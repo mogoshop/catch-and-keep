@@ -215,4 +215,18 @@ ShadowConfig = {
 ### 메이커에서 확인할 것 (런타임)
 1. 기본 몬스터를 배치하고 처치했을 때 몬스터 엔티티에서 `DeadEvent`가 실제로 발생하는지
 2. 클라이언트에서 `@ExecSpace("Server")` 메서드를 호출하면 서버에서 실행되는지, 호출한 유저를 서버에서 어떻게 식별하는지
-3. 외부에서 만든 `.mlua` 파일을 메이커가 인식하는지 (로컬 워크스페이스 동기화 방식)
+3. ~~외부에서 만든 `.mlua` 파일을 메이커가 인식하는지~~ → 확인됨 (11장)
+2-보충. 호출자 식별은 `@ExecSpace("Server")` 본문의 `senderUserId`로 한다 (MSW 스킬 문서 기준, 런타임 미확인)
+
+## 11. 0-2 구현 결과 (2026-10-06, 메이커 실행 확인)
+
+| 스크립트 | 종류 | 역할 |
+| --- | --- | --- |
+| `RootDesk/MyDesk/Shadow/ShadowConfig.mlua` | `@Logic` | 수치 테이블 (`_ShadowConfig`) |
+| `RootDesk/MyDesk/Shadow/ShadowOwner.mlua` | `@Component` | 플레이어별 보관함·정수. 추가/분해/강화/소환 가능 판정 |
+| `RootDesk/MyDesk/Shadow/ShadowSystem.mlua` | `@Logic` | 입장한 플레이어에게 `ShadowOwner` 부착. 0-3 추출 판정이 들어갈 자리 |
+
+- **설계 변경:** `ShadowSystem`을 관리 엔티티의 컴포넌트가 아니라 `@Logic`으로 뒀다. 맵을 옮겨도 유지돼야 하는 전역 관리자이기 때문이다. `ShadowOwner`는 플레이어 모델 파일을 고치지 않고 `UserEnterEvent` 0.5초 뒤 `player:AddComponent(ShadowOwner)`로 붙인다.
+- **실행 검증 (서버 로그):** 추출 3 → 분해 2 → 강화 2 후 보관 1, 정수 2로 기대값과 일치 → `PASS`. 자가 테스트는 `ShadowSystem.RunSelfTest`로 켜고 끈다(현재 false).
+- **런타임으로 확인된 것:** 외부에서 만든 `.mlua`는 메이커 새로고침으로 `.codeblock`이 생성돼 인식된다. 런타임 `AddComponent(사용자 스크립트 타입)`이 동작한다.
+- **남은 확인:** 런타임에 붙인 컴포넌트의 `@Sync` 값이 클라이언트에 전달되는지 (0-5 보관함 UI 전에 확인). 안 되면 플레이어 모델에 `ModelBuilder`로 부착한다.

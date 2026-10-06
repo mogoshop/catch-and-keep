@@ -1,0 +1,42 @@
+-- Phase 0 그림자 수치 테이블. 로직 없음.
+-- 근거: docs/phase0-core-loop-design.md 4장, docs/data/config.csv
+-- 하드 상한(HardCap)은 이 파일에서만 정의한다. (docs/project-rules.md)
+@Logic
+script ShadowConfig extends Logic
+
+    property integer DeployBase = 5
+    property integer HardCap = 8
+    property number StatMultiplier = 0.6
+    property number LevelGrowth = 0.08
+    property number RespawnDelaySec = 10
+
+    method number GetExtractChance(integer grade)
+        -- 등급별 추출 확률. 1 일반, 2 정예. 보스(3)는 별도 처리
+        if grade == 1 then return 0.15 end
+        if grade == 2 then return 0.08 end
+        return 0
+    end
+
+    method integer GetDisassembleYield(integer grade)
+        -- 등급별 분해 수익. 0이면 분해 불가
+        if grade == 1 then return 1 end
+        if grade == 2 then return 4 end
+        return 0
+    end
+
+    method integer GetUpgradeCost(integer level)
+        -- 레벨 n에서 n+1로 올리는 정수 비용
+        return level
+    end
+
+    method integer GetDeployLimit(integer bonus)
+        -- 기본 슬롯 + 보너스. 어떤 경우에도 HardCap을 넘지 않는다
+        return math.min(self.DeployBase + bonus, self.HardCap)
+    end
+
+    method number GetStatScale(integer level)
+        -- 원본 스탯 대비 그림자 스탯 배율
+        return self.StatMultiplier * (1 + self.LevelGrowth * (level - 1))
+    end
+
+end
