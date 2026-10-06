@@ -1,0 +1,181 @@
+-- 그림자 HUD + 보관함 창 컨트롤러 (클라이언트 전용).
+-- 서버의 ShadowOwner가 동기화하는 값(StorageDigest, Essence 등)을 읽어 그리고,
+-- 버튼은 ShadowOwner의 Server 요청 메서드로 전달한다. UI는 서버에서 접근할 수 없다.
+@Logic
+script ShadowHUD extends Logic
+
+    property Entity window = "ec7926da-b184-47ac-8171-b26c42e069c9"
+    property TextGUIRendererComponent statusText = "958a853e-65dd-4e04-a265-94dc2ab0c808"
+    property string GroupPath = "/ui/ShadowHUD"
+    property integer RowCount = 8
+    property number PollInterval = 0.25
+
+    property integer Page = 0
+    property string RenderedKey = ""
+    property table Rows = {}        -- i → { root, label, deploy, upgrade, salvage }
+    property table RowIds = {}      -- i → 그 줄에 표시 중인 그림자 id
+    property table Handlers = {}    -- { entity, handler } 목록 (OnEndPlay에서 해제)
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 창은 닫힌 상태로 시작. 줄 엔티티를 경로로 찾아 버튼을 연결한다
+        if not isvalid(self.window) then
+            log_warning("[ShadowHUD] window 바인딩 없음")
+            return
+        end
+        self.window.Enable = false
+        self.Rows = {}
+        self.RowIds = {}
+        self.Handlers = {}
+        for i = 1, self.RowCount do
+            local base = self.GroupPath .. "/Window/Row" .. tostring(i)
+            local row = {
+                root = _EntityService:GetEntityByPath(base),
+                label = _EntityService:GetEntityByPath(base .. "/Label"),
+                deploy = _EntityService:GetEntityByPath(base .. "/BtnDeploy"),
+                upgrade = _EntityService:GetEntityByPath(base .. "/BtnUpgrade"),
+                salvage = _EntityService:GetEntityByPath(base .. "/BtnSalvage"),
+            }
+            self.Rows[i] = row
+            local index = i
+            self:Connect(row.deploy, function() self:OnRowAction(index, "deploy") end)
+            self:Connect(row.upgrade, function() self:OnRowAction(index, "upgrade") end)
+            self:Connect(row.salvage, function() self:OnRowAction(index, "salvage") end)
+        end
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnClose"), function() self:ToggleWindow() end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnPrev"), function() self:ChangePage(-1) end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnNext"), function() self:ChangePage(1) end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnStorage"), function() self:ToggleWindow() end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
+        log("[ShadowHUD] 준비 완료, 줄 " .. tostring(#self.Rows))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 연결한 이벤트와 타이머 정리
+        for _, h in ipairs(self.Handlers) do
+            if isvalid(h.entity) then h.entity:DisconnectEvent(ButtonClickEvent, h.eventHandler) end
+        end
+        self.Handlers = {}
+        if self.TimerId ~= 0 then
+            _TimerService:ClearTimer(self.TimerId)
+            self.TimerId = 0
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Connect(Entity e, any callback)
+        -- 버튼 클릭 연결 + 해제용 기록
+        if not isvalid(e) then return end
+        local h = e:ConnectEvent(ButtonClickEvent, callback)
+        table.insert(self.Handlers, { entity = e, eventHandler = h })
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        -- I: 보관함 열기/닫기
+        if event.key == KeyboardKey.I then self:ToggleWindow() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method ShadowOwner GetOwner()
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return nil end
+        ---@type ShadowOwner
+        local owner = player:GetComponent("script.ShadowOwner")
+        return owner
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleWindow()
+        if not isvalid(self.window) then return end
+        self.window.Enable = not self.window.Enable
+        self.RenderedKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ChangePage(integer delta)
+        self.Page = math.max(0, self.Page + delta)
+        self.RenderedKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 상태줄은 매번, 창은 내용이 바뀌었을 때만 다시 그린다
+        local owner = self:GetOwner()
+        if owner == nil then return end
+        local limit = _ShadowConfig:GetDeployLimit(0)
+        if isvalid(self.statusText) then
+            self.statusText.Text = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, owner.DeployedCount, limit, owner.Essence)
+        end
+        if not isvalid(self.window) or not self.window.Enable then return end
+        local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page)
+        if key == self.RenderedKey then return end
+        self.RenderedKey = key
+        self:RenderRows(owner)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRows(ShadowOwner owner)
+        -- 요약 문자열(id|sourceId|grade|level|deployed;...)을 풀어 현재 페이지를 그린다
+        local entries = {}
+        for row in string.gmatch(owner.StorageDigest, "[^;]+") do
+            local id, src, grade, level, deployed = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)$")
+            if id ~= nil then
+                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1" })
+            end
+        end
+        local pages = math.max(1, math.ceil(#entries / self.RowCount))
+        if self.Page >= pages then self.Page = pages - 1 end
+        local pageText = _EntityService:GetEntityByPath(self.GroupPath .. "/Window/PageText")
+        if isvalid(pageText) then
+            pageText.TextGUIRendererComponent.Text = string.format("%d / %d   (정수 %d)", self.Page + 1, pages, owner.Essence)
+        end
+
+        for i = 1, self.RowCount do
+            local row = self.Rows[i]
+            local e = entries[self.Page * self.RowCount + i]
+            self.RowIds[i] = e ~= nil and e.id or ""
+            if isvalid(row.root) then row.root.Enable = e ~= nil end
+            if e ~= nil then
+                local gradeName = "일반"
+                if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
+                row.label.TextGUIRendererComponent.Text = string.format("%s  [%s]  Lv%d%s", e.src, gradeName, e.level, e.deployed and "  · 소환 중" or "")
+                row.deploy.TextGUIRendererComponent.Text = e.deployed and "회수" or "소환"
+                row.upgrade.TextGUIRendererComponent.Text = "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level))
+                local yield = _ShadowConfig:GetDisassembleYield(e.grade)
+                if e.deployed or yield <= 0 then
+                    row.salvage.TextGUIRendererComponent.Text = "-"
+                else
+                    row.salvage.TextGUIRendererComponent.Text = "분해 +" .. tostring(yield)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnRowAction(integer index, string action)
+        -- 줄 버튼 → 서버 요청 (검증은 서버 ShadowOwner가 한다)
+        local id = self.RowIds[index]
+        if id == nil or id == "" then return end
+        local owner = self:GetOwner()
+        if owner == nil then return end
+        if action == "deploy" then
+            if string.find(self.Rows[index].deploy.TextGUIRendererComponent.Text, "회수") then
+                owner:RequestRecall(id)
+            else
+                owner:RequestDeploy(id)
+            end
+        elseif action == "upgrade" then
+            owner:RequestUpgrade(id)
+        elseif action == "salvage" then
+            owner:RequestDisassemble(id)
+        end
+        log("[ShadowHUD] 요청 " .. action .. " " .. id)
+    end
+
+end

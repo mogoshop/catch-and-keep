@@ -230,3 +230,37 @@ ShadowConfig = {
 - **실행 검증 (서버 로그):** 추출 3 → 분해 2 → 강화 2 후 보관 1, 정수 2로 기대값과 일치 → `PASS`. 자가 테스트는 `ShadowSystem.RunSelfTest`로 켜고 끈다(현재 false).
 - **런타임으로 확인된 것:** 외부에서 만든 `.mlua`는 메이커 새로고침으로 `.codeblock`이 생성돼 인식된다. 런타임 `AddComponent(사용자 스크립트 타입)`이 동작한다.
 - **남은 확인:** 런타임에 붙인 컴포넌트의 `@Sync` 값이 클라이언트에 전달되는지 (0-5 보관함 UI 전에 확인). 안 되면 플레이어 모델에 `ModelBuilder`로 부착한다.
+  → 해결: `ShadowOwner`·`PlayerAttack`을 플레이어 모델에 직접 부착했고, `@Sync` 값이 HUD에 표시됨을 확인 (12장).
+
+## 12. 2.5D 전환 + 0-3 ~ 0-6 결과 (2026-10-06, 메이커 실행 확인)
+
+### 시점 전환
+- 맵을 **탑다운 RectTile(`TileMapMode = 1`)** 로 바꿨다. 이동 바디는 `KinematicbodyComponent`. 근거와 영향은 `design/01` 4.2절.
+- 시험장: `map/map01.map` (14×8칸 템플릿, 몬스터 12마리). 횡스크롤 사냥터 버전은 git 이력(`dfaf6ab`)에 남아 있다.
+
+### 구현 목록
+| 단계 | 파일 | 내용 | 검증 |
+| --- | --- | --- | --- |
+| 0-3 | `Combat/ShadowMonster.mlua`, `Combat/PlayerAttack.mlua`, `ShadowSystem.OnMonsterKilled` | 몬스터 HP·마지막 공격자·사망·리스폰, 처치 시 등급별 확률 추출, 클라이언트 연출 | 일반 15%·정예 8% 추출 성공 로그 |
+| 0-4 | `Shadow/ShadowUnit.mlua`, `ShadowOwner` 소환부, `Models/Shadows/ShadowUnit.model` | 원본 몬스터 스프라이트를 보라색으로 칠한 그림자. 8방향 추적·원형 범위 공격, 주인 주변 대형, 끈 거리 9 순간이동, 재탐색 0.4초 | Z 소환 3 → 각자 다른 표적 처치, 그림자 막타도 주인에게 추출, C 집결, X 회수 |
+| 0-5 | `UI/ShadowHUD.mlua`, `ui/ShadowHUD.ui` | 상단 상태줄 + 보관함 창(I 키, 8줄 페이지) | 서버 `@Sync` 요약 문자열이 창에 그려짐 |
+| 0-6 | 같은 UI의 줄 버튼 → `ShadowOwner.Request*` | 소환/회수·강화·분해 | 분해 +4, 강화 Lv2(ATK 15→16), UI에서 소환 |
+
+### 조작
+`방향키` 이동 · `Ctrl` 공격 · `Z` 소환 · `X` 전체 회수 · `C` 집결 · `I` 보관함
+
+### 실행하며 찾은 MSW 함정
+- 모델 템플릿의 `TransformComponent.Position` 값이 `placeModel`의 `pos`를 덮어써서 모든 몬스터가 한 점에 생성됐다 → 몬스터 모델에서 위치값 제거.
+- mLua `integer`는 64비트라 모델 값은 `long` 타입으로 넣어야 한다 (`int`면 LWA-4012).
+- 세션 첫 `SpawnByModelId` 직후 `GetComponent`가 실패할 수 있다 → `ShadowOwner.SetupUnit` 재시도.
+- 스폰 직후 같은 컴포넌트의 다른 메서드 호출이 nil(LEA-2011) → `Setup`은 값만 저장.
+- `Vector2.Magnitude`/`Normalize`는 메서드다 (점 표기 시 함수 객체 비교 버그).
+- `handler`는 예약어라 테이블 필드명으로 못 쓴다.
+- 메이커 마우스 시뮬레이터는 엔진 UI 버튼을 누르지 못한다 → 버튼 검증은 핸들러가 부르는 함수를 클라이언트에서 직접 호출.
+
+### 남은 일
+- **바닥 타일셋 없음:** 템플릿이 참조하는 타일셋이 워크스페이스에 없어 바닥이 체크무늬로 보인다. 메이커 타일 에디터에서 타일셋을 만들고 칠해야 한다 (사용자 작업, https://maplestoryworlds-creators.nexon.com/ko/docs/?postId=589).
+- 몬스터가 플레이어·그림자를 공격하지 않는다 → 그림자 사망·재소환 대기(`respawnReadyAt`)는 아직 실전 검증 안 됨.
+- 추격형 몬스터가 한 점에 겹친다 (몬스터 간 분리 없음).
+- 0-7 부하 확인, 0-8 재미 판정은 사용자 플레이 필요.
+- 행 버튼 높이 44px (모바일 터치 기준 88px 미달).
