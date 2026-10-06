@@ -8,6 +8,7 @@ script ShadowMonster extends Component
     property string SourceId = "mob"        -- 그림자의 원본 몬스터 종류
     property number RespawnDelay = 6
     property number HideDelay = 0.8
+    property boolean DebugLog = false
 
     @Sync
     property number Hp = 0
@@ -43,6 +44,17 @@ script ShadowMonster extends Component
     method void Die()
         -- 사망 연출 → 추출 판정 → 숨김 → 리스폰 예약
         self.IsDead = true
+        if self.DebugLog then
+            local me = self.Entity.TransformComponent.WorldPosition
+            local who = "-"
+            local dist = -1
+            if isvalid(self.LastAttacker) then
+                local a = self.LastAttacker.TransformComponent.WorldPosition
+                who = self.LastAttacker.Name
+                dist = (Vector2(a.x, a.y) - Vector2(me.x, me.y)):Magnitude()
+            end
+            log(string.format("[ShadowMonster] 사망 %s at %.2f,%.2f by %s dist %.2f", self.Entity.Name, me.x, me.y, who, dist))
+        end
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("DEAD") end
         _ShadowSystem:OnMonsterKilled(self.Entity, self.LastAttacker, self.SourceId, self.Grade)
@@ -65,8 +77,8 @@ script ShadowMonster extends Component
         self.LastAttacker = nil
         self.Hp = self.MaxHp
         self.IsDead = false
-        local body = self.Entity.RigidbodyComponent
-        if isvalid(body) then body:SetPosition(self.SpawnPosition) end
+        local movement = self.Entity.MovementComponent
+        if isvalid(movement) then movement:SetWorldPosition(self.SpawnPosition) end
         self.Entity:SetEnable(true)
         self.Entity:SetVisible(true)
         local sc = self.Entity.StateComponent

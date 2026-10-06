@@ -1,4 +1,5 @@
--- 소환된 그림자 한 마리. 가까운 몬스터를 추적·공격하고, 적이 없으면 주인을 따라간다.
+-- 소환된 그림자 한 마리. 탑다운(RectTile) 맵에서 8방향으로 움직인다.
+-- 가까운 몬스터를 추적·공격하고, 적이 없으면 주인 주변의 자기 자리(대형)로 돌아간다.
 -- 원본 몬스터 스프라이트를 어둡게 칠해서 쓴다. AIChase 없이 스크립트로 직접 움직인다.
 @Component
 script ShadowUnit extends AttackComponent
@@ -8,11 +9,13 @@ script ShadowUnit extends AttackComponent
     property integer Atk = 10
     property string StandRUID = ""
     property string MoveRUID = ""
+    property Vector2 FormationOffset = Vector2(0, -0.8)
 
-    property number AttackRange = 0.9
+    property number AttackRange = 0.8
+    property number AttackRadius = 0.6
     property number AttackCooldown = 1.0
     property number DetectRange = 5
-    property number FollowDistance = 1.2
+    property number ArriveDistance = 0.25
     property number LeashDistance = 9
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
     property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
@@ -31,14 +34,15 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method void Setup(Entity ownerPlayer, string shadowId, integer atk, string standRuid, string moveRuid)
-        -- ShadowOwner가 스폰 직후 호출한다
+    method void Setup(Entity ownerPlayer, string shadowId, integer atk, string standRuid, string moveRuid, Vector2 formationOffset)
+        -- ShadowOwner가 스폰 직후 호출한다. 스폰 직후에는 같은 컴포넌트의 다른 메서드를 부르면
+        -- nil(LEA-2011)이 날 수 있어 값만 저장하고, 스프라이트는 첫 OnUpdate에서 지정한다
         self.OwnerPlayer = ownerPlayer
         self.ShadowId = shadowId
         self.Atk = atk
         self.StandRUID = standRuid
         self.MoveRUID = moveRuid
-        self:SetClip(standRuid)
+        self.FormationOffset = formationOffset
         log("[ShadowUnit] 소환 " .. shadowId .. " ATK " .. tostring(atk))
     end
 
@@ -51,7 +55,8 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
-        -- 상태 판단: 주인 확인 → 끈 거리 → (집결 | 적 추적·공격 | 주인 따라가기)
+        -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
+        if self.ShadowId == "" then return end  -- ShadowOwner.SetupUnit 재시도 중
         if not isvalid(self.OwnerPlayer) then
             self.Entity:Destroy()
             return
@@ -59,13 +64,14 @@ script ShadowUnit extends AttackComponent
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
 
-        local myPos = self.Entity.TransformComponent.WorldPosition
-        local ownerPos = self.OwnerPlayer.TransformComponent.WorldPosition
-        local dxOwner = ownerPos.x - myPos.x
-        local dyOwner = ownerPos.y - myPos.y
-        if dxOwner * dxOwner + dyOwner * dyOwner > self.LeashDistance * self.LeashDistance then
-            -- 너무 멀어지면 주인 곁으로 순간이동 (끼임 방지)
-            self.Entity.RigidbodyComponent:SetPosition(Vector2(ownerPos.x, ownerPos.y + 0.3))
+        local p = self.Entity.TransformComponent.WorldPosition
+        local myPos = Vector2(p.x, p.y)
+        local o = self.OwnerPlayer.TransformComponent.WorldPosition
+        local slot = Vector2(o.x + self.FormationOffset.x, o.y + self.FormationOffset.y)
+        local toSlot = slot - myPos
+        if toSlot:Magnitude() > self.LeashDistance then
+            -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
+            self.Entity.MovementComponent:SetWorldPosition(slot)
             self.Target = nil
             return
         end
@@ -79,24 +85,24 @@ script ShadowUnit extends AttackComponent
         end
 
         if self.RallyTimer <= 0 and self:IsLiveTarget(self.Target) then
-            local tPos = self.Target.TransformComponent.WorldPosition
-            local dx = tPos.x - myPos.x
-            if math.abs(dx) > self.AttackRange then
-                self:MoveHorizontal(dx)
+            local t = self.Target.TransformComponent.WorldPosition
+            local toTarget = Vector2(t.x, t.y) - myPos
+            if toTarget:Magnitude() > self.AttackRange then
+                self:MoveToward(toTarget)
             else
-                self:StopMove(dx)
+                self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
                     self.AttackTimer = self.AttackCooldown
-                    self:DoAttack(dx)
+                    self:DoAttack(myPos, toTarget)
                 end
             end
             return
         end
 
-        if math.abs(dxOwner) > self.FollowDistance then
-            self:MoveHorizontal(dxOwner)
+        if toSlot:Magnitude() > self.ArriveDistance then
+            self:MoveToward(toSlot)
         else
-            self:StopMove(dxOwner)
+            self:StopMove(o.x - myPos.x)
         end
     end
 
@@ -110,20 +116,18 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method Entity FindNearestMonster(Vector3 myPos)
+    method Entity FindNearestMonster(Vector2 myPos)
         -- 감지 범위 안의 가장 가까운 몬스터. RetargetInterval마다만 호출된다
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return nil end
         local best = nil
-        local bestDist = self.DetectRange * self.DetectRange
+        local bestDist = self.DetectRange
         local monsters = map:GetChildComponentsByTypeName("script.ShadowMonster", true)
         for _, comp in ipairs(monsters) do
             local e = comp.Entity
             if self:IsLiveTarget(e) then
-                local p = e.TransformComponent.WorldPosition
-                local dx = p.x - myPos.x
-                local dy = p.y - myPos.y
-                local d = dx * dx + dy * dy
+                local q = e.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - myPos):Magnitude()
                 if d < bestDist then
                     bestDist = d
                     best = e
@@ -134,19 +138,18 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method void MoveHorizontal(number dx)
-        -- 좌우 이동 + 바라보는 방향 (스프라이트 기본은 왼쪽을 본다)
-        local dir = dx >= 0 and 1 or -1
-        self.Entity.MovementComponent:MoveToDirection(Vector2(dir, 0), 0)
-        self:Face(dir)
+    method void MoveToward(Vector2 dir)
+        -- 8방향 이동 + 좌우 바라보기 (스프라이트 기본은 왼쪽을 본다)
+        self.Entity.MovementComponent:MoveToDirection(dir:Normalize(), 0)
+        if math.abs(dir.x) > 0.05 then self:Face(dir.x >= 0 and 1 or -1) end
         self:SetClip(self.MoveRUID)
     end
 
     @ExecSpace("ServerOnly")
-    method void StopMove(number dx)
+    method void StopMove(number faceDx)
         -- 멈추고 대상 쪽을 본다
         self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
-        if math.abs(dx) > 0.05 then self:Face(dx >= 0 and 1 or -1) end
+        if math.abs(faceDx) > 0.05 then self:Face(faceDx >= 0 and 1 or -1) end
         self:SetClip(self.StandRUID)
     end
 
@@ -166,12 +169,10 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method void DoAttack(number dx)
-        -- 대상 방향 앞쪽 사각 범위
-        local pos = self.Entity.TransformComponent.WorldPosition
-        local dir = dx >= 0 and 1 or -1
-        local center = Vector2(pos.x + 0.45 * dir, pos.y + 0.4)
-        self:AttackFast(BoxShape(center, Vector2(1.0, 0.9), 0), "shadow.basic", nil)
+    method void DoAttack(Vector2 myPos, Vector2 toTarget)
+        -- 대상 방향으로 반 걸음 앞의 원형 범위
+        local center = myPos + toTarget:Normalize() * 0.4 + Vector2(0, 0.2)
+        self:AttackFast(CircleShape(center, self.AttackRadius), "shadow.basic", nil)
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
