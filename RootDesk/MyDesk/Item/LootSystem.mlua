@@ -4,10 +4,84 @@
 script LootSystem extends Logic
 
     property string DropModelId = "lootdrop"
+    property boolean DebugLog = false
 
     @ExecSpace("ServerOnly")
     method void RollDrops(Entity monster, integer monLevel, integer grade, Entity killer)
-        -- 아직 아이템 시스템 연결 전 (골격)
+        -- 등급별 추첨 횟수만큼 "없음/골드/포션/장비/룬" 가중치 롤 (05장 7.1)
+        if not isvalid(monster) or not isvalid(killer) then return end
+        ---@type PlayerStats
+        local stats = killer:GetComponent("script.PlayerStats")
+        local mf, gf = 0, 0
+        if stats ~= nil then
+            mf = stats.BonusMF
+            gf = stats.BonusGF
+        end
+        local picks = 1
+        local wNone, wGold, wPot, wItem, wRune = 45, 28, 12, 13, 2
+        if grade == 2 then
+            picks = 2
+            wNone, wGold, wPot, wItem, wRune = 20, 30, 15, 30, 5
+        elseif grade >= 3 then
+            picks = 5
+            wNone, wGold, wPot, wItem, wRune = 0, 30, 10, 45, 15
+        end
+        local userId = killer.PlayerComponent.UserId
+        local p = monster.TransformComponent.WorldPosition
+        local center = Vector2(p.x, p.y)
+        for i = 1, picks do
+            local r = _UtilLogic:RandomDouble() * (wNone + wGold + wPot + wItem + wRune)
+            if r < wNone then
+                -- 없음
+            elseif r < wNone + wGold then
+                local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * grade * (1 + gf / 100))
+                self:Spawn(center, userId, "gold", "", amount, 0)
+            elseif r < wNone + wGold + wPot then
+                local kind = "hp"
+                if _UtilLogic:RandomDouble() < 0.4 then kind = "mp" end
+                self:Spawn(center, userId, kind, "", 1, 0)
+            elseif r < wNone + wGold + wPot + wItem then
+                local s = _ItemData:Generate(monLevel, grade, mf)
+                local item = _ItemData:Parse(s)
+                self:Spawn(center, userId, "item", s, 1, item.rarity)
+            else
+                self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel), 1, 0)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Spawn(Vector2 center, string userId, string kind, string itemString, integer amount, integer rarity)
+        -- 처치 위치 주변에 흩뿌린다
+        local map = nil
+        local player = _UserService:GetUserEntityByUserId(userId)
+        if isvalid(player) then map = player.CurrentMap end
+        if map == nil then return end
+        local ang = _UtilLogic:RandomDouble() * math.pi * 2
+        local dist = 0.2 + _UtilLogic:RandomDouble() * 0.5
+        local pos = Vector3(center.x + math.cos(ang) * dist, center.y + math.sin(ang) * dist * 0.6, 0)
+        local e = _SpawnService:SpawnByModelId(self.DropModelId, "Loot", pos, map)
+        if not isvalid(e) then return end
+        self:SetupDrop(e, userId, kind, itemString, amount, rarity, 0)
+        if self.DebugLog then log("[LootSystem] 드롭 " .. kind .. " " .. itemString .. " x" .. tostring(amount)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetupDrop(Entity e, string userId, string kind, string itemString, integer amount, integer rarity, integer attempt)
+        -- 스폰 직후 컴포넌트 조회 실패 대비 재시도 (SoulOrb와 같은 패턴)
+        if not isvalid(e) then return end
+        local ok, comp = pcall(function() return e:GetComponent("script.LootDrop") end)
+        if ok and comp ~= nil then
+            ---@type LootDrop
+            local drop = comp
+            drop:Setup(userId, kind, itemString, amount, rarity)
+            return
+        end
+        if attempt >= 5 then
+            e:Destroy()
+            return
+        end
+        _TimerService:SetTimerOnce(function() self:SetupDrop(e, userId, kind, itemString, amount, rarity, attempt + 1) end, 0.1)
     end
 
 end

@@ -34,12 +34,35 @@ script PlayerStats extends Component
     @Sync
     property integer Gold = 0
 
-    -- 장비·스킬이 주는 추가치 (ItemSystem·SkillBook이 갱신)
+    -- 장비가 주는 추가치 (PlayerInventory.ApplyEquipment가 갱신). 능력치 창 표시용으로 동기화
+    @Sync
     property number BonusLife = 0
+    @Sync
     property number BonusMana = 0
+    @Sync
     property number BonusDamage = 0
+    @Sync
     property number BonusDamagePct = 0
+    @Sync
     property number BonusDefense = 0
+    @Sync
+    property integer BonusStr = 0
+    @Sync
+    property integer BonusDex = 0
+    @Sync
+    property integer BonusVit = 0
+    @Sync
+    property integer BonusEne = 0
+    @Sync
+    property number BonusMinionPct = 0
+    @Sync
+    property number BonusExtractPct = 0
+    @Sync
+    property number BonusMF = 0
+    @Sync
+    property number BonusGF = 0
+    @Sync
+    property number BonusRegen = 0
 
     property integer RegenTimer = 0
 
@@ -65,8 +88,8 @@ script PlayerStats extends Component
     method void Recalculate(boolean fill)
         -- 최대 생명·마나 = 기본 + 레벨 + 능력치 + 장비. fill이면 가득 채운다
         local pc = self.Entity.PlayerComponent
-        local maxHp = math.floor(60 + (self.Level - 1) * 1.5 + (self.Vit - 15) * 3 + self.BonusLife)
-        local maxMana = 25 + (self.Level - 1) * 2 + (self.Ene - 25) * 2 + self.BonusMana
+        local maxHp = math.floor(60 + (self.Level - 1) * 1.5 + (self.Vit + self.BonusVit - 15) * 3 + self.BonusLife)
+        local maxMana = 25 + (self.Level - 1) * 2 + (self.Ene + self.BonusEne - 25) * 2 + self.BonusMana
         local hpRatio = 1
         if pc.MaxHp > 0 then hpRatio = pc.Hp / pc.MaxHp end
         local manaRatio = 1
@@ -87,8 +110,8 @@ script PlayerStats extends Component
         -- 마나: 초당 최대치의 2% + 정신 보정 / 생명: 초당 0.5% (전투 중에도 느리게)
         local pc = self.Entity.PlayerComponent
         if pc.Hp <= 0 then return end
-        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * 0.02 + self.Ene * 0.02)
-        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)))
+        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * 0.02 + (self.Ene + self.BonusEne) * 0.02)
+        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)) + self.BonusRegen)
     end
 
     @ExecSpace("ServerOnly")
@@ -139,12 +162,12 @@ script PlayerStats extends Component
 
     method number GetMeleeDamage(number baseDamage)
         -- 근접 피해 = (기본 + 장비 추가) × (1 + 힘/100 + 장비 %)
-        return (baseDamage + self.BonusDamage) * (1 + self.Str / 100 + self.BonusDamagePct / 100)
+        return (baseDamage + self.BonusDamage) * (1 + (self.Str + self.BonusStr) / 100 + self.BonusDamagePct / 100)
     end
 
     method number GetSpellPowerPct()
-        -- 마법(혼술) 피해 보너스: 정신 1당 1%
-        return self.Ene
+        -- 마법(혼술) 피해 보너스: 정신 1당 1% + 장비 피해 %
+        return self.Ene + self.BonusEne + self.BonusDamagePct
     end
 
     @ExecSpace("Server")
@@ -165,6 +188,29 @@ script PlayerStats extends Component
     method void NotifyLevelUp(integer level)
         _ScreenMessageLogic:PrivateMsg("레벨 업! Lv " .. tostring(level) .. "  (능력치 +5, 스킬 +1)")
         _ParticleService:PlayBasicParticle(BasicParticleType.Buff, self.Entity, self.Entity.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, nil)
+    end
+
+    -- ───────── 저장 (PlayerSave가 호출) ─────────
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        return { lv = self.Level, exp = self.Exp, str = self.Str, dex = self.Dex, vit = self.Vit, ene = self.Ene, sp = self.StatPoints, skp = self.SkillPoints, gold = self.Gold }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table d)
+        if d == nil then return end
+        self.Level = d.lv or 1
+        self.Exp = d.exp or 0
+        self.Str = d.str or 15
+        self.Dex = d.dex or 25
+        self.Vit = d.vit or 15
+        self.Ene = d.ene or 25
+        self.StatPoints = d.sp or 0
+        self.SkillPoints = d.skp or 0
+        self.Gold = d.gold or 0
+        self.ExpToNext = self:CalcExpToNext(self.Level)
+        self:Recalculate(true)
     end
 
 end

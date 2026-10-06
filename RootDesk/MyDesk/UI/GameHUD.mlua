@@ -1,0 +1,473 @@
+-- D2식 메인 HUD 컨트롤러 (클라이언트 전용).
+-- 하단: 생명·마나 오브, 경험치 바, 스킬 슬롯(A S D F·우클릭), 포션(1 2) / 상단: 대상 정보, 메뉴
+-- 창: 능력치(U), 소지품(I), 스킬(K). Esc = 모든 창 닫기. 값은 각 컴포넌트의 @Sync 값을 읽고, 버튼은 Server 요청으로 보낸다.
+@Logic
+script GameHUD extends Logic
+
+    property string G = "/ui/GameHUD"
+    property number PollInterval = 0.15
+    property integer TimerId = 0
+    property table Handlers = {}
+    property table E = {}                 -- 경로 → 엔티티 캐시
+    property string SelectedSkill = ""
+    property integer SelectedBag = 0
+    property string CharKey = ""
+    property string InvKey = ""
+    property string SkillKey = ""
+    property string SlotKey = ""
+    property table SkillRows = {}         -- "T1_1" → skill id
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 창은 닫고 시작, 버튼 연결, 주기 갱신
+        self.Handlers = {}
+        self.E = {}
+        for _, w in ipairs({ "CharWin", "InvWin", "SkillWin" }) do
+            local e = self:Get(w)
+            if isvalid(e) then e.Enable = false end
+        end
+        local tgt = self:Get("Target")
+        if isvalid(tgt) then tgt.Enable = false end
+        for i = 1, 5 do
+            local slot = i
+            self:Connect("Bottom/Slots/Slot" .. tostring(i), function() self:CastSlot(slot) end)
+        end
+        self:Connect("Bottom/Slots/Pot1", function() self:UsePotion("hp") end)
+        self:Connect("Bottom/Slots/Pot2", function() self:UsePotion("mp") end)
+        self:Connect("Menu/BtnChar", function() self:Toggle("CharWin") end)
+        self:Connect("Menu/BtnInv", function() self:Toggle("InvWin") end)
+        self:Connect("Menu/BtnSkill", function() self:Toggle("SkillWin") end)
+        self:Connect("Menu/BtnExtract", function() self:Extract() end)
+        for _, w in ipairs({ "CharWin", "InvWin", "SkillWin" }) do
+            local name = w
+            self:Connect(w .. "/BtnClose", function() self:Toggle(name) end)
+        end
+        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do
+            local stat = s
+            self:Connect("CharWin/" .. s .. "/BtnAdd", function() self:AddStat(stat) end)
+        end
+        for _, slot in ipairs({ "weapon", "offhand", "helm", "armor", "gloves", "boots", "belt", "amulet", "ring1", "ring2" }) do
+            local s = slot
+            self:Connect("InvWin/Eq_" .. s, function() self:OnEquipSlot(s) end)
+        end
+        for i = 1, 30 do
+            local index = i
+            self:Connect("InvWin/Bag" .. tostring(i), function() self:SelectBag(index) end)
+        end
+        self:Connect("InvWin/BtnEquip", function() self:InvAction("equip") end)
+        self:Connect("InvWin/BtnSell", function() self:InvAction("sell") end)
+        for t = 1, 3 do
+            for r = 1, 10 do
+                local key = "T" .. tostring(t) .. "_" .. tostring(r)
+                self:Connect("SkillWin/" .. key, function() self:SelectSkill(key) end)
+            end
+        end
+        self:Connect("SkillWin/BtnLearn", function() self:SkillAction(0) end)
+        self:Connect("SkillWin/BtnA", function() self:SkillAction(1) end)
+        self:Connect("SkillWin/BtnS", function() self:SkillAction(2) end)
+        self:Connect("SkillWin/BtnD", function() self:SkillAction(3) end)
+        self:Connect("SkillWin/BtnF", function() self:SkillAction(4) end)
+        self:Connect("SkillWin/BtnR", function() self:SkillAction(5) end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
+        log("[GameHUD] 준비 완료")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        for _, h in ipairs(self.Handlers) do
+            if isvalid(h.entity) then h.entity:DisconnectEvent(ButtonClickEvent, h.eventHandler) end
+        end
+        self.Handlers = {}
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity Get(string rel)
+        -- 경로 캐시
+        local e = self.E[rel]
+        if e == nil then
+            e = _EntityService:GetEntityByPath(self.G .. "/" .. rel)
+            self.E[rel] = e
+        end
+        return e
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetText(string rel, string text)
+        local e = self:Get(rel)
+        if isvalid(e) and e.TextGUIRendererComponent.Text ~= text then e.TextGUIRendererComponent.Text = text end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetFill(string rel, number amount)
+        local e = self:Get(rel)
+        if isvalid(e) then e.SpriteGUIRendererComponent.FillAmount = math.max(0, math.min(1, amount)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Connect(string rel, any callback)
+        local e = self:Get(rel)
+        if not isvalid(e) then
+            log_warning("[GameHUD] 없음: " .. rel)
+            return
+        end
+        local h = e:ConnectEvent(ButtonClickEvent, callback)
+        table.insert(self.Handlers, { entity = e, eventHandler = h })
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Toggle(string win)
+        local e = self:Get(win)
+        if not isvalid(e) then return end
+        e.Enable = not e.Enable
+        self.CharKey = ""
+        self.InvKey = ""
+        self.SkillKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        local k = event.key
+        if k == KeyboardKey.U then self:Toggle("CharWin")
+        elseif k == KeyboardKey.I then self:Toggle("InvWin")
+        elseif k == KeyboardKey.K then self:Toggle("SkillWin")
+        elseif k == KeyboardKey.Escape then
+            for _, w in ipairs({ "CharWin", "InvWin", "SkillWin" }) do
+                local e = self:Get(w)
+                if isvalid(e) then e.Enable = false end
+            end
+        end
+    end
+
+    -- ───────── 컴포넌트 접근 ─────────
+
+    @ExecSpace("ClientOnly")
+    method PlayerStats Stats()
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return nil end
+        ---@type PlayerStats
+        local c = p:GetComponent("script.PlayerStats")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method SkillBook Book()
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return nil end
+        ---@type SkillBook
+        local c = p:GetComponent("script.SkillBook")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method PlayerInventory Inv()
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return nil end
+        ---@type PlayerInventory
+        local c = p:GetComponent("script.PlayerInventory")
+        return c
+    end
+
+    -- ───────── 갱신 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        local player = _UserService.LocalPlayer
+        local st = self:Stats()
+        if not isvalid(player) or st == nil then return end
+        local pc = player.PlayerComponent
+        self:SetFill("Bottom/LifeOrb/Fill", pc.Hp / math.max(1, pc.MaxHp))
+        self:SetText("Bottom/LifeOrb/Text", tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp)))
+        self:SetFill("Bottom/ManaOrb/Fill", st.Mana / math.max(1, st.MaxMana))
+        self:SetText("Bottom/ManaOrb/Text", tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana)))
+        self:SetFill("Bottom/XP/Fill", st.Exp / math.max(1, st.ExpToNext))
+        self:SetText("Bottom/XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
+        self:RenderSlots()
+        self:RenderTarget(player)
+        local cw = self:Get("CharWin")
+        if isvalid(cw) and cw.Enable then self:RenderChar(st, pc) end
+        local iw = self:Get("InvWin")
+        if isvalid(iw) and iw.Enable then self:RenderInv(st) end
+        local sw = self:Get("SkillWin")
+        if isvalid(sw) and sw.Enable then self:RenderSkills(st) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderSlots()
+        local book = self:Book()
+        local inv = self:Inv()
+        if book == nil or inv == nil then return end
+        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(inv.HpPot) .. "#" .. tostring(inv.MpPot)
+        if key == self.SlotKey then return end
+        self.SlotKey = key
+        local keys = { "A", "S", "D", "F" }
+        local i = 0
+        for id in string.gmatch(book.Slots .. ",", "([^,]*),") do
+            i = i + 1
+            if i <= 4 then self:SetText("Bottom/Slots/Slot" .. tostring(i), self:SkillShort(id) .. "\n" .. keys[i]) end
+        end
+        self:SetText("Bottom/Slots/Slot5", self:SkillShort(book.RightSkill) .. "\n우클릭")
+        self:SetText("Bottom/Slots/Pot1", "생명\n" .. tostring(inv.HpPot) .. "  [1]")
+        self:SetText("Bottom/Slots/Pot2", "마나\n" .. tostring(inv.MpPot) .. "  [2]")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string SkillShort(string id)
+        if id == "" then return "-" end
+        local def = _SkillData:Get(id)
+        if def == nil then return id end
+        return def.name
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderTarget(Entity player)
+        -- 대상: 커서 근처(마우스 모드) 또는 가장 가까운 살아 있는 몬스터 (반경 4)
+        local tgt = self:Get("Target")
+        if not isvalid(tgt) then return end
+        local p = player.TransformComponent.WorldPosition
+        local center = Vector2(p.x, p.y)
+        local radius = 4
+        ---@type ClickControl
+        local cc = player:GetComponent("script.ClickControl")
+        if Environment:IsPCPlatform() and cc ~= nil and cc.MouseMode then
+            center = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
+            radius = 1.2
+        end
+        local best = nil
+        local bestDist = radius
+        for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
+            ---@type ShadowMonster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - center):Magnitude()
+                if d < bestDist then bestDist = d best = m end
+            end
+        end
+        tgt.Enable = best ~= nil
+        if best == nil then return end
+        local gradeName = ""
+        local color = "#FFFFFF"
+        if best.Grade == 2 then gradeName = "정예 " color = "#6E8CFF" elseif best.Grade >= 3 then gradeName = "보스 " color = "#C8A050" end
+        self:SetText("Target/Name", string.format("<color=%s>%s%s</color>  Lv%d", color, gradeName, _ShadowConfig:GetMonsterName(best.SourceId), best.Level))
+        self:SetFill("Target/Bar/Fill", best.Hp / math.max(1, best.MaxHp))
+        self:SetText("Target/Curse", best.CurseTag)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderChar(PlayerStats st, PlayerComponent pc)
+        local key = string.format("%d|%d|%d|%d|%d|%d|%d|%.0f|%.0f|%.0f|%.0f", st.Level, st.Str, st.Dex, st.Vit, st.Ene, st.StatPoints, pc.MaxHp, st.MaxMana, st.BonusDefense, st.BonusDamage, st.BonusMinionPct)
+        if key == self.CharKey then return end
+        self.CharKey = key
+        local lines = {
+            string.format("레벨 %d  ·  네크로맨서", st.Level),
+            string.format("생명 %d   마나 %d", math.floor(pc.MaxHp), math.floor(st.MaxMana)),
+            string.format("근접 피해 %d", math.floor(st:GetMeleeDamage(25))),
+            string.format("주문력 +%d%%   방어 %d", math.floor(st:GetSpellPowerPct()), math.floor(st.BonusDefense)),
+            string.format("소환수 +%d%%   추출 +%d%%", math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct)),
+            string.format("아이템 발견 +%d%%   골드 발견 +%d%%", math.floor(st.BonusMF), math.floor(st.BonusGF)),
+        }
+        self:SetText("CharWin/Info", table.concat(lines, "\n"))
+        self:SetText("CharWin/Str/Text", self:StatLine("힘", st.Str, st.BonusStr))
+        self:SetText("CharWin/Dex/Text", self:StatLine("민첩", st.Dex, st.BonusDex))
+        self:SetText("CharWin/Vit/Text", self:StatLine("활력", st.Vit, st.BonusVit))
+        self:SetText("CharWin/Ene/Text", self:StatLine("정신", st.Ene, st.BonusEne))
+        self:SetText("CharWin/Points", "남은 능력치 포인트: " .. tostring(st.StatPoints))
+        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do
+            local btn = self:Get("CharWin/" .. s .. "/BtnAdd")
+            if isvalid(btn) then btn.Enable = st.StatPoints > 0 end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method string StatLine(string name, integer base, integer bonus)
+        if bonus > 0 then return string.format("%s  %d  <color=#6E8CFF>(+%d)</color>", name, base + bonus, bonus) end
+        return string.format("%s  %d", name, base)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderInv(PlayerStats st)
+        local inv = self:Inv()
+        if inv == nil then return end
+        local key = inv.BagDigest .. "#" .. inv.EquipDigest .. "#" .. tostring(st.Gold) .. "#" .. tostring(self.SelectedBag)
+        if key == self.InvKey then return end
+        self.InvKey = key
+        self:SetText("InvWin/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(inv.HpPot) .. "   마나 물약 " .. tostring(inv.MpPot))
+        local labels = { weapon = "무기", offhand = "보조", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring1 = "반지1", ring2 = "반지2" }
+        local eq = inv:GetEquipMap()
+        for slot, label in pairs(labels) do
+            local s = eq[slot]
+            if s == nil then
+                self:SetText("InvWin/Eq_" .. slot, "<color=#777777>" .. label .. ": 비어 있음</color>")
+            else
+                self:SetText("InvWin/Eq_" .. slot, label .. ": " .. _ItemData:DisplayName(s))
+            end
+        end
+        local list = inv:GetBagList()
+        if self.SelectedBag > #list then self.SelectedBag = 0 end
+        for i = 1, 30 do
+            local s = list[i]
+            local btn = self:Get("InvWin/Bag" .. tostring(i))
+            if isvalid(btn) then
+                if s == nil then
+                    btn.TextGUIRendererComponent.Text = ""
+                else
+                    local item = _ItemData:Parse(s)
+                    local short = self:Clip(item.name, 7)
+                    local mark = ""
+                    if i == self.SelectedBag then mark = "▶" end
+                    btn.TextGUIRendererComponent.Text = mark .. "<color=" .. _ItemData:RarityColor(item.rarity) .. ">" .. short .. "</color>"
+                end
+            end
+        end
+        local desc = "아이템을 선택하세요."
+        if self.SelectedBag > 0 and list[self.SelectedBag] ~= nil then
+            local s = list[self.SelectedBag]
+            desc = _ItemData:Describe(s) .. "\n판매가 " .. tostring(_ItemData:SellValue(s)) .. " 골드"
+            if _ItemData:IsRune(_ItemData:Parse(s).base) then desc = desc .. "\n→ 소켓이 빈 장비 칸을 누르면 끼운다" end
+        end
+        self:SetText("InvWin/Desc", desc)
+    end
+
+    @ExecSpace("ClientOnly")
+    method string Clip(string text, integer maxChars)
+        -- UTF-8 글자 단위로 자른다 (바이트로 자르면 한글이 깨진다)
+        local out = {}
+        local n = 0
+        for ch in string.gmatch(text, "[\0-\127\194-\244][\128-\191]*") do
+            n = n + 1
+            if n > maxChars then
+                table.insert(out, "..")
+                break
+            end
+            table.insert(out, ch)
+        end
+        return table.concat(out)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderSkills(PlayerStats st)
+        local book = self:Book()
+        if book == nil then return end
+        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.SelectedSkill
+        if key == self.SkillKey then return end
+        self.SkillKey = key
+        self:SetText("SkillWin/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints))
+        local trees = { "command", "soul", "curse" }
+        local rowCount = { 0, 0, 0 }
+        self.SkillRows = {}
+        for t = 1, 3 do self:SetText("SkillWin/Head" .. tostring(t), _SkillData:TreeName(trees[t])) end
+        for _, id in ipairs(_SkillData:GetOrder()) do
+            local def = _SkillData:Get(id)
+            local t = 1
+            if def.tree == "soul" then t = 2 elseif def.tree == "curse" then t = 3 end
+            rowCount[t] = rowCount[t] + 1
+            local rkey = "T" .. tostring(t) .. "_" .. tostring(rowCount[t])
+            self.SkillRows[rkey] = id
+            local lv = book:GetLevel(id)
+            local color = "#777777"
+            if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#AACCAA" end
+            local mark = ""
+            if id == self.SelectedSkill then mark = "▶" end
+            local soon = ""
+            if not def.impl then soon = " ·" end
+            self:SetText("SkillWin/" .. rkey, string.format("%s<color=%s>%s  %d/%d</color>%s", mark, color, def.name, lv, def.maxLv, soon))
+        end
+        for t = 1, 3 do
+            for r = rowCount[t] + 1, 10 do self:SetText("SkillWin/T" .. tostring(t) .. "_" .. tostring(r), "") end
+        end
+        local desc = "스킬을 선택하세요.  (· = 준비 중)"
+        if self.SelectedSkill ~= "" then
+            local def = _SkillData:Get(self.SelectedSkill)
+            local reason = book:CanLearn(self.SelectedSkill, st.Level, st.SkillPoints)
+            local req = "요구 Lv" .. tostring(def.row)
+            if def.prereq ~= "" then req = req .. ", 선행 " .. _SkillData:Get(def.prereq).name end
+            local manaText = ""
+            if def.mana > 0 then manaText = string.format("  마나 %d", math.floor(def.mana)) end
+            desc = string.format("%s — %s%s\n%s   %s", def.name, def.desc, manaText, req, reason == "" and "<color=#AACCAA>습득 가능</color>" or ("<color=#FF8888>" .. reason .. "</color>"))
+        end
+        self:SetText("SkillWin/Desc", desc)
+    end
+
+    -- ───────── 동작 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void CastSlot(integer slot)
+        local book = self:Book()
+        if book ~= nil then book:CastSlot(slot) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UsePotion(string kind)
+        local inv = self:Inv()
+        if inv ~= nil then inv:RequestUsePotion(kind) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Extract()
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return end
+        ---@type ShadowOwner
+        local owner = p:GetComponent("script.ShadowOwner")
+        if owner ~= nil then owner:TryExtractNearby() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AddStat(string stat)
+        local st = self:Stats()
+        if st ~= nil then st:RequestAddStat(stat) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SelectBag(integer index)
+        self.SelectedBag = index
+        self.InvKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEquipSlot(string slot)
+        -- 룬을 고른 상태면 그 장비에 소켓, 아니면 장비 해제
+        local inv = self:Inv()
+        if inv == nil then return end
+        local list = inv:GetBagList()
+        local sel = list[self.SelectedBag]
+        if sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
+            inv:RequestSocket(self.SelectedBag, slot)
+            self.SelectedBag = 0
+        else
+            inv:RequestUnequip(slot)
+        end
+        self.InvKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void InvAction(string action)
+        local inv = self:Inv()
+        if inv == nil or self.SelectedBag <= 0 then return end
+        if action == "equip" then inv:RequestEquip(self.SelectedBag) else inv:RequestSell(self.SelectedBag) end
+        self.SelectedBag = 0
+        self.InvKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SelectSkill(string rkey)
+        local id = self.SkillRows[rkey]
+        if id == nil then return end
+        self.SelectedSkill = id
+        self.SkillKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SkillAction(integer slot)
+        -- 0 = 습득, 1~4 = A S D F 슬롯, 5 = 우클릭
+        local book = self:Book()
+        if book == nil or self.SelectedSkill == "" then return end
+        if slot == 0 then book:RequestLearn(self.SelectedSkill) else book:RequestSetSlot(slot, self.SelectedSkill) end
+        self.SkillKey = ""
+    end
+
+end

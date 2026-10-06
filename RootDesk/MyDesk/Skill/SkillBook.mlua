@@ -378,4 +378,25 @@ script SkillBook extends Component
         return me + Vector2(self.Entity.PlayerControllerComponent.LookDirectionX * 2, 0)
     end
 
+    -- ───────── 저장 (PlayerSave가 호출) ─────────
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        local levels = {}
+        for id, lv in pairs(self.Levels) do levels[id] = lv end
+        return { levels = levels, slots = self.Slots, right = self.RightSkill }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table d)
+        if d == nil then return end
+        if d.levels ~= nil then
+            self.Levels = {}
+            for id, lv in pairs(d.levels) do self.Levels[id] = lv end
+        end
+        if d.slots ~= nil then self.Slots = d.slots end
+        if d.right ~= nil then self.RightSkill = d.right end
+        self:RefreshDigest()
+    end
+
 end

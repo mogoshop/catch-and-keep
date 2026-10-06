@@ -1,0 +1,354 @@
+-- 장비 데이터: 베이스·접사·유니크 정의와 아이템 생성·문자열 변환 (docs/design/05-items-and-economy.md).
+-- 아이템 한 개 = 문자열 "base|rarity|ilvl|name|k=v,k=v|sockets|runes" (저장·동기화를 같은 형식으로)
+-- rarity: 0 일반(흰) 1 마법(파랑) 2 희귀(노랑) 3 유니크(금) 4 룬워드
+@Logic
+script ItemData extends Logic
+
+    property table Bases = {}
+    property table BaseOrder = {}
+    property table Affixes = {}
+    property table Uniques = {}
+    property table Runes = {}
+    property table RuneOrder = {}
+    property table Runewords = {}
+    property boolean Built = false
+
+    method void Build()
+        -- 첫 조회 때 표를 만든다 (서버·클라이언트 각각)
+        if self.Built then return end
+        self.Built = true
+        self.Bases = {}
+        self.BaseOrder = {}
+        self.Affixes = {}
+        self.Uniques = {}
+        -- id, 이름, 부위, 요구 레벨, 무기 피해, 방어, 최대 소켓
+        self:AddBase("scythe1", "단낫", "weapon", 1, 6, 0, 2)
+        self:AddBase("staff1", "나무 지팡이", "weapon", 1, 4, 0, 3)
+        self:AddBase("scythe2", "장낫", "weapon", 26, 18, 0, 3)
+        self:AddBase("staff2", "뼈 지팡이", "weapon", 26, 14, 0, 4)
+        self:AddBase("scythe3", "사신의 낫", "weapon", 51, 40, 0, 4)
+        self:AddBase("staff3", "혼 지팡이", "weapon", 51, 32, 0, 5)
+        self:AddBase("lamp1", "희미한 등불", "offhand", 1, 0, 2, 1)
+        self:AddBase("lamp2", "망령 등불", "offhand", 26, 0, 8, 2)
+        self:AddBase("lamp3", "혼백 등불", "offhand", 51, 0, 20, 3)
+        self:AddBase("helm1", "가죽 두건", "helm", 1, 0, 3, 2)
+        self:AddBase("helm2", "뼈 투구", "helm", 26, 0, 12, 2)
+        self:AddBase("helm3", "혼관", "helm", 51, 0, 30, 3)
+        self:AddBase("armor1", "누더기 로브", "armor", 1, 0, 6, 3)
+        self:AddBase("armor2", "뼈 갑옷", "armor", 26, 0, 25, 4)
+        self:AddBase("armor3", "망령 갑주", "armor", 51, 0, 60, 5)
+        self:AddBase("gloves1", "천 장갑", "gloves", 1, 0, 2, 0)
+        self:AddBase("gloves2", "뼈 손아귀", "gloves", 30, 0, 9, 0)
+        self:AddBase("boots1", "짚신", "boots", 1, 0, 2, 0)
+        self:AddBase("boots2", "망자의 장화", "boots", 30, 0, 9, 0)
+        self:AddBase("belt1", "끈 허리띠", "belt", 1, 0, 2, 0)
+        self:AddBase("belt2", "뼈 허리띠", "belt", 30, 0, 8, 0)
+        self:AddBase("amulet1", "목걸이", "amulet", 5, 0, 0, 0)
+        self:AddBase("ring1", "반지", "ring", 5, 0, 0, 0)
+
+        -- 접사: id, 접두(true)/접미, 이름, 능력치, 최소, 최대, 최소 아이템 레벨, 부위("any" 또는 "a,b")
+        self:AddAffix("sharp", true, "예리한", "dmgPct", 10, 30, 1, "weapon")
+        self:AddAffix("cruel", true, "잔혹한", "dmgPct", 31, 60, 20, "weapon")
+        self:AddAffix("heavy", true, "묵직한", "dmgFlat", 2, 6, 1, "weapon,ring,amulet,gloves")
+        self:AddAffix("sturdy", true, "단단한", "def", 5, 15, 1, "offhand,helm,armor,gloves,boots,belt")
+        self:AddAffix("steel", true, "강철의", "def", 16, 40, 20, "offhand,helm,armor")
+        self:AddAffix("lively", true, "활기찬", "life", 5, 15, 1, "any")
+        self:AddAffix("vital", true, "생명의", "life", 16, 35, 18, "helm,armor,belt,amulet,ring")
+        self:AddAffix("azure", true, "푸른", "mana", 5, 15, 1, "any")
+        self:AddAffix("spirit", true, "혼령의", "minion", 5, 15, 1, "offhand,amulet,helm")
+        self:AddAffix("lord", true, "군주의", "minion", 16, 30, 25, "offhand,amulet")
+        self:AddAffix("of_str", false, "힘의", "str", 2, 6, 1, "any")
+        self:AddAffix("of_dex", false, "민첩의", "dex", 2, 6, 1, "any")
+        self:AddAffix("of_vit", false, "활력의", "vit", 2, 6, 1, "any")
+        self:AddAffix("of_ene", false, "정신의", "ene", 2, 6, 1, "any")
+        self:AddAffix("of_giant", false, "거인의", "vit", 7, 15, 20, "armor,belt,amulet")
+        self:AddAffix("of_hunter", false, "사냥꾼의", "extract", 2, 5, 1, "helm,amulet,offhand")
+        self:AddAffix("of_luck", false, "행운의", "mf", 5, 20, 1, "ring,amulet,boots,helm")
+        self:AddAffix("of_greed", false, "탐욕의", "gf", 10, 40, 1, "any")
+        self:AddAffix("of_regen", false, "재생의", "regen", 1, 3, 1, "armor,belt,ring")
+
+        -- 유니크: 베이스 고정 + 고정 옵션
+        self.Uniques["scythe1"] = { name = "망자의 손길", mods = "dmgPct=80,minion=20,life=20" }
+        self.Uniques["staff1"] = { name = "속삭이는 가지", mods = "ene=15,mana=30,dmgPct=40" }
+        self.Uniques["helm1"] = { name = "잿빛 왕관", mods = "def=20,extract=8,mf=25" }
+        self.Uniques["lamp1"] = { name = "그림자 군주의 등불", mods = "minion=40,ene=10" }
+        self.Uniques["armor1"] = { name = "무덤지기의 수의", mods = "def=30,vit=10,regen=2" }
+        self.Uniques["ring1"] = { name = "검은 맹세", mods = "dmgFlat=8,minion=15,gf=50" }
+
+        -- 룬 (docs/rune-system-draft.md): id, 이름, 무기 옵션, 방어구 옵션, 최소 몬스터 레벨
+        self.Runes = {}
+        self.RuneOrder = {}
+        self:AddRune("r_el", "엘", "dmgFlat=3", "def=8", 1)
+        self:AddRune("r_ith", "이스", "dmgPct=10", "mana=10", 1)
+        self:AddRune("r_tal", "탈", "minion=8", "life=10", 2)
+        self:AddRune("r_ral", "랄", "dmgFlat=6", "def=15", 4)
+        self:AddRune("r_ort", "오르트", "ene=5", "extract=3", 6)
+        self:AddRune("r_amn", "암", "life=15", "vit=5", 10)
+        self:AddRune("r_sol", "솔", "dmgPct=20", "def=25", 15)
+        self:AddRune("r_shael", "샤엘", "minion=15", "regen=2", 20)
+        -- 룬워드: 순서대로 끼운 룬 → 완성 효과 (부위, 필요 소켓 수)
+        self.Runewords = {}
+        self.Runewords["r_tal,r_ith"] = { name = "주종", slots = "weapon,offhand", mods = "minion=25,mana=20,ene=5" }
+        self.Runewords["r_el,r_ral"] = { name = "뼈의 맹세", slots = "helm,armor", mods = "def=40,life=25" }
+        self.Runewords["r_ort,r_tal,r_amn"] = { name = "군단", slots = "weapon,offhand,armor", mods = "minion=50,extract=8,life=30" }
+        self.Runewords["r_sol,r_el,r_ith"] = { name = "칼날 혼", slots = "weapon", mods = "dmgPct=70,dmgFlat=10,str=10" }
+    end
+
+    method void AddBase(string id, string name, string slot, integer reqLv, number dmg, number def, integer sockets)
+        self.Bases[id] = { id = id, name = name, slot = slot, reqLv = reqLv, dmg = dmg, def = def, sockets = sockets }
+        table.insert(self.BaseOrder, id)
+    end
+
+    method void AddAffix(string id, boolean prefix, string name, string stat, integer minV, integer maxV, integer minIlvl, string slots)
+        table.insert(self.Affixes, { id = id, prefix = prefix, name = name, stat = stat, min = minV, max = maxV, ilvl = minIlvl, slots = slots })
+    end
+
+    method void AddRune(string id, string name, string weaponMods, string armorMods, integer minLevel)
+        self.Runes[id] = { id = id, name = name, weapon = weaponMods, armor = armorMods, minLevel = minLevel }
+        table.insert(self.RuneOrder, id)
+    end
+
+    method any GetBase(string id)
+        self:Build()
+        return self.Bases[id]
+    end
+
+    method any GetRune(string id)
+        self:Build()
+        return self.Runes[id]
+    end
+
+    -- ───────── 문자열 ↔ 표 ─────────
+
+    method table Parse(string s)
+        -- "base|rarity|ilvl|name|mods|sockets|runes" → 표. 룬 아이템은 base가 r_* 이다
+        local f = {}
+        for part in string.gmatch(s .. "|", "([^|]*)|") do table.insert(f, part) end
+        local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {} }
+        for k, v in string.gmatch(f[5] or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = tonumber(v) end
+        for r in string.gmatch(f[7] or "", "[^,]+") do table.insert(item.runes, r) end
+        return item
+    end
+
+    method string Serialize(table item)
+        local keys = {}
+        for k, _ in pairs(item.mods) do table.insert(keys, k) end
+        table.sort(keys)
+        local mods = {}
+        for _, k in ipairs(keys) do table.insert(mods, k .. "=" .. tostring(item.mods[k])) end
+        return item.base .. "|" .. tostring(item.rarity) .. "|" .. tostring(item.ilvl) .. "|" .. item.name .. "|" .. table.concat(mods, ",") .. "|" .. tostring(item.sockets) .. "|" .. table.concat(item.runes, ",")
+    end
+
+    method boolean IsRune(string s)
+        return string.sub(s, 1, 2) == "r_"
+    end
+
+    method string GetSlot(string s)
+        -- 장착 부위 ("" = 장착 불가: 룬)
+        local item = self:Parse(s)
+        local base = self:GetBase(item.base)
+        if base == nil then return "" end
+        return base.slot
+    end
+
+    method table GetTotalMods(string s)
+        -- 아이템이 주는 최종 능력치 (베이스 피해·방어 + 옵션 + 룬/룬워드)
+        local item = self:Parse(s)
+        local base = self:GetBase(item.base)
+        local total = {}
+        if base == nil then return total end
+        if base.dmg > 0 then total["dmgFlat"] = base.dmg end
+        if base.def > 0 then total["def"] = base.def end
+        for k, v in pairs(item.mods) do total[k] = (total[k] or 0) + v end
+        local key = table.concat(item.runes, ",")
+        local rw = self.Runewords[key]
+        local isRuneword = rw ~= nil and #item.runes == item.sockets and string.find("," .. rw.slots .. ",", "," .. base.slot .. ",", 1, true) ~= nil
+        for _, rid in ipairs(item.runes) do
+            local rune = self:GetRune(rid)
+            if rune ~= nil then
+                local src = rune.armor
+                if base.slot == "weapon" or base.slot == "offhand" then src = rune.weapon end
+                for k, v in string.gmatch(src, "([%w_]+)=([%-%d%.]+)") do total[k] = (total[k] or 0) + tonumber(v) end
+            end
+        end
+        if isRuneword then
+            for k, v in string.gmatch(rw.mods, "([%w_]+)=([%-%d%.]+)") do total[k] = (total[k] or 0) + tonumber(v) end
+        end
+        return total
+    end
+
+    -- ───────── 생성 ─────────
+
+    method integer RollRarity(integer grade, number mf)
+        -- 등급별 확률 (05장 7.2). 아이템 발견은 마법 이상에 곱하되 체감 (최대 ×2.5)
+        local magic, rare, unique = 25, 5, 0.2
+        if grade == 2 then magic, rare, unique = 40, 14, 1
+        elseif grade >= 3 then magic, rare, unique = 35, 25, 8 end
+        local m = 1 + math.min(1.5, mf / (mf + 100) * 2.5)
+        local r = _UtilLogic:RandomDouble() * 100
+        if r < unique * m then return 3 end
+        if r < (unique + rare) * m then return 2 end
+        if r < (unique + rare + magic) * m then return 1 end
+        return 0
+    end
+
+    method string PickBase(integer ilvl)
+        -- 아이템 레벨에 맞는 베이스 중 무작위 (요구 레벨이 ilvl+3 이하, 너무 낮은 단계는 덜 나옴)
+        self:Build()
+        local list = {}
+        for _, id in ipairs(self.BaseOrder) do
+            local b = self.Bases[id]
+            if b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then table.insert(list, id) end
+        end
+        if #list == 0 then return "scythe1" end
+        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+    end
+
+    method string Generate(integer ilvl, integer grade, number mf)
+        -- 몬스터 처치 드롭 장비 1개 생성 → 문자열
+        self:Build()
+        local baseId = self:PickBase(ilvl)
+        local base = self.Bases[baseId]
+        local rarity = self:RollRarity(grade, mf)
+        local item = { base = baseId, rarity = rarity, ilvl = ilvl, name = base.name, mods = {}, sockets = 0, runes = {} }
+        if rarity == 3 then
+            local u = self.Uniques[baseId]
+            if u == nil then
+                rarity = 2
+                item.rarity = 2
+            else
+                item.name = u.name
+                for k, v in string.gmatch(u.mods, "([%w_]+)=([%-%d%.]+)") do item.mods[k] = tonumber(v) end
+                return self:Serialize(item)
+            end
+        end
+        if rarity == 0 then
+            -- 일반 장비는 소켓이 붙을 수 있다 (룬워드 재료)
+            if base.sockets > 0 and _UtilLogic:RandomDouble() < 0.5 then item.sockets = _UtilLogic:RandomIntegerRange(1, base.sockets) end
+            return self:Serialize(item)
+        end
+        local prefixes, suffixes = 1, 1
+        if rarity == 1 then
+            if _UtilLogic:RandomDouble() < 0.4 then
+                if _UtilLogic:RandomDouble() < 0.5 then prefixes = 0 else suffixes = 0 end
+            end
+        else
+            local total = _UtilLogic:RandomIntegerRange(4, 6)
+            prefixes = _UtilLogic:RandomIntegerRange(math.max(1, total - 3), math.min(3, total - 1))
+            suffixes = total - prefixes
+        end
+        local usedStat = {}
+        local pName, sName = "", ""
+        for pass = 1, 2 do
+            local want = prefixes
+            if pass == 2 then want = suffixes end
+            for i = 1, want do
+                local a = self:PickAffix(pass == 1, base.slot, ilvl, usedStat)
+                if a ~= nil then
+                    usedStat[a.stat .. tostring(a.prefix)] = true
+                    item.mods[a.stat] = (item.mods[a.stat] or 0) + _UtilLogic:RandomIntegerRange(a.min, a.max)
+                    if pass == 1 and pName == "" then pName = a.name end
+                    if pass == 2 and sName == "" then sName = a.name end
+                end
+            end
+        end
+        if rarity == 1 then
+            local n = base.name
+            if pName ~= "" then n = pName .. " " .. n end
+            if sName ~= "" then n = sName .. " " .. n end
+            item.name = n
+        else
+            item.name = self:RareName() .. " " .. base.name
+        end
+        return self:Serialize(item)
+    end
+
+    method any PickAffix(boolean prefix, string slot, integer ilvl, table used)
+        local pool = {}
+        for _, a in ipairs(self.Affixes) do
+            if a.prefix == prefix and a.ilvl <= ilvl and not used[a.stat .. tostring(a.prefix)]
+                and (a.slots == "any" or string.find("," .. a.slots .. ",", "," .. slot .. ",", 1, true) ~= nil) then
+                table.insert(pool, a)
+            end
+        end
+        if #pool == 0 then return nil end
+        return pool[_UtilLogic:RandomIntegerRange(1, #pool)]
+    end
+
+    method string RareName()
+        local a = { "철혼", "잿더미", "망령", "흑요", "피안", "흉조", "서리", "황혼", "해골", "적막" }
+        local b = { "의 송곳", "의 장막", "의 굴레", "의 손톱", "의 맹세", "의 눈", "의 비명", "의 그늘" }
+        return a[_UtilLogic:RandomIntegerRange(1, #a)] .. b[_UtilLogic:RandomIntegerRange(1, #b)]
+    end
+
+    method string MakeRune(integer monLevel)
+        -- 몬스터 레벨로 열리는 룬 중 하나 (높은 룬일수록 드묾)
+        self:Build()
+        local pool = {}
+        for i, id in ipairs(self.RuneOrder) do
+            local r = self.Runes[id]
+            if r.minLevel <= monLevel then
+                for w = 1, (#self.RuneOrder - i + 1) do table.insert(pool, id) end
+            end
+        end
+        if #pool == 0 then return "r_el|0|1|엘 룬||0|" end
+        local id = pool[_UtilLogic:RandomIntegerRange(1, #pool)]
+        return id .. "|0|" .. tostring(monLevel) .. "|" .. self.Runes[id].name .. " 룬||0|"
+    end
+
+    method integer SellValue(string s)
+        local item = self:Parse(s)
+        if self:IsRune(item.base) then return 20 + item.ilvl * 2 end
+        return math.floor((10 + item.ilvl * 3) * (1 + item.rarity * 2))
+    end
+
+    -- ───────── 표시 ─────────
+
+    method string RarityColor(integer rarity)
+        if rarity == 1 then return "#6E8CFF" end
+        if rarity == 2 then return "#FFE15A" end
+        if rarity == 3 or rarity == 4 then return "#C8A050" end
+        return "#FFFFFF"
+    end
+
+    method string StatName(string k)
+        local names = { dmgPct = "피해 %", dmgFlat = "피해", def = "방어", life = "생명", mana = "마나", str = "힘", dex = "민첩", vit = "활력", ene = "정신", minion = "소환수 능력치 %", extract = "추출 확률 %", mf = "아이템 발견 %", gf = "골드 발견 %", regen = "생명 재생" }
+        return names[k] or k
+    end
+
+    method string DisplayName(string s)
+        -- 색 태그 붙은 이름 (룬워드면 룬워드 이름)
+        local item = self:Parse(s)
+        local name = item.name
+        local rarity = item.rarity
+        local key = table.concat(item.runes, ",")
+        local rw = self.Runewords[key]
+        if rw ~= nil and #item.runes == item.sockets and item.sockets > 0 then
+            name = "「" .. rw.name .. "」 " .. name
+            rarity = 4
+        end
+        if item.sockets > 0 then name = name .. " [" .. tostring(#item.runes) .. "/" .. tostring(item.sockets) .. "]" end
+        return "<color=" .. self:RarityColor(rarity) .. ">" .. name .. "</color>"
+    end
+
+    method string Describe(string s)
+        -- 한 줄 요약: 이름 · 요구 레벨 · 주요 옵션
+        self:Build()
+        local item = self:Parse(s)
+        if self:IsRune(item.base) then
+            local r = self:GetRune(item.base)
+            return self:DisplayName(s) .. "  무기:" .. r.weapon .. " 방어구:" .. r.armor
+        end
+        local base = self:GetBase(item.base)
+        local parts = {}
+        local total = self:GetTotalMods(s)
+        local keys = {}
+        for k, _ in pairs(total) do table.insert(keys, k) end
+        table.sort(keys)
+        for _, k in ipairs(keys) do table.insert(parts, self:StatName(k) .. "+" .. tostring(math.floor(total[k]))) end
+        local req = ""
+        if base ~= nil and base.reqLv > 1 then req = " (Lv" .. tostring(base.reqLv) .. ")" end
+        return self:DisplayName(s) .. req .. "  " .. table.concat(parts, " ")
+    end
+
+end

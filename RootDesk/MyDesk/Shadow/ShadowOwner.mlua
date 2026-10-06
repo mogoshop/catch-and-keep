@@ -150,7 +150,7 @@ script ShadowOwner extends Component
         if ok and comp ~= nil then
             ---@type ShadowUnit
             local unitComp = comp
-            local mult = 1 + 0.08 * self:GetSkillLevel("command_mastery")
+            local mult = 1 + 0.08 * self:GetSkillLevel("command_mastery") + self:GetStatBonus("minion") / 100
             unitComp:Setup(self.Entity, id, math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult), math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
             return
         end
@@ -168,6 +168,16 @@ script ShadowOwner extends Component
         local book = self.Entity:GetComponent("script.SkillBook")
         if book == nil then return 0 end
         return book:GetLevel(id)
+    end
+
+    method number GetStatBonus(string kind)
+        -- 장비 옵션: minion = 소환수 능력치 %, extract = 추출 확률 %p
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        if kind == "minion" then return stats.BonusMinionPct end
+        if kind == "extract" then return stats.BonusExtractPct end
+        return 0
     end
 
     method integer GetDeployBonus()
@@ -310,7 +320,7 @@ script ShadowOwner extends Component
 
         local grade = orb.Grade
         local chance = 1
-        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:GetSkillLevel("extract_mastery")) end
+        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:GetSkillLevel("extract_mastery") + self:GetStatBonus("extract") / 100) end
         local roll = _UtilLogic:RandomDouble()
         local success = roll < chance
         log(string.format("[ShadowOwner] 추출 시도 %s 등급%d 확률 %.2f 굴림 %.2f → %s", orb.SourceId, grade, chance, roll, success and "성공" or "실패"))
@@ -414,6 +424,35 @@ script ShadowOwner extends Component
         _ScreenMessageLogic:PrivateMsg("그림자 추출 성공! [" .. gradeName .. "] " .. sourceId)
         _ParticleService:PlayBasicParticle(BasicParticleType.Charge, self.Entity, pos, 0, Vector3(1, 1, 1), false, nil)
         log("[ShadowOwner] 클라이언트 추출 연출: " .. sourceId)
+    end
+
+    -- ───────── 저장 (PlayerSave가 호출) ─────────
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        -- 보관함 행(소환 상태 제외)과 정수
+        local list = {}
+        for id, s in pairs(self.Storage) do
+            table.insert(list, { src = s.sourceId, g = s.grade, lv = s.level, st = s.standRuid, mv = s.moveRuid })
+        end
+        return { essence = self.Essence, shadows = list }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table data)
+        -- 저장된 그림자를 새 id로 다시 만든다 (id에는 세션마다 바뀌는 엔티티 id가 들어간다)
+        if data == nil then return end
+        self:RecallAll()
+        self.Storage = {}
+        self.StorageCount = 0
+        self.Essence = data.essence or 0
+        if data.shadows ~= nil then
+            for _, s in ipairs(data.shadows) do
+                local id = self:AddShadow(s.src or "mob", s.g or 1, s.st or "", s.mv or "")
+                self.Storage[id].level = s.lv or 1
+            end
+        end
+        self:RefreshDigest()
     end
 
 end

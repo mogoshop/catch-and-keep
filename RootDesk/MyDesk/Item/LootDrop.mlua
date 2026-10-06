@@ -1,0 +1,82 @@
+-- 땅에 떨어진 전리품 (골드·포션·장비·룬). 개인 전리품: 30초 동안 주인만 줍고 그 뒤 공개, 90초 후 사라진다.
+-- 줍기는 PlayerInventory가 서버에서 거리로 판정한다. 이 컴포넌트는 데이터·수명·연출만 맡는다.
+@Component
+script LootDrop extends Component
+
+    @Sync
+    property string OwnerUserId = ""
+    @Sync
+    property string Kind = ""          -- gold / hp / mp / item / rune
+    @Sync
+    property integer Rarity = 0
+    property string ItemString = ""
+    property integer Amount = 0
+    property number DropTime = 0
+    property number PublicAfter = 30
+    property number LifeSeconds = 90
+    property boolean Taken = false
+
+    property string GoldRUID = "94b7d89e2f514e269e04250dd4b7d989"
+    property string HpRUID = "234aca1a4ce946119b68e3717991e775"
+    property string MpRUID = "7e9b39b73f4945b1a8d77db6c99a6946"
+    property string ItemRUID = "b72a08a78ebd4a3ea633e4d7b18f67e8"
+    property string RuneRUID = "68219a8c8c1c4a43b2311c88d4a76204"
+    property number PulseTime = 0
+    property boolean Dressed = false
+
+    @ExecSpace("ServerOnly")
+    method void Setup(string ownerUserId, string kind, string itemString, integer amount, integer rarity)
+        -- LootSystem이 스폰 직후 호출 (값만 저장)
+        self.OwnerUserId = ownerUserId
+        self.Kind = kind
+        self.ItemString = itemString
+        self.Amount = amount
+        self.Rarity = rarity
+        self.DropTime = _UtilLogic.ElapsedSeconds
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and not self.Taken then self.Entity:Destroy() end
+        end, self.LifeSeconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean CanTake(string userId)
+        if self.Taken or self.Kind == "" then return false end
+        if self.OwnerUserId == "" or self.OwnerUserId == userId then return true end
+        return _UtilLogic.ElapsedSeconds - self.DropTime >= self.PublicAfter
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Take()
+        self.Taken = true
+        self.Entity:Destroy()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 종류별 아이콘, 장비는 등급 색으로 깜빡임 (희귀 이상은 더 크게)
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) or self.Kind == "" then return end
+        if not self.Dressed then
+            self.Dressed = true
+            local ruid = self.ItemRUID
+            if self.Kind == "gold" then ruid = self.GoldRUID
+            elseif self.Kind == "hp" then ruid = self.HpRUID
+            elseif self.Kind == "mp" then ruid = self.MpRUID
+            elseif self.Kind == "rune" then ruid = self.RuneRUID end
+            sprite.SpriteRUID = ruid
+        end
+        if self.Kind ~= "item" and self.Kind ~= "rune" then return end
+        self.PulseTime = self.PulseTime + delta
+        local a = 0.75 + 0.25 * math.abs(math.sin(self.PulseTime * 4))
+        if self.Kind == "rune" then sprite.Color = Color(1, 0.6, 0.2, a)
+        elseif self.Rarity == 1 then sprite.Color = Color(0.5, 0.6, 1, a)
+        elseif self.Rarity == 2 then sprite.Color = Color(1, 0.9, 0.35, a)
+        elseif self.Rarity == 3 then sprite.Color = Color(0.85, 0.65, 0.3, a)
+        else sprite.Color = Color(1, 1, 1, 1) end
+    end
+
+end
