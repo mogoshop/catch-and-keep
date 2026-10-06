@@ -59,7 +59,17 @@ script MonsterAttack extends AttackComponent
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
-        return self.Damage
+        -- 쇠약 저주가 걸려 있으면 피해 감소. 플레이어 방어(장비)는 받는 쪽에서 줄인다
+        local dmg = self.Damage
+        ---@type ShadowMonster
+        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        if monster ~= nil then dmg = dmg * monster:GetDamageDealtMultiplier() end
+        if isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local stats = defender:GetComponent("script.PlayerStats")
+            if stats ~= nil then dmg = dmg * (100 / (100 + stats.BonusDefense)) end
+        end
+        return math.max(1, math.floor(dmg + 0.5))
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)

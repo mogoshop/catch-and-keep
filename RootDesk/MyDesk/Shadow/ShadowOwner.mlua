@@ -109,7 +109,7 @@ script ShadowOwner extends Component
         -- 소환 가능 여부
         local shadow = self.Storage[id]
         if shadow == nil or shadow.deployed then return false end
-        if self.DeployedCount >= _ShadowConfig:GetDeployLimit(0) then return false end
+        if self.DeployedCount >= _ShadowConfig:GetDeployLimit(self:GetDeployBonus()) then return false end
         return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
     end
 
@@ -150,7 +150,8 @@ script ShadowOwner extends Component
         if ok and comp ~= nil then
             ---@type ShadowUnit
             local unitComp = comp
-            unitComp:Setup(self.Entity, id, _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level), _ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
+            local mult = 1 + 0.08 * self:GetSkillLevel("command_mastery")
+            unitComp:Setup(self.Entity, id, math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult), math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
             return
         end
         if attempt >= 5 then
@@ -159,6 +160,23 @@ script ShadowOwner extends Component
             return
         end
         _TimerService:SetTimerOnce(function() self:SetupUnit(id, attempt + 1) end, 0.1)
+    end
+
+    method integer GetSkillLevel(string id)
+        -- 패시브 스킬 레벨 (SkillBook이 없으면 0)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return 0 end
+        return book:GetLevel(id)
+    end
+
+    method integer GetDeployBonus()
+        -- 배치 확장: 1·8·16레벨에 +1씩 (최대 +3). 절대 상한은 ShadowConfig.HardCap
+        local lv = self:GetSkillLevel("deploy_expand")
+        if lv >= 16 then return 3 end
+        if lv >= 8 then return 2 end
+        if lv >= 1 then return 1 end
+        return 0
     end
 
     @ExecSpace("ServerOnly")
@@ -292,7 +310,7 @@ script ShadowOwner extends Component
 
         local grade = orb.Grade
         local chance = 1
-        if grade < 3 then chance = _ShadowConfig:GetExtractChance(grade) end
+        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:GetSkillLevel("extract_mastery")) end
         local roll = _UtilLogic:RandomDouble()
         local success = roll < chance
         log(string.format("[ShadowOwner] 추출 시도 %s 등급%d 확률 %.2f 굴림 %.2f → %s", orb.SourceId, grade, chance, roll, success and "성공" or "실패"))

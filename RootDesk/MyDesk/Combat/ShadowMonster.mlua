@@ -5,6 +5,7 @@ script ShadowMonster extends Component
 
     property number MaxHp = 60
     property integer Grade = 1              -- 1 일반, 2 정예, 3 보스
+    property integer Level = 1              -- 경험치·드롭 레벨
     property string SourceId = "mob"        -- 그림자의 원본 몬스터 종류
     property number RespawnDelay = 6
     property number HideDelay = 0.8
@@ -17,6 +18,73 @@ script ShadowMonster extends Component
 
     property Entity LastAttacker = nil
     property Vector2 SpawnPosition = Vector2(0, 0)
+
+    -- 상태 효과 (서버). 시각은 _UtilLogic.ElapsedSeconds 기준
+    property number AmpUntil = 0
+    property number AmpPct = 0
+    property number WeakenUntil = 0
+    property number WeakenPct = 0
+    property number PoisonUntil = 0
+    property number PoisonDps = 0
+    property Entity PoisonSource = nil
+    property integer PoisonTimer = 0
+    @Sync
+    property string CurseTag = ""        -- 대상 정보 UI 표시용
+
+    @ExecSpace("ServerOnly")
+    method void ApplyCurse(string kind, number pct, number duration)
+        -- 저주: amp(받는 피해 증가) / weaken(주는 피해 감소)
+        local now = _UtilLogic.ElapsedSeconds
+        if kind == "amp" then
+            self.AmpPct = math.max(self.AmpPct, pct)
+            self.AmpUntil = now + duration
+            self.CurseTag = "약화의 낙인"
+        elseif kind == "weaken" then
+            self.WeakenPct = math.max(self.WeakenPct, pct)
+            self.WeakenUntil = now + duration
+            self.CurseTag = "쇠약"
+        end
+    end
+
+    method number GetDamageTakenMultiplier()
+        if _UtilLogic.ElapsedSeconds < self.AmpUntil then return 1 + self.AmpPct / 100 end
+        return 1
+    end
+
+    method number GetDamageDealtMultiplier()
+        if _UtilLogic.ElapsedSeconds < self.WeakenUntil then return math.max(0.1, 1 - self.WeakenPct / 100) end
+        return 1
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyPoison(number dps, number duration, Entity source)
+        -- 독: 0.5초마다 피해. 더 센 독이 들어오면 덮어쓴다
+        self.PoisonDps = math.max(self.PoisonDps, dps)
+        self.PoisonUntil = _UtilLogic.ElapsedSeconds + duration
+        self.PoisonSource = source
+        if self.PoisonTimer ~= 0 then return end
+        self.PoisonTimer = _TimerService:SetTimerRepeat(function() self:PoisonTick() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PoisonTick()
+        if self.IsDead or _UtilLogic.ElapsedSeconds > self.PoisonUntil then
+            _TimerService:ClearTimer(self.PoisonTimer)
+            self.PoisonTimer = 0
+            self.PoisonDps = 0
+            return
+        end
+        self:TakeDamage(self.PoisonDps * 0.5, self.PoisonSource)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TakeDamage(number amount, Entity attacker)
+        -- 히트 판정을 거치지 않는 피해(독 등). 처치 처리는 HandleHitEvent와 같다
+        if self.IsDead then return end
+        if isvalid(attacker) then self.LastAttacker = attacker end
+        self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier()
+        if self.Hp <= 0 then self:Die() end
+    end
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -80,6 +148,10 @@ script ShadowMonster extends Component
         self.LastAttacker = nil
         self.Hp = self.MaxHp
         self.IsDead = false
+        self.AmpUntil = 0
+        self.WeakenUntil = 0
+        self.PoisonUntil = 0
+        self.CurseTag = ""
         local movement = self.Entity.MovementComponent
         if isvalid(movement) then movement:SetWorldPosition(self.SpawnPosition) end
         self.Entity:SetEnable(true)

@@ -1,0 +1,170 @@
+-- 캐릭터 성장: 경험치·레벨·4대 능력치·마나·골드. DefaultPlayer 모델에 붙는다. 서버 권위.
+-- 수치 근거: docs/design/03-core-rules-and-combat.md 1장, 4장 / docs/data/config.csv
+@Component
+script PlayerStats extends Component
+
+    property integer LevelCap = 80
+    property number ExpCoef = 100
+    property number ExpExp = 2.4
+    property integer StatPerLevel = 5
+    property integer SkillPerLevel = 1
+
+    @Sync
+    property integer Level = 1
+    @Sync
+    property integer Exp = 0
+    @Sync
+    property integer ExpToNext = 100
+    @Sync
+    property integer Str = 15
+    @Sync
+    property integer Dex = 25
+    @Sync
+    property integer Vit = 15
+    @Sync
+    property integer Ene = 25
+    @Sync
+    property integer StatPoints = 0
+    @Sync
+    property integer SkillPoints = 1
+    @Sync
+    property number Mana = 25
+    @Sync
+    property number MaxMana = 25
+    @Sync
+    property integer Gold = 0
+
+    -- 장비·스킬이 주는 추가치 (ItemSystem·SkillBook이 갱신)
+    property number BonusLife = 0
+    property number BonusMana = 0
+    property number BonusDamage = 0
+    property number BonusDamagePct = 0
+    property number BonusDefense = 0
+
+    property integer RegenTimer = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 시작 시 파생치 계산, 1초마다 재생
+        self.ExpToNext = self:CalcExpToNext(self.Level)
+        self:Recalculate(true)
+        self.RegenTimer = _TimerService:SetTimerRepeat(function() self:Regen() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.RegenTimer ~= 0 then _TimerService:ClearTimer(self.RegenTimer) end
+    end
+
+    method integer CalcExpToNext(integer level)
+        -- expToNext(n) = round(coef × n^exp)
+        return math.floor(self.ExpCoef * (level ^ self.ExpExp) + 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Recalculate(boolean fill)
+        -- 최대 생명·마나 = 기본 + 레벨 + 능력치 + 장비. fill이면 가득 채운다
+        local pc = self.Entity.PlayerComponent
+        local maxHp = math.floor(60 + (self.Level - 1) * 1.5 + (self.Vit - 15) * 3 + self.BonusLife)
+        local maxMana = 25 + (self.Level - 1) * 2 + (self.Ene - 25) * 2 + self.BonusMana
+        local hpRatio = 1
+        if pc.MaxHp > 0 then hpRatio = pc.Hp / pc.MaxHp end
+        local manaRatio = 1
+        if self.MaxMana > 0 then manaRatio = self.Mana / self.MaxMana end
+        pc.MaxHp = math.max(1, maxHp)
+        self.MaxMana = math.max(1, maxMana)
+        if fill then
+            pc.Hp = pc.MaxHp
+            self.Mana = self.MaxMana
+        else
+            pc.Hp = math.max(1, math.floor(pc.MaxHp * hpRatio))
+            self.Mana = self.MaxMana * manaRatio
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Regen()
+        -- 마나: 초당 최대치의 2% + 정신 보정 / 생명: 초당 0.5% (전투 중에도 느리게)
+        local pc = self.Entity.PlayerComponent
+        if pc.Hp <= 0 then return end
+        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * 0.02 + self.Ene * 0.02)
+        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SpendMana(number amount)
+        if self.Mana < amount then return false end
+        self.Mana = self.Mana - amount
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GainExp(integer amount)
+        -- 경험치 획득 → 레벨업(여러 단계 가능): 능력치 5·스킬 1 포인트, 생명·마나 회복
+        if self.Level >= self.LevelCap or amount <= 0 then return end
+        self.Exp = self.Exp + amount
+        local leveled = false
+        while self.Exp >= self.ExpToNext and self.Level < self.LevelCap do
+            self.Exp = self.Exp - self.ExpToNext
+            self.Level = self.Level + 1
+            self.StatPoints = self.StatPoints + self.StatPerLevel
+            self.SkillPoints = self.SkillPoints + self.SkillPerLevel
+            self.ExpToNext = self:CalcExpToNext(self.Level)
+            leveled = true
+        end
+        if leveled then
+            self:Recalculate(true)
+            log("[PlayerStats] 레벨 업 → " .. tostring(self.Level))
+            local pc = self.Entity.PlayerComponent
+            self:NotifyLevelUp(self.Level, pc.UserId)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer ExpForKill(integer monsterLevel, integer grade)
+        -- 처치 경험치 = 10 × 레벨^1.3 × 등급 배율, 몬스터가 5레벨 이상 낮으면 감쇠
+        local gradeMult = 1
+        if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
+        local base = 10 * (monsterLevel ^ 1.3) * gradeMult
+        local diff = self.Level - monsterLevel
+        if diff >= 10 then base = base * 0.05
+        elseif diff >= 5 then base = base * (1 - (diff - 4) * 0.15) end
+        return math.max(1, math.floor(base + 0.5))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AddGold(integer amount)
+        self.Gold = math.max(0, self.Gold + amount)
+    end
+
+    method number GetMeleeDamage(number baseDamage)
+        -- 근접 피해 = (기본 + 장비 추가) × (1 + 힘/100 + 장비 %)
+        return (baseDamage + self.BonusDamage) * (1 + self.Str / 100 + self.BonusDamagePct / 100)
+    end
+
+    method number GetSpellPowerPct()
+        -- 마법(혼술) 피해 보너스: 정신 1당 1%
+        return self.Ene
+    end
+
+    @ExecSpace("Server")
+    method void RequestAddStat(string statName)
+        -- 능력치 포인트 분배 (클라이언트 요청 → 서버 검증)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.StatPoints <= 0 then return end
+        if statName == "Str" then self.Str = self.Str + 1
+        elseif statName == "Dex" then self.Dex = self.Dex + 1
+        elseif statName == "Vit" then self.Vit = self.Vit + 1
+        elseif statName == "Ene" then self.Ene = self.Ene + 1
+        else return end
+        self.StatPoints = self.StatPoints - 1
+        self:Recalculate(false)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyLevelUp(integer level)
+        _ScreenMessageLogic:PrivateMsg("레벨 업! Lv " .. tostring(level) .. "  (능력치 +5, 스킬 +1)")
+        _ParticleService:PlayBasicParticle(BasicParticleType.Buff, self.Entity, self.Entity.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, nil)
+    end
+
+end

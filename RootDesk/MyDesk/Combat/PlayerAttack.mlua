@@ -7,6 +7,7 @@ script PlayerAttack extends AttackComponent
     property integer Damage = 25
     property Vector2 RangeSize = Vector2(1.6, 1.4)
     property number RangeOffsetX = 0.7
+    property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
 
     @ExecSpace("ServerOnly")
     @EventSender("Self")
@@ -28,8 +29,31 @@ script PlayerAttack extends AttackComponent
         self:AttackFast(BoxShape(center, self.RangeSize, 0), "player.basic", nil)
     end
 
+    @ExecSpace("ServerOnly")
+    method void SkillAttack(Vector2 center, Vector2 size, number angle, string info, number damage)
+        -- SkillBook 스킬 판정 (info = "skill.*"). angle < 0 이면 원(반지름 size.x)
+        self.SkillDamage = damage
+        if angle < 0 then
+            self:AttackFast(CircleShape(center, size.x), info, nil)
+        else
+            self:AttackFast(BoxShape(center, size, angle), info, nil)
+        end
+    end
+
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
-        return self.Damage
+        -- 기본 피해 × 힘·장비 보정 (스킬은 SkillDamage), 저주(약화의 낙인) 등 대상 배율 적용
+        local dmg = self.Damage
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if string.sub(attackInfo, 1, 6) == "skill." then
+            dmg = self.SkillDamage
+        elseif stats ~= nil then
+            dmg = stats:GetMeleeDamage(self.Damage)
+        end
+        ---@type ShadowMonster
+        local monster = defender:GetComponent("script.ShadowMonster")
+        if monster ~= nil then dmg = dmg * monster:GetDamageTakenMultiplier() end
+        return math.max(1, math.floor(dmg + 0.5))
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)

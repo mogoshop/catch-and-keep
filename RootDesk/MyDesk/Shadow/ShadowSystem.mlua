@@ -43,6 +43,12 @@ script ShadowSystem extends Logic
             log("[ShadowSystem] 처치자 불명 → 혼 생략: " .. sourceId)
             return
         end
+        -- 경험치: 처치자(그림자의 주인 포함)에게. 파티 분배는 PartySystem이 있으면 그쪽에서 나눈다
+        ---@type ShadowMonster
+        local mon = monster:GetComponent("script.ShadowMonster")
+        local monLevel = 1
+        if mon ~= nil then monLevel = mon.Level end
+        self:GrantKillRewards(player, monster, monLevel, grade)
         -- 원본 몬스터의 대기·이동 스프라이트를 혼과 그림자 외형으로 쓴다
         local standRuid = ""
         local moveRuid = ""
@@ -59,6 +65,16 @@ script ShadowSystem extends Logic
         end
         local userId = player.PlayerComponent.UserId
         self:SetupSoul(soul, userId, sourceId, grade, standRuid, moveRuid, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GrantKillRewards(Entity player, Entity monster, integer monLevel, integer grade)
+        -- 경험치 + 드롭. 파티가 있으면 PartySystem이 근처 파티원에게 나눈다
+        if _PartySystem ~= nil and _PartySystem:ShareKill(player, monster, monLevel, grade) then return end
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        if stats ~= nil then stats:GainExp(stats:ExpForKill(monLevel, grade)) end
+        if _LootSystem ~= nil then _LootSystem:RollDrops(monster, monLevel, grade, player) end
     end
 
     @ExecSpace("ServerOnly")

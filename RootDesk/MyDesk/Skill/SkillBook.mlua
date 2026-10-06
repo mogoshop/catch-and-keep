@@ -1,0 +1,381 @@
+-- 플레이어 스킬: 습득·슬롯·시전. DefaultPlayer 모델에 붙는다.
+-- 판정은 PlayerAttack:SkillAttack(AttackFast → HitEvent)을 거쳐 데미지 숫자·처치 처리를 기존 몬스터 로직과 공유한다.
+-- 입력: A S D F = 슬롯 1~4, 마우스 우클릭 = 오른쪽 스킬. 대상 위치는 커서(키보드 모드면 가까운 적).
+@Component
+script SkillBook extends Component
+
+    property table Levels = {}                -- id → 투자 레벨 (서버)
+    property table ReadyAt = {}               -- id → 쿨다운 끝나는 시각 (서버)
+    @Sync
+    property string SkillDigest = ""          -- "id:lv;..." UI 표시용
+    @Sync
+    property string Slots = "bone_shard,mark_weakness,poison_mist,corpse_blast"
+    @Sync
+    property string RightSkill = "bone_shard"
+
+    property integer StormTimer = 0
+    property number StormUntil = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 시작 스킬: 그림자 소환·골편 투척 1레벨
+        self.Levels = {}
+        self.ReadyAt = {}
+        self.Levels["shadow_summon"] = 1
+        self.Levels["bone_shard"] = 1
+        self:RefreshDigest()
+    end
+
+    method integer GetLevel(string id)
+        -- 서버에선 표, 클라이언트에선 동기화된 문자열에서 읽는다
+        if self:IsServer() then
+            local lv = self.Levels[id]
+            if lv == nil then return 0 end
+            return lv
+        end
+        local lv = string.match(";" .. self.SkillDigest, ";" .. id .. ":(%d+)")
+        if lv == nil then return 0 end
+        return tonumber(lv)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshDigest()
+        local parts = {}
+        for id, lv in pairs(self.Levels) do table.insert(parts, id .. ":" .. tostring(lv)) end
+        table.sort(parts)
+        self.SkillDigest = table.concat(parts, ";")
+    end
+
+    method string CanLearn(string id, integer playerLevel, integer skillPoints)
+        -- 습득 가능 여부. 가능하면 "", 아니면 이유
+        local def = _SkillData:Get(id)
+        if def == nil then return "없는 스킬" end
+        if skillPoints <= 0 then return "스킬 포인트 부족" end
+        if playerLevel < def.row then return "요구 레벨 " .. tostring(def.row) end
+        if self:GetLevel(id) >= def.maxLv then return "최대 레벨" end
+        if def.prereq ~= "" and self:GetLevel(def.prereq) <= 0 then
+            return "선행: " .. _SkillData:Get(def.prereq).name
+        end
+        return ""
+    end
+
+    @ExecSpace("Server")
+    method void RequestLearn(string id)
+        -- 스킬 포인트 1 → 레벨 +1
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return end
+        local reason = self:CanLearn(id, stats.Level, stats.SkillPoints)
+        if reason ~= "" then
+            self:Notify(reason, pc.UserId)
+            return
+        end
+        stats.SkillPoints = stats.SkillPoints - 1
+        self.Levels[id] = self:GetLevel(id) + 1
+        self:RefreshDigest()
+        log("[SkillBook] 습득 " .. id .. " Lv" .. tostring(self.Levels[id]))
+    end
+
+    @ExecSpace("Server")
+    method void RequestSetSlot(integer slot, string id)
+        -- 슬롯 1~4 = A S D F, 5 = 우클릭
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId then return end
+        local def = _SkillData:Get(id)
+        if def == nil or (def.kind ~= "active" and def.kind ~= "curse") then return end
+        if slot == 5 then
+            self.RightSkill = id
+            return
+        end
+        local list = {}
+        for s in string.gmatch(self.Slots, "[^,]+") do table.insert(list, s) end
+        while #list < 4 do table.insert(list, "") end
+        list[slot] = id
+        self.Slots = table.concat(list, ",")
+    end
+
+    -- ───────── 시전 (서버) ─────────
+
+    @ExecSpace("Server")
+    method void RequestCast(string id, Vector2 target)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
+        self:Cast(id, target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Cast(string id, Vector2 target)
+        -- 습득·구현 여부 → 쿨다운 → 마나 → 효과
+        local def = _SkillData:Get(id)
+        local lv = self:GetLevel(id)
+        if def == nil or lv <= 0 then return false end
+        local pc = self.Entity.PlayerComponent
+        if not def.impl then
+            self:Notify(def.name .. ": 준비 중인 스킬", pc.UserId)
+            return false
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        local ready = self.ReadyAt[id]
+        if ready ~= nil and now < ready then return false end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local manaCost = def.mana + math.floor(lv / 4)
+        if stats ~= nil and not stats:SpendMana(manaCost) then
+            self:Notify("마나 부족", pc.UserId)
+            return false
+        end
+        self.ReadyAt[id] = now + def.cooldown
+        local spell = 1
+        if stats ~= nil then spell = 1 + stats:GetSpellPowerPct() / 100 end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local me = Vector2(p.x, p.y)
+        local controller = self.Entity.PlayerControllerComponent
+        if math.abs(target.x - me.x) > 0.05 then controller.LookDirectionX = target.x >= me.x and 1 or -1 end
+        self.Entity.StateComponent:ChangeState("ATTACK")
+
+        if id == "bone_shard" then self:CastBoneShard(me, target, (10 + 6 * (lv - 1)) * spell)
+        elseif id == "poison_mist" then self:CastPoisonMist(target, (4 + 2 * lv) * spell)
+        elseif id == "corpse_blast" then self:CastCorpseBlast(target, (30 + 12 * (lv - 1)) * spell)
+        elseif id == "soul_drain" then self:CastSoulDrain(target, (15 + 8 * lv) * spell)
+        elseif id == "bone_storm" then self:CastBoneStorm((8 + 4 * lv) * spell)
+        elseif id == "mark_weakness" then self:CastCurse(target, "amp", 30 + 3 * lv, 1.5)
+        elseif id == "enfeeble" then self:CastCurse(target, "weaken", 35, 1.5)
+        elseif id == "elite_promote" then self:CastElitePromote()
+        elseif id == "shadow_summon" then
+            ---@type ShadowOwner
+            local owner = self.Entity:GetComponent("script.ShadowOwner")
+            if owner ~= nil then owner:DeployNext() end
+        elseif id == "rally" then
+            ---@type ShadowOwner
+            local owner = self.Entity:GetComponent("script.ShadowOwner")
+            if owner ~= nil then owner:RallyAll() end
+        end
+        log(string.format("[SkillBook] 시전 %s Lv%d 마나 -%d", id, lv, manaCost))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastBoneShard(Vector2 me, Vector2 target, number damage)
+        -- 커서 방향 5칸 직선, 관통
+        local dir = target - me
+        if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
+        dir = dir:Normalize()
+        local len = 5
+        local center = me + dir * (len / 2) + Vector2(0, 0.3)
+        local angle = math.deg(math.atan(dir.y, dir.x))
+        if angle < 0 then angle = angle + 360 end
+        self:SkillHit(center, Vector2(len, 0.6), angle, "skill.bone_shard", damage)
+        self:PlayLineFx(me + Vector2(0, 0.3), dir, len)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastPoisonMist(Vector2 target, number dps)
+        -- 반경 1.3 안의 적에게 4초 독
+        for _, m in ipairs(self:MonstersInRadius(target, 1.3)) do m:ApplyPoison(dps, 4, self.Entity) end
+        self:PlayFx("poison", Vector3(target.x, target.y, 0), 1.3)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastCorpseBlast(Vector2 target, number damage)
+        -- 커서 근처(1.5) 혼 하나를 소모해 반경 1.6 폭발. 피해는 원본 등급에 비례
+        local map = self.Entity.CurrentMap
+        local best = nil
+        local bestDist = 1.5
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            ---@type SoulOrb
+            local orb = c
+            if not orb.Consumed then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - target):Magnitude()
+                if d < bestDist then bestDist = d best = orb end
+            end
+        end
+        local pc = self.Entity.PlayerComponent
+        if best == nil then
+            self:Notify("근처에 혼이 없다", pc.UserId)
+            return
+        end
+        local q = best.Entity.TransformComponent.WorldPosition
+        self:SkillHit(Vector2(q.x, q.y + 0.2), Vector2(1.6, 0), -1, "skill.corpse_blast", damage * best.Grade)
+        self:PlayFx("blast", q, 1.6)
+        best:Consume()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastSoulDrain(Vector2 target, number damage)
+        -- 커서 근처 적 하나의 생명을 흡수 → 피해의 50% 회복, 소환수도 30% 회복
+        local list = self:MonstersInRadius(target, 1.5)
+        if #list == 0 then return end
+        local m = list[1]
+        m:TakeDamage(damage, self.Entity)
+        local pc = self.Entity.PlayerComponent
+        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.floor(damage * 0.5))
+        for _, u in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local unit = u
+            if unit.OwnerPlayer == self.Entity then unit.Hp = math.min(unit.MaxHp, unit.Hp + damage * 0.3) end
+        end
+        self:PlayFx("drain", m.Entity.TransformComponent.WorldPosition, 0.8)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastBoneStorm(number damage)
+        -- 6초 동안 0.5초마다 주위 반경 1.2 피해
+        self.StormUntil = _UtilLogic.ElapsedSeconds + 6
+        self:PlayFx("storm", self.Entity.TransformComponent.WorldPosition, 1.2)
+        if self.StormTimer ~= 0 then return end
+        self.StormTimer = _TimerService:SetTimerRepeat(function()
+            if _UtilLogic.ElapsedSeconds > self.StormUntil or not isvalid(self.Entity) then
+                _TimerService:ClearTimer(self.StormTimer)
+                self.StormTimer = 0
+                return
+            end
+            local p = self.Entity.TransformComponent.WorldPosition
+            self:SkillHit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", damage)
+        end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastCurse(Vector2 target, string kind, number pct, number radius)
+        local list = self:MonstersInRadius(target, radius)
+        for _, m in ipairs(list) do m:ApplyCurse(kind, pct, 8) end
+        self:PlayFx(kind, Vector3(target.x, target.y, 0), radius)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastElitePromote()
+        -- 소환 중인 그림자 중 공격력이 가장 높은 1기를 정예로 (한 번만)
+        local best = nil
+        for _, u in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local unit = u
+            if unit.OwnerPlayer == self.Entity and not unit.Promoted then
+                if best == nil or unit.Atk > best.Atk then best = unit end
+            end
+        end
+        if best == nil then return end
+        best:Promote()
+    end
+
+    @ExecSpace("ServerOnly")
+    method table MonstersInRadius(Vector2 center, number radius)
+        -- 살아 있는 추출 대상 몬스터 중 반경 안 (가까운 순)
+        local result = {}
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
+            ---@type ShadowMonster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - center):Magnitude()
+                if d <= radius then table.insert(result, { m = m, d = d }) end
+            end
+        end
+        table.sort(result, function(a, b) return a.d < b.d end)
+        local list = {}
+        for _, r in ipairs(result) do table.insert(list, r.m) end
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SkillHit(Vector2 center, Vector2 size, number angle, string info, number damage)
+        -- 판정은 플레이어의 AttackComponent(PlayerAttack)를 빌린다 (같은 엔티티에 AttackComponent는 하나만)
+        -- angle < 0 이면 원(반지름 = size.x), 아니면 회전 사각형
+        ---@type PlayerAttack
+        local atk = self.Entity:GetComponent("script.PlayerAttack")
+        if atk ~= nil then atk:SkillAttack(center, size, angle, info, damage) end
+    end
+
+    -- ───────── 연출 (모든 클라이언트) ─────────
+
+    @ExecSpace("Multicast")
+    method void PlayFx(string kind, Vector3 pos, number radius)
+        local s = Vector3(radius, radius, 1)
+        if kind == "poison" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, false, { Color = Color(0.4, 1, 0.3, 1) })
+        elseif kind == "blast" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, s * 0.6, false, nil)
+        elseif kind == "drain" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, s, false, { Color = Color(1, 0.2, 0.3, 1) })
+        elseif kind == "storm" then
+            _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, self.Entity, Vector3(0, 0.3, 0), 0, s, false, nil)
+        elseif kind == "amp" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.7, 0.2, 1, 1) })
+        elseif kind == "weaken" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.6, 0.3, 1) })
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void PlayLineFx(Vector2 from, Vector2 dir, number len)
+        for i = 1, 5 do
+            local p = from + dir * (len * i / 5)
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(p.x, p.y, 0), 0, Vector3(0.3, 0.3, 1), false, nil)
+        end
+    end
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+    -- ───────── 입력 (내 클라이언트) ─────────
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local key = event.key
+        local slot = 0
+        if key == KeyboardKey.A then slot = 1
+        elseif key == KeyboardKey.S then slot = 2
+        elseif key == KeyboardKey.D then slot = 3
+        elseif key == KeyboardKey.F then slot = 4
+        elseif key == KeyboardKey.Mouse1 then slot = 5 end
+        if slot == 0 then return end
+        self:CastSlot(slot)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CastSlot(integer slot)
+        -- 슬롯의 스킬을 커서(또는 가까운 적) 위치로 시전 요청
+        local id = self.RightSkill
+        if slot <= 4 then
+            local i = 0
+            id = ""
+            for s in string.gmatch(self.Slots .. ",", "([^,]*),") do
+                i = i + 1
+                if i == slot then id = s end
+            end
+        end
+        if id == "" then return end
+        self:RequestCast(id, self:GetAimPoint())
+    end
+
+    @ExecSpace("ClientOnly")
+    method Vector2 GetAimPoint()
+        -- PC 마우스 모드: 커서 / 그 외: 가장 가까운 적 / 없으면 바라보는 방향 앞
+        local p = self.Entity.TransformComponent.WorldPosition
+        local me = Vector2(p.x, p.y)
+        ---@type ClickControl
+        local cc = self.Entity:GetComponent("script.ClickControl")
+        if Environment:IsPCPlatform() and cc ~= nil and cc.MouseMode then
+            return _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
+        end
+        local best = nil
+        local bestDist = 5
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
+            ---@type ShadowMonster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - me):Magnitude()
+                if d < bestDist then bestDist = d best = Vector2(q.x, q.y) end
+            end
+        end
+        if best ~= nil then return best end
+        return me + Vector2(self.Entity.PlayerControllerComponent.LookDirectionX * 2, 0)
+    end
+
+end
