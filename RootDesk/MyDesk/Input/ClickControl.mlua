@@ -20,6 +20,7 @@ script ClickControl extends Component
     property boolean HasDestination = false
     property Vector2 Destination = Vector2(0, 0)
     property Entity AttackTarget = nil
+    property Entity ExtractTarget = nil
     property number AttackTimer = 0
 
     @ExecSpace("ClientOnly")
@@ -53,6 +54,18 @@ script ClickControl extends Component
     method Vector2 Pick(Vector2 screenPoint)
         -- 화면 좌표 → 월드 좌표. 근처에 살아 있는 몬스터가 있으면 공격 대상, 없으면 이동 목적지
         local world = _UILogic:ScreenToWorldPosition(screenPoint)
+        -- 내 혼을 클릭했으면 걸어가서 추출 (몬스터보다 우선)
+        ---@type ShadowOwner
+        local owner = self.Entity:GetComponent("script.ShadowOwner")
+        local soul = nil
+        if owner ~= nil then soul = owner:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
+        if soul ~= nil then
+            self.ExtractTarget = soul
+            self.AttackTarget = nil
+            self.HasDestination = false
+            return world
+        end
+        self.ExtractTarget = nil
         local monster = self:FindMonsterNear(world)
         if monster ~= nil then
             self.AttackTarget = monster
@@ -120,6 +133,26 @@ script ClickControl extends Component
         local p = self.Entity.TransformComponent.WorldPosition
         local me = Vector2(p.x, p.y)
 
+        if self.ExtractTarget ~= nil then
+            if not isvalid(self.ExtractTarget) then
+                self.ExtractTarget = nil
+                self:StopMove()
+                return
+            end
+            local s = self.ExtractTarget.TransformComponent.WorldPosition
+            local toSoul = Vector2(s.x, s.y) - me
+            if toSoul:Magnitude() > _ShadowConfig.ExtractReach * 0.8 then
+                self:MoveToward(toSoul)
+            else
+                self:StopMove()
+                ---@type ShadowOwner
+                local owner = self.Entity:GetComponent("script.ShadowOwner")
+                if owner ~= nil then owner:RequestExtract(self.ExtractTarget) end
+                self.ExtractTarget = nil
+            end
+            return
+        end
+
         if isvalid(self.AttackTarget) then
             ---@type ShadowMonster
             local m = self.AttackTarget:GetComponent("script.ShadowMonster")
@@ -164,6 +197,7 @@ script ClickControl extends Component
     method void Cancel()
         self.HasDestination = false
         self.AttackTarget = nil
+        self.ExtractTarget = nil
         self:StopMove()
     end
 

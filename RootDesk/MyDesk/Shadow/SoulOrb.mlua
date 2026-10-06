@@ -1,0 +1,58 @@
+-- 쓰러진 몬스터가 남기는 혼. 처치자(또는 그림자의 주인)만 일정 시간 안에 추출을 시도할 수 있다.
+-- 추출 판정은 ShadowOwner.RequestExtract가 서버에서 한다. 이 컴포넌트는 데이터·수명·연출만 맡는다.
+@Component
+script SoulOrb extends Component
+
+    @Sync
+    property string OwnerUserId = ""
+    @Sync
+    property integer Grade = 1
+    property string SourceId = ""
+    property string StandRUID = ""
+    property string MoveRUID = ""
+    property number LifeSeconds = 8
+    property boolean Consumed = false
+
+    property number PulseTime = 0
+
+    @ExecSpace("ServerOnly")
+    method void Setup(string ownerUserId, string sourceId, integer grade, string standRuid, string moveRuid)
+        -- ShadowSystem이 스폰 직후 호출. 값만 저장한다 (스폰 직후 다른 메서드 호출 금지 — LEA-2011)
+        self.OwnerUserId = ownerUserId
+        self.SourceId = sourceId
+        self.Grade = grade
+        self.StandRUID = standRuid
+        self.MoveRUID = moveRuid
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 수명이 다하면 사라진다
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and not self.Consumed then self.Entity:Destroy() end
+        end, self.LifeSeconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Consume()
+        -- 추출 시도 후 제거 (성공·실패 모두 한 번뿐)
+        if self.Consumed then return end
+        self.Consumed = true
+        self.Entity:Destroy()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 은은하게 깜빡이는 연출. 정예 이상은 더 밝게
+        self.PulseTime = self.PulseTime + delta
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local a = 0.45 + 0.35 * math.abs(math.sin(self.PulseTime * 3))
+        if self.Grade >= 2 then
+            sprite.Color = Color(1.0, 0.75, 0.3, a)
+        else
+            sprite.Color = Color(0.6, 0.45, 1.0, a)
+        end
+    end
+
+end

@@ -278,6 +278,67 @@ script ShadowOwner extends Component
     end
 
     @ExecSpace("Server")
+    method void RequestExtract(Entity soul)
+        -- 혼 추출 시도: 내 혼인지, 가까이 있는지 서버에서 확인 → 확률 판정 → 혼 소멸
+        if not self:IsSenderOwner(senderUserId) then return end
+        if not isvalid(soul) then return end
+        ---@type SoulOrb
+        local orb = soul:GetComponent("script.SoulOrb")
+        if orb == nil or orb.Consumed then return end
+        if orb.OwnerUserId ~= senderUserId then return end
+        local a = self.Entity.TransformComponent.WorldPosition
+        local b = soul.TransformComponent.WorldPosition
+        if (Vector2(a.x, a.y) - Vector2(b.x, b.y)):Magnitude() > _ShadowConfig.ExtractReach then return end
+
+        local grade = orb.Grade
+        local chance = 1
+        if grade < 3 then chance = _ShadowConfig:GetExtractChance(grade) end
+        local roll = _UtilLogic:RandomDouble()
+        local success = roll < chance
+        log(string.format("[ShadowOwner] 추출 시도 %s 등급%d 확률 %.2f 굴림 %.2f → %s", orb.SourceId, grade, chance, roll, success and "성공" or "실패"))
+        local pos = soul.TransformComponent.WorldPosition
+        if success then
+            self:AddShadow(orb.SourceId, grade, orb.StandRUID, orb.MoveRUID)
+            self:NotifyExtract(orb.SourceId, grade, pos, senderUserId)
+        else
+            self:NotifyMessage("추출 실패… 혼이 흩어졌다", senderUserId)
+        end
+        orb:Consume()
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindNearestSoul(Vector2 point, number radius)
+        -- 내 혼 중 point에 가장 가까운 것 (클라이언트에서 대상 고르기용)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return nil end
+        local myId = self.Entity.PlayerComponent.UserId
+        local best = nil
+        local bestDist = radius
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            ---@type SoulOrb
+            local orb = c
+            if orb.OwnerUserId == myId then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - point):Magnitude()
+                if d < bestDist then bestDist = d best = c.Entity end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TryExtractNearby()
+        -- E 키 / 모바일 버튼: 손 닿는 거리의 가장 가까운 내 혼을 추출
+        local p = self.Entity.TransformComponent.WorldPosition
+        local soul = self:FindNearestSoul(Vector2(p.x, p.y), _ShadowConfig.ExtractReach)
+        if soul == nil then
+            _ScreenMessageLogic:PrivateMsg("가까운 혼이 없다")
+            return
+        end
+        self:RequestExtract(soul)
+    end
+
+    @ExecSpace("Server")
     method void RequestRally()
         if not self:IsSenderOwner(senderUserId) then return end
         self:RallyAll()
@@ -316,6 +377,8 @@ script ShadowOwner extends Component
             self:RequestRecall("")
         elseif key == KeyboardKey.C then
             self:RequestRally()
+        elseif key == KeyboardKey.E then
+            self:TryExtractNearby()
         end
     end
 
