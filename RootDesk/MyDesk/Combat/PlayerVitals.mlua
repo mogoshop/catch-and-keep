@@ -1,0 +1,52 @@
+-- 플레이어 피격·사망·부활. DefaultPlayer 모델에 붙는다.
+-- 기본 템플릿의 PlayerHit 역할을 Phase 0에 필요한 만큼만 대신한다.
+@Component
+script PlayerVitals extends Component
+
+    property number InvincibleSeconds = 0.8
+    property number InvincibleUntil = 0
+    property boolean Dying = false
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleHitEvent(HitEvent event)
+        -- 몬스터에게 맞았을 때만 HP를 깎는다. 짧은 무적 시간 동안은 무시
+        if self.Dying then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.InvincibleUntil then return end
+        self.InvincibleUntil = now + self.InvincibleSeconds
+        local pc = self.Entity.PlayerComponent
+        pc.Hp = math.max(0, pc.Hp - event.TotalDamage)
+        if pc.Hp <= 0 then
+            self:Die()
+        else
+            self.Entity.StateComponent:ChangeState("HIT")
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Die()
+        -- 사망 → 소환수 전원 회수 → RespawnDuration 뒤 부활
+        self.Dying = true
+        local pc = self.Entity.PlayerComponent
+        self.Entity.StateComponent:ChangeState("DEAD")
+        ---@type ShadowOwner
+        local owner = self.Entity:GetComponent("script.ShadowOwner")
+        if owner ~= nil then owner:RecallAll() end
+        log("[PlayerVitals] 사망: " .. self.Entity.Name)
+        _TimerService:SetTimerOnce(function() self:Revive() end, pc.RespawnDuration)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Revive()
+        -- 부활 지점에서 HP를 채워 다시 시작
+        if not isvalid(self.Entity) then return end
+        local pc = self.Entity.PlayerComponent
+        pc:Respawn()
+        pc.Hp = pc.MaxHp
+        self.Dying = false
+        self.InvincibleUntil = _UtilLogic.ElapsedSeconds + 2
+        log("[PlayerVitals] 부활: " .. self.Entity.Name)
+    end
+
+end

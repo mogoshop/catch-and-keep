@@ -92,7 +92,12 @@ script ShadowOwner extends Component
         if isvalid(unit) then
             ---@type ShadowUnit
             local comp = unit:GetComponent("script.ShadowUnit")
-            if comp ~= nil then comp.Atk = _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) end
+            if comp ~= nil then
+                comp.Atk = _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level)
+                local newMax = _ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level)
+                comp.Hp = comp.Hp + (newMax - comp.MaxHp)
+                comp.MaxHp = newMax
+            end
         end
         self:RefreshDigest()
         log("[ShadowOwner] 강화 " .. id .. " Lv" .. tostring(shadow.level) .. " → 정수 " .. tostring(self.Essence))
@@ -145,7 +150,7 @@ script ShadowOwner extends Component
         if ok and comp ~= nil then
             ---@type ShadowUnit
             local unitComp = comp
-            unitComp:Setup(self.Entity, id, _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
+            unitComp:Setup(self.Entity, id, _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level), _ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
             return
         end
         if attempt >= 5 then
@@ -195,6 +200,25 @@ script ShadowOwner extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void OnUnitDied(string id)
+        -- 그림자 사망: 엔티티 제거, 보관함으로 돌아가되 RespawnDelaySec 동안 재소환 불가
+        local shadow = self.Storage[id]
+        if shadow == nil then return end
+        local unit = self.Units[id]
+        if isvalid(unit) then unit:Destroy() end
+        self.Units[id] = nil
+        if shadow.deployed then
+            shadow.deployed = false
+            self.DeployedCount = math.max(0, self.DeployedCount - 1)
+        end
+        shadow.respawnReadyAt = _UtilLogic.ServerElapsedSeconds + _ShadowConfig.RespawnDelaySec
+        self:RefreshDigest()
+        log("[ShadowOwner] 그림자 사망 " .. shadow.sourceId .. " → " .. tostring(_ShadowConfig.RespawnDelaySec) .. "초 뒤 재소환 가능")
+        local pc = self.Entity.PlayerComponent
+        if isvalid(pc) then self:NotifyMessage("그림자 쓰러짐: " .. shadow.sourceId, pc.UserId) end
+    end
+
+    @ExecSpace("ServerOnly")
     method integer DeployNext()
         -- 소환 가능한 그림자 중 레벨·등급이 높은 것부터 하나 소환. 소환한 수(0/1) 반환
         local best = nil
@@ -230,9 +254,10 @@ script ShadowOwner extends Component
     @ExecSpace("ServerOnly")
     method void RefreshDigest()
         -- 클라이언트 UI용 목록 문자열 갱신 (보관함은 table이라 직접 동기화할 수 없다)
+        -- 마지막 칸은 재소환 가능 시각(서버 경과 초). 클라이언트가 남은 시간을 계산한다
         local rows = {}
         for id, s in pairs(self.Storage) do
-            table.insert(rows, string.format("%s|%s|%d|%d|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0))
+            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt))
         end
         table.sort(rows)
         self.StorageDigest = table.concat(rows, ";")
@@ -292,6 +317,12 @@ script ShadowOwner extends Component
         elseif key == KeyboardKey.C then
             self:RequestRally()
         end
+    end
+
+    @ExecSpace("Client")
+    method void NotifyMessage(string text)
+        -- 짧은 안내 메시지 (해당 플레이어 클라이언트에서만)
+        _ScreenMessageLogic:PrivateMsg(text)
     end
 
     @ExecSpace("Client")

@@ -113,7 +113,10 @@ script ShadowHUD extends Logic
             self.statusText.Text = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, owner.DeployedCount, limit, owner.Essence)
         end
         if not isvalid(self.window) or not self.window.Enable then return end
-        local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page)
+        -- 재소환 대기 중인 그림자가 있으면 남은 초가 바뀔 때마다 다시 그린다
+        local tick = ""
+        if string.find(owner.StorageDigest, "|0|%d") then tick = tostring(math.floor(_UtilLogic.ServerElapsedSeconds)) end
+        local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page) .. "#" .. tick
         if key == self.RenderedKey then return end
         self.RenderedKey = key
         self:RenderRows(owner)
@@ -121,12 +124,14 @@ script ShadowHUD extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderRows(ShadowOwner owner)
-        -- 요약 문자열(id|sourceId|grade|level|deployed;...)을 풀어 현재 페이지를 그린다
+        -- 요약 문자열(id|sourceId|grade|level|deployed|readyAt;...)을 풀어 현재 페이지를 그린다
+        local now = _UtilLogic.ServerElapsedSeconds
         local entries = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
-            local id, src, grade, level, deployed = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)$")
+            local id, src, grade, level, deployed, readyAt = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)$")
             if id ~= nil then
-                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1" })
+                local wait = math.max(0, math.ceil(tonumber(readyAt) - now))
+                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1", wait = wait })
             end
         end
         local pages = math.max(1, math.ceil(#entries / self.RowCount))
@@ -144,8 +149,16 @@ script ShadowHUD extends Logic
             if e ~= nil then
                 local gradeName = "일반"
                 if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
-                row.label.TextGUIRendererComponent.Text = string.format("%s  [%s]  Lv%d%s", e.src, gradeName, e.level, e.deployed and "  · 소환 중" or "")
-                row.deploy.TextGUIRendererComponent.Text = e.deployed and "회수" or "소환"
+                local state = ""
+                if e.deployed then state = "  · 소환 중" elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
+                row.label.TextGUIRendererComponent.Text = string.format("%s  [%s]  Lv%d%s", e.src, gradeName, e.level, state)
+                if e.deployed then
+                    row.deploy.TextGUIRendererComponent.Text = "회수"
+                elseif e.wait > 0 then
+                    row.deploy.TextGUIRendererComponent.Text = "대기"
+                else
+                    row.deploy.TextGUIRendererComponent.Text = "소환"
+                end
                 row.upgrade.TextGUIRendererComponent.Text = "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level))
                 local yield = _ShadowConfig:GetDisassembleYield(e.grade)
                 if e.deployed or yield <= 0 then

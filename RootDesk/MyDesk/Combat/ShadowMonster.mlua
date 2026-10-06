@@ -33,6 +33,9 @@ script ShadowMonster extends Component
         if self.IsDead then return end
         if isvalid(event.AttackerEntity) then
             self.LastAttacker = event.AttackerEntity
+            -- 추격형은 자기를 때린 대상(플레이어 또는 그림자)을 쫓는다
+            local chase = self.Entity.AIChaseComponent
+            if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
         self.Hp = self.Hp - event.TotalDamage
         if self.Hp <= 0 then
@@ -83,6 +86,8 @@ script ShadowMonster extends Component
         self.Entity:SetVisible(true)
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("IDLE") end
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.IsChaseNearPlayer = false end  -- 다시 선공하지 않는 상태로
     end
 
 end

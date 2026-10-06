@@ -20,6 +20,11 @@ script ShadowUnit extends AttackComponent
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
     property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
 
+    property number MaxHp = 30
+    @Sync
+    property number Hp = 30
+    property boolean Dead = false
+
     property Entity Target = nil
     property number RetargetTimer = 0
     property number AttackTimer = 0
@@ -34,16 +39,37 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method void Setup(Entity ownerPlayer, string shadowId, integer atk, string standRuid, string moveRuid, Vector2 formationOffset)
+    method void Setup(Entity ownerPlayer, string shadowId, integer atk, integer maxHp, string standRuid, string moveRuid, Vector2 formationOffset)
         -- ShadowOwner가 스폰 직후 호출한다. 스폰 직후에는 같은 컴포넌트의 다른 메서드를 부르면
         -- nil(LEA-2011)이 날 수 있어 값만 저장하고, 스프라이트는 첫 OnUpdate에서 지정한다
         self.OwnerPlayer = ownerPlayer
         self.ShadowId = shadowId
         self.Atk = atk
+        self.MaxHp = maxHp
+        self.Hp = maxHp
         self.StandRUID = standRuid
         self.MoveRUID = moveRuid
         self.FormationOffset = formationOffset
         log("[ShadowUnit] 소환 " .. shadowId .. " ATK " .. tostring(atk))
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleHitEvent(HitEvent event)
+        -- 몬스터에게 맞으면 HP 감소, 0이면 주인에게 사망을 알린다 (재소환 대기는 주인이 관리)
+        if self.Dead or self.ShadowId == "" then return end
+        self.Hp = self.Hp - event.TotalDamage
+        if self.Hp > 0 then return end
+        self.Dead = true
+        if isvalid(self.OwnerPlayer) then
+            ---@type ShadowOwner
+            local owner = self.OwnerPlayer:GetComponent("script.ShadowOwner")
+            if owner ~= nil then
+                owner:OnUnitDied(self.ShadowId)
+                return
+            end
+        end
+        self.Entity:Destroy()
     end
 
     @ExecSpace("ServerOnly")
@@ -56,7 +82,7 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
-        if self.ShadowId == "" then return end  -- ShadowOwner.SetupUnit 재시도 중
+        if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
         if not isvalid(self.OwnerPlayer) then
             self.Entity:Destroy()
             return
