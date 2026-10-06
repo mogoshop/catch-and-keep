@@ -1,0 +1,44 @@
+-- 플레이어 기본 공격 (Phase 0 임시). 공격 키(Ctrl)를 누르면 정면 사각 범위를 친다.
+-- 네크로맨서 스킬(골편 투척 등)은 Phase 1에서 이 자리를 대체한다.
+@Component
+script PlayerAttack extends AttackComponent
+
+    property integer Damage = 25
+    property Vector2 RangeSize = Vector2(1.6, 1.0)
+    property number RangeOffsetX = 0.7
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandlePlayerActionEvent(PlayerActionEvent event)
+        -- 서버에서만 판정한다 (이벤트는 서버·클라이언트 양쪽에서 온다)
+        if event.ActionName ~= "Attack" then return end
+        self:DoAttack()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DoAttack()
+        -- 바라보는 방향 앞쪽에 사각 범위 공격
+        local transform = self.Entity.TransformComponent
+        local controller = self.Entity.PlayerControllerComponent
+        if not isvalid(transform) or not isvalid(controller) then return end
+        local pos = transform.WorldPosition
+        local dir = controller.LookDirectionX >= 0 and 1 or -1
+        local center = Vector2(pos.x + self.RangeOffsetX * dir, pos.y + self.RangeSize.y * 0.5)
+        self:AttackFast(BoxShape(center, self.RangeSize, 0), "player.basic", nil)
+    end
+
+    method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
+        return self.Damage
+    end
+
+    method boolean IsAttackTarget(Entity defender, string attackInfo)
+        -- 플레이어·그림자·이미 죽은 몬스터는 제외
+        if isvalid(defender.PlayerComponent) then return false end
+        if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
+        ---@type ShadowMonster
+        local monster = defender:GetComponent("script.ShadowMonster")
+        if monster ~= nil and monster.IsDead then return false end
+        return __base:IsAttackTarget(defender, attackInfo)
+    end
+
+end

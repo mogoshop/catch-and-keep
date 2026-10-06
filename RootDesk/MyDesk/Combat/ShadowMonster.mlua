@@ -1,0 +1,76 @@
+-- 추출 대상 몬스터의 HP·사망·리스폰. 처치되면 ShadowSystem에 추출 판정을 요청한다.
+-- 사망 애니메이션은 StateComponent(DEAD) → StateAnimationComponent의 die 키로 재생된다.
+@Component
+script ShadowMonster extends Component
+
+    property number MaxHp = 60
+    property integer Grade = 1              -- 1 일반, 2 정예, 3 보스
+    property string SourceId = "mob"        -- 그림자의 원본 몬스터 종류
+    property number RespawnDelay = 6
+    property number HideDelay = 0.8
+
+    @Sync
+    property number Hp = 0
+    @Sync
+    property boolean IsDead = false
+
+    property Entity LastAttacker = nil
+    property Vector2 SpawnPosition = Vector2(0, 0)
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 리스폰 위치를 기억하고 HP를 채운다
+        self.Hp = self.MaxHp
+        local pos = self.Entity.TransformComponent.WorldPosition
+        self.SpawnPosition = Vector2(pos.x, pos.y)
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleHitEvent(HitEvent event)
+        -- 마지막 공격자를 기록하고 HP가 0이 되는 순간 한 번만 사망 처리
+        if self.IsDead then return end
+        if isvalid(event.AttackerEntity) then
+            self.LastAttacker = event.AttackerEntity
+        end
+        self.Hp = self.Hp - event.TotalDamage
+        if self.Hp <= 0 then
+            self:Die()
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Die()
+        -- 사망 연출 → 추출 판정 → 숨김 → 리스폰 예약
+        self.IsDead = true
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) then sc:ChangeState("DEAD") end
+        _ShadowSystem:OnMonsterKilled(self.Entity, self.LastAttacker, self.SourceId, self.Grade)
+        _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
+        _TimerService:SetTimerOnce(function() self:Respawn() end, self.RespawnDelay)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Hide()
+        -- 시체를 치운다
+        if not isvalid(self.Entity) then return end
+        self.Entity:SetVisible(false)
+        self.Entity:SetEnable(false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Respawn()
+        -- 처음 위치에서 HP를 채워 다시 등장
+        if not isvalid(self.Entity) then return end
+        self.LastAttacker = nil
+        self.Hp = self.MaxHp
+        self.IsDead = false
+        local body = self.Entity.RigidbodyComponent
+        if isvalid(body) then body:SetPosition(self.SpawnPosition) end
+        self.Entity:SetEnable(true)
+        self.Entity:SetVisible(true)
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) then sc:ChangeState("IDLE") end
+    end
+
+end

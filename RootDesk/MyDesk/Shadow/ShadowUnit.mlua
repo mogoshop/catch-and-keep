@@ -1,0 +1,189 @@
+-- 소환된 그림자 한 마리. 가까운 몬스터를 추적·공격하고, 적이 없으면 주인을 따라간다.
+-- 원본 몬스터 스프라이트를 어둡게 칠해서 쓴다. AIChase 없이 스크립트로 직접 움직인다.
+@Component
+script ShadowUnit extends AttackComponent
+
+    property Entity OwnerPlayer = nil
+    property string ShadowId = ""
+    property integer Atk = 10
+    property string StandRUID = ""
+    property string MoveRUID = ""
+
+    property number AttackRange = 0.9
+    property number AttackCooldown = 1.0
+    property number DetectRange = 5
+    property number FollowDistance = 1.2
+    property number LeashDistance = 9
+    property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
+    property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
+
+    property Entity Target = nil
+    property number RetargetTimer = 0
+    property number AttackTimer = 0
+    property number RallyTimer = 0
+    property string CurrentClip = ""
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 그림자 색으로 칠한다
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.Color = self.ShadowTint end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Setup(Entity ownerPlayer, string shadowId, integer atk, string standRuid, string moveRuid)
+        -- ShadowOwner가 스폰 직후 호출한다
+        self.OwnerPlayer = ownerPlayer
+        self.ShadowId = shadowId
+        self.Atk = atk
+        self.StandRUID = standRuid
+        self.MoveRUID = moveRuid
+        self:SetClip(standRuid)
+        log("[ShadowUnit] 소환 " .. shadowId .. " ATK " .. tostring(atk))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Rally(number seconds)
+        -- 집결: 일정 시간 적을 무시하고 주인에게 모인다
+        self.RallyTimer = seconds
+        self.Target = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        -- 상태 판단: 주인 확인 → 끈 거리 → (집결 | 적 추적·공격 | 주인 따라가기)
+        if not isvalid(self.OwnerPlayer) then
+            self.Entity:Destroy()
+            return
+        end
+        self.AttackTimer = self.AttackTimer - delta
+        self.RallyTimer = self.RallyTimer - delta
+
+        local myPos = self.Entity.TransformComponent.WorldPosition
+        local ownerPos = self.OwnerPlayer.TransformComponent.WorldPosition
+        local dxOwner = ownerPos.x - myPos.x
+        local dyOwner = ownerPos.y - myPos.y
+        if dxOwner * dxOwner + dyOwner * dyOwner > self.LeashDistance * self.LeashDistance then
+            -- 너무 멀어지면 주인 곁으로 순간이동 (끼임 방지)
+            self.Entity.RigidbodyComponent:SetPosition(Vector2(ownerPos.x, ownerPos.y + 0.3))
+            self.Target = nil
+            return
+        end
+
+        if self.RallyTimer <= 0 then
+            self.RetargetTimer = self.RetargetTimer - delta
+            if self.RetargetTimer <= 0 or not self:IsLiveTarget(self.Target) then
+                self.RetargetTimer = self.RetargetInterval
+                self.Target = self:FindNearestMonster(myPos)
+            end
+        end
+
+        if self.RallyTimer <= 0 and self:IsLiveTarget(self.Target) then
+            local tPos = self.Target.TransformComponent.WorldPosition
+            local dx = tPos.x - myPos.x
+            if math.abs(dx) > self.AttackRange then
+                self:MoveHorizontal(dx)
+            else
+                self:StopMove(dx)
+                if self.AttackTimer <= 0 then
+                    self.AttackTimer = self.AttackCooldown
+                    self:DoAttack(dx)
+                end
+            end
+            return
+        end
+
+        if math.abs(dxOwner) > self.FollowDistance then
+            self:MoveHorizontal(dxOwner)
+        else
+            self:StopMove(dxOwner)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsLiveTarget(Entity e)
+        -- 살아 있는 추출 대상 몬스터인지
+        if not isvalid(e) or not e.Enable then return false end
+        ---@type ShadowMonster
+        local monster = e:GetComponent("script.ShadowMonster")
+        return monster ~= nil and not monster.IsDead
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity FindNearestMonster(Vector3 myPos)
+        -- 감지 범위 안의 가장 가까운 몬스터. RetargetInterval마다만 호출된다
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return nil end
+        local best = nil
+        local bestDist = self.DetectRange * self.DetectRange
+        local monsters = map:GetChildComponentsByTypeName("script.ShadowMonster", true)
+        for _, comp in ipairs(monsters) do
+            local e = comp.Entity
+            if self:IsLiveTarget(e) then
+                local p = e.TransformComponent.WorldPosition
+                local dx = p.x - myPos.x
+                local dy = p.y - myPos.y
+                local d = dx * dx + dy * dy
+                if d < bestDist then
+                    bestDist = d
+                    best = e
+                end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MoveHorizontal(number dx)
+        -- 좌우 이동 + 바라보는 방향 (스프라이트 기본은 왼쪽을 본다)
+        local dir = dx >= 0 and 1 or -1
+        self.Entity.MovementComponent:MoveToDirection(Vector2(dir, 0), 0)
+        self:Face(dir)
+        self:SetClip(self.MoveRUID)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StopMove(number dx)
+        -- 멈추고 대상 쪽을 본다
+        self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+        if math.abs(dx) > 0.05 then self:Face(dx >= 0 and 1 or -1) end
+        self:SetClip(self.StandRUID)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Face(integer dir)
+        local t = self.Entity.TransformComponent
+        local s = t.Scale
+        t.Scale = Vector3(math.abs(s.x) * -dir, s.y, s.z)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetClip(string ruid)
+        -- 같은 클립을 반복 대입하지 않는다
+        if ruid == "" or ruid == self.CurrentClip then return end
+        self.CurrentClip = ruid
+        self.Entity.SpriteRendererComponent.SpriteRUID = ruid
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DoAttack(number dx)
+        -- 대상 방향 앞쪽 사각 범위
+        local pos = self.Entity.TransformComponent.WorldPosition
+        local dir = dx >= 0 and 1 or -1
+        local center = Vector2(pos.x + 0.45 * dir, pos.y + 0.4)
+        self:AttackFast(BoxShape(center, Vector2(1.0, 0.9), 0), "shadow.basic", nil)
+    end
+
+    method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
+        return self.Atk
+    end
+
+    method boolean IsAttackTarget(Entity defender, string attackInfo)
+        -- 살아 있는 몬스터만 때린다 (플레이어·다른 그림자 제외)
+        ---@type ShadowMonster
+        local monster = defender:GetComponent("script.ShadowMonster")
+        if monster == nil or monster.IsDead then return false end
+        return __base:IsAttackTarget(defender, attackInfo)
+    end
+
+end

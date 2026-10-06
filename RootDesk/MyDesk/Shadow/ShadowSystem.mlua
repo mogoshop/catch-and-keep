@@ -34,6 +34,50 @@ script ShadowSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(Entity monster, Entity killer, string sourceId, integer grade)
+        -- 0-3 추출 판정. 처치자(플레이어 또는 그림자의 주인)의 보관함에 확률로 그림자를 넣는다
+        local player = self:ResolveOwnerPlayer(killer)
+        if player == nil then
+            log("[ShadowSystem] 처치자 불명 → 추출 판정 생략: " .. sourceId)
+            return
+        end
+        ---@type ShadowOwner
+        local owner = player:GetComponent("script.ShadowOwner")
+        if owner == nil then return end
+
+        -- 보스(3)는 100% 추출. 일반·정예는 ShadowConfig 확률
+        local chance = 1
+        if grade < 3 then chance = _ShadowConfig:GetExtractChance(grade) end
+        local roll = _UtilLogic:RandomDouble()
+        local success = roll < chance
+        log(string.format("[ShadowSystem] 추출 판정 %s 등급%d 확률 %.2f 굴림 %.2f → %s", sourceId, grade, chance, roll, success and "성공" or "실패"))
+        if not success then return end
+
+        -- 원본 몬스터의 대기·이동 스프라이트를 그림자 외형으로 쓴다
+        local standRuid = ""
+        local moveRuid = ""
+        local anim = monster.StateAnimationComponent
+        if isvalid(anim) then
+            standRuid = anim.ActionSheet["stand"] or ""
+            moveRuid = anim.ActionSheet["move"] or standRuid
+        end
+        owner:AddShadow(sourceId, grade, standRuid, moveRuid)
+        local pos = monster.TransformComponent.WorldPosition
+        owner:NotifyExtract(sourceId, grade, pos, player.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity ResolveOwnerPlayer(Entity killer)
+        -- 막타가 플레이어면 그대로, 그림자면 그 주인 플레이어를 돌려준다
+        if not isvalid(killer) then return nil end
+        if isvalid(killer.PlayerComponent) then return killer end
+        ---@type ShadowUnit
+        local unit = killer:GetComponent("script.ShadowUnit")
+        if unit ~= nil and isvalid(unit.OwnerPlayer) then return unit.OwnerPlayer end
+        return nil
+    end
+
+    @ExecSpace("ServerOnly")
     method void SelfTest(string userId)
         -- 추가 3 → 분해 2 → 강화 2. 기대값: 보관 1, 정수 2
         local player = _UserService:GetUserEntityByUserId(userId)
@@ -44,9 +88,9 @@ script ShadowSystem extends Logic
             log_error("[SelfTest] ShadowOwner를 찾지 못함")
             return
         end
-        local a = owner:AddShadow("snail", 1)
-        local b = owner:AddShadow("snail", 1)
-        local c = owner:AddShadow("stump", 2)
+        local a = owner:AddShadow("snail", 1, "", "")
+        local b = owner:AddShadow("snail", 1, "", "")
+        local c = owner:AddShadow("stump", 2, "", "")
         owner:Disassemble(a)
         owner:Disassemble(c)
         owner:Upgrade(b)
