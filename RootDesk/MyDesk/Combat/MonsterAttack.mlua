@@ -12,6 +12,15 @@ script MonsterAttack extends AttackComponent
     property number CooldownTimer = 0
     property number ScanTimer = 0
     property Entity CurrentTarget = nil   -- 단일 대상 공격: 범위 안이라도 이 대상만 맞는다
+    property number SlamDamage = 0        -- 보스 광역기 피해 (0이면 일반 공격)
+
+    @ExecSpace("ServerOnly")
+    method void Slam(Vector2 center, number radius, number damage)
+        -- 보스 패턴용 원형 광역 공격 (단일 대상 제한 없음)
+        self.SlamDamage = damage
+        self.CurrentTarget = nil
+        self:AttackFast(CircleShape(center, radius), "monster.slam", nil)
+    end
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
@@ -61,6 +70,7 @@ script MonsterAttack extends AttackComponent
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 쇠약 저주가 걸려 있으면 피해 감소. 플레이어 방어(장비)는 받는 쪽에서 줄인다
         local dmg = self.Damage
+        if attackInfo == "monster.slam" then dmg = self.SlamDamage end
         ---@type ShadowMonster
         local monster = self.Entity:GetComponent("script.ShadowMonster")
         if monster ~= nil then dmg = dmg * monster:GetDamageDealtMultiplier() end
@@ -73,8 +83,8 @@ script MonsterAttack extends AttackComponent
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)
-        -- 고른 대상 하나만. 플레이어(살아 있음)와 그림자만 대상이 될 수 있다
-        if defender ~= self.CurrentTarget then return false end
+        -- 고른 대상 하나만 (광역기는 범위 전체). 플레이어(살아 있음)와 그림자만 대상이 될 수 있다
+        if attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
         if isvalid(defender.PlayerComponent) then
             if defender.PlayerComponent:IsDead() then return false end
             return __base:IsAttackTarget(defender, attackInfo)

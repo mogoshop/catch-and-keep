@@ -16,6 +16,8 @@ script GameHUD extends Logic
     property string SkillKey = ""
     property string SlotKey = ""
     property table SkillRows = {}         -- "T1_1" → skill id
+    property string NpcKind = ""          -- 지금 열린 NPC 창 종류 (shop / quest / "")
+    property string NpcKey = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -28,6 +30,12 @@ script GameHUD extends Logic
         end
         local tgt = self:Get("Target")
         if isvalid(tgt) then tgt.Enable = false end
+        local npcWin = self:Get("NpcWin")
+        if isvalid(npcWin) then npcWin.Enable = false end
+        for i = 1, 3 do
+            local index = i
+            self:Connect("NpcWin/Btn" .. tostring(i), function() self:NpcAction(index) end)
+        end
         for i = 1, 5 do
             local slot = i
             self:Connect("Bottom/Slots/Slot" .. tostring(i), function() self:CastSlot(slot) end)
@@ -186,6 +194,8 @@ script GameHUD extends Logic
         self:SetText("Bottom/XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
         self:RenderSlots()
         self:RenderTarget(player)
+        self:RenderQuestTrack(player)
+        self:RenderNpc(player, st)
         local cw = self:Get("CharWin")
         if isvalid(cw) and cw.Enable then self:RenderChar(st, pc) end
         local iw = self:Get("InvWin")
@@ -251,6 +261,7 @@ script GameHUD extends Logic
         local gradeName = ""
         local color = "#FFFFFF"
         if best.Grade == 2 then gradeName = "정예 " color = "#6E8CFF" elseif best.Grade >= 3 then gradeName = "보스 " color = "#C8A050" end
+        if best.Affix ~= "" then gradeName = best.Affix .. " " .. gradeName end
         self:SetText("Target/Name", string.format("<color=%s>%s%s</color>  Lv%d", color, gradeName, _ShadowConfig:GetMonsterName(best.SourceId), best.Level))
         self:SetFill("Target/Bar/Fill", best.Hp / math.max(1, best.MaxHp))
         self:SetText("Target/Curse", best.CurseTag)
@@ -389,6 +400,108 @@ script GameHUD extends Logic
             desc = string.format("%s — %s%s\n%s   %s", def.name, def.desc, manaText, req, reason == "" and "<color=#AACCAA>습득 가능</color>" or ("<color=#FF8888>" .. reason .. "</color>"))
         end
         self:SetText("SkillWin/Desc", desc)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderQuestTrack(Entity player)
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest == nil then return end
+        local q = _QuestData:Get(quest.Index)
+        local text = ""
+        if q == nil then
+            text = "모든 의뢰 완료"
+        elseif quest.State == 0 then
+            text = "새 의뢰: 마을의 노인을 찾아가라"
+        elseif quest.State == 1 then
+            text = string.format("의뢰 「%s」 %d / %d", q.title, quest.Progress, q.count)
+        else
+            text = string.format("의뢰 「%s」 완료 — 노인에게 보고", q.title)
+        end
+        self:SetText("QuestTrack", text)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderNpc(Entity player, PlayerStats st)
+        -- 가장 가까운 NPC(대화 거리 안)의 창을 연다. 멀어지면 닫는다
+        local win = self:Get("NpcWin")
+        if not isvalid(win) then return end
+        local p = player.TransformComponent.WorldPosition
+        local best = nil
+        local bestDist = 999
+        for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            local q = c.Entity.TransformComponent.WorldPosition
+            local d = (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude()
+            if d <= npc.TalkRange and d < bestDist then bestDist = d best = npc end
+        end
+        win.Enable = best ~= nil
+        if best == nil then
+            self.NpcKind = ""
+            self.NpcKey = ""
+            return
+        end
+        self.NpcKind = best.Kind
+        self:SetText("NpcWin/Title", best.NpcName)
+        local b1 = self:Get("NpcWin/Btn1")
+        local b2 = self:Get("NpcWin/Btn2")
+        local b3 = self:Get("NpcWin/Btn3")
+        if best.Kind == "shop" then
+            ---@type PlayerInventory
+            local inv = player:GetComponent("script.PlayerInventory")
+            local gamble = 150 + 30 * st.Level
+            self:SetText("NpcWin/Body", string.format("어서 오게. 무엇이 필요한가?\n\n생명 물약 25골드 · 마나 물약 25골드\n도박: 무작위 마법 이상 장비 %d골드\n(판매는 소지품 창에서)\n\n가진 골드 %d", gamble, st.Gold))
+            if isvalid(b1) then b1.Enable = true end
+            if isvalid(b2) then b2.Enable = true end
+            if isvalid(b3) then b3.Enable = true end
+            self:SetText("NpcWin/Btn1", "생명 물약")
+            self:SetText("NpcWin/Btn2", "마나 물약")
+            self:SetText("NpcWin/Btn3", "도박 " .. tostring(gamble))
+        else
+            ---@type PlayerQuest
+            local quest = player:GetComponent("script.PlayerQuest")
+            if quest == nil then return end
+            local q = _QuestData:Get(quest.Index)
+            if isvalid(b2) then b2.Enable = false end
+            if isvalid(b3) then b3.Enable = false end
+            if q == nil then
+                self:SetText("NpcWin/Body", "자네 덕분에 마을이 평온해졌네. 고맙네.")
+                if isvalid(b1) then b1.Enable = false end
+                return
+            end
+            local reward = string.format("보상: 경험치 %d, 골드 %d", q.exp, q.gold)
+            if q.reward == "rune" then reward = reward .. ", 룬" elseif q.reward == "item" then reward = reward .. ", 장비" elseif q.reward == "rare" then reward = reward .. ", 희귀 장비" end
+            local stateText = "수락하겠나?"
+            local btn = "수락"
+            if quest.State == 1 then
+                stateText = string.format("진행 %d / %d", quest.Progress, q.count)
+                btn = ""
+            elseif quest.State == 2 then
+                stateText = "해냈군! 보상을 받게."
+                btn = "보고"
+            end
+            self:SetText("NpcWin/Body", string.format("「%s」\n%s\n%s\n\n%s", q.title, q.desc, reward, stateText))
+            if isvalid(b1) then b1.Enable = btn ~= "" end
+            self:SetText("NpcWin/Btn1", btn)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void NpcAction(integer index)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        if self.NpcKind == "shop" then
+            ---@type PlayerInventory
+            local inv = player:GetComponent("script.PlayerInventory")
+            if inv == nil then return end
+            if index == 1 then inv:RequestBuy("hp") elseif index == 2 then inv:RequestBuy("mp") else inv:RequestBuy("gamble") end
+        elseif self.NpcKind == "quest" and index == 1 then
+            ---@type PlayerQuest
+            local quest = player:GetComponent("script.PlayerQuest")
+            if quest == nil then return end
+            if quest.State == 0 then quest:RequestAccept() elseif quest.State == 2 then quest:RequestTurnIn() end
+        end
     end
 
     -- ───────── 동작 ─────────

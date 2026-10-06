@@ -2,7 +2,8 @@
 const path = require("path");
 const { UIBuilder } = require(path.resolve(__dirname, "../.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs"));
 const OUT = path.resolve(__dirname, "../ui/GameHUD" + ".ui");
-const b = new UIBuilder("GameHUD", 2);
+const b = new UIBuilder("GameHUD", 5);
+b.patchComponent("/", "MOD.Core.UIGroupComponent", { GroupOrder: 5 });
 const outline = { outline: true, outline_color: "#000000" };
 
 // ── 하단 바 ──
@@ -25,14 +26,14 @@ b.empty("Bottom/Slots", { anchor: "bottom-center", pos: [0, 18], rect_size: [740
 });
 
 // ── 대상 정보 ──
-b.panel("Target", { anchor: "top-center", pos: [0, -16], rect_size: [440, 84], color: "#000000", alpha: 0.65 });
+b.panel("Target", { anchor: "top-center", pos: [0, -150], rect_size: [440, 84], color: "#000000", alpha: 0.65 });
 b.text("Target/Name", "", { size: 22, bold: true, anchor: "top-center", pos: [0, -6], rect_size: [420, 30], ...outline });
 b.panel("Target/Bar", { anchor: "top-center", pos: [0, -40], rect_size: [400, 16], color: "#2A0A0A", alpha: 0.9 });
 b.sprite("Target/Bar/Fill", { anchor: "middle-left", pos: [2, 0], rect_size: [396, 12], color: "#C0282D", alpha: 1, sprite_type: 3, fill_method: 0 });
 b.text("Target/Curse", "", { size: 16, color: "#C88CFF", anchor: "top-center", pos: [0, -60], rect_size: [420, 22], ...outline });
 
 // ── 메뉴 버튼 (우상단, PC·모바일 공통) ──
-b.empty("Menu", { anchor: "top-right", pos: [-20, -20], rect_size: [520, 64] });
+b.empty("Menu", { anchor: "top-right", pos: [-200, -20], rect_size: [520, 64] });
 [["BtnChar", "능력치 U"], ["BtnInv", "소지품 I"], ["BtnSkill", "스킬 K"], ["BtnExtract", "추출 E"]].forEach(([n, t], i) => {
   b.button(`Menu/${n}`, t, { anchor: "middle-right", pos: [-(i * 130), 0], rect_size: [122, 64], font_size: 20 });
 });
@@ -84,6 +85,17 @@ b.text("SkillWin/Desc", "", { size: 18, alignment: 0, anchor: "bottom-left", pos
   const opts = { anchor: "bottom-left", pos: [24 + i * 152, 16], rect_size: [144, 62], font_size: 20 };
   if (i === 0) opts.bg_color = { r: 0.3, g: 0.22, b: 0.08, a: 0.95 };
   b.button(`SkillWin/${n}`, t, opts);
+});
+
+// 의뢰 추적 (좌상단, 힌트 아래)
+b.text("QuestTrack", "", { size: 20, color: "#FFE15A", alignment: 3, anchor: "top-left", pos: [24, -140], rect_size: [700, 30], outline: true, outline_color: "#000000" });
+
+// NPC 창 (가까이 가면 열림)
+b.panel("NpcWin", { anchor: "middle-left", pos: [30, 120], rect_size: [480, 360], color: "#0E0C14", alpha: 0.94, raycast: true });
+b.text("NpcWin/Title", "", { size: 26, bold: true, color: "#D2AA3C", anchor: "top-center", pos: [0, -14], rect_size: [440, 40] });
+b.text("NpcWin/Body", "", { size: 19, alignment: 0, anchor: "top-left", pos: [24, -64], rect_size: [432, 150] });
+[["Btn1", 0], ["Btn2", 1], ["Btn3", 2]].forEach(([n, i]) => {
+  b.button(`NpcWin/${n}`, n, { anchor: "bottom-left", pos: [20 + i * 150, 20], rect_size: [140, 70], font_size: 18, bg_color: { r: 0.3, g: 0.22, b: 0.08, a: 0.95 } });
 });
 
 b.write(OUT);

@@ -1,0 +1,56 @@
+-- 맵 사이 포털. 플레이어가 가까이(0.6) 오면 지정한 맵·위치로 보낸다. 서버 0.3초 간격 검사.
+@Component
+script WarpGate extends Component
+
+    property string TargetMap = "map01"
+    property Vector2 TargetPos = Vector2(0, 0)
+    property string Label = ""
+    property number Radius = 0.6
+    property number Cooldown = 2
+
+    property integer TimerId = 0
+    property table LastWarp = {}
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.LastWarp = {}
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.3)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local now = _UtilLogic.ElapsedSeconds
+        for _, u in ipairs(users) do
+            if isvalid(u) and not u.PlayerComponent:IsDead() then
+                local q = u.TransformComponent.WorldPosition
+                local id = u.PlayerComponent.UserId
+                local last = self.LastWarp[id] or -100
+                if now - last > self.Cooldown and (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
+                    self.LastWarp[id] = now
+                    self:Warp(u)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Warp(Entity player)
+        -- 소환된 그림자는 먼저 회수한다 (맵이 바뀌면 따라올 수 없다)
+        ---@type ShadowOwner
+        local owner = player:GetComponent("script.ShadowOwner")
+        if owner ~= nil then owner:RecallAll() end
+        log("[WarpGate] " .. player.Name .. " → " .. self.TargetMap)
+        _TeleportService:TeleportToMapPosition(player, Vector3(self.TargetPos.x, self.TargetPos.y, 0), self.TargetMap)
+    end
+
+end

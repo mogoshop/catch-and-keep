@@ -1,0 +1,113 @@
+-- 플레이어 의뢰 진행. State: 0 미수락 / 1 진행 중 / 2 완료 보고 대기. Index > Count 이면 모두 완료.
+-- 진행: ShadowSystem(처치)·ShadowOwner(추출)가 OnKill / OnExtract를 부른다. 수락·보고는 의뢰 NPC 근처에서만.
+@Component
+script PlayerQuest extends Component
+
+    @Sync
+    property integer Index = 1
+    @Sync
+    property integer State = 0
+    @Sync
+    property integer Progress = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnKill(string sourceId)
+        local q = _QuestData:Get(self.Index)
+        if q == nil or self.State ~= 1 or q.kind ~= "kill" or q.target ~= sourceId then return end
+        self:Advance(q)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnExtract()
+        local q = _QuestData:Get(self.Index)
+        if q == nil or self.State ~= 1 or q.kind ~= "extract" then return end
+        self:Advance(q)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Advance(table q)
+        self.Progress = math.min(q.count, self.Progress + 1)
+        if self.Progress >= q.count then
+            self.State = 2
+            self:Notify("의뢰 완료: " .. q.title .. " — 마을의 노인에게 보고하라", self.Entity.PlayerComponent.UserId)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean NearQuestNpc()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        local p = self.Entity.TransformComponent.WorldPosition
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            if npc.Kind == "quest" then
+                local q = c.Entity.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= npc.TalkRange + 0.5 then return true end
+            end
+        end
+        return false
+    end
+
+    @ExecSpace("Server")
+    method void RequestAccept()
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.State ~= 0 or not self:NearQuestNpc() then return end
+        if _QuestData:Get(self.Index) == nil then return end
+        self.State = 1
+        self.Progress = 0
+    end
+
+    @ExecSpace("Server")
+    method void RequestTurnIn()
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.State ~= 2 or not self:NearQuestNpc() then return end
+        self:TurnIn()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TurnIn()
+        -- 보상: 경험치·골드 + (룬 / 장비 / 희귀 장비)
+        local q = _QuestData:Get(self.Index)
+        if q == nil then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if stats ~= nil then
+            stats:GainExp(q.exp)
+            stats:AddGold(q.gold)
+        end
+        if inv ~= nil then
+            local lv = 1
+            if stats ~= nil then lv = stats.Level end
+            if q.reward == "rune" then inv:AddItem(_ItemData:MakeRune(lv + 4))
+            elseif q.reward == "item" then inv:AddItem(_ItemData:Generate(lv + 2, 2, 100))
+            elseif q.reward == "rare" then inv:AddItem(_ItemData:Generate(lv + 3, 3, 300)) end
+        end
+        self:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold), self.Entity.PlayerComponent.UserId)
+        log("[PlayerQuest] 완료 " .. q.title)
+        self.Index = self.Index + 1
+        self.State = 0
+        self.Progress = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        return { i = self.Index, s = self.State, p = self.Progress }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table d)
+        if d == nil then return end
+        self.Index = d.i or 1
+        self.State = d.s or 0
+        self.Progress = d.p or 0
+    end
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

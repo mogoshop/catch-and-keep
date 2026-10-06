@@ -228,6 +228,71 @@ script PlayerInventory extends Component
         stats:Recalculate(false)
     end
 
+    -- ───────── 상점 ─────────
+
+    @ExecSpace("ServerOnly")
+    method boolean NearShop()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        local p = self.Entity.TransformComponent.WorldPosition
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            if npc.Kind == "shop" then
+                local q = c.Entity.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= npc.TalkRange + 0.5 then return true end
+            end
+        end
+        return false
+    end
+
+    method integer GetPrice(string key, integer level)
+        -- 물약 25골드, 도박(무작위 마법 이상 장비) = 150 + 30 × 레벨
+        if key == "hp" or key == "mp" then return 25 end
+        if key == "gamble" then return 150 + 30 * level end
+        return 0
+    end
+
+    @ExecSpace("Server")
+    method void RequestBuy(string key)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId then return end
+        self:Buy(key)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Buy(string key)
+        local pc = self.Entity.PlayerComponent
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or not self:NearShop() then return false end
+        local price = self:GetPrice(key, stats.Level)
+        if price <= 0 then return false end
+        if stats.Gold < price then
+            self:Notify("골드가 부족하다", pc.UserId)
+            return false
+        end
+        if key == "gamble" then
+            local s = _ItemData:Generate(stats.Level + 2, 2, 150)
+            local item = _ItemData:Parse(s)
+            if item.rarity == 0 then
+                item.rarity = 1
+                s = _ItemData:Generate(stats.Level + 2, 3, 300)
+            end
+            if not self:AddItem(s) then
+                self:Notify("가방이 가득 찼다", pc.UserId)
+                return false
+            end
+            self:Notify("도박: " .. _ItemData:DisplayName(s), pc.UserId)
+        elseif key == "hp" then
+            self.HpPot = self.HpPot + 1
+        elseif key == "mp" then
+            self.MpPot = self.MpPot + 1
+        end
+        stats:AddGold(-price)
+        return true
+    end
+
     -- ───────── 포션 ─────────
 
     @ExecSpace("Server")

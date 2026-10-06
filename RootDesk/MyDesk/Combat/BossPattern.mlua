@@ -1,0 +1,107 @@
+-- 보스 패턴: 주기적으로 경고 후 내려찍기(광역), 생명 50% 이하에서 졸개 소환 + 패턴 가속.
+-- 피해 판정은 같은 엔티티의 MonsterAttack:Slam을 쓴다.
+@Component
+script BossPattern extends Component
+
+    property string BossName = "보스"
+    property number SlamInterval = 6
+    property number SlamWindup = 1.0
+    property number SlamRadius = 2.2
+    property number SlamDamage = 22
+    property number EngageRange = 5
+    property string MinionModelId = "fieldmob568"
+    property integer MinionCount = 3
+
+    property number SlamTimer = 3
+    property boolean Enraged = false
+    property boolean WasDead = false
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        ---@type ShadowMonster
+        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable then
+            if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
+            self.WasDead = monster.IsDead
+            self.Enraged = false
+            self.SlamTimer = 3
+            return
+        end
+        self.WasDead = false
+        if not self:AnyPlayerNear() then return end
+        if not self.Enraged and monster.Hp <= monster.MaxHp * 0.5 then
+            self.Enraged = true
+            self:SummonMinions()
+            self:Announce(self.BossName .. "이(가) 분노했다!")
+        end
+        self.SlamTimer = self.SlamTimer - delta
+        if self.SlamTimer > 0 then return end
+        self.SlamTimer = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
+        local p = self.Entity.TransformComponent.WorldPosition
+        local center = Vector2(p.x, p.y + 0.3)
+        self:Telegraph(Vector3(center.x, center.y, 0), self.SlamRadius)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or monster.IsDead then return end
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            if atk ~= nil then atk:Slam(center, self.SlamRadius, self.SlamDamage) end
+            self:SlamFx(Vector3(center.x, center.y, 0), self.SlamRadius)
+        end, self.SlamWindup)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean AnyPlayerNear()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return false end
+        for _, u in ipairs(users) do
+            if isvalid(u) and not u.PlayerComponent:IsDead() then
+                local q = u.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.EngageRange then return true end
+            end
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SummonMinions()
+        -- 보스 주위에 리스폰 없는 졸개
+        local map = self.Entity.CurrentMap
+        local p = self.Entity.TransformComponent.WorldPosition
+        for i = 1, self.MinionCount do
+            local ang = math.pi * 2 * i / self.MinionCount
+            local pos = Vector3(p.x + math.cos(ang) * 1.5, p.y + math.sin(ang) * 1.0, 0)
+            local e = _SpawnService:SpawnByModelId(self.MinionModelId, "BossMinion", pos, map)
+            if isvalid(e) then
+                _TimerService:SetTimerOnce(function()
+                    if not isvalid(e) then return end
+                    ---@type ShadowMonster
+                    local m = e:GetComponent("script.ShadowMonster")
+                    if m ~= nil then m.RespawnDelay = -1 end
+                end, 0.2)
+            end
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void Telegraph(Vector3 pos, number radius)
+        -- 경고: 붉은 기운
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = Color(1, 0.15, 0.1, 1) })
+    end
+
+    @ExecSpace("Multicast")
+    method void SlamFx(Vector3 pos, number radius)
+        _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.25, radius * 0.25, 1), false, nil)
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.4, 0.3) end
+    end
+
+    @ExecSpace("Multicast")
+    method void Announce(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

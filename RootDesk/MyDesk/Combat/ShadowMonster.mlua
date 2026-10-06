@@ -31,6 +31,37 @@ script ShadowMonster extends Component
     @Sync
     property string CurseTag = ""        -- 대상 정보 UI 표시용
 
+    -- 정예 수식어 (D2 정예 접사 단순화): 강인한(생명) / 흉포한(피해) / 신속한(속도)
+    @Sync
+    property string Affix = ""
+    property number BaseMaxHp = 0
+    property number BaseSpeed = 0
+    property number AffixDamageMult = 1
+
+    @ExecSpace("ServerOnly")
+    method void RollAffix()
+        -- 정예만, 등장할 때마다 새로 굴린다
+        if self.BaseMaxHp <= 0 then self.BaseMaxHp = self.MaxHp end
+        local movement = self.Entity.MovementComponent
+        if self.BaseSpeed <= 0 and isvalid(movement) then self.BaseSpeed = movement.InputSpeed end
+        self.MaxHp = self.BaseMaxHp
+        self.AffixDamageMult = 1
+        if isvalid(movement) and self.BaseSpeed > 0 then movement.InputSpeed = self.BaseSpeed end
+        self.Affix = ""
+        if self.Grade ~= 2 then return end
+        local r = _UtilLogic:RandomIntegerRange(1, 3)
+        if r == 1 then
+            self.Affix = "강인한"
+            self.MaxHp = self.BaseMaxHp * 1.7
+        elseif r == 2 then
+            self.Affix = "흉포한"
+            self.AffixDamageMult = 1.5
+        else
+            self.Affix = "신속한"
+            if isvalid(movement) then movement.InputSpeed = self.BaseSpeed * 1.5 end
+        end
+    end
+
     @ExecSpace("ServerOnly")
     method void ApplyCurse(string kind, number pct, number duration)
         -- 저주: amp(받는 피해 증가) / weaken(주는 피해 감소)
@@ -52,8 +83,9 @@ script ShadowMonster extends Component
     end
 
     method number GetDamageDealtMultiplier()
-        if _UtilLogic.ElapsedSeconds < self.WeakenUntil then return math.max(0.1, 1 - self.WeakenPct / 100) end
-        return 1
+        local m = self.AffixDamageMult
+        if _UtilLogic.ElapsedSeconds < self.WeakenUntil then m = m * math.max(0.1, 1 - self.WeakenPct / 100) end
+        return m
     end
 
     @ExecSpace("ServerOnly")
@@ -89,6 +121,7 @@ script ShadowMonster extends Component
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 리스폰 위치를 기억하고 HP를 채운다
+        self:RollAffix()
         self.Hp = self.MaxHp
         local pos = self.Entity.TransformComponent.WorldPosition
         self.SpawnPosition = Vector2(pos.x, pos.y)
@@ -130,6 +163,11 @@ script ShadowMonster extends Component
         if isvalid(sc) then sc:ChangeState("DEAD") end
         _ShadowSystem:OnMonsterKilled(self.Entity, self.LastAttacker, self.SourceId, self.Grade)
         _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
+        if self.RespawnDelay < 0 then
+            -- 소환된 졸개 등 리스폰 없는 몬스터는 치운다
+            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, self.HideDelay + 0.2)
+            return
+        end
         _TimerService:SetTimerOnce(function() self:Respawn() end, self.RespawnDelay)
     end
 
@@ -146,6 +184,7 @@ script ShadowMonster extends Component
         -- 처음 위치에서 HP를 채워 다시 등장
         if not isvalid(self.Entity) then return end
         self.LastAttacker = nil
+        self:RollAffix()
         self.Hp = self.MaxHp
         self.IsDead = false
         self.AmpUntil = 0
