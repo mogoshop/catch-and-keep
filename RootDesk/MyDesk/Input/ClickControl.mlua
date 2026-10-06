@@ -1,0 +1,209 @@
+-- PC 마우스 조작 (디아블로2식). DefaultPlayer 모델에 붙고, 내 캐릭터에서만 동작한다.
+--   바닥 클릭/누르고 있기 → 그 지점으로 이동
+--   몬스터 클릭/누르고 있기 → 다가가서 공격 (공격 자체는 기존 PlayerAttack 경로를 그대로 쓴다)
+--   방향키 입력 → 클릭 이동 취소 (키보드 조작과 함께 쓸 수 있다)
+-- 모바일은 이 컴포넌트를 쓰지 않고 가상 스틱(ShadowHUD 모바일 패드)을 쓴다.
+@Component
+script ClickControl extends Component
+
+    property boolean MouseMode = true       -- HUD의 조작 전환 버튼으로 끄고 켠다
+    property number ArriveDistance = 0.12
+    property number AttackReach = 0.9        -- PlayerAttack 범위(앞쪽 0.7 + 폭 1.6)에 맞춘 사거리
+    property number PickRadius = 0.6         -- 클릭 지점에서 이 거리 안의 몬스터를 대상으로 본다
+    property number AttackInterval = 0.45
+    property number MoveSpeed = 1.0          -- 키보드 이동과 비슷한 체감 속도
+    property boolean Moving = false
+    property integer TimerId = 0
+    property boolean DebugLog = false
+    property number LastTick = 0
+
+    property boolean HasDestination = false
+    property Vector2 Destination = Vector2(0, 0)
+    property Entity AttackTarget = nil
+    property number AttackTimer = 0
+
+    @ExecSpace("ClientOnly")
+    method boolean IsActive()
+        -- 내 캐릭터 + PC + 마우스 모드일 때만
+        if self.Entity ~= _UserService.LocalPlayer then return false end
+        if not self.MouseMode then return false end
+        return Environment:IsPCPlatform()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleScreenTouchEvent(ScreenTouchEvent event)
+        -- 클릭한 순간: 대상/목적지 지정 + 클릭 표시
+        if event.TouchId ~= 1 or not self:IsActive() then return end
+        if _InputService:IsPointerOverUI() then return end
+        local world = self:Pick(event.TouchPoint)
+        _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, Vector3(world.x, world.y, 0), 0, Vector3(0.25, 0.25, 1), false, nil)
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleScreenTouchHoldEvent(ScreenTouchHoldEvent event)
+        -- 누르고 있는 동안: 커서를 따라 목적지/대상 갱신
+        if event.TouchId ~= 1 or not self:IsActive() then return end
+        if _InputService:IsPointerOverUI() then return end
+        self:Pick(event.TouchPoint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Vector2 Pick(Vector2 screenPoint)
+        -- 화면 좌표 → 월드 좌표. 근처에 살아 있는 몬스터가 있으면 공격 대상, 없으면 이동 목적지
+        local world = _UILogic:ScreenToWorldPosition(screenPoint)
+        local monster = self:FindMonsterNear(world)
+        if monster ~= nil then
+            self.AttackTarget = monster
+            self.HasDestination = false
+        else
+            self.AttackTarget = nil
+            self.Destination = world
+            self.HasDestination = true
+        end
+        return world
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindMonsterNear(Vector2 point)
+        -- 클릭 지점에 가장 가까운 살아 있는 몬스터 (몬스터 발밑보다 몸통을 클릭하므로 y를 조금 올려 비교)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return nil end
+        local best = nil
+        local bestDist = self.PickRadius
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
+            ---@type ShadowMonster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y + 0.25) - point):Magnitude()
+                if d < bestDist then
+                    bestDist = d
+                    best = c.Entity
+                end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- OnUpdate에서 속도를 넣으면 같은 프레임에 기본 PlayerController가 0으로 덮어쓴다.
+        -- 타이머 콜백은 그 뒤에 실행되므로 1/60초 반복 타이머로 진행한다 (메이커에서 확인)
+        self.LastTick = _UtilLogic.ElapsedSeconds
+        self.TimerId = _TimerService:SetTimerRepeat(function()
+            local now = _UtilLogic.ElapsedSeconds
+            local delta = now - self.LastTick
+            self.LastTick = now
+            self:Tick(delta)
+        end, 1 / 60)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then
+            _TimerService:ClearTimer(self.TimerId)
+            self.TimerId = 0
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tick(number delta)
+        -- 클릭 이동·공격 진행. 방향키를 누르면 즉시 취소
+        if not self:IsActive() then return end
+        self.AttackTimer = self.AttackTimer - delta
+        if self:IsArrowPressed() then
+            self:Cancel()
+            return
+        end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local me = Vector2(p.x, p.y)
+
+        if isvalid(self.AttackTarget) then
+            ---@type ShadowMonster
+            local m = self.AttackTarget:GetComponent("script.ShadowMonster")
+            if m == nil or m.IsDead or not self.AttackTarget.Enable then
+                self.AttackTarget = nil
+                self:StopMove()
+                return
+            end
+            local t = self.AttackTarget.TransformComponent.WorldPosition
+            local toTarget = Vector2(t.x, t.y) - me
+            if toTarget:Magnitude() > self.AttackReach then
+                self:MoveToward(toTarget)
+            else
+                self:StopMove()
+                self:Face(toTarget.x)
+                if self.AttackTimer <= 0 then
+                    self.AttackTimer = self.AttackInterval
+                    self.Entity.PlayerControllerComponent:ActionAttack()
+                end
+            end
+            return
+        end
+
+        if self.HasDestination then
+            local toDest = self.Destination - me
+            if toDest:Magnitude() <= self.ArriveDistance then
+                self.HasDestination = false
+                self:StopMove()
+            else
+                self:MoveToward(toDest)
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsArrowPressed()
+        return _InputService:IsKeyPressed(KeyboardKey.LeftArrow) or _InputService:IsKeyPressed(KeyboardKey.RightArrow)
+            or _InputService:IsKeyPressed(KeyboardKey.UpArrow) or _InputService:IsKeyPressed(KeyboardKey.DownArrow)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Cancel()
+        self.HasDestination = false
+        self.AttackTarget = nil
+        self:StopMove()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MoveToward(Vector2 dir)
+        -- 기본 PlayerController는 입력이 없으면 물리 계산 전에 속도를 0으로 덮어쓴다.
+        -- 클릭 이동 중에만 컨트롤러를 끄고 MovementComponent로 직접 움직인다 (메이커에서 확인한 방식)
+        local controller = self.Entity.PlayerControllerComponent
+        if controller.Enable then controller.Enable = false end
+        self.Entity.MovementComponent:MoveToDirection(dir:Normalize(), 0)
+        self:Face(dir.x)
+        if not self.Moving then
+            self.Moving = true
+            self.Entity.StateComponent:ChangeState("MOVE")
+        end
+        if self.DebugLog then log("[ClickControl] move " .. tostring(dir:Normalize())) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopMove()
+        -- 멈추고 기본 컨트롤러를 다시 켠다 (키보드 입력·공격 동작이 컨트롤러를 거치므로)
+        if not self.Moving then return end
+        self.Moving = false
+        self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+        self.Entity.PlayerControllerComponent.Enable = true
+        self.Entity.StateComponent:ChangeState("IDLE")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Face(number dx)
+        -- 공격 판정이 LookDirectionX를 쓰므로 부호(±1)만 넣는다
+        if math.abs(dx) < 0.05 then return end
+        self.Entity.PlayerControllerComponent.LookDirectionX = dx >= 0 and 1 or -1
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetMouseMode(boolean enabled)
+        self.MouseMode = enabled
+        self:Cancel()
+        if not enabled then self:StopMove() end
+    end
+
+end

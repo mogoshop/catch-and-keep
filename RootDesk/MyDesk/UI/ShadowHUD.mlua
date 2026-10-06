@@ -25,6 +25,9 @@ script ShadowHUD extends Logic
             return
         end
         self.window.Enable = false
+        -- 모바일 패드는 ActivePlatform=Mobile이어도 PC에서 화면 클릭을 가로채므로 PC에서는 끈다
+        local pad = _EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad")
+        if isvalid(pad) then pad.Enable = Environment:IsMobilePlatform() end
         self.Rows = {}
         self.RowIds = {}
         self.Handlers = {}
@@ -47,6 +50,13 @@ script ShadowHUD extends Logic
         self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnPrev"), function() self:ChangePage(-1) end)
         self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnNext"), function() self:ChangePage(1) end)
         self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnStorage"), function() self:ToggleWindow() end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnInput"), function() self:ToggleInputMode() end)
+        -- 모바일 패드 (ActivePlatform=Mobile이라 PC에서는 보이지 않는다)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnAttack"), function() self:MobileAttack() end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnSummon"), function() self:OwnerCall("deploy") end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnRecall"), function() self:OwnerCall("recall") end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnRally"), function() self:OwnerCall("rally") end)
+        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnStorage"), function() self:ToggleWindow() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
         log("[ShadowHUD] 준비 완료, 줄 " .. tostring(#self.Rows))
     end
@@ -75,8 +85,67 @@ script ShadowHUD extends Logic
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        -- I: 보관함 열기/닫기
-        if event.key == KeyboardKey.I then self:ToggleWindow() end
+        -- H: 보관함 열기/닫기 (설계 08). I는 인벤토리가 생길 때까지 임시로 같이 쓴다
+        if event.key == KeyboardKey.H or event.key == KeyboardKey.I then self:ToggleWindow() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method ClickControl GetClickControl()
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return nil end
+        ---@type ClickControl
+        local cc = player:GetComponent("script.ClickControl")
+        return cc
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleInputMode()
+        -- PC 조작 전환: 마우스(클릭 이동·공격) ↔ 키보드(방향키·Ctrl)
+        local cc = self:GetClickControl()
+        if cc == nil then return end
+        cc:SetMouseMode(not cc.MouseMode)
+        self:RefreshInputLabel()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshInputLabel()
+        local btn = _EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnInput")
+        local cc = self:GetClickControl()
+        if not isvalid(btn) or cc == nil then return end
+        btn.TextGUIRendererComponent.Text = cc.MouseMode and "조작: 마우스" or "조작: 키보드"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OwnerCall(string action)
+        -- 모바일 버튼 → 단축키와 같은 서버 요청
+        local owner = self:GetOwner()
+        if owner == nil then return end
+        if action == "deploy" then owner:RequestDeploy("")
+        elseif action == "recall" then owner:RequestRecall("")
+        elseif action == "rally" then owner:RequestRally() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MobileAttack()
+        -- 모바일 공격: 가까운 몬스터 쪽을 보고 공격 (조준 입력이 없으므로)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        local p = player.TransformComponent.WorldPosition
+        local bestDx = nil
+        local bestDist = 2.0
+        for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
+            ---@type ShadowMonster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude()
+                if d < bestDist then bestDist = d bestDx = q.x - p.x end
+            end
+        end
+        if bestDx ~= nil and math.abs(bestDx) > 0.05 then
+            player.PlayerControllerComponent.LookDirectionX = bestDx >= 0 and 1 or -1
+        end
+        player.PlayerControllerComponent:ActionAttack()
     end
 
     @ExecSpace("ClientOnly")
@@ -109,6 +178,7 @@ script ShadowHUD extends Logic
         local owner = self:GetOwner()
         if owner == nil then return end
         local limit = _ShadowConfig:GetDeployLimit(0)
+        if self.RenderedKey == "" then self:RefreshInputLabel() end
         if isvalid(self.statusText) then
             self.statusText.Text = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, owner.DeployedCount, limit, owner.Essence)
         end
