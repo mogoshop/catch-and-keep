@@ -51,7 +51,26 @@ script MonsterAttack extends AttackComponent
         self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
         self.CurrentTarget = target
         local p = target.TransformComponent.WorldPosition
+        -- 원거리(사거리 1.5 넘음)는 날아가는 화살·볼트를 보여 준다
+        if self.AttackRange > 1.5 then
+            local my = self.Entity.TransformComponent.WorldPosition
+            self:BoltFx(Vector3(my.x, my.y + 0.4, 0), Vector3(p.x, p.y + 0.3, 0), self:GetElement())
+        end
         self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), self.AttackRadius), "monster.basic", nil)
+    end
+
+    @ExecSpace("Multicast")
+    method void BoltFx(Vector3 from, Vector3 to, string element)
+        local color = Color(0.85, 0.8, 0.7, 1)
+        if element == "fire" then color = Color(1, 0.5, 0.2, 1)
+        elseif element == "cold" then color = Color(0.5, 0.8, 1, 1)
+        elseif element == "light" then color = Color(1, 1, 0.5, 1)
+        elseif element == "poison" then color = Color(0.5, 1, 0.4, 1) end
+        for i = 1, 3 do
+            local t = i / 3
+            local q = Vector3(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, 0)
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, q, 0, Vector3(0.2, 0.2, 1), false, { Color = color })
+        end
     end
 
     @ExecSpace("ServerOnly")

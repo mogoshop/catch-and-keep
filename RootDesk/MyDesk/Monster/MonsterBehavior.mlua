@@ -1,6 +1,8 @@
 -- 몬스터 특수 행동 (06장 4절 AI 유형). Mode:
 --   "hitrun" : 공격 직후 잠시 대상에게서 물러났다가 다시 덤빈다 (시체 까마귀)
 --   "burrow" : 플레이어가 가까이 올 때까지 땅속에 숨어 있다(희미하게 보이고 맞지 않음). 오래 혼자면 다시 숨는다 (무덤 구더기)
+--   "coward" : 근처 같은 종족이 죽으면 잠시 흩어져 달아났다가 다시 덤빈다 (D2 폴른 — 타락 꼬마악마)
+--   "ranged" : 사거리 끝에 멈춰 쏘고, 너무 가까우면 물러선다 (D2 다크 레인저 — 광신 궁수)
 -- 이동은 AIChase가 맡고, 이 컴포넌트는 AIChase를 잠시 끄고 직접 움직인다.
 @Component
 script MonsterBehavior extends Component
@@ -10,6 +12,9 @@ script MonsterBehavior extends Component
     property number EmergeRange = 2.2
     property number ReburrowSeconds = 8
     property number CheckInterval = 0.3
+    property number FleeSeconds = 2.2
+    property number FleeRadius = 5
+    property number KeepRange = 1.8
 
     @Sync
     property boolean Burrowed = false
@@ -49,7 +54,7 @@ script MonsterBehavior extends Component
         local monster = self.Entity:GetComponent("script.Monster")
         if monster == nil or monster.IsDead or not self.Entity.Enable then return end
         local now = _UtilLogic.ElapsedSeconds
-        if self.Mode == "hitrun" and self.RetreatUntil > 0 then
+        if self.RetreatUntil > 0 then
             if now < self.RetreatUntil then
                 self.Entity.MovementComponent:MoveToDirection(self.RetreatDir, 0)
             else
@@ -60,10 +65,14 @@ script MonsterBehavior extends Component
             end
             return
         end
-        if self.Mode ~= "burrow" then return end
+        if self.Mode ~= "burrow" and self.Mode ~= "ranged" then return end
         self.CheckTimer = self.CheckTimer - delta
         if self.CheckTimer > 0 then return end
         self.CheckTimer = self.CheckInterval
+        if self.Mode == "ranged" then
+            self:RangedTick()
+            return
+        end
         local near = self:NearestPlayerDistance()
         if self.Burrowed then
             if near <= self.EmergeRange then self:SetBurrowed(false) end
@@ -75,6 +84,75 @@ script MonsterBehavior extends Component
         else
             self.LonelySince = 0
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RangedTick()
+        -- 가장 가까운 플레이어 기준: 너무 가까우면 물러서고, 사거리 안이면 멈춰 쏘고, 멀면 AIChase로 다가간다
+        local map = self.Entity.CurrentMap
+        local myPos = _Util:Pos2(self.Entity)
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        local range = 3
+        if atk ~= nil then range = atk.AttackRange end
+        local nearest = nil
+        local best = range
+        for _, u in ipairs(_Util:PlayersNear(map, myPos, range)) do
+            local d = _Util:Distance(u, self.Entity)
+            if d < best then
+                best = d
+                nearest = u
+            end
+        end
+        local chase = self.Entity.AIChaseComponent
+        if nearest == nil then
+            if isvalid(chase) then chase.Enable = true end
+            return
+        end
+        if isvalid(chase) then chase.Enable = false end
+        if best < self.KeepRange then
+            local q = _Util:Pos2(nearest)
+            local away = Vector2(myPos.x - q.x, myPos.y - q.y)
+            if away:Magnitude() < 0.01 then away = Vector2(1, 0) end
+            self.Entity.MovementComponent:MoveToDirection(away:Normalize(), 0)
+        else
+            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AlertPack()
+        -- 내가 죽었다: 근처의 같은 종족 겁쟁이들이 잠시 흩어진다 (Monster.Die가 부른다)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        ---@type Monster
+        local me = self.Entity:GetComponent("script.Monster")
+        if me == nil then return end
+        local myPos = _Util:Pos2(self.Entity)
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.MonsterBehavior", true)) do
+            ---@type MonsterBehavior
+            local other = c
+            if other ~= self and other.Mode == "coward" and _Util:Distance(other.Entity, self.Entity) < self.FleeRadius then
+                ---@type Monster
+                local m = other.Entity:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead and m.SourceId == me.SourceId then other:Flee(myPos) end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Flee(Vector2 from)
+        -- from에서 멀어지는 쪽으로 FleeSeconds 동안 달아난다 (끝나면 hitrun과 같은 길로 다시 추적)
+        local p = _Util:Pos2(self.Entity)
+        local away = Vector2(p.x - from.x, p.y - from.y)
+        if away:Magnitude() < 0.01 then
+            local a = _UtilLogic:RandomDouble() * math.pi * 2
+            away = Vector2(math.cos(a), math.sin(a))
+        end
+        self.RetreatDir = away:Normalize()
+        self.RetreatUntil = _UtilLogic.ElapsedSeconds + self.FleeSeconds
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = false end
     end
 
     @ExecSpace("ServerOnly")
