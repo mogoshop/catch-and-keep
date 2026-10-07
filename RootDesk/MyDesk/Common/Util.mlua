@@ -157,4 +157,23 @@ script Util extends Logic
         return Vector2(p.x, p.y)
     end
 
+    method boolean TileBlocked(Entity terrain, Vector2 point)
+        if not isvalid(terrain) then return false end
+        local tiles = terrain.RectTileMapComponent
+        local tile = tiles:GetTile(tiles:ToCellPosition(Vector3(point.x, point.y, 0)))
+        return tile == nil or tile.IsCollidable
+    end
+
+    method boolean HasLineOfSight(Entity map, Vector2 from, Vector2 to)
+        if not isvalid(map) then return false end
+        local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        if tiles == nil then return true end
+        local offset = to - from
+        local count = math.max(1, math.ceil(offset:Magnitude() / 0.2))
+        for i = 1, count do
+            if self:TileBlocked(tiles.Entity, from + offset * (i / count)) then return false end
+        end
+        return true
+    end
+
 end

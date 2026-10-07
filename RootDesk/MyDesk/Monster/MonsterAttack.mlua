@@ -19,6 +19,14 @@ script MonsterAttack extends AttackComponent
     property number SlamDamage = 0
     property number ArrowSpeed = 7
     property integer ShotCount = 0
+    property number AttackWindup = 0.22
+    property number AttackAnimationSeconds = 0.4
+    property number AttackAnimationUntil = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.Entity.StateComponent:AddState("ATTACK", MonsterAttackState)
+    end
 
     method Monster Body()
         ---@type Monster
@@ -48,19 +56,54 @@ script MonsterAttack extends AttackComponent
         if status ~= nil and status:IsStunned() then return end
         self.CooldownTimer = self.CooldownTimer - delta
         self.ScanTimer = self.ScanTimer - delta
-        if self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
+        if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil or self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
         self.ScanTimer = self.ScanInterval
         local target = self:FindTarget()
         if target == nil then return end
         self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
+        self:BeginAttack(target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeginAttack(Entity target)
+        local body = self:Body()
+        if body == nil or body.IsDead or not self:IsLiveDefender(target) then return end
+        local map = self.Entity.CurrentMap
+        local aim = _Util:Pos2(target)
+        if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
         self.CurrentTarget = target
-        local p = target.TransformComponent.WorldPosition
-        -- 원거리(사거리 1.5 넘음)는 실제로 날아가는 화살: 쏜 순간의 위치로 날아가므로 움직이면 피할 수 있다
-        if self.AttackRange > 1.5 then
-            self:Shoot(Vector2(p.x, p.y))
-            return
-        end
-        self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), self.AttackRadius), "monster.basic", nil)
+        self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
+        local chase = self.Entity.AIChaseComponent
+        local resumeChase = isvalid(chase) and chase.Enable
+        if isvalid(chase) then chase.Enable = false end
+        self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+        local dx = aim.x - _Util:Pos2(self.Entity).x
+        if math.abs(dx) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = dx > 0 end
+        self.Entity.StateComponent:ChangeState("ATTACK")
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or body.IsDead or self.Entity.CurrentMap ~= map then return end
+            local status = body:Status()
+            if status ~= nil and status:IsStunned() then return end
+            if not self:IsLiveDefender(target) then return end
+            if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
+            if self.AttackRange > 1.5 then self:Shoot(aim) return end
+            -- 준비 동작을 보고 이동하면 피할 수 있게, 공격 시작 때의 위치를 친다.
+            self:AttackFast(CircleShape(aim + Vector2(0, 0.3), self.AttackRadius), "monster.basic", nil)
+        end, self.AttackWindup)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or body.IsDead then return end
+            local status = body:Status()
+            if status ~= nil and status:IsStunned() then return end
+            if isvalid(chase) then chase.Enable = resumeChase end
+            if self.Entity.StateComponent.CurrentStateName == "ATTACK" then self.Entity.StateComponent:ChangeState("IDLE") end
+        end, self.AttackAnimationSeconds)
+    end
+
+    method boolean IsLiveDefender(Entity target)
+        if not isvalid(target) or not target.Enable or target.CurrentMap ~= self.Entity.CurrentMap then return false end
+        if isvalid(target.PlayerComponent) then return target.PlayerComponent.Hp > 0 end
+        local unit = target:GetComponent("script.ShadowUnit")
+        return unit ~= nil and not unit.Dead and unit.Hp > 0
     end
 
     @ExecSpace("ServerOnly")
@@ -118,14 +161,14 @@ script MonsterAttack extends AttackComponent
         local bestDist = self.AttackRange
         for _, u in ipairs(_Util:PlayersNear(map, myPos, self.AttackRange)) do
             local d = _Util:Distance(u, self.Entity)
-            if d < bestDist then
+            if d < bestDist and self:IsLiveDefender(u) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(u)) then
                 bestDist = d
                 best = u
             end
         end
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
             local d = _Util:Distance(c.Entity, self.Entity)
-            if d < bestDist then
+            if d < bestDist and self:IsLiveDefender(c.Entity) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(c.Entity)) then
                 bestDist = d
                 best = c.Entity
             end
@@ -185,6 +228,7 @@ script MonsterAttack extends AttackComponent
     method boolean IsAttackTarget(Entity defender, string attackInfo)
         -- 고른 대상 하나만 (광역기는 범위 전체). 살아 있는 플레이어와 그림자만
         if attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
+        if attackInfo == "monster.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         if isvalid(defender.PlayerComponent) then
             if defender.PlayerComponent:IsDead() then return false end
             -- 무적 시간·사망 처리 중이면 제외 (엔진이 맞자마자 생명을 깎으므로 여기서 막아야 한다)

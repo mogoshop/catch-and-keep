@@ -175,7 +175,7 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method boolean IsLiveTarget(Entity e)
         -- 살아 있는 추출 대상 몬스터인지
-        if not isvalid(e) or not e.Enable then return false end
+        if not isvalid(e) or not e.Enable or e.CurrentMap ~= self.Entity.CurrentMap then return false end
         ---@type Monster
         local monster = e:GetComponent("script.Monster")
         return monster ~= nil and not monster.IsDead
@@ -234,6 +234,7 @@ script ShadowUnit extends AttackComponent
             local at = _Util:Pos2(self.Entity)
             local delta = _Util:Pos2(target) - at
             if delta:Magnitude() > self.AttackRange + 0.3 then return end
+            if not _Util:HasLineOfSight(self.Entity.CurrentMap, at, _Util:Pos2(target)) then return end
             if self.AttackRange >= 2 then
                 local hit = at + delta + Vector2(0, 0.2)
                 self:AttackFast(CircleShape(hit, 0.5), "shadow.ranged", nil)

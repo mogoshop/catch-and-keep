@@ -5,6 +5,7 @@
 @Component
 script Projectile extends Component
 
+    property Entity Terrain = nil
     property Entity Owner = nil
     property Vector2 Dir = Vector2(1, 0)
     property number Speed = 10
@@ -25,6 +26,8 @@ script Projectile extends Component
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
         -- 방향(정규화)·속도·사거리·피해를 정하고 날린다. 스프라이트를 진행 방향으로 돌린다 (AngleOffset = 원본이 보는 방향 보정)
         self.Owner = owner
+        local tiles = self.Entity.CurrentMap:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        self.Terrain = tiles ~= nil and tiles.Entity or nil
         self.Dir = dir:Normalize()
         self.Speed = speed
         self.Range = range
@@ -50,15 +53,24 @@ script Projectile extends Component
             local body = self.Owner:GetComponent("script.Monster")
             if body == nil or body.IsDead then self:Finish() return end
         end
-        local step = self.Speed * delta
-        self.Entity.TransformComponent:Translate(self.Dir.x * step, self.Dir.y * step)
-        self.Traveled = self.Traveled + step
-        local p = _Util:Pos2(self.Entity) - Vector2(0, self.HeightOffset)
-        if self.Team == "monster" then
-            self:HitDefenders(p)
-            if self.Launched and self.Traveled >= self.Range then self:Finish() end
-            return
+        -- 이동을 잘게 나눠 저프레임·빠른 화살도 벽과 적을 건너뛰지 않게 한다.
+        local distance = math.min(self.Speed * math.max(0, delta), math.max(0, self.Range - self.Traveled))
+        local count = math.max(1, math.ceil(distance / 0.2))
+        local step = distance / count
+        for i = 1, count do
+            local p = _Util:Pos2(self.Entity) - Vector2(0, self.HeightOffset) + self.Dir * step
+            if _Util:TileBlocked(self.Terrain, p) then self:Finish() return end
+            self.Entity.TransformComponent:Translate(self.Dir.x * step, self.Dir.y * step)
+            self.Traveled = self.Traveled + step
+            self:CheckHits(p)
+            if not self.Launched then return end
         end
+        if self.Traveled >= self.Range then self:Finish() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckHits(Vector2 p)
+        if self.Team == "monster" then self:HitDefenders(p) return end
         for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.Radius)) do
             local key = m.Entity.Id
             if not self.HitIds[key] then
@@ -66,13 +78,9 @@ script Projectile extends Component
                 ---@type PlayerAttack
                 local atk = self.Owner:GetComponent("script.PlayerAttack")
                 if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
-                if not self.Pierce then
-                    self:Finish()
-                    return
-                end
+                if not self.Pierce then self:Finish() return end
             end
         end
-        if self.Traveled >= self.Range then self:Finish() end
     end
 
     @ExecSpace("ServerOnly")

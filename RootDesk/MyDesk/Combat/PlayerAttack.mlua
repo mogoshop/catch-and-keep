@@ -83,22 +83,27 @@ script PlayerAttack extends AttackComponent
         return monster ~= nil and not monster.IsDead and monster.Hp > 0
     end
 
+    method boolean CanReach(Entity target)
+        return isvalid(target) and _Util:Distance(self.Entity, target) <= self.AimRange
+            and _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(target))
+    end
+
     @ExecSpace("ServerOnly")
     method Entity ResolveTarget()
         if self.SelectedTarget ~= nil then
             if self:IsLiveMonster(self.SelectedTarget) then
-                if _Util:Distance(self.Entity, self.SelectedTarget) <= self.AimRange then return self.SelectedTarget end
+                if self:CanReach(self.SelectedTarget) then return self.SelectedTarget end
                 return nil
             end
             self.SelectedTarget = nil
         end
-        if self:IsLiveMonster(self.AutoTarget) and _Util:Distance(self.Entity, self.AutoTarget) <= self.AimRange then return self.AutoTarget end
+        if self:IsLiveMonster(self.AutoTarget) and self:CanReach(self.AutoTarget) then return self.AutoTarget end
         self.AutoTarget = nil
         local me = _Util:Pos2(self.Entity)
         local facing = self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1
         -- 키보드·모바일은 바라보는 반원 안에서 고른다. 뒤의 적 때문에 갑자기 돌아서지 않는다.
         for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, self.AimRange)) do
-            if (_Util:Pos2(monster.Entity).x - me.x) * facing >= -0.1 then
+            if (_Util:Pos2(monster.Entity).x - me.x) * facing >= -0.1 and self:CanReach(monster.Entity) then
                 self.AutoTarget = monster.Entity
                 return self.AutoTarget
             end
@@ -226,6 +231,7 @@ script PlayerAttack extends AttackComponent
             if vitals ~= nil and not vitals:CanBeHit() then return false end
             return __base:IsAttackTarget(defender, attackInfo)
         end
+        if attackInfo == "player.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
         if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
         ---@type Monster
