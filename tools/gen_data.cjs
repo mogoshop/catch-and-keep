@@ -67,6 +67,8 @@ function genGameData() {
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",
     ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
+    "        self.MonsterStats = {}",
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
     "        self.DepthPool = {}",
     ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
     "        self.DepthUniques = {}",
@@ -96,6 +98,12 @@ function genGameData() {
         return self.Shop[key]
     end
 
+    method any GetMonsterStats(string sourceId)
+        -- 원본 몬스터 능력치 (monsters.csv, sourceId 기준). 그림자 개성의 원천. 없으면 nil
+        self:Ensure()
+        return self.MonsterStats[sourceId]
+    end
+
     method table GetDepthPool()
         -- 심도 던전에 나오는 몬스터 모델 id 목록 (monsters.csv depth=true)
         self:Ensure()
@@ -118,7 +126,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

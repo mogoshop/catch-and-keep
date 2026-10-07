@@ -89,11 +89,18 @@ script MonsterAttack extends AttackComponent
         if attackInfo == "monster.slam" then dmg = self.SlamDamage end
         local body = self:Body()
         if body ~= nil then dmg = dmg * body:GetDamageDealtMultiplier() end
+        local element = self:GetElement()
+        local ratio = 0
+        if element ~= "" then ratio = self.ElementRatio end
+        if body ~= nil and body:GetAffixElement() ~= "" then ratio = math.min(1, ratio + 0.5) end
+        ---@type ShadowUnit
+        local shadow = defender:GetComponent("script.ShadowUnit")
+        if shadow ~= nil and ratio > 0 then
+            -- 그림자도 원본 몬스터의 저항을 이어받는다
+            local elem = dmg * ratio
+            dmg = dmg - elem + elem * math.max(0, 1 - shadow:GetResist(element) / 100)
+        end
         if isvalid(defender.PlayerComponent) then
-            local element = self:GetElement()
-            local ratio = 0
-            if element ~= "" then ratio = self.ElementRatio end
-            if body ~= nil and body:GetAffixElement() ~= "" then ratio = math.min(1, ratio + 0.5) end
             ---@type PlayerStats
             local stats = defender:GetComponent("script.PlayerStats")
             local phys = dmg * (1 - ratio)

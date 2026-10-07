@@ -34,11 +34,11 @@ script ShadowOwner extends Component
     -- ───────── 보관함 조작 (서버) ─────────
 
     @ExecSpace("ServerOnly")
-    method string AddShadow(string sourceId, integer grade, string standRuid, string moveRuid)
-        -- 추출 성공 시 호출. 생성된 id 반환
+    method string AddShadow(string sourceId, integer grade, integer level, string standRuid, string moveRuid)
+        -- 추출 성공 시 호출. 시작 레벨 = 처치한 몬스터 레벨 (뒤 지역 그림자가 자연히 강하다). 생성된 id 반환
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
-        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = 1, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
+        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
         self.StorageCount = self.StorageCount + 1
         self:RefreshDigest()
         return id
@@ -63,6 +63,13 @@ script ShadowOwner extends Component
         -- 정수로 레벨 +1. 소환 중이면 능력치도 즉시 반영
         local shadow = self.Storage[id]
         if shadow == nil then return false end
+        -- 그림자 레벨은 주인 레벨을 넘을 수 없다
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil and shadow.level >= stats.Level then
+            _Util:Notify("그림자 레벨은 주인 레벨(" .. tostring(stats.Level) .. ")을 넘을 수 없다", self.Entity.PlayerComponent.UserId)
+            return false
+        end
         local cost = _ShadowConfig:GetUpgradeCost(shadow.level)
         if self.Essence < cost then return false end
         self.Essence = self.Essence - cost
@@ -120,8 +127,7 @@ script ShadowOwner extends Component
         self.Essence = data.essence or 0
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
-                local id = self:AddShadow(s.src or "", s.g or 1, s.st or "", s.mv or "")
-                self.Storage[id].level = s.lv or 1
+                self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.st or "", s.mv or "")
             end
         end
         self:RefreshDigest()

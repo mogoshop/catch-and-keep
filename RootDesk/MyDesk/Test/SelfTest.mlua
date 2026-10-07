@@ -56,6 +56,13 @@ script SelfTest extends Logic
         self:Check("monster name", _GameData:GetMonsterName("grave_queen") ~= "grave_queen", "monsters.csv 이름")
         self:Check("rank boss", _GameData:GetRank("boss").extract > 0 and _GameData:GetRank("boss").extract < 1, "보스 추출은 확정이 아니다")
         self:Check("rank fallback", _GameData:GetRank("없는등급").extract == _GameData:GetRank("normal").extract, "모르는 등급 = normal")
+        -- 그림자 개성: 같은 등급·레벨이라도 원본 몬스터마다 능력치가 다르다
+        local crow = _ShadowConfig:GetProfile("corpse_crow", 1, 5, 1)
+        local skel = _ShadowConfig:GetProfile("skel_warrior", 1, 5, 1)
+        local hound = _ShadowConfig:GetProfile("hellhound", 1, 5, 1)
+        self:Check("shadow profile", skel.hp > crow.hp and skel.atk > hound.atk, "해골 전사 > 시체 까마귀·지옥견")
+        self:Check("shadow element", hound.element == "fire" and hound.ratio > 0, "지옥견 그림자는 화염")
+        self:Check("shadow level", _ShadowConfig:GetProfile("hellhound", 1, 10, 1).atk > hound.atk, "레벨이 높으면 강하다")
         self:Check("quests", _QuestData:Count() == 6, "quests.csv 6개, 실제 " .. tostring(_QuestData:Count()))
         for _, id in ipairs(_SkillData:GetOrder()) do
             local def = _SkillData:Get(id)

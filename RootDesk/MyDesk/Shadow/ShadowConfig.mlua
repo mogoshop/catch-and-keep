@@ -56,12 +56,49 @@ script ShadowConfig extends Logic
         return self:C().shadowSourceHp_g3
     end
 
-    method integer GetShadowMaxHp(integer grade, integer level)
-        return math.max(1, math.floor(self:GetSourceHp(grade) * self:GetStatScale(level)))
+    method table GetProfile(string sourceId, integer grade, integer level, number statMul)
+        -- 그림자 능력치 = 등급 기본값 × 원본 몬스터 배율(개성) × 레벨 성장 × statMul(소환수 보너스 등)
+        -- 원본 배율: 원본 생명·공격을 몬스터 레벨 1·일반 등급 기준으로 되돌린 뒤 일반 몬스터 평균(shadowRef*)과 비교.
+        -- 최상위·보스는 표의 수치에 등급 배율이 이미 들어 있으므로 그 배율로 나눈다. 등급 차이는 등급 기본값이 맡는다
+        local c = self:C()
+        local m = _GameData:GetMonsterStats(sourceId)
+        local hpRatio, dmgRatio = 1, 1
+        local p = { cooldown = 1.0, range = 0.8, speed = 1.2, element = "", ratio = 0, resists = {}, behavior = "" }
+        if m ~= nil then
+            local lv = math.max(1, m.level)
+            local rank = _GameData:GetRank(m.rank)
+            local normHp = m.hp / (1 + c.monsterHpPerLevel * (lv - 1)) / rank.hpMul
+            local normDmg = m.dmg / (1 + c.monsterDmgPerLevel * (lv - 1)) / rank.dmgMul
+            local low = c.shadowRatioMin
+            if grade >= 3 then low = 1 end   -- 보스 그림자는 원본이 약해도 등급 기본값 아래로 내려가지 않는다
+            hpRatio = math.max(low, math.min(c.shadowRatioMax, normHp / c.shadowRefHp))
+            dmgRatio = math.max(low, math.min(c.shadowRatioMax, normDmg / c.shadowRefDmg))
+            p.cooldown = m.interval * c.shadowCooldownMul
+            p.range = m.range
+            p.speed = math.max(c.shadowSpeedMin, math.min(c.shadowSpeedMax, m.speed))
+            p.element = m.element
+            if m.element ~= "" then p.ratio = m.ratio end
+            p.resists = self:ParseResists(m.resists)
+            p.behavior = m.behavior
+        end
+        local scale = self:GetStatScale(level) * statMul
+        p.atk = math.max(1, math.floor(self:GetSourceAtk(grade) * dmgRatio * scale))
+        p.hp = math.max(1, math.floor(self:GetSourceHp(grade) * hpRatio * scale))
+        p.hpRatio = hpRatio
+        p.dmgRatio = dmgRatio
+        return p
     end
 
-    method integer GetShadowAtk(integer grade, integer level)
-        return math.max(1, math.floor(self:GetSourceAtk(grade) * self:GetStatScale(level)))
+    method table ParseResists(string text)
+        -- "fire=50,poison=75" → { fire = 50, poison = 75 }
+        local t = {}
+        for k, v in string.gmatch(text, "(%a+)=(%-?%d+)") do t[k] = tonumber(v) end
+        return t
+    end
+
+    method string ElementName(string element)
+        local names = { fire = "화염", cold = "냉기", light = "번개", poison = "독", magic = "마법" }
+        return names[element] or ""
     end
 
     method string GetMonsterName(string sourceId)

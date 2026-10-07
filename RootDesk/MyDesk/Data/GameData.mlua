@@ -45,11 +45,19 @@ script GameData extends Logic
     property number extractMasteryPerLv = 0.015    -- 추출 숙련 레벨당 추출 확률
     property number extractChanceCap = 0.75    -- 추출 확률 상한 (보스 포함)
     property number bossShadowDeployLimit = 1    -- 보스 그림자 동시 소환 수
+    property number shadowRefHp = 60    -- 그림자 개성 기준: 일반 몬스터 평균 생명 (원본 생명 / 이 값 = 생명 배율)
+    property number shadowRefDmg = 7    -- 그림자 개성 기준: 일반 몬스터 평균 공격 (원본 공격 / 이 값 = 공격 배율)
+    property number shadowRatioMin = 0.5    -- 원본 배율 하한
+    property number shadowRatioMax = 2.5    -- 원본 배율 상한
+    property number shadowCooldownMul = 0.67    -- 그림자 공격 간격 = 원본 공격 간격 × 이 값
+    property number shadowSpeedMin = 1    -- 그림자 이동 속도 하한 (주인을 따라가도록)
+    property number shadowSpeedMax = 2    -- 그림자 이동 속도 상한
     property table Difficulties = {}
     property table Sounds = {}
     property table MonsterNames = {}
     property table DepthPool = {}
     property table Shop = {}
+    property table MonsterStats = {}
     property table Ranks = {}
     property table DepthUniques = {}
 
@@ -88,6 +96,16 @@ script GameData extends Logic
         self.MonsterNames["headsman"] = "목 없는 처형인"
         self.MonsterNames["skel_captain"] = "납골당 지휘관 바르그"
         self.MonsterNames["grave_queen"] = "묘지기 여왕"
+        self.MonsterStats = {}
+        self.MonsterStats["hellhound"] = { level = 1, hp = 40, dmg = 5, interval = 1.5, speed = 1.5, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=50", behavior = "", rank = "normal" }
+        self.MonsterStats["graveworm"] = { level = 1, hp = 50, dmg = 5, interval = 1.5, speed = 0.8, range = 0.8, element = "", ratio = 0, resists = "poison=75", behavior = "burrow", rank = "normal" }
+        self.MonsterStats["ashen_dead"] = { level = 1, hp = 70, dmg = 7, interval = 1.5, speed = 1, range = 0.8, element = "", ratio = 0, resists = "poison=40,cold=20", behavior = "", rank = "normal" }
+        self.MonsterStats["corpse_crow"] = { level = 1, hp = 35, dmg = 6, interval = 1.5, speed = 1.8, range = 0.8, element = "", ratio = 0, resists = "", behavior = "hitrun", rank = "normal" }
+        self.MonsterStats["skel_warrior"] = { level = 1, hp = 90, dmg = 9, interval = 1.5, speed = 1.1, range = 0.8, element = "", ratio = 0, resists = "poison=60,cold=30", behavior = "", rank = "normal" }
+        self.MonsterStats["starved_wraith"] = { level = 1, hp = 70, dmg = 10, interval = 1.5, speed = 1.6, range = 0.8, element = "cold", ratio = 0.6, resists = "cold=60,magic=30", behavior = "", rank = "normal" }
+        self.MonsterStats["headsman"] = { level = 1, hp = 600, dmg = 14, interval = 1.5, speed = 1.2, range = 0.8, element = "fire", ratio = 0.4, resists = "fire=40,poison=30", behavior = "", rank = "unique" }
+        self.MonsterStats["skel_captain"] = { level = 1, hp = 800, dmg = 16, interval = 1.5, speed = 1, range = 0.8, element = "cold", ratio = 0.4, resists = "poison=75,cold=40", behavior = "", rank = "unique" }
+        self.MonsterStats["grave_queen"] = { level = 12, hp = 2600, dmg = 18, interval = 1.5, speed = 1, range = 1.2, element = "poison", ratio = 0.5, resists = "poison=60,fire=25", behavior = "", rank = "boss" }
         self.DepthPool = {}
         table.insert(self.DepthPool, "hellhound")
         table.insert(self.DepthPool, "graveworm")
@@ -120,6 +138,12 @@ script GameData extends Logic
         -- 상점 품목 (shop.csv). 없으면 nil
         self:Ensure()
         return self.Shop[key]
+    end
+
+    method any GetMonsterStats(string sourceId)
+        -- 원본 몬스터 능력치 (monsters.csv, sourceId 기준). 그림자 개성의 원천. 없으면 nil
+        self:Ensure()
+        return self.MonsterStats[sourceId]
     end
 
     method table GetDepthPool()

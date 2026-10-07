@@ -19,7 +19,12 @@ script SoulExtractor extends Component
         if success then
             ---@type ShadowOwner
             local owner = self.Entity:GetComponent("script.ShadowOwner")
-            if owner ~= nil then owner:AddShadow(orb.SourceId, grade, orb.StandRUID, orb.MoveRUID) end
+            -- 시작 레벨 = 처치 레벨 (주인 레벨 이하)
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            local level = orb.Level
+            if stats ~= nil then level = math.min(level, stats.Level) end
+            if owner ~= nil then owner:AddShadow(orb.SourceId, grade, level, orb.StandRUID, orb.MoveRUID) end
             _GameEvents:Emit("ShadowExtracted", { player = self.Entity, sourceId = orb.SourceId, grade = grade })
             self:PlayExtractFx(_ShadowConfig:GetMonsterName(orb.SourceId), grade, pos, senderUserId)
         else

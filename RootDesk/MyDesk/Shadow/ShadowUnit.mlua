@@ -20,6 +20,10 @@ script ShadowUnit extends AttackComponent
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
     property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
 
+    property string Element = ""             -- 원본 몬스터의 공격 속성 (ElementRatio만큼이 그 속성)
+    property number ElementRatio = 0
+    property table Resists = {}              -- 원본 몬스터의 저항 { fire = 50 }
+
     property number MaxHp = 30
     @Sync
     property number Hp = 30
@@ -204,7 +208,21 @@ script ShadowUnit extends AttackComponent
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
-        return self.Atk
+        -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 지옥견 그림자는 화염 저항 몬스터에게 약하다)
+        local dmg = self.Atk
+        if self.Element ~= "" and self.ElementRatio > 0 then
+            ---@type Monster
+            local monster = defender:GetComponent("script.Monster")
+            if monster ~= nil then
+                local elem = dmg * self.ElementRatio
+                dmg = dmg - elem + elem * math.max(0, 1 - monster:GetResist(self.Element) / 100)
+            end
+        end
+        return math.max(1, math.floor(dmg + 0.5))
+    end
+
+    method number GetResist(string element)
+        return self.Resists[element] or 0
     end
 
     method void OnAttack(Entity defender)

@@ -102,8 +102,9 @@ script ShadowCommander extends Component
         _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
             ---@type ShadowUnit
             local u = comp
-            local mult = self:GetUnitMultiplier()
-            u:Setup(self.Entity, id, math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult), math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult), shadow.standRuid, shadow.moveRuid, offset)
+            local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
+            u:Setup(self.Entity, id, prof.atk, prof.hp, shadow.standRuid, shadow.moveRuid, offset)
+            self:ApplyTraits(u, prof)
         end, function()
             log_error("[ShadowCommander] ShadowUnit 연결 실패, 회수: " .. id)
             self:Recall(id)
@@ -120,11 +121,22 @@ script ShadowCommander extends Component
         ---@type ShadowUnit
         local comp = unit:GetComponent("script.ShadowUnit")
         if comp == nil then return end
-        local mult = self:GetUnitMultiplier()
-        comp.Atk = math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult)
-        local newMax = math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult)
-        comp.Hp = comp.Hp + (newMax - comp.MaxHp)
-        comp.MaxHp = newMax
+        local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
+        comp.Atk = prof.atk
+        comp.Hp = comp.Hp + (prof.hp - comp.MaxHp)
+        comp.MaxHp = prof.hp
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyTraits(ShadowUnit u, table prof)
+        -- 원본 몬스터 개성: 공격 간격·사거리·이동 속도·속성 공격·저항
+        u.AttackCooldown = prof.cooldown
+        u.AttackRange = prof.range
+        u.Element = prof.element
+        u.ElementRatio = prof.ratio
+        u.Resists = prof.resists
+        local mv = u.Entity.MovementComponent
+        if isvalid(mv) then mv.InputSpeed = prof.speed end
     end
 
     @ExecSpace("ServerOnly")
