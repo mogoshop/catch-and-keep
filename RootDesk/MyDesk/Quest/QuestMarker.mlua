@@ -1,0 +1,38 @@
+-- 도달형 의뢰의 목표 지점 (숨겨진 제단 등). 플레이어가 가까이 오면 그 플레이어의 PlayerQuest:OnReach를 부른다.
+@Component
+script QuestMarker extends Component
+
+    property string MarkerId = ""
+    property number Radius = 1.2
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        for _, u in ipairs(users) do
+            if isvalid(u) then
+                local q = u.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
+                    ---@type PlayerQuest
+                    local quest = u:GetComponent("script.PlayerQuest")
+                    if quest ~= nil then quest:OnReach(self.MarkerId) end
+                end
+            end
+        end
+    end
+
+end

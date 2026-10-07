@@ -209,6 +209,7 @@ script SkillBook extends Component
         local list = self:MonstersInRadius(target, 1.5)
         if #list == 0 then return end
         local m = list[1]
+        damage = damage * math.max(0, 1 - m:GetResist("magic") / 100)
         m:TakeDamage(damage, self.Entity)
         local pc = self.Entity.PlayerComponent
         pc.Hp = math.min(pc.MaxHp, pc.Hp + math.floor(damage * 0.5))
@@ -239,6 +240,9 @@ script SkillBook extends Component
 
     @ExecSpace("ServerOnly")
     method void CastCurse(Vector2 target, string kind, number pct, number radius)
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil then radius = radius * (1 + stats.BonusCurse / 100) end
         local list = self:MonstersInRadius(target, radius)
         for _, m in ipairs(list) do m:ApplyCurse(kind, pct, 8) end
         self:PlayFx(kind, Vector3(target.x, target.y, 0), radius)

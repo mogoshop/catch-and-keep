@@ -27,6 +27,7 @@ script PlayerAttack extends AttackComponent
         local dir = controller.LookDirectionX >= 0 and 1 or -1
         local center = Vector2(pos.x + self.RangeOffsetX * dir, pos.y + 0.2)
         self:AttackFast(BoxShape(center, self.RangeSize, 0), "player.basic", nil)
+        self:PlaySwing(Vector3(center.x, center.y, 0))
     end
 
     @ExecSpace("ServerOnly")
@@ -40,25 +41,82 @@ script PlayerAttack extends AttackComponent
         end
     end
 
+    method string SkillElement(string attackInfo)
+        if attackInfo == "skill.corpse_blast" then return "fire" end
+        return "magic"
+    end
+
+    method number ResistFactor(Entity defender, ShadowMonster monster, string element)
+        -- 1 - 저항/100 (면역 100 이상이면 0)
+        local res = 0
+        if monster ~= nil then
+            res = monster:GetResist(element)
+        elseif isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local ds = defender:GetComponent("script.PlayerStats")
+            if ds ~= nil then res = ds:GetResist(element) end
+        end
+        return math.max(0, 1 - res / 100)
+    end
+
+    method void OnAttack(Entity defender)
+        -- 냉기 피해가 있으면 맞은 몬스터를 둔화 (D2 냉기)
+        if not self:IsServer() then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or stats:GetElemDamage("cold") <= 0 then return end
+        ---@type ShadowMonster
+        local monster = defender:GetComponent("script.ShadowMonster")
+        if monster ~= nil then monster:ApplyChill(2) end
+    end
+
+    @ExecSpace("Multicast")
+    method void PlaySwing(Vector3 pos)
+        local me = _UserService.LocalPlayer
+        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_SoundDirector.SfxHit, pos, me, 0.5) end
+    end
+
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 기본 피해 × 힘·장비 보정 (스킬은 SkillDamage), 저주(약화의 낙인) 등 대상 배율 적용
+        -- 속성: 스킬은 스킬 고유 속성, 기본 공격은 물리 + 장비 무기 속성 피해. 각각 대상 저항으로 줄인다
         local dmg = self.Damage
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
-        if string.sub(attackInfo, 1, 6) == "skill." then
-            dmg = self.SkillDamage
-        elseif stats ~= nil then
-            dmg = stats:GetMeleeDamage(self.Damage)
-        end
         ---@type ShadowMonster
         local monster = defender:GetComponent("script.ShadowMonster")
+        if string.sub(attackInfo, 1, 6) == "skill." then
+            dmg = self.SkillDamage * self:ResistFactor(defender, monster, self:SkillElement(attackInfo))
+        else
+            if stats ~= nil then dmg = stats:GetMeleeDamage(self.Damage) end
+            dmg = dmg * self:ResistFactor(defender, monster, "phys")
+            if stats ~= nil then
+                for _, e in ipairs({ "fire", "cold", "light", "poison" }) do
+                    local v = stats:GetElemDamage(e)
+                    if v > 0 then dmg = dmg + v * self:ResistFactor(defender, monster, e) end
+                end
+            end
+        end
         if monster ~= nil then dmg = dmg * monster:GetDamageTakenMultiplier() end
-        return math.max(1, math.floor(dmg + 0.5))
+        -- 결투(PvP): 플레이어 대상 피해는 1/4 (D2도 PvP 피해를 크게 줄인다)
+        if isvalid(defender.PlayerComponent) then dmg = dmg * 0.25 end
+        local final = math.max(1, math.floor(dmg + 0.5))
+        -- 생명력 흡수 (룬 드락, 룬워드 「검은 서약」)
+        if self:IsServer() and stats ~= nil and stats.BonusLeech > 0 then
+            local pc = self.Entity.PlayerComponent
+            if pc.Hp > 0 then pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(final * stats.BonusLeech / 100))) end
+        end
+        return final
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)
-        -- 플레이어·그림자·이미 죽은 몬스터는 제외
-        if isvalid(defender.PlayerComponent) then return false end
+        -- 그림자·이미 죽은 몬스터는 제외. 플레이어는 결투 중인 상대만
+        if isvalid(defender.PlayerComponent) then
+            if defender == self.Entity then return false end
+            ---@type PlayerDuel
+            local duel = self.Entity:GetComponent("script.PlayerDuel")
+            if duel == nil or not duel:IsOpponent(defender) then return false end
+            return __base:IsAttackTarget(defender, attackInfo)
+        end
         if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
         ---@type ShadowMonster
         local monster = defender:GetComponent("script.ShadowMonster")

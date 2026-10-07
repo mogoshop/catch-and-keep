@@ -1,0 +1,70 @@
+-- 결투 (D2의 적대 선언을 "요청·수락"으로). 결투 중인 두 사람만 서로 공격할 수 있다 (피해 1/4).
+-- 진 쪽은 장비를 떨구지 않고 제자리에서 부활, 이긴 쪽은 전리품 「귀」를 얻는다. 맵이 달라지면 결투 종료.
+@Component
+script PlayerDuel extends Component
+
+    @Sync
+    property string Opponent = ""            -- 상대 userId
+    property integer TimerId = 0
+
+    method boolean IsOpponent(Entity e)
+        return self.Opponent ~= "" and isvalid(e) and isvalid(e.PlayerComponent) and e.PlayerComponent.UserId == self.Opponent
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Start(string opponentUserId)
+        self.Opponent = opponentUserId
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
+        local o = _UserService:GetUserEntityByUserId(opponentUserId)
+        local name = "?"
+        if isvalid(o) then name = o.PlayerComponent.Nickname end
+        self:Notify("결투 시작: " .. name, self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        -- 상대가 사라지거나 다른 맵이면 끝
+        local o = _UserService:GetUserEntityByUserId(self.Opponent)
+        if not isvalid(o) or o.CurrentMap ~= self.Entity.CurrentMap then self:End("결투가 끝났다") end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void End(string message)
+        if self.Opponent == "" then return end
+        self.Opponent = ""
+        if self.TimerId ~= 0 then
+            _TimerService:ClearTimer(self.TimerId)
+            self.TimerId = 0
+        end
+        if message ~= "" then self:Notify(message, self.Entity.PlayerComponent.UserId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean OnOwnerDied()
+        -- PlayerVitals.Die가 부른다. 결투 중이었으면 결투 패배로 처리하고 true
+        if self.Opponent == "" then return false end
+        local winner = _UserService:GetUserEntityByUserId(self.Opponent)
+        local myName = self.Entity.PlayerComponent.Nickname
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local lv = 1
+        if stats ~= nil then lv = stats.Level end
+        if isvalid(winner) then
+            ---@type PlayerInventory
+            local inv = winner:GetComponent("script.PlayerInventory")
+            if inv ~= nil then inv:AddItem("ear|3|" .. tostring(lv) .. "|" .. myName .. "의 귀||0|") end
+            ---@type PlayerDuel
+            local wd = winner:GetComponent("script.PlayerDuel")
+            if wd ~= nil then wd:End("결투 승리! " .. myName .. "의 귀를 얻었다") end
+        end
+        self:End("")
+        return true
+    end
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

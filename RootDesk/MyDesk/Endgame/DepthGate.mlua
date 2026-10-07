@@ -1,0 +1,89 @@
+-- 심도 던전 문. Action:
+--   "enter" : (마을) 밟으면 자신과 근처(6칸) 파티원을 심도 1층 인스턴스 룸으로
+--   "next"  : (심도 안) 다음 층으로
+--   "exit"  : (심도 안) 마을로 귀환
+@Component
+script DepthGate extends Component
+
+    property string Action = "enter"
+    property number Radius = 0.7
+    property integer TimerId = 0
+    property boolean Busy = false
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        if self.Busy then return end
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        for _, u in ipairs(users) do
+            if isvalid(u) and not u.PlayerComponent:IsDead() then
+                local q = u.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
+                    self.Busy = true
+                    self:Use(u)
+                    _TimerService:SetTimerOnce(function() self.Busy = false end, 3)
+                    return
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Use(Entity player)
+        if self.Action == "enter" then
+            self:Enter(player)
+            return
+        end
+        local map = self.Entity.CurrentMap
+        ---@type DepthDirector
+        local director = map:GetFirstChildComponentByTypeName("script.DepthDirector", true)
+        if director == nil then return end
+        if self.Action == "next" then director:Advance() else director:Exit() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Enter(Entity player)
+        -- 근처 파티원과 함께 1층으로. 입장 전에 저장한다 (인스턴스 룸은 저장소에서 다시 불러온다)
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        local diff = 0
+        if stats ~= nil then diff = stats.Difficulty end
+        local ids = {}
+        local p = player.TransformComponent.WorldPosition
+        ---@type PlayerSocial
+        local social = player:GetComponent("script.PlayerSocial")
+        local users = _UserService:GetUsersByMapComponent(player.CurrentMap.MapComponent)
+        for _, u in ipairs(users) do
+            local same = u == player
+            if not same and social ~= nil and social.PartyId ~= 0 then
+                ---@type PlayerSocial
+                local s2 = u:GetComponent("script.PlayerSocial")
+                local q = u.TransformComponent.WorldPosition
+                same = s2 ~= nil and s2.PartyId == social.PartyId and (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= 6
+            end
+            if same then
+                ---@type PlayerSave
+                local save = u:GetComponent("script.PlayerSave")
+                if save ~= nil then save:Save(true) end
+                table.insert(ids, u.PlayerComponent.UserId)
+            end
+        end
+        local key = "depth:1:" .. tostring(diff) .. ":" .. player.PlayerComponent.UserId .. tostring(math.floor(_UtilLogic.ElapsedSeconds))
+        _RoomService:CreateInstanceRoom(key, { "depth" }, 30)
+        _RoomService:MoveUsersToInstanceRoom(key, ids, "depth")
+    end
+
+end

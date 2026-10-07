@@ -1,0 +1,104 @@
+-- 플레이어 사이의 요청 창구: 파티 초대 / 결투 신청 / 거래 요청 → 상대가 수락하면 시작.
+-- 요청은 20초 뒤 만료. 상대에게는 @TargetUserSync로 받은 요청만 보인다 (GameHUD가 수락 창을 띄움).
+@Component
+script PlayerSocial extends Component
+
+    @Sync
+    property integer PartyId = 0
+    @Sync
+    property string PartyDigest = ""          -- "userId|이름|레벨;..."
+    @TargetUserSync
+    property string PendingKind = ""          -- party / duel / trade
+    @TargetUserSync
+    property string PendingFrom = ""          -- 요청한 사람 userId
+    @TargetUserSync
+    property string PendingFromName = ""
+    property number PendingUntil = 0
+
+    @ExecSpace("Server")
+    method void RequestAction(string kind, string toUserId)
+        -- 내가 상대에게 요청을 보낸다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or toUserId == pc.UserId then return end
+        local target = _UserService:GetUserEntityByUserId(toUserId)
+        if not isvalid(target) then return end
+        ---@type PlayerSocial
+        local other = target:GetComponent("script.PlayerSocial")
+        if other == nil then return end
+        if (kind == "duel" or kind == "trade") and target.CurrentMap ~= self.Entity.CurrentMap then
+            self:Notify("같은 지역에 있어야 한다", pc.UserId)
+            return
+        end
+        if kind == "duel" and self:InTown() then
+            self:Notify("마을에서는 결투할 수 없다", pc.UserId)
+            return
+        end
+        if other.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < other.PendingUntil then
+            self:Notify("상대가 다른 요청을 처리 중이다", pc.UserId)
+            return
+        end
+        other.PendingKind = kind
+        other.PendingFrom = pc.UserId
+        other.PendingFromName = pc.Nickname
+        other.PendingUntil = _UtilLogic.ElapsedSeconds + 20
+        local names = { party = "파티 초대", duel = "결투 신청", trade = "거래 요청" }
+        self:Notify((names[kind] or kind) .. "를 보냈다: " .. target.PlayerComponent.Nickname, pc.UserId)
+    end
+
+    @ExecSpace("Server")
+    method void RespondRequest(boolean accept)
+        -- 받은 요청에 답한다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.PendingKind == "" then return end
+        local kind = self.PendingKind
+        local fromId = self.PendingFrom
+        self.PendingKind = ""
+        self.PendingFrom = ""
+        self.PendingFromName = ""
+        if _UtilLogic.ElapsedSeconds > self.PendingUntil then return end
+        local from = _UserService:GetUserEntityByUserId(fromId)
+        if not isvalid(from) then return end
+        if not accept then
+            self:Notify(pc.Nickname .. "님이 거절했다", fromId)
+            return
+        end
+        if kind == "party" then
+            _PartySystem:Join(fromId, pc.UserId)
+        elseif kind == "duel" then
+            ---@type PlayerDuel
+            local a = from:GetComponent("script.PlayerDuel")
+            ---@type PlayerDuel
+            local b = self.Entity:GetComponent("script.PlayerDuel")
+            if a ~= nil and b ~= nil and from.CurrentMap == self.Entity.CurrentMap and not self:InTown() then
+                a:Start(pc.UserId)
+                b:Start(fromId)
+            end
+        elseif kind == "trade" then
+            ---@type PlayerTrade
+            local a = from:GetComponent("script.PlayerTrade")
+            ---@type PlayerTrade
+            local b = self.Entity:GetComponent("script.PlayerTrade")
+            if a ~= nil and b ~= nil and a.Partner == "" and b.Partner == "" then
+                a:Start(pc.UserId)
+                b:Start(fromId)
+            end
+        end
+    end
+
+    @ExecSpace("Server")
+    method void RequestLeaveParty()
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        _PartySystem:Leave(senderUserId)
+    end
+
+    method boolean InTown()
+        local map = self.Entity.CurrentMap
+        return isvalid(map) and string.sub(map.Name, 1, 4) == "town"
+    end
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

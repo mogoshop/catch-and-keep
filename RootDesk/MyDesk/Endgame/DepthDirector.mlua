@@ -1,0 +1,153 @@
+-- 심도 던전 (07장): 층마다 새 인스턴스 룸. 룸 키 "depth:층:난이도:고유값"에서 층을 읽어 몬스터를 만든다.
+-- 층의 몬스터를 모두 쓰러뜨리면 「더 깊이」·「귀환」 문이 열린다. 층이 오를수록 몬스터 레벨이 올라 상위 룬이 나온다.
+-- 같은 룸의 플레이어는 자동으로 파티가 된다 (인스턴스 룸은 Logic·파티 정보가 따로라서).
+@Component
+script DepthDirector extends Component
+
+    property integer Floor = 0
+    property integer Difficulty = 0
+    property string Nonce = ""
+    property table Spawned = {}
+    property boolean Cleared = false
+    property integer TimerId = 0
+    property string Pool = "hellhound,graveworm,ashendead,corpsecrow,skelwarrior,starvedwraith"
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if not _RoomService:IsInstanceRoom() then return end
+        local f, d, n = string.match(_RoomService.RoomKey, "^depth:(%d+):(%d+):(.+)$")
+        if f == nil then return end
+        self.Floor = tonumber(f)
+        self.Difficulty = tonumber(d)
+        self.Nonce = n
+        self.Spawned = {}
+        _TimerService:SetTimerOnce(function() self:Begin() end, 2)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer BaseLevel()
+        -- 보통 12 / 악몽 42 / 지옥 72 + 층
+        return 12 + self.Difficulty * 30 + self.Floor
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Begin()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        -- 같은 룸 사람끼리 파티
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users ~= nil and #users > 1 then
+            local leader = users[1].PlayerComponent.UserId
+            for i = 2, #users do _PartySystem:Join(leader, users[i].PlayerComponent.UserId) end
+        end
+        local models = {}
+        for m in string.gmatch(self.Pool, "[^,]+") do table.insert(models, m) end
+        local count = math.min(24, 8 + self.Floor)
+        local elite = math.min(0.4, 0.15 + 0.02 * self.Floor)
+        for i = 1, count do
+            local id = models[_UtilLogic:RandomIntegerRange(1, #models)]
+            self:SpawnOne(map, id, self:BaseLevel() + _UtilLogic:RandomIntegerRange(0, 2), _UtilLogic:RandomDouble() < elite)
+        end
+        -- 5층마다 최상위 하나
+        if self.Floor % 5 == 0 then
+            local unique = "skelcaptain"
+            if self.Floor % 10 == 0 then unique = "headsman" end
+            self:SpawnOne(map, unique, self:BaseLevel() + 3, false)
+        end
+        self:Announce("심도 " .. tostring(self.Floor) .. "층 — 모든 적을 쓰러뜨려라")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnOne(Entity map, string modelId, integer level, boolean elite)
+        local x = -5.5 + _UtilLogic:RandomDouble() * 11
+        local y = -3 + _UtilLogic:RandomDouble() * 6
+        local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(x, y, 0), map)
+        if not isvalid(e) then return end
+        table.insert(self.Spawned, e)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(e) then return end
+            ---@type ShadowMonster
+            local m = e:GetComponent("script.ShadowMonster")
+            if m == nil then return end
+            m.RespawnDelay = -1            -- 심도에서는 다시 나오지 않는다
+            m:ApplyLevel(level, elite)
+        end, 0.2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        if self.Cleared or self.Floor <= 0 or #self.Spawned == 0 then return end
+        for _, e in ipairs(self.Spawned) do
+            if isvalid(e) then
+                ---@type ShadowMonster
+                local m = e:GetComponent("script.ShadowMonster")
+                if m ~= nil and not m.IsDead then return end
+            end
+        end
+        self.Cleared = true
+        local map = self.Entity.CurrentMap
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users ~= nil then
+            for _, u in ipairs(users) do _RankingSystem:RecordDepth(u, self.Difficulty, self.Floor) end
+        end
+        self:Announce("심도 " .. tostring(self.Floor) .. "층 정복! 오른쪽 문: 더 깊이 / 왼쪽 문: 귀환")
+        self:OpenDoor(map, "next", Vector3(5.5, 0, 0))
+        self:OpenDoor(map, "exit", Vector3(-5.5, 0, 0))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OpenDoor(Entity map, string action, Vector3 pos)
+        local e = _SpawnService:SpawnByModelId("depthgate", "DepthDoor", pos, map)
+        if not isvalid(e) then return end
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(e) then return end
+            ---@type DepthGate
+            local g = e:GetComponent("script.DepthGate")
+            if g ~= nil then g.Action = action end
+        end, 0.2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Advance()
+        -- 모두 저장 → 다음 층 룸 생성 → 이동
+        local ids = self:SaveAll()
+        if #ids == 0 then return end
+        local key = "depth:" .. tostring(self.Floor + 1) .. ":" .. tostring(self.Difficulty) .. ":" .. self.Nonce
+        _RoomService:CreateInstanceRoom(key, { "depth" }, 30)
+        _RoomService:MoveUsersToInstanceRoom(key, ids, "depth")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Exit()
+        local ids = self:SaveAll()
+        if #ids == 0 then return end
+        _RoomService:MoveUsersToStaticRoom(ids, _WaypointData:MapFor("town", self.Difficulty))
+    end
+
+    @ExecSpace("ServerOnly")
+    method table SaveAll()
+        local ids = {}
+        local map = self.Entity.CurrentMap
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return ids end
+        for _, u in ipairs(users) do
+            ---@type PlayerSave
+            local save = u:GetComponent("script.PlayerSave")
+            if save ~= nil then save:Save(true) end
+            table.insert(ids, u.PlayerComponent.UserId)
+        end
+        return ids
+    end
+
+    @ExecSpace("Multicast")
+    method void Announce(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

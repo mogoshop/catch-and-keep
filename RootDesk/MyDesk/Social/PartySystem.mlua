@@ -1,11 +1,141 @@
--- 파티: 초대·수락·탈퇴, 근처 파티원 경험치 분배. (골격 — 처치 분배만 먼저 연결)
+-- 파티 (D2 방식): 초대·수락으로 결성, 최대 8명. 같은 맵·가까운(12칸) 파티원끼리 경험치를 나눈다.
+-- D2 분배: 전체 경험치 × (1 + 0.35 × (인원-1)), 레벨 비율로 나눈다. 드롭은 개인 전리품 그대로.
 @Logic
 script PartySystem extends Logic
 
+    property integer MaxMembers = 8
+    property number ShareRange = 12
+    property table Parties = {}           -- partyId → { userId, ... }
+    property integer NextId = 1
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.Parties = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method PlayerSocial Social(string userId)
+        local p = _UserService:GetUserEntityByUserId(userId)
+        if not isvalid(p) then return nil end
+        ---@type PlayerSocial
+        local s = p:GetComponent("script.PlayerSocial")
+        return s
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Join(string leaderId, string memberId)
+        -- 초대 수락: 초대한 사람의 파티에 들어간다 (없으면 새로 만든다)
+        local leader = self:Social(leaderId)
+        local member = self:Social(memberId)
+        if leader == nil or member == nil then return end
+        if member.PartyId ~= 0 then self:Leave(memberId) end
+        local pid = leader.PartyId
+        if pid == 0 then
+            pid = self.NextId
+            self.NextId = self.NextId + 1
+            self.Parties[pid] = { leaderId }
+            leader.PartyId = pid
+        end
+        local list = self.Parties[pid]
+        if #list >= self.MaxMembers then return end
+        table.insert(list, memberId)
+        member.PartyId = pid
+        self:Refresh(pid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Leave(string userId)
+        local s = self:Social(userId)
+        local pid = 0
+        if s ~= nil then pid = s.PartyId end
+        if pid == 0 then
+            for id, list in pairs(self.Parties) do
+                for _, u in ipairs(list) do if u == userId then pid = id end end
+            end
+        end
+        local list = self.Parties[pid]
+        if list == nil then return end
+        for i = #list, 1, -1 do if list[i] == userId then table.remove(list, i) end end
+        if s ~= nil then
+            s.PartyId = 0
+            s.PartyDigest = ""
+        end
+        if #list <= 1 then
+            for _, u in ipairs(list) do
+                local o = self:Social(u)
+                if o ~= nil then
+                    o.PartyId = 0
+                    o.PartyDigest = ""
+                end
+            end
+            self.Parties[pid] = nil
+        else
+            self:Refresh(pid)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Refresh(integer pid)
+        -- 파티원 목록 요약 "userId|이름|레벨;..." 을 모두에게
+        local list = self.Parties[pid]
+        if list == nil then return end
+        local parts = {}
+        for _, u in ipairs(list) do
+            local p = _UserService:GetUserEntityByUserId(u)
+            if isvalid(p) then
+                ---@type PlayerStats
+                local st = p:GetComponent("script.PlayerStats")
+                local lv = 1
+                if st ~= nil then lv = st.Level end
+                table.insert(parts, u .. "|" .. p.PlayerComponent.Nickname .. "|" .. tostring(lv))
+            end
+        end
+        local digest = table.concat(parts, ";")
+        for _, u in ipairs(list) do
+            local s = self:Social(u)
+            if s ~= nil then s.PartyDigest = digest end
+        end
+    end
+
     @ExecSpace("ServerOnly")
     method boolean ShareKill(Entity killer, Entity monster, integer monLevel, integer grade)
-        -- 파티가 없으면 false → 처치자 혼자 받는다
-        return false
+        -- 근처 파티원이 2명 이상이면 경험치를 나눠 주고 true
+        if not isvalid(killer) then return false end
+        ---@type PlayerSocial
+        local s = killer:GetComponent("script.PlayerSocial")
+        if s == nil or s.PartyId == 0 then return false end
+        local list = self.Parties[s.PartyId]
+        if list == nil then return false end
+        local m = monster.TransformComponent.WorldPosition
+        local near = {}
+        local levelSum = 0
+        for _, u in ipairs(list) do
+            local p = _UserService:GetUserEntityByUserId(u)
+            if isvalid(p) and p.CurrentMap == monster.CurrentMap and not p.PlayerComponent:IsDead() then
+                local q = p.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(m.x, m.y)):Magnitude() <= self.ShareRange then
+                    ---@type PlayerStats
+                    local st = p:GetComponent("script.PlayerStats")
+                    if st ~= nil then
+                        table.insert(near, st)
+                        levelSum = levelSum + st.Level
+                    end
+                end
+            end
+        end
+        if #near < 2 then return false end
+        ---@type PlayerStats
+        local ks = killer:GetComponent("script.PlayerStats")
+        local base = ks:ExpForKill(monLevel, grade)
+        local total = base * (1 + 0.35 * (#near - 1))
+        for _, st in ipairs(near) do st:GainExp(math.max(1, math.floor(total * st.Level / levelSum))) end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        self:Leave(event.UserId)
     end
 
 end

@@ -1,4 +1,6 @@
--- 의뢰 목록 (순서대로 진행). kind: kill(원본 몬스터 처치) / extract(그림자 추출 성공)
+-- 영역 1 「잿빛 변경」 의뢰 6종 (docs/design/07-world-maps-and-quests.md 5.2). 순서대로 진행한다.
+-- kind: kill(원본 몬스터 처치) / extract(그림자 추출 성공) / reach(QuestMarker 도달)
+-- reward: "rune:r_as,item:lamp1|0|1|희미한 등불||2|,skp:1,stp:5,gen:2" (룬·지정 아이템·스킬/능력치 포인트·등급 장비)
 @Logic
 script QuestData extends Logic
 
@@ -9,11 +11,13 @@ script QuestData extends Logic
         if self.Built then return end
         self.Built = true
         self.List = {}
-        self:Add("들쥐 소탕", "사냥터의 잿빛 들쥐 8마리를 처치하라.", "kill", "mob-568", 8, 150, 100, "")
-        self:Add("첫 번째 그림자", "쓰러뜨린 적의 혼에서 그림자 3기를 추출하라. (E 키)", "extract", "", 3, 200, 150, "rune")
-        self:Add("이끼 망령 정화", "이끼 망령 8마리를 처치하라.", "kill", "mob-1955", 8, 300, 200, "")
-        self:Add("파수꾼의 무덤", "무덤 파수꾼 4마리를 처치하라.", "kill", "mob-1209", 4, 500, 300, "item")
-        self:Add("부패한 버섯왕", "사냥터 깊은 곳의 부패한 버섯왕을 쓰러뜨려라.", "kill", "mob-6130101", 1, 1500, 1000, "rare")
+        self:Add("첫 번째 군령", "피 묻은 황무지의 지옥견을 쓰러뜨리고, 남은 혼에서 그림자 1기를 추출하라. (E 키)", "extract", "", 1, 80, 50,
+            "item:lamp1|0|1|희미한 등불||2|,rune:r_as")
+        self:Add("굶주린 구덩이", "썩은 갈대 늪의 무덤 구더기 10마리를 처치하라.", "kill", "graveworm", 10, 250, 120, "skp:1")
+        self:Add("사라진 병사의 유물", "무너진 형장을 떠도는 잿빛 망자병 8마리를 처치하고 유물을 되찾아라.", "kill", "ashen_dead", 8, 400, 200, "gen:2")
+        self:Add("숲의 속삭임", "교수대 숲 어딘가에 버려진 피의 제단을 찾아라.", "reach", "blood_altar", 1, 300, 100, "stp:5")
+        self:Add("묘지기의 무덤", "교수대 숲의 「목 없는 처형인」을 처치하라.", "kill", "headsman", 1, 700, 400, "rune:r_ireun,skp:1")
+        self:Add("묘지기 여왕", "지하 납골당 가장 깊은 곳, 여왕의 무덤에서 묘지기 여왕을 쓰러뜨려라.", "kill", "grave_queen", 1, 2000, 1500, "gen:3,skp:1")
     end
 
     method void Add(string title, string desc, string kind, string target, integer count, integer exp, integer gold, string reward)
@@ -28,6 +32,21 @@ script QuestData extends Logic
     method integer Count()
         self:Build()
         return #self.List
+    end
+
+    method string RewardText(string reward)
+        -- 보상 문자열 → 표시용
+        local parts = {}
+        for key, val in string.gmatch(reward, "(%a+):([^,]+)") do
+            if key == "rune" then
+                local r = _ItemData:GetRune(val)
+                table.insert(parts, (r ~= nil and r.name or val) .. " 룬")
+            elseif key == "item" then table.insert(parts, _ItemData:Parse(val).name)
+            elseif key == "skp" then table.insert(parts, "스킬 포인트 " .. val)
+            elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
+            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
+        end
+        return table.concat(parts, ", ")
     end
 
 end

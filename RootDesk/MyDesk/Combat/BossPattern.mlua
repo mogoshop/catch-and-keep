@@ -9,12 +9,13 @@ script BossPattern extends Component
     property number SlamRadius = 2.2
     property number SlamDamage = 22
     property number EngageRange = 5
-    property string MinionModelId = "fieldmob568"
+    property string MinionModelId = "graveworm"
     property integer MinionCount = 3
 
     property number SlamTimer = 3
     property boolean Enraged = false
     property boolean WasDead = false
+    property number EngageStart = 0        -- 처음 플레이어와 마주친 시각 (처치 시간 랭킹)
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
@@ -26,10 +27,12 @@ script BossPattern extends Component
             self.WasDead = monster.IsDead
             self.Enraged = false
             self.SlamTimer = 3
+            self.EngageStart = 0
             return
         end
         self.WasDead = false
         if not self:AnyPlayerNear() then return end
+        if self.EngageStart <= 0 then self.EngageStart = _UtilLogic.ElapsedSeconds end
         if not self.Enraged and monster.Hp <= monster.MaxHp * 0.5 then
             self.Enraged = true
             self:SummonMinions()

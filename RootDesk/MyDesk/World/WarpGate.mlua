@@ -7,6 +7,7 @@ script WarpGate extends Component
     property string Label = ""
     property number Radius = 0.6
     property number Cooldown = 2
+    property string OwnerUserId = ""      -- 귀환 포털: 주인이 들어가면 사라진다 (다른 사람·파티원도 이용 가능)
 
     property integer TimerId = 0
     property table LastWarp = {}
@@ -51,6 +52,9 @@ script WarpGate extends Component
         if owner ~= nil then owner:RecallAll() end
         log("[WarpGate] " .. player.Name .. " → " .. self.TargetMap)
         _TeleportService:TeleportToMapPosition(player, Vector3(self.TargetPos.x, self.TargetPos.y, 0), self.TargetMap)
+        if self.OwnerUserId ~= "" and player.PlayerComponent.UserId == self.OwnerUserId then
+            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, 0.5)
+        end
     end
 
 end

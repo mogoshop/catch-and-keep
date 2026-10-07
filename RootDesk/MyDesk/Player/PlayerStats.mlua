@@ -33,6 +33,10 @@ script PlayerStats extends Component
     property number MaxMana = 25
     @Sync
     property integer Gold = 0
+    @Sync
+    property integer Difficulty = 0        -- 0 보통 / 1 악몽 / 2 지옥 (DifficultySystem)
+    @Sync
+    property integer MaxDifficulty = 0     -- 개방된 최고 난이도
 
     -- 장비가 주는 추가치 (PlayerInventory.ApplyEquipment가 갱신). 능력치 창 표시용으로 동기화
     @Sync
@@ -63,6 +67,27 @@ script PlayerStats extends Component
     property number BonusGF = 0
     @Sync
     property number BonusRegen = 0
+    -- 속성: 장비가 주는 무기 속성 피해와 저항 (저항은 난이도 페널티 적용, 상한 75)
+    @Sync
+    property string ElemDamage = ""        -- "fire=6,cold=4,light=7,poison=10"
+    @Sync
+    property integer ResFire = 0
+    @Sync
+    property integer ResCold = 0
+    @Sync
+    property integer ResLight = 0
+    @Sync
+    property integer ResPoison = 0
+    @Sync
+    property integer BonusDeploy = 0       -- 배치 한도 (룬워드, 합산 최대 +2)
+    @Sync
+    property number BonusLeech = 0         -- 생명력 흡수 %
+    @Sync
+    property number BonusMs = 0            -- 이동 속도 %
+    @Sync
+    property number BonusCurse = 0         -- 저주 범위 %
+    @Sync
+    property number BonusMinionPoison = 0  -- 소환수 공격에 독 (초당)
 
     property integer RegenTimer = 0
 
@@ -111,7 +136,7 @@ script PlayerStats extends Component
         local pc = self.Entity.PlayerComponent
         if pc.Hp <= 0 then return end
         self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * 0.02 + (self.Ene + self.BonusEne) * 0.02)
-        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)) + self.BonusRegen)
+        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)) + math.floor(self.BonusRegen))
     end
 
     @ExecSpace("ServerOnly")
@@ -156,8 +181,64 @@ script PlayerStats extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method integer LoseExp(number pct)
+        -- 사망 경험치 손실 (D2: 악몽 5%, 지옥 10%). 현재 레벨 구간 안에서만 잃는다 (레벨은 내려가지 않음)
+        if pct <= 0 then return 0 end
+        local loss = math.floor(self.ExpToNext * pct / 100)
+        loss = math.min(loss, self.Exp)
+        self.Exp = self.Exp - loss
+        return loss
+    end
+
+    @ExecSpace("ServerOnly")
     method void AddGold(integer amount)
         self.Gold = math.max(0, self.Gold + amount)
+    end
+
+    method void SetResists(number fire, number cold, number light, number poison)
+        -- 난이도 페널티 (03장 5절: 보통 0 / 악몽 -30 / 지옥 -60), 상한 75, 하한 -100
+        local penalty = 0
+        if self.Difficulty == 1 then penalty = 30 elseif self.Difficulty >= 2 then penalty = 60 end
+        self.ResFire = math.floor(math.max(-100, math.min(75, fire - penalty)))
+        self.ResCold = math.floor(math.max(-100, math.min(75, cold - penalty)))
+        self.ResLight = math.floor(math.max(-100, math.min(75, light - penalty)))
+        self.ResPoison = math.floor(math.max(-100, math.min(75, poison - penalty)))
+    end
+
+    property number ChillUntil = 0
+    property number ChillBase = 0
+
+    @ExecSpace("ServerOnly")
+    method void ApplyChill(number seconds)
+        -- 냉기 둔화: 이동 속도 ×0.6 (냉기 저항만큼 시간 감소)
+        local movement = self.Entity.MovementComponent
+        if not isvalid(movement) then return end
+        local dur = seconds * math.max(0.2, 1 - self.ResCold / 100)
+        if self.ChillUntil <= _UtilLogic.ElapsedSeconds then
+            self.ChillBase = movement.InputSpeed
+            movement.InputSpeed = movement.InputSpeed * 0.6
+        end
+        self.ChillUntil = _UtilLogic.ElapsedSeconds + dur
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ElapsedSeconds >= self.ChillUntil and self.ChillBase > 0 then
+                self.Entity.MovementComponent.InputSpeed = self.ChillBase
+                self.ChillBase = 0
+            end
+        end, dur + 0.05)
+    end
+
+    method number GetResist(string element)
+        if element == "fire" then return self.ResFire end
+        if element == "cold" then return self.ResCold end
+        if element == "light" then return self.ResLight end
+        if element == "poison" then return self.ResPoison end
+        return 0
+    end
+
+    method number GetElemDamage(string element)
+        local v = string.match("," .. self.ElemDamage, "," .. element .. "=([%d%.]+)")
+        if v == nil then return 0 end
+        return tonumber(v)
     end
 
     method number GetMeleeDamage(number baseDamage)
@@ -187,6 +268,7 @@ script PlayerStats extends Component
     @ExecSpace("Client")
     method void NotifyLevelUp(integer level)
         _ScreenMessageLogic:PrivateMsg("레벨 업! Lv " .. tostring(level) .. "  (능력치 +5, 스킬 +1)")
+        _SoundService:PlaySound(_SoundDirector.SfxLevelUp, 0.8)
         _ParticleService:PlayBasicParticle(BasicParticleType.Buff, self.Entity, self.Entity.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, nil)
     end
 
@@ -194,7 +276,7 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { lv = self.Level, exp = self.Exp, str = self.Str, dex = self.Dex, vit = self.Vit, ene = self.Ene, sp = self.StatPoints, skp = self.SkillPoints, gold = self.Gold }
+        return { lv = self.Level, exp = self.Exp, str = self.Str, dex = self.Dex, vit = self.Vit, ene = self.Ene, sp = self.StatPoints, skp = self.SkillPoints, gold = self.Gold, diff = self.Difficulty, maxDiff = self.MaxDifficulty }
     end
 
     @ExecSpace("ServerOnly")
@@ -209,6 +291,8 @@ script PlayerStats extends Component
         self.StatPoints = d.sp or 0
         self.SkillPoints = d.skp or 0
         self.Gold = d.gold or 0
+        self.Difficulty = d.diff or 0
+        self.MaxDifficulty = d.maxDiff or 0
         self.ExpToNext = self:CalcExpToNext(self.Level)
         self:Recalculate(true)
     end

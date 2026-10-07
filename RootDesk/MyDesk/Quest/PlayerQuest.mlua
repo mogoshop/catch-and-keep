@@ -25,11 +25,18 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void OnReach(string markerId)
+        local q = _QuestData:Get(self.Index)
+        if q == nil or self.State ~= 1 or q.kind ~= "reach" or q.target ~= markerId then return end
+        self:Advance(q)
+    end
+
+    @ExecSpace("ServerOnly")
     method void Advance(table q)
         self.Progress = math.min(q.count, self.Progress + 1)
         if self.Progress >= q.count then
             self.State = 2
-            self:Notify("의뢰 완료: " .. q.title .. " — 마을의 노인에게 보고하라", self.Entity.PlayerComponent.UserId)
+            self:Notify("의뢰 완료: " .. q.title .. " — 사제 오렌에게 보고하라", self.Entity.PlayerComponent.UserId)
         end
     end
 
@@ -78,14 +85,19 @@ script PlayerQuest extends Component
             stats:GainExp(q.exp)
             stats:AddGold(q.gold)
         end
-        if inv ~= nil then
-            local lv = 1
-            if stats ~= nil then lv = stats.Level end
-            if q.reward == "rune" then inv:AddItem(_ItemData:MakeRune(lv + 4))
-            elseif q.reward == "item" then inv:AddItem(_ItemData:Generate(lv + 2, 2, 100))
-            elseif q.reward == "rare" then inv:AddItem(_ItemData:Generate(lv + 3, 3, 300)) end
+        local lv = 1
+        if stats ~= nil then lv = stats.Level end
+        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
+            if key == "rune" and inv ~= nil then
+                local r = _ItemData:GetRune(val)
+                if r ~= nil then inv:AddItem(val .. "|0|" .. tostring(lv) .. "|" .. r.name .. " 룬||0|") end
+            elseif key == "item" and inv ~= nil then inv:AddItem(val)
+            elseif key == "gen" and inv ~= nil then inv:AddItem(_ItemData:Generate(lv + 2, tonumber(val), 300))
+            elseif key == "skp" and stats ~= nil then stats.SkillPoints = stats.SkillPoints + tonumber(val)
+            elseif key == "stp" and stats ~= nil then stats.StatPoints = stats.StatPoints + tonumber(val) end
         end
-        self:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold), self.Entity.PlayerComponent.UserId)
+        local rewardText = _QuestData:RewardText(q.reward)
+        self:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title)
         self.Index = self.Index + 1
         self.State = 0

@@ -182,11 +182,14 @@ script ShadowOwner extends Component
 
     method integer GetDeployBonus()
         -- 배치 확장: 1·8·16레벨에 +1씩 (최대 +3). 절대 상한은 ShadowConfig.HardCap
+        -- + 장비(룬워드 「첫 번째 군령」 등) 최대 +2
         local lv = self:GetSkillLevel("deploy_expand")
-        if lv >= 16 then return 3 end
-        if lv >= 8 then return 2 end
-        if lv >= 1 then return 1 end
-        return 0
+        local bonus = 0
+        if lv >= 16 then bonus = 3 elseif lv >= 8 then bonus = 2 elseif lv >= 1 then bonus = 1 end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil then bonus = bonus + stats.BonusDeploy end
+        return bonus
     end
 
     @ExecSpace("ServerOnly")

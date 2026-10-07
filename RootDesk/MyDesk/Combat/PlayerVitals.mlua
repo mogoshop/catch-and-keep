@@ -1,16 +1,21 @@
 -- 플레이어 피격·사망·부활. DefaultPlayer 모델에 붙는다.
--- 기본 템플릿의 PlayerHit 역할을 Phase 0에 필요한 만큼만 대신한다.
+-- 사망 규칙은 디아블로2와 같다:
+--   골드: 보유 골드의 (레벨)% 손실, 최대 20%
+--   장비: 착용 장비 전부가 죽은 자리의 시체에 남고, 마을에서 맨몸으로 부활한다. 시체에 다가가면 되찾는다
+--   경험치: 악몽 5% / 지옥 10% 손실(레벨은 유지), 시체를 되찾으면 그중 75% 회복
 @Component
 script PlayerVitals extends Component
 
     property number InvincibleSeconds = 0.8
     property number InvincibleUntil = 0
     property boolean Dying = false
+    property string TownMap = "town"
+    property Vector2 TownPos = Vector2(0, -1.2)
 
     @ExecSpace("ServerOnly")
     @EventSender("Self")
     handler HandleHitEvent(HitEvent event)
-        -- 몬스터에게 맞았을 때만 HP를 깎는다. 짧은 무적 시간 동안은 무시
+        -- 몬스터(또는 결투 상대)에게 맞았을 때만 HP를 깎는다. 짧은 무적 시간 동안은 무시
         if self.Dying then return end
         local now = _UtilLogic.ElapsedSeconds
         if now < self.InvincibleUntil then return end
@@ -26,27 +31,69 @@ script PlayerVitals extends Component
 
     @ExecSpace("ServerOnly")
     method void Die()
-        -- 사망 → 소환수 전원 회수 → RespawnDuration 뒤 부활
+        -- 사망 → 소환수 회수 → 골드·경험치 벌칙 → 시체에 장비 → RespawnDuration 뒤 마을 부활
+        if self.Dying then return end
         self.Dying = true
         local pc = self.Entity.PlayerComponent
         self.Entity.StateComponent:ChangeState("DEAD")
         ---@type ShadowOwner
         local owner = self.Entity:GetComponent("script.ShadowOwner")
         if owner ~= nil then owner:RecallAll() end
-        log("[PlayerVitals] 사망: " .. self.Entity.Name)
-        _TimerService:SetTimerOnce(function() self:Revive() end, pc.RespawnDuration)
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        local goldLost = 0
+        local expLost = 0
+        if stats ~= nil then
+            goldLost = math.floor(stats.Gold * math.min(stats.Level, 20) / 100)
+            stats:AddGold(-goldLost)
+            local pct = 0
+            if stats.Difficulty == 1 then pct = 5 elseif stats.Difficulty >= 2 then pct = 10 end
+            expLost = stats:LoseExp(pct)
+        end
+        -- 결투(PvP) 중 사망이면 결투만 끝나고 장비는 떨구지 않는다
+        ---@type PlayerDuel
+        local duel = self.Entity:GetComponent("script.PlayerDuel")
+        local inDuel = duel ~= nil and duel:OnOwnerDied()
+        if inv ~= nil and not inDuel then
+            local p = self.Entity.TransformComponent.WorldPosition
+            inv:LeaveCorpse(Vector2(p.x, p.y), math.floor(expLost * 0.75))
+        end
+        log(string.format("[PlayerVitals] 사망 %s 골드 -%d 경험치 -%d", self.Entity.Name, goldLost, expLost))
+        self:NotifyDeath(goldLost, expLost, inDuel, pc.UserId)
+        _TimerService:SetTimerOnce(function() self:Revive(inDuel) end, pc.RespawnDuration)
     end
 
     @ExecSpace("ServerOnly")
-    method void Revive()
-        -- 부활 지점에서 HP를 채워 다시 시작
+    method void Revive(boolean inPlace)
+        -- 마을에서 HP를 채워 다시 시작 (결투 패배는 제자리)
         if not isvalid(self.Entity) then return end
         local pc = self.Entity.PlayerComponent
         pc:Respawn()
         pc.Hp = pc.MaxHp
         self.Dying = false
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + 2
+        if not inPlace then
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            local diff = 0
+            if stats ~= nil then diff = stats.Difficulty end
+            local town = _WaypointData:MapFor(self.TownMap, diff)
+            _TeleportService:TeleportToMapPosition(self.Entity, Vector3(self.TownPos.x, self.TownPos.y, 0), town)
+        end
         log("[PlayerVitals] 부활: " .. self.Entity.Name)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyDeath(integer goldLost, integer expLost, boolean inDuel)
+        if inDuel then
+            _ScreenMessageLogic:PrivateMsg("결투에서 패배했다")
+            return
+        end
+        local text = "사망했다... 골드 " .. tostring(goldLost) .. " 손실. 장비는 시체에 남았다"
+        if expLost > 0 then text = text .. " (경험치 " .. tostring(expLost) .. " 손실, 시체를 찾으면 75% 회복)" end
+        _ScreenMessageLogic:PrivateMsg(text)
     end
 
 end

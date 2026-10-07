@@ -52,6 +52,8 @@ script ShadowSystem extends Logic
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         if quest ~= nil then quest:OnKill(sourceId) end
+        -- 마지막 보스(현재는 영역 1의 묘지기 여왕): 같은 맵의 모두에게 다음 난이도 개방 + 처치 시간 랭킹
+        if sourceId == "grave_queen" then self:OnFinalBossKilled(monster) end
         -- 원본 몬스터의 대기·이동 스프라이트를 혼과 그림자 외형으로 쓴다
         local standRuid = ""
         local moveRuid = ""
@@ -71,12 +73,45 @@ script ShadowSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void OnFinalBossKilled(Entity boss)
+        local map = boss.CurrentMap
+        if not isvalid(map) then return end
+        local diff = 0
+        ---@type MapAmbience
+        local amb = map:GetComponent("script.MapAmbience")
+        if amb ~= nil then diff = amb.Difficulty end
+        ---@type BossPattern
+        local pattern = boss:GetComponent("script.BossPattern")
+        local seconds = 0
+        if pattern ~= nil and pattern.EngageStart > 0 then seconds = math.floor(_UtilLogic.ElapsedSeconds - pattern.EngageStart) end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return end
+        for _, u in ipairs(users) do
+            ---@type PlayerStats
+            local st = u:GetComponent("script.PlayerStats")
+            if st ~= nil and diff < 2 and st.MaxDifficulty <= diff then
+                st.MaxDifficulty = diff + 1
+                self:NotifyUnlock(diff + 1, u.PlayerComponent.UserId)
+            end
+            if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
+        end
+    end
+
+    @ExecSpace("Client")
+    method void NotifyUnlock(integer diff)
+        local names = { "악몽", "지옥" }
+        _ScreenMessageLogic:PrivateMsg((names[diff] or "") .. " 난이도가 열렸다! 웨이포인트에서 난이도를 바꿀 수 있다")
+    end
+
+    @ExecSpace("ServerOnly")
     method void GrantKillRewards(Entity player, Entity monster, integer monLevel, integer grade)
         -- 경험치 + 드롭. 파티가 있으면 PartySystem이 근처 파티원에게 나눈다
-        if _PartySystem ~= nil and _PartySystem:ShareKill(player, monster, monLevel, grade) then return end
-        ---@type PlayerStats
-        local stats = player:GetComponent("script.PlayerStats")
-        if stats ~= nil then stats:GainExp(stats:ExpForKill(monLevel, grade)) end
+        -- 경험치: 파티면 PartySystem이 근처 파티원에게 나눈다. 드롭은 항상 처치자 기준 (개인 전리품)
+        if not _PartySystem:ShareKill(player, monster, monLevel, grade) then
+            ---@type PlayerStats
+            local stats = player:GetComponent("script.PlayerStats")
+            if stats ~= nil then stats:GainExp(stats:ExpForKill(monLevel, grade)) end
+        end
         if _LootSystem ~= nil then _LootSystem:RollDrops(monster, monLevel, grade, player) end
     end
 

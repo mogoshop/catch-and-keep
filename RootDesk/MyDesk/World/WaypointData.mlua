@@ -1,0 +1,41 @@
+-- 웨이포인트 목록 (D2 방식: 밟아서 활성화, 아무 웨이포인트에서나 활성화한 곳으로 이동).
+-- 난이도별 맵은 접미사(_nm, _hell)가 붙고, 같은 웨이포인트 id를 공유한다.
+@Logic
+script WaypointData extends Logic
+
+    property table List = {}
+    property boolean Built = false
+
+    method void Build()
+        if self.Built then return end
+        self.Built = true
+        self.List = {}
+        -- id, 이름, 맵(보통 난이도 기준), 도착 위치
+        self:Add("camp", "잿불 야영지", "town", 0, -1.2)
+        self:Add("execution", "무너진 형장", "execution", -3.2, -2)
+        self:Add("crypt1", "지하 납골당 1층", "crypt1", -3.2, -2)
+    end
+
+    method void Add(string id, string name, string map, number x, number y)
+        table.insert(self.List, { id = id, name = name, map = map, x = x, y = y })
+    end
+
+    method any Get(string id)
+        self:Build()
+        for _, w in ipairs(self.List) do if w.id == id then return w end end
+        return nil
+    end
+
+    method table GetList()
+        self:Build()
+        return self.List
+    end
+
+    method string MapFor(string baseMap, integer difficulty)
+        -- 난이도별 맵 이름 (보통 = 그대로)
+        if difficulty == 1 then return baseMap .. "_nm" end
+        if difficulty >= 2 then return baseMap .. "_hell" end
+        return baseMap
+    end
+
+end

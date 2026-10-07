@@ -221,6 +221,17 @@ script ShadowUnit extends AttackComponent
         return self.Atk
     end
 
+    method void OnAttack(Entity defender)
+        -- 주인 장비의 「소환수 독」(룬워드 「무덤의 속삭임」): 맞은 몬스터에 3초 독
+        if not self:IsServer() or not isvalid(self.OwnerPlayer) then return end
+        ---@type PlayerStats
+        local stats = self.OwnerPlayer:GetComponent("script.PlayerStats")
+        if stats == nil or stats.BonusMinionPoison <= 0 then return end
+        ---@type ShadowMonster
+        local monster = defender:GetComponent("script.ShadowMonster")
+        if monster ~= nil and not monster.IsDead then monster:ApplyPoison(stats.BonusMinionPoison, 3, self.OwnerPlayer) end
+    end
+
     method boolean IsAttackTarget(Entity defender, string attackInfo)
         -- 살아 있는 몬스터만 때린다 (플레이어·다른 그림자 제외)
         ---@type ShadowMonster

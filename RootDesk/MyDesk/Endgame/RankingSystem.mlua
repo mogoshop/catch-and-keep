@@ -1,0 +1,94 @@
+-- 랭킹 (11장: 최고 심도 층, 보스 처치 시간). SortableDataStorage에 기록하고, 이름은 GlobalDataStorage에 따로 둔다.
+-- 비용 규칙(datastorage.md): 기록이 좋아졌을 때만 쓴다. 조회는 창을 열 때만, 서버에서 60초 캐시.
+@Logic
+script RankingSystem extends Logic
+
+    property string NameStore = "rank_names"
+    property table Cache = {}            -- board → { at, digest }
+    property table Known = {}            -- board|userId → 이번 세션에 확인한 기록 (중복 조회 방지)
+
+    @ExecSpace("ServerOnly")
+    method string BoardName(string kind, integer diff)
+        return "rank_" .. kind .. "_" .. tostring(diff)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecordDepth(Entity player, integer diff, integer floor)
+        -- 높을수록 좋음
+        self:Record(player, self:BoardName("depth", diff), floor, false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecordBossTime(Entity player, integer diff, integer seconds)
+        -- 짧을수록 좋음
+        self:Record(player, self:BoardName("queen", diff), seconds, true)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Record(Entity player, string board, integer value, boolean lowerIsBetter)
+        if not isvalid(player) then return end
+        local pc = player.PlayerComponent
+        local key = pc.ProfileCode
+        local cacheKey = board .. "|" .. key
+        local best = self.Known[cacheKey]
+        local ds = _DataStorageService:GetSortableDataStorage(board)
+        if best == nil then
+            local code, v = ds:GetAndWait(key)
+            if code == 0 then best = v elseif code ~= 1000002 then return end
+        end
+        local better = best == nil or (lowerIsBetter and value < best) or (not lowerIsBetter and value > best)
+        if not better then return end
+        self.Known[cacheKey] = value
+        ds:SetAsync(key, value, function(code, k)
+            if code ~= 0 then log_warning("[RankingSystem] 기록 실패 " .. tostring(code)) end
+        end)
+        _DataStorageService:GetGlobalDataStorage(self.NameStore):SetAsync(key, pc.Nickname, nil)
+        self.Cache[board] = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method string GetTop(string board, boolean ascending)
+        -- 상위 10명 "이름|값;..." (60초 캐시)
+        local c = self.Cache[board]
+        if c ~= nil and _UtilLogic.ElapsedSeconds - c.at < 60 then return c.digest end
+        local ds = _DataStorageService:GetSortableDataStorage(board)
+        local dir = SortDirection.Descending
+        if ascending then dir = SortDirection.Ascending end
+        local code, pages = ds:GetSortedAndWait(dir, 1, 999999)
+        local rows = {}
+        if code == 0 then
+            local datas = pages:GetCurrentPageDatas()
+            if datas ~= nil then
+                for i = 1, math.min(10, #datas) do table.insert(rows, { key = datas[i].KeyInfo.Key, value = datas[i].Value }) end
+            end
+        end
+        local keys = {}
+        for _, r in ipairs(rows) do table.insert(keys, r.key) end
+        local names = {}
+        if #keys > 0 then
+            local ncode, npages = _DataStorageService:GetGlobalDataStorage(self.NameStore):BatchGetAndWait(keys)
+            if ncode == 0 then
+                local nd = npages:GetCurrentPageDatas()
+                if nd ~= nil then for i = 1, #nd do names[nd[i].KeyInfo.Key] = nd[i].Value end end
+            end
+        end
+        local parts = {}
+        for _, r in ipairs(rows) do table.insert(parts, (names[r.key] or "?") .. "|" .. tostring(r.value)) end
+        local digest = table.concat(parts, ";")
+        self.Cache[board] = { at = _UtilLogic.ElapsedSeconds, digest = digest }
+        return digest
+    end
+
+    @ExecSpace("Server")
+    method void RequestBoard(string kind, integer diff)
+        -- 클라이언트 랭킹 창 → 결과는 그 사람에게만
+        local digest = self:GetTop(self:BoardName(kind, diff), kind == "queen")
+        self:ShowBoard(kind, diff, digest, senderUserId)
+    end
+
+    @ExecSpace("Client")
+    method void ShowBoard(string kind, integer diff, string digest)
+        _GameHUD:OnRankingData(kind, diff, digest)
+    end
+
+end

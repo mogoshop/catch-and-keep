@@ -4,6 +4,9 @@
 script MonsterAttack extends AttackComponent
 
     property integer Damage = 8
+    property integer BaseDamage = 0       -- 스포너가 레벨 보정할 때 기준값
+    property string Element = ""          -- 공격 속성 (fire/cold/light/poison). 피해 중 ElementRatio만큼이 그 속성
+    property number ElementRatio = 0.5
     property number AttackRange = 0.8
     property number AttackRadius = 0.5
     property number AttackCooldown = 1.5
@@ -75,11 +78,42 @@ script MonsterAttack extends AttackComponent
         local monster = self.Entity:GetComponent("script.ShadowMonster")
         if monster ~= nil then dmg = dmg * monster:GetDamageDealtMultiplier() end
         if isvalid(defender.PlayerComponent) then
+            -- 물리 부분은 방어로, 속성 부분은 저항으로 줄인다. 정예 인챈트는 같은 속성 피해 +50%
             ---@type PlayerStats
             local stats = defender:GetComponent("script.PlayerStats")
-            if stats ~= nil then dmg = dmg * (100 / (100 + stats.BonusDefense)) end
+            local element = self:GetElement(monster)
+            local ratio = 0
+            if element ~= "" then ratio = self.ElementRatio end
+            if monster ~= nil and monster.AffixElement ~= "" then ratio = math.min(1, ratio + 0.5) end
+            local phys = dmg * (1 - ratio)
+            local elem = dmg * ratio
+            if stats ~= nil then
+                phys = phys * (100 / (100 + stats.BonusDefense))
+                elem = elem * math.max(0, 1 - stats:GetResist(element) / 100)
+            end
+            dmg = phys + elem
         end
         return math.max(1, math.floor(dmg + 0.5))
+    end
+
+    method string GetElement(ShadowMonster monster)
+        if monster ~= nil and monster.AffixElement ~= "" then return monster.AffixElement end
+        return self.Element
+    end
+
+    method void OnAttack(Entity defender)
+        -- 냉기 공격은 플레이어를 잠시 둔화 / 특수 행동(치고 빠지기)에 알림
+        if not self:IsServer() then return end
+        ---@type ShadowMonster
+        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        if self:GetElement(monster) == "cold" and isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local stats = defender:GetComponent("script.PlayerStats")
+            if stats ~= nil then stats:ApplyChill(1.5) end
+        end
+        ---@type MonsterBehavior
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:OnAttacked(defender) end
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)

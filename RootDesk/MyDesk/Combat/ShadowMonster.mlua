@@ -8,6 +8,12 @@ script ShadowMonster extends Component
     property integer Level = 1              -- 경험치·드롭 레벨
     property string SourceId = "mob"        -- 그림자의 원본 몬스터 종류
     property number RespawnDelay = 6
+    property string Tint = ""               -- "r,g,b" 스프라이트 색조 (악마 분위기 재채색)
+    property boolean Unique = false         -- 최상위(고유 이름) 몬스터
+    property string Resists = ""            -- "fire=50,poison=75" (100 이상 = 면역)
+    property table ResistTable = {}
+    property number ChillUntil = 0
+    property number ChillBaseSpeed = 0
     property number HideDelay = 0.8
     property boolean DebugLog = false
 
@@ -37,6 +43,54 @@ script ShadowMonster extends Component
     property number BaseMaxHp = 0
     property number BaseSpeed = 0
     property number AffixDamageMult = 1
+    @Sync
+    property string AffixElement = ""      -- 불꽃/냉기/번개 인챈트: fire/cold/light
+
+    @Sync
+    property string TintSync = ""
+
+    @ExecSpace("ServerOnly")
+    method void ApplyTint()
+        -- 색조는 클라이언트에서 칠한다 (OnSyncProperty)
+        self.TintSync = self.Tint
+    end
+
+    property string AppliedTint = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 동기화된 색조가 바뀌었을 때만 칠한다 (처음 입장한 클라이언트 포함)
+        if self.TintSync == self.AppliedTint then return end
+        self.AppliedTint = self.TintSync
+        local r, g, b = string.match(self.TintSync, "([%d%.]+),([%d%.]+),([%d%.]+)")
+        local sprite = self.Entity.SpriteRendererComponent
+        if r ~= nil and isvalid(sprite) then sprite.Color = Color(tonumber(r), tonumber(g), tonumber(b), 1) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyLevel(integer level, boolean elite)
+        -- 스포너가 호출: 레벨에 맞춰 생명·공격을 올리고, 정예면 생명 ×3 + 수식어 (06장 2절)
+        self.LevelApplied = true
+        if self.BaseMaxHp <= 0 then self.BaseMaxHp = self.MaxHp end
+        if self.BaseLevel <= 0 then self.BaseLevel = self.Level end
+        local hpBase = self.BaseMaxHp / (1 + 0.3 * (self.BaseLevel - 1))
+        self.Level = level
+        if elite and self.Grade == 1 then self.Grade = 2 end
+        local gradeMult = 1
+        if self.Grade == 2 and not self.Unique then gradeMult = 3 end
+        self.BaseMaxHp = hpBase * (1 + 0.3 * (level - 1)) * gradeMult
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil then
+            if atk.BaseDamage <= 0 then atk.BaseDamage = atk.Damage end
+            atk.Damage = math.floor(atk.BaseDamage * (1 + 0.2 * (level - self.BaseLevel)) + 0.5)
+        end
+        self:RollAffix()
+        self.Hp = self.MaxHp
+    end
+
+    property integer BaseLevel = 0
+    property boolean LevelApplied = false
 
     @ExecSpace("ServerOnly")
     method void RollAffix()
@@ -48,8 +102,22 @@ script ShadowMonster extends Component
         self.AffixDamageMult = 1
         if isvalid(movement) and self.BaseSpeed > 0 then movement.InputSpeed = self.BaseSpeed end
         self.Affix = ""
+        self.AffixElement = ""
         if self.Grade ~= 2 then return end
-        local r = _UtilLogic:RandomIntegerRange(1, 3)
+        local r = _UtilLogic:RandomIntegerRange(1, 6)
+        if r == 4 then
+            self.Affix = "불꽃 인챈트"
+            self.AffixElement = "fire"
+            return
+        elseif r == 5 then
+            self.Affix = "냉기 인챈트"
+            self.AffixElement = "cold"
+            return
+        elseif r == 6 then
+            self.Affix = "번개 인챈트"
+            self.AffixElement = "light"
+            return
+        end
         if r == 1 then
             self.Affix = "강인한"
             self.MaxHp = self.BaseMaxHp * 1.7
@@ -75,6 +143,38 @@ script ShadowMonster extends Component
             self.WeakenUntil = now + duration
             self.CurseTag = "쇠약"
         end
+    end
+
+    method number GetResist(string element)
+        -- 종족 저항 (+ 정예 인챈트는 같은 속성 저항 +50)
+        if self.ResistTable == nil or self.ResistParsed ~= self.Resists then
+            self.ResistTable = {}
+            for k, v in string.gmatch(self.Resists, "(%a+)=(%-?%d+)") do self.ResistTable[k] = tonumber(v) end
+            self.ResistParsed = self.Resists
+        end
+        local r = self.ResistTable[element] or 0
+        if self.AffixElement ~= "" and self.AffixElement == element then r = r + 50 end
+        return r
+    end
+
+    property string ResistParsed = "?"
+
+    @ExecSpace("ServerOnly")
+    method void ApplyChill(number seconds)
+        -- 냉기 둔화: 이동 속도 절반
+        local movement = self.Entity.MovementComponent
+        if not isvalid(movement) or self:GetResist("cold") >= 100 then return end
+        if self.ChillUntil <= _UtilLogic.ElapsedSeconds then
+            self.ChillBaseSpeed = movement.InputSpeed
+            movement.InputSpeed = movement.InputSpeed * 0.5
+        end
+        self.ChillUntil = _UtilLogic.ElapsedSeconds + seconds
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ElapsedSeconds >= self.ChillUntil and self.ChillBaseSpeed > 0 then
+                self.Entity.MovementComponent.InputSpeed = self.ChillBaseSpeed
+                self.ChillBaseSpeed = 0
+            end
+        end, seconds + 0.05)
     end
 
     method number GetDamageTakenMultiplier()
@@ -106,7 +206,7 @@ script ShadowMonster extends Component
             self.PoisonDps = 0
             return
         end
-        self:TakeDamage(self.PoisonDps * 0.5, self.PoisonSource)
+        self:TakeDamage(self.PoisonDps * 0.5 * math.max(0, 1 - self:GetResist("poison") / 100), self.PoisonSource)
     end
 
     @ExecSpace("ServerOnly")
@@ -121,7 +221,17 @@ script ShadowMonster extends Component
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 리스폰 위치를 기억하고 HP를 채운다
+        self:ApplyTint()
         self:RollAffix()
+        -- 맵에 고정 배치된 몬스터(최상위·보스)는 맵의 난이도 레벨 가산을 받는다 (스포너 몬스터는 스포너가 처리)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or self.LevelApplied then return end
+            local map = self.Entity.CurrentMap
+            if not isvalid(map) then return end
+            ---@type MapAmbience
+            local amb = map:GetComponent("script.MapAmbience")
+            if amb ~= nil and amb.LevelBonus > 0 then self:ApplyLevel(self.Level + amb.LevelBonus, false) end
+        end, 0.3)
         self.Hp = self.MaxHp
         local pos = self.Entity.TransformComponent.WorldPosition
         self.SpawnPosition = Vector2(pos.x, pos.y)
@@ -161,6 +271,7 @@ script ShadowMonster extends Component
         end
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("DEAD") end
+        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
         _ShadowSystem:OnMonsterKilled(self.Entity, self.LastAttacker, self.SourceId, self.Grade)
         _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
         if self.RespawnDelay < 0 then
@@ -169,6 +280,12 @@ script ShadowMonster extends Component
             return
         end
         _TimerService:SetTimerOnce(function() self:Respawn() end, self.RespawnDelay)
+    end
+
+    @ExecSpace("Multicast")
+    method void PlayDeathSound(Vector3 pos)
+        local me = _UserService.LocalPlayer
+        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_SoundDirector.SfxDeath, pos, me, 0.6) end
     end
 
     @ExecSpace("ServerOnly")

@@ -1,0 +1,221 @@
+-- 거래 (D2 거래창): 올린 아이템은 서버 보관(에스크로)으로 옮겨 두고, 두 사람 모두 확인하면 한 번에 교환한다.
+-- 내용이 바뀌면 양쪽 확인이 풀린다. 취소·접속 종료·맵 이동이면 올린 물건은 주인 가방으로 돌아간다.
+-- 룬워드 완성 장비는 귀속이라 올릴 수 없다 (룬 v0.2).
+@Component
+script PlayerTrade extends Component
+
+    @Sync
+    property string Partner = ""
+    @Sync
+    property string MyOffer = ""          -- 올린 아이템 ";"
+    @Sync
+    property integer MyGold = 0
+    @Sync
+    property boolean MyConfirm = false
+    @Sync
+    property string TheirOffer = ""
+    @Sync
+    property integer TheirGold = 0
+    @Sync
+    property boolean TheirConfirm = false
+    property table Escrow = {}
+    property integer TimerId = 0
+    property integer MaxItems = 8
+
+    @ExecSpace("ServerOnly")
+    method void Start(string partnerUserId)
+        self.Partner = partnerUserId
+        self.Escrow = {}
+        self.MyOffer = ""
+        self.MyGold = 0
+        self.MyConfirm = false
+        self.TheirOffer = ""
+        self.TheirGold = 0
+        self.TheirConfirm = false
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method PlayerTrade Other()
+        local p = _UserService:GetUserEntityByUserId(self.Partner)
+        if not isvalid(p) then return nil end
+        ---@type PlayerTrade
+        local t = p:GetComponent("script.PlayerTrade")
+        return t
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        local p = _UserService:GetUserEntityByUserId(self.Partner)
+        if not isvalid(p) or p.CurrentMap ~= self.Entity.CurrentMap then self:Cancel("거래가 취소되었다") end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Changed()
+        -- 내용 변경 → 확인 해제, 상대 화면 갱신
+        self.MyOffer = table.concat(self.Escrow, ";")
+        self.MyConfirm = false
+        local o = self:Other()
+        if o ~= nil then
+            o.MyConfirm = false
+            o.TheirOffer = self.MyOffer
+            o.TheirGold = self.MyGold
+            o.TheirConfirm = false
+            self.TheirConfirm = false
+        end
+    end
+
+    @ExecSpace("Server")
+    method void RequestOffer(integer bagIndex)
+        -- 가방 아이템을 거래창에 올린다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.Partner == "" or #self.Escrow >= self.MaxItems then return end
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        local s = inv.Bag[bagIndex]
+        if s == nil then return end
+        if _ItemData:IsBound(s) then
+            self:Notify("귀속 아이템은 거래할 수 없다", pc.UserId)
+            return
+        end
+        table.remove(inv.Bag, bagIndex)
+        inv:RefreshDigest()
+        table.insert(self.Escrow, s)
+        self:Changed()
+    end
+
+    @ExecSpace("Server")
+    method void RequestRetract(integer index)
+        -- 올린 아이템을 다시 가방으로
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId then return end
+        local s = self.Escrow[index]
+        if s == nil then return end
+        table.remove(self.Escrow, index)
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil then
+            table.insert(inv.Bag, s)
+            inv:RefreshDigest()
+        end
+        self:Changed()
+    end
+
+    @ExecSpace("Server")
+    method void RequestGold(integer delta)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.Partner == "" then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return end
+        self.MyGold = math.max(0, math.min(stats.Gold, self.MyGold + delta))
+        self:Changed()
+    end
+
+    @ExecSpace("Server")
+    method void RequestConfirm()
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.Partner == "" then return end
+        local o = self:Other()
+        if o == nil then return end
+        self.MyConfirm = true
+        o.TheirConfirm = true
+        if o.MyConfirm then self:Complete(o) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestCancel()
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:Cancel("거래를 취소했다")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Complete(PlayerTrade o)
+        -- 서버에서 한 번에: 공간·골드 확인 → 교환 → 기록
+        ---@type PlayerInventory
+        local myInv = self.Entity:GetComponent("script.PlayerInventory")
+        ---@type PlayerInventory
+        local theirInv = o.Entity:GetComponent("script.PlayerInventory")
+        ---@type PlayerStats
+        local myStats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerStats
+        local theirStats = o.Entity:GetComponent("script.PlayerStats")
+        if myInv == nil or theirInv == nil or myStats == nil or theirStats == nil then return end
+        if #myInv.Bag + #o.Escrow > myInv.BagSize or #theirInv.Bag + #self.Escrow > theirInv.BagSize then
+            self:Notify("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
+            o:Notify("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
+            self:Changed()
+            return
+        end
+        if myStats.Gold < self.MyGold or theirStats.Gold < o.MyGold then
+            self:Changed()
+            return
+        end
+        for _, s in ipairs(o.Escrow) do table.insert(myInv.Bag, s) end
+        for _, s in ipairs(self.Escrow) do table.insert(theirInv.Bag, s) end
+        myStats:AddGold(o.MyGold - self.MyGold)
+        theirStats:AddGold(self.MyGold - o.MyGold)
+        log(string.format("[PlayerTrade] %s ↔ %s 아이템 %d/%d 골드 %d/%d", self.Entity.PlayerComponent.Nickname, o.Entity.PlayerComponent.Nickname, #self.Escrow, #o.Escrow, self.MyGold, o.MyGold))
+        self.Escrow = {}
+        o.Escrow = {}
+        myInv:RefreshDigest()
+        theirInv:RefreshDigest()
+        self:Finish("거래 완료")
+        o:Finish("거래 완료")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Cancel(string message)
+        -- 양쪽 모두 올린 물건을 돌려받고 끝
+        local o = self:Other()
+        self:ReturnEscrow()
+        self:Finish(message)
+        if o ~= nil and o.Partner == self.Entity.PlayerComponent.UserId then
+            o:ReturnEscrow()
+            o:Finish(message)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReturnEscrow()
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil then
+            for _, s in ipairs(self.Escrow) do table.insert(inv.Bag, s) end
+            inv:RefreshDigest()
+        end
+        self.Escrow = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Finish(string message)
+        if self.Partner == "" then return end
+        self.Partner = ""
+        self.MyOffer = ""
+        self.MyGold = 0
+        self.MyConfirm = false
+        self.TheirOffer = ""
+        self.TheirGold = 0
+        self.TheirConfirm = false
+        if self.TimerId ~= 0 then
+            _TimerService:ClearTimer(self.TimerId)
+            self.TimerId = 0
+        end
+        if message ~= "" then self:Notify(message, self.Entity.PlayerComponent.UserId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        -- 나나 상대가 나가면 취소 (나가는 쪽의 물건도 가방으로 돌아간 뒤 저장된다)
+        if event.UserId == self.Entity.PlayerComponent.UserId or event.UserId == self.Partner then self:Cancel("거래가 취소되었다") end
+    end
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+end

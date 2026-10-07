@@ -1,0 +1,39 @@
+-- 웨이포인트 오브젝트. 플레이어가 밟으면 그 플레이어의 PlayerTravel에 활성화를 알린다.
+-- 이동 창은 클라이언트(GameHUD)가 근처에 서 있을 때 연다.
+@Component
+script Waypoint extends Component
+
+    property string WaypointId = "camp"
+    property number Radius = 1.0
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        for _, u in ipairs(users) do
+            if isvalid(u) then
+                local q = u.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
+                    ---@type PlayerTravel
+                    local travel = u:GetComponent("script.PlayerTravel")
+                    if travel ~= nil then travel:Activate(self.WaypointId) end
+                end
+            end
+        end
+    end
+
+end

@@ -1,0 +1,130 @@
+-- 몬스터 특수 행동 (06장 4절 AI 유형). Mode:
+--   "hitrun" : 공격 직후 잠시 대상에게서 물러났다가 다시 덤빈다 (시체 까마귀)
+--   "burrow" : 플레이어가 가까이 올 때까지 땅속에 숨어 있다(희미하게 보이고 맞지 않음). 오래 혼자면 다시 숨는다 (무덤 구더기)
+-- 이동은 AIChase가 맡고, 이 컴포넌트는 AIChase를 잠시 끄고 직접 움직인다.
+@Component
+script MonsterBehavior extends Component
+
+    property string Mode = "hitrun"
+    property number RetreatSeconds = 0.9
+    property number EmergeRange = 2.2
+    property number ReburrowSeconds = 8
+    property number CheckInterval = 0.3
+
+    @Sync
+    property boolean Burrowed = false
+    property number RetreatUntil = 0
+    property Vector2 RetreatDir = Vector2(0, 0)
+    property number LonelySince = 0
+    property number CheckTimer = 0
+    property boolean AppliedBurrow = false
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if self.Mode == "burrow" then self:SetBurrowed(true) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnAttacked(Entity target)
+        -- MonsterAttack이 공격 직후 부른다
+        if self.Mode ~= "hitrun" or not isvalid(target) then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local q = target.TransformComponent.WorldPosition
+        local away = Vector2(p.x - q.x, p.y - q.y)
+        if away:Magnitude() < 0.01 then away = Vector2(1, 0) end
+        self.RetreatDir = away:Normalize()
+        self.RetreatUntil = _UtilLogic.ElapsedSeconds + self.RetreatSeconds
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = false end
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버: 행동 판단 / 클라이언트: 숨은 상태 표시
+        if self:IsServer() then self:ServerTick(delta) else self:ClientTick() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ServerTick(number delta)
+        ---@type ShadowMonster
+        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        if monster == nil or monster.IsDead or not self.Entity.Enable then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if self.Mode == "hitrun" and self.RetreatUntil > 0 then
+            if now < self.RetreatUntil then
+                self.Entity.MovementComponent:MoveToDirection(self.RetreatDir, 0)
+            else
+                self.RetreatUntil = 0
+                self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+                local chase = self.Entity.AIChaseComponent
+                if isvalid(chase) then chase.Enable = true end
+            end
+            return
+        end
+        if self.Mode ~= "burrow" then return end
+        self.CheckTimer = self.CheckTimer - delta
+        if self.CheckTimer > 0 then return end
+        self.CheckTimer = self.CheckInterval
+        local near = self:NearestPlayerDistance()
+        if self.Burrowed then
+            if near <= self.EmergeRange then self:SetBurrowed(false) end
+            return
+        end
+        if near > 4 then
+            if self.LonelySince == 0 then self.LonelySince = now end
+            if now - self.LonelySince > self.ReburrowSeconds then self:SetBurrowed(true) end
+        else
+            self.LonelySince = 0
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method number NearestPlayerDistance()
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return 999 end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return 999 end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local best = 999
+        for _, u in ipairs(users) do
+            if isvalid(u) then
+                local q = u.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude()
+                if d < best then best = d end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetBurrowed(boolean value)
+        -- 숨으면 맞지 않고(HitComponent 끔) 움직이지 않는다
+        self.Burrowed = value
+        self.LonelySince = 0
+        local hit = self.Entity.HitComponent
+        if isvalid(hit) then hit.Enable = not value end
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = not value end
+        if value then
+            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+        else
+            self:EmergeFx(self.Entity.TransformComponent.WorldPosition)
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void EmergeFx(Vector3 pos)
+        _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(0.6, 0.6, 1), false, { Color = Color(0.4, 0.35, 0.25, 1) })
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 숨은 동안 거의 보이지 않게
+        if self.AppliedBurrow == self.Burrowed then return end
+        self.AppliedBurrow = self.Burrowed
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local c = sprite.Color
+        sprite.Color = Color(c.r, c.g, c.b, self.Burrowed and 0.12 or 1)
+    end
+
+end

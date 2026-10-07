@@ -1,0 +1,30 @@
+-- 플레이어 시체 (D2 사망 규칙). 사망 시 착용 장비·되찾을 경험치를 담고 죽은 자리에 남는다.
+-- 주인이 다가가면(PlayerInventory.TryPickup) 장비를 돌려받고 시체는 사라진다. 다른 사람은 주울 수 없다.
+@Component
+script PlayerCorpse extends Component
+
+    @Sync
+    property string OwnerUserId = ""
+    @Sync
+    property string OwnerName = ""
+    property string CorpseKey = ""         -- PlayerInventory.Corpses의 키
+    property boolean Taken = false
+
+    @ExecSpace("ServerOnly")
+    method void Setup(string ownerUserId, string ownerName, string corpseKey)
+        -- LootSystem처럼 스폰 직후 값만 저장한다
+        self.OwnerUserId = ownerUserId
+        self.OwnerName = ownerName
+        self.CorpseKey = corpseKey
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then tag.Name = ownerName .. "의 시체" end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Take()
+        if self.Taken then return end
+        self.Taken = true
+        self.Entity:Destroy()
+    end
+
+end
