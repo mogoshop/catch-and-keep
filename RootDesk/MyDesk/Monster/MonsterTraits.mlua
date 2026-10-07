@@ -1,0 +1,78 @@
+-- 몬스터 특성: 종족 저항, 정예 수식어(06장 3절 단순화), 색조(악마 분위기 재채색).
+--   강인한 생명 ×1.7 / 흉포한 피해 ×1.5 / 신속한 속도 ×1.5 / 불꽃·냉기·번개 인챈트 (공격에 속성 + 같은 속성 저항 +50)
+@Component
+script MonsterTraits extends Component
+
+    property string Resists = ""             -- "fire=50,poison=75" (100 이상 = 면역)
+    property string Tint = ""                -- "r,g,b"
+    @Sync
+    property string Affix = ""
+    @Sync
+    property string AffixElement = ""
+    @Sync
+    property string TintSync = ""
+    property number HpMult = 1
+    property number DamageMult = 1
+    property number SpeedMult = 1
+    property table ResistTable = {}
+    property string ResistParsed = "?"
+    property string AppliedTint = ""
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TintSync = self.Tint
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Roll(integer grade)
+        -- 정예(등급 2)만 수식어 하나. 등장할 때마다 새로
+        self.HpMult = 1
+        self.DamageMult = 1
+        self.SpeedMult = 1
+        self.Affix = ""
+        self.AffixElement = ""
+        if grade ~= 2 then return end
+        local r = _UtilLogic:RandomIntegerRange(1, 6)
+        if r == 1 then
+            self.Affix = "강인한"
+            self.HpMult = 1.7
+        elseif r == 2 then
+            self.Affix = "흉포한"
+            self.DamageMult = 1.5
+        elseif r == 3 then
+            self.Affix = "신속한"
+            self.SpeedMult = 1.5
+        elseif r == 4 then
+            self.Affix = "불꽃 인챈트"
+            self.AffixElement = "fire"
+        elseif r == 5 then
+            self.Affix = "냉기 인챈트"
+            self.AffixElement = "cold"
+        else
+            self.Affix = "번개 인챈트"
+            self.AffixElement = "light"
+        end
+    end
+
+    method number GetResist(string element)
+        if self.ResistParsed ~= self.Resists then
+            self.ResistTable = {}
+            for k, v in string.gmatch(self.Resists, "(%a+)=(%-?%d+)") do self.ResistTable[k] = tonumber(v) end
+            self.ResistParsed = self.Resists
+        end
+        local r = self.ResistTable[element] or 0
+        if self.AffixElement ~= "" and self.AffixElement == element then r = r + 50 end
+        return r
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 동기화된 색조가 바뀌었을 때만 칠한다 (늦게 들어온 클라이언트 포함)
+        if self.TintSync == self.AppliedTint then return end
+        self.AppliedTint = self.TintSync
+        local r, g, b = string.match(self.TintSync, "([%d%.]+),([%d%.]+),([%d%.]+)")
+        local sprite = self.Entity.SpriteRendererComponent
+        if r ~= nil and isvalid(sprite) then sprite.Color = Color(tonumber(r), tonumber(g), tonumber(b), 1) end
+    end
+
+end

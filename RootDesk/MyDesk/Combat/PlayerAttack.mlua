@@ -46,7 +46,7 @@ script PlayerAttack extends AttackComponent
         return "magic"
     end
 
-    method number ResistFactor(Entity defender, ShadowMonster monster, string element)
+    method number ResistFactor(Entity defender, Monster monster, string element)
         -- 1 - 저항/100 (면역 100 이상이면 0)
         local res = 0
         if monster ~= nil then
@@ -65,15 +65,15 @@ script PlayerAttack extends AttackComponent
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or stats:GetElemDamage("cold") <= 0 then return end
-        ---@type ShadowMonster
-        local monster = defender:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = defender:GetComponent("script.Monster")
         if monster ~= nil then monster:ApplyChill(2) end
     end
 
     @ExecSpace("Multicast")
     method void PlaySwing(Vector3 pos)
         local me = _UserService.LocalPlayer
-        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_SoundDirector.SfxHit, pos, me, 0.5) end
+        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_GameConst.SfxHit, pos, me, 0.5) end
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
@@ -82,8 +82,8 @@ script PlayerAttack extends AttackComponent
         local dmg = self.Damage
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
-        ---@type ShadowMonster
-        local monster = defender:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = defender:GetComponent("script.Monster")
         if string.sub(attackInfo, 1, 6) == "skill." then
             dmg = self.SkillDamage * self:ResistFactor(defender, monster, self:SkillElement(attackInfo))
         else
@@ -115,11 +115,15 @@ script PlayerAttack extends AttackComponent
             ---@type PlayerDuel
             local duel = self.Entity:GetComponent("script.PlayerDuel")
             if duel == nil or not duel:IsOpponent(defender) then return false end
+            -- 무적 시간·사망 처리 중이면 제외 (엔진이 맞자마자 생명을 깎으므로 여기서 막아야 한다)
+            ---@type PlayerVitals
+            local vitals = defender:GetComponent("script.PlayerVitals")
+            if vitals ~= nil and not vitals:CanBeHit() then return false end
             return __base:IsAttackTarget(defender, attackInfo)
         end
         if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
-        ---@type ShadowMonster
-        local monster = defender:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = defender:GetComponent("script.Monster")
         if monster ~= nil and monster.IsDead then return false end
         return __base:IsAttackTarget(defender, attackInfo)
     end

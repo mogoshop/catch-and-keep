@@ -19,8 +19,8 @@ script BossPattern extends Component
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
-        ---@type ShadowMonster
-        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
         if monster == nil then return end
         if monster.IsDead or not self.Entity.Enable then
             if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
@@ -55,18 +55,7 @@ script BossPattern extends Component
 
     @ExecSpace("ServerOnly")
     method boolean AnyPlayerNear()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return false end
-        local p = self.Entity.TransformComponent.WorldPosition
-        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
-        if users == nil then return false end
-        for _, u in ipairs(users) do
-            if isvalid(u) and not u.PlayerComponent:IsDead() then
-                local q = u.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.EngageRange then return true end
-            end
-        end
-        return false
+        return #_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.EngageRange) > 0
     end
 
     @ExecSpace("ServerOnly")
@@ -79,12 +68,11 @@ script BossPattern extends Component
             local pos = Vector3(p.x + math.cos(ang) * 1.5, p.y + math.sin(ang) * 1.0, 0)
             local e = _SpawnService:SpawnByModelId(self.MinionModelId, "BossMinion", pos, map)
             if isvalid(e) then
-                _TimerService:SetTimerOnce(function()
-                    if not isvalid(e) then return end
-                    ---@type ShadowMonster
-                    local m = e:GetComponent("script.ShadowMonster")
-                    if m ~= nil then m.RespawnDelay = -1 end
-                end, 0.2)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                end, nil)
             end
         end
     end

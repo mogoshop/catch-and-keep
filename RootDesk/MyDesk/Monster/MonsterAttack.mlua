@@ -1,0 +1,138 @@
+-- 몬스터 공격 판정. 사거리 안의 가장 가까운 플레이어·그림자 하나를 일정 간격으로 친다 (이동은 AIChase/AIWander).
+-- 피해 = 기본 × (쇠약·수식어 배율). 플레이어 대상이면 물리 부분은 방어로, 속성 부분은 저항으로 줄인다.
+-- 보스 광역기는 Slam (단일 대상 제한 없음).
+@Component
+script MonsterAttack extends AttackComponent
+
+    property integer Damage = 8
+    property string Element = ""          -- 공격 속성 (fire/cold/light/poison). ElementRatio만큼이 그 속성
+    property number ElementRatio = 0.5
+    property number AttackRange = 0.8
+    property number AttackRadius = 0.5
+    property number AttackCooldown = 1.5
+    property number ScanInterval = 0.4
+
+    property integer BaseDamage = 0
+    property number CooldownTimer = 0
+    property number ScanTimer = 0
+    property Entity CurrentTarget = nil
+    property number SlamDamage = 0
+
+    method Monster Body()
+        ---@type Monster
+        local c = self.Entity:GetComponent("script.Monster")
+        return c
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ScaleToLevel(integer baseLevel, integer level)
+        -- Monster.ApplyLevel이 부른다: 모델 기본 피해 기준으로 레벨 보정
+        if self.BaseDamage <= 0 then self.BaseDamage = self.Damage end
+        self.Damage = math.floor(self.BaseDamage * (1 + _GameData.monsterDmgPerLevel * (level - baseLevel)) + 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Slam(Vector2 center, number radius, number damage)
+        self.SlamDamage = damage
+        self.CurrentTarget = nil
+        self:AttackFast(CircleShape(center, radius), "monster.slam", nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        local body = self:Body()
+        if body == nil or body.IsDead or not self.Entity.Enable then return end
+        self.CooldownTimer = self.CooldownTimer - delta
+        self.ScanTimer = self.ScanTimer - delta
+        if self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
+        self.ScanTimer = self.ScanInterval
+        local target = self:FindTarget()
+        if target == nil then return end
+        self.CooldownTimer = self.AttackCooldown
+        self.CurrentTarget = target
+        local p = target.TransformComponent.WorldPosition
+        self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), self.AttackRadius), "monster.basic", nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity FindTarget()
+        -- 사거리 안의 가장 가까운 플레이어·그림자
+        local map = self.Entity.CurrentMap
+        local myPos = _Util:Pos2(self.Entity)
+        local best = nil
+        local bestDist = self.AttackRange
+        for _, u in ipairs(_Util:PlayersNear(map, myPos, self.AttackRange)) do
+            local d = _Util:Distance(u, self.Entity)
+            if d < bestDist then
+                bestDist = d
+                best = u
+            end
+        end
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            local d = _Util:Distance(c.Entity, self.Entity)
+            if d < bestDist then
+                bestDist = d
+                best = c.Entity
+            end
+        end
+        return best
+    end
+
+    method string GetElement()
+        local body = self:Body()
+        if body ~= nil and body:GetAffixElement() ~= "" then return body:GetAffixElement() end
+        return self.Element
+    end
+
+    method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
+        local dmg = self.Damage
+        if attackInfo == "monster.slam" then dmg = self.SlamDamage end
+        local body = self:Body()
+        if body ~= nil then dmg = dmg * body:GetDamageDealtMultiplier() end
+        if isvalid(defender.PlayerComponent) then
+            local element = self:GetElement()
+            local ratio = 0
+            if element ~= "" then ratio = self.ElementRatio end
+            if body ~= nil and body:GetAffixElement() ~= "" then ratio = math.min(1, ratio + 0.5) end
+            ---@type PlayerStats
+            local stats = defender:GetComponent("script.PlayerStats")
+            local phys = dmg * (1 - ratio)
+            local elem = dmg * ratio
+            if stats ~= nil then
+                phys = phys * (100 / (100 + stats.BonusDefense))
+                elem = elem * math.max(0, 1 - stats:GetResist(element) / 100)
+            end
+            dmg = phys + elem
+        end
+        return math.max(1, math.floor(dmg + 0.5))
+    end
+
+    method void OnAttack(Entity defender)
+        -- 냉기 공격은 플레이어 둔화 / 특수 행동(치고 빠지기)에 알림
+        if not self:IsServer() then return end
+        if self:GetElement() == "cold" and isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local stats = defender:GetComponent("script.PlayerStats")
+            if stats ~= nil then stats:ApplyChill(1.5) end
+        end
+        ---@type MonsterBehavior
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:OnAttacked(defender) end
+    end
+
+    method boolean IsAttackTarget(Entity defender, string attackInfo)
+        -- 고른 대상 하나만 (광역기는 범위 전체). 살아 있는 플레이어와 그림자만
+        if attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
+        if isvalid(defender.PlayerComponent) then
+            if defender.PlayerComponent:IsDead() then return false end
+            -- 무적 시간·사망 처리 중이면 제외 (엔진이 맞자마자 생명을 깎으므로 여기서 막아야 한다)
+            ---@type PlayerVitals
+            local vitals = defender:GetComponent("script.PlayerVitals")
+            if vitals ~= nil and not vitals:CanBeHit() then return false end
+            return __base:IsAttackTarget(defender, attackInfo)
+        end
+        if defender:GetComponent("script.ShadowUnit") ~= nil then return __base:IsAttackTarget(defender, attackInfo) end
+        return false
+    end
+
+end

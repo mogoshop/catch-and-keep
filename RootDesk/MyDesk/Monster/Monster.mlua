@@ -1,0 +1,240 @@
+-- 몬스터 본체: 생명·레벨·피격·사망·리스폰. 다른 시스템은 이 컴포넌트 하나만 보고, 상태 이상(MonsterStatus)과
+-- 특성(MonsterTraits)은 여기의 창구 메서드를 거친다. 처치되면 MonsterKilled 이벤트를 낸다 (보상·혼·의뢰는 구독자 몫).
+-- 사망 애니메이션은 StateComponent(DEAD) → StateAnimationComponent의 die 키.
+@Component
+script Monster extends Component
+
+    property number MaxHp = 60              -- 모델 값 = BaseLevel(=모델 Level)에서의 기본 생명
+    property integer Grade = 1              -- 1 일반, 2 정예, 3 보스
+    property integer Level = 1
+    property string SourceId = "mob"        -- 몬스터 종류 (그림자·의뢰·이름)
+    property number RespawnDelay = 10       -- 음수면 리스폰 없음 (소환된 졸개·심도)
+    property boolean Unique = false         -- 최상위(고유 이름)
+    property number HideDelay = 0.8
+
+    @Sync
+    property number Hp = 0
+    @Sync
+    property boolean IsDead = false
+
+    property number BaseHp = 0
+    property integer BaseLevel = 0
+    property number BaseSpeed = 0
+    property boolean LevelApplied = false
+    property Entity LastAttacker = nil
+    property Vector2 SpawnPosition = Vector2(0, 0)
+
+    method MonsterStatus Status()
+        ---@type MonsterStatus
+        local c = self.Entity:GetComponent("script.MonsterStatus")
+        return c
+    end
+
+    method MonsterTraits Traits()
+        ---@type MonsterTraits
+        local c = self.Entity:GetComponent("script.MonsterTraits")
+        return c
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.BaseHp = self.MaxHp
+        self.BaseLevel = self.Level
+        local movement = self.Entity.MovementComponent
+        if isvalid(movement) then self.BaseSpeed = movement.InputSpeed end
+        local p = self.Entity.TransformComponent.WorldPosition
+        self.SpawnPosition = Vector2(p.x, p.y)
+        self:Reroll()
+        -- 맵에 고정 배치된 몬스터(최상위·보스)는 맵의 난이도 레벨 가산을 받는다 (스포너 몬스터는 스포너가 ApplyLevel)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or self.LevelApplied then return end
+            ---@type MapAmbience
+            local amb = self.Entity.CurrentMap:GetComponent("script.MapAmbience")
+            if amb ~= nil and amb.LevelBonus > 0 then self:ApplyLevel(self.Level + amb.LevelBonus, false) end
+        end, 0.3)
+    end
+
+    -- ───────── 레벨·생명 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void ApplyLevel(integer level, boolean elite)
+        -- 스포너·심도·맵 난이도: 레벨에 맞춰 생명·공격 조정, 정예면 등급 2 (06장 2절)
+        self.LevelApplied = true
+        self.Level = level
+        if elite and self.Grade == 1 then self.Grade = 2 end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil then atk:ScaleToLevel(self.BaseLevel, level) end
+        self:Reroll()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Reroll()
+        -- 등장할 때마다: 수식어 다시 굴림 → 최대 생명·속도 다시 계산 → 생명 가득
+        local traits = self:Traits()
+        if traits ~= nil then traits:Roll(self.Grade) end
+        self:RecomputeMaxHp()
+        self:RefreshSpeed()
+        self.Hp = self.MaxHp
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecomputeMaxHp()
+        local k = _GameData.monsterHpPerLevel
+        local hp = self.BaseHp * (1 + k * (self.Level - 1)) / (1 + k * (self.BaseLevel - 1))
+        if self.Grade == 2 and not self.Unique then hp = hp * _GameData.eliteHpMul end
+        local traits = self:Traits()
+        if traits ~= nil then hp = hp * traits.HpMult end
+        self.MaxHp = math.max(1, hp)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshSpeed()
+        -- 기본 속도 × 수식어(신속한) × 상태(냉기 둔화)
+        local movement = self.Entity.MovementComponent
+        if not isvalid(movement) or self.BaseSpeed <= 0 then return end
+        local mult = 1
+        local traits = self:Traits()
+        if traits ~= nil then mult = mult * traits.SpeedMult end
+        local status = self:Status()
+        if status ~= nil then mult = mult * status:SpeedMult() end
+        movement.InputSpeed = self.BaseSpeed * mult
+    end
+
+    -- ───────── 창구 (다른 시스템은 이것만 쓴다) ─────────
+
+    method number GetResist(string element)
+        local traits = self:Traits()
+        if traits == nil then return 0 end
+        return traits:GetResist(element)
+    end
+
+    method number GetDamageTakenMultiplier()
+        local status = self:Status()
+        if status == nil then return 1 end
+        return status:TakenMult()
+    end
+
+    method number GetDamageDealtMultiplier()
+        local m = 1
+        local traits = self:Traits()
+        if traits ~= nil then m = traits.DamageMult end
+        local status = self:Status()
+        if status ~= nil then m = m * status:WeakenMult() end
+        return m
+    end
+
+    method string GetAffixElement()
+        local traits = self:Traits()
+        if traits == nil then return "" end
+        return traits.AffixElement
+    end
+
+    method string GetAffixName()
+        local traits = self:Traits()
+        if traits == nil then return "" end
+        return traits.Affix
+    end
+
+    method string GetCurseTag()
+        local status = self:Status()
+        if status == nil then return "" end
+        return status.CurseTag
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyCurse(string kind, number pct, number duration)
+        local status = self:Status()
+        if status ~= nil then status:ApplyCurse(kind, pct, duration) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyPoison(number dps, number duration, Entity source)
+        local status = self:Status()
+        if status ~= nil then status:ApplyPoison(dps, duration, source) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyChill(number seconds)
+        local status = self:Status()
+        if status ~= nil then status:ApplyChill(seconds) end
+    end
+
+    -- ───────── 피격·사망 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void TakeDamage(number amount, Entity attacker)
+        -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율만 여기서
+        if self.IsDead then return end
+        if isvalid(attacker) then self.LastAttacker = attacker end
+        self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier()
+        if self.Hp <= 0 then self:Die() end
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Self")
+    handler HandleHitEvent(HitEvent event)
+        -- 피해 계산(저항·저주 포함)은 공격 쪽 CalcDamage가 이미 했다
+        if self.IsDead then return end
+        if isvalid(event.AttackerEntity) then
+            self.LastAttacker = event.AttackerEntity
+            local chase = self.Entity.AIChaseComponent
+            if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
+        end
+        self.Hp = self.Hp - event.TotalDamage
+        if self.Hp <= 0 then self:Die() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Die()
+        -- 사망 연출 → MonsterKilled 이벤트 → 숨김 → 리스폰 예약 (또는 제거)
+        if self.IsDead then return end
+        self.IsDead = true
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) then sc:ChangeState("DEAD") end
+        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
+        _GameEvents:Emit("MonsterKilled", {
+            monster = self.Entity, player = _Util:OwnerPlayerOf(self.LastAttacker),
+            sourceId = self.SourceId, grade = self.Grade, level = self.Level, map = self.Entity.CurrentMap,
+        })
+        _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
+        if self.RespawnDelay < 0 then
+            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, self.HideDelay + 0.2)
+            return
+        end
+        _TimerService:SetTimerOnce(function() self:Respawn() end, self.RespawnDelay)
+    end
+
+    @ExecSpace("Multicast")
+    method void PlayDeathSound(Vector3 pos)
+        local me = _UserService.LocalPlayer
+        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_GameConst.SfxDeath, pos, me, 0.6) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Hide()
+        if not isvalid(self.Entity) then return end
+        self.Entity:SetVisible(false)
+        self.Entity:SetEnable(false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Respawn()
+        -- 처음 위치에서 상태를 지우고 다시 등장 (선공하지 않는 상태로)
+        if not isvalid(self.Entity) then return end
+        self.LastAttacker = nil
+        local status = self:Status()
+        if status ~= nil then status:Reset() end
+        self.IsDead = false
+        self:Reroll()
+        local movement = self.Entity.MovementComponent
+        if isvalid(movement) then movement:SetWorldPosition(self.SpawnPosition) end
+        self.Entity:SetEnable(true)
+        self.Entity:SetVisible(true)
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) then sc:ChangeState("IDLE") end
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.IsChaseNearPlayer = false end
+    end
+
+end

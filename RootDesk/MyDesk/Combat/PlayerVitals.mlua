@@ -1,88 +1,107 @@
--- 플레이어 피격·사망·부활. DefaultPlayer 모델에 붙는다.
--- 사망 규칙은 디아블로2와 같다:
---   골드: 보유 골드의 (레벨)% 손실, 최대 20%
---   장비: 착용 장비 전부가 죽은 자리의 시체에 남고, 마을에서 맨몸으로 부활한다. 시체에 다가가면 되찾는다
---   경험치: 악몽 5% / 지옥 10% 손실(레벨은 유지), 시체를 되찾으면 그중 75% 회복
+-- 플레이어 피격·사망·부활. 사망 규칙은 디아블로2와 같다:
+--   골드: 보유 골드의 (레벨)% 손실, 최대 deathGoldPctCap(20)%
+--   장비: 착용 장비가 죽은 자리의 시체에 남고(PlayerCorpses), 마을에서 맨몸으로 부활
+--   경험치: 난이도별 손실(difficulty.csv, 악몽 5% / 지옥 10%, 레벨 유지), 시체를 되찾으면 deathExpRecover(75%) 회복
+--   결투 패배는 예외: 장비를 떨구지 않고 제자리 부활 (PlayerDuel)
 @Component
 script PlayerVitals extends Component
 
     property number InvincibleSeconds = 0.8
+    property number RespawnInvincible = 2
     property number InvincibleUntil = 0
     property boolean Dying = false
-    property string TownMap = "town"
-    property Vector2 TownPos = Vector2(0, -1.2)
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 엔진이 피격 생명 차감을 언제 하는지(우리 핸들러 앞/뒤)에 기대지 않고, 0 이하가 되면 바로 사망 처리한다.
+        -- 피격·독·결투 등 어떤 경로로 깎여도 같다
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:CheckDeath() end, 0.1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckDeath()
+        if self.Dying or not isvalid(self.Entity) then return end
+        local pc = self.Entity.PlayerComponent
+        if pc.Hp > 0 then return end
+        pc.Hp = 0
+        self:Die()
+    end
 
     @ExecSpace("ServerOnly")
     @EventSender("Self")
     handler HandleHitEvent(HitEvent event)
-        -- 몬스터(또는 결투 상대)에게 맞았을 때만 HP를 깎는다. 짧은 무적 시간 동안은 무시
+        -- 생명 차감은 엔진(PlayerComponent)이 한다. 여기서는 무적 시간 시작과 피격 자세만 (사망은 CheckDeath).
+        -- 무적·사망 중 피격 차단은 공격 쪽 IsAttackTarget이 CanBeHit으로 거른다 (맞은 뒤에 되돌리지 않는다)
         if self.Dying then return end
-        local now = _UtilLogic.ElapsedSeconds
-        if now < self.InvincibleUntil then return end
-        self.InvincibleUntil = now + self.InvincibleSeconds
-        local pc = self.Entity.PlayerComponent
-        pc.Hp = math.max(0, pc.Hp - event.TotalDamage)
-        if pc.Hp <= 0 then
-            self:Die()
-        else
-            self.Entity.StateComponent:ChangeState("HIT")
-        end
+        self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.InvincibleSeconds
+        self:CheckDeath()
+        if not self.Dying then self.Entity.StateComponent:ChangeState("HIT") end
+    end
+
+    method boolean CanBeHit()
+        -- 공격 판정 대상인가: 살아 있고, 사망 처리 중이 아니고, 무적 시간이 지났다
+        if self.Dying or self.Entity.PlayerComponent.Hp <= 0 then return false end
+        return _UtilLogic.ElapsedSeconds >= self.InvincibleUntil
     end
 
     @ExecSpace("ServerOnly")
     method void Die()
-        -- 사망 → 소환수 회수 → 골드·경험치 벌칙 → 시체에 장비 → RespawnDuration 뒤 마을 부활
         if self.Dying then return end
         self.Dying = true
         local pc = self.Entity.PlayerComponent
         self.Entity.StateComponent:ChangeState("DEAD")
-        ---@type ShadowOwner
-        local owner = self.Entity:GetComponent("script.ShadowOwner")
-        if owner ~= nil then owner:RecallAll() end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        ---@type PlayerInventory
-        local inv = self.Entity:GetComponent("script.PlayerInventory")
-        local goldLost = 0
-        local expLost = 0
-        if stats ~= nil then
-            goldLost = math.floor(stats.Gold * math.min(stats.Level, 20) / 100)
-            stats:AddGold(-goldLost)
-            local pct = 0
-            if stats.Difficulty == 1 then pct = 5 elseif stats.Difficulty >= 2 then pct = 10 end
-            expLost = stats:LoseExp(pct)
-        end
-        -- 결투(PvP) 중 사망이면 결투만 끝나고 장비는 떨구지 않는다
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:RecallAll() end
         ---@type PlayerDuel
         local duel = self.Entity:GetComponent("script.PlayerDuel")
         local inDuel = duel ~= nil and duel:OnOwnerDied()
-        if inv ~= nil and not inDuel then
-            local p = self.Entity.TransformComponent.WorldPosition
-            inv:LeaveCorpse(Vector2(p.x, p.y), math.floor(expLost * 0.75))
+        local goldLost = 0
+        local expLost = 0
+        if not inDuel then
+            local lost = self:ApplyDeathPenalty()
+            goldLost = lost.gold
+            expLost = lost.exp
+            ---@type PlayerCorpses
+            local corpses = self.Entity:GetComponent("script.PlayerCorpses")
+            if corpses ~= nil then corpses:LeaveCorpse(_Util:Pos2(self.Entity), math.floor(expLost * _GameData.deathExpRecover)) end
         end
-        log(string.format("[PlayerVitals] 사망 %s 골드 -%d 경험치 -%d", self.Entity.Name, goldLost, expLost))
+        _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap })
         self:NotifyDeath(goldLost, expLost, inDuel, pc.UserId)
         _TimerService:SetTimerOnce(function() self:Revive(inDuel) end, pc.RespawnDuration)
     end
 
     @ExecSpace("ServerOnly")
+    method table ApplyDeathPenalty()
+        -- 반환 { gold, exp } (메이커는 다중 반환 선언을 등록하지 않는다)
+        -- 골드: 레벨%(최대 deathGoldPctCap) / 경험치: 난이도별 비율
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return { gold = 0, exp = 0 } end
+        local goldLost = math.floor(stats.Gold * math.min(stats.Level, _GameData.deathGoldPctCap) / 100)
+        stats:AddGold(-goldLost)
+        local expLost = stats:LoseExp(_GameConst:DeathExpLossPct(stats.Difficulty))
+        return { gold = goldLost, exp = expLost }
+    end
+
+    @ExecSpace("ServerOnly")
     method void Revive(boolean inPlace)
-        -- 마을에서 HP를 채워 다시 시작 (결투 패배는 제자리)
         if not isvalid(self.Entity) then return end
         local pc = self.Entity.PlayerComponent
         pc:Respawn()
         pc.Hp = pc.MaxHp
         self.Dying = false
-        self.InvincibleUntil = _UtilLogic.ElapsedSeconds + 2
-        if not inPlace then
-            ---@type PlayerStats
-            local stats = self.Entity:GetComponent("script.PlayerStats")
-            local diff = 0
-            if stats ~= nil then diff = stats.Difficulty end
-            local town = _WaypointData:MapFor(self.TownMap, diff)
-            _TeleportService:TeleportToMapPosition(self.Entity, Vector3(self.TownPos.x, self.TownPos.y, 0), town)
-        end
-        log("[PlayerVitals] 부활: " .. self.Entity.Name)
+        self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.RespawnInvincible
+        if inPlace then return end
+        ---@type PlayerTravel
+        local travel = self.Entity:GetComponent("script.PlayerTravel")
+        if travel ~= nil then travel:GoTown() end
     end
 
     @ExecSpace("Client")

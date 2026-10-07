@@ -45,8 +45,8 @@ script MonsterBehavior extends Component
 
     @ExecSpace("ServerOnly")
     method void ServerTick(number delta)
-        ---@type ShadowMonster
-        local monster = self.Entity:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
         if monster == nil or monster.IsDead or not self.Entity.Enable then return end
         local now = _UtilLogic.ElapsedSeconds
         if self.Mode == "hitrun" and self.RetreatUntil > 0 then
@@ -79,20 +79,7 @@ script MonsterBehavior extends Component
 
     @ExecSpace("ServerOnly")
     method number NearestPlayerDistance()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return 999 end
-        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
-        if users == nil then return 999 end
-        local p = self.Entity.TransformComponent.WorldPosition
-        local best = 999
-        for _, u in ipairs(users) do
-            if isvalid(u) then
-                local q = u.TransformComponent.WorldPosition
-                local d = (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude()
-                if d < best then best = d end
-            end
-        end
-        return best
+        return _Util:NearestPlayerDistance(self.Entity.CurrentMap, _Util:Pos2(self.Entity))
     end
 
     @ExecSpace("ServerOnly")

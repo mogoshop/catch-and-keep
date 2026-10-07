@@ -1,5 +1,5 @@
 -- 맵별 몬스터 배치 (맵 안의 빈 엔티티에 붙인다). 시작할 때 목록대로 영역 안 무작위 위치에 소환하고,
--- 레벨·정예 여부를 정한다. 이후 리스폰은 각 몬스터(ShadowMonster)가 처음 위치에서 스스로 한다.
+-- 레벨·정예 여부를 정한다. 이후 리스폰은 각 몬스터(Monster)가 처음 위치에서 스스로 한다.
 -- Entries 형식: "모델id:마리수:레벨;..."   예) "hellhound:6:1;graveworm:3:2"
 @Component
 script MonsterSpawner extends Component
@@ -32,7 +32,7 @@ script MonsterSpawner extends Component
                 local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(x, y, 0), map)
                 if isvalid(e) then
                     local elite = _UtilLogic:RandomDouble() < self.EliteChance
-                    self:Setup(e, tonumber(level) + bonus, elite, 0)
+                    self:Configure(e, tonumber(level) + bonus, elite)
                     total = total + 1
                 end
             end
@@ -41,18 +41,12 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void Setup(Entity e, integer level, boolean elite, integer attempt)
-        -- 스폰 직후 컴포넌트 조회 실패 대비 재시도
-        if not isvalid(e) then return end
-        local ok, comp = pcall(function() return e:GetComponent("script.ShadowMonster") end)
-        if ok and comp ~= nil then
-            ---@type ShadowMonster
+    method void Configure(Entity e, integer level, boolean elite)
+        _Util:AfterSpawn(e, "script.Monster", function(comp)
+            ---@type Monster
             local m = comp
             m:ApplyLevel(level, elite)
-            return
-        end
-        if attempt >= 5 then return end
-        _TimerService:SetTimerOnce(function() self:Setup(e, level, elite, attempt + 1) end, 0.1)
+        end, nil)
     end
 
 end
