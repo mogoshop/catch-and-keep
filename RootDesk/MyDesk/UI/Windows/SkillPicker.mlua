@@ -71,8 +71,9 @@ script SkillPicker extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         local current = book:GetSlotSkill(self.Slot)
-        -- 탭: 고른 칸은 밝게, 칸 이름 아래 지금 든 스킬
+        -- 탭: 고른 칸은 밝게, 칸 이름 아래 지금 든 스킬. 모바일은 키가 없으니 칸 번호와 큰 공격 버튼
         local names = { "A", "S", "D", "F", "우클릭" }
+        if Environment:IsMobilePlatform() then names = { "1번", "2번", "3번", "4번", "공격 버튼" } end
         for i = 1, 5 do
             local held = book:GetSlotSkill(i)
             local label = names[i]
@@ -97,9 +98,16 @@ script SkillPicker extends Logic
         end
         for i = n + 1, self.PickCount do _UIKit:SetEnabled(self.Win .. "/Grid/Pick" .. tostring(i), false) end
         local desc = names[self.Slot] .. " 칸: "
-        if current == "" then desc = desc .. "비어 있음" else desc = desc .. _SkillData:Get(current).name end
+        if current == "" then
+            if self.Slot == 5 and Environment:IsMobilePlatform() then desc = desc .. "기본 공격" else desc = desc .. "비어 있음" end
+        else
+            desc = desc .. _SkillData:Get(current).name
+        end
         if n == 0 then desc = desc .. "\n배운 스킬이 없습니다. 스킬 창(K)에서 먼저 배우세요." else desc = desc .. "\n아래에서 스킬을 누르면 이 칸에 들어갑니다." end
         _UIKit:SetText(self.Win .. "/Desc", desc)
+        local clear = "칸 비우기"
+        if self.Slot == 5 and Environment:IsMobilePlatform() then clear = "기본 공격으로" end
+        _UIKit:SetText(self.Win .. "/BtnClear", clear)
     end
 
 end

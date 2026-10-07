@@ -366,6 +366,7 @@ function buildGameHud() {
 // ShadowHUD: 상태줄·보관함은 그대로 두고 그림만 바꾸며, 모바일 패드는 새로 짠다
 function patchShadowHud() {
   const file = P.ui("ShadowHUD");
+  const previous = readIfExists(file);
   const s = UIBuilder.read(file);
   const k = kit(s);
   // 테마 부품으로 바꿔 입힌다 (그림 + 정해진 색)
@@ -412,14 +413,19 @@ function patchShadowHud() {
   k.pic("MobilePad/Attack/Icon", "icon_sword", { anchor: "middle-center", pos: [0, 14], rect_size: [100, 100] });
   b_label(s, "MobilePad/Attack/Label", "공격", 28, "bottom-center");
   s.patch("MobilePad/Attack/Label", { pos: [0, 22] });
+  // 편집 모드 표시 (스킬 편집을 누르면 켜짐: 누르는 칸에 스킬을 넣는다)
+  const editMark = (path, size) => {
+    s.text(`${path}/Edit`, "+", { size, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], ...outline, enable: false });
+  };
+  editMark("MobilePad/Attack", 90);
   const arc = [[-420, 120], [-390, 290], [-260, 410], [-100, 430]];
   s.empty("MobilePad/Skills", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   arc.forEach((p, i) => {
     const n = `MobilePad/Skills/S${i + 1}`;
     k.slot(n, { ...center, pos: p, rect_size: [124, 124] }, 80, "slot_skill");
-    b_label(s, `${n}/Key`, ["A", "S", "D", "F"][i], 18, "bottom-right");
+    editMark(n, 64);
   });
-  k.btn("MobilePad/BtnSkillEdit", "스킬 편집", { ...center, pos: [-580, 560], rect_size: [150, 64], font_size: 20 });
+  k.btn("MobilePad/BtnSkillEdit", "스킬 편집", { ...center, pos: [-580, 560], rect_size: [170, 68], font_size: 22 });
   s.empty("MobilePad/Potions", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   [["Hp", K.potion_hp, -580], ["Mp", K.potion_mp, -700]].forEach(([n, ruid, x]) => {
     const path = `MobilePad/Potions/${n}`;
@@ -444,6 +450,8 @@ function patchShadowHud() {
   });
   for (const n of ["MobilePad/Attack", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
   s.write(file);
+  // 다시 만든 패드도 경로가 같으면 예전 UUID를 유지 (메이커가 새 UUID 묶음을 다시 불러오지 못하는 경우가 있었다)
+  preserveIds(file, previous);
 }
 
 // 칸·버튼 위 글자 (외곽선)

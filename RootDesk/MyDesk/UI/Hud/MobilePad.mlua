@@ -1,5 +1,6 @@
--- 모바일 패드 (모바일에서만 켜짐, ShadowHUD/MobilePad): 큰 공격 버튼 + 둘레 스킬 4칸(A S D F 칸과 같음, 아이콘) +
--- 생명·마나 물약 + 그림자 명령(누르면 소환·회수·집결이 펼쳐짐, 배운 것만) + 스킬 편집(SkillPicker).
+-- 모바일 패드 (모바일에서만 켜짐, ShadowHUD/MobilePad): 큰 공격 버튼 + 둘레 스킬 4칸 + 생명·마나 물약 + 그림자 명령(펼침, 배운 것만).
+-- 스킬 칸 1~4 = 퀵슬롯 1~4, 큰 버튼 = 5번 칸(비우면 기본 공격, 스킬을 넣으면 그 스킬). PC의 A S D F·우클릭과 같은 칸.
+-- 스킬 편집: 누르면 편집 모드(칸마다 +), 칸이나 큰 버튼을 누르면 SkillPicker로 그 칸에 넣을 스킬을 고른다.
 @Logic
 script MobilePad extends Logic
 
@@ -7,6 +8,7 @@ script MobilePad extends Logic
     property number PollInterval = 0.2
     property integer TimerId = 0
     property boolean CmdsOpen = false
+    property boolean EditMode = false
     property string RenderKey = ""
 
     @ExecSpace("ClientOnly")
@@ -17,7 +19,7 @@ script MobilePad extends Logic
             local slot = i
             _UIKit:Connect(self.Root .. "/Skills/S" .. tostring(i), function() self:Cast(slot) end)
         end
-        _UIKit:Connect(self.Root .. "/BtnSkillEdit", function() _SkillPicker:Open(1) end)
+        _UIKit:Connect(self.Root .. "/BtnSkillEdit", function() self:ToggleEdit() end)
         _UIKit:Connect(self.Root .. "/Potions/Hp", function() self:Potion("hp") end)
         _UIKit:Connect(self.Root .. "/Potions/Mp", function() self:Potion("mp") end)
         _UIKit:Connect(self.Root .. "/Shadow/Toggle", function() self:ToggleCmds() end)
@@ -37,7 +39,28 @@ script MobilePad extends Logic
     -- ───────── 동작 ─────────
 
     @ExecSpace("ClientOnly")
+    method void ToggleEdit()
+        -- 편집 모드: 칸마다 + 표시, 누르는 칸에 스킬을 넣는다. 다시 누르면 끝
+        self.EditMode = not self.EditMode
+        _UIKit:SetText(self.Root .. "/BtnSkillEdit", self.EditMode and "편집 끝" or "스킬 편집")
+        _UIKit:SetEnabled(self.Root .. "/Attack/Edit", self.EditMode)
+        for i = 1, 4 do _UIKit:SetEnabled(self.Root .. "/Skills/S" .. tostring(i) .. "/Edit", self.EditMode) end
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
     method void Attack()
+        -- 편집 모드면 큰 버튼(5번 칸)에 넣을 스킬 고르기. 스킬이 들어 있으면 그 스킬, 아니면 기본 공격
+        if self.EditMode then
+            _SkillPicker:Open(5)
+            return
+        end
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book ~= nil and book:GetSlotSkill(5) ~= "" then
+            book:CastSlot(5)
+            return
+        end
         -- 조준 입력이 없으므로 가까운 몬스터 쪽을 보고 기본 공격
         local player = _UserService.LocalPlayer
         if not isvalid(player) then return end
@@ -55,7 +78,7 @@ script MobilePad extends Logic
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         if book == nil then return end
-        if book:GetSlotSkill(slot) == "" then
+        if self.EditMode or book:GetSlotSkill(slot) == "" then
             _SkillPicker:Open(slot)
             return
         end
@@ -100,7 +123,7 @@ script MobilePad extends Logic
         if book == nil or belt == nil then return end
         local summon = book:GetLevel("shadow_summon") > 0
         local rally = book:GetLevel("rally") > 0
-        local key = book.Slots .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(summon) .. tostring(rally)
+        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(self.EditMode) .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(summon) .. tostring(rally)
         if key == self.RenderKey then return end
         self.RenderKey = key
         for i = 1, 4 do
@@ -108,6 +131,16 @@ script MobilePad extends Logic
             local icon = ""
             if id ~= "" then icon = _SkillData:Get(id).icon end
             _UIKit:SetIcon(self.Root .. "/Skills/S" .. tostring(i) .. "/Icon", icon)
+        end
+        -- 큰 버튼: 스킬이 들어 있으면 그 아이콘·이름, 아니면 칼·공격
+        local main = book:GetSlotSkill(5)
+        if main ~= "" then
+            local def = _SkillData:Get(main)
+            _UIKit:SetIcon(self.Root .. "/Attack/Icon", def.icon)
+            _UIKit:SetText(self.Root .. "/Attack/Label", _UIKit:Clip(def.name, 5))
+        else
+            _UIKit:SetIcon(self.Root .. "/Attack/Icon", _GameData:GetUiIcon("icon_sword"))
+            _UIKit:SetText(self.Root .. "/Attack/Label", "공격")
         end
         _UIKit:SetText(self.Root .. "/Potions/Hp/Count", tostring(belt.HpPot))
         _UIKit:SetText(self.Root .. "/Potions/Mp/Count", tostring(belt.MpPot))
