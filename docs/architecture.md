@@ -47,6 +47,7 @@ Common (_GameConst, _Util, _GameEvents) · Data (_GameData, _ItemTables, _SkillD
 | `ShadowExtracted` | `SoulExtractor` | QuestSystem | player, sourceId, grade |
 | `QuestMarkerReached` | `QuestMarker` | QuestSystem | player, markerId |
 | `PlayerDied` | `PlayerVitals` | (확장용) | player, map |
+| `UndeadRaised` | `UndeadSystem` | QuestSystem | player, kind |
 | `DepthDoorUsed` | `DepthGate` | DepthDirector (같은 맵만) | player, action, map |
 
 구독은 Logic의 `OnBeginPlay`(서버)에서, 키는 구독자 이름. 한 구독자의 오류는 `pcall`로 격리되어 다른 구독자를 막지 않는다 (`SelfTest`가 확인).
@@ -61,6 +62,7 @@ Common (_GameConst, _Util, _GameEvents) · Data (_GameData, _ItemTables, _SkillD
 | `Combat/` | 플레이어 공격·피격·사망 | `PlayerAttack`, `PlayerVitals`(D2 사망 규칙) |
 | `Monster/` | 몬스터 | `Monster`(파사드: 생명·레벨·사망) + `MonsterStatus`(저주·독·냉각) + `MonsterTraits`(저항·정예 수식어·색) + `MonsterAttack` / `MonsterBehavior` / `BossPattern` / `MonsterSpawner` |
 | `Shadow/` | 그림자 군단 | `ShadowOwner`(보관함·저장) / `ShadowCommander`(소환·회수·대형) / `SoulExtractor`(추출) / `ShadowUnit` / `ShadowSystem`(처치 → 혼) / `ShadowConfig` |
+| `Undead/` | D2식 언데드 | `UndeadSystem`(해골 전사·마법사·되살림, 혼 소모, D2 수 규칙, 맵 이동 따라옴) |
 | `Skill/` | 스킬 | `SkillBook`(습득·슬롯·시전 조건) / `SkillEffects`(효과 실행) |
 | `Item/` | 아이템 | `ItemData`(규칙: 생성·해석·룬워드) / `PlayerInventory`(가방·장비) / `PlayerBelt`(물약) / `PlayerShop` / `LootSystem`·`LootDrop` |
 | `Quest/` `Progress/` | 의뢰·보상·진행 | `PlayerQuest`, `QuestSystem`, `QuestMarker` / `RewardSystem`, `ProgressionSystem` |
@@ -90,7 +92,10 @@ data/*.csv ──gen_data──▶ RootDesk/MyDesk/Data/*.mlua   (런타임 표)
 | `objects` `npcs` | 오브젝트·NPC 모델 빌드 |
 | `item_*` `runes` `runewords` `stats` | `_ItemTables` (`ItemData`가 규칙 적용) |
 | `skills` `quests` `waypoints` `shop` `sounds` | `_SkillData` `_QuestData` `_WaypointData` `_GameData` |
-| `regions` `monster_ranks` | 기획 표·시뮬레이터 전용 (게임 미사용) |
+| `monster_ranks` | 등급별 추출 확률·체력/피해 배율 (`_GameData:GetRank`, 시뮬레이터도 같은 값) |
+| `variants` | 변종 우두머리·고유 능력 (`_GameData:GetVariant`) |
+| `item_sets` `item_set_pieces` | 세트 (`_ItemTables.Sets`·`SetPieces`) |
+| `regions` | 기획 표 (게임 미사용) |
 
 `monsters.csv`의 `def` 열은 시뮬레이터(`tools/sim.py`) 전용이다. 표 데이터 Logic은 MSW에서 `OnInitialize`에 채운 표가 남지 않으므로 첫 조회 때 `Ensure()`로 채운다.
 
