@@ -98,30 +98,38 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderTarget(Entity player)
-        -- 마우스 모드면 커서 근처(1.2), 아니면 가장 가까운 적(4)
-        local center = _Util:Pos2(player)
-        local radius = 4
+        -- D2처럼 상단 중앙에 대상 이름·레벨·생명·저주. 우선순위: 커서 아래(마우스 모드, 1.2) → 지금 공격 중인 대상 → 가장 가까운 적(4)
+        local m = nil
         ---@type ClickControl
         local cc = player:GetComponent("script.ClickControl")
         if Environment:IsPCPlatform() and cc ~= nil and cc.MouseMode then
-            center = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
-            radius = 1.2
+            m = _Util:NearestMonster(player.CurrentMap, _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()), 1.2)
         end
-        local m = _Util:NearestMonster(player.CurrentMap, center, radius)
+        if m == nil and cc ~= nil and isvalid(cc.AttackTarget) then
+            ---@type Monster
+            local attacking = cc.AttackTarget:GetComponent("script.Monster")
+            if attacking ~= nil and not attacking.IsDead and cc.AttackTarget.Enable then m = attacking end
+        end
+        if m == nil then m = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 4) end
         _UIKit:SetEnabled("Target", m ~= nil)
         if m == nil then return end
         local prefix = ""
         local color = "#FFFFFF"
-        if m.Grade == 2 then
-            prefix = "정예 "
-            color = "#6E8CFF"
-        elseif m.Grade >= 3 then
+        local affix = m:GetAffixName()
+        if m.Grade >= 3 then
             prefix = "보스 "
             color = "#C8A050"
+        elseif m.Unique then
+            prefix = "최상위 "
+            color = "#C8A050"
+        elseif m:GetVariant() ~= "" then
+            color = "#E070FF"            -- 변종 우두머리 (오오라·기술): 이름표에 능력 이름
+        elseif m.Grade == 2 then
+            prefix = "정예 "
+            color = "#6E8CFF"
         end
-        local affix = m:GetAffixName()
         if affix ~= "" then prefix = affix .. " " .. prefix end
-        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. _ShadowConfig:GetMonsterName(m.SourceId)) .. "  Lv" .. tostring(m.Level))
+        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. _GameData:GetMonsterName(m.SourceId)) .. "  Lv" .. tostring(m.Level))
         _UIKit:SetFill("Target/Bar/Fill", m.Hp / math.max(1, m.MaxHp))
         _UIKit:SetText("Target/Curse", m:GetCurseTag())
     end
