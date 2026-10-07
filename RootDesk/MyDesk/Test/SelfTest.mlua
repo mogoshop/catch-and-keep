@@ -1,0 +1,112 @@
+-- 런타임 자가 진단 (서버). 월드가 시작되면 한 번, 데이터 표·아이템 규칙·이벤트 버스·상수 규칙을 확인하고
+-- "[SelfTest] 통과 n / 실패 m" 을 남긴다. 실패 항목은 log_error. 메이커 검증 때 logs 에서 이 줄을 본다.
+-- 오프라인 검사(tools/test.cjs)가 못 보는 것 — 실제 엔진에서의 Lua 동작·생성 데이터 로드 — 을 맡는다.
+@Logic
+script SelfTest extends Logic
+
+    property boolean RunOnStart = true
+    property integer Passed = 0
+    property integer Failed = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if not self.RunOnStart then return end
+        -- 다른 Logic의 OnBeginPlay가 끝난 뒤 돌도록 한 박자 늦춘다
+        _TimerService:SetTimerOnce(function() self:RunAll() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Check(string name, boolean ok, string detail)
+        if ok then
+            self.Passed = self.Passed + 1
+        else
+            self.Failed = self.Failed + 1
+            log_error("[SelfTest] 실패: " .. name .. " — " .. detail)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Run(string name, any fn)
+        -- 한 묶음이 터져도 나머지는 계속
+        local ok, err = pcall(fn)
+        if not ok then self:Check(name, false, "예외 " .. tostring(err)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RunAll()
+        self.Passed = 0
+        self.Failed = 0
+        self:Run("data", function() self:TestData() end)
+        self:Run("items", function() self:TestItems() end)
+        self:Run("const", function() self:TestConst() end)
+        self:Run("events", function() self:TestEvents() end)
+        local line = string.format("[SelfTest] 통과 %d / 실패 %d", self.Passed, self.Failed)
+        if self.Failed > 0 then log_error(line) else log(line) end
+    end
+
+    -- ───────── 묶음 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void TestData()
+        _GameData:Ensure()
+        self:Check("difficulties", _GameData:GetDifficulty(2) ~= nil and _GameData:GetDifficulty(2).suffix == "_hell", "난이도 2 = _hell")
+        self:Check("sound town", string.len(_GameData:GetSound("town")) == 32, "sounds.csv town RUID")
+        self:Check("resistCap", _GameData.resistCap > 0, "config resistCap")
+        self:Check("depth pool", #_GameData:GetDepthPool() > 0, "monsters.csv depth=pool")
+        self:Check("monster name", _GameData:GetMonsterName("grave_queen") ~= "grave_queen", "monsters.csv 이름")
+        self:Check("quests", _QuestData:Count() == 6, "quests.csv 6개, 실제 " .. tostring(_QuestData:Count()))
+        for _, id in ipairs(_SkillData:GetOrder()) do
+            local def = _SkillData:Get(id)
+            self:Check("skill " .. id, def ~= nil and (def.prereq == "" or _SkillData:Get(def.prereq) ~= nil), "선행 스킬")
+        end
+        for _, w in ipairs(_WaypointData:GetList()) do
+            self:Check("waypoint " .. w.id, _WaypointData:Get(w.id) ~= nil, "Get(id)")
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TestItems()
+        -- 생성 → 문자열 → 해석 → 문자열이 같아야 저장·거래가 안전하다
+        for i = 1, 30 do
+            local s = _ItemData:Generate(1 + (i * 7) % 60, 1 + i % 3, 50)
+            local again = _ItemData:Serialize(_ItemData:Parse(s))
+            self:Check("item roundtrip", again == s, s .. " → " .. again)
+            self:Check("item describe", _ItemData:Describe(s) ~= "", s)
+        end
+        for lv = 1, 80, 13 do
+            local r = _ItemData:MakeRune(lv)
+            self:Check("rune drop", _ItemData:IsRune(_ItemData:Parse(r).base), r)
+            self:Check("rune level", _ItemData:GetRune(_ItemData:Parse(r).base).minLevel <= lv, r .. " @Lv" .. tostring(lv))
+        end
+        local t = _ItemData:T()
+        for key, rw in pairs(t.Runewords) do
+            for id in string.gmatch(key, "[^,]+") do self:Check("runeword rune", t.Runes[id] ~= nil, rw.name .. " → " .. id) end
+        end
+        self:Check("stat names", _ItemData:StatName("fireRes") ~= "fireRes", "stats.csv")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TestConst()
+        self:Check("MapFor", _GameConst:MapFor("map01", 1) == "map01_nm" and _GameConst:MapFor("map01", 0) == "map01", "난이도 맵 이름")
+        local key = _GameConst:MakeDepthKey(7, 2, "abc")
+        local k = _GameConst:ParseDepthKey(key)
+        self:Check("depth key", k.floor == 7 and k.difficulty == 2 and k.nonce == "abc", key)
+        self:Check("resist penalty", _GameConst:ResistPenalty(0) == 0 and _GameConst:ResistPenalty(2) > _GameConst:ResistPenalty(1), "보통 0 < 악몽 < 지옥")
+        self:Check("death exp", _GameConst:DeathExpLossPct(0) == 0 and _GameConst:DeathExpLossPct(2) == 10, "D2: 보통 0, 지옥 10%")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TestEvents()
+        -- 구독자 하나가 터져도 다른 구독자는 받는다 (Emit의 pcall 격리)
+        local got = 0
+        _GameEvents:Subscribe("SelfTestEvent", "boom(의도한 실패·무시)", function(p) error("의도한 오류") end)
+        _GameEvents:Subscribe("SelfTestEvent", "count", function(p) got = got + p.n end)
+        _GameEvents:Emit("SelfTestEvent", { n = 2 })
+        self:Check("event isolation", got == 2, "got " .. tostring(got))
+        _GameEvents:Unsubscribe("SelfTestEvent", "boom(의도한 실패·무시)")
+        _GameEvents:Unsubscribe("SelfTestEvent", "count")
+        _GameEvents:Emit("SelfTestEvent", { n = 5 })
+        self:Check("event unsubscribe", got == 2, "got " .. tostring(got))
+    end
+
+end

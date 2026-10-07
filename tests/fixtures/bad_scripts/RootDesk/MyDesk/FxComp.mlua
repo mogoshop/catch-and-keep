@@ -1,0 +1,35 @@
+-- 검사기 자가 테스트용 픽스처 (일부러 틀린 코드). EXPECT 주석 수 = 기대 검출 수
+@Component
+script FxComp extends Component
+
+    property integer Hp = 0
+
+    @ExecSpace("ServerOnly")
+    method void Run()
+        _FxLogic:ClientThing(1)                 -- EXPECT 반대편 호출
+        _FxLogic:Notify("hi", "userId")         -- Client RPC 마지막 userId 허용 (검출 없음)
+        _FxLogic:Notify("a", "b", "c")          -- EXPECT 인자 개수
+        _FxLogic:Missing()                      -- EXPECT 없는 메서드
+        _FxLogic.Countt = 1                     -- EXPECT 없는 속성
+        _NoSuchLogic:Foo()                      -- EXPECT 없는 Logic
+        _TimerService:SetTimerOnce(function() local x, y = 1, 2 end, 1)   -- 함수 리터럴 안 쉼표 (검출 없음)
+        local c = self.Entity:GetComponent("script.NoSuch")              -- EXPECT 없는 스크립트
+        ---@type FxComp
+        local other = self.Entity:GetComponent("script.FxComp")
+        other:Nope()                            -- EXPECT 타입 변수 멤버
+        other.Hp = 3
+        local found = _FxLogic:Find(1)
+        found:Run()
+        found:Gone()                            -- EXPECT 반환 타입 추론
+        self:Walk()                             -- EXPECT self 메서드
+        self.Entity.Enable = false
+        local s = "_Fake:Thing() script.Fake"   -- 문자열 안 (검출 없음)
+        -- _Comment:Thing()                     주석 안 (검출 없음)
+    end
+
+    method void Typed(FxComp target)
+        target:Run()
+        target:Fly()                            -- EXPECT 매개변수 타입
+    end
+
+end
