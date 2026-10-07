@@ -10,6 +10,7 @@ script PlayerAttack extends AttackComponent
     property number RangeOffsetX = 0.7
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
     property number LastAttackAt = -99
+    property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
     @ExecSpace("ServerOnly")
     @EventSender("Self")
@@ -50,6 +51,17 @@ script PlayerAttack extends AttackComponent
         else
             self:AttackFast(BoxShape(center, size, angle), info, nil)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SkillHitOne(Entity target, string info, number damage)
+        -- 투사체처럼 대상 하나만 맞히는 스킬 판정 (같은 자리에 겹친 다른 몬스터는 제외)
+        if not isvalid(target) then return end
+        self.SkillDamage = damage
+        self.OnlyTarget = target
+        local q = target.TransformComponent.WorldPosition
+        self:AttackFast(CircleShape(Vector2(q.x, q.y + 0.3), 0.6), info, nil)
+        self.OnlyTarget = nil
     end
 
     method string SkillElement(string attackInfo)
@@ -136,6 +148,7 @@ script PlayerAttack extends AttackComponent
             return __base:IsAttackTarget(defender, attackInfo)
         end
         if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
+        if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
         ---@type Monster
         local monster = defender:GetComponent("script.Monster")
         if monster ~= nil and monster.IsDead then return false end

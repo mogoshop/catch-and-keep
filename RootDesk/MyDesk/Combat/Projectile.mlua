@@ -1,0 +1,75 @@
+-- 날아가는 스킬 투사체 (서버가 움직이고 판정한다). 지나가며 닿은 몬스터만 맞고, Pierce면 꿰뚫어 사거리 끝까지 간다.
+-- 피해는 쏜 플레이어의 PlayerAttack(SkillHitOne → HitEvent 경로)으로 보낸다. 모양·스프라이트는 Projectile 모델 (Body 없음, Translate로 이동).
+@Component
+script Projectile extends Component
+
+    property Entity Owner = nil
+    property Vector2 Dir = Vector2(1, 0)
+    property number Speed = 10
+    property number Range = 5
+    property number Radius = 0.45            -- 판정 반경 (몬스터 발밑 기준, 투사체 높이 HeightOffset만큼 내려서 잰다)
+    property number HeightOffset = 0.3
+    property number AngleOffset = 0          -- 스프라이트가 왼쪽을 보면 180 (모델 값)
+    property number Damage = 0
+    property string Info = ""
+    property boolean Pierce = true
+    property boolean Launched = false
+    property number Traveled = 0
+    property table HitIds = {}
+
+    @ExecSpace("ServerOnly")
+    method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
+        -- 방향(정규화)·속도·사거리·피해를 정하고 날린다. 스프라이트를 진행 방향으로 돌린다 (AngleOffset = 원본이 보는 방향 보정)
+        self.Owner = owner
+        self.Dir = dir:Normalize()
+        self.Speed = speed
+        self.Range = range
+        self.Damage = damage
+        self.Info = info
+        self.Pierce = pierce
+        self.Traveled = 0
+        self.HitIds = {}
+        self.Entity.TransformComponent.ZRotation = math.deg(math.atan(self.Dir.y, self.Dir.x)) + self.AngleOffset
+        self.Launched = true
+        log("[VRF] projectile launched " .. info .. " dmg=" .. tostring(math.floor(damage)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        if not self.Launched then return end
+        if not isvalid(self.Owner) then
+            self:Finish()
+            return
+        end
+        local step = self.Speed * delta
+        self.Entity.TransformComponent:Translate(self.Dir.x * step, self.Dir.y * step)
+        self.Traveled = self.Traveled + step
+        local p = _Util:Pos2(self.Entity) - Vector2(0, self.HeightOffset)
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.Radius)) do
+            local key = m.Entity.Id
+            if not self.HitIds[key] then
+                self.HitIds[key] = true
+                ---@type PlayerAttack
+                local atk = self.Owner:GetComponent("script.PlayerAttack")
+                if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
+                if not self.Pierce then
+                    self:Finish()
+                    return
+                end
+            end
+        end
+        if self.Traveled >= self.Range then self:Finish() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Finish()
+        -- 사거리 끝·첫 명중(관통 아님)·주인 이탈 시 사라진다
+        if not self.Launched then return end
+        self.Launched = false
+        local n = 0
+        for _ in pairs(self.HitIds) do n = n + 1 end
+        log("[VRF] projectile end " .. self.Info .. " hits=" .. tostring(n) .. " traveled=" .. string.format("%.1f", self.Traveled))
+        self.Entity:Destroy()
+    end
+
+end

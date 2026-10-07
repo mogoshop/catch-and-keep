@@ -6,25 +6,34 @@ script SkillEffects extends Component
 
     property integer StormTimer = 0
     property number StormUntil = 0
+    property integer ShotCount = 0            -- 투사체 이름 번호 (맵 안에서 겹치지 않게)
+    property table MistTimers = {}            -- 남아 있는 독안개 타이머
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
-        -- 구현된 스킬이면 true
-        if id == "bone_shard" then self:BoneShard(me, target, (10 + 6 * (lv - 1)) * spell)
-        elseif id == "poison_mist" then self:PoisonMist(target, (4 + 2 * lv) * spell)
-        elseif id == "corpse_blast" then self:CorpseBlast(target, (30 + 12 * (lv - 1)) * spell)
-        elseif id == "soul_drain" then self:SoulDrain(target, (15 + 8 * lv) * spell)
-        elseif id == "bone_storm" then self:BoneStorm((8 + 4 * lv) * spell)
-        elseif id == "mark_weakness" then self:Curse(target, "amp", 30 + 3 * lv, 1.5)
-        elseif id == "enfeeble" then self:Curse(target, "weaken", 35, 1.5)
-        elseif id == "elite_promote" then self:ElitePromote()
-        elseif id == "shadow_summon" then return self:Commander():DeployNext() > 0
-        elseif id == "rally" then self:Commander():RallyAll()
-        elseif id == "raise_skeleton" then return _UndeadSystem:Raise(self.Entity, "skeleton", lv, target, nil)
-        elseif id == "raise_mage" then return _UndeadSystem:Raise(self.Entity, "mage", lv, target, nil)
-        elseif id == "revive" then return _UndeadSystem:Raise(self.Entity, "revive", lv, target, nil)
-        else return false end
-        return true
+        -- 효과가 실제로 났으면 true. false면 SkillBook이 마나·쿨다운을 쓰지 않는다 (실패 이유는 각 효과가 알린다)
+        local ok = false
+        if id == "bone_shard" then ok = self:BoneShard(me, target, (10 + 6 * (lv - 1)) * spell)
+        elseif id == "poison_mist" then ok = self:PoisonMist(target, (4 + 2 * lv) * spell)
+        elseif id == "corpse_blast" then ok = self:CorpseBlast(target, (30 + 12 * (lv - 1)) * spell)
+        elseif id == "soul_drain" then ok = self:SoulDrain(target, (15 + 8 * lv) * spell)
+        elseif id == "bone_storm" then ok = self:BoneStorm((8 + 4 * lv) * spell)
+        elseif id == "mark_weakness" then ok = self:Curse(target, "amp", 30 + 3 * lv, 1.5)
+        elseif id == "enfeeble" then ok = self:Curse(target, "weaken", 35, 1.5)
+        elseif id == "elite_promote" then ok = self:ElitePromote()
+        elseif id == "shadow_summon" then ok = self:SummonShadow()
+        elseif id == "rally" then ok = self:Rally()
+        elseif id == "raise_skeleton" then ok = _UndeadSystem:Raise(self.Entity, "skeleton", lv, target, nil)
+        elseif id == "raise_mage" then ok = _UndeadSystem:Raise(self.Entity, "mage", lv, target, nil)
+        elseif id == "revive" then ok = _UndeadSystem:Raise(self.Entity, "revive", lv, target, nil) end
+        log("[VRF] skill " .. id .. " applied=" .. tostring(ok))
+        return ok
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Fail(string reason)
+        -- 시전 실패 안내 (마나·쿨다운은 쓰지 않는다)
+        _Util:Notify(reason, self.Entity.PlayerComponent.UserId)
     end
 
     method ShadowCommander Commander()
@@ -49,45 +58,75 @@ script SkillEffects extends Component
     -- ───────── 혼술 ─────────
 
     @ExecSpace("ServerOnly")
-    method void BoneShard(Vector2 me, Vector2 target, number damage)
-        -- 조준 방향 5칸 직선, 관통
+    method boolean BoneShard(Vector2 me, Vector2 target, number damage)
+        -- 조준 방향으로 뼛조각이 날아간다 (초속 11, 사거리 6, 관통). 지나가며 닿은 적만 맞는다
         local dir = target - me
         if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
         dir = dir:Normalize()
-        local len = 5
-        local angle = math.deg(math.atan(dir.y, dir.x))
-        if angle < 0 then angle = angle + 360 end
-        self:Hit(me + dir * (len / 2) + Vector2(0, 0.3), Vector2(len, 0.6), angle, "skill.bone_shard", damage)
-        self:LineFx(me + Vector2(0, 0.3), dir, len)
+        local start = me + Vector2(0, 0.3) + dir * 0.35
+        self.ShotCount = self.ShotCount + 1
+        local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "BoneShard_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
+        if not isvalid(shot) then
+            self:Fail("뼛조각을 만들지 못했다")
+            return false
+        end
+        local owner = self.Entity
+        _Util:AfterSpawn(shot, "script.Projectile", function(comp)
+            ---@type Projectile
+            local proj = comp
+            proj:Launch(owner, dir, 11, 6, damage, "skill.bone_shard", true)
+        end, function()
+            if isvalid(shot) then shot:Destroy() end
+        end)
+        return true
     end
 
     @ExecSpace("ServerOnly")
-    method void PoisonMist(Vector2 target, number dps)
-        -- 반경 1.3, 4초 독
-        for _, m in ipairs(self:Targets(target, 1.3)) do m:ApplyPoison(dps, 4, self.Entity) end
-        self:Fx("poison", Vector3(target.x, target.y, 0), 1.3)
+    method boolean PoisonMist(Vector2 target, number dps)
+        -- 4초 동안 남는 독안개(반경 1.3): 0.5초마다 안에 있는 적에게 독(2초)을 건다. 나중에 들어온 적도 걸린다
+        local untilAt = _UtilLogic.ElapsedSeconds + 4
+        local radius = 1.3
+        local tick = function()
+            for _, m in ipairs(self:Targets(target, radius)) do m:ApplyPoison(dps, 2, self.Entity) end
+        end
+        tick()
+        local timerId = 0
+        timerId = _TimerService:SetTimerRepeat(function()
+            if not isvalid(self.Entity) or _UtilLogic.ElapsedSeconds >= untilAt then
+                _TimerService:ClearTimer(timerId)
+                self.MistTimers[timerId] = nil
+                return
+            end
+            tick()
+        end, 0.5)
+        self.MistTimers[timerId] = true
+        self:MistFx(Vector3(target.x, target.y, 0), radius, 4)
+        return true
     end
 
     @ExecSpace("ServerOnly")
-    method void CorpseBlast(Vector2 target, number damage)
-        -- 조준점 근처(1.5) 내 혼 하나를 소모해 반경 1.6 폭발. 피해는 원본 등급에 비례 (혼은 추출·해골·되살림과 배타)
-        ---@type SoulOrb
-        local orb = _Util:NearestComponent(self.Entity.CurrentMap, "script.SoulOrb", target, 1.5)
-        if orb == nil or orb.Consumed or orb.OwnerUserId ~= self.Entity.PlayerComponent.UserId then
-            _Util:Notify("근처에 혼이 없다", self.Entity.PlayerComponent.UserId)
-            return
+    method boolean CorpseBlast(Vector2 target, number damage)
+        -- 조준점 근처(1.5) 내 혼 하나를 소모해 반경 1.6 폭발. 피해는 원본 등급에 비례 (혼은 추출·해골·되살림과 배타, 소환 예약된 혼은 건너뛴다)
+        local orb = _UndeadSystem:FindSoul(self.Entity, target, 1.5)
+        if orb == nil then
+            self:Fail("근처에 내 혼이 없다 — 몬스터를 처치한 뒤 쓰세요")
+            return false
         end
         local q = orb.Entity.TransformComponent.WorldPosition
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.6, 0), -1, "skill.corpse_blast", damage * orb.Grade)
         self:Fx("blast", q, 1.6)
         orb:Consume()
+        return true
     end
 
     @ExecSpace("ServerOnly")
-    method void SoulDrain(Vector2 target, number damage)
+    method boolean SoulDrain(Vector2 target, number damage)
         -- 가장 가까운 적 하나의 생명을 흡수 → 피해의 50% 회복, 소환수도 30% 회복 (마법)
         local m = self:Targets(target, 1.5)[1]
-        if m == nil then return end
+        if m == nil then
+            self:Fail("흡수할 대상이 없다")
+            return false
+        end
         damage = damage * math.max(0, 1 - m:GetResist("magic") / 100)
         m:TakeDamage(damage, self.Entity)
         ---@type PlayerStats
@@ -95,14 +134,15 @@ script SkillEffects extends Component
         if stats ~= nil then stats:Heal(damage * 0.5, 0) end
         for _, unit in ipairs(self:Commander():GetUnits()) do unit.Hp = math.min(unit.MaxHp, unit.Hp + damage * 0.3) end
         self:Fx("drain", m.Entity.TransformComponent.WorldPosition, 0.8)
+        return true
     end
 
     @ExecSpace("ServerOnly")
-    method void BoneStorm(number damage)
-        -- 6초 동안 0.5초마다 주위 반경 1.2
+    method boolean BoneStorm(number damage)
+        -- 6초 동안 0.5초마다 주위 반경 1.2 (다시 쓰면 시간만 늘어난다)
         self.StormUntil = _UtilLogic.ElapsedSeconds + 6
         self:Fx("storm", self.Entity.TransformComponent.WorldPosition, 1.2)
-        if self.StormTimer ~= 0 then return end
+        if self.StormTimer ~= 0 then return true end
         self.StormTimer = _TimerService:SetTimerRepeat(function()
             if _UtilLogic.ElapsedSeconds > self.StormUntil or not isvalid(self.Entity) then
                 _TimerService:ClearTimer(self.StormTimer)
@@ -112,33 +152,64 @@ script SkillEffects extends Component
             local p = _Util:Pos2(self.Entity)
             self:Hit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", damage)
         end, 0.5)
+        return true
     end
 
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.StormTimer ~= 0 then _TimerService:ClearTimer(self.StormTimer) end
+        for id, _ in pairs(self.MistTimers) do _TimerService:ClearTimer(id) end
+        self.MistTimers = {}
     end
 
     -- ───────── 저주·군령 ─────────
 
     @ExecSpace("ServerOnly")
-    method void Curse(Vector2 target, string kind, number pct, number radius)
-        -- 범위는 장비 「저주 범위 %」만큼 넓어진다. 8초
+    method boolean Curse(Vector2 target, string kind, number pct, number radius)
+        -- 범위는 장비 「저주 범위 %」만큼 넓어진다. 8초. 범위 안에 적이 없으면 실패
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil then radius = radius * (1 + stats.BonusCurse / 100) end
-        for _, m in ipairs(self:Targets(target, radius)) do m:ApplyCurse(kind, pct, 8) end
+        local list = self:Targets(target, radius)
+        if #list == 0 then
+            self:Fail("저주할 적이 범위 안에 없다")
+            return false
+        end
+        for _, m in ipairs(list) do m:ApplyCurse(kind, pct, 8) end
         self:Fx(kind, Vector3(target.x, target.y, 0), radius)
+        return true
     end
 
     @ExecSpace("ServerOnly")
-    method void ElitePromote()
+    method boolean ElitePromote()
         -- 소환 중인 그림자 중 공격력이 가장 높은 1기를 정예로 (한 번만)
         local best = nil
         for _, unit in ipairs(self:Commander():GetUnits()) do
             if not unit.Promoted and (best == nil or unit.Atk > best.Atk) then best = unit end
         end
-        if best ~= nil then best:Promote() end
+        if best == nil then
+            self:Fail("승격할 그림자가 없다 — 그림자를 먼저 소환하세요")
+            return false
+        end
+        best:Promote()
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SummonShadow()
+        -- 보관함에서 가장 강한 그림자 하나. 못 부르면 이유를 알린다
+        local cmd = self:Commander()
+        if cmd:DeployNext() > 0 then return true end
+        self:Fail(cmd:DeployBlockReason())
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Rally()
+        -- 그림자·언데드를 곁으로. 따를 소환수가 없으면 실패
+        if self:Commander():RallyAll() > 0 then return true end
+        self:Fail("따라올 소환수가 없다")
+        return false
     end
 
     -- ───────── 연출 (모든 클라이언트) ─────────
@@ -162,11 +233,11 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("Multicast")
-    method void LineFx(Vector2 from, Vector2 dir, number len)
-        for i = 1, 5 do
-            local p = from + dir * (len * i / 5)
-            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(p.x, p.y, 0), 0, Vector3(0.3, 0.3, 1), false, nil)
-        end
+    method void MistFx(Vector3 pos, number radius, number seconds)
+        -- 남는 독안개: 반복 입자를 seconds 동안 틀고 끈다
+        local s = Vector3(radius, radius, 1)
+        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, true, { Color = Color(0.4, 1, 0.3, 1) })
+        _TimerService:SetTimerOnce(function() _ParticleService:RemoveParticle(serial) end, seconds)
     end
 
 end

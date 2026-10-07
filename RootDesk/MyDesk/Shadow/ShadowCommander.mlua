@@ -234,16 +234,41 @@ script ShadowCommander extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void RallyAll()
-        -- 집결: 잠시 적을 무시하고 주인 곁으로 (언데드 포함)
-        _UndeadSystem:RallyAll(self.Entity, self.RallySeconds)
+    method integer RallyAll()
+        -- 집결: 잠시 적을 무시하고 주인 곁으로 (언데드 포함). 따라온 소환수 수
+        local n = _UndeadSystem:RallyAll(self.Entity, self.RallySeconds)
         for _, unit in pairs(self.Units) do
             if isvalid(unit) then
                 ---@type ShadowUnit
                 local comp = unit:GetComponent("script.ShadowUnit")
-                if comp ~= nil then comp:Rally(self.RallySeconds) end
+                if comp ~= nil then
+                    comp:Rally(self.RallySeconds)
+                    n = n + 1
+                end
             end
         end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method string DeployBlockReason()
+        -- 그림자 소환이 안 될 때 이유 (DeployNext가 0일 때)
+        local owner = self:Owner()
+        local stored = 0
+        local waiting = 0
+        local now = _UtilLogic.ServerElapsedSeconds
+        if owner ~= nil then
+            for _, s in pairs(owner.Storage) do
+                if not s.deployed then
+                    stored = stored + 1
+                    if now < s.respawnReadyAt then waiting = waiting + 1 end
+                end
+            end
+        end
+        if self.DeployedCount >= self:GetDeployLimit() then return "그림자 소환 한도 " .. tostring(self:GetDeployLimit()) .. "기에 도달했다" end
+        if stored == 0 then return "부를 그림자가 없다 — 혼을 추출해 그림자를 모으세요" end
+        if waiting == stored then return "그림자가 아직 회복 중이다" end
+        return "지금은 그림자를 부를 수 없다"
     end
 
     @ExecSpace("ServerOnly")
