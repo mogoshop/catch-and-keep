@@ -274,7 +274,7 @@ ShadowConfig = {
 | `ShadowUnit` 피격 | 그림자 HP = 원본 HP × 0.6 × 레벨 보정 (일반 36, 정예 90). 0이면 주인에게 사망 통보 |
 | `ShadowOwner.OnUnitDied` | 엔티티 제거, 보관함 복귀, **10초 재소환 대기**(`RespawnDelaySec`), 화면 알림 |
 | `ShadowHUD` | 대기 중인 그림자를 "재소환 n초 · 대기"로 표시 |
-| `ShadowMonster` | 추격형(정예)은 **선공하지 않고** 맞으면 때린 대상(플레이어·그림자)을 쫓는다 |
+| `ShadowMonster` (현재 `Monster/Monster` + `MonsterTraits`·`MonsterStatus`) | 추격형(정예)은 **선공하지 않고** 맞으면 때린 대상(플레이어·그림자)을 쫓는다 |
 | 플레이어 모델 | 기본 피격 박스가 0×0이라 (0.45, 0.7)로 지정, 최대 HP 300 |
 
 ### 튜닝 기록
@@ -297,6 +297,8 @@ ShadowConfig = {
 - 메서드 인자로 Shape 타입을 넘길 수 없다 (LEA-4002). 중심·크기·각도 값으로 넘긴다.
 - Logic의 OnInitialize에서 채운 table 속성이 비어 있을 수 있다. 첫 조회 때 만드는 지연 생성으로 바꿨다 (SkillData·ItemData·QuestData).
 - 새 모델을 맵에 배치하면 refresh를 두 번 해야 런타임에 엔티티가 생긴다 (모델 등록 → 맵 재로드).
-- 한글 문자열은 string.sub로 자르면 깨진다. UTF-8 글자 단위로 자른다 (GameHUD.Clip).
+- 한글 문자열은 string.sub로 자르면 깨진다. UTF-8 글자 단위로 자른다 (현재 `_UIKit:Clip`).
 - UI 그룹 순서가 같으면 겹침 순서가 불안정하다. 창이 있는 GameHUD는 GroupOrder 5.
 
+
+> 2026-10-07 구조 정리 이후 파일 이름·위치는 `docs/architecture.md`가 기준이다 (이 문서의 파일 경로는 당시 기록).

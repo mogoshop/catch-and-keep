@@ -2,7 +2,7 @@
 
 디아블로2 룬워드의 구조(소켓 + 순서대로 룬 삽입 → 특수 효과)만 차용하고, 룬 이름·조합·효과·룬워드 이름은 전부 오리지널로 설계한 초안. 핵심 테마: **그림자 군단(소환수) 강화**.
 
-v0.1 원본은 `rune-system-draft-v0.1.md`에 보존.
+v0.1 원본은 `archive/rune-system-draft-v0.1.md`에 보존. 실제 게임 룬 데이터는 `data/runes.csv`·`data/runewords.csv`가 기준이다.
 
 ## v0.2 변경 요약
 
