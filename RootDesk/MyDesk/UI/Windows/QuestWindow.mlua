@@ -1,0 +1,72 @@
+-- 퀘스트 창 (Q, D2 퀘스트 로그): 영역 의뢰 6개의 상태(완료·진행·보고 대기·잠김)와 선택한 의뢰의 설명·보상.
+@Logic
+script QuestWindow extends Logic
+
+    property string Win = "QuestWin"
+    property integer Selected = 1
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for i = 1, 6 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function()
+                self.Selected = index
+                self.RenderKey = ""
+            end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        if not _UIKit:IsOpen(self.Win) then
+            self.RenderKey = ""
+            return
+        end
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil then return end
+        local key = tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        for i = 1, 6 do
+            local q = _QuestData:Get(i)
+            local text = ""
+            if q ~= nil then
+                local mark = ""
+                if i == self.Selected then mark = "▶" end
+                text = mark .. tostring(i) .. ". " .. q.title .. "   " .. self:StatusText(i, quest, q)
+            end
+            _UIKit:SetText(self.Win .. "/Q" .. tostring(i), text)
+        end
+        _UIKit:SetText(self.Win .. "/Desc", self:DescText(quest))
+    end
+
+    method string StatusText(integer i, PlayerQuest quest, table q)
+        if i < quest.Index then return _UIKit:Colored("#7CFF7A", "완료") end
+        if i > quest.Index then return _UIKit:Colored("#777777", "잠김") end
+        if quest.State == 0 then return _UIKit:Colored("#FFE15A", "새 의뢰") end
+        if quest.State == 1 then return "진행 " .. tostring(quest.Progress) .. "/" .. tostring(q.count) end
+        return _UIKit:Colored("#7CFF7A", "보고 대기")
+    end
+
+    method string DescText(PlayerQuest quest)
+        local q = _QuestData:Get(self.Selected)
+        if q == nil then return "" end
+        if self.Selected > quest.Index then return "앞선 의뢰를 마치면 열린다." end
+        local text = q.desc .. "\n보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
+        local extra = _QuestData:RewardText(q.reward)
+        if extra ~= "" then text = text .. ", " .. extra end
+        return text
+    end
+
+end

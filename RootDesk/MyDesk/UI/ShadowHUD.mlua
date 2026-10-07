@@ -1,107 +1,76 @@
--- 그림자 HUD + 보관함 창 컨트롤러 (클라이언트 전용).
--- 서버의 ShadowOwner가 동기화하는 값(StorageDigest, Essence 등)을 읽어 그리고,
--- 버튼은 ShadowOwner의 Server 요청 메서드로 전달한다. UI는 서버에서 접근할 수 없다.
+-- 그림자 상태줄 + 보관함 창 (H) + 모바일 패드 (클라이언트 전용).
+-- 보관함 값은 ShadowOwner(@Sync StorageDigest·Essence), 소환 수는 ShadowCommander에서 읽는다.
+-- 버튼은 각 컴포넌트의 Server 요청으로 보낸다 (검증은 서버).
 @Logic
 script ShadowHUD extends Logic
 
-    property Entity window = "ec7926da-b184-47ac-8171-b26c42e069c9"
-    property TextGUIRendererComponent statusText = "958a853e-65dd-4e04-a265-94dc2ab0c808"
-    property string GroupPath = "/ui/ShadowHUD"
+    property string Root = "/ui/ShadowHUD"
+    property string Win = "/ui/ShadowHUD/Window"
     property integer RowCount = 8
     property number PollInterval = 0.25
 
     property integer Page = 0
-    property string RenderedKey = ""
-    property table Rows = {}        -- i → { root, label, deploy, upgrade, salvage }
-    property table RowIds = {}      -- i → 그 줄에 표시 중인 그림자 id
-    property table Handlers = {}    -- { entity, handler } 목록 (OnEndPlay에서 해제)
+    property string RenderKey = ""
+    property table RowIds = {}      -- 줄 번호 → 표시 중인 그림자 id
+    property table RowDeployed = {} -- 줄 번호 → 소환 중 여부
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        -- 창은 닫힌 상태로 시작. 줄 엔티티를 경로로 찾아 버튼을 연결한다
-        if not isvalid(self.window) then
-            log_warning("[ShadowHUD] window 바인딩 없음")
-            return
-        end
-        self.window.Enable = false
+        _UIKit:RegisterWindow(self.Win)
         -- 모바일 패드는 ActivePlatform=Mobile이어도 PC에서 화면 클릭을 가로채므로 PC에서는 끈다
-        local pad = _EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad")
-        if isvalid(pad) then pad.Enable = Environment:IsMobilePlatform() end
-        self.Rows = {}
-        self.RowIds = {}
-        self.Handlers = {}
+        _UIKit:SetEnabled(self.Root .. "/MobilePad", Environment:IsMobilePlatform())
         for i = 1, self.RowCount do
-            local base = self.GroupPath .. "/Window/Row" .. tostring(i)
-            local row = {
-                root = _EntityService:GetEntityByPath(base),
-                label = _EntityService:GetEntityByPath(base .. "/Label"),
-                deploy = _EntityService:GetEntityByPath(base .. "/BtnDeploy"),
-                upgrade = _EntityService:GetEntityByPath(base .. "/BtnUpgrade"),
-                salvage = _EntityService:GetEntityByPath(base .. "/BtnSalvage"),
-            }
-            self.Rows[i] = row
             local index = i
-            self:Connect(row.deploy, function() self:OnRowAction(index, "deploy") end)
-            self:Connect(row.upgrade, function() self:OnRowAction(index, "upgrade") end)
-            self:Connect(row.salvage, function() self:OnRowAction(index, "salvage") end)
+            local base = self.Win .. "/Row" .. tostring(i)
+            _UIKit:Connect(base .. "/BtnDeploy", function() self:OnRowAction(index, "deploy") end)
+            _UIKit:Connect(base .. "/BtnUpgrade", function() self:OnRowAction(index, "upgrade") end)
+            _UIKit:Connect(base .. "/BtnSalvage", function() self:OnRowAction(index, "salvage") end)
         end
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnClose"), function() self:ToggleWindow() end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnPrev"), function() self:ChangePage(-1) end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Window/BtnNext"), function() self:ChangePage(1) end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnStorage"), function() self:ToggleWindow() end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnInput"), function() self:ToggleInputMode() end)
-        -- 모바일 패드 (ActivePlatform=Mobile이라 PC에서는 보이지 않는다)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnAttack"), function() self:MobileAttack() end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnSummon"), function() self:OwnerCall("deploy") end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnRecall"), function() self:OwnerCall("recall") end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnRally"), function() self:OwnerCall("rally") end)
-        self:Connect(_EntityService:GetEntityByPath(self.GroupPath .. "/MobilePad/BtnStorage"), function() self:ToggleWindow() end)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self:ToggleWindow() end)
+        _UIKit:Connect(self.Win .. "/BtnPrev", function() self:ChangePage(-1) end)
+        _UIKit:Connect(self.Win .. "/BtnNext", function() self:ChangePage(1) end)
+        _UIKit:Connect(self.Root .. "/Status/BtnStorage", function() self:ToggleWindow() end)
+        _UIKit:Connect(self.Root .. "/Status/BtnInput", function() self:ToggleInputMode() end)
+        _UIKit:Connect(self.Root .. "/MobilePad/BtnAttack", function() self:MobileAttack() end)
+        _UIKit:Connect(self.Root .. "/MobilePad/BtnSummon", function() self:CommanderCall("deploy") end)
+        _UIKit:Connect(self.Root .. "/MobilePad/BtnRecall", function() self:CommanderCall("recall") end)
+        _UIKit:Connect(self.Root .. "/MobilePad/BtnRally", function() self:CommanderCall("rally") end)
+        _UIKit:Connect(self.Root .. "/MobilePad/BtnStorage", function() self:ToggleWindow() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
-        log("[ShadowHUD] 준비 완료, 줄 " .. tostring(#self.Rows))
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        -- 연결한 이벤트와 타이머 정리
-        for _, h in ipairs(self.Handlers) do
-            if isvalid(h.entity) then h.entity:DisconnectEvent(ButtonClickEvent, h.eventHandler) end
-        end
-        self.Handlers = {}
-        if self.TimerId ~= 0 then
-            _TimerService:ClearTimer(self.TimerId)
-            self.TimerId = 0
-        end
-    end
-
-    @ExecSpace("ClientOnly")
-    method void Connect(Entity e, any callback)
-        -- 버튼 클릭 연결 + 해제용 기록
-        if not isvalid(e) then return end
-        local h = e:ConnectEvent(ButtonClickEvent, callback)
-        table.insert(self.Handlers, { entity = e, eventHandler = h })
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
     end
 
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        -- H: 보관함 열기/닫기 (설계 08). I는 소지품(GameHUD)
+        -- H: 보관함 열기/닫기
         if event.key == KeyboardKey.H then self:ToggleWindow() end
     end
 
-    @ExecSpace("ClientOnly")
-    method ClickControl GetClickControl()
-        local player = _UserService.LocalPlayer
-        if not isvalid(player) then return nil end
-        ---@type ClickControl
-        local cc = player:GetComponent("script.ClickControl")
-        return cc
+    method ShadowOwner Owner()
+        ---@type ShadowOwner
+        local c = _UIKit:Comp("script.ShadowOwner")
+        return c
     end
+
+    method ShadowCommander Commander()
+        ---@type ShadowCommander
+        local c = _UIKit:Comp("script.ShadowCommander")
+        return c
+    end
+
+    -- ───────── 조작 ─────────
 
     @ExecSpace("ClientOnly")
     method void ToggleInputMode()
         -- PC 조작 전환: 마우스(클릭 이동·공격) ↔ 키보드(방향키·Ctrl)
-        local cc = self:GetClickControl()
+        ---@type ClickControl
+        local cc = _UIKit:Comp("script.ClickControl")
         if cc == nil then return end
         cc:SetMouseMode(not cc.MouseMode)
         self:RefreshInputLabel()
@@ -109,20 +78,22 @@ script ShadowHUD extends Logic
 
     @ExecSpace("ClientOnly")
     method void RefreshInputLabel()
-        local btn = _EntityService:GetEntityByPath(self.GroupPath .. "/Status/BtnInput")
-        local cc = self:GetClickControl()
-        if not isvalid(btn) or cc == nil then return end
-        btn.TextGUIRendererComponent.Text = cc.MouseMode and "조작: 마우스" or "조작: 키보드"
+        ---@type ClickControl
+        local cc = _UIKit:Comp("script.ClickControl")
+        if cc == nil then return end
+        local label = "조작: 키보드"
+        if cc.MouseMode then label = "조작: 마우스" end
+        _UIKit:SetText(self.Root .. "/Status/BtnInput", label)
     end
 
     @ExecSpace("ClientOnly")
-    method void OwnerCall(string action)
-        -- 모바일 버튼 → 단축키와 같은 서버 요청
-        local owner = self:GetOwner()
-        if owner == nil then return end
-        if action == "deploy" then owner:RequestDeploy("")
-        elseif action == "recall" then owner:RequestRecall("")
-        elseif action == "rally" then owner:RequestRally() end
+    method void CommanderCall(string action)
+        -- 모바일 버튼 → 단축키(Z X C)와 같은 서버 요청
+        local cmd = self:Commander()
+        if cmd == nil then return end
+        if action == "deploy" then cmd:RequestDeploy("")
+        elseif action == "recall" then cmd:RequestRecall("")
+        elseif action == "rally" then cmd:RequestRally() end
     end
 
     @ExecSpace("ClientOnly")
@@ -130,65 +101,49 @@ script ShadowHUD extends Logic
         -- 모바일 공격: 가까운 몬스터 쪽을 보고 공격 (조준 입력이 없으므로)
         local player = _UserService.LocalPlayer
         if not isvalid(player) then return end
-        local p = player.TransformComponent.WorldPosition
-        local bestDx = nil
-        local bestDist = 2.0
-        for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
-            ---@type ShadowMonster
-            local m = c
-            if not m.IsDead and c.Entity.Enable then
-                local q = c.Entity.TransformComponent.WorldPosition
-                local d = (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude()
-                if d < bestDist then bestDist = d bestDx = q.x - p.x end
+        local m = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 2.0)
+        if m ~= nil then
+            local dx = m.Entity.TransformComponent.WorldPosition.x - player.TransformComponent.WorldPosition.x
+            if math.abs(dx) > 0.05 then
+                local dir = -1
+                if dx >= 0 then dir = 1 end
+                player.PlayerControllerComponent.LookDirectionX = dir
             end
-        end
-        if bestDx ~= nil and math.abs(bestDx) > 0.05 then
-            player.PlayerControllerComponent.LookDirectionX = bestDx >= 0 and 1 or -1
         end
         player.PlayerControllerComponent:ActionAttack()
     end
 
     @ExecSpace("ClientOnly")
-    method ShadowOwner GetOwner()
-        local player = _UserService.LocalPlayer
-        if not isvalid(player) then return nil end
-        ---@type ShadowOwner
-        local owner = player:GetComponent("script.ShadowOwner")
-        return owner
-    end
-
-    @ExecSpace("ClientOnly")
     method void ToggleWindow()
-        if not isvalid(self.window) then return end
-        self.window.Enable = not self.window.Enable
-        self.RenderedKey = ""
+        _UIKit:Toggle(self.Win)
+        self.RenderKey = ""
         self:Poll()
     end
 
     @ExecSpace("ClientOnly")
     method void ChangePage(integer delta)
         self.Page = math.max(0, self.Page + delta)
-        self.RenderedKey = ""
+        self.RenderKey = ""
         self:Poll()
     end
+
+    -- ───────── 갱신 ─────────
 
     @ExecSpace("ClientOnly")
     method void Poll()
         -- 상태줄은 매번, 창은 내용이 바뀌었을 때만 다시 그린다
-        local owner = self:GetOwner()
-        if owner == nil then return end
-        local limit = _ShadowConfig:GetDeployLimit(owner:GetDeployBonus())
-        if self.RenderedKey == "" then self:RefreshInputLabel() end
-        if isvalid(self.statusText) then
-            self.statusText.Text = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, owner.DeployedCount, limit, owner.Essence)
-        end
-        if not isvalid(self.window) or not self.window.Enable then return end
+        local owner = self:Owner()
+        local cmd = self:Commander()
+        if owner == nil or cmd == nil then return end
+        if self.RenderKey == "" then self:RefreshInputLabel() end
+        _UIKit:SetText(self.Root .. "/Status/Text", string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit(), owner.Essence))
+        if not _UIKit:IsOpen(self.Win) then return end
         -- 재소환 대기 중인 그림자가 있으면 남은 초가 바뀔 때마다 다시 그린다
         local tick = ""
         if string.find(owner.StorageDigest, "|0|%d") then tick = tostring(math.floor(_UtilLogic.ServerElapsedSeconds)) end
         local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page) .. "#" .. tick
-        if key == self.RenderedKey then return end
-        self.RenderedKey = key
+        if key == self.RenderKey then return end
+        self.RenderKey = key
         self:RenderRows(owner)
     end
 
@@ -206,59 +161,51 @@ script ShadowHUD extends Logic
         end
         local pages = math.max(1, math.ceil(#entries / self.RowCount))
         if self.Page >= pages then self.Page = pages - 1 end
-        local pageText = _EntityService:GetEntityByPath(self.GroupPath .. "/Window/PageText")
-        if isvalid(pageText) then
-            pageText.TextGUIRendererComponent.Text = string.format("%d / %d   (정수 %d)", self.Page + 1, pages, owner.Essence)
-        end
-
+        _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d   (정수 %d)", self.Page + 1, pages, owner.Essence))
         for i = 1, self.RowCount do
-            local row = self.Rows[i]
+            local base = self.Win .. "/Row" .. tostring(i)
             local e = entries[self.Page * self.RowCount + i]
-            self.RowIds[i] = e ~= nil and e.id or ""
-            if isvalid(row.root) then row.root.Enable = e ~= nil end
+            self.RowIds[i] = ""
+            self.RowDeployed[i] = false
+            _UIKit:SetEnabled(base, e ~= nil)
             if e ~= nil then
-                local gradeName = "일반"
-                if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
-                local state = ""
-                if e.deployed then state = "  · 소환 중" elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
-                row.label.TextGUIRendererComponent.Text = string.format("%s  [%s]  Lv%d%s", _ShadowConfig:GetMonsterName(e.src), gradeName, e.level, state)
-                if e.deployed then
-                    row.deploy.TextGUIRendererComponent.Text = "회수"
-                elseif e.wait > 0 then
-                    row.deploy.TextGUIRendererComponent.Text = "대기"
-                else
-                    row.deploy.TextGUIRendererComponent.Text = "소환"
-                end
-                row.upgrade.TextGUIRendererComponent.Text = "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level))
+                self.RowIds[i] = e.id
+                self.RowDeployed[i] = e.deployed
+                _UIKit:SetText(base .. "/Label", self:RowLabel(e))
+                local deployText = "소환"
+                if e.deployed then deployText = "회수" elseif e.wait > 0 then deployText = "대기" end
+                _UIKit:SetText(base .. "/BtnDeploy", deployText)
+                _UIKit:SetText(base .. "/BtnUpgrade", "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level)))
                 local yield = _ShadowConfig:GetDisassembleYield(e.grade)
-                if e.deployed or yield <= 0 then
-                    row.salvage.TextGUIRendererComponent.Text = "-"
-                else
-                    row.salvage.TextGUIRendererComponent.Text = "분해 +" .. tostring(yield)
-                end
+                local salvage = "분해 +" .. tostring(yield)
+                if e.deployed or yield <= 0 then salvage = "-" end
+                _UIKit:SetText(base .. "/BtnSalvage", salvage)
             end
         end
     end
 
+    method string RowLabel(table e)
+        local gradeName = "일반"
+        if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
+        local state = ""
+        if e.deployed then state = "  · 소환 중" elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
+        return string.format("%s  [%s]  Lv%d%s", _GameData:GetMonsterName(e.src), gradeName, e.level, state)
+    end
+
     @ExecSpace("ClientOnly")
     method void OnRowAction(integer index, string action)
-        -- 줄 버튼 → 서버 요청 (검증은 서버 ShadowOwner가 한다)
+        -- 줄 버튼 → 서버 요청
         local id = self.RowIds[index]
         if id == nil or id == "" then return end
-        local owner = self:GetOwner()
-        if owner == nil then return end
         if action == "deploy" then
-            if string.find(self.Rows[index].deploy.TextGUIRendererComponent.Text, "회수") then
-                owner:RequestRecall(id)
-            else
-                owner:RequestDeploy(id)
-            end
-        elseif action == "upgrade" then
-            owner:RequestUpgrade(id)
-        elseif action == "salvage" then
-            owner:RequestDisassemble(id)
+            local cmd = self:Commander()
+            if cmd == nil then return end
+            if self.RowDeployed[index] then cmd:RequestRecall(id) else cmd:RequestDeploy(id) end
+        else
+            local owner = self:Owner()
+            if owner == nil then return end
+            if action == "upgrade" then owner:RequestUpgrade(id) else owner:RequestDisassemble(id) end
         end
-        log("[ShadowHUD] 요청 " .. action .. " " .. id)
     end
 
 end

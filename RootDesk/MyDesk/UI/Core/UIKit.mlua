@@ -1,0 +1,128 @@
+-- UI 공통 도구 (클라이언트). 모든 HUD·창 컨트롤러가 같이 쓴다.
+--   경로 캐시 Get / 글자·게이지 SetText·SetFill / 버튼 연결 Connect(OnEndPlay 해제 포함)
+--   창 열고 닫기 Open·Close·Toggle·IsOpen, Esc로 열린 창 모두 닫기 / 내 캐릭터 컴포넌트 Comp / 한글 안전 자르기 Clip
+-- 경로: "Bottom/XP"처럼 쓰면 GameHUD 그룹 기준, "/ui/ShadowHUD/..."처럼 /로 시작하면 절대 경로.
+@Logic
+script UIKit extends Logic
+
+    property string Group = "/ui/GameHUD"
+    property table Cache = {}
+    property table Handlers = {}
+    property table Windows = {}             -- Esc로 닫을 창 이름 목록
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        for _, h in ipairs(self.Handlers) do
+            if isvalid(h.entity) then h.entity:DisconnectEvent(ButtonClickEvent, h.eventHandler) end
+        end
+        self.Handlers = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity Get(string rel)
+        local e = self.Cache[rel]
+        if e == nil or not isvalid(e) then
+            local path = rel
+            if string.sub(rel, 1, 1) ~= "/" then path = self.Group .. "/" .. rel end
+            e = _EntityService:GetEntityByPath(path)
+            self.Cache[rel] = e
+        end
+        return e
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetText(string rel, string text)
+        local e = self:Get(rel)
+        if isvalid(e) and e.TextGUIRendererComponent.Text ~= text then e.TextGUIRendererComponent.Text = text end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetFill(string rel, number amount)
+        local e = self:Get(rel)
+        if isvalid(e) then e.SpriteGUIRendererComponent.FillAmount = math.max(0, math.min(1, amount)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetEnabled(string rel, boolean enabled)
+        local e = self:Get(rel)
+        if isvalid(e) and e.Enable ~= enabled then e.Enable = enabled end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Connect(string rel, any callback)
+        local e = self:Get(rel)
+        if not isvalid(e) then
+            log_warning("[UIKit] UI 없음: " .. rel)
+            return
+        end
+        local h = e:ConnectEvent(ButtonClickEvent, callback)
+        table.insert(self.Handlers, { entity = e, eventHandler = h })
+    end
+
+    -- ───────── 창 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void RegisterWindow(string name)
+        -- 창 컨트롤러가 시작할 때 등록 (닫힌 상태로 시작)
+        table.insert(self.Windows, name)
+        self:SetEnabled(name, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsOpen(string name)
+        local e = self:Get(name)
+        return isvalid(e) and e.Enable
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open(string name)
+        self:SetEnabled(name, true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Close(string name)
+        self:SetEnabled(name, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Toggle(string name)
+        self:SetEnabled(name, not self:IsOpen(name))
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.Escape then return end
+        for _, name in ipairs(self.Windows) do self:Close(name) end
+    end
+
+    -- ───────── 데이터 ─────────
+
+    @ExecSpace("ClientOnly")
+    method any Comp(string componentName)
+        -- 내 캐릭터의 스크립트 컴포넌트 (없으면 nil)
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return nil end
+        return p:GetComponent(componentName)
+    end
+
+    method string Clip(string text, integer maxChars)
+        -- UTF-8 글자 단위로 자른다 (바이트로 자르면 한글이 깨진다)
+        local out = {}
+        local n = 0
+        for ch in string.gmatch(text, "[\0-\127\194-\244][\128-\191]*") do
+            n = n + 1
+            if n > maxChars then
+                table.insert(out, "..")
+                break
+            end
+            table.insert(out, ch)
+        end
+        return table.concat(out)
+    end
+
+    method string Colored(string color, string text)
+        return "<color=" .. color .. ">" .. text .. "</color>"
+    end
+
+end

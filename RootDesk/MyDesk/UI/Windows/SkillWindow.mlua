@@ -1,0 +1,106 @@
+-- 스킬 창 (K): 3트리 × 최대 10행. 스킬을 고르면 설명·습득 조건, 습득(+1)·슬롯 지정(A S D F 우클릭).
+@Logic
+script SkillWindow extends Logic
+
+    property string Win = "SkillWin"
+    property string Selected = ""
+    property table Rows = {}                -- "T1_1" → skill id
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for t = 1, 3 do
+            for r = 1, 10 do
+                local key = "T" .. tostring(t) .. "_" .. tostring(r)
+                _UIKit:Connect(self.Win .. "/" .. key, function() self:Select(key) end)
+            end
+        end
+        local actions = { { "BtnLearn", 0 }, { "BtnA", 1 }, { "BtnS", 2 }, { "BtnD", 3 }, { "BtnF", 4 }, { "BtnR", 5 } }
+        for _, a in ipairs(actions) do
+            local slot = a[2]
+            _UIKit:Connect(self.Win .. "/" .. a[1], function() self:Act(slot) end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        if not _UIKit:IsOpen(self.Win) then
+            self.RenderKey = ""
+            return
+        end
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if book == nil or st == nil then return end
+        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints))
+        local trees = { "command", "soul", "curse" }
+        local rowCount = { 0, 0, 0 }
+        self.Rows = {}
+        for t = 1, 3 do _UIKit:SetText(self.Win .. "/Head" .. tostring(t), _SkillData:TreeName(trees[t])) end
+        for _, id in ipairs(_SkillData:GetOrder()) do
+            local def = _SkillData:Get(id)
+            local t = 1
+            if def.tree == "soul" then t = 2 elseif def.tree == "curse" then t = 3 end
+            rowCount[t] = rowCount[t] + 1
+            local rkey = "T" .. tostring(t) .. "_" .. tostring(rowCount[t])
+            self.Rows[rkey] = id
+            local lv = book:GetLevel(id)
+            local color = "#777777"
+            if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#AACCAA" end
+            local mark = ""
+            if id == self.Selected then mark = "▶" end
+            local soon = ""
+            if not def.impl then soon = " ·" end
+            _UIKit:SetText(self.Win .. "/" .. rkey, mark .. _UIKit:Colored(color, def.name .. "  " .. tostring(lv) .. "/" .. tostring(def.maxLv)) .. soon)
+        end
+        for t = 1, 3 do
+            for r = rowCount[t] + 1, 10 do _UIKit:SetText(self.Win .. "/T" .. tostring(t) .. "_" .. tostring(r), "") end
+        end
+        _UIKit:SetText(self.Win .. "/Desc", self:Describe(book, st))
+    end
+
+    method string Describe(SkillBook book, PlayerStats st)
+        if self.Selected == "" then return "스킬을 선택하세요.  (· = 준비 중)" end
+        local def = _SkillData:Get(self.Selected)
+        local reason = book:CanLearn(self.Selected, st.Level, st.SkillPoints)
+        local req = "요구 Lv" .. tostring(def.row)
+        if def.prereq ~= "" then req = req .. ", 선행 " .. _SkillData:Get(def.prereq).name end
+        local mana = ""
+        if def.mana > 0 then mana = "  마나 " .. tostring(math.floor(def.mana)) end
+        local learn = _UIKit:Colored("#AACCAA", "습득 가능")
+        if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
+        return def.name .. " — " .. def.desc .. mana .. "\n" .. req .. "   " .. learn
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Select(string rkey)
+        local id = self.Rows[rkey]
+        if id == nil then return end
+        self.Selected = id
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Act(integer slot)
+        -- 0 = 습득, 1~4 = A S D F, 5 = 우클릭
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil or self.Selected == "" then return end
+        if slot == 0 then book:RequestLearn(self.Selected) else book:RequestSetSlot(slot, self.Selected) end
+        self.RenderKey = ""
+    end
+
+end

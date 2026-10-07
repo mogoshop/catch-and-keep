@@ -1,0 +1,74 @@
+-- 거래 창: 거래가 성립하면 자동으로 열리고 소지품 창도 함께 연다 (가방 칸을 누르면 올라감 — InventoryWindow).
+-- 내 칸을 누르면 회수, 골드 ±100, 양쪽 확인 시 교환. 닫기 = 거래 취소.
+@Logic
+script TradeWindow extends Logic
+
+    property string Win = "TradeWin"
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:SetEnabled(self.Win, false)
+        for i = 1, 8 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/My" .. tostring(i), function()
+                local t = self:Trade()
+                if t ~= nil and t.Partner ~= "" then t:RequestRetract(index) end
+            end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnGoldMinus", function() local t = self:Trade() if t ~= nil then t:RequestGold(-100) end end)
+        _UIKit:Connect(self.Win .. "/BtnGoldPlus", function() local t = self:Trade() if t ~= nil then t:RequestGold(100) end end)
+        _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm() end end)
+        _UIKit:Connect(self.Win .. "/BtnCancel", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    method PlayerTrade Trade()
+        ---@type PlayerTrade
+        local c = _UIKit:Comp("script.PlayerTrade")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        local t = self:Trade()
+        if t == nil then return end
+        local active = t.Partner ~= ""
+        _UIKit:SetEnabled(self.Win, active)
+        if not active then
+            self.RenderKey = ""
+            return
+        end
+        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm)
+        if key == self.RenderKey then return end
+        if self.RenderKey == "" then _UIKit:Open("InvWin") end
+        self.RenderKey = key
+        local mine = self:Split(t.MyOffer)
+        local theirs = self:Split(t.TheirOffer)
+        for i = 1, 8 do
+            _UIKit:SetText(self.Win .. "/My" .. tostring(i), mine[i] ~= nil and _ItemData:DisplayName(mine[i]) or "")
+            _UIKit:SetText(self.Win .. "/Their" .. tostring(i), theirs[i] ~= nil and _ItemData:DisplayName(theirs[i]) or "")
+        end
+        _UIKit:SetText(self.Win .. "/Gold", "내 골드 " .. tostring(t.MyGold) .. "  " .. self:ConfirmText(t.MyConfirm)
+            .. "\n상대 골드 " .. tostring(t.TheirGold) .. "  " .. self:ConfirmText(t.TheirConfirm) .. "   (소지품 칸을 누르면 올라간다)")
+    end
+
+    method table Split(string digest)
+        local out = {}
+        for x in string.gmatch(digest, "[^;]+") do table.insert(out, x) end
+        return out
+    end
+
+    method string ConfirmText(boolean confirmed)
+        if confirmed then return _UIKit:Colored("#7CFF7A", "확인함") end
+        return _UIKit:Colored("#888888", "대기")
+    end
+
+end

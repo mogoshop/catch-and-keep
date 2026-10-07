@@ -1,0 +1,123 @@
+-- 소지품 창 (I): 장비 10부위, 가방 30칸, 선택 아이템 설명, 장착·판매. 룬을 고른 뒤 장비 칸을 누르면 소켓.
+-- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
+@Logic
+script InventoryWindow extends Logic
+
+    property string Win = "InvWin"
+    property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
+    property integer Selected = 0
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for slot in string.gmatch(self.SlotOrder, "[^,]+") do
+            local s = slot
+            _UIKit:Connect(self.Win .. "/Eq_" .. s, function() self:OnEquipSlot(s) end)
+        end
+        for i = 1, 30 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Bag" .. tostring(i), function() self:OnBagSlot(index) end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnEquip", function() self:Act("equip") end)
+        _UIKit:Connect(self.Win .. "/BtnSell", function() self:Act("sell") end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    method PlayerInventory Inv()
+        ---@type PlayerInventory
+        local c = _UIKit:Comp("script.PlayerInventory")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        if not _UIKit:IsOpen(self.Win) then
+            self.RenderKey = ""
+            return
+        end
+        local inv = self:Inv()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        ---@type PlayerBelt
+        local belt = _UIKit:Comp("script.PlayerBelt")
+        if inv == nil or st == nil or belt == nil then return end
+        local key = inv.BagDigest .. "#" .. inv.EquipDigest .. "#" .. tostring(st.Gold) .. "#" .. tostring(self.Selected) .. "#" .. tostring(belt.HpPot) .. tostring(belt.MpPot)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
+        local labels = { weapon = "무기", offhand = "보조", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring1 = "반지1", ring2 = "반지2" }
+        local eq = inv:GetEquipMap()
+        for slot, label in pairs(labels) do
+            local s = eq[slot]
+            if s == nil then
+                _UIKit:SetText(self.Win .. "/Eq_" .. slot, _UIKit:Colored("#777777", label .. ": 비어 있음"))
+            else
+                _UIKit:SetText(self.Win .. "/Eq_" .. slot, label .. ": " .. _ItemData:DisplayName(s))
+            end
+        end
+        local list = inv:GetBagList()
+        if self.Selected > #list then self.Selected = 0 end
+        for i = 1, 30 do
+            local s = list[i]
+            local text = ""
+            if s ~= nil then
+                local item = _ItemData:Parse(s)
+                text = (i == self.Selected and "▶" or "") .. _UIKit:Colored(_ItemData:RarityColor(item.rarity), _UIKit:Clip(item.name, 7))
+            end
+            _UIKit:SetText(self.Win .. "/Bag" .. tostring(i), text)
+        end
+        local desc = "아이템을 선택하세요."
+        local sel = list[self.Selected]
+        if sel ~= nil then
+            desc = _ItemData:Describe(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
+            if _ItemData:IsRune(_ItemData:Parse(sel).base) then desc = desc .. "\n→ 소켓이 빈 장비 칸을 누르면 끼운다" end
+        end
+        _UIKit:SetText(self.Win .. "/Desc", desc)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnBagSlot(integer index)
+        -- 거래 중이면 거래창에 올리고, 아니면 선택
+        ---@type PlayerTrade
+        local trade = _UIKit:Comp("script.PlayerTrade")
+        if trade ~= nil and trade.Partner ~= "" then
+            trade:RequestOffer(index)
+            return
+        end
+        self.Selected = index
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEquipSlot(string slot)
+        -- 룬을 고른 상태면 그 장비에 소켓, 아니면 장비 해제
+        local inv = self:Inv()
+        if inv == nil then return end
+        local sel = inv:GetBagList()[self.Selected]
+        if sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
+            inv:RequestSocket(self.Selected, slot)
+            self.Selected = 0
+        else
+            inv:RequestUnequip(slot)
+        end
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Act(string action)
+        local inv = self:Inv()
+        if inv == nil or self.Selected <= 0 then return end
+        if action == "equip" then inv:RequestEquip(self.Selected) else inv:RequestSell(self.Selected) end
+        self.Selected = 0
+        self.RenderKey = ""
+    end
+
+end

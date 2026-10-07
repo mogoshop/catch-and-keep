@@ -1,0 +1,82 @@
+-- 웨이포인트 창: 웨이포인트 위(반경 1.2)에 서면 열린다. 닫으면 벗어났다 다시 밟을 때까지 닫힘.
+-- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환.
+@Logic
+script WaypointWindow extends Logic
+
+    property string Win = "WpWin"
+    property number Reach = 1.2
+    property boolean Dismissed = false
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:SetEnabled(self.Win, false)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self.Dismissed = true end)
+        for i = 1, 6 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Wp" .. tostring(i), function() self:TravelTo(index) end)
+        end
+        for d = 0, 2 do
+            local diff = d
+            _UIKit:Connect(self.Win .. "/Diff" .. tostring(d), function()
+                local travel = self:Travel()
+                if travel ~= nil then travel:RequestDifficulty(diff) end
+            end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    method PlayerTravel Travel()
+        ---@type PlayerTravel
+        local c = _UIKit:Comp("script.PlayerTravel")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        local player = _UserService.LocalPlayer
+        local travel = self:Travel()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if not isvalid(player) or not isvalid(player.CurrentMap) or travel == nil or st == nil then return end
+        local near = _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), self.Reach) ~= nil
+        if not near then self.Dismissed = false end
+        local open = near and not self.Dismissed
+        _UIKit:SetEnabled(self.Win, open)
+        if not open then
+            self.RenderKey = ""
+            return
+        end
+        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local list = _WaypointData:GetList()
+        for i = 1, 6 do
+            local w = list[i]
+            local text = ""
+            if w ~= nil then
+                if travel:IsKnown(w.id) then text = w.name else text = _UIKit:Colored("#666666", w.name .. " (미발견)") end
+            end
+            _UIKit:SetText(self.Win .. "/Wp" .. tostring(i), text)
+        end
+        for d = 0, 2 do
+            local label = _GameConst:DifficultyName(d)
+            if d == st.Difficulty then label = "▶" .. label elseif d > st.MaxDifficulty then label = _UIKit:Colored("#666666", label .. " (잠김)") end
+            _UIKit:SetText(self.Win .. "/Diff" .. tostring(d), label)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TravelTo(integer index)
+        local w = _WaypointData:GetList()[index]
+        local travel = self:Travel()
+        if w ~= nil and travel ~= nil then travel:RequestTravel(w.id) end
+    end
+
+end

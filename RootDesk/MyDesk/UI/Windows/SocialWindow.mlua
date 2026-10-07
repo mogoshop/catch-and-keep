@@ -1,0 +1,96 @@
+-- 사교 창 (P): 같은 서버 플레이어 최대 8명에게 파티·결투·거래 요청, 파티 탈퇴.
+-- 받은 요청 팝업(Request)도 여기서 띄운다 (D2처럼 요청 → 수락해야 성립).
+@Logic
+script SocialWindow extends Logic
+
+    property string Win = "SocialWin"
+    property table Ids = {}
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:SetEnabled("Request", false)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for i = 1, 8 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Party" .. tostring(i), function() self:Act(index, "party") end)
+            _UIKit:Connect(self.Win .. "/Duel" .. tostring(i), function() self:Act(index, "duel") end)
+            _UIKit:Connect(self.Win .. "/Trade" .. tostring(i), function() self:Act(index, "trade") end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnLeave", function()
+            local s = self:Social()
+            if s ~= nil then s:RequestLeaveParty() end
+        end)
+        _UIKit:Connect("Request/BtnYes", function() self:Respond(true) end)
+        _UIKit:Connect("Request/BtnNo", function() self:Respond(false) end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    method PlayerSocial Social()
+        ---@type PlayerSocial
+        local c = _UIKit:Comp("script.PlayerSocial")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        self:RenderRequest()
+        if not _UIKit:IsOpen(self.Win) then
+            self.RenderKey = ""
+            return
+        end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        local ids = {}
+        local names = {}
+        for _, u in pairs(_UserService.UserEntities) do
+            if isvalid(u) and u ~= player and #ids < 8 then
+                table.insert(ids, u.PlayerComponent.UserId)
+                local mapName = ""
+                if isvalid(u.CurrentMap) then mapName = u.CurrentMap.Name end
+                table.insert(names, u.PlayerComponent.Nickname .. "  " .. _UIKit:Colored("#888888", mapName))
+            end
+        end
+        local key = table.concat(names, ";")
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        self.Ids = ids
+        for i = 1, 8 do
+            local text = names[i] or ""
+            if i == 1 and #names == 0 then text = "같은 서버에 다른 플레이어가 없다" end
+            _UIKit:SetText(self.Win .. "/Name" .. tostring(i), text)
+            for _, b in ipairs({ "Party", "Duel", "Trade" }) do _UIKit:SetEnabled(self.Win .. "/" .. b .. tostring(i), ids[i] ~= nil) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRequest()
+        local s = self:Social()
+        if s == nil then return end
+        _UIKit:SetEnabled("Request", s.PendingKind ~= "")
+        if s.PendingKind == "" then return end
+        local names = { party = "파티에 초대했다", duel = "결투를 신청했다", trade = "거래를 요청했다" }
+        _UIKit:SetText("Request/Text", s.PendingFromName .. "님이 " .. (names[s.PendingKind] or s.PendingKind))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Act(integer index, string kind)
+        local id = self.Ids[index]
+        local s = self:Social()
+        if id ~= nil and s ~= nil then s:RequestAction(kind, id) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Respond(boolean accept)
+        local s = self:Social()
+        if s ~= nil then s:RespondRequest(accept) end
+    end
+
+end

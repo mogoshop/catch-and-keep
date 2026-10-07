@@ -1,0 +1,46 @@
+-- 랭킹 창 (L): 심도 최고 층 / 묘지기 여왕 최단 처치. 현재 난이도 기준.
+-- Show(kind)로 열면 서버에 요청 → RankingSystem이 OnData로 돌려준다.
+@Logic
+script RankWindow extends Logic
+
+    property string Win = "RankWin"
+    property string Kind = "depth"
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/TabDepth", function() self:Show("depth") end)
+        _UIKit:Connect(self.Win .. "/TabQueen", function() self:Show("queen") end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string kind)
+        _UIKit:Open(self.Win)
+        self.Kind = kind
+        _UIKit:SetText(self.Win .. "/List", "불러오는 중...")
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local diff = 0
+        if st ~= nil then diff = st.Difficulty end
+        _RankingSystem:RequestBoard(kind, diff)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnData(string kind, integer diff, string digest)
+        if kind ~= self.Kind then return end
+        local title = "묘지기 여왕 최단 처치"
+        if kind == "depth" then title = "심도 최고 층" end
+        local lines = { title .. "  (" .. _GameConst:DifficultyName(diff) .. ")", "" }
+        local i = 0
+        for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
+            i = i + 1
+            local unit = "초"
+            if kind == "depth" then unit = "층" end
+            table.insert(lines, string.format("%2d.  %s   %s", i, name, value .. unit))
+        end
+        if i == 0 then table.insert(lines, "아직 기록이 없다") end
+        _UIKit:SetText(self.Win .. "/List", table.concat(lines, "\n"))
+    end
+
+end

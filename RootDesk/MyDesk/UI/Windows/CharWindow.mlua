@@ -1,0 +1,67 @@
+-- 능력치 창 (U): 레벨·생명·마나·피해·저항, 4대 능력치 분배.
+@Logic
+script CharWindow extends Logic
+
+    property string Win = "CharWin"
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do
+            local stat = s
+            _UIKit:Connect(self.Win .. "/" .. s .. "/BtnAdd", function()
+                ---@type PlayerStats
+                local st = _UIKit:Comp("script.PlayerStats")
+                if st ~= nil then st:RequestAddStat(stat) end
+            end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        if not _UIKit:IsOpen(self.Win) then
+            self.RenderKey = ""
+            return
+        end
+        local player = _UserService.LocalPlayer
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if not isvalid(player) or st == nil then return end
+        local pc = player.PlayerComponent
+        local key = string.format("%d|%d|%d|%d|%d|%d|%d|%.0f|%.0f|%.0f|%.0f|%d|%d|%d|%d|%s|%d", st.Level, st.Str, st.Dex, st.Vit, st.Ene, st.StatPoints, pc.MaxHp, st.MaxMana, st.BonusDefense, st.BonusDamage, st.BonusMinionPct, st.ResFire, st.ResCold, st.ResLight, st.ResPoison, st.ElemDamage, st.Difficulty)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local lines = {
+            string.format("레벨 %d  ·  네크로맨서", st.Level),
+            string.format("생명 %d   마나 %d", math.floor(pc.MaxHp), math.floor(st.MaxMana)),
+            string.format("근접 피해 %d", math.floor(st:GetMeleeDamage(25))),
+            string.format("주문력 +%d%%   방어 %d", math.floor(st:GetSpellPowerPct()), math.floor(st.BonusDefense)),
+            string.format("소환수 +%d%%   추출 +%d%%", math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct)),
+            string.format("아이템 발견 +%d%%   골드 발견 +%d%%", math.floor(st.BonusMF), math.floor(st.BonusGF)),
+            _UIKit:Colored("#FF7A45", "화염 " .. tostring(st.ResFire)) .. "  " .. _UIKit:Colored("#7AB8FF", "냉기 " .. tostring(st.ResCold)) .. "  "
+                .. _UIKit:Colored("#FFE15A", "번개 " .. tostring(st.ResLight)) .. "  " .. _UIKit:Colored("#7CFF7A", "독 " .. tostring(st.ResPoison)) .. "  (" .. _GameConst:DifficultyName(st.Difficulty) .. ")",
+        }
+        _UIKit:SetText(self.Win .. "/Info", table.concat(lines, "\n"))
+        _UIKit:SetText(self.Win .. "/Str/Text", self:StatLine("힘", st.Str, st.BonusStr))
+        _UIKit:SetText(self.Win .. "/Dex/Text", self:StatLine("민첩", st.Dex, st.BonusDex))
+        _UIKit:SetText(self.Win .. "/Vit/Text", self:StatLine("활력", st.Vit, st.BonusVit))
+        _UIKit:SetText(self.Win .. "/Ene/Text", self:StatLine("정신", st.Ene, st.BonusEne))
+        _UIKit:SetText(self.Win .. "/Points", "남은 능력치 포인트: " .. tostring(st.StatPoints))
+        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetEnabled(self.Win .. "/" .. s .. "/BtnAdd", st.StatPoints > 0) end
+    end
+
+    method string StatLine(string name, integer base, integer bonus)
+        if bonus > 0 then return string.format("%s  %d  ", name, base + bonus) .. _UIKit:Colored("#6E8CFF", "(+" .. tostring(bonus) .. ")") end
+        return string.format("%s  %d", name, base)
+    end
+
+end
