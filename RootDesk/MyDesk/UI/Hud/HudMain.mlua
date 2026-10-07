@@ -275,9 +275,30 @@ script HudMain extends Logic
             tip = "스킬 포인트가 있습니다 — 메뉴 ▸ 스킬(K)에서 「해골 전사」나 「골편 투척」을 배우세요"
         elseif inTown and st.Level <= 2 and quest ~= nil and quest.State == 1 then
             tip = "미니맵의 출구 표시로 나가 사냥터로 가세요"
+        elseif not inTown and quest ~= nil and quest.Index == 1 and quest.State == 1 and book ~= nil then
+            tip = self:FirstQuestTip(player, book)
         end
         _UIKit:SetEnabled("Tip", tip ~= "")
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method string FirstQuestTip(Entity player, SkillBook book)
+        -- 첫 의뢰(해골 전사 일으키기) 진행 안내: 혼이 근처에 있으면 바로 쓸 키를, 없으면 할 일을
+        if book:GetLevel("raise_skeleton") <= 0 then
+            if book:GetLevel("bone_shard") > 0 then return "레벨 2가 되면 스킬(K)에서 「해골 전사」를 배울 수 있습니다" end
+            return "스킬(K)에서 「해골 전사」를 배우세요"
+        end
+        local key = ""
+        local keys = { "A", "S", "D", "F", "우클릭" }
+        for i = 1, 5 do
+            if book:GetSlotSkill(i) == "raise_skeleton" then key = Environment:IsPCPlatform() and (keys[i] .. " 키") or "스킬 칸" end
+        end
+        if key == "" then return "「해골 전사」를 스킬 칸에 넣으세요 (칸을 누르면 고를 수 있습니다)" end
+        if _UndeadSystem:FindSoul(player, _Util:Pos2(player), 5) ~= nil then
+            return "혼이 남았습니다! 혼 가까이에서 「해골 전사」(" .. key .. ")를 쓰세요"
+        end
+        return "지옥견을 쓰러뜨리면 혼이 남습니다 — 그 혼으로 해골 전사를 일으키세요"
     end
 
     -- ───────── 동작 ─────────
