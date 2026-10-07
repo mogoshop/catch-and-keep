@@ -91,6 +91,7 @@ script HudMain extends Logic
         _UIKit:SetFill("XP/Fill", st.Exp / math.max(1, st.ExpToNext))
         _UIKit:SetText("XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
         self:RenderSlots()
+        self:RenderCooldowns()
         self:RenderBadges(st)
         self:RenderMinions()
         self:RenderTarget(player)
@@ -119,6 +120,17 @@ script HudMain extends Logic
             _UIKit:SetIcon(path .. "/Icon", _GameData:GetUiIcon(b[1]))
             _UIKit:SetColor(path .. "/Icon", b[2] > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
             _UIKit:SetText(path .. "/Count", tostring(b[2]))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderCooldowns()
+        -- 스킬 칸 쿨다운 덮개 (시계 방향으로 줄어듦) + 남은 초
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        for i = 1, 5 do
+            _UIKit:ShowCooldown("Bottom/Slots/Slot" .. tostring(i) .. "/Cd", book, book:GetSlotSkill(i))
         end
     end
 

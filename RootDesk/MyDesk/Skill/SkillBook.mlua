@@ -8,6 +8,9 @@ script SkillBook extends Component
     property table PendingCasts = {}
     property number PendingMana = 0
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
+    property table CdLen = {}                 -- id → 마지막 쿨다운 길이 (표시용)
+    @Sync
+    property string CdDigest = ""             -- "id:끝(서버 시각):길이;..." HUD 쿨다운 덮개용
     @Sync
     property string SkillDigest = ""          -- "id:lv;..." UI 표시용
     @Sync
@@ -19,6 +22,7 @@ script SkillBook extends Component
     method void OnBeginPlay()
         self.Levels = {}
         self.ReadyAt = {}
+        self.CdLen = {}
         self.PendingCasts = {}
         self.PendingMana = 0
         for id in string.gmatch(self.StartSkills, "[^,]+") do self.Levels[id] = 1 end
@@ -189,7 +193,7 @@ script SkillBook extends Component
                 self.PendingMana = math.max(0, self.PendingMana - cost)
                 if not success or not isvalid(self.Entity) then return end
                 stats:SpendMana(cost)
-                self.ReadyAt[id] = _UtilLogic.ElapsedSeconds + def.cooldown * stats:GetCastCooldownMult()
+                self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
                 self.Entity.StateComponent:ChangeState("ATTACK")
                 log("[VRF] summon committed " .. id .. " mana=" .. tostring(cost))
             end)
@@ -203,12 +207,41 @@ script SkillBook extends Component
         local effects = self.Entity:GetComponent("script.SkillEffects")
         if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
         stats:SpendMana(cost)
-        self.ReadyAt[id] = now + def.cooldown * stats:GetCastCooldownMult()
+        self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
         if id ~= "shadow_summon" and id ~= "rally" and id ~= "elite_promote" and math.abs(target.x - me.x) > 0.05 then
             self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1
         end
         self.Entity.StateComponent:ChangeState("ATTACK")
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetCooldown(string id, number seconds)
+        -- 쿨다운 시작 + 클라이언트 표시용 요약 (끝 시각은 서버 시각 ServerElapsedSeconds 기준)
+        local now = _UtilLogic.ElapsedSeconds
+        self.ReadyAt[id] = now + seconds
+        self.CdLen[id] = seconds
+        local snow = _UtilLogic.ServerElapsedSeconds
+        local parts = {}
+        for k, t in pairs(self.ReadyAt) do
+            if t > now then table.insert(parts, k .. ":" .. string.format("%.2f", snow + (t - now)) .. ":" .. string.format("%.2f", self.CdLen[k] or seconds)) end
+        end
+        self.CdDigest = table.concat(parts, ";")
+    end
+
+    method number CooldownLeft(string id)
+        -- 남은 쿨다운(초). 0이면 쓸 수 있다 (클라이언트·서버 공용, 요약 문자열 기준)
+        if id == "" then return 0 end
+        local untilAt = tonumber(string.match(";" .. self.CdDigest, ";" .. id .. ":([%d%.]+):"))
+        if untilAt == nil then return 0 end
+        return math.max(0, untilAt - _UtilLogic.ServerElapsedSeconds)
+    end
+
+    method number CooldownRatio(string id)
+        -- 남은 비율 1→0 (덮개 채움)
+        local total = tonumber(string.match(";" .. self.CdDigest, ";" .. id .. ":[%d%.]+:([%d%.]+)"))
+        if total == nil or total <= 0 then return 0 end
+        return math.min(1, self:CooldownLeft(id) / total)
     end
 
     -- ───────── 입력 (내 클라이언트) ─────────
@@ -239,8 +272,10 @@ script SkillBook extends Component
 
     @ExecSpace("ClientOnly")
     method void CastSlot(integer slot)
+        -- 쿨다운 중이면 서버에 보내지 않는다 (칸의 덮개가 남은 시간을 보여 준다)
         local id = self:GetSlotSkill(slot)
-        if id ~= "" then self:RequestCast(id, self:GetAimPoint(id)) end
+        if id == "" or self:CooldownLeft(id) > 0.05 then return end
+        self:RequestCast(id, self:GetAimPoint(id))
     end
 
     @ExecSpace("ClientOnly")

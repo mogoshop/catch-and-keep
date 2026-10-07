@@ -67,6 +67,13 @@ function kit(b) {
       k.aspect(`${name}/Icon`);
       k.rim(name, "slot_frame");
     },
+    // 쿨다운 덮개: 어두운 원형 채움(시계 방향, 위에서 시작) + 남은 초. 꺼진 채로 두고 컨트롤러(UIKit.ShowCooldown)가 켠다
+    cooldown(name, size, round = false) {
+      const extra = round ? { image_ruid: K.circle } : {};
+      b.sprite(`${name}/Cd`, { anchor: "middle-center", pos: [0, 0], rect_size: [size, size], color: { r: 0, g: 0, b: 0, a: 0.72 }, sprite_type: 3, fill_method: 4, enable: false, ...extra });
+      b.patchComponent(`${name}/Cd`, "MOD.Core.SpriteGUIRendererComponent", { FillOrigin: 2, FillAmount: 1, RaycastTarget: false });
+      b.text(`${name}/Cd/Text`, "", { size: Math.round(size * 0.34), bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [size, size], ...outline });
+    },
     // 테마 그림 한 장 (아이콘·장식)
     pic(name, key, opts) {
       b.sprite(name, { ...part(key), sprite_type: 0, ...opts });
@@ -161,6 +168,7 @@ function buildGameHud() {
   ["A", "S", "D", "F", "R"].forEach((key, i) => {
     const n = `Bottom/Slots/Slot${i + 1}`;
     k.slot(n, { anchor: "middle-left", pos: [76 + i * 96, 0], rect_size: [88, 88] }, 60, "slot_skill");
+    k.cooldown(n, 80);
     b.text(`${n}/Key`, key === "R" ? "우클릭" : key, { size: 18, color: C.white, anchor: "bottom-right", pos: [-4, 2], rect_size: [70, 22], alignment: 8, ...outline });
   });
   ["1", "2", "3", "4"].forEach((key, i) => {
@@ -413,6 +421,7 @@ function patchShadowHud() {
   k.pic("MobilePad/Attack/Icon", "icon_sword", { anchor: "middle-center", pos: [0, 14], rect_size: [100, 100] });
   b_label(s, "MobilePad/Attack/Label", "공격", 28, "bottom-center");
   s.patch("MobilePad/Attack/Label", { pos: [0, 22] });
+  k.cooldown("MobilePad/Attack", 210, true);
   // 편집 모드 표시 (스킬 편집을 누르면 켜짐: 누르는 칸에 스킬을 넣는다)
   const editMark = (path, size) => {
     s.text(`${path}/Edit`, "+", { size, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], ...outline, enable: false });
@@ -423,6 +432,7 @@ function patchShadowHud() {
   arc.forEach((p, i) => {
     const n = `MobilePad/Skills/S${i + 1}`;
     k.slot(n, { ...center, pos: p, rect_size: [124, 124] }, 80, "slot_skill");
+    k.cooldown(n, 112);
     editMark(n, 64);
   });
   k.btn("MobilePad/BtnSkillEdit", "스킬 편집", { ...center, pos: [-580, 560], rect_size: [170, 68], font_size: 22 });
