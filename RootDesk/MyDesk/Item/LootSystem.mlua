@@ -3,7 +3,6 @@
 @Logic
 script LootSystem extends Logic
 
-    property string DropModelId = "lootdrop"
     property boolean DebugLog = false
 
     @ExecSpace("ServerOnly")
@@ -62,28 +61,14 @@ script LootSystem extends Logic
         local ang = _UtilLogic:RandomDouble() * math.pi * 2
         local dist = 0.2 + _UtilLogic:RandomDouble() * 0.5
         local pos = Vector3(center.x + math.cos(ang) * dist, center.y + math.sin(ang) * dist * 0.6, 0)
-        local e = _SpawnService:SpawnByModelId(self.DropModelId, "Loot", pos, map)
+        local e = _SpawnService:SpawnByModelId(_GameConst.ModelLootDrop, "Loot", pos, map)
         if not isvalid(e) then return end
-        self:SetupDrop(e, userId, kind, itemString, amount, rarity, 0)
-        if self.DebugLog then log("[LootSystem] 드롭 " .. kind .. " " .. itemString .. " x" .. tostring(amount)) end
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SetupDrop(Entity e, string userId, string kind, string itemString, integer amount, integer rarity, integer attempt)
-        -- 스폰 직후 컴포넌트 조회 실패 대비 재시도 (SoulOrb와 같은 패턴)
-        if not isvalid(e) then return end
-        local ok, comp = pcall(function() return e:GetComponent("script.LootDrop") end)
-        if ok and comp ~= nil then
+        _Util:AfterSpawn(e, "script.LootDrop", function(comp)
             ---@type LootDrop
             local drop = comp
             drop:Setup(userId, kind, itemString, amount, rarity)
-            return
-        end
-        if attempt >= 5 then
-            e:Destroy()
-            return
-        end
-        _TimerService:SetTimerOnce(function() self:SetupDrop(e, userId, kind, itemString, amount, rarity, attempt + 1) end, 0.1)
+        end, function() e:Destroy() end)
+        if self.DebugLog then log("[LootSystem] 드롭 " .. kind .. " " .. itemString .. " x" .. tostring(amount)) end
     end
 
 end

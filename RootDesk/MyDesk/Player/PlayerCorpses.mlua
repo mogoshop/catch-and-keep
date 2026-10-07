@@ -1,0 +1,118 @@
+-- 사망 시체 (D2 규칙): 죽은 자리에 착용 장비와 되찾을 경험치를 담은 시체를 남기고, 주인이 다가가면 돌려받는다.
+-- 시체는 저장된다. 접속이 끊긴 사이의 시체는 다음 접속 때 마을에 놓인다 (D2: 다음 게임의 마을).
+@Component
+script PlayerCorpses extends Component
+
+    property table Corpses = {}         -- key → { items = { {slot, s} }, exp, map, x, y }
+    property table Spawned = {}         -- key → 시체 엔티티 (주인이 그 맵에 있을 때만 만든다)
+    property integer Serial = 0
+    property number PickupRadius = 1.0
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.Corpses = {}
+        self.Spawned = {}
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LeaveCorpse(Vector2 pos, integer expRecover)
+        -- 착용 장비를 모두 벗겨 죽은 자리의 시체에 담는다
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        local items = inv:StripEquipment()
+        if #items == 0 and expRecover <= 0 then return end
+        self.Serial = self.Serial + 1
+        local key = tostring(math.floor(_UtilLogic.ElapsedSeconds * 1000)) .. "_" .. tostring(self.Serial)
+        local map = self.Entity.CurrentMap
+        self.Corpses[key] = { items = items, exp = expRecover, map = map.Name, x = pos.x, y = pos.y }
+        self:SpawnCorpse(key, map, pos)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        self:EnsureSpawned()
+        self:TryRecover()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnsureSpawned()
+        -- 주인이 있는 맵의 시체만 엔티티로 만든다 (사람이 없는 맵에는 스폰할 수 없다: 저장된 시체·맵 이동 후 복귀)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        for key, data in pairs(self.Corpses) do
+            if data.map == map.Name and not isvalid(self.Spawned[key]) then self:SpawnCorpse(key, map, Vector2(data.x, data.y)) end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnCorpse(string key, Entity map, Vector2 pos)
+        if not isvalid(map) then return end
+        local e = _SpawnService:SpawnByModelId(_GameConst.ModelCorpse, "Corpse", Vector3(pos.x, pos.y, 0), map)
+        if not isvalid(e) then return end
+        self.Spawned[key] = e
+        local pc = self.Entity.PlayerComponent
+        _Util:AfterSpawn(e, "script.PlayerCorpse", function(comp)
+            ---@type PlayerCorpse
+            local corpse = comp
+            corpse:Setup(pc.UserId, pc.Nickname, key)
+        end, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryRecover()
+        -- 죽어 있는 동안(부활 대기)에는 줍지 않는다 — 죽은 자리의 새 시체를 바로 되찾는 것을 막는다
+        local pc = self.Entity.PlayerComponent
+        if not _Util:IsAlive(self.Entity) then return end
+        ---@type PlayerCorpse
+        local corpse = _Util:NearestComponent(self.Entity.CurrentMap, "script.PlayerCorpse", _Util:Pos2(self.Entity), self.PickupRadius)
+        if corpse == nil or corpse.Taken or corpse.OwnerUserId ~= pc.UserId then return end
+        -- Take()가 엔티티를 지우므로 키는 먼저 꺼내 둔다 (지운 뒤에는 속성이 nil)
+        local key = corpse.CorpseKey
+        local data = self.Corpses[key]
+        corpse:Take()
+        self.Spawned[key] = nil
+        if data == nil then return end
+        self.Corpses[key] = nil
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil then inv:RestoreEquipment(data.items) end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil and data.exp > 0 then stats:GainExp(data.exp) end
+        _Util:Notify("시체를 되찾았다" .. (data.exp > 0 and (" (경험치 +" .. tostring(data.exp) .. ")") or ""), pc.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        local list = {}
+        for _, data in pairs(self.Corpses) do table.insert(list, data) end
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table list)
+        if list == nil then return end
+        -- 접속이 끊긴 사이의 시체는 마을로 옮긴다 (D2: 다음 게임의 마을). 엔티티는 마을에 들어가면 EnsureSpawned가 만든다
+        self.Corpses = {}
+        -- 저장 순서상 PlayerStats(Char 섹션)가 먼저 불러와져 있다
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local town = _GameConst.MapTown
+        if stats ~= nil then town = _GameConst:MapFor(_GameConst.MapTown, stats.Difficulty) end
+        for i, data in ipairs(list) do
+            data.map = town
+            data.x = 1.5 + i * 0.6
+            data.y = -2
+            self.Corpses["saved_" .. tostring(i)] = data
+        end
+    end
+
+end

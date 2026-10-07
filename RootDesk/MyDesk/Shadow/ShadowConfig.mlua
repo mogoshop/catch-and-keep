@@ -1,86 +1,73 @@
--- Phase 0 그림자 수치 테이블. 로직 없음.
--- 근거: docs/phase0-core-loop-design.md 4장, docs/data/config.csv
--- 하드 상한(HardCap)은 이 파일에서만 정의한다. (docs/project-rules.md)
+-- 그림자 규칙 (수치는 data/config.csv → _GameData). 배치 하드 상한은 hardCap 하나로만 정한다 (docs/project-rules.md).
 @Logic
 script ShadowConfig extends Logic
 
-    property integer DeployBase = 5
-    property integer HardCap = 8
-    property number StatMultiplier = 0.6
-    property number LevelGrowth = 0.08
-    property number RespawnDelaySec = 10
-    property number ExtractReach = 1.2      -- 혼 추출 가능 거리
+    method any C()
+        return _GameData
+    end
+
+    method number GetExtractReach()
+        return self:C().extractReach
+    end
+
+    method number GetRespawnDelay()
+        return self:C().respawnDelaySec
+    end
+
+    method integer GetHardCap()
+        return math.floor(self:C().hardCap)
+    end
 
     method number GetExtractChance(integer grade)
-        -- 등급별 추출 확률. 1 일반, 2 정예. 보스(3)는 별도 처리
-        -- 능동 추출로 바꾸며 상향 (처치마다 자동 판정 15%/8% → 직접 시도 35%/20%) [가정]
-        if grade == 1 then return 0.35 end
-        if grade == 2 then return 0.20 end
+        -- 1 일반, 2 정예. 보스(3)는 1회 확정 (추출 쪽에서 처리)
+        if grade == 1 then return self:C().extractChance_g1 end
+        if grade == 2 then return self:C().extractChance_g2 end
         return 0
     end
 
     method integer GetDisassembleYield(integer grade)
-        -- 등급별 분해 수익. 0이면 분해 불가
-        if grade == 1 then return 1 end
-        if grade == 2 then return 4 end
+        -- 0이면 분해 불가 (보스 그림자)
+        if grade == 1 then return math.floor(self:C().disassembleYield_g1) end
+        if grade == 2 then return math.floor(self:C().disassembleYield_g2) end
         return 0
     end
 
     method integer GetUpgradeCost(integer level)
-        -- 레벨 n에서 n+1로 올리는 정수 비용
+        -- 레벨 n → n+1 정수 비용
         return level
     end
 
     method integer GetDeployLimit(integer bonus)
-        -- 기본 슬롯 + 보너스. 어떤 경우에도 HardCap을 넘지 않는다
-        return math.min(self.DeployBase + bonus, self.HardCap)
+        -- 기본 + 보너스, 어떤 경우에도 hardCap 이하
+        return math.min(math.floor(self:C().deployBase) + bonus, self:GetHardCap())
     end
 
     method number GetStatScale(integer level)
-        -- 원본 스탯 대비 그림자 스탯 배율
-        return self.StatMultiplier * (1 + self.LevelGrowth * (level - 1))
+        return self:C().shadowStatMul * (1 + self:C().shadowLevelGrowth * (level - 1))
     end
 
-    method integer GetSourceAtk(integer grade)
-        -- 원본 몬스터 공격력 [가정]. 몬스터별 수치표가 생기면 docs/data/monsters.csv로 옮긴다
-        if grade == 1 then return 25 end
-        if grade == 2 then return 50 end
-        return 100
+    method number GetSourceAtk(integer grade)
+        if grade == 1 then return self:C().shadowSourceAtk_g1 end
+        if grade == 2 then return self:C().shadowSourceAtk_g2 end
+        return self:C().shadowSourceAtk_g3
     end
 
-    method integer GetSourceHp(integer grade)
-        -- 원본 몬스터 체력 [가정]. 몬스터 모델의 ShadowMonster.MaxHp와 맞춘다
-        if grade == 1 then return 60 end
-        if grade == 2 then return 150 end
-        return 600
+    method number GetSourceHp(integer grade)
+        if grade == 1 then return self:C().shadowSourceHp_g1 end
+        if grade == 2 then return self:C().shadowSourceHp_g2 end
+        return self:C().shadowSourceHp_g3
     end
 
     method integer GetShadowMaxHp(integer grade, integer level)
-        -- 그림자 체력 = 원본 × 0.6 × 레벨 보정 (최소 1)
         return math.max(1, math.floor(self:GetSourceHp(grade) * self:GetStatScale(level)))
     end
 
     method integer GetShadowAtk(integer grade, integer level)
-        -- 그림자 공격력 = 원본 × 0.6 × 레벨 보정 (최소 1)
         return math.max(1, math.floor(self:GetSourceAtk(grade) * self:GetStatScale(level)))
     end
 
     method string GetMonsterName(string sourceId)
-        -- 표시 이름 (원본 몬스터 종류 → 오리지널 이름)
-        if sourceId == "mob-568" then return "잿빛 들쥐" end
-        if sourceId == "mob-1955" then return "이끼 망령" end
-        if sourceId == "mob-1209" then return "무덤 파수꾼" end
-        if sourceId == "mob-6130101" then return "부패한 버섯왕" end
-        if sourceId == "hellhound" then return "지옥견" end
-        if sourceId == "graveworm" then return "무덤 구더기" end
-        if sourceId == "ashen_dead" then return "잿빛 망자병" end
-        if sourceId == "corpse_crow" then return "시체 까마귀" end
-        if sourceId == "skel_warrior" then return "해골 전사" end
-        if sourceId == "starved_wraith" then return "굶주린 악령" end
-        if sourceId == "headsman" then return "목 없는 처형인" end
-        if sourceId == "skel_captain" then return "납골당 지휘관 바르그" end
-        if sourceId == "grave_queen" then return "묘지기 여왕" end
-        return sourceId
+        return _GameData:GetMonsterName(sourceId)
     end
 
 end

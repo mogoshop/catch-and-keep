@@ -1,0 +1,57 @@
+-- 상점 거래 (상인 NPC 근처에서만): 물약·귀환 두루마리·도박(무작위 마법 이상 장비). 품목·가격은 data/shop.csv.
+-- 판매는 소지품 창(PlayerInventory.RequestSell).
+@Component
+script PlayerShop extends Component
+
+    method integer GetPrice(string key, integer level)
+        local item = _GameData:GetShopItem(key)
+        if item == nil then return 0 end
+        return math.floor(item.price + item.perLevel * level)
+    end
+
+    @ExecSpace("Server")
+    method void RequestBuy(string key)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:Buy(key)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Buy(string key)
+        local userId = self.Entity.PlayerComponent.UserId
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or not _Util:NearNpc(self.Entity, "shop") then return false end
+        local price = self:GetPrice(key, stats.Level)
+        if price <= 0 then return false end
+        if stats.Gold < price then
+            _Util:Notify("골드가 부족하다", userId)
+            return false
+        end
+        if key == "gamble" then
+            ---@type PlayerInventory
+            local inv = self.Entity:GetComponent("script.PlayerInventory")
+            if inv == nil then return false end
+            -- 일반 등급이 나오면 한 번 더 (도박은 마법 이상 보장)
+            local s = _ItemData:Generate(stats.Level + 2, 2, 150)
+            if _ItemData:Parse(s).rarity == 0 then s = _ItemData:Generate(stats.Level + 2, 3, 300) end
+            if not inv:AddItem(s) then
+                _Util:Notify("가방이 가득 찼다", userId)
+                return false
+            end
+            _Util:Notify("도박: " .. _ItemData:DisplayName(s), userId)
+        elseif key == "tp" then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            if travel == nil then return false end
+            travel.TownScroll = travel.TownScroll + 1
+        else
+            ---@type PlayerBelt
+            local belt = self.Entity:GetComponent("script.PlayerBelt")
+            if belt == nil then return false end
+            belt:AddPotion(key, 1)
+        end
+        stats:AddGold(-price)
+        return true
+    end
+
+end

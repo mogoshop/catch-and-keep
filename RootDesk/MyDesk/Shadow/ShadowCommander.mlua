@@ -1,0 +1,244 @@
+-- 그림자 지휘: 보관함(ShadowOwner)의 그림자를 엔티티로 소환·회수·집결하고 대형을 관리한다.
+-- 단축키: Z 소환, X 전체 회수, C 집결.
+@Component
+script ShadowCommander extends Component
+
+    property number RallySeconds = 2.5
+    property table Units = {}                -- shadow id → 소환된 엔티티
+    @Sync
+    property integer DeployedCount = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.Units = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        -- 주인이 나가면 소환된 그림자 정리
+        for _, unit in pairs(self.Units) do
+            if isvalid(unit) then unit:Destroy() end
+        end
+        self.Units = {}
+    end
+
+    method ShadowOwner Owner()
+        ---@type ShadowOwner
+        local o = self.Entity:GetComponent("script.ShadowOwner")
+        return o
+    end
+
+    method integer GetSkillLevel(string id)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return 0 end
+        return book:GetLevel(id)
+    end
+
+    method integer GetDeployBonus()
+        -- 배치 확장 스킬(1·8·16레벨에 +1, 최대 +3) + 장비(룬워드, 최대 +2). 절대 상한은 hardCap
+        local lv = self:GetSkillLevel("deploy_expand")
+        local bonus = 0
+        if lv >= 16 then bonus = 3 elseif lv >= 8 then bonus = 2 elseif lv >= 1 then bonus = 1 end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil then bonus = bonus + stats.BonusDeploy end
+        return bonus
+    end
+
+    method integer GetDeployLimit()
+        return _ShadowConfig:GetDeployLimit(self:GetDeployBonus())
+    end
+
+    @ExecSpace("ServerOnly")
+    method number GetUnitMultiplier()
+        -- 군령 숙련 +8%/레벨 + 장비 소환수 %
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local equip = 0
+        if stats ~= nil then equip = stats.BonusMinionPct end
+        return 1 + 0.08 * self:GetSkillLevel("command_mastery") + equip / 100
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean CanDeploy(string id)
+        local owner = self:Owner()
+        local shadow = owner ~= nil and owner:GetShadow(id) or nil
+        if shadow == nil or shadow.deployed then return false end
+        if self.DeployedCount >= self:GetDeployLimit() then return false end
+        return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Deploy(string id)
+        if not self:CanDeploy(id) then return false end
+        local owner = self:Owner()
+        local shadow = owner:GetShadow(id)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local slotIndex = self:FindFreeSlot()
+        local offset = self:GetFormationOffset(slotIndex)
+        local unit = _SpawnService:SpawnByModelId(_GameConst.ModelShadowUnit, "Shadow_" .. shadow.sourceId, Vector3(p.x + offset.x, p.y + offset.y, p.z), map)
+        if not isvalid(unit) then return false end
+        shadow.slot = slotIndex
+        shadow.deployed = true
+        self.Units[id] = unit
+        self.DeployedCount = self.DeployedCount + 1
+        owner:RefreshDigest()
+        _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
+            ---@type ShadowUnit
+            local u = comp
+            local mult = self:GetUnitMultiplier()
+            u:Setup(self.Entity, id, math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult), math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult), shadow.standRuid, shadow.moveRuid, offset)
+        end, function()
+            log_error("[ShadowCommander] ShadowUnit 연결 실패, 회수: " .. id)
+            self:Recall(id)
+        end)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshUnitStats(string id)
+        -- 강화 직후 소환 중인 그림자 능력치 반영
+        local unit = self.Units[id]
+        local shadow = self:Owner():GetShadow(id)
+        if not isvalid(unit) or shadow == nil then return end
+        ---@type ShadowUnit
+        local comp = unit:GetComponent("script.ShadowUnit")
+        if comp == nil then return end
+        local mult = self:GetUnitMultiplier()
+        comp.Atk = math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult)
+        local newMax = math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult)
+        comp.Hp = comp.Hp + (newMax - comp.MaxHp)
+        comp.MaxHp = newMax
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer FindFreeSlot()
+        -- 소환 중인 그림자가 쓰지 않는 가장 앞 대형 번호 (0부터)
+        local used = {}
+        for id, unit in pairs(self.Units) do
+            local s = self:Owner():GetShadow(id)
+            if s ~= nil then used[s.slot] = true end
+        end
+        for i = 0, _ShadowConfig:GetHardCap() - 1 do
+            if not used[i] then return i end
+        end
+        return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 GetFormationOffset(integer slot)
+        -- 탑다운 대형: 주인 뒤쪽 반원부터 (최대 8칸)
+        local offsets = {
+            Vector2(-0.7, -0.5), Vector2(0.7, -0.5), Vector2(0, -0.9), Vector2(-1.3, 0),
+            Vector2(1.3, 0), Vector2(-1.1, -1.0), Vector2(1.1, -1.0), Vector2(0, 0.8),
+        }
+        return offsets[(slot % #offsets) + 1]
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Recall(string id)
+        local owner = self:Owner()
+        local shadow = owner:GetShadow(id)
+        if shadow == nil or not shadow.deployed then return false end
+        local unit = self.Units[id]
+        if isvalid(unit) then unit:Destroy() end
+        self.Units[id] = nil
+        shadow.deployed = false
+        self.DeployedCount = math.max(0, self.DeployedCount - 1)
+        owner:RefreshDigest()
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUnitDied(string id)
+        -- 그림자 사망: 보관함으로 돌아가되 respawnDelaySec 동안 재소환 불가
+        local owner = self:Owner()
+        local shadow = owner:GetShadow(id)
+        if shadow == nil then return end
+        local unit = self.Units[id]
+        if isvalid(unit) then unit:Destroy() end
+        self.Units[id] = nil
+        if shadow.deployed then
+            shadow.deployed = false
+            self.DeployedCount = math.max(0, self.DeployedCount - 1)
+        end
+        shadow.respawnReadyAt = _UtilLogic.ServerElapsedSeconds + _ShadowConfig:GetRespawnDelay()
+        owner:RefreshDigest()
+        _Util:Notify("그림자 쓰러짐: " .. _ShadowConfig:GetMonsterName(shadow.sourceId), self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer DeployNext()
+        -- 소환 가능한 그림자 중 등급·레벨이 높은 것 하나. 소환한 수(0/1)
+        local best = nil
+        for id, s in pairs(self:Owner().Storage) do
+            if self:CanDeploy(id) and (best == nil or s.grade * 100 + s.level > best.grade * 100 + best.level) then best = s end
+        end
+        if best == nil then return 0 end
+        return self:Deploy(best.id) and 1 or 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecallAll()
+        for id, _ in pairs(self.Units) do self:Recall(id) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RallyAll()
+        -- 집결: 잠시 적을 무시하고 주인 곁으로
+        for _, unit in pairs(self.Units) do
+            if isvalid(unit) then
+                ---@type ShadowUnit
+                local comp = unit:GetComponent("script.ShadowUnit")
+                if comp ~= nil then comp:Rally(self.RallySeconds) end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetUnits()
+        -- 소환 중인 그림자 컴포넌트 목록 (정예 승격·혼 흡수 등 스킬용)
+        local list = {}
+        for _, unit in pairs(self.Units) do
+            if isvalid(unit) then
+                ---@type ShadowUnit
+                local comp = unit:GetComponent("script.ShadowUnit")
+                if comp ~= nil then table.insert(list, comp) end
+            end
+        end
+        return list
+    end
+
+    -- ───────── 클라이언트 요청 ─────────
+
+    @ExecSpace("Server")
+    method void RequestDeploy(string id)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if id == "" then self:DeployNext() else self:Deploy(id) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestRecall(string id)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if id == "" then self:RecallAll() else self:Recall(id) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestRally()
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:RallyAll()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if event.key == KeyboardKey.Z then self:RequestDeploy("")
+        elseif event.key == KeyboardKey.X then self:RequestRecall("")
+        elseif event.key == KeyboardKey.C then self:RequestRally() end
+    end
+
+end

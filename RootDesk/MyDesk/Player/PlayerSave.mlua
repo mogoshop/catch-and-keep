@@ -1,19 +1,31 @@
--- 플레이어 저장 관리자 (UserDataStorage, docs: msw-scripting datastorage 8장 패턴).
--- 키 3개: Char(레벨·능력치·골드·스킬) / Inv(가방·장비·포션) / Shadow(보관함·정수)
--- 입장 시 BatchGet 1회 → 각 컴포넌트에 적용. 2분마다 바뀐 키만 BatchSetAsync, 퇴장 시 BatchSetAndWait.
--- 바뀜 판단: 마지막으로 "저장 확인된" 문자열과 비교 (각 저장 호출이 자기가 보낸 문자열을 들고 간다)
+-- 플레이어 저장 관리자 (UserDataStorage, msw-scripting datastorage 8장 패턴).
+-- 저장 구역(Sections): 키 하나 = 여러 컴포넌트의 GetSaveData()/LoadSaveData() 묶음. 새 저장 대상은 표에 한 줄만 추가한다.
+--   Char   : stats·skills·quest·travel
+--   Inv    : inv·belt·corpses
+--   Shadow : shadow
+-- 입장 시 BatchGet 1회, 2분마다 바뀐 키만 BatchSetAsync, 퇴장·인스턴스 이동 전 BatchSetAndWait.
+-- 바뀜 판단: 마지막으로 "저장 확인된" 문자열과 비교 (각 저장 호출이 보낸 문자열을 들고 간다)
 @Component
 script PlayerSave extends Component
 
+    property integer Version = 2
     property number AutoSaveInterval = 120
     property number LoadDelay = 1.0
     property boolean IsLoadSuccess = false
-    property table LastSaved = {}       -- key → 저장 확인된 문자열
+    property table LastSaved = {}
     property integer TimerId = 0
+
+    method table Sections()
+        -- 불러오는 순서가 중요하다: 능력치 → 소지품(장착 효과가 능력치에 반영) 순
+        return {
+            { key = "Char", parts = { { "stats", "script.PlayerStats" }, { "skills", "script.SkillBook" }, { "quest", "script.PlayerQuest" }, { "travel", "script.PlayerTravel" } } },
+            { key = "Inv", parts = { { "inv", "script.PlayerInventory" }, { "belt", "script.PlayerBelt" }, { "corpses", "script.PlayerCorpses" } } },
+            { key = "Shadow", parts = { { "shadow", "script.ShadowOwner" } } },
+        }
+    end
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        -- 다른 컴포넌트가 기본값을 채운 뒤 불러온다
         self.LastSaved = {}
         _TimerService:SetTimerOnce(function() self:Load() end, self.LoadDelay)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Save(false) end, self.AutoSaveInterval, self.AutoSaveInterval)
@@ -29,14 +41,41 @@ script PlayerSave extends Component
         return _DataStorageService:GetUserDataStorage(self.Entity.PlayerComponent.ProfileCode)
     end
 
+    -- ───────── 불러오기 ─────────
+
     @ExecSpace("ServerOnly")
     method void Load()
         if not isvalid(self.Entity) then return end
-        local ds = self:Storage()
-        local code, pages = ds:BatchGetAndWait({ "Char", "Inv", "Shadow" })
+        local keys = {}
+        for _, sec in ipairs(self:Sections()) do table.insert(keys, sec.key) end
+        local loaded = self:BatchGet(keys)
+        if loaded == nil then return end
+        local isNew = loaded["Char"] == nil
+        for _, sec in ipairs(self:Sections()) do
+            local data = self:Migrate(sec.key, self:Decode(loaded[sec.key]))
+            if data ~= nil then
+                for _, part in ipairs(sec.parts) do
+                    local comp = self.Entity:GetComponent(part[2])
+                    if comp ~= nil then comp:LoadSaveData(data[part[1]]) end
+                end
+            end
+        end
+        for k, v in pairs(loaded) do self.LastSaved[k] = v end
+        self.IsLoadSuccess = true
+        -- 처음 온 플레이어는 마을에서 시작한다 (월드 시작 맵은 사냥터)
+        if isNew and not _RoomService:IsInstanceRoom() then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            if travel ~= nil then travel:GoTown() end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method any BatchGet(table keys)
+        local code, pages = self:Storage():BatchGetAndWait(keys)
         if code ~= 0 then
             log_error("[PlayerSave] 불러오기 실패 " .. tostring(code))
-            return
+            return nil
         end
         local loaded = {}
         while true do
@@ -46,47 +85,22 @@ script PlayerSave extends Component
             if pages.IsLastPage then break end
             if pages:LoadNextPageAndWait() ~= 0 then
                 log_error("[PlayerSave] 다음 페이지 실패")
-                return
+                return nil
             end
             pages:MoveToNextPageAndWait()
         end
-        local char = self:Decode(loaded["Char"])
-        if char ~= nil then
-            ---@type PlayerStats
-            local stats = self.Entity:GetComponent("script.PlayerStats")
-            if stats ~= nil then stats:LoadSaveData(char.stats) end
-            ---@type SkillBook
-            local book = self.Entity:GetComponent("script.SkillBook")
-            if book ~= nil then book:LoadSaveData(char.skills) end
-            ---@type PlayerQuest
-            local quest = self.Entity:GetComponent("script.PlayerQuest")
-            if quest ~= nil then quest:LoadSaveData(char.quest) end
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel ~= nil then travel:LoadSaveData(char.travel) end
+        return loaded
+    end
+
+    @ExecSpace("ServerOnly")
+    method any Migrate(string key, any data)
+        -- 버전 1(구역 나누기 전) 저장을 현재 형식으로
+        if data == nil or (data.v ~= nil and data.v >= 2) then return data end
+        if key == "Inv" then
+            return { inv = { bag = data.bag, equip = data.equip }, belt = { hp = data.hp, mp = data.mp, rv = data.rv }, corpses = data.corpses }
         end
-        local inv = self:Decode(loaded["Inv"])
-        if inv ~= nil then
-            ---@type PlayerInventory
-            local c = self.Entity:GetComponent("script.PlayerInventory")
-            if c ~= nil then c:LoadSaveData(inv) end
-        end
-        local shadow = self:Decode(loaded["Shadow"])
-        if shadow ~= nil then
-            ---@type ShadowOwner
-            local c = self.Entity:GetComponent("script.ShadowOwner")
-            if c ~= nil then c:LoadSaveData(shadow) end
-        end
-        for k, v in pairs(loaded) do self.LastSaved[k] = v end
-        -- 처음 온 플레이어는 마을(잿불 야영지)에서 시작한다 (시작 맵 설정은 사냥터)
-        if char == nil then
-            log("[PlayerSave] 첫 접속 → 마을로 이동")
-            _TeleportService:TeleportToMapPosition(self.Entity, Vector3(0, -1.2, 0), "town")
-        end
-        self.IsLoadSuccess = true
-        local lv = 1
-        if char ~= nil and char.stats ~= nil then lv = char.stats.lv or 1 end
-        log(string.format("[PlayerSave] 불러오기 완료 (키 %d개, Lv%d)", self:Count(loaded), lv))
+        if key == "Shadow" then return { shadow = data } end
+        return data
     end
 
     @ExecSpace("ServerOnly")
@@ -98,58 +112,48 @@ script PlayerSave extends Component
         return nil
     end
 
-    @ExecSpace("ServerOnly")
-    method integer Count(table t)
-        local n = 0
-        for _ in pairs(t) do n = n + 1 end
-        return n
-    end
+    -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
     method table Collect()
-        -- 현재 상태 → key별 JSON 문자열
+        -- 섹션별 JSON. 직렬화할 수 없는 값이 섞인 부분이 있으면 그 섹션은 이번에 건너뛴다
+        -- (저장소의 이전 값을 유지 — 반쪽 데이터로 덮어쓰지 않는다) 그리고 어느 부분인지 남긴다
         local out = {}
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        ---@type SkillBook
-        local book = self.Entity:GetComponent("script.SkillBook")
-        if stats ~= nil and book ~= nil then
-            local travelData = nil
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel ~= nil then travelData = travel:GetSaveData() end
-            local questData = nil
-            ---@type PlayerQuest
-            local quest = self.Entity:GetComponent("script.PlayerQuest")
-            if quest ~= nil then questData = quest:GetSaveData() end
-            out["Char"] = _HttpService:JSONEncode({ v = 1, stats = stats:GetSaveData(), skills = book:GetSaveData(), quest = questData, travel = travelData })
+        for _, sec in ipairs(self:Sections()) do
+            local data = { v = self.Version }
+            local broken = ""
+            for _, part in ipairs(sec.parts) do
+                local comp = self.Entity:GetComponent(part[2])
+                if comp ~= nil then
+                    local value = comp:GetSaveData()
+                    local ok = pcall(function() _HttpService:JSONEncode({ x = value }) end)
+                    if ok then data[part[1]] = value else broken = part[1] end
+                end
+            end
+            if broken == "" then
+                out[sec.key] = _HttpService:JSONEncode(data)
+            else
+                log_error("[PlayerSave] " .. sec.key .. "." .. broken .. " 직렬화 실패 — 이 섹션 저장을 건너뛴다")
+            end
         end
-        ---@type PlayerInventory
-        local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then out["Inv"] = _HttpService:JSONEncode(inv:GetSaveData()) end
-        ---@type ShadowOwner
-        local owner = self.Entity:GetComponent("script.ShadowOwner")
-        if owner ~= nil then out["Shadow"] = _HttpService:JSONEncode(owner:GetSaveData()) end
         return out
     end
 
     @ExecSpace("ServerOnly")
-    method void Save(boolean isLeaving)
+    method void Save(boolean wait)
         -- 불러오기 전에는 절대 저장하지 않는다 (빈 기본값으로 덮어쓰기 방지)
         if not self.IsLoadSuccess or not isvalid(self.Entity) then return end
-        local all = self:Collect()
         local changed = {}
-        for k, v in pairs(all) do
+        for k, v in pairs(self:Collect()) do
             if self.LastSaved[k] ~= v then changed[k] = v end
         end
         if next(changed) == nil then return end
-        local ds = self:Storage()
-        if isLeaving then
-            local code, ok = ds:BatchSetAndWait(changed)
+        if wait then
+            local code, ok = self:Storage():BatchSetAndWait(changed)
             self:OnSaved(changed, ok)
-            if code ~= 0 then log_error("[PlayerSave] 퇴장 저장 실패 " .. tostring(code)) end
+            if code ~= 0 then log_error("[PlayerSave] 저장 실패 " .. tostring(code)) end
         else
-            ds:BatchSetAsync(changed, function(code, ok)
+            self:Storage():BatchSetAsync(changed, function(code, ok)
                 self:OnSaved(changed, ok)
                 if code ~= 0 then log_warning("[PlayerSave] 자동 저장 실패 " .. tostring(code)) end
             end)
@@ -158,16 +162,11 @@ script PlayerSave extends Component
 
     @ExecSpace("ServerOnly")
     method void OnSaved(table sent, any successKeys)
-        -- 저장이 확인된 키만 "마지막 저장값"으로 기록
-        local n = 0
+        -- 저장이 확인된 키만 "마지막 저장값"으로 (실패한 키는 다음에 다시)
         for i = 1, #successKeys do
             local k = successKeys[i]
-            if sent[k] ~= nil then
-                self.LastSaved[k] = sent[k]
-                n = n + 1
-            end
+            if sent[k] ~= nil then self.LastSaved[k] = sent[k] end
         end
-        log("[PlayerSave] 저장 " .. tostring(n) .. "개 키")
     end
 
     @ExecSpace("ServerOnly")

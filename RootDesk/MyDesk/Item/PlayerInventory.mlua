@@ -1,44 +1,28 @@
--- 플레이어 소지품: 가방(30칸, 슬롯 방식)·장비 10부위·포션·룬 소켓. DefaultPlayer 모델에 붙는다. 서버 권위.
--- 아이템은 ItemData 문자열로 보관하고, 클라이언트에는 요약 문자열(@Sync)로 보낸다.
--- 줍기: 0.25초마다 발밑(0.8) 전리품을 자동으로 줍는다. 포션: 1 = 생명, 2 = 마나.
+-- 소지품: 가방(30칸, 슬롯 방식) · 장비 10부위 · 전리품 줍기 · 장착 효과 반영. 서버 권위.
+-- 아이템은 ItemData 문자열로 보관하고 클라이언트에는 요약(@Sync)으로 보낸다.
+-- 물약은 PlayerBelt, 상점은 PlayerShop, 사망 시체는 PlayerCorpses.
 @Component
 script PlayerInventory extends Component
 
     property integer BagSize = 30
     property number PickupRadius = 0.8
-    property number PotionCooldown = 0.8
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
+    property string StarterWeapon = "scythe1|0|1|단낫||0|"
 
-    property table Bag = {}           -- 문자열 목록 (서버)
-    property table Equip = {}         -- 부위 → 문자열 (서버)
+    property table Bag = {}           -- 아이템 문자열 목록
+    property table Equip = {}         -- 부위 → 아이템 문자열
     @Sync
-    property string BagDigest = ""    -- 가방 아이템을 ";"로 이은 것
+    property string BagDigest = ""
     @Sync
     property string EquipDigest = ""  -- "부위>아이템;..."
-    @Sync
-    property integer HpPot = 0
-    @Sync
-    property integer MpPot = 0
-    @Sync
-    property integer RvPot = 0            -- 회복 물약 (생명·마나 동시)
-
-    property table Corpses = {}       -- key → { items = { {slot, s}, ... }, exp, map, x, y } (서버, 저장됨)
-    property integer CorpseSerial = 0
-    property string CorpseModelId = "playercorpse"
-    property number BaseSpeed = 0
     property integer PickupTimer = 0
-    property number PotionReadyAt = 0
-    property boolean Loaded = false
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        -- 시작 장비 (저장 데이터가 오면 PlayerSave가 덮어쓴다)
+        -- 새 캐릭터 기본 장비 (저장 데이터가 있으면 PlayerSave가 덮어쓴다)
         self.Bag = {}
         self.Equip = {}
-        self.Corpses = {}
-        self.Equip["weapon"] = "scythe1|0|1|단낫||0|"
-        self.HpPot = 3
-        self.MpPot = 2
+        self.Equip["weapon"] = self.StarterWeapon
         self:RefreshDigest()
         _TimerService:SetTimerOnce(function() self:ApplyEquipment() end, 0.3)
         self.PickupTimer = _TimerService:SetTimerRepeat(function() self:TryPickup() end, 0.25)
@@ -47,6 +31,16 @@ script PlayerInventory extends Component
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.PickupTimer ~= 0 then _TimerService:ClearTimer(self.PickupTimer) end
+    end
+
+    method PlayerStats Stats()
+        ---@type PlayerStats
+        local c = self.Entity:GetComponent("script.PlayerStats")
+        return c
+    end
+
+    method boolean IsOwnerRequest(string fromUserId)
+        return fromUserId == self.Entity.PlayerComponent.UserId
     end
 
     @ExecSpace("ServerOnly")
@@ -68,148 +62,77 @@ script PlayerInventory extends Component
         return true
     end
 
+    @ExecSpace("ServerOnly")
+    method string TakeBagItem(integer index)
+        -- 가방에서 꺼낸다 (거래·판매). 없으면 ""
+        local s = self.Bag[index]
+        if s == nil then return "" end
+        table.remove(self.Bag, index)
+        self:RefreshDigest()
+        return s
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PutBagItems(table items)
+        -- 공간과 관계없이 넣는다 (돌려받기·교환: 호출하는 쪽이 공간을 미리 확인)
+        for _, s in ipairs(items) do table.insert(self.Bag, s) end
+        self:RefreshDigest()
+    end
+
     -- ───────── 줍기 ─────────
 
     @ExecSpace("ServerOnly")
     method void TryPickup()
         local pc = self.Entity.PlayerComponent
-        if pc == nil or pc.Hp <= 0 then return end
+        if pc.Hp <= 0 then return end
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
-        local p = self.Entity.TransformComponent.WorldPosition
-        local me = Vector2(p.x, p.y)
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.PlayerCorpse", true)) do
-            ---@type PlayerCorpse
-            local corpse = c
-            if not corpse.Taken and corpse.OwnerUserId == pc.UserId then
-                local q = c.Entity.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - me):Magnitude() <= 1.0 then self:RestoreCorpse(corpse) end
-            end
-        end
+        local me = _Util:Pos2(self.Entity)
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.LootDrop", true)) do
             ---@type LootDrop
             local drop = c
-            if drop:CanTake(pc.UserId) then
-                local q = c.Entity.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - me):Magnitude() <= self.PickupRadius then self:Pickup(drop) end
-            end
+            if drop:CanTake(pc.UserId) and (_Util:Pos2(c.Entity) - me):Magnitude() <= self.PickupRadius then self:Pickup(drop) end
         end
     end
 
     @ExecSpace("ServerOnly")
     method void Pickup(LootDrop drop)
-        local pc = self.Entity.PlayerComponent
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
         local msg = ""
         if drop.Kind == "gold" then
+            local stats = self:Stats()
             if stats ~= nil then stats:AddGold(drop.Amount) end
             msg = "골드 +" .. tostring(drop.Amount)
-        elseif drop.Kind == "hp" then
-            self.HpPot = self.HpPot + drop.Amount
-            msg = "생명 물약 +1"
-        elseif drop.Kind == "mp" then
-            self.MpPot = self.MpPot + drop.Amount
-            msg = "마나 물약 +1"
+        elseif drop.Kind == "hp" or drop.Kind == "mp" then
+            ---@type PlayerBelt
+            local belt = self.Entity:GetComponent("script.PlayerBelt")
+            if belt == nil then return end
+            belt:AddPotion(drop.Kind, drop.Amount)
+            msg = (drop.Kind == "hp" and "생명" or "마나") .. " 물약 +" .. tostring(drop.Amount)
         else
-            if not self:AddItem(drop.ItemString) then
-                return  -- 가방이 꽉 차면 그대로 둔다
-            end
+            if not self:AddItem(drop.ItemString) then return end   -- 가방이 꽉 차면 그대로 둔다
             msg = _ItemData:DisplayName(drop.ItemString)
         end
         drop:Take()
-        self:NotifyPickup(msg, pc.UserId)
-    end
-
-    -- ───────── 시체 (D2 사망 규칙) ─────────
-
-    @ExecSpace("ServerOnly")
-    method void LeaveCorpse(Vector2 pos, integer expRecover)
-        -- 착용 장비를 모두 벗겨 죽은 자리의 시체에 담는다
-        local items = {}
-        for slot, s in pairs(self.Equip) do table.insert(items, { slot = slot, s = s }) end
-        if #items == 0 and expRecover <= 0 then return end
-        self.Equip = {}
-        self:RefreshDigest()
-        self:ApplyEquipment()
-        self.CorpseSerial = self.CorpseSerial + 1
-        local key = tostring(math.floor(_UtilLogic.ElapsedSeconds * 1000)) .. "_" .. tostring(self.CorpseSerial)
-        local map = self.Entity.CurrentMap
-        local mapName = ""
-        if isvalid(map) then mapName = map.Name end
-        self.Corpses[key] = { items = items, exp = expRecover, map = mapName, x = pos.x, y = pos.y }
-        self:SpawnCorpse(key, map, pos)
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SpawnCorpse(string key, Entity map, Vector2 pos)
-        if not isvalid(map) then return end
-        local e = _SpawnService:SpawnByModelId(self.CorpseModelId, "Corpse", Vector3(pos.x, pos.y, 0), map)
-        if isvalid(e) then self:SetupCorpse(e, key, 0) end
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SetupCorpse(Entity e, string key, integer attempt)
-        if not isvalid(e) then return end
-        local ok, comp = pcall(function() return e:GetComponent("script.PlayerCorpse") end)
-        if ok and comp ~= nil then
-            ---@type PlayerCorpse
-            local corpse = comp
-            corpse:Setup(self.Entity.PlayerComponent.UserId, self.Entity.PlayerComponent.Nickname, key)
-            return
-        end
-        if attempt >= 5 then return end
-        _TimerService:SetTimerOnce(function() self:SetupCorpse(e, key, attempt + 1) end, 0.1)
-    end
-
-    @ExecSpace("ServerOnly")
-    method void RestoreCorpse(PlayerCorpse corpse)
-        -- 빈 부위에는 다시 장착, 이미 다른 장비를 낀 부위는 가방으로. 경험치 75% 회복
-        local data = self.Corpses[corpse.CorpseKey]
-        corpse:Take()
-        if data == nil then return end
-        self.Corpses[corpse.CorpseKey] = nil
-        for _, it in ipairs(data.items) do
-            if self.Equip[it.slot] == nil then self.Equip[it.slot] = it.s else table.insert(self.Bag, it.s) end
-        end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats ~= nil and data.exp > 0 then stats:GainExp(data.exp) end
-        self:RefreshDigest()
-        self:ApplyEquipment()
-        self:Notify("시체를 되찾았다" .. (data.exp > 0 and (" (경험치 +" .. tostring(data.exp) .. ")") or ""), self.Entity.PlayerComponent.UserId)
-    end
-
-    @ExecSpace("ServerOnly")
-    method void RespawnSavedCorpses()
-        -- 접속이 끊긴 사이의 시체는 마을에 놓아 둔다 (D2: 다음 게임의 마을에 시체가 생긴다)
-        local town = _EntityService:GetEntityByPath("/maps/town")
-        local i = 0
-        for key, data in pairs(self.Corpses) do
-            i = i + 1
-            self:SpawnCorpse(key, town, Vector2(1.5 + i * 0.6, -2))
-        end
+        _Util:Notify(msg, self.Entity.PlayerComponent.UserId)
     end
 
     -- ───────── 장착 ─────────
 
     @ExecSpace("Server")
     method void RequestEquip(integer index)
-        -- 가방 index번 아이템을 장착 (같은 부위 장비는 가방으로)
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
+        -- 가방 index번을 장착 (같은 부위 장비는 가방으로)
+        if not self:IsOwnerRequest(senderUserId) then return end
         local s = self.Bag[index]
         if s == nil then return end
-        local item = _ItemData:Parse(s)
-        local base = _ItemData:GetBase(item.base)
+        local base = _ItemData:GetBase(_ItemData:Parse(s).base)
+        local userId = self.Entity.PlayerComponent.UserId
         if base == nil then
-            self:Notify("장착할 수 없는 물건", pc.UserId)
+            _Util:Notify("장착할 수 없는 물건", userId)
             return
         end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local stats = self:Stats()
         if stats ~= nil and stats.Level < base.reqLv then
-            self:Notify("요구 레벨 " .. tostring(base.reqLv), pc.UserId)
+            _Util:Notify("요구 레벨 " .. tostring(base.reqLv), userId)
             return
         end
         local slot = base.slot
@@ -227,12 +150,11 @@ script PlayerInventory extends Component
 
     @ExecSpace("Server")
     method void RequestUnequip(string slot)
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
+        if not self:IsOwnerRequest(senderUserId) then return end
         local s = self.Equip[slot]
         if s == nil then return end
         if #self.Bag >= self.BagSize then
-            self:Notify("가방이 가득 찼다", pc.UserId)
+            _Util:Notify("가방이 가득 찼다", senderUserId)
             return
         end
         self.Equip[slot] = nil
@@ -243,278 +165,78 @@ script PlayerInventory extends Component
 
     @ExecSpace("Server")
     method void RequestSell(integer index)
-        -- 가방 아이템 판매 → 골드
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
-        local s = self.Bag[index]
-        if s == nil then return end
+        if not self:IsOwnerRequest(senderUserId) then return end
+        local s = self:TakeBagItem(index)
+        if s == "" then return end
         local value = _ItemData:SellValue(s)
-        table.remove(self.Bag, index)
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local stats = self:Stats()
         if stats ~= nil then stats:AddGold(value) end
-        self:RefreshDigest()
-        self:Notify("판매 +" .. tostring(value) .. " 골드", pc.UserId)
+        _Util:Notify("판매 +" .. tostring(value) .. " 골드", senderUserId)
     end
 
     @ExecSpace("Server")
     method void RequestSocket(integer runeIndex, string slot)
-        -- 가방의 룬을 장착 중인 장비의 빈 소켓에 끼운다 (되돌릴 수 없음)
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
+        -- 가방의 룬을 장착 중인 장비의 빈 소켓에 (되돌릴 수 없음)
+        if not self:IsOwnerRequest(senderUserId) then return end
         self:SocketRune(runeIndex, slot)
     end
 
     @ExecSpace("ServerOnly")
     method boolean SocketRune(integer runeIndex, string slot)
-        local pc = self.Entity.PlayerComponent
+        local userId = self.Entity.PlayerComponent.UserId
         local r = self.Bag[runeIndex]
         local s = self.Equip[slot]
         if r == nil or s == nil or not _ItemData:IsRune(r) then return false end
         local item = _ItemData:Parse(s)
         if #item.runes >= item.sockets then
-            self:Notify("빈 소켓이 없다", pc.UserId)
+            _Util:Notify("빈 소켓이 없다", userId)
             return false
         end
-        local rune = _ItemData:Parse(r)
-        table.insert(item.runes, rune.base)
+        table.insert(item.runes, _ItemData:Parse(r).base)
         self.Equip[slot] = _ItemData:Serialize(item)
         table.remove(self.Bag, runeIndex)
         self:RefreshDigest()
         self:ApplyEquipment()
-        self:Notify(_ItemData:DisplayName(self.Equip[slot]), pc.UserId)
+        _Util:Notify(_ItemData:DisplayName(self.Equip[slot]), userId)
         return true
     end
 
     @ExecSpace("ServerOnly")
-    method void ApplyEquipment()
-        -- 장비 옵션 합계 → PlayerStats 추가치
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats == nil then return end
-        local t = {}
-        for slot, s in pairs(self.Equip) do
-            for k, v in pairs(_ItemData:GetTotalMods(s)) do t[k] = (t[k] or 0) + v end
-        end
-        stats.BonusDamage = t["dmgFlat"] or 0
-        stats.BonusDamagePct = t["dmgPct"] or 0
-        stats.BonusDefense = t["def"] or 0
-        stats.BonusLife = t["life"] or 0
-        stats.BonusMana = t["mana"] or 0
-        stats.BonusStr = math.floor(t["str"] or 0)
-        stats.BonusDex = math.floor(t["dex"] or 0)
-        stats.BonusVit = math.floor(t["vit"] or 0)
-        stats.BonusEne = math.floor(t["ene"] or 0)
-        stats.BonusMinionPct = t["minion"] or 0
-        stats.BonusExtractPct = t["extract"] or 0
-        stats.BonusMF = t["mf"] or 0
-        stats.BonusGF = t["gf"] or 0
-        stats.BonusRegen = t["regen"] or 0
-        stats.BonusDeploy = math.min(2, math.floor(t["deploy"] or 0))
-        stats.BonusLeech = t["leech"] or 0
-        stats.BonusMs = t["ms"] or 0
-        stats.BonusCurse = t["curse"] or 0
-        stats.BonusMinionPoison = t["minionPoison"] or 0
-        local all = t["allRes"] or 0
-        stats:SetResists((t["fireRes"] or 0) + all, (t["coldRes"] or 0) + all, (t["lightRes"] or 0) + all, (t["poisonRes"] or 0) + all)
-        local elem = {}
-        for _, e in ipairs({ "fire", "cold", "light", "poison" }) do
-            local v = t[e .. "Dmg"] or 0
-            if v > 0 then table.insert(elem, e .. "=" .. tostring(math.floor(v))) end
-        end
-        stats.ElemDamage = table.concat(elem, ",")
-        -- 이동 속도: 처음 본 값을 기본으로 기억해 두고 배율만 바꾼다
-        local movement = self.Entity.MovementComponent
-        if isvalid(movement) then
-            if self.BaseSpeed <= 0 then self.BaseSpeed = movement.InputSpeed end
-            movement.InputSpeed = self.BaseSpeed * (1 + stats.BonusMs / 100)
-        end
-        stats:Recalculate(false)
-    end
-
-    -- ───────── 상점 ─────────
-
-    @ExecSpace("ServerOnly")
-    method boolean NearShop()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return false end
-        local p = self.Entity.TransformComponent.WorldPosition
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
-            ---@type WorldNPC
-            local npc = c
-            if npc.Kind == "shop" then
-                local q = c.Entity.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= npc.TalkRange + 0.5 then return true end
-            end
-        end
-        return false
-    end
-
-    method integer GetPrice(string key, integer level)
-        -- 물약 25골드, 도박(무작위 마법 이상 장비) = 150 + 30 × 레벨
-        if key == "hp" or key == "mp" then return 25 end
-        if key == "tp" then return 40 end
-        if key == "rv" then return 120 end
-        if key == "gamble" then return 150 + 30 * level end
-        return 0
-    end
-
-    @ExecSpace("Server")
-    method void RequestBuy(string key)
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
-        self:Buy(key)
-    end
-
-    @ExecSpace("ServerOnly")
-    method boolean Buy(string key)
-        local pc = self.Entity.PlayerComponent
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats == nil or not self:NearShop() then return false end
-        local price = self:GetPrice(key, stats.Level)
-        if price <= 0 then return false end
-        if stats.Gold < price then
-            self:Notify("골드가 부족하다", pc.UserId)
-            return false
-        end
-        if key == "gamble" then
-            local s = _ItemData:Generate(stats.Level + 2, 2, 150)
-            local item = _ItemData:Parse(s)
-            if item.rarity == 0 then
-                item.rarity = 1
-                s = _ItemData:Generate(stats.Level + 2, 3, 300)
-            end
-            if not self:AddItem(s) then
-                self:Notify("가방이 가득 찼다", pc.UserId)
-                return false
-            end
-            self:Notify("도박: " .. _ItemData:DisplayName(s), pc.UserId)
-        elseif key == "hp" then
-            self.HpPot = self.HpPot + 1
-        elseif key == "mp" then
-            self.MpPot = self.MpPot + 1
-        elseif key == "rv" then
-            self.RvPot = self.RvPot + 1
-        elseif key == "tp" then
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel == nil then return false end
-            travel.TownScroll = travel.TownScroll + 1
-        end
-        stats:AddGold(-price)
-        return true
-    end
-
-    -- ───────── 포션 ─────────
-
-    @ExecSpace("Server")
-    method void RequestUsePotion(string kind)
-        local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId then return end
-        self:UsePotion(kind)
-    end
-
-    @ExecSpace("ServerOnly")
-    method boolean UsePotion(string kind)
-        -- 생명 물약: 최대 생명 40% / 마나 물약: 최대 마나 50%
-        local pc = self.Entity.PlayerComponent
-        if pc.Hp <= 0 then return false end
-        local now = _UtilLogic.ElapsedSeconds
-        if now < self.PotionReadyAt then return false end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if kind == "rv" then
-            if self.RvPot <= 0 or stats == nil then
-                self:Notify("회복 물약이 없다", pc.UserId)
-                return false
-            end
-            self.RvPot = self.RvPot - 1
-            pc.Hp = math.min(pc.MaxHp, pc.Hp + math.floor(pc.MaxHp * 0.35))
-            stats.Mana = math.min(stats.MaxMana, stats.Mana + stats.MaxMana * 0.35)
-        elseif kind == "hp" then
-            if self.HpPot <= 0 then
-                self:Notify("생명 물약이 없다", pc.UserId)
-                return false
-            end
-            self.HpPot = self.HpPot - 1
-            pc.Hp = math.min(pc.MaxHp, pc.Hp + math.floor(pc.MaxHp * 0.4))
-        else
-            if self.MpPot <= 0 or stats == nil then
-                self:Notify("마나 물약이 없다", pc.UserId)
-                return false
-            end
-            self.MpPot = self.MpPot - 1
-            stats.Mana = math.min(stats.MaxMana, stats.Mana + stats.MaxMana * 0.5)
-        end
-        self.PotionReadyAt = now + self.PotionCooldown
-        return true
-    end
-
-    -- ───────── 저장 ─────────
-
-    @ExecSpace("ServerOnly")
-    method table GetSaveData()
-        local equip = {}
-        for slot, s in pairs(self.Equip) do equip[slot] = s end
-        local bag = {}
-        for i, s in ipairs(self.Bag) do bag[i] = s end
-        -- 거래창에 올려 둔 물건도 가방에 있는 것으로 저장 (접속 종료 순서와 관계없이 잃지 않게)
-        ---@type PlayerTrade
-        local trade = self.Entity:GetComponent("script.PlayerTrade")
-        if trade ~= nil then for _, s in ipairs(trade.Escrow) do table.insert(bag, s) end end
-        local corpses = {}
-        for _, data in pairs(self.Corpses) do table.insert(corpses, data) end
-        return { bag = bag, equip = equip, hp = self.HpPot, mp = self.MpPot, rv = self.RvPot, corpses = corpses }
-    end
-
-    @ExecSpace("ServerOnly")
-    method void LoadSaveData(table data)
-        if data == nil then return end
-        self.Bag = {}
+    method table StripEquipment()
+        -- 사망: 착용 장비를 모두 벗겨 { {slot, s}, ... } 로 돌려준다
+        local items = {}
+        for slot, s in pairs(self.Equip) do table.insert(items, { slot = slot, s = s }) end
         self.Equip = {}
-        if data.bag ~= nil then for _, s in ipairs(data.bag) do table.insert(self.Bag, s) end end
-        if data.equip ~= nil then for slot, s in pairs(data.equip) do self.Equip[slot] = s end end
-        self.HpPot = data.hp or 0
-        self.MpPot = data.mp or 0
-        self.RvPot = data.rv or 0
-        self.Corpses = {}
-        if data.corpses ~= nil then
-            for i, c in ipairs(data.corpses) do self.Corpses["saved_" .. tostring(i)] = c end
-            self:RespawnSavedCorpses()
+        self:RefreshDigest()
+        self:ApplyEquipment()
+        return items
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RestoreEquipment(table items)
+        -- 시체 회수: 빈 부위는 다시 장착, 이미 다른 장비가 있으면 가방으로
+        for _, it in ipairs(items) do
+            if self.Equip[it.slot] == nil then self.Equip[it.slot] = it.s else table.insert(self.Bag, it.s) end
         end
         self:RefreshDigest()
         self:ApplyEquipment()
     end
 
-    -- ───────── 클라이언트 ─────────
-
-    @ExecSpace("Client")
-    method void NotifyPickup(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
-
-    @ExecSpace("Client")
-    method void Notify(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
-
-    @ExecSpace("ClientOnly")
-    @EventSender("Service", "InputService")
-    handler HandleKeyDownEvent(KeyDownEvent event)
-        if self.Entity ~= _UserService.LocalPlayer then return end
-        if event.key == KeyboardKey.Alpha1 then self:RequestUsePotion("hp")
-        elseif event.key == KeyboardKey.Alpha2 then self:RequestUsePotion("mp")
-        elseif event.key == KeyboardKey.Alpha3 then self:RequestUsePotion("rv")
-        elseif event.key == KeyboardKey.Alpha4 then
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel ~= nil then travel:RequestTownPortal() end
+    @ExecSpace("ServerOnly")
+    method void ApplyEquipment()
+        -- 장비 옵션 합계 → PlayerStats (생명·마나·이동 속도·저항까지 다시 계산)
+        local stats = self:Stats()
+        if stats == nil then return end
+        local t = {}
+        for _, s in pairs(self.Equip) do
+            for k, v in pairs(_ItemData:GetTotalMods(s)) do t[k] = (t[k] or 0) + v end
         end
+        stats:ApplyEquipmentMods(t)
     end
+
+    -- ───────── 클라이언트 표시용 ─────────
 
     method table GetBagList()
-        -- 클라이언트 UI용: 가방 문자열 목록
         local list = {}
         if self.BagDigest == "" then return list end
         for s in string.gmatch(self.BagDigest .. ";", "([^;]*);") do table.insert(list, s) end
@@ -525,6 +247,32 @@ script PlayerInventory extends Component
         local map = {}
         for slot, s in string.gmatch(self.EquipDigest, "([%w]+)>([^;]*)") do map[slot] = s end
         return map
+    end
+
+    -- ───────── 저장 ─────────
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        local bag = {}
+        for i, s in ipairs(self.Bag) do bag[i] = s end
+        -- 거래창에 올려 둔 물건도 가방에 있는 것으로 저장 (접속 종료 순서와 관계없이 잃지 않게)
+        ---@type PlayerTrade
+        local trade = self.Entity:GetComponent("script.PlayerTrade")
+        if trade ~= nil then for _, s in ipairs(trade.Escrow) do table.insert(bag, s) end end
+        local equip = {}
+        for slot, s in pairs(self.Equip) do equip[slot] = s end
+        return { bag = bag, equip = equip }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table data)
+        if data == nil then return end
+        self.Bag = {}
+        self.Equip = {}
+        if data.bag ~= nil then for _, s in ipairs(data.bag) do table.insert(self.Bag, s) end end
+        if data.equip ~= nil then for slot, s in pairs(data.equip) do self.Equip[slot] = s end end
+        self:RefreshDigest()
+        self:ApplyEquipment()
     end
 
 end

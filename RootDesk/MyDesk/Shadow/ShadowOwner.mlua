@@ -1,72 +1,52 @@
--- 플레이어별 그림자 보관함. DefaultPlayer 모델에 붙어 있다 (없으면 ShadowSystem이 런타임에 붙인다).
--- 보관함의 그림자는 엔티티가 아니라 데이터 행이다. 소환할 때만 엔티티가 된다.
--- Phase 0은 저장 없이 세션 단위로 동작한다. (설계 6장 "저장")
+-- 그림자 보관함 (플레이어별 데이터). 보관함의 그림자는 엔티티가 아니라 데이터 행이고, 소환은 ShadowCommander가 맡는다.
+-- 책임: 행 추가·분해·강화, UI용 요약 문자열, 저장/불러오기.
+-- 행: id → { id, sourceId, grade, level, deployed, slot, respawnReadyAt, standRuid, moveRuid }
 @Component
 script ShadowOwner extends Component
 
-    property string UnitModelId = "shadowunit"
-    property number RallySeconds = 2.5
-
-    -- id → { id, sourceId, grade, level, deployed, respawnReadyAt, standRuid, moveRuid }
     property table Storage = {}
-    -- id → 소환된 그림자 엔티티
-    property table Units = {}
     property integer NextSerial = 1
 
-    -- HUD 표시용 (서버 → 클라이언트)
     @Sync
     property integer Essence = 0
     @Sync
     property integer StorageCount = 0
     @Sync
-    property integer DeployedCount = 0
-    -- 보관함 목록을 UI에 보내기 위한 직렬화 문자열 (id|sourceId|grade|level|deployed;...)
-    @Sync
-    property string StorageDigest = ""
+    property string StorageDigest = ""       -- "id|sourceId|grade|level|deployed|readyAt;..."
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        -- 인스턴스마다 새 테이블을 쓴다 (기본값 테이블 공유 방지)
+        -- 인스턴스마다 새 표 (기본값 표 공유 방지)
         self.Storage = {}
-        self.Units = {}
-        log("[ShadowOwner] 준비 완료: " .. self.Entity.Name)
+    end
+
+    method ShadowCommander Commander()
+        ---@type ShadowCommander
+        local c = self.Entity:GetComponent("script.ShadowCommander")
+        return c
     end
 
     @ExecSpace("ServerOnly")
-    method void OnEndPlay()
-        -- 주인이 나가면 소환된 그림자를 모두 정리
-        for id, unit in pairs(self.Units) do
-            if isvalid(unit) then unit:Destroy() end
-        end
-        self.Units = {}
+    method any GetShadow(string id)
+        return self.Storage[id]
     end
 
-    -- ───────── 보관함 데이터 (서버) ─────────
+    -- ───────── 보관함 조작 (서버) ─────────
 
     @ExecSpace("ServerOnly")
     method string AddShadow(string sourceId, integer grade, string standRuid, string moveRuid)
-        -- 추출 성공 시 호출된다. 생성된 그림자 id를 반환
+        -- 추출 성공 시 호출. 생성된 id 반환
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
-        self.Storage[id] = {
-            id = id,
-            sourceId = sourceId,
-            grade = grade,
-            level = 1,
-            deployed = false,
-            respawnReadyAt = 0,
-            standRuid = standRuid,
-            moveRuid = moveRuid,
-        }
+        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = 1, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
         self.StorageCount = self.StorageCount + 1
         self:RefreshDigest()
-        log("[ShadowOwner] 추출 " .. sourceId .. " 등급" .. tostring(grade) .. " → 보관 " .. tostring(self.StorageCount))
         return id
     end
 
     @ExecSpace("ServerOnly")
     method boolean Disassemble(string id)
-        -- 보관 중(소환 중 아님)인 그림자를 정수로 바꾼다
+        -- 소환 중이 아닌 그림자 → 정수
         local shadow = self.Storage[id]
         if shadow == nil or shadow.deployed then return false end
         local yield = _ShadowConfig:GetDisassembleYield(shadow.grade)
@@ -75,217 +55,27 @@ script ShadowOwner extends Component
         self.StorageCount = self.StorageCount - 1
         self.Essence = self.Essence + yield
         self:RefreshDigest()
-        log("[ShadowOwner] 분해 " .. id .. " +" .. tostring(yield) .. " → 정수 " .. tostring(self.Essence))
         return true
     end
 
     @ExecSpace("ServerOnly")
     method boolean Upgrade(string id)
-        -- 정수를 써서 레벨 +1 (Phase 0 임시 소비처). 소환 중이면 공격력도 즉시 반영
+        -- 정수로 레벨 +1. 소환 중이면 능력치도 즉시 반영
         local shadow = self.Storage[id]
         if shadow == nil then return false end
         local cost = _ShadowConfig:GetUpgradeCost(shadow.level)
         if self.Essence < cost then return false end
         self.Essence = self.Essence - cost
         shadow.level = shadow.level + 1
-        local unit = self.Units[id]
-        if isvalid(unit) then
-            ---@type ShadowUnit
-            local comp = unit:GetComponent("script.ShadowUnit")
-            if comp ~= nil then
-                comp.Atk = _ShadowConfig:GetShadowAtk(shadow.grade, shadow.level)
-                local newMax = _ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level)
-                comp.Hp = comp.Hp + (newMax - comp.MaxHp)
-                comp.MaxHp = newMax
-            end
-        end
+        local commander = self:Commander()
+        if commander ~= nil then commander:RefreshUnitStats(id) end
         self:RefreshDigest()
-        log("[ShadowOwner] 강화 " .. id .. " Lv" .. tostring(shadow.level) .. " → 정수 " .. tostring(self.Essence))
         return true
-    end
-
-    @ExecSpace("ServerOnly")
-    method boolean CanDeploy(string id)
-        -- 소환 가능 여부
-        local shadow = self.Storage[id]
-        if shadow == nil or shadow.deployed then return false end
-        if self.DeployedCount >= _ShadowConfig:GetDeployLimit(self:GetDeployBonus()) then return false end
-        return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
-    end
-
-    -- ───────── 소환 / 회수 / 집결 (서버) ─────────
-
-    @ExecSpace("ServerOnly")
-    method boolean Deploy(string id)
-        -- 보관함의 그림자를 엔티티로 만들어 주인 곁에 소환한다
-        if not self:CanDeploy(id) then return false end
-        local shadow = self.Storage[id]
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return false end
-        local p = self.Entity.TransformComponent.WorldPosition
-        local slotIndex = self:FindFreeSlot()
-        local slot = self:GetFormationOffset(slotIndex)
-        local unit = _SpawnService:SpawnByModelId(self.UnitModelId, "Shadow_" .. shadow.sourceId, Vector3(p.x + slot.x, p.y + slot.y, p.z), map)
-        if unit == nil then
-            log_error("[ShadowOwner] 그림자 모델 스폰 실패: " .. self.UnitModelId)
-            return false
-        end
-        shadow.slot = slotIndex
-        shadow.deployed = true
-        self.Units[id] = unit
-        self.DeployedCount = self.DeployedCount + 1
-        self:RefreshDigest()
-        self:SetupUnit(id, 0)
-        log("[ShadowOwner] 소환 " .. shadow.sourceId .. " → 소환 중 " .. tostring(self.DeployedCount))
-        return true
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SetupUnit(string id, integer attempt)
-        -- 스폰 직후(특히 세션 첫 스폰)에는 컴포넌트 조회가 실패할 수 있어 몇 번 재시도한다
-        local shadow = self.Storage[id]
-        local unit = self.Units[id]
-        if shadow == nil or not isvalid(unit) then return end
-        local ok, comp = pcall(function() return unit:GetComponent("script.ShadowUnit") end)
-        if ok and comp ~= nil then
-            ---@type ShadowUnit
-            local unitComp = comp
-            local mult = 1 + 0.08 * self:GetSkillLevel("command_mastery") + self:GetStatBonus("minion") / 100
-            unitComp:Setup(self.Entity, id, math.floor(_ShadowConfig:GetShadowAtk(shadow.grade, shadow.level) * mult), math.floor(_ShadowConfig:GetShadowMaxHp(shadow.grade, shadow.level) * mult), shadow.standRuid, shadow.moveRuid, self:GetFormationOffset(shadow.slot))
-            return
-        end
-        if attempt >= 5 then
-            log_error("[ShadowOwner] ShadowUnit 연결 실패, 회수 처리: " .. id)
-            self:Recall(id)
-            return
-        end
-        _TimerService:SetTimerOnce(function() self:SetupUnit(id, attempt + 1) end, 0.1)
-    end
-
-    method integer GetSkillLevel(string id)
-        -- 패시브 스킬 레벨 (SkillBook이 없으면 0)
-        ---@type SkillBook
-        local book = self.Entity:GetComponent("script.SkillBook")
-        if book == nil then return 0 end
-        return book:GetLevel(id)
-    end
-
-    method number GetStatBonus(string kind)
-        -- 장비 옵션: minion = 소환수 능력치 %, extract = 추출 확률 %p
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats == nil then return 0 end
-        if kind == "minion" then return stats.BonusMinionPct end
-        if kind == "extract" then return stats.BonusExtractPct end
-        return 0
-    end
-
-    method integer GetDeployBonus()
-        -- 배치 확장: 1·8·16레벨에 +1씩 (최대 +3). 절대 상한은 ShadowConfig.HardCap
-        -- + 장비(룬워드 「첫 번째 군령」 등) 최대 +2
-        local lv = self:GetSkillLevel("deploy_expand")
-        local bonus = 0
-        if lv >= 16 then bonus = 3 elseif lv >= 8 then bonus = 2 elseif lv >= 1 then bonus = 1 end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats ~= nil then bonus = bonus + stats.BonusDeploy end
-        return bonus
-    end
-
-    @ExecSpace("ServerOnly")
-    method integer FindFreeSlot()
-        -- 소환 중인 그림자가 쓰지 않는 가장 앞 대형 번호 (0부터)
-        for i = 0, _ShadowConfig.HardCap - 1 do
-            local used = false
-            for _, s in pairs(self.Storage) do
-                if s.deployed and s.slot == i then used = true end
-            end
-            if not used then return i end
-        end
-        return 0
-    end
-
-    @ExecSpace("ServerOnly")
-    method Vector2 GetFormationOffset(integer slot)
-        -- 탑다운 대형: 주인 뒤쪽 반원부터 채운다 (최대 8칸)
-        local offsets = {
-            Vector2(-0.7, -0.5), Vector2(0.7, -0.5), Vector2(0, -0.9), Vector2(-1.3, 0),
-            Vector2(1.3, 0), Vector2(-1.1, -1.0), Vector2(1.1, -1.0), Vector2(0, 0.8),
-        }
-        return offsets[(slot % #offsets) + 1]
-    end
-
-    @ExecSpace("ServerOnly")
-    method boolean Recall(string id)
-        -- 소환 중인 그림자를 보관함으로 되돌린다 (즉시)
-        local shadow = self.Storage[id]
-        if shadow == nil or not shadow.deployed then return false end
-        local unit = self.Units[id]
-        if isvalid(unit) then unit:Destroy() end
-        self.Units[id] = nil
-        shadow.deployed = false
-        self.DeployedCount = math.max(0, self.DeployedCount - 1)
-        self:RefreshDigest()
-        log("[ShadowOwner] 회수 " .. shadow.sourceId .. " → 소환 중 " .. tostring(self.DeployedCount))
-        return true
-    end
-
-    @ExecSpace("ServerOnly")
-    method void OnUnitDied(string id)
-        -- 그림자 사망: 엔티티 제거, 보관함으로 돌아가되 RespawnDelaySec 동안 재소환 불가
-        local shadow = self.Storage[id]
-        if shadow == nil then return end
-        local unit = self.Units[id]
-        if isvalid(unit) then unit:Destroy() end
-        self.Units[id] = nil
-        if shadow.deployed then
-            shadow.deployed = false
-            self.DeployedCount = math.max(0, self.DeployedCount - 1)
-        end
-        shadow.respawnReadyAt = _UtilLogic.ServerElapsedSeconds + _ShadowConfig.RespawnDelaySec
-        self:RefreshDigest()
-        log("[ShadowOwner] 그림자 사망 " .. shadow.sourceId .. " → " .. tostring(_ShadowConfig.RespawnDelaySec) .. "초 뒤 재소환 가능")
-        local pc = self.Entity.PlayerComponent
-        if isvalid(pc) then self:NotifyMessage("그림자 쓰러짐: " .. shadow.sourceId, pc.UserId) end
-    end
-
-    @ExecSpace("ServerOnly")
-    method integer DeployNext()
-        -- 소환 가능한 그림자 중 레벨·등급이 높은 것부터 하나 소환. 소환한 수(0/1) 반환
-        local best = nil
-        for id, s in pairs(self.Storage) do
-            if self:CanDeploy(id) then
-                if best == nil or s.grade * 100 + s.level > best.grade * 100 + best.level then best = s end
-            end
-        end
-        if best == nil then return 0 end
-        return self:Deploy(best.id) and 1 or 0
-    end
-
-    @ExecSpace("ServerOnly")
-    method void RecallAll()
-        for id, s in pairs(self.Storage) do
-            if s.deployed then self:Recall(id) end
-        end
-    end
-
-    @ExecSpace("ServerOnly")
-    method void RallyAll()
-        -- 집결: 모든 소환수가 잠시 적을 무시하고 주인 곁으로
-        for id, unit in pairs(self.Units) do
-            if isvalid(unit) then
-                ---@type ShadowUnit
-                local comp = unit:GetComponent("script.ShadowUnit")
-                if comp ~= nil then comp:Rally(self.RallySeconds) end
-            end
-        end
-        log("[ShadowOwner] 집결")
     end
 
     @ExecSpace("ServerOnly")
     method void RefreshDigest()
-        -- 클라이언트 UI용 목록 문자열 갱신 (보관함은 table이라 직접 동기화할 수 없다)
-        -- 마지막 칸은 재소환 가능 시각(서버 경과 초). 클라이언트가 남은 시간을 계산한다
+        -- 클라이언트 UI용 (table은 동기화할 수 없다). 마지막 칸은 재소환 가능 시각(서버 경과 초)
         local rows = {}
         for id, s in pairs(self.Storage) do
             table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt))
@@ -294,151 +84,26 @@ script ShadowOwner extends Component
         self.StorageDigest = table.concat(rows, ";")
     end
 
-    -- ───────── 클라이언트 → 서버 요청 ─────────
-
-    @ExecSpace("Server")
-    method void RequestDeploy(string id)
-        if not self:IsSenderOwner(senderUserId) then return end
-        if id == "" then self:DeployNext() else self:Deploy(id) end
-    end
-
-    @ExecSpace("Server")
-    method void RequestRecall(string id)
-        if not self:IsSenderOwner(senderUserId) then return end
-        if id == "" then self:RecallAll() else self:Recall(id) end
-    end
-
-    @ExecSpace("Server")
-    method void RequestExtract(Entity soul)
-        -- 혼 추출 시도: 내 혼인지, 가까이 있는지 서버에서 확인 → 확률 판정 → 혼 소멸
-        if not self:IsSenderOwner(senderUserId) then return end
-        if not isvalid(soul) then return end
-        ---@type SoulOrb
-        local orb = soul:GetComponent("script.SoulOrb")
-        if orb == nil or orb.Consumed then return end
-        if orb.OwnerUserId ~= senderUserId then return end
-        local a = self.Entity.TransformComponent.WorldPosition
-        local b = soul.TransformComponent.WorldPosition
-        if (Vector2(a.x, a.y) - Vector2(b.x, b.y)):Magnitude() > _ShadowConfig.ExtractReach then return end
-
-        local grade = orb.Grade
-        local chance = 1
-        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:GetSkillLevel("extract_mastery") + self:GetStatBonus("extract") / 100) end
-        local roll = _UtilLogic:RandomDouble()
-        local success = roll < chance
-        log(string.format("[ShadowOwner] 추출 시도 %s 등급%d 확률 %.2f 굴림 %.2f → %s", orb.SourceId, grade, chance, roll, success and "성공" or "실패"))
-        local pos = soul.TransformComponent.WorldPosition
-        if success then
-            self:AddShadow(orb.SourceId, grade, orb.StandRUID, orb.MoveRUID)
-            ---@type PlayerQuest
-            local quest = self.Entity:GetComponent("script.PlayerQuest")
-            if quest ~= nil then quest:OnExtract() end
-            self:NotifyExtract(orb.SourceId, grade, pos, senderUserId)
-        else
-            self:NotifyMessage("추출 실패… 혼이 흩어졌다", senderUserId)
-        end
-        orb:Consume()
-    end
-
-    @ExecSpace("ClientOnly")
-    method Entity FindNearestSoul(Vector2 point, number radius)
-        -- 내 혼 중 point에 가장 가까운 것 (클라이언트에서 대상 고르기용)
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return nil end
-        local myId = self.Entity.PlayerComponent.UserId
-        local best = nil
-        local bestDist = radius
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.SoulOrb", true)) do
-            ---@type SoulOrb
-            local orb = c
-            if orb.OwnerUserId == myId then
-                local q = c.Entity.TransformComponent.WorldPosition
-                local d = (Vector2(q.x, q.y) - point):Magnitude()
-                if d < bestDist then bestDist = d best = c.Entity end
-            end
-        end
-        return best
-    end
-
-    @ExecSpace("ClientOnly")
-    method void TryExtractNearby()
-        -- E 키 / 모바일 버튼: 손 닿는 거리의 가장 가까운 내 혼을 추출
-        local p = self.Entity.TransformComponent.WorldPosition
-        local soul = self:FindNearestSoul(Vector2(p.x, p.y), _ShadowConfig.ExtractReach)
-        if soul == nil then
-            _ScreenMessageLogic:PrivateMsg("가까운 혼이 없다")
-            return
-        end
-        self:RequestExtract(soul)
-    end
-
-    @ExecSpace("Server")
-    method void RequestRally()
-        if not self:IsSenderOwner(senderUserId) then return end
-        self:RallyAll()
-    end
+    -- ───────── 클라이언트 요청 ─────────
 
     @ExecSpace("Server")
     method void RequestDisassemble(string id)
-        if not self:IsSenderOwner(senderUserId) then return end
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
         self:Disassemble(id)
     end
 
     @ExecSpace("Server")
     method void RequestUpgrade(string id)
-        if not self:IsSenderOwner(senderUserId) then return end
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
         self:Upgrade(id)
     end
 
-    @ExecSpace("ServerOnly")
-    method boolean IsSenderOwner(string fromUserId)
-        -- 요청자가 이 보관함의 주인인지 확인 (다른 유저의 조작 차단)
-        local pc = self.Entity.PlayerComponent
-        return isvalid(pc) and pc.UserId == fromUserId
-    end
-
-    -- ───────── 클라이언트 ─────────
-
-    @ExecSpace("ClientOnly")
-    @EventSender("Service", "InputService")
-    handler HandleKeyDownEvent(KeyDownEvent event)
-        -- 단축키: Z 소환, X 전체 회수, C 집결 (내 캐릭터의 보관함만 반응)
-        if self.Entity ~= _UserService.LocalPlayer then return end
-        local key = event.key
-        if key == KeyboardKey.Z then
-            self:RequestDeploy("")
-        elseif key == KeyboardKey.X then
-            self:RequestRecall("")
-        elseif key == KeyboardKey.C then
-            self:RequestRally()
-        elseif key == KeyboardKey.E then
-            self:TryExtractNearby()
-        end
-    end
-
-    @ExecSpace("Client")
-    method void NotifyMessage(string text)
-        -- 짧은 안내 메시지 (해당 플레이어 클라이언트에서만)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
-
-    @ExecSpace("Client")
-    method void NotifyExtract(string sourceId, integer grade, Vector3 pos)
-        -- 추출 성공 연출 (해당 플레이어 클라이언트에서만). 서버가 마지막 인자로 userId를 붙여 호출한다
-        local gradeName = "일반"
-        if grade == 2 then gradeName = "정예" elseif grade >= 3 then gradeName = "보스" end
-        _ScreenMessageLogic:PrivateMsg("그림자 추출 성공! [" .. gradeName .. "] " .. sourceId)
-        _ParticleService:PlayBasicParticle(BasicParticleType.Charge, self.Entity, pos, 0, Vector3(1, 1, 1), false, nil)
-        log("[ShadowOwner] 클라이언트 추출 연출: " .. sourceId)
-    end
-
-    -- ───────── 저장 (PlayerSave가 호출) ─────────
+    -- ───────── 저장 (PlayerSave) ─────────
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        -- 보관함 행(소환 상태 제외)과 정수
         local list = {}
-        for id, s in pairs(self.Storage) do
+        for _, s in pairs(self.Storage) do
             table.insert(list, { src = s.sourceId, g = s.grade, lv = s.level, st = s.standRuid, mv = s.moveRuid })
         end
         return { essence = self.Essence, shadows = list }
@@ -446,15 +111,16 @@ script ShadowOwner extends Component
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table data)
-        -- 저장된 그림자를 새 id로 다시 만든다 (id에는 세션마다 바뀌는 엔티티 id가 들어간다)
+        -- 새 id로 다시 만든다 (id에는 세션마다 바뀌는 엔티티 id가 들어간다)
         if data == nil then return end
-        self:RecallAll()
+        local commander = self:Commander()
+        if commander ~= nil then commander:RecallAll() end
         self.Storage = {}
         self.StorageCount = 0
         self.Essence = data.essence or 0
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
-                local id = self:AddShadow(s.src or "mob", s.g or 1, s.st or "", s.mv or "")
+                local id = self:AddShadow(s.src or "", s.g or 1, s.st or "", s.mv or "")
                 self.Storage[id].level = s.lv or 1
             end
         end

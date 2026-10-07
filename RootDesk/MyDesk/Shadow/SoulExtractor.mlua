@@ -1,0 +1,93 @@
+-- 혼 추출: 쓰러진 몬스터의 혼(SoulOrb)에 다가가 E 키 / 클릭 / 모바일 버튼으로 추출을 시도한다.
+-- 서버가 주인·거리·확률을 판정하고, 성공하면 보관함에 넣고 ShadowExtracted 이벤트를 낸다.
+@Component
+script SoulExtractor extends Component
+
+    @ExecSpace("Server")
+    method void RequestExtract(Entity soul)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not isvalid(soul) then return end
+        ---@type SoulOrb
+        local orb = soul:GetComponent("script.SoulOrb")
+        if orb == nil or orb.Consumed or orb.OwnerUserId ~= senderUserId then return end
+        if _Util:Distance(self.Entity, soul) > _ShadowConfig:GetExtractReach() then return end
+        local grade = orb.Grade
+        local chance = 1
+        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100) end
+        local success = _UtilLogic:RandomDouble() < chance
+        local pos = soul.TransformComponent.WorldPosition
+        if success then
+            ---@type ShadowOwner
+            local owner = self.Entity:GetComponent("script.ShadowOwner")
+            if owner ~= nil then owner:AddShadow(orb.SourceId, grade, orb.StandRUID, orb.MoveRUID) end
+            _GameEvents:Emit("ShadowExtracted", { player = self.Entity, sourceId = orb.SourceId, grade = grade })
+            self:PlayExtractFx(_ShadowConfig:GetMonsterName(orb.SourceId), grade, pos, senderUserId)
+        else
+            _Util:Notify("추출 실패… 혼이 흩어졌다", senderUserId)
+        end
+        orb:Consume()
+    end
+
+    method integer SkillLevel(string id)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return 0 end
+        return book:GetLevel(id)
+    end
+
+    method number ExtractBonus()
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        return stats.BonusExtractPct
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindNearestSoul(Vector2 point, number radius)
+        -- 내 혼 중 point에 가장 가까운 것 (대상 고르기)
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return nil end
+        local myId = self.Entity.PlayerComponent.UserId
+        local best = nil
+        local bestDist = radius
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            ---@type SoulOrb
+            local orb = c
+            if orb.OwnerUserId == myId then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - point):Magnitude()
+                if d < bestDist then
+                    bestDist = d
+                    best = c.Entity
+                end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TryExtractNearby()
+        -- 손 닿는 거리의 가장 가까운 내 혼
+        local soul = self:FindNearestSoul(_Util:Pos2(self.Entity), _ShadowConfig:GetExtractReach())
+        if soul == nil then
+            _ScreenMessageLogic:PrivateMsg("가까운 혼이 없다")
+            return
+        end
+        self:RequestExtract(soul)
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if event.key == KeyboardKey.E then self:TryExtractNearby() end
+    end
+
+    @ExecSpace("Client")
+    method void PlayExtractFx(string name, integer grade, Vector3 pos)
+        local gradeName = "일반"
+        if grade == 2 then gradeName = "정예" elseif grade >= 3 then gradeName = "보스" end
+        _ScreenMessageLogic:PrivateMsg("그림자 추출 성공! [" .. gradeName .. "] " .. name)
+        _ParticleService:PlayBasicParticle(BasicParticleType.Charge, self.Entity, pos, 0, Vector3(1, 1, 1), false, nil)
+    end
+
+end

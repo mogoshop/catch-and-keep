@@ -1,60 +1,63 @@
--- 이동: 웨이포인트 활성화·이동, 귀환 두루마리(T). DefaultPlayer 모델에 붙는다.
--- 귀환: 마을로 이동하고, 마을에 원래 자리로 돌아가는 포털을 하나 연다 (주인이 쓰면 닫힘).
+-- 이동: 맵 이동(모든 포털·웨이포인트·귀환의 공통 진입점), 웨이포인트 활성화·이동, 난이도 전환, 귀환 두루마리(T·4번).
+-- 귀환: 마을로 이동하고 마을에 원래 자리로 돌아가는 포털을 하나 연다 (주인이 쓰면 닫힘).
 @Component
 script PlayerTravel extends Component
 
     @Sync
-    property string Known = "camp"         -- 활성화한 웨이포인트 id (","로 연결)
+    property string Known = "camp"          -- 활성화한 웨이포인트 id (","로 연결)
     @Sync
-    property integer TownScroll = 2        -- 귀환 두루마리 개수
+    property integer TownScroll = 2         -- 귀환 두루마리 개수
     property Entity ReturnGate = nil
-    property string GateModelId = "warpgate"
+    property number WaypointRange = 1.6
+
+    method integer Difficulty()
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        return stats.Difficulty
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Go(string mapName, Vector2 pos)
+        -- 맵이 바뀌면 소환수는 따라올 수 없으니 먼저 회수
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:RecallAll() end
+        _TeleportService:TeleportToMapPosition(self.Entity, Vector3(pos.x, pos.y, 0), mapName)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GoTown()
+        self:Go(_GameConst:MapFor(_GameConst.MapTown, self:Difficulty()), _GameConst.TownArrival)
+    end
+
+    -- ───────── 웨이포인트 ─────────
 
     @ExecSpace("ServerOnly")
     method void Activate(string id)
-        if string.find("," .. self.Known .. ",", "," .. id .. ",", 1, true) ~= nil then return end
+        if self:IsKnown(id) then return end
         self.Known = self.Known .. "," .. id
         local w = _WaypointData:Get(id)
-        if w ~= nil then self:Notify("웨이포인트 활성화: " .. w.name, self.Entity.PlayerComponent.UserId) end
+        if w ~= nil then _Util:Notify("웨이포인트 활성화: " .. w.name, self.Entity.PlayerComponent.UserId) end
     end
 
     method boolean IsKnown(string id)
         return string.find("," .. self.Known .. ",", "," .. id .. ",", 1, true) ~= nil
     end
 
-    @ExecSpace("ServerOnly")
     method boolean NearWaypoint()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return false end
-        local p = self.Entity.TransformComponent.WorldPosition
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Waypoint", true)) do
-            local q = c.Entity.TransformComponent.WorldPosition
-            if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= 1.6 then return true end
-        end
-        return false
+        return _Util:NearestComponent(self.Entity.CurrentMap, "script.Waypoint", _Util:Pos2(self.Entity), self.WaypointRange) ~= nil
     end
 
     @ExecSpace("Server")
     method void RequestTravel(string id)
-        -- 웨이포인트 위에서만, 활성화한 곳으로만. 난이도에 맞는 맵으로 보낸다
+        -- 웨이포인트 위에서만, 활성화한 곳으로만. 지금 난이도의 맵으로
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
         if not self:IsKnown(id) or not self:NearWaypoint() then return end
         local w = _WaypointData:Get(id)
         if w == nil then return end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        local diff = 0
-        if stats ~= nil then diff = stats.Difficulty end
-        self:Go(_WaypointData:MapFor(w.map, diff), Vector2(w.x, w.y))
-    end
-
-    @ExecSpace("ServerOnly")
-    method void Go(string mapName, Vector2 pos)
-        ---@type ShadowOwner
-        local owner = self.Entity:GetComponent("script.ShadowOwner")
-        if owner ~= nil then owner:RecallAll() end
-        _TeleportService:TeleportToMapPosition(self.Entity, Vector3(pos.x, pos.y, 0), mapName)
+        self:Go(_GameConst:MapFor(w.map, self:Difficulty()), Vector2(w.x, w.y))
     end
 
     @ExecSpace("Server")
@@ -66,37 +69,31 @@ script PlayerTravel extends Component
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty or diff == stats.Difficulty then return end
         stats.Difficulty = diff
-        ---@type PlayerInventory
-        local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then inv:ApplyEquipment() end
-        self:Go(_WaypointData:MapFor("town", diff), Vector2(0, -1.2))
+        stats:RefreshResists()    -- 난이도 저항 페널티 다시 계산
+        self:GoTown()
     end
+
+    -- ───────── 귀환 두루마리 ─────────
 
     @ExecSpace("Server")
     method void RequestTownPortal()
-        -- 귀환 두루마리: 지금 자리를 기억하고 마을로. 마을에 돌아가는 포털을 연다
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        local diff = 0
-        if stats ~= nil then diff = stats.Difficulty end
-        local townName = _WaypointData:MapFor("town", diff)
-        if map.Name == townName then
-            self:Notify("이미 마을이다", pc.UserId)
+        if _GameConst:IsTown(map) then
+            _Util:Notify("이미 마을이다", pc.UserId)
             return
         end
         if self.TownScroll <= 0 then
-            self:Notify("귀환 두루마리가 없다 (상인에게 구입)", pc.UserId)
+            _Util:Notify("귀환 두루마리가 없다 (상인에게 구입)", pc.UserId)
             return
         end
         self.TownScroll = self.TownScroll - 1
-        local p = self.Entity.TransformComponent.WorldPosition
         local backMap = map.Name
-        local backPos = Vector2(p.x, p.y)
-        self:Go(townName, Vector2(0, -1.2))
+        local backPos = _Util:Pos2(self.Entity)
+        self:GoTown()
+        local townName = _GameConst:MapFor(_GameConst.MapTown, self:Difficulty())
         _TimerService:SetTimerOnce(function() self:OpenReturnGate(townName, backMap, backPos) end, 1.0)
     end
 
@@ -106,27 +103,28 @@ script PlayerTravel extends Component
         if isvalid(self.ReturnGate) then self.ReturnGate:Destroy() end
         local town = _EntityService:GetEntityByPath("/maps/" .. townName)
         if not isvalid(town) then return end
-        local e = _SpawnService:SpawnByModelId(self.GateModelId, "ReturnGate", Vector3(2.2, -1.2, 0), town)
+        local e = _SpawnService:SpawnByModelId(_GameConst.ModelWarpGate, "ReturnGate", Vector3(2.2, -1.2, 0), town)
         if not isvalid(e) then return end
         self.ReturnGate = e
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(e) then return end
+        local ownerId = self.Entity.PlayerComponent.UserId
+        _Util:AfterSpawn(e, "script.WarpGate", function(comp)
             ---@type WarpGate
-            local gate = e:GetComponent("script.WarpGate")
-            if gate == nil then return end
+            local gate = comp
             gate.TargetMap = backMap
             gate.TargetPos = backPos
             gate.Label = "되돌아가기"
-            gate.OwnerUserId = self.Entity.PlayerComponent.UserId
-        end, 0.2)
+            gate.OwnerUserId = ownerId
+        end, nil)
     end
 
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         if self.Entity ~= _UserService.LocalPlayer then return end
-        if event.key == KeyboardKey.T then self:RequestTownPortal() end
+        if event.key == KeyboardKey.T or event.key == KeyboardKey.Alpha4 then self:RequestTownPortal() end
     end
+
+    -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
@@ -138,11 +136,6 @@ script PlayerTravel extends Component
         if d == nil then return end
         self.Known = d.known or "camp"
         self.TownScroll = d.tp or 0
-    end
-
-    @ExecSpace("Client")
-    method void Notify(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
     end
 
 end

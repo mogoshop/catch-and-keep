@@ -56,7 +56,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void Setup(Entity ownerPlayer, string shadowId, integer atk, integer maxHp, string standRuid, string moveRuid, Vector2 formationOffset)
-        -- ShadowOwner가 스폰 직후 호출한다. 스폰 직후에는 같은 컴포넌트의 다른 메서드를 부르면
+        -- ShadowCommander가 스폰 직후 호출한다. 스폰 직후에는 같은 컴포넌트의 다른 메서드를 부르면
         -- nil(LEA-2011)이 날 수 있어 값만 저장하고, 스프라이트는 첫 OnUpdate에서 지정한다
         self.OwnerPlayer = ownerPlayer
         self.ShadowId = shadowId
@@ -78,10 +78,10 @@ script ShadowUnit extends AttackComponent
         if self.Hp > 0 then return end
         self.Dead = true
         if isvalid(self.OwnerPlayer) then
-            ---@type ShadowOwner
-            local owner = self.OwnerPlayer:GetComponent("script.ShadowOwner")
-            if owner ~= nil then
-                owner:OnUnitDied(self.ShadowId)
+            ---@type ShadowCommander
+            local commander = self.OwnerPlayer:GetComponent("script.ShadowCommander")
+            if commander ~= nil then
+                commander:OnUnitDied(self.ShadowId)
                 return
             end
         end
@@ -152,31 +152,17 @@ script ShadowUnit extends AttackComponent
     method boolean IsLiveTarget(Entity e)
         -- 살아 있는 추출 대상 몬스터인지
         if not isvalid(e) or not e.Enable then return false end
-        ---@type ShadowMonster
-        local monster = e:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = e:GetComponent("script.Monster")
         return monster ~= nil and not monster.IsDead
     end
 
     @ExecSpace("ServerOnly")
     method Entity FindNearestMonster(Vector2 myPos)
-        -- 감지 범위 안의 가장 가까운 몬스터. RetargetInterval마다만 호출된다
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return nil end
-        local best = nil
-        local bestDist = self.DetectRange
-        local monsters = map:GetChildComponentsByTypeName("script.ShadowMonster", true)
-        for _, comp in ipairs(monsters) do
-            local e = comp.Entity
-            if self:IsLiveTarget(e) then
-                local q = e.TransformComponent.WorldPosition
-                local d = (Vector2(q.x, q.y) - myPos):Magnitude()
-                if d < bestDist then
-                    bestDist = d
-                    best = e
-                end
-            end
-        end
-        return best
+        -- 감지 범위 안의 가장 가까운 몬스터 (RetargetInterval마다만)
+        local m = _Util:NearestMonster(self.Entity.CurrentMap, myPos, self.DetectRange)
+        if m == nil then return nil end
+        return m.Entity
     end
 
     @ExecSpace("ServerOnly")
@@ -227,15 +213,15 @@ script ShadowUnit extends AttackComponent
         ---@type PlayerStats
         local stats = self.OwnerPlayer:GetComponent("script.PlayerStats")
         if stats == nil or stats.BonusMinionPoison <= 0 then return end
-        ---@type ShadowMonster
-        local monster = defender:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = defender:GetComponent("script.Monster")
         if monster ~= nil and not monster.IsDead then monster:ApplyPoison(stats.BonusMinionPoison, 3, self.OwnerPlayer) end
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)
         -- 살아 있는 몬스터만 때린다 (플레이어·다른 그림자 제외)
-        ---@type ShadowMonster
-        local monster = defender:GetComponent("script.ShadowMonster")
+        ---@type Monster
+        local monster = defender:GetComponent("script.Monster")
         if monster == nil or monster.IsDead then return false end
         return __base:IsAttackTarget(defender, attackInfo)
     end

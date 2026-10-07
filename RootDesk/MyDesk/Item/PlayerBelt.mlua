@@ -1,0 +1,75 @@
+-- 물약 벨트 (D2 벨트): 1 생명 · 2 마나 · 3 회복(생명·마나 동시). 4번 칸은 귀환 두루마리(PlayerTravel).
+@Component
+script PlayerBelt extends Component
+
+    property number PotionCooldown = 0.8
+    @Sync
+    property integer HpPot = 3
+    @Sync
+    property integer MpPot = 2
+    @Sync
+    property integer RvPot = 0
+    property number ReadyAt = 0
+
+    @ExecSpace("ServerOnly")
+    method void AddPotion(string kind, integer count)
+        if kind == "hp" then self.HpPot = self.HpPot + count
+        elseif kind == "mp" then self.MpPot = self.MpPot + count
+        elseif kind == "rv" then self.RvPot = self.RvPot + count end
+    end
+
+    @ExecSpace("Server")
+    method void RequestUsePotion(string kind)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:UsePotion(kind)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean UsePotion(string kind)
+        -- 회복량은 data/shop.csv hpPct·manaPct (생명 40% / 마나 50% / 회복 35%+35%)
+        local pc = self.Entity.PlayerComponent
+        if pc.Hp <= 0 then return false end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.ReadyAt then return false end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return false end
+        local item = _GameData:GetShopItem(kind)
+        if item == nil then return false end
+        local count = 0
+        if kind == "hp" then count = self.HpPot elseif kind == "mp" then count = self.MpPot elseif kind == "rv" then count = self.RvPot end
+        if count <= 0 then
+            _Util:Notify(item.name .. "이 없다", pc.UserId)
+            return false
+        end
+        if kind == "hp" then self.HpPot = self.HpPot - 1
+        elseif kind == "mp" then self.MpPot = self.MpPot - 1
+        else self.RvPot = self.RvPot - 1 end
+        stats:Heal(pc.MaxHp * item.hpPct / 100, stats.MaxMana * item.manaPct / 100)
+        self.ReadyAt = now + self.PotionCooldown
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if event.key == KeyboardKey.Alpha1 then self:RequestUsePotion("hp")
+        elseif event.key == KeyboardKey.Alpha2 then self:RequestUsePotion("mp")
+        elseif event.key == KeyboardKey.Alpha3 then self:RequestUsePotion("rv") end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        return { hp = self.HpPot, mp = self.MpPot, rv = self.RvPot }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table d)
+        if d == nil then return end
+        self.HpPot = d.hp or 0
+        self.MpPot = d.mp or 0
+        self.RvPot = d.rv or 0
+    end
+
+end

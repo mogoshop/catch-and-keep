@@ -1,60 +1,17 @@
--- 그림자 시스템 전역 관리자. 맵을 옮겨도 유지돼야 하므로 Logic으로 둔다.
--- 0-2: 입장한 플레이어에게 ShadowOwner를 붙인다.
--- 0-3에서 몬스터 처치 → 추출 판정을 여기에 추가한다.
+-- 그림자 시스템: 몬스터가 쓰러지면 그 자리에 혼(SoulOrb)을 남긴다. 처치자(또는 그림자의 주인)만 추출할 수 있다.
+-- 원본 몬스터의 대기·이동 스프라이트가 혼과 그림자의 외형이 된다. (MonsterKilled 구독)
 @Logic
 script ShadowSystem extends Logic
 
-    -- 0-2 검증용 자가 테스트. 2026-10-06 PASS 확인 후 끔
-    property boolean RunSelfTest = false
-    property string SoulModelId = "soulorb"
-
     @ExecSpace("ServerOnly")
-    @EventSender("Service", "UserService")
-    handler HandleUserEnterEvent(UserEnterEvent event)
-        -- 플레이어 엔티티가 만들어질 시간을 두고 보관함을 붙인다
-        local userId = event.UserId
-        _TimerService:SetTimerOnce(function() self:AttachOwner(userId) end, 0.5)
+    method void OnBeginPlay()
+        _GameEvents:Subscribe("MonsterKilled", "ShadowSystem", function(e) self:OnMonsterKilled(e) end)
     end
 
     @ExecSpace("ServerOnly")
-    method void AttachOwner(string userId)
-        -- 플레이어에게 ShadowOwner가 없으면 추가한다
-        local player = _UserService:GetUserEntityByUserId(userId)
-        if not isvalid(player) then
-            log_warning("[ShadowSystem] 플레이어 엔티티 없음: " .. userId)
-            return
-        end
-        local owner = player:GetComponent("script.ShadowOwner")
-        if owner == nil then
-            owner = player:AddComponent(ShadowOwner)
-        end
-        log("[ShadowSystem] 보관함 연결: " .. player.Name .. " / " .. tostring(owner ~= nil))
-        if self.RunSelfTest and owner ~= nil then
-            _TimerService:SetTimerOnce(function() self:SelfTest(userId) end, 1)
-        end
-    end
-
-    @ExecSpace("ServerOnly")
-    method void OnMonsterKilled(Entity monster, Entity killer, string sourceId, integer grade)
-        -- 처치 시 혼을 남긴다. 처치자(플레이어 또는 그림자의 주인)가 혼에 다가가 추출을 시도한다
-        -- (능동 추출: E 키 / 혼 클릭 / 모바일 추출 버튼 → ShadowOwner.RequestExtract)
-        local player = self:ResolveOwnerPlayer(killer)
-        if player == nil then
-            log("[ShadowSystem] 처치자 불명 → 혼 생략: " .. sourceId)
-            return
-        end
-        -- 경험치: 처치자(그림자의 주인 포함)에게. 파티 분배는 PartySystem이 있으면 그쪽에서 나눈다
-        ---@type ShadowMonster
-        local mon = monster:GetComponent("script.ShadowMonster")
-        local monLevel = 1
-        if mon ~= nil then monLevel = mon.Level end
-        self:GrantKillRewards(player, monster, monLevel, grade)
-        ---@type PlayerQuest
-        local quest = player:GetComponent("script.PlayerQuest")
-        if quest ~= nil then quest:OnKill(sourceId) end
-        -- 마지막 보스(현재는 영역 1의 묘지기 여왕): 같은 맵의 모두에게 다음 난이도 개방 + 처치 시간 랭킹
-        if sourceId == "grave_queen" then self:OnFinalBossKilled(monster) end
-        -- 원본 몬스터의 대기·이동 스프라이트를 혼과 그림자 외형으로 쓴다
+    method void OnMonsterKilled(table e)
+        if e.player == nil or not isvalid(e.monster) then return end
+        local monster = e.monster
         local standRuid = ""
         local moveRuid = ""
         local anim = monster.StateAnimationComponent
@@ -63,108 +20,15 @@ script ShadowSystem extends Logic
             moveRuid = anim.ActionSheet["move"] or standRuid
         end
         local pos = monster.TransformComponent.WorldPosition
-        local soul = _SpawnService:SpawnByModelId(self.SoulModelId, "Soul_" .. sourceId, Vector3(pos.x, pos.y, pos.z), monster.CurrentMap)
-        if soul == nil then
-            log_error("[ShadowSystem] 혼 스폰 실패")
-            return
-        end
-        local userId = player.PlayerComponent.UserId
-        self:SetupSoul(soul, userId, sourceId, grade, standRuid, moveRuid, 0)
-    end
-
-    @ExecSpace("ServerOnly")
-    method void OnFinalBossKilled(Entity boss)
-        local map = boss.CurrentMap
-        if not isvalid(map) then return end
-        local diff = 0
-        ---@type MapAmbience
-        local amb = map:GetComponent("script.MapAmbience")
-        if amb ~= nil then diff = amb.Difficulty end
-        ---@type BossPattern
-        local pattern = boss:GetComponent("script.BossPattern")
-        local seconds = 0
-        if pattern ~= nil and pattern.EngageStart > 0 then seconds = math.floor(_UtilLogic.ElapsedSeconds - pattern.EngageStart) end
-        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
-        if users == nil then return end
-        for _, u in ipairs(users) do
-            ---@type PlayerStats
-            local st = u:GetComponent("script.PlayerStats")
-            if st ~= nil and diff < 2 and st.MaxDifficulty <= diff then
-                st.MaxDifficulty = diff + 1
-                self:NotifyUnlock(diff + 1, u.PlayerComponent.UserId)
-            end
-            if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
-        end
-    end
-
-    @ExecSpace("Client")
-    method void NotifyUnlock(integer diff)
-        local names = { "악몽", "지옥" }
-        _ScreenMessageLogic:PrivateMsg((names[diff] or "") .. " 난이도가 열렸다! 웨이포인트에서 난이도를 바꿀 수 있다")
-    end
-
-    @ExecSpace("ServerOnly")
-    method void GrantKillRewards(Entity player, Entity monster, integer monLevel, integer grade)
-        -- 경험치 + 드롭. 파티가 있으면 PartySystem이 근처 파티원에게 나눈다
-        -- 경험치: 파티면 PartySystem이 근처 파티원에게 나눈다. 드롭은 항상 처치자 기준 (개인 전리품)
-        if not _PartySystem:ShareKill(player, monster, monLevel, grade) then
-            ---@type PlayerStats
-            local stats = player:GetComponent("script.PlayerStats")
-            if stats ~= nil then stats:GainExp(stats:ExpForKill(monLevel, grade)) end
-        end
-        if _LootSystem ~= nil then _LootSystem:RollDrops(monster, monLevel, grade, player) end
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SetupSoul(Entity soul, string userId, string sourceId, integer grade, string standRuid, string moveRuid, integer attempt)
-        -- 스폰 직후 컴포넌트 조회가 실패할 수 있어 재시도 (ShadowOwner.SetupUnit과 같은 이유)
+        local soul = _SpawnService:SpawnByModelId(_GameConst.ModelSoulOrb, "Soul_" .. e.sourceId, Vector3(pos.x, pos.y, pos.z), e.map)
         if not isvalid(soul) then return end
-        local ok, comp = pcall(function() return soul:GetComponent("script.SoulOrb") end)
-        if ok and comp ~= nil then
+        local userId = e.player.PlayerComponent.UserId
+        _Util:AfterSpawn(soul, "script.SoulOrb", function(comp)
             ---@type SoulOrb
             local orb = comp
-            orb:Setup(userId, sourceId, grade, standRuid, moveRuid)
+            orb:Setup(userId, e.sourceId, e.grade, standRuid, moveRuid)
             if standRuid ~= "" then soul.SpriteRendererComponent.SpriteRUID = standRuid end
-            return
-        end
-        if attempt >= 5 then
-            soul:Destroy()
-            return
-        end
-        _TimerService:SetTimerOnce(function() self:SetupSoul(soul, userId, sourceId, grade, standRuid, moveRuid, attempt + 1) end, 0.1)
-    end
-
-    @ExecSpace("ServerOnly")
-    method Entity ResolveOwnerPlayer(Entity killer)
-        -- 막타가 플레이어면 그대로, 그림자면 그 주인 플레이어를 돌려준다
-        if not isvalid(killer) then return nil end
-        if isvalid(killer.PlayerComponent) then return killer end
-        ---@type ShadowUnit
-        local unit = killer:GetComponent("script.ShadowUnit")
-        if unit ~= nil and isvalid(unit.OwnerPlayer) then return unit.OwnerPlayer end
-        return nil
-    end
-
-    @ExecSpace("ServerOnly")
-    method void SelfTest(string userId)
-        -- 추가 3 → 분해 2 → 강화 2. 기대값: 보관 1, 정수 2
-        local player = _UserService:GetUserEntityByUserId(userId)
-        if not isvalid(player) then return end
-        ---@type ShadowOwner
-        local owner = player:GetComponent("script.ShadowOwner")
-        if owner == nil then
-            log_error("[SelfTest] ShadowOwner를 찾지 못함")
-            return
-        end
-        local a = owner:AddShadow("snail", 1, "", "")
-        local b = owner:AddShadow("snail", 1, "", "")
-        local c = owner:AddShadow("stump", 2, "", "")
-        owner:Disassemble(a)
-        owner:Disassemble(c)
-        owner:Upgrade(b)
-        owner:Upgrade(b)
-        local pass = owner.StorageCount == 1 and owner.Essence == 2
-        log("[SelfTest] 기대 보관 1, 정수 2 / 실제 보관 " .. tostring(owner.StorageCount) .. ", 정수 " .. tostring(owner.Essence) .. " → " .. (pass and "PASS" or "FAIL"))
+        end, function() soul:Destroy() end)
     end
 
 end
