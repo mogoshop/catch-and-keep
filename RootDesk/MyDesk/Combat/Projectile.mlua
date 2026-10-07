@@ -53,6 +53,10 @@ script Projectile extends Component
             local body = self.Owner:GetComponent("script.Monster")
             if body == nil or body.IsDead then self:Finish() return end
         end
+        if self.Team == "minion" then
+            local unit = self.Owner:GetComponent("script.ShadowUnit")
+            if unit == nil or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then self:Finish() return end
+        end
         -- 이동을 잘게 나눠 저프레임·빠른 화살도 벽과 적을 건너뛰지 않게 한다.
         local distance = math.min(self.Speed * math.max(0, delta), math.max(0, self.Range - self.Traveled))
         local count = math.max(1, math.ceil(distance / 0.2))
@@ -76,8 +80,13 @@ script Projectile extends Component
             if not self.HitIds[key] then
                 self.HitIds[key] = true
                 ---@type PlayerAttack
-                local atk = self.Owner:GetComponent("script.PlayerAttack")
-                if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
+                if self.Team == "minion" then
+                    local unit = self.Owner:GetComponent("script.ShadowUnit")
+                    if unit ~= nil then unit:HitOne(m.Entity) end
+                else
+                    local atk = self.Owner:GetComponent("script.PlayerAttack")
+                    if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
+                end
                 if not self.Pierce then self:Finish() return end
             end
         end

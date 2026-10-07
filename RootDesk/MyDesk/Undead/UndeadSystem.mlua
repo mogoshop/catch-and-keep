@@ -99,12 +99,32 @@ script UndeadSystem extends Logic
             self:TrimOldest(player, kind, max - 1)
             table.insert(self:ListOf(player), rec)
             self:RefreshSummary(player)
+            self:PlaySummonFx(player, pos)
             _GameEvents:Emit("UndeadRaised", { player = player, kind = kind })
             if onComplete ~= nil then onComplete(true) end
         end, fail)
         if not spawned then orb.Reserved = false return false end
         _TimerService:SetTimerOnce(function() if not finished then fail() end end, 1)
         return true
+    end
+
+    -- 확정된 소환에만 표시한다. PNG는 애니메이션 clip이 아니므로 장식 모델로 재생한다.
+    @ExecSpace("ServerOnly")
+    method void PlaySummonFx(Entity player, Vector2 pos)
+        if not isvalid(player.CurrentMap) then return end
+        local fx = _SpawnService:SpawnByModelId("summonritual", "SummonRitual", Vector3(pos.x, pos.y, 0), player.CurrentMap)
+        if not isvalid(fx) then return end
+        fx.TransformComponent.Scale = Vector3(0.1, 0.055, 1)
+        for i = 1, 6 do
+            local step = i
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(fx) then return end
+                local t = step / 6
+                fx.TransformComponent.Scale = Vector3(0.1 + 0.07 * t, 0.055 + 0.035 * t, 1)
+                fx.SpriteRendererComponent.Color = Color(0.85, 0.75, 1, 1 - t)
+            end, step * 0.12)
+        end
+        fx:Destroy(0.8)
     end
 
     @ExecSpace("ServerOnly")
