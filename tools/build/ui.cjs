@@ -59,12 +59,10 @@ function kit(b) {
     // 버튼 (흰 글자)
     btn(name, text, opts) { b.button(name, text, { font_size: 24, color: C.gold, ...bg("btn_frame"), sprite_type: 1, ...opts }); },
     ok(name, text, opts) { b.button(name, text, { font_size: 24, color: "#F4E2B0", ...bg("btn_frame"), bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, ...opts }); },
-    // 아이콘 칸: 칸 그림 + Frame(등급 테두리, 꺼짐) + Icon(꺼짐) — 컨트롤러가 그림을 넣고 켠다
+    // 아이콘 칸: 어두운 바탕 + Icon(꺼짐, 컨트롤러가 그림을 넣고 켠다) + Rim(청동 테두리, 등급은 테두리 색으로)
     slot(name, opts, iconSize = 60, key = "slot") {
       const base = key === "slot_eq" ? { r: 0.07, g: 0.07, b: 0.1, a: 0.9 } : DARK;
       b.button(name, "", { bg_color: base, sprite_type: 1, ...opts });
-      const sz = b.getComponent(name, "MOD.Core.UITransformComponent").RectSize;
-      b.sprite(`${name}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [sz.x - 4, sz.y - 4], ...part("frame_magic"), sprite_type: 1, enable: false });
       b.sprite(`${name}/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [iconSize, iconSize], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
       k.aspect(`${name}/Icon`);
       k.rim(name, "slot_frame");
