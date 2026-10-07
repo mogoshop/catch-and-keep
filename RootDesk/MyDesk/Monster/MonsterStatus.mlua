@@ -18,6 +18,8 @@ script MonsterStatus extends Component
     property number AuraUntil = 0
     property boolean HasteRefreshPending = false
     @Sync
+    property number KnockUntil = 0           -- 넉백·경직 (서버). 그동안 이동·공격·특수 행동을 멈춘다
+    property number StaggerUntil = 0
     property string CurseTag = ""            -- 대상 정보 UI 표시
 
     method Monster Body()
@@ -138,6 +140,76 @@ script MonsterStatus extends Component
         end, seconds + 0.05)
     end
 
+    -- ───────── 넉백·경직 ─────────
+
+    method boolean IsStunned()
+        local now = _UtilLogic.ElapsedSeconds
+        return now < self.KnockUntil or now < self.StaggerUntil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Knockback(Vector2 dir, number mult)
+        -- 맞은 반대쪽으로 짧게 밀린다. 보스·최상위는 밀리지 않고 정예는 절반
+        local body = self:Body()
+        if body == nil or body.IsDead or mult <= 0 or dir:Magnitude() < 0.01 then return end
+        if body.Grade >= 3 or body.Unique then return end
+        if body.Grade == 2 then mult = mult * 0.5 end
+        local movement = self.Entity.MovementComponent
+        if not isvalid(movement) then return end
+        self:Hold()
+        self.KnockUntil = _UtilLogic.ElapsedSeconds + _GameData.knockbackSec
+        movement.InputSpeed = _GameData.knockbackSpeed * mult
+        movement:MoveToDirection(dir:Normalize(), 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Stagger()
+        -- 피격 경직 (D2 hit recovery): 피격 모션, 잠깐 이동·공격 멈춤. 보스는 경직 없음
+        local body = self:Body()
+        if body == nil or body.IsDead or body.Grade >= 3 then return end
+        self:Hold()
+        self.StaggerUntil = math.max(self.StaggerUntil, _UtilLogic.ElapsedSeconds + _GameData.staggerSec)
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) then sc:ChangeState("HIT") end
+        if self.KnockUntil <= _UtilLogic.ElapsedSeconds then self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Hold()
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = false end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        -- 넉백이 끝나면 멈추고 속도 복구, 경직까지 끝나면 추적을 되돌린다
+        if self.KnockUntil <= 0 and self.StaggerUntil <= 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local body = self:Body()
+        if self.KnockUntil > 0 and now >= self.KnockUntil then
+            self.KnockUntil = 0
+            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+            if body ~= nil then body:RefreshSpeed() end
+        end
+        if self.KnockUntil > 0 or now < self.StaggerUntil then return end
+        self.StaggerUntil = 0
+        self:Release()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Release()
+        -- 죽었거나 특수 행동(땅속·도망·원거리 유지)이 추적을 쥐고 있으면 그대로 둔다
+        local body = self:Body()
+        if body == nil or body.IsDead then return end
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) and sc.CurrentStateName == "HIT" then sc:ChangeState("IDLE") end
+        ---@type MonsterBehavior
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil and (behavior.Burrowed or behavior.RetreatUntil > 0 or behavior.Mode == "ranged") then return end
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = true end
+    end
+
     @ExecSpace("ServerOnly")
     method void Reset()
         -- 리스폰 시 모두 해제
@@ -146,6 +218,8 @@ script MonsterStatus extends Component
         self.ChillUntil = 0
         self.AuraUntil = 0
         self.PoisonUntil = 0
+        self.KnockUntil = 0
+        self.StaggerUntil = 0
         self:StopPoison()
         self.CurseTag = ""
     end

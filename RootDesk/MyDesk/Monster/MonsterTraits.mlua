@@ -21,6 +21,8 @@ script MonsterTraits extends Component
     property table ResistTable = {}
     property string ResistParsed = "?"
     property string AppliedTint = ""
+    property number FlashUntil = 0           -- 피격 번쩍임 (클라이언트)
+    property Color FlashRestore = Color(1, 1, 1, 1)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -76,7 +78,10 @@ script MonsterTraits extends Component
 
     method void OnUpdate(number delta)
         -- 서버: 변종 능력 / 클라이언트: 색조
-        if self:IsServer() then self:AbilityTick(delta) else self:TintTick() end
+        if self:IsServer() then self:AbilityTick(delta) else
+            self:TintTick()
+            self:FlashTick()
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -138,6 +143,42 @@ script MonsterTraits extends Component
         local r = self.ResistTable[element] or 0
         if self.AffixElement ~= "" and self.AffixElement == element then r = r + 50 end
         return r
+    end
+
+    @ExecSpace("Multicast")
+    method void HitFx(Vector3 pos, boolean heavy, Entity attacker)
+        -- 맞은 자리 불꽃 + 붉게 번쩍 + 잠깐 멈춤(타격 정지) + 타격음. 강타면 크게, 친 사람 화면만 흔들림
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local s = 0.45
+        if heavy then s = 0.75 end
+        _EffectService:PlayEffect(_GameConst.FxHit, self.Entity, pos, 0, Vector3(s, s, 1), false, { PlayRate = 1.4 })
+        _SoundService:PlaySoundAtPos(_GameConst.SfxImpact, pos, me, 0.45)
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then
+            if self.FlashUntil <= 0 then self.FlashRestore = sprite.Color end
+            self.FlashUntil = _UtilLogic.ElapsedSeconds + 0.1
+            sprite.Color = Color(1, 0.35, 0.35, self.FlashRestore.a)
+            sprite.PlayRate = 0
+        end
+        if heavy and attacker == me then
+            local cam = _CameraService:GetCurrentCameraComponent()
+            if isvalid(cam) then cam:ShakeCamera(0.12, 0.15) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FlashTick()
+        -- 0.06초 뒤 애니메이션 재개, 0.1초 뒤 원래 색 (색조가 그 사이 바뀌었으면 새 색조)
+        if self.FlashUntil <= 0 then return end
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.FlashUntil - 0.04 then sprite.PlayRate = 1 end
+        if now < self.FlashUntil then return end
+        self.FlashUntil = 0
+        sprite.Color = self.FlashRestore
+        self.AppliedTint = ""
     end
 
     @ExecSpace("ClientOnly")

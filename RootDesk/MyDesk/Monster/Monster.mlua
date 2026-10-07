@@ -221,7 +221,28 @@ script Monster extends Component
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
         self.Hp = self.Hp - event.TotalDamage
-        if self.Hp <= 0 then self:Die() end
+        local pos = self.Entity.TransformComponent.WorldPosition
+        local heavy = event.TotalDamage >= self.MaxHp * _GameData.heavyHitPct
+        local traits = self:Traits()
+        if traits ~= nil then traits:HitFx(Vector3(pos.x, pos.y + 0.4, 0), heavy, event.AttackerEntity) end
+        if self.Hp <= 0 then
+            self:Die()
+            return
+        end
+        self:HitReact(event.AttackerEntity, event.TotalDamage)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HitReact(Entity attacker, number damage)
+        -- 넉백(플레이어가 친 것만, 소환수는 knockbackMinionMul) + 큰 피해면 경직
+        local status = self:Status()
+        if status == nil then return end
+        if isvalid(attacker) then
+            local mult = _GameData.knockbackMinionMul
+            if isvalid(attacker.PlayerComponent) then mult = 1 end
+            status:Knockback(_Util:Pos2(self.Entity) - _Util:Pos2(attacker), mult)
+        end
+        if damage >= self.MaxHp * _GameData.hitRecoverPct then status:Stagger() end
     end
 
     @ExecSpace("ServerOnly")
@@ -261,7 +282,10 @@ script Monster extends Component
     @ExecSpace("Multicast")
     method void PlayDeathSound(Vector3 pos)
         local me = _UserService.LocalPlayer
-        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_GameConst.SfxDeath, pos, me, 0.6) end
+        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then
+            _SoundService:PlaySoundAtPos(_GameConst.SfxDeath, pos, me, 0.6)
+            _EffectService:PlayEffect(_GameConst.FxDeath, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), 0, Vector3(0.7, 0.7, 1), false, { PlayRate = 1.6 })
+        end
     end
 
     @ExecSpace("ServerOnly")

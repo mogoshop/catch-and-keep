@@ -1,10 +1,11 @@
--- 플레이어 기본 공격 (Phase 0 임시). 공격 키(Ctrl)를 누르면 바라보는 쪽 사각 범위를 친다.
+-- 플레이어 기본 공격. 공격 키(Ctrl)·클릭·모바일 공격 버튼으로 바라보는 쪽 사각 범위를 친다.
+-- 기본 피해 12: 같은 레벨 일반 몬스터가 2~4대에 쓰러지는 D2 감각 (25는 한 방이었다).
 -- 탑다운 맵이라 위아래 깊이(y)도 넉넉하게 잡는다.
 -- 네크로맨서 스킬(골편 투척 등)은 Phase 1에서 이 자리를 대체한다.
 @Component
 script PlayerAttack extends AttackComponent
 
-    property integer Damage = 25
+    property integer Damage = 12
     property Vector2 RangeSize = Vector2(1.6, 1.4)
     property number RangeOffsetX = 0.7
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
@@ -37,7 +38,7 @@ script PlayerAttack extends AttackComponent
         local dir = controller.LookDirectionX >= 0 and 1 or -1
         local center = Vector2(pos.x + self.RangeOffsetX * dir, pos.y + 0.2)
         self:AttackFast(BoxShape(center, self.RangeSize, 0), "player.basic", nil)
-        self:PlaySwing(Vector3(center.x, center.y, 0))
+        self:PlaySwing(Vector3(center.x, center.y, 0), dir)
     end
 
     @ExecSpace("ServerOnly")
@@ -81,9 +82,12 @@ script PlayerAttack extends AttackComponent
     end
 
     @ExecSpace("Multicast")
-    method void PlaySwing(Vector3 pos)
+    method void PlaySwing(Vector3 pos, integer dir)
+        -- 휘두르기 궤적(리소스가 왼쪽을 보므로 오른쪽이면 뒤집음) + 휘두르는 소리. 맞는 소리는 몬스터 쪽(HitFx)
         local me = _UserService.LocalPlayer
-        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then _SoundService:PlaySoundAtPos(_GameConst.SfxHit, pos, me, 0.5) end
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundService:PlaySoundAtPos(_GameConst.SfxSwing, pos, me, 0.35)
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), 0, Vector3(0.55, 0.55, 1), false, { FlipX = dir > 0, PlayRate = 1.5, Color = Color(0.75, 0.7, 1, 0.9) })
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
