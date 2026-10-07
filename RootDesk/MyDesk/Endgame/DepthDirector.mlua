@@ -127,29 +127,35 @@ script DepthDirector extends Component
     @ExecSpace("ServerOnly")
     method void OnDoorUsed(string action)
         -- 한 번만 (여러 명이 동시에 밟아도)
-        if self.Moving or not self.Cleared then return end
+        if self.Moving or not self.Cleared or (action ~= "next" and action ~= "exit") then return end
         self.Moving = true
-        local ids = self:SaveAll()
-        if action == "next" then
-            local key = _GameConst:MakeDepthKey(self.Floor + 1, self.Difficulty, self.Nonce)
-            _RoomService:CreateInstanceRoom(key, { _GameConst.MapDepth }, 30)
-            _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst.MapDepth)
-        else
-            _RoomService:MoveUsersToStaticRoom(ids, _GameConst:MapFor(_GameConst.MapTown, self.Difficulty))
-        end
+        local key = _RoomService.StaticRoomKey
+        if action == "next" then key = _GameConst:MakeDepthKey(self.Floor + 1, self.Difficulty, self.Nonce) end
+        local ids = self:SaveAll(key)
+        if #ids == 0 then self.Moving = false return end
+        -- 다음 층도 먼저 정적 방으로 돌아간다. PlayerSave.Load가 일회성 다음 층 요청을 이어간다.
+        local moved = _RoomService:MoveUsersToStaticRoom(ids, _GameConst:MapFor(_GameConst.MapTown, self.Difficulty))
+        if moved == nil or moved == 0 then self.Moving = false end
     end
 
     @ExecSpace("ServerOnly")
-    method table SaveAll()
-        -- 인스턴스 룸은 저장소에서 다시 불러오므로 이동 전에 모두 저장
+    method table SaveAll(string destination)
+        -- 목적지 방으로 언데드를 전달하고, 인스턴스 이동 전에 캐릭터를 모두 저장한다
         local ids = {}
         for _, u in ipairs(_Util:PlayersInMap(self.Entity.CurrentMap)) do
+            if not _UndeadSystem:StashForRoomTravel(u, destination) then return {} end
             ---@type ShadowCommander
             local commander = u:GetComponent("script.ShadowCommander")
             if commander ~= nil then commander:StashForTravel() end
             ---@type PlayerSave
             local save = u:GetComponent("script.PlayerSave")
-            if save ~= nil then save:Save(true) end
+            if save ~= nil then
+                if destination ~= _RoomService.StaticRoomKey and not save:StageDepthTravel(destination) then
+                    _Util:Notify("다음 층 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", u.PlayerComponent.UserId)
+                    return {}
+                end
+                save:Save(true)
+            end
             table.insert(ids, u.PlayerComponent.UserId)
         end
         return ids

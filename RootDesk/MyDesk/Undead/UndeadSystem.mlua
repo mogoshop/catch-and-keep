@@ -2,12 +2,14 @@
 -- 혼은 한 번만 쓴다 — 해골·되살림·추출·망자 폭쇄 중 하나 (D2의 시체와 같다).
 -- 수: D2 규칙 — 스킬 1~3레벨은 레벨만큼, 이후 2 + 레벨/3 (20레벨 8기, undeadCountMax). 꽉 차면 가장 오래된 것이 무너진다.
 -- 되살림: 원본 몬스터 그대로 reviveSeconds(180초), 동시 수 = 스킬 레벨 (reviveCountMax 5).
--- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 저장하지 않는다.
+-- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 영구 저장하지 않는다. 방 이동은 공유 메모리의 일회성 전달을 쓴다.
 -- 유닛 엔티티는 그림자와 같은 shadowunit 모델(ShadowUnit, Kind만 다름)을 쓴다.
 @Logic
 script UndeadSystem extends Logic
 
     property table Owned = {}            -- userId → { rec, ... } (오래된 순)
+    property table TravelEpochs = {}      -- userId → 이동 번호 (이전 이동의 지연 생성 취소)
+    property string TravelMemoryName = "UndeadRoomTravelV1"
     property integer Serial = 0
     property number SoulReach = 1.5      -- 조준점에서 혼을 찾는 거리
 
@@ -138,7 +140,7 @@ script UndeadSystem extends Logic
     method table MakeRecord(Entity player, string kind, integer slvl, SoulOrb orb)
         -- 일으킬 때 능력치를 확정해 둔다 (맵 이동 때 같은 능력치로 다시 일으킨다)
         self.Serial = self.Serial + 1
-        local rec = { id = "ud" .. tostring(self.Serial), kind = kind, expireAt = 0, entity = nil, element = "", ratio = 0 }
+        local rec = { id = "ud" .. tostring(self.Serial), kind = kind, ownerEntityId = player.Id, expireAt = 0, entity = nil, element = "", ratio = 0 }
         local mastery = 1 + _GameData.skeletonMasteryPct * self:SkillLevel(player, "skeleton_mastery") / 100
         if kind == "skeleton" then
             local m = _GameData:GetMonsterStats("skel_warrior")
@@ -227,7 +229,14 @@ script UndeadSystem extends Logic
         _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
             ---@type ShadowUnit
             local u = comp
+            if not _Util:IsAlive(player) or player.CurrentMap ~= map or rec.entity ~= unit then
+                if isvalid(unit) then unit:Destroy() end
+                if rec.entity == unit then rec.entity = nil end
+                if onFail ~= nil then onFail() end
+                return
+            end
             u:Setup(player, rec.id, rec.atk, rec.hp, rec.stand, rec.move, offset)
+            u.Hp = math.min(u.MaxHp, rec.currentHp or rec.hp)
             u.Kind = rec.kind
             u.AttackRUID = rec.attack or ""
             unit.TransformComponent.Scale = Vector3(rec.scale or 1, rec.scale or 1, 1)
@@ -244,6 +253,7 @@ script UndeadSystem extends Logic
             if onReady ~= nil then onReady() end
         end, function()
             if isvalid(unit) then unit:Destroy() end
+            if rec.entity == unit then rec.entity = nil end
             if onFail ~= nil then onFail() end
         end)
         if rec.expireAt > 0 then
@@ -297,7 +307,9 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void DismissAll(Entity player)
-        -- 주인이 죽으면 모두 무너진다 (D2)
+        -- 사망·명시적 해제 시 모두 정리하고, 이전 맵의 따라오기 타이머도 무효화한다.
+        local uid = player.PlayerComponent.UserId
+        self.TravelEpochs[uid] = (self.TravelEpochs[uid] or 0) + 1
         for _, rec in ipairs(self:ListOf(player)) do self:DestroyEntity(rec) end
         self.Owned[player.PlayerComponent.UserId] = {}
         self:RefreshSummary(player)
@@ -306,19 +318,130 @@ script UndeadSystem extends Logic
     -- ───────── 맵 이동 ─────────
 
     @ExecSpace("ServerOnly")
-    method void Follow(Entity player)
-        -- PlayerTravel.Go가 순간이동 직전에 부른다: 지금 엔티티를 지우고, 도착 뒤 같은 능력치로 다시 일으킨다
-        local list = self:ListOf(player)
-        if #list == 0 then return end
-        for _, rec in ipairs(list) do self:DestroyEntity(rec) end
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(player) then return end
-            local now = _UtilLogic.ElapsedSeconds
-            local p = _Util:Pos2(player)
-            for _, rec in ipairs(self:ListOf(player)) do
-                if rec.expireAt == 0 or rec.expireAt > now then self:SpawnUnit(player, rec, p, nil, nil) end
+    method table LiveRecords(Entity player)
+        -- 현재 체력·남은 시간을 보존하고 죽거나 만료된 유닛은 이동 대상에서 제외한다.
+        local live = {}
+        local now = _UtilLogic.ElapsedSeconds
+        for _, rec in ipairs(self:ListOf(player)) do
+            local alive = (rec.ownerEntityId == nil or rec.ownerEntityId == player.Id) and (rec.expireAt == 0 or rec.expireAt > now)
+            if isvalid(rec.entity) then
+                local u = rec.entity:GetComponent("script.ShadowUnit")
+                if u == nil or u.Dead or u.Hp <= 0 then alive = false
+                else rec.currentHp = u.Hp end
             end
+            if alive and (rec.currentHp or rec.hp) > 0 then table.insert(live, rec)
+            else self:DestroyEntity(rec) end
+        end
+        self.Owned[player.PlayerComponent.UserId] = live
+        return live
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Follow(Entity player)
+        -- 일반 포털·귀환·웨이포인트: 이동 번호가 최신일 때만 같은 체력으로 다시 만든다.
+        local uid = player.PlayerComponent.UserId
+        local epoch = (self.TravelEpochs[uid] or 0) + 1
+        self.TravelEpochs[uid] = epoch
+        local list = self:LiveRecords(player)
+        for _, rec in ipairs(list) do self:DestroyEntity(rec) end
+        self:RefreshSummary(player)
+        if #list == 0 then return end
+        _TimerService:SetTimerOnce(function()
+            if not _Util:IsAlive(player) or self.TravelEpochs[uid] ~= epoch then return end
+            local p = _Util:Pos2(player)
+            local count = 0
+            for _, rec in ipairs(self:LiveRecords(player)) do
+                if not isvalid(rec.entity) and self:SpawnUnit(player, rec, p, nil, nil) then count = count + 1 end
+            end
+            self:RefreshSummary(player)
+            log("[VRF] undead followed map=" .. player.CurrentMap.Name .. " count=" .. tostring(count))
         end, 1.2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table TravelSnapshot(Entity player, string destination)
+        -- 엔티티·Color 객체는 제외한다. UTC 시각을 써서 방마다 다른 경과 시간에도 수명을 유지한다.
+        local now = _UtilLogic.ElapsedSeconds
+        local utc = DateTime.UtcNow.Elapsed
+        local units = {}
+        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant" }
+        for _, rec in ipairs(self:LiveRecords(player)) do
+            local data = {}
+            for _, key in ipairs(fields) do data[key] = rec[key] end
+            data.tint = { rec.tint.r, rec.tint.g, rec.tint.b, rec.tint.a }
+            data.expires = rec.expireAt > 0 and (utc + math.max(0, rec.expireAt - now) * 1000) or 0
+            table.insert(units, data)
+        end
+        local snapshot = { destination = destination, created = utc, unitCount = #units }
+        if #units > 0 then snapshot.units = units end
+        return snapshot
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean StashForRoomTravel(Entity player, string destination)
+        -- 심도 입장·다음 층·귀환 직전에만 전달한다. 실패하면 이동을 중단해 소환수를 잃지 않는다.
+        local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then
+            _Util:Notify("소환수 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", player.PlayerComponent.UserId)
+            return false
+        end
+        local snapshot = self:TravelSnapshot(player, destination)
+        local result = memory:SetVariableAndWait(player.PlayerComponent.UserId, _HttpService:JSONEncode(snapshot))
+        if result.Code ~= SharedMemoryResultCode.OK then
+            _Util:Notify("소환수 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", player.PlayerComponent.UserId)
+            return false
+        end
+        log("[VRF] undead room stash count=" .. tostring(snapshot.unitCount) .. " to=" .. destination)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RetargetRoomTravel(Entity player, string destination)
+        local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        local uid = player.PlayerComponent.UserId
+        local result = memory:GetVariableAndWait(uid)
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return end
+        local ok, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+        if not ok or type(data) ~= "table" then return end
+        data.destination = destination
+        memory:SetVariableAndWait(uid, _HttpService:JSONEncode(data))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RestoreRoomTravel(Entity player)
+        -- PlayerSave.Load 완료 뒤 목적지 방에서 한 번 소비한다. 2분 지난 전달은 폐기하며 영구 저장은 하지 않는다.
+        local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        local uid = player.PlayerComponent.UserId
+        local result = memory:GetVariableAndWait(uid)
+        if result.Code == SharedMemoryResultCode.NotFound then return end
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return end
+        local ok, snapshot = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+        local utc = DateTime.UtcNow.Elapsed
+        if not ok or type(snapshot) ~= "table" or type(snapshot.created) ~= "number" or utc - snapshot.created > 120000 then
+            memory:DeleteVariableAndWait(uid)
+            return
+        end
+        if snapshot.destination ~= _RoomService.RoomKey then return end
+        if memory:DeleteVariableAndWait(uid) ~= SharedMemoryResultCode.OK then return end
+        self:DismissAll(player)
+        if not _Util:IsAlive(player) then return end
+        local list = self:ListOf(player)
+        for _, data in ipairs(snapshot.units or {}) do
+            if (data.expires == 0 or data.expires > utc) and (data.currentHp or 0) > 0 then
+                self.Serial = self.Serial + 1
+                data.id = "ud" .. tostring(self.Serial)
+                data.entity = nil
+                data.ownerEntityId = player.Id
+                data.expireAt = data.expires > 0 and (_UtilLogic.ElapsedSeconds + (data.expires - utc) / 1000) or 0
+                local tint = data.tint
+                data.tint = Color(tint[1], tint[2], tint[3], tint[4])
+                table.insert(list, data)
+            end
+        end
+        log("[VRF] undead room restored count=" .. tostring(#list) .. " room=" .. _RoomService.RoomKey)
+        self:Follow(player)
     end
 
     @ExecSpace("ServerOnly")

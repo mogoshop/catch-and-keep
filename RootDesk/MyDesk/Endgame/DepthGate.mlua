@@ -76,6 +76,7 @@ script DepthGate extends Component
         if stats ~= nil then diff = stats.Difficulty end
         ---@type PlayerSocial
         local social = player:GetComponent("script.PlayerSocial")
+        local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. tostring(math.floor(_UtilLogic.ElapsedSeconds)))
         local ids = {}
         for _, u in ipairs(_Util:PlayersNear(player.CurrentMap, _Util:Pos2(player), self.PartyRange)) do
             local include = u == player
@@ -85,6 +86,7 @@ script DepthGate extends Component
                 include = s2 ~= nil and s2.PartyId == social.PartyId
             end
             if include then
+                if not _UndeadSystem:StashForRoomTravel(u, key) then return end
                 ---@type ShadowCommander
                 local commander = u:GetComponent("script.ShadowCommander")
                 if commander ~= nil then commander:StashForTravel() end
@@ -94,7 +96,6 @@ script DepthGate extends Component
                 table.insert(ids, u.PlayerComponent.UserId)
             end
         end
-        local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. tostring(math.floor(_UtilLogic.ElapsedSeconds)))
         _RoomService:CreateInstanceRoom(key, { _GameConst.MapDepth }, 30)
         _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst.MapDepth)
     end
