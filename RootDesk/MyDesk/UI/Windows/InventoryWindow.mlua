@@ -76,11 +76,28 @@ script InventoryWindow extends Logic
         if sel ~= nil then
             desc = _ItemData:Describe(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
             if _ItemData:IsRune(_ItemData:Parse(sel).base) then desc = desc .. "\n→ 소켓이 빈 장비 칸을 누르면 끼운다" end
+            desc = desc .. self:CompareLine(sel, eq, st)
         end
         _UIKit:SetText(self.Win .. "/DescBox/Desc", desc)
     end
 
     @ExecSpace("ClientOnly")
+    method string CompareLine(string sel, table eq, PlayerStats st)
+        -- 장비면: 요구 레벨 부족 경고 + 같은 부위 착용품과 능력치 비교 (반지는 빈 칸이 있으면 빈 칸, 아니면 첫째 반지)
+        local slot = _ItemData:GetSlot(sel)
+        if slot == "" then return "" end
+        local line = ""
+        local base = _ItemData:GetBase(_ItemData:Parse(sel).base)
+        if base ~= nil and base.reqLv > st.Level then line = "\n<color=#FF6464>레벨 부족 — Lv" .. tostring(base.reqLv) .. " 필요</color>" end
+        local old = ""
+        if slot == "ring" then
+            if eq.ring1 ~= nil and eq.ring2 ~= nil then old = eq.ring1 end
+        elseif eq[slot] ~= nil then
+            old = eq[slot]
+        end
+        return line .. "\n" .. _ItemData:CompareText(sel, old)
+    end
+
     method void DrawItem(string path, any s)
         -- 칸 하나: 아이템 그림(베이스 아이콘, 룬은 룬 그림) + 등급은 칸 테두리 색 (마법 파랑·레어 노랑·유니크 금·세트 초록, 일반은 원래 청동)
         if s == nil then

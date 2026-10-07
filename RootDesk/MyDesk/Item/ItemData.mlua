@@ -326,6 +326,30 @@ script ItemData extends Logic
         return table.concat(parts, " ")
     end
 
+    method string CompareText(string newS, string oldS)
+        -- 착용 중인 장비와 비교: 늘어나는 능력치 초록, 줄어드는 능력치 빨강 (같은 값은 생략). oldS ""는 빈 칸
+        local a = self:GetTotalMods(newS)
+        local b = {}
+        if oldS ~= "" then b = self:GetTotalMods(oldS) end
+        local keys = {}
+        local seen = {}
+        for k, _ in pairs(a) do if not seen[k] then seen[k] = true table.insert(keys, k) end end
+        for k, _ in pairs(b) do if not seen[k] then seen[k] = true table.insert(keys, k) end end
+        table.sort(keys)
+        local parts = {}
+        for _, k in ipairs(keys) do
+            local d = (a[k] or 0) - (b[k] or 0)
+            if math.abs(d) >= 0.5 then
+                local v = tostring(math.floor(math.abs(d) + 0.5))
+                if d > 0 then table.insert(parts, "<color=#5AE65A>" .. self:StatName(k) .. " +" .. v .. "</color>")
+                else table.insert(parts, "<color=#FF6464>" .. self:StatName(k) .. " -" .. v .. "</color>") end
+            end
+        end
+        local head = oldS == "" and "빈 칸에 착용하면: " or "착용 중인 것과 비교: "
+        if #parts == 0 then return head .. "변화 없음" end
+        return head .. table.concat(parts, "  ")
+    end
+
     method string Describe(string s)
         -- 이름 · 요구 레벨 · 옵션 요약
         local item = self:Parse(s)
