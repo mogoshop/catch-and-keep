@@ -10,6 +10,11 @@ script SoulExtractor extends Component
         local orb = soul:GetComponent("script.SoulOrb")
         if orb == nil or orb.Consumed or orb.OwnerUserId ~= senderUserId then return end
         if _Util:Distance(self.Entity, soul) > _ShadowConfig:GetExtractReach() then return end
+        if self:SkillLevel("shadow_summon") <= 0 then
+            -- 추출은 그림자 소환을 배운 뒤부터 (그 전에는 혼을 해골·폭쇄에 쓴다)
+            _Util:Notify("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배워야 한다", senderUserId)
+            return
+        end
         local grade = orb.Grade
         -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다
         local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100

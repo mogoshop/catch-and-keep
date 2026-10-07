@@ -3,13 +3,13 @@
 @Component
 script SkillBook extends Component
 
-    property string StartSkills = "shadow_summon,bone_shard"
+    property string StartSkills = "raise_skeleton,bone_shard"     -- D2: 해골 전사는 1레벨부터. 그림자는 Lv15 스킬
     property table Levels = {}                -- id → 투자 레벨 (서버)
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     @Sync
     property string SkillDigest = ""          -- "id:lv;..." UI 표시용
     @Sync
-    property string Slots = "bone_shard,mark_weakness,poison_mist,corpse_blast"
+    property string Slots = "raise_skeleton,mark_weakness,poison_mist,corpse_blast"
     @Sync
     property string RightSkill = "bone_shard"
 
@@ -170,6 +170,32 @@ script SkillBook extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
+    method void MigrateLevels()
+        -- 스킬 표가 바뀐 뒤의 옛 저장: 없어진 스킬은 포인트 환급, 요구 레벨 전에 받았던 시작 스킬(그림자 소환)은 해골 전사로 교체
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local refund = 0
+        for id, lv in pairs(self.Levels) do
+            if _SkillData:Get(id) == nil then
+                refund = refund + lv
+                self.Levels[id] = nil
+            end
+        end
+        local shadow = _SkillData:Get("shadow_summon")
+        if stats ~= nil and shadow ~= nil and (self.Levels.shadow_summon or 0) > 0 and stats.Level < shadow.row then
+            refund = refund + self.Levels.shadow_summon - 1
+            self.Levels.shadow_summon = nil
+        end
+        for id in string.gmatch(self.StartSkills, "[^,]+") do
+            if (self.Levels[id] or 0) <= 0 then self.Levels[id] = 1 end
+        end
+        if refund > 0 and stats ~= nil then
+            stats.SkillPoints = stats.SkillPoints + refund
+            _Util:Notify("스킬 표가 바뀌어 포인트 " .. tostring(refund) .. "을 돌려받았다", self.Entity.PlayerComponent.UserId)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
@@ -182,6 +208,7 @@ script SkillBook extends Component
         if d.levels ~= nil then
             self.Levels = {}
             for id, lv in pairs(d.levels) do self.Levels[id] = lv end
+            self:MigrateLevels()
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end

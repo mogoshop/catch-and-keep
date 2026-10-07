@@ -16,7 +16,7 @@ const problems = [];
 const bad = (file, msg) => problems.push(`${rel(file)}: ${msg}`);
 
 // 엔진이 기본으로 주는 모델 id (워크스페이스에 파일이 없다)
-const ENGINE_MODELS = new Set(["mapempty", "maplemaplayer", "recttilemap", "tilemap", "sideviewrecttilemap", "player"]);
+const ENGINE_MODELS = new Set(["mapempty", "mapobject", "maplemaplayer", "recttilemap", "tilemap", "sideviewrecttilemap", "player"]);
 
 const scripts = new Set(walk(path.join(ROOT, "RootDesk/MyDesk"), ".mlua", []).map((f) => path.basename(f, ".mlua")));
 const modelFiles = [...walk(path.join(ROOT, "Global"), EXT.model, []), ...walk(path.join(ROOT, "RootDesk"), EXT.model, [])];

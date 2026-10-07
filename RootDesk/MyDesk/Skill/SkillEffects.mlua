@@ -19,7 +19,9 @@ script SkillEffects extends Component
         elseif id == "enfeeble" then self:Curse(target, "weaken", 35, 1.5)
         elseif id == "elite_promote" then self:ElitePromote()
         elseif id == "shadow_summon" then self:Commander():DeployNext()
-        elseif id == "rally" then self:Commander():RallyAll()
+        elseif id == "raise_skeleton" then _UndeadSystem:Raise(self.Entity, "skeleton", lv, target)
+        elseif id == "raise_mage" then _UndeadSystem:Raise(self.Entity, "mage", lv, target)
+        elseif id == "revive" then _UndeadSystem:Raise(self.Entity, "revive", lv, target)
         else return false end
         return true
     end
@@ -67,10 +69,10 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method void CorpseBlast(Vector2 target, number damage)
-        -- 조준점 근처(1.5) 혼 하나를 소모해 반경 1.6 폭발. 피해는 원본 등급에 비례
+        -- 조준점 근처(1.5) 내 혼 하나를 소모해 반경 1.6 폭발. 피해는 원본 등급에 비례 (혼은 추출·해골·되살림과 배타)
         ---@type SoulOrb
         local orb = _Util:NearestComponent(self.Entity.CurrentMap, "script.SoulOrb", target, 1.5)
-        if orb == nil or orb.Consumed then
+        if orb == nil or orb.Consumed or orb.OwnerUserId ~= self.Entity.PlayerComponent.UserId then
             _Util:Notify("근처에 혼이 없다", self.Entity.PlayerComponent.UserId)
             return
         end

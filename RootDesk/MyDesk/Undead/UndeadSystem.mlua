@@ -1,0 +1,279 @@
+-- 언데드 (디아블로2 네크로맨서 소환): 해골 전사·해골 마법사·되살림. 혼 하나를 소모해 일으킨다.
+-- 혼은 한 번만 쓴다 — 해골·되살림·추출·망자 폭쇄 중 하나 (D2의 시체와 같다).
+-- 수: D2 규칙 — 스킬 1~3레벨은 레벨만큼, 이후 2 + 레벨/3 (20레벨 8기, undeadCountMax). 꽉 차면 가장 오래된 것이 무너진다.
+-- 되살림: 원본 몬스터 그대로 reviveSeconds(180초), 동시 수 = 스킬 레벨 (reviveCountMax 5).
+-- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 저장하지 않는다.
+-- 유닛 엔티티는 그림자와 같은 shadowunit 모델(ShadowUnit, Kind만 다름)을 쓴다.
+@Logic
+script UndeadSystem extends Logic
+
+    property table Owned = {}            -- userId → { rec, ... } (오래된 순)
+    property integer Serial = 0
+    property number SoulReach = 1.5      -- 조준점에서 혼을 찾는 거리
+
+    method table Elements()
+        return { "fire", "cold", "light", "poison" }
+    end
+
+    method integer CountFor(integer slvl)
+        -- 해골 전사·마법사 최대 수 (D2): 1, 2, 3, 3, 3, 4, 4, 4, 5 … 20레벨 8
+        if slvl <= 0 then return 0 end
+        if slvl <= 3 then return slvl end
+        return math.min(math.floor(_GameData.undeadCountMax), 2 + math.floor(slvl / 3))
+    end
+
+    method integer ReviveCountFor(integer slvl)
+        return math.min(math.floor(_GameData.reviveCountMax), slvl)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ListOf(Entity player)
+        -- 주인별 목록 (무너진 것은 정리)
+        local uid = player.PlayerComponent.UserId
+        local list = self.Owned[uid]
+        if list == nil then
+            list = {}
+            self.Owned[uid] = list
+        end
+        return list
+    end
+
+    -- ───────── 일으키기 ─────────
+
+    @ExecSpace("ServerOnly")
+    method boolean Raise(Entity player, string kind, integer slvl, Vector2 target)
+        -- kind: skeleton / mage / revive. 조준점 근처 내 혼 하나를 소모
+        local userId = player.PlayerComponent.UserId
+        ---@type SoulOrb
+        local orb = _Util:NearestComponent(player.CurrentMap, "script.SoulOrb", target, self.SoulReach)
+        if orb == nil or orb.Consumed or orb.OwnerUserId ~= userId then
+            _Util:Notify("조준한 곳 근처에 내 혼이 없다", userId)
+            return false
+        end
+        if kind == "revive" and (orb.Rank == "unique" or orb.Rank == "boss") then
+            _Util:Notify("최상위·보스는 되살릴 수 없다", userId)
+            return false
+        end
+        local q = orb.Entity.TransformComponent.WorldPosition
+        local rec = self:MakeRecord(player, kind, slvl, orb)
+        orb:Consume()
+
+        local max = self:CountFor(slvl)
+        if kind == "revive" then max = self:ReviveCountFor(slvl) end
+        self:TrimOldest(player, kind, max - 1)
+        table.insert(self:ListOf(player), rec)
+        self:SpawnUnit(player, rec, Vector2(q.x, q.y))
+        self:RefreshSummary(player)
+        _GameEvents:Emit("UndeadRaised", { player = player, kind = kind })
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method table MakeRecord(Entity player, string kind, integer slvl, SoulOrb orb)
+        -- 일으킬 때 능력치를 확정해 둔다 (맵 이동 때 같은 능력치로 다시 일으킨다)
+        self.Serial = self.Serial + 1
+        local rec = { id = "ud" .. tostring(self.Serial), kind = kind, expireAt = 0, entity = nil, element = "", ratio = 0 }
+        local mastery = 1 + _GameData.skeletonMasteryPct * self:SkillLevel(player, "skeleton_mastery") / 100
+        if kind == "skeleton" then
+            local m = _GameData:GetMonsterStats("skel_warrior")
+            rec.atk = math.floor((_GameData.skeletonAtkBase + _GameData.skeletonAtkPerLv * (slvl - 1)) * mastery)
+            rec.hp = math.floor((_GameData.skeletonHpBase + _GameData.skeletonHpPerLv * (slvl - 1)) * mastery)
+            rec.cooldown = _GameData.skeletonCooldown
+            rec.range = 0.8
+            rec.speed = _GameData.skeletonSpeed
+            rec.stand = m ~= nil and m.stand or ""
+            rec.move = m ~= nil and m.move or ""
+            rec.tint = Color(0.92, 0.9, 0.82, 1)
+        elseif kind == "mage" then
+            local m = _GameData:GetMonsterStats("skel_warrior")
+            local elements = self:Elements()
+            rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
+            rec.ratio = 1
+            rec.atk = math.floor((_GameData.mageAtkBase + _GameData.mageAtkPerLv * (slvl - 1)) * mastery)
+            rec.hp = math.floor((_GameData.mageHpBase + _GameData.mageHpPerLv * (slvl - 1)) * mastery)
+            rec.cooldown = _GameData.mageCooldown
+            rec.range = _GameData.mageRange
+            rec.speed = _GameData.skeletonSpeed
+            rec.stand = m ~= nil and m.stand or ""
+            rec.move = m ~= nil and m.move or ""
+            rec.tint = self:ElementTint(rec.element)
+        else
+            -- 되살림: 원본 몬스터 그대로 (그림자 개성 계산을 배율 1로)
+            local mul = _GameData.reviveStatMul / _GameData.shadowStatMul
+            local prof = _ShadowConfig:GetProfile(orb.SourceId, orb.Grade, orb.Level, mul)
+            rec.atk = prof.atk
+            rec.hp = prof.hp
+            rec.cooldown = prof.cooldown
+            rec.range = prof.range
+            rec.speed = prof.speed
+            rec.element = prof.element
+            rec.ratio = prof.ratio
+            rec.resists = prof.resists
+            rec.stand = orb.StandRUID
+            rec.move = orb.MoveRUID
+            rec.tint = Color(0.6, 1, 0.65, 0.9)
+            rec.expireAt = _UtilLogic.ElapsedSeconds + _GameData.reviveSeconds
+        end
+        return rec
+    end
+
+    method Color ElementTint(string element)
+        if element == "fire" then return Color(1, 0.55, 0.4, 1) end
+        if element == "cold" then return Color(0.55, 0.75, 1, 1) end
+        if element == "light" then return Color(1, 0.95, 0.5, 1) end
+        return Color(0.55, 1, 0.5, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TrimOldest(Entity player, string kind, integer keep)
+        -- kind가 keep 개를 넘으면 가장 오래된 것부터 무너뜨린다 (D2)
+        local list = self:ListOf(player)
+        local count = 0
+        for _, rec in ipairs(list) do if rec.kind == kind then count = count + 1 end end
+        local i = 1
+        while count > keep and i <= #list do
+            if list[i].kind == kind then
+                self:DestroyEntity(list[i])
+                table.remove(list, i)
+                count = count - 1
+            else
+                i = i + 1
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnUnit(Entity player, table rec, Vector2 pos)
+        local map = player.CurrentMap
+        if not isvalid(map) then return end
+        local unit = _SpawnService:SpawnByModelId(_GameConst.ModelShadowUnit, "Undead_" .. rec.kind, Vector3(pos.x, pos.y, 0), map)
+        if not isvalid(unit) then return end
+        rec.entity = unit
+        local offset = self:FormationOffset(#self:ListOf(player))
+        _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
+            ---@type ShadowUnit
+            local u = comp
+            u:Setup(player, rec.id, rec.atk, rec.hp, rec.stand, rec.move, offset)
+            u.Kind = rec.kind
+            u.AttackCooldown = rec.cooldown
+            u.AttackRange = rec.range
+            u.Element = rec.element
+            u.ElementRatio = rec.ratio
+            u.Resists = rec.resists or {}
+            u.ShadowTint = rec.tint
+            unit.SpriteRendererComponent.Color = rec.tint
+            local mv = unit.MovementComponent
+            if isvalid(mv) then mv.InputSpeed = rec.speed end
+        end, function() unit:Destroy() end)
+        if rec.expireAt > 0 then
+            local id = rec.id
+            local delay = math.max(0.1, rec.expireAt - _UtilLogic.ElapsedSeconds)
+            _TimerService:SetTimerOnce(function() self:Expire(player, id) end, delay)
+        end
+    end
+
+    method Vector2 FormationOffset(integer index)
+        -- 주인 둘레 고리 (그림자 대형 바깥쪽)
+        local angle = index * 0.9
+        local r = 1.6 + (index % 3) * 0.35
+        return Vector2(math.cos(angle) * r, math.sin(angle) * r * 0.7)
+    end
+
+    -- ───────── 소멸 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void DestroyEntity(table rec)
+        if isvalid(rec.entity) then rec.entity:Destroy() end
+        rec.entity = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Remove(Entity player, string id)
+        if not isvalid(player) then return end
+        local list = self:ListOf(player)
+        for i, rec in ipairs(list) do
+            if rec.id == id then
+                self:DestroyEntity(rec)
+                table.remove(list, i)
+                break
+            end
+        end
+        self:RefreshSummary(player)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUnitDied(Entity player, string id)
+        -- ShadowUnit(Kind ~= shadow)이 쓰러지면 부른다
+        self:Remove(player, id)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Expire(Entity player, string id)
+        -- 되살림 시간이 끝남
+        self:Remove(player, id)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DismissAll(Entity player)
+        -- 주인이 죽으면 모두 무너진다 (D2)
+        for _, rec in ipairs(self:ListOf(player)) do self:DestroyEntity(rec) end
+        self.Owned[player.PlayerComponent.UserId] = {}
+        self:RefreshSummary(player)
+    end
+
+    -- ───────── 맵 이동 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Follow(Entity player)
+        -- PlayerTravel.Go가 순간이동 직전에 부른다: 지금 엔티티를 지우고, 도착 뒤 같은 능력치로 다시 일으킨다
+        local list = self:ListOf(player)
+        if #list == 0 then return end
+        for _, rec in ipairs(list) do self:DestroyEntity(rec) end
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(player) then return end
+            local now = _UtilLogic.ElapsedSeconds
+            local p = _Util:Pos2(player)
+            for _, rec in ipairs(self:ListOf(player)) do
+                if rec.expireAt == 0 or rec.expireAt > now then self:SpawnUnit(player, rec, p) end
+            end
+        end, 1.2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RallyAll(Entity player, number seconds)
+        for _, rec in ipairs(self:ListOf(player)) do
+            if isvalid(rec.entity) then
+                ---@type ShadowUnit
+                local u = rec.entity:GetComponent("script.ShadowUnit")
+                if u ~= nil then u:Rally(seconds) end
+            end
+        end
+    end
+
+    -- ───────── 표시 ─────────
+
+    method integer SkillLevel(Entity player, string id)
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        if book == nil then return 0 end
+        return book:GetLevel(id)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshSummary(Entity player)
+        -- 상태줄 "해골 3/4 · 마법사 1/1 · 되살림 2" → ShadowCommander.UndeadSummary (동기화)
+        ---@type ShadowCommander
+        local cmd = player:GetComponent("script.ShadowCommander")
+        if cmd == nil then return end
+        local n = { skeleton = 0, mage = 0, revive = 0 }
+        for _, rec in ipairs(self:ListOf(player)) do n[rec.kind] = (n[rec.kind] or 0) + 1 end
+        local parts = {}
+        local sk = self:SkillLevel(player, "raise_skeleton")
+        local mg = self:SkillLevel(player, "raise_mage")
+        if sk > 0 then table.insert(parts, "해골 " .. tostring(n.skeleton) .. "/" .. tostring(self:CountFor(sk))) end
+        if mg > 0 then table.insert(parts, "마법사 " .. tostring(n.mage) .. "/" .. tostring(self:CountFor(mg))) end
+        if n.revive > 0 then table.insert(parts, "되살림 " .. tostring(n.revive)) end
+        cmd.UndeadSummary = table.concat(parts, " · ")
+    end
+
+end

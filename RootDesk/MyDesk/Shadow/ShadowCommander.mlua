@@ -7,6 +7,8 @@ script ShadowCommander extends Component
     property table Units = {}                -- shadow id → 소환된 엔티티
     @Sync
     property integer DeployedCount = 0
+    @Sync
+    property string UndeadSummary = ""       -- UndeadSystem이 채우는 "해골 3/4 · 마법사 1/1"
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -65,6 +67,7 @@ script ShadowCommander extends Component
         local owner = self:Owner()
         local shadow = owner ~= nil and owner:GetShadow(id) or nil
         if shadow == nil or shadow.deployed then return false end
+        if self:GetSkillLevel("shadow_summon") <= 0 then return false end
         if self.DeployedCount >= self:GetDeployLimit() then return false end
         if shadow.grade >= 3 and self:DeployedBossCount() >= math.floor(_GameData.bossShadowDeployLimit) then return false end
         return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
@@ -213,7 +216,8 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void RallyAll()
-        -- 집결: 잠시 적을 무시하고 주인 곁으로
+        -- 집결: 잠시 적을 무시하고 주인 곁으로 (언데드 포함)
+        _UndeadSystem:RallyAll(self.Entity, self.RallySeconds)
         for _, unit in pairs(self.Units) do
             if isvalid(unit) then
                 ---@type ShadowUnit
@@ -242,6 +246,10 @@ script ShadowCommander extends Component
     @ExecSpace("Server")
     method void RequestDeploy(string id)
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if self:GetSkillLevel("shadow_summon") <= 0 then
+            _Util:Notify("그림자 소환은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배워야 한다", senderUserId)
+            return
+        end
         if id == "" then self:DeployNext() else self:Deploy(id) end
     end
 

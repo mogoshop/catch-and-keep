@@ -137,7 +137,8 @@ T.waypoints.forEach((r, i) => { if (!mapIds.has(r.map)) err("waypoints", i, `map
 T.quests.forEach((r, i) => {
   if (r.kind === "kill" && !sourceIds.has(r.target)) err("quests", i, `kill 대상 '${r.target}' — monsters.csv sourceId에 없음`);
   if (r.kind === "reach" && !markers.has(r.target)) err("quests", i, `reach 대상 '${r.target}' — maps.csv extra에 altar:${r.target} 없음`);
-  if (!["kill", "extract", "reach"].includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
+  if (!["kill", "extract", "reach", "raise"].includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
+  if (r.kind === "raise" && !["skeleton", "mage", "revive"].includes(r.target)) err("quests", i, `raise 대상 '${r.target}' — skeleton / mage / revive`);
   if (!(num(r.count) > 0)) err("quests", i, "count 양수여야 함");
   for (const part of r.reward.split(",")) {
     if (part === "") continue;
