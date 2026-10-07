@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -87,6 +87,7 @@ script GameData extends Logic
     property table Sounds = {}
     property table MonsterNames = {}
     property table DepthPool = {}
+    property table MapSpawns = {}
     property table Shop = {}
     property table Variants = {}
     property table VariantOrder = {}
@@ -153,6 +154,20 @@ script GameData extends Logic
         self.MonsterStats["headsman"] = { level = 1, hp = 600, dmg = 14, interval = 1.5, speed = 1.2, range = 0.8, element = "fire", ratio = 0.4, resists = "fire=40,poison=30", behavior = "", stand = "c68c66cc812e4e4aa9a6f1ffcdc48985", move = "924e249ccb8747dbbe548dc5af908c4f", innate = "aura_might", rank = "unique" }
         self.MonsterStats["skel_captain"] = { level = 1, hp = 800, dmg = 16, interval = 1.5, speed = 1, range = 0.8, element = "cold", ratio = 0.4, resists = "poison=75,cold=40", behavior = "", stand = "ed882269a5d543318ad73e7032632960", move = "94003c3d90dd4fd4866c725b29704169", innate = "aura_guard", rank = "unique" }
         self.MonsterStats["grave_queen"] = { level = 12, hp = 2600, dmg = 18, interval = 1.5, speed = 1, range = 1.2, element = "poison", ratio = 0.5, resists = "poison=60,fire=25", behavior = "", stand = "f4a4aadb84bb4060af45a7ad23f189e5", move = "a97b63a93e6b4be2a6158acc573126bc", innate = "skill_slam", rank = "boss" }
+        self.MapSpawns = {}
+        self.MapSpawns["map01"] = { entries = "hellhound:20:1;hellhound:8:2", pack = 4, elite = 0, variant = -1, respawn = 120, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
+        self.MapSpawns["rotmarsh"] = { entries = "hellhound:12:3;graveworm:18:4", pack = 4, elite = 0.05, variant = -1, respawn = 120, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
+        self.MapSpawns["execution"] = { entries = "ashendead:18:5;corpsecrow:14:6", pack = 4, elite = 0.08, variant = -1, respawn = 120, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["gallows"] = { entries = "ashendead:14:7;graveworm:10:7;corpsecrow:12:8", pack = 4, elite = 0.15, variant = -1, respawn = 120, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["crypt1"] = { entries = "skelwarrior:14:8;ashendead:8:8", pack = 3, elite = 0.1, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["crypt2"] = { entries = "skelwarrior:12:10;starvedwraith:10:10", pack = 3, elite = 0.12, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["crypt3"] = { entries = "skelwarrior:10:11;starvedwraith:12:11", pack = 3, elite = 0.15, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["hollow"] = { entries = "hellhound:10:2;graveworm:6:3", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cellar1"] = { entries = "graveworm:12:4;hellhound:4:4", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cellar2"] = { entries = "graveworm:8:5;ashendead:8:5", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["pit1"] = { entries = "ashendead:10:6;corpsecrow:6:6", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["pit2"] = { entries = "skelwarrior:8:7;corpsecrow:6:7", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cave"] = { entries = "starvedwraith:8:9;skelwarrior:6:9", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -11, maxX = 11, minY = -6.5, maxY = 7.5 }
         self.DepthPool = {}
         table.insert(self.DepthPool, "hellhound")
         table.insert(self.DepthPool, "graveworm")
@@ -212,6 +227,12 @@ script GameData extends Logic
         -- 원본 몬스터 능력치 (monsters.csv, sourceId 기준). 그림자 개성의 원천. 없으면 nil
         self:Ensure()
         return self.MonsterStats[sourceId]
+    end
+
+    method any GetMapSpawns(string mapId)
+        -- 맵별 몬스터 출현 (maps.csv spawns·무리·정예·변종·리스폰·출현 범위). 보통 난이도 맵 id. 없으면 nil
+        self:Ensure()
+        return self.MapSpawns[mapId]
     end
 
     method table GetDepthPool()

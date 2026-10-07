@@ -1,6 +1,8 @@
 -- 맵별 몬스터 배치 (맵 안의 빈 엔티티에 붙인다). 시작할 때 목록대로 영역 안에 D2처럼 무리(PackSize) 단위로 소환하고,
 -- 레벨·정예·변종 여부를 정한다. 이후 리스폰은 각 몬스터(Monster)가 RespawnSec 뒤, 플레이어 눈에 안 띌 때 처음 위치에서 한다.
--- Entries 형식: "모델id:마리수:레벨;..."   예) "hellhound:6:1;graveworm:3:2". 값은 빌드가 maps.csv에서 넣는다
+-- Entries 형식: "모델id:마리수:레벨;..."   예) "hellhound:6:1;graveworm:3:2".
+-- 값은 실행 시 _GameData:GetMapSpawns(보통 맵 id)를 우선 쓴다 (maps.csv → 데이터 생성만으로 바뀜, 맵 파일 재빌드 불필요).
+-- 데이터에 없는 맵이면 이 컴포넌트의 속성값을 쓴다
 @Component
 script MonsterSpawner extends Component
 
@@ -23,6 +25,7 @@ script MonsterSpawner extends Component
     method void SpawnAll()
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
+        self:LoadFromData(map.Name)
         local total = 0
         local bonus = 0
         ---@type MapAmbience
@@ -56,6 +59,18 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void LoadFromData(string mapName)
+        local d = _GameData:GetMapSpawns(_GameConst:BaseMapName(mapName))
+        if d == nil then return end
+        self.Entries = d.entries
+        self.PackSize = math.floor(d.pack)
+        self.EliteChance = d.elite
+        self.VariantChance = d.variant
+        self.RespawnSec = d.respawn
+        self.AreaMin = Vector2(d.minX, d.minY)
+        self.AreaMax = Vector2(d.maxX, d.maxY)
+    end
+
     method Vector2 RandomPoint()
         local x = self.AreaMin.x + _UtilLogic:RandomDouble() * (self.AreaMax.x - self.AreaMin.x)
         local y = self.AreaMin.y + _UtilLogic:RandomDouble() * (self.AreaMax.y - self.AreaMin.y)
