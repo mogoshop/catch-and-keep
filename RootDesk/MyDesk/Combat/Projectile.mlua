@@ -1,5 +1,7 @@
--- 날아가는 스킬 투사체 (서버가 움직이고 판정한다). 지나가며 닿은 몬스터만 맞고, Pierce면 꿰뚫어 사거리 끝까지 간다.
--- 피해는 쏜 플레이어의 PlayerAttack(SkillHitOne → HitEvent 경로)으로 보낸다. 모양·스프라이트는 Projectile 모델 (Body 없음, Translate로 이동).
+-- 날아가는 투사체 (서버가 움직이고 판정한다). 지나가며 닿은 상대만 맞고, Pierce면 꿰뚫어 사거리 끝까지 간다.
+--   Team "player" (기본): 몬스터를 맞힌다. 피해는 쏜 플레이어의 PlayerAttack.SkillHitOne (HitEvent 경로)
+--   Team "monster": 플레이어·그림자를 맞힌다. 피해는 쏜 몬스터의 MonsterAttack.HitOne — 움직여서 피할 수 있다
+-- 모양·스프라이트는 Projectile 모델 (Body 없음, Translate로 이동). 몬스터 화살은 쏠 때 그림을 바꾼다.
 @Component
 script Projectile extends Component
 
@@ -13,9 +15,11 @@ script Projectile extends Component
     property number Damage = 0
     property string Info = ""
     property boolean Pierce = true
+    property string Team = "player"
     property boolean Launched = false
     property number Traveled = 0
     property table HitIds = {}
+    property boolean DebugLog = false
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -31,7 +35,7 @@ script Projectile extends Component
         self.HitIds = {}
         self.Entity.TransformComponent.ZRotation = math.deg(math.atan(self.Dir.y, self.Dir.x)) + self.AngleOffset
         self.Launched = true
-        log("[VRF] projectile launched " .. info .. " dmg=" .. tostring(math.floor(damage)))
+        if self.DebugLog then log("[Projectile] launched " .. info .. " dmg=" .. tostring(math.floor(damage))) end
     end
 
     @ExecSpace("ServerOnly")
@@ -45,6 +49,11 @@ script Projectile extends Component
         self.Entity.TransformComponent:Translate(self.Dir.x * step, self.Dir.y * step)
         self.Traveled = self.Traveled + step
         local p = _Util:Pos2(self.Entity) - Vector2(0, self.HeightOffset)
+        if self.Team == "monster" then
+            self:HitDefenders(p)
+            if self.Launched and self.Traveled >= self.Range then self:Finish() end
+            return
+        end
         for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.Radius)) do
             local key = m.Entity.Id
             if not self.HitIds[key] then
@@ -62,13 +71,35 @@ script Projectile extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void HitDefenders(Vector2 p)
+        -- 몬스터 투사체: 반경 안 살아 있는 플레이어·그림자 하나에 닿으면 맞히고 사라진다
+        ---@type MonsterAttack
+        local atk = self.Owner:GetComponent("script.MonsterAttack")
+        if atk == nil then return end
+        local map = self.Entity.CurrentMap
+        local victim = nil
+        for _, u in ipairs(_Util:PlayersNear(map, p, self.Radius)) do victim = u end
+        if victim == nil then
+            for _, comp in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                ---@type ShadowUnit
+                local unit = comp
+                if victim == nil and not unit.Dead and (_Util:Pos2(unit.Entity) - p):Magnitude() <= self.Radius then victim = unit.Entity end
+            end
+        end
+        if victim == nil then return end
+        self.HitIds[victim.Id] = true
+        atk:HitOne(victim)
+        self:Finish()
+    end
+
+    @ExecSpace("ServerOnly")
     method void Finish()
         -- 사거리 끝·첫 명중(관통 아님)·주인 이탈 시 사라진다
         if not self.Launched then return end
         self.Launched = false
         local n = 0
         for _ in pairs(self.HitIds) do n = n + 1 end
-        log("[VRF] projectile end " .. self.Info .. " hits=" .. tostring(n) .. " traveled=" .. string.format("%.1f", self.Traveled))
+        if self.DebugLog then log("[Projectile] end " .. self.Info .. " hits=" .. tostring(n) .. " traveled=" .. string.format("%.1f", self.Traveled)) end
         self.Entity:Destroy()
     end
 

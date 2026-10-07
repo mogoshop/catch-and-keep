@@ -17,6 +17,8 @@ script MonsterAttack extends AttackComponent
     property number ScanTimer = 0
     property Entity CurrentTarget = nil
     property number SlamDamage = 0
+    property number ArrowSpeed = 7
+    property integer ShotCount = 0
 
     method Monster Body()
         ---@type Monster
@@ -53,26 +55,58 @@ script MonsterAttack extends AttackComponent
         self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
         self.CurrentTarget = target
         local p = target.TransformComponent.WorldPosition
-        -- 원거리(사거리 1.5 넘음)는 날아가는 화살·볼트를 보여 준다
+        -- 원거리(사거리 1.5 넘음)는 실제로 날아가는 화살: 쏜 순간의 위치로 날아가므로 움직이면 피할 수 있다
         if self.AttackRange > 1.5 then
-            local my = self.Entity.TransformComponent.WorldPosition
-            self:BoltFx(Vector3(my.x, my.y + 0.4, 0), Vector3(p.x, p.y + 0.3, 0), self:GetElement())
+            self:Shoot(Vector2(p.x, p.y))
+            return
         end
         self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), self.AttackRadius), "monster.basic", nil)
     end
 
-    @ExecSpace("Multicast")
-    method void BoltFx(Vector3 from, Vector3 to, string element)
-        local color = Color(0.85, 0.8, 0.7, 1)
-        if element == "fire" then color = Color(1, 0.5, 0.2, 1)
-        elseif element == "cold" then color = Color(0.5, 0.8, 1, 1)
-        elseif element == "light" then color = Color(1, 1, 0.5, 1)
-        elseif element == "poison" then color = Color(0.5, 1, 0.4, 1) end
-        for i = 1, 3 do
-            local t = i / 3
-            local q = Vector3(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, 0)
-            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, q, 0, Vector3(0.2, 0.2, 1), false, { Color = color })
-        end
+    @ExecSpace("ServerOnly")
+    method void Shoot(Vector2 aim)
+        -- 화살 투사체 (초속 ArrowSpeed, 사거리 + 1.5, 첫 대상에서 멈춤). 속성이 있으면 그 색으로 물든다
+        local my = _Util:Pos2(self.Entity)
+        local dir = aim - my
+        if dir:Magnitude() < 0.05 then return end
+        dir = dir:Normalize()
+        local start = my + Vector2(0, 0.4) + dir * 0.3
+        self.ShotCount = self.ShotCount + 1
+        local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "Arrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
+        if not isvalid(shot) then return end
+        local owner = self.Entity
+        local color = self:ElementColor(self:GetElement())
+        _Util:AfterSpawn(shot, "script.Projectile", function(comp)
+            ---@type Projectile
+            local proj = comp
+            shot.SpriteRendererComponent.SpriteRUID = _GameConst.SpriteArrow
+            shot.SpriteRendererComponent.Color = color
+            shot.TransformComponent.Scale = Vector3(1.6, 1.6, 1)
+            proj.AngleOffset = 0
+            proj.Team = "monster"
+            proj.HeightOffset = 0.4
+            proj.Radius = 0.4
+            proj:Launch(owner, dir, self.ArrowSpeed, self.AttackRange + 1.5, 0, "monster.arrow", false)
+        end, function()
+            if isvalid(shot) then shot:Destroy() end
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HitOne(Entity target)
+        -- 투사체가 닿은 대상 하나에 기본 공격 피해 (IsAttackTarget이 CurrentTarget만 통과시킨다)
+        if not isvalid(target) then return end
+        self.CurrentTarget = target
+        local q = target.TransformComponent.WorldPosition
+        self:AttackFast(CircleShape(Vector2(q.x, q.y + 0.3), 0.5), "monster.basic", nil)
+    end
+
+    method Color ElementColor(string element)
+        if element == "fire" then return Color(1, 0.6, 0.35, 1) end
+        if element == "cold" then return Color(0.6, 0.85, 1, 1) end
+        if element == "light" then return Color(1, 1, 0.6, 1) end
+        if element == "poison" then return Color(0.6, 1, 0.5, 1) end
+        return Color(1, 1, 1, 1)
     end
 
     @ExecSpace("ServerOnly")
