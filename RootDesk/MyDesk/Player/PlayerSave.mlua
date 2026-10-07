@@ -62,12 +62,15 @@ script PlayerSave extends Component
         end
         for k, v in pairs(loaded) do self.LastSaved[k] = v end
         self.IsLoadSuccess = true
-        -- 처음 온 플레이어는 마을에서 시작한다 (월드 시작 맵은 사냥터)
-        if isNew and not _RoomService:IsInstanceRoom() then
+        -- D2처럼 접속하면 언제나 (저장된 난이도의) 마을에서 시작한다. 월드 시작 맵은 사냥터라 여기서 옮긴다
+        if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel ~= nil then travel:GoTown() end
+            local want = _GameConst:MapFor(_GameConst.MapTown, travel ~= nil and travel:Difficulty() or 0)
+            local map = self.Entity.CurrentMap
+            if travel ~= nil and (not isvalid(map) or map.Name ~= want) then travel:GoTown() end
         end
+        log("[PlayerSave] 불러오기 완료 (새 캐릭터 " .. tostring(isNew) .. ")")
     end
 
     @ExecSpace("ServerOnly")

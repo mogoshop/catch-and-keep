@@ -117,7 +117,7 @@ T.skills.forEach((r, i) => {
 });
 for (const tree of ["command", "soul", "curse"]) {
   const n = T.skills.filter((r) => r.tree === tree).length;
-  if (n > 10) err("skills", null, `${tree} 트리 ${n}개 — 스킬 창은 트리당 10칸`);
+  if (n > 12) err("skills", null, `${tree} 트리 ${n}개 — 스킬 창은 트리당 12칸`);
 }
 
 // ── 몬스터·보스 ──

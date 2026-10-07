@@ -3,21 +3,22 @@
 @Component
 script SkillBook extends Component
 
-    property string StartSkills = "raise_skeleton,bone_shard"     -- D2: 해골 전사는 1레벨부터. 그림자는 Lv15 스킬
+    property string StartSkills = ""          -- D2처럼 처음엔 배운 스킬 없이 포인트 1로 시작 (해골 전사·골편 투척은 Lv1부터 배울 수 있다)
     property table Levels = {}                -- id → 투자 레벨 (서버)
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     @Sync
     property string SkillDigest = ""          -- "id:lv;..." UI 표시용
     @Sync
-    property string Slots = "raise_skeleton,mark_weakness,poison_mist,corpse_blast"
+    property string Slots = ",,,"             -- A S D F. 빈 칸으로 시작, 배운 스킬만 넣는다
     @Sync
-    property string RightSkill = "bone_shard"
+    property string RightSkill = ""
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self.Levels = {}
         self.ReadyAt = {}
         for id in string.gmatch(self.StartSkills, "[^,]+") do self.Levels[id] = 1 end
+        self:SanitizeSlots()
         self:RefreshDigest()
     end
 
@@ -63,25 +64,73 @@ script SkillBook extends Component
             return
         end
         stats.SkillPoints = stats.SkillPoints - 1
+        local first = self:GetLevel(id) == 0
         self.Levels[id] = self:GetLevel(id) + 1
+        if first then self:AutoSlot(id) end
         self:RefreshDigest()
     end
 
     @ExecSpace("Server")
     method void RequestSetSlot(integer slot, string id)
-        -- 1~4 = A S D F, 5 = 우클릭. 액티브·저주만
+        -- 1~4 = A S D F, 5 = 우클릭. 배운 액티브·저주만, id ""는 비우기
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if id ~= "" and not self:IsSlottable(id) then return end
+        self:SetSlot(slot, id)
+    end
+
+    method boolean IsSlottable(string id)
         local def = _SkillData:Get(id)
-        if def == nil or (def.kind ~= "active" and def.kind ~= "curse") then return end
+        if def == nil or (def.kind ~= "active" and def.kind ~= "curse") then return false end
+        return self:GetLevel(id) > 0
+    end
+
+    method table SlotList()
+        local list = {}
+        for s in string.gmatch(self.Slots .. ",", "([^,]*),") do table.insert(list, s) end
+        while #list < 4 do table.insert(list, "") end
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetSlot(integer slot, string id)
         if slot == 5 then
             self.RightSkill = id
             return
         end
-        local list = {}
-        for s in string.gmatch(self.Slots .. ",", "([^,]*),") do table.insert(list, s) end
-        while #list < 4 do table.insert(list, "") end
+        if slot < 1 or slot > 4 then return end
+        local list = self:SlotList()
+        -- 같은 스킬이 다른 칸에 있으면 옮긴다
+        for i = 1, 4 do if id ~= "" and list[i] == id then list[i] = "" end end
         list[slot] = id
         self.Slots = table.concat(list, ",", 1, 4)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AutoSlot(string id)
+        -- 처음 배운 액티브·저주는 빈 칸(우클릭 → A S D F 순)에 자동으로 넣는다
+        if not self:IsSlottable(id) then return end
+        if self.RightSkill == id then return end
+        local list = self:SlotList()
+        for i = 1, 4 do if list[i] == id then return end end
+        if self.RightSkill == "" then
+            self.RightSkill = id
+            return
+        end
+        for i = 1, 4 do
+            if list[i] == "" then
+                self:SetSlot(i, id)
+                return
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SanitizeSlots()
+        -- 옛 저장·기본값에 남은 "안 배운 스킬" 칸을 비운다
+        local list = self:SlotList()
+        for i = 1, 4 do if list[i] ~= "" and not self:IsSlottable(list[i]) then list[i] = "" end end
+        self.Slots = table.concat(list, ",", 1, 4)
+        if self.RightSkill ~= "" and not self:IsSlottable(self.RightSkill) then self.RightSkill = "" end
     end
 
     -- ───────── 시전 (서버) ─────────
@@ -100,6 +149,11 @@ script SkillBook extends Component
         local lv = self:GetLevel(id)
         if def == nil or lv <= 0 then return false end
         local userId = self.Entity.PlayerComponent.UserId
+        if _GameConst:IsTown(self.Entity.CurrentMap) then
+            _Util:Notify("마을에서는 스킬을 쓸 수 없습니다", userId)
+            return false
+        end
+        if def.kind == "passive" then return false end
         if not def.impl then
             _Util:Notify(def.name .. ": 준비 중인 스킬", userId)
             return false
@@ -214,6 +268,7 @@ script SkillBook extends Component
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end
+        self:SanitizeSlots()
         self:RefreshDigest()
     end
 

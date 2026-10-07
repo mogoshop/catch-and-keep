@@ -276,8 +276,15 @@ script ShadowCommander extends Component
 
     @ExecSpace("Server")
     method void RequestRally()
+        -- 집결은 스킬 「집결」을 배워야 쓴다 (C 키·모바일 버튼). 마나·쿨다운은 스킬 시전 규칙을 따른다
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
-        self:RallyAll()
+        if self:GetSkillLevel("rally") <= 0 then
+            _Util:Notify("집결은 스킬 「집결」(Lv" .. tostring(_SkillData:Get("rally").row) .. ")을 배워야 한다", senderUserId)
+            return
+        end
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book ~= nil then book:Cast("rally", _Util:Pos2(self.Entity)) end
     end
 
     @ExecSpace("ClientOnly")

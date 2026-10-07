@@ -78,8 +78,8 @@ function buildGameHud() {
   b.text("SkillWin/Points", "", { size: 20, color: "#FFE15A", anchor: "top-left", pos: [24, -62], rect_size: [500, 30], alignment: 3 });
   [0, 1, 2].forEach((t) => {
     b.text(`SkillWin/Head${t + 1}`, "", { size: 22, bold: true, color: "#D2AA3C", anchor: "top-left", pos: [24 + t * 310, -100], rect_size: [296, 34] });
-    for (let r = 0; r < 10; r++) {
-      b.button(`SkillWin/T${t + 1}_${r + 1}`, "", { anchor: "top-left", pos: [24 + t * 310, -140 - r * 46], rect_size: [296, 42], font_size: 16 });
+    for (let r = 0; r < 12; r++) {
+      b.button(`SkillWin/T${t + 1}_${r + 1}`, "", { anchor: "top-left", pos: [24 + t * 310, -140 - r * 40], rect_size: [296, 37], font_size: 15 });
     }
   });
   b.text("SkillWin/Desc", "", { size: 18, alignment: 0, anchor: "bottom-left", pos: [24, 90], rect_size: [912, 60] });
