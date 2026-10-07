@@ -63,6 +63,7 @@ script PlayerStats extends Component
     property number BonusRegen = 0
     @Sync
     property integer BonusDeploy = 0         -- 배치 한도 (룬워드, 합산 최대 +2)
+    property string FirstKills = ""         -- 보스·최상위 첫 처치 기록 (LootSystem 첫 처치 보상)
     @Sync
     property integer BonusShadowCap = 0      -- 그림자 절대 상한 + (세트 완성 효과, 최대 shadowCapBonusMax)
     @Sync
@@ -348,8 +349,20 @@ script PlayerStats extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
+    method boolean HasFirstKill(string key)
+        return string.find("," .. self.FirstKills .. ",", "," .. key .. ",", 1, true) ~= nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MarkFirstKill(string key)
+        -- 보스·최상위 첫 처치 기록 ("sourceId@난이도", 저장됨)
+        if self:HasFirstKill(key) then return end
+        if self.FirstKills == "" then self.FirstKills = key else self.FirstKills = self.FirstKills .. "," .. key end
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { lv = self.Level, exp = self.Exp, str = self.Str, dex = self.Dex, vit = self.Vit, ene = self.Ene, sp = self.StatPoints, skp = self.SkillPoints, gold = self.Gold, diff = self.Difficulty, maxDiff = self.MaxDifficulty }
+        return { fk = self.FirstKills, lv = self.Level, exp = self.Exp, str = self.Str, dex = self.Dex, vit = self.Vit, ene = self.Ene, sp = self.StatPoints, skp = self.SkillPoints, gold = self.Gold, diff = self.Difficulty, maxDiff = self.MaxDifficulty }
     end
 
     @ExecSpace("ServerOnly")
@@ -366,6 +379,7 @@ script PlayerStats extends Component
         self.Gold = d.gold or 0
         self.Difficulty = d.diff or 0
         self.MaxDifficulty = d.maxDiff or 0
+        self.FirstKills = d.fk or ""
         self.ExpToNext = self:CalcExpToNext(self.Level)
         self:RefreshResists()
         self:Recalculate(true)

@@ -24,6 +24,12 @@ script LootSystem extends Logic
         local userId = killer.PlayerComponent.UserId
         local p = monster.TransformComponent.WorldPosition
         local center = Vector2(p.x, p.y)
+        local sourceId = ""
+        ---@type Monster
+        local body = monster:GetComponent("script.Monster")
+        if body ~= nil then sourceId = body.SourceId end
+        local special = rank == "boss" or rank == "unique"
+        if special then self:FirstKillReward(center, userId, stats, sourceId, monLevel) end
         for i = 1, picks do
             local r = _UtilLogic:RandomDouble() * (wNone + wGold + wPot + wItem + wRune)
             if r < wNone then
@@ -38,6 +44,14 @@ script LootSystem extends Logic
             elseif r < wNone + wGold + wPot + wItem then
                 local s = _ItemData:Generate(monLevel, rank, mf)
                 local item = _ItemData:Parse(s)
+                if special and item.rarity == 3 and _UtilLogic:RandomDouble() < _GameData.bossExclusiveShare then
+                    -- 보스·최상위의 유니크는 절반 확률로 그 몬스터 전용 유니크
+                    local u = _ItemData:PickUnique(monLevel, sourceId)
+                    if u ~= nil then
+                        s = _ItemData:MakeUnique(u, monLevel)
+                        item = _ItemData:Parse(s)
+                    end
+                end
                 self:Spawn(center, userId, "item", s, 1, item.rarity)
             else
                 self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel), 1, 0)
@@ -45,6 +59,29 @@ script LootSystem extends Logic
         end
         -- 보스는 룬 1개 확정 (06장)
         if rank == "boss" then self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel + 5), 1, 0) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FirstKillReward(Vector2 center, string userId, PlayerStats stats, string sourceId, integer monLevel)
+        -- 보스·최상위 첫 처치 (캐릭터·난이도마다 1회, D2 퀘스트 드롭): 전용 유니크 → 없으면 일반 유니크 → 세트 하나 확정
+        if stats == nil or sourceId == "" then return end
+        local key = sourceId .. "@" .. tostring(stats.Difficulty)
+        if stats:HasFirstKill(key) then return end
+        stats:MarkFirstKill(key)
+        local s = ""
+        local u = _ItemData:PickUnique(monLevel, sourceId)
+        if u == nil then u = _ItemData:PickUnique(monLevel, "") end
+        if u ~= nil then
+            s = _ItemData:MakeUnique(u, monLevel)
+        else
+            local piece = _ItemData:PickSetPiece(monLevel)
+            if piece == nil then return end
+            local item = { base = piece.base, rarity = 4, ilvl = monLevel, name = piece.name, mods = {}, sockets = 0, runes = {} }
+            _ItemData:AddMods(item.mods, piece.mods)
+            s = _ItemData:Serialize(item)
+        end
+        self:Spawn(center, userId, "item", s, 1, _ItemData:Parse(s).rarity)
+        _Util:Notify("첫 처치 보상: " .. _ItemData:Parse(s).name, userId)
     end
 
     @ExecSpace("ServerOnly")
