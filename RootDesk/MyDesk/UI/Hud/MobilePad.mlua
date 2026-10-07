@@ -10,11 +10,14 @@ script MobilePad extends Logic
     property boolean CmdsOpen = false
     property boolean EditMode = false
     property string RenderKey = ""
+    property boolean Holding = false
+    property number HoldNext = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         if not Environment:IsMobilePlatform() then return end
-        _UIKit:Connect(self.Root .. "/Attack", function() self:Attack() end)
+        -- 큰 버튼: 누르는 순간 한 번, 누르고 있으면 공격 간격마다 계속 (기본 공격일 때만)
+        _UIKit:ConnectHold(self.Root .. "/Attack", function() self:AttackDown() end, function() self.Holding = false end)
         for i = 1, 4 do
             local slot = i
             _UIKit:Connect(self.Root .. "/Skills/S" .. tostring(i), function() self:Cast(slot) end)
@@ -46,6 +49,34 @@ script MobilePad extends Logic
         _UIKit:SetEnabled(self.Root .. "/Attack/Edit", self.EditMode)
         for i = 1, 4 do _UIKit:SetEnabled(self.Root .. "/Skills/S" .. tostring(i) .. "/Edit", self.EditMode) end
         self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AttackDown()
+        -- 누름: 바로 한 번. 기본 공격이면 누르고 있는 동안 반복 (Poll에서)
+        self:Attack()
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        self.Holding = not self.EditMode and (book == nil or book:GetSlotSkill(5) == "")
+        self.HoldNext = _UtilLogic.ElapsedSeconds + self:AttackInterval()
+    end
+
+    @ExecSpace("ClientOnly")
+    method number AttackInterval()
+        -- 공격 속도(ias)가 반영된 기본 공격 간격
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local base = _GameData.baseAttackInterval
+        if st ~= nil then return st:GetAttackInterval(base) end
+        return base
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HoldTick()
+        -- 누르고 있는 동안 간격마다 공격 (손을 떼면 Holding = false)
+        if not self.Holding or _UtilLogic.ElapsedSeconds < self.HoldNext then return end
+        self.HoldNext = _UtilLogic.ElapsedSeconds + self:AttackInterval()
+        self:Attack()
     end
 
     @ExecSpace("ClientOnly")
@@ -121,6 +152,7 @@ script MobilePad extends Logic
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if book == nil or belt == nil then return end
+        self:HoldTick()
         -- 쿨다운 덮개는 매번 (시간이 흐르므로)
         for i = 1, 4 do _UIKit:ShowCooldown(self.Root .. "/Skills/S" .. tostring(i) .. "/Cd", book, book:GetSlotSkill(i)) end
         _UIKit:ShowCooldown(self.Root .. "/Attack/Cd", book, book:GetSlotSkill(5))

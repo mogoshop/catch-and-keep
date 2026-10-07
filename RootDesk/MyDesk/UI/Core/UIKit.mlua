@@ -13,7 +13,7 @@ script UIKit extends Logic
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         for _, h in ipairs(self.Handlers) do
-            if isvalid(h.entity) then h.entity:DisconnectEvent(ButtonClickEvent, h.eventHandler) end
+            if isvalid(h.entity) then h.entity:DisconnectEvent(h.eventType or ButtonClickEvent, h.eventHandler) end
         end
         self.Handlers = {}
     end
@@ -98,6 +98,18 @@ script UIKit extends Logic
         end
         local h = e:ConnectEvent(ButtonClickEvent, callback)
         table.insert(self.Handlers, { entity = e, eventHandler = h })
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ConnectHold(string rel, any onDown, any onUp)
+        -- 누르고 있기 (버튼은 UITouchReceive가 붙어 있다): 누를 때 onDown, 뗄 때 onUp
+        local e = self:Get(rel)
+        if not isvalid(e) then
+            log_warning("[UIKit] UI 없음: " .. rel)
+            return
+        end
+        table.insert(self.Handlers, { entity = e, eventType = UITouchDownEvent, eventHandler = e:ConnectEvent(UITouchDownEvent, onDown) })
+        table.insert(self.Handlers, { entity = e, eventType = UITouchUpEvent, eventHandler = e:ConnectEvent(UITouchUpEvent, onUp) })
     end
 
     -- ───────── 창 ─────────
