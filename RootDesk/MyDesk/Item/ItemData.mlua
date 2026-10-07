@@ -100,15 +100,23 @@ script ItemData extends Logic
     -- ───────── 생성 ─────────
 
     method integer RollRarity(integer grade, number mf)
+        -- 0 일반 / 1 마법 / 2 레어 / 3 유니크 / 4 세트 (룬워드는 일반 장비에 룬을 끼워 만든다)
         -- 등급별 확률 (05장 7.2). 아이템 발견은 마법 이상에 곱하되 체감 (최대 ×2.5)
         local magic, rare, unique = 25, 5, 0.2
-        if grade == 2 then magic, rare, unique = 40, 14, 1
-        elseif grade >= 3 then magic, rare, unique = 35, 25, 8 end
+        local set = _GameData.setChance_g1
+        if grade == 2 then
+            magic, rare, unique = 40, 14, 1
+            set = _GameData.setChance_g2
+        elseif grade >= 3 then
+            magic, rare, unique = 35, 25, 8
+            set = _GameData.setChance_g3
+        end
         local m = 1 + math.min(1.5, mf / (mf + 100) * 2.5)
         local r = _UtilLogic:RandomDouble() * 100
         if r < unique * m then return 3 end
-        if r < (unique + rare) * m then return 2 end
-        if r < (unique + rare + magic) * m then return 1 end
+        if r < (unique + set) * m then return 4 end
+        if r < (unique + set + rare) * m then return 2 end
+        if r < (unique + set + rare + magic) * m then return 1 end
         return 0
     end
 
@@ -130,6 +138,16 @@ script ItemData extends Logic
         local baseId = self:PickBase(ilvl)
         local base = t.Bases[baseId]
         local rarity = self:RollRarity(grade, mf)
+        if rarity == 4 then
+            -- 세트: 아이템 레벨에 맞는 세트 조각 하나 (없으면 레어)
+            local piece = self:PickSetPiece(ilvl)
+            if piece ~= nil then
+                local item = { base = piece.base, rarity = 4, ilvl = ilvl, name = piece.name, mods = {}, sockets = 0, runes = {} }
+                self:AddMods(item.mods, piece.mods)
+                return self:Serialize(item)
+            end
+            rarity = 2
+        end
         local item = { base = baseId, rarity = rarity, ilvl = ilvl, name = base.name, mods = {}, sockets = 0, runes = {} }
         if rarity == 3 then
             local u = t.Uniques[baseId]
@@ -181,6 +199,34 @@ script ItemData extends Logic
             item.name = self:RareName() .. " " .. base.name
         end
         return self:Serialize(item)
+    end
+
+    method any PickSetPiece(integer ilvl)
+        local t = self:T()
+        local list = {}
+        for _, baseId in ipairs(t.SetPieceOrder) do
+            local b = t.Bases[baseId]
+            if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then table.insert(list, t.SetPieces[baseId]) end
+        end
+        if #list == 0 then return nil end
+        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+    end
+
+    method any GetSetPiece(table item)
+        -- 세트 조각이면 { set, base, name, mods }
+        if item.rarity ~= 4 then return nil end
+        return self:T().SetPieces[item.base]
+    end
+
+    method table GetSetBonusMods(string setId, integer count)
+        -- 착용한 조각 수에 따른 세트 효과 합계 (2개 / 3개 / 전체)
+        local total = {}
+        local set = self:T().Sets[setId]
+        if set == nil then return total end
+        if count >= 2 then self:AddMods(total, set.bonus2) end
+        if count >= 3 then self:AddMods(total, set.bonus3) end
+        if count >= set.pieces then self:AddMods(total, set.full) end
+        return total
     end
 
     method any PickAffix(boolean prefix, string slot, integer ilvl, table used)
@@ -237,7 +283,9 @@ script ItemData extends Logic
     method string RarityColor(integer rarity)
         if rarity == 1 then return "#6E8CFF" end
         if rarity == 2 then return "#FFE15A" end
-        if rarity == 3 or rarity == 4 then return "#C8A050" end
+        if rarity == 3 then return "#C8A050" end         -- 유니크
+        if rarity == 4 then return "#3CDC3C" end         -- 세트
+        if rarity == 5 then return "#D8B868" end         -- 룬워드 (표시 전용)
         return "#FFFFFF"
     end
 
@@ -254,7 +302,7 @@ script ItemData extends Logic
         local rw = self:GetRuneword(item)
         if rw ~= nil then
             name = "「" .. rw.name .. "」 " .. name
-            rarity = 4
+            rarity = 5
         end
         if item.sockets > 0 then name = name .. " [" .. tostring(#item.runes) .. "/" .. tostring(item.sockets) .. "]" end
         return "<color=" .. self:RarityColor(rarity) .. ">" .. name .. "</color>"
@@ -283,7 +331,18 @@ script ItemData extends Logic
         for _, k in ipairs(keys) do table.insert(parts, self:StatName(k) .. "+" .. tostring(math.floor(total[k]))) end
         local req = ""
         if base ~= nil and base.reqLv > 1 then req = " (Lv" .. tostring(base.reqLv) .. ")" end
-        return self:DisplayName(s) .. req .. "  " .. table.concat(parts, " ")
+        local text = self:DisplayName(s) .. req .. "  " .. table.concat(parts, " ")
+        local piece = self:GetSetPiece(item)
+        if piece ~= nil then
+            local set = self:T().Sets[piece.set]
+            if set ~= nil then
+                text = text .. "\n<color=#3CDC3C>세트 「" .. set.name .. "」 " .. tostring(set.pieces) .. "부위</color>"
+                if set.bonus2 ~= "" then text = text .. "  2: " .. self:ModsText(set.bonus2) end
+                if set.bonus3 ~= "" then text = text .. "  3: " .. self:ModsText(set.bonus3) end
+                text = text .. "  전체: " .. self:ModsText(set.full)
+            end
+        end
+        return text
     end
 
 end

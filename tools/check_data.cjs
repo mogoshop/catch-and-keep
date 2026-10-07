@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -69,6 +69,32 @@ T.runewords.forEach((r, i) => {
   for (const id of r.runes.split(",")) if (!runeIds.has(id.trim())) err("runewords", i, `룬 '${id}' — runes.csv에 없음`);
   for (const s of r.slots.split(/[,;|]/)) if (!SLOTS.has(s)) err("runewords", i, `slots '${s}' 알 수 없음`);
   checkMods("runewords", i, "mods", r.mods);
+});
+
+// ── 세트 ──
+const setIds = unique("item_sets", "id");
+unique("item_set_pieces", "base");   // 베이스 하나는 세트 조각 하나 (조각을 베이스로 찾는다)
+T.item_sets.forEach((r, i) => {
+  for (const c of ["bonus2", "bonus3", "full"]) checkMods("item_sets", i, c, r[c]);
+  if (!/shadowCap=/.test(r.full)) err("item_sets", i, "완성 효과에 shadowCap(그림자 상한)이 없음 — 세트의 확실한 이익");
+  const n = T.item_set_pieces.filter((p) => p.set === r.id).length;
+  if (n < 2) err("item_sets", i, `조각 ${n}개 — 2개 이상`);
+});
+T.item_set_pieces.forEach((r, i) => {
+  if (!setIds.has(r.set)) err("item_set_pieces", i, `set '${r.set}' — item_sets.csv에 없음`);
+  if (!baseIds.has(r.base)) err("item_set_pieces", i, `base '${r.base}' — item_bases.csv에 없음`);
+  checkMods("item_set_pieces", i, "mods", r.mods);
+});
+for (const t of ["item_uniques", "runewords", "runes"]) {
+  T[t].forEach((r, i) => { for (const c of ["mods", "weapon", "armor", "lamp"]) if (/shadowCap=/.test(r[c] || "")) err(t, i, "shadowCap은 세트 전용"); });
+}
+// 룬워드 룬 수 ≤ 그 부위 베이스의 최대 소켓
+T.runewords.forEach((r, i) => {
+  const n = r.runes.split(",").length;
+  for (const slot of r.slots.split(/[,;|]/)) {
+    const max = Math.max(0, ...T.item_bases.filter((b) => b.slot === slot).map((b) => num(b.sockets)));
+    if (n > max) err("runewords", i, `룬 ${n}개 — ${slot} 최대 소켓 ${max}`);
+  }
 });
 
 // ── 스킬 ──

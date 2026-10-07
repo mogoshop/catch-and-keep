@@ -1,10 +1,13 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/item_bases.csv, item_affixes.csv, item_uniques.csv, runes.csv, runewords.csv, stats.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 아이템 데이터 표 (규칙·생성 로직은 Item/ItemData)
 @Logic
 script ItemTables extends Logic
 
     property boolean Built = false
     property table StatNames = {}
+    property table Sets = {}
+    property table SetPieces = {}
+    property table SetPieceOrder = {}
     property table Bases = {}
     property table BaseOrder = {}
     property table Affixes = {}
@@ -47,6 +50,7 @@ script ItemTables extends Logic
         self.StatNames["allRes"] = "모든 저항 %"
         self.StatNames["ias"] = "공격 속도 %"
         self.StatNames["fcr"] = "시전 속도 %"
+        self.StatNames["shadowCap"] = "그림자 상한"
         self.Bases = {}
         self.BaseOrder = {}
         self.Bases["scythe1"] = { id = "scythe1", name = "단낫", slot = "weapon", reqLv = 1, dmg = 6, def = 0, sockets = 3 }
@@ -190,11 +194,41 @@ script ItemTables extends Logic
         table.insert(self.RuneOrder, "r_rev")
         self.Runes["r_obl"] = { id = "r_obl", name = "오블", weapon = "dmgPct=40", armor = "str=10,dex=10,vit=10,ene=10", lamp = "minion=20", minLevel = 65, weight = 0.3 }
         table.insert(self.RuneOrder, "r_obl")
+        self.Sets = {}
+        self.Sets["ashen_legion"] = { id = "ashen_legion", name = "잿빛 군단", bonus2 = "minion=15", bonus3 = "allRes=10,extract=5", full = "shadowCap=1,deploy=1,minion=20", pieces = 4 }
+        self.Sets["bone_choir"] = { id = "bone_choir", name = "뼈의 합창", bonus2 = "minion=25,fcr=10", bonus3 = "", full = "shadowCap=1,allRes=20,life=40", pieces = 3 }
+        self.Sets["grave_king"] = { id = "grave_king", name = "무덤왕의 유산", bonus2 = "minion=30", bonus3 = "allRes=25,fcr=20", full = "shadowCap=2,deploy=2,minion=40,life=80", pieces = 4 }
+        self.SetPieces = {}
+        self.SetPieceOrder = {}
+        self.SetPieces["helm1"] = { set = "ashen_legion", base = "helm1", name = "잿빛 군단의 두건", mods = "def=8,minion=8" }
+        table.insert(self.SetPieceOrder, "helm1")
+        self.SetPieces["armor1"] = { set = "ashen_legion", base = "armor1", name = "잿빛 군단의 수의", mods = "def=12,life=15" }
+        table.insert(self.SetPieceOrder, "armor1")
+        self.SetPieces["gloves1"] = { set = "ashen_legion", base = "gloves1", name = "잿빛 군단의 손", mods = "ias=10,minion=5" }
+        table.insert(self.SetPieceOrder, "gloves1")
+        self.SetPieces["boots1"] = { set = "ashen_legion", base = "boots1", name = "잿빛 군단의 행군화", mods = "ms=10,fireRes=15" }
+        table.insert(self.SetPieceOrder, "boots1")
+        self.SetPieces["helm2"] = { set = "bone_choir", base = "helm2", name = "합창단의 뼈 투구", mods = "def=20,mana=30,minion=10" }
+        table.insert(self.SetPieceOrder, "helm2")
+        self.SetPieces["armor2"] = { set = "bone_choir", base = "armor2", name = "합창단의 늑골 갑옷", mods = "def=40,life=30,poisonRes=25" }
+        table.insert(self.SetPieceOrder, "armor2")
+        self.SetPieces["lamp2"] = { set = "bone_choir", base = "lamp2", name = "합창단의 망령 등불", mods = "minion=20,ene=10,fcr=10" }
+        table.insert(self.SetPieceOrder, "lamp2")
+        self.SetPieces["helm3"] = { set = "grave_king", base = "helm3", name = "무덤왕의 혼관", mods = "def=45,minion=20,mf=30" }
+        table.insert(self.SetPieceOrder, "helm3")
+        self.SetPieces["armor3"] = { set = "grave_king", base = "armor3", name = "무덤왕의 수의 갑주", mods = "def=90,life=60,vit=15" }
+        table.insert(self.SetPieceOrder, "armor3")
+        self.SetPieces["lamp3"] = { set = "grave_king", base = "lamp3", name = "무덤왕의 혼백 등불", mods = "minion=35,deploy=1,ene=20" }
+        table.insert(self.SetPieceOrder, "lamp3")
+        self.SetPieces["amulet1"] = { set = "grave_king", base = "amulet1", name = "무덤왕의 인장", mods = "allRes=20,fcr=20,minion=15" }
+        table.insert(self.SetPieceOrder, "amulet1")
         self.Runewords = {}
-        self.Runewords["r_as,r_ireun"] = { name = "첫 번째 군령", slots = "offhand", mods = "deploy=1,minion=15,extract=5,mana=20" }
-        self.Runewords["r_mir,r_nod,r_seb"] = { name = "무덤의 속삭임", slots = "helm", mods = "curse=30,minionPoison=15,mana=20,poisonRes=30" }
-        self.Runewords["r_wen,r_baen"] = { name = "망자의 행진", slots = "armor", mods = "ms=20,minion=10,def=20,fireRes=30" }
-        self.Runewords["r_drak,r_keil,r_kura"] = { name = "검은 서약", slots = "weapon", mods = "dmgPct=80,leech=6" }
+        self.Runewords["r_as,r_ireun"] = { name = "첫 번째 군령", slots = "offhand", mods = "deploy=1,minion=25,extract=8,mana=30,fcr=10" }
+        self.Runewords["r_mir,r_nod,r_seb"] = { name = "무덤의 속삭임", slots = "helm", mods = "curse=40,minionPoison=25,poisonRes=40,fcr=20,mana=30" }
+        self.Runewords["r_wen,r_baen"] = { name = "망자의 행진", slots = "armor", mods = "ms=25,minion=30,def=40,allRes=20,life=30" }
+        self.Runewords["r_drak,r_keil,r_kura"] = { name = "검은 서약", slots = "weapon", mods = "dmgPct=150,leech=8,ias=30,minion=20" }
+        self.Runewords["r_kan,r_xil,r_ab,r_rev,r_obl"] = { name = "끝없는 장례", slots = "armor", mods = "allRes=40,life=150,def=120,minion=40,fcr=20,regen=8" }
+        self.Runewords["r_nox,r_ur,r_sel,r_ab,r_rev,r_obl"] = { name = "망령 군주", slots = "weapon", mods = "dmgPct=250,minion=60,ias=40,fcr=30,deploy=1,allRes=20,leech=10" }
     end
 
 end

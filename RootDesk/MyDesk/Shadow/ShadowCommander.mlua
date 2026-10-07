@@ -48,8 +48,16 @@ script ShadowCommander extends Component
         return bonus
     end
 
+    method integer GetCapBonus()
+        -- 세트 완성 효과로 늘어난 그림자 절대 상한
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        return stats.BonusShadowCap
+    end
+
     method integer GetDeployLimit()
-        return _ShadowConfig:GetDeployLimit(self:GetDeployBonus())
+        return _ShadowConfig:GetDeployLimit(self:GetDeployBonus(), self:GetCapBonus())
     end
 
     @ExecSpace("ServerOnly")
@@ -151,7 +159,7 @@ script ShadowCommander extends Component
             local s = self:Owner():GetShadow(id)
             if s ~= nil then used[s.slot] = true end
         end
-        for i = 0, _ShadowConfig:GetHardCap() - 1 do
+        for i = 0, _ShadowConfig:GetHardCap() + self:GetCapBonus() - 1 do
             if not used[i] then return i end
         end
         return 0
@@ -159,10 +167,11 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method Vector2 GetFormationOffset(integer slot)
-        -- 탑다운 대형: 주인 뒤쪽 반원부터 (최대 8칸)
+        -- 탑다운 대형: 주인 뒤쪽 반원부터 (최대 10칸: 상한 8 + 세트 +2)
         local offsets = {
             Vector2(-0.7, -0.5), Vector2(0.7, -0.5), Vector2(0, -0.9), Vector2(-1.3, 0),
             Vector2(1.3, 0), Vector2(-1.1, -1.0), Vector2(1.1, -1.0), Vector2(0, 0.8),
+            Vector2(-1.8, -0.6), Vector2(1.8, -0.6),
         }
         return offsets[(slot % #offsets) + 1]
     end

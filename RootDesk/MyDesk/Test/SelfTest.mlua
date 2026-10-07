@@ -100,6 +100,11 @@ script SelfTest extends Logic
             for id in string.gmatch(key, "[^,]+") do self:Check("runeword rune", t.Runes[id] ~= nil, rw.name .. " → " .. id) end
         end
         self:Check("stat names", _ItemData:StatName("fireRes") ~= "fireRes", "stats.csv")
+        -- 세트: 조각 수에 따른 효과, 완성 시 그림자 상한
+        self:Check("set full", (_ItemData:GetSetBonusMods("ashen_legion", 4).shadowCap or 0) == 1, "잿빛 군단 완성 = 그림자 상한 +1")
+        self:Check("set partial", (_ItemData:GetSetBonusMods("ashen_legion", 2).shadowCap or 0) == 0, "2개는 상한 효과 없음")
+        local piece = _ItemData:PickSetPiece(5)
+        self:Check("set piece", piece ~= nil and _ItemData:GetSetPiece({ base = piece.base, rarity = 4 }) ~= nil, "Lv5 세트 조각")
     end
 
     @ExecSpace("ServerOnly")

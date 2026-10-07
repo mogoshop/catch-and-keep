@@ -162,6 +162,8 @@ function genItems() {
   const runes = load("runes");
   const runewords = load("runewords");
   const stats = load("stats");
+  const sets = load("item_sets");
+  const pieces = load("item_set_pieces");
   const body = [
     "        self.StatNames = {}",
     ...stats.map((r) => `        self.StatNames[${s(r.key)}] = ${s(r.name)}`),
@@ -175,12 +177,17 @@ function genItems() {
     "        self.Runes = {}",
     "        self.RuneOrder = {}",
     ...runes.map((r) => `        self.Runes[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, weapon = ${s(r.weapon)}, armor = ${s(r.armor)}, lamp = ${s(r.lamp)}, minLevel = ${n(r.minLevel)}, weight = ${n(r.dropWeight)} }\n        table.insert(self.RuneOrder, ${s(r.id)})`),
+    "        self.Sets = {}",
+    ...sets.map((r) => `        self.Sets[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, bonus2 = ${s(r.bonus2)}, bonus3 = ${s(r.bonus3)}, full = ${s(r.full)}, pieces = ${n(pieces.filter((p) => p.set === r.id).length)} }`),
+    "        self.SetPieces = {}",
+    "        self.SetPieceOrder = {}",
+    ...pieces.map((r) => `        self.SetPieces[${s(r.base)}] = { set = ${s(r.set)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)} }\n        table.insert(self.SetPieceOrder, ${s(r.base)})`),
     "        self.Runewords = {}",
     ...runewords.map((r) => `        self.Runewords[${s(r.runes)}] = { name = ${s(r.name)}, slots = ${s(r.slots)}, mods = ${s(r.mods)} }`),
   ].join("\n");
-  write("ItemTables.mlua", "item_bases.csv, item_affixes.csv, item_uniques.csv, runes.csv, runewords.csv, stats.csv",
+  write("ItemTables.mlua", "item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv",
     logic("ItemTables", "아이템 데이터 표 (규칙·생성 로직은 Item/ItemData)", body, "",
-      "    property table StatNames = {}\n    property table Bases = {}\n    property table BaseOrder = {}\n    property table Affixes = {}\n    property table Uniques = {}\n    property table Runes = {}\n    property table RuneOrder = {}\n    property table Runewords = {}\n"));
+      "    property table StatNames = {}\n    property table Sets = {}\n    property table SetPieces = {}\n    property table SetPieceOrder = {}\n    property table Bases = {}\n    property table BaseOrder = {}\n    property table Affixes = {}\n    property table Uniques = {}\n    property table Runes = {}\n    property table RuneOrder = {}\n    property table Runewords = {}\n"));
 }
 
 // ── SkillData ──

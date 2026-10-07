@@ -228,8 +228,15 @@ script PlayerInventory extends Component
         local stats = self:Stats()
         if stats == nil then return end
         local t = {}
+        local setCounts = {}
         for _, s in pairs(self.Equip) do
             for k, v in pairs(_ItemData:GetTotalMods(s)) do t[k] = (t[k] or 0) + v end
+            local piece = _ItemData:GetSetPiece(_ItemData:Parse(s))
+            if piece ~= nil then setCounts[piece.set] = (setCounts[piece.set] or 0) + 1 end
+        end
+        -- 세트 효과 (2개·3개·전체)
+        for setId, count in pairs(setCounts) do
+            for k, v in pairs(_ItemData:GetSetBonusMods(setId, count)) do t[k] = (t[k] or 0) + v end
         end
         stats:ApplyEquipmentMods(t)
     end
