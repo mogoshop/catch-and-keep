@@ -50,6 +50,7 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void ToggleEdit()
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         -- 편집 모드: 칸마다 + 표시, 누르는 칸에 스킬을 넣는다. 다시 누르면 끝
         self.Holding = false
         self.EditMode = not self.EditMode
@@ -62,6 +63,7 @@ script MobilePad extends Logic
     @ExecSpace("ClientOnly")
     method void AttackDown()
         -- 누름: 바로 한 번. 기본 공격이면 누르고 있는 동안 반복 (Poll에서)
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         self:Attack()
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
@@ -84,7 +86,7 @@ script MobilePad extends Logic
         -- 누르고 있는 동안 간격마다 공격 (손을 떼면 Holding = false)
         local player = _UserService.LocalPlayer
         local book = _UIKit:Comp("script.SkillBook")
-        if not isvalid(player) or player.PlayerComponent.Hp <= 0 or self.EditMode or (book ~= nil and book:GetSlotSkill(5) ~= "") then self.Holding = false return end
+        if not isvalid(player) or player.PlayerComponent.Hp <= 0 or self.EditMode or _UIKit:AnyWindowOpen() or (book ~= nil and book:GetSlotSkill(5) ~= "") then self.Holding = false return end
         if not self.Holding or _UtilLogic.ElapsedSeconds < self.HoldNext then return end
         self.HoldNext = _UtilLogic.ElapsedSeconds + self:AttackInterval()
         self:Attack()
@@ -92,6 +94,7 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void Attack()
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         -- 편집 모드면 큰 버튼(5번 칸)에 넣을 스킬 고르기. 스킬이 들어 있으면 그 스킬, 아니면 기본 공격
         if self.EditMode then
             _SkillPicker:Open(5)
@@ -111,6 +114,7 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void Cast(integer slot)
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         -- 빈 칸이면 스킬 편집을 연다 (무엇을 넣을지 바로 고르게)
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
@@ -124,6 +128,7 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void Potion(string kind)
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if belt ~= nil then belt:RequestUsePotion(kind) end
@@ -131,12 +136,14 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void ToggleCmds()
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         self.CmdsOpen = not self.CmdsOpen
         _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", self.CmdsOpen)
     end
 
     @ExecSpace("ClientOnly")
     method void Command(string action)
+        if _UIKit:AnyWindowOpen() then self.Holding = false return end
         -- 단축키(Z X C)와 같은 서버 요청. 누르면 펼친 버튼은 접는다
         ---@type ShadowCommander
         local cmd = _UIKit:Comp("script.ShadowCommander")
@@ -152,6 +159,9 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void Poll()
+        local windowOpen = _UIKit:AnyWindowOpen()
+        _UIKit:SetEnabled(self.Root, not windowOpen)
+        if windowOpen then self.Holding = false return end
         -- 스킬 아이콘·물약 개수·그림자 버튼(배운 것만). 바뀌었을 때만 그린다
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")

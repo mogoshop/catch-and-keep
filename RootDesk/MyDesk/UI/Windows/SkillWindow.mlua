@@ -13,6 +13,9 @@ script SkillWindow extends Logic
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for t = 1, 3 do
+            local tree = t
+            _UIKit:Connect(self.Win .. "/Scroll" .. tostring(t) .. "Up", function() self:Page(tree, -1) end)
+            _UIKit:Connect(self.Win .. "/Scroll" .. tostring(t) .. "Down", function() self:Page(tree, 1) end)
             for r = 1, 12 do
                 local key = "T" .. tostring(t) .. "_" .. tostring(r)
                 _UIKit:Connect(self.Win .. "/Col" .. tostring(t) .. "/T" .. tostring(r), function() self:Select(key) end)
@@ -21,6 +24,7 @@ script SkillWindow extends Logic
         local actions = { { "BtnLearn", 0 }, { "BtnA", 1 }, { "BtnS", 2 }, { "BtnD", 3 }, { "BtnF", 4 }, { "BtnR", 5 } }
         for _, a in ipairs(actions) do
             local slot = a[2]
+            if slot > 0 and Environment:IsMobilePlatform() then _UIKit:SetText(self.Win .. "/" .. a[1], slot == 5 and "공격 칸" or (tostring(slot) .. "번 칸")) end
             _UIKit:Connect(self.Win .. "/" .. a[1], function() self:Act(slot) end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
@@ -49,7 +53,7 @@ script SkillWindow extends Logic
         local trees = { "command", "soul", "curse" }
         local rowCount = { 0, 0, 0 }
         self.Rows = {}
-        for t = 1, 3 do _UIKit:SetText(self.Win .. "/Col" .. tostring(t) .. "/Head", _SkillData:TreeName(trees[t])) end
+        for t = 1, 3 do _UIKit:SetText(self.Win .. "/Head" .. tostring(t), _SkillData:TreeName(trees[t])) end
         for _, id in ipairs(_SkillData:GetOrder()) do
             local def = _SkillData:Get(id)
             local t = 1
@@ -64,7 +68,7 @@ script SkillWindow extends Logic
             if not def.impl then soon = " ·" end
             local path = self.Win .. "/Col" .. tostring(t) .. "/T" .. tostring(rowCount[t])
             _UIKit:SetEnabled(path, true)
-            _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, def.name .. "  " .. tostring(lv) .. "/" .. tostring(def.maxLv)) .. soon .. "  " .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row)))
+            _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, def.name .. "\n" .. tostring(lv) .. "/" .. tostring(def.maxLv)) .. soon .. "  " .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row)))
             _UIKit:SetIcon(path .. "/Icon", def.icon)
             _UIKit:SetColor(path .. "/Icon", lv > 0 and Color(1, 1, 1, 1) or Color(0.45, 0.45, 0.45, 0.8))
             -- 고른 줄은 밝은 바탕
@@ -88,6 +92,16 @@ script SkillWindow extends Logic
         local learn = _UIKit:Colored("#AACCAA", "습득 가능")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         return def.name .. " — " .. def.desc .. mana .. "\n" .. req .. "   " .. learn
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Page(integer tree, integer direction)
+        local column = _UIKit:Get(self.Win .. "/Col" .. tostring(tree))
+        if not isvalid(column) then return end
+        local scroll = column.ScrollLayoutGroupComponent
+        local pos = scroll:GetScrollNormalizedPosition(UITransformAxis.Vertical)
+        scroll:SetScrollNormalizedPosition(UITransformAxis.Vertical, math.max(0, math.min(1, pos + direction * 0.45)))
+        _SoundService:PlaySound("972843e759204d3e9ad84e7d3fa94f83", 0.35)
     end
 
     @ExecSpace("ClientOnly")

@@ -14,6 +14,8 @@ script HudMap extends Logic
     property boolean HasQuestNpc = false
     property table Gates = {}               -- 이 맵의 포털 { pos, label }
     property number GateLabelRange = 9
+    property integer TerrainCount = 128
+    property integer TerrainUsed = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -72,6 +74,7 @@ script HudMap extends Logic
         self:SetBannerAlpha(1)
         _UIKit:SetText("MiniMap/Name", _UIKit:Clip(title, 14))
         self:BuildMiniMap(info)
+        self:BuildTerrain(_UserService.LocalPlayer.CurrentMap, info)
         log("[HudMap] 맵 " .. mapName .. " → " .. title)
     end
 
@@ -85,7 +88,7 @@ script HudMap extends Logic
             for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Area/F" .. tostring(i), false) end
             return
         end
-        self.Scale = math.min(264 / math.max(1, info.w), 172 / math.max(1, info.h))
+        self.Scale = math.min(240 / math.max(1, info.w), 160 / math.max(1, info.h))
         local colors = {
             portal = Color(0.55, 0.8, 1, 1), waypoint = Color(0.3, 1, 0.9, 1), quest = Color(1, 0.9, 0.2, 1), npc = Color(1, 1, 1, 1),
             depth = Color(0.8, 0.45, 1, 1), altar = Color(1, 0.3, 0.3, 1), boss = Color(1, 0.55, 0.15, 1),
@@ -106,6 +109,56 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Area/F" .. tostring(i), false) end
+    end
+
+    -- 실제 타일의 통행 가능한 구간을 가로로 합치고, 같은 구간은 세로로 병합한다.
+    -- 맵 진입 때 한 번만 계산하며 점/이름보다 뒤에 표시한다.
+    @ExecSpace("ClientOnly")
+    method void BuildTerrain(Entity map, any info)
+        self.TerrainUsed = 0
+        for i = 1, self.TerrainCount do _UIKit:SetEnabled("MiniMap/Area/Terrain/R" .. tostring(i), false) end
+        if info == nil or not isvalid(map) then return end
+        local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        if tiles == nil then return end
+        local low = tiles:ToCellPosition(Vector3(-info.w / 2, -info.h / 2, 0))
+        local high = tiles:ToCellPosition(Vector3(info.w / 2, info.h / 2, 0))
+        local rects = {}
+        local active = {}
+        for y = low.y, high.y - 1 do
+            local nextActive = {}
+            local start = nil
+            for x = low.x, high.x do
+                local tile = x < high.x and tiles:GetTile(Vector2Int(x, y)) or nil
+                local floor = tile ~= nil and not tile.IsCollidable
+                if floor and start == nil then start = x end
+                if not floor and start ~= nil then
+                    local key = tostring(start) .. ":" .. tostring(x - 1)
+                    local r = active[key]
+                    if r == nil then
+                        r = { x1 = start, x2 = x - 1, y1 = y, y2 = y }
+                        table.insert(rects, r)
+                    else r.y2 = y end
+                    nextActive[key] = r
+                    start = nil
+                end
+            end
+            active = nextActive
+        end
+        local grid = tiles.GridSize
+        for i, r in ipairs(rects) do
+            if i > self.TerrainCount then log_warning("[HudMap] terrain capacity exceeded " .. tostring(#rects)) break end
+            local a = tiles:ToWorldPosition(Vector2Int(r.x1, r.y1))
+            local z = tiles:ToWorldPosition(Vector2Int(r.x2, r.y2))
+            local e = _UIKit:Get("MiniMap/Area/Terrain/R" .. tostring(i))
+            if isvalid(e) then
+                e.UITransformComponent.RectSize = Vector2((r.x2 - r.x1 + 1) * grid.x * self.Scale, (r.y2 - r.y1 + 1) * grid.y * self.Scale)
+                e.UITransformComponent.anchoredPosition = self:ToMini(Vector2((a.x + z.x) / 2, (a.y + z.y) / 2))
+                local size = e.UITransformComponent.RectSize / 2
+                e.PolygonGUIRendererComponent.Points = { Vector2(-size.x, -size.y), Vector2(-size.x, size.y), Vector2(size.x, size.y), Vector2(size.x, -size.y) }
+                e.Enable = true
+                self.TerrainUsed = i
+            end
+        end
     end
 
     method Vector2 ToMini(Vector2 world)
@@ -168,6 +221,11 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method void RenderGates(Entity player)
         -- D2처럼 출구 위에 갈 곳 이름: 가까운 포털(9칸 안)만, 최대 4개. 화면 밖이면 숨김
+        if _UIKit:AnyWindowOpen() then
+            for i = 1, 4 do _UIKit:SetEnabled("Gate" .. tostring(i), false) end
+            _UIKit:SetEnabled("GatePrompt", false)
+            return
+        end
         local root = _UIKit:Get("/ui/GameHUD")
         if not isvalid(root) then return end
         local me = _Util:Pos2(player)
@@ -204,6 +262,7 @@ script HudMap extends Logic
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         local icon = ""
+        if _UIKit:AnyWindowOpen() then _UIKit:SetEnabled("NpcMark", false) return end
         if self.HasQuestNpc and quest ~= nil and _QuestData:Get(quest.Index) ~= nil then
             if quest.State == 0 then icon = _GameData:GetUiIcon("q_avail") elseif quest.State == 2 then icon = _GameData:GetUiIcon("q_done") end
         end

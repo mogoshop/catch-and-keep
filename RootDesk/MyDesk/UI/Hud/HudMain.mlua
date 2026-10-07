@@ -15,6 +15,14 @@ script HudMain extends Logic
         _UIKit:SetEnabled("Target", false)
         _UIKit:SetEnabled("Tip", false)
         _UIKit:RegisterWindow("MenuWin")
+        if Environment:IsMobilePlatform() then
+            local track = _UIKit:Get("QuestTrack")
+            if isvalid(track) then
+                track.UITransformComponent.AlignmentOption = AlignmentType.TopLeft
+                track.UITransformComponent.Pivot = Vector2(0, 1)
+                track.UITransformComponent.anchoredPosition = Vector2(24, -190)
+            end
+        end
         -- 스킬 칸: 누르면 그 칸에 넣을 스킬을 고른다 (시전은 A S D F·우클릭)
         for i = 1, 5 do
             local slot = i
@@ -95,6 +103,7 @@ script HudMain extends Logic
         self:RenderBadges(st)
         self:RenderMinions()
         self:RenderTarget(player)
+        _UIKit:SetEnabled("QuestTrack", not _UIKit:AnyWindowOpen())
         self:RenderQuestTrack(player)
         self:RenderParty()
         self:RenderTip(player, st)
@@ -278,7 +287,7 @@ script HudMain extends Logic
         elseif not inTown and quest ~= nil and quest.Index == 1 and quest.State == 1 and book ~= nil then
             tip = self:FirstQuestTip(player, book)
         end
-        _UIKit:SetEnabled("Tip", tip ~= "")
+        _UIKit:SetEnabled("Tip", tip ~= "" and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds)
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
     end
 

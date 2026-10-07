@@ -479,6 +479,8 @@ function run() {
   quiet(() => {
     n = buildGameHud();
     patchShadowHud();
+    require("./ux-layout.cjs").run();
+    require("./ux-feedback.cjs").run();
   });
   console.log(`  UI: GameHUD ${n}개 엔티티 · ShadowHUD 스킨·모바일 패드`);
 }
