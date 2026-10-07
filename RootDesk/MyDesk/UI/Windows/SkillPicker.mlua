@@ -1,0 +1,105 @@
+-- 스킬 지정 창: 퀵슬롯(A S D F 우클릭)마다 넣을 스킬을 고른다. 배운 액티브·저주만 아이콘으로 보인다 (D2 스킬 선택).
+-- 여는 곳: PC 아래 스킬 칸 클릭, 모바일 패드 「스킬 편집」, 스킬 창. 지정은 SkillBook:RequestSetSlot (서버 검증).
+@Logic
+script SkillPicker extends Logic
+
+    property string Win = "SkillPick"
+    property integer PickCount = 18
+    property integer Slot = 1
+    property table Picks = {}               -- 칸 번호 → 스킬 id
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for i = 1, 5 do
+            local slot = i
+            _UIKit:Connect(self.Win .. "/Tab" .. tostring(i), function() self:SelectSlot(slot) end)
+        end
+        for i = 1, self.PickCount do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Grid/Pick" .. tostring(i), function() self:Pick(index) end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnClear", function() self:Assign("") end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open(integer slot)
+        self.Slot = math.max(1, math.min(5, slot))
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SelectSlot(integer slot)
+        self.Slot = slot
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Pick(integer index)
+        local id = self.Picks[index]
+        if id == nil then return end
+        self:Assign(id)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Assign(string id)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        book:RequestSetSlot(self.Slot, id)
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        if not _UIKit:IsOpen(self.Win) then return end
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        local key = book.SkillDigest .. "#" .. book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(self.Slot)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local current = book:GetSlotSkill(self.Slot)
+        -- 탭: 고른 칸은 밝게, 칸 이름 아래 지금 든 스킬
+        local names = { "A", "S", "D", "F", "우클릭" }
+        for i = 1, 5 do
+            local held = book:GetSlotSkill(i)
+            local label = names[i]
+            if held ~= "" then label = label .. " " .. _UIKit:Clip(_SkillData:Get(held).name, 4) end
+            if i == self.Slot then label = _UIKit:Colored("#FFFFFF", "▶" .. label) end
+            _UIKit:SetText(self.Win .. "/Tab" .. tostring(i), label)
+        end
+        -- 배운 액티브·저주 목록
+        self.Picks = {}
+        local n = 0
+        for _, id in ipairs(_SkillData:GetOrder()) do
+            local def = _SkillData:Get(id)
+            if (def.kind == "active" or def.kind == "curse") and book:GetLevel(id) > 0 and n < self.PickCount then
+                n = n + 1
+                self.Picks[n] = id
+                local path = self.Win .. "/Grid/Pick" .. tostring(n)
+                _UIKit:SetEnabled(path, true)
+                _UIKit:SetIcon(path .. "/Icon", def.icon)
+                _UIKit:SetText(path .. "/Name", _UIKit:Clip(def.name, 6))
+                _UIKit:SetColor(path, id == current and Color(1, 0.85, 0.4, 1) or Color(1, 1, 1, 1))
+            end
+        end
+        for i = n + 1, self.PickCount do _UIKit:SetEnabled(self.Win .. "/Grid/Pick" .. tostring(i), false) end
+        local desc = names[self.Slot] .. " 칸: "
+        if current == "" then desc = desc .. "비어 있음" else desc = desc .. _SkillData:Get(current).name end
+        if n == 0 then desc = desc .. "\n배운 스킬이 없습니다. 스킬 창(K)에서 먼저 배우세요." else desc = desc .. "\n아래에서 스킬을 누르면 이 칸에 들어갑니다." end
+        _UIKit:SetText(self.Win .. "/Desc", desc)
+    end
+
+end

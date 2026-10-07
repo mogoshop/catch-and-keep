@@ -1,4 +1,4 @@
--- 스킬 창 (K): 3트리 × 최대 12행. 스킬을 고르면 설명·습득 조건, 습득(+1)·슬롯 지정(A S D F 우클릭).
+-- 스킬 창 (K): 3트리 × 최대 12행 (아이콘 + 이름·레벨, 안 배운 스킬은 흐리게). 스킬을 고르면 설명·습득 조건, 습득(+1)·슬롯 지정(A S D F 우클릭).
 @Logic
 script SkillWindow extends Logic
 
@@ -15,7 +15,7 @@ script SkillWindow extends Logic
         for t = 1, 3 do
             for r = 1, 12 do
                 local key = "T" .. tostring(t) .. "_" .. tostring(r)
-                _UIKit:Connect(self.Win .. "/" .. key, function() self:Select(key) end)
+                _UIKit:Connect(self.Win .. "/Col" .. tostring(t) .. "/T" .. tostring(r), function() self:Select(key) end)
             end
         end
         local actions = { { "BtnLearn", 0 }, { "BtnA", 1 }, { "BtnS", 2 }, { "BtnD", 3 }, { "BtnF", 4 }, { "BtnR", 5 } }
@@ -49,7 +49,7 @@ script SkillWindow extends Logic
         local trees = { "command", "soul", "curse" }
         local rowCount = { 0, 0, 0 }
         self.Rows = {}
-        for t = 1, 3 do _UIKit:SetText(self.Win .. "/Head" .. tostring(t), _SkillData:TreeName(trees[t])) end
+        for t = 1, 3 do _UIKit:SetText(self.Win .. "/Col" .. tostring(t) .. "/Head", _SkillData:TreeName(trees[t])) end
         for _, id in ipairs(_SkillData:GetOrder()) do
             local def = _SkillData:Get(id)
             local t = 1
@@ -60,16 +60,20 @@ script SkillWindow extends Logic
             local lv = book:GetLevel(id)
             local color = "#777777"
             if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#AACCAA" end
-            local mark = ""
-            if id == self.Selected then mark = "▶" end
             local soon = ""
             if not def.impl then soon = " ·" end
-            _UIKit:SetText(self.Win .. "/" .. rkey, mark .. _UIKit:Colored(color, def.name .. "  " .. tostring(lv) .. "/" .. tostring(def.maxLv)) .. soon)
+            local path = self.Win .. "/Col" .. tostring(t) .. "/T" .. tostring(rowCount[t])
+            _UIKit:SetEnabled(path, true)
+            _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, def.name .. "  " .. tostring(lv) .. "/" .. tostring(def.maxLv)) .. soon .. "  " .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row)))
+            _UIKit:SetIcon(path .. "/Icon", def.icon)
+            _UIKit:SetColor(path .. "/Icon", lv > 0 and Color(1, 1, 1, 1) or Color(0.45, 0.45, 0.45, 0.8))
+            -- 고른 줄은 밝은 바탕
+            _UIKit:SetColor(path, id == self.Selected and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.25))
         end
         for t = 1, 3 do
-            for r = rowCount[t] + 1, 12 do _UIKit:SetText(self.Win .. "/T" .. tostring(t) .. "_" .. tostring(r), "") end
+            for r = rowCount[t] + 1, 12 do _UIKit:SetEnabled(self.Win .. "/Col" .. tostring(t) .. "/T" .. tostring(r), false) end
         end
-        _UIKit:SetText(self.Win .. "/Desc", self:Describe(book, st))
+        _UIKit:SetText(self.Win .. "/DescBox/Desc", self:Describe(book, st))
     end
 
     method string Describe(SkillBook book, PlayerStats st)

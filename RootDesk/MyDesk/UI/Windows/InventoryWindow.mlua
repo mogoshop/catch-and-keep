@@ -1,4 +1,5 @@
--- 소지품 창 (I): 장비 10부위, 가방 30칸, 선택 아이템 설명, 장착·판매. 룬을 고른 뒤 장비 칸을 누르면 소켓.
+-- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 30칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·판매.
+-- 룬을 고른 뒤 장비 칸을 누르면 소켓.
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 @Logic
 script InventoryWindow extends Logic
@@ -15,11 +16,11 @@ script InventoryWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local s = slot
-            _UIKit:Connect(self.Win .. "/Eq_" .. s, function() self:OnEquipSlot(s) end)
+            _UIKit:Connect(self.Win .. "/Doll/Eq_" .. s, function() self:OnEquipSlot(s) end)
         end
         for i = 1, 30 do
             local index = i
-            _UIKit:Connect(self.Win .. "/Bag" .. tostring(i), function() self:OnBagSlot(index) end)
+            _UIKit:Connect(self.Win .. "/Bag/Bag" .. tostring(i), function() self:OnBagSlot(index) end)
         end
         _UIKit:Connect(self.Win .. "/BtnEquip", function() self:Act("equip") end)
         _UIKit:Connect(self.Win .. "/BtnSell", function() self:Act("sell") end)
@@ -53,26 +54,21 @@ script InventoryWindow extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
-        local labels = { weapon = "무기", offhand = "보조", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring1 = "반지1", ring2 = "반지2" }
+        -- 장비: 아이콘 + 등급 테두리, 빈 칸은 부위 실루엣
         local eq = inv:GetEquipMap()
-        for slot, label in pairs(labels) do
+        for slot in string.gmatch(self.SlotOrder, "[^,]+") do
+            local path = self.Win .. "/Doll/Eq_" .. slot
             local s = eq[slot]
-            if s == nil then
-                _UIKit:SetText(self.Win .. "/Eq_" .. slot, _UIKit:Colored("#777777", label .. ": 비어 있음"))
-            else
-                _UIKit:SetText(self.Win .. "/Eq_" .. slot, label .. ": " .. _ItemData:DisplayName(s))
-            end
+            self:DrawItem(path, s)
+            _UIKit:SetEnabled(path .. "/Ghost", s == nil)
         end
+        -- 가방: 아이콘 + 등급 테두리, 고른 칸은 노랗게
         local list = inv:GetBagList()
         if self.Selected > #list then self.Selected = 0 end
         for i = 1, 30 do
-            local s = list[i]
-            local text = ""
-            if s ~= nil then
-                local item = _ItemData:Parse(s)
-                text = (i == self.Selected and "▶" or "") .. _UIKit:Colored(_ItemData:RarityColor(item.rarity), _UIKit:Clip(item.name, 7))
-            end
-            _UIKit:SetText(self.Win .. "/Bag" .. tostring(i), text)
+            local path = self.Win .. "/Bag/Bag" .. tostring(i)
+            self:DrawItem(path, list[i])
+            _UIKit:SetColor(path, i == self.Selected and Color(1, 0.85, 0.35, 1) or Color(1, 1, 1, 1))
         end
         local desc = "아이템을 선택하세요."
         local sel = list[self.Selected]
@@ -80,7 +76,30 @@ script InventoryWindow extends Logic
             desc = _ItemData:Describe(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
             if _ItemData:IsRune(_ItemData:Parse(sel).base) then desc = desc .. "\n→ 소켓이 빈 장비 칸을 누르면 끼운다" end
         end
-        _UIKit:SetText(self.Win .. "/Desc", desc)
+        _UIKit:SetText(self.Win .. "/DescBox/Desc", desc)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawItem(string path, any s)
+        -- 칸 하나: 아이템 그림(베이스 아이콘, 룬은 룬 그림) + 등급 테두리(마법·레어·유니크·세트/룬워드)
+        if s == nil then
+            _UIKit:SetIcon(path .. "/Icon", "")
+            _UIKit:SetIcon(path .. "/Frame", "")
+            return
+        end
+        local item = _ItemData:Parse(s)
+        local icon = ""
+        if _ItemData:IsRune(item.base) then
+            icon = _GameData:GetUiIcon("rune")
+        else
+            local base = _ItemData:GetBase(item.base)
+            if base ~= nil then icon = base.icon end
+        end
+        _UIKit:SetIcon(path .. "/Icon", icon)
+        local frames = { "frame_magic", "frame_rare", "frame_unique", "frame_set", "frame_unique" }
+        local frame = ""
+        if item.rarity >= 1 and item.rarity <= 5 then frame = _GameData:GetUiIcon(frames[item.rarity]) end
+        _UIKit:SetIcon(path .. "/Frame", frame)
     end
 
     @ExecSpace("ClientOnly")

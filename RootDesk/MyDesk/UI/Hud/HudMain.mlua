@@ -1,32 +1,47 @@
--- 하단·상단 상시 HUD (D2 배치): 생명·마나 오브, 경험치 바, 스킬 슬롯(A S D F·우클릭), 벨트(1~4),
--- 미니 패널 버튼, 대상 정보(커서 근처 또는 가장 가까운 적), 의뢰 추적, 파티 목록. 창 단축키도 여기서 받는다.
+-- 상시 HUD: 생명·마나(PC 오브·모바일 작은 오브), 경험치, 스킬 칸(아이콘, 누르면 스킬 지정), 벨트(물약 아이콘·개수),
+-- 미니 패널·메뉴 창(모든 창을 한곳에서), 대상 정보, 퀘스트 추적(오른쪽 위), 파티, 첫 진입 안내, 포인트 빨간 점.
+-- 미니맵·맵 이름·NPC 의뢰 표시는 HudMap, 스킬 지정 창은 SkillPicker, 모바일 패드는 MobilePad.
 @Logic
 script HudMain extends Logic
 
     property number PollInterval = 0.15
     property integer TimerId = 0
     property string SlotKey = ""
+    property string BadgeKey = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:SetEnabled("Target", false)
+        _UIKit:SetEnabled("Tip", false)
+        _UIKit:RegisterWindow("MenuWin")
+        -- 스킬 칸: 누르면 그 칸에 넣을 스킬을 고른다 (시전은 A S D F·우클릭)
         for i = 1, 5 do
             local slot = i
-            _UIKit:Connect("Bottom/Slots/Slot" .. tostring(i), function() self:CastSlot(slot) end)
+            _UIKit:Connect("Bottom/Slots/Slot" .. tostring(i), function() _SkillPicker:Open(slot) end)
         end
         _UIKit:Connect("Bottom/Slots/Belt1", function() self:UsePotion("hp") end)
         _UIKit:Connect("Bottom/Slots/Belt2", function() self:UsePotion("mp") end)
         _UIKit:Connect("Bottom/Slots/Belt3", function() self:UsePotion("rv") end)
         _UIKit:Connect("Bottom/Slots/Belt4", function() self:TownPortal() end)
-        _UIKit:Connect("Bottom/Menu/BtnChar", function() _UIKit:Toggle("CharWin") end)
-        _UIKit:Connect("Bottom/Menu/BtnInv", function() _UIKit:Toggle("InvWin") end)
-        _UIKit:Connect("Bottom/Menu/BtnSkill", function() _UIKit:Toggle("SkillWin") end)
-        _UIKit:Connect("Bottom/Menu/BtnQuest", function() _UIKit:Toggle("QuestWin") end)
-        _UIKit:Connect("Bottom/Menu/BtnSocial", function() _UIKit:Toggle("SocialWin") end)
+        local menu = { { "Inv", "InvWin" }, { "Char", "CharWin" }, { "Skill", "SkillWin" }, { "Quest", "QuestWin" }, { "Social", "SocialWin" } }
+        for _, m in ipairs(menu) do
+            local win = m[2]
+            _UIKit:Connect("Bottom/Menu/Btn" .. m[1], function() _UIKit:Toggle(win) end)
+            _UIKit:Connect("MenuWin/" .. m[1], function() self:FromMenu(win) end)
+        end
+        _UIKit:Connect("Bottom/Menu/BtnShadow", function() _ShadowHUD:ToggleWindow() end)
         _UIKit:Connect("Bottom/Menu/BtnRank", function() _RankWindow:Show("depth") end)
         _UIKit:Connect("Bottom/Menu/BtnExtract", function() self:Extract() end)
         _UIKit:Connect("Bottom/Menu/BtnPortal", function() self:TownPortal() end)
+        _UIKit:Connect("MenuWin/Shadow", function() self:FromMenu("") _ShadowHUD:ToggleWindow() end)
+        _UIKit:Connect("MenuWin/Rank", function() self:FromMenu("") _RankWindow:Show("depth") end)
+        _UIKit:Connect("MenuWin/Portal", function() self:FromMenu("") self:TownPortal() end)
+        _UIKit:Connect("MenuWin/Input", function() self:FromMenu("") _ShadowHUD:ToggleInputMode() end)
+        _UIKit:Connect("MenuWin/BtnClose", function() _UIKit:Close("MenuWin") end)
+        _UIKit:Connect("BtnMenu", function() _UIKit:Toggle("MenuWin") end)
+        _UIKit:Connect("QuestTrack", function() _UIKit:Toggle("QuestWin") end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
+        log("[HudMain] 시작")
     end
 
     @ExecSpace("ClientOnly")
@@ -44,7 +59,15 @@ script HudMain extends Logic
         elseif k == KeyboardKey.K then _UIKit:Toggle("SkillWin")
         elseif k == KeyboardKey.Q then _UIKit:Toggle("QuestWin")
         elseif k == KeyboardKey.P then _UIKit:Toggle("SocialWin")
-        elseif k == KeyboardKey.L then _RankWindow:Show("depth") end
+        elseif k == KeyboardKey.L then _RankWindow:Show("depth")
+        elseif k == KeyboardKey.M then _UIKit:Toggle("MenuWin") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FromMenu(string win)
+        -- 메뉴에서 고르면 메뉴는 닫고 그 창을 연다
+        _UIKit:Close("MenuWin")
+        if win ~= "" then _UIKit:Open(win) end
     end
 
     -- ───────── 갱신 ─────────
@@ -56,20 +79,27 @@ script HudMain extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or st == nil then return end
         local pc = player.PlayerComponent
-        _UIKit:SetFill("Bottom/LifeOrb/Fill", pc.Hp / math.max(1, pc.MaxHp))
-        _UIKit:SetText("Bottom/LifeOrb/Text", tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp)))
-        _UIKit:SetFill("Bottom/ManaOrb/Fill", st.Mana / math.max(1, st.MaxMana))
-        _UIKit:SetText("Bottom/ManaOrb/Text", tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana)))
-        _UIKit:SetFill("Bottom/XP/Fill", st.Exp / math.max(1, st.ExpToNext))
-        _UIKit:SetText("Bottom/XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
+        local hp = pc.Hp / math.max(1, pc.MaxHp)
+        local mp = st.Mana / math.max(1, st.MaxMana)
+        local hpText = tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp))
+        local mpText = tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana))
+        for _, orb in ipairs({ { "LifeOrb", hp, hpText }, { "MLife", hp, hpText }, { "ManaOrb", mp, mpText }, { "MMana", mp, mpText } }) do
+            _UIKit:SetFill(orb[1] .. "/Fill", orb[2])
+            _UIKit:SetText(orb[1] .. "/Text", orb[3])
+        end
+        _UIKit:SetFill("XP/Fill", st.Exp / math.max(1, st.ExpToNext))
+        _UIKit:SetText("XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
         self:RenderSlots()
+        self:RenderBadges(st)
         self:RenderTarget(player)
         self:RenderQuestTrack(player)
         self:RenderParty()
+        self:RenderTip(player, st)
     end
 
     @ExecSpace("ClientOnly")
     method void RenderSlots()
+        -- 스킬 칸 아이콘 (빈 칸은 비움) + 벨트 물약 아이콘·개수. 바뀌었을 때만
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         ---@type PlayerBelt
@@ -80,20 +110,36 @@ script HudMain extends Logic
         local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(travel.TownScroll)
         if key == self.SlotKey then return end
         self.SlotKey = key
-        local keys = { "A", "S", "D", "F", "우클릭" }
-        for i = 1, 5 do _UIKit:SetText("Bottom/Slots/Slot" .. tostring(i), self:SkillShort(book:GetSlotSkill(i)) .. "\n" .. keys[i]) end
-        _UIKit:SetText("Bottom/Slots/Belt1", "생명 ×" .. tostring(belt.HpPot) .. "\n[1]")
-        _UIKit:SetText("Bottom/Slots/Belt2", "마나 ×" .. tostring(belt.MpPot) .. "\n[2]")
-        _UIKit:SetText("Bottom/Slots/Belt3", "회복 ×" .. tostring(belt.RvPot) .. "\n[3]")
-        _UIKit:SetText("Bottom/Slots/Belt4", "귀환 ×" .. tostring(travel.TownScroll) .. "\n[4]")
+        for i = 1, 5 do _UIKit:SetIcon("Bottom/Slots/Slot" .. tostring(i) .. "/Icon", self:SkillIcon(book:GetSlotSkill(i))) end
+        local belts = { { "potion_hp", belt.HpPot }, { "potion_mp", belt.MpPot }, { "potion_rv", belt.RvPot }, { "icon_scroll", travel.TownScroll } }
+        for i, b in ipairs(belts) do
+            local path = "Bottom/Slots/Belt" .. tostring(i)
+            _UIKit:SetIcon(path .. "/Icon", _GameData:GetUiIcon(b[1]))
+            _UIKit:SetColor(path .. "/Icon", b[2] > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
+            _UIKit:SetText(path .. "/Count", tostring(b[2]))
+        end
+    end
+
+    method string SkillIcon(string id)
+        if id == "" then return "" end
+        local def = _SkillData:Get(id)
+        if def == nil then return "" end
+        return def.icon
     end
 
     @ExecSpace("ClientOnly")
-    method string SkillShort(string id)
-        if id == "" then return "-" end
-        local def = _SkillData:Get(id)
-        if def == nil then return id end
-        return def.name
+    method void RenderBadges(PlayerStats st)
+        -- 쓸 포인트가 있으면 메뉴·능력치·스킬 버튼에 빨간 점
+        local key = tostring(st.StatPoints) .. "#" .. tostring(st.SkillPoints)
+        if key == self.BadgeKey then return end
+        self.BadgeKey = key
+        local stat = st.StatPoints > 0
+        local skill = st.SkillPoints > 0
+        _UIKit:SetEnabled("BtnMenu/Badge", stat or skill)
+        _UIKit:SetEnabled("Bottom/Menu/BtnChar/Badge", stat)
+        _UIKit:SetEnabled("Bottom/Menu/BtnSkill/Badge", skill)
+        _UIKit:SetEnabled("MenuWin/Char/Badge", stat)
+        _UIKit:SetEnabled("MenuWin/Skill/Badge", skill)
     end
 
     @ExecSpace("ClientOnly")
@@ -136,16 +182,28 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderQuestTrack(Entity player)
+        -- 오른쪽 위 종이: 제목 + 할 일 (누르면 퀘스트 창)
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         if quest == nil then return end
         local q = _QuestData:Get(quest.Index)
-        local text = ""
-        if q == nil then text = "모든 의뢰 완료"
-        elseif quest.State == 0 then text = "새 의뢰: 잿불 야영지의 사제 오렌을 찾아가라"
-        elseif quest.State == 1 then text = string.format("의뢰 「%s」 %d / %d", q.title, quest.Progress, q.count)
-        else text = string.format("의뢰 「%s」 완료 — 사제 오렌에게 보고", q.title) end
-        _UIKit:SetText("QuestTrack", text)
+        local title = ""
+        local body = ""
+        if q == nil then
+            title = "모든 의뢰 완료"
+            body = "심도 던전·높은 난이도에 도전하세요"
+        elseif quest.State == 0 then
+            title = "새 의뢰"
+            body = "잿불 야영지의 사제 오렌을 찾아가세요"
+        elseif quest.State == 1 then
+            title = q.title
+            body = string.format("진행 %d / %d", quest.Progress, q.count)
+        else
+            title = q.title .. " (완료)"
+            body = "사제 오렌에게 보고하세요"
+        end
+        _UIKit:SetText("QuestTrack/Title", _UIKit:Clip(title, 16))
+        _UIKit:SetText("QuestTrack/Body", body)
     end
 
     @ExecSpace("ClientOnly")
@@ -157,17 +215,30 @@ script HudMain extends Logic
         for _, name, lv in string.gmatch(s.PartyDigest, "([^|;]+)|([^|;]+)|(%d+)") do table.insert(lines, name .. "  Lv" .. lv) end
         local text = ""
         if #lines > 0 then text = "파티 (" .. tostring(#lines) .. ")\n" .. table.concat(lines, "\n") end
-        _UIKit:SetText("PartyPanel", text)
+        _UIKit:SetText("Party/Text", text)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderTip(Entity player, PlayerStats st)
+        -- 첫 진입 안내: 의뢰 받기 → 스킬 배우기 → 사냥터로 (해당하는 것 하나만)
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        local tip = ""
+        local inTown = _GameConst:IsTown(player.CurrentMap)
+        if quest ~= nil and quest.Index == 1 and quest.State == 0 and inTown then
+            tip = "사제 오렌(미니맵 노란 점, 머리 위 표시)에게 다가가 의뢰를 받으세요"
+        elseif book ~= nil and st.SkillPoints > 0 and book:GetLevel("raise_skeleton") <= 0 and book:GetLevel("bone_shard") <= 0 then
+            tip = "스킬 포인트가 있습니다 — 메뉴 ▸ 스킬(K)에서 「해골 전사」나 「골편 투척」을 배우세요"
+        elseif inTown and st.Level <= 2 and quest ~= nil and quest.State == 1 then
+            tip = "미니맵의 출구 표시로 나가 사냥터로 가세요"
+        end
+        _UIKit:SetEnabled("Tip", tip ~= "")
+        if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
     end
 
     -- ───────── 동작 ─────────
-
-    @ExecSpace("ClientOnly")
-    method void CastSlot(integer slot)
-        ---@type SkillBook
-        local book = _UIKit:Comp("script.SkillBook")
-        if book ~= nil then book:CastSlot(slot) end
-    end
 
     @ExecSpace("ClientOnly")
     method void UsePotion(string kind)

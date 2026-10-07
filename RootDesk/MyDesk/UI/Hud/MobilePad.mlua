@@ -1,0 +1,119 @@
+-- 모바일 패드 (모바일에서만 켜짐, ShadowHUD/MobilePad): 큰 공격 버튼 + 둘레 스킬 4칸(A S D F 칸과 같음, 아이콘) +
+-- 생명·마나 물약 + 그림자 명령(누르면 소환·회수·집결이 펼쳐짐, 배운 것만) + 스킬 편집(SkillPicker).
+@Logic
+script MobilePad extends Logic
+
+    property string Root = "/ui/ShadowHUD/MobilePad"
+    property number PollInterval = 0.2
+    property integer TimerId = 0
+    property boolean CmdsOpen = false
+    property string RenderKey = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        if not Environment:IsMobilePlatform() then return end
+        _UIKit:Connect(self.Root .. "/Attack", function() self:Attack() end)
+        for i = 1, 4 do
+            local slot = i
+            _UIKit:Connect(self.Root .. "/Skills/S" .. tostring(i), function() self:Cast(slot) end)
+        end
+        _UIKit:Connect(self.Root .. "/BtnSkillEdit", function() _SkillPicker:Open(1) end)
+        _UIKit:Connect(self.Root .. "/Potions/Hp", function() self:Potion("hp") end)
+        _UIKit:Connect(self.Root .. "/Potions/Mp", function() self:Potion("mp") end)
+        _UIKit:Connect(self.Root .. "/Shadow/Toggle", function() self:ToggleCmds() end)
+        _UIKit:Connect(self.Root .. "/Shadow/Cmds/Summon", function() self:Command("deploy") end)
+        _UIKit:Connect(self.Root .. "/Shadow/Cmds/Recall", function() self:Command("recall") end)
+        _UIKit:Connect(self.Root .. "/Shadow/Cmds/Rally", function() self:Command("rally") end)
+        _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", false)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
+        log("[MobilePad] 시작")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    -- ───────── 동작 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void Attack()
+        -- 조준 입력이 없으므로 가까운 몬스터 쪽을 보고 기본 공격
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        local m = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 2.0)
+        if m ~= nil then
+            local dx = m.Entity.TransformComponent.WorldPosition.x - player.TransformComponent.WorldPosition.x
+            if math.abs(dx) > 0.05 then player.PlayerControllerComponent.LookDirectionX = dx >= 0 and 1 or -1 end
+        end
+        player.PlayerControllerComponent:ActionAttack()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Cast(integer slot)
+        -- 빈 칸이면 스킬 편집을 연다 (무엇을 넣을지 바로 고르게)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        if book:GetSlotSkill(slot) == "" then
+            _SkillPicker:Open(slot)
+            return
+        end
+        book:CastSlot(slot)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Potion(string kind)
+        ---@type PlayerBelt
+        local belt = _UIKit:Comp("script.PlayerBelt")
+        if belt ~= nil then belt:RequestUsePotion(kind) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleCmds()
+        self.CmdsOpen = not self.CmdsOpen
+        _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", self.CmdsOpen)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Command(string action)
+        -- 단축키(Z X C)와 같은 서버 요청. 누르면 펼친 버튼은 접는다
+        ---@type ShadowCommander
+        local cmd = _UIKit:Comp("script.ShadowCommander")
+        if cmd == nil then return end
+        if action == "deploy" then cmd:RequestDeploy("")
+        elseif action == "recall" then cmd:RequestRecall("")
+        else cmd:RequestRally() end
+        self.CmdsOpen = false
+        _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", false)
+    end
+
+    -- ───────── 갱신 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 스킬 아이콘·물약 개수·그림자 버튼(배운 것만). 바뀌었을 때만 그린다
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        ---@type PlayerBelt
+        local belt = _UIKit:Comp("script.PlayerBelt")
+        if book == nil or belt == nil then return end
+        local summon = book:GetLevel("shadow_summon") > 0
+        local rally = book:GetLevel("rally") > 0
+        local key = book.Slots .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(summon) .. tostring(rally)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        for i = 1, 4 do
+            local id = book:GetSlotSkill(i)
+            local icon = ""
+            if id ~= "" then icon = _SkillData:Get(id).icon end
+            _UIKit:SetIcon(self.Root .. "/Skills/S" .. tostring(i) .. "/Icon", icon)
+        end
+        _UIKit:SetText(self.Root .. "/Potions/Hp/Count", tostring(belt.HpPot))
+        _UIKit:SetText(self.Root .. "/Potions/Mp/Count", tostring(belt.MpPot))
+        -- 그림자 명령 버튼은 그림자 소환을 배운 뒤에만, 집결은 「집결」을 배운 뒤에만
+        _UIKit:SetEnabled(self.Root .. "/Shadow", summon)
+        _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds/Rally", rally)
+    end
+
+end

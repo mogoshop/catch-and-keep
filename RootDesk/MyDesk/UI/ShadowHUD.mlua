@@ -1,4 +1,4 @@
--- 그림자 상태줄 + 보관함 창 (H) + 모바일 패드 (클라이언트 전용).
+-- 그림자 상태줄 + 보관함 창 (H, 줄마다 원본 몬스터 초상) (클라이언트 전용). 모바일 패드는 MobilePad.
 -- 보관함 값은 ShadowOwner(@Sync StorageDigest·Essence), 소환 수는 ShadowCommander에서 읽는다.
 -- 버튼은 각 컴포넌트의 Server 요청으로 보낸다 (검증은 서버).
 @Logic
@@ -14,7 +14,6 @@ script ShadowHUD extends Logic
     property table RowIds = {}      -- 줄 번호 → 표시 중인 그림자 id
     property table RowDeployed = {} -- 줄 번호 → 소환 중 여부
     property integer TimerId = 0
-    property string PadKey = ""     -- 모바일 그림자 버튼 표시 상태 (배운 스킬이 바뀔 때만 갱신)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -33,11 +32,6 @@ script ShadowHUD extends Logic
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:ChangePage(1) end)
         _UIKit:Connect(self.Root .. "/Status/BtnStorage", function() self:ToggleWindow() end)
         _UIKit:Connect(self.Root .. "/Status/BtnInput", function() self:ToggleInputMode() end)
-        _UIKit:Connect(self.Root .. "/MobilePad/BtnAttack", function() self:MobileAttack() end)
-        _UIKit:Connect(self.Root .. "/MobilePad/BtnSummon", function() self:CommanderCall("deploy") end)
-        _UIKit:Connect(self.Root .. "/MobilePad/BtnRecall", function() self:CommanderCall("recall") end)
-        _UIKit:Connect(self.Root .. "/MobilePad/BtnRally", function() self:CommanderCall("rally") end)
-        _UIKit:Connect(self.Root .. "/MobilePad/BtnStorage", function() self:ToggleWindow() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
     end
 
@@ -88,33 +82,6 @@ script ShadowHUD extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void CommanderCall(string action)
-        -- 모바일 버튼 → 단축키(Z X C)와 같은 서버 요청
-        local cmd = self:Commander()
-        if cmd == nil then return end
-        if action == "deploy" then cmd:RequestDeploy("")
-        elseif action == "recall" then cmd:RequestRecall("")
-        elseif action == "rally" then cmd:RequestRally() end
-    end
-
-    @ExecSpace("ClientOnly")
-    method void MobileAttack()
-        -- 모바일 공격: 가까운 몬스터 쪽을 보고 공격 (조준 입력이 없으므로)
-        local player = _UserService.LocalPlayer
-        if not isvalid(player) then return end
-        local m = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 2.0)
-        if m ~= nil then
-            local dx = m.Entity.TransformComponent.WorldPosition.x - player.TransformComponent.WorldPosition.x
-            if math.abs(dx) > 0.05 then
-                local dir = -1
-                if dx >= 0 then dir = 1 end
-                player.PlayerControllerComponent.LookDirectionX = dir
-            end
-        end
-        player.PlayerControllerComponent:ActionAttack()
-    end
-
-    @ExecSpace("ClientOnly")
     method void ToggleWindow()
         _UIKit:Toggle(self.Win)
         self.RenderKey = ""
@@ -136,7 +103,6 @@ script ShadowHUD extends Logic
         local owner = self:Owner()
         local cmd = self:Commander()
         if owner == nil or cmd == nil then return end
-        self:RefreshPadButtons()
         if self.RenderKey == "" then self:RefreshInputLabel() end
         local status = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit(), owner.Essence)
         if cmd.UndeadSummary ~= "" then status = status .. "\n" .. cmd.UndeadSummary end
@@ -149,22 +115,6 @@ script ShadowHUD extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         self:RenderRows(owner)
-    end
-
-    @ExecSpace("ClientOnly")
-    method void RefreshPadButtons()
-        -- 모바일 그림자 버튼: 소환·회수는 「그림자 소환」, 집결은 「집결」을 배운 뒤에만 보인다
-        ---@type SkillBook
-        local book = _UIKit:Comp("script.SkillBook")
-        if book == nil then return end
-        local summon = book:GetLevel("shadow_summon") > 0
-        local rally = book:GetLevel("rally") > 0
-        local key = tostring(summon) .. tostring(rally)
-        if key == self.PadKey then return end
-        self.PadKey = key
-        _UIKit:SetEnabled(self.Root .. "/MobilePad/BtnSummon", summon)
-        _UIKit:SetEnabled(self.Root .. "/MobilePad/BtnRecall", summon)
-        _UIKit:SetEnabled(self.Root .. "/MobilePad/BtnRally", rally)
     end
 
     @ExecSpace("ClientOnly")
@@ -192,6 +142,10 @@ script ShadowHUD extends Logic
                 self.RowIds[i] = e.id
                 self.RowDeployed[i] = e.deployed
                 _UIKit:SetText(base .. "/Label", self:RowLabel(e))
+                local m = _GameData:GetMonsterStats(e.src)
+                local portrait = ""
+                if m ~= nil then portrait = m.stand end
+                _UIKit:SetIcon(base .. "/Portrait", portrait)
                 local deployText = "소환"
                 if e.deployed then deployText = "회수" elseif e.wait > 0 then deployText = "대기" end
                 _UIKit:SetText(base .. "/BtnDeploy", deployText)
