@@ -10,6 +10,8 @@ script LootDrop extends Component
     @Sync
     property integer Rarity = 0
     property string ItemString = ""
+    @Sync
+    property string IconRUID = ""      -- 서버가 정한 바닥 아이콘 (ItemString은 클라이언트로 동기화되지 않는다)
     property integer Amount = 0
     property number DropTime = 0
     property number PublicAfter = 30
@@ -28,6 +30,8 @@ script LootDrop extends Component
         self.Amount = amount
         self.Rarity = rarity
         self.DropTime = _UtilLogic.ElapsedSeconds
+        if kind == "item" then self.IconRUID = _ItemData:IconFor(itemString)
+        elseif kind == "rune" then self.IconRUID = _GameConst.IconRune end
     end
 
     @ExecSpace("ServerOnly")
@@ -56,13 +60,14 @@ script LootDrop extends Component
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) or self.Kind == "" then return end
         if not self.Dressed then
+            -- 장비·룬 아이콘은 서버 값이 동기화된 뒤에 입힌다
+            if (self.Kind == "item" or self.Kind == "rune") and self.IconRUID == "" then return end
             self.Dressed = true
             local ruid = _GameConst.IconItem
             if self.Kind == "gold" then ruid = _GameConst.IconGold
             elseif self.Kind == "hp" then ruid = _GameConst.IconHpPotion
             elseif self.Kind == "mp" then ruid = _GameConst.IconMpPotion
-            elseif self.Kind == "rune" then ruid = _GameConst.IconRune
-            elseif self.Kind == "item" then ruid = _ItemData:IconFor(self.ItemString) end
+            elseif self.Kind == "rune" or self.Kind == "item" then ruid = self.IconRUID end
             sprite.SpriteRUID = ruid
         end
         if self.Kind ~= "item" and self.Kind ~= "rune" then return end

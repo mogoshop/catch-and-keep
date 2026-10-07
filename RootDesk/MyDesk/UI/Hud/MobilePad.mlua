@@ -26,6 +26,7 @@ script MobilePad extends Logic
         _UIKit:Connect(self.Root .. "/Potions/Hp", function() self:Potion("hp") end)
         _UIKit:Connect(self.Root .. "/Potions/Mp", function() self:Potion("mp") end)
         _UIKit:Connect(self.Root .. "/Shadow/Toggle", function() self:ToggleCmds() end)
+        _UIKit:Connect(self.Root .. "/Extract", function() self:Extract() end)
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Summon", function() self:Command("deploy") end)
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Recall", function() self:Command("recall") end)
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Rally", function() self:Command("rally") end)
@@ -135,6 +136,14 @@ script MobilePad extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void Extract()
+        -- 손 닿는 거리의 내 혼을 추출 (판정은 서버)
+        ---@type SoulExtractor
+        local extractor = _UIKit:Comp("script.SoulExtractor")
+        if extractor ~= nil then extractor:TryExtractNearby() end
+    end
+
+    @ExecSpace("ClientOnly")
     method void ToggleCmds()
         if _UIKit:AnyWindowOpen() then self.Holding = false return end
         self.CmdsOpen = not self.CmdsOpen
@@ -169,6 +178,13 @@ script MobilePad extends Logic
         local belt = _UIKit:Comp("script.PlayerBelt")
         if book == nil or belt == nil then return end
         self:HoldTick()
+        -- 혼 추출 버튼: 그림자 소환을 배웠고 손 닿는 거리에 내 혼이 있을 때만
+        ---@type SoulExtractor
+        local extractor = _UIKit:Comp("script.SoulExtractor")
+        local player = _UserService.LocalPlayer
+        local canExtract = extractor ~= nil and isvalid(player) and book:GetLevel("shadow_summon") > 0
+            and extractor:FindNearestSoul(_Util:Pos2(player), _ShadowConfig:GetExtractReach()) ~= nil
+        _UIKit:SetEnabled(self.Root .. "/Extract", canExtract and not _UIKit:AnyWindowOpen())
         -- 쿨다운 덮개는 매번 (시간이 흐르므로)
         for i = 1, 4 do _UIKit:ShowCooldown(self.Root .. "/Skills/S" .. tostring(i) .. "/Cd", book, book:GetSlotSkill(i)) end
         _UIKit:ShowCooldown(self.Root .. "/Attack/Cd", book, book:GetSlotSkill(5))

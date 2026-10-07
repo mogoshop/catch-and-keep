@@ -96,6 +96,13 @@ script UndeadSystem extends Logic
             orb:Consume()
             local max = self:CountFor(slvl)
             if kind == "revive" then max = self:ReviveCountFor(slvl) end
+            -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다
+            local have = 0
+            for _, r in ipairs(self:ListOf(player)) do if r.kind == kind then have = have + 1 end end
+            if have >= max then
+                local names = { skeleton = "해골 전사", mage = "해골 마법사", revive = "되살린 몬스터" }
+                _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(max) .. "기 — 가장 오래된 하나가 무너졌다 (스킬 레벨을 올리면 늘어난다)", userId)
+            end
             self:TrimOldest(player, kind, max - 1)
             table.insert(self:ListOf(player), rec)
             self:RefreshSummary(player)

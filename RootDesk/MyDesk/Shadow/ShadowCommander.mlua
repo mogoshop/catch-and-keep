@@ -5,6 +5,7 @@ script ShadowCommander extends Component
 
     property number RallySeconds = 2.5
     property table Units = {}                -- shadow id → 소환된 엔티티
+    property table Wanted = {}               -- 맵 이동 뒤 다시 부를 그림자 id (이동 전에 소환 중이던 것)
     @Sync
     property integer DeployedCount = 0
     @Sync
@@ -24,6 +25,52 @@ script ShadowCommander extends Component
             if isvalid(unit) then unit:Destroy() end
         end
         self.Units = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Prune()
+        -- 엔티티가 사라진 소환(다른 맵·방으로 옮겨져 스스로 사라짐 등)을 보관함 상태와 맞춘다
+        local owner = self:Owner()
+        local changed = false
+        for id, unit in pairs(self.Units) do
+            if not isvalid(unit) then
+                self.Units[id] = nil
+                local shadow = owner ~= nil and owner:GetShadow(id) or nil
+                if shadow ~= nil and shadow.deployed then shadow.deployed = false end
+                self.DeployedCount = math.max(0, self.DeployedCount - 1)
+                changed = true
+            end
+        end
+        if changed and owner ~= nil then owner:RefreshDigest() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StashForTravel()
+        -- 맵·방 이동 직전: 소환 중인 그림자를 기억하고 회수 (도착하면 TryRedeploy가 다시 부른다)
+        self:Prune()
+        self.Wanted = {}
+        for id, _ in pairs(self.Units) do table.insert(self.Wanted, id) end
+        self:RecallAll()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
+        -- 같은 방 안의 맵 이동: 도착 1초 뒤 기억한 그림자를 다시 부른다
+        if #self.Wanted == 0 then return end
+        _TimerService:SetTimerOnce(function() self:TryRedeploy() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryRedeploy()
+        -- 기억한 그림자 중 지금 부를 수 있는 것을 다시 소환 (소환 한도·재소환 대기는 평소 규칙대로)
+        if #self.Wanted == 0 or not isvalid(self.Entity) or not _Util:IsAlive(self.Entity) then return end
+        local wanted = self.Wanted
+        self.Wanted = {}
+        local n = 0
+        for _, id in ipairs(wanted) do
+            if self:Deploy(id) then n = n + 1 end
+        end
+        log("[VRF] shadows redeployed " .. tostring(n) .. "/" .. tostring(#wanted))
     end
 
     method ShadowOwner Owner()
@@ -102,6 +149,7 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method boolean Deploy(string id)
+        self:Prune()
         if not self:CanDeploy(id) then return false end
         local owner = self:Owner()
         local shadow = owner:GetShadow(id)
@@ -220,6 +268,7 @@ script ShadowCommander extends Component
     @ExecSpace("ServerOnly")
     method integer DeployNext()
         -- 소환 가능한 그림자 중 등급·레벨이 높은 것 하나. 소환한 수(0/1)
+        self:Prune()
         local best = nil
         for id, s in pairs(self:Owner().Storage) do
             if self:CanDeploy(id) and (best == nil or s.grade * 100 + s.level > best.grade * 100 + best.level) then best = s end

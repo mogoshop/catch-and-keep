@@ -109,9 +109,15 @@ script ShadowOwner extends Component
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
+        -- d = 소환 중이었거나 맵·방 이동으로 잠시 회수된 그림자 (불러온 뒤 다시 부른다: 심도 등 다른 방으로 옮겨도 따라온다)
+        local wanted = {}
+        local commander = self:Commander()
+        if commander ~= nil then for _, id in ipairs(commander.Wanted) do wanted[id] = true end end
         local list = {}
-        for _, s in pairs(self.Storage) do
-            table.insert(list, { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid })
+        for id, s in pairs(self.Storage) do
+            local entry = { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid }
+            if s.deployed or wanted[id] then entry.d = true end
+            table.insert(list, entry)
         end
         local saved = { essence = self.Essence, shadowCount = #list }
         if #list > 0 then saved.shadows = list end
@@ -127,12 +133,18 @@ script ShadowOwner extends Component
         self.Storage = {}
         self.StorageCount = 0
         self.Essence = data.essence or 0
+        local redeploy = {}
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
-                self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
+                local id = self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
+                if s.d then table.insert(redeploy, id) end
             end
         end
         self:RefreshDigest()
+        if commander ~= nil and #redeploy > 0 then
+            commander.Wanted = redeploy
+            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then commander:TryRedeploy() end end, 2)
+        end
     end
 
 end

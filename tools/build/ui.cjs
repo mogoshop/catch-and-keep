@@ -411,7 +411,7 @@ function patchShadowHud() {
   s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
 
   // 모바일 패드: 조이스틱(왼쪽) + 오른쪽 공격 + 둘레 스킬 4칸 + 물약 2 + 그림자 명령(펼침) + 스킬 편집
-  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Skills", "Potions", "Shadow", "BtnSkillEdit"]) {
+  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract"]) {
     if (s.find(`MobilePad/${old}`)) s.remove(`MobilePad/${old}`);
   }
   const center = { anchor: "bottom-right", pivot: [0.5, 0.5] };
@@ -445,6 +445,12 @@ function patchShadowHud() {
     b_label(s, `${path}/Count`, "", 20, "bottom-right");
   });
   // 그림자 명령: 버튼 하나를 누르면 소환·회수·집결이 위로 펼쳐진다 (배운 것만 보임)
+  // 혼 추출: 손 닿는 거리에 내 혼이 있을 때만 나타난다 (그림자 소환을 배운 뒤). PC는 E 키·혼 클릭
+  k.slot("MobilePad/Extract", { ...center, pos: [-840, 460], rect_size: [120, 120] }, 70);
+  s.patchComponent("MobilePad/Extract/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: SKILL_ICON.extract_mastery }, Color: hexA("#FFFFFF", 1) });
+  s.patch("MobilePad/Extract/Icon", { enable: true });
+  b_label(s, "MobilePad/Extract/Label", "추출", 20, "bottom-center");
+  s.patch("MobilePad/Extract", { enable: false });
   s.empty("MobilePad/Shadow", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-580, 200], rect_size: [104, 104] }, 64);
   s.patchComponent("MobilePad/Shadow/Toggle/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.icon_shadow }, Color: hexA(part("icon_shadow").color, 1) });
