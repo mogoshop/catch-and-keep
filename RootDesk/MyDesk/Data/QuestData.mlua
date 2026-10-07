@@ -1,0 +1,46 @@
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/quests.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 의뢰 목록 (순서대로 진행). kind: kill / extract / reach
+@Logic
+script QuestData extends Logic
+
+    property boolean Built = false
+    property table List = {}
+
+    method void Ensure()
+        if self.Built then return end
+        self.Built = true
+        self.List = {}
+        table.insert(self.List, { title = "첫 번째 군령", desc = "피 묻은 황무지의 지옥견을 쓰러뜨리고, 남은 혼에서 그림자 1기를 추출하라. (E 키)", kind = "extract", target = "", count = 1, exp = 80, gold = 50, reward = "item:lamp1|0|1|희미한 등불||2|,rune:r_as" })
+        table.insert(self.List, { title = "굶주린 구덩이", desc = "썩은 갈대 늪의 무덤 구더기 10마리를 처치하라.", kind = "kill", target = "graveworm", count = 10, exp = 250, gold = 120, reward = "skp:1" })
+        table.insert(self.List, { title = "사라진 병사의 유물", desc = "무너진 형장을 떠도는 잿빛 망자병 8마리를 처치하고 유물을 되찾아라.", kind = "kill", target = "ashen_dead", count = 8, exp = 400, gold = 200, reward = "gen:2" })
+        table.insert(self.List, { title = "숲의 속삭임", desc = "교수대 숲 어딘가에 버려진 피의 제단을 찾아라.", kind = "reach", target = "blood_altar", count = 1, exp = 300, gold = 100, reward = "stp:5" })
+        table.insert(self.List, { title = "묘지기의 무덤", desc = "교수대 숲의 「목 없는 처형인」을 처치하라.", kind = "kill", target = "headsman", count = 1, exp = 700, gold = 400, reward = "rune:r_ireun,skp:1" })
+        table.insert(self.List, { title = "묘지기 여왕", desc = "지하 납골당 가장 깊은 곳, 여왕의 무덤에서 묘지기 여왕을 쓰러뜨려라.", kind = "kill", target = "grave_queen", count = 1, exp = 2000, gold = 1500, reward = "gen:3,skp:1" })
+    end
+
+    method any Get(integer index)
+        self:Ensure()
+        return self.List[index]
+    end
+
+    method integer Count()
+        self:Ensure()
+        return #self.List
+    end
+
+    method string RewardText(string reward)
+        -- 보상 문자열("rune:r_as,item:...,skp:1,stp:5,gen:2") → 표시용
+        local parts = {}
+        for key, val in string.gmatch(reward, "(%a+):([^,]+)") do
+            if key == "rune" then
+                local r = _ItemData:GetRune(val)
+                table.insert(parts, (r ~= nil and r.name or val) .. " 룬")
+            elseif key == "item" then table.insert(parts, _ItemData:Parse(val).name)
+            elseif key == "skp" then table.insert(parts, "스킬 포인트 " .. val)
+            elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
+            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
+        end
+        return table.concat(parts, ", ")
+    end
+
+end

@@ -3,8 +3,8 @@
 
 사용:
   python3 tools/sim.py exp                       레벨 곡선 표
-  python3 tools/sim.py fight --level 10 --monster cinder_soldier --rank elite --count 5 --shadows 5 --shadow-level 3
-  python3 tools/sim.py economy --monster wild_dog --kills 200
+  python3 tools/sim.py fight --level 10 --monster skelwarrior --rank elite --count 5 --shadows 5 --shadow-level 3
+  python3 tools/sim.py economy --monster hellhound --kills 200
 """
 import argparse, csv, pathlib, random
 

@@ -1,0 +1,236 @@
+#!/usr/bin/env node
+// data/*.csv → RootDesk/MyDesk/Data/*.mlua (게임이 읽는 데이터 스크립트).
+// 콘텐츠 수치는 CSV만 고친다. 생성 파일은 직접 수정하지 않는다 (다시 생성하면 덮어쓴다).
+// 사용: node tools/gen_data.cjs          → 생성 후 메이커 refresh
+//       node tools/gen_data.cjs --check  → 쓰지 않고, 생성 파일이 CSV와 다르면 실패 (테스트용)
+const fs = require("fs");
+const path = require("path");
+const { load, num, bool } = require("./lib/csv.cjs");
+
+const OUT_DIR = path.resolve(__dirname, "../RootDesk/MyDesk/Data");
+const CHECK = process.argv.includes("--check");
+let stale = 0;
+const HEADER = "-- 자동 생성 파일: tools/gen_data.cjs 가 data/%SRC% 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).\n";
+
+// Lua 리터럴
+function s(v) { return JSON.stringify(String(v)); }
+function n(v) { return String(num(v)); }
+function b(v) { return bool(v) ? "true" : "false"; }
+
+function write(file, src, body) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const text = HEADER.replace("%SRC%", src) + body;
+  const full = path.join(OUT_DIR, file);
+  const old = fs.existsSync(full) ? fs.readFileSync(full, "utf8") : "";
+  if (old !== text) {
+    stale++;
+    if (!CHECK) fs.writeFileSync(full, text);
+  }
+  console.log((old === text ? "  같음  " : CHECK ? "  낡음  " : "  생성  ") + file);
+}
+
+// 표 데이터는 OnInitialize 시점에 남지 않는 MSW 특성 때문에 첫 조회 때 채운다 (Ensure)
+function logic(name, desc, ensureBody, extra = "", props = "") {
+  return `-- ${desc}
+@Logic
+script ${name} extends Logic
+
+    property boolean Built = false
+${props}
+    method void Ensure()
+        if self.Built then return end
+        self.Built = true
+${ensureBody}
+    end
+${extra}
+end
+`;
+}
+
+// ── GameData: 설정값·난이도·배경음·몬스터 이름 ──
+function genGameData() {
+  const cfg = load("config");
+  const props = cfg.map((r) => `    property number ${r.key} = ${n(r.value)}    -- ${r.note}`).join("\n");
+  const diffs = load("difficulty");
+  const sounds = load("sounds");
+  const mons = load("monsters");
+  const shop = load("shop");
+  const body = [
+    "        self.Shop = {}",
+    ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)} }`),
+    "        self.Difficulties = {}",
+    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)} }`),
+    "        self.Sounds = {}",
+    ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
+    "        self.MonsterNames = {}",
+    ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
+    "        self.DepthPool = {}",
+    ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
+    "        self.DepthUniques = {}",
+    ...mons.filter((m) => /^every\d+$/.test(m.depth)).sort((a, b) => num(b.depth.slice(5)) - num(a.depth.slice(5)))
+      .map((m) => `        table.insert(self.DepthUniques, { every = ${n(m.depth.slice(5))}, id = ${s(m.id)} })`),
+  ].join("\n");
+  const extra = `
+    method any GetDifficulty(integer index)
+        self:Ensure()
+        return self.Difficulties[math.max(0, math.min(#self.Difficulties, index))]
+    end
+
+    method string GetSound(string key)
+        self:Ensure()
+        return self.Sounds[key] or ""
+    end
+
+    method any GetShopItem(string key)
+        -- 상점 품목 (shop.csv). 없으면 nil
+        self:Ensure()
+        return self.Shop[key]
+    end
+
+    method table GetDepthPool()
+        -- 심도 던전에 나오는 몬스터 모델 id 목록 (monsters.csv depth=true)
+        self:Ensure()
+        return self.DepthPool
+    end
+
+    method string GetDepthUnique(integer floor)
+        -- 이 층에 나올 최상위 몬스터 (monsters.csv depth=everyN, 큰 N 우선). 없으면 ""
+        self:Ensure()
+        for _, u in ipairs(self.DepthUniques) do
+            if floor % u.every == 0 then return u.id end
+        end
+        return ""
+    end
+
+    method string GetMonsterName(string sourceId)
+        self:Ensure()
+        return self.MonsterNames[sourceId] or sourceId
+    end
+`;
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv",
+    logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
+      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table DepthUniques = {}\n"));
+}
+
+// ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
+function genItems() {
+  const bases = load("item_bases");
+  const affixes = load("item_affixes");
+  const uniques = load("item_uniques");
+  const runes = load("runes");
+  const runewords = load("runewords");
+  const stats = load("stats");
+  const body = [
+    "        self.StatNames = {}",
+    ...stats.map((r) => `        self.StatNames[${s(r.key)}] = ${s(r.name)}`),
+    "        self.Bases = {}",
+    "        self.BaseOrder = {}",
+    ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
+    "        self.Affixes = {}",
+    ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
+    "        self.Uniques = {}",
+    ...uniques.map((r) => `        self.Uniques[${s(r.base)}] = { name = ${s(r.name)}, mods = ${s(r.mods)} }`),
+    "        self.Runes = {}",
+    "        self.RuneOrder = {}",
+    ...runes.map((r) => `        self.Runes[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, weapon = ${s(r.weapon)}, armor = ${s(r.armor)}, lamp = ${s(r.lamp)}, minLevel = ${n(r.minLevel)}, weight = ${n(r.dropWeight)} }\n        table.insert(self.RuneOrder, ${s(r.id)})`),
+    "        self.Runewords = {}",
+    ...runewords.map((r) => `        self.Runewords[${s(r.runes)}] = { name = ${s(r.name)}, slots = ${s(r.slots)}, mods = ${s(r.mods)} }`),
+  ].join("\n");
+  write("ItemTables.mlua", "item_bases.csv, item_affixes.csv, item_uniques.csv, runes.csv, runewords.csv, stats.csv",
+    logic("ItemTables", "아이템 데이터 표 (규칙·생성 로직은 Item/ItemData)", body, "",
+      "    property table StatNames = {}\n    property table Bases = {}\n    property table BaseOrder = {}\n    property table Affixes = {}\n    property table Uniques = {}\n    property table Runes = {}\n    property table RuneOrder = {}\n    property table Runewords = {}\n"));
+}
+
+// ── SkillData ──
+function genSkills() {
+  const rows = load("skills");
+  const body = [
+    "        self.Skills = {}",
+    "        self.Order = {}",
+    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, desc = ${s(r.desc)} }\n        table.insert(self.Order, ${s(r.id)})`),
+  ].join("\n");
+  const extra = `
+    method any Get(string id)
+        self:Ensure()
+        return self.Skills[id]
+    end
+
+    method table GetOrder()
+        self:Ensure()
+        return self.Order
+    end
+
+    method string TreeName(string tree)
+        if tree == "command" then return "군령" end
+        if tree == "soul" then return "혼술" end
+        return "저주"
+    end
+`;
+  write("SkillData.mlua", "skills.csv", logic("SkillData", "네크로맨서 스킬 정의 (docs/design/04 3장). impl=false는 트리에만 보이는 준비 중 스킬", body, extra,
+    "    property table Skills = {}\n    property table Order = {}\n"));
+}
+
+// ── QuestData ──
+function genQuests() {
+  const rows = load("quests");
+  const body = ["        self.List = {}",
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)} })`)].join("\n");
+  const extra = `
+    method any Get(integer index)
+        self:Ensure()
+        return self.List[index]
+    end
+
+    method integer Count()
+        self:Ensure()
+        return #self.List
+    end
+
+    method string RewardText(string reward)
+        -- 보상 문자열("rune:r_as,item:...,skp:1,stp:5,gen:2") → 표시용
+        local parts = {}
+        for key, val in string.gmatch(reward, "(%a+):([^,]+)") do
+            if key == "rune" then
+                local r = _ItemData:GetRune(val)
+                table.insert(parts, (r ~= nil and r.name or val) .. " 룬")
+            elseif key == "item" then table.insert(parts, _ItemData:Parse(val).name)
+            elseif key == "skp" then table.insert(parts, "스킬 포인트 " .. val)
+            elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
+            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
+        end
+        return table.concat(parts, ", ")
+    end
+`;
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach", body, extra, "    property table List = {}\n"));
+}
+
+// ── WaypointData ──
+function genWaypoints() {
+  const rows = load("waypoints");
+  const body = ["        self.List = {}",
+    ...rows.map((r) => `        table.insert(self.List, { id = ${s(r.id)}, name = ${s(r.name)}, map = ${s(r.map)}, x = ${n(r.x)}, y = ${n(r.y)} })`)].join("\n");
+  const extra = `
+    method any Get(string id)
+        self:Ensure()
+        for _, w in ipairs(self.List) do if w.id == id then return w end end
+        return nil
+    end
+
+    method table GetList()
+        self:Ensure()
+        return self.List
+    end
+`;
+  write("WaypointData.mlua", "waypoints.csv", logic("WaypointData", "웨이포인트 목록 (보통 난이도 맵 기준. 난이도 맵은 _GameConst:MapFor)", body, extra, "    property table List = {}\n"));
+}
+
+genGameData();
+genItems();
+genSkills();
+genQuests();
+genWaypoints();
+
+if (CHECK && stale > 0) {
+  console.log(`\n[gen_data] 생성 파일 ${stale}개가 CSV와 다르다 → node tools/gen_data.cjs 실행`);
+  process.exitCode = 1;
+}
