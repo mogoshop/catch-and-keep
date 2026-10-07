@@ -19,7 +19,7 @@ script MonsterAttack extends AttackComponent
     property number SlamDamage = 0
     property number ArrowSpeed = 7
     property integer ShotCount = 0
-    property number AttackWindup = 0.22
+    property number AttackWindup = 0.3
     property number AttackAnimationSeconds = 0.4
     property number AttackAnimationUntil = 0
 
@@ -79,6 +79,10 @@ script MonsterAttack extends AttackComponent
         self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
         local dx = aim.x - _Util:Pos2(self.Entity).x
         if math.abs(dx) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = dx > 0 end
+        -- 근접은 공격을 시작할 때 바라본 방향 앞쪽만 친다 (등 뒤·옆으로 빠지면 빗나간다)
+        local face = aim - _Util:Pos2(self.Entity)
+        if face:Magnitude() < 0.05 then face = Vector2(dx >= 0 and 1 or -1, 0) end
+        face = face:Normalize()
         self.Entity.StateComponent:ChangeState("ATTACK")
         _TimerService:SetTimerOnce(function()
             if not isvalid(self.Entity) or body.IsDead or self.Entity.CurrentMap ~= map then return end
@@ -87,8 +91,11 @@ script MonsterAttack extends AttackComponent
             if not self:IsLiveDefender(target) then return end
             if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
             if self.AttackRange > 1.5 then self:Shoot(aim) return end
-            -- 준비 동작을 보고 이동하면 피할 수 있게, 공격 시작 때의 위치를 친다.
-            self:AttackFast(CircleShape(aim + Vector2(0, 0.3), self.AttackRadius), "monster.basic", nil)
+            -- 준비 동작을 보고 옆·뒤로 빠지면 피할 수 있게: 지금 몬스터 위치에서 처음 바라본 방향 앞쪽 원
+            local reach = math.max(0.4, self.AttackRange * 0.55)
+            local center = _Util:Pos2(self.Entity) + face * reach + Vector2(0, 0.3)
+            self:AttackFast(CircleShape(center, reach), "monster.basic", nil)
+            self:SwingFx(Vector3(center.x, center.y, 0), face)
         end, self.AttackWindup)
         _TimerService:SetTimerOnce(function()
             if not isvalid(self.Entity) or body.IsDead then return end
@@ -97,6 +104,18 @@ script MonsterAttack extends AttackComponent
             if isvalid(chase) then chase.Enable = resumeChase end
             if self.Entity.StateComponent.CurrentStateName == "ATTACK" then self.Entity.StateComponent:ChangeState("IDLE") end
         end, self.AttackAnimationSeconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void SwingFx(Vector3 pos, Vector2 dir)
+        -- 몬스터 근접 궤적: 실제 판정 범위(앞쪽)를 보여 준다. 리소스가 왼쪽을 보므로 오른쪽이면 뒤집는다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local right = dir.x >= 0
+        local rot = math.deg(math.atan(dir.y, dir.x))
+        if not right then rot = rot - 180 end
+        if rot > 180 then rot = rot - 360 elseif rot < -180 then rot = rot + 360 end
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, rot, Vector3(0.45, 0.45, 1), false, { FlipX = right, PlayRate = 1.4, Color = Color(1, 0.45, 0.4, 0.85) })
     end
 
     method boolean IsLiveDefender(Entity target)

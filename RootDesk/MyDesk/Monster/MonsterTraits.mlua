@@ -11,6 +11,7 @@ script MonsterTraits extends Component
     @Sync
     property string AffixElement = ""
     @Sync
+    property number NovaWarnSeconds = 1.2     -- 변종 범위 기술 예고 시간 (초속 1.2칸으로 반경 밖으로 걸어 나갈 수 있게)
     property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
     property number AbilityTimer = 1
     @Sync
@@ -114,17 +115,34 @@ script MonsterTraits extends Component
             return
         end
         self.AbilityTimer = v.interval
-        ---@type MonsterAttack
-        local atk = self.Entity:GetComponent("script.MonsterAttack")
-        if atk ~= nil then atk:Slam(pos, v.radius, atk.Damage * v.mult) end
-        if v.element == "cold" then
-            for _, p in ipairs(players) do
-                ---@type PlayerStats
-                local st = p:GetComponent("script.PlayerStats")
-                if st ~= nil then st:ApplyChill(1.5) end
+        -- 예고: NovaWarnSeconds 동안 그 자리에 경고 원 → 같은 자리에서 터진다. 원 밖으로 나가면 피할 수 있다
+        self:WarnFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+        local map = self.Entity.CurrentMap
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or body.IsDead or not self.Entity.Enable or self.Entity.CurrentMap ~= map then return end
+            local status = body:Status()
+            if status ~= nil and status:IsStunned() then return end
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            if atk ~= nil then atk:Slam(pos, v.radius, atk.Damage * v.mult) end
+            if v.element == "cold" then
+                for _, p in ipairs(_Util:PlayersNear(map, pos, v.radius)) do
+                    ---@type PlayerStats
+                    local st = p:GetComponent("script.PlayerStats")
+                    if st ~= nil then st:ApplyChill(1.5) end
+                end
             end
-        end
-        self:NovaFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+            self:NovaFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+        end, self.NovaWarnSeconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void WarnFx(Vector3 pos, number radius, string element)
+        -- 범위 기술 예고: 바닥에 붉은(냉기는 푸른) 원 + 몬스터가 힘을 모으는 빛
+        local color = Color(1, 0.25, 0.15, 0.85)
+        if element == "cold" then color = Color(0.4, 0.75, 1, 0.85) end
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = color })
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.4, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = color })
     end
 
     @ExecSpace("Multicast")
