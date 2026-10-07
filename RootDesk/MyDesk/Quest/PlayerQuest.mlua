@@ -36,24 +36,12 @@ script PlayerQuest extends Component
         self.Progress = math.min(q.count, self.Progress + 1)
         if self.Progress >= q.count then
             self.State = 2
-            self:Notify("의뢰 완료: " .. q.title .. " — 사제 오렌에게 보고하라", self.Entity.PlayerComponent.UserId)
+            _Util:Notify("의뢰 완료: " .. q.title .. " — 사제 오렌에게 보고하라", self.Entity.PlayerComponent.UserId)
         end
     end
 
-    @ExecSpace("ServerOnly")
     method boolean NearQuestNpc()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return false end
-        local p = self.Entity.TransformComponent.WorldPosition
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
-            ---@type WorldNPC
-            local npc = c
-            if npc.Kind == "quest" then
-                local q = c.Entity.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= npc.TalkRange + 0.5 then return true end
-            end
-        end
-        return false
+        return _Util:NearNpc(self.Entity, "quest")
     end
 
     @ExecSpace("Server")
@@ -89,15 +77,14 @@ script PlayerQuest extends Component
         if stats ~= nil then lv = stats.Level end
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
             if key == "rune" and inv ~= nil then
-                local r = _ItemData:GetRune(val)
-                if r ~= nil then inv:AddItem(val .. "|0|" .. tostring(lv) .. "|" .. r.name .. " 룬||0|") end
+                if _ItemData:GetRune(val) ~= nil then inv:AddItem(_ItemData:MakeRuneString(val, lv)) end
             elseif key == "item" and inv ~= nil then inv:AddItem(val)
             elseif key == "gen" and inv ~= nil then inv:AddItem(_ItemData:Generate(lv + 2, tonumber(val), 300))
             elseif key == "skp" and stats ~= nil then stats.SkillPoints = stats.SkillPoints + tonumber(val)
             elseif key == "stp" and stats ~= nil then stats.StatPoints = stats.StatPoints + tonumber(val) end
         end
         local rewardText = _QuestData:RewardText(q.reward)
-        self:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
+        _Util:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title)
         self.Index = self.Index + 1
         self.State = 0
@@ -117,9 +104,5 @@ script PlayerQuest extends Component
         self.Progress = d.p or 0
     end
 
-    @ExecSpace("Client")
-    method void Notify(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
 
 end

@@ -77,12 +77,10 @@ script PlayerTrade extends Component
         local s = inv.Bag[bagIndex]
         if s == nil then return end
         if _ItemData:IsBound(s) then
-            self:Notify("귀속 아이템은 거래할 수 없다", pc.UserId)
+            _Util:Notify("귀속 아이템은 거래할 수 없다", pc.UserId)
             return
         end
-        table.remove(inv.Bag, bagIndex)
-        inv:RefreshDigest()
-        table.insert(self.Escrow, s)
+        table.insert(self.Escrow, inv:TakeBagItem(bagIndex))
         self:Changed()
     end
 
@@ -96,10 +94,7 @@ script PlayerTrade extends Component
         table.remove(self.Escrow, index)
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then
-            table.insert(inv.Bag, s)
-            inv:RefreshDigest()
-        end
+        if inv ~= nil then inv:PutBagItems({ s }) end
         self:Changed()
     end
 
@@ -144,8 +139,8 @@ script PlayerTrade extends Component
         local theirStats = o.Entity:GetComponent("script.PlayerStats")
         if myInv == nil or theirInv == nil or myStats == nil or theirStats == nil then return end
         if #myInv.Bag + #o.Escrow > myInv.BagSize or #theirInv.Bag + #self.Escrow > theirInv.BagSize then
-            self:Notify("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
-            o:Notify("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
+            _Util:Notify("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
+            _Util:Notify("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end
@@ -153,15 +148,13 @@ script PlayerTrade extends Component
             self:Changed()
             return
         end
-        for _, s in ipairs(o.Escrow) do table.insert(myInv.Bag, s) end
-        for _, s in ipairs(self.Escrow) do table.insert(theirInv.Bag, s) end
+        myInv:PutBagItems(o.Escrow)
+        theirInv:PutBagItems(self.Escrow)
         myStats:AddGold(o.MyGold - self.MyGold)
         theirStats:AddGold(self.MyGold - o.MyGold)
         log(string.format("[PlayerTrade] %s ↔ %s 아이템 %d/%d 골드 %d/%d", self.Entity.PlayerComponent.Nickname, o.Entity.PlayerComponent.Nickname, #self.Escrow, #o.Escrow, self.MyGold, o.MyGold))
         self.Escrow = {}
         o.Escrow = {}
-        myInv:RefreshDigest()
-        theirInv:RefreshDigest()
         self:Finish("거래 완료")
         o:Finish("거래 완료")
     end
@@ -182,10 +175,7 @@ script PlayerTrade extends Component
     method void ReturnEscrow()
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then
-            for _, s in ipairs(self.Escrow) do table.insert(inv.Bag, s) end
-            inv:RefreshDigest()
-        end
+        if inv ~= nil then inv:PutBagItems(self.Escrow) end
         self.Escrow = {}
     end
 
@@ -203,7 +193,7 @@ script PlayerTrade extends Component
             _TimerService:ClearTimer(self.TimerId)
             self.TimerId = 0
         end
-        if message ~= "" then self:Notify(message, self.Entity.PlayerComponent.UserId) end
+        if message ~= "" then _Util:Notify(message, self.Entity.PlayerComponent.UserId) end
     end
 
     @ExecSpace("ServerOnly")
@@ -213,9 +203,5 @@ script PlayerTrade extends Component
         if event.UserId == self.Entity.PlayerComponent.UserId or event.UserId == self.Partner then self:Cancel("거래가 취소되었다") end
     end
 
-    @ExecSpace("Client")
-    method void Notify(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
 
 end

@@ -55,10 +55,9 @@ script ClickControl extends Component
         -- 화면 좌표 → 월드 좌표. 근처에 살아 있는 몬스터가 있으면 공격 대상, 없으면 이동 목적지
         local world = _UILogic:ScreenToWorldPosition(screenPoint)
         -- 내 혼을 클릭했으면 걸어가서 추출 (몬스터보다 우선)
-        ---@type ShadowOwner
-        local owner = self.Entity:GetComponent("script.ShadowOwner")
+        local extractor = self:Extractor()
         local soul = nil
-        if owner ~= nil then soul = owner:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
+        if extractor ~= nil then soul = extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
         if soul ~= nil then
             self.ExtractTarget = soul
             self.AttackTarget = nil
@@ -80,24 +79,16 @@ script ClickControl extends Component
 
     @ExecSpace("ClientOnly")
     method Entity FindMonsterNear(Vector2 point)
-        -- 클릭 지점에 가장 가까운 살아 있는 몬스터 (몬스터 발밑보다 몸통을 클릭하므로 y를 조금 올려 비교)
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return nil end
-        local best = nil
-        local bestDist = self.PickRadius
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowMonster", true)) do
-            ---@type ShadowMonster
-            local m = c
-            if not m.IsDead and c.Entity.Enable then
-                local q = c.Entity.TransformComponent.WorldPosition
-                local d = (Vector2(q.x, q.y + 0.25) - point):Magnitude()
-                if d < bestDist then
-                    bestDist = d
-                    best = c.Entity
-                end
-            end
-        end
-        return best
+        -- 클릭 지점에 가장 가까운 살아 있는 몬스터 (발밑보다 몸통을 클릭하므로 y를 조금 내려 비교)
+        local m = _Util:NearestMonster(self.Entity.CurrentMap, Vector2(point.x, point.y - 0.25), self.PickRadius)
+        if m == nil then return nil end
+        return m.Entity
+    end
+
+    method SoulExtractor Extractor()
+        ---@type SoulExtractor
+        local c = self.Entity:GetComponent("script.SoulExtractor")
+        return c
     end
 
     @ExecSpace("ClientOnly")
@@ -141,21 +132,20 @@ script ClickControl extends Component
             end
             local s = self.ExtractTarget.TransformComponent.WorldPosition
             local toSoul = Vector2(s.x, s.y) - me
-            if toSoul:Magnitude() > _ShadowConfig.ExtractReach * 0.8 then
+            if toSoul:Magnitude() > _ShadowConfig:GetExtractReach() * 0.8 then
                 self:MoveToward(toSoul)
             else
                 self:StopMove()
-                ---@type ShadowOwner
-                local owner = self.Entity:GetComponent("script.ShadowOwner")
-                if owner ~= nil then owner:RequestExtract(self.ExtractTarget) end
+                local extractor = self:Extractor()
+                if extractor ~= nil then extractor:RequestExtract(self.ExtractTarget) end
                 self.ExtractTarget = nil
             end
             return
         end
 
         if isvalid(self.AttackTarget) then
-            ---@type ShadowMonster
-            local m = self.AttackTarget:GetComponent("script.ShadowMonster")
+            ---@type Monster
+            local m = self.AttackTarget:GetComponent("script.Monster")
             if m == nil or m.IsDead or not self.AttackTarget.Enable then
                 self.AttackTarget = nil
                 self:StopMove()

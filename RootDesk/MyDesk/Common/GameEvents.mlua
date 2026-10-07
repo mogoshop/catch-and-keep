@@ -1,0 +1,43 @@
+-- 서버 이벤트 버스. 발행자는 누가 듣는지 모르고, 구독자는 필요한 이벤트만 받는다 (시스템 간 직접 호출을 끊는다).
+-- 이벤트 (payload 필드):
+--   MonsterKilled   { monster, player(보상 귀속, nil 가능), sourceId, grade, level, map }
+--   ShadowExtracted { player, sourceId, grade }
+--   QuestMarkerReached { player, markerId }
+--   PlayerDied      { player, map }
+--   DepthDoorUsed   { player, action(next/exit), map } — 같은 맵의 DepthDirector만 처리
+-- 구독은 Logic의 OnBeginPlay(서버)에서, 구독 키는 구독자 이름(중복 구독 방지).
+@Logic
+script GameEvents extends Logic
+
+    property table Handlers = {}         -- 이벤트 이름 → { 구독 키 → 함수 }
+    property boolean DebugLog = false
+
+    @ExecSpace("ServerOnly")
+    method void Subscribe(string eventName, string key, any fn)
+        local list = self.Handlers[eventName]
+        if list == nil then
+            list = {}
+            self.Handlers[eventName] = list
+        end
+        list[key] = fn
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Unsubscribe(string eventName, string key)
+        local list = self.Handlers[eventName]
+        if list ~= nil then list[key] = nil end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Emit(string eventName, table payload)
+        -- 한 구독자의 오류가 다른 구독자를 막지 않게 각각 보호해서 부른다
+        local list = self.Handlers[eventName]
+        if list == nil then return end
+        for key, fn in pairs(list) do
+            local ok, err = pcall(function() fn(payload) end)
+            if not ok then log_error("[GameEvents] " .. eventName .. " → " .. key .. " 실패: " .. tostring(err)) end
+        end
+        if self.DebugLog then log("[GameEvents] " .. eventName) end
+    end
+
+end

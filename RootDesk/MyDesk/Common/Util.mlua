@@ -1,0 +1,160 @@
+-- 여러 시스템이 같이 쓰는 도우미. 같은 코드를 컴포넌트마다 복사하지 않기 위해 둔다.
+--   Notify          : 특정 플레이어 화면 안내 (서버 → 그 클라이언트)
+--   AfterSpawn      : 스폰 직후 컴포넌트 조회 실패 대비 재시도 (MSW: 첫 프레임에 GetComponent가 nil일 수 있음)
+--   PlayersNear     : 맵의 살아 있는 플레이어 중 반경 안
+--   NearestPlayerDistance, OwnerPlayerOf, Distance
+@Logic
+script Util extends Logic
+
+    property integer SpawnRetryCount = 5
+    property number SpawnRetryInterval = 0.1
+
+    @ExecSpace("Client")
+    method void Notify(string text)
+        -- 서버에서 _Util:Notify(text, userId) 로 부른다 (마지막 인자 = 받을 사람)
+        _ScreenMessageLogic:PrivateMsg(text)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AfterSpawn(Entity e, string componentName, any onReady, any onFail)
+        -- e의 componentName 컴포넌트가 잡히면 onReady(comp), 끝내 실패하면 onFail() (nil 가능)
+        self:TryAfterSpawn(e, componentName, onReady, onFail, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryAfterSpawn(Entity e, string componentName, any onReady, any onFail, integer attempt)
+        if not isvalid(e) then return end
+        local ok, comp = pcall(function() return e:GetComponent(componentName) end)
+        if ok and comp ~= nil then
+            onReady(comp)
+            return
+        end
+        if attempt >= self.SpawnRetryCount then
+            if onFail ~= nil then onFail() end
+            return
+        end
+        _TimerService:SetTimerOnce(function() self:TryAfterSpawn(e, componentName, onReady, onFail, attempt + 1) end, self.SpawnRetryInterval)
+    end
+
+    method number Distance(Entity a, Entity b)
+        local p = a.TransformComponent.WorldPosition
+        local q = b.TransformComponent.WorldPosition
+        return (Vector2(p.x, p.y) - Vector2(q.x, q.y)):Magnitude()
+    end
+
+    @ExecSpace("ServerOnly")
+    method table PlayersNear(Entity map, Vector2 center, number radius)
+        -- 맵의 살아 있는 플레이어 중 center에서 radius 안 (가까운 순 아님)
+        local result = {}
+        if not isvalid(map) then return result end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return result end
+        for _, u in ipairs(users) do
+            if isvalid(u) and not u.PlayerComponent:IsDead() then
+                local q = u.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - center):Magnitude() <= radius then table.insert(result, u) end
+            end
+        end
+        return result
+    end
+
+    @ExecSpace("ServerOnly")
+    method table PlayersInMap(Entity map)
+        local result = {}
+        if not isvalid(map) then return result end
+        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
+        if users == nil then return result end
+        for _, u in ipairs(users) do if isvalid(u) then table.insert(result, u) end end
+        return result
+    end
+
+    @ExecSpace("ServerOnly")
+    method number NearestPlayerDistance(Entity map, Vector2 center)
+        local best = 999
+        for _, u in ipairs(self:PlayersInMap(map)) do
+            local q = u.TransformComponent.WorldPosition
+            local d = (Vector2(q.x, q.y) - center):Magnitude()
+            if d < best then best = d end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity OwnerPlayerOf(Entity attacker)
+        -- 막타가 플레이어면 그대로, 그림자면 그 주인 플레이어 (보상·의뢰 귀속)
+        if not isvalid(attacker) then return nil end
+        if isvalid(attacker.PlayerComponent) then return attacker end
+        ---@type ShadowUnit
+        local unit = attacker:GetComponent("script.ShadowUnit")
+        if unit ~= nil and isvalid(unit.OwnerPlayer) then return unit.OwnerPlayer end
+        return nil
+    end
+
+    method table MonstersNear(Entity map, Vector2 center, number radius)
+        -- 살아 있는(보이는) 몬스터 중 반경 안, 가까운 순 (서버·클라이언트 공용)
+        local found = {}
+        if not isvalid(map) then return found end
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if not m.IsDead and c.Entity.Enable then
+                local q = c.Entity.TransformComponent.WorldPosition
+                local d = (Vector2(q.x, q.y) - center):Magnitude()
+                if d <= radius then table.insert(found, { m = m, d = d }) end
+            end
+        end
+        table.sort(found, function(a, b) return a.d < b.d end)
+        local list = {}
+        for _, f in ipairs(found) do table.insert(list, f.m) end
+        return list
+    end
+
+    method Monster NearestMonster(Entity map, Vector2 center, number radius)
+        local list = self:MonstersNear(map, center, radius)
+        return list[1]
+    end
+
+    method any NearestComponent(Entity map, string componentName, Vector2 center, number radius)
+        -- 맵에서 componentName을 가진 엔티티 중 반경 안 가장 가까운 것의 컴포넌트 (없으면 nil)
+        if not isvalid(map) then return nil end
+        local best = nil
+        local bestDist = radius
+        for _, c in ipairs(map:GetChildComponentsByTypeName(componentName, true)) do
+            local q = c.Entity.TransformComponent.WorldPosition
+            local d = (Vector2(q.x, q.y) - center):Magnitude()
+            if d <= bestDist then
+                bestDist = d
+                best = c
+            end
+        end
+        return best
+    end
+
+    method boolean NearNpc(Entity player, string kind)
+        -- 상점·의뢰 같은 NPC 기능은 그 NPC 대화 거리 안에서만 (서버 검증용)
+        local map = player.CurrentMap
+        if not isvalid(map) then return false end
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            if npc.Kind == kind and self:Distance(player, c.Entity) <= npc.TalkRange + 0.5 then return true end
+        end
+        return false
+    end
+
+    method boolean IsAlive(Entity player)
+        -- 플레이어가 살아 있는가 (HP > 0 이고 사망 처리·부활 대기 중이 아님)
+        if not isvalid(player) or player.PlayerComponent == nil then return false end
+        local pc = player.PlayerComponent
+        if pc.Hp <= 0 or pc:IsDead() then return false end
+        ---@type PlayerVitals
+        local vitals = player:GetComponent("script.PlayerVitals")
+        return vitals == nil or not vitals.Dying
+    end
+
+    method Vector2 Pos2(Entity e)
+        local p = e.TransformComponent.WorldPosition
+        return Vector2(p.x, p.y)
+    end
+
+end

@@ -1,0 +1,22 @@
+-- 처치 보상: 경험치(파티면 PartySystem이 근처 파티원에게 나눈다) + 드롭(개인 전리품, 처치자 기준). (MonsterKilled 구독)
+@Logic
+script RewardSystem extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        _GameEvents:Subscribe("MonsterKilled", "RewardSystem", function(e) self:OnMonsterKilled(e) end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(table e)
+        local player = e.player
+        if player == nil then return end
+        if not _PartySystem:ShareKill(player, e.monster, e.level, e.grade) then
+            ---@type PlayerStats
+            local stats = player:GetComponent("script.PlayerStats")
+            if stats ~= nil then stats:GainExp(stats:ExpForKill(e.level, e.grade)) end
+        end
+        _LootSystem:RollDrops(e.monster, e.level, e.grade, player)
+    end
+
+end

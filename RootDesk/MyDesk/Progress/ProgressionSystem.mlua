@@ -1,0 +1,33 @@
+-- 진행: 마지막 보스(_GameConst.FinalBossSourceId) 처치 시 같은 맵의 모두에게 다음 난이도 개방 + 처치 시간 랭킹 기록.
+-- (MonsterKilled 구독. 영역이 늘어나면 FinalBossSourceId만 바꾼다)
+@Logic
+script ProgressionSystem extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        _GameEvents:Subscribe("MonsterKilled", "ProgressionSystem", function(e) self:OnMonsterKilled(e) end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(table e)
+        if e.sourceId ~= _GameConst.FinalBossSourceId or not isvalid(e.map) then return end
+        local diff = 0
+        ---@type MapAmbience
+        local amb = e.map:GetComponent("script.MapAmbience")
+        if amb ~= nil then diff = amb.Difficulty end
+        ---@type BossPattern
+        local pattern = e.monster:GetComponent("script.BossPattern")
+        local seconds = 0
+        if pattern ~= nil and pattern.EngageStart > 0 then seconds = math.floor(_UtilLogic.ElapsedSeconds - pattern.EngageStart) end
+        for _, u in ipairs(_Util:PlayersInMap(e.map)) do
+            ---@type PlayerStats
+            local st = u:GetComponent("script.PlayerStats")
+            if st ~= nil and diff < 2 and st.MaxDifficulty <= diff then
+                st.MaxDifficulty = diff + 1
+                _Util:Notify(_GameConst:DifficultyName(diff + 1) .. " 난이도가 열렸다! 웨이포인트에서 난이도를 바꿀 수 있다", u.PlayerComponent.UserId)
+            end
+            if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
+        end
+    end
+
+end

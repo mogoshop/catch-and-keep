@@ -1,0 +1,73 @@
+-- 게임 전역 상수: 맵 이름, 모델 id, 공용 리소스 RUID, 난이도 규칙. 문자열을 코드 곳곳에 직접 쓰지 않고 여기서 꺼내 쓴다.
+-- 콘텐츠 수치(아이템·스킬·몬스터·의뢰)는 data/*.csv → Data/Gen*.mlua 에 있다.
+@Logic
+script GameConst extends Logic
+
+    -- 맵 (보통 난이도 이름. 악몽·지옥은 MapFor가 접미사를 붙인다)
+    property string MapTown = "town"
+    property string MapDepth = "depth"
+    property Vector2 TownArrival = Vector2(0, -1.2)
+    property string FinalBossSourceId = "grave_queen"   -- 처치 시 다음 난이도 개방 (현재 영역 1까지)
+
+    -- 런타임 스폰 모델 id
+    property string ModelShadowUnit = "shadowunit"
+    property string ModelSoulOrb = "soulorb"
+    property string ModelLootDrop = "lootdrop"
+    property string ModelCorpse = "playercorpse"
+    property string ModelWarpGate = "warpgate"
+    property string ModelDepthGate = "depthgate"
+
+    -- 전리품 아이콘
+    property string IconGold = "94b7d89e2f514e269e04250dd4b7d989"
+    property string IconHpPotion = "234aca1a4ce946119b68e3717991e775"
+    property string IconMpPotion = "7e9b39b73f4945b1a8d77db6c99a6946"
+    property string IconItem = "b72a08a78ebd4a3ea633e4d7b18f67e8"
+    property string IconRune = "68219a8c8c1c4a43b2311c88d4a76204"
+
+    -- 효과음
+    property string SfxHit = "4b2b7c555a8c47ec8c80b626067dba84"
+    property string SfxDeath = "5c83e3feda2642d9a795d4f596fd065e"
+    property string SfxTeleport = "efdcebfd3e604aa6a15fe2214ee203a0"
+    property string SfxLevelUp = "401ca227c0c844569422a53bd21ab647"
+    property string SfxWind = "960d62d9bf614fac842b243a95748988"
+    property string SfxCrow = "5b585718c91c4253ac860d1c76c19ab2"
+
+    method string MapFor(string baseMap, integer difficulty)
+        -- 난이도별 맵 이름 = 보통 맵 + difficulty.csv mapSuffix (_nm / _hell)
+        return baseMap .. _GameData:GetDifficulty(difficulty).suffix
+    end
+
+    method string MakeDepthKey(integer floor, integer difficulty, string nonce)
+        -- 심도 인스턴스 룸 키 "depth:층:난이도:고유값"
+        return "depth:" .. tostring(floor) .. ":" .. tostring(difficulty) .. ":" .. nonce
+    end
+
+    method table ParseDepthKey(string key)
+        -- { floor, difficulty, nonce }. 심도 룸 키가 아니면 floor 0 (메이커는 다중 반환 선언을 등록하지 않는다)
+        local parts = {}
+        for p in string.gmatch(key, "[^:]+") do table.insert(parts, p) end
+        local f = tonumber(parts[2] or "")
+        local d = tonumber(parts[3] or "")
+        if parts[1] ~= "depth" or #parts < 4 or f == nil or d == nil then return { floor = 0, difficulty = 0, nonce = "" } end
+        return { floor = math.floor(f), difficulty = math.floor(d), nonce = table.concat(parts, ":", 4) }
+    end
+
+    method boolean IsTown(Entity map)
+        return isvalid(map) and string.sub(map.Name, 1, string.len(self.MapTown)) == self.MapTown
+    end
+
+    method string DifficultyName(integer difficulty)
+        return _GameData:GetDifficulty(difficulty).name
+    end
+
+    method integer ResistPenalty(integer difficulty)
+        -- 저항 페널티 (difficulty.csv, 03장 5절: 보통 0 / 악몽 30 / 지옥 60 — D2 원작은 40 / 100)
+        return math.floor(_GameData:GetDifficulty(difficulty).resistPenalty)
+    end
+
+    method number DeathExpLossPct(integer difficulty)
+        -- 사망 시 경험치 손실 % (difficulty.csv, D2: 보통 0 / 악몽 5 / 지옥 10)
+        return _GameData:GetDifficulty(difficulty).deathExpLossPct
+    end
+
+end

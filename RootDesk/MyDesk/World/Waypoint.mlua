@@ -1,5 +1,4 @@
--- 웨이포인트 오브젝트. 플레이어가 밟으면 그 플레이어의 PlayerTravel에 활성화를 알린다.
--- 이동 창은 클라이언트(GameHUD)가 근처에 서 있을 때 연다.
+-- 웨이포인트 오브젝트. 밟은 플레이어의 PlayerTravel에 활성화를 알린다. 이동 창은 WaypointWindow가 근처에서 연다.
 @Component
 script Waypoint extends Component
 
@@ -19,20 +18,10 @@ script Waypoint extends Component
 
     @ExecSpace("ServerOnly")
     method void Check()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return end
-        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
-        if users == nil then return end
-        local p = self.Entity.TransformComponent.WorldPosition
-        for _, u in ipairs(users) do
-            if isvalid(u) then
-                local q = u.TransformComponent.WorldPosition
-                if (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
-                    ---@type PlayerTravel
-                    local travel = u:GetComponent("script.PlayerTravel")
-                    if travel ~= nil then travel:Activate(self.WaypointId) end
-                end
-            end
+        for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
+            ---@type PlayerTravel
+            local travel = u:GetComponent("script.PlayerTravel")
+            if travel ~= nil then travel:Activate(self.WaypointId) end
         end
     end
 

@@ -26,15 +26,15 @@ script PlayerSocial extends Component
         local other = target:GetComponent("script.PlayerSocial")
         if other == nil then return end
         if (kind == "duel" or kind == "trade") and target.CurrentMap ~= self.Entity.CurrentMap then
-            self:Notify("같은 지역에 있어야 한다", pc.UserId)
+            _Util:Notify("같은 지역에 있어야 한다", pc.UserId)
             return
         end
-        if kind == "duel" and self:InTown() then
-            self:Notify("마을에서는 결투할 수 없다", pc.UserId)
+        if kind == "duel" and _GameConst:IsTown(self.Entity.CurrentMap) then
+            _Util:Notify("마을에서는 결투할 수 없다", pc.UserId)
             return
         end
         if other.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < other.PendingUntil then
-            self:Notify("상대가 다른 요청을 처리 중이다", pc.UserId)
+            _Util:Notify("상대가 다른 요청을 처리 중이다", pc.UserId)
             return
         end
         other.PendingKind = kind
@@ -42,7 +42,7 @@ script PlayerSocial extends Component
         other.PendingFromName = pc.Nickname
         other.PendingUntil = _UtilLogic.ElapsedSeconds + 20
         local names = { party = "파티 초대", duel = "결투 신청", trade = "거래 요청" }
-        self:Notify((names[kind] or kind) .. "를 보냈다: " .. target.PlayerComponent.Nickname, pc.UserId)
+        _Util:Notify((names[kind] or kind) .. "를 보냈다: " .. target.PlayerComponent.Nickname, pc.UserId)
     end
 
     @ExecSpace("Server")
@@ -59,7 +59,7 @@ script PlayerSocial extends Component
         local from = _UserService:GetUserEntityByUserId(fromId)
         if not isvalid(from) then return end
         if not accept then
-            self:Notify(pc.Nickname .. "님이 거절했다", fromId)
+            _Util:Notify(pc.Nickname .. "님이 거절했다", fromId)
             return
         end
         if kind == "party" then
@@ -69,7 +69,7 @@ script PlayerSocial extends Component
             local a = from:GetComponent("script.PlayerDuel")
             ---@type PlayerDuel
             local b = self.Entity:GetComponent("script.PlayerDuel")
-            if a ~= nil and b ~= nil and from.CurrentMap == self.Entity.CurrentMap and not self:InTown() then
+            if a ~= nil and b ~= nil and from.CurrentMap == self.Entity.CurrentMap and not _GameConst:IsTown(self.Entity.CurrentMap) then
                 a:Start(pc.UserId)
                 b:Start(fromId)
             end
@@ -91,14 +91,5 @@ script PlayerSocial extends Component
         _PartySystem:Leave(senderUserId)
     end
 
-    method boolean InTown()
-        local map = self.Entity.CurrentMap
-        return isvalid(map) and string.sub(map.Name, 1, 4) == "town"
-    end
-
-    @ExecSpace("Client")
-    method void Notify(string text)
-        _ScreenMessageLogic:PrivateMsg(text)
-    end
 
 end

@@ -1,0 +1,30 @@
+-- 의뢰 진행 중계: 게임 이벤트를 해당 플레이어의 PlayerQuest로 넘긴다 (발행자는 의뢰를 모른다).
+--   MonsterKilled → OnKill / ShadowExtracted → OnExtract / QuestMarkerReached → OnReach
+@Logic
+script QuestSystem extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        _GameEvents:Subscribe("MonsterKilled", "QuestSystem", function(e)
+            local q = self:QuestOf(e.player)
+            if q ~= nil then q:OnKill(e.sourceId) end
+        end)
+        _GameEvents:Subscribe("ShadowExtracted", "QuestSystem", function(e)
+            local q = self:QuestOf(e.player)
+            if q ~= nil then q:OnExtract() end
+        end)
+        _GameEvents:Subscribe("QuestMarkerReached", "QuestSystem", function(e)
+            local q = self:QuestOf(e.player)
+            if q ~= nil then q:OnReach(e.markerId) end
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method PlayerQuest QuestOf(Entity player)
+        if player == nil or not isvalid(player) then return nil end
+        ---@type PlayerQuest
+        local q = player:GetComponent("script.PlayerQuest")
+        return q
+    end
+
+end

@@ -1,4 +1,5 @@
--- 맵 사이 포털. 플레이어가 가까이(0.6) 오면 지정한 맵·위치로 보낸다. 서버 0.3초 간격 검사.
+-- 맵 사이 포털. 플레이어가 반경 안에 오면 지정한 맵·위치로 보낸다 (0.3초 검사, 사람마다 2초 재사용 대기).
+-- 귀환 포털(OwnerUserId 지정)은 주인이 지나가면 닫힌다. 파티원도 함께 쓸 수 있다.
 @Component
 script WarpGate extends Component
 
@@ -7,7 +8,7 @@ script WarpGate extends Component
     property string Label = ""
     property number Radius = 0.6
     property number Cooldown = 2
-    property string OwnerUserId = ""      -- 귀환 포털: 주인이 들어가면 사라진다 (다른 사람·파티원도 이용 가능)
+    property string OwnerUserId = ""
 
     property integer TimerId = 0
     property table LastWarp = {}
@@ -25,33 +26,21 @@ script WarpGate extends Component
 
     @ExecSpace("ServerOnly")
     method void Check()
-        local map = self.Entity.CurrentMap
-        if not isvalid(map) then return end
-        local users = _UserService:GetUsersByMapComponent(map.MapComponent)
-        if users == nil then return end
-        local p = self.Entity.TransformComponent.WorldPosition
         local now = _UtilLogic.ElapsedSeconds
-        for _, u in ipairs(users) do
-            if isvalid(u) and not u.PlayerComponent:IsDead() then
-                local q = u.TransformComponent.WorldPosition
-                local id = u.PlayerComponent.UserId
-                local last = self.LastWarp[id] or -100
-                if now - last > self.Cooldown and (Vector2(q.x, q.y) - Vector2(p.x, p.y)):Magnitude() <= self.Radius then
-                    self.LastWarp[id] = now
-                    self:Warp(u)
-                end
+        for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
+            local id = u.PlayerComponent.UserId
+            if now - (self.LastWarp[id] or -100) > self.Cooldown then
+                self.LastWarp[id] = now
+                self:Warp(u)
             end
         end
     end
 
     @ExecSpace("ServerOnly")
     method void Warp(Entity player)
-        -- 소환된 그림자는 먼저 회수한다 (맵이 바뀌면 따라올 수 없다)
-        ---@type ShadowOwner
-        local owner = player:GetComponent("script.ShadowOwner")
-        if owner ~= nil then owner:RecallAll() end
-        log("[WarpGate] " .. player.Name .. " → " .. self.TargetMap)
-        _TeleportService:TeleportToMapPosition(player, Vector3(self.TargetPos.x, self.TargetPos.y, 0), self.TargetMap)
+        ---@type PlayerTravel
+        local travel = player:GetComponent("script.PlayerTravel")
+        if travel ~= nil then travel:Go(self.TargetMap, self.TargetPos) end
         if self.OwnerUserId ~= "" and player.PlayerComponent.UserId == self.OwnerUserId then
             _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, 0.5)
         end

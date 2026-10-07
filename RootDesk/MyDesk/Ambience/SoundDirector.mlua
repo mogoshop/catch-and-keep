@@ -1,14 +1,8 @@
 -- 맵별 배경음·환경음과 공용 효과음 RUID (클라이언트). 맵이 바뀌면 MapAmbience의 Bgm으로 바꾸고 이동 효과음을 낸다.
--- 바람은 반복 재생, 까마귀는 15~35초마다 한 번. 효과음 RUID는 다른 스크립트가 _SoundDirector.SfxXxx로 쓴다.
+-- 바람은 반복 재생, 까마귀는 15~35초마다 한 번. 맵의 Bgm은 data/sounds.csv 키(town/field/…) 또는 RUID. 효과음 RUID는 _GameConst.
 @Logic
 script SoundDirector extends Logic
 
-    property string SfxHit = "4b2b7c555a8c47ec8c80b626067dba84"
-    property string SfxDeath = "5c83e3feda2642d9a795d4f596fd065e"
-    property string SfxTeleport = "efdcebfd3e604aa6a15fe2214ee203a0"
-    property string SfxLevelUp = "401ca227c0c844569422a53bd21ab647"
-    property string SfxWind = "960d62d9bf614fac842b243a95748988"
-    property string SfxCrow = "5b585718c91c4253ac860d1c76c19ab2"
     property number BgmVolume = 0.55
 
     property Entity CurrentMap = nil
@@ -37,7 +31,7 @@ script SoundDirector extends Logic
         if map ~= self.CurrentMap then self:EnterMap(map) end
         if self.CrowsOn and _UtilLogic.ElapsedSeconds >= self.NextCrow then
             self.NextCrow = _UtilLogic.ElapsedSeconds + 15 + _UtilLogic:RandomDouble() * 20
-            _SoundService:PlaySound(self.SfxCrow, 0.35)
+            _SoundService:PlaySound(_GameConst.SfxCrow, 0.35)
         end
     end
 
@@ -45,7 +39,7 @@ script SoundDirector extends Logic
     method void EnterMap(Entity map)
         local first = self.CurrentMap == nil
         self.CurrentMap = map
-        if not first then _SoundService:PlaySound(self.SfxTeleport, 0.5) end
+        if not first then _SoundService:PlaySound(_GameConst.SfxTeleport, 0.5) end
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         local bgm = ""
@@ -53,6 +47,8 @@ script SoundDirector extends Logic
         self.CrowsOn = false
         if amb ~= nil then
             bgm = amb.Bgm
+            local keyed = _GameData:GetSound(bgm)
+            if keyed ~= "" then bgm = keyed end
             wind = amb.Wind
             self.CrowsOn = amb.Crows
         end
@@ -62,7 +58,7 @@ script SoundDirector extends Logic
         end
         if wind ~= self.WindOn then
             self.WindOn = wind
-            if wind then _SoundService:PlayLoopSound(self.SfxWind, 0.25) else _SoundService:StopSound(self.SfxWind) end
+            if wind then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25) else _SoundService:StopSound(_GameConst.SfxWind) end
         end
         self.NextCrow = _UtilLogic.ElapsedSeconds + 5
     end
