@@ -57,7 +57,12 @@ script ShadowCommander extends Component
     end
 
     method integer GetDeployLimit()
-        return _ShadowConfig:GetDeployLimit(self:GetDeployBonus(), self:GetCapBonus())
+        -- Lv15(shadowFullLevel) 전에는 맛보기로 1기만 (잡으면 내편: Lv5부터 첫 그림자)
+        local limit = _ShadowConfig:GetDeployLimit(self:GetDeployBonus(), self:GetCapBonus())
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil and stats.Level < _GameData.shadowFullLevel then limit = math.min(limit, math.floor(_GameData.shadowEarlyDeployLimit)) end
+        return limit
     end
 
     @ExecSpace("ServerOnly")

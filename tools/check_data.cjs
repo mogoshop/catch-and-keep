@@ -102,6 +102,7 @@ T.skills.forEach((r, i) => {
   if (!["command", "soul", "curse"].includes(r.tree)) err("skills", i, `tree '${r.tree}' 알 수 없음`);
   if (r.prereq !== "" && !skillIds.has(r.prereq)) err("skills", i, `prereq '${r.prereq}' — skills.csv에 없음`);
   if (num(r.maxLv) < 1) err("skills", i, "maxLv < 1");
+  if (r.nextLv !== "" && num(r.nextLv) <= num(r.row)) err("skills", i, `nextLv ${r.nextLv} — 요구 레벨(row ${r.row})보다 커야 함`);
 });
 for (const tree of ["command", "soul", "curse"]) {
   const n = T.skills.filter((r) => r.tree === tree).length;
