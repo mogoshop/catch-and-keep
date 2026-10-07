@@ -44,7 +44,10 @@ script QuestWindow extends Logic
             if q ~= nil then
                 local mark = ""
                 if i == self.Selected then mark = "▶" end
-                text = mark .. tostring(i) .. ". " .. q.title .. "   " .. self:StatusText(i, quest, q)
+                -- D2: 의뢰인과 말하기 전에는 제목도 보이지 않는다
+                local title = q.title
+                if i > quest.Index or (i == quest.Index and quest.State == 0) then title = "???" end
+                text = mark .. tostring(i) .. ". " .. title .. "   " .. self:StatusText(i, quest, q)
             end
             _UIKit:SetText(self.Win .. "/Q" .. tostring(i), text)
         end
@@ -54,7 +57,7 @@ script QuestWindow extends Logic
     method string StatusText(integer i, PlayerQuest quest, table q)
         if i < quest.Index then return _UIKit:Colored("#7CFF7A", "완료") end
         if i > quest.Index then return _UIKit:Colored("#777777", "잠김") end
-        if quest.State == 0 then return _UIKit:Colored("#FFE15A", "새 의뢰") end
+        if quest.State == 0 then return _UIKit:Colored("#FFE15A", "사제 오렌과 대화") end
         if quest.State == 1 then return "진행 " .. tostring(quest.Progress) .. "/" .. tostring(q.count) end
         return _UIKit:Colored("#7CFF7A", "보고 대기")
     end
@@ -63,6 +66,7 @@ script QuestWindow extends Logic
         local q = _QuestData:Get(self.Selected)
         if q == nil then return "" end
         if self.Selected > quest.Index then return "앞선 의뢰를 마치면 열린다." end
+        if self.Selected == quest.Index and quest.State == 0 then return "잿불 야영지의 사제 오렌에게 말을 걸면 의뢰 내용을 알 수 있다." end
         local text = q.desc .. "\n보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
         local extra = _QuestData:RewardText(q.reward)
         if extra ~= "" then text = text .. ", " .. extra end

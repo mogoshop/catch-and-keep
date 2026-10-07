@@ -12,6 +12,8 @@ script HudMap extends Logic
     property number Scale = 1
     property Vector2 QuestPos = Vector2(0, 0)
     property boolean HasQuestNpc = false
+    property table Gates = {}               -- 이 맵의 포털 { pos, label }
+    property number GateLabelRange = 9
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -39,6 +41,7 @@ script HudMap extends Logic
         _UIKit:SetPos("MiniMap/Area/Me", self:ToMini(me))
         self:RenderParty(player)
         self:RenderNpcMark(player)
+        self:RenderGates(player)
     end
 
     -- ───────── 맵이 바뀔 때 ─────────
@@ -76,6 +79,7 @@ script HudMap extends Logic
     method void BuildMiniMap(any info)
         -- 미니맵 영역(272×180)에 맵 전체가 들어가게 축소. 표시물 점 색: 포털 하늘·웨이포인트 청록·의뢰 노랑·NPC 흰·입구 보라·제단 빨강·보스 주황
         self.HasQuestNpc = false
+        self.Gates = {}
         if info == nil then
             self.Scale = 8
             for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Area/F" .. tostring(i), false) end
@@ -95,6 +99,7 @@ script HudMap extends Logic
                 _UIKit:SetPos(path, self:ToMini(Vector2(f.x, f.y)))
                 _UIKit:SetColor(path, colors[f.kind] or Color(1, 1, 1, 1))
             end
+            if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label }) end
             if f.kind == "quest" then
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
@@ -158,6 +163,39 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, 3 do _UIKit:SetEnabled("MiniMap/Area/P" .. tostring(i), false) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderGates(Entity player)
+        -- D2처럼 출구 위에 갈 곳 이름: 가까운 포털(9칸 안)만, 최대 4개. 화면 밖이면 숨김
+        local root = _UIKit:Get("/ui/GameHUD")
+        if not isvalid(root) then return end
+        local me = _Util:Pos2(player)
+        local n = 0
+        local nearest = nil
+        local nearestDist = 3.5
+        for _, g in ipairs(self.Gates) do
+            local d = (g.pos - me):Magnitude()
+            if d < nearestDist then
+                nearestDist = d
+                nearest = g
+            end
+            if n < 4 and d <= self.GateLabelRange then
+                n = n + 1
+                local path = "Gate" .. tostring(n)
+                local screen = _UILogic:WorldToScreenPosition(g.pos + Vector2(0, 1.3))
+                local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
+                -- 아래 HUD·위 대상 정보에 가리지 않게 화면 안쪽으로
+                ui = Vector2(math.max(-760, math.min(760, ui.x)), math.max(-230, math.min(380, ui.y)))
+                _UIKit:SetEnabled(path, true)
+                _UIKit:SetText(path, "▼ " .. g.label)
+                _UIKit:SetPos(path, ui)
+            end
+        end
+        for i = n + 1, 4 do _UIKit:SetEnabled("Gate" .. tostring(i), false) end
+        -- 출구 바로 앞: 어디로 가는지 분명히
+        _UIKit:SetEnabled("GatePrompt", nearest ~= nil)
+        if nearest ~= nil then _UIKit:SetText("GatePrompt/Text", "출구: " .. nearest.label .. " — 들어서면 이동") end
     end
 
     @ExecSpace("ClientOnly")

@@ -1,6 +1,7 @@
--- NPC 대화 창: 대화 거리 안의 가장 가까운 NPC 창을 자동으로 연다 (멀어지면 닫힘).
+-- NPC 대화 창 (화면 아래): 대화 거리 안의 가장 가까운 NPC와 대화한다. 멀어지면 닫히고, 닫기를 누르면 떠날 때까지 다시 열리지 않는다.
 --   shop  = 물약·두루마리·도박 5버튼 → PlayerShop
---   quest = 현재 의뢰 수락·보고 → PlayerQuest
+--   quest = D2처럼 말을 건 뒤 의뢰를 받는다: 소개 대사(다음 ▶) → 의뢰 내용·보상 → 수락/거절 → PlayerQuest.
+--           완료하면 마무리 대사 → 보고(보상). 대사는 quests.csv intro·outro ("/"로 줄 나눔)
 @Logic
 script NpcWindow extends Logic
 
@@ -8,6 +9,10 @@ script NpcWindow extends Logic
     property string Kind = ""
     property string RenderKey = ""
     property integer TimerId = 0
+    property integer Page = 1
+    property string PageKey = ""            -- 의뢰 번호·상태가 바뀌면 대사를 처음부터
+    property boolean Dismissed = false      -- 닫기를 누른 뒤 NPC에게서 멀어질 때까지 열지 않음
+    property integer PageCount = 1
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -16,6 +21,7 @@ script NpcWindow extends Logic
             local index = i
             _UIKit:Connect(self.Win .. "/Btn" .. tostring(i), function() self:Action(index) end)
         end
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self:Dismiss() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
     end
 
@@ -48,8 +54,15 @@ script NpcWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or not isvalid(player.CurrentMap) or st == nil then return end
         local npc = self:FindNpc(player)
-        _UIKit:SetEnabled(self.Win, npc ~= nil)
         if npc == nil then
+            -- 떠나면 다음에 다시 말을 걸 수 있다
+            self.Dismissed = false
+            self.Page = 1
+            self.PageKey = ""
+        end
+        local open = npc ~= nil and not self.Dismissed
+        _UIKit:SetEnabled(self.Win, open)
+        if not open then
             self.Kind = ""
             self.RenderKey = ""
             return
@@ -58,6 +71,24 @@ script NpcWindow extends Logic
         _UIKit:SetText(self.Win .. "/Title", npc.NpcName)
         if npc.Kind == "shop" then self:RenderShop(st) else self:RenderQuest() end
     end
+
+    @ExecSpace("ClientOnly")
+    method void Dismiss()
+        self.Dismissed = true
+        _UIKit:SetEnabled(self.Win, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetButtons(table labels)
+        -- labels[i] = 글자 ("" = 숨김)
+        for i = 1, 5 do
+            local label = labels[i] or ""
+            _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), label ~= "")
+            if label ~= "" then _UIKit:SetText(self.Win .. "/Btn" .. tostring(i), label) end
+        end
+    end
+
+    -- ───────── 상점 ─────────
 
     @ExecSpace("ClientOnly")
     method void RenderShop(PlayerStats st)
@@ -69,12 +100,26 @@ script NpcWindow extends Logic
         self.RenderKey = key
         local keys = { "hp", "mp", "rv", "tp", "gamble" }
         local labels = { "생명", "마나", "회복", "귀환", "도박" }
-        for i = 1, 5 do
-            _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), true)
-            _UIKit:SetText(self.Win .. "/Btn" .. tostring(i), labels[i] .. "\n" .. tostring(shop:GetPrice(keys[i], st.Level)))
-        end
-        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 필요한 걸 골라라.\n\n생명·마나 물약 %d · 회복 물약 %d · 귀환 두루마리 %d\n도박: 무작위 마법 이상 장비 %d골드\n(판매는 소지품 창에서)\n\n가진 골드 %d",
-            shop:GetPrice("hp", st.Level), shop:GetPrice("rv", st.Level), shop:GetPrice("tp", st.Level), shop:GetPrice("gamble", st.Level), st.Gold))
+        local buttons = {}
+        for i = 1, 5 do buttons[i] = labels[i] .. "  " .. tostring(shop:GetPrice(keys[i], st.Level)) end
+        self:SetButtons(buttons)
+        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 필요한 걸 골라라.  (가진 골드 %d)\n생명·마나 물약 %d · 회복 물약 %d · 귀환 두루마리 %d · 도박(무작위 마법 이상 장비) %d골드\n판매는 소지품 창에서 한다.",
+            st.Gold, shop:GetPrice("hp", st.Level), shop:GetPrice("rv", st.Level), shop:GetPrice("tp", st.Level), shop:GetPrice("gamble", st.Level)))
+    end
+
+    -- ───────── 의뢰 ─────────
+
+    method table Lines(string text)
+        local out = {}
+        for line in string.gmatch(text, "[^/]+") do table.insert(out, line) end
+        return out
+    end
+
+    method string RewardText(table q)
+        local reward = "보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
+        local extra = _QuestData:RewardText(q.reward)
+        if extra ~= "" then reward = reward .. ", " .. extra end
+        return reward
     end
 
     @ExecSpace("ClientOnly")
@@ -82,31 +127,42 @@ script NpcWindow extends Logic
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
         if quest == nil then return end
-        local key = "quest#" .. tostring(quest.Index) .. "#" .. tostring(quest.State) .. "#" .. tostring(quest.Progress)
+        local pageKey = tostring(quest.Index) .. "#" .. tostring(quest.State)
+        if pageKey ~= self.PageKey then
+            self.PageKey = pageKey
+            self.Page = 1
+        end
+        local key = pageKey .. "#" .. tostring(quest.Progress) .. "#" .. tostring(self.Page)
         if key == self.RenderKey then return end
         self.RenderKey = key
-        for i = 2, 5 do _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), false) end
         local q = _QuestData:Get(quest.Index)
+        local body = ""
         if q == nil then
-            _UIKit:SetText(self.Win .. "/Paper/Body", "여왕의 저주가 걷혔다... 하지만 혼각은 더 깊은 곳에서 울리고 있다.")
-            _UIKit:SetEnabled(self.Win .. "/Btn1", false)
-            return
+            body = "여왕의 저주가 걷혔다... 하지만 혼각은 더 깊은 곳에서 울리고 있다."
+            self.PageCount = 1
+            self:SetButtons({ "", "", "", "", "닫기" })
+        elseif quest.State == 1 then
+            body = "「" .. q.title .. "」  진행 " .. tostring(quest.Progress) .. " / " .. tostring(q.count) .. "\n" .. q.desc .. "\n어서 다녀오게."
+            self.PageCount = 1
+            self:SetButtons({ "", "", "", "", "닫기" })
+        else
+            -- 0 = 새 의뢰(소개 대사 → 수락), 2 = 완료(마무리 대사 → 보고)
+            local lines = self:Lines(quest.State == 0 and q.intro or q.outro)
+            if #lines == 0 then lines = { quest.State == 0 and "할 일이 있다." or "해냈군." } end
+            self.PageCount = #lines
+            local page = math.min(self.Page, #lines)
+            body = lines[page]
+            if page < #lines then
+                self:SetButtons({ "", "", "", "다음 ▶", "닫기" })
+            elseif quest.State == 0 then
+                body = body .. "\n\n의뢰 「" .. q.title .. "」 — " .. q.desc .. "\n" .. self:RewardText(q)
+                self:SetButtons({ "", "", "", "수락", "거절" })
+            else
+                body = body .. "\n\n" .. self:RewardText(q)
+                self:SetButtons({ "", "", "", "보상 받기", "닫기" })
+            end
         end
-        local reward = "보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
-        local extra = _QuestData:RewardText(q.reward)
-        if extra ~= "" then reward = reward .. ", " .. extra end
-        local stateText = "수락하겠나?"
-        local btn = "수락"
-        if quest.State == 1 then
-            stateText = "진행 " .. tostring(quest.Progress) .. " / " .. tostring(q.count)
-            btn = ""
-        elseif quest.State == 2 then
-            stateText = "해냈군! 보상을 받게."
-            btn = "보고"
-        end
-        _UIKit:SetText(self.Win .. "/Paper/Body", "「" .. q.title .. "」\n" .. q.desc .. "\n" .. reward .. "\n\n" .. stateText)
-        _UIKit:SetEnabled(self.Win .. "/Btn1", btn ~= "")
-        _UIKit:SetText(self.Win .. "/Btn1", btn)
+        _UIKit:SetText(self.Win .. "/Paper/Body", body)
     end
 
     @ExecSpace("ClientOnly")
@@ -116,7 +172,19 @@ script NpcWindow extends Logic
             local shop = _UIKit:Comp("script.PlayerShop")
             local keys = { "hp", "mp", "rv", "tp", "gamble" }
             if shop ~= nil and keys[index] ~= nil then shop:RequestBuy(keys[index]) end
-        elseif self.Kind == "quest" and index == 1 then
+            self.RenderKey = ""
+            return
+        end
+        if self.Kind ~= "quest" then return end
+        if index == 5 then
+            self:Dismiss()
+            return
+        end
+        if index ~= 4 then return end
+        -- 다음 대사, 마지막이면 수락 / 보고
+        if self.Page < self.PageCount then
+            self.Page = self.Page + 1
+        else
             ---@type PlayerQuest
             local quest = _UIKit:Comp("script.PlayerQuest")
             if quest == nil then return end

@@ -107,15 +107,12 @@ script SkillBook extends Component
 
     @ExecSpace("ServerOnly")
     method void AutoSlot(string id)
-        -- 처음 배운 액티브·저주는 빈 칸(우클릭 → A S D F 순)에 자동으로 넣는다
+        -- 처음 배운 액티브·저주는 빈 칸(A S D F 순)에 자동으로 넣는다. 우클릭은 플레이어가 직접 지정할 때만
+        -- (우클릭에 자동으로 들어가면 클릭 조작 중 마법이 저절로 나간다)
         if not self:IsSlottable(id) then return end
         if self.RightSkill == id then return end
         local list = self:SlotList()
         for i = 1, 4 do if list[i] == id then return end end
-        if self.RightSkill == "" then
-            self.RightSkill = id
-            return
-        end
         for i = 1, 4 do
             if list[i] == "" then
                 self:SetSlot(i, id)
@@ -260,7 +257,7 @@ script SkillBook extends Component
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
-        return { levels = levels, slots = self.Slots, right = self.RightSkill }
+        return { levels = levels, slots = self.Slots, right = self.RightSkill, sv = 2 }
     end
 
     @ExecSpace("ServerOnly")
@@ -273,6 +270,8 @@ script SkillBook extends Component
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end
+        -- 옛 저장(sv 없음): 예전 기본값이 우클릭에 넣어 둔 스킬을 비운다 (평타 중 골편 투척이 저절로 나가던 문제)
+        if (d.sv or 1) < 2 then self.RightSkill = "" end
         self:SanitizeSlots()
         self:RefreshDigest()
     end

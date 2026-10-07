@@ -127,7 +127,7 @@ function buildGameHud() {
   b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 170], ...outline });
 
   // ── NPC 머리 위 의뢰 표시 (화면 좌표로 따라다닌다) ──
-  b.sprite("NpcMark", { anchor: "middle-center", pos: [0, 0], rect_size: [60, 60], image_ruid: K.q_avail, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
+  b.sprite("NpcMark", { anchor: "middle-center", pos: [0, 0], rect_size: [84, 84], image_ruid: K.q_avail, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
   k.aspect("NpcMark");
 
   // ── 안내 (첫 진입·포인트) ──
@@ -265,11 +265,35 @@ function buildGameHud() {
     if (i === 0) k.ok(`SkillWin/${n}`, t, opts); else k.btn(`SkillWin/${n}`, t, opts);
   });
 
-  // ── NPC 창 (가까이 가면 열림) ──
-  k.frame("NpcWin", "middle-left", [30, 100], [520, 420], "");
-  k.inner("NpcWin/Paper", "top-center", [0, -76], [470, 200], "win_content");
-  b.text("NpcWin/Paper/Body", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [16, -12], rect_size: [438, 176] });
-  [0, 1, 2, 3, 4].forEach((i) => k.btn(`NpcWin/Btn${i + 1}`, `Btn${i + 1}`, { anchor: "bottom-left", pos: [22 + i * 96, 26], rect_size: [90, 76], font_size: 16 }));
+  // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
+  k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
+  b.patch("NpcWin/Title", { anchor: "top-left", pos: [70, -22], rect_size: [600, 44], pivot: [0, 1] });
+  b.patchComponent("NpcWin/Title", "MOD.Core.TextGUIRendererComponent", { HorizontalAlignment: 1 });
+  k.inner("NpcWin/Paper", "top-center", [0, -72], [1000, 150], "win_content");
+  b.text("NpcWin/Paper/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -14], rect_size: [960, 124] });
+  [0, 1, 2, 3, 4].forEach((i) => k.btn(`NpcWin/Btn${i + 1}`, `Btn${i + 1}`, { anchor: "bottom-right", pos: [-50 - (4 - i) * 196, 24], rect_size: [184, 72], font_size: 20 }));
+
+  // ── 포털 이름 (D2처럼 출구 위에 갈 곳 이름, HudMap이 화면 좌표로 옮긴다) ──
+  for (let i = 1; i <= 4; i++) {
+    b.text(`Gate${i}`, "", { size: 22, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 34], ...outline, enable: false });
+  }
+
+  // 출구 가까이 가면 화면 가운데 아래 안내 (어디로 가는지 + 들어서면 이동)
+  b.panel("GatePrompt", { anchor: "bottom-center", pos: [0, 330], rect_size: [760, 60], ...part("hud_box"), sprite_type: 1, enable: false });
+  b.text("GatePrompt/Text", "", { size: 24, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [740, 56], ...outline });
+
+  // ── 소환수 배지 (해골·마법사·되살림·그림자 + 수, 있을 때만) — PC는 생명 오브 위, 모바일은 조이스틱 위 ──
+  const minions = [["Skel", SKILL_ICON.raise_skeleton], ["Mage", SKILL_ICON.raise_mage], ["Revive", SKILL_ICON.revive], ["Shadow", SKILL_ICON.shadow_summon]];
+  for (const [root, y, platform] of [["Minions", 236, "pc"], ["MMinions", 430, "mobile"]]) {
+    b.empty(root, { anchor: "bottom-left", pos: [20, y], rect_size: [4 * 76, 72] });
+    minions.forEach(([n, ruid], i) => {
+      const path = `${root}/${n}`;
+      b.sprite(path, { anchor: "middle-left", pos: [i * 76, 0], rect_size: [68, 68], image_ruid: ruid, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
+      k.rim(path, "slot_frame", -2);
+      b.text(`${path}/Count`, "", { size: 22, bold: true, anchor: "bottom-right", pos: [-2, 0], rect_size: [60, 28], alignment: 8, ...outline });
+    });
+    if (platform === "pc") k.pc(root); else k.mobile(root);
+  }
 
   // ── 퀘스트 창 (Q) ──
   k.frame("QuestWin", "middle-center", [0, 60], [800, 620], "퀘스트 — 잿빛 변경");
@@ -354,7 +378,8 @@ function patchShadowHud() {
   // 안내 한 줄은 메뉴 창(단축키)으로 옮겼다
   s.patch("Hint", { enable: false });
   // 상태줄: PC 시스템 버튼(왼쪽 위 260×170)을 피해 오른쪽으로
-  s.patch("Status", { anchor: "top-left", pos: [20, -190], rect_size: [760, 72] });
+  // 상태줄은 숨긴다: 소환 수는 GameHUD 소환수 배지, 보관함·조작 전환은 메뉴 창에
+  s.patch("Status", { anchor: "top-left", pos: [20, -190], rect_size: [760, 72], enable: false });
   s.patch("Status/Text", { rect_size: [400, 64] });
   skin("Status", "hud_box");
   s.patchComponent("Status/BtnStorage", "MOD.Core.TextGUIRendererComponent", { Text: "보관함 (H)" });

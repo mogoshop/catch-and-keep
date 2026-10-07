@@ -259,7 +259,7 @@ function genSkills() {
 function genQuests() {
   const rows = load("quests");
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)} })`)].join("\n");
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
