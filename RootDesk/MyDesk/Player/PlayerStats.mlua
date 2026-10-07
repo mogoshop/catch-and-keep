@@ -66,7 +66,11 @@ script PlayerStats extends Component
     @Sync
     property number BonusLeech = 0           -- 생명력 흡수 %
     @Sync
-    property number BonusMs = 0              -- 이동 속도 %
+    property number BonusMs = 0              -- 이동 속도 % (신발)
+    @Sync
+    property number BonusIas = 0             -- 공격 속도 % (장갑·무기)
+    @Sync
+    property number BonusFcr = 0             -- 시전 속도 % (반지·목걸이)
     @Sync
     property number BonusCurse = 0           -- 저주 범위 %
     @Sync
@@ -234,6 +238,8 @@ script PlayerStats extends Component
         self.BonusDeploy = math.min(2, math.floor(v("deploy")))
         self.BonusLeech = v("leech")
         self.BonusMs = v("ms")
+        self.BonusIas = v("ias")
+        self.BonusFcr = v("fcr")
         self.BonusCurse = v("curse")
         self.BonusMinionPoison = v("minionPoison")
         local all = v("allRes")
@@ -249,6 +255,16 @@ script PlayerStats extends Component
     end
 
     -- ───────── 속성 ─────────
+
+    method number GetAttackInterval(number base)
+        -- 공격 속도(장갑·무기)만큼 기본 공격 간격이 짧아진다 (상한 iasCap)
+        return base / (1 + math.min(self.BonusIas, _GameData.iasCap) / 100)
+    end
+
+    method number GetCastCooldownMult()
+        -- 시전 속도(반지·목걸이)만큼 스킬 재사용 대기가 짧아진다 (상한 fcrCap)
+        return 1 / (1 + math.min(self.BonusFcr, _GameData.fcrCap) / 100)
+    end
 
     @ExecSpace("ServerOnly")
     method void RefreshResists()

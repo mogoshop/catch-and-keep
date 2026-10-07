@@ -8,6 +8,7 @@ script PlayerAttack extends AttackComponent
     property Vector2 RangeSize = Vector2(1.6, 1.4)
     property number RangeOffsetX = 0.7
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
+    property number LastAttackAt = -99
 
     @ExecSpace("ServerOnly")
     @EventSender("Self")
@@ -19,7 +20,14 @@ script PlayerAttack extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void DoAttack()
-        -- 바라보는 방향 앞쪽에 사각 범위 공격
+        -- 바라보는 방향 앞쪽에 사각 범위 공격. 공격 속도(ias)로 줄어든 간격보다 빨리 오면 무시 (연타 방지)
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local interval = _GameData.baseAttackInterval
+        if stats ~= nil then interval = stats:GetAttackInterval(interval) end
+        local now = _UtilLogic.ElapsedSeconds
+        if now - self.LastAttackAt < interval * 0.9 then return end
+        self.LastAttackAt = now
         local transform = self.Entity.TransformComponent
         local controller = self.Entity.PlayerControllerComponent
         if not isvalid(transform) or not isvalid(controller) then return end
