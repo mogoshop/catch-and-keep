@@ -203,7 +203,7 @@ function genItems() {
     ...stats.map((r) => `        self.StatNames[${s(r.key)}] = ${s(r.name)}`),
     "        self.Bases = {}",
     "        self.BaseOrder = {}",
-    ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)}, icon = ${s(r.icon)} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
+    ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)}, icon = ${s(r.icon)}, avatar = ${s(r.avatar || "")} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
     "        self.Affixes = {}",
     ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
     "        self.UniqueList = {}",

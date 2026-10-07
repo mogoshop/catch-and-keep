@@ -120,6 +120,13 @@ for (const tree of ["command", "soul", "curse"]) {
   if (n > 12) err("skills", null, `${tree} 트리 ${n}개 — 스킬 창은 트리당 12칸`);
 }
 
+// 착용 가능한 부위의 외형 RUID는 아이콘과 같은 에셋을 사용한다.
+const AVATAR_SLOTS = new Set(["weapon", "helm", "armor", "gloves", "boots"]);
+T.item_bases.forEach((r, i) => {
+  if (AVATAR_SLOTS.has(r.slot) && !RUID.test(r.avatar || "")) err("item_bases", i, "avatar — 착용 외형 RUID 필요");
+  if (r.avatar && r.icon !== r.avatar) err("item_bases", i, "icon과 avatar가 달라 착용 그림이 일치하지 않음");
+});
+
 // ── 아이콘: 베이스·스킬마다 그림, UI 아이콘 표는 키 중복 없이 RUID·색 형식 ──
 T.item_bases.forEach((r, i) => { if (!RUID.test(r.icon || "")) err("item_bases", i, `icon '${r.icon}' — 32자리 RUID 필요`); });
 T.skills.forEach((r, i) => { if (!RUID.test(r.icon || "")) err("skills", i, `icon '${r.icon}' — 32자리 RUID 필요`); });

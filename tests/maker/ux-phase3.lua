@@ -11,7 +11,7 @@ sv.IsLoadSuccess=false
 _TimerService:SetTimerOnce(function()
  for _,e in ipairs(fixtures) do if isvalid(e) then e:Destroy() end end
  if tiles~=nil then
-  for _,c in ipairs(edited) do if c.index~=nil then tiles:SetTile(c.index,c.pos) else tiles:RemoveTile(c.pos) end end
+  for _,c in ipairs(edited) do if c.name~=nil then tiles:SetTile(c.name,c.pos) else tiles:RemoveTile(c.pos) end end
  end
  tr:Go(old.map,old.pos) sv.IsLoadSuccess=old.save log("[VRF-P3] restored player and terrain")
 end,7)
@@ -21,9 +21,9 @@ _TimerService:SetTimerOnce(function()
  tiles=map:GetFirstChildComponentByTypeName("RectTileMapComponent",true)
  if tiles==nil then log_error("[VRF-P3] FAIL missing terrain") return end
  local startCell=tiles:ToCellPosition(Vector3(me.x,me.y,0))
- local floor=tiles:GetTile(startCell).Index
+ local floor=tiles:GetTile(startCell).Name
  local edit=function(cell,index)
-  local t=tiles:GetTile(cell) table.insert(edited,{pos=cell,index=t~=nil and t.Index or nil}) tiles:SetTile(index,cell)
+  local t=tiles:GetTile(cell) table.insert(edited,{pos=cell,name=t~=nil and t.Name or nil}) tiles:SetTile(index,cell)
  end
  -- 검사용 두 레인. 검사 종료 시 원래 타일을 복원한다.
  for y=0,2,2 do for x=1,6 do edit(Vector2Int(startCell.x+x,startCell.y+y),floor) end end

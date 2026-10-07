@@ -17,6 +17,8 @@ script PlayerInventory extends Component
     property string EquipDigest = ""  -- "부위>아이템;..."
     property integer PickupTimer = 0
     property number BagWarningAt = 0
+    property boolean AppearanceReady = false
+    property integer AppearanceTries = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -26,6 +28,7 @@ script PlayerInventory extends Component
         self.Equip["weapon"] = self.StarterWeapon
         self:RefreshDigest()
         _TimerService:SetTimerOnce(function() self:ApplyEquipment() end, 0.3)
+        _TimerService:SetTimerOnce(function() self:CaptureAppearance(self.Entity.PlayerComponent.UserId) end, 0.8)
         self.PickupTimer = _TimerService:SetTimerRepeat(function() self:TryPickup() end, 0.25)
     end
 
@@ -254,6 +257,76 @@ script PlayerInventory extends Component
             for k, v in pairs(_ItemData:GetSetBonusMods(setId, count)) do t[k] = (t[k] or 0) + v end
         end
         stats:ApplyEquipmentMods(t)
+        self:ApplyAppearance()
+    end
+
+    -- 계정의 피부·얼굴·머리·귀는 보존하고, 전투 장비 외형은 모든 클라이언트에 동기화한다.
+    @ExecSpace("Client")
+    method void CaptureAppearance()
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local costume = self.Entity.CostumeManagerComponent
+        if not isvalid(costume) then return end
+        local body = costume:GetEquip(MapleAvatarItemCategory.Body)
+        if body == "" then
+            self.AppearanceTries = self.AppearanceTries + 1
+            if self.AppearanceTries < 5 then
+                _TimerService:SetTimerOnce(function() self:CaptureAppearance() end, 1)
+            else
+                log_warning("[Appearance] 아바타 로딩이 늦어 기본 외형을 유지합니다")
+            end
+            return
+        end
+        self:RequestAppearance(body, costume:GetEquip(MapleAvatarItemCategory.Hair), costume:GetEquip(MapleAvatarItemCategory.Face), costume:GetEquip(MapleAvatarItemCategory.Ear))
+    end
+
+    @ExecSpace("Server")
+    method void RequestAppearance(string body, string hair, string face, string ear)
+        if not self:IsOwnerRequest(senderUserId) or self.AppearanceReady then return end
+        for _, ruid in ipairs({ body, hair, face, ear }) do
+            if ruid ~= "" and (#ruid ~= 32 or string.match(ruid, "^%x+$") == nil) then return end
+        end
+        if body == "" then return end
+        local costume = self.Entity.CostumeManagerComponent
+        if not isvalid(costume) then return end
+        costume:SetEquip(MapleAvatarItemCategory.Body, body)
+        costume:SetEquip(MapleAvatarItemCategory.Hair, hair)
+        costume:SetEquip(MapleAvatarItemCategory.Face, face)
+        costume:SetEquip(MapleAvatarItemCategory.Ear, ear)
+        costume.UseCustomEquipOnly = true
+        self.AppearanceReady = true
+        self:ApplyAppearance()
+    end
+
+    @ExecSpace("ServerOnly")
+    method string EquippedAvatar(string slot)
+        local item = self.Equip[slot]
+        if item == nil then return "" end
+        local base = _ItemData:GetBase(_ItemData:Parse(item).base)
+        if base == nil then return "" end
+        return base.avatar or ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyAppearance()
+        if not self.AppearanceReady then return end
+        local costume = self.Entity.CostumeManagerComponent
+        if not isvalid(costume) then return end
+        -- 로브 없이도 기본 복장은 유지한다. 미장착 무기는 계정 무기로 되돌리지 않는다.
+        local robe = self:EquippedAvatar("armor")
+        if robe == "" then robe = _ItemData:GetBase("armor1").avatar end
+        costume:SetEquip(MapleAvatarItemCategory.Coat, "")
+        costume:SetEquip(MapleAvatarItemCategory.Pants, "")
+        costume:SetEquip(MapleAvatarItemCategory.TwoHandedWeapon, "")
+        costume:SetEquip(MapleAvatarItemCategory.SubWeapon, "")
+        costume:SetEquip(MapleAvatarItemCategory.Cape, "")
+        costume:SetEquip(MapleAvatarItemCategory.FaceAccessory, "")
+        costume:SetEquip(MapleAvatarItemCategory.EyeAccessory, "")
+        costume:SetEquip(MapleAvatarItemCategory.EarAccessory, "")
+        costume:SetEquip(MapleAvatarItemCategory.Longcoat, robe)
+        costume:SetEquip(MapleAvatarItemCategory.Cap, self:EquippedAvatar("helm"))
+        costume:SetEquip(MapleAvatarItemCategory.Glove, self:EquippedAvatar("gloves"))
+        costume:SetEquip(MapleAvatarItemCategory.Shoes, self:EquippedAvatar("boots"))
+        costume:SetEquip(MapleAvatarItemCategory.OneHandedWeapon, self:EquippedAvatar("weapon"))
     end
 
     -- ───────── 클라이언트 표시용 ─────────

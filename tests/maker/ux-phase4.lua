@@ -7,15 +7,15 @@ local ck=function(n,ok,v) if ok then log("[VRF-P4] PASS "..n.." "..tostring(v)) 
 sv.IsLoadSuccess=false
 _TimerService:SetTimerOnce(function()
  for _,e in ipairs(fixtures) do if isvalid(e) then e:Destroy() end end
- if tiles~=nil then for _,c in ipairs(edited) do if c.index~=nil then tiles:SetTile(c.index,c.pos) else tiles:RemoveTile(c.pos) end end end
+ if tiles~=nil then for _,c in ipairs(edited) do if c.name~=nil then tiles:SetTile(c.name,c.pos) else tiles:RemoveTile(c.pos) end end end
  tr:Go(old.map,old.pos) sv.IsLoadSuccess=old.save log("[VRF-P4] restored player")
 end,8)
 tr:Go("map01",Vector2(-19,9))
 _TimerService:SetTimerOnce(function()
  local map=p.CurrentMap local me=_Util:Pos2(p)
  tiles=map:GetFirstChildComponentByTypeName("RectTileMapComponent",true)
- local c=tiles:ToCellPosition(Vector3(me.x,me.y,0)) local floor=tiles:GetTile(c).Index
- for x=0,5 do for y=0,2 do local cell=Vector2Int(c.x+x,c.y+y) local t=tiles:GetTile(cell) table.insert(edited,{pos=cell,index=t~=nil and t.Index or nil}) tiles:SetTile(floor,cell) end end
+ local c=tiles:ToCellPosition(Vector3(me.x,me.y,0)) local floor=tiles:GetTile(c).Name
+ for x=0,5 do for y=0,2 do local cell=Vector2Int(c.x+x,c.y+y) local t=tiles:GetTile(cell) table.insert(edited,{pos=cell,name=t~=nil and t.Name or nil}) tiles:SetTile(floor,cell) end end
  local enemy=_SpawnService:SpawnByModelId("hellhound","P4_target",Vector3(me.x+2,me.y,0),map) table.insert(fixtures,enemy)
  _Util:AfterSpawn(enemy,"script.Monster",function(m)
   m.MaxHp=1000 m.Hp=1000 m.RespawnDelay=-1 enemy.AIChaseComponent.Enable=false enemy:GetComponent("script.MonsterAttack").Enable=false enemy.KinematicbodyComponent:SetWorldPosition(me+Vector2(2,0))

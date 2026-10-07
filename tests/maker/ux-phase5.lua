@@ -21,4 +21,4 @@ q:OnKill("graveworm") ck("complete quest stops counting",q.Progress==10,q.Progre
 local sp=st.SkillPoints local ap=st.StatPoints st:GainExp(20)
 ck("level up grants points",st.Level==2 and st.SkillPoints==sp+_GameData.skillPerLevel and st.StatPoints==ap+_GameData.statPerLevel,st.Level)
 ck("quest contains location and action",_QuestData:Get(1).zone=="피 묻은 황무지" and _QuestData:Get(1).objective~="",_QuestData:Get(1).zone)
-ck("world loot uses equipment icon",_ItemData:IconFor(inv.StarterWeapon)==_ItemData:GetBase("scythe1").icon,_ItemData:IconFor(inv.StarterWeapon))
+ck("world loot uses equipment icon",_ItemData:IconFor(inv.StarterWeapon)=="thumbnail://".._ItemData:GetBase("scythe1").avatar,_ItemData:IconFor(inv.StarterWeapon))
