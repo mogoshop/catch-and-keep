@@ -130,6 +130,9 @@ script UIKit extends Logic
 
     @ExecSpace("ClientOnly")
     method void Open(string name)
+        if name ~= "NpcWin" and self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
+        local click = self:Comp("script.ClickControl")
+        if click ~= nil then click:Cancel() end
         for _, win in ipairs(self.Windows) do if win ~= name then self:SetEnabled(win, false) end end
         self:SetEnabled(name, true)
         local e = self:Get(name)
@@ -150,12 +153,18 @@ script UIKit extends Logic
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         if event.key ~= KeyboardKey.Escape then return end
+        if self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
         for _, name in ipairs(self.Windows) do self:Close(name) end
     end
 
     @ExecSpace("ClientOnly")
     method boolean AnyWindowOpen()
-        for _, name in ipairs(self.Windows) do if self:IsOpen(name) then return true end end
+        return self:AnyOtherWindowOpen("")
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean AnyOtherWindowOpen(string ignored)
+        for _, name in ipairs(self.Windows) do if name ~= ignored and self:IsOpen(name) then return true end end
         return self:IsOpen("/ui/ShadowHUD/Window")
     end
 

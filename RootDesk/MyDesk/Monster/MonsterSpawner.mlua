@@ -15,6 +15,9 @@ script MonsterSpawner extends Component
     property number RespawnSec = 10        -- 리스폰 대기 (음수 = 다시 나오지 않음)
     property boolean DebugLog = false
 
+    property table SafeZones = {}
+    property Entity Terrain = nil
+
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 맵이 다 준비된 뒤 소환
@@ -26,6 +29,7 @@ script MonsterSpawner extends Component
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
         self:LoadFromData(map.Name)
+        self:BuildSafeZones()
         local total = 0
         local bonus = 0
         ---@type MapAmbience
@@ -39,19 +43,22 @@ script MonsterSpawner extends Component
             for i = 1, tonumber(count) do
                 -- 무리마다 새 중심, 무리 안에서는 중심 둘레로 흩어진다
                 if (i - 1) % packSize == 0 then center = self:RandomPoint() end
-                local p = center
-                if packSize > 1 then
-                    local a = _UtilLogic:RandomDouble() * math.pi * 2
-                    local r = _UtilLogic:RandomDouble() * _GameData.packRadius
-                    p = self:Clamp(center + Vector2(math.cos(a) * r, math.sin(a) * r))
-                end
-                local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(p.x, p.y, 0), map)
-                if isvalid(e) then
-                    local elite = _UtilLogic:RandomDouble() < self.EliteChance
-                    local variant = ""
-                    if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
-                    self:Configure(e, tonumber(level) + bonus, elite, variant)
-                    total = total + 1
+                if center ~= nil then
+                    local p = center
+                    if packSize > 1 then
+                        local a = _UtilLogic:RandomDouble() * math.pi * 2
+                        local r = _UtilLogic:RandomDouble() * _GameData.packRadius
+                        p = self:Clamp(center + Vector2(math.cos(a) * r, math.sin(a) * r))
+                    end
+                    if not self:ValidSpawn(p) then p = center end
+                    local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(p.x, p.y, 0), map)
+                    if isvalid(e) then
+                        local elite = _UtilLogic:RandomDouble() < self.EliteChance
+                        local variant = ""
+                        if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
+                        self:Configure(e, tonumber(level) + bonus, elite, variant)
+                        total = total + 1
+                    end
                 end
             end
         end
@@ -71,10 +78,48 @@ script MonsterSpawner extends Component
         self.AreaMax = Vector2(d.maxX, d.maxY)
     end
 
-    method Vector2 RandomPoint()
-        local x = self.AreaMin.x + _UtilLogic:RandomDouble() * (self.AreaMax.x - self.AreaMin.x)
-        local y = self.AreaMin.y + _UtilLogic:RandomDouble() * (self.AreaMax.y - self.AreaMin.y)
-        return Vector2(x, y)
+    method void BuildSafeZones()
+        self.SafeZones = {}
+        local map = self.Entity.CurrentMap
+        local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        self.Terrain = tiles ~= nil and tiles.Entity or nil
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil then return end
+        for _,f in ipairs(info.features) do
+            if f.kind == "portal" or f.kind == "waypoint" then
+                table.insert(self.SafeZones, { pos = Vector2(f.x, f.y), radius = f.kind == "portal" and 6 or 5.5 })
+            end
+        end
+    end
+
+    method boolean ValidSpawn(Vector2 p)
+        for _,zone in ipairs(self.SafeZones) do
+            if (p-zone.pos):Magnitude() < zone.radius then return false end
+        end
+        if _Util:NearestPlayerDistance(self.Entity.CurrentMap, p) < 5 then return false end
+        if isvalid(self.Terrain) then
+            for _,offset in ipairs({ Vector2(0,0), Vector2(-0.25,0), Vector2(0.25,0), Vector2(0,-0.25), Vector2(0,0.25) }) do
+                if _Util:TileBlocked(self.Terrain, p+offset) then return false end
+            end
+        end
+        return true
+    end
+
+    method any RandomPoint()
+        for i = 1, 96 do
+            local x = self.AreaMin.x + _UtilLogic:RandomDouble() * (self.AreaMax.x - self.AreaMin.x)
+            local y = self.AreaMin.y + _UtilLogic:RandomDouble() * (self.AreaMax.y - self.AreaMin.y)
+            local p = Vector2(x,y)
+            if self:ValidSpawn(p) then return p end
+        end
+        -- 좁은 던전에서도 안전한 지점을 찾아 무리가 벽·출구 위에 나오지 않게 한다.
+        for x = math.ceil(self.AreaMin.x), math.floor(self.AreaMax.x) do
+            for y = math.ceil(self.AreaMin.y), math.floor(self.AreaMax.y) do
+                local p = Vector2(x,y)
+                if self:ValidSpawn(p) then return p end
+            end
+        end
+        return nil
     end
 
     method Vector2 Clamp(Vector2 p)

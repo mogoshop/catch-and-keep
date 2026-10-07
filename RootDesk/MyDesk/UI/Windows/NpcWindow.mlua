@@ -16,7 +16,7 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        _UIKit:SetEnabled(self.Win, false)
+        _UIKit:RegisterWindow(self.Win)
         for i = 1, 5 do
             local index = i
             _UIKit:Connect(self.Win .. "/Btn" .. tostring(i), function() self:Action(index) end)
@@ -60,7 +60,8 @@ script NpcWindow extends Logic
             self.Page = 1
             self.PageKey = ""
         end
-        local open = npc ~= nil and not self.Dismissed
+        local open = npc ~= nil and not self.Dismissed and not _UIKit:AnyOtherWindowOpen(self.Win)
+        if open and not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win) end
         _UIKit:SetEnabled(self.Win, open)
         if not open then
             self.Kind = ""
@@ -149,13 +150,13 @@ script NpcWindow extends Logic
             -- 0 = 새 의뢰(소개 대사 → 수락), 2 = 완료(마무리 대사 → 보고)
             local lines = self:Lines(quest.State == 0 and q.intro or q.outro)
             if #lines == 0 then lines = { quest.State == 0 and "할 일이 있다." or "해냈군." } end
-            self.PageCount = #lines
-            local page = math.min(self.Page, #lines)
-            body = lines[page]
-            if page < #lines then
+            self.PageCount = #lines + (quest.State == 0 and 1 or 0)
+            local page = math.min(self.Page, self.PageCount)
+            body = lines[page] or ""
+            if page < self.PageCount then
                 self:SetButtons({ "", "", "", "다음 ▶", "닫기" })
             elseif quest.State == 0 then
-                body = body .. "\n\n의뢰 「" .. q.title .. "」 — " .. q.desc .. "\n" .. self:RewardText(q)
+                body = "의뢰 「" .. q.title .. "」\n" .. q.desc .. "\n\n" .. self:RewardText(q)
                 self:SetButtons({ "", "", "", "수락", "거절" })
             else
                 body = body .. "\n\n" .. self:RewardText(q)
