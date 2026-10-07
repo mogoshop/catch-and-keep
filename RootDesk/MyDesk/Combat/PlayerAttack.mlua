@@ -1,4 +1,4 @@
--- 플레이어 기본 공격. 공격 키(Ctrl)·클릭·모바일 공격 버튼으로 바라보는 쪽 사각 범위를 친다.
+-- 플레이어 기본 공격. 공격 키(Ctrl)·클릭·모바일 공격 버튼으로 가까운 적 쪽(없으면 바라보는 쪽) 사각 범위를 친다.
 -- 기본 피해 12: 같은 레벨 일반 몬스터가 2~4대에 쓰러지는 D2 감각 (25는 한 방이었다).
 -- 탑다운 맵이라 위아래 깊이(y)도 넉넉하게 잡는다.
 -- 네크로맨서 스킬(골편 투척 등)은 Phase 1에서 이 자리를 대체한다.
@@ -8,6 +8,8 @@ script PlayerAttack extends AttackComponent
     property integer Damage = 12
     property Vector2 RangeSize = Vector2(1.6, 1.4)
     property number RangeOffsetX = 0.7
+    property number AimRange = 1.7            -- 자동 조준: 이 거리 안 가장 가까운 적 쪽으로 친다
+    property number Windup = 0.1              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
     property number LastAttackAt = -99
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
@@ -22,23 +24,37 @@ script PlayerAttack extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void DoAttack()
-        -- 바라보는 방향 앞쪽에 사각 범위 공격. 공격 속도(ias)로 줄어든 간격보다 빨리 오면 무시 (연타 방지)
+        -- 공격 속도(ias)로 줄어든 간격보다 빨리 오면 무시 (연타 방지). 마을에서는 공격하지 않는다 (D2)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local interval = _GameData.baseAttackInterval
         if stats ~= nil then interval = stats:GetAttackInterval(interval) end
-        -- D2: 마을에서는 공격하지 않는다
         if _GameConst:IsTown(self.Entity.CurrentMap) then return end
         local now = _UtilLogic.ElapsedSeconds
         if now - self.LastAttackAt < interval * 0.9 then return end
         self.LastAttackAt = now
-        local transform = self.Entity.TransformComponent
-        local controller = self.Entity.PlayerControllerComponent
-        if not isvalid(transform) or not isvalid(controller) then return end
-        local pos = transform.WorldPosition
-        local dir = controller.LookDirectionX >= 0 and 1 or -1
-        local center = Vector2(pos.x + self.RangeOffsetX * dir, pos.y + 0.2)
-        self:AttackFast(BoxShape(center, self.RangeSize, 0), "player.basic", nil)
+        -- 탑다운 자동 조준: 사거리 안 가장 가까운 적 쪽으로 돌아서 친다 (위아래에 있는 적도 맞는다). 없으면 바라보는 쪽
+        local me = _Util:Pos2(self.Entity)
+        local dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
+        local m = _Util:NearestMonster(self.Entity.CurrentMap, me, self.AimRange)
+        if m ~= nil then
+            local to = _Util:Pos2(m.Entity) - me
+            if to:Magnitude() > 0.05 then dir = to:Normalize() end
+            if math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
+        end
+        -- 아바타 휘두르는 동작에 맞춰 Windup초 뒤에 판정·궤적
+        local aimDir = dir
+        _TimerService:SetTimerOnce(function() self:Strike(aimDir) end, self.Windup)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Strike(Vector2 dir)
+        -- 실제 판정: 조준 방향 앞 사각 범위 (방향으로 회전)
+        if not isvalid(self.Entity) or self.Entity.PlayerComponent.Hp <= 0 then return end
+        local me = _Util:Pos2(self.Entity)
+        local center = me + Vector2(0, 0.2) + dir * self.RangeOffsetX
+        local angle = math.deg(math.atan(dir.y, dir.x))
+        self:AttackFast(BoxShape(center, self.RangeSize, angle), "player.basic", nil)
         self:PlaySwing(Vector3(center.x, center.y, 0), dir)
     end
 
@@ -94,12 +110,16 @@ script PlayerAttack extends AttackComponent
     end
 
     @ExecSpace("Multicast")
-    method void PlaySwing(Vector3 pos, integer dir)
-        -- 휘두르기 궤적(리소스가 왼쪽을 보므로 오른쪽이면 뒤집음) + 휘두르는 소리. 맞는 소리는 몬스터 쪽(HitFx)
+    method void PlaySwing(Vector3 pos, Vector2 dir)
+        -- 휘두르기 궤적(리소스가 왼쪽을 본다: 오른쪽이면 뒤집고, 위아래로는 기울인다) + 휘두르는 소리. 맞는 소리는 몬스터 쪽(HitFx)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         _SoundService:PlaySoundAtPos(_GameConst.SfxSwing, pos, me, 0.35)
-        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), 0, Vector3(0.55, 0.55, 1), false, { FlipX = dir > 0, PlayRate = 1.5, Color = Color(0.75, 0.7, 1, 0.9) })
+        local right = dir.x >= 0
+        local rot = math.deg(math.atan(dir.y, dir.x))
+        if not right then rot = rot - 180 end
+        if rot > 180 then rot = rot - 360 elseif rot < -180 then rot = rot + 360 end
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), rot, Vector3(0.55, 0.55, 1), false, { FlipX = right, PlayRate = 1.5, Color = Color(0.75, 0.7, 1, 0.9) })
     end
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)

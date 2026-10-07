@@ -42,6 +42,19 @@ script PlayerVitals extends Component
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.InvincibleSeconds
         self:CheckDeath()
         if not self.Dying then self.Entity.StateComponent:ChangeState("HIT") end
+        -- 맞은 사람 화면만 흔들림·소리 (피해가 클수록 세게)
+        local pc = self.Entity.PlayerComponent
+        local ratio = event.TotalDamage / math.max(1, pc.MaxHp)
+        self:HitFeel(ratio, pc.UserId)
+    end
+
+    @ExecSpace("Client")
+    method void HitFeel(number ratio)
+        -- 내가 맞았을 때: 카메라 흔들림 + 둔탁한 소리. 생명의 15% 넘게 깎이면 더 세게
+        local cam = _CameraService:GetCurrentCameraComponent()
+        local heavy = ratio >= 0.15
+        if isvalid(cam) then cam:ShakeCamera(heavy and 0.22 or 0.1, heavy and 0.25 or 0.12) end
+        _SoundService:PlaySound(_GameConst.SfxImpact, heavy and 0.7 or 0.45)
     end
 
     method boolean CanBeHit()

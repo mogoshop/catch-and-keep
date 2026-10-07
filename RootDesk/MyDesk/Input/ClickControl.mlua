@@ -22,6 +22,15 @@ script ClickControl extends Component
     property Entity AttackTarget = nil
     property Entity ExtractTarget = nil
     property number AttackTimer = 0
+    -- 막힘 미끄러지기: 움직이려는데 제자리면 잠깐 옆으로 비켜 간다 (벽·장애물 모서리)
+    property Vector2 WantDir = Vector2(0, 0)
+    property Vector2 LastPos = Vector2(0, 0)
+    property number StuckTime = 0
+    property number SlideUntil = 0
+    property Vector2 SlideDir = Vector2(0, 0)
+    property integer SlideSide = 1
+    property integer SlideCount = 0           -- 비켜 가도 앞으로 못 나간 횟수 (3번이면 포기하고 멈춘다)
+    property Vector2 StuckPos = Vector2(0, 0)
 
     @ExecSpace("ClientOnly")
     method boolean IsActive()
@@ -55,6 +64,7 @@ script ClickControl extends Component
     method Vector2 Pick(Vector2 screenPoint)
         -- 화면 좌표 → 월드 좌표. 근처에 살아 있는 몬스터가 있으면 공격 대상, 없으면 이동 목적지
         local world = _UILogic:ScreenToWorldPosition(screenPoint)
+        self.SlideCount = 0
         -- 내 혼을 클릭했으면 걸어가서 추출 (몬스터보다 우선)
         local extractor = self:Extractor()
         local soul = nil
@@ -124,6 +134,7 @@ script ClickControl extends Component
         end
         local p = self.Entity.TransformComponent.WorldPosition
         local me = Vector2(p.x, p.y)
+        self:CheckStuck(me, delta)
 
         if self.ExtractTarget ~= nil then
             if not isvalid(self.ExtractTarget) then
@@ -189,10 +200,40 @@ script ClickControl extends Component
 
     @ExecSpace("ClientOnly")
     method void Cancel()
+        self.SlideCount = 0
+        self.SlideUntil = 0
         self.HasDestination = false
         self.AttackTarget = nil
         self.ExtractTarget = nil
         self:StopMove()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckStuck(Vector2 me, number delta)
+        -- 이동 중인데 0.2초 동안 거의 안 움직였으면 0.35초 옆으로 비켜 간다 (번갈아 좌우)
+        local moved = (me - self.LastPos):Magnitude()
+        self.LastPos = me
+        if not self.Moving or delta <= 0 then
+            self.StuckTime = 0
+            return
+        end
+        if moved < 0.25 * delta then self.StuckTime = self.StuckTime + delta else self.StuckTime = 0 end
+        if self.StuckTime < 0.2 then return end
+        self.StuckTime = 0
+        local w = self.WantDir
+        -- 지난번 막힌 곳에서 가려는 방향으로 0.3도 못 나갔으면 갈 수 없는 곳 (맵 밖·막힌 방)
+        local progress = (me - self.StuckPos):Dot(w)
+        if self.SlideCount > 0 and progress < 0.3 then self.SlideCount = self.SlideCount + 1 else self.SlideCount = 1 end
+        self.StuckPos = me
+        if self.SlideCount >= 3 then
+            if self.DebugLog then log("[ClickControl] 갈 수 없는 곳 → 멈춤") end
+            self:Cancel()
+            return
+        end
+        self.SlideDir = Vector2(-w.y, w.x) * self.SlideSide + w * 0.3
+        self.SlideSide = -self.SlideSide
+        self.SlideUntil = _UtilLogic.ElapsedSeconds + 0.35
+        if self.DebugLog then log("[ClickControl] 막힘 → 옆으로") end
     end
 
     @ExecSpace("ClientOnly")
@@ -201,7 +242,10 @@ script ClickControl extends Component
         -- 클릭 이동 중에만 컨트롤러를 끄고 MovementComponent로 직접 움직인다 (메이커에서 확인한 방식)
         local controller = self.Entity.PlayerControllerComponent
         if controller.Enable then controller.Enable = false end
-        self.Entity.MovementComponent:MoveToDirection(dir:Normalize(), 0)
+        self.WantDir = dir:Normalize()
+        local go = self.WantDir
+        if _UtilLogic.ElapsedSeconds < self.SlideUntil then go = self.SlideDir:Normalize() end
+        self.Entity.MovementComponent:MoveToDirection(go, 0)
         self:Face(dir.x)
         if not self.Moving then
             self.Moving = true
