@@ -1,0 +1,53 @@
+-- 성장·목표 달성·장비 획득을 한 곳에서 읽는다. 겹친 보상은 큐로 순서대로 표시한다.
+@Logic
+script UXFeedback extends Logic
+
+    property table Queue = {}
+    property number Until = 0
+    property integer TimerId = 0
+    property integer ShownCount = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Queue = {}
+        _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.Queue = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string title, string detail, string icon)
+        if #self.Queue >= 5 then table.remove(self.Queue, 1) end
+        table.insert(self.Queue, { title = title, detail = detail, icon = icon })
+        self:Tick()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tick()
+        local root = _UIKit:Get("/ui/RewardHUD/Toast")
+        if not isvalid(root) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if self.Until > now then
+            root.CanvasGroupComponent.GroupAlpha = math.min(1, (self.Until - now) / 0.5)
+            return
+        end
+        if #self.Queue == 0 then
+            root.Enable = false
+            return
+        end
+        local msg = table.remove(self.Queue, 1)
+        _UIKit:SetText("/ui/RewardHUD/Toast/Title", msg.title)
+        _UIKit:SetText("/ui/RewardHUD/Toast/Body", msg.detail)
+        _UIKit:SetIcon("/ui/RewardHUD/Toast/Icon", msg.icon)
+        root.CanvasGroupComponent.GroupAlpha = 1
+        root.Enable = true
+        self.Until = now + 4
+        self.ShownCount = self.ShownCount + 1
+    end
+
+end

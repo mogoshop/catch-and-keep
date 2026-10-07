@@ -44,7 +44,7 @@ script PlayerQuest extends Component
         self.Progress = math.min(q.count, self.Progress + 1)
         if self.Progress >= q.count then
             self.State = 2
-            _Util:Notify("의뢰 완료: " .. q.title .. " — 사제 오렌에게 보고하라", self.Entity.PlayerComponent.UserId)
+            self:NotifyQuest("목표 달성", q.title .. " — 사제 오렌에게 보고", _GameData:GetUiIcon("q_done"), self.Entity.PlayerComponent.UserId)
         end
     end
 
@@ -74,31 +74,52 @@ script PlayerQuest extends Component
     method void TurnIn()
         -- 보상: 경험치·골드 + (룬 / 장비 / 희귀 장비)
         local q = _QuestData:Get(self.Index)
-        if q == nil then return end
+        if q == nil or self.State ~= 2 or not _Util:IsAlive(self.Entity) then return end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if stats ~= nil then
-            stats:GainExp(q.exp)
-            stats:AddGold(q.gold)
-        end
-        local lv = 1
-        if stats ~= nil then lv = stats.Level end
+        if stats == nil or inv == nil then return end
+        -- 먼저 공간을 예약할 수 있는지 확인한다. 부족하면 진행·경험치·골드 모두 그대로 둔다.
+        local slots = 0
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
-            if key == "rune" and inv ~= nil then
-                if _ItemData:GetRune(val) ~= nil then inv:AddItem(_ItemData:MakeRuneString(val, lv)) end
-            elseif key == "item" and inv ~= nil then inv:AddItem(val)
-            elseif key == "gen" and inv ~= nil then inv:AddItem(_ItemData:Generate(lv + 2, tonumber(val) >= 3 and "boss" or "quest", 300))
-            elseif key == "skp" and stats ~= nil then stats.SkillPoints = stats.SkillPoints + tonumber(val)
-            elseif key == "stp" and stats ~= nil then stats.StatPoints = stats.StatPoints + tonumber(val) end
+            if key == "item" or key == "gen" or (key == "rune" and _ItemData:GetRune(val) ~= nil) then slots = slots + 1 end
         end
+        if #inv.Bag + slots > inv.BagSize then
+            _Util:Notify("보상 받을 가방 공간 " .. tostring(slots) .. "칸이 필요합니다. 의뢰와 보상은 보관됩니다", self.Entity.PlayerComponent.UserId)
+            return
+        end
+        local items = {}
+        local lv = stats.Level
+        local skillPoints = 0
+        local statPoints = 0
+        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
+            if key == "rune" and _ItemData:GetRune(val) ~= nil then table.insert(items, _ItemData:MakeRuneString(val, lv))
+            elseif key == "item" then table.insert(items, val)
+            elseif key == "gen" then table.insert(items, _ItemData:Generate(lv + 2, (tonumber(val) or 0) >= 3 and "boss" or "quest", 300))
+            elseif key == "skp" then skillPoints = skillPoints + (tonumber(val) or 0)
+            elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0) end
+        end
+        -- 서버의 한 번의 실행에서 전부 지급하고 의뢰를 다음 단계로 넘긴다.
+        inv:PutBagItems(items)
+        stats.SkillPoints = stats.SkillPoints + skillPoints
+        stats.StatPoints = stats.StatPoints + statPoints
+        stats:GainExp(q.exp)
+        stats:AddGold(q.gold)
         local rewardText = _QuestData:RewardText(q.reward)
         _Util:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
+        local icon = _GameData:GetUiIcon("q_done")
+        if #items > 0 then icon = _ItemData:IconFor(items[1]) end
+        self:NotifyQuest("의뢰 보상 · " .. q.title, "경험치 +" .. tostring(q.exp) .. " · 골드 +" .. tostring(q.gold) .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title)
         self.Index = self.Index + 1
         self.State = 0
         self.Progress = 0
+    end
+
+    @ExecSpace("Client")
+    method void NotifyQuest(string title, string detail, string icon)
+        _UXFeedback:Show(title, detail, icon)
     end
 
     @ExecSpace("ServerOnly")

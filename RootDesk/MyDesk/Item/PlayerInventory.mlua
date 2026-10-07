@@ -16,6 +16,7 @@ script PlayerInventory extends Component
     @Sync
     property string EquipDigest = ""  -- "부위>아이템;..."
     property integer PickupTimer = 0
+    property number BagWarningAt = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -109,11 +110,25 @@ script PlayerInventory extends Component
             belt:AddPotion(drop.Kind, drop.Amount)
             msg = (drop.Kind == "hp" and "생명" or "마나") .. " 물약 +" .. tostring(drop.Amount)
         else
-            if not self:AddItem(drop.ItemString) then return end   -- 가방이 꽉 차면 그대로 둔다
+            if not self:AddItem(drop.ItemString) then
+                if _UtilLogic.ElapsedSeconds >= self.BagWarningAt then
+                    self.BagWarningAt = _UtilLogic.ElapsedSeconds + 4
+                    _Util:Notify("가방이 가득 찼습니다 — 전리품은 바닥에 남습니다", self.Entity.PlayerComponent.UserId)
+                end
+                return
+            end
             msg = _ItemData:DisplayName(drop.ItemString)
+        end
+        if drop.Kind == "rune" or (drop.Kind == "item" and drop.Rarity >= 2) then
+            self:NotifyTreasure(drop.ItemString, self.Entity.PlayerComponent.UserId)
         end
         drop:Take()
         _Util:Notify(msg, self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyTreasure(string item)
+        _UXFeedback:Show("전리품 획득", _ItemData:DisplayName(item) .. "\n메뉴의 인벤토리에서 장비를 확인하세요", _ItemData:IconFor(item))
     end
 
     -- ───────── 장착 ─────────
