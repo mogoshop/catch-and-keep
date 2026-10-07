@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -158,6 +158,17 @@ T.monster_ranks.forEach((r, i) => {
   if (!(c > 0 && c <= 1)) err("monster_ranks", i, `extractChance ${r.extractChance} — 0 초과 1 이하`);
   if (![1, 2, 3].includes(num(r.shadowGrade))) err("monster_ranks", i, "shadowGrade 1~3");
 });
+
+// ── 변종 능력 ──
+const variantIds = unique("variants", "id");
+T.variants.forEach((r, i) => {
+  if (r.kind === "aura" && !["dmg", "haste", "guard"].includes(r.effect)) err("variants", i, `오오라 effect '${r.effect}' — dmg / haste / guard`);
+  if (r.kind === "skill" && !(num(r.interval) > 0 && num(r.mult) > 0)) err("variants", i, "기술은 interval·mult 양수");
+  if (!["aura", "skill"].includes(r.kind)) err("variants", i, `kind '${r.kind}' — aura / skill`);
+  if (!(num(r.radius) > 0)) err("variants", i, "radius 양수");
+});
+if (!T.variants.some((r) => num(r.weight) > 0)) err("variants", null, "weight > 0 인 변종이 없음 (무작위 변종 우두머리가 나오지 않는다)");
+T.monsters.forEach((r, i) => { if (r.innate !== "" && !variantIds.has(r.innate)) err("monsters", i, `innate '${r.innate}' — variants.csv에 없음`); });
 
 // ── 상점·오브젝트·NPC ──
 const shopKeys = unique("shop", "key");

@@ -12,6 +12,11 @@ script MonsterStatus extends Component
     property Entity PoisonSource = nil
     property integer PoisonTimer = 0
     property number ChillUntil = 0
+    property number AuraDmg = 0              -- 받은 오오라 (변종 우두머리): 피해 % / 속도 % / 받는 피해 감소 %
+    property number AuraHaste = 0
+    property number AuraGuard = 0
+    property number AuraUntil = 0
+    property boolean HasteRefreshPending = false
     @Sync
     property string CurseTag = ""            -- 대상 정보 UI 표시
 
@@ -37,7 +42,49 @@ script MonsterStatus extends Component
     end
 
     method number TakenMult()
-        if _UtilLogic.ElapsedSeconds < self.AmpUntil then return 1 + self.AmpPct / 100 end
+        local m = self:AuraMult("guard")
+        if _UtilLogic.ElapsedSeconds < self.AmpUntil then m = m * (1 + self.AmpPct / 100) end
+        return m
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReceiveAura(string effect, number value)
+        -- 변종 우두머리 오오라: 범위 안에 있는 동안 auraTickSec마다 갱신, 벗어나면 auraHoldSec 뒤 사라진다
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.AuraUntil then
+            self.AuraDmg = 0
+            self.AuraHaste = 0
+            self.AuraGuard = 0
+        end
+        local hadHaste = self.AuraHaste > 0
+        if effect == "dmg" then self.AuraDmg = math.max(self.AuraDmg, value)
+        elseif effect == "haste" then self.AuraHaste = math.max(self.AuraHaste, value)
+        elseif effect == "guard" then self.AuraGuard = math.max(self.AuraGuard, value) end
+        self.AuraUntil = now + _GameData.auraHoldSec
+        if effect == "haste" and not hadHaste then self:RefreshSpeedLater() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshSpeedLater()
+        -- 질풍 오오라: 지금 속도를 올리고, 오오라가 끝나면 되돌린다
+        local body = self:Body()
+        if body == nil then return end
+        body:RefreshSpeed()
+        if self.HasteRefreshPending then return end
+        self.HasteRefreshPending = true
+        _TimerService:SetTimerOnce(function()
+            self.HasteRefreshPending = false
+            if not isvalid(self.Entity) then return end
+            if _UtilLogic.ElapsedSeconds >= self.AuraUntil then body:RefreshSpeed() else self:RefreshSpeedLater() end
+        end, _GameData.auraHoldSec + 0.05)
+    end
+
+    method number AuraMult(string kind)
+        -- dmg: 주는 피해 배율 / haste: 속도 배율 / guard: 받는 피해 배율
+        if _UtilLogic.ElapsedSeconds >= self.AuraUntil then return 1 end
+        if kind == "dmg" then return 1 + self.AuraDmg / 100 end
+        if kind == "haste" then return 1 + self.AuraHaste / 100 end
+        if kind == "guard" then return math.max(0.1, 1 - self.AuraGuard / 100) end
         return 1
     end
 
@@ -47,8 +94,9 @@ script MonsterStatus extends Component
     end
 
     method number SpeedMult()
-        if _UtilLogic.ElapsedSeconds < self.ChillUntil then return 0.5 end
-        return 1
+        local m = self:AuraMult("haste")
+        if _UtilLogic.ElapsedSeconds < self.ChillUntil then m = m * 0.5 end
+        return m
     end
 
     @ExecSpace("ServerOnly")
@@ -96,6 +144,7 @@ script MonsterStatus extends Component
         self.AmpUntil = 0
         self.WeakenUntil = 0
         self.ChillUntil = 0
+        self.AuraUntil = 0
         self.PoisonUntil = 0
         self:StopPoison()
         self.CurseTag = ""

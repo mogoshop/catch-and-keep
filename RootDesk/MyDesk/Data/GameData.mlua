@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -69,11 +69,16 @@ script GameData extends Logic
     property number reviveSeconds = 180    -- 되살림 지속 (D2 180초)
     property number reviveCountMax = 5    -- 되살림 동시 최대 (D2는 스킬 레벨
     property number reviveStatMul = 1    -- 되살림 능력치 배율 (원본 몬스터 그대로)
+    property number variantChance = 0.04    -- 스포너 몬스터가 변종 우두머리(오오라·특수 기술)로 나올 확률
+    property number auraTickSec = 0.5    -- 오오라 갱신 간격
+    property number auraHoldSec = 1.2    -- 오오라 유지 시간 (범위를 벗어나면 이만큼 뒤 사라짐)
     property table Difficulties = {}
     property table Sounds = {}
     property table MonsterNames = {}
     property table DepthPool = {}
     property table Shop = {}
+    property table Variants = {}
+    property table VariantOrder = {}
     property table MonsterStats = {}
     property table Ranks = {}
     property table DepthUniques = {}
@@ -81,6 +86,20 @@ script GameData extends Logic
     method void Ensure()
         if self.Built then return end
         self.Built = true
+        self.Variants = {}
+        self.VariantOrder = {}
+        self.Variants["aura_might"] = { id = "aura_might", name = "광기 오오라", kind = "aura", effect = "dmg", value = 25, radius = 3, interval = 0, mult = 0, element = "", weight = 1 }
+        table.insert(self.VariantOrder, "aura_might")
+        self.Variants["aura_haste"] = { id = "aura_haste", name = "질풍 오오라", kind = "aura", effect = "haste", value = 20, radius = 3, interval = 0, mult = 0, element = "", weight = 1 }
+        table.insert(self.VariantOrder, "aura_haste")
+        self.Variants["aura_guard"] = { id = "aura_guard", name = "수호 오오라", kind = "aura", effect = "guard", value = 20, radius = 3, interval = 0, mult = 0, element = "", weight = 1 }
+        table.insert(self.VariantOrder, "aura_guard")
+        self.Variants["skill_nova"] = { id = "skill_nova", name = "충격파", kind = "skill", effect = "nova", value = 0, radius = 2, interval = 6, mult = 1.5, element = "", weight = 1 }
+        table.insert(self.VariantOrder, "skill_nova")
+        self.Variants["skill_frost"] = { id = "skill_frost", name = "냉기 파동", kind = "skill", effect = "nova", value = 0, radius = 2, interval = 7, mult = 1, element = "cold", weight = 1 }
+        table.insert(self.VariantOrder, "skill_frost")
+        self.Variants["skill_slam"] = { id = "skill_slam", name = "내려찍기", kind = "skill", effect = "nova", value = 0, radius = 2.2, interval = 6, mult = 1.6, element = "", weight = 0 }
+        table.insert(self.VariantOrder, "skill_slam")
         self.Ranks = {}
         self.Ranks["normal"] = { name = "일반", hpMul = 1, dmgMul = 1, extract = 0.25, grade = 1 }
         self.Ranks["elite"] = { name = "정예", hpMul = 3, dmgMul = 1.3, extract = 0.15, grade = 2 }
@@ -114,15 +133,15 @@ script GameData extends Logic
         self.MonsterNames["skel_captain"] = "납골당 지휘관 바르그"
         self.MonsterNames["grave_queen"] = "묘지기 여왕"
         self.MonsterStats = {}
-        self.MonsterStats["hellhound"] = { level = 1, hp = 40, dmg = 5, interval = 1.5, speed = 1.5, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=50", behavior = "", stand = "c436866a4cda4f7b8614d2f0a6b36ae5", move = "d436b59499404682aebbb64fbb610a98", rank = "normal" }
-        self.MonsterStats["graveworm"] = { level = 1, hp = 50, dmg = 5, interval = 1.5, speed = 0.8, range = 0.8, element = "", ratio = 0, resists = "poison=75", behavior = "burrow", stand = "2eccc104f9114701b2bac18a8d7f3845", move = "f5f4d35b8e7f4c6599b6598ec1023c5a", rank = "normal" }
-        self.MonsterStats["ashen_dead"] = { level = 1, hp = 70, dmg = 7, interval = 1.5, speed = 1, range = 0.8, element = "", ratio = 0, resists = "poison=40,cold=20", behavior = "", stand = "9c27b5511689485ab1b3381a00fcfec6", move = "3799c5aea9dc45b09057cd1adba0e913", rank = "normal" }
-        self.MonsterStats["corpse_crow"] = { level = 1, hp = 35, dmg = 6, interval = 1.5, speed = 1.8, range = 0.8, element = "", ratio = 0, resists = "", behavior = "hitrun", stand = "5f1a018ca946468a8d3a6dac0d9c4ba8", move = "a408d61514e9476c933bdef0e9e2d0d2", rank = "normal" }
-        self.MonsterStats["skel_warrior"] = { level = 1, hp = 90, dmg = 9, interval = 1.5, speed = 1.1, range = 0.8, element = "", ratio = 0, resists = "poison=60,cold=30", behavior = "", stand = "0f7660bf15a14a379657c4f35fe10fd0", move = "d247c52315634dba95e5956ca057d06b", rank = "normal" }
-        self.MonsterStats["starved_wraith"] = { level = 1, hp = 70, dmg = 10, interval = 1.5, speed = 1.6, range = 0.8, element = "cold", ratio = 0.6, resists = "cold=60,magic=30", behavior = "", stand = "15e7b98cec434b269c09e97f550921c3", move = "2f11969b1f694825ac8ad13635711c5b", rank = "normal" }
-        self.MonsterStats["headsman"] = { level = 1, hp = 600, dmg = 14, interval = 1.5, speed = 1.2, range = 0.8, element = "fire", ratio = 0.4, resists = "fire=40,poison=30", behavior = "", stand = "c68c66cc812e4e4aa9a6f1ffcdc48985", move = "924e249ccb8747dbbe548dc5af908c4f", rank = "unique" }
-        self.MonsterStats["skel_captain"] = { level = 1, hp = 800, dmg = 16, interval = 1.5, speed = 1, range = 0.8, element = "cold", ratio = 0.4, resists = "poison=75,cold=40", behavior = "", stand = "ed882269a5d543318ad73e7032632960", move = "94003c3d90dd4fd4866c725b29704169", rank = "unique" }
-        self.MonsterStats["grave_queen"] = { level = 12, hp = 2600, dmg = 18, interval = 1.5, speed = 1, range = 1.2, element = "poison", ratio = 0.5, resists = "poison=60,fire=25", behavior = "", stand = "f4a4aadb84bb4060af45a7ad23f189e5", move = "a97b63a93e6b4be2a6158acc573126bc", rank = "boss" }
+        self.MonsterStats["hellhound"] = { level = 1, hp = 40, dmg = 5, interval = 1.5, speed = 1.5, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=50", behavior = "", stand = "c436866a4cda4f7b8614d2f0a6b36ae5", move = "d436b59499404682aebbb64fbb610a98", innate = "", rank = "normal" }
+        self.MonsterStats["graveworm"] = { level = 1, hp = 50, dmg = 5, interval = 1.5, speed = 0.8, range = 0.8, element = "", ratio = 0, resists = "poison=75", behavior = "burrow", stand = "2eccc104f9114701b2bac18a8d7f3845", move = "f5f4d35b8e7f4c6599b6598ec1023c5a", innate = "", rank = "normal" }
+        self.MonsterStats["ashen_dead"] = { level = 1, hp = 70, dmg = 7, interval = 1.5, speed = 1, range = 0.8, element = "", ratio = 0, resists = "poison=40,cold=20", behavior = "", stand = "9c27b5511689485ab1b3381a00fcfec6", move = "3799c5aea9dc45b09057cd1adba0e913", innate = "", rank = "normal" }
+        self.MonsterStats["corpse_crow"] = { level = 1, hp = 35, dmg = 6, interval = 1.5, speed = 1.8, range = 0.8, element = "", ratio = 0, resists = "", behavior = "hitrun", stand = "5f1a018ca946468a8d3a6dac0d9c4ba8", move = "a408d61514e9476c933bdef0e9e2d0d2", innate = "", rank = "normal" }
+        self.MonsterStats["skel_warrior"] = { level = 1, hp = 90, dmg = 9, interval = 1.5, speed = 1.1, range = 0.8, element = "", ratio = 0, resists = "poison=60,cold=30", behavior = "", stand = "0f7660bf15a14a379657c4f35fe10fd0", move = "d247c52315634dba95e5956ca057d06b", innate = "", rank = "normal" }
+        self.MonsterStats["starved_wraith"] = { level = 1, hp = 70, dmg = 10, interval = 1.5, speed = 1.6, range = 0.8, element = "cold", ratio = 0.6, resists = "cold=60,magic=30", behavior = "", stand = "15e7b98cec434b269c09e97f550921c3", move = "2f11969b1f694825ac8ad13635711c5b", innate = "", rank = "normal" }
+        self.MonsterStats["headsman"] = { level = 1, hp = 600, dmg = 14, interval = 1.5, speed = 1.2, range = 0.8, element = "fire", ratio = 0.4, resists = "fire=40,poison=30", behavior = "", stand = "c68c66cc812e4e4aa9a6f1ffcdc48985", move = "924e249ccb8747dbbe548dc5af908c4f", innate = "aura_might", rank = "unique" }
+        self.MonsterStats["skel_captain"] = { level = 1, hp = 800, dmg = 16, interval = 1.5, speed = 1, range = 0.8, element = "cold", ratio = 0.4, resists = "poison=75,cold=40", behavior = "", stand = "ed882269a5d543318ad73e7032632960", move = "94003c3d90dd4fd4866c725b29704169", innate = "aura_guard", rank = "unique" }
+        self.MonsterStats["grave_queen"] = { level = 12, hp = 2600, dmg = 18, interval = 1.5, speed = 1, range = 1.2, element = "poison", ratio = 0.5, resists = "poison=60,fire=25", behavior = "", stand = "f4a4aadb84bb4060af45a7ad23f189e5", move = "a97b63a93e6b4be2a6158acc573126bc", innate = "skill_slam", rank = "boss" }
         self.DepthPool = {}
         table.insert(self.DepthPool, "hellhound")
         table.insert(self.DepthPool, "graveworm")
@@ -149,6 +168,27 @@ script GameData extends Logic
         -- 몬스터 등급 표 (monster_ranks.csv). 모르는 등급은 normal
         self:Ensure()
         return self.Ranks[rank] or self.Ranks["normal"]
+    end
+
+    method any GetVariant(string id)
+        -- 변종 능력 (variants.csv). 없으면 nil
+        self:Ensure()
+        if id == nil or id == "" then return nil end
+        return self.Variants[id]
+    end
+
+    method string RollVariant()
+        -- 무작위 변종 (weight 비례, 0은 고유 전용)
+        self:Ensure()
+        local total = 0
+        for _, id in ipairs(self.VariantOrder) do total = total + self.Variants[id].weight end
+        if total <= 0 then return "" end
+        local roll = _UtilLogic:RandomDouble() * total
+        for _, id in ipairs(self.VariantOrder) do
+            roll = roll - self.Variants[id].weight
+            if roll <= 0 and self.Variants[id].weight > 0 then return id end
+        end
+        return ""
     end
 
     method any GetShopItem(string key)

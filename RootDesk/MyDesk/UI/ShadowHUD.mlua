@@ -155,10 +155,10 @@ script ShadowHUD extends Logic
         local now = _UtilLogic.ServerElapsedSeconds
         local entries = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
-            local id, src, grade, level, deployed, readyAt = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)$")
+            local id, src, grade, level, deployed, readyAt, variant = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)$")
             if id ~= nil then
                 local wait = math.max(0, math.ceil(tonumber(readyAt) - now))
-                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1", wait = wait })
+                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1", wait = wait, variant = variant })
             end
         end
         local pages = math.max(1, math.ceil(#entries / self.RowCount))
@@ -195,6 +195,8 @@ script ShadowHUD extends Logic
         local trait = ""
         local m = _GameData:GetMonsterStats(e.src)
         if m ~= nil and m.element ~= "" then trait = " " .. _ShadowConfig:ElementName(m.element) end
+        local v = _GameData:GetVariant(e.variant)
+        if v ~= nil then trait = trait .. " · " .. v.name end
         return string.format("%s  [%s%s]  Lv%d%s", _GameData:GetMonsterName(e.src), gradeName, trait, e.level, state)
     end
 

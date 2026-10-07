@@ -32,7 +32,9 @@ script MonsterSpawner extends Component
                 local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(x, y, 0), map)
                 if isvalid(e) then
                     local elite = _UtilLogic:RandomDouble() < self.EliteChance
-                    self:Configure(e, tonumber(level) + bonus, elite)
+                    local variant = ""
+                    if _UtilLogic:RandomDouble() < _GameData.variantChance then variant = _GameData:RollVariant() end
+                    self:Configure(e, tonumber(level) + bonus, elite, variant)
                     total = total + 1
                 end
             end
@@ -41,11 +43,12 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void Configure(Entity e, integer level, boolean elite)
+    method void Configure(Entity e, integer level, boolean elite, string variant)
         _Util:AfterSpawn(e, "script.Monster", function(comp)
             ---@type Monster
             local m = comp
             m:ApplyLevel(level, elite)
+            if variant ~= "" then m:MakeVariant(variant) end
         end, nil)
     end
 

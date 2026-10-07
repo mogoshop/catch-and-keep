@@ -24,6 +24,13 @@ script ShadowUnit extends AttackComponent
     property string Element = ""             -- 원본 몬스터의 공격 속성 (ElementRatio만큼이 그 속성)
     property number ElementRatio = 0
     property table Resists = {}              -- 원본 몬스터의 저항 { fire = 50 }
+    property string Variant = ""             -- 원본 변종 능력 (오오라·특수 기술, variants.csv)
+    property number AbilityTimer = 2
+    property string LastInfo = ""
+    property number AuraDmg = 0              -- 받은 오오라 (같은 주인의 다른 소환수가 준다)
+    property number AuraHaste = 0
+    property number AuraGuard = 0
+    property number AuraUntil = 0
 
     property number MaxHp = 30
     @Sync
@@ -79,7 +86,7 @@ script ShadowUnit extends AttackComponent
     handler HandleHitEvent(HitEvent event)
         -- 몬스터에게 맞으면 HP 감소, 0이면 주인에게 사망을 알린다 (재소환 대기는 주인이 관리)
         if self.Dead or self.ShadowId == "" then return end
-        self.Hp = self.Hp - event.TotalDamage
+        self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard")
         if self.Hp > 0 then return end
         self.Dead = true
         if self.Kind ~= "shadow" then
@@ -116,6 +123,7 @@ script ShadowUnit extends AttackComponent
         end
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
+        self:AbilityTick(delta)
 
         local p = self.Entity.TransformComponent.WorldPosition
         local myPos = Vector2(p.x, p.y)
@@ -145,7 +153,7 @@ script ShadowUnit extends AttackComponent
             else
                 self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
-                    self.AttackTimer = self.AttackCooldown
+                    self.AttackTimer = self.AttackCooldown / self:AuraMult("haste")
                     self:DoAttack(myPos, toTarget)
                 end
             end
@@ -236,7 +244,20 @@ script ShadowUnit extends AttackComponent
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 지옥견 그림자는 화염 저항 몬스터에게 약하다)
-        local dmg = self.Atk
+        local dmg = self.Atk * self:AuraMult("dmg")
+        if attackInfo == "shadow.skill" then
+            -- 원본 변종 기술: 배율, 기술 속성이 있으면 전부 그 속성
+            local v = _GameData:GetVariant(self.Variant)
+            if v ~= nil then
+                dmg = dmg * v.mult
+                if v.element ~= "" then
+                    ---@type Monster
+                    local target = defender:GetComponent("script.Monster")
+                    if target ~= nil then dmg = dmg * math.max(0, 1 - target:GetResist(v.element) / 100) end
+                    return math.max(1, math.floor(dmg + 0.5))
+                end
+            end
+        end
         if self.Element ~= "" and self.ElementRatio > 0 then
             ---@type Monster
             local monster = defender:GetComponent("script.Monster")
@@ -252,9 +273,87 @@ script ShadowUnit extends AttackComponent
         return self.Resists[element] or 0
     end
 
+    -- ───────── 변종 능력 (원본 몬스터에게서 이어받음) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void AbilityTick(number delta)
+        -- 오오라: auraTickSec마다 같은 주인의 소환수(그림자·언데드)에게 / 기술: 대상이 범위 안이면 interval마다
+        if self.Variant == "" then return end
+        self.AbilityTimer = self.AbilityTimer - delta
+        if self.AbilityTimer > 0 then return end
+        local v = _GameData:GetVariant(self.Variant)
+        if v == nil then
+            self.AbilityTimer = 999
+            return
+        end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local myPos = Vector2(p.x, p.y)
+        if v.kind == "aura" then
+            self.AbilityTimer = _GameData.auraTickSec
+            for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                ---@type ShadowUnit
+                local ally = c
+                if ally.OwnerPlayer == self.OwnerPlayer and not ally.Dead then
+                    local q = c.Entity.TransformComponent.WorldPosition
+                    if (Vector2(q.x, q.y) - myPos):Magnitude() <= v.radius then ally:ReceiveAura(v.effect, v.value) end
+                end
+            end
+            return
+        end
+        if not self:IsLiveTarget(self.Target) then
+            self.AbilityTimer = 0.5
+            return
+        end
+        local t = self.Target.TransformComponent.WorldPosition
+        if (Vector2(t.x, t.y) - myPos):Magnitude() > v.radius then
+            self.AbilityTimer = 0.3
+            return
+        end
+        self.AbilityTimer = v.interval
+        self.LastInfo = "shadow.skill"
+        self:AttackFast(CircleShape(myPos + Vector2(0, 0.2), v.radius), "shadow.skill", nil)
+        self.LastInfo = ""
+        self:NovaFx(Vector3(myPos.x, myPos.y, 0), v.radius, v.element)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReceiveAura(string effect, number value)
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.AuraUntil then
+            self.AuraDmg = 0
+            self.AuraHaste = 0
+            self.AuraGuard = 0
+        end
+        if effect == "dmg" then self.AuraDmg = math.max(self.AuraDmg, value)
+        elseif effect == "haste" then self.AuraHaste = math.max(self.AuraHaste, value)
+        elseif effect == "guard" then self.AuraGuard = math.max(self.AuraGuard, value) end
+        self.AuraUntil = now + _GameData.auraHoldSec
+    end
+
+    method number AuraMult(string kind)
+        if _UtilLogic.ElapsedSeconds >= self.AuraUntil then return 1 end
+        if kind == "dmg" then return 1 + self.AuraDmg / 100 end
+        if kind == "haste" then return 1 + self.AuraHaste / 100 end
+        if kind == "guard" then return math.max(0.1, 1 - self.AuraGuard / 100) end
+        return 1
+    end
+
+    @ExecSpace("Multicast")
+    method void NovaFx(Vector3 pos, number radius, string element)
+        local color = Color(0.75, 0.5, 1, 1)
+        if element == "cold" then color = Color(0.5, 0.8, 1, 1) end
+        _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, { Color = color })
+    end
+
     method void OnAttack(Entity defender)
         -- 주인 장비의 「소환수 독」(룬워드 「무덤의 속삭임」): 맞은 몬스터에 3초 독
         if not self:IsServer() or not isvalid(self.OwnerPlayer) then return end
+        if self.LastInfo == "shadow.skill" then
+            local v = _GameData:GetVariant(self.Variant)
+            ---@type Monster
+            local hit = defender:GetComponent("script.Monster")
+            if v ~= nil and v.element == "cold" and hit ~= nil and not hit.IsDead then hit:ApplyChill(1.5) end
+        end
         ---@type PlayerStats
         local stats = self.OwnerPlayer:GetComponent("script.PlayerStats")
         if stats == nil or stats.BonusMinionPoison <= 0 then return end

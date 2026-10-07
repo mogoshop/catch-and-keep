@@ -1,5 +1,6 @@
--- 몬스터 특성: 종족 저항, 정예 수식어(06장 3절 단순화), 색조(악마 분위기 재채색).
+-- 몬스터 특성: 종족 저항, 정예 수식어(06장 3절 단순화), 변종 능력(오오라·특수 기술), 색조(악마 분위기 재채색).
 --   강인한 생명 ×1.7 / 흉포한 피해 ×1.5 / 신속한 속도 ×1.5 / 불꽃·냉기·번개 인챈트 (공격에 속성 + 같은 속성 저항 +50)
+--   변종(variants.csv): 변종 우두머리(스포너 variantChance) 또는 최상위·보스 고유(monsters.csv innate). 잡아서 추출하면 그림자가 그대로 쓴다
 @Component
 script MonsterTraits extends Component
 
@@ -9,6 +10,9 @@ script MonsterTraits extends Component
     property string Affix = ""
     @Sync
     property string AffixElement = ""
+    @Sync
+    property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
+    property number AbilityTimer = 1
     @Sync
     property string TintSync = ""
     property number HpMult = 1
@@ -31,6 +35,13 @@ script MonsterTraits extends Component
         self.SpeedMult = 1
         self.Affix = ""
         self.AffixElement = ""
+        if self.Variant == "" then self.Variant = self:InnateVariant() end
+        local v = _GameData:GetVariant(self.Variant)
+        if v ~= nil and v.weight > 0 then
+            -- 변종 우두머리: 이름표는 능력 이름 (수식어 대신)
+            self.Affix = v.name .. " 우두머리"
+            return
+        end
         if grade ~= 2 then return end
         local r = _UtilLogic:RandomIntegerRange(1, 6)
         if r == 1 then
@@ -54,6 +65,70 @@ script MonsterTraits extends Component
         end
     end
 
+    method string InnateVariant()
+        ---@type Monster
+        local body = self.Entity:GetComponent("script.Monster")
+        if body == nil then return "" end
+        local m = _GameData:GetMonsterStats(body.SourceId)
+        if m == nil then return "" end
+        return m.innate
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버: 변종 능력 / 클라이언트: 색조
+        if self:IsServer() then self:AbilityTick(delta) else self:TintTick() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AbilityTick(number delta)
+        -- 변종 능력 실행: 오오라는 주기적으로 주변 몬스터에게, 기술은 플레이어·그림자가 가까우면
+        if self.Variant == "" then return end
+        self.AbilityTimer = self.AbilityTimer - delta
+        if self.AbilityTimer > 0 then return end
+        ---@type Monster
+        local body = self.Entity:GetComponent("script.Monster")
+        local v = _GameData:GetVariant(self.Variant)
+        if body == nil or v == nil or body.IsDead or not self.Entity.Enable then
+            self.AbilityTimer = 1
+            return
+        end
+        local pos = _Util:Pos2(self.Entity)
+        if v.kind == "aura" then
+            self.AbilityTimer = _GameData.auraTickSec
+            for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, pos, v.radius)) do m:ReceiveAura(v.effect, v.value) end
+            return
+        end
+        -- 기술: 보스는 BossPattern이 따로 쓰므로 건너뛴다
+        if self.Entity:GetComponent("script.BossPattern") ~= nil then
+            self.AbilityTimer = 999
+            return
+        end
+        local players = _Util:PlayersNear(self.Entity.CurrentMap, pos, v.radius)
+        if #players == 0 then
+            self.AbilityTimer = 0.5
+            return
+        end
+        self.AbilityTimer = v.interval
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil then atk:Slam(pos, v.radius, atk.Damage * v.mult) end
+        if v.element == "cold" then
+            for _, p in ipairs(players) do
+                ---@type PlayerStats
+                local st = p:GetComponent("script.PlayerStats")
+                if st ~= nil then st:ApplyChill(1.5) end
+            end
+        end
+        self:NovaFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+    end
+
+    @ExecSpace("Multicast")
+    method void NovaFx(Vector3 pos, number radius, string element)
+        local color = Color(1, 0.6, 0.3, 1)
+        if element == "cold" then color = Color(0.5, 0.8, 1, 1) end
+        _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, { Color = color })
+    end
+
     method number GetResist(string element)
         if self.ResistParsed ~= self.Resists then
             self.ResistTable = {}
@@ -66,7 +141,7 @@ script MonsterTraits extends Component
     end
 
     @ExecSpace("ClientOnly")
-    method void OnUpdate(number delta)
+    method void TintTick()
         -- 동기화된 색조가 바뀌었을 때만 칠한다 (늦게 들어온 클라이언트 포함)
         if self.TintSync == self.AppliedTint then return end
         self.AppliedTint = self.TintSync

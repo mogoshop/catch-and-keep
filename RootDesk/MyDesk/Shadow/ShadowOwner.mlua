@@ -1,6 +1,6 @@
 -- 그림자 보관함 (플레이어별 데이터). 보관함의 그림자는 엔티티가 아니라 데이터 행이고, 소환은 ShadowCommander가 맡는다.
 -- 책임: 행 추가·분해·강화, UI용 요약 문자열, 저장/불러오기.
--- 행: id → { id, sourceId, grade, level, deployed, slot, respawnReadyAt, standRuid, moveRuid }
+-- 행: id → { id, sourceId, grade, level, variant, deployed, slot, respawnReadyAt, standRuid, moveRuid }
 @Component
 script ShadowOwner extends Component
 
@@ -12,7 +12,7 @@ script ShadowOwner extends Component
     @Sync
     property integer StorageCount = 0
     @Sync
-    property string StorageDigest = ""       -- "id|sourceId|grade|level|deployed|readyAt;..."
+    property string StorageDigest = ""       -- "id|sourceId|grade|level|deployed|readyAt|variant;..."
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -34,11 +34,11 @@ script ShadowOwner extends Component
     -- ───────── 보관함 조작 (서버) ─────────
 
     @ExecSpace("ServerOnly")
-    method string AddShadow(string sourceId, integer grade, integer level, string standRuid, string moveRuid)
+    method string AddShadow(string sourceId, integer grade, integer level, string variant, string standRuid, string moveRuid)
         -- 추출 성공 시 호출. 시작 레벨 = 처치한 몬스터 레벨 (뒤 지역 그림자가 자연히 강하다). 생성된 id 반환
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
-        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
+        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
         self.StorageCount = self.StorageCount + 1
         self:RefreshDigest()
         return id
@@ -85,7 +85,7 @@ script ShadowOwner extends Component
         -- 클라이언트 UI용 (table은 동기화할 수 없다). 마지막 칸은 재소환 가능 시각(서버 경과 초)
         local rows = {}
         for id, s in pairs(self.Storage) do
-            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt))
+            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or ""))
         end
         table.sort(rows)
         self.StorageDigest = table.concat(rows, ";")
@@ -111,7 +111,7 @@ script ShadowOwner extends Component
     method table GetSaveData()
         local list = {}
         for _, s in pairs(self.Storage) do
-            table.insert(list, { src = s.sourceId, g = s.grade, lv = s.level, st = s.standRuid, mv = s.moveRuid })
+            table.insert(list, { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid })
         end
         return { essence = self.Essence, shadows = list }
     end
@@ -127,7 +127,7 @@ script ShadowOwner extends Component
         self.Essence = data.essence or 0
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
-                self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.st or "", s.mv or "")
+                self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
             end
         end
         self:RefreshDigest()

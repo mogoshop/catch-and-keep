@@ -107,6 +107,7 @@ script Monster extends Component
         -- monster_ranks.csv의 등급: boss / unique(고유 이름) / elite / normal
         if self.Grade >= 3 then return "boss" end
         if self.Unique then return "unique" end
+        if self:GetVariant() ~= "" then return "champion" end
         if self.Grade == 2 then return "elite" end
         return "normal"
     end
@@ -128,8 +129,38 @@ script Monster extends Component
         local traits = self:Traits()
         if traits ~= nil then m = traits.DamageMult end
         local status = self:Status()
-        if status ~= nil then m = m * status:WeakenMult() end
+        if status ~= nil then m = m * status:WeakenMult() * status:AuraMult("dmg") end
         return m
+    end
+
+    method number GetAttackSpeedMultiplier()
+        -- 질풍 오오라
+        local status = self:Status()
+        if status == nil then return 1 end
+        return status:AuraMult("haste")
+    end
+
+    method string GetVariant()
+        -- 변종 능력 id (variants.csv). 무작위 변종 우두머리 또는 최상위·보스 고유
+        local traits = self:Traits()
+        if traits == nil then return "" end
+        return traits.Variant
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MakeVariant(string id)
+        -- 스포너가 변종 우두머리로 만든다: 등급 2(정예 생명) + 능력
+        local traits = self:Traits()
+        if traits == nil or id == "" then return end
+        if self.Grade == 1 then self.Grade = 2 end
+        traits.Variant = id
+        self:Reroll()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReceiveAura(string effect, number value)
+        local status = self:Status()
+        if status ~= nil then status:ReceiveAura(effect, value) end
     end
 
     method string GetAffixElement()
@@ -203,7 +234,7 @@ script Monster extends Component
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = _Util:OwnerPlayerOf(self.LastAttacker),
-            sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, map = self.Entity.CurrentMap,
+            sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, variant = self:GetVariant(), map = self.Entity.CurrentMap,
         })
         _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
         if self.RespawnDelay < 0 then

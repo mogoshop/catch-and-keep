@@ -56,7 +56,11 @@ function genGameData() {
   const mons = load("monsters");
   const shop = load("shop");
   const ranks = load("monster_ranks");
+  const variants = load("variants");
   const body = [
+    "        self.Variants = {}",
+    "        self.VariantOrder = {}",
+    ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
     "        self.Ranks = {}",
     ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, grade = ${n(r.shadowGrade)} }`),
     "        self.Shop = {}",
@@ -68,7 +72,7 @@ function genGameData() {
     "        self.MonsterNames = {}",
     ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(m.stand)}, move = ${s(m.move)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(m.stand)}, move = ${s(m.move)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
     "        self.DepthPool = {}",
     ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
     "        self.DepthUniques = {}",
@@ -90,6 +94,27 @@ function genGameData() {
         -- 몬스터 등급 표 (monster_ranks.csv). 모르는 등급은 normal
         self:Ensure()
         return self.Ranks[rank] or self.Ranks["normal"]
+    end
+
+    method any GetVariant(string id)
+        -- 변종 능력 (variants.csv). 없으면 nil
+        self:Ensure()
+        if id == nil or id == "" then return nil end
+        return self.Variants[id]
+    end
+
+    method string RollVariant()
+        -- 무작위 변종 (weight 비례, 0은 고유 전용)
+        self:Ensure()
+        local total = 0
+        for _, id in ipairs(self.VariantOrder) do total = total + self.Variants[id].weight end
+        if total <= 0 then return "" end
+        local roll = _UtilLogic:RandomDouble() * total
+        for _, id in ipairs(self.VariantOrder) do
+            roll = roll - self.Variants[id].weight
+            if roll <= 0 and self.Variants[id].weight > 0 then return id end
+        end
+        return ""
     end
 
     method any GetShopItem(string key)
@@ -124,9 +149,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

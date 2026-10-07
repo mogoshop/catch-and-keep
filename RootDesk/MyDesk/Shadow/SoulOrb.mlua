@@ -10,6 +10,8 @@ script SoulOrb extends Component
     property string SourceId = ""
     property string Rank = "normal"         -- monster_ranks.csv 등급 (추출 확률)
     property integer Level = 1              -- 처치된 몬스터 레벨 (그림자 시작 레벨)
+    @Sync
+    property string Variant = ""            -- 변종 능력 (추출·되살림하면 그대로 쓴다)
     property string StandRUID = ""
     property string MoveRUID = ""
     property number LifeSeconds = 8
@@ -18,13 +20,14 @@ script SoulOrb extends Component
     property number PulseTime = 0
 
     @ExecSpace("ServerOnly")
-    method void Setup(string ownerUserId, string sourceId, integer grade, string rank, integer level, string standRuid, string moveRuid)
+    method void Setup(string ownerUserId, string sourceId, integer grade, string rank, integer level, string variant, string standRuid, string moveRuid)
         -- ShadowSystem이 스폰 직후 호출. 값만 저장한다 (스폰 직후 다른 메서드 호출 금지 — LEA-2011)
         self.OwnerUserId = ownerUserId
         self.SourceId = sourceId
         self.Grade = grade
         self.Rank = rank
         self.Level = level
+        self.Variant = variant
         self.StandRUID = standRuid
         self.MoveRUID = moveRuid
     end
@@ -52,7 +55,9 @@ script SoulOrb extends Component
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) then return end
         local a = 0.45 + 0.35 * math.abs(math.sin(self.PulseTime * 3))
-        if self.Grade >= 2 then
+        if self.Variant ~= "" then
+            sprite.Color = Color(1.0, 0.35, 0.9, a)     -- 변종 능력이 든 혼은 자홍색
+        elseif self.Grade >= 2 then
             sprite.Color = Color(1.0, 0.75, 0.3, a)
         else
             sprite.Color = Color(0.6, 0.45, 1.0, a)

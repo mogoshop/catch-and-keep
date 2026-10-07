@@ -67,6 +67,10 @@ script SelfTest extends Logic
         local u = _UndeadSystem
         self:Check("undead count", u:CountFor(1) == 1 and u:CountFor(3) == 3 and u:CountFor(4) == 3 and u:CountFor(6) == 4 and u:CountFor(20) == 8, "D2 해골 수 규칙")
         self:Check("shadow unlock", _SkillData:Get("shadow_summon").row >= 10 and _SkillData:Get("raise_skeleton").row == 1, "해골 1레벨, 그림자는 Lv10 이후")
+        -- 변종 능력: 무작위는 weight > 0 만, 고유는 표에서
+        local rolled = _GameData:RollVariant()
+        self:Check("variant roll", rolled ~= "" and _GameData:GetVariant(rolled).weight > 0, "무작위 변종 " .. rolled)
+        self:Check("variant innate", _GameData:GetMonsterStats("grave_queen").innate == "skill_slam", "여왕 고유 = 내려찍기")
         self:Check("quests", _QuestData:Count() == 6, "quests.csv 6개, 실제 " .. tostring(_QuestData:Count()))
         for _, id in ipairs(_SkillData:GetOrder()) do
             local def = _SkillData:Get(id)
