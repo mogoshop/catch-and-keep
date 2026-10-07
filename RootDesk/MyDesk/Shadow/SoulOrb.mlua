@@ -8,6 +8,8 @@ script SoulOrb extends Component
     @Sync
     property integer Grade = 1
     property string SourceId = ""
+    property string Rank = "normal"         -- monster_ranks.csv 등급 (추출 확률)
+    property integer Level = 1              -- 처치된 몬스터 레벨 (그림자 시작 레벨)
     property string StandRUID = ""
     property string MoveRUID = ""
     property number LifeSeconds = 8
@@ -16,11 +18,13 @@ script SoulOrb extends Component
     property number PulseTime = 0
 
     @ExecSpace("ServerOnly")
-    method void Setup(string ownerUserId, string sourceId, integer grade, string standRuid, string moveRuid)
+    method void Setup(string ownerUserId, string sourceId, integer grade, string rank, integer level, string standRuid, string moveRuid)
         -- ShadowSystem이 스폰 직후 호출. 값만 저장한다 (스폰 직후 다른 메서드 호출 금지 — LEA-2011)
         self.OwnerUserId = ownerUserId
         self.SourceId = sourceId
         self.Grade = grade
+        self.Rank = rank
+        self.Level = level
         self.StandRUID = standRuid
         self.MoveRUID = moveRuid
     end
@@ -35,7 +39,7 @@ script SoulOrb extends Component
 
     @ExecSpace("ServerOnly")
     method void Consume()
-        -- 추출 시도 후 제거 (성공·실패 모두 한 번뿐)
+        -- 혼은 한 번만 쓴다: 추출 시도(성공·실패) / 망자 폭쇄 / 되살림 중 하나
         if self.Consumed then return end
         self.Consumed = true
         self.Entity:Destroy()

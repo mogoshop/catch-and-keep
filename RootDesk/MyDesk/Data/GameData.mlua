@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -6,8 +6,6 @@ script GameData extends Logic
     property boolean Built = false
     property number deployBase = 5    -- 배치 기본 한도
     property number hardCap = 8    -- 배치 절대 상한 (스킬·장비 보너스 포함)
-    property number extractChance_g1 = 0.35    -- 일반 몬스터 추출 확률 (능동 추출)
-    property number extractChance_g2 = 0.2    -- 정예 추출 확률
     property number extractReach = 1.2    -- 혼 추출 가능 거리
     property number shadowStatMul = 0.6    -- 원본 대비 그림자 능력치 배율
     property number shadowLevelGrowth = 0.08    -- 그림자 레벨당 성장률
@@ -44,16 +42,26 @@ script GameData extends Logic
     property number depthUniqueLevelBonus = 3    -- 심도 최상위 몬스터 레벨 가산
     property number deathGoldPctCap = 20    -- 사망 골드 손실 % = 레벨 (최대 이 값) — D2 규칙
     property number deathExpRecover = 0.75    -- 시체를 되찾으면 잃은 경험치 중 회복되는 비율 — D2 규칙
+    property number extractMasteryPerLv = 0.015    -- 추출 숙련 레벨당 추출 확률
+    property number extractChanceCap = 0.75    -- 추출 확률 상한 (보스 포함)
+    property number bossShadowDeployLimit = 1    -- 보스 그림자 동시 소환 수
     property table Difficulties = {}
     property table Sounds = {}
     property table MonsterNames = {}
     property table DepthPool = {}
     property table Shop = {}
+    property table Ranks = {}
     property table DepthUniques = {}
 
     method void Ensure()
         if self.Built then return end
         self.Built = true
+        self.Ranks = {}
+        self.Ranks["normal"] = { name = "일반", hpMul = 1, dmgMul = 1, extract = 0.25, grade = 1 }
+        self.Ranks["elite"] = { name = "정예", hpMul = 3, dmgMul = 1.3, extract = 0.15, grade = 2 }
+        self.Ranks["champion"] = { name = "무리 우두머리", hpMul = 4, dmgMul = 1.5, extract = 0.15, grade = 2 }
+        self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, grade = 2 }
+        self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.3, grade = 3 }
         self.Shop = {}
         self.Shop["hp"] = { name = "생명 물약", price = 25, perLevel = 0, hpPct = 40, manaPct = 0 }
         self.Shop["mp"] = { name = "마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 50 }
@@ -100,6 +108,12 @@ script GameData extends Logic
     method string GetSound(string key)
         self:Ensure()
         return self.Sounds[key] or ""
+    end
+
+    method any GetRank(string rank)
+        -- 몬스터 등급 표 (monster_ranks.csv). 모르는 등급은 normal
+        self:Ensure()
+        return self.Ranks[rank] or self.Ranks["normal"]
     end
 
     method any GetShopItem(string key)

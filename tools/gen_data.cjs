@@ -55,7 +55,10 @@ function genGameData() {
   const sounds = load("sounds");
   const mons = load("monsters");
   const shop = load("shop");
+  const ranks = load("monster_ranks");
   const body = [
+    "        self.Ranks = {}",
+    ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, grade = ${n(r.shadowGrade)} }`),
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)} }`),
     "        self.Difficulties = {}",
@@ -79,6 +82,12 @@ function genGameData() {
     method string GetSound(string key)
         self:Ensure()
         return self.Sounds[key] or ""
+    end
+
+    method any GetRank(string rank)
+        -- 몬스터 등급 표 (monster_ranks.csv). 모르는 등급은 normal
+        self:Ensure()
+        return self.Ranks[rank] or self.Ranks["normal"]
     end
 
     method any GetShopItem(string key)
@@ -107,9 +116,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table Shop = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

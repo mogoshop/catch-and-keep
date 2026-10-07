@@ -11,8 +11,9 @@ script SoulExtractor extends Component
         if orb == nil or orb.Consumed or orb.OwnerUserId ~= senderUserId then return end
         if _Util:Distance(self.Entity, soul) > _ShadowConfig:GetExtractReach() then return end
         local grade = orb.Grade
-        local chance = 1
-        if grade < 3 then chance = math.min(0.95, _ShadowConfig:GetExtractChance(grade) + 0.03 * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100) end
+        -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다
+        local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100
+        chance = math.min(_GameData.extractChanceCap, chance)
         local success = _UtilLogic:RandomDouble() < chance
         local pos = soul.TransformComponent.WorldPosition
         if success then

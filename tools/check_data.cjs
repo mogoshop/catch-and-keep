@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -147,6 +147,15 @@ T.quests.forEach((r, i) => {
     else if (["skp", "stp", "gen"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
     else if (!["rune", "item"].includes(k)) err("quests", i, `보상 종류 '${k}' 알 수 없음`);
   }
+});
+
+// ── 몬스터 등급 (추출 확률 단일 기준) ──
+const rankIds = unique("monster_ranks", "rank");
+for (const k of ["normal", "elite", "unique", "boss"]) if (!rankIds.has(k)) err("monster_ranks", null, `'${k}' 등급 없음 (Monster:GetRank가 쓴다)`);
+T.monster_ranks.forEach((r, i) => {
+  const c = num(r.extractChance, -1);
+  if (!(c > 0 && c <= 1)) err("monster_ranks", i, `extractChance ${r.extractChance} — 0 초과 1 이하`);
+  if (![1, 2, 3].includes(num(r.shadowGrade))) err("monster_ranks", i, "shadowGrade 1~3");
 });
 
 // ── 상점·오브젝트·NPC ──

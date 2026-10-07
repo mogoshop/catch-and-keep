@@ -103,6 +103,14 @@ script Monster extends Component
 
     -- ───────── 창구 (다른 시스템은 이것만 쓴다) ─────────
 
+    method string GetRank()
+        -- monster_ranks.csv의 등급: boss / unique(고유 이름) / elite / normal
+        if self.Grade >= 3 then return "boss" end
+        if self.Unique then return "unique" end
+        if self.Grade == 2 then return "elite" end
+        return "normal"
+    end
+
     method number GetResist(string element)
         local traits = self:Traits()
         if traits == nil then return 0 end
@@ -195,7 +203,7 @@ script Monster extends Component
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = _Util:OwnerPlayerOf(self.LastAttacker),
-            sourceId = self.SourceId, grade = self.Grade, level = self.Level, map = self.Entity.CurrentMap,
+            sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, map = self.Entity.CurrentMap,
         })
         _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
         if self.RespawnDelay < 0 then

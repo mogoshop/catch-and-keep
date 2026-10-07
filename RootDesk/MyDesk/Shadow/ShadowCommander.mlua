@@ -66,7 +66,20 @@ script ShadowCommander extends Component
         local shadow = owner ~= nil and owner:GetShadow(id) or nil
         if shadow == nil or shadow.deployed then return false end
         if self.DeployedCount >= self:GetDeployLimit() then return false end
+        if shadow.grade >= 3 and self:DeployedBossCount() >= math.floor(_GameData.bossShadowDeployLimit) then return false end
         return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer DeployedBossCount()
+        -- 보스 그림자는 한 번에 bossShadowDeployLimit(1)기만
+        local n = 0
+        local owner = self:Owner()
+        for id, _ in pairs(self.Units) do
+            local s = owner:GetShadow(id)
+            if s ~= nil and s.grade >= 3 then n = n + 1 end
+        end
+        return n
     end
 
     @ExecSpace("ServerOnly")
