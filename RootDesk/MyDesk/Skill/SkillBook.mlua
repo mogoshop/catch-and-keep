@@ -128,7 +128,12 @@ script SkillBook extends Component
     method void SanitizeSlots()
         -- 옛 저장·기본값에 남은 "안 배운 스킬" 칸을 비운다
         local list = self:SlotList()
-        for i = 1, 4 do if list[i] ~= "" and not self:IsSlottable(list[i]) then list[i] = "" end end
+        local seen = {}
+        for i = 1, 4 do
+            -- 안 배운 스킬, 같은 스킬이 두 칸에 든 경우(옛 저장) 비운다
+            if list[i] ~= "" and (not self:IsSlottable(list[i]) or seen[list[i]]) then list[i] = "" end
+            if list[i] ~= "" then seen[list[i]] = true end
+        end
         self.Slots = table.concat(list, ",", 1, 4)
         if self.RightSkill ~= "" and not self:IsSlottable(self.RightSkill) then self.RightSkill = "" end
     end

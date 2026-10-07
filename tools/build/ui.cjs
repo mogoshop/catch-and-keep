@@ -1,6 +1,7 @@
 // UI 생성: GameHUD(상시 HUD·창·메뉴, 컨트롤러는 RootDesk/MyDesk/UI) + ShadowHUD(그림자 상태·보관함·모바일 패드).
 // GameHUD는 매번 새로 만든다 (경로 = 컨트롤러가 찾는 이름. 이름을 바꾸면 UI/*의 경로도 같이).
-// 그림은 data/ui_icons.csv (msw-ui-kit simplefantasy 테마 = MapleSlash UI: 남색 창·흰 글자, 색 마스크는 color·alpha 필수),
+// 그림은 data/ui_icons.csv: 코덱스 제작 음울한 테마(창·버튼·칸·미니맵 테두리, 오브, 빈 장비, 메뉴·스킬 아이콘, 9-slice 경계는 리소스에 설정)
+// + msw-ui-kit simplefantasy 부품(안쪽 칸·정보 띠·등급 테두리·작은 아이콘, 색 마스크는 color·alpha 필수),
 // 아이템·스킬 아이콘은 item_bases.csv·skills.csv의 icon 열(메이플 아이템·스킬 그림).
 // PC 전용 = ActivePlatform 1, 모바일 전용 = 2 (나머지는 공용).
 "use strict";
@@ -25,7 +26,8 @@ function hexA(hex, a) {
 }
 const SKILL_ICON = Object.fromEntries(load("skills").map((r) => [r.id, r.icon]));
 // 글자색: 테마 원작 조합 (어두운 바탕 = 밝은 글자, 종이 = #757474, 퀘스트 종이 = #6C7995/#8C99B4)
-const C = { gold: "#EEEDE8", brown: "#757474", white: "#FFFFFF", dim: "#B2B2B2", dark: "#2D2D2D", qTitle: "#6C7995", qBody: "#8C99B4", value: "#D3CCCC" };
+const C = { gold: "#E6DCC6", brown: "#757474", white: "#FFFFFF", dim: "#A8A090", dark: "#2D2D2D", qTitle: "#E6C88A", qBody: "#D8CFBC", value: "#D3CCCC", title: "#F6E3B0" };
+const DARK = { r: 0.05, g: 0.045, b: 0.06, a: 0.94 };   // 테두리 그림 뒤에 까는 어두운 바탕
 const WHITE = "#FFFFFF";
 const outline = { outline: true, outline_color: "#2D2D2D" };
 
@@ -34,26 +36,38 @@ function kit(b) {
   const k = {
     pc(name) { b.patchComponent(name, "MOD.Core.UITransformComponent", { ActivePlatform: 1 }); },
     mobile(name) { b.patchComponent(name, "MOD.Core.UITransformComponent", { ActivePlatform: 2 }); },
-    aspect(name) { b.patchComponent(name, "MOD.Core.SpriteGUIRendererComponent", { PreserveSprite: 1 }); },
+    // 아이콘은 칸 크기에 맞춰 늘린다 (PreserveSprite None). AspectOnly·NativeSize는 메이플 아이템 그림의 피벗 때문에 칸 밖으로 밀린다
+    aspect(name) { b.patchComponent(name, "MOD.Core.SpriteGUIRendererComponent", { PreserveSprite: 0 }); },
     // 창: 남색 바탕(9-slice) + 흰 제목 + 닫기(70)
     frame(name, anchor, pos, size, title) {
-      b.panel(name, { anchor, pos, rect_size: size, ...part("win_panel"), sprite_type: 1, raycast: true });
-      b.text(`${name}/Title`, title, { size: 30, bold: true, color: C.white, anchor: "top-center", pos: [0, -20], rect_size: [size[0] - 220, 44] });
+      b.panel(name, { anchor, pos, rect_size: size, color: DARK, sprite_type: 1, raycast: true });
+      k.rim(name, "win_frame", -10);
+      b.text(`${name}/Title`, title, { size: 30, bold: true, color: C.title, anchor: "top-center", pos: [0, -22], rect_size: [size[0] - 260, 44], ...outline });
       b.button(`${name}/BtnClose`, "", { anchor: "top-right", pos: [-12, -10], rect_size: [70, 70], ...bg("btn_close"), sprite_type: 1 });
+    },
+    // 테두리 그림을 부모 크기에 맞춰 덮는다 (inset 음수 = 바깥으로 조금 넘침)
+    // stretch 앵커는 다시 불러올 때 크기 0으로 접히므로, 부모 크기를 읽어 가운데 고정 크기로 둔다
+    rim(name, key, inset = 0) {
+      const size = b.getComponent(name, "MOD.Core.UITransformComponent").RectSize;
+      b.sprite(`${name}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [size.x - inset * 2, size.y - inset * 2], ...part(key), sprite_type: 1 });
+      b.patchComponent(`${name}/Rim`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     },
     // 안쪽 칸: win_content(어두운, 밝은 글자) / win_paper·win_desc(밝은 종이, #757474 글자)
     inner(name, anchor, pos, size, key = "win_content") {
       b.panel(name, { anchor, pos, rect_size: size, ...part(key), sprite_type: 1 });
     },
     // 버튼 (흰 글자)
-    btn(name, text, opts) { b.button(name, text, { font_size: 24, color: C.white, ...bg("btn"), sprite_type: 1, ...opts }); },
-    ok(name, text, opts) { b.button(name, text, { font_size: 24, color: C.white, ...bg("btn_ok"), sprite_type: 1, ...opts }); },
+    btn(name, text, opts) { b.button(name, text, { font_size: 24, color: C.gold, ...bg("btn_frame"), sprite_type: 1, ...opts }); },
+    ok(name, text, opts) { b.button(name, text, { font_size: 24, color: "#F4E2B0", ...bg("btn_frame"), bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, ...opts }); },
     // 아이콘 칸: 칸 그림 + Frame(등급 테두리, 꺼짐) + Icon(꺼짐) — 컨트롤러가 그림을 넣고 켠다
     slot(name, opts, iconSize = 60, key = "slot") {
-      b.button(name, "", { ...bg(key), sprite_type: 1, ...opts });
-      b.sprite(`${name}/Frame`, { anchor: "stretch", pos: [0, 0], rect_size: [0, 0], ...part("frame_magic"), sprite_type: 1, enable: false });
+      const base = key === "slot_eq" ? { r: 0.07, g: 0.07, b: 0.1, a: 0.9 } : DARK;
+      b.button(name, "", { bg_color: base, sprite_type: 1, ...opts });
+      const sz = b.getComponent(name, "MOD.Core.UITransformComponent").RectSize;
+      b.sprite(`${name}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [sz.x - 4, sz.y - 4], ...part("frame_magic"), sprite_type: 1, enable: false });
       b.sprite(`${name}/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [iconSize, iconSize], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
       k.aspect(`${name}/Icon`);
+      k.rim(name, "slot_frame");
     },
     // 테마 그림 한 장 (아이콘·장식)
     pic(name, key, opts) {
@@ -81,15 +95,14 @@ function buildGameHud() {
   b.text("Target/Curse", "", { size: 16, color: "#C88CFF", anchor: "top-center", pos: [0, -66], rect_size: [440, 22], ...outline });
 
   // ── 맵 이름 (D2처럼 들어올 때 상단 가운데 2초) ──
-  b.empty("Banner", { anchor: "top-center", pos: [0, -290], rect_size: [900, 130] });
-  b.text("Banner/Title", "", { size: 54, bold: true, color: "#F4ED83", anchor: "top-center", pos: [0, 0], rect_size: [900, 72], ...outline, outline_width: 0.25 });
+  b.sprite("Banner", { anchor: "top-center", pos: [0, -280], rect_size: [900, 150], ...part("banner"), sprite_type: 1 });
+  b.text("Banner/Title", "", { size: 48, bold: true, color: C.title, anchor: "top-center", pos: [0, -22], rect_size: [620, 64], ...outline, outline_width: 0.25 });
   b.patchComponent("Banner/Title", "MOD.Core.TextGUIRendererComponent", { Font: "Maple" });
-  b.text("Banner/Sub", "", { size: 26, color: C.white, anchor: "top-center", pos: [0, -76], rect_size: [900, 40], ...outline });
+  b.text("Banner/Sub", "", { size: 24, color: C.gold, anchor: "top-center", pos: [0, -86], rect_size: [620, 36], ...outline });
 
   // ── 미니맵 (오른쪽 위, PC 시스템 버튼 아래) ──
-  b.panel("MiniMap", { anchor: "top-right", pos: [-24, -140], rect_size: [304, 252], ...part("win_panel"), sprite_type: 1, raycast: true });
-  b.text("MiniMap/Name", "", { size: 19, bold: true, color: C.white, anchor: "top-center", pos: [0, -12], rect_size: [280, 30], ...outline });
-  b.panel("MiniMap/Area", { anchor: "middle-center", pos: [0, -16], rect_size: [272, 180], ...part("win_content"), sprite_type: 1 });
+  b.panel("MiniMap", { anchor: "top-right", pos: [-24, -140], rect_size: [300, 280], color: DARK, sprite_type: 1, raycast: true });
+  b.panel("MiniMap/Area", { anchor: "middle-center", pos: [0, -10], rect_size: [256, 200], ...part("win_content"), sprite_type: 1 });
   for (let i = 1; i <= 12; i++) {
     b.sprite(`MiniMap/Area/F${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [20, 20], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
   }
@@ -97,6 +110,8 @@ function buildGameHud() {
     b.sprite(`MiniMap/Area/P${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [16, 16], image_ruid: K.dot, sprite_type: 0, color: "#5AA0FF", alpha: 1, enable: false });
   }
   b.sprite("MiniMap/Area/Me", { anchor: "middle-center", pos: [0, 0], rect_size: [20, 20], image_ruid: K.dot, sprite_type: 0, color: "#50FF50", alpha: 1 });
+  k.rim("MiniMap", "minimap_frame", -6);
+  b.text("MiniMap/Name", "", { size: 19, bold: true, color: C.title, anchor: "top-center", pos: [0, -14], rect_size: [220, 28], ...outline });
 
   // ── 메뉴 버튼 (미니맵 왼쪽) ──
   b.button("BtnMenu", "", { anchor: "top-right", pos: [-344, -140], rect_size: [96, 96], ...bg("menu_btn"), sprite_type: 1 });
@@ -104,10 +119,10 @@ function buildGameHud() {
   k.badge("BtnMenu");
 
   // ── 퀘스트 추적 (미니맵 아래) ──
-  b.button("QuestTrack", "", { anchor: "top-right", pos: [-24, -404], rect_size: [420, 120], ...bg("quest_paper"), sprite_type: 1 });
-  k.pic("QuestTrack/Icon", "quest_icon", { anchor: "middle-left", pos: [20, 0], rect_size: [56, 56] });
-  b.text("QuestTrack/Title", "", { size: 23, bold: true, color: C.qTitle, alignment: 3, anchor: "top-left", pos: [92, -14], rect_size: [310, 32] });
-  b.text("QuestTrack/Body", "", { size: 19, color: C.qBody, alignment: 0, anchor: "top-left", pos: [92, -48], rect_size: [310, 60] });
+  b.button("QuestTrack", "", { anchor: "top-right", pos: [-24, -432], rect_size: [420, 120], ...bg("btn_frame"), sprite_type: 1 });
+  k.pic("QuestTrack/Icon", "quest_icon", { anchor: "middle-left", pos: [28, 0], rect_size: [52, 52] });
+  b.text("QuestTrack/Title", "", { size: 22, bold: true, color: C.qTitle, alignment: 3, anchor: "top-left", pos: [88, -16], rect_size: [300, 32], ...outline });
+  b.text("QuestTrack/Body", "", { size: 18, color: C.qBody, alignment: 0, anchor: "top-left", pos: [88, -50], rect_size: [300, 56] });
 
   // ── 파티 (왼쪽, 그림자 상태줄 아래) ──
   b.empty("Party", { anchor: "top-left", pos: [24, -272], rect_size: [400, 170] });
@@ -127,12 +142,16 @@ function buildGameHud() {
   b.text("XP/Text", "Lv 1", { size: 15, anchor: "middle-center", pos: [0, 0], rect_size: [900, 20], ...outline });
 
   // ── 생명·마나: PC는 D2 오브(양쪽 아래), 모바일은 가운데 아래 작게. 오브 그림은 코덱스 제작 전까지 임시 ──
-  for (const [name, side, col, x, size, platform] of [
-    ["LifeOrb", "bottom-left", "#C0282D", 16, 170, "pc"], ["ManaOrb", "bottom-right", "#2D50C8", -16, 170, "pc"],
-    ["MLife", "bottom-center", "#C0282D", -74, 120, "mobile"], ["MMana", "bottom-center", "#2D50C8", 74, 120, "mobile"],
+  for (const [name, side, fill, x, size, platform] of [
+    ["LifeOrb", "bottom-left", "orb_life", 12, 180, "pc"], ["ManaOrb", "bottom-right", "orb_mana", -12, 180, "pc"],
+    ["MLife", "bottom-center", "orb_life", -74, 124, "mobile"], ["MMana", "bottom-center", "orb_mana", 74, 124, "mobile"],
   ]) {
-    b.panel(name, { anchor: side, pos: [x, 30], rect_size: [size, size], color: "#140A0A", alpha: 0.85 });
-    b.sprite(`${name}/Fill`, { anchor: "middle-center", pos: [0, 0], rect_size: [size - 12, size - 12], color: col, alpha: 0.95, sprite_type: 3, fill_method: 1 });
+    const inner = Math.round(size * 240 / 256);
+    b.empty(name, { anchor: side, pos: [x, 28], rect_size: [size, size] });
+    b.sprite(`${name}/Bg`, { anchor: "middle-center", pos: [0, 0], rect_size: [inner, inner], ...part("orb_bg"), sprite_type: 0 });
+    b.sprite(`${name}/Fill`, { anchor: "middle-center", pos: [0, 0], rect_size: [inner, inner], ...part(fill), sprite_type: 3, fill_method: 1 });
+    b.patchComponent(`${name}/Fill`, "MOD.Core.SpriteGUIRendererComponent", { FillOrigin: 0, FillAmount: 1 });
+    b.sprite(`${name}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [size, size], ...part("orb_frame"), sprite_type: 0 });
     b.text(`${name}/Text`, "0/0", { size: size > 150 ? 22 : 17, bold: true, anchor: "middle-center", pos: [0, 0], rect_size: [size, 40], ...outline });
     if (platform === "pc") k.pc(name); else k.mobile(name);
   }
@@ -183,7 +202,7 @@ function buildGameHud() {
 
   // ── 스킬 지정 (퀵슬롯 칸을 누르거나 메뉴·모바일 편집 버튼으로) ──
   k.frame("SkillPick", "middle-center", [0, 20], [900, 720], "스킬 지정");
-  ["A", "S", "D", "F", "우클릭"].forEach((t, i) => b.button(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 64], font_size: 22, color: C.white, ...bg("tab"), sprite_type: 1 }));
+  ["A", "S", "D", "F", "우클릭"].forEach((t, i) => k.btn(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 64], font_size: 22 }));
   k.inner("SkillPick/Grid", "top-center", [0, -166], [820, 424]);
   for (let i = 0; i < 18; i++) {
     const col = i % 6, row = Math.floor(i / 6);
@@ -337,14 +356,15 @@ function patchShadowHud() {
   // 안내 한 줄은 메뉴 창(단축키)으로 옮겼다
   s.patch("Hint", { enable: false });
   // 상태줄: PC 시스템 버튼(왼쪽 위 260×170)을 피해 오른쪽으로
-  s.patch("Status", { anchor: "top-left", pos: [20, -190], rect_size: [680, 72] });
-  s.patch("Status/Text", { rect_size: [300, 64] });
+  s.patch("Status", { anchor: "top-left", pos: [20, -190], rect_size: [760, 72] });
+  s.patch("Status/Text", { rect_size: [400, 64] });
   skin("Status", "hud_box");
   s.patchComponent("Status/BtnStorage", "MOD.Core.TextGUIRendererComponent", { Text: "보관함 (H)" });
-  skin("Status/BtnStorage", "btn");
-  skin("Status/BtnInput", "btn");
-  // 보관함 창: 테마 창 + 줄마다 원본 몬스터 초상
-  skin("Window", "win_panel");
+  skin("Status/BtnStorage", "btn_frame");
+  skin("Status/BtnInput", "btn_frame");
+  // 보관함 창: 어두운 바탕 + 코덱스 창 테두리 + 줄마다 원본 몬스터 초상
+  s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK });
+  k.rim("Window", "win_frame", -10);
   textColor("Window/Title", C.white);
   for (let i = 1; i <= 8; i++) {
     const row = `Window/Row${i}`;
@@ -352,9 +372,9 @@ function patchShadowHud() {
     if (!s.find(`${row}/Portrait`)) s.sprite(`${row}/Portrait`, { anchor: "middle-left", pos: [6, 0], rect_size: [48, 48], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     k.aspect(`${row}/Portrait`);
     s.patch(`${row}/Label`, { pos: [60, 0], rect_size: [350, 44] });
-    for (const btn of ["BtnDeploy", "BtnUpgrade", "BtnSalvage"]) skin(`${row}/${btn}`, "btn");
+    for (const btn of ["BtnDeploy", "BtnUpgrade", "BtnSalvage"]) skin(`${row}/${btn}`, "btn_frame");
   }
-  for (const btn of ["BtnPrev", "BtnNext"]) skin(`Window/${btn}`, "btn");
+  for (const btn of ["BtnPrev", "BtnNext"]) skin(`Window/${btn}`, "btn_frame");
   skin("Window/BtnClose", "btn_close");
   s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
 
@@ -364,7 +384,8 @@ function patchShadowHud() {
   }
   const center = { anchor: "bottom-right", pivot: [0.5, 0.5] };
   // 오른쪽 아래 모서리 기준 중심 좌표 (엄지 반경 안, 서로 겹치지 않게)
-  s.button("MobilePad/Attack", "", { ...center, pos: [-180, 190], rect_size: [220, 220], ...bg("circle"), sprite_type: 1 });
+  s.button("MobilePad/Attack", "", { ...center, pos: [-180, 190], rect_size: [220, 220], ...bg("orb_bg"), sprite_type: 0 });
+  s.sprite("MobilePad/Attack/Ring", { anchor: "middle-center", pos: [0, 0], rect_size: [234, 234], ...part("orb_frame"), sprite_type: 0 });
   k.pic("MobilePad/Attack/Icon", "icon_sword", { anchor: "middle-center", pos: [0, 14], rect_size: [100, 100] });
   b_label(s, "MobilePad/Attack/Label", "공격", 28, "bottom-center");
   s.patch("MobilePad/Attack/Label", { pos: [0, 22] });
