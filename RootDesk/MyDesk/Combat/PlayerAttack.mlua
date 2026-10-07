@@ -11,6 +11,7 @@ script PlayerAttack extends AttackComponent
     property number AimRange = 1.7            -- 자동 조준: 이 거리 안 가장 가까운 적 쪽으로 친다
     property number Windup = 0.1              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
+    property integer AttackEpoch = 0
     property number LastAttackAt = -99
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
@@ -44,7 +45,16 @@ script PlayerAttack extends AttackComponent
         end
         -- 아바타 휘두르는 동작에 맞춰 Windup초 뒤에 판정·궤적
         local aimDir = dir
-        _TimerService:SetTimerOnce(function() self:Strike(aimDir) end, self.Windup)
+        local epoch = self.AttackEpoch
+        local map = self.Entity.CurrentMap
+        _TimerService:SetTimerOnce(function()
+            if epoch == self.AttackEpoch and self.Entity.CurrentMap == map then self:Strike(aimDir) end
+        end, self.Windup)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelAttack()
+        self.AttackEpoch = self.AttackEpoch + 1
     end
 
     @ExecSpace("ServerOnly")

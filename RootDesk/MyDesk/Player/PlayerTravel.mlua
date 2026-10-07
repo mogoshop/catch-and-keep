@@ -19,12 +19,32 @@ script PlayerTravel extends Component
 
     @ExecSpace("ServerOnly")
     method void Go(string mapName, Vector2 pos)
+        -- 이동 전 예약·장판·공격 입력을 끊어 이전 맵의 효과가 새 맵에 적용되지 않게 한다.
+        self:CancelCombat()
+        self:ResetLocalInput(self.Entity.PlayerComponent.UserId)
         -- 맵이 바뀌면 소환수는 따라올 수 없으니 먼저 회수
         ---@type ShadowCommander
         local commander = self.Entity:GetComponent("script.ShadowCommander")
         if commander ~= nil then commander:RecallAll() end
         _UndeadSystem:Follow(self.Entity)   -- 언데드는 도착 뒤 다시 일어나 따라온다 (D2)
         _TeleportService:TeleportToMapPosition(self.Entity, Vector3(pos.x, pos.y, 0), mapName)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelCombat()
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book ~= nil then book:CancelPending() end
+        local effects = self.Entity:GetComponent("script.SkillEffects")
+        if effects ~= nil then effects:CancelActiveEffects() end
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        if attack ~= nil then attack:CancelAttack() end
+    end
+
+    @ExecSpace("Client")
+    method void ResetLocalInput()
+        local cc = self.Entity:GetComponent("script.ClickControl")
+        if cc ~= nil then cc:Cancel() end
+        _MobilePad.Holding = false
     end
 
     @ExecSpace("ServerOnly")

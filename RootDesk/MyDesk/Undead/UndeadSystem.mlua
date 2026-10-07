@@ -60,7 +60,7 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method boolean Raise(Entity player, string kind, integer slvl, Vector2 target, any onComplete)
+    method boolean Raise(Entity player, string kind, integer slvl, Vector2 target, any onComplete, any canCommit)
         local userId = player.PlayerComponent.UserId
         local me = _Util:Pos2(player)
         if (target - me):Magnitude() > 5 then
@@ -91,6 +91,7 @@ script UndeadSystem extends Logic
         local spawned = self:SpawnUnit(player, rec, pos, function()
             if finished then self:DestroyEntity(rec) return end
             if not _Util:IsAlive(player) or not isvalid(orb.Entity) or player.CurrentMap ~= orb.Entity.CurrentMap then fail() return end
+            if canCommit ~= nil and not canCommit() then fail() return end
             finished = true
             orb:Consume()
             local max = self:CountFor(slvl)

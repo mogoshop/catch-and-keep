@@ -1,3 +1,4 @@
+-- 지연 생성은 성공 확인 후 비용을 확정하고, 맵 이동·사망 시 취소한다.
 -- 스킬북: 습득·슬롯·입력·시전 조건(구현 여부·쿨다운·마나). 효과는 SkillEffects.
 -- 입력: A S D F = 슬롯 1~4, 마우스 우클릭 = 오른쪽 스킬. 조준점은 커서(마우스 모드) 또는 가장 가까운 적.
 @Component
@@ -7,6 +8,7 @@ script SkillBook extends Component
     property table Levels = {}                -- id → 투자 레벨 (서버)
     property table PendingCasts = {}
     property number PendingMana = 0
+    property integer CastEpoch = 0
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     property table CdLen = {}                 -- id → 마지막 쿨다운 길이 (표시용)
     @Sync
@@ -157,6 +159,7 @@ script SkillBook extends Component
     @ExecSpace("ServerOnly")
     method boolean Cast(string id, Vector2 target)
         -- 습득·구현·비용 확인 → 효과 성공 → 마나·쿨다운 확정
+        if not _Util:IsAlive(self.Entity) then return false end
         local def = _SkillData:Get(id)
         local lv = self:GetLevel(id)
         if def == nil or lv <= 0 then return false end
@@ -185,22 +188,34 @@ script SkillBook extends Component
         if id == "raise_skeleton" then kind = "skeleton"
         elseif id == "raise_mage" then kind = "mage"
         elseif id == "revive" then kind = "revive" end
-        if kind ~= "" then
+        if kind ~= "" or id == "bone_shard" then
+            local epoch = self.CastEpoch
             self.PendingCasts[id] = true
             self.PendingMana = self.PendingMana + cost
-            local accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, function(success)
+            local complete = function(success)
+                if epoch ~= self.CastEpoch or not self.PendingCasts[id] then return end
                 self.PendingCasts[id] = nil
                 self.PendingMana = math.max(0, self.PendingMana - cost)
-                if not success or not isvalid(self.Entity) then return end
-                stats:SpendMana(cost)
+                if not success or not _Util:IsAlive(self.Entity) then return end
+                if not stats:SpendMana(cost) then return end
                 self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
+                if id == "bone_shard" and math.abs(target.x - me.x) > 0.05 then
+                    self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1
+                end
                 self.Entity.StateComponent:ChangeState("ATTACK")
-                log("[VRF] summon committed " .. id .. " mana=" .. tostring(cost))
-            end)
-            if not accepted then
-                self.PendingCasts[id] = nil
-                self.PendingMana = math.max(0, self.PendingMana - cost)
+                log("[VRF] cast committed " .. id .. " mana=" .. tostring(cost))
             end
+            local canCommit = function()
+                return epoch == self.CastEpoch and self.PendingCasts[id] == true and _Util:IsAlive(self.Entity) and stats.Mana >= cost
+            end
+            local accepted = false
+            if kind ~= "" then
+                accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, complete, canCommit)
+            else
+                local effects = self.Entity:GetComponent("script.SkillEffects")
+                if effects ~= nil then accepted = effects:BoneShard(me, target, (10 + 6 * (lv - 1)) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit) end
+            end
+            if not accepted then complete(false) end
             return accepted
         end
         ---@type SkillEffects
@@ -213,6 +228,13 @@ script SkillBook extends Component
         end
         self.Entity.StateComponent:ChangeState("ATTACK")
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelPending()
+        self.CastEpoch = self.CastEpoch + 1
+        self.PendingCasts = {}
+        self.PendingMana = 0
     end
 
     @ExecSpace("ServerOnly")
@@ -330,15 +352,18 @@ script SkillBook extends Component
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
-        return { levels = levels, slots = self.Slots, right = self.RightSkill, sv = 2 }
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 2 }
+        for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
+        if saved.levelCount > 0 then saved.levels = levels end
+        return saved
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table d)
         if d == nil then return end
-        if d.levels ~= nil then
+        if d.levels ~= nil or d.levelCount == 0 then
             self.Levels = {}
-            for id, lv in pairs(d.levels) do self.Levels[id] = lv end
+            for id, lv in pairs(d.levels or {}) do self.Levels[id] = lv end
             self:MigrateLevels()
         end
         if d.slots ~= nil then self.Slots = d.slots end

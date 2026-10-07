@@ -50,9 +50,21 @@ script PlayerSave extends Component
         for _, sec in ipairs(self:Sections()) do table.insert(keys, sec.key) end
         local loaded = self:BatchGet(keys)
         if loaded == nil then return end
-        local isNew = loaded["Char"] == nil
+        -- 모든 구역을 먼저 해석한다. 깨진 저장을 기본 캐릭터로 덮어쓰지 않는다.
+        local decoded = {}
         for _, sec in ipairs(self:Sections()) do
-            local data = self:Migrate(sec.key, self:Decode(loaded[sec.key]))
+            local raw = loaded[sec.key]
+            local data = self:Decode(raw)
+            if raw ~= nil and raw ~= "" and data == nil then
+                self.IsLoadSuccess = false
+                _Util:Notify("저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다", self.Entity.PlayerComponent.UserId)
+                return
+            end
+            decoded[sec.key] = data
+        end
+        local isNew = loaded["Char"] == nil or loaded["Char"] == ""
+        for _, sec in ipairs(self:Sections()) do
+            local data = self:Migrate(sec.key, decoded[sec.key])
             if data ~= nil then
                 for _, part in ipairs(sec.parts) do
                     local comp = self.Entity:GetComponent(part[2])
@@ -110,7 +122,7 @@ script PlayerSave extends Component
     method any Decode(any raw)
         if raw == nil or raw == "" then return nil end
         local ok, t = pcall(function() return _HttpService:JSONDecode(raw) end)
-        if ok then return t end
+        if ok and type(t) == "table" then return t end
         log_error("[PlayerSave] 해석 실패")
         return nil
     end
@@ -128,8 +140,11 @@ script PlayerSave extends Component
             for _, part in ipairs(sec.parts) do
                 local comp = self.Entity:GetComponent(part[2])
                 if comp ~= nil then
-                    local value = comp:GetSaveData()
-                    local ok = pcall(function() _HttpService:JSONEncode({ x = value }) end)
+                    local ok, value = pcall(function()
+                        local saved = comp:GetSaveData()
+                        _HttpService:JSONEncode({ x = saved })
+                        return saved
+                    end)
                     if ok then data[part[1]] = value else broken = part[1] end
                 end
             end
@@ -166,6 +181,7 @@ script PlayerSave extends Component
     @ExecSpace("ServerOnly")
     method void OnSaved(table sent, any successKeys)
         -- 저장이 확인된 키만 "마지막 저장값"으로 (실패한 키는 다음에 다시)
+        if successKeys == nil then return end
         for i = 1, #successKeys do
             local k = successKeys[i]
             if sent[k] ~= nil then self.LastSaved[k] = sent[k] end

@@ -268,7 +268,12 @@ script PlayerInventory extends Component
         if trade ~= nil then for _, s in ipairs(trade.Escrow) do table.insert(bag, s) end end
         local equip = {}
         for slot, s in pairs(self.Equip) do equip[slot] = s end
-        return { bag = bag, equip = equip }
+        -- 빈 Lua 표는 JSON 타입이 불명확하므로 개수만 저장한다. 기존 배열 저장도 계속 읽는다.
+        local saved = { bagCount = #bag, equipCount = 0 }
+        for _ in pairs(equip) do saved.equipCount = saved.equipCount + 1 end
+        if #bag > 0 then saved.bag = bag end
+        if saved.equipCount > 0 then saved.equip = equip end
+        return saved
     end
 
     @ExecSpace("ServerOnly")

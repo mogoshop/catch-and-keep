@@ -41,9 +41,14 @@ script Projectile extends Component
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         if not self.Launched then return end
-        if not isvalid(self.Owner) then
+        if not isvalid(self.Owner) or self.Owner.CurrentMap ~= self.Entity.CurrentMap then
             self:Finish()
             return
+        end
+        if self.Team == "player" and not _Util:IsAlive(self.Owner) then self:Finish() return end
+        if self.Team == "monster" then
+            local body = self.Owner:GetComponent("script.Monster")
+            if body == nil or body.IsDead then self:Finish() return end
         end
         local step = self.Speed * delta
         self.Entity.TransformComponent:Translate(self.Dir.x * step, self.Dir.y * step)
