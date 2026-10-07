@@ -31,6 +31,8 @@ script ClickControl extends Component
     property integer SlideSide = 1
     property integer SlideCount = 0           -- 비켜 가도 앞으로 못 나간 횟수 (3번이면 포기하고 멈춘다)
     property Vector2 StuckPos = Vector2(0, 0)
+    property boolean BlockedPick = false
+    property Vector2 BlockedPoint = Vector2(0, 0)
 
     @ExecSpace("ClientOnly")
     method boolean IsActive()
@@ -46,6 +48,9 @@ script ClickControl extends Component
         -- 클릭한 순간: 대상/목적지 지정 + 클릭 표시
         if event.TouchId ~= 1 or not self:IsActive() then return end
         if _InputService:IsPointerOverUI() then return end
+        self.BlockedPick = false
+        self.SlideCount = 0
+        self.StuckTime = 0
         local world = self:Pick(event.TouchPoint)
         -- 클릭 표시는 땅을 눌러 이동할 때만 (몬스터·혼을 누를 때는 표시 없음)
         if self.HasDestination then _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, Vector3(world.x, world.y, 0), 0, Vector3(0.25, 0.25, 1), false, nil) end
@@ -64,24 +69,27 @@ script ClickControl extends Component
     method Vector2 Pick(Vector2 screenPoint)
         -- 화면 좌표 → 월드 좌표. 근처에 살아 있는 몬스터가 있으면 공격 대상, 없으면 이동 목적지
         local world = _UILogic:ScreenToWorldPosition(screenPoint)
-        self.SlideCount = 0
+        if self.BlockedPick and (world - self.BlockedPoint):Magnitude() < 0.35 then return world end
+        self.BlockedPick = false
         -- 내 혼을 클릭했으면 걸어가서 추출 (몬스터보다 우선)
         local extractor = self:Extractor()
         local soul = nil
         if extractor ~= nil then soul = extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
         if soul ~= nil then
             self.ExtractTarget = soul
-            self.AttackTarget = nil
+            self:SelectAttackTarget(nil)
             self.HasDestination = false
             return world
         end
         self.ExtractTarget = nil
         local monster = self:FindMonsterNear(world)
         if monster ~= nil then
-            self.AttackTarget = monster
+            if self.AttackTarget ~= monster then self.SlideCount = 0 self.StuckTime = 0 end
+            self:SelectAttackTarget(monster)
             self.HasDestination = false
         else
-            self.AttackTarget = nil
+            if not self.HasDestination or (world - self.Destination):Magnitude() > 0.35 then self.SlideCount = 0 self.StuckTime = 0 end
+            self:SelectAttackTarget(nil)
             self.Destination = world
             self.HasDestination = true
         end
@@ -127,6 +135,7 @@ script ClickControl extends Component
     method void Tick(number delta)
         -- 클릭 이동·공격 진행. 방향키를 누르면 즉시 취소
         if not self:IsActive() then return end
+        if self.Entity.PlayerComponent.Hp <= 0 then self:Cancel() return end
         self.AttackTimer = self.AttackTimer - delta
         if self:IsArrowPressed() then
             self:Cancel()
@@ -158,8 +167,8 @@ script ClickControl extends Component
         if isvalid(self.AttackTarget) then
             ---@type Monster
             local m = self.AttackTarget:GetComponent("script.Monster")
-            if m == nil or m.IsDead or not self.AttackTarget.Enable then
-                self.AttackTarget = nil
+            if m == nil or m.IsDead or not self.AttackTarget.Enable or self.AttackTarget.CurrentMap ~= self.Entity.CurrentMap then
+                self:SelectAttackTarget(nil)
                 self:StopMove()
                 return
             end
@@ -181,6 +190,7 @@ script ClickControl extends Component
             return
         end
 
+        if self.AttackTarget ~= nil then self:SelectAttackTarget(nil) self:StopMove() end
         if self.HasDestination then
             local toDest = self.Destination - me
             if toDest:Magnitude() <= self.ArriveDistance then
@@ -203,9 +213,24 @@ script ClickControl extends Component
         self.SlideCount = 0
         self.SlideUntil = 0
         self.HasDestination = false
-        self.AttackTarget = nil
+        self:SelectAttackTarget(nil)
         self.ExtractTarget = nil
         self:StopMove()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SelectAttackTarget(Entity target)
+        if self.AttackTarget == target then return end
+        self.AttackTarget = target
+        ---@type PlayerAttack
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        if attack ~= nil then attack:RequestSelectTarget(target) end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "ApplicationService")
+    handler HandleApplicationFocusOutEvent(ApplicationFocusOutEvent event)
+        if self.Entity == _UserService.LocalPlayer then self:Cancel() end
     end
 
     @ExecSpace("ClientOnly")
@@ -227,7 +252,11 @@ script ClickControl extends Component
         self.StuckPos = me
         if self.SlideCount >= 3 then
             if self.DebugLog then log("[ClickControl] 갈 수 없는 곳 → 멈춤") end
+            local point = self.Destination
+            if isvalid(self.AttackTarget) then point = _Util:Pos2(self.AttackTarget) + Vector2(0, 0.25) end
             self:Cancel()
+            self.BlockedPoint = point
+            self.BlockedPick = true
             return
         end
         self.SlideDir = Vector2(-w.y, w.x) * self.SlideSide + w * 0.3

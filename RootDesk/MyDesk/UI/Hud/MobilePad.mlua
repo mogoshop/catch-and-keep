@@ -36,7 +36,14 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        self.Holding = false
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "ApplicationService")
+    handler HandleApplicationFocusOutEvent(ApplicationFocusOutEvent event)
+        self.Holding = false
     end
 
     -- ───────── 동작 ─────────
@@ -44,6 +51,7 @@ script MobilePad extends Logic
     @ExecSpace("ClientOnly")
     method void ToggleEdit()
         -- 편집 모드: 칸마다 + 표시, 누르는 칸에 스킬을 넣는다. 다시 누르면 끝
+        self.Holding = false
         self.EditMode = not self.EditMode
         _UIKit:SetText(self.Root .. "/BtnSkillEdit", self.EditMode and "편집 끝" or "스킬 편집")
         _UIKit:SetEnabled(self.Root .. "/Attack/Edit", self.EditMode)
@@ -74,6 +82,9 @@ script MobilePad extends Logic
     @ExecSpace("ClientOnly")
     method void HoldTick()
         -- 누르고 있는 동안 간격마다 공격 (손을 떼면 Holding = false)
+        local player = _UserService.LocalPlayer
+        local book = _UIKit:Comp("script.SkillBook")
+        if not isvalid(player) or player.PlayerComponent.Hp <= 0 or self.EditMode or (book ~= nil and book:GetSlotSkill(5) ~= "") then self.Holding = false return end
         if not self.Holding or _UtilLogic.ElapsedSeconds < self.HoldNext then return end
         self.HoldNext = _UtilLogic.ElapsedSeconds + self:AttackInterval()
         self:Attack()
@@ -92,14 +103,9 @@ script MobilePad extends Logic
             book:CastSlot(5)
             return
         end
-        -- 조준 입력이 없으므로 가까운 몬스터 쪽을 보고 기본 공격
+        -- 대상 선택과 방향은 서버 PlayerAttack에서 한 번만 결정한다.
         local player = _UserService.LocalPlayer
-        if not isvalid(player) then return end
-        local m = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 2.0)
-        if m ~= nil then
-            local dx = m.Entity.TransformComponent.WorldPosition.x - player.TransformComponent.WorldPosition.x
-            if math.abs(dx) > 0.05 then player.PlayerControllerComponent.LookDirectionX = dx >= 0 and 1 or -1 end
-        end
+        if not isvalid(player) or player.PlayerComponent.Hp <= 0 then self.Holding = false return end
         player.PlayerControllerComponent:ActionAttack()
     end
 

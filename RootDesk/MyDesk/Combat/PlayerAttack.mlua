@@ -11,6 +11,8 @@ script PlayerAttack extends AttackComponent
     property number AimRange = 1.7            -- 자동 조준: 이 거리 안 가장 가까운 적 쪽으로 친다
     property number Windup = 0.1              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
+    property Entity SelectedTarget = nil       -- PC가 고른 적. 가까운 다른 적으로 바꾸지 않는다
+    property Entity AutoTarget = nil           -- 자동 조준도 공격마다 흔들리지 않게 유지
     property integer AttackEpoch = 0
     property number LastAttackAt = -99
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
@@ -33,13 +35,15 @@ script PlayerAttack extends AttackComponent
         if _GameConst:IsTown(self.Entity.CurrentMap) then return end
         local now = _UtilLogic.ElapsedSeconds
         if now - self.LastAttackAt < interval * 0.9 then return end
-        self.LastAttackAt = now
-        -- 탑다운 자동 조준: 사거리 안 가장 가까운 적 쪽으로 돌아서 친다 (위아래에 있는 적도 맞는다). 없으면 바라보는 쪽
+        if not _Util:IsAlive(self.Entity) then return end
         local me = _Util:Pos2(self.Entity)
         local dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
-        local m = _Util:NearestMonster(self.Entity.CurrentMap, me, self.AimRange)
-        if m ~= nil then
-            local to = _Util:Pos2(m.Entity) - me
+        local target = self:ResolveTarget()
+        -- 선택한 적이 아직 멀면 접근을 기다린다. 옆의 다른 적을 치지 않는다.
+        if isvalid(self.SelectedTarget) and target == nil then return end
+        self.LastAttackAt = now
+        if isvalid(target) then
+            local to = _Util:Pos2(target) - me
             if to:Magnitude() > 0.05 then dir = to:Normalize() end
             if math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         end
@@ -55,6 +59,51 @@ script PlayerAttack extends AttackComponent
     @ExecSpace("ServerOnly")
     method void CancelAttack()
         self.AttackEpoch = self.AttackEpoch + 1
+        self.SelectedTarget = nil
+        self.AutoTarget = nil
+    end
+
+    @ExecSpace("Server")
+    method void RequestSelectTarget(Entity target)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:SetSelectedTarget(target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetSelectedTarget(Entity target)
+        if target ~= nil and (not self:IsLiveMonster(target) or _Util:Distance(self.Entity, target) > 24) then return end
+        self.SelectedTarget = target
+        self.AutoTarget = nil
+    end
+
+    method boolean IsLiveMonster(Entity target)
+        if not isvalid(target) or not target.Enable or target.CurrentMap ~= self.Entity.CurrentMap then return false end
+        ---@type Monster
+        local monster = target:GetComponent("script.Monster")
+        return monster ~= nil and not monster.IsDead and monster.Hp > 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity ResolveTarget()
+        if self.SelectedTarget ~= nil then
+            if self:IsLiveMonster(self.SelectedTarget) then
+                if _Util:Distance(self.Entity, self.SelectedTarget) <= self.AimRange then return self.SelectedTarget end
+                return nil
+            end
+            self.SelectedTarget = nil
+        end
+        if self:IsLiveMonster(self.AutoTarget) and _Util:Distance(self.Entity, self.AutoTarget) <= self.AimRange then return self.AutoTarget end
+        self.AutoTarget = nil
+        local me = _Util:Pos2(self.Entity)
+        local facing = self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1
+        -- 키보드·모바일은 바라보는 반원 안에서 고른다. 뒤의 적 때문에 갑자기 돌아서지 않는다.
+        for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, self.AimRange)) do
+            if (_Util:Pos2(monster.Entity).x - me.x) * facing >= -0.1 then
+                self.AutoTarget = monster.Entity
+                return self.AutoTarget
+            end
+        end
+        return nil
     end
 
     @ExecSpace("ServerOnly")
