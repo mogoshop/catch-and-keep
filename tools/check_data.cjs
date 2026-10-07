@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -119,6 +119,16 @@ for (const tree of ["command", "soul", "curse"]) {
   const n = T.skills.filter((r) => r.tree === tree).length;
   if (n > 12) err("skills", null, `${tree} 트리 ${n}개 — 스킬 창은 트리당 12칸`);
 }
+
+// ── 아이콘: 베이스·스킬마다 그림, UI 아이콘 표는 키 중복 없이 RUID·색 형식 ──
+T.item_bases.forEach((r, i) => { if (!RUID.test(r.icon || "")) err("item_bases", i, `icon '${r.icon}' — 32자리 RUID 필요`); });
+T.skills.forEach((r, i) => { if (!RUID.test(r.icon || "")) err("skills", i, `icon '${r.icon}' — 32자리 RUID 필요`); });
+unique("ui_icons", "key");
+T.ui_icons.forEach((r, i) => {
+  if (!RUID.test(r.ruid)) err("ui_icons", i, `ruid '${r.ruid}' 형식`);
+  if (!/^#[0-9A-Fa-f]{6}$/.test(r.color)) err("ui_icons", i, `color '${r.color}' — #RRGGBB`);
+  if (!(num(r.alpha) > 0 && num(r.alpha) <= 1)) err("ui_icons", i, `alpha ${r.alpha} — 0~1`);
+});
 
 // ── 몬스터·보스 ──
 T.monsters.forEach((r, i) => {

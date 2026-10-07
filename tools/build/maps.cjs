@@ -156,18 +156,45 @@ function buildCopy(d, diff) {
   map.write(file);
 }
 
-function run() {
-  const maps = load("maps").sort((a, b) => num(a.order) - num(b.order));
-  const diffs = load("difficulty").filter((x) => num(x.index) > 0);
+// maps.csv와 맵 빌드가 같은 기준으로 쓰는 맥락 (gen_data의 미니맵 정보도 이것을 쓴다)
+function context() {
   const monsters = load("monsters");
   const npcs = load("npcs");
   const cfg = Object.fromEntries(load("config").map((r) => [r.key, num(r.value)]));
-  const ctx = {
+  return {
     townArrival: { x: cfg.townArrivalX, y: cfg.townArrivalY },
     monsters: Object.fromEntries(monsters.map((m) => [m.id, m])),
     npcs: Object.fromEntries(npcs.map((n) => [n.model, n])),
     managed: managedModelIds(monsters, npcs),
   };
+}
+
+// 미니맵 표시물: 맵 빌드가 놓는 엔티티(포털·웨이포인트·NPC·심도 입구·제단·고정 보스)와 같은 위치
+function minimapFeatures(d, maps) {
+  const ctx = context();
+  const out = [];
+  for (const e of desiredEntities(d, maps, ctx)) {
+    const src = e.model;
+    let kind = "";
+    if (e.name.startsWith("Gate")) kind = "portal";
+    else if (e.name === "Waypoint") kind = "waypoint";
+    else if (e.name === "DepthEntrance") kind = "depth";
+    else if (e.name === "BloodAltar") kind = "altar";
+    else if (src.startsWith("NPC/")) kind = ((ctx.npcs[e.name] || {}).kind === "quest") ? "quest" : "npc";
+    else if (src.startsWith("Region")) kind = "boss";
+    if (kind === "") continue;
+    let label = "";
+    if (kind === "portal") label = e.overrides["script.WarpGate"].Label;
+    if (kind === "npc" || kind === "quest") label = (ctx.npcs[e.name] || {}).name || "";
+    out.push({ kind, x: e.pos[0], y: e.pos[1], label });
+  }
+  return out;
+}
+
+function run() {
+  const maps = load("maps").sort((a, b) => num(a.order) - num(b.order));
+  const diffs = load("difficulty").filter((x) => num(x.index) > 0);
+  const ctx = context();
   let copies = 0;
   quiet(() => {
     for (const d of maps) buildNormal(d, maps, ctx);
@@ -184,4 +211,4 @@ function run() {
   console.log(`  맵: 보통 ${maps.length} · 난이도 복제 ${copies}`);
 }
 
-module.exports = { run };
+module.exports = { run, edges, minimapFeatures };

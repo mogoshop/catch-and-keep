@@ -6,6 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const { load, num, bool } = require("./lib/csv.cjs");
+const { minimapFeatures } = require("./build/maps.cjs");
 
 const OUT_DIR = path.resolve(__dirname, "../RootDesk/MyDesk/Data");
 const CHECK = process.argv.includes("--check");
@@ -57,6 +58,7 @@ function genGameData() {
   const shop = load("shop");
   const ranks = load("monster_ranks");
   const variants = load("variants");
+  const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
   const body = [
     "        self.Variants = {}",
     "        self.VariantOrder = {}",
@@ -79,6 +81,13 @@ function genGameData() {
       const area = `minX = ${-(w / 2) + 3}, maxX = ${w / 2 - 3}, minY = ${-(h / 2) + 2.5}, maxY = ${h / 2 - 1.5}`;
       return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area} }`;
     }),
+    "        self.MapInfo = {}",
+    ...mapRows.map((m) => {
+      const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)} }`).join(", ");
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, w = ${n(m.w)}, h = ${n(m.h)}, features = { ${feats} } }`;
+    }),
+    "        self.UiIcons = {}",
+    ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.DepthPool = {}",
     ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
     "        self.DepthUniques = {}",
@@ -135,6 +144,18 @@ function genGameData() {
         return self.MonsterStats[sourceId]
     end
 
+    method any GetMapInfo(string mapId)
+        -- 맵 이름·종류·크기와 미니맵 표시물(포털·웨이포인트·NPC·입구). 보통 난이도 맵 id. 없으면 nil
+        self:Ensure()
+        return self.MapInfo[mapId]
+    end
+
+    method string GetUiIcon(string key)
+        -- UI 아이콘 RUID (ui_icons.csv). 없으면 ""
+        self:Ensure()
+        return self.UiIcons[key] or ""
+    end
+
     method any GetMapSpawns(string mapId)
         -- 맵별 몬스터 출현 (maps.csv spawns·무리·정예·변종·리스폰·출현 범위). 보통 난이도 맵 id. 없으면 nil
         self:Ensure()
@@ -163,7 +184,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
@@ -182,7 +203,7 @@ function genItems() {
     ...stats.map((r) => `        self.StatNames[${s(r.key)}] = ${s(r.name)}`),
     "        self.Bases = {}",
     "        self.BaseOrder = {}",
-    ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
+    ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)}, icon = ${s(r.icon)} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
     "        self.Affixes = {}",
     ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
     "        self.UniqueList = {}",
@@ -211,7 +232,7 @@ function genSkills() {
   const body = [
     "        self.Skills = {}",
     "        self.Order = {}",
-    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)} }\n        table.insert(self.Order, ${s(r.id)})`),
+    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, icon = ${s(r.icon)} }\n        table.insert(self.Order, ${s(r.id)})`),
   ].join("\n");
   const extra = `
     method any Get(string id)
