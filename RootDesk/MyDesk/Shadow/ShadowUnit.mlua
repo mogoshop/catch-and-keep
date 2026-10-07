@@ -61,14 +61,31 @@ script ShadowUnit extends AttackComponent
         t.Scale = Vector3(t.Scale.x * 1.25, t.Scale.y * 1.25, 1)
         self.ShadowTint = Color(0.9, 0.7, 0.3, 0.9)
         self.Entity.SpriteRendererComponent.Color = self.ShadowTint
+        self.RingPainted = false
         log("[ShadowUnit] 정예 승격 " .. self.ShadowId .. " ATK " .. tostring(self.Atk))
     end
 
     property Entity Target = nil
+    property boolean RingPainted = false
     property number RetargetTimer = 0
     property number AttackTimer = 0
     property number RallyTimer = 0
     property string CurrentClip = ""
+
+    @ExecSpace("ServerOnly")
+    method void PaintRing()
+        -- 발밑 아군 표시(모델 자식 AllyRing): 그림자 보라 · 언데드 청록 · 정예 금빛. 필드 몬스터와 한눈에 구분
+        self.RingPainted = true
+        local ring = self.Entity:GetChildByName("AllyRing")
+        if not isvalid(ring) then return end
+        local color = Color(0.3, 1, 0.8, 1)
+        if self.Kind == "shadow" then color = Color(0.75, 0.5, 1, 1) end
+        if self.Promoted then color = Color(1, 0.8, 0.3, 1) end
+        ring.SpriteRendererComponent.Color = color
+        -- 몸 크기(작은 해골 0.55 등)와 상관없이 발밑 원은 같은 크기로 보이게
+        local ps = math.max(0.3, math.abs(self.Entity.TransformComponent.Scale.y))
+        ring.TransformComponent.Scale = Vector3(1.05 / ps, 1.05 / ps, 1)
+    end
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -130,6 +147,7 @@ script ShadowUnit extends AttackComponent
     method void OnUpdate(number delta)
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
+        if not self.RingPainted then self:PaintRing() end
         if not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= self.Entity.CurrentMap then
             self.Entity:Destroy()
             return
