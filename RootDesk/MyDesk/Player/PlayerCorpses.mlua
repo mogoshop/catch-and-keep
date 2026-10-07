@@ -93,13 +93,26 @@ script PlayerCorpses extends Component
     @ExecSpace("ServerOnly")
     method table GetSaveData()
         local list = {}
-        for _, data in pairs(self.Corpses) do table.insert(list, data) end
-        return list
+        for _, data in pairs(self.Corpses) do
+            local items = {}
+            for _, item in ipairs(data.items or {}) do
+                table.insert(items, { slot = tostring(item.slot), s = tostring(item.s) })
+            end
+            local record = { exp = tonumber(data.exp) or 0, map = tostring(data.map), x = tonumber(data.x) or 0, y = tonumber(data.y) or 0 }
+            if #items > 0 then record.items = items end
+            table.insert(list, record)
+        end
+        -- MSW JSONEncode는 빈 Lua 배열의 타입을 추론하지 못한다. count로 빈 목록을 표현한다.
+        local saved = { count = #list }
+        if #list > 0 then saved.entries = list end
+        return saved
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table list)
         if list == nil then return end
+        -- 옛 배열 저장도 읽고, 새 count/entries 형식도 읽는다.
+        if list.count ~= nil then list = list.entries or {} end
         -- 접속이 끊긴 사이의 시체는 마을로 옮긴다 (D2: 다음 게임의 마을). 엔티티는 마을에 들어가면 EnsureSpawned가 만든다
         self.Corpses = {}
         -- 저장 순서상 PlayerStats(Char 섹션)가 먼저 불러와져 있다
@@ -108,6 +121,7 @@ script PlayerCorpses extends Component
         local town = _GameConst.MapTown
         if stats ~= nil then town = _GameConst:MapFor(_GameConst.MapTown, stats.Difficulty) end
         for i, data in ipairs(list) do
+            if data.items == nil then data.items = {} end
             data.map = town
             data.x = 1.5 + i * 0.6
             data.y = -2

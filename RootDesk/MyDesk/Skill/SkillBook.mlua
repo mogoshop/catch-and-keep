@@ -5,6 +5,8 @@ script SkillBook extends Component
 
     property string StartSkills = ""          -- D2처럼 처음엔 배운 스킬 없이 포인트 1로 시작 (해골 전사·골편 투척은 Lv1부터 배울 수 있다)
     property table Levels = {}                -- id → 투자 레벨 (서버)
+    property table PendingCasts = {}
+    property number PendingMana = 0
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     @Sync
     property string SkillDigest = ""          -- "id:lv;..." UI 표시용
@@ -17,6 +19,8 @@ script SkillBook extends Component
     method void OnBeginPlay()
         self.Levels = {}
         self.ReadyAt = {}
+        self.PendingCasts = {}
+        self.PendingMana = 0
         for id in string.gmatch(self.StartSkills, "[^,]+") do self.Levels[id] = 1 end
         self:SanitizeSlots()
         self:RefreshDigest()
@@ -146,7 +150,7 @@ script SkillBook extends Component
 
     @ExecSpace("ServerOnly")
     method boolean Cast(string id, Vector2 target)
-        -- 습득·구현 → 쿨다운 → 마나 → 효과
+        -- 습득·구현·비용 확인 → 효과 성공 → 마나·쿨다운 확정
         local def = _SkillData:Get(id)
         local lv = self:GetLevel(id)
         if def == nil or lv <= 0 then return false end
@@ -165,18 +169,44 @@ script SkillBook extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return false end
-        if not stats:SpendMana(def.mana + math.floor(lv / 4)) then
-            _Util:Notify("마나 부족", userId)
+        local cost = def.mana + math.floor(lv / 4)
+        if self.PendingCasts[id] or stats.Mana - self.PendingMana < cost then
+            if not self.PendingCasts[id] then _Util:Notify("마나 부족", userId) end
             return false
         end
-        self.ReadyAt[id] = now + def.cooldown * stats:GetCastCooldownMult()
         local me = _Util:Pos2(self.Entity)
-        if math.abs(target.x - me.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1 end
-        self.Entity.StateComponent:ChangeState("ATTACK")
+        local kind = ""
+        if id == "raise_skeleton" then kind = "skeleton"
+        elseif id == "raise_mage" then kind = "mage"
+        elseif id == "revive" then kind = "revive" end
+        if kind ~= "" then
+            self.PendingCasts[id] = true
+            self.PendingMana = self.PendingMana + cost
+            local accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, function(success)
+                self.PendingCasts[id] = nil
+                self.PendingMana = math.max(0, self.PendingMana - cost)
+                if not success or not isvalid(self.Entity) then return end
+                stats:SpendMana(cost)
+                self.ReadyAt[id] = _UtilLogic.ElapsedSeconds + def.cooldown * stats:GetCastCooldownMult()
+                self.Entity.StateComponent:ChangeState("ATTACK")
+                log("[VRF] summon committed " .. id .. " mana=" .. tostring(cost))
+            end)
+            if not accepted then
+                self.PendingCasts[id] = nil
+                self.PendingMana = math.max(0, self.PendingMana - cost)
+            end
+            return accepted
+        end
         ---@type SkillEffects
         local effects = self.Entity:GetComponent("script.SkillEffects")
-        if effects == nil then return false end
-        return effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100)
+        if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
+        stats:SpendMana(cost)
+        self.ReadyAt[id] = now + def.cooldown * stats:GetCastCooldownMult()
+        if id ~= "shadow_summon" and id ~= "rally" and id ~= "elite_promote" and math.abs(target.x - me.x) > 0.05 then
+            self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1
+        end
+        self.Entity.StateComponent:ChangeState("ATTACK")
+        return true
     end
 
     -- ───────── 입력 (내 클라이언트) ─────────
@@ -208,11 +238,11 @@ script SkillBook extends Component
     @ExecSpace("ClientOnly")
     method void CastSlot(integer slot)
         local id = self:GetSlotSkill(slot)
-        if id ~= "" then self:RequestCast(id, self:GetAimPoint()) end
+        if id ~= "" then self:RequestCast(id, self:GetAimPoint(id)) end
     end
 
     @ExecSpace("ClientOnly")
-    method Vector2 GetAimPoint()
+    method Vector2 GetAimPoint(string id)
         -- PC 마우스 모드: 커서 / 그 외: 가장 가까운 적(5칸) / 없으면 바라보는 방향 앞
         ---@type ClickControl
         local cc = self.Entity:GetComponent("script.ClickControl")
@@ -220,6 +250,11 @@ script SkillBook extends Component
             return _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
         end
         local me = _Util:Pos2(self.Entity)
+        if id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "corpse_blast" then
+            local orb = _UndeadSystem:FindSoul(self.Entity, me, 3)
+            if orb ~= nil then return _Util:Pos2(orb.Entity) end
+            return me
+        end
         local m = _Util:NearestMonster(self.Entity.CurrentMap, me, 5)
         if m ~= nil then return _Util:Pos2(m.Entity) end
         return me + Vector2(self.Entity.PlayerControllerComponent.LookDirectionX * 2, 0)

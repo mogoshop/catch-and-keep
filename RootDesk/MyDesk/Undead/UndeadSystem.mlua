@@ -40,31 +40,69 @@ script UndeadSystem extends Logic
 
     -- ───────── 일으키기 ─────────
 
+    method SoulOrb FindSoul(Entity player, Vector2 target, number radius)
+        -- 다른 사람의 혼·이미 예약된 혼은 건너뛰고 내 혼만 찾는다.
+        local best = nil
+        local distance = radius
+        if not isvalid(player.CurrentMap) then return nil end
+        for _, comp in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            ---@type SoulOrb
+            local orb = comp
+            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId then
+                local d = (_Util:Pos2(orb.Entity) - target):Magnitude()
+                if d <= distance then
+                    best = orb
+                    distance = d
+                end
+            end
+        end
+        return best
+    end
+
     @ExecSpace("ServerOnly")
-    method boolean Raise(Entity player, string kind, integer slvl, Vector2 target)
-        -- kind: skeleton / mage / revive. 조준점 근처 내 혼 하나를 소모
+    method boolean Raise(Entity player, string kind, integer slvl, Vector2 target, any onComplete)
         local userId = player.PlayerComponent.UserId
-        ---@type SoulOrb
-        local orb = _Util:NearestComponent(player.CurrentMap, "script.SoulOrb", target, self.SoulReach)
-        if orb == nil or orb.Consumed or orb.OwnerUserId ~= userId then
-            _Util:Notify("조준한 곳 근처에 내 혼이 없다", userId)
+        local me = _Util:Pos2(player)
+        if (target - me):Magnitude() > 5 then
+            _Util:Notify("혼이 너무 멀리 있다", userId)
+            return false
+        end
+        local orb = self:FindSoul(player, target, self.SoulReach)
+        if orb == nil then
+            _Util:Notify("근처에 내 혼이 없다 — 몬스터를 처치한 뒤 소환하세요", userId)
+            log("[VRF] summon rejected: no owned soul")
             return false
         end
         if kind == "revive" and (orb.Rank == "unique" or orb.Rank == "boss") then
             _Util:Notify("최상위·보스는 되살릴 수 없다", userId)
             return false
         end
-        local q = orb.Entity.TransformComponent.WorldPosition
+        local pos = _Util:Pos2(orb.Entity)
         local rec = self:MakeRecord(player, kind, slvl, orb)
-        orb:Consume()
-
-        local max = self:CountFor(slvl)
-        if kind == "revive" then max = self:ReviveCountFor(slvl) end
-        self:TrimOldest(player, kind, max - 1)
-        table.insert(self:ListOf(player), rec)
-        self:SpawnUnit(player, rec, Vector2(q.x, q.y))
-        self:RefreshSummary(player)
-        _GameEvents:Emit("UndeadRaised", { player = player, kind = kind })
+        orb.Reserved = true
+        local finished = false
+        local fail = function()
+            if finished then return end
+            finished = true
+            if isvalid(orb.Entity) then orb.Reserved = false end
+            self:DestroyEntity(rec)
+            if onComplete ~= nil then onComplete(false) end
+        end
+        local spawned = self:SpawnUnit(player, rec, pos, function()
+            if finished then self:DestroyEntity(rec) return end
+            if not _Util:IsAlive(player) or not isvalid(orb.Entity) or player.CurrentMap ~= orb.Entity.CurrentMap then fail() return end
+            finished = true
+            orb:Consume()
+            local max = self:CountFor(slvl)
+            if kind == "revive" then max = self:ReviveCountFor(slvl) end
+            self:TrimOldest(player, kind, max - 1)
+            table.insert(self:ListOf(player), rec)
+            self:RefreshSummary(player)
+            _GameEvents:Emit("UndeadRaised", { player = player, kind = kind })
+            if onComplete ~= nil then onComplete(true) end
+        end, fail)
+        if not spawned then orb.Reserved = false return false end
+        _TimerService:SetTimerOnce(function() if not finished then fail() end end, 1)
         return true
     end
 
@@ -83,6 +121,8 @@ script UndeadSystem extends Logic
             rec.speed = _GameData.skeletonSpeed
             rec.stand = m ~= nil and m.stand or ""
             rec.move = m ~= nil and m.move or ""
+            rec.attack = m ~= nil and m.attack or ""
+            rec.scale = 0.7
             rec.tint = Color(0.92, 0.9, 0.82, 1)
         elseif kind == "mage" then
             local m = _GameData:GetMonsterStats("skel_warrior")
@@ -96,6 +136,8 @@ script UndeadSystem extends Logic
             rec.speed = _GameData.skeletonSpeed
             rec.stand = m ~= nil and m.stand or ""
             rec.move = m ~= nil and m.move or ""
+            rec.attack = m ~= nil and m.attack or ""
+            rec.scale = 0.7
             rec.tint = self:ElementTint(rec.element)
         else
             -- 되살림: 원본 몬스터 그대로 (그림자 개성 계산을 배율 1로)
@@ -111,6 +153,9 @@ script UndeadSystem extends Logic
             rec.resists = prof.resists
             rec.stand = orb.StandRUID
             rec.move = orb.MoveRUID
+            local source = _GameData:GetMonsterStats(orb.SourceId)
+            rec.attack = source ~= nil and source.attack or ""
+            rec.scale = 1
             rec.tint = Color(0.6, 1, 0.65, 0.9)
             rec.variant = orb.Variant        -- 되살린 변종 우두머리는 능력도 그대로
             rec.expireAt = _UtilLogic.ElapsedSeconds + _GameData.reviveSeconds
@@ -144,11 +189,11 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method void SpawnUnit(Entity player, table rec, Vector2 pos)
+    method boolean SpawnUnit(Entity player, table rec, Vector2 pos, any onReady, any onFail)
         local map = player.CurrentMap
-        if not isvalid(map) then return end
+        if not isvalid(map) then return false end
         local unit = _SpawnService:SpawnByModelId(_GameConst.ModelShadowUnit, "Undead_" .. rec.kind, Vector3(pos.x, pos.y, 0), map)
-        if not isvalid(unit) then return end
+        if not isvalid(unit) then return false end
         rec.entity = unit
         local offset = self:FormationOffset(#self:ListOf(player))
         _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
@@ -156,6 +201,8 @@ script UndeadSystem extends Logic
             local u = comp
             u:Setup(player, rec.id, rec.atk, rec.hp, rec.stand, rec.move, offset)
             u.Kind = rec.kind
+            u.AttackRUID = rec.attack or ""
+            unit.TransformComponent.Scale = Vector3(rec.scale or 1, rec.scale or 1, 1)
             u.AttackCooldown = rec.cooldown
             u.AttackRange = rec.range
             u.Element = rec.element
@@ -166,12 +213,17 @@ script UndeadSystem extends Logic
             unit.SpriteRendererComponent.Color = rec.tint
             local mv = unit.MovementComponent
             if isvalid(mv) then mv.InputSpeed = rec.speed end
-        end, function() unit:Destroy() end)
+            if onReady ~= nil then onReady() end
+        end, function()
+            if isvalid(unit) then unit:Destroy() end
+            if onFail ~= nil then onFail() end
+        end)
         if rec.expireAt > 0 then
             local id = rec.id
             local delay = math.max(0.1, rec.expireAt - _UtilLogic.ElapsedSeconds)
             _TimerService:SetTimerOnce(function() self:Expire(player, id) end, delay)
         end
+        return true
     end
 
     method Vector2 FormationOffset(integer index)
@@ -236,7 +288,7 @@ script UndeadSystem extends Logic
             local now = _UtilLogic.ElapsedSeconds
             local p = _Util:Pos2(player)
             for _, rec in ipairs(self:ListOf(player)) do
-                if rec.expireAt == 0 or rec.expireAt > now then self:SpawnUnit(player, rec, p) end
+                if rec.expireAt == 0 or rec.expireAt > now then self:SpawnUnit(player, rec, p, nil, nil) end
             end
         end, 1.2)
     end

@@ -10,6 +10,10 @@ script ShadowUnit extends AttackComponent
     property integer Atk = 10
     property string StandRUID = ""
     property string MoveRUID = ""
+    property string AttackRUID = ""
+    property number AttackAnimationUntil = 0
+    property number AttackWindup = 0.18
+    property number AttackAnimationSeconds = 0.45
     property Vector2 FormationOffset = Vector2(0, -0.8)
 
     property number AttackRange = 0.8
@@ -123,6 +127,7 @@ script ShadowUnit extends AttackComponent
         end
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
+        if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
         self:AbilityTick(delta)
 
         local p = self.Entity.TransformComponent.WorldPosition
@@ -217,15 +222,34 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void DoAttack(Vector2 myPos, Vector2 toTarget)
-        -- 근접: 대상 방향 반 걸음 앞 원형 / 원거리(사거리 2 이상, 해골 마법사 등): 대상 위치에 작은 원 + 투사체 연출
-        if self.AttackRange >= 2 then
-            local at = myPos + toTarget + Vector2(0, 0.2)
-            self:AttackFast(CircleShape(at, 0.5), "shadow.ranged", nil)
-            self:BoltFx(Vector3(myPos.x, myPos.y + 0.3, 0), Vector3(at.x, at.y, 0), self.Element)
-            return
-        end
-        local center = myPos + toTarget:Normalize() * 0.4 + Vector2(0, 0.2)
-        self:AttackFast(CircleShape(center, self.AttackRadius), "shadow.basic", nil)
+        local target = self.Target
+        if not self:IsLiveTarget(target) then return end
+        self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
+        if self.AttackRUID ~= "" then self:SetClip(self.AttackRUID) end
+        local dir = toTarget.x >= 0 and 1 or -1
+        if self.AttackRange < 2 then self:SwingFx(Vector3(myPos.x, myPos.y + 0.3, 0), dir) end
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or self.Dead or not self:IsLiveTarget(target) then return end
+            if target.CurrentMap ~= self.Entity.CurrentMap then return end
+            local at = _Util:Pos2(self.Entity)
+            local delta = _Util:Pos2(target) - at
+            if delta:Magnitude() > self.AttackRange + 0.3 then return end
+            if self.AttackRange >= 2 then
+                local hit = at + delta + Vector2(0, 0.2)
+                self:AttackFast(CircleShape(hit, 0.5), "shadow.ranged", nil)
+                self:BoltFx(Vector3(at.x, at.y + 0.3, 0), Vector3(hit.x, hit.y, 0), self.Element)
+            else
+                local center = at + delta:Normalize() * 0.4 + Vector2(0, 0.2)
+                self:AttackFast(CircleShape(center, self.AttackRadius), "shadow.basic", nil)
+            end
+        end, self.AttackWindup)
+    end
+
+    @ExecSpace("Multicast")
+    method void SwingFx(Vector3 pos, integer dir)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, 0, Vector3(0.3, 0.3, 1), false, { FlipX = dir > 0, PlayRate = 1.8 })
     end
 
     @ExecSpace("Multicast")
