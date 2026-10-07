@@ -163,6 +163,7 @@ function genItems() {
   const runewords = load("runewords");
   const stats = load("stats");
   const sets = load("item_sets");
+  const drops = load("drop_tables");
   const pieces = load("item_set_pieces");
   const body = [
     "        self.StatNames = {}",
@@ -172,11 +173,13 @@ function genItems() {
     ...bases.map((r) => `        self.Bases[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, slot = ${s(r.slot)}, reqLv = ${n(r.reqLv)}, dmg = ${n(r.dmg)}, def = ${n(r.def)}, sockets = ${n(r.sockets)} }\n        table.insert(self.BaseOrder, ${s(r.id)})`),
     "        self.Affixes = {}",
     ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
-    "        self.Uniques = {}",
-    ...uniques.map((r) => `        self.Uniques[${s(r.base)}] = { name = ${s(r.name)}, mods = ${s(r.mods)} }`),
+    "        self.UniqueList = {}",
+    ...uniques.map((r) => `        table.insert(self.UniqueList, { id = ${s(r.id)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)}, source = ${s(r.source)} })`),
     "        self.Runes = {}",
     "        self.RuneOrder = {}",
     ...runes.map((r) => `        self.Runes[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, weapon = ${s(r.weapon)}, armor = ${s(r.armor)}, lamp = ${s(r.lamp)}, minLevel = ${n(r.minLevel)}, weight = ${n(r.dropWeight)} }\n        table.insert(self.RuneOrder, ${s(r.id)})`),
+    "        self.Drops = {}",
+    ...drops.map((r) => `        self.Drops[${s(r.rank)}] = { picks = ${n(r.picks)}, none = ${n(r.none)}, gold = ${n(r.gold)}, potion = ${n(r.potion)}, item = ${n(r.item)}, rune = ${n(r.rune)}, unique = ${n(r.unique)}, set = ${n(r.set)}, rare = ${n(r.rare)}, magic = ${n(r.magic)} }`),
     "        self.Sets = {}",
     ...sets.map((r) => `        self.Sets[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, bonus2 = ${s(r.bonus2)}, bonus3 = ${s(r.bonus3)}, full = ${s(r.full)}, pieces = ${n(pieces.filter((p) => p.set === r.id).length)} }`),
     "        self.SetPieces = {}",
@@ -185,9 +188,9 @@ function genItems() {
     "        self.Runewords = {}",
     ...runewords.map((r) => `        self.Runewords[${s(r.runes)}] = { name = ${s(r.name)}, slots = ${s(r.slots)}, mods = ${s(r.mods)} }`),
   ].join("\n");
-  write("ItemTables.mlua", "item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv",
+  write("ItemTables.mlua", "item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, drop_tables.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv",
     logic("ItemTables", "아이템 데이터 표 (규칙·생성 로직은 Item/ItemData)", body, "",
-      "    property table StatNames = {}\n    property table Sets = {}\n    property table SetPieces = {}\n    property table SetPieceOrder = {}\n    property table Bases = {}\n    property table BaseOrder = {}\n    property table Affixes = {}\n    property table Uniques = {}\n    property table Runes = {}\n    property table RuneOrder = {}\n    property table Runewords = {}\n"));
+      "    property table StatNames = {}\n    property table Drops = {}\n    property table Sets = {}\n    property table SetPieces = {}\n    property table SetPieceOrder = {}\n    property table Bases = {}\n    property table BaseOrder = {}\n    property table Affixes = {}\n    property table UniqueList = {}\n    property table Runes = {}\n    property table RuneOrder = {}\n    property table Runewords = {}\n"));
 }
 
 // ── SkillData ──

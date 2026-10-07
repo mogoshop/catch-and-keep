@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -60,8 +60,10 @@ T.item_affixes.forEach((r, i) => {
   if (num(r.min) > num(r.max)) err("item_affixes", i, "min > max");
   for (const s of r.slots.split(/[,;|]/)) if (s !== "" && s !== "any" && !SLOTS.has(s)) err("item_affixes", i, `slots '${s}' 알 수 없음`);
 });
+unique("item_uniques", "id");
 T.item_uniques.forEach((r, i) => {
   if (!baseIds.has(r.base)) err("item_uniques", i, `base '${r.base}' — item_bases에 없음`);
+  if (r.source !== "" && !sourceIds.has(r.source)) err("item_uniques", i, `source '${r.source}' — monsters.csv sourceId에 없음`);
   checkMods("item_uniques", i, "mods", r.mods);
 });
 T.runes.forEach((r, i) => { for (const c of ["weapon", "armor", "lamp"]) checkMods("runes", i, c, r[c]); });
@@ -69,6 +71,15 @@ T.runewords.forEach((r, i) => {
   for (const id of r.runes.split(",")) if (!runeIds.has(id.trim())) err("runewords", i, `룬 '${id}' — runes.csv에 없음`);
   for (const s of r.slots.split(/[,;|]/)) if (!SLOTS.has(s)) err("runewords", i, `slots '${s}' 알 수 없음`);
   checkMods("runewords", i, "mods", r.mods);
+});
+
+// ── 드롭 표 ──
+const dropRanks = unique("drop_tables", "rank");
+for (const k of ["normal", "elite", "champion", "unique", "boss", "gamble", "quest"]) if (!dropRanks.has(k)) err("drop_tables", null, `'${k}' 없음`);
+T.drop_tables.forEach((r, i) => {
+  if (!(num(r.picks) >= 1)) err("drop_tables", i, "picks ≥ 1");
+  if (!(num(r.none) + num(r.gold) + num(r.potion) + num(r.item) + num(r.rune) > 0)) err("drop_tables", i, "가중치 합 0");
+  if (num(r.unique) + num(r.set) + num(r.rare) > 100) err("drop_tables", i, "유니크+세트+레어 > 100%");
 });
 
 // ── 세트 ──

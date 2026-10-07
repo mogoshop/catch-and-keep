@@ -1,17 +1,18 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/item_bases.csv, item_affixes.csv, item_uniques.csv, item_sets.csv, drop_tables.csv, item_set_pieces.csv, runes.csv, runewords.csv, stats.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 아이템 데이터 표 (규칙·생성 로직은 Item/ItemData)
 @Logic
 script ItemTables extends Logic
 
     property boolean Built = false
     property table StatNames = {}
+    property table Drops = {}
     property table Sets = {}
     property table SetPieces = {}
     property table SetPieceOrder = {}
     property table Bases = {}
     property table BaseOrder = {}
     property table Affixes = {}
-    property table Uniques = {}
+    property table UniqueList = {}
     property table Runes = {}
     property table RuneOrder = {}
     property table Runewords = {}
@@ -137,13 +138,13 @@ script ItemTables extends Logic
         table.insert(self.Affixes, { id = "of_storm", prefix = false, name = "벼락막이", stat = "lightRes", min = 10, max = 30, ilvl = 1, slots = "offhand,helm,armor,boots,belt,ring,amulet,gloves" })
         table.insert(self.Affixes, { id = "of_venom", prefix = false, name = "독막이", stat = "poisonRes", min = 10, max = 30, ilvl = 1, slots = "offhand,helm,armor,boots,belt,ring,amulet,gloves" })
         table.insert(self.Affixes, { id = "of_ward", prefix = false, name = "수호의", stat = "allRes", min = 5, max = 15, ilvl = 12, slots = "offhand,helm,armor,amulet,ring" })
-        self.Uniques = {}
-        self.Uniques["scythe1"] = { name = "망자의 손길", mods = "dmgPct=80,minion=20,life=20" }
-        self.Uniques["staff1"] = { name = "속삭이는 가지", mods = "ene=15,mana=30,dmgPct=40" }
-        self.Uniques["helm1"] = { name = "잿빛 왕관", mods = "def=20,extract=8,mf=25" }
-        self.Uniques["lamp1"] = { name = "그림자 군주의 등불", mods = "minion=40,ene=10" }
-        self.Uniques["armor1"] = { name = "무덤지기의 수의", mods = "def=30,vit=10,regen=2" }
-        self.Uniques["ring1"] = { name = "검은 맹세", mods = "dmgFlat=8,minion=15,gf=50" }
+        self.UniqueList = {}
+        table.insert(self.UniqueList, { id = "dead_touch", base = "scythe1", name = "망자의 손길", mods = "dmgPct=80,minion=20,life=20", source = "" })
+        table.insert(self.UniqueList, { id = "whisper_branch", base = "staff1", name = "속삭이는 가지", mods = "ene=15,mana=30,dmgPct=40", source = "" })
+        table.insert(self.UniqueList, { id = "ashen_crown", base = "helm1", name = "잿빛 왕관", mods = "def=20,extract=8,mf=25", source = "" })
+        table.insert(self.UniqueList, { id = "shadow_lord_lamp", base = "lamp1", name = "그림자 군주의 등불", mods = "minion=40,ene=10", source = "" })
+        table.insert(self.UniqueList, { id = "gravekeeper_shroud", base = "armor1", name = "무덤지기의 수의", mods = "def=30,vit=10,regen=2", source = "" })
+        table.insert(self.UniqueList, { id = "black_oath", base = "ring1", name = "검은 맹세", mods = "dmgFlat=8,minion=15,gf=50", source = "" })
         self.Runes = {}
         self.RuneOrder = {}
         self.Runes["r_as"] = { id = "r_as", name = "아스", weapon = "dmgPct=15", armor = "def=15", lamp = "mana=10", minLevel = 1, weight = 10 }
@@ -194,6 +195,14 @@ script ItemTables extends Logic
         table.insert(self.RuneOrder, "r_rev")
         self.Runes["r_obl"] = { id = "r_obl", name = "오블", weapon = "dmgPct=40", armor = "str=10,dex=10,vit=10,ene=10", lamp = "minion=20", minLevel = 65, weight = 0.3 }
         table.insert(self.RuneOrder, "r_obl")
+        self.Drops = {}
+        self.Drops["normal"] = { picks = 1, none = 45, gold = 28, potion = 12, item = 13, rune = 2, unique = 0.25, set = 0.6, rare = 1.5, magic = 15 }
+        self.Drops["elite"] = { picks = 2, none = 20, gold = 30, potion = 15, item = 30, rune = 5, unique = 1, set = 2, rare = 6, magic = 30 }
+        self.Drops["champion"] = { picks = 2, none = 15, gold = 30, potion = 15, item = 35, rune = 5, unique = 1.5, set = 2.5, rare = 8, magic = 35 }
+        self.Drops["unique"] = { picks = 3, none = 0, gold = 30, potion = 10, item = 50, rune = 10, unique = 4, set = 4, rare = 15, magic = 40 }
+        self.Drops["boss"] = { picks = 5, none = 0, gold = 30, potion = 10, item = 45, rune = 15, unique = 7, set = 5, rare = 25, magic = 40 }
+        self.Drops["gamble"] = { picks = 1, none = 0, gold = 0, potion = 0, item = 100, rune = 0, unique = 1, set = 2, rare = 15, magic = 100 }
+        self.Drops["quest"] = { picks = 1, none = 0, gold = 0, potion = 0, item = 100, rune = 0, unique = 3, set = 4, rare = 35, magic = 100 }
         self.Sets = {}
         self.Sets["ashen_legion"] = { id = "ashen_legion", name = "잿빛 군단", bonus2 = "minion=15", bonus3 = "allRes=10,extract=5", full = "shadowCap=1,deploy=1,minion=20", pieces = 4 }
         self.Sets["bone_choir"] = { id = "bone_choir", name = "뼈의 합창", bonus2 = "minion=25,fcr=10", bonus3 = "", full = "shadowCap=1,allRes=20,life=40", pieces = 3 }

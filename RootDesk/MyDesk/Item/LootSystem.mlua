@@ -6,8 +6,8 @@ script LootSystem extends Logic
     property boolean DebugLog = false
 
     @ExecSpace("ServerOnly")
-    method void RollDrops(Entity monster, integer monLevel, integer grade, Entity killer)
-        -- 등급별 추첨 횟수만큼 "없음/골드/포션/장비/룬" 가중치 롤 (05장 7.1)
+    method void RollDrops(Entity monster, integer monLevel, string rank, Entity killer)
+        -- 등급(drop_tables.csv)별 추첨 횟수만큼 "없음/골드/포션/장비/룬" 가중치 롤 (05장 7.1)
         if not isvalid(monster) or not isvalid(killer) then return end
         ---@type PlayerStats
         local stats = killer:GetComponent("script.PlayerStats")
@@ -16,15 +16,11 @@ script LootSystem extends Logic
             mf = stats.BonusMF
             gf = stats.BonusGF
         end
-        local picks = 1
-        local wNone, wGold, wPot, wItem, wRune = 45, 28, 12, 13, 2
-        if grade == 2 then
-            picks = 2
-            wNone, wGold, wPot, wItem, wRune = 20, 30, 15, 30, 5
-        elseif grade >= 3 then
-            picks = 5
-            wNone, wGold, wPot, wItem, wRune = 0, 30, 10, 45, 15
-        end
+        local d = _ItemData:GetDropTable(rank)
+        local picks = math.floor(d.picks)
+        local wNone, wGold, wPot, wItem, wRune = d.none, d.gold, d.potion, d.item, d.rune
+        local goldMult = 1
+        if rank == "elite" or rank == "champion" then goldMult = 2 elseif rank == "unique" or rank == "boss" then goldMult = 3 end
         local userId = killer.PlayerComponent.UserId
         local p = monster.TransformComponent.WorldPosition
         local center = Vector2(p.x, p.y)
@@ -33,14 +29,14 @@ script LootSystem extends Logic
             if r < wNone then
                 -- 없음
             elseif r < wNone + wGold then
-                local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * grade * (1 + gf / 100))
+                local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * goldMult * (1 + gf / 100))
                 self:Spawn(center, userId, "gold", "", amount, 0)
             elseif r < wNone + wGold + wPot then
                 local kind = "hp"
                 if _UtilLogic:RandomDouble() < 0.4 then kind = "mp" end
                 self:Spawn(center, userId, kind, "", 1, 0)
             elseif r < wNone + wGold + wPot + wItem then
-                local s = _ItemData:Generate(monLevel, grade, mf)
+                local s = _ItemData:Generate(monLevel, rank, mf)
                 local item = _ItemData:Parse(s)
                 self:Spawn(center, userId, "item", s, 1, item.rarity)
             else
@@ -48,7 +44,7 @@ script LootSystem extends Logic
             end
         end
         -- 보스는 룬 1개 확정 (06장)
-        if grade >= 3 then self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel + 5), 1, 0) end
+        if rank == "boss" then self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel + 5), 1, 0) end
     end
 
     @ExecSpace("ServerOnly")

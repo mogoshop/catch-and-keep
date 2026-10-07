@@ -99,24 +99,22 @@ script ItemData extends Logic
 
     -- ───────── 생성 ─────────
 
-    method integer RollRarity(integer grade, number mf)
+    method any GetDropTable(string rank)
+        -- 등급별 드롭 표 (drop_tables.csv). 모르는 등급은 normal
+        local t = self:T()
+        return t.Drops[rank] or t.Drops["normal"]
+    end
+
+    method integer RollRarity(string rank, number mf)
         -- 0 일반 / 1 마법 / 2 레어 / 3 유니크 / 4 세트 (룬워드는 일반 장비에 룬을 끼워 만든다)
-        -- 등급별 확률 (05장 7.2). 아이템 발견은 마법 이상에 곱하되 체감 (최대 ×2.5)
-        local magic, rare, unique = 25, 5, 0.2
-        local set = _GameData.setChance_g1
-        if grade == 2 then
-            magic, rare, unique = 40, 14, 1
-            set = _GameData.setChance_g2
-        elseif grade >= 3 then
-            magic, rare, unique = 35, 25, 8
-            set = _GameData.setChance_g3
-        end
+        -- D2처럼 유니크 → 세트 → 레어 → 마법 순서. 확률(%)은 drop_tables.csv, 아이템 발견은 체감 적용 (최대 ×2.5)
+        local d = self:GetDropTable(rank)
         local m = 1 + math.min(1.5, mf / (mf + 100) * 2.5)
         local r = _UtilLogic:RandomDouble() * 100
-        if r < unique * m then return 3 end
-        if r < (unique + set) * m then return 4 end
-        if r < (unique + set + rare) * m then return 2 end
-        if r < (unique + set + rare + magic) * m then return 1 end
+        if r < d.unique * m then return 3 end
+        if r < (d.unique + d.set) * m then return 4 end
+        if r < (d.unique + d.set + d.rare) * m then return 2 end
+        if r < (d.unique + d.set + d.rare) * m + d.magic * m then return 1 end
         return 0
     end
 
@@ -132,12 +130,12 @@ script ItemData extends Logic
         return list[_UtilLogic:RandomIntegerRange(1, #list)]
     end
 
-    method string Generate(integer ilvl, integer grade, number mf)
-        -- 드롭 장비 1개 → 문자열
+    method string Generate(integer ilvl, string rank, number mf)
+        -- 드롭 장비 1개 → 문자열. rank = drop_tables.csv 등급 (normal / elite / champion / unique / boss / gamble / quest)
         local t = self:T()
         local baseId = self:PickBase(ilvl)
         local base = t.Bases[baseId]
-        local rarity = self:RollRarity(grade, mf)
+        local rarity = self:RollRarity(rank, mf)
         if rarity == 4 then
             -- 세트: 아이템 레벨에 맞는 세트 조각 하나 (없으면 레어)
             local piece = self:PickSetPiece(ilvl)
@@ -150,15 +148,11 @@ script ItemData extends Logic
         end
         local item = { base = baseId, rarity = rarity, ilvl = ilvl, name = base.name, mods = {}, sockets = 0, runes = {} }
         if rarity == 3 then
-            local u = t.Uniques[baseId]
-            if u == nil then
-                item.rarity = 2
-                rarity = 2
-            else
-                item.name = u.name
-                self:AddMods(item.mods, u.mods)
-                return self:Serialize(item)
-            end
+            -- 유니크: 아이템 레벨에 맞는 일반 유니크 하나 (보스 전용은 LootSystem이 따로). 없으면 레어
+            local u = self:PickUnique(ilvl, "")
+            if u ~= nil then return self:MakeUnique(u, ilvl) end
+            item.rarity = 2
+            rarity = 2
         end
         if rarity == 0 then
             -- 일반 장비는 소켓이 붙을 수 있다 (룬워드 재료)
@@ -198,6 +192,24 @@ script ItemData extends Logic
         else
             item.name = self:RareName() .. " " .. base.name
         end
+        return self:Serialize(item)
+    end
+
+    method any PickUnique(integer ilvl, string source)
+        -- source = "" 이면 어디서나 나오는 유니크, 몬스터 sourceId면 그 몬스터 전용
+        local t = self:T()
+        local list = {}
+        for _, u in ipairs(t.UniqueList) do
+            local b = t.Bases[u.base]
+            if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then table.insert(list, u) end
+        end
+        if #list == 0 then return nil end
+        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+    end
+
+    method string MakeUnique(table u, integer ilvl)
+        local item = { base = u.base, rarity = 3, ilvl = ilvl, name = u.name, mods = {}, sockets = 0, runes = {} }
+        self:AddMods(item.mods, u.mods)
         return self:Serialize(item)
     end
 
