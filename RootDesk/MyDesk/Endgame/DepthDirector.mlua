@@ -12,6 +12,7 @@ script DepthDirector extends Component
     property boolean Cleared = false
     property boolean Moving = false
     property integer TimerId = 0
+    property number NearestSpawn = 99
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -65,11 +66,22 @@ script DepthDirector extends Component
         local unique = _GameData:GetDepthUnique(self.Floor)
         if unique ~= "" then self:SpawnOne(map, unique, self:BaseLevel() + math.floor(_GameData.depthUniqueLevelBonus), false) end
         self:Announce("심도 " .. tostring(self.Floor) .. "층 — 모든 적을 쓰러뜨려라")
+        log("[DepthDirector] " .. tostring(self.Floor) .. "층 몬스터 " .. tostring(#self.Spawned) .. " 가장 가까운 생성 거리 " .. string.format("%.1f", self.NearestSpawn) .. "칸")
     end
 
     @ExecSpace("ServerOnly")
     method void SpawnOne(Entity map, string modelId, integer level, boolean elite)
-        local pos = Vector3(-5.5 + _UtilLogic:RandomDouble() * 11, -3 + _UtilLogic:RandomDouble() * 6, 0)
+        -- 도착 지점(0,0) 둘레 depthSafeRadius 안에는 만들지 않는다 (들어가자마자 둘러싸이지 않게)
+        local pos = Vector3(5.5, 0, 0)
+        for _ = 1, 12 do
+            local x = -5.5 + _UtilLogic:RandomDouble() * 11
+            local y = -3 + _UtilLogic:RandomDouble() * 6
+            if math.sqrt(x * x + y * y) >= _GameData.depthSafeRadius then
+                pos = Vector3(x, y, 0)
+                break
+            end
+        end
+        self.NearestSpawn = math.min(self.NearestSpawn, math.sqrt(pos.x * pos.x + pos.y * pos.y))
         local e = _SpawnService:SpawnByModelId(modelId, modelId, pos, map)
         if not isvalid(e) then return end
         table.insert(self.Spawned, e)

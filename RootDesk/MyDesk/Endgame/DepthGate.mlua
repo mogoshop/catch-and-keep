@@ -9,6 +9,7 @@ script DepthGate extends Component
     property number PartyRange = 6
     property integer TimerId = 0
     property boolean Busy = false
+    property table Dwell = {}               -- userId → 문 위에 올라선 시각 (enter·next: 머물러야 이동)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -24,7 +25,13 @@ script DepthGate extends Component
     method void Check()
         if self.Busy then return end
         local player = _Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)[1]
-        if player == nil then return end
+        if player == nil then
+            self.Dwell = {}
+            return
+        end
+        -- 입구·다음 층: 문 위에 depthEnterDwell초 머물러야 이동 (지나가다 들어가지 않게). 귀환은 바로
+        if self.Action ~= "exit" and not self:Ready(player) then return end
+        self.Dwell = {}
         self.Busy = true
         _TimerService:SetTimerOnce(function() self.Busy = false end, 3)
         if self.Action == "enter" then
@@ -32,6 +39,33 @@ script DepthGate extends Component
         else
             _GameEvents:Emit("DepthDoorUsed", { action = self.Action, player = player, map = self.Entity.CurrentMap })
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Ready(Entity player)
+        -- 처음 밟으면 안내(권장 레벨·남은 시간), 머문 시간이 차면 true. 최소 레벨 미만이면 막는다
+        local uid = player.PlayerComponent.UserId
+        local now = _UtilLogic.ElapsedSeconds
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        local level = stats ~= nil and stats.Level or 1
+        local diff = stats ~= nil and stats.Difficulty or 0
+        local recommend = math.floor(_GameData.depthBaseLevel) + _GameData:GetDifficulty(diff).levelBonus
+        if self.Action == "enter" and level < _GameData.depthMinLevel then
+            if self.Dwell[uid] == nil then
+                self.Dwell[uid] = now
+                _Util:Notify("심도 던전은 Lv" .. tostring(math.floor(_GameData.depthMinLevel)) .. "부터 들어갈 수 있다 (권장 Lv" .. tostring(recommend) .. "+, 지금 Lv" .. tostring(level) .. ")", uid)
+            end
+            return false
+        end
+        if self.Dwell[uid] == nil then
+            self.Dwell[uid] = now
+            local what = self.Action == "enter" and ("심도 던전 (권장 Lv" .. tostring(recommend) .. "+, 몬스터 Lv" .. tostring(recommend + 1) .. "~)") or "더 깊은 층"
+            local warn = (self.Action == "enter" and level < recommend) and " — 아직 위험하다!" or ""
+            _Util:Notify(what .. warn .. " · " .. tostring(math.floor(_GameData.depthEnterDwell)) .. "초 머무르면 들어간다", uid)
+            return false
+        end
+        return now - self.Dwell[uid] >= _GameData.depthEnterDwell
     end
 
     @ExecSpace("ServerOnly")
