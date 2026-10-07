@@ -241,7 +241,18 @@ script Monster extends Component
             _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, self.HideDelay + 0.2)
             return
         end
-        _TimerService:SetTimerOnce(function() self:Respawn() end, self.RespawnDelay)
+        _TimerService:SetTimerOnce(function() self:TryRespawn() end, self.RespawnDelay)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryRespawn()
+        -- D2처럼 눈앞에서 되살아나지 않는다: 처음 위치 가까이에 플레이어가 있으면 잠시 뒤 다시 시도
+        if not isvalid(self.Entity) or not self.IsDead then return end
+        if _Util:NearestPlayerDistance(self.Entity.CurrentMap, self.SpawnPosition) < _GameData.respawnHideRadius then
+            _TimerService:SetTimerOnce(function() self:TryRespawn() end, 5)
+            return
+        end
+        self:Respawn()
     end
 
     @ExecSpace("Multicast")

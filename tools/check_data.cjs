@@ -163,6 +163,10 @@ T.maps.forEach((r, i) => {
     const wp = T.waypoints.find((w) => w.id === id);
     if (!wp) err("maps", i, `waypoint '${id}' — waypoints.csv에 없음`);
     else if (wp.map !== r.id) err("maps", i, `waypoint '${id}'의 map이 '${wp.map}' (이 맵은 '${r.id}')`);
+    else {
+      const [x, y] = r.waypoint.split("@")[1].split("/").map(Number);
+      if (Math.hypot(num(wp.x) - x, num(wp.y) - y) > 2) err("waypoints", null, `${id} 도착 위치(${wp.x},${wp.y})가 웨이포인트(${x},${y})에서 2칸 넘게 떨어짐`);
+    }
   }
   for (const x of r.extra.split(";")) {
     const m = x.match(/^altar:(\w+)@/);
@@ -221,7 +225,32 @@ T.npcs.forEach((r, i) => {
   if (!["shop", "quest"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
 });
 T.maps.forEach((r, i) => {
-  if (!["town", "field", "instance"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance`);
+  if (!["town", "field", "instance", "side"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side`);
+  // 크기와 좌표: 모든 위치가 맵 타일 범위 안 (x = -w/2 .. w/2-1, y = -h/2+1 .. h/2)
+  const w = num(r.w), h = num(r.h);
+  if (!(w >= 8 && h >= 6) || w % 2 || h % 2) err("maps", i, `크기 ${r.w}×${r.h} — 8×6 이상 짝수`);
+  const inside = (text, what) => {
+    const xy = text.includes("@") ? text.split("@")[1] : text;
+    const [x, y] = xy.split("/").map(Number);
+    if (Number.isNaN(x) || Number.isNaN(y)) return err("maps", i, `${what} 좌표 '${text}' 형식 오류`);
+    if (x < -w / 2 + 1 || x > w / 2 - 2 || y < -h / 2 + 1 || y > h / 2 - 1) err("maps", i, `${what} '${text}' — 맵 ${w}×${h} 범위 밖 (포털 줄 x=±${w / 2 - 1} 제외)`);
+  };
+  for (const t of r.torches.split(";").filter(Boolean)) inside(t, "torches");
+  for (const t of r.fixed.split(";").filter(Boolean)) inside(t, "fixed");
+  for (const t of r.extra.split(";").filter(Boolean)) inside(t, "extra");
+  if (r.waypoint !== "") inside(r.waypoint, "waypoint");
+  if (r.kind === "side") {
+    const parent = T.maps.find((m) => m.id === r.parent);
+    if (!parent || parent.kind !== "field") err("maps", i, `parent '${r.parent}' — 필드 맵이어야 함`);
+    const floors = T.maps.filter((m) => m.kind === "side" && m.parent === r.parent);
+    if (floors[0] === r && r.entry === "") err("maps", i, "곁가지 첫 층은 entry(부모 필드의 입구 위치)가 필요");
+    if (floors[0] !== r && r.entry !== "") err("maps", i, "entry는 첫 층에만");
+    if (r.entry !== "" && parent) {
+      const [x, y] = r.entry.split("/").map(Number);
+      const pw = num(parent.w), ph = num(parent.h);
+      if (x < -pw / 2 + 2 || x > pw / 2 - 3 || y < -ph / 2 + 2 || y > ph / 2 - 1) err("maps", i, `entry '${r.entry}' — 부모 ${parent.id} 범위 밖`);
+    }
+  }
   for (const x of r.extra.split(";")) {
     const m = x.match(/^npc:(\w+)@/);
     if (m && !npcModels.has(m[1])) err("maps", i, `npc '${m[1]}' — npcs.csv에 없음`);

@@ -11,23 +11,56 @@ function managedModelIds(monsters, npcs) {
   return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);
 }
 
-// 이번 빌드가 놓을 엔티티 목록 (이름 → 배치 함수)
+// 맵 크기(타일, 1칸 = 1월드 단위): 가로 x = -w/2 .. w/2-1, 세로 y = -h/2+1 .. h/2 (메이커 기본 RectTile 격자와 같은 기준)
+function edges(d) {
+  const w = num(d.w, 14), h = num(d.h, 8);
+  return { left: -(w / 2) + 1, right: w / 2 - 1, bottom: -(h / 2) + 1, top: h / 2, w, h };
+}
+// 포털 앞 도착 위치 (포털에서 안쪽으로 1.4칸)
+const arriveLeft = (d) => [edges(d).left + 1.4, 0];
+const arriveRight = (d) => [edges(d).right - 1.4, 0];
+
+// 이번 빌드가 놓을 엔티티 목록
+//   마을 → 필드 사슬(order 순, 왼쪽 GateBack·오른쪽 GateNext) → 보스 방
+//   곁가지 던전(kind=side): 부모 필드의 entry 위치에 입구(Gate_<첫 층>), 층끼리는 GateBack/GateNext, 마지막 층은 막다른 곳 (D2)
 function desiredEntities(d, maps, ctx) {
   const out = [];
   const place = (name, model, p, overrides) => out.push({ name, model, pos: p, overrides });
   const fields = maps.filter((m) => m.kind === "field");
   const town = maps.find((m) => m.kind === "town");
-  const townArrival = [0, -1.2];
+  const townArrival = [ctx.townArrival.x, ctx.townArrival.y];
+  const e = edges(d);
 
   if (d.kind === "town") {
     const first = fields[0];
-    place("GateToField", "Objects/WarpGate", [0, -2.8, 0], { "script.WarpGate": gate(first.id, [-4.6, 0], first.name) });
+    place("GateToField", "Objects/WarpGate", [townArrival[0], townArrival[1] - 1.4, 0], { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
   } else if (d.kind === "field") {
     const i = fields.indexOf(d);
     const prev = i === 0 ? town : fields[i - 1];
     const next = i === fields.length - 1 ? town : fields[i + 1];
-    place("GateBack", "Objects/WarpGate", [-6, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : [4.6, 0], prev.name) });
-    place("GateNext", "Objects/WarpGate", [6, 0, 0], { "script.WarpGate": gate(next.id, next === town ? townArrival : [-4.6, 0], next.name) });
+    place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
+    place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": gate(next.id, next === town ? townArrival : arriveLeft(next), next.name) });
+    // 이 필드에 딸린 곁가지 던전 입구
+    const firstFloor = maps.find((m) => m.kind === "side" && m.parent === d.id && m.entry !== "");
+    if (firstFloor) {
+      const p = pos(firstFloor.entry);
+      place(`Gate_${firstFloor.id}`, "Objects/WarpGate", p, { "script.WarpGate": gate(firstFloor.id, arriveLeft(firstFloor), firstFloor.name) });
+    }
+  } else if (d.kind === "side") {
+    const floors = maps.filter((m) => m.kind === "side" && m.parent === d.parent);
+    const i = floors.indexOf(d);
+    if (i === 0) {
+      const parent = maps.find((m) => m.id === d.parent);
+      const back = pos(d.entry);
+      place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(parent.id, [back[0], back[1] - 1.4], parent.name) });
+    } else {
+      const prev = floors[i - 1];
+      place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, arriveRight(prev), prev.name) });
+    }
+    if (i < floors.length - 1) {
+      const next = floors[i + 1];
+      place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": gate(next.id, arriveLeft(next), next.name) });
+    }
   }
   list(d.torches).forEach((t, k) => place(`Torch${k + 1}`, "Objects/Brazier", pos(t)));
   if (d.waypoint !== "") {
@@ -39,15 +72,15 @@ function desiredEntities(d, maps, ctx) {
     const m = ctx.monsters[x.name];
     place(m.model, `Region${m.region}/${m.model}`, x.pos);
   }
-  for (const e of list(d.extra)) {
-    const x = at(e);
+  for (const ex of list(d.extra)) {
+    const x = at(ex);
     if (x.name === "depthgate") place("DepthEntrance", "Objects/DepthGate", x.pos, { "script.DepthGate": { Action: "enter" } });
     else if (x.name.startsWith("npc:")) {
       const n = ctx.npcs[x.name.slice(4)];
       place(n.model, `NPC/${n.model}`, x.pos);
     } else if (x.name.startsWith("altar:")) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
-    } else throw new Error(`maps.csv ${d.id} extra '${e}' 알 수 없음`);
+    } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
   return out;
 }
@@ -92,7 +125,14 @@ function buildNormal(d, maps, ctx) {
   for (const e of desired) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
-    map.patchComponent("Spawner", "script.MonsterSpawner", { Entries: d.spawns, EliteChance: num(d.eliteChance) });
+    // 출현 범위 = 맵 가장자리에서 2칸 안쪽 (포털 앞은 비워 둔다)
+    const e = edges(d);
+    map.patchComponent("Spawner", "script.MonsterSpawner", {
+      Entries: d.spawns, EliteChance: num(d.eliteChance),
+      VariantChance: d.variantChance === "" ? -1 : num(d.variantChance),
+      PackSize: Math.max(1, num(d.packSize, 1)), RespawnSec: num(d.respawnSec, 10),
+      AreaMin: { x: e.left + 2, y: e.bottom + 1.5 }, AreaMax: { x: e.right - 2, y: e.top - 1.5 },
+    });
   }
   map.write(file);
 }
@@ -121,7 +161,9 @@ function run() {
   const diffs = load("difficulty").filter((x) => num(x.index) > 0);
   const monsters = load("monsters");
   const npcs = load("npcs");
+  const cfg = Object.fromEntries(load("config").map((r) => [r.key, num(r.value)]));
   const ctx = {
+    townArrival: { x: cfg.townArrivalX, y: cfg.townArrivalY },
     monsters: Object.fromEntries(monsters.map((m) => [m.id, m])),
     npcs: Object.fromEntries(npcs.map((n) => [n.model, n])),
     managed: managedModelIds(monsters, npcs),
