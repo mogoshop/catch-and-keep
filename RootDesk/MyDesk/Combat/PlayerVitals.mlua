@@ -11,12 +11,37 @@ script PlayerVitals extends Component
     property number InvincibleUntil = 0
     property boolean Dying = false
     property integer TimerId = 0
+    property boolean HitStateDetached = false
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 엔진이 피격 생명 차감을 언제 하는지(우리 핸들러 앞/뒤)에 기대지 않고, 0 이하가 되면 바로 사망 처리한다.
         -- 피격·독·결투 등 어떤 경로로 깎여도 같다
+        -- 엔진의 모든 피격→HIT 전환을 끈다. 실제 중단 여부와 자세는 아래의 피해 기준이 함께 결정한다.
+        local state = self.Entity.StateComponent
+        if isvalid(state) then state:DisconnectHitEvent() end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:CheckDeath() end, 0.1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 플레이어 상태 머신은 클라이언트에도 피격을 듣는다. 초기화/맵 이동/부활 뒤 한 번씩 해제한다.
+        if self.HitStateDetached then return end
+        local state = self.Entity.StateComponent
+        if not isvalid(state) then return end
+        state:DisconnectHitEvent()
+        self.HitStateDetached = true
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Self")
+    handler HandleMapChanged(EntityMapChangedEvent event)
+        self.HitStateDetached = false
+    end
+
+    @ExecSpace("Client")
+    method void PrepareHitState()
+        self.HitStateDetached = false
     end
 
     @ExecSpace("ServerOnly")
@@ -56,6 +81,9 @@ script PlayerVitals extends Component
         -- 내가 맞았을 때: 카메라 흔들림 + 둔탁한 소리. 생명의 15% 넘게 깎이면 더 세게
         local cam = _CameraService:GetCurrentCameraComponent()
         local heavy = ratio >= 0.15
+        -- 큰 피해만 실제 HIT 자세로 바꾸며, 작은 피해는 시전/평타 동작을 덮지 않는다.
+        local state = self.Entity.StateComponent
+        if heavy and self.Entity.PlayerComponent.Hp > 0 and isvalid(state) and state.CurrentStateName ~= "DEAD" then state:ChangeState("HIT") end
         if isvalid(cam) then cam:ShakeCamera(heavy and 0.22 or 0.1, heavy and 0.25 or 0.12) end
         _SoundService:PlaySound(_GameConst.SfxImpact, heavy and 0.7 or 0.45)
     end
@@ -117,6 +145,7 @@ script PlayerVitals extends Component
         if not isvalid(self.Entity) then return end
         local pc = self.Entity.PlayerComponent
         pc:Respawn()
+        self:PrepareHitState(pc.UserId)
         pc.Hp = pc.MaxHp
         self.Dying = false
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.RespawnInvincible
