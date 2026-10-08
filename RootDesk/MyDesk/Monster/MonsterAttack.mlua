@@ -25,10 +25,12 @@ script MonsterAttack extends AttackComponent
     property number AttackWindup = 0.3
     property number AttackAnimationSeconds = 0.4
     property number AttackAnimationUntil = 0
+    property boolean ResumeChaseAfterAttack = false
     @Sync
     property integer AttackEpoch = 0
     property integer WarningSerial = 0
     property integer WarningTimer = 0
+    property string WarningOwner = ""
     property integer WarningEpoch = -1
     property integer WindupTimer = 0
     property integer RecoveryTimer = 0
@@ -95,6 +97,9 @@ script MonsterAttack extends AttackComponent
     method void OnUpdate(number delta)
         local body = self:Body()
         if body == nil or body.IsDead or not self.Entity.Enable then self.SpacingControlled = false return end
+        ---@type BossPattern
+        local boss = self.Entity:GetComponent("script.BossPattern")
+        if boss ~= nil and boss.SlamPhase ~= "idle" then self.SpacingControlled = false return end
         local status = body:Status()
         if status ~= nil and status:IsStunned() then self.SpacingControlled = false return end
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")
@@ -171,6 +176,9 @@ script MonsterAttack extends AttackComponent
         local body = self:Body()
         if body == nil or body.IsDead or not self:IsLiveDefender(target) then return end
         if not self.Entity.Enable then return end
+        ---@type BossPattern
+        local boss = self.Entity:GetComponent("script.BossPattern")
+        if boss ~= nil and boss.SlamPhase ~= "idle" then return end
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")
         if behavior ~= nil and not behavior:CanBeginAttack() then return end
         local map = self.Entity.CurrentMap
@@ -182,6 +190,7 @@ script MonsterAttack extends AttackComponent
         self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
         local chase = self.Entity.AIChaseComponent
         local resumeChase = isvalid(chase) and chase.Enable
+        self.ResumeChaseAfterAttack = resumeChase
         if isvalid(chase) then chase.Enable = false end
         self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
         local dx = aim.x - _Util:Pos2(self.Entity).x
@@ -241,7 +250,11 @@ script MonsterAttack extends AttackComponent
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         if epoch < self.AttackEpoch then return end
+        ---@type BossPattern
+        local boss = self.Entity:GetComponent("script.BossPattern")
+        if boss ~= nil and boss.SlamPhase ~= "idle" then return end
         self:ClearWindup()
+        self.WarningOwner = "basic"
         self.WarningEpoch = epoch
         local drawn = false
         if self.AttackRange > 1.5 then drawn = self:DrawRangedWarning(dir)
@@ -336,8 +349,9 @@ script MonsterAttack extends AttackComponent
         -- 경고 입자와 제거 타이머를 함께 정리한다.
         if self.WarningTimer ~= 0 then _TimerService:ClearTimer(self.WarningTimer) self.WarningTimer = 0 end
         if self.WarningSerial ~= 0 then _ParticleService:RemoveParticle(self.WarningSerial) self.WarningSerial = 0 end
-        if isvalid(self.Entity.LineRendererComponent) then
-            self.Entity.LineRendererComponent.Points:Clear()
+        if self.WarningOwner == "basic" then
+            if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
+            self.WarningOwner = ""
         end
         self.WarningEpoch = -1
     end

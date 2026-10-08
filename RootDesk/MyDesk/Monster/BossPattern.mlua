@@ -12,17 +12,35 @@ script BossPattern extends Component
     property string MinionModelId = "graveworm"
     property integer MinionCount = 3
 
+    property number SlamRecovery = 0.65
+    @Sync
+    property string SlamPhase = "idle"
+    @Sync
+    property Vector2 SlamCenter = Vector2(0, 0)
+    property number PhaseRemaining = 0
+    property boolean ResumeChase = false
+    property boolean ResumeWander = false
+    property integer SlamCount = 0
+    property boolean DebugCombat = false
+
     property number SlamTimer = 3
     property boolean Enraged = false
     property boolean WasDead = false
     property number EngageStart = 0        -- 처음 플레이어와 마주친 시각 (처치 시간 랭킹)
 
-    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 내려찍기는 소유 타이머 없는 단계 갱신으로 예고·타격·회복을 순서대로 실행한다.
+        if self:IsServer() then log("[VRF] BossPattern phased slam ready " .. self.BossName) end
+    end
+
     method void OnUpdate(number delta)
+        -- 클라이언트는 서버가 확정한 타격 원을 표시하고 서버만 전투 단계를 진행한다.
+        if self:IsClient() then self:DrawWarning() return end
         ---@type Monster
         local monster = self.Entity:GetComponent("script.Monster")
         if monster == nil then return end
         if monster.IsDead or not self.Entity.Enable then
+            self:CancelSlam()
             if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
             self.WasDead = monster.IsDead
             self.Enraged = false
@@ -31,6 +49,31 @@ script BossPattern extends Component
             return
         end
         self.WasDead = false
+        local status = monster:Status()
+        if status ~= nil and status:IsStunned() then self:CancelSlam() return end
+        if self.SlamPhase ~= "idle" then
+            -- 회피로 반경 밖에 나가도 예고한 자리에 친다. 맵을 떠난 뒤 남는 공격은 취소한다.
+            if #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then self:CancelSlam() return end
+            self:HoldMotion()
+            self.PhaseRemaining = self.PhaseRemaining - delta
+            if self.PhaseRemaining > 0 then return end
+            if self.SlamPhase == "windup" then
+                self.SlamPhase = "recovery"
+                self.PhaseRemaining = self.SlamRecovery
+                ---@type MonsterAttack
+                local atk = self.Entity:GetComponent("script.MonsterAttack")
+                if atk ~= nil then
+                    self.Entity.StateComponent:ChangeState("ATTACK")
+                    atk:Slam(self.SlamCenter, self.SlamRadius, self.SlamDamage)
+                    self.SlamCount = self.SlamCount + 1
+                end
+                self:SlamFx(Vector3(self.SlamCenter.x, self.SlamCenter.y, 0), self.SlamRadius)
+                if self.DebugCombat then log("[VRF] boss slam contact " .. tostring(self.SlamCount)) end
+            else
+                self:CancelSlam()
+            end
+            return
+        end
         if not self:AnyPlayerNear() then return end
         if self.EngageStart <= 0 then self.EngageStart = _UtilLogic.ElapsedSeconds end
         if not self.Enraged and monster.Hp <= monster.MaxHp * 0.5 then
@@ -39,18 +82,110 @@ script BossPattern extends Component
             self:Announce(self.BossName .. "이(가) 분노했다!")
         end
         self.SlamTimer = self.SlamTimer - delta
-        if self.SlamTimer > 0 then return end
-        self.SlamTimer = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
-        local p = self.Entity.TransformComponent.WorldPosition
-        local center = Vector2(p.x, p.y + 0.3)
-        self:Telegraph(Vector3(center.x, center.y, 0), self.SlamRadius)
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(self.Entity) or monster.IsDead then return end
-            ---@type MonsterAttack
-            local atk = self.Entity:GetComponent("script.MonsterAttack")
-            if atk ~= nil then atk:Slam(center, self.SlamRadius, self.SlamDamage) end
-            self:SlamFx(Vector3(center.x, center.y, 0), self.SlamRadius)
-        end, self.SlamWindup)
+        if self.SlamTimer <= 0 then self:BeginSlam() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeginSlam()
+        -- 일반 공격을 먼저 끊고 위치를 고정한다. 예고한 원은 목표를 따라 움직이지 않는다.
+        if self.SlamPhase ~= "idle" then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil or monster.IsDead or not self.Entity.Enable then return end
+        local status = monster:Status()
+        if status ~= nil and status:IsStunned() then return end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk == nil then return end
+        local chase = self.Entity.AIChaseComponent
+        local wander = self.Entity.AIWanderComponent
+        self.ResumeChase = isvalid(chase) and (chase.Enable or atk.SpacingControlled
+            or (atk.AttackAnimationUntil > _UtilLogic.ElapsedSeconds and atk.ResumeChaseAfterAttack))
+        self.ResumeWander = isvalid(wander) and wander.Enable
+        atk:CancelPending()
+        self.SlamCenter = _Util:Pos2(self.Entity) + Vector2(0, 0.3)
+        self.SlamPhase = "windup"
+        self.PhaseRemaining = math.max(0.1, self.SlamWindup)
+        local interval = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
+        self.SlamTimer = math.max(0.5, interval - self.PhaseRemaining - self.SlamRecovery)
+        self:HoldMotion()
+        if self.Entity.StateComponent.CurrentStateName ~= "IDLE" then self.Entity.StateComponent:ChangeState("IDLE") end
+        if self.DebugCombat then log("[VRF] boss slam windup center=" .. tostring(self.SlamCenter) .. " radius=" .. tostring(self.SlamRadius)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HoldMotion()
+        -- 예고와 회복 중에는 추적 및 일반 공격의 이동이 서로 덮어쓰지 않는다.
+        local chase = self.Entity.AIChaseComponent
+        local wander = self.Entity.AIWanderComponent
+        if isvalid(chase) then chase.Enable = false end
+        if isvalid(wander) then wander.Enable = false end
+        self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelSlam()
+        -- 사망·중단·종료 때 지연 타격을 남기지 않고 살아 있을 때만 원래 추적을 복원한다.
+        if self.SlamPhase == "idle" then return end
+        self.SlamPhase = "idle"
+        self.PhaseRemaining = 0
+        if not isvalid(self.Entity) then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil or monster.IsDead or not self.Entity.Enable then return end
+        local status = monster:Status()
+        if status ~= nil and status:IsStunned() then return end
+        local chase = self.Entity.AIChaseComponent
+        local wander = self.Entity.AIWanderComponent
+        if isvalid(chase) then chase.Enable = self.ResumeChase end
+        if isvalid(wander) then wander.Enable = self.ResumeWander end
+        if self.Entity.StateComponent.CurrentStateName == "ATTACK" then self.Entity.StateComponent:ChangeState("IDLE") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawWarning()
+        -- 실제 CircleShape와 같은 중심·반경을 그린다. 일반 공격과 렌더러 소유권을 구분한다.
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        local line = self.Entity.LineRendererComponent
+        if atk == nil or not isvalid(line) then return end
+        if self.SlamPhase ~= "windup" or not self:HasLocalAudience() then
+            self:ClearWarning()
+            return
+        end
+        local transform = self.Entity.TransformComponent
+        line.Points:Clear()
+        for i = 0, 32 do
+            local angle = math.pi * 2 * i / 32
+            local p = self.SlamCenter + Vector2(math.cos(angle), math.sin(angle)) * self.SlamRadius
+            local localPoint = transform:ToLocalPoint(Vector3(p.x, p.y, transform.WorldPosition.z))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), Color(1, 0.25, 0.12, 0.85), 0.14))
+        end
+        atk.WarningOwner = "boss"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearWarning()
+        -- 자신이 그린 원만 지워 이어지는 일반 공격 예고를 지우지 않는다.
+        if not isvalid(self.Entity) then return end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil and atk.WarningOwner == "boss" then
+            if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
+            atk.WarningOwner = ""
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean HasLocalAudience()
+        -- 다른 맵의 보스 효과가 현재 화면과 카메라에 나타나지 않는다.
+        local me = _UserService.LocalPlayer
+        return isvalid(me) and isvalid(self.Entity) and me.CurrentMap == self.Entity.CurrentMap
+    end
+
+    method void OnEndPlay()
+        -- 타격은 OnUpdate에만 존재하므로 종료 이후 실행될 예약 콜백이 없다.
+        if self:IsServer() then self:CancelSlam() else self:ClearWarning() end
     end
 
     @ExecSpace("ServerOnly")
@@ -78,20 +213,18 @@ script BossPattern extends Component
     end
 
     @ExecSpace("Multicast")
-    method void Telegraph(Vector3 pos, number radius)
-        -- 경고: 붉은 기운
-        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = Color(1, 0.15, 0.1, 1) })
-    end
-
-    @ExecSpace("Multicast")
     method void SlamFx(Vector3 pos, number radius)
+        -- 같은 맵에서만 충격을 보여 주고 가까운 관전자만 카메라를 흔든다.
+        if not self:HasLocalAudience() then return end
         _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.25, radius * 0.25, 1), false, nil)
         local cam = _CameraService:GetCurrentCameraComponent()
-        if isvalid(cam) then cam:ShakeCamera(0.4, 0.3) end
+        if isvalid(cam) and (_Util:Pos2(_UserService.LocalPlayer) - Vector2(pos.x, pos.y)):Magnitude() <= 10 then cam:ShakeCamera(0.25, 0.2) end
     end
 
     @ExecSpace("Multicast")
     method void Announce(string text)
+        -- 현재 전투에 참여하는 맵의 사용자에게만 알린다.
+        if not self:HasLocalAudience() then return end
         _ScreenMessageLogic:PrivateMsg(text)
     end
 
