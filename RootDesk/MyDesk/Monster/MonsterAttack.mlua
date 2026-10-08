@@ -37,6 +37,17 @@ script MonsterAttack extends AttackComponent
     method void OnBeginPlay()
         -- 종별 준비/회복 시간을 구분하고 무리의 첫 타격이 한 프레임에 몰리지 않게 한다.
         self.Entity.StateComponent:AddState("ATTACK", MonsterAttackState)
+        -- 서버는 빈 경고 렌더러를 마련하고 클라이언트가 공격 예고 동안만 그린다.
+        local line = self.Entity.LineRendererComponent
+        if not isvalid(line) then line = self.Entity:AddComponent("LineRendererComponent") end
+        if isvalid(line) then
+            line.SortingLayer = "MapLayer0"
+            line.OrderInLayer = 2
+            line.IsFlexible = false
+            line.IsSmooth = false
+            line.Loop = false
+            line.Points:Clear()
+        end
         local body = self:Body()
         local source = body ~= nil and body.SourceId or ""
         self.AttackWindup = 0.35
@@ -133,8 +144,8 @@ script MonsterAttack extends AttackComponent
             if self.DebugCombat then log("[VRF-COMBAT] enemy active epoch=" .. tostring(epoch)) end
             if self.AttackRange > 1.5 then self:Shoot(aim) return end
             -- 준비 동작을 보고 옆·뒤로 빠지면 피할 수 있게: 지금 몬스터 위치에서 처음 바라본 방향 앞쪽 원
-            local reach = math.max(0.4, self.AttackRange * 0.55)
-            local center = _Util:Pos2(self.Entity) + face * reach + Vector2(0, 0.3)
+            local reach = self:MeleeReach()
+            local center = self:MeleeCenter(face)
             self:AttackFast(CircleShape(center, reach), "monster.basic", nil)
             self:SwingFx(Vector3(center.x, center.y, 0), face)
         end, self.AttackWindup)
@@ -172,15 +183,86 @@ script MonsterAttack extends AttackComponent
         if epoch < self.AttackEpoch then return end
         self:ClearWindup()
         self.WarningEpoch = epoch
-        local reach = math.max(0.4, self.AttackRange * 0.55)
-        if self.AttackRange > 1.5 then reach = 0.3 end
-        local p = self.Entity.TransformComponent.WorldPosition
-        local pos = Vector3(p.x + dir.x * reach, p.y + dir.y * reach + 0.3, p.z)
-        self.WarningSerial = _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(reach, reach, 1), true, { Color = Color(0.8, 0.35, 0.18, 0.38) })
+        local drawn = false
+        if self.AttackRange > 1.5 then drawn = self:DrawRangedWarning(dir)
+        else drawn = self:DrawMeleeWarning(dir) end
+        if not drawn then
+            local reach = math.max(0.4, self.AttackRange * 0.55)
+            if self.AttackRange > 1.5 then reach = 0.3 end
+            local p = self.Entity.TransformComponent.WorldPosition
+            local pos = Vector3(p.x + dir.x * reach, p.y + dir.y * reach + 0.3, p.z)
+            self.WarningSerial = _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(reach, reach, 1), true, { Color = Color(0.8, 0.35, 0.18, 0.38) })
+        end
         self.WarningTimer = _TimerService:SetTimerOnce(function()
             self.WarningTimer = 0
             if self.WarningEpoch == epoch then self:ClearWindup() end
         end, duration)
+    end
+
+    method number MeleeReach()
+        -- 근접 예고와 실제 원형 판정이 같은 반경을 사용한다.
+        return math.max(0.4, self.AttackRange * 0.55)
+    end
+
+    method Vector2 MeleeCenter(Vector2 dir)
+        -- 캐릭터 피격 높이 보정을 포함한 실제 근접 판정 중심이다.
+        return _Util:Pos2(self.Entity) + dir * self:MeleeReach() + Vector2(0, 0.3)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean DrawMeleeWarning(Vector2 dir)
+        -- 올라오는 입자 대신 실제 공격 원의 경계를 표시해 옆·뒤 회피 거리를 읽게 한다.
+        local line = self.Entity.LineRendererComponent
+        if not isvalid(line) or dir:Magnitude() < 0.05 then return false end
+        local transform = self.Entity.TransformComponent
+        local center = self:MeleeCenter(dir:Normalize())
+        local radius = self:MeleeReach()
+        local color = Color(1, 0.45, 0.2, 0.65)
+        line.Points:Clear()
+        for i = 0, 24 do
+            local angle = math.pi * 2 * i / 24
+            local point = center + Vector2(math.cos(angle), math.sin(angle)) * radius
+            local localPoint = transform:ToLocalPoint(Vector3(point.x, point.y, transform.WorldPosition.z))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, 0.12))
+        end
+        if self.DebugCombat then log("[VRF] melee warning points=25 center=" .. tostring(center) .. " radius=" .. tostring(radius)) end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean DrawRangedWarning(Vector2 dir)
+        -- 실제 화살의 지면 경로를 얇은 선·화살촉으로 표시하고 막힌 타일 앞에서 끊는다.
+        local line = self.Entity.LineRendererComponent
+        if not isvalid(line) or dir:Magnitude() < 0.05 then return false end
+        dir = dir:Normalize()
+        local transform = self.Entity.TransformComponent
+        local p = transform.WorldPosition
+        local start = Vector2(p.x, p.y) + dir * 0.3
+        local tip = start
+        local range = self.AttackRange + 1.5
+        local terrain = self.Entity.CurrentMap:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        local steps = math.ceil(range / 0.2)
+        for i = 1, steps do
+            local nextPoint = start + dir * math.min(range, i * 0.2)
+            if isvalid(terrain) and _Util:TileBlocked(terrain.Entity, nextPoint) then break end
+            tip = nextPoint
+        end
+        if (tip - start):Magnitude() < 0.1 then return false end
+        local normal = Vector2(-dir.y, dir.x)
+        local head = math.min(0.28, (tip - start):Magnitude() * 0.4)
+        local color = Color(1, 0.55, 0.2, 0.65)
+        local function addPoint(point)
+            local localPoint = transform:ToLocalPoint(Vector3(point.x, point.y, p.z))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, 0.12))
+        end
+        line.Points:Clear()
+        addPoint(start)
+        addPoint(tip)
+        addPoint(tip - dir * head + normal * head * 0.6)
+        addPoint(tip)
+        addPoint(tip - dir * head - normal * head * 0.6)
+        if self.DebugCombat then log("[VRF] ranged warning points=5 length=" .. tostring((tip - start):Magnitude()) .. " dir=" .. tostring(dir)) end
+        return true
     end
 
     @ExecSpace("ClientOnly")
@@ -194,6 +276,9 @@ script MonsterAttack extends AttackComponent
         -- 경고 입자와 제거 타이머를 함께 정리한다.
         if self.WarningTimer ~= 0 then _TimerService:ClearTimer(self.WarningTimer) self.WarningTimer = 0 end
         if self.WarningSerial ~= 0 then _ParticleService:RemoveParticle(self.WarningSerial) self.WarningSerial = 0 end
+        if isvalid(self.Entity.LineRendererComponent) then
+            self.Entity.LineRendererComponent.Points:Clear()
+        end
         self.WarningEpoch = -1
     end
 
