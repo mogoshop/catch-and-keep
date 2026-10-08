@@ -1,76 +1,180 @@
--- 퀘스트 창 (Q, D2 퀘스트 로그): 영역 의뢰 6개의 상태(완료·진행·보고 대기·잠김)와 선택한 의뢰의 설명·보상.
+-- 의뢰 일지: 현재 목표·지역·진행 상태와 실제 지급 데이터에서 읽은 보상 아이콘을 표시한다.
 @Logic
 script QuestWindow extends Logic
 
     property string Win = "QuestWin"
     property integer Selected = 1
+    property integer CurrentIndex = 0
+    property boolean WasOpen = false
     property string RenderKey = ""
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 별도 일지 그룹으로 연결하고 옛 창은 닫아 중복 표시를 막는다.
+        _UIKit:SetEnabled("/ui/GameHUD/QuestWin", false)
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for i = 1, 6 do
             local index = i
-            _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function()
-                self.Selected = index
-                self.RenderKey = ""
-            end)
+            _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function() self:Select(index) end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+        log("[VRF] QuestWindow journal ready")
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        -- 일지 갱신 타이머를 세션 종료 때 해제한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Select(integer index)
+        -- 완료·현재·잠긴 의뢰를 확인할 수 있지만 데이터 밖 인덱스는 무시한다.
+        if not _UIKit:IsOpen(self.Win) or _QuestData:Get(index) == nil then return end
+        self:Poll()
+        self.Selected = index
+        self.RenderKey = ""
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
     method void Poll()
+        -- 처음 열 때와 다음 의뢰로 넘어갈 때 현재 목표를 선택한다.
         if not _UIKit:IsOpen(self.Win) then
+            self.WasOpen = false
             self.RenderKey = ""
             return
         end
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
-        if quest == nil then return end
+        if quest == nil then
+            self.RenderKey = ""
+            self.WasOpen = false
+            _UIKit:SetText(self.Win .. "/Detail/Title", "의뢰 기록을 불러오는 중")
+            for i = 1, 6 do
+                _UIKit:SetEnabled(self.Win .. "/Q" .. tostring(i), false)
+                _UIKit:SetEnabled(self.Win .. "/Detail/Reward" .. tostring(i), false)
+            end
+            for _, name in ipairs({"Status", "Zone", "Objective", "Desc", "RewardTitle"}) do _UIKit:SetText(self.Win .. "/Detail/" .. name, "") end
+            _UIKit:SetEnabled(self.Win .. "/Detail/Progress", false)
+            return
+        end
+        local count = _QuestData:Count()
+        if not self.WasOpen or self.CurrentIndex ~= quest.Index then self.Selected = math.max(1, math.min(count, quest.Index)) end
+        self.WasOpen = true
+        self.CurrentIndex = quest.Index
         local key = tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected)
         if key == self.RenderKey then return end
         self.RenderKey = key
+        self:Render(quest)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render(PlayerQuest quest)
+        -- 제목과 상태를 분리하고 선택한 의뢰만 강조한다. 미수락 내용·보상은 숨긴다.
         for i = 1, 6 do
+            local row = self.Win .. "/Q" .. tostring(i)
             local q = _QuestData:Get(i)
-            local text = ""
+            _UIKit:SetEnabled(row, q ~= nil)
             if q ~= nil then
-                local mark = ""
-                if i == self.Selected then mark = "▶" end
-                -- D2: 의뢰인과 말하기 전에는 제목도 보이지 않는다
-                local title = q.title
-                if i > quest.Index or (i == quest.Index and quest.State == 0) then title = "???" end
-                text = mark .. tostring(i) .. ". " .. title .. "   " .. self:StatusText(i, quest, q)
+                local view = self:View(i, quest)
+                _UIKit:SetText(row .. "/Title", view.title)
+                _UIKit:SetText(row .. "/Status", view.status)
+                _UIKit:SetIcon(row .. "/Icon", view.icon)
+                local selected = i == self.Selected
+                _UIKit:SetColor(row, selected and Color(0.28, 0.23, 0.18, 1) or Color(0.14, 0.13, 0.17, 1))
             end
-            _UIKit:SetText(self.Win .. "/Q" .. tostring(i), text)
         end
-        _UIKit:SetText(self.Win .. "/DescBox/Desc", self:DescText(quest))
+        local view = self:View(self.Selected, quest)
+        local detail = self.Win .. "/Detail"
+        _UIKit:SetText(detail .. "/Title", view.title)
+        _UIKit:SetText(detail .. "/Status", view.status)
+        _UIKit:SetText(detail .. "/Zone", view.zone)
+        _UIKit:SetText(detail .. "/Objective", view.objective)
+        _UIKit:SetText(detail .. "/Desc", view.desc)
+        _UIKit:SetEnabled(detail .. "/Progress", view.showProgress)
+        _UIKit:SetFill(detail .. "/Progress", view.ratio)
+        _UIKit:SetText(detail .. "/RewardTitle", #view.rewards > 0 and (self.Selected < quest.Index and "의뢰 보상" or "완료 보상") or "")
+        for i = 1, 6 do
+            local card = detail .. "/Reward" .. tostring(i)
+            local reward = view.rewards[i]
+            _UIKit:SetEnabled(card, reward ~= nil)
+            _UIKit:SetIcon(card .. "/Icon", reward ~= nil and reward.icon or "")
+            _UIKit:SetText(card .. "/Name", reward ~= nil and reward.name or "")
+            _UIKit:SetText(card .. "/Value", reward ~= nil and reward.value or "")
+        end
     end
 
-    method string StatusText(integer i, PlayerQuest quest, table q)
-        if i < quest.Index then return _UIKit:Colored("#7CFF7A", "완료") end
-        if i > quest.Index then return _UIKit:Colored("#777777", "잠김") end
-        if quest.State == 0 then return _UIKit:Colored("#FFE15A", "사제 오렌과 대화") end
-        if quest.State == 1 then return "진행 " .. tostring(quest.Progress) .. "/" .. tostring(q.count) end
-        return _UIKit:Colored("#7CFF7A", "보고 대기")
+    method table View(integer index, PlayerQuest quest)
+        -- 화면용 데이터만 만든다. 플레이어 진행도나 보상을 변경하지 않는다.
+        local view = { title = "의뢰 없음", status = "", zone = "", objective = "", desc = "", icon = _GameData:GetUiIcon("icon_quest"), showProgress = false, ratio = 0, rewards = {} }
+        local q = _QuestData:Get(index)
+        if q == nil then return view end
+        if index > quest.Index then
+            view.title = "미공개 의뢰"
+            view.status = "잠김"
+            view.objective = "앞선 의뢰를 완료하세요."
+            view.desc = "앞선 의뢰를 마치면 사제 오렌이 다음 일을 알려줍니다."
+            return view
+        end
+        if index == quest.Index and quest.State == 0 then
+            view.title = "새로운 의뢰"
+            view.status = "수락 전"
+            view.icon = _GameData:GetUiIcon("q_avail")
+            view.zone = "의뢰인 · 잿불 야영지의 사제 오렌"
+            view.objective = "사제 오렌과 대화하세요."
+            view.desc = "가까이 다가가 대화 버튼을 누르면 의뢰를 확인할 수 있습니다."
+            return view
+        end
+        view.title = q.title
+        view.zone = "목적지 · " .. q.zone
+        view.desc = q.desc
+        view.rewards = self:Rewards(q)
+        local progress = math.max(0, math.min(q.count, quest.Progress))
+        view.showProgress = true
+        view.ratio = q.count > 0 and progress / q.count or 0
+        if index < quest.Index then
+            view.status = "완료 · 보상 수령"
+            view.icon = _GameData:GetUiIcon("q_done")
+            view.objective = "완료한 목표 · " .. q.objective
+            view.ratio = 1
+        elseif quest.State == 2 then
+            view.status = "목표 달성 · 보고 대기"
+            view.icon = _GameData:GetUiIcon("q_done")
+            view.zone = "보고 위치 · 잿불 야영지의 사제 오렌"
+            view.objective = "사제 오렌에게 돌아가 보상을 받으세요."
+            view.ratio = 1
+        else
+            view.status = "진행 중 · " .. tostring(progress) .. "/" .. tostring(q.count)
+            view.objective = q.objective
+        end
+        return view
     end
 
-    method string DescText(PlayerQuest quest)
-        local q = _QuestData:Get(self.Selected)
-        if q == nil then return "" end
-        if self.Selected > quest.Index then return "앞선 의뢰를 마치면 열린다." end
-        if self.Selected == quest.Index and quest.State == 0 then return "잿불 야영지의 사제 오렌에게 말을 걸면 의뢰 내용을 알 수 있다." end
-        local text = "목적지: " .. q.zone .. "\n" .. q.desc .. "\n보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
-        local extra = _QuestData:RewardText(q.reward)
-        if extra ~= "" then text = text .. ", " .. extra end
-        return text
+    method table Rewards(table q)
+        -- 지급과 같은 보상 문자열을 해석하고 무작위 장비는 확정 아이템처럼 표시하지 않는다.
+        local rewards = {}
+        if q.exp > 0 then table.insert(rewards, { name = "경험치", value = "+" .. tostring(q.exp), icon = _GameData:GetUiIcon("icon_stats") }) end
+        if q.gold > 0 then table.insert(rewards, { name = "골드", value = "+" .. tostring(q.gold), icon = _GameConst.IconGold }) end
+        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
+            if key == "item" then
+                local item = _ItemData:Parse(val)
+                table.insert(rewards, { name = item.name, value = "장비 1개", icon = _ItemData:IconFor(val) })
+            elseif key == "rune" then
+                local rune = _ItemData:GetRune(val)
+                if rune ~= nil then table.insert(rewards, { name = rune.name .. " 룬", value = "소켓 재료 1개", icon = _GameData:GetUiIcon("rune") }) end
+            elseif key == "skp" then
+                table.insert(rewards, { name = "스킬 포인트", value = "+" .. val, icon = _GameData:GetUiIcon("icon_skill") })
+            elseif key == "stp" then
+                table.insert(rewards, { name = "능력치 포인트", value = "+" .. val, icon = _GameData:GetUiIcon("icon_stats") })
+            elseif key == "gen" then
+                table.insert(rewards, { name = val == "3" and "희귀 장비" or "마법 장비", value = "무작위 1개", icon = _GameData:GetUiIcon("icon_bag") })
+            end
+        end
+        return rewards
     end
 
 end

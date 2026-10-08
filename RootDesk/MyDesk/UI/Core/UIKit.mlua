@@ -6,6 +6,7 @@
 script UIKit extends Logic
 
     property string Group = "/ui/GameHUD"
+    property table WindowPaths = { QuestWin = "/ui/QuestJournalHUD/SafeArea/QuestWin" }
     property table Cache = {}
     property table Handlers = {}
     property table Windows = {}             -- Esc로 닫을 창 이름 목록
@@ -22,12 +23,20 @@ script UIKit extends Logic
     method Entity Get(string rel)
         local e = self.Cache[rel]
         if e == nil or not isvalid(e) then
-            local path = rel
-            if string.sub(rel, 1, 1) ~= "/" then path = self.Group .. "/" .. rel end
+            local path = self:ResolvePath(rel)
             e = _EntityService:GetEntityByPath(path)
             self.Cache[rel] = e
         end
         return e
+    end
+
+    method string ResolvePath(string rel)
+        -- 창 별칭은 자식 경로까지 같은 그룹으로 보낸다. 절대 경로는 그대로 둔다.
+        if string.sub(rel, 1, 1) == "/" then return rel end
+        local first, suffix = string.match(rel, "^([^/]+)(.*)$")
+        local mapped = first ~= nil and self.WindowPaths[first] or nil
+        if mapped ~= nil then return mapped .. suffix end
+        return self.Group .. "/" .. rel
     end
 
     @ExecSpace("ClientOnly")
