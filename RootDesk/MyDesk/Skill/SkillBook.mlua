@@ -55,11 +55,11 @@ script SkillBook extends Component
         if def == nil then return "없는 스킬" end
         -- 아직 효과가 없는 스킬은 배울 수 없다 (포인트를 헛쓰지 않게)
         if not def.impl then return "준비 중인 스킬" end
+        if self:GetLevel(id) >= def.maxLv then return "최대 레벨" end
         if skillPoints <= 0 then return "스킬 포인트 부족" end
         if playerLevel < def.row then return "요구 레벨 " .. tostring(def.row) end
         -- 2레벨부터 요구 레벨이 따로 있는 스킬 (그림자 소환: Lv5에 1레벨, 2레벨부터 Lv15)
         if def.nextLv > 0 and self:GetLevel(id) >= 1 and playerLevel < def.nextLv then return "2레벨부터 요구 레벨 " .. tostring(def.nextLv) end
-        if self:GetLevel(id) >= def.maxLv then return "최대 레벨" end
         if def.prereq ~= "" and self:GetLevel(def.prereq) <= 0 then return "선행: " .. _SkillData:Get(def.prereq).name end
         return ""
     end
@@ -108,6 +108,14 @@ script SkillBook extends Component
             elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         end
         if id == "shadow_summon" and level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
+        if id == "deploy_expand" then
+            -- 작은 알림은 두 줄 안에 보너스와 다음 목표만 표시한다.
+            detail = string.format("배치 보너스 +%d기", _ShadowConfig:GetDeploySkillBonus(level))
+            hint = "배치 확장 최대 단계 달성"
+            if level < def.maxLv then
+                hint = string.format("다음 증가까지 %d포인트", (level < 8 and 8 or 16) - level)
+            end
+        end
         if detail ~= "" then detail = detail .. "\n" end
         _UXFeedback:Show((level == 1 and "새 스킬 · " or "스킬 강화 · ") .. def.name .. " Lv" .. tostring(level), detail .. hint, def.icon)
     end
@@ -147,6 +155,14 @@ script SkillBook extends Component
             return string.format("그림자 공격·생명 +%g%%", _GameData.shadowSummonPerLvPct * (level - 1))
         end
         if id == "extract_mastery" then return string.format("추출 확률 +%g%%p", _GameData.extractMasteryPerLv * level * 100) end
+        if id == "deploy_expand" then
+            local bonus = _ShadowConfig:GetDeploySkillBonus(level)
+            local limit = _ShadowConfig:GetDeployLimit(bonus + stats.BonusDeploy, stats.BonusShadowCap)
+            local summary = string.format("스킬 +%d기 · 현재 최대 %d기", bonus, limit)
+            local nextLevel = level < 8 and 8 or 16
+            if level < def.maxLv then summary = summary .. string.format(" · 다음 단계까지 %d포인트", nextLevel - level) end
+            return summary
+        end
         if id == "revive" then return string.format("최대 %d기 · 능력치 ×%.2f · %g초", _UndeadSystem:ReviveCountFor(level), _UndeadSystem:GetReviveMultiplier(level), _GameData.reviveSeconds) end
         local power = self:GetEffectPower(id, level)
         if id == "elite_promote" then return string.format("그림자 1기 공격·생명 ×%.2f", power) end
@@ -439,26 +455,31 @@ script SkillBook extends Component
 
     @ExecSpace("ServerOnly")
     method void MigrateLevels()
-        -- 스킬 표가 바뀐 뒤의 옛 저장: 없어진 스킬·준비 중 스킬은 포인트 환급, 요구 레벨 전에 받았던 시작 스킬(그림자 소환)은 해골 전사로 교체
+        -- 삭제·미구현·상한 초과 투자를 환급한다. 레벨 조정 후 다시 호출해도 중복 환급하지 않는다.
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return end
         local refund = 0
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
             if def == nil or not def.impl then
                 refund = refund + lv
                 self.Levels[id] = nil
+            elseif lv > def.maxLv then
+                refund = refund + lv - def.maxLv
+                self.Levels[id] = def.maxLv
             end
         end
         local shadow = _SkillData:Get("shadow_summon")
-        if stats ~= nil and shadow ~= nil and (self.Levels.shadow_summon or 0) > 0 and stats.Level < shadow.row then
-            refund = refund + self.Levels.shadow_summon - 1
+        if shadow ~= nil and (self.Levels.shadow_summon or 0) > 0 and stats.Level < shadow.row then
+            -- 현재 시작 스킬은 비어 있다. 대체 스킬을 주지 않으므로 제거한 투자 전부를 돌려준다.
+            refund = refund + self.Levels.shadow_summon
             self.Levels.shadow_summon = nil
         end
         for id in string.gmatch(self.StartSkills, "[^,]+") do
             if (self.Levels[id] or 0) <= 0 then self.Levels[id] = 1 end
         end
-        if refund > 0 and stats ~= nil then
+        if refund > 0 then
             stats.SkillPoints = stats.SkillPoints + refund
             _Util:Notify("스킬 표가 바뀌어 포인트 " .. tostring(refund) .. "을 돌려받았다", self.Entity.PlayerComponent.UserId)
         end
