@@ -7,6 +7,9 @@ script SkillEffects extends Component
 
     property integer StormTimer = 0
     property number StormUntil = 0
+    property number StormDamage = 0
+    property integer StormVisual = 0
+    property table VisualTimers = {}
     property integer ShotCount = 0            -- 투사체 이름 번호 (맵 안에서 겹치지 않게)
     property integer EffectEpoch = 0
     property table MistVisuals = {}
@@ -159,6 +162,7 @@ script SkillEffects extends Component
         -- 6초 동안 0.5초마다 주위 반경 1.2 (다시 쓰면 시간만 늘어난다)
         local map = self.Entity.CurrentMap
         self.StormUntil = _UtilLogic.ElapsedSeconds + 6
+        self.StormDamage = damage
         self:Fx("storm", self.Entity.TransformComponent.WorldPosition, 1.2)
         if self.StormTimer ~= 0 then return true end
         self.StormTimer = _TimerService:SetTimerRepeat(function()
@@ -168,7 +172,7 @@ script SkillEffects extends Component
                 return
             end
             local p = _Util:Pos2(self.Entity)
-            self:Hit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", damage)
+            self:Hit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", self.StormDamage)
         end, 0.5)
         return true
     end
@@ -187,20 +191,33 @@ script SkillEffects extends Component
                 if comp.Owner == self.Entity and isvalid(comp.Entity) then comp.Entity:Destroy() end
             end
         end
-        self:ClearMistVisuals()
+        self:ClearPersistentVisuals()
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        if self.StormTimer ~= 0 then _TimerService:ClearTimer(self.StormTimer) end
-        for id, _ in pairs(self.MistTimers) do _TimerService:ClearTimer(id) end
-        self.MistTimers = {}
+        -- 서버 타격 타이머와 클라이언트 입자의 수명을 따로 정리한다.
+        if self:IsServer() then
+            if self.StormTimer ~= 0 then _TimerService:ClearTimer(self.StormTimer) self.StormTimer = 0 end
+            for id, _ in pairs(self.MistTimers) do _TimerService:ClearTimer(id) end
+            self.MistTimers = {}
+        else self:ClearLocalVisuals() end
     end
 
     @ExecSpace("Multicast")
-    method void ClearMistVisuals()
+    method void ClearPersistentVisuals()
+        -- 사망/이동에서는 남은 장판과 몸 주위 폭풍을 모두 지운다.
+        self:ClearLocalVisuals()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearLocalVisuals()
+        -- 입자와 그 입자를 지울 예정이었던 타이머도 함께 해제한다.
         for serial, _ in pairs(self.MistVisuals) do _ParticleService:RemoveParticle(serial) end
+        if self.StormVisual ~= 0 then _ParticleService:RemoveParticle(self.StormVisual) end
+        for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
         self.MistVisuals = {}
+        self.VisualTimers = {}
+        self.StormVisual = 0
     end
 
     -- ───────── 저주·군령 ─────────
@@ -257,15 +274,31 @@ script SkillEffects extends Component
 
     @ExecSpace("Multicast")
     method void Fx(string kind, Vector3 pos, number radius)
+        -- 다른 맵의 시전은 이 클라이언트에 그리지 않는다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local s = Vector3(radius, radius, 1)
         if kind == "poison" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, false, { Color = Color(0.4, 1, 0.3, 1) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.65, 0.25, 0.5) })
         elseif kind == "blast" then
             _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, s * 0.6, false, nil)
         elseif kind == "drain" then
             _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, s, false, { Color = Color(1, 0.2, 0.3, 1) })
         elseif kind == "storm" then
-            _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, self.Entity, Vector3(0, 0.3, 0), 0, s, false, nil)
+            if self.StormVisual ~= 0 then
+                _ParticleService:RemoveParticle(self.StormVisual)
+                local oldTimer = self.VisualTimers[self.StormVisual]
+                if oldTimer ~= nil then _TimerService:ClearTimer(oldTimer) self.VisualTimers[self.StormVisual] = nil end
+            end
+            local serial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, self.Entity, Vector3(0, 0.3, 0), 0, s * 0.55, true, { Color = Color(0.65, 0.6, 0.5, 0.45) })
+            self.StormVisual = serial
+            if serial ~= 0 then
+                self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
+                    _ParticleService:RemoveParticle(serial)
+                    self.VisualTimers[serial] = nil
+                    if self.StormVisual == serial then self.StormVisual = 0 end
+                end, 6)
+            end
         elseif kind == "amp" then
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.7, 0.2, 1, 1) })
         elseif kind == "weaken" then
@@ -275,15 +308,19 @@ script SkillEffects extends Component
 
     @ExecSpace("Multicast")
     method void MistFx(Vector3 pos, number radius, number seconds)
-        -- 남는 독안개: 반복 입자를 seconds 동안 틀고 끈다
+        -- 남는 독안개: 반복 입자를 seconds 동안 틀고 끈다. 맵 이탈 시 타이머도 해제한다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local s = Vector3(radius, radius, 1)
-        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, true, { Color = Color(0.4, 1, 0.3, 1) })
+        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, true, { Color = Color(0.3, 0.65, 0.25, 0.5) })
+        if serial == 0 then return end
         self.MistVisuals[serial] = true
-        _TimerService:SetTimerOnce(function()
+        self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
             if self.MistVisuals[serial] then
                 _ParticleService:RemoveParticle(serial)
                 self.MistVisuals[serial] = nil
             end
+            self.VisualTimers[serial] = nil
         end, seconds)
     end
 

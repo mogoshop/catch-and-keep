@@ -204,10 +204,9 @@ script PlayerAttack extends AttackComponent
         local rate = 1.33 * _GameData.baseAttackInterval / math.max(0.1, interval)
         local animations = self.Entity.AvatarStateAnimationComponent
         if isvalid(animations) then animations.StateToAvatarBodyActionSheet["ATTACK"] = AvatarBodyActionElement("attack", rate) end
-        if replay or self.Entity.StateComponent.CurrentStateName ~= "ATTACK" then
-            self.Entity.StateComponent:ChangeState("ATTACK")
-            self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Attack, 0, 2147483647, rate))
-        end
+        -- 직전에 주문의 손동작을 재생했어도 평타는 반드시 무기 동작으로 돌아온다.
+        self.Entity.StateComponent:ChangeState("ATTACK")
+        self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Attack, 0, 2147483647, rate))
         if self.DebugCombat then log("[VRF-COMBAT] accepted motion replay=" .. tostring(replay) .. " rate=" .. tostring(rate)) end
     end
 

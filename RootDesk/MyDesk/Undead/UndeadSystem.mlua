@@ -61,6 +61,27 @@ script UndeadSystem extends Logic
         return best
     end
 
+    method SoulOrb FindSoulInDirection(Entity player, Vector2 origin, Vector2 direction, number reach)
+        -- 모바일 드래그는 길이 대신 방향을 정한다. 그 방향의 내 혼을 골라 정확한 위치에 시전한다.
+        if not isvalid(player.CurrentMap) or direction:Magnitude() < 0.05 then return nil end
+        local dir = direction:Normalize()
+        local best = nil
+        local bestScore = math.huge
+        for _, comp in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            local orb = comp
+            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId then
+                local to = _Util:Pos2(orb.Entity) - origin
+                local distance = to:Magnitude()
+                if distance <= reach and distance > 0.05 then
+                    local alignment = to:Normalize():Dot(dir)
+                    local score = distance + (1 - alignment) * 3
+                    if alignment >= 0.65 and score < bestScore then best = orb bestScore = score end
+                end
+            end
+        end
+        return best
+    end
+
     @ExecSpace("ServerOnly")
     method boolean Raise(Entity player, string kind, integer slvl, Vector2 target, any onComplete, any canCommit)
         local userId = player.PlayerComponent.UserId

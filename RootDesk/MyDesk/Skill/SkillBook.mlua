@@ -9,6 +9,7 @@ script SkillBook extends Component
     property table PendingCasts = {}
     property number PendingMana = 0
     property integer CastEpoch = 0
+    property integer PresentedCastCount = 0
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     property table CdLen = {}                 -- id → 마지막 쿨다운 길이 (표시용)
     @Sync
@@ -88,6 +89,13 @@ script SkillBook extends Component
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
         if id ~= "" and not self:IsSlottable(id) then return end
         self:SetSlot(slot, id)
+    end
+
+    method number GetManaCost(string id, integer level)
+        -- 실제 시전과 스킬 설명이 같은 비용 공식을 사용한다.
+        local def = _SkillData:Get(id)
+        if def == nil or def.kind == "passive" then return 0 end
+        return def.mana + math.floor(math.max(1, level) / 4)
     end
 
     method boolean IsSlottable(string id)
@@ -178,12 +186,18 @@ script SkillBook extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return false end
-        local cost = def.mana + math.floor(lv / 4)
+        local cost = self:GetManaCost(id, lv)
         if self.PendingCasts[id] or stats.Mana - self.PendingMana < cost then
             if not self.PendingCasts[id] then _Util:Notify("마나 부족", userId) end
             return false
         end
         local me = _Util:Pos2(self.Entity)
+        if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
+        local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm"
+        local ray = target - me
+        if selfCast then target = me
+        elseif id == "bone_shard" and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6
+        elseif ray:Magnitude() > 6 then _Util:Notify("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
         elseif id == "raise_mage" then kind = "mage"
@@ -199,10 +213,7 @@ script SkillBook extends Component
                 if not success or not _Util:IsAlive(self.Entity) then return end
                 if not stats:SpendMana(cost) then return end
                 self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
-                if id == "bone_shard" and math.abs(target.x - me.x) > 0.05 then
-                    self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1
-                end
-                self.Entity.StateComponent:ChangeState("ATTACK")
+                self:PresentCast(id, target - me, userId)
                 log("[VRF] cast committed " .. id .. " mana=" .. tostring(cost))
             end
             local canCommit = function()
@@ -223,11 +234,20 @@ script SkillBook extends Component
         if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
         stats:SpendMana(cost)
         self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
-        if id ~= "shadow_summon" and id ~= "rally" and id ~= "elite_promote" and math.abs(target.x - me.x) > 0.05 then
-            self.Entity.PlayerControllerComponent.LookDirectionX = target.x >= me.x and 1 or -1
-        end
-        self.Entity.StateComponent:ChangeState("ATTACK")
+        self:PresentCast(id, target - me, userId)
         return true
+    end
+
+    @ExecSpace("Client")
+    method void PresentCast(string id, Vector2 dir)
+        -- 성공한 시전만 소유자 클라이언트에서 재생한다. 소환/집결은 바라보는 방향을 바꾸지 않는다.
+        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
+        local command = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
+        if not command and math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
+        local body = id == "bone_shard" and MapleAvatarBodyActionState.Attack or MapleAvatarBodyActionState.Heal
+        self.Entity.StateComponent:ChangeState("ATTACK")
+        self.Entity:SendEvent(BodyActionStateChangeEvent(true, body, 0, 2147483647, 1.25))
+        self.PresentedCastCount = self.PresentedCastCount + 1
     end
 
     @ExecSpace("ServerOnly")
@@ -271,7 +291,7 @@ script SkillBook extends Component
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        if self.Entity ~= _UserService.LocalPlayer then return end
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         local key = event.key
         local slot = 0
         if key == KeyboardKey.A then slot = 1
@@ -294,6 +314,8 @@ script SkillBook extends Component
 
     @ExecSpace("ClientOnly")
     method void CastSlot(integer slot)
+        -- 창/사망 상태에서는 단축키와 모바일 시전 요청을 함께 막는다.
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         -- 쿨다운 중이면 서버에 보내지 않는다 (칸의 덮개가 남은 시간을 보여 준다)
         local id = self:GetSlotSkill(slot)
         if id == "" or self:CooldownLeft(id) > 0.05 then return end
@@ -312,6 +334,10 @@ script SkillBook extends Component
         local attack = self.Entity:GetComponent("script.PlayerAttack")
         if attack ~= nil and attack.LocalAimActive then
             local corpse = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "corpse_blast"
+            if corpse then
+                local orb = _UndeadSystem:FindSoulInDirection(self.Entity, me, attack.LocalAimDirection, 5)
+                if orb ~= nil then return _Util:Pos2(orb.Entity) end
+            end
             return me + attack.LocalAimDirection * (corpse and 2.5 or 5)
         end
         if id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "corpse_blast" then

@@ -140,6 +140,8 @@ script UIKit extends Logic
 
     @ExecSpace("ClientOnly")
     method void Open(string name)
+        -- 창을 여는 순간 캡처된 전투 입력을 끊어 손을 뗄 때 스킬이 나가지 않게 한다.
+        _MobilePad:ClearGesture()
         if name ~= "NpcWin" and self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
         local click = self:Comp("script.ClickControl")
         if click ~= nil then click:Cancel() end
@@ -165,6 +167,13 @@ script UIKit extends Logic
         if event.key ~= KeyboardKey.Escape then return end
         if self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
         for _, name in ipairs(self.Windows) do self:Close(name) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CanUseGameplayInput()
+        -- 메뉴·NPC 대화·보관함에서는 전투/소모품 단축키를 게임으로 보내지 않는다.
+        local player = _UserService.LocalPlayer
+        return isvalid(player) and _Util:IsAlive(player) and not self:AnyWindowOpen()
     end
 
     @ExecSpace("ClientOnly")

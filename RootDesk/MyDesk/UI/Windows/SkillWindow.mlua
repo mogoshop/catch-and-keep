@@ -82,13 +82,22 @@ script SkillWindow extends Logic
 
     method string Describe(SkillBook book, PlayerStats st)
         if self.Selected == "" then return "스킬을 선택하세요.  (· = 준비 중)" end
+        -- 현재/다음 투자 레벨의 비용과 장비가 반영된 재사용 시간을 보여 준다.
         local def = _SkillData:Get(self.Selected)
+        if def == nil then return "스킬을 다시 선택하세요." end
         local reason = book:CanLearn(self.Selected, st.Level, st.SkillPoints)
         local req = "요구 Lv" .. tostring(def.row)
         if def.nextLv > 0 then req = req .. " (2레벨부터 Lv" .. tostring(def.nextLv) .. ")" end
         if def.prereq ~= "" then req = req .. ", 선행 " .. _SkillData:Get(def.prereq).name end
         local mana = ""
-        if def.mana > 0 then mana = "  마나 " .. tostring(math.floor(def.mana)) end
+        if def.kind ~= "passive" then
+            local lv = math.max(1, book:GetLevel(self.Selected))
+            local cost = book:GetManaCost(self.Selected, lv)
+            local nextCost = book:GetManaCost(self.Selected, math.min(def.maxLv, lv + 1))
+            mana = "  마나 " .. tostring(math.floor(cost))
+            if book:GetLevel(self.Selected) > 0 and lv < def.maxLv and nextCost ~= cost then mana = mana .. " (다음 " .. tostring(math.floor(nextCost)) .. ")" end
+            if def.cooldown > 0 then mana = mana .. string.format("  재사용 %.1f초", def.cooldown * st:GetCastCooldownMult()) end
+        end
         local learn = _UIKit:Colored("#AACCAA", "습득 가능")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         return def.name .. " — " .. def.desc .. mana .. "\n" .. req .. "   " .. learn
