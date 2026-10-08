@@ -14,13 +14,16 @@ script InventoryWindow extends Logic
     property string SocketItem = ""
     property string RenderKey = ""
     property integer TimerId = 0
+    property boolean PreviewSelection = true
+    property string PreviewKey = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         -- 선택과 확정을 분리한 소지품 창을 등록한다.
         self:ClearSelection()
+        _UIKit:SetEnabled("/ui/GameHUD/InvWin", false)
         _UIKit:RegisterWindow(self.Win)
-        _UIKit:SetText(self.Win .. "/Hint", "장비·룬은 선택 후 미리보기\n아래 버튼을 눌러 작업 확정")
+        _UIKit:SetText(self.Win .. "/Hint", "선택 → 설명 확인\n버튼으로 작업 확정")
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local s = slot
@@ -32,6 +35,7 @@ script InventoryWindow extends Logic
         end
         _UIKit:Connect(self.Win .. "/BtnEquip", function() self:Act("equip") end)
         _UIKit:Connect(self.Win .. "/BtnSell", function() self:Act("sell") end)
+        _UIKit:Connect(self.Win .. "/Doll/BtnPreview", function() self:TogglePreview() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] InventoryWindow inspect-first ready")
     end
@@ -65,6 +69,7 @@ script InventoryWindow extends Logic
         local list = inv:GetBagList()
         local eq = inv:GetEquipMap()
         self:ValidateSelection(list, eq)
+        self:RenderAppearance(eq, list[self.Selected] or "")
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
         local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot)}, "#")
         if key == self.RenderKey then return end
@@ -82,7 +87,7 @@ script InventoryWindow extends Logic
             self:DrawItem(path, list[i])
             _UIKit:SetColor(path, i == self.Selected and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        local desc = "가방이나 착용 중인 장비를 선택하세요. 선택 후 아래 버튼으로 작업합니다."
+        local desc = "가방이나 착용 장비를 선택하세요.\n설명을 확인한 뒤 장착·판매 버튼으로 확정합니다."
         local label, allowed, sell = "장착", false, false
         local sel = list[self.Selected]
         if self.SelectedEquipSlot ~= "" then
@@ -118,9 +123,73 @@ script InventoryWindow extends Logic
             sell = false
             desc = desc .. "\n<color=#FF6464>사망 중에는 장비 작업을 할 수 없습니다.</color>"
         end
-        _UIKit:SetText(self.Win .. "/DescBox/Desc", desc)
+        self:SetDescription(desc)
         self:SetActionButton("BtnEquip", label, allowed)
         self:SetActionButton("BtnSell", "판매", sell)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetDescription(string desc)
+        -- 긴 장비 옵션은 작은 글씨로 줄이거나 잘라내지 않고 세로로 스크롤한다.
+        local text = _UIKit:Get(self.Win .. "/DescBox/Desc")
+        local box = _UIKit:Get(self.Win .. "/DescBox")
+        if not isvalid(text) or not isvalid(box) then return end
+        text.TextGUIRendererComponent.Text = desc
+        local height = text.TextGUIRendererComponent:GetPreferredHeight(desc, 740)
+        text.UITransformComponent.RectSize = Vector2(740, math.max(48, height + 16))
+        if box.ScrollLayoutGroupComponent ~= nil then box.ScrollLayoutGroupComponent:ResetScrollPosition(UITransformAxis.Vertical) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TogglePreview()
+        -- 미리보기 버튼은 가방과 착용 장비에 요청을 보내지 않는다.
+        if not _UIKit:IsOpen(self.Win) then return end
+        local inv = self:Inv()
+        if inv == nil then return end
+        local list, eq = inv:GetBagList(), inv:GetEquipMap()
+        self:ValidateSelection(list, eq)
+        if not _ItemData:HasAppearance(list[self.Selected] or "") then return end
+        self.PreviewSelection = not self.PreviewSelection
+        self.PreviewKey = ""
+        self:RenderAppearance(eq, list[self.Selected])
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderAppearance(table eq, string selected)
+        -- 로컬 UI 아바타만 교체한다. 실제 캐릭터 외형과 능력치는 장착 확정 전 그대로 둔다.
+        local preview = _UIKit:Get(self.Win .. "/Doll/Avatar")
+        local player = _UserService.LocalPlayer
+        if not isvalid(preview) or not isvalid(player) or not isvalid(player.CostumeManagerComponent) then return end
+        local source, costume = player.CostumeManagerComponent, preview.CostumeManagerComponent
+        if not isvalid(costume) then return end
+        local supported = _ItemData:HasAppearance(selected)
+        local showing = supported and self.PreviewSelection
+        local parts = _ItemData:AppearanceParts(eq, showing and selected or "")
+        local identity = {
+            (source:GetEquip(MapleAvatarItemCategory.Body) or ""), (source:GetEquip(MapleAvatarItemCategory.Hair) or ""),
+            (source:GetEquip(MapleAvatarItemCategory.Face) or ""), (source:GetEquip(MapleAvatarItemCategory.Ear) or "")
+        }
+        local key = table.concat(identity, "/") .. "/" .. table.concat({ parts.armor, parts.helm, parts.gloves, parts.boots, parts.weapon, tostring(showing), selected }, "/")
+        if key == self.PreviewKey then return end
+        self.PreviewKey = key
+        local categories = { MapleAvatarItemCategory.Body, MapleAvatarItemCategory.Hair, MapleAvatarItemCategory.Face, MapleAvatarItemCategory.Ear }
+        for i, category in ipairs(categories) do costume:SetEquip(category, identity[i]) end
+        costume.UseCustomEquipOnly = true
+        costume:SetEquip(MapleAvatarItemCategory.Longcoat, parts.armor)
+        costume:SetEquip(MapleAvatarItemCategory.Cap, parts.helm)
+        costume:SetEquip(MapleAvatarItemCategory.Glove, parts.gloves)
+        costume:SetEquip(MapleAvatarItemCategory.Shoes, parts.boots)
+        costume:SetEquip(MapleAvatarItemCategory.OneHandedWeapon, parts.weapon)
+        _UIKit:SetEnabled(self.Win .. "/Doll/Avatar", identity[1] ~= "")
+        _UIKit:SetText(self.Win .. "/Doll/PreviewState", showing and "선택 장비 · 미착용" or "현재 착용 모습")
+        local label = "장비 선택 후 외형 비교"
+        if supported then label = showing and "현재 모습 보기" or "선택 모습 보기"
+        elseif selected ~= "" then label = "외형 변화 없는 부위" end
+        local button = _UIKit:Get(self.Win .. "/Doll/BtnPreview")
+        if isvalid(button) then
+            button.ButtonComponent.Enable = supported
+            button.TextGUIRendererComponent.Text = label
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -133,6 +202,8 @@ script InventoryWindow extends Logic
         self.SocketSlot = ""
         self.SocketItem = ""
         self.RenderKey = ""
+        self.PreviewSelection = true
+        self.PreviewKey = ""
     end
 
     @ExecSpace("ClientOnly")
