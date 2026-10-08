@@ -12,6 +12,9 @@ script ClickControl extends Component
     property number PickRadius = 0.6         -- 클릭 지점에서 이 거리 안의 몬스터를 대상으로 본다
     property number AttackInterval = 0.45
     property number MoveSpeed = 1.0          -- 키보드 이동과 비슷한 체감 속도
+    property boolean ModalHoldsController = false
+    property boolean OwnsController = false
+    property boolean PendingControllerRestore = false
     property boolean Moving = false
     property integer TimerId = 0
     property boolean DebugLog = false
@@ -47,7 +50,7 @@ script ClickControl extends Component
     handler HandleScreenTouchEvent(ScreenTouchEvent event)
         -- 클릭한 순간: 대상/목적지 지정 + 클릭 표시
         if event.TouchId ~= 1 or not self:IsActive() then return end
-        if _InputService:IsPointerOverUI() then return end
+        if _InputService:IsPointerOverUI() or _UIKit:AnyWindowOpen() then return end
         if self:IsStationaryAttack() then
             self:Cancel()
             self:AttackAtCursor()
@@ -66,7 +69,7 @@ script ClickControl extends Component
     handler HandleScreenTouchHoldEvent(ScreenTouchHoldEvent event)
         -- 누르고 있는 동안: 커서를 따라 목적지/대상 갱신
         if event.TouchId ~= 1 or not self:IsActive() then return end
-        if _InputService:IsPointerOverUI() then return end
+        if _InputService:IsPointerOverUI() or _UIKit:AnyWindowOpen() then return end
         if self:IsStationaryAttack() then self:AttackAtCursor() return end
         self:Pick(event.TouchPoint)
     end
@@ -149,6 +152,11 @@ script ClickControl extends Component
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        if isvalid(self.Entity) and self.Entity == _UserService.LocalPlayer then
+            self:Cancel()
+            self:ReleaseWindowControl()
+            self:RestoreController()
+        end
         if self.TimerId ~= 0 then
             _TimerService:ClearTimer(self.TimerId)
             self.TimerId = 0
@@ -158,8 +166,18 @@ script ClickControl extends Component
     @ExecSpace("ClientOnly")
     method void Tick(number delta)
         -- 클릭 이동·공격 진행. 방향키를 누르면 즉시 취소
-        if not self:IsActive() then return end
-        if self.Entity.PlayerComponent.Hp <= 0 then self:Cancel() return end
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if _UIKit:AnyWindowOpen() then
+            self:Cancel()
+            self:HoldWindowControl()
+            return
+        end
+        self:ReleaseWindowControl()
+        self:RestoreController()
+        if not self:IsActive() or not _Util:IsAlive(self.Entity) then
+            self:Cancel()
+            return
+        end
         self.AttackTimer = self.AttackTimer - delta
         if self:IsArrowPressed() then
             self:Cancel()
@@ -236,6 +254,10 @@ script ClickControl extends Component
 
     @ExecSpace("ClientOnly")
     method void Cancel()
+        -- 메뉴·맵 변경·포커스 해제에서 이전 클릭과 막힘 판정을 함께 지운다.
+        self.StuckTime = 0
+        self.BlockedPick = false
+        self.WantDir = Vector2(0, 0)
         self.SlideCount = 0
         self.SlideUntil = 0
         self.HasDestination = false
@@ -257,6 +279,41 @@ script ClickControl extends Component
     @EventSender("Service", "ApplicationService")
     handler HandleApplicationFocusOutEvent(ApplicationFocusOutEvent event)
         if self.Entity == _UserService.LocalPlayer then self:Cancel() end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Self")
+    handler HandleEntityMapChangedEvent(EntityMapChangedEvent event)
+        -- 포털 이외의 맵 이동에서도 이전 목적지·대상을 다음 맵으로 가져가지 않는다.
+        if self.Entity == _UserService.LocalPlayer then self:Cancel() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HoldWindowControl()
+        -- 열린 메뉴 뒤에서는 키보드/가상 패드의 기본 컨트롤러도 걷지 못하게 한다.
+        local controller = self.Entity.PlayerControllerComponent
+        if controller.Enable then
+            self.ModalHoldsController = true
+            controller.Enable = false
+        end
+        self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ReleaseWindowControl()
+        -- 이 컴포넌트가 창 때문에 끈 컨트롤러만, 살아난 뒤 복구한다.
+        if not self.ModalHoldsController then return end
+        self.ModalHoldsController = false
+        self.PendingControllerRestore = true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RestoreController()
+        -- 죽은 동안 되살리지 않고, 부활 뒤 클릭 이동이 빌린 컨트롤러만 복구한다.
+        if not self.PendingControllerRestore or not _Util:IsAlive(self.Entity) then return end
+        if self.Entity.StateComponent.CurrentStateName == "DEAD" then return end
+        self.Entity.PlayerControllerComponent.Enable = true
+        self.PendingControllerRestore = false
     end
 
     @ExecSpace("ClientOnly")
@@ -296,7 +353,11 @@ script ClickControl extends Component
         -- 기본 PlayerController는 입력이 없으면 물리 계산 전에 속도를 0으로 덮어쓴다.
         -- 클릭 이동 중에만 컨트롤러를 끄고 MovementComponent로 직접 움직인다 (메이커에서 확인한 방식)
         local controller = self.Entity.PlayerControllerComponent
-        if controller.Enable then controller.Enable = false end
+        if not self.Moving then
+            if not controller.Enable then return end
+            self.OwnsController = true
+            controller.Enable = false
+        end
         self.WantDir = dir:Normalize()
         local go = self.WantDir
         if _UtilLogic.ElapsedSeconds < self.SlideUntil then go = self.SlideDir:Normalize() end
@@ -304,8 +365,9 @@ script ClickControl extends Component
         self:Face(dir.x)
         if not self.Moving then
             self.Moving = true
-            self.Entity.StateComponent:ChangeState("MOVE")
         end
+        local state = self.Entity.StateComponent
+        if state.CurrentStateName == "IDLE" then state:ChangeState("MOVE") end
         if self.DebugLog then log("[ClickControl] move " .. tostring(dir:Normalize())) end
     end
 
@@ -315,8 +377,13 @@ script ClickControl extends Component
         if not self.Moving then return end
         self.Moving = false
         self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
-        self.Entity.PlayerControllerComponent.Enable = true
-        self.Entity.StateComponent:ChangeState("IDLE")
+        if self.OwnsController then
+            self.PendingControllerRestore = true
+            self.OwnsController = false
+            self:RestoreController()
+        end
+        local state = self.Entity.StateComponent
+        if state.CurrentStateName == "MOVE" then state:ChangeState("IDLE") end
     end
 
     @ExecSpace("ClientOnly")
