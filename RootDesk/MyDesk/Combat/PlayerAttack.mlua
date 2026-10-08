@@ -41,6 +41,19 @@ script PlayerAttack extends AttackComponent
     property number ContactRestoreRate = 1
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 내 타격 숫자는 소환수보다 선명하게, 빠르게 사라져 전장을 비운다.
+        local skin = self.Entity.DamageSkinSettingComponent
+        if not isvalid(skin) then skin = self.Entity:AddComponent("DamageSkinSettingComponent") end
+        if isvalid(skin) then
+            skin.DamageSkinScale = Vector2(0.7, 0.7)
+            skin.PlayRate = 1.6
+            skin.DelayPerAttack = 0.025
+            skin.TweenType = DamageSkinTweenType.Default
+        end
+    end
+
     @ExecSpace("ClientOnly")
     @EventSender("Self")
     handler HandlePlayerActionEvent(PlayerActionEvent event)

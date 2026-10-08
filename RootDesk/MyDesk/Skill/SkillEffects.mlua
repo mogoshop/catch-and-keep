@@ -279,7 +279,7 @@ script SkillEffects extends Component
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local s = Vector3(radius, radius, 1)
         if kind == "poison" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.65, 0.25, 0.5) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.22, 1), false, { Color = Color(0.28, 0.55, 0.2, 0.28), ParticleCount = 12 })
         elseif kind == "blast" then
             _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, s * 0.6, false, nil)
         elseif kind == "drain" then
@@ -311,10 +311,25 @@ script SkillEffects extends Component
         -- 남는 독안개: 반복 입자를 seconds 동안 틀고 끈다. 맵 이탈 시 타이머도 해제한다.
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        local s = Vector3(radius, radius, 1)
-        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, s, true, { Color = Color(0.3, 0.65, 0.25, 0.5) })
+        -- 상승 연기 대신 낮은 회전 장판: 적의 몸과 공격 예고를 덮지 않는다.
+        -- 같은 시전자의 장판은 최대 3개만 표시하고 오래된 입자/타이머를 함께 해제한다.
+        local count = 0
+        local oldest = 0
+        local oldestUntil = math.huge
+        for id, untilAt in pairs(self.MistVisuals) do
+            count = count + 1
+            if untilAt < oldestUntil then oldest = id oldestUntil = untilAt end
+        end
+        local s = Vector3(radius, radius * 0.22, 1)
+        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, s, true, { Color = Color(0.28, 0.55, 0.2, 0.28), ParticleCount = 12 })
         if serial == 0 then return end
-        self.MistVisuals[serial] = true
+        if count >= 3 and oldest ~= 0 then
+            _ParticleService:RemoveParticle(oldest)
+            self.MistVisuals[oldest] = nil
+            local timer = self.VisualTimers[oldest]
+            if timer ~= nil then _TimerService:ClearTimer(timer) self.VisualTimers[oldest] = nil end
+        end
+        self.MistVisuals[serial] = _UtilLogic.ElapsedSeconds + seconds
         self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
             if self.MistVisuals[serial] then
                 _ParticleService:RemoveParticle(serial)

@@ -278,7 +278,11 @@ script MonsterBehavior extends Component
 
     @ExecSpace("Multicast")
     method void EmergeFx(Vector3 pos)
-        _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(0.6, 0.6, 1), false, { Color = Color(0.4, 0.35, 0.25, 1) })
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        -- 등장 예고는 발밑에서 짧게 끝낸다. 구더기와 주변 적의 실루엣을 가리지 않는다.
+        local serial = _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(0.28, 0.1, 1), false, { ParticleCount = 8 })
+        if serial ~= 0 then _TimerService:SetTimerOnce(function() _ParticleService:RemoveParticle(serial) end, 0.35) end
     end
 
     @ExecSpace("ClientOnly")
