@@ -1,5 +1,5 @@
 -- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 30칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·판매.
--- 룬을 고른 뒤 장비 칸을 누르면 소켓.
+-- 장비·룬은 선택만으로 바뀌지 않는다. 설명과 미리보기를 확인한 뒤 작업 버튼으로 확정한다.
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 @Logic
 script InventoryWindow extends Logic
@@ -7,12 +7,20 @@ script InventoryWindow extends Logic
     property string Win = "InvWin"
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
     property integer Selected = 0
+    property string SelectedItem = ""
+    property string SelectedEquipSlot = ""
+    property string SelectedEquipItem = ""
+    property string SocketSlot = ""
+    property string SocketItem = ""
     property string RenderKey = ""
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 선택과 확정을 분리한 소지품 창을 등록한다.
+        self:ClearSelection()
         _UIKit:RegisterWindow(self.Win)
+        _UIKit:SetText(self.Win .. "/Hint", "장비·룬은 선택 후 미리보기\n아래 버튼을 눌러 작업 확정")
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local s = slot
@@ -25,11 +33,14 @@ script InventoryWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnEquip", function() self:Act("equip") end)
         _UIKit:Connect(self.Win .. "/BtnSell", function() self:Act("sell") end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+        log("[VRF] InventoryWindow inspect-first ready")
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        -- 반복 갱신과 선택 상태를 플레이 종료 시 정리한다.
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        self:ClearSelection()
     end
 
     method PlayerInventory Inv()
@@ -40,8 +51,9 @@ script InventoryWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Poll()
+        -- 동기화로 칸의 아이템이 바뀌면 선택을 해제한다. 새 물건에 오래된 작업을 보내지 않는다.
         if not _UIKit:IsOpen(self.Win) then
-            self.RenderKey = ""
+            self:ClearSelection()
             return
         end
         local inv = self:Inv()
@@ -50,35 +62,135 @@ script InventoryWindow extends Logic
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if inv == nil or st == nil or belt == nil then return end
-        local key = inv.BagDigest .. "#" .. inv.EquipDigest .. "#" .. tostring(st.Gold) .. "#" .. tostring(self.Selected) .. "#" .. tostring(belt.HpPot) .. tostring(belt.MpPot)
+        local list = inv:GetBagList()
+        local eq = inv:GetEquipMap()
+        self:ValidateSelection(list, eq)
+        local alive = _Util:IsAlive(_UserService.LocalPlayer)
+        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot)}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
-        -- 장비: 아이콘 + 등급 테두리, 빈 칸은 부위 실루엣
-        local eq = inv:GetEquipMap()
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local path = self.Win .. "/Doll/Eq_" .. slot
-            local s = eq[slot]
-            self:DrawItem(path, s)
-            _UIKit:SetEnabled(path .. "/Ghost", s == nil)
+            self:DrawItem(path, eq[slot])
+            _UIKit:SetEnabled(path .. "/Ghost", eq[slot] == nil)
+            local chosen = slot == self.SelectedEquipSlot or slot == self.SocketSlot
+            _UIKit:SetColor(path, chosen and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        -- 가방: 아이콘 + 등급 테두리, 고른 칸은 노랗게
-        local list = inv:GetBagList()
-        if self.Selected > #list then self.Selected = 0 end
         for i = 1, 30 do
             local path = self.Win .. "/Bag/Bag" .. tostring(i)
             self:DrawItem(path, list[i])
-            -- 칸 바탕은 어두운 색, 고른 칸만 청동빛
             _UIKit:SetColor(path, i == self.Selected and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        local desc = "아이템을 선택하세요."
+        local desc = "가방이나 착용 중인 장비를 선택하세요. 선택 후 아래 버튼으로 작업합니다."
+        local label, allowed, sell = "장착", false, false
         local sel = list[self.Selected]
-        if sel ~= nil then
-            desc = _ItemData:Describe(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
-            if _ItemData:IsRune(_ItemData:Parse(sel).base) then desc = desc .. "\n→ 소켓이 빈 장비 칸을 누르면 끼운다" end
-            desc = desc .. self:CompareLine(sel, eq, st)
+        if self.SelectedEquipSlot ~= "" then
+            local worn = eq[self.SelectedEquipSlot]
+            desc = "<color=#C8A050>현재 착용 중</color>\n" .. _ItemData:Describe(worn) .. self:SummonHint(worn)
+            label = "해제"
+            allowed = #list < inv.BagSize
+            if not allowed then desc = desc .. "\n<color=#FF6464>가방이 가득 차 해제할 수 없습니다.</color>" end
+        elseif sel ~= nil then
+            sell = true
+            desc = _ItemData:Describe(sel) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
+            if _ItemData:IsRune(_ItemData:Parse(sel).base) then
+                label = "룬 끼우기"
+                desc = desc .. "\n장비 칸을 골라 삽입 후 효과를 확인하세요."
+                if self.SocketSlot ~= "" then
+                    local target = eq[self.SocketSlot]
+                    allowed = self:CanSocket(sel, target)
+                    if allowed then
+                        desc = desc .. self:SocketPreview(sel, target)
+                    elseif target == nil then
+                        desc = desc .. "\n<color=#FF6464>빈 장비 칸에는 룬을 끼울 수 없습니다.</color>"
+                    else
+                        desc = desc .. "\n<color=#FF6464>선택한 장비에 빈 소켓이 없습니다.</color>"
+                    end
+                end
+            else
+                desc = desc .. self:CompareLine(sel, eq, st)
+                allowed = self:CanEquip(sel, st)
+            end
+        end
+        if not alive then
+            allowed = false
+            sell = false
+            desc = desc .. "\n<color=#FF6464>사망 중에는 장비 작업을 할 수 없습니다.</color>"
         end
         _UIKit:SetText(self.Win .. "/DescBox/Desc", desc)
+        self:SetActionButton("BtnEquip", label, allowed)
+        self:SetActionButton("BtnSell", "판매", sell)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearSelection()
+        -- 가방·착용품·룬 대상의 식별값과 표시 캐시를 함께 지운다.
+        self.Selected = 0
+        self.SelectedItem = ""
+        self.SelectedEquipSlot = ""
+        self.SelectedEquipItem = ""
+        self.SocketSlot = ""
+        self.SocketItem = ""
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ValidateSelection(table list, table eq)
+        -- 선택 이후 판매·거래·장착 등으로 실제 물건이 바뀌면 작업 대상을 잃는다.
+        if self.Selected > 0 and list[self.Selected] ~= self.SelectedItem then self:ClearSelection() return end
+        if self.SelectedEquipSlot ~= "" and eq[self.SelectedEquipSlot] ~= self.SelectedEquipItem then self:ClearSelection() return end
+        if self.SocketSlot ~= "" and (eq[self.SocketSlot] or "") ~= self.SocketItem then
+            self.SocketSlot = ""
+            self.SocketItem = ""
+            self.RenderKey = ""
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CanEquip(string sel, PlayerStats st)
+        -- 클라이언트 안내를 위한 자격 확인이다. 서버는 동일한 장착 조건을 다시 검증한다.
+        local base = _ItemData:GetBase(_ItemData:Parse(sel).base)
+        return base ~= nil and _ItemData:GetSlot(sel) ~= "" and st ~= nil and st.Level >= base.reqLv
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CanSocket(string sel, any target)
+        -- 존재하는 룬과 빈 소켓이 있는 착용 장비만 확정할 수 있다.
+        local rune = _ItemData:Parse(sel)
+        if not _ItemData:IsRune(rune.base) or _ItemData:GetRune(rune.base) == nil or target == nil then return false end
+        local item = _ItemData:Parse(target)
+        return item.sockets > #item.runes
+    end
+
+    @ExecSpace("ClientOnly")
+    method string SocketPreview(string sel, string target)
+        -- 문자열 사본에만 룬을 넣어 최종 능력치와 룬워드를 계산한다. 가방·장비는 건드리지 않는다.
+        local item = _ItemData:Parse(target)
+        table.insert(item.runes, _ItemData:Parse(sel).base)
+        local after = _ItemData:Serialize(item)
+        local delta = _ItemData:CompareText(after, target)
+        delta = string.gsub(delta, "착용 중인 것과 비교:", "삽입 후 변화:")
+        return "\n대상: " .. _ItemData:DisplayName(target) .. "\n" .. delta
+            .. "\n완성: " .. _ItemData:DisplayName(after)
+            .. "\n<color=#E0B87A>「룬 끼우기」를 누르면 룬 1개가 소모됩니다. 되돌릴 수 없습니다.</color>"
+    end
+
+    @ExecSpace("ClientOnly")
+    method string SummonHint(string sel)
+        -- 소환 시점에 확정되는 장비 효과를 설명해 이미 부른 유닛과 혼동하지 않게 한다.
+        if (_ItemData:GetTotalMods(sel).minion or 0) ~= 0 then return "\n소환수 능력치 효과는 새로 소환할 때 적용됩니다." end
+        return ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetActionButton(string name, string label, boolean allowed)
+        -- 비활성 작업도 버튼과 이유는 보인다. ButtonComponent만 입력을 차단한다.
+        local path = self.Win .. "/" .. name
+        _UIKit:SetText(path, label)
+        local e = _UIKit:Get(path)
+        if isvalid(e) and e.ButtonComponent ~= nil then e.ButtonComponent.Enable = allowed end
+        _UIKit:SetColor(path, allowed and Color(1, 1, 1, 1) or Color(0.42, 0.42, 0.42, 1))
     end
 
     @ExecSpace("ClientOnly")
@@ -116,39 +228,67 @@ script InventoryWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnBagSlot(integer index)
-        -- 거래 중이면 거래창에 올리고, 아니면 선택
+        -- 거래 중의 제안 동작은 유지하고, 일반 가방 선택은 설명만 표시한다.
         ---@type PlayerTrade
         local trade = _UIKit:Comp("script.PlayerTrade")
         if trade ~= nil and trade.Partner ~= "" then
             trade:RequestOffer(index)
             return
         end
-        self.Selected = index
-        self.RenderKey = ""
+        local inv = self:Inv()
+        if inv == nil then return end
+        local sel = inv:GetBagList()[index]
+        self:ClearSelection()
+        if sel ~= nil then self.Selected = index self.SelectedItem = sel end
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
     method void OnEquipSlot(string slot)
-        -- 룬을 고른 상태면 그 장비에 소켓, 아니면 장비 해제
+        -- 착용 칸은 해제나 룬 소모 없이 선택만 한다. 별도 작업 버튼으로 확정한다.
         local inv = self:Inv()
-        if inv == nil then return end
-        local sel = inv:GetBagList()[self.Selected]
+        if inv == nil or string.find("," .. self.SlotOrder .. ",", "," .. slot .. ",", 1, true) == nil then return end
+        local list, eq = inv:GetBagList(), inv:GetEquipMap()
+        self:ValidateSelection(list, eq)
+        local sel = list[self.Selected]
         if sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
-            inv:RequestSocket(self.Selected, slot)
-            self.Selected = 0
+            self.SocketSlot = slot
+            self.SocketItem = eq[slot] or ""
         else
-            inv:RequestUnequip(slot)
+            self:ClearSelection()
+            if eq[slot] ~= nil then self.SelectedEquipSlot = slot self.SelectedEquipItem = eq[slot] end
         end
         self.RenderKey = ""
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
     method void Act(string action)
+        -- 클릭 순간에도 선택 식별값과 레벨·공간·소켓을 검사한다. 연속 클릭은 재실행하지 않는다.
+        if not _UIKit:IsOpen(self.Win) or not _Util:IsAlive(_UserService.LocalPlayer) then return end
         local inv = self:Inv()
-        if inv == nil or self.Selected <= 0 then return end
-        if action == "equip" then inv:RequestEquip(self.Selected) else inv:RequestSell(self.Selected) end
-        self.Selected = 0
-        self.RenderKey = ""
+        if inv == nil then return end
+        local list, eq = inv:GetBagList(), inv:GetEquipMap()
+        self:ValidateSelection(list, eq)
+        local sel = list[self.Selected]
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if action == "sell" then
+            if sel == nil then return end
+            inv:RequestSell(self.Selected, sel)
+        elseif action == "equip" then
+            if self.SelectedEquipSlot ~= "" then
+                if #list >= inv.BagSize then return end
+                inv:RequestUnequip(self.SelectedEquipSlot, self.SelectedEquipItem)
+            elseif sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
+                if self.SocketSlot == "" or not self:CanSocket(sel, eq[self.SocketSlot]) then return end
+                inv:RequestSocket(self.Selected, self.SocketSlot, sel, self.SocketItem)
+            elseif sel ~= nil and self:CanEquip(sel, st) then
+                inv:RequestEquip(self.Selected, sel)
+            else return end
+        else return end
+        self:ClearSelection()
+        self:Poll()
     end
 
 end

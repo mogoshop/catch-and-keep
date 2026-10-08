@@ -137,11 +137,11 @@ script PlayerInventory extends Component
     -- ───────── 장착 ─────────
 
     @ExecSpace("Server")
-    method void RequestEquip(integer index)
-        -- 가방 index번을 장착 (같은 부위 장비는 가방으로)
+    method void RequestEquip(integer index, string expectedItem)
+        -- 선택한 물건이 아직 같은 칸에 있을 때만 장착한다. 네트워크 지연 중 바뀐 칸은 거부한다.
         if not self:IsOwnerRequest(senderUserId) then return end
         local s = self.Bag[index]
-        if s == nil then return end
+        if s == nil or s ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         local base = _ItemData:GetBase(_ItemData:Parse(s).base)
         local userId = self.Entity.PlayerComponent.UserId
         if base == nil then
@@ -149,7 +149,8 @@ script PlayerInventory extends Component
             return
         end
         local stats = self:Stats()
-        if stats ~= nil and stats.Level < base.reqLv then
+        if stats == nil then return end
+        if stats.Level < base.reqLv then
             _Util:Notify("요구 레벨 " .. tostring(base.reqLv), userId)
             return
         end
@@ -167,10 +168,11 @@ script PlayerInventory extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestUnequip(string slot)
+    method void RequestUnequip(string slot, string expectedItem)
+        -- 착용품과 생존 상태를 서버에서 다시 확인한 뒤 해제한다.
         if not self:IsOwnerRequest(senderUserId) then return end
         local s = self.Equip[slot]
-        if s == nil then return end
+        if s == nil or s ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         if #self.Bag >= self.BagSize then
             _Util:Notify("가방이 가득 찼다", senderUserId)
             return
@@ -182,29 +184,34 @@ script PlayerInventory extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestSell(integer index)
+    method void RequestSell(integer index, string expectedItem)
+        -- 판매 요청 도착 전에 거래 등으로 바뀐 물건을 판매하지 않는다.
         if not self:IsOwnerRequest(senderUserId) then return end
+        if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
+        local stats = self:Stats()
+        if stats == nil then return end
         local s = self:TakeBagItem(index)
         if s == "" then return end
         local value = _ItemData:SellValue(s)
-        local stats = self:Stats()
-        if stats ~= nil then stats:AddGold(value) end
+        stats:AddGold(value)
         _Util:Notify("판매 +" .. tostring(value) .. " 골드", senderUserId)
     end
 
     @ExecSpace("Server")
-    method void RequestSocket(integer runeIndex, string slot)
-        -- 가방의 룬을 장착 중인 장비의 빈 소켓에 (되돌릴 수 없음)
+    method void RequestSocket(integer runeIndex, string slot, string expectedRune, string expectedGear)
+        -- 선택한 룬과 장비가 서버에도 그대로 있을 때만 소모한다 (되돌릴 수 없음).
         if not self:IsOwnerRequest(senderUserId) then return end
+        if self.Bag[runeIndex] == nil or self.Equip[slot] == nil or self.Bag[runeIndex] ~= expectedRune or self.Equip[slot] ~= expectedGear or not _Util:IsAlive(self.Entity) then return end
         self:SocketRune(runeIndex, slot)
     end
 
     @ExecSpace("ServerOnly")
     method boolean SocketRune(integer runeIndex, string slot)
+        -- 룬 데이터와 빈 소켓을 검증한 뒤 두 물건을 한 번의 서버 작업으로 바꾼다.
         local userId = self.Entity.PlayerComponent.UserId
         local r = self.Bag[runeIndex]
         local s = self.Equip[slot]
-        if r == nil or s == nil or not _ItemData:IsRune(r) then return false end
+        if r == nil or s == nil or not _ItemData:IsRune(r) or _ItemData:GetRune(_ItemData:Parse(r).base) == nil then return false end
         local item = _ItemData:Parse(s)
         if #item.runes >= item.sockets then
             _Util:Notify("빈 소켓이 없다", userId)
