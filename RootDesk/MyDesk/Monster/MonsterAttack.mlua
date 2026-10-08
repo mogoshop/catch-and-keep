@@ -16,6 +16,9 @@ script MonsterAttack extends AttackComponent
     property number CooldownTimer = 0
     property number ScanTimer = 0
     property Entity CurrentTarget = nil
+    property boolean SpacingControlled = false
+    property number SpacingTimer = 0
+    property number NeighborSpacing = 0.45
     property number SlamDamage = 0
     property number ArrowSpeed = 7
     property integer ShotCount = 0
@@ -91,19 +94,76 @@ script MonsterAttack extends AttackComponent
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         local body = self:Body()
-        if body == nil or body.IsDead or not self.Entity.Enable then return end
+        if body == nil or body.IsDead or not self.Entity.Enable then self.SpacingControlled = false return end
         local status = body:Status()
-        if status ~= nil and status:IsStunned() then return end
+        if status ~= nil and status:IsStunned() then self.SpacingControlled = false return end
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")
-        if behavior ~= nil and not behavior:CanBeginAttack() then return end
+        if behavior ~= nil and not behavior:CanBeginAttack() then self.SpacingControlled = false return end
         self.CooldownTimer = self.CooldownTimer - delta
         self.ScanTimer = self.ScanTimer - delta
-        if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil or self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
+        if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
+        self:UpdateMeleeSpacing(delta)
+        if self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
         self.ScanTimer = self.ScanInterval
         local target = self:FindTarget()
         if target == nil then return end
         self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
         self:BeginAttack(target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdateMeleeSpacing(number delta)
+        -- 멀리서는 기존 추적, 마지막 접근에서는 사거리 안쪽에 멈춰 몸을 관통하지 않는다.
+        if self.AttackRange > 1.5 then return end
+        local chase = self.Entity.AIChaseComponent
+        if not isvalid(chase) or not isvalid(self.Entity.MovementComponent) then return end
+        self.SpacingTimer = self.SpacingTimer - delta
+        if self.SpacingTimer > 0 then return end
+        self.SpacingTimer = 0.1
+        local target = self:FindDefender(math.max(1.3, self.AttackRange + 0.55))
+        if not isvalid(target) then
+            if self.SpacingControlled then
+                self.SpacingControlled = false
+                local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+                if behavior ~= nil then behavior:ResumeMovement() else chase.Enable = true end
+            end
+            return
+        end
+        self.SpacingControlled = true
+        chase.Enable = false
+        local p = _Util:Pos2(self.Entity)
+        local to = _Util:Pos2(target) - p
+        local distance = to:Magnitude()
+        local radial = distance > 0.01 and to:Normalize() or Vector2(1, 0)
+        local wanted = math.max(0.55, math.min(1.1, self.AttackRange * 0.9))
+        local direction = Vector2(0, 0)
+        if distance < wanted - 0.08 then direction = radial * -1
+        elseif distance > wanted + 0.04 then direction = radial end
+        local push = Vector2(0, 0)
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.NeighborSpacing)) do
+            if m.Entity ~= self.Entity then
+                local away = p - _Util:Pos2(m.Entity)
+                local gap = away:Magnitude()
+                if gap < 0.01 then away = self.Entity.Id < m.Entity.Id and Vector2(1, 0) or Vector2(-1, 0) gap = 0.01 end
+                push = push + away:Normalize() * ((self.NeighborSpacing - gap) / self.NeighborSpacing)
+            end
+        end
+        -- 대상 쪽으로 밀지 않고 둘레로 흩어진다. 공격 준비/회복에는 이 이동을 실행하지 않는다.
+        local tangent = push - radial * push:Dot(radial)
+        direction = direction + tangent * 0.8
+        if direction:Magnitude() > 0.05 then
+            direction = direction:Normalize()
+            if not _Util:HasLineOfSight(self.Entity.CurrentMap, p, p + direction * 0.3) then direction = Vector2(0, 0) end
+        else direction = Vector2(0, 0) end
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:DriveMotion(direction)
+        else
+            self.Entity.MovementComponent:MoveToDirection(direction, 0)
+            local state = self.Entity.StateComponent
+            local nextState = direction:Magnitude() > 0.01 and "MOVE" or "IDLE"
+            if isvalid(state) and state.CurrentStateName ~= nextState then state:ChangeState(nextState) end
+            if math.abs(direction.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = direction.x > 0 end
+        end
     end
 
     @ExecSpace("ServerOnly")
