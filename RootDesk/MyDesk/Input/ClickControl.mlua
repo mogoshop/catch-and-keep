@@ -104,7 +104,16 @@ script ClickControl extends Component
         local world = _UILogic:ScreenToWorldPosition(screenPoint)
         if self.BlockedPick and (world - self.BlockedPoint):Magnitude() < 0.35 then return world end
         self.BlockedPick = false
-        -- 내 혼을 클릭했으면 걸어가서 추출 (몬스터보다 우선)
+        -- 살아 있는 적과 혼이 겹치면 적을 먼저 고른다. 혼 추출이 평타 대상을 지우지 않게 한다.
+        self.ExtractTarget = nil
+        local monster = self:FindMonsterNear(world)
+        if monster ~= nil then
+            if self.AttackTarget ~= monster then self.SlideCount = 0 self.StuckTime = 0 end
+            self:SelectAttackTarget(monster)
+            self.HasDestination = false
+            return world
+        end
+        -- 적이 없는 곳의 내 혼을 클릭했으면 기존처럼 걸어가서 추출한다.
         local extractor = self:Extractor()
         local soul = nil
         if extractor ~= nil then soul = extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
@@ -114,18 +123,10 @@ script ClickControl extends Component
             self.HasDestination = false
             return world
         end
-        self.ExtractTarget = nil
-        local monster = self:FindMonsterNear(world)
-        if monster ~= nil then
-            if self.AttackTarget ~= monster then self.SlideCount = 0 self.StuckTime = 0 end
-            self:SelectAttackTarget(monster)
-            self.HasDestination = false
-        else
-            if not self.HasDestination or (world - self.Destination):Magnitude() > 0.35 then self.SlideCount = 0 self.StuckTime = 0 end
-            self:SelectAttackTarget(nil)
-            self.Destination = world
-            self.HasDestination = true
-        end
+        if not self.HasDestination or (world - self.Destination):Magnitude() > 0.35 then self.SlideCount = 0 self.StuckTime = 0 end
+        self:SelectAttackTarget(nil)
+        self.Destination = world
+        self.HasDestination = true
         return world
     end
 
