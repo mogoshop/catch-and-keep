@@ -1,0 +1,166 @@
+-- 클릭 이동용 지형 경로. 타일의 충돌 값과 실제 월드 좌표 변환을 사용하고, 제한된 A*로 짧은 장애물을 우회한다.
+@Logic
+script GroundPath extends Logic
+
+    property integer MaxExpanded = 640
+    property integer SearchMargin = 6
+    property number MaxDistance = 24
+    property number Clearance = 0.12
+    property integer LastExpanded = 0
+
+    method string Key(integer x, integer y)
+        -- 서로 다른 행의 셀이 같은 키가 되지 않게 한다.
+        return tostring(x) .. ":" .. tostring(y)
+    end
+
+    method Vector2 Center(RectTileMapComponent tiles, integer x, integer y)
+        -- ToWorldPosition은 셀 중심을 반환한다 (실제 메이커 좌표 변환으로 확인).
+        local point = tiles:ToWorldPosition(Vector2Int(x, y))
+        return Vector2(point.x, point.y)
+    end
+
+    method boolean Walkable(RectTileMapComponent tiles, integer x, integer y, table cache)
+        -- 없는 타일과 충돌 타일은 길로 보지 않는다. 탐색 한 번 안에서만 캐시한다.
+        local key = self:Key(x, y)
+        if cache[key] ~= nil then return cache[key] end
+        local tile = tiles:GetTile(x, y)
+        local ok = tile ~= nil and not tile.IsCollidable
+        cache[key] = ok
+        return ok
+    end
+
+    method boolean ClearSegment(RectTileMapComponent tiles, Vector2 from, Vector2 to)
+        -- 중심·양옆을 촘촘하게 검사해 모서리를 사선으로 잘라 지나가지 않는다.
+        local offset = to - from
+        local count = math.max(1, math.ceil(offset:Magnitude() / 0.2))
+        local side = offset:Magnitude() > 0.01 and Vector2(-offset.y, offset.x):Normalize() * self.Clearance or Vector2(0, 0)
+        for i = 1, count do
+            local point = from + offset * (i / count)
+            for _, extra in ipairs({ Vector2(0, 0), side, side * -1 }) do
+                local cell = tiles:ToCellPosition(Vector3(point.x + extra.x, point.y + extra.y, 0))
+                local tile = tiles:GetTile(cell)
+                if tile == nil or tile.IsCollidable then return false end
+            end
+        end
+        return true
+    end
+
+    method number Heuristic(integer x, integer y, integer gx, integer gy, Vector2 grid)
+        -- 직사각형 격자의 8방향 최단 비용을 넘지 않는 휴리스틱.
+        local dx = math.abs(gx - x)
+        local dy = math.abs(gy - y)
+        local diagonal = math.min(dx, dy)
+        return diagonal * math.sqrt(grid.x * grid.x + grid.y * grid.y) + (dx - diagonal) * grid.x + (dy - diagonal) * grid.y
+    end
+
+    method void Push(table heap, table node)
+        -- 최소 힙으로 열린 셀 검색 비용을 제한한다.
+        table.insert(heap, node)
+        local index = #heap
+        while index > 1 do
+            local parent = math.floor(index / 2)
+            if heap[parent].f <= node.f then break end
+            heap[index] = heap[parent]
+            index = parent
+        end
+        heap[index] = node
+    end
+
+    method table Pop(table heap)
+        -- 가장 유망한 셀 하나를 꺼낸다.
+        local node = heap[1]
+        local last = table.remove(heap)
+        if #heap > 0 then
+            local index = 1
+            while index * 2 <= #heap do
+                local child = index * 2
+                if child + 1 <= #heap and heap[child + 1].f < heap[child].f then child = child + 1 end
+                if last.f <= heap[child].f then break end
+                heap[index] = heap[child]
+                index = child
+            end
+            heap[index] = last
+        end
+        return node
+    end
+
+    method table Smooth(RectTileMapComponent tiles, Vector2 from, table points)
+        -- 통과 가능한 긴 구간은 한 번에 걷되, 벽 모서리와 빈 타일을 건너뛰지 않는다.
+        local route = {}
+        local index = 1
+        local anchor = from
+        while index <= #points do
+            local far = nil
+            for nextIndex = #points, index, -1 do
+                if self:ClearSegment(tiles, anchor, points[nextIndex]) then far = nextIndex break end
+            end
+            if far == nil then return {} end
+            table.insert(route, points[far])
+            anchor = points[far]
+            index = far + 1
+        end
+        return route
+    end
+
+    @ExecSpace("ClientOnly")
+    method table Find(Entity map, Vector2 from, Vector2 goal)
+        -- 클릭 한 번당 제한된 탐색. 닿을 수 없는 목적지는 빈 경로를 반환한다.
+        self.LastExpanded = 0
+        if not isvalid(map) or (goal - from):Magnitude() > self.MaxDistance then return {} end
+        ---@type RectTileMapComponent
+        local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        if tiles == nil then return { goal } end
+        local start = tiles:ToCellPosition(Vector3(from.x, from.y, 0))
+        local finish = tiles:ToCellPosition(Vector3(goal.x, goal.y, 0))
+        local cache = {}
+        if not self:Walkable(tiles, start.x, start.y, cache) or not self:Walkable(tiles, finish.x, finish.y, cache) then return {} end
+        if self:ClearSegment(tiles, from, goal) then return { goal } end
+        local grid = tiles.GridSize
+        local minX = math.min(start.x, finish.x) - self.SearchMargin
+        local maxX = math.max(start.x, finish.x) + self.SearchMargin
+        local minY = math.min(start.y, finish.y) - self.SearchMargin
+        local maxY = math.max(start.y, finish.y) + self.SearchMargin
+        local heap, records, closed = {}, {}, {}
+        local startKey = self:Key(start.x, start.y)
+        local first = { x = start.x, y = start.y, key = startKey, parent = "", g = 0, f = 0 }
+        records[startKey] = first
+        self:Push(heap, first)
+        local directions = { {1,0}, {0,1}, {-1,0}, {0,-1}, {1,1}, {-1,1}, {-1,-1}, {1,-1} }
+        while #heap > 0 and self.LastExpanded < self.MaxExpanded do
+            local node = self:Pop(heap)
+            if not closed[node.key] and records[node.key] == node then
+                closed[node.key] = true
+                self.LastExpanded = self.LastExpanded + 1
+                if node.x == finish.x and node.y == finish.y then
+                    local points = {}
+                    while node.parent ~= "" do
+                        table.insert(points, 1, self:Center(tiles, node.x, node.y))
+                        node = records[node.parent]
+                    end
+                    if #points == 0 then points = { self:Center(tiles, finish.x, finish.y) } end
+                    if not self:ClearSegment(tiles, from, points[1]) then table.insert(points, 1, self:Center(tiles, start.x, start.y)) end
+                    local tail = points[#points]
+                    if self:ClearSegment(tiles, tail, goal) then table.insert(points, goal) end
+                    return self:Smooth(tiles, from, points)
+                end
+                for _, d in ipairs(directions) do
+                    local x, y = node.x + d[1], node.y + d[2]
+                    if x >= minX and x <= maxX and y >= minY and y <= maxY and self:Walkable(tiles, x, y, cache) then
+                        local key = self:Key(x, y)
+                        local cornerOK = d[1] == 0 or d[2] == 0 or (self:Walkable(tiles, node.x + d[1], node.y, cache) and self:Walkable(tiles, node.x, node.y + d[2], cache))
+                        if cornerOK and not closed[key] then
+                            local cost = node.g + math.sqrt((d[1] * grid.x)^2 + (d[2] * grid.y)^2)
+                            if records[key] == nil or cost < records[key].g then
+                                local nextNode = { x = x, y = y, key = key, parent = node.key, g = cost, f = cost + self:Heuristic(x, y, finish.x, finish.y, grid) }
+                                records[key] = nextNode
+                                self:Push(heap, nextNode)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return {}
+    end
+
+end

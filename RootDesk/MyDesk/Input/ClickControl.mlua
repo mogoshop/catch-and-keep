@@ -34,6 +34,12 @@ script ClickControl extends Component
     property integer SlideSide = 1
     property integer SlideCount = 0           -- 비켜 가도 앞으로 못 나간 횟수 (3번이면 포기하고 멈춘다)
     property Vector2 StuckPos = Vector2(0, 0)
+    property table Route = {}
+    property integer RouteIndex = 1
+    property Entity RouteMap = nil
+    property Vector2 RouteGoal = Vector2(0, 0)
+    property number RouteRecheckAt = 0
+    property number NextBlockedHintAt = 0
     property boolean BlockedPick = false
     property Vector2 BlockedPoint = Vector2(0, 0)
 
@@ -196,7 +202,7 @@ script ClickControl extends Component
             local s = self.ExtractTarget.TransformComponent.WorldPosition
             local toSoul = Vector2(s.x, s.y) - me
             if toSoul:Magnitude() > _ShadowConfig:GetExtractReach() * 0.8 then
-                self:MoveToward(toSoul)
+                self:Navigate(Vector2(s.x, s.y))
             else
                 self:StopMove()
                 local extractor = self:Extractor()
@@ -217,7 +223,7 @@ script ClickControl extends Component
             local t = self.AttackTarget.TransformComponent.WorldPosition
             local toTarget = Vector2(t.x, t.y) - me
             if toTarget:Magnitude() > self.AttackReach then
-                self:MoveToward(toTarget)
+                self:Navigate(Vector2(t.x, t.y))
             else
                 self:StopMove()
                 self:Face(toTarget.x)
@@ -241,7 +247,7 @@ script ClickControl extends Component
                 self.HasDestination = false
                 self:StopMove()
             else
-                self:MoveToward(toDest)
+                self:Navigate(self.Destination)
             end
         end
     end
@@ -255,6 +261,7 @@ script ClickControl extends Component
     @ExecSpace("ClientOnly")
     method void Cancel()
         -- 메뉴·맵 변경·포커스 해제에서 이전 클릭과 막힘 판정을 함께 지운다.
+        self:ClearRoute()
         self.StuckTime = 0
         self.BlockedPick = false
         self.WantDir = Vector2(0, 0)
@@ -346,6 +353,55 @@ script ClickControl extends Component
         self.SlideSide = -self.SlideSide
         self.SlideUntil = _UtilLogic.ElapsedSeconds + 0.35
         if self.DebugLog then log("[ClickControl] 막힘 → 옆으로") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearRoute()
+        -- 오래된 맵의 타일·우회 점을 붙잡지 않는다.
+        self.Route = {}
+        self.RouteIndex = 1
+        self.RouteMap = nil
+        self.RouteRecheckAt = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Navigate(Vector2 goal)
+        -- 목적지가 움직이거나 지형이 바뀌었을 때만 제한된 경로를 다시 계산한다.
+        local me = _Util:Pos2(self.Entity)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.RouteMap ~= self.Entity.CurrentMap or (goal - self.RouteGoal):Magnitude() > 0.3 or now >= self.RouteRecheckAt then
+            self.Route = _GroundPath:Find(self.Entity.CurrentMap, me, goal)
+            self.RouteIndex = 1
+            self.RouteMap = self.Entity.CurrentMap
+            self.RouteGoal = goal
+            self.RouteRecheckAt = now + 0.8
+            if self.HasDestination and #self.Route > 0 and (self.Route[#self.Route] - goal):Magnitude() > self.ArriveDistance then
+                self.BlockedPoint = goal
+                self.BlockedPick = true
+                self.Destination = self.Route[#self.Route]
+                self.RouteGoal = self.Destination
+            end
+        end
+        if #self.Route == 0 then
+            local point = goal
+            if isvalid(self.AttackTarget) or isvalid(self.ExtractTarget) then point = goal + Vector2(0, 0.25) end
+            self:Cancel()
+            self.BlockedPick = true
+            self.BlockedPoint = point
+            if now >= self.NextBlockedHintAt then
+                self.NextBlockedHintAt = now + 2
+                _ScreenMessageLogic:PrivateMsg("지나갈 수 없는 지점입니다")
+                _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, Vector3(goal.x, goal.y, 0), 0, Vector3(0.25, 0.25, 1), false, {Color=Color(0.6,0.2,0.18,0.7)})
+            end
+            return
+        end
+        while self.RouteIndex <= #self.Route and (self.Route[self.RouteIndex] - me):Magnitude() <= self.ArriveDistance do self.RouteIndex = self.RouteIndex + 1 end
+        if self.RouteIndex > #self.Route then
+            self:StopMove()
+            self.RouteRecheckAt = 0
+            return
+        end
+        self:MoveToward(self.Route[self.RouteIndex] - me)
     end
 
     @ExecSpace("ClientOnly")
