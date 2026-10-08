@@ -24,6 +24,7 @@ script MonsterStatus extends Component
     property number PoiseHitAt = -99
     property number InterruptReadyAt = 0
     property integer InterruptCount = 0
+    @Sync
     property string CurseTag = ""            -- 대상 정보 UI 표시
 
     method Monster Body()
@@ -37,14 +38,25 @@ script MonsterStatus extends Component
         -- amp: 받는 피해 증가 / weaken: 주는 피해 감소
         local now = _UtilLogic.ElapsedSeconds
         if kind == "amp" then
+            if now >= self.AmpUntil then self.AmpPct = 0 end
             self.AmpPct = math.max(self.AmpPct, pct)
             self.AmpUntil = now + duration
-            self.CurseTag = "약화의 낙인"
         elseif kind == "weaken" then
+            if now >= self.WeakenUntil then self.WeakenPct = 0 end
             self.WeakenPct = math.max(self.WeakenPct, pct)
             self.WeakenUntil = now + duration
-            self.CurseTag = "쇠약"
         end
+        self:RefreshCurseTag()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshCurseTag()
+        -- UI는 실제 남아 있는 저주만 표시한다. 중첩된 낙인·쇠약도 함께 보여 준다.
+        local now = _UtilLogic.ElapsedSeconds
+        local text = ""
+        if now < self.AmpUntil then text = "약화의 낙인" end
+        if now < self.WeakenUntil then text = text == "" and "쇠약" or (text .. " · 쇠약") end
+        if self.CurseTag ~= text then self.CurseTag = text end
     end
 
     method number TakenMult()
@@ -211,7 +223,8 @@ script MonsterStatus extends Component
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
-        -- 넉백이 끝나면 멈추고 속도 복구, 경직까지 끝나면 추적을 되돌린다
+        -- 저주 표시는 만료 시 지우고, 넉백·경직이 끝나면 이동을 복구한다.
+        self:RefreshCurseTag()
         if self.KnockUntil <= 0 and self.StaggerUntil <= 0 then return end
         local now = _UtilLogic.ElapsedSeconds
         local body = self:Body()

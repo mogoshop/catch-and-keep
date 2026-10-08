@@ -13,6 +13,10 @@ script HudMain extends Logic
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:SetEnabled("Target", false)
+        local target = _UIKit:Get("Target")
+        local targetStatus = _UIKit:Get("Target/Curse")
+        if isvalid(target) then target.UITransformComponent.RectSize = Vector2(460, 114) end
+        if isvalid(targetStatus) then targetStatus.UITransformComponent.RectSize = Vector2(440, 44) end
         _UIKit:SetEnabled("Tip", false)
         _UIKit:RegisterWindow("MenuWin")
         if Environment:IsMobilePlatform() then
@@ -191,7 +195,6 @@ script HudMain extends Logic
         if m == nil then return end
         local prefix = ""
         local color = "#FFFFFF"
-        local affix = m:GetAffixName()
         if m.Grade >= 3 then
             prefix = "보스 "
             color = "#C8A050"
@@ -199,15 +202,36 @@ script HudMain extends Logic
             prefix = "최상위 "
             color = "#C8A050"
         elseif m:GetVariant() ~= "" then
+            prefix = "우두머리 "
             color = "#E070FF"            -- 변종 우두머리 (오오라·기술): 이름표에 능력 이름
         elseif m.Grade == 2 then
             prefix = "정예 "
             color = "#6E8CFF"
         end
-        if affix ~= "" then prefix = affix .. " " .. prefix end
         _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. _GameData:GetMonsterName(m.SourceId)) .. "  Lv" .. tostring(m.Level))
         _UIKit:SetFill("Target/Bar/Fill", m.Hp / math.max(1, m.MaxHp))
-        _UIKit:SetText("Target/Curse", m:GetCurseTag())
+        _UIKit:SetText("Target/Curse", self:TargetStatus(m))
+    end
+
+    @ExecSpace("ClientOnly")
+    method string TargetStatus(Monster monster)
+        -- 적의 지원 능력과 현재 저주를 짧게 함께 보여 주어 먼저 잡을 대상을 고를 수 있게 한다.
+        local text = ""
+        local variant = _GameData:GetVariant(monster:GetVariant())
+        if variant ~= nil then
+            if variant.kind == "aura" then
+                local labels = { dmg = "피해", haste = "공격·이동", guard = "피해 감소" }
+                local label = labels[variant.effect] or "전투력"
+                text = variant.name .. " · 주변 적 " .. label .. " +" .. tostring(math.floor(variant.value)) .. "%"
+            elseif variant.kind == "skill" then
+                text = "범위 공격 · 지면 예고 밖으로 이동"
+            end
+        else
+            text = monster:GetAffixName()
+        end
+        local curse = monster:GetCurseTag()
+        if curse ~= "" then text = text == "" and curse or (text .. "\n" .. curse) end
+        return text
     end
 
     @ExecSpace("ClientOnly")
