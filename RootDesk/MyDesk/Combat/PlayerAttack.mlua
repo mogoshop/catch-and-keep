@@ -35,6 +35,7 @@ script PlayerAttack extends AttackComponent
     property Vector2 LocalAimDirection = Vector2(1, 0)
     property integer AimRequestCount = 0
     property number LastLocalInputAt = -99
+    property number NextHeldInputAt = 0
     property Entity AimIndicator = nil
     property number ContactPauseUntil = 0
     property number NextContactPauseAt = 0
@@ -43,6 +44,9 @@ script PlayerAttack extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
+        -- 서버가 수락한 평타만 모션을 재생한다. 자동 ATTACK 매핑이 맨손 모션을 덮지 않게 한다.
+        local animations = self.Entity.AvatarStateAnimationComponent
+        if isvalid(animations) then animations:RemoveActionSheet("ATTACK") end
         -- 내 타격 숫자는 소환수보다 선명하게, 빠르게 사라져 전장을 비운다.
         local skin = self.Entity.DamageSkinSettingComponent
         if not isvalid(skin) then skin = self.Entity:AddComponent("DamageSkinSettingComponent") end
@@ -68,6 +72,17 @@ script PlayerAttack extends AttackComponent
         if self.Entity ~= _UserService.LocalPlayer or (event.key ~= KeyboardKey.LeftControl and event.key ~= KeyboardKey.RightControl) or _UIKit:AnyWindowOpen() then return end
         local click = self.Entity:GetComponent("script.ClickControl")
         if click ~= nil and click.Moving then click:Cancel() end
+        self:SubmitBasicInput()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleAttackKeyHold(KeyHoldEvent event)
+        -- 자동 ATTACK 모션을 끈 뒤에도 Ctrl 유지 공격을 이어간다. 서버의 단일 예약 창만 사용한다.
+        if self.Entity ~= _UserService.LocalPlayer or (event.key ~= KeyboardKey.LeftControl and event.key ~= KeyboardKey.RightControl) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.NextHeldInputAt then return end
+        self.NextHeldInputAt = now + 0.08
         self:SubmitBasicInput()
     end
 
@@ -131,9 +146,9 @@ script PlayerAttack extends AttackComponent
         if isvalid(target) then
             local to = _Util:Pos2(target) - me
             if to:Magnitude() > 0.05 then dir = to:Normalize() end
-            if math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         end
         self.CombatDirection = dir
+        if math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         -- 공격 속도에 맞춰 준비/타격/회복을 함께 축소한다. 준비 중 이동하면 공격을 취소한다.
         self.AttackEpoch = self.AttackEpoch + 1
         self.BufferedAttack = false
@@ -141,7 +156,7 @@ script PlayerAttack extends AttackComponent
         self.AttackPhase = "windup"
         local replay = self.ReplayNextSwing
         self.ReplayNextSwing = false
-        self:PresentAcceptedSwing(dir, interval, replay, self.Entity.PlayerComponent.UserId)
+        self:PresentAcceptedSwing(dir, interval, replay)
         local aimDir = dir
         local epoch = self.AttackEpoch
         local map = self.Entity.CurrentMap
@@ -208,19 +223,23 @@ script PlayerAttack extends AttackComponent
         if self:IsServer() then self:CancelAttack() else self:ReleaseContactPause() self:HideAimIndicator() end
     end
 
-    @ExecSpace("Client")
+    @ExecSpace("Multicast")
     method void PresentAcceptedSwing(Vector2 dir, number interval, boolean replay)
-        -- 예약으로 시작된 공격도 실제 아바타 모션을 재생한다. 피해 이벤트는 다시 내보내지 않는다.
-        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
+        -- 자동 매핑 대신 수락된 공격을 한 번 재생한다. 같은 맵의 다른 유저도 동작을 본다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap or not _Util:IsAlive(self.Entity) then return end
+        local avatar = self.Entity.AvatarRendererComponent
+        if not isvalid(avatar) then return end
         local controller = self.Entity.PlayerControllerComponent
-        if math.abs(dir.x) > 0.05 then controller.LookDirectionX = dir.x >= 0 and 1 or -1 end
-        local rate = 1.33 * _GameData.baseAttackInterval / math.max(0.1, interval)
-        local animations = self.Entity.AvatarStateAnimationComponent
-        if isvalid(animations) then animations.StateToAvatarBodyActionSheet["ATTACK"] = AvatarBodyActionElement("attack", rate) end
-        -- 직전에 주문의 손동작을 재생했어도 평타는 반드시 무기 동작으로 돌아온다.
-        self.Entity.StateComponent:ChangeState("ATTACK")
-        self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Attack, 0, 2147483647, rate))
-        if self.DebugCombat then log("[VRF-COMBAT] accepted motion replay=" .. tostring(replay) .. " rate=" .. tostring(rate)) end
+        if isvalid(controller) and math.abs(dir.x) > 0.05 then controller.LookDirectionX = dir.x >= 0 and 1 or -1 end
+        local rate = 2 * _GameData.baseAttackInterval / math.max(0.1, interval)
+        if self.Entity == me then self.Entity.StateComponent:ChangeState("ATTACK") end
+        -- 이 게임의 평타는 장비와 무관하게 근접 베기다. Attack enum은 일부 장비도 alert로 풀리므로 사용하지 않는다.
+        -- 몸과 장비 파츠에 같은 동작을 보내고 한 번만 재생한다. native Attack 이벤트와 섞으면 캐시된 속도가 덮어쓴다.
+        local body = avatar:GetBodyEntity()
+        if not isvalid(body) then return end
+        body:SendEvent(ActionStateChangedEvent("swingO1", "swingO1", rate, SpriteAnimClipPlayType.Onetime))
+        if self.DebugCombat then log("[VRF-COMBAT] accepted melee motion replay=" .. tostring(replay) .. " rate=" .. tostring(rate)) end
     end
 
     @ExecSpace("ClientOnly")
