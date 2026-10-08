@@ -1,4 +1,4 @@
--- NPC 대화 창 (화면 아래): 대화 거리 안의 가장 가까운 NPC와 대화한다. 멀어지면 닫히고, 닫기를 누르면 떠날 때까지 다시 열리지 않는다.
+-- NPC 대화 창: 근처에서는 대화 버튼만 표시한다. 버튼/B 키로 선택했을 때 열고, 거리·맵이 바뀌면 닫는다.
 --   shop  = 물약·두루마리·도박 5버튼 → PlayerShop
 --   quest = D2처럼 말을 건 뒤 의뢰를 받는다: 소개 대사(다음 ▶) → 의뢰 내용·보상 → 수락/거절 → PlayerQuest.
 --           완료하면 마무리 대사 → 보고(보상). 대사는 quests.csv intro·outro ("/"로 줄 나눔)
@@ -13,10 +13,18 @@ script NpcWindow extends Logic
     property string PageKey = ""            -- 의뢰 번호·상태가 바뀌면 대사를 처음부터
     property boolean Dismissed = false      -- 닫기를 누른 뒤 NPC에게서 멀어질 때까지 열지 않음
     property integer PageCount = 1
+    property string Prompt = "/ui/InteractionHUD/SafeArea/Talk"
+    property Entity ActiveNpc = nil
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 가까이 지나가는 것만으로 대화가 이동을 막지 않게 한다.
+        self.ActiveNpc = nil
         _UIKit:RegisterWindow(self.Win)
+        _UIKit:SetEnabled(self.Prompt, false)
+        _UIKit:Connect(self.Prompt, function() self:Talk() end)
+        local prompt = _UIKit:Get(self.Prompt)
+        if isvalid(prompt) then prompt.UITransformComponent.anchoredPosition = Vector2(0, Environment:IsMobilePlatform() and 390 or 280) end
         for i = 1, 5 do
             local index = i
             _UIKit:Connect(self.Win .. "/Btn" .. tostring(i), function() self:Action(index) end)
@@ -27,11 +35,16 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        -- 세션 종료 시 대화 대상과 안내를 함께 지운다.
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        self.ActiveNpc = nil
+        _UIKit:SetEnabled(self.Prompt, false)
     end
 
     @ExecSpace("ClientOnly")
     method WorldNPC FindNpc(Entity player)
+        -- 맵을 전환하는 짧은 구간의 입력에서도 nil 맵을 읽지 않는다.
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return nil end
         local best = nil
         local bestDist = 999
         local p = _Util:Pos2(player)
@@ -39,7 +52,7 @@ script NpcWindow extends Logic
             ---@type WorldNPC
             local npc = c
             local d = (_Util:Pos2(c.Entity) - p):Magnitude()
-            if d <= npc.TalkRange and d < bestDist then
+            if d < bestDist and self:CanTalkTo(player, npc) then
                 bestDist = d
                 best = npc
             end
@@ -48,24 +61,60 @@ script NpcWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method boolean CanTalkTo(Entity player, WorldNPC npc)
+        -- 벽 너머·다른 맵·사망·비활성 NPC와는 대화하지 않는다.
+        return isvalid(player) and _Util:IsAlive(player) and npc ~= nil and isvalid(npc.Entity) and npc.Entity.Enable
+            and npc.Entity.CurrentMap == player.CurrentMap and _Util:Distance(player, npc.Entity) <= npc.TalkRange
+            and _Util:HasLineOfSight(player.CurrentMap, _Util:Pos2(player), _Util:Pos2(npc.Entity))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Talk()
+        -- 명시적인 버튼/키 입력 한 번에 가장 가까운 대화 대상을 고정한다.
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) or _UIKit:AnyWindowOpen() then return end
+        local npc = self:FindNpc(player)
+        if npc == nil then return end
+        self.ActiveNpc = npc.Entity
+        self.Dismissed = false
+        self.Page = 1
+        self.PageKey = ""
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        _SoundService:PlaySound("972843e759204d3e9ad84e7d3fa94f83", 0.35 * _SoundDirector.EffectsVolume)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        -- 기존 추출/스킬/귀환 키와 겹치지 않는 대화 단축키.
+        if event.key == KeyboardKey.B then self:Talk() end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
+        -- 접근은 안내만 보여준다. 열린 대화는 처음 선택한 NPC에 고정한다.
         local player = _UserService.LocalPlayer
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
-        if not isvalid(player) or not isvalid(player.CurrentMap) or st == nil then return end
-        local npc = self:FindNpc(player)
-        if npc == nil then
-            -- 떠나면 다음에 다시 말을 걸 수 있다
-            self.Dismissed = false
-            self.Page = 1
-            self.PageKey = ""
+        if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) or st == nil then
+            self:Dismiss()
+            _UIKit:SetEnabled(self.Prompt, false)
+            return
         end
-        local open = npc ~= nil and not self.Dismissed and not _UIKit:AnyOtherWindowOpen(self.Win)
-        if open and not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win) end
-        _UIKit:SetEnabled(self.Win, open)
-        if not open then
-            self.Kind = ""
-            self.RenderKey = ""
+        local nearby = self:FindNpc(player)
+        local show = nearby ~= nil and not _UIKit:AnyWindowOpen()
+        _UIKit:SetEnabled(self.Prompt, show)
+        if show then
+            local hint = Environment:IsPCPlatform() and " [B]" or ""
+            _UIKit:SetText(self.Prompt, _UIKit:Clip(nearby.NpcName, 12) .. " · 대화" .. hint)
+        end
+        if not _UIKit:IsOpen(self.Win) then self.ActiveNpc = nil end
+        ---@type WorldNPC
+        local npc = isvalid(self.ActiveNpc) and self.ActiveNpc:GetComponent("script.WorldNPC") or nil
+        if npc == nil or not self:CanTalkTo(player, npc) or _UIKit:AnyOtherWindowOpen(self.Win) then
+            if isvalid(self.ActiveNpc) or _UIKit:IsOpen(self.Win) then self:Dismiss() end
             return
         end
         self.Kind = npc.Kind
@@ -75,7 +124,13 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Dismiss()
+        -- 닫은 뒤에도 근처에서 버튼으로 다시 대화할 수 있다. 자동 재열기는 없다.
         self.Dismissed = true
+        self.ActiveNpc = nil
+        self.Kind = ""
+        self.RenderKey = ""
+        self.PageKey = ""
+        self.Page = 1
         _UIKit:SetEnabled(self.Win, false)
     end
 
@@ -168,6 +223,8 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Action(integer index)
+        -- 닫힌 창의 오래된 버튼 입력은 상점/의뢰 RPC로 보내지 않는다.
+        if not _UIKit:IsOpen(self.Win) or not isvalid(self.ActiveNpc) then return end
         if self.Kind == "shop" then
             ---@type PlayerShop
             local shop = _UIKit:Comp("script.PlayerShop")
