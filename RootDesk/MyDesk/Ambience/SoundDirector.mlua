@@ -4,6 +4,13 @@
 script SoundDirector extends Logic
 
     property number BgmVolume = 0.55
+    property number EffectsVolume = 1
+    property number AmbienceVolume = 1
+    property number CombatWindowAt = -99
+    property integer CombatVoices = 0
+    property table LastCombatSounds = {}
+    property integer PlayedCombatCount = 0
+    property integer SuppressedCombatCount = 0
 
     property Entity CurrentMap = nil
     property string CurrentBgm = ""
@@ -14,12 +21,23 @@ script SoundDirector extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        self.CurrentMap = nil
+        self.CurrentBgm = ""
+        self.WindOn = false
+        self.CrowsOn = false
+        self.LastCombatSounds = {}
+        self.CombatVoices = 0
+        self.CombatWindowAt = -99
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        if self.WindOn then _SoundService:StopSound(_GameConst.SfxWind) end
+        self.WindOn = false
+        self.CurrentMap = nil
+        self.LastCombatSounds = {}
     end
 
     @ExecSpace("ClientOnly")
@@ -31,7 +49,7 @@ script SoundDirector extends Logic
         if map ~= self.CurrentMap then self:EnterMap(map) end
         if self.CrowsOn and _UtilLogic.ElapsedSeconds >= self.NextCrow then
             self.NextCrow = _UtilLogic.ElapsedSeconds + 15 + _UtilLogic:RandomDouble() * 20
-            _SoundService:PlaySound(_GameConst.SfxCrow, 0.35)
+            _SoundService:PlaySound(_GameConst.SfxCrow, 0.35 * self.AmbienceVolume)
         end
     end
 
@@ -39,7 +57,7 @@ script SoundDirector extends Logic
     method void EnterMap(Entity map)
         local first = self.CurrentMap == nil
         self.CurrentMap = map
-        if not first then _SoundService:PlaySound(_GameConst.SfxTeleport, 0.5) end
+        if not first then _SoundService:PlaySound(_GameConst.SfxTeleport, 0.5 * self.EffectsVolume) end
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         local bgm = ""
@@ -58,9 +76,50 @@ script SoundDirector extends Logic
         end
         if wind ~= self.WindOn then
             self.WindOn = wind
-            if wind then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25) else _SoundService:StopSound(_GameConst.SfxWind) end
+            if wind then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25 * self.AmbienceVolume) else _SoundService:StopSound(_GameConst.SfxWind) end
         end
         self.NextCrow = _UtilLogic.ElapsedSeconds + 5
     end
 
+    @ExecSpace("ClientOnly")
+    method void PlayCombat(string ruid, Vector3 pos, number volume, integer priority)
+        -- 100ms 안에 저우선 3개/전체 5개까지만 허용해 소환수 무리의 타격음이 경고를 덮지 않게 한다.
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or ruid == "" or self.EffectsVolume <= 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now - self.CombatWindowAt >= 0.1 then self.CombatWindowAt = now self.CombatVoices = 0 end
+        local key = ruid .. ":" .. tostring(priority)
+        local gap = priority > 0 and 0.035 or 0.09
+        local cap = priority > 0 and 5 or 3
+        if self.CombatVoices >= cap or now - (self.LastCombatSounds[key] or -99) < gap then
+            self.SuppressedCombatCount = self.SuppressedCombatCount + 1
+            return
+        end
+        self.LastCombatSounds[key] = now
+        self.CombatVoices = self.CombatVoices + 1
+        self.PlayedCombatCount = self.PlayedCombatCount + 1
+        _SoundService:PlaySoundAtPos(ruid, pos, player, math.max(0, math.min(1, volume * self.EffectsVolume)))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayContact(string material, Vector3 pos, boolean heavy, boolean owned)
+        -- 뼈는 짧은 접촉음, 살/영체는 충격음을 사용하며 내 강타를 소환수 연타보다 우선한다.
+        local ruid = material == "bone" and _GameConst.SfxHit or _GameConst.SfxImpact
+        local volume = owned and 0.45 or 0.22
+        if heavy then volume = volume + 0.12 end
+        self:PlayCombat(ruid, pos, volume, owned and (heavy and 2 or 1) or 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetVolumes(number bgm, number effects, number ambience)
+        -- 설정 UI의 세 볼륨을 즉시 적용한다. 반복 환경음은 새 볼륨으로 다시 시작한다.
+        self.BgmVolume = math.max(0, math.min(1, bgm))
+        self.EffectsVolume = math.max(0, math.min(1, effects))
+        self.AmbienceVolume = math.max(0, math.min(1, ambience))
+        _SoundService:SetBGMVolume(self.BgmVolume)
+        if self.WindOn then
+            _SoundService:StopSound(_GameConst.SfxWind)
+            if self.AmbienceVolume > 0 then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25 * self.AmbienceVolume) end
+        end
+    end
 end

@@ -9,12 +9,27 @@ script PlayerAttack extends AttackComponent
     property Vector2 RangeSize = Vector2(1.6, 1.4)
     property number RangeOffsetX = 0.7
     property number AimRange = 1.7            -- 자동 조준: 이 거리 안 가장 가까운 적 쪽으로 친다
-    property number Windup = 0.1              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
+    property number Windup = 0.16              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
     property Entity SelectedTarget = nil       -- PC가 고른 적. 가까운 다른 적으로 바꾸지 않는다
     property Entity AutoTarget = nil           -- 자동 조준도 공격마다 흔들리지 않게 유지
     property integer AttackEpoch = 0
     property number LastAttackAt = -99
+    @Sync
+    property string AttackPhase = "idle"
+    property number ReadyAt = 0
+    property boolean BufferedAttack = false
+    property number InputBufferSeconds = 0.12
+    property number InterruptedUntil = 0
+    property integer StrikeCount = 0
+    property boolean DebugCombat = false
+    property integer SwingTimer = 0
+    property integer ReadyTimer = 0
+    property integer PhaseTimer = 0
+    property boolean ReplayNextSwing = false
+    property number ContactPauseUntil = 0
+    property number NextContactPauseAt = 0
+    property number ContactRestoreRate = 1
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
     @ExecSpace("ServerOnly")
@@ -34,7 +49,12 @@ script PlayerAttack extends AttackComponent
         if stats ~= nil then interval = stats:GetAttackInterval(interval) end
         if _GameConst:IsTown(self.Entity.CurrentMap) then return end
         local now = _UtilLogic.ElapsedSeconds
-        if now - self.LastAttackAt < interval * 0.9 then return end
+        if now < self.InterruptedUntil then return end
+        if now < self.ReadyAt then
+            -- 회복 끝 120ms 안의 한 입력만 예약한다. 연타가 무한 대기열을 만들지 않는다.
+            if self.ReadyAt - now <= self.InputBufferSeconds then self.BufferedAttack = true end
+            return
+        end
         if not _Util:IsAlive(self.Entity) then return end
         local me = _Util:Pos2(self.Entity)
         local dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
@@ -47,20 +67,127 @@ script PlayerAttack extends AttackComponent
             if to:Magnitude() > 0.05 then dir = to:Normalize() end
             if math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         end
-        -- 아바타 휘두르는 동작에 맞춰 Windup초 뒤에 판정·궤적
+        -- 공격 속도에 맞춰 준비/타격/회복을 함께 축소한다. 준비 중 이동하면 공격을 취소한다.
+        self.AttackEpoch = self.AttackEpoch + 1
+        self.BufferedAttack = false
+        self.ReadyAt = now + interval
+        self.AttackPhase = "windup"
+        local replay = self.ReplayNextSwing
+        self.ReplayNextSwing = false
+        self:PresentAcceptedSwing(dir, interval, replay, self.Entity.PlayerComponent.UserId)
         local aimDir = dir
         local epoch = self.AttackEpoch
         local map = self.Entity.CurrentMap
-        _TimerService:SetTimerOnce(function()
-            if epoch == self.AttackEpoch and self.Entity.CurrentMap == map then self:Strike(aimDir) end
-        end, self.Windup)
+        local origin = me
+        local contact = math.min(interval * 0.5, self.Windup * interval / _GameData.baseAttackInterval)
+        if self.DebugCombat then log("[VRF-COMBAT] player windup epoch=" .. tostring(epoch)) end
+        self.SwingTimer = _TimerService:SetTimerOnce(function()
+            self.SwingTimer = 0
+            if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.Entity) then return end
+            if (_Util:Pos2(self.Entity) - origin):Magnitude() > 0.18 then
+                self.AttackPhase = "recovery"
+                return
+            end
+            self.AttackPhase = "active"
+            self.StrikeCount = self.StrikeCount + 1
+            self:Strike(aimDir)
+            if self.DebugCombat then log("[VRF-COMBAT] player active epoch=" .. tostring(epoch)) end
+            self.PhaseTimer = _TimerService:SetTimerOnce(function()
+                self.PhaseTimer = 0
+                if epoch == self.AttackEpoch then self.AttackPhase = "recovery" end
+            end, math.min(0.05, interval * 0.15))
+        end, contact)
+        self.ReadyTimer = _TimerService:SetTimerOnce(function()
+            self.ReadyTimer = 0
+            if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Entity.CurrentMap ~= map then return end
+            self.AttackPhase = "idle"
+            -- 타이머의 소수점 오차 때문에 예약 입력만 남고 다음 타이머가 사라지지 않게 한다.
+            self.ReadyAt = math.min(self.ReadyAt, _UtilLogic.ElapsedSeconds)
+            if self.BufferedAttack then
+                self.BufferedAttack = false
+                self.ReplayNextSwing = true
+                self:DoAttack()
+                self.ReplayNextSwing = false
+            end
+        end, interval)
     end
 
     @ExecSpace("ServerOnly")
     method void CancelAttack()
-        self.AttackEpoch = self.AttackEpoch + 1
+        -- 이동·사망에서는 대상/예약/판정을 모두 버린다.
+        self:InterruptSwing(0)
+        self.ReadyAt = 0
         self.SelectedTarget = nil
         self.AutoTarget = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void InterruptSwing(number seconds)
+        -- 피격 중단은 선택 대상을 보존하되, 이전 준비 동작과 입력 예약은 되살리지 않는다.
+        self.AttackEpoch = self.AttackEpoch + 1
+        self.BufferedAttack = false
+        self.ReplayNextSwing = false
+        if self.SwingTimer ~= 0 then _TimerService:ClearTimer(self.SwingTimer) self.SwingTimer = 0 end
+        if self.ReadyTimer ~= 0 then _TimerService:ClearTimer(self.ReadyTimer) self.ReadyTimer = 0 end
+        if self.PhaseTimer ~= 0 then _TimerService:ClearTimer(self.PhaseTimer) self.PhaseTimer = 0 end
+        self.InterruptedUntil = _UtilLogic.ElapsedSeconds + math.max(0, seconds)
+        self.ReadyAt = math.max(self.ReadyAt, self.InterruptedUntil)
+        self.AttackPhase = "idle"
+    end
+
+    method void OnEndPlay()
+        -- 양쪽 수명 종료: 서버는 판정, 클라이언트는 로컬 타격 정지를 복구한다.
+        if self:IsServer() then self:CancelAttack() else self:ReleaseContactPause() end
+    end
+
+    @ExecSpace("Client")
+    method void PresentAcceptedSwing(Vector2 dir, number interval, boolean replay)
+        -- 예약으로 시작된 공격도 실제 아바타 모션을 재생한다. 피해 이벤트는 다시 내보내지 않는다.
+        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
+        local controller = self.Entity.PlayerControllerComponent
+        if math.abs(dir.x) > 0.05 then controller.LookDirectionX = dir.x >= 0 and 1 or -1 end
+        local rate = 1.33 * _GameData.baseAttackInterval / math.max(0.1, interval)
+        local animations = self.Entity.AvatarStateAnimationComponent
+        if isvalid(animations) then animations.StateToAvatarBodyActionSheet["ATTACK"] = AvatarBodyActionElement("attack", rate) end
+        if replay then
+            self.Entity.StateComponent:ChangeState("ATTACK")
+            self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Attack, 0, 2147483647, rate))
+        end
+        if self.DebugCombat then log("[VRF-COMBAT] accepted motion replay=" .. tostring(replay) .. " rate=" .. tostring(rate)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ContactPause(boolean heavy)
+        -- 공격자 자신의 아바타만 짧게 멈춘다. 이동/판정/다른 유저의 시간은 바꾸지 않는다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local avatar = self.Entity.AvatarRendererComponent
+        local now = _UtilLogic.ElapsedSeconds
+        if not isvalid(avatar) or now < self.NextContactPauseAt or self.ContactPauseUntil > 0 then return end
+        self.ContactRestoreRate = avatar.PlayRate
+        self.ContactPauseUntil = now + (heavy and 0.045 or 0.025)
+        self.NextContactPauseAt = now + 0.16
+        avatar.PlayRate = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 타격 정지는 반복 명중으로 연장하지 않으며 이동/사망/맵 이탈에서도 해제한다.
+        if self.ContactPauseUntil > 0 and (_UtilLogic.ElapsedSeconds >= self.ContactPauseUntil or not _Util:IsAlive(self.Entity)) then self:ReleaseContactPause() end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Self")
+    handler HandleMapChanged(EntityMapChangedEvent event)
+        -- 이전 맵의 접촉 정지를 다음 맵으로 가져가지 않는다.
+        self:ReleaseContactPause()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ReleaseContactPause()
+        -- 다른 상태 전환이 이미 속도를 바꿨다면 덮어쓰지 않는다.
+        local avatar = self.Entity.AvatarRendererComponent
+        if self.ContactPauseUntil > 0 and isvalid(avatar) and avatar.PlayRate == 0 then avatar.PlayRate = self.ContactRestoreRate end
+        self.ContactPauseUntil = 0
     end
 
     @ExecSpace("Server")
@@ -178,7 +305,7 @@ script PlayerAttack extends AttackComponent
         -- 휘두르기 궤적(리소스가 왼쪽을 본다: 오른쪽이면 뒤집고, 위아래로는 기울인다) + 휘두르는 소리. 맞는 소리는 몬스터 쪽(HitFx)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _SoundService:PlaySoundAtPos(_GameConst.SfxSwing, pos, me, 0.35)
+        _SoundDirector:PlayCombat(_GameConst.SfxSwing, pos, 0.35, self.Entity == me and 1 or 0)
         local right = dir.x >= 0
         local rot = math.deg(math.atan(dir.y, dir.x))
         if not right then rot = rot - 180 end

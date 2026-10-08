@@ -234,15 +234,9 @@ script Monster extends Component
 
     @ExecSpace("ServerOnly")
     method void HitReact(Entity attacker, number damage)
-        -- 넉백(플레이어가 친 것만, 소환수는 knockbackMinionMul) + 큰 피해면 경직
+        -- 명중의 빛/소리는 매번, 행동 중단은 누적 충격과 회복 시간을 통과했을 때만.
         local status = self:Status()
-        if status == nil then return end
-        if isvalid(attacker) then
-            local mult = _GameData.knockbackMinionMul
-            if isvalid(attacker.PlayerComponent) then mult = 1 end
-            status:Knockback(_Util:Pos2(self.Entity) - _Util:Pos2(attacker), mult)
-        end
-        if damage >= self.MaxHp * _GameData.hitRecoverPct then status:Stagger() end
+        if status ~= nil then status:ReactToHit(attacker, damage) end
     end
 
     @ExecSpace("ServerOnly")

@@ -20,6 +20,10 @@ script MonsterStatus extends Component
     @Sync
     property number KnockUntil = 0           -- 넉백·경직 (서버). 그동안 이동·공격·특수 행동을 멈춘다
     property number StaggerUntil = 0
+    property number PoiseDamage = 0
+    property number PoiseHitAt = -99
+    property number InterruptReadyAt = 0
+    property integer InterruptCount = 0
     property string CurseTag = ""            -- 대상 정보 UI 표시
 
     method Monster Body()
@@ -148,6 +152,29 @@ script MonsterStatus extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method boolean ReactToHit(Entity attacker, number damage)
+        -- 작은 피격은 시각 반응만. 누적 충격/강타만 행동을 끊고, 회복 구간에는 재경직을 막는다.
+        local body = self:Body()
+        if body == nil or body.IsDead or damage <= 0 or body.Grade >= 3 then return false end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.InterruptReadyAt then return false end
+        if now - self.PoiseHitAt > 1.4 then self.PoiseDamage = 0 end
+        self.PoiseHitAt = now
+        local playerHit = isvalid(attacker) and isvalid(attacker.PlayerComponent)
+        local impact = math.min(0.65, damage / math.max(1, body.MaxHp))
+        if not playerHit then impact = impact * 0.35 end
+        self.PoiseDamage = self.PoiseDamage + impact
+        local threshold = body.Grade == 2 and 0.75 or 0.5
+        if self.PoiseDamage < threshold and not (playerHit and damage >= body.MaxHp * _GameData.heavyHitPct) then return false end
+        self.PoiseDamage = 0
+        self.InterruptReadyAt = now + (body.Grade == 2 and 1.5 or 1.0)
+        self.InterruptCount = self.InterruptCount + 1
+        self:Stagger()
+        if playerHit then self:Knockback(_Util:Pos2(self.Entity) - _Util:Pos2(attacker), 0.55) end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
     method void Knockback(Vector2 dir, number mult)
         -- 맞은 반대쪽으로 짧게 밀린다. 보스·최상위는 밀리지 않고 정예는 절반
         local body = self:Body()
@@ -168,6 +195,8 @@ script MonsterStatus extends Component
         local body = self:Body()
         if body == nil or body.IsDead or body.Grade >= 3 then return end
         self:Hold()
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
         self.StaggerUntil = math.max(self.StaggerUntil, _UtilLogic.ElapsedSeconds + _GameData.staggerSec)
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("HIT") end
@@ -220,6 +249,10 @@ script MonsterStatus extends Component
         self.PoisonUntil = 0
         self.KnockUntil = 0
         self.StaggerUntil = 0
+        self.PoiseDamage = 0
+        self.PoiseHitAt = -99
+        self.InterruptReadyAt = 0
+        self.InterruptCount = 0
         self:StopPoison()
         self.CurseTag = ""
     end

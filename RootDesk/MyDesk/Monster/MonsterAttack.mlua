@@ -22,10 +22,37 @@ script MonsterAttack extends AttackComponent
     property number AttackWindup = 0.3
     property number AttackAnimationSeconds = 0.4
     property number AttackAnimationUntil = 0
+    @Sync
+    property integer AttackEpoch = 0
+    property integer WarningSerial = 0
+    property integer WarningTimer = 0
+    property integer WarningEpoch = -1
+    property integer StrikeCount = 0
+    property integer CancelCount = 0
+    property boolean DebugCombat = false
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
+        -- 종별 준비/회복 시간을 구분하고 무리의 첫 타격이 한 프레임에 몰리지 않게 한다.
         self.Entity.StateComponent:AddState("ATTACK", MonsterAttackState)
+        local body = self:Body()
+        local source = body ~= nil and body.SourceId or ""
+        self.AttackWindup = 0.35
+        self.AttackAnimationSeconds = 0.65
+        if source == "rot_zombie" or source == "headsman" then
+            self.AttackWindup = 0.6
+            self.AttackAnimationSeconds = 0.95
+        elseif source == "skel_warrior" or source == "skel_captain" then
+            self.AttackWindup = 0.42
+            self.AttackAnimationSeconds = 0.72
+        elseif source == "corpse_crow" or source == "brood_spider" then
+            self.AttackWindup = 0.24
+            self.AttackAnimationSeconds = 0.46
+        elseif self.AttackRange > 1.5 then
+            self.AttackWindup = 0.48
+            self.AttackAnimationSeconds = 0.8
+        end
+        self.CooldownTimer = 0.15 + _UtilLogic:RandomDouble() * 0.3
     end
 
     method Monster Body()
@@ -71,6 +98,8 @@ script MonsterAttack extends AttackComponent
         local map = self.Entity.CurrentMap
         local aim = _Util:Pos2(target)
         if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
+        self.AttackEpoch = self.AttackEpoch + 1
+        local epoch = self.AttackEpoch
         self.CurrentTarget = target
         self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
         local chase = self.Entity.AIChaseComponent
@@ -84,12 +113,16 @@ script MonsterAttack extends AttackComponent
         if face:Magnitude() < 0.05 then face = Vector2(dx >= 0 and 1 or -1, 0) end
         face = face:Normalize()
         self.Entity.StateComponent:ChangeState("ATTACK")
+        self:WindupFx(face, self.AttackWindup, epoch)
+        if self.DebugCombat then log("[VRF-COMBAT] enemy windup epoch=" .. tostring(epoch)) end
         _TimerService:SetTimerOnce(function()
-            if not isvalid(self.Entity) or body.IsDead or self.Entity.CurrentMap ~= map then return end
+            if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or body.IsDead or self.Entity.CurrentMap ~= map then return end
             local status = body:Status()
             if status ~= nil and status:IsStunned() then return end
             if not self:IsLiveDefender(target) then return end
             if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
+            self.StrikeCount = self.StrikeCount + 1
+            if self.DebugCombat then log("[VRF-COMBAT] enemy active epoch=" .. tostring(epoch)) end
             if self.AttackRange > 1.5 then self:Shoot(aim) return end
             -- 준비 동작을 보고 옆·뒤로 빠지면 피할 수 있게: 지금 몬스터 위치에서 처음 바라본 방향 앞쪽 원
             local reach = math.max(0.4, self.AttackRange * 0.55)
@@ -98,12 +131,60 @@ script MonsterAttack extends AttackComponent
             self:SwingFx(Vector3(center.x, center.y, 0), face)
         end, self.AttackWindup)
         _TimerService:SetTimerOnce(function()
-            if not isvalid(self.Entity) or body.IsDead then return end
+            if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or body.IsDead or self.Entity.CurrentMap ~= map then return end
             local status = body:Status()
             if status ~= nil and status:IsStunned() then return end
             if isvalid(chase) then chase.Enable = resumeChase end
             if self.Entity.StateComponent.CurrentStateName == "ATTACK" then self.Entity.StateComponent:ChangeState("IDLE") end
         end, self.AttackAnimationSeconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelPending()
+        -- 중단한 공격의 지연 타이머는 경직이 풀려도 되살리지 않는다.
+        self.AttackEpoch = self.AttackEpoch + 1
+        self.CancelCount = self.CancelCount + 1
+        self.AttackAnimationUntil = 0
+        self.CurrentTarget = nil
+        self.CooldownTimer = math.max(self.CooldownTimer, 0.35)
+    end
+
+    @ExecSpace("Multicast")
+    method void WindupFx(Vector2 dir, number duration, integer epoch)
+        -- 공격 방향의 짧은 지면 표시. 준비가 끝나면 제거해 실제 궤적과 겹치지 않는다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        if epoch < self.AttackEpoch then return end
+        self:ClearWindup()
+        self.WarningEpoch = epoch
+        local reach = math.max(0.4, self.AttackRange * 0.55)
+        if self.AttackRange > 1.5 then reach = 0.3 end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local pos = Vector3(p.x + dir.x * reach, p.y + dir.y * reach + 0.3, p.z)
+        self.WarningSerial = _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(reach, reach, 1), true, { Color = Color(0.8, 0.35, 0.18, 0.38) })
+        self.WarningTimer = _TimerService:SetTimerOnce(function()
+            self.WarningTimer = 0
+            if self.WarningEpoch == epoch then self:ClearWindup() end
+        end, duration)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string name, any value)
+        -- 공격 중단/새 공격의 epoch가 오면 이전 경고 원도 즉시 제거한다.
+        if name == "AttackEpoch" and self.WarningEpoch >= 0 and self.WarningEpoch ~= value then self:ClearWindup() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearWindup()
+        -- 경고 입자와 제거 타이머를 함께 정리한다.
+        if self.WarningTimer ~= 0 then _TimerService:ClearTimer(self.WarningTimer) self.WarningTimer = 0 end
+        if self.WarningSerial ~= 0 then _ParticleService:RemoveParticle(self.WarningSerial) self.WarningSerial = 0 end
+        self.WarningEpoch = -1
+    end
+
+    method void OnEndPlay()
+        -- 폐기한 적의 판정과 경고가 다음 세션에 남지 않게 한다.
+        if self:IsServer() then self:CancelPending() else self:ClearWindup() end
     end
 
     @ExecSpace("Multicast")

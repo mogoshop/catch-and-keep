@@ -24,6 +24,13 @@ script MonsterTraits extends Component
     property string AppliedTint = ""
     property number FlashUntil = 0           -- 피격 번쩍임 (클라이언트)
     property Color FlashRestore = Color(1, 1, 1, 1)
+    property number PauseUntil = 0
+    property number NextPauseAt = 0
+    property number PauseRestoreRate = 1
+    property number NextContactFxAt = 0
+    property integer ContactCount = 0
+    property integer ContactEffectCount = 0
+    property integer ContactPauseCount = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -165,41 +172,82 @@ script MonsterTraits extends Component
 
     @ExecSpace("Multicast")
     method void HitFx(Vector3 pos, boolean heavy, Entity attacker)
-        -- 붉게 번쩍 + 잠깐 멈춤(타격 정지) + 타격음. 강타면 친 사람 화면만 흔들림 (타격 불꽃은 쓰지 않음: 평타 연출은 휘두르기 궤적만)
+        -- 접촉 섬광/타격음은 명중에만 생성한다. 가벼운 연타로 애니메이션 정지를 연장하지 않는다.
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _SoundService:PlaySoundAtPos(_GameConst.SfxImpact, pos, me, 0.45)
+        self.ContactCount = self.ContactCount + 1
+        local owned = attacker == me
+        local material = "flesh"
+        local body = self.Entity:GetComponent("script.Monster")
+        local source = body ~= nil and body.SourceId or ""
+        if string.find(source, "skel", 1, true) ~= nil then material = "bone"
+        elseif string.find(source, "wraith", 1, true) ~= nil then material = "spirit" end
+        _SoundDirector:PlayContact(material, pos, heavy, owned)
+        local now = _UtilLogic.ElapsedSeconds
+        local color = Color(0.85, 0.48, 0.35, 0.85)
+        if material == "bone" then color = Color(0.9, 0.82, 0.65, 0.85)
+        elseif material == "spirit" then color = Color(0.65, 0.6, 0.95, 0.85) end
+        if now >= self.NextContactFxAt then
+            self.NextContactFxAt = now + 0.06
+            local size = heavy and 0.32 or (owned and 0.22 or 0.14)
+            local serial = _EffectService:PlayEffect(_GameConst.FxHit, self.Entity, pos, 0, Vector3(size, size, 1), false, { PlayRate = 1.8, Color = color })
+            if serial ~= 0 then self.ContactEffectCount = self.ContactEffectCount + 1 end
+        end
         local sprite = self.Entity.SpriteRendererComponent
         if isvalid(sprite) then
             if self.FlashUntil <= 0 then self.FlashRestore = sprite.Color end
-            self.FlashUntil = _UtilLogic.ElapsedSeconds + 0.1
-            sprite.Color = Color(1, 0.35, 0.35, self.FlashRestore.a)
-            sprite.PlayRate = 0
+            self.FlashUntil = now + 0.09
+            sprite.Color = Color(color.r, color.g, color.b, self.FlashRestore.a)
+            if now >= self.NextPauseAt and self.PauseUntil <= 0 then
+                self.ContactPauseCount = self.ContactPauseCount + 1
+                self.PauseRestoreRate = sprite.PlayRate
+                self.PauseUntil = now + (heavy and 0.055 or 0.025)
+                self.NextPauseAt = now + 0.16
+                sprite.PlayRate = 0
+            end
         end
-        if heavy and attacker == me then
-            local cam = _CameraService:GetCurrentCameraComponent()
-            if isvalid(cam) then cam:ShakeCamera(0.12, 0.15) end
+        if owned then
+            local attack = me:GetComponent("script.PlayerAttack")
+            if attack ~= nil then attack:ContactPause(heavy) end
+            if heavy then
+                local cam = _CameraService:GetCurrentCameraComponent()
+                if isvalid(cam) then cam:ShakeCamera(0.07, 0.07) end
+            end
         end
     end
 
     @ExecSpace("ClientOnly")
     method void FlashTick()
-        -- 0.06초 뒤 애니메이션 재개, 0.1초 뒤 원래 색 (색조가 그 사이 바뀌었으면 새 색조)
-        if self.FlashUntil <= 0 then return end
+        -- 색과 재생 속도의 복구 시간을 분리한다. 연타는 속도 복구를 뒤로 미루지 않는다.
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) then return end
         local now = _UtilLogic.ElapsedSeconds
-        if now >= self.FlashUntil - 0.04 then sprite.PlayRate = 1 end
-        if now < self.FlashUntil then return end
+        if self.PauseUntil > 0 and now >= self.PauseUntil then
+            if sprite.PlayRate == 0 then sprite.PlayRate = self.PauseRestoreRate end
+            self.PauseUntil = 0
+        end
+        if self.FlashUntil <= 0 or now < self.FlashUntil then return end
         self.FlashUntil = 0
         sprite.Color = self.FlashRestore
         self.AppliedTint = ""
     end
 
     @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 종료 시 타격 정지와 임시 색을 남기지 않는다.
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then
+            if self.PauseUntil > 0 and sprite.PlayRate == 0 then sprite.PlayRate = self.PauseRestoreRate end
+            if self.FlashUntil > 0 then sprite.Color = self.FlashRestore end
+        end
+        self.PauseUntil = 0
+        self.FlashUntil = 0
+    end
+
+    @ExecSpace("ClientOnly")
     method void TintTick()
         -- 동기화된 색조가 바뀌었을 때만 칠한다 (늦게 들어온 클라이언트 포함)
-        if self.TintSync == self.AppliedTint then return end
+        if self.FlashUntil > 0 or self.TintSync == self.AppliedTint then return end
         self.AppliedTint = self.TintSync
         local r, g, b = string.match(self.TintSync, "([%d%.]+),([%d%.]+),([%d%.]+)")
         local sprite = self.Entity.SpriteRendererComponent

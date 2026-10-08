@@ -41,10 +41,13 @@ script PlayerVitals extends Component
         if self.Dying then return end
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.InvincibleSeconds
         self:CheckDeath()
-        if not self.Dying then self.Entity.StateComponent:ChangeState("HIT") end
-        -- 맞은 사람 화면만 흔들림·소리 (피해가 클수록 세게)
+        -- 큰 피해만 준비 중 공격을 끊는다. 가벼운 피해는 예약 타격과 조작을 유지한다.
         local pc = self.Entity.PlayerComponent
         local ratio = event.TotalDamage / math.max(1, pc.MaxHp)
+        if not self.Dying and ratio >= 0.15 then
+            local attack = self.Entity:GetComponent("script.PlayerAttack")
+            if attack ~= nil then attack:InterruptSwing(0.18) end
+        end
         self:HitFeel(ratio, pc.UserId)
     end
 
