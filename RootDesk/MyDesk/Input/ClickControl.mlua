@@ -17,6 +17,7 @@ script ClickControl extends Component
     property boolean PendingControllerRestore = false
     property boolean Moving = false
     property integer TimerId = 0
+    property integer TimerGeneration = 0
     property boolean DebugLog = false
     property number LastTick = 0
 
@@ -148,22 +149,40 @@ script ClickControl extends Component
     method void OnBeginPlay()
         -- OnUpdate에서 속도를 넣으면 같은 프레임에 기본 PlayerController가 0으로 덮어쓴다.
         -- 타이머 콜백은 그 뒤에 실행되므로 1/60초 반복 타이머로 진행한다 (메이커에서 확인)
+        self:StopInputTimer()
+        local generation = self.TimerGeneration
         self.LastTick = _UtilLogic.ElapsedSeconds
-        self.TimerId = _TimerService:SetTimerRepeat(function()
+        self.TimerId = _TimerService:SetTimer(self, function()
+            if not isvalid(self) or not isvalid(self.Entity) then return end
+            if generation ~= self.TimerGeneration then return end
             local now = _UtilLogic.ElapsedSeconds
             local delta = now - self.LastTick
             self.LastTick = now
             self:Tick(delta)
-        end, 1 / 60)
+        end, 1 / 60, true)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        -- 컨트롤러·대상 정리보다 먼저 반복 작업을 끊어 종료 순서에 의한 누수를 막는다.
+        self:StopInputTimer()
         if isvalid(self.Entity) and self.Entity == _UserService.LocalPlayer then
             self:Cancel()
             self:ReleaseWindowControl()
             self:RestoreController()
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnDestroy()
+        -- 종료와 파괴가 연이어 와도 같은 타이머를 두 번 정리하지 않는다.
+        self:StopInputTimer()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopInputTimer()
+        -- 재초기화·종료 뒤 늦게 도착한 이전 콜백도 더 이상 입력을 처리하지 않는다.
+        self.TimerGeneration = self.TimerGeneration + 1
         if self.TimerId ~= 0 then
             _TimerService:ClearTimer(self.TimerId)
             self.TimerId = 0

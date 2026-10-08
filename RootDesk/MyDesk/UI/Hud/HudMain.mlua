@@ -267,41 +267,80 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderTip(Entity player, PlayerStats st)
-        -- 첫 진입 안내: 의뢰 받기 → 스킬 배우기 → 사냥터로 (해당하는 것 하나만)
+        -- 현재 단계의 다음 행동 하나만 안내하고 대화·보상 연출 중에는 숨긴다.
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
-        local tip = ""
-        local inTown = _GameConst:IsTown(player.CurrentMap)
-        if quest ~= nil and quest.Index == 1 and quest.State == 0 and inTown then
-            tip = "사제 오렌(미니맵 의뢰 아이콘, 머리 위 표시)에게 다가가 의뢰를 받으세요"
-        elseif book ~= nil and st.SkillPoints > 0 and book:GetLevel("raise_skeleton") <= 0 and book:GetLevel("bone_shard") <= 0 then
-            tip = "스킬 포인트가 있습니다 — 메뉴의 스킬(K)에서 「해골 전사」나 「골편 투척」을 배우세요"
-        elseif inTown and st.Level <= 2 and quest ~= nil and quest.State == 1 then
-            tip = "미니맵의 출구 표시로 나가 사냥터로 가세요"
-        elseif not inTown and quest ~= nil and quest.Index == 1 and quest.State == 1 and book ~= nil then
-            tip = self:FirstQuestTip(player, book)
-        end
+        local tip = self:JourneyTip(player, st, quest, book)
         _UIKit:SetEnabled("Tip", tip ~= "" and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds)
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
     end
 
     @ExecSpace("ClientOnly")
+    method string JourneyTip(Entity player, PlayerStats st, PlayerQuest quest, SkillBook book)
+        -- 의뢰의 수락→습득→배치→소환→보고→첫 장비를 실제 저장 상태에서 이어 준다.
+        if not _Util:IsAlive(player) or quest == nil then return "" end
+        local inTown = _GameConst:IsTown(player.CurrentMap)
+        if quest.State == 2 then
+            return inTown and "목표 달성 — 사제 오렌에게 보고하고 보상을 받으세요" or "목표 달성 — 잿불 야영지로 돌아가 사제 오렌에게 보고하세요"
+        end
+        if quest.Index == 1 then
+            if quest.State == 0 then
+                return inTown and "사제 오렌(미니맵 의뢰 아이콘)에게 다가가 첫 의뢰를 받으세요" or "잿불 야영지의 사제 오렌에게 첫 의뢰를 받으세요"
+            end
+            if book ~= nil then return self:FirstQuestTip(player, book) end
+        elseif quest.Index == 2 and quest.State == 0 and inTown then
+            ---@type PlayerInventory
+            local inv = player:GetComponent("script.PlayerInventory")
+            local first = _QuestData:Get(1)
+            local reward = first ~= nil and string.match("," .. first.reward, ",item:([^,]+)") or nil
+            if inv ~= nil and reward ~= nil then
+                -- 이미 다른 등불을 착용했으면 교체를 강요하지 않는다. 보유한 첫 보상에만 안내한다.
+                local eq = inv:GetEquipMap()
+                local rewardSlot = _ItemData:GetSlot(reward)
+                if eq[rewardSlot] == nil or eq[rewardSlot] == "" then
+                    for _, item in ipairs(inv:GetBagList()) do
+                        if _ItemData:Parse(item).base == _ItemData:Parse(reward).base then
+                            return "메뉴 → 소지품에서 보상 등불을 장착하세요 — 새로 부르는 소환수가 강해집니다"
+                        end
+                    end
+                end
+            end
+            return "사제 오렌에게 다음 의뢰를 받으세요 — 썩은 갈대 늪으로 여정이 이어집니다"
+        end
+        return ""
+    end
+
+    @ExecSpace("ClientOnly")
     method string FirstQuestTip(Entity player, SkillBook book)
-        -- 첫 의뢰(해골 전사 일으키기) 진행 안내: 혼이 근처에 있으면 바로 쓸 키를, 없으면 할 일을
+        -- 다른 스킬을 먼저 배웠어도 현재 포인트·슬롯·마나에 맞는 행동을 안내한다.
+        ---@type PlayerStats
+        local st = player:GetComponent("script.PlayerStats")
+        if st == nil then return "" end
+        local pc = Environment:IsPCPlatform()
+        local skillMenu = pc and "스킬(K)" or "메뉴 → 스킬"
         if book:GetLevel("raise_skeleton") <= 0 then
-            if book:GetLevel("bone_shard") > 0 then return "레벨 2가 되면 스킬(K)에서 「해골 전사」를 배울 수 있습니다" end
-            return "스킬(K)에서 「해골 전사」를 배우세요"
+            local reason = book:CanLearn("raise_skeleton", st.Level, st.SkillPoints)
+            if reason == "" then return skillMenu .. "에서 「해골 전사」를 배우세요 — 첫 의뢰에 필요합니다" end
+            if st.SkillPoints <= 0 then return "황무지에서 적을 처치해 레벨을 올리세요 — 다음 스킬 포인트로 「해골 전사」 습득" end
+            return "「해골 전사」 습득 조건: " .. reason .. " — " .. skillMenu .. "에서 확인하세요"
         end
         local key = ""
-        local keys = { "A", "S", "D", "F", "우클릭" }
-        for i = 1, 5 do
-            if book:GetSlotSkill(i) == "raise_skeleton" then key = Environment:IsPCPlatform() and (keys[i] .. " 키") or "스킬 칸" end
+        local keys = { "A 키", "S 키", "D 키", "F 키", "우클릭" }
+        for i = 1, (pc and 5 or 4) do
+            if book:GetSlotSkill(i) == "raise_skeleton" then
+                key = pc and keys[i] or ("스킬 " .. tostring(i) .. "번")
+                break
+            end
         end
-        if key == "" then return "「해골 전사」를 스킬 칸에 넣으세요 (칸을 누르면 고를 수 있습니다)" end
+        if key == "" then return skillMenu .. "에서 「해골 전사」를 스킬 1~4번 칸에 지정하세요" end
+        if _GameConst:IsTown(player.CurrentMap) then return "미니맵의 황무지 출구로 나가세요 — 지옥견을 쓰러뜨리고 혼으로 해골 소환" end
+        if st.Mana < book:GetManaCost("raise_skeleton", book:GetLevel("raise_skeleton")) then
+            return "소환할 마나가 부족합니다 — 마나 회복을 기다리거나 파란 물약을 사용하세요"
+        end
         if _UndeadSystem:FindSoul(player, _Util:Pos2(player), 5) ~= nil then
-            return "혼이 남았습니다! 혼 가까이에서 「해골 전사」(" .. key .. ")를 쓰세요"
+            return "혼이 남았습니다 — 가까이 다가가 혼을 조준하고 「해골 전사」(" .. key .. ") 사용"
         end
         return "지옥견을 쓰러뜨리면 혼이 남습니다 — 그 혼으로 해골 전사를 일으키세요"
     end
