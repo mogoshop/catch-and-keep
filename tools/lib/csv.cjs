@@ -25,6 +25,7 @@ function parse(text) {
       row = [];
     } else cell += ch;
   }
+  if (quoted) throw new Error("CSV 따옴표가 닫히지 않았습니다");
   if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
   return rows;
 }
@@ -33,7 +34,15 @@ function parse(text) {
 function load(name) {
   const rows = parse(fs.readFileSync(path.join(DATA_DIR, name + ".csv"), "utf8"));
   const header = rows.shift();
-  return rows.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] === undefined ? "" : r[i]])));
+  if (!header || header.some((h) => h === "") || new Set(header).size !== header.length) {
+    throw new Error(name + ".csv: 비어 있거나 중복된 열 이름");
+  }
+  return rows.map((r, index) => {
+    if (r.length !== header.length) {
+      throw new Error(`${name}.csv: 데이터 ${index + 1}행의 열 ${r.length}개, 헤더 ${header.length}개 — 쉼표가 든 칸은 따옴표로 감싸세요`);
+    }
+    return Object.fromEntries(header.map((h, i) => [h, r[i]]));
+  });
 }
 
 function num(v, fallback = 0) {

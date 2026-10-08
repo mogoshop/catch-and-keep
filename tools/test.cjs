@@ -33,6 +33,7 @@ function tool(script, args) {
   return [r.status === 0, r.status === 0 ? last : out];
 }
 
+step("CSV 파서 회귀 검사", () => tool("test_csv.cjs"));
 step("생성 데이터 최신", () => tool("gen_data.cjs", ["--check"]));
 step("데이터 무결성", () => tool("check_data.cjs"));
 step("스크립트 참조", () => tool("check_scripts.cjs"));
