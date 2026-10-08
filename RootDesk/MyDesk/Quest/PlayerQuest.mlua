@@ -60,7 +60,15 @@ script PlayerQuest extends Component
         if q == nil then return end
         self.State = 1
         self.Progress = 0
-        _Util:Notify("새 의뢰 「" .. q.title .. "」 — 퀘스트 창(Q)에서 볼 수 있다", pc.UserId)
+        self:NotifyAccepted(q.title, pc.UserId)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyAccepted(string title)
+        -- 의뢰를 받은 본인에게 기기에 맞는 다음 행동을 안내한다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local shortcut = Environment:IsMobilePlatform() and "메뉴 → 의뢰" or "퀘스트 창(Q)"
+        _UXFeedback:Show("새 의뢰 · " .. title, "우측 목표를 따라가세요\n" .. shortcut .. "에서 자세히 보기", _GameData:GetUiIcon("icon_quest"))
     end
 
     @ExecSpace("Server")

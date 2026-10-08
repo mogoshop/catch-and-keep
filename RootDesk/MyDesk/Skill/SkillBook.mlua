@@ -66,6 +66,7 @@ script SkillBook extends Component
 
     @ExecSpace("Server")
     method void RequestLearn(string id)
+        -- 서버가 승인한 투자만 결과와 실제 배정 칸을 소유자에게 알린다.
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId then return end
         ---@type PlayerStats
@@ -81,6 +82,76 @@ script SkillBook extends Component
         self.Levels[id] = self:GetLevel(id) + 1
         if first then self:AutoSlot(id) end
         self:RefreshDigest()
+        local slot = 0
+        for i = 1, 5 do if self:GetSlotSkill(i) == id then slot = i break end end
+        self:NotifyLearned(id, self:GetLevel(id), self:GetRankSummary(id, self:GetLevel(id)), slot, pc.UserId)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyLearned(string id, integer level, string after, integer slot)
+        -- RPC 인자로 투자 결과를 받아 동기화 문자열 도착 순서와 무관하게 표시한다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local def = _SkillData:Get(id)
+        if def == nil then return end
+        local detail = after
+        local hint = ""
+        if def.kind == "passive" then
+            hint = "자동 적용"
+            if id == "skeleton_mastery" or id == "command_mastery" then hint = "다음 소환부터 적용" end
+        elseif slot > 0 then
+            local keys = { "A", "S", "D", "F", "우클릭" }
+            hint = keys[slot] .. " 배정"
+            if Environment:IsMobilePlatform() then hint = slot == 5 and "큰 버튼 배정" or (tostring(slot) .. "번 칸 배정") end
+        else hint = "슬롯 버튼으로 사용할 칸을 선택하세요" end
+        if id == "raise_skeleton" or id == "raise_mage" or id == "revive" then
+            if level == 1 and slot > 0 then hint = hint .. " · 처치 후 혼에 사용"
+            elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
+        end
+        if detail ~= "" then detail = detail .. "\n" end
+        _UXFeedback:Show((level == 1 and "새 스킬 · " or "스킬 강화 · ") .. def.name .. " Lv" .. tostring(level), detail .. hint, def.icon)
+    end
+
+    method number GetEffectPower(string id, integer level)
+        -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치. 기존 전투 공식을 유지한다.
+        if level <= 0 then return 0 end
+        if id == "bone_shard" then return 10 + 6 * (level - 1) end
+        if id == "poison_mist" then return 4 + 2 * level end
+        if id == "corpse_blast" then return 30 + 12 * (level - 1) end
+        if id == "soul_drain" then return 15 + 8 * level end
+        if id == "bone_storm" then return 8 + 4 * level end
+        if id == "mark_weakness" then return 30 + 3 * level end
+        if id == "enfeeble" then return 35 end
+        return 0
+    end
+
+    method string GetRankSummary(string id, integer level)
+        -- 효과 비교용 짧은 요약. 피해는 대상 저항·등급 보정 전, 소환수는 다음 소환 기준이다.
+        if level <= 0 then return "" end
+        local def = _SkillData:Get(id)
+        if def == nil or not def.impl then return "" end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return "" end
+        if id == "raise_skeleton" or id == "raise_mage" then
+            local kind = id == "raise_skeleton" and "skeleton" or "mage"
+            local values = _UndeadSystem:GetBaseStats(kind, level, self:GetLevel("skeleton_mastery"))
+            local equip = math.max(0.1, 1 + stats.BonusMinionPct / 100)
+            return string.format("최대 %d기 · 공격 %d · 생명 %d", _UndeadSystem:CountFor(level), math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip)))
+        end
+        if id == "skeleton_mastery" then return string.format("해골 공격·생명 +%g%%", _GameData.skeletonMasteryPct * level) end
+        if id == "extract_mastery" then return string.format("추출 확률 +%g%%p", _GameData.extractMasteryPerLv * level * 100) end
+        if id == "revive" then return string.format("최대 %d기 · %g초 유지", _UndeadSystem:ReviveCountFor(level), _GameData.reviveSeconds) end
+        local power = self:GetEffectPower(id, level)
+        if id == "mark_weakness" then return string.format("받는 피해 +%g%% · 8초", power) end
+        if id == "enfeeble" then return string.format("적 공격력 -%g%% · 8초", power) end
+        if power > 0 then
+            local label = "기준 피해"
+            if id == "poison_mist" then label = "초당 기준 피해"
+            elseif id == "corpse_blast" then label = "일반 혼 기준 피해"
+            elseif id == "bone_storm" then label = "0.5초당 기준 피해" end
+            return label .. " " .. string.format("%.1f", power * (1 + stats:GetSpellPowerPct() / 100))
+        end
+        return ""
     end
 
     @ExecSpace("Server")
@@ -224,7 +295,7 @@ script SkillBook extends Component
                 accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, complete, canCommit)
             else
                 local effects = self.Entity:GetComponent("script.SkillEffects")
-                if effects ~= nil then accepted = effects:BoneShard(me, target, (10 + 6 * (lv - 1)) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit) end
+                if effects ~= nil then accepted = effects:BoneShard(me, target, self:GetEffectPower(id, lv) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit) end
             end
             if not accepted then complete(false) end
             return accepted
