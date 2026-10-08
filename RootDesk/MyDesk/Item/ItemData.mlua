@@ -360,12 +360,24 @@ script ItemData extends Logic
 
     method string ModsText(string mods)
         local parts = {}
-        for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do table.insert(parts, self:StatName(k) .. "+" .. v) end
+        for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do table.insert(parts, self:StatValueText(k, tonumber(v) or 0)) end
         return table.concat(parts, " ")
     end
 
+    method string StatValueText(string key, number value)
+        -- 퍼센트는 값 뒤에 두고 소수 능력치를 버리지 않는다.
+        local label = self:StatName(key)
+        if key == "minion" then label = "소환수 공격·생명 %" end
+        local percent = string.find(label, "%", 1, true) ~= nil
+        label = string.gsub(label, "%s*%%", "")
+        local amount = string.format("%.2f", math.abs(value))
+        amount = string.gsub(amount, "0+$", "")
+        amount = string.gsub(amount, "%.$", "")
+        return label .. " " .. (value < 0 and "-" or "+") .. amount .. (percent and "%" or "")
+    end
+
     method string CompareText(string newS, string oldS)
-        -- 착용 중인 장비와 비교: 늘어나는 능력치 초록, 줄어드는 능력치 빨강 (같은 값은 생략). oldS ""는 빈 칸
+        -- 변화한 능력치를 한 줄씩 표시한다. 작은 재생 옵션도 비교에서 누락하지 않는다.
         local a = self:GetTotalMods(newS)
         local b = {}
         if oldS ~= "" then b = self:GetTotalMods(oldS) end
@@ -377,15 +389,40 @@ script ItemData extends Logic
         local parts = {}
         for _, k in ipairs(keys) do
             local d = (a[k] or 0) - (b[k] or 0)
-            if math.abs(d) >= 0.5 then
-                local v = tostring(math.floor(math.abs(d) + 0.5))
-                if d > 0 then table.insert(parts, "<color=#5AE65A>" .. self:StatName(k) .. " +" .. v .. "</color>")
-                else table.insert(parts, "<color=#FF6464>" .. self:StatName(k) .. " -" .. v .. "</color>") end
+            if math.abs(d) >= 0.005 then
+                local color = d > 0 and "#5AE65A" or "#FF6464"
+                table.insert(parts, "<color=" .. color .. ">" .. self:StatValueText(k, d) .. "</color>")
             end
         end
-        local head = oldS == "" and "빈 칸에 착용하면: " or "착용 중인 것과 비교: "
-        if #parts == 0 then return head .. "변화 없음" end
-        return head .. table.concat(parts, "  ")
+        local head = oldS == "" and "빈 칸에 착용하면:" or "착용 중인 것과 비교:"
+        if #parts == 0 then return head .. " 변화 없음" end
+        return head .. "\n" .. table.concat(parts, "\n")
+    end
+
+    method string DescribeDetailed(string s)
+        -- 인벤토리의 넓은 설명 영역은 이름·옵션·소켓을 구분해 읽게 한다.
+        local item = self:Parse(s)
+        local name = self:DisplayName(s)
+        if self:IsRune(item.base) then
+            local rune = self:GetRune(item.base)
+            if rune == nil then return name end
+            return name .. "\n무기에 삽입: " .. self:ModsText(rune.weapon)
+                .. "\n방어구에 삽입: " .. self:ModsText(rune.armor)
+                .. "\n등불에 삽입: " .. self:ModsText(rune.lamp)
+        end
+        local base = self:GetBase(item.base)
+        if base ~= nil and base.reqLv > 1 then name = name .. " · 요구 레벨 " .. tostring(base.reqLv) end
+        local total = self:GetTotalMods(s)
+        local keys = {}
+        for key, _ in pairs(total) do table.insert(keys, key) end
+        table.sort(keys)
+        local lines = { name }
+        for _, key in ipairs(keys) do table.insert(lines, self:StatValueText(key, total[key])) end
+        if item.sockets > 0 then table.insert(lines, "소켓 " .. tostring(#item.runes) .. "/" .. tostring(item.sockets)) end
+        -- 기존 세트 설명도 보존한다. 간단한 상점·전리품 이름표 형식은 유지한다.
+        local extra = string.match(self:Describe(s), "\n(.*)")
+        if extra ~= nil then table.insert(lines, extra) end
+        return table.concat(lines, "\n")
     end
 
     method string Describe(string s)

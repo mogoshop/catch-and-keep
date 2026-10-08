@@ -165,6 +165,19 @@ script PlayerInventory extends Component
         if old ~= nil then table.insert(self.Bag, old) end
         self:RefreshDigest()
         self:ApplyEquipment()
+        self:NotifyEquipped(slot, old or "", s, userId)
+    end
+
+    @ExecSpace("Client")
+    method void NotifyEquipped(string slot, string before, string after)
+        -- 실제 서버 장착이 끝난 소유자에게만 이미지와 결과를 알린다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local detail = _ItemData:DisplayName(after)
+        if (_ItemData:GetTotalMods(after).minion or 0) ~= 0 then
+            detail = detail .. "\n소환수 강화는 다음 소환부터 적용됩니다."
+        end
+        _UXFeedback:Show("장비 장착", detail, _ItemData:IconFor(after))
+        _InventoryWindow:OnEquipped(slot, before, after)
     end
 
     @ExecSpace("Server")

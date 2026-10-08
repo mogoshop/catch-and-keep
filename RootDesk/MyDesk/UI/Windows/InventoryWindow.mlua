@@ -16,6 +16,9 @@ script InventoryWindow extends Logic
     property integer TimerId = 0
     property boolean PreviewSelection = true
     property string PreviewKey = ""
+    property string EquipResultSlot = ""
+    property string EquipResultBefore = ""
+    property string EquipResultAfter = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -68,10 +71,14 @@ script InventoryWindow extends Logic
         if inv == nil or st == nil or belt == nil then return end
         local list = inv:GetBagList()
         local eq = inv:GetEquipMap()
+        if self.EquipResultSlot ~= "" and eq[self.EquipResultSlot] == self.EquipResultAfter then
+            self.SelectedEquipSlot = self.EquipResultSlot
+            self.SelectedEquipItem = self.EquipResultAfter
+        end
         self:ValidateSelection(list, eq)
         self:RenderAppearance(eq, list[self.Selected] or "")
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
-        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot)}, "#")
+        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
@@ -92,13 +99,19 @@ script InventoryWindow extends Logic
         local sel = list[self.Selected]
         if self.SelectedEquipSlot ~= "" then
             local worn = eq[self.SelectedEquipSlot]
-            desc = "<color=#C8A050>현재 착용 중</color>\n" .. _ItemData:Describe(worn) .. self:SummonHint(worn)
+            desc = "<color=#C8A050>현재 착용 중</color>\n" .. _ItemData:DescribeDetailed(worn) .. self:SummonHint(worn)
+            if self.EquipResultSlot == self.SelectedEquipSlot and worn == self.EquipResultAfter then
+                local change = _ItemData:CompareText(worn, self.EquipResultBefore)
+                change = string.gsub(change, "착용 중인 것과 비교:", "이번 장착 변화:")
+                change = string.gsub(change, "빈 칸에 착용하면:", "이번 장착 변화:")
+                desc = "<color=#E0B87A>장착 완료</color>\n" .. _ItemData:DescribeDetailed(worn) .. self:SummonHint(worn) .. "\n\n" .. change
+            end
             label = "해제"
             allowed = #list < inv.BagSize
             if not allowed then desc = desc .. "\n<color=#FF6464>가방이 가득 차 해제할 수 없습니다.</color>" end
         elseif sel ~= nil then
             sell = true
-            desc = _ItemData:Describe(sel) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
+            desc = _ItemData:DescribeDetailed(sel) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
             if _ItemData:IsRune(_ItemData:Parse(sel).base) then
                 label = "룬 끼우기"
                 desc = desc .. "\n장비 칸을 골라 삽입 후 효과를 확인하세요."
@@ -204,6 +217,20 @@ script InventoryWindow extends Logic
         self.RenderKey = ""
         self.PreviewSelection = true
         self.PreviewKey = ""
+        self.EquipResultSlot = ""
+        self.EquipResultBefore = ""
+        self.EquipResultAfter = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEquipped(string slot, string before, string after)
+        -- 서버 장착 성공 응답 후 착용 칸과 변화량을 남긴다. 뒤늦은 응답이 새 선택을 빼앗지 않는다.
+        if not _UIKit:IsOpen(self.Win) or self.Selected > 0 or self.SelectedEquipSlot ~= "" then return end
+        self:ClearSelection()
+        self.EquipResultSlot = slot
+        self.EquipResultBefore = before
+        self.EquipResultAfter = after
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
