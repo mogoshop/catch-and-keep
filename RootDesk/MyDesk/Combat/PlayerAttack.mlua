@@ -40,6 +40,10 @@ script PlayerAttack extends AttackComponent
     property number ContactPauseUntil = 0
     property number NextContactPauseAt = 0
     property number ContactRestoreRate = 1
+    property boolean ResolvingBasicStrike = false
+    property integer BasicContactHits = 0
+    property boolean BasicContactHeavy = false
+    property integer BasicContactFeedbackCount = 0
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
     @ExecSpace("ServerOnly")
@@ -242,6 +246,27 @@ script PlayerAttack extends AttackComponent
         if self.DebugCombat then log("[VRF-COMBAT] accepted melee motion replay=" .. tostring(replay) .. " rate=" .. tostring(rate)) end
     end
 
+    @ExecSpace("ServerOnly")
+    method void RegisterBasicContact(boolean heavy)
+        -- Monster의 실제 HitEvent에서만 호출한다. 스킬·빗나감은 평타 정지를 만들지 않는다.
+        if not self.ResolvingBasicStrike then return end
+        self.BasicContactHits = self.BasicContactHits + 1
+        self.BasicContactHeavy = self.BasicContactHeavy or heavy
+    end
+
+    @ExecSpace("Client")
+    method void PresentBasicContact(boolean heavy, integer hitCount, string mapId)
+        -- 소유자만 한 번 반응하며, 맵을 옮긴 뒤 도착한 이전 맵의 명중은 버린다.
+        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) or self.Entity.CurrentMap.Id ~= mapId then return end
+        self.BasicContactFeedbackCount = self.BasicContactFeedbackCount + 1
+        self:ContactPause(heavy)
+        if heavy then
+            local cam = _CameraService:GetCurrentCameraComponent()
+            if isvalid(cam) then cam:ShakeCamera(0.07, 0.07) end
+        end
+        if self.DebugCombat then log("[VRF-CONTACT] basic hits=" .. tostring(hitCount) .. " heavy=" .. tostring(heavy)) end
+    end
+
     @ExecSpace("ClientOnly")
     method void ContactPause(boolean heavy)
         -- 공격자 자신의 아바타만 짧게 멈춘다. 이동/판정/다른 유저의 시간은 바꾸지 않는다.
@@ -370,7 +395,16 @@ script PlayerAttack extends AttackComponent
         local me = _Util:Pos2(self.Entity)
         local center = me + Vector2(0, 0.2) + dir * self.RangeOffsetX
         local angle = math.deg(math.atan(dir.y, dir.x))
+        -- 실제 피해 이벤트만 모아 한 번의 베기에 한 번만 공격자 피드백을 보낸다.
+        local mapId = self.Entity.CurrentMap.Id
+        self.BasicContactHits = 0
+        self.BasicContactHeavy = false
+        self.ResolvingBasicStrike = true
         self:AttackFast(BoxShape(center, self.RangeSize, angle), "player.basic", nil)
+        self.ResolvingBasicStrike = false
+        if self.BasicContactHits > 0 then
+            self:PresentBasicContact(self.BasicContactHeavy, self.BasicContactHits, mapId, self.Entity.PlayerComponent.UserId)
+        end
         self:PlaySwing(Vector3(center.x, center.y, 0), dir)
     end
 
