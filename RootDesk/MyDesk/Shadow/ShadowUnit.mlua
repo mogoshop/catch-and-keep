@@ -22,6 +22,14 @@ script ShadowUnit extends AttackComponent
     property number SidestepUntil = 0
     property integer SidestepSide = 1
     property Vector2 FormationOffset = Vector2(0, -0.8)
+    property integer FormationIndex = 0
+    property Vector2 OwnerLastPos = Vector2(0, 0)
+    property Vector2 OwnerFacing = Vector2(1, 0)
+    property integer AttackEpoch = 0
+    property integer StrikeTimer = 0
+    property integer StrikeCount = 0
+    property number BackpedalUntil = 0
+    property number NextBackpedalAt = 0
 
     property number AttackRange = 0.8
     property number AttackRadius = 0.6
@@ -99,6 +107,8 @@ script ShadowUnit extends AttackComponent
         -- ShadowCommander가 스폰 직후 호출한다. 스폰 직후에는 같은 컴포넌트의 다른 메서드를 부르면
         -- nil(LEA-2011)이 날 수 있어 값만 저장하고, 스프라이트는 첫 OnUpdate에서 지정한다
         self.OwnerPlayer = ownerPlayer
+        self.OwnerLastPos = _Util:Pos2(ownerPlayer)
+        self.OwnerFacing = Vector2(ownerPlayer.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
         self.ShadowId = shadowId
         self.Atk = atk
         self.MaxHp = maxHp
@@ -139,7 +149,7 @@ script ShadowUnit extends AttackComponent
         -- 집결: 일정 시간 적을 무시하고 주인에게 모인다
         self.RallyTimer = seconds
         self.Target = nil
-        self.AttackAnimationUntil = 0
+        self:CancelPendingAttack()
         self:ClearProjectiles()
     end
 
@@ -162,7 +172,7 @@ script ShadowUnit extends AttackComponent
         if self.Moving and (myPos - self.LastMovePos):Magnitude() < 0.02 then self.StuckSeconds = self.StuckSeconds + delta else self.StuckSeconds = 0 end
         self.LastMovePos = myPos
         local o = self.OwnerPlayer.TransformComponent.WorldPosition
-        local slot = Vector2(o.x + self.FormationOffset.x, o.y + self.FormationOffset.y)
+        local slot = self:FormationSlot(Vector2(o.x, o.y))
         local toSlot = slot - myPos
         if toSlot:Magnitude() > self.LeashDistance then
             -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
@@ -185,6 +195,19 @@ script ShadowUnit extends AttackComponent
             if toTarget:Magnitude() > self.AttackRange or not _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, Vector2(t.x, t.y)) then
                 self:MoveToward(toTarget)
             else
+                -- 마법사는 닿는 적에게서 물러나 전사의 뒤에서 쏜다. 벽 앞에서는 공격을 포기하지 않는다.
+                local safeRange = math.min(2.2, self.AttackRange * 0.55)
+                local retreat = toTarget * -1
+                if self.Kind == "mage" and toTarget:Magnitude() < safeRange and retreat:Magnitude() > 0.05
+                    and (_Util:Pos2(self.OwnerPlayer) - myPos):Magnitude() < 6
+                    and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, myPos + retreat:Normalize() * 0.6) then
+                    local now = _UtilLogic.ElapsedSeconds
+                    if now >= self.NextBackpedalAt then
+                        self.BackpedalUntil = now + 0.35
+                        self.NextBackpedalAt = now + 1.2
+                    end
+                    if now < self.BackpedalUntil then self:MoveToward(retreat) return end
+                end
                 self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
                     self.AttackTimer = self.AttackCooldown / self:AuraMult("haste")
@@ -202,12 +225,47 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method Vector2 FormationSlot(Vector2 ownerPos)
+        -- 전사는 진행 방향 앞, 마법사는 뒤로 선다. 이동/공격 방향을 따라 대형도 회전한다.
+        if self.Kind == "shadow" then return ownerPos + self.FormationOffset end
+        local moved = ownerPos - self.OwnerLastPos
+        self.OwnerLastPos = ownerPos
+        local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
+        if moved:Magnitude() > 0.015 and moved:Magnitude() < 2 then self.OwnerFacing = moved:Normalize()
+        elseif attack ~= nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1 then self.OwnerFacing = attack.CombatDirection end
+        local forward = self.OwnerFacing
+        if forward:Magnitude() < 0.05 then forward = Vector2(1, 0) else forward = forward:Normalize() end
+        local side = Vector2(-forward.y, forward.x)
+        local row = math.floor(self.FormationIndex / 3)
+        local lane = self.FormationIndex % 3 - 1
+        local depth = 0.95 + row * 0.42
+        if self.Kind == "mage" then depth = -1.2 - row * 0.45 end
+        if self.Kind == "revive" then depth = 0.35 + row * 0.6 end
+        return ownerPos + forward * depth + side * (lane * 0.6)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelPendingAttack()
+        -- 집결/회수/수명 종료 시 이전 준비 동작이 뒤늦게 피해를 주지 않는다.
+        self.AttackEpoch = self.AttackEpoch + 1
+        if self.StrikeTimer ~= 0 then _TimerService:ClearTimer(self.StrikeTimer) self.StrikeTimer = 0 end
+        self.AttackAnimationUntil = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        -- 예약 타격과 소환수 투사체를 함께 정리한다.
+        self:CancelPendingAttack()
+        if isvalid(self.Entity.CurrentMap) then self:ClearProjectiles() end
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean IsLiveTarget(Entity e)
         -- 살아 있는 추출 대상 몬스터인지
         if not isvalid(e) or not e.Enable or e.CurrentMap ~= self.Entity.CurrentMap then return false end
         ---@type Monster
         local monster = e:GetComponent("script.Monster")
-        return monster ~= nil and not monster.IsDead
+        return monster ~= nil and not monster.IsDead and monster.Hp > 0
     end
 
     @ExecSpace("ServerOnly")
@@ -261,23 +319,29 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void DoAttack(Vector2 myPos, Vector2 toTarget)
+        -- 모션을 시작하고, 실제 접촉 시점에 궤적/소리/피해를 함께 낸다.
         local target = self.Target
         if not self:IsLiveTarget(target) then return end
+        self:CancelPendingAttack()
+        local epoch = self.AttackEpoch
+        local map = self.Entity.CurrentMap
         self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
         if self.AttackRUID ~= "" then self:SetClip(self.AttackRUID) end
-        local dir = toTarget.x >= 0 and 1 or -1
-        if self.AttackRange < 2 then self:SwingFx(Vector3(myPos.x, myPos.y + 0.3, 0), dir) end
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(self.Entity) or self.Dead or self.RallyTimer > 0 or not self:IsLiveTarget(target) then return end
-            if target.CurrentMap ~= self.Entity.CurrentMap then return end
+        self.StrikeTimer = _TimerService:SetTimerOnce(function()
+            self.StrikeTimer = 0
+            if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Dead or self.RallyTimer > 0 or not self:IsLiveTarget(target) then return end
+            if self.Entity.CurrentMap ~= map or target.CurrentMap ~= map or not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= map then return end
             local at = _Util:Pos2(self.Entity)
             local delta = _Util:Pos2(target) - at
             if delta:Magnitude() > self.AttackRange + 0.3 then return end
             if not _Util:HasLineOfSight(self.Entity.CurrentMap, at, _Util:Pos2(target)) then return end
+            self.StrikeCount = self.StrikeCount + 1
             if self.AttackRange >= 2 then
                 self:ShootBolt(_Util:Pos2(target))
             else
-                local center = at + delta:Normalize() * 0.4 + Vector2(0, 0.2)
+                local dir = delta:Magnitude() > 0.05 and delta:Normalize() or Vector2(1, 0)
+                local center = at + dir * 0.4 + Vector2(0, 0.2)
+                self:SwingFx(Vector3(center.x, center.y, 0), dir)
                 self:AttackFast(CircleShape(center, self.AttackRadius), "shadow.basic", nil)
             end
         end, self.AttackWindup)
@@ -331,10 +395,15 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("Multicast")
-    method void SwingFx(Vector3 pos, integer dir)
+    method void SwingFx(Vector3 pos, Vector2 dir)
+        -- 소환수의 작은 궤적은 실제 접촉 방향으로 회전하며 전투 음량 한도를 공유한다.
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, 0, Vector3(0.3, 0.3, 1), false, { FlipX = dir > 0, PlayRate = 1.8 })
+        local right = dir.x >= 0
+        local angle = math.deg(math.atan(dir.y, dir.x))
+        if not right then angle = angle - 180 end
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(0.25, 0.25, 1), false, { FlipX = right, PlayRate = 1.8, Color = Color(0.75, 0.7, 0.8, 0.65) })
+        _SoundDirector:PlayCombat(_GameConst.SfxSwing, pos, 0.12, 0)
     end
 
     @ExecSpace("Multicast")

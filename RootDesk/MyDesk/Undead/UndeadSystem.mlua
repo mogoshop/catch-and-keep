@@ -238,6 +238,12 @@ script UndeadSystem extends Logic
             u:Setup(player, rec.id, rec.atk, rec.hp, rec.stand, rec.move, offset)
             u.Hp = math.min(u.MaxHp, rec.currentHp or rec.hp)
             u.Kind = rec.kind
+            local index = 0
+            for _, other in ipairs(self:ListOf(player)) do
+                if other == rec then break end
+                if other.kind == rec.kind then index = index + 1 end
+            end
+            u.FormationIndex = index
             u.AttackRUID = rec.attack or ""
             unit.TransformComponent.Scale = Vector3(rec.scale or 1, rec.scale or 1, 1)
             u.AttackCooldown = rec.cooldown
@@ -477,7 +483,13 @@ script UndeadSystem extends Logic
         local cmd = player:GetComponent("script.ShadowCommander")
         if cmd == nil then return end
         local n = { skeleton = 0, mage = 0, revive = 0 }
-        for _, rec in ipairs(self:ListOf(player)) do n[rec.kind] = (n[rec.kind] or 0) + 1 end
+        for _, rec in ipairs(self:ListOf(player)) do
+            n[rec.kind] = (n[rec.kind] or 0) + 1
+            if isvalid(rec.entity) then
+                local unit = rec.entity:GetComponent("script.ShadowUnit")
+                if unit ~= nil then unit.FormationIndex = n[rec.kind] - 1 end
+            end
+        end
         local parts = {}
         local sk = self:SkillLevel(player, "raise_skeleton")
         local mg = self:SkillLevel(player, "raise_mage")
