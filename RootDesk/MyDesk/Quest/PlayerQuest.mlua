@@ -106,7 +106,10 @@ script PlayerQuest extends Component
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
             if key == "rune" and _ItemData:GetRune(val) ~= nil then table.insert(items, _ItemData:MakeRuneString(val, lv))
             elseif key == "item" then table.insert(items, val)
-            elseif key == "gen" then table.insert(items, _ItemData:Generate(lv + 2, (tonumber(val) or 0) >= 3 and "boss" or "quest", 300))
+            elseif key == "gen" then
+                -- 발견 확률만 높여서는 희귀 보상이 보장되지 않는다. 옵션도 보장 등급에 맞춰 생성한다.
+                local rare = (tonumber(val) or 0) >= 3
+                table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, rare and "boss" or "quest", 300, rare and 2 or 1))
             elseif key == "skp" then skillPoints = skillPoints + (tonumber(val) or 0)
             elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0) end
         end

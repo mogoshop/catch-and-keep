@@ -170,10 +170,16 @@ script ItemData extends Logic
 
     method string Generate(integer ilvl, string rank, number mf)
         -- 드롭 장비 1개 → 문자열. rank = drop_tables.csv 등급 (normal / elite / champion / unique / boss / gamble / quest)
+        return self:GenerateWithMinimum(ilvl, rank, mf, 0)
+    end
+
+    method string GenerateWithMinimum(integer ilvl, string rank, number mf, integer minimumRarity)
+        -- 의뢰가 약속한 일반·마법·희귀 하한(0~2)을 생성 전에 적용한다. 상위 등급은 보존하고 재추첨하지 않는다.
         local t = self:T()
         local baseId = self:PickBase(ilvl)
         local base = t.Bases[baseId]
         local rarity = self:RollRarity(rank, mf)
+        rarity = math.max(rarity, math.max(0, math.min(2, minimumRarity)))
         if rarity == 4 then
             -- 세트: 아이템 레벨에 맞는 세트 조각 하나 (없으면 레어)
             local piece = self:PickSetPiece(ilvl)
