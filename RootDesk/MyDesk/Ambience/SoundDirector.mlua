@@ -9,6 +9,10 @@ script SoundDirector extends Logic
     property number CombatWindowAt = -99
     property integer CombatVoices = 0
     property table LastCombatSounds = {}
+    property table LastEffects = {}
+    property table PlayedEffects = {}
+    property boolean Running = false
+    property boolean WindPlaying = false
     property integer PlayedCombatCount = 0
     property integer SuppressedCombatCount = 0
 
@@ -21,27 +25,41 @@ script SoundDirector extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        self.Running = true
         self.CurrentMap = nil
         self.CurrentBgm = ""
         self.WindOn = false
         self.CrowsOn = false
         self.LastCombatSounds = {}
+        self.LastEffects = {}
+        self.PlayedEffects = {}
+        self.WindPlaying = false
+        self.PlayedCombatCount = 0
+        self.SuppressedCombatCount = 0
         self.CombatVoices = 0
         self.CombatWindowAt = -99
-        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
+        self.TimerId = _TimerService:SetTimer(self, function() self:Tick() end, 0.5, true, 0.5)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        self.Running = false
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
-        if self.WindOn then _SoundService:StopSound(_GameConst.SfxWind) end
         self.WindOn = false
+        self:RefreshWind()
+        _SoundService:StopSound(_GameConst.SfxCrow)
+        self:StopEffects()
+        if self.CurrentBgm ~= "" then _SoundService:StopBGM(true) end
+        self.CurrentBgm = ""
+        self.CrowsOn = false
         self.CurrentMap = nil
         self.LastCombatSounds = {}
+        self.LastEffects = {}
     end
 
     @ExecSpace("ClientOnly")
     method void Tick()
+        if not self.Running then return end
         local player = _UserService.LocalPlayer
         if not isvalid(player) then return end
         local map = player.CurrentMap
@@ -49,7 +67,7 @@ script SoundDirector extends Logic
         if map ~= self.CurrentMap then self:EnterMap(map) end
         if self.CrowsOn and _UtilLogic.ElapsedSeconds >= self.NextCrow then
             self.NextCrow = _UtilLogic.ElapsedSeconds + 15 + _UtilLogic:RandomDouble() * 20
-            _SoundService:PlaySound(_GameConst.SfxCrow, 0.35 * self.AmbienceVolume)
+            if self.AmbienceVolume > 0 then _SoundService:PlaySound(_GameConst.SfxCrow, 0.35 * self.AmbienceVolume) end
         end
     end
 
@@ -57,11 +75,12 @@ script SoundDirector extends Logic
     method void EnterMap(Entity map)
         local first = self.CurrentMap == nil
         self.CurrentMap = map
-        if not first then _SoundService:PlaySound(_GameConst.SfxTeleport, 0.5 * self.EffectsVolume) end
+        if not first then self:PlayEffect(_GameConst.SfxTeleport, 0.5) end
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         local bgm = ""
         local wind = false
+        local hadCrows = self.CrowsOn
         self.CrowsOn = false
         if amb ~= nil then
             bgm = amb.Bgm
@@ -70,13 +89,14 @@ script SoundDirector extends Logic
             wind = amb.Wind
             self.CrowsOn = amb.Crows
         end
+        if hadCrows and not self.CrowsOn then _SoundService:StopSound(_GameConst.SfxCrow) end
         if bgm ~= self.CurrentBgm then
             self.CurrentBgm = bgm
             if bgm == "" then _SoundService:StopBGM(false) else _SoundService:PlayBGM(bgm, self.BgmVolume) end
         end
         if wind ~= self.WindOn then
             self.WindOn = wind
-            if wind then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25 * self.AmbienceVolume) else _SoundService:StopSound(_GameConst.SfxWind) end
+            self:RefreshWind()
         end
         self.NextCrow = _UtilLogic.ElapsedSeconds + 5
     end
@@ -85,7 +105,12 @@ script SoundDirector extends Logic
     method void PlayCombat(string ruid, Vector3 pos, number volume, integer priority)
         -- 100ms 안에 저우선 3개/전체 5개까지만 허용해 소환수 무리의 타격음이 경고를 덮지 않게 한다.
         local player = _UserService.LocalPlayer
-        if not isvalid(player) or ruid == "" or self.EffectsVolume <= 0 then return end
+        local gain = math.max(0, math.min(1, volume * self.EffectsVolume))
+        if not isvalid(player) or ruid == "" or gain <= 0 then return end
+        -- 화면 밖 먼 무리의 소리가 가까운 전투의 재생 한도를 먼저 쓰지 않게 한다.
+        local listener = player.TransformComponent.WorldPosition
+        local dx, dy = pos.x - listener.x, pos.y - listener.y
+        if dx * dx + dy * dy > 144 then return end
         local now = _UtilLogic.ElapsedSeconds
         if now - self.CombatWindowAt >= 0.1 then self.CombatWindowAt = now self.CombatVoices = 0 end
         local key = ruid .. ":" .. tostring(priority)
@@ -98,7 +123,8 @@ script SoundDirector extends Logic
         self.LastCombatSounds[key] = now
         self.CombatVoices = self.CombatVoices + 1
         self.PlayedCombatCount = self.PlayedCombatCount + 1
-        _SoundService:PlaySoundAtPos(ruid, pos, player, math.max(0, math.min(1, volume * self.EffectsVolume)))
+        self.PlayedEffects[ruid] = true
+        _SoundService:PlaySoundAtPos(ruid, pos, player, gain)
     end
 
     @ExecSpace("ClientOnly")
@@ -111,15 +137,41 @@ script SoundDirector extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void PlayEffect(string ruid, number volume)
+        -- 피격·성장·UI 안내는 몬스터 무리의 재생 한도와 분리한다. 같은 소리의 순간 중복만 막는다.
+        local gain = math.max(0, math.min(1, volume * self.EffectsVolume))
+        if ruid == "" or gain <= 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now - (self.LastEffects[ruid] or -99) < 0.08 then return end
+        self.LastEffects[ruid] = now
+        self.PlayedEffects[ruid] = true
+        _SoundService:PlaySound(ruid, gain)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopEffects()
+        for ruid, _ in pairs(self.PlayedEffects) do _SoundService:StopSound(ruid) end
+        self.PlayedEffects = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshWind()
+        if self.WindPlaying then _SoundService:StopSound(_GameConst.SfxWind) end
+        self.WindPlaying = self.WindOn and self.AmbienceVolume > 0
+        if self.WindPlaying then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25 * self.AmbienceVolume) end
+    end
+
+    @ExecSpace("ClientOnly")
     method void SetVolumes(number bgm, number effects, number ambience)
-        -- 설정 UI의 세 볼륨을 즉시 적용한다. 반복 환경음은 새 볼륨으로 다시 시작한다.
+        local oldBgm, oldEffects, oldAmbience = self.BgmVolume, self.EffectsVolume, self.AmbienceVolume
         self.BgmVolume = math.max(0, math.min(1, bgm))
         self.EffectsVolume = math.max(0, math.min(1, effects))
         self.AmbienceVolume = math.max(0, math.min(1, ambience))
-        _SoundService:SetBGMVolume(self.BgmVolume)
-        if self.WindOn then
-            _SoundService:StopSound(_GameConst.SfxWind)
-            if self.AmbienceVolume > 0 then _SoundService:PlayLoopSound(_GameConst.SfxWind, 0.25 * self.AmbienceVolume) end
+        if oldBgm ~= self.BgmVolume then _SoundService:SetBGMVolume(self.BgmVolume) end
+        if oldEffects > 0 and self.EffectsVolume == 0 then self:StopEffects() end
+        if oldAmbience ~= self.AmbienceVolume then
+            self:RefreshWind()
+            if self.AmbienceVolume == 0 then _SoundService:StopSound(_GameConst.SfxCrow) end
         end
     end
 end
