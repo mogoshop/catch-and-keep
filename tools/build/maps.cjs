@@ -186,7 +186,7 @@ function minimapFeatures(d, maps) {
     let label = "";
     if (kind === "portal") label = e.overrides["script.WarpGate"].Label;
     if (kind === "npc" || kind === "quest") label = (ctx.npcs[e.name] || {}).name || "";
-    out.push({ kind, x: e.pos[0], y: e.pos[1], label });
+    out.push({ kind, x: e.pos[0], y: e.pos[1], label, targetMap: kind === "portal" ? e.overrides["script.WarpGate"].TargetMap : "" });
   }
   return out;
 }

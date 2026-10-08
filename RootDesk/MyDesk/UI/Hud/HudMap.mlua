@@ -14,11 +14,21 @@ script HudMap extends Logic
     property boolean HasQuestNpc = false
     property table Gates = {}               -- 이 맵의 포털 { pos, label }
     property number GateLabelRange = 9
-    property integer TerrainCount = 128
+    property integer TerrainCount = 256
     property integer TerrainUsed = 0
+    property string LastMapId = ""
+    property Vector2 MapCenter = Vector2(0, 0)
+    property table Features = {}
+    property boolean Expanded = true
+    property string LayoutKey = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 별도 내비게이션 HUD를 사용하며 이전 표시물은 중복되지 않게 숨긴다.
+        _UIKit:SetEnabled("/ui/GameHUD/MiniMap", false)
+        _UIKit:SetEnabled("/ui/GameHUD/QuestTrack", false)
+        self.Expanded = not Environment:IsMobilePlatform()
+        _UIKit:Connect("MiniMap/Toggle", function() self:ToggleMap() end)
         _UIKit:SetEnabled("Banner", false)
         _UIKit:SetEnabled("NpcMark", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
@@ -34,13 +44,16 @@ script HudMap extends Logic
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not isvalid(player.CurrentMap) then return end
         local map = player.CurrentMap
-        if map.Name ~= self.LastMap then
+        if map.Id ~= self.LastMapId then
+            self.LastMapId = map.Id
             self.LastMap = map.Name
             self:OnMapChanged(map.Name)
         end
+        self:RenderLayout()
+        self:RenderFocus(player)
         self:TickBanner()
         local me = _Util:Pos2(player)
-        _UIKit:SetPos("MiniMap/Area/Me", self:ToMini(me))
+        _UIKit:SetPos("MiniMap/Body/Area/Me", self:ToMini(me))
         self:RenderParty(player)
         self:RenderNpcMark(player)
         self:RenderGates(player)
@@ -60,7 +73,7 @@ script HudMap extends Logic
         local sub = ""
         if info ~= nil then
             title = info.name
-            if info.kind == "town" then sub = "마을" elseif info.kind == "side" then sub = "곁가지 던전" elseif info.kind == "instance" then sub = "심도 던전" end
+            if info.kind == "town" then sub = "마을" elseif info.kind == "side" then sub = "곁가지 던전" elseif info.kind == "instance" then sub = "심도 던전" else sub = "사냥터" end
         end
         if diff > 0 then
             if sub ~= "" then sub = sub .. " · " end
@@ -73,9 +86,11 @@ script HudMap extends Logic
         self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerSeconds
         self:SetBannerAlpha(1)
         local shortName = string.gsub(title, "%s*%(Lv[^%)]*%)", "")
-        _UIKit:SetText("MiniMap/Name", _UIKit:Clip(shortName, 14))
-        self:BuildMiniMap(info)
+        _UIKit:SetText("MiniMap/Toggle/Name", shortName)
+        _UIKit:SetText("MiniMap/Toggle/Kind", sub)
         self:BuildTerrain(_UserService.LocalPlayer.CurrentMap, info)
+        self:BuildMiniMap(info)
+        log("[VRF] Navigation ready terrain=" .. tostring(self.TerrainUsed) .. " features=" .. tostring(#self.Features))
         log("[HudMap] 맵 " .. mapName .. " → " .. title)
     end
 
@@ -84,24 +99,24 @@ script HudMap extends Logic
         -- 미니맵 영역(272×180)에 맵 전체가 들어가게 축소. 표시물 점 색: 포털 하늘·웨이포인트 청록·의뢰 노랑·NPC 흰·입구 보라·제단 빨강·보스 주황
         self.HasQuestNpc = false
         self.Gates = {}
+        self.Features = {}
         if info == nil then
             self.Scale = 8
-            for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Area/F" .. tostring(i), false) end
+            for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
             return
         end
-        self.Scale = math.min(240 / math.max(1, info.w), 160 / math.max(1, info.h))
-        local colors = {
-            portal = Color(0.55, 0.8, 1, 1), waypoint = Color(0.3, 1, 0.9, 1), quest = Color(1, 0.9, 0.2, 1), npc = Color(1, 1, 1, 1),
-            depth = Color(0.8, 0.45, 1, 1), altar = Color(1, 0.3, 0.3, 1), boss = Color(1, 0.55, 0.15, 1),
-        }
+        -- 지형에서 계산한 축척을 표식에도 그대로 적용한다.
+        local icons = { portal = "icon_scroll", waypoint = "icon_waypoint", quest = "icon_quest", npc = "icon_party", depth = "icon_shadow", altar = "rune", boss = "icon_sword" }
         local n = 0
-        for _, f in ipairs(info.features) do
+        for _, f in ipairs(self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)) do
+            table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "" })
             if n < self.FeatureCount then
                 n = n + 1
-                local path = "MiniMap/Area/F" .. tostring(n)
+                local path = "MiniMap/Body/Area/F" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
                 _UIKit:SetPos(path, self:ToMini(Vector2(f.x, f.y)))
-                _UIKit:SetColor(path, colors[f.kind] or Color(1, 1, 1, 1))
+                _UIKit:SetIcon(path, _GameData:GetUiIcon(icons[f.kind] or "dot"))
+                _UIKit:SetColor(path, Color(1, 1, 1, 1))
             end
             if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label }) end
             if f.kind == "quest" then
@@ -109,7 +124,42 @@ script HudMap extends Logic
                 self.QuestPos = Vector2(f.x, f.y)
             end
         end
-        for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Area/F" .. tostring(i), false) end
+        for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method table MapFeatures(Entity map, any info)
+        -- 메이커에서 옮긴 배치도 현재 맵의 실제 엔티티 위치로 표시한다.
+        local result = {}
+        local liveKinds = {}
+        local player = _UserService.LocalPlayer
+        for _, spec in ipairs({ { "script.WarpGate", "portal" }, { "script.WorldNPC", "npc" }, { "script.Waypoint", "waypoint" }, { "script.QuestMarker", "altar" }, { "script.DepthGate", "depth" } }) do
+            for _, component in ipairs(map:GetChildComponentsByTypeName(spec[1], true)) do
+                if isvalid(component.Entity) and component.Entity.Enable then
+                    local kind = spec[2]
+                    local label = ""
+                    local target = ""
+                    local show = true
+                    if kind == "portal" then
+                        label = component.Label
+                        target = component.TargetMap
+                        show = component.OwnerUserId == "" or component.OwnerUserId == player.PlayerComponent.UserId
+                    elseif kind == "npc" then
+                        kind = component.Kind == "quest" and "quest" or "npc"
+                        label = component.NpcName
+                    end
+                    if show then
+                        local pos = _Util:Pos2(component.Entity)
+                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target })
+                        liveKinds[kind] = true
+                    end
+                end
+            end
+        end
+        for _, f in ipairs(info.features) do
+            if not liveKinds[f.kind] then table.insert(result, f) end
+        end
+        return result
     end
 
     -- 실제 타일의 통행 가능한 구간을 가로로 합치고, 같은 구간은 세로로 병합한다.
@@ -117,19 +167,34 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method void BuildTerrain(Entity map, any info)
         self.TerrainUsed = 0
-        for i = 1, self.TerrainCount do _UIKit:SetEnabled("MiniMap/Area/Terrain/R" .. tostring(i), false) end
+        for i = 1, self.TerrainCount do _UIKit:SetEnabled("MiniMap/Body/Area/Terrain/R" .. tostring(i), false) end
         if info == nil or not isvalid(map) then return end
         local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
         if tiles == nil then return end
-        local low = tiles:ToCellPosition(Vector3(-info.w / 2, -info.h / 2, 0))
-        local high = tiles:ToCellPosition(Vector3(info.w / 2, info.h / 2, 0))
+        -- 실제 타일 목록의 양끝을 포함해 CSV 크기 밖 지형과 최상단도 누락하지 않는다.
+        self.MapCenter = Vector2(0, 0)
+        self.Scale = math.min(272 / math.max(1, info.w), 156 / math.max(1, info.h))
+        local positions = tiles:GetAllTilePositions()
+        local low = nil
+        local high = nil
+        for _, cell in ipairs(positions) do
+            if low == nil then low = Vector2Int(cell.x, cell.y) high = Vector2Int(cell.x, cell.y) end
+            low = Vector2Int(math.min(low.x, cell.x), math.min(low.y, cell.y))
+            high = Vector2Int(math.max(high.x, cell.x), math.max(high.y, cell.y))
+        end
+        if low == nil then return end
+        local grid = tiles.GridSize
+        local a = tiles:ToWorldPosition(low)
+        local z = tiles:ToWorldPosition(high)
+        self.MapCenter = Vector2((a.x + z.x) / 2, (a.y + z.y) / 2)
+        self.Scale = math.min(272 / math.max(1, (high.x - low.x + 1) * grid.x), 156 / math.max(1, (high.y - low.y + 1) * grid.y))
         local rects = {}
         local active = {}
-        for y = low.y, high.y - 1 do
+        for y = low.y, high.y do
             local nextActive = {}
             local start = nil
-            for x = low.x, high.x do
-                local tile = x < high.x and tiles:GetTile(Vector2Int(x, y)) or nil
+            for x = low.x, high.x + 1 do
+                local tile = x <= high.x and tiles:GetTile(Vector2Int(x, y)) or nil
                 local floor = tile ~= nil and not tile.IsCollidable
                 if floor and start == nil then start = x end
                 if not floor and start ~= nil then
@@ -145,25 +210,18 @@ script HudMap extends Logic
             end
             active = nextActive
         end
-        local grid = tiles.GridSize
         for i, r in ipairs(rects) do
             if i > self.TerrainCount then log_warning("[HudMap] terrain capacity exceeded " .. tostring(#rects)) break end
             local a = tiles:ToWorldPosition(Vector2Int(r.x1, r.y1))
             local z = tiles:ToWorldPosition(Vector2Int(r.x2, r.y2))
-            local e = _UIKit:Get("MiniMap/Area/Terrain/R" .. tostring(i))
+            local e = _UIKit:Get("MiniMap/Body/Area/Terrain/R" .. tostring(i))
             if isvalid(e) then
                 e.UITransformComponent.RectSize = Vector2((r.x2 - r.x1 + 1) * grid.x * self.Scale, (r.y2 - r.y1 + 1) * grid.y * self.Scale)
                 e.UITransformComponent.anchoredPosition = self:ToMini(Vector2((a.x + z.x) / 2, (a.y + z.y) / 2))
-                -- 네이티브 GUI 스프라이트로 그린다. 지형은 직사각형이므로 동적 폴리곤 갱신에 기대지 않는다.
-                local polygon = e:GetComponent("MOD.Core.PolygonGUIRendererComponent")
-                if isvalid(polygon) then polygon.Enable = false end
+                -- 실제 화면에서 검증한 사각 바닥 타일을 Simple로 그려 둥근 점 늘림을 피한다.
                 local sprite = e:GetComponent("MOD.Core.SpriteGUIRendererComponent")
-                if not isvalid(sprite) then sprite = e:AddComponent("MOD.Core.SpriteGUIRendererComponent") end
                 if isvalid(sprite) then
-                    sprite.ImageRUID = DataRef("2860136c06ab075439721c027de365af")
-                    sprite.Type = ImageType.Sliced
-                    sprite.Color = Color(0.38, 0.35, 0.32, 0.85)
-                    sprite.RaycastTarget = false
+                    sprite.Color = Color(1, 1, 1, 1)
                 end
                 e.Enable = true
                 self.TerrainUsed = i
@@ -173,9 +231,121 @@ script HudMap extends Logic
 
     method Vector2 ToMini(Vector2 world)
         -- 맵 좌표(타일 = 1) → 미니맵 영역 안 좌표 (가장자리에서 잘림)
-        local x = math.max(-132, math.min(132, world.x * self.Scale))
-        local y = math.max(-86, math.min(86, world.y * self.Scale))
+        local x = math.max(-140, math.min(140, (world.x - self.MapCenter.x) * self.Scale))
+        local y = math.max(-82, math.min(82, (world.y - self.MapCenter.y) * self.Scale))
         return Vector2(x, y)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleMap()
+        -- 지도는 전투 입력을 가로막는 창 대신 접을 수 있는 HUD로 남긴다.
+        if _UIKit:AnyWindowOpen() then return end
+        self.Expanded = not self.Expanded
+        self:RenderLayout()
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ShouldShowQuestTrack()
+        -- 모바일에서 지도와 의뢰가 같은 손 영역을 겹쳐 차지하지 않게 한다.
+        return not _UIKit:AnyWindowOpen() and not (Environment:IsMobilePlatform() and self.Expanded)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderLayout()
+        -- 매 프레임 위치를 쓰지 않고 플랫폼·펼침 상태가 바뀔 때만 배치한다.
+        local mobile = Environment:IsMobilePlatform()
+        local key = tostring(mobile) .. ":" .. tostring(self.Expanded)
+        if key ~= self.LayoutKey then
+            self.LayoutKey = key
+            local map = _UIKit:Get("MiniMap")
+            local track = _UIKit:Get("QuestTrack")
+            if isvalid(map) then
+                local t = map.UITransformComponent
+                t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
+                t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
+                t.anchoredPosition = mobile and Vector2(24, -180) or Vector2(-24, -150)
+                t.RectSize = Vector2(344, self.Expanded and 436 or 104)
+            end
+            if isvalid(track) then
+                local t = track.UITransformComponent
+                t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
+                t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
+                t.anchoredPosition = mobile and Vector2(24, -302) or Vector2(-24, self.Expanded and -606 or -270)
+            end
+            _UIKit:SetText("MiniMap/Toggle/Hint", self.Expanded and "−" or "+")
+        end
+        _UIKit:SetEnabled("MiniMap", not _UIKit:AnyWindowOpen())
+        _UIKit:SetEnabled("MiniMap/Body", self.Expanded)
+        _UIKit:SetEnabled("QuestTrack", self:ShouldShowQuestTrack())
+    end
+
+    method string QuestMap(integer index, integer state)
+        -- 목표 지역은 의뢰 데이터에서 찾고, 수락·완료 보고는 야영지로 안내한다.
+        local q = _QuestData:Get(index)
+        if q == nil then return "" end
+        if state ~= 1 then return "town" end
+        for name, info in pairs(_GameData.MapInfo) do
+            local title = string.gsub(info.name, "%s*%(Lv[^%)]*%)", "")
+            if title == q.zone then return name end
+        end
+        return ""
+    end
+
+    method string NextRoute(string startMap, string goalMap)
+        -- 포털 목적지 그래프를 너비 우선 탐색해 가장 짧은 경로의 첫 출구를 찾는다.
+        if startMap == goalMap or goalMap == "" then return "" end
+        local queue = { { name = startMap, first = "" } }
+        local seen = { [startMap] = true }
+        local head = 1
+        while head <= #queue do
+            local node = queue[head]
+            head = head + 1
+            local info = _GameData:GetMapInfo(node.name)
+            if info ~= nil then
+                for _, f in ipairs(info.features) do
+                    local target = f.targetMap or ""
+                    if f.kind == "portal" and target ~= "" and not seen[target] then
+                        local first = node.first == "" and target or node.first
+                        if target == goalMap then return first end
+                        seen[target] = true
+                        table.insert(queue, { name = target, first = first })
+                    end
+                end
+            end
+        end
+        return ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderFocus(Entity player)
+        -- 현재 의뢰에 필요한 NPC·제단 또는 다음 지역의 출구 하나만 강조한다.
+        local quest = player:GetComponent("script.PlayerQuest")
+        local focused = nil
+        local text = ""
+        if quest ~= nil then
+            local goal = self:QuestMap(quest.Index, quest.State)
+            local current = _GameConst:BaseMapName(player.CurrentMap.Name)
+            local nextMap = self:NextRoute(current, goal)
+            local q = _QuestData:Get(quest.Index)
+            for _, f in ipairs(self.Features) do
+                if nextMap ~= "" and f.kind == "portal" and _GameConst:BaseMapName(f.targetMap or "") == nextMap then
+                    focused = f
+                    text = "다음 길: " .. string.gsub(f.label, "%s*%(Lv[^%)]*%)", "")
+                    break
+                elseif current == goal and (quest.State ~= 1 and f.kind == "quest" or quest.State == 1 and q ~= nil and q.kind == "reach" and f.kind == "altar") then
+                    focused = f
+                    text = quest.State == 1 and "목표: 피의 제단" or "대화: 사제 오렌"
+                    break
+                end
+            end
+            if text == "" and q ~= nil then
+                text = current == goal and "이 지역에서 의뢰 진행" or "목표: " .. (goal == "town" and "잿불 야영지" or q.zone)
+            end
+        end
+        if text == "" then text = "출구와 거점을 찾아 탐험하세요" end
+        _UIKit:SetText("MiniMap/Body/FocusText", text)
+        _UIKit:SetEnabled("MiniMap/Body/Area/Focus", focused ~= nil)
+        if focused ~= nil then _UIKit:SetPos("MiniMap/Body/Area/Focus", self:ToMini(Vector2(focused.x, focused.y))) end
     end
 
     -- ───────── 맵 이름 ─────────
@@ -218,14 +388,14 @@ script HudMap extends Logic
                     local other = _UserService:GetUserEntityByUserId(userId)
                     if isvalid(other) and other.CurrentMap == player.CurrentMap then
                         n = n + 1
-                        local path = "MiniMap/Area/P" .. tostring(n)
+                        local path = "MiniMap/Body/Area/P" .. tostring(n)
                         _UIKit:SetEnabled(path, true)
                         _UIKit:SetPos(path, self:ToMini(_Util:Pos2(other)))
                     end
                 end
             end
         end
-        for i = n + 1, 3 do _UIKit:SetEnabled("MiniMap/Area/P" .. tostring(i), false) end
+        for i = n + 1, 3 do _UIKit:SetEnabled("MiniMap/Body/Area/P" .. tostring(i), false) end
     end
 
     @ExecSpace("ClientOnly")

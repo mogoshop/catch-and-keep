@@ -83,7 +83,7 @@ function genGameData() {
     }),
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {
-      const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)} }`).join(", ");
+      const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
       return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, w = ${n(m.w)}, h = ${n(m.h)}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",

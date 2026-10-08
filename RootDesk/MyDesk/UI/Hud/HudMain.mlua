@@ -19,14 +19,6 @@ script HudMain extends Logic
         if isvalid(targetStatus) then targetStatus.UITransformComponent.RectSize = Vector2(440, 44) end
         _UIKit:SetEnabled("Tip", false)
         _UIKit:RegisterWindow("MenuWin")
-        if Environment:IsMobilePlatform() then
-            local track = _UIKit:Get("QuestTrack")
-            if isvalid(track) then
-                track.UITransformComponent.AlignmentOption = AlignmentType.TopLeft
-                track.UITransformComponent.Pivot = Vector2(0, 1)
-                track.UITransformComponent.anchoredPosition = Vector2(24, -190)
-            end
-        end
         -- 스킬 칸: 누르면 그 칸에 넣을 스킬을 고른다 (시전은 A S D F·우클릭)
         for i = 1, 5 do
             local slot = i
@@ -107,7 +99,7 @@ script HudMain extends Logic
         self:RenderBadges(st)
         self:RenderMinions()
         self:RenderTarget(player)
-        _UIKit:SetEnabled("QuestTrack", not _UIKit:AnyWindowOpen())
+        _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack())
         self:RenderQuestTrack(player)
         self:RenderParty()
         self:RenderTip(player, st)
@@ -283,7 +275,7 @@ script HudMain extends Logic
         local tip = ""
         local inTown = _GameConst:IsTown(player.CurrentMap)
         if quest ~= nil and quest.Index == 1 and quest.State == 0 and inTown then
-            tip = "사제 오렌(미니맵 노란 점, 머리 위 표시)에게 다가가 의뢰를 받으세요"
+            tip = "사제 오렌(미니맵 의뢰 아이콘, 머리 위 표시)에게 다가가 의뢰를 받으세요"
         elseif book ~= nil and st.SkillPoints > 0 and book:GetLevel("raise_skeleton") <= 0 and book:GetLevel("bone_shard") <= 0 then
             tip = "스킬 포인트가 있습니다 — 메뉴의 스킬(K)에서 「해골 전사」나 「골편 투척」을 배우세요"
         elseif inTown and st.Level <= 2 and quest ~= nil and quest.State == 1 then
