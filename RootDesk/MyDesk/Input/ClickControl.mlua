@@ -41,6 +41,8 @@ script ClickControl extends Component
     property Entity RouteMap = nil
     property Vector2 RouteGoal = Vector2(0, 0)
     property number RouteRecheckAt = 0
+    property number RouteFoundAt = -99
+    property number RouteMinInterval = 0.15   -- 경로 재탐색 최소 간격 (A*+다듬기 비용)
     property number NextBlockedHintAt = 0
     property boolean BlockedPick = false
     property Vector2 BlockedPoint = Vector2(0, 0)
@@ -401,8 +403,11 @@ script ClickControl extends Component
         -- 목적지가 움직이거나 지형이 바뀌었을 때만 제한된 경로를 다시 계산한다.
         local me = _Util:Pos2(self.Entity)
         local now = _UtilLogic.ElapsedSeconds
-        if self.RouteMap ~= self.Entity.CurrentMap or (goal - self.RouteGoal):Magnitude() > 0.3 or now >= self.RouteRecheckAt then
+        -- 끌어서 이동하면 목적지가 매 프레임 바뀐다. 다시 찾기는 최소 RouteMinInterval 간격으로만 (모바일 끊김 방지).
+        local goalMoved = (goal - self.RouteGoal):Magnitude() > 0.3 and now - self.RouteFoundAt >= self.RouteMinInterval
+        if self.RouteMap ~= self.Entity.CurrentMap or goalMoved or now >= self.RouteRecheckAt then
             self.Route = _GroundPath:Find(self.Entity.CurrentMap, me, goal)
+            self.RouteFoundAt = now
             self.RouteIndex = 1
             self.RouteMap = self.Entity.CurrentMap
             self.RouteGoal = goal

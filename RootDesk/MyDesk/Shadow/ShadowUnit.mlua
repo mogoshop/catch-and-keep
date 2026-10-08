@@ -85,6 +85,8 @@ script ShadowUnit extends AttackComponent
     property Entity Target = nil
     property boolean RingPainted = false
     property number RetargetTimer = 0
+    property number OwnerCheckTimer = 0
+    property number OwnerCheckInterval = 0.2  -- 주인 교전 범위·시야 재확인 간격
     property number AttackTimer = 0
     property number RallyTimer = 0
     property string CurrentClip = ""
@@ -191,7 +193,11 @@ script ShadowUnit extends AttackComponent
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
         -- 주인이 물러나면 준비 중인 타격도 끊고 따라간다. 공격 모션이 끝날 때까지 기다리지 않는다.
-        if self.Target ~= nil and not self:IsOwnerCombatTarget(self.Target, self.OwnerCombatRange) then
+        -- 시야 판정은 비싸서 매 프레임이 아니라 OwnerCheckInterval마다 (대상이 죽으면 바로 놓는다).
+        self.OwnerCheckTimer = self.OwnerCheckTimer - delta
+        local checkOwner = self.OwnerCheckTimer <= 0 or not self:IsLiveTarget(self.Target)
+        if checkOwner then self.OwnerCheckTimer = self.OwnerCheckInterval end
+        if self.Target ~= nil and checkOwner and not self:IsOwnerCombatTarget(self.Target, self.OwnerCombatRange) then
             self.Target = nil
             self.RetargetTimer = 0
             self:CancelPendingAttack()

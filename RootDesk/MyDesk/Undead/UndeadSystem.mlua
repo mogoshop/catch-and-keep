@@ -444,6 +444,14 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void CancelRoomTravel(Entity player)
+        -- 방 이동이 취소되면 전달 예약만 지운다. 소환수는 떠나지 않았으므로 그대로 남는다.
+        local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil or not isvalid(player) then return end
+        memory:DeleteVariableAndWait(player.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
     method void RetargetRoomTravel(Entity player, string destination)
         local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
         if code ~= SharedMemoryResultCode.OK or memory == nil then return end

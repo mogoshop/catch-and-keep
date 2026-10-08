@@ -135,23 +135,54 @@ script DepthDirector extends Component
         if #ids == 0 then self.Moving = false return end
         -- 다음 층도 먼저 정적 방으로 돌아간다. PlayerSave.Load가 일회성 다음 층 요청을 이어간다.
         local moved = _RoomService:MoveUsersToStaticRoom(ids, _GameConst:MapFor(_GameConst.MapTown, self.Difficulty))
-        if moved == nil or moved == 0 then self.Moving = false end
+        if moved == nil or moved == 0 then
+            local players = _Util:PlayersInMap(self.Entity.CurrentMap)
+            self:RollbackPlayers(players)
+            self.Moving = false
+            for _, u in ipairs(players) do _Util:Notify("이동에 실패했습니다. 문을 다시 밟아 주세요", u.PlayerComponent.UserId) end
+        elseif moved < #ids then
+            -- 일부만 떠났으면 남은 사람의 준비를 되돌리고 문을 다시 쓸 수 있게 한다.
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(self.Entity) then return end
+                self:RollbackPlayers(_Util:PlayersInMap(self.Entity.CurrentMap))
+                self.Moving = false
+            end, 3)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RollbackPlayers(table players)
+        -- 이동 준비(소환수 전달·다음 층 예약·그림자 회수)를 되돌린다.
+        for _, u in ipairs(players) do
+            ---@type PlayerSave
+            local save = isvalid(u) and u:GetComponent("script.PlayerSave") or nil
+            if save ~= nil then save:RollbackRoomTravel() end
+        end
     end
 
     @ExecSpace("ServerOnly")
     method table SaveAll(string destination)
         -- 목적지 방으로 언데드를 전달하고, 인스턴스 이동 전에 캐릭터를 모두 저장한다
         local ids = {}
+        local prepared = {}
         for _, u in ipairs(_Util:PlayersInMap(self.Entity.CurrentMap)) do
-            if not _UndeadSystem:StashForRoomTravel(u, destination) then return {} end
+            table.insert(prepared, u)
+            -- 한 명이라도 준비에 실패하면 앞서 준비한 파티원까지 모두 되돌린다.
+            if not _UndeadSystem:StashForRoomTravel(u, destination) then
+                self:RollbackPlayers(prepared)
+                return {}
+            end
             ---@type ShadowCommander
             local commander = u:GetComponent("script.ShadowCommander")
             if commander ~= nil then commander:StashForTravel() end
             ---@type PlayerSave
             local save = u:GetComponent("script.PlayerSave")
             if save ~= nil then
-                if destination ~= _RoomService.StaticRoomKey and not save:StageDepthTravel(destination) then
+                if destination == _RoomService.StaticRoomKey then
+                    save:ClearDepthTravel()
+                elseif not save:StageDepthTravel(destination) then
                     _Util:Notify("다음 층 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", u.PlayerComponent.UserId)
+                    self:RollbackPlayers(prepared)
                     return {}
                 end
                 save:Save(true)

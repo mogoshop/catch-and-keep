@@ -25,7 +25,8 @@ script HudMap extends Logic
     property string RouteWaypoint = ""
     property string LastFeatureKey = ""
     property number NextFeatureRefresh = 0
-    property number FeatureRefreshInterval = 0.5
+    property number FeatureRefreshInterval = 1.2   -- 늦게 생기는 포털·파티 표시 반영 (맵 전체 검색 5종이라 자주 돌리지 않는다)
+    property number NextFocusAt = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -59,11 +60,17 @@ script HudMap extends Logic
         if map.Id ~= self.LastMapId then
             self.LastMapId = map.Id
             self.LastMap = map.Name
+            self.NextFocusAt = 0
             self:OnMapChanged(map.Name)
         end
         self:RefreshFeatures(map)
         self:RenderLayout()
-        self:RenderFocus(player)
+        -- 의뢰 경로 강조(경로 탐색 포함)는 0.5초마다면 충분하다. 내 위치 점만 0.1초마다 옮긴다.
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.NextFocusAt then
+            self.NextFocusAt = now + 0.5
+            self:RenderFocus(player)
+        end
         self:TickBanner()
         local me = _Util:Pos2(player)
         _UIKit:SetPos("MiniMap/Body/Area/Me", self:ToMini(me))

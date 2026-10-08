@@ -78,6 +78,7 @@ script DepthGate extends Component
         local social = player:GetComponent("script.PlayerSocial")
         local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. tostring(math.floor(_UtilLogic.ElapsedSeconds)))
         local ids = {}
+        local prepared = {}
         for _, u in ipairs(_Util:PlayersNear(player.CurrentMap, _Util:Pos2(player), self.PartyRange)) do
             local include = u == player
             if not include and social ~= nil and social.PartyId ~= 0 then
@@ -86,7 +87,11 @@ script DepthGate extends Component
                 include = s2 ~= nil and s2.PartyId == social.PartyId
             end
             if include then
-                if not _UndeadSystem:StashForRoomTravel(u, key) then return end
+                table.insert(prepared, u)
+                if not _UndeadSystem:StashForRoomTravel(u, key) then
+                    self:Rollback(prepared)
+                    return
+                end
                 ---@type ShadowCommander
                 local commander = u:GetComponent("script.ShadowCommander")
                 if commander ~= nil then commander:StashForTravel() end
@@ -97,7 +102,28 @@ script DepthGate extends Component
             end
         end
         _RoomService:CreateInstanceRoom(key, { _GameConst.MapDepth }, 30)
-        _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst.MapDepth)
+        local moved = _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst.MapDepth)
+        if moved == nil or moved < #ids then
+            -- 들어가지 못한 사람은 준비를 되돌린다 (그림자 재소환·전달 예약 삭제). 이동 처리 시간을 두고 확인한다.
+            local map = player.CurrentMap
+            _TimerService:SetTimerOnce(function()
+                local left = {}
+                for _, u in ipairs(prepared) do
+                    if isvalid(u) and u.CurrentMap == map then table.insert(left, u) end
+                end
+                self:Rollback(left)
+                for _, u in ipairs(left) do _Util:Notify("심도 입장에 실패했습니다. 잠시 뒤 다시 시도하세요", u.PlayerComponent.UserId) end
+            end, 3)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Rollback(table players)
+        for _, u in ipairs(players) do
+            ---@type PlayerSave
+            local save = isvalid(u) and u:GetComponent("script.PlayerSave") or nil
+            if save ~= nil then save:RollbackRoomTravel() end
+        end
     end
 
 end

@@ -108,6 +108,25 @@ script PlayerSave extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void ClearDepthTravel()
+        -- 취소됐거나 귀환으로 바뀐 다음 층 예약을 지운다 (나중에 마을에서 엉뚱하게 다음 층으로 보내지 않게).
+        local code, memory = _RoomService:GetSharedMemory("DepthContinuationV1")
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        memory:DeleteVariableAndWait(self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RollbackRoomTravel()
+        -- 방 이동 준비를 되돌린다: 소환수 전달·다음 층 예약 삭제, 거둬 둔 그림자 재소환.
+        if not isvalid(self.Entity) then return end
+        _UndeadSystem:CancelRoomTravel(self.Entity)
+        self:ClearDepthTravel()
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:ScheduleRedeploy(0.5) end
+    end
+
+    @ExecSpace("ServerOnly")
     method void ContinueDepthTravel()
         -- 서로 다른 인스턴스 방 사이에는 정적 방을 거친다. 소환수 전달은 최종 목적지에서만 소비한다.
         if _RoomService:IsInstanceRoom() then return end
