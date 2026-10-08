@@ -23,9 +23,16 @@ script HudMap extends Logic
     property string LayoutKey = ""
     property string RouteKey = ""
     property string RouteWaypoint = ""
+    property string LastFeatureKey = ""
+    property number NextFeatureRefresh = 0
+    property number FeatureRefreshInterval = 0.5
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 플레이 재시작 시 이전 맵과 동적 포털 캐시를 이어 쓰지 않는다.
+        self.LastMapId = ""
+        self.LastFeatureKey = ""
+        self.NextFeatureRefresh = 0
         self.RouteKey = ""
         self.RouteWaypoint = ""
         -- 별도 내비게이션 HUD를 사용하며 이전 표시물은 중복되지 않게 숨긴다.
@@ -41,6 +48,7 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
     end
 
     @ExecSpace("ClientOnly")
@@ -53,6 +61,7 @@ script HudMap extends Logic
             self.LastMap = map.Name
             self:OnMapChanged(map.Name)
         end
+        self:RefreshFeatures(map)
         self:RenderLayout()
         self:RenderFocus(player)
         self:TickBanner()
@@ -104,6 +113,8 @@ script HudMap extends Logic
         self.HasQuestNpc = false
         self.Gates = {}
         self.Features = {}
+        self.LastFeatureKey = ""
+        self.NextFeatureRefresh = _UtilLogic.ElapsedSeconds + self.FeatureRefreshInterval
         if info == nil then
             self.Scale = 8
             for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
@@ -112,7 +123,9 @@ script HudMap extends Logic
         -- 지형에서 계산한 축척을 표식에도 그대로 적용한다.
         local icons = { portal = "icon_scroll", waypoint = "icon_waypoint", quest = "icon_quest", npc = "icon_party", depth = "icon_shadow", altar = "rune", boss = "icon_sword" }
         local n = 0
-        for _, f in ipairs(self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)) do
+        local features = self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)
+        self.LastFeatureKey = self:FeatureKey(features)
+        for _, f in ipairs(features) do
             table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "", waypointId = f.waypointId or "" })
             if n < self.FeatureCount then
                 n = n + 1
@@ -129,6 +142,30 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
+    end
+
+    method string FeatureKey(table features)
+        -- 생성·소멸·이동·소유권 동기화를 감지하되 엔티티 열거 순서 변화만으로 다시 그리지 않는다.
+        local keys = {}
+        for _, f in ipairs(features) do
+            table.insert(keys, table.concat({ f.kind, tostring(f.x), tostring(f.y), f.label or "", f.targetMap or "", f.waypointId or "", tostring(f.radius or 0.6) }, "|"))
+        end
+        table.sort(keys)
+        return table.concat(keys, "\n")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshFeatures(Entity map)
+        -- 늦게 생기는 귀환 포털과 파티 변경을 반영한다. 지형은 다시 계산하지 않는다.
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.NextFeatureRefresh then return end
+        self.NextFeatureRefresh = now + self.FeatureRefreshInterval
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil then return end
+        local features = self:MapFeatures(map, info)
+        if self:FeatureKey(features) == self.LastFeatureKey then return end
+        self:BuildMiniMap(info)
+        log("[VRF] Navigation features refreshed map=" .. map.Name .. " features=" .. tostring(#self.Features))
     end
 
     @ExecSpace("ClientOnly")
@@ -150,7 +187,7 @@ script HudMap extends Logic
                         label = component.Label
                         target = component.TargetMap
                         radius = component.Radius
-                        show = component.OwnerUserId == "" or component.OwnerUserId == player.PlayerComponent.UserId
+                        show = component:CanUse(player)
                     elseif kind == "npc" then
                         kind = component.Kind == "quest" and "quest" or "npc"
                         label = component.NpcName

@@ -3,11 +3,15 @@
 @Component
 script WarpGate extends Component
 
+    @Sync
     property string TargetMap = "map01"
     property Vector2 TargetPos = Vector2(0, 0)
+    @Sync
     property string Label = ""
+    @Sync
     property number Radius = 0.6
     property number Cooldown = 2
+    @Sync
     property string OwnerUserId = ""
 
     property integer TimerId = 0
@@ -22,6 +26,7 @@ script WarpGate extends Component
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
     end
 
     @ExecSpace("ServerOnly")
@@ -29,15 +34,28 @@ script WarpGate extends Component
         local now = _UtilLogic.ElapsedSeconds
         for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
             local id = u.PlayerComponent.UserId
-            if now - (self.LastWarp[id] or -100) > self.Cooldown then
+            if self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
                 self.LastWarp[id] = now
                 self:Warp(u)
             end
         end
     end
 
+    method boolean CanUse(Entity player)
+        -- 귀환 포털은 주인과 같은 파티만 공유한다. 일반 지역 출구는 모두에게 열린다.
+        if not isvalid(player) or player.PlayerComponent == nil then return false end
+        if self.OwnerUserId == "" or player.PlayerComponent.UserId == self.OwnerUserId then return true end
+        local owner = _UserService:GetUserEntityByUserId(self.OwnerUserId)
+        if not isvalid(owner) then return false end
+        local mine = player:GetComponent("script.PlayerSocial")
+        local theirs = owner:GetComponent("script.PlayerSocial")
+        return mine ~= nil and theirs ~= nil and mine.PartyId > 0 and mine.PartyId == theirs.PartyId
+    end
+
     @ExecSpace("ServerOnly")
     method void Warp(Entity player)
+        -- 직접 호출되는 경우에도 이용 권한과 생존 상태를 다시 확인한다.
+        if not self:CanUse(player) or not _Util:IsAlive(player) then return end
         ---@type PlayerTravel
         local travel = player:GetComponent("script.PlayerTravel")
         if travel ~= nil then travel:Go(self.TargetMap, self.TargetPos) end
