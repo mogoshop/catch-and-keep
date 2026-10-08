@@ -38,6 +38,8 @@ script ShadowUnit extends AttackComponent
     property number AttackRadius = 0.6
     property number AttackCooldown = 1.0
     property number DetectRange = 5
+    property number OwnerGuardRange = 3.5  -- 자동 교전은 주인 근처에서만 시작한다
+    property number OwnerCombatRange = 4.5 -- 선택한 적·현재 교전에는 여유를 두되 다음 무리까지 쫓지 않는다
     property number ArriveDistance = 0.25
     property number LeashDistance = 9
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
@@ -181,6 +183,12 @@ script ShadowUnit extends AttackComponent
         end
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
+        -- 주인이 물러나면 준비 중인 타격도 끊고 따라간다. 공격 모션이 끝날 때까지 기다리지 않는다.
+        if self.Target ~= nil and not self:IsOwnerCombatTarget(self.Target, self.OwnerCombatRange) then
+            self.Target = nil
+            self.RetargetTimer = 0
+            self:CancelPendingAttack()
+        end
         self:UpdateCommandState()
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
         self:AbilityTick(delta)
@@ -194,8 +202,11 @@ script ShadowUnit extends AttackComponent
         local toSlot = slot - myPos
         if toSlot:Magnitude() > self.LeashDistance then
             -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
-            self.Entity.MovementComponent:SetWorldPosition(slot)
             self.Target = nil
+            self:CancelPendingAttack()
+            self:StopMove(o.x - myPos.x)
+            self.Entity.MovementComponent:SetWorldPosition(slot)
+            self:UpdateCommandState()
             return
         end
 
@@ -298,11 +309,41 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method boolean IsOwnerCombatTarget(Entity target, number range)
+        -- 살아 있는 적이라도 주인의 교전 범위 밖이거나 벽 뒤에 있으면 쫓지 않는다.
+        if not self:IsLiveTarget(target) or not _Util:IsAlive(self.OwnerPlayer) then return false end
+        local ownerPos = _Util:Pos2(self.OwnerPlayer)
+        local targetPos = _Util:Pos2(target)
+        return (targetPos - ownerPos):Magnitude() <= range
+            and _Util:HasLineOfSight(self.Entity.CurrentMap, ownerPos, targetPos)
+    end
+
+    @ExecSpace("ServerOnly")
     method Entity FindNearestMonster(Vector2 myPos)
-        -- 감지 범위 안의 가장 가까운 몬스터 (RetargetInterval마다만)
-        local m = _Util:NearestMonster(self.Entity.CurrentMap, myPos, self.DetectRange)
-        if m == nil then return nil end
-        return m.Entity
+        -- 주인의 선택을 먼저 돕고, 선택이 없으면 현재 교전을 유지한다. 자동 탐색은 주인 주변만.
+        local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
+        if attack ~= nil then
+            local preferred = attack.SelectedTarget
+            if preferred == nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1.2 then preferred = attack.AutoTarget end
+            if self:IsOwnerCombatTarget(preferred, self.OwnerCombatRange)
+                and (_Util:Pos2(preferred) - myPos):Magnitude() <= self.DetectRange
+                and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, _Util:Pos2(preferred)) then return preferred end
+        end
+        local currentTarget = self.Target
+        if self:IsOwnerCombatTarget(currentTarget, self.OwnerCombatRange)
+            and (_Util:Pos2(currentTarget) - myPos):Magnitude() <= self.DetectRange then return currentTarget end
+        local best = nil
+        local distance = self.DetectRange
+        for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, _Util:Pos2(self.OwnerPlayer), self.OwnerGuardRange)) do
+            local target = monster.Entity
+            local to = _Util:Pos2(target) - myPos
+            if to:Magnitude() <= distance and self:IsOwnerCombatTarget(target, self.OwnerGuardRange)
+                and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, _Util:Pos2(target)) then
+                best = target
+                distance = to:Magnitude()
+            end
+        end
+        return best
     end
 
     @ExecSpace("ServerOnly")
@@ -361,6 +402,7 @@ script ShadowUnit extends AttackComponent
             self.StrikeTimer = 0
             if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Dead or self.RallyTimer > 0 or not self:IsLiveTarget(target) then return end
             if self.Entity.CurrentMap ~= map or target.CurrentMap ~= map or not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= map then return end
+            if not self:IsOwnerCombatTarget(target, self.OwnerCombatRange) then return end
             local at = _Util:Pos2(self.Entity)
             local delta = _Util:Pos2(target) - at
             if delta:Magnitude() > self.AttackRange + 0.3 then return end
