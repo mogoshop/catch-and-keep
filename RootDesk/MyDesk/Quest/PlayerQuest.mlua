@@ -53,9 +53,10 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestAccept()
+    method void RequestAccept(integer expectedIndex)
+        -- 화면에 표시된 의뢰만 수락한다. 늦게 도착한 이전 의뢰 입력은 다음 의뢰에 적용하지 않는다.
         local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId or self.State ~= 0 or not self:NearQuestNpc() then return end
+        if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 0 or not _Util:IsAlive(self.Entity) or not self:NearQuestNpc() then return end
         local q = _QuestData:Get(self.Index)
         if q == nil then return end
         self.State = 1
@@ -72,9 +73,10 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestTurnIn()
+    method void RequestTurnIn(integer expectedIndex)
+        -- 보고 요청도 표시된 의뢰 번호에 묶어 재전송·연속 입력을 안전하게 무시한다.
         local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId or self.State ~= 2 or not self:NearQuestNpc() then return end
+        if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 2 or not self:NearQuestNpc() then return end
         self:TurnIn()
     end
 
@@ -127,6 +129,8 @@ script PlayerQuest extends Component
 
     @ExecSpace("Client")
     method void NotifyQuest(string title, string detail, string icon)
+        -- 의뢰 보상과 완료 알림은 해당 플레이어의 화면에만 표시한다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
         _UXFeedback:Show(title, detail, icon)
     end
 
