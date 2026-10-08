@@ -37,13 +37,14 @@ script CharWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or st == nil then return end
         local pc = player.PlayerComponent
-        local key = string.format("%d|%d|%d|%d|%d|%d|%d|%.0f|%.0f|%.0f|%.0f|%d|%d|%d|%d|%s|%d|%.0f|%.0f|%.0f", st.Level, st.Str, st.Dex, st.Vit, st.Ene, st.StatPoints, pc.MaxHp, st.MaxMana, st.BonusDefense, st.BonusDamage, st.BonusMinionPct, st.ResFire, st.ResCold, st.ResLight, st.ResPoison, st.ElemDamage, st.Difficulty, st.BonusIas, st.BonusFcr, st.BonusMs)
-        if key == self.RenderKey then return end
-        self.RenderKey = key
+        ---@type PlayerAttack
+        local attack = player:GetComponent("script.PlayerAttack")
+        local physical = "—"
+        if attack ~= nil then physical = tostring(math.max(1, math.floor(attack:GetBasicPhysicalDamage() + 0.5))) end
         local lines = {
             string.format("레벨 %d  ·  네크로맨서", st.Level),
             string.format("생명 %d   마나 %d", math.floor(pc.MaxHp), math.floor(st.MaxMana)),
-            string.format("근접 피해 %d", math.floor(st:GetMeleeDamage(25))),
+            string.format("평타 물리 %s (저항 전) · 치명 %.1f%% ×%.1f", physical, st:GetBasicCriticalChancePct(), _GameData.basicCritMultiplier),
             string.format("주문력 +%d%%   방어 %d", math.floor(st:GetSpellPowerPct()), math.floor(st.BonusDefense)),
             string.format("소환수 +%d%%   추출 +%d%%", math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct)),
             string.format("아이템 발견 +%d%%   골드 발견 +%d%%", math.floor(st.BonusMF), math.floor(st.BonusGF)),
@@ -51,17 +52,27 @@ script CharWindow extends Logic
             _UIKit:Colored("#FF7A45", "화염 " .. tostring(st.ResFire)) .. "  " .. _UIKit:Colored("#7AB8FF", "냉기 " .. tostring(st.ResCold)) .. "  "
                 .. _UIKit:Colored("#FFE15A", "번개 " .. tostring(st.ResLight)) .. "  " .. _UIKit:Colored("#7CFF7A", "독 " .. tostring(st.ResPoison)) .. "  (" .. _GameConst:DifficultyName(st.Difficulty) .. ")",
         }
-        _UIKit:SetText(self.Win .. "/Paper/Info", table.concat(lines, "\n"))
-        _UIKit:SetText(self.Win .. "/Str/Text", self:StatLine("힘", st.Str, st.BonusStr))
-        _UIKit:SetText(self.Win .. "/Dex/Text", self:StatLine("민첩", st.Dex, st.BonusDex))
-        _UIKit:SetText(self.Win .. "/Vit/Text", self:StatLine("활력", st.Vit, st.BonusVit))
-        _UIKit:SetText(self.Win .. "/Ene/Text", self:StatLine("정신", st.Ene, st.BonusEne))
-        _UIKit:SetText(self.Win .. "/Points", "남은 능력치 포인트: " .. tostring(st.StatPoints))
+        -- 실제 표시 내용을 캐시한다. 장비 능력치·피해%·발견 확률도 열린 창에 즉시 반영한다.
+        local info = table.concat(lines, "\n")
+        local statLines = {
+            Str = self:StatLine("힘", st.Str, st.BonusStr) .. "\n평타 물리 피해 증가",
+            Dex = self:StatLine("민첩", st.Dex, st.BonusDex) .. string.format("\n1당 평타 치명 +%.1f%%p (최대 %.0f%%)", _GameData.basicCritPerDex, _GameData.basicCritChanceCap),
+            Vit = self:StatLine("활력", st.Vit, st.BonusVit) .. "\n1당 최대 생명 +3",
+            Ene = self:StatLine("정신", st.Ene, st.BonusEne) .. "\n1당 마나 +2 · 주문력 +1%",
+        }
+        local points = "남은 능력치 포인트: " .. tostring(st.StatPoints)
+        local key = table.concat({ info, statLines.Str, statLines.Dex, statLines.Vit, statLines.Ene, points }, "|")
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        _UIKit:SetText(self.Win .. "/Paper/Info", info)
+        for _, stat in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetText(self.Win .. "/" .. stat .. "/Text", statLines[stat]) end
+        _UIKit:SetText(self.Win .. "/Points", points)
         for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetEnabled(self.Win .. "/" .. s .. "/BtnAdd", st.StatPoints > 0) end
     end
 
     method string StatLine(string name, integer base, integer bonus)
-        if bonus > 0 then return string.format("%s  %d  ", name, base + bonus) .. _UIKit:Colored("#6E8CFF", "(+" .. tostring(bonus) .. ")") end
+        -- 장비 보정의 부호와 총합을 함께 표시한다.
+        if bonus ~= 0 then return string.format("%s  %d  ", name, base + bonus) .. _UIKit:Colored(bonus > 0 and "#6E8CFF" or "#FF7A45", string.format("(%+d)", bonus)) end
         return string.format("%s  %d", name, base)
     end
 

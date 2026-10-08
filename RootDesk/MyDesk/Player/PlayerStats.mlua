@@ -331,12 +331,18 @@ script PlayerStats extends Component
         return self.Ene + self.BonusEne + self.BonusDamagePct
     end
 
+    method number GetBasicCriticalChancePct()
+        -- 민첩(장비 포함)은 평타 치명타 확률을 높인다. 소환수·주문에는 전이하지 않는다.
+        return math.max(0, math.min(_GameData.basicCritChanceCap, (self.Dex + self.BonusDex) * _GameData.basicCritPerDex))
+    end
+
     -- ───────── 요청 ─────────
 
     @ExecSpace("Server")
     method void RequestAddStat(string statName)
+        -- 살아 있는 소유자만 투자한다. 사망 중 재계산으로 생명이 1이 되는 것을 막는다.
         local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId or self.StatPoints <= 0 then return end
+        if senderUserId ~= pc.UserId or self.StatPoints <= 0 or not _Util:IsAlive(self.Entity) then return end
         if statName == "Str" then self.Str = self.Str + 1
         elseif statName == "Dex" then self.Dex = self.Dex + 1
         elseif statName == "Vit" then self.Vit = self.Vit + 1

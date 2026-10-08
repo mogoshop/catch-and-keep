@@ -472,6 +472,26 @@ script PlayerAttack extends AttackComponent
         _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), rot, Vector3(0.55, 0.55, 1), false, { FlipX = right, PlayRate = 1.5, Color = Color(0.75, 0.7, 1, 0.9) })
     end
 
+    method number GetBasicPhysicalDamage()
+        -- 대상 저항·저주·치명타 적용 전 물리 피해. 능력치 창도 같은 기준을 사용한다.
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return self.Damage end
+        return stats:GetMeleeDamage(self.Damage)
+    end
+
+    method boolean CalcCritical(Entity attacker, Entity defender, string attackInfo)
+        -- 엔진이 평타 명중마다 서버에서 한 번 판정한다. 스킬과 소환수는 이 보너스를 받지 않는다.
+        if not self:IsServer() or attackInfo ~= "player.basic" then return false end
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return false end
+        return _UtilLogic:RandomDouble() * 100 < stats:GetBasicCriticalChancePct()
+    end
+
+    method float GetCriticalDamageRate()
+        -- 설계의 치명타 배율을 엔진 피해 계산과 능력치 창이 공유한다.
+        return _GameData.basicCritMultiplier
+    end
+
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 기본 피해 × 힘·장비 보정 (스킬은 SkillDamage), 저주(약화의 낙인) 등 대상 배율 적용
         -- 속성: 스킬은 스킬 고유 속성, 기본 공격은 물리 + 장비 무기 속성 피해. 각각 대상 저항으로 줄인다
@@ -483,7 +503,7 @@ script PlayerAttack extends AttackComponent
         if string.sub(attackInfo, 1, 6) == "skill." then
             dmg = self.SkillDamage * self:ResistFactor(defender, monster, self:SkillElement(attackInfo))
         else
-            if stats ~= nil then dmg = stats:GetMeleeDamage(self.Damage) end
+            dmg = self:GetBasicPhysicalDamage()
             dmg = dmg * self:ResistFactor(defender, monster, "phys")
             if stats ~= nil then
                 for _, e in ipairs({ "fire", "cold", "light", "poison" }) do
