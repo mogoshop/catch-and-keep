@@ -8,11 +8,15 @@ script WaypointWindow extends Logic
     property boolean Dismissed = false
     property string RenderKey = ""
     property integer TimerId = 0
+    property boolean WasOpen = false
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        _UIKit:SetEnabled(self.Win, false)
-        _UIKit:Connect(self.Win .. "/BtnClose", function() self.Dismissed = true end)
+        self.Dismissed = false
+        self.WasOpen = false
+        self.RenderKey = ""
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self.Dismissed = true _UIKit:Close(self.Win) end)
         for i = 1, 6 do
             local index = i
             _UIKit:Connect(self.Win .. "/Wp" .. tostring(i), function() self:TravelTo(index) end)
@@ -25,11 +29,14 @@ script WaypointWindow extends Logic
             end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+        log("[VRF] WaypointWindow route recommendation and modal input ready")
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+        self.WasOpen = false
     end
 
     method PlayerTravel Travel()
@@ -46,22 +53,32 @@ script WaypointWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or not isvalid(player.CurrentMap) or travel == nil or st == nil then return end
         local near = _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), self.Reach) ~= nil
+        -- Esc·다른 메뉴로 닫은 창은 같은 거점 위에서 다시 열지 않는다.
+        if self.WasOpen and not _UIKit:IsOpen(self.Win) then self.Dismissed = true end
         if not near then self.Dismissed = false end
-        local open = near and not self.Dismissed
-        _UIKit:SetEnabled(self.Win, open)
+        local open = near and not self.Dismissed and _Util:IsAlive(player) and not _UIKit:AnyOtherWindowOpen(self.Win)
+        if open and not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win)
+        elseif not open then _UIKit:Close(self.Win) end
+        self.WasOpen = open
         if not open then
             self.RenderKey = ""
             return
         end
-        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty)
+        local quest = player:GetComponent("script.PlayerQuest")
+        local goal = quest ~= nil and _HudMap:QuestMap(quest.Index, quest.State) or ""
+        local recommended = _HudMap:RecommendedWaypoint(player.CurrentMap.Name, goal, travel)
+        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty) .. "#" .. player.CurrentMap.Id .. "#" .. recommended
         if key == self.RenderKey then return end
         self.RenderKey = key
         local list = _WaypointData:GetList()
         for i = 1, 6 do
             local w = list[i]
             local text = ""
+            _UIKit:SetEnabled(self.Win .. "/Wp" .. tostring(i), w ~= nil)
             if w ~= nil then
-                if travel:IsKnown(w.id) then text = w.name else text = _UIKit:Colored("#666666", w.name .. " (미발견)") end
+                if travel:IsKnown(w.id) then
+                    text = w.id == recommended and "[의뢰 경로] " .. w.name or w.name
+                else text = _UIKit:Colored("#666666", w.name .. " (미발견)") end
             end
             _UIKit:SetText(self.Win .. "/Wp" .. tostring(i), text)
         end

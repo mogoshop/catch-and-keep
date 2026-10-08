@@ -21,9 +21,13 @@ script HudMap extends Logic
     property table Features = {}
     property boolean Expanded = true
     property string LayoutKey = ""
+    property string RouteKey = ""
+    property string RouteWaypoint = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        self.RouteKey = ""
+        self.RouteWaypoint = ""
         -- 별도 내비게이션 HUD를 사용하며 이전 표시물은 중복되지 않게 숨긴다.
         _UIKit:SetEnabled("/ui/GameHUD/MiniMap", false)
         _UIKit:SetEnabled("/ui/GameHUD/QuestTrack", false)
@@ -109,7 +113,7 @@ script HudMap extends Logic
         local icons = { portal = "icon_scroll", waypoint = "icon_waypoint", quest = "icon_quest", npc = "icon_party", depth = "icon_shadow", altar = "rune", boss = "icon_sword" }
         local n = 0
         for _, f in ipairs(self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)) do
-            table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "" })
+            table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "", waypointId = f.waypointId or "" })
             if n < self.FeatureCount then
                 n = n + 1
                 local path = "MiniMap/Body/Area/F" .. tostring(n)
@@ -139,6 +143,7 @@ script HudMap extends Logic
                     local kind = spec[2]
                     local label = ""
                     local target = ""
+                    local waypointId = ""
                     local show = true
                     if kind == "portal" then
                         label = component.Label
@@ -147,10 +152,12 @@ script HudMap extends Logic
                     elseif kind == "npc" then
                         kind = component.Kind == "quest" and "quest" or "npc"
                         label = component.NpcName
+                    elseif kind == "waypoint" then
+                        waypointId = component.WaypointId
                     end
                     if show then
                         local pos = _Util:Pos2(component.Entity)
-                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target })
+                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target, waypointId = waypointId })
                         liveKinds[kind] = true
                     end
                 end
@@ -292,9 +299,16 @@ script HudMap extends Logic
     end
 
     method string NextRoute(string startMap, string goalMap)
+        return self:Route(startMap, goalMap).first
+    end
+
+    method table Route(string startMap, string goalMap)
         -- 포털 목적지 그래프를 너비 우선 탐색해 가장 짧은 경로의 첫 출구를 찾는다.
-        if startMap == goalMap or goalMap == "" then return "" end
-        local queue = { { name = startMap, first = "" } }
+        startMap = _GameConst:BaseMapName(startMap)
+        goalMap = _GameConst:BaseMapName(goalMap)
+        if goalMap == "" then return { first = "", steps = -1 } end
+        if startMap == goalMap then return { first = "", steps = 0 } end
+        local queue = { { name = startMap, first = "", steps = 0 } }
         local seen = { [startMap] = true }
         local head = 1
         while head <= #queue do
@@ -303,17 +317,42 @@ script HudMap extends Logic
             local info = _GameData:GetMapInfo(node.name)
             if info ~= nil then
                 for _, f in ipairs(info.features) do
-                    local target = f.targetMap or ""
+                    local target = _GameConst:BaseMapName(f.targetMap or "")
                     if f.kind == "portal" and target ~= "" and not seen[target] then
                         local first = node.first == "" and target or node.first
-                        if target == goalMap then return first end
+                        if target == goalMap then return { first = first, steps = node.steps + 1 } end
                         seen[target] = true
-                        table.insert(queue, { name = target, first = first })
+                        table.insert(queue, { name = target, first = first, steps = node.steps + 1 })
                     end
                 end
             end
         end
-        return ""
+        return { first = "", steps = -1 }
+    end
+
+    @ExecSpace("ClientOnly")
+    method string RecommendedWaypoint(string startMap, string goalMap, PlayerTravel travel)
+        if travel == nil or goalMap == "" then return "" end
+        startMap = _GameConst:BaseMapName(startMap)
+        goalMap = _GameConst:BaseMapName(goalMap)
+        local key = startMap .. "|" .. goalMap .. "|" .. travel.Known
+        if self.RouteKey == key then return self.RouteWaypoint end
+        self.RouteKey = key
+        self.RouteWaypoint = ""
+        local best = self:Route(startMap, goalMap).steps
+        if best == 0 then return "" end
+        if best < 0 then best = math.huge end
+        -- 거점 이동도 한 번의 전환으로 계산한다. 같은 거리라면 걷는 길을 유지한다.
+        for _, w in ipairs(_WaypointData:GetList()) do
+            if w.map ~= startMap and travel:IsKnown(w.id) then
+                local remaining = self:Route(w.map, goalMap).steps
+                if remaining >= 0 and remaining + 1 < best then
+                    best = remaining + 1
+                    self.RouteWaypoint = w.id
+                end
+            end
+        end
+        return self.RouteWaypoint
     end
 
     @ExecSpace("ClientOnly")
@@ -327,7 +366,21 @@ script HudMap extends Logic
             local current = _GameConst:BaseMapName(player.CurrentMap.Name)
             local nextMap = self:NextRoute(current, goal)
             local q = _QuestData:Get(quest.Index)
+            ---@type PlayerTravel
+            local travel = player:GetComponent("script.PlayerTravel")
+            local waypoint = _WaypointData:Get(self:RecommendedWaypoint(current, goal, travel))
+            -- 실제로 사용할 수 있는 이 맵의 거점을 강조한다. 없는 맵에서는 출구 안내를 유지한다.
+            if waypoint ~= nil then
+                for _, f in ipairs(self.Features) do
+                    if f.kind == "waypoint" and f.waypointId ~= "" and travel:IsKnown(f.waypointId) then
+                        focused = f
+                        text = "거점 이동: " .. waypoint.name
+                        break
+                    end
+                end
+            end
             for _, f in ipairs(self.Features) do
+                if focused ~= nil then break end
                 if nextMap ~= "" and f.kind == "portal" and _GameConst:BaseMapName(f.targetMap or "") == nextMap then
                     focused = f
                     text = "다음 길: " .. string.gsub(f.label, "%s*%(Lv[^%)]*%)", "")
