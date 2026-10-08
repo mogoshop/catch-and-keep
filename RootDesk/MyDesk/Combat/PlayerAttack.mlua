@@ -99,10 +99,12 @@ script PlayerAttack extends AttackComponent
         self.LastLocalInputAt = now
         local dir = self.LocalAimDirection
         local manual = self.LocalAimActive
-        if Environment:IsPCPlatform() and not _InputService:IsPointerOverUI() then
-            local click = self.Entity:GetComponent("script.ClickControl")
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        -- PC 마우스 모드에서만 커서를 조준한다. 키보드 모드는 스킬과 같이 바라보는 쪽(앞 반원 대상)을 친다.
+        if Environment:IsPCPlatform() and click ~= nil and click.MouseMode and not _InputService:IsPointerOverUI() then
             -- 몬스터를 직접 클릭해서 접근 중인 경우에는 선택 대상 조준을 유지한다.
-            if click == nil or not isvalid(click.AttackTarget) then
+            if not isvalid(click.AttackTarget) then
                 dir = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - _Util:Pos2(self.Entity)
                 manual = dir:Magnitude() > 0.08
             end
@@ -170,8 +172,11 @@ script PlayerAttack extends AttackComponent
         self.SwingTimer = _TimerService:SetTimerOnce(function()
             self.SwingTimer = 0
             if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.Entity) then return end
-            if (_Util:Pos2(self.Entity) - origin):Magnitude() > 0.18 then
-                self.AttackPhase = "recovery"
+            -- 크게 밀려났거나(넉백·순간이동) 지연으로 이미 걸어간 경우만 취소한다. 취소된 휘두르기는 대기 시간을 돌려준다.
+            if (_Util:Pos2(self.Entity) - origin):Magnitude() > 0.35 then
+                self.AttackPhase = "idle"
+                self.ReadyAt = _UtilLogic.ElapsedSeconds
+                if self.ReadyTimer ~= 0 then _TimerService:ClearTimer(self.ReadyTimer) self.ReadyTimer = 0 end
                 return
             end
             self.AttackPhase = "active"
@@ -237,7 +242,14 @@ script PlayerAttack extends AttackComponent
         local controller = self.Entity.PlayerControllerComponent
         if isvalid(controller) and math.abs(dir.x) > 0.05 then controller.LookDirectionX = dir.x >= 0 and 1 or -1 end
         local rate = 2 * _GameData.baseAttackInterval / math.max(0.1, interval)
-        if self.Entity == me then self.Entity.StateComponent:ChangeState("ATTACK") end
+        if self.Entity == me then
+            self.Entity.StateComponent:ChangeState("ATTACK")
+            -- 판정 순간까지 제자리에 세워 휘두른 모션이 실제 타격으로 이어지게 한다.
+            ---@type ClickControl
+            local click = self.Entity:GetComponent("script.ClickControl")
+            local contact = math.min(interval * 0.5, self.Windup * interval / _GameData.baseAttackInterval)
+            if click ~= nil then click:RootForAttack(contact + 0.05) end
+        end
         -- 이 게임의 평타는 장비와 무관하게 근접 베기다. Attack enum은 일부 장비도 alert로 풀리므로 사용하지 않는다.
         -- 몸과 장비 파츠에 같은 동작을 보내고 한 번만 재생한다. native Attack 이벤트와 섞으면 캐시된 속도가 덮어쓴다.
         local body = avatar:GetBodyEntity()
@@ -312,10 +324,11 @@ script PlayerAttack extends AttackComponent
         local me = _Util:Pos2(self.Entity)
         local dir = self.LocalAimDirection
         local visible = self.LocalAimActive
-        if Environment:IsPCPlatform() and not _InputService:IsPointerOverUI() then
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if Environment:IsPCPlatform() and click ~= nil and click.MouseMode and not _InputService:IsPointerOverUI() then
             visible = true
-            local click = self.Entity:GetComponent("script.ClickControl")
-            if click ~= nil and self:IsLiveMonster(click.AttackTarget) then dir = _Util:Pos2(click.AttackTarget) - me
+            if self:IsLiveMonster(click.AttackTarget) then dir = _Util:Pos2(click.AttackTarget) - me
             else dir = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - me end
         end
         if not visible or dir:Magnitude() < 0.08 then self:HideAimIndicator() return end
@@ -370,17 +383,20 @@ script PlayerAttack extends AttackComponent
             end
             self.SelectedTarget = nil
         end
-        if self:IsLiveMonster(self.AutoTarget) and self:CanReach(self.AutoTarget) then return self.AutoTarget end
-        self.AutoTarget = nil
         local me = _Util:Pos2(self.Entity)
         local facing = self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1
+        -- 자동 대상도 플레이어가 돌아서면 놓는다 (등 뒤 대상에 고정되지 않게).
+        if self:IsLiveMonster(self.AutoTarget) and self:CanReach(self.AutoTarget)
+            and (_Util:Pos2(self.AutoTarget).x - me.x) * facing >= -0.1 then return self.AutoTarget end
+        self.AutoTarget = nil
         local best = nil
         local bestScore = math.huge
-        -- 위아래도 선택하되 뒤쪽에는 작은 비용을 준다. 선택된 자동 대상은 닿는 동안 유지한다.
+        -- 수동 조준 설계: 바라보는 반원(바로 위·아래 포함) 안에서만 가장 가까운 적을 고른다.
+        -- 등 뒤의 적 때문에 저절로 돌아서지 않는다. 뒤를 치려면 방향을 바꾸거나 대상을 직접 고른다.
         for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, self.AimRange)) do
-            if self:CanReach(monster.Entity) then
-                local to = _Util:Pos2(monster.Entity) - me
-                local score = to:Magnitude() + (to.x * facing < -0.1 and 0.45 or 0)
+            local to = _Util:Pos2(monster.Entity) - me
+            if to.x * facing >= -0.1 and self:CanReach(monster.Entity) then
+                local score = to:Magnitude()
                 if score < bestScore then best = monster.Entity bestScore = score end
             end
         end
