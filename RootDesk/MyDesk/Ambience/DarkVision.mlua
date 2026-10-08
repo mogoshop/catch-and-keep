@@ -116,11 +116,13 @@ script DarkVision extends Logic
         end
         self.Active = true
         _OverlayLightService:SetOverlayLightEnabled(true)
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, amb.AmbientColor, amb.Ambient))
-        local r = amb.PlayerLightRadius
-        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.35, r)
+        -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
+        local ambient = math.max(amb.Ambient, 0.20)
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, amb.AmbientColor, ambient))
+        local r = math.max(amb.PlayerLightRadius, 4.8)
+        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.5, r)
         if amb.DisplayName ~= "" then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
-        log(string.format("[DarkVision] %s 밝기 %.2f", map.Name, amb.Ambient))
+        log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f", map.Name, ambient, r))
     end
 
     @ExecSpace("ClientOnly")
