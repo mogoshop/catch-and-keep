@@ -244,9 +244,15 @@ script SkillBook extends Component
         if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
         local command = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
         if not command and math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
-        local body = id == "bone_shard" and MapleAvatarBodyActionState.Attack or MapleAvatarBodyActionState.Heal
         self.Entity.StateComponent:ChangeState("ATTACK")
-        self.Entity:SendEvent(BodyActionStateChangeEvent(true, body, 0, 2147483647, 1.25))
+        if id == "bone_shard" then
+            -- 무기별 Attack 선택이 alert 대기로 풀리지 않게 주문 제스처를 한 번 재생한다.
+            local avatar = self.Entity.AvatarRendererComponent
+            local body = isvalid(avatar) and avatar:GetBodyEntity() or nil
+            if isvalid(body) then body:SendEvent(ActionStateChangedEvent("heal", "heal", 1.6, SpriteAnimClipPlayType.Onetime)) end
+        else
+            self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Heal, 0, 2147483647, 1.25))
+        end
         self.PresentedCastCount = self.PresentedCastCount + 1
     end
 

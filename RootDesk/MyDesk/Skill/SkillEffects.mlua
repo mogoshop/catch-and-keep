@@ -15,6 +15,9 @@ script SkillEffects extends Component
     property table MistVisuals = {}
     property table MistTimers = {}            -- 남아 있는 독안개 타이머
     property table DrainVisuals = {}           -- 짧은 흡수 궤적; 맵 이동·사망에서도 정리한다
+    property table BoneVisuals = {}
+    property integer BoneLaunchFxCount = 0
+    property integer BoneContactFxCount = 0
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -94,6 +97,7 @@ script SkillEffects extends Component
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then finish(false) return end
             if canCommit ~= nil and not canCommit() then finish(false) return end
             proj:Launch(owner, dir, 11, 6, damage, "skill.bone_shard", true)
+            self:BoneShardFx(Vector3(start.x, start.y, 0), dir, false, map.Id)
             finish(true)
         end, function() finish(false) end)
         _TimerService:SetTimerOnce(function() if not finished then finish(false) end end, 1)
@@ -220,10 +224,12 @@ script SkillEffects extends Component
         -- 입자와 그 입자를 지울 예정이었던 타이머도 함께 해제한다.
         for serial, _ in pairs(self.MistVisuals) do _ParticleService:RemoveParticle(serial) end
         for serial, _ in pairs(self.DrainVisuals) do _ParticleService:RemoveParticle(serial) end
+        for serial, _ in pairs(self.BoneVisuals) do _ParticleService:RemoveParticle(serial) end
         if self.StormVisual ~= 0 then _ParticleService:RemoveParticle(self.StormVisual) end
         for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
         self.MistVisuals = {}
         self.DrainVisuals = {}
+        self.BoneVisuals = {}
         self.VisualTimers = {}
         self.StormVisual = 0
     end
@@ -331,6 +337,25 @@ script SkillEffects extends Component
         elseif kind == "weaken" then
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.6, 0.3, 1) })
         end
+    end
+
+    @ExecSpace("Multicast")
+    method void BoneShardFx(Vector3 pos, Vector2 dir, boolean contact, string mapId)
+        -- 발사는 손 앞의 작은 응집, 실제 명중은 뼛가루 파열로 구분한다. 이전 맵의 지연 연출은 버린다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not _Util:IsAlive(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap or self.Entity.CurrentMap.Id ~= mapId then return end
+        local particle = contact and BasicParticleType.SparkRadialExplosion or BasicParticleType.ChargeOrb
+        local size = contact and 0.2 or 0.18
+        local angle = math.deg(math.atan(dir.y, dir.x))
+        local serial = _ParticleService:PlayBasicParticle(particle, self.Entity, pos, angle, Vector3(size, size, 1), false, { Color = Color(0.8, 0.76, 0.65, 0.8) })
+        if serial == 0 then return end
+        if contact then self.BoneContactFxCount = self.BoneContactFxCount + 1 else self.BoneLaunchFxCount = self.BoneLaunchFxCount + 1 end
+        self.BoneVisuals[serial] = true
+        self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
+            _ParticleService:RemoveParticle(serial)
+            self.BoneVisuals[serial] = nil
+            self.VisualTimers[serial] = nil
+        end, 0.4)
     end
 
     @ExecSpace("Multicast")

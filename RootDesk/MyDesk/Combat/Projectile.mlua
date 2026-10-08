@@ -85,7 +85,15 @@ script Projectile extends Component
                     if unit ~= nil then unit:HitOne(m.Entity) end
                 else
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
+                    local beforeHp = m.Hp
+                    local hitPos = m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0)
                     if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
+                    if self.Info == "skill.bone_shard" and m.Hp < beforeHp then
+                        local effects = self.Owner:GetComponent("script.SkillEffects")
+                        if effects ~= nil then
+                            effects:BoneShardFx(hitPos, self.Dir, true, self.Entity.CurrentMap.Id)
+                        end
+                    end
                 end
                 if not self.Pierce then self:Finish() return end
             end
