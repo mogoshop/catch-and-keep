@@ -244,6 +244,8 @@ script Monster extends Component
         -- 사망 연출 → MonsterKilled 이벤트 → 숨김 → 리스폰 예약 (또는 제거)
         if self.IsDead then return end
         self.IsDead = true
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("DEAD") end
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
@@ -305,7 +307,11 @@ script Monster extends Component
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("IDLE") end
         local chase = self.Entity.AIChaseComponent
-        if isvalid(chase) then chase.IsChaseNearPlayer = false end
+        if isvalid(chase) then chase.IsChaseNearPlayer = false chase.Enable = true end
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:ResetBehavior() end
     end
 
 end

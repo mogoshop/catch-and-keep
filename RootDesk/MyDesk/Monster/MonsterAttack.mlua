@@ -27,6 +27,8 @@ script MonsterAttack extends AttackComponent
     property integer WarningSerial = 0
     property integer WarningTimer = 0
     property integer WarningEpoch = -1
+    property integer WindupTimer = 0
+    property integer RecoveryTimer = 0
     property integer StrikeCount = 0
     property integer CancelCount = 0
     property boolean DebugCombat = false
@@ -81,6 +83,8 @@ script MonsterAttack extends AttackComponent
         if body == nil or body.IsDead or not self.Entity.Enable then return end
         local status = body:Status()
         if status ~= nil and status:IsStunned() then return end
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil and not behavior:CanBeginAttack() then return end
         self.CooldownTimer = self.CooldownTimer - delta
         self.ScanTimer = self.ScanTimer - delta
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil or self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
@@ -95,6 +99,9 @@ script MonsterAttack extends AttackComponent
     method void BeginAttack(Entity target)
         local body = self:Body()
         if body == nil or body.IsDead or not self:IsLiveDefender(target) then return end
+        if not self.Entity.Enable then return end
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil and not behavior:CanBeginAttack() then return end
         local map = self.Entity.CurrentMap
         local aim = _Util:Pos2(target)
         if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
@@ -115,7 +122,8 @@ script MonsterAttack extends AttackComponent
         self.Entity.StateComponent:ChangeState("ATTACK")
         self:WindupFx(face, self.AttackWindup, epoch)
         if self.DebugCombat then log("[VRF-COMBAT] enemy windup epoch=" .. tostring(epoch)) end
-        _TimerService:SetTimerOnce(function()
+        self.WindupTimer = _TimerService:SetTimerOnce(function()
+            self.WindupTimer = 0
             if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or body.IsDead or self.Entity.CurrentMap ~= map then return end
             local status = body:Status()
             if status ~= nil and status:IsStunned() then return end
@@ -130,23 +138,30 @@ script MonsterAttack extends AttackComponent
             self:AttackFast(CircleShape(center, reach), "monster.basic", nil)
             self:SwingFx(Vector3(center.x, center.y, 0), face)
         end, self.AttackWindup)
-        _TimerService:SetTimerOnce(function()
+        self.RecoveryTimer = _TimerService:SetTimerOnce(function()
+            self.RecoveryTimer = 0
             if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or body.IsDead or self.Entity.CurrentMap ~= map then return end
             local status = body:Status()
             if status ~= nil and status:IsStunned() then return end
-            if isvalid(chase) then chase.Enable = resumeChase end
             if self.Entity.StateComponent.CurrentStateName == "ATTACK" then self.Entity.StateComponent:ChangeState("IDLE") end
+            if behavior ~= nil then behavior:ResumeMovement()
+            elseif isvalid(chase) then chase.Enable = resumeChase end
         end, self.AttackAnimationSeconds)
     end
 
     @ExecSpace("ServerOnly")
     method void CancelPending()
         -- 중단한 공격의 지연 타이머는 경직이 풀려도 되살리지 않는다.
+        if self.WindupTimer ~= 0 then _TimerService:ClearTimer(self.WindupTimer) self.WindupTimer = 0 end
+        if self.RecoveryTimer ~= 0 then _TimerService:ClearTimer(self.RecoveryTimer) self.RecoveryTimer = 0 end
         self.AttackEpoch = self.AttackEpoch + 1
         self.CancelCount = self.CancelCount + 1
         self.AttackAnimationUntil = 0
         self.CurrentTarget = nil
         self.CooldownTimer = math.max(self.CooldownTimer, 0.35)
+        if isvalid(self.Entity) and isvalid(self.Entity.StateComponent) and self.Entity.StateComponent.CurrentStateName == "ATTACK" then
+            self.Entity.StateComponent:ChangeState("IDLE")
+        end
     end
 
     @ExecSpace("Multicast")
@@ -218,10 +233,16 @@ script MonsterAttack extends AttackComponent
         local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "Arrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
         if not isvalid(shot) then return end
         local owner = self.Entity
+        local originMap = self.Entity.CurrentMap
         local color = self:ElementColor(self:GetElement())
         _Util:AfterSpawn(shot, "script.Projectile", function(comp)
             ---@type Projectile
             local proj = comp
+            local body = isvalid(owner) and owner:GetComponent("script.Monster") or nil
+            if body == nil or body.IsDead or not owner.Enable or owner.CurrentMap ~= originMap then
+                if isvalid(shot) then shot:Destroy() end
+                return
+            end
             shot.SpriteRendererComponent.SpriteRUID = _GameConst.SpriteArrow
             shot.SpriteRendererComponent.Color = color
             shot.TransformComponent.Scale = Vector3(1.6, 1.6, 1)
@@ -254,21 +275,28 @@ script MonsterAttack extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method Entity FindTarget()
-        -- 사거리 안의 가장 가까운 플레이어·그림자
+        -- 공격과 거리 유지가 같은 대상 선정 기준을 사용한다.
+        return self:FindDefender(self.AttackRange)
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity FindDefender(number range)
+        -- 감지 범위 안의 가장 가까운 살아 있는 플레이어·소환수. 장애물 뒤 대상은 제외한다.
         local map = self.Entity.CurrentMap
         local myPos = _Util:Pos2(self.Entity)
         local best = nil
-        local bestDist = self.AttackRange
-        for _, u in ipairs(_Util:PlayersNear(map, myPos, self.AttackRange)) do
+        if not isvalid(map) then return nil end
+        local bestDist = range
+        for _, u in ipairs(_Util:PlayersNear(map, myPos, range)) do
             local d = _Util:Distance(u, self.Entity)
-            if d < bestDist and self:IsLiveDefender(u) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(u)) then
+            if d <= bestDist and self:IsLiveDefender(u) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(u)) then
                 bestDist = d
                 best = u
             end
         end
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
             local d = _Util:Distance(c.Entity, self.Entity)
-            if d < bestDist and self:IsLiveDefender(c.Entity) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(c.Entity)) then
+            if d <= bestDist and self:IsLiveDefender(c.Entity) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(c.Entity)) then
                 bestDist = d
                 best = c.Entity
             end

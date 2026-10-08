@@ -15,6 +15,14 @@ script MonsterBehavior extends Component
     property number FleeSeconds = 2.2
     property number FleeRadius = 5
     property number KeepRange = 1.8
+    property number RangedRetreatSeconds = 0.65
+    property number RangedRetreatCooldown = 2.8
+    property number RetreatReadyAt = 0
+    property number EmergeUntil = 0
+    property number EmergeSeconds = 0.55
+    property number RetreatCheckAt = 0
+    property Vector2 RetreatCheckPos = Vector2(0, 0)
+    property Entity RangeTarget = nil
 
     @Sync
     property boolean Burrowed = false
@@ -38,7 +46,11 @@ script MonsterBehavior extends Component
         local away = Vector2(p.x - q.x, p.y - q.y)
         if away:Magnitude() < 0.01 then away = Vector2(1, 0) end
         self.RetreatDir = away:Normalize()
-        self.RetreatUntil = _UtilLogic.ElapsedSeconds + self.RetreatSeconds
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        local ready = attack ~= nil and attack.AttackAnimationUntil or 0
+        self.RetreatUntil = math.max(_UtilLogic.ElapsedSeconds, ready) + self.RetreatSeconds
+        self:TrackRetreat()
+        self.RetreatCheckAt = math.max(_UtilLogic.ElapsedSeconds, ready)
         local chase = self.Entity.AIChaseComponent
         if isvalid(chase) then chase.Enable = false end
     end
@@ -58,16 +70,26 @@ script MonsterBehavior extends Component
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil and _UtilLogic.ElapsedSeconds < attack.AttackAnimationUntil then return end
         local now = _UtilLogic.ElapsedSeconds
+        if now < self.EmergeUntil then
+            self:DriveMotion(Vector2(0, 0))
+            return
+        end
         if self.RetreatUntil > 0 then
-            if now < self.RetreatUntil then
-                self.Entity.MovementComponent:MoveToDirection(self.RetreatDir, 0)
+            if now < self.RetreatUntil and self:RetreatPathOpen(self.RetreatDir) then
+                -- 실제로 벽에 막혔으면 같은 방향으로 계속 달리지 않는다.
+                if now - self.RetreatCheckAt >= 0.25 then
+                    local moved = (_Util:Pos2(self.Entity) - self.RetreatCheckPos):Magnitude()
+                    self:TrackRetreat()
+                    if moved < 0.03 then self:EndRetreat() return end
+                end
+                self:DriveMotion(self.RetreatDir)
             else
-                self.RetreatUntil = 0
-                self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
-                local chase = self.Entity.AIChaseComponent
-                if isvalid(chase) then chase.Enable = true end
+                self:EndRetreat()
             end
             return
+        end
+        if self.Mode == "burrow" and not self.Burrowed then
+            self:ResumeMovement()
         end
         if self.Mode ~= "burrow" and self.Mode ~= "ranged" then return end
         self.CheckTimer = self.CheckTimer - delta
@@ -77,7 +99,7 @@ script MonsterBehavior extends Component
             self:RangedTick()
             return
         end
-        local near = self:NearestPlayerDistance()
+        local near = self:NearestDefenderDistance()
         if self.Burrowed then
             if near <= self.EmergeRange then self:SetBurrowed(false) end
             return
@@ -92,36 +114,87 @@ script MonsterBehavior extends Component
 
     @ExecSpace("ServerOnly")
     method void RangedTick()
-        -- 가장 가까운 플레이어 기준: 너무 가까우면 물러서고, 사거리 안이면 멈춰 쏘고, 멀면 AIChase로 다가간다
-        local map = self.Entity.CurrentMap
-        local myPos = _Util:Pos2(self.Entity)
-        ---@type MonsterAttack
+        -- 사격과 거리 유지가 같은 살아 있는 대상(플레이어·소환수)을 본다. 짧게 후퇴한 뒤 반격한다.
         local atk = self.Entity:GetComponent("script.MonsterAttack")
-        local range = 3
-        if atk ~= nil then range = atk.AttackRange end
-        local nearest = nil
-        local best = range
-        for _, u in ipairs(_Util:PlayersNear(map, myPos, range)) do
-            local d = _Util:Distance(u, self.Entity)
-            if d < best then
-                best = d
-                nearest = u
-            end
-        end
+        self.RangeTarget = atk ~= nil and atk:FindTarget() or nil
         local chase = self.Entity.AIChaseComponent
-        if nearest == nil then
+        if not isvalid(self.RangeTarget) then
             if isvalid(chase) then chase.Enable = true end
             return
         end
         if isvalid(chase) then chase.Enable = false end
-        if best < self.KeepRange then
-            local q = _Util:Pos2(nearest)
-            local away = Vector2(myPos.x - q.x, myPos.y - q.y)
+        local now = _UtilLogic.ElapsedSeconds
+        if _Util:Distance(self.RangeTarget, self.Entity) < self.KeepRange and now >= self.RetreatReadyAt then
+            local away = _Util:Pos2(self.Entity) - _Util:Pos2(self.RangeTarget)
             if away:Magnitude() < 0.01 then away = Vector2(1, 0) end
-            self.Entity.MovementComponent:MoveToDirection(away:Normalize(), 0)
-        else
-            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+            self.RetreatDir = away:Normalize()
+            self.RetreatReadyAt = now + self.RangedRetreatCooldown
+            if self:RetreatPathOpen(self.RetreatDir) then
+                self.RetreatUntil = now + self.RangedRetreatSeconds
+                self:TrackRetreat()
+                self:DriveMotion(self.RetreatDir)
+                return
+            end
         end
+        self:DriveMotion(Vector2(0, 0))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DriveMotion(Vector2 direction)
+        -- 네이티브 추적을 잠시 끈 이동도 MOVE 모션을 유지한다. 공격·경직 모션은 덮어쓰지 않는다.
+        self.Entity.MovementComponent:MoveToDirection(direction, 0)
+        local state = self.Entity.StateComponent
+        if not isvalid(state) then return end
+        local current = state.CurrentStateName
+        if current == "ATTACK" or current == "HIT" or current == "DEAD" then return end
+        local nextState = direction:Magnitude() > 0.01 and "MOVE" or "IDLE"
+        if current ~= nextState then state:ChangeState(nextState) end
+        if math.abs(direction.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = direction.x > 0 end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TrackRetreat()
+        -- 저속 갱신마다 실제 이동량을 비교해 막힌 후퇴를 끝낸다.
+        self.RetreatCheckAt = _UtilLogic.ElapsedSeconds
+        self.RetreatCheckPos = _Util:Pos2(self.Entity)
+    end
+
+    method boolean RetreatPathOpen(Vector2 dir)
+        -- 발밑 중심·양옆을 검사한다. 벽·절벽으로 무리하게 후퇴하지 않는다.
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        local p = _Util:Pos2(self.Entity)
+        local side = Vector2(-dir.y, dir.x) * 0.22
+        for _, offset in ipairs({ Vector2(0, 0), side, side * -1 }) do
+            if not _Util:HasLineOfSight(map, p + offset, p + offset + dir * 0.45) then return false end
+        end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EndRetreat()
+        -- 후퇴 후 즉시 사격/추적으로 돌아간다. 원거리 적은 쿨다운 동안 자리에서 반격할 수 있다.
+        self.RetreatUntil = 0
+        self:DriveMotion(Vector2(0, 0))
+        self:ResumeMovement()
+    end
+
+    method boolean CanBeginAttack()
+        -- 매복의 출현 준비·도주·후퇴 중에는 공격을 시작하지 않는다.
+        local now = _UtilLogic.ElapsedSeconds
+        return not self.Burrowed and now >= self.EmergeUntil and now >= self.RetreatUntil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResumeMovement()
+        -- 공격 회복/경직 해제도 특수 행동의 이동 소유권을 존중한다.
+        local chase = self.Entity.AIChaseComponent
+        if not self:CanBeginAttack() then
+            if isvalid(chase) then chase.Enable = false end
+            return
+        end
+        if self.Mode == "ranged" then self:RangedTick() return end
+        if isvalid(chase) then chase.Enable = true end
     end
 
     @ExecSpace("ServerOnly")
@@ -155,13 +228,20 @@ script MonsterBehavior extends Component
         end
         self.RetreatDir = away:Normalize()
         self.RetreatUntil = _UtilLogic.ElapsedSeconds + self.FleeSeconds
+        self:TrackRetreat()
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
         local chase = self.Entity.AIChaseComponent
         if isvalid(chase) then chase.Enable = false end
     end
 
     @ExecSpace("ServerOnly")
-    method number NearestPlayerDistance()
-        return _Util:NearestPlayerDistance(self.Entity.CurrentMap, _Util:Pos2(self.Entity))
+    method number NearestDefenderDistance()
+        -- 무덤 구더기는 소환수에도 반응하지만 벽 뒤·사망한 대상에는 반응하지 않는다.
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        local target = attack ~= nil and attack:FindDefender(math.max(4.1, self.EmergeRange)) or nil
+        if not isvalid(target) then return 999 end
+        return _Util:Distance(target, self.Entity)
     end
 
     @ExecSpace("ServerOnly")
@@ -169,15 +249,31 @@ script MonsterBehavior extends Component
         -- 숨으면 맞지 않고(HitComponent 끔) 움직이지 않는다
         self.Burrowed = value
         self.LonelySince = 0
+        self.RetreatUntil = 0
+        self.EmergeUntil = value and 0 or (_UtilLogic.ElapsedSeconds + self.EmergeSeconds)
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
         local hit = self.Entity.HitComponent
         if isvalid(hit) then hit.Enable = not value end
         local chase = self.Entity.AIChaseComponent
-        if isvalid(chase) then chase.Enable = not value end
+        if isvalid(chase) then chase.Enable = false end
         if value then
-            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+            self:DriveMotion(Vector2(0, 0))
         else
             self:EmergeFx(self.Entity.TransformComponent.WorldPosition)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetBehavior()
+        -- 리스폰은 이전 후퇴·도주·거리 유지 대상을 이어받지 않는다.
+        self.RetreatUntil = 0
+        self.RetreatReadyAt = 0
+        self.EmergeUntil = 0
+        self.LonelySince = 0
+        self.CheckTimer = 0
+        self.RangeTarget = nil
+        if self.Mode == "burrow" then self:SetBurrowed(true) end
     end
 
     @ExecSpace("Multicast")
