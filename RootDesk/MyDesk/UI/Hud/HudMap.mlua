@@ -122,7 +122,7 @@ script HudMap extends Logic
                 _UIKit:SetIcon(path, _GameData:GetUiIcon(icons[f.kind] or "dot"))
                 _UIKit:SetColor(path, Color(1, 1, 1, 1))
             end
-            if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label }) end
+            if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
             if f.kind == "quest" then
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
@@ -144,10 +144,12 @@ script HudMap extends Logic
                     local label = ""
                     local target = ""
                     local waypointId = ""
+                    local radius = 0.6
                     local show = true
                     if kind == "portal" then
                         label = component.Label
                         target = component.TargetMap
+                        radius = component.Radius
                         show = component.OwnerUserId == "" or component.OwnerUserId == player.PlayerComponent.UserId
                     elseif kind == "npc" then
                         kind = component.Kind == "quest" and "quest" or "npc"
@@ -157,7 +159,7 @@ script HudMap extends Logic
                     end
                     if show then
                         local pos = _Util:Pos2(component.Entity)
-                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target, waypointId = waypointId })
+                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target, waypointId = waypointId, radius = radius })
                         liveKinds[kind] = true
                     end
                 end
@@ -464,30 +466,39 @@ script HudMap extends Logic
         local me = _Util:Pos2(player)
         local n = 0
         local nearest = nil
-        local nearestDist = 3.5
+        local nearestDist = math.huge
         for _, g in ipairs(self.Gates) do
             local d = (g.pos - me):Magnitude()
-            if d < nearestDist then
+            if d <= math.max(1.8, (g.radius or 0.6) + 0.8) and d < nearestDist then
                 nearestDist = d
                 nearest = g
             end
             if n < 4 and d <= self.GateLabelRange then
-                n = n + 1
-                local path = "Gate" .. tostring(n)
                 local screen = _UILogic:WorldToScreenPosition(g.pos + Vector2(0, 1.3))
                 local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
-                -- 아래 HUD·위 대상 정보에 가리지 않게 화면 안쪽으로
-                ui = Vector2(math.max(-760, math.min(760, ui.x)), math.max(-230, math.min(380, ui.y)))
-                _UIKit:SetEnabled(path, true)
-                _UIKit:SetText(path, "▼ " .. g.label)
-                _UIKit:SetPos(path, ui)
+                -- 화면 밖 출구를 임의의 화면 안 위치에 붙이지 않는다. 바깥 방향은 미니맵으로 안내한다.
+                if ui.x >= -760 and ui.x <= 760 and ui.y >= -230 and ui.y <= 380 then
+                    n = n + 1
+                    local path = "Gate" .. tostring(n)
+                    _UIKit:SetEnabled(path, true)
+                    _UIKit:SetText(path, "▼ " .. g.label)
+                    _UIKit:SetPos(path, ui)
+                end
             end
         end
         for i = n + 1, 4 do _UIKit:SetEnabled("Gate" .. tostring(i), false) end
-        -- 출구 바로 앞: 어디로 가는지 분명히
-        -- 알림이 끝나면 출구 안내가 다시 나타난다. 월드 위 출구 이름은 계속 유지한다.
-        _UIKit:SetEnabled("GatePrompt", nearest ~= nil and not _UXFeedback:IsShowing())
+        -- 전투 중에는 실제 이동 반경 바로 앞에서만 큰 배너를 띄운다. 포털 이름은 계속 유지한다.
+        _UIKit:SetEnabled("GatePrompt", self:ShouldShowGatePrompt(player, nearest, nearestDist))
         if nearest ~= nil then _UIKit:SetText("GatePrompt/Text", "출구: " .. nearest.label .. " — 들어서면 이동") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ShouldShowGatePrompt(Entity player, any gate, number distance)
+        -- 보상·사망 알림과 근처 적의 공격을 먼저 읽게 하되, 출구에 들어서기 직전에는 이동을 알린다.
+        if gate == nil or _UIKit:AnyWindowOpen() or _UXFeedback:IsShowing() then return false end
+        if distance > math.max(1.8, (gate.radius or 0.6) + 0.8) then return false end
+        if distance <= (gate.radius or 0.6) + 0.4 then return true end
+        return _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 4) == nil
     end
 
     @ExecSpace("ClientOnly")
