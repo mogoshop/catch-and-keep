@@ -154,8 +154,17 @@ script HudMap extends Logic
             if isvalid(e) then
                 e.UITransformComponent.RectSize = Vector2((r.x2 - r.x1 + 1) * grid.x * self.Scale, (r.y2 - r.y1 + 1) * grid.y * self.Scale)
                 e.UITransformComponent.anchoredPosition = self:ToMini(Vector2((a.x + z.x) / 2, (a.y + z.y) / 2))
-                local size = e.UITransformComponent.RectSize / 2
-                e.PolygonGUIRendererComponent.Points = { Vector2(-size.x, -size.y), Vector2(-size.x, size.y), Vector2(size.x, size.y), Vector2(size.x, -size.y) }
+                -- 네이티브 GUI 스프라이트로 그린다. 지형은 직사각형이므로 동적 폴리곤 갱신에 기대지 않는다.
+                local polygon = e:GetComponent("MOD.Core.PolygonGUIRendererComponent")
+                if isvalid(polygon) then polygon.Enable = false end
+                local sprite = e:GetComponent("MOD.Core.SpriteGUIRendererComponent")
+                if not isvalid(sprite) then sprite = e:AddComponent("MOD.Core.SpriteGUIRendererComponent") end
+                if isvalid(sprite) then
+                    sprite.ImageRUID = DataRef("2860136c06ab075439721c027de365af")
+                    sprite.Type = ImageType.Sliced
+                    sprite.Color = Color(0.38, 0.35, 0.32, 0.85)
+                    sprite.RaycastTarget = false
+                end
                 e.Enable = true
                 self.TerrainUsed = i
             end

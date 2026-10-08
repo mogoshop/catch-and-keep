@@ -48,6 +48,11 @@ script ClickControl extends Component
         -- 클릭한 순간: 대상/목적지 지정 + 클릭 표시
         if event.TouchId ~= 1 or not self:IsActive() then return end
         if _InputService:IsPointerOverUI() then return end
+        if self:IsStationaryAttack() then
+            self:Cancel()
+            self:AttackAtCursor()
+            return
+        end
         self.BlockedPick = false
         self.SlideCount = 0
         self.StuckTime = 0
@@ -62,7 +67,26 @@ script ClickControl extends Component
         -- 누르고 있는 동안: 커서를 따라 목적지/대상 갱신
         if event.TouchId ~= 1 or not self:IsActive() then return end
         if _InputService:IsPointerOverUI() then return end
+        if self:IsStationaryAttack() then self:AttackAtCursor() return end
         self:Pick(event.TouchPoint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsStationaryAttack()
+        -- Shift+클릭은 이동 목적지를 만들지 않고 커서 방향으로 공격한다.
+        return _InputService:IsKeyPressed(KeyboardKey.LeftShift) or _InputService:IsKeyPressed(KeyboardKey.RightShift)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AttackAtCursor()
+        -- 누른 채 커서를 옮겨도 서버 공격 간격과 기존 아바타 입력 경로를 지킨다.
+        if self.AttackTimer > 0 or _UIKit:AnyWindowOpen() then return end
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        self.AttackTimer = self.AttackInterval
+        if stats ~= nil then self.AttackTimer = stats:GetAttackInterval(self.AttackInterval) end
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        if attack ~= nil then attack:SubmitBasicInput() end
+        self.Entity.PlayerControllerComponent:ActionAttack()
     end
 
     @ExecSpace("ClientOnly")
@@ -184,6 +208,8 @@ script ClickControl extends Component
                     local stats = self.Entity:GetComponent("script.PlayerStats")
                     self.AttackTimer = self.AttackInterval
                     if stats ~= nil then self.AttackTimer = stats:GetAttackInterval(self.AttackInterval) end
+                    local attack = self.Entity:GetComponent("script.PlayerAttack")
+                    if attack ~= nil then attack:SubmitBasicInput() end
                     self.Entity.PlayerControllerComponent:ActionAttack()
                 end
             end

@@ -113,6 +113,16 @@ script UIKit extends Logic
         table.insert(self.Handlers, { entity = e, eventType = UITouchExitEvent, eventHandler = e:ConnectEvent(UITouchExitEvent, onUp) })
     end
 
+    @ExecSpace("ClientOnly")
+    method void ConnectAimControl(string rel, any onDown, any onDrag, any onUp)
+        -- 버튼 밖 드래그에서도 유지한다. 화면 release는 MobilePad가 touch id별로 받는다.
+        local e = self:Get(rel)
+        if not isvalid(e) then log_warning("[UIKit] 조준 UI 없음: " .. rel) return end
+        table.insert(self.Handlers, { entity = e, eventType = UITouchDownEvent, eventHandler = e:ConnectEvent(UITouchDownEvent, onDown) })
+        table.insert(self.Handlers, { entity = e, eventType = UITouchDragEvent, eventHandler = e:ConnectEvent(UITouchDragEvent, onDrag) })
+        table.insert(self.Handlers, { entity = e, eventType = UITouchUpEvent, eventHandler = e:ConnectEvent(UITouchUpEvent, onUp) })
+    end
+
     -- ───────── 창 ─────────
 
     @ExecSpace("ClientOnly")

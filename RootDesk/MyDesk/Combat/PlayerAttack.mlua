@@ -1,4 +1,4 @@
--- 플레이어 기본 공격. 공격 키(Ctrl)·클릭·모바일 공격 버튼으로 가까운 적 쪽(없으면 바라보는 쪽) 사각 범위를 친다.
+-- 플레이어 기본 공격. PC 커서·모바일 드래그는 2D 수동 조준, 직접 클릭한 적·모바일 탭은 대상 조준을 사용한다.
 -- 기본 피해 12: 같은 레벨 일반 몬스터가 2~4대에 쓰러지는 D2 감각 (25는 한 방이었다).
 -- 탑다운 맵이라 위아래 깊이(y)도 넉넉하게 잡는다.
 -- 네크로맨서 스킬(골편 투척 등)은 Phase 1에서 이 자리를 대체한다.
@@ -27,16 +27,65 @@ script PlayerAttack extends AttackComponent
     property integer ReadyTimer = 0
     property integer PhaseTimer = 0
     property boolean ReplayNextSwing = false
+    property Vector2 ManualAimDirection = Vector2(1, 0)
+    property number ManualAimUntil = 0
+    property boolean LocalAimActive = false
+    property Vector2 LocalAimDirection = Vector2(1, 0)
+    property integer AimRequestCount = 0
+    property number LastLocalInputAt = -99
+    property Entity AimIndicator = nil
     property number ContactPauseUntil = 0
     property number NextContactPauseAt = 0
     property number ContactRestoreRate = 1
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
 
-    @ExecSpace("ServerOnly")
+    @ExecSpace("ClientOnly")
     @EventSender("Self")
     handler HandlePlayerActionEvent(PlayerActionEvent event)
-        -- 서버에서만 판정한다 (이벤트는 서버·클라이언트 양쪽에서 온다)
-        if event.ActionName ~= "Attack" then return end
+        -- 네이티브 자동 반복과 클릭 공격도 같은 입력 창구를 사용한다.
+        if event.ActionName == "Attack" then self:SubmitBasicInput() end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleAttackKeyDown(KeyDownEvent event)
+        -- 아바타 ATTACK 상태가 두 번째 키 입력을 막아도 회복 직전 입력은 서버에 도착한다.
+        if self.Entity ~= _UserService.LocalPlayer or (event.key ~= KeyboardKey.LeftControl and event.key ~= KeyboardKey.RightControl) or _UIKit:AnyWindowOpen() then return end
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if click ~= nil and click.Moving then click:Cancel() end
+        self:SubmitBasicInput()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SubmitBasicInput()
+        -- 같은 프레임의 키·아바타 이벤트를 합친다. 피해/예약 여부는 서버가 결정한다.
+        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) or _UIKit:AnyWindowOpen() then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now - self.LastLocalInputAt < 0.03 then return end
+        self.LastLocalInputAt = now
+        local dir = self.LocalAimDirection
+        local manual = self.LocalAimActive
+        if Environment:IsPCPlatform() and not _InputService:IsPointerOverUI() then
+            local click = self.Entity:GetComponent("script.ClickControl")
+            -- 몬스터를 직접 클릭해서 접근 중인 경우에는 선택 대상 조준을 유지한다.
+            if click == nil or not isvalid(click.AttackTarget) then
+                dir = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - _Util:Pos2(self.Entity)
+                manual = dir:Magnitude() > 0.08
+            end
+        end
+        self:RequestBasicAttack(dir, manual)
+    end
+
+    @ExecSpace("Server")
+    method void RequestBasicAttack(Vector2 dir, boolean manual)
+        -- 소유자 요청만 허용하며 클라이언트 방향은 유한한 단위 벡터로 제한한다. 피해/속도는 서버가 정한다.
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not _Util:IsAlive(self.Entity) then return end
+        if dir.x ~= dir.x or dir.y ~= dir.y or math.abs(dir.x) > 10000 or math.abs(dir.y) > 10000 then return end
+        if manual and dir:Magnitude() > 0.05 then
+            self.ManualAimDirection = dir:Normalize()
+            self.ManualAimUntil = _UtilLogic.ElapsedSeconds + 0.75
+        else self.ManualAimUntil = 0 end
+        self.AimRequestCount = self.AimRequestCount + 1
         self:DoAttack()
     end
 
@@ -58,9 +107,11 @@ script PlayerAttack extends AttackComponent
         if not _Util:IsAlive(self.Entity) then return end
         local me = _Util:Pos2(self.Entity)
         local dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
-        local target = self:ResolveTarget()
-        -- 선택한 적이 아직 멀면 접근을 기다린다. 옆의 다른 적을 치지 않는다.
-        if isvalid(self.SelectedTarget) and target == nil then return end
+        local manual = now <= self.ManualAimUntil and self.ManualAimUntil > 0
+        local target = nil
+        if manual then dir = self.ManualAimDirection else target = self:ResolveTarget() end
+        -- 수동 조준은 선택 대상의 위치와 독립적이다. 자동 접근은 선택한 먼 적을 기다린다.
+        if not manual and isvalid(self.SelectedTarget) and target == nil then return end
         self.LastAttackAt = now
         if isvalid(target) then
             local to = _Util:Pos2(target) - me
@@ -119,6 +170,7 @@ script PlayerAttack extends AttackComponent
         self.ReadyAt = 0
         self.SelectedTarget = nil
         self.AutoTarget = nil
+        self.ManualAimUntil = 0
     end
 
     @ExecSpace("ServerOnly")
@@ -137,7 +189,7 @@ script PlayerAttack extends AttackComponent
 
     method void OnEndPlay()
         -- 양쪽 수명 종료: 서버는 판정, 클라이언트는 로컬 타격 정지를 복구한다.
-        if self:IsServer() then self:CancelAttack() else self:ReleaseContactPause() end
+        if self:IsServer() then self:CancelAttack() else self:ReleaseContactPause() self:HideAimIndicator() end
     end
 
     @ExecSpace("Client")
@@ -149,7 +201,7 @@ script PlayerAttack extends AttackComponent
         local rate = 1.33 * _GameData.baseAttackInterval / math.max(0.1, interval)
         local animations = self.Entity.AvatarStateAnimationComponent
         if isvalid(animations) then animations.StateToAvatarBodyActionSheet["ATTACK"] = AvatarBodyActionElement("attack", rate) end
-        if replay then
+        if replay or self.Entity.StateComponent.CurrentStateName ~= "ATTACK" then
             self.Entity.StateComponent:ChangeState("ATTACK")
             self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Attack, 0, 2147483647, rate))
         end
@@ -172,6 +224,7 @@ script PlayerAttack extends AttackComponent
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
         -- 타격 정지는 반복 명중으로 연장하지 않으며 이동/사망/맵 이탈에서도 해제한다.
+        self:UpdateAimIndicator()
         if self.ContactPauseUntil > 0 and (_UtilLogic.ElapsedSeconds >= self.ContactPauseUntil or not _Util:IsAlive(self.Entity)) then self:ReleaseContactPause() end
     end
 
@@ -180,6 +233,40 @@ script PlayerAttack extends AttackComponent
     handler HandleMapChanged(EntityMapChangedEvent event)
         -- 이전 맵의 접촉 정지를 다음 맵으로 가져가지 않는다.
         self:ReleaseContactPause()
+        self.LocalAimActive = false
+        self:HideAimIndicator()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideAimIndicator()
+        -- 플레이어 수명 종료 시 공유 HUD에 마지막 조준을 남기지 않는다.
+        if isvalid(self.AimIndicator) then self.AimIndicator.Enable = false end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateAimIndicator()
+        -- 캐릭터 스프라이트의 좌우 방향과 별개로 실제 2D 판정 방향을 작은 쐐기로 표시한다.
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if not isvalid(self.AimIndicator) then self.AimIndicator = _EntityService:GetEntityByPath("/ui/AimHUD/Direction") end
+        if not isvalid(self.AimIndicator) then return end
+        if not _Util:IsAlive(self.Entity) or _GameConst:IsTown(self.Entity.CurrentMap) or _UIKit:AnyWindowOpen() then self:HideAimIndicator() return end
+        local me = _Util:Pos2(self.Entity)
+        local dir = self.LocalAimDirection
+        local visible = self.LocalAimActive
+        if Environment:IsPCPlatform() and not _InputService:IsPointerOverUI() then
+            visible = true
+            local click = self.Entity:GetComponent("script.ClickControl")
+            if click ~= nil and self:IsLiveMonster(click.AttackTarget) then dir = _Util:Pos2(click.AttackTarget) - me
+            else dir = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - me end
+        end
+        if not visible or dir:Magnitude() < 0.08 then self:HideAimIndicator() return end
+        dir = dir:Normalize()
+        local point = me + Vector2(0, 0.2) + dir * 0.85
+        local screen = _UILogic:WorldToScreenPosition(point)
+        local root = self.AimIndicator.Parent.UITransformComponent
+        self.AimIndicator.UITransformComponent.anchoredPosition = _UILogic:ScreenToLocalUIPosition(screen, root)
+        self.AimIndicator.UITransformComponent.UIRotation = Vector3(0, 0, math.deg(math.atan(dir.y, dir.x)))
+        self.AimIndicator.Enable = true
     end
 
     @ExecSpace("ClientOnly")
@@ -228,14 +315,18 @@ script PlayerAttack extends AttackComponent
         self.AutoTarget = nil
         local me = _Util:Pos2(self.Entity)
         local facing = self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1
-        -- 키보드·모바일은 바라보는 반원 안에서 고른다. 뒤의 적 때문에 갑자기 돌아서지 않는다.
+        local best = nil
+        local bestScore = math.huge
+        -- 위아래도 선택하되 뒤쪽에는 작은 비용을 준다. 선택된 자동 대상은 닿는 동안 유지한다.
         for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, self.AimRange)) do
-            if (_Util:Pos2(monster.Entity).x - me.x) * facing >= -0.1 and self:CanReach(monster.Entity) then
-                self.AutoTarget = monster.Entity
-                return self.AutoTarget
+            if self:CanReach(monster.Entity) then
+                local to = _Util:Pos2(monster.Entity) - me
+                local score = to:Magnitude() + (to.x * facing < -0.1 and 0.45 or 0)
+                if score < bestScore then best = monster.Entity bestScore = score end
             end
         end
-        return nil
+        self.AutoTarget = best
+        return best
     end
 
     @ExecSpace("ServerOnly")

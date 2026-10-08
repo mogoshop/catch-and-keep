@@ -12,16 +12,19 @@ script MobilePad extends Logic
     property string RenderKey = ""
     property boolean Holding = false
     property number HoldNext = 0
+    property integer GestureTouchId = 0
+    property integer GestureSlot = 0
+    property Vector2 GestureStart = Vector2(0, 0)
+    property boolean GestureBasic = false
+    property Entity GestureMap = nil
+    property number AimDeadZone = 18
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         if not Environment:IsMobilePlatform() then return end
-        -- 큰 버튼: 누르는 순간 한 번, 누르고 있으면 공격 간격마다 계속 (기본 공격일 때만)
-        _UIKit:ConnectHold(self.Root .. "/Attack", function() self:AttackDown() end, function() self.Holding = false end)
-        for i = 1, 4 do
-            local slot = i
-            _UIKit:Connect(self.Root .. "/Skills/S" .. tostring(i), function() self:Cast(slot) end)
-        end
+        -- 기본 공격은 누를 때 시작하고 유지 중 조준을 바꾼다. 스킬은 드래그 후 놓을 때 한 번 발동한다.
+        self:BindAimButton(self.Root .. "/Attack", 5)
+        for i = 1, 4 do self:BindAimButton(self.Root .. "/Skills/S" .. tostring(i), i) end
         _UIKit:Connect(self.Root .. "/BtnSkillEdit", function() self:ToggleEdit() end)
         _UIKit:Connect(self.Root .. "/Potions/Hp", function() self:Potion("hp") end)
         _UIKit:Connect(self.Root .. "/Potions/Mp", function() self:Potion("mp") end)
@@ -37,23 +40,111 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        self.Holding = false
-        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self:ClearGesture()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
     end
 
     @ExecSpace("ClientOnly")
     @EventSender("Service", "ApplicationService")
     handler HandleApplicationFocusOutEvent(ApplicationFocusOutEvent event)
+        -- 앱 전환에서는 미발동 스킬과 반복 입력을 버린다.
+        self:ClearGesture()
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleAimHold(ScreenTouchHoldEvent event)
+        -- 스틱을 누른 다른 손가락은 조준에 영향을 주지 않는다.
+        self:UpdateGesture(event.TouchId, event.TouchPoint)
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleAimRelease(ScreenTouchReleaseEvent event)
+        -- 버튼 밖에서 놓아도 같은 손가락의 캡처를 종료한다.
+        self:EndGesture(event.TouchId, event.TouchPoint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BindAimButton(string path, integer slot)
+        -- ButtonClick과 중복 연결하지 않아 한 번 놓으면 한 번만 발동한다.
+        _UIKit:ConnectAimControl(path,
+            function(event) self:BeginGesture(slot, event.TouchId, event.TouchPoint) end,
+            function(event) self:UpdateGesture(event.TouchId, event.TouchPoint) end,
+            function(event) self:EndGesture(event.TouchId, event.TouchPoint) end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean MatchesGesture(integer touchId)
+        -- UI의 PC 왼쪽 클릭(-1)과 화면 클릭(1)을 같은 입력으로 취급한다.
+        if self.GestureTouchId == 0 then return false end
+        return touchId == self.GestureTouchId or (self.GestureTouchId == -1 and touchId == 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BeginGesture(integer slot, integer touchId, Vector2 point)
+        -- 하나의 공격 손가락만 캡처한다. 빈/편집 칸도 놓을 때 선택창을 연다.
+        local player = _UserService.LocalPlayer
+        if self.GestureTouchId ~= 0 or not isvalid(player) or player.PlayerComponent.Hp <= 0 or _UIKit:AnyWindowOpen() then return end
+        self.GestureTouchId = touchId
+        self.GestureSlot = slot
+        self.GestureStart = point
+        self.GestureMap = player.CurrentMap
+        local book = _UIKit:Comp("script.SkillBook")
+        self.GestureBasic = slot == 5 and not self.EditMode and (book == nil or book:GetSlotSkill(5) == "")
+        local attack = player:GetComponent("script.PlayerAttack")
+        if attack ~= nil then attack.LocalAimActive = false end
+        if self.GestureBasic then self:AttackDown() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateGesture(integer touchId, Vector2 point)
+        -- 화면 이동량을 단위 방향으로 바꾼다. 중앙 데드존에서는 자동 조준한다.
+        if not self:MatchesGesture(touchId) then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or player.CurrentMap ~= self.GestureMap or _UIKit:AnyWindowOpen() then self:ClearGesture() return end
+        local attack = player:GetComponent("script.PlayerAttack")
+        if attack == nil then return end
+        local offset = point - self.GestureStart
+        local deadZone = math.max(12, self.AimDeadZone * _UILogic.ScreenWidth / 1920)
+        attack.LocalAimActive = offset:Magnitude() >= deadZone
+        if attack.LocalAimActive then attack.LocalAimDirection = offset:Normalize() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void EndGesture(integer touchId, Vector2 point)
+        -- UI up와 screen release가 함께 와도 첫 종료만 발동한다.
+        if not self:MatchesGesture(touchId) then return end
+        self:UpdateGesture(touchId, point)
+        local player = _UserService.LocalPlayer
+        if self.GestureTouchId ~= 0 and isvalid(player) and player.PlayerComponent.Hp > 0 and player.CurrentMap == self.GestureMap and not _UIKit:AnyWindowOpen() and not self.GestureBasic then
+            if self.GestureSlot == 5 then self:Attack() else self:Cast(self.GestureSlot) end
+        end
+        self:ClearGesture()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearGesture()
+        -- 앱 전환/창/사망/맵 전환에서 조준과 반복 공격을 함께 버린다.
         self.Holding = false
+        self.GestureTouchId = 0
+        self.GestureSlot = 0
+        self.GestureMap = nil
+        self.GestureBasic = false
+        local player = _UserService.LocalPlayer
+        if isvalid(player) then
+            local attack = player:GetComponent("script.PlayerAttack")
+            if attack ~= nil then attack.LocalAimActive = false end
+        end
     end
 
     -- ───────── 동작 ─────────
 
     @ExecSpace("ClientOnly")
     method void ToggleEdit()
-        if _UIKit:AnyWindowOpen() then self.Holding = false return end
+        if _UIKit:AnyWindowOpen() then self:ClearGesture() return end
         -- 편집 모드: 칸마다 + 표시, 누르는 칸에 스킬을 넣는다. 다시 누르면 끝
-        self.Holding = false
+        self:ClearGesture()
         self.EditMode = not self.EditMode
         _UIKit:SetText(self.Root .. "/BtnSkillEdit", self.EditMode and "편집 끝" or "스킬 편집")
         _UIKit:SetEnabled(self.Root .. "/Attack/Edit", self.EditMode)
@@ -110,6 +201,8 @@ script MobilePad extends Logic
         -- 대상 선택과 방향은 서버 PlayerAttack에서 한 번만 결정한다.
         local player = _UserService.LocalPlayer
         if not isvalid(player) or player.PlayerComponent.Hp <= 0 then self.Holding = false return end
+        local attack = player:GetComponent("script.PlayerAttack")
+        if attack ~= nil then attack:SubmitBasicInput() end
         player.PlayerControllerComponent:ActionAttack()
     end
 
@@ -169,8 +262,10 @@ script MobilePad extends Logic
     @ExecSpace("ClientOnly")
     method void Poll()
         local windowOpen = _UIKit:AnyWindowOpen()
+        local player = _UserService.LocalPlayer
+        if self.GestureTouchId ~= 0 and (windowOpen or not isvalid(player) or player.PlayerComponent.Hp <= 0 or player.CurrentMap ~= self.GestureMap) then self:ClearGesture() end
         _UIKit:SetEnabled(self.Root, not windowOpen)
-        if windowOpen then self.Holding = false return end
+        if windowOpen then return end
         -- 스킬 아이콘·물약 개수·그림자 버튼(배운 것만). 바뀌었을 때만 그린다
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
@@ -181,7 +276,6 @@ script MobilePad extends Logic
         -- 혼 추출 버튼: 그림자 소환을 배웠고 손 닿는 거리에 내 혼이 있을 때만
         ---@type SoulExtractor
         local extractor = _UIKit:Comp("script.SoulExtractor")
-        local player = _UserService.LocalPlayer
         local canExtract = extractor ~= nil and isvalid(player) and book:GetLevel("shadow_summon") > 0
             and extractor:FindNearestSoul(_Util:Pos2(player), _ShadowConfig:GetExtractReach()) ~= nil
         _UIKit:SetEnabled(self.Root .. "/Extract", canExtract and not _UIKit:AnyWindowOpen())
