@@ -26,6 +26,10 @@ script MonsterStatus extends Component
     property integer InterruptCount = 0
     @Sync
     property string CurseTag = ""            -- 대상 정보 UI 표시
+    @Sync
+    property integer CurseMask = 0           -- 1 낙인, 2 쇠약; 실제 지속 상태만 동기화
+    property table CurseMarkers = {}          -- 클라이언트 전용, 몬스터의 자식이라 함께 정리된다
+    property number MarkerRetryAt = 0
 
     method Monster Body()
         ---@type Monster
@@ -54,9 +58,11 @@ script MonsterStatus extends Component
         -- UI는 실제 남아 있는 저주만 표시한다. 중첩된 낙인·쇠약도 함께 보여 준다.
         local now = _UtilLogic.ElapsedSeconds
         local text = ""
-        if now < self.AmpUntil then text = "약화의 낙인" end
-        if now < self.WeakenUntil then text = text == "" and "쇠약" or (text .. " · 쇠약") end
+        local mask = 0
+        if now < self.AmpUntil then text = "약화의 낙인" mask = mask + 1 end
+        if now < self.WeakenUntil then text = text == "" and "쇠약" or (text .. " · 쇠약") mask = mask + 2 end
         if self.CurseTag ~= text then self.CurseTag = text end
+        if self.CurseMask ~= mask then self.CurseMask = mask end
     end
 
     method number TakenMult()
@@ -221,8 +227,8 @@ script MonsterStatus extends Component
         if isvalid(chase) then chase.Enable = false end
     end
 
-    @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
+        if not self:IsServer() then self:UpdateCurseMarkers() return end
         -- 저주 표시는 만료 시 지우고, 넉백·경직이 끝나면 이동을 복구한다.
         self:RefreshCurseTag()
         if self.KnockUntil <= 0 and self.StaggerUntil <= 0 then return end
@@ -268,11 +274,68 @@ script MonsterStatus extends Component
         self.InterruptCount = 0
         self:StopPoison()
         self.CurseTag = ""
+        self.CurseMask = 0
     end
 
-    @ExecSpace("ServerOnly")
+    @ExecSpace("ClientOnly")
+    method void UpdateCurseMarkers()
+        local me = _UserService.LocalPlayer
+        local body = self:Body()
+        if not isvalid(me) or body == nil or body.IsDead or not self.Entity.Enable or me.CurrentMap ~= self.Entity.CurrentMap or self.CurseMask == 0 or _Util:Distance(me, self.Entity) > 8 then
+            self:ClearCurseMarkers()
+            return
+        end
+        local amp = self.CurseMask % 2 == 1
+        local weaken = self.CurseMask >= 2
+        self:UpdateCurseMarker("amp", amp, amp and weaken and -0.13 or 0, "mark_weakness")
+        self:UpdateCurseMarker("weaken", weaken, amp and weaken and 0.13 or 0, "enfeeble")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateCurseMarker(string kind, boolean active, number offset, string skillId)
+        local rec = self.CurseMarkers[kind]
+        if not active then
+            if rec ~= nil and isvalid(rec.entity) then rec.entity:Destroy() end
+            self.CurseMarkers[kind] = nil
+            return
+        end
+        if rec == nil or not isvalid(rec.entity) then
+            if _UtilLogic.ElapsedSeconds < self.MarkerRetryAt then return end
+            local marker = _SpawnService:SpawnByModelId("cursemarker", "Curse_" .. kind, self.Entity.TransformComponent.WorldPosition, self.Entity)
+            if not isvalid(marker) then self.MarkerRetryAt = _UtilLogic.ElapsedSeconds + 1 return end
+            rec = { entity = marker, ready = false }
+            self.CurseMarkers[kind] = rec
+        end
+        -- 새 엔티티의 렌더러가 준비되기 전에는 기본 아이콘을 보여 주지 않는다.
+        if not rec.ready then
+            local ok, sprite = pcall(function() return rec.entity:GetComponent("SpriteRendererComponent") end)
+            if not ok or not isvalid(sprite) then return end
+            local def = _SkillData:Get(skillId)
+            if def == nil or def.icon == "" then return end
+            sprite.SpriteRUID = def.icon
+            rec.ready = true
+        end
+        local transform = self.Entity.TransformComponent
+        local hit = self.Entity.HitComponent
+        local sx = math.max(0.1, math.abs(transform.Scale.x))
+        local sy = math.max(0.1, math.abs(transform.Scale.y))
+        local height = math.max(1.1, isvalid(hit) and hit.BoxSize.y * sy + 0.55 or 1.1)
+        local marker = rec.entity
+        marker.TransformComponent.Position = transform:ToLocalPoint(transform.WorldPosition + Vector3(offset, height, 0))
+        marker.TransformComponent.Scale = Vector3(0.14 / sx, 0.14 / sy, 1)
+        marker:SetVisible(true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClearCurseMarkers()
+        for _, rec in pairs(self.CurseMarkers) do
+            if isvalid(rec.entity) then rec.entity:Destroy() end
+        end
+        self.CurseMarkers = {}
+    end
+
     method void OnEndPlay()
-        self:StopPoison()
+        if self:IsServer() then self:StopPoison() else self:ClearCurseMarkers() end
     end
 
 end
