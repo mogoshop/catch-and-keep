@@ -193,7 +193,7 @@ function buildGameHud() {
   k.frame("MenuWin", "middle-center", [0, 20], [800, 640], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
-    ["Rank", K.icon_rank, "랭킹"], ["Portal", K.icon_portal, "귀환"], ["Input", K.icon_gear, "조작 전환"]].forEach(([n, ruid, label], i) => {
+    ["Rank", K.icon_rank, "랭킹"], ["Portal", K.icon_portal, "귀환"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const path = `MenuWin/${n}`;
     k.btn(path, "", { anchor: "top-left", pos: [64 + col * 230, -96 - row * 160], rect_size: [212, 148] });

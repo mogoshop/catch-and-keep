@@ -1,0 +1,110 @@
+-- 메뉴에서 여는 공용 환경 설정. 실제 저장 확인과 즉시 적용을 구분한다.
+@Logic
+script AudioWindow extends Logic
+
+    property string Win = "AudioWin"
+    property string Body = "/ui/AudioSettingsHUD/Modal/SafeArea/Panel"
+    property table Values = { bgm = 55, effects = 100, ambience = 100 }
+    property table Previous = { bgm = 55, effects = 100, ambience = 100 }
+    property Entity Player = nil
+    property boolean Ready = false
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        for _, key in ipairs({ "bgm", "effects", "ambience" }) do
+            local channel = key
+            _UIKit:Connect(self.Body .. "/" .. channel .. "/Minus", function() self:Adjust(channel, -5) end)
+            _UIKit:Connect(self.Body .. "/" .. channel .. "/Plus", function() self:Adjust(channel, 5) end)
+            _UIKit:Connect(self.Body .. "/" .. channel .. "/Mute", function() self:ToggleMute(channel) end)
+        end
+        _UIKit:Connect(self.Body .. "/Reset", function() self:ResetVolumes() end)
+        _UIKit:Connect(self.Body .. "/Input", function() _ShadowHUD:ToggleInputMode() end)
+        _UIKit:Connect(self.Body .. "/Back", function() _UIKit:Open("MenuWin") end)
+        self.TimerId = _TimerService:SetTimer(self, function() self:Poll() end, 0.2, true, 0.2)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        self.Player = nil
+        self.Ready = false
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        local player = _UserService.LocalPlayer
+        if player ~= self.Player then self.Player = player self.Ready = false end
+        ---@type PlayerSave
+        local save = isvalid(player) and player:GetComponent("script.PlayerSave") or nil
+        if save == nil then return end
+        if not self.Ready and save.AudioDigest ~= "" then
+            local values = { string.match(save.AudioDigest, "^(%d+),(%d+),(%d+)$") }
+            if values[1] ~= nil then
+                self.Values = { bgm = tonumber(values[1]), effects = tonumber(values[2]), ambience = tonumber(values[3]) }
+                self.Previous = { bgm = self.Values.bgm > 0 and self.Values.bgm or 55, effects = self.Values.effects > 0 and self.Values.effects or 100, ambience = self.Values.ambience > 0 and self.Values.ambience or 100 }
+                self.Ready = true
+                self:Apply()
+            end
+        end
+        if not _UIKit:IsOpen(self.Win) then return end
+        for _, key in ipairs({ "bgm", "effects", "ambience" }) do
+            local value = self.Values[key]
+            _UIKit:SetText(self.Body .. "/" .. key .. "/Value", self.Ready and (tostring(value) .. "%") or "—")
+            _UIKit:SetFill(self.Body .. "/" .. key .. "/Bar/Fill", value / 100)
+            _UIKit:SetText(self.Body .. "/" .. key .. "/Mute", value == 0 and "켜기" or "음소거")
+        end
+        ---@type ClickControl
+        local control = _UIKit:Comp("script.ClickControl")
+        if control ~= nil then _UIKit:SetText(self.Body .. "/Input", control.MouseMode and "조작: 마우스" or "조작: 키보드") end
+        local status = "저장 데이터를 불러온 뒤 변경할 수 있습니다"
+        if self.Ready then status = save.AudioSavedDigest == self:Key() and "저장 완료" or "저장 대기 중" end
+        _UIKit:SetText(self.Body .. "/Status", status)
+    end
+
+    method string Key()
+        return tostring(self.Values.bgm) .. "," .. tostring(self.Values.effects) .. "," .. tostring(self.Values.ambience)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Apply()
+        _SoundDirector:SetVolumes(self.Values.bgm / 100, self.Values.effects / 100, self.Values.ambience / 100)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Submit()
+        self:Apply()
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestAudioSettings(self.Values.bgm, self.Values.effects, self.Values.ambience) end
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Adjust(string key, integer delta)
+        if not self.Ready or not _UIKit:IsOpen(self.Win) or self.Values[key] == nil then return end
+        local value = math.max(0, math.min(100, self.Values[key] + delta))
+        if value == self.Values[key] then return end
+        self.Values[key] = value
+        if value > 0 then self.Previous[key] = value end
+        self:Submit()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleMute(string key)
+        if not self.Ready or not _UIKit:IsOpen(self.Win) or self.Values[key] == nil then return end
+        local value = self.Values[key]
+        if value > 0 then self.Previous[key] = value self.Values[key] = 0
+        else self.Values[key] = self.Previous[key] end
+        self:Submit()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ResetVolumes()
+        if not self.Ready or not _UIKit:IsOpen(self.Win) then return end
+        self.Values = { bgm = 55, effects = 100, ambience = 100 }
+        self.Previous = { bgm = 55, effects = 100, ambience = 100 }
+        self:Submit()
+    end
+end

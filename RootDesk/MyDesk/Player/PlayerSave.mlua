@@ -14,11 +14,17 @@ script PlayerSave extends Component
     property boolean IsLoadSuccess = false
     property table LastSaved = {}
     property integer TimerId = 0
+    property integer AudioSaveTimer = 0
+    property table AudioSettings = { bgm = 55, effects = 100, ambience = 100 }
+    @Sync
+    property string AudioDigest = ""
+    @Sync
+    property string AudioSavedDigest = ""
 
     method table Sections()
         -- 불러오는 순서가 중요하다: 능력치 → 소지품(장착 효과가 능력치에 반영) 순
         return {
-            { key = "Char", parts = { { "stats", "script.PlayerStats" }, { "skills", "script.SkillBook" }, { "quest", "script.PlayerQuest" }, { "travel", "script.PlayerTravel" } } },
+            { key = "Char", parts = { { "stats", "script.PlayerStats" }, { "skills", "script.SkillBook" }, { "quest", "script.PlayerQuest" }, { "travel", "script.PlayerTravel" }, { "settings", "script.PlayerSave" } } },
             { key = "Inv", parts = { { "inv", "script.PlayerInventory" }, { "belt", "script.PlayerBelt" }, { "corpses", "script.PlayerCorpses" } } },
             { key = "Shadow", parts = { { "shadow", "script.ShadowOwner" } } },
         }
@@ -27,12 +33,16 @@ script PlayerSave extends Component
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self.LastSaved = {}
+        self.AudioDigest = ""
+        self.AudioSavedDigest = ""
+        self.AudioSettings = { bgm = 55, effects = 100, ambience = 100 }
         _TimerService:SetTimerOnce(function() self:Load() end, self.LoadDelay)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Save(false) end, self.AutoSaveInterval, self.AutoSaveInterval)
     end
 
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
+        self:CancelAudioSave()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
     end
 
@@ -74,6 +84,8 @@ script PlayerSave extends Component
         end
         for k, v in pairs(loaded) do self.LastSaved[k] = v end
         self.IsLoadSuccess = true
+        self.AudioDigest = self:AudioKey(self.AudioSettings)
+        self.AudioSavedDigest = self.AudioDigest
         -- D2처럼 접속하면 언제나 (저장된 난이도의) 마을에서 시작한다. 월드 시작 맵은 사냥터라 여기서 옮긴다
         if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
@@ -223,7 +235,13 @@ script PlayerSave extends Component
         if successKeys == nil then return end
         for i = 1, #successKeys do
             local k = successKeys[i]
-            if sent[k] ~= nil then self.LastSaved[k] = sent[k] end
+            if sent[k] ~= nil then
+                self.LastSaved[k] = sent[k]
+                if k == "Char" then
+                    local data = self:Decode(sent[k])
+                    if data ~= nil then self.AudioSavedDigest = self:AudioKey(self:NormalizeAudio(data.settings)) end
+                end
+            end
         end
     end
 
@@ -231,11 +249,57 @@ script PlayerSave extends Component
     @EventSender("Service", "UserService")
     handler HandleUserLeaveEvent(UserLeaveEvent event)
         if event.UserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:CancelAudioSave()
         if self.TimerId ~= 0 then
             _TimerService:ClearTimer(self.TimerId)
             self.TimerId = 0
         end
         self:Save(true)
+    end
+
+    method table NormalizeAudio(any data)
+        local result = { bgm = 55, effects = 100, ambience = 100 }
+        if type(data) ~= "table" then return result end
+        for key, fallback in pairs(result) do
+            local value = data[key]
+            if type(value) == "number" and value == value then result[key] = math.floor(math.max(0, math.min(100, value)) + 0.5) end
+        end
+        return result
+    end
+
+    method string AudioKey(table data)
+        return tostring(data.bgm) .. "," .. tostring(data.effects) .. "," .. tostring(data.ambience)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        -- Char.settings에 함께 저장한다. 슬라이더/버튼 입력마다 저장소를 호출하지 않는다.
+        return self:NormalizeAudio(self.AudioSettings)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(any data)
+        self.AudioSettings = self:NormalizeAudio(data)
+    end
+
+    @ExecSpace("Server")
+    method void RequestAudioSettings(integer bgm, integer effects, integer ambience)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.IsLoadSuccess then return end
+        local nextValues = self:NormalizeAudio({ bgm = bgm, effects = effects, ambience = ambience })
+        local key = self:AudioKey(nextValues)
+        if key == self.AudioDigest then return end
+        self.AudioSettings = nextValues
+        self.AudioDigest = key
+        self:CancelAudioSave()
+        self.AudioSaveTimer = _TimerService:SetTimer(self, function()
+            self.AudioSaveTimer = 0
+            self:Save(false)
+        end, 2, false, 2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelAudioSave()
+        if self.AudioSaveTimer ~= 0 then _TimerService:ClearTimer(self.AudioSaveTimer) self.AudioSaveTimer = 0 end
     end
 
 end
