@@ -36,7 +36,7 @@ script SkillEffects extends Component
         elseif id == "bone_storm" then ok = self:BoneStorm(power * spell)
         elseif id == "mark_weakness" then ok = self:Curse(target, "amp", power, 1.5)
         elseif id == "enfeeble" then ok = self:Curse(target, "weaken", power, 1.5)
-        elseif id == "elite_promote" then ok = self:ElitePromote()
+        elseif id == "elite_promote" then ok = self:ElitePromote(power)
         elseif id == "shadow_summon" then ok = self:SummonShadow()
         elseif id == "rally" then ok = self:Rally()
         elseif id == "raise_skeleton" then ok = _UndeadSystem:Raise(self.Entity, "skeleton", lv, target, nil, nil)
@@ -261,17 +261,17 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method boolean ElitePromote()
+    method boolean ElitePromote(number multiplier)
         -- 소환 중인 그림자 중 공격력이 가장 높은 1기를 정예로 (한 번만)
         local best = nil
         for _, unit in ipairs(self:Commander():GetUnits()) do
-            if not unit.Promoted and (best == nil or unit.Atk > best.Atk) then best = unit end
+            if not unit.Promoted and not unit.Dead and unit.Hp > 0 and (best == nil or unit.Atk > best.Atk) then best = unit end
         end
         if best == nil then
             self:Fail("승격할 그림자가 없다 — 그림자를 먼저 소환하세요")
             return false
         end
-        best:Promote()
+        best:Promote(multiplier)
         return true
     end
 

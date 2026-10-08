@@ -191,8 +191,8 @@ script UndeadSystem extends Logic
             rec.scale = 0.55          -- 필드의 해골 전사(1배)보다 확실히 작게
             rec.tint = self:ElementTint(rec.element)
         else
-            -- 되살림: 원본 몬스터 그대로 (그림자 개성 계산을 배율 1로)
-            local mul = _GameData.reviveStatMul / _GameData.shadowStatMul
+            -- 동시 개체 수 상한 이후에도 투자 레벨에 따라 능력치가 성장한다.
+            local mul = self:GetReviveMultiplier(slvl) / _GameData.shadowStatMul
             local prof = _ShadowConfig:GetProfile(orb.SourceId, orb.Grade, orb.Level, mul)
             rec.atk = prof.atk
             rec.hp = prof.hp
@@ -235,6 +235,11 @@ script UndeadSystem extends Logic
             return { atk = math.floor((_GameData.mageAtkBase + _GameData.mageAtkPerLv * (level - 1)) * mastery), hp = math.floor((_GameData.mageHpBase + _GameData.mageHpPerLv * (level - 1)) * mastery) }
         end
         return {}
+    end
+
+    method number GetReviveMultiplier(integer level)
+        -- 다음 소환 미리보기와 실제 생성에서 같은 배율을 사용한다.
+        return _GameData.reviveStatMul * (1 + math.max(0, level - 1) * _GameData.reviveStatPerLvPct / 100)
     end
 
     @ExecSpace("ServerOnly")

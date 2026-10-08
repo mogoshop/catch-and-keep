@@ -116,12 +116,13 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method number GetUnitMultiplier()
-        -- 군령 숙련 +8%/레벨 + 장비 소환수 %
+        -- 그림자 소환 추가 레벨 + 군령 숙련 + 장비 소환수 보너스를 더한다.
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local equip = 0
         if stats ~= nil then equip = stats.BonusMinionPct end
-        return 1 + 0.08 * self:GetSkillLevel("command_mastery") + equip / 100
+        local summon = _GameData.shadowSummonPerLvPct * math.max(0, self:GetSkillLevel("shadow_summon") - 1)
+        return 1 + (summon + _GameData.commandMasteryPct * self:GetSkillLevel("command_mastery") + equip) / 100
     end
 
     @ExecSpace("ServerOnly")
@@ -191,6 +192,10 @@ script ShadowCommander extends Component
         local comp = unit:GetComponent("script.ShadowUnit")
         if comp == nil then return end
         local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
+        if comp.Promoted then
+            prof.atk = math.floor(prof.atk * comp.PromotionMultiplier)
+            prof.hp = prof.hp * comp.PromotionMultiplier
+        end
         comp.Atk = prof.atk
         comp.Hp = comp.Hp + (prof.hp - comp.MaxHp)
         comp.MaxHp = prof.hp

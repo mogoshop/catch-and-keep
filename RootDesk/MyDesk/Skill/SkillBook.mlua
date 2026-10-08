@@ -107,12 +107,13 @@ script SkillBook extends Component
             if level == 1 and slot > 0 then hint = hint .. " · 처치 후 혼에 사용"
             elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         end
+        if id == "shadow_summon" and level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         if detail ~= "" then detail = detail .. "\n" end
         _UXFeedback:Show((level == 1 and "새 스킬 · " or "스킬 강화 · ") .. def.name .. " Lv" .. tostring(level), detail .. hint, def.icon)
     end
 
     method number GetEffectPower(string id, integer level)
-        -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치. 기존 전투 공식을 유지한다.
+        -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치와 강화 배율.
         if level <= 0 then return 0 end
         if id == "bone_shard" then return 10 + 6 * (level - 1) end
         if id == "poison_mist" then return 4 + 2 * level end
@@ -120,7 +121,8 @@ script SkillBook extends Component
         if id == "soul_drain" then return 15 + 8 * level end
         if id == "bone_storm" then return 8 + 4 * level end
         if id == "mark_weakness" then return 30 + 3 * level end
-        if id == "enfeeble" then return 35 end
+        if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end
+        if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
         return 0
     end
 
@@ -139,9 +141,15 @@ script SkillBook extends Component
             return string.format("최대 %d기 · 공격 %d · 생명 %d", _UndeadSystem:CountFor(level), math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip)))
         end
         if id == "skeleton_mastery" then return string.format("해골 공격·생명 +%g%%", _GameData.skeletonMasteryPct * level) end
+        if id == "command_mastery" then return string.format("그림자 공격·생명 +%g%%", _GameData.commandMasteryPct * level) end
+        if id == "shadow_summon" then
+            if level == 1 then return "혼 추출·그림자 소환 해금" end
+            return string.format("그림자 공격·생명 +%g%%", _GameData.shadowSummonPerLvPct * (level - 1))
+        end
         if id == "extract_mastery" then return string.format("추출 확률 +%g%%p", _GameData.extractMasteryPerLv * level * 100) end
-        if id == "revive" then return string.format("최대 %d기 · %g초 유지", _UndeadSystem:ReviveCountFor(level), _GameData.reviveSeconds) end
+        if id == "revive" then return string.format("최대 %d기 · 능력치 ×%.2f · %g초", _UndeadSystem:ReviveCountFor(level), _UndeadSystem:GetReviveMultiplier(level), _GameData.reviveSeconds) end
         local power = self:GetEffectPower(id, level)
+        if id == "elite_promote" then return string.format("그림자 1기 공격·생명 ×%.2f", power) end
         if id == "mark_weakness" then return string.format("받는 피해 +%g%% · 8초", power) end
         if id == "enfeeble" then return string.format("적 공격력 -%g%% · 8초", power) end
         if power > 0 then

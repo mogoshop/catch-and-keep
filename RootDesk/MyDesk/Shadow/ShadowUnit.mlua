@@ -63,14 +63,17 @@ script ShadowUnit extends AttackComponent
     property boolean Dead = false
     @Sync
     property boolean Promoted = false
+    property number PromotionMultiplier = 1
 
     @ExecSpace("ServerOnly")
-    method void Promote()
-        -- 정예 승격: 공격력·생명 ×1.5, 크기 ×1.25, 금빛
+    method void Promote(number multiplier)
+        -- 같은 개체에 중복 적용하지 않고 시전 당시 스킬 배율을 보관한다.
+        if self.Promoted or self.Dead or self.Hp <= 0 then return end
+        self.PromotionMultiplier = math.max(1, multiplier)
         self.Promoted = true
-        self.Atk = math.floor(self.Atk * 1.5)
-        self.MaxHp = self.MaxHp * 1.5
-        self.Hp = self.Hp * 1.5
+        self.Atk = math.floor(self.Atk * self.PromotionMultiplier)
+        self.MaxHp = self.MaxHp * self.PromotionMultiplier
+        self.Hp = self.Hp * self.PromotionMultiplier
         local t = self.Entity.TransformComponent
         t.Scale = Vector3(t.Scale.x * 1.25, t.Scale.y * 1.25, 1)
         self.ShadowTint = Color(0.9, 0.7, 0.3, 0.9)
