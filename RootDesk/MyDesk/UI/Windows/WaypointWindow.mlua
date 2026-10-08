@@ -88,8 +88,14 @@ script WaypointWindow extends Logic
         if self.WasOpen and not shown then self.Dismissed = true end
         if not near then self.Dismissed = false end
         local eligible = near and not self.Dismissed and _Util:IsAlive(player) and not _UIKit:AnyOtherWindowOpen(self.Win)
-        if not eligible or (pos - self.LastPosition):Magnitude() > 0.01 or self:HasGameplayIntent(player) then self.QuietSince = now end
+        local moving = (pos - self.LastPosition):Magnitude() > 0.01 or self:HasGameplayIntent(player)
+        if not eligible or moving then self.QuietSince = now end
         self.LastPosition = pos
+        -- 이동을 막지 않는 창이라, 열린 뒤 걷거나 공격하면 스스로 닫고 거점을 벗어날 때까지 다시 열지 않는다.
+        if shown and moving then
+            self.Dismissed = true
+            eligible = false
+        end
         local open = eligible and (shown or now - self.QuietSince >= self.OpenDelay)
         if open and not shown then _UIKit:Open(self.Win)
         elseif not open then _UIKit:Close(self.Win) end

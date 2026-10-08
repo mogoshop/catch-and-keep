@@ -10,6 +10,7 @@ script UIKit extends Logic
     property table Cache = {}
     property table Handlers = {}
     property table Windows = {}             -- Esc로 닫을 창 이름 목록
+    property table Passive = { WpWin = true } -- 떠 있어도 이동·전투를 막지 않는 안내 창 (움직이면 스스로 닫힌다)
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
@@ -192,7 +193,7 @@ script UIKit extends Logic
 
     @ExecSpace("ClientOnly")
     method boolean AnyOtherWindowOpen(string ignored)
-        for _, name in ipairs(self.Windows) do if name ~= ignored and self:IsOpen(name) then return true end end
+        for _, name in ipairs(self.Windows) do if name ~= ignored and not self.Passive[name] and self:IsOpen(name) then return true end end
         return self:IsOpen("/ui/ShadowHUD/Window")
     end
 
