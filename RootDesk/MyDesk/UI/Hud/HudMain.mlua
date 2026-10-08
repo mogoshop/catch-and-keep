@@ -167,30 +167,9 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderMinions()
-        -- 소환수 배지 (D2): 해골·마법사·되살림·그림자 아이콘 + 지금 수. 0이면 숨김
-        ---@type ShadowCommander
-        local cmd = _UIKit:Comp("script.ShadowCommander")
-        if cmd == nil then return end
-        local key = cmd.MinionCounts .. "," .. tostring(cmd.DeployedCount)
-        if key == self.MinionKey then return end
-        self.MinionKey = key
-        local counts = {}
-        for v in string.gmatch(key, "[^,]+") do table.insert(counts, tonumber(v) or 0) end
-        local names = { "Skel", "Mage", "Revive", "Shadow" }
-        for _, root in ipairs({ "Minions", "MMinions" }) do
-            local x = 0
-            for i = 1, 4 do
-                local path = root .. "/" .. names[i]
-                local n = counts[i] or 0
-                _UIKit:SetEnabled(path, n > 0)
-                if n > 0 then
-                    -- 있는 것만 왼쪽부터 붙여서
-                    _UIKit:SetPos(path, Vector2(x, 0))
-                    _UIKit:SetText(path .. "/Count", tostring(n))
-                    x = x + 76
-                end
-            end
-        end
+        -- 개별 초상·생명·상태는 CompanionHUD가 담당해 동일 정보가 겹치지 않게 한다.
+        _UIKit:SetEnabled("Minions", false)
+        _UIKit:SetEnabled("MMinions", false)
     end
 
     @ExecSpace("ClientOnly")

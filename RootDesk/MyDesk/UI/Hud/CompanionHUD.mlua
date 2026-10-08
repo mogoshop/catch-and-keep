@@ -1,0 +1,118 @@
+-- 소환수별 초상·생명·행동 상태. 다른 창에서는 숨기고 4마리씩 넘긴다.
+@Logic
+script CompanionHUD extends Logic
+
+    property string Strip = "/ui/CompanionHUD/SafeArea/Strip"
+    property integer Page = 0
+    property integer TimerId = 0
+    property integer UnitCount = 0
+    property string LastMapId = ""
+    property table Units = {}
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 페이지 버튼을 연결하고 낮은 주기로 소환수의 동기화된 정보만 읽는다.
+        self.Page = 0
+        self.Units = {}
+        _UIKit:SetEnabled(self.Strip, false)
+        local strip = _UIKit:Get(self.Strip)
+        if isvalid(strip) then strip.UITransformComponent.anchoredPosition = Vector2(24, Environment:IsMobilePlatform() and 430 or 236) end
+        _UIKit:Connect(self.Strip .. "/Page", function() self:NextPage() end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
+        log("[VRF] CompanionHUD ready pageSize=4")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 반복 갱신과 이전 세션의 엔티티 참조를 정리한다.
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        self.Units = {}
+        self.UnitCount = 0
+        _UIKit:SetEnabled(self.Strip, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void NextPage()
+        -- 소환수 수가 줄면 남은 페이지 범위 안에서만 순환한다.
+        local pages = math.max(1, math.ceil(self.UnitCount / 4))
+        self.Page = (self.Page + 1) % pages
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 내 소유·현재 맵·생존 조건을 모두 만족하는 실제 소환수만 표시한다.
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) or not isvalid(p.CurrentMap) or not _Util:IsAlive(p) then
+            self.Units = {}
+            self.UnitCount = 0
+            _UIKit:SetEnabled(self.Strip, false)
+            return
+        end
+        if p.CurrentMap.Id ~= self.LastMapId then self.LastMapId = p.CurrentMap.Id self.Page = 0 end
+        local units = {}
+        for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == p and u.Hp > 0 and u.MaxHp > 0 then table.insert(units, u) end
+        end
+        table.sort(units, function(a, b)
+            if a.Kind ~= b.Kind then return a.Kind < b.Kind end
+            return a.Entity.Id < b.Entity.Id
+        end)
+        self.Units = units
+        self.UnitCount = #units
+        self.Page = math.min(self.Page, math.max(0, math.ceil(#units / 4) - 1))
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render()
+        -- 체력 막대는 왼쪽 고정 폭으로 줄이고 저체력일 때만 경고색을 쓴다.
+        local show = self.UnitCount > 0 and not _UIKit:AnyWindowOpen()
+        _UIKit:SetEnabled(self.Strip, show)
+        if not show then return end
+        local pages = math.max(1, math.ceil(self.UnitCount / 4))
+        _UIKit:SetText(self.Strip .. "/Page", tostring(self.Page + 1) .. " / " .. tostring(pages))
+        _UIKit:SetEnabled(self.Strip .. "/Page", pages > 1)
+        for i = 1, 4 do
+            local base = self.Strip .. "/Unit" .. tostring(i)
+            local u = self.Units[self.Page * 4 + i]
+            local live = u ~= nil and isvalid(u.Entity) and u.Hp > 0
+            _UIKit:SetEnabled(base, live)
+            if live then
+                local ratio = math.max(0, math.min(1, u.Hp / math.max(1, u.MaxHp)))
+                local color = Color(0.4, 0.58, 0.51, 1)
+                if u.Kind == "shadow" then color = Color(0.52, 0.43, 0.67, 1) end
+                if ratio <= 0.25 then color = Color(0.78, 0.23, 0.22, 1) end
+                _UIKit:SetColor(base .. "/HP/Fill", color)
+                local fill = _UIKit:Get(base .. "/HP/Fill")
+                if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(84 * ratio, 8) end
+                local portrait = u.StandRUID ~= "" and ("thumbnail://" .. u.StandRUID) or self:FallbackIcon(u.Kind)
+                _UIKit:SetIcon(base .. "/Portrait", portrait)
+                local frame = Color(1, 1, 1, 1)
+                if u.Promoted then frame = Color(1, 0.86, 0.56, 1) end
+                if ratio <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
+                _UIKit:SetColor(base .. "/Frame", frame)
+                local state = self:StateLabel(u.CommandState)
+                _UIKit:SetText(base .. "/State", state)
+            end
+        end
+    end
+
+    method string StateLabel(string state)
+        -- 색만으로 구별하기 어려운 상태는 짧은 글자로도 표시한다.
+        if state == "rally" then return "집결" end
+        if state == "attack" then return "공격" end
+        if state == "combat" then return "추격" end
+        return "추종"
+    end
+
+    method string FallbackIcon(string kind)
+        -- 원본 초상 동기화가 아직 도착하지 않았을 때도 종류별 제작 아이콘을 쓴다.
+        if kind == "mage" then return "2b7b45e6527b45ddbc3e5962e637649b" end
+        if kind == "revive" then return "f5c27a5d48c145129117e41e264df8df" end
+        if kind == "shadow" then return "3ad12e3a900e44648d683a541f801ef2" end
+        return "28a05141071146c291d0593fe2dfcdd1"
+    end
+end

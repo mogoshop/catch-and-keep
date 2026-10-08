@@ -4,10 +4,13 @@
 @Component
 script ShadowUnit extends AttackComponent
 
+    @Sync
     property Entity OwnerPlayer = nil
+    @Sync
     property string Kind = "shadow"          -- shadow(보관함 그림자) / skeleton / mage / revive (UndeadSystem)
     property string ShadowId = ""
     property integer Atk = 10
+    @Sync
     property string StandRUID = ""
     property string MoveRUID = ""
     property string AttackRUID = ""
@@ -51,6 +54,7 @@ script ShadowUnit extends AttackComponent
     property number AuraGuard = 0
     property number AuraUntil = 0
 
+    @Sync
     property number MaxHp = 30
     @Sync
     property number Hp = 30
@@ -79,6 +83,8 @@ script ShadowUnit extends AttackComponent
     property number AttackTimer = 0
     property number RallyTimer = 0
     property string CurrentClip = ""
+    @Sync
+    property string CommandState = "follow"
 
     @ExecSpace("ServerOnly")
     method void PaintRing()
@@ -148,6 +154,7 @@ script ShadowUnit extends AttackComponent
     method void Rally(number seconds)
         -- 집결: 일정 시간 적을 무시하고 주인에게 모인다
         self.RallyTimer = seconds
+        self.CommandState = "rally"
         self.Target = nil
         self:CancelPendingAttack()
         self:ClearProjectiles()
@@ -164,6 +171,7 @@ script ShadowUnit extends AttackComponent
         end
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
+        self:UpdateCommandState()
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
         self:AbilityTick(delta)
 
@@ -189,6 +197,7 @@ script ShadowUnit extends AttackComponent
             end
         end
 
+        self:UpdateCommandState()
         if self.RallyTimer <= 0 and self:IsLiveTarget(self.Target) then
             local t = self.Target.TransformComponent.WorldPosition
             local toTarget = Vector2(t.x, t.y) - myPos
@@ -222,6 +231,16 @@ script ShadowUnit extends AttackComponent
         else
             self:StopMove(o.x - myPos.x)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdateCommandState()
+        -- 실제 행동을 동기화해 HUD가 추종·집결·추격·공격을 구분한다.
+        local state = "follow"
+        if self.RallyTimer > 0 then state = "rally"
+        elseif _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then state = "attack"
+        elseif self:IsLiveTarget(self.Target) then state = "combat" end
+        if self.CommandState ~= state then self.CommandState = state end
     end
 
     @ExecSpace("ServerOnly")
@@ -326,6 +345,7 @@ script ShadowUnit extends AttackComponent
         local epoch = self.AttackEpoch
         local map = self.Entity.CurrentMap
         self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + self.AttackAnimationSeconds
+        self.CommandState = "attack"
         if self.AttackRUID ~= "" then self:SetClip(self.AttackRUID) end
         self.StrikeTimer = _TimerService:SetTimerOnce(function()
             self.StrikeTimer = 0
