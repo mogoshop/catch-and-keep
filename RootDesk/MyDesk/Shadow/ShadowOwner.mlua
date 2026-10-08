@@ -109,14 +109,20 @@ script ShadowOwner extends Component
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        -- d = 소환 중이었거나 맵·방 이동으로 잠시 회수된 그림자 (불러온 뒤 다시 부른다: 심도 등 다른 방으로 옮겨도 따라온다)
+        -- d = 소환·이동 대기, h = 남은 체력 비율, p = 시전 당시 승격 배율. 기존 저장에는 h/p가 없어도 된다.
         local wanted = {}
         local commander = self:Commander()
         if commander ~= nil then for _, id in ipairs(commander.Wanted) do wanted[id] = true end end
         local list = {}
         for id, s in pairs(self.Storage) do
             local entry = { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid }
-            if s.deployed or wanted[id] then entry.d = true end
+            if s.deployed or wanted[id] then
+                local state = commander ~= nil and commander:GetTravelState(id) or nil
+                if state == nil or state.health > 0 then
+                    entry.d = true
+                    if state ~= nil then entry.h = state.health entry.p = state.promotion end
+                end
+            end
             table.insert(list, entry)
         end
         local saved = { essence = self.Essence, shadowCount = #list }
@@ -137,13 +143,26 @@ script ShadowOwner extends Component
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
                 local id = self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
-                if s.d then table.insert(redeploy, id) end
+                if s.d then
+                    -- 구 저장은 체력·승격 필드가 없으므로 이전처럼 일반 개체로 복원한다.
+                    local health = tonumber(s.h) or 1
+                    local promotion = tonumber(s.p) or 1
+                    if health ~= health then health = 1 end
+                    if promotion ~= promotion then promotion = 1 end
+                    local maxPromotion = _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (_SkillData:Get("elite_promote").maxLv - 1)
+                    if health > 0 then
+                        table.insert(redeploy, id)
+                        if commander ~= nil then
+                            commander.TravelStates[id] = { health = math.min(1, health), promotion = math.max(1, math.min(maxPromotion, promotion)) }
+                        end
+                    end
+                end
             end
         end
         self:RefreshDigest()
         if commander ~= nil and #redeploy > 0 then
             commander.Wanted = redeploy
-            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then commander:TryRedeploy() end end, 2)
+            commander:ScheduleRedeploy(2)
         end
     end
 

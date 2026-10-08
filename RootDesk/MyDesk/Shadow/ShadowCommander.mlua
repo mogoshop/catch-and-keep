@@ -6,6 +6,9 @@ script ShadowCommander extends Component
     property number RallySeconds = 2.5
     property table Units = {}                -- shadow id → 소환된 엔티티
     property table Wanted = {}               -- 맵 이동 뒤 다시 부를 그림자 id (이동 전에 소환 중이던 것)
+    property table TravelStates = {}          -- 재소환 대기 중인 개체의 체력 비율·시전 당시 승격 배율
+    property integer RedeployTimer = 0
+    property integer RedeployGeneration = 0
     @Sync
     property integer DeployedCount = 0
     @Sync
@@ -15,16 +18,22 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
+        -- 플레이어마다 독립적인 소환·이동 대기 상태를 만든다.
         self.Units = {}
+        self.Wanted = {}
+        self.TravelStates = {}
     end
 
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         -- 주인이 나가면 소환된 그림자 정리
+        self:CancelRedeployTimer()
         for _, unit in pairs(self.Units) do
             if isvalid(unit) then unit:Destroy() end
         end
         self.Units = {}
+        self.Wanted = {}
+        self.TravelStates = {}
     end
 
     @ExecSpace("ServerOnly")
@@ -46,18 +55,76 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void StashForTravel()
-        -- 맵·방 이동 직전: 소환 중인 그림자를 기억하고 회수 (도착하면 TryRedeploy가 다시 부른다)
+        -- 재소환 전에 다시 이동해도 대기 목록과 개체 상태를 잃지 않는다.
         self:Prune()
-        self.Wanted = {}
-        for id, _ in pairs(self.Units) do table.insert(self.Wanted, id) end
+        local wanted = {}
+        local states = {}
+        local seen = {}
+        local ids = {}
+        for _, id in ipairs(self.Wanted) do table.insert(ids, id) end
+        for id, _ in pairs(self.Units) do table.insert(ids, id) end
+        for _, id in ipairs(ids) do
+            if not seen[id] and self:Owner():GetShadow(id) ~= nil then
+                seen[id] = true
+                local state = self:GetTravelState(id)
+                if state == nil or state.health > 0 then
+                    table.insert(wanted, id)
+                    states[id] = state
+                end
+            end
+        end
         self:RecallAll()
+        self.Wanted = wanted
+        self.TravelStates = states
+    end
+
+    @ExecSpace("ServerOnly")
+    method any GetTravelState(string id)
+        -- 초기화가 끝난 살아 있는 개체를 우선하며, 스폰 대기 중에는 이전 이동 상태를 쓴다.
+        local entity = self.Units[id]
+        if isvalid(entity) then
+            ---@type ShadowUnit
+            local unit = entity:GetComponent("script.ShadowUnit")
+            if unit ~= nil and unit.ShadowId == id and unit.MaxHp > 0 then
+                local health = unit.Dead and 0 or math.max(0, math.min(1, unit.Hp / unit.MaxHp))
+                return { health = health, promotion = unit.Promoted and unit.PromotionMultiplier or 1 }
+            end
+        end
+        return self.TravelStates[id]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelRedeployTimer()
+        -- 이미 예약된 콜백도 세대 번호가 달라지면 새 이동에 끼어들 수 없다.
+        self.RedeployGeneration = self.RedeployGeneration + 1
+        if self.RedeployTimer ~= 0 then _TimerService:ClearTimer(self.RedeployTimer) end
+        self.RedeployTimer = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ScheduleRedeploy(number delay)
+        -- 현재 맵에 도착한 뒤 한 번만 복원한다. 떠나거나 회수하면 예약을 취소한다.
+        self:CancelRedeployTimer()
+        if #self.Wanted == 0 or not isvalid(self.Entity) then return end
+        local map = self.Entity.CurrentMap
+        local generation = self.RedeployGeneration
+        self.RedeployTimer = _TimerService:SetTimer(self, function()
+            if not isvalid(self.Entity) or self.RedeployGeneration ~= generation then return end
+            self.RedeployTimer = 0
+            if self.Entity.CurrentMap == map then self:TryRedeploy() end
+        end, delay, false, delay)
     end
 
     @ExecSpace("ServerOnly")
     method void OnMapEnter(Entity enteredMap)
         -- 같은 방 안의 맵 이동: 도착 1초 뒤 기억한 그림자를 다시 부른다
-        if #self.Wanted == 0 then return end
-        _TimerService:SetTimerOnce(function() self:TryRedeploy() end, 1)
+        self:ScheduleRedeploy(1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMapLeave(Entity leftMap)
+        -- 이전 맵에서 예약한 재소환은 새 맵 입장 예약으로 대체한다.
+        self:CancelRedeployTimer()
     end
 
     @ExecSpace("ServerOnly")
@@ -68,7 +135,11 @@ script ShadowCommander extends Component
         self.Wanted = {}
         local n = 0
         for _, id in ipairs(wanted) do
-            if self:Deploy(id) then n = n + 1 end
+            if self:Deploy(id) then
+                n = n + 1
+            elseif self:Owner():GetShadow(id) ~= nil and not isvalid(self.Units[id]) then
+                table.insert(self.Wanted, id)
+            end
         end
         log("[VRF] shadows redeployed " .. tostring(n) .. "/" .. tostring(#wanted))
     end
@@ -164,9 +235,12 @@ script ShadowCommander extends Component
         shadow.slot = slotIndex
         shadow.deployed = true
         self.Units[id] = unit
+        for i = #self.Wanted, 1, -1 do if self.Wanted[i] == id then table.remove(self.Wanted, i) end end
         self.DeployedCount = self.DeployedCount + 1
         owner:RefreshDigest()
         _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
+            if not isvalid(self.Entity) or self.Units[id] ~= unit then return end
+            if self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.Entity) then self:Recall(id) return end
             ---@type ShadowUnit
             local u = comp
             local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
@@ -175,7 +249,14 @@ script ShadowCommander extends Component
             u.AttackRUID = source ~= nil and source.attack or ""
             u.Variant = shadow.variant or ""
             self:ApplyTraits(u, prof)
+            local state = self.TravelStates[id]
+            if state ~= nil then
+                if state.promotion > 1 then u:Promote(state.promotion) end
+                u.Hp = u.MaxHp * math.max(0, math.min(1, state.health))
+                self.TravelStates[id] = nil
+            end
         end, function()
+            if self.Units[id] ~= unit then return end
             log_error("[ShadowCommander] ShadowUnit 연결 실패, 회수: " .. id)
             self:Recall(id)
         end)
@@ -240,6 +321,9 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method boolean Recall(string id)
+        -- 명시적 회수는 아직 도착하지 않은 소환도 취소한다. 이동 회수는 호출자가 상태를 따로 보관한다.
+        self.TravelStates[id] = nil
+        for i = #self.Wanted, 1, -1 do if self.Wanted[i] == id then table.remove(self.Wanted, i) end end
         local owner = self:Owner()
         local shadow = owner:GetShadow(id)
         if shadow == nil or not shadow.deployed then return false end
@@ -255,6 +339,8 @@ script ShadowCommander extends Component
     @ExecSpace("ServerOnly")
     method void OnUnitDied(string id)
         -- 그림자 사망: 보관함으로 돌아가되 respawnDelaySec 동안 재소환 불가
+        self.TravelStates[id] = nil
+        for i = #self.Wanted, 1, -1 do if self.Wanted[i] == id then table.remove(self.Wanted, i) end end
         local owner = self:Owner()
         local shadow = owner:GetShadow(id)
         if shadow == nil then return end
@@ -284,6 +370,10 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void RecallAll()
+        -- 사망·직접 회수 시 이동 예약까지 지워 뒤늦게 소환되지 않게 한다.
+        self:CancelRedeployTimer()
+        self.Wanted = {}
+        self.TravelStates = {}
         for id, _ in pairs(self.Units) do self:Recall(id) end
     end
 
