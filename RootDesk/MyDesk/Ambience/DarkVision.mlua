@@ -1,5 +1,5 @@
 -- 디아블로식 시야: 맵 전체는 어둡게(Global 조명), 플레이어·파티원·소환수·횃불 주변만 밝힌다 (클라이언트 전용).
--- 맵이 바뀌면 다시 만들고, 0.3초마다 새로 생긴 소환수·횃불·다른 플레이어에 조명을 붙인다.
+-- 가까운 보스는 작은 보조 조명으로 몸체와 공격 예고를 읽을 수 있게 한다. 맵 전체 밝기는 유지한다.
 @Logic
 script DarkVision extends Logic
 
@@ -12,18 +12,27 @@ script DarkVision extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 새 플레이 세션은 이전 맵과 조명 식별자를 재사용하지 않는다.
         self.Lights = {}
+        self.CurrentMap = nil
+        self.Active = false
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, self.ScanInterval)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        -- 세션 종료 시 타이머와 모든 보조 조명을 함께 해제한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
         self:ClearAll()
+        self.CurrentMap = nil
+        self.Active = false
+        _OverlayLightService:SetOverlayLightEnabled(false)
     end
 
     @ExecSpace("ClientOnly")
     method void ClearAll()
+        -- 플레이어·횃불·보스 조명 모두 동일한 소유 목록에서 정리한다.
         for _, l in pairs(self.Lights) do _OverlayLightService:DestroyOverlayLight(l.serial) end
         self.Lights = {}
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
@@ -32,6 +41,7 @@ script DarkVision extends Logic
 
     @ExecSpace("ClientOnly")
     method void Tick()
+        -- 현재 맵의 유효한 광원만 유지한다. 보스의 사망·이탈도 다음 스캔에서 반영한다.
         local player = _UserService.LocalPlayer
         if not isvalid(player) then return end
         local map = player.CurrentMap
@@ -40,7 +50,8 @@ script DarkVision extends Logic
         if not self.Active then return end
         -- 사라진 대상의 조명 정리
         for id, l in pairs(self.Lights) do
-            if not isvalid(l.entity) or not l.entity.Enable or l.entity.CurrentMap ~= map then
+            if not isvalid(l.entity) or not l.entity.Enable or l.entity.CurrentMap ~= map
+                or (l.boss and not self:IsNearbyBoss(l.entity, player, map, 6)) then
                 _OverlayLightService:DestroyOverlayLight(l.serial)
                 self.Lights[id] = nil
             end
@@ -66,6 +77,29 @@ script DarkVision extends Logic
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.SoulOrb", true)) do
             self:Attach(c.Entity, Color(0.7, 0.55, 1, 1), 0.5, 0.1, 0.9)
         end
+        -- 먼 곳의 보스를 먼저 드러내지 않는다. 제거 거리에는 여유를 둬 경계에서 깜빡이지 않게 한다.
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            if self:IsNearbyBoss(c.Entity, player, map, 5.5) then self:AttachBoss(c.Entity) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsNearbyBoss(Entity e, Entity player, Entity map, number range)
+        -- 살아 있는 같은 맵의 보스만 읽기 보조 대상이다. 일반 몬스터의 어둠 연출은 유지한다.
+        if not isvalid(e) or not e.Enable or e.CurrentMap ~= map then return false end
+        local monster = e:GetComponent("script.Monster")
+        return monster ~= nil and monster.Grade >= 3 and not monster.IsDead and monster.Hp > 0
+            and (_Util:Pos2(e) - _Util:Pos2(player)):Magnitude() <= range
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AttachBoss(Entity e)
+        -- 머리와 몸통을 약한 회보라 조명으로 받친다. 전체 조명·스프라이트·피격 색상은 건드리지 않는다.
+        if self.Lights[e.Id] ~= nil then return end
+        local info = AttachedSpotTypeOverlayLightInfo(e, 0, Vector3(0, 1.8, 0), 0,
+            Color(0.85, 0.76, 0.9, 1), 0.42, OverlayLightOverlapOperation.Additive, 0, 1.4, 3.2, 360, 360, 0.65)
+        local serial = _OverlayLightService:SpawnSpotTypeOverlayLightAttached(info)
+        if serial ~= 0 then self.Lights[e.Id] = { entity = e, serial = serial, boss = true } end
     end
 
     @ExecSpace("ClientOnly")
