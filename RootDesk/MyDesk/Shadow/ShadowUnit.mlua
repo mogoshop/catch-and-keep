@@ -148,6 +148,10 @@ script ShadowUnit extends AttackComponent
         self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard")
         if self.Hp > 0 then return end
         self.Dead = true
+        -- 실제 피격 사망만 알린다. 이동·회수·수명 종료의 Destroy에는 이 경로가 없다.
+        if _Util:IsAlive(self.OwnerPlayer) and isvalid(self.Entity.CurrentMap) then
+            _CompanionHUD:NotifyLoss(self.OwnerPlayer, self.Kind, self.Entity.CurrentMap.Id, self.OwnerPlayer.PlayerComponent.UserId)
+        end
         if self.Kind ~= "shadow" then
             -- 언데드는 무너지면 끝 (재소환 대기 없음)
             _UndeadSystem:OnUnitDied(self.OwnerPlayer, self.ShadowId)

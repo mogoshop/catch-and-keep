@@ -10,6 +10,7 @@ script UXFeedback extends Logic
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self.Queue = {}
+        self.Until = 0
         _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
     end
@@ -18,6 +19,14 @@ script UXFeedback extends Logic
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.Queue = {}
+        self.Until = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsShowing()
+        -- 같은 상단 영역의 출구 안내가 알림 본문 위에 겹치지 않게 표시 상태를 공유한다.
+        local root = _UIKit:Get("/ui/RewardHUD/Toast")
+        return isvalid(root) and root.Enable and self.Until > _UtilLogic.ElapsedSeconds
     end
 
     @ExecSpace("ClientOnly")
@@ -47,6 +56,7 @@ script UXFeedback extends Logic
         root.CanvasGroupComponent.GroupAlpha = 1
         root.Enable = true
         _UIKit:SetEnabled("Tip", false)
+        _UIKit:SetEnabled("GatePrompt", false)
         self.Until = now + 4
         self.ShownCount = self.ShownCount + 1
     end
