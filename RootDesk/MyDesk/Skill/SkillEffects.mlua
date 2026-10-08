@@ -15,6 +15,8 @@ script SkillEffects extends Component
     property table MistVisuals = {}
     property table MistTimers = {}            -- 남아 있는 독안개 타이머
     property table DrainVisuals = {}           -- 짧은 흡수 궤적; 맵 이동·사망에서도 정리한다
+    property table BlastVisuals = {}
+    property integer BlastFxCount = 0
     property table BoneVisuals = {}
     property integer BoneLaunchFxCount = 0
     property integer BoneContactFxCount = 0
@@ -139,7 +141,7 @@ script SkillEffects extends Component
         end
         local q = orb.Entity.TransformComponent.WorldPosition
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.6, 0), -1, "skill.corpse_blast", damage * orb.Grade)
-        self:Fx("blast", q, 1.6)
+        self:CorpseBlastFx(q + Vector3(0, 0.2, 0), 1.6, self.Entity.CurrentMap.Id)
         orb:Consume()
         return true
     end
@@ -225,11 +227,13 @@ script SkillEffects extends Component
         for serial, _ in pairs(self.MistVisuals) do _ParticleService:RemoveParticle(serial) end
         for serial, _ in pairs(self.DrainVisuals) do _ParticleService:RemoveParticle(serial) end
         for serial, _ in pairs(self.BoneVisuals) do _ParticleService:RemoveParticle(serial) end
+        for serial, _ in pairs(self.BlastVisuals) do _ParticleService:RemoveParticle(serial) end
         if self.StormVisual ~= 0 then _ParticleService:RemoveParticle(self.StormVisual) end
         for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
         self.MistVisuals = {}
         self.DrainVisuals = {}
         self.BoneVisuals = {}
+        self.BlastVisuals = {}
         self.VisualTimers = {}
         self.StormVisual = 0
     end
@@ -294,8 +298,6 @@ script SkillEffects extends Component
         local s = Vector3(radius, radius, 1)
         if kind == "poison" then
             _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.22, 1), false, { Color = Color(0.28, 0.55, 0.2, 0.28), ParticleCount = 12 })
-        elseif kind == "blast" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, s * 0.6, false, nil)
         elseif kind == "drain" then
             -- 적의 혼 → 시전자의 회복을 작은 연결 궤적으로 보여 준다. 적 예고를 덮는 큰 붉은 구는 피한다.
             local from = pos + Vector3(0, 0.4, 0)
@@ -337,6 +339,31 @@ script SkillEffects extends Component
         elseif kind == "weaken" then
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.6, 0.3, 1) })
         end
+    end
+
+    @ExecSpace("Multicast")
+    method void CorpseBlastFx(Vector3 pos, number radius, string mapId)
+        -- 혼의 파열과 뼛가루를 낮게 펼친다. 연출 중심은 실제 피해 중심과 같다.
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not _Util:IsAlive(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap or self.Entity.CurrentMap.Id ~= mapId then return end
+        local parts = {
+            { particle = BasicParticleType.DustExplosion, scale = Vector3(radius * 0.4, radius * 0.18, 1) },
+            { particle = BasicParticleType.SparkRadialExplosion, scale = Vector3(radius * 0.3, radius * 0.16, 1), tint = Color(0.78, 0.73, 0.62, 0.8) }
+        }
+        local played = false
+        for _, part in ipairs(parts) do
+            local serial = _ParticleService:PlayBasicParticle(part.particle, self.Entity, pos, 0, part.scale, false, part.tint ~= nil and { Color = part.tint } or nil)
+            if serial ~= 0 then
+                played = true
+                self.BlastVisuals[serial] = true
+                self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
+                    _ParticleService:RemoveParticle(serial)
+                    self.BlastVisuals[serial] = nil
+                    self.VisualTimers[serial] = nil
+                end, 0.55)
+            end
+        end
+        if played then self.BlastFxCount = self.BlastFxCount + 1 end
     end
 
     @ExecSpace("Multicast")
