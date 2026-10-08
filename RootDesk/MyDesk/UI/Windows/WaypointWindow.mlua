@@ -1,4 +1,4 @@
--- 웨이포인트 창: 웨이포인트 위(반경 1.2)에 서면 열린다. 닫으면 벗어났다 다시 밟을 때까지 닫힘.
+-- 웨이포인트 창: 반경 1.2에서 이동·전투를 멈추면 열린다. 통과 중에는 입력을 가로채지 않는다.
 -- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환.
 @Logic
 script WaypointWindow extends Logic
@@ -9,12 +9,19 @@ script WaypointWindow extends Logic
     property string RenderKey = ""
     property integer TimerId = 0
     property boolean WasOpen = false
+    property string LastMapId = ""
+    property Vector2 LastPosition = Vector2(0, 0)
+    property number QuietSince = 0
+    property number OpenDelay = 0.4
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
+        -- 플레이마다 거점 체류·닫기 상태를 초기화한다.
         self.Dismissed = false
         self.WasOpen = false
         self.RenderKey = ""
+        self.LastMapId = ""
+        self.QuietSince = _UtilLogic.ElapsedSeconds
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() self.Dismissed = true _UIKit:Close(self.Win) end)
         for i = 1, 6 do
@@ -29,14 +36,16 @@ script WaypointWindow extends Logic
             end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
-        log("[VRF] WaypointWindow route recommendation and modal input ready")
+        log("[VRF] WaypointWindow idle-only opening and route recommendation ready")
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        -- 반복 검사와 이전 맵의 체류 상태를 정리한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
         self.WasOpen = false
+        self.LastMapId = ""
     end
 
     method PlayerTravel Travel()
@@ -46,18 +55,43 @@ script WaypointWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method boolean HasGameplayIntent(Entity player)
+        -- 경로 추적·표적 접근·방향키·공격·터치 조준이 끝나기 전에는 창을 열지 않는다.
+        local click = player:GetComponent("script.ClickControl")
+        if click ~= nil and (click.HasDestination or click.Moving or isvalid(click.AttackTarget) or isvalid(click.ExtractTarget) or click:IsArrowPressed()) then return true end
+        local attack = player:GetComponent("script.PlayerAttack")
+        if attack ~= nil and (attack.AttackPhase ~= "idle" or _UtilLogic.ElapsedSeconds - attack.LastLocalInputAt < 0.6) then return true end
+        return _MobilePad.Holding or _MobilePad.GestureTouchId ~= 0
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
+        -- 거점에 잠시 멈춘 뒤에만 자동으로 열고, 맵 전환 시 이전 창을 정리한다.
         local player = _UserService.LocalPlayer
         local travel = self:Travel()
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or not isvalid(player.CurrentMap) or travel == nil or st == nil then return end
-        local near = _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), self.Reach) ~= nil
+        local pos = _Util:Pos2(player)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.LastMapId ~= player.CurrentMap.Id then
+            self.LastMapId = player.CurrentMap.Id
+            self.LastPosition = pos
+            self.QuietSince = now
+            self.Dismissed = false
+            self.WasOpen = false
+            _UIKit:Close(self.Win)
+        end
+        local near = _Util:NearestComponent(player.CurrentMap, "script.Waypoint", pos, self.Reach) ~= nil
+        local shown = _UIKit:IsOpen(self.Win)
         -- Esc·다른 메뉴로 닫은 창은 같은 거점 위에서 다시 열지 않는다.
-        if self.WasOpen and not _UIKit:IsOpen(self.Win) then self.Dismissed = true end
+        if self.WasOpen and not shown then self.Dismissed = true end
         if not near then self.Dismissed = false end
-        local open = near and not self.Dismissed and _Util:IsAlive(player) and not _UIKit:AnyOtherWindowOpen(self.Win)
-        if open and not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win)
+        local eligible = near and not self.Dismissed and _Util:IsAlive(player) and not _UIKit:AnyOtherWindowOpen(self.Win)
+        if not eligible or (pos - self.LastPosition):Magnitude() > 0.01 or self:HasGameplayIntent(player) then self.QuietSince = now end
+        self.LastPosition = pos
+        local open = eligible and (shown or now - self.QuietSince >= self.OpenDelay)
+        if open and not shown then _UIKit:Open(self.Win)
         elseif not open then _UIKit:Close(self.Win) end
         self.WasOpen = open
         if not open then
