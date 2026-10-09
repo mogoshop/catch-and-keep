@@ -192,7 +192,15 @@ script ShadowCommander extends Component
         local equip = 0
         if stats ~= nil then equip = stats.BonusMinionPct end
         local summon = _GameData.shadowSummonPerLvPct * math.max(0, self:GetSkillLevel("shadow_summon") - 1)
-        return 1 + (summon + _GameData.commandMasteryPct * self:GetSkillLevel("command_mastery") + equip) / 100
+        return 1 + (summon + _GameData.commandMasteryPct * self:GetSkillLevel("command_mastery") + equip + self:CommandAura().atk) / 100
+    end
+
+    method table CommandAura()
+        -- 호령 오라 (소환수 공격·생명 / 이동 / 저항)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return { atk = 0, speed = 0, resist = 0 } end
+        return book:GetCommandAura()
     end
 
     @ExecSpace("ServerOnly")
@@ -289,8 +297,10 @@ script ShadowCommander extends Component
         u.Element = prof.element
         u.ElementRatio = prof.ratio
         u.Resists = prof.resists
+        local aura = self:CommandAura()
+        u.BonusResist = aura.resist
         local mv = u.Entity.MovementComponent
-        if isvalid(mv) then mv.InputSpeed = prof.speed end
+        if isvalid(mv) then mv.InputSpeed = prof.speed * (1 + aura.speed / 100) end
     end
 
     @ExecSpace("ServerOnly")

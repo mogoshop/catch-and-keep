@@ -21,6 +21,9 @@ script Projectile extends Component
     property number Traveled = 0
     property table HitIds = {}
     property boolean DebugLog = false
+    property number Homing = 0               -- 0이면 직선. 양수면 초당 이 라디안만큼 가까운 적 쪽으로 꺾는다 (영혼 격류)
+    @Sync
+    property Color TintColor = Color(1, 1, 1, 1)
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -57,6 +60,7 @@ script Projectile extends Component
             local unit = self.Owner:GetComponent("script.ShadowUnit")
             if unit == nil or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then self:Finish() return end
         end
+        if self.Homing > 0 then self:Steer(delta) end
         -- 이동을 잘게 나눠 저프레임·빠른 화살도 벽과 적을 건너뛰지 않게 한다.
         local distance = math.min(self.Speed * math.max(0, delta), math.max(0, self.Range - self.Traveled))
         local count = math.max(1, math.ceil(distance / 0.2))
@@ -70,6 +74,41 @@ script Projectile extends Component
             if not self.Launched then return end
         end
         if self.Traveled >= self.Range then self:Finish() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Steer(number delta)
+        -- 반경 3.5 안 가장 가까운(아직 안 맞힌) 적 쪽으로 방향을 조금씩 돌린다.
+        local p = _Util:Pos2(self.Entity) - Vector2(0, self.HeightOffset)
+        local target = nil
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, 3.5)) do
+            if not self.HitIds[m.Entity.Id] then target = m break end
+        end
+        if target == nil then return end
+        local want = (_Util:Pos2(target.Entity) - p)
+        if want:Magnitude() < 0.01 then return end
+        local cur = math.atan(self.Dir.y, self.Dir.x)
+        local goal = math.atan(want.y, want.x)
+        local diff = (goal - cur + math.pi) % (2 * math.pi) - math.pi
+        local step = math.max(-self.Homing * delta, math.min(self.Homing * delta, diff))
+        local a = cur + step
+        self.Dir = Vector2(math.cos(a), math.sin(a))
+        self.Entity.TransformComponent.ZRotation = math.deg(a) + self.AngleOffset
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tint(Color color)
+        -- 같은 투사체 모델을 스킬마다 다른 색으로 보이게 한다 (클라이언트는 동기화된 값으로 칠한다)
+        self.TintColor = color
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.Color = color end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string name, any value)
+        if name ~= "TintColor" then return end
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.Color = self.TintColor end
     end
 
     @ExecSpace("ServerOnly")

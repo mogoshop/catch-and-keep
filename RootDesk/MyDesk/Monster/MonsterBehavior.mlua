@@ -66,7 +66,7 @@ script MonsterBehavior extends Component
         local monster = self.Entity:GetComponent("script.Monster")
         if monster == nil or monster.IsDead or not self.Entity.Enable then return end
         local status = monster:Status()
-        if status ~= nil and status:IsStunned() then return end
+        if status ~= nil and (status:IsStunned() or status:IsConfused()) then return end   -- 혼란 중 이동은 MonsterStatus가 맡는다
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil and _UtilLogic.ElapsedSeconds < attack.AttackAnimationUntil then return end
         local now = _UtilLogic.ElapsedSeconds
@@ -225,6 +225,12 @@ script MonsterBehavior extends Component
     @ExecSpace("ServerOnly")
     method void Flee(Vector2 from)
         -- from에서 멀어지는 쪽으로 FleeSeconds 동안 달아난다 (끝나면 hitrun과 같은 길로 다시 추적)
+        self:FleeFor(from, self.FleeSeconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FleeFor(Vector2 from, number seconds)
+        -- 공포 저주도 같은 도주를 쓴다. seconds 동안 달아난 뒤 원래 추적으로 돌아간다.
         local p = _Util:Pos2(self.Entity)
         local away = Vector2(p.x - from.x, p.y - from.y)
         if away:Magnitude() < 0.01 then
@@ -232,7 +238,7 @@ script MonsterBehavior extends Component
             away = Vector2(math.cos(a), math.sin(a))
         end
         self.RetreatDir = away:Normalize()
-        self.RetreatUntil = _UtilLogic.ElapsedSeconds + self.FleeSeconds
+        self.RetreatUntil = _UtilLogic.ElapsedSeconds + seconds
         self:TrackRetreat()
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil then attack:CancelPending() end

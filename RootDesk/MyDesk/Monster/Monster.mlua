@@ -124,9 +124,12 @@ script Monster extends Component
     end
 
     method number GetResist(string element)
+        -- 저항 붕괴 저주는 모든 저항을 낮춘다 (음수면 더 아프게 맞는다)
         local traits = self:Traits()
-        if traits == nil then return 0 end
-        return traits:GetResist(element)
+        local base = traits ~= nil and traits:GetResist(element) or 0
+        local status = self:Status()
+        if status ~= nil then base = base - status:ResistBreak() end
+        return base
     end
 
     method number GetDamageTakenMultiplier()
@@ -199,6 +202,34 @@ script Monster extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void ApplyCurseFrom(string kind, number pct, number duration, Entity source)
+        local status = self:Status()
+        if status ~= nil then status:ApplyCurseFrom(kind, pct, duration, source) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyRoot(number seconds, Entity source)
+        local status = self:Status()
+        if status ~= nil then status:ApplyRoot(seconds, source) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LifeTapFor(Entity attacker, number damage)
+        -- 생명 약탈이 걸린 대상을 때리면 때린 플레이어·소환수가 피해의 일부를 회복한다.
+        local status = self:Status()
+        if status == nil or damage <= 0 or not isvalid(attacker) then return end
+        local pct = status:LifeTap()
+        if pct <= 0 then return end
+        local heal = damage * pct / 100
+        ---@type PlayerStats
+        local stats = attacker:GetComponent("script.PlayerStats")
+        if stats ~= nil then stats:Heal(heal, 0) return end
+        ---@type ShadowUnit
+        local unit = attacker:GetComponent("script.ShadowUnit")
+        if unit ~= nil and not unit.Dead and unit.Hp > 0 then unit.Hp = math.min(unit.MaxHp, unit.Hp + heal) end
+    end
+
+    @ExecSpace("ServerOnly")
     method void ApplyPoison(number dps, number duration, Entity source)
         local status = self:Status()
         if status ~= nil then status:ApplyPoison(dps, duration, source) end
@@ -232,6 +263,7 @@ script Monster extends Component
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
         self.Hp = self.Hp - event.TotalDamage
+        self:LifeTapFor(event.AttackerEntity, event.TotalDamage)
         local pos = self.Entity.TransformComponent.WorldPosition
         local heavy = event.TotalDamage >= self.MaxHp * _GameData.heavyHitPct
         if isvalid(event.AttackerEntity) then
@@ -263,6 +295,7 @@ script Monster extends Component
         if attack ~= nil then attack:CancelPending() end
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("DEAD") end
+        self:SpreadPoison()
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = _Util:OwnerPlayerOf(self.LastAttacker),
@@ -277,6 +310,35 @@ script Monster extends Component
             return
         end
         _TimerService:SetTimerOnce(function() self:TryRespawn() end, self.RespawnDelay)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpreadPoison()
+        -- 독 확산(패시브): 독에 걸린 채 죽으면 주변 적에게 같은 독이 옮는다. 독을 건 플레이어의 스킬 레벨 기준.
+        local status = self:Status()
+        if status == nil or status.PoisonDps <= 0 or _UtilLogic.ElapsedSeconds > status.PoisonUntil then return end
+        local source = status.PoisonSource
+        if not isvalid(source) then return end
+        ---@type SkillBook
+        local book = source:GetComponent("script.SkillBook")
+        if book == nil then return end
+        local lv = book:GetLevel("poison_spread")
+        if lv <= 0 then return end
+        local radius = book:GetEffectPower("poison_spread", lv)
+        local dps = status.PoisonDps
+        local p = _Util:Pos2(self.Entity)
+        local n = 0
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, radius)) do
+            if m.Entity ~= self.Entity then
+                m:ApplyPoison(dps, 2.5, source)
+                n = n + 1
+            end
+        end
+        if n > 0 then
+            ---@type SkillEffects
+            local fx = source:GetComponent("script.SkillEffects")
+            if fx ~= nil then fx:Fx("poison", Vector3(p.x, p.y, 0), radius) end
+        end
     end
 
     @ExecSpace("ServerOnly")

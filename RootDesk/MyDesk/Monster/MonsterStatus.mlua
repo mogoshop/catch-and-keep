@@ -1,4 +1,5 @@
--- 몬스터 상태 이상: 저주(약화의 낙인·쇠약), 독, 냉기 둔화. 시각은 _UtilLogic.ElapsedSeconds 기준.
+-- 몬스터 상태 이상: 저주(약화의 낙인·쇠약·가시·공포·혼란·생명 약탈·쇠퇴·저항 붕괴), 골격 감옥 속박, 독, 냉기 둔화.
+-- 시각은 _UtilLogic.ElapsedSeconds 기준.
 -- 바깥에서는 Monster의 창구(ApplyCurse·ApplyPoison·ApplyChill)를 거쳐 부른다.
 @Component
 script MonsterStatus extends Component
@@ -30,6 +31,23 @@ script MonsterStatus extends Component
     property integer CurseMask = 0           -- 1 낙인, 2 쇠약; 실제 지속 상태만 동기화
     property table CurseMarkers = {}          -- 클라이언트 전용, 몬스터의 자식이라 함께 정리된다
     property number MarkerRetryAt = 0
+    property number ThornUntil = 0            -- 가시 저주: 이 몬스터가 준 피해의 ThornPct%를 되돌려 받는다
+    property number ThornPct = 0
+    property Entity ThornSource = nil
+    property number TerrorUntil = 0           -- 공포: 시전자에게서 달아나며 공격하지 않는다 (보스 면역)
+    property Vector2 TerrorFrom = Vector2(0, 0)
+    property number TerrorCheckAt = 0
+    property number ConfuseUntil = 0          -- 혼란: 플레이어 대신 가까운 몬스터를 친다 (보스 면역)
+    property Entity ConfuseSource = nil
+    property number ConfuseSwingAt = 0
+    property number LifeTapUntil = 0          -- 생명 약탈: 이 몬스터를 때린 쪽이 피해의 LifeTapPct%를 회복
+    property number LifeTapPct = 0
+    property number DecayUntil = 0            -- 쇠퇴: 이동 속도·주는 피해 감소
+    property number DecayPct = 0
+    property number ResistBreakUntil = 0      -- 저항 붕괴: 모든 저항 감소
+    property number ResistBreakPct = 0
+    property number RootUntil = 0             -- 골격 감옥: 제자리에 묶인다 (공격은 가능)
+    property boolean ControlHeld = false      -- 공포·혼란이 이동을 쥐고 있었는가 (끝나면 추적 복구)
 
     method Monster Body()
         ---@type Monster
@@ -39,8 +57,16 @@ script MonsterStatus extends Component
 
     @ExecSpace("ServerOnly")
     method void ApplyCurse(string kind, number pct, number duration)
-        -- amp: 받는 피해 증가 / weaken: 주는 피해 감소
+        self:ApplyCurseFrom(kind, pct, duration, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyCurseFrom(string kind, number pct, number duration, Entity source)
+        -- amp 받는 피해↑ / weaken 주는 피해↓ / thorn 반사 / terror 도주 / confuse 동족 공격 / lifetap 흡혈 / decay 속도·피해↓ / resist 저항↓
+        -- 같은 저주를 다시 걸면 시간을 새로 하고 수치는 더 센 쪽을 남긴다. 공포·혼란은 보스에게 듣지 않는다.
         local now = _UtilLogic.ElapsedSeconds
+        local body = self:Body()
+        local boss = body ~= nil and body.Grade >= 3
         if kind == "amp" then
             if now >= self.AmpUntil then self.AmpPct = 0 end
             self.AmpPct = math.max(self.AmpPct, pct)
@@ -49,20 +75,211 @@ script MonsterStatus extends Component
             if now >= self.WeakenUntil then self.WeakenPct = 0 end
             self.WeakenPct = math.max(self.WeakenPct, pct)
             self.WeakenUntil = now + duration
+        elseif kind == "thorn" then
+            if now >= self.ThornUntil then self.ThornPct = 0 end
+            self.ThornPct = math.max(self.ThornPct, pct)
+            self.ThornUntil = now + duration
+            self.ThornSource = source
+        elseif kind == "lifetap" then
+            if now >= self.LifeTapUntil then self.LifeTapPct = 0 end
+            self.LifeTapPct = math.max(self.LifeTapPct, pct)
+            self.LifeTapUntil = now + duration
+        elseif kind == "decay" then
+            if now >= self.DecayUntil then self.DecayPct = 0 end
+            self.DecayPct = math.max(self.DecayPct, pct)
+            self.DecayUntil = now + duration
+            self:RefreshSpeedAfter(duration)
+        elseif kind == "resist" then
+            if now >= self.ResistBreakUntil then self.ResistBreakPct = 0 end
+            self.ResistBreakPct = math.max(self.ResistBreakPct, pct)
+            self.ResistBreakUntil = now + duration
+        elseif kind == "terror" then
+            if boss then return end
+            self.TerrorUntil = now + duration
+            self.TerrorFrom = isvalid(source) and _Util:Pos2(source) or _Util:Pos2(self.Entity)
+            self.ControlHeld = true
+            self:StartFlee()
+        elseif kind == "confuse" then
+            if boss then return end
+            self.ConfuseUntil = now + duration
+            self.ConfuseSource = source
+            self.ControlHeld = true
+            local attack = self.Entity:GetComponent("script.MonsterAttack")
+            if attack ~= nil then attack:CancelPending() end
+            self:Hold()
         end
         self:RefreshCurseTag()
     end
 
     @ExecSpace("ServerOnly")
+    method void ApplyRoot(number seconds, Entity source)
+        -- 골격 감옥: 제자리에 묶는다(이동 속도 0). 보스는 절반만. 공격은 막지 않는다.
+        local body = self:Body()
+        if body == nil or body.IsDead then return end
+        if body.Grade >= 3 then seconds = seconds * 0.5 end
+        self.RootUntil = math.max(self.RootUntil, _UtilLogic.ElapsedSeconds + seconds)
+        self:RefreshSpeedAfter(seconds)
+        self:RefreshCurseTag()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshSpeedAfter(number seconds)
+        -- 지금 속도를 다시 계산하고, 효과가 끝나는 시점에 한 번 더 계산한다.
+        local body = self:Body()
+        if body == nil then return end
+        body:RefreshSpeed()
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) then body:RefreshSpeed() end
+        end, seconds + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartFlee()
+        -- 공포: 남은 시간 동안 시전 위치에서 멀어진다 (벽에 막혀 멈추면 OnUpdate가 다시 달아나게 한다).
+        -- 특수 행동이 없는 몬스터는 ControlTick이 직접 몰아간다.
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        local left = self.TerrorUntil - _UtilLogic.ElapsedSeconds
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
+        if behavior ~= nil and left > 0.1 then behavior:FleeFor(self.TerrorFrom, left) else self:Hold() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Drive(Vector2 dir)
+        -- 저주가 이동을 쥐었을 때의 걸음. 특수 행동 컴포넌트가 있으면 그쪽 모션 규칙을 쓴다.
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:DriveMotion(dir) return end
+        self.Entity.MovementComponent:MoveToDirection(dir, 0)
+        local state = self.Entity.StateComponent
+        if isvalid(state) then
+            local current = state.CurrentStateName
+            if current ~= "ATTACK" and current ~= "HIT" and current ~= "DEAD" then
+                local nextState = dir:Magnitude() > 0.01 and "MOVE" or "IDLE"
+                if current ~= nextState then state:ChangeState(nextState) end
+            end
+        end
+        if math.abs(dir.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = dir.x > 0 end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FleeStep()
+        -- 특수 행동이 없는 몬스터의 공포 도주: 시전 위치 반대쪽, 막히면 옆으로 비켜 간다.
+        self:Hold()
+        local p = _Util:Pos2(self.Entity)
+        local away = p - self.TerrorFrom
+        if away:Magnitude() < 0.01 then away = Vector2(1, 0) end
+        away = away:Normalize()
+        local map = self.Entity.CurrentMap
+        for _, d in ipairs({ away, Vector2(-away.y, away.x), Vector2(away.y, -away.x) }) do
+            if _Util:HasLineOfSight(map, p, p + d * 0.45) then
+                self:Drive(d)
+                return
+            end
+        end
+        self:Drive(Vector2(0, 0))
+    end
+
+    method boolean IsTerrified()
+        return _UtilLogic.ElapsedSeconds < self.TerrorUntil
+    end
+
+    method boolean IsConfused()
+        return _UtilLogic.ElapsedSeconds < self.ConfuseUntil
+    end
+
+    method boolean CanTargetDefenders()
+        -- 공포·혼란 중에는 플레이어·소환수를 노리지 않는다.
+        return not self:IsTerrified() and not self:IsConfused()
+    end
+
+    method number ResistBreak()
+        if _UtilLogic.ElapsedSeconds < self.ResistBreakUntil then return self.ResistBreakPct end
+        return 0
+    end
+
+    method number LifeTap()
+        if _UtilLogic.ElapsedSeconds < self.LifeTapUntil then return self.LifeTapPct end
+        return 0
+    end
+
+    method number Thorns()
+        if _UtilLogic.ElapsedSeconds < self.ThornUntil then return self.ThornPct end
+        return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ConfuseTick(number now)
+        -- 혼란: 가까운 다른 몬스터에게 다가가 자기 공격력으로 친다. 처치 공적은 저주를 건 플레이어에게 간다.
+        local body = self:Body()
+        if body == nil then return end
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        self:Hold()
+        local me = _Util:Pos2(self.Entity)
+        local target = nil
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, 4)) do
+            if m.Entity ~= self.Entity then
+                target = m
+                break
+            end
+        end
+        local dir = Vector2(0, 0)
+        if target ~= nil then
+            local to = _Util:Pos2(target.Entity) - me
+            local reach = attack ~= nil and math.max(0.8, attack.AttackRange) or 0.9
+            if to:Magnitude() > reach then dir = to:Normalize()
+            elseif now >= self.ConfuseSwingAt then
+                self.ConfuseSwingAt = now + (attack ~= nil and attack.AttackCooldown or 1.5)
+                local damage = (attack ~= nil and attack.Damage or 5) * body:GetDamageDealtMultiplier()
+                target:TakeDamage(damage, self.ConfuseSource)
+                if attack ~= nil and to:Magnitude() > 0.01 then attack:SwingFx(target.Entity.TransformComponent.WorldPosition, to:Normalize()) end
+            end
+        end
+        self:Drive(dir)
+    end
+
+    @ExecSpace("ServerOnly")
     method void RefreshCurseTag()
-        -- UI는 실제 남아 있는 저주만 표시한다. 중첩된 낙인·쇠약도 함께 보여 준다.
+        -- UI는 실제 남아 있는 저주만 표시한다. 여러 저주가 겹치면 모두 보여 준다.
         local now = _UtilLogic.ElapsedSeconds
         local text = ""
         local mask = 0
-        if now < self.AmpUntil then text = "약화의 낙인" mask = mask + 1 end
-        if now < self.WeakenUntil then text = text == "" and "쇠약" or (text .. " · 쇠약") mask = mask + 2 end
+        for _, def in ipairs(self:CurseDefs()) do
+            if now < self:CurseEndsAt(def.kind) then
+                text = text == "" and def.name or (text .. " · " .. def.name)
+                mask = mask + def.bit
+            end
+        end
         if self.CurseTag ~= text then self.CurseTag = text end
         if self.CurseMask ~= mask then self.CurseMask = mask end
+    end
+
+    method number CurseEndsAt(string kind)
+        if kind == "amp" then return self.AmpUntil end
+        if kind == "weaken" then return self.WeakenUntil end
+        if kind == "thorn" then return self.ThornUntil end
+        if kind == "terror" then return self.TerrorUntil end
+        if kind == "confuse" then return self.ConfuseUntil end
+        if kind == "lifetap" then return self.LifeTapUntil end
+        if kind == "decay" then return self.DecayUntil end
+        if kind == "resist" then return self.ResistBreakUntil end
+        if kind == "root" then return self.RootUntil end
+        return 0
+    end
+
+    method table CurseDefs()
+        -- 표시 순서·비트·아이콘 스킬. CurseMask로 클라이언트에 전달된다.
+        return {
+            { bit = 1, name = "약화의 낙인", kind = "amp", skill = "mark_weakness" },
+            { bit = 2, name = "쇠약", kind = "weaken", skill = "enfeeble" },
+            { bit = 4, name = "가시 저주", kind = "thorn", skill = "thorn_curse" },
+            { bit = 8, name = "공포", kind = "terror", skill = "terror" },
+            { bit = 16, name = "혼란", kind = "confuse", skill = "confusion" },
+            { bit = 32, name = "생명 약탈", kind = "lifetap", skill = "life_tap" },
+            { bit = 64, name = "쇠퇴", kind = "decay", skill = "decay" },
+            { bit = 128, name = "저항 붕괴", kind = "resist", skill = "resist_break" },
+            { bit = 256, name = "골격 감옥", kind = "root", skill = "bone_prison" },
+        }
     end
 
     method number TakenMult()
@@ -113,13 +330,19 @@ script MonsterStatus extends Component
     end
 
     method number WeakenMult()
-        if _UtilLogic.ElapsedSeconds < self.WeakenUntil then return math.max(0.1, 1 - self.WeakenPct / 100) end
-        return 1
+        local now = _UtilLogic.ElapsedSeconds
+        local m = 1
+        if now < self.WeakenUntil then m = m * math.max(0.1, 1 - self.WeakenPct / 100) end
+        if now < self.DecayUntil then m = m * math.max(0.1, 1 - self.DecayPct / 100) end
+        return m
     end
 
     method number SpeedMult()
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.RootUntil then return 0 end
         local m = self:AuraMult("haste")
-        if _UtilLogic.ElapsedSeconds < self.ChillUntil then m = m * 0.5 end
+        if now < self.ChillUntil then m = m * 0.5 end
+        if now < self.DecayUntil then m = m * math.max(0.4, 1 - self.DecayPct / 100) end
         return m
     end
 
@@ -231,6 +454,7 @@ script MonsterStatus extends Component
         if not self:IsServer() then self:UpdateCurseMarkers() return end
         -- 저주 표시는 만료 시 지우고, 넉백·경직이 끝나면 이동을 복구한다.
         self:RefreshCurseTag()
+        self:ControlTick()
         if self.KnockUntil <= 0 and self.StaggerUntil <= 0 then return end
         local now = _UtilLogic.ElapsedSeconds
         local body = self:Body()
@@ -241,6 +465,36 @@ script MonsterStatus extends Component
         end
         if self.KnockUntil > 0 or now < self.StaggerUntil then return end
         self.StaggerUntil = 0
+        self:Release()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ControlTick()
+        -- 공포는 막히면 다시 달아나게, 혼란은 동족을 치게 한다. 둘 다 끝나면 원래 추적으로 돌려놓는다.
+        if not self.ControlHeld then return end
+        local body = self:Body()
+        if body == nil or body.IsDead then
+            self.ControlHeld = false
+            return
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        if self:IsStunned() then return end
+        if now < self.TerrorUntil then
+            local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+            if behavior == nil then
+                self:FleeStep()
+            elseif now >= self.TerrorCheckAt then
+                self.TerrorCheckAt = now + 0.4
+                if behavior.RetreatUntil <= now then self:StartFlee() end
+            end
+            return
+        end
+        if now < self.ConfuseUntil then
+            self:ConfuseTick(now)
+            return
+        end
+        self.ControlHeld = false
+        self:Drive(Vector2(0, 0))
         self:Release()
     end
 
@@ -263,6 +517,14 @@ script MonsterStatus extends Component
         -- 리스폰 시 모두 해제
         self.AmpUntil = 0
         self.WeakenUntil = 0
+        self.ThornUntil = 0
+        self.TerrorUntil = 0
+        self.ConfuseUntil = 0
+        self.LifeTapUntil = 0
+        self.DecayUntil = 0
+        self.ResistBreakUntil = 0
+        self.RootUntil = 0
+        self.ControlHeld = false
         self.ChillUntil = 0
         self.AuraUntil = 0
         self.PoisonUntil = 0
@@ -285,10 +547,19 @@ script MonsterStatus extends Component
             self:ClearCurseMarkers()
             return
         end
-        local amp = self.CurseMask % 2 == 1
-        local weaken = self.CurseMask >= 2
-        self:UpdateCurseMarker("amp", amp, amp and weaken and -0.13 or 0, "mark_weakness")
-        self:UpdateCurseMarker("weaken", weaken, amp and weaken and 0.13 or 0, "enfeeble")
+        -- 걸린 저주 아이콘을 머리 위에 한 줄로 가운데 정렬한다.
+        local defs = self:CurseDefs()
+        local active = {}
+        for _, def in ipairs(defs) do
+            if (self.CurseMask // def.bit) % 2 == 1 then table.insert(active, def) end
+        end
+        local n = #active
+        local index = {}
+        for i, def in ipairs(active) do index[def.kind] = i end
+        for _, def in ipairs(defs) do
+            local i = index[def.kind]
+            self:UpdateCurseMarker(def.kind, i ~= nil, i ~= nil and (i - (n + 1) / 2) * 0.26 or 0, def.skill)
+        end
     end
 
     @ExecSpace("ClientOnly")

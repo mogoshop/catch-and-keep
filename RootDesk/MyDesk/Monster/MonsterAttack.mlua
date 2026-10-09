@@ -101,7 +101,7 @@ script MonsterAttack extends AttackComponent
         local boss = self.Entity:GetComponent("script.BossPattern")
         if boss ~= nil and boss.SlamPhase ~= "idle" then self.SpacingControlled = false return end
         local status = body:Status()
-        if status ~= nil and status:IsStunned() then self.SpacingControlled = false return end
+        if status ~= nil and (status:IsStunned() or not status:CanTargetDefenders()) then self.SpacingControlled = false return end
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")
         if behavior ~= nil and not behavior:CanBeginAttack() then self.SpacingControlled = false return end
         self.CooldownTimer = self.CooldownTimer - delta
@@ -496,7 +496,17 @@ script MonsterAttack extends AttackComponent
             end
             dmg = phys + elem
         end
-        return math.max(1, math.floor(dmg + 0.5))
+        local final = math.max(1, math.floor(dmg + 0.5))
+        -- 가시 저주: 준 피해의 일부를 되돌려 받는다 (판정 흐름이 끝난 뒤 적용)
+        local status = body ~= nil and body:Status() or nil
+        if status ~= nil and self:IsServer() and status:Thorns() > 0 then
+            local reflect = final * status:Thorns() / 100
+            local source = status.ThornSource
+            _TimerService:SetTimerOnce(function()
+                if isvalid(self.Entity) and body ~= nil and not body.IsDead then body:TakeDamage(reflect, source) end
+            end, 0.05)
+        end
+        return final
     end
 
     method void OnAttack(Entity defender)

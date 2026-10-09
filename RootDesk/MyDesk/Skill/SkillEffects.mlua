@@ -34,8 +34,19 @@ script SkillEffects extends Component
         elseif id == "corpse_blast" then ok = self:CorpseBlast(target, power * spell)
         elseif id == "soul_drain" then ok = self:SoulDrain(target, power * spell)
         elseif id == "bone_storm" then ok = self:BoneStorm(power * spell)
-        elseif id == "mark_weakness" then ok = self:Curse(target, "amp", power, 1.5)
-        elseif id == "enfeeble" then ok = self:Curse(target, "weaken", power, 1.5)
+        elseif id == "mark_weakness" then ok = self:Curse(target, "amp", power, 1.5, 8)
+        elseif id == "enfeeble" then ok = self:Curse(target, "weaken", power, 1.5, 8)
+        elseif id == "thorn_curse" then ok = self:Curse(target, "thorn", power, 1.5, 8)
+        elseif id == "terror" then ok = self:Curse(target, "terror", 0, 1.5, power)
+        elseif id == "confusion" then ok = self:Curse(target, "confuse", 0, 1.5, power)
+        elseif id == "life_tap" then ok = self:Curse(target, "lifetap", power, 1.5, 8)
+        elseif id == "decay" then ok = self:Curse(target, "decay", power, 1.5, 8)
+        elseif id == "resist_break" then ok = self:Curse(target, "resist", power, 1.5, 8)
+        elseif id == "lure" then ok = self:Lure(target, power)
+        elseif id == "bone_prison" then ok = self:BonePrison(target, power)
+        elseif id == "soul_torrent" then ok = self:SoulTorrent(me, target, power * spell, book:GetTorrentCount(lv))
+        elseif id == "death_wave" then ok = self:DeathWave(power * spell)
+        elseif id == "shadow_sacrifice" then ok = self:ShadowSacrifice(target, power * spell)
         elseif id == "elite_promote" then ok = self:ElitePromote(power)
         elseif id == "shadow_summon" then ok = self:SummonShadow()
         elseif id == "rally" then ok = self:Rally()
@@ -245,8 +256,8 @@ script SkillEffects extends Component
     -- ───────── 저주·군령 ─────────
 
     @ExecSpace("ServerOnly")
-    method boolean Curse(Vector2 target, string kind, number pct, number radius)
-        -- 범위는 장비 「저주 범위 %」만큼 넓어진다. 8초. 범위 안에 적이 없으면 실패
+    method boolean Curse(Vector2 target, string kind, number pct, number radius, number duration)
+        -- 범위는 장비 「저주 범위 %」만큼 넓어진다. 범위 안에 적이 없으면 실패
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil then radius = radius * (1 + stats.BonusCurse / 100) end
@@ -255,8 +266,121 @@ script SkillEffects extends Component
             self:Fail("저주할 적이 범위 안에 없다")
             return false
         end
-        for _, m in ipairs(list) do m:ApplyCurse(kind, pct, 8) end
+        for _, m in ipairs(list) do m:ApplyCurseFrom(kind, pct, duration, self.Entity) end
         self:Fx(kind, Vector3(target.x, target.y, 0), radius)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Lure(Vector2 target, number holdSeconds)
+        -- 반경 3 안의 적을 조준점으로 세 번 끌어당긴 뒤 holdSeconds 묶는다 (보스·고유는 끌려오지 않고 짧게 묶인다)
+        local list = self:Targets(target, 3)
+        if #list == 0 then
+            self:Fail("끌어올 적이 범위 안에 없다")
+            return false
+        end
+        local epoch = self.EffectEpoch
+        local map = self.Entity.CurrentMap
+        local pull = function()
+            for _, m in ipairs(self:Targets(target, 3.4)) do
+                local to = target - _Util:Pos2(m.Entity)
+                local status = m:Status()
+                if status ~= nil and to:Magnitude() > 0.5 then status:Knockback(to, 0.9) end
+            end
+        end
+        pull()
+        for i = 1, 2 do
+            _TimerService:SetTimerOnce(function()
+                if epoch ~= self.EffectEpoch or self.Entity.CurrentMap ~= map then return end
+                pull()
+            end, 0.3 * i)
+        end
+        _TimerService:SetTimerOnce(function()
+            if epoch ~= self.EffectEpoch or self.Entity.CurrentMap ~= map then return end
+            for _, m in ipairs(self:Targets(target, 1.6)) do m:ApplyRoot(holdSeconds, self.Entity) end
+        end, 0.75)
+        self:Fx("lure", Vector3(target.x, target.y, 0), 3)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BonePrison(Vector2 target, number seconds)
+        -- 조준점 반경 1.3 안의 적을 뼈 장벽으로 묶는다 (이동만 막고 공격은 가능)
+        local list = self:Targets(target, 1.3)
+        if #list == 0 then
+            self:Fail("가둘 적이 범위 안에 없다")
+            return false
+        end
+        for _, m in ipairs(list) do m:ApplyRoot(seconds, self.Entity) end
+        self:Fx("prison", Vector3(target.x, target.y, 0), 1.3)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SoulTorrent(Vector2 me, Vector2 target, number damage, integer count)
+        -- 조준 방향 부채꼴로 유도 영혼 count발. 각자 가까운 적을 쫓아가 하나에 맞고 사라진다.
+        local dir = target - me
+        if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
+        local base = math.atan(dir.y, dir.x)
+        local owner = self.Entity
+        local map = owner.CurrentMap
+        local epoch = self.EffectEpoch
+        local launched = 0
+        for i = 1, count do
+            local spread = count > 1 and ((i - 1) / (count - 1) - 0.5) * math.rad(60) or 0
+            local d = Vector2(math.cos(base + spread), math.sin(base + spread))
+            local start = me + Vector2(0, 0.3) + d * 0.35
+            self.ShotCount = self.ShotCount + 1
+            local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "Soul_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), map)
+            if isvalid(shot) then
+                launched = launched + 1
+                _Util:AfterSpawn(shot, "script.Projectile", function(comp)
+                    ---@type Projectile
+                    local proj = comp
+                    if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
+                    proj.Homing = 5
+                    proj:Launch(owner, d, 7, 7, damage, "skill.soul_torrent", false)
+                    proj:Tint(Color(0.65, 0.5, 1, 1))
+                end, function() if isvalid(shot) then shot:Destroy() end end)
+            end
+        end
+        if launched == 0 then
+            self:Fail("영혼을 날리지 못했다")
+            return false
+        end
+        self:Fx("torrent", Vector3(me.x, me.y + 0.3, 0), 0.6)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean DeathWave(number damage)
+        -- 내 주위 반경 3.5 전방위 파동. 범위에 적이 없어도 시전은 된다 (먼저 깔아 두는 용도)
+        local p = _Util:Pos2(self.Entity)
+        self:Hit(Vector2(p.x, p.y + 0.3), Vector2(3.5, 0), -1, "skill.death_wave", damage)
+        self:Fx("wave", Vector3(p.x, p.y, 0), 3.5)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ShadowSacrifice(Vector2 target, number damage)
+        -- 조준점에 가장 가까운 내 그림자 1기를 터뜨린다 (반경 1.8). 그림자는 죽은 것처럼 보관함으로 돌아가 재소환 대기
+        local best = nil
+        local bestDist = math.huge
+        for _, unit in ipairs(self:Commander():GetUnits()) do
+            if not unit.Dead and unit.Hp > 0 then
+                local d = (_Util:Pos2(unit.Entity) - target):Magnitude()
+                if d < bestDist then best = unit bestDist = d end
+            end
+        end
+        if best == nil then
+            self:Fail("희생할 그림자가 없다 — 그림자를 먼저 소환하세요")
+            return false
+        end
+        local q = _Util:Pos2(best.Entity)
+        local total = damage + best.Atk * 2
+        self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.8, 0), -1, "skill.shadow_sacrifice", total)
+        self:Fx("sacrifice", Vector3(q.x, q.y, 0), 1.8)
+        self:Commander():OnUnitDied(best.ShadowId)
         return true
     end
 
@@ -342,6 +466,25 @@ script SkillEffects extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.7, 0.2, 1, 1) })
         elseif kind == "weaken" then
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.6, 0.3, 1) })
+        elseif kind == "thorn" or kind == "terror" or kind == "confuse" or kind == "lifetap" or kind == "decay" or kind == "resist" then
+            -- 저주마다 색을 달리해 무엇을 걸었는지 바로 구분한다 (머리 위 아이콘과 같은 계열)
+            local colors = { thorn = Color(0.95, 0.45, 0.2, 1), terror = Color(0.35, 0.1, 0.45, 1), confuse = Color(1, 0.85, 0.3, 1),
+                lifetap = Color(0.9, 0.15, 0.25, 1), decay = Color(0.55, 0.45, 0.3, 1), resist = Color(0.3, 0.85, 1, 1) }
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = colors[kind] })
+        elseif kind == "lure" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s * 0.6, false, { Color = Color(0.6, 0.3, 0.9, 1) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos, 0, Vector3(0.5, 0.5, 1), false, { Color = Color(0.7, 0.45, 1, 0.9) })
+        elseif kind == "prison" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(radius * 0.45, radius * 0.3, 1), false, { Color = Color(0.85, 0.8, 0.68, 0.95) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.85, 0.8, 0.65, 1) })
+        elseif kind == "torrent" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.65, 0.5, 1, 0.9) })
+        elseif kind == "wave" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos + Vector3(0, 0.3, 0), 0, Vector3(radius * 0.5, radius * 0.5, 1), false, { Color = Color(0.55, 0.35, 0.8, 0.9) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(radius * 0.35, radius * 0.15, 1), false, { Color = Color(0.5, 0.45, 0.55, 0.8) })
+        elseif kind == "sacrifice" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.3, 0), 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.6, 0.3, 1, 1) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(radius * 0.35, radius * 0.18, 1), false, { Color = Color(0.35, 0.2, 0.5, 0.8) })
         end
     end
 

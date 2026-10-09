@@ -214,8 +214,15 @@ script UndeadSystem extends Logic
         ---@type PlayerStats
         local stats = player:GetComponent("script.PlayerStats")
         local equipment = stats ~= nil and math.max(0.1, 1 + stats.BonusMinionPct / 100) or 1
+        -- 호령 오라도 숙련처럼 일으키는 순간 확정한다 (다음 소환부터 적용)
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        local aura = book ~= nil and book:GetCommandAura() or { atk = 0, speed = 0, resist = 0 }
+        equipment = equipment * (1 + aura.atk / 100)
         rec.atk = math.max(1, math.floor(rec.atk * equipment))
         rec.hp = math.max(1, math.floor(rec.hp * equipment))
+        rec.speed = rec.speed * (1 + aura.speed / 100)
+        rec.auraResist = aura.resist
         return rec
     end
 
@@ -293,6 +300,7 @@ script UndeadSystem extends Logic
             u.Element = rec.element
             u.ElementRatio = rec.ratio
             u.Resists = rec.resists or {}
+            u.BonusResist = rec.auraResist or 0
             u.Variant = rec.variant or ""
             u.ShadowTint = rec.tint
             unit.SpriteRendererComponent.Color = rec.tint
@@ -412,7 +420,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant" }
+        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist" }
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end
