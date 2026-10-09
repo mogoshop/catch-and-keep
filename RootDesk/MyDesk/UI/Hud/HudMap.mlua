@@ -145,11 +145,23 @@ script HudMap extends Logic
         end
         local title = base
         local sub = ""
+        local chestNote = ""
         local floor = self:DepthFloor()
         self.ShownFloor = floor
         if info ~= nil then
             title = _GameConst:LevelText(info.name, mapName)
             if info.kind == "town" then sub = "마을" elseif info.kind == "side" then sub = "곁가지 던전" elseif info.kind == "instance" then sub = "심도 던전" else sub = "사냥터" end
+            -- 곁가지 끝방 봉인 상자: 이 난이도에서 열었는지 (14장 §4)
+            if info.kind == "side" then
+                for _, row in ipairs(_NamedData:ForMap(base)) do
+                    if row.chest then
+                        ---@type PlayerQuest
+                        local quest = _UIKit:Comp("script.PlayerQuest")
+                        local opened = quest ~= nil and string.find(quest.SealedNow, ";" .. base .. ";", 1, true) ~= nil
+                        chestNote = opened and " · 봉인 상자 열었음" or " · 끝방에 봉인 상자"
+                    end
+                end
+            end
             -- 심도: 층 번호 (DepthDirector.Floor 동기화)
             if info.kind == "instance" and floor > 0 then title = "심도 " .. tostring(floor) .. "층" end
         end
@@ -162,7 +174,8 @@ script HudMap extends Logic
         end
         -- 레벨 표시는 괄호 안 그대로 이름에 붙어 있다 ("피 묻은 황무지 (Lv 1~3)")
         _UIKit:SetText("Banner/Title", title)
-        _UIKit:SetText("Banner/Sub", sub)
+        -- 봉인 상자 안내는 큰 배너에만 (미니맵 머리글은 좁다)
+        _UIKit:SetText("Banner/Sub", sub .. chestNote)
         _UIKit:SetEnabled("Banner", true)
         self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerSeconds
         self:SetBannerAlpha(1)

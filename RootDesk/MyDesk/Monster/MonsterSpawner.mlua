@@ -3,8 +3,9 @@
 -- Entries 형식: "모델id:마리수:레벨;..."   예) "hellhound:6:1;graveworm:3:2".
 -- 값은 실행 시 _GameData:GetMapSpawns(보통 맵 id)를 우선 쓴다 (maps.csv → 데이터 생성만으로 바뀜, 맵 파일 재빌드 불필요).
 -- 데이터에 없는 맵이면 이 컴포넌트의 속성값을 쓴다
--- 끝방 우두머리·봉인 상자(named.csv)도 여기서 놓는다. RespawnSec < 0 인 맵(굶주린 굴)은 「정리」 맵: 다시 나오지 않고,
--- 남은 수를 동기화하며, 다 잡으면 MapCleared. 정리됐거나 우두머리가 쓰러진 맵이 3초 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1)
+-- 끝방 우두머리·봉인 상자(named.csv)도 여기서 놓는다. RespawnSec < 0 인 맵(곁가지 던전)은 「정리」 맵: 다시 나오지 않고,
+-- 남은 수를 동기화하며, 다 잡으면 「층 정리」 골드 묶음 + MapCleared. 정리됐거나 우두머리가 쓰러진 맵이 3초 넘게 비면,
+-- 덜 정리된 맵은 5분 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1·§4)
 @Component
 script MonsterSpawner extends Component
 
@@ -71,7 +72,13 @@ script MonsterSpawner extends Component
                 self.Cleared = true
                 local info = _GameData:GetMapInfo(base)
                 local name = info ~= nil and string.gsub(info.name, "%s*%(Lv[^%)]*%)", "") or base
-                for _, p in ipairs(players) do _Util:Notify(name .. "을(를) 모두 정리했다", p.PlayerComponent.UserId) end
+                -- 층 정리 보상: 맵 안의 사람마다 골드 묶음 (맵 레벨 기준)
+                local gold = math.floor(self.MapLevel * _GameData.floorClearGoldPerLevel + _GameData.floorClearGoldBase)
+                for _, p in ipairs(players) do
+                    local userId = p.PlayerComponent.UserId
+                    _LootSystem:Spawn(_Util:Pos2(p), userId, "gold", "", gold, 0)
+                    _Util:Notify("층 정리 · " .. name .. " — 골드 묶음 " .. tostring(gold), userId)
+                end
                 log("[VRF] map cleared " .. map.Name .. " total=" .. tostring(self.Total))
                 _GameEvents:Emit("MapCleared", { map = map, mapKey = base })
             end
@@ -80,15 +87,16 @@ script MonsterSpawner extends Component
             self.EmptySince = 0
         elseif self.EmptySince == 0 then
             self.EmptySince = now
-        elseif now - self.EmptySince >= 3 and self:NeedsRefill() then
+        elseif now - self.EmptySince >= 3 and self:NeedsRefill(now - self.EmptySince) then
             self:Refill()
         end
     end
 
     @ExecSpace("ServerOnly")
-    method boolean NeedsRefill()
-        -- 정리를 끝냈거나 이름 있는 적이 쓰러진 맵만 다시 채운다 (진행 중인 정리는 나갔다 와도 그대로)
+    method boolean NeedsRefill(number emptyFor)
+        -- 정리를 끝냈거나 이름 있는 적이 쓰러진 맵은 바로, 덜 정리된 맵은 5분 비어 있으면 (진행 중인 정리는 잠깐 나갔다 와도 그대로)
         if self.ClearMode and self.Cleared then return true end
+        if self.ClearMode and emptyFor >= _GameData.sideRefillSec and self.Remaining < self.Total then return true end
         for _, e in ipairs(self.NamedAlive) do
             if not isvalid(e) then return true end
             ---@type Monster

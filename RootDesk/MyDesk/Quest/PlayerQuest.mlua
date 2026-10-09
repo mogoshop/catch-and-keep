@@ -18,6 +18,8 @@ script PlayerQuest extends Component
     property table ByDiff = {}                -- "0"/"1"/"2" → { i, s, p } (지금 난이도 것은 바꿀 때·저장할 때 채운다)
     property table Sealed = {}                -- "0"/"1"/"2" → ";hollow;cave;" 그 난이도에서 처음 연 봉인 상자
     @Sync
+    property string SealedNow = ";"           -- 지금 난이도에서 연 봉인 상자 (맵 배너 표시용)
+    @Sync
     property integer DeployBonus = 0          -- 의뢰 영구 보상 그림자 배치 + (난이도마다 1회)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
@@ -151,6 +153,7 @@ script PlayerQuest extends Component
         if self:IsSealedOpened(mapKey) then return end
         local key = tostring(self.Diff)
         self.Sealed[key] = (self.Sealed[key] or ";") .. mapKey .. ";"
+        self.SealedNow = self.Sealed[key]
     end
 
     -- ───────── 수락·보고 ─────────
@@ -292,6 +295,7 @@ script PlayerQuest extends Component
         self.State = d ~= nil and d.s or 0
         self.Progress = d ~= nil and d.p or 0
         self.Goal = 0
+        self.SealedNow = self.Sealed[tostring(diff)] or ";"
     end
 
     @ExecSpace("ServerOnly")
@@ -344,6 +348,7 @@ script PlayerQuest extends Component
         self.State = cur ~= nil and cur.s or 0
         self.Progress = cur ~= nil and cur.p or 0
         self.Goal = 0
+        self.SealedNow = self.Sealed[tostring(diff)] or ";"
         self:RefreshPermanent()
     end
 
