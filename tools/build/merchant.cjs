@@ -13,7 +13,7 @@ const part = (key) => { const r = rows.find((x) => x.key === key); return { imag
 
 function run() {
   const file = path.join(root, 'ui', 'MerchantHUD.' + 'ui');
-  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('MerchantHUD', 7, true);
+  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('MerchantHUD', 12, true);
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/MerchantWin';
   b.panel(w, { rect_size: [1100, 720], pos: [0, 20], color: '#100E16', raycast: true, enable: false });

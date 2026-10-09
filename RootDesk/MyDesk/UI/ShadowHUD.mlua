@@ -297,11 +297,11 @@ script ShadowHUD extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         _UIKit:SetIcon(d .. "/Stage/Portrait", m ~= nil and m.stand or "")
         _UIKit:SetColor(d .. "/Stage/Portrait", Color(0.82, 0.72, 1, 1))
-        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  " .. self:LevelLabel(e) .. (e.plus > 0 and ("  " .. _UIKit:Colored("#FFD27A", "+" .. tostring(e.plus))) or ""))
+        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  " .. self:LevelLabel(e) .. (e.plus > 0 and ("  " .. _UIKit:Colored("#FFD27A", self:PlusLabel(e))) or ""))
         local gradeName = "일반"
         if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
         local p = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), 1)
-        local full = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus))
+        local full = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(self:EffPlus(e), e.grade))
         local element = p.element ~= "" and (" · " .. _ShadowConfig:ElementName(p.element) .. " 속성") or ""
         local state = e.deployed and " · 소환 중" or (e.wait > 0 and (" · 회복 " .. tostring(e.wait) .. "초") or "")
         _UIKit:SetText(d .. "/Grade", "[" .. gradeName .. "]" .. element .. state)
@@ -321,18 +321,23 @@ script ShadowHUD extends Logic
         _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
         _UIKit:SetText(d .. "/Trait", self:TraitText(e))
         _UIKit:SetText(d .. "/BtnDeploy", e.assign > 0 and "지정 해제" or "소환 지정")
-        _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or "강화")
-        _UIKit:SetText(d .. "/BtnSalvage", "분해")
+        local cap = _ShadowConfig:GetPlusCap(self:OwnerLevel())
+        _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or (e.plus >= cap and "레벨 제한" or "강화"))
+        -- 소환 중이면 분해 대신 회수 (보관함으로 돌려보내 다른 그림자를 부를 수 있게)
+        _UIKit:SetText(d .. "/BtnSalvage", e.deployed and "회수" or "분해")
         -- 보유 정수는 버튼 위 오른쪽, 각 버튼 아래에 그 버튼이 하는 일의 값 (지정 순번 · 강화 비용 · 분해로 얻는 정수)
         local yield = self:SalvageYield(e)
-        local cost = _ShadowConfig:GetUpgradeCost(e.plus)
+        local cost = _ShadowConfig:GetUpgradeCost(e.plus, e.grade)
         local cmd = self:Commander()
         local limit = cmd ~= nil and cmd:GetDeployLimit() or 1
         self:SetEssence(owner.Essence)
         _UIKit:SetText(d .. "/BtnDeployNote", e.assign > 0 and ("소환 순서 " .. tostring(e.assign) .. "번째") or string.format("지정 %d / %d", #owner:AssignedList(), limit))
-        _UIKit:SetText(d .. "/BtnUpgradeNote", e.plus >= _ShadowConfig:GetPlusMax() and "최대 강화" or string.format("+%d→+%d · 정수 %d", e.plus, e.plus + 1, cost))
+        local upNote = string.format("+%d→+%d · 정수 %d", e.plus, e.plus + 1, cost)
+        if e.plus >= _ShadowConfig:GetPlusMax() then upNote = "최대 강화"
+        elseif e.plus >= cap then upNote = string.format("Lv%d에 +%d", _ShadowConfig:NextCapLevel(e.plus + 1), e.plus + 1) end
+        _UIKit:SetText(d .. "/BtnUpgradeNote", upNote)
         local salvage = "정수 +" .. tostring(yield)
-        if e.deployed then salvage = "소환 중엔 불가" elseif yield <= 0 then salvage = "보스는 불가" end
+        if e.deployed then salvage = "보관함으로" elseif yield <= 0 then salvage = "보스는 불가" end
         _UIKit:SetText(d .. "/BtnSalvageNote", salvage)
     end
 
@@ -389,6 +394,25 @@ script ShadowHUD extends Logic
     method string PlusText(number diff)
         if diff <= 0 then return "" end
         return " " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(math.floor(diff)) .. ")")
+    end
+
+    method integer OwnerLevel()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        return st ~= nil and st.Level or 0
+    end
+
+    method integer EffPlus(table e)
+        -- 지금 힘에 들어가는 강화 (주인 레벨 상한까지)
+        return _ShadowConfig:EffectivePlus(e.plus, self:OwnerLevel())
+    end
+
+    method string PlusLabel(table e)
+        -- 「+4」 또는 상한을 넘으면 「+9 (적용 +4)」
+        if e.plus <= 0 then return "" end
+        local eff = self:EffPlus(e)
+        if eff < e.plus then return "+" .. tostring(e.plus) .. " (적용 +" .. tostring(eff) .. ")" end
+        return "+" .. tostring(e.plus)
     end
 
     method integer PowerLevel(table e)
@@ -490,13 +514,16 @@ script ShadowHUD extends Logic
         end
         local essence = _GameData:GetUiIcon("essence")
         if action == "upgrade" then
-            local cost = _ShadowConfig:GetUpgradeCost(e.plus)
-            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus + 1))
-            local curP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus))
+            local cost = _ShadowConfig:GetUpgradeCost(e.plus, e.grade)
+            local cap = _ShadowConfig:GetPlusCap(self:OwnerLevel())
+            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus + 1, e.grade))
+            local curP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus, e.grade))
             local body = name .. "  +" .. tostring(e.plus) .. " → +" .. tostring(e.plus + 1) .. "  (레벨은 그대로)\n공격 " .. tostring(curP.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(curP.hp) .. " → " .. tostring(nextP.hp)
-                .. "\n정수 " .. tostring(cost) .. " 사용 (보유 " .. tostring(owner.Essence) .. ")  ·  강화 1당 공격·생명 +" .. tostring(_GameData.shadowPlusPct) .. "% · 최대 +" .. tostring(_ShadowConfig:GetPlusMax())
+                .. "\n정수 " .. tostring(cost) .. " 사용 (보유 " .. tostring(owner.Essence) .. ")  ·  강화 1당 공격·생명 +" .. tostring(_ShadowConfig:GetPlusPct(e.grade)) .. "% · 지금 레벨 상한 +" .. tostring(cap)
             if e.plus >= _ShadowConfig:GetPlusMax() then
                 _ConfirmDialog:ShowIcon("그림자 강화 불가", name .. "\n이미 최대 강화(+" .. tostring(e.plus) .. ")입니다.", "닫기", essence, nil)
+            elseif e.plus >= cap then
+                _ConfirmDialog:ShowIcon("그림자 강화 불가", name .. "\n강화는 주인 레벨 3마다 +1까지 할 수 있습니다 (지금 +" .. tostring(cap) .. ").\nLv" .. tostring(_ShadowConfig:NextCapLevel(e.plus + 1)) .. "이 되면 +" .. tostring(e.plus + 1) .. "로 강화할 수 있습니다.", "닫기", essence, nil)
             elseif owner.Essence < cost then
                 _ConfirmDialog:ShowIcon("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "정수가 부족합니다 — 그림자를 분해하면 정수를 얻습니다."), "닫기", essence, nil)
             else
@@ -505,7 +532,12 @@ script ShadowHUD extends Logic
             return
         end
         local yield = self:SalvageYield(e)
-        if e.deployed or yield <= 0 then
+        if e.deployed then
+            -- 소환 중인 그림자: 「회수」 — 보관함으로 돌려보낸다 (지정은 그대로, 다시 부르려면 소환)
+            cmd:RequestRecall(id)
+            return
+        end
+        if yield <= 0 then
             _ConfirmDialog:Show("그림자 분해 불가", name .. "\n" .. (e.deployed and "소환 중인 그림자는 먼저 회수하세요." or "보스 그림자는 분해할 수 없습니다."), "닫기", nil)
             return
         end

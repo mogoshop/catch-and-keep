@@ -71,7 +71,8 @@ script ClickControl extends Component
             return
         end
         local extractor = self:Extractor()
-        local soul = extractor ~= nil and extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) or nil
+        -- 그림자 소환을 배우기 전에는 혼을 눌러도 추출하러 가지 않는다 (안내 문구가 쌓이던 문제)
+        local soul = (extractor ~= nil and extractor:CanExtract()) and extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) or nil
         if soul ~= nil then
             self:SelectAttackTarget(nil)
             self.ExtractTarget = soul
@@ -144,16 +145,7 @@ script ClickControl extends Component
             self.HasDestination = false
             return world
         end
-        -- 적이 없는 곳의 내 혼을 클릭했으면 기존처럼 걸어가서 추출한다.
-        local extractor = self:Extractor()
-        local soul = nil
-        if extractor ~= nil then soul = extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) end
-        if soul ~= nil then
-            self.ExtractTarget = soul
-            self:SelectAttackTarget(nil)
-            self.HasDestination = false
-            return world
-        end
+        -- PC: 혼 클릭은 추출이 아니라 그냥 이동 (그림자 추출은 E 키로만 — 10-09). 모바일은 MobileTap에서 혼 터치 추출 유지
         if not self.HasDestination or (world - self.Destination):Magnitude() > 0.35 then self.SlideCount = 0 self.StuckTime = 0 end
         self:SelectAttackTarget(nil)
         self.Destination = world

@@ -14,6 +14,9 @@ script PlayerTravel extends Component
     property number WaypointRange = 1.6
     property any ResumeAt = nil              -- 저장된 마지막 사냥터 자리 { m, x, y, t } (재접속 때 한 번 쓴다)
     property number ResumeWindowSec = 900    -- 끊긴 뒤 이 시간(15분) 안에 다시 들어오면 그 자리로
+    property integer Diff = 0                -- 지금 Known/Visited가 속한 난이도 (난이도마다 웨이포인트·방문 기록이 따로 — D2)
+    property table KnownBy = {}              -- "0"/"1"/"2" → Known 문자열 (다른 난이도 것)
+    property table VisitedBy = {}            -- "0"/"1"/"2" → Visited 문자열
 
     method integer Difficulty()
         ---@type PlayerStats
@@ -109,6 +112,11 @@ script PlayerTravel extends Component
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty or diff == stats.Difficulty then return end
         stats.Difficulty = diff
         stats:RefreshResists()    -- 난이도 저항 페널티 다시 계산
+        -- 난이도마다 웨이포인트·방문 기록·의뢰가 따로다 (처음 가는 난이도는 야영지 웨이포인트·1번 의뢰부터)
+        self:SwitchDifficulty(diff)
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        if quest ~= nil then quest:SwitchDifficulty(diff) end
         self:GoTown()
     end
 
@@ -161,17 +169,48 @@ script PlayerTravel extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
+    method void SwitchDifficulty(integer diff)
+        -- 지금 난이도의 기록을 보관하고 새 난이도의 기록을 꺼낸다
+        if diff == self.Diff then return end
+        self.KnownBy[tostring(self.Diff)] = self.Known
+        self.VisitedBy[tostring(self.Diff)] = self.Visited
+        self.Diff = diff
+        self.Known = self.KnownBy[tostring(diff)] or "camp"
+        self.Visited = self.VisitedBy[tostring(diff)] or ""
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { known = self.Known, tp = self.TownScroll, at = self:CurrentSpot(), vis = self.Visited }
+        -- 보통은 예전 이름(known/vis), 악몽·지옥은 known1/vis1 · known2/vis2
+        self.KnownBy[tostring(self.Diff)] = self.Known
+        self.VisitedBy[tostring(self.Diff)] = self.Visited
+        local out = { known = self.KnownBy["0"] or "camp", tp = self.TownScroll, at = self:CurrentSpot(), vis = self.VisitedBy["0"] or "" }
+        for k = 1, 2 do
+            local key = tostring(k)
+            if self.KnownBy[key] ~= nil then out["known" .. key] = self.KnownBy[key] end
+            if self.VisitedBy[key] ~= nil then out["vis" .. key] = self.VisitedBy[key] end
+        end
+        return out
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table d)
+        -- 능력치(난이도)가 먼저 불러와진 뒤에 온다 → 지금 난이도의 기록을 꺼낸다.
+        -- 예전 저장(난이도 구분 없음)의 기록은 보통 난이도 것으로 본다
         if d == nil then return end
-        self.Known = d.known or "camp"
+        self.KnownBy = { ["0"] = d.known or "camp" }
+        self.VisitedBy = { ["0"] = type(d.vis) == "string" and d.vis or "" }
+        for k = 1, 2 do
+            local key = tostring(k)
+            if type(d["known" .. key]) == "string" then self.KnownBy[key] = d["known" .. key] end
+            if type(d["vis" .. key]) == "string" then self.VisitedBy[key] = d["vis" .. key] end
+        end
         self.TownScroll = d.tp or 0
         self.ResumeAt = d.at
-        if type(d.vis) == "string" then self.Visited = d.vis end
+        local diff = self:Difficulty()
+        self.Diff = diff
+        self.Known = self.KnownBy[tostring(diff)] or "camp"
+        self.Visited = self.VisitedBy[tostring(diff)] or ""
     end
 
     @ExecSpace("ServerOnly")

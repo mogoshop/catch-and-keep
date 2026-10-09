@@ -1,4 +1,5 @@
 -- 플레이어 의뢰 진행. State: 0 미수락 / 1 진행 중 / 2 완료 보고 대기. Index > Count 이면 모두 완료.
+-- 난이도마다 진행이 따로다 (D2): Index/State/Progress는 지금 난이도의 것, 다른 난이도는 ByDiff에 둔다. 보상은 난이도 배율(difficulty.csv questRewardMul).
 -- 진행: ShadowSystem(처치)·ShadowOwner(추출)가 OnKill / OnExtract를 부른다. 수락·보고는 의뢰 NPC 근처에서만.
 @Component
 script PlayerQuest extends Component
@@ -9,6 +10,8 @@ script PlayerQuest extends Component
     property integer State = 0
     @Sync
     property integer Progress = 0
+    property integer Diff = 0                 -- 지금 Index/State/Progress가 속한 난이도
+    property table ByDiff = {}                -- "0"/"1"/"2" → { i, s, p } (지금 난이도 것은 바꿀 때·저장할 때 채운다)
 
     @ExecSpace("ServerOnly")
     method void OnKill(string sourceId)
@@ -120,13 +123,17 @@ script PlayerQuest extends Component
         stats.SkillPoints = stats.SkillPoints + skillPoints
         stats.StatPoints = stats.StatPoints + statPoints
         inv.SocketTokens = inv.SocketTokens + sockets
-        stats:GainExp(q.exp)
-        stats:AddGold(q.gold)
+        -- 악몽·지옥에서 다시 하는 의뢰는 그 난이도 레벨에 맞게 경험치·골드를 늘린다
+        local mul = _GameData:GetDifficulty(self.Diff).questRewardMul or 1
+        local exp = math.floor(q.exp * mul)
+        local gold = math.floor(q.gold * mul)
+        stats:GainExp(exp)
+        stats:AddGold(gold)
         local rewardText = _QuestData:RewardText(q.reward)
-        _Util:Notify("보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
+        _Util:Notify("보상: 경험치 " .. tostring(exp) .. ", 골드 " .. tostring(gold) .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
         local icon = _GameData:GetUiIcon("q_done")
         if #items > 0 then icon = _ItemData:IconFor(items[1]) end
-        self:NotifyQuest("의뢰 보상 · " .. q.title, "경험치 +" .. tostring(q.exp) .. " · 골드 +" .. tostring(q.gold) .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
+        self:NotifyQuest("의뢰 보상 · " .. q.title, "경험치 +" .. tostring(exp) .. " · 골드 +" .. tostring(gold) .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title)
         _GameEvents:Emit("QuestCompleted", { player = self.Entity, index = self.Index })
         self.Index = self.Index + 1
@@ -142,16 +149,50 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void SwitchDifficulty(integer diff)
+        -- 난이도를 바꾸면 지금 진행을 그 난이도 칸에 두고, 새 난이도의 진행을 꺼낸다 (처음이면 1번 의뢰부터)
+        if diff == self.Diff then return end
+        self.ByDiff[tostring(self.Diff)] = { i = self.Index, s = self.State, p = self.Progress }
+        local d = self.ByDiff[tostring(diff)]
+        self.Diff = diff
+        self.Index = d ~= nil and d.i or 1
+        self.State = d ~= nil and d.s or 0
+        self.Progress = d ~= nil and d.p or 0
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { i = self.Index, s = self.State, p = self.Progress }
+        -- 보통은 예전처럼 i/s/p, 악몽·지옥은 "i,s,p" 문자열 d1/d2 (빈 표는 JSON으로 못 만들어서 문자열로)
+        self.ByDiff[tostring(self.Diff)] = { i = self.Index, s = self.State, p = self.Progress }
+        local n = self.ByDiff["0"] or { i = 1, s = 0, p = 0 }
+        local out = { i = n.i, s = n.s, p = n.p }
+        for k = 1, 2 do
+            local d = self.ByDiff[tostring(k)]
+            if d ~= nil then out["d" .. tostring(k)] = tostring(d.i) .. "," .. tostring(d.s) .. "," .. tostring(d.p) end
+        end
+        return out
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table d)
+        -- 능력치(난이도)가 먼저 불러와진 뒤에 온다 (PlayerSave.Sections 순서) → 지금 난이도의 진행을 꺼낸다
         if d == nil then return end
-        self.Index = d.i or 1
-        self.State = d.s or 0
-        self.Progress = d.p or 0
+        self.ByDiff = { ["0"] = { i = d.i or 1, s = d.s or 0, p = d.p or 0 } }
+        for k = 1, 2 do
+            local raw = d["d" .. tostring(k)]
+            if type(raw) == "string" then
+                local i, st, p = string.match(raw, "^(%d+),(%d+),(%d+)$")
+                if i ~= nil then self.ByDiff[tostring(k)] = { i = tonumber(i), s = tonumber(st), p = tonumber(p) } end
+            end
+        end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local diff = stats ~= nil and stats.Difficulty or 0
+        local cur = self.ByDiff[tostring(diff)]
+        self.Diff = diff
+        self.Index = cur ~= nil and cur.i or 1
+        self.State = cur ~= nil and cur.s or 0
+        self.Progress = cur ~= nil and cur.p or 0
     end
 
 

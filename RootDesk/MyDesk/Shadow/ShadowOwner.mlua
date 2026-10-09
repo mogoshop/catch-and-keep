@@ -106,12 +106,14 @@ script ShadowOwner extends Component
 
     @ExecSpace("ServerOnly")
     method boolean ToggleAssign(string id)
-        -- 지정돼 있으면 해제, 아니면 맨 뒤에 추가 (소환 한도까지만)
+        -- 지정돼 있으면 해제(소환 중이면 함께 회수 — 새 그림자로 바꿔 부를 수 있게), 아니면 맨 뒤에 추가 (소환 한도까지만)
         if self.Storage[id] == nil then return false end
         local list = self:AssignedList()
         for _, x in ipairs(list) do
             if x == id then
                 self:Unassign(id)
+                local cmd = self:Commander()
+                if cmd ~= nil and self.Storage[id].deployed then cmd:Recall(id) end
                 return true
             end
         end
@@ -136,7 +138,13 @@ script ShadowOwner extends Component
             _Util:Notify("이미 최대 강화(+" .. tostring(plus) .. ")다", self.Entity.PlayerComponent.UserId)
             return false
         end
-        local cost = _ShadowConfig:GetUpgradeCost(plus)
+        -- 주인 레벨 상한 (Lv12 → +4): 그 이상은 레벨을 올린 뒤에
+        local ownerLevel = _GameConst:LevelOf(self.Entity)
+        if plus >= _ShadowConfig:GetPlusCap(ownerLevel) then
+            _Util:Notify("지금 레벨로는 +" .. tostring(_ShadowConfig:GetPlusCap(ownerLevel)) .. "까지 강화할 수 있다 (Lv" .. tostring(_ShadowConfig:NextCapLevel(plus + 1)) .. "에 +" .. tostring(plus + 1) .. ")", self.Entity.PlayerComponent.UserId)
+            return false
+        end
+        local cost = _ShadowConfig:GetUpgradeCost(plus, shadow.grade)
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
         if inv == nil or not inv:TakeStack("essence", cost) then
@@ -155,11 +163,11 @@ script ShadowOwner extends Component
         -- 그림자 하나가 받는 처치 경험치: 플레이어 식과 같되 레벨 차이는 그 그림자 기준 (낮은 그림자는 제 수준 사냥터에서 잘 자란다)
         local gradeMult = 1
         if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
-        local base = 10 * (monsterLevel ^ 1.3) * gradeMult
+        local base = _GameData.killExpCoef * (monsterLevel ^ 1.3) * gradeMult
         local diff = shadowLevel - monsterLevel
         if diff >= 10 then base = base * 0.05
         elseif diff >= 5 then base = base * (1 - (diff - 4) * 0.15) end
-        if grade < 3 then base = base * _GameData.densityRewardMult end
+        if grade < 3 then base = base * _GameData.densityExpMult end
         return base * _GameData.shadowExpShare
     end
 

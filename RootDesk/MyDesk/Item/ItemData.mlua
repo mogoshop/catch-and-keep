@@ -121,6 +121,8 @@ script ItemData extends Logic
     method integer IconPixels(string ruid)
         -- 직접 그린 아이콘의 원본 크기(px). 메이플 아이콘처럼 표에 없으면 0 (바닥 아이콘 크기 맞춤용)
         if ruid == "" then return 0 end
+        -- 장비 외형 썸네일은 "thumbnail://" + 원래 RUID — 앞부분을 떼고 찾는다
+        if string.sub(ruid, 1, 12) == "thumbnail://" then ruid = string.sub(ruid, 13) end
         for _, b in pairs(self:T().Bases) do
             if b.icon == ruid and (b.iconPx or 0) > 0 then return b.iconPx end
         end
@@ -209,6 +211,8 @@ script ItemData extends Logic
         if base == nil then return total end
         if base.dmg > 0 then total["dmgFlat"] = base.dmg end
         if base.def > 0 then total["def"] = base.def end
+        -- 베이스 고유 옵션 (신발 이동 속도 등, item_bases.csv mods)
+        if (base.implicit or "") ~= "" then self:AddMods(total, base.implicit) end
         for k, v in pairs(item.mods) do total[k] = (total[k] or 0) + v end
         for _, rid in ipairs(item.runes) do
             local rune = self:GetRune(rid)
@@ -485,6 +489,8 @@ script ItemData extends Logic
         -- 접사 값: [min, max] × gearMult × 난이도 상한. 같은 난이도에서도 레벨이 높을수록 범위의 위쪽에서 굴린다
         --   (Lv1 = 아래 40% 안, 난이도 끝 레벨 = 위 40% 안 — 사냥터를 옮기면 같은 옵션도 수치가 오른다)
         local scale = _GameData.gearMult * self:GearTier(ilvl)
+        -- 이동 속도는 고정 수치형 옵션 — 장비 배율·난이도 상한을 곱하지 않는다 (0.42배가 되어 4~8%만 붙던 것)
+        if a.stat == "ms" then scale = 1 end
         local lo = math.max(1, math.floor(a.min * scale))
         local hi = math.max(lo, math.floor(a.max * scale + 0.5))
         local t = self:LevelProgress(ilvl)
@@ -559,7 +565,10 @@ script ItemData extends Logic
             if a.prefix == prefix and a.ilvl <= ilvl and not used[a.stat .. tostring(a.prefix)]
                 and (a.slots == "any" or string.find("," .. a.slots .. ",", "," .. slot .. ",", 1, true) ~= nil) then
                 table.insert(pool, a)
-                table.insert(weights, self:OldWeight(a.ilvl, ilvl, 15))
+                local w = self:OldWeight(a.ilvl, ilvl, 15)
+                -- 신발의 이동 속도 옵션은 더 자주 (bootsMoveMult)
+                if a.stat == "ms" and slot == "boots" then w = w * _GameData.bootsMoveMult end
+                table.insert(weights, w)
             end
         end
         if #pool == 0 then return nil end

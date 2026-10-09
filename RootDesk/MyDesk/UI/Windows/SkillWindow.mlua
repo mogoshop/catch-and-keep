@@ -1,4 +1,5 @@
 -- 스킬 창 (K): 3트리 × 최대 12행 (아이콘 + 이름·레벨, 안 배운 스킬은 흐리게). 스킬을 고르면 설명·습득 조건, 습득(+1, 설명 오른쪽 큰 버튼).
+-- 고른 스킬을 한 번 더 누르면 바로 습득(+1) — 습득 버튼까지 가지 않아도 된다 (첫 클릭은 설명 보기라 실수로 찍히지 않는다)
 -- 칸 지정: 「스킬 편집」 하나 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
 @Logic
 script SkillWindow extends Logic
@@ -95,7 +96,7 @@ script SkillWindow extends Logic
             if book:GetLevel(self.Selected) > 0 and lv < def.maxLv and nextCost ~= cost then mana = mana .. " (다음 " .. tostring(math.floor(nextCost)) .. ")" end
             if def.cooldown > 0 then mana = mana .. string.format("  재사용 %.1f초", def.cooldown * st:GetCastCooldownMult()) end
         end
-        local learn = _UIKit:Colored("#AACCAA", "습득 가능")
+        local learn = _UIKit:Colored("#AACCAA", "습득 가능 · 한 번 더 누르면 +1")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         local level = book:GetLevel(self.Selected)
         local growth = ""
@@ -124,6 +125,15 @@ script SkillWindow extends Logic
     method void Select(string rkey)
         local id = self.Rows[rkey]
         if id == nil then return end
+        if id == self.Selected then
+            -- 이미 고른 스킬을 다시 누름 → 배울 수 있으면 +1 (못 배우면 설명의 빨간 사유가 그대로 보인다)
+            ---@type SkillBook
+            local book = _UIKit:Comp("script.SkillBook")
+            ---@type PlayerStats
+            local st = _UIKit:Comp("script.PlayerStats")
+            if book ~= nil and st ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == "" then self:Act(0) end
+            return
+        end
         self.Selected = id
         self.RenderKey = ""
     end

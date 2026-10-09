@@ -1,5 +1,7 @@
 -- 위치 안내 HUD (클라이언트): 맵 이름(D2처럼 들어올 때 상단 가운데 2.5초) · 미니맵(포털·웨이포인트·NPC·입구 + 나·파티) ·
 -- 의뢰 NPC 머리 위 표시(새 의뢰 !, 완료 보고 ?). 맵 표시물은 GameData.MapInfo (maps.csv → 맵 빌드와 같은 위치).
+-- 안개 (D2 자동 지도): 지형을 RevealCell 칸 단위로 나눠 그리고, 지나간 곳(주변 RevealRadius)만 밝힌다. 표시물·목표 원도 밝혀진 곳에서만.
+--   밝혀진 칸은 접속 중에만 기억한다. 마을은 처음부터 다 보인다.
 @Logic
 script HudMap extends Logic
 
@@ -36,7 +38,13 @@ script HudMap extends Logic
     property Vector2 ViewCenter = Vector2(0, 0) -- 원 가운데에 오는 월드 위치 (확대 시 내 위치)
     property Vector2 PlacedCenter = Vector2(99999, 99999)
     property number TerrainHalf = 132          -- 바닥을 자르는 테두리 사각형 절반 (원 밖 모서리는 Area/Frame 테두리 그림이 덮는다)
-    property table TerrainRects = {}           -- 월드 기준 바닥 사각형 { x, y, w, h } — 확대 단계가 바뀌면 크기만 다시 계산
+    property table TerrainRects = {}           -- 월드 기준 바닥 사각형 { x, y, w, h, block } — 확대 단계가 바뀌면 크기만 다시 계산
+    property number RevealCell = 4             -- 안개 칸 크기 (월드 단위, 실제는 타일 크기에 맞춰 반올림)
+    property number RevealRadius = 6           -- 내 주변 이 거리 안의 칸이 밝혀진다
+    property any Blocks = nil                  -- 이 맵의 안개 칸 목록 { key, x, y } (월드 가운데)
+    property number BlockSize = 4              -- 실제 칸 크기 (월드 단위)
+    property any Revealed = nil                -- 맵 키 → { 칸 key → true } (접속 중에만)
+    property boolean RevealAll = false         -- 마을은 처음부터 다 보인다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -90,6 +98,12 @@ script HudMap extends Logic
         self:TickBanner()
         local me = _Util:Pos2(player)
         self:UpdateView(me)
+        -- 새로 밝혀진 칸이 있으면 지형·표시물을 다시 놓는다
+        if self:UpdateReveal(me) then
+            self:LayoutTerrain()
+            self:PlaceFeatures()
+            self.NextFocusAt = 0
+        end
         _UIKit:SetPos("MiniMap/Body/Area/Me", self:ToMini(me))
         -- 내 화살표는 움직인 방향을 가리킨다
         local moved = me - self.LastMePos
@@ -120,10 +134,14 @@ script HudMap extends Logic
     method void OnMapChanged(string mapName)
         local base = _GameConst:BaseMapName(mapName)
         local info = _GameData:GetMapInfo(base)
-        ---@type PlayerStats
-        local st = _UIKit:Comp("script.PlayerStats")
-        local diff = 0
-        if st ~= nil then diff = st.Difficulty end
+        -- 난이도는 맵 이름(_nm/_hell)으로 판단한다. 캐릭터 난이도 값은 이동 직후 늦게 동기화될 수 있다
+        -- (심도 인스턴스 맵은 접미사가 없으니 캐릭터 난이도로)
+        local diff = _GameConst:DifficultyOfMap(mapName)
+        if diff == 0 and info ~= nil and info.kind == "instance" then
+            ---@type PlayerStats
+            local st = _UIKit:Comp("script.PlayerStats")
+            if st ~= nil then diff = st.Difficulty end
+        end
         local title = base
         local sub = ""
         local floor = self:DepthFloor()
@@ -135,6 +153,9 @@ script HudMap extends Logic
             if info.kind == "instance" and floor > 0 then title = "심도 " .. tostring(floor) .. "층" end
         end
         if diff > 0 then
+            -- 제목 앞에도 난이도를 붙여 보통 맵과 바로 구분되게 (악몽 주황 · 지옥 빨강)
+            local tag = _UIKit:Colored(diff == 1 and "#FF9A4D" or "#FF5050", "[" .. _GameConst:DifficultyName(diff) .. "]")
+            title = tag .. " " .. title
             if sub ~= "" then sub = sub .. " · " end
             sub = sub .. _GameConst:DifficultyName(diff)
         end
@@ -149,6 +170,9 @@ script HudMap extends Logic
         _UIKit:SetText("MiniMap/Toggle/Kind", sub)
         self:BuildTerrain(_UserService.LocalPlayer.CurrentMap, info)
         self:BuildMiniMap(info)
+        self:UpdateReveal(_Util:Pos2(_UserService.LocalPlayer))
+        self:LayoutTerrain()
+        self:PlaceFeatures()
         log("[VRF] Navigation ready terrain=" .. tostring(self.TerrainUsed) .. " features=" .. tostring(#self.Features))
         log("[HudMap] 맵 " .. mapName .. " → " .. title)
     end
@@ -197,8 +221,12 @@ script HudMap extends Logic
         for i, f in ipairs(self.Features) do
             if i > self.FeatureCount then break end
             local pos = self:ToMini(Vector2(f.x, f.y))
-            _UIKit:SetPos("MiniMap/Body/Area/F" .. tostring(i), pos)
-            table.insert(order, { index = i, f = f, pos = pos, rank = self:FeatureRank(f.kind) })
+            local path = "MiniMap/Body/Area/F" .. tostring(i)
+            -- 안개 속(아직 안 가본 곳)의 출구·보스·제단 등은 점도 이름도 숨긴다
+            local seen = self:IsRevealedPos(Vector2(f.x, f.y))
+            _UIKit:SetEnabled(path, seen)
+            _UIKit:SetPos(path, pos)
+            if seen then table.insert(order, { index = i, f = f, pos = pos, rank = self:FeatureRank(f.kind) }) end
         end
         table.sort(order, function(a, b) if a.rank ~= b.rank then return a.rank < b.rank end return a.index < b.index end)
         local placed = {}
@@ -395,40 +423,38 @@ script HudMap extends Logic
         self.FitScale = self:FitMiniScale((high.x - low.x + 1) * grid.x, (high.y - low.y + 1) * grid.y)
         self.Scale = self.FitScale * self:ZoomFactor()
         self.ViewCenter = self.MapCenter
-        local rects = {}
-        local active = {}
-        for y = low.y, high.y do
-            local nextActive = {}
-            local start = nil
-            for x = low.x, high.x + 1 do
-                local tile = x <= high.x and tiles:GetTile(Vector2Int(x, y)) or nil
-                local floor = tile ~= nil and not tile.IsCollidable
-                if floor and start == nil then start = x end
-                if not floor and start ~= nil then
-                    local key = tostring(start) .. ":" .. tostring(x - 1)
-                    local r = active[key]
-                    if r == nil then
-                        r = { x1 = start, x2 = x - 1, y1 = y, y2 = y }
-                        table.insert(rects, r)
-                    else r.y2 = y end
-                    nextActive[key] = r
-                    start = nil
-                end
-            end
-            active = nextActive
+        -- 안개 칸 단위로 나눠 합친다 (칸마다 따로 켜고 끄려고). 사각형이 슬롯보다 많으면 칸을 키운다
+        local ct = math.max(1, math.floor(self.RevealCell / math.max(0.01, grid.x) + 0.5))
+        local rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct)
+        if #rects > self.TerrainCount then
+            ct = ct * 2
+            rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct)
         end
+        self.BlockSize = ct * grid.x
+        local blocks = {}
+        local seenBlock = {}
+        for _, r in ipairs(rects) do
+            if not seenBlock[r.block] then
+                seenBlock[r.block] = true
+                local c = tiles:ToWorldPosition(Vector2Int(r.bx, r.by))
+                -- 칸 가운데 = 칸 첫 타일 + (칸 크기 - 1)/2 타일
+                table.insert(blocks, { key = r.block, x = c.x + (ct - 1) * grid.x / 2, y = c.y + (ct - 1) * grid.y / 2 })
+            end
+        end
+        self.Blocks = blocks
+        self.RevealAll = info.kind == "town"
         for i, r in ipairs(rects) do
             if i > self.TerrainCount then log_warning("[HudMap] terrain capacity exceeded " .. tostring(#rects)) break end
             local a = tiles:ToWorldPosition(Vector2Int(r.x1, r.y1))
             local z = tiles:ToWorldPosition(Vector2Int(r.x2, r.y2))
-            table.insert(self.TerrainRects, { x = (a.x + z.x) / 2, y = (a.y + z.y) / 2, w = (r.x2 - r.x1 + 1) * grid.x, h = (r.y2 - r.y1 + 1) * grid.y })
+            table.insert(self.TerrainRects, { x = (a.x + z.x) / 2, y = (a.y + z.y) / 2, w = (r.x2 - r.x1 + 1) * grid.x, h = (r.y2 - r.y1 + 1) * grid.y, block = r.block })
             local e = _UIKit:Get("MiniMap/Body/Area/Terrain/Pan/R" .. tostring(i))
             if isvalid(e) then
                 -- 실제 화면에서 검증한 사각 바닥 타일을 Simple로 그려 둥근 점 늘림을 피한다.
                 local sprite = e:GetComponent("MOD.Core.SpriteGUIRendererComponent")
                 if isvalid(sprite) then
-                    -- 돌 무늬가 그대로 보이면 지도가 아니라 바닥 그림처럼 읽혔다. 차분한 단색 바닥으로 누른다
-                    sprite.Color = Color(0.46, 0.41, 0.5, 0.95)
+                    -- 돌 무늬가 그대로 보이면 지도가 아니라 바닥 그림처럼 읽혔다. 어두운 게임 화면에 맞춰 낮게 누른다
+                    sprite.Color = Color(0.38, 0.34, 0.42, 0.92)
                 end
                 e.Enable = true
                 self.TerrainUsed = i
@@ -452,7 +478,7 @@ script HudMap extends Logic
                 local x2 = math.min(half, cx + r.w * self.Scale / 2)
                 local y1 = math.max(-half, cy - r.h * self.Scale / 2)
                 local y2 = math.min(half, cy + r.h * self.Scale / 2)
-                local visible = x2 > x1 + 0.5 and y2 > y1 + 0.5
+                local visible = x2 > x1 + 0.5 and y2 > y1 + 0.5 and self:IsRevealedBlock(r.block)
                 if e.Enable ~= visible then e.Enable = visible end
                 if visible then
                     e.UITransformComponent.RectSize = Vector2(x2 - x1, y2 - y1)
@@ -460,6 +486,91 @@ script HudMap extends Logic
                 end
             end
         end
+    end
+
+    method table ChunkRects(any tiles, integer lowX, integer lowY, integer highX, integer highY, integer ct)
+        -- ct×ct 타일 칸마다 통행 가능한 구간을 가로로 합치고 같은 구간은 세로로 병합한다 (칸을 넘지 않게)
+        local rects = {}
+        local by = lowY
+        while by <= highY do
+            local yEnd = math.min(highY, by + ct - 1)
+            local bx = lowX
+            while bx <= highX do
+                local xEnd = math.min(highX, bx + ct - 1)
+                local block = tostring(bx) .. ":" .. tostring(by)
+                local active = {}
+                for y = by, yEnd do
+                    local nextActive = {}
+                    local start = nil
+                    for x = bx, xEnd + 1 do
+                        local tile = x <= xEnd and tiles:GetTile(Vector2Int(x, y)) or nil
+                        local floor = tile ~= nil and not tile.IsCollidable
+                        if floor and start == nil then start = x end
+                        if not floor and start ~= nil then
+                            local key = tostring(start) .. ":" .. tostring(x - 1)
+                            local r = active[key]
+                            if r == nil then
+                                r = { x1 = start, x2 = x - 1, y1 = y, y2 = y, block = block, bx = bx, by = by }
+                                table.insert(rects, r)
+                            else r.y2 = y end
+                            nextActive[key] = r
+                            start = nil
+                        end
+                    end
+                    active = nextActive
+                end
+                bx = bx + ct
+            end
+            by = by + ct
+        end
+        return rects
+    end
+
+    method any RevealSet()
+        -- 지금 맵의 밝혀진 칸 (심도는 층마다 따로)
+        if self.Revealed == nil then self.Revealed = {} end
+        local key = self.LastMap .. "#" .. tostring(self.ShownFloor)
+        local set = self.Revealed[key]
+        if set == nil then
+            set = {}
+            self.Revealed[key] = set
+        end
+        return set
+    end
+
+    method boolean UpdateReveal(Vector2 me)
+        -- 내 주변 칸을 밝힌다. 새로 밝혀진 칸이 있으면 true
+        if self.RevealAll or self.Blocks == nil then return false end
+        local set = self:RevealSet()
+        local changed = false
+        local r = self.RevealRadius + self.BlockSize * 0.5
+        for _, b in ipairs(self.Blocks) do
+            if not set[b.key] and math.abs(b.x - me.x) <= r and math.abs(b.y - me.y) <= r then
+                local dx = b.x - me.x
+                local dy = b.y - me.y
+                if dx * dx + dy * dy <= r * r then
+                    set[b.key] = true
+                    changed = true
+                end
+            end
+        end
+        return changed
+    end
+
+    method boolean IsRevealedBlock(string key)
+        if self.RevealAll or key == nil then return true end
+        return self:RevealSet()[key] == true
+    end
+
+    method boolean IsRevealedPos(Vector2 p)
+        -- 밝혀진 칸 안(또는 바로 옆)에 있는 위치인가 — 벽 위의 출구처럼 칸 밖 표시물도 가까운 칸을 따른다
+        if self.RevealAll or self.Blocks == nil then return true end
+        local set = self:RevealSet()
+        local reach = self.BlockSize * 0.75
+        for _, b in ipairs(self.Blocks) do
+            if set[b.key] and math.abs(b.x - p.x) <= reach and math.abs(b.y - p.y) <= reach then return true end
+        end
+        return false
     end
 
     method number FitMiniScale(number width, number height)
@@ -650,6 +761,8 @@ script HudMap extends Logic
         end
         if text == "" then text = "출구와 웨이포인트를 찾으세요" end
         _UIKit:SetText("MiniMap/Body/FocusText", text)
+        -- 목표 원은 그 자리가 밝혀졌을 때만 (안개 속 보스·제단 위치를 미리 알려 주지 않게). 안내 문구는 그대로
+        if focused ~= nil and not self:IsRevealedPos(Vector2(focused.x, focused.y)) then focused = nil end
         _UIKit:SetEnabled("MiniMap/Body/Area/Focus", focused ~= nil)
         if focused ~= nil then _UIKit:SetPos("MiniMap/Body/Area/Focus", self:ToMini(Vector2(focused.x, focused.y))) end
     end

@@ -34,7 +34,7 @@ function applyResources(b){
 }
 function run(){
  const file=path.join(root,'ui/NavigationHUD.ui');
- const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('NavigationHUD',5,true);
+ const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('NavigationHUD', 2,true);
  b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
  const m='SafeArea/MiniMap';
  b.empty(m,{anchor:'top-right',pivot:[1,1],pos:[-24,-150],rect_size:[344,488]});

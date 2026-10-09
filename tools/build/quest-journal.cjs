@@ -20,7 +20,7 @@ function applyResources(b) {
 }
 function run(){
 const file=path.join(root,'ui/QuestJournalHUD.ui');
-const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('QuestJournalHUD',6,true);
+const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('QuestJournalHUD', 14,true);
 b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const win='SafeArea/QuestWin';
 b.panel(win,{rect_size:[1320,960],color:{r:.05,g:.045,b:.06,a:1},raycast:true,enable:false});

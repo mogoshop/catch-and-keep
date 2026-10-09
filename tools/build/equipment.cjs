@@ -6,7 +6,7 @@ const {load}=require(path.join(root,'tools/lib/csv.cjs'));
 const icons=Object.fromEntries(load('ui_icons').map(x=>[x.key,x.ruid]));
 function run(){
 const file=path.join(root,'ui/EquipmentHUD.ui');
-const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('EquipmentHUD',7,true);
+const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('EquipmentHUD', 15,true);
 b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const w='SafeArea/InvWin';
 b.panel(w,{rect_size:[1400,1000],pos:[20,0],color:'#100E16',raycast:true,enable:false});

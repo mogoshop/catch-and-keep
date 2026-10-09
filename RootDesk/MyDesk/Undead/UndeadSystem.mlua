@@ -7,6 +7,10 @@
 @Logic
 script UndeadSystem extends Logic
 
+    property string MageStand = "8b20897f0de04e76a742460b6cbadb41"   -- 리치 stand
+    property string MageMove = "82965e5a9a6a4a9295a9dcb72c158c10"    -- 리치 move
+    property string MageAttack = "2eb9f0c278734f558d87ac12159e09b5"  -- 리치 attack1
+
     property table Owned = {}            -- userId → { rec, ... } (오래된 순)
     property table TravelEpochs = {}      -- userId → 이동 번호 (이전 이동의 지연 생성 취소)
     property string TravelMemoryName = "UndeadRoomTravelV1"
@@ -176,7 +180,6 @@ script UndeadSystem extends Logic
             rec.scale = 0.55          -- 필드의 해골 전사(1배)보다 확실히 작게
             rec.tint = Color(0.92, 0.9, 0.82, 1)
         elseif kind == "mage" then
-            local m = _GameData:GetMonsterStats("skel_warrior")
             local elements = self:Elements()
             rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
             rec.ratio = 1
@@ -185,10 +188,11 @@ script UndeadSystem extends Logic
             rec.cooldown = _GameData.mageCooldown
             rec.range = _GameData.mageRange
             rec.speed = _GameData.skeletonSpeed
-            rec.stand = m ~= nil and m.stand or ""
-            rec.move = m ~= nil and m.move or ""
-            rec.attack = m ~= nil and m.attack or ""
-            rec.scale = 0.55          -- 필드의 해골 전사(1배)보다 확실히 작게
+            -- 해골 마법사는 전사와 다른 그림: 메이플 「리치」(mob/6090000, 로브 입은 해골 마법사) 서기·이동·공격1. 속성 색은 그대로 입힌다
+            rec.stand = self.MageStand
+            rec.move = self.MageMove
+            rec.attack = self.MageAttack
+            rec.scale = 0.5
             rec.tint = self:ElementTint(rec.element)
         else
             -- 동시 개체 수 상한 이후에도 투자 레벨에 따라 능력치가 성장한다.

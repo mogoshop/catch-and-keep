@@ -97,6 +97,7 @@ script PlayerStats extends Component
     property number BaseSpeed = 0
     property number ChillUntil = 0
     property integer RegenTimer = 0
+    property number RegenCarry = 0           -- 생명 재생의 1 미만 나머지
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -154,10 +155,10 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method integer ExpForKill(integer monsterLevel, integer grade)
-        -- 10 × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 감쇠, 10 이상이면 5%, 5레벨 넘게 높아도 감쇠
+        -- killExpCoef(15) × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 감쇠, 10 이상이면 5%, 5레벨 넘게 높아도 감쇠
         local gradeMult = 1
         if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
-        local base = 10 * (monsterLevel ^ 1.3) * gradeMult
+        local base = _GameData.killExpCoef * (monsterLevel ^ 1.3) * gradeMult
         local diff = self.Level - monsterLevel
         if diff >= 10 then base = base * 0.05
         elseif diff >= 5 then base = base * (1 - (diff - 4) * 0.15) end
@@ -168,8 +169,8 @@ script PlayerStats extends Component
         base = base * (1 + 0.3 * self:ShrineBonus("wisdom"))
         -- 초반 가속: 그림자 해금(Lv5) 전까지 처치 경험치를 올린다 (config earlyExpLevel·earlyExpMult)
         if self.Level < _GameData.earlyExpLevel then base = base * _GameData.earlyExpMult end
-        -- 몬스터 밀도를 40% 늘린 만큼 일반·정예 처치 보상을 줄인다 (보스·고유는 그대로)
-        if grade < 3 then base = base * _GameData.densityRewardMult end
+        -- 몬스터 밀도 보정 (densityExpMult — 10-09에 1로: 넓은 맵 이동량 대비 레벨업이 느렸다. 드롭은 densityRewardMult 그대로)
+        if grade < 3 then base = base * _GameData.densityExpMult end
         return math.max(1, math.floor(base + 0.5))
     end
 
@@ -214,11 +215,20 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method void Regen()
-        -- 마나: 초당 최대치 2% + 정신 보정 / 생명: 초당 0.5% + 장비 재생
+        -- 마나: 초당 최대치 manaRegenPct + 정신 보정 / 생명: 초당 hpRegenPct + 장비 재생 (config.csv)
+        -- 생명은 정수라 1 미만은 RegenCarry에 모았다가 채운다 (낮은 레벨에서 1씩 올라 너무 빨랐던 것 수정)
         local pc = self.Entity.PlayerComponent
         if not _Util:IsAlive(self.Entity) then return end
-        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * 0.02 + (self.Ene + self.BonusEne) * 0.02)
-        pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(pc.MaxHp * 0.005)) + math.floor(self.BonusRegen))
+        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * _GameData.manaRegenPct + (self.Ene + self.BonusEne) * _GameData.manaRegenPerEne)
+        if pc.Hp >= pc.MaxHp then
+            self.RegenCarry = 0
+            return
+        end
+        self.RegenCarry = self.RegenCarry + pc.MaxHp * _GameData.hpRegenPct + self.BonusRegen
+        local add = math.floor(self.RegenCarry)
+        if add <= 0 then return end
+        self.RegenCarry = self.RegenCarry - add
+        pc.Hp = math.min(pc.MaxHp, pc.Hp + add)
     end
 
     @ExecSpace("ServerOnly")

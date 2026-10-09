@@ -25,7 +25,7 @@ function slot(b, n, size, iconSize) {
 
 function run() {
   const file = path.join(root, 'ui', 'ShopHUD.' + 'ui');
-  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('ShopHUD', 7, true);
+  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('ShopHUD', 10, true);
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/ShopWin';
   b.panel(w, { rect_size: [1380, 880], pos: [0, 10], color: '#100E16', raycast: true, enable: false });

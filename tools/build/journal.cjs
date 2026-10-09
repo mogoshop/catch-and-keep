@@ -10,7 +10,7 @@ const ROWS = 8;
 
 function run() {
   const file = path.join(root, 'ui/JournalHUD.u' + 'i');
-  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('JournalHUD', 7, true);
+  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('JournalHUD', 13, true);
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
 
   // 모바일 전용 여는 버튼 (의뢰 추적 패널 바로 아래, 왼쪽 위 기준)

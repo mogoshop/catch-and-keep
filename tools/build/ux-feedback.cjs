@@ -4,7 +4,7 @@ const {UIBuilder,P,load}=require('./lib.cjs');
 const icons=Object.fromEntries(load('ui_icons').map(r=>[r.key,r.ruid]));
 function run(){
  const file=P.ui('RewardHUD');
- const b=require('fs').existsSync(file)?UIBuilder.load(file):new UIBuilder('RewardHUD',20,true);
+ const b=require('fs').existsSync(file)?UIBuilder.load(file):new UIBuilder('RewardHUD', 25,true);
  // 판·테두리는 메이커에 저장된 그림(코덱스)을 그대로 두고, 없을 때만 만든다
  if(!b.find('Toast')){
   b.panel('Toast',{anchor:'top-center',pos:[0,-130],rect_size:[650,132],color:{r:.045,g:.04,b:.055,a:.98},enable:false});

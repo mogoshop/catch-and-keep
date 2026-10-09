@@ -3,6 +3,8 @@
 @Component
 script SoulExtractor extends Component
 
+    property number NoticeAt = 0             -- 「그림자 소환을 배워야 한다」 안내를 다시 띄울 수 있는 시각 (서버)
+
     @ExecSpace("Server")
     method void RequestExtract(Entity soul)
         if senderUserId ~= self.Entity.PlayerComponent.UserId or not isvalid(soul) then return end
@@ -10,9 +12,12 @@ script SoulExtractor extends Component
         local orb = soul:GetComponent("script.SoulOrb")
         if orb == nil or orb.Consumed or orb.OwnerUserId ~= senderUserId then return end
         if _Util:Distance(self.Entity, soul) > _ShadowConfig:GetExtractReach() then return end
-        if self:SkillLevel("shadow_summon") <= 0 then
-            -- 추출은 그림자 소환을 배운 뒤부터 (그 전에는 혼을 해골·폭쇄에 쓴다)
-            _Util:Notify("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배워야 한다", senderUserId)
+        if not self:CanExtract() then
+            -- 추출은 그림자 소환을 배운 뒤부터 (그 전에는 혼을 해골·폭쇄에 쓴다). 안내는 30초에 한 번만
+            if _UtilLogic.ElapsedSeconds >= self.NoticeAt then
+                self.NoticeAt = _UtilLogic.ElapsedSeconds + 30
+                _Util:Notify("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배워야 한다", senderUserId)
+            end
             return
         end
         local grade = orb.Grade
@@ -44,6 +49,11 @@ script SoulExtractor extends Component
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil then chance = chance * _GameConst:LevelGapExtract(stats.Level, orb.Level) + 0.15 * stats:ShrineBonus("soul") end
         return math.min(_GameData.extractChanceCap, chance)
+    end
+
+    method boolean CanExtract()
+        -- 그림자 소환을 배웠는지 (클라이언트는 SkillBook 동기화 문자열로 판단)
+        return self:SkillLevel("shadow_summon") > 0
     end
 
     method integer SkillLevel(string id)
@@ -87,6 +97,14 @@ script SoulExtractor extends Component
     method void TryExtractNearby()
         -- 손 닿는 거리의 가장 가까운 내 혼. 창이 열렸거나 사망했으면 추출하지 않는다.
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
+        if not self:CanExtract() then
+            -- 배우기 전: 서버에 보내지 않고 화면 안내만 (서버 쪽 안내와 겹치지 않게 같은 30초 간격)
+            if _UtilLogic.ElapsedSeconds >= self.NoticeAt then
+                self.NoticeAt = _UtilLogic.ElapsedSeconds + 30
+                _ScreenMessageLogic:PrivateMsg("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배운 뒤에 할 수 있다")
+            end
+            return
+        end
         local soul = self:FindNearestSoul(_Util:Pos2(self.Entity), _ShadowConfig:GetExtractReach())
         if soul == nil then
             _ScreenMessageLogic:PrivateMsg("가까운 혼이 없다")

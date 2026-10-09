@@ -21,7 +21,7 @@ function grid(b, name, count, pos, rows, prefix) {
 
 function run() {
   const file = path.join(root, 'ui', 'StashHUD.' + 'ui');
-  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('StashHUD', 7, true);
+  const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('StashHUD', 11, true);
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/StashWin';
   b.panel(w, { rect_size: [1100, 1000], pos: [0, 0], color: '#100E16', raycast: true, enable: false });

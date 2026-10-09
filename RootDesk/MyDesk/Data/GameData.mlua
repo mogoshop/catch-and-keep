@@ -121,10 +121,10 @@ script GameData extends Logic
     property number gearTierNightmare = 0.8    -- 아이템 레벨 31~60(악몽) 무작위 옵션 상한 배율
     property number uniqueRollMin = 0.75    -- 유니크·세트 수치는 표기의 이 비율 ~ 100% 사이에서 무작위
     property number skillPowerMult = 0.7    -- 스킬 피해·비율 효과 배율 (10-09 30% 하향 · 지속 시간·수는 그대로)
-    property number shadowPlusPct = 6    -- 그림자 강화 +1당 공격·생명 % (레벨과 별개)
-    property number shadowPlusMax = 10    -- 그림자 강화 최대 +N
-    property number shadowPlusCostBase = 3    -- 그림자 강화 비용 (정수) = base + step × 현재 강화
-    property number shadowPlusCostStep = 2    -- 그림자 강화 비용 증가
+    property number shadowPlusPct = 6    -- 그림자 강화 +1당 공격·생명 % (레벨과 별개 · 보스는 shadowPlusPctBoss)
+    property number shadowPlusMax = 10    -- 그림자 강화 최대 +N (실제 상한은 주인 레벨 ÷ shadowPlusLevelDiv)
+    property number shadowPlusCostBase = 5    -- 그림자 강화 비용 (정수) = (base + step × 현재 강화) × 등급 배율 (10-09: 3 → 5)
+    property number shadowPlusCostStep = 4    -- 그림자 강화 비용 증가 (10-09: 2 → 4 · +9 누적 189)
     property number shadowExpBase = 40    -- 그림자 레벨 n→n+1 경험치 = base × n^exp
     property number shadowExpExp = 1.8    -- 그림자 경험치 곡선 지수
     property number shadowExpShare = 0.6    -- 처치 경험치 중 소환 중인 그림자가 각각 받는 비율
@@ -140,6 +140,18 @@ script GameData extends Logic
     property number nestInterval = 7    -- 뼈 둥지가 졸개를 낳는 간격(초) — 플레이어가 가까이 있을 때만
     property number nestMaxAlive = 4    -- 뼈 둥지 하나가 동시에 거느리는 졸개 수
     property number chestAmbush = 4    -- 저주받은 상자를 열면 나오는 습격 무리 수 (+정예 우두머리 1)
+    property number hpRegenPct = 0.002    -- 기본 생명 재생 (초당 최대 생명 비율 · D2처럼 거의 없음 — 장비 재생·물약이 주력)
+    property number manaRegenPct = 0.01    -- 기본 마나 재생 (초당 최대 마나 비율 — 약 100초에 가득)
+    property number manaRegenPerEne = 0.004    -- 정신 1당 초당 마나 재생
+    property number shadowPlusLevelDiv = 3    -- 강화 상한 = 주인 레벨 ÷ 이 값 (Lv12 → +4 · Lv30 → +10) — 넘는 강화는 상한까지만 적용
+    property number shadowPlusPctBoss = 3    -- 보스 그림자 강화 +1당 공격·생명 % (일반·정예의 절반)
+    property number shadowPlusCostEliteMul = 1.5    -- 정예 그림자 강화 비용 배율
+    property number shadowPlusCostBossMul = 3    -- 보스 그림자 강화 비용 배율
+    property number shadowRefundBase = 3    -- 분해 환급 기준 비용 (예전 강화 비용표 3·5·7… 의 절반을 돌려준다 — 비용을 올려도 환급으로 정수가 늘지 않게)
+    property number shadowRefundStep = 2    -- 분해 환급 기준 비용 증가
+    property number killExpCoef = 15    -- 처치 경험치 = 이 값 × 몬스터 레벨^1.3 × 등급 배율 (10-09: 10 → 15 · 넓은 맵 이동량 대비 레벨업이 느렸다)
+    property number densityExpMult = 1    -- 몬스터 밀도 증가분만큼 처치 경험치를 줄이는 배율 (10-09: 0.72 → 1 · 드롭은 densityRewardMult 그대로)
+    property number bootsMoveMult = 2    -- 신발에서 이동 속도 옵션이 뽑힐 가중치 배율
     property table PlayerAppearance = {}
     property table Difficulties = {}
     property table Sounds = {}
@@ -203,9 +215,9 @@ script GameData extends Logic
         self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
         self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
-        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, resistPenalty = 0, deathExpLossPct = 0 }
-        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 15, resistPenalty = 30, deathExpLossPct = 5 }
-        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 30, resistPenalty = 60, deathExpLossPct = 10 }
+        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1 }
+        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 15, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5 }
+        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 30, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 14 }
         self.Sounds = {}
         self.Sounds["town"] = "93147bcf77494841b8d4478791ed9282"
         self.Sounds["field"] = "8efc5a3200114606a71e907036fe920f"

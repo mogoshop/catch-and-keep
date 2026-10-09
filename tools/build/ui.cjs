@@ -184,14 +184,14 @@ function buildGameHud() {
   });
   // PC 메뉴 줄: 아이콘 + 아래 메뉴 이름 + 오른쪽 위 단축키 (귀환은 벨트 칸으로 옮겨 메뉴에서 뺐다)
   const MENU = [["BtnInv", K.icon_bag, "I", "소지품"], ["BtnChar", K.icon_stats, "U", "능력치"], ["BtnSkill", K.icon_skill, "K", "스킬"], ["BtnShadow", K.icon_shadow, "H", "그림자"],
-    ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "플레이어"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "추출"]];
+    ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "플레이어"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "그림자 추출"]];
   b.empty("Bottom/Menu", { anchor: "top-center", pos: [0, 92], rect_size: [MENU.length * 88, 84] });
   MENU.forEach(([n, ruid, key, label], i) => {
       const path = `Bottom/Menu/${n}`;
       b.button(path, "", { anchor: "middle-left", pos: [i * 88, 0], rect_size: [84, 84], ...bg("hud_box"), sprite_type: 1 });
       b.sprite(`${path}/Icon`, { anchor: "top-center", pos: [0, -6], rect_size: [44, 44], image_ruid: ruid, sprite_type: 0, color: iconColor(ruid), alpha: 1 });
       k.aspect(`${path}/Icon`);
-      b.text(`${path}/Label`, label, { size: 18, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 4], rect_size: [84, 24], ...outline });
+      b.text(`${path}/Label`, label, { size: 18, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 4], rect_size: [84, 24], bestfit: true, min_size: 12, max_size: 18, ...outline });
       b.text(`${path}/Key`, key, { size: 16, color: C.white, anchor: "top-right", pos: [-3, -2], rect_size: [20, 18], alignment: 2, ...outline });
       if (n === "BtnChar" || n === "BtnSkill") k.badge(path);
     });
