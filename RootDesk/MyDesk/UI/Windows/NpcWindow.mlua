@@ -95,7 +95,18 @@ script NpcWindow extends Logic
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         -- 기존 추출/스킬/귀환 키와 겹치지 않는 대화 단축키.
-        if event.key == KeyboardKey.B then self:Talk() end
+        -- 대화 중에는 Space·Enter로 주 버튼(다음·수락·보상 받기)을 누른다. 마우스 없이도 의뢰를 진행할 수 있게.
+        if (event.key == KeyboardKey.Space or event.key == KeyboardKey.Return) and _UIKit:IsOpen(self.Win) then
+            if self.Kind == "quest" and self:ButtonShown(4) then self:Action(4) end
+            return
+        end
+        if event.key == KeyboardKey.B and not _UIKit:IsOpen(self.Win) then self:Talk() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ButtonShown(integer index)
+        local e = _UIKit:Get(self.Win .. "/Btn" .. tostring(index))
+        return isvalid(e) and e.Enable
     end
 
     @ExecSpace("ClientOnly")
@@ -163,6 +174,8 @@ script NpcWindow extends Logic
         for i = 1, 5 do
             local label = labels[i] or ""
             _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), label ~= "")
+            -- PC 의뢰 대화의 주 버튼에는 키 안내를 붙인다 (처리 중 표시는 제외)
+            if label ~= "" and i == 4 and self.Kind == "quest" and Environment:IsPCPlatform() and label ~= "처리 중…" then label = label .. " [Space]" end
             if label ~= "" then _UIKit:SetText(self.Win .. "/Btn" .. tostring(i), label) end
         end
     end

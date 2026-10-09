@@ -23,7 +23,7 @@ try{
 }finally{fs.rmSync(dir,{recursive:true,force:true});}
 const first=load('quests')[0];
 assert.equal(first.zone,'피 묻은 황무지');
-assert.equal(first.objective,'지옥견 처치 → 혼에서 해골 소환');
+assert.equal(first.objective,'몬스터 처치 → 혼에서 해골 소환');
 assert.match(first.outro,/장착하고, 다시 해골/);
 assert.match(first.reward,/minion=20\|2\|,rune:r_as$/);
 console.log('[test_csv] 인용·줄바꿈·빈 칸·열 개수·첫 퀘스트 회귀 검사 통과');

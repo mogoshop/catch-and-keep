@@ -33,7 +33,7 @@ function desiredEntities(d, maps, ctx) {
 
   if (d.kind === "town") {
     const first = fields[0];
-    place("GateToField", "Objects/WarpGate", [townArrival[0], townArrival[1] - 1.4, 0], { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
+    place("GateToField", "Objects/WarpGate", [townArrival[0], ctx.townExitY ?? townArrival[1] - 1.4, 0], { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
   } else if (d.kind === "field") {
     const i = fields.indexOf(d);
     const prev = i === 0 ? town : fields[i - 1];
@@ -163,6 +163,7 @@ function context() {
   const cfg = Object.fromEntries(load("config").map((r) => [r.key, num(r.value)]));
   return {
     townArrival: { x: cfg.townArrivalX, y: cfg.townArrivalY },
+    townExitY: cfg.townExitY,
     monsters: Object.fromEntries(monsters.map((m) => [m.id, m])),
     npcs: Object.fromEntries(npcs.map((n) => [n.model, n])),
     managed: managedModelIds(monsters, npcs),
