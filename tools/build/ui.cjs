@@ -197,7 +197,7 @@ function buildGameHud() {
     });
 
   // ── 메뉴 창 (모바일·PC 공용): 모든 창을 한곳에서 ──
-  k.frame("MenuWin", "middle-center", [0, 20], [800, 640], "메뉴");
+  k.frame("MenuWin", "middle-center", [0, 20], [800, 740], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
     ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬워드"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
@@ -209,6 +209,8 @@ function buildGameHud() {
     b.text(`${path}/Label`, label, { size: 26, color: C.white, anchor: "bottom-center", pos: [0, 14], rect_size: [200, 34] });
     if (n === "Char" || n === "Skill") k.badge(path);
   });
+  // 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
+  k.btn("MenuWin/CharSel", "캐릭터 선택으로", { anchor: "top-left", pos: [64, -576], rect_size: [672, 72], font_size: 24 });
   b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");

@@ -56,6 +56,7 @@ script HudMain extends Logic
         _UIKit:SetText("MenuWin/Input/Label", "설정")
         _UIKit:Connect("MenuWin/Input", function() self:FromMenu("AudioWin") end)
         _UIKit:Connect("MenuWin/BtnClose", function() _UIKit:Close("MenuWin") end)
+        _UIKit:Connect("MenuWin/CharSel", function() self:FromMenu("") self:AskCharSelect() end)
         _UIKit:Connect("BtnMenu", function() _UIKit:Toggle("MenuWin") end)
         _UIKit:Connect("QuestTrack", function() _UIKit:Toggle("QuestWin") end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
@@ -79,6 +80,17 @@ script HudMain extends Logic
         elseif k == KeyboardKey.P then _UIKit:Toggle("SocialWin")
         elseif k == KeyboardKey.L then _RankWindow:Show("depth")
         elseif k == KeyboardKey.M then _UIKit:Toggle("MenuWin") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AskCharSelect()
+        -- 메뉴 「캐릭터 선택으로」: 확인 후 저장하고 선택 화면으로 (PlayerSave.RequestCharSelect)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil or save.Selecting then return end
+        _ConfirmDialog:Show("캐릭터 선택", "지금 캐릭터를 저장하고 캐릭터 선택 화면으로 갑니다.\n다른 캐릭터로 들어가거나 새 캐릭터를 만들 수 있습니다.", "이동", function()
+            save:RequestCharSelect()
+        end)
     end
 
     @ExecSpace("ClientOnly")

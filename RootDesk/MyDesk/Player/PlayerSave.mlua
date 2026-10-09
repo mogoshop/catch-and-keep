@@ -34,6 +34,8 @@ script PlayerSave extends Component
     property table Account = {}
     property table StashItems = {}
     property string SlotMemoryName = "CharSlotV1"
+    property boolean InSelectRoom = false      -- 메뉴 「캐릭터 선택으로」로 온 선택용 인스턴스 방 (고르면 정적 방으로 돌아간다)
+    property boolean Switching = false         -- 방 이동을 요청한 뒤 (중복 요청 막기)
 
     method table Sections()
         -- 불러오는 순서가 중요하다: 능력치 → 소지품(장착 효과가 능력치에 반영) 순. key = 고른 슬롯의 키, base = 이전 형식 이름
@@ -113,7 +115,8 @@ script PlayerSave extends Component
             self:LoadSlot(slot)
             return
         end
-        -- 캐릭터를 고르는 동안은 보통 야영지에 둔다 (월드 시작 맵은 사냥터)
+        -- 캐릭터를 고르는 동안은 보통 야영지에 둔다 (월드 시작 맵은 사냥터). slot -1 = 메뉴에서 온 선택용 방
+        self.InSelectRoom = slot < 0 and _RoomService:IsInstanceRoom()
         self.Selecting = true
         if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
@@ -229,7 +232,11 @@ script PlayerSave extends Component
     @ExecSpace("Server")
     method void RequestSelectSlot(integer slot)
         if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.Selecting then return end
-        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) == nil then return end
+        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) == nil or self.Switching then return end
+        if self.InSelectRoom then
+            self:LeaveSelectRoom(slot)
+            return
+        end
         self:LoadSlot(slot)
     end
 
@@ -237,16 +244,78 @@ script PlayerSave extends Component
     method void RequestCreateSlot(integer slot, string name)
         -- 빈 칸에 새 캐릭터: 기본 상태 그대로 시작하고 곧바로 저장해 슬롯을 확정한다
         if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.Selecting then return end
-        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) ~= nil then return end
+        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) ~= nil or self.Switching then return end
         local clean = self:CleanName(name)
         if clean == "" then clean = self:DefaultName(slot) end
         self.Account.slots[tostring(slot)] = { name = clean, lv = 1, diff = 0, created = DateTime.UtcNow.Elapsed }
         self.Slot = slot
         self:PublishSlots()
         self:ApplyStash()
+        if self.InSelectRoom then
+            -- 선택용 방: 기본 상태를 저장해 슬롯을 확정하고 정적 방에서 새로 불러온다
+            self.IsLoadSuccess = true
+            self:Save(true)
+            _Util:Notify("새 캐릭터 「" .. clean .. "」", senderUserId)
+            self:LeaveSelectRoom(slot)
+            return
+        end
         self:FinishLoad(true)
         self:Save(true)
         _Util:Notify("새 캐릭터 「" .. clean .. "」", senderUserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestCharSelect()
+        -- 메뉴 「캐릭터 선택으로」: 지금 캐릭터를 저장하고 선택용 인스턴스 방으로 옮긴다.
+        -- 방을 옮기면 플레이어 엔티티가 새로 만들어지므로 이전 캐릭터의 상태(소환수·버프·쿨타임)가 남지 않는다
+        local uid = self.Entity.PlayerComponent.UserId
+        if senderUserId ~= uid or not self.IsLoadSuccess or self.Selecting or self.Switching or self.Slot <= 0 then return end
+        if not _Util:IsAlive(self.Entity) then
+            _Util:Notify("쓰러진 상태에서는 캐릭터를 바꿀 수 없다", uid)
+            return
+        end
+        self:Save(true)
+        for k, v in pairs(self:Collect()) do
+            if self.LastSaved[k] ~= v then
+                _Util:Notify("저장에 실패해 캐릭터 선택으로 가지 않았다. 잠시 뒤 다시 시도하세요", uid)
+                return
+            end
+        end
+        self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
+        self.Switching = true
+        self:MarkTravel(-1)
+        -- 인스턴스 방에는 인스턴스 맵만 쓸 수 있다 → 심도 맵을 배경으로 (룸 키가 "depth:"가 아니면 DepthDirector는 아무것도 하지 않는다)
+        local key = "charsel:" .. uid
+        local ok, moved = pcall(function()
+            _RoomService:CreateInstanceRoom(key, { _GameConst.MapDepth }, 30)
+            return _RoomService:MoveUserToInstanceRoom(key, uid, _GameConst.MapDepth)
+        end)
+        if not ok or not moved then
+            self:TakeSlotTravel()
+            self.IsLoadSuccess = true
+            self.Switching = false
+            _Util:Notify("캐릭터 선택으로 이동하지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            return
+        end
+        log("[VRF] slots: 캐릭터 선택 방으로 이동 (슬롯 " .. tostring(self.Slot) .. " 저장)")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LeaveSelectRoom(integer slot)
+        -- 선택용 방에서 고른 캐릭터로: 정적 방(그 캐릭터 난이도의 마을)으로 돌아가며 그 슬롯을 바로 불러온다
+        local uid = self.Entity.PlayerComponent.UserId
+        local info = self:SlotInfo(slot)
+        self.Switching = true
+        self:MarkTravel(slot)
+        local town = _GameConst:MapFor(_GameConst.MapTown, info ~= nil and math.floor(tonumber(info.diff) or 0) or 0)
+        local ok, moved = pcall(function() return _RoomService:MoveUserToStaticRoom(uid, town) end)
+        if not ok or not moved then
+            self:TakeSlotTravel()
+            self.Switching = false
+            _Util:Notify("이동하지 못했다. 다시 골라 주세요", uid)
+            return
+        end
+        log("[VRF] slots: 선택 방 → " .. town .. " (슬롯 " .. tostring(slot) .. ")")
     end
 
     @ExecSpace("Server")
@@ -277,9 +346,15 @@ script PlayerSave extends Component
     method void MarkSlotTravel()
         -- 방을 옮기기 직전에 부른다 → 목적지 방의 Load가 선택 창 없이 같은 캐릭터를 불러온다 (2분 안)
         if self.Slot <= 0 then return end
+        self:MarkTravel(self.Slot)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MarkTravel(integer slot)
+        -- slot > 0: 그 캐릭터를 바로 불러오기 / -1: 선택용 방 (선택 창)
         local code, memory = _RoomService:GetSharedMemory(self.SlotMemoryName)
         if code ~= SharedMemoryResultCode.OK or memory == nil then return end
-        memory:SetVariableAndWait(self.Entity.PlayerComponent.UserId, _HttpService:JSONEncode({ slot = self.Slot, created = DateTime.UtcNow.Elapsed }))
+        memory:SetVariableAndWait(self.Entity.PlayerComponent.UserId, _HttpService:JSONEncode({ slot = slot, created = DateTime.UtcNow.Elapsed }))
     end
 
     @ExecSpace("ServerOnly")
