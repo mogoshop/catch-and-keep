@@ -38,38 +38,80 @@ script MonsterSpawner extends Component
         local variantChance = self.VariantChance
         if variantChance < 0 then variantChance = _GameData.variantChance end
         local packSize = math.max(1, self.PackSize)
+        local list = {}
         for modelId, count, level in string.gmatch(self.Entries, "([%w_]+):(%d+):(%d+)") do
-            local center = self:RandomPoint()
-            for i = 1, tonumber(count) do
-                -- 무리마다 새 중심, 무리 안에서는 중심 둘레로 흩어진다
-                if (i - 1) % packSize == 0 then center = self:RandomPoint() end
-                if center ~= nil then
-                    local p = center
-                    if packSize > 1 then
-                        local a = _UtilLogic:RandomDouble() * math.pi * 2
-                        local r = _UtilLogic:RandomDouble() * _GameData.packRadius
-                        p = self:Clamp(center + Vector2(math.cos(a) * r, math.sin(a) * r))
-                    end
-                    if not self:ValidSpawn(p) then p = center end
-                    local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(p.x, p.y, 0), map)
-                    if isvalid(e) then
-                        local elite = _UtilLogic:RandomDouble() < self.EliteChance
-                        local variant = ""
-                        if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
-                        self:Configure(e, tonumber(level) + bonus, elite, variant)
-                        total = total + 1
+            table.insert(list, { id = modelId, count = tonumber(count), level = tonumber(level) })
+        end
+        local stats = { packs = 0, leaders = 0, mixed = 0, hordes = 0 }
+        for _, entry in ipairs(list) do
+            local remaining = entry.count
+            while remaining > 0 do
+                -- 무리 하나: 가끔 두 배 크기(큰 무리), 가끔 정예 우두머리 + 호위, 가끔 같은 맵의 다른 종류가 섞인다
+                local size = packSize
+                if packSize > 1 and _UtilLogic:RandomDouble() < _GameData.hordeChance then
+                    size = packSize * 2
+                    stats.hordes = stats.hordes + 1
+                end
+                size = math.min(size, remaining)
+                remaining = remaining - size
+                stats.packs = stats.packs + 1
+                local leader = size > 1 and _UtilLogic:RandomDouble() < _GameData.packLeaderChance
+                local escort = nil
+                if size > 2 and #list > 1 and _UtilLogic:RandomDouble() < _GameData.packMixChance then
+                    escort = self:PickEscort(list, entry)
+                    if escort ~= nil then stats.mixed = stats.mixed + 1 end
+                end
+                if leader then stats.leaders = stats.leaders + 1 end
+                local center = self:RandomPoint()
+                for i = 1, size do
+                    if center ~= nil then
+                        local p = center
+                        if size > 1 then
+                            local a = _UtilLogic:RandomDouble() * math.pi * 2
+                            local r = _UtilLogic:RandomDouble() * _GameData.packRadius * (size > packSize and 1.4 or 1)
+                            p = self:Clamp(center + Vector2(math.cos(a) * r, math.sin(a) * r))
+                        end
+                        if not self:ValidSpawn(p) then p = center end
+                        local kind = entry
+                        if escort ~= nil and i > 1 and i % 3 == 0 then kind = escort end
+                        local e = _SpawnService:SpawnByModelId(kind.id, kind.id, Vector3(p.x, p.y, 0), map)
+                        if isvalid(e) then
+                            local elite = (leader and i == 1) or _UtilLogic:RandomDouble() < self.EliteChance
+                            local variant = ""
+                            if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
+                            self:Configure(e, kind.level + bonus, elite, variant)
+                            total = total + 1
+                        end
                     end
                 end
             end
         end
-        if self.DebugLog then log("[MonsterSpawner] " .. map.Name .. " 소환 " .. tostring(total)) end
+        log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes))
+    end
+
+    method any PickEscort(table list, any entry)
+        -- 섞일 종류: 원거리가 있으면 우선(근접 무리 뒤에서 쏘는 궁수), 없으면 다른 종류 중 무작위
+        local others = {}
+        for _, e in ipairs(list) do
+            if e.id ~= entry.id then
+                local stats = _GameData:GetMonsterStats(_GameData:SourceOfModel(e.id))
+                if stats ~= nil and stats.behavior == "ranged" then return e end
+                table.insert(others, e)
+            end
+        end
+        if #others == 0 then return nil end
+        return others[_UtilLogic:RandomIntegerRange(1, #others)]
     end
 
     @ExecSpace("ServerOnly")
     method void LoadFromData(string mapName)
         local d = _GameData:GetMapSpawns(_GameConst:BaseMapName(mapName))
         if d == nil then return end
+        -- 악몽·지옥은 그 난이도 전용 목록(다른 지역 몬스터가 섞인 조합). 비어 있으면 보통 목록
+        local diff = _GameConst:DifficultyOfMap(mapName)
         self.Entries = d.entries
+        if diff == 1 and d.entriesNm ~= "" then self.Entries = d.entriesNm end
+        if diff == 2 and d.entriesHell ~= "" then self.Entries = d.entriesHell end
         self.PackSize = math.floor(d.pack)
         self.EliteChance = d.elite
         self.VariantChance = d.variant

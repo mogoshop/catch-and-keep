@@ -164,11 +164,15 @@ if (!T.monsters.some((r) => r.depth === "pool")) err("monsters", null, "depth=po
 const markers = new Set();
 T.maps.forEach((r, i) => {
   if (!soundKeys.has(r.bgm)) err("maps", i, `bgm '${r.bgm}' — sounds.csv에 없음`);
-  for (const sp of r.spawns.split(";")) {
-    if (sp === "") continue;
-    const [id, count, level] = sp.split(":");
-    if (!monsterIds.has(id)) err("maps", i, `spawns '${id}' — monsters.csv에 없음`);
-    if (!(num(count) > 0) || !(num(level) > 0)) err("maps", i, `spawns '${sp}' 형식 오류 (id:수:레벨)`);
+  // 출현 목록: 보통(spawns) · 악몽(spawnsNm) · 지옥(spawnsHell, 비면 보통 목록). 레벨은 보통 기준 (난이도 가산은 실행 시)
+  for (const col of ["spawns", "spawnsNm", "spawnsHell"]) {
+    for (const sp of (r[col] || "").split(";")) {
+      if (sp === "") continue;
+      const [id, count, level] = sp.split(":");
+      if (!monsterIds.has(id)) err("maps", i, `${col} '${id}' — monsters.csv에 없음`);
+      if (!(num(count) > 0) || !(num(level) > 0)) err("maps", i, `${col} '${sp}' 형식 오류 (id:수:레벨)`);
+    }
+    if (col !== "spawns" && r[col] && !r.spawns) err("maps", i, `${col}만 있고 spawns가 비었음`);
   }
   for (const f of r.fixed.split(";")) {
     if (f === "") continue;

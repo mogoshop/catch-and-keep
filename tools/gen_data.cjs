@@ -76,13 +76,15 @@ function genGameData() {
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",
     ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
+    "        self.MonsterSourceOf = {}",
+    ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
     ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(m.stand)}, move = ${s(m.move)}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
       const area = `minX = ${-(w / 2) + 3}, maxX = ${w / 2 - 3}, minY = ${-(h / 2) + 2.5}, maxY = ${h / 2 - 1.5}`;
-      return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area} }`;
+      return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, entriesNm = ${s(m.spawnsNm || "")}, entriesHell = ${s(m.spawnsHell || "")}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area} }`;
     }),
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {
@@ -165,6 +167,12 @@ function genGameData() {
         return self.UiIcons[key] or ""
     end
 
+    method string SourceOfModel(string modelId)
+        -- 출현 목록의 몬스터 id(skelwarrior) → 몬스터 표 sourceId(skel_warrior). 없으면 그대로
+        self:Ensure()
+        return self.MonsterSourceOf[modelId] or modelId
+    end
+
     method any GetMapSpawns(string mapId)
         -- 맵별 몬스터 출현 (maps.csv spawns·무리·정예·변종·리스폰·출현 범위). 보통 난이도 맵 id. 없으면 nil
         self:Ensure()
@@ -193,7 +201,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
