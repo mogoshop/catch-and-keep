@@ -56,17 +56,20 @@ function genGameData() {
   const sounds = load("sounds");
   const mons = load("monsters");
   const shop = load("shop");
+  const appearance = load("player_appearance");
   const ranks = load("monster_ranks");
   const variants = load("variants");
   const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
   const body = [
+    "        self.PlayerAppearance = {}",
+    ...appearance.map((r) => `        self.PlayerAppearance[${s(r.slot)}] = ${s(r.ruid)}`),
     "        self.Variants = {}",
     "        self.VariantOrder = {}",
     ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
     "        self.Ranks = {}",
     ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, grade = ${n(r.shadowGrade)} }`),
     "        self.Shop = {}",
-    ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")} }`),
+    ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
     ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)} }`),
     "        self.Sounds = {}",
@@ -95,6 +98,12 @@ function genGameData() {
       .map((m) => `        table.insert(self.DepthUniques, { every = ${n(m.depth.slice(5))}, id = ${s(m.id)} })`),
   ].join("\n");
   const extra = `
+    method string GetPlayerAppearance(string slot)
+        -- 월드 전용 기본 피부·머리·얼굴 (player_appearance.csv). 계정 옷장과 별개다.
+        self:Ensure()
+        return self.PlayerAppearance[slot] or ""
+    end
+
     method any GetDifficulty(integer index)
         self:Ensure()
         return self.Difficulties[math.max(0, math.min(#self.Difficulties, index))]
@@ -182,9 +191,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, monster_ranks.csv, variants.csv, maps.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
