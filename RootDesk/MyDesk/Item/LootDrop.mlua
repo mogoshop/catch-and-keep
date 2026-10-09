@@ -20,7 +20,8 @@ script LootDrop extends Component
 
     property number PulseTime = 0
     property boolean Dressed = false
-    property number IconScale = 0.85      -- 금화·물약·룬 (28~40px 아이콘)
+    property number IconScale = 0.85      -- 메이플 아이콘(28~40px) 배율
+    property number IconWorldSize = 0.32  -- 직접 그린 큰 아이콘의 바닥 크기 (월드 단위)
     @Sync
     property number LockedUntil = 0       -- 서버 경과 초. 이 시각까지는 아무도 못 줍는다 (버린 물건, 깜빡임)
     property number DiscardLockSeconds = 10
@@ -82,8 +83,12 @@ script LootDrop extends Component
             elseif self.Kind == "rune" or self.Kind == "item" then ruid = self.IconRUID end
             sprite.SpriteRUID = ruid
             -- 장비 외형 썸네일(thumbnail://)은 메이플 아이템 아이콘보다 몇 배 커서 바닥에서 몬스터만큼 보였다. 작게 줄인다
+            -- 직접 그린 아이콘(끈 허리띠 1254px 등)은 같은 배율이면 맵을 덮었다:
+            -- 원본 px을 아는 그림은 바닥 크기(IconWorldSize, 월드 단위)에 맞춰 줄인다 (100px = 1월드 단위)
             local scale = self.IconScale
-            if string.sub(ruid, 1, 12) == "thumbnail://" then scale = self.ThumbScale end
+            local px = _ItemData:IconPixels(ruid)
+            if string.sub(ruid, 1, 12) == "thumbnail://" then scale = self.ThumbScale
+            elseif px > 0 then scale = self.IconWorldSize / (px / 100) end
             self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
         end
         if self.Kind ~= "item" and self.Kind ~= "rune" then return end
