@@ -4,6 +4,20 @@ const root=path.resolve(__dirname,'../..');
 const {UIBuilder}=require(path.join(root,'.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const {load}=require(path.join(root,'tools/lib/csv.cjs'));
 const icons=Object.fromEntries(load('ui_icons').map(x=>[x.key,x.ruid]));
+// 메이커 기본 화면도 실제 의뢰 그림을 사용한다. 실행 중 색상은 진행도가 결정한다.
+function initialArt(i) {
+ const key=(i===1?'quest_art':'quest_art_gray')+i;
+ if(!icons[key]) throw new Error(key+' 업로드 RUID가 없습니다');
+ return icons[key];
+}
+function applyResources(b) {
+ for(let i=1;i<=6;i++) {
+  b.patchComponent('SafeArea/QuestWin/Q'+i+'/Art','MOD.Core.SpriteGUIRendererComponent',{
+   ImageRUID:{DataId:initialArt(i)}, Type:0,
+   Color:{r:1,g:1,b:1,a:1}, RaycastTarget:false
+  });
+ }
+}
 function run(){
 const file=path.join(root,'ui/QuestJournalHUD.ui');
 const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('QuestJournalHUD',6,true);
@@ -21,7 +35,7 @@ for(let i=1;i<=6;i++){
  const col=(i-1)%3,row=Math.floor((i-1)/3);
  // 칸 자체가 테두리 그림, 그 위에 의뢰 그림·이름 (덮개 테두리는 그림을 가렸다)
  b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250,-96-row*236],rect_size:[220,224],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
- b.sprite(n+'/Art',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],image_ruid:icons.icon_quest,color:'#FFFFFF',sprite_type:0});
+ b.sprite(n+'/Art',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],image_ruid:initialArt(i),color:'#FFFFFF',sprite_type:0});
  b.text(n+'/Name','',{anchor:'bottom-center',pivot:[.5,0],pos:[0,12],rect_size:[196,36],size:21,bold:true,color:'#E6DCC6',bestfit:true,min_size:17,max_size:21,overflow:2});
 }
 const d=win+'/Detail';
@@ -44,4 +58,4 @@ b.write(file,{lint_verbose:true});
 return b.listEntities().length;
 }
 if(require.main===module)console.log('Quest journal entities: '+run());
-module.exports={run};
+module.exports={run,applyResources};
