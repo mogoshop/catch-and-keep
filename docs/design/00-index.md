@@ -18,6 +18,7 @@
 | 10 | [10-technical-architecture-and-data](10-technical-architecture-and-data.md) | 서버 권위, 데이터 테이블, 저장, 부하, 치트 방지 |
 | 11 | [11-multiplayer-social-pvp](11-multiplayer-social-pvp.md) | 파티, 거래, 채팅, PvP, 랭킹 |
 | 12 | [12-roadmap-roles-risks](12-roadmap-roles-risks.md) | 단계별 로드맵, 역할 분담, 리스크, **사용자 결정 필요 목록** |
+| 13 | [13-act2-sand-ruins](13-act2-sand-ruins.md) | 액트 2 모래 폐허 — 레벨 흐름 12~18, 맵 11, 몬스터, 의뢰 6, 구현 단계 (초안) |
 
 기존 문서: [룬 시스템 v0.2](../rune-system-draft.md), [Phase 0 코어 루프](../phase0-core-loop-design.md), [설치 체크리스트](../setup-checklist.md)
 
