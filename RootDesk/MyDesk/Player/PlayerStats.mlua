@@ -7,6 +7,7 @@ script PlayerStats extends Component
     property string ShrineKind = ""          -- 신전 축복 (MapShrine): fury · ward · wisdom · soul · legion
     @Sync
     property number ShrineUntil = 0          -- 축복이 끝나는 서버 시각 (ServerElapsedSeconds)
+    property number PotionCurseUntil = 0     -- 모래 미라 저주: 이 서버 시각까지 물약 회복 -30%
     @Sync
     property integer Level = 1
     @Sync
@@ -229,6 +230,20 @@ script PlayerStats extends Component
         if add <= 0 then return end
         self.RegenCarry = self.RegenCarry - add
         pc.Hp = math.min(pc.MaxHp, pc.Hp + add)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyPotionCurse(number seconds)
+        -- 모래 미라에게 맞음: 물약 회복 -30% (새로 걸릴 때만 알림)
+        local now = _UtilLogic.ServerElapsedSeconds
+        if self.PotionCurseUntil < now then _Util:Notify("미라의 저주 — 물약 회복 -30% (5초)", self.Entity.PlayerComponent.UserId) end
+        self.PotionCurseUntil = now + seconds
+    end
+
+    method number PotionMult()
+        -- 물약 회복 배율 (미라 저주 중 0.7)
+        if _UtilLogic.ServerElapsedSeconds < self.PotionCurseUntil then return 0.7 end
+        return 1
     end
 
     @ExecSpace("ServerOnly")

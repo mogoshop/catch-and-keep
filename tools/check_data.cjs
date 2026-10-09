@@ -152,7 +152,7 @@ T.monsters.forEach((r, i) => {
   for (const c of ["stand", "move", "hit", "die"]) if (!RUID.test(r[c])) err("monsters", i, `${c} RUID 형식 오류 ('${r[c]}')`);
   if (r.attack !== "" && !RUID.test(r.attack)) err("monsters", i, `attack RUID 형식 오류`);
   if (r.depth !== "" && r.depth !== "pool" && !/^every\d+$/.test(r.depth)) err("monsters", i, `depth '${r.depth}' — pool / everyN / 빈칸`);
-  if (!["", "burrow", "hitrun", "coward", "ranged", "nest"].includes(r.behavior)) err("monsters", i, `behavior '${r.behavior}' 알 수 없음`);
+  if (!["", "burrow", "hitrun", "coward", "ranged", "nest", "phase"].includes(r.behavior)) err("monsters", i, `behavior '${r.behavior}' 알 수 없음`);
 });
 const bossIds = new Set();
 T.bosses.forEach((r, i) => {
@@ -226,7 +226,8 @@ T.quests.forEach((r, i) => {
   if (r.kind === "chest" && !T.named.some((x) => x.map === r.map && x.chest === "true" && x.key === r.target)) err("quests", i, `chest — named.csv에 map '${r.map}' key '${r.target}' 봉인 상자 없음`);
   if (r.map !== "" && !mapIds.has(r.map)) err("quests", i, `map '${r.map}' — maps.csv에 없음`);
   if (r.kind === "chest" && !mapIds.has(r.map1)) err("quests", i, `chest 1단계 맵 '${r.map1}' — maps.csv에 없음`);
-  if (!["quest", "smith"].includes(r.giver)) err("quests", i, `giver '${r.giver}' — quest / smith`);
+  if (!T.npcs.some((x) => x.kind === r.giver)) err("quests", i, `giver '${r.giver}' — npcs.csv kind에 없음`);
+  if (![1, 2].includes(num(r.act))) err("quests", i, `act '${r.act}' — 1 / 2`);
   if (!(num(r.count) > 0)) err("quests", i, "count 양수여야 함");
   for (const part of r.reward.split(",")) {
     if (part === "") continue;
@@ -268,7 +269,7 @@ for (const need of ["WarpGate", "Brazier", "BloodAltar", "PlayerCorpse", "Waypoi
 const npcModels = unique("npcs", "model");
 T.npcs.forEach((r, i) => {
   if (!RUID.test(r.stand)) err("npcs", i, "stand RUID 형식 오류");
-  if (!["shop", "quest", "smith", "merchant", "stash"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
+  if (!["shop", "quest", "smith", "merchant", "stash", "caravan", "scholar", "apothecary"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
 });
 T.maps.forEach((r, i) => {
   if (!["town", "field", "instance", "side"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side`);
@@ -302,7 +303,10 @@ T.maps.forEach((r, i) => {
     if (m && !npcModels.has(m[1])) err("maps", i, `npc '${m[1]}' — npcs.csv에 없음`);
   }
 });
-if (T.maps.filter((r) => r.kind === "town").length !== 1) err("maps", null, "town은 정확히 하나여야 함");
+// 액트마다 마을 하나 (필드 사슬은 같은 액트의 마을에서 시작해 마을로 돌아온다)
+for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
+  if (T.maps.filter((r) => (r.act || "1") === act && r.kind === "town").length !== 1) err("maps", null, `액트 ${act}: town은 정확히 하나여야 함`);
+}
 
 // ── 난이도·사운드 ──
 T.difficulty.forEach((r, i) => {

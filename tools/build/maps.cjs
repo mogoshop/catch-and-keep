@@ -21,13 +21,14 @@ const arriveLeft = (d) => [edges(d).left + 1.4, 0];
 const arriveRight = (d) => [edges(d).right - 1.4, 0];
 
 // 이번 빌드가 놓을 엔티티 목록
-//   마을 → 필드 사슬(order 순, 왼쪽 GateBack·오른쪽 GateNext) → 보스 방
+//   액트마다: 그 액트의 마을 → 필드 사슬(order 순, 왼쪽 GateBack·오른쪽 GateNext) → 보스 방 (액트 사이는 카라반 NPC가 잇는다)
 //   곁가지 던전(kind=side): 부모 필드의 entry 위치에 입구(Gate_<첫 층>), 층끼리는 GateBack/GateNext, 마지막 층은 막다른 곳 (D2)
 function desiredEntities(d, maps, ctx) {
   const out = [];
   const place = (name, model, p, overrides) => out.push({ name, model, pos: p, overrides });
-  const fields = maps.filter((m) => m.kind === "field");
-  const town = maps.find((m) => m.kind === "town");
+  const act = d.act || "1";
+  const fields = maps.filter((m) => m.kind === "field" && (m.act || "1") === act);
+  const town = maps.find((m) => m.kind === "town" && (m.act || "1") === act);
   const townArrival = [ctx.townArrival.x, ctx.townArrival.y];
   const e = edges(d);
 
@@ -196,10 +197,14 @@ function run() {
   const maps = load("maps").sort((a, b) => num(a.order) - num(b.order));
   const diffs = load("difficulty").filter((x) => num(x.index) > 0);
   const ctx = context();
+  // MAPS_ONLY=town,oasis,... 이면 그 맵(과 난이도 복제)만 다시 만든다 — 다른 맵의 메이커 편집을 건드리지 않게
+  const only = (process.env.MAPS_ONLY || "").split(",").filter((x) => x !== "");
+  const target = only.length > 0 ? maps.filter((m) => only.includes(m.id)) : maps;
+  if (only.length > 0 && target.length !== only.length) throw new Error(`MAPS_ONLY에 maps.csv에 없는 id: ${only.join(",")}`);
   let copies = 0;
   quiet(() => {
-    for (const d of maps) buildNormal(d, maps, ctx);
-    for (const d of maps.filter((m) => m.kind !== "instance")) {
+    for (const d of target) buildNormal(d, maps, ctx);
+    for (const d of target.filter((m) => m.kind !== "instance")) {
       for (const diff of diffs) {
         const file = P.map(d.id + diff.mapSuffix);
         const previous = readIfExists(file);
@@ -209,7 +214,7 @@ function run() {
       }
     }
   });
-  console.log(`  맵: 보통 ${maps.length} · 난이도 복제 ${copies}`);
+  console.log(`  맵: 보통 ${target.length} · 난이도 복제 ${copies}`);
 }
 
 module.exports = { run, edges, minimapFeatures };

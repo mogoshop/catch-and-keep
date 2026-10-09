@@ -17,6 +17,8 @@ script PlayerTravel extends Component
     property integer Diff = 0                -- 지금 Known/Visited가 속한 난이도 (난이도마다 웨이포인트·방문 기록이 따로 — D2)
     property table KnownBy = {}              -- "0"/"1"/"2" → Known 문자열 (다른 난이도 것)
     property table VisitedBy = {}            -- "0"/"1"/"2" → Visited 문자열
+    @Sync
+    property integer Act = 1                 -- 지금 액트 (마을 귀환·사망 부활·웨이포인트 창 첫 탭). 마지막으로 들어간 액트 맵 기준
 
     method integer Difficulty()
         ---@type PlayerStats
@@ -55,9 +57,37 @@ script PlayerTravel extends Component
         _MobilePad:ClearGesture()
     end
 
+    method string TownMap()
+        -- 지금 액트·난이도의 마을 맵 이름
+        return _GameConst:MapFor(_GameConst:TownOfAct(self.Act), self:Difficulty())
+    end
+
     @ExecSpace("ServerOnly")
     method void GoTown()
-        self:Go(_GameConst:MapFor(_GameConst.MapTown, self:Difficulty()), _GameConst:GetTownArrival())
+        self:Go(self:TownMap(), _GameConst:GetTownArrival())
+    end
+
+    method boolean ActUnlocked(integer act)
+        -- 액트 2부터는 지금 난이도에서 앞 액트의 마지막 의뢰(액트 보스)를 끝내야 열린다 (D2)
+        if act <= 1 then return true end
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        return quest ~= nil and quest:IsActDone(act - 1)
+    end
+
+    @ExecSpace("Server")
+    method void RequestActTravel(integer act)
+        -- 카라반 대장: 다른 액트의 마을로 (열린 액트만, 카라반 대장 곁에서만)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or pc.Hp <= 0 or act == self.Act then return end
+        if act < 1 or act > 2 or not _Util:NearNpc(self.Entity, "caravan") then return end
+        if not self:ActUnlocked(act) then
+            _Util:Notify("아직 길이 열리지 않았다 — 묘지기 여왕을 쓰러뜨려야 사막길이 열린다", pc.UserId)
+            return
+        end
+        log("[VRF] act travel " .. tostring(self.Act) .. " -> " .. tostring(act))
+        self.Act = act
+        self:GoTown()
     end
 
     @ExecSpace("ServerOnly")
@@ -65,6 +95,8 @@ script PlayerTravel extends Component
         -- 들어간 사냥터를 기록한다 (난이도 접미사는 떼고 보통 맵 이름으로)
         if not isvalid(enteredMap) then return end
         local base = _GameConst:BaseMapName(enteredMap.Name)
+        local info = _GameData:GetMapInfo(base)
+        if info ~= nil and info.kind ~= "instance" then self.Act = _GameConst:ActOfMap(base) end
         if string.find("," .. self.Visited .. ",", "," .. base .. ",", 1, true) ~= nil then return end
         self.Visited = self.Visited == "" and base or (self.Visited .. "," .. base)
     end
@@ -98,7 +130,7 @@ script PlayerTravel extends Component
         if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
         if not self:IsKnown(id) or not self:NearWaypoint() then return end
         local w = _WaypointData:Get(id)
-        if w == nil then return end
+        if w == nil or not self:ActUnlocked(math.floor(w.act or 1)) then return end
         self:Go(_GameConst:MapFor(w.map, self:Difficulty()), Vector2(w.x, w.y))
     end
 
@@ -117,6 +149,8 @@ script PlayerTravel extends Component
         ---@type PlayerQuest
         local quest = self.Entity:GetComponent("script.PlayerQuest")
         if quest ~= nil then quest:SwitchDifficulty(diff) end
+        -- 새 난이도는 액트 1 마을에서 시작한다 (D2)
+        self.Act = 1
         self:GoTown()
     end
 
@@ -141,7 +175,7 @@ script PlayerTravel extends Component
         local backMap = map.Name
         local backPos = _Util:Pos2(self.Entity)
         self:GoTown()
-        local townName = _GameConst:MapFor(_GameConst.MapTown, self:Difficulty())
+        local townName = self:TownMap()
         _TimerService:SetTimerOnce(function() self:OpenReturnGate(townName, backMap, backPos) end, 1.0)
         return true
     end
@@ -184,7 +218,7 @@ script PlayerTravel extends Component
         -- 보통은 예전 이름(known/vis), 악몽·지옥은 known1/vis1 · known2/vis2
         self.KnownBy[tostring(self.Diff)] = self.Known
         self.VisitedBy[tostring(self.Diff)] = self.Visited
-        local out = { known = self.KnownBy["0"] or "camp", tp = self.TownScroll, at = self:CurrentSpot(), vis = self.VisitedBy["0"] or "" }
+        local out = { known = self.KnownBy["0"] or "camp", tp = self.TownScroll, at = self:CurrentSpot(), vis = self.VisitedBy["0"] or "", act = self.Act }
         for k = 1, 2 do
             local key = tostring(k)
             if self.KnownBy[key] ~= nil then out["known" .. key] = self.KnownBy[key] end
@@ -207,6 +241,8 @@ script PlayerTravel extends Component
         end
         self.TownScroll = d.tp or 0
         self.ResumeAt = d.at
+        self.Act = math.max(1, math.floor(tonumber(d.act) or 1))
+        if not self:ActUnlocked(self.Act) then self.Act = 1 end
         local diff = self:Difficulty()
         self.Diff = diff
         self.Known = self.KnownBy[tostring(diff)] or "camp"

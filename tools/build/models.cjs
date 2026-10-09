@@ -112,4 +112,4 @@ function run() {
   console.log(`  모델: 몬스터 ${monsters.length} · 오브젝트 ${objects.length} · NPC ${npcs.length}`);
 }
 
-module.exports = { run, buildMonster, buildObject };
+module.exports = { run, buildMonster, buildObject, buildNpc };

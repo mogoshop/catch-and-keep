@@ -6,6 +6,8 @@
 --   quest = D2처럼 말을 건 뒤 의뢰를 받는다: 소개 대사(다음 ▶) → 의뢰 내용·보상 → 수락/거절 → PlayerQuest.
 --           완료하면 마무리 대사 → 보고(보상). 대사는 quests.csv intro·outro ("/"로 줄 나눔)
 --   의뢰인(giver)이 대장장이인 의뢰는 대장장이에게 말을 걸면 의뢰 대화가 먼저 나온다 (진행 중에는 평소 메뉴).
+--   caravan = 카라반 대장: 액트 사이 이동 (잿불 야영지 ↔ 오아시스 시장, 앞 액트 보스를 쓰러뜨려야 열림) + 의뢰
+--   scholar · apothecary = 액트 2 의뢰인 (자기 의뢰 차례가 아니면 한마디만)
 @Logic
 script NpcWindow extends Logic
 
@@ -175,7 +177,49 @@ script NpcWindow extends Logic
         if self.Kind == "shop" then self:RenderShop(st)
         elseif self.Kind == "merchant" then self:RenderMerchant(st)
         elseif self.Kind == "smith" then self:RenderSmith(st)
+        elseif self.Kind == "caravan" then self:RenderCaravan()
         else self:RenderQuest() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer CaravanTarget()
+        -- 카라반으로 갈 수 있는 다른 액트 (지금 액트 1이면 2, 아니면 1)
+        ---@type PlayerTravel
+        local travel = _UIKit:Comp("script.PlayerTravel")
+        if travel == nil then return 0 end
+        return travel.Act == 1 and 2 or 1
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderCaravan()
+        -- 카라반 대장: 다른 액트 마을로. 잠겨 있으면 이유만
+        ---@type PlayerTravel
+        local travel = _UIKit:Comp("script.PlayerTravel")
+        if travel == nil then return end
+        local target = self:CaravanTarget()
+        local unlocked = travel:ActUnlocked(target)
+        local key = "caravan#" .. tostring(travel.Act) .. "#" .. tostring(unlocked)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local dest = _GameConst:ActTownName(target)
+        local body = ""
+        if unlocked then
+            body = target == 2 and "사막길이 열렸다. 낙타 등에 짐은 다 실었지 — 오아시스 시장까지 데려다주마.\n(언제든 이곳 카라반으로 오갈 수 있다)"
+                or "잿불 야영지로 돌아가겠나? 사막 모래가 신발에 가득하군.\n(언제든 카라반으로 다시 사막에 올 수 있다)"
+            -- 받침에 맞춘 조사 (시장으로 · 야영지로)
+            self:SetButtons({ "", "", "", target == 2 and (dest .. "으로") or (dest .. "로"), "닫기" })
+        else
+            body = "사막길은 아직 막혀 있다. 지하 납골당 깊은 곳의 묘지기 여왕이 길을 막고 있지.\n여왕을 쓰러뜨리고 사제 오렌에게 알리면 출발하겠네."
+            self:SetButtons({ "", "", "", "", "닫기" })
+        end
+        _UIKit:SetText(self.Win .. "/Paper/Body", body)
+    end
+
+    method string IdleLine(string kind)
+        -- 자기 의뢰 차례가 아닐 때 의뢰인 NPC의 한마디
+        if kind == "scholar" then return "사원의 비밀은 아직 모래 아래 잠들어 있다. 길이 열리면 자네에게 부탁할 일이 생길 걸세." end
+        if kind == "apothecary" then return "사막에선 물 한 모금이 목숨이야. 다치면 서두르지 말고 물약부터 챙겨." end
+        return "할 이야기가 없다."
     end
 
     @ExecSpace("ClientOnly")
@@ -306,7 +350,11 @@ script NpcWindow extends Logic
         self.RenderKey = key
         local q = _QuestData:Get(quest.Index)
         local body = ""
-        if q == nil then
+        if self.NpcKind ~= "quest" and (q == nil or q.giver ~= self.NpcKind) then
+            body = self:IdleLine(self.NpcKind)
+            self.PageCount = 1
+            self:SetButtons({ "", "", "", "", "닫기" })
+        elseif q == nil then
             body = "여왕의 저주가 걷혔다... 하지만 혼각은 더 깊은 곳에서 울리고 있다."
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
@@ -378,7 +426,21 @@ script NpcWindow extends Logic
             end
             return
         end
-        if self.Kind ~= "quest" then return end
+        if self.Kind == "caravan" then
+            if index == 5 then self:Dismiss() return end
+            if index == 4 then
+                ---@type PlayerTravel
+                local travel = _UIKit:Comp("script.PlayerTravel")
+                local target = self:CaravanTarget()
+                self:Dismiss()
+                if travel ~= nil and target > 0 then travel:RequestActTravel(target) end
+            end
+            return
+        end
+        if self.Kind ~= "quest" then
+            if index == 5 then self:Dismiss() end
+            return
+        end
         if index == 5 then
             self:Dismiss()
             return

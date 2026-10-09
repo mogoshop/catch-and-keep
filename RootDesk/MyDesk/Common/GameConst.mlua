@@ -174,7 +174,34 @@ script GameConst extends Logic
     end
 
     method boolean IsTown(Entity map)
-        return isvalid(map) and string.sub(map.Name, 1, string.len(self.MapTown)) == self.MapTown
+        -- 액트마다 마을이 있다 (잿불 야영지 · 오아시스 시장) — maps.csv kind = town
+        return isvalid(map) and self:IsTownName(map.Name)
+    end
+
+    method boolean IsTownName(string mapName)
+        local info = _GameData:GetMapInfo(self:BaseMapName(mapName))
+        return info ~= nil and info.kind == "town"
+    end
+
+    method integer ActOfMap(string mapName)
+        -- 맵이 속한 액트 (maps.csv act, 없으면 1)
+        local info = _GameData:GetMapInfo(self:BaseMapName(mapName))
+        if info == nil or info.act == nil then return 1 end
+        return math.floor(info.act)
+    end
+
+    method string TownOfAct(integer act)
+        -- 그 액트의 마을 (보통 맵 이름). 없으면 액트 1 마을
+        for id, info in pairs(_GameData.MapInfo) do
+            if info.kind == "town" and math.floor(info.act or 1) == act then return id end
+        end
+        return self.MapTown
+    end
+
+    method string ActTownName(integer act)
+        -- 화면 표시용 마을 이름 (잿불 야영지 / 오아시스 시장)
+        local info = _GameData:GetMapInfo(self:TownOfAct(act))
+        return info ~= nil and info.name or "마을"
     end
 
     method string DifficultyName(integer difficulty)

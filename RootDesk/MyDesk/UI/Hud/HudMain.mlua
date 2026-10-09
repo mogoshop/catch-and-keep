@@ -339,12 +339,12 @@ script HudMain extends Logic
         if q == nil then
             badge, title, caption, goal = "완료", "모든 의뢰 완료", "심도 던전·높은 난이도", "새로운 도전을 찾아보세요"
         elseif quest.State == 0 then
-            badge, title, caption, goal = "새 의뢰", q.title, "잿불 야영지", _QuestData:GiverName(q.giver) .. "에게 말을 거세요"
+            badge, title, caption, goal = "새 의뢰", q.title, _GameConst:ActTownName(q.act), _QuestData:GiverName(q.giver) .. "에게 말을 거세요"
         elseif quest.State == 1 then
             badge, title, caption = "의뢰 " .. tostring(quest.Index) .. "/" .. tostring(total), q.title, q.zone
             goal = self:QuestGoalText(q, quest)
         else
-            badge, title, caption, goal = "보고", q.title, "잿불 야영지", _QuestData:GiverName(q.giver) .. "에게 보고하세요"
+            badge, title, caption, goal = "보고", q.title, _GameConst:ActTownName(q.act), _QuestData:GiverName(q.giver) .. "에게 보고하세요"
         end
         _UIKit:SetText("QuestTrack/Badge/Text", badge)
         _UIKit:SetText("QuestTrack/Title", _UIKit:Clip(title, 16))
@@ -398,7 +398,16 @@ script HudMain extends Logic
         local cur = _QuestData:Get(quest.Index)
         local giver = cur ~= nil and _QuestData:GiverName(cur.giver) or "사제 오렌"
         if quest.State == 2 then
-            return inTown and ("목표 달성 — " .. giver .. "에게 보고하고 보상을 받으세요") or ("목표 달성 — 잿불 야영지로 돌아가 " .. giver .. "에게 보고하세요")
+            return inTown and ("목표 달성 — " .. giver .. "에게 보고하고 보상을 받으세요") or ("목표 달성 — " .. _GameConst:ActTownName(cur ~= nil and cur.act or 1) .. "(으)로 돌아가 " .. giver .. "에게 보고하세요")
+        end
+        -- 액트 2 첫 의뢰: 카라반 대장에게 (액트 1 마을에서는 오아시스 시장으로 가는 길부터)
+        if cur ~= nil and cur.act == 2 and quest.Index == _QuestData:LastOfAct(1) + 1 and quest.State == 0 then
+            ---@type PlayerTravel
+            local travel = player:GetComponent("script.PlayerTravel")
+            if travel ~= nil and travel.Act == 1 then
+                return inTown and "카라반 대장 무하드에게 말을 걸어 오아시스 시장으로 — 액트 2 「모래 폐허」가 열렸습니다" or "잿불 야영지의 카라반 대장 무하드에게 — 액트 2가 열렸습니다"
+            end
+            return "오아시스 시장의 카라반 대장 무하드에게 의뢰를 받으세요"
         end
         if quest.Index == 1 then
             if quest.State == 0 then

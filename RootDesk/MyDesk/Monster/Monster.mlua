@@ -137,9 +137,14 @@ script Monster extends Component
     end
 
     method number GetDamageTakenMultiplier()
+        -- 상태 이상(저주 등) × 모래 망령 반투명(-50%)
+        local m = 1
         local status = self:Status()
-        if status == nil then return 1 end
-        return status:TakenMult()
+        if status ~= nil then m = status:TakenMult() end
+        ---@type MonsterBehavior
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil and behavior.Phased then m = m * 0.5 end
+        return m
     end
 
     method number GetDamageDealtMultiplier()

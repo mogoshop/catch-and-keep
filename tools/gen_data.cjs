@@ -89,7 +89,7 @@ function genGameData() {
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {
       const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
-      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, w = ${n(m.w)}, h = ${n(m.h)}, features = { ${feats} } }`;
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",
     ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),
@@ -275,8 +275,11 @@ function genSkills() {
 // ── QuestData ──
 function genQuests() {
   const rows = load("quests");
+  const givers = load("npcs").filter((x) => rows.some((r) => r.giver === x.kind));
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`)].join("\n");
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
+    "        self.Givers = {}",
+    ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
@@ -298,9 +301,19 @@ function genQuests() {
     end
 
     method string GiverName(string giver)
-        -- 의뢰인 NPC 종류 → 이름 (npcs.csv와 같은 이름)
-        if giver == "smith" then return "대장장이 하르크" end
-        return "사제 오렌"
+        -- 의뢰인 NPC 종류 → 이름 (npcs.csv의 name)
+        self:Ensure()
+        return self.Givers[giver] or giver
+    end
+
+    method integer LastOfAct(integer act)
+        -- 그 액트의 마지막 의뢰 번호 (액트 완료 = 이 의뢰까지 끝냄). 없으면 0
+        self:Ensure()
+        local last = 0
+        for i, q in ipairs(self.List) do
+            if q.act == act then last = i end
+        end
+        return last
     end
 
     method string RewardText(string reward)
@@ -321,7 +334,7 @@ function genQuests() {
         return table.concat(parts, ", ")
     end
 `;
-  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자)", body, extra, "    property table List = {}\n"));
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n"));
 }
 
 // ── NamedData: 곁가지 끝방의 이름 있는 적 · 봉인 상자 · 의식의 주인 ──
@@ -350,8 +363,9 @@ function genNamed() {
 // ── WaypointData ──
 function genWaypoints() {
   const rows = load("waypoints");
+  const actOf = Object.fromEntries(load("maps").map((m) => [m.id, num(m.act || 1)]));
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { id = ${s(r.id)}, name = ${s(r.name)}, map = ${s(r.map)}, x = ${n(r.x)}, y = ${n(r.y)} })`)].join("\n");
+    ...rows.map((r) => `        table.insert(self.List, { id = ${s(r.id)}, name = ${s(r.name)}, map = ${s(r.map)}, act = ${actOf[r.map] || 1}, x = ${n(r.x)}, y = ${n(r.y)} })`)].join("\n");
   const extra = `
     method any Get(string id)
         self:Ensure()
@@ -362,6 +376,14 @@ function genWaypoints() {
     method table GetList()
         self:Ensure()
         return self.List
+    end
+
+    method table ListOfAct(integer act)
+        -- 그 액트의 웨이포인트 (창의 액트 탭)
+        self:Ensure()
+        local out = {}
+        for _, w in ipairs(self.List) do if w.act == act then table.insert(out, w) end end
+        return out
     end
 `;
   write("WaypointData.mlua", "waypoints.csv", logic("WaypointData", "웨이포인트 목록 (보통 난이도 맵 기준. 난이도 맵은 _GameConst:MapFor)", body, extra, "    property table List = {}\n"));

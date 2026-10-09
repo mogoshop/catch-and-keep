@@ -1,6 +1,6 @@
 -- 웨이포인트 창: 문양 위(반경 1.5)에서 멈추면 열린다. B·대화 버튼으로 바로 열 수도 있다. 통과 중에는 입력을 가로채지 않는다.
 -- (클릭 이동의 목적지가 문양 안쪽에서 끝나지 않으면 '이동 중'이 남아 창이 영영 안 열리던 문제 — 실제 위치 변화와 전투만 본다)
--- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환.
+-- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환. 액트 탭(액트 1 · 액트 2): 열린 액트의 웨이포인트로 바로 이동 (D2).
 @Logic
 script WaypointWindow extends Logic
 
@@ -14,6 +14,7 @@ script WaypointWindow extends Logic
     property Vector2 LastPosition = Vector2(0, 0)
     property number QuietSince = 0
     property number OpenDelay = 0.4
+    property integer ViewAct = 1             -- 탭에서 보고 있는 액트 (창을 열 때 지금 액트로)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -28,6 +29,10 @@ script WaypointWindow extends Logic
         for i = 1, 6 do
             local index = i
             _UIKit:Connect(self.Win .. "/Wp" .. tostring(i), function() self:TravelTo(index) end)
+        end
+        for a = 1, 2 do
+            local act = a
+            _UIKit:Connect(self.Win .. "/Act" .. tostring(a), function() self:SelectAct(act) end)
         end
         for d = 0, 2 do
             local diff = d
@@ -98,7 +103,10 @@ script WaypointWindow extends Logic
             eligible = false
         end
         local open = eligible and (shown or now - self.QuietSince >= self.OpenDelay)
-        if open and not shown then _UIKit:Open(self.Win)
+        if open and not shown then
+            -- 열 때는 지금 액트의 탭부터
+            self.ViewAct = travel.Act
+            _UIKit:Open(self.Win)
         elseif not open then _UIKit:Close(self.Win) end
         self.WasOpen = open
         if not open then
@@ -108,10 +116,16 @@ script WaypointWindow extends Logic
         local quest = player:GetComponent("script.PlayerQuest")
         local goal = quest ~= nil and _HudMap:QuestMap(quest.Index, quest.State) or ""
         local recommended = _HudMap:RecommendedWaypoint(player.CurrentMap.Name, goal, travel)
-        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty) .. "#" .. player.CurrentMap.Id .. "#" .. recommended
+        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty) .. "#" .. player.CurrentMap.Id .. "#" .. recommended .. "#" .. tostring(self.ViewAct) .. "#" .. tostring(travel:ActUnlocked(2))
         if key == self.RenderKey then return end
         self.RenderKey = key
-        local list = _WaypointData:GetList()
+        local list = _WaypointData:ListOfAct(self.ViewAct)
+        for a = 1, 2 do
+            local label = "액트 " .. tostring(a)
+            if a == self.ViewAct then label = "▶" .. label
+            elseif not travel:ActUnlocked(a) then label = _UIKit:Colored("#666666", label .. " (잠김)") end
+            _UIKit:SetText(self.Win .. "/Act" .. tostring(a), label)
+        end
         for i = 1, 6 do
             local w = list[i]
             local text = ""
@@ -140,6 +154,8 @@ script WaypointWindow extends Logic
         self.QuietSince = _UtilLogic.ElapsedSeconds - self.OpenDelay
         self.LastPosition = _Util:Pos2(player)
         self.RenderKey = ""
+        local travel = self:Travel()
+        if travel ~= nil then self.ViewAct = travel.Act end
         _UIKit:Open(self.Win)
         self.WasOpen = true
         self:Poll()
@@ -147,8 +163,22 @@ script WaypointWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SelectAct(integer act)
+        -- 액트 탭: 열린 액트만 (잠긴 액트는 이유 안내)
+        local travel = self:Travel()
+        if travel == nil then return end
+        if not travel:ActUnlocked(act) then
+            _UXFeedback:Show("액트 " .. tostring(act) .. " 잠김", "묘지기 여왕을 쓰러뜨리고 사제 오렌에게 알리면 열립니다", _GameData:GetUiIcon("icon_waypoint"))
+            return
+        end
+        self.ViewAct = act
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
     method void TravelTo(integer index)
-        local w = _WaypointData:GetList()[index]
+        local w = _WaypointData:ListOfAct(self.ViewAct)[index]
         local travel = self:Travel()
         if w ~= nil and travel ~= nil then travel:RequestTravel(w.id) end
     end

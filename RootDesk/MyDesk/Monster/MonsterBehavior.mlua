@@ -3,6 +3,7 @@
 --   "burrow" : 플레이어가 가까이 올 때까지 땅속에 숨어 있다(희미하게 보이고 맞지 않음). 오래 혼자면 다시 숨는다 (무덤 구더기)
 --   "coward" : 근처 같은 종족이 죽으면 잠시 흩어져 달아났다가 다시 덤빈다 (D2 폴른 — 타락 꼬마악마)
 --   "ranged" : 사거리 끝에 멈춰 쏘고, 너무 가까우면 물러선다 (D2 다크 레인저 — 광신 궁수)
+--   "phase"  : 주기적으로 반투명해져 받는 피해 -50% (모래 망령). 반투명 PhaseSeconds · 실체 SolidSeconds
 -- 이동은 AIChase가 맡고, 이 컴포넌트는 AIChase를 잠시 끄고 직접 움직인다.
 @Component
 script MonsterBehavior extends Component
@@ -26,6 +27,12 @@ script MonsterBehavior extends Component
 
     @Sync
     property boolean Burrowed = false
+    @Sync
+    property boolean Phased = false          -- phase: 반투명 (받는 피해 -50%)
+    property number PhaseSeconds = 2.5
+    property number SolidSeconds = 4.5
+    property number PhaseNextAt = 0
+    property number AppliedAlpha = 1
     property number RetreatUntil = 0
     property Vector2 RetreatDir = Vector2(0, 0)
     property number LonelySince = 0
@@ -88,6 +95,10 @@ script MonsterBehavior extends Component
             end
             return
         end
+        if self.Mode == "phase" then
+            self:PhaseTick(now)
+            return
+        end
         if self.Mode == "burrow" and not self.Burrowed then
             self:ResumeMovement()
         end
@@ -110,6 +121,15 @@ script MonsterBehavior extends Component
         else
             self.LonelySince = 0
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PhaseTick(number now)
+        -- 모래 망령: 실체 ↔ 반투명을 번갈아 (반투명 동안 받는 피해 -50%, Monster.GetDamageTakenMultiplier)
+        if self.PhaseNextAt <= 0 then self.PhaseNextAt = now + self.SolidSeconds * (0.5 + _UtilLogic:RandomDouble()) end
+        if now < self.PhaseNextAt then return end
+        self.Phased = not self.Phased
+        self.PhaseNextAt = now + (self.Phased and self.PhaseSeconds or self.SolidSeconds)
     end
 
     @ExecSpace("ServerOnly")
@@ -285,6 +305,8 @@ script MonsterBehavior extends Component
         self.CheckTimer = 0
         self.RangeTarget = nil
         if self.Mode == "burrow" then self:SetBurrowed(true) end
+        self.Phased = false
+        self.PhaseNextAt = 0
     end
 
     @ExecSpace("Multicast")
@@ -298,13 +320,16 @@ script MonsterBehavior extends Component
 
     @ExecSpace("ClientOnly")
     method void ClientTick()
-        -- 숨은 동안 거의 보이지 않게
-        if self.AppliedBurrow == self.Burrowed then return end
-        self.AppliedBurrow = self.Burrowed
+        -- 숨은 동안 거의 보이지 않게, 모래 망령은 반투명 동안 흐릿하게
+        -- (색조 갱신이 알파를 1로 되돌려도 다시 맞춘다 — 실제 스프라이트 알파와 비교)
+        local alpha = self.Burrowed and 0.12 or (self.Phased and 0.35 or 1)
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) then return end
         local c = sprite.Color
-        sprite.Color = Color(c.r, c.g, c.b, self.Burrowed and 0.12 or 1)
+        if math.abs(c.a - alpha) < 0.01 then return end
+        self.AppliedAlpha = alpha
+        self.AppliedBurrow = self.Burrowed
+        sprite.Color = Color(c.r, c.g, c.b, alpha)
     end
 
 end
