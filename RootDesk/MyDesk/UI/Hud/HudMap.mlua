@@ -9,6 +9,7 @@ script HudMap extends Logic
     property integer TimerId = 0
     property string LastMap = ""
     property number BannerUntil = 0
+    property number MiniRadius = 96          -- 264px 테두리의 투명 반경 약111px에서 표식 여백 확보
     property number Scale = 1
     property Vector2 QuestPos = Vector2(0, 0)
     property boolean HasQuestNpc = false
@@ -81,8 +82,8 @@ script HudMap extends Logic
         local moved = me - self.LastMePos
         if moved:Magnitude() > 0.03 then
             local arrow = _UIKit:Get("MiniMap/Body/Area/Me")
-            -- 그림이 아래(-90°)를 보므로 +90°를 더해 움직인 방향으로 돌린다
-            if isvalid(arrow) then arrow.UITransformComponent.UIRotation = Vector3(0, 0, math.deg(math.atan(moved.y, moved.x)) + 90) end
+            -- 새 그림이 위(+90°)를 보므로 -90°를 더해 움직인 방향으로 돌린다
+            if isvalid(arrow) then arrow.UITransformComponent.UIRotation = Vector3(0, 0, math.deg(math.atan(moved.y, moved.x)) - 90) end
         end
         self.LastMePos = me
         self:RenderParty(player)
@@ -127,7 +128,7 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void BuildMiniMap(any info)
-        -- 미니맵 영역(272×180)에 맵 전체가 들어가게 축소. 표시물 점 색: 포털 하늘·웨이포인트 청록·의뢰 노랑·NPC 흰·입구 보라·제단 빨강·보스 주황
+        -- 원형 미니맵 안에 맵 전체가 들어가게 축소. 표시물 점 색: 포털 하늘·웨이포인트 청록·의뢰 노랑·NPC 흰·입구 보라·제단 빨강·보스 주황
         self.HasQuestNpc = false
         self.Gates = {}
         self.Features = {}
@@ -149,6 +150,7 @@ script HudMap extends Logic
                 local path = "MiniMap/Body/Area/F" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
                 _UIKit:SetPos(path, self:ToMini(Vector2(f.x, f.y)))
+                _UIKit:SetIcon(path, _GameData:GetUiIcon(f.kind == "portal" and "minimap_exit" or "dot"))
                 _UIKit:SetColor(path, self:FeatureColor(f.kind))
                 _UIKit:SetText(path .. "/Label", self:FeatureLabel(f))
             end
@@ -265,7 +267,7 @@ script HudMap extends Logic
         if tiles == nil then return end
         -- 실제 타일 목록의 양끝을 포함해 CSV 크기 밖 지형과 최상단도 누락하지 않는다.
         self.MapCenter = Vector2(0, 0)
-        self.Scale = math.min(272 / math.max(1, info.w), 156 / math.max(1, info.h))
+        self.Scale = self:FitMiniScale(info.w, info.h)
         local positions = tiles:GetAllTilePositions()
         local low = nil
         local high = nil
@@ -279,7 +281,7 @@ script HudMap extends Logic
         local a = tiles:ToWorldPosition(low)
         local z = tiles:ToWorldPosition(high)
         self.MapCenter = Vector2((a.x + z.x) / 2, (a.y + z.y) / 2)
-        self.Scale = math.min(272 / math.max(1, (high.x - low.x + 1) * grid.x), 156 / math.max(1, (high.y - low.y + 1) * grid.y))
+        self.Scale = self:FitMiniScale((high.x - low.x + 1) * grid.x, (high.y - low.y + 1) * grid.y)
         local rects = {}
         local active = {}
         for y = low.y, high.y do
@@ -322,10 +324,22 @@ script HudMap extends Logic
         end
     end
 
+    method number FitMiniScale(number width, number height)
+        -- 지도 사각형의 네 모서리까지 원 안에 들어오도록 대각선 길이로 균일 축소한다.
+        width = math.max(1, width)
+        height = math.max(1, height)
+        return self.MiniRadius * 2 / math.sqrt(width * width + height * height)
+    end
+
     method Vector2 ToMini(Vector2 world)
-        -- 맵 좌표(타일 = 1) → 미니맵 영역 안 좌표 (가장자리에서 잘림)
-        local x = math.max(-140, math.min(140, (world.x - self.MapCenter.x) * self.Scale))
-        local y = math.max(-82, math.min(82, (world.y - self.MapCenter.y) * self.Scale))
+        -- 원 밖으로 생성되는 임시 포털도 같은 방향의 원 가장자리에서 찾을 수 있다.
+        local x = (world.x - self.MapCenter.x) * self.Scale
+        local y = (world.y - self.MapCenter.y) * self.Scale
+        local distance = math.sqrt(x * x + y * y)
+        if distance > self.MiniRadius then
+            x = x * self.MiniRadius / distance
+            y = y * self.MiniRadius / distance
+        end
         return Vector2(x, y)
     end
 
@@ -369,17 +383,17 @@ script HudMap extends Logic
                 t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
                 t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
                 t.anchoredPosition = mobile and Vector2(24, -180) or Vector2(-24, -150)
-                t.RectSize = Vector2(344, self.Expanded and 436 or 104)
+                t.RectSize = Vector2(344, self.Expanded and 488 or 104)
             end
             if isvalid(track) then
                 local t = track.UITransformComponent
                 t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
                 t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
-                t.anchoredPosition = mobile and Vector2(24, self.Expanded and -628 or -296) or Vector2(-24, self.Expanded and -606 or -270)
+                t.anchoredPosition = mobile and Vector2(24, self.Expanded and -680 or -296) or Vector2(-24, self.Expanded and -658 or -270)
             end
             -- 모바일 일지 버튼은 의뢰 추적 오른쪽에 나란히 (세로로 쌓으면 조이스틱 자리까지 내려온다)
             local journal = _UIKit:Get("JournalOpen")
-            if isvalid(journal) and mobile then journal.UITransformComponent.anchoredPosition = Vector2(456, self.Expanded and -628 or -296) end
+            if isvalid(journal) and mobile then journal.UITransformComponent.anchoredPosition = Vector2(456, self.Expanded and -680 or -296) end
             _UIKit:SetText("MiniMap/Toggle/Hint", self.Expanded and "−" or "+")
         end
         _UIKit:SetEnabled("MiniMap", not _UIKit:AnyWindowOpen())
