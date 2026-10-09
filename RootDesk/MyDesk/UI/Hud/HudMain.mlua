@@ -38,6 +38,7 @@ script HudMain extends Logic
         _UIKit:Connect("Bottom/Menu/BtnRank", function() _RankWindow:Show("depth") end)
         _UIKit:Connect("Bottom/Menu/BtnExtract", function() self:Extract() end)
         _UIKit:Connect("Bottom/Menu/BtnPortal", function() self:TownPortal() end)
+        self:CompactMenuRow()
         _UIKit:Connect("MenuWin/Shadow", function() self:FromMenu("") _ShadowHUD:ToggleWindow() end)
         _UIKit:Connect("MenuWin/Rank", function() self:FromMenu("") _RankWindow:Show("depth") end)
         _UIKit:Connect("MenuWin/Portal", function() self:FromMenu("") self:TownPortal() end)
@@ -354,6 +355,18 @@ script HudMain extends Logic
     end
 
     -- ───────── 동작 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void CompactMenuRow()
+        -- 하단 메뉴 아이콘 줄이 캐릭터 바로 아래 전투 공간(적·출구)을 가렸다. 78%로 줄이고 아래 단축칸 쪽에 붙인다.
+        local row = _UIKit:Get("Bottom/Menu")
+        if not isvalid(row) then return end
+        local t = row.UITransformComponent
+        local scale = 0.78
+        local bottomGap = t.anchoredPosition.y - t.RectSize.y   -- 원래 아래 끝과 단축칸 사이 간격 (위쪽 기준 피벗)
+        t.UIScale = Vector3(scale, scale, 1)
+        t.anchoredPosition = Vector2(t.anchoredPosition.x, bottomGap + t.RectSize.y * scale)
+    end
 
     @ExecSpace("ClientOnly")
     method void UsePotion(string kind)

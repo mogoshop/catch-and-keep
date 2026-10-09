@@ -88,7 +88,8 @@ script DarkVision extends Logic
         -- 살아 있는 같은 맵의 보스만 읽기 보조 대상이다. 일반 몬스터의 어둠 연출은 유지한다.
         if not isvalid(e) or not e.Enable or e.CurrentMap ~= map then return false end
         local monster = e:GetComponent("script.Monster")
-        return monster ~= nil and monster.Grade >= 3 and not monster.IsDead and monster.Hp > 0
+        -- 최상위 보스와 고유 이름 보스(해골 지휘관·처형인 등) 모두 몸체·예고를 읽을 수 있게 한다.
+        return monster ~= nil and (monster.Grade >= 3 or monster.Unique) and not monster.IsDead and monster.Hp > 0
             and (_Util:Pos2(e) - _Util:Pos2(player)):Magnitude() <= range
     end
 
@@ -117,10 +118,10 @@ script DarkVision extends Logic
         self.Active = true
         _OverlayLightService:SetOverlayLightEnabled(true)
         -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
-        local ambient = math.max(amb.Ambient, 0.20)
+        local ambient = math.max(amb.Ambient, _GameData.darkMinAmbient)
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, amb.AmbientColor, ambient))
-        local r = math.max(amb.PlayerLightRadius, 4.8)
-        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.5, r)
+        local r = math.max(amb.PlayerLightRadius, _GameData.darkMinLightRadius)
+        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.6, r)
         if amb.DisplayName ~= "" then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
         log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f", map.Name, ambient, r))
     end
