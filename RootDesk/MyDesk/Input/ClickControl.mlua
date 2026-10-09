@@ -49,16 +49,44 @@ script ClickControl extends Component
 
     @ExecSpace("ClientOnly")
     method boolean IsActive()
-        -- 내 캐릭터 + PC + 마우스 모드일 때만
+        -- 내 캐릭터 + PC 마우스 모드. 모바일은 몬스터·혼을 터치해 다가가는 동안만 (바닥 이동은 조이스틱)
         if self.Entity ~= _UserService.LocalPlayer then return false end
-        if not self.MouseMode then return false end
-        return Environment:IsPCPlatform()
+        if not Environment:IsPCPlatform() then return isvalid(self.AttackTarget) or isvalid(self.ExtractTarget) end
+        return self.MouseMode
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MobileTap(Vector2 screenPoint)
+        -- 모바일 수동 조준: 터치한 몬스터를 대상으로 골라 다가가 친다. 적이 없는 곳의 내 혼이면 걸어가 추출한다.
+        local world = _UILogic:ScreenToWorldPosition(screenPoint)
+        -- 손가락은 마우스보다 덜 정확해서 판정 반경을 넓힌다
+        local nearest = _Util:NearestMonster(self.Entity.CurrentMap, Vector2(world.x, world.y - 0.25), self.PickRadius * 1.5)
+        local monster = nearest ~= nil and nearest.Entity or nil
+        if monster ~= nil then
+            self.ExtractTarget = nil
+            self.HasDestination = false
+            self.SlideCount = 0
+            self.StuckTime = 0
+            self:SelectAttackTarget(monster)
+            return
+        end
+        local extractor = self:Extractor()
+        local soul = extractor ~= nil and extractor:FindNearestSoul(Vector2(world.x, world.y - 0.25), self.PickRadius) or nil
+        if soul ~= nil then
+            self:SelectAttackTarget(nil)
+            self.ExtractTarget = soul
+        end
     end
 
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleScreenTouchEvent(ScreenTouchEvent event)
         -- 클릭한 순간: 대상/목적지 지정 + 클릭 표시
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if not Environment:IsPCPlatform() then
+            if not _InputService:IsPointerOverUI() and not _UIKit:AnyWindowOpen() and _Util:IsAlive(self.Entity) then self:MobileTap(event.TouchPoint) end
+            return
+        end
         if event.TouchId ~= 1 or not self:IsActive() then return end
         if _InputService:IsPointerOverUI() or _UIKit:AnyWindowOpen() then return end
         if self:IsStationaryAttack() then

@@ -27,6 +27,7 @@ script HudMap extends Logic
     property number NextFeatureRefresh = 0
     property number FeatureRefreshInterval = 1.2   -- 늦게 생기는 포털·파티 표시 반영 (맵 전체 검색 5종이라 자주 돌리지 않는다)
     property number NextFocusAt = 0
+    property number CombatUntil = 0            -- 모바일 전투 중 의뢰 추적 접기 (InMobileCombat)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -300,7 +301,20 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method boolean ShouldShowQuestTrack()
         -- 모바일에서 지도와 의뢰가 같은 손 영역을 겹쳐 차지하지 않게 한다.
-        return not _UIKit:AnyWindowOpen() and not (Environment:IsMobilePlatform() and self.Expanded)
+        if _UIKit:AnyWindowOpen() then return false end
+        if not Environment:IsMobilePlatform() then return true end
+        if self.Expanded then return false end
+        return not self:InMobileCombat()
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean InMobileCombat()
+        -- 모바일 작은 화면: 근처(4.5칸)에 적이 있으면 의뢰 추적·일지 버튼을 접어 시야를 넓힌다. 전투가 끝나고 2초 뒤 다시 보인다.
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return false end
+        local now = _UtilLogic.ElapsedSeconds
+        if _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 4.5) ~= nil then self.CombatUntil = now + 2 end
+        return now < self.CombatUntil
     end
 
     @ExecSpace("ClientOnly")
