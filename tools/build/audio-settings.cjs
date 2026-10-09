@@ -9,7 +9,7 @@ function run() {
   b.empty("Modal/SafeArea", { anchor: "stretch" });
   const w = "Modal/SafeArea/Panel";
   b.panel(w, { rect_size: [960, 800], color: "#100E16", raycast: true });
-  b.sprite(w + "/Rim", { rect_size: [980, 820], image_ruid: icons.win_frame, color: "#FFFFFF" });
+  b.sprite(w + "/Rim", { rect_size: [1000, 840], image_ruid: icons.win_frame, color: "#FFFFFF" });
   b.text(w + "/Title", "환경 설정", { anchor: "top-center", pos: [0, -26], rect_size: [600, 58], size: 28, bold: true, color: "#E6C88A" });
   b.text(w + "/Help", "소리는 즉시 바뀌며, 설정은 자동으로 저장됩니다", { anchor: "top-center", pos: [0, -96], rect_size: [840, 44], size: 26, color: "#D8CFBC" });
   const button = (name, text, pos, size) => b.button(w + "/" + name, text, { pos, rect_size: size, image_ruid: icons.btn_frame, bg_color: "#FFFFFF", color: "#E6DCC6", font_size: 28 });

@@ -185,7 +185,7 @@ script ItemData extends Logic
             local piece = self:PickSetPiece(ilvl)
             if piece ~= nil then
                 local item = { base = piece.base, rarity = 4, ilvl = ilvl, name = piece.name, mods = {}, sockets = 0, runes = {} }
-                self:AddMods(item.mods, piece.mods)
+                self:AddModsRolled(item.mods, piece.mods)
                 return self:Serialize(item)
             end
             rarity = 2
@@ -227,7 +227,7 @@ script ItemData extends Logic
                 local a = self:PickAffix(pass == 1, base.slot, ilvl, used)
                 if a ~= nil then
                     used[a.stat .. tostring(a.prefix)] = true
-                    item.mods[a.stat] = (item.mods[a.stat] or 0) + _UtilLogic:RandomIntegerRange(a.min, a.max)
+                    item.mods[a.stat] = (item.mods[a.stat] or 0) + self:RollAffix(a, ilvl)
                     if pass == 1 and pName == "" then pName = a.name end
                     if pass == 2 and sName == "" then sName = a.name end
                 end
@@ -240,7 +240,7 @@ script ItemData extends Logic
             local a = self:PickAffix(tries % 2 == 1, base.slot, ilvl, used)
             if a == nil then a = self:PickAffix(tries % 2 == 1, "any", ilvl, used) end
             if a ~= nil then
-                item.mods[a.stat] = _UtilLogic:RandomIntegerRange(a.min, a.max)
+                item.mods[a.stat] = self:RollAffix(a, ilvl)
                 if a.prefix and pName == "" then pName = a.name elseif not a.prefix and sName == "" then sName = a.name end
             end
         end
@@ -269,9 +269,53 @@ script ItemData extends Logic
     end
 
     method string MakeUnique(table u, integer ilvl)
+        -- 유니크 수치는 표기 × gearMult의 uniqueRollMin~100% 사이에서 무작위 (같은 유니크도 좋고 나쁜 것이 있다)
         local item = { base = u.base, rarity = 3, ilvl = ilvl, name = u.name, mods = {}, sockets = 0, runes = {} }
-        self:AddMods(item.mods, u.mods)
+        self:AddModsRolled(item.mods, u.mods)
         return self:Serialize(item)
+    end
+
+    method number GearTier(integer ilvl)
+        -- D2처럼 난이도(아이템 레벨)마다 무작위 옵션 최대치가 다르다: 보통(≤30) · 악몽(≤60) · 지옥
+        if ilvl <= 30 then return _GameData.gearTierNormal end
+        if ilvl <= 60 then return _GameData.gearTierNightmare end
+        return 1
+    end
+
+    method boolean IsCountStat(string key)
+        -- 개수형 보너스(그림자 상한·배치 한도)는 줄이지 않는다
+        return key == "shadowCap" or key == "deploy"
+    end
+
+    method integer RollAffix(any a, integer ilvl)
+        -- 접사 값: [min, max] × gearMult × 난이도 상한 사이 무작위 (상한이 낮으면 같은 접사도 9·12·15처럼 제각각)
+        local scale = _GameData.gearMult * self:GearTier(ilvl)
+        local lo = math.max(1, math.floor(a.min * scale))
+        local hi = math.max(lo, math.floor(a.max * scale + 0.5))
+        return _UtilLogic:RandomIntegerRange(lo, hi)
+    end
+
+    method void AddModsRolled(table total, string mods)
+        -- 유니크·세트 조각: 표기 × gearMult × (uniqueRollMin~1) 무작위, 개수형은 그대로
+        for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do
+            local value = tonumber(v)
+            if not self:IsCountStat(k) then
+                local roll = _GameData.uniqueRollMin + (1 - _GameData.uniqueRollMin) * _UtilLogic:RandomDouble()
+                value = math.max(1, math.floor(value * _GameData.gearMult * roll + 0.5))
+            end
+            total[k] = (total[k] or 0) + value
+        end
+    end
+
+    method string ScaleMods(string mods)
+        -- 세트 효과 표기를 gearMult로 줄인 문자열 (실제 적용과 설명이 같은 값을 쓴다)
+        local parts = {}
+        for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do
+            local value = tonumber(v)
+            if not self:IsCountStat(k) then value = math.max(1, math.floor(value * _GameData.gearMult + 0.5)) end
+            table.insert(parts, k .. "=" .. tostring(math.floor(value)))
+        end
+        return table.concat(parts, ",")
     end
 
     method any PickSetPiece(integer ilvl)
@@ -296,9 +340,9 @@ script ItemData extends Logic
         local total = {}
         local set = self:T().Sets[setId]
         if set == nil then return total end
-        if count >= 2 then self:AddMods(total, set.bonus2) end
-        if count >= 3 then self:AddMods(total, set.bonus3) end
-        if count >= set.pieces then self:AddMods(total, set.full) end
+        if count >= 2 then self:AddMods(total, self:ScaleMods(set.bonus2)) end
+        if count >= 3 then self:AddMods(total, self:ScaleMods(set.bonus3)) end
+        if count >= set.pieces then self:AddMods(total, self:ScaleMods(set.full)) end
         return total
     end
 
@@ -472,9 +516,9 @@ script ItemData extends Logic
             end
         end
         table.insert(lines, "<color=" .. (count >= 1 and on or off) .. ">1부위: 각 장비 자체 옵션</color>")
-        if set.bonus2 ~= "" then table.insert(lines, "<color=" .. (count >= 2 and on or off) .. ">2부위: " .. self:ModsText(set.bonus2) .. "</color>") end
-        if set.bonus3 ~= "" and set.pieces > 3 then table.insert(lines, "<color=" .. (count >= 3 and on or off) .. ">3부위: " .. self:ModsText(set.bonus3) .. "</color>") end
-        table.insert(lines, "<color=" .. (count >= set.pieces and on or off) .. ">" .. tostring(set.pieces) .. "부위(완성): " .. self:ModsText(set.full) .. "</color>")
+        if set.bonus2 ~= "" then table.insert(lines, "<color=" .. (count >= 2 and on or off) .. ">2부위: " .. self:ModsText(self:ScaleMods(set.bonus2)) .. "</color>") end
+        if set.bonus3 ~= "" and set.pieces > 3 then table.insert(lines, "<color=" .. (count >= 3 and on or off) .. ">3부위: " .. self:ModsText(self:ScaleMods(set.bonus3)) .. "</color>") end
+        table.insert(lines, "<color=" .. (count >= set.pieces and on or off) .. ">" .. tostring(set.pieces) .. "부위(완성): " .. self:ModsText(self:ScaleMods(set.full)) .. "</color>")
         return table.concat(lines, "\n")
     end
 
@@ -501,9 +545,9 @@ script ItemData extends Logic
             local set = self:T().Sets[piece.set]
             if set ~= nil then
                 text = text .. "\n<color=#3CDC3C>세트 「" .. set.name .. "」 " .. tostring(set.pieces) .. "부위</color>"
-                if set.bonus2 ~= "" then text = text .. "  2: " .. self:ModsText(set.bonus2) end
-                if set.bonus3 ~= "" then text = text .. "  3: " .. self:ModsText(set.bonus3) end
-                text = text .. "  전체: " .. self:ModsText(set.full)
+                if set.bonus2 ~= "" then text = text .. "  2: " .. self:ModsText(self:ScaleMods(set.bonus2)) end
+                if set.bonus3 ~= "" then text = text .. "  3: " .. self:ModsText(self:ScaleMods(set.bonus3)) end
+                text = text .. "  전체: " .. self:ModsText(self:ScaleMods(set.full))
             end
         end
         return text

@@ -175,8 +175,8 @@ script PlayerStats extends Component
     method void Recalculate(boolean fill)
         -- 최대 생명·마나 = 기본 + 레벨 + 능력치 + 장비. fill이면 가득, 아니면 비율 유지
         local pc = self.Entity.PlayerComponent
-        local maxHp = math.floor(_GameData.playerBaseHp + (self.Level - 1) * _GameData.playerHpPerLevel + (self.Vit + self.BonusVit - 15) * 3 + self.BonusLife)
-        local maxMana = 25 + (self.Level - 1) * 2 + (self.Ene + self.BonusEne - 25) * 2 + self.BonusMana
+        local maxHp = math.floor(_GameData.playerBaseHp + (self.Level - 1) * _GameData.playerHpPerLevel + (self.Vit + self.BonusVit - 15) * _GameData.vitLife + self.BonusLife)
+        local maxMana = 25 + (self.Level - 1) * 2 + (self.Ene + self.BonusEne - 25) * _GameData.eneMana + self.BonusMana
         local hpRatio = 1
         if pc.MaxHp > 0 then hpRatio = pc.Hp / pc.MaxHp end
         local manaRatio = 1
@@ -266,7 +266,7 @@ script PlayerStats extends Component
 
     method number GetAttackInterval(number base)
         -- 공격 속도(장갑·무기)만큼 기본 공격 간격이 짧아진다 (상한 iasCap)
-        return base / (1 + math.min(self.BonusIas, _GameData.iasCap) / 100)
+        return base / (1 + self:GetIas() / 100)
     end
 
     method number GetCastCooldownMult()
@@ -326,13 +326,23 @@ script PlayerStats extends Component
     -- ───────── 피해 계산 보조 ─────────
 
     method number GetMeleeDamage(number baseDamage)
-        -- (기본 + 장비 추가) × (1 + 힘/100 + 장비 %)
-        return (baseDamage + self.BonusDamage) * (1 + (self.Str + self.BonusStr) / 100 + self.BonusDamagePct / 100)
+        -- (기본 + 장비 추가) × (1 + 힘 × strDmgPct/100 + 장비 %)
+        return (baseDamage + self.BonusDamage) * (1 + (self.Str + self.BonusStr) * _GameData.strDmgPct / 100 + self.BonusDamagePct / 100)
     end
 
     method number GetSpellPowerPct()
-        -- 혼술 피해 보너스: 정신 1당 1% + 장비 피해 %
-        return self.Ene + self.BonusEne + self.BonusDamagePct
+        -- 혼술 피해 보너스: 정신 1당 eneSpellPct% + 장비 피해 %
+        return (self.Ene + self.BonusEne) * _GameData.eneSpellPct + self.BonusDamagePct
+    end
+
+    method number GetDefense()
+        -- 방어 = 장비 + 민첩/dexPerDefense (D2 규칙). 물리 피해 감소 = 100/(100+방어)
+        return self.BonusDefense + math.floor((self.Dex + self.BonusDex) / _GameData.dexPerDefense)
+    end
+
+    method number GetIas()
+        -- 공격 속도 % = 장비 + 민첩 × dexIasPct (상한 iasCap)
+        return math.min(_GameData.iasCap, self.BonusIas + (self.Dex + self.BonusDex) * _GameData.dexIasPct)
     end
 
     method number GetBasicCriticalChancePct()

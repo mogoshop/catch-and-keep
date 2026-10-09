@@ -102,7 +102,7 @@ script SkillBook extends Component
             local keys = { "A", "S", "D", "F", "우클릭" }
             hint = keys[slot] .. " 배정"
             if Environment:IsMobilePlatform() then hint = slot == 5 and "큰 버튼 배정" or (tostring(slot) .. "번 칸 배정") end
-        else hint = "슬롯 버튼으로 사용할 칸을 선택하세요" end
+        else hint = "스킬 창의 「스킬 편집」으로 칸에 넣으세요" end
         if id == "raise_skeleton" or id == "raise_mage" or id == "revive" then
             if level == 1 and slot > 0 then hint = hint .. " · 처치 후 혼에 사용"
             elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
@@ -121,14 +121,28 @@ script SkillBook extends Component
     end
 
     method number GetEffectPower(string id, integer level)
-        -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치와 강화 배율.
+        -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치. 피해·비율 효과는 skillPowerMult(10-09 30% 하향),
+        -- 지속 시간·개수·반경·배율형(정예 승격)은 그대로 둔다.
+        local raw = self:RawEffectPower(id, level)
+        local flat = { terror = true, confusion = true, lure = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true }
+        if flat[id] then return raw end
+        return math.floor(raw * _GameData.skillPowerMult * 10 + 0.5) / 10
+    end
+
+    method number GetCurseDuration(integer level)
+        -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 20.5초)
+        if level <= 0 then return 0 end
+        return 4 + 0.5 * math.min(level - 1, 4) + 1 * math.max(0, level - 5)
+    end
+
+    method number RawEffectPower(string id, integer level)
         if level <= 0 then return 0 end
         if id == "bone_shard" then return 10 + 6 * (level - 1) end
         if id == "poison_mist" then return 4 + 2 * level end
         if id == "corpse_blast" then return 30 + 12 * (level - 1) end
         if id == "soul_drain" then return 15 + 8 * level end
         if id == "bone_storm" then return 8 + 4 * level end
-        if id == "mark_weakness" then return 30 + 3 * level end
+        if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
         if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end
         if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
         local k = level - 1
@@ -192,15 +206,15 @@ script SkillBook extends Component
         if id == "revive" then return string.format("최대 %d기 · 능력치 ×%.2f · %g초", _UndeadSystem:ReviveCountFor(level), _UndeadSystem:GetReviveMultiplier(level), _GameData.reviveSeconds) end
         local power = self:GetEffectPower(id, level)
         if id == "elite_promote" then return string.format("그림자 1기 공격·생명 ×%.2f", power) end
-        if id == "mark_weakness" then return string.format("받는 피해 +%g%% · 8초", power) end
-        if id == "enfeeble" then return string.format("적 공격력 -%g%% · 8초", power) end
-        if id == "thorn_curse" then return string.format("적이 준 피해의 %g%% 반사 · 8초", power) end
+        if id == "mark_weakness" then return string.format("받는 피해 +%g%% · %g초", power, self:GetCurseDuration(level)) end
+        if id == "enfeeble" then return string.format("적 공격력 -%g%% · %g초", power, self:GetCurseDuration(level)) end
+        if id == "thorn_curse" then return string.format("적이 준 피해의 %g%% 반사 · %g초", power, self:GetCurseDuration(level)) end
         if id == "terror" then return string.format("%.1f초간 도주·공격 안 함 (보스 면역)", power) end
         if id == "confusion" then return string.format("%.1f초간 주변 몬스터 공격 (보스 면역)", power) end
-        if id == "life_tap" then return string.format("때린 피해의 %g%% 회복 · 8초", power) end
+        if id == "life_tap" then return string.format("때린 피해의 %g%% 회복 · %g초", power, self:GetCurseDuration(level)) end
         if id == "lure" then return string.format("반경 3 안 적을 끌어와 %.1f초 묶음", power) end
-        if id == "decay" then return string.format("이동 속도·공격력 -%g%% · 8초", power) end
-        if id == "resist_break" then return string.format("모든 저항 -%g · 8초", power) end
+        if id == "decay" then return string.format("이동 속도·공격력 -%g%% · %g초", power, self:GetCurseDuration(level)) end
+        if id == "resist_break" then return string.format("모든 저항 -%g · %g초", power, self:GetCurseDuration(level)) end
         if id == "bone_prison" then return string.format("반경 1.3 안 적 %.1f초 묶음 (보스 절반)", power) end
         if id == "poison_spread" then return string.format("독 걸린 적 사망 시 반경 %.2f에 독 확산", power) end
         if id == "command_aura" then

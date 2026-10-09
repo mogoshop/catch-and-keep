@@ -12,7 +12,7 @@ function run() {
   b.panel('SafeArea/Dim', { anchor: 'middle-center', rect_size: [4000, 3000], color: { r: 0, g: 0, b: 0, a: 0.55 }, raycast: true, enable: false });
   const w = 'SafeArea/Dim/Box';
   b.panel(w, { anchor: 'middle-center', rect_size: [760, 420], color: { r: 0.05, g: 0.045, b: 0.06, a: 1 }, raycast: true });
-  b.sprite(w + '/Rim', { anchor: 'middle-center', rect_size: [780, 440], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
+  b.sprite(w + '/Rim', { anchor: 'middle-center', rect_size: [800, 460], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
   b.patchComponent(w + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
   b.text(w + '/Title', '', { anchor: 'top-center', pos: [0, -28], rect_size: [640, 44], size: 28, bold: true, color: '#E6C88A' });
   b.text(w + '/Body', '', { anchor: 'top-center', pos: [0, -86], rect_size: [660, 200], size: 24, color: '#E8E1D3', alignment: 1, bestfit: true, min_size: 19, max_size: 24 });

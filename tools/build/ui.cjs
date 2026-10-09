@@ -41,7 +41,7 @@ function kit(b) {
     // 창: 남색 바탕(9-slice) + 흰 제목 + 닫기(70)
     frame(name, anchor, pos, size, title) {
       b.panel(name, { anchor, pos, rect_size: size, color: DARK, sprite_type: 1, raycast: true });
-      k.rim(name, "win_frame", -10);
+      k.rim(name, "win_frame", -20);   // 테두리를 창 바깥으로 10px 더 — 안쪽 내용과 테두리 사이 여백
       b.text(`${name}/Title`, title, { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -24], rect_size: [size[0] - 260, 40], ...outline });
       b.button(`${name}/BtnClose`, "", { anchor: "top-right", pos: [-12, -10], rect_size: [70, 70], ...bg("btn_close"), sprite_type: 1 });
     },
@@ -270,16 +270,10 @@ function buildGameHud() {
   });
   k.inner("SkillWin/DescBox", "bottom-left", [30, 104], [960, 72], "win_content");
   b.text("SkillWin/DescBox/Desc", "", { size: 17, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [932, 66] });
-  // 습득은 설명 오른쪽의 가장 큰 버튼. 칸 지정은 PC만 A S D F 우클릭, 모바일은 「스킬 편집」 하나 (창을 닫고 패드 칸의 +로 지정)
+  // 습득은 설명 오른쪽의 가장 큰 버튼. 칸 지정은 PC·모바일 모두 「스킬 편집」 하나
+  //   (PC: 창을 닫고 스킬 지정 창 — A S D F 우클릭 탭, 모바일: 창을 닫고 패드 칸의 +)
   k.ok("SkillWin/BtnLearn", "습득 +1", { anchor: "bottom-right", pos: [-30, 132], rect_size: [240, 248], font_size: 34 });
-  [["BtnA", "A"], ["BtnS", "S"], ["BtnD", "D"], ["BtnF", "F"], ["BtnR", "우클릭"]].forEach(([n, t], i) => {
-    k.btn(`SkillWin/${n}`, t, { anchor: "bottom-left", pos: [30 + i * 162, 24], rect_size: [150, 88] });
-    k.pc(`SkillWin/${n}`);
-  });
-  b.text("SkillWin/SlotHint", "← 고른 스킬을\n그 칸에 넣기", { size: 20, color: C.dim, alignment: 3, anchor: "bottom-right", pos: [-24, 24], rect_size: [156, 88] });
-  k.pc("SkillWin/SlotHint");
   k.btn("SkillWin/BtnEdit", "스킬 편집 — 스킬 칸에 넣기", { anchor: "bottom-left", pos: [30, 24], rect_size: [960, 88], font_size: 28 });
-  k.mobile("SkillWin/BtnEdit");
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
@@ -410,7 +404,7 @@ function patchShadowHud() {
   // 오른쪽 목록(필터 전체|일반|정예|보스 · 정렬 · 8줄 · 페이지). 컨트롤러는 UI/ShadowHUD.mlua
   s.patch("Window", { anchor: "middle-center", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [1560, 900] });
   s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK, RaycastTarget: true });
-  k.rim("Window", "win_frame", -10);
+  k.rim("Window", "win_frame", -20);
   s.text("Window/Title", "그림자 보관함", { size: 26, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -24], rect_size: [900, 40], ...outline });
   s.button("Window/BtnClose", "", { anchor: "top-right", pivot: [1, 1], pos: [-20, -14], rect_size: [88, 88], ...bg("btn_close"), sprite_type: 1 });
   s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
