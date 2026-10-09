@@ -286,12 +286,11 @@ script ShadowHUD extends Logic
             self:RenderMulti(owner)
             return
         end
-        _UIKit:SetEnabled(d .. "/BtnDeploy", true)
-        _UIKit:SetEnabled(d .. "/BtnUpgrade", true)
+
         local has = e ~= nil
         _UIKit:SetEnabled(d .. "/Empty", not has)
-        for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
-        _UIKit:SetText(d .. "/Essence/Text", "보유 정수 " .. tostring(owner.Essence))
+        for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage", "BtnDeployNote", "BtnUpgradeNote", "BtnSalvageNote" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
+        self:SetEssence(owner.Essence)
         if not has then return end
         local m = _GameData:GetMonsterStats(e.src)
         ---@type PlayerStats
@@ -323,12 +322,17 @@ script ShadowHUD extends Logic
         _UIKit:SetText(d .. "/BtnDeploy", e.assign > 0 and "지정 해제" or "소환 지정")
         _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or "강화")
         _UIKit:SetText(d .. "/BtnSalvage", "분해")
-        -- 정수 줄: 아이콘 + 보유 · 강화 비용 · 분해하면 얻는 양
+        -- 보유 정수는 버튼 위 오른쪽, 각 버튼 아래에 그 버튼이 하는 일의 값 (지정 순번 · 강화 비용 · 분해로 얻는 정수)
         local yield = self:SalvageYield(e)
         local cost = _ShadowConfig:GetUpgradeCost(e.plus)
-        local salvage = (e.deployed or yield <= 0) and "분해 불가(배치 중)" or ("분해 시 정수 +" .. tostring(yield))
-        local upgrade = e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or string.format("강화 +%d→+%d: 정수 %d", e.plus, e.plus + 1, cost)
-        _UIKit:SetText(d .. "/Essence/Text", string.format("정수 %d 보유  ·  %s  ·  %s", owner.Essence, upgrade, salvage))
+        local cmd = self:Commander()
+        local limit = cmd ~= nil and cmd:GetDeployLimit() or 1
+        self:SetEssence(owner.Essence)
+        _UIKit:SetText(d .. "/BtnDeployNote", e.assign > 0 and ("소환 순서 " .. tostring(e.assign) .. "번째") or string.format("지정 %d / %d", #owner:AssignedList(), limit))
+        _UIKit:SetText(d .. "/BtnUpgradeNote", e.plus >= _ShadowConfig:GetPlusMax() and "최대 강화" or string.format("+%d→+%d · 정수 %d", e.plus, e.plus + 1, cost))
+        local salvage = "정수 +" .. tostring(yield)
+        if e.deployed then salvage = "소환 중엔 불가" elseif yield <= 0 then salvage = "보스는 불가" end
+        _UIKit:SetText(d .. "/BtnSalvageNote", salvage)
     end
 
     @ExecSpace("ClientOnly")
@@ -348,6 +352,10 @@ script ShadowHUD extends Logic
         _UIKit:SetEnabled(d .. "/Stage", false)
         _UIKit:SetEnabled(d .. "/BtnDeploy", false)
         _UIKit:SetEnabled(d .. "/BtnUpgrade", false)
+        _UIKit:SetEnabled(d .. "/BtnDeployNote", false)
+        _UIKit:SetEnabled(d .. "/BtnUpgradeNote", false)
+        _UIKit:SetEnabled(d .. "/BtnSalvageNote", true)
+        _UIKit:SetText(d .. "/BtnSalvageNote", "정수 +" .. tostring(total))
         _UIKit:SetText(d .. "/Name", "여러 개 선택 · " .. tostring(#picked) .. "마리")
         _UIKit:SetText(d .. "/Grade", "목록을 눌러 분해할 그림자를 고르세요 (다시 누르면 빠짐)")
         local lines = {}
@@ -362,7 +370,19 @@ script ShadowHUD extends Logic
         _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
         _UIKit:SetText(d .. "/Trait", _UIKit:Colored("#8C99B4", "소환 중인 그림자와 보스 그림자는 고를 수 없다 · 소환 지정·강화는 「선택 끝내기」 후"))
         _UIKit:SetText(d .. "/BtnSalvage", "선택 분해")
-        _UIKit:SetText(d .. "/Essence/Text", string.format("정수 %d 보유  ·  %d마리 분해 시 정수 +%d", owner.Essence, #picked, total))
+        self:SetEssence(owner.Essence)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetEssence(integer essence)
+        -- [아이콘] 정수 N 보유 — 글자 길이에 맞춰 묶음 폭을 줄여 오른쪽 끝(버튼 끝)에 붙인다
+        local text = "정수 " .. tostring(essence) .. " 보유"
+        _UIKit:SetText(self.Win .. "/Detail/Essence/Text", text)
+        local chars = utf8.len(text) or #text
+        local wide = (#text - chars) // 2            -- 한글(3바이트) 글자 수
+        local width = 44 + wide * 22 + (chars - wide) * 12 + 6
+        local box = _UIKit:Get(self.Win .. "/Detail/Essence")
+        if isvalid(box) then box.UITransformComponent.RectSize = Vector2(width, 40) end
     end
 
     method string PlusText(number diff)

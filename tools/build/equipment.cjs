@@ -11,7 +11,7 @@ b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const w='SafeArea/InvWin';
 b.panel(w,{rect_size:[1400,1000],pos:[20,0],color:'#100E16',raycast:true,enable:false});
 b.sprite(w+'/Rim',{rect_size:[1440,1040],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
-b.text(w+'/Title','소지품  ·  망자의 장비',{anchor:'top-left',pos:[100,-20],rect_size:[1140,64],size:28,color:'#E6C88A',alignment:3,bold:true});
+b.text(w+'/Title','소지품  ·  망자의 장비',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[1100,40],size:28,color:'#E6C88A',alignment:4,bold:true});
 b.button(w+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
 const d=w+'/Doll';
 b.panel(d,{anchor:'top-left',pos:[28,-112],rect_size:[500,516],color:'#17131D'});

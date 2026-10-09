@@ -42,7 +42,8 @@ function kit(b) {
     frame(name, anchor, pos, size, title) {
       b.panel(name, { anchor, pos, rect_size: size, color: DARK, sprite_type: 1, raycast: true });
       k.rim(name, "win_frame", -20);   // 테두리를 창 바깥으로 10px 더 — 안쪽 내용과 테두리 사이 여백
-      b.text(`${name}/Title`, title, { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -24], rect_size: [size[0] - 260, 40], ...outline });
+      // 제목은 테두리 그림의 제목 띠 한가운데 (창 위에서 37px) — 띠 아래 선에 글자가 걸치지 않게
+      b.text(`${name}/Title`, title, { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -17], rect_size: [size[0] - 260, 40], alignment: 4, ...outline });
       b.button(`${name}/BtnClose`, "", { anchor: "top-right", pos: [-12, -10], rect_size: [70, 70], ...bg("btn_close"), sprite_type: 1 });
     },
     // 테두리 그림을 부모 크기에 맞춰 덮는다 (inset 음수 = 바깥으로 조금 넘침)
@@ -102,9 +103,10 @@ function buildGameHud() {
   // ── 맵 이름 (D2처럼 들어올 때 상단 가운데 2초) ──
   // 띠 그림의 어두운 가운데 안에 제목·부제가 모두 들어가게 (예전 48px 제목은 띠 위로, 부제는 아래 테두리로 넘쳤다)
   b.sprite("Banner", { anchor: "top-center", pos: [0, -270], rect_size: [1000, 180], ...part("banner"), sprite_type: 1 });
-  b.text("Banner/Title", "", { size: 38, bold: true, color: C.title, anchor: "middle-center", pos: [0, 14], rect_size: [640, 52], ...outline, outline_width: 0.25, bestfit: true, min_size: 30, max_size: 38 });
+  // 판 안쪽 위아래 여백을 같게: 제목(36)과 부제(21)를 한 덩어리로 가운데에
+  b.text("Banner/Title", "", { size: 36, bold: true, color: C.title, anchor: "middle-center", pos: [0, 12], rect_size: [700, 48], alignment: 4, ...outline, outline_width: 0.25, bestfit: true, min_size: 28, max_size: 36 });
   b.patchComponent("Banner/Title", "MOD.Core.TextGUIRendererComponent", { Font: "Maple" });
-  b.text("Banner/Sub", "", { size: 22, color: C.gold, anchor: "middle-center", pos: [0, -28], rect_size: [640, 30], ...outline });
+  b.text("Banner/Sub", "", { size: 21, color: C.gold, anchor: "middle-center", pos: [0, -24], rect_size: [700, 28], alignment: 4, ...outline });
 
   // ── 미니맵 (오른쪽 위, PC 시스템 버튼 아래) ──
   b.panel("MiniMap", { anchor: "top-right", pos: [-24, -140], rect_size: [300, 280], color: DARK, sprite_type: 1, raycast: true });
@@ -120,7 +122,8 @@ function buildGameHud() {
   b.text("MiniMap/Name", "", { size: 19, bold: true, color: C.title, anchor: "top-center", pos: [0, -14], rect_size: [220, 28], ...outline });
 
   // ── 메뉴 버튼 (미니맵 왼쪽) ──
-  b.button("BtnMenu", "", { anchor: "top-right", pos: [-344, -140], rect_size: [96, 96], ...bg("menu_btn"), sprite_type: 1 });
+  // 메뉴 버튼은 미니맵 열(오른쪽 24~368px) 왼쪽으로 40px 띄우고, 위쪽을 지역 이름 상자 위쪽(150)에 맞춘다
+  b.button("BtnMenu", "", { anchor: "top-right", pos: [-456, -150], rect_size: [96, 96], ...bg("menu_btn"), sprite_type: 1 });
   b.text("BtnMenu/Label", "메뉴", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnMenu");
 
@@ -413,26 +416,27 @@ function patchShadowHud() {
   s.patch("Window", { anchor: "middle-center", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [1560, 900] });
   s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK, RaycastTarget: true });
   k.rim("Window", "win_frame", -20);
-  s.text("Window/Title", "그림자 보관함", { size: 26, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -24], rect_size: [900, 40], ...outline });
+  s.text("Window/Title", "그림자 보관함", { size: 26, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -17], rect_size: [900, 40], alignment: 4, ...outline });
   s.button("Window/BtnClose", "", { anchor: "top-right", pivot: [1, 1], pos: [-20, -14], rect_size: [88, 88], ...bg("btn_close"), sprite_type: 1 });
   s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
   // 왼쪽 상세
   const d = "Window/Detail";
   s.panel(d, { anchor: "top-left", pivot: [0, 1], pos: [30, -88], rect_size: [560, 784], ...part("win_content"), sprite_type: 1 });
-  s.sprite(`${d}/Stage`, { anchor: "top-center", pivot: [0.5, 1], pos: [0, -18], rect_size: [300, 270], color: { r: 0.09, g: 0.07, b: 0.13, a: 1 }, sprite_type: 1 });
-  s.sprite(`${d}/Stage/Portrait`, { anchor: "middle-center", pos: [0, 0], rect_size: [220, 220], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+  s.sprite(`${d}/Stage`, { anchor: "top-center", pivot: [0.5, 1], pos: [0, -18], rect_size: [300, 240], color: { r: 0.09, g: 0.07, b: 0.13, a: 1 }, sprite_type: 1 });
+  s.sprite(`${d}/Stage/Portrait`, { anchor: "middle-center", pos: [0, 0], rect_size: [200, 200], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
   k.aspect(`${d}/Stage/Portrait`);
-  s.text(`${d}/Name`, "", { size: 30, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -298], rect_size: [520, 42], bestfit: true, min_size: 24, max_size: 30, ...outline });
-  s.text(`${d}/Grade`, "", { size: 22, color: C.gold, anchor: "top-center", pivot: [0.5, 1], pos: [0, -342], rect_size: [520, 32] });
-  s.text(`${d}/Stats`, "", { size: 21, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -378], rect_size: [508, 188], bestfit: true, min_size: 17, max_size: 21 });
-  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -570], rect_size: [508, 54], bestfit: true, min_size: 17, max_size: 21 });
+  s.text(`${d}/Name`, "", { size: 30, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -268], rect_size: [520, 42], bestfit: true, min_size: 24, max_size: 30, ...outline });
+  s.text(`${d}/Grade`, "", { size: 22, color: C.gold, anchor: "top-center", pivot: [0.5, 1], pos: [0, -312], rect_size: [520, 32] });
+  s.text(`${d}/Stats`, "", { size: 21, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -348], rect_size: [508, 188], bestfit: true, min_size: 17, max_size: 21 });
+  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -540], rect_size: [508, 54], bestfit: true, min_size: 17, max_size: 21 });
   s.text(`${d}/Empty`, "왼쪽에 보일 그림자를\n오른쪽 목록에서 고르세요", { size: 24, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [500, 120], enable: false });
-  // 정수 줄: 아이콘 + 보유 · 강화 비용 · 분해하면 얻는 양 (버튼 위)
-  s.empty(`${d}/Essence`, { anchor: "bottom-left", pivot: [0, 0], pos: [20, 116], rect_size: [520, 40] });
+  // 보유 정수: 버튼 위 오른쪽 ([아이콘] 정수 N 보유). 강화 비용·분해로 얻는 정수는 각 버튼 바로 아래
+  s.empty(`${d}/Essence`, { anchor: "bottom-right", pivot: [1, 0], pos: [-20, 150], rect_size: [230, 40] });
   s.sprite(`${d}/Essence/Icon`, { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [36, 36], image_ruid: K.essence, color: WHITE, alpha: 1, sprite_type: 0 });
-  s.text(`${d}/Essence/Text`, "", { size: 20, color: "#D9B8FF", alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [44, 0], rect_size: [476, 40], bestfit: true, min_size: 16, max_size: 20 });
-  [["BtnDeploy", "소환"], ["BtnUpgrade", "강화"], ["BtnSalvage", "분해"]].forEach(([n, label], i) => {
-    k.btn(`${d}/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 18], rect_size: [168, 88], font_size: 26 });
+  s.text(`${d}/Essence/Text`, "", { size: 21, color: "#D9B8FF", alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [44, 0], rect_size: [186, 40], bestfit: true, min_size: 16, max_size: 21 });
+  [["BtnDeploy", "소환 지정"], ["BtnUpgrade", "강화"], ["BtnSalvage", "분해"]].forEach(([n, label], i) => {
+    k.btn(`${d}/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 52], rect_size: [168, 88], font_size: 26 });
+    s.text(`${d}/${n}Note`, "", { size: 18, color: "#D9B8FF", alignment: 4, anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 14], rect_size: [168, 34], bestfit: true, min_size: 14, max_size: 18 });
   });
   // 오른쪽 목록: 필터 4 + 정렬 1
   [["FAll", "전체"], ["FNormal", "일반"], ["FElite", "정예"], ["FBoss", "보스"]].forEach(([n, label], i) => {

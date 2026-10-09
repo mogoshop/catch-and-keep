@@ -38,9 +38,10 @@ function run(){
  const m='SafeArea/MiniMap';
  b.empty(m,{anchor:'top-right',pivot:[1,1],pos:[-24,-150],rect_size:[344,488]});
  b.button(m+'/Toggle','',{anchor:'top-center',pivot:[.5,1],pos:[0,0],rect_size:[344,104],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
- b.text(m+'/Toggle/Name','',{anchor:'top-left',pos:[32,-12],rect_size:[244,44],size:28,color:'#E6DCC6',alignment:3,bestfit:true,min_size:24,max_size:28});
- b.text(m+'/Toggle/Kind','',{anchor:'bottom-left',pos:[32,8],rect_size:[244,40],size:24,color:'#B9B0A1',alignment:3});
- b.text(m+'/Toggle/Hint','−',{anchor:'middle-right',pos:[-24,0],rect_size:[44,60],size:32,color:'#E6C88A',alignment:4});
+ // 왼쪽 해골 장식(약 40px) 안쪽으로 — 글자가 장식에 붙어 보였다
+ b.text(m+'/Toggle/Name','',{anchor:'top-left',pos:[50,-14],rect_size:[206,42],size:28,color:'#E6DCC6',alignment:3,bestfit:true,min_size:22,max_size:28});
+ b.text(m+'/Toggle/Kind','',{anchor:'bottom-left',pos:[50,12],rect_size:[206,34],size:22,color:'#B9B0A1',alignment:3});
+ b.text(m+'/Toggle/Hint','−',{anchor:'middle-right',pos:[-44,0],rect_size:[40,60],size:32,color:'#E6C88A',alignment:4});
  // 와우·이모탈처럼: 어두운 바탕 위 평평한 바닥색, 표시물은 그림 대신 색 점 + 아래 짧은 이름, 나는 바라보는 방향 화살표
  b.panel(m+'/Body',{anchor:'top-center',pivot:[.5,1],pos:[0,-104],rect_size:[344,384],image_ruid:icons.win_content,sprite_type:0,color:'#0D0A10'});
  b.sprite(m+'/Body/Rim',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[264,264],image_ruid:icons.minimap_round,color:'#FFFFFF',sprite_type:0});
@@ -74,11 +75,12 @@ function run(){
  const q='SafeArea/QuestTrack';
  b.button(q,'',{anchor:'top-right',pivot:[1,1],pos:[-24,-658],rect_size:[420,176],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
  if(b.find(q+'/Icon'))b.remove(q+'/Icon');
- b.panel(q+'/Badge',{anchor:'top-left',pos:[22,-16],rect_size:[132,34],color:'#3A2C1A'});
+ // 해골 장식 안쪽 여백 46px, 위아래 18px
+ b.panel(q+'/Badge',{anchor:'top-left',pos:[46,-18],rect_size:[132,34],color:'#3A2C1A'});
  b.text(q+'/Badge/Text','',{anchor:'middle-center',rect_size:[128,32],size:20,bold:true,color:'#E6C88A'});
- b.text(q+'/Title','',{anchor:'top-left',pos:[22,-54],rect_size:[376,40],size:28,bold:true,color:'#F3E7CC',alignment:3,bestfit:true,min_size:22,max_size:28});
- b.text(q+'/Body','',{anchor:'top-left',pos:[22,-94],rect_size:[376,30],size:21,color:'#A99F8E',alignment:3,bestfit:true,min_size:18,max_size:21});
- b.text(q+'/Progress','',{anchor:'bottom-left',pos:[22,14],rect_size:[376,36],size:23,color:'#E6C88A',alignment:3,bestfit:true,min_size:19,max_size:23});
+ b.text(q+'/Title','',{anchor:'top-left',pos:[46,-56],rect_size:[328,40],size:28,bold:true,color:'#F3E7CC',alignment:3,bestfit:true,min_size:22,max_size:28});
+ b.text(q+'/Body','',{anchor:'top-left',pos:[46,-96],rect_size:[328,30],size:21,color:'#A99F8E',alignment:3,bestfit:true,min_size:18,max_size:21});
+ b.text(q+'/Progress','',{anchor:'bottom-left',pos:[46,18],rect_size:[328,34],size:23,color:'#E6C88A',alignment:3,bestfit:true,min_size:19,max_size:23});
  applyResources(b);
  b.write(file,{lint_verbose:true});
  return b.listEntities().length;
