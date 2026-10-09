@@ -1,0 +1,275 @@
+-- 잿빛 행상 거래 창 (말을 건 뒤 「거래」): 창고처럼 두 칸.
+--   왼쪽 = 살 물건 — 물약 등급은 야영지 난이도별(보통 하급 · 악몽 중급까지 · 지옥 고급까지) + 회복 물약 · 귀환 두루마리 · 도박.
+--          칸을 누르면 설명, 「구매」(1개) · 「5개 구매」.
+--   오른쪽 = 가방 — 칸을 누르면 설명·판매가, 「판매」. 「여러 개 선택」이면 여러 칸을 골라 한꺼번에 판다.
+-- 검증·거래는 서버(PlayerShop.RequestBuyCount · PlayerInventory.RequestSell/RequestSellMany)가 한다.
+@Logic
+script ShopWindow extends Logic
+
+    property string Win = "ShopWin"
+    property string RenderKey = ""
+    property integer TimerId = 0
+    property integer GoodsCount = 9
+    property string SelGoods = ""            -- 고른 상품 키 (hp1 …)
+    property integer SelBag = 0              -- 고른 가방 칸
+    property string SelBagItem = ""
+    property boolean Multi = false
+    property table Picked = {}               -- 여러 개 선택: 칸 번호 → 물건 문자열
+    property string NpcName = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 칸·버튼 연결, 열려 있는 동안 골드·가방이 바뀌면 다시 그린다
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for i = 1, self.GoodsCount do
+            local index = i
+            _UIKit:Connect(self.Win .. "/G" .. tostring(i), function() self:PickGoods(index) end)
+        end
+        for i = 1, 60 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Bag/B" .. tostring(i), function() self:PickBag(index) end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnBuy", function() self:Buy(1) end)
+        _UIKit:Connect(self.Win .. "/BtnBuy5", function() self:Buy(5) end)
+        _UIKit:Connect(self.Win .. "/BtnSell", function() self:Sell() end)
+        _UIKit:Connect(self.Win .. "/BtnMulti", function()
+            self.Multi = not self.Multi
+            self.Picked = {}
+            self.SelBag = 0
+            self.SelBagItem = ""
+            self.RenderKey = ""
+            self:Poll()
+        end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method PlayerShop Shop()
+        ---@type PlayerShop
+        local c = _UIKit:Comp("script.PlayerShop")
+        return c
+    end
+
+    method PlayerInventory Inv()
+        ---@type PlayerInventory
+        local c = _UIKit:Comp("script.PlayerInventory")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open(string npcName)
+        -- 처음엔 첫 상품(하급 생명 물약)을 고른 채 연다
+        self.NpcName = npcName
+        local shop = self:Shop()
+        self.SelGoods = shop ~= nil and shop:Goods(shop:ShopDifficulty())[1] or ""
+        self.SelBag = 0
+        self.SelBagItem = ""
+        self.Multi = false
+        self.Picked = {}
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickGoods(integer index)
+        local shop = self:Shop()
+        if shop == nil then return end
+        local key = shop:Goods(shop:ShopDifficulty())[index]
+        if key == nil then return end
+        self.SelGoods = key
+        self.SelBag = 0
+        self.SelBagItem = ""
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickBag(integer index)
+        -- 한 칸 고르기 / 여러 개 선택이면 켜고 끄기 (귀속 재료는 팔 수 없어 고르지 않는다)
+        local inv = self:Inv()
+        if inv == nil then return end
+        local s = inv:GetBagList()[index]
+        if s == nil then return end
+        if self.Multi then
+            if _ItemData:IsSoulbound(_ItemData:Parse(s).base) then return end
+            if self.Picked[index] ~= nil then self.Picked[index] = nil else self.Picked[index] = s end
+        else
+            self.SelBag = index
+            self.SelBagItem = s
+            self.SelGoods = ""
+        end
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Buy(integer count)
+        local shop = self:Shop()
+        if shop == nil or self.SelGoods == "" then return end
+        shop:RequestBuyCount(self.SelGoods, count)
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Sell()
+        -- 한 칸 판매(레어 이상은 확인 창) / 여러 개 선택 판매(확인 창)
+        local inv = self:Inv()
+        if inv == nil then return end
+        local list = inv:GetBagList()
+        if self.Multi then
+            local parts, n, total = {}, 0, 0
+            for idx, item in pairs(self.Picked) do
+                if list[idx] == item then
+                    table.insert(parts, tostring(idx) .. "\t" .. item)
+                    n = n + 1
+                    total = total + _ItemData:SellValue(item)
+                end
+            end
+            if n == 0 then return end
+            -- 서버 형식 "칸\t아이템\n..." (PlayerInventory.ParsePicks)
+            local payload = table.concat(parts, "\n")
+            _ConfirmDialog:Show("판매", tostring(n) .. "개를 " .. tostring(total) .. " 골드에 팝니다.", "판매", function()
+                inv:RequestSellMany(payload)
+                self.Picked = {}
+                self.RenderKey = ""
+            end)
+            return
+        end
+        local s = list[self.SelBag]
+        if s == nil or s ~= self.SelBagItem or _ItemData:IsSoulbound(_ItemData:Parse(s).base) then return end
+        local index = self.SelBag
+        local doSell = function()
+            inv:RequestSell(index, s)
+            self.SelBag = 0
+            self.SelBagItem = ""
+            self.RenderKey = ""
+        end
+        if _ItemData:Parse(s).rarity >= 2 or #_ItemData:Parse(s).runes > 0 then
+            _ConfirmDialog:ShowIcon("판매", _ItemData:DisplayName(s) .. "\n" .. tostring(_ItemData:SellValue(s)) .. " 골드에 팝니다.", "판매", _ItemData:IconFor(s), doSell)
+        else
+            doSell()
+        end
+    end
+
+    method string GoodsDesc(string key, PlayerShop shop, integer level)
+        -- 상품 설명: 이름 · 효과 · 값
+        local item = _GameData:GetShopItem(key)
+        if item == nil then return "" end
+        local effect = ""
+        if item.hpFlat > 0 then effect = "생명 " .. tostring(item.hpFlat) .. " 회복"
+        elseif item.manaFlat > 0 then effect = "마나 " .. tostring(item.manaFlat) .. " 회복"
+        elseif key == "rv" then effect = "생명·마나 " .. tostring(item.hpPct) .. "%씩 즉시 회복"
+        elseif key == "tp" then effect = "야영지로 돌아가는 포털을 연다 (벨트 칸에 넣어 사용)"
+        elseif key == "gamble" then effect = "무작위 장비 — 마법 이상 보장, 드물게 레어·유니크·세트" end
+        return _UIKit:Colored("#E6C88A", item.name) .. "\n" .. effect .. "\n\n" .. _UIKit:Colored("#FFD27A", "값 " .. tostring(shop:GetPrice(key, level)) .. " 골드")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 행상 곁을 벗어나면 닫는다
+        if not _UIKit:IsOpen(self.Win) then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not _Util:NearNpc(player, "shop") then
+            _UIKit:Close(self.Win)
+            return
+        end
+        local shop = self:Shop()
+        local inv = self:Inv()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if shop == nil or inv == nil or st == nil then return end
+        local diff = shop:ShopDifficulty()
+        local key = table.concat({ inv.BagDigest, tostring(st.Gold), tostring(st.Level), tostring(diff), self.SelGoods, tostring(self.SelBag), tostring(self.Multi), tostring(self:PickedCount()) }, "#")
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local goods = shop:Goods(diff)
+        local list = inv:GetBagList()
+        -- 고른 가방 칸이 판매·정렬로 바뀌었으면 고르기를 푼다
+        if self.SelBag > 0 and list[self.SelBag] ~= self.SelBagItem then
+            self.SelBag = 0
+            self.SelBagItem = ""
+        end
+        local tiers = { "보통 · 하급 물약", "악몽 · 중급 물약까지", "지옥 · 고급 물약까지" }
+        _UIKit:SetText(self.Win .. "/Title", (self.NpcName ~= "" and self.NpcName or "잿빛 행상") .. " · 거래")
+        _UIKit:SetText(self.Win .. "/Info", string.format("가진 골드 <color=#FFD27A>%d</color>  ·  %s  ·  물건을 눌러 고른 뒤 구매 / 판매", st.Gold, tiers[diff + 1] or tiers[1]))
+        _UIKit:SetText(self.Win .. "/GoodsLabel", "살 물건  <color=#9C9488>(" .. (tiers[diff + 1] or tiers[1]) .. ")</color>")
+        for i = 1, self.GoodsCount do
+            local path = self.Win .. "/G" .. tostring(i)
+            local k = goods[i]
+            _UIKit:SetEnabled(path, k ~= nil)
+            if k ~= nil then
+                local item = _GameData:GetShopItem(k)
+                _UIKit:SetIcon(path .. "/Slot/Icon", item ~= nil and item.icon or "")
+                _UIKit:SetText(path .. "/Name", item ~= nil and item.name or k)
+                local price = shop:GetPrice(k, st.Level)
+                _UIKit:SetText(path .. "/Price", price > st.Gold and ("<color=#FF6464>" .. tostring(price) .. "</color>") or tostring(price))
+                _UIKit:SetEnabled(path .. "/Slot/Pick", k == self.SelGoods)
+            end
+        end
+        _UIKit:SetText(self.Win .. "/BagLabel", string.format("가방  %d / %d  ·  %s", #list, inv.BagSize, self.Multi and "누른 칸을 모두 판다" or "눌러서 고르기"))
+        for i = 1, 60 do
+            local path = self.Win .. "/Bag/B" .. tostring(i)
+            _InventoryWindow:DrawItem(path, list[i])
+            -- 고른 칸 = 하늘색 표시 (한 칸 고르기 · 여러 개 선택 공통)
+            local picked = self.Multi and self.Picked[i] ~= nil and list[i] == self.Picked[i]
+            _UIKit:SetEnabled(path .. "/Pick", picked or (not self.Multi and i == self.SelBag and list[i] ~= nil))
+        end
+        -- 설명 · 버튼
+        local desc = ""
+        local canBuy, canSell = false, false
+        local stack = false
+        if self.Multi then
+            local n, total = 0, 0
+            for idx, item in pairs(self.Picked) do
+                if list[idx] == item then
+                    n = n + 1
+                    total = total + _ItemData:SellValue(item)
+                end
+            end
+            desc = _UIKit:Colored("#FFD27A", "여러 개 선택 · " .. tostring(n) .. "개 · 판매가 합계 " .. tostring(total) .. " 골드") .. "\n가방 칸을 눌러 팔 물건을 고르세요. (귀속 재료 제외)"
+            canSell = n > 0
+            _UIKit:SetText(self.Win .. "/BtnSell", "선택 판매 " .. tostring(n))
+        else
+            _UIKit:SetText(self.Win .. "/BtnSell", "판매")
+            if self.SelBag > 0 then
+                local s = self.SelBagItem
+                local bound = _ItemData:IsSoulbound(_ItemData:Parse(s).base)
+                desc = _ItemData:DescribeDetailed(s) .. "\n" .. (bound and _UIKit:Colored("#FF8888", "귀속 재료는 팔 수 없다") or _UIKit:Colored("#FFD27A", "판매가 " .. tostring(_ItemData:SellValue(s)) .. " 골드"))
+                canSell = not bound
+            elseif self.SelGoods ~= "" then
+                desc = self:GoodsDesc(self.SelGoods, shop, st.Level)
+                canBuy = shop:GetPrice(self.SelGoods, st.Level) <= st.Gold
+                stack = self.SelGoods ~= "gamble"
+            else
+                desc = _UIKit:Colored("#9C9488", "왼쪽 상품이나 오른쪽 가방 칸을 누르세요.")
+            end
+        end
+        _UIKit:SetText(self.Win .. "/Detail/Desc", desc)
+        _UIKit:SetText(self.Win .. "/BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택")
+        self:SetButton("BtnBuy", canBuy, Color(1, 0.86, 0.62, 1))
+        self:SetButton("BtnBuy5", canBuy and stack and shop:GetPrice(self.SelGoods, st.Level) * 5 <= st.Gold, Color(1, 1, 1, 1))
+        self:SetButton("BtnSell", canSell, Color(1, 0.86, 0.62, 1))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetButton(string name, boolean allowed, Color on)
+        -- 못 누르는 버튼은 회색 (ButtonComponent가 입력을 막는다)
+        local e = _UIKit:Get(self.Win .. "/" .. name)
+        if isvalid(e) and e.ButtonComponent ~= nil then e.ButtonComponent.Enable = allowed end
+        _UIKit:SetColor(self.Win .. "/" .. name, allowed and on or Color(0.42, 0.42, 0.42, 1))
+    end
+
+    method integer PickedCount()
+        local n = 0
+        for _, _ in pairs(self.Picked) do n = n + 1 end
+        return n
+    end
+
+end

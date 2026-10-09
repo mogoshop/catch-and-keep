@@ -47,7 +47,7 @@ for(let i=1;i<=60;i++){
 b.button(w+'/BtnEquip','장착',{anchor:'top-left',pos:[1100,-690],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6C88A'});
 b.button(w+'/BtnSell','버리기',{anchor:'top-left',pos:[1100,-794],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6DCC6'});
 b.text(w+'/Hint','선택 → 설명 확인 · 버튼으로 작업 확정',{anchor:'top-left',pos:[28,-628],rect_size:[1044,40],size:24,color:'#C9BBA0',alignment:3,bestfit:true,min_size:18,max_size:24});
-// 가방 정렬(등급순) · 여러 개 선택(한꺼번에 판매·버리기) — 버리기 아래 나란히
+// 가방 정렬(등급순) · 여러 개 선택(한꺼번에 버리기 — 판매는 잿빛 행상 거래 창) — 버리기 아래 나란히
 b.button(w+'/BtnSort','정렬',{anchor:'top-left',pos:[1100,-892],rect_size:[110,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22,color:'#E6DCC6'});
 b.button(w+'/BtnMulti','여러 개 선택',{anchor:'top-left',pos:[1218,-892],rect_size:[154,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:20,color:'#E6DCC6'});
 b.write(file,{lint_verbose:true});

@@ -1,5 +1,5 @@
 -- NPC 대화 창: 근처에서는 대화 버튼만 표시한다. 버튼/B 키로 선택했을 때 열고, 거리·맵이 바뀌면 닫는다.
---   shop  = 물약·두루마리·도박 5버튼 → PlayerShop
+--   shop  = 잿빛 행상: 「거래」로 거래 창(ShopWindow — 살 물건 · 가방 판매)을 연다
 --   merchant = 떠돌이 상인: 10분마다 바뀌는 장비 5개 — 「물건 보기」로 목록 창(MerchantWindow)을 연다
 --   smith = 대장장이: 「물건 고르기」로 소지품을 대장장이 모드로 연다 (옵션 바꾸기 · 소켓 뚫기)
 --   stash = 창고: 대화 대신 창고 창(StashWindow)을 바로 연다
@@ -205,21 +205,17 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderShop(PlayerStats st)
+        -- 잿빛 행상: 인사 + 「거래」(거래 창 — 왼쪽 살 물건 · 오른쪽 가방). 버튼에 물건을 넣지 않는다
         ---@type PlayerShop
         local shop = _UIKit:Comp("script.PlayerShop")
         if shop == nil then return end
-        local key = "shop#" .. tostring(st.Gold) .. "#" .. tostring(st.Level)
+        local diff = shop:ShopDifficulty()
+        local key = "shop#" .. tostring(st.Gold) .. "#" .. tostring(diff)
         if key == self.RenderKey then return end
         self.RenderKey = key
-        local keys = { "hp", "mp", "rv", "tp", "gamble" }
-        local labels = { "생명", "마나", "회복", "귀환", "도박" }
-        local buttons = {}
-        for i = 1, 5 do buttons[i] = labels[i] .. "  " .. tostring(shop:GetPrice(keys[i], st.Level)) end
-        self:SetButtons(buttons)
-        local hp = _GameData:GetShopItem(shop:Resolve("hp", st.Level))
-        local mp = _GameData:GetShopItem(shop:Resolve("mp", st.Level))
-        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 필요한 걸 골라라.  (가진 골드 %d)\n%s(+%d) · %s(+%d) · 회복 물약 · 귀환 두루마리 · 도박(무작위 마법 이상 장비) %d골드\n물약은 가방에 들어간다. 가방 물건을 팔려면 소지품을 열어 「판매」.",
-            st.Gold, hp.name, hp.hpFlat, mp.name, mp.manaFlat, shop:GetPrice("gamble", st.Level)))
+        local tiers = { "하급 물약", "중급 물약까지", "고급 물약까지" }
+        self:SetButtons({ "", "", "", "거래", "닫기" })
+        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 물약이 필요한가, 아니면 짐을 덜고 싶은가.\n이 야영지에선 %s · 회복 물약 · 귀환 두루마리 · 도박을 판다.\n쓸모없는 물건은 사 주지.  <color=#9C9488>가진 골드 %d</color>", tiers[diff + 1] or tiers[1], st.Gold))
     end
 
     method table StockList()
@@ -329,11 +325,13 @@ script NpcWindow extends Logic
         local npc = self.ActiveNpc:GetComponent("script.WorldNPC")
         if not self:CanTalkTo(_UserService.LocalPlayer, npc) or _UIKit:AnyOtherWindowOpen(self.Win) then return end
         if self.Kind == "shop" then
-            ---@type PlayerShop
-            local shop = _UIKit:Comp("script.PlayerShop")
-            local keys = { "hp", "mp", "rv", "tp", "gamble" }
-            if shop ~= nil and keys[index] ~= nil then shop:RequestBuy(keys[index]) end
-            self.RenderKey = ""
+            -- 거래 = 거래 창 (이 대화 창은 닫는다)
+            if index == 5 then self:Dismiss() return end
+            if index == 4 then
+                local name = npc.NpcName
+                self:Dismiss()
+                _ShopWindow:Open(name)
+            end
             return
         end
         if self.Kind == "merchant" then
