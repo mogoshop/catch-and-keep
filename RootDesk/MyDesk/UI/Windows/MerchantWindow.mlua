@@ -1,0 +1,159 @@
+-- 떠돌이 상인 창 (상인에게 말을 건 뒤 「물건 보기」): 왼쪽 5줄 = 오늘 물건 (그림 · 이름 · 종류 · 값),
+-- 줄을 누르면 오른쪽에 전체 옵션과 착용품 비교, 「구매」로 산다. 검증·판매는 서버(PlayerShop.RequestBuyStock)가 한다.
+@Logic
+script MerchantWindow extends Logic
+
+    property string Win = "MerchantWin"
+    property string RenderKey = ""
+    property integer TimerId = 0
+    property integer Selected = 1
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 줄·버튼 연결, 열려 있는 동안 물건·골드가 바뀌면 다시 그린다
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/BtnBuy", function() self:Buy() end)
+        for i = 1, 5 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Row" .. tostring(i), function()
+                self.Selected = index
+                self.RenderKey = ""
+                self:Poll()
+            end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method PlayerShop Shop()
+        ---@type PlayerShop
+        local c = _UIKit:Comp("script.PlayerShop")
+        return c
+    end
+
+    method table StockList(PlayerShop shop)
+        local list = {}
+        if shop == nil or shop.StockDigest == "" then return list end
+        for s in string.gmatch(shop.StockDigest .. ";", "([^;]*);") do table.insert(list, s) end
+        return list
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open()
+        -- 처음 열면 남아 있는 첫 물건을 고른다
+        local shop = self:Shop()
+        if shop ~= nil then shop:RequestOpenMerchant() end
+        self.Selected = 1
+        local list = self:StockList(shop)
+        for i = 1, 5 do
+            if (list[i] or "") ~= "" then
+                self.Selected = i
+                break
+            end
+        end
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Buy()
+        -- 고른 칸의 물건이 그대로 있을 때만 서버가 판다
+        local shop = self:Shop()
+        local s = self:StockList(shop)[self.Selected] or ""
+        if shop == nil or s == "" then return end
+        shop:RequestBuyStock(self.Selected, s)
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 상인 곁을 벗어나면 닫는다
+        if not _UIKit:IsOpen(self.Win) then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not _Util:NearNpc(player, "merchant") then
+            _UIKit:Close(self.Win)
+            return
+        end
+        local shop = self:Shop()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        if shop == nil or st == nil or inv == nil then return end
+        local left = math.max(0, math.ceil(shop.StockNextAt - _UtilLogic.ServerElapsedSeconds))
+        local key = shop.StockDigest .. "#" .. tostring(st.Gold) .. "#" .. tostring(self.Selected) .. "#" .. tostring(left // 10) .. "#" .. inv.BagDigest
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local list = self:StockList(shop)
+        -- 고른 물건이 팔렸으면 남은 물건 중 첫째로 옮긴다
+        if (list[self.Selected] or "") == "" then
+            for i = 1, 5 do
+                if (list[i] or "") ~= "" then
+                    self.Selected = i
+                    break
+                end
+            end
+        end
+        _UIKit:SetText(self.Win .. "/Info", string.format("가진 골드 <color=#FFD27A>%d</color>  ·  다음 입고 %d분 %02d초  ·  물건을 누르면 오른쪽에 옵션이 보입니다", st.Gold, left // 60, left % 60))
+        for i = 1, 5 do
+            local row = self.Win .. "/Row" .. tostring(i)
+            local s = list[i] or ""
+            _UIKit:SetColor(row, i == self.Selected and Color(1, 0.86, 0.55, 1) or Color(1, 1, 1, 1))
+            if s == "" then
+                _InventoryWindow:DrawItem(row .. "/Slot", nil)
+                _UIKit:SetText(row .. "/Name", "<color=#6E6658>팔림</color>")
+                _UIKit:SetText(row .. "/Sub", #list == 0 and "짐을 푸는 중…" or "다음 입고 때 새 물건")
+                _UIKit:SetText(row .. "/Price", "")
+            else
+                _InventoryWindow:DrawItem(row .. "/Slot", s)
+                local item = _ItemData:Parse(s)
+                local base = _ItemData:GetBase(item.base)
+                local sub = base ~= nil and base.name or ""
+                if base ~= nil and base.reqLv > 1 then
+                    local need = "요구 Lv " .. tostring(base.reqLv)
+                    if base.reqLv > st.Level then need = "<color=#FF6464>" .. need .. "</color>" end
+                    sub = sub .. " · " .. need
+                end
+                _UIKit:SetText(row .. "/Name", _ItemData:DisplayName(s))
+                _UIKit:SetText(row .. "/Sub", sub)
+                local price = shop:StockPrice(s)
+                _UIKit:SetText(row .. "/Price", price > st.Gold and ("<color=#FF6464>" .. tostring(price) .. "</color>") or tostring(price))
+            end
+        end
+        local sel = list[self.Selected] or ""
+        local can = false
+        if sel == "" then
+            _UIKit:SetText(self.Win .. "/Detail/Desc", "<color=#9C9488>왼쪽에서 물건을 고르세요.</color>")
+        else
+            local price = shop:StockPrice(sel)
+            can = price <= st.Gold
+            local desc = _ItemData:DescribeDetailed(sel) .. "\n" .. self:Compare(sel, inv:GetEquipMap())
+            desc = desc .. "\n\n" .. _UIKit:Colored(can and "#FFD27A" or "#FF6464", "값 " .. tostring(price) .. " 골드" .. (can and "" or " — 골드 부족"))
+            _UIKit:SetText(self.Win .. "/Detail/Desc", desc)
+        end
+        local btn = _UIKit:Get(self.Win .. "/BtnBuy")
+        if isvalid(btn) and btn.ButtonComponent ~= nil then btn.ButtonComponent.Enable = can end
+        _UIKit:SetColor(self.Win .. "/BtnBuy", can and Color(1, 0.86, 0.62, 1) or Color(0.42, 0.42, 0.42, 1))
+    end
+
+    method string Compare(string sel, table eq)
+        -- 같은 부위 착용품과 비교 (반지는 빈 칸이 있으면 빈 칸 기준)
+        local slot = _ItemData:GetSlot(sel)
+        if slot == "" then return "" end
+        local old = ""
+        if slot == "ring" then
+            if eq.ring1 ~= nil and eq.ring2 ~= nil then old = eq.ring1 end
+        elseif eq[slot] ~= nil then
+            old = eq[slot]
+        end
+        return _ItemData:CompareText(sel, old)
+    end
+
+end

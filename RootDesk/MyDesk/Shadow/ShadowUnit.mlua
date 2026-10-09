@@ -115,7 +115,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ClientOnly")
     method void StartView()
-        -- 클라이언트: 주인이 동기화되면 내 소환수는 그대로, 팀원 소환수는 흐린 회색 고리 + 작은 주인 이름
+        -- 클라이언트: 주인이 동기화되면 내 소환수는 그대로(야영지에서만 「내 소환수」), 팀원 소환수는 흐린 회색 고리 + 작은 주인 이름
         self.ViewTimer = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
     end
 
@@ -125,16 +125,22 @@ script ShadowUnit extends AttackComponent
         if not isvalid(owner) or not isvalid(owner.PlayerComponent) then return end
         local me = _UserService.LocalPlayer
         local mine = isvalid(me) and owner == me
-        local state = mine and "mine" or ("other:" .. owner.PlayerComponent.Nickname)
+        -- 야영지(마을)에서는 내 소환수에도 「내 소환수」 이름표 — 따라온 해골을 적으로 착각하지 않게
+        local town = false
+        if mine and isvalid(self.Entity.CurrentMap) then
+            local info = _GameData:GetMapInfo(_GameConst:BaseMapName(self.Entity.CurrentMap.Name))
+            town = info ~= nil and info.kind == "town"
+        end
+        local state = mine and (town and "mine:town" or "mine") or ("other:" .. owner.PlayerComponent.Nickname)
         local ring = self.Entity:GetChildByName("AllyRing")
         if not mine and isvalid(ring) then ring.SpriteRendererComponent.Color = Color(0.55, 0.55, 0.58, 0.45) end
         if state == self.ViewState then return end
         self.ViewState = state
         local tag = self.Entity.NameTagComponent
         if isvalid(tag) then
-            tag.Name = mine and "" or owner.PlayerComponent.Nickname
-            tag.FontColor = Color(0.75, 0.75, 0.78, 1)
-            tag.Enable = not mine
+            tag.Name = mine and (town and "내 소환수" or "") or owner.PlayerComponent.Nickname
+            tag.FontColor = mine and Color(0.55, 1, 0.85, 1) or Color(0.75, 0.75, 0.78, 1)
+            tag.Enable = not mine or town
         end
     end
 

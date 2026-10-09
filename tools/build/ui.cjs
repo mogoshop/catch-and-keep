@@ -198,7 +198,7 @@ function buildGameHud() {
   k.frame("MenuWin", "middle-center", [0, 20], [800, 640], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
-    ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬어"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
+    ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬워드"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const path = `MenuWin/${n}`;
     k.btn(path, "", { anchor: "top-left", pos: [64 + col * 230, -96 - row * 160], rect_size: [212, 148] });
@@ -280,8 +280,7 @@ function buildGameHud() {
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
-  b.patch("NpcWin/Title", { anchor: "top-left", pos: [70, -22], rect_size: [600, 44], pivot: [0, 1] });
-  b.patchComponent("NpcWin/Title", "MOD.Core.TextGUIRendererComponent", { HorizontalAlignment: 1 });
+  // 제목(NPC 이름)은 다른 창과 같은 공통 제목 규칙(k.frame: 가운데 · 제목 띠 세로 가운데)을 그대로 쓴다
   k.inner("NpcWin/Paper", "top-center", [0, -72], [1000, 150], "win_content");
   b.text("NpcWin/Paper/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -14], rect_size: [960, 124] });
   [0, 1, 2, 3, 4].forEach((i) => k.btn(`NpcWin/Btn${i + 1}`, `Btn${i + 1}`, { anchor: "bottom-right", pos: [-50 - (4 - i) * 196, 24], rect_size: [184, 72], font_size: 20 }));
@@ -373,9 +372,9 @@ function buildGameHud() {
   k.inner("RankWin/Paper", "top-center", [0, -156], [580, 470], "win_content");
   b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 440] });
 
-  // ── 룬어 조합법 (메뉴 「룬어」): 조합·부위·효과, 룬별 효과 (RuneWindow.mlua) ──
-  k.frame("RuneWin", "middle-center", [0, 20], [960, 760], "룬어 조합법");
-  [["TabWords", "룬어 조합", -339], ["TabRunes1", "하급 룬", -113], ["TabRunes2", "중급 룬", 113], ["TabRunes3", "상급 룬", 339]].forEach(([n, t, x]) => {
+  // ── 룬워드 조합법 (메뉴 「룬워드」): 조합·부위·효과, 룬별 효과 (RuneWindow.mlua) ──
+  k.frame("RuneWin", "middle-center", [0, 20], [960, 760], "룬워드 조합법");
+  [["TabWords", "룬워드 조합", -339], ["TabRunes1", "하급 룬", -113], ["TabRunes2", "중급 룬", 113], ["TabRunes3", "상급 룬", 339]].forEach(([n, t, x]) => {
     k.btn(`RuneWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [216, 56], font_size: 18 });
   });
   k.inner("RuneWin/Paper", "top-center", [0, -156], [900, 572], "win_content");

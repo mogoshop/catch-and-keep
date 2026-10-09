@@ -6,7 +6,7 @@
 script UIKit extends Logic
 
     property string Group = "/ui/GameHUD"
-    property table WindowPaths = { AudioWin = "/ui/AudioSettingsHUD/Modal", InvWin = "/ui/EquipmentHUD/SafeArea/InvWin", QuestWin = "/ui/QuestJournalHUD/SafeArea/QuestWin", MiniMap = "/ui/NavigationHUD/SafeArea/MiniMap", QuestTrack = "/ui/NavigationHUD/SafeArea/QuestTrack", JournalWin = "/ui/JournalHUD/SafeArea/JournalWin", JournalOpen = "/ui/JournalHUD/SafeArea/BtnOpen", StashWin = "/ui/StashHUD/SafeArea/StashWin" }
+    property table WindowPaths = { AudioWin = "/ui/AudioSettingsHUD/Modal", InvWin = "/ui/EquipmentHUD/SafeArea/InvWin", QuestWin = "/ui/QuestJournalHUD/SafeArea/QuestWin", MiniMap = "/ui/NavigationHUD/SafeArea/MiniMap", QuestTrack = "/ui/NavigationHUD/SafeArea/QuestTrack", JournalWin = "/ui/JournalHUD/SafeArea/JournalWin", JournalOpen = "/ui/JournalHUD/SafeArea/BtnOpen", StashWin = "/ui/StashHUD/SafeArea/StashWin", MerchantWin = "/ui/MerchantHUD/SafeArea/MerchantWin" }
     property table Cache = {}
     property table Handlers = {}
     property table Windows = {}             -- Esc로 닫을 창 이름 목록
@@ -220,6 +220,44 @@ script UIKit extends Logic
             table.insert(out, ch)
         end
         return table.concat(out)
+    end
+
+    method integer CharCount(string text)
+        -- UTF-8 글자 수 (한글 1자 = 1). 글자 길이에 맞춰 칸 너비를 정할 때 쓴다
+        local n = 0
+        for _ in string.gmatch(text or "", "[\0-\127\194-\244][\128-\191]*") do n = n + 1 end
+        return n
+    end
+
+    method number TextWidth(string text, number fontPx)
+        -- 글자 폭 어림값: 한글·기호 1자 = 글자 크기, 영문·숫자·공백 = 0.55배
+        local w = 0
+        for ch in string.gmatch(text or "", "[\0-\127\194-\244][\128-\191]*") do
+            w = w + (string.len(ch) > 1 and fontPx or fontPx * 0.55)
+        end
+        return w
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetFitText(string rel, string text, number fontPx, number sidePad, number minW, number maxW)
+        -- 글자 길이에 맞춰 배너·버튼 너비를 정한다 (공통 규칙: 좌우 장식 안쪽 여백 sidePad, 가운데 정렬).
+        -- 최대 너비를 넘으면 그 안에서 글자 크기를 줄인다 — 이름이 길어도 테두리를 넘지 않는다
+        local e = self:Get(rel)
+        if not isvalid(e) then return end
+        local t = e.TextGUIRendererComponent
+        if t == nil then return end
+        if t.Text ~= text then t.Text = text end
+        local need = self:TextWidth(text, fontPx) + sidePad * 2
+        local width = math.max(minW, math.min(maxW, need))
+        local size = e.UITransformComponent.RectSize
+        if math.abs(size.x - width) > 1 then e.UITransformComponent.RectSize = Vector2(width, size.y) end
+        local fit = need > maxW
+        if t.BestFit ~= fit then
+            t.BestFit = fit
+            t.MinSize = math.floor(fontPx * 0.7)
+            t.MaxSize = math.floor(fontPx)
+        end
+        if t.Padding.left ~= math.floor(sidePad) then t.Padding = RectOffset(math.floor(sidePad), math.floor(sidePad), 0, 0) end
     end
 
     method string Colored(string color, string text)

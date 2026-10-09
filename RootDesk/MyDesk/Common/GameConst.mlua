@@ -53,6 +53,25 @@ script GameConst extends Logic
         return mapName
     end
 
+    method integer DifficultyOfMap(string mapName)
+        -- 맵 이름 접미사로 난이도 (map01_nm → 1, _hell → 2, 없으면 0)
+        for i = 1, 2 do
+            local suffix = _GameData:GetDifficulty(i).suffix
+            local n = string.len(suffix)
+            if n > 0 and string.sub(mapName, -n) == suffix then return i end
+        end
+        return 0
+    end
+
+    method string LevelText(string text, string mapName)
+        -- 이름 속 「(Lv a~b)」를 그 맵 난이도의 실제 레벨로 바꾼다 (악몽 +30 · 지옥 +60). 맵 데이터는 보통 기준이라서
+        local bonus = _GameData:GetDifficulty(self:DifficultyOfMap(mapName)).levelBonus
+        if bonus == nil or bonus <= 0 then return text end
+        local out = string.gsub(text, "Lv%s*(%d+)%s*~%s*(%d+)", function(a, b) return "Lv " .. tostring(tonumber(a) + bonus) .. "~" .. tostring(tonumber(b) + bonus) end)
+        if out == text then out = string.gsub(text, "Lv%s*(%d+)", function(a) return "Lv " .. tostring(tonumber(a) + bonus) end) end
+        return out
+    end
+
     method string BeltIcon(string kind)
         -- 벨트 물건 종류 → ui_icons 키
         if kind == "hp" then return "potion_hp" end

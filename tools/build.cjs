@@ -12,7 +12,7 @@ const STEPS = {
   models: () => require("./build/models.cjs").run(),
   player: () => require("./build/player.cjs").run(),
   maps: () => require("./build/maps.cjs").run(),
-  ui: () => { require("./build/ui.cjs").run(); require("./build/quest-journal.cjs").run(); require("./build/navigation.cjs").run(); require("./build/equipment.cjs").run(); require("./build/audio-settings.cjs").run(); require("./build/journal.cjs").run(); require("./build/companion.cjs").run(); require("./build/aim.cjs").run(); require("./build/confirm.cjs").run(); require("./build/stash.cjs").run(); },
+  ui: () => { require("./build/ui.cjs").run(); require("./build/quest-journal.cjs").run(); require("./build/navigation.cjs").run(); require("./build/equipment.cjs").run(); require("./build/audio-settings.cjs").run(); require("./build/journal.cjs").run(); require("./build/companion.cjs").run(); require("./build/aim.cjs").run(); require("./build/confirm.cjs").run(); require("./build/stash.cjs").run(); require("./build/merchant.cjs").run(); },
 };
 const ORDER = Object.keys(STEPS);
 

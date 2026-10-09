@@ -31,6 +31,12 @@ script HudMap extends Logic
     property number CombatUntil = 0            -- 모바일 전투 중 의뢰 추적 접기 (InMobileCombat)
     property Vector2 LastMePos = Vector2(0, 0)
     property integer ShownFloor = 0
+    property integer ZoomLevel = 2             -- 1 맵 전체 · 2 기본(가까이, 나를 따라감) · 3 더 가까이
+    property number FitScale = 1               -- 맵 전체가 원 안에 들어가는 축척
+    property Vector2 ViewCenter = Vector2(0, 0) -- 원 가운데에 오는 월드 위치 (확대 시 내 위치)
+    property Vector2 PlacedCenter = Vector2(99999, 99999)
+    property number TerrainHalf = 132          -- 바닥을 자르는 테두리 사각형 절반 (원 밖 모서리는 Area/Frame 테두리 그림이 덮는다)
+    property table TerrainRects = {}           -- 월드 기준 바닥 사각형 { x, y, w, h } — 확대 단계가 바뀌면 크기만 다시 계산
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -46,6 +52,9 @@ script HudMap extends Logic
         -- 모바일도 지도를 펼친 채 시작한다 (접힌 채라 「미니맵이 없어졌다」고 보였다)
         self.Expanded = true
         _UIKit:Connect("MiniMap/Toggle", function() self:ToggleMap() end)
+        _UIKit:Connect("MiniMap/Body/ZoomIn", function() self:SetZoom(self.ZoomLevel + 1) end)
+        _UIKit:Connect("MiniMap/Body/ZoomOut", function() self:SetZoom(self.ZoomLevel - 1) end)
+        self:RenderZoomButtons()
         _UIKit:SetEnabled("Banner", false)
         _UIKit:SetEnabled("NpcMark", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
@@ -80,6 +89,7 @@ script HudMap extends Logic
         end
         self:TickBanner()
         local me = _Util:Pos2(player)
+        self:UpdateView(me)
         _UIKit:SetPos("MiniMap/Body/Area/Me", self:ToMini(me))
         -- 내 화살표는 움직인 방향을 가리킨다
         local moved = me - self.LastMePos
@@ -119,7 +129,7 @@ script HudMap extends Logic
         local floor = self:DepthFloor()
         self.ShownFloor = floor
         if info ~= nil then
-            title = info.name
+            title = _GameConst:LevelText(info.name, mapName)
             if info.kind == "town" then sub = "마을" elseif info.kind == "side" then sub = "곁가지 던전" elseif info.kind == "instance" then sub = "심도 던전" else sub = "사냥터" end
             -- 심도: 층 번호 (DepthDirector.Floor 동기화)
             if info.kind == "instance" and floor > 0 then title = "심도 " .. tostring(floor) .. "층" end
@@ -166,10 +176,8 @@ script HudMap extends Logic
                 n = n + 1
                 local path = "MiniMap/Body/Area/F" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
-                _UIKit:SetPos(path, self:ToMini(Vector2(f.x, f.y)))
                 _UIKit:SetIcon(path, _GameData:GetUiIcon(f.kind == "portal" and "minimap_exit" or "dot"))
                 _UIKit:SetColor(path, self:FeatureColor(f.kind))
-                _UIKit:SetText(path .. "/Label", self:FeatureLabel(f))
             end
             if (f.kind == "portal" or f.kind == "depth") and (f.label or "") ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
             if f.kind == "quest" then
@@ -178,6 +186,86 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
+        self:PlaceFeatures()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlaceFeatures()
+        -- 표식 위치 + 이름. 이름끼리 겹치면 덜 중요한 쪽 이름을 숨긴다 (의뢰 > 출구 > 웨이포인트 > 심도 > 보스 > 제단 > NPC)
+        self.PlacedCenter = self.ViewCenter
+        local order = {}
+        for i, f in ipairs(self.Features) do
+            if i > self.FeatureCount then break end
+            local pos = self:ToMini(Vector2(f.x, f.y))
+            _UIKit:SetPos("MiniMap/Body/Area/F" .. tostring(i), pos)
+            table.insert(order, { index = i, f = f, pos = pos, rank = self:FeatureRank(f.kind) })
+        end
+        table.sort(order, function(a, b) if a.rank ~= b.rank then return a.rank < b.rank end return a.index < b.index end)
+        local placed = {}
+        for _, o in ipairs(order) do
+            local label = self:FeatureLabel(o.f)
+            -- 원 가장자리에 붙은 표식(멀리 있는 것)은 출구·의뢰만 이름을 단다
+            if label ~= "" and o.pos:Magnitude() >= self.MiniRadius - 0.5 and o.f.kind ~= "portal" and o.f.kind ~= "quest" then label = "" end
+            if label ~= "" then
+                local w = _UIKit:CharCount(label) * 15 + 8
+                local cx = o.pos.x
+                local cy = o.pos.y - 17
+                for _, r in ipairs(placed) do
+                    if math.abs(cx - r.x) < (w + r.w) / 2 and math.abs(cy - r.y) < 19 then
+                        label = ""
+                        break
+                    end
+                end
+                if label ~= "" then table.insert(placed, { x = cx, y = cy, w = w }) end
+            end
+            _UIKit:SetText("MiniMap/Body/Area/F" .. tostring(o.index) .. "/Label", label)
+        end
+    end
+
+    method integer FeatureRank(string kind)
+        local ranks = { quest = 1, portal = 2, waypoint = 3, depth = 4, boss = 5, altar = 6, npc = 7 }
+        return ranks[kind] or 8
+    end
+
+    method number ZoomFactor()
+        -- 확대 단계별 배율. 2단계(기본)는 맵 전체보다 2배 가까이 보고 나를 따라간다
+        local factors = { 1, 2, 3.2 }
+        return factors[math.max(1, math.min(3, self.ZoomLevel))]
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetZoom(integer level)
+        -- + / − 버튼: 1(전체) ~ 3(가까이)
+        level = math.max(1, math.min(3, level))
+        if level == self.ZoomLevel then return end
+        self.ZoomLevel = level
+        self.Scale = self.FitScale * self:ZoomFactor()
+        self.PlacedCenter = Vector2(99999, 99999)
+        local player = _UserService.LocalPlayer
+        if isvalid(player) then self:UpdateView(_Util:Pos2(player)) end
+        self:LayoutTerrain()
+        self:PlaceFeatures()
+        self.NextFocusAt = 0
+        self:RenderZoomButtons()
+        log("[VRF] minimap zoom=" .. tostring(level) .. " scale=" .. string.format("%.2f", self.Scale))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderZoomButtons()
+        -- 끝 단계 버튼은 흐리게
+        _UIKit:SetText("MiniMap/Body/ZoomIn/Text", self.ZoomLevel >= 3 and "<color=#6E6658>+</color>" or "+")
+        _UIKit:SetText("MiniMap/Body/ZoomOut/Text", self.ZoomLevel <= 1 and "<color=#6E6658>−</color>" or "−")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateView(Vector2 me)
+        -- 전체 보기는 맵 가운데 고정, 확대하면 내 위치를 가운데로 (지형은 묶음째 옮긴다)
+        local center = self.ZoomLevel <= 1 and self.MapCenter or me
+        self.ViewCenter = center
+        if (center - self.PlacedCenter):Magnitude() > 0.05 then
+            self:LayoutTerrain()
+            self:PlaceFeatures()
+        end
     end
 
     method Color FeatureColor(string kind)
@@ -249,7 +337,7 @@ script HudMap extends Logic
                     local radius = 0.6
                     local show = true
                     if kind == "portal" then
-                        label = component.Label
+                        label = _GameConst:LevelText(component.Label, map.Name)
                         target = component.TargetMap
                         radius = component.Radius
                         show = component:CanUse(player)
@@ -281,13 +369,16 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method void BuildTerrain(Entity map, any info)
         self.TerrainUsed = 0
-        for i = 1, self.TerrainCount do _UIKit:SetEnabled("MiniMap/Body/Area/Terrain/R" .. tostring(i), false) end
+        self.TerrainRects = {}
+        for i = 1, self.TerrainCount do _UIKit:SetEnabled("MiniMap/Body/Area/Terrain/Pan/R" .. tostring(i), false) end
         if info == nil or not isvalid(map) then return end
         local tiles = map:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
         if tiles == nil then return end
         -- 실제 타일 목록의 양끝을 포함해 CSV 크기 밖 지형과 최상단도 누락하지 않는다.
         self.MapCenter = Vector2(0, 0)
-        self.Scale = self:FitMiniScale(info.w, info.h)
+        self.TerrainRects = {}
+        self.FitScale = self:FitMiniScale(info.w, info.h)
+        self.Scale = self.FitScale * self:ZoomFactor()
         local positions = tiles:GetAllTilePositions()
         local low = nil
         local high = nil
@@ -301,7 +392,9 @@ script HudMap extends Logic
         local a = tiles:ToWorldPosition(low)
         local z = tiles:ToWorldPosition(high)
         self.MapCenter = Vector2((a.x + z.x) / 2, (a.y + z.y) / 2)
-        self.Scale = self:FitMiniScale((high.x - low.x + 1) * grid.x, (high.y - low.y + 1) * grid.y)
+        self.FitScale = self:FitMiniScale((high.x - low.x + 1) * grid.x, (high.y - low.y + 1) * grid.y)
+        self.Scale = self.FitScale * self:ZoomFactor()
+        self.ViewCenter = self.MapCenter
         local rects = {}
         local active = {}
         for y = low.y, high.y do
@@ -328,10 +421,9 @@ script HudMap extends Logic
             if i > self.TerrainCount then log_warning("[HudMap] terrain capacity exceeded " .. tostring(#rects)) break end
             local a = tiles:ToWorldPosition(Vector2Int(r.x1, r.y1))
             local z = tiles:ToWorldPosition(Vector2Int(r.x2, r.y2))
-            local e = _UIKit:Get("MiniMap/Body/Area/Terrain/R" .. tostring(i))
+            table.insert(self.TerrainRects, { x = (a.x + z.x) / 2, y = (a.y + z.y) / 2, w = (r.x2 - r.x1 + 1) * grid.x, h = (r.y2 - r.y1 + 1) * grid.y })
+            local e = _UIKit:Get("MiniMap/Body/Area/Terrain/Pan/R" .. tostring(i))
             if isvalid(e) then
-                e.UITransformComponent.RectSize = Vector2((r.x2 - r.x1 + 1) * grid.x * self.Scale, (r.y2 - r.y1 + 1) * grid.y * self.Scale)
-                e.UITransformComponent.anchoredPosition = self:ToMini(Vector2((a.x + z.x) / 2, (a.y + z.y) / 2))
                 -- 실제 화면에서 검증한 사각 바닥 타일을 Simple로 그려 둥근 점 늘림을 피한다.
                 local sprite = e:GetComponent("MOD.Core.SpriteGUIRendererComponent")
                 if isvalid(sprite) then
@@ -340,6 +432,32 @@ script HudMap extends Logic
                 end
                 e.Enable = true
                 self.TerrainUsed = i
+            end
+        end
+        self:LayoutTerrain()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LayoutTerrain()
+        -- 바닥 사각형을 지금 보는 가운데 기준으로 놓고 테두리 사각형(±TerrainHalf) 안으로 자른다.
+        -- (메이커 원형 마스크는 자식을 자르지 못했다) 원 밖 모서리는 위에 덮인 테두리 그림이 가린다
+        local half = self.TerrainHalf
+        for i, r in ipairs(self.TerrainRects) do
+            if i > self.TerrainUsed then break end
+            local e = _UIKit:Get("MiniMap/Body/Area/Terrain/Pan/R" .. tostring(i))
+            if isvalid(e) then
+                local cx = (r.x - self.ViewCenter.x) * self.Scale
+                local cy = (r.y - self.ViewCenter.y) * self.Scale
+                local x1 = math.max(-half, cx - r.w * self.Scale / 2)
+                local x2 = math.min(half, cx + r.w * self.Scale / 2)
+                local y1 = math.max(-half, cy - r.h * self.Scale / 2)
+                local y2 = math.min(half, cy + r.h * self.Scale / 2)
+                local visible = x2 > x1 + 0.5 and y2 > y1 + 0.5
+                if e.Enable ~= visible then e.Enable = visible end
+                if visible then
+                    e.UITransformComponent.RectSize = Vector2(x2 - x1, y2 - y1)
+                    e.UITransformComponent.anchoredPosition = Vector2((x1 + x2) / 2, (y1 + y2) / 2)
+                end
             end
         end
     end
@@ -353,8 +471,8 @@ script HudMap extends Logic
 
     method Vector2 ToMini(Vector2 world)
         -- 원 밖으로 생성되는 임시 포털도 같은 방향의 원 가장자리에서 찾을 수 있다.
-        local x = (world.x - self.MapCenter.x) * self.Scale
-        local y = (world.y - self.MapCenter.y) * self.Scale
+        local x = (world.x - self.ViewCenter.x) * self.Scale
+        local y = (world.y - self.ViewCenter.y) * self.Scale
         local distance = math.sqrt(x * x + y * y)
         if distance > self.MiniRadius then
             x = x * self.MiniRadius / distance
