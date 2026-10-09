@@ -162,7 +162,7 @@ script UndeadSystem extends Logic
         -- 일으킬 때 숙련과 장비 소환수 보너스를 확정한다. 이동 때는 재적용하지 않는다.
         self.Serial = self.Serial + 1
         local rec = { id = "ud" .. tostring(self.Serial), kind = kind, ownerEntityId = player.Id, expireAt = 0, entity = nil, element = "", ratio = 0 }
-        local base = self:GetBaseStats(kind, slvl, self:SkillLevel(player, "skeleton_mastery"))
+        local base = self:GetBaseStats(kind, slvl, self:SkillLevel(player, "skeleton_mastery"), _GameConst:LevelOf(player))
         if kind == "skeleton" then
             local m = _GameData:GetMonsterStats("skel_warrior")
             rec.atk = base.atk
@@ -234,15 +234,18 @@ script UndeadSystem extends Logic
         return Color(0.55, 1, 0.5, 1)
     end
 
-    method table GetBaseStats(string kind, integer level, integer masteryLevel)
+    method table GetBaseStats(string kind, integer level, integer masteryLevel, integer ownerLevel)
         -- 소환 레코드와 스킬 창이 동일한 숙련·반올림 순서를 사용한다. 장비는 호출부에서 적용한다.
+        -- 기본값 × 주인 레벨 성장(몬스터와 같은 곡선 — 같은 레벨 사냥터 몬스터와 맞붙을 수 있게) × 스킬 레벨 % × 숙련 %
         local mastery = 1 + _GameData.skeletonMasteryPct * masteryLevel / 100
-        if kind == "skeleton" then
-            return { atk = math.floor((_GameData.skeletonAtkBase + _GameData.skeletonAtkPerLv * (level - 1)) * mastery), hp = math.floor((_GameData.skeletonHpBase + _GameData.skeletonHpPerLv * (level - 1)) * mastery) }
-        elseif kind == "mage" then
-            return { atk = math.floor((_GameData.mageAtkBase + _GameData.mageAtkPerLv * (level - 1)) * mastery), hp = math.floor((_GameData.mageHpBase + _GameData.mageHpPerLv * (level - 1)) * mastery) }
-        end
-        return {}
+        local skill = 1 + _GameData.undeadSkillLvPct * math.max(0, level - 1) / 100
+        local lv = math.max(1, ownerLevel)
+        local hpGrow = 1 + _GameData.monsterHpPerLevel * (lv - 1)
+        local atkGrow = 1 + _GameData.monsterDmgPerLevel * (lv - 1)
+        local atkBase, hpBase = _GameData.skeletonAtkBase, _GameData.skeletonHpBase
+        if kind == "mage" then atkBase, hpBase = _GameData.mageAtkBase, _GameData.mageHpBase
+        elseif kind ~= "skeleton" then return {} end
+        return { atk = math.floor(atkBase * atkGrow * skill * mastery), hp = math.floor(hpBase * hpGrow * skill * mastery) }
     end
 
     method number GetReviveMultiplier(integer level)

@@ -40,8 +40,10 @@ def monster_stats(mid, level, rank):
 
 
 def shadow_stats(src_hp, src_dmg, shadow_level):
-    g = CFG["shadowStatMul"] * (1 + CFG["shadowLevelGrowth"] * (shadow_level - 1))
-    return src_hp * g, src_dmg * g
+    # 게임(ShadowConfig.GetAtkScale/GetHpScale)과 같은 곡선: 생명 shadowHpMul, 공격 shadowStatMul × 몬스터 성장
+    n = max(shadow_level, 1) - 1
+    return (src_hp * CFG["shadowHpMul"] * (1 + CFG["monsterHpPerLevel"] * n),
+            src_dmg * CFG["shadowStatMul"] * (1 + CFG["monsterDmgPerLevel"] * n))
 
 
 def cmd_exp(a):

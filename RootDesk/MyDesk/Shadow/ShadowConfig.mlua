@@ -75,8 +75,14 @@ script ShadowConfig extends Logic
         return math.max(1, math.min(level, ownerLevel))
     end
 
-    method number GetStatScale(integer level)
-        return self:C().shadowStatMul * (1 + self:C().shadowLevelGrowth * (level - 1))
+    method number GetAtkScale(integer level)
+        -- 그림자 공격 성장 = 몬스터 공격과 같은 곡선 (같은 레벨 몬스터와 맞붙을 수 있게)
+        return self:C().shadowStatMul * (1 + self:C().monsterDmgPerLevel * (math.max(1, level) - 1))
+    end
+
+    method number GetHpScale(integer level)
+        -- 그림자 생명 성장 = 몬스터 생명과 같은 곡선
+        return self:C().shadowHpMul * (1 + self:C().monsterHpPerLevel * (math.max(1, level) - 1))
     end
 
     method number GetSourceAtk(integer grade)
@@ -116,9 +122,8 @@ script ShadowConfig extends Logic
             p.resists = self:ParseResists(m.resists)
             p.behavior = m.behavior
         end
-        local scale = self:GetStatScale(level) * statMul
-        p.atk = math.max(1, math.floor(self:GetSourceAtk(grade) * dmgRatio * scale))
-        p.hp = math.max(1, math.floor(self:GetSourceHp(grade) * hpRatio * scale))
+        p.atk = math.max(1, math.floor(self:GetSourceAtk(grade) * dmgRatio * self:GetAtkScale(level) * statMul))
+        p.hp = math.max(1, math.floor(self:GetSourceHp(grade) * hpRatio * self:GetHpScale(level) * statMul))
         p.hpRatio = hpRatio
         p.dmgRatio = dmgRatio
         return p

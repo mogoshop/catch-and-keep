@@ -68,6 +68,12 @@ script SelfTest extends Logic
         self:Check("level gap dealt", math.abs(g:LevelGapDealt(10, 31) - 0.3) < 0.01 and g:LevelGapDealt(10, 11) == 1 and g:LevelGapDealt(10, 80) == g.LevelGapDmgFloor, "높은 몬스터에게 피해 감소·하한")
         self:Check("level gap taken", g:LevelGapTaken(31, 10) > 1.2 and g:LevelGapTaken(31, 10) <= 1 + g.LevelGapTakenCap and g:LevelGapTaken(10, 31) == 1, "높은 몬스터는 더 아프다")
         self:Check("level gap extract", g:LevelGapExtract(10, 31) < 1 and g:LevelGapExtract(10, 31) >= g.LevelGapExtractFloor and g:LevelGapExtract(31, 10) == 1, "높은 몬스터 혼은 덜 뽑힌다")
+        -- 소환수 성장 = 몬스터 곡선: Lv10 주인·해골 5레벨·숙련 3이면 같은 레벨 해골 전사(생명 약 500)와 맞붙을 수 있다
+        local sk = _UndeadSystem:GetBaseStats("skeleton", 5, 3, 10)
+        local mobHp = 135 * (1 + _GameData.monsterHpPerLevel * 9)
+        self:Check("undead vs level", sk.hp >= mobHp * 0.4 and sk.atk >= 20 and _UndeadSystem:GetBaseStats("skeleton", 5, 3, 1).hp < sk.hp, "해골 생명 ≥ 같은 레벨 몬스터의 40%, 주인 레벨에 따라 큰다")
+        local sh10 = _ShadowConfig:GetProfile("skel_warrior", 1, 10, 1)
+        self:Check("shadow vs level", sh10.hp >= mobHp * 0.4, "Lv10 그림자 생명 ≥ 같은 레벨 몬스터의 40%")
         self:Check("shadow power level", _ShadowConfig:EffectiveLevel(31, 10) == 10 and _ShadowConfig:EffectiveLevel(8, 10) == 8, "그림자 힘 = min(본래, 주인)")
         -- 언데드 수 (D2): 1·2·3·3·3·4 … 20레벨 8
         local u = _UndeadSystem
