@@ -454,10 +454,18 @@ script ItemData extends Logic
         return self:Serialize(item)
     end
 
+    method integer TierOfLevel(integer ilvl)
+        -- 아이템 레벨이 속한 난이도 구간: 악몽 가산(15)까지 보통, 지옥 가산(30)까지 악몽, 그 위 지옥 (difficulty.csv levelBonus)
+        if ilvl > _GameData:GetDifficulty(2).levelBonus then return 2 end
+        if ilvl > _GameData:GetDifficulty(1).levelBonus then return 1 end
+        return 0
+    end
+
     method number GearTier(integer ilvl)
-        -- D2처럼 난이도(아이템 레벨)마다 무작위 옵션 최대치가 다르다: 보통(≤30) · 악몽(≤60) · 지옥
-        if ilvl <= 30 then return _GameData.gearTierNormal end
-        if ilvl <= 60 then return _GameData.gearTierNightmare end
+        -- D2처럼 난이도(아이템 레벨)마다 무작위 옵션 최대치가 다르다
+        local tier = self:TierOfLevel(ilvl)
+        if tier == 0 then return _GameData.gearTierNormal end
+        if tier == 1 then return _GameData.gearTierNightmare end
         return 1
     end
 
@@ -467,10 +475,10 @@ script ItemData extends Logic
     end
 
     method number LevelProgress(integer ilvl)
-        -- 같은 난이도 안에서 아이템 레벨이 어디쯤인지 0~1 (보통 1~15 · 악몽 31~45 · 지옥 61~75)
-        local start = 1
-        if ilvl > 60 then start = 61 elseif ilvl > 30 then start = 31 end
-        return math.max(0, math.min(1, (ilvl - start) / 14))
+        -- 같은 난이도 안에서 아이템 레벨이 어디쯤인지 0~1 (보통 1~15 · 악몽 16~30 · 지옥 31~45 — 구간 폭 = 악몽 가산)
+        local step = math.max(2, _GameData:GetDifficulty(1).levelBonus)
+        local start = 1 + _GameData:GetDifficulty(self:TierOfLevel(ilvl)).levelBonus
+        return math.max(0, math.min(1, (ilvl - start) / (step - 1)))
     end
 
     method integer RollAffix(any a, integer ilvl)
@@ -482,7 +490,7 @@ script ItemData extends Logic
         local t = self:LevelProgress(ilvl)
         -- 보통: 아래 40% → 위 40%. 악몽·지옥은 상한이 커지는 만큼 30~70%에서 시작해 이전 난이도 끝보다 떨어지지 않게
         local fromK, toK = 0.6 * t, 0.4 + 0.6 * t
-        if ilvl > 30 then fromK, toK = 0.3 + 0.5 * t, 0.7 + 0.3 * t end
+        if self:TierOfLevel(ilvl) > 0 then fromK, toK = 0.3 + 0.5 * t, 0.7 + 0.3 * t end
         local from = math.floor(lo + (hi - lo) * fromK)
         local to = math.max(from, math.floor(lo + (hi - lo) * toK + 0.5))
         return _UtilLogic:RandomIntegerRange(from, to)
