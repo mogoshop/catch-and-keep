@@ -297,11 +297,11 @@ script ShadowHUD extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         _UIKit:SetIcon(d .. "/Stage/Portrait", m ~= nil and m.stand or "")
         _UIKit:SetColor(d .. "/Stage/Portrait", Color(0.82, 0.72, 1, 1))
-        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  Lv" .. tostring(e.level) .. (e.plus > 0 and ("  " .. _UIKit:Colored("#FFD27A", "+" .. tostring(e.plus))) or ""))
+        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  " .. self:LevelLabel(e) .. (e.plus > 0 and ("  " .. _UIKit:Colored("#FFD27A", "+" .. tostring(e.plus))) or ""))
         local gradeName = "일반"
         if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
-        local p = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
-        local full = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus))
+        local p = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), 1)
+        local full = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus))
         local element = p.element ~= "" and (" · " .. _ShadowConfig:ElementName(p.element) .. " 속성") or ""
         local state = e.deployed and " · 소환 중" or (e.wait > 0 and (" · 회복 " .. tostring(e.wait) .. "초") or "")
         _UIKit:SetText(d .. "/Grade", "[" .. gradeName .. "]" .. element .. state)
@@ -310,7 +310,8 @@ script ShadowHUD extends Logic
         local roles = { ranged = "원거리 사격", burrow = "땅속 기습", hitrun = "치고 빠지기", coward = "겁쟁이(무리와 함께)" }
         local lines = {
             "공격 " .. tostring(full.atk) .. self:PlusText(full.atk - p.atk) .. "   ·   생명 " .. tostring(full.hp) .. self:PlusText(full.hp - p.hp),
-            (st ~= nil and e.level >= st.Level) and _UIKit:Colored("#8C99B4", "레벨 최대 (내 레벨까지) — 내가 레벨업하면 다시 자란다")
+            (st ~= nil and e.level > st.Level) and _UIKit:Colored("#C9A2FF", string.format("본래 Lv%d — 지금은 내 레벨(Lv%d)만큼 힘을 낸다. 내가 크면 본래 레벨까지 함께 강해진다", e.level, st.Level))
+                or (st ~= nil and e.level >= st.Level) and _UIKit:Colored("#8C99B4", "레벨 최대 (내 레벨까지) — 내가 레벨업하면 다시 자란다")
                 or _UIKit:Colored("#9EE6A0", string.format("경험치 %d%% — 소환해 데리고 다니며 처치하면 오른다", e.xp)),
             string.format("공격 간격 %.1f초  ·  사거리 %.1f  ·  이동 %.1f", p.cooldown, p.range, p.speed),
             "저항: " .. (#resist > 0 and table.concat(resist, " · ") or "없음"),
@@ -390,6 +391,20 @@ script ShadowHUD extends Logic
         return " " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(math.floor(diff)) .. ")")
     end
 
+    method integer PowerLevel(table e)
+        -- 지금 내는 힘의 레벨: 본래 레벨과 내 레벨 중 낮은 쪽
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        return _ShadowConfig:EffectiveLevel(e.level, st ~= nil and st.Level or 0)
+    end
+
+    method string LevelLabel(table e)
+        -- 「Lv31」 또는 내 레벨보다 높으면 「Lv31(힘 Lv10)」
+        local power = self:PowerLevel(e)
+        if power < e.level then return "Lv" .. tostring(e.level) .. _UIKit:Colored("#C9A2FF", "(힘 Lv" .. tostring(power) .. ")") end
+        return "Lv" .. tostring(e.level)
+    end
+
     method integer SalvageYield(table e)
         if _ShadowConfig:GetDisassembleYield(e.grade) <= 0 then return 0 end
         return _ShadowConfig:GetDisassembleYield(e.grade) + _ShadowConfig:GetPlusRefund(e.plus)
@@ -435,7 +450,7 @@ script ShadowHUD extends Logic
         if v ~= nil then trait = trait .. " · " .. v.name end
         local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
         local assign = e.assign > 0 and (_UIKit:Colored("#FFD27A", "[지정 " .. tostring(e.assign) .. "] ")) or ""
-        return assign .. string.format("%s  [%s%s]  Lv%d", self:ShadowName(e.src), gradeName, trait, e.level) .. plus .. state
+        return assign .. string.format("%s  [%s%s]  %s", self:ShadowName(e.src), gradeName, trait, self:LevelLabel(e)) .. plus .. state
     end
 
     @ExecSpace("ClientOnly")
@@ -461,8 +476,8 @@ script ShadowHUD extends Logic
         local owner = self:Owner()
         local cmd = self:Commander()
         if owner == nil or cmd == nil then return end
-        local name = self:ShadowName(e.src) .. " Lv" .. tostring(e.level)
-        local now = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
+        local name = self:ShadowName(e.src) .. " " .. self:LevelLabel(e)
+        local now = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), 1)
         if action == "deploy" then
             -- 소환 지정: 소환 스킬(Z)이 지정 순서대로 부른다. 한도가 차 있으면 해제부터 하라고 알린다
             local limit = cmd:GetDeployLimit()
@@ -476,8 +491,8 @@ script ShadowHUD extends Logic
         local essence = _GameData:GetUiIcon("essence")
         if action == "upgrade" then
             local cost = _ShadowConfig:GetUpgradeCost(e.plus)
-            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus + 1))
-            local curP = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus))
+            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus + 1))
+            local curP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus))
             local body = name .. "  +" .. tostring(e.plus) .. " → +" .. tostring(e.plus + 1) .. "  (레벨은 그대로)\n공격 " .. tostring(curP.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(curP.hp) .. " → " .. tostring(nextP.hp)
                 .. "\n정수 " .. tostring(cost) .. " 사용 (보유 " .. tostring(owner.Essence) .. ")  ·  강화 1당 공격·생명 +" .. tostring(_GameData.shadowPlusPct) .. "% · 최대 +" .. tostring(_ShadowConfig:GetPlusMax())
             if e.plus >= _ShadowConfig:GetPlusMax() then

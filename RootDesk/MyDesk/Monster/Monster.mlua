@@ -246,13 +246,16 @@ script Monster extends Component
 
     @ExecSpace("ServerOnly")
     method void TakeDamage(number amount, Entity attacker)
-        -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율만 여기서
+        -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율·레벨 차이만 여기서
         if self.IsDead then return end
         if isvalid(attacker) then
             self.LastAttacker = attacker
             self:NoteContributor(attacker)
         end
-        self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier()
+        local gap = 1
+        local lv = _GameConst:LevelOf(attacker)
+        if lv > 0 then gap = _GameConst:LevelGapDealt(lv, self.Level) end
+        self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier() * gap
         if self.Hp <= 0 then self:Die() end
     end
 

@@ -573,6 +573,13 @@ script ShadowUnit extends AttackComponent
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 지옥견 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
+        -- 레벨 차이: 주인보다 높은 몬스터에게는 덜 들어간다
+        ---@type Monster
+        local foe = defender:GetComponent("script.Monster")
+        if foe ~= nil and isvalid(self.OwnerPlayer) then
+            local lv = _GameConst:LevelOf(self.OwnerPlayer)
+            if lv > 0 then dmg = dmg * _GameConst:LevelGapDealt(lv, foe.Level) end
+        end
         if attackInfo == "shadow.skill" then
             -- 원본 변종 기술: 배율, 기술 속성이 있으면 전부 그 속성
             local v = _GameData:GetVariant(self.Variant)

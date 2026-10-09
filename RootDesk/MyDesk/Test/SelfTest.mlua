@@ -63,6 +63,12 @@ script SelfTest extends Logic
         self:Check("shadow profile", skel.hp > crow.hp and skel.atk > hound.atk, "해골 전사 > 시체 까마귀·지옥견")
         self:Check("shadow element", hound.element == "fire" and hound.ratio > 0, "지옥견 그림자는 화염")
         self:Check("shadow level", _ShadowConfig:GetProfile("hellhound", 1, 10, 1).atk > hound.atk, "레벨이 높으면 강하다")
+        -- 레벨 차이 보정: Lv10이 Lv31(악몽)을 치면 약 30%, 1레벨 차이까지는 그대로, 그림자 힘은 주인 레벨까지
+        local g = _GameConst
+        self:Check("level gap dealt", math.abs(g:LevelGapDealt(10, 31) - 0.3) < 0.01 and g:LevelGapDealt(10, 11) == 1 and g:LevelGapDealt(10, 80) == g.LevelGapDmgFloor, "높은 몬스터에게 피해 감소·하한")
+        self:Check("level gap taken", g:LevelGapTaken(31, 10) > 1.2 and g:LevelGapTaken(31, 10) <= 1 + g.LevelGapTakenCap and g:LevelGapTaken(10, 31) == 1, "높은 몬스터는 더 아프다")
+        self:Check("level gap extract", g:LevelGapExtract(10, 31) < 1 and g:LevelGapExtract(10, 31) >= g.LevelGapExtractFloor and g:LevelGapExtract(31, 10) == 1, "높은 몬스터 혼은 덜 뽑힌다")
+        self:Check("shadow power level", _ShadowConfig:EffectiveLevel(31, 10) == 10 and _ShadowConfig:EffectiveLevel(8, 10) == 8, "그림자 힘 = min(본래, 주인)")
         -- 언데드 수 (D2): 1·2·3·3·3·4 … 20레벨 8
         local u = _UndeadSystem
         self:Check("undead count", u:CountFor(1) == 1 and u:CountFor(3) == 3 and u:CountFor(4) == 3 and u:CountFor(6) == 4 and u:CountFor(20) == 8, "D2 해골 수 규칙")

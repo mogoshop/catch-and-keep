@@ -22,11 +22,8 @@ script SoulExtractor extends Component
         if success then
             ---@type ShadowOwner
             local owner = self.Entity:GetComponent("script.ShadowOwner")
-            -- 시작 레벨 = 처치 레벨 (주인 레벨 이하)
-            ---@type PlayerStats
-            local stats = self.Entity:GetComponent("script.PlayerStats")
+            -- 레벨 = 처치한 몬스터의 본래 레벨 그대로 (Lv31 악마는 Lv31). 힘은 주인 레벨까지만 낸다 (ShadowConfig.EffectiveLevel)
             local level = orb.Level
-            if stats ~= nil then level = math.min(level, stats.Level) end
             if owner ~= nil then owner:AddShadow(orb.SourceId, grade, level, orb.Variant, orb.StandRUID, orb.MoveRUID) end
             _GameEvents:Emit("ShadowExtracted", { player = self.Entity, sourceId = orb.SourceId, grade = grade })
             local name = _ShadowConfig:GetMonsterName(orb.SourceId)
@@ -41,7 +38,11 @@ script SoulExtractor extends Component
 
     method number ChanceFor(SoulOrb orb)
         -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다 (클라이언트 표시도 같은 식)
+        -- 나보다 높은 몬스터의 혼은 레벨 차이만큼 덜 뽑힌다 (_GameConst.LevelGapExtract)
         local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats ~= nil then chance = chance * _GameConst:LevelGapExtract(stats.Level, orb.Level) end
         return math.min(_GameData.extractChanceCap, chance)
     end
 
