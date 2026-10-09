@@ -59,3 +59,13 @@
 - Art 엔티티 UUID·기존 레이아웃·보상 코드는 보존했다. 실행 중 로딩된 quest_art1과 의뢰 인덱스를 보여 주는 [VRF] QuestWindow art1=… index=… 진단 로그를 추가했다.
 - 기본 그림6개·표시형식0·클릭 비수신·UUID 보존 검사와 UI lint clean, npm test6/6 통과. 기존 메이커 재직렬화 변경은 보존하고 이 수정만 별도로 스테이징한다.
 - 메이커 자동 조작이 사용자 조작 중 차단됐고, 중지 후에도 File 메뉴 클릭이 반응하지 않았다. 사용자에게 중지와 Refresh2회 후 의뢰 일지 열기를 요청했다. 직접 확인된 새 적용본 화면·로그 없이 런타임 PASS로 처리하지 않는다.
+
+## 실행 데이터 미갱신 확인·실제 반영 — 2026-10-09 15:41 KST
+
+- 정정: 앞서 안내한 **File → Refresh 메뉴는 실제 메뉴가 아니다**. 여기서 refresh는 공식 Maker MCP의 `maker_refresh_workspace` API를 뜻한다. 사용자에게 존재하지 않는 메뉴를 안내한 오류를 정정한다.
+- 로컬 동기화 후에도 실행 중 `_GameData:GetUiIcon("quest_art1")`는 빈 문자열, 실제 Q1/Art의 ImageRUID는 기존 책 `58020b61089540c8951862d737a46c8e`였다. 최신 QuestWindow의 art1 진단 로그도 실행되지 않았다. 로컬 파일이 맞는 것만으로 메이커에 스크립트가 등록됐다고 판단할 수 없다.
+- 설치된 공식 MakerMCP 실행기의 stdio JSON-RPC 연결로 조회·제어했다. 현재 플레이 맵 pit2 UUID와 MapBuilder가 읽은 로컬 맵 루트 UUID가 동일함을 확인하고, 정상 로그를 보존한 뒤 중지 → workspace refresh 2회 → 빌드/일반 로그 확인 → 플레이했다.
+- 빌드 오류 **0**, 기존 Warning36건. 일반 로그의 SelfTestEvent 의도적 실패 로그와 실제 실패를 구분했다. 새 플레이 SelfTest160/0 확인.
+- 실제 실행값: quest_art1=`7f1dc68392b5435bb77eddecdfa76bc3`, Q1~Q6의 ImageRUID가 사용자 카탈로그 컬러6개와 전부 일치했다. 의뢰창을 연 뒤 [실제 플레이 화면](../../assets/codex-quest-minimap-v1/verification/quest-journal-live.png)에서 책 대신 서로 다른 그림6개 표시를 확인했다.
+- [실행 전후 로그 근거](../../assets/codex-quest-minimap-v1/verification/quest-journal-runtime.json). 캐릭터의 실제 Index=7이므로 이번 화면 검증은 완료된 의뢰의 컬러6개 대상이다. 흑백 잠금 상태를 확인하려고 퀘스트 진행·보상·저장 데이터를 수정하지 않았다.
+- npm test **6/6 통과**. 이번에는 코드 추가 변경 없이 기존 f808b6f 수정의 실제 반영을 확인했다. Claude의 .claude/AGENTS 변경과 기존 UI 재직렬화 변경은 보존한다. 의뢰창은 검수할 수 있도록 플레이 상태로 열어 두었다.
