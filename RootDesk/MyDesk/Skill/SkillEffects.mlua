@@ -17,9 +17,17 @@ script SkillEffects extends Component
     property table DrainVisuals = {}           -- 짧은 흡수 궤적; 맵 이동·사망에서도 정리한다
     property table BlastVisuals = {}
     property integer BlastFxCount = 0
-    property table BoneVisuals = {}
-    property integer BoneLaunchFxCount = 0
-    property integer BoneContactFxCount = 0
+    -- 메이플 스킬 이펙트 (animationclip, 장식 모델 summonritual에 입혀 재생)
+    property string FxShardShot = "423983c3b393414c8a8d91578b1fab9c"     -- 어두운 보라 궤적 (골편 투사체)
+    property string FxShardLaunch = "072ed2b035d44caa9a463b8cdc8a0f07"   -- 해골 무리 발사
+    property string FxShardHit = "5dbd9bf30819471b9375a5d8343ac780"      -- 보라 파열
+    property string FxCorpseBlast = "22444db0645d47f48f300f36b3d90e4b"   -- 검붉은 피 폭발
+    property string FxPoisonCloud = "71898bc523f441e39f00f25ac4989166"   -- 초록 독구름
+    property string FxDrain = "07e92bf63fa44ba5a74507f96cb4e18c"         -- 보라 소용돌이
+    property string FxStorm = "0d7381204f9b47869a705a16cf0344d1"         -- 보라 회오리 고리
+    property string FxWave = "19fd8c7d47ec44aeb467bad744659899"          -- 보라 마법진 폭발
+    property table ClipVisuals = {}           -- 클라이언트: 재생 중인 메이플 스킬 애니메이션 serial
+    property integer StormClip = 0
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -30,7 +38,7 @@ script SkillEffects extends Component
         if book == nil then return false end
         local power = book:GetEffectPower(id, lv)
         local duration = book:GetCurseDuration(lv)   -- 저주 지속 (레벨이 오를수록 길어진다)
-        if id == "bone_shard" then ok = self:BoneShard(me, target, power * spell, nil, nil)
+        if id == "bone_shard" then ok = self:BoneShardFan(me, target, power * spell, book:GetBoneShardCount(lv))
         elseif id == "poison_mist" then ok = self:PoisonMist(target, power * spell)
         elseif id == "corpse_blast" then ok = self:CorpseBlast(target, power * spell)
         elseif id == "soul_drain" then ok = self:SoulDrain(target, power * spell)
@@ -85,6 +93,82 @@ script SkillEffects extends Component
 
     -- ───────── 혼술 ─────────
 
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 내 캐릭터면 스킬 애니메이션을 투명하게 한 번씩 틀어 미리 불러 둔다 (처음 쓸 때 불러오느라 짧은 연출이 안 보였다)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local list = { self.FxShardShot, self.FxShardLaunch, self.FxShardHit, self.FxCorpseBlast, self.FxPoisonCloud, self.FxDrain, self.FxStorm, self.FxWave }
+        local serials = {}
+        for _, ruid in ipairs(list) do
+            local serial = _EffectService:PlayEffectAttached(ruid, self.Entity, Vector3.zero, 0, Vector3(0.1, 0.1, 1), false, { Alpha = 0 })
+            if serial ~= 0 then table.insert(serials, serial) end
+        end
+        self.VisualTimers["preload"] = _TimerService:SetTimerOnce(function()
+            for _, serial in ipairs(serials) do _EffectService:RemoveEffect(serial) end
+            self.VisualTimers["preload"] = nil
+        end, 3)
+    end
+
+    @ExecSpace("Multicast")
+    method void ClipFx(string ruid, Vector3 pos, number scale, number seconds, number angle)
+        -- 메이플 스킬 애니메이션을 그 자리에 seconds 동안 재생한다. 서버가 바꾼 SpriteRUID는 클라이언트에 안 보여서 클라이언트마다 EffectService로 그린다
+        local me = _UserService.LocalPlayer
+        if ruid == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local serial = _EffectService:PlayEffect(ruid, self.Entity, pos, angle, Vector3(scale, scale, 1), seconds > 1.5, nil)
+        if serial == 0 then return end
+        self.ClipVisuals[serial] = true
+        local key = "clip" .. tostring(serial)
+        self.VisualTimers[key] = _TimerService:SetTimerOnce(function()
+            _EffectService:RemoveEffect(serial)
+            self.ClipVisuals[serial] = nil
+            self.VisualTimers[key] = nil
+        end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void StormClipFx(number seconds)
+        -- 뼈 폭풍 회오리 고리: 시전자에게 붙여 따라다니게 한다. 다시 쓰면 새 시간으로 다시 건다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        if self.StormClip ~= 0 then _EffectService:RemoveEffect(self.StormClip) end
+        local oldTimer = self.VisualTimers["stormclip"]
+        if oldTimer ~= nil then _TimerService:ClearTimer(oldTimer) end
+        local serial = _EffectService:PlayEffectAttached(self.FxStorm, self.Entity, Vector3(0, 0.15, 0), 0, Vector3(0.65, 0.65, 1), true, { Alpha = 0.6 })
+        self.StormClip = serial
+        if serial == 0 then return end
+        self.VisualTimers["stormclip"] = _TimerService:SetTimerOnce(function()
+            _EffectService:RemoveEffect(serial)
+            if self.StormClip == serial then self.StormClip = 0 end
+            self.VisualTimers["stormclip"] = nil
+        end, seconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BoneShardFan(Vector2 me, Vector2 target, number damage, integer count)
+        -- 골편 투척: 레벨이 오르면 부채꼴로 여러 발 (D2 이빨). 각 발은 같은 피해로 꿰뚫는다
+        local dir = target - me
+        if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
+        local base = math.atan(dir.y, dir.x)
+        local spread = math.rad(9)
+        local fired = 0
+        for i = 1, math.max(1, count) do
+            local a = base + (i - 1 - (count - 1) / 2) * spread
+            local t = me + Vector2(math.cos(a), math.sin(a)) * 3
+            if self:BoneShard(me, t, damage, nil, nil) then fired = fired + 1 end
+        end
+        if fired == 0 then return false end
+        local d = Vector2(math.cos(base), math.sin(base))
+        local muzzle = me + Vector2(0, 0.35) + d * 0.5
+        self:ClipFx(self.FxShardLaunch, Vector3(muzzle.x, muzzle.y, 0), 0.45, 0.55, math.deg(base) + 180)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BoneShardImpact(Vector3 pos)
+        -- 뼛조각 명중: 보라 파열
+        self:ClipFx(self.FxShardHit, pos, 0.32, 0.5, 0)
+    end
+
     @ExecSpace("ServerOnly")
     method boolean BoneShard(Vector2 me, Vector2 target, number damage, any onComplete, any canCommit)
         -- 조준 방향으로 뼛조각이 날아간다 (초속 11, 사거리 6, 관통). 지나가며 닿은 적만 맞는다
@@ -114,8 +198,9 @@ script SkillEffects extends Component
             if finished then if isvalid(shot) then shot:Destroy() end return end
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then finish(false) return end
             if canCommit ~= nil and not canCommit() then finish(false) return end
-            proj:Launch(owner, dir, 11, 6, damage, "skill.bone_shard", true)
-            self:BoneShardFx(Vector3(start.x, start.y, 0), dir, false, map.Id)
+            -- 투사체 그림: 어두운 보라 궤적 (기본 화살 그림은 평범했다)
+            proj:Skin(self.FxShardShot, 0.55)
+            proj:Launch(owner, dir, 12, 6.5, damage, "skill.bone_shard", true)
             finish(true)
         end, function() finish(false) end)
         _TimerService:SetTimerOnce(function() if not finished then finish(false) end end, 1)
@@ -144,6 +229,7 @@ script SkillEffects extends Component
         end, 0.5)
         self.MistTimers[timerId] = true
         self:MistFx(Vector3(target.x, target.y, 0), radius, 4)
+        self:ClipFx(self.FxPoisonCloud, Vector3(target.x, target.y + 0.3, 0), 1.25, 4, 0)
         return true
     end
 
@@ -158,6 +244,7 @@ script SkillEffects extends Component
         local q = orb.Entity.TransformComponent.WorldPosition
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.6, 0), -1, "skill.corpse_blast", damage * orb.Grade)
         self:CorpseBlastFx(q + Vector3(0, 0.2, 0), 1.6, self.Entity.CurrentMap.Id)
+        self:ClipFx(self.FxCorpseBlast, q + Vector3(0, 0.5, 0), 0.7, 1.3, 0)
         orb:Consume()
         return true
     end
@@ -182,6 +269,7 @@ script SkillEffects extends Component
             end
         end
         self:Fx("drain", m.Entity.TransformComponent.WorldPosition, 0.8)
+        self:ClipFx(self.FxDrain, m.Entity.TransformComponent.WorldPosition + Vector3(0, 0.4, 0), 0.6, 0.7, 0)
         return true
     end
 
@@ -192,6 +280,7 @@ script SkillEffects extends Component
         self.StormUntil = _UtilLogic.ElapsedSeconds + 6
         self.StormDamage = damage
         self:Fx("storm", self.Entity.TransformComponent.WorldPosition, 1.2)
+        self:StormClipFx(6)
         if self.StormTimer ~= 0 then return true end
         self.StormTimer = _TimerService:SetTimerRepeat(function()
             if _UtilLogic.ElapsedSeconds > self.StormUntil or not _Util:IsAlive(self.Entity) or self.Entity.CurrentMap ~= map then
@@ -242,13 +331,15 @@ script SkillEffects extends Component
         -- 입자와 그 입자를 지울 예정이었던 타이머도 함께 해제한다.
         for serial, _ in pairs(self.MistVisuals) do _ParticleService:RemoveParticle(serial) end
         for serial, _ in pairs(self.DrainVisuals) do _ParticleService:RemoveParticle(serial) end
-        for serial, _ in pairs(self.BoneVisuals) do _ParticleService:RemoveParticle(serial) end
         for serial, _ in pairs(self.BlastVisuals) do _ParticleService:RemoveParticle(serial) end
         if self.StormVisual ~= 0 then _ParticleService:RemoveParticle(self.StormVisual) end
+        for serial, _ in pairs(self.ClipVisuals) do _EffectService:RemoveEffect(serial) end
+        if self.StormClip ~= 0 then _EffectService:RemoveEffect(self.StormClip) end
+        self.ClipVisuals = {}
+        self.StormClip = 0
         for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
         self.MistVisuals = {}
         self.DrainVisuals = {}
-        self.BoneVisuals = {}
         self.BlastVisuals = {}
         self.VisualTimers = {}
         self.StormVisual = 0
@@ -340,8 +431,9 @@ script SkillEffects extends Component
                     local proj = comp
                     if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
                     proj.Homing = 5
+                    proj:Skin(self.FxShardShot, 0.5)
                     proj:Launch(owner, d, 7, 7, damage, "skill.soul_torrent", false)
-                    proj:Tint(Color(0.65, 0.5, 1, 1))
+                    proj:Tint(Color(0.75, 0.6, 1, 1))
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
         end
@@ -359,6 +451,7 @@ script SkillEffects extends Component
         local p = _Util:Pos2(self.Entity)
         self:Hit(Vector2(p.x, p.y + 0.3), Vector2(3.5, 0), -1, "skill.death_wave", damage)
         self:Fx("wave", Vector3(p.x, p.y, 0), 3.5)
+        self:ClipFx(self.FxWave, Vector3(p.x, p.y + 0.3, 0), 2.6, 0.6, 0)
         return true
     end
 
@@ -512,25 +605,6 @@ script SkillEffects extends Component
             end
         end
         if played then self.BlastFxCount = self.BlastFxCount + 1 end
-    end
-
-    @ExecSpace("Multicast")
-    method void BoneShardFx(Vector3 pos, Vector2 dir, boolean contact, string mapId)
-        -- 발사는 손 앞의 작은 응집, 실제 명중은 뼛가루 파열로 구분한다. 이전 맵의 지연 연출은 버린다.
-        local me = _UserService.LocalPlayer
-        if not isvalid(me) or not _Util:IsAlive(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap or self.Entity.CurrentMap.Id ~= mapId then return end
-        local particle = contact and BasicParticleType.SparkRadialExplosion or BasicParticleType.ChargeOrb
-        local size = contact and 0.2 or 0.18
-        local angle = math.deg(math.atan(dir.y, dir.x))
-        local serial = _ParticleService:PlayBasicParticle(particle, self.Entity, pos, angle, Vector3(size, size, 1), false, { Color = Color(0.8, 0.76, 0.65, 0.8) })
-        if serial == 0 then return end
-        if contact then self.BoneContactFxCount = self.BoneContactFxCount + 1 else self.BoneLaunchFxCount = self.BoneLaunchFxCount + 1 end
-        self.BoneVisuals[serial] = true
-        self.VisualTimers[serial] = _TimerService:SetTimerOnce(function()
-            _ParticleService:RemoveParticle(serial)
-            self.BoneVisuals[serial] = nil
-            self.VisualTimers[serial] = nil
-        end, 0.4)
     end
 
     @ExecSpace("Multicast")

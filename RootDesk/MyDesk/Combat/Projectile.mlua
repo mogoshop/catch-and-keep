@@ -24,6 +24,8 @@ script Projectile extends Component
     property number Homing = 0               -- 0이면 직선. 양수면 초당 이 라디안만큼 가까운 적 쪽으로 꺾는다 (영혼 격류)
     @Sync
     property Color TintColor = Color(1, 1, 1, 1)
+    @Sync
+    property string SkinRuid = ""            -- 스킬 투사체 그림 (서버에서 바꾼 SpriteRUID는 클라이언트에 안 보여서 동기화 값으로 칠한다)
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -104,11 +106,30 @@ script Projectile extends Component
         if isvalid(sprite) then sprite.Color = color end
     end
 
+    @ExecSpace("ServerOnly")
+    method void Skin(string ruid, number scale)
+        -- 같은 투사체 모델에 스킬 그림(메이플 스킬 애니메이션)을 입힌다
+        self.SkinRuid = ruid
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.SpriteRUID = ruid end
+        self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 늦게 들어온 클라이언트: 이미 정해진 그림·색을 바로 입힌다
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        if self.SkinRuid ~= "" then sprite.SpriteRUID = self.SkinRuid end
+        sprite.Color = self.TintColor
+    end
+
     @ExecSpace("ClientOnly")
     method void OnSyncProperty(string name, any value)
-        if name ~= "TintColor" then return end
         local sprite = self.Entity.SpriteRendererComponent
-        if isvalid(sprite) then sprite.Color = self.TintColor end
+        if not isvalid(sprite) then return end
+        if name == "TintColor" then sprite.Color = self.TintColor
+        elseif name == "SkinRuid" and self.SkinRuid ~= "" then sprite.SpriteRUID = self.SkinRuid end
     end
 
     @ExecSpace("ServerOnly")
@@ -129,9 +150,7 @@ script Projectile extends Component
                     if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
                     if self.Info == "skill.bone_shard" and m.Hp < beforeHp then
                         local effects = self.Owner:GetComponent("script.SkillEffects")
-                        if effects ~= nil then
-                            effects:BoneShardFx(hitPos, self.Dir, true, self.Entity.CurrentMap.Id)
-                        end
+                        if effects ~= nil then effects:BoneShardImpact(hitPos) end
                     end
                 end
                 if not self.Pierce then self:Finish() return end

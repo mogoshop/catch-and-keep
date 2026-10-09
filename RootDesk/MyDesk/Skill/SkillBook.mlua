@@ -126,7 +126,29 @@ script SkillBook extends Component
         local raw = self:RawEffectPower(id, level)
         local flat = { terror = true, confusion = true, lure = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true }
         if flat[id] then return raw end
-        return math.floor(raw * _GameData.skillPowerMult * 10 + 0.5) / 10
+        -- 공격 스킬 피해는 캐릭터 레벨을 따라 커진다 (몬스터 생명이 레벨마다 +30% 오르는데 스킬은 스킬 레벨만 따라가 금방 약해졌다)
+        local scale = 1
+        if self:IsDamageSkill(id) then scale = self:CharDamageScale() * _GameData.skillDmgMult end
+        return math.floor(raw * _GameData.skillPowerMult * scale * 10 + 0.5) / 10
+    end
+
+    method boolean IsDamageSkill(string id)
+        local ids = { bone_shard = true, poison_mist = true, corpse_blast = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true }
+        return ids[id] == true
+    end
+
+    method number CharDamageScale()
+        -- 1 + skillDmgPerCharLevel × (캐릭터 레벨 - 1)
+        ---@type PlayerStats
+        local st = self.Entity:GetComponent("script.PlayerStats")
+        local lv = st ~= nil and st.Level or 1
+        return 1 + _GameData.skillDmgPerCharLevel * (math.max(1, lv) - 1)
+    end
+
+    method integer GetBoneShardCount(integer level)
+        -- 골편 투척 발 수: 1·5·9·13·17레벨에 1발씩 (최대 boneShardMaxCount)
+        if level <= 0 then return 0 end
+        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + math.floor((level - 1) / 4))
     end
 
     method number GetCurseDuration(integer level)
@@ -221,6 +243,7 @@ script SkillBook extends Component
             local aura = self:GetCommandAura()
             return string.format("소환수 공격·생명 +%g%% · 이동 +%g%% · 저항 +%g", aura.atk, aura.speed, aura.resist)
         end
+        if id == "bone_shard" then return string.format("뼛조각 %d발 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
         if power > 0 then
