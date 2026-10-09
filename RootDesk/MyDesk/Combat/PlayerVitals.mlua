@@ -50,6 +50,16 @@ script PlayerVitals extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void TakeTickDamage(number amount)
+        -- 장판 같은 지속 피해: 무적 시간을 걸지 않는다 (잦은 작은 피해가 큰 공격을 막아 주지 않게). 생명만 깎는다
+        if self.Dying or amount <= 0 then return end
+        local pc = self.Entity.PlayerComponent
+        if pc.Hp <= 0 then return end
+        pc.Hp = math.max(0, pc.Hp - math.floor(amount + 0.5))
+        self:CheckDeath()
+    end
+
+    @ExecSpace("ServerOnly")
     method void CheckDeath()
         if self.Dying or not isvalid(self.Entity) then return end
         local pc = self.Entity.PlayerComponent

@@ -159,6 +159,11 @@ T.bosses.forEach((r, i) => {
   bossIds.add(r.id);
   if (!monsterIds.has(r.id)) err("bosses", i, `id '${r.id}' — monsters.csv에 없음`);
   if (r.minion !== "" && !monsterIds.has(r.minion)) err("bosses", i, `minion '${r.minion}' — monsters.csv에 없음`);
+  // 장판: 내려찍은 자리에 poolSec초 동안 남아 0.5초마다 속성 피해
+  if (!(num(r.poolSec, 0) >= 0)) err("bosses", i, `poolSec '${r.poolSec}' — 0 이상`);
+  if (num(r.poolSec, 0) > 0 && (r.poolElement === "" || !ELEMENTS.has(r.poolElement))) err("bosses", i, `poolElement '${r.poolElement}' 알 수 없음`);
+  if (num(r.poolSec, 0) >= num(r.slamInterval) - 1) err("bosses", i, "poolSec는 slamInterval보다 1초 이상 짧아야 함 (예고 원과 겹침)");
+  if (!["true", "false", ""].includes(r.atTarget)) err("bosses", i, `atTarget '${r.atTarget}' — true / false`);
 });
 
 if (!T.monsters.some((r) => r.depth === "pool")) err("monsters", null, "depth=pool 몬스터가 하나도 없음 (심도 던전이 빈다)");
@@ -234,7 +239,7 @@ T.quests.forEach((r, i) => {
     const [k, v] = [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)];
     if (k === "rune" && !runeIds.has(v)) err("quests", i, `보상 룬 '${v}' — runes.csv에 없음`);
     else if (k === "item" && !baseIds.has(v.split("|")[0])) err("quests", i, `보상 아이템 '${v.split("|")[0]}' — item_bases에 없음`);
-    else if (["skp", "stp", "gen", "socket", "deploy", "runes"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
+    else if (["skp", "stp", "gen", "socket", "deploy", "runes", "respoison"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
     else if (!["rune", "item"].includes(k)) err("quests", i, `보상 종류 '${k}' 알 수 없음`);
   }
 });
@@ -289,9 +294,17 @@ T.maps.forEach((r, i) => {
   if (r.kind === "side") {
     const parent = T.maps.find((m) => m.id === r.parent);
     if (!parent || parent.kind !== "field") err("maps", i, `parent '${r.parent}' — 필드 맵이어야 함`);
-    const floors = T.maps.filter((m) => m.kind === "side" && m.parent === r.parent);
-    if (floors[0] === r && r.entry === "") err("maps", i, "곁가지 첫 층은 entry(부모 필드의 입구 위치)가 필요");
-    if (floors[0] !== r && r.entry !== "") err("maps", i, "entry는 첫 층에만");
+    // 던전 = entry 있는 첫 층 + 뒤따르는 entry 없는 층들 (한 필드에 던전 여러 개 가능)
+    const sides = T.maps.filter((m) => m.kind === "side" && m.parent === r.parent);
+    if (sides[0] === r && r.entry === "") err("maps", i, "곁가지 첫 층은 entry(부모 필드의 입구 위치)가 필요");
+    if (r.entry !== "") {
+      const [x, y] = r.entry.split("/").map(Number);
+      for (const o of sides) {
+        if (o === r || o.entry === "") continue;
+        const [ox, oy] = o.entry.split("/").map(Number);
+        if (Math.hypot(x - ox, y - oy) < 3) err("maps", i, `entry '${r.entry}' — 같은 필드의 ${o.id} 입구와 너무 가까움`);
+      }
+    }
     if (r.entry !== "" && parent) {
       const [x, y] = r.entry.split("/").map(Number);
       const pw = num(parent.w), ph = num(parent.h);

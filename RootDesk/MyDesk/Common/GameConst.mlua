@@ -204,6 +204,18 @@ script GameConst extends Logic
         return info ~= nil and info.name or "마을"
     end
 
+    method string WithRo(string word)
+        -- 「~로 / ~으로」: 마지막 글자에 받침이 없거나 ㄹ 받침이면 로, 아니면 으로 (UTF-8 한글 음절만 판단)
+        local n = string.len(word)
+        if n < 3 then return word .. "로" end
+        local b1, b2, b3 = string.byte(word, n - 2, n)
+        local code = ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+        if code < 0xAC00 or code > 0xD7A3 then return word .. "로" end
+        local jong = (code - 0xAC00) % 28
+        if jong == 0 or jong == 8 then return word .. "로" end
+        return word .. "으로"
+    end
+
     method string DifficultyName(integer difficulty)
         return _GameData:GetDifficulty(difficulty).name
     end

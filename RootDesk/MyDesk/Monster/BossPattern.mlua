@@ -1,5 +1,7 @@
 -- 보스 패턴: 주기적으로 경고 후 내려찍기(광역), 생명 50% 이하에서 졸개 소환 + 패턴 가속.
--- 피해 판정은 같은 엔티티의 MonsterAttack:Slam을 쓴다.
+-- 피해 판정은 같은 엔티티의 MonsterAttack:Slam을 쓴다. 내려찍기 피해는 몬스터 레벨 보정(공격력 배율)을 따른다.
+-- 장판(PoolSeconds > 0): 내려찍은 자리에 PoolSeconds초 동안 남아 0.5초마다 PoolElement 피해 (세르카 독 · 사서 화염).
+-- SlamAtTarget: 자기 자리 대신 가장 가까운 플레이어 발밑에 예고한다 (원거리 미니보스).
 @Component
 script BossPattern extends Component
 
@@ -11,6 +13,15 @@ script BossPattern extends Component
     property number EngageRange = 5
     property string MinionModelId = "graveworm"
     property integer MinionCount = 3
+    property number PoolSeconds = 0
+    property string PoolElement = ""
+    property boolean SlamAtTarget = false
+    @Sync
+    property boolean PoolActive = false
+    @Sync
+    property Vector2 PoolCenter = Vector2(0, 0)
+    property number PoolRemaining = 0
+    property number PoolTick = 0
 
     property number SlamRecovery = 0.65
     @Sync
@@ -41,6 +52,7 @@ script BossPattern extends Component
         if monster == nil then return end
         if monster.IsDead or not self.Entity.Enable then
             self:CancelSlam()
+            self:EndPool()
             if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
             self.WasDead = monster.IsDead
             self.Enraged = false
@@ -49,6 +61,7 @@ script BossPattern extends Component
             return
         end
         self.WasDead = false
+        self:UpdatePool(delta)
         local status = monster:Status()
         if status ~= nil and status:IsStunned() then self:CancelSlam() return end
         if self.SlamPhase ~= "idle" then
@@ -64,9 +77,10 @@ script BossPattern extends Component
                 local atk = self.Entity:GetComponent("script.MonsterAttack")
                 if atk ~= nil then
                     self.Entity.StateComponent:ChangeState("ATTACK")
-                    atk:Slam(self.SlamCenter, self.SlamRadius, self.SlamDamage)
+                    atk:Slam(self.SlamCenter, self.SlamRadius, self:ScaledSlamDamage())
                     self.SlamCount = self.SlamCount + 1
                 end
+                if self.PoolSeconds > 0 then self:BeginPool() end
                 self:SlamFx(Vector3(self.SlamCenter.x, self.SlamCenter.y, 0), self.SlamRadius)
                 if self.DebugCombat then log("[VRF] boss slam contact " .. tostring(self.SlamCount)) end
             else
@@ -103,7 +117,7 @@ script BossPattern extends Component
             or (atk.AttackAnimationUntil > _UtilLogic.ElapsedSeconds and atk.ResumeChaseAfterAttack))
         self.ResumeWander = isvalid(wander) and wander.Enable
         atk:CancelPending()
-        self.SlamCenter = _Util:Pos2(self.Entity) + Vector2(0, 0.3)
+        self.SlamCenter = self:PickSlamCenter()
         self.SlamPhase = "windup"
         self.PhaseRemaining = math.max(0.1, self.SlamWindup)
         local interval = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
@@ -111,6 +125,76 @@ script BossPattern extends Component
         self:HoldMotion()
         if self.Entity.StateComponent.CurrentStateName ~= "IDLE" then self.Entity.StateComponent:ChangeState("IDLE") end
         if self.DebugCombat then log("[VRF] boss slam windup center=" .. tostring(self.SlamCenter) .. " radius=" .. tostring(self.SlamRadius)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 PickSlamCenter()
+        -- 기본은 자기 발밑, SlamAtTarget이면 가장 가까운 플레이어 발밑 (예고 뒤 그 자리를 친다)
+        local here = _Util:Pos2(self.Entity)
+        if not self.SlamAtTarget then return here + Vector2(0, 0.3) end
+        local best = nil
+        local bestD = 999
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, self.EngageRange + 2)) do
+            local d = (_Util:Pos2(p) - here):Magnitude()
+            if d < bestD then
+                best = p
+                bestD = d
+            end
+        end
+        if best == nil then return here + Vector2(0, 0.3) end
+        return _Util:Pos2(best) + Vector2(0, 0.3)
+    end
+
+    @ExecSpace("ServerOnly")
+    method number ScaledSlamDamage()
+        -- 모델 기준 레벨의 내려찍기 피해 × 레벨 보정 (일반 공격과 같은 비율: 악몽·지옥·이름 있는 적 레벨 가산)
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk == nil or atk.BaseDamage <= 0 then return self.SlamDamage end
+        return self.SlamDamage * atk.Damage / atk.BaseDamage
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeginPool()
+        -- 내려찍은 자리에 장판을 남긴다
+        self.PoolCenter = self.SlamCenter
+        self.PoolRemaining = self.PoolSeconds
+        self.PoolTick = 0.5
+        self.PoolActive = true
+        self:PoolFx(Vector3(self.SlamCenter.x, self.SlamCenter.y, 0), self.SlamRadius, self.PoolSeconds, self.PoolElement)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdatePool(number delta)
+        -- 0.5초마다 장판 안의 플레이어에게 내려찍기 피해의 12% (속성 100% · 저항·방어 적용).
+        -- 판정 공격이 아니라 지속 피해라서 무적 시간을 걸지 않는다 (작은 틱이 내려찍기·일반 공격을 막아 주지 않게)
+        if not self.PoolActive then return end
+        self.PoolRemaining = self.PoolRemaining - delta
+        if self.PoolRemaining <= 0 then self:EndPool() return end
+        self.PoolTick = self.PoolTick - delta
+        if self.PoolTick > 0 then return end
+        self.PoolTick = 0.5
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk == nil then return end
+        local keepDamage = atk.SlamDamage
+        local keepElement = atk.SlamElement
+        atk.SlamDamage = math.max(1, self:ScaledSlamDamage() * 0.12)
+        atk.SlamElement = self.PoolElement
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, self.PoolCenter, self.SlamRadius * 0.9)) do
+            ---@type PlayerVitals
+            local vitals = p:GetComponent("script.PlayerVitals")
+            if vitals ~= nil then vitals:TakeTickDamage(atk:CalcDamage(self.Entity, p, "monster.slam")) end
+        end
+        atk.SlamDamage = keepDamage
+        atk.SlamElement = keepElement
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EndPool()
+        if not self.PoolActive then return end
+        self.PoolActive = false
+        self.PoolRemaining = 0
     end
 
     @ExecSpace("ServerOnly")
@@ -149,17 +233,27 @@ script BossPattern extends Component
         local atk = self.Entity:GetComponent("script.MonsterAttack")
         local line = self.Entity.LineRendererComponent
         if atk == nil or not isvalid(line) then return end
-        if self.SlamPhase ~= "windup" or not self:HasLocalAudience() then
+        local windup = self.SlamPhase == "windup"
+        if (not windup and not self.PoolActive) or not self:HasLocalAudience() then
             self:ClearWarning()
             return
+        end
+        -- 예고 = 주황 굵은 원 · 장판 = 속성 색 얇은 원 (독 초록 / 화염 주황빨강)
+        local center = windup and self.SlamCenter or self.PoolCenter
+        local radius = windup and self.SlamRadius or self.SlamRadius * 0.9
+        local color = Color(1, 0.38, 0.12, 0.95)
+        local width = 0.16
+        if not windup then
+            color = self.PoolElement == "poison" and Color(0.45, 1, 0.3, 0.8) or Color(1, 0.25, 0.1, 0.8)
+            width = 0.09
         end
         local transform = self.Entity.TransformComponent
         line.Points:Clear()
         for i = 0, 32 do
             local angle = math.pi * 2 * i / 32
-            local p = self.SlamCenter + Vector2(math.cos(angle), math.sin(angle)) * self.SlamRadius
+            local p = center + Vector2(math.cos(angle), math.sin(angle)) * radius
             local localPoint = transform:ToLocalPoint(Vector3(p.x, p.y, transform.WorldPosition.z))
-            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), Color(1, 0.38, 0.12, 0.95), 0.16))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, width))
         end
         atk.WarningOwner = "boss"
     end
@@ -219,6 +313,23 @@ script BossPattern extends Component
         _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.25, radius * 0.25, 1), false, nil)
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) and (_Util:Pos2(_UserService.LocalPlayer) - Vector2(pos.x, pos.y)):Magnitude() <= 10 then cam:ShakeCamera(0.25, 0.2) end
+    end
+
+    @ExecSpace("Multicast")
+    method void PoolFx(Vector3 pos, number radius, number seconds, string element)
+        -- 장판 입자: 바닥에 낮게 도는 속성 색 소용돌이 (+ 화염은 불길). seconds 뒤 지운다
+        if not self:HasLocalAudience() then return end
+        local tint = element == "poison" and Color(0.35, 0.95, 0.25, 0.55) or Color(1, 0.35, 0.1, 0.55)
+        local serials = {}
+        table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = tint }))
+        if element == "fire" then
+            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
+        end
+        _TimerService:SetTimerOnce(function()
+            for _, serial in ipairs(serials) do
+                if serial ~= nil and serial > 0 then _ParticleService:RemoveParticle(serial) end
+            end
+        end, seconds)
     end
 
     @ExecSpace("Multicast")

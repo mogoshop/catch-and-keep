@@ -55,6 +55,9 @@ function buildMonster(m, boss) {
     b.value("script.BossPattern", "SlamDamage", num(boss.slamDamage), "double");
     b.value("script.BossPattern", "SlamRadius", num(boss.slamRadius), "double");
     b.value("script.BossPattern", "SlamInterval", num(boss.slamInterval), "double");
+    b.value("script.BossPattern", "PoolSeconds", num(boss.poolSec, 0), "double");
+    b.value("script.BossPattern", "PoolElement", boss.poolElement || "", "string");
+    b.value("script.BossPattern", "SlamAtTarget", bool(boss.atTarget), "bool");
   }
   b.write(P.model(`Region${m.region}/${m.model}`));
 }

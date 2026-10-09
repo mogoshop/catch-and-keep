@@ -325,10 +325,14 @@ script PlayerStats extends Component
         local penalty = _GameConst:ResistPenalty(self.Difficulty)
         local cap = _GameData.resistCap
         local raw = self.RawResists
+        -- 의뢰 영구 보상 독 저항 (난이도 페널티 전에 더한다)
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        local questPoison = quest ~= nil and quest.PoisonBonus or 0
         self.ResFire = math.floor(math.max(-100, math.min(cap, (raw.fire or 0) - penalty)))
         self.ResCold = math.floor(math.max(-100, math.min(cap, (raw.cold or 0) - penalty)))
         self.ResLight = math.floor(math.max(-100, math.min(cap, (raw.light or 0) - penalty)))
-        self.ResPoison = math.floor(math.max(-100, math.min(cap, (raw.poison or 0) - penalty)))
+        self.ResPoison = math.floor(math.max(-100, math.min(cap, (raw.poison or 0) + questPoison - penalty)))
     end
 
     method number GetResist(string element)

@@ -21,6 +21,8 @@ script PlayerQuest extends Component
     property string SealedNow = ";"           -- 지금 난이도에서 연 봉인 상자 (맵 배너 표시용)
     @Sync
     property integer DeployBonus = 0          -- 의뢰 영구 보상 그림자 배치 + (난이도마다 1회)
+    @Sync
+    property integer PoisonBonus = 0          -- 의뢰 영구 보상 독 저항 + (「독침 여왕」 난이도마다 1회)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -91,10 +93,15 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void OnExtract()
+    method void OnExtract(string sourceId, Entity map)
+        -- 혼 추출. target이 있으면 그 몬스터만, map이 있으면 그 맵(같은 난이도)에서만 센다
         local q = self:Current()
         if q == nil or q.kind ~= "extract" then return end
+        local here = isvalid(map) and map.Name or "?"
+        if q.target ~= "" and q.target ~= sourceId then log("[VRF] extract skip target " .. sourceId .. " @" .. here) return end
+        if q.map ~= "" and (not isvalid(map) or _GameConst:BaseMapName(map.Name) ~= q.map or not self:SameDifficulty(map)) then log("[VRF] extract skip map " .. sourceId .. " @" .. here) return end
         self:Advance(q)
+        log("[VRF] extract counted " .. sourceId .. " @" .. here .. " " .. tostring(self.Progress) .. "/" .. tostring(q.count))
     end
 
     @ExecSpace("ServerOnly")
@@ -267,20 +274,31 @@ script PlayerQuest extends Component
 
     @ExecSpace("ServerOnly")
     method void RefreshPermanent()
-        -- 그림자 배치 영구 보상: deploy 보상 의뢰를 끝낸 난이도 수만큼 (보통·악몽·지옥 최대 +3)
+        -- 영구 보상 (그림자 배치 · 독 저항): 그 보상 의뢰를 끝낸 난이도 수만큼 (보통·악몽·지옥)
         self.ByDiff[tostring(self.Diff)] = { i = self.Index, s = self.State, p = self.Progress }
         local bonus = 0
+        local poison = 0
         for i = 1, _QuestData:Count() do
             local q = _QuestData:Get(i)
             local n = tonumber(string.match("," .. q.reward, ",deploy:(%d+)")) or 0
-            if n > 0 then
+            local r = tonumber(string.match("," .. q.reward, ",respoison:(%d+)")) or 0
+            if n > 0 or r > 0 then
                 for k = 0, 2 do
                     local d = self.ByDiff[tostring(k)]
-                    if d ~= nil and d.i > i then bonus = bonus + n end
+                    if d ~= nil and d.i > i then
+                        bonus = bonus + n
+                        poison = poison + r
+                    end
                 end
             end
         end
         self.DeployBonus = bonus
+        if self.PoisonBonus ~= poison then
+            self.PoisonBonus = poison
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            if stats ~= nil then stats:RefreshResists() end
+        end
     end
 
     @ExecSpace("Client")

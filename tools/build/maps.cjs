@@ -20,6 +20,19 @@ function edges(d) {
 const arriveLeft = (d) => [edges(d).left + 1.4, 0];
 const arriveRight = (d) => [edges(d).right - 1.4, 0];
 
+// 곁가지 던전 하나 = entry가 있는 첫 층 + 바로 뒤따르는(entry 없는) 층들. 한 필드에 던전이 여러 개 붙을 수 있다
+function dungeonFloors(maps, m) {
+  let cur = [];
+  for (const x of maps.filter((y) => y.kind === "side" && y.parent === m.parent)) {
+    if (x.entry !== "") cur = [];
+    cur.push(x);
+    if (x === m) break;
+  }
+  const rest = maps.filter((y) => y.kind === "side" && y.parent === m.parent);
+  for (let k = rest.indexOf(m) + 1; k < rest.length && rest[k].entry === ""; k++) cur.push(rest[k]);
+  return cur;
+}
+
 // 이번 빌드가 놓을 엔티티 목록
 //   액트마다: 그 액트의 마을 → 필드 사슬(order 순, 왼쪽 GateBack·오른쪽 GateNext) → 보스 방 (액트 사이는 카라반 NPC가 잇는다)
 //   곁가지 던전(kind=side): 부모 필드의 entry 위치에 입구(Gate_<첫 층>), 층끼리는 GateBack/GateNext, 마지막 층은 막다른 곳 (D2)
@@ -41,14 +54,13 @@ function desiredEntities(d, maps, ctx) {
     const next = i === fields.length - 1 ? town : fields[i + 1];
     place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
     place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": gate(next.id, next === town ? townArrival : arriveLeft(next), next.name) });
-    // 이 필드에 딸린 곁가지 던전 입구
-    const firstFloor = maps.find((m) => m.kind === "side" && m.parent === d.id && m.entry !== "");
-    if (firstFloor) {
+    // 이 필드에 딸린 곁가지 던전 입구 (던전마다 하나)
+    for (const firstFloor of maps.filter((m) => m.kind === "side" && m.parent === d.id && m.entry !== "")) {
       const p = pos(firstFloor.entry);
       place(`Gate_${firstFloor.id}`, "Objects/WarpGate", p, { "script.WarpGate": gate(firstFloor.id, arriveLeft(firstFloor), firstFloor.name) });
     }
   } else if (d.kind === "side") {
-    const floors = maps.filter((m) => m.kind === "side" && m.parent === d.parent);
+    const floors = dungeonFloors(maps, d);
     const i = floors.indexOf(d);
     if (i === 0) {
       const parent = maps.find((m) => m.id === d.parent);
