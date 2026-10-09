@@ -11,7 +11,8 @@ const IGNORE = [/^\.claude\//, /^AGENTS\.md$/, /^CLAUDE\.md$/, /^\.mcp\.json$/];
 let failed = false;
 const fail = (msg) => { failed = true; console.log("실패  " + msg); };
 
-const dirty = sh("git status --porcelain").split("\n").filter(Boolean)
+// Porcelain 상태 코드 앞 공백을 보존한다. trim()은 첫 경로의 첫 글자를 잘라낸다.
+const dirty = execSync("git status --porcelain", { encoding: "utf8" }).split("\n").filter(Boolean)
   .map((l) => l.slice(3)).filter((p) => !IGNORE.some((r) => r.test(p)));
 if (dirty.length > 0) {
   fail(`커밋하지 않은 변경 ${dirty.length}개 — 메이커 재저장분이면 'chore(maker)' 커밋으로 정리하거나 되돌린 뒤 출시`);
