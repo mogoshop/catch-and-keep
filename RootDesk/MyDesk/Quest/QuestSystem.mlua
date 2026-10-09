@@ -1,15 +1,40 @@
 -- 의뢰 진행 중계: 게임 이벤트를 해당 플레이어의 PlayerQuest로 넘긴다 (발행자는 의뢰를 모른다).
---   MonsterKilled → OnKill / ShadowExtracted → OnExtract / QuestMarkerReached → OnReach / UndeadRaised → OnRaise
+--   MonsterKilled → OnKill (함께 싸운 사람) / 이름 있는 적이면 OnNamedKilled (맵 전원 + 파티원)
+--   MapCleared → OnMapCleared · SealedChestOpened → OnChestOpened · ShadowExtracted → OnExtract
+--   QuestMarkerReached → OnReach · UndeadRaised → OnRaise
+-- 공동 완료 (14장 §3.1): 정리·이름 있는 적·열쇠는 그 순간 맵 안의 모든 플레이어 + 같은 파티원(어디에 있든, 같은 난이도)이 받는다.
 @Logic
 script QuestSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         _GameEvents:Subscribe("MonsterKilled", "QuestSystem", function(e)
-            -- 함께 싸운 사람(피해를 준 사람·근처 파티원) 모두의 의뢰에 처치가 오른다
+            -- 일반 처치: 함께 싸운 사람(피해를 준 사람·근처 파티원). 이름 있는 적·열쇠 적은 맵 전원 + 파티원
+            local credited = self:CreditSet(e.map, e.player)
             for _, p in ipairs(e.players or { e.player }) do
                 local q = self:QuestOf(p)
-                if q ~= nil then q:OnKill(e.sourceId) end
+                if q ~= nil then q:OnKill(e.sourceId, e.map) end
+            end
+            for _, p in ipairs(credited) do
+                local q = self:QuestOf(p)
+                if q ~= nil then
+                    local cur = q:Current()
+                    if cur ~= nil and cur.kind == "chest" and cur.target == e.sourceId then q:OnKill(e.sourceId, e.map) end
+                    if e.named ~= nil and e.named ~= "" then q:OnNamedKilled(e.named, e.map) end
+                end
+            end
+        end)
+        _GameEvents:Subscribe("MapCleared", "QuestSystem", function(e)
+            for _, p in ipairs(self:CreditSet(e.map, nil)) do
+                local q = self:QuestOf(p)
+                if q ~= nil then q:OnMapCleared(e.mapKey, e.map) end
+            end
+        end)
+        _GameEvents:Subscribe("SealedChestOpened", "QuestSystem", function(e)
+            -- 봉인 상자는 연 사람 + 그 파티원
+            for _, p in ipairs(self:CreditSet(nil, e.player)) do
+                local q = self:QuestOf(p)
+                if q ~= nil then q:OnChestOpened(e.mapKey, e.map) end
             end
         end)
         _GameEvents:Subscribe("ShadowExtracted", "QuestSystem", function(e)
@@ -24,6 +49,30 @@ script QuestSystem extends Logic
             local q = self:QuestOf(e.player)
             if q ~= nil then q:OnReach(e.markerId) end
         end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table CreditSet(Entity map, Entity player)
+        -- 맵 안의 모든 플레이어 + player, 그리고 그들의 파티원 전원 (중복 없이). 난이도 확인은 PlayerQuest가 한다
+        local out = {}
+        local seen = {}
+        local function add(p)
+            if not isvalid(p) or not isvalid(p.PlayerComponent) then return end
+            local id = p.PlayerComponent.UserId
+            if seen[id] then return end
+            seen[id] = true
+            table.insert(out, p)
+        end
+        if isvalid(map) then
+            for _, p in ipairs(_Util:PlayersInMap(map)) do add(p) end
+        end
+        if player ~= nil then add(player) end
+        local base = {}
+        for _, p in ipairs(out) do table.insert(base, p) end
+        for _, p in ipairs(base) do
+            for _, m in ipairs(_PartySystem:Members(p)) do add(m) end
+        end
+        return out
     end
 
     @ExecSpace("ServerOnly")

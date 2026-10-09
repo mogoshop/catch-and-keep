@@ -1,0 +1,99 @@
+-- 이름 있는 적·봉인 상자 배치 (data/named.csv, 14장 §4): 곁가지 마지막 층 끝방의 우두머리 + 호위 + 봉인 상자, 피의 제단 의식의 주인.
+-- 이름 있는 적은 기존 몬스터 모델을 재색칠·확대한 임시 그림이다 (코덱스 그림이 오면 model 열만 바꾼다).
+-- 다시 나오지 않는다 (RespawnDelay -1). 맵이 비면 MonsterSpawner가 맵 전체를 다시 채울 때 함께 돌아온다.
+@Logic
+script NamedSystem extends Logic
+
+    @ExecSpace("ServerOnly")
+    method any EndPoint(MonsterSpawner spawner)
+        -- 맵 끝방: 출구(포털)에서 가장 먼, 벽에서 떨어진 빈 지점 (플레이어 위치와 무관하게 늘 같은 자리)
+        local map = spawner.Entity.CurrentMap
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local portals = {}
+        if info ~= nil then
+            for _, f in ipairs(info.features) do
+                if f.kind == "portal" then table.insert(portals, Vector2(f.x, f.y)) end
+            end
+        end
+        local best = nil
+        local bestD = -1
+        for x = math.ceil(spawner.AreaMin.x), math.floor(spawner.AreaMax.x) do
+            for y = math.ceil(spawner.AreaMin.y), math.floor(spawner.AreaMax.y) do
+                local p = Vector2(x, y)
+                if spawner:OpenPoint(p, 1.0) then
+                    local d = 999
+                    for _, q in ipairs(portals) do d = math.min(d, (p - q):Magnitude()) end
+                    if d > bestD then
+                        best = p
+                        bestD = d
+                    end
+                end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity SpawnNamed(any row, Entity map, Vector2 pos, integer level)
+        -- 이름 있는 적 하나 + 호위. 반환 = 우두머리 엔티티 (실패 시 nil)
+        if row == nil or row.id == "" or not isvalid(map) then return nil end
+        local e = _SpawnService:SpawnByModelId(row.model, row.id, Vector3(pos.x, pos.y, 0), map)
+        if not isvalid(e) then return nil end
+        local lv = level + math.floor(row.levelAdd)
+        _Util:AfterSpawn(e, "script.Monster", function(comp)
+            ---@type Monster
+            local m = comp
+            m.RespawnDelay = -1
+            m.NamedId = row.id
+            m.DisplayName = row.name
+            m.Unique = true
+            m:ApplyLevel(lv, true)
+            m.MaxHp = m.MaxHp * row.hpMul
+            m.Hp = m.MaxHp
+            ---@type MonsterTraits
+            local traits = e:GetComponent("script.MonsterTraits")
+            if traits ~= nil and row.tint ~= "" then
+                traits.Tint = row.tint
+                traits.TintSync = row.tint
+            end
+            e.TransformComponent.Scale = Vector3(row.scale, row.scale, 1)
+            log(string.format("[VRF] named %s Lv%d hp %d at (%.1f,%.1f) %s", row.id, m.Level, math.floor(m.MaxHp), pos.x, pos.y, map.Name))
+        end, nil)
+        for i = 1, math.floor(row.escortCount) do
+            if row.escort ~= "" then
+                local a = (i / row.escortCount) * math.pi * 2
+                local p = pos + Vector2(math.cos(a) * 1.4, math.sin(a) * 1.1)
+                local guard = _SpawnService:SpawnByModelId(row.escort, row.escort, Vector3(p.x, p.y, 0), map)
+                if isvalid(guard) then
+                    _Util:AfterSpawn(guard, "script.Monster", function(comp)
+                        ---@type Monster
+                        local m = comp
+                        m.RespawnDelay = -1
+                        m:ApplyLevel(lv - 1, i == 1)
+                    end, nil)
+                end
+            end
+        end
+        return e
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity SpawnSealedChest(any row, Entity map, Vector2 pos, integer level)
+        -- 끝방 봉인 상자: 난이도마다 처음 열 때 희귀 장비 + 룬 보장 (key가 있으면 그 열쇠 의뢰 단계가 필요)
+        local e = _SpawnService:SpawnByModelId("cursedchest", "SealedChest", Vector3(pos.x, pos.y, 0), map)
+        if not isvalid(e) then return nil end
+        _Util:AfterSpawn(e, "script.CursedChest", function(comp)
+            ---@type CursedChest
+            local c = comp
+            c.Sealed = true
+            c.Level = level
+            c.MapKey = _GameConst:BaseMapName(map.Name)
+            c.NeedKey = row.key
+            -- 저주받은 상자와 같은 임시 그림이라 금빛 + 크게 해서 구분한다
+            e.SpriteRendererComponent.Color = Color(1, 0.85, 0.45, 1)
+            e.TransformComponent.Scale = Vector3(0.8, 0.8, 1)
+        end, nil)
+        return e
+    end
+
+end

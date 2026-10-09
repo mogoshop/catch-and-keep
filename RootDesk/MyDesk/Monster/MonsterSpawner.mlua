@@ -3,6 +3,8 @@
 -- Entries 형식: "모델id:마리수:레벨;..."   예) "hellhound:6:1;graveworm:3:2".
 -- 값은 실행 시 _GameData:GetMapSpawns(보통 맵 id)를 우선 쓴다 (maps.csv → 데이터 생성만으로 바뀜, 맵 파일 재빌드 불필요).
 -- 데이터에 없는 맵이면 이 컴포넌트의 속성값을 쓴다
+-- 끝방 우두머리·봉인 상자(named.csv)도 여기서 놓는다. RespawnSec < 0 인 맵(굶주린 굴)은 「정리」 맵: 다시 나오지 않고,
+-- 남은 수를 동기화하며, 다 잡으면 MapCleared. 정리됐거나 우두머리가 쓰러진 맵이 3초 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1)
 @Component
 script MonsterSpawner extends Component
 
@@ -17,11 +19,135 @@ script MonsterSpawner extends Component
 
     property table SafeZones = {}
     property Entity Terrain = nil
+    @Sync
+    property boolean ClearMode = false     -- 정리 맵 (리스폰 없음 · 남은 수 표시)
+    @Sync
+    property integer Total = 0             -- 정리 맵: 이번에 채운 몬스터 수 (매복 등으로 늘면 같이 는다)
+    @Sync
+    property integer Remaining = 0         -- 정리 맵: 살아 있는 몬스터 수
+    property boolean Cleared = false
+    property number SpawnedAt = 0
+    property number EmptySince = 0
+    property table NamedAlive = {}         -- 이 맵의 이름 있는 적 엔티티
+    property integer PollTimer = 0
+    property integer MapLevel = 1
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 맵이 다 준비된 뒤 소환
         _TimerService:SetTimerOnce(function() self:SpawnAll() end, 0.5)
+        self.PollTimer = _TimerService:SetTimerRepeat(function() self:Poll() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
+        self.PollTimer = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Poll()
+        -- 1초마다: 정리 맵 남은 수·완료, 빈 맵 다시 채우기
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) or self.SpawnedAt <= 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local players = _Util:PlayersInMap(map)
+        if self.ClearMode and now - self.SpawnedAt > 2 then
+            local alive = 0
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+                ---@type Monster
+                local m = c
+                if isvalid(m.Entity) and not m.IsDead then alive = alive + 1 end
+            end
+            self.Total = math.max(self.Total, alive)
+            self.Remaining = alive
+            local base = _GameConst:BaseMapName(map.Name)
+            for _, p in ipairs(players) do
+                ---@type PlayerQuest
+                local q = p:GetComponent("script.PlayerQuest")
+                if q ~= nil then q:ShowClearProgress(base, self.Total, alive) end
+            end
+            if alive == 0 and self.Total > 0 and not self.Cleared then
+                self.Cleared = true
+                local info = _GameData:GetMapInfo(base)
+                local name = info ~= nil and string.gsub(info.name, "%s*%(Lv[^%)]*%)", "") or base
+                for _, p in ipairs(players) do _Util:Notify(name .. "을(를) 모두 정리했다", p.PlayerComponent.UserId) end
+                log("[VRF] map cleared " .. map.Name .. " total=" .. tostring(self.Total))
+                _GameEvents:Emit("MapCleared", { map = map, mapKey = base })
+            end
+        end
+        if #players > 0 then
+            self.EmptySince = 0
+        elseif self.EmptySince == 0 then
+            self.EmptySince = now
+        elseif now - self.EmptySince >= 3 and self:NeedsRefill() then
+            self:Refill()
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean NeedsRefill()
+        -- 정리를 끝냈거나 이름 있는 적이 쓰러진 맵만 다시 채운다 (진행 중인 정리는 나갔다 와도 그대로)
+        if self.ClearMode and self.Cleared then return true end
+        for _, e in ipairs(self.NamedAlive) do
+            if not isvalid(e) then return true end
+            ---@type Monster
+            local m = e:GetComponent("script.Monster")
+            if m == nil or m.IsDead then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Refill()
+        -- 맵을 처음 상태로: 남은 몬스터·상자·신전을 치우고 다시 소환 (D2의 새 게임처럼)
+        local map = self.Entity.CurrentMap
+        for _, kind in ipairs({ "script.Monster", "script.CursedChest", "script.MapShrine" }) do
+            for _, c in ipairs(map:GetChildComponentsByTypeName(kind, true)) do
+                if isvalid(c.Entity) then c.Entity:Destroy() end
+            end
+        end
+        log("[VRF] map refill " .. map.Name)
+        self.SpawnedAt = 0
+        self:SpawnAll()
+    end
+
+    method boolean OpenPoint(Vector2 p, number margin)
+        -- 벽·출구 안전 구역 밖이고 사방 margin까지 막히지 않은 지점 (플레이어 위치는 보지 않는다)
+        for _, zone in ipairs(self.SafeZones) do
+            if (p - zone.pos):Magnitude() < zone.radius then return false end
+        end
+        if not isvalid(self.Terrain) then return true end
+        for _, offset in ipairs({ Vector2(0, 0), Vector2(-margin, 0), Vector2(margin, 0), Vector2(0, -margin), Vector2(0, margin) }) do
+            if _Util:TileBlocked(self.Terrain, p + offset) then return false end
+        end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PlaceNamed(Entity map, integer level)
+        -- named.csv의 이 맵 끝방 행: 이름 있는 적 + 호위, 봉인 상자
+        self.NamedAlive = {}
+        for _, row in ipairs(_NamedData:ForMap(_GameConst:BaseMapName(map.Name))) do
+            if row.place == "end" then
+                local pos = _NamedSystem:EndPoint(self)
+                if pos ~= nil then
+                    if row.id ~= "" then
+                        local e = _NamedSystem:SpawnNamed(row, map, pos, level)
+                        if isvalid(e) then table.insert(self.NamedAlive, e) end
+                    end
+                    if row.chest then
+                        local chestPos = pos
+                        if row.id ~= "" then
+                            chestPos = pos + Vector2(1.6, 0)
+                            if not self:OpenPoint(chestPos, 0.4) then chestPos = pos + Vector2(-1.6, 0) end
+                            if not self:OpenPoint(chestPos, 0.4) then chestPos = pos + Vector2(0, -1.2) end
+                        end
+                        _NamedSystem:SpawnSealedChest(row, map, chestPos, level)
+                    end
+                end
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -87,8 +213,19 @@ script MonsterSpawner extends Component
             end
         end
         log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes))
+        -- 맵 레벨 = 출현 목록 평균 + 난이도 가산 (MapEvents와 같은 기준) → 끝방 우두머리·봉인 상자
+        local sum = 0
+        for _, e in ipairs(list) do sum = sum + e.level end
+        self.MapLevel = #list > 0 and math.floor(sum / #list + 0.5) + bonus or 1 + bonus
+        self:PlaceNamed(map, self.MapLevel)
         -- 맵 이벤트: 신전 · 저주받은 상자 · 뼈 둥지 · 드문 최상위 (사냥터·곁가지 던전만)
         _MapEvents:Populate(self, list, bonus)
+        self.ClearMode = self.RespawnSec < 0
+        self.Cleared = false
+        self.Total = 0
+        self.Remaining = 0
+        self.EmptySince = 0
+        self.SpawnedAt = _UtilLogic.ElapsedSeconds
     end
 
     method any PickEscort(table list, any entry)

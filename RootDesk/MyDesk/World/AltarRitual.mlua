@@ -1,0 +1,202 @@
+-- 피의 제단 의식 (의뢰 ritual, 14장 §3 4번): 그 의뢰를 진행 중인 플레이어가 제단(QuestMarker)에 다가가면 시작한다.
+--   습격 3번 (제단 둘레에 맵 몬스터 종류, 매번 정예 하나) → 마지막에 피의 사제(named.csv place=ritual) + 호위.
+--   사제를 쓰러뜨리면 QuestSystem이 맵 전원 + 파티원에게 완료를 준다 (MonsterKilled.named).
+-- 끝난 제단은 「피의 신전」: 그 난이도에서 의뢰를 끝낸 플레이어가 다가가면 60초 동안 주는 피해 +25% (90초마다).
+-- 맵에 아무도 없으면 5초 뒤 진행 중인 의식은 처음 상태로 돌아간다.
+@Logic
+script AltarRitual extends Logic
+
+    property table Runs = {}                 -- 맵 엔티티 id → { map, center, wave, spawned, nextAt, deadline, priest, done, ... }
+    property table BlessAt = {}              -- userId → 피의 신전을 다시 받을 수 있는 시각
+    property integer TimerId = 0
+    property integer Waves = 3
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.Runs = {}
+        _GameEvents:Subscribe("QuestMarkerReached", "AltarRitual", function(e) self:OnReached(e.player, e.markerId) end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method integer RitualIndex(string markerId)
+        -- 이 제단을 쓰는 ritual 의뢰 번호 (없으면 0)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if q.kind == "ritual" and q.map1 == markerId then return i end
+        end
+        return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnReached(Entity player, string markerId)
+        if not isvalid(player) or not _Util:IsAlive(player) then return end
+        local index = self:RitualIndex(markerId)
+        if index == 0 then return end
+        local map = player.CurrentMap
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest == nil or not isvalid(map) or not quest:SameDifficulty(map) then return end
+        local run = self.Runs[map.Id]
+        if quest.Index > index then
+            -- 이 난이도에서 의뢰를 끝냈다 → 피의 신전 (의식 중에는 아님)
+            if run == nil or run.done then self:Bless(player) end
+            return
+        end
+        if run ~= nil then return end
+        local cur = quest:Current()
+        if cur == nil or cur.kind ~= "ritual" or cur.map1 ~= markerId then return end
+        self:Start(map, markerId, cur.target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Start(Entity map, string markerId, string priestId)
+        local center = nil
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.QuestMarker", true)) do
+            ---@type QuestMarker
+            local m = c
+            if m.MarkerId == markerId then center = _Util:Pos2(c.Entity) end
+        end
+        ---@type MonsterSpawner
+        local spawner = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+        if center == nil or spawner == nil then return end
+        local species = {}
+        for id in string.gmatch(spawner.Entries, "([%w_]+):%d+:%d+") do table.insert(species, id) end
+        if #species == 0 then table.insert(species, "skelwarrior") end
+        local now = _UtilLogic.ElapsedSeconds
+        self.Runs[map.Id] = { map = map, center = center, spawner = spawner, species = species, level = spawner.MapLevel, priestId = priestId,
+            wave = 0, spawned = {}, nextAt = now + 1.5, deadline = 0, priest = nil, priestSpawned = false, done = false, emptySince = 0 }
+        self:Tell(map, "피의 의식이 깨어났다 — 제단으로 망자들이 몰려온다!")
+        log("[VRF] ritual start " .. map.Name .. " lv=" .. tostring(spawner.MapLevel))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        local now = _UtilLogic.ElapsedSeconds
+        for id, run in pairs(self.Runs) do
+            if not isvalid(run.map) then
+                self.Runs[id] = nil
+            elseif not run.done then
+                local players = _Util:PlayersInMap(run.map)
+                if #players == 0 then
+                    if run.emptySince == 0 then run.emptySince = now
+                    elseif now - run.emptySince >= 5 then self:Abort(id, run) end
+                else
+                    run.emptySince = 0
+                    self:Step(run, now)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Step(any run, number now)
+        local alive = 0
+        for _, e in ipairs(run.spawned) do
+            if isvalid(e) then
+                ---@type Monster
+                local m = e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead then alive = alive + 1 end
+            end
+        end
+        if run.wave < self.Waves then
+            if (alive == 0 and now >= run.nextAt) or (run.deadline > 0 and now >= run.deadline) then
+                run.wave = run.wave + 1
+                self:SpawnWave(run)
+                run.nextAt = now + 2
+                run.deadline = now + 25
+                self:Tell(run.map, "피의 습격 " .. tostring(run.wave) .. "/" .. tostring(self.Waves))
+            end
+        elseif not run.priestSpawned then
+            if alive == 0 or now >= run.deadline then
+                run.priestSpawned = true
+                local row = _NamedData:Get(run.priestId)
+                run.priest = _NamedSystem:SpawnNamed(row, run.map, run.center + Vector2(0, -1.4), run.level)
+                if isvalid(run.priest) then table.insert(run.spawned, run.priest) end
+                self:Tell(run.map, (row ~= nil and row.name or "제단의 주인") .. "이(가) 모습을 드러냈다!")
+            end
+        else
+            local dead = not isvalid(run.priest)
+            if not dead then
+                ---@type Monster
+                local m = run.priest:GetComponent("script.Monster")
+                dead = m == nil or m.IsDead
+            end
+            if dead then
+                run.done = true
+                self:Tell(run.map, "제단이 잠잠해졌다 — 이제 피의 신전이다 (의뢰를 마친 사람이 다가가면 힘이 깃든다)")
+                log("[VRF] ritual done " .. run.map.Name)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnWave(any run)
+        -- 제단 둘레(반경 3.5)에 5 + 2×회차 마리, 첫 마리는 정예
+        local count = 5 + 2 * run.wave
+        local base = _UtilLogic:RandomDouble() * math.pi * 2
+        for i = 1, count do
+            local p = nil
+            for attempt = 0, 5 do
+                local a = base + (i / count) * math.pi * 2 + attempt * 0.4
+                local r = 3.2 + _UtilLogic:RandomDouble() * 0.8
+                local q = run.center + Vector2(math.cos(a) * r, math.sin(a) * r * 0.75)
+                if run.spawner:OpenPoint(q, 0.3) then
+                    p = q
+                    break
+                end
+            end
+            if p ~= nil then
+                local id = run.species[_UtilLogic:RandomIntegerRange(1, #run.species)]
+                local e = _SpawnService:SpawnByModelId(id, id, Vector3(p.x, p.y, 0), run.map)
+                if isvalid(e) then
+                    table.insert(run.spawned, e)
+                    local level = run.level + (run.wave >= self.Waves and 1 or 0)
+                    local leader = i == 1
+                    _Util:AfterSpawn(e, "script.Monster", function(comp)
+                        ---@type Monster
+                        local m = comp
+                        m.RespawnDelay = -1
+                        m:ApplyLevel(level, leader)
+                    end, nil)
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Abort(any id, any run)
+        -- 아무도 없으면 의식을 거둔다 (다음에 다가가면 처음부터)
+        for _, e in ipairs(run.spawned) do
+            if isvalid(e) then e:Destroy() end
+        end
+        self.Runs[id] = nil
+        log("[VRF] ritual reset (empty map)")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Bless(Entity player)
+        local userId = player.PlayerComponent.UserId
+        local now = _UtilLogic.ServerElapsedSeconds
+        if (self.BlessAt[userId] or 0) > now then return end
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        if stats == nil then return end
+        self.BlessAt[userId] = now + 90
+        stats.ShrineKind = "fury"
+        stats.ShrineUntil = now + 60
+        _Util:Notify("피의 신전 · 주는 피해 +25% (60초)", userId)
+        _ParticleService:PlayBasicParticle(BasicParticleType.Buff, player, player.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, { Color = Color(1, 0.3, 0.3, 1) })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tell(Entity map, string text)
+        for _, p in ipairs(_Util:PlayersInMap(map)) do _Util:Notify(text, p.PlayerComponent.UserId) end
+    end
+
+end

@@ -276,7 +276,7 @@ function genSkills() {
 function genQuests() {
   const rows = load("quests");
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`)].join("\n");
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
@@ -288,8 +288,23 @@ function genQuests() {
         return #self.List
     end
 
+    method integer IndexOf(string kind, string target)
+        -- 그 종류·대상의 의뢰 번호 (없으면 0)
+        self:Ensure()
+        for i, q in ipairs(self.List) do
+            if q.kind == kind and q.target == target then return i end
+        end
+        return 0
+    end
+
+    method string GiverName(string giver)
+        -- 의뢰인 NPC 종류 → 이름 (npcs.csv와 같은 이름)
+        if giver == "smith" then return "대장장이 하르크" end
+        return "사제 오렌"
+    end
+
     method string RewardText(string reward)
-        -- 보상 문자열("rune:r_as,item:...,skp:1,stp:5,gen:2") → 표시용
+        -- 보상 문자열("rune:r_as,item:...,skp:1,stp:5,gen:2,deploy:1,runes:2,socket:1") → 표시용
         local parts = {}
         for key, val in string.gmatch(reward, "(%a+):([^,]+)") do
             if key == "rune" then
@@ -298,12 +313,38 @@ function genQuests() {
             elseif key == "item" then table.insert(parts, _ItemData:Parse(val).name)
             elseif key == "skp" then table.insert(parts, "스킬 포인트 " .. val)
             elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
-            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
+            elseif key == "deploy" then table.insert(parts, "그림자 배치 +" .. val .. " (영구 · 난이도마다)")
+            elseif key == "runes" then table.insert(parts, "룬 " .. val .. "개")
+            elseif key == "socket" then table.insert(parts, "소켓권 " .. val .. "장")
+            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비 (보장)" or "마법 장비") end
         end
         return table.concat(parts, ", ")
     end
 `;
-  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach", body, extra, "    property table List = {}\n"));
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자)", body, extra, "    property table List = {}\n"));
+}
+
+// ── NamedData: 곁가지 끝방의 이름 있는 적 · 봉인 상자 · 의식의 주인 ──
+function genNamed() {
+  const rows = load("named");
+  const body = ["        self.List = {}",
+    ...rows.map((r) => `        table.insert(self.List, { id = ${s(r.id)}, name = ${s(r.name)}, model = ${s(r.model)}, map = ${s(r.map)}, place = ${s(r.place)}, levelAdd = ${n(r.levelAdd)}, hpMul = ${n(r.hpMul)}, tint = ${s(r.tint)}, scale = ${n(r.scale)}, escort = ${s(r.escort)}, escortCount = ${n(r.escortCount)}, chest = ${b(r.chest)}, key = ${s(r.key)} })`)].join("\n");
+  const extra = `
+    method table ForMap(string mapId)
+        -- 그 맵(보통 맵 id)의 행 목록
+        self:Ensure()
+        local out = {}
+        for _, r in ipairs(self.List) do if r.map == mapId then table.insert(out, r) end end
+        return out
+    end
+
+    method any Get(string id)
+        self:Ensure()
+        for _, r in ipairs(self.List) do if r.id == id and id ~= "" then return r end end
+        return nil
+    end
+`;
+  write("NamedData.mlua", "named.csv", logic("NamedData", "이름 있는 적 (곁가지 끝방 우두머리·의식의 주인)과 봉인 상자 배치. place: end(맵 끝방) / ritual(제단 의식 마지막)", body, extra, "    property table List = {}\n"));
 }
 
 // ── WaypointData ──
@@ -364,6 +405,7 @@ genGameData();
 genItems();
 genSkills();
 genQuests();
+genNamed();
 genWaypoints();
 genJournal();
 

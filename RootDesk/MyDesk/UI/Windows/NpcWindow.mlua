@@ -5,11 +5,13 @@
 --   stash = 창고: 대화 대신 창고 창(StashWindow)을 바로 연다
 --   quest = D2처럼 말을 건 뒤 의뢰를 받는다: 소개 대사(다음 ▶) → 의뢰 내용·보상 → 수락/거절 → PlayerQuest.
 --           완료하면 마무리 대사 → 보고(보상). 대사는 quests.csv intro·outro ("/"로 줄 나눔)
+--   의뢰인(giver)이 대장장이인 의뢰는 대장장이에게 말을 걸면 의뢰 대화가 먼저 나온다 (진행 중에는 평소 메뉴).
 @Logic
 script NpcWindow extends Logic
 
     property string Win = "NpcWin"
     property string Kind = ""
+    property string NpcKind = ""            -- 말을 건 NPC의 원래 종류 (대장장이가 의뢰 대화 중이면 Kind = quest)
     property string RenderKey = ""
     property integer TimerId = 0
     property integer Page = 1
@@ -153,6 +155,8 @@ script NpcWindow extends Logic
             return
         end
         self.Kind = npc.Kind
+        self.NpcKind = npc.Kind
+        if npc.Kind ~= "quest" and self:GiverWaiting(npc.Kind) then self.Kind = "quest" end
         if self.Kind == "quest" and self.PendingIndex > 0 then
             ---@type PlayerQuest
             local quest = _UIKit:Comp("script.PlayerQuest")
@@ -168,10 +172,20 @@ script NpcWindow extends Logic
             self.RenderKey = ""
         end
         _UIKit:SetText(self.Win .. "/Title", npc.NpcName)
-        if npc.Kind == "shop" then self:RenderShop(st)
-        elseif npc.Kind == "merchant" then self:RenderMerchant(st)
-        elseif npc.Kind == "smith" then self:RenderSmith(st)
+        if self.Kind == "shop" then self:RenderShop(st)
+        elseif self.Kind == "merchant" then self:RenderMerchant(st)
+        elseif self.Kind == "smith" then self:RenderSmith(st)
         else self:RenderQuest() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean GiverWaiting(string kind)
+        -- 이 NPC가 지금 의뢰의 의뢰인이고 받기/보고 차례인가 (진행 중이면 평소 메뉴)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil then return false end
+        local q = _QuestData:Get(quest.Index)
+        return q ~= nil and q.giver == kind and quest.State ~= 1
     end
 
     @ExecSpace("ClientOnly")
@@ -268,10 +282,13 @@ script NpcWindow extends Logic
     end
 
     method string RewardText(table q)
-        local reward = "보상: 경험치 " .. tostring(q.exp) .. ", 골드 " .. tostring(q.gold)
+        -- 대표 보상을 앞에, 경험치는 주는 의뢰만 (14장 §2). 악몽·지옥 배율은 보고할 때 붙는다
         local extra = _QuestData:RewardText(q.reward)
-        if extra ~= "" then reward = reward .. ", " .. extra end
-        return reward
+        local parts = {}
+        if extra ~= "" then table.insert(parts, extra) end
+        if q.exp > 0 then table.insert(parts, "경험치 " .. tostring(q.exp)) end
+        table.insert(parts, "골드 " .. tostring(q.gold))
+        return "보상: " .. table.concat(parts, ", ")
     end
 
     @ExecSpace("ClientOnly")
@@ -293,8 +310,17 @@ script NpcWindow extends Logic
             body = "여왕의 저주가 걷혔다... 하지만 혼각은 더 깊은 곳에서 울리고 있다."
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
+        elseif q.giver ~= self.NpcKind and quest.State ~= 1 then
+            -- 다른 의뢰인의 차례: 그 사람에게 보낸다
+            local who = _QuestData:GiverName(q.giver)
+            body = quest.State == 2 and ("「" .. q.title .. "」을 해냈다고? " .. who .. "에게 알려 주게. 보상은 그쪽에서 받을 거다.")
+                or ("「" .. q.title .. "」 — " .. who .. "이(가) 자네를 찾고 있더군. 먼저 가 보게.")
+            self.PageCount = 1
+            self:SetButtons({ "", "", "", "", "닫기" })
         elseif quest.State == 1 then
-            body = "「" .. q.title .. "」  진행 " .. tostring(quest.Progress) .. " / " .. tostring(q.count) .. "\n" .. q.desc .. "\n어서 다녀오게."
+            local count = quest:CountFor(q)
+            local progress = count > 0 and ("  진행 " .. tostring(quest.Progress) .. " / " .. tostring(count)) or ""
+            body = "「" .. q.title .. "」" .. progress .. "\n" .. q.desc .. "\n어서 다녀오게."
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
         else

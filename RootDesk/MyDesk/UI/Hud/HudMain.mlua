@@ -285,6 +285,9 @@ script HudMain extends Logic
         if m.Grade >= 3 then
             prefix = "보스 "
             color = "#C8A050"
+        elseif m.DisplayName ~= "" then
+            prefix = ""                  -- 이름 있는 적 (모르그·유물 지기·피의 사제): 이름만 금색으로
+            color = "#E0B050"
         elseif m.Unique then
             prefix = "최상위 "
             color = "#C8A050"
@@ -295,7 +298,7 @@ script HudMain extends Logic
             prefix = "정예 "
             color = "#6E8CFF"
         end
-        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. _GameData:GetMonsterName(m.SourceId)) .. "  Lv" .. tostring(m.Level))
+        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. (m.DisplayName ~= "" and m.DisplayName or _GameData:GetMonsterName(m.SourceId))) .. "  Lv" .. tostring(m.Level))
         _UIKit:SetFill("Target/Bar/Fill", m.Hp / math.max(1, m.MaxHp))
         _UIKit:SetText("Target/Curse", self:TargetStatus(m))
     end
@@ -336,17 +339,31 @@ script HudMain extends Logic
         if q == nil then
             badge, title, caption, goal = "완료", "모든 의뢰 완료", "심도 던전·높은 난이도", "새로운 도전을 찾아보세요"
         elseif quest.State == 0 then
-            badge, title, caption, goal = "새 의뢰", q.title, "잿불 야영지", "사제 오렌에게 말을 거세요"
+            badge, title, caption, goal = "새 의뢰", q.title, "잿불 야영지", _QuestData:GiverName(q.giver) .. "에게 말을 거세요"
         elseif quest.State == 1 then
             badge, title, caption = "의뢰 " .. tostring(quest.Index) .. "/" .. tostring(total), q.title, q.zone
-            goal = q.objective .. "  " .. string.format("%d/%d", quest.Progress, q.count)
+            goal = self:QuestGoalText(q, quest)
         else
-            badge, title, caption, goal = "보고", q.title, "잿불 야영지", "사제 오렌에게 보고하세요"
+            badge, title, caption, goal = "보고", q.title, "잿불 야영지", _QuestData:GiverName(q.giver) .. "에게 보고하세요"
         end
         _UIKit:SetText("QuestTrack/Badge/Text", badge)
         _UIKit:SetText("QuestTrack/Title", _UIKit:Clip(title, 16))
         _UIKit:SetText("QuestTrack/Body", caption)
         _UIKit:SetText("QuestTrack/Progress", goal)
+    end
+
+    method string QuestGoalText(table q, PlayerQuest quest)
+        -- 진행 중 목표 한 줄: 정리 = 남은 수, 열쇠 → 상자 = 단계, 나머지 = n/count
+        if q.kind == "clear" then
+            local count = quest:CountFor(q)
+            if count <= 0 then return q.objective end
+            return "남은 망자 " .. tostring(math.max(0, count - quest.Progress)) .. " / " .. tostring(count)
+        end
+        if q.kind == "chest" then
+            return quest.Progress >= 1 and "열쇠 획득 → 봉인 상자를 여세요" or q.objective
+        end
+        if q.count <= 1 then return q.objective end
+        return q.objective .. "  " .. string.format("%d/%d", quest.Progress, q.count)
     end
 
     @ExecSpace("ClientOnly")
@@ -378,8 +395,10 @@ script HudMain extends Logic
         -- 의뢰의 수락→습득→배치→소환→보고→첫 장비를 실제 저장 상태에서 이어 준다.
         if not _Util:IsAlive(player) or quest == nil then return "" end
         local inTown = _GameConst:IsTown(player.CurrentMap)
+        local cur = _QuestData:Get(quest.Index)
+        local giver = cur ~= nil and _QuestData:GiverName(cur.giver) or "사제 오렌"
         if quest.State == 2 then
-            return inTown and "목표 달성 — 사제 오렌에게 보고하고 보상을 받으세요" or "목표 달성 — 잿불 야영지로 돌아가 사제 오렌에게 보고하세요"
+            return inTown and ("목표 달성 — " .. giver .. "에게 보고하고 보상을 받으세요") or ("목표 달성 — 잿불 야영지로 돌아가 " .. giver .. "에게 보고하세요")
         end
         if quest.Index == 1 then
             if quest.State == 0 then
@@ -404,7 +423,7 @@ script HudMain extends Logic
                 end
             end
             if quest.State == 0 then
-                return inTown and "사제 오렌에게 다음 의뢰를 받으세요 — 썩은 갈대 늪으로 여정이 이어집니다" or "잿불 야영지의 사제 오렌에게 다음 의뢰를 받으세요"
+                return inTown and "사제 오렌에게 다음 의뢰를 받으세요 — 썩은 갈대 늪의 가라앉은 지하실로" or "잿불 야영지의 사제 오렌에게 다음 의뢰를 받으세요"
             end
         end
         return ""
@@ -420,7 +439,7 @@ script HudMain extends Logic
         local skillMenu = pc and "스킬(K)" or "메뉴 → 스킬"
         if book:GetLevel("raise_skeleton") <= 0 then
             local reason = book:CanLearn("raise_skeleton", st.Level, st.SkillPoints)
-            if reason == "" then return skillMenu .. "에서 「해골 전사」를 배우세요 — 첫 의뢰에 필요합니다" end
+            if reason == "" then return skillMenu .. "에서 「해골 전사」를 배우세요 — 첫 의뢰가 훨씬 쉬워집니다" end
             if st.SkillPoints <= 0 then return "황무지에서 적을 처치해 레벨을 올리세요 — 다음 스킬 포인트로 「해골 전사」 습득" end
             return "「해골 전사」 습득 조건: " .. reason .. " — " .. skillMenu .. "에서 확인하세요"
         end
@@ -435,7 +454,7 @@ script HudMain extends Logic
             end
         end
         if key == "" then return skillMenu .. "에서 「해골 전사」를 스킬 1~4번 칸에 지정하세요" end
-        if _GameConst:IsTown(player.CurrentMap) then return "미니맵의 황무지 출구로 나가세요 — 지옥견을 쓰러뜨리고 혼으로 해골 소환" end
+        if _GameConst:IsTown(player.CurrentMap) then return "미니맵의 황무지 출구로 나가세요 — 황무지 북동쪽 「굶주린 굴」이 목적지" end
         if st.Mana < book:GetManaCost("raise_skeleton", book:GetLevel("raise_skeleton")) then
             return "소환할 마나가 부족합니다 — 마나 회복을 기다리거나 파란 물약을 사용하세요"
         end
@@ -445,7 +464,8 @@ script HudMain extends Logic
         if not pc and chosenSlot == 5 then
             return "혼이 없습니다 — 스킬 창의 「스킬 편집」에서 소환을 1~4번에 두고 큰 공격 칸을 비우면 기본 공격을 쓸 수 있습니다"
         end
-        return "지옥견을 쓰러뜨리면 혼이 남습니다 — 그 혼으로 해골 전사를 일으키세요"
+        if _GameConst:BaseMapName(player.CurrentMap.Name) == "hollow" then return "" end
+        return "황무지 북동쪽 「굶주린 굴」로 — 쓰러뜨린 적의 혼으로 해골 전사를 일으키며 가세요"
     end
 
     -- ───────── 동작 ─────────

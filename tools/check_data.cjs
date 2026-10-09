@@ -11,7 +11,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -199,19 +199,41 @@ T.maps.forEach((r, i) => {
 });
 T.waypoints.forEach((r, i) => { if (!mapIds.has(r.map)) err("waypoints", i, `map '${r.map}' — maps.csv에 없음`); });
 
+// ── 이름 있는 적 (named.csv) ──
+const namedIds = new Set();
+T.named.forEach((r, i) => {
+  if (!mapIds.has(r.map)) err("named", i, `map '${r.map}' — maps.csv에 없음`);
+  if (!["end", "ritual"].includes(r.place)) err("named", i, `place '${r.place}' — end / ritual`);
+  if (r.id !== "") {
+    namedIds.add(r.id);
+    if (!monsterIds.has(r.model)) err("named", i, `model '${r.model}' — monsters.csv id에 없음`);
+    if (!(num(r.hpMul) > 0)) err("named", i, "hpMul 양수여야 함");
+  }
+  if (r.escort !== "" && !monsterIds.has(r.escort)) err("named", i, `escort '${r.escort}' — monsters.csv id에 없음`);
+  if (r.key !== "" && !sourceIds.has(r.key)) err("named", i, `key '${r.key}' — monsters.csv sourceId에 없음`);
+});
+
 // ── 의뢰 ──
+const KINDS = ["kill", "extract", "reach", "raise", "clear", "boss", "ritual", "chest"];
 T.quests.forEach((r, i) => {
-  if (r.kind === "kill" && !sourceIds.has(r.target)) err("quests", i, `kill 대상 '${r.target}' — monsters.csv sourceId에 없음`);
+  if (!KINDS.includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
+  if ((r.kind === "kill" || r.kind === "chest") && !sourceIds.has(r.target)) err("quests", i, `${r.kind} 대상 '${r.target}' — monsters.csv sourceId에 없음`);
   if (r.kind === "reach" && !markers.has(r.target)) err("quests", i, `reach 대상 '${r.target}' — maps.csv extra에 altar:${r.target} 없음`);
-  if (!["kill", "extract", "reach", "raise"].includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
   if (r.kind === "raise" && !["skeleton", "mage", "revive"].includes(r.target)) err("quests", i, `raise 대상 '${r.target}' — skeleton / mage / revive`);
+  if (r.kind === "clear" && !mapIds.has(r.target)) err("quests", i, `clear 대상 맵 '${r.target}' — maps.csv에 없음`);
+  if ((r.kind === "boss" || r.kind === "ritual") && !namedIds.has(r.target)) err("quests", i, `${r.kind} 대상 '${r.target}' — named.csv id에 없음`);
+  if (r.kind === "ritual" && !markers.has(r.map1)) err("quests", i, `ritual 제단 '${r.map1}' — maps.csv extra에 altar 없음`);
+  if (r.kind === "chest" && !T.named.some((x) => x.map === r.map && x.chest === "true" && x.key === r.target)) err("quests", i, `chest — named.csv에 map '${r.map}' key '${r.target}' 봉인 상자 없음`);
+  if (r.map !== "" && !mapIds.has(r.map)) err("quests", i, `map '${r.map}' — maps.csv에 없음`);
+  if (r.kind === "chest" && !mapIds.has(r.map1)) err("quests", i, `chest 1단계 맵 '${r.map1}' — maps.csv에 없음`);
+  if (!["quest", "smith"].includes(r.giver)) err("quests", i, `giver '${r.giver}' — quest / smith`);
   if (!(num(r.count) > 0)) err("quests", i, "count 양수여야 함");
   for (const part of r.reward.split(",")) {
     if (part === "") continue;
     const [k, v] = [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)];
     if (k === "rune" && !runeIds.has(v)) err("quests", i, `보상 룬 '${v}' — runes.csv에 없음`);
     else if (k === "item" && !baseIds.has(v.split("|")[0])) err("quests", i, `보상 아이템 '${v.split("|")[0]}' — item_bases에 없음`);
-    else if (["skp", "stp", "gen", "socket"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
+    else if (["skp", "stp", "gen", "socket", "deploy", "runes"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
     else if (!["rune", "item"].includes(k)) err("quests", i, `보상 종류 '${k}' 알 수 없음`);
   }
 });

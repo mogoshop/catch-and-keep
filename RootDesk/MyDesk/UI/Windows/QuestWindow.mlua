@@ -139,7 +139,7 @@ script QuestWindow extends Logic
         local q = _QuestData:Get(index)
         if q == nil then return view end
         if index > quest.Index then
-            -- 그 사냥터에 가 본 의뢰는 내용을 미리 읽을 수 있다 (수락은 앞선 의뢰 뒤 사제 오렌에게서)
+            -- 그 사냥터에 가 본 의뢰는 내용을 미리 읽을 수 있다 (수락은 앞선 의뢰 뒤 의뢰인에게서)
             view.title = q.title
             view.status = "앞선 의뢰 뒤에 수락"
             view.zone = "목적지 · " .. q.zone
@@ -152,8 +152,9 @@ script QuestWindow extends Logic
             view.title = "새로운 의뢰"
             view.status = "수락 전"
             view.icon = _GameData:GetUiIcon("q_avail")
-            view.zone = "의뢰인 · 잿불 야영지의 사제 오렌"
-            view.objective = "사제 오렌과 대화하세요."
+            local giver = _QuestData:GiverName(q.giver)
+            view.zone = "의뢰인 · 잿불 야영지의 " .. giver
+            view.objective = giver .. "과(와) 대화하세요."
             view.desc = "가까이 다가가 대화 버튼을 누르면 의뢰를 확인할 수 있습니다."
             return view
         end
@@ -161,9 +162,10 @@ script QuestWindow extends Logic
         view.zone = "목적지 · " .. q.zone
         view.desc = q.desc
         view.rewards = self:Rewards(q)
-        local progress = math.max(0, math.min(q.count, quest.Progress))
+        local count = index == quest.Index and quest:CountFor(q) or q.count
+        local progress = math.max(0, math.min(count, quest.Progress))
         view.showProgress = true
-        view.ratio = q.count > 0 and progress / q.count or 0
+        view.ratio = count > 0 and progress / count or 0
         if index < quest.Index then
             view.status = "완료 · 보상 수령"
             view.icon = _GameData:GetUiIcon("q_done")
@@ -172,11 +174,18 @@ script QuestWindow extends Logic
         elseif quest.State == 2 then
             view.status = "목표 달성 · 보고 대기"
             view.icon = _GameData:GetUiIcon("q_done")
-            view.zone = "보고 위치 · 잿불 야영지의 사제 오렌"
-            view.objective = "사제 오렌에게 돌아가 보상을 받으세요."
+            local giver = _QuestData:GiverName(q.giver)
+            view.zone = "보고 위치 · 잿불 야영지의 " .. giver
+            view.objective = giver .. "에게 돌아가 보상을 받으세요."
             view.ratio = 1
         else
-            view.status = "진행 중 · " .. tostring(progress) .. "/" .. tostring(q.count)
+            if q.kind == "clear" then
+                view.status = count > 0 and ("진행 중 · 남은 망자 " .. tostring(count - progress) .. "/" .. tostring(count)) or "진행 중 · 굴에 들어가면 남은 수가 보인다"
+            elseif q.kind == "chest" then
+                view.status = progress >= 1 and "진행 중 · 열쇠 획득 → 봉인 상자" or "진행 중 · 열쇠를 지닌 적을 찾아라"
+            else
+                view.status = "진행 중 · " .. tostring(progress) .. "/" .. tostring(count)
+            end
             view.objective = q.objective
         end
         return view
@@ -184,9 +193,8 @@ script QuestWindow extends Logic
 
     method table Rewards(table q)
         -- 지급과 같은 보상 문자열을 해석하고 무작위 장비는 확정 아이템처럼 표시하지 않는다.
+        -- 대표 보상(영구 강화·확정 아이템)을 먼저, 경험치·골드는 뒤에 (14장 §2)
         local rewards = {}
-        if q.exp > 0 then table.insert(rewards, { name = "경험치", value = "+" .. tostring(q.exp), icon = _GameData:GetUiIcon("icon_stats") }) end
-        if q.gold > 0 then table.insert(rewards, { name = "골드", value = "+" .. tostring(q.gold), icon = _GameConst.IconGold }) end
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
             if key == "item" then
                 local item = _ItemData:Parse(val)
@@ -201,9 +209,15 @@ script QuestWindow extends Logic
             elseif key == "socket" then
                 table.insert(rewards, { name = "대장장이 소켓권", value = "+" .. val, icon = _GameData:GetUiIcon("rune") })
             elseif key == "gen" then
-                table.insert(rewards, { name = val == "3" and "희귀 장비" or "마법 장비", value = "무작위 1개", icon = _GameData:GetUiIcon("icon_bag") })
+                table.insert(rewards, { name = val == "3" and "희귀 장비" or "마법 장비", value = val == "3" and "보장 1개" or "무작위 1개", icon = _GameData:GetUiIcon("icon_bag") })
+            elseif key == "deploy" then
+                table.insert(rewards, { name = "그림자 배치", value = "+" .. val .. " 영구 (난이도마다)", icon = _GameData:GetUiIcon("icon_shadow") })
+            elseif key == "runes" then
+                table.insert(rewards, { name = "룬", value = val .. "개", icon = _GameData:GetUiIcon("rune") })
             end
         end
+        if q.exp > 0 then table.insert(rewards, { name = "경험치", value = "+" .. tostring(q.exp), icon = _GameData:GetUiIcon("icon_stats") }) end
+        if q.gold > 0 then table.insert(rewards, { name = "골드", value = "+" .. tostring(q.gold), icon = _GameConst.IconGold }) end
         return rewards
     end
 

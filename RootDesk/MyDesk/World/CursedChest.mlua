@@ -1,5 +1,7 @@
 -- 맵 이벤트 저주받은 상자 (MapEvents가 사냥터에 놓는다): 다가가면 열린다 → 둘레에 매복 무리(정예 우두머리 + chestAmbush)가 솟고,
 -- 연 사람에게 최상위 몬스터급 보물을 떨어뜨린다 (개인 보상 — LootSystem.RollDrops). 한 번만 열린다.
+-- Sealed = 곁가지 끝방 봉인 상자 (NamedSystem이 놓는다, 14장 §4): 매복 없이 플레이어마다 한 번씩 열린다.
+--   그 난이도에서 처음 열면 희귀 장비 + 룬 보장, 이후엔 정예급 보물. NeedKey가 있으면 그 열쇠(의뢰 단계)가 있어야 열린다.
 @Component
 script CursedChest extends Component
 
@@ -10,6 +12,14 @@ script CursedChest extends Component
     property number Radius = 1.0
     property integer TimerId = 0
     property string OpenRuid = "a35c8fabe25e462f8750acadb2ffbf02"   -- 열린 상자 (임시 그림)
+    @Sync
+    property boolean Sealed = false
+    property string MapKey = ""              -- 봉인 상자가 놓인 보통 맵 id (첫 개봉 기록·의뢰 판정)
+    @Sync
+    property string NeedKey = ""             -- 열쇠를 주는 적 sourceId ("headsman" → 의뢰 「목 없는 처형인」 1단계)
+    @Sync
+    property string OpenedDigest = ";"        -- 이 상자를 연 플레이어 userId (";a;b;")
+    property table NoticeAt = {}             -- userId → 다음 「잠김」 안내 시각
 
     method void OnBeginPlay()
         if self:IsServer() then
@@ -26,6 +36,12 @@ script CursedChest extends Component
 
     @ExecSpace("ServerOnly")
     method void Tick()
+        if self.Sealed then
+            for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
+                if not string.find(self.OpenedDigest, ";" .. p.PlayerComponent.UserId .. ";", 1, true) then self:OpenSealed(p) end
+            end
+            return
+        end
         if self.Opened then return end
         local p = _Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)[1]
         if p ~= nil then self:Open(p) end
@@ -68,8 +84,47 @@ script CursedChest extends Component
         log("[VRF] cursed chest opened by " .. player.Name .. " ambush=" .. tostring(count) .. " lv=" .. tostring(self.Level))
     end
 
+    @ExecSpace("ServerOnly")
+    method void OpenSealed(Entity player)
+        -- 봉인 상자: 열쇠 확인 → 이 플레이어에게만 보물 → 첫 개봉 기록 → SealedChestOpened (의뢰 chest 판정)
+        local userId = player.PlayerComponent.UserId
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest == nil or not _Util:IsAlive(player) then return end
+        if self.NeedKey ~= "" and not quest:HasChestKey(self.MapKey) then
+            local now = _UtilLogic.ElapsedSeconds
+            if (self.NoticeAt[userId] or 0) <= now then
+                self.NoticeAt[userId] = now + 6
+                _Util:Notify("봉인되어 있다 — " .. _GameData:GetMonsterName(self.NeedKey) .. "의 열쇠가 필요하다", userId)
+            end
+            return
+        end
+        self.OpenedDigest = self.OpenedDigest .. userId .. ";"
+        local first = not quest:IsSealedOpened(self.MapKey)
+        local center = _Util:Pos2(self.Entity) + Vector2(0, -0.6)
+        if first then
+            -- 그 난이도 첫 개봉: 희귀 이상 1 + 룬 1 보장
+            local item = _ItemData:GenerateWithMinimum(self.Level + 2, "boss", 300, 2)
+            _LootSystem:Spawn(center, userId, "item", item, 1, _ItemData:Parse(item).rarity)
+            _LootSystem:Spawn(center, userId, "rune", _ItemData:MakeRune(self.Level + 4), 1, 0)
+            quest:MarkSealedOpened(self.MapKey)
+            _Util:Notify("봉인 상자를 열었다 — 이 난이도 첫 개봉: 희귀 장비와 룬", userId)
+        else
+            _LootSystem:RollDrops(self.Entity, self.Level, "elite", player)
+            _Util:Notify("봉인 상자를 열었다", userId)
+        end
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.4, 0), 0, Vector3(1, 1, 1), false, { Color = Color(1, 0.85, 0.4, 1) })
+        _GameEvents:Emit("SealedChestOpened", { player = player, map = self.Entity.CurrentMap, mapKey = self.MapKey })
+        log("[VRF] sealed chest " .. self.MapKey .. " opened by " .. player.Name .. " first=" .. tostring(first) .. " lv=" .. tostring(self.Level))
+    end
+
     @ExecSpace("ClientOnly")
     method void RefreshView()
+        if self.Sealed then
+            self:RefreshSealedView()
+            return
+        end
         local tag = self.Entity.NameTagComponent
         if isvalid(tag) then
             local name = self.Opened and "열린 상자" or "저주받은 상자 · 다가가면 열린다"
@@ -82,6 +137,27 @@ script CursedChest extends Component
         if self.Opened and isvalid(sprite) and sprite.SpriteRUID ~= self.OpenRuid then
             sprite.SpriteRUID = self.OpenRuid
             sprite.Color = Color(0.7, 0.65, 0.75, 1)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshSealedView()
+        -- 봉인 상자는 플레이어마다 열린다: 내가 열었으면 열린 그림
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) then return end
+        local opened = string.find(self.OpenedDigest, ";" .. me.PlayerComponent.UserId .. ";", 1, true) ~= nil
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then
+            local name = opened and "열린 봉인 상자" or (self.NeedKey ~= "" and "봉인 상자 · 열쇠가 필요하다" or "봉인 상자 · 다가가면 열린다")
+            if tag.Name ~= name then
+                tag.Name = name
+                tag.FontColor = opened and Color(0.6, 0.6, 0.6, 1) or Color(1, 0.85, 0.4, 1)
+            end
+        end
+        local sprite = self.Entity.SpriteRendererComponent
+        if opened and isvalid(sprite) and sprite.SpriteRUID ~= self.OpenRuid then
+            sprite.SpriteRUID = self.OpenRuid
+            sprite.Color = Color(0.75, 0.7, 0.6, 1)
         end
     end
 

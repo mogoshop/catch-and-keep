@@ -15,6 +15,7 @@ script HudMap extends Logic
     property number Scale = 1
     property Vector2 QuestPos = Vector2(0, 0)
     property boolean HasQuestNpc = false
+    property table NpcPos = {}                -- NPC 종류 → 위치 (의뢰인 머리 위 「!」)
     property table Gates = {}               -- 이 맵의 포털 { pos, label }
     property number GateLabelRange = 9
     property integer TerrainCount = 256
@@ -181,6 +182,7 @@ script HudMap extends Logic
     method void BuildMiniMap(any info)
         -- 원형 미니맵 안에 맵 전체가 들어가게 축소. 표시물 점 색: 포털 하늘·웨이포인트 청록·의뢰 노랑·NPC 흰·입구 보라·제단 빨강·보스 주황
         self.HasQuestNpc = false
+        self.NpcPos = {}
         self.Gates = {}
         self.Features = {}
         self.LastFeatureKey = ""
@@ -195,7 +197,7 @@ script HudMap extends Logic
         local features = self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)
         self.LastFeatureKey = self:FeatureKey(features)
         for _, f in ipairs(features) do
-            table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "", waypointId = f.waypointId or "" })
+            table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "", waypointId = f.waypointId or "", npcKind = f.npcKind or "" })
             if n < self.FeatureCount then
                 n = n + 1
                 local path = "MiniMap/Body/Area/F" .. tostring(n)
@@ -208,6 +210,7 @@ script HudMap extends Logic
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
             end
+            if f.npcKind ~= nil and f.npcKind ~= "" then self.NpcPos[f.npcKind] = Vector2(f.x, f.y) end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
         self:PlaceFeatures()
@@ -364,12 +367,14 @@ script HudMap extends Logic
                     local waypointId = ""
                     local radius = 0.6
                     local show = true
+                    local npcKind = ""
                     if kind == "portal" then
                         label = _GameConst:LevelText(component.Label, map.Name)
                         target = component.TargetMap
                         radius = component.Radius
                         show = component:CanUse(player)
                     elseif kind == "npc" then
+                        npcKind = component.Kind
                         kind = component.Kind == "quest" and "quest" or "npc"
                         label = component.NpcName
                     elseif kind == "waypoint" then
@@ -380,7 +385,7 @@ script HudMap extends Logic
                     end
                     if show then
                         local pos = _Util:Pos2(component.Entity)
-                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target, waypointId = waypointId, radius = radius })
+                        table.insert(result, { kind = kind, x = pos.x, y = pos.y, label = label, targetMap = target, waypointId = waypointId, radius = radius, npcKind = npcKind })
                         liveKinds[kind] = true
                     end
                 end
@@ -651,15 +656,15 @@ script HudMap extends Logic
     end
 
     method string QuestMap(integer index, integer state)
-        -- 목표 지역은 의뢰 데이터에서 찾고, 수락·완료 보고는 야영지로 안내한다.
+        -- 목표 맵은 의뢰 데이터의 map(열쇠 단계는 map1), 수락·완료 보고는 야영지로 안내한다.
         local q = _QuestData:Get(index)
         if q == nil then return "" end
         if state ~= 1 then return "town" end
-        for name, info in pairs(_GameData.MapInfo) do
-            local title = string.gsub(info.name, "%s*%(Lv[^%)]*%)", "")
-            if title == q.zone then return name end
-        end
-        return ""
+        local player = _UserService.LocalPlayer
+        ---@type PlayerQuest
+        local quest = isvalid(player) and player:GetComponent("script.PlayerQuest") or nil
+        if quest ~= nil and quest.Index == index then return quest:GoalMap(q) end
+        return q.map
     end
 
     method string NextRoute(string startMap, string goalMap)
@@ -749,11 +754,21 @@ script HudMap extends Logic
                     focused = f
                     text = "다음 길: " .. string.gsub(f.label, "%s*%(Lv[^%)]*%)", "")
                     break
-                elseif current == goal and (quest.State ~= 1 and f.kind == "quest" or quest.State == 1 and q ~= nil and q.kind == "reach" and f.kind == "altar") then
+                elseif current == goal and quest.State ~= 1 and q ~= nil and f.kind ~= "portal" and f.npcKind == q.giver then
                     focused = f
-                    text = quest.State == 1 and "목표: 피의 제단" or "대화: 사제 오렌"
+                    text = "대화: " .. _QuestData:GiverName(q.giver)
+                    break
+                elseif current == goal and quest.State == 1 and q ~= nil and (q.kind == "reach" or q.kind == "ritual") and f.kind == "altar" then
+                    focused = f
+                    text = "목표: 피의 제단"
                     break
                 end
+            end
+            -- 정리 맵에서 5마리 이하로 남으면 가장 가까운 남은 몬스터를 가리킨다 (구석에 낀 몬스터 때문에 못 끝내지 않게)
+            local remain = self:RemainingFocus(player)
+            if remain ~= nil then
+                focused = remain
+                text = "남은 망자 " .. tostring(remain.count) .. " — 가까운 곳 표시"
             end
             if text == "" and q ~= nil then
                 text = current == goal and "이 지역에서 의뢰 진행" or "목표: " .. (goal == "town" and "잿불 야영지" or q.zone)
@@ -762,9 +777,36 @@ script HudMap extends Logic
         if text == "" then text = "출구와 웨이포인트를 찾으세요" end
         _UIKit:SetText("MiniMap/Body/FocusText", text)
         -- 목표 원은 그 자리가 밝혀졌을 때만 (안개 속 보스·제단 위치를 미리 알려 주지 않게). 안내 문구는 그대로
-        if focused ~= nil and not self:IsRevealedPos(Vector2(focused.x, focused.y)) then focused = nil end
+        if focused ~= nil and not focused.always and not self:IsRevealedPos(Vector2(focused.x, focused.y)) then focused = nil end
         _UIKit:SetEnabled("MiniMap/Body/Area/Focus", focused ~= nil)
         if focused ~= nil then _UIKit:SetPos("MiniMap/Body/Area/Focus", self:ToMini(Vector2(focused.x, focused.y))) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method any RemainingFocus(Entity player)
+        -- 정리 맵(MonsterSpawner.ClearMode)이고 남은 수가 1~5면 가장 가까운 살아 있는 몬스터 위치
+        local map = player.CurrentMap
+        if not isvalid(map) then return nil end
+        ---@type MonsterSpawner
+        local spawner = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+        if spawner == nil or not spawner.ClearMode or spawner.Remaining <= 0 or spawner.Remaining > 5 then return nil end
+        local me = _Util:Pos2(player)
+        local best = nil
+        local bestD = 9999
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if isvalid(m.Entity) and not m.IsDead then
+                local p = _Util:Pos2(m.Entity)
+                local d = (p - me):Magnitude()
+                if d < bestD then
+                    best = p
+                    bestD = d
+                end
+            end
+        end
+        if best == nil then return nil end
+        return { x = best.x, y = best.y, count = spawner.Remaining, always = true }
     end
 
     -- ───────── 맵 이름 ─────────
@@ -872,7 +914,9 @@ script HudMap extends Logic
         local quest = player:GetComponent("script.PlayerQuest")
         local color = nil
         if _UIKit:AnyWindowOpen() then _UIKit:SetEnabled("NpcMark", false) return end
-        if self.HasQuestNpc and quest ~= nil and _QuestData:Get(quest.Index) ~= nil then
+        local q = quest ~= nil and _QuestData:Get(quest.Index) or nil
+        local giverPos = q ~= nil and self.NpcPos[q.giver] or nil
+        if giverPos ~= nil then
             if quest.State == 0 then color = Color(1, 0.82, 0.25, 1) elseif quest.State == 2 then color = Color(0.45, 1, 0.45, 1) end
         end
         if color == nil then
@@ -882,7 +926,7 @@ script HudMap extends Logic
         -- 월드 → 화면 → GameHUD 루트 기준 좌표 (NpcMark는 루트 가운데 기준)
         local root = _UIKit:Get("/ui/GameHUD")
         if not isvalid(root) then return end
-        local screen = _UILogic:WorldToScreenPosition(self.QuestPos + Vector2(0, 1.35))
+        local screen = _UILogic:WorldToScreenPosition(giverPos + Vector2(0, 1.35))
         local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
         local bob = math.sin(_UtilLogic.ElapsedSeconds * 4) * 6
         -- NPC가 화면 위쪽 끝에 있어도 「!」는 화면 안 가장자리에 보이게 한다
