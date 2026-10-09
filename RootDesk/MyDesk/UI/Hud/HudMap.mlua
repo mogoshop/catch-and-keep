@@ -30,6 +30,7 @@ script HudMap extends Logic
     property number NextFocusAt = 0
     property number CombatUntil = 0            -- 모바일 전투 중 의뢰 추적 접기 (InMobileCombat)
     property Vector2 LastMePos = Vector2(0, 0)
+    property integer ShownFloor = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -67,6 +68,8 @@ script HudMap extends Logic
             self.NextFocusAt = 0
             self:OnMapChanged(map.Name)
         end
+        -- 심도 층 번호가 늦게 동기화되면 이름을 다시 그린다
+        if self:DepthFloor() ~= self.ShownFloor then self:OnMapChanged(map.Name) end
         self:RefreshFeatures(map)
         self:RenderLayout()
         -- 의뢰 경로 강조(경로 탐색 포함)는 0.5초마다면 충분하다. 내 위치 점만 0.1초마다 옮긴다.
@@ -93,6 +96,16 @@ script HudMap extends Logic
 
     -- ───────── 맵이 바뀔 때 ─────────
 
+    method integer DepthFloor()
+        -- 지금 맵의 심도 층 (심도가 아니면 0)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return 0 end
+        -- 감독은 심도 맵 엔티티 자체에 붙어 있다
+        local director = player.CurrentMap:GetComponent("script.DepthDirector")
+        if director == nil then return 0 end
+        return director.Floor
+    end
+
     @ExecSpace("ClientOnly")
     method void OnMapChanged(string mapName)
         local base = _GameConst:BaseMapName(mapName)
@@ -103,9 +116,13 @@ script HudMap extends Logic
         if st ~= nil then diff = st.Difficulty end
         local title = base
         local sub = ""
+        local floor = self:DepthFloor()
+        self.ShownFloor = floor
         if info ~= nil then
             title = info.name
             if info.kind == "town" then sub = "마을" elseif info.kind == "side" then sub = "곁가지 던전" elseif info.kind == "instance" then sub = "심도 던전" else sub = "사냥터" end
+            -- 심도: 층 번호 (DepthDirector.Floor 동기화)
+            if info.kind == "instance" and floor > 0 then title = "심도 " .. tostring(floor) .. "층" end
         end
         if diff > 0 then
             if sub ~= "" then sub = sub .. " · " end
@@ -154,7 +171,7 @@ script HudMap extends Logic
                 _UIKit:SetColor(path, self:FeatureColor(f.kind))
                 _UIKit:SetText(path .. "/Label", self:FeatureLabel(f))
             end
-            if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
+            if (f.kind == "portal" or f.kind == "depth") and (f.label or "") ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
             if f.kind == "quest" then
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
@@ -164,7 +181,7 @@ script HudMap extends Logic
     end
 
     method Color FeatureColor(string kind)
-        -- 출구 빨강 · 의뢰 노랑 · 거점 파랑 · NPC 흰색 · 심도 보라 · 제단 주황 · 보스 진홍
+        -- 출구 빨강 · 의뢰 노랑 · 웨이포인트 파랑 · NPC 흰색 · 심도 보라 · 제단 주황 · 보스 진홍
         if kind == "portal" then return Color(1, 0.35, 0.29, 1) end
         if kind == "quest" then return Color(1, 0.82, 0.25, 1) end
         if kind == "waypoint" then return Color(0.44, 0.7, 1, 1) end
@@ -185,8 +202,8 @@ script HudMap extends Logic
             local last = string.match(label, "(%S+)$") or label
             return f.kind == "quest" and ("! " .. last) or last
         end
-        if f.kind == "waypoint" then return "거점" end
-        if f.kind == "depth" then return "심도" end
+        if f.kind == "waypoint" then return "웨이포인트" end
+        if f.kind == "depth" then return (f.label ~= nil and f.label ~= "") and f.label or "심도" end
         if f.kind == "altar" then return "제단" end
         if f.kind == "boss" then return "보스" end
         return ""
@@ -241,6 +258,9 @@ script HudMap extends Logic
                         label = component.NpcName
                     elseif kind == "waypoint" then
                         waypointId = component.WaypointId
+                    elseif kind == "depth" then
+                        -- 심도 문: 마을 입구는 「심도 입구」, 심도 안에서는 「심도 N층」(더 깊이) · 「야영지」(귀환)
+                        label = component.Label ~= "" and component.Label or (component.Action == "enter" and "심도 입구" or "")
                     end
                     if show then
                         local pos = _Util:Pos2(component.Entity)
@@ -489,7 +509,7 @@ script HudMap extends Logic
                 for _, f in ipairs(self.Features) do
                     if f.kind == "waypoint" and f.waypointId ~= "" and travel:IsKnown(f.waypointId) then
                         focused = f
-                        text = "거점 이동: " .. waypoint.name
+                        text = "웨이포인트 이동: " .. waypoint.name
                         break
                     end
                 end
@@ -510,7 +530,7 @@ script HudMap extends Logic
                 text = current == goal and "이 지역에서 의뢰 진행" or "목표: " .. (goal == "town" and "잿불 야영지" or q.zone)
             end
         end
-        if text == "" then text = "출구와 거점을 찾아 탐험하세요" end
+        if text == "" then text = "출구와 웨이포인트를 찾으세요" end
         _UIKit:SetText("MiniMap/Body/FocusText", text)
         _UIKit:SetEnabled("MiniMap/Body/Area/Focus", focused ~= nil)
         if focused ~= nil then _UIKit:SetPos("MiniMap/Body/Area/Focus", self:ToMini(Vector2(focused.x, focused.y))) end

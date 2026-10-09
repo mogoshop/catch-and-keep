@@ -195,7 +195,7 @@ function buildGameHud() {
   k.frame("MenuWin", "middle-center", [0, 20], [800, 640], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
-    ["Rank", K.icon_rank, "랭킹"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
+    ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬어"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const path = `MenuWin/${n}`;
     k.btn(path, "", { anchor: "top-left", pos: [64 + col * 230, -96 - row * 160], rect_size: [212, 148] });
@@ -370,6 +370,14 @@ function buildGameHud() {
   k.inner("RankWin/Paper", "top-center", [0, -156], [580, 470], "win_content");
   b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 440] });
 
+  // ── 룬어 조합법 (메뉴 「룬어」): 조합·부위·효과, 룬별 효과 (RuneWindow.mlua) ──
+  k.frame("RuneWin", "middle-center", [0, 20], [960, 760], "룬어 조합법");
+  [["TabWords", "룬어 조합", -339], ["TabRunes1", "하급 룬", -113], ["TabRunes2", "중급 룬", 113], ["TabRunes3", "상급 룬", 339]].forEach(([n, t, x]) => {
+    k.btn(`RuneWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [216, 56], font_size: 18 });
+  });
+  k.inner("RuneWin/Paper", "top-center", [0, -156], [900, 572], "win_content");
+  b.text("RuneWin/Paper/List", "", { size: 18, color: C.white, alignment: 0, anchor: "top-left", pos: [20, -14], rect_size: [860, 544], bestfit: true, min_size: 13, max_size: 18 });
+
   const file = P.ui("GameHUD");
   const previous = readIfExists(file);
   b.write(file);
@@ -416,9 +424,13 @@ function patchShadowHud() {
   k.aspect(`${d}/Stage/Portrait`);
   s.text(`${d}/Name`, "", { size: 30, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -298], rect_size: [520, 42], bestfit: true, min_size: 24, max_size: 30, ...outline });
   s.text(`${d}/Grade`, "", { size: 22, color: C.gold, anchor: "top-center", pivot: [0.5, 1], pos: [0, -342], rect_size: [520, 32] });
-  s.text(`${d}/Stats`, "", { size: 22, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -384], rect_size: [508, 200], bestfit: true, min_size: 18, max_size: 22 });
-  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -588], rect_size: [508, 84], bestfit: true, min_size: 17, max_size: 21 });
+  s.text(`${d}/Stats`, "", { size: 21, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -378], rect_size: [508, 188], bestfit: true, min_size: 17, max_size: 21 });
+  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -570], rect_size: [508, 54], bestfit: true, min_size: 17, max_size: 21 });
   s.text(`${d}/Empty`, "왼쪽에 보일 그림자를\n오른쪽 목록에서 고르세요", { size: 24, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [500, 120], enable: false });
+  // 정수 줄: 아이콘 + 보유 · 강화 비용 · 분해하면 얻는 양 (버튼 위)
+  s.empty(`${d}/Essence`, { anchor: "bottom-left", pivot: [0, 0], pos: [20, 116], rect_size: [520, 40] });
+  s.sprite(`${d}/Essence/Icon`, { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [36, 36], image_ruid: K.essence, color: WHITE, alpha: 1, sprite_type: 0 });
+  s.text(`${d}/Essence/Text`, "", { size: 20, color: "#D9B8FF", alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [44, 0], rect_size: [476, 40], bestfit: true, min_size: 16, max_size: 20 });
   [["BtnDeploy", "소환"], ["BtnUpgrade", "강화"], ["BtnSalvage", "분해"]].forEach(([n, label], i) => {
     k.btn(`${d}/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 18], rect_size: [168, 88], font_size: 26 });
   });

@@ -1,27 +1,69 @@
--- 웨이포인트 오브젝트. 밟은 플레이어의 PlayerTravel에 활성화를 알린다. 이동 창은 WaypointWindow가 근처에서 연다.
+-- 웨이포인트 오브젝트 (바닥 문양). 밟은 플레이어의 PlayerTravel에 활성화를 알린다. 이동 창은 WaypointWindow가 근처에서 연다.
+-- 클라이언트: 내가 아직 활성화하지 않은 문양은 어둡게, 활성화하면 밝게 빛난다 (D2처럼 밟으면 켜진다).
 @Component
 script Waypoint extends Component
 
     property string WaypointId = "camp"
     property number Radius = 1.0
     property integer TimerId = 0
+    property integer ShownState = -1        -- 클라이언트: 0 꺼짐 · 1 켜짐 (-1 아직 안 그림)
+    property number FlashUntil = 0
+    property Vector3 BaseScale = Vector3(1, 1, 1)
 
-    @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.5)
+        -- 서버는 밟았는지 확인, 클라이언트는 켜짐/꺼짐 모양을 맞춘다
+        if self:IsServer() then
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.5)
+        else
+            self.BaseScale = self.Entity.TransformComponent.Scale
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Look() end, 0.1)
+        end
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
+        -- 타이머 정리
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
     end
 
     @ExecSpace("ServerOnly")
     method void Check()
+        -- 반경 안 플레이어의 웨이포인트를 활성화
         for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
             ---@type PlayerTravel
             local travel = u:GetComponent("script.PlayerTravel")
             if travel ~= nil then travel:Activate(self.WaypointId) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Look()
+        -- 내 PlayerTravel.Known(동기화)에 따라 문양 색을 바꾸고, 막 켜졌으면 잠깐 번쩍인다
+        local player = _UserService.LocalPlayer
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(player) or sprite == nil then return end
+        ---@type PlayerTravel
+        local travel = player:GetComponent("script.PlayerTravel")
+        if travel == nil then return end
+        local state = travel:IsKnown(self.WaypointId) and 1 or 0
+        local now = _UtilLogic.ElapsedSeconds
+        if state ~= self.ShownState then
+            if self.ShownState == 0 and state == 1 then self.FlashUntil = now + 0.6 end
+            self.ShownState = state
+            -- 전용 그림(ui_icons.csv waypoint_off / waypoint_on)이 들어오면 그 그림으로, 없으면 모델 그림을 색으로만 구분
+            local art = _GameData:GetUiIcon(state == 1 and "waypoint_on" or "waypoint_off")
+            if art ~= "" then sprite.SpriteRUID = art end
+        end
+        if state == 0 then
+            sprite.Color = Color(0.32, 0.32, 0.4, 0.75)
+        elseif now < self.FlashUntil then
+            -- 켜지는 순간: 문양이 잠깐 커졌다 돌아온다
+            local k = (self.FlashUntil - now) / 0.6
+            sprite.Color = Color(1, 1, 1, 1)
+            self.Entity.TransformComponent.Scale = self.BaseScale * (1 + 0.3 * k)
+        else
+            sprite.Color = Color(1, 1, 1, 1)
+            self.Entity.TransformComponent.Scale = self.BaseScale
         end
     end
 

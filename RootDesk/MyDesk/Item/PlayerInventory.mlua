@@ -1,6 +1,6 @@
 -- 소지품: 가방(60칸, 슬롯 방식) · 장비 10부위 · 전리품 줍기 · 장착 효과 반영. 서버 권위.
 -- 아이템은 ItemData 문자열로 보관하고 클라이언트에는 요약(@Sync)으로 보낸다.
--- 물약은 PlayerBelt, 상점은 PlayerShop, 사망 시체는 PlayerCorpses.
+-- 물약·정수는 가방의 겹치는 물건(ItemData.IsStack). 벨트(PlayerBelt)는 가방의 물약을 높은 등급부터 마신다. 상점은 PlayerShop, 사망 시체는 PlayerCorpses.
 @Component
 script PlayerInventory extends Component
 
@@ -23,7 +23,8 @@ script PlayerInventory extends Component
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 새 캐릭터 기본 장비 (저장 데이터가 있으면 PlayerSave가 덮어쓴다)
-        self.Bag = {}
+        -- 새 캐릭터: 하급 생명 물약 3 · 하급 마나 물약 2
+        self.Bag = { _ItemData:MakeStack("hp1", 3), _ItemData:MakeStack("mp1", 2) }
         self.Equip = {}
         self.Equip["weapon"] = self.StarterWeapon
         self:RefreshDigest()
@@ -50,6 +51,13 @@ script PlayerInventory extends Component
     @ExecSpace("ServerOnly")
     method void RefreshDigest()
         self.BagDigest = table.concat(self.Bag, ";")
+        -- 가방의 물약 수·정수 수를 벨트·그림자 보관함 표시와 맞춘다
+        ---@type PlayerBelt
+        local belt = self.Entity:GetComponent("script.PlayerBelt")
+        if belt ~= nil then belt:SyncCounts() end
+        ---@type ShadowOwner
+        local owner = self.Entity:GetComponent("script.ShadowOwner")
+        if owner ~= nil then owner.Essence = self:CountStack("essence") end
         local parts = {}
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local s = self.Equip[slot]
@@ -60,10 +68,78 @@ script PlayerInventory extends Component
 
     @ExecSpace("ServerOnly")
     method boolean AddItem(string s)
+        -- 겹치는 물건은 같은 종류 칸에 먼저 쌓는다 (칸이 모자라 다 못 넣으면 false, 넣은 만큼은 남는다)
+        local item = _ItemData:Parse(s)
+        if _ItemData:IsStack(item.base) then return self:AddStack(item.base, item.count) == 0 end
         if #self.Bag >= self.BagSize then return false end
         table.insert(self.Bag, s)
         self:RefreshDigest()
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer AddStack(string base, integer count)
+        -- base 물건 count개를 넣고 못 넣은 개수를 돌려준다
+        local left = count
+        local limit = _ItemData:StackLimit(base)
+        for i, s in ipairs(self.Bag) do
+            if left <= 0 then break end
+            local item = _ItemData:Parse(s)
+            if item.base == base and item.count < limit then
+                local add = math.min(left, limit - item.count)
+                item.count = item.count + add
+                left = left - add
+                self.Bag[i] = _ItemData:Serialize(item)
+            end
+        end
+        while left > 0 and #self.Bag < self.BagSize do
+            local add = math.min(left, limit)
+            table.insert(self.Bag, _ItemData:MakeStack(base, add))
+            left = left - add
+        end
+        self:RefreshDigest()
+        return left
+    end
+
+    method integer CountStack(string base)
+        local n = 0
+        for _, s in ipairs(self.Bag) do
+            if string.sub(s, 1, string.len(base) + 1) == base .. "|" then n = n + _ItemData:Parse(s).count end
+        end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TakeStack(string base, integer count)
+        -- base 물건 count개를 꺼낸다 (모자라면 아무것도 꺼내지 않고 false)
+        if count <= 0 then return true end
+        if self:CountStack(base) < count then return false end
+        local left = count
+        for i = #self.Bag, 1, -1 do
+            if left <= 0 then break end
+            local item = _ItemData:Parse(self.Bag[i])
+            if item.base == base then
+                local take = math.min(left, item.count)
+                item.count = item.count - take
+                left = left - take
+                if item.count <= 0 then table.remove(self.Bag, i) else self.Bag[i] = _ItemData:Serialize(item) end
+            end
+        end
+        self:RefreshDigest()
+        return true
+    end
+
+    @ExecSpace("Server")
+    method void RequestUseItem(integer index, string expectedItem)
+        -- 가방의 물약을 직접 마신다 (선택 → 「사용」)
+        if not self:IsOwnerRequest(senderUserId) then return end
+        if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
+        local item = _ItemData:Parse(expectedItem)
+        local c = _ItemData:Consumable(item.base)
+        if c == nil then return end
+        ---@type PlayerBelt
+        local belt = self.Entity:GetComponent("script.PlayerBelt")
+        if belt ~= nil then belt:DrinkBase(item.base) end
     end
 
     @ExecSpace("ServerOnly")
@@ -107,11 +183,10 @@ script PlayerInventory extends Component
             if stats ~= nil then stats:AddGold(drop.Amount) end
             msg = "골드 +" .. tostring(drop.Amount)
         elseif drop.Kind == "hp" or drop.Kind == "mp" then
-            ---@type PlayerBelt
-            local belt = self.Entity:GetComponent("script.PlayerBelt")
-            if belt == nil then return end
-            belt:AddPotion(drop.Kind, drop.Amount)
-            msg = (drop.Kind == "hp" and "생명" or "마나") .. " 물약 +" .. tostring(drop.Amount)
+            -- 예전 방식의 물약 드롭(이미 바닥에 있던 것): 하급 물약으로 가방에
+            local base = _ItemData:PotionFor(drop.Kind, 1)
+            if self:AddStack(base, drop.Amount) > 0 then return end
+            msg = _ItemData:StackName(base) .. " +" .. tostring(drop.Amount)
         else
             if not self:AddItem(drop.ItemString) then
                 if _UtilLogic.ElapsedSeconds >= self.BagWarningAt then
@@ -206,6 +281,10 @@ script PlayerInventory extends Component
         if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         local stats = self:Stats()
         if stats == nil then return end
+        if _ItemData:IsSoulbound(_ItemData:Parse(expectedItem).base) then
+            _Util:Notify("귀속 물건은 팔 수 없다", senderUserId)
+            return
+        end
         -- 판매는 상인 곁에서만 (소지품 어디서나 팔리던 것을 막는다)
         if not _Util:NearNpc(self.Entity, "shop") then
             _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
@@ -225,6 +304,11 @@ script PlayerInventory extends Component
         if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         local s = self:TakeBagItem(index)
         if s == "" then return end
+        -- 귀속 물건(정수)은 떨어뜨리지 않고 파괴한다 (확인 창에서 미리 알린다)
+        if _ItemData:IsSoulbound(_ItemData:Parse(s).base) then
+            _Util:Notify("파괴했다: " .. _ItemData:DisplayName(s), senderUserId)
+            return
+        end
         -- 땅에 떨어뜨린다 (10초 뒤부터 누구나 주울 수 있다 — 파티원과 나누기)
         _LootSystem:DropDiscarded(self.Entity, s)
         _Util:Notify("버렸다: " .. _ItemData:Parse(s).name .. " (10초 뒤 누구나 주울 수 있다)", senderUserId)

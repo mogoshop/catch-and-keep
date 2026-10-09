@@ -1,0 +1,147 @@
+-- 룬어 조합법 창 (메뉴 「룬어」): 룬어마다 넣을 룬 순서·부위·소켓 수·효과, 그리고 룬 하나하나의 부위별 효과.
+-- 가방에 가진 룬은 밝게, 없는 룬은 어둡게 보여 준다 (조합에 무엇이 모자란지 바로 보이게).
+@Logic
+script RuneWindow extends Logic
+
+    property string Win = "RuneWin"
+    property string Tab = "words"
+    property string LastKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 창 등록·탭 연결, 열려 있는 동안 가방이 바뀌면 다시 그린다
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/TabWords", function() self:Show("words") end)
+        _UIKit:Connect(self.Win .. "/TabRunes1", function() self:Show("runes1") end)
+        _UIKit:Connect(self.Win .. "/TabRunes2", function() self:Show("runes2") end)
+        _UIKit:Connect(self.Win .. "/TabRunes3", function() self:Show("runes3") end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 타이머 정리
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string tab)
+        -- 탭을 골라 창을 연다
+        self.Tab = tab
+        self.LastKey = ""
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 열려 있을 때만, 탭이나 가방이 바뀌었으면 다시 쓴다
+        if not _UIKit:IsOpen(self.Win) then return end
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        local bag = ""
+        if inv ~= nil then bag = inv.BagDigest end
+        local key = self.Tab .. "#" .. bag
+        if key == self.LastKey then return end
+        self.LastKey = key
+        local owned = self:OwnedRunes(bag)
+        -- 고른 탭 버튼은 밝게, 나머지는 어둡게
+        for _, t in ipairs({ { "TabWords", "words" }, { "TabRunes1", "runes1" }, { "TabRunes2", "runes2" }, { "TabRunes3", "runes3" } }) do
+            _UIKit:SetColor(self.Win .. "/" .. t[1], t[2] == self.Tab and Color(1, 0.9, 0.7, 1) or Color(0.55, 0.52, 0.5, 1))
+        end
+        if self.Tab == "words" then
+            _UIKit:SetText(self.Win .. "/Paper/List", self:WordsText(owned))
+        elseif self.Tab == "runes1" then
+            _UIKit:SetText(self.Win .. "/Paper/List", self:RunesText(owned, 1, 8))
+        elseif self.Tab == "runes2" then
+            _UIKit:SetText(self.Win .. "/Paper/List", self:RunesText(owned, 9, 16))
+        else
+            _UIKit:SetText(self.Win .. "/Paper/List", self:RunesText(owned, 17, 99))
+        end
+    end
+
+    method table OwnedRunes(string bag)
+        -- 가방에 든 룬 id → 개수
+        local owned = {}
+        if bag == "" then return owned end
+        for s in string.gmatch(bag .. ";", "([^;]*);") do
+            if _ItemData:IsRune(s) then
+                local id = _ItemData:Parse(s).base
+                owned[id] = (owned[id] or 0) + 1
+            end
+        end
+        return owned
+    end
+
+    method string SlotName(string slots)
+        -- 부위 목록("weapon,offhand")을 한국어로
+        local names = { weapon = "무기", offhand = "등불(보조)", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring = "반지" }
+        local out = {}
+        for slot in string.gmatch(slots, "[^,]+") do table.insert(out, names[slot] or slot) end
+        return table.concat(out, " · ")
+    end
+
+    method string RuneLabel(string id, table owned)
+        -- 룬 이름 (가졌으면 밝게 ×개수, 없으면 어둡게)
+        local rune = _ItemData:GetRune(id)
+        local name = id
+        if rune ~= nil then name = rune.name end
+        local count = owned[id] or 0
+        if count > 0 then return _UIKit:Colored("#F4E2B0", name .. " ×" .. tostring(count)) end
+        return _UIKit:Colored("#6E6A62", name)
+    end
+
+    method string WordsText(table owned)
+        -- 룬어 목록: 필요한 룬이 낮은 것부터
+        local list = {}
+        for key, rw in pairs(_ItemData:T().Runewords) do
+            local need = 0
+            local ids = {}
+            for id in string.gmatch(key, "[^,]+") do
+                table.insert(ids, id)
+                local rune = _ItemData:GetRune(id)
+                if rune ~= nil then need = math.max(need, rune.minLevel) end
+            end
+            table.insert(list, { key = key, rw = rw, ids = ids, need = need })
+        end
+        table.sort(list, function(a, b)
+            if a.need ~= b.need then return a.need < b.need end
+            return #a.ids < #b.ids
+        end)
+        local lines = { _UIKit:Colored("#9C9488", "소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬어가 된다. 가진 룬은 밝게 보인다.") }
+        for _, e in ipairs(list) do
+            local names = {}
+            local ready = true
+            for _, id in ipairs(e.ids) do
+                table.insert(names, self:RuneLabel(id, owned))
+                if (owned[id] or 0) <= 0 then ready = false end
+            end
+            local head = _UIKit:Colored("#E6C88A", e.rw.name) .. "   " .. self:SlotName(e.rw.slots) .. " · 소켓 " .. tostring(#e.ids) .. "칸"
+            if ready then head = head .. "   " .. _UIKit:Colored("#7CD67C", "룬 모두 있음") end
+            table.insert(lines, "")
+            table.insert(lines, head)
+            table.insert(lines, "   룬: " .. table.concat(names, " → "))
+            table.insert(lines, "   " .. _UIKit:Colored("#8FB4FF", _ItemData:ModsText(e.rw.mods)))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    method string RunesText(table owned, integer from, integer to)
+        -- 룬 하나하나의 부위별 효과 (드롭 순서 = 낮은 룬부터)
+        local lines = { _UIKit:Colored("#9C9488", "룬을 소켓에 끼우면 부위에 따라 효과가 다르다 (무기 / 방어구 / 등불). 높은 룬일수록 깊은 곳에서 드물게 나온다.") }
+        local order = _ItemData:T().RuneOrder
+        for i = from, math.min(to, #order) do
+            local rune = _ItemData:GetRune(order[i])
+            if rune ~= nil then
+                table.insert(lines, "")
+                table.insert(lines, tostring(i) .. ". " .. self:RuneLabel(rune.id, owned) .. "   " .. _UIKit:Colored("#9C9488", "Lv" .. tostring(rune.minLevel) .. "부터"))
+                table.insert(lines, "   무기 " .. _ItemData:ModsText(rune.weapon) .. "  ·  방어구 " .. _ItemData:ModsText(rune.armor) .. "  ·  등불 " .. _ItemData:ModsText(rune.lamp))
+            end
+        end
+        return table.concat(lines, "\n")
+    end
+
+end

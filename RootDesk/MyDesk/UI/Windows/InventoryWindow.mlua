@@ -27,7 +27,7 @@ script InventoryWindow extends Logic
         self:ClearSelection()
         _UIKit:SetEnabled("/ui/GameHUD/InvWin", false)
         _UIKit:RegisterWindow(self.Win)
-        _UIKit:SetText(self.Win .. "/Hint", "선택 → 설명 확인\n버튼으로 작업 확정")
+        _UIKit:SetText(self.Win .. "/Hint", "선택 → 설명 확인 · 버튼으로 작업 확정")
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local s = slot
@@ -82,7 +82,7 @@ script InventoryWindow extends Logic
         local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self:NearShop())}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
-        _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
+        _UIKit:SetText(self.Win .. "/Gold/Text", tostring(st.Gold))
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
             local path = self.Win .. "/Doll/Eq_" .. slot
             self:DrawItem(path, eq[slot])
@@ -113,8 +113,17 @@ script InventoryWindow extends Logic
             if not allowed then desc = desc .. "\n<color=#FF6464>가방이 가득 차 해제할 수 없습니다.</color>" end
         elseif sel ~= nil then
             sell = true
-            desc = _ItemData:DescribeDetailed(sel) .. self:SetSection(sel, eq) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
-            if _ItemData:IsRune(_ItemData:Parse(sel).base) then
+            local selBase = _ItemData:Parse(sel).base
+            desc = _ItemData:DescribeDetailed(sel) .. self:SetSection(sel, eq) .. self:SummonHint(sel)
+            if not _ItemData:IsSoulbound(selBase) then desc = desc .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드" end
+            if _ItemData:Consumable(selBase) ~= nil then
+                -- 물약: 「사용」으로 바로 마신다
+                label = "사용"
+                allowed = true
+            elseif _ItemData:IsSoulbound(selBase) then
+                label = "귀속 재료"
+                allowed = false
+            elseif _ItemData:IsRune(selBase) then
                 label = "룬 끼우기"
                 desc = desc .. "\n장비 칸을 골라 삽입 후 효과를 확인하세요."
                 if self.SocketSlot ~= "" then
@@ -140,7 +149,9 @@ script InventoryWindow extends Logic
         end
         self:SetDescription(desc)
         self:SetActionButton("BtnEquip", label, allowed)
-        self:SetActionButton("BtnSell", self:NearShop() and "판매" or "버리기", sell)
+        local selItem = list[self.Selected]
+        local bound = selItem ~= nil and self.SelectedEquipSlot == "" and _ItemData:IsSoulbound(_ItemData:Parse(selItem).base)
+        self:SetActionButton("BtnSell", bound and "파괴" or (self:NearShop() and "판매" or "버리기"), sell)
     end
 
     @ExecSpace("ClientOnly")
@@ -314,12 +325,15 @@ script InventoryWindow extends Logic
         -- 칸 하나: 아이템 그림(베이스 아이콘, 룬은 룬 그림) + 등급은 칸 테두리 색 (마법 파랑·레어 노랑·유니크 금·세트 초록, 일반은 원래 청동)
         if s == nil then
             _UIKit:SetIcon(path .. "/Icon", "")
+            _UIKit:SetText(path .. "/Count", "")
             _UIKit:SetColor(path .. "/Rim", Color(1, 1, 1, 1))
             return
         end
         local item = _ItemData:Parse(s)
         local icon = _ItemData:IconFor(s)
         _UIKit:SetIcon(path .. "/Icon", icon)
+        -- 겹치는 물건(물약·정수)은 오른쪽 아래 개수
+        _UIKit:SetText(path .. "/Count", _ItemData:IsStack(item.base) and tostring(item.count) or "")
         local tints = { Color(0.55, 0.72, 1, 1), Color(1, 0.95, 0.4, 1), Color(1, 0.78, 0.4, 1), Color(0.5, 1, 0.5, 1), Color(1, 0.78, 0.4, 1) }
         local tint = Color(1, 1, 1, 1)
         if item.rarity >= 1 and item.rarity <= 5 then tint = tints[item.rarity] end
@@ -429,7 +443,16 @@ script InventoryWindow extends Logic
             if sel == nil then return end
             -- 되돌릴 수 없는 조작이라 확인 창을 거친다. 상인 곁이면 판매, 아니면 버리기(영구 삭제)
             local index = self.Selected
-            local name = _ItemData:Parse(sel).name
+            local name = _ItemData:DisplayName(sel)
+            if _ItemData:IsSoulbound(_ItemData:Parse(sel).base) then
+                -- 귀속 재료(정수)는 팔거나 떨어뜨릴 수 없다: 버리면 파괴된다
+                _ConfirmDialog:ShowIcon("파괴", name .. "\n" .. _UIKit:Colored("#FF8888", "귀속 재료는 떨어뜨리거나 팔 수 없어 버리면 영원히 파괴됩니다.") .. "\n정말 파괴할까요?", "파괴", _ItemData:IconFor(sel), function()
+                    inv:RequestDiscard(index, sel)
+                    self:ClearSelection()
+                    self:Poll()
+                end)
+                return
+            end
             if self:NearShop() then
                 _ConfirmDialog:Show("판매", name .. "\n상인에게 " .. tostring(_ItemData:SellValue(sel)) .. " 골드에 팝니다.", "판매", function()
                     inv:RequestSell(index, sel)
@@ -448,6 +471,9 @@ script InventoryWindow extends Logic
             if self.SelectedEquipSlot ~= "" then
                 if #list >= inv.BagSize then return end
                 inv:RequestUnequip(self.SelectedEquipSlot, self.SelectedEquipItem)
+            elseif sel ~= nil and _ItemData:Consumable(_ItemData:Parse(sel).base) ~= nil then
+                inv:RequestUseItem(self.Selected, sel)
+                return
             elseif sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
                 if self.SocketSlot == "" or not self:CanSocket(sel, eq[self.SocketSlot]) then return end
                 inv:RequestSocket(self.Selected, self.SocketSlot, sel, self.SocketItem)

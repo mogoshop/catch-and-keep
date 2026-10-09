@@ -1,5 +1,6 @@
 -- 아이템 규칙: 문자열 ↔ 표, 능력치 합산, 드롭 생성, 표시. 데이터 표는 _ItemTables (data/*.csv에서 생성).
--- 아이템 한 개 = 문자열 "base|rarity|ilvl|name|k=v,k=v|sockets|runes" (저장·동기화·거래가 같은 형식)
+-- 아이템 한 개 = 문자열 "base|rarity|ilvl|name|k=v,k=v|sockets|runes[|count]" (저장·동기화·거래가 같은 형식)
+-- 겹치는 물건(물약·정수)은 base = shop.csv 키(hp1~3·mp1~3·rv) 또는 "essence", count = 개수. 정수는 귀속(버리면 파괴·거래 불가)
 -- rarity: 0 일반(흰) 1 마법(파랑) 2 희귀(노랑) 3 유니크(금) 4 룬워드(표시 전용)
 @Logic
 script ItemData extends Logic
@@ -33,7 +34,7 @@ script ItemData extends Logic
         -- 룬 아이템은 base가 r_* 이다
         local f = {}
         for part in string.gmatch(s .. "|", "([^|]*)|") do table.insert(f, part) end
-        local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {} }
+        local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {}, count = tonumber(f[8]) or 1 }
         for k, v in string.gmatch(f[5] or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = tonumber(v) end
         for r in string.gmatch(f[7] or "", "[^,]+") do table.insert(item.runes, r) end
         return item
@@ -45,7 +46,69 @@ script ItemData extends Logic
         table.sort(keys)
         local mods = {}
         for _, k in ipairs(keys) do table.insert(mods, k .. "=" .. tostring(item.mods[k])) end
-        return item.base .. "|" .. tostring(item.rarity) .. "|" .. tostring(item.ilvl) .. "|" .. item.name .. "|" .. table.concat(mods, ",") .. "|" .. tostring(item.sockets) .. "|" .. table.concat(item.runes, ",")
+        local text = item.base .. "|" .. tostring(item.rarity) .. "|" .. tostring(item.ilvl) .. "|" .. item.name .. "|" .. table.concat(mods, ",") .. "|" .. tostring(item.sockets) .. "|" .. table.concat(item.runes, ",")
+        if item.count ~= nil and item.count ~= 1 then text = text .. "|" .. tostring(item.count) end
+        return text
+    end
+
+    -- ───────── 겹치는 물건 (물약·정수) ─────────
+
+    method any Consumable(string base)
+        -- 물약 품목 (shop.csv hp1~3·mp1~3·rv). 아니면 nil
+        local c = _GameData:GetShopItem(base)
+        if c == nil or c.tier <= 0 then return nil end
+        if c.kind ~= "hp" and c.kind ~= "mp" and c.kind ~= "rv" then return nil end
+        return c
+    end
+
+    method boolean IsStack(string base)
+        return base == "essence" or self:Consumable(base) ~= nil
+    end
+
+    method boolean IsSoulbound(string base)
+        -- 귀속 재료(정수): 버리면 파괴되고 거래·판매할 수 없다
+        return base == "essence"
+    end
+
+    method integer StackLimit(string base)
+        if base == "essence" then return 9999 end
+        return 20
+    end
+
+    method string StackName(string base)
+        if base == "essence" then return "그림자 정수" end
+        local c = self:Consumable(base)
+        if c ~= nil then return c.name end
+        return base
+    end
+
+    method string MakeStack(string base, integer count)
+        local item = { base = base, rarity = 0, ilvl = 1, name = self:StackName(base), mods = {}, sockets = 0, runes = {}, count = math.max(1, count) }
+        return self:Serialize(item)
+    end
+
+    method string PotionFor(string kind, integer level)
+        -- 몬스터·플레이어 레벨에 맞는 물약 등급: Lv1~9 하급 · 10~29 중급 · 30+ 고급 (회복 물약은 한 등급)
+        if kind == "rv" then return "rv" end
+        local tier = 1
+        if level >= 30 then tier = 3 elseif level >= 10 then tier = 2 end
+        return kind .. tostring(tier)
+    end
+
+    method string DescribeStack(string s)
+        -- 물약·정수 설명
+        local item = self:Parse(s)
+        if item.base == "essence" then
+            return "<color=#D9B8FF>그림자 정수</color>  ×" .. tostring(item.count) .. "\n그림자를 분해하면 얻고, 그림자 강화에 쓴다.\n<color=#FF9A5A>귀속 — 거래·판매할 수 없고 버리면 파괴된다</color>"
+        end
+        local c = self:Consumable(item.base)
+        if c == nil then return item.name end
+        local effect = {}
+        if c.hpFlat > 0 then table.insert(effect, "생명 +" .. tostring(c.hpFlat)) end
+        if c.manaFlat > 0 then table.insert(effect, "마나 +" .. tostring(c.manaFlat)) end
+        if c.hpPct > 0 then table.insert(effect, "생명 " .. tostring(c.hpPct) .. "%") end
+        if c.manaPct > 0 then table.insert(effect, "마나 " .. tostring(c.manaPct) .. "%") end
+        return c.name .. "  ×" .. tostring(item.count) .. "\n즉시 " .. table.concat(effect, " · ") .. " 회복\n벨트 칸에 넣으면 숫자키(모바일은 물약 칸)로 마신다 — 가방에서 높은 등급부터 쓴다"
     end
 
     method string MakeRuneString(string runeId, integer ilvl)
@@ -61,7 +124,15 @@ script ItemData extends Logic
 
     method string IconFor(string s)
         local item = self:Parse(s)
-        if self:IsRune(item.base) then return _GameData:GetUiIcon("rune") end
+        if item.base == "essence" then return _GameData:GetUiIcon("essence") end
+        local c = self:Consumable(item.base)
+        if c ~= nil then return c.icon end
+        if self:IsRune(item.base) then
+            -- 룬마다 그림이 있으면 그 그림 (runes.csv icon), 없으면 공용 룬 그림
+            local rune = self:GetRune(item.base)
+            if rune ~= nil and (rune.icon or "") ~= "" then return rune.icon end
+            return _GameData:GetUiIcon("rune")
+        end
         local base = self:GetBase(item.base)
         if base ~= nil and base.icon ~= "" then
             if base.avatar ~= nil and base.avatar ~= "" then return "thumbnail://" .. base.icon end
@@ -98,8 +169,9 @@ script ItemData extends Logic
     end
 
     method boolean IsBound(string s)
-        -- 완성된 룬워드 장비는 귀속 (거래 불가, 룬 v0.2)
-        return self:GetRuneword(self:Parse(s)) ~= nil
+        -- 거래 불가: 완성된 룬워드 장비(룬 v0.2) · 귀속 재료(정수)
+        local item = self:Parse(s)
+        return self:IsSoulbound(item.base) or self:GetRuneword(item) ~= nil
     end
 
     method string GetSlot(string s)
@@ -391,6 +463,9 @@ script ItemData extends Logic
 
     method integer SellValue(string s)
         local item = self:Parse(s)
+        if self:IsSoulbound(item.base) then return 0 end
+        local c = self:Consumable(item.base)
+        if c ~= nil then return math.max(1, math.floor(c.price / 4)) * item.count end
         if self:IsRune(item.base) then return 20 + item.ilvl * 2 end
         return math.floor((10 + item.ilvl * 3) * (1 + item.rarity * 2))
     end
@@ -412,8 +487,9 @@ script ItemData extends Logic
     end
 
     method string DisplayName(string s)
-        -- 색 태그 붙은 이름 (룬워드면 룬워드 이름)
+        -- 색 태그 붙은 이름 (룬워드면 룬워드 이름, 겹치는 물건은 ×개수)
         local item = self:Parse(s)
+        if self:IsStack(item.base) then return item.name .. " ×" .. tostring(item.count) end
         local name = item.name
         local rarity = item.rarity
         local rw = self:GetRuneword(item)
@@ -469,6 +545,7 @@ script ItemData extends Logic
     method string DescribeDetailed(string s)
         -- 인벤토리의 넓은 설명 영역은 이름·옵션·소켓을 구분해 읽게 한다.
         local item = self:Parse(s)
+        if self:IsStack(item.base) then return self:DescribeStack(s) end
         local name = self:DisplayName(s)
         if self:IsRune(item.base) then
             local rune = self:GetRune(item.base)

@@ -15,7 +15,8 @@ function run() {
   b.sprite(w + '/Rim', { anchor: 'middle-center', rect_size: [800, 460], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
   b.patchComponent(w + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
   b.text(w + '/Title', '', { anchor: 'top-center', pos: [0, -28], rect_size: [640, 44], size: 28, bold: true, color: '#E6C88A' });
-  b.text(w + '/Body', '', { anchor: 'top-center', pos: [0, -86], rect_size: [660, 200], size: 24, color: '#E8E1D3', alignment: 1, bestfit: true, min_size: 19, max_size: 24 });
+  b.sprite(w + '/Icon', { anchor: 'top-center', pos: [0, -86], rect_size: [56, 56], color: '#FFFFFF', sprite_type: 0, enable: false });
+  b.text(w + '/Body', '', { anchor: 'top-center', pos: [0, -86], rect_size: [660, 150], size: 24, color: '#E8E1D3', alignment: 1, bestfit: true, min_size: 19, max_size: 24 });
   b.button(w + '/BtnNo', '취소', { anchor: 'bottom-center', pos: [-150, 30], rect_size: [240, 88], font_size: 26, image_ruid: icons.btn_frame, bg_color: '#FFFFFF', color: '#E6DCC6' });
   b.button(w + '/BtnYes', '확인', { anchor: 'bottom-center', pos: [150, 30], rect_size: [240, 88], font_size: 26, image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, color: '#F4E2B0' });
   b.write(file, { lint_verbose: false });

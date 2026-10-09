@@ -7,6 +7,8 @@ script PlayerTravel extends Component
     @Sync
     property string Known = "camp"          -- 활성화한 웨이포인트 id (","로 연결)
     @Sync
+    property string Visited = ""            -- 한 번이라도 들어간 사냥터 (보통 맵 이름, ","로 연결) — 의뢰 일지 열람 조건 (D2처럼 그 지역에 가면 읽힌다)
+    @Sync
     property integer TownScroll = 2         -- 귀환 두루마리 개수
     property Entity ReturnGate = nil
     property number WaypointRange = 1.6
@@ -53,6 +55,19 @@ script PlayerTravel extends Component
     @ExecSpace("ServerOnly")
     method void GoTown()
         self:Go(_GameConst:MapFor(_GameConst.MapTown, self:Difficulty()), _GameConst:GetTownArrival())
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMapEnter(Entity enteredMap)
+        -- 들어간 사냥터를 기록한다 (난이도 접미사는 떼고 보통 맵 이름으로)
+        if not isvalid(enteredMap) then return end
+        local base = _GameConst:BaseMapName(enteredMap.Name)
+        if string.find("," .. self.Visited .. ",", "," .. base .. ",", 1, true) ~= nil then return end
+        self.Visited = self.Visited == "" and base or (self.Visited .. "," .. base)
+    end
+
+    method boolean HasVisited(string baseMap)
+        return string.find("," .. self.Visited .. ",", "," .. baseMap .. ",", 1, true) ~= nil
     end
 
     -- ───────── 웨이포인트 ─────────
@@ -147,7 +162,7 @@ script PlayerTravel extends Component
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { known = self.Known, tp = self.TownScroll, at = self:CurrentSpot() }
+        return { known = self.Known, tp = self.TownScroll, at = self:CurrentSpot(), vis = self.Visited }
     end
 
     @ExecSpace("ServerOnly")
@@ -156,6 +171,7 @@ script PlayerTravel extends Component
         self.Known = d.known or "camp"
         self.TownScroll = d.tp or 0
         self.ResumeAt = d.at
+        if type(d.vis) == "string" then self.Visited = d.vis end
     end
 
     @ExecSpace("ServerOnly")

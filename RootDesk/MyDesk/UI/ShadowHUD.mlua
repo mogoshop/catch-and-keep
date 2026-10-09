@@ -122,7 +122,7 @@ script ShadowHUD extends Logic
         local cmd = self:Commander()
         if owner == nil or cmd == nil then return end
         if self.RenderKey == "" then self:RefreshInputLabel() end
-        local status = string.format("그림자 %d   소환 %d/%d   정수 %d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit(), owner.Essence)
+        local status = string.format("그림자 %d   소환 %d/%d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit())
         if cmd.UndeadSummary ~= "" then status = status .. "\n" .. cmd.UndeadSummary end
         _UIKit:SetText(self.Root .. "/Status/Text", status)
         if not _UIKit:IsOpen(self.Win) then return end
@@ -166,13 +166,13 @@ script ShadowHUD extends Logic
         local now = _UtilLogic.ServerElapsedSeconds
         local list = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
-            local id, src, grade, level, deployed, readyAt, variant, at = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)$")
+            local id, src, grade, level, deployed, readyAt, variant, at, plus, xp = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)|(%d+)|(%d+)$")
             if id ~= nil then
                 local g = tonumber(grade)
                 local tier = math.min(3, g)
                 if self.Filter == 0 or self.Filter == tier then
                     local serial = tonumber(string.match(id, "_(%d+)$")) or 0
-                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial })
+                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), plus = tonumber(plus) or 0, xp = tonumber(xp) or 0, deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial })
                 end
             end
         end
@@ -199,7 +199,7 @@ script ShadowHUD extends Logic
         local entries = self:Entries(owner)
         local pages = math.max(1, math.ceil(#entries / self.RowCount))
         if self.Page >= pages then self.Page = pages - 1 end
-        _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d  ·  %d마리  ·  정수 %d", self.Page + 1, pages, #entries, owner.Essence))
+        _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d  ·  %d마리", self.Page + 1, pages, #entries))
         local sortNames = { level = "레벨순", recent = "추출순", grade = "등급순" }
         _UIKit:SetText(self.Win .. "/BtnSort", "정렬: " .. sortNames[self.Sort])
         local filterPaths = { "FAll", "FNormal", "FElite", "FBoss" }
@@ -241,14 +241,18 @@ script ShadowHUD extends Logic
         local has = e ~= nil
         _UIKit:SetEnabled(d .. "/Empty", not has)
         for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
+        _UIKit:SetText(d .. "/Essence/Text", "보유 정수 " .. tostring(owner.Essence))
         if not has then return end
         local m = _GameData:GetMonsterStats(e.src)
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
         _UIKit:SetIcon(d .. "/Stage/Portrait", m ~= nil and m.stand or "")
         _UIKit:SetColor(d .. "/Stage/Portrait", Color(0.82, 0.72, 1, 1))
-        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  Lv" .. tostring(e.level))
+        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  Lv" .. tostring(e.level) .. (e.plus > 0 and ("  " .. _UIKit:Colored("#FFD27A", "+" .. tostring(e.plus))) or ""))
         local gradeName = "일반"
         if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
         local p = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
+        local full = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus))
         local element = p.element ~= "" and (" · " .. _ShadowConfig:ElementName(p.element) .. " 속성") or ""
         local state = e.deployed and " · 소환 중" or (e.wait > 0 and (" · 회복 " .. tostring(e.wait) .. "초") or "")
         _UIKit:SetText(d .. "/Grade", "[" .. gradeName .. "]" .. element .. state)
@@ -256,18 +260,35 @@ script ShadowHUD extends Logic
         for k, v in pairs(p.resists or {}) do if v ~= 0 then table.insert(resist, _ShadowConfig:ElementName(k) .. " " .. tostring(v)) end end
         local roles = { ranged = "원거리 사격", burrow = "땅속 기습", hitrun = "치고 빠지기", coward = "겁쟁이(무리와 함께)" }
         local lines = {
-            string.format("공격 %d   ·   생명 %d", p.atk, p.hp),
+            "공격 " .. tostring(full.atk) .. self:PlusText(full.atk - p.atk) .. "   ·   생명 " .. tostring(full.hp) .. self:PlusText(full.hp - p.hp),
+            (st ~= nil and e.level >= st.Level) and _UIKit:Colored("#8C99B4", "레벨 최대 (내 레벨까지) — 내가 레벨업하면 다시 자란다")
+                or _UIKit:Colored("#9EE6A0", string.format("경험치 %d%% — 소환해 데리고 다니며 처치하면 오른다", e.xp)),
             string.format("공격 간격 %.1f초  ·  사거리 %.1f  ·  이동 %.1f", p.cooldown, p.range, p.speed),
             "저항: " .. (#resist > 0 and table.concat(resist, " · ") or "없음"),
             "싸움 방식: " .. (roles[p.behavior] or "근접 돌격"),
-            _UIKit:Colored("#8C99B4", "(장비·스킬 보너스 전 기본값 · 레벨은 내 레벨까지 강화)"),
+            _UIKit:Colored("#8C99B4", "(장비·스킬 보너스 전 · 노란 +는 강화로 오른 몫)"),
         }
         _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
         _UIKit:SetText(d .. "/Trait", self:TraitText(e))
         _UIKit:SetText(d .. "/BtnDeploy", e.deployed and "회수" or (e.wait > 0 and "대기" or "소환"))
-        _UIKit:SetText(d .. "/BtnUpgrade", "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level)))
-        local yield = _ShadowConfig:GetDisassembleYield(e.grade)
-        _UIKit:SetText(d .. "/BtnSalvage", (e.deployed or yield <= 0) and "분해 -" or ("분해 +" .. tostring(yield)))
+        _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or "강화")
+        _UIKit:SetText(d .. "/BtnSalvage", "분해")
+        -- 정수 줄: 아이콘 + 보유 · 강화 비용 · 분해하면 얻는 양
+        local yield = self:SalvageYield(e)
+        local cost = _ShadowConfig:GetUpgradeCost(e.plus)
+        local salvage = (e.deployed or yield <= 0) and "분해 불가(배치 중)" or ("분해 시 정수 +" .. tostring(yield))
+        local upgrade = e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or string.format("강화 +%d→+%d: 정수 %d", e.plus, e.plus + 1, cost)
+        _UIKit:SetText(d .. "/Essence/Text", string.format("정수 %d 보유  ·  %s  ·  %s", owner.Essence, upgrade, salvage))
+    end
+
+    method string PlusText(number diff)
+        if diff <= 0 then return "" end
+        return " " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(math.floor(diff)) .. ")")
+    end
+
+    method integer SalvageYield(table e)
+        if _ShadowConfig:GetDisassembleYield(e.grade) <= 0 then return 0 end
+        return _ShadowConfig:GetDisassembleYield(e.grade) + _ShadowConfig:GetPlusRefund(e.plus)
     end
 
     method string ShadowName(string src)
@@ -289,7 +310,7 @@ script ShadowHUD extends Logic
                 table.insert(lines, "고유 기술 「" .. v.name .. "」: " .. tostring(v.interval) .. "초마다 주위 " .. elem .. "범위 공격 (공격력 ×" .. tostring(v.mult) .. ", 반경 " .. tostring(v.radius) .. ")")
             end
         end
-        if e.grade == 2 then table.insert(lines, "정예: 일반보다 기본 공격·생명이 높고 분해 시 정수 +4")
+        if e.grade == 2 then table.insert(lines, "정예: 일반보다 기본 공격·생명이 높고 분해하면 정수를 더 준다")
         elseif e.grade >= 3 then table.insert(lines, "보스: 가장 높은 기본 능력치 · 분해할 수 없음") end
         if #lines == 0 then return _UIKit:Colored("#8C99B4", "특수 능력 없음 (정예·변종 우두머리에게서 추출하면 고유 능력이 붙는다)") end
         return table.concat(lines, "\n")
@@ -306,7 +327,8 @@ script ShadowHUD extends Logic
         if m ~= nil and m.element ~= "" then trait = " " .. _ShadowConfig:ElementName(m.element) end
         local v = _GameData:GetVariant(e.variant)
         if v ~= nil then trait = trait .. " · " .. v.name end
-        return string.format("%s  [%s%s]  Lv%d%s", self:ShadowName(e.src), gradeName, trait, e.level, state)
+        local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
+        return string.format("%s  [%s%s]  Lv%d", self:ShadowName(e.src), gradeName, trait, e.level) .. plus .. state
     end
 
     @ExecSpace("ClientOnly")
@@ -340,29 +362,29 @@ script ShadowHUD extends Logic
             end
             return
         end
+        local essence = _GameData:GetUiIcon("essence")
         if action == "upgrade" then
-            ---@type PlayerStats
-            local st = _UIKit:Comp("script.PlayerStats")
-            local cap = st ~= nil and st.Level or 1
-            local cost = _ShadowConfig:GetUpgradeCost(e.level)
-            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, e.level + 1, 1)
-            local body = name .. " → Lv" .. tostring(e.level + 1) .. "\n공격 " .. tostring(now.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(now.hp) .. " → " .. tostring(nextP.hp)
-                .. "\n비용: 정수 " .. tostring(cost) .. " (보유 " .. tostring(owner.Essence) .. ")\n조건: 그림자 레벨은 내 레벨(Lv" .. tostring(cap) .. ")까지"
-            if e.level >= cap then
-                _ConfirmDialog:Show("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "내 레벨을 먼저 올려야 합니다."), "닫기", nil)
+            local cost = _ShadowConfig:GetUpgradeCost(e.plus)
+            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus + 1))
+            local curP = _ShadowConfig:GetProfile(e.src, e.grade, e.level, _ShadowConfig:GetPlusMult(e.plus))
+            local body = name .. "  +" .. tostring(e.plus) .. " → +" .. tostring(e.plus + 1) .. "  (레벨은 그대로)\n공격 " .. tostring(curP.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(curP.hp) .. " → " .. tostring(nextP.hp)
+                .. "\n정수 " .. tostring(cost) .. " 사용 (보유 " .. tostring(owner.Essence) .. ")  ·  강화 1당 공격·생명 +" .. tostring(_GameData.shadowPlusPct) .. "% · 최대 +" .. tostring(_ShadowConfig:GetPlusMax())
+            if e.plus >= _ShadowConfig:GetPlusMax() then
+                _ConfirmDialog:ShowIcon("그림자 강화 불가", name .. "\n이미 최대 강화(+" .. tostring(e.plus) .. ")입니다.", "닫기", essence, nil)
             elseif owner.Essence < cost then
-                _ConfirmDialog:Show("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "정수가 부족합니다 — 그림자를 분해하면 정수를 얻습니다."), "닫기", nil)
+                _ConfirmDialog:ShowIcon("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "정수가 부족합니다 — 그림자를 분해하면 정수를 얻습니다."), "닫기", essence, nil)
             else
-                _ConfirmDialog:Show("그림자 강화", body, "강화", function() owner:RequestUpgrade(id) end)
+                _ConfirmDialog:ShowIcon("그림자 강화", body, "강화", essence, function() owner:RequestUpgrade(id) end)
             end
             return
         end
-        local yield = _ShadowConfig:GetDisassembleYield(e.grade)
+        local yield = self:SalvageYield(e)
         if e.deployed or yield <= 0 then
             _ConfirmDialog:Show("그림자 분해 불가", name .. "\n" .. (e.deployed and "소환 중인 그림자는 먼저 회수하세요." or "보스 그림자는 분해할 수 없습니다."), "닫기", nil)
             return
         end
-        _ConfirmDialog:Show("그림자 분해", name .. "\n분해하면 이 그림자는 영원히 사라지고 정수 +" .. tostring(yield) .. "을 얻습니다.\n(정수 " .. tostring(owner.Essence) .. " → " .. tostring(owner.Essence + yield) .. ")", "분해", function() owner:RequestDisassemble(id) end)
+        local refund = e.plus > 0 and ("\n(강화에 쓴 정수의 절반 " .. tostring(_ShadowConfig:GetPlusRefund(e.plus)) .. " 포함)") or ""
+        _ConfirmDialog:ShowIcon("그림자 분해", name .. "\n분해하면 이 그림자는 영원히 사라지고 정수 +" .. tostring(yield) .. "을 얻습니다." .. refund .. "\n(정수 " .. tostring(owner.Essence) .. " → " .. tostring(owner.Essence + yield) .. " · 가방에 귀속 재료로 들어갑니다)", "분해", essence, function() owner:RequestDisassemble(id) end)
     end
 
 end

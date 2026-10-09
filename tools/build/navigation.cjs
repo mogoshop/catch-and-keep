@@ -17,7 +17,7 @@ function applyResources(b){
  image(m+'/Body/Rim',icons.minimap_round);
  b.patch(a+'/Me',{rect_size:[22,22]});image(a+'/Me',icons.minimap_me);
  // 로컬 파일에 범례 자식이 없을 때도 화면 설명을 복원한다.
- for(const [i,color,label] of [[0,'#FF5A4A','출구'],[1,'#FFD23F','의뢰'],[2,'#6FB4FF','거점'],[3,'#E8E1D3','NPC']]){
+ for(const [i,color,label] of [[0,'#FF5A4A','출구'],[1,'#FFD23F','의뢰'],[2,'#6FB4FF','웨이포인트'],[3,'#E8E1D3','NPC']]){
   const n=m+'/Body/Legend'+i;
   if(!b.find(n+'/Icon'))b.sprite(n+'/Icon',{anchor:'middle-left',pivot:[0,.5],pos:[0,0],rect_size:[14,14],image_ruid:icons.dot,color,sprite_type:0});
   if(!b.find(n+'/Text'))b.text(n+'/Text',label,{anchor:'middle-left',pivot:[0,.5],pos:[18,0],rect_size:[58,40],size:19,color:'#D8CFBC',alignment:3});
@@ -60,11 +60,12 @@ function run(){
  b.text(m+'/Body/FocusText','',{anchor:'top-left',pos:[18,-286],rect_size:[308,44],size:24,color:'#E6C88A',alignment:3,bestfit:true,min_size:24,max_size:24});
  // 범례: 미니맵과 같은 색 점
  for(let i=0;i<=3;i++)if(b.find(m+'/Body/Legend'+i))b.remove(m+'/Body/Legend'+i);
- for(const [i,color,label] of [[0,'#FF5A4A','출구'],[1,'#FFD23F','의뢰'],[2,'#6FB4FF','거점'],[3,'#E8E1D3','NPC']]){
+ // 웨이포인트(디아2 이름 그대로)는 글자가 길어 칸을 넓힌다
+ for(const [i,color,label,x,w] of [[0,'#FF5A4A','출구',18,64],[1,'#FFD23F','의뢰',82,64],[2,'#6FB4FF','웨이포인트',146,118],[3,'#E8E1D3','NPC',266,64]]){
   const n=m+'/Body/Legend'+i;
-  b.empty(n,{anchor:'bottom-left',pivot:[0,0],pos:[18+i*78,22],rect_size:[78,40]});
+  b.empty(n,{anchor:'bottom-left',pivot:[0,0],pos:[x,22],rect_size:[w,40]});
   b.sprite(n+'/Icon',{anchor:'middle-left',pivot:[0,.5],pos:[0,0],rect_size:[14,14],image_ruid:icons.dot,color,sprite_type:0});
-  b.text(n+'/Text',label,{anchor:'middle-left',pivot:[0,.5],pos:[18,0],rect_size:[58,40],size:19,color:'#D8CFBC',alignment:3});
+  b.text(n+'/Text',label,{anchor:'middle-left',pivot:[0,.5],pos:[18,0],rect_size:[w-18,40],size:19,color:'#D8CFBC',alignment:3});
  }
  // 테두리(Rim)를 맨 아래로: 나중에 만든 범례가 테두리 그림에 덮여 보이지 않았다
  {const kids=b.listEntities().filter(e=>e.path.startsWith('/ui/NavigationHUD/'+m+'/Body/')&&e.path.split('/').length===('/ui/NavigationHUD/'+m+'/Body/x').split('/').length);

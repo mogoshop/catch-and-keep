@@ -250,7 +250,7 @@ script ShadowCommander extends Component
             if self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.Entity) then self:Recall(id) return end
             ---@type ShadowUnit
             local u = comp
-            local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
+            local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier() * _ShadowConfig:GetPlusMult(shadow.plus or 0))
             u:Setup(self.Entity, id, prof.atk, prof.hp, shadow.standRuid, shadow.moveRuid, offset)
             local source = _GameData:GetMonsterStats(shadow.sourceId)
             u.AttackRUID = source ~= nil and source.attack or ""
@@ -272,14 +272,14 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void RefreshUnitStats(string id)
-        -- 강화 직후 소환 중인 그림자 능력치 반영
+        -- 강화·레벨 업 직후 소환 중인 그림자 능력치 반영
         local unit = self.Units[id]
         local shadow = self:Owner():GetShadow(id)
         if not isvalid(unit) or shadow == nil then return end
         ---@type ShadowUnit
         local comp = unit:GetComponent("script.ShadowUnit")
         if comp == nil then return end
-        local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier())
+        local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, shadow.level, self:GetUnitMultiplier() * _ShadowConfig:GetPlusMult(shadow.plus or 0))
         if comp.Promoted then
             prof.atk = math.floor(prof.atk * comp.PromotionMultiplier)
             prof.hp = prof.hp * comp.PromotionMultiplier

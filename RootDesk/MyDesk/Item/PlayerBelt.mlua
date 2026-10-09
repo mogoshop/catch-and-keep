@@ -1,14 +1,15 @@
 -- 벨트 (D2 벨트): 4칸에 무엇을 넣을지 플레이어가 고른다 — hp 생명 물약 · mp 마나 물약 · rv 회복 물약 · tp 귀환 두루마리 · "" 빈 칸.
 -- 칸 사용: PC 숫자 1~4·칸 클릭, 모바일 물약 칸. 칸 지정: PC 칸 우클릭(빈 칸은 클릭), 모바일 「스킬 편집」 중 물약 칸 → SkillPicker 벨트 모드.
--- 귀환 두루마리 개수는 PlayerTravel.TownScroll (상점 구매).
+-- 물약은 가방의 겹치는 물건(하급·중급·고급, shop.csv hp1~3·mp1~3·rv). 벨트 칸 = 종류만 정하고, 마실 때 가방에서 높은 등급부터 쓴다.
+-- HpPot·MpPot·RvPot = 가방 속 개수 합 (표시용, PlayerInventory.RefreshDigest가 맞춘다). 귀환 두루마리 개수는 PlayerTravel.TownScroll.
 @Component
 script PlayerBelt extends Component
 
     property number PotionCooldown = 0.8
     @Sync
-    property integer HpPot = 3
+    property integer HpPot = 0
     @Sync
-    property integer MpPot = 2
+    property integer MpPot = 0
     @Sync
     property integer RvPot = 0
     @Sync
@@ -42,11 +43,42 @@ script PlayerBelt extends Component
         return 0
     end
 
+    method PlayerInventory Inv()
+        ---@type PlayerInventory
+        local c = self.Entity:GetComponent("script.PlayerInventory")
+        return c
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SyncCounts()
+        -- 가방 속 물약 수 (모든 등급 합)
+        local inv = self:Inv()
+        if inv == nil then return end
+        self.HpPot = inv:CountStack("hp1") + inv:CountStack("hp2") + inv:CountStack("hp3")
+        self.MpPot = inv:CountStack("mp1") + inv:CountStack("mp2") + inv:CountStack("mp3")
+        self.RvPot = inv:CountStack("rv")
+    end
+
     @ExecSpace("ServerOnly")
     method void AddPotion(string kind, integer count)
-        if kind == "hp" then self.HpPot = self.HpPot + count
-        elseif kind == "mp" then self.MpPot = self.MpPot + count
-        elseif kind == "rv" then self.RvPot = self.RvPot + count end
+        -- 레벨에 맞는 등급의 물약을 가방에 넣는다 (가방이 차면 넣은 만큼만)
+        local inv = self:Inv()
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if inv == nil then return end
+        inv:AddStack(_ItemData:PotionFor(kind, stats ~= nil and stats.Level or 1), count)
+    end
+
+    method string BestPotion(string kind)
+        -- 가방에 있는 그 종류 물약 중 가장 높은 등급 ("" = 없음)
+        local inv = self:Inv()
+        if inv == nil then return "" end
+        if kind == "rv" then return inv:CountStack("rv") > 0 and "rv" or "" end
+        for tier = 3, 1, -1 do
+            local base = kind .. tostring(tier)
+            if inv:CountStack(base) > 0 then return base end
+        end
+        return ""
     end
 
     @ExecSpace("Server")
@@ -84,26 +116,30 @@ script PlayerBelt extends Component
 
     @ExecSpace("ServerOnly")
     method boolean UsePotion(string kind)
-        -- 회복량은 data/shop.csv hpPct·manaPct (생명 40% / 마나 50% / 회복 35%+35%)
+        -- 벨트·숫자키: 가방에서 그 종류의 가장 높은 등급 물약을 마신다
+        local base = self:BestPotion(kind)
+        if base == "" then
+            local names = { hp = "생명 물약", mp = "마나 물약", rv = "회복 물약" }
+            _Util:Notify((names[kind] or "물약") .. "이 없다 (가방)", self.Entity.PlayerComponent.UserId)
+            return false
+        end
+        return self:DrinkBase(base)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean DrinkBase(string base)
+        -- 회복량: shop.csv hpFlat·manaFlat(고정) + hpPct·manaPct(최대치 %)
         local pc = self.Entity.PlayerComponent
         if pc.Hp <= 0 then return false end
         local now = _UtilLogic.ElapsedSeconds
         if now < self.ReadyAt then return false end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats == nil then return false end
-        local item = _GameData:GetShopItem(kind)
-        if item == nil then return false end
-        local count = 0
-        if kind == "hp" then count = self.HpPot elseif kind == "mp" then count = self.MpPot elseif kind == "rv" then count = self.RvPot end
-        if count <= 0 then
-            _Util:Notify(item.name .. "이 없다", pc.UserId)
-            return false
-        end
-        if kind == "hp" then self.HpPot = self.HpPot - 1
-        elseif kind == "mp" then self.MpPot = self.MpPot - 1
-        else self.RvPot = self.RvPot - 1 end
-        stats:Heal(pc.MaxHp * item.hpPct / 100, stats.MaxMana * item.manaPct / 100)
+        local c = _ItemData:Consumable(base)
+        local inv = self:Inv()
+        if stats == nil or c == nil or inv == nil then return false end
+        if not inv:TakeStack(base, 1) then return false end
+        stats:Heal(c.hpFlat + pc.MaxHp * c.hpPct / 100, c.manaFlat + stats.MaxMana * c.manaPct / 100)
         self.ReadyAt = now + self.PotionCooldown
         return true
     end
@@ -121,15 +157,23 @@ script PlayerBelt extends Component
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { hp = self.HpPot, mp = self.MpPot, rv = self.RvPot, lay = self.Layout }
+        -- v2: 물약은 가방에 저장된다 (개수는 저장하지 않는다)
+        return { lay = self.Layout, v = 2 }
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table d)
         if d == nil then return end
-        self.HpPot = d.hp or 0
-        self.MpPot = d.mp or 0
-        self.RvPot = d.rv or 0
+        -- 예전 저장(벨트 개수): 하급 물약으로 가방에 옮긴다 (가방이 소지품 다음에 불러와진다)
+        if d.v ~= 2 then
+            local inv = self:Inv()
+            if inv ~= nil then
+                inv:AddStack("hp1", math.floor(tonumber(d.hp) or 0))
+                inv:AddStack("mp1", math.floor(tonumber(d.mp) or 0))
+                inv:AddStack("rv", math.floor(tonumber(d.rv) or 0))
+            end
+        end
+        self:SyncCounts()
         -- 예전 저장(칸 고정)은 물약 3칸 + 빈 4번 칸으로 시작한다
         if type(d.lay) == "string" then self.Layout = d.lay else self.Layout = "hp,mp,rv," end
     end

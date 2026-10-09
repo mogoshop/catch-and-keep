@@ -30,9 +30,30 @@ script ShadowConfig extends Logic
         return 0
     end
 
-    method integer GetUpgradeCost(integer level)
-        -- 레벨 n → n+1 정수 비용
-        return level
+    method integer GetUpgradeCost(integer plus)
+        -- 강화 +n → +n+1 정수 비용 (레벨과 별개): 3, 5, 7, … 
+        return math.floor(_GameData.shadowPlusCostBase + _GameData.shadowPlusCostStep * plus)
+    end
+
+    method integer GetPlusMax()
+        return math.floor(_GameData.shadowPlusMax)
+    end
+
+    method number GetPlusMult(integer plus)
+        -- 강화 배율: +1당 공격·생명 shadowPlusPct%
+        return 1 + _GameData.shadowPlusPct / 100 * math.max(0, plus)
+    end
+
+    method integer GetPlusRefund(integer plus)
+        -- 강화한 그림자를 분해하면 쓴 정수의 절반을 돌려준다
+        local spent = 0
+        for i = 0, plus - 1 do spent = spent + self:GetUpgradeCost(i) end
+        return math.floor(spent / 2)
+    end
+
+    method number ExpToNext(integer level)
+        -- 그림자 레벨 n → n+1 경험치 (데리고 다니며 처치 경험치를 나눠 받는다)
+        return math.floor(_GameData.shadowExpBase * (math.max(1, level) ^ _GameData.shadowExpExp))
     end
 
     method integer GetDeployLimit(integer bonus, integer capBonus)

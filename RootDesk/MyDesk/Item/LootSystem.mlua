@@ -41,9 +41,11 @@ script LootSystem extends Logic
                 local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * goldMult * (1 + gf / 100))
                 self:Spawn(center, userId, "gold", "", amount, 0)
             elseif r < wNone + wGold + wPot then
+                -- 물약: 몬스터 레벨에 맞는 등급 (하급 Lv1~9 · 중급 10~29 · 고급 30+), 가끔 회복 물약
                 local kind = "hp"
-                if _UtilLogic:RandomDouble() < 0.4 then kind = "mp" end
-                self:Spawn(center, userId, kind, "", 1, 0)
+                local r2 = _UtilLogic:RandomDouble()
+                if r2 < 0.06 then kind = "rv" elseif r2 < 0.42 then kind = "mp" end
+                self:Spawn(center, userId, "item", _ItemData:MakeStack(_ItemData:PotionFor(kind, monLevel), 1), 1, 0)
             elseif r < wNone + wGold + wPot + wItem then
                 local s = _ItemData:Generate(monLevel, rank, mf)
                 local item = _ItemData:Parse(s)
@@ -60,8 +62,7 @@ script LootSystem extends Logic
                 self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel), 1, 0)
             end
         end
-        -- 보스는 룬 1개 확정 (06장)
-        if rank == "boss" then self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel + 5), 1, 0) end
+        -- 룬은 D2처럼 희귀한 엔드 재료: 보스 확정 룬은 없앴다 (10-09). 의뢰 룬은 마지막 의뢰(묘지기 여왕)에서만
     end
 
     @ExecSpace("ServerOnly")

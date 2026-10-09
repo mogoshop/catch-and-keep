@@ -34,6 +34,9 @@ script QuestWindow extends Logic
     method void Select(integer index)
         -- 완료·현재·잠긴 의뢰를 확인할 수 있지만 데이터 밖 인덱스는 무시한다.
         if not _UIKit:IsOpen(self.Win) or _QuestData:Get(index) == nil then return end
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil or not self:Readable(index, quest) then return end
         self:Poll()
         self.Selected = index
         self.RenderKey = ""
@@ -66,7 +69,9 @@ script QuestWindow extends Logic
         if not self.WasOpen or self.CurrentIndex ~= quest.Index then self.Selected = math.max(1, math.min(count, quest.Index)) end
         self.WasOpen = true
         self.CurrentIndex = quest.Index
-        local key = tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected)
+        ---@type PlayerTravel
+        local travel = _UIKit:Comp("script.PlayerTravel")
+        local key = tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected) .. "|" .. (travel ~= nil and travel.Visited or "")
         if key == self.RenderKey then return end
         self.RenderKey = key
         self:Render(quest)
@@ -76,24 +81,25 @@ script QuestWindow extends Logic
     method void Render(PlayerQuest quest)
         log("[VRF] QuestWindow art1=" .. _GameData:GetUiIcon("quest_art1") .. " index=" .. tostring(quest.Index))
         -- 제목과 상태를 분리하고 선택한 의뢰만 강조한다. 미수락 내용·보상은 숨긴다.
-        -- 2×3 의뢰 그림: 받을 수 있거나 끝낸 의뢰만 컬러, 아직 열리지 않은 의뢰는 어둡게(흑백판 그림이 있으면 그것으로)
+        -- 2×3 의뢰 그림 (D2 의뢰 일지): 완료 = 흑백 그림, 현재·열람 가능 = 컬러, 아직 못 읽는 의뢰 = 컬러 위 반투명 검정 덮개(누를 수 없음)
         for i = 1, 6 do
             local cell = self.Win .. "/Q" .. tostring(i)
             local q = _QuestData:Get(i)
             _UIKit:SetEnabled(cell, q ~= nil)
             if q ~= nil then
-                local open = i <= quest.Index
-                local art = _GameData:GetUiIcon((open and "quest_art" or "quest_art_gray") .. tostring(i))
-                local grayscale = not open and art ~= ""
+                local done = i < quest.Index
+                local readable = self:Readable(i, quest)
+                local art = done and _GameData:GetUiIcon("quest_art_gray" .. tostring(i)) or ""
                 if art == "" then art = _GameData:GetUiIcon("quest_art" .. tostring(i)) end
                 if art == "" then art = _GameData:GetUiIcon("icon_quest") end
                 _UIKit:SetIcon(cell .. "/Art", art)
-                _UIKit:SetColor(cell .. "/Art", open and Color(1, 1, 1, 1) or (grayscale and Color(0.8, 0.8, 0.8, 1) or Color(0.22, 0.22, 0.24, 1)))
-                _UIKit:SetText(cell .. "/Name", open and q.title or "???")
-                -- 고른 칸은 테두리를 금빛으로, 잠긴 칸은 테두리도 어둡게
+                _UIKit:SetColor(cell .. "/Art", done and Color(0.78, 0.78, 0.78, 1) or Color(1, 1, 1, 1))
+                _UIKit:SetEnabled(cell .. "/Lock", not readable)
+                _UIKit:SetEnabled(cell .. "/Done", done)
+                _UIKit:SetText(cell .. "/Name", readable and q.title or "???")
                 local selected = i == self.Selected
                 local frame = Color(0.62, 0.58, 0.54, 1)
-                if selected then frame = Color(1, 0.86, 0.5, 1) elseif not open then frame = Color(0.32, 0.3, 0.3, 1) end
+                if selected then frame = Color(1, 0.86, 0.5, 1) elseif not readable then frame = Color(0.32, 0.3, 0.3, 1) end
                 _UIKit:SetColor(cell, frame)
             end
         end
@@ -117,16 +123,29 @@ script QuestWindow extends Logic
         end
     end
 
+    method boolean Readable(integer index, PlayerQuest quest)
+        -- D2처럼: 끝낸 의뢰·지금 의뢰, 그리고 그 의뢰의 사냥터에 한 번이라도 들어가 본 의뢰만 읽을 수 있다
+        if index <= quest.Index then return true end
+        ---@type PlayerTravel
+        local travel = _UIKit:Comp("script.PlayerTravel")
+        if travel == nil then return false end
+        local map = _HudMap:QuestMap(index, 1)
+        return map ~= "" and travel:HasVisited(map)
+    end
+
     method table View(integer index, PlayerQuest quest)
         -- 화면용 데이터만 만든다. 플레이어 진행도나 보상을 변경하지 않는다.
         local view = { title = "의뢰 없음", status = "", zone = "", objective = "", desc = "", icon = _GameData:GetUiIcon("icon_quest"), showProgress = false, ratio = 0, rewards = {} }
         local q = _QuestData:Get(index)
         if q == nil then return view end
         if index > quest.Index then
-            view.title = "미공개 의뢰"
-            view.status = "잠김"
-            view.objective = "앞선 의뢰를 완료하세요."
-            view.desc = "앞선 의뢰를 마치면 사제 오렌이 다음 일을 알려줍니다."
+            -- 그 사냥터에 가 본 의뢰는 내용을 미리 읽을 수 있다 (수락은 앞선 의뢰 뒤 사제 오렌에게서)
+            view.title = q.title
+            view.status = "앞선 의뢰 뒤에 수락"
+            view.zone = "목적지 · " .. q.zone
+            view.objective = q.objective
+            view.desc = q.desc
+            view.rewards = self:Rewards(q)
             return view
         end
         if index == quest.Index and quest.State == 0 then

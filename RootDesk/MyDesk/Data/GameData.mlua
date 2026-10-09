@@ -120,6 +120,13 @@ script GameData extends Logic
     property number gearTierNightmare = 0.8    -- 아이템 레벨 31~60(악몽) 무작위 옵션 상한 배율
     property number uniqueRollMin = 0.75    -- 유니크·세트 수치는 표기의 이 비율 ~ 100% 사이에서 무작위
     property number skillPowerMult = 0.7    -- 스킬 피해·비율 효과 배율 (10-09 30% 하향 · 지속 시간·수는 그대로)
+    property number shadowPlusPct = 6    -- 그림자 강화 +1당 공격·생명 % (레벨과 별개)
+    property number shadowPlusMax = 10    -- 그림자 강화 최대 +N
+    property number shadowPlusCostBase = 3    -- 그림자 강화 비용 (정수) = base + step × 현재 강화
+    property number shadowPlusCostStep = 2    -- 그림자 강화 비용 증가
+    property number shadowExpBase = 40    -- 그림자 레벨 n→n+1 경험치 = base × n^exp
+    property number shadowExpExp = 1.8    -- 그림자 경험치 곡선 지수
+    property number shadowExpShare = 0.6    -- 처치 경험치 중 소환 중인 그림자가 각각 받는 비율
     property table Difficulties = {}
     property table Sounds = {}
     property table MonsterNames = {}
@@ -158,11 +165,17 @@ script GameData extends Logic
         self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, grade = 2 }
         self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.3, grade = 3 }
         self.Shop = {}
-        self.Shop["hp"] = { name = "생명 물약", price = 25, perLevel = 0, hpPct = 40, manaPct = 0 }
-        self.Shop["mp"] = { name = "마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 50 }
-        self.Shop["rv"] = { name = "회복 물약", price = 120, perLevel = 0, hpPct = 35, manaPct = 35 }
-        self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0 }
-        self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0 }
+        self.Shop["hp"] = { name = "생명 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "hp", tier = 0, minLevel = 1, icon = "234aca1a4ce946119b68e3717991e775" }
+        self.Shop["mp"] = { name = "마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "mp", tier = 0, minLevel = 1, icon = "7e9b39b73f4945b1a8d77db6c99a6946" }
+        self.Shop["hp1"] = { name = "하급 생명 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 60, manaFlat = 0, kind = "hp", tier = 1, minLevel = 1, icon = "234aca1a4ce946119b68e3717991e775" }
+        self.Shop["hp2"] = { name = "중급 생명 물약", price = 70, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 150, manaFlat = 0, kind = "hp", tier = 2, minLevel = 10, icon = "2debf574d6d04f7083e980dbc8f462d9" }
+        self.Shop["hp3"] = { name = "고급 생명 물약", price = 180, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 360, manaFlat = 0, kind = "hp", tier = 3, minLevel = 30, icon = "289c7bdcbdc8484ab7bad688b2519ca7" }
+        self.Shop["mp1"] = { name = "하급 마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 40, kind = "mp", tier = 1, minLevel = 1, icon = "7e9b39b73f4945b1a8d77db6c99a6946" }
+        self.Shop["mp2"] = { name = "중급 마나 물약", price = 70, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 90, kind = "mp", tier = 2, minLevel = 10, icon = "3b778fe9d0b64a52a038b1c72cb58454" }
+        self.Shop["mp3"] = { name = "고급 마나 물약", price = 180, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 220, kind = "mp", tier = 3, minLevel = 30, icon = "2f9d856f316f476bb5adf13ecf9f93c6" }
+        self.Shop["rv"] = { name = "회복 물약", price = 120, perLevel = 0, hpPct = 35, manaPct = 35, hpFlat = 0, manaFlat = 0, kind = "rv", tier = 1, minLevel = 1, icon = "60538a9f27134b1c89cad56d3acda17c" }
+        self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "2b7a59d71ba142b6a6dd66aa8f8dbe73" }
+        self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "" }
         self.Difficulties = {}
         self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, resistPenalty = 0, deathExpLossPct = 0 }
         self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 30, resistPenalty = 30, deathExpLossPct = 5 }
@@ -223,7 +236,7 @@ script GameData extends Logic
         self.MapInfo["gallows"] = { name = "교수대 숲 (Lv 6~9)", kind = "field", w = 52, h = 28, features = { { kind = "portal", x = -25, y = 0, label = "무너진 형장 (Lv 5~7)", targetMap = "execution" }, { kind = "portal", x = 25, y = 0, label = "지하 납골당 1층 (Lv 8~10)", targetMap = "crypt1" }, { kind = "portal", x = 16, y = -9, label = "목매단 동굴 (Lv 8~9)", targetMap = "cave" }, { kind = "waypoint", x = -20, y = -8, label = "", targetMap = "" }, { kind = "boss", x = 14, y = 6, label = "", targetMap = "" }, { kind = "altar", x = -6, y = 10, label = "", targetMap = "" } } }
         self.MapInfo["crypt1"] = { name = "지하 납골당 1층 (Lv 8~10)", kind = "field", w = 36, h = 20, features = { { kind = "portal", x = -17, y = 0, label = "교수대 숲 (Lv 6~9)", targetMap = "gallows" }, { kind = "portal", x = 17, y = 0, label = "지하 납골당 2층 (Lv 9~11)", targetMap = "crypt2" }, { kind = "waypoint", x = -14, y = -6, label = "", targetMap = "" } } }
         self.MapInfo["crypt2"] = { name = "지하 납골당 2층 (Lv 9~11)", kind = "field", w = 36, h = 20, features = { { kind = "portal", x = -17, y = 0, label = "지하 납골당 1층 (Lv 8~10)", targetMap = "crypt1" }, { kind = "portal", x = 17, y = 0, label = "지하 납골당 3층 (Lv 10~12)", targetMap = "crypt3" } } }
-        self.MapInfo["crypt3"] = { name = "지하 납골당 3층 (Lv 10~12)", kind = "field", w = 36, h = 20, features = { { kind = "portal", x = -17, y = 0, label = "지하 납골당 2층 (Lv 9~11)", targetMap = "crypt2" }, { kind = "portal", x = 17, y = 0, label = "여왕의 무덤", targetMap = "queentomb" }, { kind = "boss", x = 12, y = -4, label = "", targetMap = "" } } }
+        self.MapInfo["crypt3"] = { name = "지하 납골당 3층 (Lv 10~12)", kind = "field", w = 36, h = 20, features = { { kind = "portal", x = -17, y = 0, label = "지하 납골당 2층 (Lv 9~11)", targetMap = "crypt2" }, { kind = "portal", x = 17, y = 0, label = "여왕의 무덤", targetMap = "queentomb" }, { kind = "waypoint", x = -14.2, y = 0, label = "", targetMap = "" }, { kind = "boss", x = 12, y = -4, label = "", targetMap = "" } } }
         self.MapInfo["queentomb"] = { name = "여왕의 무덤", kind = "field", w = 20, h = 12, features = { { kind = "portal", x = -9, y = 0, label = "지하 납골당 3층 (Lv 10~12)", targetMap = "crypt3" }, { kind = "portal", x = 9, y = 0, label = "잿불 야영지", targetMap = "town" }, { kind = "boss", x = 5, y = 0, label = "", targetMap = "" } } }
         self.MapInfo["depth"] = { name = "심도", kind = "instance", w = 14, h = 8, features = {  } }
         self.MapInfo["hollow"] = { name = "굶주린 굴 (Lv 2~3)", kind = "side", w = 24, h = 16, features = { { kind = "portal", x = -11, y = 0, label = "피 묻은 황무지 (Lv 1~3)", targetMap = "map01" } } }
@@ -307,6 +320,7 @@ script GameData extends Logic
         self.UiIcons["minimap_me"] = "55d2e99e4fa04485bf24daf914bed89c"
         self.UiIcons["minimap_exit"] = "ec2c7892571844758379ae5b10743828"
         self.UiIcons["aim_chevron"] = "eaff4b14e6be408e82ad9a56b0ce81ec"
+        self.UiIcons["essence"] = "4854135ad37a434b8c4f22539e532186"
         self.DepthPool = {}
         table.insert(self.DepthPool, "hellhound")
         table.insert(self.DepthPool, "graveworm")

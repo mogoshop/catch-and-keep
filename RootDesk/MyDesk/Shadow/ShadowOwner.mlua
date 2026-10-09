@@ -1,6 +1,8 @@
 -- 그림자 보관함 (플레이어별 데이터). 보관함의 그림자는 엔티티가 아니라 데이터 행이고, 소환은 ShadowCommander가 맡는다.
 -- 책임: 행 추가·분해·강화, UI용 요약 문자열, 저장/불러오기.
--- 행: id → { id, sourceId, grade, level, variant, deployed, slot, respawnReadyAt, standRuid, moveRuid }
+-- 행: id → { id, sourceId, grade, level, xp, plus, variant, deployed, slot, respawnReadyAt, standRuid, moveRuid, at }
+--   level = 데리고 다니며 오르는 레벨(주인 레벨까지, 팰월드식) · plus = 정수로 하는 강화(+N, 능력치 %) — 둘은 별개
+-- 정수는 가방의 귀속 물건(essence)이다. Essence = 가방 속 개수(표시용, PlayerInventory가 맞춘다)
 @Component
 script ShadowOwner extends Component
 
@@ -8,7 +10,7 @@ script ShadowOwner extends Component
     property integer NextSerial = 1
 
     @Sync
-    property integer Essence = 0
+    property integer Essence = 0             -- 가방 속 정수 개수 (표시용)
     @Sync
     property integer StorageCount = 0
     @Sync
@@ -39,7 +41,7 @@ script ShadowOwner extends Component
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
         -- at = 추출 시각(초, 보관함 「추출순」 정렬). 저장에서 불러올 때는 LoadSaveData가 원래 시각으로 덮는다
-        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid, at = math.floor(DateTime.UtcNow.Elapsed / 1000) }
+        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), xp = 0, plus = 0, variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid, at = math.floor(DateTime.UtcNow.Elapsed / 1000) }
         self.StorageCount = self.StorageCount + 1
         self:RefreshDigest()
         return id
@@ -50,31 +52,41 @@ script ShadowOwner extends Component
         -- 소환 중이 아닌 그림자 → 정수
         local shadow = self.Storage[id]
         if shadow == nil or shadow.deployed then return false end
-        local yield = _ShadowConfig:GetDisassembleYield(shadow.grade)
-        if yield <= 0 then return false end
+        local yield = _ShadowConfig:GetDisassembleYield(shadow.grade) + _ShadowConfig:GetPlusRefund(shadow.plus or 0)
+        if yield <= 0 or _ShadowConfig:GetDisassembleYield(shadow.grade) <= 0 then return false end
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return false end
+        -- 정수 칸이 없고 가방이 가득 찼으면 분해하지 않는다 (정수를 잃지 않게)
+        if inv:CountStack("essence") == 0 and #inv.Bag >= inv.BagSize then
+            _Util:Notify("가방이 가득 차 정수를 받을 수 없다", self.Entity.PlayerComponent.UserId)
+            return false
+        end
         self.Storage[id] = nil
         self.StorageCount = self.StorageCount - 1
-        self.Essence = self.Essence + yield
+        inv:AddStack("essence", yield)
         self:RefreshDigest()
         return true
     end
 
     @ExecSpace("ServerOnly")
     method boolean Upgrade(string id)
-        -- 정수로 레벨 +1. 소환 중이면 능력치도 즉시 반영
+        -- 정수로 강화 +1 (레벨과 별개, 능력치 % 상승). 소환 중이면 능력치도 즉시 반영
         local shadow = self.Storage[id]
         if shadow == nil then return false end
-        -- 그림자 레벨은 주인 레벨을 넘을 수 없다
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats ~= nil and shadow.level >= stats.Level then
-            _Util:Notify("그림자 레벨은 주인 레벨(" .. tostring(stats.Level) .. ")을 넘을 수 없다", self.Entity.PlayerComponent.UserId)
+        local plus = shadow.plus or 0
+        if plus >= _ShadowConfig:GetPlusMax() then
+            _Util:Notify("이미 최대 강화(+" .. tostring(plus) .. ")다", self.Entity.PlayerComponent.UserId)
             return false
         end
-        local cost = _ShadowConfig:GetUpgradeCost(shadow.level)
-        if self.Essence < cost then return false end
-        self.Essence = self.Essence - cost
-        shadow.level = shadow.level + 1
+        local cost = _ShadowConfig:GetUpgradeCost(plus)
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil or not inv:TakeStack("essence", cost) then
+            _Util:Notify("정수가 부족하다", self.Entity.PlayerComponent.UserId)
+            return false
+        end
+        shadow.plus = plus + 1
         local commander = self:Commander()
         if commander ~= nil then commander:RefreshUnitStats(id) end
         self:RefreshDigest()
@@ -82,11 +94,53 @@ script ShadowOwner extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method number ShadowExpForKill(integer shadowLevel, integer monsterLevel, integer grade)
+        -- 그림자 하나가 받는 처치 경험치: 플레이어 식과 같되 레벨 차이는 그 그림자 기준 (낮은 그림자는 제 수준 사냥터에서 잘 자란다)
+        local gradeMult = 1
+        if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
+        local base = 10 * (monsterLevel ^ 1.3) * gradeMult
+        local diff = shadowLevel - monsterLevel
+        if diff >= 10 then base = base * 0.05
+        elseif diff >= 5 then base = base * (1 - (diff - 4) * 0.15) end
+        if grade < 3 then base = base * _GameData.densityRewardMult end
+        return base * _GameData.shadowExpShare
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GainKillExp(integer monsterLevel, integer grade)
+        -- 처치 경험치: 지금 소환 중인 그림자들이 각자 받는다 (팰월드처럼 데리고 다니면 자란다). 레벨은 주인 레벨까지
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or monsterLevel <= 0 then return end
+        local changed = false
+        for id, s in pairs(self.Storage) do
+            if s.deployed and s.level < stats.Level then
+                s.xp = (s.xp or 0) + self:ShadowExpForKill(s.level, monsterLevel, grade)
+                local leveled = false
+                while s.level < stats.Level and s.xp >= _ShadowConfig:ExpToNext(s.level) do
+                    s.xp = s.xp - _ShadowConfig:ExpToNext(s.level)
+                    s.level = s.level + 1
+                    leveled = true
+                end
+                if s.level >= stats.Level then s.xp = 0 end
+                if leveled then
+                    local commander = self:Commander()
+                    if commander ~= nil then commander:RefreshUnitStats(id) end
+                    _Util:Notify("그림자 레벨 업 · " .. _GameData:GetMonsterName(s.sourceId) .. " Lv" .. tostring(s.level), self.Entity.PlayerComponent.UserId)
+                end
+                changed = true
+            end
+        end
+        if changed then self:RefreshDigest() end
+    end
+
+    @ExecSpace("ServerOnly")
     method void RefreshDigest()
         -- 클라이언트 UI용 (table은 동기화할 수 없다). 마지막 칸은 재소환 가능 시각(서버 경과 초)
         local rows = {}
         for id, s in pairs(self.Storage) do
-            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or "", s.at or 0))
+            local need = _ShadowConfig:ExpToNext(s.level)
+            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s|%d|%d|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or "", s.at or 0, s.plus or 0, math.floor(100 * (s.xp or 0) / math.max(1, need))))
         end
         table.sort(rows)
         self.StorageDigest = table.concat(rows, ";")
@@ -116,7 +170,7 @@ script ShadowOwner extends Component
         if commander ~= nil then for _, id in ipairs(commander.Wanted) do wanted[id] = true end end
         local list = {}
         for id, s in pairs(self.Storage) do
-            local entry = { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid, at = s.at or 0 }
+            local entry = { src = s.sourceId, g = s.grade, lv = s.level, xp = math.floor(s.xp or 0), pl = s.plus or 0, va = s.variant or "", st = s.standRuid, mv = s.moveRuid, at = s.at or 0 }
             if s.deployed or wanted[id] then
                 local state = commander ~= nil and commander:GetTravelState(id) or nil
                 if state == nil or state.health > 0 then
@@ -126,7 +180,8 @@ script ShadowOwner extends Component
             end
             table.insert(list, entry)
         end
-        local saved = { essence = self.Essence, shadowCount = #list }
+        -- 정수는 가방에 저장된다 (v2)
+        local saved = { v = 2, shadowCount = #list }
         if #list > 0 then saved.shadows = list end
         return saved
     end
@@ -139,12 +194,19 @@ script ShadowOwner extends Component
         if commander ~= nil then commander:RecallAll() end
         self.Storage = {}
         self.StorageCount = 0
-        self.Essence = data.essence or 0
+        -- 예전 저장(정수 개수): 가방의 귀속 정수로 옮긴다 (가방은 이 섹션보다 먼저 불러와진다)
+        if data.v ~= 2 and (tonumber(data.essence) or 0) > 0 then
+            ---@type PlayerInventory
+            local inv = self.Entity:GetComponent("script.PlayerInventory")
+            if inv ~= nil then inv:AddStack("essence", math.floor(tonumber(data.essence))) end
+        end
         local redeploy = {}
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
                 local id = self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
                 self.Storage[id].at = tonumber(s.at) or 0
+                self.Storage[id].xp = tonumber(s.xp) or 0
+                self.Storage[id].plus = tonumber(s.pl) or 0
                 if s.d then
                     -- 구 저장은 체력·승격 필드가 없으므로 이전처럼 일반 개체로 복원한다.
                     local health = tonumber(s.h) or 1

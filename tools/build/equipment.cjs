@@ -30,19 +30,23 @@ b.button(d+'/BtnPreview','장비 선택 후 외형 비교',{anchor:'top-left',po
 const desc=w+'/DescBox';
 b.scrollLayout(desc,{anchor:'top-left',pos:[552,-112],rect_size:[820,516],layout_type:1,use_scroll:true,padding:[24,32,20,20],scroll_bar_visible:1,scroll_bar_thickness:12,scroll_bar_bg_color:{r:.14,g:.12,b:.17,a:.6},scroll_bar_handle_color:{r:.6,g:.49,b:.3,a:1}});
 b.text(desc+'/Desc','가방이나 착용 중인 장비를 선택하세요.',{anchor:'top-left',pos:[0,0],rect_size:[740,48],size:26,color:'#EEE5D4',alignment:0,overflow:0});
-b.text(w+'/Gold','',{anchor:'top-left',pos:[28,-640],rect_size:[1344,36],size:26,color:'#E6C88A',alignment:3});
+// 골드: 아이콘 + 액수 (장착 버튼 위). 안내 문구는 가방 바로 위로
+b.empty(w+'/Gold',{anchor:'top-left',pos:[1100,-622],rect_size:[272,48]});
+b.sprite(w+'/Gold/Icon',{anchor:'middle-left',pivot:[0,.5],pos:[8,0],rect_size:[36,36],image_ruid:'94b7d89e2f514e269e04250dd4b7d989',color:'#FFFFFF',sprite_type:0});
+b.text(w+'/Gold/Text','',{anchor:'middle-left',pivot:[0,.5],pos:[54,0],rect_size:[212,44],size:28,bold:true,color:'#E6C88A',alignment:3});
 const bag=w+'/Bag';
 // 가방 60칸 (10열 × 6줄): 3줄이 보이고 손가락·휠로 끌어 내린다
-b.scrollLayout(bag,{anchor:'top-left',pos:[28,-690],rect_size:[1044,296],layout_type:2,cell_size:[88,88],constraint:1,constraint_count:10,grid_spacing:[16,14],padding:[10,10,6,6],use_scroll:true,v_scroll_dir:3,scroll_bar_visible:1,scroll_bar_thickness:10,scroll_bar_bg_color:{r:.14,g:.12,b:.17,a:.6},scroll_bar_handle_color:{r:.6,g:.49,b:.3,a:1}});
+b.scrollLayout(bag,{anchor:'top-left',pos:[28,-672],rect_size:[1044,280],layout_type:2,cell_size:[88,88],constraint:1,constraint_count:10,grid_spacing:[14,14],padding:[8,8,6,6],use_scroll:true,v_scroll_dir:2,scroll_bar_visible:1,scroll_bar_thickness:10,scroll_bar_bg_color:{r:.14,g:.12,b:.17,a:.6},scroll_bar_handle_color:{r:.6,g:.49,b:.3,a:1}});
 for(let i=1;i<=60;i++){
  const n=bag+'/Bag'+i;
- b.button(n,'',{anchor:'top-left',pos:[10+((i-1)%10)*104,-Math.floor(((i-1)%30)/10)*104],rect_size:[88,88],bg_color:'#19131E'}); // 실제 위치는 그리드가 정한다 (작성 좌표는 보이는 3줄 안)
+ b.button(n,'',{anchor:'top-left',pos:[8+((i-1)%10)*102,-Math.floor(((i-1)%30)/10)*104],rect_size:[88,88],bg_color:'#19131E'}); // 실제 위치는 그리드가 정한다 (작성 좌표는 보이는 3줄 안)
  b.sprite(n+'/Rim',{rect_size:[88,88],image_ruid:icons.slot_frame,color:'#FFFFFF',sprite_type:1});
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
+ b.text(n+'/Count','',{anchor:'bottom-right',pivot:[1,0],pos:[-4,2],rect_size:[60,28],size:20,bold:true,color:'#FFFFFF',alignment:8,outline:true,outline_color:'#101010',outline_width:0.3});
 }
 b.button(w+'/BtnEquip','장착',{anchor:'top-left',pos:[1100,-690],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6C88A'});
 b.button(w+'/BtnSell','버리기',{anchor:'top-left',pos:[1100,-794],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6DCC6'});
-b.text(w+'/Hint','선택 → 설명 확인\n버튼으로 작업 확정',{anchor:'top-left',pos:[1100,-616],rect_size:[272,64],size:24,color:'#C9BBA0',alignment:0});
+b.text(w+'/Hint','선택 → 설명 확인 · 버튼으로 작업 확정',{anchor:'top-left',pos:[28,-628],rect_size:[1044,40],size:24,color:'#C9BBA0',alignment:3});
 b.write(file,{lint_verbose:true});
 return b.listEntities().length;
 }

@@ -36,6 +36,9 @@ for(let i=1;i<=6;i++){
  // 칸 자체가 테두리 그림, 그 위에 의뢰 그림·이름 (덮개 테두리는 그림을 가렸다)
  b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250,-96-row*236],rect_size:[220,224],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
  b.sprite(n+'/Art',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],image_ruid:initialArt(i),color:'#FFFFFF',sprite_type:0});
+ // 완료 표시(흑백 그림 위 도장) · 아직 못 읽는 의뢰는 반투명 검정 덮개 (그림 형태는 보인다)
+ b.text(n+'/Done','완료',{anchor:'top-right',pivot:[1,1],pos:[-14,-14],rect_size:[84,32],size:20,bold:true,color:'#B9E6A0',outline:true,outline_color:'#101010',outline_width:0.3,enable:false});
+ b.panel(n+'/Lock',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],color:{r:0.02,g:0.02,b:0.03,a:0.72},enable:false});
  b.text(n+'/Name','',{anchor:'bottom-center',pivot:[.5,0],pos:[0,12],rect_size:[196,36],size:21,bold:true,color:'#E6DCC6',bestfit:true,min_size:17,max_size:21,overflow:2});
 }
 const d=win+'/Detail';

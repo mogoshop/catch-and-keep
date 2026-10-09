@@ -1,10 +1,16 @@
 -- 상점 거래 (상인 NPC 근처에서만): 물약·귀환 두루마리·도박(무작위 마법 이상 장비). 품목·가격은 data/shop.csv.
--- 판매는 소지품 창(PlayerInventory.RequestSell).
+-- 생명·마나 물약은 레벨에 맞는 등급(하급 Lv1~9 · 중급 10~29 · 고급 30+)을 가방에 넣는다. 판매는 상인 곁 소지품 창(PlayerInventory.RequestSell).
 @Component
 script PlayerShop extends Component
 
+    method string Resolve(string key, integer level)
+        -- 상점 버튼 키 → 실제 품목 (생명·마나는 레벨 등급)
+        if key == "hp" or key == "mp" then return _ItemData:PotionFor(key, level) end
+        return key
+    end
+
     method integer GetPrice(string key, integer level)
-        local item = _GameData:GetShopItem(key)
+        local item = _GameData:GetShopItem(self:Resolve(key, level))
         if item == nil then return 0 end
         return math.floor(item.price + item.perLevel * level)
     end
@@ -44,10 +50,14 @@ script PlayerShop extends Component
             if travel == nil then return false end
             travel.TownScroll = travel.TownScroll + 1
         else
-            ---@type PlayerBelt
-            local belt = self.Entity:GetComponent("script.PlayerBelt")
-            if belt == nil then return false end
-            belt:AddPotion(key, 1)
+            ---@type PlayerInventory
+            local inv = self.Entity:GetComponent("script.PlayerInventory")
+            if inv == nil then return false end
+            local base = self:Resolve(key, stats.Level)
+            if inv:AddStack(base, 1) > 0 then
+                _Util:Notify("가방이 가득 찼다", userId)
+                return false
+            end
         end
         stats:AddGold(-price)
         return true
