@@ -1,4 +1,5 @@
--- 땅에 떨어진 전리품 (골드·포션·장비·룬). 개인 전리품: 30초 동안 주인만 줍고 그 뒤 공개, 90초 후 사라진다.
+-- 땅에 떨어진 전리품 (골드·포션·장비·룬). 개인 전리품(D3·이모탈): 주인만 보이고 주인만 줍는다, 90초 후 사라진다.
+-- 주인 없는 것(버린 물건)은 누구나 보고 잠금 시간 뒤 줍는다.
 -- 줍기는 PlayerInventory가 서버에서 거리로 판정한다. 이 컴포넌트는 데이터·수명·연출만 맡는다.
 @Component
 script LootDrop extends Component
@@ -57,8 +58,7 @@ script LootDrop extends Component
     method boolean CanTake(string userId)
         if self.Taken or self.Kind == "" then return false end
         if _UtilLogic.ServerElapsedSeconds < self.LockedUntil then return false end
-        if self.OwnerUserId == "" or self.OwnerUserId == userId then return true end
-        return _UtilLogic.ElapsedSeconds - self.DropTime >= self.PublicAfter
+        return self.OwnerUserId == "" or self.OwnerUserId == userId
     end
 
     @ExecSpace("ServerOnly")
@@ -72,6 +72,11 @@ script LootDrop extends Component
         -- 종류별 아이콘, 장비는 등급 색으로 깜빡임 (희귀 이상은 더 크게)
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) or self.Kind == "" then return end
+        -- 남의 개인 전리품은 보이지 않는다
+        local me = _UserService.LocalPlayer
+        local mine = self.OwnerUserId == "" or (isvalid(me) and me.PlayerComponent.UserId == self.OwnerUserId)
+        if sprite.Enable ~= mine then sprite.Enable = mine end
+        if not mine then return end
         if not self.Dressed then
             -- 장비·룬 아이콘은 서버 값이 동기화된 뒤에 입힌다
             if (self.Kind == "item" or self.Kind == "rune") and self.IconRUID == "" then return end

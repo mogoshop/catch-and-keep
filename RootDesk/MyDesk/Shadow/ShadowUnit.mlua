@@ -52,7 +52,7 @@ script ShadowUnit extends AttackComponent
     property string Variant = ""             -- 원본 변종 능력 (오오라·특수 기술, variants.csv)
     property number AbilityTimer = 2
     property string LastInfo = ""
-    property number AuraDmg = 0              -- 받은 오오라 (같은 주인의 다른 소환수가 준다)
+    property number AuraDmg = 0              -- 받은 오오라 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다)
     property number AuraHaste = 0
     property number AuraGuard = 0
     property number AuraUntil = 0
@@ -85,6 +85,10 @@ script ShadowUnit extends AttackComponent
 
     property Entity Target = nil
     property boolean RingPainted = false
+    property number PartyAuraTimer = 0
+    property number PartyAuraRange = 6        -- 다른 플레이어의 호령이 닿는 거리
+    property integer ViewTimer = 0            -- 클라이언트: 내 것/남의 것 표시 갱신
+    property string ViewState = ""
     property number RetargetTimer = 0
     property number OwnerCheckTimer = 0
     property number OwnerCheckInterval = 0.2  -- 주인 교전 범위·시야 재확인 간격
@@ -109,8 +113,57 @@ script ShadowUnit extends AttackComponent
         ring.TransformComponent.Scale = Vector3(1.05 / ps, 1.05 / ps, 1)
     end
 
+    @ExecSpace("ClientOnly")
+    method void StartView()
+        -- 클라이언트: 주인이 동기화되면 내 소환수는 그대로, 팀원 소환수는 흐린 회색 고리 + 작은 주인 이름
+        self.ViewTimer = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshView()
+        local owner = self.OwnerPlayer
+        if not isvalid(owner) or not isvalid(owner.PlayerComponent) then return end
+        local me = _UserService.LocalPlayer
+        local mine = isvalid(me) and owner == me
+        local state = mine and "mine" or ("other:" .. owner.PlayerComponent.Nickname)
+        local ring = self.Entity:GetChildByName("AllyRing")
+        if not mine and isvalid(ring) then ring.SpriteRendererComponent.Color = Color(0.55, 0.55, 0.58, 0.45) end
+        if state == self.ViewState then return end
+        self.ViewState = state
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then
+            tag.Name = mine and "" or owner.PlayerComponent.Nickname
+            tag.FontColor = Color(0.75, 0.75, 0.78, 1)
+            tag.Enable = not mine
+        end
+    end
+
     @ExecSpace("ServerOnly")
+    method void PartyAuraTick(number delta)
+        -- 버프는 섞인다: 근처 다른 플레이어의 호령(소환수 공격 %·이동 속도)이 내 주인과 상관없이 이 소환수에도 닿는다
+        self.PartyAuraTimer = self.PartyAuraTimer - delta
+        if self.PartyAuraTimer > 0 then return end
+        self.PartyAuraTimer = _GameData.auraTickSec
+        local me = _Util:Pos2(self.Entity)
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, me, self.PartyAuraRange)) do
+            if p ~= self.OwnerPlayer then
+                ---@type SkillBook
+                local book = p:GetComponent("script.SkillBook")
+                if book ~= nil then
+                    local aura = book:GetCommandAura()
+                    if aura.atk > 0 then self:ReceiveAura("dmg", aura.atk) end
+                    if aura.speed > 0 then self:ReceiveAura("haste", aura.speed) end
+                end
+            end
+        end
+    end
+
     method void OnBeginPlay()
+        -- 클라이언트는 내 것/남의 것 표시만, 서버는 아래 설정
+        if self:IsClient() then
+            self:StartView()
+            return
+        end
         -- 소환수 피해는 작고 빠르게 표시해 내 타격과 적의 행동을 가리지 않는다.
         local skin = self.Entity.DamageSkinSettingComponent
         if not isvalid(skin) then skin = self.Entity:AddComponent("DamageSkinSettingComponent") end
@@ -206,6 +259,7 @@ script ShadowUnit extends AttackComponent
         self:UpdateCommandState()
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
         self:AbilityTick(delta)
+        self:PartyAuraTick(delta)
 
         local p = self.Entity.TransformComponent.WorldPosition
         local myPos = Vector2(p.x, p.y)
@@ -306,9 +360,13 @@ script ShadowUnit extends AttackComponent
         self.AttackAnimationUntil = 0
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        -- 예약 타격과 소환수 투사체를 함께 정리한다.
+        -- 클라이언트: 표시 타이머 정리 / 서버: 예약 타격과 소환수 투사체를 함께 정리한다.
+        if self:IsClient() then
+            if self.ViewTimer ~= 0 then _TimerService:ClearTimer(self.ViewTimer) end
+            self.ViewTimer = 0
+            return
+        end
         self:CancelPendingAttack()
         if isvalid(self.Entity.CurrentMap) then self:ClearProjectiles() end
     end
@@ -555,9 +613,10 @@ script ShadowUnit extends AttackComponent
         if v.kind == "aura" then
             self.AbilityTimer = _GameData.auraTickSec
             for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
                 ---@type ShadowUnit
                 local ally = c
-                if ally.OwnerPlayer == self.OwnerPlayer and not ally.Dead then
+                if not ally.Dead then
                     local q = c.Entity.TransformComponent.WorldPosition
                     if (Vector2(q.x, q.y) - myPos):Magnitude() <= v.radius then ally:ReceiveAura(v.effect, v.value) end
                 end

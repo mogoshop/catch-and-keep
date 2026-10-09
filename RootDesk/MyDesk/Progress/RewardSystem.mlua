@@ -1,4 +1,5 @@
--- 처치 보상: 경험치(파티면 PartySystem이 근처 파티원에게 나눈다) + 드롭(개인 전리품, 처치자 기준). (MonsterKilled 구독)
+-- 처치 보상 (개인 보상, D3·디아블로 이모탈 방식): 피해를 준 사람과 막타 친 사람 근처 파티원 각자가
+--   자기 경험치(파티면 D2식 분배)·자기 그림자 경험치·자기 드롭(본인 MF, 본인만 보임)을 받는다. 막타 경쟁이 없다. (MonsterKilled 구독)
 @Logic
 script RewardSystem extends Logic
 
@@ -11,18 +12,31 @@ script RewardSystem extends Logic
     method void OnMonsterKilled(table e)
         local player = e.player
         if player == nil then return end
-        if not _PartySystem:ShareKill(player, e.monster, e.level, e.grade) then
-            ---@type PlayerStats
-            local stats = player:GetComponent("script.PlayerStats")
-            if stats ~= nil then stats:GainExp(stats:ExpForKill(e.level, e.grade)) end
+        local players = e.players or { player }
+        -- 경험치: 파티는 한 번만 D2식으로 나누고(근처 파티원 전원), 파티 밖 기여자는 각자 받는다
+        local paid = {}
+        for _, p in ipairs(players) do
+            local id = p.PlayerComponent.UserId
+            if not paid[id] then
+                local near = _PartySystem:NearbyMembers(p, e.monster)
+                if #near >= 2 and _PartySystem:ShareKill(p, e.monster, e.level, e.grade) then
+                    for _, m in ipairs(near) do paid[m.PlayerComponent.UserId] = true end
+                else
+                    ---@type PlayerStats
+                    local stats = p:GetComponent("script.PlayerStats")
+                    if stats ~= nil then stats:GainExp(stats:ExpForKill(e.level, e.grade)) end
+                    paid[id] = true
+                end
+            end
         end
-        -- 소환 중인 그림자도 처치 경험치를 나눠 받아 레벨이 오른다
-        ---@type PlayerStats
-        local killer = player:GetComponent("script.PlayerStats")
-        ---@type ShadowOwner
-        local owner = player:GetComponent("script.ShadowOwner")
-        if killer ~= nil and owner ~= nil then owner:GainKillExp(e.level, e.grade) end
-        _LootSystem:RollDrops(e.monster, e.level, e.rank, player)
+        for _, p in ipairs(players) do
+            -- 소환 중인 그림자도 처치 경험치를 받아 레벨이 오른다 (각자의 그림자)
+            ---@type ShadowOwner
+            local owner = p:GetComponent("script.ShadowOwner")
+            if owner ~= nil then owner:GainKillExp(e.level, e.grade) end
+            -- 드롭: 각자 따로 굴린다 (본인 MF·GF, 본인만 보이고 줍는다)
+            _LootSystem:RollDrops(e.monster, e.level, e.rank, p)
+        end
     end
 
 end

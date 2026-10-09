@@ -98,6 +98,27 @@ script PartySystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method table NearbyMembers(Entity player, Entity monster)
+        -- player 파티원 중 monster와 같은 맵·ShareRange 안에 살아 있는 사람 (player 포함, 파티가 없으면 빈 목록)
+        local out = {}
+        if not isvalid(player) or not isvalid(monster) then return out end
+        ---@type PlayerSocial
+        local s = player:GetComponent("script.PlayerSocial")
+        if s == nil or s.PartyId == 0 then return out end
+        local list = self.Parties[s.PartyId]
+        if list == nil then return out end
+        local m = monster.TransformComponent.WorldPosition
+        for _, u in ipairs(list) do
+            local p = _UserService:GetUserEntityByUserId(u)
+            if isvalid(p) and p.CurrentMap == monster.CurrentMap and not p.PlayerComponent:IsDead() then
+                local q = p.TransformComponent.WorldPosition
+                if (Vector2(q.x, q.y) - Vector2(m.x, m.y)):Magnitude() <= self.ShareRange then table.insert(out, p) end
+            end
+        end
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean ShareKill(Entity killer, Entity monster, integer monLevel, integer grade)
         -- 근처 파티원이 2명 이상이면 경험치를 나눠 주고 true
         if not isvalid(killer) then return false end

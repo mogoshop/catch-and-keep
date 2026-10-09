@@ -1,4 +1,5 @@
--- 그림자 시스템: 몬스터가 쓰러지면 그 자리에 혼(SoulOrb)을 남긴다. 처치자(또는 그림자의 주인)만 추출할 수 있다.
+-- 그림자 시스템: 몬스터가 쓰러지면 그 자리에 혼(SoulOrb)을 남긴다. 개인 보상 — 피해를 준 사람·근처 파티원 각자에게
+-- 자기 혼이 하나씩 생긴다 (본인만 보이고 본인만 추출·해골·되살림에 쓴다).
 -- 원본 몬스터의 대기·이동 스프라이트가 혼과 그림자의 외형이 된다. (MonsterKilled 구독)
 @Logic
 script ShadowSystem extends Logic
@@ -20,9 +21,15 @@ script ShadowSystem extends Logic
             moveRuid = anim.ActionSheet["move"] or standRuid
         end
         local pos = monster.TransformComponent.WorldPosition
-        local soul = _SpawnService:SpawnByModelId(_GameConst.ModelSoulOrb, "Soul_" .. e.sourceId, Vector3(pos.x, pos.y, pos.z), e.map)
+        for _, p in ipairs(e.players or { e.player }) do
+            self:SpawnSoul(Vector3(pos.x, pos.y, pos.z), e, p.PlayerComponent.UserId, standRuid, moveRuid)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnSoul(Vector3 pos, table e, string userId, string standRuid, string moveRuid)
+        local soul = _SpawnService:SpawnByModelId(_GameConst.ModelSoulOrb, "Soul_" .. e.sourceId, pos, e.map)
         if not isvalid(soul) then return end
-        local userId = e.player.PlayerComponent.UserId
         _Util:AfterSpawn(soul, "script.SoulOrb", function(comp)
             ---@type SoulOrb
             local orb = comp

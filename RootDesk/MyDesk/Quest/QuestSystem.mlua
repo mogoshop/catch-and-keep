@@ -6,8 +6,11 @@ script QuestSystem extends Logic
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         _GameEvents:Subscribe("MonsterKilled", "QuestSystem", function(e)
-            local q = self:QuestOf(e.player)
-            if q ~= nil then q:OnKill(e.sourceId) end
+            -- 함께 싸운 사람(피해를 준 사람·근처 파티원) 모두의 의뢰에 처치가 오른다
+            for _, p in ipairs(e.players or { e.player }) do
+                local q = self:QuestOf(p)
+                if q ~= nil then q:OnKill(e.sourceId) end
+            end
         end)
         _GameEvents:Subscribe("ShadowExtracted", "QuestSystem", function(e)
             local q = self:QuestOf(e.player)

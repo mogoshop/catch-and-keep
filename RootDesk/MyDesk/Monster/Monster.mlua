@@ -26,6 +26,7 @@ script Monster extends Component
     property number BaseSpeed = 0
     property boolean LevelApplied = false
     property Entity LastAttacker = nil
+    property table Contributors = {}        -- 이번 생에 피해를 준 플레이어(소환수는 주인) userId → 플레이어 (개인 보상 대상)
     property Vector2 SpawnPosition = Vector2(0, 0)
 
     method MonsterStatus Status()
@@ -247,7 +248,10 @@ script Monster extends Component
     method void TakeDamage(number amount, Entity attacker)
         -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율만 여기서
         if self.IsDead then return end
-        if isvalid(attacker) then self.LastAttacker = attacker end
+        if isvalid(attacker) then
+            self.LastAttacker = attacker
+            self:NoteContributor(attacker)
+        end
         self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier()
         if self.Hp <= 0 then self:Die() end
     end
@@ -259,6 +263,7 @@ script Monster extends Component
         if self.IsDead then return end
         if isvalid(event.AttackerEntity) then
             self.LastAttacker = event.AttackerEntity
+            self:NoteContributor(event.AttackerEntity)
             local chase = self.Entity.AIChaseComponent
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
@@ -280,6 +285,32 @@ script Monster extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void NoteContributor(Entity attacker)
+        -- 피해를 준 쪽(소환수면 주인)을 개인 보상 대상으로 기억한다
+        local owner = _Util:OwnerPlayerOf(attacker)
+        if isvalid(owner) and isvalid(owner.PlayerComponent) then self.Contributors[owner.PlayerComponent.UserId] = owner end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table RewardPlayers(Entity killer)
+        -- 개인 보상(D3·이모탈): 피해를 준 플레이어 + 막타 친 사람 근처의 파티원. 같은 맵에 있는 사람만, 막타 친 사람이 맨 앞
+        local list = {}
+        local seen = {}
+        local map = self.Entity.CurrentMap
+        local function add(p)
+            if not isvalid(p) or not isvalid(p.PlayerComponent) or p.CurrentMap ~= map then return end
+            local id = p.PlayerComponent.UserId
+            if seen[id] then return end
+            seen[id] = true
+            table.insert(list, p)
+        end
+        add(killer)
+        for _, p in pairs(self.Contributors) do add(p) end
+        for _, p in ipairs(_PartySystem:NearbyMembers(killer, self.Entity)) do add(p) end
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
     method void HitReact(Entity attacker, number damage)
         -- 명중의 빛/소리는 매번, 행동 중단은 누적 충격과 회복 시간을 통과했을 때만.
         local status = self:Status()
@@ -297,8 +328,9 @@ script Monster extends Component
         if isvalid(sc) then sc:ChangeState("DEAD") end
         self:SpreadPoison()
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
+        local killer = _Util:OwnerPlayerOf(self.LastAttacker)
         _GameEvents:Emit("MonsterKilled", {
-            monster = self.Entity, player = _Util:OwnerPlayerOf(self.LastAttacker),
+            monster = self.Entity, player = killer, players = self:RewardPlayers(killer),
             sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, variant = self:GetVariant(), map = self.Entity.CurrentMap,
         })
         ---@type MonsterBehavior
@@ -373,6 +405,7 @@ script Monster extends Component
         -- 처음 위치에서 상태를 지우고 다시 등장 (선공하지 않는 상태로)
         if not isvalid(self.Entity) then return end
         self.LastAttacker = nil
+        self.Contributors = {}
         local status = self:Status()
         if status ~= nil then status:Reset() end
         self.IsDead = false
