@@ -1,0 +1,201 @@
+-- 일지 (플레이어별): 일일 의뢰 3개(한국 시간 자정 교체, 달성하면 바로 보상), 업적, 도감(몬스터 종류별 처치·포획).
+-- 집계는 JournalSystem이 게임 이벤트를 받아 Record로 넘긴다. 저장은 PlayerSave "Char" 구역의 journal.
+-- 화면은 Digest(JSON, 본인에게만 동기화)를 읽어 그린다.
+@Component
+script PlayerJournal extends Component
+
+    property table Counters = {}              -- kill·kill_elite·kill_boss·capture·raise·depth(최고 층)·quest·daily
+    property table Kills = {}                 -- 몬스터 sourceId → 처치 수
+    property table Captures = {}              -- 몬스터 sourceId → 포획(혼 추출) 수
+    property table AchDone = {}               -- 업적 id → true
+    property integer DailyDay = 0             -- 한국 시간 기준 날짜 번호
+    property table Daily = {}                 -- { { id, p, done }, ... } 3개
+    property boolean Dirty = false
+    property integer FlushTimer = 0
+    @TargetUserSync
+    property string Digest = ""
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.FlushTimer = _TimerService:SetTimerRepeat(function() self:Flush() end, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.FlushTimer ~= 0 then _TimerService:ClearTimer(self.FlushTimer) end
+        self.FlushTimer = 0
+    end
+
+    -- ───────── 집계 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Record(string kind, string target, integer amount)
+        -- kind: kill / kill_elite / kill_boss / capture / raise / depth / quest. depth는 도달 층(최고값만 남긴다)
+        if amount <= 0 then return end
+        self:EnsureDaily()
+        if kind == "depth" then
+            self.Counters.depth = math.max(self.Counters.depth or 0, amount)
+        else
+            self.Counters[kind] = (self.Counters[kind] or 0) + amount
+        end
+        if kind == "kill" and target ~= "" then self.Kills[target] = (self.Kills[target] or 0) + amount end
+        if kind == "capture" and target ~= "" then self.Captures[target] = (self.Captures[target] or 0) + amount end
+        -- 일일 의뢰 진행 (depth는 정복한 층 수만큼 1씩)
+        for _, slot in ipairs(self.Daily) do
+            local def = _JournalData:GetDaily(slot.id)
+            if def ~= nil and not slot.done and def.kind == kind then
+                slot.p = math.min(def.count, slot.p + (kind == "depth" and 1 or amount))
+                if slot.p >= def.count then self:CompleteDaily(slot, def) end
+            end
+        end
+        self:CheckAchievements()
+        self.Dirty = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CompleteDaily(table slot, any def)
+        -- 달성 즉시 보상: 골드 + 현재 레벨 다음 단계까지 필요한 경험치의 expPct%
+        slot.done = true
+        self.Counters.daily = (self.Counters.daily or 0) + 1
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local exp = 0
+        if stats ~= nil then
+            stats.Gold = stats.Gold + def.gold
+            exp = math.floor(stats.ExpToNext * def.expPct / 100)
+            stats:GainExp(exp)
+        end
+        _Util:Notify("일일 의뢰 완료 · " .. def.name .. "  (+" .. tostring(def.gold) .. " 골드, 경험치 +" .. tostring(exp) .. ")", self.Entity.PlayerComponent.UserId)
+        log("[VRF] daily complete " .. def.id .. " exp=" .. tostring(exp))
+    end
+
+    method integer Progress(any a)
+        -- 업적 하나의 현재 진행 값
+        if a.kind == "level" then
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            return stats ~= nil and stats.Level or 0
+        end
+        if a.kind == "kill_source" then return self.Kills[a.target] or 0 end
+        if a.kind == "collection" then
+            local n = 0
+            for _, m in ipairs(_JournalData:GetMonsters()) do if (self.Kills[m.id] or 0) > 0 then n = n + 1 end end
+            return n
+        end
+        if a.kind == "capture_species" then
+            local n = 0
+            for _, c in pairs(self.Captures) do if c > 0 then n = n + 1 end end
+            return n
+        end
+        return self.Counters[a.kind] or 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckAchievements()
+        -- 새로 달성한 업적은 한 번만 보상한다
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        for _, a in ipairs(_JournalData:GetAchievements()) do
+            if not self.AchDone[a.id] and self:Progress(a) >= a.count then
+                self.AchDone[a.id] = true
+                if stats ~= nil then stats.Gold = stats.Gold + a.gold end
+                _Util:Notify("업적 달성 · " .. a.name .. "  (+" .. tostring(a.gold) .. " 골드)", self.Entity.PlayerComponent.UserId)
+                self.Dirty = true
+            end
+        end
+    end
+
+    -- ───────── 일일 의뢰 ─────────
+
+    method integer Today()
+        -- 한국 시간(UTC+9) 기준 날짜 번호
+        return math.floor((DateTime.UtcNow.Elapsed + 9 * 3600 * 1000) / 86400000)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnsureDaily()
+        -- 날짜가 바뀌면 새 3개를 고른다. 같은 날에는 모두 같은 의뢰 (날짜로 섞는다)
+        local today = self:Today()
+        if self.DailyDay == today and #self.Daily > 0 then return end
+        self.DailyDay = today
+        self.Daily = {}
+        local pool = _JournalData:GetDailies()
+        if #pool == 0 then return end
+        local start = (today * 7) % #pool
+        local step = 3
+        local picked = {}
+        local i = 0
+        while #self.Daily < math.min(3, #pool) and i < #pool * 2 do
+            local idx = (start + i * step) % #pool + 1
+            local def = pool[idx]
+            if not picked[def.id] then
+                picked[def.id] = true
+                table.insert(self.Daily, { id = def.id, p = 0, done = false })
+            end
+            i = i + 1
+        end
+        self.Dirty = true
+    end
+
+    -- ───────── 화면용 요약 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Flush()
+        -- 바뀐 것이 있으면 1초에 한 번만 요약을 다시 만든다. 자정이 지나면 새 의뢰로 바꾼다.
+        if self.DailyDay ~= self:Today() then self:EnsureDaily() end
+        if not self.Dirty then return end
+        self.Dirty = false
+        local view = { daily = {}, ach = {}, col = {}, left = 0 }
+        for _, slot in ipairs(self.Daily) do
+            local def = _JournalData:GetDaily(slot.id)
+            if def ~= nil then table.insert(view.daily, { n = def.name, p = slot.p, c = def.count, d = slot.done, g = def.gold, x = def.expPct }) end
+        end
+        for _, a in ipairs(_JournalData:GetAchievements()) do
+            table.insert(view.ach, { n = a.name, s = a.desc, p = math.min(a.count, self:Progress(a)), c = a.count, d = self.AchDone[a.id] == true, g = a.gold })
+        end
+        for _, m in ipairs(_JournalData:GetMonsters()) do
+            table.insert(view.col, { n = m.name, k = self.Kills[m.id] or 0, c = self.Captures[m.id] or 0, g = m.grade, u = m.unique })
+        end
+        -- 다음 교체까지 남은 분 (한국 시간 자정)
+        local ms = (DateTime.UtcNow.Elapsed + 9 * 3600 * 1000) % 86400000
+        view.left = math.floor((86400000 - ms) / 60000)
+        self.Digest = _HttpService:JSONEncode(view)
+    end
+
+    -- ───────── 저장 ─────────
+
+    @ExecSpace("ServerOnly")
+    method table GetSaveData()
+        -- 빈 표는 JSON에서 배열/객체가 애매해서 비어 있으면 생략한다
+        local d = { dd = self.DailyDay }
+        if next(self.Counters) ~= nil then d.c = self.Counters end
+        if next(self.Kills) ~= nil then d.k = self.Kills end
+        if next(self.Captures) ~= nil then d.cp = self.Captures end
+        local done = {}
+        for id, v in pairs(self.AchDone) do if v then table.insert(done, id) end end
+        if #done > 0 then d.a = done end
+        if #self.Daily > 0 then d.d = self.Daily end
+        return d
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSaveData(table d)
+        if d == nil then
+            self:EnsureDaily()
+            return
+        end
+        self.Counters = type(d.c) == "table" and d.c or {}
+        self.Kills = type(d.k) == "table" and d.k or {}
+        self.Captures = type(d.cp) == "table" and d.cp or {}
+        self.AchDone = {}
+        if type(d.a) == "table" then for _, id in ipairs(d.a) do self.AchDone[id] = true end end
+        self.DailyDay = d.dd or 0
+        self.Daily = {}
+        if type(d.d) == "table" then
+            for _, slot in ipairs(d.d) do table.insert(self.Daily, { id = slot.id, p = slot.p or 0, done = slot.done == true }) end
+        end
+        self:EnsureDaily()
+        self.Dirty = true
+    end
+
+end

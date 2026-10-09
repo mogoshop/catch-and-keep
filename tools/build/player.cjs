@@ -12,7 +12,7 @@ const PLAYER_SCRIPTS = [
   // 아이템
   "script.PlayerInventory", "script.PlayerBelt", "script.PlayerShop", "script.PlayerCorpses",
   // 진행·이동·저장
-  "script.PlayerQuest", "script.PlayerTravel", "script.PlayerSave",
+  "script.PlayerQuest", "script.PlayerTravel", "script.PlayerSave", "script.PlayerJournal",
   // 멀티
   "script.PlayerSocial", "script.PlayerDuel", "script.PlayerTrade",
 ];

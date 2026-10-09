@@ -1,0 +1,145 @@
+-- 일지 창: 일일 의뢰 · 업적 · 도감 (PlayerJournal.Digest를 그린다). PC는 J, 모바일은 의뢰 추적 아래 「일지」 버튼.
+@Logic
+script JournalWindow extends Logic
+
+    property string Win = "JournalWin"
+    property string Tab = "daily"
+    property integer Page = 1
+    property integer Rows = 8
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/TabDaily", function() self:SetTab("daily") end)
+        _UIKit:Connect(self.Win .. "/TabAch", function() self:SetTab("ach") end)
+        _UIKit:Connect(self.Win .. "/TabCol", function() self:SetTab("col") end)
+        _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
+        _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
+        _UIKit:Connect("JournalOpen", function() self:Toggle() end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+        log("[VRF] JournalWindow ready")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if event.key ~= KeyboardKey.J then return end
+        if _UIKit:IsOpen(self.Win) then _UIKit:Close(self.Win) return end
+        if _UIKit:CanUseGameplayInput() then self:Toggle() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Toggle()
+        self.RenderKey = ""
+        _UIKit:Toggle(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetTab(string tab)
+        self.Tab = tab
+        self.Page = 1
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Turn(integer delta)
+        self.Page = math.max(1, self.Page + delta)
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 모바일 여는 버튼은 다른 창이 없을 때만. 창이 열려 있으면 요약이 바뀔 때만 다시 그린다.
+        _UIKit:SetEnabled("JournalOpen", not _UIKit:AnyWindowOpen())
+        if not _UIKit:IsOpen(self.Win) then return end
+        ---@type PlayerJournal
+        local journal = _UIKit:Comp("script.PlayerJournal")
+        if journal == nil then return end
+        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. journal.Digest
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local ok, view = pcall(function() return _HttpService:JSONDecode(journal.Digest) end)
+        if not ok or type(view) ~= "table" then view = { daily = {}, ach = {}, col = {}, left = 0 } end
+        self:Render(view)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render(table view)
+        local list = view.daily or {}
+        local info = ""
+        if self.Tab == "daily" then
+            local left = view.left or 0
+            info = string.format("다음 교체까지 %d시간 %d분", left // 60, left % 60)
+        elseif self.Tab == "ach" then
+            list = view.ach or {}
+            local done = 0
+            for _, a in ipairs(list) do if a.d then done = done + 1 end end
+            info = string.format("달성 %d / %d", done, #list)
+        else
+            list = view.col or {}
+            local seen = 0
+            for _, m in ipairs(list) do if (m.k or 0) > 0 then seen = seen + 1 end end
+            info = string.format("도감 %d / %d종", seen, #list)
+        end
+        _UIKit:SetText(self.Win .. "/Info", info)
+        local pages = math.max(1, math.ceil(#list / self.Rows))
+        self.Page = math.min(self.Page, pages)
+        _UIKit:SetText(self.Win .. "/Page", tostring(self.Page) .. " / " .. tostring(pages))
+        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
+        _UIKit:SetEnabled(self.Win .. "/BtnNext", self.Page < pages)
+        for _, tab in ipairs({ { "TabDaily", "daily" }, { "TabAch", "ach" }, { "TabCol", "col" } }) do
+            _UIKit:SetColor(self.Win .. "/" .. tab[1], tab[2] == self.Tab and Color(0.55, 0.45, 0.25, 1) or Color(0.14, 0.13, 0.17, 1))
+        end
+        for i = 1, self.Rows do
+            local row = self.Win .. "/List/R" .. tostring(i)
+            local item = list[(self.Page - 1) * self.Rows + i]
+            _UIKit:SetEnabled(row, item ~= nil)
+            if item ~= nil then self:RenderRow(row, item) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRow(string row, table item)
+        local name, desc, value, ratio = "", "", "", 0
+        local finished = false
+        if self.Tab == "col" then
+            local known = (item.k or 0) > 0
+            name = known and item.n or "???"
+            if known and item.u then name = name .. "  (고유)" elseif known and (item.g or 1) >= 3 then name = name .. "  (보스)" end
+            desc = known and ("처치 " .. tostring(item.k) .. " · 그림자 포획 " .. tostring(item.c or 0)) or "아직 만나지 못한 몬스터"
+            value = known and ((item.c or 0) > 0 and "포획함" or "처치함") or ""
+            ratio = known and ((item.c or 0) > 0 and 1 or 0.5) or 0
+            finished = (item.c or 0) > 0
+        else
+            local p, c = item.p or 0, math.max(1, item.c or 1)
+            finished = item.d == true
+            name = item.n or ""
+            if self.Tab == "daily" then desc = "보상: 골드 " .. tostring(item.g or 0) .. " · 다음 레벨 경험치의 " .. tostring(item.x or 0) .. "%"
+            else desc = (item.s or "") .. "  ·  골드 " .. tostring(item.g or 0) end
+            value = finished and "완료" or (tostring(p) .. " / " .. tostring(c))
+            ratio = math.min(1, p / c)
+        end
+        _UIKit:SetText(row .. "/Name", finished and _UIKit:Colored("#9FD69B", name) or name)
+        _UIKit:SetText(row .. "/Desc", desc)
+        _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
+        local fill = _UIKit:Get(row .. "/BarBg/Fill")
+        if isvalid(fill) then
+            local t = fill.UITransformComponent
+            t.RectSize = Vector2(math.max(0.01, 260 * ratio), t.RectSize.y)
+            fill.Enable = ratio > 0
+        end
+    end
+
+end

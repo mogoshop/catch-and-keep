@@ -1,0 +1,33 @@
+-- 일지 집계: 게임 이벤트를 받아 해당 플레이어의 PlayerJournal로 넘긴다 (서버).
+@Logic
+script JournalSystem extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        _GameEvents:Subscribe("MonsterKilled", "JournalSystem", function(e) self:OnMonsterKilled(e) end)
+        _GameEvents:Subscribe("ShadowExtracted", "JournalSystem", function(e) self:Add(e.player, "capture", e.sourceId or "", 1) end)
+        _GameEvents:Subscribe("UndeadRaised", "JournalSystem", function(e) self:Add(e.player, "raise", "", 1) end)
+        _GameEvents:Subscribe("DepthCleared", "JournalSystem", function(e) self:Add(e.player, "depth", "", e.floor or 0) end)
+        _GameEvents:Subscribe("QuestCompleted", "JournalSystem", function(e) self:Add(e.player, "quest", "", 1) end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(table e)
+        -- 처치 공적은 마지막으로 때린 쪽의 주인(소환수 처치 포함)에게 간다
+        local player = e.player
+        if not isvalid(player) then return end
+        self:Add(player, "kill", e.sourceId or "", 1)
+        local rank = e.rank or ""
+        if rank == "elite" or rank == "champion" then self:Add(player, "kill_elite", "", 1) end
+        if rank == "boss" or rank == "unique" then self:Add(player, "kill_boss", "", 1) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Add(Entity player, string kind, string target, integer amount)
+        if not isvalid(player) then return end
+        ---@type PlayerJournal
+        local journal = player:GetComponent("script.PlayerJournal")
+        if journal ~= nil then journal:Record(kind, target, amount) end
+    end
+
+end

@@ -309,11 +309,46 @@ function genWaypoints() {
   write("WaypointData.mlua", "waypoints.csv", logic("WaypointData", "웨이포인트 목록 (보통 난이도 맵 기준. 난이도 맵은 _GameConst:MapFor)", body, extra, "    property table List = {}\n"));
 }
 
+// ── JournalData: 일일 의뢰 후보·업적·도감 몬스터 순서 ──
+function genJournal() {
+  const dailies = load("dailies");
+  const ach = load("achievements");
+  const mons = load("monsters");
+  const body = ["        self.Dailies = {}", "        self.Achievements = {}", "        self.Monsters = {}",
+    ...dailies.map((r) => `        table.insert(self.Dailies, { id = ${s(r.id)}, name = ${s(r.name)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)}, expPct = ${n(r.expPct)} })`),
+    ...ach.map((r) => `        table.insert(self.Achievements, { id = ${s(r.id)}, name = ${s(r.name)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)} })`),
+    ...mons.map((r) => `        table.insert(self.Monsters, { id = ${s(r.id)}, name = ${s(r.name)}, grade = ${n(r.grade)}, unique = ${b(r.unique)} })`)].join("\n");
+  const extra = `
+    method table GetDailies()
+        self:Ensure()
+        return self.Dailies
+    end
+
+    method table GetAchievements()
+        self:Ensure()
+        return self.Achievements
+    end
+
+    method table GetMonsters()
+        self:Ensure()
+        return self.Monsters
+    end
+
+    method any GetDaily(string id)
+        self:Ensure()
+        for _, d in ipairs(self.Dailies) do if d.id == id then return d end end
+        return nil
+    end
+`;
+  write("JournalData.mlua", "dailies.csv·achievements.csv·monsters.csv", logic("JournalData", "일지 데이터: 일일 의뢰 후보, 업적, 도감 몬스터 순서", body, extra, "    property table Dailies = {}\n    property table Achievements = {}\n    property table Monsters = {}\n"));
+}
+
 genGameData();
 genItems();
 genSkills();
 genQuests();
 genWaypoints();
+genJournal();
 
 if (CHECK && stale > 0) {
   console.log(`\n[gen_data] 생성 파일 ${stale}개가 CSV와 다르다 → node tools/gen_data.cjs 실행`);
