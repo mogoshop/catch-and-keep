@@ -41,24 +41,38 @@ script CharWindow extends Logic
         local attack = player:GetComponent("script.PlayerAttack")
         local physical = "—"
         if attack ~= nil then physical = tostring(math.max(1, math.floor(attack:GetBasicPhysicalDamage() + 0.5))) end
+        -- 왼쪽: 캐릭터 능력치를 「기본 · 능력치 투자 · 장비」로 나눠 보여 준다 (장비 몫은 파랑). 장비 효과 전체는 소지품 창에서
+        local gear = "#6E8CFF"
+        local baseHp = math.floor(_GameData.playerBaseHp + (st.Level - 1) * _GameData.playerHpPerLevel)
+        local vitHp = (st.Vit - 15) * 3
+        local gearHp = math.floor(pc.MaxHp) - baseHp - vitHp
+        local baseMana = 25 + (st.Level - 1) * 2
+        local eneMana = (st.Ene - 25) * 2
+        local gearMana = math.floor(st.MaxMana) - baseMana - eneMana
         local lines = {
-            string.format("레벨 %d  ·  네크로맨서", st.Level),
-            string.format("생명 %d   마나 %d", math.floor(pc.MaxHp), math.floor(st.MaxMana)),
+            string.format("레벨 %d  ·  네크로맨서  ·  %s", st.Level, _GameConst:DifficultyName(st.Difficulty)),
+            string.format("생명 %d  = 기본 %d + 활력 %d + ", math.floor(pc.MaxHp), baseHp, vitHp) .. _UIKit:Colored(gear, "장비 " .. tostring(gearHp)),
+            string.format("마나 %d  = 기본 %d + 정신 %d + ", math.floor(st.MaxMana), baseMana, eneMana) .. _UIKit:Colored(gear, "장비 " .. tostring(gearMana)),
             string.format("평타 물리 %s (저항 전) · 치명 %.1f%% ×%.1f", physical, st:GetBasicCriticalChancePct(), _GameData.basicCritMultiplier),
-            string.format("주문력 +%d%%   방어 %d", math.floor(st:GetSpellPowerPct()), math.floor(st.BonusDefense)),
-            string.format("소환수 +%d%%   추출 +%d%%", math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct)),
-            string.format("아이템 발견 +%d%%   골드 발견 +%d%%", math.floor(st.BonusMF), math.floor(st.BonusGF)),
-            string.format("공격 속도 +%d%%   시전 속도 +%d%%   이동 +%d%%", math.floor(st.BonusIas), math.floor(st.BonusFcr), math.floor(st.BonusMs)),
+            string.format("주문력 +%d%%  = 정신 %d + ", math.floor(st:GetSpellPowerPct()), st.Ene) .. _UIKit:Colored(gear, string.format("장비 %d", math.floor(st:GetSpellPowerPct()) - st.Ene)),
+            _UIKit:Colored(gear, string.format("방어 %d · 소환수 +%d%% · 추출 +%d%%", math.floor(st.BonusDefense), math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct))),
+            _UIKit:Colored(gear, string.format("공격 속도 +%d%% · 시전 +%d%% · 이동 +%d%%", math.floor(st.BonusIas), math.floor(st.BonusFcr), math.floor(st.BonusMs))),
             _UIKit:Colored("#FF7A45", "화염 " .. tostring(st.ResFire)) .. "  " .. _UIKit:Colored("#7AB8FF", "냉기 " .. tostring(st.ResCold)) .. "  "
-                .. _UIKit:Colored("#FFE15A", "번개 " .. tostring(st.ResLight)) .. "  " .. _UIKit:Colored("#7CFF7A", "독 " .. tostring(st.ResPoison)) .. "  (" .. _GameConst:DifficultyName(st.Difficulty) .. ")",
+                .. _UIKit:Colored("#FFE15A", "번개 " .. tostring(st.ResLight)) .. "  " .. _UIKit:Colored("#7CFF7A", "독 " .. tostring(st.ResPoison)),
+            _UIKit:Colored("#8C99B4", "파란 글씨 = 장비 효과 (자세히: 소지품 창)"),
         }
         -- 실제 표시 내용을 캐시한다. 장비 능력치·피해%·발견 확률도 열린 창에 즉시 반영한다.
         local info = table.concat(lines, "\n")
+        -- 오른쪽: 스탯마다 「합계 (기본·투자·장비)」 + 지금 주는 효과 + 1포인트당 효과. 이 게임에서 각 스탯이 하는 일은 이것이 전부다
+        local str = st.Str + st.BonusStr
+        local dex = st.Dex + st.BonusDex
+        local vit = st.Vit + st.BonusVit
+        local ene = st.Ene + st.BonusEne
         local statLines = {
-            Str = self:StatLine("힘", st.Str, st.BonusStr) .. "\n평타 물리 피해 증가",
-            Dex = self:StatLine("민첩", st.Dex, st.BonusDex) .. string.format("\n1당 평타 치명 +%.1f%%p (최대 %.0f%%)", _GameData.basicCritPerDex, _GameData.basicCritChanceCap),
-            Vit = self:StatLine("활력", st.Vit, st.BonusVit) .. "\n1당 최대 생명 +3",
-            Ene = self:StatLine("정신", st.Ene, st.BonusEne) .. "\n1당 마나 +2 · 주문력 +1%",
+            Str = self:StatLine("힘", 15, st.Str, st.BonusStr) .. string.format("\n평타 물리 +%d%%   (1당 +1%%)", str),
+            Dex = self:StatLine("민첩", 25, st.Dex, st.BonusDex) .. string.format("\n평타 치명 %.1f%%   (1당 +%.1f%%p · 최대 %.0f%%)", st:GetBasicCriticalChancePct(), _GameData.basicCritPerDex, _GameData.basicCritChanceCap),
+            Vit = self:StatLine("활력", 15, st.Vit, st.BonusVit) .. string.format("\n생명 +%d   (1당 +3)", (vit - 15) * 3),
+            Ene = self:StatLine("정신", 25, st.Ene, st.BonusEne) .. string.format("\n마나 +%d · 주문력 +%d%% · 마나 재생 +%.1f/초   (1당 마나 +2 · 주문력 +1%%)", (ene - 25) * 2, ene, ene * 0.02),
         }
         local points = "남은 능력치 포인트: " .. tostring(st.StatPoints)
         local key = table.concat({ info, statLines.Str, statLines.Dex, statLines.Vit, statLines.Ene, points }, "|")
@@ -70,10 +84,11 @@ script CharWindow extends Logic
         for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetEnabled(self.Win .. "/" .. s .. "/BtnAdd", st.StatPoints > 0) end
     end
 
-    method string StatLine(string name, integer base, integer bonus)
-        -- 장비 보정의 부호와 총합을 함께 표시한다.
-        if bonus ~= 0 then return string.format("%s  %d  ", name, base + bonus) .. _UIKit:Colored(bonus > 0 and "#6E8CFF" or "#FF7A45", string.format("(%+d)", bonus)) end
-        return string.format("%s  %d", name, base)
+    method string StatLine(string name, integer start, integer value, integer bonus)
+        -- 「힘 21  기본 15 · 투자 +6 · 장비 +3」 (장비 몫은 파랑)
+        local text = string.format("%s  %d   ", name, value + bonus) .. _UIKit:Colored("#A99F8E", string.format("기본 %d · 투자 +%d", start, value - start))
+        if bonus ~= 0 then text = text .. " · " .. _UIKit:Colored(bonus > 0 and "#6E8CFF" or "#FF7A45", string.format("장비 %+d", bonus)) end
+        return text
     end
 
 end

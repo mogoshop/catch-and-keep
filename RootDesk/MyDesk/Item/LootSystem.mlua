@@ -88,6 +88,25 @@ script LootSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void DropDiscarded(Entity player, string itemString)
+        -- 버리기: 발밑 조금 앞에 떨어뜨린다. 주인 없음(누구나 주울 수 있음) + LockSeconds 동안은 아무도 못 줍고 깜빡인다
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return end
+        local item = _ItemData:Parse(itemString)
+        local kind = _ItemData:IsRune(item.base) and "rune" or "item"
+        local p = _Util:Pos2(player)
+        local ang = _UtilLogic:RandomDouble() * math.pi * 2
+        local pos = Vector3(p.x + math.cos(ang) * 0.9, p.y + math.sin(ang) * 0.6, 0)
+        local e = _SpawnService:SpawnByModelId(_GameConst.ModelLootDrop, "Loot", pos, player.CurrentMap)
+        if not isvalid(e) then return end
+        _Util:AfterSpawn(e, "script.LootDrop", function(comp)
+            ---@type LootDrop
+            local drop = comp
+            drop:Setup("", kind, itemString, 1, item.rarity)
+            drop:LockFor(drop.DiscardLockSeconds)
+        end, function() e:Destroy() end)
+    end
+
+    @ExecSpace("ServerOnly")
     method void Spawn(Vector2 center, string userId, string kind, string itemString, integer amount, integer rarity)
         -- 처치 위치 주변에 흩뿌린다
         local map = nil

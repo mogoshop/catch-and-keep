@@ -21,6 +21,9 @@ script LootDrop extends Component
     property number PulseTime = 0
     property boolean Dressed = false
     property number IconScale = 0.85      -- 금화·물약·룬 (28~40px 아이콘)
+    @Sync
+    property number LockedUntil = 0       -- 서버 경과 초. 이 시각까지는 아무도 못 줍는다 (버린 물건, 깜빡임)
+    property number DiscardLockSeconds = 10
     property number ThumbScale = 0.4      -- 장비 외형 썸네일
 
     @ExecSpace("ServerOnly")
@@ -44,8 +47,15 @@ script LootDrop extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void LockFor(number seconds)
+        -- 버린 물건: seconds 동안 줍기 금지 (버린 사람이 바로 다시 줍지 않게, 그 뒤 파티원 누구나)
+        self.LockedUntil = _UtilLogic.ServerElapsedSeconds + seconds
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean CanTake(string userId)
         if self.Taken or self.Kind == "" then return false end
+        if _UtilLogic.ServerElapsedSeconds < self.LockedUntil then return false end
         if self.OwnerUserId == "" or self.OwnerUserId == userId then return true end
         return _UtilLogic.ElapsedSeconds - self.DropTime >= self.PublicAfter
     end
@@ -78,6 +88,12 @@ script LootDrop extends Component
         end
         if self.Kind ~= "item" and self.Kind ~= "rune" then return end
         self.PulseTime = self.PulseTime + delta
+        -- 버린 물건은 잠긴 동안 빠르게 깜빡인다 (아직 못 줍는다는 표시)
+        if _UtilLogic.ServerElapsedSeconds < self.LockedUntil then
+            local blink = math.floor(self.PulseTime * 6) % 2 == 0
+            sprite.Color = Color(1, 1, 1, blink and 0.9 or 0.25)
+            return
+        end
         local a = 0.75 + 0.25 * math.abs(math.sin(self.PulseTime * 4))
         if self.Kind == "rune" then sprite.Color = Color(1, 0.6, 0.2, a)
         elseif self.Rarity == 1 then sprite.Color = Color(0.5, 0.6, 1, a)

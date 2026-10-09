@@ -1,4 +1,5 @@
--- 그림자 상태줄 + 보관함 창 (H, 줄마다 원본 몬스터 초상) (클라이언트 전용). 모바일 패드는 MobilePad.
+-- 그림자 상태줄 + 보관함 창 (H) (클라이언트 전용). 모바일 패드는 MobilePad.
+-- 보관함 창: 왼쪽 = 고른 그림자 상세(모습·능력치·고유 능력·소환/강화/분해, 모두 확인 창), 오른쪽 = 목록(필터 전체|일반|정예|보스, 정렬 레벨·추출·등급).
 -- 보관함 값은 ShadowOwner(@Sync StorageDigest·Essence), 소환 수는 ShadowCommander에서 읽는다.
 -- 버튼은 각 컴포넌트의 Server 요청으로 보낸다 (검증은 서버).
 @Logic
@@ -13,7 +14,11 @@ script ShadowHUD extends Logic
     property string RenderKey = ""
     property table RowIds = {}      -- 줄 번호 → 표시 중인 그림자 id
     property table RowDeployed = {} -- 줄 번호 → 소환 중 여부
-    property table RowEntries = {}  -- 줄 번호 → 그 줄의 그림자 요약 (확인 창 문구용)
+    property table RowEntries = {}  -- 줄 번호 → 그 줄의 그림자 요약
+    property string SelectedId = ""
+    property any SelectedEntry = nil
+    property integer Filter = 0     -- 0 전체 / 1 일반 / 2 정예 / 3 보스
+    property string Sort = "level"  -- level / recent / grade
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
@@ -21,13 +26,25 @@ script ShadowHUD extends Logic
         _UIKit:RegisterWindow(self.Win)
         -- 모바일 패드는 ActivePlatform=Mobile이어도 PC에서 화면 클릭을 가로채므로 PC에서는 끈다
         _UIKit:SetEnabled(self.Root .. "/MobilePad", Environment:IsMobilePlatform())
+        -- 목록 줄을 누르면 왼쪽 상세에 띄운다. 소환·강화·분해는 상세의 버튼으로 (확인 창)
         for i = 1, self.RowCount do
             local index = i
-            local base = self.Win .. "/Row" .. tostring(i)
-            _UIKit:Connect(base .. "/BtnDeploy", function() self:OnRowAction(index, "deploy") end)
-            _UIKit:Connect(base .. "/BtnUpgrade", function() self:OnRowAction(index, "upgrade") end)
-            _UIKit:Connect(base .. "/BtnSalvage", function() self:OnRowAction(index, "salvage") end)
+            _UIKit:Connect(self.Win .. "/Row" .. tostring(i), function() self:SelectRow(index) end)
         end
+        _UIKit:Connect(self.Win .. "/Detail/BtnDeploy", function() self:OnAction("deploy") end)
+        _UIKit:Connect(self.Win .. "/Detail/BtnUpgrade", function() self:OnAction("upgrade") end)
+        _UIKit:Connect(self.Win .. "/Detail/BtnSalvage", function() self:OnAction("salvage") end)
+        local filters = { { "FAll", 0 }, { "FNormal", 1 }, { "FElite", 2 }, { "FBoss", 3 } }
+        for _, f in ipairs(filters) do
+            local grade = f[2]
+            _UIKit:Connect(self.Win .. "/" .. f[1], function() self:SetFilter(grade) end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnSort", function() self:NextSort() end)
+        -- 보관함 창이 하단 메뉴 줄(GameHUD 5)보다 위에, 제목이 테두리 그림보다 위에 오게 (파일 값만으로는 메이커가 다시 읽지 않았다)
+        local group = _EntityService:GetEntityByPath(self.Root)
+        if isvalid(group) then group.UIGroupComponent.GroupOrder = 6 end
+        local title = _UIKit:Get(self.Win .. "/Title")
+        if isvalid(title) then _UILogic:SetSiblingIndex(title.UITransformComponent, 1000) end
         _UIKit:Connect(self.Win .. "/BtnClose", function() self:ToggleWindow() end)
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:ChangePage(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:ChangePage(1) end)
@@ -119,45 +136,163 @@ script ShadowHUD extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void RenderRows(ShadowOwner owner)
-        -- 요약 문자열(id|sourceId|grade|level|deployed|readyAt;...)을 풀어 현재 페이지를 그린다
+    method void SelectRow(integer index)
+        local e = self.RowEntries[index]
+        if e == nil then return end
+        self.SelectedId = e.id
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetFilter(integer grade)
+        self.Filter = grade
+        self.Page = 0
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void NextSort()
+        -- 레벨순 → 추출순(최근) → 등급순
+        if self.Sort == "level" then self.Sort = "recent" elseif self.Sort == "recent" then self.Sort = "grade" else self.Sort = "level" end
+        self.Page = 0
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    method table Entries(ShadowOwner owner)
+        -- 요약 문자열(id|src|grade|level|deployed|readyAt|variant|at;...)을 풀어 필터·정렬한다
         local now = _UtilLogic.ServerElapsedSeconds
-        local entries = {}
+        local list = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
-            local id, src, grade, level, deployed, readyAt, variant = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)$")
+            local id, src, grade, level, deployed, readyAt, variant, at = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)$")
             if id ~= nil then
-                local wait = math.max(0, math.ceil(tonumber(readyAt) - now))
-                table.insert(entries, { id = id, src = src, grade = tonumber(grade), level = tonumber(level), deployed = deployed == "1", wait = wait, variant = variant })
+                local g = tonumber(grade)
+                local tier = math.min(3, g)
+                if self.Filter == 0 or self.Filter == tier then
+                    local serial = tonumber(string.match(id, "_(%d+)$")) or 0
+                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial })
+                end
             end
         end
+        local sort = self.Sort
+        table.sort(list, function(a, b)
+            if sort == "recent" then
+                if a.at ~= b.at then return a.at > b.at end
+                return a.serial > b.serial
+            elseif sort == "grade" then
+                if a.grade ~= b.grade then return a.grade > b.grade end
+                if a.level ~= b.level then return a.level > b.level end
+            else
+                if a.level ~= b.level then return a.level > b.level end
+                if a.grade ~= b.grade then return a.grade > b.grade end
+            end
+            return a.id < b.id
+        end)
+        return list
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRows(ShadowOwner owner)
+        -- 목록(현재 필터·정렬·페이지) + 왼쪽 상세
+        local entries = self:Entries(owner)
         local pages = math.max(1, math.ceil(#entries / self.RowCount))
         if self.Page >= pages then self.Page = pages - 1 end
-        _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d   (정수 %d)", self.Page + 1, pages, owner.Essence))
+        _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d  ·  %d마리  ·  정수 %d", self.Page + 1, pages, #entries, owner.Essence))
+        local sortNames = { level = "레벨순", recent = "추출순", grade = "등급순" }
+        _UIKit:SetText(self.Win .. "/BtnSort", "정렬: " .. sortNames[self.Sort])
+        local filterPaths = { "FAll", "FNormal", "FElite", "FBoss" }
+        for i, name in ipairs(filterPaths) do
+            _UIKit:SetColor(self.Win .. "/" .. name, (i - 1) == self.Filter and Color(1, 0.86, 0.55, 1) or Color(0.55, 0.52, 0.5, 1))
+        end
+        -- 고른 그림자가 목록에 없으면(필터·분해) 첫 줄을 고른다
+        local selected = nil
+        for _, e in ipairs(entries) do if e.id == self.SelectedId then selected = e end end
+        if selected == nil and #entries > 0 then
+            selected = entries[self.Page * self.RowCount + 1] or entries[1]
+            self.SelectedId = selected.id
+        end
+        self.SelectedEntry = selected
         for i = 1, self.RowCount do
             local base = self.Win .. "/Row" .. tostring(i)
             local e = entries[self.Page * self.RowCount + i]
-            self.RowIds[i] = ""
-            self.RowDeployed[i] = false
+            self.RowIds[i] = e ~= nil and e.id or ""
+            self.RowDeployed[i] = e ~= nil and e.deployed or false
             self.RowEntries[i] = e
             _UIKit:SetEnabled(base, e ~= nil)
             if e ~= nil then
-                self.RowIds[i] = e.id
-                self.RowDeployed[i] = e.deployed
                 _UIKit:SetText(base .. "/Label", self:RowLabel(e))
+                local state = ""
+                if e.deployed then state = _UIKit:Colored("#9EE6A0", "소환 중") elseif e.wait > 0 then state = "회복 " .. tostring(e.wait) .. "초" end
+                _UIKit:SetText(base .. "/State", state)
                 local m = _GameData:GetMonsterStats(e.src)
-                local portrait = ""
-                if m ~= nil then portrait = m.stand end
-                _UIKit:SetIcon(base .. "/Portrait", portrait)
-                local deployText = "소환"
-                if e.deployed then deployText = "회수" elseif e.wait > 0 then deployText = "대기" end
-                _UIKit:SetText(base .. "/BtnDeploy", deployText)
-                _UIKit:SetText(base .. "/BtnUpgrade", "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level)))
-                local yield = _ShadowConfig:GetDisassembleYield(e.grade)
-                local salvage = "분해 +" .. tostring(yield)
-                if e.deployed or yield <= 0 then salvage = "-" end
-                _UIKit:SetText(base .. "/BtnSalvage", salvage)
+                _UIKit:SetIcon(base .. "/Portrait", m ~= nil and m.stand or "")
+                _UIKit:SetColor(base, e.id == self.SelectedId and Color(0.42, 0.32, 0.14, 1) or Color(0.13, 0.12, 0.16, 1))
             end
         end
+        self:RenderDetail(owner, selected)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderDetail(ShadowOwner owner, any e)
+        -- 왼쪽 상세: 모습(원본 몬스터, 그림자 보라빛) · 등급·속성 · 능력치 · 고유 능력(변종 기술·오오라)
+        local d = self.Win .. "/Detail"
+        local has = e ~= nil
+        _UIKit:SetEnabled(d .. "/Empty", not has)
+        for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
+        if not has then return end
+        local m = _GameData:GetMonsterStats(e.src)
+        _UIKit:SetIcon(d .. "/Stage/Portrait", m ~= nil and m.stand or "")
+        _UIKit:SetColor(d .. "/Stage/Portrait", Color(0.82, 0.72, 1, 1))
+        _UIKit:SetText(d .. "/Name", self:ShadowName(e.src) .. "  Lv" .. tostring(e.level))
+        local gradeName = "일반"
+        if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
+        local p = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
+        local element = p.element ~= "" and (" · " .. _ShadowConfig:ElementName(p.element) .. " 속성") or ""
+        local state = e.deployed and " · 소환 중" or (e.wait > 0 and (" · 회복 " .. tostring(e.wait) .. "초") or "")
+        _UIKit:SetText(d .. "/Grade", "[" .. gradeName .. "]" .. element .. state)
+        local resist = {}
+        for k, v in pairs(p.resists or {}) do if v ~= 0 then table.insert(resist, _ShadowConfig:ElementName(k) .. " " .. tostring(v)) end end
+        local roles = { ranged = "원거리 사격", burrow = "땅속 기습", hitrun = "치고 빠지기", coward = "겁쟁이(무리와 함께)" }
+        local lines = {
+            string.format("공격 %d   ·   생명 %d", p.atk, p.hp),
+            string.format("공격 간격 %.1f초  ·  사거리 %.1f  ·  이동 %.1f", p.cooldown, p.range, p.speed),
+            "저항: " .. (#resist > 0 and table.concat(resist, " · ") or "없음"),
+            "싸움 방식: " .. (roles[p.behavior] or "근접 돌격"),
+            _UIKit:Colored("#8C99B4", "(장비·스킬 보너스 전 기본값 · 레벨은 내 레벨까지 강화)"),
+        }
+        _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
+        _UIKit:SetText(d .. "/Trait", self:TraitText(e))
+        _UIKit:SetText(d .. "/BtnDeploy", e.deployed and "회수" or (e.wait > 0 and "대기" or "소환"))
+        _UIKit:SetText(d .. "/BtnUpgrade", "강화 " .. tostring(_ShadowConfig:GetUpgradeCost(e.level)))
+        local yield = _ShadowConfig:GetDisassembleYield(e.grade)
+        _UIKit:SetText(d .. "/BtnSalvage", (e.deployed or yield <= 0) and "분해 -" or ("분해 +" .. tostring(yield)))
+    end
+
+    method string ShadowName(string src)
+        -- 몬스터 표에 없는 원본(예전 시험 데이터 "mob-…")은 내부 id 대신 이름 없는 그림자로
+        if _GameData:GetMonsterStats(src) == nil then return "이름 없는 그림자" end
+        return _GameData:GetMonsterName(src)
+    end
+
+    method string TraitText(table e)
+        -- 고유 능력: 변종 우두머리의 오오라·범위 기술, 정예·보스의 등급 보정
+        local v = _GameData:GetVariant(e.variant)
+        local lines = {}
+        if v ~= nil then
+            if v.kind == "aura" then
+                local labels = { dmg = "피해", haste = "공격·이동 속도", guard = "받는 피해 감소" }
+                table.insert(lines, "고유 오오라 「" .. v.name .. "」: 주변 아군 " .. (labels[v.effect] or "능력") .. " +" .. tostring(math.floor(v.value)) .. "% (반경 " .. tostring(v.radius) .. ")")
+            else
+                local elem = v.element ~= "" and (_ShadowConfig:ElementName(v.element) .. " ") or ""
+                table.insert(lines, "고유 기술 「" .. v.name .. "」: " .. tostring(v.interval) .. "초마다 주위 " .. elem .. "범위 공격 (공격력 ×" .. tostring(v.mult) .. ", 반경 " .. tostring(v.radius) .. ")")
+            end
+        end
+        if e.grade == 2 then table.insert(lines, "정예: 일반보다 기본 공격·생명이 높고 분해 시 정수 +4")
+        elseif e.grade >= 3 then table.insert(lines, "보스: 가장 높은 기본 능력치 · 분해할 수 없음") end
+        if #lines == 0 then return _UIKit:Colored("#8C99B4", "특수 능력 없음 (정예·변종 우두머리에게서 추출하면 고유 능력이 붙는다)") end
+        return table.concat(lines, "\n")
     end
 
     method string RowLabel(table e)
@@ -171,19 +306,29 @@ script ShadowHUD extends Logic
         if m ~= nil and m.element ~= "" then trait = " " .. _ShadowConfig:ElementName(m.element) end
         local v = _GameData:GetVariant(e.variant)
         if v ~= nil then trait = trait .. " · " .. v.name end
-        return string.format("%s  [%s%s]  Lv%d%s", _GameData:GetMonsterName(e.src), gradeName, trait, e.level, state)
+        return string.format("%s  [%s%s]  Lv%d%s", self:ShadowName(e.src), gradeName, trait, e.level, state)
     end
 
     @ExecSpace("ClientOnly")
     method void OnRowAction(integer index, string action)
-        -- 줄 버튼 → 확인 창(무엇이 어떻게 바뀌는지) → 확인하면 서버 요청
-        local id = self.RowIds[index]
+        -- (예전 줄 버튼 호환) 그 줄을 고른 뒤 같은 동작
         local e = self.RowEntries[index]
-        if id == nil or id == "" or e == nil then return end
+        if e == nil then return end
+        self.SelectedId = e.id
+        self.SelectedEntry = e
+        self:OnAction(action)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnAction(string action)
+        -- 상세 버튼 → 확인 창(무엇이 어떻게 바뀌는지) → 확인하면 서버 요청
+        local e = self.SelectedEntry
+        if e == nil then return end
+        local id = e.id
         local owner = self:Owner()
         local cmd = self:Commander()
         if owner == nil or cmd == nil then return end
-        local name = _GameData:GetMonsterName(e.src) .. " Lv" .. tostring(e.level)
+        local name = self:ShadowName(e.src) .. " Lv" .. tostring(e.level)
         local now = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
         if action == "deploy" then
             if e.deployed then

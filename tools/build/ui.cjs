@@ -294,6 +294,10 @@ function buildGameHud() {
     b.text(`Gate${i}`, "", { size: 22, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 34], ...outline, enable: false });
   }
 
+  // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
+  b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [320, 34], ...outline, enable: false });
+  b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });
+
   // 출구 가까이 가면 화면 가운데 아래 안내 (어디로 가는지 + 들어서면 이동)
   b.panel("GatePrompt", { anchor: "bottom-center", pos: [0, 330], rect_size: [760, 60], ...part("hud_box"), sprite_type: 1, enable: false });
   b.text("GatePrompt/Text", "", { size: 24, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [740, 56], ...outline });
@@ -402,21 +406,52 @@ function patchShadowHud() {
   s.patchComponent("Status/BtnStorage", "MOD.Core.TextGUIRendererComponent", { Text: "보관함 (H)" });
   skin("Status/BtnStorage", "btn_frame");
   skin("Status/BtnInput", "btn_frame");
-  // 보관함 창: 어두운 바탕 + 코덱스 창 테두리 + 줄마다 원본 몬스터 초상
-  s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK });
+  // 보관함 창 (핵심 콘텐츠라 넓게): 왼쪽 고른 그림자 상세(모습·능력치·고유 능력·소환/강화/분해),
+  // 오른쪽 목록(필터 전체|일반|정예|보스 · 정렬 · 8줄 · 페이지). 컨트롤러는 UI/ShadowHUD.mlua
+  s.patch("Window", { anchor: "middle-center", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [1560, 900] });
+  s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK, RaycastTarget: true });
   k.rim("Window", "win_frame", -10);
-  textColor("Window/Title", C.white);
+  s.text("Window/Title", "그림자 보관함", { size: 26, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -24], rect_size: [900, 40], ...outline });
+  s.button("Window/BtnClose", "", { anchor: "top-right", pivot: [1, 1], pos: [-20, -14], rect_size: [88, 88], ...bg("btn_close"), sprite_type: 1 });
+  s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
+  // 왼쪽 상세
+  const d = "Window/Detail";
+  s.panel(d, { anchor: "top-left", pivot: [0, 1], pos: [30, -88], rect_size: [560, 784], ...part("win_content"), sprite_type: 1 });
+  s.sprite(`${d}/Stage`, { anchor: "top-center", pivot: [0.5, 1], pos: [0, -18], rect_size: [300, 270], color: { r: 0.09, g: 0.07, b: 0.13, a: 1 }, sprite_type: 1 });
+  s.sprite(`${d}/Stage/Portrait`, { anchor: "middle-center", pos: [0, 0], rect_size: [220, 220], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+  k.aspect(`${d}/Stage/Portrait`);
+  s.text(`${d}/Name`, "", { size: 30, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -298], rect_size: [520, 42], bestfit: true, min_size: 24, max_size: 30, ...outline });
+  s.text(`${d}/Grade`, "", { size: 22, color: C.gold, anchor: "top-center", pivot: [0.5, 1], pos: [0, -342], rect_size: [520, 32] });
+  s.text(`${d}/Stats`, "", { size: 22, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -384], rect_size: [508, 200], bestfit: true, min_size: 18, max_size: 22 });
+  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -588], rect_size: [508, 84], bestfit: true, min_size: 17, max_size: 21 });
+  s.text(`${d}/Empty`, "왼쪽에 보일 그림자를\n오른쪽 목록에서 고르세요", { size: 24, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [500, 120], enable: false });
+  [["BtnDeploy", "소환"], ["BtnUpgrade", "강화"], ["BtnSalvage", "분해"]].forEach(([n, label], i) => {
+    k.btn(`${d}/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 18], rect_size: [168, 88], font_size: 26 });
+  });
+  // 오른쪽 목록: 필터 4 + 정렬 1
+  [["FAll", "전체"], ["FNormal", "일반"], ["FElite", "정예"], ["FBoss", "보스"]].forEach(([n, label], i) => {
+    k.btn(`Window/${n}`, label, { anchor: "top-left", pivot: [0, 1], pos: [620 + i * 152, -88], rect_size: [144, 72], font_size: 24 });
+  });
+  k.btn("Window/BtnSort", "정렬: 레벨순", { anchor: "top-right", pivot: [1, 1], pos: [-30, -88], rect_size: [236, 72], font_size: 22 });
   for (let i = 1; i <= 8; i++) {
     const row = `Window/Row${i}`;
-    skin(row, "win_content");
-    if (!s.find(`${row}/Portrait`)) s.sprite(`${row}/Portrait`, { anchor: "middle-left", pos: [6, 0], rect_size: [48, 48], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    for (const old of ["BtnDeploy", "BtnUpgrade", "BtnSalvage"]) if (s.find(`${row}/${old}`)) s.remove(`${row}/${old}`);
+    s.button(row, "", { anchor: "top-left", pivot: [0, 1], pos: [620, -176 - (i - 1) * 80], rect_size: [910, 74], bg_color: { r: 0.13, g: 0.12, b: 0.16, a: 1 }, sprite_type: 1 });
+    s.patchComponent(row, "MOD.Core.TextGUIRendererComponent", { Text: "" });
+    s.sprite(`${row}/Portrait`, { anchor: "middle-left", pivot: [0, 0.5], pos: [12, 0], rect_size: [60, 60], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     k.aspect(`${row}/Portrait`);
-    s.patch(`${row}/Label`, { pos: [60, 0], rect_size: [350, 44] });
-    for (const btn of ["BtnDeploy", "BtnUpgrade", "BtnSalvage"]) skin(`${row}/${btn}`, "btn_frame");
+    s.text(`${row}/Label`, "", { size: 23, color: C.gold, alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [84, 0], rect_size: [600, 66], bestfit: true, min_size: 18, max_size: 23 });
+    s.text(`${row}/State`, "", { size: 21, color: C.dim, alignment: 5, anchor: "middle-right", pivot: [1, 0.5], pos: [-18, 0], rect_size: [200, 60] });
   }
-  for (const btn of ["BtnPrev", "BtnNext"]) skin(`Window/${btn}`, "btn_frame");
-  skin("Window/BtnClose", "btn_close");
-  s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
+  k.btn("Window/BtnPrev", "◀ 이전", { anchor: "bottom-left", pivot: [0, 0], pos: [620, 18], rect_size: [180, 72], font_size: 22 });
+  k.btn("Window/BtnNext", "다음 ▶", { anchor: "bottom-right", pivot: [1, 0], pos: [-30, 18], rect_size: [180, 72], font_size: 22 });
+  s.text("Window/PageText", "", { size: 22, color: C.dim, anchor: "bottom-left", pivot: [0.5, 0], pos: [1075, 30], rect_size: [420, 48] });
+  // 테두리(Rim)를 맨 아래로 (제목이 테두리에 가렸다), 창이 GameHUD(하단 메뉴 줄)보다 위에 오게 그룹 순서 6
+  {
+    const kids = s.listEntities().filter((e) => e.path.startsWith("/ui/ShadowHUD/Window/") && e.path.split("/").length === 5);
+    kids.sort((x, y) => (x.name === "Rim" ? -1 : y.name === "Rim" ? 1 : 0)).forEach((e, i) => s.patch(e.path, { display_order: i }));
+  }
+  s.patchComponent("/", "MOD.Core.UIGroupComponent", { GroupOrder: 6 });
 
   // 모바일 패드: 조이스틱(왼쪽) + 오른쪽 공격 + 둘레 스킬 4칸 + 물약 2 + 그림자 명령(펼침) + 스킬 편집
   for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract"]) {

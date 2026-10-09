@@ -38,7 +38,8 @@ script ShadowOwner extends Component
         -- 추출 성공 시 호출. 시작 레벨 = 처치한 몬스터 레벨 (뒤 지역 그림자가 자연히 강하다). 생성된 id 반환
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
-        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid }
+        -- at = 추출 시각(초, 보관함 「추출순」 정렬). 저장에서 불러올 때는 LoadSaveData가 원래 시각으로 덮는다
+        self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid, at = math.floor(DateTime.UtcNow.Elapsed / 1000) }
         self.StorageCount = self.StorageCount + 1
         self:RefreshDigest()
         return id
@@ -85,7 +86,7 @@ script ShadowOwner extends Component
         -- 클라이언트 UI용 (table은 동기화할 수 없다). 마지막 칸은 재소환 가능 시각(서버 경과 초)
         local rows = {}
         for id, s in pairs(self.Storage) do
-            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or ""))
+            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or "", s.at or 0))
         end
         table.sort(rows)
         self.StorageDigest = table.concat(rows, ";")
@@ -115,7 +116,7 @@ script ShadowOwner extends Component
         if commander ~= nil then for _, id in ipairs(commander.Wanted) do wanted[id] = true end end
         local list = {}
         for id, s in pairs(self.Storage) do
-            local entry = { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid }
+            local entry = { src = s.sourceId, g = s.grade, lv = s.level, va = s.variant or "", st = s.standRuid, mv = s.moveRuid, at = s.at or 0 }
             if s.deployed or wanted[id] then
                 local state = commander ~= nil and commander:GetTravelState(id) or nil
                 if state == nil or state.health > 0 then
@@ -143,6 +144,7 @@ script ShadowOwner extends Component
         if data.shadows ~= nil then
             for _, s in ipairs(data.shadows) do
                 local id = self:AddShadow(s.src or "", s.g or 1, s.lv or 1, s.va or "", s.st or "", s.mv or "")
+                self.Storage[id].at = tonumber(s.at) or 0
                 if s.d then
                     -- 구 저장은 체력·승격 필드가 없으므로 이전처럼 일반 개체로 복원한다.
                     local health = tonumber(s.h) or 1

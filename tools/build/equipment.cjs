@@ -32,10 +32,11 @@ b.scrollLayout(desc,{anchor:'top-left',pos:[552,-112],rect_size:[820,516],layout
 b.text(desc+'/Desc','가방이나 착용 중인 장비를 선택하세요.',{anchor:'top-left',pos:[0,0],rect_size:[740,48],size:26,color:'#EEE5D4',alignment:0,overflow:0});
 b.text(w+'/Gold','',{anchor:'top-left',pos:[28,-640],rect_size:[1344,36],size:26,color:'#E6C88A',alignment:3});
 const bag=w+'/Bag';
-b.panel(bag,{anchor:'top-left',pos:[28,-690],rect_size:[1044,296],color:'#17131D'});
-for(let i=1;i<=30;i++){
+// 가방 60칸 (10열 × 6줄): 3줄이 보이고 손가락·휠로 끌어 내린다
+b.scrollLayout(bag,{anchor:'top-left',pos:[28,-690],rect_size:[1044,296],layout_type:2,cell_size:[88,88],constraint:1,constraint_count:10,grid_spacing:[16,14],padding:[10,10,6,6],use_scroll:true,v_scroll_dir:3,scroll_bar_visible:1,scroll_bar_thickness:10,scroll_bar_bg_color:{r:.14,g:.12,b:.17,a:.6},scroll_bar_handle_color:{r:.6,g:.49,b:.3,a:1}});
+for(let i=1;i<=60;i++){
  const n=bag+'/Bag'+i;
- b.button(n,'',{anchor:'top-left',pos:[10+((i-1)%10)*104,-Math.floor((i-1)/10)*104],rect_size:[88,88],bg_color:'#19131E'});
+ b.button(n,'',{anchor:'top-left',pos:[10+((i-1)%10)*104,-Math.floor(((i-1)%30)/10)*104],rect_size:[88,88],bg_color:'#19131E'}); // 실제 위치는 그리드가 정한다 (작성 좌표는 보이는 3줄 안)
  b.sprite(n+'/Rim',{rect_size:[88,88],image_ruid:icons.slot_frame,color:'#FFFFFF',sprite_type:1});
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
 }

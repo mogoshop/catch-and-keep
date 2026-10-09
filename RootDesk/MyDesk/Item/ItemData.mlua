@@ -198,6 +198,11 @@ script ItemData extends Logic
             item.rarity = 2
             rarity = 2
         end
+        -- D2처럼 기본 수치(공격·방어)가 없는 반지·목걸이는 일반 등급이 없다: 최소 마법 (옵션 없는 장신구 방지)
+        if rarity == 0 and base.dmg <= 0 and base.def <= 0 then
+            rarity = 1
+            item.rarity = 1
+        end
         if rarity == 0 then
             -- 일반 장비는 소켓이 붙을 수 있다 (룬워드 재료)
             if base.sockets > 0 and _UtilLogic:RandomDouble() < 0.5 then item.sockets = _UtilLogic:RandomIntegerRange(1, base.sockets) end
@@ -228,6 +233,18 @@ script ItemData extends Logic
                 end
             end
         end
+        -- 옵션 추첨이 비었으면(부위에 맞는 접사가 없을 때) 접두·접미를 번갈아 다시 고른다. 그래도 없으면 작은 기본 옵션
+        local tries = 0
+        while next(item.mods) == nil and tries < 6 do
+            tries = tries + 1
+            local a = self:PickAffix(tries % 2 == 1, base.slot, ilvl, used)
+            if a == nil then a = self:PickAffix(tries % 2 == 1, "any", ilvl, used) end
+            if a ~= nil then
+                item.mods[a.stat] = _UtilLogic:RandomIntegerRange(a.min, a.max)
+                if a.prefix and pName == "" then pName = a.name elseif not a.prefix and sName == "" then sName = a.name end
+            end
+        end
+        if next(item.mods) == nil then item.mods["life"] = _UtilLogic:RandomIntegerRange(3, 6 + math.floor(ilvl / 3)) end
         if rarity == 1 then
             local n = base.name
             if pName ~= "" then n = pName .. " " .. n end
@@ -425,9 +442,39 @@ script ItemData extends Logic
         local lines = { name }
         for _, key in ipairs(keys) do table.insert(lines, self:StatValueText(key, total[key])) end
         if item.sockets > 0 then table.insert(lines, "소켓 " .. tostring(#item.runes) .. "/" .. tostring(item.sockets)) end
-        -- 기존 세트 설명도 보존한다. 간단한 상점·전리품 이름표 형식은 유지한다.
-        local extra = string.match(self:Describe(s), "\n(.*)")
-        if extra ~= nil then table.insert(lines, extra) end
+        return table.concat(lines, "\n")
+    end
+
+    method string DescribeSet(string s, table equip)
+        -- D2 세트 설명: 세트의 모든 부위(착용한 것은 초록, 없는 것은 회색)와 부위 수별 효과(활성 초록, 비활성 회색)
+        local item = self:Parse(s)
+        local piece = self:GetSetPiece(item)
+        if piece == nil then return "" end
+        local t = self:T()
+        local set = t.Sets[piece.set]
+        if set == nil then return "" end
+        local worn = {}
+        local count = 0
+        for _, e in pairs(equip or {}) do
+            local p = self:GetSetPiece(self:Parse(e))
+            if p ~= nil and p.set == piece.set and not worn[p.base] then
+                worn[p.base] = true
+                count = count + 1
+            end
+        end
+        local on, off = "#3CDC3C", "#6E6A66"
+        local lines = { "<color=#3CDC3C>세트 「" .. set.name .. "」  " .. tostring(count) .. " / " .. tostring(set.pieces) .. " 착용</color>" }
+        for _, baseId in ipairs(t.SetPieceOrder) do
+            local p = t.SetPieces[baseId]
+            if p ~= nil and p.set == piece.set then
+                local mark = worn[baseId] and "● " or "○ "
+                table.insert(lines, "<color=" .. (worn[baseId] and on or off) .. ">" .. mark .. p.name .. "</color>")
+            end
+        end
+        table.insert(lines, "<color=" .. (count >= 1 and on or off) .. ">1부위: 각 장비 자체 옵션</color>")
+        if set.bonus2 ~= "" then table.insert(lines, "<color=" .. (count >= 2 and on or off) .. ">2부위: " .. self:ModsText(set.bonus2) .. "</color>") end
+        if set.bonus3 ~= "" and set.pieces > 3 then table.insert(lines, "<color=" .. (count >= 3 and on or off) .. ">3부위: " .. self:ModsText(set.bonus3) .. "</color>") end
+        table.insert(lines, "<color=" .. (count >= set.pieces and on or off) .. ">" .. tostring(set.pieces) .. "부위(완성): " .. self:ModsText(set.full) .. "</color>")
         return table.concat(lines, "\n")
     end
 

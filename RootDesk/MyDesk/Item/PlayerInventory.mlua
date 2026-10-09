@@ -1,10 +1,10 @@
--- 소지품: 가방(30칸, 슬롯 방식) · 장비 10부위 · 전리품 줍기 · 장착 효과 반영. 서버 권위.
+-- 소지품: 가방(60칸, 슬롯 방식) · 장비 10부위 · 전리품 줍기 · 장착 효과 반영. 서버 권위.
 -- 아이템은 ItemData 문자열로 보관하고 클라이언트에는 요약(@Sync)으로 보낸다.
 -- 물약은 PlayerBelt, 상점은 PlayerShop, 사망 시체는 PlayerCorpses.
 @Component
 script PlayerInventory extends Component
 
-    property integer BagSize = 30
+    property integer BagSize = 60            -- 가방 칸 (10열 × 6줄, 창에서는 3줄씩 스크롤)
     property number PickupRadius = 0.8
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
     property string StarterWeapon = "scythe1|0|1|단낫||0|"
@@ -225,7 +225,9 @@ script PlayerInventory extends Component
         if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         local s = self:TakeBagItem(index)
         if s == "" then return end
-        _Util:Notify("버렸다: " .. _ItemData:Parse(s).name, senderUserId)
+        -- 땅에 떨어뜨린다 (10초 뒤부터 누구나 주울 수 있다 — 파티원과 나누기)
+        _LootSystem:DropDiscarded(self.Entity, s)
+        _Util:Notify("버렸다: " .. _ItemData:Parse(s).name .. " (10초 뒤 누구나 주울 수 있다)", senderUserId)
     end
 
     @ExecSpace("Server")

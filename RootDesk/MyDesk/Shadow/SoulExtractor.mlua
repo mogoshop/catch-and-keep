@@ -16,9 +16,7 @@ script SoulExtractor extends Component
             return
         end
         local grade = orb.Grade
-        -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다
-        local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100
-        chance = math.min(_GameData.extractChanceCap, chance)
+        local chance = self:ChanceFor(orb)
         local success = _UtilLogic:RandomDouble() < chance
         local pos = soul.TransformComponent.WorldPosition
         if success then
@@ -34,11 +32,17 @@ script SoulExtractor extends Component
             local name = _ShadowConfig:GetMonsterName(orb.SourceId)
             local v = _GameData:GetVariant(orb.Variant)
             if v ~= nil then name = name .. " · " .. v.name end
-            self:PlayExtractFx(name, grade, pos, senderUserId)
+            self:PlayExtractFx(name, grade, pos, orb.StandRUID, math.floor(chance * 100 + 0.5), senderUserId)
         else
-            _Util:Notify("추출 실패… 혼이 흩어졌다", senderUserId)
+            self:PlayExtractFail(pos, math.floor(chance * 100 + 0.5), senderUserId)
         end
         orb:Consume()
+    end
+
+    method number ChanceFor(SoulOrb orb)
+        -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다 (클라이언트 표시도 같은 식)
+        local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100
+        return math.min(_GameData.extractChanceCap, chance)
     end
 
     method integer SkillLevel(string id)
@@ -98,14 +102,28 @@ script SoulExtractor extends Component
     end
 
     @ExecSpace("Client")
-    method void PlayExtractFx(string name, integer grade, Vector3 pos)
-        -- 추출이 성공해 보관함에 반영된 소유자에게만 획득음을 낸다.
+    method void PlayExtractFx(string name, integer grade, Vector3 pos, string standRuid, integer chancePct)
+        -- 성공: 혼 자리에서 「그림자 획득!」이 떠오르고, 새 그림자 초상 카드가 뜬다 (보관함 안내)
         if self.Entity ~= _UserService.LocalPlayer then return end
         _SoundDirector:PlayEffect(_GameConst.SfxSoul, 0.4)
         local gradeName = "일반"
         if grade == 2 then gradeName = "정예" elseif grade >= 3 then gradeName = "보스" end
-        _ScreenMessageLogic:PrivateMsg("그림자 추출 성공! [" .. gradeName .. "] " .. name)
+        _HudMain:ExtractPop(Vector2(pos.x, pos.y), "그림자 획득!\n" .. name, Color(0.85, 0.72, 1, 1))
+        ---@type ShadowOwner
+        local owner = self.Entity:GetComponent("script.ShadowOwner")
+        local count = owner ~= nil and owner.StorageCount or 0
+        local icon = standRuid ~= "" and ("thumbnail://" .. standRuid) or _GameData:GetUiIcon("icon_shadow")
+        local open = Environment:IsMobilePlatform() and "메뉴 → 그림자" or "H"
+        _UXFeedback:Show("그림자 획득 · [" .. gradeName .. "] " .. name, "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. open .. "에서 소환·강화", icon)
         _ParticleService:PlayBasicParticle(BasicParticleType.Charge, self.Entity, pos, 0, Vector3(1, 1, 1), false, nil)
+    end
+
+    @ExecSpace("Client")
+    method void PlayExtractFail(Vector3 pos, integer chancePct)
+        -- 실패: 혼 자리에서 회색 「추출 실패」와 확률. 혼이 흩어지는 연기
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _HudMain:ExtractPop(Vector2(pos.x, pos.y), "추출 실패\n확률 " .. tostring(chancePct) .. "% — 혼이 흩어졌다", Color(0.72, 0.7, 0.68, 1))
+        _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(0.5, 0.5, 1), false, { Color = Color(0.6, 0.55, 0.7, 0.7) })
     end
 
 end

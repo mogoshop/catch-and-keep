@@ -11,6 +11,9 @@ script HudMain extends Logic
     property string MinionKey = ""
     property boolean DangerHinted = false
     property boolean BeltRightClick = false
+    property Vector2 PopPos = Vector2(0, 0)
+    property number PopUntil = 0
+    property number PopSeconds = 1.8
     property any TunedCamera = nil
     property Vector2 CamScreenOffset = Vector2(0.5, 0.45)
     property Vector2 CamDamping = Vector2(0.8, 0.8)
@@ -113,6 +116,60 @@ script HudMain extends Logic
         self:RenderQuestTrack(player)
         self:RenderParty()
         self:RenderTip(player, st)
+        self:RenderSoulUi(player)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ExtractPop(Vector2 worldPos, string text, Color color)
+        -- 추출 결과: 혼 자리에서 글자가 떠오른다 (PopSeconds 동안)
+        self.PopPos = worldPos
+        self.PopUntil = _UtilLogic.ElapsedSeconds + self.PopSeconds
+        _UIKit:SetText("ExtractPop", text)
+        local e = _UIKit:Get("ExtractPop")
+        if isvalid(e) then e.TextGUIRendererComponent.FontColor = color end
+        self:RenderSoulUi(_UserService.LocalPlayer)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Vector2 WorldToHud(Vector2 world)
+        local root = _UIKit:Get("/ui/GameHUD")
+        if not isvalid(root) then return Vector2(0, 0) end
+        return _UILogic:ScreenToLocalUIPosition(_UILogic:WorldToScreenPosition(world), root.UITransformComponent)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderSoulUi(Entity player)
+        -- 손 닿는(조금 넘는) 내 혼 위에 추출 확률, 추출 결과 글자 이동
+        local now = _UtilLogic.ElapsedSeconds
+        local popping = now < self.PopUntil
+        _UIKit:SetEnabled("ExtractPop", popping)
+        if popping then
+            local rise = (self.PopSeconds - (self.PopUntil - now)) * 0.45
+            _UIKit:SetPos("ExtractPop", self:WorldToHud(self.PopPos + Vector2(0, 1.1 + rise)))
+        end
+        local show = false
+        ---@type SoulExtractor
+        local extractor = _UIKit:Comp("script.SoulExtractor")
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if isvalid(player) and extractor ~= nil and book ~= nil and book:GetLevel("shadow_summon") > 0 and not _UIKit:AnyWindowOpen() then
+            local soul = extractor:FindNearestSoul(_Util:Pos2(player), _ShadowConfig:GetExtractReach() + 2)
+            if soul ~= nil then
+                ---@type SoulOrb
+                local orb = soul:GetComponent("script.SoulOrb")
+                if orb ~= nil then
+                    show = true
+                    local pct = math.floor(extractor:ChanceFor(orb) * 100 + 0.5)
+                    local key = Environment:IsMobilePlatform() and "추출" or "E 추출"
+                    local color = "#FF9A5A"
+                    if pct >= 60 then color = "#8CF08C" elseif pct >= 35 then color = "#FFE15A" end
+                    _UIKit:SetText("SoulHint", key .. " " .. _UIKit:Colored(color, tostring(pct) .. "%"))
+                    local q = soul.TransformComponent.WorldPosition
+                    _UIKit:SetPos("SoulHint", self:WorldToHud(Vector2(q.x, q.y + 0.75)))
+                end
+            end
+        end
+        _UIKit:SetEnabled("SoulHint", show and not popping)
     end
 
     @ExecSpace("ClientOnly")

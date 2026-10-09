@@ -1,4 +1,4 @@
--- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 30칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·버리기.
+-- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 60칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·버리기.
 -- 판매는 상인(잿빛 행상 고르) 곁에서만: 그때만 「버리기」 자리가 「판매」로 바뀐다. 둘 다 확인 창을 거친다.
 -- 장비·룬은 선택만으로 바뀌지 않는다. 설명과 미리보기를 확인한 뒤 작업 버튼으로 확정한다.
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
@@ -33,7 +33,7 @@ script InventoryWindow extends Logic
             local s = slot
             _UIKit:Connect(self.Win .. "/Doll/Eq_" .. s, function() self:OnEquipSlot(s) end)
         end
-        for i = 1, 30 do
+        for i = 1, 60 do
             local index = i
             _UIKit:Connect(self.Win .. "/Bag/Bag" .. tostring(i), function() self:OnBagSlot(index) end)
         end
@@ -90,17 +90,18 @@ script InventoryWindow extends Logic
             local chosen = slot == self.SelectedEquipSlot or slot == self.SocketSlot
             _UIKit:SetColor(path, chosen and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        for i = 1, 30 do
+        for i = 1, 60 do
             local path = self.Win .. "/Bag/Bag" .. tostring(i)
             self:DrawItem(path, list[i])
             _UIKit:SetColor(path, i == self.Selected and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        local desc = "가방이나 착용 장비를 선택하세요.\n설명을 확인한 뒤 장착·버리기(상인 곁에서는 판매) 버튼으로 확정합니다."
+        -- 아무것도 고르지 않았으면 「장비로 오른 능력치」 합계를 보여 준다 (능력치 창은 기본·투자 몫)
+        local desc = self:GearSummary(st)
         local label, allowed, sell = "장착", false, false
         local sel = list[self.Selected]
         if self.SelectedEquipSlot ~= "" then
             local worn = eq[self.SelectedEquipSlot]
-            desc = "<color=#C8A050>현재 착용 중</color>\n" .. _ItemData:DescribeDetailed(worn) .. self:SummonHint(worn)
+            desc = "<color=#C8A050>현재 착용 중</color>\n" .. _ItemData:DescribeDetailed(worn) .. self:SetSection(worn, eq) .. self:SummonHint(worn)
             if self.EquipResultSlot == self.SelectedEquipSlot and worn == self.EquipResultAfter then
                 local change = _ItemData:CompareText(worn, self.EquipResultBefore)
                 change = string.gsub(change, "착용 중인 것과 비교:", "이번 장착 변화:")
@@ -112,7 +113,7 @@ script InventoryWindow extends Logic
             if not allowed then desc = desc .. "\n<color=#FF6464>가방이 가득 차 해제할 수 없습니다.</color>" end
         elseif sel ~= nil then
             sell = true
-            desc = _ItemData:DescribeDetailed(sel) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
+            desc = _ItemData:DescribeDetailed(sel) .. self:SetSection(sel, eq) .. self:SummonHint(sel) .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드"
             if _ItemData:IsRune(_ItemData:Parse(sel).base) then
                 label = "룬 끼우기"
                 desc = desc .. "\n장비 칸을 골라 삽입 후 효과를 확인하세요."
@@ -361,6 +362,51 @@ script InventoryWindow extends Logic
         self:Poll()
     end
 
+    method string SetSection(string s, table eq)
+        -- 세트 조각이면 세트 전체 부위·부위 수별 효과 (착용 중인 수 기준으로 활성 표시)
+        local text = _ItemData:DescribeSet(s, eq)
+        if text == "" then return "" end
+        return "\n\n" .. text
+    end
+
+    method string GearSummary(PlayerStats st)
+        -- 착용 장비가 주는 효과 합계. 0인 항목은 숨긴다
+        if st == nil then return "가방이나 착용 장비를 선택하세요." end
+        local rows = {}
+        local function add(label, value, fmt)
+            if value ~= nil and math.abs(value) > 0.001 then table.insert(rows, string.format(fmt, label, value)) end
+        end
+        add("힘", st.BonusStr, "%s %+d")
+        add("민첩", st.BonusDex, "%s %+d")
+        add("활력", st.BonusVit, "%s %+d")
+        add("정신", st.BonusEne, "%s %+d")
+        add("생명", st.BonusLife, "%s %+d")
+        add("마나", st.BonusMana, "%s %+d")
+        add("피해", st.BonusDamage, "%s %+d")
+        add("피해", st.BonusDamagePct, "%s %+d%%")
+        add("방어", st.BonusDefense, "%s %+d")
+        add("공격 속도", st.BonusIas, "%s %+d%%")
+        add("시전 속도", st.BonusFcr, "%s %+d%%")
+        add("이동 속도", st.BonusMs, "%s %+d%%")
+        add("생명력 흡수", st.BonusLeech, "%s %+d%%")
+        add("생명 재생", st.BonusRegen, "%s %+.1f/초")
+        add("소환수 능력치", st.BonusMinionPct, "%s %+d%%")
+        add("소환수 독", st.BonusMinionPoison, "%s %+d/초")
+        add("배치 한도", st.BonusDeploy, "%s %+d")
+        add("그림자 상한", st.BonusShadowCap, "%s %+d")
+        add("추출 확률", st.BonusExtractPct, "%s %+d%%")
+        add("저주 범위", st.BonusCurse, "%s %+d%%")
+        add("아이템 발견", st.BonusMF, "%s %+d%%")
+        add("골드 발견", st.BonusGF, "%s %+d%%")
+        local names = { fire = "화염", cold = "냉기", light = "번개", poison = "독" }
+        for e, amount in string.gmatch(st.ElemDamage, "(%a+)=(%d+)") do table.insert(rows, (names[e] or e) .. " 피해 +" .. amount) end
+        local text = _UIKit:Colored("#E6C88A", "장비로 오른 능력치") .. "\n"
+        if #rows == 0 then text = text .. "착용한 장비 효과가 없습니다." else text = text .. table.concat(rows, "\n") end
+        local penalty = _GameConst:ResistPenalty(st.Difficulty)
+        text = text .. "\n" .. _UIKit:Colored("#8C99B4", string.format("저항 (난이도 -%d 적용): 화염 %d · 냉기 %d · 번개 %d · 독 %d", penalty, st.ResFire, st.ResCold, st.ResLight, st.ResPoison))
+        return text .. "\n\n" .. _UIKit:Colored("#8C99B4", "가방·장비를 누르면 그 물건의 설명이 나옵니다.")
+    end
+
     @ExecSpace("ClientOnly")
     method boolean NearShop()
         -- 상인 대화 거리 안 (서버도 같은 거리로 다시 검사한다)
@@ -391,7 +437,7 @@ script InventoryWindow extends Logic
                     self:Poll()
                 end)
             else
-                _ConfirmDialog:Show("버리기", name .. "\n버린 물건은 사라지며 되찾을 수 없습니다.\n(팔려면 마을 상인 곁에서 소지품을 여세요)", "버리기", function()
+                _ConfirmDialog:Show("버리기", name .. "\n발밑에 떨어뜨립니다. 10초 동안은 아무도 줍지 못하고, 그 뒤 누구나(파티원 포함) 주울 수 있습니다.\n(팔려면 마을 상인 곁에서 소지품을 여세요)", "버리기", function()
                     inv:RequestDiscard(index, sel)
                     self:ClearSelection()
                     self:Poll()
