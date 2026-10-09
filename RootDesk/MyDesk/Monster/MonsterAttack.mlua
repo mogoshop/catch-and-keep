@@ -546,6 +546,13 @@ script MonsterAttack extends AttackComponent
             local lv = _GameConst:LevelOf(defender)
             if lv > 0 then dmg = dmg * _GameConst:LevelGapTaken(body.Level, lv) end
         end
+        -- 수호의 신전: 대상(소환수는 주인)이 축복을 받았으면 받는 피해 -25%
+        local guard = _Util:OwnerPlayerOf(defender)
+        if isvalid(guard) then
+            ---@type PlayerStats
+            local gst = guard:GetComponent("script.PlayerStats")
+            if gst ~= nil then dmg = dmg * (1 - 0.25 * gst:ShrineBonus("ward")) end
+        end
         local final = math.max(1, math.floor(dmg + 0.5))
         -- 가시 저주: 준 피해의 일부를 되돌려 받는다 (판정 흐름이 끝난 뒤 적용)
         local status = body ~= nil and body:Status() or nil

@@ -1,0 +1,63 @@
+-- 뼈 둥지 (monsters.csv bonenest, MapEvents가 사냥터에 놓는다): 움직이지 않고 때리지도 않지만, 플레이어가 가까이 있으면
+-- nestInterval초마다 졸개를 하나씩 낳는다 (동시에 nestMaxAlive까지). 부수면 정예 보상 · 혼은 남지 않는다 (ShadowSystem).
+@Component
+script MonsterNest extends Component
+
+    property string Minions = ""             -- 낳을 몬스터 id ("hellhound;fallenimp") — MapEvents가 맵 출현 목록으로 채운다
+    property table Alive = {}
+    property integer TimerId = 0
+    property number WakeRange = 9
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Spawn() end, _GameData.nestInterval)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Spawn()
+        ---@type Monster
+        local body = self.Entity:GetComponent("script.Monster")
+        if body == nil or body.IsDead then
+            if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+            self.TimerId = 0
+            return
+        end
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        if _Util:NearestPlayerDistance(map, here) > self.WakeRange then return end
+        local alive = {}
+        for _, e in ipairs(self.Alive) do
+            if isvalid(e) then
+                ---@type Monster
+                local m = e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead then table.insert(alive, e) end
+            end
+        end
+        self.Alive = alive
+        if #alive >= math.floor(_GameData.nestMaxAlive) then return end
+        local kinds = {}
+        for id in string.gmatch(self.Minions, "[^;]+") do table.insert(kinds, id) end
+        if #kinds == 0 then return end
+        local id = kinds[_UtilLogic:RandomIntegerRange(1, #kinds)]
+        local a = _UtilLogic:RandomDouble() * math.pi * 2
+        local p = here + Vector2(math.cos(a) * 1.1, math.sin(a) * 0.8)
+        local e = _SpawnService:SpawnByModelId(id, id, Vector3(p.x, p.y, 0), map)
+        if not isvalid(e) then return end
+        table.insert(self.Alive, e)
+        local level = body.Level
+        _Util:AfterSpawn(e, "script.Monster", function(comp)
+            ---@type Monster
+            local m = comp
+            m.RespawnDelay = -1
+            m:ApplyLevel(level, false)
+        end, nil)
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(p.x, p.y + 0.2, 0), 0, Vector3(0.5, 0.5, 1), false, { Color = Color(0.75, 0.7, 0.6, 1) })
+    end
+
+end

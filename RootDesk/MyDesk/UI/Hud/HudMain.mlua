@@ -91,6 +91,20 @@ script HudMain extends Logic
     -- ───────── 갱신 ─────────
 
     @ExecSpace("ClientOnly")
+    method void RenderShrineBuff(PlayerStats st)
+        -- 신전 축복이 걸려 있는 동안 남은 시간 (MapShrine · PlayerStats.ShrineKind/ShrineUntil)
+        local left = math.ceil(st.ShrineUntil - _UtilLogic.ServerElapsedSeconds)
+        local info = _GameConst:ShrineInfo(st.ShrineKind)
+        local show = info ~= nil and left > 0
+        _UIKit:SetEnabled("ShrineBuff", show)
+        if show then _UIKit:SetText("ShrineBuff", _UIKit:Colored(self:Hex(info.color), info.name) .. " · " .. info.desc .. " · " .. tostring(left) .. "초") end
+    end
+
+    method string Hex(Color c)
+        return string.format("#%02X%02X%02X", math.floor(c.r * 255), math.floor(c.g * 255), math.floor(c.b * 255))
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
         local player = _UserService.LocalPlayer
         ---@type PlayerStats
@@ -99,6 +113,7 @@ script HudMain extends Logic
         local pc = player.PlayerComponent
         local hp = pc.Hp / math.max(1, pc.MaxHp)
         local mp = st.Mana / math.max(1, st.MaxMana)
+        self:RenderShrineBuff(st)
         local hpText = tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp))
         local mpText = tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana))
         for _, orb in ipairs({ { "LifeOrb", hp, hpText }, { "MLife", hp, hpText }, { "ManaOrb", mp, mpText }, { "MMana", mp, mpText } }) do

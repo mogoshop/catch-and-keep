@@ -1,0 +1,88 @@
+-- 맵 이벤트 저주받은 상자 (MapEvents가 사냥터에 놓는다): 다가가면 열린다 → 둘레에 매복 무리(정예 우두머리 + chestAmbush)가 솟고,
+-- 연 사람에게 최상위 몬스터급 보물을 떨어뜨린다 (개인 보상 — LootSystem.RollDrops). 한 번만 열린다.
+@Component
+script CursedChest extends Component
+
+    @Sync
+    property boolean Opened = false
+    property string Species = ""             -- 매복에 쓸 몬스터 id ("hellhound;fallenimp") — MapEvents가 맵 출현 목록으로 채운다
+    property integer Level = 1               -- 매복·보물 레벨 (난이도 가산 포함)
+    property number Radius = 1.0
+    property integer TimerId = 0
+    property string OpenRuid = "a35c8fabe25e462f8750acadb2ffbf02"   -- 열린 상자 (임시 그림)
+
+    method void OnBeginPlay()
+        if self:IsServer() then
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.25)
+        else
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+        end
+    end
+
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        if self.Opened then return end
+        local p = _Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)[1]
+        if p ~= nil then self:Open(p) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Open(Entity player)
+        self.Opened = true
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+        local map = self.Entity.CurrentMap
+        local center = _Util:Pos2(self.Entity)
+        -- 매복: 상자 둘레에 우두머리 1 + 졸개 N
+        local kinds = {}
+        for id in string.gmatch(self.Species, "[^;]+") do table.insert(kinds, id) end
+        if #kinds == 0 then table.insert(kinds, "skelwarrior") end
+        local count = math.floor(_GameData.chestAmbush) + 1
+        for i = 1, count do
+            local a = (i / count) * math.pi * 2
+            local p = center + Vector2(math.cos(a) * 2.2, math.sin(a) * 1.6)
+            local id = kinds[_UtilLogic:RandomIntegerRange(1, #kinds)]
+            local e = _SpawnService:SpawnByModelId(id, id, Vector3(p.x, p.y, 0), map)
+            if isvalid(e) then
+                local leader = i == 1
+                local level = self.Level
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, leader)
+                    if leader then m:MakeVariant(_GameData:RollVariant()) end
+                end, nil)
+            end
+        end
+        -- 보물: 연 사람에게 최상위 몬스터 드롭 표로 (본인만 보이고 줍는다)
+        _LootSystem:RollDrops(self.Entity, self.Level, "unique", player)
+        _Util:Notify("저주받은 상자! 매복이 덮친다 — 보물을 지켜라", player.PlayerComponent.UserId)
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.4, 0), 0, Vector3(1, 1, 1), false, { Color = Color(0.7, 0.3, 1, 1) })
+        log("[VRF] cursed chest opened by " .. player.Name .. " ambush=" .. tostring(count) .. " lv=" .. tostring(self.Level))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshView()
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then
+            local name = self.Opened and "열린 상자" or "저주받은 상자 · 다가가면 열린다"
+            if tag.Name ~= name then
+                tag.Name = name
+                tag.FontColor = self.Opened and Color(0.6, 0.6, 0.6, 1) or Color(0.85, 0.55, 1, 1)
+            end
+        end
+        local sprite = self.Entity.SpriteRendererComponent
+        if self.Opened and isvalid(sprite) and sprite.SpriteRUID ~= self.OpenRuid then
+            sprite.SpriteRUID = self.OpenRuid
+            sprite.Color = Color(0.7, 0.65, 0.75, 1)
+        end
+    end
+
+end

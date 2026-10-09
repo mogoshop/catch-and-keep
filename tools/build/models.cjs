@@ -38,7 +38,12 @@ function buildMonster(m, boss) {
   b.value("script.MonsterAttack", "Element", m.element, "string");
   b.value("script.MonsterAttack", "ElementRatio", num(m.elementRatio), "double");
   if (m.attackRange !== "") b.value("script.MonsterAttack", "AttackRange", num(m.attackRange), "double");
-  if (m.behavior !== "") {
+  if (m.behavior === "nest") {
+    // 뼈 둥지: 움직이지도 때리지도 않고 졸개를 낳는다 (MonsterNest). 부수면 정예 보상
+    b.removeComponent("MOD.Core.AIChaseComponent");
+    b.removeComponent("script.MonsterAttack");
+    b.component("script.MonsterNest");
+  } else if (m.behavior !== "") {
     b.component("script.MonsterBehavior");
     b.value("script.MonsterBehavior", "Mode", m.behavior, "string");
   }
@@ -107,4 +112,4 @@ function run() {
   console.log(`  모델: 몬스터 ${monsters.length} · 오브젝트 ${objects.length} · NPC ${npcs.length}`);
 }
 
-module.exports = { run };
+module.exports = { run, buildMonster, buildObject };

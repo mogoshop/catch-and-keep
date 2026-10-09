@@ -1,0 +1,96 @@
+-- 맵 이벤트 배치 (D2식 변화): 사냥터·곁가지 던전에 몬스터를 다 놓은 뒤 MonsterSpawner가 부른다.
+--   신전(eventShrines, 곁가지 1) · 저주받은 상자(eventChests) · 뼈 둥지(eventNests, 곁가지 0) · 드문 최상위 몬스터(rareUniqueChance, 호위 3)
+-- 위치는 스포너의 안전한 무작위 지점(출구·웨이포인트·플레이어 근처 제외). 수치는 data/config.csv
+@Logic
+script MapEvents extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void Populate(MonsterSpawner spawner, table list, integer bonus)
+        local map = spawner.Entity.CurrentMap
+        if not isvalid(map) or #list == 0 then return end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil or (info.kind ~= "field" and info.kind ~= "side") then return end
+        local side = info.kind == "side"
+        -- 맵 레벨 = 출현 목록 평균 레벨 + 난이도 가산, 종류 = 목록의 몬스터들
+        local sum, ids = 0, {}
+        for _, e in ipairs(list) do
+            sum = sum + e.level
+            table.insert(ids, e.id)
+        end
+        local level = math.floor(sum / #list + 0.5) + bonus
+        local species = table.concat(ids, ";")
+        local placed = { shrine = 0, chest = 0, nest = 0, rare = 0 }
+        for i = 1, side and 1 or math.floor(_GameData.eventShrines) do
+            if self:Place(spawner, map, "shrine", nil) then placed.shrine = placed.shrine + 1 end
+        end
+        for i = 1, math.floor(_GameData.eventChests) do
+            if self:Place(spawner, map, "cursedchest", function(e)
+                _Util:AfterSpawn(e, "script.CursedChest", function(comp)
+                    ---@type CursedChest
+                    local c = comp
+                    c.Species = species
+                    c.Level = level
+                end, nil)
+            end) then placed.chest = placed.chest + 1 end
+        end
+        for i = 1, side and 0 or math.floor(_GameData.eventNests) do
+            if self:Place(spawner, map, "bonenest", function(e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
+                    ---@type MonsterNest
+                    local nest = e:GetComponent("script.MonsterNest")
+                    if nest ~= nil then nest.Minions = species end
+                end, nil)
+            end) then placed.nest = placed.nest + 1 end
+        end
+        if _UtilLogic:RandomDouble() < _GameData.rareUniqueChance then
+            if self:PlaceRareUnique(spawner, map, list[_UtilLogic:RandomIntegerRange(1, #list)].id, level) then placed.rare = 1 end
+        end
+        log(string.format("[VRF] events %s 신전 %d · 상자 %d · 둥지 %d · 드문 최상위 %d (Lv%d)", map.Name, placed.shrine, placed.chest, placed.nest, placed.rare, level))
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Place(MonsterSpawner spawner, Entity map, string modelId, any configure)
+        local p = spawner:RandomPoint()
+        if p == nil then return false end
+        local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(p.x, p.y, 0), map)
+        if not isvalid(e) then return false end
+        if configure ~= nil then configure(e) end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean PlaceRareUnique(MonsterSpawner spawner, Entity map, string modelId, integer level)
+        -- 드문 최상위: 정예 + 변종 능력 + 최상위 표시(드롭·추출 등급 unique), 생명 ×1.5, 같은 종류 호위 3. 다시 나오지 않는다
+        local center = spawner:RandomPoint()
+        if center == nil then return false end
+        for i = 1, 4 do
+            local p = center
+            if i > 1 then
+                local a = (i / 3) * math.pi * 2
+                p = spawner:Clamp(center + Vector2(math.cos(a) * 1.2, math.sin(a) * 1.0))
+            end
+            local e = _SpawnService:SpawnByModelId(modelId, modelId, Vector3(p.x, p.y, 0), map)
+            if isvalid(e) then
+                local boss = i == 1
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(boss and level + 2 or level, boss)
+                    if boss then
+                        m:MakeVariant(_GameData:RollVariant())
+                        m.Unique = true
+                        m.MaxHp = m.MaxHp * 1.5
+                        m.Hp = m.MaxHp
+                    end
+                end, nil)
+            end
+        end
+        return true
+    end
+
+end

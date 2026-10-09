@@ -1,0 +1,79 @@
+-- 맵 이벤트 신전 (MapEvents가 사냥터에 놓는다, D2 신전): 밟으면 그 사람에게 축복 shrineSeconds초
+--   분노(주는 피해 +25%) · 수호(받는 피해 -25%) · 지혜(경험치 +30%) · 혼(추출 +15%p) · 군세(소환수 피해 +30%) · 샘(생명·마나 가득, 즉시).
+-- 쓰면 어두워지고 shrineRefreshSec 뒤 다시 빛난다. 종류는 놓일 때 무작위. 효과 적용은 PlayerStats.ShrineBonus를 보는 쪽이 한다.
+@Component
+script MapShrine extends Component
+
+    @Sync
+    property string Kind = ""
+    @Sync
+    property number ReadyAt = 0              -- 다시 쓸 수 있는 서버 시각
+    property number Radius = 0.9
+    property integer TimerId = 0
+    property string ViewKey = ""
+
+    method void OnBeginPlay()
+        -- 서버: 종류 정하기 + 밟기 감시 / 클라이언트: 이름표·빛 색
+        if self:IsServer() then
+            if self.Kind == "" then self.Kind = _GameConst:RandomShrineKind() end
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.25)
+        else
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+        end
+    end
+
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        if _UtilLogic.ServerElapsedSeconds < self.ReadyAt then return end
+        local here = _Util:Pos2(self.Entity)
+        local p = _Util:PlayersNear(self.Entity.CurrentMap, here, self.Radius)[1]
+        if p ~= nil then self:Activate(p) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Activate(Entity player)
+        -- 축복 걸기 (샘은 즉시 회복). 다른 신전의 축복은 새 것으로 바뀐다
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        local info = _GameConst:ShrineInfo(self.Kind)
+        if stats == nil or info == nil then return end
+        local now = _UtilLogic.ServerElapsedSeconds
+        self.ReadyAt = now + _GameData.shrineRefreshSec
+        if self.Kind == "spring" then
+            stats:Heal(999999, 999999)
+        else
+            stats.ShrineKind = self.Kind
+            stats.ShrineUntil = now + _GameData.shrineSeconds
+        end
+        local userId = player.PlayerComponent.UserId
+        _Util:Notify(info.name .. " · " .. info.desc .. (self.Kind == "spring" and "" or (" (" .. tostring(math.floor(_GameData.shrineSeconds)) .. "초)")), userId)
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.Buff, player, player.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, nil)
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.8, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = info.color })
+        log("[VRF] shrine " .. self.Kind .. " → " .. player.Name)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshView()
+        -- 이름표: 「분노의 신전 · 주는 피해 +25%」, 쓴 뒤에는 회색 + 남은 시간
+        local info = _GameConst:ShrineInfo(self.Kind)
+        if info == nil then return end
+        local left = math.max(0, math.ceil(self.ReadyAt - _UtilLogic.ServerElapsedSeconds))
+        local key = self.Kind .. "#" .. tostring(left > 0) .. "#" .. tostring(left // 10)
+        if key == self.ViewKey then return end
+        self.ViewKey = key
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then
+            tag.Name = left > 0 and (info.name .. " (다시 빛나기까지 " .. tostring(left) .. "초)") or (info.name .. " · " .. info.desc)
+            tag.FontColor = left > 0 and Color(0.6, 0.6, 0.6, 1) or info.color
+        end
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.Color = left > 0 and Color(0.45, 0.45, 0.5, 1) or Color(0.75 + info.color.r * 0.25, 0.75 + info.color.g * 0.25, 0.75 + info.color.b * 0.25, 1) end
+    end
+
+end

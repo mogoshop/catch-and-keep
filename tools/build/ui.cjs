@@ -99,6 +99,8 @@ function buildGameHud() {
   b.panel("Target/Bar", { anchor: "top-center", pos: [0, -42], rect_size: [420, 24], ...part("gauge_frame"), sprite_type: 1 });
   b.sprite("Target/Bar/Fill", { anchor: "middle-left", pos: [8, 0], rect_size: [404, 12], image_ruid: K.gauge_fill, color: "#E03A2A", alpha: 1, sprite_type: 3, fill_method: 0 });
   b.text("Target/Curse", "", { size: 16, color: "#C88CFF", anchor: "top-center", pos: [0, -66], rect_size: [440, 22], ...outline });
+  // 신전 축복 (MapShrine): 대상 이름표 아래, 축복이 있을 때만 「분노의 신전 · 주는 피해 +25% · 42초」 (HudMain)
+  b.text("ShrineBuff", "", { size: 22, bold: true, color: "#FFD27A", anchor: "top-center", pos: [0, -126], rect_size: [640, 34], ...outline, enable: false });
 
   // ── 맵 이름 (D2처럼 들어올 때 상단 가운데 2초) ──
   // 띠 그림의 어두운 가운데 안에 제목·부제가 모두 들어가게 (예전 48px 제목은 띠 위로, 부제는 아래 테두리로 넘쳤다)

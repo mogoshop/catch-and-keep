@@ -4,6 +4,10 @@
 script PlayerStats extends Component
 
     @Sync
+    property string ShrineKind = ""          -- 신전 축복 (MapShrine): fury · ward · wisdom · soul · legion
+    @Sync
+    property number ShrineUntil = 0          -- 축복이 끝나는 서버 시각 (ServerElapsedSeconds)
+    @Sync
     property integer Level = 1
     @Sync
     property integer Exp = 0
@@ -141,6 +145,13 @@ script PlayerStats extends Component
         end
     end
 
+    method number ShrineBonus(string kind)
+        -- 그 종류의 신전 축복(MapShrine)이 지금 걸려 있으면 1, 아니면 0
+        if self.ShrineKind ~= kind then return 0 end
+        if _UtilLogic.ServerElapsedSeconds >= self.ShrineUntil then return 0 end
+        return 1
+    end
+
     @ExecSpace("ServerOnly")
     method integer ExpForKill(integer monsterLevel, integer grade)
         -- 10 × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 감쇠, 10 이상이면 5%, 5레벨 넘게 높아도 감쇠
@@ -153,6 +164,8 @@ script PlayerStats extends Component
         -- 너무 높은 몬스터(내 레벨 +5 초과)는 경험치를 (내 레벨+5)/몬스터 레벨로 줄인다 — 높은 난이도로 건너뛰어 레벨을 날로 먹지 않게
         local grace = _GameConst.ExpHighMonsterGrace
         if monsterLevel > self.Level + grace then base = base * (self.Level + grace) / monsterLevel end
+        -- 지혜의 신전: 경험치 +30%
+        base = base * (1 + 0.3 * self:ShrineBonus("wisdom"))
         -- 초반 가속: 그림자 해금(Lv5) 전까지 처치 경험치를 올린다 (config earlyExpLevel·earlyExpMult)
         if self.Level < _GameData.earlyExpLevel then base = base * _GameData.earlyExpMult end
         -- 몬스터 밀도를 40% 늘린 만큼 일반·정예 처치 보상을 줄인다 (보스·고유는 그대로)
