@@ -1,0 +1,142 @@
+-- 캐릭터 선택 창 (CharSelectHUD): PlayerSave.Selecting 동안 화면을 덮고 슬롯 4칸을 보여 준다 (Esc로 닫혀도 다시 연다).
+--   칸을 누르면 고르기 → 「입장」(캐릭터가 있으면 불러오기, 빈 칸이면 이름을 적고 새 캐릭터), 「삭제」(확인 창).
+-- 서버 처리: PlayerSave.RequestSelectSlot / RequestCreateSlot / RequestDeleteSlot
+@Logic
+script CharSelectWindow extends Logic
+
+    property string Win = "CharSelect"
+    property integer TimerId = 0
+    property integer Selected = 0
+    property string RenderKey = ""
+    property boolean Busy = false             -- 요청을 보낸 뒤 결과(창 닫힘·목록 변화)가 올 때까지 중복 클릭 막기
+    property number BusyUntil = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        for i = 1, 4 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Box/S" .. tostring(i), function()
+                self.Selected = index
+                self.RenderKey = ""
+                self:Poll()
+            end)
+        end
+        _UIKit:Connect(self.Win .. "/Box/BtnEnter", function() self:Enter() end)
+        _UIKit:Connect(self.Win .. "/Box/BtnDelete", function() self:Delete() end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method PlayerSave Save()
+        ---@type PlayerSave
+        local c = _UIKit:Comp("script.PlayerSave")
+        return c
+    end
+
+    method table Slots(string digest)
+        -- "1|이름|레벨|난이도;2;…" → { [1] = { name, lv, diff } 또는 nil }
+        local list = {}
+        for entry in string.gmatch(digest .. ";", "([^;]*);") do
+            local no, name, lv, diff = string.match(entry, "^(%d+)|([^|]*)|(%d+)|(%d+)$")
+            if no ~= nil then
+                list[tonumber(no)] = { name = name, lv = tonumber(lv), diff = tonumber(diff) }
+            end
+        end
+        return list
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        local save = self:Save()
+        if save == nil then return end
+        if not save.Selecting then
+            if _UIKit:IsOpen(self.Win) then _UIKit:Close(self.Win) end
+            self.Busy = false
+            return
+        end
+        if not _UIKit:IsOpen(self.Win) then
+            _UIKit:Open(self.Win)
+            self.RenderKey = ""
+        end
+        if self.Busy and _UtilLogic.ElapsedSeconds > self.BusyUntil then self.Busy = false end
+        local slots = self:Slots(save.SlotDigest)
+        if self.Selected == 0 then
+            -- 처음엔 캐릭터가 있는 첫 칸 (없으면 1번)
+            self.Selected = 1
+            for i = 1, 4 do
+                if slots[i] ~= nil then
+                    self.Selected = i
+                    break
+                end
+            end
+        end
+        local key = save.SlotDigest .. "#" .. tostring(self.Selected) .. "#" .. tostring(self.Busy)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local count = 0
+        for i = 1, 4 do
+            local s = slots[i]
+            local path = self.Win .. "/Box/S" .. tostring(i)
+            if s ~= nil then count = count + 1 end
+            _UIKit:SetEnabled(path .. "/Pick", i == self.Selected)
+            _UIKit:SetText(path .. "/Name", s ~= nil and s.name or "<color=#6E6658>빈 칸</color>")
+            _UIKit:SetText(path .. "/Level", s ~= nil and ("Lv " .. tostring(s.lv)) or "")
+            _UIKit:SetText(path .. "/Diff", s ~= nil and _GameConst:DifficultyName(s.diff) or "<color=#6E6658>새 캐릭터를 만들 수 있다</color>")
+        end
+        local sel = slots[self.Selected]
+        local empty = sel == nil
+        _UIKit:SetText(self.Win .. "/Box/Info", string.format("캐릭터 %d / 4  ·  창고는 모든 캐릭터가 함께 쓴다  ·  칸을 누르고 %s", count, empty and "이름을 적은 뒤 「새 캐릭터」" or "「입장」"))
+        _UIKit:SetEnabled(self.Win .. "/Box/NameLabel", empty)
+        _UIKit:SetEnabled(self.Win .. "/Box/NameInput", empty)
+        _UIKit:SetText(self.Win .. "/Box/BtnEnter", empty and "새 캐릭터 만들기" or ("「" .. sel.name .. "」 입장"))
+        self:SetButton("BtnEnter", not self.Busy)
+        self:SetButton("BtnDelete", not empty and not self.Busy)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetButton(string name, boolean allowed)
+        local e = _UIKit:Get(self.Win .. "/Box/" .. name)
+        if isvalid(e) and e.ButtonComponent ~= nil then e.ButtonComponent.Enable = allowed end
+        _UIKit:SetColor(self.Win .. "/Box/" .. name, allowed and Color(1, 1, 1, 1) or Color(0.42, 0.42, 0.42, 1))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Enter()
+        local save = self:Save()
+        if save == nil or self.Busy or self.Selected == 0 then return end
+        local slots = self:Slots(save.SlotDigest)
+        self.Busy = true
+        self.BusyUntil = _UtilLogic.ElapsedSeconds + 5
+        self.RenderKey = ""
+        if slots[self.Selected] ~= nil then
+            save:RequestSelectSlot(self.Selected)
+        else
+            local input = _UIKit:Get(self.Win .. "/Box/NameInput")
+            local name = ""
+            if isvalid(input) and input.TextGUIRendererInputComponent ~= nil then name = input.TextGUIRendererInputComponent.Text end
+            save:RequestCreateSlot(self.Selected, name)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Delete()
+        local save = self:Save()
+        if save == nil or self.Busy then return end
+        local s = self:Slots(save.SlotDigest)[self.Selected]
+        if s == nil then return end
+        local slot = self.Selected
+        _ConfirmDialog:Show("캐릭터 삭제", "「" .. s.name .. "」 Lv " .. tostring(s.lv) .. "\n이 캐릭터를 목록에서 지웁니다. 장비·그림자·진행도는 이 캐릭터와 함께 사라집니다.\n(공용 창고는 그대로 남습니다)", "삭제", function()
+            self.Busy = true
+            self.BusyUntil = _UtilLogic.ElapsedSeconds + 5
+            self.RenderKey = ""
+            save:RequestDeleteSlot(slot)
+        end)
+    end
+
+end

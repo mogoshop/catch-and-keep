@@ -1,10 +1,14 @@
--- 플레이어 저장 관리자 (UserDataStorage, msw-scripting datastorage 8장 패턴).
--- 저장 구역(Sections): 키 하나 = 여러 컴포넌트의 GetSaveData()/LoadSaveData() 묶음. 새 저장 대상은 표에 한 줄만 추가한다.
---   Char   : stats·skills·quest·travel
---   Inv    : inv·belt·corpses
---   Shadow : shadow
--- 입장 시 BatchGet 1회, 2분마다 바뀐 키만 BatchSetAsync, 퇴장·인스턴스 이동 전 BatchSetAndWait.
--- 바뀜 판단: 마지막으로 "저장 확인된" 문자열과 비교 (각 저장 호출이 보낸 문자열을 들고 간다)
+-- 플레이어 저장 관리자 (UserDataStorage, msw-scripting datastorage 8장 패턴). 계정당 캐릭터 슬롯 MaxSlots(4) + 계정 공용 창고.
+-- 저장 키:
+--   Account  : 슬롯 요약 { v, slots = { ["1"] = { name, lv, diff, created }, ... } } — 캐릭터 선택 창(CharSelectWindow)
+--   Stash    : 계정 공용 창고 { v, items }
+--   Char_N   : N번 캐릭터 stats·skills·quest·travel·settings·journal
+--   Inv_N    : inv·belt·corpses
+--   Shadow_N : shadow
+-- 슬롯이 생기기 전 저장(Char·Inv·Shadow)은 지우지 않고 1번 캐릭터로 옮긴다 (그 캐릭터 첫 저장 때 Char_1… 생성, 원본은 백업으로 남는다).
+-- 입장: Account·Stash 읽기 → 선택 창 → 고른 슬롯 3키만 읽기. 심도 같은 방 이동은 고른 슬롯을 이어서 불러온다 (MarkSlotTravel).
+-- 캐릭터 삭제는 슬롯 목록에서만 뺀다 (저장 데이터는 남겨 두고, 그 칸에 새 캐릭터를 만들면 덮어쓴다).
+-- 2분마다 바뀐 키만 BatchSetAsync, 퇴장·인스턴스 이동 전 BatchSetAndWait. 바뀜 판단 = 마지막으로 "저장 확인된" 문자열과 비교
 @Component
 script PlayerSave extends Component
 
@@ -20,13 +24,24 @@ script PlayerSave extends Component
     property string AudioDigest = ""
     @Sync
     property string AudioSavedDigest = ""
+    property integer MaxSlots = 4
+    @Sync
+    property integer Slot = 0                 -- 고른 캐릭터 슬롯 (0 = 아직 안 고름)
+    @Sync
+    property boolean Selecting = false        -- 캐릭터 선택 창을 띄울 때 (CharSelectWindow)
+    @Sync
+    property string SlotDigest = ""           -- "번호|이름|레벨|난이도;…" (빈 슬롯은 번호만)
+    property table Account = {}
+    property table StashItems = {}
+    property string SlotMemoryName = "CharSlotV1"
 
     method table Sections()
-        -- 불러오는 순서가 중요하다: 능력치 → 소지품(장착 효과가 능력치에 반영) 순
+        -- 불러오는 순서가 중요하다: 능력치 → 소지품(장착 효과가 능력치에 반영) 순. key = 고른 슬롯의 키, base = 이전 형식 이름
+        local sfx = "_" .. tostring(self.Slot)
         return {
-            { key = "Char", parts = { { "stats", "script.PlayerStats" }, { "skills", "script.SkillBook" }, { "quest", "script.PlayerQuest" }, { "travel", "script.PlayerTravel" }, { "settings", "script.PlayerSave" }, { "journal", "script.PlayerJournal" } } },
-            { key = "Inv", parts = { { "inv", "script.PlayerInventory" }, { "belt", "script.PlayerBelt" }, { "corpses", "script.PlayerCorpses" } } },
-            { key = "Shadow", parts = { { "shadow", "script.ShadowOwner" } } },
+            { key = "Char" .. sfx, base = "Char", parts = { { "stats", "script.PlayerStats" }, { "skills", "script.SkillBook" }, { "quest", "script.PlayerQuest" }, { "travel", "script.PlayerTravel" }, { "settings", "script.PlayerSave" }, { "journal", "script.PlayerJournal" } } },
+            { key = "Inv" .. sfx, base = "Inv", parts = { { "inv", "script.PlayerInventory" }, { "belt", "script.PlayerBelt" }, { "corpses", "script.PlayerCorpses" } } },
+            { key = "Shadow" .. sfx, base = "Shadow", parts = { { "shadow", "script.ShadowOwner" } } },
         }
     end
 
@@ -55,26 +70,121 @@ script PlayerSave extends Component
 
     @ExecSpace("ServerOnly")
     method void Load()
+        -- 1) 계정(슬롯 요약)·공용 창고 → 2) 방 이동 중이면 그 슬롯을 바로, 아니면 캐릭터 선택 창
         if not isvalid(self.Entity) then return end
+        local first = self:BatchGet({ "Account", "Stash" })
+        if first == nil then return end
+        local account = self:Decode(first["Account"])
+        local stash = self:Decode(first["Stash"])
+        if (first["Account"] ~= nil and first["Account"] ~= "" and account == nil) or (first["Stash"] ~= nil and first["Stash"] ~= "" and stash == nil) then
+            self:Protect()
+            return
+        end
+        if account == nil then
+            -- 처음 슬롯을 쓰는 계정: 이전 저장(Char·Inv·Shadow)이 있으면 1번 캐릭터로 옮긴다
+            account = { v = 1, slots = {} }
+            local legacy = self:BatchGet({ "Char", "Inv", "Shadow" })
+            if legacy == nil then return end
+            if legacy["Char"] ~= nil and legacy["Char"] ~= "" then
+                local char = self:Decode(legacy["Char"])
+                if char == nil then
+                    self:Protect()
+                    return
+                end
+                local st = char.stats or {}
+                -- legacy = 1: 슬롯 키(Char_1…)가 아직 없으니 이전 키에서 읽는다 — 세 키가 모두 저장되면 지운다 (OnSaved)
+                account.slots["1"] = { name = self:DefaultName(1), lv = tonumber(st.lv) or 1, diff = tonumber(st.diff) or 0, created = DateTime.UtcNow.Elapsed, legacy = 1 }
+                if stash == nil then
+                    local inv = self:Migrate("Inv", self:Decode(legacy["Inv"]))
+                    if inv ~= nil and inv.inv ~= nil and inv.inv.stash ~= nil then stash = { v = 1, items = inv.inv.stash } end
+                end
+                log("[VRF] slots: 이전 저장을 1번 캐릭터로 옮김 lv=" .. tostring(account.slots["1"].lv))
+            end
+        end
+        if type(account.slots) ~= "table" then account.slots = {} end
+        self.Account = account
+        self.StashItems = {}
+        if stash ~= nil and type(stash.items) == "table" then for _, x in ipairs(stash.items) do table.insert(self.StashItems, x) end end
+        if first["Account"] ~= nil then self.LastSaved["Account"] = first["Account"] end
+        if first["Stash"] ~= nil then self.LastSaved["Stash"] = first["Stash"] end
+        self:PublishSlots()
+        local slot = self:TakeSlotTravel()
+        if slot > 0 and self:SlotInfo(slot) ~= nil then
+            self:LoadSlot(slot)
+            return
+        end
+        -- 캐릭터를 고르는 동안은 보통 야영지에 둔다 (월드 시작 맵은 사냥터)
+        self.Selecting = true
+        if not _RoomService:IsInstanceRoom() then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            local map = self.Entity.CurrentMap
+            if travel ~= nil and (not isvalid(map) or map.Name ~= _GameConst.MapTown) then travel:Go(_GameConst.MapTown, _GameConst:GetTownArrival()) end
+        end
+        log("[VRF] slots: 캐릭터 선택 대기 " .. self.SlotDigest)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Protect()
+        -- 깨진 저장을 기본 캐릭터로 덮어쓰지 않는다
+        self.IsLoadSuccess = false
+        _Util:Notify("저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다", self.Entity.PlayerComponent.UserId)
+    end
+
+    method string DefaultName(integer slot)
+        local nick = self.Entity.PlayerComponent.Nickname
+        if nick == nil or nick == "" then nick = "망자" end
+        if slot <= 1 then return nick end
+        return nick .. " " .. tostring(slot)
+    end
+
+    method any SlotInfo(integer slot)
+        if type(self.Account.slots) ~= "table" then return nil end
+        return self.Account.slots[tostring(slot)]
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PublishSlots()
+        -- 선택 창용 요약: "1|이름|레벨|난이도;2;3|…"  (이름의 | ; 는 저장할 때 걸러진다)
+        local parts = {}
+        for i = 1, self.MaxSlots do
+            local info = self:SlotInfo(i)
+            if info == nil then table.insert(parts, tostring(i))
+            else table.insert(parts, table.concat({ tostring(i), tostring(info.name or ""), tostring(math.floor(tonumber(info.lv) or 1)), tostring(math.floor(tonumber(info.diff) or 0)) }, "|")) end
+        end
+        self.SlotDigest = table.concat(parts, ";")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadSlot(integer slot)
+        -- 고른 캐릭터의 3키를 읽어 컴포넌트에 넣는다. 이전 저장에서 옮긴 캐릭터(legacy)는 슬롯 키가 생길 때까지 이전 키를 읽는다
+        self.Slot = slot
+        local info = self:SlotInfo(slot)
+        local fromLegacy = info ~= nil and info.legacy ~= nil
         local keys = {}
-        for _, sec in ipairs(self:Sections()) do table.insert(keys, sec.key) end
-        local loaded = self:BatchGet(keys)
-        if loaded == nil then return end
-        -- 모든 구역을 먼저 해석한다. 깨진 저장을 기본 캐릭터로 덮어쓰지 않는다.
+        for _, sec in ipairs(self:Sections()) do table.insert(keys, fromLegacy and sec.base or sec.key) end
+        local raw = self:BatchGet(keys)
+        if raw == nil then
+            self.Slot = 0
+            return
+        end
+        local loaded = {}
+        for _, sec in ipairs(self:Sections()) do loaded[sec.key] = raw[fromLegacy and sec.base or sec.key] end
         local decoded = {}
         for _, sec in ipairs(self:Sections()) do
             local raw = loaded[sec.key]
             local data = self:Decode(raw)
             if raw ~= nil and raw ~= "" and data == nil then
-                self.IsLoadSuccess = false
-                _Util:Notify("저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다", self.Entity.PlayerComponent.UserId)
+                self.Slot = 0
+                self:Protect()
                 return
             end
             decoded[sec.key] = data
         end
-        local isNew = loaded["Char"] == nil or loaded["Char"] == ""
+        -- 공용 창고를 먼저 넣는다 (가방이 가득 차 지급품이 창고로 가는 경우 뒤에서 덮어쓰지 않게)
+        self:ApplyStash()
         for _, sec in ipairs(self:Sections()) do
-            local data = self:Migrate(sec.key, decoded[sec.key])
+            local data = self:Migrate(sec.base, decoded[sec.key])
             if data ~= nil then
                 for _, part in ipairs(sec.parts) do
                     local comp = self.Entity:GetComponent(part[2])
@@ -82,12 +192,26 @@ script PlayerSave extends Component
                 end
             end
         end
-        for k, v in pairs(loaded) do self.LastSaved[k] = v end
+        -- 이전 저장에서 옮긴 경우 슬롯 키 내용과 다르므로 "저장된 값"으로 기억하지 않는다 → 첫 저장에서 Char_1… 생성
+        if not fromLegacy then for k, v in pairs(loaded) do self.LastSaved[k] = v end end
+        self:FinishLoad(false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyStash()
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil then inv:LoadStash(self.StashItems) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FinishLoad(boolean isNew)
+        -- 불러오기 마무리: 저장 허용 → 선택 창 닫기 → 마을/이어하기·소환수·심도 이동 이어가기
         self.IsLoadSuccess = true
+        self.Selecting = false
         self.AudioDigest = self:AudioKey(self.AudioSettings)
         self.AudioSavedDigest = self.AudioDigest
         -- 짧게 끊겼다 돌아오면(15분 이내) 마지막 사냥터 자리로, 아니면 (저장된 난이도의) 마을에서 시작한다.
-        -- 월드 시작 맵은 사냥터라 여기서 옮긴다
         if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
@@ -97,7 +221,78 @@ script PlayerSave extends Component
         end
         _UndeadSystem:RestoreRoomTravel(self.Entity)
         self:ContinueDepthTravel()
-        log("[PlayerSave] 불러오기 완료 (새 캐릭터 " .. tostring(isNew) .. ")")
+        log("[PlayerSave] 불러오기 완료 (슬롯 " .. tostring(self.Slot) .. ", 새 캐릭터 " .. tostring(isNew) .. ")")
+    end
+
+    -- ───────── 캐릭터 선택 (CharSelectWindow) ─────────
+
+    @ExecSpace("Server")
+    method void RequestSelectSlot(integer slot)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.Selecting then return end
+        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) == nil then return end
+        self:LoadSlot(slot)
+    end
+
+    @ExecSpace("Server")
+    method void RequestCreateSlot(integer slot, string name)
+        -- 빈 칸에 새 캐릭터: 기본 상태 그대로 시작하고 곧바로 저장해 슬롯을 확정한다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.Selecting then return end
+        if slot < 1 or slot > self.MaxSlots or self:SlotInfo(slot) ~= nil then return end
+        local clean = self:CleanName(name)
+        if clean == "" then clean = self:DefaultName(slot) end
+        self.Account.slots[tostring(slot)] = { name = clean, lv = 1, diff = 0, created = DateTime.UtcNow.Elapsed }
+        self.Slot = slot
+        self:PublishSlots()
+        self:ApplyStash()
+        self:FinishLoad(true)
+        self:Save(true)
+        _Util:Notify("새 캐릭터 「" .. clean .. "」", senderUserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestDeleteSlot(integer slot)
+        -- 슬롯 목록에서만 뺀다 (저장 데이터는 남는다 — 그 칸에 새 캐릭터를 만들면 덮어쓴다)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.Selecting then return end
+        local info = self:SlotInfo(slot)
+        if info == nil then return end
+        self.Account.slots[tostring(slot)] = nil
+        self:PublishSlots()
+        local json = self:AccountJson()
+        local code, ok = self:Storage():BatchSetAndWait({ Account = json })
+        if code == 0 then self.LastSaved["Account"] = json else log_error("[PlayerSave] 슬롯 삭제 저장 실패 " .. tostring(code)) end
+        _Util:Notify("캐릭터 「" .. tostring(info.name) .. "」 삭제", senderUserId)
+    end
+
+    method string CleanName(string name)
+        -- 이름: 앞뒤 공백 제거, 구분 문자(| ;) 제거, 최대 10글자
+        local s = string.gsub(name or "", "[|;\n\r\t]", "")
+        s = string.gsub(s, "^%s+", "")
+        s = string.gsub(s, "%s+$", "")
+        return _UIKit:Clip(s, 10)
+    end
+
+    -- ───────── 방 이동 (심도) 때 고른 슬롯 이어가기 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void MarkSlotTravel()
+        -- 방을 옮기기 직전에 부른다 → 목적지 방의 Load가 선택 창 없이 같은 캐릭터를 불러온다 (2분 안)
+        if self.Slot <= 0 then return end
+        local code, memory = _RoomService:GetSharedMemory(self.SlotMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        memory:SetVariableAndWait(self.Entity.PlayerComponent.UserId, _HttpService:JSONEncode({ slot = self.Slot, created = DateTime.UtcNow.Elapsed }))
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer TakeSlotTravel()
+        local code, memory = _RoomService:GetSharedMemory(self.SlotMemoryName)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return 0 end
+        local uid = self.Entity.PlayerComponent.UserId
+        local result = memory:GetVariableAndWait(uid)
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return 0 end
+        memory:DeleteVariableAndWait(uid)
+        local ok, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+        if not ok or type(data) ~= "table" or type(data.created) ~= "number" or DateTime.UtcNow.Elapsed - data.created > 120000 then return 0 end
+        return math.floor(tonumber(data.slot) or 0)
     end
 
     @ExecSpace("ServerOnly")
@@ -146,6 +341,7 @@ script PlayerSave extends Component
         if memory:DeleteVariableAndWait(uid) ~= SharedMemoryResultCode.OK then return end
         _TimerService:SetTimerOnce(function()
             if not _Util:IsAlive(self.Entity) then return end
+            self:MarkSlotTravel()
             _RoomService:CreateInstanceRoom(data.destination, { _GameConst.MapDepth }, 30)
             if not _RoomService:MoveUserToInstanceRoom(data.destination, uid, _GameConst.MapDepth) then
                 -- 실패한 경우 마을에서 소환수를 돌려준다.
@@ -179,13 +375,13 @@ script PlayerSave extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method any Migrate(string key, any data)
+    method any Migrate(string base, any data)
         -- 버전 1(구역 나누기 전) 저장을 현재 형식으로
         if data == nil or (data.v ~= nil and data.v >= 2) then return data end
-        if key == "Inv" then
+        if base == "Inv" then
             return { inv = { bag = data.bag, equip = data.equip }, belt = { hp = data.hp, mp = data.mp, rv = data.rv }, corpses = data.corpses }
         end
-        if key == "Shadow" then return { shadow = data } end
+        if base == "Shadow" then return { shadow = data } end
         return data
     end
 
@@ -225,18 +421,49 @@ script PlayerSave extends Component
                 log_error("[PlayerSave] " .. sec.key .. "." .. broken .. " 직렬화 실패 — 이 섹션 저장을 건너뛴다")
             end
         end
+        -- 계정 공용 창고와 슬롯 요약 (이 캐릭터의 레벨·난이도)
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil then
+            -- 빈 Lua 표는 JSON 타입이 불명확해 인코딩이 실패한다 → 비면 개수만
+            local items = inv:GetStashData()
+            local stash = { v = 1, count = #items }
+            if #items > 0 then stash.items = items end
+            out["Stash"] = _HttpService:JSONEncode(stash)
+        end
+        local info = self:SlotInfo(self.Slot)
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if info ~= nil and stats ~= nil then
+            info.lv = stats.Level
+            info.diff = stats.Difficulty
+        end
+        out["Account"] = self:AccountJson()
         return out
+    end
+
+    method string AccountJson()
+        -- 빈 Lua 표는 JSON 인코딩이 실패한다 → 캐릭터가 없으면 slots를 빼고 개수만
+        local data = { v = 1, count = 0 }
+        local slots = {}
+        for k, info in pairs(self.Account.slots or {}) do
+            slots[k] = info
+            data.count = data.count + 1
+        end
+        if data.count > 0 then data.slots = slots end
+        return _HttpService:JSONEncode(data)
     end
 
     @ExecSpace("ServerOnly")
     method void Save(boolean wait)
         -- 불러오기 전에는 절대 저장하지 않는다 (빈 기본값으로 덮어쓰기 방지)
-        if not self.IsLoadSuccess or not isvalid(self.Entity) then return end
+        if not self.IsLoadSuccess or self.Slot <= 0 or not isvalid(self.Entity) then return end
         local changed = {}
         for k, v in pairs(self:Collect()) do
             if self.LastSaved[k] ~= v then changed[k] = v end
         end
         if next(changed) == nil then return end
+        if changed["Account"] ~= nil then self:PublishSlots() end
         if wait then
             local code, ok = self:Storage():BatchSetAndWait(changed)
             self:OnSaved(changed, ok)
@@ -257,10 +484,21 @@ script PlayerSave extends Component
             local k = successKeys[i]
             if sent[k] ~= nil then
                 self.LastSaved[k] = sent[k]
-                if k == "Char" then
+                if k == "Char_" .. tostring(self.Slot) then
                     local data = self:Decode(sent[k])
                     if data ~= nil then self.AudioSavedDigest = self:AudioKey(self:NormalizeAudio(data.settings)) end
                 end
+            end
+        end
+        -- 이전 저장에서 옮긴 캐릭터: 슬롯 키 셋이 모두 저장되면 표시를 지우고 계정을 곧바로 다시 저장한다
+        local info = self:SlotInfo(self.Slot)
+        if info ~= nil and info.legacy ~= nil then
+            local all = true
+            for _, sec in ipairs(self:Sections()) do if self.LastSaved[sec.key] == nil then all = false end end
+            if all then
+                info.legacy = nil
+                log("[VRF] slots: " .. tostring(self.Slot) .. "번 캐릭터 슬롯 키 저장 완료 — 이전 저장 표시 해제")
+                self:Save(false)
             end
         end
     end

@@ -12,7 +12,7 @@ script PlayerInventory extends Component
 
     property integer StashSize = 100         -- 창고 칸 (마을 창고 곁에서만)
     property table Bag = {}           -- 아이템 문자열 목록
-    property table Stash = {}         -- 창고 (아이템 문자열 목록, 캐릭터별 저장)
+    property table Stash = {}         -- 창고 (아이템 문자열 목록, 계정 공용 — PlayerSave가 Stash 키로 따로 저장)
     @Sync
     property string StashDigest = ""
     @Sync
@@ -658,6 +658,21 @@ script PlayerInventory extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
+    method table GetStashData()
+        -- 계정 공용 창고 (PlayerSave가 Stash 키로 저장 — 캐릭터를 바꿔도 같은 창고)
+        local list = {}
+        for i, x in ipairs(self.Stash) do list[i] = x end
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadStash(table items)
+        self.Stash = {}
+        for _, x in ipairs(items or {}) do table.insert(self.Stash, x) end
+        self:RefreshDigest()
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetSaveData()
         local bag = {}
         for i, s in ipairs(self.Bag) do bag[i] = s end
@@ -672,12 +687,7 @@ script PlayerInventory extends Component
         for _ in pairs(equip) do saved.equipCount = saved.equipCount + 1 end
         if #bag > 0 then saved.bag = bag end
         if saved.equipCount > 0 then saved.equip = equip end
-        saved.stashCount = #self.Stash
-        if #self.Stash > 0 then
-            local stash = {}
-            for i, x in ipairs(self.Stash) do stash[i] = x end
-            saved.stash = stash
-        end
+        -- 창고는 계정 공용 — 캐릭터 저장이 아니라 PlayerSave의 Stash 키 (GetStashData)
         saved.ashenHoodGranted = self.AshenHoodGranted
         saved.socketTokens = self.SocketTokens
         return saved
@@ -690,8 +700,6 @@ script PlayerInventory extends Component
         self.Equip = {}
         if data.bag ~= nil then for _, s in ipairs(data.bag) do table.insert(self.Bag, s) end end
         if data.equip ~= nil then for slot, s in pairs(data.equip) do self.Equip[slot] = s end end
-        self.Stash = {}
-        if data.stash ~= nil then for _, s in ipairs(data.stash) do table.insert(self.Stash, s) end end
         self.SocketTokens = tonumber(data.socketTokens) or 0
         self.AshenHoodGranted = data.ashenHoodGranted == true
         self:EnsureAshenHoodGrant()
