@@ -9,7 +9,13 @@ script PlayerInventory extends Component
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
     property string StarterWeapon = "scythe1|0|1|단낫||0|"
 
+    property integer StashSize = 100         -- 창고 칸 (마을 창고 곁에서만)
     property table Bag = {}           -- 아이템 문자열 목록
+    property table Stash = {}         -- 창고 (아이템 문자열 목록, 캐릭터별 저장)
+    @Sync
+    property string StashDigest = ""
+    @Sync
+    property integer SocketTokens = 0 -- 의뢰 보상 소켓권 (대장장이가 무료로 소켓을 뚫어 준다)
     property table Equip = {}         -- 부위 → 아이템 문자열
     @Sync
     property string BagDigest = ""
@@ -26,6 +32,7 @@ script PlayerInventory extends Component
         -- 새 캐릭터: 하급 생명 물약 3 · 하급 마나 물약 2
         self.Bag = { _ItemData:MakeStack("hp1", 3), _ItemData:MakeStack("mp1", 2) }
         self.Equip = {}
+        self.Stash = {}
         self.Equip["weapon"] = self.StarterWeapon
         self:RefreshDigest()
         _TimerService:SetTimerOnce(function() self:ApplyEquipment() end, 0.3)
@@ -64,6 +71,7 @@ script PlayerInventory extends Component
             if s ~= nil then table.insert(parts, slot .. ">" .. s) end
         end
         self.EquipDigest = table.concat(parts, ";")
+        self.StashDigest = table.concat(self.Stash, ";")
     end
 
     @ExecSpace("ServerOnly")
@@ -467,6 +475,194 @@ script PlayerInventory extends Component
         return map
     end
 
+    -- ───────── 정렬 · 여러 개 판매 ─────────
+
+    @ExecSpace("Server")
+    method void RequestSortBag()
+        -- 등급순 정렬: 유니크 · 세트 · 레어 · 마법 · 일반 · 룬 · 물약 · 귀속 재료 (같은 등급은 이름순)
+        if not self:IsOwnerRequest(senderUserId) then return end
+        table.sort(self.Bag, function(a, b)
+            local ra, rb = _ItemData:SortRank(a), _ItemData:SortRank(b)
+            if ra ~= rb then return ra < rb end
+            local na, nb = _ItemData:Parse(a).name, _ItemData:Parse(b).name
+            if na ~= nb then return na < nb end
+            return a < b
+        end)
+        self:RefreshDigest()
+    end
+
+    method table ParsePicks(string list)
+        -- "칸번호\t아이템\n..." → { {index, item}, ... } (큰 칸부터 — 앞에서 빼도 뒤 칸 번호가 흔들리지 않게)
+        local out = {}
+        for line in string.gmatch(list, "[^\n]+") do
+            local idx, item = string.match(line, "^(%d+)\t(.+)$")
+            if idx ~= nil then table.insert(out, { index = tonumber(idx), item = item }) end
+        end
+        table.sort(out, function(a, b) return a.index > b.index end)
+        return out
+    end
+
+    @ExecSpace("Server")
+    method void RequestSellMany(string list)
+        -- 상인 곁에서 고른 여러 개를 한꺼번에 판다 (요청 사이에 바뀐 칸·귀속 물건은 건너뛴다)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:IsAlive(self.Entity) then return end
+        local stats = self:Stats()
+        if stats == nil then return end
+        if not _Util:NearNpc(self.Entity, "shop") then
+            _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            return
+        end
+        local total, n = 0, 0
+        for _, p in ipairs(self:ParsePicks(list)) do
+            local cur = self.Bag[p.index]
+            if cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
+                total = total + _ItemData:SellValue(cur)
+                table.remove(self.Bag, p.index)
+                n = n + 1
+            end
+        end
+        if n == 0 then return end
+        self:RefreshDigest()
+        stats:AddGold(total)
+        _Util:Notify("판매 " .. tostring(n) .. "개 · +" .. tostring(total) .. " 골드", senderUserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestDiscardMany(string list)
+        -- 상인이 없는 곳에서 여러 개 버리기 (땅에 떨어뜨림, 귀속 물건은 건너뛴다)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:IsAlive(self.Entity) then return end
+        local n = 0
+        for _, p in ipairs(self:ParsePicks(list)) do
+            local cur = self.Bag[p.index]
+            if cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
+                table.remove(self.Bag, p.index)
+                _LootSystem:DropDiscarded(self.Entity, cur)
+                n = n + 1
+            end
+        end
+        if n == 0 then return end
+        self:RefreshDigest()
+        _Util:Notify("버렸다 " .. tostring(n) .. "개 (10초 뒤 누구나 주울 수 있다)", senderUserId)
+    end
+
+    -- ───────── 창고 (마을 창고 곁) ─────────
+
+    @ExecSpace("Server")
+    method void RequestDeposit(integer index, string expectedItem)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "stash") then return end
+        local cur = self.Bag[index]
+        if cur == nil or cur ~= expectedItem then return end
+        if #self.Stash >= self.StashSize then
+            _Util:Notify("창고가 가득 찼다", senderUserId)
+            return
+        end
+        table.remove(self.Bag, index)
+        table.insert(self.Stash, cur)
+        self:RefreshDigest()
+    end
+
+    @ExecSpace("Server")
+    method void RequestWithdraw(integer index, string expectedItem)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "stash") then return end
+        local cur = self.Stash[index]
+        if cur == nil or cur ~= expectedItem then return end
+        if #self.Bag >= self.BagSize then
+            _Util:Notify("가방이 가득 찼다", senderUserId)
+            return
+        end
+        table.remove(self.Stash, index)
+        table.insert(self.Bag, cur)
+        self:RefreshDigest()
+    end
+
+    method boolean MatchesKind(string s, string kind)
+        -- 창고 「한꺼번에 넣기」 분류: normal 일반 · magic 마법 · rare 레어 · unique 유니크·세트 · rune 룬
+        local item = _ItemData:Parse(s)
+        if kind == "rune" then return _ItemData:IsRune(item.base) end
+        if _ItemData:IsRune(item.base) or _ItemData:IsStack(item.base) or _ItemData:GetBase(item.base) == nil then return false end
+        if kind == "normal" then return item.rarity == 0 end
+        if kind == "magic" then return item.rarity == 1 end
+        if kind == "rare" then return item.rarity == 2 end
+        if kind == "unique" then return item.rarity == 3 or item.rarity == 4 end
+        return false
+    end
+
+    @ExecSpace("Server")
+    method void RequestDepositKind(string kind)
+        -- 가방의 그 등급 물건을 창고에 한꺼번에 (창고가 차면 거기서 멈춘다)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "stash") then return end
+        local n = 0
+        local i = 1
+        while i <= #self.Bag do
+            if #self.Stash >= self.StashSize then break end
+            if self:MatchesKind(self.Bag[i], kind) then
+                table.insert(self.Stash, table.remove(self.Bag, i))
+                n = n + 1
+            else
+                i = i + 1
+            end
+        end
+        self:RefreshDigest()
+        local names = { normal = "일반", magic = "마법", rare = "레어", unique = "유니크·세트", rune = "룬" }
+        if n == 0 then _Util:Notify("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없다", senderUserId)
+        else _Util:Notify("창고에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개 넣었다" .. (#self.Stash >= self.StashSize and " (창고 가득)" or ""), senderUserId) end
+    end
+
+    -- ───────── 대장장이 (마을 대장장이 곁) ─────────
+
+    @ExecSpace("Server")
+    method void RequestReroll(integer index, string expectedItem)
+        -- 마법·레어 장비의 옵션을 골드로 새로 굴린다
+        if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "smith") then return end
+        local cur = self.Bag[index]
+        local stats = self:Stats()
+        if cur == nil or cur ~= expectedItem or stats == nil or not _ItemData:CanReroll(cur) then return end
+        local cost = _ItemData:RerollCost(cur)
+        if stats.Gold < cost then
+            _Util:Notify("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+            return
+        end
+        stats:AddGold(-cost)
+        local after = _ItemData:RerollMods(cur)
+        self.Bag[index] = after
+        self:RefreshDigest()
+        self:NotifySmith("옵션을 새로 새겼다", _ItemData:DescribeDetailed(after), _ItemData:IconFor(after), senderUserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestPunch(integer index, string expectedItem, boolean useToken)
+        -- 소켓 뚫기: 의뢰 소켓권이면 확실히, 골드면 50% (실패해도 골드는 사라진다)
+        if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "smith") then return end
+        local cur = self.Bag[index]
+        local stats = self:Stats()
+        if cur == nil or cur ~= expectedItem or stats == nil or not _ItemData:CanPunch(cur) then return end
+        if useToken then
+            if self.SocketTokens <= 0 then return end
+            self.SocketTokens = self.SocketTokens - 1
+        else
+            local cost = _ItemData:PunchCost(cur)
+            if stats.Gold < cost then
+                _Util:Notify("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+                return
+            end
+            stats:AddGold(-cost)
+            if _UtilLogic:RandomDouble() >= _GameData.punchChance then
+                self:NotifySmith("소켓 뚫기 실패", "망치질이 빗나갔다… 장비는 그대로다. (골드 " .. tostring(cost) .. " 소모)", _ItemData:IconFor(cur), senderUserId)
+                return
+            end
+        end
+        local after = _ItemData:PunchSockets(cur)
+        self.Bag[index] = after
+        self:RefreshDigest()
+        self:NotifySmith("소켓 " .. tostring(_ItemData:Parse(after).sockets) .. "개를 뚫었다", _ItemData:DisplayName(after) .. "\n이제 룬을 끼울 수 있다 (룬어 조합은 메뉴 「룬어」)", _ItemData:IconFor(after), senderUserId)
+    end
+
+    @ExecSpace("Client")
+    method void NotifySmith(string title, string detail, string icon)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _UXFeedback:Show(title, detail, icon)
+    end
+
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
@@ -484,6 +680,13 @@ script PlayerInventory extends Component
         for _ in pairs(equip) do saved.equipCount = saved.equipCount + 1 end
         if #bag > 0 then saved.bag = bag end
         if saved.equipCount > 0 then saved.equip = equip end
+        saved.stashCount = #self.Stash
+        if #self.Stash > 0 then
+            local stash = {}
+            for i, x in ipairs(self.Stash) do stash[i] = x end
+            saved.stash = stash
+        end
+        saved.socketTokens = self.SocketTokens
         return saved
     end
 
@@ -494,6 +697,9 @@ script PlayerInventory extends Component
         self.Equip = {}
         if data.bag ~= nil then for _, s in ipairs(data.bag) do table.insert(self.Bag, s) end end
         if data.equip ~= nil then for slot, s in pairs(data.equip) do self.Equip[slot] = s end end
+        self.Stash = {}
+        if data.stash ~= nil then for _, s in ipairs(data.stash) do table.insert(self.Stash, s) end end
+        self.SocketTokens = tonumber(data.socketTokens) or 0
         self:RefreshDigest()
         self:ApplyEquipment()
     end

@@ -1,10 +1,11 @@
--- 웨이포인트 창: 반경 1.2에서 이동·전투를 멈추면 열린다. 통과 중에는 입력을 가로채지 않는다.
+-- 웨이포인트 창: 문양 위(반경 1.5)에서 멈추면 열린다. B·대화 버튼으로 바로 열 수도 있다. 통과 중에는 입력을 가로채지 않는다.
+-- (클릭 이동의 목적지가 문양 안쪽에서 끝나지 않으면 '이동 중'이 남아 창이 영영 안 열리던 문제 — 실제 위치 변화와 전투만 본다)
 -- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환.
 @Logic
 script WaypointWindow extends Logic
 
     property string Win = "WpWin"
-    property number Reach = 1.2
+    property number Reach = 1.5
     property boolean Dismissed = false
     property string RenderKey = ""
     property integer TimerId = 0
@@ -58,7 +59,7 @@ script WaypointWindow extends Logic
     method boolean HasGameplayIntent(Entity player)
         -- 경로 추적·표적 접근·방향키·공격·터치 조준이 끝나기 전에는 창을 열지 않는다.
         local click = player:GetComponent("script.ClickControl")
-        if click ~= nil and (click.HasDestination or click.Moving or isvalid(click.AttackTarget) or isvalid(click.ExtractTarget) or click:IsArrowPressed()) then return true end
+        if click ~= nil and (isvalid(click.AttackTarget) or isvalid(click.ExtractTarget) or click:IsArrowPressed()) then return true end
         local attack = player:GetComponent("script.PlayerAttack")
         if attack ~= nil and (attack.AttackPhase ~= "idle" or _UtilLogic.ElapsedSeconds - attack.LastLocalInputAt < 0.6) then return true end
         return _MobilePad.Holding or _MobilePad.GestureTouchId ~= 0
@@ -127,6 +128,22 @@ script WaypointWindow extends Logic
             if d == st.Difficulty then label = "▶" .. label elseif d > st.MaxDifficulty then label = _UIKit:Colored("#666666", label .. " (잠김)") end
             _UIKit:SetText(self.Win .. "/Diff" .. tostring(d), label)
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean OpenNear()
+        -- B·대화 버튼: 웨이포인트 위면 바로 연다 (NPC보다 먼저 확인할 필요는 없다 — NPC가 없을 때 불린다)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) then return false end
+        if _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), self.Reach) == nil then return false end
+        self.Dismissed = false
+        self.QuietSince = _UtilLogic.ElapsedSeconds - self.OpenDelay
+        self.LastPosition = _Util:Pos2(player)
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        self.WasOpen = true
+        self:Poll()
+        return true
     end
 
     @ExecSpace("ClientOnly")

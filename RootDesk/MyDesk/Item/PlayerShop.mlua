@@ -1,7 +1,66 @@
 -- 상점 거래 (상인 NPC 근처에서만): 물약·귀환 두루마리·도박(무작위 마법 이상 장비). 품목·가격은 data/shop.csv.
 -- 생명·마나 물약은 레벨에 맞는 등급(하급 Lv1~9 · 중급 10~29 · 고급 30+)을 가방에 넣는다. 판매는 상인 곁 소지품 창(PlayerInventory.RequestSell).
+-- 떠돌이 상인(merchant): 플레이어마다 장비 5개(마법 이상, 내 레벨 기준)를 merchantRefreshSec마다 새로 들여온다. 값 = 판매가 × merchantPriceMult.
 @Component
 script PlayerShop extends Component
+
+    property table Stock = {}
+    property number StockAt = -9999
+    @Sync
+    property string StockDigest = ""           -- 상인 물건 ("아이템;아이템;...") — 같은 순서로 5칸
+    @Sync
+    property number StockNextAt = 0           -- 다음에 물건이 바뀌는 서버 시각
+
+    method integer StockPrice(string s)
+        return _ItemData:SellValue(s) * math.floor(_GameData.merchantPriceMult)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnsureStock()
+        -- 처음이거나 시간이 지났으면 새 물건 5개 (일반 몹 정예 등급 추첨 · 마법 이상 보장)
+        local now = _UtilLogic.ServerElapsedSeconds
+        if #self.Stock > 0 and now - self.StockAt < _GameData.merchantRefreshSec then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local level = stats ~= nil and stats.Level or 1
+        self.Stock = {}
+        for i = 1, 5 do table.insert(self.Stock, _ItemData:GenerateWithMinimum(level + 1, "elite", 0, 1)) end
+        self.StockAt = now
+        self.StockNextAt = now + _GameData.merchantRefreshSec
+        self.StockDigest = table.concat(self.Stock, ";")
+    end
+
+    @ExecSpace("Server")
+    method void RequestOpenMerchant()
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not _Util:NearNpc(self.Entity, "merchant") then return end
+        self:EnsureStock()
+    end
+
+    @ExecSpace("Server")
+    method void RequestBuyStock(integer index, string expectedItem)
+        -- 같은 물건이 아직 그 칸에 있을 때만 판다 (물건이 바뀐 직후의 클릭 방지)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not _Util:NearNpc(self.Entity, "merchant") then return end
+        local s = self.Stock[index]
+        if s == nil or s ~= expectedItem then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if stats == nil or inv == nil then return end
+        local price = self:StockPrice(s)
+        if stats.Gold < price then
+            _Util:Notify("골드가 부족하다 (" .. tostring(price) .. " 필요)", senderUserId)
+            return
+        end
+        if not inv:AddItem(s) then
+            _Util:Notify("가방이 가득 찼다", senderUserId)
+            return
+        end
+        stats:AddGold(-price)
+        self.Stock[index] = ""
+        self.StockDigest = table.concat(self.Stock, ";")
+        _Util:Notify("구매: " .. _ItemData:DisplayName(s), senderUserId)
+    end
 
     method string Resolve(string key, integer level)
         -- 상점 버튼 키 → 실제 품목 (생명·마나는 레벨 등급)
@@ -37,8 +96,9 @@ script PlayerShop extends Component
             ---@type PlayerInventory
             local inv = self.Entity:GetComponent("script.PlayerInventory")
             if inv == nil then return false end
-            -- 도박은 마법 이상 보장 (drop_tables.csv gamble)
-            local s = _ItemData:Generate(stats.Level + 2, "gamble", 150)
+            -- 도박은 마법 이상 보장 (drop_tables.csv gamble). 아이템 발견은 적용하지 않는다
+            -- (예전엔 발견 150을 넣어 유니크·세트·레어 확률이 ×2.5 — 8번에 세트 1·레어 3이 나왔다)
+            local s = _ItemData:Generate(stats.Level + 2, "gamble", 0)
             if not inv:AddItem(s) then
                 _Util:Notify("가방이 가득 찼다", userId)
                 return false

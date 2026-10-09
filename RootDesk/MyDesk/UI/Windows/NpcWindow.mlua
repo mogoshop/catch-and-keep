@@ -1,5 +1,8 @@
 -- NPC 대화 창: 근처에서는 대화 버튼만 표시한다. 버튼/B 키로 선택했을 때 열고, 거리·맵이 바뀌면 닫는다.
 --   shop  = 물약·두루마리·도박 5버튼 → PlayerShop
+--   merchant = 떠돌이 상인: 10분마다 바뀌는 장비 5개 (5버튼 = 5물건) → PlayerShop.RequestBuyStock
+--   smith = 대장장이: 「물건 고르기」로 소지품을 대장장이 모드로 연다 (옵션 바꾸기 · 소켓 뚫기)
+--   stash = 창고: 대화 대신 창고 창(StashWindow)을 바로 연다
 --   quest = D2처럼 말을 건 뒤 의뢰를 받는다: 소개 대사(다음 ▶) → 의뢰 내용·보상 → 수락/거절 → PlayerQuest.
 --           완료하면 마무리 대사 → 보고(보상). 대사는 quests.csv intro·outro ("/"로 줄 나눔)
 @Logic
@@ -81,7 +84,20 @@ script NpcWindow extends Logic
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) or _UIKit:AnyWindowOpen() then return end
         local npc = self:FindNpc(player)
-        if npc == nil then return end
+        if npc == nil then
+            -- 근처에 NPC가 없으면 웨이포인트 창 (B·대화 버튼 하나로)
+            _WaypointWindow:OpenNear()
+            return
+        end
+        if npc.Kind == "stash" then
+            _StashWindow:Open()
+            return
+        end
+        if npc.Kind == "merchant" then
+            ---@type PlayerShop
+            local shop = _UIKit:Comp("script.PlayerShop")
+            if shop ~= nil then shop:RequestOpenMerchant() end
+        end
         self.ActiveNpc = npc.Entity
         self.Dismissed = false
         self.Page = 1
@@ -151,7 +167,10 @@ script NpcWindow extends Logic
             self.RenderKey = ""
         end
         _UIKit:SetText(self.Win .. "/Title", npc.NpcName)
-        if npc.Kind == "shop" then self:RenderShop(st) else self:RenderQuest() end
+        if npc.Kind == "shop" then self:RenderShop(st)
+        elseif npc.Kind == "merchant" then self:RenderMerchant(st)
+        elseif npc.Kind == "smith" then self:RenderSmith(st)
+        else self:RenderQuest() end
     end
 
     @ExecSpace("ClientOnly")
@@ -200,6 +219,63 @@ script NpcWindow extends Logic
         local mp = _GameData:GetShopItem(shop:Resolve("mp", st.Level))
         _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 필요한 걸 골라라.  (가진 골드 %d)\n%s(+%d) · %s(+%d) · 회복 물약 · 귀환 두루마리 · 도박(무작위 마법 이상 장비) %d골드\n물약은 가방에 들어간다. 가방 물건을 팔려면 소지품을 열어 「판매」.",
             st.Gold, hp.name, hp.hpFlat, mp.name, mp.manaFlat, shop:GetPrice("gamble", st.Level)))
+    end
+
+    method table StockList()
+        ---@type PlayerShop
+        local shop = _UIKit:Comp("script.PlayerShop")
+        local list = {}
+        if shop == nil or shop.StockDigest == "" then return list end
+        for x in string.gmatch(shop.StockDigest .. ";", "([^;]*);") do table.insert(list, x) end
+        return list
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderMerchant(PlayerStats st)
+        -- 떠돌이 상인: 5칸 = 5물건 (이름 · 값), 본문에 옵션 요약과 다음 입고까지 남은 시간
+        ---@type PlayerShop
+        local shop = _UIKit:Comp("script.PlayerShop")
+        if shop == nil then return end
+        local left = math.max(0, math.ceil(shop.StockNextAt - _UtilLogic.ServerElapsedSeconds))
+        local key = "merchant#" .. shop.StockDigest .. "#" .. tostring(st.Gold) .. "#" .. tostring(math.floor(left / 10))
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local list = self:StockList()
+        local buttons = {}
+        local lines = { string.format("먼 길을 왔지. 오늘 들고 온 물건이다.  (가진 골드 %d · 다음 입고 %d분 %02d초)", st.Gold, left // 60, left % 60) }
+        for i = 1, 5 do
+            local s = list[i] or ""
+            if s == "" then
+                buttons[i] = "팔림"
+            else
+                local item = _ItemData:Parse(s)
+                buttons[i] = _UIKit:Clip(item.name, 9) .. "  " .. tostring(shop:StockPrice(s))
+                table.insert(lines, _UIKit:Colored(_ItemData:RarityColor(item.rarity), tostring(i) .. ". " .. _ItemData:DisplayName(s)) .. "  " .. _ItemData:ModsText(self:ModsOf(item)))
+            end
+        end
+        if #list == 0 then table.insert(lines, "짐을 푸는 중이다… 잠시 뒤 다시 말을 걸어라.") end
+        self:SetButtons(buttons)
+        _UIKit:SetText(self.Win .. "/Paper/Body", table.concat(lines, "\n"))
+    end
+
+    method string ModsOf(table item)
+        local parts = {}
+        for k, v in pairs(item.mods) do table.insert(parts, k .. "=" .. tostring(v)) end
+        table.sort(parts)
+        return table.concat(parts, ",")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderSmith(PlayerStats st)
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        local tokens = inv ~= nil and inv.SocketTokens or 0
+        local key = "smith#" .. tostring(st.Gold) .. "#" .. tostring(tokens)
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        self:SetButtons({ "", "", "", "물건 고르기", "닫기" })
+        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("망치질이 필요한가. 소지품에서 물건을 고르면 손봐 주지.  (가진 골드 %d)\n· 옵션 바꾸기: 마법·레어 장비의 옵션을 새로 새긴다 (레벨이 높을수록 비쌈, 레어는 3배)\n· 소켓 뚫기: 소켓 없는 무기·등불·투구·갑옷. 소켓권 %d장 — 소켓권이 있으면 확실히, 없으면 골드로 %d%% 확률\n  (일반 2~최대 · 마법 1~2 · 레어·유니크·세트 1개)",
+            st.Gold, tokens, math.floor(_GameData.punchChance * 100 + 0.5)))
     end
 
     -- ───────── 의뢰 ─────────
@@ -273,6 +349,26 @@ script NpcWindow extends Logic
             local keys = { "hp", "mp", "rv", "tp", "gamble" }
             if shop ~= nil and keys[index] ~= nil then shop:RequestBuy(keys[index]) end
             self.RenderKey = ""
+            return
+        end
+        if self.Kind == "merchant" then
+            -- 물건 확인 창(전체 옵션 · 값)을 거쳐 산다
+            ---@type PlayerShop
+            local shop = _UIKit:Comp("script.PlayerShop")
+            local s = self:StockList()[index] or ""
+            if shop == nil or s == "" then return end
+            local price = shop:StockPrice(s)
+            _ConfirmDialog:ShowIcon("구매", _ItemData:DescribeDetailed(s) .. "\n\n" .. _UIKit:Colored("#FFD27A", tostring(price) .. " 골드에 삽니다."), "구매", _ItemData:IconFor(s), function() shop:RequestBuyStock(index, s) end)
+            self.RenderKey = ""
+            return
+        end
+        if self.Kind == "smith" then
+            if index == 5 then self:Dismiss() return end
+            if index == 4 then
+                -- 소지품을 대장장이 모드로 연다 (이 창은 닫힌다)
+                self:Dismiss()
+                _InventoryWindow:OpenSmith()
+            end
             return
         end
         if self.Kind ~= "quest" then return end

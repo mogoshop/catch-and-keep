@@ -204,7 +204,7 @@ T.quests.forEach((r, i) => {
     const [k, v] = [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)];
     if (k === "rune" && !runeIds.has(v)) err("quests", i, `보상 룬 '${v}' — runes.csv에 없음`);
     else if (k === "item" && !baseIds.has(v.split("|")[0])) err("quests", i, `보상 아이템 '${v.split("|")[0]}' — item_bases에 없음`);
-    else if (["skp", "stp", "gen"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
+    else if (["skp", "stp", "gen", "socket"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
     else if (!["rune", "item"].includes(k)) err("quests", i, `보상 종류 '${k}' 알 수 없음`);
   }
 });
@@ -239,7 +239,7 @@ for (const need of ["WarpGate", "Brazier", "BloodAltar", "PlayerCorpse", "Waypoi
 const npcModels = unique("npcs", "model");
 T.npcs.forEach((r, i) => {
   if (!RUID.test(r.stand)) err("npcs", i, "stand RUID 형식 오류");
-  if (!["shop", "quest"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
+  if (!["shop", "quest", "smith", "merchant", "stash"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
 });
 T.maps.forEach((r, i) => {
   if (!["town", "field", "instance", "side"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side`);

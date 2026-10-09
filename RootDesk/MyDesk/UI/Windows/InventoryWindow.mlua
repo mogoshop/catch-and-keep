@@ -2,6 +2,8 @@
 -- 판매는 상인(잿빛 행상 고르) 곁에서만: 그때만 「버리기」 자리가 「판매」로 바뀐다. 둘 다 확인 창을 거친다.
 -- 장비·룬은 선택만으로 바뀌지 않는다. 설명과 미리보기를 확인한 뒤 작업 버튼으로 확정한다.
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
+-- 「정렬」: 등급순(유니크 · 세트 · 레어 · 마법 · 일반 · 룬 · 물약). 「여러 개 선택」: 칸을 눌러 여러 개 고른 뒤 상인 곁이면 한꺼번에 판매, 아니면 한꺼번에 버리기.
+-- 대장장이 모드(OpenSmith): 두 작업 버튼이 「옵션 바꾸기」·「소켓 뚫기」로 바뀐다.
 @Logic
 script InventoryWindow extends Logic
 
@@ -20,6 +22,9 @@ script InventoryWindow extends Logic
     property string EquipResultSlot = ""
     property string EquipResultBefore = ""
     property string EquipResultAfter = ""
+    property boolean SmithMode = false
+    property boolean Multi = false
+    property table Picked = {}          -- 여러 개 선택: 칸 번호 → 그 칸의 아이템 문자열
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -40,6 +45,13 @@ script InventoryWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnEquip", function() self:Act("equip") end)
         _UIKit:Connect(self.Win .. "/BtnSell", function() self:Act("sell") end)
         _UIKit:Connect(self.Win .. "/Doll/BtnPreview", function() self:TogglePreview() end)
+        _UIKit:Connect(self.Win .. "/BtnSort", function()
+            local inv = self:Inv()
+            if inv ~= nil then inv:RequestSortBag() end
+            self:ClearSelection()
+            self.Picked = {}
+        end)
+        _UIKit:Connect(self.Win .. "/BtnMulti", function() self:ToggleMulti() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] InventoryWindow inspect-first ready")
     end
@@ -49,6 +61,45 @@ script InventoryWindow extends Logic
         -- 반복 갱신과 선택 상태를 플레이 종료 시 정리한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
         self:ClearSelection()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OpenSmith()
+        -- 대장장이에게서 「물건 고르기」: 소지품을 대장장이 모드로 연다
+        self.SmithMode = true
+        self.Multi = false
+        self.Picked = {}
+        self:ClearSelection()
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleMulti()
+        self.Multi = not self.Multi
+        self.Picked = {}
+        self:ClearSelection()
+        self:Poll()
+    end
+
+    method integer PickedCount()
+        local n = 0
+        for _, _ in pairs(self.Picked) do n = n + 1 end
+        return n
+    end
+
+    method string PickedList(table list)
+        -- 서버로 보낼 "칸\t아이템\n..." (그 사이 바뀐 칸은 빼고)
+        local lines = {}
+        for idx, item in pairs(self.Picked) do
+            if list[idx] == item then table.insert(lines, tostring(idx) .. "\t" .. item) end
+        end
+        return table.concat(lines, "\n")
+    end
+
+    method boolean NearSmith()
+        local player = _UserService.LocalPlayer
+        return isvalid(player) and _Util:NearNpc(player, "smith")
     end
 
     method PlayerInventory Inv()
@@ -62,8 +113,12 @@ script InventoryWindow extends Logic
         -- 동기화로 칸의 아이템이 바뀌면 선택을 해제한다. 새 물건에 오래된 작업을 보내지 않는다.
         if not _UIKit:IsOpen(self.Win) then
             self:ClearSelection()
+            self.SmithMode = false
+            self.Multi = false
+            self.Picked = {}
             return
         end
+        if self.SmithMode and not self:NearSmith() then self.SmithMode = false end
         local inv = self:Inv()
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
@@ -79,7 +134,7 @@ script InventoryWindow extends Logic
         self:ValidateSelection(list, eq)
         self:RenderAppearance(eq, list[self.Selected] or "")
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
-        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self:NearShop())}, "#")
+        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self:NearShop()), tostring(self.SmithMode), tostring(self.Multi), tostring(self:PickedCount()), tostring(inv.SocketTokens)}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold/Text", tostring(st.Gold))
@@ -90,10 +145,25 @@ script InventoryWindow extends Logic
             local chosen = slot == self.SelectedEquipSlot or slot == self.SocketSlot
             _UIKit:SetColor(path, chosen and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
+        -- 여러 개 선택에서 그 사이 바뀐 칸은 고른 목록에서 뺀다
+        for idx, item in pairs(self.Picked) do if list[idx] ~= item then self.Picked[idx] = nil end end
         for i = 1, 60 do
             local path = self.Win .. "/Bag/Bag" .. tostring(i)
             self:DrawItem(path, list[i])
-            _UIKit:SetColor(path, i == self.Selected and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
+            local cellColor = Color(0.05, 0.045, 0.06, 0.94)
+            if self.Multi then
+                if self.Picked[i] ~= nil then cellColor = Color(0.14, 0.4, 0.18, 0.95) end
+            elseif i == self.Selected then cellColor = Color(0.42, 0.3, 0.12, 0.95) end
+            _UIKit:SetColor(path, cellColor)
+        end
+        _UIKit:SetText(self.Win .. "/BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택")
+        local hint = "선택 → 설명 확인 · 버튼으로 작업 확정"
+        if self.SmithMode then hint = _UIKit:Colored("#FFD27A", "대장장이: 손볼 물건을 고르세요 · 소켓권 " .. tostring(inv.SocketTokens) .. "장")
+        elseif self.Multi then hint = _UIKit:Colored("#9EE6A0", "여러 개 선택: 칸을 눌러 넣고 빼기 · " .. tostring(self:PickedCount()) .. "개") end
+        _UIKit:SetText(self.Win .. "/Hint", hint)
+        if self.Multi then
+            self:RenderMulti(list, inv)
+            return
         end
         -- 아무것도 고르지 않았으면 「장비로 오른 능력치」 합계를 보여 준다 (능력치 창은 기본·투자 몫)
         local desc = self:GearSummary(st)
@@ -115,7 +185,7 @@ script InventoryWindow extends Logic
             sell = true
             local selBase = _ItemData:Parse(sel).base
             desc = _ItemData:DescribeDetailed(sel) .. self:SetSection(sel, eq) .. self:SummonHint(sel)
-            if not _ItemData:IsSoulbound(selBase) then desc = desc .. "\n판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드" end
+            if not _ItemData:IsSoulbound(selBase) then desc = desc .. "\n" .. _UIKit:Colored("#FFD27A", "상인 판매가 " .. tostring(_ItemData:SellValue(sel)) .. " 골드") end
             if _ItemData:Consumable(selBase) ~= nil then
                 -- 물약: 「사용」으로 바로 마신다
                 label = "사용"
@@ -146,6 +216,23 @@ script InventoryWindow extends Logic
             allowed = false
             sell = false
             desc = desc .. "\n<color=#FF6464>사망 중에는 장비 작업을 할 수 없습니다.</color>"
+        end
+        if self.SmithMode and self.SelectedEquipSlot == "" then
+            -- 대장장이: 옵션 바꾸기(마법·레어) · 소켓 뚫기(소켓 없는 무기·등불·투구·갑옷)
+            local canReroll = sel ~= nil and alive and _ItemData:CanReroll(sel)
+            local canPunch = sel ~= nil and alive and _ItemData:CanPunch(sel)
+            if sel ~= nil then
+                local lines = {}
+                table.insert(lines, canReroll and ("옵션 바꾸기: " .. tostring(_ItemData:RerollCost(sel)) .. " 골드 (옵션·이름을 새로)") or "옵션 바꾸기: 마법·레어 장비만")
+                if canPunch then
+                    table.insert(lines, inv.SocketTokens > 0 and ("소켓 뚫기: 소켓권 1장 사용 (확실히)") or ("소켓 뚫기: " .. tostring(_ItemData:PunchCost(sel)) .. " 골드 · 성공 " .. tostring(math.floor(_GameData.punchChance * 100 + 0.5)) .. "%"))
+                else table.insert(lines, "소켓 뚫기: 소켓 없는 무기·등불·투구·갑옷만") end
+                desc = desc .. "\n\n" .. _UIKit:Colored("#FFD27A", "대장장이  ·  " .. table.concat(lines, "\n"))
+            end
+            self:SetDescription(desc)
+            self:SetActionButton("BtnEquip", canReroll and ("옵션 바꾸기 " .. tostring(_ItemData:RerollCost(sel))) or "옵션 바꾸기", canReroll)
+            self:SetActionButton("BtnSell", "소켓 뚫기", canPunch)
+            return
         end
         self:SetDescription(desc)
         self:SetActionButton("BtnEquip", label, allowed)
@@ -352,6 +439,14 @@ script InventoryWindow extends Logic
         local inv = self:Inv()
         if inv == nil then return end
         local sel = inv:GetBagList()[index]
+        if self.Multi then
+            -- 여러 개 선택: 넣고 빼기 (귀속 재료는 팔 수 없어 고르지 않는다)
+            if sel == nil or _ItemData:IsSoulbound(_ItemData:Parse(sel).base) then return end
+            if self.Picked[index] ~= nil then self.Picked[index] = nil else self.Picked[index] = sel end
+            self.RenderKey = ""
+            self:Poll()
+            return
+        end
         self:ClearSelection()
         if sel ~= nil then self.Selected = index self.SelectedItem = sel end
         self:Poll()
@@ -429,6 +524,87 @@ script InventoryWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void RenderMulti(table list, PlayerInventory inv)
+        -- 여러 개 선택: 설명 = 고른 물건 목록과 합계, 왼쪽 버튼 = 모두 해제, 오른쪽 = 선택 판매(상인 곁) / 선택 버리기
+        local total, n = 0, 0
+        local lines = {}
+        local idxs = {}
+        for idx, _ in pairs(self.Picked) do table.insert(idxs, idx) end
+        table.sort(idxs)
+        for _, idx in ipairs(idxs) do
+            local s = list[idx]
+            n = n + 1
+            total = total + _ItemData:SellValue(s)
+            if n <= 12 then table.insert(lines, _UIKit:Colored(_ItemData:RarityColor(_ItemData:Parse(s).rarity), _ItemData:DisplayName(s)) .. "  " .. tostring(_ItemData:SellValue(s)) .. " 골드") end
+        end
+        if n > 12 then table.insert(lines, "… 외 " .. tostring(n - 12) .. "개") end
+        local shop = self:NearShop()
+        local head = shop and ("고른 " .. tostring(n) .. "개 · 상인 판매가 합계 " .. tostring(total) .. " 골드") or ("고른 " .. tostring(n) .. "개 · 상인 곁에서는 한꺼번에 팔 수 있다 (합계 " .. tostring(total) .. " 골드)")
+        if n == 0 then lines = { "가방 칸을 눌러 여러 물건을 고르세요. (귀속 재료 제외)" } end
+        self:SetDescription(_UIKit:Colored("#FFD27A", head) .. "\n" .. table.concat(lines, "\n"))
+        self:SetActionButton("BtnEquip", "모두 해제", n > 0)
+        self:SetActionButton("BtnSell", shop and ("선택 판매 " .. tostring(n)) or ("선택 버리기 " .. tostring(n)), n > 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ActMulti(string action, table list, PlayerInventory inv)
+        if action == "equip" then
+            self.Picked = {}
+            self.RenderKey = ""
+            self:Poll()
+            return
+        end
+        local payload = self:PickedList(list)
+        if payload == "" then return end
+        local n, total = 0, 0
+        for idx, item in pairs(self.Picked) do
+            if list[idx] == item then
+                n = n + 1
+                total = total + _ItemData:SellValue(item)
+            end
+        end
+        if self:NearShop() then
+            _ConfirmDialog:Show("선택 판매", tostring(n) .. "개를 상인에게 " .. tostring(total) .. " 골드에 팝니다.", "판매", function()
+                inv:RequestSellMany(payload)
+                self.Picked = {}
+                self.RenderKey = ""
+            end)
+        else
+            _ConfirmDialog:Show("선택 버리기", tostring(n) .. "개를 발밑에 떨어뜨립니다. 10초 뒤 누구나 주울 수 있습니다.\n(팔려면 마을 상인 곁에서 소지품을 여세요)", "버리기", function()
+                inv:RequestDiscardMany(payload)
+                self.Picked = {}
+                self.RenderKey = ""
+            end)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ActSmith(string action, string sel, PlayerInventory inv, PlayerStats st)
+        -- 대장장이: 확인 창(비용·결과 안내)을 거쳐 서버에 요청
+        local index = self.Selected
+        local name = _ItemData:DisplayName(sel)
+        if action == "equip" then
+            if not _ItemData:CanReroll(sel) then return end
+            local cost = _ItemData:RerollCost(sel)
+            _ConfirmDialog:ShowIcon("옵션 바꾸기", name .. "\n지금 옵션은 사라지고 새로 새겨집니다 (등급·레벨·소켓은 그대로).\n" .. _UIKit:Colored("#FFD27A", tostring(cost) .. " 골드") .. " (가진 골드 " .. tostring(st.Gold) .. ")", "바꾸기", _ItemData:IconFor(sel), function()
+                inv:RequestReroll(index, sel)
+            end)
+            return
+        end
+        if not _ItemData:CanPunch(sel) then return end
+        if inv.SocketTokens > 0 then
+            _ConfirmDialog:ShowIcon("소켓 뚫기", name .. "\n소켓권 1장을 써서 확실히 뚫습니다 (남은 소켓권 " .. tostring(inv.SocketTokens) .. "장).\n일반 2~최대 · 마법 1~2 · 레어·유니크·세트 1개", "뚫기", _ItemData:IconFor(sel), function()
+                inv:RequestPunch(index, sel, true)
+            end)
+        else
+            local cost = _ItemData:PunchCost(sel)
+            _ConfirmDialog:ShowIcon("소켓 뚫기", name .. "\n" .. _UIKit:Colored("#FFD27A", tostring(cost) .. " 골드") .. " · 성공 " .. tostring(math.floor(_GameData.punchChance * 100 + 0.5)) .. "% — 실패해도 골드는 돌려받지 못합니다.\n(의뢰 보상 소켓권이 있으면 확실히 뚫립니다)", "뚫기", _ItemData:IconFor(sel), function()
+                inv:RequestPunch(index, sel, false)
+            end)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Act(string action)
         -- 클릭 순간에도 선택 식별값과 레벨·공간·소켓을 검사한다. 연속 클릭은 재실행하지 않는다.
         if not _UIKit:IsOpen(self.Win) or not _Util:IsAlive(_UserService.LocalPlayer) then return end
@@ -439,6 +615,14 @@ script InventoryWindow extends Logic
         local sel = list[self.Selected]
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
+        if self.Multi then
+            self:ActMulti(action, list, inv)
+            return
+        end
+        if self.SmithMode and self.SelectedEquipSlot == "" and sel ~= nil then
+            self:ActSmith(action, sel, inv, st)
+            return
+        end
         if action == "sell" then
             if sel == nil then return end
             -- 되돌릴 수 없는 조작이라 확인 창을 거친다. 상인 곁이면 판매, 아니면 버리기(영구 삭제)

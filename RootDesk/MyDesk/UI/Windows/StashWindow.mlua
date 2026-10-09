@@ -1,0 +1,106 @@
+-- 창고 창 (마을 창고 곁 · B/대화로 열기): 위 = 창고 100칸, 아래 = 가방 60칸. 칸을 누르면 바로 옮긴다.
+-- 가운데 버튼: 가방의 일반 · 마법 · 레어 · 유니크/세트 · 룬을 한꺼번에 창고에. 검증·이동은 서버(PlayerInventory)가 한다.
+@Logic
+script StashWindow extends Logic
+
+    property string Win = "StashWin"
+    property string RenderKey = ""
+    property integer TimerId = 0
+    property string Info = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 칸·버튼 연결, 열려 있는 동안 가방·창고가 바뀌면 다시 그린다
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for i = 1, 100 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Stash/S" .. tostring(i), function() self:Withdraw(index) end)
+        end
+        for i = 1, 60 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Bag/B" .. tostring(i), function() self:Deposit(index) end)
+        end
+        for _, d in ipairs({ { "DepNormal", "normal" }, { "DepMagic", "magic" }, { "DepRare", "rare" }, { "DepUnique", "unique" }, { "DepRune", "rune" } }) do
+            local kind = d[2]
+            _UIKit:Connect(self.Win .. "/" .. d[1], function()
+                local inv = self:Inv()
+                if inv ~= nil then inv:RequestDepositKind(kind) end
+            end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method PlayerInventory Inv()
+        ---@type PlayerInventory
+        local c = _UIKit:Comp("script.PlayerInventory")
+        return c
+    end
+
+    method table StashList(PlayerInventory inv)
+        local list = {}
+        if inv.StashDigest == "" then return list end
+        for s in string.gmatch(inv.StashDigest .. ";", "([^;]*);") do table.insert(list, s) end
+        return list
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open()
+        self.RenderKey = ""
+        self.Info = "칸을 누르면 옮깁니다 · 가운데 버튼으로 등급별 한꺼번에 넣기"
+        _UIKit:Open(self.Win)
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Withdraw(integer index)
+        local inv = self:Inv()
+        if inv == nil then return end
+        local s = self:StashList(inv)[index]
+        if s == nil or s == "" then return end
+        self.Info = "꺼냄: " .. _ItemData:DisplayName(s)
+        self.RenderKey = ""
+        inv:RequestWithdraw(index, s)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Deposit(integer index)
+        local inv = self:Inv()
+        if inv == nil then return end
+        local s = inv:GetBagList()[index]
+        if s == nil then return end
+        self.Info = "넣음: " .. _ItemData:DisplayName(s)
+        self.RenderKey = ""
+        inv:RequestDeposit(index, s)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 창고 곁을 벗어나면 닫는다
+        if not _UIKit:IsOpen(self.Win) then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not _Util:NearNpc(player, "stash") then
+            _UIKit:Close(self.Win)
+            return
+        end
+        local inv = self:Inv()
+        if inv == nil then return end
+        local key = inv.StashDigest .. "#" .. inv.BagDigest .. "#" .. self.Info
+        if key == self.RenderKey then return end
+        self.RenderKey = key
+        local stash = self:StashList(inv)
+        local bag = inv:GetBagList()
+        for i = 1, 100 do _InventoryWindow:DrawItem(self.Win .. "/Stash/S" .. tostring(i), stash[i]) end
+        for i = 1, 60 do _InventoryWindow:DrawItem(self.Win .. "/Bag/B" .. tostring(i), bag[i]) end
+        _UIKit:SetText(self.Win .. "/StashLabel", string.format("창고  %d / %d  ·  누르면 가방으로", #stash, inv.StashSize))
+        _UIKit:SetText(self.Win .. "/BagLabel", string.format("가방  %d / %d  ·  누르면 창고로", #bag, inv.BagSize))
+        _UIKit:SetText(self.Win .. "/Info", self.Info)
+    end
+
+end

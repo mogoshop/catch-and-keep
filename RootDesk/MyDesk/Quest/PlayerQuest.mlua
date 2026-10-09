@@ -103,6 +103,7 @@ script PlayerQuest extends Component
         local lv = stats.Level
         local skillPoints = 0
         local statPoints = 0
+        local sockets = 0
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
             if key == "rune" and _ItemData:GetRune(val) ~= nil then table.insert(items, _ItemData:MakeRuneString(val, lv))
             elseif key == "item" then table.insert(items, val)
@@ -111,12 +112,14 @@ script PlayerQuest extends Component
                 local rare = (tonumber(val) or 0) >= 3
                 table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, rare and "boss" or "quest", 300, rare and 2 or 1))
             elseif key == "skp" then skillPoints = skillPoints + (tonumber(val) or 0)
-            elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0) end
+            elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0)
+            elseif key == "socket" then sockets = sockets + (tonumber(val) or 0) end
         end
         -- 서버의 한 번의 실행에서 전부 지급하고 의뢰를 다음 단계로 넘긴다.
         inv:PutBagItems(items)
         stats.SkillPoints = stats.SkillPoints + skillPoints
         stats.StatPoints = stats.StatPoints + statPoints
+        inv.SocketTokens = inv.SocketTokens + sockets
         stats:GainExp(q.exp)
         stats:AddGold(q.gold)
         local rewardText = _QuestData:RewardText(q.reward)

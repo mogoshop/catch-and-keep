@@ -240,16 +240,38 @@ script ItemData extends Logic
         return 0
     end
 
+    method number OldWeight(integer itemLevel, integer ilvl, integer gap)
+        -- D2식: 아이템 레벨보다 gap 넘게 낮은 베이스·옵션·유니크는 덜 나온다 (0.3배). 그보다 가까우면 1
+        if itemLevel >= ilvl - gap then return 1 end
+        return 0.3
+    end
+
+    method any WeightedPick(table list, table weights)
+        local total = 0
+        for _, w in ipairs(weights) do total = total + w end
+        if #list == 0 or total <= 0 then return nil end
+        local r = _UtilLogic:RandomDouble() * total
+        for i, w in ipairs(weights) do
+            r = r - w
+            if r <= 0 then return list[i] end
+        end
+        return list[#list]
+    end
+
     method string PickBase(integer ilvl)
-        -- 아이템 레벨에 맞는 베이스 (요구 레벨 ilvl+3 이하, 40 이상 낮은 단계 제외)
+        -- 아이템 레벨에 맞는 베이스 (요구 레벨 ilvl+3 이하, 40 이상 낮은 단계 제외, 15 넘게 낮으면 덜 나옴)
         local t = self:T()
         local list = {}
+        local weights = {}
         for _, id in ipairs(t.BaseOrder) do
             local b = t.Bases[id]
-            if b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then table.insert(list, id) end
+            if b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then
+                table.insert(list, id)
+                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 15))
+            end
         end
         if #list == 0 then return t.BaseOrder[1] end
-        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+        return self:WeightedPick(list, weights)
     end
 
     method string Generate(integer ilvl, string rank, number mf)
@@ -292,6 +314,12 @@ script ItemData extends Logic
             if base.sockets > 0 and _UtilLogic:RandomDouble() < 0.5 then item.sockets = _UtilLogic:RandomIntegerRange(1, base.sockets) end
             return self:Serialize(item)
         end
+        self:FillAffixes(item, base, ilvl, rarity)
+        return self:Serialize(item)
+    end
+
+    method void FillAffixes(table item, any base, integer ilvl, integer rarity)
+        -- 마법(접두·접미 1~2개)·레어(4~6개) 옵션과 이름을 새로 굴린다. 드롭 생성과 대장장이 「옵션 바꾸기」가 같이 쓴다
         local prefixes, suffixes = 1, 1
         if rarity == 1 then
             if _UtilLogic:RandomDouble() < 0.4 then
@@ -337,19 +365,82 @@ script ItemData extends Logic
         else
             item.name = self:RareName() .. " " .. base.name
         end
+    end
+
+    -- ───────── 대장장이 (옵션 바꾸기 · 소켓 뚫기) ─────────
+
+    method boolean CanReroll(string s)
+        -- 마법·레어 장비만 (일반은 옵션이 없고, 유니크·세트·룬워드는 고정 옵션)
+        if s == "" then return false end
+        local item = self:Parse(s)
+        if self:GetBase(item.base) == nil then return false end
+        if item.rarity ~= 1 and item.rarity ~= 2 then return false end
+        return self:GetRuneword(item) == nil
+    end
+
+    method integer RerollCost(string s)
+        local item = self:Parse(s)
+        local cost = 40 + item.ilvl * 12
+        if item.rarity == 2 then cost = cost * 3 end
+        return cost
+    end
+
+    method string RerollMods(string s)
+        -- 같은 베이스·등급·아이템 레벨·소켓·룬은 그대로, 옵션과 이름만 새로
+        local item = self:Parse(s)
+        local base = self:GetBase(item.base)
+        item.mods = {}
+        self:FillAffixes(item, base, item.ilvl, item.rarity)
         return self:Serialize(item)
+    end
+
+    method boolean CanPunch(string s)
+        -- 소켓이 없는 장비 중 소켓을 가질 수 있는 베이스(무기·등불·투구·갑옷)
+        if s == "" then return false end
+        local item = self:Parse(s)
+        local base = self:GetBase(item.base)
+        return base ~= nil and base.sockets > 0 and item.sockets == 0 and #item.runes == 0
+    end
+
+    method integer PunchCost(string s)
+        return 150 + self:Parse(s).ilvl * 25
+    end
+
+    method string PunchSockets(string s)
+        -- D2 대장장이처럼: 일반은 2~최대, 마법은 1~2, 레어·유니크·세트는 1
+        local item = self:Parse(s)
+        local base = self:GetBase(item.base)
+        local n = 1
+        if item.rarity == 0 then n = _UtilLogic:RandomIntegerRange(math.min(2, base.sockets), base.sockets)
+        elseif item.rarity == 1 then n = _UtilLogic:RandomIntegerRange(1, math.min(2, base.sockets)) end
+        item.sockets = n
+        return self:Serialize(item)
+    end
+
+    method integer SortRank(string s)
+        -- 가방 정렬 순서: 유니크 · 세트 · 레어 · 마법 · 일반 장비 · 룬 · 물약 · 귀속 재료
+        local item = self:Parse(s)
+        if self:IsSoulbound(item.base) then return 8 end
+        if self:Consumable(item.base) ~= nil then return 7 end
+        if self:IsRune(item.base) then return 6 end
+        local order = { [3] = 1, [4] = 2, [2] = 3, [1] = 4, [0] = 5 }
+        return order[item.rarity] or 5
     end
 
     method any PickUnique(integer ilvl, string source)
         -- source = "" 이면 어디서나 나오는 유니크, 몬스터 sourceId면 그 몬스터 전용
         local t = self:T()
         local list = {}
+        local weights = {}
         for _, u in ipairs(t.UniqueList) do
             local b = t.Bases[u.base]
-            if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then table.insert(list, u) end
+            if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then
+                table.insert(list, u)
+                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25))
+            end
         end
         if #list == 0 then return nil end
-        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+        return self:WeightedPick(list, weights)
     end
 
     method string MakeUnique(table u, integer ilvl)
@@ -371,12 +462,26 @@ script ItemData extends Logic
         return key == "shadowCap" or key == "deploy"
     end
 
+    method number LevelProgress(integer ilvl)
+        -- 같은 난이도 안에서 아이템 레벨이 어디쯤인지 0~1 (보통 1~15 · 악몽 31~45 · 지옥 61~75)
+        local start = 1
+        if ilvl > 60 then start = 61 elseif ilvl > 30 then start = 31 end
+        return math.max(0, math.min(1, (ilvl - start) / 14))
+    end
+
     method integer RollAffix(any a, integer ilvl)
-        -- 접사 값: [min, max] × gearMult × 난이도 상한 사이 무작위 (상한이 낮으면 같은 접사도 9·12·15처럼 제각각)
+        -- 접사 값: [min, max] × gearMult × 난이도 상한. 같은 난이도에서도 레벨이 높을수록 범위의 위쪽에서 굴린다
+        --   (Lv1 = 아래 40% 안, 난이도 끝 레벨 = 위 40% 안 — 사냥터를 옮기면 같은 옵션도 수치가 오른다)
         local scale = _GameData.gearMult * self:GearTier(ilvl)
         local lo = math.max(1, math.floor(a.min * scale))
         local hi = math.max(lo, math.floor(a.max * scale + 0.5))
-        return _UtilLogic:RandomIntegerRange(lo, hi)
+        local t = self:LevelProgress(ilvl)
+        -- 보통: 아래 40% → 위 40%. 악몽·지옥은 상한이 커지는 만큼 30~70%에서 시작해 이전 난이도 끝보다 떨어지지 않게
+        local fromK, toK = 0.6 * t, 0.4 + 0.6 * t
+        if ilvl > 30 then fromK, toK = 0.3 + 0.5 * t, 0.7 + 0.3 * t end
+        local from = math.floor(lo + (hi - lo) * fromK)
+        local to = math.max(from, math.floor(lo + (hi - lo) * toK + 0.5))
+        return _UtilLogic:RandomIntegerRange(from, to)
     end
 
     method void AddModsRolled(table total, string mods)
@@ -405,12 +510,16 @@ script ItemData extends Logic
     method any PickSetPiece(integer ilvl)
         local t = self:T()
         local list = {}
+        local weights = {}
         for _, baseId in ipairs(t.SetPieceOrder) do
             local b = t.Bases[baseId]
-            if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then table.insert(list, t.SetPieces[baseId]) end
+            if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then
+                table.insert(list, t.SetPieces[baseId])
+                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25))
+            end
         end
         if #list == 0 then return nil end
-        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+        return self:WeightedPick(list, weights)
     end
 
     method any GetSetPiece(table item)
@@ -431,15 +540,18 @@ script ItemData extends Logic
     end
 
     method any PickAffix(boolean prefix, string slot, integer ilvl, table used)
+        -- 아이템 레벨보다 15 넘게 낮은 옵션은 덜 나온다 (상위 옵션이 묽어지지 않게)
         local pool = {}
+        local weights = {}
         for _, a in ipairs(self:T().Affixes) do
             if a.prefix == prefix and a.ilvl <= ilvl and not used[a.stat .. tostring(a.prefix)]
                 and (a.slots == "any" or string.find("," .. a.slots .. ",", "," .. slot .. ",", 1, true) ~= nil) then
                 table.insert(pool, a)
+                table.insert(weights, self:OldWeight(a.ilvl, ilvl, 15))
             end
         end
         if #pool == 0 then return nil end
-        return pool[_UtilLogic:RandomIntegerRange(1, #pool)]
+        return self:WeightedPick(pool, weights)
     end
 
     method string RareName()
