@@ -7,6 +7,7 @@ script PlayerInventory extends Component
     property integer BagSize = 60            -- 가방 칸 (10열 × 6줄, 창에서는 3줄씩 스크롤)
     property number PickupRadius = 0.8
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
+    property boolean AshenHoodGranted = false -- 등록한 후드: 캐릭터당 한 번 지급, 저장 데이터에 보존
     property string StarterWeapon = "scythe1|0|1|단낫||0|"
 
     property integer StashSize = 100         -- 창고 칸 (마을 창고 곁에서만)
@@ -32,9 +33,35 @@ script PlayerInventory extends Component
         self.Equip = {}
         self.Stash = {}
         self.Equip["weapon"] = self.StarterWeapon
+        self:EnsureAshenHoodGrant()
         self:RefreshDigest()
         _TimerService:SetTimerOnce(function() self:ApplyEquipment() end, 0.3)
         self.PickupTimer = _TimerService:SetTimerRepeat(function() self:TryPickup() end, 0.25)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnsureAshenHoodGrant()
+        if self.AshenHoodGranted then return end
+        -- 기존 후드를 가지고 있으면 추가 지급하지 않는다. 장착한 투구는 교체하지 않는다.
+        for _, s in ipairs(self.Bag) do
+            if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
+        end
+        for _, s in ipairs(self.Stash) do
+            if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
+        end
+        for _, s in pairs(self.Equip) do
+            if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
+        end
+        local hood = "ashen_hood|0|1|잿빛 장막 후드||0|"
+        if #self.Bag < self.BagSize then
+            table.insert(self.Bag, hood)
+        elseif #self.Stash < self.StashSize then
+            table.insert(self.Stash, hood)
+        else
+            -- 두 곳 모두 가득 차면 기존 아이템을 보존하고 다음 접속에서 다시 확인한다.
+            return
+        end
+        self.AshenHoodGranted = true
     end
 
     @ExecSpace("ServerOnly")
@@ -651,6 +678,7 @@ script PlayerInventory extends Component
             for i, x in ipairs(self.Stash) do stash[i] = x end
             saved.stash = stash
         end
+        saved.ashenHoodGranted = self.AshenHoodGranted
         saved.socketTokens = self.SocketTokens
         return saved
     end
@@ -665,6 +693,8 @@ script PlayerInventory extends Component
         self.Stash = {}
         if data.stash ~= nil then for _, s in ipairs(data.stash) do table.insert(self.Stash, s) end end
         self.SocketTokens = tonumber(data.socketTokens) or 0
+        self.AshenHoodGranted = data.ashenHoodGranted == true
+        self:EnsureAshenHoodGrant()
         self:RefreshDigest()
         self:ApplyEquipment()
     end

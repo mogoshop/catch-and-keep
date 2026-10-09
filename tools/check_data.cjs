@@ -54,7 +54,10 @@ function checkMods(table, i, col, text) {
 }
 
 // ── 아이템 ──
-T.item_bases.forEach((r, i) => { if (!SLOTS.has(r.slot)) err("item_bases", i, `slot '${r.slot}' 알 수 없음`); });
+T.item_bases.forEach((r, i) => {
+  if (!SLOTS.has(r.slot)) err("item_bases", i, `slot '${r.slot}' 알 수 없음`);
+  if (!["", "true", "false"].includes(r.drop || "")) err("item_bases", i, "drop — 빈칸 / true / false");
+});
 T.item_affixes.forEach((r, i) => {
   if (!statKeys.has(r.stat)) err("item_affixes", i, `stat '${r.stat}' — stats.csv에 없음`);
   if (num(r.min) > num(r.max)) err("item_affixes", i, "min > max");
