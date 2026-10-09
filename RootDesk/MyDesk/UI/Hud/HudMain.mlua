@@ -9,6 +9,13 @@ script HudMain extends Logic
     property string SlotKey = ""
     property string BadgeKey = ""
     property string MinionKey = ""
+    property boolean DangerHinted = false
+    property boolean BeltRightClick = false
+    property any TunedCamera = nil
+    property Vector2 CamScreenOffset = Vector2(0.5, 0.45)
+    property Vector2 CamDamping = Vector2(0.8, 0.8)
+    property Vector2 CamDeadZone = Vector2(0.03, 0.03)
+    property Vector2 CamSoftZone = Vector2(0.5, 0.5)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -24,10 +31,12 @@ script HudMain extends Logic
             local slot = i
             _UIKit:Connect("Bottom/Slots/Slot" .. tostring(i), function() _SkillPicker:Open(slot) end)
         end
-        _UIKit:Connect("Bottom/Slots/Belt1", function() self:UsePotion("hp") end)
-        _UIKit:Connect("Bottom/Slots/Belt2", function() self:UsePotion("mp") end)
-        _UIKit:Connect("Bottom/Slots/Belt3", function() self:UsePotion("rv") end)
-        _UIKit:Connect("Bottom/Slots/Belt4", function() self:TownPortal() end)
+        -- 벨트 칸: 클릭 = 사용(빈 칸이면 지정 창), 우클릭 = 넣을 물건 바꾸기
+        for i = 1, 4 do
+            local index = i
+            _UIKit:Connect("Bottom/Slots/Belt" .. tostring(i), function() self:UseBelt(index) end)
+            _UIKit:ConnectHold("Bottom/Slots/Belt" .. tostring(i), function(event) self:BeltDown(index, event.TouchId) end, function(event) end)
+        end
         local menu = { { "Inv", "InvWin" }, { "Char", "CharWin" }, { "Skill", "SkillWin" }, { "Quest", "QuestWin" }, { "Social", "SocialWin" } }
         for _, m in ipairs(menu) do
             local win = m[2]
@@ -37,11 +46,9 @@ script HudMain extends Logic
         _UIKit:Connect("Bottom/Menu/BtnShadow", function() _ShadowHUD:ToggleWindow() end)
         _UIKit:Connect("Bottom/Menu/BtnRank", function() _RankWindow:Show("depth") end)
         _UIKit:Connect("Bottom/Menu/BtnExtract", function() self:Extract() end)
-        _UIKit:Connect("Bottom/Menu/BtnPortal", function() self:TownPortal() end)
         self:CompactMenuRow()
         _UIKit:Connect("MenuWin/Shadow", function() self:FromMenu("") _ShadowHUD:ToggleWindow() end)
         _UIKit:Connect("MenuWin/Rank", function() self:FromMenu("") _RankWindow:Show("depth") end)
-        _UIKit:Connect("MenuWin/Portal", function() self:FromMenu("") self:TownPortal() end)
         _UIKit:SetText("MenuWin/Input/Label", "설정")
         _UIKit:Connect("MenuWin/Input", function() self:FromMenu("AudioWin") end)
         _UIKit:Connect("MenuWin/BtnClose", function() _UIKit:Close("MenuWin") end)
@@ -96,6 +103,7 @@ script HudMain extends Logic
         end
         _UIKit:SetFill("XP/Fill", st.Exp / math.max(1, st.ExpToNext))
         _UIKit:SetText("XP/Text", string.format("Lv %d   경험치 %d / %d", st.Level, st.Exp, st.ExpToNext))
+        self:ApplyCamera()
         self:RenderSlots()
         self:RenderCooldowns()
         self:RenderBadges(st)
@@ -114,19 +122,19 @@ script HudMain extends Logic
         local book = _UIKit:Comp("script.SkillBook")
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
-        ---@type PlayerTravel
-        local travel = _UIKit:Comp("script.PlayerTravel")
-        if book == nil or belt == nil or travel == nil then return end
-        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(travel.TownScroll)
+        if book == nil or belt == nil then return end
+        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(belt:CountOf("tp"))
         if key == self.SlotKey then return end
         self.SlotKey = key
         for i = 1, 5 do _UIKit:SetIcon("Bottom/Slots/Slot" .. tostring(i) .. "/Icon", self:SkillIcon(book:GetSlotSkill(i))) end
-        local belts = { { "potion_hp", belt.HpPot }, { "potion_mp", belt.MpPot }, { "potion_rv", belt.RvPot }, { "icon_scroll", travel.TownScroll } }
-        for i, b in ipairs(belts) do
+        -- 벨트: 칸마다 플레이어가 넣은 물건 그림·개수 (빈 칸은 그림 없이)
+        for i = 1, 4 do
             local path = "Bottom/Slots/Belt" .. tostring(i)
-            _UIKit:SetIcon(path .. "/Icon", _GameData:GetUiIcon(b[1]))
-            _UIKit:SetColor(path .. "/Icon", b[2] > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
-            _UIKit:SetText(path .. "/Count", tostring(b[2]))
+            local kind = belt:SlotKind(i)
+            local count = belt:CountOf(kind)
+            _UIKit:SetIcon(path .. "/Icon", kind == "" and "" or _GameData:GetUiIcon(_GameConst:BeltIcon(kind)))
+            _UIKit:SetColor(path .. "/Icon", count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
+            _UIKit:SetText(path .. "/Count", kind == "" and "" or tostring(count))
         end
     end
 
@@ -230,29 +238,27 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderQuestTrack(Entity player)
-        -- 오른쪽 위 종이: 제목 + 할 일 (누르면 퀘스트 창)
+        -- 의뢰 추적(글자만): 뱃지 → 제목 → 지역 → 완료 조건·진행. 누르면 퀘스트 창
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         if quest == nil then return end
         local q = _QuestData:Get(quest.Index)
-        local title = ""
-        local body = ""
+        local total = _QuestData:Count()
+        local badge, title, caption, goal = "", "", "", ""
         if q == nil then
-            title = "모든 의뢰 완료"
-            body = "심도 던전·높은 난이도에 도전하세요"
+            badge, title, caption, goal = "완료", "모든 의뢰 완료", "심도 던전·높은 난이도", "새로운 도전을 찾아보세요"
         elseif quest.State == 0 then
-            title = "새 의뢰"
-            body = "잿불 야영지의 사제 오렌을 찾아가세요"
+            badge, title, caption, goal = "새 의뢰", q.title, "잿불 야영지", "사제 오렌에게 말을 거세요"
         elseif quest.State == 1 then
-            title = q.title
-            body = q.zone .. "\n" .. q.objective
+            badge, title, caption = "의뢰 " .. tostring(quest.Index) .. "/" .. tostring(total), q.title, q.zone
+            goal = q.objective .. "  " .. string.format("%d/%d", quest.Progress, q.count)
         else
-            title = q.title .. " (완료)"
-            body = "사제 오렌에게 보고하세요"
+            badge, title, caption, goal = "보고", q.title, "잿불 야영지", "사제 오렌에게 보고하세요"
         end
+        _UIKit:SetText("QuestTrack/Badge/Text", badge)
         _UIKit:SetText("QuestTrack/Title", _UIKit:Clip(title, 16))
-        _UIKit:SetText("QuestTrack/Body", body)
-        _UIKit:SetText("QuestTrack/Progress", q ~= nil and quest.State == 1 and string.format("%d / %d", quest.Progress, q.count) or "")
+        _UIKit:SetText("QuestTrack/Body", caption)
+        _UIKit:SetText("QuestTrack/Progress", goal)
     end
 
     @ExecSpace("ClientOnly")
@@ -349,7 +355,7 @@ script HudMain extends Logic
             return "혼이 남았습니다 — 가까이 다가가 혼을 조준하고 「해골 전사」(" .. key .. ") 사용"
         end
         if not pc and chosenSlot == 5 then
-            return "혼이 없습니다 — 스킬 편집에서 소환을 1~4번에 두고 큰 공격 칸을 비우면 기본 공격을 쓸 수 있습니다"
+            return "혼이 없습니다 — 스킬 창의 「스킬 편집」에서 소환을 1~4번에 두고 큰 공격 칸을 비우면 기본 공격을 쓸 수 있습니다"
         end
         return "지옥견을 쓰러뜨리면 혼이 남습니다 — 그 혼으로 해골 전사를 일으키세요"
     end
@@ -357,33 +363,58 @@ script HudMain extends Logic
     -- ───────── 동작 ─────────
 
     @ExecSpace("ClientOnly")
+    method void ApplyCamera()
+        -- 탑다운 카메라: 횡스크롤 기본값(캐릭터를 중앙 아래에 두고 세로로 느리게 따라옴)은 아래로 걸을 때 하단 HUD에 길이 가려졌다.
+        -- 캐릭터를 중앙보다 조금 위에 두고(아래 시야 확보) 가로·세로 모두 빨리 따라가게 한다. 맵 이동 뒤에도 다시 맞춘다
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if not isvalid(cam) or cam == self.TunedCamera then return end
+        self.TunedCamera = cam
+        cam.ScreenOffset = self.CamScreenOffset
+        cam.Damping = self.CamDamping
+        cam.DeadZone = self.CamDeadZone
+        cam.SoftZone = self.CamSoftZone
+        log("[VRF] camera tuned offset=" .. tostring(cam.ScreenOffset) .. " damping=" .. tostring(cam.Damping))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HintDanger(string kind)
+        -- 처음 보는 붉은 바닥 원이 무엇인지 한 번만 알려 준다 (접속마다 1회)
+        if self.DangerHinted then return end
+        self.DangerHinted = true
+        _UXFeedback:Show("붉은 원 = 적의 범위 공격", "곧 원 안이 터집니다 — 테두리 밖으로 걸어 나가면 피할 수 있습니다", _GameData:GetUiIcon("red_dot"))
+    end
+
+    @ExecSpace("ClientOnly")
     method void CompactMenuRow()
-        -- 하단 메뉴 아이콘 줄이 캐릭터 바로 아래 전투 공간(적·출구)을 가렸다. 78%로 줄이고 아래 단축칸 쪽에 붙인다.
+        -- 하단 메뉴 줄이 캐릭터 바로 아래 전투 공간(적·출구)을 가렸다. 85%로 줄이고(메뉴 이름은 읽히게) 아래 단축칸 쪽에 붙인다.
         local row = _UIKit:Get("Bottom/Menu")
         if not isvalid(row) then return end
         local t = row.UITransformComponent
-        local scale = 0.78
+        local scale = 0.85
         local bottomGap = t.anchoredPosition.y - t.RectSize.y   -- 원래 아래 끝과 단축칸 사이 간격 (위쪽 기준 피벗)
         t.UIScale = Vector3(scale, scale, 1)
         t.anchoredPosition = Vector2(t.anchoredPosition.x, bottomGap + t.RectSize.y * scale)
     end
 
     @ExecSpace("ClientOnly")
-    method void UsePotion(string kind)
-        -- 다른 창을 조작하는 동안 배경 HUD에서 전투 동작이 나가지 않게 한다.
+    method void UseBelt(integer index)
+        -- 벨트 칸 클릭: 빈 칸이면 넣을 물건 고르기, 아니면 사용. 다른 창 조작 중에는 쓰지 않는다
+        if self.BeltRightClick then self.BeltRightClick = false return end
         if not _UIKit:CanUseGameplayInput() then return end
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
-        if belt ~= nil then belt:RequestUsePotion(kind) end
+        if belt == nil then return end
+        if belt:SlotKind(index) == "" then _SkillPicker:OpenBelt(index) return end
+        belt:RequestUseSlot(index)
     end
 
     @ExecSpace("ClientOnly")
-    method void TownPortal()
-        -- 다른 창을 조작하는 동안 배경 HUD에서 전투 동작이 나가지 않게 한다.
-        if not _UIKit:CanUseGameplayInput() then return end
-        ---@type PlayerTravel
-        local travel = _UIKit:Comp("script.PlayerTravel")
-        if travel ~= nil then travel:RequestTownPortal() end
+    method void BeltDown(integer index, integer touchId)
+        -- PC 우클릭(-2)은 사용하지 않고 칸 지정 창을 연다
+        log("[VRF] belt down slot=" .. tostring(index) .. " touch=" .. tostring(touchId))
+        if touchId ~= -2 then return end
+        self.BeltRightClick = true
+        _SkillPicker:OpenBelt(index)
     end
 
     @ExecSpace("ClientOnly")

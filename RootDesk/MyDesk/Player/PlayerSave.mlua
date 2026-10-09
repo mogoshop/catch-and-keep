@@ -86,13 +86,14 @@ script PlayerSave extends Component
         self.IsLoadSuccess = true
         self.AudioDigest = self:AudioKey(self.AudioSettings)
         self.AudioSavedDigest = self.AudioDigest
-        -- D2처럼 접속하면 언제나 (저장된 난이도의) 마을에서 시작한다. 월드 시작 맵은 사냥터라 여기서 옮긴다
+        -- 짧게 끊겼다 돌아오면(15분 이내) 마지막 사냥터 자리로, 아니면 (저장된 난이도의) 마을에서 시작한다.
+        -- 월드 시작 맵은 사냥터라 여기서 옮긴다
         if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
             local want = _GameConst:MapFor(_GameConst.MapTown, travel ~= nil and travel:Difficulty() or 0)
             local map = self.Entity.CurrentMap
-            if travel ~= nil and (not isvalid(map) or map.Name ~= want) then travel:GoTown() end
+            if travel ~= nil and not travel:TryResume() and (not isvalid(map) or map.Name ~= want) then travel:GoTown() end
         end
         _UndeadSystem:RestoreRoomTravel(self.Entity)
         self:ContinueDepthTravel()

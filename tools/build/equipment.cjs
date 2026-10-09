@@ -11,7 +11,7 @@ b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const w='SafeArea/InvWin';
 b.panel(w,{rect_size:[1400,1000],pos:[20,0],color:'#100E16',raycast:true,enable:false});
 b.sprite(w+'/Rim',{rect_size:[1420,1020],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
-b.text(w+'/Title','소지품  ·  망자의 장비',{anchor:'top-left',pos:[100,-20],rect_size:[1140,64],size:36,color:'#E6C88A',alignment:3,bold:true});
+b.text(w+'/Title','소지품  ·  망자의 장비',{anchor:'top-left',pos:[100,-20],rect_size:[1140,64],size:28,color:'#E6C88A',alignment:3,bold:true});
 b.button(w+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
 const d=w+'/Doll';
 b.panel(d,{anchor:'top-left',pos:[28,-112],rect_size:[500,516],color:'#17131D'});
@@ -40,7 +40,7 @@ for(let i=1;i<=30;i++){
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
 }
 b.button(w+'/BtnEquip','장착',{anchor:'top-left',pos:[1100,-690],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6C88A'});
-b.button(w+'/BtnSell','판매',{anchor:'top-left',pos:[1100,-794],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6DCC6'});
+b.button(w+'/BtnSell','버리기',{anchor:'top-left',pos:[1100,-794],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6DCC6'});
 b.text(w+'/Hint','선택 → 설명 확인\n버튼으로 작업 확정',{anchor:'top-left',pos:[1100,-616],rect_size:[272,64],size:24,color:'#C9BBA0',alignment:0});
 b.write(file,{lint_verbose:true});
 return b.listEntities().length;

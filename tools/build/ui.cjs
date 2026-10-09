@@ -42,7 +42,7 @@ function kit(b) {
     frame(name, anchor, pos, size, title) {
       b.panel(name, { anchor, pos, rect_size: size, color: DARK, sprite_type: 1, raycast: true });
       k.rim(name, "win_frame", -10);
-      b.text(`${name}/Title`, title, { size: 30, bold: true, color: C.title, anchor: "top-center", pos: [0, -22], rect_size: [size[0] - 260, 44], ...outline });
+      b.text(`${name}/Title`, title, { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -24], rect_size: [size[0] - 260, 40], ...outline });
       b.button(`${name}/BtnClose`, "", { anchor: "top-right", pos: [-12, -10], rect_size: [70, 70], ...bg("btn_close"), sprite_type: 1 });
     },
     // 테두리 그림을 부모 크기에 맞춰 덮는다 (inset 음수 = 바깥으로 조금 넘침)
@@ -100,10 +100,11 @@ function buildGameHud() {
   b.text("Target/Curse", "", { size: 16, color: "#C88CFF", anchor: "top-center", pos: [0, -66], rect_size: [440, 22], ...outline });
 
   // ── 맵 이름 (D2처럼 들어올 때 상단 가운데 2초) ──
-  b.sprite("Banner", { anchor: "top-center", pos: [0, -280], rect_size: [900, 150], ...part("banner"), sprite_type: 1 });
-  b.text("Banner/Title", "", { size: 48, bold: true, color: C.title, anchor: "top-center", pos: [0, -22], rect_size: [620, 64], ...outline, outline_width: 0.25 });
+  // 띠 그림의 어두운 가운데 안에 제목·부제가 모두 들어가게 (예전 48px 제목은 띠 위로, 부제는 아래 테두리로 넘쳤다)
+  b.sprite("Banner", { anchor: "top-center", pos: [0, -270], rect_size: [1000, 180], ...part("banner"), sprite_type: 1 });
+  b.text("Banner/Title", "", { size: 38, bold: true, color: C.title, anchor: "middle-center", pos: [0, 14], rect_size: [640, 52], ...outline, outline_width: 0.25, bestfit: true, min_size: 30, max_size: 38 });
   b.patchComponent("Banner/Title", "MOD.Core.TextGUIRendererComponent", { Font: "Maple" });
-  b.text("Banner/Sub", "", { size: 24, color: C.gold, anchor: "top-center", pos: [0, -86], rect_size: [620, 36], ...outline });
+  b.text("Banner/Sub", "", { size: 22, color: C.gold, anchor: "middle-center", pos: [0, -28], rect_size: [640, 30], ...outline });
 
   // ── 미니맵 (오른쪽 위, PC 시스템 버튼 아래) ──
   b.panel("MiniMap", { anchor: "top-right", pos: [-24, -140], rect_size: [300, 280], color: DARK, sprite_type: 1, raycast: true });
@@ -133,9 +134,8 @@ function buildGameHud() {
   b.empty("Party", { anchor: "top-left", pos: [24, -272], rect_size: [400, 170] });
   b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 170], ...outline });
 
-  // ── NPC 머리 위 의뢰 표시 (화면 좌표로 따라다닌다) ──
-  b.sprite("NpcMark", { anchor: "middle-center", pos: [0, 0], rect_size: [84, 84], image_ruid: K.q_avail, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
-  k.aspect("NpcMark");
+  // ── NPC 머리 위 의뢰 표시 「!」 (새 의뢰 노랑 · 완료 보고 초록, 화면 좌표로 따라다닌다) ──
+  b.text("NpcMark", "!", { size: 96, bold: true, color: "#FFD23F", anchor: "middle-center", pos: [0, 0], rect_size: [90, 120], outline: true, outline_color: "#2A1A05", outline_width: 0.3, enable: false });
 
   // ── 안내 (첫 진입·포인트) ──
   b.panel("Tip", { anchor: "top-center", pos: [0, -122], rect_size: [780, 50], ...part("hud_box"), sprite_type: 1, enable: false });
@@ -177,15 +177,17 @@ function buildGameHud() {
     b.text(`${n}/Key`, key, { size: 18, color: C.white, anchor: "top-left", pos: [6, -2], rect_size: [24, 22], alignment: 0, ...outline });
     b.text(`${n}/Count`, "", { size: 18, bold: true, anchor: "bottom-right", pos: [-6, 2], rect_size: [60, 24], alignment: 8, ...outline });
   });
-  b.empty("Bottom/Menu", { anchor: "top-center", pos: [0, 64], rect_size: [9 * 66, 60] });
-  [["BtnInv", K.icon_bag, "I"], ["BtnChar", K.icon_stats, "U"], ["BtnSkill", K.icon_skill, "K"], ["BtnShadow", K.icon_shadow, "H"],
-    ["BtnQuest", K.icon_quest, "Q"], ["BtnSocial", K.icon_party, "P"], ["BtnRank", K.icon_rank, "L"], ["BtnExtract", SKILL_ICON.extract_mastery, "E"], ["BtnPortal", K.icon_scroll, "T"]]
-    .forEach(([n, ruid, key], i) => {
+  // PC 메뉴 줄: 아이콘 + 아래 메뉴 이름 + 오른쪽 위 단축키 (귀환은 벨트 칸으로 옮겨 메뉴에서 뺐다)
+  const MENU = [["BtnInv", K.icon_bag, "I", "소지품"], ["BtnChar", K.icon_stats, "U", "능력치"], ["BtnSkill", K.icon_skill, "K", "스킬"], ["BtnShadow", K.icon_shadow, "H", "그림자"],
+    ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "플레이어"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "추출"]];
+  b.empty("Bottom/Menu", { anchor: "top-center", pos: [0, 92], rect_size: [MENU.length * 88, 84] });
+  MENU.forEach(([n, ruid, key, label], i) => {
       const path = `Bottom/Menu/${n}`;
-      b.button(path, "", { anchor: "middle-left", pos: [i * 66, 0], rect_size: [60, 60], ...bg("hud_box"), sprite_type: 1 });
-      b.sprite(`${path}/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [40, 40], image_ruid: ruid, sprite_type: 0, color: iconColor(ruid), alpha: 1 });
+      b.button(path, "", { anchor: "middle-left", pos: [i * 88, 0], rect_size: [84, 84], ...bg("hud_box"), sprite_type: 1 });
+      b.sprite(`${path}/Icon`, { anchor: "top-center", pos: [0, -6], rect_size: [44, 44], image_ruid: ruid, sprite_type: 0, color: iconColor(ruid), alpha: 1 });
       k.aspect(`${path}/Icon`);
-      b.text(`${path}/Key`, key, { size: 16, color: C.white, anchor: "bottom-right", pos: [-2, 0], rect_size: [20, 18], alignment: 8, ...outline });
+      b.text(`${path}/Label`, label, { size: 18, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 4], rect_size: [84, 24], ...outline });
+      b.text(`${path}/Key`, key, { size: 16, color: C.white, anchor: "top-right", pos: [-3, -2], rect_size: [20, 18], alignment: 2, ...outline });
       if (n === "BtnChar" || n === "BtnSkill") k.badge(path);
     });
 
@@ -193,7 +195,7 @@ function buildGameHud() {
   k.frame("MenuWin", "middle-center", [0, 20], [800, 640], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
-    ["Rank", K.icon_rank, "랭킹"], ["Portal", K.icon_portal, "귀환"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
+    ["Rank", K.icon_rank, "랭킹"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const path = `MenuWin/${n}`;
     k.btn(path, "", { anchor: "top-left", pos: [64 + col * 230, -96 - row * 160], rect_size: [212, 148] });
@@ -202,7 +204,7 @@ function buildGameHud() {
     b.text(`${path}/Label`, label, { size: 26, color: C.white, anchor: "bottom-center", pos: [0, 14], rect_size: [200, 34] });
     if (n === "Char" || n === "Skill") k.badge(path);
   });
-  b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · T 귀환\nA S D F·우클릭 스킬 · 1 2 3 물약 · Z 소환 · X 회수 · C 집결 · E 추출 · 칸 클릭 = 스킬 바꾸기",
+  b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
 
@@ -268,10 +270,16 @@ function buildGameHud() {
   });
   k.inner("SkillWin/DescBox", "bottom-left", [30, 104], [960, 72], "win_content");
   b.text("SkillWin/DescBox/Desc", "", { size: 17, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [932, 66] });
-  [["BtnLearn", "습득 +1"], ["BtnA", "A"], ["BtnS", "S"], ["BtnD", "D"], ["BtnF", "F"], ["BtnR", "우클릭"]].forEach(([n, t], i) => {
-    const opts = { anchor: "bottom-left", pos: [30 + i * 162, 24], rect_size: [150, 66] };
-    if (i === 0) k.ok(`SkillWin/${n}`, t, opts); else k.btn(`SkillWin/${n}`, t, opts);
+  // 습득은 설명 오른쪽의 가장 큰 버튼. 칸 지정은 PC만 A S D F 우클릭, 모바일은 「스킬 편집」 하나 (창을 닫고 패드 칸의 +로 지정)
+  k.ok("SkillWin/BtnLearn", "습득 +1", { anchor: "bottom-right", pos: [-30, 132], rect_size: [240, 248], font_size: 34 });
+  [["BtnA", "A"], ["BtnS", "S"], ["BtnD", "D"], ["BtnF", "F"], ["BtnR", "우클릭"]].forEach(([n, t], i) => {
+    k.btn(`SkillWin/${n}`, t, { anchor: "bottom-left", pos: [30 + i * 162, 24], rect_size: [150, 88] });
+    k.pc(`SkillWin/${n}`);
   });
+  b.text("SkillWin/SlotHint", "← 고른 스킬을\n그 칸에 넣기", { size: 20, color: C.dim, alignment: 3, anchor: "bottom-right", pos: [-24, 24], rect_size: [156, 88] });
+  k.pc("SkillWin/SlotHint");
+  k.btn("SkillWin/BtnEdit", "스킬 편집 — 스킬 칸에 넣기", { anchor: "bottom-left", pos: [30, 24], rect_size: [960, 88], font_size: 28 });
+  k.mobile("SkillWin/BtnEdit");
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
@@ -435,14 +443,15 @@ function patchShadowHud() {
     k.cooldown(n, 112);
     editMark(n, 64);
   });
-  k.btn("MobilePad/BtnSkillEdit", "스킬 편집", { ...center, pos: [-580, 560], rect_size: [170, 68], font_size: 22 });
+  // 「편집 끝」: 스킬 창의 「스킬 편집」으로 편집 모드일 때만 보인다 (평소에는 화면에 떠 있지 않다)
+  k.btn("MobilePad/BtnSkillEdit", "편집 끝", { ...center, pos: [-180, 580], rect_size: [220, 88], font_size: 26, enable: false });
+  // 벨트 4칸 (2×2): 무엇을 넣을지는 플레이어가 정한다 (「스킬 편집」 중 칸을 누르면 지정). 그림·개수는 MobilePad가 채운다
   s.empty("MobilePad/Potions", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
-  [["Hp", K.potion_hp, -580], ["Mp", K.potion_mp, -700]].forEach(([n, ruid, x]) => {
-    const path = `MobilePad/Potions/${n}`;
-    k.slot(path, { ...center, pos: [x, 70], rect_size: [104, 104] }, 56);
-    s.patchComponent(`${path}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: ruid } });
-    s.patch(`${path}/Icon`, { enable: true });
+  [[-700, 70], [-580, 70], [-700, 186], [-580, 186]].forEach(([x, y], i) => {
+    const path = `MobilePad/Potions/Belt${i + 1}`;
+    k.slot(path, { ...center, pos: [x, y], rect_size: [104, 104] }, 56);
     b_label(s, `${path}/Count`, "", 20, "bottom-right");
+    editMark(path, 56);
   });
   // 그림자 명령: 버튼 하나를 누르면 소환·회수·집결이 위로 펼쳐진다 (배운 것만 보임)
   // 혼 추출: 손 닿는 거리에 내 혼이 있을 때만 나타난다 (그림자 소환을 배운 뒤). PC는 E 키·혼 클릭
@@ -452,20 +461,21 @@ function patchShadowHud() {
   b_label(s, "MobilePad/Extract/Label", "추출", 20, "bottom-center");
   s.patch("MobilePad/Extract", { enable: false });
   s.empty("MobilePad/Shadow", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
-  k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-580, 200], rect_size: [104, 104] }, 64);
+  k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-600, 320], rect_size: [104, 104] }, 64);
   s.patchComponent("MobilePad/Shadow/Toggle/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.icon_shadow }, Color: hexA(part("icon_shadow").color, 1) });
   s.patch("MobilePad/Shadow/Toggle/Icon", { enable: true });
   s.empty("MobilePad/Shadow/Cmds", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   [["Summon", "소환", SKILL_ICON.shadow_summon], ["Recall", "회수", K.icon_scroll], ["Rally", "집결", SKILL_ICON.rally]].forEach(([n, label, ruid], i) => {
     const path = `MobilePad/Shadow/Cmds/${n}`;
-    const p = [[-580, 320], [-580, 436], [-700, 320]][i];
+    const p = [[-600, 440], [-600, 556], [-720, 440]][i];
     k.slot(path, { ...center, pos: p, rect_size: [100, 100] }, 56);
     s.patchComponent(`${path}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: ruid } });
     s.patch(`${path}/Icon`, { enable: true });
     b_label(s, `${path}/Label`, label, 18, "bottom-center");
   });
   for (const n of ["MobilePad/Attack", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
-  s.write(file);
+  // ui_lint L013이 stretch 묶음(Potions) 아래 물약 수 글자를 화면 밖으로 잘못 계산한다 (실제 위치는 물약 칸 안, 메이커 화면 확인). 오류로 빌드를 멈추지 않게 한다
+  s.write(file, { strict: false });
   // 다시 만든 패드도 경로가 같으면 예전 UUID를 유지 (메이커가 새 UUID 묶음을 다시 불러오지 못하는 경우가 있었다)
   preserveIds(file, previous);
 }

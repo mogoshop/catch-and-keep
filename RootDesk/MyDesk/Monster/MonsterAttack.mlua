@@ -30,6 +30,9 @@ script MonsterAttack extends AttackComponent
     property integer AttackEpoch = 0
     property integer WarningSerial = 0
     property integer WarningTimer = 0
+    property integer NovaTimer = 0
+    property number NovaLineWidth = 0.12
+    property number WarnLineWidth = 0.1      -- 정예·변종 평타 예고 선 두께 (예전 0.65는 꽉 찬 붉은 점처럼 보였다)
     property string WarningOwner = ""
     property integer WarningEpoch = -1
     property integer WindupTimer = 0
@@ -253,6 +256,11 @@ script MonsterAttack extends AttackComponent
         ---@type BossPattern
         local boss = self.Entity:GetComponent("script.BossPattern")
         if boss ~= nil and boss.SlamPhase ~= "idle" then return end
+        -- 범위 기술 예고(nova)가 떠 있는 동안에는 더 큰 위험을 덮어쓰지 않는다
+        if self.WarningOwner == "nova" then return end
+        -- D2·이모탈처럼 일반 몬스터의 평타에는 바닥 표시를 하지 않는다 (몸짓으로 읽는다). 정예·변종·보스만 얇은 테두리로 예고
+        local body = self:Body()
+        if body ~= nil and body.Grade < 2 and body:GetVariant() == "" then return end
         self:ClearWindup()
         self.WarningOwner = "basic"
         self.WarningEpoch = epoch
@@ -296,7 +304,7 @@ script MonsterAttack extends AttackComponent
             local angle = math.pi * 2 * i / 24
             local point = center + Vector2(math.cos(angle), math.sin(angle)) * radius
             local localPoint = transform:ToLocalPoint(Vector3(point.x, point.y, transform.WorldPosition.z))
-            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, 0.65))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, self.WarnLineWidth))
         end
         if self.DebugCombat then log("[VRF] melee warning points=25 center=" .. tostring(center) .. " radius=" .. tostring(radius)) end
         return true
@@ -326,7 +334,7 @@ script MonsterAttack extends AttackComponent
         local color = Color(1, 0.55, 0.2, 0.9)
         local function addPoint(point)
             local localPoint = transform:ToLocalPoint(Vector3(point.x, point.y, p.z))
-            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, 0.65))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, self.WarnLineWidth))
         end
         line.Points:Clear()
         addPoint(start)
@@ -336,6 +344,30 @@ script MonsterAttack extends AttackComponent
         addPoint(tip - dir * head - normal * head * 0.6)
         if self.DebugCombat then log("[VRF] ranged warning points=5 length=" .. tostring((tip - start):Magnitude()) .. " dir=" .. tostring(dir)) end
         return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawNovaWarning(Vector2 center, number radius, Color color, number duration)
+        -- 변종 범위 기술 예고: 실제 판정 원(CircleShape)의 경계를 선명한 선으로 그린다. duration 뒤 같은 자리에서 터진다.
+        local line = self.Entity.LineRendererComponent
+        if not isvalid(line) then return end
+        self:ClearWindup()
+        if self.WarningOwner == "basic" or self.WarningOwner == "" then line.Points:Clear() end
+        self.WarningOwner = "nova"
+        local transform = self.Entity.TransformComponent
+        for i = 0, 40 do
+            local angle = math.pi * 2 * i / 40
+            local p = center + Vector2(math.cos(angle), math.sin(angle)) * radius
+            local localPoint = transform:ToLocalPoint(Vector3(p.x, p.y, transform.WorldPosition.z))
+            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, self.NovaLineWidth))
+        end
+        if self.NovaTimer ~= 0 then _TimerService:ClearTimer(self.NovaTimer) end
+        self.NovaTimer = _TimerService:SetTimerOnce(function()
+            self.NovaTimer = 0
+            if not isvalid(self.Entity) or self.WarningOwner ~= "nova" then return end
+            if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
+            self.WarningOwner = ""
+        end, duration)
     end
 
     @ExecSpace("ClientOnly")

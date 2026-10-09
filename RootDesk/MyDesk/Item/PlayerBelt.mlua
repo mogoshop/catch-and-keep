@@ -1,4 +1,6 @@
--- 물약 벨트 (D2 벨트): 1 생명 · 2 마나 · 3 회복(생명·마나 동시). 4번 칸은 귀환 두루마리(PlayerTravel).
+-- 벨트 (D2 벨트): 4칸에 무엇을 넣을지 플레이어가 고른다 — hp 생명 물약 · mp 마나 물약 · rv 회복 물약 · tp 귀환 두루마리 · "" 빈 칸.
+-- 칸 사용: PC 숫자 1~4·칸 클릭, 모바일 물약 칸. 칸 지정: PC 칸 우클릭(빈 칸은 클릭), 모바일 「스킬 편집」 중 물약 칸 → SkillPicker 벨트 모드.
+-- 귀환 두루마리 개수는 PlayerTravel.TownScroll (상점 구매).
 @Component
 script PlayerBelt extends Component
 
@@ -9,13 +11,69 @@ script PlayerBelt extends Component
     property integer MpPot = 2
     @Sync
     property integer RvPot = 0
+    @Sync
+    property string Layout = "hp,mp,rv,"   -- 칸 1~4의 물건 (","로 연결, 빈 칸은 빈 문자열)
     property number ReadyAt = 0
+
+    method string SlotKind(integer index)
+        -- index번 칸의 물건 종류 ("" = 빈 칸)
+        local i = 0
+        for part in string.gmatch(self.Layout .. ",", "([^,]*),") do
+            i = i + 1
+            if i == index then return part end
+        end
+        return ""
+    end
+
+    method boolean ValidKind(string kind)
+        return kind == "" or kind == "hp" or kind == "mp" or kind == "rv" or kind == "tp"
+    end
+
+    method integer CountOf(string kind)
+        -- 그 물건의 남은 개수 (귀환 두루마리는 PlayerTravel)
+        if kind == "hp" then return self.HpPot end
+        if kind == "mp" then return self.MpPot end
+        if kind == "rv" then return self.RvPot end
+        if kind == "tp" then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            if travel ~= nil then return travel.TownScroll end
+        end
+        return 0
+    end
 
     @ExecSpace("ServerOnly")
     method void AddPotion(string kind, integer count)
         if kind == "hp" then self.HpPot = self.HpPot + count
         elseif kind == "mp" then self.MpPot = self.MpPot + count
         elseif kind == "rv" then self.RvPot = self.RvPot + count end
+    end
+
+    @ExecSpace("Server")
+    method void RequestSetBelt(integer index, string kind)
+        -- 칸 지정 (서버 검증). 같은 물건이 다른 칸에 있으면 그 칸은 비운다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or index < 1 or index > 4 or not self:ValidKind(kind) then return end
+        local parts = {}
+        for i = 1, 4 do
+            local current = self:SlotKind(i)
+            if i == index then current = kind elseif kind ~= "" and current == kind then current = "" end
+            parts[i] = current
+        end
+        self.Layout = table.concat(parts, ",")
+    end
+
+    @ExecSpace("Server")
+    method void RequestUseSlot(integer index)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or index < 1 or index > 4 then return end
+        local kind = self:SlotKind(index)
+        if kind == "" then return end
+        if kind == "tp" then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            if travel ~= nil then travel:UseTownScroll() end
+            return
+        end
+        self:UsePotion(kind)
     end
 
     @ExecSpace("Server")
@@ -53,15 +111,17 @@ script PlayerBelt extends Component
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
+        -- 숫자 1~4 = 벨트 칸 1~4 (무엇이 들었는지는 플레이어가 정한다)
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
-        if event.key == KeyboardKey.Alpha1 then self:RequestUsePotion("hp")
-        elseif event.key == KeyboardKey.Alpha2 then self:RequestUsePotion("mp")
-        elseif event.key == KeyboardKey.Alpha3 then self:RequestUsePotion("rv") end
+        if event.key == KeyboardKey.Alpha1 then self:RequestUseSlot(1)
+        elseif event.key == KeyboardKey.Alpha2 then self:RequestUseSlot(2)
+        elseif event.key == KeyboardKey.Alpha3 then self:RequestUseSlot(3)
+        elseif event.key == KeyboardKey.Alpha4 then self:RequestUseSlot(4) end
     end
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { hp = self.HpPot, mp = self.MpPot, rv = self.RvPot }
+        return { hp = self.HpPot, mp = self.MpPot, rv = self.RvPot, lay = self.Layout }
     end
 
     @ExecSpace("ServerOnly")
@@ -70,6 +130,8 @@ script PlayerBelt extends Component
         self.HpPot = d.hp or 0
         self.MpPot = d.mp or 0
         self.RvPot = d.rv or 0
+        -- 예전 저장(칸 고정)은 물약 3칸 + 빈 4번 칸으로 시작한다
+        if type(d.lay) == "string" then self.Layout = d.lay else self.Layout = "hp,mp,rv," end
     end
 
 end

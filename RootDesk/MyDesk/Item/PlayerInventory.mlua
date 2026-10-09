@@ -206,11 +206,26 @@ script PlayerInventory extends Component
         if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         local stats = self:Stats()
         if stats == nil then return end
+        -- 판매는 상인 곁에서만 (소지품 어디서나 팔리던 것을 막는다)
+        if not _Util:NearNpc(self.Entity, "shop") then
+            _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            return
+        end
         local s = self:TakeBagItem(index)
         if s == "" then return end
         local value = _ItemData:SellValue(s)
         stats:AddGold(value)
         _Util:Notify("판매 +" .. tostring(value) .. " 골드", senderUserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestDiscard(integer index, string expectedItem)
+        -- 버리기: 확인 창을 거친 뒤 가방에서 영구 삭제. 요청 사이에 바뀐 물건은 버리지 않는다
+        if not self:IsOwnerRequest(senderUserId) then return end
+        if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
+        local s = self:TakeBagItem(index)
+        if s == "" then return end
+        _Util:Notify("버렸다: " .. _ItemData:Parse(s).name, senderUserId)
     end
 
     @ExecSpace("Server")

@@ -21,7 +21,7 @@ function run() {
   const win = 'SafeArea/JournalWin';
   b.panel(win, { rect_size: [1320, 900], color: { r: .05, g: .045, b: .06, a: 1 }, raycast: true, enable: false });
   b.sprite(win + '/Rim', { rect_size: [1340, 920], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
-  b.text(win + '/Title', '일지', { anchor: 'top-left', pos: [110, -22], rect_size: [700, 56], size: 36, color: '#E6C88A', alignment: 3, bold: true });
+  b.text(win + '/Title', '일지', { anchor: 'top-left', pos: [110, -22], rect_size: [700, 56], size: 28, color: '#E6C88A', alignment: 3, bold: true });
   b.button(win + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
   [['TabDaily', '일일 의뢰'], ['TabAch', '업적'], ['TabCol', '도감']].forEach(([n, label], i) => {
     b.button(win + '/' + n, label, { anchor: 'top-left', pos: [40 + i * 260, -88], rect_size: [244, 88], font_size: 28, bg_color: '#24212B', color: '#E6DCC6' });

@@ -28,6 +28,7 @@ script HudMap extends Logic
     property number FeatureRefreshInterval = 1.2   -- 늦게 생기는 포털·파티 표시 반영 (맵 전체 검색 5종이라 자주 돌리지 않는다)
     property number NextFocusAt = 0
     property number CombatUntil = 0            -- 모바일 전투 중 의뢰 추적 접기 (InMobileCombat)
+    property Vector2 LastMePos = Vector2(0, 0)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -40,7 +41,8 @@ script HudMap extends Logic
         -- 별도 내비게이션 HUD를 사용하며 이전 표시물은 중복되지 않게 숨긴다.
         _UIKit:SetEnabled("/ui/GameHUD/MiniMap", false)
         _UIKit:SetEnabled("/ui/GameHUD/QuestTrack", false)
-        self.Expanded = not Environment:IsMobilePlatform()
+        -- 모바일도 지도를 펼친 채 시작한다 (접힌 채라 「미니맵이 없어졌다」고 보였다)
+        self.Expanded = true
         _UIKit:Connect("MiniMap/Toggle", function() self:ToggleMap() end)
         _UIKit:SetEnabled("Banner", false)
         _UIKit:SetEnabled("NpcMark", false)
@@ -75,6 +77,14 @@ script HudMap extends Logic
         self:TickBanner()
         local me = _Util:Pos2(player)
         _UIKit:SetPos("MiniMap/Body/Area/Me", self:ToMini(me))
+        -- 내 화살표는 움직인 방향을 가리킨다
+        local moved = me - self.LastMePos
+        if moved:Magnitude() > 0.03 then
+            local arrow = _UIKit:Get("MiniMap/Body/Area/Me")
+            -- 그림이 아래(-90°)를 보므로 +90°를 더해 움직인 방향으로 돌린다
+            if isvalid(arrow) then arrow.UITransformComponent.UIRotation = Vector3(0, 0, math.deg(math.atan(moved.y, moved.x)) + 90) end
+        end
+        self.LastMePos = me
         self:RenderParty(player)
         self:RenderNpcMark(player)
         self:RenderGates(player)
@@ -128,8 +138,7 @@ script HudMap extends Logic
             for i = 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
             return
         end
-        -- 지형에서 계산한 축척을 표식에도 그대로 적용한다.
-        local icons = { portal = "icon_scroll", waypoint = "icon_waypoint", quest = "icon_quest", npc = "icon_party", depth = "icon_shadow", altar = "rune", boss = "icon_sword" }
+        -- 지형에서 계산한 축척을 표식에도 그대로 적용한다. 표식은 그림 대신 색 점 + 짧은 이름 (와우·이모탈 미니맵)
         local n = 0
         local features = self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)
         self.LastFeatureKey = self:FeatureKey(features)
@@ -140,8 +149,8 @@ script HudMap extends Logic
                 local path = "MiniMap/Body/Area/F" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
                 _UIKit:SetPos(path, self:ToMini(Vector2(f.x, f.y)))
-                _UIKit:SetIcon(path, _GameData:GetUiIcon(icons[f.kind] or "dot"))
-                _UIKit:SetColor(path, Color(1, 1, 1, 1))
+                _UIKit:SetColor(path, self:FeatureColor(f.kind))
+                _UIKit:SetText(path .. "/Label", self:FeatureLabel(f))
             end
             if f.kind == "portal" and f.label ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
             if f.kind == "quest" then
@@ -150,6 +159,35 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
+    end
+
+    method Color FeatureColor(string kind)
+        -- 출구 빨강 · 의뢰 노랑 · 거점 파랑 · NPC 흰색 · 심도 보라 · 제단 주황 · 보스 진홍
+        if kind == "portal" then return Color(1, 0.35, 0.29, 1) end
+        if kind == "quest" then return Color(1, 0.82, 0.25, 1) end
+        if kind == "waypoint" then return Color(0.44, 0.7, 1, 1) end
+        if kind == "depth" then return Color(0.72, 0.45, 1, 1) end
+        if kind == "altar" then return Color(1, 0.6, 0.25, 1) end
+        if kind == "boss" then return Color(0.9, 0.15, 0.2, 1) end
+        return Color(0.91, 0.88, 0.83, 1)
+    end
+
+    method string FeatureLabel(table f)
+        -- 점 아래 짧은 이름: 출구는 갈 곳(레벨 표기 뺌), NPC는 이름 끝말, 나머지는 종류
+        local label = f.label or ""
+        if f.kind == "portal" then
+            label = string.gsub(label, "%s*%(Lv[^%)]*%)", "")
+            return _UIKit:Clip(label, 6)
+        end
+        if f.kind == "npc" or f.kind == "quest" then
+            local last = string.match(label, "(%S+)$") or label
+            return f.kind == "quest" and ("! " .. last) or last
+        end
+        if f.kind == "waypoint" then return "거점" end
+        if f.kind == "depth" then return "심도" end
+        if f.kind == "altar" then return "제단" end
+        if f.kind == "boss" then return "보스" end
+        return ""
     end
 
     method string FeatureKey(table features)
@@ -275,7 +313,8 @@ script HudMap extends Logic
                 -- 실제 화면에서 검증한 사각 바닥 타일을 Simple로 그려 둥근 점 늘림을 피한다.
                 local sprite = e:GetComponent("MOD.Core.SpriteGUIRendererComponent")
                 if isvalid(sprite) then
-                    sprite.Color = Color(1, 1, 1, 1)
+                    -- 돌 무늬가 그대로 보이면 지도가 아니라 바닥 그림처럼 읽혔다. 차분한 단색 바닥으로 누른다
+                    sprite.Color = Color(0.46, 0.41, 0.5, 0.95)
                 end
                 e.Enable = true
                 self.TerrainUsed = i
@@ -303,7 +342,6 @@ script HudMap extends Logic
         -- 모바일에서 지도와 의뢰가 같은 손 영역을 겹쳐 차지하지 않게 한다.
         if _UIKit:AnyWindowOpen() then return false end
         if not Environment:IsMobilePlatform() then return true end
-        if self.Expanded then return false end
         return not self:InMobileCombat()
     end
 
@@ -337,8 +375,11 @@ script HudMap extends Logic
                 local t = track.UITransformComponent
                 t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
                 t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
-                t.anchoredPosition = mobile and Vector2(24, -302) or Vector2(-24, self.Expanded and -606 or -270)
+                t.anchoredPosition = mobile and Vector2(24, self.Expanded and -628 or -296) or Vector2(-24, self.Expanded and -606 or -270)
             end
+            -- 모바일 일지 버튼은 의뢰 추적 오른쪽에 나란히 (세로로 쌓으면 조이스틱 자리까지 내려온다)
+            local journal = _UIKit:Get("JournalOpen")
+            if isvalid(journal) and mobile then journal.UITransformComponent.anchoredPosition = Vector2(456, self.Expanded and -628 or -296) end
             _UIKit:SetText("MiniMap/Toggle/Hint", self.Expanded and "−" or "+")
         end
         _UIKit:SetEnabled("MiniMap", not _UIKit:AnyWindowOpen())
@@ -561,25 +602,30 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderNpcMark(Entity player)
-        -- 의뢰 NPC 머리 위: 새 의뢰 = 말풍선, 완료 보고 = 체크 (진행 중에는 없음). 위아래로 살짝 흔들림
+        -- 의뢰 NPC 머리 위 「!」: 새 의뢰 = 노랑, 완료 보고 = 초록 (진행 중에는 없음). 위아래로 살짝 흔들림
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
-        local icon = ""
+        local color = nil
         if _UIKit:AnyWindowOpen() then _UIKit:SetEnabled("NpcMark", false) return end
         if self.HasQuestNpc and quest ~= nil and _QuestData:Get(quest.Index) ~= nil then
-            if quest.State == 0 then icon = _GameData:GetUiIcon("q_avail") elseif quest.State == 2 then icon = _GameData:GetUiIcon("q_done") end
+            if quest.State == 0 then color = Color(1, 0.82, 0.25, 1) elseif quest.State == 2 then color = Color(0.45, 1, 0.45, 1) end
         end
-        if icon == "" then
+        if color == nil then
             _UIKit:SetEnabled("NpcMark", false)
             return
         end
         -- 월드 → 화면 → GameHUD 루트 기준 좌표 (NpcMark는 루트 가운데 기준)
         local root = _UIKit:Get("/ui/GameHUD")
         if not isvalid(root) then return end
-        local screen = _UILogic:WorldToScreenPosition(self.QuestPos + Vector2(0, 1.9))
+        local screen = _UILogic:WorldToScreenPosition(self.QuestPos + Vector2(0, 1.35))
         local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
         local bob = math.sin(_UtilLogic.ElapsedSeconds * 4) * 6
-        _UIKit:SetIcon("NpcMark", icon)
+        -- NPC가 화면 위쪽 끝에 있어도 「!」는 화면 안 가장자리에 보이게 한다
+        local half = root.UITransformComponent.RectSize * 0.5
+        ui = Vector2(math.max(-half.x + 60, math.min(half.x - 60, ui.x)), math.max(-half.y + 80, math.min(half.y - 70, ui.y)))
+        local mark = _UIKit:Get("NpcMark")
+        if isvalid(mark) and mark.TextGUIRendererComponent.FontColor ~= color then mark.TextGUIRendererComponent.FontColor = color end
+        _UIKit:SetEnabled("NpcMark", true)
         _UIKit:SetPos("NpcMark", Vector2(ui.x, ui.y + bob))
     end
 

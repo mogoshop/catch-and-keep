@@ -1,4 +1,5 @@
--- 이동: 맵 이동(모든 포털·웨이포인트·귀환의 공통 진입점), 웨이포인트 활성화·이동, 난이도 전환, 귀환 두루마리(T·4번).
+-- 이동: 맵 이동(모든 포털·웨이포인트·귀환의 공통 진입점), 웨이포인트 활성화·이동, 난이도 전환, 귀환 두루마리.
+-- 귀환 두루마리는 고정 키가 없다: 플레이어가 벨트 칸에 넣어 그 칸으로 쓴다 (PlayerBelt).
 -- 귀환: 마을로 이동하고 마을에 원래 자리로 돌아가는 포털을 하나 연다 (주인이 쓰면 닫힘).
 @Component
 script PlayerTravel extends Component
@@ -9,6 +10,8 @@ script PlayerTravel extends Component
     property integer TownScroll = 2         -- 귀환 두루마리 개수
     property Entity ReturnGate = nil
     property number WaypointRange = 1.6
+    property any ResumeAt = nil              -- 저장된 마지막 사냥터 자리 { m, x, y, t } (재접속 때 한 번 쓴다)
+    property number ResumeWindowSec = 900    -- 끊긴 뒤 이 시간(15분) 안에 다시 들어오면 그 자리로
 
     method integer Difficulty()
         ---@type PlayerStats
@@ -96,19 +99,20 @@ script PlayerTravel extends Component
 
     -- ───────── 귀환 두루마리 ─────────
 
-    @ExecSpace("Server")
-    method void RequestTownPortal()
+    @ExecSpace("ServerOnly")
+    method boolean UseTownScroll()
+        -- 벨트 칸의 귀환 두루마리: 마을로 가고 원래 자리로 돌아가는 포털을 연다
         local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
+        if pc.Hp <= 0 then return false end
         local map = self.Entity.CurrentMap
-        if not isvalid(map) then return end
+        if not isvalid(map) then return false end
         if _GameConst:IsTown(map) then
             _Util:Notify("이미 마을이다", pc.UserId)
-            return
+            return false
         end
         if self.TownScroll <= 0 then
             _Util:Notify("귀환 두루마리가 없다 (상인에게 구입)", pc.UserId)
-            return
+            return false
         end
         self.TownScroll = self.TownScroll - 1
         local backMap = map.Name
@@ -116,6 +120,7 @@ script PlayerTravel extends Component
         self:GoTown()
         local townName = _GameConst:MapFor(_GameConst.MapTown, self:Difficulty())
         _TimerService:SetTimerOnce(function() self:OpenReturnGate(townName, backMap, backPos) end, 1.0)
+        return true
     end
 
     @ExecSpace("ServerOnly")
@@ -138,18 +143,11 @@ script PlayerTravel extends Component
         end, nil)
     end
 
-    @ExecSpace("ClientOnly")
-    @EventSender("Service", "InputService")
-    handler HandleKeyDownEvent(KeyDownEvent event)
-        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
-        if event.key == KeyboardKey.T or event.key == KeyboardKey.Alpha4 then self:RequestTownPortal() end
-    end
-
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
     method table GetSaveData()
-        return { known = self.Known, tp = self.TownScroll }
+        return { known = self.Known, tp = self.TownScroll, at = self:CurrentSpot() }
     end
 
     @ExecSpace("ServerOnly")
@@ -157,6 +155,31 @@ script PlayerTravel extends Component
         if d == nil then return end
         self.Known = d.known or "camp"
         self.TownScroll = d.tp or 0
+        self.ResumeAt = d.at
+    end
+
+    @ExecSpace("ServerOnly")
+    method table CurrentSpot()
+        -- 저장할 현재 자리: 마을이 아닌 일반(정적) 사냥터에 살아 있을 때만
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) or _GameConst:IsTown(map) or _RoomService:IsInstanceRoom() or not _Util:IsAlive(self.Entity) then return nil end
+        if not isvalid(_EntityService:GetEntityByPath("/maps/" .. map.Name)) then return nil end
+        local p = _Util:Pos2(self.Entity)
+        return { m = map.Name, x = p.x, y = p.y, t = DateTime.UtcNow.Elapsed }
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TryResume()
+        -- 재접속: 끊긴 지 ResumeWindowSec 안이면 마지막 사냥터 자리로 돌아간다 (휴대폰 앱 전환으로 끊겨도 마을로 튕기지 않게)
+        local at = self.ResumeAt
+        self.ResumeAt = nil
+        if type(at) ~= "table" or type(at.m) ~= "string" or type(at.t) ~= "number" then return false end
+        local age = (DateTime.UtcNow.Elapsed - at.t) / 1000
+        if age < 0 or age > self.ResumeWindowSec then return false end
+        if not isvalid(_EntityService:GetEntityByPath("/maps/" .. at.m)) then return false end
+        log("[VRF] resume map=" .. at.m .. " age=" .. tostring(math.floor(age)))
+        self:Go(at.m, Vector2(tonumber(at.x) or 0, tonumber(at.y) or 0))
+        return true
     end
 
 end

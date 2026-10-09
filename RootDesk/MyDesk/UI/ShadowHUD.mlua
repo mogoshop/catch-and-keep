@@ -13,6 +13,7 @@ script ShadowHUD extends Logic
     property string RenderKey = ""
     property table RowIds = {}      -- 줄 번호 → 표시 중인 그림자 id
     property table RowDeployed = {} -- 줄 번호 → 소환 중 여부
+    property table RowEntries = {}  -- 줄 번호 → 그 줄의 그림자 요약 (확인 창 문구용)
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
@@ -137,6 +138,7 @@ script ShadowHUD extends Logic
             local e = entries[self.Page * self.RowCount + i]
             self.RowIds[i] = ""
             self.RowDeployed[i] = false
+            self.RowEntries[i] = e
             _UIKit:SetEnabled(base, e ~= nil)
             if e ~= nil then
                 self.RowIds[i] = e.id
@@ -174,18 +176,48 @@ script ShadowHUD extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnRowAction(integer index, string action)
-        -- 줄 버튼 → 서버 요청
+        -- 줄 버튼 → 확인 창(무엇이 어떻게 바뀌는지) → 확인하면 서버 요청
         local id = self.RowIds[index]
-        if id == nil or id == "" then return end
+        local e = self.RowEntries[index]
+        if id == nil or id == "" or e == nil then return end
+        local owner = self:Owner()
+        local cmd = self:Commander()
+        if owner == nil or cmd == nil then return end
+        local name = _GameData:GetMonsterName(e.src) .. " Lv" .. tostring(e.level)
+        local now = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
         if action == "deploy" then
-            local cmd = self:Commander()
-            if cmd == nil then return end
-            if self.RowDeployed[index] then cmd:RequestRecall(id) else cmd:RequestDeploy(id) end
-        else
-            local owner = self:Owner()
-            if owner == nil then return end
-            if action == "upgrade" then owner:RequestUpgrade(id) else owner:RequestDisassemble(id) end
+            if e.deployed then
+                _ConfirmDialog:Show("그림자 회수", name .. "\n소환을 풀고 보관함으로 돌려보냅니다.", "회수", function() cmd:RequestRecall(id) end)
+            elseif e.wait > 0 then
+                _ConfirmDialog:Show("그림자 소환", name .. "\n쓰러진 뒤 회복 중입니다 — " .. tostring(e.wait) .. "초 뒤에 다시 소환할 수 있습니다.", "닫기", nil)
+            else
+                _ConfirmDialog:Show("그림자 소환", name .. "\n공격 " .. tostring(now.atk) .. " · 생명 " .. tostring(now.hp) .. " (장비·스킬 보너스 전)\n소환 " .. tostring(cmd.DeployedCount) .. " / " .. tostring(cmd:GetDeployLimit()) .. "기", "소환", function() cmd:RequestDeploy(id) end)
+            end
+            return
         end
+        if action == "upgrade" then
+            ---@type PlayerStats
+            local st = _UIKit:Comp("script.PlayerStats")
+            local cap = st ~= nil and st.Level or 1
+            local cost = _ShadowConfig:GetUpgradeCost(e.level)
+            local nextP = _ShadowConfig:GetProfile(e.src, e.grade, e.level + 1, 1)
+            local body = name .. " → Lv" .. tostring(e.level + 1) .. "\n공격 " .. tostring(now.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(now.hp) .. " → " .. tostring(nextP.hp)
+                .. "\n비용: 정수 " .. tostring(cost) .. " (보유 " .. tostring(owner.Essence) .. ")\n조건: 그림자 레벨은 내 레벨(Lv" .. tostring(cap) .. ")까지"
+            if e.level >= cap then
+                _ConfirmDialog:Show("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "내 레벨을 먼저 올려야 합니다."), "닫기", nil)
+            elseif owner.Essence < cost then
+                _ConfirmDialog:Show("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "정수가 부족합니다 — 그림자를 분해하면 정수를 얻습니다."), "닫기", nil)
+            else
+                _ConfirmDialog:Show("그림자 강화", body, "강화", function() owner:RequestUpgrade(id) end)
+            end
+            return
+        end
+        local yield = _ShadowConfig:GetDisassembleYield(e.grade)
+        if e.deployed or yield <= 0 then
+            _ConfirmDialog:Show("그림자 분해 불가", name .. "\n" .. (e.deployed and "소환 중인 그림자는 먼저 회수하세요." or "보스 그림자는 분해할 수 없습니다."), "닫기", nil)
+            return
+        end
+        _ConfirmDialog:Show("그림자 분해", name .. "\n분해하면 이 그림자는 영원히 사라지고 정수 +" .. tostring(yield) .. "을 얻습니다.\n(정수 " .. tostring(owner.Essence) .. " → " .. tostring(owner.Essence + yield) .. ")", "분해", function() owner:RequestDisassemble(id) end)
     end
 
 end

@@ -97,7 +97,7 @@ script GameData extends Logic
     property number townArrivalX = 0    -- 마을 도착 위치 x (귀환·사망 부활·포털)
     property number townArrivalY = -1.6    -- 마을 도착 위치 y (출구 안내 반경 1.8 밖 — 도착하자마자 출구 안내가 뜨지 않게)
     property number townExitY = -4    -- 마을 → 사냥터 출구 포털 y (맵 빌드)
-    property number respawnHideRadius = 9    -- 리스폰 시 이 거리 안에 플레이어가 있으면 미룬다 (D2처럼 보이는 곳에서 되살아나지 않게)
+    property number respawnHideRadius = 6    -- 리스폰 시 이 거리 안에 플레이어가 있으면 미룬다 (화면 밖에서만 되살아나게. 9칸은 사냥 중인 곳이 계속 비었다)
     property number packRadius = 1.4    -- 무리 몬스터가 무리 중심에서 흩어지는 반경
     property number knockbackSec = 0.12    -- 넉백 시간(초)
     property number knockbackSpeed = 5    -- 넉백 중 이동 속도 (InputSpeed)
@@ -108,6 +108,7 @@ script GameData extends Logic
     property number playerSpeedMul = 1.44    -- 플레이어 기본 이동 속도 배율 (모델 InputSpeed × 이 값)
     property number darkMinAmbient = 0.32    -- 어두운 맵 전체 밝기 하한 (0.2는 길·바닥이 거의 안 보임 — 메이커 확인 2026-10-09)
     property number darkMinLightRadius = 5.2    -- 플레이어 주변 밝은 범위 하한 (월드 단위)
+    property number densityRewardMult = 0.72    -- 몬스터 수를 40% 늘린 만큼 일반·정예 몬스터의 처치 경험치·드롭 추첨을 줄이는 배율 (보스·고유는 그대로)
     property table Difficulties = {}
     property table Sounds = {}
     property table MonsterNames = {}
@@ -190,19 +191,19 @@ script GameData extends Logic
         self.MonsterStats["skel_captain"] = { level = 1, hp = 1200, dmg = 16, interval = 1.5, speed = 1, range = 0.8, element = "cold", ratio = 0.4, resists = "poison=75,cold=40", behavior = "", stand = "ed882269a5d543318ad73e7032632960", move = "94003c3d90dd4fd4866c725b29704169", attack = "791b405fbab44bf1a914043ca29a1848", innate = "aura_guard", rank = "unique" }
         self.MonsterStats["grave_queen"] = { level = 12, hp = 3900, dmg = 18, interval = 1.5, speed = 1, range = 1.2, element = "poison", ratio = 0.5, resists = "poison=60,fire=25", behavior = "", stand = "f4a4aadb84bb4060af45a7ad23f189e5", move = "a97b63a93e6b4be2a6158acc573126bc", attack = "6bd87ca65e864cf98162f51d2f61efda", innate = "skill_slam", rank = "boss" }
         self.MapSpawns = {}
-        self.MapSpawns["map01"] = { entries = "hellhound:12:1;fallenimp:16:1;hellhound:4:2", pack = 3, elite = 0, variant = -1, respawn = 120, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
-        self.MapSpawns["rotmarsh"] = { entries = "hellhound:8:3;graveworm:12:4;rotzombie:10:4", pack = 4, elite = 0.05, variant = -1, respawn = 120, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
-        self.MapSpawns["execution"] = { entries = "ashendead:12:5;corpsecrow:10:6;cultarcher:10:6", pack = 4, elite = 0.08, variant = -1, respawn = 120, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
-        self.MapSpawns["gallows"] = { entries = "ashendead:10:7;graveworm:6:7;corpsecrow:8:8;broodspider:12:8", pack = 4, elite = 0.15, variant = -1, respawn = 120, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
-        self.MapSpawns["crypt1"] = { entries = "skelwarrior:14:8;ashendead:8:8", pack = 3, elite = 0.1, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
-        self.MapSpawns["crypt2"] = { entries = "skelwarrior:12:10;starvedwraith:10:10", pack = 3, elite = 0.12, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
-        self.MapSpawns["crypt3"] = { entries = "skelwarrior:10:11;starvedwraith:12:11", pack = 3, elite = 0.15, variant = -1, respawn = 90, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
-        self.MapSpawns["hollow"] = { entries = "fallenimp:10:2;graveworm:6:3", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
-        self.MapSpawns["cellar1"] = { entries = "graveworm:10:4;rotzombie:6:4", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
-        self.MapSpawns["cellar2"] = { entries = "rotzombie:8:5;ashendead:8:5", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
-        self.MapSpawns["pit1"] = { entries = "ashendead:8:6;cultarcher:8:6", pack = 3, elite = 0.25, variant = 0.15, respawn = 180, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
-        self.MapSpawns["pit2"] = { entries = "skelwarrior:8:7;cultarcher:6:7", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
-        self.MapSpawns["cave"] = { entries = "broodspider:8:9;starvedwraith:4:9;skelwarrior:4:9", pack = 3, elite = 0.3, variant = 0.2, respawn = 180, minX = -11, maxX = 11, minY = -6.5, maxY = 7.5 }
+        self.MapSpawns["map01"] = { entries = "hellhound:17:1;fallenimp:22:1;hellhound:6:2", pack = 3, elite = 0, variant = -1, respawn = 60, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
+        self.MapSpawns["rotmarsh"] = { entries = "hellhound:11:3;graveworm:17:4;rotzombie:14:4", pack = 4, elite = 0.05, variant = -1, respawn = 60, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
+        self.MapSpawns["execution"] = { entries = "ashendead:17:5;corpsecrow:14:6;cultarcher:14:6", pack = 4, elite = 0.08, variant = -1, respawn = 60, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["gallows"] = { entries = "ashendead:14:7;graveworm:8:7;corpsecrow:11:8;broodspider:17:8", pack = 4, elite = 0.15, variant = -1, respawn = 60, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["crypt1"] = { entries = "skelwarrior:20:8;ashendead:11:8", pack = 3, elite = 0.1, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["crypt2"] = { entries = "skelwarrior:17:10;starvedwraith:14:10", pack = 3, elite = 0.12, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["crypt3"] = { entries = "skelwarrior:14:11;starvedwraith:17:11", pack = 3, elite = 0.15, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["hollow"] = { entries = "fallenimp:14:2;graveworm:8:3", pack = 3, elite = 0.25, variant = 0.15, respawn = 90, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cellar1"] = { entries = "graveworm:14:4;rotzombie:8:4", pack = 3, elite = 0.25, variant = 0.15, respawn = 90, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cellar2"] = { entries = "rotzombie:11:5;ashendead:11:5", pack = 3, elite = 0.3, variant = 0.2, respawn = 90, minX = -9, maxX = 9, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["pit1"] = { entries = "ashendead:11:6;cultarcher:11:6", pack = 3, elite = 0.25, variant = 0.15, respawn = 90, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["pit2"] = { entries = "skelwarrior:11:7;cultarcher:8:7", pack = 3, elite = 0.3, variant = 0.2, respawn = 90, minX = -11, maxX = 11, minY = -5.5, maxY = 6.5 }
+        self.MapSpawns["cave"] = { entries = "broodspider:11:9;starvedwraith:6:9;skelwarrior:6:9", pack = 3, elite = 0.3, variant = 0.2, respawn = 90, minX = -11, maxX = 11, minY = -6.5, maxY = 7.5 }
         self.MapInfo = {}
         self.MapInfo["town"] = { name = "잿불 야영지", kind = "town", w = 24, h = 14, features = { { kind = "portal", x = 0, y = -4, label = "피 묻은 황무지 (Lv 1~3)", targetMap = "map01" }, { kind = "waypoint", x = -5, y = 3, label = "", targetMap = "" }, { kind = "depth", x = 5, y = 3, label = "", targetMap = "" }, { kind = "npc", x = -3, y = 1, label = "잿빛 행상 고르", targetMap = "" }, { kind = "quest", x = 3, y = 1, label = "파문당한 사제 오렌", targetMap = "" } } }
         self.MapInfo["map01"] = { name = "피 묻은 황무지 (Lv 1~3)", kind = "field", w = 44, h = 24, features = { { kind = "portal", x = -21, y = 0, label = "잿불 야영지", targetMap = "town" }, { kind = "portal", x = 21, y = 0, label = "썩은 갈대 늪 (Lv 3~5)", targetMap = "rotmarsh" }, { kind = "portal", x = 8, y = 8, label = "굶주린 굴 (Lv 2~3)", targetMap = "hollow" } } }

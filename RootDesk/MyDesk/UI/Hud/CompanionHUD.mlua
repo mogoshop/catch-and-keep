@@ -1,4 +1,5 @@
--- 소환수별 초상·생명·행동 상태. 다른 창에서는 숨기고 4마리씩 넘긴다.
+-- 소환수 종류별 초상 하나 + 「×N」·합친 생명·행동 상태 (해골 3마리 = 해골 초상 ×3). 다른 창에서는 숨긴다.
+-- 위치: PC는 생명 오브 위(왼쪽 아래), 모바일은 의뢰 추적·일지 버튼과 겹치지 않게 가운데 아래 생명·마나 오브 위.
 @Logic
 script CompanionHUD extends Logic
 
@@ -18,7 +19,16 @@ script CompanionHUD extends Logic
         self.LossHints = {}
         _UIKit:SetEnabled(self.Strip, false)
         local strip = _UIKit:Get(self.Strip)
-        if isvalid(strip) then strip.UITransformComponent.anchoredPosition = Vector2(24, Environment:IsMobilePlatform() and 430 or 236) end
+        if isvalid(strip) then
+            local t = strip.UITransformComponent
+            if Environment:IsMobilePlatform() then
+                t.AlignmentOption = AlignmentType.BottomCenter
+                t.Pivot = Vector2(0.5, 0)
+                t.anchoredPosition = Vector2(0, 286)   -- 대화 버튼(170~266) 위
+            else
+                t.anchoredPosition = Vector2(24, 236)
+            end
+        end
         _UIKit:Connect(self.Strip .. "/Page", function() self:NextPage() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] CompanionHUD ready pageSize=4")
@@ -79,19 +89,31 @@ script CompanionHUD extends Logic
             return
         end
         if p.CurrentMap.Id ~= self.LastMapId then self.LastMapId = p.CurrentMap.Id self.Page = 0 end
-        local units = {}
+        -- 같은 종류는 한 칸으로 묶는다: 수·생명 합계·가장 약한 개체의 체력 비율·승격 여부
+        local groups = {}
+        local byKind = {}
         for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
             ---@type ShadowUnit
             local u = c
-            if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == p and u.Hp > 0 and u.MaxHp > 0 then table.insert(units, u) end
+            if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == p and u.Hp > 0 and u.MaxHp > 0 then
+                local g = byKind[u.Kind]
+                if g == nil then
+                    g = { kind = u.Kind, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id }
+                    byKind[u.Kind] = g
+                    table.insert(groups, g)
+                end
+                g.count = g.count + 1
+                g.hp = g.hp + u.Hp
+                g.maxHp = g.maxHp + u.MaxHp
+                g.lowest = math.min(g.lowest, u.Hp / math.max(1, u.MaxHp))
+                if u.Promoted then g.promoted = true end
+                if u.Entity.Id < g.first then g.first = u.Entity.Id g.state = u.CommandState g.portrait = u.StandRUID end
+            end
         end
-        table.sort(units, function(a, b)
-            if a.Kind ~= b.Kind then return a.Kind < b.Kind end
-            return a.Entity.Id < b.Entity.Id
-        end)
-        self.Units = units
-        self.UnitCount = #units
-        self.Page = math.min(self.Page, math.max(0, math.ceil(#units / 4) - 1))
+        table.sort(groups, function(a, b) return self:KindOrder(a.kind) < self:KindOrder(b.kind) end)
+        self.Units = groups
+        self.UnitCount = #groups
+        self.Page = math.min(self.Page, math.max(0, math.ceil(#groups / 4) - 1))
         self:Render()
     end
 
@@ -104,29 +126,42 @@ script CompanionHUD extends Logic
         local pages = math.max(1, math.ceil(self.UnitCount / 4))
         _UIKit:SetText(self.Strip .. "/Page", tostring(self.Page + 1) .. " / " .. tostring(pages))
         _UIKit:SetEnabled(self.Strip .. "/Page", pages > 1)
+        -- 모바일은 가운데 정렬이므로 보이는 칸 수만큼 띠 폭을 맞춘다
+        local strip = _UIKit:Get(self.Strip)
+        local shown = math.min(4, self.UnitCount)
+        if isvalid(strip) and Environment:IsMobilePlatform() then strip.UITransformComponent.RectSize = Vector2(shown * 112 - 16, 112) end
         for i = 1, 4 do
             local base = self.Strip .. "/Unit" .. tostring(i)
-            local u = self.Units[self.Page * 4 + i]
-            local live = u ~= nil and isvalid(u.Entity) and u.Hp > 0
+            local g = self.Units[self.Page * 4 + i]
+            local live = g ~= nil and g.count > 0
             _UIKit:SetEnabled(base, live)
             if live then
-                local ratio = math.max(0, math.min(1, u.Hp / math.max(1, u.MaxHp)))
+                -- 막대는 무리 전체 생명, 경고색·테두리는 가장 약한 한 마리 기준
+                local ratio = math.max(0, math.min(1, g.hp / math.max(1, g.maxHp)))
                 local color = Color(0.4, 0.58, 0.51, 1)
-                if u.Kind == "shadow" then color = Color(0.52, 0.43, 0.67, 1) end
-                if ratio <= 0.25 then color = Color(0.78, 0.23, 0.22, 1) end
+                if g.kind == "shadow" then color = Color(0.52, 0.43, 0.67, 1) end
+                if g.lowest <= 0.25 then color = Color(0.78, 0.23, 0.22, 1) end
                 _UIKit:SetColor(base .. "/HP/Fill", color)
                 local fill = _UIKit:Get(base .. "/HP/Fill")
                 if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(84 * ratio, 8) end
-                local portrait = u.StandRUID ~= "" and ("thumbnail://" .. u.StandRUID) or self:FallbackIcon(u.Kind)
+                local portrait = g.portrait ~= "" and ("thumbnail://" .. g.portrait) or self:FallbackIcon(g.kind)
                 _UIKit:SetIcon(base .. "/Portrait", portrait)
                 local frame = Color(1, 1, 1, 1)
-                if u.Promoted then frame = Color(1, 0.86, 0.56, 1) end
-                if ratio <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
+                if g.promoted then frame = Color(1, 0.86, 0.56, 1) end
+                if g.lowest <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
                 _UIKit:SetColor(base .. "/Frame", frame)
-                local state = self:StateLabel(u.CommandState)
-                _UIKit:SetText(base .. "/State", state)
+                _UIKit:SetText(base .. "/State", self:StateLabel(g.state))
+                _UIKit:SetText(base .. "/Count", g.count > 1 and ("×" .. tostring(g.count)) or "")
             end
         end
+    end
+
+    method integer KindOrder(string kind)
+        -- 띠 순서: 해골 전사 → 해골 마법사 → 되살린 몬스터 → 그림자
+        if kind == "skeleton" then return 1 end
+        if kind == "mage" then return 2 end
+        if kind == "revive" then return 3 end
+        return 4
     end
 
     method string StateLabel(string state)

@@ -1,4 +1,5 @@
--- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 30칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·판매.
+-- 소지품 창 (I): 장비 10부위(종이 인형, 빈 칸은 실루엣), 가방 30칸(아이콘 + 등급 테두리), 선택 아이템 설명, 장착·버리기.
+-- 판매는 상인(잿빛 행상 고르) 곁에서만: 그때만 「버리기」 자리가 「판매」로 바뀐다. 둘 다 확인 창을 거친다.
 -- 장비·룬은 선택만으로 바뀌지 않는다. 설명과 미리보기를 확인한 뒤 작업 버튼으로 확정한다.
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 @Logic
@@ -78,7 +79,7 @@ script InventoryWindow extends Logic
         self:ValidateSelection(list, eq)
         self:RenderAppearance(eq, list[self.Selected] or "")
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
-        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore}, "#")
+        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self:NearShop())}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold", "골드 " .. tostring(st.Gold) .. "      생명 물약 " .. tostring(belt.HpPot) .. "   마나 물약 " .. tostring(belt.MpPot))
@@ -94,7 +95,7 @@ script InventoryWindow extends Logic
             self:DrawItem(path, list[i])
             _UIKit:SetColor(path, i == self.Selected and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
-        local desc = "가방이나 착용 장비를 선택하세요.\n설명을 확인한 뒤 장착·판매 버튼으로 확정합니다."
+        local desc = "가방이나 착용 장비를 선택하세요.\n설명을 확인한 뒤 장착·버리기(상인 곁에서는 판매) 버튼으로 확정합니다."
         local label, allowed, sell = "장착", false, false
         local sel = list[self.Selected]
         if self.SelectedEquipSlot ~= "" then
@@ -138,7 +139,7 @@ script InventoryWindow extends Logic
         end
         self:SetDescription(desc)
         self:SetActionButton("BtnEquip", label, allowed)
-        self:SetActionButton("BtnSell", "판매", sell)
+        self:SetActionButton("BtnSell", self:NearShop() and "판매" or "버리기", sell)
     end
 
     @ExecSpace("ClientOnly")
@@ -361,6 +362,13 @@ script InventoryWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method boolean NearShop()
+        -- 상인 대화 거리 안 (서버도 같은 거리로 다시 검사한다)
+        local player = _UserService.LocalPlayer
+        return isvalid(player) and _Util:NearNpc(player, "shop")
+    end
+
+    @ExecSpace("ClientOnly")
     method void Act(string action)
         -- 클릭 순간에도 선택 식별값과 레벨·공간·소켓을 검사한다. 연속 클릭은 재실행하지 않는다.
         if not _UIKit:IsOpen(self.Win) or not _Util:IsAlive(_UserService.LocalPlayer) then return end
@@ -373,7 +381,23 @@ script InventoryWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if action == "sell" then
             if sel == nil then return end
-            inv:RequestSell(self.Selected, sel)
+            -- 되돌릴 수 없는 조작이라 확인 창을 거친다. 상인 곁이면 판매, 아니면 버리기(영구 삭제)
+            local index = self.Selected
+            local name = _ItemData:Parse(sel).name
+            if self:NearShop() then
+                _ConfirmDialog:Show("판매", name .. "\n상인에게 " .. tostring(_ItemData:SellValue(sel)) .. " 골드에 팝니다.", "판매", function()
+                    inv:RequestSell(index, sel)
+                    self:ClearSelection()
+                    self:Poll()
+                end)
+            else
+                _ConfirmDialog:Show("버리기", name .. "\n버린 물건은 사라지며 되찾을 수 없습니다.\n(팔려면 마을 상인 곁에서 소지품을 여세요)", "버리기", function()
+                    inv:RequestDiscard(index, sel)
+                    self:ClearSelection()
+                    self:Poll()
+                end)
+            end
+            return
         elseif action == "equip" then
             if self.SelectedEquipSlot ~= "" then
                 if #list >= inv.BagSize then return end

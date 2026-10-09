@@ -75,17 +75,24 @@ script QuestWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Render(PlayerQuest quest)
         -- 제목과 상태를 분리하고 선택한 의뢰만 강조한다. 미수락 내용·보상은 숨긴다.
+        -- 2×3 의뢰 그림: 받을 수 있거나 끝낸 의뢰만 컬러, 아직 열리지 않은 의뢰는 어둡게(흑백판 그림이 있으면 그것으로)
         for i = 1, 6 do
-            local row = self.Win .. "/Q" .. tostring(i)
+            local cell = self.Win .. "/Q" .. tostring(i)
             local q = _QuestData:Get(i)
-            _UIKit:SetEnabled(row, q ~= nil)
+            _UIKit:SetEnabled(cell, q ~= nil)
             if q ~= nil then
-                local view = self:View(i, quest)
-                _UIKit:SetText(row .. "/Title", view.title)
-                _UIKit:SetText(row .. "/Status", view.status)
-                _UIKit:SetIcon(row .. "/Icon", view.icon)
+                local open = i <= quest.Index
+                local art = _GameData:GetUiIcon((open and "quest_art" or "quest_art_gray") .. tostring(i))
+                if art == "" then art = _GameData:GetUiIcon("quest_art" .. tostring(i)) end
+                if art == "" then art = _GameData:GetUiIcon("icon_quest") end
+                _UIKit:SetIcon(cell .. "/Art", art)
+                _UIKit:SetColor(cell .. "/Art", open and Color(1, 1, 1, 1) or Color(0.22, 0.22, 0.24, 1))
+                _UIKit:SetText(cell .. "/Name", open and q.title or "???")
+                -- 고른 칸은 테두리를 금빛으로, 잠긴 칸은 테두리도 어둡게
                 local selected = i == self.Selected
-                _UIKit:SetColor(row, selected and Color(0.28, 0.23, 0.18, 1) or Color(0.14, 0.13, 0.17, 1))
+                local frame = Color(0.62, 0.58, 0.54, 1)
+                if selected then frame = Color(1, 0.86, 0.5, 1) elseif not open then frame = Color(0.32, 0.3, 0.3, 1) end
+                _UIKit:SetColor(cell, frame)
             end
         end
         local view = self:View(self.Selected, quest)
@@ -97,7 +104,7 @@ script QuestWindow extends Logic
         _UIKit:SetText(detail .. "/Desc", view.desc)
         _UIKit:SetEnabled(detail .. "/Progress", view.showProgress)
         _UIKit:SetFill(detail .. "/Progress", view.ratio)
-        _UIKit:SetText(detail .. "/RewardTitle", #view.rewards > 0 and (self.Selected < quest.Index and "의뢰 보상" or "완료 보상") or "")
+        _UIKit:SetText(detail .. "/RewardTitle", #view.rewards > 0 and (self.Selected < quest.Index and "받은 보상" or "완료 보상") or "")
         for i = 1, 6 do
             local card = detail .. "/Reward" .. tostring(i)
             local reward = view.rewards[i]

@@ -30,8 +30,11 @@ script LootSystem extends Logic
         if body ~= nil then sourceId = body.SourceId end
         local special = rank == "boss" or rank == "unique"
         if special then self:FirstKillReward(center, userId, stats, sourceId, monLevel) end
+        -- 몬스터 밀도를 40% 늘린 만큼 일반·정예의 추첨마다 densityRewardMult 확률로만 굴린다 (보스·고유는 그대로)
+        local keep = special and 1 or _GameData.densityRewardMult
         for i = 1, picks do
             local r = _UtilLogic:RandomDouble() * (wNone + wGold + wPot + wItem + wRune)
+            if _UtilLogic:RandomDouble() >= keep then r = 0 end
             if r < wNone then
                 -- 없음
             elseif r < wNone + wGold then

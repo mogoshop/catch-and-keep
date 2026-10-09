@@ -1,0 +1,51 @@
+-- 공용 확인 창 (ConfirmHUD): Show(제목, 본문, 확인 글자, 확인 시 실행할 함수). 취소·Esc·바깥 누르기는 아무것도 하지 않는다.
+-- 쓰는 곳: 그림자 소환·강화·분해(ShadowHUD), 소지품 버리기·판매(InventoryWindow).
+@Logic
+script ConfirmDialog extends Logic
+
+    property string Root = "/ui/ConfirmHUD/SafeArea/Dim"
+    property any OnYes = nil
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:SetEnabled(self.Root, false)
+        _UIKit:Connect(self.Root .. "/Box/BtnYes", function() self:Answer(true) end)
+        _UIKit:Connect(self.Root .. "/Box/BtnNo", function() self:Answer(false) end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string title, string body, string yesLabel, any onYes)
+        -- 같은 창을 다시 쓰면 앞의 질문은 취소된다
+        self.OnYes = onYes
+        _UIKit:SetText(self.Root .. "/Box/Title", title)
+        _UIKit:SetText(self.Root .. "/Box/Body", body)
+        _UIKit:SetText(self.Root .. "/Box/BtnYes", yesLabel ~= "" and yesLabel or "확인")
+        _UIKit:SetEnabled(self.Root, true)
+        local e = _UIKit:Get(self.Root)
+        if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
+        log("[VRF] confirm show " .. title)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsOpen()
+        return _UIKit:IsOpen(self.Root)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Answer(boolean yes)
+        local callback = self.OnYes
+        self.OnYes = nil
+        _UIKit:SetEnabled(self.Root, false)
+        if yes and callback ~= nil then callback() end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        -- Esc = 취소, Enter = 확인
+        if not self:IsOpen() then return end
+        if event.key == KeyboardKey.Escape then self:Answer(false)
+        elseif event.key == KeyboardKey.Return then self:Answer(true) end
+    end
+
+end

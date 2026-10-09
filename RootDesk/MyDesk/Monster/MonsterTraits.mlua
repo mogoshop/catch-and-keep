@@ -146,11 +146,19 @@ script MonsterTraits extends Component
 
     @ExecSpace("Multicast")
     method void WarnFx(Vector3 pos, number radius, string element)
-        -- 범위 기술 예고: 바닥에 붉은(냉기는 푸른) 원 + 몬스터가 힘을 모으는 빛
-        local color = Color(1, 0.25, 0.15, 0.85)
-        if element == "cold" then color = Color(0.4, 0.75, 1, 0.85) end
-        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = color })
+        -- 범위 기술 예고: 판정 반경 그대로의 선명한 붉은(냉기는 푸른) 테두리 + 옅은 안쪽 + 몬스터가 힘을 모으는 빛.
+        -- 예전에는 흐릿한 큰 오라 입자만 있어 무엇인지·어디까지인지 읽기 어려웠다.
+        local color = Color(1, 0.25, 0.15, 0.95)
+        local fill = Color(1, 0.25, 0.15, 0.28)
+        if element == "cold" then color = Color(0.4, 0.75, 1, 0.95) fill = Color(0.4, 0.75, 1, 0.28) end
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil then atk:DrawNovaWarning(Vector2(pos.x, pos.y), radius, color, self.NovaWarnSeconds) end
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = fill })
         _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.4, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = color })
+        if (_Util:Pos2(me) - Vector2(pos.x, pos.y)):Magnitude() <= radius + 2.5 then _HudMain:HintDanger("nova") end
     end
 
     @ExecSpace("Multicast")
