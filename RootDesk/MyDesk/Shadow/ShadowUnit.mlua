@@ -605,7 +605,10 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("Multicast")
     method void NovaFx(Vector3 pos, number radius, string element)
         local color = Color(0.75, 0.5, 1, 1)
-        if element == "cold" then color = Color(0.5, 0.8, 1, 1) end
+        if element == "cold" then color = Color(0.5, 0.8, 1, 1)
+        elseif element == "fire" then color = Color(1, 0.55, 0.2, 1)
+        elseif element == "light" then color = Color(1, 0.95, 0.4, 1)
+        elseif element == "poison" then color = Color(0.45, 0.95, 0.35, 1) end
         _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, { Color = color })
     end
 
@@ -617,6 +620,8 @@ script ShadowUnit extends AttackComponent
             ---@type Monster
             local hit = defender:GetComponent("script.Monster")
             if v ~= nil and v.element == "cold" and hit ~= nil and not hit.IsDead then hit:ApplyChill(1.5) end
+            -- 독안개 그림자: 맞은 몬스터에 4초 독 (공격력 × mult를 나눠서)
+            if v ~= nil and v.kind == "cloud" and hit ~= nil and not hit.IsDead then hit:ApplyPoison(self.Atk * v.mult / 4, 4, self.OwnerPlayer) end
         end
         ---@type PlayerStats
         local stats = self.OwnerPlayer:GetComponent("script.PlayerStats")

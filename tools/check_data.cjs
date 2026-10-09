@@ -222,8 +222,8 @@ T.monster_ranks.forEach((r, i) => {
 const variantIds = unique("variants", "id");
 T.variants.forEach((r, i) => {
   if (r.kind === "aura" && !["dmg", "haste", "guard"].includes(r.effect)) err("variants", i, `오오라 effect '${r.effect}' — dmg / haste / guard`);
-  if (r.kind === "skill" && !(num(r.interval) > 0 && num(r.mult) > 0)) err("variants", i, "기술은 interval·mult 양수");
-  if (!["aura", "skill"].includes(r.kind)) err("variants", i, `kind '${r.kind}' — aura / skill`);
+  if ((r.kind === "skill" || r.kind === "cloud") && !(num(r.interval) > 0 && num(r.mult) > 0)) err("variants", i, "기술은 interval·mult 양수");
+  if (!["aura", "skill", "cloud"].includes(r.kind)) err("variants", i, `kind '${r.kind}' — aura / skill / cloud`);
   if (!(num(r.radius) > 0)) err("variants", i, "radius 양수");
 });
 if (!T.variants.some((r) => num(r.weight) > 0)) err("variants", null, "weight > 0 인 변종이 없음 (무작위 변종 우두머리가 나오지 않는다)");

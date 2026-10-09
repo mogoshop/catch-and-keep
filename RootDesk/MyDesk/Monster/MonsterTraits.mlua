@@ -15,6 +15,8 @@ script MonsterTraits extends Component
     @Sync
     property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
     property number AbilityTimer = 1
+    property number CloudSeconds = 4          -- 독안개 지속
+    property number CloudTick = 0.5           -- 독안개 피해 간격
     @Sync
     property string TintSync = ""
     property number HpMult = 1
@@ -132,7 +134,12 @@ script MonsterTraits extends Component
             if status ~= nil and status:IsStunned() then return end
             ---@type MonsterAttack
             local atk = self.Entity:GetComponent("script.MonsterAttack")
-            if atk ~= nil then atk:Slam(pos, v.radius, atk.Damage * v.mult) end
+            if v.kind == "cloud" then
+                -- 독안개: 그 자리에 CloudSeconds 동안 남아 CloudTick마다 독 피해 (총 공격력 × mult)
+                if atk ~= nil then self:StartCloud(pos, v.radius, atk.Damage * v.mult, v.element) end
+                return
+            end
+            if atk ~= nil then atk:SlamWithElement(pos, v.radius, atk.Damage * v.mult, v.element) end
             if v.element == "cold" then
                 for _, p in ipairs(_Util:PlayersNear(map, pos, v.radius)) do
                     ---@type PlayerStats
@@ -144,13 +151,51 @@ script MonsterTraits extends Component
         end, self.NovaWarnSeconds)
     end
 
+    @ExecSpace("ServerOnly")
+    method void StartCloud(Vector2 pos, number radius, number totalDamage, string element)
+        -- 독안개: 몬스터가 쓰러져도 안개는 남는다 (엔티티가 사라지면 멈춘다)
+        local ticks = math.max(1, math.floor(self.CloudSeconds / self.CloudTick + 0.5))
+        local map = self.Entity.CurrentMap
+        local n = 0
+        local timerId = 0
+        timerId = _TimerService:SetTimerRepeat(function()
+            n = n + 1
+            if not isvalid(self.Entity) or self.Entity.CurrentMap ~= map or n > ticks then
+                _TimerService:ClearTimer(timerId)
+                return
+            end
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            if atk ~= nil then atk:SlamWithElement(pos, radius, totalDamage / ticks, element) end
+            if n % 2 == 1 then self:CloudFx(Vector3(pos.x, pos.y, 0), radius) end
+        end, self.CloudTick)
+        self:CloudFx(Vector3(pos.x, pos.y, 0), radius)
+    end
+
+    @ExecSpace("Multicast")
+    method void CloudFx(Vector3 pos, number radius)
+        -- 독안개: 초록 안개가 피어오른다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = Color(0.35, 0.9, 0.3, 0.45) })
+        _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(radius * 0.6, radius * 0.6, 1), false, { Color = Color(0.4, 0.85, 0.35, 0.6) })
+    end
+
+    method Color ElementColor(string element)
+        -- 범위 기술 색: 화염 주황 · 냉기 파랑 · 번개 노랑 · 독 초록 · 물리 붉은색
+        if element == "cold" then return Color(0.4, 0.75, 1, 0.95) end
+        if element == "fire" then return Color(1, 0.5, 0.1, 0.95) end
+        if element == "light" then return Color(1, 0.95, 0.35, 0.95) end
+        if element == "poison" then return Color(0.4, 0.95, 0.3, 0.95) end
+        return Color(1, 0.25, 0.15, 0.95)
+    end
+
     @ExecSpace("Multicast")
     method void WarnFx(Vector3 pos, number radius, string element)
         -- 범위 기술 예고: 판정 반경 그대로의 선명한 붉은(냉기는 푸른) 테두리 + 옅은 안쪽 + 몬스터가 힘을 모으는 빛.
         -- 예전에는 흐릿한 큰 오라 입자만 있어 무엇인지·어디까지인지 읽기 어려웠다.
-        local color = Color(1, 0.25, 0.15, 0.95)
-        local fill = Color(1, 0.25, 0.15, 0.28)
-        if element == "cold" then color = Color(0.4, 0.75, 1, 0.95) fill = Color(0.4, 0.75, 1, 0.28) end
+        local color = self:ElementColor(element)
+        local fill = Color(color.r, color.g, color.b, 0.28)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         ---@type MonsterAttack
@@ -164,8 +209,14 @@ script MonsterTraits extends Component
     @ExecSpace("Multicast")
     method void NovaFx(Vector3 pos, number radius, string element)
         local color = Color(1, 0.6, 0.3, 1)
-        if element == "cold" then color = Color(0.5, 0.8, 1, 1) end
+        if element ~= "" then
+            local c = self:ElementColor(element)
+            color = Color(c.r, c.g, c.b, 1)
+        end
         _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, { Color = color })
+        -- 속성마다 한 겹 더: 번개는 내리꽂는 번개, 화염은 바닥 불길
+        if element == "light" then _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrike, self.Entity, pos, 0, Vector3(0.6, 0.6, 1), false, { Color = color })
+        elseif element == "fire" then _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = color }) end
     end
 
     method number GetResist(string element)

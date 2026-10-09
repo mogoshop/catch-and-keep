@@ -367,8 +367,16 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method integer DeployNext()
-        -- 소환 가능한 그림자 중 등급·레벨이 높은 것 하나. 소환한 수(0/1)
+        -- 소환 지정이 있으면 지정 순서대로 다음 하나, 지정이 없으면 등급·레벨이 높은 것 하나. 소환한 수(0/1)
         self:Prune()
+        local owner = self:Owner()
+        local assigned = owner:AssignedList()
+        if #assigned > 0 then
+            for _, id in ipairs(assigned) do
+                if self:CanDeploy(id) then return self:Deploy(id) and 1 or 0 end
+            end
+            return 0
+        end
         local best = nil
         for id, s in pairs(self:Owner().Storage) do
             if self:CanDeploy(id) and (best == nil or s.grade * 100 + s.level > best.grade * 100 + best.level) then best = s end
@@ -419,6 +427,19 @@ script ShadowCommander extends Component
             end
         end
         if self.DeployedCount >= self:GetDeployLimit() then return "그림자 소환 한도 " .. tostring(self:GetDeployLimit()) .. "기에 도달했다" end
+        -- 소환 지정이 있으면 지정한 그림자만 부른다
+        if owner ~= nil and #owner:AssignedList() > 0 then
+            local recovering = 0
+            local idle = 0
+            for _, id in ipairs(owner:AssignedList()) do
+                local s = owner:GetShadow(id)
+                if s ~= nil and not s.deployed then
+                    if now < s.respawnReadyAt then recovering = recovering + 1 else idle = idle + 1 end
+                end
+            end
+            if recovering > 0 and idle == 0 then return "지정한 그림자가 아직 회복 중이다" end
+            if idle == 0 then return "지정한 그림자가 모두 소환 중이다 — 보관함(H)에서 소환 지정을 바꿀 수 있다" end
+        end
         if stored == 0 then return "부를 그림자가 없다 — 혼을 추출해 그림자를 모으세요" end
         if waiting == stored then return "그림자가 아직 회복 중이다" end
         return "지금은 그림자를 부를 수 없다"

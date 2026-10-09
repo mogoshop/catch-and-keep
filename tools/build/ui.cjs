@@ -451,7 +451,9 @@ function patchShadowHud() {
   }
   k.btn("Window/BtnPrev", "◀ 이전", { anchor: "bottom-left", pivot: [0, 0], pos: [620, 18], rect_size: [180, 72], font_size: 22 });
   k.btn("Window/BtnNext", "다음 ▶", { anchor: "bottom-right", pivot: [1, 0], pos: [-30, 18], rect_size: [180, 72], font_size: 22 });
-  s.text("Window/PageText", "", { size: 22, color: C.dim, anchor: "bottom-left", pivot: [0.5, 0], pos: [1075, 30], rect_size: [420, 48] });
+  // 여러 개 선택(분해 전용) — 이전 버튼 옆
+  k.btn("Window/BtnMulti", "여러 개 선택", { anchor: "bottom-left", pivot: [0, 0], pos: [816, 18], rect_size: [230, 72], font_size: 22 });
+  s.text("Window/PageText", "", { size: 22, color: C.dim, anchor: "bottom-left", pivot: [0.5, 0], pos: [1198, 30], rect_size: [290, 48] });
   // 테두리(Rim)를 맨 아래로 (제목이 테두리에 가렸다), 창이 GameHUD(하단 메뉴 줄)보다 위에 오게 그룹 순서 6
   {
     const kids = s.listEntities().filter((e) => e.path.startsWith("/ui/ShadowHUD/Window/") && e.path.split("/").length === 5);

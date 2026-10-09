@@ -20,6 +20,7 @@ script MonsterAttack extends AttackComponent
     property number SpacingTimer = 0
     property number NeighborSpacing = 0.45
     property number SlamDamage = 0
+    property string SlamElement = ""       -- 변종 기술 속성 (화염·냉기·번개·독). 그 판정 동안만 피해 전부가 이 속성
     property number ArrowSpeed = 7
     property integer ShotCount = 0
     property number AttackWindup = 0.3
@@ -94,6 +95,14 @@ script MonsterAttack extends AttackComponent
         self.SlamDamage = damage
         self.CurrentTarget = nil
         self:AttackFast(CircleShape(center, radius), "monster.slam", nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SlamWithElement(Vector2 center, number radius, number damage, string element)
+        -- 속성 범위 기술 (판정은 동기라 끝나면 바로 되돌린다)
+        self.SlamElement = element
+        self:Slam(center, radius, damage)
+        self.SlamElement = ""
     end
 
     @ExecSpace("ServerOnly")
@@ -510,6 +519,10 @@ script MonsterAttack extends AttackComponent
         local ratio = 0
         if element ~= "" then ratio = self.ElementRatio end
         if body ~= nil and body:GetAffixElement() ~= "" then ratio = math.min(1, ratio + 0.5) end
+        if attackInfo == "monster.slam" and self.SlamElement ~= "" then
+            element = self.SlamElement
+            ratio = 1
+        end
         ---@type ShadowUnit
         local shadow = defender:GetComponent("script.ShadowUnit")
         if shadow ~= nil and ratio > 0 then

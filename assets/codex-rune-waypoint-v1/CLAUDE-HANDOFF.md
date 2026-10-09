@@ -6,7 +6,7 @@
 
 1. `png/`의 룬24개·웨이포인트2개만 리소스 보관함에 업로드한다. 파일명은 유지한다.
 2. 업로드 후 메이커가 제공하는 리소스 카탈로그 CSV를 전달한다. `UPLOAD-MAPPING.csv`의 ruid는 아직 빈 값이며 실제 카탈로그와 대조 후 채운다. RUID를 임의로 만들지 않는다.
-3. 룬은 `data/runes.csv`에서 id가 같은 행의 icon 칸에 넣는다. 웨이포인트는 `data/ui_icons.csv`의 waypoint_off/on 키로 연결한다.
+3. 룬은 `data/runes.csv`에서 id가 같은 행의 icon 칸에 RUID를 넣고, iconPx는 업로드한 PNG의 실제 너비인 128로 채운다. originals/의 큰 원본을 업로드하지 않는다. 웨이포인트는 `data/ui_icons.csv`의 waypoint_off/on 키로 연결하며 색상 #FFFFFF, 알파 1을 사용한다.
 4. 사용자 업로드 카탈로그 확보 전에는 기존 CSV·게임 코드·맵·UI를 수정하지 않는다.
 5. 연결 후 데이터 생성, 메이커 플레이 중지, 공식 MCP `maker_refresh_workspace`, 빌드/일반 로그 확인, 플레이로 실제 표시를 검증한다. File 메뉴의 Refresh를 찾도록 안내하지 않는다.
 

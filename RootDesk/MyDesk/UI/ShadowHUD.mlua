@@ -1,5 +1,6 @@
 -- 그림자 상태줄 + 보관함 창 (H) (클라이언트 전용). 모바일 패드는 MobilePad.
--- 보관함 창: 왼쪽 = 고른 그림자 상세(모습·능력치·고유 능력·소환/강화/분해, 모두 확인 창), 오른쪽 = 목록(필터 전체|일반|정예|보스, 정렬 레벨·추출·등급).
+-- 보관함 창: 왼쪽 = 고른 그림자 상세(모습·능력치·고유 능력·소환 지정/강화/분해), 오른쪽 = 목록(필터 전체|일반|정예|보스, 정렬 레벨·추출·등급).
+--   소환 지정: 소환 스킬(Z)이 부를 그림자와 순서를 정한다 (소환 한도만큼). 「여러 개 선택」: 목록에서 여러 마리를 골라 한꺼번에 분해만.
 -- 보관함 값은 ShadowOwner(@Sync StorageDigest·Essence), 소환 수는 ShadowCommander에서 읽는다.
 -- 버튼은 각 컴포넌트의 Server 요청으로 보낸다 (검증은 서버).
 @Logic
@@ -19,6 +20,8 @@ script ShadowHUD extends Logic
     property any SelectedEntry = nil
     property integer Filter = 0     -- 0 전체 / 1 일반 / 2 정예 / 3 보스
     property string Sort = "level"  -- level / recent / grade
+    property boolean Multi = false  -- 여러 개 선택(분해 전용) 모드
+    property table Picked = {}      -- 여러 개 선택: id → true
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
@@ -40,6 +43,7 @@ script ShadowHUD extends Logic
             _UIKit:Connect(self.Win .. "/" .. f[1], function() self:SetFilter(grade) end)
         end
         _UIKit:Connect(self.Win .. "/BtnSort", function() self:NextSort() end)
+        _UIKit:Connect(self.Win .. "/BtnMulti", function() self:ToggleMulti() end)
         -- 보관함 창이 하단 메뉴 줄(GameHUD 5)보다 위에, 제목이 테두리 그림보다 위에 오게 (파일 값만으로는 메이커가 다시 읽지 않았다)
         local group = _EntityService:GetEntityByPath(self.Root)
         if isvalid(group) then group.UIGroupComponent.GroupOrder = 6 end
@@ -107,6 +111,21 @@ script ShadowHUD extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void ToggleMulti()
+        -- 여러 개 선택(분해 전용) 켜고 끄기. 끄면 고른 것을 비운다
+        self.Multi = not self.Multi
+        self.Picked = {}
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    method integer PickedCount()
+        local n = 0
+        for _, v in pairs(self.Picked) do if v then n = n + 1 end end
+        return n
+    end
+
+    @ExecSpace("ClientOnly")
     method void ChangePage(integer delta)
         self.Page = math.max(0, self.Page + delta)
         self.RenderKey = ""
@@ -122,14 +141,15 @@ script ShadowHUD extends Logic
         local cmd = self:Commander()
         if owner == nil or cmd == nil then return end
         if self.RenderKey == "" then self:RefreshInputLabel() end
-        local status = string.format("그림자 %d   소환 %d/%d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit())
+        local assignedCount = #owner:AssignedList()
+        local status = string.format("그림자 %d   소환 %d/%d", owner.StorageCount, cmd.DeployedCount, cmd:GetDeployLimit()) .. (assignedCount > 0 and ("   지정 " .. tostring(assignedCount)) or "")
         if cmd.UndeadSummary ~= "" then status = status .. "\n" .. cmd.UndeadSummary end
         _UIKit:SetText(self.Root .. "/Status/Text", status)
         if not _UIKit:IsOpen(self.Win) then return end
         -- 재소환 대기 중인 그림자가 있으면 남은 초가 바뀔 때마다 다시 그린다
         local tick = ""
         if string.find(owner.StorageDigest, "|0|%d") then tick = tostring(math.floor(_UtilLogic.ServerElapsedSeconds)) end
-        local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page) .. "#" .. tick
+        local key = owner.StorageDigest .. "#" .. tostring(owner.Essence) .. "#" .. tostring(self.Page) .. "#" .. tick .. "#" .. owner.Assigned .. "#" .. tostring(cmd:GetDeployLimit())
         if key == self.RenderKey then return end
         self.RenderKey = key
         self:RenderRows(owner)
@@ -139,6 +159,17 @@ script ShadowHUD extends Logic
     method void SelectRow(integer index)
         local e = self.RowEntries[index]
         if e == nil then return end
+        if self.Multi then
+            -- 여러 개 선택: 누를 때마다 넣고 빼기 (소환 중·보스는 분해할 수 없어 고를 수 없다)
+            if e.deployed or self:SalvageYield(e) <= 0 then
+                _ConfirmDialog:Show("고를 수 없음", self:ShadowName(e.src) .. " Lv" .. tostring(e.level) .. "\n" .. (e.deployed and "소환 중인 그림자는 먼저 회수(X)하세요." or "보스 그림자는 분해할 수 없습니다."), "닫기", nil)
+                return
+            end
+            self.Picked[e.id] = not self.Picked[e.id]
+            self.RenderKey = ""
+            self:Poll()
+            return
+        end
         self.SelectedId = e.id
         self.RenderKey = ""
         self:Poll()
@@ -164,6 +195,8 @@ script ShadowHUD extends Logic
     method table Entries(ShadowOwner owner)
         -- 요약 문자열(id|src|grade|level|deployed|readyAt|variant|at;...)을 풀어 필터·정렬한다
         local now = _UtilLogic.ServerElapsedSeconds
+        local order = {}
+        for i, id in ipairs(owner:AssignedList()) do order[id] = i end
         local list = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
             local id, src, grade, level, deployed, readyAt, variant, at, plus, xp = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)|(%d+)|(%d+)$")
@@ -172,7 +205,7 @@ script ShadowHUD extends Logic
                 local tier = math.min(3, g)
                 if self.Filter == 0 or self.Filter == tier then
                     local serial = tonumber(string.match(id, "_(%d+)$")) or 0
-                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), plus = tonumber(plus) or 0, xp = tonumber(xp) or 0, deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial })
+                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), plus = tonumber(plus) or 0, xp = tonumber(xp) or 0, deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial, assign = order[id] or 0 })
                 end
             end
         end
@@ -202,6 +235,12 @@ script ShadowHUD extends Logic
         _UIKit:SetText(self.Win .. "/PageText", string.format("%d / %d  ·  %d마리", self.Page + 1, pages, #entries))
         local sortNames = { level = "레벨순", recent = "추출순", grade = "등급순" }
         _UIKit:SetText(self.Win .. "/BtnSort", "정렬: " .. sortNames[self.Sort])
+        _UIKit:SetText(self.Win .. "/BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택")
+        _UIKit:SetColor(self.Win .. "/BtnMulti", self.Multi and Color(0.6, 1, 0.65, 1) or Color(1, 1, 1, 1))
+        -- 사라진(분해된) 그림자는 고른 목록에서 뺀다
+        local alive = {}
+        for _, e in ipairs(self:Entries(owner)) do alive[e.id] = true end
+        for id, _ in pairs(self.Picked) do if not alive[id] then self.Picked[id] = nil end end
         local filterPaths = { "FAll", "FNormal", "FElite", "FBoss" }
         for i, name in ipairs(filterPaths) do
             _UIKit:SetColor(self.Win .. "/" .. name, (i - 1) == self.Filter and Color(1, 0.86, 0.55, 1) or Color(0.55, 0.52, 0.5, 1))
@@ -225,10 +264,15 @@ script ShadowHUD extends Logic
                 _UIKit:SetText(base .. "/Label", self:RowLabel(e))
                 local state = ""
                 if e.deployed then state = _UIKit:Colored("#9EE6A0", "소환 중") elseif e.wait > 0 then state = "회복 " .. tostring(e.wait) .. "초" end
+                if self.Multi and self.Picked[e.id] then state = _UIKit:Colored("#9EE6A0", "분해 선택") end
                 _UIKit:SetText(base .. "/State", state)
                 local m = _GameData:GetMonsterStats(e.src)
                 _UIKit:SetIcon(base .. "/Portrait", m ~= nil and m.stand or "")
-                _UIKit:SetColor(base, e.id == self.SelectedId and Color(0.42, 0.32, 0.14, 1) or Color(0.13, 0.12, 0.16, 1))
+                local rowColor = Color(0.13, 0.12, 0.16, 1)
+                if self.Multi then
+                    if self.Picked[e.id] then rowColor = Color(0.16, 0.36, 0.2, 1) end
+                elseif e.id == self.SelectedId then rowColor = Color(0.42, 0.32, 0.14, 1) end
+                _UIKit:SetColor(base, rowColor)
             end
         end
         self:RenderDetail(owner, selected)
@@ -238,6 +282,12 @@ script ShadowHUD extends Logic
     method void RenderDetail(ShadowOwner owner, any e)
         -- 왼쪽 상세: 모습(원본 몬스터, 그림자 보라빛) · 등급·속성 · 능력치 · 고유 능력(변종 기술·오오라)
         local d = self.Win .. "/Detail"
+        if self.Multi then
+            self:RenderMulti(owner)
+            return
+        end
+        _UIKit:SetEnabled(d .. "/BtnDeploy", true)
+        _UIKit:SetEnabled(d .. "/BtnUpgrade", true)
         local has = e ~= nil
         _UIKit:SetEnabled(d .. "/Empty", not has)
         for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
@@ -270,7 +320,7 @@ script ShadowHUD extends Logic
         }
         _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
         _UIKit:SetText(d .. "/Trait", self:TraitText(e))
-        _UIKit:SetText(d .. "/BtnDeploy", e.deployed and "회수" or (e.wait > 0 and "대기" or "소환"))
+        _UIKit:SetText(d .. "/BtnDeploy", e.assign > 0 and "지정 해제" or "소환 지정")
         _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or "강화")
         _UIKit:SetText(d .. "/BtnSalvage", "분해")
         -- 정수 줄: 아이콘 + 보유 · 강화 비용 · 분해하면 얻는 양
@@ -279,6 +329,40 @@ script ShadowHUD extends Logic
         local salvage = (e.deployed or yield <= 0) and "분해 불가(배치 중)" or ("분해 시 정수 +" .. tostring(yield))
         local upgrade = e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or string.format("강화 +%d→+%d: 정수 %d", e.plus, e.plus + 1, cost)
         _UIKit:SetText(d .. "/Essence/Text", string.format("정수 %d 보유  ·  %s  ·  %s", owner.Essence, upgrade, salvage))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderMulti(ShadowOwner owner)
+        -- 여러 개 선택: 왼쪽은 고른 그림자 요약 + 분해 버튼만
+        local d = self.Win .. "/Detail"
+        local picked = {}
+        local total = 0
+        for _, e in ipairs(self:Entries(owner)) do
+            if self.Picked[e.id] then
+                table.insert(picked, e)
+                total = total + self:SalvageYield(e)
+            end
+        end
+        _UIKit:SetEnabled(d .. "/Empty", false)
+        for _, n in ipairs({ "Name", "Grade", "Stats", "Trait", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, true) end
+        _UIKit:SetEnabled(d .. "/Stage", false)
+        _UIKit:SetEnabled(d .. "/BtnDeploy", false)
+        _UIKit:SetEnabled(d .. "/BtnUpgrade", false)
+        _UIKit:SetText(d .. "/Name", "여러 개 선택 · " .. tostring(#picked) .. "마리")
+        _UIKit:SetText(d .. "/Grade", "목록을 눌러 분해할 그림자를 고르세요 (다시 누르면 빠짐)")
+        local lines = {}
+        for i, e in ipairs(picked) do
+            if i > 7 then
+                table.insert(lines, _UIKit:Colored("#8C99B4", "… 외 " .. tostring(#picked - 7) .. "마리"))
+                break
+            end
+            table.insert(lines, self:ShadowName(e.src) .. "  Lv" .. tostring(e.level) .. (e.plus > 0 and ("  +" .. tostring(e.plus)) or "") .. (e.assign > 0 and _UIKit:Colored("#FFD27A", "  (소환 지정됨)") or ""))
+        end
+        if #lines == 0 then lines = { _UIKit:Colored("#8C99B4", "아직 고른 그림자가 없다") } end
+        _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
+        _UIKit:SetText(d .. "/Trait", _UIKit:Colored("#8C99B4", "소환 중인 그림자와 보스 그림자는 고를 수 없다 · 소환 지정·강화는 「선택 끝내기」 후"))
+        _UIKit:SetText(d .. "/BtnSalvage", "선택 분해")
+        _UIKit:SetText(d .. "/Essence/Text", string.format("정수 %d 보유  ·  %d마리 분해 시 정수 +%d", owner.Essence, #picked, total))
     end
 
     method string PlusText(number diff)
@@ -305,6 +389,8 @@ script ShadowHUD extends Logic
             if v.kind == "aura" then
                 local labels = { dmg = "피해", haste = "공격·이동 속도", guard = "받는 피해 감소" }
                 table.insert(lines, "고유 오오라 「" .. v.name .. "」: 주변 아군 " .. (labels[v.effect] or "능력") .. " +" .. tostring(math.floor(v.value)) .. "% (반경 " .. tostring(v.radius) .. ")")
+            elseif v.kind == "cloud" then
+                table.insert(lines, "고유 기술 「" .. v.name .. "」: " .. tostring(v.interval) .. "초마다 주위 적에게 독 (4초 동안 공격력 ×" .. tostring(v.mult) .. ", 반경 " .. tostring(v.radius) .. ")")
             else
                 local elem = v.element ~= "" and (_ShadowConfig:ElementName(v.element) .. " ") or ""
                 table.insert(lines, "고유 기술 「" .. v.name .. "」: " .. tostring(v.interval) .. "초마다 주위 " .. elem .. "범위 공격 (공격력 ×" .. tostring(v.mult) .. ", 반경 " .. tostring(v.radius) .. ")")
@@ -328,7 +414,8 @@ script ShadowHUD extends Logic
         local v = _GameData:GetVariant(e.variant)
         if v ~= nil then trait = trait .. " · " .. v.name end
         local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
-        return string.format("%s  [%s%s]  Lv%d", self:ShadowName(e.src), gradeName, trait, e.level) .. plus .. state
+        local assign = e.assign > 0 and (_UIKit:Colored("#FFD27A", "[지정 " .. tostring(e.assign) .. "] ")) or ""
+        return assign .. string.format("%s  [%s%s]  Lv%d", self:ShadowName(e.src), gradeName, trait, e.level) .. plus .. state
     end
 
     @ExecSpace("ClientOnly")
@@ -344,6 +431,10 @@ script ShadowHUD extends Logic
     @ExecSpace("ClientOnly")
     method void OnAction(string action)
         -- 상세 버튼 → 확인 창(무엇이 어떻게 바뀌는지) → 확인하면 서버 요청
+        if self.Multi then
+            if action == "salvage" then self:SalvagePicked() end
+            return
+        end
         local e = self.SelectedEntry
         if e == nil then return end
         local id = e.id
@@ -353,13 +444,13 @@ script ShadowHUD extends Logic
         local name = self:ShadowName(e.src) .. " Lv" .. tostring(e.level)
         local now = _ShadowConfig:GetProfile(e.src, e.grade, e.level, 1)
         if action == "deploy" then
-            if e.deployed then
-                _ConfirmDialog:Show("그림자 회수", name .. "\n소환을 풀고 보관함으로 돌려보냅니다.", "회수", function() cmd:RequestRecall(id) end)
-            elseif e.wait > 0 then
-                _ConfirmDialog:Show("그림자 소환", name .. "\n쓰러진 뒤 회복 중입니다 — " .. tostring(e.wait) .. "초 뒤에 다시 소환할 수 있습니다.", "닫기", nil)
-            else
-                _ConfirmDialog:Show("그림자 소환", name .. "\n공격 " .. tostring(now.atk) .. " · 생명 " .. tostring(now.hp) .. " (장비·스킬 보너스 전)\n소환 " .. tostring(cmd.DeployedCount) .. " / " .. tostring(cmd:GetDeployLimit()) .. "기", "소환", function() cmd:RequestDeploy(id) end)
+            -- 소환 지정: 소환 스킬(Z)이 지정 순서대로 부른다. 한도가 차 있으면 해제부터 하라고 알린다
+            local limit = cmd:GetDeployLimit()
+            if e.assign == 0 and #owner:AssignedList() >= limit then
+                _ConfirmDialog:Show("소환 지정", name .. "\n소환 지정은 최대 " .. tostring(limit) .. "마리입니다 (지금 소환 한도).\n지정된 그림자 하나를 먼저 「지정 해제」하세요.", "닫기", nil)
+                return
             end
+            owner:RequestToggleAssign(id)
             return
         end
         local essence = _GameData:GetUiIcon("essence")
@@ -385,6 +476,33 @@ script ShadowHUD extends Logic
         end
         local refund = e.plus > 0 and ("\n(강화에 쓴 정수의 절반 " .. tostring(_ShadowConfig:GetPlusRefund(e.plus)) .. " 포함)") or ""
         _ConfirmDialog:ShowIcon("그림자 분해", name .. "\n분해하면 이 그림자는 영원히 사라지고 정수 +" .. tostring(yield) .. "을 얻습니다." .. refund .. "\n(정수 " .. tostring(owner.Essence) .. " → " .. tostring(owner.Essence + yield) .. " · 가방에 귀속 재료로 들어갑니다)", "분해", essence, function() owner:RequestDisassemble(id) end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SalvagePicked()
+        -- 고른 그림자 한꺼번에 분해 (확인 창 한 번)
+        local owner = self:Owner()
+        if owner == nil then return end
+        local ids = {}
+        local total = 0
+        local assigned = 0
+        for _, e in ipairs(self:Entries(owner)) do
+            if self.Picked[e.id] and not e.deployed and self:SalvageYield(e) > 0 then
+                table.insert(ids, e.id)
+                total = total + self:SalvageYield(e)
+                if e.assign > 0 then assigned = assigned + 1 end
+            end
+        end
+        if #ids == 0 then
+            _ConfirmDialog:Show("선택 분해", "목록에서 분해할 그림자를 먼저 고르세요.", "닫기", nil)
+            return
+        end
+        local warn = assigned > 0 and ("\n" .. _UIKit:Colored("#FFD27A", "소환 지정된 그림자 " .. tostring(assigned) .. "마리 포함 — 지정에서도 빠집니다")) or ""
+        _ConfirmDialog:ShowIcon("그림자 " .. tostring(#ids) .. "마리 분해", tostring(#ids) .. "마리가 영원히 사라지고 정수 +" .. tostring(total) .. "을 얻습니다." .. warn .. "\n(정수 " .. tostring(owner.Essence) .. " → " .. tostring(owner.Essence + total) .. ")", "분해", _GameData:GetUiIcon("essence"), function()
+            owner:RequestDisassembleMany(table.concat(ids, ","))
+            self.Picked = {}
+            self.RenderKey = ""
+        end)
     end
 
 end
