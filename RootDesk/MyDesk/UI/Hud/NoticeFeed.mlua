@@ -6,6 +6,10 @@
 script NoticeFeed extends Logic
 
     property integer MaxLines = 4
+    property number LineHeight = 44      -- 한 줄 문구 판 높이 (빌드 기본값)
+    property number LineGap = 6
+    property number TextWidth = 590      -- 글 칸 폭 (줄바꿈 계산용)
+    property number MaxHeight = 250      -- 쌓을 수 있는 높이 (Feed 바닥 -170 ~ 위쪽 알림 판 바닥 +89)
     property number LineSeconds = 3.5
     property number FadeSeconds = 0.5
     property any Lines = nil          -- { text, key, count, gold, at } 아래(최신)부터
@@ -88,16 +92,34 @@ script NoticeFeed extends Logic
 
     @ExecSpace("ClientOnly")
     method void Render()
+        -- 10-10 3차 QA: 두 줄로 넘어가는 문구가 위 줄과 겹쳤다 → 줄마다 글 높이에 맞춰 판을 늘리고 아래부터 차례로 쌓는다.
+        -- 쌓인 높이가 MaxHeight를 넘으면 오래된 줄은 숨긴다 (위쪽 알림 판과 겹치지 않게)
+        local y = 0
+        local full = false
         for i = 1, self.MaxLines do
             local path = "/ui/RewardHUD/Feed/Line" .. tostring(i)
             local line = self.Lines[i]
-            if line == nil then
+            local e = _UIKit:Get(path)
+            if line == nil or not isvalid(e) then
                 _UIKit:SetEnabled(path, false)
             else
                 local text = line.text
                 if line.count > 1 then text = text .. "  ×" .. tostring(line.count) end
                 _UIKit:SetText(path .. "/Text", text)
-                _UIKit:SetEnabled(path, true)
+                local h = self.LineHeight
+                local t = _UIKit:Get(path .. "/Text")
+                local r = isvalid(t) and t.TextGUIRendererComponent or nil
+                if isvalid(r) then h = math.max(self.LineHeight, math.ceil(r:GetPreferredHeight(text, self.TextWidth)) + 12) end
+                if full or (y > 0 and y + h > self.MaxHeight) then
+                    full = true
+                    _UIKit:SetEnabled(path, false)
+                else
+                    e.UITransformComponent.RectSize = Vector2(e.UITransformComponent.RectSize.x, h)
+                    e.UITransformComponent.anchoredPosition = Vector2(0, y)
+                    if isvalid(t) then t.UITransformComponent.RectSize = Vector2(t.UITransformComponent.RectSize.x, h - 4) end
+                    _UIKit:SetEnabled(path, true)
+                    y = y + h + self.LineGap
+                end
             end
         end
         self:Fade(_UtilLogic.ElapsedSeconds)

@@ -48,6 +48,7 @@ script ShadowUnit extends AttackComponent
     property Vector2 OwnerVelPos = Vector2(0, 0)
     property number OwnerVelAt = 0
     property number OwnerVel = 0              -- 주인의 실제 이동 속도(칸/초). 서버의 주인 InputSpeed는 클라이언트 배율이 빠진 값이라 재서 쓴다
+    property Vector2 OwnerVelDir = Vector2(0, 0) -- 주인의 마지막 이동 방향
     property number LeashDistance = 9
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
     property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
@@ -326,7 +327,7 @@ script ShadowUnit extends AttackComponent
         self.LastMovePos = myPos
         local o = self.OwnerPlayer.TransformComponent.WorldPosition
         self:TrackOwnerSpeed(Vector2(o.x, o.y))
-        local slot = self:FormationSlot(Vector2(o.x, o.y))
+        local slot = self:FreeSlot(Vector2(o.x, o.y), self:FormationSlot(Vector2(o.x, o.y)))
         local toSlot = slot - myPos
         if toSlot:Magnitude() > self.LeashDistance then
             -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
@@ -378,18 +379,44 @@ script ShadowUnit extends AttackComponent
 
         -- 따라가기: 멈춤·출발 사이에 간격을 두고, 멀수록 빨라진다 (주인보다 느린 원본도 대형에 붙는다)
         local dist = toSlot:Magnitude()
-        local follow = (self.Moving and dist > self.FollowStop) or (not self.Moving and dist > self.FollowStart)
+        -- 10-10 3차 QA(11마리 끌고 다닐 때 뚝뚝): 주인이 걷는 중에도 자리에 닿으면 멈췄다가 0.6칸 벌어지면 다시 출발했다
+        -- (메이커 측정: 마법사·그림자가 걷는 3초 동안 2번 출발·5~9프레임 정지). 주인이 걷는 동안은 멈추지 않고 주인 속도에 맞춰 함께 걷는다
+        local ownerMoving = self.OwnerVel > 0.3
+        local follow = (self.Moving and (dist > self.FollowStop or ownerMoving)) or (not self.Moving and dist > self.FollowStart)
+        -- 주인이 서 있는데 동료·주인 몸에 막혀 자리에 못 가면(0.8초) 그 자리에 선다 (계속 비비며 움직이지 않게)
+        if follow and not ownerMoving and self.StuckSeconds > 0.8 and dist < 1.6 then follow = false end
         if follow then
             -- 많이 뒤처졌을 때(1.2칸+)만 살짝 서두른다. 최대 1.25배 · 걷기 동작도 같은 배율로 빨라져 발이 미끄러지지 않는다
             -- (10-10 2차 QA: 1.8배까지 올리니 걷지 않고 날아다니는 것처럼 보였다)
             local mult = 1
-            if dist > 1.2 then mult = math.min(1.25, 1 + (dist - 1.2) * 0.25) end
+            local base = self:Base()
+            if dist > 1.2 then mult = math.min(1.25, 1 + (dist - 1.2) * 0.25)
+            elseif ownerMoving and base > 0 then
+                -- 자리 근처: 주인 속도에 맞춘다 (가까우면 조금 느리게, 처지면 조금 빠르게)
+                mult = math.max(0.5, math.min(1.25, self.OwnerVel / base * (dist < 0.3 and 0.95 or 1.1)))
+            end
             self:SetSpeedMult(mult)
-            self:MoveToward(toSlot)
+            -- 주인이 걷는 중이면 자리보다 조금 앞을 겨눠 자리에 「도착」해서 서지 않게 한다
+            local aim = toSlot
+            if ownerMoving then aim = toSlot + self.OwnerVelDir * 0.3 end
+            self:MoveToward(aim)
         else
             self:SetSpeedMult(1)
             self:StopMove(o.x - myPos.x)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 FreeSlot(Vector2 ownerPos, Vector2 slot)
+        -- 대형 자리가 벽·막힌 칸이면 주인 쪽으로 당겨 처음 비어 있는 곳을 쓴다
+        -- (10-10 3차 QA: 벽 앞에 서면 앞줄 해골의 자리가 벽 속이라 닿지 못하고 계속 움직였다)
+        local memo = _Util:TerrainMemo(self.Entity.CurrentMap)
+        if memo == nil then return slot end
+        for _, t in ipairs({ 1, 0.7, 0.4 }) do
+            local p = ownerPos + (slot - ownerPos) * t
+            if not _Util:CellBlocked(memo, p) then return p end
+        end
+        return ownerPos
     end
 
     @ExecSpace("ServerOnly")
@@ -399,7 +426,10 @@ script ShadowUnit extends AttackComponent
         local moved = (ownerPos - self.OwnerVelPos):Magnitude()
         if moved > 0.001 then
             local dt = now - self.OwnerVelAt
-            if dt > 0.02 and dt < 0.5 and moved < 2 then self.OwnerVel = self.OwnerVel + (moved / dt - self.OwnerVel) * 0.5 end
+            if dt > 0.02 and dt < 0.5 and moved < 2 then
+                self.OwnerVel = self.OwnerVel + (moved / dt - self.OwnerVel) * 0.5
+                self.OwnerVelDir = (ownerPos - self.OwnerVelPos) / moved
+            end
             self.OwnerVelPos = ownerPos
             self.OwnerVelAt = now
         elseif now - self.OwnerVelAt > 0.4 then
@@ -420,6 +450,8 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method void SetSpeedMult(number mult)
         -- 0.1 단위로 바뀔 때만 이동 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다)
+        -- 경계에서 0.9↔1.0을 오가며 동기화 값을 계속 쓰지 않도록, 지금 배율에서 0.08 이상 벗어날 때만 바꾼다
+        if math.abs(mult - self.SpeedMult) < 0.08 then return end
         local q = math.floor(mult * 10 + 0.5) / 10
         if q == self.SpeedMult then return end
         local base = self:Base()

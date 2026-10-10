@@ -13,6 +13,8 @@ script DarkVision extends Logic
     property number MapStorm = 0            -- 맵 모래폭풍 (MapAmbience.Storm)
     property number BossStorm = 0           -- 보스 모래폭풍 (HighPriestRite 3단계)
     property integer DustSerial = 0         -- 폭풍 모래 입자
+    property number WallShade = 0.5         -- 지나갈 수 없는 벽·테두리 그림 밝기 배율 (10-10 3차 QA: 바닥·기둥·동굴 벽이 구분되지 않았다)
+    property any WallBase = nil             -- 벽 그림 엔티티 id → 원래 색 (다시 들어와도 배율이 겹치지 않게)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -117,6 +119,7 @@ script DarkVision extends Logic
         -- 맵의 어둠 설정을 읽어 전체 조명 + 내 주변 빛을 만든다
         self:ClearAll()
         self.CurrentMap = map
+        self:ShadeWalls(map)
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         if amb == nil then
@@ -137,6 +140,27 @@ script DarkVision extends Logic
         self:ApplyPlayerLight(player)
         if amb.DisplayName ~= "" then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
         log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f 폭풍 %.2f", map.Name, ambient, r, amb.Storm))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShadeWalls(Entity map)
+        -- 충돌 칸에 그린 벽(ArtWall*) · 열린 맵 바위 테두리(ArtBorder*)만 어둡게 칠해 걷는 바닥과 구분한다.
+        -- 맵 그림은 서버가 바꾸지 않는 정적 엔티티라 클라이언트에서 색만 바꾼다. 원래 색을 기억해 늘 원래 색 × WallShade로 쓴다
+        if self.WallBase == nil then self.WallBase = {} end
+        local n = 0
+        for _, r in ipairs(map:GetChildComponentsByTypeName("SpriteRendererComponent", true)) do
+            local name = r.Entity.Name
+            if string.sub(name, 1, 7) == "ArtWall" or string.sub(name, 1, 9) == "ArtBorder" then
+                local base = self.WallBase[r.Entity.Id]
+                if base == nil then
+                    base = r.Color
+                    self.WallBase[r.Entity.Id] = base
+                end
+                r.Color = Color(base.r * self.WallShade, base.g * self.WallShade, base.b * self.WallShade, base.a)
+                n = n + 1
+            end
+        end
+        log(string.format("[VRF] DarkVision 벽 그림 %d개 어둡게 (%.2f)", n, self.WallShade))
     end
 
     @ExecSpace("ClientOnly")
