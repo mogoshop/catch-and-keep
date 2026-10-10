@@ -19,6 +19,7 @@ script MonsterAttack extends AttackComponent
     property boolean SpacingControlled = false
     property number SpacingTimer = 0
     property number NeighborSpacing = 0.45
+    property integer SpacingMode = 0             -- 근접 간격: 0 유지 · 1 다가감 · -1 물러남 (폭을 넓게 두고 상태를 유지해 제자리 꿈틀거림을 없앤다, 10-10 QA)
     property number SlamDamage = 0
     property string SlamElement = ""       -- 변종 기술 속성 (화염·냉기·번개·독). 그 판정 동안만 피해 전부가 이 속성
     property number ArrowSpeed = 7
@@ -139,6 +140,7 @@ script MonsterAttack extends AttackComponent
         self.SpacingTimer = 0.1
         local target = self:FindDefender(math.max(1.3, self.AttackRange + 0.55))
         if not isvalid(target) then
+            self.SpacingMode = 0
             if self.SpacingControlled then
                 self.SpacingControlled = false
                 local behavior = self.Entity:GetComponent("script.MonsterBehavior")
@@ -153,9 +155,17 @@ script MonsterAttack extends AttackComponent
         local distance = to:Magnitude()
         local radial = distance > 0.01 and to:Normalize() or Vector2(1, 0)
         local wanted = math.max(0.55, math.min(1.1, self.AttackRange * 0.9))
+        -- 다가가기는 사거리 + 0.18 밖에서 시작해 사거리에 닿을 때까지, 물러나기는 사거리 − 0.28 안에서 시작해 거의 사거리까지
+        -- (예전: ±0.04~0.08 폭을 0.1초마다 다시 판단해 다가감·물러남을 반복했다 — 메이커 측정 8초에 방향 반전 9번)
+        if self.SpacingMode == 1 and distance <= wanted then self.SpacingMode = 0
+        elseif self.SpacingMode == -1 and distance >= wanted - 0.05 then self.SpacingMode = 0 end
+        if self.SpacingMode == 0 then
+            if distance > wanted + 0.18 then self.SpacingMode = 1
+            elseif distance < wanted - 0.28 then self.SpacingMode = -1 end
+        end
         local direction = Vector2(0, 0)
-        if distance < wanted - 0.08 then direction = radial * -1
-        elseif distance > wanted + 0.04 then direction = radial end
+        if self.SpacingMode == 1 then direction = radial
+        elseif self.SpacingMode == -1 then direction = radial * -1 end
         local push = Vector2(0, 0)
         for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.NeighborSpacing)) do
             if m.Entity ~= self.Entity then
@@ -167,7 +177,8 @@ script MonsterAttack extends AttackComponent
         end
         -- 대상 쪽으로 밀지 않고 둘레로 흩어진다. 공격 준비/회복에는 이 이동을 실행하지 않는다.
         local tangent = push - radial * push:Dot(radial)
-        direction = direction + tangent * 0.8
+        -- 서로 많이 겹칠 때만 옆으로 비킨다 (살짝 닿은 것까지 밀면 계속 흔들렸다)
+        if tangent:Magnitude() > 0.35 then direction = direction + tangent * 0.6 end
         if direction:Magnitude() > 0.05 then
             direction = direction:Normalize()
             if not _Util:HasLineOfSight(self.Entity.CurrentMap, p, p + direction * 0.3) then direction = Vector2(0, 0) end

@@ -41,6 +41,13 @@ script ShadowUnit extends AttackComponent
     property number OwnerGuardRange = 3.5  -- 자동 교전은 주인 근처에서만 시작한다
     property number OwnerCombatRange = 4.5 -- 선택한 적·현재 교전에는 여유를 두되 다음 무리까지 쫓지 않는다
     property number ArriveDistance = 0.25
+    property number FollowStart = 0.6         -- 대형 자리에서 이만큼 벗어나면 출발 (10-10 QA: 0.25에서 섰다 갔다를 반복해 끊겨 보였다)
+    property number FollowStop = 0.2          -- 따라가는 중에는 이만큼 붙어야 멈춘다
+    property number BaseSpeed = 0             -- 원본 이동 속도 (ShadowCommander/UndeadSystem이 정한다)
+    property number SpeedMult = 1             -- 따라잡기 배율 (바뀔 때만 InputSpeed를 쓴다)
+    property Vector2 OwnerVelPos = Vector2(0, 0)
+    property number OwnerVelAt = 0
+    property number OwnerVel = 0              -- 주인의 실제 이동 속도(칸/초). 서버의 주인 InputSpeed는 클라이언트 배율이 빠진 값이라 재서 쓴다
     property number LeashDistance = 9
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
     property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
@@ -310,6 +317,7 @@ script ShadowUnit extends AttackComponent
         if self.Moving and (myPos - self.LastMovePos):Magnitude() < 0.02 then self.StuckSeconds = self.StuckSeconds + delta else self.StuckSeconds = 0 end
         self.LastMovePos = myPos
         local o = self.OwnerPlayer.TransformComponent.WorldPosition
+        self:TrackOwnerSpeed(Vector2(o.x, o.y))
         local slot = self:FormationSlot(Vector2(o.x, o.y))
         local toSlot = slot - myPos
         if toSlot:Magnitude() > self.LeashDistance then
@@ -335,6 +343,7 @@ script ShadowUnit extends AttackComponent
             local t = self.Target.TransformComponent.WorldPosition
             local toTarget = Vector2(t.x, t.y) - myPos
             if toTarget:Magnitude() > self.AttackRange or not _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, Vector2(t.x, t.y)) then
+                self:SetSpeedMult(1)
                 self:MoveToward(toTarget)
             else
                 -- 마법사는 닿는 적에게서 물러나 전사의 뒤에서 쏜다. 벽 앞에서는 공격을 포기하지 않는다.
@@ -359,11 +368,66 @@ script ShadowUnit extends AttackComponent
             return
         end
 
-        if toSlot:Magnitude() > self.ArriveDistance then
+        -- 따라가기: 멈춤·출발 사이에 간격을 두고, 멀수록 빨라진다 (주인보다 느린 원본도 대형에 붙는다)
+        local dist = toSlot:Magnitude()
+        local follow = (self.Moving and dist > self.FollowStop) or (not self.Moving and dist > self.FollowStart)
+        if follow then
+            local mult = math.max(1, math.min(1.8, dist))
+            local base = self:Base()
+            -- 주인보다 느린 원본: 주인 실제 속도의 1.1배까지 (RectTile 실제 속도 = InputSpeed / 1.2)
+            if base > 0 and dist > self.FollowStop * 2 then mult = math.max(mult, self.OwnerVel * 1.1 * 1.2 / base) end
+            self:SetSpeedMult(math.min(2.2, mult))
             self:MoveToward(toSlot)
         else
+            self:SetSpeedMult(1)
             self:StopMove(o.x - myPos.x)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TrackOwnerSpeed(Vector2 ownerPos)
+        -- 서버에 보이는 주인 위치는 초당 약 10번 바뀐다: 바뀔 때마다 이동 거리 / 경과로 속도를 잡는다
+        local now = _UtilLogic.ElapsedSeconds
+        local moved = (ownerPos - self.OwnerVelPos):Magnitude()
+        if moved > 0.001 then
+            local dt = now - self.OwnerVelAt
+            if dt > 0.02 and dt < 0.5 and moved < 2 then self.OwnerVel = self.OwnerVel + (moved / dt - self.OwnerVel) * 0.5 end
+            self.OwnerVelPos = ownerPos
+            self.OwnerVelAt = now
+        elseif now - self.OwnerVelAt > 0.4 then
+            self.OwnerVel = 0
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method number Base()
+        -- 원본 이동 속도 (처음이면 지금 속도를 원본으로 잡는다)
+        if self.BaseSpeed <= 0 then
+            local mv = self.Entity.MovementComponent
+            if isvalid(mv) then self.BaseSpeed = mv.InputSpeed / math.max(0.1, self.SpeedMult) end
+        end
+        return self.BaseSpeed
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetSpeedMult(number mult)
+        -- 0.1 단위로 바뀔 때만 이동 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다)
+        local q = math.floor(mult * 10 + 0.5) / 10
+        if q == self.SpeedMult then return end
+        local base = self:Base()
+        local mv = self.Entity.MovementComponent
+        if base <= 0 or not isvalid(mv) then return end
+        self.SpeedMult = q
+        mv.InputSpeed = base * q
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetBaseSpeed(number speed)
+        -- 원본 속도가 바뀌었다 (배치·능력치 갱신): 배율을 다시 1로
+        self.BaseSpeed = speed
+        self.SpeedMult = 1
+        local mv = self.Entity.MovementComponent
+        if isvalid(mv) then mv.InputSpeed = speed end
     end
 
     @ExecSpace("ServerOnly")
