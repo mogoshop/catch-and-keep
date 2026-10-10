@@ -53,6 +53,8 @@ script ShadowUnit extends AttackComponent
     property Vector2 Heading = Vector2(0, 0)  -- 지금 걷는 방향 (서서히 튼다)
     property number TurnRate = 7              -- 초당 최대 회전(라디안, 약 400°). 90° 꺾기 ≈ 0.22초
     property number LastDelta = 0.02
+    property number TickAcc = 0               -- 판단 주기 누적 시간
+    property number TickInterval = 0.05       -- 판단은 초당 20번 (이동은 그 사이에도 MovementComponent가 이어 간다)
     property Vector2 OwnerVelVec = Vector2(0, 0) -- 주인 속도 벡터 (평활)
     property Vector2 OwnerSmooth = Vector2(0, 0) -- 이 소환수가 따라가는 주인 위치: 서버가 보는 주인 위치(초당 약 10번 바뀜)를 예측·평활한 값
     property boolean OwnerSmoothReady = false
@@ -309,6 +311,12 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
+        -- 10-10 4차 QA(실제 서버 끊김): 판단 로직이 서버 매 프레임(메이커 초당 약 340번) 통째로 돌며 표·벡터를 계속 만들어,
+        -- 소환수가 있을 때만 30~74ms 서버 멈춤이 8초에 3~6번 생겼다 (끄면 0~1번). 판단은 초당 20번으로 묶는다
+        self.TickAcc = self.TickAcc + delta
+        if self.TickAcc < self.TickInterval then return end
+        delta = math.min(0.25, self.TickAcc)
+        self.TickAcc = 0
         self.LastDelta = delta
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
@@ -422,6 +430,7 @@ script ShadowUnit extends AttackComponent
         -- 바꿔 한 부대가 같은 박자로 딱딱 움직였다 (10-10 3차 QA). 마지막 속도로 앞을 예측하고, 소환수마다 다른 빠르기로 따라간다
         if not self.Personal then
             self.Personal = true
+            self.TickAcc = _UtilLogic:RandomDouble() * self.TickInterval  -- 소환수마다 판단 시점을 어긋나게
             self.FollowLag = 4.5 + _UtilLogic:RandomDouble() * 6
             self.SpeedJitter = 0.93 + _UtilLogic:RandomDouble() * 0.14
             self.RetargetTimer = _UtilLogic:RandomDouble() * self.RetargetInterval
@@ -454,10 +463,12 @@ script ShadowUnit extends AttackComponent
         -- (10-10 3차 QA: 벽 앞에 서면 앞줄 해골의 자리가 벽 속이라 닿지 못하고 계속 움직였다)
         local memo = _Util:TerrainMemo(self.Entity.CurrentMap)
         if memo == nil then return slot end
-        for _, t in ipairs({ 1, 0.7, 0.4 }) do
-            local p = ownerPos + (slot - ownerPos) * t
-            if not _Util:CellBlocked(memo, p) then return p end
-        end
+        -- (매 판단마다 표를 새로 만들지 않게 세 번 직접 확인한다)
+        if not _Util:CellBlocked(memo, slot) then return slot end
+        local p = ownerPos + (slot - ownerPos) * 0.7
+        if not _Util:CellBlocked(memo, p) then return p end
+        p = ownerPos + (slot - ownerPos) * 0.4
+        if not _Util:CellBlocked(memo, p) then return p end
         return ownerPos
     end
 
@@ -604,10 +615,10 @@ script ShadowUnit extends AttackComponent
             and (_Util:Pos2(currentTarget) - myPos):Magnitude() <= self.DetectRange then return currentTarget end
         -- 이미 동료 여럿이 붙은 적은 덜 고른다 (한 마리에 몰려 줄서지 않고 각자 근처 적에게 흩어진다)
         local engaged = {}
-        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+        for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
             ---@type ShadowUnit
             local u = c
-            if u ~= self and u.OwnerPlayer == self.OwnerPlayer and isvalid(u.Target) then engaged[u.Target.Id] = (engaged[u.Target.Id] or 0) + 1 end
+            if isvalid(c) and u ~= self and u.OwnerPlayer == self.OwnerPlayer and isvalid(u.Target) then engaged[u.Target.Id] = (engaged[u.Target.Id] or 0) + 1 end
         end
         local best = nil
         local bestScore = self.DetectRange
@@ -851,11 +862,11 @@ script ShadowUnit extends AttackComponent
         local myPos = Vector2(p.x, p.y)
         if v.kind == "aura" then
             self.AbilityTimer = _GameData.auraTickSec
-            for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
                 -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
                 ---@type ShadowUnit
                 local ally = c
-                if not ally.Dead then
+                if isvalid(c) and not ally.Dead then
                     local q = c.Entity.TransformComponent.WorldPosition
                     if (Vector2(q.x, q.y) - myPos):Magnitude() <= v.radius then ally:ReceiveAura(v.effect, v.value) end
                 end

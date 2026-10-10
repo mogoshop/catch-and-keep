@@ -8,6 +8,8 @@ script Util extends Logic
 
     property integer SpawnRetryCount = 5
     property number SpawnRetryInterval = 0.1
+    property any ListMemo = nil               -- 맵Id·종류 → { at, list } 맵 전체 컴포넌트 목록 (0.2초 재사용)
+    property number ListMemoSec = 0.2
     property any TileMemo = nil               -- 맵Id → { tiles, ox, oy, gx, gy, cells = 칸키 → 막힘 } (일반 Lua 테이블이라 any)
 
     @ExecSpace("Client")
@@ -128,14 +130,28 @@ script Util extends Logic
         return blocked
     end
 
+    method table ListOf(Entity map, string typeName)
+        -- 맵 전체에서 그 종류의 컴포넌트 목록. 0.2초 동안 같은 목록을 돌려준다 (10-10 4차 QA: 몬스터 46마리·소환수가 초당 수백 번
+        -- 맵 전체를 다시 뒤지며 표를 만들어 서버가 30~70ms씩 멈췄다). 사라진 개체가 섞일 수 있으니 쓰는 쪽에서 isvalid로 거른다
+        if not isvalid(map) then return {} end
+        if self.ListMemo == nil then self.ListMemo = {} end
+        local key = map.Id .. "|" .. typeName
+        local now = _UtilLogic.ElapsedSeconds
+        local m = self.ListMemo[key]
+        if m ~= nil and now - m.at < self.ListMemoSec then return m.list end
+        local list = map:GetChildComponentsByTypeName(typeName, true)
+        self.ListMemo[key] = { at = now, list = list }
+        return list
+    end
+
     method table MonstersNear(Entity map, Vector2 center, number radius)
         -- 살아 있는(보이는) 몬스터 중 반경 안, 가까운 순 (서버·클라이언트 공용)
         local found = {}
         if not isvalid(map) then return found end
-        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+        for _, c in ipairs(self:ListOf(map, "script.Monster")) do
             ---@type Monster
             local m = c
-            if not m.IsDead and c.Entity.Enable then
+            if isvalid(c) and isvalid(c.Entity) and not m.IsDead and c.Entity.Enable then
                 local q = c.Entity.TransformComponent.WorldPosition
                 local d = (Vector2(q.x, q.y) - center):Magnitude()
                 if d <= radius then table.insert(found, { m = m, d = d }) end
