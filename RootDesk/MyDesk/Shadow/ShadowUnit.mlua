@@ -98,7 +98,8 @@ script ShadowUnit extends AttackComponent
     property integer HpBarTimer = 0           -- 클라이언트: 발밑 체력 막대 갱신
     property boolean HpBarReady = false
     property integer HpBarFill = -1
-    property number HpBarScale = 4            -- 논리 픽셀 16×2 → 약 0.64×0.08칸 (메이커에서 크기 확인)
+    property number HpBarScale = 2.7          -- 논리 픽셀 22×4 (테두리 포함) → 약 0.75×0.14칸
+    property number HpBarHeadY = 0            -- 머리 위 높이 (원본 그림 높이, 배율 전 칸)
     property string ViewState = ""
     property number RetargetTimer = 0
     property number OwnerCheckTimer = 0
@@ -133,34 +134,42 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ClientOnly")
     method void UpdateHpBar()
-        -- 발밑 체력 막대 (모델 자식 HpBar의 PixelRenderer 16×2). 소환수마다 따로 보여 묶음 HUD로는 모르던 개별 체력을 본다 (10-10 QA)
-        -- 몸 크기·좌우 반전과 상관없이 같은 크기·같은 방향으로 채운다 (부모 배율을 되돌린다)
+        -- 머리 위 체력 막대 (모델 자식 HpBar의 PixelRenderer 22×4: 어두운 테두리 + 위쪽 밝은 줄 + 빈 칸은 검붉게).
+        -- 발밑에 두니 이름표(야영지 「내 소환수」 · 파티원 이름)와 겹쳤다 (10-10 2차 QA). 몸 크기·좌우 반전과 상관없이 같은 크기로 그린다
         if not isvalid(self.Entity) then return end
         local bar = self.Entity:GetChildByName("HpBar")
         if not isvalid(bar) then return end
         local pixel = bar.PixelRendererComponent
         if not isvalid(pixel) then return end
         if not self.HpBarReady then
-            pixel:ResetWithColor(16, 2, Color(0.1, 0.08, 0.1, 0.85))
+            pixel:ResetWithColor(22, 4, Color(0.04, 0.03, 0.05, 0.9))
             pixel.SortingLayer = "MapLayer0"
-            pixel.OrderInLayer = 3
+            pixel.OrderInLayer = 6
             self.HpBarReady = true
             self.HpBarFill = -1
+            -- 원본 그림 높이(px)로 머리 위치를 잡는다 (그림자 = 원본 몬스터, 해골·마법사는 기본 0.95칸)
+            local src = string.match(self.Entity.Name, "^Shadow_(.+)$")
+            local stats = src ~= nil and _GameData:GetMonsterStats(src) or nil
+            self.HpBarHeadY = (stats ~= nil and stats.h ~= nil and stats.h > 0) and stats.h / 100 or 0.95
         end
         local ps = self.Entity.TransformComponent.Scale
         local sx, sy = math.max(0.05, math.abs(ps.x)), math.max(0.05, math.abs(ps.y))
         local flip = ps.x < 0 and -1 or 1
         bar.TransformComponent.Scale = Vector3(self.HpBarScale / sx * flip, self.HpBarScale / sy, 1)
-        bar.TransformComponent.Position = Vector3(0, -0.14 / sy, 0)
+        bar.TransformComponent.Position = Vector3(0, self.HpBarHeadY + 0.12 / sy, 0)
         local ratio = self.MaxHp > 0 and math.max(0, math.min(1, self.Hp / self.MaxHp)) or 0
-        local fill = math.max(self.Hp > 0 and 1 or 0, math.floor(ratio * 16 + 0.5))
+        local fill = math.max(self.Hp > 0 and 1 or 0, math.floor(ratio * 20 + 0.5))
         if fill == self.HpBarFill then return end
         self.HpBarFill = fill
-        local color = ratio <= 0.3 and Color(1, 0.3, 0.25, 1) or (ratio <= 0.6 and Color(1, 0.85, 0.3, 1) or Color(0.4, 1, 0.55, 1))
-        for x = 1, 16 do
-            for y = 1, 2 do
-                pixel:SetPixel(x, y, x <= fill and color or Color(0.1, 0.08, 0.1, 0.85))
-            end
+        local base = Color(0.36, 0.86, 0.45, 1)
+        if ratio <= 0.3 then base = Color(0.92, 0.26, 0.22, 1) elseif ratio <= 0.6 then base = Color(0.95, 0.78, 0.25, 1) end
+        local light = Color(math.min(1, base.r + 0.3), math.min(1, base.g + 0.2), math.min(1, base.b + 0.25), 1)
+        local empty = Color(0.22, 0.06, 0.07, 0.9)
+        -- 안쪽 20×2 (x 2~21, y 2~3). 위쪽 줄이 PixelRenderer의 y 큰 쪽이라 y=3을 밝게
+        for x = 2, 21 do
+            local filled = x - 1 <= fill
+            pixel:SetPixel(x, 2, filled and base or empty)
+            pixel:SetPixel(x, 3, filled and light or empty)
         end
     end
 
@@ -372,11 +381,11 @@ script ShadowUnit extends AttackComponent
         local dist = toSlot:Magnitude()
         local follow = (self.Moving and dist > self.FollowStop) or (not self.Moving and dist > self.FollowStart)
         if follow then
-            local mult = math.max(1, math.min(1.8, dist))
-            local base = self:Base()
-            -- 주인보다 느린 원본: 주인 실제 속도의 1.1배까지 (RectTile 실제 속도 = InputSpeed / 1.2)
-            if base > 0 and dist > self.FollowStop * 2 then mult = math.max(mult, self.OwnerVel * 1.1 * 1.2 / base) end
-            self:SetSpeedMult(math.min(2.2, mult))
+            -- 많이 뒤처졌을 때(1.2칸+)만 살짝 서두른다. 최대 1.25배 · 걷기 동작도 같은 배율로 빨라져 발이 미끄러지지 않는다
+            -- (10-10 2차 QA: 1.8배까지 올리니 걷지 않고 날아다니는 것처럼 보였다)
+            local mult = 1
+            if dist > 1.2 then mult = math.min(1.25, 1 + (dist - 1.2) * 0.25) end
+            self:SetSpeedMult(mult)
             self:MoveToward(toSlot)
         else
             self:SetSpeedMult(1)
@@ -419,6 +428,8 @@ script ShadowUnit extends AttackComponent
         if base <= 0 or not isvalid(mv) then return end
         self.SpeedMult = q
         mv.InputSpeed = base * q
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.PlayRate = q end
     end
 
     @ExecSpace("ServerOnly")
@@ -426,6 +437,8 @@ script ShadowUnit extends AttackComponent
         -- 원본 속도가 바뀌었다 (배치·능력치 갱신): 배율을 다시 1로
         self.BaseSpeed = speed
         self.SpeedMult = 1
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then sprite.PlayRate = 1 end
         local mv = self.Entity.MovementComponent
         if isvalid(mv) then mv.InputSpeed = speed end
     end

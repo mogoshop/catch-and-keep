@@ -154,7 +154,7 @@ script SkillEffects extends Component
         for i = 1, math.max(1, count) do
             local a = base + (i - 1 - (count - 1) / 2) * spread
             local t = me + Vector2(math.cos(a), math.sin(a)) * 3
-            if self:BoneShard(me, t, damage, nil, nil) then fired = fired + 1 end
+            if self:BoneShard(me, t, damage, nil, nil, nil) then fired = fired + 1 end
         end
         if fired == 0 then return false end
         local d = Vector2(math.cos(base), math.sin(base))
@@ -166,15 +166,17 @@ script SkillEffects extends Component
     @ExecSpace("ServerOnly")
     method void BoneShardImpact(Vector3 pos)
         -- 뼛조각 명중: 보라 파열
-        self:ClipFx(self.FxShardHit, pos, 0.32, 0.5, 0)
+        self:ClipFx(self.FxShardHit, pos, 0.5, 0.6, 0)
     end
 
     @ExecSpace("ServerOnly")
-    method boolean BoneShard(Vector2 me, Vector2 target, number damage, any onComplete, any canCommit)
-        -- 조준 방향으로 뼛조각이 날아간다 (초속 11, 사거리 6, 관통). 지나가며 닿은 적만 맞는다
+    method boolean BoneShard(Vector2 me, Vector2 target, number damage, any onComplete, any canCommit, Entity lock)
+        -- 조준 방향으로 뼛조각이 날아간다 (초속 12, 사거리 6.5, 관통). 지나가며 닿은 적만 맞는다
+        -- lock(고정 대상)이 있으면 그 몬스터를 따라가 닿는 순간 터진다 (가는 길의 적도 맞는다)
         local dir = target - me
         if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
         dir = dir:Normalize()
+        if lock ~= nil and not isvalid(lock) then lock = nil end
         local start = me + Vector2(0, 0.3) + dir * 0.35
         self.ShotCount = self.ShotCount + 1
         local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "BoneShard_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
@@ -200,6 +202,7 @@ script SkillEffects extends Component
             if canCommit ~= nil and not canCommit() then finish(false) return end
             -- 투사체 그림: 어두운 보라 궤적 (기본 화살 그림은 평범했다)
             proj:Skin(self.FxShardShot, 0.55)
+            if isvalid(lock) then proj.Lock = lock end
             proj:Launch(owner, dir, 12, 6.5, damage, "skill.bone_shard", true)
             finish(true)
         end, function() finish(false) end)

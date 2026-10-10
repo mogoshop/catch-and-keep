@@ -329,7 +329,12 @@ script PlayerAttack extends AttackComponent
         if Environment:IsPCPlatform() and click ~= nil and click.MouseMode and not _InputService:IsPointerOverUI() then
             visible = true
             if self:IsLiveMonster(click.AttackTarget) then dir = _Util:Pos2(click.AttackTarget) - me
-            else dir = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - me end
+            else
+                -- 커서 근처 몬스터가 있으면 그쪽 (골편 투척이 그 몬스터를 따라간다)
+                local cursor = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
+                local near = _Util:NearestMonster(self.Entity.CurrentMap, cursor, 1.2)
+                if near ~= nil then dir = _Util:Pos2(near.Entity) - me else dir = cursor - me end
+            end
         end
         if not visible or dir:Magnitude() < 0.08 then self:HideAimIndicator() return end
         dir = dir:Normalize()

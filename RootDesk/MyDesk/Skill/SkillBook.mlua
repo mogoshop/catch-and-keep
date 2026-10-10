@@ -377,8 +377,23 @@ script SkillBook extends Component
         local me = _Util:Pos2(self.Entity)
         if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
         local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave"
+        local lock = nil
+        if id == "bone_shard" then
+            -- 10-10 2차 QA: 커서가 몬스터 위가 아니면 오른쪽 몬스터를 두고 왼쪽으로 날아갔다.
+            -- 플레이어가 고른 대상 → 없으면 커서 근처(1.2) 몬스터 순으로 고정해, 뼛조각이 그 몬스터까지 날아가 맞는다.
+            -- (조준 쐐기 PlayerAttack.UpdateAimIndicator와 같은 우선순위)
+            ---@type PlayerAttack
+            local attack = self.Entity:GetComponent("script.PlayerAttack")
+            if attack ~= nil and attack:IsLiveMonster(attack.SelectedTarget) and _Util:Distance(self.Entity, attack.SelectedTarget) <= 7.5 then
+                lock = attack.SelectedTarget
+            end
+            local near = lock == nil and _Util:NearestMonster(self.Entity.CurrentMap, target, 1.2) or nil
+            if near ~= nil and (_Util:Pos2(near.Entity) - me):Magnitude() <= 7.5 then lock = near.Entity end
+            if lock ~= nil then target = _Util:Pos2(lock) end
+        end
         local ray = target - me
         if selfCast then target = me
+        elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
         elseif (id == "bone_shard" or id == "soul_torrent") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6
         elseif ray:Magnitude() > 6 then _Util:Notify("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
@@ -407,7 +422,7 @@ script SkillBook extends Component
                 accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, complete, canCommit)
             else
                 local effects = self.Entity:GetComponent("script.SkillEffects")
-                if effects ~= nil then accepted = effects:BoneShard(me, target, self:GetEffectPower(id, lv) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit) end
+                if effects ~= nil then accepted = effects:BoneShard(me, target, self:GetEffectPower(id, lv) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit, lock) end
             end
             if not accepted then complete(false) end
             return accepted

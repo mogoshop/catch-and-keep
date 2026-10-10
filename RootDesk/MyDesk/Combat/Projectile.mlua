@@ -25,7 +25,11 @@ script Projectile extends Component
     property Vector2 ViewPos = Vector2(0, 0)  -- 클라이언트: 유도 투사체의 그림 위치
     property boolean ViewStarted = false
     property number ViewStartAt = -1         -- 클라이언트: 그리기 시작한 발사(StartAt) — 재사용 투사체면 다시 맞춘다
-    property integer TrailSerial = 0         -- 클라이언트: 날아가는 동안 붙는 반짝이 꼬리 (10-10 QA: 스티커 한 장이 나가는 것 같았다)
+    property any Ghosts = nil                -- 클라이언트: 잔상 {serial=true} (10-10 QA: 스티커 한 장이 나가는 것 같았다 → 같은 그림의 옅은 잔상 꼬리)
+    property number NextGhostAt = 0
+    property Vector2 ViewDir = Vector2(1, 0)  -- 클라이언트: 고정 대상 추적 중 진행 방향
+    @Sync
+    property Entity Lock = nil               -- 고정 대상: 그 몬스터를 따라가 닿으면 끝난다 (골편 투척, 10-10 2차 QA)
     property number ViewT0 = 0               -- 클라이언트 시계 기준 발사 시각 (서버 시각은 네트워크 단위로만 바뀌어 계단식으로 움직였다)
     property number Radius = 0.45            -- 판정 반경 (몬스터 발밑 기준, 투사체 높이 HeightOffset만큼 내려서 잰다)
     property number HeightOffset = 0.3
@@ -64,6 +68,7 @@ script Projectile extends Component
         self.SimPos = _Util:Pos2(self.Entity)
         self.StartPos = self.SimPos
         self.StartAt = _UtilLogic.ServerElapsedSeconds
+        if isvalid(self.Lock) then self.Range = math.max(range, (_Util:Pos2(self.Lock) - (self.SimPos - Vector2(0, self.HeightOffset))):Magnitude() + 2) end
         self.Flying = true
         self.Launched = true
         if self.DebugLog then log("[Projectile] launched " .. info .. " dmg=" .. tostring(math.floor(damage))) end
@@ -94,6 +99,7 @@ script Projectile extends Component
         local count = math.max(1, math.ceil(distance / 0.2))
         local step = distance / count
         for i = 1, count do
+            if self.Lock ~= nil then self:SteerToLock() end
             local p = self.SimPos - Vector2(0, self.HeightOffset) + self.Dir * step
             if _Util:TileBlocked(self.Terrain, p) then self:Finish() return end
             self.SimPos = self.SimPos + self.Dir * step
@@ -102,6 +108,18 @@ script Projectile extends Component
             if not self.Launched then return end
         end
         if self.Traveled >= self.Range then self:Finish() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SteerToLock()
+        -- 고정 대상 발밑(+높이)을 향해 매 걸음 방향을 다시 잡는다. 대상이 죽거나 사라지면 그 방향 그대로 날아간다
+        local m = isvalid(self.Lock) and self.Lock:GetComponent("script.Monster") or nil
+        if m == nil or m.IsDead or self.Lock.CurrentMap ~= self.Entity.CurrentMap then
+            self.Lock = nil
+            return
+        end
+        local want = _Util:Pos2(self.Lock) - (self.SimPos - Vector2(0, self.HeightOffset))
+        if want:Magnitude() > 0.05 then self.Dir = want:Normalize() end
     end
 
     @ExecSpace("ServerOnly")
@@ -133,12 +151,30 @@ script Projectile extends Component
             self.ViewStartAt = self.StartAt
             self.ViewStarted = false
             self.ViewT0 = _UtilLogic.ElapsedSeconds - math.max(0, _UtilLogic.ServerElapsedSeconds - self.StartAt)
-            if self.TrailSerial == 0 then
-                self.TrailSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SparkLoop, self.Entity, Vector3(0, 0, 0), 0, Vector3(0.35, 0.35, 1), true, { Color = self.TintColor })
-            end
+            self.ViewDir = self.Dir
         end
         local pos
-        if self.Homing > 0 then
+        local dir = self.Dir
+        if self.Lock ~= nil then
+            -- 고정 대상: 이 클라이언트에 보이는 몬스터 위치를 따라가 닿는다 (처음 볼 때 늦은 만큼 한 번에 따라잡는다)
+            local step = self.Speed * math.max(0, delta)
+            if not self.ViewStarted then
+                self.ViewStarted = true
+                self.ViewPos = self.StartPos
+                step = self.Speed * math.max(0, _UtilLogic.ElapsedSeconds - self.ViewT0)
+            end
+            if isvalid(self.Lock) then
+                local aim = _Util:Pos2(self.Lock) + Vector2(0, self.HeightOffset)
+                local to = aim - self.ViewPos
+                local dist = to:Magnitude()
+                if dist > 0.01 then self.ViewDir = to / dist end
+                if dist <= step then self.ViewPos = aim else self.ViewPos = self.ViewPos + self.ViewDir * step end
+            else
+                self.ViewPos = self.ViewPos + self.ViewDir * step
+            end
+            pos = self.ViewPos
+            dir = self.ViewDir
+        elseif self.Homing > 0 then
             if not self.ViewStarted then
                 self.ViewStarted = true
                 self.ViewPos = self.StartPos
@@ -151,7 +187,27 @@ script Projectile extends Component
         end
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(pos.x, pos.y, t.WorldPosition.z)
-        t.ZRotation = math.deg(math.atan(self.Dir.y, self.Dir.x)) + self.AngleOffset
+        t.ZRotation = math.deg(math.atan(dir.y, dir.x)) + self.AngleOffset
+        self:DropGhost(t)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DropGhost(TransformComponent t)
+        -- 스킬 그림 투사체만: 0.035초마다 같은 그림을 옅게 그 자리에 남겨 0.14초 뒤 지운다 (날아가는 궤적이 보이게)
+        if self.SkinRuid == "" or _UtilLogic.ElapsedSeconds < self.NextGhostAt then return end
+        self.NextGhostAt = _UtilLogic.ElapsedSeconds + 0.035
+        if self.Ghosts == nil then self.Ghosts = {} end
+        local s = t.Scale.x * 0.85
+        local serial = _EffectService:PlayEffect(self.SkinRuid, self.Entity, t.WorldPosition, t.ZRotation, Vector3(s, s, 1), false, { Alpha = 0.4, Color = self.TintColor })
+        if serial == 0 then return end
+        local ghosts = self.Ghosts
+        ghosts[serial] = true
+        _TimerService:SetTimerOnce(function()
+            if ghosts[serial] then
+                ghosts[serial] = nil
+                _EffectService:RemoveEffect(serial)
+            end
+        end, 0.14)
     end
 
     @ExecSpace("ServerOnly")
@@ -182,9 +238,12 @@ script Projectile extends Component
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
-        -- 꼬리 입자 정리
-        if self.TrailSerial ~= 0 then _ParticleService:RemoveParticle(self.TrailSerial) end
-        self.TrailSerial = 0
+        -- 남은 잔상 정리
+        if self.Ghosts == nil then return end
+        for serial, _ in pairs(self.Ghosts) do
+            self.Ghosts[serial] = nil
+            _EffectService:RemoveEffect(serial)
+        end
     end
 
     @ExecSpace("Multicast")
@@ -227,7 +286,7 @@ script Projectile extends Component
                         self:HitFx(hitPos, self.TintColor)
                     end
                 end
-                if not self.Pierce then self:Finish() return end
+                if not self.Pierce or m.Entity == self.Lock then self:Finish() return end
             end
         end
     end
