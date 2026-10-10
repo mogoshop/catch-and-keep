@@ -8,6 +8,11 @@
 --   · 좌우 방향·서기/걷기 그림도 화면 위치에 맞춘다 (10-10 4차 QA): 위치만 늦추면 움직이기 전에 먼저 돌거나 걷는 그림이 나오고,
 --     멈춘 뒤에도 서 있는 그림으로 미끄러졌다. 화면에서 실제로 움직이는 동안은 그 방향·걷기 그림, 멈추면 서버 값(대상 바라보기 등)으로.
 --     공격 등 서기/걷기가 아닌 그림은 건드리지 않는다.
+--   · 내 소환수가 「따라가기·집결」 중이면 서버 위치 대신 내 클라이언트가 직접 움직인다 (10-10 5차 QA: 사냥은 자연스러운데
+--     걸어 다닐 때만 끊긴다). 서버 위치를 아무리 잘 이어 그려도 통신으로 띄엄띄엄 오는 값이라, 매 프레임 내 손으로 움직이는
+--     캐릭터만큼 부드러울 수 없다. 내 캐릭터의 화면 위치로 ShadowUnit과 같은 대형 자리를 매 프레임 계산해 따라 걷는다.
+--     판정은 여전히 서버 위치: 둘이 FollowSlack보다 벌어지면 조금씩 당기고, 사냥을 시작하면 0.3초 이상(초당 2칸 이하로)에 걸쳐 보간 위치로 넘어간다.
+--     파티원의 소환수는 지금처럼 보간만 한다.
 @Logic
 script MotionSmoother extends Logic
 
@@ -26,6 +31,29 @@ script MotionSmoother extends Logic
     property number MoveOff = 0.12           -- 이보다 느려지면 「멈춤」
     property integer StatMoving = 0          -- 점검용: 화면에서 걷는 중이던 프레임 수 (개체별 합)
     property integer StatHold = 0            -- 점검용: 그중 다음 기록이 늦어 제자리에서 기다리다 다시 움직인 프레임 수 (진짜 멈칫, 실제로 멈춘 것은 빼고)
+    property boolean LocalFollow = true      -- 내 소환수의 따라가기를 내 클라이언트가 직접 그린다
+    property number FollowSlack = 0.8        -- 직접 그린 위치가 서버 위치에서 이보다 벌어지면 초당 3배 빠르기로 당긴다
+    property number SpeedScale = 0.836       -- RectTile 맵에서 InputSpeed 1 = 초당 0.836칸 (메이커 실측, 플랫폼 규칙 ÷1.2)
+    property any Me = nil
+    property boolean OwnerReady = false
+    property number OwnerPX = 0
+    property number OwnerPY = 0
+    property number OwnerVX = 0              -- 내 캐릭터 화면 속도 (평활)
+    property number OwnerVY = 0
+    property number OwnerSpeed = 0
+    property number OwnerDX = 1              -- 마지막 걷는 방향
+    property number OwnerDY = 0
+    property any LastCombat = nil
+    property number CombatFX = 1             -- 서서 공격한 방향 (바뀔 때마다 CombatSerial이 오른다)
+    property number CombatFY = 0
+    property integer CombatSerial = 0
+    property integer StatLocal = 0           -- 점검용: 직접 그린 프레임 수
+    property number StatMaxPull = 0          -- 점검용: 서버 위치와 가장 많이 벌어졌던 거리
+    property number StatMaxSpeed = 0         -- 점검용: 화면에서 한 프레임에 움직인 가장 빠른 속도(칸/초) — 튐 확인 (보간 중)
+    property number StatMaxSpeedLocal = 0    -- 점검용: 직접 그리는 중
+    property number StatMaxSpeedBlend = 0    -- 점검용: 직접 그리기 → 보간으로 넘어가는 중
+    property integer StatSnap = 0            -- 점검용: 직접 그리다 서버 위치로 순간이동시킨 횟수
+    property number StatPullSum = 0          -- 점검용: 직접 그리는 동안 서버 위치와의 거리 합 (평균 = 합 / StatLocal)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -63,7 +91,10 @@ script MotionSmoother extends Logic
             self.Map = map
             self.Recs = {}
             self.ScanTimer = 0
+            self.OwnerReady = false
         end
+        self.Me = me
+        self:OwnerTick(me, delta)
         self.ScanTimer = self.ScanTimer - delta
         if self.ScanTimer <= 0 then
             self.ScanTimer = 0.5
@@ -158,10 +189,24 @@ script MotionSmoother extends Logic
             end
             if x == nil then x, y = buf[1].x, buf[1].y end
         end
+        if r.unit ~= nil and self.LocalFollow then
+            self:FollowLocal(r, delta, x, y)
+            x, y = r.outx, r.outy
+        end
         local now = _UtilLogic.ElapsedSeconds
         local dt = now - r.vt
         if dt > 0.0005 then
             -- 화면에 그리는 위치의 속도 (평활)
+            if r.unit ~= nil then
+                local inst = math.sqrt((x - r.dx) ^ 2 + (y - r.dy) ^ 2) / math.max(0.001, delta)   -- 프레임 시간 기준 (ElapsedSeconds 차이는 흔들린다)
+                if inst < 30 then
+                    if r.lf then
+                        if inst > self.StatMaxSpeedLocal then self.StatMaxSpeedLocal = inst end
+                    elseif r.blend ~= nil and r.blend > 0 then
+                        if inst > self.StatMaxSpeedBlend then self.StatMaxSpeedBlend = inst end
+                    elseif inst > self.StatMaxSpeed then self.StatMaxSpeed = inst end
+                end
+            end
             local k = math.min(1, dt * 12)
             r.vx = r.vx + ((x - r.dx) / dt - r.vx) * k
             r.vy = r.vy + ((y - r.dy) / dt - r.vy) * k
@@ -178,6 +223,180 @@ script MotionSmoother extends Logic
         if r.moving and speed < self.MoveOff then r.moving = false
         elseif not r.moving and speed > self.MoveOn then r.moving = true end
         if r.unit ~= nil then self:LookUnit(r, t) elseif r.monster then self:LookMonster(r) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OwnerTick(Entity me, number delta)
+        -- 내 캐릭터의 화면 속도·걷는 방향·대형 방향 (매 프레임, 소환수 따라가기 그리기용)
+        local p = me.TransformComponent.WorldPosition
+        if not self.OwnerReady or delta <= 0 then
+            self.OwnerPX, self.OwnerPY = p.x, p.y
+            self.OwnerVX, self.OwnerVY, self.OwnerSpeed = 0, 0, 0
+            self.OwnerReady = true
+            return
+        end
+        local vx, vy = (p.x - self.OwnerPX) / delta, (p.y - self.OwnerPY) / delta
+        if vx * vx + vy * vy > 100 then vx, vy = 0, 0 end   -- 순간이동
+        local k = 1 - math.exp(-delta * 15)
+        self.OwnerVX = self.OwnerVX + (vx - self.OwnerVX) * k
+        self.OwnerVY = self.OwnerVY + (vy - self.OwnerVY) * k
+        self.OwnerPX, self.OwnerPY = p.x, p.y
+        local sp = math.sqrt(self.OwnerVX * self.OwnerVX + self.OwnerVY * self.OwnerVY)
+        self.OwnerSpeed = sp
+        if sp > 0.3 then self.OwnerDX, self.OwnerDY = self.OwnerVX / sp, self.OwnerVY / sp end
+        -- 서서 공격하면 대형이 공격 방향으로 돈다 (서버: 공격 1초 안이면 CombatDirection). 동기화된 공격 방향이 바뀔 때 따른다
+        local attack = me:GetComponent("script.PlayerAttack")
+        if attack ~= nil then
+            local cd = attack.CombatDirection
+            local last = self.LastCombat
+            if last ~= nil and (math.abs(cd.x - last.x) > 0.001 or math.abs(cd.y - last.y) > 0.001) then
+                local m = math.sqrt(cd.x * cd.x + cd.y * cd.y)
+                if m > 0.05 then
+                    self.CombatFX, self.CombatFY = cd.x / m, cd.y / m
+                    self.CombatSerial = self.CombatSerial + 1
+                end
+            end
+            self.LastCombat = { x = cd.x, y = cd.y }
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FollowLocal(any r, number delta, number ix, number iy)
+        -- 내 소환수가 따라가기·집결 중이면 화면 위치를 직접 움직인다. 아니면 보간 위치 (넘어갈 때는 0.3초 이상에 걸쳐)
+        r.outx, r.outy = ix, iy
+        ---@type ShadowUnit
+        local unit = r.unit
+        local me = self.Me
+        if not isvalid(unit) or not isvalid(me) or unit.OwnerPlayer ~= me then return end
+        -- 대형 방향은 소환수마다, 사냥 중에도 매 프레임 (서버 ShadowUnit.OwnerFacing처럼 새로 생기면 오른쪽, 주인이 걸어야 바뀐다)
+        if r.ffx == nil then
+            r.ffx, r.ffy = 1, 0
+            r.cser = self.CombatSerial
+        end
+        if self.OwnerSpeed > 0.3 then
+            r.ffx, r.ffy = self.OwnerDX, self.OwnerDY
+        elseif r.cser ~= self.CombatSerial then
+            r.ffx, r.ffy = self.CombatFX, self.CombatFY
+        end
+        r.cser = self.CombatSerial
+        local st = unit.CommandState
+        local last = r.buf[#r.buf]
+        if (st == "follow" or st == "rally") and last ~= nil and delta > 0 and delta < 0.25 then
+            if not r.lf then
+                -- 지금 화면 위치·속도에서 이어 간다 (r.wx는 이번 프레임에 서버 위치로 바뀌었을 수 있어 마지막으로 그린 r.dx를 쓴다)
+                r.lf = true
+                r.fx, r.fy = r.dx, r.dy
+                r.fvx, r.fvy = r.vx, r.vy
+                r.fmove = math.sqrt(r.vx * r.vx + r.vy * r.vy) > 0.3
+                r.blend = 0
+            end
+            self:FollowMove(r, unit, delta)
+            -- 판정은 서버 위치: 많이 벌어지면 조금씩 당기고, 순간이동(끈 거리)이면 바로 옮긴다
+            local ex, ey = last.x - r.fx, last.y - r.fy
+            local e = math.sqrt(ex * ex + ey * ey)
+            if e > self.StatMaxPull then self.StatMaxPull = e end
+            self.StatPullSum = self.StatPullSum + e
+            if e > self.SnapDistance then
+                self.StatSnap = self.StatSnap + 1
+                r.fx, r.fy = last.x, last.y
+                r.fvx, r.fvy = 0, 0
+            elseif e > self.FollowSlack then
+                local k = math.min(1, delta * 3) * (e - self.FollowSlack) / e
+                r.fx, r.fy = r.fx + ex * k, r.fy + ey * k
+            end
+            r.outx, r.outy = r.fx, r.fy
+            self.StatLocal = self.StatLocal + 1
+            return
+        end
+        if r.lf then
+            -- 사냥 시작 등: 직접 그리던 위치와 보간 위치의 차이를 줄인다 (0.3초, 차이가 크면 초당 2칸을 넘지 않게 더 길게)
+            r.lf = false
+            r.bx, r.by = r.fx - ix, r.fy - iy
+            r.blend = 1
+            r.bdur = math.max(0.3, math.sqrt(r.bx * r.bx + r.by * r.by) / 2)
+        end
+        if r.blend ~= nil and r.blend > 0 then
+            r.blend = math.max(0, r.blend - delta / (r.bdur or 0.3))
+            local w = r.blend * r.blend * (3 - 2 * r.blend)
+            r.outx, r.outy = ix + r.bx * w, iy + r.by * w
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FollowMove(any r, ShadowUnit unit, number delta)
+        -- ShadowUnit 서버 따라가기와 같은 규칙을 내 캐릭터의 화면 위치로 매 프레임 계산한다
+        if r.flag == nil then
+            -- 소환수마다 반응·걸음이 조금씩 달라 줄맞춰 걷지 않는다 (서버 FollowLag·SpeedJitter와 같은 범위)
+            r.flag = 4.5 + _UtilLogic:RandomDouble() * 6
+            r.fjit = 0.93 + _UtilLogic:RandomDouble() * 0.14
+        end
+        local op = self.Me.TransformComponent.WorldPosition
+        if r.osx == nil or (op.x - r.osx) ^ 2 + (op.y - r.osy) ^ 2 > 9 then
+            r.osx, r.osy = op.x, op.y
+        else
+            local k = 1 - math.exp(-r.flag * delta)
+            r.osx, r.osy = r.osx + (op.x - r.osx) * k, r.osy + (op.y - r.osy) * k
+        end
+        local ox, oy = r.osx, r.osy
+        -- 대형 자리 (ShadowUnit.FormationSlot): 전사는 앞, 마법사는 뒤, 그림자는 고정 위치
+        local sx, sy
+        if unit.Kind == "shadow" then
+            sx, sy = ox + unit.FormationOffset.x, oy + unit.FormationOffset.y
+        else
+            local fx, fy = r.ffx, r.ffy
+            local row = unit.FormationIndex // 3
+            local lane = unit.FormationIndex % 3 - 1
+            local depth = 0.95 + row * 0.42
+            if unit.Kind == "mage" then depth = -1.2 - row * 0.45 end
+            if unit.Kind == "revive" then depth = 0.35 + row * 0.6 end
+            sx = ox + fx * depth - fy * (lane * 0.6)
+            sy = oy + fy * depth + fx * (lane * 0.6)
+        end
+        local w = unit.Wander
+        sx, sy = sx + w.x, sy + w.y
+        -- 막힌 자리는 주인 쪽으로 당긴 빈 칸 (ShadowUnit.FreeSlot)
+        local memo = _Util:TerrainMemo(self.Map)
+        if memo ~= nil and _Util:CellBlocked(memo, Vector2(sx, sy)) then
+            local ax, ay = ox + (sx - ox) * 0.7, oy + (sy - oy) * 0.7
+            if _Util:CellBlocked(memo, Vector2(ax, ay)) then
+                ax, ay = ox + (sx - ox) * 0.4, oy + (sy - oy) * 0.4
+                if _Util:CellBlocked(memo, Vector2(ax, ay)) then ax, ay = ox, oy end
+            end
+            sx, sy = ax, ay
+        end
+        local px, py = r.fx, r.fy
+        local tx, ty = sx - px, sy - py
+        local dist = math.sqrt(tx * tx + ty * ty)
+        local ownerMoving = self.OwnerSpeed > 0.3
+        -- 출발 0.6칸 · 멈춤 0.2칸, 주인이 걷는 동안은 멈추지 않는다 (ShadowUnit과 같다)
+        local follow = (r.fmove and (dist > 0.2 or ownerMoving)) or (not r.fmove and dist > 0.6)
+        r.fmove = follow
+        local dvx, dvy = 0, 0
+        if follow then
+            local mult = math.max(0.75, math.min(1.3, 0.75 + 0.35 * dist)) * r.fjit
+            local ax, ay = tx, ty
+            if ownerMoving then ax, ay = ax + self.OwnerDX * 0.3, ay + self.OwnerDY * 0.3 end
+            local am = math.sqrt(ax * ax + ay * ay)
+            if am > 0.001 then
+                local base = unit.BaseSpeed
+                if base <= 0 and isvalid(unit.Entity.MovementComponent) then base = unit.Entity.MovementComponent.InputSpeed end
+                local speed = base * self.SpeedScale * mult
+                -- 주인이 서 있으면 자리 앞에서 서서히 선다 (서버는 0.2칸에서 바로 서지만 화면은 부드럽게)
+                if not ownerMoving then speed = speed * math.min(1, 0.35 + dist / 0.45) end
+                dvx, dvy = ax / am * speed, ay / am * speed
+            end
+        end
+        -- 방향·빠르기는 약 0.08초에 걸쳐 바꾼다 (꺾을 때 곡선, 출발·멈춤도 부드럽게)
+        local k = 1 - math.exp(-delta * 12)
+        r.fvx, r.fvy = r.fvx + (dvx - r.fvx) * k, r.fvy + (dvy - r.fvy) * k
+        local nx, ny = px + r.fvx * delta, py + r.fvy * delta
+        -- 벽: 막히면 한 축으로 미끄러지고, 그래도 막히면 그 자리
+        if memo ~= nil and (nx ~= px or ny ~= py) and _Util:CellBlocked(memo, Vector2(nx, ny)) then
+            if not _Util:CellBlocked(memo, Vector2(nx, py)) then ny = py r.fvy = 0
+            elseif not _Util:CellBlocked(memo, Vector2(px, ny)) then nx = px r.fvx = 0
+            else nx, ny = px, py r.fvx, r.fvy = 0, 0 end
+        end
+        r.fx, r.fy = nx, ny
     end
 
     @ExecSpace("ClientOnly")

@@ -25,7 +25,9 @@ script ShadowUnit extends AttackComponent
     property number StuckSeconds = 0
     property number SidestepUntil = 0
     property integer SidestepSide = 1
-    property Vector2 FormationOffset = Vector2(0, -0.8)
+    @Sync
+    property Vector2 FormationOffset = Vector2(0, -0.8)   -- 동기화: 내 클라이언트가 따라가기를 직접 그릴 때 같은 자리를 계산한다 (MotionSmoother)
+    @Sync
     property integer FormationIndex = 0
     property Vector2 OwnerLastPos = Vector2(0, 0)
     property Vector2 OwnerFacing = Vector2(1, 0)
@@ -44,7 +46,8 @@ script ShadowUnit extends AttackComponent
     property number ArriveDistance = 0.25
     property number FollowStart = 0.6         -- 대형 자리에서 이만큼 벗어나면 출발 (10-10 QA: 0.25에서 섰다 갔다를 반복해 끊겨 보였다)
     property number FollowStop = 0.2          -- 따라가는 중에는 이만큼 붙어야 멈춘다
-    property number BaseSpeed = 0             -- 원본 이동 속도 (ShadowCommander/UndeadSystem이 정한다)
+    @Sync
+    property number BaseSpeed = 0             -- 원본 이동 속도 (ShadowCommander/UndeadSystem이 정한다). 클라이언트 따라가기 그리기도 쓴다
     property number SpeedMult = 1             -- 따라잡기 배율 (바뀔 때만 InputSpeed를 쓴다)
     property Vector2 OwnerVelPos = Vector2(0, 0)
     property number OwnerVelAt = 0
@@ -60,7 +63,8 @@ script ShadowUnit extends AttackComponent
     property boolean OwnerSmoothReady = false
     property number FollowLag = 8             -- 주인 위치를 따라잡는 빠르기(1/초). 소환수마다 달라 같은 박자로 움직이지 않는다
     property number SpeedJitter = 1           -- 소환수마다 걸음 빠르기를 조금씩 다르게
-    property Vector2 Wander = Vector2(0, 0)   -- 대형 자리의 개인 흔들림 (디아2 하수인처럼 칼같이 줄 서지 않게)
+    @Sync
+    property Vector2 Wander = Vector2(0, 0)   -- 대형 자리의 개인 흔들림 (디아2 하수인처럼 칼같이 줄 서지 않게). 2.5~4.5초마다 바뀌어 동기화 부담이 작다
     property number WanderAt = 0
     property boolean Personal = false         -- 개인 성향(반응·걸음·흔들림)을 정했는지
     property number LeashDistance = 9
@@ -543,10 +547,11 @@ script ShadowUnit extends AttackComponent
     method Vector2 FormationSlot(Vector2 ownerPos)
         -- 전사는 진행 방향 앞, 마법사는 뒤로 선다. 이동/공격 방향을 따라 대형도 회전한다.
         if self.Kind == "shadow" then return ownerPos + self.FormationOffset end
-        local moved = ownerPos - self.OwnerLastPos
         self.OwnerLastPos = ownerPos
         local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
-        if moved:Magnitude() > 0.015 and moved:Magnitude() < 2 then self.OwnerFacing = moved:Normalize()
+        -- 방향은 주인이 실제로 걷는 동안의 이동 방향으로만 (10-10 5차 QA 점검: 평활·예측한 주인 위치는 멈출 때 예측만큼 되돌아가
+        -- 「반대로 걸었다」고 보여, 멈출 때마다 대형이 180° 돌아 전사·마법사가 앞뒤를 바꿨다)
+        if self.OwnerVel > 0.3 and self.OwnerVelDir:Magnitude() > 0.5 then self.OwnerFacing = self.OwnerVelDir
         elseif attack ~= nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1 then self.OwnerFacing = attack.CombatDirection end
         local forward = self.OwnerFacing
         if forward:Magnitude() < 0.05 then forward = Vector2(1, 0) else forward = forward:Normalize() end
