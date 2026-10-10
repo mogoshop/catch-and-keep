@@ -153,11 +153,12 @@ script Projectile extends Component
         -- 10-10 3차 QA: 「골편이 지팡이가 아니라 엄청 멀리서 출발한다」 — 처음 본 순간 서버에서 이미 날아간 거리만큼 건너뛰어
         -- 그렸다(네트워크 지연·생성 지연만큼). 이제 늘 쏜 사람의 지금 위치(손 높이)에서 출발하고, 서버보다 뒤처진 만큼은
         -- 1.4배 빠르게 날아 따라잡는다. 고정 대상(Lock)은 이 화면의 몬스터 위치까지, 유도는 동기화된 방향으로, 직선은 사거리까지
-        if not self.Flying then return end
+        if not self.Flying or self.SkinRuid == "" then return end
         if self:HideForPrediction() then return end
         local now = _UtilLogic.ElapsedSeconds
         if self.ViewStartAt ~= self.StartAt then
             self.ViewStartAt = self.StartAt
+            self:UpdateVisible()
             self.ViewT0 = now - math.max(0, math.min(0.5, _UtilLogic.ServerElapsedSeconds - self.StartAt))
             self.ViewDir = self.Dir
             self.ViewDist = 0
@@ -235,6 +236,7 @@ script Projectile extends Component
         end
         self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
         self.Flying = true
+        self:UpdateVisible()
     end
 
     @ExecSpace("ClientOnly")
@@ -275,11 +277,26 @@ script Projectile extends Component
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        -- 늦게 들어온 클라이언트: 이미 정해진 그림·색을 바로 입힌다
+        -- 늦게 들어온 클라이언트: 이미 정해진 그림·색을 바로 입힌다. 그림·발사 전이면 숨긴다 (UpdateVisible)
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) then return end
-        if self.SkinRuid ~= "" then sprite.SpriteRUID = self.SkinRuid end
         sprite.Color = self.TintColor
+        self:UpdateVisible()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateVisible()
+        -- 10-11 QA 「골편 쏠 때 캐릭터 옆 파란 화살」: 모델 기본 그림(파란 얼음 화살)이 그림(SkinRuid)·발사(Flying)
+        -- 동기화가 오기 전 몇 프레임 손 앞에 보였다. 그림이 정해지고 날기 시작한 투사체만 그린다
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        if self.SkinRuid == "" or not self.Flying then
+            sprite.Enable = false
+            return
+        end
+        if self:HideForPrediction() then return end
+        if sprite.SpriteRUID ~= self.SkinRuid then sprite.SpriteRUID = self.SkinRuid end
+        sprite.Enable = true
     end
 
     @ExecSpace("ClientOnly")
@@ -305,7 +322,7 @@ script Projectile extends Component
         local sprite = self.Entity.SpriteRendererComponent
         if not isvalid(sprite) then return end
         if name == "TintColor" then sprite.Color = self.TintColor
-        elseif name == "SkinRuid" and self.SkinRuid ~= "" then sprite.SpriteRUID = self.SkinRuid end
+        elseif name == "SkinRuid" or name == "Flying" or name == "ViewKind" then self:UpdateVisible() end
     end
 
     @ExecSpace("ServerOnly")

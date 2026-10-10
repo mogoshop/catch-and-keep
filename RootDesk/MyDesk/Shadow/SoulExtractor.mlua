@@ -36,6 +36,7 @@ script SoulExtractor extends Component
             local v = _GameData:GetVariant(orb.Variant)
             if v ~= nil then name = name .. " · " .. v.name end
             self:PlayExtractFx(name, grade, pos, orb.StandRUID, math.floor(chance * 100 + 0.5), senderUserId)
+            self:PlayArise(pos, grade)
         else
             self:PlayExtractFail(pos, math.floor(chance * 100 + 0.5), senderUserId)
         end
@@ -135,7 +136,52 @@ script SoulExtractor extends Component
         local icon = standRuid ~= "" and ("thumbnail://" .. standRuid) or _GameData:GetUiIcon("icon_shadow")
         local open = Environment:IsMobilePlatform() and "메뉴 → 그림자" or "H"
         _UXFeedback:Show("그림자 획득 · [" .. gradeName .. "] " .. name, "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. open .. "에서 소환·강화", icon)
-        _ParticleService:PlayBasicParticle(BasicParticleType.Charge, self.Entity, pos, 0, Vector3(1, 1, 1), false, nil)
+    end
+
+    @ExecSpace("Multicast")
+    method void PlayArise(Vector3 pos, integer grade)
+        -- 추출 성공 연출 (같은 맵 모두 · 10-11 개선, 예전 기본 파티클 하나는 투박했다):
+        -- 혼 자리 바닥에 보라 고리 → 검보라 불꽃이 솟고 → 혼 구슬이 곡선을 그리며 주인에게 날아가 → 주인 몸에서 보라 파열 + 보랏빛
+        local me = _UserService.LocalPlayer
+        local owner = self.Entity
+        if not isvalid(me) or not isvalid(owner) or me.CurrentMap ~= owner.CurrentMap then return end
+        local map = owner.CurrentMap
+        local big = grade >= 2 and 1.25 or 1
+        _EffectService:PlayEffect(_GameConst.FxAriseRing, owner, pos + Vector3(0, 0.05, 0), 0, Vector3(1.1 * big, 1.1 * big, 1), false, nil)
+        _EffectService:PlayEffect(_GameConst.FxAriseFlame, owner, pos + Vector3(0, 0.75 * big, 0), 0, Vector3(0.5 * big, 0.5 * big, 1), false, nil)
+        -- 혼 구슬: 불꽃이 오른 뒤(0.35초) 주인 가슴까지 0.4초 동안 위로 볼록한 곡선
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(owner) or owner.CurrentMap ~= map then return end
+            local start = Vector2(pos.x, pos.y + 0.9)
+            local orb = _SpawnService:SpawnByModelId("artsprite", "AriseSoul", Vector3(start.x, start.y, 0), map)
+            if not isvalid(orb) then return end
+            orb.SpriteRendererComponent.Enable = false
+            -- 혼 구슬 = 혼 흡수와 같은 보라 소용돌이 (기본 파티클 ChargeOrb는 색 지정이 안 먹고 노란 큰 원이 나왔다)
+            _EffectService:PlayEffectAttached(_GameConst.FxAriseSoul, orb, Vector3.zero, 0, Vector3(0.32, 0.32, 1), true, nil)
+            local t0 = _UtilLogic.ElapsedSeconds
+            local timer = 0
+            timer = _TimerService:SetTimerRepeat(function()
+                if not isvalid(orb) or not isvalid(owner) or owner.CurrentMap ~= map then
+                    _TimerService:ClearTimer(timer)
+                    if isvalid(orb) then orb:Destroy() end
+                    return
+                end
+                local k = math.min(1, (_UtilLogic.ElapsedSeconds - t0) / 0.4)
+                local goal = _Util:Pos2(owner) + Vector2(0, 0.5)
+                local p = start + (goal - start) * k + Vector2(0, 0.8 * math.sin(math.pi * k))
+                orb.TransformComponent.WorldPosition = Vector3(p.x, p.y, 0)
+                if k >= 1 then
+                    _TimerService:ClearTimer(timer)
+                    orb:Destroy()
+                    _EffectService:PlayEffect(_GameConst.FxAriseBurst, owner, Vector3(goal.x, goal.y, 0), 0, Vector3(0.45, 0.45, 1), false, nil)
+                    local avatar = owner.AvatarRendererComponent
+                    if isvalid(avatar) then
+                        avatar:SetColor(0.8, 0.6, 1, 1)
+                        _TimerService:SetTimerOnce(function() if isvalid(avatar) then avatar:SetColor(1, 1, 1, 1) end end, 0.25)
+                    end
+                end
+            end, 0.016)
+        end, 0.35)
     end
 
     @ExecSpace("Client")
