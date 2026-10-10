@@ -447,7 +447,10 @@ script MotionSmoother extends Logic
         if not isvalid(src) or not isvalid(self.Map) then return false end
         local vis = r.vis
         if vis == nil or not isvalid(vis) then
+            -- artsprite 모델의 기본 그림은 모래 바닥(3b9c…)이라, 만들자마자 같은 프레임에 그림을 바꾼다
+            -- (7차 QA: 체력 막대 대역의 그림을 ""로 비웠더니 기본 모래 바닥이 그대로 나와 소환수마다 모래 네모·불러오는 중 원이 따라다녔다)
             vis = _SpawnService:SpawnByModelId("artsprite", "MSVis", Vector3(x, y, p.z), self.Map)
+            if isvalid(vis) then vis.SpriteRendererComponent.SpriteRUID = src.SpriteRUID end
             if not isvalid(vis) then
                 self.UseProxy = false
                 log_warning("[MotionSmoother] 그림 대역을 만들 수 없어 루트 위치로 그린다")
@@ -460,6 +463,7 @@ script MotionSmoother extends Logic
                 r.ring = ring
                 local rc = _SpawnService:SpawnByModelId("artsprite", "MSVisRing", Vector3(x, y, p.z), vis)
                 if isvalid(rc) then
+                    rc.SpriteRendererComponent.SpriteRUID = ring.SpriteRendererComponent.SpriteRUID
                     r.visRing = rc
                     rc.TransformComponent.Position = ring.TransformComponent.Position
                 end
@@ -467,7 +471,8 @@ script MotionSmoother extends Logic
             -- 체력 막대: 대역 아래 픽셀 막대 (ShadowUnit.UpdateHpBar가 HpBarAlt에 그린다)
             local bar = _SpawnService:SpawnByModelId("artsprite", "MSVisBar", Vector3(x, y, p.z), vis)
             if isvalid(bar) then
-                bar.SpriteRendererComponent.SpriteRUID = ""
+                -- 막대는 픽셀 그림만: 기본 그림(모래 바닥) 그리기를 아예 끈다
+                bar.SpriteRendererComponent.Enable = false
                 if not isvalid(bar.PixelRendererComponent) then bar:AddComponent("PixelRendererComponent") end
                 if isvalid(bar.PixelRendererComponent) then
                     r.visBar = bar
