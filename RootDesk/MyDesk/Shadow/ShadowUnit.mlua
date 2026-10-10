@@ -30,7 +30,8 @@ script ShadowUnit extends AttackComponent
     @Sync
     property integer FormationIndex = 0
     property Vector2 OwnerLastPos = Vector2(0, 0)
-    property Vector2 OwnerFacing = Vector2(1, 0)
+    @Sync
+    property Vector2 OwnerFacing = Vector2(1, 0)   -- 동기화: 클라이언트 따라가기 그리기가 같은 대형 방향을 쓴다 (8° 넘게 바뀔 때만 쓴다)
     property integer AttackEpoch = 0
     property integer StrikeTimer = 0
     property integer StrikeCount = 0
@@ -587,8 +588,14 @@ script ShadowUnit extends AttackComponent
         local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
         -- 방향은 주인이 실제로 걷는 동안의 이동 방향으로만 (10-10 5차 QA 점검: 평활·예측한 주인 위치는 멈출 때 예측만큼 되돌아가
         -- 「반대로 걸었다」고 보여, 멈출 때마다 대형이 180° 돌아 전사·마법사가 앞뒤를 바꿨다)
-        if self.OwnerVel > 0.3 and self.OwnerVelDir:Magnitude() > 0.5 then self.OwnerFacing = self.OwnerVelDir
-        elseif attack ~= nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1 then self.OwnerFacing = attack.CombatDirection end
+        local face = nil
+        if self.OwnerVel > 0.3 and self.OwnerVelDir:Magnitude() > 0.5 then face = self.OwnerVelDir
+        elseif attack ~= nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1 then face = attack.CombatDirection end
+        -- 동기화 값이라 8°(cos 0.99) 넘게 바뀔 때만 쓴다
+        if face ~= nil and face:Magnitude() > 0.05 then
+            face = face:Normalize()
+            if face:Dot(self.OwnerFacing) < 0.99 then self.OwnerFacing = face end
+        end
         local forward = self.OwnerFacing
         if forward:Magnitude() < 0.05 then forward = Vector2(1, 0) else forward = forward:Normalize() end
         local side = Vector2(-forward.y, forward.x)

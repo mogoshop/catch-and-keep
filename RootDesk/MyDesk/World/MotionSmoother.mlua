@@ -43,15 +43,15 @@ script MotionSmoother extends Logic
     property number OwnerSpeed = 0
     property number OwnerDX = 1              -- 마지막 걷는 방향
     property number OwnerDY = 0
-    property any LastCombat = nil
-    property number CombatFX = 1             -- 서서 공격한 방향 (바뀔 때마다 CombatSerial이 오른다)
-    property number CombatFY = 0
-    property integer CombatSerial = 0
     property integer StatLocal = 0           -- 점검용: 직접 그린 프레임 수
     property number StatMaxPull = 0          -- 점검용: 서버 위치와 가장 많이 벌어졌던 거리
     property number StatMaxSpeed = 0         -- 점검용: 화면에서 한 프레임에 움직인 가장 빠른 속도(칸/초) — 튐 확인 (보간 중)
     property number StatMaxSpeedLocal = 0    -- 점검용: 직접 그리는 중
     property number StatMaxSpeedBlend = 0    -- 점검용: 직접 그리기 → 보간으로 넘어가는 중
+    property integer ShadowW = 28            -- 그림자 타원 픽셀 크기
+    property integer ShadowH = 12
+    property number PixelUnit = 0.01         -- 픽셀 그림 1칸 = 0.01칸 (100px = 1칸)
+    property any ShadowCache = nil
     property boolean UseProxy = true         -- 소환수는 몸 그림을 클라이언트 전용 자식(MSVis)으로 그린다 (아래 PlaceVis)
     property integer StatFlip = 0            -- 점검용: 소환수 좌우를 바꿔 쓴 횟수
     property integer StatSwitch = 0          -- 점검용: 직접 그리기 ↔ 보간 전환 횟수
@@ -272,20 +272,6 @@ script MotionSmoother extends Logic
         local sp = math.sqrt(self.OwnerVX * self.OwnerVX + self.OwnerVY * self.OwnerVY)
         self.OwnerSpeed = sp
         if sp > 0.3 then self.OwnerDX, self.OwnerDY = self.OwnerVX / sp, self.OwnerVY / sp end
-        -- 서서 공격하면 대형이 공격 방향으로 돈다 (서버: 공격 1초 안이면 CombatDirection). 동기화된 공격 방향이 바뀔 때 따른다
-        local attack = me:GetComponent("script.PlayerAttack")
-        if attack ~= nil then
-            local cd = attack.CombatDirection
-            local last = self.LastCombat
-            if last ~= nil and (math.abs(cd.x - last.x) > 0.001 or math.abs(cd.y - last.y) > 0.001) then
-                local m = math.sqrt(cd.x * cd.x + cd.y * cd.y)
-                if m > 0.05 then
-                    self.CombatFX, self.CombatFY = cd.x / m, cd.y / m
-                    self.CombatSerial = self.CombatSerial + 1
-                end
-            end
-            self.LastCombat = { x = cd.x, y = cd.y }
-        end
     end
 
     @ExecSpace("ClientOnly")
@@ -296,17 +282,6 @@ script MotionSmoother extends Logic
         local unit = r.unit
         local me = self.Me
         if not isvalid(unit) or not isvalid(me) or unit.OwnerPlayer ~= me then return end
-        -- 대형 방향은 소환수마다, 사냥 중에도 매 프레임 (서버 ShadowUnit.OwnerFacing처럼 새로 생기면 오른쪽, 주인이 걸어야 바뀐다)
-        if r.ffx == nil then
-            r.ffx, r.ffy = 1, 0
-            r.cser = self.CombatSerial
-        end
-        if self.OwnerSpeed > 0.3 then
-            r.ffx, r.ffy = self.OwnerDX, self.OwnerDY
-        elseif r.cser ~= self.CombatSerial then
-            r.ffx, r.ffy = self.CombatFX, self.CombatFY
-        end
-        r.cser = self.CombatSerial
         local st = unit.CommandState
         local last = r.buf[#r.buf]
         if (st == "follow" or st == "rally") and last ~= nil and delta > 0 and delta < 0.25 then
@@ -373,7 +348,12 @@ script MotionSmoother extends Logic
         if unit.Kind == "shadow" then
             sx, sy = ox + unit.FormationOffset.x, oy + unit.FormationOffset.y
         else
-            local fx, fy = r.ffx, r.ffy
+            -- 대형 방향은 서버 값(ShadowUnit.OwnerFacing, 동기화)을 그대로 쓴다
+            -- (8차 QA 점검: 클라이언트가 따로 추측하니 서버와 반대 방향이 되어 서버 위치로 당기는 힘과 맞서 주인 위에 뭉쳤다)
+            local of = unit.OwnerFacing
+            local fm = math.sqrt(of.x * of.x + of.y * of.y)
+            local fx, fy = 1, 0
+            if fm > 0.05 then fx, fy = of.x / fm, of.y / fm end
             local row = unit.FormationIndex // 3
             local lane = unit.FormationIndex % 3 - 1
             local depth = 0.95 + row * 0.42
@@ -484,6 +464,26 @@ script MotionSmoother extends Logic
                     end
                 end
             end
+            -- 발밑 그림자: 몸체(Kinematicbody)가 그리는 그림자는 서버 위치에 붙어 대역과 따로 놀았다 (8차 QA)
+            -- → 내 화면에서는 끄고, 같은 색·크기의 타원을 대역 아래 픽셀로 그린다
+            local body = e.KinematicbodyComponent
+            if isvalid(body) and body.EnableShadow then
+                local sh = _SpawnService:SpawnByModelId("artsprite", "MSVisShadow", Vector3(x, y, p.z), vis)
+                if isvalid(sh) then
+                    sh.SpriteRendererComponent.Enable = false
+                    if not isvalid(sh.PixelRendererComponent) then sh:AddComponent("PixelRendererComponent") end
+                    local pix = sh.PixelRendererComponent
+                    if isvalid(pix) then
+                        pix:ResetWithColors(self.ShadowW, self.ShadowH, self:ShadowPixels(body.ShadowColor))
+                        r.visShadow = sh
+                        r.shadowSize = body.ShadowSize
+                        r.shadowOffset = body.ShadowOffset
+                        body.EnableShadow = false
+                    else
+                        sh:Destroy()
+                    end
+                end
+            end
             r.visSign = nil
         end
         if src.Enable then src.Enable = false end
@@ -514,12 +514,47 @@ script MotionSmoother extends Logic
             local rs = r.ring.TransformComponent.Scale
             r.visRing.TransformComponent.Scale = Vector3(math.abs(rs.x), math.abs(rs.y), rs.z)
         end
+        if r.visShadow ~= nil and isvalid(r.visShadow) then
+            -- 그림자 타원: 몸체 그림자와 같은 크기(ShadowSize × 개체 크기)
+            local px, py = math.max(0.05, math.abs(sc.x)), math.max(0.05, math.abs(sc.y))
+            local ss, so = r.shadowSize, r.shadowOffset
+            local st = r.visShadow.TransformComponent
+            -- 몸체 그림자는 개체 크기만큼 함께 줄어든다 (부모 크기를 되돌리지 않고 좌우만 되돌린다)
+            st.Scale = Vector3(ss.x / (self.ShadowW * self.PixelUnit) * sign, ss.y / (self.ShadowH * self.PixelUnit), 1)
+            st.Position = Vector3(so.x / px * sign, so.y / py, 0.001)
+            local pr = r.visShadow.PixelRendererComponent
+            if pr.SortingLayer ~= dst.SortingLayer then pr.SortingLayer = dst.SortingLayer end
+            if pr.OrderInLayer ~= dst.OrderInLayer - 1 then pr.OrderInLayer = dst.OrderInLayer - 1 end
+        end
         if r.visSign ~= sign then
             -- 좌우가 바뀌면 체력 막대도 다시 (부모의 좌우를 되돌린다)
             r.visSign = sign
             if isvalid(r.unit) then r.unit:UpdateHpBar() end
         end
         return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method any ShadowPixels(Color c)
+        -- 그림자 타원 픽셀 (가장자리는 옅게). 색마다 한 번만 만든다
+        if self.ShadowCache == nil then self.ShadowCache = {} end
+        local key = string.format("%.2f,%.2f,%.2f,%.2f", c.r, c.g, c.b, c.a)
+        local px = self.ShadowCache[key]
+        if px ~= nil then return px end
+        px = {}
+        local w, h = self.ShadowW, self.ShadowH
+        for yy = 1, h do
+            for xx = 1, w do
+                local dx = (xx - 0.5 - w / 2) / (w / 2)
+                local dy = (yy - 0.5 - h / 2) / (h / 2)
+                local d = dx * dx + dy * dy
+                local a = 0
+                if d < 1 then a = c.a * math.min(1, (1 - d) * 2.5) end
+                table.insert(px, Color(c.r, c.g, c.b, a))
+            end
+        end
+        self.ShadowCache[key] = px
+        return px
     end
 
     @ExecSpace("ClientOnly")
@@ -532,6 +567,8 @@ script MotionSmoother extends Logic
             if isvalid(old) then old:SetEnable(true, false, false) end
         end
         if r.ring ~= nil and isvalid(r.ring) then r.ring:SetEnable(true, false, false) end
+        if r.visShadow ~= nil and isvalid(r.e) and isvalid(r.e.KinematicbodyComponent) then r.e.KinematicbodyComponent.EnableShadow = true end
+        r.visShadow = nil
         if isvalid(r.vis) then r.vis:Destroy() end
         r.vis = nil
         r.visRing = nil
