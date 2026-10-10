@@ -44,6 +44,8 @@ script MotionSmoother extends Logic
     property number OwnerSpeed = 0
     property number OwnerDX = 1              -- 마지막 걷는 방향
     property number OwnerDY = 0
+    property any Owners = nil                -- 주인(플레이어) Id → 화면 위치·속도·걷는 방향 (내 캐릭터·파티원 모두, 프레임마다 한 번)
+    property integer FrameNo = 0
     property integer StatLocal = 0           -- 점검용: 직접 그린 프레임 수
     property number StatMaxPull = 0          -- 점검용: 서버 위치와 가장 많이 벌어졌던 거리
     property number StatMaxSpeed = 0         -- 점검용: 화면에서 한 프레임에 움직인 가장 빠른 속도(칸/초) — 튐 확인 (보간 중)
@@ -100,7 +102,9 @@ script MotionSmoother extends Logic
             self.Recs = {}
             self.ScanTimer = 0
             self.OwnerReady = false
+            self.Owners = {}
         end
+        self.FrameNo = self.FrameNo + 1
         self.Me = me
         self:OwnerTick(me, delta)
         self.ScanTimer = self.ScanTimer - delta
@@ -255,34 +259,58 @@ script MotionSmoother extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void OwnerTick(Entity me, number delta)
-        -- 내 캐릭터의 화면 속도·걷는 방향·대형 방향 (매 프레임, 소환수 따라가기 그리기용)
-        local p = me.TransformComponent.WorldPosition
-        if not self.OwnerReady or delta <= 0 then
-            self.OwnerPX, self.OwnerPY = p.x, p.y
-            self.OwnerVX, self.OwnerVY, self.OwnerSpeed = 0, 0, 0
-            self.OwnerReady = true
-            return
+    method any OwnerState(Entity owner, number delta)
+        -- 주인 한 명의 화면 위치·속도·걷는 방향 (프레임마다 한 번만 계산). 내 캐릭터는 내가 움직인 위치,
+        -- 파티원은 내 화면에 그려지는 위치 — 둘 다 그 주인의 소환수를 화면에서 직접 따라가게 할 때 쓴다
+        if self.Owners == nil then self.Owners = {} end
+        local o = self.Owners[owner.Id]
+        if o == nil then
+            o = { ready = false, px = 0, py = 0, vx = 0, vy = 0, speed = 0, dx = 1, dy = 0, frame = -1 }
+            self.Owners[owner.Id] = o
         end
-        local vx, vy = (p.x - self.OwnerPX) / delta, (p.y - self.OwnerPY) / delta
+        if o.frame == self.FrameNo then return o end
+        o.frame = self.FrameNo
+        local p = owner.TransformComponent.WorldPosition
+        if not o.ready or delta <= 0 then
+            o.px, o.py = p.x, p.y
+            o.vx, o.vy, o.speed = 0, 0, 0
+            o.ready = true
+            return o
+        end
+        local vx, vy = (p.x - o.px) / delta, (p.y - o.py) / delta
         if vx * vx + vy * vy > 100 then vx, vy = 0, 0 end   -- 순간이동
         local k = 1 - math.exp(-delta * 15)
-        self.OwnerVX = self.OwnerVX + (vx - self.OwnerVX) * k
-        self.OwnerVY = self.OwnerVY + (vy - self.OwnerVY) * k
-        self.OwnerPX, self.OwnerPY = p.x, p.y
-        local sp = math.sqrt(self.OwnerVX * self.OwnerVX + self.OwnerVY * self.OwnerVY)
-        self.OwnerSpeed = sp
-        if sp > 0.3 then self.OwnerDX, self.OwnerDY = self.OwnerVX / sp, self.OwnerVY / sp end
+        o.vx = o.vx + (vx - o.vx) * k
+        o.vy = o.vy + (vy - o.vy) * k
+        o.px, o.py = p.x, p.y
+        local sp = math.sqrt(o.vx * o.vx + o.vy * o.vy)
+        o.speed = sp
+        if sp > 0.3 then o.dx, o.dy = o.vx / sp, o.vy / sp end
+        return o
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OwnerTick(Entity me, number delta)
+        -- 내 캐릭터 상태 (점검용 Owner* 값으로도 남긴다)
+        local o = self:OwnerState(me, delta)
+        self.OwnerPX, self.OwnerPY = o.px, o.py
+        self.OwnerVX, self.OwnerVY, self.OwnerSpeed = o.vx, o.vy, o.speed
+        self.OwnerDX, self.OwnerDY = o.dx, o.dy
+        self.OwnerReady = o.ready
     end
 
     @ExecSpace("ClientOnly")
     method void FollowLocal(any r, number delta, number ix, number iy)
-        -- 내 소환수가 따라가기·집결 중이면 화면 위치를 직접 움직인다. 아니면 보간 위치 (넘어갈 때는 0.3초 이상에 걸쳐)
+        -- 소환수가 따라가기·집결 중이면 화면 위치를 직접 움직인다 (내 소환수·파티원 소환수 모두 — 9차 QA: 파티원 것도 같게).
+        -- 주인의 내 화면 위치를 기준으로 서버와 같은 대형 규칙을 계산한다. 아니면 보간 위치 (넘어갈 때는 0.3초 이상에 걸쳐)
         r.outx, r.outy = ix, iy
         ---@type ShadowUnit
         local unit = r.unit
-        local me = self.Me
-        if not isvalid(unit) or not isvalid(me) or unit.OwnerPlayer ~= me then return end
+        if not isvalid(unit) then return end
+        local owner = unit.OwnerPlayer
+        if not isvalid(owner) or owner.CurrentMap ~= self.Map then return end
+        r.ost = self:OwnerState(owner, delta)
+        r.owner = owner
         local st = unit.CommandState
         local last = r.buf[#r.buf]
         if (st == "follow" or st == "rally") and last ~= nil and delta > 0 and delta < 0.25 then
@@ -336,7 +364,8 @@ script MotionSmoother extends Logic
             r.flag = 4.5 + _UtilLogic:RandomDouble() * 6
             r.fjit = 0.93 + _UtilLogic:RandomDouble() * 0.14
         end
-        local op = self.Me.TransformComponent.WorldPosition
+        local ost = r.ost
+        local op = r.owner.TransformComponent.WorldPosition
         if r.osx == nil or (op.x - r.osx) ^ 2 + (op.y - r.osy) ^ 2 > 9 then
             r.osx, r.osy = op.x, op.y
         else
@@ -378,7 +407,7 @@ script MotionSmoother extends Logic
         local px, py = r.fx, r.fy
         local tx, ty = sx - px, sy - py
         local dist = math.sqrt(tx * tx + ty * ty)
-        local ownerMoving = self.OwnerSpeed > 0.3
+        local ownerMoving = ost.speed > 0.3
         -- 출발 0.6칸 · 멈춤 0.2칸, 주인이 걷는 동안은 멈추지 않는다 (ShadowUnit과 같다)
         local follow = (r.fmove and (dist > 0.2 or ownerMoving)) or (not r.fmove and dist > 0.6)
         r.fmove = follow
@@ -391,9 +420,9 @@ script MotionSmoother extends Logic
             local ax, ay = tx, ty
             if ownerMoving then
                 -- 주인 속도의 1.0~1.6배까지 내서 앞자리에 닿고, 주인 몸은 옆으로 비켜 돈다 (ShadowUnit 따라가기와 같다)
-                if world > 0.05 then mult = math.max(mult, math.min(unit.PaceMax, self.OwnerSpeed * math.min(1.6, 1 + 0.5 * dist) / world)) end
-                local pass = unit:PassOwner(Vector2(px, py), Vector2(op.x, op.y), Vector2(sx, sy), Vector2(self.OwnerDX, self.OwnerDY))
-                ax, ay = ax + self.OwnerDX * 0.3 + pass.x, ay + self.OwnerDY * 0.3 + pass.y
+                if world > 0.05 then mult = math.max(mult, math.min(unit.PaceMax, ost.speed * math.min(1.6, 1 + 0.5 * dist) / world)) end
+                local pass = unit:PassOwner(Vector2(px, py), Vector2(op.x, op.y), Vector2(sx, sy), Vector2(ost.dx, ost.dy))
+                ax, ay = ax + ost.dx * 0.3 + pass.x, ay + ost.dy * 0.3 + pass.y
             end
             local am = math.sqrt(ax * ax + ay * ay)
             if am > 0.001 then
