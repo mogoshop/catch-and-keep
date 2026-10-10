@@ -118,6 +118,17 @@ script SelfTest extends Logic
         self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen") ~= nil, "여왕 전용 유니크")
         self:Check("act2 boss", _GameConst.FinalBossSourceId == "high_priest" and _ItemData:PickUnique(21, "high_priest") ~= nil, "대사제 = 난이도 개방 · 전용 유니크")
         self:Check("drop table", _ItemData:GetDropTable("normal").unique < _ItemData:GetDropTable("boss").unique, "보스가 유니크를 더 잘 준다")
+        -- 잿빛 장막 유니크 5종: 가중치가 모든 유니크 중 가장 낮다 (가장 희귀)
+        local ashenMax, otherMin, ashenN = 0, 1, 0
+        for _, u in ipairs(t.UniqueList) do
+            if string.sub(u.id, 1, 11) == "ashen_veil_" then
+                ashenN = ashenN + 1
+                ashenMax = math.max(ashenMax, u.weight or 1)
+            else
+                otherMin = math.min(otherMin, u.weight or 1)
+            end
+        end
+        self:Check("ashen uniques rarest", ashenN == 5 and ashenMax < otherMin, "잿빛 장막 5종 가중치 < 다른 유니크")
         -- 세트: 조각 수에 따른 효과, 완성 시 그림자 상한
         self:Check("set full", (_ItemData:GetSetBonusMods("ashen_legion", 4).shadowCap or 0) == 1, "잿빛 군단 완성 = 그림자 상한 +1")
         self:Check("set partial", (_ItemData:GetSetBonusMods("ashen_legion", 2).shadowCap or 0) == 0, "2개는 상한 효과 없음")

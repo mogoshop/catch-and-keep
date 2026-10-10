@@ -264,7 +264,7 @@ function genItems() {
     "        self.Affixes = {}",
     ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
     "        self.UniqueList = {}",
-    ...uniques.map((r) => `        table.insert(self.UniqueList, { id = ${s(r.id)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)}, special = ${s(r.special || "")}, source = ${s(r.source)} })`),
+    ...uniques.map((r) => `        table.insert(self.UniqueList, { id = ${s(r.id)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)}, special = ${s(r.special || "")}, source = ${s(r.source)}, weight = ${n(r.weight || 1)} })`),
     "        self.Runes = {}",
     "        self.RuneOrder = {}",
     ...runes.map((r) => `        self.Runes[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, weapon = ${s(r.weapon)}, armor = ${s(r.armor)}, lamp = ${s(r.lamp)}, minLevel = ${n(r.minLevel)}, weight = ${n(r.dropWeight)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }\n        table.insert(self.RuneOrder, ${s(r.id)})`),

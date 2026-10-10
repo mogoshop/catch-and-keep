@@ -71,6 +71,7 @@ T.item_uniques.forEach((r, i) => {
   if (!baseIds.has(r.base)) err("item_uniques", i, `base '${r.base}' — item_bases에 없음`);
   if (r.source !== "" && !sourceIds.has(r.source)) err("item_uniques", i, `source '${r.source}' — monsters.csv sourceId에 없음`);
   checkMods("item_uniques", i, "mods", r.mods);
+  if ((r.weight || "") !== "" && !(num(r.weight) > 0)) err("item_uniques", i, "weight — 빈칸(=1) 또는 0보다 큰 수");
 });
 T.runes.forEach((r, i) => { for (const c of ["weapon", "armor", "lamp"]) checkMods("runes", i, c, r[c]); });
 T.runewords.forEach((r, i) => {
@@ -128,9 +129,12 @@ for (const tree of ["command", "soul", "curse"]) {
 
 // 착용 가능한 부위의 외형 RUID는 아이콘과 같은 에셋을 사용한다.
 const AVATAR_SLOTS = new Set(["weapon", "helm", "armor", "gloves", "boots"]);
+// 예외: 잿빛 장막 유니크 베이스는 같은 디자인으로 따로 그린 아이콘(iconPx)을 쓴다.
+// ashen_scythe는 커스텀 무기 외형(공식 무기 템플릿 필요) 등록 전까지 사신의 낫 외형을 빌려 쓴다 (2026-10-10).
+const DRAWN_ICON_BASES = new Set(["ashen_robe", "ashen_gloves", "ashen_boots", "ashen_scythe"]);
 T.item_bases.forEach((r, i) => {
   if (AVATAR_SLOTS.has(r.slot) && !RUID.test(r.avatar || "")) err("item_bases", i, "avatar — 착용 외형 RUID 필요");
-  if (r.avatar && r.icon !== r.avatar) err("item_bases", i, "icon과 avatar가 달라 착용 그림이 일치하지 않음");
+  if (r.avatar && r.icon !== r.avatar && !(DRAWN_ICON_BASES.has(r.id) && num(r.iconPx) > 0)) err("item_bases", i, "icon과 avatar가 달라 착용 그림이 일치하지 않음");
 });
 
 // ── 아이콘: 베이스·스킬마다 그림, UI 아이콘 표는 키 중복 없이 RUID·색 형식 ──

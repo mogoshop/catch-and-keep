@@ -153,7 +153,8 @@ script ItemData extends Logic
         end
         local base = self:GetBase(item.base)
         if base ~= nil and base.icon ~= "" then
-            if base.avatar ~= nil and base.avatar ~= "" then return "thumbnail://" .. base.icon end
+            -- 아이콘이 외형 RUID 자체면 썸네일로, 따로 그린 아이콘 그림(잿빛 장막 5종 등)이면 그대로
+            if base.avatar ~= nil and base.avatar ~= "" and base.icon == base.avatar then return "thumbnail://" .. base.icon end
             return base.icon
         end
         return _GameConst.IconItem
@@ -445,7 +446,8 @@ script ItemData extends Logic
             local b = t.Bases[u.base]
             if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then
                 table.insert(list, u)
-                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25))
+                -- weight(item_uniques.csv)가 1보다 작으면 다른 유니크보다 그만큼 덜 나온다 (잿빛 장막 5종 0.15 = 가장 희귀)
+                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25) * (u.weight or 1))
             end
         end
         if #list == 0 then return nil end
