@@ -23,6 +23,9 @@ function rng(seed) {
 // anchors: [{ x, y, kind }] — kind "portalW"/"portalE" = 가장자리 출구, "stop" = 길이 거쳐 가는 기능(웨이포인트·입구·NPC·보스),
 // "room" = 화로 같은 자리, "decor" = 메이커 장식(Decor_) 자리. style "maze" = 동굴 미로, 그 밖 = 필드 (generateField)
 function generate(d, spec, anchors) {
+  // 맨 바깥 테두리 줄에 놓인 장식은 기준점이 아니다 (테두리 바위 위 장식으로 그대로 둔다)
+  const b = bounds(d);
+  anchors = anchors.filter((a) => a.kind !== "decor" || (Math.floor(a.x) > b.x0 && Math.floor(a.x) < b.x1 && Math.floor(a.y) > b.y0 && Math.floor(a.y) < b.y1));
   if ((spec.style || "maze") !== "maze") return generateField(d, spec, anchors);
   return generateMaze(d, spec, anchors.filter((a) => a.kind !== "decor"));
 }

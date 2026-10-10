@@ -250,8 +250,13 @@ function buildNormal(d, maps, ctx) {
     const spec = ctx.layouts[d.id];
     const roadTile = spec.roadTile === "" ? -1 : num(spec.roadTile);
     map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap: layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile), roadTile) });
-    // 벽 칸에 묻힌 장식은 끈다 (배치가 바뀌어 다시 바닥이 되면 켠다)
-    for (const p of decorPositions(d)) map.patch(p.path, { enable: layout.isFloor(Math.floor(p.x), Math.floor(p.y)) });
+    // 안쪽 벽 칸에 묻힌 장식은 끈다 (배치가 바뀌어 다시 바닥이 되면 켠다). 맨 바깥 테두리 줄 장식은 그대로
+    const lb = layout.bounds;
+    for (const p of decorPositions(d)) {
+      const x = Math.floor(p.x), y = Math.floor(p.y);
+      const edge = x <= lb.x0 || x >= lb.x1 || y <= lb.y0 || y >= lb.y1;
+      map.patch(p.path, { enable: edge || layout.isFloor(x, y) });
+    }
   }
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
