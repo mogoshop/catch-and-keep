@@ -44,6 +44,7 @@ script ShadowHUD extends Logic
         end
         _UIKit:Connect(self.Win .. "/BtnSort", function() self:NextSort() end)
         _UIKit:Connect(self.Win .. "/BtnMulti", function() self:ToggleMulti() end)
+        _UIKit:Connect(self.Win .. "/BtnPickAll", function() self:PickAll() end)
         -- 보관함 창이 하단 메뉴 줄(GameHUD 5)보다 위에, 제목이 테두리 그림보다 위에 오게 (파일 값만으로는 메이커가 다시 읽지 않았다)
         local group = _EntityService:GetEntityByPath(self.Root)
         if isvalid(group) then group.UIGroupComponent.GroupOrder = 6 end
@@ -115,6 +116,28 @@ script ShadowHUD extends Logic
         -- 여러 개 선택(분해 전용) 켜고 끄기. 끄면 고른 것을 비운다
         self.Multi = not self.Multi
         self.Picked = {}
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickAll()
+        -- 지금 필터 목록에서 분해할 수 있는 그림자(소환 중·보스 제외)를 전부 고른다. 이미 다 골랐으면 모두 뺀다
+        local owner = self:Owner()
+        if owner == nil then return end
+        if not self.Multi then
+            self.Multi = true
+            self.Picked = {}
+        end
+        local eligible = {}
+        local allPicked = true
+        for _, e in ipairs(self:Entries(owner)) do
+            if not e.deployed and self:SalvageYield(e) > 0 then
+                table.insert(eligible, e.id)
+                if not self.Picked[e.id] then allPicked = false end
+            end
+        end
+        for _, id in ipairs(eligible) do self.Picked[id] = not allPicked end
         self.RenderKey = ""
         self:Poll()
     end
@@ -236,6 +259,7 @@ script ShadowHUD extends Logic
         local sortNames = { level = "레벨순", recent = "추출순", grade = "등급순" }
         _UIKit:SetText(self.Win .. "/BtnSort", "정렬: " .. sortNames[self.Sort])
         _UIKit:SetText(self.Win .. "/BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택")
+        _UIKit:SetText(self.Win .. "/BtnPickAll", (self.Multi and self:PickedCount() > 0) and "전체 해제" or "전체 선택")
         _UIKit:SetColor(self.Win .. "/BtnMulti", self.Multi and Color(0.6, 1, 0.65, 1) or Color(1, 1, 1, 1))
         -- 사라진(분해된) 그림자는 고른 목록에서 뺀다
         local alive = {}
@@ -366,8 +390,9 @@ script ShadowHUD extends Logic
         _UIKit:SetText(d .. "/Grade", "목록을 눌러 분해할 그림자를 고르세요 (다시 누르면 빠짐)")
         local lines = {}
         for i, e in ipairs(picked) do
-            if i > 7 then
-                table.insert(lines, _UIKit:Colored("#8C99B4", "… 외 " .. tostring(#picked - 7) .. "마리"))
+            if i > 6 then
+                -- 6마리 + 「외 N마리」 한 줄 (7마리를 다 쓰면 아래 안내문과 겹쳤다)
+                table.insert(lines, _UIKit:Colored("#8C99B4", "… 외 " .. tostring(#picked - 6) .. "마리"))
                 break
             end
             table.insert(lines, self:ShadowName(e.src) .. "  Lv" .. tostring(e.level) .. (e.plus > 0 and ("  +" .. tostring(e.plus)) or "") .. (e.assign > 0 and _UIKit:Colored("#FFD27A", "  (소환 지정됨)") or ""))
@@ -430,8 +455,8 @@ script ShadowHUD extends Logic
     end
 
     method integer SalvageYield(table e)
-        if _ShadowConfig:GetDisassembleYield(e.grade) <= 0 then return 0 end
-        return _ShadowConfig:GetDisassembleYield(e.grade) + _ShadowConfig:GetPlusRefund(e.plus)
+        if _ShadowConfig:GetDisassembleYield(e.grade, e.level or 1) <= 0 then return 0 end
+        return _ShadowConfig:GetDisassembleYield(e.grade, e.level or 1) + _ShadowConfig:GetPlusRefund(e.plus)
     end
 
     method string ShadowName(string src)

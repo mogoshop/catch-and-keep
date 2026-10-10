@@ -1,0 +1,105 @@
+-- 안내 줄 (획득·경고 문구). 엔진 화면 메시지(상단 가운데 큰 띠)는 전투 화면을 가려 왼쪽 아래 짧은 줄로 옮겼다 (10-10 QA).
+--   · 아래가 최신, 최대 4줄, 한 줄은 3.5초 뒤 0.5초 동안 흐려진다
+--   · 같은 문구는 보이는 동안 2번까지는 새 줄로 바로 띄우고, 3번째부터는 마지막 줄에 "×N"만 올린다 (화면을 덮지 않게)
+--   · 골드 획득("골드 +N")은 보이는 줄 하나에 합친다
+@Logic
+script NoticeFeed extends Logic
+
+    property integer MaxLines = 4
+    property number LineSeconds = 3.5
+    property number FadeSeconds = 0.5
+    property any Lines = nil          -- { text, key, count, gold, at } 아래(최신)부터
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Lines = {}
+        for i = 1, self.MaxLines do _UIKit:SetEnabled("/ui/RewardHUD/Feed/Line" .. tostring(i), false) end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.Lines = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Push(string text)
+        if text == nil or text == "" then return end
+        if self.Lines == nil then self.Lines = {} end
+        local now = _UtilLogic.ElapsedSeconds
+        local gold = tonumber(string.match(text, "^골드 %+(%d+)$"))
+        if gold ~= nil then
+            for _, line in ipairs(self.Lines) do
+                if line.gold ~= nil then
+                    line.gold = line.gold + gold
+                    line.text = "골드 +" .. tostring(line.gold)
+                    line.at = now
+                    self:Render()
+                    return
+                end
+            end
+        else
+            -- 같은 문구가 이미 2줄 보이면 새 줄 대신 가장 최근 줄의 횟수만 올린다
+            local same, latest = 0, nil
+            for _, line in ipairs(self.Lines) do
+                if line.key == text then
+                    same = same + 1
+                    if latest == nil then latest = line end
+                end
+            end
+            if same >= 2 and latest ~= nil then
+                latest.count = latest.count + 1
+                latest.at = now
+                self:Render()
+                return
+            end
+        end
+        table.insert(self.Lines, 1, { text = text, key = text, count = 1, gold = gold, at = now })
+        while #self.Lines > self.MaxLines do table.remove(self.Lines) end
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tick()
+        if self.Lines == nil or #self.Lines == 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local changed = false
+        for i = #self.Lines, 1, -1 do
+            if now - self.Lines[i].at > self.LineSeconds + self.FadeSeconds then
+                table.remove(self.Lines, i)
+                changed = true
+            end
+        end
+        if changed then self:Render() else self:Fade(now) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Fade(number now)
+        for i, line in ipairs(self.Lines) do
+            local e = _UIKit:Get("/ui/RewardHUD/Feed/Line" .. tostring(i))
+            if isvalid(e) and isvalid(e.CanvasGroupComponent) then
+                local left = self.LineSeconds + self.FadeSeconds - (now - line.at)
+                e.CanvasGroupComponent.GroupAlpha = math.max(0, math.min(1, left / self.FadeSeconds))
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render()
+        for i = 1, self.MaxLines do
+            local path = "/ui/RewardHUD/Feed/Line" .. tostring(i)
+            local line = self.Lines[i]
+            if line == nil then
+                _UIKit:SetEnabled(path, false)
+            else
+                local text = line.text
+                if line.count > 1 then text = text .. "  ×" .. tostring(line.count) end
+                _UIKit:SetText(path .. "/Text", text)
+                _UIKit:SetEnabled(path, true)
+            end
+        end
+        self:Fade(_UtilLogic.ElapsedSeconds)
+    end
+end

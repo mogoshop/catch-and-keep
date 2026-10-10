@@ -26,9 +26,11 @@ const win='SafeArea/QuestWin';
 b.panel(win,{rect_size:[1320,960],color:{r:.05,g:.045,b:.06,a:1},raycast:true,enable:false});
 b.sprite(win+'/Rim',{rect_size:[1360,1000],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
 // D2 의뢰 일지: 위 2×3 의뢰 그림(받을 수 있거나 끝낸 의뢰만 컬러, 나머지 어둡게) → 누르면 아래에 내용
-b.text(win+'/Title','의뢰 일지  ·  잿빛 변경',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[1000,40],size:28,color:'#E6C88A',alignment:4,bold:true});
+b.text(win+'/Title','의뢰 일지  ·  잿빛 변경',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[640,40],size:28,color:'#E6C88A',alignment:4,bold:true});
 b.button(win+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
 if(b.find(win+'/List'))b.remove(win+'/List');
+// 액트 탭 (10-10 QA: 액트 2 의뢰가 일지에 없었다) — 왼쪽 위, 고른 탭은 금빛
+for(const a of [1,2])b.button(win+'/Act'+a,'액트 '+a,{anchor:'top-left',pos:[20+(a-1)*144,-8],rect_size:[136,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22});
 for(let i=1;i<=6;i++){
  const n=win+'/Q'+i;
  for(const old of ['Icon','Title','Status','Frame'])if(b.find(n+'/'+old))b.remove(n+'/'+old);

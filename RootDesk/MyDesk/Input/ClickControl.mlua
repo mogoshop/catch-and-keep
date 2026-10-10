@@ -145,6 +145,23 @@ script ClickControl extends Component
             self.HasDestination = false
             return world
         end
+        -- 웨이포인트 클릭: 걸어가서 닿으면 창을 연다 (이미 닿아 있으면 바로) — 10-10 QA
+        ---@type Waypoint
+        local wp = _Util:NearestComponent(self.Entity.CurrentMap, "script.Waypoint", world, 1.2)
+        _WaypointWindow.PendingOpen = false
+        if wp ~= nil then
+            self:SelectAttackTarget(nil)
+            if _Util:Distance(self.Entity, wp.Entity) <= _WaypointWindow.Reach and _WaypointWindow:OpenNear() then
+                self.HasDestination = false
+                return world
+            end
+            _WaypointWindow.PendingOpen = true
+            self.Destination = _Util:Pos2(wp.Entity)
+            self.HasDestination = true
+            self.SlideCount = 0
+            self.StuckTime = 0
+            return world
+        end
         -- PC: 혼 클릭은 추출이 아니라 그냥 이동 (그림자 추출은 E 키로만 — 10-09). 모바일은 MobileTap에서 혼 터치 추출 유지
         if not self.HasDestination or (world - self.Destination):Magnitude() > 0.35 then self.SlideCount = 0 self.StuckTime = 0 end
         self:SelectAttackTarget(nil)
@@ -446,7 +463,7 @@ script ClickControl extends Component
             self.BlockedPoint = point
             if now >= self.NextBlockedHintAt then
                 self.NextBlockedHintAt = now + 2
-                _ScreenMessageLogic:PrivateMsg("지나갈 수 없는 지점입니다")
+                _NoticeFeed:Push("지나갈 수 없는 지점입니다")
             end
             return
         end

@@ -142,11 +142,14 @@ script NpcWindow extends Logic
             return
         end
         local nearby = self:FindNpc(player)
-        local show = nearby ~= nil and not _UIKit:AnyWindowOpen()
+        -- NPC가 없어도 웨이포인트 위면 같은 안내 버튼으로 연다 (B · 버튼 터치 → Talk → OpenNear)
+        local nearWp = nearby == nil and _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), _WaypointWindow.Reach) ~= nil
+        local show = (nearby ~= nil or nearWp) and not _UIKit:AnyWindowOpen()
         _UIKit:SetEnabled(self.Prompt, show)
         if show then
             -- PC는 「[B] 이름」, 모바일은 「이름 · 대화」. 너비는 이름 길이에 맞춘다 (공통 SetFitText)
-            local text = Environment:IsPCPlatform() and ("[B] " .. nearby.NpcName) or (nearby.NpcName .. " · 대화")
+            local name = nearby ~= nil and nearby.NpcName or "웨이포인트"
+            local text = Environment:IsPCPlatform() and ("[B] " .. name) or (name .. (nearby ~= nil and " · 대화" or " · 열기"))
             _UIKit:SetFitText(self.Prompt, text, 28, 56, 300, 640)
         end
         if not _UIKit:IsOpen(self.Win) then self.ActiveNpc = nil end

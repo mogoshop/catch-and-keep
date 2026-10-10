@@ -463,8 +463,10 @@ function patchShadowHud() {
   k.btn("Window/BtnPrev", "◀ 이전", { anchor: "bottom-left", pivot: [0, 0], pos: [620, 18], rect_size: [180, 72], font_size: 22 });
   k.btn("Window/BtnNext", "다음 ▶", { anchor: "bottom-right", pivot: [1, 0], pos: [-30, 18], rect_size: [180, 72], font_size: 22 });
   // 여러 개 선택(분해 전용) — 이전 버튼 옆
-  k.btn("Window/BtnMulti", "여러 개 선택", { anchor: "bottom-left", pivot: [0, 0], pos: [816, 18], rect_size: [230, 72], font_size: 22 });
-  s.text("Window/PageText", "", { size: 22, color: C.dim, anchor: "bottom-left", pivot: [0.5, 0], pos: [1198, 30], rect_size: [290, 48] });
+  k.btn("Window/BtnMulti", "여러 개 선택", { anchor: "bottom-left", pivot: [0, 0], pos: [816, 18], rect_size: [184, 72], font_size: 21 });
+  // 목록 전체 선택 (지금 필터의 분해 가능한 그림자 전부 → 왼쪽 「분해」 한 번) — 10-10 QA
+  k.btn("Window/BtnPickAll", "전체 선택", { anchor: "bottom-left", pivot: [0, 0], pos: [1008, 18], rect_size: [164, 72], font_size: 21 });
+  s.text("Window/PageText", "", { size: 22, color: C.dim, anchor: "bottom-left", pivot: [0.5, 0], pos: [1262, 30], rect_size: [170, 48] });
   // 테두리(Rim)를 맨 아래로 (제목이 테두리에 가렸다), 창이 GameHUD(하단 메뉴 줄)보다 위에 오게 그룹 순서 6
   {
     const kids = s.listEntities().filter((e) => e.path.startsWith("/ui/ShadowHUD/Window/") && e.path.split("/").length === 5);
@@ -555,4 +557,4 @@ function run() {
   console.log(`  UI: GameHUD ${n}개 엔티티 · ShadowHUD 스킨·모바일 패드`);
 }
 
-module.exports = { run };
+module.exports = { run, patchShadowHud };

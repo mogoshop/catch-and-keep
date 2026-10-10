@@ -63,7 +63,11 @@ function run(){
   b.sprite(a+'/F'+i,{rect_size:[16,16],image_ruid:icons.dot,color:'#FFFFFF',sprite_type:0,enable:false});
   b.text(a+'/F'+i+'/Label','',{anchor:'middle-center',pos:[0,-17],rect_size:[150,22],size:15,bold:true,color:'#E8E1D3',outline:true,outline_color:'#0A0808',outline_width:0.25});
  }
- b.sprite(a+'/Focus',{rect_size:[42,42],image_ruid:icons.slot_frame,color:'#E6C88A',sprite_type:0,enable:false});
+ // 목표: 네모 틀 대신 금빛 점 + 퍼지며 흐려지는 고리 (HudMap.PulseFocus가 고리 크기·투명도를 움직인다)
+ b.sprite(a+'/Focus',{rect_size:[18,18],image_ruid:icons.dot,color:'#FFD46A',sprite_type:0,enable:false});
+ b.patchComponent(a+'/Focus','MOD.Core.SpriteGUIRendererComponent',{ImageRUID:{DataId:icons.dot},Type:0,RaycastTarget:false});
+ b.sprite(a+'/Focus/Ring',{anchor:'middle-center',rect_size:[18,18],image_ruid:icons.circle,color:'#FFD46A',sprite_type:0});
+ b.patchComponent(a+'/Focus/Ring','MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:false});
  for(let i=1;i<=3;i++)b.sprite(a+'/P'+i,{rect_size:[14,14],image_ruid:icons.dot,color:'#71A6FF',sprite_type:0,enable:false});
  // 내 위치: 위를 향한 정사각형 화살표. HudMap이 이동 방향으로 돌린다.
  b.sprite(a+'/Me',{rect_size:[22,22],image_ruid:icons.minimap_me,color:'#73F59B',sprite_type:0});

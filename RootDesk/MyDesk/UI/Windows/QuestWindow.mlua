@@ -4,6 +4,7 @@ script QuestWindow extends Logic
 
     property string Win = "QuestWin"
     property integer Selected = 1
+    property integer ViewAct = 1             -- 보고 있는 액트 탭 (한 탭 = 의뢰 6개)
     property integer CurrentIndex = 0
     property boolean WasOpen = false
     property string RenderKey = ""
@@ -15,9 +16,13 @@ script QuestWindow extends Logic
         _UIKit:SetEnabled("/ui/GameHUD/QuestWin", false)
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        for a = 1, 2 do
+            local act = a
+            _UIKit:Connect(self.Win .. "/Act" .. tostring(a), function() self:SetAct(act) end)
+        end
         for i = 1, 6 do
             local index = i
-            _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function() self:Select(index) end)
+            _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function() self:Select((self.ViewAct - 1) * 6 + index) end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
         log("[VRF] QuestWindow journal ready")
@@ -28,6 +33,20 @@ script QuestWindow extends Logic
         -- 일지 갱신 타이머를 세션 종료 때 해제한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetAct(integer act)
+        -- 액트 탭: 그 액트에서 읽을 수 있는 마지막 의뢰(진행 중이면 그것)를 고른다. 아직 열리지 않은 액트는 첫 의뢰를 잠긴 채 보여 준다
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil then return end
+        self.ViewAct = act
+        local first = (act - 1) * 6 + 1
+        self.Selected = math.max(first, math.min(first + 5, quest.Index))
+        if not self:Readable(self.Selected, quest) then self.Selected = first end
+        self.RenderKey = ""
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
@@ -66,12 +85,15 @@ script QuestWindow extends Logic
             return
         end
         local count = _QuestData:Count()
-        if not self.WasOpen or self.CurrentIndex ~= quest.Index then self.Selected = math.max(1, math.min(count, quest.Index)) end
+        if not self.WasOpen or self.CurrentIndex ~= quest.Index then
+            self.Selected = math.max(1, math.min(count, quest.Index))
+            self.ViewAct = math.floor((self.Selected - 1) / 6) + 1
+        end
         self.WasOpen = true
         self.CurrentIndex = quest.Index
         ---@type PlayerTravel
         local travel = _UIKit:Comp("script.PlayerTravel")
-        local key = tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected) .. "|" .. (travel ~= nil and travel.Visited or "")
+        local key = tostring(self.ViewAct) .. "|" .. tostring(quest.Index) .. "|" .. tostring(quest.State) .. "|" .. tostring(quest.Progress) .. "|" .. tostring(self.Selected) .. "|" .. (travel ~= nil and travel.Visited or "")
         if key == self.RenderKey then return end
         self.RenderKey = key
         self:Render(quest)
@@ -82,8 +104,16 @@ script QuestWindow extends Logic
         log("[VRF] QuestWindow art1=" .. _GameData:GetUiIcon("quest_art1") .. " index=" .. tostring(quest.Index))
         -- 제목과 상태를 분리하고 선택한 의뢰만 강조한다. 미수락 내용·보상은 숨긴다.
         -- 2×3 의뢰 그림 (D2 의뢰 일지): 완료 = 흑백 그림, 현재·열람 가능 = 컬러, 아직 못 읽는 의뢰 = 컬러 위 반투명 검정 덮개(누를 수 없음)
-        for i = 1, 6 do
-            local cell = self.Win .. "/Q" .. tostring(i)
+        -- 액트 탭: 고른 탭 금빛, 아직 의뢰가 하나도 안 열린 액트는 흐리게
+        for a = 1, 2 do
+            local first = (a - 1) * 6 + 1
+            local open = _QuestData:Get(first) ~= nil and first <= quest.Index
+            _UIKit:SetColor(self.Win .. "/Act" .. tostring(a), a == self.ViewAct and Color(1, 0.86, 0.5, 1) or (open and Color(1, 1, 1, 1) or Color(0.45, 0.45, 0.45, 1)))
+        end
+        _UIKit:SetText(self.Win .. "/Title", "의뢰 일지  ·  " .. (self.ViewAct == 2 and "모래 폐허" or "잿빛 변경"))
+        for c = 1, 6 do
+            local i = (self.ViewAct - 1) * 6 + c
+            local cell = self.Win .. "/Q" .. tostring(c)
             local q = _QuestData:Get(i)
             _UIKit:SetEnabled(cell, q ~= nil)
             if q ~= nil then

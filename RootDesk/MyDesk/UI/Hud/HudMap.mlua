@@ -9,6 +9,7 @@ script HudMap extends Logic
     property number BannerSeconds = 2.5
     property integer FeatureCount = 12
     property integer TimerId = 0
+    property integer PulseTimerId = 0
     property string LastMap = ""
     property number BannerUntil = 0
     property number MiniRadius = 96          -- 264px 테두리의 투명 반경 약111px에서 표식 여백 확보
@@ -67,12 +68,27 @@ script HudMap extends Logic
         _UIKit:SetEnabled("Banner", false)
         _UIKit:SetEnabled("NpcMark", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
+        self.PulseTimerId = _TimerService:SetTimerRepeat(function() self:PulseFocus() end, 0.05)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        if self.PulseTimerId ~= 0 then _TimerService:ClearTimer(self.PulseTimerId) end
         self.TimerId = 0
+        self.PulseTimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PulseFocus()
+        -- 목표 점 둘레 고리가 1.2초마다 18 → 46px로 퍼지며 흐려진다 (레이더 펄스)
+        local ring = _UIKit:Get("MiniMap/Body/Area/Focus/Ring")
+        if not isvalid(ring) or not isvalid(ring.Parent) or not ring.Parent.Enable then return end
+        local t = (_UtilLogic.ElapsedSeconds % 1.2) / 1.2
+        local size = 18 + 28 * t
+        ring.UITransformComponent.RectSize = Vector2(size, size)
+        local sprite = ring.SpriteGUIRendererComponent
+        if isvalid(sprite) then sprite.Color = Color(1, 0.83, 0.42, 0.9 * (1 - t)) end
     end
 
     @ExecSpace("ClientOnly")

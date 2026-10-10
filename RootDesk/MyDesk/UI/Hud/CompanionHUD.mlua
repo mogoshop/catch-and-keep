@@ -96,10 +96,13 @@ script CompanionHUD extends Logic
             ---@type ShadowUnit
             local u = c
             if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == p and u.Hp > 0 and u.MaxHp > 0 then
-                local g = byKind[u.Kind]
+                -- 그림자는 원본 몬스터별로 따로 묶는다 (자칼·전갈이 한 칸에 섞이지 않게). 엔티티 이름 = Shadow_원본id
+                local src = string.match(u.Entity.Name, "^Shadow_(.+)$") or ""
+                local key = u.Kind == "shadow" and ("shadow:" .. src) or u.Kind
+                local g = byKind[key]
                 if g == nil then
-                    g = { kind = u.Kind, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id }
-                    byKind[u.Kind] = g
+                    g = { kind = u.Kind, src = src, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id }
+                    byKind[key] = g
                     table.insert(groups, g)
                 end
                 g.count = g.count + 1
@@ -146,6 +149,7 @@ script CompanionHUD extends Logic
                 if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(84 * ratio, 8) end
                 local portrait = g.portrait ~= "" and ("thumbnail://" .. g.portrait) or self:FallbackIcon(g.kind)
                 _UIKit:SetIcon(base .. "/Portrait", portrait)
+                self:FitPortrait(base .. "/Portrait", g.src)
                 local frame = Color(1, 1, 1, 1)
                 if g.promoted then frame = Color(1, 0.86, 0.56, 1) end
                 if g.lowest <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
@@ -154,6 +158,23 @@ script CompanionHUD extends Logic
                 _UIKit:SetText(base .. "/Count", g.count > 1 and ("×" .. tostring(g.count)) or "")
             end
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitPortrait(string rel, string src)
+        -- 초상 칸(62) 안에 그림 비율대로 맞춘다. 코덱스 프레임 그림은 피벗이 발밑이라 비율 유지(AspectOnly)면 칸 위로 밀렸다 (10-10 QA 전갈)
+        local e = _UIKit:Get(rel)
+        if not isvalid(e) then return end
+        local stats = src ~= "" and _GameData:GetMonsterStats(src) or nil
+        local sprite = e.SpriteGUIRendererComponent
+        if stats == nil or stats.w == nil or stats.w <= 0 or stats.h <= 0 or not isvalid(sprite) then
+            if isvalid(sprite) then sprite.PreserveSprite = PreserveSpriteType.AspectOnly end
+            e.UITransformComponent.RectSize = Vector2(62, 62)
+            return
+        end
+        sprite.PreserveSprite = PreserveSpriteType.None
+        local k = 62 / math.max(stats.w, stats.h)
+        e.UITransformComponent.RectSize = Vector2(stats.w * k, stats.h * k)
     end
 
     method integer KindOrder(string kind)

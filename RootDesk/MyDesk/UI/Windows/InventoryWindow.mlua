@@ -25,6 +25,7 @@ script InventoryWindow extends Logic
     property boolean SmithMode = false
     property boolean Multi = false
     property table Picked = {}          -- 여러 개 선택: 칸 번호 → 그 칸의 아이템 문자열
+    property any WheelHandler = nil     -- 마우스 휠 → 옵션 설명 스크롤 (10-10 QA: 긴 옵션이 안 내려갔다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -32,6 +33,7 @@ script InventoryWindow extends Logic
         self:ClearSelection()
         _UIKit:SetEnabled("/ui/GameHUD/InvWin", false)
         _UIKit:RegisterWindow(self.Win)
+        self.WheelHandler = _InputService:ConnectEvent(MouseScrollEvent, function(ev) self:OnWheel(ev.ScrollDelta) end)
         _UIKit:SetText(self.Win .. "/Hint", "선택 → 설명 확인 · 버튼으로 작업 확정")
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for slot in string.gmatch(self.SlotOrder, "[^,]+") do
@@ -60,7 +62,37 @@ script InventoryWindow extends Logic
     method void OnEndPlay()
         -- 반복 갱신과 선택 상태를 플레이 종료 시 정리한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
+        if self.WheelHandler ~= nil then _InputService:DisconnectEvent(MouseScrollEvent, self.WheelHandler) self.WheelHandler = nil end
         self:ClearSelection()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnWheel(number delta)
+        -- 소지품이 열려 있으면 휠로 옵션 설명을 내린다 (커서가 가방 위면 가방의 기본 스크롤에 맡긴다). 한 칸 = 약 3줄
+        if delta == 0 or not _UIKit:IsOpen(self.Win) then return end
+        if self:CursorOver(self.Win .. "/Bag") then return end
+        local box = _UIKit:Get(self.Win .. "/DescBox")
+        local text = _UIKit:Get(self.Win .. "/DescBox/Desc")
+        if not isvalid(box) or not isvalid(text) or box.ScrollLayoutGroupComponent == nil then return end
+        local overflow = text.UITransformComponent.RectSize.y + 52 - box.UITransformComponent.RectSize.y
+        if overflow <= 0 then return end
+        local sl = box.ScrollLayoutGroupComponent
+        local now = sl:GetScrollNormalizedPosition(UITransformAxis.Vertical)
+        local nextPos = math.max(0, math.min(1, now - delta * 120 / overflow))
+        sl:SetScrollNormalizedPosition(UITransformAxis.Vertical, nextPos)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CursorOver(string path)
+        -- 커서가 그 UI 사각형 안인지 (화면 좌표 = 모서리 좌표가 같은 기준일 때만 판정, 아니면 false)
+        local e = _UIKit:Get(path)
+        if not isvalid(e) then return false end
+        local corners = e.UITransformComponent:GetWorldCorners()
+        if corners == nil or #corners < 4 then return false end
+        local cur = _InputService:GetCursorPosition()
+        local minX, maxX = math.min(corners[1].x, corners[3].x), math.max(corners[1].x, corners[3].x)
+        local minY, maxY = math.min(corners[1].y, corners[3].y), math.max(corners[1].y, corners[3].y)
+        return cur.x >= minX and cur.x <= maxX and cur.y >= minY and cur.y <= maxY
     end
 
     @ExecSpace("ClientOnly")
