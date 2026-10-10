@@ -134,7 +134,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ClientOnly")
     method void UpdateHpBar()
-        -- 머리 위 체력 막대 (모델 자식 HpBar의 PixelRenderer 22×4: 어두운 테두리 + 위쪽 밝은 줄 + 빈 칸은 검붉게).
+        -- 머리 위 체력 막대 (모델 자식 HpBar의 PixelRenderer 22×4: 어두운 테두리 + HUD 체력 구슬과 같은 짙은 빨강 한 가지, 빈 칸은 검붉게).
         -- 발밑에 두니 이름표(야영지 「내 소환수」 · 파티원 이름)와 겹쳤다 (10-10 2차 QA). 몸 크기·좌우 반전과 상관없이 같은 크기로 그린다
         if not isvalid(self.Entity) then return end
         local bar = self.Entity:GetChildByName("HpBar")
@@ -161,15 +161,14 @@ script ShadowUnit extends AttackComponent
         local fill = math.max(self.Hp > 0 and 1 or 0, math.floor(ratio * 20 + 0.5))
         if fill == self.HpBarFill then return end
         self.HpBarFill = fill
-        local base = Color(0.36, 0.86, 0.45, 1)
-        if ratio <= 0.3 then base = Color(0.92, 0.26, 0.22, 1) elseif ratio <= 0.6 then base = Color(0.95, 0.78, 0.25, 1) end
-        local light = Color(math.min(1, base.r + 0.3), math.min(1, base.g + 0.2), math.min(1, base.b + 0.25), 1)
-        local empty = Color(0.22, 0.06, 0.07, 0.9)
-        -- 안쪽 20×2 (x 2~21, y 2~3). 위쪽 줄이 PixelRenderer의 y 큰 쪽이라 y=3을 밝게
+        -- 10-10 3차 QA: 2단(밝은 줄)·녹색이 두 가지 수치처럼 보이고 분위기와 안 맞았다 → HUD 체력(구슬·보스 막대)과 같은 빨강 한 가지
+        local hp = Color(0.74, 0.03, 0.04, 1)
+        local empty = Color(0.16, 0.03, 0.04, 0.9)
+        -- 안쪽 20×2 (x 2~21, y 2~3)
         for x = 2, 21 do
-            local filled = x - 1 <= fill
-            pixel:SetPixel(x, 2, filled and base or empty)
-            pixel:SetPixel(x, 3, filled and light or empty)
+            local c = x - 1 <= fill and hp or empty
+            pixel:SetPixel(x, 2, c)
+            pixel:SetPixel(x, 3, c)
         end
     end
 
