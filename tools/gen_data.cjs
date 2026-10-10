@@ -98,8 +98,9 @@ function genGameData() {
     }),
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {
+      const maze = load("map_layouts").some((l) => l.map === m.id);
       const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
-      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, features = { ${feats} } }`;
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, maze = ${maze}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",
     ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),

@@ -1,9 +1,11 @@
 // 맵 생성: maps.csv(보통 난이도) → 배치·설정, difficulty.csv → 악몽·지옥 복제.
-// 타일·지형은 사용자가 메이커에서 칠한다. 빌드는 타일을 건드리지 않고 "관리 대상" 엔티티(포털·화로·스포너·
+// 타일·지형은 사용자가 메이커에서 칠한다 (예외: map_layouts.csv에 있는 던전은 빌드가 방·통로 타일을 만든다 — 10-10 사용자 승인).
+// 빌드는 그 밖의 타일을 건드리지 않고 "관리 대상" 엔티티(포털·화로·스포너·
 // 웨이포인트·심도 입구·NPC·고정 몬스터·제단)만 CSV와 같게 맞춘다. CSV에서 빠진 관리 대상은 지운다.
 "use strict";
 const fs = require("fs");
 const { MapBuilder, readIfExists, preserveIds, P, pos, at, list, load, num, bool, quiet, exists } = require("./lib.cjs");
+const layoutGen = require("./layout.cjs");
 
 const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
@@ -76,7 +78,6 @@ function desiredEntities(d, maps, ctx) {
     }
   }
   list(d.torches).forEach((t, k) => place(`Torch${k + 1}`, "Objects/Brazier", pos(t)));
-  for (const a of artEntities(d, maps, ctx)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
   if (d.waypoint !== "") {
     const w = at(d.waypoint);
     place("Waypoint", "Objects/Waypoint", w.pos, { "script.Waypoint": { WaypointId: w.name } });
@@ -102,16 +103,34 @@ function desiredEntities(d, maps, ctx) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
+  const layout = layoutOf(d, out, ctx);
+  for (const a of artEntities(d, maps, ctx, layout)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
   return out;
+}
+
+// 통로 배치가 있는 던전: 지금까지 놓은 기능 엔티티 자리를 방으로 삼아 배치를 만든다 (맵마다 한 번)
+function layoutOf(d, entities, ctx) {
+  const spec = ctx.layouts[d.id];
+  if (!spec) return null;
+  if (ctx.layoutCache[d.id]) return ctx.layoutCache[d.id];
+  const e = edges(d);
+  const anchors = entities.map((x) => ({
+    x: x.pos[0], y: x.pos[1],
+    kind: x.name === "GateBack" && x.pos[0] === e.left ? "portalW" : x.name === "GateNext" && x.pos[0] === e.right ? "portalE" : "room",
+  }));
+  const layout = layoutGen.generate(d, spec, anchors);
+  ctx.layoutCache[d.id] = layout;
+  return layout;
 }
 
 // 맵 그림 (data/map_art.csv · art_sprites.csv): 반복 그리기 바닥 + 길 띠 + 9분할 테두리 + 장식.
 // 타일맵(통행 판정, OrderInLayer 0) 위에 OrderInLayer 1로 덮고, 캐릭터·NPC(2 이상) 아래에 깐다. 같은 층에선 Z가 작을수록 앞.
-// 바닥 영역 = 타일 칸 전체: x -w/2-0.5 ~ w/2-0.5, y -h/2+0.5 ~ h/2+0.5. 테두리 한 칸 = 128px = 1.28
+// 바닥 영역 = 타일 칸 전체: 칸 (x, y)는 월드 [x, x+1]×[y, y+1] (메이커 ToWorldPosition 실측 10-10: 칸 (1,-1) 중심 = (1.5, -0.5))
+// → x -w/2 ~ w/2, y -h/2+1 ~ h/2+1. 테두리 한 칸 = 128px = 1.28
 // 반복 그리기(Tiled) 측정값 (메이커 10-10): TiledSize = 그림 장 수(1.28 → 1.28장 = 1.64), 영역은 위치에 첫 장의 중심을 두고
 // 오른쪽·위로 펼쳐진다 → 월드 사각형 [x0,x1]×[y0,y1]을 덮으려면 위치 = (x0+S/2, y0+S/2), TiledSize = (폭/S, 높이/S), S = 한 장 크기
-function artEntities(d, maps, ctx) {
-  const art = ctx.art[d.id];
+function artEntities(d, maps, ctx, layout) {
+  const art = ctx.art[d.id] || (layout ? {} : null);
   if (!art) return [];
   const ruid = (name) => {
     const s = ctx.sprites[name];
@@ -119,7 +138,7 @@ function artEntities(d, maps, ctx) {
     return s.ruid;
   };
   const w = num(d.w), h = num(d.h);
-  const x0 = -w / 2 - 0.5, x1 = w / 2 - 0.5, y0 = -h / 2 + 0.5, y1 = h / 2 + 0.5;
+  const x0 = -w / 2, x1 = w / 2, y0 = -h / 2 + 1, y1 = h / 2 + 1;
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, T = 1.28;
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const sprite = (rid, size, order) => ({
@@ -131,30 +150,38 @@ function artEntities(d, maps, ctx) {
   // 중심 (x, y) · 크기 (rw, rh)인 월드 사각형을 반복 그리기로 덮는 배치
   const tiled = (name, rid, x, y, rw, rh, z) => ({ name, pos: [r3(x - rw / 2 + S / 2), r3(y - rh / 2 + S / 2), z], overrides: sprite(rid, [rw / S, rh / S], 1) });
   const out = [];
-  out.push(tiled("ArtFloor", ruid(art.floor), cx, cy, w, h, 0));
-  list(art.roads).forEach((r, k) => {
+  if (art.floor) out.push(tiled("ArtFloor", ruid(art.floor), cx, cy, w, h, 0));
+  list(art.roads || "").forEach((r, k) => {
     const [x, y, rw, rh] = r.split("/").map(Number);
     out.push(tiled(`ArtRoad${k + 1}`, ruid(art.road), x, y, rw, rh, -0.01));
   });
-  if (art.border) {
-    const b = (part) => ruid(`${art.border}-borders-${part}`);
-    out.push(tiled("ArtBorderN", b("n"), cx, y1 - T / 2, w - 2 * T, T, -0.02));
-    out.push(tiled("ArtBorderS", b("s"), cx, y0 + T / 2, w - 2 * T, T, -0.02));
-    // 좌우 테두리는 그 쪽에 포털(GateBack 왼쪽 · GateNext 오른쪽)이 있으면 가운데(y -1.6 ~ 1.6)를 비운다
+  // 벽 칸마다 바위 9조각 (한 조각 = 1칸이 되게 1/1.28 축소, 같은 줄 같은 조각은 반복 그리기로 합침). 칸 (x, y) = 월드 [x, x+1]×[y, y+1]
+  const walls = (lay, atlas, tint, prefix) => {
+    const [tr, tg, tb] = (tint || "1/1/1").split("/").map(Number);
+    const k = 1 / S;
+    layoutGen.wallRuns(lay).forEach((r, i) => {
+      const o = sprite(ruid(`${atlas}-borders-${r.piece}`), [r.len, 1], 1);
+      o["MOD.Core.SpriteRendererComponent"].Color = { r: tr, g: tg, b: tb, a: 1 };
+      o["MOD.Core.TransformComponent"] = { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: k, y: k, z: 1 } };
+      out.push({ name: `${prefix}${i + 1}`, pos: [r.x + 0.5, r.y + 0.5, -0.02], overrides: o });
+    });
+  };
+  if (layout) {
+    // 통로 던전: 충돌 타일 칸이 곧 벽
+    const spec = ctx.layouts[d.id];
+    walls(layout, spec.wall, spec.tint, "ArtWall");
+  } else if (art.border) {
+    // 열린 맵: 걷는 타일 바깥 두 칸에 바위 테두리 → 그림 경계 = 통행 경계 (테두리 위를 걸어 다니지 않는다)
+    // 포털(GateBack 왼쪽 · GateNext 오른쪽)이 있는 쪽은 가운데 네 칸(y -2 ~ 2)을 어둡게 비워 출구로 보이게 한다
     const floors = d.kind === "side" ? dungeonFloors(maps, d) : [];
     const portalAt = { w: d.kind === "field" || d.kind === "side", e: d.kind === "field" || (d.kind === "side" && floors.indexOf(d) < floors.length - 1) };
-    for (const [side, x] of [["w", x0 + T / 2], ["e", x1 - T / 2]]) {
-      const gapLo = portalAt[side] ? -1.6 : 0, gapHi = portalAt[side] ? 1.6 : 0;
-      const lowH = gapLo - (y0 + T), highH = (y1 - T) - gapHi;
-      const key = side.toUpperCase();
-      if (lowH > 0.2) out.push(tiled(`ArtBorder${key}1`, b(side), x, (y0 + T + gapLo) / 2, T, lowH, -0.02));
-      if (highH > 0.2) out.push(tiled(`ArtBorder${key}2`, b(side), x, (gapHi + y1 - T) / 2, T, highH, -0.02));
-    }
-    for (const [part, x, y] of [["nw", x0 + T / 2, y1 - T / 2], ["ne", x1 - T / 2, y1 - T / 2], ["sw", x0 + T / 2, y0 + T / 2], ["se", x1 - T / 2, y0 + T / 2]]) {
-      out.push({ name: `ArtCorner${part.toUpperCase()}`, pos: [x, y, -0.02], overrides: sprite(b(part), null, 1) });
-    }
+    const tb = { x0: -w / 2, x1: w / 2 - 1, y0: -h / 2 + 1, y1: h / 2 };
+    const inTiles = (x, y) => x >= tb.x0 && x <= tb.x1 && y >= tb.y0 && y <= tb.y1;
+    const gap = (x, y) => y >= -2 && y <= 1 && ((portalAt.w && x < tb.x0) || (portalAt.e && x > tb.x1));
+    const frame = { bounds: { x0: tb.x0 - 2, x1: tb.x1 + 2, y0: tb.y0 - 2, y1: tb.y1 + 2 }, isFloor: (x, y) => inTiles(x, y) || gap(x, y) };
+    walls(frame, art.border, "1/1/1", "ArtBorder");
   }
-  list(art.props).forEach((p, k) => {
+  list(art.props || "").forEach((p, k) => {
     const [name, at, sc] = p.split("@").concat([]);
     const [x, y] = at.split("/").map(Number);
     const s = num(sc, 0.8);
@@ -202,6 +229,11 @@ function buildNormal(d, maps, ctx) {
     if (isManaged && !keep.has(leaf)) map.remove(e.path);
   }
   for (const e of desired) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
+  const layout = ctx.layoutCache[d.id];
+  if (layout) {
+    const spec = ctx.layouts[d.id];
+    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap: layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile)) });
+  }
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
     // 출현 범위 = 맵 가장자리에서 2칸 안쪽 (포털 앞은 비워 둔다)
@@ -248,6 +280,8 @@ function context() {
     managed: managedModelIds(monsters, npcs),
     art: Object.fromEntries(load("map_art").map((a) => [a.map, a])),
     sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
+    layouts: Object.fromEntries(load("map_layouts").map((l) => [l.map, l])),
+    layoutCache: {},
   };
 }
 

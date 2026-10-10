@@ -1,0 +1,219 @@
+-- 통로 던전(맵 정보 maze)의 몬스터 길찾기. 네이티브 추적(AIChase)은 벽을 모르고 곧장 밀고 들어가다 멈춘다.
+-- 벽 너머(시야 밖)의 가까운 플레이어에게는 플레이어 칸에서 퍼뜨린 거리표(BFS)를 따라 통로로 돌아가고,
+-- 다시 보이면 네이티브 추적에 맡긴다. 공격 모션·경직·혼란·후퇴·숨기 중에는 손대지 않는다.
+@Logic
+script MonsterNav extends Logic
+
+    property number DecideInterval = 0.2      -- 누구를 길찾기로 몰지 다시 정하는 간격(초)
+    property number FieldRefresh = 0.3        -- 플레이어가 같은 칸에 있어도 거리표를 다시 만드는 최소 간격
+    property number NoticeRange = 9           -- 이 직선거리 안의 플레이어만 (벽 너머 눈치)
+    property integer MaxSteps = 30            -- 통로로 이 칸 수 넘게 돌아가야 하면 쫓지 않는다 (미로는 직선 4칸이 길로 20칸쯤)
+    property number DecideAt = 0
+    property table Fields = {}                -- "맵Id:플레이어Id" → { tx, ty, at, dist, m }
+    property table Active = {}                -- 몬스터 Id → { monster, target }
+    property table Owned = {}                 -- 몬스터 Id → true (추적을 이쪽이 껐다)
+    property integer LastActive = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.DecideAt then
+            self.DecideAt = now + self.DecideInterval
+            self:Decide(now)
+        end
+        for id, a in pairs(self.Active) do
+            self:Drive(id, a)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean IsMaze(Entity map)
+        -- 빌드가 방·통로를 만든 맵만 (열린 필드는 시야가 늘 트여 있어 길찾기가 필요 없다)
+        if not isvalid(map) then return false end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        return info ~= nil and info.maze == true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Blocked(any m, integer x, integer y)
+        -- Util.CellBlocked와 같은 칸 기억표를 쓴다 (칸마다 엔진 조회 한 번)
+        local key = x * 100000 + y
+        local b = m.cells[key]
+        if b == nil then
+            local tile = m.tiles:GetTile(Vector2Int(x, y))
+            b = tile == nil or tile.IsCollidable
+            m.cells[key] = b
+        end
+        return b
+    end
+
+    @ExecSpace("ServerOnly")
+    method any Field(Entity map, Entity target, number now)
+        -- 플레이어 칸에서 MaxSteps까지 퍼뜨린 칸별 걸음 수. 플레이어가 칸을 옮기면 다시 만든다
+        local m = _Util:TerrainMemo(map)
+        if m == nil then return nil end
+        local p = _Util:Pos2(target)
+        local tx = math.floor((p.x - m.ox) / m.gx + 0.5)
+        local ty = math.floor((p.y - m.oy) / m.gy + 0.5)
+        local key = map.Id .. ":" .. target.Id
+        local f = self.Fields[key]
+        if f ~= nil and f.m == m and ((f.tx == tx and f.ty == ty) or now - f.at < self.FieldRefresh) then return f end
+        f = { tx = tx, ty = ty, at = now, dist = {}, m = m }
+        local dist = f.dist
+        local qx, qy = { tx }, { ty }
+        dist[tx * 100000 + ty] = 0
+        local head = 1
+        while head <= #qx do
+            local x, y = qx[head], qy[head]
+            local d = dist[x * 100000 + y]
+            head = head + 1
+            if d < self.MaxSteps then
+                for _, o in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+                    local nx, ny = x + o[1], y + o[2]
+                    local k = nx * 100000 + ny
+                    if dist[k] == nil and not self:Blocked(m, nx, ny) then
+                        dist[k] = d + 1
+                        table.insert(qx, nx)
+                        table.insert(qy, ny)
+                    end
+                end
+            end
+        end
+        self.Fields[key] = f
+        return f
+    end
+
+    @ExecSpace("ServerOnly")
+    method any Step(any f, Vector2 from)
+        -- 이웃 8칸 중 걸음 수가 가장 작은 칸의 중심 방향 (대각선은 양옆이 트였을 때만). 길이 없으면 nil
+        local m = f.m
+        local x = math.floor((from.x - m.ox) / m.gx + 0.5)
+        local y = math.floor((from.y - m.oy) / m.gy + 0.5)
+        local d = f.dist[x * 100000 + y]
+        if d == nil then return nil end
+        local bestX, bestY, bestD = x, y, d
+        for _, o in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } }) do
+            local nx, ny = x + o[1], y + o[2]
+            local nd = f.dist[nx * 100000 + ny]
+            local diagonalOk = o[1] == 0 or o[2] == 0 or (not self:Blocked(m, x + o[1], y) and not self:Blocked(m, x, y + o[2]))
+            if nd ~= nil and nd < bestD and diagonalOk then
+                bestX, bestY, bestD = nx, ny, nd
+            end
+        end
+        if bestD >= d then return nil end
+        local center = Vector2(m.ox + bestX * m.gx, m.oy + bestY * m.gy)
+        local dir = center - from
+        if dir:Magnitude() < 0.01 then return nil end
+        return dir:Normalize()
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Busy(Monster monster, number now)
+        -- 다른 컴포넌트가 이동을 맡은 동안 (공격 모션·경직·혼란·후퇴·숨기·등장)
+        local status = monster:Status()
+        if status ~= nil and (status:IsStunned() or status:IsConfused()) then return true end
+        ---@type MonsterAttack
+        local attack = monster.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil and now < attack.AttackAnimationUntil then return true end
+        ---@type MonsterBehavior
+        local behavior = monster.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil and (behavior.RetreatUntil > 0 or behavior.Burrowed or now < behavior.EmergeUntil) then return true end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Decide(number now)
+        -- 맵마다: 살아 있는 플레이어 중 시야 밖·통로로 가까운 대상이 있는 몬스터만 길찾기로 몬다
+        local next = {}
+        local maps = {}
+        for _, player in pairs(_UserService.UserEntities) do
+            local map = player.CurrentMap
+            if isvalid(map) and _Util:IsAlive(player) and self:IsMaze(map) then
+                if maps[map.Id] == nil then maps[map.Id] = { map = map, players = {} } end
+                table.insert(maps[map.Id].players, player)
+            end
+        end
+        for _, entry in pairs(maps) do
+            local map = entry.map
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+                ---@type Monster
+                local monster = c
+                local e = c.Entity
+                local chase = e.AIChaseComponent
+                if not monster.IsDead and e.Enable and isvalid(chase) and e:GetComponent("script.BossPattern") == nil and not self:Busy(monster, now) then
+                    local pos = _Util:Pos2(e)
+                    local best, bestD = nil, 999
+                    -- 이미 쫓던 몬스터는 보이더라도 네이티브 추적 범위(DetectionRange) 안에 들 때까지 계속 몬다
+                    local pursuing = self.Active[e.Id] ~= nil
+                    for _, player in ipairs(entry.players) do
+                        local d = (_Util:Pos2(player) - pos):Magnitude()
+                        local hidden = not _Util:HasLineOfSight(map, pos, _Util:Pos2(player))
+                        if d <= self.NoticeRange and d < bestD and (hidden or (pursuing and d > chase.DetectionRange - 0.3)) then
+                            local f = self:Field(map, player, now)
+                            if f ~= nil and self:Step(f, pos) ~= nil then
+                                best, bestD = player, d
+                            end
+                        end
+                    end
+                    if best ~= nil then next[e.Id] = { monster = monster, target = best } end
+                end
+            end
+        end
+        -- 길찾기에서 빠진 몬스터는 네이티브 추적으로 돌려준다
+        for id, a in pairs(self.Active) do
+            if next[id] == nil then self:Release(id, a.monster) end
+        end
+        self.Active = next
+        -- 지난 거리표 정리 (5초 넘게 안 쓴 것)
+        for key, f in pairs(self.Fields) do
+            if now - f.at > 5 then self.Fields[key] = nil end
+        end
+        local count = 0
+        for _ in pairs(next) do count = count + 1 end
+        if count ~= self.LastActive then
+            self.LastActive = count
+            log(string.format("[VRF] MonsterNav 길찾기 몬스터 %d", count))
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Drive(string id, any a)
+        local monster = a.monster
+        local e = isvalid(monster) and monster.Entity or nil
+        if not isvalid(e) or monster.IsDead or not isvalid(a.target) then
+            self.Active[id] = nil
+            if isvalid(monster) then self:Release(id, monster) end
+            return
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        if self:Busy(monster, now) then return end
+        local f = self:Field(e.CurrentMap, a.target, now)
+        local dir = f ~= nil and self:Step(f, _Util:Pos2(e)) or nil
+        if dir == nil then return end
+        local chase = e.AIChaseComponent
+        if isvalid(chase) and chase.Enable then
+            chase.Enable = false
+            self.Owned[id] = true
+        end
+        e.MovementComponent:MoveToDirection(dir, 0)
+        local state = e.StateComponent
+        if isvalid(state) then
+            local current = state.CurrentStateName
+            if current ~= "ATTACK" and current ~= "HIT" and current ~= "DEAD" and current ~= "MOVE" then state:ChangeState("MOVE") end
+        end
+        if math.abs(dir.x) > 0.05 and isvalid(e.SpriteRendererComponent) then e.SpriteRendererComponent.FlipX = dir.x > 0 end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Release(string id, Monster monster)
+        -- 이쪽이 끈 추적만 다시 켠다 (다른 컴포넌트가 끈 추적은 그대로)
+        if self.Owned[id] == true then
+            self.Owned[id] = nil
+            local e = monster.Entity
+            if isvalid(e) and not monster.IsDead then
+                if not self:Busy(monster, _UtilLogic.ElapsedSeconds) and isvalid(e.AIChaseComponent) then e.AIChaseComponent.Enable = true end
+                e.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+            end
+        end
+    end
+end
