@@ -29,7 +29,8 @@ script LootSystem extends Logic
         local body = monster:GetComponent("script.Monster")
         if body ~= nil then sourceId = body.SourceId end
         local special = rank == "boss" or rank == "unique"
-        if special then self:FirstKillReward(center, userId, stats, sourceId, monLevel) end
+        -- 첫 처치 확정 유니크·세트는 액트 보스만 (고유 이름 몬스터까지 주니 Lv14에 유니크·세트가 너무 쌓였다 — 10-10 QA)
+        if rank == "boss" then self:FirstKillReward(center, userId, stats, sourceId, monLevel) end
         -- 몬스터 밀도를 40% 늘린 만큼 일반·정예의 추첨마다 densityRewardMult 확률로만 굴린다 (보스·고유는 그대로)
         local keep = special and 1 or _GameData.densityRewardMult
         for i = 1, picks do
@@ -44,8 +45,13 @@ script LootSystem extends Logic
                 -- 물약: 몬스터 레벨에 맞는 등급 (하급 Lv1~9 · 중급 10~29 · 고급 30+), 가끔 회복 물약
                 local kind = "hp"
                 local r2 = _UtilLogic:RandomDouble()
-                if r2 < 0.06 then kind = "rv" elseif r2 < 0.42 then kind = "mp" end
-                self:Spawn(center, userId, "item", _ItemData:MakeStack(_ItemData:PotionFor(kind, monLevel), 1), 1, 0)
+                if r2 < _GameData.tpScrollShare then
+                    -- 귀환 두루마리 (D2처럼 물약 자리에서 흔히 나온다 — 10-10 QA)
+                    self:Spawn(center, userId, "tp", "", 1, 0)
+                else
+                    if r2 < _GameData.tpScrollShare + 0.06 then kind = "rv" elseif r2 < _GameData.tpScrollShare + 0.36 then kind = "mp" end
+                    self:Spawn(center, userId, "item", _ItemData:MakeStack(_ItemData:PotionFor(kind, monLevel), 1), 1, 0)
+                end
             elseif r < wNone + wGold + wPot + wItem then
                 local s = _ItemData:Generate(monLevel, rank, mf)
                 local item = _ItemData:Parse(s)
@@ -81,7 +87,7 @@ script LootSystem extends Logic
             local piece = _ItemData:PickSetPiece(monLevel)
             if piece == nil then return end
             local item = { base = piece.base, rarity = 4, ilvl = monLevel, name = piece.name, mods = {}, sockets = 0, runes = {} }
-            _ItemData:AddModsRolled(item.mods, piece.mods)
+            _ItemData:AddModsRolled(item.mods, piece.mods, 1)
             s = _ItemData:Serialize(item)
         end
         self:Spawn(center, userId, "item", s, 1, _ItemData:Parse(s).rarity)

@@ -23,11 +23,14 @@ script ShadowConfig extends Logic
         return _GameData:GetRank(rank).extract
     end
 
-    method integer GetDisassembleYield(integer grade)
-        -- 0이면 분해 불가 (보스 그림자)
-        if grade == 1 then return math.floor(self:C().disassembleYield_g1) end
-        if grade == 2 then return math.floor(self:C().disassembleYield_g2) end
-        return 0
+    method integer GetDisassembleYield(integer grade, integer level)
+        -- 0이면 분해 불가 (보스 그림자). 높은 사냥터(그림자 레벨)일수록 정수가 늘어난다:
+        -- 등급 기본값 × (1 + essenceLevelStep × (레벨 − 1)) — 1레벨 일반 1개 · 20레벨 3개 · 40레벨 5개 (10-10 QA)
+        local base = 0
+        if grade == 1 then base = self:C().disassembleYield_g1 elseif grade == 2 then base = self:C().disassembleYield_g2 end
+        if base <= 0 then return 0 end
+        local mult = 1 + _GameData.essenceLevelStep * math.max(0, (level or 1) - 1)
+        return math.max(1, math.floor(base * mult + 0.5))
     end
 
     method integer GetUpgradeCost(integer plus, integer grade)

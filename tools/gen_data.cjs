@@ -14,6 +14,16 @@ let stale = 0;
 const HEADER = "-- 자동 생성 파일: tools/gen_data.cjs 가 data/%SRC% 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).\n";
 
 // Lua 리터럴
+// 소환수(그림자·되살린 언데드) 배율: 필드에서의 키(그림 높이 × 배율)를 0.7~1.15칸으로 맞춘다 —
+// 보스(묘지의 여왕 2.7칸)도 소환하면 다른 소환수와 비슷한 크기, 큰 몹은 조금만 더 크게 (10-10 QA)
+function summonScale(m) {
+  const h = num(m.h, 0) / 100, sc = num(m.scale, 1);
+  if (h <= 0) return Math.min(1, sc);
+  const fieldH = h * sc;
+  const want = Math.max(0.7, Math.min(1.15, fieldH));
+  return Math.round((want / h) * 1000) / 1000;
+}
+
 function s(v) { return JSON.stringify(String(v)); }
 function n(v) { return String(num(v)); }
 function b(v) { return bool(v) ? "true" : "false"; }
@@ -71,6 +81,13 @@ function genGameData() {
   const body = [
     "        self.PlayerAppearance = {}",
     ...appearance.map((r) => `        self.PlayerAppearance[${s(r.slot)}] = ${s(r.ruid)}`),
+    "        self.BossSkills = {}",
+    ...load("bosses").filter((b) => (b.skills || "") !== "").map((b) => {
+      const src = (mons.find((m) => m.id === b.id) || {}).sourceId || b.id;
+      // 무리 부르기: 보스는 자기 복제가 아니라 bosses.csv의 졸개(minion)를 부른다 (sourceId로 바꿔 둔다)
+      const minion = b.minion ? (mons.find((m) => m.id === b.minion) || {}).sourceId || "" : "";
+      return `        self.BossSkills[${s(src)}] = { skills = ${s(b.skills)}, interval = ${n(b.skillInterval || 5)}, minion = ${s(minion)} }`;
+    }),
     "        self.Variants = {}",
     "        self.VariantOrder = {}",
     ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
@@ -89,7 +106,7 @@ function genGameData() {
     "        self.MonsterSourceOf = {}",
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
@@ -131,6 +148,12 @@ function genGameData() {
         -- 몬스터 등급 표 (monster_ranks.csv). 모르는 등급은 normal
         self:Ensure()
         return self.Ranks[rank] or self.Ranks["normal"]
+    end
+
+    method any GetBossSkills(string sourceId)
+        -- 보스가 내려찍기 사이에 쓰는 기술 (bosses.csv skills · skillInterval). 없으면 nil
+        self:Ensure()
+        return self.BossSkills[sourceId]
     end
 
     method any GetVariant(string id)
@@ -218,7 +241,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
@@ -241,7 +264,7 @@ function genItems() {
     "        self.Affixes = {}",
     ...affixes.map((r) => `        table.insert(self.Affixes, { id = ${s(r.id)}, prefix = ${b(r.prefix)}, name = ${s(r.name)}, stat = ${s(r.stat)}, min = ${n(r.min)}, max = ${n(r.max)}, ilvl = ${n(r.minIlvl)}, slots = ${s(r.slots)} })`),
     "        self.UniqueList = {}",
-    ...uniques.map((r) => `        table.insert(self.UniqueList, { id = ${s(r.id)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)}, source = ${s(r.source)} })`),
+    ...uniques.map((r) => `        table.insert(self.UniqueList, { id = ${s(r.id)}, base = ${s(r.base)}, name = ${s(r.name)}, mods = ${s(r.mods)}, special = ${s(r.special || "")}, source = ${s(r.source)} })`),
     "        self.Runes = {}",
     "        self.RuneOrder = {}",
     ...runes.map((r) => `        self.Runes[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, weapon = ${s(r.weapon)}, armor = ${s(r.armor)}, lamp = ${s(r.lamp)}, minLevel = ${n(r.minLevel)}, weight = ${n(r.dropWeight)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }\n        table.insert(self.RuneOrder, ${s(r.id)})`),

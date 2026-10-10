@@ -299,7 +299,7 @@ script ItemData extends Logic
             local piece = self:PickSetPiece(ilvl)
             if piece ~= nil then
                 local item = { base = piece.base, rarity = 4, ilvl = ilvl, name = piece.name, mods = {}, sockets = 0, runes = {} }
-                self:AddModsRolled(item.mods, piece.mods)
+                self:AddModsRolled(item.mods, piece.mods, 1)
                 return self:Serialize(item)
             end
             rarity = 2
@@ -334,7 +334,8 @@ script ItemData extends Logic
                 if _UtilLogic:RandomDouble() < 0.5 then prefixes = 0 else suffixes = 0 end
             end
         else
-            local count = _UtilLogic:RandomIntegerRange(4, 6)
+            -- 레어 3~5개 (10-10 QA: 유니크와의 차이를 위해 4~6에서 줄임)
+            local count = _UtilLogic:RandomIntegerRange(3, 5)
             prefixes = _UtilLogic:RandomIntegerRange(math.max(1, count - 3), math.min(3, count - 1))
             suffixes = count - prefixes
         end
@@ -454,7 +455,9 @@ script ItemData extends Logic
     method string MakeUnique(table u, integer ilvl)
         -- 유니크 수치는 표기 × gearMult의 uniqueRollMin~100% 사이에서 무작위 (같은 유니크도 좋고 나쁜 것이 있다)
         local item = { base = u.base, rarity = 3, ilvl = ilvl, name = u.name, mods = {}, sockets = 0, runes = {} }
-        self:AddModsRolled(item.mods, u.mods)
+        -- 유니크는 같은 부위 레어보다 확실히 세게 (uniqueStatMul) + 유니크만의 고유 효과(special: 모든 스킬·배치 한도·소환수 독…)
+        self:AddModsRolled(item.mods, u.mods, _GameData.uniqueStatMul)
+        for k, v in string.gmatch(u.special or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = (item.mods[k] or 0) + (tonumber(v) or 0) end
         return self:Serialize(item)
     end
 
@@ -475,7 +478,7 @@ script ItemData extends Logic
 
     method boolean IsCountStat(string key)
         -- 개수형 보너스(그림자 상한·배치 한도)는 줄이지 않는다
-        return key == "shadowCap" or key == "deploy"
+        return key == "shadowCap" or key == "deploy" or key == "allSkills"
     end
 
     method number LevelProgress(integer ilvl)
@@ -502,13 +505,15 @@ script ItemData extends Logic
         return _UtilLogic:RandomIntegerRange(from, to)
     end
 
-    method void AddModsRolled(table total, string mods)
-        -- 유니크·세트 조각: 표기 × gearMult × (uniqueRollMin~1) 무작위, 개수형은 그대로
+    method void AddModsRolled(table total, string mods, number mult)
+        -- 유니크·세트 조각: 표기 × gearMult × mult × (uniqueRollMin~1) 무작위, 개수형은 그대로
+        local extra = mult or 1
+        if extra <= 0 then extra = 1 end
         for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do
             local value = tonumber(v)
             if not self:IsCountStat(k) then
                 local roll = _GameData.uniqueRollMin + (1 - _GameData.uniqueRollMin) * _UtilLogic:RandomDouble()
-                value = math.max(1, math.floor(value * _GameData.gearMult * roll + 0.5))
+                value = math.max(1, math.floor(value * _GameData.gearMult * extra * roll + 0.5))
             end
             total[k] = (total[k] or 0) + value
         end
@@ -706,7 +711,22 @@ script ItemData extends Logic
         for key, _ in pairs(total) do table.insert(keys, key) end
         table.sort(keys)
         local lines = { name }
-        for _, key in ipairs(keys) do table.insert(lines, self:StatValueText(key, total[key])) end
+        -- 유니크 고유 효과는 따로 금빛 줄로 (일반 옵션과 구분 — 10-10 QA)
+        local special = {}
+        if item.rarity == 3 then
+            for _, u in ipairs(self:T().UniqueList) do
+                if u.name == item.name and u.base == item.base then
+                    for k in string.gmatch(u.special or "", "([%w_]+)=") do special[k] = true end
+                    break
+                end
+            end
+        end
+        for _, key in ipairs(keys) do
+            if not special[key] then table.insert(lines, self:StatValueText(key, total[key])) end
+        end
+        for _, key in ipairs(keys) do
+            if special[key] then table.insert(lines, "<color=#F5C451>★ 고유 효과 · " .. self:StatValueText(key, total[key]) .. "</color>") end
+        end
         if item.sockets > 0 then table.insert(lines, "소켓 " .. tostring(#item.runes) .. "/" .. tostring(item.sockets)) end
         return table.concat(lines, "\n")
     end
