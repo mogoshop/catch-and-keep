@@ -187,12 +187,18 @@ function layoutOf(d, entities, ctx) {
 // → x -w/2 ~ w/2, y -h/2+1 ~ h/2+1. 테두리 한 칸 = 128px = 1.28
 // 반복 그리기(Tiled) 측정값 (메이커 10-10): TiledSize = 그림 장 수(1.28 → 1.28장 = 1.64), 영역은 위치에 첫 장의 중심을 두고
 // 오른쪽·위로 펼쳐진다 → 월드 사각형 [x0,x1]×[y0,y1]을 덮으려면 위치 = (x0+S/2, y0+S/2), TiledSize = (폭/S, 높이/S), S = 한 장 크기
-// 장식 발밑 칸: 그림 가로의 80% · 발밑 한 줄을 막는다 (키 큰 장식도 윗부분은 원근상 뒤로 지나가 보이게 둔다)
+// 장식 발밑 칸: 그림 가로의 60% · 발밑 한 줄을 막는다 (키 큰 장식도 윗부분은 원근상 뒤로 지나가 보이게 둔다)
+// (10-10 9차 QA: 그림보다 넓게 막혀 보였다 — 그림 양옆의 투명 여백까지 막던 80% → 60%)
 const PROP_WALL_TILE = 269;   // AshCampTiles 충돌 타일 (모든 맵 같은 타일셋)
+// 옆 칸은 그림이 그 칸의 35% 이상을 덮을 때만 막는다 (9차 QA: 폭 1.76칸 선반이 양옆으로 0.03칸 걸쳐 3칸을 막아,
+// 선반 두 개와 벽이 이어진 줄이 8칸짜리 보이지 않는 벽이 됐다)
 function propFootprint(x, y, wPx, scale) {
-  const hw = (num(wPx, 128) * scale / 100) * 0.4;
+  const hw = (num(wPx, 128) * scale / 100) * 0.3;
   const cy = Math.floor(y), out = [];
-  for (let cx = Math.floor(x - hw); cx <= Math.floor(x + hw - 1e-6); cx++) out.push(`${cx},${cy}`);
+  for (let cx = Math.floor(x - hw); cx <= Math.floor(x + hw - 1e-6); cx++) {
+    const cover = Math.min(x + hw, cx + 1) - Math.max(x - hw, cx);
+    if (cover >= 0.35 || cx === Math.floor(x)) out.push(`${cx},${cy}`);
+  }
   return out;
 }
 
@@ -226,12 +232,17 @@ function artEntities(d, maps, ctx, layout) {
     out.push(tiled(`ArtRoad${k + 1}`, ruid(art.road), x, y, rw, rh, -0.01));
   });
   // 벽 칸마다 바위 9조각 (한 조각 = 1칸이 되게 1/1.28 축소, 같은 줄 같은 조각은 반복 그리기로 합침). 칸 (x, y) = 월드 [x, x+1]×[y, y+1]
+  // 벽 안쪽(center) 조각은 아주 어둡게: 지하실 벽돌처럼 바닥 그림과 닮은 조각이 있어 두꺼운 벽 속이 걸을 수 있는 바닥처럼 보였다
+  // (10-10 9차 QA: 캐릭터 아래가 넓게 비어 보이는데 미니맵으로는 막힌 곳 — 마우스로 끌어도 왜 멈추는지 몰랐다).
+  // 바닥과 맞닿은 가장자리 조각은 그대로 두어 벽의 테두리는 보이고, 그 안은 맵 바깥처럼 어두운 덩어리로 읽힌다
+  const WALL_CENTER_SHADE = 0.3;
   const walls = (lay, atlas, tint, prefix) => {
     const [tr, tg, tb] = (tint || "1/1/1").split("/").map(Number);
     const k = 1 / S;
     layoutGen.wallRuns(lay).forEach((r, i) => {
       const o = sprite(ruid(`${atlas}-borders-${r.piece}`), [r.len, 1], 1);
-      o["MOD.Core.SpriteRendererComponent"].Color = { r: tr, g: tg, b: tb, a: 1 };
+      const m = r.piece === "center" ? WALL_CENTER_SHADE : 1;
+      o["MOD.Core.SpriteRendererComponent"].Color = { r: tr * m, g: tg * m, b: tb * m, a: 1 };
       o["MOD.Core.TransformComponent"] = { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: k, y: k, z: 1 } };
       out.push({ name: `${prefix}${i + 1}`, pos: [r.x + 0.5, r.y + 0.5, -0.02], overrides: o });
     });
