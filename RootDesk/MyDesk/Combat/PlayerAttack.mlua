@@ -45,6 +45,7 @@ script PlayerAttack extends AttackComponent
     property boolean BasicContactHeavy = false
     property integer BasicContactFeedbackCount = 0
     property Entity OnlyTarget = nil          -- SkillHitOne 판정 중에만: 이 대상 말고는 맞지 않는다
+    property Entity PrimaryTarget = nil       -- 평타 판정 중에만: 가장 가까운 대상 (나머지는 basicSplashPct %)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -421,7 +422,16 @@ script PlayerAttack extends AttackComponent
         self.BasicContactHits = 0
         self.BasicContactHeavy = false
         self.ResolvingBasicStrike = true
+        -- 10-11 밸런스: 범위 안 가장 가까운 적만 100%, 나머지는 basicSplashPct % (평타만으로 무리를 다 잡았다)
+        local near = _Util:MonstersNear(self.Entity.CurrentMap, center, 1.1)
+        local best, bestD = nil, 999
+        for _, m in ipairs(near) do
+            local d = (_Util:Pos2(m.Entity) - me):Magnitude()
+            if d < bestD then best, bestD = m.Entity, d end
+        end
+        self.PrimaryTarget = best
         self:AttackFast(BoxShape(center, self.RangeSize, angle), "player.basic", nil)
+        self.PrimaryTarget = nil
         self.ResolvingBasicStrike = false
         if self.BasicContactHits > 0 then
             self:PresentBasicContact(self.BasicContactHeavy, self.BasicContactHits, mapId, self.Entity.PlayerComponent.UserId)
@@ -532,6 +542,8 @@ script PlayerAttack extends AttackComponent
                     if v > 0 then dmg = dmg + v * self:ResistFactor(defender, monster, e) end
                 end
             end
+            -- 평타 범위의 가장 가까운 적이 아니면 basicSplashPct % (속성 피해 포함)
+            if self.PrimaryTarget ~= nil and defender ~= self.PrimaryTarget then dmg = dmg * _GameData.basicSplashPct / 100 end
         end
         if monster ~= nil then dmg = dmg * monster:GetDamageTakenMultiplier() end
         -- 레벨 차이: 나보다 높은 몬스터에게는 덜 들어간다 (악몽 Lv31을 Lv10이 쉽게 잡지 못하게)

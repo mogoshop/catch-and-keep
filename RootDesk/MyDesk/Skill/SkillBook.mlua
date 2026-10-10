@@ -172,9 +172,9 @@ script SkillBook extends Component
         if level <= 0 then return 0 end
         if id == "bone_shard" then return 10 + 6 * (level - 1) end
         if id == "poison_mist" then return 4 + 2 * level end
-        if id == "corpse_blast" then return 30 + 12 * (level - 1) end
+        if id == "corpse_blast" then return 24 + 10 * (level - 1) end   -- 10-11: 30+12 → 24+10 (1레벨 범위 피해가 골편 3발 분량이었다)
         if id == "soul_drain" then return 15 + 8 * level end
-        if id == "bone_storm" then return 8 + 4 * level end
+        if id == "bone_storm" then return 4 + 2 * level end   -- 0.5초마다 12번 (10-11: 절반 — 마나 20에 적 하나당 망자 폭쇄 5번 분량이었다)
         if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
         if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end
         if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
@@ -345,7 +345,12 @@ script SkillBook extends Component
     method void RequestCast(string id, Vector2 target)
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
-        self:Cast(id, target)
+        if self:Cast(id, target) then
+            -- 시전은 준비 중인 평타를 끊는다 (시전 순간 평타 궤적이 같이 나와 스킬 이펙트처럼 보였다, 10-11 QA)
+            ---@type PlayerAttack
+            local attack = self.Entity:GetComponent("script.PlayerAttack")
+            if attack ~= nil then attack:InterruptSwing(0.35) end
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -552,6 +557,11 @@ script SkillBook extends Component
         local aim = self:GetAimPoint(id)
         if id == "bone_shard" then self:PredictBoneShard(aim) end
         self:RequestCast(id, aim)
+        -- 10-11 QA 「골편 쏠 때 캐릭터 옆 파란 이펙트」: 클릭으로 고른 옆 몬스터에게 자동 평타가 같이 나가 평타 궤적이 보였다.
+        -- 스킬을 쓴 직후 잠깐은 자동 평타를 쉬게 한다 (Shift+클릭·Ctrl 평타는 그대로)
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if click ~= nil then click.AttackTimer = math.max(click.AttackTimer, 0.6) end
     end
 
     @ExecSpace("ClientOnly")
