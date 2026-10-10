@@ -145,9 +145,21 @@ function layoutOf(d, entities, ctx) {
 // → x -w/2 ~ w/2, y -h/2+1 ~ h/2+1. 테두리 한 칸 = 128px = 1.28
 // 반복 그리기(Tiled) 측정값 (메이커 10-10): TiledSize = 그림 장 수(1.28 → 1.28장 = 1.64), 영역은 위치에 첫 장의 중심을 두고
 // 오른쪽·위로 펼쳐진다 → 월드 사각형 [x0,x1]×[y0,y1]을 덮으려면 위치 = (x0+S/2, y0+S/2), TiledSize = (폭/S, 높이/S), S = 한 장 크기
+// 장식 발밑 칸: 그림 가로의 80% · 발밑 한 줄을 막는다 (키 큰 장식도 윗부분은 원근상 뒤로 지나가 보이게 둔다)
+const PROP_WALL_TILE = 269;   // AshCampTiles 충돌 타일 (모든 맵 같은 타일셋)
+function propFootprint(x, y, wPx, scale) {
+  const hw = (num(wPx, 128) * scale / 100) * 0.4;
+  const cy = Math.floor(y), out = [];
+  for (let cx = Math.floor(x - hw); cx <= Math.floor(x + hw - 1e-6); cx++) out.push(`${cx},${cy}`);
+  return out;
+}
+
 function artEntities(d, maps, ctx, layout) {
   const art = ctx.art[d.id] || (layout ? {} : null);
   if (!art) return [];
+  const blocked = new Set();
+  ctx.propBlocked[d.id] = blocked;
+  const block = (name, x, y, scale) => { for (const k of propFootprint(x, y, (ctx.sprites[name] || {}).w, scale)) blocked.add(k); };
   const ruid = (name) => {
     const s = ctx.sprites[name];
     if (!s) throw new Error(`map_art ${d.id}: 그림 '${name}'이 art_sprites.csv에 없음`);
@@ -200,6 +212,7 @@ function artEntities(d, maps, ctx, layout) {
     if (props.length) {
       layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
         const name = props[p.pick % props.length];
+        block(name, p.x + 0.5, p.y + 0.2, 0.8);
         out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: 0.8, y: 0.8, z: 1 } } }) });
       });
     }
@@ -218,6 +231,7 @@ function artEntities(d, maps, ctx, layout) {
     const [name, at, sc] = p.split("@").concat([]);
     const [x, y] = at.split("/").map(Number);
     const s = num(sc, 0.8);
+    block(name, x, y, s);
     out.push({ name: `ArtProp${k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: s, y: s, z: 1 } } }) });
   });
   return out;
@@ -266,7 +280,10 @@ function buildNormal(d, maps, ctx) {
   if (layout) {
     const spec = ctx.layouts[d.id];
     const roadTile = spec.roadTile === "" ? -1 : num(spec.roadTile);
-    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap: layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile), roadTile) });
+    const blocked = ctx.propBlocked[d.id] || new Set();
+    const tileMap = layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile), roadTile)
+      .map((t) => (blocked.has(`${t.position.x},${t.position.y}`) ? Object.assign({}, t, { tileIndex: num(spec.wallTile) }) : t));
+    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap });
     // 안쪽 벽 칸에 묻힌 장식은 끈다 (배치가 바뀌어 다시 바닥이 되면 켠다). 맨 바깥 테두리 줄 장식은 그대로
     const lb = layout.bounds;
     for (const p of decorPositions(d)) {
@@ -274,6 +291,24 @@ function buildNormal(d, maps, ctx) {
       const edge = x <= lb.x0 || x >= lb.x1 || y <= lb.y0 || y >= lb.y1;
       map.patch(p.path, { enable: edge || layout.isFloor(x, y) });
     }
+  }
+  // 장식 충돌 칸이 기능 자리(포털·NPC·웨이포인트·화로 등)를 막으면 빌드를 멈춘다
+  for (const e of desired) {
+    if (/^Art/.test(e.name)) continue;
+    const k = `${Math.floor(e.pos[0])},${Math.floor(e.pos[1])}`;
+    if ((ctx.propBlocked[d.id] || new Set()).has(k)) throw new Error(`${d.id}: 장식이 ${e.name} 자리(${k})를 막음`);
+  }
+  if (!layout && ctx.art[d.id]) {
+    // 열린 그림 맵(액트 2·심도): 칠해 둔 타일은 그대로 두고 장식 발밑 칸만 충돌 타일로 (장식이 옮겨지면 예전 칸은 바닥으로 되돌린다)
+    const blocked = ctx.propBlocked[d.id] || new Set();
+    const comp = map.component("RectTileMap", "MOD.Core.RectTileMapComponent");
+    const tileMap = (comp.tileMap || []).map((t) => {
+      const k = `${t.position.x},${t.position.y}`;
+      if (blocked.has(k)) return Object.assign({}, t, { tileIndex: PROP_WALL_TILE });
+      if (t.tileIndex === PROP_WALL_TILE) return Object.assign({}, t, { tileIndex: 266 });
+      return t;
+    });
+    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap });
   }
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
@@ -323,6 +358,7 @@ function context() {
     sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
     layouts: Object.fromEntries(load("map_layouts").map((l) => [l.map, l])),
     layoutCache: {},
+    propBlocked: {},
   };
 }
 
