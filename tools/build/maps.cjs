@@ -183,9 +183,26 @@ function artEntities(d, maps, ctx, layout) {
     });
   };
   if (layout) {
-    // 통로 던전: 충돌 타일 칸이 곧 벽
+    // 지형 생성 맵: 바닥 그림(맵 전체) → 길 칸 그림 → 벽(충돌 타일 칸) → 장식(넓은 빈 곳)
     const spec = ctx.layouts[d.id];
+    const k = 1 / S;
+    const cellScale = { "$type": "MOD.Core.MODVector3, MOD.Core", x: k, y: k, z: 1 };
+    if (spec.floorArt) out.push(tiled("ArtFloor", ruid(spec.floorArt), cx, cy, w, h, 0));
+    if (spec.roadArt) {
+      layoutGen.roadRuns(layout).forEach((r, i) => {
+        const o = sprite(ruid(spec.roadArt), [r.len, 1], 1);
+        o["MOD.Core.TransformComponent"] = { Scale: cellScale };
+        out.push({ name: `ArtRoad${i + 1}`, pos: [r.x + 0.5, r.y + 0.5, -0.01], overrides: o });
+      });
+    }
     walls(layout, spec.wall, spec.tint, "ArtWall");
+    const props = list(spec.props || "");
+    if (props.length) {
+      layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
+        const name = props[p.pick % props.length];
+        out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: 0.8, y: 0.8, z: 1 } } }) });
+      });
+    }
   } else if (art.border) {
     // 열린 맵: 걷는 타일 바깥 두 칸에 바위 테두리 → 그림 경계 = 통행 경계 (테두리 위를 걸어 다니지 않는다)
     // 포털(GateBack 왼쪽 · GateNext 오른쪽)이 있는 쪽은 가운데 네 칸(y -2 ~ 2)을 어둡게 비워 출구로 보이게 한다

@@ -26,8 +26,9 @@ function generate(d, spec, anchors) {
   // 맨 바깥 테두리 줄에 놓인 장식은 기준점이 아니다 (테두리 바위 위 장식으로 그대로 둔다)
   const b = bounds(d);
   anchors = anchors.filter((a) => a.kind !== "decor" || (Math.floor(a.x) > b.x0 && Math.floor(a.x) < b.x1 && Math.floor(a.y) > b.y0 && Math.floor(a.y) < b.y1));
-  if ((spec.style || "maze") !== "maze") return generateField(d, spec, anchors);
-  return generateMaze(d, spec, anchors.filter((a) => a.kind !== "decor"));
+  const layout = (spec.style || "maze") !== "maze" ? generateField(d, spec, anchors) : generateMaze(d, spec, anchors.filter((a) => a.kind !== "decor"));
+  layout.anchors = anchors;
+  return layout;
 }
 
 function generateMaze(d, spec, anchors) {
@@ -334,4 +335,46 @@ function wallRuns(layout) {
   return runs;
 }
 
-module.exports = { bounds, generate, tiles, wallRuns };
+// 길 칸을 줄마다 이어진 구간으로 합친다 → [{ x, y, len }] (길 그림을 칸 크기로 반복해 깐다)
+function roadRuns(layout) {
+  if (!layout.isRoad) return [];
+  const { x0, x1, y0, y1 } = layout.bounds;
+  const runs = [];
+  for (let y = y0; y <= y1; y++) {
+    let cur = null;
+    for (let x = x0; x <= x1 + 1; x++) {
+      const on = x <= x1 && layout.isRoad(x, y);
+      if (on && cur) { cur.len++; continue; }
+      if (cur) runs.push(cur);
+      cur = on ? { x, y, len: 1 } : null;
+    }
+  }
+  return runs;
+}
+
+// 장식 자리: 길이 아니고 둘레 5×5 중 17칸 이상이 바닥인 넓은 곳(통로 한가운데를 막지 않게),
+// 기능·장식 자리에서 2.5칸, 서로 4.5칸 이상 떨어진 칸 count개. 같은 seed면 같은 자리
+function propSpots(layout, count, seed) {
+  const rand = rng((Number(seed) || 1) * 7 + 3);
+  const { x0, x1, y0, y1 } = layout.bounds;
+  const anchors = layout.anchors || [];
+  const cands = [];
+  for (let x = x0 + 1; x < x1; x++) for (let y = y0 + 1; y < y1; y++) {
+    if (!layout.isFloor(x, y) || (layout.isRoad && layout.isRoad(x, y))) continue;
+    let open = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) if (layout.isFloor(x + dx, y + dy)) open++;
+    if (open < 17) continue;
+    if (anchors.some((a) => Math.hypot(x + 0.5 - a.x, y + 0.5 - a.y) < 2.5)) continue;
+    cands.push({ x, y, k: rand() });
+  }
+  cands.sort((p, q) => p.k - q.k);
+  const out = [];
+  for (const c of cands) {
+    if (out.length >= count) break;
+    if (out.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < 4.5)) continue;
+    out.push(c);
+  }
+  return out.map((c, i) => ({ x: c.x, y: c.y, pick: Math.floor(rng(i + 11 + (Number(seed) || 1))() * 1000) }));
+}
+
+module.exports = { bounds, generate, tiles, wallRuns, roadRuns, propSpots };
