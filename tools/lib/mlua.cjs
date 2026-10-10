@@ -195,7 +195,17 @@ function parseScript(file, src, native) {
       script.props[pm[2]] = { type: pm[1].replace(/\s+/g, " "), line: i + 1, sync: annotations.some((a) => /@(Sync|TargetUserSync)/.test(a)) };
       continue;
     }
-    const mm = line.match(/\b(method|handler)\s+(?:([\w<>,\s]+?)\s+)?(\w+)\s*\(([^)]*)\)/);
+    // 매개변수 목록은 괄호 짝으로 자른다 (기본값 Vector2(0, 0) 안의 ")"에서 끊으면 인자 수를 적게 셌다)
+    let mm = line.match(/\b(method|handler)\s+(?:([\w<>,\s]+?)\s+)?(\w+)\s*\(/);
+    if (mm) {
+      let depth = 1, j = mm.index + mm[0].length;
+      const start = j;
+      for (; j < line.length && depth > 0; j++) {
+        if (line[j] === "(") depth++;
+        else if (line[j] === ")") depth--;
+      }
+      mm = depth === 0 ? [mm[0], mm[1], mm[2], mm[3], line.slice(start, j - 1)] : null;
+    }
     if (mm) {
       const execA = annotations.find((a) => a.startsWith("@ExecSpace"));
       const exec = execA ? (execA.match(/"(\w+)"/) || [])[1] || "" : "";
