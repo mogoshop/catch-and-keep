@@ -63,11 +63,26 @@ quiet(() => {
   }
 });
 
+// 모든 맵은 같은 타일셋 (번호 = 충돌·지형 판정 기준). 다른 타일셋이면 벽·미니맵이 조용히 어긋난다
+const tilesetKey = JSON.parse(fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/AshCampTiles.tileset"), "utf8")).EntryKey;
+for (const f of mapFiles) {
+  const m = fs.readFileSync(f, "utf8").match(/"TileSetRUID":\s*"([^"]*)"/);
+  if (m && m[1] !== tilesetKey) problems.push(`${path.relative(ROOT, f)}: 타일셋 ${m[1]} — 프로젝트 타일셋(${tilesetKey})이 아님`);
+}
+
 // 난이도 복제 맵
 const suffixes = load("difficulty").filter((d) => num(d.index) > 0).map((d) => d.mapSuffix);
 for (const m of load("maps")) {
   if (!mapIds.has(m.id)) problems.push(`map/${m.id}${EXT.map}: maps.csv에 있는데 파일 없음 (node tools/build.cjs maps)`);
-  if (m.kind === "instance") continue;
+  if (m.kind === "instance") {
+    // 메이커는 파일 머리 Usage(1)로 인스턴스 맵을 가른다 — IsInstanceMap만 켜면 정적 방에 실려 인스턴스 방 생성이 실패한다
+    const f = path.join(ROOT, "map", m.id + EXT.map);
+    if (mapIds.has(m.id)) {
+      const raw = JSON.parse(fs.readFileSync(f, "utf8"));
+      if (raw.Usage !== 1) problems.push(`map/${m.id}${EXT.map}: 인스턴스 맵인데 Usage ${raw.Usage} (1이어야 인스턴스 방에 실림)`);
+    }
+    continue;
+  }
   for (const s of suffixes) if (!mapIds.has(m.id + s)) problems.push(`map/${m.id + s}${EXT.map}: 난이도 복제 없음`);
 }
 

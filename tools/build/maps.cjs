@@ -190,6 +190,9 @@ function layoutOf(d, entities, ctx) {
 // 장식 발밑 칸: 그림 가로의 60% · 발밑 한 줄을 막는다 (키 큰 장식도 윗부분은 원근상 뒤로 지나가 보이게 둔다)
 // (10-10 9차 QA: 그림보다 넓게 막혀 보였다 — 그림 양옆의 투명 여백까지 막던 80% → 60%)
 const PROP_WALL_TILE = 269;   // AshCampTiles 충돌 타일 (모든 맵 같은 타일셋)
+// 모든 맵이 쓰는 타일셋. 새 맵은 빌더 템플릿 타일셋(번호가 다름)으로 만들어지므로 이것으로 바꾼다
+// (10-11: depth2~4가 템플릿 타일셋으로 생겨 벽·충돌·미니맵 지형이 전부 어긋났다)
+const PROJECT_TILESET = JSON.parse(fs.readFileSync(require("path").join(__dirname, "../../RootDesk/MyDesk/AshCampTiles.tileset"), "utf8")).EntryKey;
 // 옆 칸은 그림이 그 칸의 35% 이상을 덮을 때만 막는다 (9차 QA: 폭 1.76칸 선반이 양옆으로 0.03칸 걸쳐 3칸을 막아,
 // 선반 두 개와 벽이 이어진 줄이 8칸짜리 보이지 않는 벽이 됐다)
 function propFootprint(x, y, wPx, scale) {
@@ -306,6 +309,9 @@ function ambience(d) {
 function buildNormal(d, maps, ctx) {
   const file = P.map(d.id);
   const map = exists(file) ? MapBuilder.read(file) : MapBuilder.fromTemplate(MapBuilder.templatePath("rect"), d.id);
+  if (map.component("RectTileMap", "MOD.Core.RectTileMapComponent")) {
+    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { TileSetRUID: PROJECT_TILESET });
+  }
   map.upsertComponent(d.id, "script.MapAmbience", ambience(d));
 
   if (d.kind === "instance") {
@@ -314,6 +320,9 @@ function buildNormal(d, maps, ctx) {
     delete mc.InstanceMap;
     mc.IsInstanceMap = true;
     map.upsertComponent(d.id, "MOD.Core.MapComponent", mc);
+    // 메이커는 파일 머리의 Usage(1 = 인스턴스 맵)로 정적/인스턴스 방을 가른다. IsInstanceMap만 켜면 정적 방에 실린다
+    // (10-11: 새로 만든 depth2~4가 "must be set to instance map"으로 다음 층 이동 실패)
+    map.data.Usage = 1;
     map.upsertComponent(d.id, "script.DepthDirector", { "@type": "script.DepthDirector", Enable: true });
   }
 

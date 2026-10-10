@@ -1,4 +1,4 @@
--- 랭킹 창 (L): 심도 최고 층 / 묘지기 여왕 최단 처치. 현재 난이도 기준.
+-- 랭킹 창 (L): 심도 도전 (최고 층 · 같은 층이면 빠른 순) / 묘지기 여왕 최단 처치. 현재 난이도 기준.
 -- Show(kind)로 열면 서버에 요청 → RankingSystem이 OnData로 돌려준다.
 @Logic
 script RankWindow extends Logic
@@ -23,21 +23,28 @@ script RankWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         local diff = 0
         if st ~= nil then diff = st.Difficulty end
-        _RankingSystem:RequestBoard(kind, diff)
+        -- 심도 탭은 10-11부터 도전 기록판(층 + 걸린 시간)을 읽는다
+        _RankingSystem:RequestBoard(kind == "depth" and "depthrun" or kind, diff)
     end
 
     @ExecSpace("ClientOnly")
     method void OnData(string kind, integer diff, string digest)
+        if kind == "depthrun" then kind = "depth" end
         if kind ~= self.Kind then return end
         local title = "묘지기 여왕 최단 처치"
-        if kind == "depth" then title = "심도 최고 층" end
+        if kind == "depth" then title = "심도 도전 · 최고 층 (같은 층이면 빠른 순)" end
         local lines = { title .. "  (" .. _GameConst:DifficultyName(diff) .. ")", "" }
         local i = 0
         for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
             i = i + 1
-            local unit = "초"
-            if kind == "depth" then unit = "층" end
-            table.insert(lines, string.format("%2d.  %s   %s", i, name, value .. unit))
+            local text = value .. "초"
+            if kind == "depth" then
+                local v = tonumber(value) or 0
+                local floor = math.floor(v / 100000)
+                local secs = 99999 - v % 100000
+                text = string.format("%d층 · %d분 %02d초", floor, math.floor(secs / 60), secs % 60)
+            end
+            table.insert(lines, string.format("%2d.  %s   %s", i, name, text))
         end
         if i == 0 then table.insert(lines, "아직 기록이 없다") end
         _UIKit:SetText(self.Win .. "/Paper/List", table.concat(lines, "\n"))

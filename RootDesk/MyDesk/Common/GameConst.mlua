@@ -163,6 +163,20 @@ script GameConst extends Logic
         return baseMap .. _GameData:GetDifficulty(difficulty).suffix
     end
 
+    method string DepthMapFor(integer floor)
+        -- 심도 층별 방 모양 (10-11): 1층 작은 방 → 이후 납골 미로·바위 동굴·작은 방·담장 마당을 돌고, 5층마다 보스 층은 넓은 마당(depth3)
+        if floor % 5 == 0 then return "depth3" end
+        if floor <= 1 then return self.MapDepth end
+        local list = { "depth2", "depth4", self.MapDepth, "depth3" }
+        return list[(floor - 2) % #list + 1]
+    end
+
+    method integer DepthRunStart(string nonce)
+        -- 심도 키 고유값 끝의 「~시작초」(DateTime.UtcNow 초) — 층을 옮겨도 같은 값이라 한 번의 도전 시간을 잰다. 없으면 0
+        local s = string.match(nonce or "", "~(%d+)$")
+        return s ~= nil and math.floor(tonumber(s)) or 0
+    end
+
     method string MakeDepthKey(integer floor, integer difficulty, string nonce)
         -- 심도 인스턴스 룸 키 "depth:층:난이도:고유값"
         return "depth:" .. tostring(floor) .. ":" .. tostring(difficulty) .. ":" .. nonce

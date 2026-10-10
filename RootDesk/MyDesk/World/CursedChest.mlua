@@ -20,6 +20,9 @@ script CursedChest extends Component
     @Sync
     property string OpenedDigest = ";"        -- 이 상자를 연 플레이어 userId (";a;b;")
     property table NoticeAt = {}             -- userId → 다음 「잠김」 안내 시각
+    @Sync
+    property string RewardRank = ""          -- 심도 층 보상 상자 (DepthDirector): 드롭 표 등급. Sealed와 같이 파티원마다 한 번씩 열린다
+    property integer RewardRolls = 1         -- 심도 보상: 그 표로 몇 번 굴리나
 
     method void OnBeginPlay()
         if self:IsServer() then
@@ -88,6 +91,10 @@ script CursedChest extends Component
     method void OpenSealed(Entity player)
         -- 봉인 상자: 열쇠 확인 → 이 플레이어에게만 보물 → 첫 개봉 기록 → SealedChestOpened (의뢰 chest 판정)
         local userId = player.PlayerComponent.UserId
+        if self.RewardRank ~= "" then
+            self:OpenReward(player)
+            return
+        end
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         if quest == nil or not _Util:IsAlive(player) then return end
@@ -117,6 +124,19 @@ script CursedChest extends Component
         _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.4, 0), 0, Vector3(1, 1, 1), false, { Color = Color(1, 0.85, 0.4, 1) })
         _GameEvents:Emit("SealedChestOpened", { player = player, map = self.Entity.CurrentMap, mapKey = self.MapKey })
         log("[VRF] sealed chest " .. self.MapKey .. " opened by " .. player.Name .. " first=" .. tostring(first) .. " lv=" .. tostring(self.Level))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OpenReward(Entity player)
+        -- 심도 층 보상: 이 플레이어에게만 RewardRank 표로 RewardRolls번 (깊을수록·보스 층·저주 층일수록 많고 좋다)
+        if not _Util:IsAlive(player) then return end
+        local userId = player.PlayerComponent.UserId
+        self.OpenedDigest = self.OpenedDigest .. userId .. ";"
+        for _ = 1, math.max(1, self.RewardRolls) do _LootSystem:RollDrops(self.Entity, self.Level, self.RewardRank, player) end
+        _Util:Notify("심도 보상 상자를 열었다 (" .. tostring(self.RewardRolls) .. "번)", userId)
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.4, 0), 0, Vector3(1, 1, 1), false, { Color = Color(0.75, 0.55, 1, 1) })
+        log("[VRF] depth reward opened by " .. player.Name .. " rank=" .. self.RewardRank .. " rolls=" .. tostring(self.RewardRolls) .. " lv=" .. tostring(self.Level))
     end
 
     @ExecSpace("ClientOnly")
@@ -149,6 +169,7 @@ script CursedChest extends Component
         local tag = self.Entity.NameTagComponent
         if isvalid(tag) then
             local name = opened and "열린 봉인 상자" or (self.NeedKey ~= "" and "봉인 상자 · 열쇠가 필요하다" or "봉인 상자 · 다가가면 열린다")
+            if self.RewardRank ~= "" then name = opened and "열린 보상 상자" or "심도 보상 상자 · 다가가면 열린다" end
             if tag.Name ~= name then
                 tag.Name = name
                 tag.FontColor = opened and Color(0.6, 0.6, 0.6, 1) or Color(1, 0.85, 0.4, 1)

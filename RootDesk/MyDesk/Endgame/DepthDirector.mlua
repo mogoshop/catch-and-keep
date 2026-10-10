@@ -1,5 +1,7 @@
 -- 심도 던전 (07장): 층마다 새 인스턴스 룸. 룸 키 "depth:층:난이도:고유값"에서 층을 읽어 몬스터를 만든다.
--- 층의 몬스터를 모두 쓰러뜨리면 「더 깊이」·「귀환」 문(DepthGate)이 열린다. 층이 오를수록 몬스터 레벨이 올라 상위 룬이 나온다.
+-- 층의 몬스터를 모두 쓰러뜨리면 「더 깊이」·「귀환」 문(DepthGate)과 보상 상자가 나온다. 층이 오를수록 몬스터 레벨이 올라 상위 룬이 나온다.
+-- 10-11 개선: 층마다 방 모양이 바뀌고(GameConst.DepthMapFor), 2층부터 저주 하나(신속·정예 다수·독 장판·칠흑)가 걸린다.
+-- 5층마다 보스 층(곁가지 보스를 층 레벨로), 클리어 보상 상자는 층이 깊을수록 좋다. 랭킹은 최고 층 + 도전 시간.
 -- 같은 룸의 플레이어는 자동으로 파티가 된다 (인스턴스 룸은 Logic·파티 정보가 따로라서).
 -- 문은 DepthDoorUsed 이벤트로 알린다 (문은 감독을 모른다).
 @Component
@@ -7,16 +9,31 @@ script DepthDirector extends Component
 
     @Sync
     property integer Floor = 0              -- 클라이언트도 「심도 N층」 이름과 문 표시에 쓴다
+    @Sync
+    property string Curse = ""              -- "" / fast / elite / poison / dark (클라이언트: 안내·칠흑 시야)
+    @Sync
+    property string BossName = ""           -- 보스 층이면 보스 이름 (클라이언트: 안내·보스 배경음)
     property integer Difficulty = 0
     property string Nonce = ""
     property table Spawned = {}
     property boolean Cleared = false
     property boolean Moving = false
     property integer TimerId = 0
+    property integer PoolTimerId = 0
+    property table Pools = {}               -- 독 장판 { pos, radius, startAt, untilAt, nextTick }
+    property number NextPoolAt = 0
     property number NearestSpawn = 99
+    property number StartedAt = 0
+    property boolean BannerShown = false    -- 클라이언트: 층 안내를 한 번만
+    property string PoolFxRuid = "71898bc523f441e39f00f25ac4989166"   -- 초록 독구름 (독 장판 저주)
+
+    method void OnBeginPlay()
+        -- 서버: 층·저주·보스 결정과 몬스터 / 클라이언트: 층 안내
+        if self:IsServer() then self:BeginServer() else self:BeginClient() end
+    end
 
     @ExecSpace("ServerOnly")
-    method void OnBeginPlay()
+    method void BeginServer()
         if not _RoomService:IsInstanceRoom() then return end
         local key = _GameConst:ParseDepthKey(_RoomService.RoomKey)
         if key.floor <= 0 then return end
@@ -24,6 +41,13 @@ script DepthDirector extends Component
         self.Difficulty = key.difficulty
         self.Nonce = key.nonce
         self.Spawned = {}
+        -- 저주·보스는 방이 열릴 때 정한다 (플레이어가 들어오기 전에 동기화돼 도착하자마자 안내가 뜬다)
+        if self:IsBossFloor() then
+            self.BossName = _GameData:GetMonsterName(self:BossModel())
+        elseif self.Floor >= 2 then
+            local curses = { "fast", "elite", "poison", "dark" }
+            self.Curse = curses[_UtilLogic:RandomIntegerRange(1, #curses)]
+        end
         -- 인스턴스 룸마다 디렉터가 하나씩 있으므로 구독 키는 엔티티별, 자기 맵의 문만 받는다
         _GameEvents:Subscribe("DepthDoorUsed", self:EventKey(), function(e)
             if e.map == self.Entity.CurrentMap then self:OnDoorUsed(e.action) end
@@ -35,11 +59,39 @@ script DepthDirector extends Component
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        if self.PoolTimerId ~= 0 then _TimerService:ClearTimer(self.PoolTimerId) end
         _GameEvents:Unsubscribe("DepthDoorUsed", self:EventKey())
     end
 
     method string EventKey()
         return "DepthDirector:" .. self.Entity.Id
+    end
+
+    method boolean IsBossFloor()
+        return self.Floor > 0 and self.Floor % 5 == 0
+    end
+
+    method string BossModel()
+        -- 5층마다 곁가지 보스를 번갈아 (본선 보스는 의뢰·난이도 개방과 얽혀 쓰지 않는다)
+        local list = { "serka", "tombking", "librarian" }
+        return list[(math.floor(self.Floor / 5) - 1) % #list + 1]
+    end
+
+    method string CurseName(string curse)
+        if curse == "fast" then return "신속" end
+        if curse == "elite" then return "정예 다수" end
+        if curse == "poison" then return "독 장판" end
+        if curse == "dark" then return "칠흑" end
+        return ""
+    end
+
+    method string CurseDetail(string curse)
+        -- 층 안내 둘째 줄: 저주가 무엇을 바꾸는지
+        if curse == "fast" then return "몬스터 이동 속도 +35% — 거리를 벌리기 어렵다" end
+        if curse == "elite" then return "정예 무리가 훨씬 자주 나온다" end
+        if curse == "poison" then return "발밑에 독 장판이 생긴다 — 초록 원이 보이면 벗어나라" end
+        if curse == "dark" then return "내 주변 빛이 45% 줄어든다 — 횃불 근처가 안전하다" end
+        return ""
     end
 
     @ExecSpace("ServerOnly")
@@ -56,36 +108,86 @@ script DepthDirector extends Component
             local leader = users[1].PlayerComponent.UserId
             for i = 2, #users do _PartySystem:Join(leader, users[i].PlayerComponent.UserId) end
         end
-        -- 출현 몬스터·수·정예 확률은 data (monsters.csv depth, config.csv depth*)
+        self.StartedAt = _UtilLogic.ElapsedSeconds
+        -- 출현 몬스터·수·정예 확률은 data (monsters.csv depth, config.csv depth*). 저주 「정예 다수」는 정예 확률 +35%p
         local models = _GameData:GetDepthPool()
         local count = math.floor(math.min(_GameData.depthMobMax, _GameData.depthMobBase + self.Floor))
         local elite = math.min(_GameData.depthEliteMax, _GameData.depthEliteBase + _GameData.depthElitePerFloor * self.Floor)
+        if self.Curse == "elite" then elite = math.min(0.8, elite + 0.35) end
+        if self:IsBossFloor() then
+            -- 보스 층: 보스 하나 + 졸개 절반
+            count = math.max(4, math.floor(count / 2))
+            self:SpawnOne(map, self:BossModel(), self:BaseLevel() + 2, false, self:SpotFar(4.5))
+        end
         for i = 1, count do
-            self:SpawnOne(map, models[_UtilLogic:RandomIntegerRange(1, #models)], self:BaseLevel() + _UtilLogic:RandomIntegerRange(0, 2), _UtilLogic:RandomDouble() < elite)
+            self:SpawnOne(map, models[_UtilLogic:RandomIntegerRange(1, #models)], self:BaseLevel() + _UtilLogic:RandomIntegerRange(0, 2), _UtilLogic:RandomDouble() < elite, self:SpotFar(_GameData.depthSafeRadius))
         end
         -- 정해진 층마다 최상위 하나 (monsters.csv depth=everyN)
         local unique = _GameData:GetDepthUnique(self.Floor)
-        if unique ~= "" then self:SpawnOne(map, unique, self:BaseLevel() + math.floor(_GameData.depthUniqueLevelBonus), false) end
+        if unique ~= "" then self:SpawnOne(map, unique, self:BaseLevel() + math.floor(_GameData.depthUniqueLevelBonus), false, self:SpotFar(_GameData.depthSafeRadius)) end
+        if self.Curse == "poison" then
+            self.NextPoolAt = _UtilLogic.ElapsedSeconds + 3
+            self.PoolTimerId = _TimerService:SetTimerRepeat(function() self:TickPools() end, 0.25)
+        end
         self:Announce("심도 " .. tostring(self.Floor) .. "층 — 모든 적을 쓰러뜨려라")
-        log("[DepthDirector] " .. tostring(self.Floor) .. "층 몬스터 " .. tostring(#self.Spawned) .. " 가장 가까운 생성 거리 " .. string.format("%.1f", self.NearestSpawn) .. "칸")
+        log(string.format("[VRF] depth floor=%d map=%s curse=%s boss=%s mobs=%d nearest=%.1f", self.Floor, map.Name, self.Curse, self.BossName, #self.Spawned, self.NearestSpawn))
     end
 
     @ExecSpace("ServerOnly")
-    method void SpawnOne(Entity map, string modelId, integer level, boolean elite)
-        -- 도착 지점(0,0) 둘레 depthSafeRadius 안에는 만들지 않는다 (들어가자마자 둘러싸이지 않게)
-        local pos = Vector3(5.5, 0, 0)
-        for _ = 1, 12 do
-            local x = -5.5 + _UtilLogic:RandomDouble() * 11
-            local y = -3 + _UtilLogic:RandomDouble() * 6
-            if math.sqrt(x * x + y * y) >= _GameData.depthSafeRadius then
-                pos = Vector3(x, y, 0)
-                break
+    method Vector2 Bounds()
+        -- 이 방 크기 (maps.csv w·h). 없으면 예전 작은 방 크기
+        local info = _GameData:GetMapInfo(self.Entity.CurrentMap.Name)
+        if info == nil then return Vector2(14, 8) end
+        return Vector2(info.w, info.h)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Walkable(Vector2 p)
+        local memo = _Util:TerrainMemo(self.Entity.CurrentMap)
+        if memo == nil then return true end
+        -- 몸 크기만큼 둘레 네 점도 막히지 않아야 (벽에 반쯤 박혀 나오지 않게)
+        for _, d in ipairs({ Vector2(0, 0), Vector2(0.35, 0), Vector2(-0.35, 0), Vector2(0, 0.35), Vector2(0, -0.35) }) do
+            if _Util:CellBlocked(memo, p + d) then return false end
+        end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 SpotFar(number minDist)
+        -- 도착 지점(0,0)에서 minDist 넘게 떨어진, 걸을 수 있는 무작위 자리 (들어가자마자 둘러싸이지 않게)
+        local b = self:Bounds()
+        for _ = 1, 40 do
+            local p = Vector2(-b.x / 2 + 1.5 + _UtilLogic:RandomDouble() * (b.x - 3), -b.y / 2 + 1.5 + _UtilLogic:RandomDouble() * (b.y - 3))
+            if p:Magnitude() >= minDist and self:Walkable(p) then return p end
+        end
+        return self:WalkableNear(Vector2(b.x / 2 - 2.5, 0))
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 WalkableNear(Vector2 want)
+        -- want에서 가장 가까운 걸을 수 있는 칸 중심 (문·상자 자리)
+        if self:Walkable(want) then return want end
+        for r = 1, 8 do
+            for dx = -r, r do
+                for dy = -r, r do
+                    if math.max(math.abs(dx), math.abs(dy)) == r then
+                        local p = Vector2(math.floor(want.x + dx) + 0.5, math.floor(want.y + dy) + 0.5)
+                        if self:Walkable(p) then return p end
+                    end
+                end
             end
         end
-        self.NearestSpawn = math.min(self.NearestSpawn, math.sqrt(pos.x * pos.x + pos.y * pos.y))
+        return Vector2(0, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnOne(Entity map, string modelId, integer level, boolean elite, Vector2 spot)
+        local pos = Vector3(spot.x, spot.y, 0)
+        self.NearestSpawn = math.min(self.NearestSpawn, spot:Magnitude())
         local e = _SpawnService:SpawnByModelId(modelId, modelId, pos, map)
         if not isvalid(e) then return end
         table.insert(self.Spawned, e)
+        local fast = self.Curse == "fast"
         _Util:AfterSpawn(e, "script.Monster", function(comp)
             ---@type Monster
             local m = comp
@@ -93,7 +195,74 @@ script DepthDirector extends Component
             m:ApplyLevel(level, elite)
             -- 심도에서도 변종 우두머리가 나온다 (층이 깊을수록 정예와 함께)
             if elite and _UtilLogic:RandomDouble() < _GameData.variantChance * 3 then m:MakeVariant(_GameData:RollVariant()) end
+            if fast then
+                -- 저주 「신속」: 기본 속도가 정해진 뒤(OnBeginPlay) 35% 올린다
+                _TimerService:SetTimerOnce(function()
+                    if not isvalid(m.Entity) or m.BaseSpeed <= 0 then return end
+                    m.BaseSpeed = m.BaseSpeed * 1.35
+                    m:RefreshSpeed()
+                end, 0.5)
+            end
         end, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TickPools()
+        -- 저주 「독 장판」: 2.8초마다 살아 있는 플레이어 한 명 발밑 근처에 예고(0.8초) 뒤 4초 독 장판 (반경 1.2).
+        -- 0.5초마다 최대 생명의 3% × (1 - 독 저항) — 움직이면 피할 수 있다 (예고 원을 보고 벗어나기)
+        if self.Cleared then return end
+        local map = self.Entity.CurrentMap
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.NextPoolAt then
+            self.NextPoolAt = now + 2.8
+            local players = _Util:PlayersInMap(map)
+            if #players > 0 then
+                local target = players[_UtilLogic:RandomIntegerRange(1, #players)]
+                if _Util:IsAlive(target) then
+                    local a = _UtilLogic:RandomDouble() * math.pi * 2
+                    local spot = self:WalkableNear(_Util:Pos2(target) + Vector2(math.cos(a), math.sin(a)) * _UtilLogic:RandomDouble() * 1.5)
+                    table.insert(self.Pools, { pos = spot, radius = 1.2, startAt = now + 0.8, untilAt = now + 4.8, nextTick = now + 0.8 })
+                    self:PoolFx(Vector3(spot.x, spot.y, 0), 1.2, 0.8, 4)
+                end
+            end
+        end
+        local keep = {}
+        for _, pool in ipairs(self.Pools) do
+            if now < pool.untilAt then
+                table.insert(keep, pool)
+                if now >= pool.nextTick then
+                    pool.nextTick = now + 0.5
+                    for _, p in ipairs(_Util:PlayersNear(map, pool.pos, pool.radius)) do
+                        ---@type PlayerVitals
+                        local vitals = p:GetComponent("script.PlayerVitals")
+                        ---@type PlayerStats
+                        local stats = p:GetComponent("script.PlayerStats")
+                        local resist = stats ~= nil and stats:GetResist("poison") or 0
+                        local dmg = p.PlayerComponent.MaxHp * 0.03 * math.max(0, 1 - math.max(-100, math.min(90, resist)) / 100)
+                        if vitals ~= nil then vitals:TakeTickDamage(dmg) end
+                    end
+                end
+            end
+        end
+        self.Pools = keep
+    end
+
+    @ExecSpace("Multicast")
+    method void PoolFx(Vector3 pos, number radius, number warnSeconds, number seconds)
+        -- 예고: 옅은 초록 소용돌이 → 장판: 진한 소용돌이 + 독구름
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local warn = _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(0.4, 1, 0.3, 0.25) })
+        _TimerService:SetTimerOnce(function()
+            if warn ~= nil and warn > 0 then _ParticleService:RemoveParticle(warn) end
+            if not isvalid(self.Entity) then return end
+            local field = _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(0.35, 0.95, 0.25, 0.6) })
+            local cloud = _EffectService:PlayEffect(self.PoolFxRuid, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(radius * 0.55, radius * 0.45, 1), true, { Alpha = 0.75 })
+            _TimerService:SetTimerOnce(function()
+                if field ~= nil and field > 0 then _ParticleService:RemoveParticle(field) end
+                if cloud ~= nil and cloud ~= 0 then _EffectService:RemoveEffect(cloud) end
+            end, seconds)
+        end, warnSeconds)
     end
 
     @ExecSpace("ServerOnly")
@@ -107,19 +276,56 @@ script DepthDirector extends Component
             end
         end
         self.Cleared = true
+        self.Pools = {}
         local map = self.Entity.CurrentMap
+        -- 도전 시간 = 1층 입장부터 (룸 키 고유값의 시작 시각). 랭킹: 최고 층 → 같은 층이면 빠른 순
+        local start = _GameConst:DepthRunStart(self.Nonce)
+        local runSeconds = start > 0 and math.max(0, math.floor(DateTime.UtcNow.Elapsed / 1000) - start) or 0
         for _, u in ipairs(_Util:PlayersInMap(map)) do
             _RankingSystem:RecordDepth(u, self.Difficulty, self.Floor)
+            if start > 0 then _RankingSystem:RecordDepthRun(u, self.Difficulty, self.Floor, runSeconds) end
             _GameEvents:Emit("DepthCleared", { player = u, floor = self.Floor, difficulty = self.Difficulty })
         end
-        self:Announce("심도 " .. tostring(self.Floor) .. "층 정복! 오른쪽 문: 더 깊이 / 왼쪽 문: 귀환")
-        self:OpenDoor(map, "next", Vector3(5.5, 0, 0))
-        self:OpenDoor(map, "exit", Vector3(-5.5, 0, 0))
+        local timeText = start > 0 and string.format(" (도전 %d분 %02d초)", math.floor(runSeconds / 60), runSeconds % 60) or ""
+        self:Announce("심도 " .. tostring(self.Floor) .. "층 정복!" .. timeText .. " 보상 상자 · 오른쪽 문: 더 깊이 / 왼쪽 문: 귀환")
+        self:Banner("심도 " .. tostring(self.Floor) .. "층 정복" .. timeText)
+        local b = self:Bounds()
+        self:OpenDoor(map, "next", self:WalkableNear(Vector2(b.x / 2 - 2.5, 0)))
+        self:OpenDoor(map, "exit", self:WalkableNear(Vector2(-b.x / 2 + 2.5, 0)))
+        -- 상자는 파티 한가운데 오른쪽 위에 둔다 (방 가운데 아래쪽이면 하단 스킬 바에 가려졌고, 바로 위는 가운데 횃불(0, 1.6)과 겹쳤다 — 메이커 확인 10-11)
+        local sum, n = Vector2(0, 0), 0
+        for _, u in ipairs(_Util:PlayersInMap(map)) do
+            sum = sum + _Util:Pos2(u)
+            n = n + 1
+        end
+        local center = n > 0 and Vector2(sum.x / n, sum.y / n) or Vector2(0, 0)
+        self:PlaceReward(map, self:WalkableNear(center + Vector2(1.5, 0.9)))
+        log(string.format("[VRF] depth cleared floor=%d run=%ds", self.Floor, runSeconds))
     end
 
     @ExecSpace("ServerOnly")
-    method void OpenDoor(Entity map, string action, Vector3 pos)
-        local e = _SpawnService:SpawnByModelId(_GameConst.ModelDepthGate, "DepthDoor", pos, map)
+    method void PlaceReward(Entity map, Vector2 at)
+        -- 층 클리어 보상 상자: 파티원마다 한 번씩 열린다. 깊을수록 좋은 표·많이 (보스 층은 보스 표, 저주 층은 한 번 더)
+        local rank = "champion"
+        if self:IsBossFloor() then rank = "boss" elseif self.Floor >= 10 then rank = "unique" end
+        local rolls = math.min(5, 2 + math.floor(self.Floor / 5))   -- 1층도 2개 (1개는 메이커 확인 때 너무 허전했다)
+        if self.Curse ~= "" then rolls = rolls + 1 end
+        local level = self:BaseLevel()
+        local e = _SpawnService:SpawnByModelId("cursedchest", "DepthReward", Vector3(at.x, at.y, 0), map)
+        if not isvalid(e) then return end
+        _Util:AfterSpawn(e, "script.CursedChest", function(comp)
+            ---@type CursedChest
+            local c = comp
+            c.Level = level
+            c.RewardRank = rank
+            c.RewardRolls = rolls
+            c.Sealed = true
+        end, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OpenDoor(Entity map, string action, Vector2 pos)
+        local e = _SpawnService:SpawnByModelId(_GameConst.ModelDepthGate, "DepthDoor", Vector3(pos.x, pos.y, 0), map)
         if not isvalid(e) then return end
         _Util:AfterSpawn(e, "script.DepthGate", function(comp)
             ---@type DepthGate
@@ -201,6 +407,53 @@ script DepthDirector extends Component
     @ExecSpace("Multicast")
     method void Announce(string text)
         _NoticeFeed:Push(text)
+    end
+
+    @ExecSpace("Multicast")
+    method void Banner(string text)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _UXFeedback:Show(text, "보상 상자 · 오른쪽 문: 더 깊이 / 왼쪽 문: 귀환", _GameData:GetUiIcon("icon_rank"))
+    end
+
+    -- ───────── 클라이언트: 층 안내 · 칠흑 시야 · 보스 배경음 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void BeginClient()
+        -- 도착 직후 안내 (동기화 값이 이미 와 있으면 바로, 아니면 OnSyncProperty에서)
+        _TimerService:SetTimerOnce(function() self:ShowBanner() end, 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string name, any value)
+        if name == "Curse" or name == "BossName" or name == "Floor" then
+            _DarkVision:RefreshDepthCurse()
+            _SoundDirector:RefreshDepthBgm()
+            self:ShowBanner()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowBanner()
+        -- 「심도 7층 · 저주: 독 장판」 / 「심도 10층 · 보스: 묘실 수호왕」 (한 번만)
+        local me = _UserService.LocalPlayer
+        if self.BannerShown or self.Floor <= 0 or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        if self.Floor >= 2 and self.Curse == "" and self.BossName == "" then return end   -- 저주·보스가 아직 안 왔다
+        self.BannerShown = true
+        local text = "심도 " .. tostring(self.Floor) .. "층"
+        local detail = "적을 모두 쓰러뜨리면 보상 상자와 문이 열린다"
+        local icon = "icon_portal"
+        if self.BossName ~= "" then
+            text = text .. " · 보스: " .. self.BossName
+            detail = "보스를 쓰러뜨리면 확정 보상 상자가 나온다"
+            icon = "icon_sword"
+        elseif self.Curse ~= "" then
+            text = text .. " · 저주: " .. self:CurseName(self.Curse)
+            detail = self:CurseDetail(self.Curse) .. " · 보상 상자 +1회"
+        end
+        _UXFeedback:Show(text, detail, _GameData:GetUiIcon(icon))
+        _DarkVision:RefreshDepthCurse()
+        _SoundDirector:RefreshDepthBgm()
     end
 
 end

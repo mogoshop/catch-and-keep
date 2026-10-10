@@ -84,6 +84,11 @@ script SoundDirector extends Logic
         self.CrowsOn = false
         if amb ~= nil then
             bgm = amb.Bgm
+            -- 심도 보스 층은 보스 배경음 (DepthDirector.BossName)
+            local depth = map:GetComponent("script.DepthDirector")
+            ---@type DepthDirector
+            local dd = depth
+            if dd ~= nil and dd.BossName ~= "" then bgm = "abyssboss" end
             local keyed = _GameData:GetSound(bgm)
             if keyed ~= "" then bgm = keyed end
             wind = amb.Wind
@@ -164,6 +169,21 @@ script SoundDirector extends Logic
     method void StopEffects()
         for ruid, _ in pairs(self.PlayedEffects) do _SoundService:StopSound(ruid) end
         self.PlayedEffects = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshDepthBgm()
+        -- 심도 보스 정보가 맵 입장 뒤에 동기화돼도 배경음을 맞춘다 (같은 곡이면 그대로)
+        if not isvalid(self.CurrentMap) then return end
+        local depth = self.CurrentMap:GetComponent("script.DepthDirector")
+        ---@type DepthDirector
+        local dd = depth
+        if dd == nil or dd.BossName == "" then return end
+        local bgm = _GameData:GetSound("abyssboss")
+        if bgm ~= "" and bgm ~= self.CurrentBgm then
+            self.CurrentBgm = bgm
+            _SoundService:PlayBGM(bgm, self.BgmVolume)
+        end
     end
 
     @ExecSpace("ClientOnly")

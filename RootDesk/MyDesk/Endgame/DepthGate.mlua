@@ -79,7 +79,8 @@ script DepthGate extends Component
         if stats ~= nil then diff = stats.Difficulty end
         ---@type PlayerSocial
         local social = player:GetComponent("script.PlayerSocial")
-        local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. tostring(math.floor(_UtilLogic.ElapsedSeconds)))
+        -- 고유값 끝 「~시작초」: 층을 옮겨도 유지돼 랭킹의 도전 시간(최고 층·걸린 시간)을 잰다
+        local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. "~" .. tostring(math.floor(DateTime.UtcNow.Elapsed / 1000)))
         local ids = {}
         local prepared = {}
         for _, u in ipairs(_Util:PlayersNear(player.CurrentMap, _Util:Pos2(player), self.PartyRange)) do
@@ -107,8 +108,8 @@ script DepthGate extends Component
                 table.insert(ids, u.PlayerComponent.UserId)
             end
         end
-        _RoomService:CreateInstanceRoom(key, { _GameConst.MapDepth }, 30)
-        local moved = _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst.MapDepth)
+        _RoomService:CreateInstanceRoom(key, { _GameConst:DepthMapFor(1) }, 30)
+        local moved = _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst:DepthMapFor(1))
         if moved == nil or moved < #ids then
             -- 들어가지 못한 사람은 준비를 되돌린다 (그림자 재소환·전달 예약 삭제). 이동 처리 시간을 두고 확인한다.
             local map = player.CurrentMap

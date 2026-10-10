@@ -12,6 +12,7 @@ script DarkVision extends Logic
     property number BaseRadius = 0          -- 이 맵의 내 시야 반경 (폭풍 전)
     property number MapStorm = 0            -- 맵 모래폭풍 (MapAmbience.Storm)
     property number BossStorm = 0           -- 보스 모래폭풍 (HighPriestRite 3단계)
+    property number CurseDark = 0           -- 심도 저주 「칠흑」: 시야를 이만큼 줄인다 (DepthDirector.Curse)
     property integer DustSerial = 0         -- 폭풍 모래 입자
     property number WallShade = 0.5         -- 지나갈 수 없는 벽·테두리 그림 밝기 배율 (10-10 3차 QA: 바닥·기둥·동굴 벽이 구분되지 않았다)
     property any WallBase = nil             -- 벽 그림 엔티티 id → 원래 색 (다시 들어와도 배율이 겹치지 않게)
@@ -133,14 +134,23 @@ script DarkVision extends Logic
         _OverlayLightService:SetOverlayLightEnabled(true)
         -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
         local ambient = math.max(amb.Ambient, _GameData.darkMinAmbient)
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, amb.AmbientColor, ambient))
+        local color = amb.AmbientColor
+        -- 심도는 전용 조명: 일반 맵 하한보다 어둡고 보랏빛이다 (횃불·내 주변 빛으로 길을 읽는다)
+        local depth = map:GetComponent("script.DepthDirector")
+        if depth ~= nil then
+            ambient = _GameData.depthAmbient
+            color = Color(0.62, 0.48, 0.9, 1)
+        end
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
         -- 카메라를 뺀 만큼(cameraZoom) 시야도 넓혀 화면 대비 밝은 범위를 유지한다
         local r = math.max(amb.PlayerLightRadius, _GameData.darkMinLightRadius) * _GameData.visionZoomMul
         self.BaseRadius = r
         self.MapStorm = amb.Storm
         self.BossStorm = 0
         self:ApplyPlayerLight(player)
-        if amb.DisplayName ~= "" then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
+        -- 심도 방은 DepthDirector가 「심도 N층 · 저주」 안내를 따로 띄운다
+        if amb.DisplayName ~= "" and depth == nil then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
+        self:RefreshDepthCurse()
         log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f 폭풍 %.2f", map.Name, ambient, r, amb.Storm))
     end
 
@@ -184,6 +194,21 @@ script DarkVision extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void RefreshDepthCurse()
+        -- 심도 저주 「칠흑」이면 내 주변 빛을 45% 줄인다. 저주가 바뀔 때만 다시 그린다
+        local dark = 0
+        if isvalid(self.CurrentMap) then
+            local depth = self.CurrentMap:GetComponent("script.DepthDirector")
+            ---@type DepthDirector
+            local dd = depth
+            if dd ~= nil and dd.Curse == "dark" then dark = 0.45 end
+        end
+        if dark == self.CurseDark then return end
+        self.CurseDark = dark
+        if self.Active then self:ApplyPlayerLight(_UserService.LocalPlayer) end
+    end
+
+    @ExecSpace("ClientOnly")
     method void ApplyPlayerLight(Entity player)
         -- 내 주변 빛 = 맵 시야 × (1 - 모래폭풍). 폭풍이면 모래 입자를 함께 두른다 (하한 시야 뒤에 줄인다)
         if not isvalid(player) then return end
@@ -193,7 +218,7 @@ script DarkVision extends Logic
             self.Lights[player.Id] = nil
         end
         local storm = math.max(self.MapStorm, self.BossStorm)
-        local r = self.BaseRadius * (1 - storm)
+        local r = self.BaseRadius * (1 - storm) * (1 - self.CurseDark)
         self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.6, r)
         if storm > 0 and self.DustSerial == 0 then
             self.DustSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.DustStorm, player, Vector3(0, 0.6, 0), 0, Vector3(4, 3, 1), true, { Color = Color(0.95, 0.8, 0.55, 0.35) })
