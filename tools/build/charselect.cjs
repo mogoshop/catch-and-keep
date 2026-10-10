@@ -38,6 +38,14 @@ function run() {
   b.textInput(box + '/NameInput', { anchor: 'bottom-left', pivot: [0, 0], pos: [48, 40], rect_size: [520, 88], placeholder: '이름 (최대 10글자)', char_limit: 10, line_type: 0, font_size: 26, color: '#F3E7CC', ...part('win_content'), bg_color: part('win_content').color, sprite_type: 1 });
   b.button(box + '/BtnDelete', '삭제', { anchor: 'bottom-right', pivot: [1, 0], pos: [-660, 40], rect_size: [220, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
   b.button(box + '/BtnEnter', '입장', { anchor: 'bottom-right', pivot: [1, 0], pos: [-48, 40], rect_size: [592, 88], image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, font_size: 30, color: '#F4E2B0' });
+  // 첫 진입 로딩 화면: 처음부터 켜져 있어 스크립트가 돌기 전에도 바로 그려진다 (10-10 QA: 메이플월드 기본 캐릭터가 1.5초 보였다가
+  // 캐릭터 슬롯이 켜졌다). 저장을 불러와 선택 창이 열리거나 캐릭터를 다 불러오면 CharSelectWindow가 끈다
+  const boot = 'SafeArea/Boot';
+  if (!b.find(boot)) {
+    b.panel(boot, { anchor: 'middle-center', rect_size: [3840, 2160], color: { r: 0.02, g: 0.015, b: 0.03, a: 1 }, raycast: true });
+    b.text(boot + '/Title', '잡으면 내편', { anchor: 'middle-center', pos: [0, 40], rect_size: [900, 90], size: 64, bold: true, color: '#E6C88A', alignment: 4 });
+    b.text(boot + '/Status', '불러오는 중…', { anchor: 'middle-center', pos: [0, -40], rect_size: [900, 50], size: 28, color: '#A99F8E', alignment: 4 });
+  }
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
 }

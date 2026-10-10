@@ -10,6 +10,8 @@ script CharSelectWindow extends Logic
     property string RenderKey = ""
     property boolean Busy = false             -- 요청을 보낸 뒤 결과(창 닫힘·목록 변화)가 올 때까지 중복 클릭 막기
     property number BusyUntil = 0
+    property boolean BootShown = true         -- 첫 진입 로딩 화면 (UI 파일에서 처음부터 켜져 있다)
+    property number BootLimit = 15            -- 저장 응답이 없어도 이 시간(초) 뒤엔 로딩 화면을 끈다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -54,6 +56,11 @@ script CharSelectWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Poll()
         local save = self:Save()
+        if self.BootShown and ((save ~= nil and save.BootDone) or _UtilLogic.ElapsedSeconds > self.BootLimit) then
+            -- 선택 창이 열리거나 캐릭터를 다 불러왔다: 로딩 화면을 끈다 (선택 창은 같은 Poll에서 바로 열린다)
+            self.BootShown = false
+            _UIKit:SetEnabled("/ui/CharSelectHUD/SafeArea/Boot", false)
+        end
         if save == nil then return end
         if not save.Selecting then
             if _UIKit:IsOpen(self.Win) then _UIKit:Close(self.Win) end

@@ -28,6 +28,8 @@ script PlayerSave extends Component
     @Sync
     property integer Slot = 0                 -- 고른 캐릭터 슬롯 (0 = 아직 안 고름)
     @Sync
+    property boolean BootDone = false         -- 첫 진입 준비 끝 (선택 창을 띄웠거나 캐릭터를 다 불러왔다) → 로딩 화면을 끈다
+    @Sync
     property boolean Selecting = false        -- 캐릭터 선택 창을 띄울 때 (CharSelectWindow)
     @Sync
     property string SlotDigest = ""           -- "번호|이름|레벨|난이도;…" (빈 슬롯은 번호만)
@@ -118,6 +120,7 @@ script PlayerSave extends Component
         -- 캐릭터를 고르는 동안은 보통 야영지에 둔다 (월드 시작 맵은 사냥터). slot -1 = 메뉴에서 온 선택용 방
         self.InSelectRoom = slot < 0 and _RoomService:IsInstanceRoom()
         self.Selecting = true
+        self.BootDone = true
         if not _RoomService:IsInstanceRoom() then
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
@@ -212,6 +215,7 @@ script PlayerSave extends Component
         -- 불러오기 마무리: 저장 허용 → 선택 창 닫기 → 마을/이어하기·소환수·심도 이동 이어가기
         self.IsLoadSuccess = true
         self.Selecting = false
+        self.BootDone = true
         self.AudioDigest = self:AudioKey(self.AudioSettings)
         self.AudioSavedDigest = self.AudioDigest
         -- 의뢰 진행까지 불러온 뒤 난이도별 웨이포인트·열린 액트를 다시 맞춘다 (웨이포인트 창 난이도 미리보기)
