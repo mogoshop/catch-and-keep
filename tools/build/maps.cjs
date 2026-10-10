@@ -5,10 +5,10 @@
 const fs = require("fs");
 const { MapBuilder, readIfExists, preserveIds, P, pos, at, list, load, num, bool, quiet, exists } = require("./lib.cjs");
 
-const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar)$/;
+const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
 function managedModelIds(monsters, npcs) {
-  return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);
+  return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", "artsprite", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);
 }
 
 // 맵 크기(타일, 1칸 = 1월드 단위): 가로 x = -w/2 .. w/2-1, 세로 y = -h/2+1 .. h/2 (메이커 기본 RectTile 격자와 같은 기준)
@@ -76,6 +76,7 @@ function desiredEntities(d, maps, ctx) {
     }
   }
   list(d.torches).forEach((t, k) => place(`Torch${k + 1}`, "Objects/Brazier", pos(t)));
+  for (const a of artEntities(d, maps, ctx)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
   if (d.waypoint !== "") {
     const w = at(d.waypoint);
     place("Waypoint", "Objects/Waypoint", w.pos, { "script.Waypoint": { WaypointId: w.name } });
@@ -101,6 +102,64 @@ function desiredEntities(d, maps, ctx) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
+  return out;
+}
+
+// 맵 그림 (data/map_art.csv · art_sprites.csv): 반복 그리기 바닥 + 길 띠 + 9분할 테두리 + 장식.
+// 타일맵(통행 판정, OrderInLayer 0) 위에 OrderInLayer 1로 덮고, 캐릭터·NPC(2 이상) 아래에 깐다. 같은 층에선 Z가 작을수록 앞.
+// 바닥 영역 = 타일 칸 전체: x -w/2-0.5 ~ w/2-0.5, y -h/2+0.5 ~ h/2+0.5. 테두리 한 칸 = 128px = 1.28
+// 반복 그리기(Tiled) 측정값 (메이커 10-10): TiledSize = 그림 장 수(1.28 → 1.28장 = 1.64), 영역은 위치에 첫 장의 중심을 두고
+// 오른쪽·위로 펼쳐진다 → 월드 사각형 [x0,x1]×[y0,y1]을 덮으려면 위치 = (x0+S/2, y0+S/2), TiledSize = (폭/S, 높이/S), S = 한 장 크기
+function artEntities(d, maps, ctx) {
+  const art = ctx.art[d.id];
+  if (!art) return [];
+  const ruid = (name) => {
+    const s = ctx.sprites[name];
+    if (!s) throw new Error(`map_art ${d.id}: 그림 '${name}'이 art_sprites.csv에 없음`);
+    return s.ruid;
+  };
+  const w = num(d.w), h = num(d.h);
+  const x0 = -w / 2 - 0.5, x1 = w / 2 - 0.5, y0 = -h / 2 + 0.5, y1 = h / 2 + 0.5;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, T = 1.28;
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const sprite = (rid, size, order) => ({
+    "MOD.Core.SpriteRendererComponent": Object.assign(
+      { SpriteRUID: rid, SortingLayer: "MapLayer0", OrderInLayer: order },
+      size ? { DrawMode: 2, TiledSize: { x: r3(size[0]), y: r3(size[1]) } } : { DrawMode: 0 }),
+  });
+  const S = 1.28;
+  // 중심 (x, y) · 크기 (rw, rh)인 월드 사각형을 반복 그리기로 덮는 배치
+  const tiled = (name, rid, x, y, rw, rh, z) => ({ name, pos: [r3(x - rw / 2 + S / 2), r3(y - rh / 2 + S / 2), z], overrides: sprite(rid, [rw / S, rh / S], 1) });
+  const out = [];
+  out.push(tiled("ArtFloor", ruid(art.floor), cx, cy, w, h, 0));
+  list(art.roads).forEach((r, k) => {
+    const [x, y, rw, rh] = r.split("/").map(Number);
+    out.push(tiled(`ArtRoad${k + 1}`, ruid(art.road), x, y, rw, rh, -0.01));
+  });
+  if (art.border) {
+    const b = (part) => ruid(`${art.border}-borders-${part}`);
+    out.push(tiled("ArtBorderN", b("n"), cx, y1 - T / 2, w - 2 * T, T, -0.02));
+    out.push(tiled("ArtBorderS", b("s"), cx, y0 + T / 2, w - 2 * T, T, -0.02));
+    // 좌우 테두리는 그 쪽에 포털(GateBack 왼쪽 · GateNext 오른쪽)이 있으면 가운데(y -1.6 ~ 1.6)를 비운다
+    const floors = d.kind === "side" ? dungeonFloors(maps, d) : [];
+    const portalAt = { w: d.kind === "field" || d.kind === "side", e: d.kind === "field" || (d.kind === "side" && floors.indexOf(d) < floors.length - 1) };
+    for (const [side, x] of [["w", x0 + T / 2], ["e", x1 - T / 2]]) {
+      const gapLo = portalAt[side] ? -1.6 : 0, gapHi = portalAt[side] ? 1.6 : 0;
+      const lowH = gapLo - (y0 + T), highH = (y1 - T) - gapHi;
+      const key = side.toUpperCase();
+      if (lowH > 0.2) out.push(tiled(`ArtBorder${key}1`, b(side), x, (y0 + T + gapLo) / 2, T, lowH, -0.02));
+      if (highH > 0.2) out.push(tiled(`ArtBorder${key}2`, b(side), x, (gapHi + y1 - T) / 2, T, highH, -0.02));
+    }
+    for (const [part, x, y] of [["nw", x0 + T / 2, y1 - T / 2], ["ne", x1 - T / 2, y1 - T / 2], ["sw", x0 + T / 2, y0 + T / 2], ["se", x1 - T / 2, y0 + T / 2]]) {
+      out.push({ name: `ArtCorner${part.toUpperCase()}`, pos: [x, y, -0.02], overrides: sprite(b(part), null, 1) });
+    }
+  }
+  list(art.props).forEach((p, k) => {
+    const [name, at, sc] = p.split("@").concat([]);
+    const [x, y] = at.split("/").map(Number);
+    const s = num(sc, 0.8);
+    out.push({ name: `ArtProp${k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: s, y: s, z: 1 } } }) });
+  });
   return out;
 }
 
@@ -187,6 +246,8 @@ function context() {
     monsters: Object.fromEntries(monsters.map((m) => [m.id, m])),
     npcs: Object.fromEntries(npcs.map((n) => [n.model, n])),
     managed: managedModelIds(monsters, npcs),
+    art: Object.fromEntries(load("map_art").map((a) => [a.map, a])),
+    sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
   };
 }
 
