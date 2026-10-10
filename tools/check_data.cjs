@@ -167,7 +167,7 @@ T.bosses.forEach((r, i) => {
   if (num(r.poolSec, 0) > 0 && (r.poolElement === "" || !ELEMENTS.has(r.poolElement))) err("bosses", i, `poolElement '${r.poolElement}' 알 수 없음`);
   if (num(r.poolSec, 0) >= num(r.slamInterval) - 1) err("bosses", i, "poolSec는 slamInterval보다 1초 이상 짧아야 함 (예고 원과 겹침)");
   if (!["true", "false", ""].includes(r.atTarget)) err("bosses", i, `atTarget '${r.atTarget}' — true / false`);
-  if (!["true", "false", ""].includes(r.bond)) err("bosses", i, `bond '${r.bond}' — true / false`);
+  if (r.bond && !/^[a-z0-9_]+$/.test(r.bond)) err("bosses", i, `bond '${r.bond}' — 형제 묶음 이름 (영문 소문자)`);
   if (r.extra && !fs.existsSync(path.join(ROOT, "RootDesk/MyDesk/Monster", r.extra.replace(/^script\./, "") + ".mlua"))) err("bosses", i, `extra '${r.extra}' — RootDesk/MyDesk/Monster에 스크립트 없음`);
 });
 
@@ -227,7 +227,8 @@ T.named.forEach((r, i) => {
 const KINDS = ["kill", "extract", "reach", "raise", "clear", "boss", "ritual", "chest"];
 T.quests.forEach((r, i) => {
   if (!KINDS.includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
-  if ((r.kind === "kill" || r.kind === "chest") && !sourceIds.has(r.target)) err("quests", i, `${r.kind} 대상 '${r.target}' — monsters.csv sourceId에 없음`);
+  // kill 대상은 '|'로 여러 종류 (예: 창·방패 문지기)
+  for (const t of r.kind === "kill" ? r.target.split("|") : r.kind === "chest" ? [r.target] : []) if (!sourceIds.has(t)) err("quests", i, `${r.kind} 대상 '${t}' — monsters.csv sourceId에 없음`);
   if (r.kind === "reach" && !markers.has(r.target)) err("quests", i, `reach 대상 '${r.target}' — maps.csv extra에 altar:${r.target} 없음`);
   if (r.kind === "raise" && !["skeleton", "mage", "revive"].includes(r.target)) err("quests", i, `raise 대상 '${r.target}' — skeleton / mage / revive`);
   if (r.kind === "clear" && !mapIds.has(r.target)) err("quests", i, `clear 대상 맵 '${r.target}' — maps.csv에 없음`);

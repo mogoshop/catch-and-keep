@@ -60,6 +60,14 @@ function genGameData() {
   const ranks = load("monster_ranks");
   const variants = load("variants");
   const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
+  // 프레임 애니메이션 (data/monster_frames.csv, 몬스터 id → sourceId 기준). 클립 RUID가 있는 동작은 클립을 쓴다
+  const sourceOf = Object.fromEntries(mons.map((m) => [m.id, m.sourceId]));
+  const frames = {};
+  for (const f of load("monster_frames")) {
+    const src = sourceOf[f.monster];
+    (frames[src] = frames[src] || {})[f.state] = f;
+  }
+  const firstFrame = (src, state, fallback) => (frames[src] && frames[src][state] ? frames[src][state].frames.split(";")[0] : fallback);
   const body = [
     "        self.PlayerAppearance = {}",
     ...appearance.map((r) => `        self.PlayerAppearance[${s(r.slot)}] = ${s(r.ruid)}`),
@@ -76,10 +84,12 @@ function genGameData() {
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",
     ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
+    "        self.MonsterFrames = {}",
+    ...Object.entries(frames).map(([src, states]) => `        self.MonsterFrames[${s(src)}] = { ${Object.values(states).map((f) => `${f.state} = { r = { ${f.frames.split(";").map(s).join(", ")} }, d = { ${f.delays.split(";").map(n).join(", ")} }, loop = ${f.loop === "true"} }`).join(", ")} }`),
     "        self.MonsterSourceOf = {}",
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(m.stand)}, move = ${s(m.move)}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
@@ -149,6 +159,12 @@ function genGameData() {
         return self.Shop[key]
     end
 
+    method any GetMonsterFrames(string sourceId)
+        -- 프레임 애니메이션 (stand/move/attack/hit/die → { r = 스프라이트 RUID 목록, d = 프레임 시간, loop }). 없으면 nil (클립 몬스터)
+        self:Ensure()
+        return self.MonsterFrames[sourceId]
+    end
+
     method any GetMonsterStats(string sourceId)
         -- 원본 몬스터 능력치 (monsters.csv, sourceId 기준). 그림자 개성의 원천. 없으면 nil
         self:Ensure()
@@ -201,7 +217,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

@@ -1,0 +1,81 @@
+-- 프레임 애니메이션: 애니메이션 클립 없이 스프라이트 프레임을 직접 넘긴다 (클라이언트 전용).
+-- 프레임 = data/monster_frames.csv (코덱스 등록표에서 tools/import_frames.cjs로 가져온다) → GameData.MonsterFrames[FrameKey].
+-- 동작 = StateComponent 상태 (IDLE→stand · MOVE→move · ATTACK→attack · HIT→hit · DEAD→die).
+-- stand·move는 반복, attack·hit·die는 한 번 재생 후 마지막 프레임 유지 (사망은 숨겨질 때까지 쓰러진 모습).
+@Component
+script FrameAnimator extends Component
+
+    property string FrameKey = ""            -- 몬스터 sourceId (빌드가 모델에 넣는다)
+    property any Set = nil                   -- GameData 프레임 묶음 (클라이언트)
+    property string Action = ""
+    property integer Frame = 1
+    property number Elapsed = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 프레임 묶음을 찾고 첫 프레임을 건다
+        self.Set = _GameData:GetMonsterFrames(self.FrameKey)
+        if self.Set == nil then
+            log_warning("[FrameAnimator] 프레임 없음 " .. self.FrameKey)
+            return
+        end
+        self:Play(self:ActionOf())
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 상태가 바뀌면 그 동작 처음부터, 아니면 프레임 시간만큼 다음 프레임
+        local set = self.Set
+        if set == nil then return end
+        local action = self:ActionOf()
+        if action ~= self.Action then
+            self:Play(action)
+            return
+        end
+        local clip = set[action]
+        if clip == nil or #clip.r <= 1 then return end
+        self.Elapsed = self.Elapsed + delta
+        local d = clip.d[self.Frame] or 0.12
+        if self.Elapsed < d then return end
+        self.Elapsed = self.Elapsed - d
+        if self.Frame < #clip.r then
+            self.Frame = self.Frame + 1
+        elseif clip.loop then
+            self.Frame = 1
+        else
+            return
+        end
+        self:Apply()
+    end
+
+    @ExecSpace("ClientOnly")
+    method string ActionOf()
+        -- 상태 이름 → 동작 이름 (모르는 상태는 대기)
+        local state = self.Entity.StateComponent
+        local name = isvalid(state) and state.CurrentStateName or "IDLE"
+        if name == "MOVE" or name == "WALK" or name == "CHASE" then return "move" end
+        if name == "ATTACK" then return "attack" end
+        if name == "HIT" then return "hit" end
+        if name == "DEAD" or name == "DIE" then return "die" end
+        return "stand"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Play(string action)
+        -- 동작 시작: 첫 프레임부터 (그 동작 프레임이 없으면 대기)
+        self.Action = action
+        self.Frame = 1
+        self.Elapsed = 0
+        self:Apply()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Apply()
+        local clip = self.Set[self.Action] or self.Set.stand
+        if clip == nil then return end
+        local ruid = clip.r[math.min(self.Frame, #clip.r)]
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) and sprite.SpriteRUID ~= ruid then sprite.SpriteRUID = ruid end
+    end
+
+end

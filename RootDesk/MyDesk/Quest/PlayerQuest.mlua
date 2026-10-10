@@ -31,6 +31,11 @@ script PlayerQuest extends Component
         return _QuestData:Get(self.Index)
     end
 
+    method boolean IsTarget(string target, string sourceId)
+        -- 처치 대상: 하나 또는 '|'로 여러 종류 ("gate_brother|gate_brother_shield")
+        return string.find("|" .. target .. "|", "|" .. sourceId .. "|", 1, true) ~= nil
+    end
+
     method boolean SameDifficulty(Entity map)
         -- 다른 난이도 맵에서 일어난 일은 이 난이도 의뢰에 세지 않는다
         return isvalid(map) and _GameConst:DifficultyOfMap(map.Name) == self.Diff
@@ -40,7 +45,7 @@ script PlayerQuest extends Component
     method void OnKill(string sourceId, Entity map)
         local q = self:Current()
         if q == nil or not self:SameDifficulty(map) then return end
-        if q.kind == "kill" and q.target == sourceId then self:Advance(q) end
+        if q.kind == "kill" and self:IsTarget(q.target, sourceId) then self:Advance(q) end
         if q.kind == "chest" and q.target == sourceId and self.Progress < 1 then
             -- 열쇠 단계: 열쇠를 지닌 적을 쓰러뜨렸다 → 봉인 상자로
             self.Progress = 1

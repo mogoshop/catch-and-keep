@@ -7,13 +7,27 @@ const { ModelBuilder, P, list, load, num, bool, quiet } = require("./lib.cjs");
 // + 스크립트. 탑다운(RectTile)이라 Body는 Kinematicbody.
 const MONSTER_SCRIPTS = ["script.Monster", "script.MonsterStatus", "script.MonsterTraits", "script.MonsterAttack"];
 
+// 프레임 애니메이션 몬스터 (data/monster_frames.csv): 상태 애니메이션 컴포넌트 대신 FrameAnimator가 스프라이트를 직접 넘긴다
+function framesOf(id) {
+  const rows = load("monster_frames").filter((f) => f.monster === id);
+  return rows.length > 0 ? Object.fromEntries(rows.map((f) => [f.state, f])) : null;
+}
+
 function buildMonster(m, boss) {
   const b = ModelBuilder.read(P.template("MonsterBase"));
   b.renameModel(m.model, m.id);
-  const clips = { stand: m.stand, move: m.move, hit: m.hit, die: m.die };
-  if (m.attack !== "") clips.attack = m.attack;
-  b.value("MOD.Core.StateAnimationComponent", "ActionSheet", clips, "action_sheet");
-  b.value("MOD.Core.SpriteRendererComponent", "SpriteRUID", m.stand, "string");
+  const frames = framesOf(m.id);
+  if (frames) {
+    b.removeComponent("MOD.Core.StateAnimationComponent");
+    b.value("MOD.Core.SpriteRendererComponent", "SpriteRUID", frames.stand.frames.split(";")[0], "string");
+    b.component("script.FrameAnimator");
+    b.value("script.FrameAnimator", "FrameKey", m.sourceId, "string");
+  } else {
+    const clips = { stand: m.stand, move: m.move, hit: m.hit, die: m.die };
+    if (m.attack !== "") clips.attack = m.attack;
+    b.value("MOD.Core.StateAnimationComponent", "ActionSheet", clips, "action_sheet");
+    b.value("MOD.Core.SpriteRendererComponent", "SpriteRUID", m.stand, "string");
+  }
   const s = num(m.scale, 1);
   b.value("MOD.Core.TransformComponent", "Scale", { x: s, y: s, z: 1 }, "vector3");
   // 히트 박스: 스프라이트 크기(px)의 60% × 배율, 최소 0.4. hitW/hitH가 있으면 그 값
@@ -58,7 +72,7 @@ function buildMonster(m, boss) {
     b.value("script.BossPattern", "PoolSeconds", num(boss.poolSec, 0), "double");
     b.value("script.BossPattern", "PoolElement", boss.poolElement || "", "string");
     b.value("script.BossPattern", "SlamAtTarget", bool(boss.atTarget), "bool");
-    b.value("script.BossPattern", "Bonded", bool(boss.bond), "bool");
+    b.value("script.BossPattern", "BondGroup", boss.bond || "", "string");
     if (boss.extra) b.component(boss.extra);
   }
   b.write(P.model(`Region${m.region}/${m.model}`));
