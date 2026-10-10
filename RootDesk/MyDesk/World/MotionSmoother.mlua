@@ -52,6 +52,10 @@ script MotionSmoother extends Logic
     property number StatMaxSpeed = 0         -- 점검용: 화면에서 한 프레임에 움직인 가장 빠른 속도(칸/초) — 튐 확인 (보간 중)
     property number StatMaxSpeedLocal = 0    -- 점검용: 직접 그리는 중
     property number StatMaxSpeedBlend = 0    -- 점검용: 직접 그리기 → 보간으로 넘어가는 중
+    property boolean UseProxy = true         -- 소환수는 몸 그림을 클라이언트 전용 자식(MSVis)으로 그린다 (아래 PlaceVis)
+    property integer StatFlip = 0            -- 점검용: 소환수 좌우를 바꿔 쓴 횟수
+    property integer StatSwitch = 0          -- 점검용: 직접 그리기 ↔ 보간 전환 횟수
+    property integer StatReverse = 0         -- 점검용: 화면에서 움직이던 방향과 반대로 꺾인 프레임 수 (뒤로 갔다 앞으로)
     property integer StatSnap = 0            -- 점검용: 직접 그리다 서버 위치로 순간이동시킨 횟수
     property number StatPullSum = 0          -- 점검용: 직접 그리는 동안 서버 위치와의 거리 합 (평균 = 합 / StatLocal)
 
@@ -104,6 +108,7 @@ script MotionSmoother extends Logic
         for id, r in pairs(self.Recs) do
             local e = r.e
             if not isvalid(e) or not e.Enable then
+                self:DropVis(r)
                 self.Recs[id] = nil
             else
                 self:Step(r, snow, delta)
@@ -213,16 +218,36 @@ script MotionSmoother extends Logic
             r.vt = now
             r.dx, r.dy = x, y
         end
-        if math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
-            t.WorldPosition = Vector3(x, y, p.z)
-            r.wx, r.wy = x, y
-            self.DrawCount = self.DrawCount + 1
+        if r.unit ~= nil and r.pdx ~= nil then
+            local sx, sy = x - r.pdx, y - r.pdy
+            local a = math.sqrt(sx * sx + sy * sy)
+            local b = math.sqrt(r.psx * r.psx + r.psy * r.psy)
+            if a > 0.002 and b > 0.002 and sx * r.psx + sy * r.psy < -0.3 * a * b then self.StatReverse = self.StatReverse + 1 end
+            if a > 0.002 then r.psx, r.psy = sx, sy end
         end
+        if r.unit ~= nil then
+            if r.psx == nil then r.psx, r.psy = 0, 0 end
+            r.pdx, r.pdy = x, y
+        end
+        -- 좌우·그림을 먼저 정한다 (좌우를 바꾸는 프레임에 그림 자식 위치가 거울처럼 반대쪽으로 한 번 튀지 않게)
         if r.moving then self.StatMoving = self.StatMoving + 1 end
         local speed = math.sqrt(r.vx * r.vx + r.vy * r.vy)
         if r.moving and speed < self.MoveOff then r.moving = false
         elseif not r.moving and speed > self.MoveOn then r.moving = true end
-        if r.unit ~= nil then self:LookUnit(r, t) elseif r.monster then self:LookMonster(r) end
+        if r.unit ~= nil then self:LookUnit(r, t, delta) elseif r.monster then self:LookMonster(r) end
+        if r.unit ~= nil and self.UseProxy then
+            -- 소환수: 루트 위치는 서버 값 그대로 두고, 몸 그림(자식)을 원하는 위치만큼 옮겨 그린다
+            if self:PlaceVis(r, x, y, p, t) then
+                r.wx, r.wy = p.x, p.y
+            elseif math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
+                t.WorldPosition = Vector3(x, y, p.z)
+                r.wx, r.wy = x, y
+            end
+        elseif math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
+            t.WorldPosition = Vector3(x, y, p.z)
+            r.wx, r.wy = x, y
+            self.DrawCount = self.DrawCount + 1
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -285,6 +310,7 @@ script MotionSmoother extends Logic
             if not r.lf then
                 -- 지금 화면 위치·속도에서 이어 간다 (r.wx는 이번 프레임에 서버 위치로 바뀌었을 수 있어 마지막으로 그린 r.dx를 쓴다)
                 r.lf = true
+                self.StatSwitch = self.StatSwitch + 1
                 r.fx, r.fy = r.dx, r.dy
                 r.fvx, r.fvy = r.vx, r.vy
                 r.fmove = math.sqrt(r.vx * r.vx + r.vy * r.vy) > 0.3
@@ -311,6 +337,7 @@ script MotionSmoother extends Logic
         if r.lf then
             -- 사냥 시작 등: 직접 그리던 위치와 보간 위치의 차이를 줄인다 (0.3초, 차이가 크면 초당 2칸을 넘지 않게 더 길게)
             r.lf = false
+            self.StatSwitch = self.StatSwitch + 1
             r.bx, r.by = r.fx - ix, r.fy - iy
             r.blend = 1
             r.bdur = math.max(0.3, math.sqrt(r.bx * r.bx + r.by * r.by) / 2)
@@ -374,13 +401,19 @@ script MotionSmoother extends Logic
         local dvx, dvy = 0, 0
         if follow then
             local mult = math.max(0.75, math.min(1.3, 0.75 + 0.35 * dist)) * r.fjit
+            local base = unit.BaseSpeed
+            if base <= 0 and isvalid(unit.Entity.MovementComponent) then base = unit.Entity.MovementComponent.InputSpeed end
+            local world = base * self.SpeedScale
             local ax, ay = tx, ty
-            if ownerMoving then ax, ay = ax + self.OwnerDX * 0.3, ay + self.OwnerDY * 0.3 end
+            if ownerMoving then
+                -- 주인 속도의 1.0~1.6배까지 내서 앞자리에 닿고, 주인 몸은 옆으로 비켜 돈다 (ShadowUnit 따라가기와 같다)
+                if world > 0.05 then mult = math.max(mult, math.min(unit.PaceMax, self.OwnerSpeed * math.min(1.6, 1 + 0.5 * dist) / world)) end
+                local pass = unit:PassOwner(Vector2(px, py), Vector2(op.x, op.y), Vector2(sx, sy), Vector2(self.OwnerDX, self.OwnerDY))
+                ax, ay = ax + self.OwnerDX * 0.3 + pass.x, ay + self.OwnerDY * 0.3 + pass.y
+            end
             local am = math.sqrt(ax * ax + ay * ay)
             if am > 0.001 then
-                local base = unit.BaseSpeed
-                if base <= 0 and isvalid(unit.Entity.MovementComponent) then base = unit.Entity.MovementComponent.InputSpeed end
-                local speed = base * self.SpeedScale * mult
+                local speed = world * mult
                 -- 주인이 서 있으면 자리 앞에서 서서히 선다 (서버는 0.2칸에서 바로 서지만 화면은 부드럽게)
                 if not ownerMoving then speed = speed * math.min(1, 0.35 + dist / 0.45) end
                 dvx, dvy = ax / am * speed, ay / am * speed
@@ -400,7 +433,80 @@ script MotionSmoother extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void LookUnit(any r, TransformComponent t)
+    method boolean PlaceVis(any r, number x, number y, Vector3 p, TransformComponent t)
+        -- 10-10 6차 QA(움직이면서 뒤로 갔다 앞으로 갔다 껌뻑껌뻑): 서버 위치가 올 때마다 엔진이 루트 위치를 덮어쓰고, 그 프레임은
+        -- 서버 위치(뒤)가 그대로 화면에 나왔다 (메이커는 매 프레임 덮어써 루트에 쓴 위치가 아예 안 보였다 — 띄워 그리기로 확인).
+        -- 루트의 몸 그림은 내 화면에서만 끄고, 클라이언트 전용 자식(MSVis)이 같은 그림을 원하는 위치에 그린다.
+        -- 자식 위치는 서버가 건드리지 않으므로, 루트가 덮어써져도 어긋남은 그 사이 서버 이동 한 번만큼뿐이다.
+        -- 발밑 원(AllyRing)·체력 막대(HpBar)도 같은 만큼 옮긴다. 판정·피해 숫자 등은 서버 위치 그대로
+        local e = r.e
+        local src = e.SpriteRendererComponent
+        if not isvalid(src) then return false end
+        local vis = r.vis
+        if vis == nil or not isvalid(vis) then
+            vis = e:GetChildByName("MSVis")
+            if not isvalid(vis) then vis = _SpawnService:SpawnByModelId("artsprite", "MSVis", Vector3(x, y, p.z), e) end
+            if not isvalid(vis) then
+                self.UseProxy = false
+                log_warning("[MotionSmoother] 그림 자식을 만들 수 없어 루트 위치로 그린다")
+                return false
+            end
+            r.vis = vis
+            vis.TransformComponent.Scale = Vector3(1, 1, 1)
+            vis.TransformComponent.ZRotation = 0
+            local ring = e:GetChildByName("AllyRing")
+            if isvalid(ring) then
+                r.ring = ring
+                if r.ringBase == nil then r.ringBase = ring.TransformComponent.Position end
+            end
+        end
+        if src.Enable then src.Enable = false end
+        -- 그림 따라 하기 (서버가 바꾸는 클립·색·재생 속도·좌우·정렬)
+        local dst = vis.SpriteRendererComponent
+        if dst.SpriteRUID ~= src.SpriteRUID then dst.SpriteRUID = src.SpriteRUID end
+        local c, d = src.Color, dst.Color
+        if c.r ~= d.r or c.g ~= d.g or c.b ~= d.b or c.a ~= d.a then dst.Color = c end
+        if dst.PlayRate ~= src.PlayRate then dst.PlayRate = src.PlayRate end
+        if dst.FlipX ~= src.FlipX then dst.FlipX = src.FlipX end
+        if dst.SortingLayer ~= src.SortingLayer then dst.SortingLayer = src.SortingLayer end
+        if dst.OrderInLayer ~= src.OrderInLayer then dst.OrderInLayer = src.OrderInLayer end
+        -- 위치: 부모 좌표(크기·좌우 반전이 곱해진)로 바꿔 자식에 준다
+        local sc = t.Scale
+        local sx = sc.x
+        local sy = sc.y
+        if math.abs(sx) < 0.001 then sx = 1 end
+        if math.abs(sy) < 0.001 then sy = 1 end
+        local lx, ly = (x - p.x) / sx, (y - p.y) / sy
+        vis.TransformComponent.Position = Vector3(lx, ly, 0)
+        if r.ring ~= nil and isvalid(r.ring) then
+            local b = r.ringBase
+            r.ring.TransformComponent.Position = Vector3(b.x + lx, b.y + ly, b.z)
+        end
+        ---@type ShadowUnit
+        local unit = r.unit
+        if isvalid(unit) then
+            unit.VisLocal = Vector2(lx, ly)
+            unit:PlaceHpBar()
+        end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DropVis(any r)
+        -- 추적을 그만둘 때: 루트 몸 그림을 다시 켜고 그림 자식을 지운다
+        if r.vis == nil then return end
+        if isvalid(r.e) and isvalid(r.e.SpriteRendererComponent) then r.e.SpriteRendererComponent.Enable = true end
+        if isvalid(r.vis) then r.vis:Destroy() end
+        r.vis = nil
+        if r.ring ~= nil and isvalid(r.ring) and r.ringBase ~= nil then r.ring.TransformComponent.Position = r.ringBase end
+        if isvalid(r.unit) then
+            r.unit.VisLocal = Vector2(0, 0)
+            r.unit:PlaceHpBar()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LookUnit(any r, TransformComponent t, number delta)
         -- 소환수: 좌우 = 크기 x 부호 (그림 기본은 왼쪽), 그림 = 서기/걷기 클립. 서버가 바꾼 값은 기억해 두고 멈추면 그 값으로
         ---@type ShadowUnit
         local unit = r.unit
@@ -409,7 +515,15 @@ script MotionSmoother extends Logic
         if r.myScaleX == nil or math.abs(sc.x - r.myScaleX) > 0.0001 then r.srvScaleX = sc.x end
         local wantX = r.srvScaleX
         if r.moving and math.abs(r.vx) > 0.2 then wantX = math.abs(sc.x) * (r.vx > 0 and -1 or 1) end
+        -- 좌우는 0.15초 넘게 그 방향일 때만 바꾼다 (10-10 6차 QA 껌뻑임: 4초에 소환수 7마리가 10번 좌우를 뒤집었다)
+        if wantX ~= nil and wantX * sc.x < 0 then
+            r.flipT = (r.flipT or 0) + delta
+            if r.flipT < 0.15 then wantX = sc.x end
+        else
+            r.flipT = 0
+        end
         if wantX ~= nil and math.abs(wantX - sc.x) > 0.0001 then
+            if wantX * sc.x < 0 then self.StatFlip = self.StatFlip + 1 end
             t.Scale = Vector3(wantX, sc.y, sc.z)
             unit:UpdateHpBar()
         end
@@ -480,6 +594,7 @@ script MotionSmoother extends Logic
                         r.e.TransformComponent.WorldPosition = Vector3(last.x, last.y, p.z)
                     end
                 end
+                self:DropVis(r)
                 self.Recs[id] = nil
             end
         end
