@@ -217,8 +217,18 @@ script NpcWindow extends Logic
 
     method string IdleLine(string kind)
         -- 자기 의뢰 차례가 아닐 때 의뢰인 NPC의 한마디
-        if kind == "scholar" then return "사원의 비밀은 아직 모래 아래 잠들어 있다. 길이 열리면 자네에게 부탁할 일이 생길 걸세." end
-        if kind == "apothecary" then return "사막에선 물 한 모금이 목숨이야. 다치면 서두르지 말고 물약부터 챙겨." end
+        -- 액트 2를 끝냈으면 끝난 뒤의 대사 (악몽·지옥 안내)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local done = quest ~= nil and quest:IsActDone(2)
+        if kind == "scholar" then
+            if done then return "대사제가 쓰러진 뒤로 사막이 조용하군. 하지만 악몽 속의 사원은 또 다른 이야기일 걸세 — 웨이포인트에서 난이도를 바꿔 보게." end
+            return "사원의 비밀은 아직 모래 아래 잠들어 있다. 길이 열리면 자네에게 부탁할 일이 생길 걸세."
+        end
+        if kind == "apothecary" then
+            if done then return "모래폭풍이 잦아들었어. 그래도 악몽의 사막에 간다면 해독제는 넉넉히 챙겨." end
+            return "사막에선 물 한 모금이 목숨이야. 다치면 서두르지 말고 물약부터 챙겨."
+        end
         return "할 이야기가 없다."
     end
 

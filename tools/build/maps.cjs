@@ -80,10 +80,16 @@ function desiredEntities(d, maps, ctx) {
     const w = at(d.waypoint);
     place("Waypoint", "Objects/Waypoint", w.pos, { "script.Waypoint": { WaypointId: w.name } });
   }
+  // 같은 고정 몬스터가 여러 번 나오면 엔티티 이름에 번호 (사원 문지기 두 형제)
+  const fixedCount = {};
+  for (const f of list(d.fixed)) fixedCount[at(f).name] = (fixedCount[at(f).name] || 0) + 1;
+  const fixedSeen = {};
   for (const f of list(d.fixed)) {
     const x = at(f);
     const m = ctx.monsters[x.name];
-    place(m.model, `Region${m.region}/${m.model}`, x.pos);
+    fixedSeen[x.name] = (fixedSeen[x.name] || 0) + 1;
+    const name = fixedCount[x.name] > 1 ? `${m.model}${fixedSeen[x.name]}` : m.model;
+    place(name, `Region${m.region}/${m.model}`, x.pos);
   }
   for (const ex of list(d.extra)) {
     const x = at(ex);
@@ -107,6 +113,7 @@ function ambience(d) {
     "@type": "script.MapAmbience", Enable: true,
     DisplayName: d.name, Ambient: num(d.ambient), PlayerLightRadius: num(d.lightRadius),
     Bgm: d.bgm, Wind: bool(d.wind), Crows: bool(d.crows), Difficulty: 0, LevelBonus: 0,
+    Storm: num(d.storm, 0),
   };
 }
 

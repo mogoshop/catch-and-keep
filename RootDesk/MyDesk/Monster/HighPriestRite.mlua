@@ -1,0 +1,129 @@
+-- 모래 폐허의 대사제 (액트 2 보스) 3단계. 내려찍기·장판·졸개 소환은 같은 엔티티의 BossPattern을 쓴다.
+--   1단계 (생명 66% 초과): 플레이어 발밑 화염 장판 (BossPattern SlamAtTarget + 장판)
+--   2단계 (66% 이하): 쓰러진 자들을 미라로 일으킨다 — 14초마다 미라 2마리 (맵에 살아 있는 졸개 6 이하일 때)
+--   3단계 (33% 이하): 모래폭풍 — 같은 맵 플레이어 시야 축소(DarkVision) + 화염구 연사(일반 공격 간격 ×0.45)
+-- 죽거나 맵에 플레이어가 없으면 1단계로 돌아간다.
+@Component
+script HighPriestRite extends Component
+
+    property integer Phase = 1
+    @Sync
+    property boolean Storm = false
+    property number SummonTimer = 0
+    property number BaseCooldown = 0
+    property number SummonInterval = 14
+    property integer SummonCount = 2
+    property integer MinionCap = 6
+    property boolean StormApplied = false     -- 클라이언트: 내 시야에 폭풍을 적용했는가
+
+    method void OnBeginPlay()
+        -- 서버는 단계 진행, 클라이언트는 폭풍 시야만 맡는다
+        if self:IsServer() then log("[VRF] HighPriestRite ready") end
+    end
+
+    method void OnUpdate(number delta)
+        -- 생명 비율로 단계를 올리고, 2단계부터 주기적으로 미라를 일으킨다
+        if self:IsClient() then self:ClientTick() return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            if self.Phase ~= 1 then self:ResetRite() end
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if self.Phase == 1 and ratio <= 0.66 then self:EnterPhase(2) end
+        if self.Phase == 2 and ratio <= 0.33 then self:EnterPhase(3) end
+        if self.Phase >= 2 then
+            self.SummonTimer = self.SummonTimer - delta
+            if self.SummonTimer <= 0 then
+                self.SummonTimer = self.SummonInterval
+                self:RaiseMummies()
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnterPhase(integer phase)
+        -- 단계 전환: 2 = 미라 소환(장판은 자기 자리), 3 = 모래폭풍 + 화염구 연사(장판은 다시 발밑)
+        self.Phase = phase
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if phase == 2 then
+            if bp ~= nil then
+                bp.SlamAtTarget = false
+                bp:Announce("대사제가 쓰러진 자들을 미라로 일으킨다!")
+            end
+            self.SummonTimer = 0
+        elseif phase == 3 then
+            self.Storm = true
+            if atk ~= nil then
+                if self.BaseCooldown <= 0 then self.BaseCooldown = atk.AttackCooldown end
+                atk.AttackCooldown = self.BaseCooldown * 0.45
+            end
+            if bp ~= nil then
+                bp.SlamAtTarget = true
+                bp:Announce("모래폭풍이 성소를 덮는다! 대사제가 화염구를 퍼붓는다")
+            end
+        end
+        log("[VRF] high priest phase " .. tostring(phase))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로: 폭풍 해제, 공격 간격·발밑 장판 복원
+        self.Phase = 1
+        self.Storm = false
+        self.SummonTimer = 0
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil and self.BaseCooldown > 0 then atk.AttackCooldown = self.BaseCooldown end
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil then bp.SlamAtTarget = true end
+        log("[VRF] high priest rite reset")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RaiseMummies()
+        -- 맵에 살아 있는 졸개가 상한 미만일 때만 미라 SummonCount마리 (BossPattern 졸개 = 레벨 맞춤·리스폰 없음)
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp == nil then return end
+        local alive = 0
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if c.Entity.Name == "BossMinion" and not m.IsDead and c.Entity.Enable then alive = alive + 1 end
+        end
+        if alive >= self.MinionCap then return end
+        bp.MinionModelId = "mummy"
+        bp.MinionCount = math.min(self.SummonCount, self.MinionCap - alive)
+        bp:SummonMinions()
+        bp.MinionCount = 0
+        log("[VRF] high priest raised mummies alive=" .. tostring(alive))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 같은 맵에 있을 때만 폭풍 시야를 켜고 끈다 (맵을 떠나면 DarkVision이 맵 설정으로 되돌린다)
+        local me = _UserService.LocalPlayer
+        local here = isvalid(me) and isvalid(self.Entity) and me.CurrentMap == self.Entity.CurrentMap
+        local want = here and self.Storm
+        if not here then
+            self.StormApplied = false
+            return
+        end
+        if want == self.StormApplied then return end
+        self.StormApplied = want
+        _DarkVision:SetBossStorm(want and 0.5 or 0)
+    end
+
+    method void OnEndPlay()
+        -- 보스가 사라지면 내 시야의 폭풍도 거둔다
+        if self:IsClient() and self.StormApplied then _DarkVision:SetBossStorm(0) end
+    end
+
+end

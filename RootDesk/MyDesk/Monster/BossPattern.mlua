@@ -2,6 +2,8 @@
 -- 피해 판정은 같은 엔티티의 MonsterAttack:Slam을 쓴다. 내려찍기 피해는 몬스터 레벨 보정(공격력 배율)을 따른다.
 -- 장판(PoolSeconds > 0): 내려찍은 자리에 PoolSeconds초 동안 남아 0.5초마다 PoolElement 피해 (세르카 독 · 사서 화염).
 -- SlamAtTarget: 자기 자리 대신 가장 가까운 플레이어 발밑에 예고한다 (원거리 미니보스).
+-- Bonded: 같은 맵의 같은 종류(형제)가 쓰러지면 분노 — 공격 +50% · 공격 속도 +30% (사원 문지기 두 형제).
+-- 졸개는 보스 레벨 -2로 맞춘다 (레벨 1 졸개가 높은 맵에서 의미 없어지지 않게).
 @Component
 script BossPattern extends Component
 
@@ -22,6 +24,10 @@ script BossPattern extends Component
     property Vector2 PoolCenter = Vector2(0, 0)
     property number PoolRemaining = 0
     property number PoolTick = 0
+    property boolean Bonded = false
+    property number RageMult = 1             -- 형제 분노 배율 (Monster.GetDamageDealtMultiplier가 읽는다)
+    property number BondTimer = 0
+    property boolean TwinSeenAlive = false   -- 살아 있는 형제를 본 뒤에만 「형제가 쓰러짐」으로 분노한다 (다시 나타날 때 오작동 방지)
 
     property number SlamRecovery = 0.65
     @Sync
@@ -53,6 +59,8 @@ script BossPattern extends Component
         if monster.IsDead or not self.Entity.Enable then
             self:CancelSlam()
             self:EndPool()
+            self:Calm()
+            self.TwinSeenAlive = false
             if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
             self.WasDead = monster.IsDead
             self.Enraged = false
@@ -62,6 +70,7 @@ script BossPattern extends Component
         end
         self.WasDead = false
         self:UpdatePool(delta)
+        self:CheckBond(delta)
         local status = monster:Status()
         if status ~= nil and status:IsStunned() then self:CancelSlam() return end
         if self.SlamPhase ~= "idle" then
@@ -125,6 +134,50 @@ script BossPattern extends Component
         self:HoldMotion()
         if self.Entity.StateComponent.CurrentStateName ~= "IDLE" then self.Entity.StateComponent:ChangeState("IDLE") end
         if self.DebugCombat then log("[VRF] boss slam windup center=" .. tostring(self.SlamCenter) .. " radius=" .. tostring(self.SlamRadius)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckBond(number delta)
+        -- 형제 보스: 살아 있던 형제가 내 눈앞에서 쓰러지면 분노한다. 형제가 다시 나타나면(리스폰) 가라앉는다.
+        -- 내가 다시 나타났을 때 형제가 이미 죽어 있는 것은 분노 조건이 아니다 (살아 있는 형제를 먼저 봐야 한다)
+        if not self.Bonded then return end
+        self.BondTimer = self.BondTimer - delta
+        if self.BondTimer > 0 then return end
+        self.BondTimer = 0.5
+        ---@type Monster
+        local me = self.Entity:GetComponent("script.Monster")
+        local twinAlive = false
+        local twinDead = false
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local other = c
+            if c.Entity ~= self.Entity and other.SourceId == me.SourceId then
+                if other.IsDead then twinDead = true else twinAlive = true end
+            end
+        end
+        if self.RageMult > 1 then
+            if twinAlive and not twinDead then
+                self:Calm()
+                log("[VRF] bond calm " .. me.SourceId)
+            end
+            return
+        end
+        if twinAlive and not twinDead then self.TwinSeenAlive = true end
+        if twinDead and self.TwinSeenAlive then
+            self.TwinSeenAlive = false
+            self.RageMult = 1.5
+            self.Entity.TransformComponent.Scale = self.Entity.TransformComponent.Scale * 1.15
+            self:Announce("형제를 잃은 문지기가 분노했다! (공격 +50%)")
+            log("[VRF] bond rage " .. me.SourceId)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Calm()
+        -- 형제 분노 해제 (내가 죽었거나 형제가 돌아왔다)
+        if self.RageMult <= 1 then return end
+        self.RageMult = 1
+        self.Entity.TransformComponent.Scale = self.Entity.TransformComponent.Scale / 1.15
     end
 
     @ExecSpace("ServerOnly")
@@ -289,9 +342,12 @@ script BossPattern extends Component
 
     @ExecSpace("ServerOnly")
     method void SummonMinions()
-        -- 보스 주위에 리스폰 없는 졸개
+        -- 보스 주위에 리스폰 없는 졸개 (보스 레벨 -2)
         local map = self.Entity.CurrentMap
         local p = self.Entity.TransformComponent.WorldPosition
+        ---@type Monster
+        local boss = self.Entity:GetComponent("script.Monster")
+        local level = boss ~= nil and math.max(1, boss.Level - 2) or 1
         for i = 1, self.MinionCount do
             local ang = math.pi * 2 * i / self.MinionCount
             local pos = Vector3(p.x + math.cos(ang) * 1.5, p.y + math.sin(ang) * 1.0, 0)
@@ -301,6 +357,7 @@ script BossPattern extends Component
                     ---@type Monster
                     local m = comp
                     m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
                 end, nil)
             end
         end

@@ -58,6 +58,8 @@ function buildMonster(m, boss) {
     b.value("script.BossPattern", "PoolSeconds", num(boss.poolSec, 0), "double");
     b.value("script.BossPattern", "PoolElement", boss.poolElement || "", "string");
     b.value("script.BossPattern", "SlamAtTarget", bool(boss.atTarget), "bool");
+    b.value("script.BossPattern", "Bonded", bool(boss.bond), "bool");
+    if (boss.extra) b.component(boss.extra);
   }
   b.write(P.model(`Region${m.region}/${m.model}`));
 }

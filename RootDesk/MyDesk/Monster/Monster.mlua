@@ -153,14 +153,21 @@ script Monster extends Component
         if traits ~= nil then m = traits.DamageMult end
         local status = self:Status()
         if status ~= nil then m = m * status:WeakenMult() * status:AuraMult("dmg") end
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil then m = m * bp.RageMult end
         return m
     end
 
     method number GetAttackSpeedMultiplier()
-        -- 질풍 오오라
+        -- 질풍 오오라 × 형제 분노(+30%)
+        local m = 1
         local status = self:Status()
-        if status == nil then return 1 end
-        return status:AuraMult("haste")
+        if status ~= nil then m = status:AuraMult("haste") end
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil and bp.RageMult > 1 then m = m * 1.3 end
+        return m
     end
 
     method string GetVariant()

@@ -6,6 +6,9 @@
 // 사용: node tools/check_data.cjs   (GAME_DATA_DIR=<dir>로 다른 폴더 검사 가능)
 "use strict";
 const { load, num } = require("./lib/csv.cjs");
+const fs = require("fs");
+const path = require("path");
+const ROOT = path.join(__dirname, "..");
 
 const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
@@ -164,6 +167,8 @@ T.bosses.forEach((r, i) => {
   if (num(r.poolSec, 0) > 0 && (r.poolElement === "" || !ELEMENTS.has(r.poolElement))) err("bosses", i, `poolElement '${r.poolElement}' 알 수 없음`);
   if (num(r.poolSec, 0) >= num(r.slamInterval) - 1) err("bosses", i, "poolSec는 slamInterval보다 1초 이상 짧아야 함 (예고 원과 겹침)");
   if (!["true", "false", ""].includes(r.atTarget)) err("bosses", i, `atTarget '${r.atTarget}' — true / false`);
+  if (!["true", "false", ""].includes(r.bond)) err("bosses", i, `bond '${r.bond}' — true / false`);
+  if (r.extra && !fs.existsSync(path.join(ROOT, "RootDesk/MyDesk/Monster", r.extra.replace(/^script\./, "") + ".mlua"))) err("bosses", i, `extra '${r.extra}' — RootDesk/MyDesk/Monster에 스크립트 없음`);
 });
 
 if (!T.monsters.some((r) => r.depth === "pool")) err("monsters", null, "depth=pool 몬스터가 하나도 없음 (심도 던전이 빈다)");
@@ -239,7 +244,7 @@ T.quests.forEach((r, i) => {
     const [k, v] = [part.slice(0, part.indexOf(":")), part.slice(part.indexOf(":") + 1)];
     if (k === "rune" && !runeIds.has(v)) err("quests", i, `보상 룬 '${v}' — runes.csv에 없음`);
     else if (k === "item" && !baseIds.has(v.split("|")[0])) err("quests", i, `보상 아이템 '${v.split("|")[0]}' — item_bases에 없음`);
-    else if (["skp", "stp", "gen", "socket", "deploy", "runes", "respoison"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
+    else if (["skp", "stp", "gen", "socket", "deploy", "runes", "respoison", "unique"].includes(k)) { if (!(num(v) > 0)) err("quests", i, `보상 '${part}' 수치 오류`); }
     else if (!["rune", "item"].includes(k)) err("quests", i, `보상 종류 '${k}' 알 수 없음`);
   }
 });

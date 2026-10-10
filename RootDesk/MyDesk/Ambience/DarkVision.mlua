@@ -9,6 +9,10 @@ script DarkVision extends Logic
     property integer GlobalSerial = 0
     property table Lights = {}          -- entity id → { entity, serial }
     property boolean Active = false
+    property number BaseRadius = 0          -- 이 맵의 내 시야 반경 (폭풍 전)
+    property number MapStorm = 0            -- 맵 모래폭풍 (MapAmbience.Storm)
+    property number BossStorm = 0           -- 보스 모래폭풍 (HighPriestRite 3단계)
+    property integer DustSerial = 0         -- 폭풍 모래 입자
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -37,6 +41,8 @@ script DarkVision extends Logic
         self.Lights = {}
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
         self.GlobalSerial = 0
+        if self.DustSerial ~= 0 then _ParticleService:RemoveParticle(self.DustSerial) end
+        self.DustSerial = 0
     end
 
     @ExecSpace("ClientOnly")
@@ -124,9 +130,42 @@ script DarkVision extends Logic
         local ambient = math.max(amb.Ambient, _GameData.darkMinAmbient)
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, amb.AmbientColor, ambient))
         local r = math.max(amb.PlayerLightRadius, _GameData.darkMinLightRadius)
-        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.6, r)
+        self.BaseRadius = r
+        self.MapStorm = amb.Storm
+        self.BossStorm = 0
+        self:ApplyPlayerLight(player)
         if amb.DisplayName ~= "" then _ScreenMessageLogic:PrivateMsg(amb.DisplayName) end
-        log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f", map.Name, ambient, r))
+        log(string.format("[VRF] DarkVision %s 밝기 %.2f 시야 %.1f 폭풍 %.2f", map.Name, ambient, r, amb.Storm))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyPlayerLight(Entity player)
+        -- 내 주변 빛 = 맵 시야 × (1 - 모래폭풍). 폭풍이면 모래 입자를 함께 두른다 (하한 시야 뒤에 줄인다)
+        if not isvalid(player) then return end
+        local old = self.Lights[player.Id]
+        if old ~= nil then
+            _OverlayLightService:DestroyOverlayLight(old.serial)
+            self.Lights[player.Id] = nil
+        end
+        local storm = math.max(self.MapStorm, self.BossStorm)
+        local r = self.BaseRadius * (1 - storm)
+        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.6, r)
+        if storm > 0 and self.DustSerial == 0 then
+            self.DustSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.DustStorm, player, Vector3(0, 0.6, 0), 0, Vector3(4, 3, 1), true, { Color = Color(0.95, 0.8, 0.55, 0.35) })
+        elseif storm <= 0 and self.DustSerial ~= 0 then
+            _ParticleService:RemoveParticle(self.DustSerial)
+            self.DustSerial = 0
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetBossStorm(number storm)
+        -- 대사제 3단계 모래폭풍: 내 시야를 좁힌다 (0 = 해제)
+        if self.BossStorm == storm then return end
+        self.BossStorm = storm
+        local player = _UserService.LocalPlayer
+        if self.Active and isvalid(player) then self:ApplyPlayerLight(player) end
+        log(string.format("[VRF] DarkVision boss storm %.2f 시야 %.1f", storm, self.BaseRadius * (1 - math.max(self.MapStorm, storm))))
     end
 
     @ExecSpace("ClientOnly")

@@ -220,7 +220,7 @@ script PlayerQuest extends Component
         local slots = 0
         for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
             if key == "item" or key == "gen" or (key == "rune" and _ItemData:GetRune(val) ~= nil) then slots = slots + 1 end
-            if key == "runes" then slots = slots + (tonumber(val) or 0) end
+            if key == "runes" or key == "unique" then slots = slots + (tonumber(val) or 0) end
         end
         if #inv.Bag + slots > inv.BagSize then
             _Util:Notify("보상 받을 가방 공간 " .. tostring(slots) .. "칸이 필요합니다. 의뢰와 보상은 보관됩니다", self.Entity.PlayerComponent.UserId)
@@ -242,6 +242,13 @@ script PlayerQuest extends Component
                 -- 발견 확률만 높여서는 희귀 보상이 보장되지 않는다. 옵션도 보장 등급에 맞춰 생성한다.
                 local rare = (tonumber(val) or 0) >= 3
                 table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, rare and "boss" or "quest", 300, rare and 2 or 1))
+            elseif key == "unique" then
+                -- 유니크 장비 보장 (어디서나 나오는 유니크 중 레벨에 맞는 것, 없으면 희귀 보장)
+                for i = 1, (tonumber(val) or 0) do
+                    local u = _ItemData:PickUnique(lv + 2, "")
+                    if u ~= nil then table.insert(items, _ItemData:MakeUnique(u, lv + 2))
+                    else table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, "boss", 300, 2)) end
+                end
             elseif key == "skp" then skillPoints = skillPoints + (tonumber(val) or 0)
             elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0)
             elseif key == "socket" then sockets = sockets + (tonumber(val) or 0) end
