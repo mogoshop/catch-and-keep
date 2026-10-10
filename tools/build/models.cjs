@@ -27,6 +27,8 @@ function buildMonster(m, boss) {
     if (m.attack !== "") clips.attack = m.attack;
     b.value("MOD.Core.StateAnimationComponent", "ActionSheet", clips, "action_sheet");
     b.value("MOD.Core.SpriteRendererComponent", "SpriteRUID", m.stand, "string");
+    // 템플릿(MonsterBase)의 재생 범위가 0~0이라 메이플 애니메이션 클립이 첫 프레임에 멈춰 있었다 (10-10 QA: 액트 1 몬스터 애니메이션 없음) → 끝까지 재생
+    b.value("MOD.Core.SpriteRendererComponent", "EndFrameIndex", 2147483647, "int");
   }
   const s = num(m.scale, 1);
   b.value("MOD.Core.TransformComponent", "Scale", { x: s, y: s, z: 1 }, "vector3");
