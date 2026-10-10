@@ -1,0 +1,92 @@
+-- 채널 (10-11): MSW 월드 인스턴스 = 채널. 출시 설정의 「최대 인원」을 넘으면 엔진이 새 인스턴스를 연다.
+-- 같은 채널끼리만 만나고 파티를 맺으므로, 목록을 보여 주고 고른 채널로 옮긴다 (TeleportService 워프).
+-- 목록·워프 API는 출시 환경 전용이라 메이커에서는 「지금 채널 하나」만 보인다.
+@Logic
+script ChannelSystem extends Logic
+
+    property table LastAsk = nil   -- 서버: userId → 마지막 목록 요청 시각 (연타 방지)
+
+    @ExecSpace("Server")
+    method void RequestList()
+        -- 채널 창 → 목록 (그 사람에게만). 줄 = "번호|인원|최대|id|지금"
+        local uid = senderUserId
+        local now = _UtilLogic.ElapsedSeconds
+        if self.LastAsk == nil then self.LastAsk = {} end
+        if self.LastAsk[uid] ~= nil and now - self.LastAsk[uid] < 1.5 then return end
+        self.LastAsk[uid] = now
+        self:RequestListFor(uid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method any Instances()
+        -- 모든 채널 (Id 순 — 채널 번호가 자주 바뀌지 않게). 메이커·실패 = nil
+        local ok, success, pages = pcall(function() return _WorldInstanceService:GetWorldInstanceInfoPagesAndWait() end)
+        if not ok or not success or pages == nil then return nil end
+        local list = {}
+        while true do
+            for _, info in ipairs(pages:GetCurrentPageDatas()) do
+                table.insert(list, { id = info.Id, cur = info.CurrentUserCount, max = info.MaxUserCount })
+            end
+            if pages.IsLastPage or not pages:MoveToNextPageAndWait() then break end
+        end
+        table.sort(list, function(a, b) return a.id < b.id end)
+        return list
+    end
+
+    @ExecSpace("Client")
+    method void ShowList(string digest, boolean makerOnly)
+        _ChannelWindow:OnList(digest, makerOnly)
+    end
+
+    @ExecSpace("Server")
+    method void RequestMove(string instanceId)
+        -- 고른 채널로: 저장 후 워프 (PlayerSave.WarpToChannel). 심도·선택 방·쓰러진 상태·꽉 찬 채널은 막는다
+        local uid = senderUserId
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) then return end
+        if instanceId == "" or instanceId == _WorldInstanceService.WorldInstanceId then
+            _Util:Notify("이미 이 채널에 있다", uid)
+            return
+        end
+        if _RoomService:IsInstanceRoom() then
+            _Util:Notify("심도·캐릭터 선택 중에는 채널을 옮길 수 없다 — 야영지나 사냥터에서 옮기세요", uid)
+            return
+        end
+        local list = self:Instances()
+        local target = nil
+        if list ~= nil then
+            for _, w in ipairs(list) do
+                if w.id == instanceId then target = w end
+            end
+        end
+        if target == nil then
+            _Util:Notify("그 채널은 이제 없다 — 목록을 새로 불러오세요", uid)
+            self:RequestListFor(uid)
+            return
+        end
+        if target.max > 0 and target.cur >= target.max then
+            _Util:Notify("그 채널은 가득 찼다", uid)
+            return
+        end
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save ~= nil then save:WarpToChannel(instanceId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RequestListFor(string uid)
+        -- 서버 안에서 목록을 다시 보낼 때 (RequestList는 senderUserId를 쓴다)
+        local list = self:Instances()
+        if list == nil then
+            self:ShowList("", true, uid)
+            return
+        end
+        local current = _WorldInstanceService.WorldInstanceId
+        local rows = {}
+        for i, w in ipairs(list) do
+            table.insert(rows, string.format("%d|%d|%d|%s|%s", i, w.cur, w.max, w.id, w.id == current and "1" or "0"))
+        end
+        self:ShowList(table.concat(rows, ";"), false, uid)
+    end
+
+end

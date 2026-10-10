@@ -113,6 +113,7 @@ script PlayerSave extends Component
         if first["Stash"] ~= nil then self.LastSaved["Stash"] = first["Stash"] end
         self:PublishSlots()
         local slot = self:TakeSlotTravel()
+        if slot == 0 then slot = self:TakeWarpSlot() end
         if slot > 0 and self:SlotInfo(slot) ~= nil then
             self:LoadSlot(slot)
             return
@@ -380,6 +381,50 @@ script PlayerSave extends Component
         local ok, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
         if not ok or type(data) ~= "table" or type(data.created) ~= "number" or DateTime.UtcNow.Elapsed - data.created > 120000 then return 0 end
         return math.floor(tonumber(data.slot) or 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer TakeWarpSlot()
+        -- 채널 이동(월드 인스턴스 워프)으로 왔으면 워프 데이터의 슬롯을 바로 불러온다 (2분 안). 방 공유 메모리는 인스턴스마다 따로라 워프 데이터로 넘긴다
+        local ok, record = pcall(function() return _TeleportService:GetWarpRecord(self.Entity.PlayerComponent.UserId) end)
+        if not ok or record == nil or record.Data == nil or record.Data == "" then return 0 end
+        local okData, data = pcall(function() return _HttpService:JSONDecode(record.Data) end)
+        if not okData or type(data) ~= "table" or data.kind ~= "channel" or type(data.created) ~= "number" then return 0 end
+        if DateTime.UtcNow.Elapsed - data.created > 120000 then return 0 end
+        log("[VRF] channel: 워프로 도착 → 슬롯 " .. tostring(data.slot))
+        return math.floor(tonumber(data.slot) or 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WarpToChannel(string instanceId)
+        -- 채널 이동 (ChannelSystem.RequestMove): 지금 캐릭터를 저장하고 그 월드 인스턴스로 워프한다. 도착하면 TakeWarpSlot이 같은 캐릭터를 불러온다.
+        -- 되살린 언데드·버프는 캐릭터 선택과 같이 이어지지 않는다 (그림자 군단은 저장돼 있다)
+        local uid = self.Entity.PlayerComponent.UserId
+        if not self.IsLoadSuccess or self.Selecting or self.Switching or self.Slot <= 0 then return end
+        if not _Util:IsAlive(self.Entity) then
+            _Util:Notify("쓰러진 상태에서는 채널을 옮길 수 없다", uid)
+            return
+        end
+        self:Save(true)
+        for k, v in pairs(self:Collect()) do
+            if self.LastSaved[k] ~= v then
+                _Util:Notify("저장에 실패해 채널을 옮기지 않았다. 잠시 뒤 다시 시도하세요", uid)
+                return
+            end
+        end
+        self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
+        self.Switching = true
+        local data = _HttpService:JSONEncode({ kind = "channel", slot = self.Slot, created = DateTime.UtcNow.Elapsed })
+        local ok, moved = pcall(function() return _TeleportService:WarpUserToWorldInstanceAndWait(uid, instanceId, data) end)
+        if not ok or not moved then
+            -- 메이커는 nil (출시 환경 전용). 실패하면 이 자리에서 계속 논다
+            self.IsLoadSuccess = true
+            self.Switching = false
+            _Util:Notify("채널을 옮기지 못했다 (가득 찼거나 닫히는 채널). 다른 채널을 고르세요", uid)
+            log("[VRF] channel: 워프 실패 ok=" .. tostring(ok) .. " moved=" .. tostring(moved))
+            return
+        end
+        log("[VRF] channel: 워프 → " .. instanceId .. " (슬롯 " .. tostring(self.Slot) .. ")")
     end
 
     @ExecSpace("ServerOnly")

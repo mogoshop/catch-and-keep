@@ -210,7 +210,9 @@ function buildGameHud() {
     if (n === "Char" || n === "Skill") k.badge(path);
   });
   // 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
-  k.btn("MenuWin/CharSel", "캐릭터 선택으로", { anchor: "top-left", pos: [64, -576], rect_size: [672, 72], font_size: 24 });
+  k.btn("MenuWin/CharSel", "캐릭터 선택으로", { anchor: "top-left", pos: [64, -576], rect_size: [330, 72], font_size: 24 });
+  // 채널 변경 (ChannelWindow · ChannelSystem — 같은 채널끼리만 만나고 파티를 맺는다)
+  k.btn("MenuWin/Channel", "채널 변경", { anchor: "top-left", pos: [406, -576], rect_size: [330, 72], font_size: 24 });
   b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
@@ -379,6 +381,14 @@ function buildGameHud() {
   });
   k.inner("RankWin/Paper", "top-center", [0, -156], [580, 470], "win_content");
   b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 440] });
+
+  // ── 채널 창 (메뉴 「채널 변경」): 채널별 인원, 고르면 확인 후 이동 (ChannelWindow.mlua) ──
+  k.frame("ChanWin", "middle-center", [0, 40], [620, 700], "채널");
+  for (let i = 1; i <= 8; i++) {
+    k.btn(`ChanWin/Ch${i}`, "", { anchor: "top-center", pos: [0, -84 - (i - 1) * 58], rect_size: [540, 52], font_size: 20 });
+  }
+  b.text("ChanWin/Note", "", { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 96], rect_size: [540, 52], bestfit: true, min_size: 13, max_size: 17 });
+  k.btn("ChanWin/BtnRefresh", "새로 고침", { anchor: "bottom-center", pos: [0, 24], rect_size: [240, 60], font_size: 20 });
 
   // ── 룬워드 조합법 (메뉴 「룬워드」): 조합·부위·효과, 룬별 효과 (RuneWindow.mlua) ──
   k.frame("RuneWin", "middle-center", [0, 20], [960, 760], "룬워드 조합법");

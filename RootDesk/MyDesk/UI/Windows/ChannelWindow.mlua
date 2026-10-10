@@ -1,0 +1,86 @@
+-- 채널 창 (메뉴 「채널 변경」): 채널마다 인원을 보여 주고, 고르면 확인 후 그 채널로 옮긴다 (ChannelSystem).
+@Logic
+script ChannelWindow extends Logic
+
+    property string Win = "ChanWin"
+    property integer Rows = 8
+    property table Ids = nil      -- 줄 번호 → 월드 인스턴스 Id ("" = 지금 채널·빈 줄)
+    property table Names = nil    -- 줄 번호 → "채널 N"
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Ids = {}
+        self.Names = {}
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/BtnRefresh", function() self:Show() end)
+        for i = 1, self.Rows do
+            local row = i
+            _UIKit:Connect(self.Win .. "/Ch" .. tostring(i), function() self:Pick(row) end)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show()
+        _UIKit:Open(self.Win)
+        self.Ids = {}
+        self.Names = {}
+        for i = 1, self.Rows do _UIKit:SetEnabled(self.Win .. "/Ch" .. tostring(i), false) end
+        _UIKit:SetText(self.Win .. "/Note", "채널 목록을 불러오는 중...")
+        _ChannelSystem:RequestList()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnList(string digest, boolean makerOnly)
+        -- digest 줄 = "번호|인원|최대|id|지금"
+        self.Ids = {}
+        self.Names = {}
+        local n, current = 0, ""
+        for no, cur, max, id, me in string.gmatch(digest, "(%d+)|(%d+)|(%d+)|([^|;]+)|(%d)") do
+            n = n + 1
+            if n <= self.Rows then
+                local name = "채널 " .. no
+                local text = string.format("%s    %s / %s명", name, cur, max)
+                if me == "1" then
+                    text = text .. "   · 지금 채널"
+                    current = name
+                    self.Ids[n] = ""
+                else
+                    if tonumber(cur) >= tonumber(max) and tonumber(max) > 0 then text = text .. "   · 가득" end
+                    self.Ids[n] = id
+                end
+                self.Names[n] = name
+                local path = self.Win .. "/Ch" .. tostring(n)
+                _UIKit:SetEnabled(path, true)
+                _UIKit:SetText(path, text)
+            end
+        end
+        if makerOnly or n == 0 then
+            -- 메이커 테스트·목록 실패: 지금 채널 하나만
+            local path = self.Win .. "/Ch1"
+            _UIKit:SetEnabled(path, true)
+            _UIKit:SetText(path, "채널 1    · 지금 채널")
+            self.Ids[1] = ""
+            self.Names[1] = "채널 1"
+            _UIKit:SetText(self.Win .. "/Note", "채널 목록은 출시된 월드에서만 보입니다 (메이커 테스트는 채널 하나)")
+            log("[VRF] ChannelWindow 메이커 — 지금 채널 하나만")
+            return
+        end
+        local note = "같은 채널에 있는 사람끼리만 만나고 파티를 맺을 수 있습니다"
+        if n > self.Rows then note = note .. string.format(" (그 밖에 %d개 채널)", n - self.Rows) end
+        _UIKit:SetText(self.Win .. "/Note", note)
+        log("[VRF] ChannelWindow 채널 " .. tostring(n) .. "개 · 지금 " .. current)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Pick(integer row)
+        local id = self.Ids[row]
+        if id == nil or id == "" then return end
+        local name = self.Names[row] or "다른 채널"
+        _ConfirmDialog:Show("채널 변경", name .. "(으)로 옮깁니다.\n지금 캐릭터를 저장하고 이동합니다. 되살린 언데드는 따라오지 않습니다.", "이동", function()
+            _UIKit:Close(self.Win)
+            _ChannelSystem:RequestMove(id)
+        end)
+    end
+
+end
