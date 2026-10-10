@@ -117,9 +117,51 @@ function decorPositions(d) {
     const parts = e.path.split("/");
     if (parts.length !== 4 || !/^Decor/.test(parts[3])) continue;
     const t = map.component(e.path, "MOD.Core.TransformComponent");
-    if (t && t.Position) out.push({ path: e.path, x: t.Position.x, y: t.Position.y });
+    if (t && t.Position) out.push({ path: e.path, x: t.Position.x, y: t.Position.y, model: e.modelId || "", scale: (t.Scale && t.Scale.x) || 1 });
   }
   return out;
+}
+
+// 메이커 장식(Decor_) 발밑 폭(월드 단위, 배율 1 기준). 다리는 밟고 지나가는 장식이라 막지 않는다
+const DECOR_FOOT = { decorfence: 2.5, decorruins: 2, decordeadtree: 1, decorsarcophagus: 1.5, decorrockedge: 2, decorabyss: 3, decorwell: 1.5, decorbridge: 0 };
+
+// 장식(Decor_) 발밑 칸을 막는다. 길·기능 자리 둘레(2칸)는 피하고, 지형 생성 맵에선 막아서 길이 끊기는 장식은 통과로 둔다
+function blockDecor(d, layout, blocked, desired) {
+  const near = desired.filter((e) => !/^Art/.test(e.name)).map((e) => [e.pos[0], e.pos[1]]);
+  const open = (x, y) => (layout ? layout.isFloor(x, y) : true) && !blocked.has(`${x},${y}`);
+  const reach = () => {
+    if (!layout) return 0;
+    const start = (layout.anchors || []).find((a) => a.kind === "portalW") || (layout.anchors || [])[0];
+    if (!start) return 0;
+    const sx = Math.floor(start.x), sy = Math.floor(start.y);
+    const seen = new Set([`${sx},${sy}`]);
+    const q = [[sx, sy]];
+    while (q.length) {
+      const [x, y] = q.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = `${x + dx},${y + dy}`;
+        if (!seen.has(k) && open(x + dx, y + dy)) { seen.add(k); q.push([x + dx, y + dy]); }
+      }
+    }
+    return seen.size;
+  };
+  let before = reach();
+  for (const p of decorPositions(d)) {
+    const foot = DECOR_FOOT[p.model];
+    if (!foot) continue;
+    const cells = propFootprint(p.x, p.y, foot * 100 / 0.8, 0.8 * Math.abs(p.scale));
+    if (cells.some((k) => {
+      const [x, y] = k.split(",").map(Number);
+      return (layout && (!layout.isFloor(x, y) || (layout.isRoad && layout.isRoad(x, y)))) || near.some(([fx, fy]) => Math.hypot(x + 0.5 - fx, y + 0.5 - fy) < 2);
+    })) continue;
+    const added = cells.filter((k) => !blocked.has(k));
+    for (const k of added) blocked.add(k);
+    if (layout) {
+      const after = reach();
+      if (after < before - added.length) { for (const k of added) blocked.delete(k); continue; }
+      before = after;
+    }
+  }
 }
 
 // 통로 배치가 있는 맵: 지금까지 놓은 기능 엔티티 자리를 방·길로 삼아 배치를 만든다 (맵마다 한 번)
@@ -277,6 +319,10 @@ function buildNormal(d, maps, ctx) {
   }
   for (const e of desired) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
   const layout = ctx.layoutCache[d.id];
+  if (layout || ctx.art[d.id]) {
+    if (!ctx.propBlocked[d.id]) ctx.propBlocked[d.id] = new Set();
+    blockDecor(d, layout, ctx.propBlocked[d.id], desired);
+  }
   if (layout) {
     const spec = ctx.layouts[d.id];
     const roadTile = spec.roadTile === "" ? -1 : num(spec.roadTile);
