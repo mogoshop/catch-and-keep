@@ -18,6 +18,10 @@ script PlayerTravel extends Component
     property table KnownBy = {}              -- "0"/"1"/"2" → Known 문자열 (다른 난이도 것)
     property table VisitedBy = {}            -- "0"/"1"/"2" → Visited 문자열
     @Sync
+    property string KnownAll = ""            -- 난이도별 활성화 웨이포인트 "0=camp,x|1=camp|2=camp" (웨이포인트 창이 다른 난이도 목록을 미리 본다)
+    @Sync
+    property string ActOpenAll = ""          -- 난이도별 열린 마지막 액트 "0=2|1=1|2=1"
+    @Sync
     property integer Act = 1                 -- 지금 액트 (마을 귀환·사망 부활·웨이포인트 창 첫 탭). 마지막으로 들어간 액트 맵 기준
 
     method integer Difficulty()
@@ -111,6 +115,7 @@ script PlayerTravel extends Component
     method void Activate(string id)
         if self:IsKnown(id) then return end
         self.Known = self.Known .. "," .. id
+        self:SyncDiffInfo()
         local w = _WaypointData:Get(id)
         if w ~= nil then _Util:Notify("웨이포인트 활성화: " .. w.name, self.Entity.PlayerComponent.UserId) end
     end
@@ -132,6 +137,29 @@ script PlayerTravel extends Component
         local w = _WaypointData:Get(id)
         if w == nil or not self:ActUnlocked(math.floor(w.act or 1)) then return end
         self:Go(_GameConst:MapFor(w.map, self:Difficulty()), Vector2(w.x, w.y))
+    end
+
+    @ExecSpace("Server")
+    method void RequestTravelIn(string id, integer diff)
+        -- 웨이포인트 창에서 고른 난이도·맵으로 간다. 난이도는 맵을 고를 때 바뀐다 (10-10 QA: 액트·난이도 버튼은 보기만, 이동은 맵 선택 때만)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or pc.Hp <= 0 or not self:NearWaypoint() then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or diff < 0 or diff > stats.MaxDifficulty then return end
+        local w = _WaypointData:Get(id)
+        if w == nil or not self:IsKnownIn(diff, id) or not self:ActUnlockedIn(diff, math.floor(w.act or 1)) then return end
+        if diff ~= stats.Difficulty then
+            stats.Difficulty = diff
+            stats:RefreshResists()    -- 난이도 저항 페널티 다시 계산
+            -- 난이도마다 웨이포인트·방문 기록·의뢰가 따로다
+            self:SwitchDifficulty(diff)
+            ---@type PlayerQuest
+            local quest = self.Entity:GetComponent("script.PlayerQuest")
+            if quest ~= nil then quest:SwitchDifficulty(diff) end
+            self:SyncDiffInfo()
+        end
+        self:Go(_GameConst:MapFor(w.map, diff), Vector2(w.x, w.y))
     end
 
     @ExecSpace("Server")
@@ -211,6 +239,53 @@ script PlayerTravel extends Component
         self.Diff = diff
         self.Known = self.KnownBy[tostring(diff)] or "camp"
         self.Visited = self.VisitedBy[tostring(diff)] or ""
+        self:SyncDiffInfo()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SyncDiffInfo()
+        -- 웨이포인트 창이 난이도를 바꿔 보기만 할 때 쓸 값: 난이도별 활성화 웨이포인트와 열린 액트
+        self.KnownBy[tostring(self.Diff)] = self.Known
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        local known, acts = {}, {}
+        for d = 0, 2 do
+            local key = tostring(d)
+            table.insert(known, key .. "=" .. (self.KnownBy[key] or "camp"))
+            local open = 1
+            if quest ~= nil then
+                local index = 1
+                if d == quest.Diff then index = quest.Index
+                elseif quest.ByDiff[key] ~= nil then index = quest.ByDiff[key].i or 1 end
+                for a = 2, 2 do
+                    local last = _QuestData:LastOfAct(a - 1)
+                    if last > 0 and index > last then open = a end
+                end
+            end
+            table.insert(acts, key .. "=" .. tostring(open))
+        end
+        local k, a = table.concat(known, "|"), table.concat(acts, "|")
+        if self.KnownAll ~= k then self.KnownAll = k end
+        if self.ActOpenAll ~= a then self.ActOpenAll = a end
+    end
+
+    method string KnownIn(integer diff)
+        -- 그 난이도에서 활성화한 웨이포인트 목록 (지금 난이도면 Known 그대로)
+        if diff == self:Difficulty() then return self.Known end
+        local v = string.match("|" .. self.KnownAll .. "|", "|" .. tostring(diff) .. "=([^|]*)|")
+        return v or "camp"
+    end
+
+    method boolean IsKnownIn(integer diff, string id)
+        return string.find("," .. self:KnownIn(diff) .. ",", "," .. id .. ",", 1, true) ~= nil
+    end
+
+    method boolean ActUnlockedIn(integer diff, integer act)
+        -- 그 난이도에서 액트가 열렸는가 (지금 난이도면 의뢰 진행으로 바로 판단)
+        if act <= 1 then return true end
+        if diff == self:Difficulty() then return self:ActUnlocked(act) end
+        local v = tonumber(string.match("|" .. self.ActOpenAll .. "|", "|" .. tostring(diff) .. "=(%d+)|"))
+        return v ~= nil and v >= act
     end
 
     @ExecSpace("ServerOnly")
@@ -247,6 +322,7 @@ script PlayerTravel extends Component
         self.Diff = diff
         self.Known = self.KnownBy[tostring(diff)] or "camp"
         self.Visited = self.VisitedBy[tostring(diff)] or ""
+        self:SyncDiffInfo()
     end
 
     @ExecSpace("ServerOnly")

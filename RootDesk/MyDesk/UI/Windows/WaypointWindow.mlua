@@ -17,6 +17,7 @@ script WaypointWindow extends Logic
     property number QuietSince = 0
     property number OpenDelay = 0.4
     property integer ViewAct = 1             -- 탭에서 보고 있는 액트 (창을 열 때 지금 액트로)
+    property integer ViewDiff = 0            -- 보고 있는 난이도 (창을 열 때 지금 난이도로). 바꿔도 이동하지 않고, 맵을 고를 때 그 난이도로 간다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -38,10 +39,7 @@ script WaypointWindow extends Logic
         end
         for d = 0, 2 do
             local diff = d
-            _UIKit:Connect(self.Win .. "/Diff" .. tostring(d), function()
-                local travel = self:Travel()
-                if travel ~= nil then travel:RequestDifficulty(diff) end
-            end)
+            _UIKit:Connect(self.Win .. "/Diff" .. tostring(d), function() self:SelectDiff(diff) end)
         end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] WaypointWindow idle-only opening and route recommendation ready")
@@ -115,6 +113,7 @@ script WaypointWindow extends Logic
         if open and not shown then
             -- 열 때는 지금 액트의 탭부터
             self.ViewAct = travel.Act
+            self.ViewDiff = st.Difficulty
             _UIKit:Open(self.Win)
         elseif not open then _UIKit:Close(self.Win) end
         self.WasOpen = open
@@ -125,14 +124,14 @@ script WaypointWindow extends Logic
         local quest = player:GetComponent("script.PlayerQuest")
         local goal = quest ~= nil and _HudMap:QuestMap(quest.Index, quest.State) or ""
         local recommended = _HudMap:RecommendedWaypoint(player.CurrentMap.Name, goal, travel)
-        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty) .. "#" .. player.CurrentMap.Id .. "#" .. recommended .. "#" .. tostring(self.ViewAct) .. "#" .. tostring(travel:ActUnlocked(2))
+        local key = travel.Known .. "#" .. tostring(st.Difficulty) .. "#" .. tostring(st.MaxDifficulty) .. "#" .. player.CurrentMap.Id .. "#" .. recommended .. "#" .. tostring(self.ViewAct) .. "#" .. tostring(self.ViewDiff) .. "#" .. travel.KnownAll .. "#" .. travel.ActOpenAll .. "#" .. tostring(travel:ActUnlocked(2))
         if key == self.RenderKey then return end
         self.RenderKey = key
         local list = _WaypointData:ListOfAct(self.ViewAct)
         for a = 1, 2 do
             local label = "액트 " .. tostring(a)
             if a == self.ViewAct then label = "▶" .. label
-            elseif not travel:ActUnlocked(a) then label = _UIKit:Colored("#666666", label .. " (잠김)") end
+            elseif not travel:ActUnlockedIn(self.ViewDiff, a) then label = _UIKit:Colored("#666666", label .. " (잠김)") end
             _UIKit:SetText(self.Win .. "/Act" .. tostring(a), label)
         end
         for i = 1, 6 do
@@ -140,15 +139,20 @@ script WaypointWindow extends Logic
             local text = ""
             _UIKit:SetEnabled(self.Win .. "/Wp" .. tostring(i), w ~= nil)
             if w ~= nil then
-                if travel:IsKnown(w.id) then
-                    text = w.id == recommended and "[의뢰 경로] " .. w.name or w.name
+                if travel:IsKnownIn(self.ViewDiff, w.id) then
+                    -- 의뢰 경로 표시는 지금 난이도를 볼 때만 (의뢰 진행은 난이도마다 다르다)
+                    text = (w.id == recommended and self.ViewDiff == st.Difficulty) and "[의뢰 경로] " .. w.name or w.name
                 else text = _UIKit:Colored("#666666", w.name .. " (미발견)") end
             end
             _UIKit:SetText(self.Win .. "/Wp" .. tostring(i), text)
         end
         for d = 0, 2 do
             local label = _GameConst:DifficultyName(d)
-            if d == st.Difficulty then label = "▶" .. label elseif d > st.MaxDifficulty then label = _UIKit:Colored("#666666", label .. " (잠김)") end
+            if d > st.MaxDifficulty then label = _UIKit:Colored("#666666", label .. " (잠김)")
+            else
+                if d == st.Difficulty and d ~= self.ViewDiff then label = label .. " (지금)" end
+                if d == self.ViewDiff then label = "▶" .. label end
+            end
             _UIKit:SetText(self.Win .. "/Diff" .. tostring(d), label)
         end
     end
@@ -166,6 +170,9 @@ script WaypointWindow extends Logic
         self.RenderKey = ""
         local travel = self:Travel()
         if travel ~= nil then self.ViewAct = travel.Act end
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if st ~= nil then self.ViewDiff = st.Difficulty end
         _UIKit:Open(self.Win)
         self.WasOpen = true
         self:Poll()
@@ -177,7 +184,7 @@ script WaypointWindow extends Logic
         -- 액트 탭: 열린 액트만 (잠긴 액트는 이유 안내)
         local travel = self:Travel()
         if travel == nil then return end
-        if not travel:ActUnlocked(act) then
+        if not travel:ActUnlockedIn(self.ViewDiff, act) then
             _UXFeedback:Show("액트 " .. tostring(act) .. " 잠김", "묘지기 여왕을 쓰러뜨리고 사제 오렌에게 알리면 열립니다", _GameData:GetUiIcon("icon_waypoint"))
             return
         end
@@ -187,10 +194,33 @@ script WaypointWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SelectDiff(integer diff)
+        -- 난이도 버튼: 그 난이도의 웨이포인트 목록을 보여 주기만 한다 (이동은 맵을 고를 때)
+        local travel = self:Travel()
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if travel == nil or st == nil then return end
+        if diff > st.MaxDifficulty then
+            _UXFeedback:Show(_GameConst:DifficultyName(diff) .. " 잠김", "이전 난이도의 마지막 보스를 쓰러뜨리면 열립니다", _GameData:GetUiIcon("icon_waypoint"))
+            return
+        end
+        self.ViewDiff = diff
+        if not travel:ActUnlockedIn(diff, self.ViewAct) then self.ViewAct = 1 end
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
     method void TravelTo(integer index)
+        -- 맵을 골랐을 때만 이동한다 (보고 있는 난이도로)
         local w = _WaypointData:ListOfAct(self.ViewAct)[index]
         local travel = self:Travel()
-        if w ~= nil and travel ~= nil then travel:RequestTravel(w.id) end
+        if w == nil or travel == nil then return end
+        if not travel:IsKnownIn(self.ViewDiff, w.id) then
+            _UXFeedback:Show(w.name, "아직 발견하지 않은 웨이포인트입니다", _GameData:GetUiIcon("icon_waypoint"))
+            return
+        end
+        travel:RequestTravelIn(w.id, self.ViewDiff)
     end
 
 end
