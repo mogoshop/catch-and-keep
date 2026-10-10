@@ -23,11 +23,13 @@ script Projectile extends Component
     property boolean Flying = false
     property Vector2 SimPos = Vector2(0, 0)   -- 서버 판정용 위치 (Transform은 옮기지 않는다)
     property Vector2 ViewPos = Vector2(0, 0)  -- 클라이언트: 유도 투사체의 그림 위치
-    property boolean ViewStarted = false
     property number ViewStartAt = -1         -- 클라이언트: 그리기 시작한 발사(StartAt) — 재사용 투사체면 다시 맞춘다
     property any Ghosts = nil                -- 클라이언트: 잔상 {serial=true} (10-10 QA: 스티커 한 장이 나가는 것 같았다 → 같은 그림의 옅은 잔상 꼬리)
     property number NextGhostAt = 0
     property Vector2 ViewDir = Vector2(1, 0)  -- 클라이언트: 고정 대상 추적 중 진행 방향
+    @Sync
+    property Entity Shooter = nil            -- 쏜 플레이어·몬스터·소환수 (클라이언트가 그림을 그 손에서 출발시킨다)
+    property number ViewDist = 0             -- 클라이언트: 그린 비행 거리
     @Sync
     property Entity Lock = nil               -- 고정 대상: 그 몬스터를 따라가 닿으면 끝난다 (골편 투척, 10-10 2차 QA)
     property number ViewT0 = 0               -- 클라이언트 시계 기준 발사 시각 (서버 시각은 네트워크 단위로만 바뀌어 계단식으로 움직였다)
@@ -54,6 +56,7 @@ script Projectile extends Component
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
         -- 방향(정규화)·속도·사거리·피해를 정하고 날린다. 스프라이트를 진행 방향으로 돌린다 (AngleOffset = 원본이 보는 방향 보정)
         self.Owner = owner
+        self.Shooter = owner
         local tiles = self.Entity.CurrentMap:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
         self.Terrain = tiles ~= nil and tiles.Entity or nil
         self.Dir = dir:Normalize()
@@ -143,52 +146,43 @@ script Projectile extends Component
 
     @ExecSpace("ClientOnly")
     method void DrawFlight(number delta)
-        -- 직선 투사체: 발사 위치 + 방향 × 속도 × (지금 서버 시각 − 발사 시각) → 지연이 있어도 매 프레임 같은 궤적
-        -- 유도 투사체: 동기화된 방향으로 매 프레임 조금씩 (방향이 바뀌면 그 자리에서 꺾인다)
+        -- 10-10 3차 QA: 「골편이 지팡이가 아니라 엄청 멀리서 출발한다」 — 처음 본 순간 서버에서 이미 날아간 거리만큼 건너뛰어
+        -- 그렸다(네트워크 지연·생성 지연만큼). 이제 늘 쏜 사람의 지금 위치(손 높이)에서 출발하고, 서버보다 뒤처진 만큼은
+        -- 1.4배 빠르게 날아 따라잡는다. 고정 대상(Lock)은 이 화면의 몬스터 위치까지, 유도는 동기화된 방향으로, 직선은 사거리까지
         if not self.Flying then return end
+        local now = _UtilLogic.ElapsedSeconds
         if self.ViewStartAt ~= self.StartAt then
-            -- 처음 본 순간 한 번만 서버 시각으로 얼마나 날아갔는지 맞추고, 이후는 매 프레임 바뀌는 클라이언트 시계로 그린다
             self.ViewStartAt = self.StartAt
-            self.ViewStarted = false
-            self.ViewT0 = _UtilLogic.ElapsedSeconds - math.max(0, _UtilLogic.ServerElapsedSeconds - self.StartAt)
+            self.ViewT0 = now - math.max(0, math.min(0.5, _UtilLogic.ServerElapsedSeconds - self.StartAt))
             self.ViewDir = self.Dir
+            self.ViewDist = 0
+            self.ViewPos = self.StartPos
+            if isvalid(self.Shooter) and self.Shooter.CurrentMap == self.Entity.CurrentMap then
+                local hand = _Util:Pos2(self.Shooter) + Vector2(0, self.HeightOffset) + self.Dir * 0.35
+                if (hand - self.StartPos):Magnitude() < 2 then self.ViewPos = hand end
+            end
         end
-        local pos
-        local dir = self.Dir
-        if self.Lock ~= nil then
-            -- 고정 대상: 이 클라이언트에 보이는 몬스터 위치를 따라가 닿는다 (처음 볼 때 늦은 만큼 한 번에 따라잡는다)
-            local step = self.Speed * math.max(0, delta)
-            if not self.ViewStarted then
-                self.ViewStarted = true
-                self.ViewPos = self.StartPos
-                step = self.Speed * math.max(0, _UtilLogic.ElapsedSeconds - self.ViewT0)
-            end
-            if isvalid(self.Lock) then
-                local aim = _Util:Pos2(self.Lock) + Vector2(0, self.HeightOffset)
-                local to = aim - self.ViewPos
-                local dist = to:Magnitude()
-                if dist > 0.01 then self.ViewDir = to / dist end
-                if dist <= step then self.ViewPos = aim else self.ViewPos = self.ViewPos + self.ViewDir * step end
-            else
-                self.ViewPos = self.ViewPos + self.ViewDir * step
-            end
-            pos = self.ViewPos
-            dir = self.ViewDir
+        local expected = self.Speed * (now - self.ViewT0)
+        local boost = self.ViewDist < expected - 0.05 and 1.4 or 1
+        local step = self.Speed * math.max(0, delta) * boost
+        if self.Lock ~= nil and isvalid(self.Lock) then
+            local aim = _Util:Pos2(self.Lock) + Vector2(0, self.HeightOffset)
+            local to = aim - self.ViewPos
+            local dist = to:Magnitude()
+            if dist > 0.01 then self.ViewDir = to / dist end
+            if dist <= step then self.ViewPos = aim else self.ViewPos = self.ViewPos + self.ViewDir * step end
         elseif self.Homing > 0 then
-            if not self.ViewStarted then
-                self.ViewStarted = true
-                self.ViewPos = self.StartPos
-            end
-            self.ViewPos = self.ViewPos + self.Dir * (self.Speed * math.max(0, delta))
-            pos = self.ViewPos
+            self.ViewDir = self.Dir
+            self.ViewPos = self.ViewPos + self.ViewDir * step
         else
-            local d = math.min(self.Range, self.Speed * math.max(0, _UtilLogic.ElapsedSeconds - self.ViewT0))
-            pos = self.StartPos + self.Dir * d
+            step = math.min(step, math.max(0, self.Range - self.ViewDist))
+            self.ViewPos = self.ViewPos + self.ViewDir * step
         end
+        self.ViewDist = self.ViewDist + step
+        self:DropGhost(self.Entity.TransformComponent)
         local t = self.Entity.TransformComponent
-        t.WorldPosition = Vector3(pos.x, pos.y, t.WorldPosition.z)
-        t.ZRotation = math.deg(math.atan(dir.y, dir.x)) + self.AngleOffset
-        self:DropGhost(t)
+        t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
+        t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
     end
 
     @ExecSpace("ClientOnly")
