@@ -33,6 +33,16 @@ script SkillBook extends Component
         self:RefreshDigest()
     end
 
+    method integer GetPowerLevel(string id)
+        -- 효과에 쓰는 레벨: 배운 스킬에만 장비의 「모든 스킬 +N」(유니크 고유 효과)을 더한다. 배울 때·요구 조건은 GetLevel
+        local lv = self:GetLevel(id)
+        if lv <= 0 then return 0 end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return lv end
+        return lv + stats.BonusAllSkills
+    end
+
     method integer GetLevel(string id)
         -- 서버는 표, 클라이언트는 동기화 문자열
         if self:IsServer() then return self.Levels[id] or 0 end
@@ -191,7 +201,7 @@ script SkillBook extends Component
 
     method table GetCommandAura()
         -- 호령(항상 켜짐): 소환수 공격·생명 %, 이동 속도 %, 모든 저항 %p. 다음 소환부터 적용한다.
-        local lv = self:GetLevel("command_aura")
+        local lv = self:GetPowerLevel("command_aura")
         if lv <= 0 then return { atk = 0, speed = 0, resist = 0 } end
         return { atk = self:GetEffectPower("command_aura", lv), speed = 5 + 0.5 * (lv - 1), resist = 5 + (lv - 1) }
     end
@@ -206,7 +216,7 @@ script SkillBook extends Component
         if stats == nil then return "" end
         if id == "raise_skeleton" or id == "raise_mage" then
             local kind = id == "raise_skeleton" and "skeleton" or "mage"
-            local values = _UndeadSystem:GetBaseStats(kind, level, self:GetLevel("skeleton_mastery"), stats.Level)
+            local values = _UndeadSystem:GetBaseStats(kind, level, self:GetPowerLevel("skeleton_mastery"), stats.Level)
             local equip = math.max(0.1, 1 + stats.BonusMinionPct / 100)
             return string.format("최대 %d기 · 공격 %d · 생명 %d", _UndeadSystem:CountFor(level), math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip)))
         end
@@ -342,7 +352,7 @@ script SkillBook extends Component
         -- 습득·구현·비용 확인 → 효과 성공 → 마나·쿨다운 확정
         if not _Util:IsAlive(self.Entity) then return false end
         local def = _SkillData:Get(id)
-        local lv = self:GetLevel(id)
+        local lv = self:GetPowerLevel(id)
         if def == nil or lv <= 0 then return false end
         local userId = self.Entity.PlayerComponent.UserId
         if _GameConst:IsTown(self.Entity.CurrentMap) then

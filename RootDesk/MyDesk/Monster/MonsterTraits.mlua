@@ -11,7 +11,7 @@ script MonsterTraits extends Component
     @Sync
     property string AffixElement = ""
     @Sync
-    property number NovaWarnSeconds = 1.2     -- 변종 범위 기술 예고 시간 (초속 1.2칸으로 반경 밖으로 걸어 나갈 수 있게)
+    property number NovaWarnSeconds = 1.7     -- 변종 범위 기술 예고 시간 (10-10 QA: 1.2초는 너무 빨라 피하기 어려웠다)
     @Sync
     property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
     property number AbilityTimer = 1
@@ -119,27 +119,106 @@ script MonsterTraits extends Component
             self.AbilityTimer = 999
             return
         end
-        local players = _Util:PlayersNear(self.Entity.CurrentMap, pos, v.radius)
+        -- 발동 거리: 범위 기술은 판정 반경, 도약·탄막·부르기는 6칸 안에 플레이어가 있으면
+        local trigger = v.radius
+        if v.effect == "leap" or v.effect == "barrage" or v.effect == "summon" then trigger = 6 end
+        local players = _Util:PlayersNear(self.Entity.CurrentMap, pos, trigger)
         if #players == 0 then
             self.AbilityTimer = 0.5
             return
         end
         self.AbilityTimer = v.interval
-        -- 예고: NovaWarnSeconds 동안 그 자리에 경고 원 → 같은 자리에서 터진다. 원 밖으로 나가면 피할 수 있다
-        self:WarnFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+        self:CastSkill(self.Variant, players[1])
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CastSkill(string variantId, Entity target)
+        -- 변종 기술 하나 (변종 우두머리 AbilityTick · 보스 BossPattern 공용). 모두 예고 후 발동 — 피할 틈을 준다
+        local v = _GameData:GetVariant(variantId)
+        ---@type Monster
+        local body = self.Entity:GetComponent("script.Monster")
+        if v == nil or body == nil or body.IsDead or not self.Entity.Enable then return end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk == nil then return end
+        local pos = _Util:Pos2(self.Entity)
         local map = self.Entity.CurrentMap
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(self.Entity) or body.IsDead or not self.Entity.Enable or self.Entity.CurrentMap ~= map then return end
+        local alive = function()
+            if not isvalid(self.Entity) or body.IsDead or not self.Entity.Enable or self.Entity.CurrentMap ~= map then return false end
             local status = body:Status()
-            if status ~= nil and status:IsStunned() then return end
-            ---@type MonsterAttack
-            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            return status == nil or not status:IsStunned()
+        end
+        if v.effect == "leap" then
+            -- 도약 강타: 대상 자리(최대 6칸)에 예고 원 → 뛰어올라 그 자리에 내려찍는다
+            local dest = isvalid(target) and _Util:Pos2(target) or pos
+            local d = dest - pos
+            if d:Magnitude() > 6 then dest = pos + d:Normalize() * 6 end
+            self:WarnFx(Vector3(dest.x, dest.y, 0), v.radius, v.element)
+            _TimerService:SetTimerOnce(function()
+                if not alive() then return end
+                self.Entity.MovementComponent:SetWorldPosition(dest)
+                atk:SlamWithElement(dest, v.radius, atk.Damage * v.mult, v.element)
+                self:NovaFx(Vector3(dest.x, dest.y, 0), v.radius, v.element)
+            end, self.NovaWarnSeconds)
+            return
+        end
+        if v.effect == "barrage" then
+            -- 뼈 탄막: 기를 모은 뒤 대상 쪽 부채꼴로 value발 (각 발 = 일반 공격 한 번)
+            local aim = isvalid(target) and (_Util:Pos2(target) - pos) or Vector2(1, 0)
+            if aim:Magnitude() < 0.05 then aim = Vector2(1, 0) end
+            local base = math.atan(aim.y, aim.x)
+            local count = math.max(3, math.floor(v.value))
+            local color = self:ElementColor(v.element)
+            self:ChargeFx(color)
+            _TimerService:SetTimerOnce(function()
+                if not alive() then return end
+                for i = 1, count do
+                    local a = base + (i - (count + 1) / 2) * 0.24
+                    atk:ShootBolt(Vector2(math.cos(a), math.sin(a)), 6.5, 7, color)
+                end
+            end, 0.8)
+            return
+        end
+        if v.effect == "summon" then
+            -- 무리 부르기: 같은 종류 졸개 value마리 (레벨 −2, 리스폰 없음, 한 번에 6마리까지). 보스는 자기 복제 대신 bosses.csv 졸개를
+            local src = body.SourceId
+            local boss = _GameData:GetBossSkills(body.SourceId)
+            if boss ~= nil and boss.minion ~= nil and boss.minion ~= "" then src = boss.minion
+            elseif body.Grade >= 3 then return end
+            local stats = _GameData:GetMonsterStats(src)
+            if stats == nil or stats.mid == nil or stats.mid == "" then return end
+            local alive2 = 0
+            for _, m in ipairs(_Util:MonstersNear(map, pos, 12)) do
+                if m.Entity.Name == "Summoned_" .. src then alive2 = alive2 + 1 end
+            end
+            local n = math.min(math.floor(v.value), 6 - alive2)
+            if n <= 0 then return end
+            self:ChargeFx(Color(0.8, 0.5, 1, 1))
+            local level = math.max(1, body.Level - 2)
+            for i = 1, n do
+                local ang = math.pi * 2 * i / n
+                local spot = Vector3(pos.x + math.cos(ang) * 1.3, pos.y + math.sin(ang) * 0.9, 0)
+                local e = _SpawnService:SpawnByModelId(stats.mid, "Summoned_" .. src, spot, map)
+                if isvalid(e) then
+                    _Util:AfterSpawn(e, "script.Monster", function(comp)
+                        ---@type Monster
+                        local m = comp
+                        m.RespawnDelay = -1
+                        m:ApplyLevel(level, false)
+                    end, nil)
+                end
+            end
+            return
+        end
+        -- 범위 기술(충격파·냉기·화염·낙뢰)·독안개: NovaWarnSeconds 동안 그 자리에 경고 원 → 같은 자리에서 터진다
+        self:WarnFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
+        _TimerService:SetTimerOnce(function()
+            if not alive() then return end
             if v.kind == "cloud" then
-                -- 독안개: 그 자리에 CloudSeconds 동안 남아 CloudTick마다 독 피해 (총 공격력 × mult)
-                if atk ~= nil then self:StartCloud(pos, v.radius, atk.Damage * v.mult, v.element) end
+                self:StartCloud(pos, v.radius, atk.Damage * v.mult, v.element)
                 return
             end
-            if atk ~= nil then atk:SlamWithElement(pos, v.radius, atk.Damage * v.mult, v.element) end
+            atk:SlamWithElement(pos, v.radius, atk.Damage * v.mult, v.element)
             if v.element == "cold" then
                 for _, p in ipairs(_Util:PlayersNear(map, pos, v.radius)) do
                     ---@type PlayerStats
@@ -149,6 +228,14 @@ script MonsterTraits extends Component
             end
             self:NovaFx(Vector3(pos.x, pos.y, 0), v.radius, v.element)
         end, self.NovaWarnSeconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void ChargeFx(Color color)
+        -- 기를 모으는 빛 (탄막·부르기 예고)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.4, 0), 0, Vector3(0.7, 0.7, 1), false, { Color = color })
     end
 
     @ExecSpace("ServerOnly")

@@ -41,13 +41,26 @@ script BossPattern extends Component
     property boolean DebugCombat = false
 
     property number SlamTimer = 3
+    property string Skills = ""              -- 내려찍기 사이에 쓰는 변종 기술 목록 (bosses.csv skills → GameData.BossSkills)
+    property integer SkillIndex = 0
+    property number SkillTimer = 4
+    property number SkillInterval = 5
     property boolean Enraged = false
     property boolean WasDead = false
     property number EngageStart = 0        -- 처음 플레이어와 마주친 시각 (처치 시간 랭킹)
 
     method void OnBeginPlay()
         -- 내려찍기는 소유 타이머 없는 단계 갱신으로 예고·타격·회복을 순서대로 실행한다.
-        if self:IsServer() then log("[VRF] BossPattern phased slam ready " .. self.BossName) end
+        if self:IsServer() then
+            ---@type Monster
+            local monster = self.Entity:GetComponent("script.Monster")
+            local info = monster ~= nil and _GameData:GetBossSkills(monster.SourceId) or nil
+            if info ~= nil then
+                self.Skills = info.skills
+                self.SkillInterval = info.interval
+            end
+            log("[VRF] BossPattern phased slam ready " .. self.BossName .. " skills=" .. self.Skills)
+        end
     end
 
     method void OnUpdate(number delta)
@@ -105,6 +118,20 @@ script BossPattern extends Component
             self:Announce(self.BossName .. "이(가) 분노했다!")
         end
         self.SlamTimer = self.SlamTimer - delta
+        self.SkillTimer = self.SkillTimer - delta
+        if self.Skills ~= "" and self.SkillTimer <= 0 and self.SlamTimer > 1.5 then
+            -- 기술은 차례대로 돌린다 (분노하면 더 자주)
+            local list = {}
+            for id in string.gmatch(self.Skills, "[^;]+") do table.insert(list, id) end
+            self.SkillIndex = self.SkillIndex % #list + 1
+            ---@type MonsterTraits
+            local traits = self.Entity:GetComponent("script.MonsterTraits")
+            local target = nil
+            local near = _Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), 9)
+            if #near > 0 then target = near[1] end
+            if traits ~= nil then traits:CastSkill(list[self.SkillIndex], target) end
+            self.SkillTimer = self.Enraged and self.SkillInterval * 0.7 or self.SkillInterval
+        end
         if self.SlamTimer <= 0 then self:BeginSlam() end
     end
 
@@ -395,7 +422,7 @@ script BossPattern extends Component
     method void Announce(string text)
         -- 현재 전투에 참여하는 맵의 사용자에게만 알린다.
         if not self:HasLocalAudience() then return end
-        _ScreenMessageLogic:PrivateMsg(text)
+        _NoticeFeed:Push(text)
     end
 
 end

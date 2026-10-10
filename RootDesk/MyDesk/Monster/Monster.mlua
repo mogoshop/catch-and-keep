@@ -4,6 +4,8 @@
 @Component
 script Monster extends Component
 
+    property number TickAccum = 0           -- 틱 피해 숫자 모음 (ShowTickDamage)
+    property number TickShownAt = -99
     @Sync
     property number MaxHp = 60              -- 모델 값 = BaseLevel(=모델 Level)에서의 기본 생명
     @Sync
@@ -98,6 +100,7 @@ script Monster extends Component
         local k = _GameData.monsterHpPerLevel
         local hp = self.BaseHp * (1 + k * (self.Level - 1)) / (1 + k * (self.BaseLevel - 1))
         if self.Grade == 2 and not self.Unique then hp = hp * _GameData.eliteHpMul end
+        if self.Grade >= 3 then hp = hp * _GameData.bossHpMul end   -- 10-10 QA: 보스가 너무 약했다
         local traits = self:Traits()
         if traits ~= nil then hp = hp * traits.HpMult end
         self.MaxHp = math.max(1, hp)
@@ -156,6 +159,7 @@ script Monster extends Component
         ---@type BossPattern
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil then m = m * bp.RageMult end
+        if self.Grade >= 3 then m = m * _GameData.bossDmgMul end
         return m
     end
 
@@ -270,8 +274,27 @@ script Monster extends Component
         local gap = 1
         local lv = _GameConst:LevelOf(attacker)
         if lv > 0 then gap = _GameConst:LevelGapDealt(lv, self.Level) end
-        self.Hp = self.Hp - amount * self:GetDamageTakenMultiplier() * gap
+        local dealt = amount * self:GetDamageTakenMultiplier() * gap
+        self.Hp = self.Hp - dealt
+        -- 틱 피해는 히트 판정을 거치지 않아 엔진이 숫자를 띄우지 않는다 → 0.45초마다 모아 작게 띄운다 (10-10 QA: 독안개 피해가 안 보임)
+        self.TickAccum = self.TickAccum + dealt
+        local now = _UtilLogic.ElapsedSeconds
+        if now - self.TickShownAt >= 0.45 or self.Hp <= 0 then
+            local shown = math.floor(self.TickAccum + 0.5)
+            self.TickAccum = 0
+            self.TickShownAt = now
+            if shown > 0 then self:ShowTickDamage(shown) end
+        end
         if self.Hp <= 0 then self:Die() end
+    end
+
+    @ExecSpace("Multicast")
+    method void ShowTickDamage(integer amount)
+        -- 독·흡수 같은 지속 피해 숫자. 평타 숫자보다 작고 옅게, 머리 위에서
+        if not isvalid(self.Entity) then return end
+        -- 위치는 엔진 기본(평타 숫자와 같은 머리 위). 추가 오프셋을 주면 두 번 더해져 두 칸 위로 떴다 (메이커 확인)
+        -- Play: 선택 인자는 5개를 모두 넘겨야 한다 (일부만 넘기면 LEA-3005)
+        _DamageSkinService:Play(self.Entity, "6ba67548f43f48f29eb23dafd0766383", 0, { amount }, DamageSkinTweenType.DefaultMini, false, Vector2(0, 0), Vector2(0.85, 0.85), 1.2, 1, LitMode.Default)
     end
 
     @ExecSpace("ServerOnly")

@@ -61,7 +61,7 @@ script SoulExtractor extends Component
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book == nil then return 0 end
-        return book:GetLevel(id)
+        return book:GetPowerLevel(id)
     end
 
     method number ExtractBonus()
@@ -102,13 +102,13 @@ script SoulExtractor extends Component
             -- 배우기 전: 서버에 보내지 않고 화면 안내만 (서버 쪽 안내와 겹치지 않게 같은 30초 간격)
             if _UtilLogic.ElapsedSeconds >= self.NoticeAt then
                 self.NoticeAt = _UtilLogic.ElapsedSeconds + 30
-                _ScreenMessageLogic:PrivateMsg("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배운 뒤에 할 수 있다")
+                _NoticeFeed:Push("혼 추출은 스킬 「그림자 소환」(Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. ")을 배운 뒤에 할 수 있다")
             end
             return
         end
         local soul = self:FindNearestSoul(_Util:Pos2(self.Entity), _ShadowConfig:GetExtractReach())
         if soul == nil then
-            _ScreenMessageLogic:PrivateMsg("가까운 혼이 없다")
+            _NoticeFeed:Push("가까운 혼이 없다")
             return
         end
         self:RequestExtract(soul)

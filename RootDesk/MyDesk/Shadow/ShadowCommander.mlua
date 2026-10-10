@@ -154,7 +154,7 @@ script ShadowCommander extends Component
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book == nil then return 0 end
-        return book:GetLevel(id)
+        return book:GetPowerLevel(id)
     end
 
     method integer GetDeployBonus()
@@ -257,6 +257,9 @@ script ShadowCommander extends Component
             local prof = _ShadowConfig:GetProfile(shadow.sourceId, shadow.grade, _ShadowConfig:EffectiveLevel(shadow.level, _GameConst:LevelOf(self.Entity)), self:GetUnitMultiplier() * _ShadowConfig:GetPlusMult(_ShadowConfig:EffectivePlus(shadow.plus or 0, _GameConst:LevelOf(self.Entity)), shadow.grade))
             u:Setup(self.Entity, id, prof.atk, prof.hp, shadow.standRuid, shadow.moveRuid, offset)
             local source = _GameData:GetMonsterStats(shadow.sourceId)
+            -- 소환수 크기 맞춤 (보스도 다른 소환수와 비슷하게 — GameData summonScale)
+            local sc = source ~= nil and source.summonScale or 1
+            unit.TransformComponent.Scale = Vector3(sc, sc, 1)
             u.AttackRUID = source ~= nil and source.attack or ""
             u.Variant = shadow.variant or ""
             self:ApplyTraits(u, prof)

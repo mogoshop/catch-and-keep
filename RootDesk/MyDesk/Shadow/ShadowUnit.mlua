@@ -88,6 +88,10 @@ script ShadowUnit extends AttackComponent
     property number PartyAuraTimer = 0
     property number PartyAuraRange = 6        -- 다른 플레이어의 호령이 닿는 거리
     property integer ViewTimer = 0            -- 클라이언트: 내 것/남의 것 표시 갱신
+    property integer HpBarTimer = 0           -- 클라이언트: 발밑 체력 막대 갱신
+    property boolean HpBarReady = false
+    property integer HpBarFill = -1
+    property number HpBarScale = 4            -- 논리 픽셀 16×2 → 약 0.64×0.08칸 (메이커에서 크기 확인)
     property string ViewState = ""
     property number RetargetTimer = 0
     property number OwnerCheckTimer = 0
@@ -117,6 +121,40 @@ script ShadowUnit extends AttackComponent
     method void StartView()
         -- 클라이언트: 주인이 동기화되면 내 소환수는 그대로(야영지에서만 「내 소환수」), 팀원 소환수는 흐린 회색 고리 + 작은 주인 이름
         self.ViewTimer = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+        self.HpBarTimer = _TimerService:SetTimerRepeat(function() self:UpdateHpBar() end, 0.15)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateHpBar()
+        -- 발밑 체력 막대 (모델 자식 HpBar의 PixelRenderer 16×2). 소환수마다 따로 보여 묶음 HUD로는 모르던 개별 체력을 본다 (10-10 QA)
+        -- 몸 크기·좌우 반전과 상관없이 같은 크기·같은 방향으로 채운다 (부모 배율을 되돌린다)
+        if not isvalid(self.Entity) then return end
+        local bar = self.Entity:GetChildByName("HpBar")
+        if not isvalid(bar) then return end
+        local pixel = bar.PixelRendererComponent
+        if not isvalid(pixel) then return end
+        if not self.HpBarReady then
+            pixel:ResetWithColor(16, 2, Color(0.1, 0.08, 0.1, 0.85))
+            pixel.SortingLayer = "MapLayer0"
+            pixel.OrderInLayer = 3
+            self.HpBarReady = true
+            self.HpBarFill = -1
+        end
+        local ps = self.Entity.TransformComponent.Scale
+        local sx, sy = math.max(0.05, math.abs(ps.x)), math.max(0.05, math.abs(ps.y))
+        local flip = ps.x < 0 and -1 or 1
+        bar.TransformComponent.Scale = Vector3(self.HpBarScale / sx * flip, self.HpBarScale / sy, 1)
+        bar.TransformComponent.Position = Vector3(0, -0.14 / sy, 0)
+        local ratio = self.MaxHp > 0 and math.max(0, math.min(1, self.Hp / self.MaxHp)) or 0
+        local fill = math.max(self.Hp > 0 and 1 or 0, math.floor(ratio * 16 + 0.5))
+        if fill == self.HpBarFill then return end
+        self.HpBarFill = fill
+        local color = ratio <= 0.3 and Color(1, 0.3, 0.25, 1) or (ratio <= 0.6 and Color(1, 0.85, 0.3, 1) or Color(0.4, 1, 0.55, 1))
+        for x = 1, 16 do
+            for y = 1, 2 do
+                pixel:SetPixel(x, y, x <= fill and color or Color(0.1, 0.08, 0.1, 0.85))
+            end
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -371,6 +409,8 @@ script ShadowUnit extends AttackComponent
         if self:IsClient() then
             if self.ViewTimer ~= 0 then _TimerService:ClearTimer(self.ViewTimer) end
             self.ViewTimer = 0
+            if self.HpBarTimer ~= 0 then _TimerService:ClearTimer(self.HpBarTimer) end
+            self.HpBarTimer = 0
             return
         end
         self:CancelPendingAttack()
@@ -452,9 +492,12 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void Face(integer dir)
+        -- 방향이 바뀔 때만 쓴다 (매 프레임 같은 배율을 다시 써서 동기화가 밀리던 것 — 10-10 QA 소환수 끊김)
         local t = self.Entity.TransformComponent
         local s = t.Scale
-        t.Scale = Vector3(math.abs(s.x) * -dir, s.y, s.z)
+        local want = math.abs(s.x) * -dir
+        if dir == 0 or s.x == want then return end
+        t.Scale = Vector3(want, s.y, s.z)
     end
 
     @ExecSpace("ServerOnly")
@@ -508,12 +551,14 @@ script ShadowUnit extends AttackComponent
         if not isvalid(shot) then return end
         _Util:AfterSpawn(shot, "script.Projectile", function(proj)
             if not isvalid(self.Entity) or self.Dead or self.RallyTimer > 0 or self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.OwnerPlayer) then shot:Destroy() return end
+            -- 그림·색은 동기화 값으로 (서버에서 SpriteRUID를 바꾸면 클라이언트에 안 보인다)
             if self.Kind ~= "mage" then
-                shot.SpriteRendererComponent.SpriteRUID = _GameConst.SpriteArrow
+                proj:Skin(_GameConst.SpriteArrow, 1.2)
                 proj.AngleOffset = 0
+            else
+                shot.TransformComponent.Scale = Vector3(1.2, 1.2, 1)
             end
-            shot.SpriteRendererComponent.Color = self:BoltColor()
-            shot.TransformComponent.Scale = Vector3(1.2, 1.2, 1)
+            proj:Tint(self:BoltColor())
             proj.Team = "minion"
             proj.Radius = 0.3
             proj:Launch(self.Entity, dir, 7, self.AttackRange + 0.8, self.Atk, "shadow.ranged", false)

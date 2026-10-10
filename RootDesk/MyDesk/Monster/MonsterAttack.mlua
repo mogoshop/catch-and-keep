@@ -427,14 +427,19 @@ script MonsterAttack extends AttackComponent
         local my = _Util:Pos2(self.Entity)
         local dir = aim - my
         if dir:Magnitude() < 0.05 then return end
-        dir = dir:Normalize()
+        self:ShootBolt(dir:Normalize(), self.ArrowSpeed, self.AttackRange + 1.5, self:ElementColor(self:GetElement()))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ShootBolt(Vector2 dir, number speed, number range, Color color)
+        -- 화살 모양 투사체 한 발 (변종 「뼈 탄막」도 이것을 여러 번)
+        local my = _Util:Pos2(self.Entity)
         local start = my + Vector2(0, 0.4) + dir * 0.3
         self.ShotCount = self.ShotCount + 1
         local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "Arrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
         if not isvalid(shot) then return end
         local owner = self.Entity
         local originMap = self.Entity.CurrentMap
-        local color = self:ElementColor(self:GetElement())
         _Util:AfterSpawn(shot, "script.Projectile", function(comp)
             ---@type Projectile
             local proj = comp
@@ -443,14 +448,14 @@ script MonsterAttack extends AttackComponent
                 if isvalid(shot) then shot:Destroy() end
                 return
             end
-            shot.SpriteRendererComponent.SpriteRUID = _GameConst.SpriteArrow
-            shot.SpriteRendererComponent.Color = color
-            shot.TransformComponent.Scale = Vector3(1.6, 1.6, 1)
+            -- 서버에서 바꾼 SpriteRUID·색은 클라이언트에 안 보인다 → 동기화 값(Skin·Tint)으로
+            proj:Skin(_GameConst.SpriteArrow, 1.6)
+            proj:Tint(color)
             proj.AngleOffset = 0
             proj.Team = "monster"
             proj.HeightOffset = 0.4
             proj.Radius = 0.4
-            proj:Launch(owner, dir, self.ArrowSpeed, self.AttackRange + 1.5, 0, "monster.arrow", false)
+            proj:Launch(owner, dir, speed, range, 0, "monster.arrow", false)
         end, function()
             if isvalid(shot) then shot:Destroy() end
         end)
