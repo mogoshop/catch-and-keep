@@ -50,7 +50,11 @@ script Projectile extends Component
     @Sync
     property Color TintColor = Color(1, 1, 1, 1)
     @Sync
-    property string SkinRuid = ""            -- 스킬 투사체 그림 (서버에서 바꾼 SpriteRUID는 클라이언트에 안 보여서 동기화 값으로 칠한다)
+    property string SkinRuid = ""
+    @Sync
+    property string ViewKind = ""            -- "bone_shard": 쏜 사람 화면에서는 직접 그린 예측 뼛조각을 보이고 이 투사체는 숨긴다
+    property boolean LocalView = false       -- 클라이언트 전용 예측 투사체 (판정 없음, 사거리 끝에서 스스로 사라진다)
+    property boolean ViewHidden = false            -- 스킬 투사체 그림 (서버에서 바꾼 SpriteRUID는 클라이언트에 안 보여서 동기화 값으로 칠한다)
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -150,6 +154,7 @@ script Projectile extends Component
         -- 그렸다(네트워크 지연·생성 지연만큼). 이제 늘 쏜 사람의 지금 위치(손 높이)에서 출발하고, 서버보다 뒤처진 만큼은
         -- 1.4배 빠르게 날아 따라잡는다. 고정 대상(Lock)은 이 화면의 몬스터 위치까지, 유도는 동기화된 방향으로, 직선은 사거리까지
         if not self.Flying then return end
+        if self:HideForPrediction() then return end
         local now = _UtilLogic.ElapsedSeconds
         if self.ViewStartAt ~= self.StartAt then
             self.ViewStartAt = self.StartAt
@@ -170,7 +175,9 @@ script Projectile extends Component
             local to = aim - self.ViewPos
             local dist = to:Magnitude()
             if dist > 0.01 then self.ViewDir = to / dist end
-            if dist <= step then self.ViewPos = aim else self.ViewPos = self.ViewPos + self.ViewDir * step end
+            self.ViewPos = self.ViewPos + self.ViewDir * step
+            -- 닿으면 놓고 그 방향 그대로 꿰뚫어 간다 (서버도 명중 순간 Lock을 푼다)
+            if dist <= step then self.Lock = nil end
         elseif self.Homing > 0 then
             self.ViewDir = self.Dir
             self.ViewPos = self.ViewPos + self.ViewDir * step
@@ -183,6 +190,51 @@ script Projectile extends Component
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
         t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
+        -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
+        if self.LocalView and (self.ViewDist >= self.Range - 0.01 or _Util:TileBlocked(self.Terrain, self.ViewPos - Vector2(0, self.HeightOffset))) then
+            self.Flying = false
+            self.Entity:Destroy()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean HideForPrediction()
+        -- 내가 쏜 골편의 서버 투사체: 누르는 순간 직접 그린 예측 뼛조각이 이미 날고 있으니 이 그림은 숨긴다
+        if self.LocalView or self.ViewKind == "" or not isvalid(self.Shooter) or self.Shooter ~= _UserService.LocalPlayer then return false end
+        if not self.ViewHidden then
+            local fx = self.Shooter:GetComponent("script.SkillEffects")
+            ---@type SkillEffects
+            local effects = fx
+            if effects == nil or not effects:RecentlyPredicted() then return false end
+            self.ViewHidden = true
+            local sprite = self.Entity.SpriteRendererComponent
+            if isvalid(sprite) then sprite.Enable = false end
+        end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayLocal(Entity shooter, Vector2 dir, number speed, number range, string skin, number scale, Entity lock)
+        -- 클라이언트 전용 예측 투사체: 서버 Launch와 같은 값으로 날리고 그림만 그린다 (판정·피해 없음)
+        self.LocalView = true
+        self.Shooter = shooter
+        local tiles = self.Entity.CurrentMap:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
+        self.Terrain = tiles ~= nil and tiles.Entity or nil
+        self.Dir = dir:Normalize()
+        self.Speed = speed
+        self.Lock = lock
+        self.StartPos = _Util:Pos2(self.Entity)
+        self.Range = range
+        if isvalid(lock) then self.Range = math.max(range, (_Util:Pos2(lock) - (self.StartPos - Vector2(0, self.HeightOffset))):Magnitude() + 2) end
+        self.StartAt = _UtilLogic.ServerElapsedSeconds
+        self.SkinRuid = skin
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) then
+            sprite.SpriteRUID = skin
+            sprite.Color = self.TintColor
+        end
+        self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
+        self.Flying = true
     end
 
     @ExecSpace("ClientOnly")
@@ -280,7 +332,9 @@ script Projectile extends Component
                         self:HitFx(hitPos, self.TintColor)
                     end
                 end
-                if not self.Pierce or m.Entity == self.Lock then self:Finish() return end
+                -- 10-11 QA: 고른 적에 닿아도 사라지지 않고 꿰뚫어 그 방향 그대로 사거리 끝까지 간다 (맞은 자리엔 타격 이펙트만 남는다)
+                if m.Entity == self.Lock then self.Lock = nil end
+                if not self.Pierce then self:Finish() return end
             end
         end
     end

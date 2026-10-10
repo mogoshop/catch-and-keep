@@ -10,6 +10,7 @@ script SkillBook extends Component
     property number PendingMana = 0
     property integer CastEpoch = 0
     property integer PresentedCastCount = 0
+    property number PredictedCastAt = -10     -- 클라이언트: 골편을 누르는 순간 그린 시각 (서버 확인 때 몸짓을 두 번 틀지 않게)
     property table ReadyAt = {}               -- id → 쿨다운 끝 시각 (서버)
     property table CdLen = {}                 -- id → 마지막 쿨다운 길이 (표시용)
     @Sync
@@ -156,9 +157,9 @@ script SkillBook extends Component
     end
 
     method integer GetBoneShardCount(integer level)
-        -- 골편 투척 발 수: 1·5·9·13·17레벨에 1발씩 (최대 boneShardMaxCount)
+        -- 골편 투척 발 수: 1·3·7·11·15레벨에 1발씩 (최대 boneShardMaxCount) — 10-11 QA: 2발을 Lv5 → Lv3으로
         if level <= 0 then return 0 end
-        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + math.floor((level - 1) / 4))
+        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + math.floor((level + 1) / 4))
     end
 
     method number GetCurseDuration(integer level)
@@ -422,7 +423,7 @@ script SkillBook extends Component
                 accepted = _UndeadSystem:Raise(self.Entity, kind, lv, target, complete, canCommit)
             else
                 local effects = self.Entity:GetComponent("script.SkillEffects")
-                if effects ~= nil then accepted = effects:BoneShard(me, target, self:GetEffectPower(id, lv) * (1 + stats:GetSpellPowerPct() / 100), complete, canCommit, lock) end
+                if effects ~= nil then accepted = effects:BoneShardVolley(me, target, self:GetEffectPower(id, lv) * (1 + stats:GetSpellPowerPct() / 100), self:GetBoneShardCount(lv), complete, canCommit, lock) end
             end
             if not accepted then complete(false) end
             return accepted
@@ -440,16 +441,32 @@ script SkillBook extends Component
     method void PresentCast(string id, Vector2 dir)
         -- 성공한 시전만 소유자 클라이언트에서 재생한다. 소환/집결은 바라보는 방향을 바꾸지 않는다.
         if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
+        -- 골편은 누를 때 이미 재생했다 (PredictBoneShard)
+        if id == "bone_shard" and _UtilLogic.ElapsedSeconds - self.PredictedCastAt < 1.5 then return end
+        self:PlayCastGesture(id, dir)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayCastGesture(string id, Vector2 dir)
+        -- 시전 소리·방향·몸짓 (서버 확인 후 PresentCast, 골편은 누르는 순간 PredictBoneShard)
         _SoundDirector:PlaySkillCue(id)
         local command = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
         if not command and math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
-        self.Entity.StateComponent:ChangeState("ATTACK")
         if id == "bone_shard" then
-            -- 무기별 Attack 선택이 alert 대기로 풀리지 않게 주문 제스처를 한 번 재생한다.
+            -- 10-11 QA 「발사 때 캐릭터 옆 파란 이펙트」: ATTACK 상태로 바꾸면 무기 휘두르기 동작과 그 잔상(검기)이 함께 나왔다.
+            -- 골편은 공격 상태 없이 주문 몸짓만 한 번 틀고, 끝나면 지금 상태(서기·걷기)의 몸짓으로 되돌린다
             local avatar = self.Entity.AvatarRendererComponent
             local body = isvalid(avatar) and avatar:GetBodyEntity() or nil
             if isvalid(body) then body:SendEvent(ActionStateChangedEvent("heal", "heal", 1.6, SpriteAnimClipPlayType.Onetime)) end
+            local count = self.PresentedCastCount + 1
+            _TimerService:SetTimerOnce(function()
+                if self.PresentedCastCount ~= count or not _Util:IsAlive(self.Entity) then return end
+                local state = self.Entity.StateComponent.CurrentStateName
+                if state == "MOVE" then self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Walk, 0, 2147483647, 1))
+                elseif state == "IDLE" then self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Stand, 0, 2147483647, 1)) end
+            end, 0.45)
         else
+            self.Entity.StateComponent:ChangeState("ATTACK")
             self.Entity:SendEvent(BodyActionStateChangeEvent(true, MapleAvatarBodyActionState.Heal, 0, 2147483647, 1.25))
         end
         self.PresentedCastCount = self.PresentedCastCount + 1
@@ -524,7 +541,46 @@ script SkillBook extends Component
         -- 쿨다운 중이면 서버에 보내지 않는다 (칸의 덮개가 남은 시간을 보여 준다)
         local id = self:GetSlotSkill(slot)
         if id == "" or self:CooldownLeft(id) > 0.05 then return end
-        self:RequestCast(id, self:GetAimPoint(id))
+        if id == "bone_shard" then
+            -- 서버 쿨다운이 화면에 오기 전 연타로 예측만 더 나가지 않게, 방금 그린 시전의 쿨다운은 여기서 막는다
+            local def = _SkillData:Get(id)
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            local cd = (def ~= nil and def.cooldown or 0.5) * (stats ~= nil and stats:GetCastCooldownMult() or 1)
+            if _UtilLogic.ElapsedSeconds - self.PredictedCastAt < cd - 0.03 then return end
+        end
+        local aim = self:GetAimPoint(id)
+        if id == "bone_shard" then self:PredictBoneShard(aim) end
+        self:RequestCast(id, aim)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PredictBoneShard(Vector2 aim)
+        -- 골편은 누르는 순간 내 화면에서 바로 나간다 (서버 확인을 기다리면 0.5초쯤 늦어 보였다, 10-11 QA).
+        -- 서버 Cast와 같은 조건(마을·마나·쿨다운·대상 우선순위)일 때만 그린다. 판정·피해·마나는 서버가 정한다
+        if _GameConst:IsTown(self.Entity.CurrentMap) or not _Util:IsAlive(self.Entity) then return end
+        local lv = self:GetPowerLevel("bone_shard")
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if lv <= 0 or stats == nil or stats.Mana < self:GetManaCost("bone_shard", lv) then return end
+        local me = _Util:Pos2(self.Entity)
+        local lock = nil
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        ---@type PlayerAttack
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        if click ~= nil and attack ~= nil and attack:IsLiveMonster(click.AttackTarget) and _Util:Distance(self.Entity, click.AttackTarget) <= 7.5 then lock = click.AttackTarget end
+        local near = lock == nil and _Util:NearestMonster(self.Entity.CurrentMap, aim, 1.2) or nil
+        if near ~= nil and (_Util:Pos2(near.Entity) - me):Magnitude() <= 7.5 then lock = near.Entity end
+        local target = aim
+        if lock ~= nil then target = _Util:Pos2(lock)
+        elseif (aim - me):Magnitude() > 6 then target = me + (aim - me):Normalize() * 6 end
+        ---@type SkillEffects
+        local effects = self.Entity:GetComponent("script.SkillEffects")
+        if effects == nil then return end
+        effects:PredictBoneShard(target, self:GetBoneShardCount(lv), lock)
+        self:PlayCastGesture("bone_shard", target - me)
+        self.PredictedCastAt = _UtilLogic.ElapsedSeconds
     end
 
     @ExecSpace("ClientOnly")
