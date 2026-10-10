@@ -53,10 +53,13 @@ script FrameAnimator extends Component
         -- 상태 이름 → 동작 이름 (모르는 상태는 대기)
         local state = self.Entity.StateComponent
         local name = isvalid(state) and state.CurrentStateName or "IDLE"
-        if name == "MOVE" or name == "WALK" or name == "CHASE" then return "move" end
         if name == "ATTACK" then return "attack" end
         if name == "HIT" then return "hit" end
         if name == "DEAD" or name == "DIE" then return "die" end
+        -- 서기/걷기는 화면(보간) 움직임에 맞춘다: 서버 상태는 화면 위치보다 0.1초쯤 먼저 바뀌어 움직이기 전에 걷거나 멈춘 뒤 미끄러졌다 (10-10 4차 QA)
+        local visual = _MotionSmoother:VisualMoving(self.Entity)
+        if visual == 1 then return "move" elseif visual == 0 then return "stand" end
+        if name == "MOVE" or name == "WALK" or name == "CHASE" then return "move" end
         return "stand"
     end
 

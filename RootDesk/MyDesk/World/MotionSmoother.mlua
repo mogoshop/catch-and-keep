@@ -5,6 +5,9 @@
 --     앞뒤 기록 사이에서 이어 그린다. 다음 기록이 늦으면 마지막 기록 위치에서 기다릴 뿐 앞서 나가지 않는다
 --     (예전 추측 항법은 앞서 나가 「걷지 않고 날아다니는」 것처럼 보였다 — 10-10 2차 QA).
 --   · 그림만 옮긴다. 판정·이동은 서버 그대로이고, 서버 위치가 오면 엔진이 덮어쓴다 (그 차이로 새 기록을 알아챈다).
+--   · 좌우 방향·서기/걷기 그림도 화면 위치에 맞춘다 (10-10 4차 QA): 위치만 늦추면 움직이기 전에 먼저 돌거나 걷는 그림이 나오고,
+--     멈춘 뒤에도 서 있는 그림으로 미끄러졌다. 화면에서 실제로 움직이는 동안은 그 방향·걷기 그림, 멈추면 서버 값(대상 바라보기 등)으로.
+--     공격 등 서기/걷기가 아닌 그림은 건드리지 않는다.
 @Logic
 script MotionSmoother extends Logic
 
@@ -19,6 +22,8 @@ script MotionSmoother extends Logic
     property boolean ClockReady = false
     property integer SampleCount = 0
     property integer DrawCount = 0
+    property number MoveOn = 0.35            -- 화면 속도가 이보다 빠르면 「걷는 중」 (칸/초)
+    property number MoveOff = 0.12           -- 이보다 느려지면 「멈춤」
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -116,11 +121,74 @@ script MotionSmoother extends Logic
             end
             if x == nil then x, y = buf[1].x, buf[1].y end
         end
+        local now = _UtilLogic.ElapsedSeconds
+        local dt = now - r.vt
+        if dt > 0.0005 then
+            -- 화면에 그리는 위치의 속도 (평활)
+            local k = math.min(1, dt * 12)
+            r.vx = r.vx + ((x - r.dx) / dt - r.vx) * k
+            r.vy = r.vy + ((y - r.dy) / dt - r.vy) * k
+            r.vt = now
+            r.dx, r.dy = x, y
+        end
         if math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
             t.WorldPosition = Vector3(x, y, p.z)
             r.wx, r.wy = x, y
             self.DrawCount = self.DrawCount + 1
         end
+        local speed = math.sqrt(r.vx * r.vx + r.vy * r.vy)
+        if r.moving and speed < self.MoveOff then r.moving = false
+        elseif not r.moving and speed > self.MoveOn then r.moving = true end
+        if r.unit ~= nil then self:LookUnit(r, t) elseif r.monster then self:LookMonster(r) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LookUnit(any r, TransformComponent t)
+        -- 소환수: 좌우 = 크기 x 부호 (그림 기본은 왼쪽), 그림 = 서기/걷기 클립. 서버가 바꾼 값은 기억해 두고 멈추면 그 값으로
+        ---@type ShadowUnit
+        local unit = r.unit
+        if not isvalid(unit) then return end
+        local sc = t.Scale
+        if r.myScaleX == nil or math.abs(sc.x - r.myScaleX) > 0.0001 then r.srvScaleX = sc.x end
+        local wantX = r.srvScaleX
+        if r.moving and math.abs(r.vx) > 0.2 then wantX = math.abs(sc.x) * (r.vx > 0 and -1 or 1) end
+        if wantX ~= nil and math.abs(wantX - sc.x) > 0.0001 then
+            t.Scale = Vector3(wantX, sc.y, sc.z)
+            unit:UpdateHpBar()
+        end
+        r.myScaleX = wantX
+        local sprite = unit.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local cur = sprite.SpriteRUID
+        if r.myClip == nil or cur ~= r.myClip then r.srvClip = cur end
+        local stand, move = unit.StandRUID, unit.MoveRUID
+        local want = r.srvClip
+        if stand ~= "" and move ~= "" and (r.srvClip == stand or r.srvClip == move) then
+            want = r.moving and move or stand
+        end
+        if want ~= nil and want ~= "" and want ~= cur then sprite.SpriteRUID = want end
+        r.myClip = want
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LookMonster(any r)
+        -- 몬스터: 좌우 = FlipX (true면 오른쪽). 움직이는 동안만 화면 방향, 멈추면 서버 값(공격 대상 바라보기)
+        local sprite = r.e.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local cur = sprite.FlipX
+        if r.myFlip == nil or cur ~= r.myFlip then r.srvFlip = cur end
+        local want = r.srvFlip
+        if r.moving and math.abs(r.vx) > 0.2 then want = r.vx > 0 end
+        if want ~= nil and want ~= cur then sprite.FlipX = want end
+        r.myFlip = want
+    end
+
+    method integer VisualMoving(Entity e)
+        -- 프레임 애니메이터용: 화면에서 걷는 중이면 1, 멈췄으면 0, 추적하지 않는 개체면 -1
+        if self.Recs == nil or not isvalid(e) then return -1 end
+        local r = self.Recs[e.Id]
+        if r == nil or #r.buf == 0 then return -1 end
+        return r.moving and 1 or 0
     end
 
     @ExecSpace("ClientOnly")
@@ -129,6 +197,7 @@ script MotionSmoother extends Logic
         local mp = me.TransformComponent.WorldPosition
         local seen = {}
         for _, typeName in ipairs({ "script.Monster", "script.ShadowUnit" }) do
+            local isUnit = typeName == "script.ShadowUnit"
             for _, comp in ipairs(map:GetChildComponentsByTypeName(typeName, false)) do
                 local e = comp.Entity
                 if isvalid(e) and e.Enable then
@@ -138,7 +207,8 @@ script MotionSmoother extends Logic
                         local id = e.Id
                         seen[id] = true
                         if self.Recs[id] == nil then
-                            self.Recs[id] = { e = e, buf = {}, wx = p.x, wy = p.y, gap = 0.05 }
+                            self.Recs[id] = { e = e, buf = {}, wx = p.x, wy = p.y, gap = 0.05, vx = 0, vy = 0, vt = _UtilLogic.ElapsedSeconds, dx = p.x, dy = p.y, moving = false,
+                                unit = isUnit and comp or nil, monster = not isUnit }
                         end
                     end
                 end

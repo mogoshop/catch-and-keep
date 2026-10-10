@@ -12,7 +12,8 @@ script ShadowUnit extends AttackComponent
     property integer Atk = 10
     @Sync
     property string StandRUID = ""
-    property string MoveRUID = ""
+    @Sync
+    property string MoveRUID = ""            -- 클라이언트 MotionSmoother가 화면 움직임에 맞춰 서기/걷기 그림을 고를 때 쓴다
     property string AttackRUID = ""
     property number AttackAnimationUntil = 0
     property number AttackWindup = 0.18
@@ -49,6 +50,9 @@ script ShadowUnit extends AttackComponent
     property number OwnerVelAt = 0
     property number OwnerVel = 0              -- 주인의 실제 이동 속도(칸/초). 서버의 주인 InputSpeed는 클라이언트 배율이 빠진 값이라 재서 쓴다
     property Vector2 OwnerVelDir = Vector2(0, 0) -- 주인의 마지막 이동 방향
+    property Vector2 Heading = Vector2(0, 0)  -- 지금 걷는 방향 (서서히 튼다)
+    property number TurnRate = 7              -- 초당 최대 회전(라디안, 약 400°). 90° 꺾기 ≈ 0.22초
+    property number LastDelta = 0.02
     property Vector2 OwnerVelVec = Vector2(0, 0) -- 주인 속도 벡터 (평활)
     property Vector2 OwnerSmooth = Vector2(0, 0) -- 이 소환수가 따라가는 주인 위치: 서버가 보는 주인 위치(초당 약 10번 바뀜)를 예측·평활한 값
     property boolean OwnerSmoothReady = false
@@ -305,6 +309,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
+        self.LastDelta = delta
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
         if not self.RingPainted then self:PaintRing() end
@@ -622,6 +627,7 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method void MoveToward(Vector2 dir)
         -- 8방향 이동 + 좌우 바라보기 (스프라이트 기본은 왼쪽을 본다)
+        local wasMoving = self.Moving
         self.Moving = true
         local go = dir:Normalize()
         if self.StuckSeconds > 0.35 then
@@ -630,7 +636,21 @@ script ShadowUnit extends AttackComponent
             self.SidestepUntil = _UtilLogic.ElapsedSeconds + 0.4
         end
         if _UtilLogic.ElapsedSeconds < self.SidestepUntil then go = (Vector2(-go.y, go.x) * self.SidestepSide + go * 0.25):Normalize() end
-        self.Entity.MovementComponent:MoveToDirection(go, 0)
+        -- 10-10 4차 QA: 방향을 그 자리에서 꺾으면 화면(보간)에서도 각지게 꺾였다 → 걷던 방향에서 초당 TurnRate만큼만 튼다
+        -- (서 있다가 출발하거나 거의 반대로 돌 때는 바로 그 방향으로)
+        local h = self.Heading
+        if not wasMoving or h:Magnitude() < 0.5 or h:Dot(go) < -0.5 then
+            h = go
+        else
+            local cur = math.atan(h.y, h.x)
+            local goal = math.atan(go.y, go.x)
+            local diff = (goal - cur + math.pi) % (2 * math.pi) - math.pi
+            local maxStep = self.TurnRate * math.max(0.005, math.min(0.1, self.LastDelta))
+            local a = cur + math.max(-maxStep, math.min(maxStep, diff))
+            h = Vector2(math.cos(a), math.sin(a))
+        end
+        self.Heading = h
+        self.Entity.MovementComponent:MoveToDirection(h, 0)
         if math.abs(dir.x) > 0.05 then self:Face(dir.x >= 0 and 1 or -1) end
         self:SetClip(self.MoveRUID)
     end
