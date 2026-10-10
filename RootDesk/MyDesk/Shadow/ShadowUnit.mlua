@@ -121,7 +121,7 @@ script ShadowUnit extends AttackComponent
     property integer HpBarFill = -1
     property number HpBarScale = 2.7          -- 논리 픽셀 22×4 (테두리 포함) → 약 0.75×0.14칸
     property number HpBarHeadY = 0            -- 머리 위 높이 (원본 그림 높이, 배율 전 칸)
-    property Vector2 VisLocal = Vector2(0, 0) -- 클라이언트: 화면 그림이 서버 위치에서 떨어진 만큼 (MotionSmoother가 매 프레임 정한다, 부모 좌표)
+    property any HpBarAlt = nil               -- 클라이언트: MotionSmoother의 그림 대역에 붙은 체력 막대 (있으면 모델 자식 HpBar 대신 여기에 그린다)
     property string ViewState = ""
     property number RetargetTimer = 0
     property number OwnerCheckTimer = 0
@@ -159,7 +159,7 @@ script ShadowUnit extends AttackComponent
         -- 머리 위 체력 막대 (모델 자식 HpBar의 PixelRenderer 22×4: 어두운 테두리 + HUD 체력 구슬과 같은 짙은 빨강 한 가지, 빈 칸은 검붉게).
         -- 발밑에 두니 이름표(야영지 「내 소환수」 · 파티원 이름)와 겹쳤다 (10-10 2차 QA). 몸 크기·좌우 반전과 상관없이 같은 크기로 그린다
         if not isvalid(self.Entity) then return end
-        local bar = self.Entity:GetChildByName("HpBar")
+        local bar = self:BarEntity()
         if not isvalid(bar) then return end
         local pixel = bar.PixelRendererComponent
         if not isvalid(pixel) then return end
@@ -174,11 +174,13 @@ script ShadowUnit extends AttackComponent
             local stats = src ~= nil and _GameData:GetMonsterStats(src) or nil
             self.HpBarHeadY = (stats ~= nil and stats.h ~= nil and stats.h > 0) and stats.h / 100 or 0.95
         end
-        local ps = self.Entity.TransformComponent.Scale
+        -- 부모(본체 또는 그림 대역)의 크기·좌우를 되돌려 늘 같은 크기·방향으로
+        local parent = bar.Parent
+        local ps = isvalid(parent) and parent.TransformComponent.Scale or self.Entity.TransformComponent.Scale
         local sx, sy = math.max(0.05, math.abs(ps.x)), math.max(0.05, math.abs(ps.y))
         local flip = ps.x < 0 and -1 or 1
         bar.TransformComponent.Scale = Vector3(self.HpBarScale / sx * flip, self.HpBarScale / sy, 1)
-        bar.TransformComponent.Position = Vector3(self.VisLocal.x, self.HpBarHeadY + 0.12 / sy + self.VisLocal.y, 0)
+        bar.TransformComponent.Position = Vector3(0, self.HpBarHeadY + 0.12 / sy, 0)
         local ratio = self.MaxHp > 0 and math.max(0, math.min(1, self.Hp / self.MaxHp)) or 0
         local fill = math.max(self.Hp > 0 and 1 or 0, math.floor(ratio * 20 + 0.5))
         if fill == self.HpBarFill then return end
@@ -195,13 +197,10 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ClientOnly")
-    method void PlaceHpBar()
-        -- 체력 막대 위치만 다시 (화면 그림을 따라 매 프레임, MotionSmoother)
-        if not self.HpBarReady then return end
-        local bar = self.Entity:GetChildByName("HpBar")
-        if not isvalid(bar) then return end
-        local sy = math.max(0.05, math.abs(self.Entity.TransformComponent.Scale.y))
-        bar.TransformComponent.Position = Vector3(self.VisLocal.x, self.HpBarHeadY + 0.12 / sy + self.VisLocal.y, 0)
+    method Entity BarEntity()
+        -- 체력 막대를 그릴 곳: 그림 대역의 막대가 있으면 그것, 아니면 모델 자식 HpBar
+        if self.HpBarAlt ~= nil and isvalid(self.HpBarAlt) then return self.HpBarAlt end
+        return self.Entity:GetChildByName("HpBar")
     end
 
     @ExecSpace("ClientOnly")

@@ -92,6 +92,9 @@ script MotionSmoother extends Logic
         local map = me.CurrentMap
         if not isvalid(map) then return end
         if map ~= self.Map then
+            if self.Recs ~= nil then
+                for _, old in pairs(self.Recs) do self:DropVis(old) end
+            end
             self.Map = map
             self.Recs = {}
             self.ScanTimer = 0
@@ -436,86 +439,136 @@ script MotionSmoother extends Logic
     method boolean PlaceVis(any r, number x, number y, Vector3 p, TransformComponent t)
         -- 10-10 6차 QA(움직이면서 뒤로 갔다 앞으로 갔다 껌뻑껌뻑): 서버 위치가 올 때마다 엔진이 루트 위치를 덮어쓰고, 그 프레임은
         -- 서버 위치(뒤)가 그대로 화면에 나왔다 (메이커는 매 프레임 덮어써 루트에 쓴 위치가 아예 안 보였다 — 띄워 그리기로 확인).
-        -- 루트의 몸 그림은 내 화면에서만 끄고, 클라이언트 전용 자식(MSVis)이 같은 그림을 원하는 위치에 그린다.
-        -- 자식 위치는 서버가 건드리지 않으므로, 루트가 덮어써져도 어긋남은 그 사이 서버 이동 한 번만큼뿐이다.
-        -- 발밑 원(AllyRing)·체력 막대(HpBar)도 같은 만큼 옮긴다. 판정·피해 숫자 등은 서버 위치 그대로
+        -- 루트의 몸 그림·발밑 원·체력 막대는 내 화면에서만 끄고, 맵 아래 클라이언트 전용 대역(MSVis)이 그 자리를 대신 그린다.
+        -- (7차 QA: 대역을 루트의 자식으로 두니 서버가 루트 위치·좌우·클립을 바꿀 때마다 대역도 한 프레임씩 끌려가 여전히 껌뻑였다
+        --  → 대역은 맵에 따로 두고 위치·좌우·클립을 모두 클라이언트가 정한다. 서버 값은 색·재생 속도·공격 같은 다른 클립만 따른다)
         local e = r.e
         local src = e.SpriteRendererComponent
-        if not isvalid(src) then return false end
+        if not isvalid(src) or not isvalid(self.Map) then return false end
         local vis = r.vis
         if vis == nil or not isvalid(vis) then
-            vis = e:GetChildByName("MSVis")
-            if not isvalid(vis) then vis = _SpawnService:SpawnByModelId("artsprite", "MSVis", Vector3(x, y, p.z), e) end
+            vis = _SpawnService:SpawnByModelId("artsprite", "MSVis", Vector3(x, y, p.z), self.Map)
             if not isvalid(vis) then
                 self.UseProxy = false
-                log_warning("[MotionSmoother] 그림 자식을 만들 수 없어 루트 위치로 그린다")
+                log_warning("[MotionSmoother] 그림 대역을 만들 수 없어 루트 위치로 그린다")
                 return false
             end
             r.vis = vis
-            vis.TransformComponent.Scale = Vector3(1, 1, 1)
-            vis.TransformComponent.ZRotation = 0
+            -- 발밑 원: 모델 자식 AllyRing과 같은 그림을 대역 아래에
             local ring = e:GetChildByName("AllyRing")
             if isvalid(ring) then
                 r.ring = ring
-                if r.ringBase == nil then r.ringBase = ring.TransformComponent.Position end
+                local rc = _SpawnService:SpawnByModelId("artsprite", "MSVisRing", Vector3(x, y, p.z), vis)
+                if isvalid(rc) then
+                    r.visRing = rc
+                    rc.TransformComponent.Position = ring.TransformComponent.Position
+                end
             end
+            -- 체력 막대: 대역 아래 픽셀 막대 (ShadowUnit.UpdateHpBar가 HpBarAlt에 그린다)
+            local bar = _SpawnService:SpawnByModelId("artsprite", "MSVisBar", Vector3(x, y, p.z), vis)
+            if isvalid(bar) then
+                bar.SpriteRendererComponent.SpriteRUID = ""
+                if not isvalid(bar.PixelRendererComponent) then bar:AddComponent("PixelRendererComponent") end
+                if isvalid(bar.PixelRendererComponent) then
+                    r.visBar = bar
+                    local old = e:GetChildByName("HpBar")
+                    if isvalid(old) then old:SetEnable(false, false, false) end
+                    if isvalid(r.unit) then
+                        r.unit.HpBarAlt = bar
+                        r.unit.HpBarReady = false
+                    end
+                end
+            end
+            r.visSign = nil
         end
         if src.Enable then src.Enable = false end
-        -- 그림 따라 하기 (서버가 바꾸는 클립·색·재생 속도·좌우·정렬)
+        if r.ring ~= nil and isvalid(r.ring) and r.visRing ~= nil and r.ring.Enable then r.ring:SetEnable(false, false, false) end
+        -- 그림: 클립(서기/걷기는 LookUnit이 정한 r.visClip)·색·재생 속도·정렬
         local dst = vis.SpriteRendererComponent
-        if dst.SpriteRUID ~= src.SpriteRUID then dst.SpriteRUID = src.SpriteRUID end
+        local clip = r.visClip or src.SpriteRUID
+        if dst.SpriteRUID ~= clip then dst.SpriteRUID = clip end
         local c, d = src.Color, dst.Color
         if c.r ~= d.r or c.g ~= d.g or c.b ~= d.b or c.a ~= d.a then dst.Color = c end
         if dst.PlayRate ~= src.PlayRate then dst.PlayRate = src.PlayRate end
         if dst.FlipX ~= src.FlipX then dst.FlipX = src.FlipX end
         if dst.SortingLayer ~= src.SortingLayer then dst.SortingLayer = src.SortingLayer end
         if dst.OrderInLayer ~= src.OrderInLayer then dst.OrderInLayer = src.OrderInLayer end
-        -- 위치: 부모 좌표(크기·좌우 반전이 곱해진)로 바꿔 자식에 준다
+        -- 크기는 본체 그대로, 좌우는 LookUnit이 정한 방향
         local sc = t.Scale
-        local sx = sc.x
-        local sy = sc.y
-        if math.abs(sx) < 0.001 then sx = 1 end
-        if math.abs(sy) < 0.001 then sy = 1 end
-        local lx, ly = (x - p.x) / sx, (y - p.y) / sy
-        vis.TransformComponent.Position = Vector3(lx, ly, 0)
-        if r.ring ~= nil and isvalid(r.ring) then
-            local b = r.ringBase
-            r.ring.TransformComponent.Position = Vector3(b.x + lx, b.y + ly, b.z)
+        local sign = r.visSignWant or (sc.x < 0 and -1 or 1)
+        local vt = vis.TransformComponent
+        vt.Scale = Vector3(math.abs(sc.x) * sign, math.abs(sc.y), sc.z)
+        vt.WorldPosition = Vector3(x, y, p.z)
+        if r.visRing ~= nil and isvalid(r.visRing) and isvalid(r.ring) then
+            local a, b = r.ring.SpriteRendererComponent, r.visRing.SpriteRendererComponent
+            if b.SpriteRUID ~= a.SpriteRUID then b.SpriteRUID = a.SpriteRUID end
+            local rc1, rc2 = a.Color, b.Color
+            if rc1.r ~= rc2.r or rc1.g ~= rc2.g or rc1.b ~= rc2.b or rc1.a ~= rc2.a then b.Color = rc1 end
+            if b.SortingLayer ~= a.SortingLayer then b.SortingLayer = a.SortingLayer end
+            if b.OrderInLayer ~= a.OrderInLayer then b.OrderInLayer = a.OrderInLayer end
+            local rs = r.ring.TransformComponent.Scale
+            r.visRing.TransformComponent.Scale = Vector3(math.abs(rs.x), math.abs(rs.y), rs.z)
         end
-        ---@type ShadowUnit
-        local unit = r.unit
-        if isvalid(unit) then
-            unit.VisLocal = Vector2(lx, ly)
-            unit:PlaceHpBar()
+        if r.visSign ~= sign then
+            -- 좌우가 바뀌면 체력 막대도 다시 (부모의 좌우를 되돌린다)
+            r.visSign = sign
+            if isvalid(r.unit) then r.unit:UpdateHpBar() end
         end
         return true
     end
 
     @ExecSpace("ClientOnly")
     method void DropVis(any r)
-        -- 추적을 그만둘 때: 루트 몸 그림을 다시 켜고 그림 자식을 지운다
+        -- 추적을 그만둘 때: 루트의 몸 그림·발밑 원·체력 막대를 다시 켜고 대역을 지운다
         if r.vis == nil then return end
-        if isvalid(r.e) and isvalid(r.e.SpriteRendererComponent) then r.e.SpriteRendererComponent.Enable = true end
+        if isvalid(r.e) then
+            if isvalid(r.e.SpriteRendererComponent) then r.e.SpriteRendererComponent.Enable = true end
+            local old = r.e:GetChildByName("HpBar")
+            if isvalid(old) then old:SetEnable(true, false, false) end
+        end
+        if r.ring ~= nil and isvalid(r.ring) then r.ring:SetEnable(true, false, false) end
         if isvalid(r.vis) then r.vis:Destroy() end
         r.vis = nil
-        if r.ring ~= nil and isvalid(r.ring) and r.ringBase ~= nil then r.ring.TransformComponent.Position = r.ringBase end
+        r.visRing = nil
+        r.visBar = nil
         if isvalid(r.unit) then
-            r.unit.VisLocal = Vector2(0, 0)
-            r.unit:PlaceHpBar()
+            r.unit.HpBarAlt = nil
+            r.unit.HpBarReady = false
+            r.unit:UpdateHpBar()
         end
     end
 
     @ExecSpace("ClientOnly")
     method void LookUnit(any r, TransformComponent t, number delta)
-        -- 소환수: 좌우 = 크기 x 부호 (그림 기본은 왼쪽), 그림 = 서기/걷기 클립. 서버가 바꾼 값은 기억해 두고 멈추면 그 값으로
+        -- 소환수: 좌우 = 크기 x 부호 (그림 기본은 왼쪽), 그림 = 서기/걷기 클립. 화면에서 걷는 동안은 그 방향·걷기, 멈추면 서버 값.
+        -- 그림 대역(PlaceVis)을 쓰면 루트는 건드리지 않고 대역에 쓸 값(r.visSignWant·r.visClip)만 정한다
         ---@type ShadowUnit
         local unit = r.unit
         if not isvalid(unit) then return end
+        local sprite = unit.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
         local sc = t.Scale
+        local stand, move = unit.StandRUID, unit.MoveRUID
+        if self.UseProxy then
+            local cur = r.visSignWant or (sc.x < 0 and -1 or 1)
+            local want = sc.x < 0 and -1 or 1
+            if r.moving and math.abs(r.vx) > 0.2 then want = r.vx > 0 and -1 or 1 end
+            -- 좌우는 0.15초 넘게 그 방향일 때만 바꾼다 (10-10 6차 QA 껌뻑임)
+            if want ~= cur then
+                r.flipT = (r.flipT or 0) + delta
+                if r.flipT < 0.15 then want = cur else self.StatFlip = self.StatFlip + 1 end
+            end
+            if want == cur then r.flipT = 0 end
+            r.visSignWant = want
+            local srv = sprite.SpriteRUID
+            local clip = srv
+            if stand ~= "" and move ~= "" and (srv == stand or srv == move) then clip = r.moving and move or stand end
+            r.visClip = clip
+            return
+        end
         if r.myScaleX == nil or math.abs(sc.x - r.myScaleX) > 0.0001 then r.srvScaleX = sc.x end
         local wantX = r.srvScaleX
         if r.moving and math.abs(r.vx) > 0.2 then wantX = math.abs(sc.x) * (r.vx > 0 and -1 or 1) end
-        -- 좌우는 0.15초 넘게 그 방향일 때만 바꾼다 (10-10 6차 QA 껌뻑임: 4초에 소환수 7마리가 10번 좌우를 뒤집었다)
         if wantX ~= nil and wantX * sc.x < 0 then
             r.flipT = (r.flipT or 0) + delta
             if r.flipT < 0.15 then wantX = sc.x end
@@ -528,11 +581,8 @@ script MotionSmoother extends Logic
             unit:UpdateHpBar()
         end
         r.myScaleX = wantX
-        local sprite = unit.Entity.SpriteRendererComponent
-        if not isvalid(sprite) then return end
         local cur = sprite.SpriteRUID
         if r.myClip == nil or cur ~= r.myClip then r.srvClip = cur end
-        local stand, move = unit.StandRUID, unit.MoveRUID
         local want = r.srvClip
         if stand ~= "" and move ~= "" and (r.srvClip == stand or r.srvClip == move) then
             want = r.moving and move or stand
