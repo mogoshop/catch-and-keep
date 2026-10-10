@@ -1,17 +1,22 @@
--- 클라이언트: 서버가 움직이는 몬스터·소환수를 부드럽게 그린다 (10-10 QA: 플레이어는 부드러운데 몹·소환수만 끊겼다).
---   · 서버 위치는 바뀔 때만, 초당 약 10번 도착한다 (메이커 측정: 서버가 받는 플레이어 위치도 7초 동안 61번).
---     도착할 때마다 순간이동하듯 0.1~0.2칸씩 툭툭 움직였다.
---   · 새 서버 위치가 오면 직전 위치와의 차이로 속도를 잡고, 다음 위치가 올 때까지 그 속도로 이어서 그린다 (추측 항법).
---   · 다음 위치가 제때 오지 않으면 멈춘 것 → 마지막 서버 위치로 빠르게 되돌린다 (서버는 멈춘 위치를 다시 보내지 않는다).
---   · 그림만 옮긴다. 판정·이동은 서버 그대로이고, 서버 위치가 오면 엔진이 덮어쓴다.
+-- 클라이언트: 서버가 움직이는 몬스터·소환수를 「보간」으로 부드럽게 그린다 (10-10 4차 QA: 실제 서버에서 소환수가 계속 끊긴다).
+--   · 실제 서버에서는 위치가 고르게 오지 않는다 (통신 지연이 들쭉날쭉, 11마리 × 위치·그림·방향 동기화).
+--     받은 위치를 그대로 쓰면 멈칫 → 한 번에 건너뜀이 반복된다.
+--   · 새 서버 위치가 올 때마다 그 서버 시각과 함께 기록해 두고, 화면에는 「지금 − Delay」 시점의 위치를
+--     앞뒤 기록 사이에서 이어 그린다. 다음 기록이 늦으면 마지막 기록 위치에서 기다릴 뿐 앞서 나가지 않는다
+--     (예전 추측 항법은 앞서 나가 「걷지 않고 날아다니는」 것처럼 보였다 — 10-10 2차 QA).
+--   · 그림만 옮긴다. 판정·이동은 서버 그대로이고, 서버 위치가 오면 엔진이 덮어쓴다 (그 차이로 새 기록을 알아챈다).
 @Logic
 script MotionSmoother extends Logic
 
-    property boolean Enabled = false         -- 10-10 2차 QA: 실제 플레이에서 걷지 않고 미끄러져 날아다니는 것처럼 보여 끈다 (켜지 말 것)
+    property boolean Enabled = true
     property number Range = 12               -- 플레이어에게서 이 거리 안의 개체만 (화면 밖은 그대로)
+    property number Delay = 0.1              -- 그리는 시점을 이만큼 늦춘다 (기본값, 기록 간격에 맞춰 0.08~0.22로 조절)
+    property number SnapDistance = 2.5       -- 기록 사이가 이보다 멀면 순간이동(도약·재배치)으로 보고 바로 옮긴다
     property number ScanTimer = 0
     property any Map = nil
-    property any Recs = nil                  -- 개체 Id → { e, sx, sy, st, vx, vy, iv, wx, wy, has }
+    property any Recs = nil                  -- 개체 Id → { e, buf = { {t, x, y} … }, wx, wy, gap }
+    property number ClockOffset = 0          -- 서버 시각 − 클라이언트 시각 (평활)
+    property boolean ClockReady = false
     property integer SampleCount = 0
     property integer DrawCount = 0
 
@@ -19,12 +24,28 @@ script MotionSmoother extends Logic
     method void OnBeginPlay()
         -- 추적표 준비
         self.Recs = {}
-        log("[VRF] MotionSmoother ready")
+        log("[VRF] MotionSmoother ready (interpolation)")
+    end
+
+    @ExecSpace("ClientOnly")
+    method number ServerNow(number now)
+        -- 서버 시각 추정: ServerElapsedSeconds는 통신 단위로만 바뀌므로, 클라이언트 시계와의 차이를 평활해 매 프레임 이어지는 서버 시각을 만든다
+        local off = _UtilLogic.ServerElapsedSeconds - now
+        if not self.ClockReady or math.abs(off - self.ClockOffset) > 1 then
+            self.ClockOffset = off
+            self.ClockReady = true
+        elseif off > self.ClockOffset then
+            -- 새 통신이 도착한 순간(차이가 커질 때)은 빠르게 따라가고, 통신 사이(차이가 줄어들 때)는 아주 천천히
+            self.ClockOffset = self.ClockOffset + (off - self.ClockOffset) * 0.2
+        else
+            self.ClockOffset = self.ClockOffset + (off - self.ClockOffset) * 0.01
+        end
+        return now + self.ClockOffset
     end
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
-        -- 매 프레임: 새 서버 위치를 받았으면 속도를 갱신하고, 아니면 그 속도로 이어 그린다
+        -- 매 프레임: 서버가 덮어쓴 새 위치를 기록하고, 「지금 − Delay」 시점의 위치를 기록 사이에서 이어 그린다
         if not self.Enabled then return end
         local me = _UserService.LocalPlayer
         if not isvalid(me) then return end
@@ -40,55 +61,71 @@ script MotionSmoother extends Logic
             self.ScanTimer = 0.5
             self:Scan(map, me)
         end
-        local now = _UtilLogic.ElapsedSeconds
-        local ease = math.min(1, delta * 12)
+        local snow = self:ServerNow(_UtilLogic.ElapsedSeconds)
         for id, r in pairs(self.Recs) do
             local e = r.e
             if not isvalid(e) or not e.Enable then
                 self.Recs[id] = nil
             else
-                local t = e.TransformComponent
-                local p = t.WorldPosition
-                local cx, cy = p.x, p.y
-                if not r.has or math.abs(cx - r.wx) > 0.0005 or math.abs(cy - r.wy) > 0.0005 then
-                    -- 엔진이 서버 위치로 덮어썼다 = 새 표본
-                    local dt = now - r.st
-                    local dx, dy = cx - r.sx, cy - r.sy
-                    if r.has and dt > 0.005 and dt < 0.6 and dx * dx + dy * dy < 4 and dx * dx + dy * dy < 64 * dt * dt then
-                        r.vx = r.vx + (dx / dt - r.vx) * 0.7
-                        r.vy = r.vy + (dy / dt - r.vy) * 0.7
-                        r.iv = r.iv + (dt - r.iv) * 0.3
-                    else
-                        -- 처음 보거나 순간이동(도약·넉백·재배치)
-                        r.vx, r.vy = 0, 0
-                    end
-                    r.sx, r.sy, r.st, r.has = cx, cy, now, true
-                    r.wx, r.wy = cx, cy
-                    self.SampleCount = self.SampleCount + 1
-                else
-                    local age = now - r.st
-                    local tx, ty = r.wx, r.wy
-                    if age <= r.iv then
-                        -- 다음 표본까지: 마지막 서버 위치 + 속도 × 경과 (한 간격까지만 앞서 나간다)
-                        tx, ty = r.sx + r.vx * age, r.sy + r.vy * age
-                    elseif age > math.max(0.35, r.iv * 4) then
-                        -- 표본이 한참 안 온다 = 멈췄다 → 마지막 서버 위치로 (조금 늦는 표본에는 뒤로 물러나지 않고 그 자리에서 기다린다)
-                        r.vx, r.vy = 0, 0
-                        tx, ty = r.wx + (r.sx - r.wx) * ease, r.wy + (r.sy - r.wy) * ease
-                    end
-                    if math.abs(tx - r.wx) > 0.0001 or math.abs(ty - r.wy) > 0.0001 then
-                        t.WorldPosition = Vector3(tx, ty, p.z)
-                        r.wx, r.wy = tx, ty
-                        self.DrawCount = self.DrawCount + 1
-                    end
-                end
+                self:Step(r, snow)
             end
         end
     end
 
     @ExecSpace("ClientOnly")
+    method void Step(any r, number snow)
+        -- 개체 하나: 새 기록 감지 → 그릴 시점의 위치 계산 → 위치 쓰기
+        local t = r.e.TransformComponent
+        local p = t.WorldPosition
+        local buf = r.buf
+        if #buf == 0 or math.abs(p.x - r.wx) > 0.0005 or math.abs(p.y - r.wy) > 0.0005 then
+            -- 엔진이 서버 위치로 덮어썼다 = 새 기록 (서버 시각으로 찍는다)
+            local last = buf[#buf]
+            local st = _UtilLogic.ServerElapsedSeconds
+            if last ~= nil and ((p.x - last.x) ^ 2 + (p.y - last.y) ^ 2 > self.SnapDistance * self.SnapDistance) then
+                -- 순간이동: 기록을 비우고 그 자리에서 다시 시작
+                buf = {}
+                r.buf = buf
+                last = nil
+            end
+            if last ~= nil and st <= last.t then st = last.t + 0.001 end
+            if last ~= nil then r.gap = r.gap + (math.min(0.3, st - last.t) - r.gap) * 0.2 end
+            table.insert(buf, { t = st, x = p.x, y = p.y })
+            while #buf > 10 do table.remove(buf, 1) end
+            r.wx, r.wy = p.x, p.y
+            self.SampleCount = self.SampleCount + 1
+        end
+        -- 그릴 시점: 기록 간격의 약 1.6배 뒤 (간격이 고르면 0.08초, 통신이 성기면 최대 0.22초)
+        local delay = math.max(0.08, math.min(0.22, r.gap * 1.6))
+        local rt = snow - delay
+        local x, y
+        if rt <= buf[1].t then
+            x, y = buf[1].x, buf[1].y
+        elseif rt >= buf[#buf].t then
+            -- 다음 기록이 아직: 마지막 기록 위치에서 기다린다 (앞서 나가지 않는다)
+            x, y = buf[#buf].x, buf[#buf].y
+        else
+            for i = #buf - 1, 1, -1 do
+                local a = buf[i]
+                if a.t <= rt then
+                    local b = buf[i + 1]
+                    local k = (rt - a.t) / math.max(0.0001, b.t - a.t)
+                    x, y = a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k
+                    break
+                end
+            end
+            if x == nil then x, y = buf[1].x, buf[1].y end
+        end
+        if math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
+            t.WorldPosition = Vector3(x, y, p.z)
+            r.wx, r.wy = x, y
+            self.DrawCount = self.DrawCount + 1
+        end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Scan(Entity map, Entity me)
-        -- 0.5초마다: 플레이어 근처의 몬스터·소환수를 추적표에 넣고, 멀어진 것은 뺀다
+        -- 0.5초마다: 플레이어 근처의 몬스터·소환수를 추적표에 넣고, 멀어진 것은 마지막 서버 위치로 돌려놓고 뺀다
         local mp = me.TransformComponent.WorldPosition
         local seen = {}
         for _, typeName in ipairs({ "script.Monster", "script.ShadowUnit" }) do
@@ -101,7 +138,7 @@ script MotionSmoother extends Logic
                         local id = e.Id
                         seen[id] = true
                         if self.Recs[id] == nil then
-                            self.Recs[id] = { e = e, sx = p.x, sy = p.y, st = _UtilLogic.ElapsedSeconds, vx = 0, vy = 0, iv = 0.1, wx = p.x, wy = p.y, has = false }
+                            self.Recs[id] = { e = e, buf = {}, wx = p.x, wy = p.y, gap = 0.05 }
                         end
                     end
                 end
@@ -109,11 +146,11 @@ script MotionSmoother extends Logic
         end
         for id, r in pairs(self.Recs) do
             if not seen[id] then
-                -- 멀어졌다: 이어 그린 위치를 마지막 서버 위치로 되돌리고 뺀다
-                if isvalid(r.e) and r.has then
+                local last = r.buf[#r.buf]
+                if isvalid(r.e) and last ~= nil then
                     local p = r.e.TransformComponent.WorldPosition
                     if math.abs(p.x - r.wx) < 0.0005 and math.abs(p.y - r.wy) < 0.0005 then
-                        r.e.TransformComponent.WorldPosition = Vector3(r.sx, r.sy, p.z)
+                        r.e.TransformComponent.WorldPosition = Vector3(last.x, last.y, p.z)
                     end
                 end
                 self.Recs[id] = nil

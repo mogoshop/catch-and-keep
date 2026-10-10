@@ -488,10 +488,10 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void SetSpeedMult(number mult)
-        -- 0.1 단위로 바뀔 때만 이동 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다)
-        -- 경계에서 0.9↔1.0을 오가며 동기화 값을 계속 쓰지 않도록, 지금 배율에서 0.08 이상 벗어날 때만 바꾼다
-        if math.abs(mult - self.SpeedMult) < 0.08 then return end
-        local q = math.floor(mult * 10 + 0.5) / 10
+        -- 배율이 충분히 바뀔 때만 이동 속도·걷기 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다)
+        -- 10-10 4차 QA: 실제 서버에서는 11마리의 동기화 값이 위치와 함께 몰려 끊김을 키운다 → 0.15 이상 바뀔 때만, 0.15 단위로
+        if math.abs(mult - self.SpeedMult) < 0.15 then return end
+        local q = math.floor(mult / 0.15 + 0.5) * 0.15
         if q == self.SpeedMult then return end
         local base = self:Base()
         local mv = self.Entity.MovementComponent
