@@ -108,7 +108,21 @@ function desiredEntities(d, maps, ctx) {
   return out;
 }
 
-// 통로 배치가 있는 던전: 지금까지 놓은 기능 엔티티 자리를 방으로 삼아 배치를 만든다 (맵마다 한 번)
+function decorPositions(d) {
+  const file = P.map(d.id);
+  if (!exists(file)) return [];
+  const map = MapBuilder.read(file);
+  const out = [];
+  for (const e of map.listEntities()) {
+    const parts = e.path.split("/");
+    if (parts.length !== 4 || !/^Decor/.test(parts[3])) continue;
+    const t = map.component(e.path, "MOD.Core.TransformComponent");
+    if (t && t.Position) out.push({ path: e.path, x: t.Position.x, y: t.Position.y });
+  }
+  return out;
+}
+
+// 통로 배치가 있는 맵: 지금까지 놓은 기능 엔티티 자리를 방·길로 삼아 배치를 만든다 (맵마다 한 번)
 function layoutOf(d, entities, ctx) {
   const spec = ctx.layouts[d.id];
   if (!spec) return null;
@@ -116,8 +130,10 @@ function layoutOf(d, entities, ctx) {
   const e = edges(d);
   const anchors = entities.map((x) => ({
     x: x.pos[0], y: x.pos[1],
-    kind: x.name === "GateBack" && x.pos[0] === e.left ? "portalW" : x.name === "GateNext" && x.pos[0] === e.right ? "portalE" : "room",
+    kind: x.name === "GateBack" && x.pos[0] === e.left ? "portalW" : x.name === "GateNext" && x.pos[0] === e.right ? "portalE" : /^Torch/.test(x.name) ? "room" : "stop",
   }));
+  // 메이커에서 놓은 장식(Decor_) 자리: 필드는 그 칸을 바닥으로 남긴다 (동굴 미로는 벽에 묻힌 장식을 끈다 — buildNormal)
+  for (const p of decorPositions(d)) anchors.push({ x: p.x, y: p.y, kind: "decor" });
   const layout = layoutGen.generate(d, spec, anchors);
   ctx.layoutCache[d.id] = layout;
   return layout;
@@ -232,7 +248,10 @@ function buildNormal(d, maps, ctx) {
   const layout = ctx.layoutCache[d.id];
   if (layout) {
     const spec = ctx.layouts[d.id];
-    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap: layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile)) });
+    const roadTile = spec.roadTile === "" ? -1 : num(spec.roadTile);
+    map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap: layoutGen.tiles(layout, num(spec.floorTile), num(spec.wallTile), roadTile) });
+    // 벽 칸에 묻힌 장식은 끈다 (배치가 바뀌어 다시 바닥이 되면 켠다)
+    for (const p of decorPositions(d)) map.patch(p.path, { enable: layout.isFloor(Math.floor(p.x), Math.floor(p.y)) });
   }
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
