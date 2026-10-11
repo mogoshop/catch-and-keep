@@ -383,7 +383,24 @@ script Monster extends Component
             _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, self.HideDelay + 0.2)
             return
         end
-        _TimerService:SetTimerOnce(function() self:TryRespawn() end, self.RespawnDelay)
+        local delay = self.RespawnDelay
+        if self:IsFieldBoss() then
+            -- 맵에 놓인 보스(처형인·여왕 등): 5분 뒤, 남은 시간은 미니맵 머리글에 (10-11)
+            delay = _GameData.bossRespawnSec
+            _BossRespawn:Start(self.Entity.CurrentMap.Name, self:ShownName())
+            _Util:NotifyMap(self.Entity.CurrentMap, self:ShownName() .. " — " .. tostring(math.floor(delay / 60)) .. "분 뒤 다시 나타난다")
+        end
+        _TimerService:SetTimerOnce(function() self:TryRespawn() end, delay)
+    end
+
+    method boolean IsFieldBoss()
+        -- 다시 나오는 보스 (고유 이름 또는 보스 등급, 리스폰 있음). 소환된 졸개·심도·끝방 이름 있는 적은 RespawnDelay < 0
+        return self.RespawnDelay >= 0 and (self.Unique or self.Grade >= 3)
+    end
+
+    method string ShownName()
+        if self.DisplayName ~= "" then return self.DisplayName end
+        return _GameData:GetMonsterName(self.SourceId)
     end
 
     @ExecSpace("ServerOnly")
@@ -419,6 +436,13 @@ script Monster extends Component
     method void TryRespawn()
         -- D2처럼 눈앞에서 되살아나지 않는다: 처음 위치 가까이에 플레이어가 있으면 잠시 뒤 다시 시도
         if not isvalid(self.Entity) or not self.IsDead then return end
+        if self:IsFieldBoss() then
+            -- 보스는 기다린 사람 앞에 그대로 나온다 (팰월드처럼 시간이 되면 등장)
+            self:Respawn()
+            _BossRespawn:Clear(self.Entity.CurrentMap.Name, self:ShownName())
+            _Util:NotifyMap(self.Entity.CurrentMap, self:ShownName() .. "이(가) 다시 나타났다")
+            return
+        end
         if _Util:NearestPlayerDistance(self.Entity.CurrentMap, self.SpawnPosition) < _GameData.respawnHideRadius then
             _TimerService:SetTimerOnce(function() self:TryRespawn() end, 5)
             return

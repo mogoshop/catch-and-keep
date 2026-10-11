@@ -47,6 +47,9 @@ script HudMap extends Logic
     property number BlockSize = 4              -- 실제 칸 크기 (월드 단위)
     property any Revealed = nil                -- 맵 키 → { 칸 key → true } (접속 중에만)
     property boolean RevealAll = false         -- 마을은 처음부터 다 보인다
+    property string MapSub = ""                -- 미니맵 머리글 기본 문구 (사냥터 · 악몽 …)
+    property string BossShown = ""             -- 머리글에 지금 보이는 보스 남은 시간 (바뀔 때만 다시 쓴다)
+    property number NextBossAt = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -113,6 +116,10 @@ script HudMap extends Logic
             self:RenderFocus(player)
         end
         self:TickBanner()
+        if now >= self.NextBossAt then
+            self.NextBossAt = now + 0.5
+            self:RenderBossTimer(map.Name)
+        end
         local me = _Util:Pos2(player)
         self:UpdateView(me)
         -- 새로 밝혀진 칸이 있으면 지형·표시물을 다시 놓는다
@@ -145,6 +152,19 @@ script HudMap extends Logic
         local director = player.CurrentMap:GetComponent("script.DepthDirector")
         if director == nil then return 0 end
         return director.Floor
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderBossTimer(string mapName)
+        -- 미니맵 머리글: 쓰러진 보스가 있으면 「목 없는 처형인 4:32」(주황), 없으면 맵 종류
+        local boss = _BossRespawn:LabelFor(mapName)
+        if boss == self.BossShown then return end
+        self.BossShown = boss
+        if boss == "" then
+            _UIKit:SetText("MiniMap/Toggle/Kind", self.MapSub)
+        else
+            _UIKit:SetText("MiniMap/Toggle/Kind", _UIKit:Colored("#FF8A6B", boss))
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -188,6 +208,9 @@ script HudMap extends Logic
             if sub ~= "" then sub = sub .. " · " end
             sub = sub .. _GameConst:DifficultyName(diff)
         end
+        -- 쓰러진 보스가 다시 나오기까지 남은 시간 (BossRespawn, 10-11)
+        local boss = _BossRespawn:LabelFor(mapName)
+        if boss ~= "" then chestNote = chestNote .. " · " .. _UIKit:Colored("#FF8A6B", boss .. " 뒤 다시 등장") end
         -- 레벨 표시는 괄호 안 그대로 이름에 붙어 있다 ("피 묻은 황무지 (Lv 1~3)")
         _UIKit:SetText("Banner/Title", title)
         -- 봉인 상자 안내는 큰 배너에만 (미니맵 머리글은 좁다)
@@ -197,7 +220,9 @@ script HudMap extends Logic
         self:SetBannerAlpha(1)
         local shortName = string.gsub(title, "%s*%(Lv[^%)]*%)", "")
         _UIKit:SetText("MiniMap/Toggle/Name", shortName)
-        _UIKit:SetText("MiniMap/Toggle/Kind", sub)
+        self.MapSub = sub
+        self.BossShown = "-"
+        self:RenderBossTimer(mapName)
         self:BuildTerrain(_UserService.LocalPlayer.CurrentMap, info)
         self:BuildMiniMap(info)
         self:UpdateReveal(_Util:Pos2(_UserService.LocalPlayer))

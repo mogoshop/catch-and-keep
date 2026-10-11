@@ -5,11 +5,14 @@
 -- 맵에 아무도 없으면 5초 뒤 진행 중인 의식은 처음 상태로 돌아간다. 끝난 제단도 맵이 비면 지운다.
 -- 10-11: 끝난 의식(done)이 서버가 끝날 때까지 남아, 다른 사람이 먼저 깬 뒤에는 의뢰 중인 파티원이 다시 와도 사제가 안 나왔다
 --   → 의뢰 중인 사람이 끝난 제단에 다가가면 새로 시작하고, 끝난 제단은 맵이 비면 지운다.
+-- 10-11: 맵이 5초 비면 바로 다시 할 수 있어 포털을 켜 두고 사제를 무한 파밍했다 → 사제가 쓰러진 뒤 bossRespawnSec(5분) 동안 제단이 잠잠하다.
+--   남은 시간은 미니맵 머리글(BossRespawn)과 다가갔을 때 알림으로 보여 준다.
 @Logic
 script AltarRitual extends Logic
 
     property table Runs = {}                 -- 맵 엔티티 id → { map, center, wave, spawned, nextAt, deadline, priest, done, ... }
     property table BlessAt = {}              -- userId → 피의 신전을 다시 받을 수 있는 시각
+    property table WaitToldAt = {}           -- userId → 「아직 잠잠하다」 알림을 마지막으로 보낸 시각 (도배 방지)
     property integer TimerId = 0
     property integer Waves = 3
 
@@ -53,6 +56,20 @@ script AltarRitual extends Logic
         if run ~= nil and not run.done then return end   -- 진행 중이면 그대로 (끝난 제단은 의뢰 중인 사람이 다시 시작할 수 있다)
         local cur = quest:Current()
         if cur == nil or cur.kind ~= "ritual" or cur.map1 ~= markerId then return end
+        if run ~= nil and run.done then
+            local left = _BossRespawn:Remaining(map.Name, run.priestName)
+            if left > 0 then
+                -- 사제가 쓰러진 지 5분이 안 됐다: 남은 시간만 알린다
+                local userId = player.PlayerComponent.UserId
+                local now = _UtilLogic.ElapsedSeconds
+                if now - (self.WaitToldAt[userId] or -99) >= 5 then
+                    self.WaitToldAt[userId] = now
+                    local sec = math.ceil(left)
+                    _Util:Notify(string.format("피의 제단이 잠잠하다 — %d:%02d 뒤 다시 의식을 시작할 수 있다", math.floor(sec / 60), sec % 60), userId)
+                end
+                return
+            end
+        end
         self:Start(map, markerId, cur.target)
     end
 
@@ -71,7 +88,10 @@ script AltarRitual extends Logic
         for id in string.gmatch(spawner.Entries, "([%w_]+):%d+:%d+") do table.insert(species, id) end
         if #species == 0 then table.insert(species, "skelwarrior") end
         local now = _UtilLogic.ElapsedSeconds
-        self.Runs[map.Id] = { map = map, center = center, spawner = spawner, species = species, level = spawner.MapLevel, priestId = priestId,
+        local row = _NamedData:Get(priestId)
+        local priestName = row ~= nil and row.name or "피의 사제"
+        _BossRespawn:Clear(map.Name, priestName)
+        self.Runs[map.Id] = { map = map, center = center, spawner = spawner, species = species, level = spawner.MapLevel, priestId = priestId, priestName = priestName,
             wave = 0, spawned = {}, nextAt = now + 1.5, deadline = 0, priest = nil, priestSpawned = false, done = false, emptySince = 0 }
         self:Tell(map, "피의 의식이 깨어났다 — 제단으로 망자들이 몰려온다!")
         log("[VRF] ritual start " .. map.Name .. " lv=" .. tostring(spawner.MapLevel))
@@ -84,12 +104,11 @@ script AltarRitual extends Logic
             if not isvalid(run.map) then
                 self.Runs[id] = nil
             elseif run.done then
-                -- 끝난 제단: 맵이 5초 비면 지운다 (다음에 오는 사람은 처음부터)
-                if #_Util:PlayersInMap(run.map) == 0 then
-                    if run.emptySince == 0 then run.emptySince = now
-                    elseif now - run.emptySince >= 5 then self.Runs[id] = nil end
-                else
-                    run.emptySince = 0
+                -- 끝난 제단: 사제가 쓰러진 지 bossRespawnSec가 지나면 지운다 (다음에 오는 사람은 처음부터)
+                if _BossRespawn:Remaining(run.map.Name, run.priestName) <= 0 then
+                    _BossRespawn:Clear(run.map.Name, run.priestName)
+                    self.Runs[id] = nil
+                    self:Tell(run.map, "피의 제단이 다시 꿈틀거린다 — 의식을 시작할 수 있다")
                 end
             else
                 local players = _Util:PlayersInMap(run.map)
@@ -139,7 +158,8 @@ script AltarRitual extends Logic
             end
             if dead then
                 run.done = true
-                self:Tell(run.map, "제단이 잠잠해졌다 — 이제 피의 신전이다 (의뢰를 마친 사람이 다가가면 힘이 깃든다)")
+                _BossRespawn:Start(run.map.Name, run.priestName)
+                self:Tell(run.map, "제단이 잠잠해졌다 — 이제 피의 신전이다 (의뢰를 마친 사람이 다가가면 힘이 깃든다) · " .. run.priestName .. "은(는) " .. tostring(math.floor(_GameData.bossRespawnSec / 60)) .. "분 뒤 다시 깨어난다")
                 log("[VRF] ritual done " .. run.map.Name)
             end
         end

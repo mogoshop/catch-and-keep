@@ -41,7 +41,7 @@ function run(){
  b.button(m+'/Toggle','',{anchor:'top-center',pivot:[.5,1],pos:[0,0],rect_size:[344,104],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
  // 왼쪽 해골 장식(약 40px) 안쪽으로 — 글자가 장식에 붙어 보였다
  b.text(m+'/Toggle/Name','',{anchor:'top-left',pos:[50,-14],rect_size:[206,42],size:28,color:'#E6DCC6',alignment:3,bestfit:true,min_size:22,max_size:28});
- b.text(m+'/Toggle/Kind','',{anchor:'bottom-left',pos:[50,12],rect_size:[206,34],size:22,color:'#B9B0A1',alignment:3});
+ b.text(m+'/Toggle/Kind','',{anchor:'bottom-left',pos:[50,12],rect_size:[206,34],size:22,color:'#B9B0A1',alignment:3,bestfit:true,min_size:15,max_size:22});  // 보스 남은 시간(「목 없는 처형인 4:32」)이 들어가도 한 줄
  b.text(m+'/Toggle/Hint','−',{anchor:'middle-right',pos:[-44,0],rect_size:[40,60],size:32,color:'#E6C88A',alignment:4});
  // 와우·이모탈처럼: 어두운 바탕 위 평평한 바닥색, 표시물은 그림 대신 색 점 + 아래 짧은 이름, 나는 바라보는 방향 화살표
  b.panel(m+'/Body',{anchor:'top-center',pivot:[.5,1],pos:[0,-104],rect_size:[344,384],image_ruid:icons.win_content,sprite_type:0,color:'#0D0A10'});

@@ -5,7 +5,9 @@
 -- 데이터에 없는 맵이면 이 컴포넌트의 속성값을 쓴다
 -- 끝방 우두머리·봉인 상자(named.csv)도 여기서 놓는다. RespawnSec < 0 인 맵(곁가지 던전)은 「정리」 맵: 다시 나오지 않고,
 -- 남은 수를 동기화하며, 다 잡으면 「층 정리」 골드 묶음 + MapCleared. 정리됐거나 우두머리가 쓰러진 맵이 3초 넘게 비면,
--- 덜 정리된 맵은 5분 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1·§4)
+-- 덜 정리된 맵은 5분 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1·§4).
+-- 10-11: 끝방 우두머리가 쓰러지면 bossRespawnSec(5분) 동안은 맵이 비어도 다시 채우지 않는다 (BossRespawn이 남은 시간을 미니맵에 표시).
+-- 시간이 되면 빈 맵은 통째로, 사람이 있는 맵은 우두머리(+호위)만 끝방에 다시 나온다
 @Component
 script MonsterSpawner extends Component
 
@@ -29,7 +31,7 @@ script MonsterSpawner extends Component
     property boolean Cleared = false
     property number SpawnedAt = 0
     property number EmptySince = 0
-    property table NamedAlive = {}         -- 이 맵의 이름 있는 적 엔티티
+    property table NamedAlive = {}         -- 이 맵의 끝방 이름 있는 적: { e = 엔티티, row = named.csv 행, down = 쓰러짐 }
     property integer PollTimer = 0
     property integer MapLevel = 1
 
@@ -53,6 +55,7 @@ script MonsterSpawner extends Component
         if not isvalid(map) or self.SpawnedAt <= 0 then return end
         local now = _UtilLogic.ElapsedSeconds
         local players = _Util:PlayersInMap(map)
+        self:TrackNamed(map, #players > 0)
         if self.ClearMode and now - self.SpawnedAt > 2 then
             local alive = 0
             for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
@@ -94,16 +97,45 @@ script MonsterSpawner extends Component
 
     @ExecSpace("ServerOnly")
     method boolean NeedsRefill(number emptyFor)
-        -- 정리를 끝냈거나 이름 있는 적이 쓰러진 맵은 바로, 덜 정리된 맵은 5분 비어 있으면 (진행 중인 정리는 잠깐 나갔다 와도 그대로)
+        -- 정리를 끝냈거나 이름 있는 적이 쓰러진 맵은 바로, 덜 정리된 맵은 5분 비어 있으면 (진행 중인 정리는 잠깐 나갔다 와도 그대로).
+        -- 단 우두머리가 쓰러진 지 bossRespawnSec가 안 됐으면 기다린다 (포털로 드나들며 우두머리·봉인 상자 무한 파밍 방지)
+        if _BossRespawn:MapRemaining(self.Entity.CurrentMap.Name) > 0 then return false end
         if self.ClearMode and self.Cleared then return true end
         if self.ClearMode and emptyFor >= _GameData.sideRefillSec and self.Remaining < self.Total then return true end
-        for _, e in ipairs(self.NamedAlive) do
-            if not isvalid(e) then return true end
-            ---@type Monster
-            local m = e:GetComponent("script.Monster")
-            if m == nil or m.IsDead then return true end
+        for _, r in ipairs(self.NamedAlive) do
+            if r.down or not self:NamedUp(r.e) then return true end
         end
         return false
+    end
+
+    method boolean NamedUp(Entity e)
+        if not isvalid(e) then return false end
+        ---@type Monster
+        local m = e:GetComponent("script.Monster")
+        return m ~= nil and not m.IsDead
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TrackNamed(Entity map, boolean occupied)
+        -- 끝방 우두머리: 쓰러지면 5분 타이머, 시간이 됐는데 사람이 있으면 우두머리만 다시 (봉인 상자는 맵을 다시 채울 때만)
+        for _, r in ipairs(self.NamedAlive) do
+            if not r.down and not self:NamedUp(r.e) then
+                r.down = true
+                _BossRespawn:Start(map.Name, r.row.name)
+                _Util:NotifyMap(map, r.row.name .. " — " .. tostring(math.floor(_GameData.bossRespawnSec / 60)) .. "분 뒤 다시 나타난다")
+                log("[VRF] named down " .. r.row.id .. " " .. map.Name)
+            elseif r.down and occupied and _BossRespawn:Remaining(map.Name, r.row.name) <= 0 then
+                local pos = _NamedSystem:EndPoint(self)
+                local e = pos ~= nil and _NamedSystem:SpawnNamed(r.row, map, pos, self.MapLevel) or nil
+                if isvalid(e) then
+                    r.e = e
+                    r.down = false
+                    _BossRespawn:Clear(map.Name, r.row.name)
+                    _Util:NotifyMap(map, r.row.name .. "이(가) 다시 나타났다")
+                    log("[VRF] named back " .. r.row.id .. " " .. map.Name)
+                end
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -142,7 +174,8 @@ script MonsterSpawner extends Component
                 if pos ~= nil then
                     if row.id ~= "" then
                         local e = _NamedSystem:SpawnNamed(row, map, pos, level)
-                        if isvalid(e) then table.insert(self.NamedAlive, e) end
+                        if isvalid(e) then table.insert(self.NamedAlive, { e = e, row = row, down = false }) end
+                        _BossRespawn:Clear(map.Name, row.name)
                     end
                     if row.chest then
                         local chestPos = pos

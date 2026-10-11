@@ -1,0 +1,79 @@
+-- 보스 다시 나타나기까지 (10-11, 팰월드처럼): 고정 보스·곁가지 끝방 보스·피의 제단 의식은 쓰러진 뒤 bossRespawnSec(5분) 동안 다시 나오지 않는다.
+-- 맵마다 남은 시간을 클라이언트에 알려 미니맵 머리글에 「처형인 4:32」처럼 보여 준다 (HudMap).
+-- 예전에는 고정 보스 90~120초, 끝방 보스는 맵이 3초 비면 맵 전체와 함께, 제단은 맵이 5초 비면 다시 나와 포털로 끝없이 잡을 수 있었다.
+@Logic
+script BossRespawn extends Logic
+
+    @Sync
+    property string Digest = ""        -- "맵 이름|보스 이름|다시 나오는 서버 시각;..." (ServerElapsedSeconds)
+    property table Timers = nil         -- 서버: "맵|이름" → { map, name, at }
+
+    @ExecSpace("ServerOnly")
+    method void Start(string mapName, string bossName)
+        -- 보스가 쓰러졌다: 지금부터 bossRespawnSec 뒤에 다시 나올 수 있다
+        if self.Timers == nil then self.Timers = {} end
+        self.Timers[mapName .. "|" .. bossName] = { map = mapName, name = bossName, at = _UtilLogic.ServerElapsedSeconds + _GameData.bossRespawnSec }
+        self:Publish()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Clear(string mapName, string bossName)
+        if self.Timers == nil or self.Timers[mapName .. "|" .. bossName] == nil then return end
+        self.Timers[mapName .. "|" .. bossName] = nil
+        self:Publish()
+    end
+
+    @ExecSpace("ServerOnly")
+    method number Remaining(string mapName, string bossName)
+        -- 남은 초 (없거나 지났으면 0)
+        if self.Timers == nil then return 0 end
+        local t = self.Timers[mapName .. "|" .. bossName]
+        if t == nil then return 0 end
+        return math.max(0, t.at - _UtilLogic.ServerElapsedSeconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method number MapRemaining(string mapName)
+        -- 그 맵에서 가장 늦게 돌아오는 보스까지 남은 초 (곁가지 던전 다시 채우기 판단)
+        local best = 0
+        if self.Timers == nil then return 0 end
+        for _, t in pairs(self.Timers) do
+            if t.map == mapName then best = math.max(best, t.at - _UtilLogic.ServerElapsedSeconds) end
+        end
+        return math.max(0, best)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Publish()
+        local parts = {}
+        for _, t in pairs(self.Timers) do
+            table.insert(parts, t.map .. "|" .. t.name .. "|" .. tostring(math.floor(t.at)))
+        end
+        table.sort(parts)
+        self.Digest = table.concat(parts, ";")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string LabelFor(string mapName)
+        -- 클라이언트: 이 맵에서 가장 늦게 돌아오는 보스 「목 없는 처형인 4:32」, 더 있으면 「 외 1」. 다 됐으면 ""
+        local now = _UtilLogic.ServerElapsedSeconds
+        local bestName = ""
+        local bestLeft = 0
+        local count = 0
+        for map, name, at in string.gmatch(self.Digest, "([^|;]+)|([^|;]+)|(%d+)") do
+            local left = math.floor(tonumber(at) - now)
+            if map == mapName and left > 0 then
+                count = count + 1
+                if left > bestLeft then
+                    bestLeft = left
+                    bestName = name
+                end
+            end
+        end
+        if count == 0 then return "" end
+        local text = bestName .. " " .. string.format("%d:%02d", math.floor(bestLeft / 60), bestLeft % 60)
+        if count > 1 then text = text .. " 외 " .. tostring(count - 1) end
+        return text
+    end
+
+end
