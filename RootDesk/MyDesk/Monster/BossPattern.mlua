@@ -267,6 +267,12 @@ script BossPattern extends Component
             ---@type PlayerVitals
             local vitals = p:GetComponent("script.PlayerVitals")
             if vitals ~= nil then vitals:TakeTickDamage(atk:CalcDamage(self.Entity, p, "monster.slam")) end
+            if self.PoolElement == "cold" then
+                -- 냉기 장판 위에서는 둔화 (액트 3 물에 잠긴 사제 · 제독 2단계)
+                ---@type PlayerStats
+                local st = p:GetComponent("script.PlayerStats")
+                if st ~= nil then st:ApplyChill(1.0) end
+            end
         end
         atk.SlamDamage = keepDamage
         atk.SlamElement = keepElement
@@ -326,7 +332,10 @@ script BossPattern extends Component
         local color = Color(1, 0.38, 0.12, 0.95)
         local width = 0.16
         if not windup then
-            color = self.PoolElement == "poison" and Color(0.45, 1, 0.3, 0.8) or Color(1, 0.25, 0.1, 0.8)
+            color = Color(1, 0.25, 0.1, 0.8)
+            if self.PoolElement == "poison" then color = Color(0.45, 1, 0.3, 0.8)
+            elseif self.PoolElement == "cold" then color = Color(0.5, 0.85, 1, 0.8)
+            elseif self.PoolElement == "light" then color = Color(0.85, 0.95, 1, 0.85) end
             width = 0.09
         end
         local transform = self.Entity.TransformComponent
@@ -405,15 +414,25 @@ script BossPattern extends Component
     method void PoolFx(Vector3 pos, number radius, number seconds, string element)
         -- 장판 입자: 바닥에 낮게 도는 속성 색 소용돌이 (+ 화염은 불길). seconds 뒤 지운다
         if not self:HasLocalAudience() then return end
-        local tint = element == "poison" and Color(0.35, 0.95, 0.25, 0.55) or Color(1, 0.35, 0.1, 0.55)
+        local tint = Color(1, 0.35, 0.1, 0.55)
+        if element == "poison" then tint = Color(0.35, 0.95, 0.25, 0.55)
+        elseif element == "cold" then tint = Color(0.45, 0.8, 1, 0.55)
+        elseif element == "light" then tint = Color(0.75, 0.9, 1, 0.55) end
         local serials = {}
         table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(tint.r, tint.g, tint.b, 0.3) }))
         if element == "fire" then
             table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
         end
-        -- 바닥 그림 (코덱스 독·화염 장판, 10-11 그림 감사: 받아 두고 안 쓰던 그림)
-        local decal = element == "poison" and _Util:GroundDecal(_GameConst.SpriteGroundPoison, 160, 80, self.Entity, pos, radius, 0.85)
-            or _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, pos, radius, 0.85)
+        -- 바닥 그림 (코덱스 독·화염 장판, 10-11 그림 감사: 받아 두고 안 쓰던 그림). 냉기·번개(액트 3)는 전용 그림 요청 중이라 입자만
+        local decal = 0
+        if element == "poison" then decal = _Util:GroundDecal(_GameConst.SpriteGroundPoison, 160, 80, self.Entity, pos, radius, Color(1, 1, 1, 0.85))
+        elseif element == "cold" then
+            -- 이펙트 Color 옵션은 스프라이트 색을 바꾸지 못했다 (초록 독 장판이 그대로 보임) → 전용 그림이 올 때까지 입자만
+            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(0.55, 0.85, 1, 0.7) }))
+        elseif element == "light" then
+            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SparkLoop, self.Entity, pos, 0, Vector3(radius * 0.5, radius * 0.3, 1), true, { Color = Color(0.75, 0.9, 1, 0.9) }))
+            _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrikeSharpTall, self.Entity, pos, 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+        else decal = _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.85)) end
         _TimerService:SetTimerOnce(function()
             for _, serial in ipairs(serials) do
                 if serial ~= nil and serial > 0 then _ParticleService:RemoveParticle(serial) end

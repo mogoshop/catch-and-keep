@@ -1,0 +1,154 @@
+-- 액트 3 보스 기믹 (docs/design/17 §4). 내려찍기·장판·졸개 소환은 같은 엔티티의 BossPattern을 쓴다.
+--   바위 집게 왕 (crab_king): 생명 50% 아래에서 껍질 6초 (받는 피해 -40%, Monster.GetDamageTakenMultiplier) ↔ 6초 쉼을 되풀이
+--   익사한 제독 바렌 (admiral) 3단계:
+--     1단계 (66% 초과): 번개 연쇄 5번(MonsterAttack.ChainJumps) + 닻 내려찍기
+--     2단계 (66% 이하): 14초마다 익사한 선원 2 (졸개 6 이하) + 플레이어 발밑 냉기 장판(둔화)
+--     3단계 (33% 이하): 폭풍 — 발밑 낙뢰 장판(번개) 연속 (내려찍기 간격 ×0.6)
+-- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아간다.
+@Component
+script Act3Rite extends Component
+
+    property string Kind = ""                -- crab | admiral (Monster.SourceId로 정한다)
+    @Sync
+    property boolean Shell = false
+    property number ShellTimer = 0
+    property number ShellOn = 6
+    property number ShellOff = 6
+    property integer Phase = 1
+    property number SummonTimer = 0
+    property number SummonInterval = 14
+    property integer SummonCount = 2
+    property integer MinionCap = 6
+    property number BaseSlamInterval = 0
+    property string BasePoolElement = ""
+    property number BasePoolSeconds = 0
+    property integer ShellFx = 0             -- 클라이언트: 껍질 빛 입자
+
+    method void OnBeginPlay()
+        -- 서버만 기믹을 돌린다 (클라이언트는 껍질 빛만)
+        if not self:IsServer() then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.SourceId == "crab_king" then self.Kind = "crab" elseif monster.SourceId == "admiral" then self.Kind = "admiral" end
+        log("[VRF] Act3Rite ready kind=" .. self.Kind)
+    end
+
+    method void OnUpdate(number delta)
+        -- 생명 비율로 껍질·단계를 바꾼다
+        if self:IsClient() then self:ClientTick() return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil or self.Kind == "" then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            self:ResetRite()
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if self.Kind == "crab" then
+            if ratio > 0.5 then return end
+            self.ShellTimer = self.ShellTimer - delta
+            if self.ShellTimer <= 0 then
+                self.Shell = not self.Shell
+                self.ShellTimer = self.Shell and self.ShellOn or self.ShellOff
+                ---@type BossPattern
+                local bp = self.Entity:GetComponent("script.BossPattern")
+                if self.Shell and bp ~= nil then bp:Announce("바위 집게 왕이 껍질을 단단히 닫는다 — 잠시 받는 피해 -40%") end
+                log("[VRF] crab shell " .. tostring(self.Shell))
+            end
+            return
+        end
+        if self.Phase == 1 and ratio <= 0.66 then self:EnterPhase(2) end
+        if self.Phase == 2 and ratio <= 0.33 then self:EnterPhase(3) end
+        if self.Phase >= 2 then
+            self.SummonTimer = self.SummonTimer - delta
+            if self.SummonTimer <= 0 then
+                self.SummonTimer = self.SummonInterval
+                self:RaiseSailors()
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnterPhase(integer phase)
+        -- 제독 단계 전환: 2 = 선원 소환 + 냉기 장판, 3 = 낙뢰 장판 연속
+        self.Phase = phase
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp == nil then return end
+        if self.BaseSlamInterval <= 0 then
+            self.BaseSlamInterval = bp.SlamInterval
+            self.BasePoolElement = bp.PoolElement
+            self.BasePoolSeconds = bp.PoolSeconds
+        end
+        if phase == 2 then
+            bp.PoolElement = "cold"
+            bp.PoolSeconds = 3
+            bp.SlamAtTarget = true
+            self.SummonTimer = 0
+            bp:Announce("제독이 익사한 선원들을 부른다! 발밑에 냉기 파도가 깔린다")
+        elseif phase == 3 then
+            bp.PoolElement = "light"
+            bp.PoolSeconds = 2.5
+            bp.SlamAtTarget = true
+            bp.SlamInterval = self.BaseSlamInterval * 0.6
+            bp:Announce("폭풍이 몰아친다! 제독이 낙뢰를 부른다 — 발밑을 피하라")
+        end
+        log("[VRF] admiral phase " .. tostring(phase))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로: 껍질 닫힘 해제, 제독 장판·내려찍기 간격 복원
+        if self.Shell then self.Shell = false end
+        self.ShellTimer = 0
+        if self.Phase == 1 then return end
+        self.Phase = 1
+        self.SummonTimer = 0
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil and self.BaseSlamInterval > 0 then
+            bp.SlamInterval = self.BaseSlamInterval
+            bp.PoolElement = self.BasePoolElement
+            bp.PoolSeconds = self.BasePoolSeconds
+            bp.SlamAtTarget = false
+        end
+        log("[VRF] Act3Rite reset")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RaiseSailors()
+        -- 맵에 살아 있는 졸개가 상한 미만일 때만 익사한 선원 SummonCount마리 (BossPattern 졸개 = 레벨 맞춤·리스폰 없음)
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp == nil then return end
+        local alive = 0
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if c.Entity.Name == "BossMinion" and not m.IsDead and c.Entity.Enable then alive = alive + 1 end
+        end
+        if alive >= self.MinionCap then return end
+        bp.MinionModelId = "drownedsailor"
+        bp.MinionCount = math.min(self.SummonCount, self.MinionCap - alive)
+        bp:SummonMinions()
+        bp.MinionCount = 0
+        log("[VRF] admiral raised sailors alive=" .. tostring(alive))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 껍질이 닫혀 있는 동안 몸에 푸른 빛
+        if self.Shell and self.ShellFx == 0 then
+            self.ShellFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.4, 1.4, 1), true, { Color = Color(0.5, 0.8, 1, 0.8) })
+        elseif not self.Shell and self.ShellFx ~= 0 then
+            _ParticleService:RemoveParticle(self.ShellFx)
+            self.ShellFx = 0
+        end
+    end
+
+    method void OnEndPlay()
+        if self:IsClient() and self.ShellFx ~= 0 then _ParticleService:RemoveParticle(self.ShellFx) end
+    end
+
+end

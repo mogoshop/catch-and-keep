@@ -393,6 +393,7 @@ function genQuests() {
             elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
             elseif key == "deploy" then table.insert(parts, "그림자 배치 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "respoison" then table.insert(parts, "독 저항 +" .. val .. " (영구 · 난이도마다)")
+            elseif key == "reslight" then table.insert(parts, "번개 저항 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "unique" then table.insert(parts, "유니크 장비 " .. val .. " (보장)")
             elseif key == "runes" then table.insert(parts, "룬 " .. val .. "개")
             elseif key == "socket" then table.insert(parts, "소켓권 " .. val .. "장")

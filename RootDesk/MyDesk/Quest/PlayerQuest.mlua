@@ -23,6 +23,7 @@ script PlayerQuest extends Component
     property integer DeployBonus = 0          -- 의뢰 영구 보상 그림자 배치 + (난이도마다 1회)
     @Sync
     property integer PoisonBonus = 0          -- 의뢰 영구 보상 독 저항 + (「독침 여왕」 난이도마다 1회)
+    property integer LightBonus = 0           -- 의뢰 영구 보상 번개 저항 + (「바위 집게 왕」 난이도마다 1회, 액트 3)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -312,23 +313,27 @@ script PlayerQuest extends Component
         self.ByDiff[tostring(self.Diff)] = { i = self.Index, s = self.State, p = self.Progress }
         local bonus = 0
         local poison = 0
+        local light = 0
         for i = 1, _QuestData:Count() do
             local q = _QuestData:Get(i)
             local n = tonumber(string.match("," .. q.reward, ",deploy:(%d+)")) or 0
             local r = tonumber(string.match("," .. q.reward, ",respoison:(%d+)")) or 0
-            if n > 0 or r > 0 then
+            local l = tonumber(string.match("," .. q.reward, ",reslight:(%d+)")) or 0
+            if n > 0 or r > 0 or l > 0 then
                 for k = 0, 2 do
                     local d = self.ByDiff[tostring(k)]
                     if d ~= nil and d.i > i then
                         bonus = bonus + n
                         poison = poison + r
+                        light = light + l
                     end
                 end
             end
         end
         self.DeployBonus = bonus
-        if self.PoisonBonus ~= poison then
+        if self.PoisonBonus ~= poison or self.LightBonus ~= light then
             self.PoisonBonus = poison
+            self.LightBonus = light
             ---@type PlayerStats
             local stats = self.Entity:GetComponent("script.PlayerStats")
             if stats ~= nil then stats:RefreshResists() end
