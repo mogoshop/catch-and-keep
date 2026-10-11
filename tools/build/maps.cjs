@@ -211,6 +211,8 @@ function artEntities(d, maps, ctx, layout) {
   const blocked = new Set();
   ctx.propBlocked[d.id] = blocked;
   const block = (name, x, y, scale) => { for (const k of propFootprint(x, y, (ctx.sprites[name] || {}).w, scale)) blocked.add(k); };
+  // 메이플식 장식(art_sprites kind prop-1x)은 예전 그림 × 0.8 크기로 원본 크기에 그렸다 → 배율을 1/0.8 하여 화면 크기는 그대로, 픽셀은 1:1
+  const pscale = (name, sc) => ((ctx.sprites[name] || {}).kind === "prop-1x" ? sc / 0.8 : sc);
   const ruid = (name) => {
     const s = ctx.sprites[name];
     if (!s) throw new Error(`map_art ${d.id}: 그림 '${name}'이 art_sprites.csv에 없음`);
@@ -268,8 +270,9 @@ function artEntities(d, maps, ctx, layout) {
     if (props.length) {
       layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
         const name = props[p.pick % props.length];
-        block(name, p.x + 0.5, p.y + 0.2, 0.8);
-        out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: 0.8, y: 0.8, z: 1 } } }) });
+        const ps = pscale(name, 0.8);
+        block(name, p.x + 0.5, p.y + 0.2, ps);
+        out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(ps), y: r3(ps), z: 1 } } }) });
       });
     }
   } else if (art.border) {
@@ -286,9 +289,9 @@ function artEntities(d, maps, ctx, layout) {
   list(art.props || "").forEach((p, k) => {
     const [name, at, sc] = p.split("@").concat([]);
     const [x, y] = at.split("/").map(Number);
-    const s = num(sc, 0.8);
+    const s = pscale(name, num(sc, 0.8));
     block(name, x, y, s);
-    out.push({ name: `ArtProp${k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: s, y: s, z: 1 } } }) });
+    out.push({ name: `ArtProp${k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
   });
   return out;
 }

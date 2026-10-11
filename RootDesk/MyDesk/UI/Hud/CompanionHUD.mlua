@@ -148,6 +148,9 @@ script CompanionHUD extends Logic
                 local fill = _UIKit:Get(base .. "/HP/Fill")
                 if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(84 * ratio, 8) end
                 local portrait = g.portrait ~= "" and ("thumbnail://" .. g.portrait) or self:FallbackIcon(g.kind)
+                -- 메이플식 프레임 몬스터는 캔버스가 몸보다 넓어 초상이 작아진다 → 몸만 잘라 둔 초상 그림 (monsters.csv portrait)
+                local pst = g.src ~= "" and _GameData:GetMonsterStats(g.src) or nil
+                if pst ~= nil and pst.portrait ~= nil and pst.portrait ~= "" then portrait = pst.portrait end
                 _UIKit:SetIcon(base .. "/Portrait", portrait)
                 self:FitPortrait(base .. "/Portrait", g.src)
                 local frame = Color(1, 1, 1, 1)
@@ -173,8 +176,10 @@ script CompanionHUD extends Logic
             return
         end
         sprite.PreserveSprite = PreserveSpriteType.None
-        local k = 62 / math.max(stats.w, stats.h)
-        e.UITransformComponent.RectSize = Vector2(stats.w * k, stats.h * k)
+        local w = (stats.pw ~= nil and stats.pw > 0) and stats.pw or stats.w
+        local h = (stats.ph ~= nil and stats.ph > 0) and stats.ph or stats.h
+        local k = 62 / math.max(w, h)
+        e.UITransformComponent.RectSize = Vector2(w * k, h * k)
     end
 
     method integer KindOrder(string kind)

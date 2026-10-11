@@ -135,6 +135,14 @@ async function uploadRes(pack, argv) {
   const opt = (k) => ((argv.find((a) => a.startsWith(`--${k}=`)) || "").split("=")[1] || "").split(",").filter(Boolean);
   const skipCat = opt("skip"), skipKey = opt("skip-key");
   const bottom = (r) => ["monster-frame", "npc", "prop"].includes(r[c("category")]) || /-ground/.test(r[c("key")]);
+  // 팩에 resource-properties.csv(name,pivot_x,pivot_y,wrap_mode)가 있으면 그림마다 그 피벗을 쓴다 (발이 캔버스 바닥이 아닌 장식·넓은 캔버스)
+  const propFile = path.join(root, pack, "resource-properties.csv");
+  const pivots = {};
+  if (fs.existsSync(propFile)) {
+    const p = parseQuoted(fs.readFileSync(propFile, "utf8"));
+    const pc = (n) => p.head.indexOf(n);
+    for (const r of p.rows) pivots[r[pc("name")]] = { x: r[pc("pivot_x")], y: r[pc("pivot_y")], wrap: r[pc("wrap_mode")] || "Clamp" };
+  }
   const todo = t.rows.filter((r) => !/^[0-9a-f]{32}$/.test(r[c("RUID")]) && !skipCat.includes(r[c("category")]) && !skipKey.some((k) => r[c("key")].startsWith(k) || r[c("upload_name")].includes(k)));
   console.log(`올릴 그림 ${todo.length}장 (건너뜀: ${skipCat.join("/") || "-"} · ${skipKey.join("/") || "-"})`);
   if (argv.includes("--dry")) return;
@@ -152,9 +160,10 @@ async function uploadRes(pack, argv) {
     const done = pickJson(await callTool("asset_create_group_resource_storage_item", Object.assign({}, args, { fileUrl: url })));
     const ruid = findKey(done, /^(ruid|guid|resourceId)$/i);
     if (!ruid || !/^[0-9a-f]{32}$/.test(ruid)) throw new Error(`${name}: RUID를 못 받음 (${JSON.stringify(done).slice(0, 200)})`);
-    if (bottom(r)) {
+    const pv = pivots[name];
+    if (pv || bottom(r)) {
       await callTool("asset_update_resource_storage_info", { guid: ruid, name, subcategory: "object", properties: [
-        { key: "pivot_x", value: "0.5" }, { key: "pivot_y", value: "0" }, { key: "filter_mode", value: "Point" }, { key: "wrap_mode", value: "Clamp" },
+        { key: "pivot_x", value: pv ? String(pv.x) : "0.5" }, { key: "pivot_y", value: pv ? String(pv.y) : "0" }, { key: "filter_mode", value: "Point" }, { key: "wrap_mode", value: pv ? pv.wrap : "Clamp" },
       ] });
     }
     r[c("RUID")] = ruid;

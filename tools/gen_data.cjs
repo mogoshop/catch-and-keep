@@ -17,7 +17,8 @@ const HEADER = "-- 자동 생성 파일: tools/gen_data.cjs 가 data/%SRC% 에�
 // 소환수(그림자·되살린 언데드) 배율: 필드에서의 키(그림 높이 × 배율)를 0.7~1.15칸으로 맞춘다 —
 // 보스(묘지의 여왕 2.7칸)도 소환하면 다른 소환수와 비슷한 크기, 큰 몹은 조금만 더 크게 (10-10 QA)
 function summonScale(m) {
-  const h = num(m.h, 0) / 100, sc = num(m.scale, 1);
+  // 몸 키(bodyH)가 있으면 그것으로 (메이플식 프레임은 공격·사망 자세 때문에 캔버스가 몸보다 크다)
+  const h = num(m.bodyH, 0) > 0 ? num(m.bodyH) / 100 : num(m.h, 0) / 100, sc = num(m.scale, 1);
   if (h <= 0) return Math.min(1, sc);
   const fieldH = h * sc;
   const want = Math.max(0.7, Math.min(1.15, fieldH));
@@ -81,7 +82,9 @@ function genGameData() {
   // 소환수 공격 그림: 코덱스 프레임 몬스터는 공격 프레임 가운데(타격 순간) 한 장. csv attack 칸은 다른 몬스터의 대체값이라 쓰지 않는다 (10-11 그림 감사 C-4)
   const strikeFrame = (src, fallback) => {
     const f = frames[src] && frames[src].attack ? frames[src].attack.frames.split(";") : null;
-    return f ? f[Math.floor(f.length / 2)] : fallback;
+    if (!f) return fallback;
+    const imp = frames[src].attack.impact;
+    return f[imp !== undefined && imp !== "" ? Math.min(f.length - 1, Number(imp)) : Math.floor(f.length / 2)];
   };
   const body = [
     "        self.PlayerAppearance = {}",
@@ -107,11 +110,11 @@ function genGameData() {
     "        self.MonsterNames = {}",
     ...mons.map((m) => `        self.MonsterNames[${s(m.sourceId)}] = ${s(m.name)}`),
     "        self.MonsterFrames = {}",
-    ...Object.entries(frames).map(([src, states]) => `        self.MonsterFrames[${s(src)}] = { ${Object.values(states).map((f) => `${f.state} = { r = { ${f.frames.split(";").map(s).join(", ")} }, d = { ${f.delays.split(";").map(n).join(", ")} }, loop = ${f.loop === "true"} }`).join(", ")} }`),
+    ...Object.entries(frames).map(([src, states]) => `        self.MonsterFrames[${s(src)}] = { ${Object.values(states).map((f) => `${f.state} = { r = { ${f.frames.split(";").map(s).join(", ")} }, d = { ${f.delays.split(";").map(n).join(", ")} }, loop = ${f.loop === "true"}${f.impact !== undefined && f.impact !== "" ? `, s = ${Number(f.impact) + 1}` : ""} }`).join(", ")} }`),
     "        self.MonsterSourceOf = {}",
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)}, chain = ${n(m.chain || 0)} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)}, bh = ${n(m.bodyH || 0)}, portrait = ${s(m.portrait || "")}, pw = ${n(m.pw || 0)}, ph = ${n(m.ph || 0)}, chain = ${n(m.chain || 0)} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);

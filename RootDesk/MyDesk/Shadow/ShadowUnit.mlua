@@ -175,7 +175,9 @@ script ShadowUnit extends AttackComponent
             -- 원본 그림 높이(px)로 머리 위치를 잡는다 (그림자 = 원본 몬스터, 해골·마법사는 기본 0.95칸)
             local src = string.match(self.Entity.Name, "^Shadow_(.+)$")
             local stats = src ~= nil and _GameData:GetMonsterStats(src) or nil
-            self.HpBarHeadY = (stats ~= nil and stats.h ~= nil and stats.h > 0) and stats.h / 100 or 0.95
+            -- 몸 키(bh)가 있으면 그것으로 (메이플식 프레임은 캔버스가 몸보다 크다)
+            local headPx = stats ~= nil and ((stats.bh ~= nil and stats.bh > 0) and stats.bh or stats.h) or nil
+            self.HpBarHeadY = (headPx ~= nil and headPx > 0) and headPx / 100 or 0.95
         end
         -- 부모(본체 또는 그림 대역)의 크기·좌우를 되돌려 늘 같은 크기·방향으로
         local parent = bar.Parent

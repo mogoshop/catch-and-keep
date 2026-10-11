@@ -10,7 +10,7 @@ const { load } = require("./lib/csv.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "data/monster_frames.csv");
-const HEADER = "monster,state,frames,delays,loop,clip";
+const HEADER = "monster,state,frames,delays,loop,clip,impact";   // impact = 공격 타격 칸 (0부터, 비면 가운데)
 
 function parseCsv(text) {
   const rows = [];
@@ -47,7 +47,7 @@ function main() {
     const frames = r.ordered_sprite_RUIDs.split(";").filter(Boolean);
     const delays = r.ordered_frame_delay_seconds.split(";").filter(Boolean);
     if (frames.length === 0 || frames.length !== delays.length) throw new Error(`${r.entity} ${r.state}: 프레임·지연 수가 다름`);
-    added.push([id, r.state, frames.join(";"), delays.join(";"), r.loop === "true" ? "true" : "false", r.animationclip_RUID || ""].join(","));
+    added.push([id, r.state, frames.join(";"), delays.join(";"), r.loop === "true" ? "true" : "false", r.animationclip_RUID || "", r.attack_impact_index || ""].join(","));
   }
   fs.writeFileSync(OUT, [HEADER, ...keep, ...added].join("\n") + "\n");
   console.log(`monster_frames.csv: ${added.length}행 추가 · 기존 ${keep.length}행 유지`);
