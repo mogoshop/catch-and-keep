@@ -342,6 +342,8 @@ function buildGameHud() {
     b.button(path, "", { anchor: "middle-left", pos: [(i - 1) * 64, 0], rect_size: [56, 56], image_ruid: K.circle, bg_color: "#FFFFFF", sprite_type: 0, enable: false });
     b.text(`${path}/Label`, "", { size: 15, bold: true, anchor: "middle-center", pos: [0, 7], rect_size: [56, 22], bestfit: true, min_size: 11, max_size: 15, ...outline });
     b.text(`${path}/Time`, "", { size: 13, anchor: "middle-center", pos: [0, -12], rect_size: [56, 18], ...outline });
+    // 디버프 칩 위에 코덱스 붉은 테두리 (debuff_frame, 가운데 투명). 버프와 한눈에 갈린다
+    b.sprite(`${path}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], image_ruid: K.debuff_frame, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
   }
 
   // ── 퀘스트 창 (Q) ──

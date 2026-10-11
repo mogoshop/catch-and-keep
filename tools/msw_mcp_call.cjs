@@ -45,6 +45,7 @@ async function callTool(name, args) {
 // 그림 팩 업로드: <팩>/upload-environment-mapping.csv에서 RUID가 빈 줄을 그룹 저장소(sprite/object)에 올리고
 // 받은 RUID를 그 표와 resource-mapping.csv(file 칸이 같은 줄)에 바로 적는다 (중간에 끊겨도 다시 실행하면 이어서).
 //   node tools/msw_mcp_call.cjs upload <팩 폴더> [최대 개수] [--dry]
+//   (코덱스 따옴표 표 resource-mapping.csv는 아래 upload-res)
 function readCsv(file) {
   const [head, ...rows] = fs.readFileSync(file, "utf8").split(/\r?\n/).filter((l) => l !== "").map((l) => l.split(","));
   return { head, rows };
@@ -96,9 +97,78 @@ async function upload(pack, limitArg, dry) {
   }
 }
 
+// 따옴표 CSV (코덱스 resource-mapping.csv 형식)
+function parseQuoted(text) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return { head: rows[0], rows: rows.slice(1) };
+}
+function writeQuoted(file, t) {
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  fs.writeFileSync(file, [t.head.join(","), ...t.rows.map((r) => r.map(q).join(","))].join("\n") + "\n");   // 헤더는 따옴표 없이 (코덱스 원본과 같게)
+}
+
+// 코덱스 팩의 resource-mapping.csv(따옴표 CSV)를 그대로 읽어 RUID가 빈 줄을 그룹 저장소에 올리고 RUID를 그 표에 적는다.
+// 올린 직후 몬스터 프레임·NPC·장식·바닥 장판은 발밑 가운데 피벗(0.5, 0)으로 둔다 (중간에 끊겨도 다시 실행하면 이어서).
+//   node tools/msw_mcp_call.cjs upload-res <팩 폴더> [--skip=floor,wall] [--skip-key=stormgulls] [--dry]
+async function uploadRes(pack, argv) {
+  const root = path.join(__dirname, "..");
+  const resFile = path.join(root, pack, "resource-mapping.csv");
+  const t = parseQuoted(fs.readFileSync(resFile, "utf8"));
+  const c = (name) => t.head.indexOf(name);
+  const opt = (k) => ((argv.find((a) => a.startsWith(`--${k}=`)) || "").split("=")[1] || "").split(",").filter(Boolean);
+  const skipCat = opt("skip"), skipKey = opt("skip-key");
+  const bottom = (r) => ["monster-frame", "npc", "prop"].includes(r[c("category")]) || /-ground/.test(r[c("key")]);
+  const todo = t.rows.filter((r) => !/^[0-9a-f]{32}$/.test(r[c("RUID")]) && !skipCat.includes(r[c("category")]) && !skipKey.some((k) => r[c("key")].startsWith(k) || r[c("upload_name")].includes(k)));
+  console.log(`올릴 그림 ${todo.length}장 (건너뜀: ${skipCat.join("/") || "-"} · ${skipKey.join("/") || "-"})`);
+  if (argv.includes("--dry")) return;
+  await connect();
+  let n = 0;
+  for (const r of todo) {
+    const name = r[c("upload_name")], rel = r[c("file")], group = r[c("group")] || "OJYYQ";
+    const body = fs.readFileSync(path.join(root, pack, rel));
+    const args = { groupCode: group, category: "sprite", subcategory: "object", name, description: `${pack.split("/").pop()} ${r[c("category")]}`, contentLength: body.length };
+    const first = pickJson(await callTool("asset_create_group_resource_storage_item", args));
+    const url = findKey(first, /presigned/i);
+    if (!url) throw new Error(`${name}: 업로드 주소를 못 받음 (${Object.keys(first).join(",")})`);
+    const put = await fetch(url, { method: "PUT", body, headers: { "Content-Length": String(body.length) } });
+    if (!put.ok) throw new Error(`${name}: 파일 올리기 실패 HTTP ${put.status}`);
+    const done = pickJson(await callTool("asset_create_group_resource_storage_item", Object.assign({}, args, { fileUrl: url })));
+    const ruid = findKey(done, /^(ruid|guid|resourceId)$/i);
+    if (!ruid || !/^[0-9a-f]{32}$/.test(ruid)) throw new Error(`${name}: RUID를 못 받음 (${JSON.stringify(done).slice(0, 200)})`);
+    if (bottom(r)) {
+      await callTool("asset_update_resource_storage_info", { guid: ruid, name, subcategory: "object", properties: [
+        { key: "pivot_x", value: "0.5" }, { key: "pivot_y", value: "0" }, { key: "filter_mode", value: "Point" }, { key: "wrap_mode", value: "Clamp" },
+      ] });
+    }
+    r[c("RUID")] = ruid;
+    r[c("status")] = "uploaded";
+    writeQuoted(resFile, t);
+    n++;
+    if (n % 10 === 0 || n === todo.length) console.log(`  ${n}/${todo.length} ${name}`);
+  }
+}
+
 async function main() {
   const [cmd, file, px, py] = process.argv.slice(2);
   if (cmd === "upload") return upload(file, px, process.argv.includes("--dry"));
+  if (cmd === "upload-res") return uploadRes(file, process.argv.slice(4));
   if (cmd !== "pivot") throw new Error("사용법: node tools/msw_mcp_call.cjs pivot <guid-list-file> [pivot_x] [pivot_y] | upload <팩 폴더> [최대 개수]");
   const rows = fs.readFileSync(file, "utf8").split(/\r?\n/).map((l) => l.trim().split(",")).filter((r) => /^[0-9a-f]{32}$/.test(r[0]) && r[1] && r[2]);
   await connect();

@@ -23,6 +23,7 @@ script Act3Rite extends Component
     property string BasePoolElement = ""
     property number BasePoolSeconds = 0
     property integer ShellFx = 0             -- 클라이언트: 껍질 빛 입자
+    property boolean ShellTinted = false     -- 클라이언트: 몸에 푸른 색조를 입혔다
 
     method void OnBeginPlay()
         -- 서버만 기믹을 돌린다 (클라이언트는 껍질 빛만)
@@ -138,12 +139,31 @@ script Act3Rite extends Component
 
     @ExecSpace("ClientOnly")
     method void ClientTick()
-        -- 껍질이 닫혀 있는 동안 몸에 푸른 빛
+        -- 껍질이 닫혀 있는 동안 몸에 푸른 빛 입자 + 몸 그림 청백 색조. 닫히는 순간 코덱스 껍질 고리가 한 번 터진다
+        -- (껍질 그림은 몸 실루엣과 안 맞아 겹쳐 두지 않는다 — 10-11 검토). 피격 번쩍임 중에는 색을 건드리지 않는다
+        local sprite = self.Entity.SpriteRendererComponent
+        ---@type MonsterTraits
+        local traits = self.Entity:GetComponent("script.MonsterTraits")
+        local flashing = traits ~= nil and traits.FlashUntil > 0
         if self.Shell and self.ShellFx == 0 then
             self.ShellFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.4, 1.4, 1), true, { Color = Color(0.5, 0.8, 1, 0.8) })
+            local s = self.Entity.TransformComponent.Scale.x
+            local p = self.Entity.TransformComponent.WorldPosition
+            local glow = _EffectService:PlayEffect(_GameConst.SpriteCrabShellGlow, self.Entity, Vector3(p.x, p.y + 0.65 * s, 0), 0, Vector3(s * 1.1, s * 1.1, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 20 })
+            _TimerService:SetTimerOnce(function() if glow ~= 0 then _EffectService:RemoveEffect(glow) end end, 0.6)
         elseif not self.Shell and self.ShellFx ~= 0 then
             _ParticleService:RemoveParticle(self.ShellFx)
             self.ShellFx = 0
+        end
+        if not isvalid(sprite) or flashing then return end
+        local c = sprite.Color
+        if self.Shell then
+            if math.abs(c.r - 0.62) > 0.01 or math.abs(c.g - 0.82) > 0.01 or math.abs(c.b - 1) > 0.01 then sprite.Color = Color(0.62, 0.82, 1, c.a) end
+            self.ShellTinted = true
+        elseif self.ShellTinted then
+            self.ShellTinted = false
+            sprite.Color = Color(1, 1, 1, c.a)
+            if traits ~= nil then traits.AppliedTint = "" end   -- 데이터 색조가 있으면 MonsterTraits.TintTick이 다시 칠한다
         end
     end
 

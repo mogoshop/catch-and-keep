@@ -463,6 +463,7 @@ script MonsterAttack extends AttackComponent
         local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "Arrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), self.Entity.CurrentMap)
         if not isvalid(shot) then return end
         local fire = self:GetElement() == "fire"
+        local cold = self:GetElement() == "cold"
         local owner = self.Entity
         local originMap = self.Entity.CurrentMap
         _Util:AfterSpawn(shot, "script.Projectile", function(comp)
@@ -477,6 +478,9 @@ script MonsterAttack extends AttackComponent
             -- 화염 몬스터(불꽃 사도·서고 사서·대사제 등)는 코덱스 화염구, 나머지는 화살에 속성 색 (10-11 그림 감사)
             if fire then
                 proj:Skin(_GameConst.SpriteFireball, 1.3)
+                proj:Tint(Color(1, 1, 1, 1))
+            elseif cold then
+                proj:Skin(_GameConst.SpriteIceArrow, 1.3)
                 proj:Tint(Color(1, 1, 1, 1))
             else
                 proj:Skin(_GameConst.SpriteArrow, 1.6)
@@ -521,6 +525,9 @@ script MonsterAttack extends AttackComponent
             self.ChainMul = mul
             self.ChainTarget = cur
             self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), 0.6), "monster.chain", nil)
+            ---@type PlayerStats
+            local shocked = cur:GetComponent("script.PlayerStats")
+            if shocked ~= nil then shocked.ShockUntil = _UtilLogic.ServerElapsedSeconds + 2.5 end   -- 버프 줄 「감전」 칩 (표시만)
             count = count + 1
             mul = mul * 0.85
             cur = self:NearestDefenderExcept(p, self.ChainRange, hit)
@@ -557,58 +564,48 @@ script MonsterAttack extends AttackComponent
 
     @ExecSpace("Multicast")
     method void ChainWarnFx(Vector3 pos, number seconds)
-        -- 첫 대상 발밑 파란 예고 원 (코덱스 표식이 오면 그림으로)
+        -- 첫 대상 발밑 파란 예고 원 + 코덱스 번개 예고 타원 (예고 시간 동안)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         self:DrawNovaWarning(Vector2(pos.x, pos.y), 0.55, Color(0.45, 0.75, 1, 0.95), seconds)
+        local mark = _EffectService:PlayEffect(_GameConst.SpriteLightningWarning, self.Entity, pos, 0, Vector3(1.15, 1.15, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 3 })
+        _TimerService:SetTimerOnce(function()
+            if mark ~= nil and mark ~= 0 then _EffectService:RemoveEffect(mark) end
+        end, math.max(0.1, seconds))
     end
 
     @ExecSpace("Multicast")
     method void ChainFx(table points)
-        -- 번개 줄기: 점 사이를 지그재그 선으로 잇고(0.3초) 맞은 자리마다 낙뢰·불꽃
+        -- 번개 줄기: 점 사이마다 코덱스 번개 줄기 그림(256×48, 4장 중 하나)을 늘이고 돌려 0.3초 잇고, 맞은 자리마다 번개 자국·불꽃
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        local line = self.Entity.LineRendererComponent
-        local transform = self.Entity.TransformComponent
-        if isvalid(line) then
-            self:ClearWindup()
-            line.Points:Clear()
-            self.WarningOwner = "chain"
-            local color = Color(0.7, 0.88, 1, 1)
-            for i = 1, #points - 1 do
-                local a = points[i]
-                local b = points[i + 1]
-                local d = Vector2(b.x - a.x, b.y - a.y)
-                local n = Vector2(-d.y, d.x)
-                if n:Magnitude() > 0.001 then n = n:Normalize() end
-                for k = 0, 6 do
-                    local t = k / 6
-                    local jitter = (k == 0 or k == 6) and 0 or (_UtilLogic:RandomDouble() - 0.5) * 0.45
-                    local q = Vector2(a.x, a.y) + d * t + n * jitter
-                    local lp = transform:ToLocalPoint(Vector3(q.x, q.y, transform.WorldPosition.z))
-                    line.Points:Add(LinePoint(Vector2(lp.x, lp.y), color, 0.09))
-                end
-            end
-            _TimerService:SetTimerOnce(function()
-                if not isvalid(self.Entity) or self.WarningOwner ~= "chain" then return end
-                if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
-                self.WarningOwner = ""
-            end, 0.3)
-        end
-        -- 줄기 중간에도 작은 번개 구슬 (선이 짧게 보여도 튕긴 길이 읽히게)
+        self:ClearWindup()
+        local chains = {}
+        for ruid in string.gmatch(_GameConst.SpriteLightningChains, "[^|]+") do table.insert(chains, ruid) end
+        local serials = {}
+        local opt = { SortingLayer = "MapLayer0", OrderInLayer = 20 }
         for i = 1, #points - 1 do
             local a = points[i]
             local b = points[i + 1]
-            for _, t in ipairs({ 0.33, 0.66 }) do
-                local m = Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 0)
-                _ParticleService:PlayBasicParticle(BasicParticleType.LightningOrbSharp, self.Entity, m, 0, Vector3(0.18, 0.18, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+            local dx = b.x - a.x
+            local dy = b.y - a.y
+            local len = math.sqrt(dx * dx + dy * dy)
+            if len > 0.05 and #chains > 0 then
+                local ruid = chains[_UtilLogic:RandomIntegerRange(1, #chains)]
+                local mid = Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0)
+                table.insert(serials, _EffectService:PlayEffect(ruid, self.Entity, mid, math.deg(math.atan(dy, dx)), Vector3(len / 2.56, 0.9, 1), true, opt))
             end
         end
         for i = 2, #points do
             local p = points[i]
-            _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrikeSharp, self.Entity, Vector3(p.x, p.y + 0.2, 0), 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+            table.insert(serials, _EffectService:PlayEffect(_GameConst.SpriteLightningHit, self.Entity, p, 0, Vector3(0.9, 0.9, 1), true, opt))
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, p, 0, Vector3(0.3, 0.3, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
         end
+        _TimerService:SetTimerOnce(function()
+            for _, serial in ipairs(serials) do
+                if serial ~= nil and serial ~= 0 then _EffectService:RemoveEffect(serial) end
+            end
+        end, 0.3)
     end
 
     method Color ElementColor(string element)

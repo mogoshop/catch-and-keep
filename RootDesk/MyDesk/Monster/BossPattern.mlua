@@ -156,6 +156,7 @@ script BossPattern extends Component
         self.SlamCenter = self:PickSlamCenter()
         self.SlamPhase = "windup"
         self.PhaseRemaining = math.max(0.1, self.SlamWindup)
+        if self.PoolElement == "light" then self:LightWarnFx(Vector3(self.SlamCenter.x, self.SlamCenter.y, 0), self.SlamRadius, self.PhaseRemaining) end
         local interval = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
         self.SlamTimer = math.max(0.5, interval - self.PhaseRemaining - self.SlamRecovery)
         self:HoldMotion()
@@ -411,6 +412,14 @@ script BossPattern extends Component
     end
 
     @ExecSpace("Multicast")
+    method void LightWarnFx(Vector3 pos, number radius, number seconds)
+        -- 낙뢰 장판(제독 3단계) 예고: 내려찍기 준비 동안 목표 자리에 코덱스 낙뢰 예고 그림
+        if not self:HasLocalAudience() then return end
+        local mark = _Util:GroundDecal(_GameConst.SpriteGroundLightningWarning, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.95))
+        _TimerService:SetTimerOnce(function() if mark ~= nil and mark ~= 0 then _EffectService:RemoveEffect(mark) end end, math.max(0.1, seconds))
+    end
+
+    @ExecSpace("Multicast")
     method void PoolFx(Vector3 pos, number radius, number seconds, string element)
         -- 장판 입자: 바닥에 낮게 도는 속성 색 소용돌이 (+ 화염은 불길). seconds 뒤 지운다
         if not self:HasLocalAudience() then return end
@@ -423,13 +432,16 @@ script BossPattern extends Component
         if element == "fire" then
             table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
         end
-        -- 바닥 그림 (코덱스 독·화염 장판, 10-11 그림 감사: 받아 두고 안 쓰던 그림). 냉기·번개(액트 3)는 전용 그림 요청 중이라 입자만
+        -- 바닥 그림 (코덱스 독·화염 장판 · 액트 3 냉기·등불빛 장판). 이펙트 Color 옵션은 스프라이트 색을 못 바꾸므로 속성마다 전용 그림
         local decal = 0
+        local impact = 0
         if element == "poison" then decal = _Util:GroundDecal(_GameConst.SpriteGroundPoison, 160, 80, self.Entity, pos, radius, Color(1, 1, 1, 0.85))
-        elseif element == "cold" then
-            -- 이펙트 Color 옵션은 스프라이트 색을 바꾸지 못했다 (초록 독 장판이 그대로 보임) → 전용 그림이 올 때까지 입자만
-            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(0.55, 0.85, 1, 0.7) }))
+        elseif element == "cold" then decal = _Util:GroundDecal(_GameConst.SpriteGroundCold, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.9))
         elseif element == "light" then
+            decal = _Util:GroundDecal(_GameConst.SpriteGroundLantern, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.9))
+            -- 꽂히는 순간 낙뢰 그림 0.4초
+            impact = _Util:GroundDecal(_GameConst.SpriteGroundLightningImpact, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 1))
+            _TimerService:SetTimerOnce(function() if impact ~= 0 then _EffectService:RemoveEffect(impact) end end, 0.4)
             table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SparkLoop, self.Entity, pos, 0, Vector3(radius * 0.5, radius * 0.3, 1), true, { Color = Color(0.75, 0.9, 1, 0.9) }))
             _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrikeSharpTall, self.Entity, pos, 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
         else decal = _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.85)) end
