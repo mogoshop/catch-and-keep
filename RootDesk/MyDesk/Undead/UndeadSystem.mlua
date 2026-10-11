@@ -46,15 +46,28 @@ script UndeadSystem extends Logic
 
     -- ───────── 일으키기 ─────────
 
-    method SoulOrb FindSoul(Entity player, Vector2 target, number radius)
-        -- 다른 사람의 혼·이미 예약된 혼은 건너뛰고 내 혼만 찾는다.
+    method boolean IsValuableSoul(SoulOrb orb)
+        -- 정예·무리 우두머리·최상위·보스 혼 = 그림자 추출용으로 아껴 둘 혼 (해골·폭쇄가 아무렇게나 쓰면 안 된다 — 10-11)
+        return orb.Rank ~= "" and orb.Rank ~= "normal"
+    end
+
+    method SoulOrb FindUsableSoul(Entity player, Vector2 target, number radius)
+        -- 해골·되살림·망자 폭쇄가 쓸 혼: 조준점 근처 일반 혼을 먼저. 귀한 혼(정예 이상)은 바로 그 혼을 겨눴을 때만(0.6 안)
+        local orb = self:FindSoul(player, target, radius, true)
+        if orb ~= nil then return orb end
+        return self:FindSoul(player, target, math.min(radius, 0.6), false)
+    end
+
+    method SoulOrb FindSoul(Entity player, Vector2 target, number radius, boolean commonOnly)
+        -- 다른 사람의 혼·이미 예약된 혼은 건너뛰고 내 혼만 찾는다. commonOnly면 일반 혼만 (귀한 혼은 추출용으로 남긴다)
         local best = nil
         local distance = radius
         if not isvalid(player.CurrentMap) then return nil end
         for _, comp in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.SoulOrb", true)) do
             ---@type SoulOrb
             local orb = comp
-            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId then
+            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId
+                and not (commonOnly and self:IsValuableSoul(orb)) then
                 local d = (_Util:Pos2(orb.Entity) - target):Magnitude()
                 if d <= distance then
                     best = orb
@@ -66,14 +79,15 @@ script UndeadSystem extends Logic
     end
 
     method SoulOrb FindSoulInDirection(Entity player, Vector2 origin, Vector2 direction, number reach)
-        -- 모바일 드래그는 길이 대신 방향을 정한다. 그 방향의 내 혼을 골라 정확한 위치에 시전한다.
+        -- 모바일 드래그·키보드 바라보는 방향: 그 방향의 내 일반 혼을 골라 정확한 위치에 시전한다 (귀한 혼은 자동으로 고르지 않는다)
         if not isvalid(player.CurrentMap) or direction:Magnitude() < 0.05 then return nil end
         local dir = direction:Normalize()
         local best = nil
         local bestScore = math.huge
         for _, comp in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.SoulOrb", true)) do
             local orb = comp
-            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId then
+            if isvalid(orb.Entity) and orb.Entity.Enable and not orb.Consumed and not orb.Reserved and orb.OwnerUserId == player.PlayerComponent.UserId
+                and not self:IsValuableSoul(orb) then
                 local to = _Util:Pos2(orb.Entity) - origin
                 local distance = to:Magnitude()
                 if distance <= reach and distance > 0.05 then
@@ -94,7 +108,7 @@ script UndeadSystem extends Logic
             _Util:Notify("혼이 너무 멀리 있다", userId)
             return false
         end
-        local orb = self:FindSoul(player, target, self.SoulReach)
+        local orb = self:FindUsableSoul(player, target, self.SoulReach)
         if orb == nil then
             _Util:Notify("근처에 내 혼이 없다 — 몬스터를 처치한 뒤 소환하세요", userId)
             log("[VRF] summon rejected: no owned soul")
