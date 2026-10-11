@@ -372,10 +372,19 @@ script HudMain extends Logic
         ---@type PlayerSocial
         local s = _UIKit:Comp("script.PlayerSocial")
         if s == nil then return end
+        -- 파티원마다 「이름  Lv」 + 아래 작은 글씨로 지금 있는 곳 (PartySystem.Refresh가 2초마다 갱신)
         local lines = {}
-        for _, name, lv in string.gmatch(s.PartyDigest, "([^|;]+)|([^|;]+)|(%d+)") do table.insert(lines, name .. "  Lv" .. lv) end
+        local n = 0
+        for entry in string.gmatch(s.PartyDigest .. ";", "([^;]*);") do
+            local _, name, lv, place = string.match(entry, "^([^|]*)|([^|]*)|(%d+)|?(.*)$")
+            if name ~= nil then
+                n = n + 1
+                table.insert(lines, name .. "  Lv" .. lv)
+                if place ~= nil and place ~= "" then table.insert(lines, "<size=14><color=#9DB89F>  " .. place .. "</color></size>") end
+            end
+        end
         local text = ""
-        if #lines > 0 then text = "파티 (" .. tostring(#lines) .. ")\n" .. table.concat(lines, "\n") end
+        if n > 0 then text = "파티 (" .. tostring(n) .. ")\n" .. table.concat(lines, "\n") end
         _UIKit:SetText("Party/Text", text)
     end
 

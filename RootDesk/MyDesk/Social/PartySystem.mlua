@@ -7,10 +7,40 @@ script PartySystem extends Logic
     property number ShareRange = 12
     property table Parties = {}           -- partyId → { userId, ... }
     property integer NextId = 1
+    property table Known = nil            -- userId → { name, lv } 마지막으로 본 값 (다른 방(심도 등)에 가 있어 안 보이는 파티원 표시용)
+    property integer TimerId = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self.Parties = {}
+        self.Known = {}
+        -- 10-11: 레벨·위치가 들어오고 나갈 때만 갱신돼 레벨업이 파티 목록에 안 보였다 → 2초마다 다시 만든다 (바뀐 것만 동기화된다)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:RefreshAll() end, 2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshAll()
+        for pid, _ in pairs(self.Parties) do self:Refresh(pid) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method string PlaceName(Entity p)
+        -- 파티 목록 이름 아래 위치: 심도는 「심도 N층」, 그 밖은 맵 표시 이름
+        local map = p.CurrentMap
+        if not isvalid(map) then return "" end
+        local place = map.Name
+        ---@type DepthDirector
+        local depth = map:GetComponent("script.DepthDirector")
+        ---@type MapAmbience
+        local amb = map:GetComponent("script.MapAmbience")
+        if depth ~= nil and depth.Floor > 0 then place = "심도 " .. tostring(depth.Floor) .. "층"
+        elseif amb ~= nil and amb.DisplayName ~= "" then place = amb.DisplayName end
+        return (string.gsub(place, "[|;]", " "))
     end
 
     @ExecSpace("ServerOnly")
@@ -76,9 +106,10 @@ script PartySystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void Refresh(integer pid)
-        -- 파티원 목록 요약 "userId|이름|레벨;..." 을 모두에게
+        -- 파티원 목록 요약 "userId|이름|레벨|위치;..." 을 모두에게. 이 방에 없는 파티원은 마지막으로 본 이름·레벨에 「다른 곳」
         local list = self.Parties[pid]
         if list == nil then return end
+        if self.Known == nil then self.Known = {} end
         local parts = {}
         for _, u in ipairs(list) do
             local p = _UserService:GetUserEntityByUserId(u)
@@ -87,7 +118,11 @@ script PartySystem extends Logic
                 local st = p:GetComponent("script.PlayerStats")
                 local lv = 1
                 if st ~= nil then lv = st.Level end
-                table.insert(parts, u .. "|" .. p.PlayerComponent.Nickname .. "|" .. tostring(lv))
+                local name = (string.gsub(p.PlayerComponent.Nickname, "[|;]", " "))
+                self.Known[u] = { name = name, lv = lv }
+                table.insert(parts, u .. "|" .. name .. "|" .. tostring(lv) .. "|" .. self:PlaceName(p))
+            elseif self.Known[u] ~= nil then
+                table.insert(parts, u .. "|" .. self.Known[u].name .. "|" .. tostring(self.Known[u].lv) .. "|다른 곳")
             end
         end
         local digest = table.concat(parts, ";")

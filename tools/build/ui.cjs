@@ -136,8 +136,9 @@ function buildGameHud() {
   b.text("QuestTrack/Body", "", { size: 18, color: C.qBody, alignment: 0, anchor: "top-left", pos: [88, -50], rect_size: [300, 56] });
 
   // ── 파티 (왼쪽, 그림자 상태줄 아래) ──
-  b.empty("Party", { anchor: "top-left", pos: [24, -272], rect_size: [400, 170] });
-  b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 170], ...outline });
+  // 파티원마다 이름·레벨 줄 + 위치 작은 줄 (최대 8명 → 높이 360)
+  b.empty("Party", { anchor: "top-left", pos: [24, -272], rect_size: [400, 360] });
+  b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 360], ...outline });
 
   // ── NPC 머리 위 의뢰 표시 「!」 (새 의뢰 노랑 · 완료 보고 초록, 화면 좌표로 따라다닌다) ──
   b.text("NpcMark", "!", { size: 96, bold: true, color: "#FFD23F", anchor: "middle-center", pos: [0, 0], rect_size: [90, 120], outline: true, outline_color: "#2A1A05", outline_width: 0.3, enable: false });
