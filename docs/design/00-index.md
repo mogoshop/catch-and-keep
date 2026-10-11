@@ -20,6 +20,8 @@
 | 12 | [12-roadmap-roles-risks](12-roadmap-roles-risks.md) | 단계별 로드맵, 역할 분담, 리스크, **사용자 결정 필요 목록** |
 | 13 | [13-act2-sand-ruins](13-act2-sand-ruins.md) | 액트 2 모래 폐허 v2 — 몬스터 Lv 13~21, 맵 16, 코덱스 그림, 의뢰 6 (대표 보상) |
 | 14 | [14-content-flow](14-content-flow.md) | 레벨 시나리오 재계산 · 악몽 가산 · 의뢰 보상 구조 · 액트 1 의뢰 개편 · 곁가지 던전 동기 |
+| 16 | [16-skill-stat-overhaul](16-skill-stat-overhaul.md) | 스킬·능력치 개편 — 메인 스킬 + 강화, 레벨당 2포인트, Lv15까지 무료 초기화, 네크로맨서용 능력치 |
+| 17 | [17-act3-storm-coast](17-act3-storm-coast.md) | 액트 3 폭풍 해안 v1 — 몬스터 Lv 22~30, 맵 16, 번개 연쇄 적, 의뢰 13~18, 악몽 +30·지옥 +60·상한 99 |
 
 기존 문서: [룬 시스템 v0.2](../rune-system-draft.md), [Phase 0 코어 루프](../phase0-core-loop-design.md), [설치 체크리스트](../setup-checklist.md)
 

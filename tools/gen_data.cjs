@@ -78,6 +78,11 @@ function genGameData() {
     (frames[src] = frames[src] || {})[f.state] = f;
   }
   const firstFrame = (src, state, fallback) => (frames[src] && frames[src][state] ? frames[src][state].frames.split(";")[0] : fallback);
+  // 소환수 공격 그림: 코덱스 프레임 몬스터는 공격 프레임 가운데(타격 순간) 한 장. csv attack 칸은 다른 몬스터의 대체값이라 쓰지 않는다 (10-11 그림 감사 C-4)
+  const strikeFrame = (src, fallback) => {
+    const f = frames[src] && frames[src].attack ? frames[src].attack.frames.split(";") : null;
+    return f ? f[Math.floor(f.length / 2)] : fallback;
+  };
   const body = [
     "        self.PlayerAppearance = {}",
     ...appearance.map((r) => `        self.PlayerAppearance[${s(r.slot)}] = ${s(r.ruid)}`),
@@ -106,7 +111,7 @@ function genGameData() {
     "        self.MonsterSourceOf = {}",
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(m.attack)}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);

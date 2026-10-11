@@ -407,14 +407,18 @@ script BossPattern extends Component
         if not self:HasLocalAudience() then return end
         local tint = element == "poison" and Color(0.35, 0.95, 0.25, 0.55) or Color(1, 0.35, 0.1, 0.55)
         local serials = {}
-        table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = tint }))
+        table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(tint.r, tint.g, tint.b, 0.3) }))
         if element == "fire" then
             table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
         end
+        -- 바닥 그림 (코덱스 독·화염 장판, 10-11 그림 감사: 받아 두고 안 쓰던 그림)
+        local decal = element == "poison" and _Util:GroundDecal(_GameConst.SpriteGroundPoison, 160, 80, self.Entity, pos, radius, 0.85)
+            or _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, pos, radius, 0.85)
         _TimerService:SetTimerOnce(function()
             for _, serial in ipairs(serials) do
                 if serial ~= nil and serial > 0 then _ParticleService:RemoveParticle(serial) end
             end
+            if decal ~= nil and decal ~= 0 then _EffectService:RemoveEffect(decal) end
         end, seconds)
     end
 
