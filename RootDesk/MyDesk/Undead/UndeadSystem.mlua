@@ -32,6 +32,29 @@ script UndeadSystem extends Logic
         return math.min(math.floor(_GameData.reviveCountMax), slvl)
     end
 
+    @ExecSpace("ServerOnly")
+    method void SkeletonBurst(ShadowUnit unit)
+        -- 해골 전사 강화 「뼈 파편」: 쓰러질 때 반경 1.5 안 적에게 해골 공격력 × (0.5 × 랭크 + 0.5) 피해 (docs/design/16)
+        local player = unit.OwnerPlayer
+        if not isvalid(player) then return end
+        local rank = self:SkillLevel(player, "skel_burst")
+        if rank <= 0 or not isvalid(unit.Entity) then return end
+        local p = _Util:Pos2(unit.Entity)
+        local damage = unit.Atk * (0.5 * rank + 0.5)
+        ---@type PlayerAttack
+        local atk = player:GetComponent("script.PlayerAttack")
+        if atk == nil then return end
+        local hits = 0
+        for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, p, 1.5)) do
+            if not m.IsDead then
+                atk:SkillHitOne(m.Entity, "skill.skel_burst", damage)
+                hits = hits + 1
+            end
+        end
+        log(string.format("[VRF] skeleton burst rank=%d dmg=%.0f hits=%d", rank, damage, hits))
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, unit.Entity, Vector3(p.x, p.y + 0.3, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = Color(0.85, 0.8, 0.68, 0.95) })
+    end
+
     method integer MaxFor(Entity player, string kind, integer slvl)
         -- 실제 최대 수 = 메인 랭크 규칙 + 강화 (뼈 군단 · 마법사 증원 · 군세) — docs/design/16
         if kind == "revive" then return self:ReviveCountFor(slvl) + self:SkillLevel(player, "revive_legion") end

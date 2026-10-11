@@ -40,6 +40,9 @@ script Projectile extends Component
     property number Damage = 0
     property string Info = ""
     property boolean Pierce = true
+    property number SpikePct = 0             -- 골편 강화 「뼈 가시」: 꿰뚫을 때마다 피해 +% (docs/design/16)
+    property integer PierceHits = 0          -- 지금까지 맞힌 적 수
+    property integer Bounces = 0             -- 골편 강화 「튕김」: 맞힌 뒤 가까운 다른 적에게 튈 남은 횟수
     property string Team = "player"
     property boolean Launched = false
     property number Traveled = 0
@@ -341,7 +344,15 @@ script Projectile extends Component
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
                     local beforeHp = m.Hp
                     local hitPos = m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0)
-                    if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, self.Damage) end
+                    local dmg = self.Damage * (1 + self.SpikePct / 100 * self.PierceHits)   -- 「뼈 가시」: 꿰뚫을수록 세게
+                    self.PierceHits = self.PierceHits + 1
+                    if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, dmg) end
+                    if self.Info == "skill.bone_shard" and self.Bounces > 0 then
+                        -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼)
+                        local effects = self.Owner:GetComponent("script.SkillEffects")
+                        if effects ~= nil then effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage, self.Bounces - 1, self.SpikePct) end
+                        self.Bounces = 0
+                    end
                     if self.Info == "skill.bone_shard" and m.Hp < beforeHp then
                         local effects = self.Owner:GetComponent("script.SkillEffects")
                         if effects ~= nil then effects:BoneShardImpact(hitPos) end

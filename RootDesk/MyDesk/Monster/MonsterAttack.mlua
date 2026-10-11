@@ -573,6 +573,25 @@ script MonsterAttack extends AttackComponent
             if gst ~= nil then dmg = dmg * (1 - 0.25 * gst:ShrineBonus("ward")) end
         end
         local final = math.max(1, math.floor(dmg + 0.5))
+        -- 뼈 갑옷: 플레이어가 두른 흡수량만큼 대신 막는다. 강화 「가시 갑옷」이면 막은 만큼의 일부를 때린 몬스터에게 (서버만)
+        if isvalid(defender.PlayerComponent) and self:IsServer() then
+            ---@type PlayerStats
+            local armorSt = defender:GetComponent("script.PlayerStats")
+            if armorSt ~= nil and armorSt.BoneArmor > 0 then
+                local absorbed = math.min(final, armorSt.BoneArmor)
+                armorSt.BoneArmor = armorSt.BoneArmor - absorbed
+                final = final - math.floor(absorbed)
+                ---@type SkillBook
+                local armorBook = defender:GetComponent("script.SkillBook")
+                local thorns = armorBook ~= nil and armorBook:Node("armor_thorns") or 0
+                if thorns > 0 and body ~= nil and absorbed > 0 then
+                    local back = absorbed * 0.25 * thorns
+                    _TimerService:SetTimerOnce(function()
+                        if isvalid(self.Entity) and not body.IsDead then body:TakeDamage(back, defender) end
+                    end, 0.05)
+                end
+            end
+        end
         -- 가시 저주: 준 피해의 일부를 되돌려 받는다 (판정 흐름이 끝난 뒤 적용)
         local status = body ~= nil and body:Status() or nil
         if status ~= nil and self:IsServer() and status:Thorns() > 0 then

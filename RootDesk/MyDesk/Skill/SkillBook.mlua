@@ -64,7 +64,7 @@ script SkillBook extends Component
     end
 
     method integer RankCap(string id, integer playerLevel)
-        -- 지금 올릴 수 있는 최대 랭크 (docs/design/16): 메인 = min(최대, 1 + (캐릭터 Lv − 해금 Lv) // 2), 강화 = 최대 랭크
+        -- 지금 올릴 수 있는 최대 랭크 (docs/design/16): 메인 = min(최대 20, 1 + (캐릭터 Lv − 해금 Lv) // 2), 강화 = 최대 랭크
         local def = _SkillData:Get(id)
         if def == nil then return 0 end
         if def.kind == "node" then return def.maxLv end
@@ -166,6 +166,13 @@ script SkillBook extends Component
         -- 시전과 강화 미리보기에서 공유하는 저항 적용 전 수치. 피해·비율 효과는 skillPowerMult(10-09 30% 하향),
         -- 지속 시간·개수·반경·배율형(정예 승격)은 그대로 둔다.
         local raw = self:RawEffectPower(id, level)
+        if id == "bone_armor" then
+            -- 흡수량은 피해 배율 대신 캐릭터 레벨당 +10% (Lv12 · 6랭크 ≈ 생명 한 줄)
+            ---@type PlayerStats
+            local ast = self.Entity:GetComponent("script.PlayerStats")
+            local alv = ast ~= nil and ast.Level or 1
+            return math.floor(raw * (1 + 0.1 * (alv - 1)))
+        end
         local flat = { terror = true, confusion = true, lure = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true }
         if flat[id] then return raw end
         -- 공격 스킬 피해는 캐릭터 레벨을 따라 커진다 (몬스터 생명이 레벨마다 +30% 오르는데 스킬은 스킬 레벨만 따라가 금방 약해졌다)
@@ -175,7 +182,7 @@ script SkillBook extends Component
     end
 
     method boolean IsDamageSkill(string id)
-        local ids = { bone_shard = true, poison_mist = true, corpse_blast = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true }
+        local ids = { bone_shard = true, poison_mist = true, corpse_blast = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, bone_spear = true }
         return ids[id] == true
     end
 
@@ -224,6 +231,8 @@ script SkillBook extends Component
         if id == "death_wave" then return 40 + 15 * k end
         if id == "shadow_sacrifice" then return 30 + 10 * k end      -- + 희생한 그림자 공격력 ×2
         if id == "command_aura" then return 10 + 2 * k end           -- 소환수 공격·생명 %
+        if id == "bone_spear" then return 30 + 12 * k end            -- 뼈 창 피해 (docs/design/16)
+        if id == "bone_armor" then return (20 + 10 * k) * (1 + 0.2 * self:Node("armor_thick")) end   -- 흡수량 (캐릭터 레벨 비례는 GetEffectPower)
         return 0
     end
 
@@ -272,6 +281,18 @@ script SkillBook extends Component
             shard_multi = string.format("뼛조각 %d발 (마나 +%d)", 1 + level, math.floor(_GameData.boneShardManaPerExtra) * level),
             curse_area = string.format("모든 저주 범위 +%d%%", 15 * level),
             curse_duration = string.format("모든 저주 지속 +%d%%", 15 * level),
+            curse_power = string.format("수치형 저주 효과 +%d%%", 10 * level),
+            armor_thick = string.format("뼈 갑옷 흡수량 +%d%%", 20 * level),
+            armor_thorns = string.format("막은 피해의 %d%%를 되돌림", 25 * level),
+            spear_long = string.format("뼈 창 사거리 %.1f", 9 * (1 + 0.2 * level)),
+            spear_twin = "뼈 창 두 갈래",
+            skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
+            shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
+            shard_spike = string.format("꿰뚫을 때마다 피해 +%d%%", 10 * level),
+            blast_chain = string.format("주변 일반 혼 %d개가 따라 터짐", level),
+            blast_save = string.format("%d%% 확률로 혼을 남김", 20 * level),
+            storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
+            elite_twin = "정예 2기까지 유지",
             mist_wide = string.format("독안개 범위 +%d%%", 20 * level),
             mist_thick = string.format("독안개 지속 +%d초", level),
             blast_wide = string.format("망자 폭쇄 범위 +%d%%", 15 * level),
@@ -303,6 +324,8 @@ script SkillBook extends Component
             local aura = self:GetCommandAura()
             return string.format("소환수 공격·생명 +%g%% · 이동 +%g%% · 저항 +%g", aura.atk, aura.speed, aura.resist)
         end
+        if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
+        if id == "bone_spear" then return string.format("관통 창 %s · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
         if id == "bone_shard" then return string.format("뼛조각 %d발 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
@@ -434,7 +457,7 @@ script SkillBook extends Component
         end
         local me = _Util:Pos2(self.Entity)
         if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
-        local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave"
+        local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave" or id == "bone_armor"
         local lock = nil
         if id == "bone_shard" then
             -- 10-10 2차 QA: 커서가 몬스터 위가 아니면 오른쪽 몬스터를 두고 왼쪽으로 날아갔다.
@@ -452,7 +475,7 @@ script SkillBook extends Component
         local ray = target - me
         if selfCast then target = me
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
-        elseif (id == "bone_shard" or id == "soul_torrent") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6
+        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
