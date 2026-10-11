@@ -988,10 +988,13 @@ script HudMap extends Logic
         local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
         local bob = math.sin(_UtilLogic.ElapsedSeconds * 4) * 6
         -- NPC가 화면 밖이면 「!」를 화면 가장자리에 화살표 + 이름과 함께 둔다 (10-11 QA: 왼쪽 위 버프 줄 밑에 「!」만 덩그러니 떠서 무엇인지 몰랐다)
-        -- 위쪽은 버프 줄(위 34~94px)·오른쪽 위 미니맵 아래까지 비워 둔다
+        -- 위쪽은 버프 줄(위 34~94px), 오른쪽은 미니맵·의뢰 칸을 비워 둔다
         local half = root.UITransformComponent.RectSize * 0.5
-        local clamped = Vector2(math.max(-half.x + 140, math.min(half.x - 140, ui.x)), math.max(-half.y + 120, math.min(half.y - 190, ui.y)))
-        local off = clamped.x ~= ui.x or clamped.y ~= ui.y
+        -- NPC 몸이 화면 안이면 「!」만 (머리 위가 화면 끝에 걸리면 안쪽으로 당긴다), 몸까지 화면 밖이면 화살표 + 이름
+        local body = _UILogic:ScreenToLocalUIPosition(_UILogic:WorldToScreenPosition(giverPos), root.UITransformComponent)
+        local off = math.abs(body.x) > half.x - 40 or math.abs(body.y) > half.y - 40
+        local clamped = off and Vector2(math.max(-half.x + 140, math.min(half.x - 620, ui.x)), math.max(-half.y + 120, math.min(half.y - 190, ui.y)))   -- 오른쪽 620px = 메뉴 버튼·미니맵·의뢰 칸
+            or Vector2(math.max(-half.x + 60, math.min(half.x - 60, ui.x)), math.max(-half.y + 80, math.min(half.y - 70, ui.y)))
         local text = "!"
         if off then
             local d = ui - clamped

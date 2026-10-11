@@ -506,14 +506,17 @@ script HudMain extends Logic
         if quest.State == 2 then
             return inTown and ("목표 달성 — " .. giver .. "에게 보고하고 보상을 받으세요") or ("목표 달성 — " .. _GameConst:WithRo(_GameConst:ActTownName(cur ~= nil and cur.act or 1)) .. " 돌아가 " .. giver .. "에게 보고하세요")
         end
-        -- 액트 2 첫 의뢰: 카라반 대장에게 (액트 1 마을에서는 오아시스 시장으로 가는 길부터)
-        if cur ~= nil and cur.act == 2 and quest.Index == _QuestData:LastOfAct(1) + 1 and quest.State == 0 then
+        -- 액트 2·3 첫 의뢰: 액트 이동 NPC에게 (앞 액트 마을에서는 다음 마을로 가는 길부터)
+        if cur ~= nil and cur.act >= 2 and quest.Index == _QuestData:LastOfAct(cur.act - 1) + 1 and quest.State == 0 then
             ---@type PlayerTravel
             local travel = player:GetComponent("script.PlayerTravel")
-            if travel ~= nil and travel.Act == 1 then
-                return inTown and "카라반 대장 무하드에게 말을 걸어 오아시스 시장으로 — 액트 2 「모래 폐허」가 열렸습니다" or "잿불 야영지의 카라반 대장 무하드에게 — 액트 2가 열렸습니다"
+            local mover = "카라반 대장 무하드"   -- 야영지·오아시스의 카라반이 열린 액트 어디로든 (항구에서는 선장)
+            if travel ~= nil and travel.Act < cur.act then
+                local here = _GameConst:ActTownName(travel.Act)
+                return inTown and (mover .. "에게 말을 걸어 " .. _GameConst:WithRo(_GameConst:ActTownName(cur.act)) .. " — 액트 " .. tostring(cur.act) .. " 「" .. _GameConst:ActRegionName(cur.act) .. "」가 열렸습니다")
+                    or (here .. "의 " .. mover .. "에게 — 액트 " .. tostring(cur.act) .. "가 열렸습니다")
             end
-            return "오아시스 시장의 카라반 대장 무하드에게 의뢰를 받으세요"
+            return _GameConst:ActTownName(cur.act) .. "의 " .. _QuestData:GiverName(cur.giver) .. "에게 의뢰를 받으세요"
         end
         if quest.Index == 1 then
             if quest.State == 0 then

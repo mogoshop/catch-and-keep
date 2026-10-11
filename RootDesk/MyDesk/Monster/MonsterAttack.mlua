@@ -42,6 +42,10 @@ script MonsterAttack extends AttackComponent
     property integer StrikeCount = 0
     property integer CancelCount = 0
     property boolean DebugCombat = false
+    property integer ChainJumps = 0           -- 번개 연쇄 튕김 수 (monsters.csv chain, 액트 3 — docs/design/17 §3). 0이면 보통 공격
+    property number ChainMul = 1              -- 연쇄 한 번의 피해 배율 (튕길 때마다 ×0.85)
+    property number ChainRange = 3            -- 다음 대상을 찾는 거리
+    property Entity ChainTarget = nil         -- 지금 연쇄가 때리는 대상 하나
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -74,6 +78,13 @@ script MonsterAttack extends AttackComponent
         elseif self.AttackRange > 1.5 then
             self.AttackWindup = 0.48
             self.AttackAnimationSeconds = 0.8
+        end
+        local stats = _GameData:GetMonsterStats(source)
+        self.ChainJumps = stats ~= nil and math.floor(stats.chain or 0) or 0
+        if self.ChainJumps > 0 then
+            -- 번개 연쇄: 첫 대상 발밑에 0.6초 예고 (처음 보는 공격은 예고 — 06장)
+            self.AttackWindup = 0.6
+            self.AttackAnimationSeconds = 1.0
         end
         self.CooldownTimer = 0.15 + _UtilLogic:RandomDouble() * 0.3
     end
@@ -223,7 +234,8 @@ script MonsterAttack extends AttackComponent
         if face:Magnitude() < 0.05 then face = Vector2(dx >= 0 and 1 or -1, 0) end
         face = face:Normalize()
         self.Entity.StateComponent:ChangeState("ATTACK")
-        self:WindupFx(face, self.AttackWindup, epoch)
+        if self.ChainJumps > 0 then self:ChainWarnFx(Vector3(aim.x, aim.y, 0), self.AttackWindup)
+        else self:WindupFx(face, self.AttackWindup, epoch) end
         if self.DebugCombat then log("[VRF-COMBAT] enemy windup epoch=" .. tostring(epoch)) end
         self.WindupTimer = _TimerService:SetTimerOnce(function()
             self.WindupTimer = 0
@@ -234,6 +246,7 @@ script MonsterAttack extends AttackComponent
             if not _Util:HasLineOfSight(map, _Util:Pos2(self.Entity), aim) then return end
             self.StrikeCount = self.StrikeCount + 1
             if self.DebugCombat then log("[VRF-COMBAT] enemy active epoch=" .. tostring(epoch)) end
+            if self.ChainJumps > 0 then self:ChainLightning(target) return end
             if self.AttackRange > 1.5 then self:Shoot(aim) return end
             -- 준비 동작을 보고 옆·뒤로 빠지면 피할 수 있게: 지금 몬스터 위치에서 처음 바라본 방향 앞쪽 원
             local reach = self:MeleeReach()
@@ -488,6 +501,116 @@ script MonsterAttack extends AttackComponent
         self:AttackFast(CircleShape(Vector2(q.x, q.y + 0.3), 0.5), "monster.basic", nil)
     end
 
+    @ExecSpace("ServerOnly")
+    method void ChainLightning(Entity first)
+        -- 번개 연쇄: 첫 대상 → 3칸 안의 아직 안 맞은 가장 가까운 플레이어·그림자로 ChainJumps번 튕긴다. 튕길 때마다 피해 ×0.85, 피해는 전부 번개
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local hit = {}
+        local points = {}
+        local me = _Util:Pos2(self.Entity)
+        table.insert(points, Vector3(me.x, me.y + 0.6, 0))
+        local cur = first
+        local mul = 1
+        local count = 0
+        for i = 0, self.ChainJumps do
+            if cur == nil or not self:IsLiveDefender(cur) then break end
+            hit[cur.Id] = true
+            local p = _Util:Pos2(cur)
+            table.insert(points, Vector3(p.x, p.y + 0.4, 0))
+            self.ChainMul = mul
+            self.ChainTarget = cur
+            self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), 0.6), "monster.chain", nil)
+            count = count + 1
+            mul = mul * 0.85
+            cur = self:NearestDefenderExcept(p, self.ChainRange, hit)
+        end
+        self.ChainMul = 1
+        self.ChainTarget = nil
+        if count > 0 then self:ChainFx(points) end
+        if self.DebugCombat then log(string.format("[VRF] chain lightning hits=%d", count)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity NearestDefenderExcept(Vector2 from, number range, table skip)
+        -- from에서 range 안의, skip에 없는 가장 가까운 살아 있는 플레이어·그림자 (벽 너머는 제외)
+        local map = self.Entity.CurrentMap
+        local best = nil
+        local bestDist = range
+        for _, u in ipairs(_Util:PlayersNear(map, from, range)) do
+            local d = (_Util:Pos2(u) - from):Magnitude()
+            if skip[u.Id] == nil and d <= bestDist and self:IsLiveDefender(u) and _Util:HasLineOfSight(map, from, _Util:Pos2(u)) then
+                bestDist = d
+                best = u
+            end
+        end
+        for _, c in ipairs(_Util:ListOf(map, "script.ShadowUnit")) do
+            if not isvalid(c) or not isvalid(c.Entity) then continue end
+            local d = (_Util:Pos2(c.Entity) - from):Magnitude()
+            if skip[c.Entity.Id] == nil and d <= bestDist and self:IsLiveDefender(c.Entity) and _Util:HasLineOfSight(map, from, _Util:Pos2(c.Entity)) then
+                bestDist = d
+                best = c.Entity
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("Multicast")
+    method void ChainWarnFx(Vector3 pos, number seconds)
+        -- 첫 대상 발밑 파란 예고 원 (코덱스 표식이 오면 그림으로)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        self:DrawNovaWarning(Vector2(pos.x, pos.y), 0.55, Color(0.45, 0.75, 1, 0.95), seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void ChainFx(table points)
+        -- 번개 줄기: 점 사이를 지그재그 선으로 잇고(0.3초) 맞은 자리마다 낙뢰·불꽃
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local line = self.Entity.LineRendererComponent
+        local transform = self.Entity.TransformComponent
+        if isvalid(line) then
+            self:ClearWindup()
+            line.Points:Clear()
+            self.WarningOwner = "chain"
+            local color = Color(0.7, 0.88, 1, 1)
+            for i = 1, #points - 1 do
+                local a = points[i]
+                local b = points[i + 1]
+                local d = Vector2(b.x - a.x, b.y - a.y)
+                local n = Vector2(-d.y, d.x)
+                if n:Magnitude() > 0.001 then n = n:Normalize() end
+                for k = 0, 6 do
+                    local t = k / 6
+                    local jitter = (k == 0 or k == 6) and 0 or (_UtilLogic:RandomDouble() - 0.5) * 0.45
+                    local q = Vector2(a.x, a.y) + d * t + n * jitter
+                    local lp = transform:ToLocalPoint(Vector3(q.x, q.y, transform.WorldPosition.z))
+                    line.Points:Add(LinePoint(Vector2(lp.x, lp.y), color, 0.09))
+                end
+            end
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(self.Entity) or self.WarningOwner ~= "chain" then return end
+                if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
+                self.WarningOwner = ""
+            end, 0.3)
+        end
+        -- 줄기 중간에도 작은 번개 구슬 (선이 짧게 보여도 튕긴 길이 읽히게)
+        for i = 1, #points - 1 do
+            local a = points[i]
+            local b = points[i + 1]
+            for _, t in ipairs({ 0.33, 0.66 }) do
+                local m = Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 0)
+                _ParticleService:PlayBasicParticle(BasicParticleType.LightningOrbSharp, self.Entity, m, 0, Vector3(0.18, 0.18, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+            end
+        end
+        for i = 2, #points do
+            local p = points[i]
+            _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrikeSharp, self.Entity, Vector3(p.x, p.y + 0.2, 0), 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, p, 0, Vector3(0.3, 0.3, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
+        end
+    end
+
     method Color ElementColor(string element)
         if element == "fire" then return Color(1, 0.6, 0.35, 1) end
         if element == "cold" then return Color(0.6, 0.85, 1, 1) end
@@ -546,6 +669,12 @@ script MonsterAttack extends AttackComponent
         if attackInfo == "monster.slam" and self.SlamElement ~= "" then
             element = self.SlamElement
             ratio = 1
+        end
+        if attackInfo == "monster.chain" then
+            -- 번개 연쇄: 전부 번개, 튕길수록 약해진다
+            element = "light"
+            ratio = 1
+            dmg = dmg * self.ChainMul
         end
         ---@type ShadowUnit
         local shadow = defender:GetComponent("script.ShadowUnit")
@@ -626,7 +755,9 @@ script MonsterAttack extends AttackComponent
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)
         -- 고른 대상 하나만 (광역기는 범위 전체). 살아 있는 플레이어와 그림자만
-        if attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
+        if attackInfo == "monster.chain" then
+            if defender ~= self.ChainTarget then return false end
+        elseif attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
         if attackInfo == "monster.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         if isvalid(defender.PlayerComponent) then
             if defender.PlayerComponent:IsDead() then return false end

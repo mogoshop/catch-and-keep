@@ -393,8 +393,8 @@ function buildGameHud() {
     k.pic(`${n}/Icon`, "icon_waypoint", { anchor: "middle-left", pos: [10, 0], rect_size: [38, 38] });
   }
   // 액트 탭 (WaypointWindow가 고른 액트의 웨이포인트만 보여 준다)
-  [["Act1", "액트 1", -135], ["Act2", "액트 2", 135]].forEach(([n, t, x]) => {
-    k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 146], rect_size: [250, 56], font_size: 20 });
+  [["Act1", "액트 1", -180], ["Act2", "액트 2", 0], ["Act3", "액트 3", 180]].forEach(([n, t, x]) => {
+    k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 146], rect_size: [170, 56], font_size: 20 });
   });
   b.text("WpWin/DiffTitle", "난이도", { size: 19, color: C.gold, anchor: "bottom-center", pos: [0, 100], rect_size: [500, 28], ...outline });
   [["Diff0", "보통", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {
