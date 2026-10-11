@@ -27,8 +27,8 @@ script RankingSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void RecordBossTime(Entity player, integer diff, integer seconds)
-        -- 짧을수록 좋음
-        self:Record(player, self:BoardName("queen", diff), seconds, true)
+        -- 짧을수록 좋음. 마지막 액트 보스(FinalBossSourceId)마다 따로 (예전 「queen」판은 여왕 → 대사제 기록이 섞였다)
+        self:Record(player, self:BoardName("boss_" .. _GameConst.FinalBossSourceId, diff), seconds, true)
     end
 
     @ExecSpace("ServerOnly")
@@ -89,7 +89,7 @@ script RankingSystem extends Logic
     @ExecSpace("Server")
     method void RequestBoard(string kind, integer diff)
         -- 클라이언트 랭킹 창 → 결과는 그 사람에게만
-        local digest = self:GetTop(self:BoardName(kind, diff), kind == "queen")
+        local digest = self:GetTop(self:BoardName(kind, diff), kind == "queen" or string.sub(kind, 1, 5) == "boss_")
         self:ShowBoard(kind, diff, digest, senderUserId)
     end
 
