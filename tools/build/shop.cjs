@@ -26,6 +26,8 @@ function slot(b, n, size, iconSize) {
 function run() {
   const file = path.join(root, 'ui', 'ShopHUD.' + 'ui');
   const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('ShopHUD', 10, true);
+  // 창 그룹은 늘 보이는 HUD(GameHUD 5 · ShadowHUD 6)보다 위 — 같으면 겹침 순서가 불안정해 HUD 아래 줄이 창을 덮었다 (10-11, tools/check_ui_layers.cjs)
+  b.patchComponent('/', 'MOD.Core.UIGroupComponent', { GroupOrder: 7 });
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/ShopWin';
   b.panel(w, { rect_size: [1380, 880], pos: [0, 10], color: '#100E16', raycast: true, enable: false });
