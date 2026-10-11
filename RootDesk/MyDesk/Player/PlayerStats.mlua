@@ -7,7 +7,8 @@ script PlayerStats extends Component
     property string ShrineKind = ""          -- 신전 축복 (MapShrine): fury · ward · wisdom · soul · legion
     @Sync
     property number ShrineUntil = 0          -- 축복이 끝나는 서버 시각 (ServerElapsedSeconds)
-    property number PotionCurseUntil = 0     -- 모래 미라 저주: 이 서버 시각까지 물약 회복 -30%
+    @Sync
+    property number PotionCurseUntil = 0     -- 모래 미라 저주: 이 서버 시각까지 물약 회복 -30% (버프 줄 표시용 동기화)
     @Sync
     property integer Level = 1
     @Sync
@@ -98,7 +99,8 @@ script PlayerStats extends Component
 
     property table RawResists = {}           -- 장비 저항 합 (난이도 바뀌면 다시 계산)
     property number BaseSpeed = 0
-    property number ChillUntil = 0
+    @Sync
+    property number ChillUntil = 0           -- 냉기 둔화가 끝나는 서버 시각 (버프 줄 표시용 동기화)
     property integer RegenTimer = 0
     property number RegenCarry = 0           -- 생명 재생의 1 미만 나머지
 
@@ -238,7 +240,7 @@ script PlayerStats extends Component
     method void ApplyPotionCurse(number seconds)
         -- 모래 미라에게 맞음: 물약 회복 -30% (새로 걸릴 때만 알림)
         local now = _UtilLogic.ServerElapsedSeconds
-        if self.PotionCurseUntil < now then _Util:Notify("미라의 저주 — 물약 회복 -30% (5초)", self.Entity.PlayerComponent.UserId) end
+        if self.PotionCurseUntil < now then _Util:Warn("미라의 저주 — 물약 회복 -30% (5초)", self.Entity.PlayerComponent.UserId) end
         self.PotionCurseUntil = now + seconds
     end
 
@@ -360,7 +362,7 @@ script PlayerStats extends Component
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1 + self.BonusMs / 100
-        if _UtilLogic.ElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
+        if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
         movement.InputSpeed = self.BaseSpeed * mult
     end
 
@@ -368,10 +370,10 @@ script PlayerStats extends Component
     method void ApplyChill(number seconds)
         -- 냉기 둔화 (냉기 저항만큼 시간 감소)
         local dur = seconds * math.max(0.2, 1 - self.ResCold / 100)
-        self.ChillUntil = _UtilLogic.ElapsedSeconds + dur
+        self.ChillUntil = _UtilLogic.ServerElapsedSeconds + dur
         self:RefreshSpeed()
         _TimerService:SetTimerOnce(function()
-            if isvalid(self.Entity) and _UtilLogic.ElapsedSeconds >= self.ChillUntil then self:RefreshSpeed() end
+            if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.ChillUntil then self:RefreshSpeed() end
         end, dur + 0.05)
     end
 

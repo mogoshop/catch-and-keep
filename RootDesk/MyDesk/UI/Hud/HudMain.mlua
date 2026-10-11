@@ -14,6 +14,14 @@ script HudMain extends Logic
     property Vector2 PopPos = Vector2(0, 0)
     property number PopUntil = 0
     property number PopSeconds = 1.8
+    property table BuffDescs = {}               -- 버프 칩 번호 → 효과 설명 (누르면 안내 줄에)
+    property number WarnUntil = 0               -- 머리 위 경고 글씨 (ShowWarn)
+    property number WarnSeconds = 1.3
+    property string WarnText = ""
+    property string TipText = ""                -- 위쪽 가운데 여정 안내: 바뀌거나 맵에 들어올 때만 TipSeconds 동안
+    property string TipMap = ""
+    property number TipUntil = 0
+    property number TipSeconds = 8
     property any TunedCamera = nil
     property Vector2 CamScreenOffset = Vector2(0.5, 0.45)
     property Vector2 CamDamping = Vector2(0.8, 0.8)
@@ -29,6 +37,15 @@ script HudMain extends Logic
         if isvalid(targetStatus) then targetStatus.UITransformComponent.RectSize = Vector2(440, 44) end
         _UIKit:SetEnabled("Tip", false)
         _UIKit:RegisterWindow("MenuWin")
+        -- 버프 칩: 누르면 효과 설명 (모바일은 마우스를 올릴 수 없다)
+        self.BuffDescs = {}
+        for i = 1, 8 do
+            local index = i
+            _UIKit:Connect("Buffs/B" .. tostring(i), function()
+                local d = self.BuffDescs[index]
+                if d ~= nil then _NoticeFeed:Push(d) end
+            end)
+        end
         -- 스킬 칸: 누르면 그 칸에 넣을 스킬을 고른다 (시전은 A S D F·우클릭)
         for i = 1, 5 do
             local slot = i
@@ -104,13 +121,42 @@ script HudMain extends Logic
     -- ───────── 갱신 ─────────
 
     @ExecSpace("ClientOnly")
-    method void RenderShrineBuff(PlayerStats st)
-        -- 신전 축복이 걸려 있는 동안 남은 시간 (MapShrine · PlayerStats.ShrineKind/ShrineUntil)
-        local left = math.ceil(st.ShrineUntil - _UtilLogic.ServerElapsedSeconds)
+    method void RenderBuffs(Entity player, PlayerStats st)
+        -- 버프·디버프 줄 (10-11 팀 QA): 신전 축복 · 호령 · 냉기 둔화 · 미라 저주. 위쪽 가운데 신전 글자는 없앴다 (메시지 정리)
+        _UIKit:SetEnabled("ShrineBuff", false)
+        local now = _UtilLogic.ServerElapsedSeconds
+        local list = {}
         local info = _GameConst:ShrineInfo(st.ShrineKind)
-        local show = info ~= nil and left > 0
-        _UIKit:SetEnabled("ShrineBuff", show)
-        if show then _UIKit:SetText("ShrineBuff", _UIKit:Colored(self:Hex(info.color), info.name) .. " · " .. info.desc .. " · " .. tostring(left) .. "초") end
+        if info ~= nil and st.ShrineUntil > now then
+            table.insert(list, { label = info.short or info.name, color = info.color, left = st.ShrineUntil - now, desc = info.name .. " · " .. info.desc })
+        end
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        if book ~= nil and book:GetLevel("command_aura") > 0 then
+            local aura = book:GetCommandAura()
+            table.insert(list, { label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
+                desc = string.format("호령 · 그림자·언데드 공격·생명 +%d%%, 이동 +%d%%, 모든 저항 +%d", math.floor(aura.atk), math.floor(aura.speed), math.floor(aura.resist)) })
+        end
+        if st.ChillUntil > now then
+            table.insert(list, { label = "둔화", color = Color(0.4, 0.65, 1, 1), left = st.ChillUntil - now, desc = "냉기 둔화 · 이동 속도 -40% (냉기 저항이 높을수록 짧다)", debuff = true })
+        end
+        if st.PotionCurseUntil > now then
+            table.insert(list, { label = "저주", color = Color(0.75, 0.3, 0.55, 1), left = st.PotionCurseUntil - now, desc = "미라의 저주 · 물약 회복 -30%", debuff = true })
+        end
+        self.BuffDescs = {}
+        for i = 1, 8 do
+            local b = list[i]
+            local path = "Buffs/B" .. tostring(i)
+            _UIKit:SetEnabled(path, b ~= nil)
+            if b ~= nil then
+                _UIKit:SetPos(path, Vector2((i - 1) * 64, 0))   -- 칩 피벗이 왼쪽 가운데
+                self.BuffDescs[i] = b.desc
+                local c = b.color
+                _UIKit:SetColor(path, Color(c.r * 0.55, c.g * 0.55, c.b * 0.55, 0.92))
+                _UIKit:SetText(path .. "/Label", _UIKit:Colored(b.debuff and "#FFB0B0" or "#FFFFFF", b.label))
+                _UIKit:SetText(path .. "/Time", b.left >= 0 and (tostring(math.ceil(b.left)) .. "초") or "")
+            end
+        end
     end
 
     method string Hex(Color c)
@@ -126,7 +172,7 @@ script HudMain extends Logic
         local pc = player.PlayerComponent
         local hp = pc.Hp / math.max(1, pc.MaxHp)
         local mp = st.Mana / math.max(1, st.MaxMana)
-        self:RenderShrineBuff(st)
+        self:RenderBuffs(player, st)
         local hpText = tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp))
         local mpText = tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana))
         for _, orb in ipairs({ { "LifeOrb", hp, hpText }, { "MLife", hp, hpText }, { "ManaOrb", mp, mpText }, { "MMana", mp, mpText } }) do
@@ -157,6 +203,35 @@ script HudMain extends Logic
         local e = _UIKit:Get("ExtractPop")
         if isvalid(e) then e.TextGUIRendererComponent.FontColor = color end
         self:RenderSoulUi(_UserService.LocalPlayer)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowWarn(string text)
+        -- 지금 한 행동이 안 된 이유: 내 캐릭터 머리 위에 주황 글씨로 잠깐 (같은 문구가 이어지면 시간만 늘린다)
+        self.WarnText = text
+        self.WarnUntil = _UtilLogic.ElapsedSeconds + self.WarnSeconds
+        _UIKit:SetText("WarnPop", text)
+        self:RenderWarn()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 경고 글씨는 캐릭터를 매 프레임 따라간다 (0.15초 갱신으로는 걸을 때 뒤처졌다). 떠 있을 때만
+        if self.WarnUntil > 0 then
+            self:RenderWarn()
+            if _UtilLogic.ElapsedSeconds >= self.WarnUntil then self.WarnUntil = 0 end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderWarn()
+        local player = _UserService.LocalPlayer
+        local now = _UtilLogic.ElapsedSeconds
+        local show = now < self.WarnUntil and isvalid(player) and not _UIKit:AnyWindowOpen()
+        _UIKit:SetEnabled("WarnPop", show)
+        if not show then return end
+        local t = 1 - (self.WarnUntil - now) / self.WarnSeconds
+        _UIKit:SetPos("WarnPop", self:WorldToHud(_Util:Pos2(player) + Vector2(0, 1.15 + t * 0.25)))
     end
 
     @ExecSpace("ClientOnly")
@@ -396,7 +471,16 @@ script HudMain extends Logic
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         local tip = self:JourneyTip(player, st, quest, book)
-        _UIKit:SetEnabled("Tip", tip ~= "" and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds)
+        -- 10-11 팀 QA(메시지가 위쪽 가운데·왼쪽으로 흩어짐): 안내는 늘 떠 있지 않고, 바뀌었을 때·맵에 들어왔을 때만 8초.
+        -- 계속 볼 내용은 오른쪽 의뢰 칸에 있다 (docs/ui/message-rules.md)
+        local now = _UtilLogic.ElapsedSeconds
+        local mapId = isvalid(player.CurrentMap) and player.CurrentMap.Id or ""
+        if tip ~= self.TipText or mapId ~= self.TipMap then
+            self.TipText = tip
+            self.TipMap = mapId
+            self.TipUntil = tip ~= "" and now + self.TipSeconds or 0
+        end
+        _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now)
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
     end
 

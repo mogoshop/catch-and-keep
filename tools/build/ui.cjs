@@ -299,6 +299,8 @@ function buildGameHud() {
 
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [320, 34], ...outline, enable: false });
+  // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
+  b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });
   b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });
 
   // 출구 가까이 가면 화면 가운데 아래 안내 (어디로 가는지 + 들어서면 이동)
@@ -316,6 +318,17 @@ function buildGameHud() {
       b.text(`${path}/Count`, "", { size: 22, bold: true, anchor: "bottom-right", pos: [-2, 0], rect_size: [60, 28], alignment: 8, ...outline });
     });
     if (platform === "pc") k.pc(root); else k.mobile(root);
+  }
+
+  // ── 버프·디버프 줄 (10-11 팀 QA: 신전 축복만 위쪽 글자로 보이고 둔화·저주는 안 보였다) ──
+  // 왼쪽 위(D2·PoE처럼)에 둥근 칩 최대 8개: 색 원 + 짧은 이름 + 남은 초. 누르면 효과 설명 (HudMain.RenderBuffs)
+  // (처음엔 아래 가운데였는데 NPC 대화 안내 「[Space] 이름」과 겹쳤다)
+  b.empty("Buffs", { anchor: "top-left", pos: [24, -34], rect_size: [8 * 64, 60] });   // top-left 프리셋은 피벗도 왼쪽 위
+  for (let i = 1; i <= 8; i++) {
+    const path = `Buffs/B${i}`;
+    b.button(path, "", { anchor: "middle-left", pos: [(i - 1) * 64, 0], rect_size: [56, 56], image_ruid: K.circle, bg_color: "#FFFFFF", sprite_type: 0, enable: false });
+    b.text(`${path}/Label`, "", { size: 15, bold: true, anchor: "middle-center", pos: [0, 7], rect_size: [56, 22], bestfit: true, min_size: 11, max_size: 15, ...outline });
+    b.text(`${path}/Time`, "", { size: 13, anchor: "middle-center", pos: [0, -12], rect_size: [56, 18], ...outline });
   }
 
   // ── 퀘스트 창 (Q) ──

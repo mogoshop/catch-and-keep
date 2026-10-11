@@ -18,6 +18,23 @@ script Util extends Logic
         _NoticeFeed:Push(text)
     end
 
+    -- 메시지 세 갈래 (10-11 팀 QA: 위쪽 가운데·왼쪽 아래로 흩어져 보기 불편했다 — docs/ui/message-rules.md)
+    --   · Notify: 왼쪽 아래 안내 줄 — 획득·기록·창 안의 결과 (골드, 구매, 판매, 보상 내역)
+    --   · Warn:   내 캐릭터 머리 위 짧은 글씨 — 지금 한 행동이 안 된 이유 (마나 부족, 혼이 멀다, 이미 마을)
+    --   · Banner: 왼쪽 알림 판(안내 줄 바로 위) — 진행 사건 (레벨 업, 의뢰 완료, 업적, 난이도 열림, 층 정리)
+    @ExecSpace("Client")
+    method void Warn(string text)
+        -- 서버에서 _Util:Warn(text, userId). 창이 열려 있으면 머리 위 글씨가 가려지므로 안내 줄로
+        if _UIKit:AnyWindowOpen() then _NoticeFeed:Push(text) return end
+        _HudMain:ShowWarn(text)
+    end
+
+    @ExecSpace("Client")
+    method void Banner(string title, string detail)
+        -- 서버에서 _Util:Banner(title, detail, userId)
+        _UXFeedback:Show(title, detail, "")
+    end
+
     @ExecSpace("ServerOnly")
     method void NotifyMap(Entity map, string text)
         -- 그 맵 안의 모든 사람에게 알림

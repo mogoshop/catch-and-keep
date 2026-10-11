@@ -1,4 +1,4 @@
--- NPC 대화 창: 근처에서는 대화 버튼만 표시한다. 버튼/B 키로 선택했을 때 열고, 거리·맵이 바뀌면 닫는다.
+-- NPC 대화 창: 근처에서는 대화 버튼만 표시한다. 버튼/Space(B) 키로 선택했을 때 열고, 거리·맵이 바뀌면 닫는다.
 --   shop  = 잿빛 행상: 「거래」로 거래 창(ShopWindow — 살 물건 · 가방 판매)을 연다
 --   merchant = 떠돌이 상인: 10분마다 바뀌는 장비 5개 — 「물건 보기」로 목록 창(MerchantWindow)을 연다
 --   smith = 대장장이: 「물건 고르기」로 소지품을 대장장이 모드로 연다 (옵션 바꾸기 · 소켓 뚫기)
@@ -121,7 +121,8 @@ script NpcWindow extends Logic
             if self.Kind == "quest" and self:ButtonShown(4) then self:Action(4) end
             return
         end
-        if event.key == KeyboardKey.B and not _UIKit:IsOpen(self.Win) then self:Talk() end
+        -- 10-11 팀 QA: 대화 키가 B라 찾기 어려웠다 → Space로 연다 (B도 그대로 둔다)
+        if (event.key == KeyboardKey.Space or event.key == KeyboardKey.B) and not _UIKit:IsOpen(self.Win) then self:Talk() end
     end
 
     @ExecSpace("ClientOnly")
@@ -142,14 +143,14 @@ script NpcWindow extends Logic
             return
         end
         local nearby = self:FindNpc(player)
-        -- NPC가 없어도 웨이포인트 위면 같은 안내 버튼으로 연다 (B · 버튼 터치 → Talk → OpenNear)
+        -- NPC가 없어도 웨이포인트 위면 같은 안내 버튼으로 연다 (Space·B · 버튼 터치 → Talk → OpenNear)
         local nearWp = nearby == nil and _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), _WaypointWindow.Reach) ~= nil
         local show = (nearby ~= nil or nearWp) and not _UIKit:AnyWindowOpen()
         _UIKit:SetEnabled(self.Prompt, show)
         if show then
-            -- PC는 「[B] 이름」, 모바일은 「이름 · 대화」. 너비는 이름 길이에 맞춘다 (공통 SetFitText)
+            -- PC는 「[Space] 이름」, 모바일은 「이름 · 대화」. 너비는 이름 길이에 맞춘다 (공통 SetFitText)
             local name = nearby ~= nil and nearby.NpcName or "웨이포인트"
-            local text = Environment:IsPCPlatform() and ("[B] " .. name) or (name .. (nearby ~= nil and " · 대화" or " · 열기"))
+            local text = Environment:IsPCPlatform() and ("[Space] " .. name) or (name .. (nearby ~= nil and " · 대화" or " · 열기"))
             _UIKit:SetFitText(self.Prompt, text, 28, 56, 300, 640)
         end
         if not _UIKit:IsOpen(self.Win) then self.ActiveNpc = nil end
