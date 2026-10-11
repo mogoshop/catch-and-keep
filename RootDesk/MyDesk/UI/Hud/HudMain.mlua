@@ -77,8 +77,7 @@ script HudMain extends Logic
         if k == KeyboardKey.U then _UIKit:Toggle("CharWin")
         elseif k == KeyboardKey.I then _UIKit:Toggle("InvWin")
         elseif k == KeyboardKey.K then _UIKit:Toggle("SkillWin")
-        elseif k == KeyboardKey.O then _UIKit:Toggle("QuestWin")
-        elseif k == KeyboardKey.Q and not self:IsKeyboardMode() then _UIKit:Toggle("QuestWin")   -- 키보드 모드의 Q는 스킬 1번 칸 (퀘스트는 O)
+        elseif k == KeyboardKey.Q then _UIKit:Toggle("QuestWin")
         elseif k == KeyboardKey.P then _UIKit:Toggle("SocialWin")
         elseif k == KeyboardKey.L then _RankWindow:Show("depth")
         elseif k == KeyboardKey.M then _UIKit:Toggle("MenuWin") end
@@ -93,28 +92,6 @@ script HudMain extends Logic
         _ConfirmDialog:Show("캐릭터 선택", "지금 캐릭터를 저장하고 캐릭터 선택 화면으로 갑니다.\n다른 캐릭터로 들어가거나 새 캐릭터를 만들 수 있습니다.", "이동", function()
             save:RequestCharSelect()
         end)
-    end
-
-    @ExecSpace("ClientOnly")
-    method boolean IsKeyboardMode()
-        if not Environment:IsPCPlatform() then return false end
-        ---@type ClickControl
-        local cc = _UIKit:Comp("script.ClickControl")
-        return cc ~= nil and not cc.MouseMode
-    end
-
-    @ExecSpace("ClientOnly")
-    method void ApplyKeyLabels()
-        -- 조작 모드에 맞춰 칸 단축키 글자·메뉴 단축키·도움말을 바꾼다 (ShadowHUD.RefreshInputLabel에서 부른다)
-        local kb = self:IsKeyboardMode()
-        local skills = kb and { "Q", "R", "F", "G" } or { "A", "S", "D", "F" }
-        for i = 1, 4 do
-            _UIKit:SetText("Bottom/Slots/Slot" .. tostring(i) .. "/Key", skills[i])
-            _UIKit:SetText("SkillPick/Tab" .. tostring(i), skills[i])
-        end
-        _UIKit:SetText("Bottom/Menu/BtnQuest/Key", kb and "O" or "Q")
-        local move = kb and "W A S D 이동 · Q R F G·우클릭 스킬 · O 퀘스트" or "마우스 이동 · A S D F·우클릭 스킬 · Q 퀘스트"
-        _UIKit:SetText("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · P 플레이어 · L 랭킹 · E 추출\n" .. move .. " · 1~4 벨트 · Z 소환 · X 회수 · C 집결")
     end
 
     @ExecSpace("ClientOnly")
