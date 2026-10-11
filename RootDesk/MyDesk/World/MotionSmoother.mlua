@@ -56,6 +56,7 @@ script MotionSmoother extends Logic
     property number PixelUnit = 0.01         -- 픽셀 그림 1칸 = 0.01칸 (100px = 1칸)
     property any ShadowCache = nil
     property boolean UseProxy = true         -- 소환수는 몸 그림을 클라이언트 전용 자식(MSVis)으로 그린다 (아래 PlaceVis)
+    property boolean MonsterProxy = true     -- 몬스터도 같은 대역으로 그린다 (10-11 QA: 몬스터도 끊긴다 — 루트에 쓴 위치는 서버 위치가 올 때마다 덮어써진다)
     property integer StatFlip = 0            -- 점검용: 소환수 좌우를 바꿔 쓴 횟수
     property integer StatSwitch = 0          -- 점검용: 직접 그리기 ↔ 보간 전환 횟수
     property integer StatReverse = 0         -- 점검용: 화면에서 움직이던 방향과 반대로 꺾인 프레임 수 (뒤로 갔다 앞으로)
@@ -242,9 +243,10 @@ script MotionSmoother extends Logic
         local speed = math.sqrt(r.vx * r.vx + r.vy * r.vy)
         if r.moving and speed < self.MoveOff then r.moving = false
         elseif not r.moving and speed > self.MoveOn then r.moving = true end
+        r.lastDelta = delta
         if r.unit ~= nil then self:LookUnit(r, t, delta) elseif r.monster then self:LookMonster(r) end
-        if r.unit ~= nil and self.UseProxy then
-            -- 소환수: 루트 위치는 서버 값 그대로 두고, 몸 그림(자식)을 원하는 위치만큼 옮겨 그린다
+        if self.UseProxy and (r.unit ~= nil or (r.monster and self.MonsterProxy)) then
+            -- 소환수·몬스터: 루트 위치는 서버 값 그대로 두고, 맵 아래 대역(MSVis)을 원하는 위치에 그린다
             if self:PlaceVis(r, x, y, p, t) then
                 r.wx, r.wy = p.x, p.y
             elseif math.abs(x - r.wx) > 0.0001 or math.abs(y - r.wy) > 0.0001 then
@@ -478,9 +480,9 @@ script MotionSmoother extends Logic
                     rc.TransformComponent.Position = ring.TransformComponent.Position
                 end
             end
-            -- 체력 막대: 대역 아래 픽셀 막대 (ShadowUnit.UpdateHpBar가 HpBarAlt에 그린다)
-            local bar = _SpawnService:SpawnByModelId("artsprite", "MSVisBar", Vector3(x, y, p.z), vis)
-            if isvalid(bar) then
+            -- 체력 막대: 대역 아래 픽셀 막대 (ShadowUnit.UpdateHpBar가 HpBarAlt에 그린다). 몬스터는 머리 위 막대가 없다
+            local bar = r.unit ~= nil and _SpawnService:SpawnByModelId("artsprite", "MSVisBar", Vector3(x, y, p.z), vis) or nil
+            if bar ~= nil and isvalid(bar) then
                 -- 막대는 픽셀 그림만: 기본 그림(모래 바닥) 그리기를 아예 끈다
                 bar.SpriteRendererComponent.Enable = false
                 if not isvalid(bar.PixelRendererComponent) then bar:AddComponent("PixelRendererComponent") end
@@ -514,9 +516,29 @@ script MotionSmoother extends Logic
                     end
                 end
             end
+            -- 이름표 (야영지 「내 소환수」 · 파티원 이름): 루트에 두면 서버 위치에 붙어 몸·체력 막대보다 늦게 따라왔다 (10-11 QA)
+            -- → 대역에 같은 이름표를 달고 루트 이름표는 끈다. ShadowUnit.RefreshView가 TagAlt에 이름·색·켜기를 쓴다
+            local tag = e.NameTagComponent
+            if r.unit ~= nil and isvalid(tag) then
+                if not isvalid(vis.NameTagComponent) then vis:AddComponent("NameTagComponent") end
+                local vtag = vis.NameTagComponent
+                if isvalid(vtag) then
+                    vtag.NameTagRUID = tag.NameTagRUID
+                    vtag.FontSize = tag.FontSize
+                    vtag.OffsetY = tag.OffsetY
+                    vtag.FontOffset = tag.FontOffset
+                    vtag.Bold = tag.Bold
+                    vtag.Name = tag.Name
+                    vtag.FontColor = tag.FontColor
+                    vtag.Enable = tag.Enable
+                    tag.Enable = false
+                    r.unit.TagAlt = vtag
+                end
+            end
             r.visSign = nil
         end
         if src.Enable then src.Enable = false end
+        if vis.Visible ~= e.Visible then vis:SetVisible(e.Visible, false, false) end
         if r.ring ~= nil and isvalid(r.ring) and r.visRing ~= nil and r.ring.Enable then r.ring:SetEnable(false, false, false) end
         -- 그림: 클립(서기/걷기는 LookUnit이 정한 r.visClip)·색·재생 속도·정렬
         local dst = vis.SpriteRendererComponent
@@ -525,7 +547,9 @@ script MotionSmoother extends Logic
         local c, d = src.Color, dst.Color
         if c.r ~= d.r or c.g ~= d.g or c.b ~= d.b or c.a ~= d.a then dst.Color = c end
         if dst.PlayRate ~= src.PlayRate then dst.PlayRate = src.PlayRate end
-        if dst.FlipX ~= src.FlipX then dst.FlipX = src.FlipX end
+        local flipX = src.FlipX
+        if r.monster and r.visFlip ~= nil then flipX = r.visFlip end
+        if dst.FlipX ~= flipX then dst.FlipX = flipX end
         if dst.SortingLayer ~= src.SortingLayer then dst.SortingLayer = src.SortingLayer end
         if dst.OrderInLayer ~= src.OrderInLayer then dst.OrderInLayer = src.OrderInLayer end
         -- 크기는 본체 그대로, 좌우는 LookUnit이 정한 방향
@@ -607,6 +631,10 @@ script MotionSmoother extends Logic
             r.unit.HpBarAlt = nil
             r.unit.HpBarReady = false
             r.unit:UpdateHpBar()
+            -- 이름표를 루트로 되돌린다 (다음 RefreshView가 루트 이름표에 다시 쓴다)
+            r.unit.TagAlt = nil
+            r.unit.ViewState = ""
+            r.unit:RefreshView()
         end
     end
 
@@ -668,6 +696,20 @@ script MotionSmoother extends Logic
         -- 몬스터: 좌우 = FlipX (true면 오른쪽). 움직이는 동안만 화면 방향, 멈추면 서버 값(공격 대상 바라보기)
         local sprite = r.e.SpriteRendererComponent
         if not isvalid(sprite) then return end
+        if self.UseProxy and self.MonsterProxy then
+            -- 대역: 루트는 건드리지 않고 대역 좌우(r.visFlip)만. 걷는 동안은 화면 방향(0.15초 유지돼야 바뀜), 멈추면 서버 값
+            local want = sprite.FlipX
+            if r.moving and math.abs(r.vx) > 0.2 then want = r.vx > 0 end
+            local cur = r.visFlip
+            if cur == nil then cur = want end
+            if want ~= cur then
+                r.flipT = (r.flipT or 0) + (r.lastDelta or 0)
+                if r.flipT < 0.15 then want = cur end
+            end
+            if want == cur then r.flipT = 0 end
+            r.visFlip = want
+            return
+        end
         local cur = sprite.FlipX
         if r.myFlip == nil or cur ~= r.myFlip then r.srvFlip = cur end
         local want = r.srvFlip

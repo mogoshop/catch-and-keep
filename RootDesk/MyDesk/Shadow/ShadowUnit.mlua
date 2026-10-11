@@ -124,6 +124,7 @@ script ShadowUnit extends AttackComponent
     property number HpBarScale = 2.7          -- 논리 픽셀 22×4 (테두리 포함) → 약 0.75×0.14칸
     property number HpBarHeadY = 0            -- 머리 위 높이 (원본 그림 높이, 배율 전 칸)
     property any HpBarAlt = nil               -- 클라이언트: MotionSmoother의 그림 대역에 붙은 체력 막대 (있으면 모델 자식 HpBar 대신 여기에 그린다)
+    property any TagAlt = nil                  -- 클라이언트: 그림 대역(MSVis)의 이름표. 있으면 루트 이름표 대신 여기에 쓴다
     property string ViewState = ""
     property number RetargetTimer = 0
     property number OwnerCheckTimer = 0
@@ -223,6 +224,11 @@ script ShadowUnit extends AttackComponent
         if state == self.ViewState then return end
         self.ViewState = state
         local tag = self.Entity.NameTagComponent
+        if self.TagAlt ~= nil and isvalid(self.TagAlt) then
+            -- 이름표는 그림 대역에 (루트 이름표는 서버 위치에 붙어 몸보다 늦게 따라온다 — MotionSmoother.PlaceVis)
+            if isvalid(tag) and tag.Enable then tag.Enable = false end
+            tag = self.TagAlt
+        end
         if isvalid(tag) then
             tag.Name = mine and (town and "내 소환수" or "") or owner.PlayerComponent.Nickname
             tag.FontColor = mine and Color(0.55, 1, 0.85, 1) or Color(0.75, 0.75, 0.78, 1)

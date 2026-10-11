@@ -36,6 +36,9 @@ const must = [
   [SU, /property number PaceMax = /, "주인 속도 따라잡기 상한(PaceMax)이 빠졌다 → 걸을 때 전사가 앞으로 못 나간다"],
   [SU, /method Vector2 PassOwner\(/, "주인 몸 비켜 돌기(PassOwner)가 빠졌다"],
   [SU, /method Entity BarEntity\(\)/, "체력 막대를 대역 막대(HpBarAlt)에 그리는 경로가 빠졌다"],
+  [MS, /property boolean MonsterProxy = true/, "몬스터 대역 그리기가 꺼져 있다 → 몬스터가 서버 위치가 올 때마다 끊긴다 (10-11 QA)"],
+  [MS, /r\.unit\.TagAlt = vtag/, "이름표를 대역에 달지 않는다 → 「내 소환수」·파티원 이름이 몸보다 늦게 따라온다 (10-11 QA)"],
+  [SU, /tag = self\.TagAlt/, "RefreshView가 대역 이름표(TagAlt)에 쓰지 않는다 → 루트 이름표가 다시 켜져 늦게 따라온다"],
   [UT, /method table ListOf\(Entity map, string typeName\)/, "맵 목록 캐시(Util:ListOf)가 빠졌다 → 소환수가 맵 전체를 매번 뒤져 서버가 멈춘다"],
 ];
 
