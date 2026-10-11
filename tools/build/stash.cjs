@@ -22,8 +22,7 @@ function grid(b, name, count, pos, rows, prefix) {
 function run() {
   const file = path.join(root, 'ui', 'StashHUD.' + 'ui');
   const b = fs.existsSync(file) ? UIBuilder.read(file) : new UIBuilder('StashHUD', 11, true);
-  // 창 그룹은 늘 보이는 HUD(GameHUD 5 · ShadowHUD 6)보다 위 — 같으면 겹침 순서가 불안정해 HUD 아래 줄이 창을 덮었다 (10-11, tools/check_ui_layers.cjs)
-  b.patchComponent('/', 'MOD.Core.UIGroupComponent', { GroupOrder: 7 });
+  // 그룹 순서는 tools/build/ui-order.cjs가 모든 UI 그룹을 한 번에 정한다
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/StashWin';
   b.panel(w, { rect_size: [1100, 1000], pos: [0, 0], color: '#100E16', raycast: true, enable: false });

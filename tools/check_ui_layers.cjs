@@ -131,6 +131,14 @@ for (const w of windows) for (const h of huds) {
   }
 }
 
+// 그룹 순서가 정해 둔 표(tools/build/ui-order.cjs)와 같은가 — 메이커가 저장하며 다시 매기면 여기서 걸린다
+const { ORDER } = require("./build/ui-order.cjs");
+for (const g of groups) {
+  const want = ORDER.indexOf(g.file.replace(/\.ui$/, ""));
+  if (want < 0) problems.set(`${g.file}: 그룹 순서 표에 없음 (tools/build/ui-order.cjs ORDER)`, 1);
+  else if (g.groupOrder !== want) problems.set(`${g.file}: 그룹 순서 ${g.groupOrder} ≠ ${want} — 메이커가 다시 매김. node tools/build/ui-order.cjs 후 refresh`, 1);
+}
+
 console.log(`[check_ui_layers] 창 ${windows.length}개 · 늘 보이는 HUD 조각 ${huds.length}개`);
 for (const [k, n] of [...problems.entries()].sort()) console.log(`  ${k}  조각 ${n}개`);
 console.log(`[check_ui_layers] 가림 ${problems.size}건`);
