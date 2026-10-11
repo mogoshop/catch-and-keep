@@ -1,6 +1,6 @@
 -- 지연 생성은 성공 확인 후 비용을 확정하고, 맵 이동·사망 시 취소한다.
 -- 스킬북: 습득·슬롯·입력·시전 조건(구현 여부·쿨다운·마나). 효과는 SkillEffects.
--- 입력: A S D F = 슬롯 1~4, 마우스 우클릭 = 오른쪽 스킬. 조준점은 커서(마우스 모드) 또는 가장 가까운 적.
+-- 입력: A S D F(키보드 모드는 Q R F G) = 슬롯 1~4, 마우스 우클릭 = 오른쪽 스킬. 조준점은 커서(마우스 모드) 또는 가장 가까운 적.
 @Component
 script SkillBook extends Component
 
@@ -524,12 +524,37 @@ script SkillBook extends Component
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         local key = event.key
         local slot = 0
-        if key == KeyboardKey.A then slot = 1
-        elseif key == KeyboardKey.S then slot = 2
-        elseif key == KeyboardKey.D then slot = 3
-        elseif key == KeyboardKey.F then slot = 4
-        elseif key == KeyboardKey.Mouse1 then slot = 5 end
+        if self:IsKeyboardMode() then
+            -- 키보드 모드: W A S D로 걸으므로 스킬은 왼손 둘레 Q R F G (E는 그림자 추출)
+            if key == KeyboardKey.Q then slot = 1
+            elseif key == KeyboardKey.R then slot = 2
+            elseif key == KeyboardKey.F then slot = 3
+            elseif key == KeyboardKey.G then slot = 4 end
+        else
+            if key == KeyboardKey.A then slot = 1
+            elseif key == KeyboardKey.S then slot = 2
+            elseif key == KeyboardKey.D then slot = 3
+            elseif key == KeyboardKey.F then slot = 4 end
+        end
+        if key == KeyboardKey.Mouse1 then slot = 5 end
         if slot > 0 then self:CastSlot(slot) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsKeyboardMode()
+        -- PC 키보드 조작 모드 (ClickControl.MouseMode 꺼짐)
+        if not Environment:IsPCPlatform() then return false end
+        ---@type ClickControl
+        local cc = self.Entity:GetComponent("script.ClickControl")
+        return cc ~= nil and not cc.MouseMode
+    end
+
+    @ExecSpace("ClientOnly")
+    method string SlotKeyName(integer slot)
+        -- 칸 이름표·안내 문구용 (마우스 모드 A S D F / 키보드 모드 Q R F G)
+        if slot == 5 then return "우클릭" end
+        local keys = self:IsKeyboardMode() and { "Q", "R", "F", "G" } or { "A", "S", "D", "F" }
+        return keys[slot] or ""
     end
 
     method string GetSlotSkill(integer slot)

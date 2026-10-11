@@ -1,12 +1,15 @@
 -- PC 마우스 조작 (디아블로2식). DefaultPlayer 모델에 붙고, 내 캐릭터에서만 동작한다.
 --   바닥 클릭/누르고 있기 → 그 지점으로 이동
 --   몬스터 클릭/누르고 있기 → 다가가서 공격 (공격 자체는 기존 PlayerAttack 경로를 그대로 쓴다)
---   방향키 입력 → 클릭 이동 취소 (키보드 조작과 함께 쓸 수 있다)
+--   마우스 모드는 마우스로만 걷는다: 엔진 기본 이동 키(W A S D·방향키)를 뗀다 (ApplyMoveKeys — A S D가 스킬 키와 겹쳐 시전과 이동이 함께 일어났다)
+--   키보드 모드는 W A S D·방향키로 걷고, 스킬은 Q R F G (SkillBook)
 -- 모바일은 이 컴포넌트를 쓰지 않고 가상 스틱(ShadowHUD 모바일 패드)을 쓴다.
 @Component
 script ClickControl extends Component
 
     property boolean MouseMode = true       -- HUD의 조작 전환 버튼으로 끄고 켠다
+    property table MoveKeyNames = nil        -- 엔진 기본 이동 키의 동작 이름 (W A S D ↑ ↓ ← →) — 키보드 모드로 돌아올 때 다시 붙인다
+    property boolean MoveKeysApplied = false
     property number ArriveDistance = 0.12
     property number AttackReach = 0.9        -- PlayerAttack 범위(앞쪽 0.7 + 폭 1.6)에 맞춘 사거리
     property number PickRadius = 0.6         -- 클릭 지점에서 이 거리 안의 몬스터를 대상으로 본다
@@ -231,6 +234,7 @@ script ClickControl extends Component
     method void Tick(number delta)
         -- 클릭 이동·공격 진행. 방향키를 누르면 즉시 취소
         if self.Entity ~= _UserService.LocalPlayer then return end
+        if not self.MoveKeysApplied then self:ApplyMoveKeys() end
         if _UIKit:AnyWindowOpen() then
             self:Cancel()
             self:HoldWindowControl()
@@ -522,6 +526,42 @@ script ClickControl extends Component
         self.MouseMode = enabled
         self:Cancel()
         if not enabled then self:StopMove() end
+        self:ApplyMoveKeys()
+    end
+
+    @ExecSpace("ClientOnly")
+    method table MoveKeys()
+        return { KeyboardKey.W, KeyboardKey.A, KeyboardKey.S, KeyboardKey.D,
+            KeyboardKey.UpArrow, KeyboardKey.DownArrow, KeyboardKey.LeftArrow, KeyboardKey.RightArrow }
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyMoveKeys()
+        -- PC 조작 모드에 맞춰 엔진 기본 이동 키를 붙이거나 뗀다. 마우스 모드 = 키보드로 못 걷는다 / 키보드 모드 = W A S D·방향키.
+        -- 모바일 가상 스틱은 방향키 신호를 쓰므로 건드리지 않는다
+        if self.Entity ~= _UserService.LocalPlayer or not Environment:IsPCPlatform() then return end
+        local controller = self.Entity.PlayerControllerComponent
+        if not isvalid(controller) then return end
+        local keys = self:MoveKeys()
+        if self.MoveKeyNames == nil then
+            -- 처음 한 번 원래 동작 이름을 기억한다 (엔진 기본값을 그대로 되살리기 위해)
+            local names = {}
+            for i, key in ipairs(keys) do
+                local name = controller:GetActionName(key)
+                names[i] = name ~= nil and name or ""
+            end
+            self.MoveKeyNames = names
+            -- C = 그림자 집결 (엔진 기본은 앉기라 집결할 때마다 주저앉았다)
+            controller:RemoveActionKey(KeyboardKey.C)
+        end
+        for i, key in ipairs(keys) do
+            local name = self.MoveKeyNames[i]
+            if name ~= "" then
+                if self.MouseMode then controller:RemoveActionKey(key) else controller:SetActionKey(key, name) end
+            end
+        end
+        self.MoveKeysApplied = true
+        log("[VRF] ClickControl 이동 키 " .. (self.MouseMode and "마우스 모드 — 키보드 이동 끔" or "키보드 모드 — W A S D·방향키") .. " (W=" .. tostring(self.MoveKeyNames[1]) .. ")")
     end
 
 end
