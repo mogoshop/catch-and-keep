@@ -148,6 +148,28 @@ script PlayerQuest extends Component
         return q.map
     end
 
+    method string MapLabel(string mapId)
+        -- 맵 표시 이름 (레벨 괄호 없이)
+        local info = _GameData:GetMapInfo(mapId)
+        if info == nil then return mapId end
+        return (string.gsub(info.name, "%s*%(Lv[^%)]*%)", ""))
+    end
+
+    method string StepZone(table q)
+        -- 지금 단계의 목적지 한 곳. 열쇠 → 상자 의뢰는 「교수대 숲 · 목매단 동굴」을 함께 보여 줘서
+        -- 처형인을 찾아 동굴로 먼저 가는 일이 있었다 (10-11 QA) → 단계마다 그 맵만
+        if q.kind ~= "chest" then return q.zone end
+        if self.Progress < 1 then return "1단계 · " .. self:MapLabel(self:GoalMap(q)) end
+        return "2단계 · " .. self:MapLabel(q.map) .. " 끝방"
+    end
+
+    method string StepGoal(table q)
+        -- 지금 단계의 할 일 한 줄 (열쇠 → 상자 의뢰)
+        if q.kind ~= "chest" then return q.objective end
+        if self.Progress >= 1 then return "열쇠 획득 → 끝방 봉인 상자를 여세요" end
+        return _GameData:GetMonsterName(q.target) .. " 처치 → 열쇠 얻기"
+    end
+
     -- ───────── 봉인 상자·열쇠 ─────────
 
     method boolean HasChestKey(string mapKey)
