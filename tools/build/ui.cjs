@@ -233,15 +233,20 @@ function buildGameHud() {
   k.btn("SkillPick/BtnClear", "칸 비우기", { anchor: "bottom-right", pos: [-40, 30], rect_size: [190, 70] });
 
   // ── 능력치 창 ──
-  k.frame("CharWin", "middle-left", [30, 40], [480, 640], "능력치");
-  k.inner("CharWin/Paper", "top-center", [0, -84], [430, 250], "win_content");
-  b.text("CharWin/Paper/Info", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [18, -14], rect_size: [394, 222] });
-  ["Str", "Dex", "Vit", "Ene"].forEach((s, i) => {
-    b.empty(`CharWin/${s}`, { anchor: "top-left", pos: [26, -350 - i * 64], rect_size: [428, 58] });
-    b.text(`CharWin/${s}/Text`, s, { size: 24, color: C.white, alignment: 3, anchor: "middle-left", pos: [4, 0], rect_size: [340, 52] });
-    k.ok(`CharWin/${s}/BtnAdd`, "+", { anchor: "middle-right", pos: [0, 0], rect_size: [64, 56], font_size: 30 });
+  // 10-11 능력치 개편 (docs/design/16): 줄마다 「이름 · 역할」 + 지금 효과 → 1포인트 더 찍으면 (미리보기), 추천 분배 3개 + 초기화
+  k.frame("CharWin", "middle-left", [30, 20], [520, 820], "능력치");
+  k.inner("CharWin/Paper", "top-center", [0, -84], [470, 236], "win_content");
+  b.text("CharWin/Paper/Info", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [18, -14], rect_size: [434, 210] });
+  ["Str", "Ene", "Vit", "Dex"].forEach((s, i) => {
+    b.empty(`CharWin/${s}`, { anchor: "top-left", pos: [26, -326 - i * 78], rect_size: [468, 72] });
+    b.text(`CharWin/${s}/Text`, s, { size: 20, color: C.white, alignment: 3, anchor: "middle-left", pos: [4, 0], rect_size: [390, 70] });
+    k.ok(`CharWin/${s}/BtnAdd`, "+", { anchor: "middle-right", pos: [0, 0], rect_size: [64, 60], font_size: 30 });
   });
-  b.text("CharWin/Points", "", { size: 22, color: "#F4ED83", anchor: "bottom-center", pos: [0, 22], rect_size: [420, 30], ...outline });
+  b.text("CharWin/Points", "", { size: 22, color: "#F4ED83", anchor: "bottom-center", pos: [0, 156], rect_size: [460, 30], ...outline });
+  [["Auto1", "소환형 추천"], ["Auto2", "주문형 추천"], ["Auto3", "균형 추천"]].forEach(([n, label], i) => {
+    k.btn(`CharWin/${n}`, label, { anchor: "bottom-left", pos: [24 + i * 160, 92], rect_size: [152, 54], font_size: 20 });
+  });
+  k.btn("CharWin/BtnReset", "초기화", { anchor: "bottom-center", pos: [0, 28], rect_size: [460, 54], font_size: 20 });
 
   // ── 소지품 창: 장비(종이 인형) + 설명 + 가방 6×5 ──
   k.frame("InvWin", "middle-right", [-30, -60], [900, 860], "소지품");
@@ -264,26 +269,34 @@ function buildGameHud() {
   k.btn("InvWin/BtnSell", "판매", { anchor: "bottom-right", pos: [-28, 30], rect_size: [260, 76] });
   b.text("InvWin/Hint", "룬: 고른 뒤 장비 칸 = 소켓\n장비 칸 누르기 = 해제", { size: 16, color: C.dim, alignment: 8, anchor: "bottom-right", pos: [-28, 210], rect_size: [260, 60] });
 
-  // ── 스킬 창: 3트리 × 12칸 (아이콘 + 이름·레벨) ──
+  // ── 스킬 창 (10-11 개편, docs/design/16): 메인 스킬 카드 6×5 (해금 레벨 순) + 오른쪽 강화 패널 ──
   k.frame("SkillWin", "middle-center", [0, 30], [1020, 860], "스킬");
-  b.text("SkillWin/Points", "", { size: 22, color: "#F4ED83", anchor: "top-left", pos: [40, -76], rect_size: [500, 30], alignment: 3, ...outline });
-  [0, 1, 2].forEach((t) => {
-    k.inner(`SkillWin/Col${t + 1}`, "top-left", [30 + t * 324, -112], [312, 560]);
-    b.text(`SkillWin/Col${t + 1}/Head`, "", { size: 24, bold: true, color: C.white, anchor: "top-center", pos: [0, -8], rect_size: [296, 32], ...outline });
-    for (let r = 0; r < 12; r++) {
-      const n = `SkillWin/Col${t + 1}/T${r + 1}`;
-      b.button(n, "", { anchor: "top-left", pos: [8, -44 - r * 42], rect_size: [296, 40], bg_color: { r: 0, g: 0, b: 0, a: 0.25 } });
-      b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [4, 0], rect_size: [34, 34], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
-      k.aspect(`${n}/Icon`);
-      b.text(`${n}/Label`, "", { size: 17, color: C.white, alignment: 3, anchor: "middle-left", pos: [44, 0], rect_size: [248, 36] });
-    }
-  });
-  k.inner("SkillWin/DescBox", "bottom-left", [30, 104], [960, 72], "win_content");
-  b.text("SkillWin/DescBox/Desc", "", { size: 17, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [932, 66] });
-  // 습득은 설명 오른쪽의 가장 큰 버튼. 칸 지정은 PC·모바일 모두 「스킬 편집」 하나
-  //   (PC: 창을 닫고 스킬 지정 창 — A S D F 우클릭 탭, 모바일: 창을 닫고 패드 칸의 +)
-  k.ok("SkillWin/BtnLearn", "습득 +1", { anchor: "bottom-right", pos: [-30, 132], rect_size: [240, 248], font_size: 34 });
-  k.btn("SkillWin/BtnEdit", "스킬 편집 — 스킬 칸에 넣기", { anchor: "bottom-left", pos: [30, 24], rect_size: [960, 88], font_size: 28 });
+  for (const old of ["SkillWin/Col1", "SkillWin/Col2", "SkillWin/Col3", "SkillWin/Head1", "SkillWin/Head2", "SkillWin/Head3"]) if (b.find(old)) b.remove(old);
+  b.text("SkillWin/Points", "", { size: 22, color: "#F4ED83", anchor: "top-left", pos: [40, -76], rect_size: [560, 30], alignment: 3, ...outline });
+  k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-96, -70], rect_size: [330, 44], font_size: 18 });
+  b.empty("SkillWin/Grid", { anchor: "top-left", pos: [30, -118], rect_size: [648, 484] });
+  for (let i = 0; i < 30; i++) {
+    const n = `SkillWin/Grid/M${i + 1}`;
+    const col = i % 6, row = Math.floor(i / 6);
+    b.button(n, "", { anchor: "top-left", pos: [col * 109, -row * 98], rect_size: [103, 92], bg_color: { r: 0, g: 0, b: 0, a: 0.3 } });
+    b.sprite(`${n}/Icon`, { anchor: "top-center", pos: [0, -4], rect_size: [42, 42], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    k.aspect(`${n}/Icon`);
+    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 4, anchor: "bottom-center", pos: [0, 2], rect_size: [101, 44], bestfit: true, min_size: 11, max_size: 14 });
+  }
+  k.inner("SkillWin/Detail", "top-left", [690, -118], [300, 484], "win_content");
+  b.text("SkillWin/Detail/Name", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [14, -10], rect_size: [272, 32], ...outline });
+  b.text("SkillWin/Detail/Desc", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -46], rect_size: [272, 150] });
+  b.text("SkillWin/Detail/NodeHead", "강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -200], rect_size: [272, 24] });
+  for (let i = 0; i < 3; i++) {
+    const n = `SkillWin/Detail/N${i + 1}`;
+    b.button(n, "", { anchor: "top-left", pos: [10, -228 - i * 84], rect_size: [280, 78], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
+    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 3, anchor: "middle-left", pos: [10, 0], rect_size: [262, 74], bestfit: true, min_size: 11, max_size: 14 });
+  }
+  k.inner("SkillWin/DescBox", "bottom-left", [30, 110], [700, 120], "win_content");
+  b.text("SkillWin/DescBox/Desc", "", { size: 16, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [672, 114] });
+  // 습득은 설명 오른쪽 버튼. 칸 지정은 PC·모바일 모두 「스킬 편집」 하나
+  k.ok("SkillWin/BtnLearn", "습득 +1", { anchor: "bottom-right", pos: [-30, 110], rect_size: [250, 120], font_size: 30 });
+  k.btn("SkillWin/BtnEdit", "스킬 편집 — 스킬 칸에 넣기", { anchor: "bottom-left", pos: [30, 24], rect_size: [960, 76], font_size: 26 });
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");

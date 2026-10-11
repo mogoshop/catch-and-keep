@@ -21,6 +21,7 @@ script SkillBook extends Component
     property string Slots = ",,,"             -- A S D F. 빈 칸으로 시작, 배운 스킬만 넣는다
     @Sync
     property string RightSkill = ""
+    property boolean NeedRework = false       -- 10-11 스킬·능력치 개편 전 저장 (sv < 3): 불러오기 끝에 전부 돌려준다 (docs/design/16)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -35,9 +36,11 @@ script SkillBook extends Component
     end
 
     method integer GetPowerLevel(string id)
-        -- 효과에 쓰는 레벨: 배운 스킬에만 장비의 「모든 스킬 +N」(유니크 고유 효과)을 더한다. 배울 때·요구 조건은 GetLevel
+        -- 효과에 쓰는 레벨: 배운 메인 스킬에만 장비의 「모든 스킬 +N」(유니크 고유 효과)을 더한다. 강화 노드는 랭크 그대로. 배울 때·요구 조건은 GetLevel
         local lv = self:GetLevel(id)
         if lv <= 0 then return 0 end
+        local def = _SkillData:Get(id)
+        if def ~= nil and def.kind == "node" then return lv end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return lv end
@@ -60,18 +63,46 @@ script SkillBook extends Component
         self.SkillDigest = table.concat(parts, ";")
     end
 
+    method integer RankCap(string id, integer playerLevel)
+        -- 지금 올릴 수 있는 최대 랭크 (docs/design/16): 메인 = min(최대, 1 + (캐릭터 Lv − 해금 Lv) // 2), 강화 = 최대 랭크
+        local def = _SkillData:Get(id)
+        if def == nil then return 0 end
+        if def.kind == "node" then return def.maxLv end
+        if playerLevel < def.row then return 0 end
+        return math.min(def.maxLv, 1 + (playerLevel - def.row) // 2)
+    end
+
+    method integer NextRankLevel(string id, integer rank)
+        -- 메인 스킬을 rank까지 올리는 데 필요한 캐릭터 레벨
+        local def = _SkillData:Get(id)
+        if def == nil or def.kind == "node" then return 1 end
+        return def.row + 2 * (rank - 1)
+    end
+
+    method integer Node(string id)
+        -- 강화 노드 랭크 (효과 계산용)
+        return self:GetLevel(id)
+    end
+
     method string CanLearn(string id, integer playerLevel, integer skillPoints)
         -- 가능하면 "", 아니면 이유
         local def = _SkillData:Get(id)
         if def == nil then return "없는 스킬" end
         -- 아직 효과가 없는 스킬은 배울 수 없다 (포인트를 헛쓰지 않게)
-        if not def.impl then return "준비 중인 스킬" end
-        if self:GetLevel(id) >= def.maxLv then return "최대 레벨" end
+        if not def.impl then return "준비 중인 강화" end
+        local lv = self:GetLevel(id)
+        if lv >= def.maxLv then return "최대 랭크" end
+        if def.kind == "node" then
+            -- 강화: 메인 스킬을 그 랭크까지 올려야 열린다
+            local parent = _SkillData:Get(def.parent)
+            local name = parent ~= nil and parent.name or def.parent
+            if self:GetLevel(def.parent) <= 0 then return "먼저 「" .. name .. "」을(를) 배우세요" end
+            if self:GetLevel(def.parent) < def.need then return "「" .. name .. "」 " .. tostring(def.need) .. "랭크부터" end
+        else
+            if playerLevel < def.row then return "Lv" .. tostring(def.row) .. "에 열림" end
+            if lv >= self:RankCap(id, playerLevel) then return "Lv" .. tostring(self:NextRankLevel(id, lv + 1)) .. "에 다음 랭크" end
+        end
         if skillPoints <= 0 then return "스킬 포인트 부족" end
-        if playerLevel < def.row then return "요구 레벨 " .. tostring(def.row) end
-        -- 2레벨부터 요구 레벨이 따로 있는 스킬 (그림자 소환: Lv5에 1레벨, 2레벨부터 Lv15)
-        if def.nextLv > 0 and self:GetLevel(id) >= 1 and playerLevel < def.nextLv then return "2레벨부터 요구 레벨 " .. tostring(def.nextLv) end
-        if def.prereq ~= "" and self:GetLevel(def.prereq) <= 0 then return "선행: " .. _SkillData:Get(def.prereq).name end
         return ""
     end
 
@@ -106,9 +137,9 @@ script SkillBook extends Component
         if def == nil then return end
         local detail = after
         local hint = ""
-        if def.kind == "passive" then
+        if def.kind == "passive" or def.kind == "node" then
             hint = "자동 적용"
-            if id == "skeleton_mastery" or id == "command_mastery" then hint = "다음 소환부터 적용" end
+            if id == "skeleton_mastery" or id == "command_mastery" or id == "skel_legion" or id == "mage_legion" or id == "mage_focus" or id == "revive_legion" or id == "revive_long" then hint = "다음 소환부터 적용" end
         elseif slot > 0 then
             local keys = { "A", "S", "D", "F", "우클릭" }
             hint = keys[slot] .. " 배정"
@@ -157,15 +188,16 @@ script SkillBook extends Component
     end
 
     method integer GetBoneShardCount(integer level)
-        -- 골편 투척 발 수: 1·3·7·11·15레벨에 1발씩 (최대 boneShardMaxCount) — 10-11 QA: 2발을 Lv5 → Lv3으로
+        -- 골편 투척 발 수: 1발 + 강화 「다중 투사체」 랭크 (docs/design/16 — 예전에는 스킬 레벨 1·3·7·11·15에 1발씩)
         if level <= 0 then return 0 end
-        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + math.floor((level + 1) / 4))
+        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + self:Node("shard_multi"))
     end
 
     method number GetCurseDuration(integer level)
         -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 20.5초)
         if level <= 0 then return 0 end
-        return 4 + 0.5 * math.min(level - 1, 4) + 1 * math.max(0, level - 5)
+        local base = 4 + 0.5 * math.min(level - 1, 4) + 1 * math.max(0, level - 5)
+        return math.floor(base * (1 + 0.15 * self:Node("curse_duration")) * 10 + 0.5) / 10   -- 강화 「저주 지속」
     end
 
     method number RawEffectPower(string id, integer level)
@@ -176,7 +208,7 @@ script SkillBook extends Component
         if id == "soul_drain" then return 15 + 8 * level end
         if id == "bone_storm" then return 4 + 2 * level end   -- 0.5초마다 12번 (10-11: 절반 — 마나 20에 적 하나당 망자 폭쇄 5번 분량이었다)
         if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
-        if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end
+        if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) + 3 * self:Node("enfeeble_deep") end
         if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
         local k = level - 1
         if id == "thorn_curse" then return 50 + 5 * k end            -- 반사 %
@@ -187,7 +219,7 @@ script SkillBook extends Component
         if id == "decay" then return math.min(60, 30 + 1 * k) end   -- 속도·피해 감소 %
         if id == "resist_break" then return 25 + 1.5 * k end         -- 저항 감소 %p
         if id == "bone_prison" then return 2 + 0.15 * k end          -- 속박 초
-        if id == "poison_spread" then return 1.5 + 0.05 * k end      -- 확산 반경
+        if id == "poison_spread" then return 1.25 + 0.25 * level end -- 확산 반경 (강화 노드 랭크 1~3: 1.5·1.75·2.0)
         if id == "soul_torrent" then return 12 + 5 * k end           -- 영혼 하나 피해
         if id == "death_wave" then return 40 + 15 * k end
         if id == "shadow_sacrifice" then return 30 + 10 * k end      -- + 희생한 그림자 공격력 ×2
@@ -204,7 +236,8 @@ script SkillBook extends Component
         -- 호령(항상 켜짐): 소환수 공격·생명 %, 이동 속도 %, 모든 저항 %p. 다음 소환부터 적용한다.
         local lv = self:GetPowerLevel("command_aura")
         if lv <= 0 then return { atk = 0, speed = 0, resist = 0 } end
-        return { atk = self:GetEffectPower("command_aura", lv), speed = 5 + 0.5 * (lv - 1), resist = 5 + (lv - 1) }
+        local deep = 1 + 0.2 * self:Node("aura_deep")   -- 강화 「깊은 울림」
+        return { atk = self:GetEffectPower("command_aura", lv) * deep, speed = 5 + 0.5 * (lv - 1), resist = 5 + (lv - 1) }
     end
 
     method string GetRankSummary(string id, integer level)
@@ -218,7 +251,7 @@ script SkillBook extends Component
         if id == "raise_skeleton" or id == "raise_mage" then
             local kind = id == "raise_skeleton" and "skeleton" or "mage"
             local values = _UndeadSystem:GetBaseStats(kind, level, self:GetPowerLevel("skeleton_mastery"), stats.Level)
-            local equip = math.max(0.1, 1 + stats.BonusMinionPct / 100)
+            local equip = math.max(0.1, 1 + stats:GetMinionPct() / 100)
             return string.format("최대 %d기 · 공격 %d · 생명 %d", _UndeadSystem:CountFor(level), math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip)))
         end
         if id == "skeleton_mastery" then return string.format("해골 공격·생명 +%g%%", _GameData.skeletonMasteryPct * level) end
@@ -231,11 +264,27 @@ script SkillBook extends Component
         if id == "deploy_expand" then
             local bonus = _ShadowConfig:GetDeploySkillBonus(level)
             local limit = _ShadowConfig:GetDeployLimit(bonus + stats.BonusDeploy, stats.BonusShadowCap)
-            local summary = string.format("스킬 +%d기 · 현재 최대 %d기", bonus, limit)
-            local nextLevel = level < 8 and 8 or 16
-            if level < def.maxLv then summary = summary .. string.format(" · 다음 단계까지 %d포인트", nextLevel - level) end
-            return summary
+            return string.format("그림자 배치 +%d기 · 현재 최대 %d기", bonus, limit)
         end
+        -- 강화 노드 (docs/design/16)
+        local nodeText = {
+            skel_legion = string.format("해골 전사 최대 수 +%d", level),
+            shard_multi = string.format("뼛조각 %d발 (마나 +%d)", 1 + level, math.floor(_GameData.boneShardManaPerExtra) * level),
+            curse_area = string.format("모든 저주 범위 +%d%%", 15 * level),
+            curse_duration = string.format("모든 저주 지속 +%d%%", 15 * level),
+            mist_wide = string.format("독안개 범위 +%d%%", 20 * level),
+            mist_thick = string.format("독안개 지속 +%d초", level),
+            blast_wide = string.format("망자 폭쇄 범위 +%d%%", 15 * level),
+            mage_legion = string.format("해골 마법사 최대 수 +%d", level),
+            mage_focus = string.format("해골 마법사 피해 +%d%%", 10 * level),
+            enfeeble_deep = string.format("쇠약 공격력 감소 +%d%%p", 3 * level),
+            prison_wide = string.format("골격 감옥 범위 +%d%%", 15 * level),
+            drain_share = string.format("소환수 회복 +%d%%", 25 * level),
+            revive_long = string.format("되살림 지속 +%d초", 30 * level),
+            revive_legion = string.format("되살림 최대 수 +%d", level),
+            aura_deep = string.format("호령 공격·생명 효과 +%d%%", 20 * level),
+        }
+        if nodeText[id] ~= nil then return nodeText[id] end
         if id == "revive" then return string.format("최대 %d기 · 능력치 ×%.2f · %g초", _UndeadSystem:ReviveCountFor(level), _UndeadSystem:GetReviveMultiplier(level), _GameData.reviveSeconds) end
         local power = self:GetEffectPower(id, level)
         if id == "elite_promote" then return string.format("그림자 1기 공격·생명 ×%.2f", power) end
@@ -667,11 +716,85 @@ script SkillBook extends Component
         end
     end
 
+    -- ───────── 초기화 (docs/design/16: Lv15까지 무료, 그 뒤 사제 오렌에게 200×레벨 골드) ─────────
+
+    @ExecSpace("ServerOnly")
+    method integer ResetSkills()
+        -- 모든 스킬·강화 투자를 돌려준다 (돌려준 포인트 수). 퀵슬롯도 비운다
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local refund = 0
+        for _, lv in pairs(self.Levels) do refund = refund + lv end
+        self.Levels = {}
+        self.Slots = ",,,"
+        self.RightSkill = ""
+        if stats ~= nil then stats.SkillPoints = stats.SkillPoints + refund end
+        self:SanitizeSlots()
+        self:RefreshDigest()
+        return refund
+    end
+
+    method integer RespecCost(integer playerLevel)
+        -- 초기화 비용: Lv15까지 0, 그 뒤 200 × 레벨 골드
+        if playerLevel <= _GameData.respecFreeLevel then return 0 end
+        return math.floor(_GameData.respecGoldPerLevel * playerLevel)
+    end
+
+    @ExecSpace("Server")
+    method void RequestRespec(string what)
+        -- 스킬("skills")·능력치("stats") 초기화. Lv16부터는 마을 의뢰인(사제 오렌·카라반 대장 무하드) 곁에서 골드를 낸다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or not _Util:IsAlive(self.Entity) then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or (what ~= "skills" and what ~= "stats") then return end
+        local cost = self:RespecCost(stats.Level)
+        if cost > 0 then
+            local npc = _Util:NearestComponent(self.Entity.CurrentMap, "script.WorldNPC", _Util:Pos2(self.Entity), 4)
+            if npc == nil or (npc.Kind ~= "quest" and npc.Kind ~= "caravan") then
+                _Util:Notify("Lv" .. tostring(math.floor(_GameData.respecFreeLevel) + 1) .. "부터는 마을의 사제 오렌·카라반 대장 무하드 곁에서 초기화할 수 있다 (" .. tostring(cost) .. " 골드)", pc.UserId)
+                return
+            end
+            if stats.Gold < cost then
+                _Util:Notify("골드가 부족하다 (" .. tostring(cost) .. " 필요)", pc.UserId)
+                return
+            end
+            stats.Gold = stats.Gold - cost
+        end
+        local refund = what == "skills" and self:ResetSkills() or stats:ResetStats()
+        _Util:Banner((what == "skills" and "스킬" or "능력치") .. " 초기화", "포인트 " .. tostring(refund) .. "을 돌려받았다" .. (cost > 0 and (" · " .. tostring(cost) .. " 골드") or " · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)"), pc.UserId)
+        log("[VRF] respec " .. what .. " refund=" .. tostring(refund) .. " cost=" .. tostring(cost))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MigrateRework()
+        -- 10-11 개편 전 캐릭터: 스킬·능력치를 모두 돌려주고, 새 규칙(레벨당 2 · 의뢰 skp 2배)만큼 더 준다 (한 번만)
+        if not self.NeedRework then return end
+        self.NeedRework = false
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return end
+        local skill = self:ResetSkills()
+        local extra = math.max(0, stats.Level - 1) * (math.floor(_GameData.skillPerLevel) - 1)
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        if quest ~= nil then
+            for i = 1, _QuestData:Count() do
+                local q = _QuestData:Get(i)
+                if i < quest.Index and string.find("," .. q.reward, ",skp:", 1, true) ~= nil then extra = extra + 1 end
+            end
+        end
+        stats.SkillPoints = stats.SkillPoints + extra
+        local stat = stats:ResetStats()
+        _Util:Banner("스킬·능력치가 새로 바뀌었다", string.format("스킬 포인트 %d · 능력치 포인트 %d를 모두 돌려받았다 — 스킬(K)·능력치(U) 창에서 다시 찍으세요", stats.SkillPoints, stats.StatPoints), self.Entity.PlayerComponent.UserId)
+        log(string.format("[VRF] skill rework migrate skill=%d+%d stat=%d", skill, extra, stat))
+    end
+
     @ExecSpace("ServerOnly")
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 2 }
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 3 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         return saved
@@ -689,6 +812,8 @@ script SkillBook extends Component
         if d.right ~= nil then self.RightSkill = d.right end
         -- 옛 저장(sv 없음): 예전 기본값이 우클릭에 넣어 둔 스킬을 비운다 (평타 중 골편 투척이 저절로 나가던 문제)
         if (d.sv or 1) < 2 then self.RightSkill = "" end
+        -- sv 3 = 메인 스킬 + 강화 (10-11). 그 전 저장은 PlayerSave.FinishLoad에서 MigrateRework로 전부 돌려준다
+        if (d.sv or 1) < 3 then self.NeedRework = true end
         self:SanitizeSlots()
         self:RefreshDigest()
     end

@@ -32,27 +32,20 @@ function run(){quiet(()=>{
  b.patch('InvWin/Gold',{pos:[32,-888],rect_size:[600,48]});b.patchComponent('InvWin/Gold','MOD.Core.TextGUIRendererComponent',{FontSize:24});
  b.patch('InvWin/BtnEquip',{pos:[-316,28],rect_size:[268,88]});b.patch('InvWin/BtnSell',{pos:[-32,28],rect_size:[268,88]});b.patch('InvWin/Hint',{pos:[-32,126],rect_size:[556,58]});b.patchComponent('InvWin/Hint','MOD.Core.TextGUIRendererComponent',{FontSize:23,HorizontalAlignment:2,Text:'룬 선택 후 장비 칸: 소켓\n장비 칸 누르기: 장착 해제'});
  b.patch('SkillWin',{rect_size:[1020,960],pos:[0,0]});b.patch('SkillWin/Rim',{rect_size:[1060,1000]});
- // 스킬 트리: 큰 아이콘을 가진 세 개의 스크롤 열. 경로는 유지해 클릭 연결을 보존.
- for(let t=1;t<=3;t++){
-  const n='SkillWin/Col'+t;if(b.find(n+'/Head'))b.remove(n+'/Head');
-  b.text('SkillWin/Head'+t,'',{anchor:'top-left',pos:[38+(t-1)*324,-114],rect_size:[296,34],size:26,bold:true,color:'#E6C88A'});
-  // 위·아래 버튼 없이 손가락/휠로 끌어 내린다. 버튼이 있던 자리만큼 목록을 길게.
-  b.scrollLayout(n,{anchor:'top-left',pos:[30+(t-1)*324,-154],rect_size:[312,408],layout_type:1,spacing:12,padding:[8,8,8,8],child_alignment:0,use_scroll:true,v_scroll_dir:3,scroll_bar_visible:1,scroll_bar_thickness:10});
-  for(let r=1;r<=12;r++){const row=n+'/T'+r;b.patch(row,{rect_size:[284,88]});b.patch(row+'/Icon',{pos:[10,0],rect_size:[56,56]});b.patch(row+'/Label',{pos:[76,0],rect_size:[200,80]});b.patchComponent(row+'/Label','MOD.Core.TextGUIRendererComponent',{FontSize:23});}
- }
- // 설명(왼쪽) + 습득(오른쪽, 가장 큰 버튼). 그 아래 줄: PC 칸 지정 / 모바일 스킬 편집
- b.patch('SkillWin/DescBox',{anchor:'bottom-left',pivot:[0,0],pos:[30,132],rect_size:[706,248]});b.patch('SkillWin/DescBox/Desc',{rect_size:[682,232]});b.patchComponent('SkillWin/DescBox/Desc','MOD.Core.TextGUIRendererComponent',{FontSize:24,BestFit:true,MinSize:21,MaxSize:24,Overflow:2});
+ // 스킬 창 안쪽 배치는 ui.cjs (10-11 메인 스킬 카드 + 강화 패널, docs/design/16). 여기서는 창 크기만
  // 다른 창의 작은 상호작용 영역도 서로 겹치지 않게 확장.
  b.patch('QuestWin',{rect_size:[800,960],pos:[0,0]});b.patch('QuestWin/Rim',{rect_size:[840,1000]});
  for(let i=1;i<=6;i++)b.patch('QuestWin/Q'+i,{pos:[40,-88-(i-1)*100],rect_size:[720,88]});
  b.patch('QuestWin/DescBox',{pos:[30,26],rect_size:[740,228]});b.patch('QuestWin/DescBox/Desc',{rect_size:[708,196]});b.patchComponent('QuestWin/DescBox/Desc','MOD.Core.TextGUIRendererComponent',{FontSize:24});
  for(let i=1;i<=5;i++)b.patch('SkillPick/Tab'+i,{rect_size:[152,88]});b.patch('SkillPick/BtnClear',{rect_size:[190,88]});
- // 능력치: 넓은 2칸 — 왼쪽 현재 능력치(정보), 오른쪽 힘·민첩·활력·정신 올리기 4줄. 모바일 가로 화면을 넓게 쓴다
- b.patch('CharWin',{anchor:'middle-center',pivot:[.5,.5],pos:[0,0],rect_size:[1140,660]});b.patch('CharWin/Rim',{rect_size:[1180,700]});
- b.patch('CharWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[30,-84],rect_size:[540,500]});
- b.patch('CharWin/Paper/Info',{pos:[18,-14],rect_size:[504,472]});b.patchComponent('CharWin/Paper/Info','MOD.Core.TextGUIRendererComponent',{FontSize:22,BestFit:true,MinSize:18,MaxSize:22});
- for(const [i,stat] of ['Str','Dex','Vit','Ene'].entries()){b.patch('CharWin/'+stat,{anchor:'top-left',pivot:[0,1],pos:[590,-84-i*126],rect_size:[520,116]});b.patch('CharWin/'+stat+'/Text',{rect_size:[410,108]});b.patchComponent('CharWin/'+stat+'/Text','MOD.Core.TextGUIRendererComponent',{FontSize:22,BestFit:true,MinSize:18,MaxSize:22});b.patch('CharWin/'+stat+'/BtnAdd',{rect_size:[96,96]});}
- b.patch('CharWin/Points',{pos:[0,20],rect_size:[700,36]});b.patchComponent('CharWin/Points','MOD.Core.TextGUIRendererComponent',{FontSize:24});
+ // 능력치: 넓은 2칸 — 왼쪽 현재 능력치(정보), 오른쪽 통솔·정신·활력·민첩 4줄 + 추천 분배 3 + 초기화 (10-11 개편, docs/design/16)
+ b.patch('CharWin',{anchor:'middle-center',pivot:[.5,.5],pos:[0,0],rect_size:[1140,720]});b.patch('CharWin/Rim',{rect_size:[1180,760]});
+ b.patch('CharWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[30,-84],rect_size:[540,540]});
+ b.patch('CharWin/Paper/Info',{pos:[18,-14],rect_size:[504,512]});b.patchComponent('CharWin/Paper/Info','MOD.Core.TextGUIRendererComponent',{FontSize:22,BestFit:true,MinSize:18,MaxSize:22});
+ for(const [i,stat] of ['Str','Ene','Vit','Dex'].entries()){b.patch('CharWin/'+stat,{anchor:'top-left',pivot:[0,1],pos:[590,-84-i*112],rect_size:[520,104]});b.patch('CharWin/'+stat+'/Text',{rect_size:[410,100]});b.patchComponent('CharWin/'+stat+'/Text','MOD.Core.TextGUIRendererComponent',{FontSize:21,BestFit:true,MinSize:16,MaxSize:21});b.patch('CharWin/'+stat+'/BtnAdd',{rect_size:[96,96]});}
+ for(let i=1;i<=3;i++)b.patch('CharWin/Auto'+i,{anchor:'bottom-left',pivot:[0,0],pos:[590+(i-1)*176,96],rect_size:[168,60]});
+ b.patch('CharWin/BtnReset',{anchor:'bottom-left',pivot:[0,0],pos:[590,26],rect_size:[520,56]});
+ b.patch('CharWin/Points',{anchor:'bottom-left',pivot:[0,0],pos:[30,30],rect_size:[540,40]});b.patchComponent('CharWin/Points','MOD.Core.TextGUIRendererComponent',{FontSize:22});
  for(const win of ['MenuWin','SkillWin','InvWin','QuestWin','CharWin'])b.patchComponent(win,'MOD.Core.SpriteGUIRendererComponent',{Color:{r:.05,g:.045,b:.06,a:1}});
  b.patch('GatePrompt',{anchor:'top-center',pivot:[.5,1],pos:[0,-220],rect_size:[760,60]});
  b.write(P.ui('GameHUD'));

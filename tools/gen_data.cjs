@@ -289,7 +289,7 @@ function genSkills() {
   const body = [
     "        self.Skills = {}",
     "        self.Order = {}",
-    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, icon = ${s(r.icon)} }\n        table.insert(self.Order, ${s(r.id)})`),
+    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, icon = ${s(r.icon)}, parent = ${s(r.parent || "")}, need = ${n(r.need || 0)} }\n        table.insert(self.Order, ${s(r.id)})`),
   ].join("\n");
   const extra = `
     method any Get(string id)
@@ -300,6 +300,26 @@ function genSkills() {
     method table GetOrder()
         self:Ensure()
         return self.Order
+    end
+
+    method table NodesOf(string parent)
+        -- 메인 스킬에 붙은 강화 노드 id (표 순서)
+        self:Ensure()
+        local list = {}
+        for _, id in ipairs(self.Order) do
+            if self.Skills[id].parent == parent then table.insert(list, id) end
+        end
+        return list
+    end
+
+    method table Mains()
+        -- 메인 스킬 id (해금 레벨 순 — 표가 이미 그 순서)
+        self:Ensure()
+        local list = {}
+        for _, id in ipairs(self.Order) do
+            if self.Skills[id].kind ~= "node" then table.insert(list, id) end
+        end
+        return list
     end
 
     method string TreeName(string tree)

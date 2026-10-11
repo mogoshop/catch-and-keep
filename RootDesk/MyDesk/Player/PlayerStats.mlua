@@ -321,7 +321,12 @@ script PlayerStats extends Component
 
     method number GetCastCooldownMult()
         -- 시전 속도(반지·목걸이)만큼 스킬 재사용 대기가 짧아진다 (상한 fcrCap)
-        return 1 / (1 + math.min(self.BonusFcr, _GameData.fcrCap) / 100)
+        return 1 / (1 + math.min(self:GetFcr(), _GameData.fcrCap) / 100)
+    end
+
+    method number GetFcr()
+        -- 시전 속도 % = 장비 + 민첩 × dexFcrPct (10-11)
+        return self.BonusFcr + (self.Dex + self.BonusDex) * _GameData.dexFcrPct
     end
 
     @ExecSpace("ServerOnly")
@@ -380,8 +385,13 @@ script PlayerStats extends Component
     -- ───────── 피해 계산 보조 ─────────
 
     method number GetMeleeDamage(number baseDamage)
-        -- (기본 + 장비 추가) × (1 + 힘 × strDmgPct/100 + 장비 %)
-        return (baseDamage + self.BonusDamage) * (1 + (self.Str + self.BonusStr) * _GameData.strDmgPct / 100 + self.BonusDamagePct / 100)
+        -- (기본 + 장비 추가) × (1 + 민첩 × dexMeleePct/100 + 장비 %) — 10-11: 힘(통솔)은 소환수 몫이 됐다
+        return (baseDamage + self.BonusDamage) * (1 + (self.Dex + self.BonusDex) * _GameData.dexMeleePct / 100 + self.BonusDamagePct / 100)
+    end
+
+    method number GetMinionPct()
+        -- 소환수 공격·생명 % = 장비 + 통솔(예전 힘)이 시작값 15를 넘은 만큼 × strMinionPct (docs/design/16)
+        return self.BonusMinionPct + math.max(0, self.Str + self.BonusStr - 15) * _GameData.strMinionPct
     end
 
     method number GetSpellPowerPct()
@@ -418,6 +428,37 @@ script PlayerStats extends Component
         else return end
         self.StatPoints = self.StatPoints - 1
         self:Recalculate(false)
+    end
+
+    @ExecSpace("Server")
+    method void RequestAutoStats(string preset)
+        -- 추천 분배 (docs/design/16): 남은 포인트를 성향 비율대로 한 번에 나눈다. 소환형 통솔3·활력2 / 주문형 정신3·활력2 / 균형 통솔2·정신1·활력2
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.StatPoints <= 0 or not _Util:IsAlive(self.Entity) then return end
+        local cycle = { summon = { "Str", "Vit", "Str", "Vit", "Str" }, spell = { "Ene", "Vit", "Ene", "Vit", "Ene" }, balance = { "Str", "Vit", "Ene", "Vit", "Str" } }
+        local order = cycle[preset]
+        if order == nil then return end
+        local spent = 0
+        while self.StatPoints > 0 do
+            local stat = order[spent % #order + 1]
+            if stat == "Str" then self.Str = self.Str + 1
+            elseif stat == "Vit" then self.Vit = self.Vit + 1
+            elseif stat == "Ene" then self.Ene = self.Ene + 1 end
+            self.StatPoints = self.StatPoints - 1
+            spent = spent + 1
+        end
+        self:Recalculate(false)
+        log("[VRF] auto stats " .. preset .. " spent=" .. tostring(spent))
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer ResetStats()
+        -- 능력치 초기화: 시작값(통솔 15 · 민첩 25 · 활력 15 · 정신 25)보다 올린 만큼 돌려준다 (돌려준 포인트 수)
+        local refund = math.max(0, self.Str - 15) + math.max(0, self.Dex - 25) + math.max(0, self.Vit - 15) + math.max(0, self.Ene - 25)
+        self.Str, self.Dex, self.Vit, self.Ene = 15, 25, 15, 25
+        self.StatPoints = self.StatPoints + refund
+        self:Recalculate(false)
+        return refund
     end
 
     -- ───────── 저장 ─────────

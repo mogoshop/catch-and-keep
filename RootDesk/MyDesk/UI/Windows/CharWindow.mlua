@@ -1,4 +1,4 @@
--- 능력치 창 (U): 레벨·생명·마나·피해·저항, 4대 능력치 분배.
+-- 능력치 창 (U): 네크로맨서용 능력치 (통솔·정신·활력·민첩 — docs/design/16). 지금 효과 → 1포인트 더 찍었을 때 미리보기, 추천 분배, 초기화.
 @Logic
 script CharWindow extends Logic
 
@@ -18,6 +18,27 @@ script CharWindow extends Logic
                 if st ~= nil then st:RequestAddStat(stat) end
             end)
         end
+        -- 추천 분배 (docs/design/16): 남은 포인트를 한 번에 — 되돌리기 어려우니 확인을 거친다
+        local presets = { { "Auto1", "summon", "소환형 (통솔 3 : 활력 2)" }, { "Auto2", "spell", "주문형 (정신 3 : 활력 2)" }, { "Auto3", "balance", "균형 (통솔 2 : 정신 1 : 활력 2)" } }
+        for _, p in ipairs(presets) do
+            local key, label = p[2], p[3]
+            _UIKit:Connect(self.Win .. "/" .. p[1], function()
+                ---@type PlayerStats
+                local st = _UIKit:Comp("script.PlayerStats")
+                if st == nil or st.StatPoints <= 0 then return end
+                _ConfirmDialog:Show("추천 분배", "남은 능력치 포인트 " .. tostring(st.StatPoints) .. "을(를)\n" .. label .. "으로 나눕니다.", "분배", function() st:RequestAutoStats(key) end)
+            end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnReset", function()
+            ---@type PlayerStats
+            local st = _UIKit:Comp("script.PlayerStats")
+            ---@type SkillBook
+            local book = _UIKit:Comp("script.SkillBook")
+            if st == nil or book == nil then return end
+            local cost = book:RespecCost(st.Level)
+            local note = cost == 0 and ("무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or (tostring(cost) .. " 골드 · 마을의 사제 오렌·카라반 대장 무하드 곁에서")
+            _ConfirmDialog:Show("능력치 초기화", "투자한 능력치를 모두 돌려받습니다.\n" .. note, "초기화", function() book:RequestRespec("stats") end)
+        end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
     end
 
@@ -41,53 +62,58 @@ script CharWindow extends Logic
         local attack = player:GetComponent("script.PlayerAttack")
         local physical = "—"
         if attack ~= nil then physical = tostring(math.max(1, math.floor(attack:GetBasicPhysicalDamage() + 0.5))) end
-        -- 왼쪽: 캐릭터 능력치를 「기본 · 능력치 투자 · 장비」로 나눠 보여 준다 (장비 몫은 파랑). 장비 효과 전체는 소지품 창에서
+        -- 위: 지금 캐릭터가 어떤 힘을 내는지 (파랑 = 장비 몫). 네크로맨서에게 중요한 순서 — 소환수 · 스킬 피해 · 생존 · 속도
         local gear = "#6E8CFF"
         local baseHp = math.floor(_GameData.playerBaseHp + (st.Level - 1) * _GameData.playerHpPerLevel)
         local vitHp = (st.Vit - 15) * _GameData.vitLife
-        local gearHp = math.floor(pc.MaxHp) - baseHp - vitHp
-        local baseMana = 25 + (st.Level - 1) * 2
-        local eneMana = (st.Ene - 25) * _GameData.eneMana
-        local gearMana = math.floor(st.MaxMana) - baseMana - eneMana
+        local gearHp = math.floor(pc.MaxHp - baseHp - vitHp)
+        local strMinion = math.max(0, st.Str + st.BonusStr - 15) * _GameData.strMinionPct   -- 장비 통솔도 통솔 몫
         local lines = {
             string.format("레벨 %d  ·  네크로맨서  ·  %s", st.Level, _GameConst:DifficultyName(st.Difficulty)),
+            string.format("소환수 공격·생명 +%d%%  = 통솔 %d + ", math.floor(st:GetMinionPct()), math.floor(strMinion)) .. _UIKit:Colored(gear, "장비 " .. tostring(math.floor(st:GetMinionPct() - strMinion))),
+            string.format("스킬 피해 +%d%%  = 정신 %d + ", math.floor(st:GetSpellPowerPct()), math.floor((st.Ene + st.BonusEne) * _GameData.eneSpellPct)) .. _UIKit:Colored(gear, string.format("장비 %d", math.floor(st:GetSpellPowerPct() - (st.Ene + st.BonusEne) * _GameData.eneSpellPct))),
             string.format("생명 %d  = 기본 %d + 활력 %d + ", math.floor(pc.MaxHp), baseHp, vitHp) .. _UIKit:Colored(gear, "장비 " .. tostring(gearHp)),
-            string.format("마나 %d  = 기본 %d + 정신 %d + ", math.floor(st.MaxMana), baseMana, eneMana) .. _UIKit:Colored(gear, "장비 " .. tostring(gearMana)),
-            string.format("평타 물리 %s (저항 전) · 치명 %.1f%% ×%.1f", physical, st:GetBasicCriticalChancePct(), _GameData.basicCritMultiplier),
-            string.format("주문력 +%d%%  = 정신 %d + ", math.floor(st:GetSpellPowerPct()), math.floor(st.Ene * _GameData.eneSpellPct)) .. _UIKit:Colored(gear, string.format("장비 %d", math.floor(st:GetSpellPowerPct()) - math.floor(st.Ene * _GameData.eneSpellPct))),
-            string.format("방어 %d = 민첩 %d + ", math.floor(st:GetDefense()), math.floor(st:GetDefense() - st.BonusDefense)) .. _UIKit:Colored(gear, string.format("장비 %d", math.floor(st.BonusDefense))),
-            string.format("공격 속도 +%.0f%% = 민첩 %.1f + ", st:GetIas(), (st.Dex + st.BonusDex) * _GameData.dexIasPct) .. _UIKit:Colored(gear, string.format("장비 %d", math.floor(st.BonusIas))),
-            _UIKit:Colored(gear, string.format("소환수 +%d%% · 추출 +%d%% · 시전 +%d%% · 이동 +%d%%", math.floor(st.BonusMinionPct), math.floor(st.BonusExtractPct), math.floor(st.BonusFcr), math.floor(st.BonusMs))),
+            string.format("마나 %d · 공격 속도 +%.0f%% · 시전 속도 +%.0f%%", math.floor(st.MaxMana), st:GetIas(), st:GetFcr()),
+            string.format("평타 물리 %s · 치명 %.1f%% · 방어 %d", physical, st:GetBasicCriticalChancePct(), math.floor(st:GetDefense())),
             _UIKit:Colored("#FF7A45", "화염 " .. tostring(st.ResFire)) .. "  " .. _UIKit:Colored("#7AB8FF", "냉기 " .. tostring(st.ResCold)) .. "  "
                 .. _UIKit:Colored("#FFE15A", "번개 " .. tostring(st.ResLight)) .. "  " .. _UIKit:Colored("#7CFF7A", "독 " .. tostring(st.ResPoison)),
             _UIKit:Colored("#8C99B4", "파란 글씨 = 장비 효과 (자세히: 소지품 창)"),
         }
-        -- 실제 표시 내용을 캐시한다. 장비 능력치·피해%·발견 확률도 열린 창에 즉시 반영한다.
         local info = table.concat(lines, "\n")
-        -- 오른쪽: 스탯마다 「합계 (기본·투자·장비)」 + 지금 주는 효과 + 1포인트당 효과. 이 게임에서 각 스탯이 하는 일은 이것이 전부다
-        local str = st.Str + st.BonusStr
-        local dex = st.Dex + st.BonusDex
-        local vit = st.Vit + st.BonusVit
+        -- 아래: 능력치마다 「이름 · 역할」 + 지금 효과, 남은 포인트가 있으면 한 번 더 찍었을 때 (→ 초록)
+        local more = st.StatPoints > 0
+        local green = "#7CFF7A"
+        local function nextOf(now, after, fmt)
+            if not more then return string.format(fmt, now) end
+            return string.format(fmt, now) .. " " .. _UIKit:Colored(green, "→ " .. string.format(fmt, after))
+        end
         local ene = st.Ene + st.BonusEne
+        local dex = st.Dex + st.BonusDex
         local statLines = {
-            Str = self:StatLine("힘", 15, st.Str, st.BonusStr) .. string.format("\n평타 물리 +%.1f%%   (1당 +%g%%)", str * _GameData.strDmgPct, _GameData.strDmgPct),
-            Dex = self:StatLine("민첩", 25, st.Dex, st.BonusDex) .. string.format("\n치명 %.1f%% · 방어 +%d · 공속 +%.1f%%   (1당 치명 +%g%%p · 공속 +%g%% · %d당 방어 +1)", st:GetBasicCriticalChancePct(), math.floor(dex / _GameData.dexPerDefense), dex * _GameData.dexIasPct, _GameData.basicCritPerDex, _GameData.dexIasPct, math.floor(_GameData.dexPerDefense)),
-            Vit = self:StatLine("활력", 15, st.Vit, st.BonusVit) .. string.format("\n생명 +%d   (1당 +%g)", (vit - 15) * _GameData.vitLife, _GameData.vitLife),
-            Ene = self:StatLine("정신", 25, st.Ene, st.BonusEne) .. string.format("\n마나 +%d · 주문력 +%.1f%% · 마나 재생 +%.1f/초   (1당 마나 +%g · 주문력 +%g%%)", (ene - 25) * _GameData.eneMana, ene * _GameData.eneSpellPct, ene * 0.02, _GameData.eneMana, _GameData.eneSpellPct),
+            Str = self:StatLine("통솔", "소환형", 15, st.Str, st.BonusStr) .. "\n소환수 공격·생명 " .. nextOf(st:GetMinionPct(), st:GetMinionPct() + _GameData.strMinionPct, "+%.0f%%"),
+            Ene = self:StatLine("정신", "주문형", 25, st.Ene, st.BonusEne) .. "\n스킬 피해 " .. nextOf(st:GetSpellPowerPct(), st:GetSpellPowerPct() + _GameData.eneSpellPct, "+%.0f%%") .. " · 마나 +" .. tostring(math.floor(_GameData.eneMana)) .. "/점",
+            Vit = self:StatLine("활력", "생존", 15, st.Vit, st.BonusVit) .. "\n생명 " .. nextOf(math.floor(pc.MaxHp), math.floor(pc.MaxHp) + _GameData.vitLife, "%d"),
+            Dex = self:StatLine("민첩", "속도", 25, st.Dex, st.BonusDex) .. "\n공격 속도 " .. nextOf(st:GetIas(), math.min(_GameData.iasCap, st:GetIas() + _GameData.dexIasPct), "+%.1f%%") .. string.format(" · 평타 +%.1f%%", dex * _GameData.dexMeleePct),
         }
-        local points = "남은 능력치 포인트: " .. tostring(st.StatPoints)
-        local key = table.concat({ info, statLines.Str, statLines.Dex, statLines.Vit, statLines.Ene, points }, "|")
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        local cost = book ~= nil and book:RespecCost(st.Level) or 0
+        local reset = cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드 (마을 의뢰인 곁)")
+        local points = more and ("남은 능력치 포인트: " .. tostring(st.StatPoints) .. "  —  [+] 또는 추천 분배") or "남은 포인트 없음 · 레벨업마다 +" .. tostring(math.floor(_GameData.statPerLevel))
+        local key = table.concat({ info, statLines.Str, statLines.Dex, statLines.Vit, statLines.Ene, points, reset }, "|")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Paper/Info", info)
         for _, stat in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetText(self.Win .. "/" .. stat .. "/Text", statLines[stat]) end
         _UIKit:SetText(self.Win .. "/Points", points)
-        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetEnabled(self.Win .. "/" .. s .. "/BtnAdd", st.StatPoints > 0) end
+        _UIKit:SetText(self.Win .. "/BtnReset", reset)
+        for _, s in ipairs({ "Str", "Dex", "Vit", "Ene" }) do _UIKit:SetEnabled(self.Win .. "/" .. s .. "/BtnAdd", more) end
+        for i = 1, 3 do _UIKit:SetEnabled(self.Win .. "/Auto" .. tostring(i), more) end
     end
 
-    method string StatLine(string name, integer start, integer value, integer bonus)
-        -- 「힘 21  기본 15 · 투자 +6 · 장비 +3」 (장비 몫은 파랑)
-        local text = string.format("%s  %d   ", name, value + bonus) .. _UIKit:Colored("#A99F8E", string.format("기본 %d · 투자 +%d", start, value - start))
+    method string StatLine(string name, string role, integer start, integer value, integer bonus)
+        -- 「통솔 21 · 소환형   기본 15 · 투자 +6 · 장비 +3」 (장비 몫은 파랑)
+        local text = string.format("%s %d", name, value + bonus) .. " " .. _UIKit:Colored("#E6C88A", "· " .. role) .. "   " .. _UIKit:Colored("#A99F8E", string.format("기본 %d · 투자 +%d", start, value - start))
         if bonus ~= 0 then text = text .. " · " .. _UIKit:Colored(bonus > 0 and "#6E8CFF" or "#FF7A45", string.format("장비 %+d", bonus)) end
         return text
     end

@@ -120,11 +120,17 @@ T.skills.forEach((r, i) => {
   if (!["command", "soul", "curse"].includes(r.tree)) err("skills", i, `tree '${r.tree}' 알 수 없음`);
   if (r.prereq !== "" && !skillIds.has(r.prereq)) err("skills", i, `prereq '${r.prereq}' — skills.csv에 없음`);
   if (num(r.maxLv) < 1) err("skills", i, "maxLv < 1");
-  if (r.nextLv !== "" && num(r.nextLv) <= num(r.row)) err("skills", i, `nextLv ${r.nextLv} — 요구 레벨(row ${r.row})보다 커야 함`);
+  if (r.nextLv !== "" && num(r.nextLv) > 0 && num(r.nextLv) <= num(r.row)) err("skills", i, `nextLv ${r.nextLv} — 요구 레벨(row ${r.row})보다 커야 함`);
+  // 강화 노드 (docs/design/16): 메인 스킬에 붙고, 필요 메인 랭크가 메인 최대 랭크 안
+  if (r.kind === "node") {
+    const parent = T.skills.find((x) => x.id === r.parent);
+    if (!parent) err("skills", i, `parent '${r.parent}' — skills.csv에 없음`);
+    else if (parent.kind === "node") err("skills", i, `parent '${r.parent}'가 강화 노드 — 메인 스킬이어야 함`);
+    else if (num(r.need) > num(parent.maxLv)) err("skills", i, `need ${r.need} — 메인 최대 랭크 ${parent.maxLv}보다 큼`);
+  } else if ((r.parent || "") !== "") err("skills", i, "메인 스킬에 parent가 있음");
 });
 for (const tree of ["command", "soul", "curse"]) {
-  const n = T.skills.filter((r) => r.tree === tree).length;
-  if (n > 12) err("skills", null, `${tree} 트리 ${n}개 — 스킬 창은 트리당 12칸`);
+  // 10-11: 트리 칸 제한 없음 — 스킬 창은 해금 레벨 순 목록 (docs/design/16)
 }
 
 // 착용 가능한 부위의 외형 RUID는 아이콘과 같은 에셋을 사용한다.

@@ -25,5 +25,5 @@ const first=load('quests')[0];
 assert.equal(first.zone,'굶주린 굴');
 assert.equal(first.objective,'굴 안의 망자 모두 처치');
 assert.match(first.intro,/아니, 넌 숨을 쉬고/);
-assert.equal(first.reward,'skp:1');
+assert.equal(first.reward,'skp:2');
 console.log('[test_csv] 인용·줄바꿈·빈 칸·열 개수·첫 퀘스트 회귀 검사 통과');
