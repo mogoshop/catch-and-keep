@@ -17,6 +17,7 @@ script HudMap extends Logic
     property Vector2 QuestPos = Vector2(0, 0)
     property boolean HasQuestNpc = false
     property table NpcPos = {}                -- NPC 종류 → 위치 (의뢰인 머리 위 「!」)
+    property table NpcLabel = {}              -- NPC 종류 → 이름 (화면 밖 「!」 옆에 붙인다)
     property table Gates = {}               -- 이 맵의 포털 { pos, label }
     property number GateLabelRange = 9
     property integer TerrainCount = 256
@@ -264,7 +265,10 @@ script HudMap extends Logic
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
             end
-            if f.npcKind ~= nil and f.npcKind ~= "" then self.NpcPos[f.npcKind] = Vector2(f.x, f.y) end
+            if f.npcKind ~= nil and f.npcKind ~= "" then
+                self.NpcPos[f.npcKind] = Vector2(f.x, f.y)
+                self.NpcLabel[f.npcKind] = f.label or ""
+            end
         end
         for i = n + 1, self.FeatureCount do _UIKit:SetEnabled("MiniMap/Body/Area/F" .. tostring(i), false) end
         self:PlaceFeatures()
@@ -983,11 +987,29 @@ script HudMap extends Logic
         local screen = _UILogic:WorldToScreenPosition(giverPos + Vector2(0, 1.35))
         local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
         local bob = math.sin(_UtilLogic.ElapsedSeconds * 4) * 6
-        -- NPC가 화면 위쪽 끝에 있어도 「!」는 화면 안 가장자리에 보이게 한다
+        -- NPC가 화면 밖이면 「!」를 화면 가장자리에 화살표 + 이름과 함께 둔다 (10-11 QA: 왼쪽 위 버프 줄 밑에 「!」만 덩그러니 떠서 무엇인지 몰랐다)
+        -- 위쪽은 버프 줄(위 34~94px)·오른쪽 위 미니맵 아래까지 비워 둔다
         local half = root.UITransformComponent.RectSize * 0.5
-        ui = Vector2(math.max(-half.x + 60, math.min(half.x - 60, ui.x)), math.max(-half.y + 80, math.min(half.y - 70, ui.y)))
+        local clamped = Vector2(math.max(-half.x + 140, math.min(half.x - 140, ui.x)), math.max(-half.y + 120, math.min(half.y - 190, ui.y)))
+        local off = clamped.x ~= ui.x or clamped.y ~= ui.y
+        local text = "!"
+        if off then
+            local d = ui - clamped
+            local arrow = math.abs(d.x) >= math.abs(d.y) and (d.x < 0 and "◀ " or "▶ ") or (d.y > 0 and "▲ " or "▼ ")
+            local name = self.NpcLabel[q.giver] or ""
+            text = arrow .. "!" .. (name ~= "" and ("\n<size=22>" .. name .. "</size>") or "")
+        end
+        ui = clamped
         local mark = _UIKit:Get("NpcMark")
-        if isvalid(mark) and mark.TextGUIRendererComponent.FontColor ~= color then mark.TextGUIRendererComponent.FontColor = color end
+        if isvalid(mark) then
+            local tc = mark.TextGUIRendererComponent
+            if tc.FontColor ~= color then tc.FontColor = color end
+            if tc.Text ~= text then
+                tc.Text = text
+                tc.FontSize = off and 56 or 96
+                mark.UITransformComponent.RectSize = off and Vector2(260, 130) or Vector2(90, 120)
+            end
+        end
         _UIKit:SetEnabled("NpcMark", true)
         _UIKit:SetPos("NpcMark", Vector2(ui.x, ui.y + bob))
     end

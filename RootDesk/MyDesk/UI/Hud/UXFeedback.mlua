@@ -12,7 +12,20 @@ script UXFeedback extends Logic
         self.Queue = {}
         self.Until = 0
         _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
+        -- 제목·본문이 칸(430px)보다 길면 글자를 줄인다 (10-11 QA: 「새 스킬 · …」 본문이 테두리 밖으로 나갔다)
+        self:FitText("/ui/RewardHUD/Toast/Title", 18, 28)
+        self:FitText("/ui/RewardHUD/Toast/Body", 15, 22)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitText(string path, integer minSize, integer maxSize)
+        local e = _UIKit:Get(path)
+        if not isvalid(e) or e.TextGUIRendererComponent == nil then return end
+        local t = e.TextGUIRendererComponent
+        t.BestFit = true
+        t.MinSize = minSize
+        t.MaxSize = maxSize
     end
 
     @ExecSpace("ClientOnly")

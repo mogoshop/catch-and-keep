@@ -200,7 +200,11 @@ T.maps.forEach((r, i) => {
   for (const f of r.fixed.split(";")) {
     if (f === "") continue;
     const id = f.split("@")[0];
-    if (!monsterIds.has(id)) err("maps", i, `fixed '${id}' — monsters.csv에 없음`);
+    if (!monsterIds.has(id)) { err("maps", i, `fixed '${id}' — monsters.csv에 없음`); continue; }
+    // 고정 배치 보스는 맵 레벨을 따로 받지 않는다 → 기본 레벨이 그 맵 출현 몬스터보다 낮으면 「최상위 Lv1」로 보인다 (10-11 처형인)
+    const top = Math.max(0, ...(r.spawns || "").split(";").filter(Boolean).map((sp) => num(sp.split(":")[2])));
+    const mon = T.monsters.find((m) => m.id === id);
+    if (top > 0 && num(mon.baseLevel) < top) err("maps", i, `fixed '${id}' 기본 레벨 ${mon.baseLevel} < 이 맵 몬스터 Lv${top}`);
   }
   if (r.waypoint !== "") {
     const id = r.waypoint.split("@")[0];

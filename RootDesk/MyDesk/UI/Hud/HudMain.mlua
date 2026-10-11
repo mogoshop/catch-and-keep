@@ -128,23 +128,23 @@ script HudMain extends Logic
         local list = {}
         local info = _GameConst:ShrineInfo(st.ShrineKind)
         if info ~= nil and st.ShrineUntil > now then
-            table.insert(list, { label = info.short or info.name, color = info.color, left = st.ShrineUntil - now, desc = info.name .. " · " .. info.desc })
+            table.insert(list, { key = "buff_" .. st.ShrineKind, label = info.short or info.name, color = info.color, left = st.ShrineUntil - now, desc = info.name .. " · " .. info.desc })
         end
         ---@type SkillBook
         local book = player:GetComponent("script.SkillBook")
         if book ~= nil and book:GetLevel("command_aura") > 0 then
             local aura = book:GetCommandAura()
-            table.insert(list, { label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
+            table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
                 desc = string.format("호령 · 그림자·언데드 공격·생명 +%d%%, 이동 +%d%%, 모든 저항 +%d", math.floor(aura.atk), math.floor(aura.speed), math.floor(aura.resist)) })
         end
         if st.BoneArmor > 0 then
-            table.insert(list, { label = "뼈갑옷", color = Color(0.85, 0.8, 0.65, 1), left = -1, timeText = tostring(math.floor(st.BoneArmor)), desc = string.format("뼈 갑옷 · 피해 흡수 %d / %d 남음", math.floor(st.BoneArmor), math.floor(st.BoneArmorMax)) })
+            table.insert(list, { key = "buff_bone_armor", label = "뼈갑옷", color = Color(0.85, 0.8, 0.65, 1), left = -1, timeText = tostring(math.floor(st.BoneArmor)), desc = string.format("뼈 갑옷 · 피해 흡수 %d / %d 남음", math.floor(st.BoneArmor), math.floor(st.BoneArmorMax)) })
         end
         if st.ChillUntil > now then
-            table.insert(list, { label = "둔화", color = Color(0.4, 0.65, 1, 1), left = st.ChillUntil - now, desc = "냉기 둔화 · 이동 속도 -40% (냉기 저항이 높을수록 짧다)", debuff = true })
+            table.insert(list, { key = "debuff_chill", label = "둔화", color = Color(0.4, 0.65, 1, 1), left = st.ChillUntil - now, desc = "냉기 둔화 · 이동 속도 -40% (냉기 저항이 높을수록 짧다)", debuff = true })
         end
         if st.PotionCurseUntil > now then
-            table.insert(list, { label = "저주", color = Color(0.75, 0.3, 0.55, 1), left = st.PotionCurseUntil - now, desc = "미라의 저주 · 물약 회복 -30%", debuff = true })
+            table.insert(list, { key = "debuff_potion_curse", label = "저주", color = Color(0.75, 0.3, 0.55, 1), left = st.PotionCurseUntil - now, desc = "미라의 저주 · 물약 회복 -30%", debuff = true })
         end
         self.BuffDescs = {}
         for i = 1, 8 do
@@ -154,9 +154,18 @@ script HudMain extends Logic
             if b ~= nil then
                 _UIKit:SetPos(path, Vector2((i - 1) * 64, 0))   -- 칩 피벗이 왼쪽 가운데
                 self.BuffDescs[i] = b.desc
-                local c = b.color
-                _UIKit:SetColor(path, Color(c.r * 0.55, c.g * 0.55, c.b * 0.55, 0.92))
-                _UIKit:SetText(path .. "/Label", _UIKit:Colored(b.debuff and "#FFB0B0" or "#FFFFFF", b.label))
+                -- 칩 그림(ui_icons.csv의 buff_*·debuff_* — 코덱스)이 있으면 그림 + 남은 시간만, 없으면 색 원 + 짧은 이름
+                local icon = _GameData:GetUiIcon(b.key)
+                if icon ~= "" then
+                    _UIKit:SetIcon(path, icon)
+                    _UIKit:SetColor(path, Color(1, 1, 1, 1))
+                    _UIKit:SetText(path .. "/Label", "")
+                else
+                    local c = b.color
+                    _UIKit:SetIcon(path, _GameData:GetUiIcon("circle"))
+                    _UIKit:SetColor(path, Color(c.r * 0.55, c.g * 0.55, c.b * 0.55, 0.92))
+                    _UIKit:SetText(path .. "/Label", _UIKit:Colored(b.debuff and "#FFB0B0" or "#FFFFFF", b.label))
+                end
                 _UIKit:SetText(path .. "/Time", b.timeText or (b.left >= 0 and (tostring(math.ceil(b.left)) .. "초") or ""))
             end
         end
