@@ -9,7 +9,7 @@ script PlayerTravel extends Component
     @Sync
     property string Visited = ""            -- 한 번이라도 들어간 사냥터 (보통 맵 이름, ","로 연결) — 의뢰 일지 열람 조건 (D2처럼 그 지역에 가면 읽힌다)
     @Sync
-    property integer TownScroll = 2         -- 귀환 두루마리 개수
+    property integer TownScroll = 0         -- 예전 저장의 귀환 두루마리 개수 (10-11부터 가방 물건 — MigrateScrolls가 가방으로 옮기고, 가방이 차서 남은 것만 여기)
     property Entity ReturnGate = nil
     property number WaypointRange = 2.2
     property any ResumeAt = nil              -- 저장된 마지막 사냥터 자리 { m, x, y, t } (재접속 때 한 번 쓴다)
@@ -185,6 +185,18 @@ script PlayerTravel extends Component
     -- ───────── 귀환 두루마리 ─────────
 
     @ExecSpace("ServerOnly")
+    method void MigrateScrolls()
+        -- 예전 저장의 귀환 두루마리 개수(tp)를 가방 물건으로 옮긴다 (불러오기 끝에 한 번). 가방이 가득 차 남은 개수는 TownScroll에 두고 계속 쓸 수 있다
+        if self.TownScroll <= 0 then return end
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        local before = self.TownScroll
+        self.TownScroll = inv:AddStack("tp", before)
+        log("[VRF] 귀환 두루마리 " .. tostring(before - self.TownScroll) .. "장을 가방으로 옮김 (남음 " .. tostring(self.TownScroll) .. ")")
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean UseTownScroll()
         -- 벨트 칸의 귀환 두루마리: 마을로 가고 원래 자리로 돌아가는 포털을 연다
         local pc = self.Entity.PlayerComponent
@@ -195,11 +207,16 @@ script PlayerTravel extends Component
             _Util:Notify("이미 마을이다", pc.UserId)
             return false
         end
-        if self.TownScroll <= 0 then
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv ~= nil and inv:TakeStack("tp", 1) then
+            -- 가방의 귀환 두루마리를 쓴다
+        elseif self.TownScroll > 0 then
+            self.TownScroll = self.TownScroll - 1
+        else
             _Util:Notify("귀환 두루마리가 없다 (상인에게 구입)", pc.UserId)
             return false
         end
-        self.TownScroll = self.TownScroll - 1
         local backMap = map.Name
         local backPos = _Util:Pos2(self.Entity)
         self:GoTown()

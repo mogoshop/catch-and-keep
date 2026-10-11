@@ -1,7 +1,7 @@
 -- 벨트 (D2 벨트): 4칸에 무엇을 넣을지 플레이어가 고른다 — hp 생명 물약 · mp 마나 물약 · rv 회복 물약 · tp 귀환 두루마리 · "" 빈 칸.
 -- 칸 사용: PC 숫자 1~4·칸 클릭, 모바일 물약 칸. 칸 지정: PC 칸 우클릭(빈 칸은 클릭), 모바일 「스킬 편집」 중 물약 칸 → SkillPicker 벨트 모드.
 -- 물약은 가방의 겹치는 물건(하급·중급·고급, shop.csv hp1~3·mp1~3·rv). 벨트 칸 = 종류만 정하고, 마실 때 가방에서 높은 등급부터 쓴다.
--- HpPot·MpPot·RvPot = 가방 속 개수 합 (표시용, PlayerInventory.RefreshDigest가 맞춘다). 귀환 두루마리 개수는 PlayerTravel.TownScroll.
+-- HpPot·MpPot·RvPot·TpPot = 가방 속 개수 합 (표시용, PlayerInventory.RefreshDigest가 맞춘다). 귀환 두루마리도 가방 물건 (10-11).
 @Component
 script PlayerBelt extends Component
 
@@ -12,6 +12,8 @@ script PlayerBelt extends Component
     property integer MpPot = 0
     @Sync
     property integer RvPot = 0
+    @Sync
+    property integer TpPot = 0
     @Sync
     property string Layout = "hp,mp,rv,"   -- 칸 1~4의 물건 (","로 연결, 빈 칸은 빈 문자열)
     property number ReadyAt = 0
@@ -36,9 +38,10 @@ script PlayerBelt extends Component
         if kind == "mp" then return self.MpPot end
         if kind == "rv" then return self.RvPot end
         if kind == "tp" then
+            -- 가방 속 두루마리 + 예전 저장에서 가방이 가득 차 아직 못 옮긴 개수
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel ~= nil then return travel.TownScroll end
+            return self.TpPot + (travel ~= nil and travel.TownScroll or 0)
         end
         return 0
     end
@@ -57,6 +60,7 @@ script PlayerBelt extends Component
         self.HpPot = inv:CountStack("hp1") + inv:CountStack("hp2") + inv:CountStack("hp3")
         self.MpPot = inv:CountStack("mp1") + inv:CountStack("mp2") + inv:CountStack("mp3")
         self.RvPot = inv:CountStack("rv")
+        self.TpPot = inv:CountStack("tp")
     end
 
     @ExecSpace("ServerOnly")

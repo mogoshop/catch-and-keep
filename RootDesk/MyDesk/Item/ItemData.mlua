@@ -54,9 +54,12 @@ script ItemData extends Logic
     -- ───────── 겹치는 물건 (물약·정수) ─────────
 
     method any Consumable(string base)
-        -- 물약 품목 (shop.csv hp1~3·mp1~3·rv). 아니면 nil
+        -- 가방에 겹쳐 넣는 소모품 (shop.csv hp1~3·mp1~3·rv·tp). 아니면 nil
+        -- 10-11: 귀환 두루마리(tp)도 물약처럼 가방 물건 (예전에는 PlayerTravel.TownScroll 숫자만 있어 소지품에 안 보였다)
         local c = _GameData:GetShopItem(base)
-        if c == nil or c.tier <= 0 then return nil end
+        if c == nil then return nil end
+        if c.kind == "tp" then return c end
+        if c.tier <= 0 then return nil end
         if c.kind ~= "hp" and c.kind ~= "mp" and c.kind ~= "rv" then return nil end
         return c
     end
@@ -103,6 +106,9 @@ script ItemData extends Logic
         end
         local c = self:Consumable(item.base)
         if c == nil then return item.name end
+        if c.kind == "tp" then
+            return c.name .. "  ×" .. tostring(item.count) .. "\n마을로 가는 포털을 열고, 포털로 원래 자리에 돌아온다\n「사용」하거나 벨트 칸에 넣어 숫자키(모바일은 물약 칸)로 쓴다"
+        end
         local effect = {}
         if c.hpFlat > 0 then table.insert(effect, "생명 +" .. tostring(c.hpFlat)) end
         if c.manaFlat > 0 then table.insert(effect, "마나 +" .. tostring(c.manaFlat)) end

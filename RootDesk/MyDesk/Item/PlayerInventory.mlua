@@ -28,8 +28,8 @@ script PlayerInventory extends Component
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 새 캐릭터 기본 장비 (저장 데이터가 있으면 PlayerSave가 덮어쓴다)
-        -- 새 캐릭터: 하급 생명 물약 3 · 하급 마나 물약 2
-        self.Bag = { _ItemData:MakeStack("hp1", 3), _ItemData:MakeStack("mp1", 2) }
+        -- 새 캐릭터: 하급 생명 물약 3 · 하급 마나 물약 2 · 귀환 두루마리 2
+        self.Bag = { _ItemData:MakeStack("hp1", 3), _ItemData:MakeStack("mp1", 2), _ItemData:MakeStack("tp", 2) }
         self.Equip = {}
         self.Stash = {}
         self.Equip["weapon"] = self.StarterWeapon
@@ -169,6 +169,12 @@ script PlayerInventory extends Component
         local item = _ItemData:Parse(expectedItem)
         local c = _ItemData:Consumable(item.base)
         if c == nil then return end
+        if c.kind == "tp" then
+            ---@type PlayerTravel
+            local travel = self.Entity:GetComponent("script.PlayerTravel")
+            if travel ~= nil then travel:UseTownScroll() end
+            return
+        end
         ---@type PlayerBelt
         local belt = self.Entity:GetComponent("script.PlayerBelt")
         if belt ~= nil then belt:DrinkBase(item.base) end
@@ -215,10 +221,8 @@ script PlayerInventory extends Component
             if stats ~= nil then stats:AddGold(drop.Amount) end
             msg = "골드 +" .. tostring(drop.Amount)
         elseif drop.Kind == "tp" then
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            if travel == nil then return end
-            travel.TownScroll = travel.TownScroll + math.max(1, drop.Amount)
+            -- 귀환 두루마리는 가방 물건 (물약과 같이 겹친다)
+            if self:AddStack("tp", math.max(1, drop.Amount)) > 0 then return end
             msg = "귀환 두루마리 +" .. tostring(math.max(1, drop.Amount))
         elseif drop.Kind == "hp" or drop.Kind == "mp" then
             -- 예전 방식의 물약 드롭(이미 바닥에 있던 것): 하급 물약으로 가방에
