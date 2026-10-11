@@ -9,6 +9,8 @@ script ClickControl extends Component
 
     property boolean MouseMode = true       -- HUD의 조작 전환 버튼으로 끄고 켠다
     property boolean ExtraKeysBlocked = false
+    property Vector2 FacingDir = Vector2(1, 0)   -- 키보드·모바일 조준 방향: 마지막으로 움직인 쪽 (방향키 8방향 · 조이스틱은 실제 이동 방향)
+    property Vector2 FacingLastPos = Vector2(0, 0)
     property number ArriveDistance = 0.12
     property number AttackReach = 0.9        -- PlayerAttack 범위(앞쪽 0.7 + 폭 1.6)에 맞춘 사거리
     property number PickRadius = 0.6         -- 클릭 지점에서 이 거리 안의 몬스터를 대상으로 본다
@@ -234,6 +236,7 @@ script ClickControl extends Component
         -- 클릭 이동·공격 진행. 방향키를 누르면 즉시 취소
         if self.Entity ~= _UserService.LocalPlayer then return end
         if not self.ExtraKeysBlocked then self:BlockExtraKeys() end
+        self:UpdateFacing()
         if _UIKit:AnyWindowOpen() then
             self:Cancel()
             self:HoldWindowControl()
@@ -525,6 +528,25 @@ script ClickControl extends Component
         self.MouseMode = enabled
         self:Cancel()
         if not enabled then self:StopMove() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateFacing()
+        -- 방향키를 누르고 있으면 그 방향(↓→ = 오른쪽 아래 대각), 아니면 실제로 움직인 방향. 멈춰 있으면 마지막 방향 유지
+        local x, y = 0, 0
+        if _InputService:IsKeyPressed(KeyboardKey.RightArrow) then x = x + 1 end
+        if _InputService:IsKeyPressed(KeyboardKey.LeftArrow) then x = x - 1 end
+        if _InputService:IsKeyPressed(KeyboardKey.UpArrow) then y = y + 1 end
+        if _InputService:IsKeyPressed(KeyboardKey.DownArrow) then y = y - 1 end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local now = Vector2(p.x, p.y)
+        if x ~= 0 or y ~= 0 then
+            self.FacingDir = Vector2(x, y):Normalize()
+        else
+            local moved = now - self.FacingLastPos
+            if moved:Magnitude() > 0.02 and moved:Magnitude() < 1 then self.FacingDir = moved:Normalize() end
+        end
+        self.FacingLastPos = now
     end
 
     @ExecSpace("ClientOnly")

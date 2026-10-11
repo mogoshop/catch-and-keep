@@ -163,6 +163,19 @@ script Util extends Logic
         return list
     end
 
+    method Monster MonsterInCone(Entity map, Vector2 origin, Vector2 dir, number range, number minCos)
+        -- 바라보는 방향 부채꼴(dir과의 각 cos ≥ minCos) 안에서 가장 가까운 몬스터. 키보드·모바일 스킬 조준 보조
+        if dir:Magnitude() < 0.01 then return nil end
+        local d = dir:Normalize()
+        for _, m in ipairs(self:MonstersNear(map, origin, range)) do
+            local q = m.Entity.TransformComponent.WorldPosition
+            local to = Vector2(q.x, q.y) - origin
+            local len = to:Magnitude()
+            if len < 0.3 or (to.x * d.x + to.y * d.y) / len >= minCos then return m end
+        end
+        return nil
+    end
+
     method Monster NearestMonster(Entity map, Vector2 center, number radius)
         local list = self:MonstersNear(map, center, radius)
         return list[1]

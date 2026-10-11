@@ -336,6 +336,14 @@ script PlayerAttack extends AttackComponent
                 local near = _Util:NearestMonster(self.Entity.CurrentMap, cursor, 1.2)
                 if near ~= nil then dir = _Util:Pos2(near.Entity) - me else dir = cursor - me end
             end
+        elseif not visible then
+            -- 키보드·모바일: 스킬이 날아갈 쪽(바라보는 방향·그 앞의 적)을 쐐기로 보여 준다 (SkillBook.GetAimPoint와 같은 규칙)
+            ---@type SkillBook
+            local book = self.Entity:GetComponent("script.SkillBook")
+            if book ~= nil then
+                dir = book:GetAimPoint("bone_shard") - me
+                visible = true
+            end
         end
         if not visible or dir:Magnitude() < 0.08 then self:HideAimIndicator() return end
         dir = dir:Normalize()
