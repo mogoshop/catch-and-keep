@@ -419,7 +419,7 @@ script ShadowUnit extends AttackComponent
                 end
                 self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
-                    self.AttackTimer = self.AttackCooldown / self:AuraMult("haste")
+                    self.AttackTimer = self.AttackCooldown / (self:AuraMult("haste") * (1 + self:OwnerBonus("ias") / 100))
                     self:DoAttack(myPos, toTarget)
                 end
             end
@@ -901,7 +901,21 @@ script ShadowUnit extends AttackComponent
     end
 
     method number GetResist(string element)
-        return (self.Resists[element] or 0) + self.BonusResist
+        -- 장비 「소환수 모든 저항」은 합계가 저항 상한(resistCap)을 넘지 않게만 더한다 (원래 면역인 그림자는 그대로)
+        local r = (self.Resists[element] or 0) + self.BonusResist
+        local gear = self:OwnerBonus("res")
+        if gear <= 0 then return r end
+        return math.max(r, math.min(_GameData.resistCap, r + gear))
+    end
+
+    method number OwnerBonus(string kind)
+        -- 주인 장비의 소환수 공격 속도 %(ias) · 소환수 모든 저항 %(res) (docs/design/19)
+        if not isvalid(self.OwnerPlayer) then return 0 end
+        ---@type PlayerStats
+        local stats = self.OwnerPlayer:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        if kind == "ias" then return stats.BonusMinionIas end
+        return stats.BonusMinionRes
     end
 
     -- ───────── 변종 능력 (원본 몬스터에게서 이어받음) ─────────

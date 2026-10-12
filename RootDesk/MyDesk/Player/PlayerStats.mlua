@@ -85,7 +85,25 @@ script PlayerStats extends Component
     @Sync
     property number BonusMinionPoison = 0    -- 소환수 공격에 독 (초당)
     @Sync
-    property integer BonusAllSkills = 0      -- 배운 모든 스킬 레벨 +N (유니크 고유 효과, 최대 3)
+    property integer BonusAllSkills = 0      -- 배운 모든 스킬 레벨 +N (유니크 고유 효과, 최대 2 · docs/design/19)
+    @Sync
+    property integer BonusTreeCommand = 0    -- 소환 계열 메인 스킬 레벨 +N (최대 3)
+    @Sync
+    property integer BonusTreeSoul = 0       -- 영혼 계열 메인 스킬 레벨 +N (최대 3)
+    @Sync
+    property integer BonusTreeCurse = 0      -- 저주 계열 메인 스킬 레벨 +N (최대 3)
+    @Sync
+    property string BonusSkillLv = ""        -- 단일 스킬 레벨 "bone_spear=2,raise_skeleton=1" (스킬마다 최대 3)
+    @Sync
+    property number BonusSpellDmg = 0        -- 영혼 스킬 피해 %
+    @Sync
+    property number BonusCurseDur = 0        -- 저주 지속 %
+    @Sync
+    property number BonusCurseEff = 0        -- 수치형 저주 효과 %
+    @Sync
+    property number BonusMinionIas = 0       -- 소환수 공격 속도 %
+    @Sync
+    property number BonusMinionRes = 0       -- 소환수 모든 저항 %
     @Sync
     property string ElemDamage = ""          -- 무기 속성 피해 "fire=6,cold=4"
     @Sync
@@ -305,7 +323,22 @@ script PlayerStats extends Component
         self.BonusFcr = v("fcr")
         self.BonusCurse = v("curse")
         self.BonusMinionPoison = v("minionPoison")
-        self.BonusAllSkills = math.min(3, math.floor(v("allSkills")))
+        self.BonusAllSkills = math.min(2, math.floor(v("allSkills")))
+        self.BonusTreeCommand = math.min(3, math.floor(v("treeCommand")))
+        self.BonusTreeSoul = math.min(3, math.floor(v("treeSoul")))
+        self.BonusTreeCurse = math.min(3, math.floor(v("treeCurse")))
+        local single = {}
+        for k, n in pairs(t) do
+            local id = string.match(k, "^sk_([%w_]+)$")
+            if id ~= nil and math.floor(n) > 0 then table.insert(single, id .. "=" .. tostring(math.min(3, math.floor(n)))) end
+        end
+        table.sort(single)
+        self.BonusSkillLv = table.concat(single, ",")
+        self.BonusSpellDmg = v("spellDmg")
+        self.BonusCurseDur = v("curseDur")
+        self.BonusCurseEff = v("curseEff")
+        self.BonusMinionIas = v("minionIas")
+        self.BonusMinionRes = v("minionRes")
         local all = v("allRes")
         self.RawResists = { fire = v("fireRes") + all, cold = v("coldRes") + all, light = v("lightRes") + all, poison = v("poisonRes") + all }
         self:RefreshResists()
@@ -402,8 +435,19 @@ script PlayerStats extends Component
     end
 
     method number GetSpellPowerPct()
-        -- 혼술 피해 보너스: 정신 1당 eneSpellPct% + 장비 피해 %
-        return (self.Ene + self.BonusEne) * _GameData.eneSpellPct + self.BonusDamagePct
+        -- 영혼 스킬 피해 보너스: 정신 1당 eneSpellPct% + 장비 피해 % + 영혼 스킬 피해 % (docs/design/19)
+        return (self.Ene + self.BonusEne) * _GameData.eneSpellPct + self.BonusDamagePct + self.BonusSpellDmg
+    end
+
+    method integer GetSkillLevelBonus(string id, string tree)
+        -- 메인 스킬 하나에 더하는 장비 레벨: 모든 스킬(≤2) + 계열(≤3) + 단일 스킬(≤3) (docs/design/19)
+        local bonus = self.BonusAllSkills
+        if tree == "command" then bonus = bonus + self.BonusTreeCommand
+        elseif tree == "soul" then bonus = bonus + self.BonusTreeSoul
+        elseif tree == "curse" then bonus = bonus + self.BonusTreeCurse end
+        local one = string.match("," .. self.BonusSkillLv, "," .. id .. "=(%d+)")
+        if one ~= nil then bonus = bonus + tonumber(one) end
+        return bonus
     end
 
     method number GetDefense()

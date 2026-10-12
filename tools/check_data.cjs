@@ -52,7 +52,11 @@ function checkMods(table, i, col, text) {
   for (const part of text.split(",")) {
     const m = part.trim().match(/^(\w+)=(-?[\d.]+)$/);
     if (!m) err(table, i, `${col} '${part}' 형식 오류 (키=숫자)`);
-    else if (!statKeys.has(m[1])) err(table, i, `${col}의 '${m[1]}' — stats.csv에 없는 능력치`);
+    else if (m[1].startsWith("sk_")) {
+      // 단일 스킬 레벨 sk_<메인 스킬 id> (docs/design/19)
+      const sk = T.skills.find((s) => s.id === m[1].slice(3));
+      if (!sk || sk.kind === "node") err(table, i, `${col}의 '${m[1]}' — skills.csv에 없는 메인 스킬`);
+    } else if (!statKeys.has(m[1])) err(table, i, `${col}의 '${m[1]}' — stats.csv에 없는 능력치`);
   }
 }
 

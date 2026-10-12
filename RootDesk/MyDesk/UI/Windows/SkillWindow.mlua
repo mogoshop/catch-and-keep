@@ -57,7 +57,7 @@ script SkillWindow extends Logic
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
-        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold)
+        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold) .. "#" .. self:GearLevelKey(st)
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints) .. _UIKit:Colored("#A99F8E", "   · 레벨업마다 +" .. tostring(math.floor(_GameData.skillPerLevel))))
@@ -82,6 +82,8 @@ script SkillWindow extends Logic
                 else
                     if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#B8E0B8" end
                     status = _UIKit:Colored(lv > 0 and "#F4ED83" or "#B8E0B8", tostring(lv) .. "/" .. tostring(cap)) .. (cap < def.maxLv and _UIKit:Colored("#8C99B4", " (" .. tostring(def.maxLv) .. ")") or "")
+                    local gear = st:GetSkillLevelBonus(id, def.tree)
+                    if lv > 0 and gear > 0 then status = status .. _UIKit:Colored("#7CFF7A", " +" .. tostring(gear)) end   -- 장비 스킬 레벨 (docs/design/19)
                 end
                 _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, def.name) .. "\n" .. status)
                 _UIKit:SetIcon(path .. "/Icon", def.icon)
@@ -101,9 +103,8 @@ script SkillWindow extends Logic
         local def = _SkillData:Get(self.SelMain)
         if def == nil then return end
         local lv = book:GetLevel(self.SelMain)
-        local tags = { command = "소환", soul = "혼술", curse = "저주" }
-        _UIKit:SetText(self.Win .. "/Detail/Name", def.name .. "  " .. _UIKit:Colored("#8C99B4", tags[def.tree] or ""))
-        local summary = book:GetRankSummary(self.SelMain, math.max(1, lv))
+        _UIKit:SetText(self.Win .. "/Detail/Name", def.name .. "  " .. _UIKit:Colored("#8C99B4", _SkillData:TreeName(def.tree)))
+        local summary = book:GetRankSummary(self.SelMain, lv > 0 and book:GetPowerLevel(self.SelMain) or 1)
         local desc = def.desc
         if summary ~= "" then desc = desc .. "\n" .. _UIKit:Colored("#F4ED83", (lv > 0 and "지금: " or "배우면: ") .. summary) end
         _UIKit:SetText(self.Win .. "/Detail/Desc", desc)
@@ -140,12 +141,16 @@ script SkillWindow extends Logic
         local cap = book:RankCap(self.Selected, st.Level)
         local head = def.name .. "  " .. tostring(level) .. "/" .. tostring(isNode and def.maxLv or cap)
         if not isNode and cap < def.maxLv then head = head .. _UIKit:Colored("#8C99B4", "  (지금 상한 " .. tostring(cap) .. " · " .. tostring(cap + 1) .. "랭크는 Lv" .. tostring(book:NextRankLevel(self.Selected, cap + 1)) .. "부터 · 최대 " .. tostring(def.maxLv) .. ")") end
+        -- 장비 스킬 레벨(모든·계열·단일)은 배운 메인 스킬의 효과에만 더한다 (docs/design/19)
+        local gear = 0
+        if not isNode and level > 0 then gear = st:GetSkillLevelBonus(self.Selected, def.tree) end
+        if gear > 0 then head = head .. _UIKit:Colored("#7CFF7A", "  장비 +" .. tostring(gear) .. " → 효과 " .. tostring(level + gear) .. "랭크") end
         local growth = ""
-        local current = book:GetRankSummary(self.Selected, math.max(1, level))
+        local current = book:GetRankSummary(self.Selected, math.max(1, level) + gear)
         if current ~= "" then
             growth = "\n" .. (level == 0 and "배우면: " or "지금: ") .. current
             if level > 0 and level < def.maxLv then
-                local nextRank = book:GetRankSummary(self.Selected, level + 1)
+                local nextRank = book:GetRankSummary(self.Selected, level + 1 + gear)
                 growth = growth .. "   " .. (nextRank == current and "다음: 효과 동일" or ("다음: " .. _UIKit:Colored("#7CFF7A", nextRank)))
             end
         elseif isNode then
@@ -160,6 +165,11 @@ script SkillWindow extends Logic
         local learn = _UIKit:Colored("#AACCAA", "배울 수 있음 · 한 번 더 누르면 +1")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         return head .. growth .. mana .. "\n" .. learn
+    end
+
+    method string GearLevelKey(PlayerStats st)
+        -- 장비 스킬 레벨·저주 수치가 바뀌면 다시 그린다
+        return tostring(st.BonusAllSkills) .. tostring(st.BonusTreeCommand) .. tostring(st.BonusTreeSoul) .. tostring(st.BonusTreeCurse) .. st.BonusSkillLv .. "#" .. tostring(st.BonusCurseDur) .. "#" .. tostring(st.BonusCurseEff) .. "#" .. tostring(st.BonusSpellDmg)
     end
 
     @ExecSpace("ClientOnly")
