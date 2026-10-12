@@ -64,10 +64,17 @@ function checkMods(table, i, col, text) {
 T.item_bases.forEach((r, i) => {
   if (!SLOTS.has(r.slot)) err("item_bases", i, `slot '${r.slot}' 알 수 없음`);
   if (!["", "true", "false"].includes(r.drop || "")) err("item_bases", i, "drop — 빈칸 / true / false");
+  // 베이스 3등급 (docs/design/19): 0 일반형 Lv1~30 · 1 강화형 31~60 · 2 정예형 61~90
+  const g = r.grade || "0";
+  if (!["0", "1", "2"].includes(g)) err("item_bases", i, "grade — 0 / 1 / 2");
+  else if (num(r.reqLv) > [30, 60, 90][num(g)] || num(r.reqLv) < [1, 31, 61][num(g)]) err("item_bases", i, `grade ${g}인데 reqLv ${r.reqLv} — 등급 구간 밖`);
 });
 T.item_affixes.forEach((r, i) => {
   if (!statKeys.has(r.stat)) err("item_affixes", i, `stat '${r.stat}' — stats.csv에 없음`);
   if (num(r.min) > num(r.max)) err("item_affixes", i, "min > max");
+  // 난이도 구간 (docs/design/19): 0 보통 · 1 악몽(아이템 레벨 31~) · 2 지옥(61~)
+  if (!["0", "1", "2"].includes(r.tier || "0")) err("item_affixes", i, "tier — 0 / 1 / 2");
+  else if (num(r.minIlvl) < [1, 31, 61][num(r.tier || 0)]) err("item_affixes", i, `tier ${r.tier}인데 minIlvl ${r.minIlvl} — 그 난이도 첫 아이템 레벨보다 낮다`);
   for (const s of r.slots.split(/[,;|]/)) if (s !== "" && s !== "any" && !SLOTS.has(s)) err("item_affixes", i, `slots '${s}' 알 수 없음`);
 });
 unique("item_uniques", "id");

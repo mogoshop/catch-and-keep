@@ -469,8 +469,15 @@ script ItemData extends Logic
         return self:Serialize(item)
     end
 
+    method string GradeName(integer grade)
+        -- 베이스 등급 이름: 0 일반형 · 1 강화형 · 2 정예형 (D2의 일반·익셉셔널·엘리트)
+        if grade == 2 then return "<color=#E0B0FF>정예형</color>" end
+        if grade == 1 then return "<color=#9FD3FF>강화형</color>" end
+        return "일반형"
+    end
+
     method integer TierOfLevel(integer ilvl)
-        -- 아이템 레벨이 속한 난이도 구간: 악몽 가산(20)까지 보통, 지옥 가산(40)까지 악몽, 그 위 지옥 (difficulty.csv levelBonus)
+        -- 아이템 레벨이 속한 난이도 구간: 악몽 가산(30)까지 보통, 지옥 가산(60)까지 악몽, 그 위 지옥 (difficulty.csv levelBonus)
         if ilvl > _GameData:GetDifficulty(2).levelBonus then return 2 end
         if ilvl > _GameData:GetDifficulty(1).levelBonus then return 1 end
         return 0
@@ -497,17 +504,15 @@ script ItemData extends Logic
     end
 
     method integer RollAffix(any a, integer ilvl)
-        -- 접사 값: [min, max] × gearMult × 난이도 상한. 같은 난이도에서도 레벨이 높을수록 범위의 위쪽에서 굴린다
-        --   (Lv1 = 아래 40% 안, 난이도 끝 레벨 = 위 40% 안 — 사냥터를 옮기면 같은 옵션도 수치가 오른다)
-        local scale = _GameData.gearMult * self:GearTier(ilvl)
-        -- 이동 속도는 고정 수치형 옵션 — 장비 배율·난이도 상한을 곱하지 않는다 (0.42배가 되어 4~8%만 붙던 것)
-        if a.stat == "ms" then scale = 1 end
+        -- 접사 값: [min, max] × gearMult × gearTierNormal. 난이도마다 따로 수치 구간을 가진 행(tier 0 보통 · 1 악몽 · 2 지옥)이 있다 (docs/design/19)
+        --   같은 난이도에서도 레벨이 높을수록 범위의 위쪽에서 굴린다 (난이도 첫 레벨 = 아래 40% 안, 끝 레벨 = 위 40% 안)
+        local scale = _GameData.gearMult * _GameData.gearTierNormal
+        -- 이동 속도·레벨형(스킬 +N)은 고정 수치형 옵션 — 배율을 곱하지 않는다
+        if a.stat == "ms" or self:IsCountStat(a.stat) then scale = 1 end
         local lo = math.max(1, math.floor(a.min * scale))
         local hi = math.max(lo, math.floor(a.max * scale + 0.5))
         local t = self:LevelProgress(ilvl)
-        -- 보통: 아래 40% → 위 40%. 악몽·지옥은 상한이 커지는 만큼 30~70%에서 시작해 이전 난이도 끝보다 떨어지지 않게
         local fromK, toK = 0.6 * t, 0.4 + 0.6 * t
-        if self:TierOfLevel(ilvl) > 0 then fromK, toK = 0.3 + 0.5 * t, 0.7 + 0.3 * t end
         local from = math.floor(lo + (hi - lo) * fromK)
         local to = math.max(from, math.floor(lo + (hi - lo) * toK + 0.5))
         return _UtilLogic:RandomIntegerRange(from, to)
@@ -572,13 +577,16 @@ script ItemData extends Logic
 
     method any PickAffix(boolean prefix, string slot, integer ilvl, table used)
         -- 아이템 레벨보다 15 넘게 낮은 옵션은 덜 나온다 (상위 옵션이 묽어지지 않게)
+        -- 난이도 구간(tier): 아이템 레벨의 난이도 행이 기본, 한 단계 아래 행은 1/4 확률, 그보다 아래는 안 나온다 (docs/design/19)
         local pool = {}
         local weights = {}
+        local tier = self:TierOfLevel(ilvl)
         for _, a in ipairs(self:T().Affixes) do
-            if a.prefix == prefix and a.ilvl <= ilvl and not used[a.stat .. tostring(a.prefix)]
+            if a.prefix == prefix and a.ilvl <= ilvl and not used[a.stat .. tostring(a.prefix)] and a.tier >= tier - 1 and a.tier <= tier
                 and (a.slots == "any" or string.find("," .. a.slots .. ",", "," .. slot .. ",", 1, true) ~= nil) then
                 table.insert(pool, a)
                 local w = self:OldWeight(a.ilvl, ilvl, 15)
+                if a.tier < tier then w = w * 0.25 end
                 -- 신발의 이동 속도 옵션은 더 자주 (bootsMoveMult)
                 if a.stat == "ms" and slot == "boots" then w = w * _GameData.bootsMoveMult end
                 table.insert(weights, w)
@@ -718,6 +726,7 @@ script ItemData extends Logic
                 .. "\n등불에 삽입: " .. self:ModsText(rune.lamp)
         end
         local base = self:GetBase(item.base)
+        if base ~= nil and (base.grade or 0) > 0 then name = name .. " · " .. self:GradeName(base.grade) end   -- 베이스 등급 (docs/design/19)
         if base ~= nil and base.reqLv > 1 then name = name .. " · 요구 레벨 " .. tostring(base.reqLv) end
         local total = self:GetTotalMods(s)
         local keys = {}

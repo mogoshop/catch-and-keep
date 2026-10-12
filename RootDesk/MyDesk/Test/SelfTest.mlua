@@ -123,6 +123,34 @@ script SelfTest extends Logic
         -- 계열 능력치 (docs/design/19): 이름표, 레벨형은 배율로 줄이지 않는다
         self:Check("tree stats", _ItemData:StatName("treeCommand") == "소환 스킬 레벨" and _ItemData:StatName("sk_bone_spear") == "뼈 창 레벨" and _ItemData:StatValueText("sk_raise_skeleton", 2) == "해골 전사 레벨 +2" and _ItemData:IsCountStat("treeSoul") and _ItemData:IsCountStat("sk_bone_spear") and not _ItemData:IsCountStat("spellDmg"), _ItemData:StatName("sk_bone_spear") .. " · " .. _ItemData:StatValueText("sk_raise_skeleton", 2))
         self:Check("tree scale", _ItemData:ScaleMods("treeCurse=2,sk_bone_spear=3") == "treeCurse=2,sk_bone_spear=3", _ItemData:ScaleMods("treeCurse=2,sk_bone_spear=3"))
+        -- 베이스 3등급 · 옵션 난이도 구간 (docs/design/19 2단계)
+        local slotsByGrade = { {}, {}, {} }
+        for _, id in ipairs(t.BaseOrder) do
+            local b = t.Bases[id]
+            slotsByGrade[(b.grade or 0) + 1][b.slot] = true
+        end
+        local gradeOk = true
+        for g = 1, 3 do
+            for _, slot in ipairs({ "weapon", "offhand", "helm", "armor", "gloves", "boots", "belt", "amulet", "ring" }) do
+                if not slotsByGrade[g][slot] then gradeOk = false end
+            end
+        end
+        self:Check("base grades", gradeOk, "일반·강화·정예형마다 9부위 베이스가 있다")
+        local hellBaseOk, lowAffixOk, highAffixOk = true, true, true
+        for i = 1, 25 do
+            local hb = t.Bases[_ItemData:PickBase(80)]
+            if hb.reqLv < 40 then hellBaseOk = false end
+            local hi = _ItemData:PickAffix(i % 2 == 0, "amulet", 75, {})
+            if hi ~= nil and hi.tier < 1 then highAffixOk = false end
+            local lo = _ItemData:PickAffix(i % 2 == 0, "amulet", 15, {})
+            if lo ~= nil and lo.tier ~= 0 then lowAffixOk = false end
+        end
+        self:Check("hell bases", hellBaseOk, "아이템 레벨 80 베이스는 요구 레벨 40 이상")
+        self:Check("affix tiers", lowAffixOk and highAffixOk, "보통은 보통 구간 옵션만, 지옥은 악몽·지옥 구간만")
+        local tierRow = nil
+        for _, a in ipairs(t.Affixes) do if a.id == "treeSoul_p2" then tierRow = a end end
+        local skillRoll = tierRow ~= nil and _ItemData:RollAffix(tierRow, 90) or 0
+        self:Check("tree affix roll", skillRoll >= 2 and skillRoll <= 3, "지옥 「명계 술사의」 영혼 스킬 +" .. tostring(skillRoll))
         self:Check("tree names", _SkillData:TreeName("command") == "소환" and _SkillData:TreeName("soul") == "영혼" and _SkillData:TreeName("curse") == "저주", "소환·영혼·저주")
         self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen") ~= nil, "여왕 전용 유니크")
         self:Check("act2 boss", _ItemData:PickUnique(21, "high_priest") ~= nil, "대사제 전용 유니크")
