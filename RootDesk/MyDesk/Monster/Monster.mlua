@@ -30,6 +30,7 @@ script Monster extends Component
     property integer BaseLevel = 0
     property number BaseSpeed = 0
     property boolean LevelApplied = false
+    property number StatMul = 1              -- 맵 생명·공격 배율 (MapAmbience.StatMul)
     property Entity LastAttacker = nil
     property table Contributors = {}        -- 이번 생에 피해를 준 플레이어(소환수는 주인) userId → 플레이어 (개인 보상 대상)
     property Vector2 SpawnPosition = Vector2(0, 0)
@@ -67,7 +68,8 @@ script Monster extends Component
             if not isvalid(self.Entity) or self.LevelApplied then return end
             ---@type MapAmbience
             local amb = self.Entity.CurrentMap:GetComponent("script.MapAmbience")
-            if amb ~= nil and amb.LevelBonus > 0 then self:ApplyLevel(self.Level + amb.LevelBonus, false) end
+            if amb ~= nil and amb.LevelBonus > 0 then self:ApplyLevel(self.Level + amb.LevelBonus, false)
+            elseif amb ~= nil and amb.StatMul ~= 1 then self:ApplyLevel(self.Level, false) end
         end, 0.3)
     end
 
@@ -78,6 +80,11 @@ script Monster extends Component
         -- 스포너·심도·맵 난이도: 레벨에 맞춰 생명·공격 조정, 정예면 등급 2 (06장 2절)
         self.LevelApplied = true
         self.Level = level
+        -- 맵 생명·공격 배율 (액트 1 3번 맵부터 1.3 등, maps.csv statMul)
+        local map = self.Entity.CurrentMap
+        ---@type MapAmbience
+        local amb = isvalid(map) and map:GetComponent("script.MapAmbience") or nil
+        self.StatMul = (amb ~= nil and amb.StatMul > 0) and amb.StatMul or 1
         if elite and self.Grade == 1 then self.Grade = 2 end
         ---@type MonsterAttack
         local atk = self.Entity:GetComponent("script.MonsterAttack")
@@ -101,6 +108,7 @@ script Monster extends Component
         local hp = self.BaseHp * (1 + k * (self.Level - 1)) / (1 + k * (self.BaseLevel - 1))
         if self.Grade == 2 and not self.Unique then hp = hp * _GameData.eliteHpMul end
         if self.Grade >= 3 then hp = hp * _GameData.bossHpMul end   -- 10-10 QA: 보스가 너무 약했다
+        hp = hp * self.StatMul
         local traits = self:Traits()
         if traits ~= nil then hp = hp * traits.HpMult end
         self.MaxHp = math.max(1, hp)

@@ -306,6 +306,7 @@ function ambience(d) {
     DisplayName: d.name, Ambient: num(d.ambient), PlayerLightRadius: num(d.lightRadius),
     Bgm: d.bgm, Wind: bool(d.wind), Crows: bool(d.crows), Difficulty: 0, LevelBonus: 0,
     Storm: num(d.storm, 0),
+    StatMul: num(d.statMul, 1),
   };
 }
 
