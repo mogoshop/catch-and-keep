@@ -14,6 +14,9 @@ script MonsterTraits extends Component
     property number NovaWarnSeconds = 1.7     -- 변종 범위 기술 예고 시간 (10-10 QA: 1.2초는 너무 빨라 피하기 어려웠다)
     @Sync
     property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
+    @Sync
+    property boolean Champion = false        -- 스포너가 만든 변종 우두머리 (몸을 푸르게 — 고유 몬스터의 타고난 변종은 아니다)
+    property string ChampionTint = "0.55,0.72,1"   -- 변종 우두머리 몸 색 (10-12 사용자: 갑자기 나타나도 우두머리인지 알아보게)
     property number AbilityTimer = 1
     property number CloudSeconds = 4          -- 독안개 지속
     property number CloudTick = 0.5           -- 독안개 피해 간격
@@ -48,6 +51,7 @@ script MonsterTraits extends Component
         self.SpeedMult = 1
         self.Affix = ""
         self.AffixElement = ""
+        self.TintSync = self.Champion and self.ChampionTint or self.Tint
         if self.Variant == "" then self.Variant = self:InnateVariant() end
         local v = _GameData:GetVariant(self.Variant)
         if v ~= nil and v.weight > 0 then
@@ -76,6 +80,21 @@ script MonsterTraits extends Component
             self.Affix = "번개 인챈트"
             self.AffixElement = "light"
         end
+    end
+
+    method string AuraEffect()
+        -- 오오라 변종이면 효과 이름(dmg·haste·guard), 아니면 "" — 발밑 오오라 표시용 (MotionSmoother.PlaceAura)
+        if self.Variant == "" then return "" end
+        local v = _GameData:GetVariant(self.Variant)
+        if v == nil or v.kind ~= "aura" then return "" end
+        return v.effect
+    end
+
+    method Color AuraColor(string effect)
+        -- 발밑 오오라 색: 광기 붉은색 · 질풍 노란색 · 수호 하늘색
+        if effect == "dmg" then return Color(1, 0.32, 0.22, 0.95) end
+        if effect == "haste" then return Color(1, 0.85, 0.3, 0.95) end
+        return Color(0.35, 0.8, 1, 0.95)
     end
 
     method string InnateVariant()

@@ -57,6 +57,8 @@ script MotionSmoother extends Logic
     property any ShadowCache = nil
     property boolean UseProxy = true         -- 소환수는 몸 그림을 클라이언트 전용 자식(MSVis)으로 그린다 (아래 PlaceVis)
     property boolean MonsterProxy = true     -- 몬스터도 같은 대역으로 그린다 (10-11 QA: 몬스터도 끊긴다 — 루트에 쓴 위치는 서버 위치가 올 때마다 덮어써진다)
+    property string AuraRingRUID = "ea61dc5ba8ce4ddd8287cba1d9566121"   -- 오오라 몬스터 발밑 원 (소환수 AllyRing과 같은 그림)
+    property number AuraFxAlpha = 0.35       -- 발밑 원 위 오오라 입자 진하기
     property integer StatFlip = 0            -- 점검용: 소환수 좌우를 바꿔 쓴 횟수
     property integer StatSwitch = 0          -- 점검용: 직접 그리기 ↔ 보간 전환 횟수
     property integer StatReverse = 0         -- 점검용: 화면에서 움직이던 방향과 반대로 꺾인 프레임 수 (뒤로 갔다 앞으로)
@@ -558,6 +560,7 @@ script MotionSmoother extends Logic
         local vt = vis.TransformComponent
         vt.Scale = Vector3(math.abs(sc.x) * sign, math.abs(sc.y), sc.z)
         vt.WorldPosition = Vector3(x, y, p.z)
+        if r.monster then self:PlaceAura(r, vis, dst, sc) end
         if r.visRing ~= nil and isvalid(r.visRing) and isvalid(r.ring) then
             local a, b = r.ring.SpriteRendererComponent, r.visRing.SpriteRendererComponent
             if b.SpriteRUID ~= a.SpriteRUID then b.SpriteRUID = a.SpriteRUID end
@@ -586,6 +589,52 @@ script MotionSmoother extends Logic
             if isvalid(r.unit) then r.unit:UpdateHpBar() end
         end
         return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlaceAura(any r, Entity vis, SpriteRendererComponent dst, Vector3 sc)
+        -- 오오라 변종(변종 우두머리·처형인·바르그)의 발밑 오오라: 대역 아래 원 + 은은한 오오라 입자 (10-12 사용자: 소환수 발밑 원처럼).
+        -- 대역(MSVis)의 자식이라 몸과 함께 움직인다. 효과가 바뀌거나 쓰러지면 다시 만들거나 지운다
+        if r.traits == nil then r.traits = r.e:GetComponent("script.MonsterTraits") or false end
+        if r.mon == nil then r.mon = r.e:GetComponent("script.Monster") or false end
+        local effect = r.traits and r.traits:AuraEffect() or ""
+        if r.mon and r.mon.IsDead then effect = "" end
+        if effect ~= (r.auraKey or "") then
+            r.auraKey = effect
+            self:DropAura(r)
+            if effect ~= "" then
+                local ring = _SpawnService:SpawnByModelId("artsprite", "MSVisAura", vis.TransformComponent.WorldPosition, vis)
+                if isvalid(ring) then
+                    -- artsprite 기본 그림(모래 바닥)이 보이지 않게 만들자마자 원 그림으로
+                    ring.SpriteRendererComponent.SpriteRUID = self.AuraRingRUID
+                    local c = r.traits:AuraColor(effect)
+                    ring.SpriteRendererComponent.Color = c
+                    r.visAura = ring
+                    r.auraFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, ring, Vector3(0, 0.05, 0), 0, Vector3(0.9, 0.9, 1), true, { Color = Color(c.r, c.g, c.b, self.AuraFxAlpha) })
+                    -- 원 크기: 몸 키에 맞춰 0.95~1.8칸
+                    local stats = r.mon and _GameData:GetMonsterStats(r.mon.SourceId) or nil
+                    local bh = stats ~= nil and ((stats.bh ~= nil and stats.bh > 0) and stats.bh or stats.h) or 90
+                    r.auraSize = math.max(0.95, math.min(1.8, bh / 100))
+                end
+            end
+        end
+        local ring = r.visAura
+        if ring == nil or not isvalid(ring) then return end
+        -- 몸 바로 뒤, 그림자 앞 (그림자는 z 0.001)
+        local rs = ring.SpriteRendererComponent
+        if rs.SortingLayer ~= dst.SortingLayer then rs.SortingLayer = dst.SortingLayer end
+        if rs.OrderInLayer ~= dst.OrderInLayer - 1 then rs.OrderInLayer = dst.OrderInLayer - 1 end
+        local px, py = math.max(0.05, math.abs(sc.x)), math.max(0.05, math.abs(sc.y))
+        ring.TransformComponent.Scale = Vector3(r.auraSize / px, r.auraSize / py, 1)
+        ring.TransformComponent.Position = Vector3(0, 0.03 / py, 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DropAura(any r)
+        if r.auraFx ~= nil and r.auraFx ~= 0 then _ParticleService:RemoveParticle(r.auraFx) end
+        r.auraFx = nil
+        if r.visAura ~= nil and isvalid(r.visAura) then r.visAura:Destroy() end
+        r.visAura = nil
     end
 
     @ExecSpace("ClientOnly")
@@ -623,6 +672,8 @@ script MotionSmoother extends Logic
         if r.ring ~= nil and isvalid(r.ring) then r.ring:SetEnable(true, false, false) end
         if r.visShadow ~= nil and isvalid(r.e) and isvalid(r.e.KinematicbodyComponent) then r.e.KinematicbodyComponent.EnableShadow = true end
         r.visShadow = nil
+        self:DropAura(r)
+        r.auraKey = nil
         if isvalid(r.vis) then r.vis:Destroy() end
         r.vis = nil
         r.visRing = nil
