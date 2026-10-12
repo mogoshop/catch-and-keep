@@ -1,0 +1,142 @@
+-- 맵 이동 화면 (클라이언트, 10-12): 로딩 창이 없어 이동할 때 이전 맵 → 빈 화면 → 새 맵이 보이고,
+-- 카메라가 이전 자리에서 캐릭터 쪽으로 미끄러져 오는 것(감쇠 0.8)까지 그대로 보였다.
+--   1. 덮기: 서버 PlayerTravel:Go가 이동 직전에 Begin(도착 맵)을 보낸다 → 바로 검게 덮고 도착지 이름·지역을 띄운다.
+--      다른 길로 맵이 바뀌어도(방 이동·부활 등) 맵이 바뀐 걸 보는 순간 덮는다.
+--   2. 맞추기: 덮여 있는 동안 카메라 감쇠를 0으로 → 새 맵에서 캐릭터에 바로 붙는다.
+--   3. 걷기: 새 맵에 도착하고 HoldAfter초 뒤 FadeOut초 동안 걷어 내고, 맵 배너를 그때부터 띄운다 (HudMap.RestartBanner).
+-- 그림: StoryHUD/SafeArea/Fade (tools/build/story.cjs). 배경 그림 ui_icons loading_act1~3 (없으면 검은 바탕)
+@Logic
+script MapTransition extends Logic
+
+    property string Root = "/ui/StoryHUD/SafeArea/Fade"
+    property boolean Active = false
+    property string Target = ""               -- 도착 맵 이름 ("" = 맵이 바뀐 걸 보고 덮은 경우)
+    property string FromMapId = ""
+    property string LastMapId = ""
+    property number ArrivedAt = 0
+    property number FadeStart = 0
+    property number StartedAt = 0
+    property number HoldAfter = 1.0           -- 도착 뒤 덮어 두는 시간 (바닥 타일이 1초 안팎 늦게 그려진다 — 10-12 메이커 확인)
+    property number FadeOut = 0.35
+    property number Timeout = 8               -- 도착을 못 보면 이 시간 뒤 걷는다
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Active = false
+        _UIKit:SetEnabled(self.Root, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Begin(string mapName)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        local cur = isvalid(player.CurrentMap) and player.CurrentMap or nil
+        self.Target = mapName
+        self.FromMapId = cur ~= nil and cur.Id or ""
+        self.ArrivedAt = 0
+        -- 같은 맵 안 이동(웨이포인트 없이 자리만 옮김)은 맵이 안 바뀌니 곧바로 도착으로 본다
+        if cur ~= nil and cur.Name == mapName then self.ArrivedAt = _UtilLogic.ElapsedSeconds + 0.15 end
+        self:Show(mapName)
+        log("[VRF] map transition cover → " .. mapName .. (self.ArrivedAt > 0 and " (same map)" or ""))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string mapName)
+        local now = _UtilLogic.ElapsedSeconds
+        self.Active = true
+        self.StartedAt = now
+        self.FadeStart = 0
+        local base = _GameConst:BaseMapName(mapName)
+        local info = _GameData:GetMapInfo(base)
+        local act = _GameConst:ActOfMap(base)
+        local name = info ~= nil and info.name or ""
+        local region = "제" .. tostring(act) .. "장 · " .. _GameConst:ActRegionName(act)
+        if info ~= nil and info.kind == "instance" then
+            name = "심도 던전"
+            region = "끝없이 내려가는 곳"
+        end
+        _UIKit:SetText(self.Root .. "/Name", name)
+        _UIKit:SetText(self.Root .. "/Region", name ~= "" and region or "")
+        _UIKit:SetIcon(self.Root .. "/Art", _GameData:GetUiIcon("loading_act" .. tostring(act)))
+        self:SetAlpha(1)
+        _UIKit:SetEnabled(self.Root, true)
+        self:SnapCamera(true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideSkyBackground(Entity map)
+        -- 메이플 기본 하늘 배경(Template)이 맵에 들어갈 때 밝게 드러났다 (황무지 map01, 10-12 메이커 확인).
+        -- Type·SolidColor는 스크립트로 못 바꾼다 ("no such field") → 배경을 꺼서 검은 바탕이 되게 한다
+        if not isvalid(map) then return end
+        local bg = map:GetChildByName("Background")
+        if not isvalid(bg) or bg.BackgroundComponent == nil then return end
+        if bg.BackgroundComponent.Type == BackgroundType.Template and bg.BackgroundComponent.Enable then
+            bg.BackgroundComponent.Enable = false
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetAlpha(number a)
+        local e = _UIKit:Get(self.Root)
+        if isvalid(e) and e.CanvasGroupComponent ~= nil then e.CanvasGroupComponent.GroupAlpha = a end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SnapCamera(boolean snap)
+        -- 덮여 있는 동안은 감쇠 0 (캐릭터에 바로 붙는다), 걷을 때 원래 값 (HudMain.CamDamping)
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if not isvalid(cam) then return end
+        cam.Damping = snap and Vector2(0, 0) or _HudMain.CamDamping
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local mapId = player.CurrentMap.Id
+        local changed = mapId ~= self.LastMapId
+        self.LastMapId = mapId
+        if not self.Active then
+            -- 서버 안내 없이 맵이 바뀌었다 (방 이동·부활 등): 바로 덮고 곧 걷는다. 첫 접속은 로딩 화면이 따로 있다
+            if changed and self.FromMapId ~= "" then
+                self.FromMapId = mapId
+                self.Target = ""
+                self:Show(player.CurrentMap.Name)
+                self.ArrivedAt = now
+                self:HideSkyBackground(player.CurrentMap)
+            elseif changed then
+                self.FromMapId = mapId
+                self:HideSkyBackground(player.CurrentMap)
+            end
+            return
+        end
+        if self.ArrivedAt <= 0 and mapId ~= self.FromMapId then
+            self.ArrivedAt = now
+            self:HideSkyBackground(player.CurrentMap)
+            log("[VRF] map transition arrived " .. string.format("%.2f", now - self.StartedAt) .. "s after cover")
+        end
+        local spin = _UIKit:Get(self.Root .. "/Spin")
+        if isvalid(spin) then spin.UITransformComponent.ZRotation = spin.UITransformComponent.ZRotation - delta * 120 end
+        if self.FadeStart <= 0 then
+            self:SnapCamera(true)
+            local arrived = self.ArrivedAt > 0 and now >= self.ArrivedAt + self.HoldAfter
+            if arrived or now - self.StartedAt > self.Timeout then
+                self.FadeStart = now
+                self:SnapCamera(false)
+                self.FromMapId = mapId
+                _HudMap:RestartBanner()
+                log("[VRF] map transition shown " .. string.format("%.2f", now - self.StartedAt) .. "s → " .. player.CurrentMap.Name)
+            end
+            return
+        end
+        local t = (now - self.FadeStart) / self.FadeOut
+        if t >= 1 then
+            self.Active = false
+            _UIKit:SetEnabled(self.Root, false)
+            return
+        end
+        self:SetAlpha(1 - t)
+    end
+
+end

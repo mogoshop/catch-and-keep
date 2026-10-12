@@ -41,6 +41,7 @@ script PlayerTravel extends Component
         local commander = self.Entity:GetComponent("script.ShadowCommander")
         if commander ~= nil then commander:StashForTravel() end
         _UndeadSystem:Follow(self.Entity)   -- 언데드는 도착 뒤 다시 일어나 따라온다 (D2)
+        self:ShowTravel(mapName, self.Entity.PlayerComponent.UserId)   -- 이동 화면으로 먼저 덮는다 (MapTransition)
         _TeleportService:TeleportToMapPosition(self.Entity, Vector3(pos.x, pos.y, 0), mapName)
     end
 
@@ -52,6 +53,12 @@ script PlayerTravel extends Component
         if effects ~= nil then effects:CancelActiveEffects() end
         local attack = self.Entity:GetComponent("script.PlayerAttack")
         if attack ~= nil then attack:CancelAttack() end
+    end
+
+    @ExecSpace("Client")
+    method void ShowTravel(string mapName)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _MapTransition:Begin(mapName)
     end
 
     @ExecSpace("Client")

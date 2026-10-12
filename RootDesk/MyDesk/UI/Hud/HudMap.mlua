@@ -12,6 +12,7 @@ script HudMap extends Logic
     property integer PulseTimerId = 0
     property string LastMap = ""
     property number BannerUntil = 0
+    property number BannerLength = 0           -- 이번 맵 배너를 띄울 시간 (이동 화면이 걷힌 뒤 다시 센다 — MapTransition)
     property number MiniRadius = 96          -- 264px 테두리의 투명 반경 약111px에서 표식 여백 확보
     property number Scale = 1
     property Vector2 QuestPos = Vector2(0, 0)
@@ -221,7 +222,8 @@ script HudMap extends Logic
         _UIKit:SetText("Banner/FlavorBg/Text", flavor)
         _UIKit:SetEnabled("Banner/FlavorBg", flavor ~= "")
         _UIKit:SetEnabled("Banner", true)
-        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerSeconds + (flavor ~= "" and 1.5 or 0)
+        self.BannerLength = self.BannerSeconds + (flavor ~= "" and 1.5 or 0)
+        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerLength
         self:SetBannerAlpha(1)
         -- 미니맵 머리글은 좁다 (206px): 괄호 속 레벨·부제는 빼고 이름만 ("폭풍의 눈 (등대 꼭대기)"가 두 줄로 넘쳐 「사냥터」와 겹쳤다, 10-11)
         local shortName = string.gsub(title, "%s*%b()", "")
@@ -873,6 +875,15 @@ script HudMap extends Logic
     end
 
     -- ───────── 맵 이름 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void RestartBanner()
+        -- 이동 화면에 가려 있던 동안 흘러간 배너 시간을 되돌린다 (걷히는 순간부터 처음부터)
+        if self.BannerLength <= 0 then return end
+        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerLength
+        _UIKit:SetEnabled("Banner", true)
+        self:SetBannerAlpha(1)
+    end
 
     @ExecSpace("ClientOnly")
     method boolean BannerShowing()
