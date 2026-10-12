@@ -1,0 +1,182 @@
+-- 이야기 카드 (클라이언트, docs/design/18 §3-4): 화면 전체를 어둡게 덮고 이야기를 띄운다 (StoryHUD — tools/build/story.cjs).
+--   prologue : 새 캐릭터 첫 접속 — 서버 PlayerQuest:OnLoadFinished → ShowStory
+--   act1~3   : 그 액트 마을에 처음 들어올 때 — 큰 제목 + 부제만, 3.5초 뒤 저절로 닫힌다
+--   end1~3   : 액트 마지막 의뢰를 보고했을 때 — 서버 PlayerQuest:TurnIn → ShowStory
+-- 글은 story.csv (_GameData:GetStory). "/"로 쪽을 나누고 글자가 차례로 나온다 ({장소} 금색 · [적] 붉은색).
+-- 누르기·Space·Enter = 글자 끝까지 → 다음 쪽 → 닫기. 본 카드는 PlayerQuest.StorySeen에 남아 캐릭터마다 한 번만 나온다.
+@Logic
+script StoryCard extends Logic
+
+    property string Card = "/ui/StoryHUD/SafeArea/Card"
+    property table Queue = {}
+    property table Pages = {}
+    property integer Page = 0
+    property boolean Active = false
+    property number AutoClose = 0
+    property number ReadySince = 0            -- 캐릭터를 다 불러온 시각 (로딩·선택 창이 닫힌 뒤에 띄운다)
+    property number NextTownCheck = 0
+    property string TownChecked = ""
+    property string TypeFull = ""
+    property number TypeShown = 0
+    property integer TypeTotal = 0
+    property number TypeSpeed = 28           -- 초당 글자 수 (대화 창보다 천천히)
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Queue = {}
+        self.Active = false
+        self.ReadySince = 0
+        self.TownChecked = ""
+        -- 창으로 등록: 떠 있는 동안 전투·이동 입력을 막고 Esc로 닫힌다
+        _UIKit:RegisterWindow(self.Card)
+        _UIKit:Connect(self.Card, function() self:Advance() end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Push(string key)
+        -- 시작 내레이션은 맨 앞 (같은 때 들어온 장 표시보다 먼저)
+        for _, k in ipairs(self.Queue) do if k == key then return end end
+        if key == "prologue" then table.insert(self.Queue, 1, key) else table.insert(self.Queue, key) end
+        log("[VRF] story queued " .. key)
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        if not self.Active then return end
+        if event.key == KeyboardKey.Space or event.key == KeyboardKey.Return then self:Advance() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsReady()
+        -- 캐릭터를 고르고 다 불러온 뒤 1.5초 (마을로 옮겨지고 로딩 화면이 걷힐 시간)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        local ok = save ~= nil and save.BootDone and save.Slot > 0 and not save.Selecting
+        local now = _UtilLogic.ElapsedSeconds
+        if not ok then
+            self.ReadySince = 0
+            return false
+        end
+        if self.ReadySince <= 0 then self.ReadySince = now end
+        return now - self.ReadySince >= 1.5
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        if self.Active then
+            -- Esc(UIKit)로 닫혔으면 다음 카드로
+            if not _UIKit:IsOpen(self.Card) then
+                self:Close()
+                return
+            end
+            if self.TypeTotal > 0 and self.TypeShown < self.TypeTotal then
+                local before = math.floor(self.TypeShown)
+                self.TypeShown = math.min(self.TypeTotal, self.TypeShown + delta * self.TypeSpeed)
+                local now = math.floor(self.TypeShown)
+                if now ~= before then _UIKit:SetText(self.Card .. "/Body", _UIKit:StoryText(self.TypeFull, now)) end
+            end
+            if self.AutoClose > 0 and _UtilLogic.ElapsedSeconds >= self.AutoClose then self:Close() end
+            return
+        end
+        if not self:IsReady() then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.NextTownCheck then
+            self.NextTownCheck = now + 0.5
+            self:CheckTown()
+        end
+        if #self.Queue > 0 and not _UIKit:AnyWindowOpen() then self:Begin(table.remove(self.Queue, 1)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckTown()
+        -- 액트 마을에 처음 들어오면 장 표시
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return end
+        local map = player.CurrentMap
+        if map.Id == self.TownChecked then return end
+        self.TownChecked = map.Id
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil or info.kind ~= "town" then return end
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local key = "act" .. tostring(info.act)
+        if quest ~= nil and not quest:HasSeenStory(key) then self:Push(key) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Begin(string key)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        -- 장 표시는 클라이언트가 정하므로 여기서 본 것으로 남긴다 (시작·마무리는 서버가 이미 남겼다)
+        if quest ~= nil and string.sub(key, 1, 3) == "act" then
+            if quest:HasSeenStory(key) then return end
+            quest:MarkStory(key)
+        end
+        local title = ""
+        local sub = ""
+        local text = ""
+        local act = string.match(key, "^act(%d)$")
+        local endAct = string.match(key, "^end(%d)$")
+        if key == "prologue" then
+            text = _GameData:GetStory("prologue")
+        elseif act ~= nil then
+            title = _GameData:GetStory("act" .. act .. "_title")
+            sub = _GameData:GetStory("act" .. act .. "_sub")
+        elseif endAct ~= nil then
+            title = _GameData:GetStory("act" .. endAct .. "_title")
+            sub = "— 끝 —"
+            text = _GameData:GetStory("act" .. endAct .. "_end")
+        end
+        self.Pages = {}
+        for line in string.gmatch(text, "[^/]+") do table.insert(self.Pages, line) end
+        _UIKit:SetText(self.Card .. "/Title", title)
+        _UIKit:SetText(self.Card .. "/Sub", sub)
+        self.Active = true
+        self.AutoClose = #self.Pages == 0 and (_UtilLogic.ElapsedSeconds + 3.5) or 0
+        _UIKit:Open(self.Card)
+        self:ShowPage(1)
+        log("[VRF] story shown " .. key .. " pages=" .. tostring(#self.Pages))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowPage(integer page)
+        self.Page = page
+        local text = self.Pages[page] or ""
+        self.TypeFull = text
+        self.TypeShown = 0
+        self.TypeTotal = _UIKit:StoryLength(text)
+        _UIKit:SetText(self.Card .. "/Body", "")
+        local count = #self.Pages
+        local hint = ""
+        if count > 0 then
+            hint = page < count and "눌러서 계속" or "눌러서 닫기"
+            if count > 1 then hint = tostring(page) .. " / " .. tostring(count) .. "   ·   " .. hint end
+        end
+        _UIKit:SetText(self.Card .. "/Hint", hint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Advance()
+        if not self.Active then return end
+        if self.TypeTotal > 0 and self.TypeShown < self.TypeTotal then
+            self.TypeShown = self.TypeTotal
+            _UIKit:SetText(self.Card .. "/Body", _UIKit:StoryText(self.TypeFull, -1))
+            return
+        end
+        if self.Page < #self.Pages then
+            self:ShowPage(self.Page + 1)
+            return
+        end
+        self:Close()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Close()
+        self.Active = false
+        self.AutoClose = 0
+        self.TypeTotal = 0
+        _UIKit:Close(self.Card)
+    end
+
+end

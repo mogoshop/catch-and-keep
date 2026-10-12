@@ -32,7 +32,8 @@ function run() {
     const n = win + '/List/R' + i;
     b.panel(n, { anchor: 'top-left', pos: [10, -8 - (i - 1) * 74], rect_size: [1240, 70], color: '#1C1A22', enable: false });
     b.text(n + '/Name', '', { anchor: 'top-left', pos: [18, -2], rect_size: [700, 42], size: 24, color: '#ECE1CB', alignment: 3, bold: true, overflow: 1 });
-    b.text(n + '/Desc', '', { anchor: 'bottom-left', pos: [18, 0], rect_size: [700, 30], size: 20, color: '#A99F8E', alignment: 3, overflow: 1 });
+    // 도감 탭은 진행 막대를 숨기고 한 줄 설명(최대 48자)이 들어가게 1010px로 넓힌다 (JournalWindow.RenderRow)
+    b.text(n + '/Desc', '', { anchor: 'bottom-left', pos: [18, 0], rect_size: [700, 30], size: 20, color: '#A99F8E', alignment: 3, overflow: 1, bestfit: true, min_size: 17, max_size: 20 });
     b.sprite(n + '/BarBg', { anchor: 'middle-right', pos: [-230, 0], rect_size: [260, 14], color: '#2E2A34', sprite_type: 0 });
     b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [260, 14], color: '#8A7651', sprite_type: 0 });
     b.text(n + '/Value', '', { anchor: 'middle-right', pos: [-18, 0], rect_size: [200, 40], size: 24, color: '#E6C88A', alignment: 5, overflow: 2 });

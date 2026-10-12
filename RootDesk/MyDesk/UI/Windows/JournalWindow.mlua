@@ -106,21 +106,26 @@ script JournalWindow extends Logic
         end
         for i = 1, self.Rows do
             local row = self.Win .. "/List/R" .. tostring(i)
-            local item = list[(self.Page - 1) * self.Rows + i]
+            local index = (self.Page - 1) * self.Rows + i
+            local item = list[index]
             _UIKit:SetEnabled(row, item ~= nil)
-            if item ~= nil then self:RenderRow(row, item) end
+            if item ~= nil then self:RenderRow(row, item, index) end
         end
     end
 
     @ExecSpace("ClientOnly")
-    method void RenderRow(string row, table item)
+    method void RenderRow(string row, table item, integer index)
         local name, desc, value, ratio = "", "", "", 0
         local finished = false
         if self.Tab == "col" then
             local known = (item.k or 0) > 0
             name = known and item.n or "???"
             if known and item.u then name = name .. "  (고유)" elseif known and (item.g or 1) >= 3 then name = name .. "  (보스)" end
-            desc = known and ("처치 " .. tostring(item.k) .. " · 그림자 포획 " .. tostring(item.c or 0)) or "아직 만나지 못한 몬스터"
+            -- 도감 한 줄 (monsters.csv lore, docs/design/18 §3-4): 만난 몬스터만. 목록 순서 = JournalData 몬스터 순서
+            local def = _JournalData:GetMonsters()[index]
+            local lore = def ~= nil and (def.lore or "") or ""
+            if known then name = name .. "   " .. _UIKit:Colored("#A99F8E", "처치 " .. tostring(item.k) .. " · 포획 " .. tostring(item.c or 0)) end
+            desc = known and (lore ~= "" and lore or "처치 기록이 쌓였다") or "아직 만나지 못한 몬스터"
             value = known and ((item.c or 0) > 0 and "포획함" or "처치함") or ""
             ratio = known and ((item.c or 0) > 0 and 1 or 0.5) or 0
             finished = (item.c or 0) > 0
@@ -136,6 +141,10 @@ script JournalWindow extends Logic
         _UIKit:SetText(row .. "/Name", finished and _UIKit:Colored("#9FD69B", name) or name)
         _UIKit:SetText(row .. "/Desc", desc)
         _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
+        -- 도감: 진행 막대 대신 한 줄 설명을 넓게
+        local codex = self.Tab == "col"
+        _UIKit:SetEnabled(row .. "/BarBg", not codex)
+        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 700, 30))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
         if isvalid(fill) then
             local t = fill.UITransformComponent

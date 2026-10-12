@@ -14,10 +14,20 @@ function run(){quiet(()=>{
  b.patch('QuestTrack',{rect_size:[460,214]});b.patch('QuestTrack/Title',{rect_size:[342,34]});b.patch('QuestTrack/Body',{rect_size:[342,112],pos:[88,-54]});
  b.text('QuestTrack/Progress','',{anchor:'bottom-right',pos:[-28,16],rect_size:[300,30],size:24,color:'#E6C88A',alignment:8});
  // 의뢰 요약과 보상은 별도 마지막 페이지로 보여서 대사와 겹치지 않는다.
- b.patch('NpcWin',{rect_size:[1100,440]});b.patch('NpcWin/Rim',{rect_size:[1140,480]});
- b.patch('NpcWin/Paper',{rect_size:[1000,248]});b.patch('NpcWin/Paper/Body',{rect_size:[952,220],pos:[24,-14]});
- b.patchComponent('NpcWin/Paper/Body','MOD.Core.TextGUIRendererComponent',{FontSize:26});
+ // 10-12 스토리 개편 (docs/design/18 §3-3): 낮은 창 · 왼쪽 NPC 초상 · 글 칸 · 쪽 표시 · 수락 쪽 의뢰 그림. 하단 메뉴를 가리지 않게 위로
+ b.patch('NpcWin',{pos:[0,200],rect_size:[1300,360]});b.patch('NpcWin/Rim',{rect_size:[1340,400]});
+ b.panel('NpcWin/PortraitBox',{anchor:'top-left',pos:[28,-74],rect_size:[220,258],image_ruid:K.win_content,color:'#000000',alpha:0.35,sprite_type:1});
+ b.sprite('NpcWin/PortraitBox/Portrait',{anchor:'middle-center',pos:[0,0],rect_size:[196,234],color:'#FFFFFF',sprite_type:0,enable:false});
+ b.patchComponent('NpcWin/PortraitBox/Portrait','MOD.Core.SpriteGUIRendererComponent',{PreserveSprite:1});
+ b.patch('NpcWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[264,-74],rect_size:[1006,156]});b.patch('NpcWin/Paper/Body',{rect_size:[966,116],pos:[20,-14]});
+ b.patchComponent('NpcWin/Paper/Body','MOD.Core.TextGUIRendererComponent',{FontSize:26,BestFit:true,MinSize:18,MaxSize:26}); // 대장장이·상점 안내처럼 긴 글은 줄여서 칸 안에
+ b.text('NpcWin/Paper/PageNo','',{anchor:'bottom-right',pos:[-14,6],rect_size:[120,28],size:18,color:'#9C9488',alignment:8});
+ b.sprite('NpcWin/Art',{anchor:'top-right',pos:[-28,-74],rect_size:[170,170],color:'#FFFFFF',sprite_type:0,enable:false});
  for(let i=1;i<=5;i++)b.patch('NpcWin/Btn'+i,{rect_size:[184,88]});
+ // 맵 한 줄 소개 (maps.csv flavor): 이름·부제 아래 (HudMap.OnMapChanged)
+ if(b.find('Banner/Flavor'))b.remove('Banner/Flavor');
+ b.panel('Banner/FlavorBg',{anchor:'middle-center',pos:[0,-80],rect_size:[960,40],color:'#000000',alpha:0.6,enable:true}); // 배너 틀 아래 바닥 위라 검은 띠를 깐다
+ b.text('Banner/FlavorBg/Text','',{anchor:'middle-center',pos:[0,0],rect_size:[930,34],size:21,color:'#D8CFBF',alignment:4});
  b.patchComponent('QuestTrack/Body','MOD.Core.TextGUIRendererComponent',{FontSize:24});
  b.patch('Tip',{rect_size:[900,74],pos:[0,-130]});b.patch('Tip/Text',{rect_size:[860,66]});b.patchComponent('Tip/Text','MOD.Core.TextGUIRendererComponent',{FontSize:26});
  for(const e of b.listEntities())if(e.name==='BtnClose'){b.patch(e.path,{rect_size:[88,88]});}

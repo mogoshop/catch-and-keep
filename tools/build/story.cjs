@@ -1,0 +1,23 @@
+'use strict';
+// 이야기 카드 (StoryHUD, docs/design/18 §3-4): 시작 내레이션 · 장 표시 · 장 마무리를 화면 전체를 어둡게 덮고 띄운다.
+// 컨트롤러는 RootDesk/MyDesk/UI/Hud/StoryCard.mlua (_StoryCard). 카드 전체가 버튼이라 아무 곳이나 누르면 넘어간다.
+const { UIBuilder, P } = require('./lib.cjs');
+
+function run() {
+  const file = P.ui('StoryHUD');
+  const b = require('fs').existsSync(file) ? UIBuilder.load(file) : new UIBuilder('StoryHUD', 39, true);
+  b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
+  const c = 'SafeArea/Card';
+  // 넓은 화면에서도 가장자리가 비지 않게 화면보다 크게 덮는다 (stretch는 다시 불러올 때 크기 0으로 접힌다)
+  b.button(c, '', { anchor: 'middle-center', rect_size: [4000, 3000], bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 0.92 }, enable: false });
+  b.text(c + '/Title', '', { anchor: 'middle-center', pos: [0, 150], rect_size: [1500, 80], size: 52, bold: true, color: '#E6C88A', alignment: 4 });
+  b.patchComponent(c + '/Title', 'MOD.Core.TextGUIRendererComponent', { Font: 'Maple' });
+  b.text(c + '/Sub', '', { anchor: 'middle-center', pos: [0, 84], rect_size: [1500, 44], size: 28, color: '#B8AFA0', alignment: 4 });
+  b.text(c + '/Body', '', { anchor: 'middle-center', pos: [0, -40], rect_size: [1300, 200], size: 32, color: '#ECE4D4', alignment: 4 });
+  b.text(c + '/Hint', '', { anchor: 'middle-center', pos: [0, -300], rect_size: [900, 36], size: 21, color: '#857D70', alignment: 4 });
+  b.write(file, { lint_verbose: false });
+  return b.listEntities().length;
+}
+
+if (require.main === module) console.log('Story HUD entities: ' + run());
+module.exports = { run };

@@ -216,8 +216,12 @@ script HudMap extends Logic
         _UIKit:SetText("Banner/Title", title)
         -- 봉인 상자 안내는 큰 배너에만 (미니맵 머리글은 좁다)
         _UIKit:SetText("Banner/Sub", sub .. chestNote)
+        -- 맵 한 줄 소개 (maps.csv flavor, docs/design/18 §3-4). 읽을 시간만큼 배너를 더 띄운다
+        local flavor = (info ~= nil and info.kind ~= "instance") and (info.flavor or "") or ""
+        _UIKit:SetText("Banner/FlavorBg/Text", flavor)
+        _UIKit:SetEnabled("Banner/FlavorBg", flavor ~= "")
         _UIKit:SetEnabled("Banner", true)
-        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerSeconds
+        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerSeconds + (flavor ~= "" and 1.5 or 0)
         self:SetBannerAlpha(1)
         -- 미니맵 머리글은 좁다 (206px): 괄호 속 레벨·부제는 빼고 이름만 ("폭풍의 눈 (등대 꼭대기)"가 두 줄로 넘쳐 「사냥터」와 겹쳤다, 10-11)
         local shortName = string.gsub(title, "%s*%b()", "")
@@ -885,13 +889,15 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void SetBannerAlpha(number a)
-        for _, path in ipairs({ "Banner/Title", "Banner/Sub" }) do
+        for _, path in ipairs({ "Banner/Title", "Banner/Sub", "Banner/FlavorBg/Text" }) do
             local e = _UIKit:Get(path)
             if isvalid(e) then
                 local c = e.TextGUIRendererComponent.FontColor
                 e.TextGUIRendererComponent.FontColor = Color(c.r, c.g, c.b, a)
             end
         end
+        local bg = _UIKit:Get("Banner/FlavorBg")
+        if isvalid(bg) then bg.SpriteGUIRendererComponent.Color = Color(0, 0, 0, 0.6 * a) end
     end
 
     -- ───────── 파티·의뢰 표시 ─────────

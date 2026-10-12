@@ -24,6 +24,8 @@ script PlayerQuest extends Component
     @Sync
     property integer PoisonBonus = 0          -- 의뢰 영구 보상 독 저항 + (「독침 여왕」 난이도마다 1회)
     property integer LightBonus = 0           -- 의뢰 영구 보상 번개 저항 + (「바위 집게 왕」 난이도마다 1회, 액트 3)
+    @Sync
+    property string StorySeen = ";"           -- 본 이야기 카드 ";prologue;act1;end1;" (StoryCard, 캐릭터마다 한 번)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -300,11 +302,53 @@ script PlayerQuest extends Component
         self:NotifyQuest("의뢰 보상 · " .. q.title, head .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title .. " diff=" .. tostring(self.Diff))
         _GameEvents:Emit("QuestCompleted", { player = self.Entity, index = self.Index })
+        -- 액트 마지막 의뢰면 장 마무리 내레이션 (docs/design/18 §3-4)
+        local actEnd = _QuestData:LastOfAct(q.act) == self.Index
         self.Index = self.Index + 1
         self.State = 0
         self.Progress = 0
         self.Goal = 0
         self:RefreshPermanent()
+        if actEnd then self:SendStory("end" .. tostring(q.act)) end
+    end
+
+    -- ───────── 이야기 카드 (StoryCard) ─────────
+
+    method boolean HasSeenStory(string key)
+        return string.find(self.StorySeen, ";" .. key .. ";", 1, true) ~= nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AddStorySeen(string key)
+        if string.match(key, "^%w+$") == nil or self:HasSeenStory(key) then return end
+        self.StorySeen = self.StorySeen .. key .. ";"
+    end
+
+    @ExecSpace("Server")
+    method void MarkStory(string key)
+        -- 클라이언트가 띄운 카드 (장 표시)를 본 것으로 남긴다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:AddStorySeen(key)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendStory(string key)
+        -- 서버가 정하는 카드 (시작 내레이션 · 장 마무리): 처음 한 번만
+        if self:HasSeenStory(key) then return end
+        self:AddStorySeen(key)
+        self:ShowStory(key, self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnLoadFinished()
+        -- 새 캐릭터(첫 의뢰를 아직 받지 않음)면 시작 내레이션
+        if self.Diff == 0 and self.Index == 1 and self.State == 0 then self:SendStory("prologue") end
+    end
+
+    @ExecSpace("Client")
+    method void ShowStory(string key)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _StoryCard:Push(key)
     end
 
     @ExecSpace("ServerOnly")
@@ -376,6 +420,7 @@ script PlayerQuest extends Component
             local sc = self.Sealed[tostring(k)]
             if sc ~= nil and sc ~= ";" then out["sc" .. tostring(k)] = sc end
         end
+        if self.StorySeen ~= ";" then out.st = self.StorySeen end
         return out
     end
 
@@ -397,6 +442,7 @@ script PlayerQuest extends Component
                 if i ~= nil then self.ByDiff[tostring(k)] = entry(tonumber(i), tonumber(st), tonumber(p)) end
             end
         end
+        self.StorySeen = type(d.st) == "string" and d.st or ";"
         self.Sealed = {}
         for k = 0, 2 do
             local sc = d["sc" .. tostring(k)]

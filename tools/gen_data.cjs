@@ -125,10 +125,13 @@ function genGameData() {
     ...mapRows.map((m) => {
       const maze = load("map_layouts").some((l) => l.map === m.id);
       const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
-      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, maze = ${maze}, features = { ${feats} } }`;
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, maze = ${maze}, flavor = ${s(m.flavor || "")}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",
     ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),
+    // 이야기 문구 (data/story.csv — 시작 내레이션·장 표시·장 마무리·NPC 한마디. 「/」로 쪽 나눔, {장소}·[적] 강조)
+    "        self.Story = {}",
+    ...load("story").map((r) => `        self.Story[${s(r.key)}] = ${s(r.text)}`),
     "        self.DepthPool = {}",
     ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
     "        self.DepthUniques = {}",
@@ -203,6 +206,12 @@ function genGameData() {
         return self.MonsterStats[sourceId]
     end
 
+    method string GetStory(string key)
+        -- 이야기 문구 (data/story.csv). 없으면 ""
+        self:Ensure()
+        return self.Story[key] or ""
+    end
+
     method any GetMapInfo(string mapId)
         -- 맵 이름·종류·크기와 미니맵 표시물(포털·웨이포인트·NPC·입구). 보통 난이도 맵 id. 없으면 nil
         self:Ensure()
@@ -249,7 +258,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
@@ -468,7 +477,7 @@ function genJournal() {
   const body = ["        self.Dailies = {}", "        self.Achievements = {}", "        self.Monsters = {}",
     ...dailies.map((r) => `        table.insert(self.Dailies, { id = ${s(r.id)}, name = ${s(r.name)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)}, expPct = ${n(r.expPct)} })`),
     ...ach.map((r) => `        table.insert(self.Achievements, { id = ${s(r.id)}, name = ${s(r.name)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)} })`),
-    ...mons.map((r) => `        table.insert(self.Monsters, { id = ${s(r.id)}, name = ${s(r.name)}, grade = ${n(r.grade)}, unique = ${b(r.unique)} })`)].join("\n");
+    ...mons.map((r) => `        table.insert(self.Monsters, { id = ${s(r.id)}, name = ${s(r.name)}, grade = ${n(r.grade)}, unique = ${b(r.unique)}, lore = ${s(r.lore || "")} })`)].join("\n");
   const extra = `
     method table GetDailies()
         self:Ensure()

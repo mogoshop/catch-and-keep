@@ -294,6 +294,48 @@ script UIKit extends Logic
         if t.Padding.left ~= math.floor(sidePad) then t.Padding = RectOffset(math.floor(sidePad), math.floor(sidePad), 0, 0) end
     end
 
+    method string StoryText(string text, integer limit)
+        -- 이야기 문구 표시: {장소} = 금색, [적] = 붉은색. limit >= 0이면 표시 글자 수(강조 기호 제외)를 그만큼만 (글자 차례 출력)
+        local out = {}
+        local count = 0
+        local mode = ""
+        for _, cp in utf8.codes(text) do
+            local ch = utf8.char(cp)
+            if ch == "{" and mode == "" then
+                table.insert(out, "<color=#E8C66B>")
+                mode = "}"
+            elseif ch == "[" and mode == "" then
+                table.insert(out, "<color=#E8705C>")
+                mode = "]"
+            elseif ch == mode then
+                table.insert(out, "</color>")
+                mode = ""
+            else
+                if limit >= 0 and count >= limit then break end
+                table.insert(out, ch)
+                count = count + 1
+            end
+        end
+        if mode ~= "" then table.insert(out, "</color>") end
+        return table.concat(out)
+    end
+
+    method integer StoryLength(string text)
+        -- 강조 기호({ } [ ])를 뺀 글자 수
+        local n = 0
+        for _, cp in utf8.codes(text) do
+            local ch = utf8.char(cp)
+            if ch ~= "{" and ch ~= "}" and ch ~= "[" and ch ~= "]" then n = n + 1 end
+        end
+        return n
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetSize(string rel, Vector2 size)
+        local e = self:Get(rel)
+        if isvalid(e) then e.UITransformComponent.RectSize = size end
+    end
+
     method string Colored(string color, string text)
         return "<color=" .. color .. ">" .. text .. "</color>"
     end
