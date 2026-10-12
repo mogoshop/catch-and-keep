@@ -445,19 +445,26 @@ script ItemData extends Logic
 
     method any PickUnique(integer ilvl, string source)
         -- source = "" 이면 어디서나 나오는 유니크, 몬스터 sourceId면 그 몬스터 전용
+        -- 쏠림 막기 (docs/design/19 §2-4): 먼저 계열(소환·영혼·저주·범용)을 1:1:1:1로 고르고, 그 계열 안에서 가중치로 고른다
         local t = self:T()
-        local list = {}
-        local weights = {}
+        local byTree = {}
+        local trees = {}
         for _, u in ipairs(t.UniqueList) do
             local b = t.Bases[u.base]
             if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then
-                table.insert(list, u)
+                local tree = u.tree or "any"
+                if byTree[tree] == nil then
+                    byTree[tree] = { list = {}, weights = {} }
+                    table.insert(trees, tree)
+                end
+                table.insert(byTree[tree].list, u)
                 -- weight(item_uniques.csv)가 1보다 작으면 다른 유니크보다 그만큼 덜 나온다 (잿빛 장막 5종 0.15 = 가장 희귀)
-                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25) * (u.weight or 1))
+                table.insert(byTree[tree].weights, self:OldWeight(b.reqLv, ilvl, 25) * (u.weight or 1))
             end
         end
-        if #list == 0 then return nil end
-        return self:WeightedPick(list, weights)
+        if #trees == 0 then return nil end
+        local pool = byTree[trees[_UtilLogic:RandomIntegerRange(1, #trees)]]
+        return self:WeightedPick(pool.list, pool.weights)
     end
 
     method string MakeUnique(table u, integer ilvl)
@@ -544,18 +551,25 @@ script ItemData extends Logic
     end
 
     method any PickSetPiece(integer ilvl)
+        -- 쏠림 막기 (docs/design/19 §2-4): 먼저 세트를 고르고(조각이 하나라도 나올 수 있는 세트끼리 같은 확률), 그다음 그 세트의 조각을 고른다
         local t = self:T()
-        local list = {}
-        local weights = {}
+        local bySet = {}
+        local sets = {}
         for _, baseId in ipairs(t.SetPieceOrder) do
             local b = t.Bases[baseId]
+            local piece = t.SetPieces[baseId]
             if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then
-                table.insert(list, t.SetPieces[baseId])
-                table.insert(weights, self:OldWeight(b.reqLv, ilvl, 25))
+                if bySet[piece.set] == nil then
+                    bySet[piece.set] = { list = {}, weights = {} }
+                    table.insert(sets, piece.set)
+                end
+                table.insert(bySet[piece.set].list, piece)
+                table.insert(bySet[piece.set].weights, self:OldWeight(b.reqLv, ilvl, 25))
             end
         end
-        if #list == 0 then return nil end
-        return self:WeightedPick(list, weights)
+        if #sets == 0 then return nil end
+        local pool = bySet[sets[_UtilLogic:RandomIntegerRange(1, #sets)]]
+        return self:WeightedPick(pool.list, pool.weights)
     end
 
     method any GetSetPiece(table item)

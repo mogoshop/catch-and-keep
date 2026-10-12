@@ -151,6 +151,25 @@ script SelfTest extends Logic
         for _, a in ipairs(t.Affixes) do if a.id == "treeSoul_p2" then tierRow = a end end
         local skillRoll = tierRow ~= nil and _ItemData:RollAffix(tierRow, 90) or 0
         self:Check("tree affix roll", skillRoll >= 2 and skillRoll <= 3, "지옥 「명계 술사의」 영혼 스킬 +" .. tostring(skillRoll))
+        -- 쏠림 막기 (docs/design/19 §2-4): 유니크는 계열 먼저, 세트는 세트 먼저 고른다
+        local treeCount, treeKinds = {}, 0
+        local setCount, setKinds = {}, 0
+        for i = 1, 120 do
+            local pu = _ItemData:PickUnique(85, "")
+            if pu ~= nil then
+                if treeCount[pu.tree] == nil then treeKinds = treeKinds + 1 end
+                treeCount[pu.tree] = (treeCount[pu.tree] or 0) + 1
+            end
+            local ps = _ItemData:PickSetPiece(85)
+            if ps ~= nil then
+                if setCount[ps.set] == nil then setKinds = setKinds + 1 end
+                setCount[ps.set] = (setCount[ps.set] or 0) + 1
+            end
+        end
+        local tmin, tmax = 999, 0
+        for _, c in pairs(treeCount) do tmin = math.min(tmin, c) tmax = math.max(tmax, c) end
+        self:Check("unique tree spread", treeKinds <= 1 or tmax <= tmin * 3, "계열별 유니크 " .. tostring(tmin) .. "~" .. tostring(tmax) .. " (계열 " .. tostring(treeKinds) .. ")")
+        self:Check("set spread", setKinds >= 1, "세트 " .. tostring(setKinds) .. "종이 나옴")
         self:Check("tree names", _SkillData:TreeName("command") == "소환" and _SkillData:TreeName("soul") == "영혼" and _SkillData:TreeName("curse") == "저주", "소환·영혼·저주")
         self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen") ~= nil, "여왕 전용 유니크")
         self:Check("act2 boss", _ItemData:PickUnique(21, "high_priest") ~= nil, "대사제 전용 유니크")

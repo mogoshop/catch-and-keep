@@ -105,7 +105,10 @@ const setIds = unique("item_sets", "id");
 unique("item_set_pieces", "base");   // 베이스 하나는 세트 조각 하나 (조각을 베이스로 찾는다)
 T.item_sets.forEach((r, i) => {
   for (const c of ["bonus2", "bonus3", "full"]) checkMods("item_sets", i, c, r[c]);
-  if (!/shadowCap=/.test(r.full)) err("item_sets", i, "완성 효과에 shadowCap(그림자 상한)이 없음 — 세트의 확실한 이익");
+  // 그림자 상한은 정예형 세트 완성 효과에만, 중첩 없음 (10-12 결정 · docs/design/19 §5). grade 칸이 없던 옛 표는 모든 세트에 있어야 했다
+  if (r.grade === undefined) { if (!/shadowCap=/.test(r.full)) err("item_sets", i, "완성 효과에 shadowCap(그림자 상한)이 없음"); }
+  else if (r.grade === "2" && !/shadowCap=/.test(r.full)) err("item_sets", i, "정예형 세트 완성 효과에 shadowCap이 없음");
+  else if (r.grade !== "2" && /shadowCap=/.test(r.bonus2 + r.bonus3 + r.full)) err("item_sets", i, "그림자 상한은 정예형 세트만");
   const n = T.item_set_pieces.filter((p) => p.set === r.id).length;
   if (n < 2) err("item_sets", i, `조각 ${n}개 — 2개 이상`);
 });
@@ -116,6 +119,10 @@ T.item_set_pieces.forEach((r, i) => {
 });
 for (const t of ["item_uniques", "runewords", "runes"]) {
   T[t].forEach((r, i) => { for (const c of ["mods", "weapon", "armor", "lamp"]) if (/shadowCap=/.test(r[c] || "")) err(t, i, "shadowCap은 세트 전용"); });
+}
+// 계열 (docs/design/19): 소환 command · 영혼 soul · 저주 curse · 범용 any
+for (const t of ["item_uniques", "item_sets", "runewords"]) {
+  T[t].forEach((r, i) => { if (r.tree !== undefined && !["command", "soul", "curse", "any"].includes(r.tree)) err(t, i, `tree '${r.tree}' — command / soul / curse / any`); });
 }
 // 룬워드 룬 수 ≤ 그 부위 베이스의 최대 소켓
 T.runewords.forEach((r, i) => {

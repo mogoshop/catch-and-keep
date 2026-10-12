@@ -418,10 +418,14 @@ script PlayerInventory extends Component
             local piece = _ItemData:GetSetPiece(_ItemData:Parse(s))
             if piece ~= nil then setCounts[piece.set] = (setCounts[piece.set] or 0) + 1 end
         end
-        -- 세트 효과 (2개·3개·전체)
+        -- 세트 효과 (2개·3개·전체). 세트의 그림자 상한은 겹치지 않는다 — 가장 높은 하나만 (docs/design/19 §5)
+        local setCap = 0
         for setId, count in pairs(setCounts) do
-            for k, v in pairs(_ItemData:GetSetBonusMods(setId, count)) do t[k] = (t[k] or 0) + v end
+            for k, v in pairs(_ItemData:GetSetBonusMods(setId, count)) do
+                if k == "shadowCap" then setCap = math.max(setCap, v) else t[k] = (t[k] or 0) + v end
+            end
         end
+        if setCap > 0 then t["shadowCap"] = (t["shadowCap"] or 0) + setCap end
         stats:ApplyEquipmentMods(t)
         self:ApplyAppearance()
     end
