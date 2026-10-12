@@ -1,5 +1,5 @@
 'use strict';
-// 일지 창 (JournalHUD): 일일 의뢰 · 업적 · 도감 3탭, 8줄 목록 + 페이지. 모바일은 의뢰 추적 아래 「일지」 버튼으로 연다 (PC는 J).
+// 일지 창 (JournalHUD): 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 4탭, 8줄 목록 + 페이지. 모바일은 의뢰 추적 아래 「일지」 버튼으로 연다 (PC는 J).
 // 화풍은 의뢰 일지(QuestJournalHUD)와 같은 프레임·색을 쓴다.
 const path = require('path'), fs = require('fs');
 const root = path.resolve(__dirname, '../..');
@@ -23,10 +23,11 @@ function run() {
   b.sprite(win + '/Rim', { rect_size: [1360, 940], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
   b.text(win + '/Title', '일지', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -17], rect_size: [700, 40], size: 28, color: '#E6C88A', alignment: 4, bold: true });
   b.button(win + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
-  [['TabDaily', '일일 의뢰'], ['TabAch', '업적'], ['TabCol', '도감']].forEach(([n, label], i) => {
-    b.button(win + '/' + n, label, { anchor: 'top-left', pos: [40 + i * 260, -88], rect_size: [244, 88], font_size: 28, bg_color: '#24212B', color: '#E6DCC6' });
+  // 4탭: 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 (유니크·세트·룬워드 수집 — docs/design/19 §2-6)
+  [['TabDaily', '일일 의뢰'], ['TabAch', '업적'], ['TabCol', '몬스터 도감'], ['TabItem', '아이템 도감']].forEach(([n, label], i) => {
+    b.button(win + '/' + n, label, { anchor: 'top-left', pos: [40 + i * 214, -88], rect_size: [204, 88], font_size: 26, bg_color: '#24212B', color: '#E6DCC6' });
   });
-  b.text(win + '/Info', '', { anchor: 'top-right', pos: [-40, -110], rect_size: [460, 48], size: 24, color: '#B9B0A1', alignment: 5, bestfit: true, min_size: 20, max_size: 24 });
+  b.text(win + '/Info', '', { anchor: 'top-right', pos: [-40, -110], rect_size: [380, 48], size: 22, color: '#B9B0A1', alignment: 5, bestfit: true, min_size: 16, max_size: 22 });
   b.panel(win + '/List', { anchor: 'top-left', pos: [30, -186], rect_size: [1260, 604], color: '#111018' });
   for (let i = 1; i <= ROWS; i++) {
     const n = win + '/List/R' + i;

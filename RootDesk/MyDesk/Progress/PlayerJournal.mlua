@@ -1,4 +1,5 @@
--- 일지 (플레이어별): 일일 의뢰 3개(한국 시간 자정 교체, 달성하면 바로 보상), 업적, 도감(몬스터 종류별 처치·포획).
+-- 일지 (플레이어별): 일일 의뢰 3개(한국 시간 자정 교체, 달성하면 바로 보상), 업적, 도감(몬스터 종류별 처치·포획),
+-- 아이템 도감(유니크·세트 조각·룬워드를 처음 얻으면 기록 — 계정 공용, PlayerSave가 Account 키에 저장 · docs/design/19 §2-6).
 -- 집계는 JournalSystem이 게임 이벤트를 받아 Record로 넘긴다. 저장은 PlayerSave "Char" 구역의 journal.
 -- 화면은 Digest(JSON, 본인에게만 동기화)를 읽어 그린다.
 @Component
@@ -8,6 +9,7 @@ script PlayerJournal extends Component
     property table Kills = {}                 -- 몬스터 sourceId → 처치 수
     property table Captures = {}              -- 몬스터 sourceId → 포획(혼 추출) 수
     property table AchDone = {}               -- 업적 id → true
+    property table Found = {}                 -- 아이템 도감 key("u:id"·"s:베이스"·"r:이름") → true (계정 공용)
     property integer DailyDay = 0             -- 한국 시간 기준 날짜 번호
     property table Daily = {}                 -- { { id, p, done }, ... } 3개
     property boolean Dirty = false
@@ -82,6 +84,25 @@ script PlayerJournal extends Component
             for _, m in ipairs(_JournalData:GetMonsters()) do if (self.Kills[m.id] or 0) > 0 then n = n + 1 end end
             return n
         end
+        if a.kind == "grail_unique" or a.kind == "grail_set" or a.kind == "grail_rw" then
+            local prefix = a.kind == "grail_unique" and "u:" or (a.kind == "grail_set" and "s:" or "r:")
+            local n = 0
+            for key, v in pairs(self.Found) do if v and string.sub(key, 1, 2) == prefix then n = n + 1 end end
+            return n
+        end
+        if a.kind == "grail_fullset" then
+            -- 모든 조각을 도감에 올린 세트 수
+            local need, got = {}, {}
+            for _, g in ipairs(_ItemData:GrailList()) do
+                if g.kind == "s" then
+                    need[g.set] = (need[g.set] or 0) + 1
+                    if self.Found[g.key] then got[g.set] = (got[g.set] or 0) + 1 end
+                end
+            end
+            local n = 0
+            for set, c in pairs(need) do if (got[set] or 0) >= c then n = n + 1 end end
+            return n
+        end
         if a.kind == "capture_species" then
             local n = 0
             for _, c in pairs(self.Captures) do if c > 0 then n = n + 1 end end
@@ -103,6 +124,44 @@ script PlayerJournal extends Component
                 self.Dirty = true
             end
         end
+    end
+
+    -- ───────── 아이템 도감 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void NoteItems(table items, boolean announce)
+        -- 가방·장비·창고에 들어온 물건 중 도감에 없던 유니크·세트 조각·룬워드를 기록한다
+        local fresh = {}
+        for _, s in pairs(items) do
+            local key = _ItemData:GrailKeyOf(s)
+            if key ~= "" and not self.Found[key] then
+                self.Found[key] = true
+                table.insert(fresh, _ItemData:DisplayName(s))
+            end
+        end
+        if #fresh == 0 then return end
+        self.Dirty = true
+        if announce then
+            _Util:Banner("아이템 도감에 새로 기록", table.concat(fresh, " · "), self.Entity.PlayerComponent.UserId)
+            log("[VRF] grail new " .. tostring(#fresh))
+            -- 불러오는 중(announce=false)에는 업적을 보지 않는다 — 캐릭터 업적 기록을 아직 안 읽었다
+            self:CheckAchievements()
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadGrail(table keys)
+        self.Found = {}
+        for _, key in ipairs(keys or {}) do self.Found[key] = true end
+        self.Dirty = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method table GetGrailList()
+        local list = {}
+        for key, v in pairs(self.Found) do if v then table.insert(list, key) end end
+        table.sort(list)
+        return list
     end
 
     -- ───────── 일일 의뢰 ─────────
@@ -156,6 +215,10 @@ script PlayerJournal extends Component
         for _, m in ipairs(_JournalData:GetMonsters()) do
             table.insert(view.col, { n = m.name, k = self.Kills[m.id] or 0, c = self.Captures[m.id] or 0, g = m.grade, u = m.unique })
         end
+        -- 아이템 도감: GrailList 순서대로 찾은 것 1 / 못 찾은 것 0
+        local bits = {}
+        for i, g in ipairs(_ItemData:GrailList()) do bits[i] = self.Found[g.key] and "1" or "0" end
+        view.it = table.concat(bits, "")
         -- 다음 교체까지 남은 분 (한국 시간 자정)
         local ms = (DateTime.UtcNow.Elapsed + 9 * 3600 * 1000) % 86400000
         view.left = math.floor((86400000 - ms) / 60000)

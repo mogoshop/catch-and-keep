@@ -160,7 +160,7 @@ script SelfTest extends Logic
                 if treeCount[pu.tree] == nil then treeKinds = treeKinds + 1 end
                 treeCount[pu.tree] = (treeCount[pu.tree] or 0) + 1
             end
-            local ps = _ItemData:PickSetPiece(85)
+            local ps = _ItemData:PickSetPiece(30)   -- 세트 조각은 일반·강화형 베이스부터 있다 (정예 세트는 3단계 초안)
             if ps ~= nil then
                 if setCount[ps.set] == nil then setKinds = setKinds + 1 end
                 setCount[ps.set] = (setCount[ps.set] or 0) + 1
@@ -170,6 +170,16 @@ script SelfTest extends Logic
         for _, c in pairs(treeCount) do tmin = math.min(tmin, c) tmax = math.max(tmax, c) end
         self:Check("unique tree spread", treeKinds <= 1 or tmax <= tmin * 3, "계열별 유니크 " .. tostring(tmin) .. "~" .. tostring(tmax) .. " (계열 " .. tostring(treeKinds) .. ")")
         self:Check("set spread", setKinds >= 1, "세트 " .. tostring(setKinds) .. "종이 나옴")
+        -- 아이템 도감 (docs/design/19 §2-6): 유니크·세트 조각·룬워드가 모두 목록에 있고, 만든 아이템의 key를 찾는다
+        local nRw = 0
+        for _ in pairs(t.Runewords) do nRw = nRw + 1 end
+        local grail = _ItemData:GrailList()
+        self:Check("grail list", #grail == #t.UniqueList + #t.SetPieceOrder + nRw, tostring(#grail) .. "칸")
+        local firstU = t.UniqueList[1]
+        local uKey = _ItemData:GrailKeyOf(_ItemData:MakeUnique(firstU, 10))
+        local firstPiece = t.SetPieces[t.SetPieceOrder[1]]
+        local sKey = _ItemData:GrailKeyOf(firstPiece.base .. "|4|10|" .. firstPiece.name .. "||0|")
+        self:Check("grail keys", uKey == "u:" .. firstU.id and sKey == "s:" .. firstPiece.base and _ItemData:GrailKeyOf("scythe1|0|1|단낫||0|") == "", uKey .. " · " .. sKey)
         self:Check("tree names", _SkillData:TreeName("command") == "소환" and _SkillData:TreeName("soul") == "영혼" and _SkillData:TreeName("curse") == "저주", "소환·영혼·저주")
         self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen") ~= nil, "여왕 전용 유니크")
         self:Check("act2 boss", _ItemData:PickUnique(21, "high_priest") ~= nil, "대사제 전용 유니크")

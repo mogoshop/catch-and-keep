@@ -1,4 +1,4 @@
--- 창고 창 (마을 창고 곁 · B/대화로 열기): 위 = 창고 100칸, 아래 = 가방 60칸. 칸을 누르면 바로 옮긴다.
+-- 창고 창 (마을 창고 곁 · B/대화로 열기): 위 = 창고 탭 4개 × 100칸 (docs/design/19 §5), 아래 = 가방 60칸. 칸을 누르면 바로 옮긴다.
 -- 가운데 버튼: 가방의 일반 · 마법 · 레어 · 유니크/세트 · 룬을 한꺼번에 창고에. 검증·이동은 서버(PlayerInventory)가 한다.
 @Logic
 script StashWindow extends Logic
@@ -20,6 +20,15 @@ script StashWindow extends Logic
         for i = 1, 60 do
             local index = i
             _UIKit:Connect(self.Win .. "/Bag/B" .. tostring(i), function() self:Deposit(index) end)
+        end
+        for t = 1, 4 do
+            local tab = t
+            _UIKit:Connect(self.Win .. "/Tab" .. tostring(t), function()
+                local inv = self:Inv()
+                if inv == nil or inv.StashTab == tab then return end
+                self.Info = tostring(tab) .. "탭을 열었습니다 · 넣기는 지금 탭에 들어갑니다"
+                inv:RequestStashTab(tab)
+            end)
         end
         for _, d in ipairs({ { "DepNormal", "normal" }, { "DepMagic", "magic" }, { "DepRare", "rare" }, { "DepUnique", "unique" }, { "DepRune", "rune" } }) do
             local kind = d[2]
@@ -91,14 +100,26 @@ script StashWindow extends Logic
         end
         local inv = self:Inv()
         if inv == nil then return end
-        local key = inv.StashDigest .. "#" .. inv.BagDigest .. "#" .. self.Info
+        local key = tostring(inv.StashTab) .. "#" .. inv.StashCounts .. "#" .. inv.StashDigest .. "#" .. inv.BagDigest .. "#" .. self.Info
         if key == self.RenderKey then return end
         self.RenderKey = key
         local stash = self:StashList(inv)
         local bag = inv:GetBagList()
         for i = 1, 100 do _InventoryWindow:DrawItem(self.Win .. "/Stash/S" .. tostring(i), stash[i]) end
         for i = 1, 60 do _InventoryWindow:DrawItem(self.Win .. "/Bag/B" .. tostring(i), bag[i]) end
-        _UIKit:SetText(self.Win .. "/StashLabel", string.format("창고  %d / %d  ·  누르면 가방으로", #stash, inv.StashSize))
+        local counts = {}
+        local total = 0
+        for c in string.gmatch(inv.StashCounts, "%d+") do
+            table.insert(counts, tonumber(c))
+            total = total + tonumber(c)
+        end
+        for t = 1, 4 do
+            local n = counts[t] or 0
+            local chosen = t == inv.StashTab
+            _UIKit:SetText(self.Win .. "/Tab" .. tostring(t), _UIKit:Colored(chosen and "#FFE9A8" or "#A99F8E", tostring(t) .. "탭 " .. tostring(n)))
+            _UIKit:SetColor(self.Win .. "/Tab" .. tostring(t), chosen and Color(1, 0.92, 0.7, 1) or Color(0.6, 0.6, 0.6, 0.85))
+        end
+        _UIKit:SetText(self.Win .. "/StashLabel", string.format("창고 %d탭  %d / %d  ·  전체 %d / %d  ·  누르면 가방으로", inv.StashTab, #stash, inv.StashSize, total, inv.StashSize * inv.StashTabCount))
         _UIKit:SetText(self.Win .. "/BagLabel", string.format("가방  %d / %d  ·  누르면 창고로", #bag, inv.BagSize))
         _UIKit:SetText(self.Win .. "/Info", self.Info)
     end

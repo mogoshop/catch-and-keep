@@ -35,6 +35,8 @@ script PlayerSave extends Component
     property string SlotDigest = ""           -- "번호|이름|레벨|난이도;…" (빈 슬롯은 번호만)
     property table Account = {}
     property table StashItems = {}
+    property table StashCounts = {}            -- 창고 탭별 개수 (v2 · 4탭 × 100칸)
+    property table Grail = {}                  -- 아이템 도감 key 목록 (계정 공용 · Account 키의 grail)
     property string SlotMemoryName = "CharSlotV1"
     property boolean InSelectRoom = false      -- 메뉴 「캐릭터 선택으로」로 온 선택용 인스턴스 방 (고르면 정적 방으로 돌아간다)
     property boolean Switching = false         -- 방 이동을 요청한 뒤 (중복 요청 막기)
@@ -107,8 +109,12 @@ script PlayerSave extends Component
         end
         if type(account.slots) ~= "table" then account.slots = {} end
         self.Account = account
+        self.Grail = {}
+        if type(account.grail) == "table" then for _, key in ipairs(account.grail) do table.insert(self.Grail, key) end end
         self.StashItems = {}
+        self.StashCounts = {}
         if stash ~= nil and type(stash.items) == "table" then for _, x in ipairs(stash.items) do table.insert(self.StashItems, x) end end
+        if stash ~= nil and type(stash.counts) == "table" then for _, c in ipairs(stash.counts) do table.insert(self.StashCounts, tonumber(c) or 0) end end
         if first["Account"] ~= nil then self.LastSaved["Account"] = first["Account"] end
         if first["Stash"] ~= nil then self.LastSaved["Stash"] = first["Stash"] end
         self:PublishSlots()
@@ -206,9 +212,13 @@ script PlayerSave extends Component
 
     @ExecSpace("ServerOnly")
     method void ApplyStash()
+        -- 계정 공용: 아이템 도감 → 창고 (창고를 넣으며 도감에 없던 것을 더한다)
+        ---@type PlayerJournal
+        local journal = self.Entity:GetComponent("script.PlayerJournal")
+        if journal ~= nil then journal:LoadGrail(self.Grail) end
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then inv:LoadStash(self.StashItems) end
+        if inv ~= nil then inv:LoadStash(self.StashItems, self.StashCounts) end
     end
 
     @ExecSpace("ServerOnly")
@@ -581,7 +591,7 @@ script PlayerSave extends Component
         if inv ~= nil then
             -- 빈 Lua 표는 JSON 타입이 불명확해 인코딩이 실패한다 → 비면 개수만
             local items = inv:GetStashData()
-            local stash = { v = 1, count = #items }
+            local stash = { v = 2, count = #items, counts = inv:GetStashCounts() }
             if #items > 0 then stash.items = items end
             out["Stash"] = _HttpService:JSONEncode(stash)
         end
@@ -605,6 +615,11 @@ script PlayerSave extends Component
             data.count = data.count + 1
         end
         if data.count > 0 then data.slots = slots end
+        -- 아이템 도감 (계정 공용). 비면 넣지 않는다
+        ---@type PlayerJournal
+        local journal = self.Entity:GetComponent("script.PlayerJournal")
+        if journal ~= nil and self.IsLoadSuccess then self.Grail = journal:GetGrailList() end
+        if #self.Grail > 0 then data.grail = self.Grail end
         return _HttpService:JSONEncode(data)
     end
 

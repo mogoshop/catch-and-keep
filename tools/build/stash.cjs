@@ -1,5 +1,5 @@
 'use strict';
-// 창고 창 (StashHUD): 위 = 창고 100칸(10열, 4줄 보임·스크롤), 가운데 = 등급별 한꺼번에 넣기 5버튼, 아래 = 가방 60칸(2줄 보임).
+// 창고 창 (StashHUD): 위 = 창고 탭 4개 × 100칸(10열, 4줄 보임·스크롤), 가운데 = 등급별 한꺼번에 넣기 5버튼, 아래 = 가방 60칸(2줄 보임).
 // 칸을 누르면 바로 옮긴다 (창고 → 가방 / 가방 → 창고). 컨트롤러는 RootDesk/MyDesk/UI/Windows/StashWindow.mlua
 const path = require('path'), fs = require('fs');
 const root = process.env.MSW_WORLD_ROOT || path.resolve(__dirname, '../..');
@@ -29,8 +29,12 @@ function run() {
   b.sprite(w + '/Rim', { rect_size: [1140, 1040], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
   b.text(w + '/Title', '창고', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -17], rect_size: [800, 40], size: 28, color: '#E6C88A', alignment: 4, bold: true });
   b.button(w + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
-  b.text(w + '/StashLabel', '창고', { anchor: 'top-left', pos: [28, -96], rect_size: [1044, 36], size: 24, color: '#C9BBA0', alignment: 3 });
-  grid(b, w + '/Stash', 100, [28, -134], 4, 'S');
+  b.text(w + '/StashLabel', '창고', { anchor: 'top-left', pos: [28, -94], rect_size: [540, 36], size: 22, color: '#C9BBA0', alignment: 3, bestfit: true, min_size: 16, max_size: 22 });
+  // 창고 탭 4개 × 100칸 = 400칸 (docs/design/19 §5). 지금 탭은 StashWindow가 밝게 칠한다
+  for (let t = 1; t <= 4; t++) {
+    b.button(w + '/Tab' + t, t + '탭', { anchor: 'top-left', pos: [572 + (t - 1) * 126, -80], rect_size: [120, 52], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', font_size: 20, color: '#E6DCC6' });
+  }
+  grid(b, w + '/Stash', 100, [28, -138], 4, 'S');
   // 등급별 한꺼번에 넣기 (가방 → 창고)
   [['DepNormal', '일반 넣기'], ['DepMagic', '마법 넣기'], ['DepRare', '레어 넣기'], ['DepUnique', '유니크·세트'], ['DepRune', '룬 넣기']].forEach(([n, label], i) => {
     b.button(w + '/' + n, label, { anchor: 'top-left', pos: [28 + i * 210, -560], rect_size: [198, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', font_size: 22, color: '#E6DCC6' });

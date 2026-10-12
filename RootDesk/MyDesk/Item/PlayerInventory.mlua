@@ -10,11 +10,17 @@ script PlayerInventory extends Component
     property boolean AshenHoodGranted = false -- 등록한 후드: 캐릭터당 한 번 지급, 저장 데이터에 보존
     property string StarterWeapon = "scythe1|0|1|단낫||0|"
 
-    property integer StashSize = 100         -- 창고 칸 (마을 창고 곁에서만)
+    property integer StashSize = 100         -- 창고 탭 하나의 칸 (마을 창고 곁에서만)
+    property integer StashTabCount = 4       -- 창고 탭 수 (4 × 100 = 400칸 · docs/design/19 §5)
     property table Bag = {}           -- 아이템 문자열 목록
-    property table Stash = {}         -- 창고 (아이템 문자열 목록, 계정 공용 — PlayerSave가 Stash 키로 따로 저장)
+    property table StashPages = {}    -- 창고 탭별 아이템 목록 (계정 공용 — PlayerSave가 Stash 키로 따로 저장)
+    property table Stash = {}         -- 지금 보고 있는 탭 (StashPages[StashTab]과 같은 표)
     @Sync
-    property string StashDigest = ""
+    property integer StashTab = 1
+    @Sync
+    property string StashDigest = ""  -- 지금 탭의 아이템만 (400칸을 한 줄로 보내지 않게)
+    @Sync
+    property string StashCounts = ""  -- 탭별 개수 "37,0,12,0"
     @Sync
     property integer SocketTokens = 0 -- 의뢰 보상 소켓권 (대장장이가 무료로 소켓을 뚫어 준다)
     property table Equip = {}         -- 부위 → 아이템 문자열
@@ -31,7 +37,7 @@ script PlayerInventory extends Component
         -- 새 캐릭터: 하급 생명 물약 3 · 하급 마나 물약 2 · 귀환 두루마리 2
         self.Bag = { _ItemData:MakeStack("hp1", 3), _ItemData:MakeStack("mp1", 2), _ItemData:MakeStack("tp", 2) }
         self.Equip = {}
-        self.Stash = {}
+        self:ResetStashPages()
         self.Equip["weapon"] = self.StarterWeapon
         self:EnsureAshenHoodGrant()
         self:RefreshDigest()
@@ -46,17 +52,23 @@ script PlayerInventory extends Component
         for _, s in ipairs(self.Bag) do
             if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
         end
-        for _, s in ipairs(self.Stash) do
-            if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
+        for _, page in ipairs(self.StashPages) do
+            for _, s in ipairs(page) do
+                if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
+            end
         end
         for _, s in pairs(self.Equip) do
             if _ItemData:Parse(s).base == "ashen_hood" then self.AshenHoodGranted = true return end
         end
         local hood = "ashen_hood|0|1|잿빛 장막 후드||0|"
+        local room = nil
+        for _, page in ipairs(self.StashPages) do
+            if room == nil and #page < self.StashSize then room = page end
+        end
         if #self.Bag < self.BagSize then
             table.insert(self.Bag, hood)
-        elseif #self.Stash < self.StashSize then
-            table.insert(self.Stash, hood)
+        elseif room ~= nil then
+            table.insert(room, hood)
         else
             -- 두 곳 모두 가득 차면 기존 아이템을 보존하고 다음 접속에서 다시 확인한다.
             return
@@ -96,6 +108,20 @@ script PlayerInventory extends Component
         end
         self.EquipDigest = table.concat(parts, ";")
         self.StashDigest = table.concat(self.Stash, ";")
+        local counts = {}
+        for i, page in ipairs(self.StashPages) do counts[i] = tostring(#page) end
+        self.StashCounts = table.concat(counts, ",")
+        -- 아이템 도감: 가방·장비에 처음 들어온 유니크·세트 조각·룬워드 (불러오는 중에는 알리지 않는다)
+        ---@type PlayerJournal
+        local journal = self.Entity:GetComponent("script.PlayerJournal")
+        if journal ~= nil then
+            local held = {}
+            for _, x in ipairs(self.Bag) do table.insert(held, x) end
+            for _, x in pairs(self.Equip) do table.insert(held, x) end
+            ---@type PlayerSave
+            local save = self.Entity:GetComponent("script.PlayerSave")
+            journal:NoteItems(held, save ~= nil and save.IsLoadSuccess)
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -559,7 +585,7 @@ script PlayerInventory extends Component
         local cur = self.Bag[index]
         if cur == nil or cur ~= expectedItem then return end
         if #self.Stash >= self.StashSize then
-            _Util:Notify("창고가 가득 찼다", senderUserId)
+            _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭이 가득 찼다 — 다른 탭을 고르세요", senderUserId)
             return
         end
         table.remove(self.Bag, index)
@@ -611,7 +637,7 @@ script PlayerInventory extends Component
         self:RefreshDigest()
         local names = { normal = "일반", magic = "마법", rare = "레어", unique = "유니크·세트", rune = "룬" }
         if n == 0 then _Util:Notify("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없다", senderUserId)
-        else _Util:Notify("창고에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개 넣었다" .. (#self.Stash >= self.StashSize and " (창고 가득)" or ""), senderUserId) end
+        else _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개 넣었다" .. (#self.Stash >= self.StashSize and " (이 탭 가득)" or ""), senderUserId) end
     end
 
     -- ───────── 대장장이 (마을 대장장이 곁) ─────────
@@ -672,17 +698,67 @@ script PlayerInventory extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
+    method void ResetStashPages()
+        self.StashPages = {}
+        for i = 1, self.StashTabCount do self.StashPages[i] = {} end
+        self.StashTab = 1
+        self.Stash = self.StashPages[1]
+    end
+
+    @ExecSpace("ServerOnly")
     method table GetStashData()
-        -- 계정 공용 창고 (PlayerSave가 Stash 키로 저장 — 캐릭터를 바꿔도 같은 창고)
+        -- 계정 공용 창고 (PlayerSave가 Stash 키로 저장 — 캐릭터를 바꿔도 같은 창고). 탭 1~4를 이어 붙인 목록, 탭별 개수는 GetStashCounts
         local list = {}
-        for i, x in ipairs(self.Stash) do list[i] = x end
+        for _, page in ipairs(self.StashPages) do
+            for _, x in ipairs(page) do table.insert(list, x) end
+        end
         return list
     end
 
     @ExecSpace("ServerOnly")
-    method void LoadStash(table items)
-        self.Stash = {}
-        for _, x in ipairs(items or {}) do table.insert(self.Stash, x) end
+    method table GetStashCounts()
+        local counts = {}
+        for i, page in ipairs(self.StashPages) do counts[i] = #page end
+        return counts
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LoadStash(table items, table counts)
+        -- counts(탭별 개수)가 목록과 맞으면 그대로 나누고, 예전 저장(한 줄 100칸)이면 앞 탭부터 100개씩 채운다
+        self:ResetStashPages()
+        items = items or {}
+        local total = 0
+        for _, c in ipairs(counts or {}) do total = total + (tonumber(c) or 0) end
+        local index = 1
+        if counts ~= nil and #counts > 0 and total == #items then
+            for tab = 1, self.StashTabCount do
+                for _ = 1, tonumber(counts[tab]) or 0 do
+                    table.insert(self.StashPages[tab], items[index])
+                    index = index + 1
+                end
+            end
+        end
+        -- 남은 것(예전 저장 · 개수가 안 맞는 저장)은 빈 칸이 있는 탭에 차례로. 넘치면 마지막 탭에 둬서 잃지 않는다
+        local tab = 1
+        while index <= #items do
+            while tab < self.StashTabCount and #self.StashPages[tab] >= self.StashSize do tab = tab + 1 end
+            table.insert(self.StashPages[tab], items[index])
+            index = index + 1
+        end
+        self:RefreshDigest()
+        -- 창고에 있는 유니크·세트·룬워드도 도감에 (조용히)
+        ---@type PlayerJournal
+        local journal = self.Entity:GetComponent("script.PlayerJournal")
+        if journal ~= nil then journal:NoteItems(items, false) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestStashTab(integer tab)
+        -- 창고 탭 바꾸기 (보기만 바뀐다. 넣기·꺼내기·한꺼번에 넣기는 지금 탭에)
+        if not self:IsOwnerRequest(senderUserId) then return end
+        if tab < 1 or tab > self.StashTabCount then return end
+        self.StashTab = tab
+        self.Stash = self.StashPages[tab]
         self:RefreshDigest()
     end
 

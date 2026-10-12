@@ -1,4 +1,4 @@
--- 일지 창: 일일 의뢰 · 업적 · 도감 (PlayerJournal.Digest를 그린다). PC는 J, 모바일은 의뢰 추적 아래 「일지」 버튼.
+-- 일지 창: 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 (PlayerJournal.Digest를 그린다). PC는 J, 모바일은 의뢰 추적 아래 「일지」 버튼.
 @Logic
 script JournalWindow extends Logic
 
@@ -16,6 +16,7 @@ script JournalWindow extends Logic
         _UIKit:Connect(self.Win .. "/TabDaily", function() self:SetTab("daily") end)
         _UIKit:Connect(self.Win .. "/TabAch", function() self:SetTab("ach") end)
         _UIKit:Connect(self.Win .. "/TabCol", function() self:SetTab("col") end)
+        _UIKit:Connect(self.Win .. "/TabItem", function() self:SetTab("item") end)
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
         _UIKit:Connect("JournalOpen", function() self:Toggle() end)
@@ -73,7 +74,7 @@ script JournalWindow extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         local ok, view = pcall(function() return _HttpService:JSONDecode(journal.Digest) end)
-        if not ok or type(view) ~= "table" then view = { daily = {}, ach = {}, col = {}, left = 0 } end
+        if not ok or type(view) ~= "table" then view = { daily = {}, ach = {}, col = {}, it = "", left = 0 } end
         self:Render(view)
     end
 
@@ -89,6 +90,19 @@ script JournalWindow extends Logic
             local done = 0
             for _, a in ipairs(list) do if a.d then done = done + 1 end end
             info = string.format("달성 %d / %d", done, #list)
+        elseif self.Tab == "item" then
+            -- 아이템 도감: ItemData.GrailList 순서 + Digest의 찾음 표시(1/0)
+            list = {}
+            local bits = view.it or ""
+            local got = { u = 0, s = 0, r = 0 }
+            local all = { u = 0, s = 0, r = 0 }
+            for i, g in ipairs(_ItemData:GrailList()) do
+                local found = string.sub(bits, i, i) == "1"
+                all[g.kind] = all[g.kind] + 1
+                if found then got[g.kind] = got[g.kind] + 1 end
+                table.insert(list, { g = g, f = found })
+            end
+            info = string.format("유니크 %d/%d · 세트 %d/%d · 룬워드 %d/%d", got.u, all.u, got.s, all.s, got.r, all.r)
         else
             list = view.col or {}
             local seen = 0
@@ -101,7 +115,7 @@ script JournalWindow extends Logic
         _UIKit:SetText(self.Win .. "/Page", tostring(self.Page) .. " / " .. tostring(pages))
         _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
         _UIKit:SetEnabled(self.Win .. "/BtnNext", self.Page < pages)
-        for _, tab in ipairs({ { "TabDaily", "daily" }, { "TabAch", "ach" }, { "TabCol", "col" } }) do
+        for _, tab in ipairs({ { "TabDaily", "daily" }, { "TabAch", "ach" }, { "TabCol", "col" }, { "TabItem", "item" } }) do
             _UIKit:SetColor(self.Win .. "/" .. tab[1], tab[2] == self.Tab and Color(0.55, 0.45, 0.25, 1) or Color(0.14, 0.13, 0.17, 1))
         end
         for i = 1, self.Rows do
@@ -117,7 +131,28 @@ script JournalWindow extends Logic
     method void RenderRow(string row, table item, integer index)
         local name, desc, value, ratio = "", "", "", 0
         local finished = false
-        if self.Tab == "col" then
+        if self.Tab == "item" then
+            -- 이름은 처음부터 보인다 (무엇을 찾아야 하는지 알게). 찾은 것만 색이 들어온다
+            local g = item.g
+            local trees = { command = "소환", soul = "영혼", curse = "저주", any = "범용" }
+            local kinds = { u = "유니크", s = "세트", r = "룬워드" }
+            local colors = { u = "#C8A050", s = "#5ED15E", r = "#E8A85A" }
+            name = item.f and _UIKit:Colored(colors[g.kind] or "#FFFFFF", g.name) or _UIKit:Colored("#77707F", g.name)
+            local parts = { kinds[g.kind] or "", trees[g.tree] or "범용" }
+            if g.kind ~= "r" then
+                table.insert(parts, ((g.grade or 0) > 0 and _ItemData:GradeName(g.grade) .. " " or "") .. g.base)
+            else
+                local n = 0
+                for _ in string.gmatch(g.runes or "", "[^,]+") do n = n + 1 end
+                table.insert(parts, "룬 " .. tostring(n) .. "개 · " .. g.base)
+            end
+            if g.kind == "s" then table.insert(parts, g.set) end
+            if g.kind == "u" and (g.source or "") ~= "" then table.insert(parts, "보스 전용") end
+            desc = table.concat(parts, " · ")
+            value = item.f and _UIKit:Colored("#9FD69B", "찾음") or "???"
+            ratio = item.f and 1 or 0
+            finished = false   -- 이름은 등급 색 그대로 (초록 덧칠 안 함)
+        elseif self.Tab == "col" then
             local known = (item.k or 0) > 0
             name = known and item.n or "???"
             if known and item.u then name = name .. "  (고유)" elseif known and (item.g or 1) >= 3 then name = name .. "  (보스)" end
@@ -142,7 +177,7 @@ script JournalWindow extends Logic
         _UIKit:SetText(row .. "/Desc", desc)
         _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
         -- 도감: 진행 막대 대신 한 줄 설명을 넓게
-        local codex = self.Tab == "col"
+        local codex = self.Tab == "col" or self.Tab == "item"
         _UIKit:SetEnabled(row .. "/BarBg", not codex)
         _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 700, 30))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
