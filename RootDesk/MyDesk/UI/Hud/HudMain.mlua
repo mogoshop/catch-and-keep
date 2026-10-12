@@ -496,7 +496,9 @@ script HudMain extends Logic
             self.TipMap = mapId
             self.TipUntil = tip ~= "" and now + self.TipSeconds or 0
         end
-        _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now)
+        -- 위쪽 가운데는 한 번에 하나: 맵 배너가 끝난 뒤 같은 자리에 TipSeconds 동안 (배너 시간만큼 뒤로 민다)
+        if _HudMap:BannerShowing() and self.TipUntil > 0 then self.TipUntil = math.max(self.TipUntil, _HudMap.BannerUntil + self.TipSeconds) end
+        _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and not _HudMap:BannerShowing() and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now)
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
     end
 
@@ -517,8 +519,9 @@ script HudMain extends Logic
             local mover = "카라반 대장 무하드"   -- 야영지·오아시스의 카라반이 열린 액트 어디로든 (항구에서는 선장)
             if travel ~= nil and travel.Act < cur.act then
                 local here = _GameConst:ActTownName(travel.Act)
-                return inTown and (mover .. "에게 말을 걸어 " .. _GameConst:WithRo(_GameConst:ActTownName(cur.act)) .. " — 액트 " .. tostring(cur.act) .. " 「" .. _GameConst:ActRegionName(cur.act) .. "」가 열렸습니다")
-                    or (here .. "의 " .. mover .. "에게 — 액트 " .. tostring(cur.act) .. "가 열렸습니다")
+                -- 한 줄로 (10-12: 「…가 열렸습니다」까지 붙여 두 줄로 넘쳤다. 열림 자체는 장 마무리 카드가 알린다)
+                return inTown and (mover .. "에게 말을 걸어 " .. _GameConst:WithRo(_GameConst:ActTownName(cur.act)) .. " (액트 " .. tostring(cur.act) .. ")")
+                    or (here .. "의 " .. mover .. "에게 — 다음 길은 " .. _GameConst:ActTownName(cur.act))
             end
             return _GameConst:ActTownName(cur.act) .. "의 " .. _QuestData:GiverName(cur.giver) .. "에게 의뢰를 받으세요"
         end

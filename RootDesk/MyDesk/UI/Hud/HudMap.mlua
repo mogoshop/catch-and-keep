@@ -875,6 +875,12 @@ script HudMap extends Logic
     -- ───────── 맵 이름 ─────────
 
     @ExecSpace("ClientOnly")
+    method boolean BannerShowing()
+        -- 위쪽 가운데는 한 번에 하나 (docs/ui/message-rules.md): 맵 배너가 떠 있는 동안 여정 안내·출구 안내는 기다린다
+        return self.BannerUntil > _UtilLogic.ElapsedSeconds
+    end
+
+    @ExecSpace("ClientOnly")
     method void TickBanner()
         if self.BannerUntil <= 0 then return end
         local left = self.BannerUntil - _UtilLogic.ElapsedSeconds
@@ -966,7 +972,7 @@ script HudMap extends Logic
     @ExecSpace("ClientOnly")
     method boolean ShouldShowGatePrompt(Entity player, any gate, number distance)
         -- 보상·사망 알림과 근처 적의 공격을 먼저 읽게 하되, 출구에 들어서기 직전에는 이동을 알린다.
-        if gate == nil or _UIKit:AnyWindowOpen() or _UXFeedback:IsShowing() then return false end
+        if gate == nil or _UIKit:AnyWindowOpen() or _UXFeedback:IsShowing() or self:BannerShowing() then return false end
         if distance > math.max(1.8, (gate.radius or 0.6) + 0.8) then return false end
         if distance <= (gate.radius or 0.6) + 0.4 then return true end
         return _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 4) == nil

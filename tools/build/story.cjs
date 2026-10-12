@@ -10,11 +10,17 @@ function run() {
   const c = 'SafeArea/Card';
   // 넓은 화면에서도 가장자리가 비지 않게 화면보다 크게 덮는다 (stretch는 다시 불러올 때 크기 0으로 접힌다)
   b.button(c, '', { anchor: 'middle-center', rect_size: [4000, 3000], bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 0.92 }, enable: false });
+  // 그림: 전체 배경(story_* 그림, 코덱스 요청 docs/requests/codex-story-art-20261012.md)이 있으면 어둡게 깔고,
+  // 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로 (StoryCard.ShowArt)
+  b.sprite(c + '/Art', { anchor: 'middle-center', rect_size: [1920, 1080], color: '#FFFFFF', alpha: 0.5, sprite_type: 0, enable: false });
+  b.sprite(c + '/Plate', { anchor: 'middle-center', pos: [0, 352], rect_size: [270, 270], color: '#FFFFFF', sprite_type: 0, enable: false });
   b.text(c + '/Title', '', { anchor: 'middle-center', pos: [0, 150], rect_size: [1500, 80], size: 52, bold: true, color: '#E6C88A', alignment: 4 });
   b.patchComponent(c + '/Title', 'MOD.Core.TextGUIRendererComponent', { Font: 'Maple' });
   b.text(c + '/Sub', '', { anchor: 'middle-center', pos: [0, 84], rect_size: [1500, 44], size: 28, color: '#B8AFA0', alignment: 4 });
   b.text(c + '/Body', '', { anchor: 'middle-center', pos: [0, -40], rect_size: [1300, 200], size: 32, color: '#ECE4D4', alignment: 4 });
   b.text(c + '/Hint', '', { anchor: 'middle-center', pos: [0, -300], rect_size: [900, 36], size: 21, color: '#857D70', alignment: 4 });
+  // 그림이 글자 아래에 오게 순서를 정한다 (기존 파일에 새로 붙인 칸은 맨 뒤 = 맨 위에 그려진다)
+  ['Art', 'Plate', 'Title', 'Sub', 'Body', 'Hint'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
 }

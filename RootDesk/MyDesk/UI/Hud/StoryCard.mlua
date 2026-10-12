@@ -11,6 +11,7 @@ script StoryCard extends Logic
     property table Queue = {}
     property table Pages = {}
     property integer Page = 0
+    property string Key = ""
     property boolean Active = false
     property number AutoClose = 0
     property number ReadySince = 0            -- 캐릭터를 다 불러온 시각 (로딩·선택 창이 닫힌 뒤에 띄운다)
@@ -128,6 +129,7 @@ script StoryCard extends Logic
             sub = "— 끝 —"
             text = _GameData:GetStory("act" .. endAct .. "_end")
         end
+        self.Key = key
         self.Pages = {}
         for line in string.gmatch(text, "[^/]+") do table.insert(self.Pages, line) end
         _UIKit:SetText(self.Card .. "/Title", title)
@@ -142,6 +144,7 @@ script StoryCard extends Logic
     @ExecSpace("ClientOnly")
     method void ShowPage(integer page)
         self.Page = page
+        self:ShowArt(page)
         local text = self.Pages[page] or ""
         self.TypeFull = text
         self.TypeShown = 0
@@ -154,6 +157,19 @@ script StoryCard extends Logic
             if count > 1 then hint = tostring(page) .. " / " .. tostring(count) .. "   ·   " .. hint end
         end
         _UIKit:SetText(self.Card .. "/Hint", hint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowArt(integer page)
+        -- 배경 그림 ui_icons story_<key> (시작 내레이션은 쪽마다 story_prologue1~5). 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로
+        local key = "story_" .. self.Key
+        if self.Key == "prologue" then key = key .. tostring(math.max(1, page)) end
+        local art = _GameData:GetUiIcon(key)
+        local plate = ""
+        local act = tonumber(string.match(self.Key, "(%d)$") or "0") or 0
+        if art == "" and act > 0 then plate = _GameData:GetUiIcon("quest_art" .. tostring(_QuestData:LastOfAct(act))) end
+        _UIKit:SetIcon(self.Card .. "/Art", art)
+        _UIKit:SetIcon(self.Card .. "/Plate", plate)
     end
 
     @ExecSpace("ClientOnly")

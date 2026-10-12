@@ -26,10 +26,13 @@ function run(){quiet(()=>{
  for(let i=1;i<=5;i++)b.patch('NpcWin/Btn'+i,{rect_size:[184,88]});
  // 맵 한 줄 소개 (maps.csv flavor): 이름·부제 아래 (HudMap.OnMapChanged)
  if(b.find('Banner/Flavor'))b.remove('Banner/Flavor');
- b.panel('Banner/FlavorBg',{anchor:'middle-center',pos:[0,-80],rect_size:[960,40],color:'#000000',alpha:0.6,enable:true}); // 배너 틀 아래 바닥 위라 검은 띠를 깐다
- b.text('Banner/FlavorBg/Text','',{anchor:'middle-center',pos:[0,0],rect_size:[930,34],size:21,color:'#D8CFBF',alignment:4});
+ b.panel('Banner/FlavorBg',{anchor:'middle-center',pos:[0,-70],rect_size:[820,36],color:'#000000',alpha:0.6,enable:true}); // 배너 틀 아래 바닥 위라 검은 띠를 깐다
+ b.text('Banner/FlavorBg/Text','',{anchor:'middle-center',pos:[0,0],rect_size:[800,32],size:20,color:'#D8CFBF',alignment:4});
  b.patchComponent('QuestTrack/Body','MOD.Core.TextGUIRendererComponent',{FontSize:24});
- b.patch('Tip',{rect_size:[900,74],pos:[0,-130]});b.patch('Tip/Text',{rect_size:[860,66]});b.patchComponent('Tip/Text','MOD.Core.TextGUIRendererComponent',{FontSize:26});
+ b.patch('Tip',{rect_size:[900,74],pos:[0,-130]});b.patch('Tip/Text',{rect_size:[860,66]});b.patchComponent('Tip/Text','MOD.Core.TextGUIRendererComponent',{FontSize:26,BestFit:true,MinSize:20,MaxSize:26});
+ // 위쪽 가운데 한 칸 (docs/ui/message-rules.md): 맵 배너를 대상 체력바 바로 아래 맨 위로 — 여정 안내는 배너가 끝난 뒤 같은 자리에
+ b.patch('Banner',{pos:[0,-160],rect_size:[820,148]}); // 1000폭이면 오른쪽 끝이 「메뉴」 버튼에 겹친다
+ b.patch('Banner/Title',{pos:[0,10],rect_size:[620,44]});b.patch('Banner/Sub',{pos:[0,-20],rect_size:[620,28]});
  for(const e of b.listEntities())if(e.name==='BtnClose'){b.patch(e.path,{rect_size:[88,88]});}
  // 소지품: 30칸 모두 88px 이상. 선택 설명은 읽을 수 있는 크기로 분리.
  b.patch('InvWin',{anchor:'middle-center',pivot:[0.5,0.5],pos:[0,0],rect_size:[1280,960]});b.patch('InvWin/Rim',{rect_size:[1320,1000]});
