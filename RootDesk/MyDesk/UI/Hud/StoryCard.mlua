@@ -38,7 +38,21 @@ script StoryCard extends Logic
         -- 시작 내레이션은 맨 앞 (같은 때 들어온 장 표시보다 먼저)
         for _, k in ipairs(self.Queue) do if k == key then return end end
         if key == "prologue" then table.insert(self.Queue, 1, key) else table.insert(self.Queue, key) end
+        self:PreloadArt(key)
         log("[VRF] story queued " .. key)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PreloadArt(string key)
+        -- 카드 배경은 큰 그림이라 접속 때 받지 않고 차례가 오면 받는다 (UIKit.PreloadItemIcons에서 뺐다)
+        local list = {}
+        local keys = { "story_" .. key }
+        if key == "prologue" then keys = { "story_prologue1", "story_prologue2", "story_prologue3", "story_prologue4", "story_prologue5" } end
+        for _, k in ipairs(keys) do
+            local ruid = _GameData:GetUiIcon(k)
+            if ruid ~= "" then table.insert(list, ruid) end
+        end
+        if #list > 0 then _ResourceService:PreloadAsync(list, function(results) end) end
     end
 
     @ExecSpace("ClientOnly")
