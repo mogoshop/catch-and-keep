@@ -511,6 +511,23 @@ script ItemData extends Logic
             end
         end
         if #trees == 0 then return nil end
+        if source ~= "" then
+            -- 보스 전용: 계열 대신 그 난이도에서 나올 수 있는 가장 높은 등급만 (지옥 보스가 일반형 전용 유니크를 주지 않게)
+            local top = -1
+            for _, tree in ipairs(trees) do
+                for _, u in ipairs(byTree[tree].list) do top = math.max(top, t.Bases[u.base].grade or 0) end
+            end
+            local list, weights = {}, {}
+            for _, tree in ipairs(trees) do
+                for i, u in ipairs(byTree[tree].list) do
+                    if (t.Bases[u.base].grade or 0) == top then
+                        table.insert(list, u)
+                        table.insert(weights, byTree[tree].weights[i])
+                    end
+                end
+            end
+            return self:WeightedPick(list, weights)
+        end
         local pool = byTree[trees[_UtilLogic:RandomIntegerRange(1, #trees)]]
         return self:WeightedPick(pool.list, pool.weights)
     end

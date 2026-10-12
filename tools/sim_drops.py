@@ -62,6 +62,12 @@ def pick_unique(ilvl, source):
         if u['source'] == source and b and int(b['reqLv']) <= ilvl + 3:
             l, w = by[u.get('tree') or 'any']; l.append(u); w.append(old_weight(int(b['reqLv']), ilvl, 25) * num(u.get('weight'), 1))
     if not by: return None
+    if source != '':
+        # 보스 전용: 그 난이도에서 나올 수 있는 가장 높은 등급만 (ItemData.PickUnique와 같다)
+        allu = [(u, w) for l, ws in by.values() for u, w in zip(l, ws)]
+        top = max(int(bases[u['base']].get('grade') or 0) for u, _ in allu)
+        allu = [(u, w) for u, w in allu if int(bases[u['base']].get('grade') or 0) == top]
+        return wpick([u for u, _ in allu], [w for _, w in allu])
     l, w = by[random.choice(list(by))]
     return wpick(l, w)
 
