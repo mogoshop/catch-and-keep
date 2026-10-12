@@ -1,4 +1,6 @@
 -- 채널 (10-11): MSW 월드 인스턴스 = 채널. 출시 설정의 「최대 인원」을 넘으면 엔진이 새 인스턴스를 연다.
+-- 10-12: 소환수가 많아 채널당 4명 (config channelMaxPlayers). 출시 설정 값과 이 값 중 작은 쪽을 상한으로 쓰고,
+-- 접속했는데 상한을 넘은 채널이면(동시 이동 경쟁 등) 자리가 있는 채널로 옮긴다.
 -- 같은 채널끼리만 만나고 파티를 맺으므로, 목록을 보여 주고 고른 채널로 옮긴다 (TeleportService 워프).
 -- 목록·워프 API는 출시 환경 전용이라 메이커에서는 「지금 채널 하나」만 보인다.
 @Logic
@@ -25,7 +27,10 @@ script ChannelSystem extends Logic
         local list = {}
         while true do
             for _, info in ipairs(pages:GetCurrentPageDatas()) do
-                table.insert(list, { id = info.Id, cur = info.CurrentUserCount, max = info.MaxUserCount })
+                local cap = math.floor(_GameData.channelMaxPlayers)
+                local max = info.MaxUserCount
+                if cap > 0 and (max <= 0 or max > cap) then max = cap end
+                table.insert(list, { id = info.Id, cur = info.CurrentUserCount, max = max })
             end
             if pages.IsLastPage or not pages:MoveToNextPageAndWait() then break end
         end
@@ -71,6 +76,32 @@ script ChannelSystem extends Logic
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
         if save ~= nil then save:WarpToChannel(instanceId) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckOverflow(Entity player)
+        -- 접속 직후: 지금 채널이 상한(4명)을 넘었으면 자리가 있는 채널 중 사람이 가장 많은 곳으로 옮긴다 (출시 환경 전용)
+        if not isvalid(player) or _RoomService:IsInstanceRoom() or not Environment:IsPublishedPlay() then return end
+        local list = self:Instances()
+        if list == nil then return end
+        local current = _WorldInstanceService.WorldInstanceId
+        local mine = nil
+        for _, w in ipairs(list) do if w.id == current then mine = w end end
+        if mine == nil or mine.max <= 0 or mine.cur <= mine.max then return end
+        local best = nil
+        for _, w in ipairs(list) do
+            if w.id ~= current and w.cur < w.max and (best == nil or w.cur > best.cur) then best = w end
+        end
+        local uid = player.PlayerComponent.UserId
+        if best == nil then
+            log("[VRF] channel: 상한 초과 " .. tostring(mine.cur) .. "/" .. tostring(mine.max) .. " — 옮길 채널 없음")
+            return
+        end
+        _Util:Notify("이 채널이 가득 차 자리가 있는 채널로 옮깁니다", uid)
+        log("[VRF] channel: 상한 초과 " .. tostring(mine.cur) .. "/" .. tostring(mine.max) .. " → " .. best.id)
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save ~= nil then save:WarpToChannel(best.id) end
     end
 
     @ExecSpace("ServerOnly")
