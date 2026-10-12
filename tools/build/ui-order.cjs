@@ -2,7 +2,7 @@
 // 메이커는 저장할 때 그룹 순서를 0~15로 다시 매긴다 — 값이 겹치면 순서를 제멋대로 정해 HUD가 창을 덮었다
 // (상점 창이 GameHUD 아래로, 그림자 창이 GameHUD 아래로). 모든 그룹에 겹치지 않는 순서를 주고
 // 루트 displayOrder와 UIGroupComponent.GroupOrder를 같은 값으로 써서, 다시 매겨도 위아래가 바뀌지 않게 한다.
-// 아래로 갈수록 위에 그린다: 늘 보이는 HUD → 창 → 입장 화면·장비 → 설정 → 보상 알림 → 이야기 카드 → 확인 창
+// 아래로 갈수록 위에 그린다: 늘 보이는 HUD(채팅창 포함) → 창 → 입장 화면·장비 → 설정 → 보상 알림 → 이야기 카드 → 확인 창
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -10,7 +10,7 @@ const { UIBuilder } = require("../../.claude/skills/msw-ui-system/scripts/msw_ui
 
 const ORDER = [
   "AimHUD", "NavigationHUD", "CompanionHUD", "InteractionHUD",
-  "GameHUD", "ShadowHUD",
+  "GameHUD", "ChatHUD", "ShadowHUD",
   "ShopHUD", "StashHUD", "MerchantHUD", "JournalHUD", "QuestJournalHUD",
   "CharSelectHUD", "EquipmentHUD", "AudioSettingsHUD", "RewardHUD", "StoryHUD", "ConfirmHUD",
 ];
