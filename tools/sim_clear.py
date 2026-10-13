@@ -11,6 +11,7 @@
 가정(코드에 없는 값)은 PROFILES 와 ASSUME 에 모았다. 사용:
   python3 tools/sim_clear.py            # 액트 2·3 전체 표
   python3 tools/sim_clear.py --eff 0.5  # 전투 효율 가정만 바꿔 보기
+  python3 tools/sim_clear.py --walls --exp-k 0.08 --boss-hp 3.0   # 수정안: 액트 보스 「벽」 (도착 레벨·보스전·벽을 넘는 사냥 시간)
 """
 import argparse, csv, math, pathlib
 
@@ -229,6 +230,9 @@ def exp_next(n):
     return round(C["expCurveCoef"] * n ** C["expCurveExp"])
 
 
+EXP_K = 0.0   # 수정안: Lv12 넘는 몬스터의 처치 경험치 +EXP_K × (몬스터 레벨 − 12) (액트 1은 그대로)
+
+
 def kill_exp(pl, ml, grade):
     g = 1 if grade == 1 else (3 if grade == 2 else 12)
     b = C["killExpCoef"] * ml ** 1.3 * g
@@ -239,7 +243,7 @@ def kill_exp(pl, ml, grade):
         b *= 1 - (d - 4) * 0.15
     if ml > pl + 5:
         b *= (pl + 5) / ml
-    return b
+    return b * (1 + EXP_K * max(0, ml - 12))
 
 
 def hits_to_die(b, dmg, element, pl, ml):
@@ -323,6 +327,46 @@ def run(profile, start_level, start_exp, route):
     return out
 
 
+def farm_rate(prof, L, mapid):
+    # 그 맵을 한 판 돌 때 초당 경험치 (벽 앞에서 앞 사냥터를 다시 도는 경우)
+    mp = [m for m in MAPS if m["id"] == mapid][0]
+    b = build(prof, L)
+    t = g = 0
+    for tok in mp["spawns"].split(";"):
+        mid, n, ml = tok.split(":")
+        n, ml = int(n), int(ml)
+        hp, _, _, _ = mon(mid, ml, float(mp["statMul"] or 1))
+        g2 = int(MON[mid]["grade"]) == 2
+        mul = 1 if g2 else 1 + 2 * float(mp["eliteChance"] or 0)
+        t += n * ASSUME["killShare"] * hp * mul / (b["total"] * ASSUME["eff"] * gap_dealt(L, ml))
+        g += n * ASSUME["killShare"] * kill_exp(L, ml, 2 if g2 else 1) * mul
+    t += float(mp["w"]) * ASSUME["routeMul"] / ASSUME["speed"] + ASSUME["overhead"]
+    return g / t
+
+
+def walls(route):
+    # 액트 보스 앞: 한 번씩 돌고 도착한 레벨, 그 레벨의 보스전(초·몇 대에 죽나), 보스 레벨−1까지 앞 맵을 다시 도는 시간
+    print("\n== 액트 보스 벽 (처치 경험치 보정 %.2f/레벨 · 보스 생명 배율 %.1f) ==" % (EXP_K, C["bossHpMul"]))
+    for prof in PROFILES:
+        rs = run(prof, 13, 0, route)
+        d = {r["id"]: r for r in rs}
+        out = []
+        for bid, mapid, farm in (("highpriest", "sanctum", "temple3"), ("admiral", "stormeye", "lighthouse3")):
+            L = d[mapid]["pl"]
+            m = MON[bid]
+            bl = int(m["baseLevel"])
+            hp, dmg, _, el = mon(bid, bl, 1.3)
+            b = build(prof, L)
+            ttk = hp / (b["total"] * ASSUME["bossEff"] * gap_dealt(L, bl))
+            htd, _ = hits_to_die(b, dmg, el, L, bl)
+            sec, lv = 0, L
+            while lv < bl - 1:
+                sec += exp_next(lv) / farm_rate(prof, lv, farm)
+                lv += 1
+            out.append("%s 도착 Lv%d · %.0f초 · %.1f대에 사망 · 벽 사냥 %.0f분" % (m["name"], L, ttk, htd, sec / 60))
+        print(" %-4s 액트2 %s 액트3 %s | %s" % (prof, fmt_time(d["sanctum"]["total"]), fmt_time(rs[-1]["total"] - d["sanctum"]["total"]), " / ".join(out)))
+
+
 def fmt_time(s):
     return "%d분 %02d초" % (s // 60, s % 60)
 
@@ -331,10 +375,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eff", type=float)
     ap.add_argument("--start", type=int, default=13)
+    ap.add_argument("--walls", action="store_true", help="액트 보스 벽 표만")
+    ap.add_argument("--exp-k", type=float, default=0.0, help="Lv12 넘는 몬스터 처치 경험치 +k/레벨 (수정안)")
+    ap.add_argument("--boss-hp", type=float, help="보스 생명 배율 bossHpMul (수정안)")
     ap.add_argument("--route", default="quest", choices=["main", "quest", "all"], help="main 필드만 · quest 퀘스트 곁가지 포함(기본) · all 곁가지 전부")
     a = ap.parse_args()
+    global EXP_K
     if a.eff:
         ASSUME["eff"] = a.eff
+    EXP_K = a.exp_k
+    if a.boss_hp:
+        C["bossHpMul"] = a.boss_hp
+    if a.walls:
+        walls(a.route)
+        return
     for L in (17, 21, 27, 30):
         print("== Lv%d 빌드 비교 ==" % L)
         ref = build("P100", L)["total"]
