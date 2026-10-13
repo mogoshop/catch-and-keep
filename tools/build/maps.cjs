@@ -343,7 +343,13 @@ function buildNormal(d, maps, ctx) {
   }
   for (const e of desired) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
   const layout = ctx.layoutCache[d.id];
-  if (layout || ctx.art[d.id]) {
+  // 바닥 그림(ArtFloor)이 맵 전체를 덮는 맵: 메이커 장식(Decor_)은 그 그림 아래(순서 0, z 999)에 깔려 보이지 않는다.
+  // 그런데 발밑을 충돌 칸으로 막아 「투명한데 못 지나가는 곳」이 됐다 (10-13 사용자 지적: 굶주린 굴 — 액트 1 지형 맵 43장에서 857칸).
+  // 보이지 않는 장식은 끄고 막지 않는다. 바닥 그림이 없는 손으로 꾸민 맵(map01)의 장식은 그대로 보이고 막는다
+  const floorPainted = layout ? !!(ctx.layouts[d.id] || {}).floorArt : !!(ctx.art[d.id] || {}).floor;
+  if (floorPainted) {
+    for (const p of decorPositions(d)) map.patch(p.path, { enable: false });
+  } else if (layout || ctx.art[d.id]) {
     if (!ctx.propBlocked[d.id]) ctx.propBlocked[d.id] = new Set();
     blockDecor(d, layout, ctx.propBlocked[d.id], desired);
   }
@@ -356,7 +362,7 @@ function buildNormal(d, maps, ctx) {
     map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { tileMap });
     // 안쪽 벽 칸에 묻힌 장식은 끈다 (배치가 바뀌어 다시 바닥이 되면 켠다). 맨 바깥 테두리 줄 장식은 그대로
     const lb = layout.bounds;
-    for (const p of decorPositions(d)) {
+    for (const p of floorPainted ? [] : decorPositions(d)) {
       const x = Math.floor(p.x), y = Math.floor(p.y);
       const edge = x <= lb.x0 || x >= lb.x1 || y <= lb.y0 || y >= lb.y1;
       map.patch(p.path, { enable: edge || layout.isFloor(x, y) });

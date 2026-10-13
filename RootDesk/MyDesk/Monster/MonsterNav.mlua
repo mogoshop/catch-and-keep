@@ -1,13 +1,17 @@
 -- 통로 던전(맵 정보 maze)의 몬스터 길찾기. 네이티브 추적(AIChase)은 벽을 모르고 곧장 밀고 들어가다 멈춘다.
 -- 벽 너머(시야 밖)의 가까운 플레이어에게는 플레이어 칸에서 퍼뜨린 거리표(BFS)를 따라 통로로 돌아가고,
 -- 다시 보이면 네이티브 추적에 맡긴다. 공격 모션·경직·혼란·후퇴·숨기 중에는 손대지 않는다.
+-- 보이더라도 벽 모서리에 몸이 걸려 0.8초 넘게 제자리이고 플레이어 쪽 바로 앞 칸이 벽이면 「끼임」으로 보고 길찾기로 돌린다
+-- (10-13 사용자 지적: 굶주린 굴에서 몬스터가 벽에 끼어 멈춰 있었다 — 시야 선은 모서리를 스쳐 통과하지만 몸은 걸린다).
 @Logic
 script MonsterNav extends Logic
 
     property number DecideInterval = 0.2      -- 누구를 길찾기로 몰지 다시 정하는 간격(초)
     property number FieldRefresh = 0.3        -- 플레이어가 같은 칸에 있어도 거리표를 다시 만드는 최소 간격
     property number NoticeRange = 9           -- 이 직선거리 안의 플레이어만 (벽 너머 눈치)
-    property integer MaxSteps = 30            -- 통로로 이 칸 수 넘게 돌아가야 하면 쫓지 않는다 (미로는 직선 4칸이 길로 20칸쯤)
+    property integer MaxSteps = 60            -- 통로로 이 칸 수 넘게 돌아가야 하면 쫓지 않는다 (10-13: 30이면 굶주린 굴 같은 큰 격자 미로에서 돌아갈 길을 못 찾고 벽으로 밀었다)
+    property number StuckSeconds = 0.8        -- 이만큼 0.15칸도 못 움직이고 앞 칸이 벽이면 끼임
+    property table Track = {}                 -- 몬스터 Id → { p = 마지막으로 움직인 자리, at = 그 시각 }
     property number DecideAt = 0
     property table Fields = {}                -- "맵Id:플레이어Id" → { tx, ty, at, dist, m }
     property table Active = {}                -- 몬스터 Id → { monster, target }
@@ -143,13 +147,20 @@ script MonsterNav extends Logic
                 local chase = e.AIChaseComponent
                 if not monster.IsDead and e.Enable and isvalid(chase) and e:GetComponent("script.BossPattern") == nil and not self:Busy(monster, now) then
                     local pos = _Util:Pos2(e)
+                    local tr = self.Track[e.Id]
+                    if tr == nil or (pos - tr.p):Magnitude() > 0.15 then
+                        tr = { p = pos, at = now }
+                        self.Track[e.Id] = tr
+                    end
+                    local still = now - tr.at >= self.StuckSeconds
                     local best, bestD = nil, 999
                     -- 이미 쫓던 몬스터는 보이더라도 네이티브 추적 범위(DetectionRange) 안에 들 때까지 계속 몬다
                     local pursuing = self.Active[e.Id] ~= nil
                     for _, player in ipairs(entry.players) do
                         local d = (_Util:Pos2(player) - pos):Magnitude()
                         local hidden = not _Util:HasLineOfSight(map, pos, _Util:Pos2(player))
-                        if d <= self.NoticeRange and d < bestD and (hidden or (pursuing and d > chase.DetectionRange - 0.3)) then
+                        local stuck = (still or pursuing) and d > 1.2 and self:WallAhead(map, pos, _Util:Pos2(player))
+                        if d <= self.NoticeRange and d < bestD and (hidden or stuck or (pursuing and d > chase.DetectionRange - 0.3)) then
                             local f = self:Field(map, player, now)
                             if f ~= nil and self:Step(f, pos) ~= nil then
                                 best, bestD = player, d
@@ -165,9 +176,12 @@ script MonsterNav extends Logic
             if next[id] == nil then self:Release(id, a.monster) end
         end
         self.Active = next
-        -- 지난 거리표 정리 (5초 넘게 안 쓴 것)
+        -- 지난 거리표·위치 기록 정리 (5초 넘게 안 쓴 것)
         for key, f in pairs(self.Fields) do
             if now - f.at > 5 then self.Fields[key] = nil end
+        end
+        for id, tr in pairs(self.Track) do
+            if now - tr.at > 5 and next[id] == nil then self.Track[id] = nil end
         end
         local count = 0
         for _ in pairs(next) do count = count + 1 end
@@ -175,6 +189,19 @@ script MonsterNav extends Logic
             self.LastActive = count
             log(string.format("[VRF] MonsterNav 길찾기 몬스터 %d", count))
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean WallAhead(Entity map, Vector2 from, Vector2 to)
+        -- 플레이어 쪽으로 0.6칸 앞(가로·세로 성분 각각 포함)이 벽인가 — 벽에 대고 미는 중이라는 표시
+        local m = _Util:TerrainMemo(map)
+        if m == nil then return false end
+        local dir = to - from
+        if dir:Magnitude() < 0.01 then return false end
+        dir = dir:Normalize()
+        return _Util:CellBlocked(m, from + dir * 0.6)
+            or (math.abs(dir.x) > 0.2 and _Util:CellBlocked(m, from + Vector2(dir.x > 0 and 0.6 or -0.6, 0)))
+            or (math.abs(dir.y) > 0.2 and _Util:CellBlocked(m, from + Vector2(0, dir.y > 0 and 0.6 or -0.6)))
     end
 
     @ExecSpace("ServerOnly")
