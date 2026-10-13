@@ -52,19 +52,30 @@ script SocialWindow extends Logic
         local ids = {}
         local names = {}
         local sameMap = {}
+        local myLv = 1
         local me = player.PlayerComponent.UserId
         local here = isvalid(player.CurrentMap) and player.CurrentMap.Name or ""
+        local rows = {}
         for entry in string.gmatch(_PartySystem.Roster .. ";", "([^;]*);") do
             local uid, name, lv, place, mapName = string.match(entry, "^([^|]*)|([^|]*)|([^|]*)|([^|]*)|?(.*)$")
-            if uid ~= nil and uid ~= me and #ids < 8 then
-                table.insert(ids, uid)
-                local near = mapName ~= "" and mapName == here
-                table.insert(sameMap, near)
-                table.insert(names, name .. "  Lv" .. lv .. "  " .. _UIKit:Colored(near and "#9EE6A0" or "#888888", near and (place .. " · 같은 곳") or place))
+            if uid == me then myLv = math.tointeger(tonumber(lv)) or 1 end
+            if uid ~= nil and uid ~= me and #rows < 8 then
+                table.insert(rows, { uid = uid, name = name, lv = math.tointeger(tonumber(lv)) or 1, place = place, near = mapName ~= "" and mapName == here })
             end
         end
+        local s = self:Social()
+        local duelOk = {}
+        for i, r in ipairs(rows) do
+            ids[i] = r.uid
+            sameMap[i] = r.near
+            duelOk[i] = s ~= nil and s:DuelLevelOk(myLv, r.lv)
+            local where = _UIKit:Colored(r.near and "#9EE6A0" or "#888888", r.near and (r.place .. " · 같은 곳") or r.place)
+            -- 같은 곳인데 레벨 차로 결투 단추가 없을 때 이유를 붙인다 (10-13)
+            if r.near and not duelOk[i] then where = where .. "  " .. _UIKit:Colored("#888888", "· 레벨 차로 결투 불가") end
+            names[i] = r.name .. "  Lv" .. tostring(r.lv) .. "  " .. where
+        end
         -- 아무도 없을 때도 한 번은 그린다 (예전에는 빈 목록 키가 처음 값 ""과 같아 버튼 24개가 그대로 떠 있었다)
-        local key = "n" .. tostring(#names) .. ":" .. table.concat(names, ";")
+        local key = "n" .. tostring(#names) .. ":" .. tostring(myLv) .. ":" .. table.concat(names, ";")
         if key == self.RenderKey then return end
         self.RenderKey = key
         self.Ids = ids
@@ -74,7 +85,9 @@ script SocialWindow extends Logic
             _UIKit:SetText(self.Win .. "/Name" .. tostring(i), text)
             -- 파티 초대는 채널 어디서나, 결투·거래는 같은 지역에서만 (서버 PlayerSocial.RequestAction과 같은 조건)
             _UIKit:SetEnabled(self.Win .. "/Party" .. tostring(i), ids[i] ~= nil)
-            for _, b in ipairs({ "Duel", "Trade" }) do _UIKit:SetEnabled(self.Win .. "/" .. b .. tostring(i), ids[i] ~= nil and sameMap[i] == true) end
+            -- 결투는 레벨 차 duelMaxLevelGap 이하만 (10-13)
+            _UIKit:SetEnabled(self.Win .. "/Duel" .. tostring(i), ids[i] ~= nil and sameMap[i] == true and duelOk[i] == true)
+            _UIKit:SetEnabled(self.Win .. "/Trade" .. tostring(i), ids[i] ~= nil and sameMap[i] == true)
         end
     end
 

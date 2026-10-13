@@ -730,7 +730,10 @@ script PlayerInventory extends Component
     method void LoadStash(table items, table counts)
         -- counts(탭별 개수)가 목록과 맞으면 그대로 나누고, 예전 저장(한 줄 100칸)이면 앞 탭부터 100개씩 채운다
         self:ResetStashPages()
-        items = items or {}
+        local kept = {}
+        for _, s in ipairs(items or {}) do if not self:IsRetiredItem(s) then table.insert(kept, s) end end
+        if #kept ~= #(items or {}) then counts = nil end
+        items = kept
         local total = 0
         for _, c in ipairs(counts or {}) do total = total + (tonumber(c) or 0) end
         local index = 1
@@ -787,12 +790,17 @@ script PlayerInventory extends Component
         return saved
     end
 
+    method boolean IsRetiredItem(string s)
+        -- 없앤 물건: 예전 결투 승리 「귀」(10-13 제거). 불러올 때 버린다
+        return type(s) == "string" and string.sub(s, 1, 4) == "ear|"
+    end
+
     @ExecSpace("ServerOnly")
     method void LoadSaveData(table data)
         if data == nil then return end
         self.Bag = {}
         self.Equip = {}
-        if data.bag ~= nil then for _, s in ipairs(data.bag) do table.insert(self.Bag, s) end end
+        if data.bag ~= nil then for _, s in ipairs(data.bag) do if not self:IsRetiredItem(s) then table.insert(self.Bag, s) end end end
         if data.equip ~= nil then for slot, s in pairs(data.equip) do self.Equip[slot] = s end end
         self.SocketTokens = tonumber(data.socketTokens) or 0
         self.AshenHoodGranted = data.ashenHoodGranted == true

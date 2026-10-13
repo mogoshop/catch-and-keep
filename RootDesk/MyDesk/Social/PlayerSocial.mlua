@@ -1,5 +1,5 @@
 -- 플레이어 사이의 요청 창구: 파티 초대 / 결투 신청 / 거래 요청 → 상대가 수락하면 시작.
--- 요청은 20초 뒤 만료. 상대에게는 @TargetUserSync로 받은 요청만 보인다 (GameHUD가 수락 창을 띄움).
+-- 요청은 20초 뒤 만료. 결투는 같은 지역 · 마을 밖 · 레벨 차 duelMaxLevelGap 이하. 상대에게는 @TargetUserSync로 받은 요청만 보인다 (GameHUD가 수락 창을 띄움).
 @Component
 script PlayerSocial extends Component
 
@@ -31,6 +31,10 @@ script PlayerSocial extends Component
         end
         if kind == "duel" and _GameConst:IsTown(self.Entity.CurrentMap) then
             _Util:Warn("마을에서는 결투할 수 없다", pc.UserId)
+            return
+        end
+        if kind == "duel" and not self:DuelLevelOk(self:LevelOf(self.Entity), self:LevelOf(target)) then
+            _Util:Warn("레벨 차가 " .. tostring(math.floor(_GameData.duelMaxLevelGap)) .. "보다 크면 결투할 수 없다", pc.UserId)
             return
         end
         if other.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < other.PendingUntil then
@@ -73,6 +77,10 @@ script PlayerSocial extends Component
             if da ~= nil and db ~= nil and (da.Opponent ~= "" or db.Opponent ~= "") then
                 _Util:Notify("이미 결투 중이다", fromId)
                 _Util:Notify("이미 결투 중이다", pc.UserId)
+            elseif not self:DuelLevelOk(self:LevelOf(from), self:LevelOf(self.Entity)) then
+                -- 신청 뒤 20초 사이에 레벨이 올라 차이가 벌어진 경우
+                _Util:Warn("레벨 차가 커서 결투할 수 없다", fromId)
+                _Util:Warn("레벨 차가 커서 결투할 수 없다", pc.UserId)
             elseif da ~= nil and db ~= nil and from.CurrentMap == self.Entity.CurrentMap and not _GameConst:IsTown(self.Entity.CurrentMap) then
                 da:Start(pc.UserId)
                 db:Start(fromId)
@@ -87,6 +95,18 @@ script PlayerSocial extends Component
                 b:Start(fromId)
             end
         end
+    end
+
+    method integer LevelOf(Entity player)
+        ---@type PlayerStats
+        local st = isvalid(player) and player:GetComponent("script.PlayerStats") or nil
+        if st == nil then return 1 end
+        return st.Level
+    end
+
+    method boolean DuelLevelOk(integer a, integer b)
+        -- 결투 레벨 차 제한 (서버 신청·수락 + 플레이어 창 단추가 같은 규칙)
+        return math.abs(a - b) <= math.floor(_GameData.duelMaxLevelGap)
     end
 
     @ExecSpace("Server")
