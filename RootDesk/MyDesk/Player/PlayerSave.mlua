@@ -37,6 +37,8 @@ script PlayerSave extends Component
     property table StashItems = {}
     property table StashCounts = {}            -- 창고 탭별 개수 (v2 · 4탭 × 100칸)
     property table Grail = {}                  -- 아이템 도감 key 목록 (계정 공용 · Account 키의 grail)
+    @Sync
+    property boolean GuideSeen = false         -- 게임 안내를 본 계정 (Account 키의 guide) — 첫 진입 때 한 번만 저절로 띄운다 (GuideWindow)
     property string SlotMemoryName = "CharSlotV1"
     property boolean InSelectRoom = false      -- 메뉴 「캐릭터 선택으로」로 온 선택용 인스턴스 방 (고르면 정적 방으로 돌아간다)
     property boolean Switching = false         -- 방 이동을 요청한 뒤 (중복 요청 막기)
@@ -111,6 +113,7 @@ script PlayerSave extends Component
         self.Account = account
         self.Grail = {}
         if type(account.grail) == "table" then for _, key in ipairs(account.grail) do table.insert(self.Grail, key) end end
+        self.GuideSeen = tonumber(account.guide) == 1
         self.StashItems = {}
         self.StashCounts = {}
         if stash ~= nil and type(stash.items) == "table" then for _, x in ipairs(stash.items) do table.insert(self.StashItems, x) end end
@@ -623,7 +626,16 @@ script PlayerSave extends Component
         local journal = self.Entity:GetComponent("script.PlayerJournal")
         if journal ~= nil and self.IsLoadSuccess then self.Grail = journal:GetGrailList() end
         if #self.Grail > 0 then data.grail = self.Grail end
+        if self.GuideSeen then data.guide = 1 end
         return _HttpService:JSONEncode(data)
+    end
+
+    @ExecSpace("Server")
+    method void RequestGuideSeen()
+        -- 게임 안내를 한 번 띄웠다 (클라이언트 GuideWindow) → 계정에 남겨 다른 캐릭터·다음 접속에는 저절로 띄우지 않는다 (다음 저장 때 Account에 들어간다)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or self.GuideSeen then return end
+        self.GuideSeen = true
+        log("[VRF] guide seen saved for account")
     end
 
     @ExecSpace("ServerOnly")

@@ -210,10 +210,12 @@ function buildGameHud() {
     b.text(`${path}/Label`, label, { size: 26, color: C.white, anchor: "bottom-center", pos: [0, 14], rect_size: [200, 34] });
     if (n === "Char" || n === "Skill") k.badge(path);
   });
-  // 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
-  k.btn("MenuWin/CharSel", "캐릭터 선택으로", { anchor: "top-left", pos: [64, -576], rect_size: [330, 72], font_size: 24 });
+  // 아래 줄 3칸 (위 격자와 같은 열): 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
+  k.btn("MenuWin/CharSel", "캐릭터 선택", { anchor: "top-left", pos: [64, -576], rect_size: [212, 72], font_size: 22 });
   // 채널 변경 (ChannelWindow · ChannelSystem — 같은 채널끼리만 만나고 파티를 맺는다)
-  k.btn("MenuWin/Channel", "채널 변경", { anchor: "top-left", pos: [406, -576], rect_size: [330, 72], font_size: 24 });
+  k.btn("MenuWin/Channel", "채널 변경", { anchor: "top-left", pos: [294, -576], rect_size: [212, 72], font_size: 22 });
+  // 게임 안내 (GuideWindow — 첫 진입 때 한 번 저절로 뜨고, 여기서 다시 본다)
+  k.btn("MenuWin/Guide", "게임 안내", { anchor: "top-left", pos: [524, -576], rect_size: [212, 72], font_size: 22 });
   b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
@@ -426,6 +428,15 @@ function buildGameHud() {
   });
   k.inner("RuneWin/Paper", "top-center", [0, -156], [900, 572], "win_content");
   b.text("RuneWin/Paper/List", "", { size: 18, color: C.white, alignment: 0, anchor: "top-left", pos: [20, -14], rect_size: [860, 544], bestfit: true, min_size: 13, max_size: 18 });
+
+  // ── 게임 안내 (메뉴 「게임 안내」 · 첫 진입 때 한 번): 쪽마다 제목 + 본문, 이전/다음 (GuideWindow.mlua) ──
+  k.frame("GuideWin", "middle-center", [0, 20], [1040, 760], "게임 안내");
+  k.inner("GuideWin/Paper", "top-center", [0, -90], [960, 548], "win_content");
+  b.text("GuideWin/Paper/Head", "", { size: 30, bold: true, color: C.title, alignment: 0, anchor: "top-left", pos: [28, -20], rect_size: [904, 46], ...outline });
+  b.text("GuideWin/Paper/Body", "", { size: 22, color: C.white, alignment: 0, anchor: "top-left", pos: [28, -82], rect_size: [904, 448], bestfit: true, min_size: 15, max_size: 22 });
+  b.text("GuideWin/Page", "", { size: 20, color: C.dim, anchor: "bottom-center", pos: [0, 40], rect_size: [240, 40] });
+  k.btn("GuideWin/BtnPrev", "이전", { anchor: "bottom-left", pos: [40, 26], rect_size: [220, 68] });
+  k.ok("GuideWin/BtnNext", "다음", { anchor: "bottom-right", pos: [-40, 26], rect_size: [220, 68] });
 
   const file = P.ui("GameHUD");
   const previous = readIfExists(file);

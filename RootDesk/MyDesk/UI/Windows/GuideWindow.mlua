@@ -1,0 +1,156 @@
+-- 게임 안내 창 (GameHUD/GuideWin — tools/build/ui.cjs): 처음 하는 사람에게 핵심 재미·조작·성장·진행·위험 신호를 쪽으로 보여 준다.
+--   · 첫 진입: 계정에서 한 번도 안 봤으면(PlayerSave.GuideSeen) 캐릭터를 다 불러오고 시작 이야기 카드가 닫힌 뒤 저절로 연다.
+--     연 순간 서버에 「봤다」를 남겨 다른 캐릭터·다음 접속에는 다시 띄우지 않는다 (RequestGuideSeen).
+--   · 메뉴 「게임 안내」로 언제든 다시 본다.
+--   · 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
+@Logic
+script GuideWindow extends Logic
+
+    property string Win = "GuideWin"
+    property integer Page = 1
+    property integer TimerId = 0
+    property number ReadyFor = 0             -- 첫 진입 조건이 이어서 맞은 시간 (이야기 카드가 대기열에 들어올 틈을 준다)
+    property number ReadyDelay = 2.5
+    property boolean AutoDone = false        -- 이번 접속에서 저절로 띄우기를 끝냈다
+    property table Pages = {}
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 창 등록·버튼 연결, 첫 진입 확인 타이머
+        self.Pages = self:BuildPages(_ApplicationService:IsMobilePlatform())
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
+        _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:CheckFirstEntry(0.5) end, 0.5)
+        log("[VRF] GuideWindow ready pages=" .. tostring(#self.Pages) .. " mobile=" .. tostring(_ApplicationService:IsMobilePlatform()))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 타이머 정리
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(integer page)
+        -- 그 쪽을 펴서 연다
+        self.Page = math.max(1, math.min(#self.Pages, page))
+        _UIKit:Open(self.Win)
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Turn(integer step)
+        -- 이전/다음. 마지막 쪽의 「시작하기」는 닫기
+        local next = self.Page + step
+        if next > #self.Pages then
+            _UIKit:Close(self.Win)
+            return
+        end
+        if next < 1 then return end
+        self.Page = next
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render()
+        -- 지금 쪽의 제목·본문·쪽 번호, 첫 쪽은 「이전」을 끄고 마지막 쪽은 「다음」을 「시작하기」로
+        local p = self.Pages[self.Page]
+        if p == nil then return end
+        _UIKit:SetText(self.Win .. "/Paper/Head", p.head)
+        _UIKit:SetText(self.Win .. "/Paper/Body", p.body)
+        _UIKit:SetText(self.Win .. "/Page", tostring(self.Page) .. " / " .. tostring(#self.Pages))
+        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
+        _UIKit:SetText(self.Win .. "/BtnNext", self.Page >= #self.Pages and "시작하기" or "다음")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckFirstEntry(number delta)
+        -- 계정 첫 진입: 캐릭터를 다 불러왔고(선택 창이 닫힘), 이야기 카드가 끝났고, 다른 창이 없을 때 한 번
+        if self.AutoDone then return end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil or not save.BootDone or save.Selecting or save.Slot <= 0 then
+            self.ReadyFor = 0
+            return
+        end
+        if save.GuideSeen then
+            self.AutoDone = true
+            log("[VRF] guide auto-open skipped (already seen)")
+            return
+        end
+        if _StoryCard.Active or #_StoryCard.Queue > 0 or _UIKit:AnyWindowOpen() then
+            self.ReadyFor = 0
+            return
+        end
+        self.ReadyFor = self.ReadyFor + delta
+        if self.ReadyFor < self.ReadyDelay then return end
+        self.AutoDone = true
+        save:RequestGuideSeen()
+        self:Show(1)
+        log("[VRF] guide auto-opened on first entry")
+    end
+
+    method table BuildPages(boolean mobile)
+        -- 쪽 내용 (금색 = 핵심 말, 붉은색 = 위험). 조작 쪽만 PC·모바일이 다르다
+        local g = function(s) return "<color=#E8C66B>" .. s .. "</color>" end
+        local r = function(s) return "<color=#E8705C>" .. s .. "</color>" end
+        local b = function(s) return "<color=#7FB2FF>" .. s .. "</color>" end
+        local pages = {}
+        table.insert(pages, { head = "쓰러뜨린 적이 내 군단이 된다",
+            body = "망자가 일어선 왕국에서 당신은 " .. g("혼을 다루는 술사") .. "입니다.\n\n"
+                .. "· 몬스터를 쓰러뜨리면 그 자리에 " .. g("혼") .. "이 남습니다.\n"
+                .. "· 혼으로 " .. g("해골 전사") .. "를 일으키고, Lv5 스킬 「그림자 소환」을 배우면 혼을 " .. g("추출") .. "해 그 몬스터를 " .. g("그림자") .. "로 거느립니다.\n"
+                .. "· 강한 몬스터일수록 강한 그림자가 됩니다. 보스도 잡으면 내 편입니다.\n\n"
+                .. "스킬은 세 계열 — " .. g("소환") .. "(해골·그림자 군단) · " .. g("영혼") .. "(뼈 마법) · " .. g("저주") .. "(적 약화)\n"
+                .. "어느 쪽으로 키울지는 자유입니다. 레벨이 오르면 능력치·스킬 포인트가 생깁니다 (메뉴의 붉은 점)." })
+        if mobile then
+            table.insert(pages, { head = "조작 (모바일)",
+                body = "· " .. g("왼쪽 스틱") .. " — 이동\n"
+                    .. "· " .. g("큰 공격 버튼") .. " — 누르고 있으면 가까운 적을 계속 공격 (누른 채 끌어 조준)\n"
+                    .. "· " .. g("둘레 스킬 4칸") .. " — 끌어서 방향을 정하고 손을 떼면 발동\n"
+                    .. "· " .. g("벨트 4칸") .. " — 물약 (칸을 길게 누르면 넣을 물건을 바꿉니다)\n"
+                    .. "· " .. g("그림자 명령") .. " — 소환 · 회수 · 집결\n"
+                    .. "· 혼 근처의 " .. g("추출 버튼") .. " — 혼을 그림자로 거둡니다\n"
+                    .. "· " .. g("메뉴") .. " — 소지품 · 능력치 · 스킬 · 그림자 · 퀘스트 · 룬워드 · 설정 · 채널\n\n"
+                    .. "스킬 칸에 넣을 스킬은 스킬 창의 「스킬 편집」에서 바꿉니다." })
+        else
+            table.insert(pages, { head = "조작 (PC)",
+                body = "· " .. g("바닥 클릭") .. " — 그 자리로 이동 (방향키로도 이동)\n"
+                    .. "· " .. g("몬스터 클릭") .. " — 다가가서 공격, 누르고 있으면 계속 공격\n"
+                    .. "· " .. g("A S D F · 우클릭") .. " — 스킬 (칸을 누르면 넣을 스킬을 바꿉니다)\n"
+                    .. "· " .. g("1 ~ 4") .. " — 벨트 물약 (칸 우클릭 = 넣을 물건 바꾸기)\n"
+                    .. "· " .. g("E") .. " — 가까운 혼 추출   · " .. g("Z") .. " 그림자 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결\n"
+                    .. "· " .. g("Space") .. " — NPC와 대화\n"
+                    .. "· " .. g("I") .. " 소지품 · " .. g("U") .. " 능력치 · " .. g("K") .. " 스킬 · " .. g("H") .. " 그림자 · " .. g("Q") .. " 퀘스트 · " .. g("P") .. " 플레이어 · " .. g("L") .. " 랭킹 · " .. g("M") .. " 메뉴\n\n"
+                    .. "창은 Esc로 닫습니다." })
+        end
+        table.insert(pages, { head = "장비와 룬 — 파밍",
+            body = "몬스터는 장비를 떨어뜨립니다. 이름 색이 등급입니다.\n"
+                .. "흰색 일반 · <color=#6E8CFF>파란색 마법</color> · <color=#FFE15A>노란색 레어</color> · <color=#3CDC3C>초록색 세트</color> · <color=#C8A050>금색 유니크</color>\n\n"
+                .. "· " .. g("룬") .. "을 정해진 순서로 소켓에 넣으면 " .. g("룬워드") .. "가 완성됩니다 — 조합법은 메뉴 「룬워드」\n"
+                .. "· 같은 세트를 여러 부위 모으면 세트 효과가 붙습니다\n"
+                .. "· 야영지 " .. g("창고") .. "는 계정의 모든 캐릭터가 함께 씁니다\n"
+                .. "· 처음 얻은 유니크·세트·룬워드는 " .. g("아이템 도감") .. "에 남고 업적 보상이 있습니다\n"
+                .. "· 아이템 위에 손을 올리면(모바일은 누르면) 능력치를 비교해 줍니다" })
+        table.insert(pages, { head = "모험의 흐름",
+            body = "· 야영지 NPC의 " .. g("의뢰") .. "를 따라 액트 1 → 2 → 3을 나아갑니다 (화면 오른쪽 추적 칸)\n"
+                .. "· 각 지역의 " .. g("웨이포인트") .. "를 켜 두면 마을에서 바로 이동할 수 있습니다\n"
+                .. "· 액트 3 보스를 쓰러뜨리면 다음 난이도 " .. g("악몽") .. ", 그다음 " .. g("지옥") .. "이 열립니다 — 몬스터·보상 모두 강해집니다\n"
+                .. "· 악몽부터는 쓰러지면 경험치를 조금 잃습니다\n"
+                .. "· 끝없는 " .. g("심도") .. "에서 최고 층 기록을 겨룹니다 (랭킹)\n\n"
+                .. "· 최대 " .. g("4명") .. "까지 파티를 맺을 수 있습니다 (메뉴 「플레이어」)\n"
+                .. "· 한 채널에는 4명까지 — 친구와 만나려면 메뉴 「채널 변경」으로 같은 채널에 들어갑니다" })
+        table.insert(pages, { head = "이것만은 기억하세요",
+            body = "· " .. r("바닥의 붉은 원") .. " — 곧 터지는 범위 공격입니다. 원 밖으로 걸어 나가면 피할 수 있습니다\n"
+                .. "· " .. b("몸이 푸른 몬스터") .. " — 변종 우두머리. 특수 기술을 쓰고 좋은 것을 떨어뜨립니다\n"
+                .. "· " .. g("발밑에 색 원") .. "이 있는 몬스터 — 주변 적을 강하게 하는 오오라 (빨강 광기 · 노랑 질풍 · 하늘 수호). 먼저 잡으세요\n"
+                .. "· 이름 있는 " .. g("고유 몬스터") .. "와 보스는 혼도 특별합니다 — 꼭 추출해 보세요\n"
+                .. "· 마나가 모자라면 스킬이 나가지 않습니다. 벨트에 물약을 채워 두세요\n\n"
+                .. "이 안내는 " .. g("메뉴 → 게임 안내") .. "에서 언제든 다시 볼 수 있습니다." })
+        return pages
+    end
+
+end
