@@ -32,8 +32,7 @@ script LootSystem extends Logic
         local body = monster:GetComponent("script.Monster")
         if body ~= nil then sourceId = body.SourceId end
         local special = rank == "boss" or rank == "unique"
-        -- 첫 처치 확정 유니크·세트는 액트 보스만 (고유 이름 몬스터까지 주니 Lv14에 유니크·세트가 너무 쌓였다 — 10-10 QA)
-        if rank == "boss" then self:FirstKillReward(center, userId, stats, sourceId, monLevel) end
+        -- 첫 처치 확정 보상은 없다 (10-13 사용자 결정: 보스 유니크도 평소 드롭과 같은 처치당 약 8% — drop_tables boss · bossExclusiveShare)
         -- 몬스터 밀도를 40% 늘린 만큼 일반·정예의 추첨마다 densityRewardMult 확률로만 굴린다 (보스·고유는 그대로)
         local keep = special and 1 or _GameData.densityRewardMult
         for i = 1, picks do
@@ -72,31 +71,6 @@ script LootSystem extends Logic
             end
         end
         -- 룬은 D2처럼 희귀한 엔드 재료: 보스 확정 룬은 없앴다 (10-09). 의뢰 룬은 마지막 의뢰(묘지기 여왕)에서만
-    end
-
-    @ExecSpace("ServerOnly")
-    method void FirstKillReward(Vector2 center, string userId, PlayerStats stats, string sourceId, integer monLevel)
-        -- 보스·최상위 첫 처치 (캐릭터·난이도마다 1회, D2 퀘스트 드롭): 전용 유니크(확률) → 일반 유니크 → 세트 하나 확정
-        if stats == nil or sourceId == "" then return end
-        local key = sourceId .. "@" .. tostring(stats.Difficulty)
-        if stats:HasFirstKill(key) then return end
-        stats:MarkFirstKill(key)
-        local s = ""
-        -- 전용 유니크는 bossSignatureChance 확률만 (10-13 사용자 결정: 확정이라 모든 캐릭터가 Lv12에 왕관 「모든 스킬 +2」를 얻었다). 나머지는 일반 유니크·세트
-        local u = nil
-        if _UtilLogic:RandomDouble() < _GameData.bossSignatureChance then u = _ItemData:PickUnique(monLevel, sourceId) end
-        if u == nil then u = _ItemData:PickUnique(monLevel, "") end
-        if u ~= nil then
-            s = _ItemData:MakeUnique(u, monLevel)
-        else
-            local piece = _ItemData:PickSetPiece(monLevel)
-            if piece == nil then return end
-            local item = { base = piece.base, rarity = 4, ilvl = monLevel, name = piece.name, mods = {}, sockets = 0, runes = {} }
-            _ItemData:AddModsRolled(item.mods, piece.mods, 1)
-            s = _ItemData:Serialize(item)
-        end
-        self:Spawn(center, userId, "item", s, 1, _ItemData:Parse(s).rarity)
-        _Util:Notify("첫 처치 보상: " .. _ItemData:Parse(s).name, userId)
     end
 
     @ExecSpace("ServerOnly")
