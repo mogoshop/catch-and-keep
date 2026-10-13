@@ -79,6 +79,14 @@ script SkillBook extends Component
         return def.row + 2 * (rank - 1)
     end
 
+    method integer NodeNeed(string id, integer rank)
+        -- 강화 rank랭크를 찍는 데 필요한 메인 스킬 랭크. 다중 투사체는 랭크마다 boneShardMultiStep씩 (10-13 사용자 결정 5·10·15·20), 나머지는 표의 need 하나
+        local def = _SkillData:Get(id)
+        if def == nil then return 0 end
+        if id == "shard_multi" then return math.max(def.need, math.floor(_GameData.boneShardMultiStep) * math.max(1, rank)) end
+        return def.need
+    end
+
     method integer Node(string id)
         -- 강화 노드 랭크 (효과 계산용)
         return self:GetLevel(id)
@@ -97,7 +105,8 @@ script SkillBook extends Component
             local parent = _SkillData:Get(def.parent)
             local name = parent ~= nil and parent.name or def.parent
             if self:GetLevel(def.parent) <= 0 then return "먼저 「" .. name .. "」을(를) 배우세요" end
-            if self:GetLevel(def.parent) < def.need then return "「" .. name .. "」 " .. tostring(def.need) .. "랭크부터" end
+            local need = self:NodeNeed(id, lv + 1)
+            if self:GetLevel(def.parent) < need then return "「" .. name .. "」 " .. tostring(need) .. "랭크부터" end
         else
             if playerLevel < def.row then return "Lv" .. tostring(def.row) .. "에 열림" end
             if lv >= self:RankCap(id, playerLevel) then return "Lv" .. tostring(self:NextRankLevel(id, lv + 1)) .. "에 다음 랭크" end
@@ -196,9 +205,11 @@ script SkillBook extends Component
     end
 
     method integer GetBoneShardCount(integer level)
-        -- 골편 투척 발 수: 1발 + 강화 「다중 투사체」 랭크 (docs/design/16 — 예전에는 스킬 레벨 1·3·7·11·15에 1발씩)
+        -- 골편 투척 발 수: 1발 + 강화 「다중 투사체」 랭크 (docs/design/16). 랭크 N은 골편 투척 N×boneShardMultiStep 레벨부터 효과
         if level <= 0 then return 0 end
-        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + self:Node("shard_multi"))
+        -- 찍은 랭크라도 골편 투척 레벨이 모자라면 그만큼만 (예전에 미리 찍어 둔 저장도 같은 규칙)
+        local usable = math.min(self:Node("shard_multi"), level // math.max(1, math.floor(_GameData.boneShardMultiStep)))
+        return math.min(math.floor(_GameData.boneShardMaxCount), 1 + usable)
     end
 
     method number GetCurseDuration(integer level)
@@ -225,7 +236,7 @@ script SkillBook extends Component
 
     method number RawEffectPower(string id, integer level)
         if level <= 0 then return 0 end
-        if id == "bone_shard" then return 10 + 6 * (level - 1) end
+        if id == "bone_shard" then return (10 + 6 * (level - 1)) * _GameData.boneShardDmgMul end   -- 10-13 사용자 결정 −40%
         if id == "poison_mist" then return 4 + 2 * level end
         if id == "corpse_blast" then return 24 + 10 * (level - 1) end   -- 10-11: 30+12 → 24+10 (1레벨 범위 피해가 골편 3발 분량이었다)
         if id == "soul_drain" then return 15 + 8 * level end

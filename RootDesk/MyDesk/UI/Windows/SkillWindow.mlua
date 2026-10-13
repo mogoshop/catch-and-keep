@@ -123,7 +123,11 @@ script SkillWindow extends Logic
                 local color = nlv > 0 and "#FFFFFF" or (reason == "" and "#B8E0B8" or "#8A8A8A")
                 local line2 = nd.desc
                 if not nd.impl then line2 = _UIKit:Colored("#8C99B4", "준비 중 — 다음 업데이트") .. " · " .. nd.desc
-                elseif nlv == 0 and lv < nd.need then line2 = _UIKit:Colored("#FF9A8A", def.name .. " " .. tostring(nd.need) .. "랭크부터") .. " · " .. nd.desc end
+                else
+                    -- 다음 랭크에 필요한 메인 랭크 (다중 투사체는 랭크마다 다르다 — SkillBook.NodeNeed)
+                    local need = book:NodeNeed(nid, nlv + 1)
+                    if nlv < nd.maxLv and lv < need then line2 = _UIKit:Colored("#FF9A8A", def.name .. " " .. tostring(need) .. "랭크부터") .. " · " .. nd.desc end
+                end
                 _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, nd.name .. "  " .. tostring(nlv) .. "/" .. tostring(nd.maxLv)) .. "\n" .. line2)
                 _UIKit:SetColor(path, nid == self.Selected and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.35))
             end

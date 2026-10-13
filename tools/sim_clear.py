@@ -179,7 +179,7 @@ def build(name, L):
     if rk.get("bone_spear"):
         spells.append(((30 + 12 * (rk["bone_spear"] - 1)) * scale * 2.0, 14, 1.2))   # 관통 평균 2마리
     if rk.get("bone_shard"):
-        spells.append(((10 + 6 * (rk["bone_shard"] - 1)) * scale * 1.5, 5, 0.75))
+        spells.append(((10 + 6 * (rk["bone_shard"] - 1)) * C.get("boneShardDmgMul", 1) * scale * 1.5, 5, 0.75))
     spell_dps = 0
     budget = regen
     for dmg, mana, cd in sorted(spells, key=lambda s: -s[0] / s[1]):
