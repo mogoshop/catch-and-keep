@@ -135,9 +135,54 @@ script PlayerInventory extends Component
         return true
     end
 
+    -- ───────── 물약 소지 상한 (10-13 사용자 결정: 종류별 소지 상한, D2처럼 무제한으로 쌓이지 않게) ─────────
+    --   생명(hp1~3 합)·마나(mp1~3 합)·회복(rv) 각각 potionCapBase개, 벨트를 차면 +potionCapBelt개. 귀환 두루마리는 제한 없음
+
+    method string PotionKind(string base)
+        if base == "rv" then return "rv" end
+        local k = string.match(base, "^(hp)%d$") or string.match(base, "^(mp)%d$")
+        return k or ""
+    end
+
+    method integer PotionCap()
+        local cap = math.floor(_GameData.potionCapBase)
+        if self.Equip ~= nil and self.Equip["belt"] ~= nil then cap = cap + math.floor(_GameData.potionCapBelt) end
+        return cap
+    end
+
+    method integer PotionCount(string kind)
+        if kind == "rv" then return self:CountStack("rv") end
+        return self:CountStack(kind .. "1") + self:CountStack(kind .. "2") + self:CountStack(kind .. "3")
+    end
+
+    method integer PotionRoom(string kind)
+        if kind == "" then return 999999 end
+        return math.max(0, self:PotionCap() - self:PotionCount(kind))
+    end
+
+    method string PotionKindName(string kind)
+        if kind == "hp" then return "생명 물약" end
+        if kind == "mp" then return "마나 물약" end
+        return "회복 물약"
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NotifyPotionCap(string kind)
+        -- 상한에 막혔을 때 안내 (4초에 한 번)
+        if _UtilLogic.ElapsedSeconds < self.BagWarningAt then return end
+        self.BagWarningAt = _UtilLogic.ElapsedSeconds + 4
+        local belt = (self.Equip ~= nil and self.Equip["belt"] ~= nil) and "" or (" · 벨트를 차면 +" .. tostring(math.floor(_GameData.potionCapBelt)))
+        _Util:Notify(self:PotionKindName(kind) .. "은 " .. tostring(self:PotionCap()) .. "개까지 들 수 있다" .. belt, self.Entity.PlayerComponent.UserId)
+    end
+
     @ExecSpace("ServerOnly")
     method integer AddStack(string base, integer count)
-        -- base 물건 count개를 넣고 못 넣은 개수를 돌려준다
+        -- base 물건 count개를 넣고 못 넣은 개수를 돌려준다. 물약은 소지 상한을 넘으면 하나도 넣지 않는다 (줍기·구매가 일부만 들어가 복제되지 않게)
+        local pk = self:PotionKind(base)
+        if pk ~= "" and count > self:PotionRoom(pk) then
+            self:NotifyPotionCap(pk)
+            return count
+        end
         local left = count
         local limit = _ItemData:StackLimit(base)
         for i, s in ipairs(self.Bag) do
@@ -214,6 +259,20 @@ script PlayerInventory extends Component
         table.remove(self.Bag, index)
         self:RefreshDigest()
         return s
+    end
+
+    method string PotionOverflow(table items)
+        -- 들어올 물건 중 물약이 소지 상한을 넘기면 그 종류 이름 ("" = 괜찮음). 거래 완료 전에 확인
+        local add = {}
+        for _, s in ipairs(items) do
+            local item = _ItemData:Parse(s)
+            local pk = _ItemData:IsStack(item.base) and self:PotionKind(item.base) or ""
+            if pk ~= "" then add[pk] = (add[pk] or 0) + item.count end
+        end
+        for kind, n in pairs(add) do
+            if n > self:PotionRoom(kind) then return self:PotionKindName(kind) end
+        end
+        return ""
     end
 
     @ExecSpace("ServerOnly")
@@ -602,6 +661,26 @@ script PlayerInventory extends Component
         if not self:IsOwnerRequest(senderUserId) or not _Util:NearNpc(self.Entity, "stash") then return end
         local cur = self.Stash[index]
         if cur == nil or cur ~= expectedItem then return end
+        local item = _ItemData:Parse(cur)
+        local pk = _ItemData:IsStack(item.base) and self:PotionKind(item.base) or ""
+        if pk ~= "" then
+            -- 물약은 소지 상한까지만 꺼내고 나머지는 창고에 남긴다
+            local take = math.min(item.count, self:PotionRoom(pk))
+            if take <= 0 then
+                self:NotifyPotionCap(pk)
+                return
+            end
+            if self:AddStack(item.base, take) > 0 then
+                _Util:Notify("가방이 가득 찼다", senderUserId)
+                return
+            end
+            if take >= item.count then table.remove(self.Stash, index) else
+                item.count = item.count - take
+                self.Stash[index] = _ItemData:Serialize(item)
+            end
+            self:RefreshDigest()
+            return
+        end
         if #self.Bag >= self.BagSize then
             _Util:Notify("가방이 가득 찼다", senderUserId)
             return

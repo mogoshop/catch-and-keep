@@ -106,6 +106,8 @@ script GameData extends Logic
     property number packLeaderChance = 0.2    -- 무리 첫 몬스터가 정예 우두머리로 나올 확률 (나머지는 호위)
     property number packMixChance = 0.35    -- 무리에 같은 맵의 다른 종류가 섞일 확률 (3마리 중 1마리꼴)
     property number hordeChance = 0.06    -- 무리가 두 배 크기의 큰 무리로 나올 확률 (같은 출현 수 안에서)
+    property number potionCapBase = 10    -- 물약 소지 상한 — 생명(하·중·고급 합)·마나·회복 각각 (10-13 사용자 결정: 종류별 상한, D2처럼 무제한으로 쌓이지 않게)
+    property number potionCapBelt = 5    -- 벨트를 차면 물약 소지 상한 +이 값 (종류마다)
     property number packSpacing = 6    -- 무리 중심끼리 이 칸 이상 떨어뜨린다 (10-13: 무리가 겹쳐 20마리가 한곳에 뭉쳤다)
     property number navMaxChasers = 8    -- 통로 길찾기로 한 플레이어를 쫓는 몬스터 최대 수 — 가까운 순 (10-13: 미로 맵에서 20마리가 줄지어 몰려왔다)
     property number knockbackSec = 0.12    -- 넉백 시간(초)
@@ -335,15 +337,15 @@ script GameData extends Logic
         self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, grade = 2 }
         self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.3, grade = 3 }
         self.Shop = {}
-        self.Shop["hp"] = { name = "생명 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "hp", tier = 0, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
-        self.Shop["mp"] = { name = "마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "mp", tier = 0, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
-        self.Shop["hp1"] = { name = "하급 생명 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 60, manaFlat = 0, kind = "hp", tier = 1, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
-        self.Shop["hp2"] = { name = "중급 생명 물약", price = 70, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 150, manaFlat = 0, kind = "hp", tier = 2, minLevel = 10, icon = "11adab8d62184c0f8650418def608ece", iconPx = 128 }
-        self.Shop["hp3"] = { name = "고급 생명 물약", price = 180, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 360, manaFlat = 0, kind = "hp", tier = 3, minLevel = 30, icon = "fd1b061e9ef042649d8b357149f9c100", iconPx = 128 }
-        self.Shop["mp1"] = { name = "하급 마나 물약", price = 25, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 40, kind = "mp", tier = 1, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
-        self.Shop["mp2"] = { name = "중급 마나 물약", price = 70, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 90, kind = "mp", tier = 2, minLevel = 10, icon = "bd12aecc8bd94d47ae4c6dd86e98ab93", iconPx = 128 }
-        self.Shop["mp3"] = { name = "고급 마나 물약", price = 180, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 220, kind = "mp", tier = 3, minLevel = 30, icon = "0a7131b3837042e8a51873132b64e18f", iconPx = 128 }
-        self.Shop["rv"] = { name = "회복 물약", price = 120, perLevel = 0, hpPct = 35, manaPct = 35, hpFlat = 0, manaFlat = 0, kind = "rv", tier = 1, minLevel = 1, icon = "b44c403aa54d433b8a1cd66b0acd02f0", iconPx = 128 }
+        self.Shop["hp"] = { name = "생명 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "hp", tier = 0, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
+        self.Shop["mp"] = { name = "마나 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "mp", tier = 0, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
+        self.Shop["hp1"] = { name = "하급 생명 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 60, manaFlat = 0, kind = "hp", tier = 1, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
+        self.Shop["hp2"] = { name = "중급 생명 물약", price = 140, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 150, manaFlat = 0, kind = "hp", tier = 2, minLevel = 10, icon = "11adab8d62184c0f8650418def608ece", iconPx = 128 }
+        self.Shop["hp3"] = { name = "고급 생명 물약", price = 360, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 360, manaFlat = 0, kind = "hp", tier = 3, minLevel = 30, icon = "fd1b061e9ef042649d8b357149f9c100", iconPx = 128 }
+        self.Shop["mp1"] = { name = "하급 마나 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 40, kind = "mp", tier = 1, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
+        self.Shop["mp2"] = { name = "중급 마나 물약", price = 140, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 90, kind = "mp", tier = 2, minLevel = 10, icon = "bd12aecc8bd94d47ae4c6dd86e98ab93", iconPx = 128 }
+        self.Shop["mp3"] = { name = "고급 마나 물약", price = 360, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 220, kind = "mp", tier = 3, minLevel = 30, icon = "0a7131b3837042e8a51873132b64e18f", iconPx = 128 }
+        self.Shop["rv"] = { name = "회복 물약", price = 240, perLevel = 0, hpPct = 35, manaPct = 35, hpFlat = 0, manaFlat = 0, kind = "rv", tier = 1, minLevel = 1, icon = "b44c403aa54d433b8a1cd66b0acd02f0", iconPx = 128 }
         self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
         self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
