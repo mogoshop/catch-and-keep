@@ -3,6 +3,7 @@
 --     연 순간 서버에 「봤다」를 남겨 다른 캐릭터·다음 접속에는 다시 띄우지 않는다 (RequestGuideSeen).
 --   · 메뉴 「게임 안내」로 언제든 다시 본다.
 --   · 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
+--   · 상황 카드: GuideCoach가 그 순간 필요한 한 장만 같은 창에 띄운다 (ShowCard — 쪽 번호 없이 「확인」).
 @Logic
 script GuideWindow extends Logic
 
@@ -13,6 +14,7 @@ script GuideWindow extends Logic
     property number ReadyDelay = 2.5
     property boolean AutoDone = false        -- 이번 접속에서 저절로 띄우기를 끝냈다
     property table Pages = {}
+    property boolean CardMode = false        -- 상황 카드 한 장을 보이는 중 (닫거나 메뉴로 열면 안내 쪽으로 돌아간다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -36,7 +38,21 @@ script GuideWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Show(integer page)
         -- 그 쪽을 펴서 연다
+        if self.CardMode then
+            self.CardMode = false
+            self.Pages = self:BuildPages(_ApplicationService:IsMobilePlatform())
+        end
         self.Page = math.max(1, math.min(#self.Pages, page))
+        _UIKit:Open(self.Win)
+        self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowCard(string head, string body)
+        -- 상황 안내 한 장 (GuideCoach): 같은 창에 쪽 번호 없이, 「확인」으로 닫는다
+        self.CardMode = true
+        self.Pages = { { head = head, body = body } }
+        self.Page = 1
         _UIKit:Open(self.Win)
         self:Render()
     end
@@ -61,9 +77,9 @@ script GuideWindow extends Logic
         if p == nil then return end
         _UIKit:SetText(self.Win .. "/Paper/Head", p.head)
         _UIKit:SetText(self.Win .. "/Paper/Body", p.body)
-        _UIKit:SetText(self.Win .. "/Page", tostring(self.Page) .. " / " .. tostring(#self.Pages))
+        _UIKit:SetText(self.Win .. "/Page", self.CardMode and "" or (tostring(self.Page) .. " / " .. tostring(#self.Pages)))
         _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
-        _UIKit:SetText(self.Win .. "/BtnNext", self.Page >= #self.Pages and "시작하기" or "다음")
+        _UIKit:SetText(self.Win .. "/BtnNext", self.CardMode and "확인" or (self.Page >= #self.Pages and "시작하기" or "다음"))
     end
 
     @ExecSpace("ClientOnly")

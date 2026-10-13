@@ -194,7 +194,8 @@ function buildGameHud() {
       k.aspect(`${path}/Icon`);
       b.text(`${path}/Label`, label, { size: 18, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 4], rect_size: [84, 24], bestfit: true, min_size: 12, max_size: 18, ...outline });
       b.text(`${path}/Key`, key, { size: 16, color: C.white, anchor: "top-right", pos: [-3, -2], rect_size: [20, 18], alignment: 2, ...outline });
-      if (n === "BtnChar" || n === "BtnSkill") k.badge(path);
+      // 붉은 점: 능력치·스킬 = 남은 포인트, 그림자·추출 = 상황 안내가 가리킬 때 (GuideCoach)
+      if (["BtnChar", "BtnSkill", "BtnShadow", "BtnExtract"].includes(n)) k.badge(path);
     });
 
   // ── 메뉴 창 (모바일·PC 공용): 모든 창을 한곳에서 ──
@@ -208,7 +209,7 @@ function buildGameHud() {
     b.sprite(`${path}/Icon`, { anchor: "top-center", pos: [0, -16], rect_size: [64, 64], image_ruid: ruid, sprite_type: 0, color: iconColor(ruid), alpha: 1 });
     k.aspect(`${path}/Icon`);
     b.text(`${path}/Label`, label, { size: 26, color: C.white, anchor: "bottom-center", pos: [0, 14], rect_size: [200, 34] });
-    if (n === "Char" || n === "Skill") k.badge(path);
+    if (n === "Char" || n === "Skill" || n === "Shadow") k.badge(path);
   });
   // 아래 줄 3칸 (위 격자와 같은 열): 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
   k.btn("MenuWin/CharSel", "캐릭터 선택", { anchor: "top-left", pos: [64, -576], rect_size: [212, 72], font_size: 22 });
@@ -284,6 +285,7 @@ function buildGameHud() {
     b.sprite(`${n}/Icon`, { anchor: "top-center", pos: [0, -4], rect_size: [42, 42], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     k.aspect(`${n}/Icon`);
     b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 4, anchor: "bottom-center", pos: [0, 2], rect_size: [101, 44], bestfit: true, min_size: 11, max_size: 14 });
+    k.badge(n);   // 상황 안내가 배울 스킬 카드를 가리킨다 (GuideCoach)
   }
   k.inner("SkillWin/Detail", "top-left", [690, -118], [300, 484], "win_content");
   b.text("SkillWin/Detail/Name", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [14, -10], rect_size: [272, 32], ...outline });
@@ -299,6 +301,8 @@ function buildGameHud() {
   // 습득은 설명 오른쪽 버튼. 칸 지정은 PC·모바일 모두 「스킬 편집」 하나
   k.ok("SkillWin/BtnLearn", "습득 +1", { anchor: "bottom-right", pos: [-30, 110], rect_size: [250, 120], font_size: 30 });
   k.btn("SkillWin/BtnEdit", "스킬 편집 — 스킬 칸에 넣기", { anchor: "bottom-left", pos: [30, 24], rect_size: [960, 76], font_size: 26 });
+  k.badge("SkillWin/BtnLearn");
+  k.badge("SkillWin/BtnEdit");
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
@@ -495,6 +499,7 @@ function patchShadowHud() {
     k.btn(`${d}/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 52], rect_size: [168, 88], font_size: 26 });
     s.text(`${d}/${n}Note`, "", { size: 18, color: "#D9B8FF", alignment: 4, anchor: "bottom-left", pivot: [0, 0], pos: [20 + i * 176, 14], rect_size: [168, 34], bestfit: true, min_size: 14, max_size: 18 });
   });
+  k.badge(`${d}/BtnDeploy`);   // 상황 안내: 첫 소환 지정·군단 확장 (GuideCoach)
   // 오른쪽 목록: 필터 4 + 정렬 1
   [["FAll", "전체"], ["FNormal", "일반"], ["FElite", "정예"], ["FBoss", "보스"]].forEach(([n, label], i) => {
     k.btn(`Window/${n}`, label, { anchor: "top-left", pivot: [0, 1], pos: [620 + i * 152, -88], rect_size: [144, 72], font_size: 24 });
@@ -509,6 +514,7 @@ function patchShadowHud() {
     k.aspect(`${row}/Portrait`);
     s.text(`${row}/Label`, "", { size: 23, color: C.gold, alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [84, 0], rect_size: [600, 66], bestfit: true, min_size: 18, max_size: 23 });
     s.text(`${row}/State`, "", { size: 21, color: C.dim, alignment: 5, anchor: "middle-right", pivot: [1, 0.5], pos: [-18, 0], rect_size: [200, 60] });
+    k.badge(row);   // 상황 안내: 아직 지정하지 않은 그림자 줄
   }
   k.btn("Window/BtnPrev", "◀ 이전", { anchor: "bottom-left", pivot: [0, 0], pos: [620, 18], rect_size: [180, 72], font_size: 22 });
   k.btn("Window/BtnNext", "다음 ▶", { anchor: "bottom-right", pivot: [1, 0], pos: [-30, 18], rect_size: [180, 72], font_size: 22 });
@@ -548,6 +554,7 @@ function patchShadowHud() {
     k.slot(n, { ...center, pos: p, rect_size: [124, 124] }, 80, "slot_skill");
     k.cooldown(n, 112);
     editMark(n, 64);
+    if (i === 0) k.badge(n);   // 상황 안내: 해골 전사를 넣을 칸
   });
   // 「편집 끝」: 스킬 창의 「스킬 편집」으로 편집 모드일 때만 보인다 (평소에는 화면에 떠 있지 않다)
   k.btn("MobilePad/BtnSkillEdit", "편집 끝", { ...center, pos: [-180, 580], rect_size: [220, 88], font_size: 26, enable: false });
@@ -566,10 +573,12 @@ function patchShadowHud() {
   s.patch("MobilePad/Extract/Icon", { enable: true });
   b_label(s, "MobilePad/Extract/Label", "추출", 20, "bottom-center");
   s.patch("MobilePad/Extract", { enable: false });
+  k.badge("MobilePad/Extract");
   s.empty("MobilePad/Shadow", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-600, 320], rect_size: [104, 104] }, 64);
   s.patchComponent("MobilePad/Shadow/Toggle/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.icon_shadow }, Color: hexA(part("icon_shadow").color, 1) });
   s.patch("MobilePad/Shadow/Toggle/Icon", { enable: true });
+  k.badge("MobilePad/Shadow/Toggle");
   s.empty("MobilePad/Shadow/Cmds", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   [["Summon", "소환", SKILL_ICON.shadow_summon], ["Recall", "회수", K.icon_scroll], ["Rally", "집결", SKILL_ICON.rally]].forEach(([n, label, ruid], i) => {
     const path = `MobilePad/Shadow/Cmds/${n}`;
@@ -578,6 +587,7 @@ function patchShadowHud() {
     s.patchComponent(`${path}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: ruid } });
     s.patch(`${path}/Icon`, { enable: true });
     b_label(s, `${path}/Label`, label, 18, "bottom-center");
+    if (n === "Summon") k.badge(path);
   });
   for (const n of ["MobilePad/Attack", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
   // ui_lint L013이 stretch 묶음(Potions) 아래 물약 수 글자를 화면 밖으로 잘못 계산한다 (실제 위치는 물약 칸 안, 메이커 화면 확인). 오류로 빌드를 멈추지 않게 한다

@@ -1,0 +1,303 @@
+-- 상황별 안내 (클라이언트 전용) — docs/design/20 「붉은 점 따라가기」.
+--   저장 상태(스킬·슬롯·그림자 보관함·지정·소환 수·레벨)를 보고 지금 할 일 하나(Step)를 고른다.
+--   · 그 일에 눌러야 할 버튼들의 붉은 점(Badge)을 깜빡인다 — PC 메뉴 줄·모바일 패드·메뉴 창·스킬 카드·그림자 창 버튼에 미리 넣어 둔 점이라
+--     화면 좌표 계산이 없어 PC·모바일 모두 같은 방식으로 맞는다. 쓸 포인트 표시(HudMain.RenderBadges)와 같은 점을 같이 쓴다.
+--   · 위쪽 안내 줄 한 줄(HudMain.RenderTip이 Tip()을 먼저 본다).
+--   · 핵심 순간 세 번만 카드 한 장(GuideWindow.ShowCard): Lv5 그림자 해금 · 첫 그림자 · Lv15 군단 확장. 계정에 한 번 (PlayerSave.GuideCards).
+-- 단계는 상태에서 다시 계산하므로 따로 저장하지 않는다 — 이미 한 사람에게는 처음부터 아무것도 뜨지 않는다.
+@Logic
+script GuideCoach extends Logic
+
+    property string Step = ""                -- 지금 단계 (빈 값 = 안내 없음)
+    property string TipText = ""
+    property table Points = {}               -- 깜빡일 붉은 점 경로 → true
+    property string PointKey = ""            -- Points 요약 (HudMain.RenderBadges가 바뀜을 안다)
+    property table Owned = {}                -- 이 스크립트가 켠 점 (HudMain이 다루지 않는 점) → true
+    property table HudBadges = {}            -- HudMain.RenderBadges가 켜고 끄는 점
+    property number PulseTime = 0
+    property number CheckEvery = 0.3
+    property number CheckLeft = 0
+    property number CardCalm = 0             -- 카드 조건(전투·창 없음)이 이어진 시간
+    property number CardCalmNeed = 1.5
+    property boolean LegionVisited = false   -- 군단 확장 카드 뒤 그림자 창을 열었다 (닫으면 그 단계 끝)
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- HudMain이 포인트로 켜고 끄는 점 목록 (여기서는 크기만 바꾸고 켜기는 HudMain에 맡긴다)
+        for _, p in ipairs({ "BtnMenu/Badge", "Bottom/Menu/BtnChar/Badge", "Bottom/Menu/BtnSkill/Badge", "MenuWin/Char/Badge", "MenuWin/Skill/Badge" }) do
+            self.HudBadges[p] = true
+        end
+        log("[VRF] GuideCoach ready")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 단계는 가끔, 깜빡임은 매 프레임
+        self.CheckLeft = self.CheckLeft - delta
+        if self.CheckLeft <= 0 then
+            self.CheckLeft = self.CheckEvery
+            self:Evaluate(self.CheckEvery)
+        end
+        self.PulseTime = self.PulseTime + delta
+        local s = 1 + 0.35 * math.abs(math.sin(self.PulseTime * 4))
+        for path, _ in pairs(self.Points) do
+            local e = _UIKit:Get(path)
+            if isvalid(e) then e.UITransformComponent.UIScale = Vector3(s, s, 1) end
+        end
+    end
+
+    method boolean Wants(string path)
+        -- HudMain.RenderBadges: 이 점을 안내로 켜야 하나
+        return self.Points[path] == true
+    end
+
+    method string Tip()
+        return self.TipText
+    end
+
+    -- ───────── 단계 판단 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void Evaluate(number delta)
+        local player = _UserService.LocalPlayer
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        local owner = _ShadowHUD:Owner()
+        local cmd = _ShadowHUD:Commander()
+        local points = {}
+        local step = ""
+        self.TipText = ""
+        if isvalid(player) and st ~= nil and book ~= nil and save ~= nil and save.BootDone and not save.Selecting and save.Slot > 0 and _Util:IsAlive(player) then
+            step = self:Decide(player, st, book, owner, cmd, points)
+            self:MaybeCard(player, st, save, owner, cmd, step, delta)
+        end
+        if step == "" then self.TipText = "" end
+        self.Step = step
+        self:ApplyPoints(points)
+    end
+
+    @ExecSpace("ClientOnly")
+    method string Decide(Entity player, PlayerStats st, SkillBook book, ShadowOwner owner, ShadowCommander cmd, table points)
+        -- 지금 할 일 하나(반환) + 안내 줄(TipText) + 그 일에 눌러야 할 점(points). 위에서부터 먼저 걸리는 것
+        local mobile = _ApplicationService:IsMobilePlatform()
+        local skillKey = mobile and "메뉴 → 스킬" or "스킬(K)"
+        local shadowKey = mobile and "메뉴 → 그림자" or "그림자(H)"
+        -- 1) 해골 전사 배우기 · 칸에 넣기
+        -- (포인트를 다른 스킬에 써서 지금 못 배우면 건너뛰고 그림자 안내로 간다)
+        if book:GetLevel("raise_skeleton") <= 0 and book:CanLearn("raise_skeleton", st.Level, st.SkillPoints) == "" then
+            self:PointLearn("raise_skeleton", points, mobile)
+            return self:Say("skel_learn", skillKey .. " → 「해골 전사」를 고르고 「습득」 — 붉은 점을 따라가세요")
+        end
+        if book:GetLevel("raise_skeleton") > 0 and not self:InSlot(book, "raise_skeleton") then
+            self:PointMenuSkill(points, mobile)
+            points["SkillWin/BtnEdit/Badge"] = true
+            if mobile then points["/ui/ShadowHUD/MobilePad/Skills/S1/Badge"] = true end
+            return self:Say("skel_slot", skillKey .. " → 「스킬 편집」으로 「해골 전사」를 스킬 칸에 넣으세요")
+        end
+        -- 2) Lv5 그림자 소환 배우기
+        if book:GetLevel("shadow_summon") <= 0 then
+            if book:CanLearn("shadow_summon", st.Level, st.SkillPoints) ~= "" then return "" end
+            self:PointLearn("shadow_summon", points, mobile)
+            return self:Say("shadow_learn", "Lv5 — " .. skillKey .. "에서 「그림자 소환」을 배우세요: 쓰러뜨린 적이 내 편이 됩니다")
+        end
+        if owner == nil or cmd == nil then return "" end
+        -- 3) 첫 추출
+        if owner.StorageCount <= 0 then
+            if mobile then points["/ui/ShadowHUD/MobilePad/Extract/Badge"] = true else points["Bottom/Menu/BtnExtract/Badge"] = true end
+            return self:Say("extract", mobile and "적이 남긴 혼 곁에 서면 「추출」 버튼이 뜹니다 — 성공하면 그 몬스터가 그림자로"
+                or "적이 남긴 혼 곁에서 E — 추출에 성공하면 그 몬스터가 내 그림자가 됩니다")
+        end
+        local assigned = #owner:AssignedList()
+        local limit = cmd:GetDeployLimit()
+        -- 4) 첫 소환 지정
+        if assigned <= 0 then
+            self:PointShadowWindow(points, mobile)
+            return self:Say("assign", shadowKey .. " → 그림자를 고르고 「소환 지정」 — 지정한 그림자만 불러낼 수 있습니다")
+        end
+        -- 5) 첫 소환 (한 번 불러 보면 끝)
+        if cmd.DeployedCount <= 0 and not self:CardSeen("summoned") then
+            if mobile then
+                points["/ui/ShadowHUD/MobilePad/Shadow/Toggle/Badge"] = true
+                points["/ui/ShadowHUD/MobilePad/Shadow/Cmds/Summon/Badge"] = true
+            end
+            return self:Say("summon", mobile and "그림자 명령 버튼 → 「소환」으로 지정한 그림자를 부르세요" or "Z — 지정한 그림자를 불러내세요 (X 회수 · C 집결)")
+        end
+        if cmd.DeployedCount > 0 and not self:CardSeen("summoned") then self:MarkCard("summoned") end
+        -- 6) Lv15 군단 확장: 배치 한도가 늘었는데 지정이 모자라면 (카드를 본 뒤 그림자 창을 열었다 닫으면 끝 — 창 안에서는 지정할 줄을 가리킨다)
+        if st.Level >= _GameData.shadowFullLevel and assigned < limit and owner.StorageCount > assigned and not self:CardSeen("legion_open") then
+            local open = _UIKit:IsOpen("/ui/ShadowHUD/Window")
+            if open and self:CardSeen("legion") then self.LegionVisited = true end
+            if not open and self.LegionVisited then
+                self:MarkCard("legion_open")
+                return ""
+            end
+            self:PointShadowWindow(points, mobile)
+            return self:Say("legion", string.format("그림자를 %d기까지 거느릴 수 있습니다 — %s에서 「소환 지정」을 더 하세요 (지금 %d기)", limit, shadowKey, assigned))
+        end
+        return ""
+    end
+
+    method string Say(string step, string tip)
+        -- 단계와 안내 줄을 함께 정한다
+        self.TipText = tip
+        return step
+    end
+
+    method boolean InSlot(SkillBook book, string id)
+        for i = 1, 5 do
+            if book:GetSlotSkill(i) == id then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PointMenuSkill(table points, boolean mobile)
+        -- 스킬 창까지: 메뉴 버튼(모바일·PC 공통) → 메뉴 창의 스킬, PC는 아래 메뉴 줄의 스킬
+        if _UIKit:IsOpen("SkillWin") then return end
+        points["BtnMenu/Badge"] = true
+        points["MenuWin/Skill/Badge"] = true
+        if not mobile then points["Bottom/Menu/BtnSkill/Badge"] = true end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PointLearn(string id, table points, boolean mobile)
+        -- 스킬 창 밖에서는 창까지, 안에서는 그 카드 → (골랐으면) 습득 버튼
+        self:PointMenuSkill(points, mobile)
+        if not _UIKit:IsOpen("SkillWin") then return end
+        if _SkillWindow.Selected == id then
+            points["SkillWin/BtnLearn/Badge"] = true
+            return
+        end
+        for i, sid in ipairs(_SkillData:Mains()) do
+            if sid == id then points["SkillWin/Grid/M" .. tostring(i) .. "/Badge"] = true end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PointShadowWindow(table points, boolean mobile)
+        -- 그림자 창까지, 창 안에서는 지정 안 된 그림자 줄 → 고른 그림자의 「소환 지정」
+        local win = "/ui/ShadowHUD/Window"
+        if not _UIKit:IsOpen(win) then
+            points["BtnMenu/Badge"] = true
+            points["MenuWin/Shadow/Badge"] = true
+            if not mobile then points["Bottom/Menu/BtnShadow/Badge"] = true end
+            return
+        end
+        if _ShadowHUD.Multi then return end
+        local sel = _ShadowHUD.SelectedEntry
+        if sel ~= nil and sel.assign <= 0 then
+            points[win .. "/Detail/BtnDeploy/Badge"] = true
+            return
+        end
+        for i = 1, _ShadowHUD.RowCount do
+            local e = _ShadowHUD.RowEntries[i]
+            if e ~= nil and e.assign <= 0 then points[win .. "/Row" .. tostring(i) .. "/Badge"] = true end
+        end
+    end
+
+    -- ───────── 점 켜기·깜빡임 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void ApplyPoints(table points)
+        -- 새 목록으로 바꾼다: 빠진 점은 크기를 되돌리고 (내가 켠 점이면 끈다), 새 점은 켠다 (HudMain 점은 RenderBadges가 켠다)
+        local keys = {}
+        for path, _ in pairs(points) do table.insert(keys, path) end
+        table.sort(keys)
+        local key = table.concat(keys, ";")
+        if key == self.PointKey then return end
+        for path, _ in pairs(self.Points) do
+            if not points[path] then
+                local e = _UIKit:Get(path)
+                if isvalid(e) then e.UITransformComponent.UIScale = Vector3(1, 1, 1) end
+                if self.Owned[path] then
+                    _UIKit:SetEnabled(path, false)
+                    self.Owned[path] = nil
+                end
+            end
+        end
+        for path, _ in pairs(points) do
+            if not self.HudBadges[path] then
+                _UIKit:SetEnabled(path, true)
+                self.Owned[path] = true
+            end
+        end
+        self.Points = points
+        self.PointKey = key
+        log("[VRF] guide step=" .. self.Step .. " points=" .. key)
+    end
+
+    -- ───────── 카드 (계정에 한 번) ─────────
+
+    method boolean CardSeen(string key)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil then return true end
+        return string.find("," .. save.GuideCards .. ",", "," .. key .. ",", 1, true) ~= nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MarkCard(string key)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil or self:CardSeen(key) then return end
+        save:RequestGuideCard(key)
+        -- 서버 동기화가 오기 전에 같은 카드를 또 띄우지 않게 이 화면에서도 바로 더해 둔다
+        save.GuideCards = save.GuideCards == "" and key or (save.GuideCards .. "," .. key)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MaybeCard(Entity player, PlayerStats st, PlayerSave save, ShadowOwner owner, ShadowCommander cmd, string step, number delta)
+        -- 그 순간의 카드: 창·이야기 카드가 없고 가까이 적이 없을 때 (싸우는 중에 가리지 않게) 잠깐 이어진 뒤
+        local card = ""
+        if step == "shadow_learn" and not self:CardSeen("shadow") then card = "shadow"
+        elseif step == "assign" and not self:CardSeen("first_shadow") then card = "first_shadow"
+        elseif step == "legion" and not self:CardSeen("legion") then card = "legion" end
+        -- (레벨 업 알림 같은 위쪽 알림이 끝난 뒤 — 알림이 카드 위에 겹쳤다)
+        local calm = card ~= "" and not _UIKit:AnyWindowOpen() and not _StoryCard.Active and #_StoryCard.Queue <= 0
+            and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds
+            and _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 6) == nil
+        if not calm then
+            self.CardCalm = 0
+            return
+        end
+        self.CardCalm = self.CardCalm + delta
+        if self.CardCalm < self.CardCalmNeed then return end
+        self.CardCalm = 0
+        self:MarkCard(card)
+        local mobile = _ApplicationService:IsMobilePlatform()
+        local g = function(s) return "<color=#E8C66B>" .. s .. "</color>" end
+        local head, body = "", ""
+        if card == "shadow" then
+            head = "Lv5 — 그림자 소환이 열렸습니다"
+            body = "이제부터 쓰러뜨린 적은 " .. g("내 편") .. "이 될 수 있습니다.\n\n"
+                .. "1. " .. (mobile and "메뉴 → 스킬" or "스킬(K)") .. "에서 " .. g("「그림자 소환」") .. "을 배웁니다.\n"
+                .. "2. 적을 쓰러뜨린 자리에 남은 " .. g("혼") .. " 곁에서 " .. (mobile and g("「추출」 버튼") or g("E")) .. " — 성공하면 그 몬스터가 그림자가 됩니다.\n"
+                .. "3. 강한 몬스터일수록 강한 그림자. 정예·보스도 데려올 수 있습니다.\n\n"
+                .. "깜빡이는 " .. g("붉은 점") .. "을 따라 누르면 됩니다."
+        elseif card == "first_shadow" then
+            head = "첫 그림자를 거두었습니다"
+            body = (mobile and "메뉴 → 그림자" or "그림자(H)") .. " 창에서 그림자를 고르면 아래 버튼 셋이 있습니다.\n\n"
+                .. "· " .. g("소환 지정") .. " — 불러낼 그림자와 순서를 정합니다. 지정한 그림자만 나옵니다.\n"
+                .. "· " .. g("강화") .. " — 정수를 써서 공격·생명을 올립니다 (내 레벨이 오를수록 더 높이).\n"
+                .. "· " .. g("분해") .. " — 필요 없는 그림자를 정수로 바꿉니다.\n\n"
+                .. "지정한 뒤 " .. (mobile and g("그림자 명령 → 소환") or (g("Z") .. " 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결")) .. ".\n"
+                .. "Lv" .. tostring(math.floor(_GameData.shadowFullLevel)) .. "까지는 한 번에 1기, 그 뒤로는 여러 기를 함께 거느립니다."
+        else
+            local limit = cmd ~= nil and cmd:GetDeployLimit() or 5
+            head = "군단이 커졌습니다"
+            body = "이제 그림자를 " .. g(tostring(limit) .. "기") .. "까지 함께 거느릴 수 있습니다.\n\n"
+                .. (mobile and "메뉴 → 그림자" or "그림자(H)") .. " 창에서 " .. g("「소환 지정」") .. "을 더 하세요 — 지정한 수만큼 한꺼번에 나옵니다.\n\n"
+                .. "그림자는 군단 피해의 대부분을 맡습니다. 막히는 곳이 있으면\n"
+                .. "· 더 강한 몬스터(정예·보스)를 그림자로 거두거나\n"
+                .. "· 정수로 " .. g("강화") .. "하거나\n"
+                .. "· 앞 사냥터에서 레벨과 장비를 채우고 다시 도전하세요."
+        end
+        _GuideWindow:ShowCard(head, body)
+        log("[VRF] guide card shown " .. card)
+    end
+
+end

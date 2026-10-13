@@ -10,6 +10,7 @@ script HudMain extends Logic
     property string BadgeKey = ""
     property string MinionKey = ""
     property boolean DangerHinted = false
+    property number GuideRepeat = 40         -- 끝나지 않은 상황 안내 줄을 다시 띄우는 간격(초)
     property boolean BeltRightClick = false
     property Vector2 PopPos = Vector2(0, 0)
     property number PopUntil = 0
@@ -336,17 +337,18 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderBadges(PlayerStats st)
-        -- 쓸 포인트가 있으면 메뉴·능력치·스킬 버튼에 빨간 점
-        local key = tostring(st.StatPoints) .. "#" .. tostring(st.SkillPoints)
+        -- 쓸 포인트가 있으면 메뉴·능력치·스킬 버튼에 빨간 점. 상황 안내(GuideCoach)가 가리키는 점도 함께 켠다 (깜빡임은 GuideCoach)
+        local key = tostring(st.StatPoints) .. "#" .. tostring(st.SkillPoints) .. "#" .. _GuideCoach.PointKey
         if key == self.BadgeKey then return end
         self.BadgeKey = key
         local stat = st.StatPoints > 0
         local skill = st.SkillPoints > 0
-        _UIKit:SetEnabled("BtnMenu/Badge", stat or skill)
-        _UIKit:SetEnabled("Bottom/Menu/BtnChar/Badge", stat)
-        _UIKit:SetEnabled("Bottom/Menu/BtnSkill/Badge", skill)
-        _UIKit:SetEnabled("MenuWin/Char/Badge", stat)
-        _UIKit:SetEnabled("MenuWin/Skill/Badge", skill)
+        local g = function(path) return _GuideCoach:Wants(path) end
+        _UIKit:SetEnabled("BtnMenu/Badge", stat or skill or g("BtnMenu/Badge"))
+        _UIKit:SetEnabled("Bottom/Menu/BtnChar/Badge", stat or g("Bottom/Menu/BtnChar/Badge"))
+        _UIKit:SetEnabled("Bottom/Menu/BtnSkill/Badge", skill or g("Bottom/Menu/BtnSkill/Badge"))
+        _UIKit:SetEnabled("MenuWin/Char/Badge", stat or g("MenuWin/Char/Badge"))
+        _UIKit:SetEnabled("MenuWin/Skill/Badge", skill or g("MenuWin/Skill/Badge"))
     end
 
     @ExecSpace("ClientOnly")
@@ -487,7 +489,10 @@ script HudMain extends Logic
         local quest = player:GetComponent("script.PlayerQuest")
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
-        local tip = self:JourneyTip(player, st, quest, book)
+        -- 상황 안내(스킬 습득·그림자 추출·지정·소환·군단 확장)가 있으면 먼저. 의뢰 보고할 때만 보고가 앞선다
+        local guide = _GuideCoach:Tip()
+        local tip = guide
+        if tip == "" or (quest ~= nil and quest.State == 2) then tip = self:JourneyTip(player, st, quest, book) end
         -- 10-11 팀 QA(메시지가 위쪽 가운데·왼쪽으로 흩어짐): 안내는 늘 떠 있지 않고, 바뀌었을 때·맵에 들어왔을 때만 8초.
         -- 계속 볼 내용은 오른쪽 의뢰 칸에 있다 (docs/ui/message-rules.md)
         local now = _UtilLogic.ElapsedSeconds
@@ -497,6 +502,10 @@ script HudMain extends Logic
             self.TipMap = mapId
             self.TipUntil = tip ~= "" and now + self.TipSeconds or 0
         end
+        -- 상황 안내는 창을 연 채 바뀌면(스킬 창에서 습득 등) 창을 닫은 뒤에 보이도록 시간을 붙잡아 둔다
+        if tip ~= "" and tip == guide and _UIKit:AnyWindowOpen() then self.TipUntil = math.max(self.TipUntil, now + self.TipSeconds) end
+        -- 상황 안내가 남아 있으면 GuideRepeat초마다 다시 보여 준다 (깜빡이는 점은 그동안에도 계속)
+        if tip ~= "" and tip == guide and now > self.TipUntil + self.GuideRepeat then self.TipUntil = now + self.TipSeconds end
         -- 위쪽 가운데는 한 번에 하나: 맵 배너가 끝난 뒤 같은 자리에 TipSeconds 동안 (배너 시간만큼 뒤로 민다)
         if _HudMap:BannerShowing() and self.TipUntil > 0 then self.TipUntil = math.max(self.TipUntil, _HudMap.BannerUntil + self.TipSeconds) end
         _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and not _HudMap:BannerShowing() and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now)
