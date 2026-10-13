@@ -11,6 +11,8 @@ script UIKit extends Logic
     property table Handlers = {}
     property table Windows = {}             -- Esc로 닫을 창 이름 목록
     property table Passive = { WpWin = true } -- 떠 있어도 이동·전투를 막지 않는 안내 창 (움직이면 스스로 닫힌다)
+    property table ScrollBoxes = {}         -- SetScrollText로 채운 스크롤 글 상자 경로 (마우스 휠 대상)
+    property any WheelHandler = nil
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
@@ -18,6 +20,86 @@ script UIKit extends Logic
             if isvalid(h.entity) then h.entity:DisconnectEvent(h.eventType or ButtonClickEvent, h.eventHandler) end
         end
         self.Handlers = {}
+        if self.WheelHandler ~= nil then _InputService:DisconnectEvent(MouseScrollEvent, self.WheelHandler) self.WheelHandler = nil end
+    end
+
+    -- ───────── 스크롤 글 상자 (빌드 kit.scrollText) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void SetScrollText(string rel, string text)
+        -- 글을 넣고 글 길이만큼 높이를 세운다. 칸보다 길면 손가락·휠로 내린다. 글이 바뀌면 맨 위부터
+        local box = self:Get(rel)
+        local body = self:Get(rel .. "/Body")
+        local e = self:Get(rel .. "/Body/Text")
+        if not isvalid(box) or not isvalid(body) or not isvalid(e) then return end
+        local t = e.TextGUIRendererComponent
+        if t.Text == text then return end
+        t.Text = text
+        local width = body.UITransformComponent.RectSize.x
+        local height = math.max(box.UITransformComponent.RectSize.y - 8, t:GetPreferredHeight(text, width) + 10)
+        e.UITransformComponent.RectSize = Vector2(width, height)
+        body.UITransformComponent.RectSize = Vector2(width, height)
+        self:RelayoutScroll(box, body)
+        local known = false
+        for _, r in ipairs(self.ScrollBoxes) do if r == rel then known = true end end
+        if not known then table.insert(self.ScrollBoxes, rel) end
+        if self.WheelHandler == nil then
+            self.WheelHandler = _InputService:ConnectEvent(MouseScrollEvent, function(ev) self:OnWheel(ev.ScrollDelta) end)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RelayoutScroll(Entity box, Entity body)
+        -- 스크롤 칸은 내용 높이를 자식이 켜질 때만 다시 잰다. 실행 중에 묶음 높이만 바꾸면 빌드 때 높이(칸과 같음)만큼만 내려갔다
+        -- (10-13 메이커 측정: 룬워드 1,981 높이인데 8px만 스크롤). 묶음과 레이아웃을 껐다 켜서 다시 재게 하고 맨 위로
+        local sl = box.ScrollLayoutGroupComponent
+        if sl == nil then return end
+        body.Enable = false
+        body.Enable = true
+        sl.Enable = false
+        sl.Enable = true
+        sl:ResetScrollPosition(UITransformAxis.Vertical)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnWheel(number delta)
+        -- 마우스 휠: 커서 아래 보이는 스크롤 글 상자를 내린다 (엔진 스크롤은 글만 든 칸에서 휠을 받지 않는다). 한 칸 = 약 3줄
+        if delta == 0 then return end
+        for _, rel in ipairs(self.ScrollBoxes) do
+            local box = self:Get(rel)
+            local body = self:Get(rel .. "/Body")
+            if isvalid(box) and isvalid(body) and self:IsShown(box) and self:CursorOver(box) and box.ScrollLayoutGroupComponent ~= nil then
+                local overflow = body.UITransformComponent.RectSize.y + 8 - box.UITransformComponent.RectSize.y
+                if overflow > 0 then
+                    local sl = box.ScrollLayoutGroupComponent
+                    local now = sl:GetScrollNormalizedPosition(UITransformAxis.Vertical)
+                    sl:SetScrollNormalizedPosition(UITransformAxis.Vertical, math.max(0, math.min(1, now - delta * 90 / overflow)))
+                end
+                return
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsShown(Entity e)
+        -- 자신과 부모가 모두 켜져 있는가 (닫힌 창 안의 상자는 휠을 받지 않는다)
+        local cur = e
+        while isvalid(cur) do
+            if not cur.Enable then return false end
+            cur = cur.Parent
+        end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CursorOver(Entity e)
+        -- 커서가 그 UI 사각형 안인지 (InventoryWindow.CursorOver와 같은 판정)
+        local corners = e.UITransformComponent:GetWorldCorners()
+        if corners == nil or #corners < 4 then return false end
+        local cur = _InputService:GetCursorPosition()
+        local minX, maxX = math.min(corners[1].x, corners[3].x), math.max(corners[1].x, corners[3].x)
+        local minY, maxY = math.min(corners[1].y, corners[3].y), math.max(corners[1].y, corners[3].y)
+        return cur.x >= minX and cur.x <= maxX and cur.y >= minY and cur.y <= maxY
     end
 
     @ExecSpace("ClientOnly")

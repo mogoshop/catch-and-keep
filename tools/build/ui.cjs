@@ -80,6 +80,16 @@ function kit(b) {
       b.sprite(name, { ...part(key), sprite_type: 0, ...opts });
       k.aspect(name);
     },
+    // 스크롤 글 상자: 스크롤 칸(name) 안에 크기를 직접 정하는 묶음(Body) + 글(Body/Text). 글 높이는 UIKit.SetScrollText가 글 길이로 정한다.
+    //   스크롤 칸이 글을 직접 세우면 줄바꿈 전 한 줄 너비로 재서 가로 스크롤바가 생기고 끝까지 안 내려갔다 (10-13 그림자 상세에서 측정)
+    //   10-13 사용자 지적: 룬워드 조합법 글이 창 밖으로 넘쳤다 (글자 자동 축소 최소 13으로도 1,971 > 544)
+    scrollText(name, anchor, pos, size, textOpts) {
+      // 글 폭 = 칸 − 오른쪽 여백 18 − 세로 스크롤바 10 − 여유 12 (스크롤바만큼 보이는 폭이 줄어, 26만 빼면 가로 스크롤바가 생겼다)
+      const w = size[0] - 40;
+      b.scrollLayout(name, { anchor, pivot: [0, 1], pos, rect_size: size, layout_type: 1, use_scroll: true, padding: [0, 18, 0, 8], scroll_bar_visible: 1, scroll_bar_thickness: 10, scroll_bar_bg_color: { r: 0.14, g: 0.12, b: 0.17, a: 0.6 }, scroll_bar_handle_color: { r: 0.6, g: 0.49, b: 0.3, a: 1 } });
+      b.empty(`${name}/Body`, { anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, size[1]] });
+      b.text(`${name}/Body/Text`, "", { alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, size[1]], overflow: 0, ...textOpts });
+    },
     // 오른쪽 위 빨간 점 (쓸 포인트가 있을 때)
     badge(name) {
       b.sprite(`${name}/Badge`, { anchor: "top-right", pos: [4, 4], rect_size: [26, 26], ...part("red_dot"), sprite_type: 0, enable: false });
@@ -443,7 +453,8 @@ function buildGameHud() {
     k.btn(`RuneWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [216, 56], font_size: 18 });
   });
   k.inner("RuneWin/Paper", "top-center", [0, -156], [900, 572], "win_content");
-  b.text("RuneWin/Paper/List", "", { size: 18, color: C.white, alignment: 0, anchor: "top-left", pos: [20, -14], rect_size: [860, 544], bestfit: true, min_size: 13, max_size: 18 });
+  if (b.find("RuneWin/Paper/List")) b.remove("RuneWin/Paper/List");
+  k.scrollText("RuneWin/Paper/Scroll", "top-left", [20, -14], [870, 544], { size: 18, color: C.white });
 
   // ── 게임 안내 (메뉴 「게임 안내」 · 첫 진입 때 한 번): 쪽마다 제목 + 본문, 이전/다음 (GuideWindow.mlua) ──
   k.frame("GuideWin", "middle-center", [0, 20], [1040, 760], "게임 안내");
