@@ -11,19 +11,20 @@ function run(){
   b.upsertComponent('Toast','MOD.Core.CanvasGroupComponent',{GroupAlpha:1,BlocksRaycasts:false,Interactable:false});
   b.sprite('Toast/Rim',{anchor:'middle-center',rect_size:[650,132],image_ruid:icons.btn_frame,color:'#FFFFFF',sprite_type:1});
  }
- // 왼쪽 해골 장식(약 40px) 안쪽에 그림, 글은 그림 오른쪽에서 위아래 가운데 (제목 34 + 본문 2줄 56)
- if(b.find('Toast/Icon'))b.patch('Toast/Icon',{anchor:'middle-left',pivot:[0,.5],pos:[48,0],rect_size:[68,68]});
- else b.sprite('Toast/Icon',{anchor:'middle-left',pivot:[0,.5],pos:[48,0],rect_size:[68,68],color:'#FFFFFF',sprite_type:0,enable:false});
- if(b.find('Toast/Title'))b.patch('Toast/Title',{anchor:'top-left',pos:[132,-20],rect_size:[470,34]});
- else b.text('Toast/Title','',{anchor:'top-left',pos:[132,-20],rect_size:[470,34],size:27,bold:true,color:'#E6C88A',alignment:3});
- if(b.find('Toast/Body'))b.patch('Toast/Body',{anchor:'top-left',pos:[132,-56],rect_size:[470,58]});
- else b.text('Toast/Body','',{anchor:'top-left',pos:[132,-56],rect_size:[470,58],size:22,color:'#DDD4C3',alignment:3});
+ // 왼쪽 해골 장식(약 40px) 안쪽에 그림 84칸(가운데 기준 — 몬스터 초상은 몸 비율대로 칸을 다시 잡는다, UXFeedback), 글은 그림 오른쪽
+ // 10-13 지적: 그림자 획득 알림의 몬스터가 너무 작다 (68칸 + 여백 많은 프레임 썸네일) → 84칸 + 몸만 자른 초상
+ if(b.find('Toast/Icon'))b.patch('Toast/Icon',{anchor:'middle-left',pivot:[.5,.5],pos:[90,0],rect_size:[84,84]});
+ else b.sprite('Toast/Icon',{anchor:'middle-left',pivot:[.5,.5],pos:[90,0],rect_size:[84,84],color:'#FFFFFF',sprite_type:0,enable:false});
+ if(b.find('Toast/Title'))b.patch('Toast/Title',{anchor:'top-left',pos:[140,-20],rect_size:[470,34]});
+ else b.text('Toast/Title','',{anchor:'top-left',pos:[140,-20],rect_size:[470,34],size:27,bold:true,color:'#E6C88A',alignment:3});
+ if(b.find('Toast/Body'))b.patch('Toast/Body',{anchor:'top-left',pos:[140,-56],rect_size:[470,58]});
+ else b.text('Toast/Body','',{anchor:'top-left',pos:[140,-56],rect_size:[470,58],size:22,color:'#DDD4C3',alignment:3});
  b.patchComponent('Toast/Body','MOD.Core.TextGUIRendererComponent',{FontSize:22});
  // 10-10 QA: 상단 가운데 큰 알림이 전투 화면을 가린다 → 왼쪽 가운데 아래로 옮기고 조금 줄인다 (모바일에서도 읽히는 크기)
  b.patch('Toast',{anchor:'middle-left',pivot:[0,.5],pos:[24,150],rect_size:[600,122]});
  b.patch('Toast/Rim',{rect_size:[600,122]});
- b.patch('Toast/Title',{rect_size:[430,34]});
- b.patch('Toast/Body',{rect_size:[430,54]});
+ b.patch('Toast/Title',{rect_size:[422,34]});
+ b.patch('Toast/Body',{rect_size:[422,54]});
  // 안내 줄(획득·경고 문구): 엔진 화면 메시지(상단 큰 띠) 대신 왼쪽 아래에 짧은 줄로 쌓는다. 아래가 최신, 위로 4줄
  if(!b.find('Feed'))b.empty('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});
  else b.patch('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});

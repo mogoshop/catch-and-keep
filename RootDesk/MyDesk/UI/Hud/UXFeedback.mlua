@@ -6,13 +6,14 @@ script UXFeedback extends Logic
     property number Until = 0
     property integer TimerId = 0
     property integer ShownCount = 0
+    property number IconBox = 84            -- 알림 그림 칸 (빌드 ux-feedback.cjs Toast/Icon과 같게)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self.Queue = {}
         self.Until = 0
         _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
-        -- 제목·본문이 칸(430px)보다 길면 글자를 줄인다 (10-11 QA: 「새 스킬 · …」 본문이 테두리 밖으로 나갔다)
+        -- 제목·본문이 칸(422px)보다 길면 글자를 줄인다 (10-11 QA: 「새 스킬 · …」 본문이 테두리 밖으로 나갔다)
         self:FitText("/ui/RewardHUD/Toast/Title", 18, 28)
         self:FitText("/ui/RewardHUD/Toast/Body", 15, 22)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
@@ -45,7 +46,15 @@ script UXFeedback extends Logic
     @ExecSpace("ClientOnly")
     method void Show(string title, string detail, string icon)
         if #self.Queue >= 5 then table.remove(self.Queue, 1) end
-        table.insert(self.Queue, { title = title, detail = detail, icon = icon })
+        table.insert(self.Queue, { title = title, detail = detail, icon = icon, src = "" })
+        self:Tick()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowMonster(string title, string detail, string src)
+        -- 몬스터 그림 알림 (그림자 획득): 몸만 자른 초상을 그림 칸 가득 (프레임 썸네일은 여백이 커서 작게 보였다, 10-13)
+        if #self.Queue >= 5 then table.remove(self.Queue, 1) end
+        table.insert(self.Queue, { title = title, detail = detail, icon = "", src = src })
         self:Tick()
     end
 
@@ -65,7 +74,18 @@ script UXFeedback extends Logic
         local msg = table.remove(self.Queue, 1)
         _UIKit:SetText("/ui/RewardHUD/Toast/Title", msg.title)
         _UIKit:SetText("/ui/RewardHUD/Toast/Body", msg.detail)
-        _UIKit:SetIcon("/ui/RewardHUD/Toast/Icon", msg.icon)
+        local iconPath = "/ui/RewardHUD/Toast/Icon"
+        if msg.src ~= "" and _GameData:GetMonsterStats(msg.src) ~= nil then
+            _UIKit:SetMonsterPortrait(iconPath, msg.src, self.IconBox)
+        else
+            -- 일반 아이콘은 칸 크기 그대로 (앞 알림이 몬스터 초상으로 칸을 바꿨을 수 있다)
+            local icon = _UIKit:Get(iconPath)
+            if isvalid(icon) then
+                icon.UITransformComponent.RectSize = Vector2(self.IconBox, self.IconBox)
+                icon.SpriteGUIRendererComponent.PreserveSprite = PreserveSpriteType.None
+            end
+            _UIKit:SetIcon(iconPath, msg.icon)
+        end
         root.CanvasGroupComponent.GroupAlpha = 1
         root.Enable = true
         _UIKit:SetEnabled("Tip", false)

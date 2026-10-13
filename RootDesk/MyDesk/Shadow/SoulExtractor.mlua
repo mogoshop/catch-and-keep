@@ -35,7 +35,7 @@ script SoulExtractor extends Component
             local name = _ShadowConfig:GetMonsterName(orb.SourceId)
             local v = _GameData:GetVariant(orb.Variant)
             if v ~= nil then name = name .. " · " .. v.name end
-            self:PlayExtractFx(name, grade, pos, orb.StandRUID, math.floor(chance * 100 + 0.5), senderUserId)
+            self:PlayExtractFx(name, grade, pos, orb.SourceId, orb.StandRUID, math.floor(chance * 100 + 0.5), senderUserId)
             self:PlayArise(pos, grade)
         else
             self:PlayExtractFail(pos, math.floor(chance * 100 + 0.5), senderUserId)
@@ -123,7 +123,7 @@ script SoulExtractor extends Component
     end
 
     @ExecSpace("Client")
-    method void PlayExtractFx(string name, integer grade, Vector3 pos, string standRuid, integer chancePct)
+    method void PlayExtractFx(string name, integer grade, Vector3 pos, string src, string standRuid, integer chancePct)
         -- 성공: 혼 자리에서 「그림자 획득!」이 떠오르고, 새 그림자 초상 카드가 뜬다 (보관함 안내)
         if self.Entity ~= _UserService.LocalPlayer then return end
         _SoundDirector:PlayEffect(_GameConst.SfxSoul, 0.4)
@@ -133,9 +133,16 @@ script SoulExtractor extends Component
         ---@type ShadowOwner
         local owner = self.Entity:GetComponent("script.ShadowOwner")
         local count = owner ~= nil and owner.StorageCount or 0
-        local icon = standRuid ~= "" and ("thumbnail://" .. standRuid) or _GameData:GetUiIcon("icon_shadow")
         local open = Environment:IsMobilePlatform() and "메뉴 → 그림자" or "H"
-        _UXFeedback:Show("그림자 획득 · [" .. gradeName .. "] " .. name, "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. open .. "에서 소환·강화", icon)
+        local title = "그림자 획득 · [" .. gradeName .. "] " .. name
+        local body = "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. open .. "에서 소환·강화"
+        if _GameData:GetMonsterStats(src) ~= nil then
+            -- 보관함과 같은 몸만 자른 초상 (프레임 썸네일은 여백이 커서 몬스터가 작게 보였다, 10-13)
+            _UXFeedback:ShowMonster(title, body, src)
+            return
+        end
+        local icon = standRuid ~= "" and ("thumbnail://" .. standRuid) or _GameData:GetUiIcon("icon_shadow")
+        _UXFeedback:Show(title, body, icon)
     end
 
     @ExecSpace("Multicast")

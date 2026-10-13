@@ -23,10 +23,13 @@ script ShadowHUD extends Logic
     property boolean Multi = false  -- 여러 개 선택(분해 전용) 모드
     property table Picked = {}      -- 여러 개 선택: id → true
     property integer TimerId = 0
+    property string InfoKey = ""    -- 상세 스크롤 칸에 지금 쓴 글 (바뀌면 맨 위로)
+    property any WheelHandler = nil -- 마우스 휠 → 상세 스크롤
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
+        self.WheelHandler = _InputService:ConnectEvent(MouseScrollEvent, function(ev) self:OnWheel(ev.ScrollDelta) end)
         -- 모바일 패드는 ActivePlatform=Mobile이어도 PC에서 화면 클릭을 가로채므로 PC에서는 끈다
         _UIKit:SetEnabled(self.Root .. "/MobilePad", Environment:IsMobilePlatform())
         -- 목록 줄을 누르면 왼쪽 상세에 띄운다. 소환·강화·분해는 상세의 버튼으로 (확인 창)
@@ -61,6 +64,7 @@ script ShadowHUD extends Logic
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        if self.WheelHandler ~= nil then _InputService:DisconnectEvent(MouseScrollEvent, self.WheelHandler) self.WheelHandler = nil end
     end
 
     @ExecSpace("ClientOnly")
@@ -313,7 +317,7 @@ script ShadowHUD extends Logic
 
         local has = e ~= nil
         _UIKit:SetEnabled(d .. "/Empty", not has)
-        for _, n in ipairs({ "Stage", "Name", "Grade", "Stats", "Trait", "BtnDeploy", "BtnUpgrade", "BtnSalvage", "BtnDeployNote", "BtnUpgradeNote", "BtnSalvageNote" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
+        for _, n in ipairs({ "Stage", "Name", "Grade", "Info", "BtnDeploy", "BtnUpgrade", "BtnSalvage", "BtnDeployNote", "BtnUpgradeNote", "BtnSalvageNote" }) do _UIKit:SetEnabled(d .. "/" .. n, has) end
         self:SetEssence(owner.Essence)
         if not has then return end
         local m = _GameData:GetMonsterStats(e.src)
@@ -342,8 +346,7 @@ script ShadowHUD extends Logic
             "싸움 방식: " .. (roles[p.behavior] or "근접 돌격"),
             _UIKit:Colored("#8C99B4", "(장비·스킬 보너스 전 · 노란 +는 강화로 오른 몫)"),
         }
-        _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
-        _UIKit:SetText(d .. "/Trait", self:TraitText(e))
+        self:FitInfo(table.concat(lines, "\n"), self:TraitText(e))
         _UIKit:SetText(d .. "/BtnDeploy", e.assign > 0 and "지정 해제" or "소환 지정")
         local cap = _ShadowConfig:GetPlusCap(self:OwnerLevel())
         _UIKit:SetText(d .. "/BtnUpgrade", e.plus >= _ShadowConfig:GetPlusMax() and "강화 최대" or (e.plus >= cap and "레벨 제한" or "강화"))
@@ -378,7 +381,7 @@ script ShadowHUD extends Logic
             end
         end
         _UIKit:SetEnabled(d .. "/Empty", false)
-        for _, n in ipairs({ "Name", "Grade", "Stats", "Trait", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, true) end
+        for _, n in ipairs({ "Name", "Grade", "Info", "BtnSalvage" }) do _UIKit:SetEnabled(d .. "/" .. n, true) end
         _UIKit:SetEnabled(d .. "/Stage", false)
         _UIKit:SetEnabled(d .. "/BtnDeploy", false)
         _UIKit:SetEnabled(d .. "/BtnUpgrade", false)
@@ -398,10 +401,67 @@ script ShadowHUD extends Logic
             table.insert(lines, self:ShadowName(e.src) .. "  Lv" .. tostring(e.level) .. (e.plus > 0 and ("  +" .. tostring(e.plus)) or "") .. (e.assign > 0 and _UIKit:Colored("#FFD27A", "  (소환 지정됨)") or ""))
         end
         if #lines == 0 then lines = { _UIKit:Colored("#8C99B4", "아직 고른 그림자가 없다") } end
-        _UIKit:SetText(d .. "/Stats", table.concat(lines, "\n"))
-        _UIKit:SetText(d .. "/Trait", _UIKit:Colored("#8C99B4", "소환 중인 그림자와 보스 그림자는 고를 수 없다 · 소환 지정·강화는 「선택 끝내기」 후"))
+        self:FitInfo(table.concat(lines, "\n"), _UIKit:Colored("#8C99B4", "소환 중인 그림자와 보스 그림자는 고를 수 없다 · 소환 지정·강화는 「선택 끝내기」 후"))
         _UIKit:SetText(d .. "/BtnSalvage", "선택 분해")
         self:SetEssence(owner.Essence)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitInfo(string stats, string trait)
+        -- 능력치·고유 능력은 스크롤 칸(Detail/Info) 안 묶음(Body)에 글 길이만큼 세운다. 넘치면 손가락·휠로 내린다 (10-13: 고유 기술 두 줄이 정수 줄과 겹쳤다)
+        --   스크롤 칸이 글을 직접 세우면 줄바꿈 전 한 줄 너비로 재므로, 칸에는 크기를 정한 묶음 하나만 둔다
+        local body = self.Win .. "/Detail/Info/Body"
+        local width = 490
+        local y = 0
+        for _, pair in ipairs({ { "/Stats", stats }, { "/Trait", trait } }) do
+            local e = _UIKit:Get(body .. pair[1])
+            if isvalid(e) then
+                local t = e.TextGUIRendererComponent
+                t.Text = pair[2]
+                local height = math.max(30, t:GetPreferredHeight(pair[2], width) + 6)
+                e.UITransformComponent.RectSize = Vector2(width, height)
+                e.UITransformComponent.anchoredPosition = Vector2(0, -y)
+                y = y + height + 10
+            end
+        end
+        local holder = _UIKit:Get(body)
+        if isvalid(holder) then holder.UITransformComponent.RectSize = Vector2(width, y) end
+        -- 다른 그림자를 고르면 맨 위부터 (같은 글을 다시 그릴 때는 읽던 자리를 둔다)
+        local key = stats .. "\n" .. trait
+        if key ~= self.InfoKey then
+            self.InfoKey = key
+            local box = _UIKit:Get(self.Win .. "/Detail/Info")
+            if isvalid(box) and box.ScrollLayoutGroupComponent ~= nil then box.ScrollLayoutGroupComponent:ResetScrollPosition(UITransformAxis.Vertical) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnWheel(number delta)
+        -- 마우스 휠: 커서가 상세 스크롤 칸 위면 내린다 (엔진 스크롤은 글만 든 칸에서 휠을 받지 않았다 — 소지품 창과 같은 처리). 한 칸 = 약 3줄
+        if delta == 0 or not _UIKit:IsOpen(self.Win) then return end
+        local info = self.Win .. "/Detail/Info"
+        if not self:CursorOver(info) then return end
+        local box = _UIKit:Get(info)
+        local holder = _UIKit:Get(info .. "/Body")
+        if not isvalid(box) or not isvalid(holder) or box.ScrollLayoutGroupComponent == nil then return end
+        local overflow = holder.UITransformComponent.RectSize.y + 8 - box.UITransformComponent.RectSize.y
+        if overflow <= 0 then return end
+        local sl = box.ScrollLayoutGroupComponent
+        local now = sl:GetScrollNormalizedPosition(UITransformAxis.Vertical)
+        sl:SetScrollNormalizedPosition(UITransformAxis.Vertical, math.max(0, math.min(1, now - delta * 90 / overflow)))
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean CursorOver(string path)
+        -- 커서가 그 UI 사각형 안인지 (InventoryWindow.CursorOver와 같은 판정)
+        local e = _UIKit:Get(path)
+        if not isvalid(e) then return false end
+        local corners = e.UITransformComponent:GetWorldCorners()
+        if corners == nil or #corners < 4 then return false end
+        local cur = _InputService:GetCursorPosition()
+        local minX, maxX = math.min(corners[1].x, corners[3].x), math.max(corners[1].x, corners[3].x)
+        local minY, maxY = math.min(corners[1].y, corners[3].y), math.max(corners[1].y, corners[3].y)
+        return cur.x >= minX and cur.x <= maxX and cur.y >= minY and cur.y <= maxY
     end
 
     @ExecSpace("ClientOnly")

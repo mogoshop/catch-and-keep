@@ -500,8 +500,15 @@ function patchShadowHud() {
   k.aspect(`${d}/Stage/Portrait`);
   s.text(`${d}/Name`, "", { size: 30, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -268], rect_size: [520, 42], bestfit: true, min_size: 24, max_size: 30, ...outline });
   s.text(`${d}/Grade`, "", { size: 22, color: C.gold, anchor: "top-center", pivot: [0.5, 1], pos: [0, -312], rect_size: [520, 32] });
-  s.text(`${d}/Stats`, "", { size: 21, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -348], rect_size: [508, 188], bestfit: true, min_size: 17, max_size: 21 });
-  s.text(`${d}/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [26, -540], rect_size: [508, 54], bestfit: true, min_size: 17, max_size: 21 });
+  // 능력치·고유 능력: 세로 스크롤 칸 (10-13 지적: 고유 기술이 두 줄이 되면 아래 「정수 N 보유」와 겹쳤다).
+  //   칸은 이름·등급 아래(-348)부터 정수 줄 위(아래에서 190 = 위에서 594)까지. 글 높이는 ShadowHUD.FitInfo가 글 길이로 정한다
+  for (const old of ["Stats", "Trait"]) if (s.find(`${d}/${old}`)) s.remove(`${d}/${old}`);
+  s.scrollLayout(`${d}/Info`, { anchor: "top-left", pivot: [0, 1], pos: [20, -348], rect_size: [524, 240], layout_type: 1, spacing: 10, use_scroll: true, padding: [6, 18, 0, 8], scroll_bar_visible: 1, scroll_bar_thickness: 10, scroll_bar_bg_color: { r: 0.14, g: 0.12, b: 0.17, a: 0.6 }, scroll_bar_handle_color: { r: 0.6, g: 0.49, b: 0.3, a: 1 } });
+  //   글은 묶음(Body) 하나에 넣는다: 스크롤 칸이 글을 직접 세우면 줄바꿈 전 한 줄 너비(약 620)로 재서 가로 스크롤바가 생기고 둘째 줄까지 안 내려갔다
+  for (const old of ["Info/Stats", "Info/Trait"]) if (s.find(`${d}/${old}`)) s.remove(`${d}/${old}`);
+  s.empty(`${d}/Info/Body`, { anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [490, 260] });
+  s.text(`${d}/Info/Body/Stats`, "", { size: 21, color: "#E8E1D3", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [490, 188], overflow: 0 });
+  s.text(`${d}/Info/Body/Trait`, "", { size: 21, color: "#D9B8FF", alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [0, -198], rect_size: [490, 54], overflow: 0 });
   s.text(`${d}/Empty`, "왼쪽에 보일 그림자를\n오른쪽 목록에서 고르세요", { size: 24, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [500, 120], enable: false });
   // 보유 정수: 버튼 위 오른쪽 ([아이콘] 정수 N 보유). 강화 비용·분해로 얻는 정수는 각 버튼 바로 아래
   s.empty(`${d}/Essence`, { anchor: "bottom-right", pivot: [1, 0], pos: [-20, 150], rect_size: [230, 40] });
