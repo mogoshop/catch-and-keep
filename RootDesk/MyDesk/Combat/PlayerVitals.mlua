@@ -14,6 +14,8 @@ script PlayerVitals extends Component
     property boolean HitStateDetached = false
     property string LastHitBy = ""           -- 마지막으로 때린 플레이어 userId (소환수면 주인, 몬스터·장판이면 "") — 결투 패배 판정용
     property number LastHitAt = 0
+    property number BlinkUntil = 0           -- 클라이언트: 피격 무적 깜빡임이 끝나는 시각 (내 시계)
+    property number BlinkStart = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -27,6 +29,7 @@ script PlayerVitals extends Component
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
+        self:TickBlink()
         -- 플레이어 상태 머신은 클라이언트에도 피격을 듣는다. 초기화/맵 이동/부활 뒤 한 번씩 해제한다.
         if self.HitStateDetached then return end
         local state = self.Entity.StateComponent
@@ -91,16 +94,40 @@ script PlayerVitals extends Component
             if attack ~= nil then attack:InterruptSwing(0.18) end
         end
         self:HitFeel(ratio, pc.UserId)
+        self:Blink(self.InvincibleSeconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void Blink(number seconds)
+        -- 피격 무적 동안 반투명 깜빡임 (메이플식). 같은 맵의 모두에게 보인다 — 「지금은 안 맞는다」가 눈에 보이게
+        local now = _UtilLogic.ElapsedSeconds
+        self.BlinkStart = now
+        self.BlinkUntil = now + seconds
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickBlink()
+        -- 0.08초 간격으로 반투명(0.35) ↔ 거의 불투명(0.85), 끝나면 1로 되돌린다
+        if self.BlinkUntil <= 0 then return end
+        local avatar = self.Entity.AvatarRendererComponent
+        if not isvalid(avatar) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.BlinkUntil then
+            self.BlinkUntil = 0
+            avatar:SetAlpha(1)
+            return
+        end
+        local phase = math.floor((now - self.BlinkStart) / 0.08) % 2
+        avatar:SetAlpha(phase == 0 and 0.35 or 0.85)
     end
 
     @ExecSpace("Client")
     method void HitFeel(number ratio)
         -- 내가 맞았을 때: 카메라 흔들림 + 둔탁한 소리. 생명의 15% 넘게 깎이면 더 세게
+        -- HIT 자세는 쓰지 않는다: 엔진 HIT 상태(약 0.5초)는 이동 입력을 막아, 몬스터 여럿에게 둘러싸이면
+        -- 맞을 때마다 다시 걸려 제자리에 묶였다 (10-13 사용자 지적, 메이커 측정: HIT 동안 방향키 이동량 0). 대신 무적 깜빡임(Blink)
         local cam = _CameraService:GetCurrentCameraComponent()
         local heavy = ratio >= 0.15
-        -- 큰 피해만 실제 HIT 자세로 바꾸며, 작은 피해는 시전/평타 동작을 덮지 않는다.
-        local state = self.Entity.StateComponent
-        if heavy and self.Entity.PlayerComponent.Hp > 0 and isvalid(state) and state.CurrentStateName ~= "DEAD" then state:ChangeState("HIT") end
         if isvalid(cam) then cam:ShakeCamera(heavy and 0.22 or 0.1, heavy and 0.25 or 0.12) end
         _SoundDirector:PlayEffect(_GameConst.SfxImpact, heavy and 0.7 or 0.45)
     end

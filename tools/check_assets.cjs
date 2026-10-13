@@ -3,6 +3,7 @@
 //   모델·맵 엔티티의 script.X → 스크립트 존재 / 맵 배치 modelId → 모델 존재
 //   WarpGate.TargetMap → 맵 파일 / Waypoint.WaypointId → waypoints.csv / MonsterSpawner.Entries → 모델 id
 //   MapAmbience.Bgm → sounds.csv 키 또는 RUID / 난이도 복제 맵이 모두 있는가
+//   프레임 몬스터(모델에 FrameAnimator)를 맵에 놓았으면 맵 쪽도 FrameAnimator가 있고 옛 StateAnimationComponent가 없는가
 // 사용: node tools/check_assets.cjs
 "use strict";
 const fs = require("fs");
@@ -21,12 +22,14 @@ const ENGINE_MODELS = new Set(["mapempty", "mapobject", "maplemaplayer", "rectti
 const scripts = new Set(walk(path.join(ROOT, "RootDesk/MyDesk"), ".mlua", []).map((f) => path.basename(f, ".mlua")));
 const modelFiles = [...walk(path.join(ROOT, "Global"), EXT.model, []), ...walk(path.join(ROOT, "RootDesk"), EXT.model, [])];
 const modelIds = new Set(ENGINE_MODELS);
+const frameModels = new Set();   // 코덱스 프레임 그림을 쓰는 모델 id
 
 quiet(() => {
   for (const f of modelFiles) {
     const s = ModelBuilder.snapshot(f);
     if (modelIds.has(s.model_id) && !ENGINE_MODELS.has(s.model_id)) bad(f, `모델 id '${s.model_id}' 중복`);
     modelIds.add(s.model_id);
+    if (s.components.includes("script.FrameAnimator")) frameModels.add(s.model_id);
     for (const c of s.components) if (c.startsWith("script.") && !scripts.has(c.slice(7))) bad(f, `${c} — 스크립트 없음`);
     for (const v of s.values) {
       const t = v.target_type || "";
@@ -47,6 +50,13 @@ quiet(() => {
       if (e.modelId && !modelIds.has(e.modelId)) bad(f, `${e.path} modelId '${e.modelId}' — 모델 없음`);
       for (const c of (e.componentNames || "").split(",")) {
         if (c.startsWith("script.") && !scripts.has(c.slice(7))) bad(f, `${e.path} ${c} — 스크립트 없음`);
+      }
+      // 10-13 사용자 지적: 맵에 직접 놓인 액트 1 보스 3종이 옛 구성(메이플 애니메이션 시트, FrameAnimator 없음)이라
+      //   싸울 때·혼·그림자가 옛 메이플 그림이었다. 모델을 바꾼 뒤 맵 배치가 따라오지 않으면 여기서 잡는다
+      if (frameModels.has(e.modelId)) {
+        const names = e.componentNames || "";
+        if (!names.includes("script.FrameAnimator")) bad(f, `${e.path} '${e.modelId}' — 모델은 프레임 그림인데 맵 배치에 FrameAnimator 없음 (옛 구성)`);
+        if (names.includes("MOD.Core.StateAnimationComponent")) bad(f, `${e.path} '${e.modelId}' — 옛 StateAnimationComponent가 남음 (옛 메이플 그림)`);
       }
       const gate = map.component(e.path, "script.WarpGate");
       if (gate && gate.TargetMap && !mapIds.has(gate.TargetMap)) bad(f, `${e.path} WarpGate → '${gate.TargetMap}' 맵 없음`);

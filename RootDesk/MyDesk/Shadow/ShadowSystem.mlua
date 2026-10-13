@@ -17,17 +17,15 @@ script ShadowSystem extends Logic
         local monster = e.monster
         local standRuid = ""
         local moveRuid = ""
+        -- 코덱스 그림(프레임)이 먼저. 몬스터에 옛 애니메이션 시트가 남아 있어도 쓰지 않는다 (10-13: 맵에 놓인 액트 1 보스)
+        local look = _ShadowConfig:FrameLook(e.sourceId)
         local anim = monster.StateAnimationComponent
-        if isvalid(anim) then
+        if look ~= nil then
+            standRuid = look.stand
+            moveRuid = look.move
+        elseif isvalid(anim) then
             standRuid = anim.ActionSheet["stand"] or ""
             moveRuid = anim.ActionSheet["move"] or standRuid
-        else
-            -- 프레임 애니메이션 몬스터: 혼·그림자 외형은 대기·이동 첫 프레임
-            local frames = _GameData:GetMonsterFrames(e.sourceId)
-            if frames ~= nil and frames.stand ~= nil then
-                standRuid = frames.stand.r[1]
-                moveRuid = frames.move ~= nil and frames.move.r[1] or standRuid
-            end
         end
         local pos = monster.TransformComponent.WorldPosition
         for _, p in ipairs(e.players or { e.player }) do

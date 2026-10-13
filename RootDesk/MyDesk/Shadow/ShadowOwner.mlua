@@ -42,6 +42,12 @@ script ShadowOwner extends Component
         -- 추출 성공 시 호출. 시작 레벨 = 처치한 몬스터 레벨 (뒤 지역 그림자가 자연히 강하다). 생성된 id 반환
         local id = self.Entity.Id .. "_" .. tostring(self.NextSerial)
         self.NextSerial = self.NextSerial + 1
+        -- 코덱스 그림이 있는 몬스터는 늘 그 그림 (예전 저장·옛 시트에서 온 메이플 그림은 불러올 때 여기서 바뀐다)
+        local look = _ShadowConfig:FrameLook(sourceId)
+        if look ~= nil then
+            standRuid = look.stand
+            moveRuid = look.move
+        end
         -- at = 추출 시각(초, 보관함 「추출순」 정렬). 저장에서 불러올 때는 LoadSaveData가 원래 시각으로 덮는다
         self.Storage[id] = { id = id, sourceId = sourceId, grade = grade, level = math.max(1, level), xp = 0, plus = 0, variant = variant, deployed = false, slot = 0, respawnReadyAt = 0, standRuid = standRuid, moveRuid = moveRuid, at = math.floor(DateTime.UtcNow.Elapsed / 1000) }
         self.StorageCount = self.StorageCount + 1
