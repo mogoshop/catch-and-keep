@@ -110,12 +110,13 @@ script CursedChest extends Component
         local first = not quest:IsSealedOpened(self.MapKey)
         local center = _Util:Pos2(self.Entity) + Vector2(0, -0.6)
         if first then
-            -- 그 난이도 첫 개봉: 희귀 이상 1 + 룬 1 보장
+            -- 그 난이도 첫 개봉: 희귀 이상 1 보장 + 룬은 sealedChestRuneChance 확률 (10-13 사용자 지적: 액트 1에 룬 12개 → 룬 출처마다 절반)
             local item = _ItemData:GenerateWithMinimum(self.Level + 2, "boss", 300, 2)
             _LootSystem:Spawn(center, userId, "item", item, 1, _ItemData:Parse(item).rarity)
-            _LootSystem:Spawn(center, userId, "rune", _ItemData:MakeRune(self.Level + 4), 1, 0)
+            local rune = _UtilLogic:RandomDouble() < _GameData.sealedChestRuneChance
+            if rune then _LootSystem:Spawn(center, userId, "rune", _ItemData:MakeRune(self.Level + 4), 1, 0) end
             quest:MarkSealedOpened(self.MapKey)
-            _Util:Banner("봉인 상자를 열었다", "이 난이도 첫 개봉 · 희귀 장비와 룬", userId)
+            _Util:Banner("봉인 상자를 열었다", rune and "이 난이도 첫 개봉 · 희귀 장비와 룬" or "이 난이도 첫 개봉 · 희귀 장비", userId)
         else
             _LootSystem:RollDrops(self.Entity, self.Level, "elite", player)
             _Util:Notify("봉인 상자를 열었다", userId)
