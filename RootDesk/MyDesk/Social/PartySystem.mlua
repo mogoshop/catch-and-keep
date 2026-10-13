@@ -9,6 +9,8 @@ script PartySystem extends Logic
     property integer NextId = 1
     property table Known = nil            -- userId → { name, lv } 마지막으로 본 값 (다른 방(심도 등)에 가 있어 안 보이는 파티원 표시용)
     property integer TimerId = 0
+    @Sync
+    property string Roster = ""           -- 이 채널의 모든 플레이어 "userId|캐릭터 이름|레벨|위치|맵 이름;..." (D2처럼 같은 채널이면 보인다 · 10-13). 2초마다
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -26,6 +28,32 @@ script PartySystem extends Logic
     @ExecSpace("ServerOnly")
     method void RefreshAll()
         for pid, _ in pairs(self.Parties) do self:Refresh(pid) end
+        self:RefreshRoster()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RefreshRoster()
+        -- 플레이어 창 목록: 클라이언트는 같은 맵 사람만 알 수 있어, 서버가 채널 전체를 요약해 내려준다
+        local parts = {}
+        for _, p in pairs(_UserService.UserEntities) do
+            if isvalid(p) and isvalid(p.PlayerComponent) then
+                ---@type PlayerStats
+                local st = p:GetComponent("script.PlayerStats")
+                local mapName = isvalid(p.CurrentMap) and p.CurrentMap.Name or ""
+                table.insert(parts, table.concat({ p.PlayerComponent.UserId, self:NameOf(p), tostring(st ~= nil and st.Level or 1), self:PlaceName(p), mapName }, "|"))
+            end
+        end
+        table.sort(parts)
+        local roster = table.concat(parts, ";")
+        if roster ~= self.Roster then self.Roster = roster end
+    end
+
+    method string NameOf(Entity p)
+        -- 표시 이름: 캐릭터 이름 (구분 문자는 빈칸으로)
+        ---@type PlayerSave
+        local save = p:GetComponent("script.PlayerSave")
+        local name = save ~= nil and save:CharName() or p.PlayerComponent.Nickname
+        return (string.gsub(name, "[|;]", " "))
     end
 
     @ExecSpace("ServerOnly")
@@ -118,7 +146,7 @@ script PartySystem extends Logic
                 local st = p:GetComponent("script.PlayerStats")
                 local lv = 1
                 if st ~= nil then lv = st.Level end
-                local name = (string.gsub(p.PlayerComponent.Nickname, "[|;]", " "))
+                local name = self:NameOf(p)
                 self.Known[u] = { name = name, lv = lv }
                 table.insert(parts, u .. "|" .. name .. "|" .. tostring(lv) .. "|" .. self:PlaceName(p))
             elseif self.Known[u] ~= nil then

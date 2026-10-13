@@ -145,6 +145,8 @@ script PlayerTrade extends Component
             return
         end
         if myStats.Gold < self.MyGold or theirStats.Gold < o.MyGold then
+            _Util:Notify("골드가 부족해 거래하지 못했다", self.Entity.PlayerComponent.UserId)
+            _Util:Notify("골드가 부족해 거래하지 못했다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end
@@ -152,11 +154,17 @@ script PlayerTrade extends Component
         theirInv:PutBagItems(self.Escrow)
         myStats:AddGold(o.MyGold - self.MyGold)
         theirStats:AddGold(self.MyGold - o.MyGold)
-        log(string.format("[PlayerTrade] %s ↔ %s 아이템 %d/%d 골드 %d/%d", self.Entity.PlayerComponent.Nickname, o.Entity.PlayerComponent.Nickname, #self.Escrow, #o.Escrow, self.MyGold, o.MyGold))
+        log(string.format("[PlayerTrade] %s ↔ %s 아이템 %d/%d 골드 %d/%d", _PartySystem:NameOf(self.Entity), _PartySystem:NameOf(o.Entity), #self.Escrow, #o.Escrow, self.MyGold, o.MyGold))
         self.Escrow = {}
         o.Escrow = {}
         self:Finish("거래 완료")
         o:Finish("거래 완료")
+        -- 거래 직후 양쪽을 바로 저장한다 (10-13: 자동 저장 120초 사이에 한쪽만 저장되면 복제·유실)
+        for _, e in ipairs({ self.Entity, o.Entity }) do
+            ---@type PlayerSave
+            local save = e:GetComponent("script.PlayerSave")
+            if save ~= nil then save:Save(false) end
+        end
     end
 
     @ExecSpace("ServerOnly")

@@ -12,6 +12,8 @@ script PlayerVitals extends Component
     property boolean Dying = false
     property integer TimerId = 0
     property boolean HitStateDetached = false
+    property string LastHitBy = ""           -- 마지막으로 때린 플레이어 userId (소환수면 주인, 몬스터·장판이면 "") — 결투 패배 판정용
+    property number LastHitAt = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -53,6 +55,8 @@ script PlayerVitals extends Component
     method void TakeTickDamage(number amount)
         -- 장판 같은 지속 피해: 무적 시간을 걸지 않는다 (잦은 작은 피해가 큰 공격을 막아 주지 않게). 생명만 깎는다
         if self.Dying or amount <= 0 then return end
+        self.LastHitBy = ""
+        self.LastHitAt = _UtilLogic.ElapsedSeconds
         local pc = self.Entity.PlayerComponent
         if pc.Hp <= 0 then return end
         pc.Hp = math.max(0, pc.Hp - math.floor(amount + 0.5))
@@ -74,6 +78,9 @@ script PlayerVitals extends Component
         -- 생명 차감은 엔진(PlayerComponent)이 한다. 여기서는 무적 시간 시작과 피격 자세만 (사망은 CheckDeath).
         -- 무적·사망 중 피격 차단은 공격 쪽 IsAttackTarget이 CanBeHit으로 거른다 (맞은 뒤에 되돌리지 않는다)
         if self.Dying then return end
+        local owner = _Util:OwnerPlayerOf(event.AttackerEntity)
+        self.LastHitBy = (isvalid(owner) and isvalid(owner.PlayerComponent)) and owner.PlayerComponent.UserId or ""
+        self.LastHitAt = _UtilLogic.ElapsedSeconds
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.InvincibleSeconds
         self:CheckDeath()
         -- 큰 피해만 준비 중 공격을 끊는다. 가벼운 피해는 예약 타격과 조작을 유지한다.
@@ -115,13 +122,20 @@ script PlayerVitals extends Component
         end
         local pc = self.Entity.PlayerComponent
         self.Entity.StateComponent:ChangeState("DEAD")
-        ---@type ShadowCommander
-        local commander = self.Entity:GetComponent("script.ShadowCommander")
-        if commander ~= nil then commander:RecallAll() end
-        _UndeadSystem:DismissAll(self.Entity)   -- 주인이 죽으면 언데드는 무너진다 (D2)
         ---@type PlayerDuel
         local duel = self.Entity:GetComponent("script.PlayerDuel")
-        local inDuel = duel ~= nil and duel:OnOwnerDied()
+        -- 결투 패배는 결투 상대(또는 그 소환수)에게 맞아 쓰러졌을 때만 (10-13: 결투를 걸어 두고 몬스터에게 죽어도 사망 벌칙이 없던 구멍)
+        local byOpponent = duel ~= nil and duel.Opponent ~= "" and self.LastHitBy == duel.Opponent and _UtilLogic.ElapsedSeconds - self.LastHitAt <= 5
+        local inDuel = false
+        if byOpponent then inDuel = duel:OnOwnerDied()
+        elseif duel ~= nil and duel.Opponent ~= "" then duel:Abort("결투 중 다른 원인으로 쓰러져 결투가 중단됐다") end
+        if not inDuel then
+            -- 결투 패배가 아니면 소환수가 무너진다 (D2). 결투에서 진 경우는 군단을 그대로 둔다
+            ---@type ShadowCommander
+            local commander = self.Entity:GetComponent("script.ShadowCommander")
+            if commander ~= nil then commander:RecallAll() end
+            _UndeadSystem:DismissAll(self.Entity)
+        end
         local goldLost = 0
         local expLost = 0
         if not inDuel then

@@ -11,6 +11,7 @@ script ProgressionSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnMonsterKilled(table e)
+        if e.grade ~= nil and e.grade >= 3 and isvalid(e.map) then self:AnnounceActBoss(e) end
         if e.sourceId ~= _GameConst.FinalBossSourceId or not isvalid(e.map) then return end
         local diff = 0
         ---@type MapAmbience
@@ -22,6 +23,7 @@ script ProgressionSystem extends Logic
         if pattern ~= nil and pattern.EngageStart > 0 then seconds = math.floor(_UtilLogic.ElapsedSeconds - pattern.EngageStart) end
         local last = _QuestData:LastOfAct(3)
         for _, u in ipairs(e.players or {}) do
+            -- (위: 함께 싸운 사람만)
             ---@type PlayerQuest
             local quest = u:GetComponent("script.PlayerQuest")
             local reached = quest ~= nil and quest:SameDifficulty(e.map) and last > 0 and quest.Index >= last
@@ -33,6 +35,36 @@ script ProgressionSystem extends Logic
             end
             if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AnnounceActBoss(table e)
+        -- 액트 보스(보스 등급)가 쓰러지면 채널 전체 안내 줄에: 「인꾸 님 일행이 액트 2 보스 「모래 폐허의 대사제」 토벌에 성공했다!」 (10-13 · 이름 뒤 을/를을 피했다)
+        local names = {}
+        for _, p in ipairs(e.players or {}) do
+            if isvalid(p) then
+                ---@type PlayerSave
+                local save = p:GetComponent("script.PlayerSave")
+                table.insert(names, save ~= nil and save:CharName() or p.PlayerComponent.Nickname)
+            end
+        end
+        if #names == 0 then return end   -- 아무도 싸우지 않았다 (테스트·시간 초과 등)
+        local who = names[1] .. " 님"
+        if #names == 2 then who = names[1] .. " 님과 " .. names[2] .. " 님"
+        elseif #names > 2 then who = names[1] .. " 님 일행" end
+        local base = _GameConst:BaseMapName(e.map.Name)
+        local info = _GameData:GetMapInfo(base)
+        local act = info ~= nil and math.floor(info.act or 1) or 1
+        local diff = _GameConst:DifficultyOfMap(e.map.Name)
+        local prefix = diff > 0 and ("[" .. _GameConst:DifficultyName(diff) .. "] ") or ""
+        ---@type Monster
+        local body = isvalid(e.monster) and e.monster:GetComponent("script.Monster") or nil
+        local bossName = body ~= nil and body:ShownName() or _GameData:GetMonsterName(e.sourceId)
+        local text = "【알림】 " .. prefix .. who .. "이 액트 " .. tostring(act) .. " 보스 「" .. bossName .. "」 토벌에 성공했다!"
+        for _, u in pairs(_UserService.UserEntities) do
+            if isvalid(u) and isvalid(u.PlayerComponent) then _Util:Notify(text, u.PlayerComponent.UserId) end
+        end
+        log("[VRF] act boss announce " .. text)
     end
 
 end

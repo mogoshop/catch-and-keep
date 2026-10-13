@@ -471,8 +471,12 @@ script PlayerInventory extends Component
         if not isvalid(costume) then return end
         -- 월드 기본 외형을 서버에서 지정해 재접속·장비 변경 후에도 유지한다.
         costume:SetEquip(MapleAvatarItemCategory.Body, _GameData:GetPlayerAppearance("body"))
-        costume:SetEquip(MapleAvatarItemCategory.Hair, _GameData:GetPlayerAppearance("hair"))
-        costume:SetEquip(MapleAvatarItemCategory.Face, _GameData:GetPlayerAppearance("face"))
+        -- 머리·얼굴은 캐릭터마다 고른 외형 (캐릭터 만들기 · PlayerSave 슬롯 look, 예전 캐릭터는 기본 = 남·검은 머리·보라 눈)
+        ---@type PlayerSave
+        local save = self.Entity:GetComponent("script.PlayerSave")
+        local look = _GameData:ParseLook(save ~= nil and save:Look() or "")
+        costume:SetEquip(MapleAvatarItemCategory.Hair, look.hair)
+        costume:SetEquip(MapleAvatarItemCategory.Face, look.face)
         costume:SetEquip(MapleAvatarItemCategory.Ear, _GameData:GetPlayerAppearance("ear"))
         costume.UseCustomEquipOnly = true
         -- 로브 없이도 기본 복장은 유지한다. 미장착 무기는 계정 무기로 되돌리지 않는다.

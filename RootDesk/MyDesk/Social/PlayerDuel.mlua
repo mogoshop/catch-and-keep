@@ -18,7 +18,7 @@ script PlayerDuel extends Component
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
         local o = _UserService:GetUserEntityByUserId(opponentUserId)
         local name = "?"
-        if isvalid(o) then name = o.PlayerComponent.Nickname end
+        if isvalid(o) then name = _PartySystem:NameOf(o) end
         _Util:Notify("결투 시작: " .. name, self.Entity.PlayerComponent.UserId)
     end
 
@@ -41,11 +41,23 @@ script PlayerDuel extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void Abort(string message)
+        -- 결투 상대가 아닌 원인으로 쓰러졌다: 양쪽 결투를 승패 없이 끝낸다
+        local o = _UserService:GetUserEntityByUserId(self.Opponent)
+        if isvalid(o) then
+            ---@type PlayerDuel
+            local od = o:GetComponent("script.PlayerDuel")
+            if od ~= nil and od.Opponent == self.Entity.PlayerComponent.UserId then od:End(message) end
+        end
+        self:End(message)
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean OnOwnerDied()
         -- PlayerVitals.Die가 부른다. 결투 중이었으면 결투 패배로 처리하고 true
         if self.Opponent == "" then return false end
         local winner = _UserService:GetUserEntityByUserId(self.Opponent)
-        local myName = self.Entity.PlayerComponent.Nickname
+        local myName = _PartySystem:NameOf(self.Entity)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local lv = 1

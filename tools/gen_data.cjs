@@ -89,6 +89,8 @@ function genGameData() {
   const body = [
     "        self.PlayerAppearance = {}",
     ...appearance.map((r) => `        self.PlayerAppearance[${s(r.slot)}] = ${s(r.ruid)}`),
+    "        self.PlayerAppearanceName = {}",
+    ...appearance.map((r) => `        self.PlayerAppearanceName[${s(r.slot)}] = ${s(r.name)}`),
     "        self.BossSkills = {}",
     ...load("bosses").filter((b) => (b.skills || "") !== "").map((b) => {
       const src = (mons.find((m) => m.id === b.id) || {}).sourceId || b.id;
@@ -143,6 +145,29 @@ function genGameData() {
         -- 월드 전용 기본 피부·머리·얼굴 (player_appearance.csv). 계정 옷장과 별개다.
         self:Ensure()
         return self.PlayerAppearance[slot] or ""
+    end
+
+    method integer LookOptionCount(string kind, string gender)
+        -- 캐릭터 만들기 선택지 수: kind = "hair" | "face", gender = "m" | "f" (player_appearance.csv의 hair.m.1 …)
+        self:Ensure()
+        local n = 0
+        while self.PlayerAppearance[kind .. "." .. gender .. "." .. tostring(n + 1)] ~= nil do n = n + 1 end
+        return n
+    end
+
+    method table ParseLook(string look)
+        -- 캐릭터 외형 "m-1-1" (성별-머리 색-눈 색) → { g, h, f, hair, face, hairName, faceName }. 모르면 기본(남·1·1)
+        self:Ensure()
+        local g, h, f = string.match(look or "", "^([mf])%-(%d+)%-(%d+)$")
+        if g == nil then g, h, f = "m", "1", "1" end
+        local hairKey = "hair." .. g .. "." .. h
+        local faceKey = "face." .. g .. "." .. f
+        if self.PlayerAppearance[hairKey] == nil then hairKey = "hair." .. g .. ".1" end
+        if self.PlayerAppearance[faceKey] == nil then faceKey = "face." .. g .. ".1" end
+        return { g = g, h = tonumber(h) or 1, f = tonumber(f) or 1,
+            hair = self.PlayerAppearance[hairKey] or self.PlayerAppearance["hair"] or "",
+            face = self.PlayerAppearance[faceKey] or self.PlayerAppearance["face"] or "",
+            hairName = self.PlayerAppearanceName[hairKey] or "", faceName = self.PlayerAppearanceName[faceKey] or "" }
     end
 
     method any GetDifficulty(integer index)
@@ -258,7 +283,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

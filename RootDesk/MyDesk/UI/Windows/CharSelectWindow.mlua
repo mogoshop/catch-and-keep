@@ -1,5 +1,6 @@
 -- 캐릭터 선택 창 (CharSelectHUD): PlayerSave.Selecting 동안 화면을 덮고 슬롯 4칸을 보여 준다 (Esc로 닫혀도 다시 연다).
---   칸을 누르면 고르기 → 「입장」(캐릭터가 있으면 불러오기, 빈 칸이면 이름을 적고 새 캐릭터), 「삭제」(확인 창).
+--   칸마다 그 캐릭터의 모습(UI 아바타 · 외형 + 기본 로브)을 보여 준다. 칸을 누르면 고르기 → 「입장」, 「삭제」(확인 창).
+--   빈 칸을 누르면 「캐릭터 만들기」 판: 이름 · 성별(남/여 데몬슬레이어) · 머리 색 · 눈 색 · 무작위 → 「만들기」 (10-13)
 -- 서버 처리: PlayerSave.RequestSelectSlot / RequestCreateSlot / RequestDeleteSlot
 @Logic
 script CharSelectWindow extends Logic
@@ -12,20 +13,31 @@ script CharSelectWindow extends Logic
     property number BusyUntil = 0
     property boolean BootShown = true         -- 첫 진입 로딩 화면 (UI 파일에서 처음부터 켜져 있다)
     property number BootLimit = 15            -- 저장 응답이 없어도 이 시간(초) 뒤엔 로딩 화면을 끈다
+    property boolean Creating = false         -- 캐릭터 만들기 판이 열려 있다
+    property string Gender = "m"
+    property integer HairIndex = 1
+    property integer FaceIndex = 1
+    property table Previewed = {}             -- 아바타 경로 → 마지막으로 입힌 외형 (같은 외형이면 다시 입히지 않는다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
         for i = 1, 4 do
             local index = i
-            _UIKit:Connect(self.Win .. "/Box/S" .. tostring(i), function()
-                self.Selected = index
-                self.RenderKey = ""
-                self:Poll()
-            end)
+            _UIKit:Connect(self.Win .. "/Box/S" .. tostring(i), function() self:PickSlot(index) end)
         end
         _UIKit:Connect(self.Win .. "/Box/BtnEnter", function() self:Enter() end)
         _UIKit:Connect(self.Win .. "/Box/BtnDelete", function() self:Delete() end)
+        local c = self.Win .. "/Box/Create"
+        _UIKit:Connect(c .. "/BtnMale", function() self:SetGender("m") end)
+        _UIKit:Connect(c .. "/BtnFemale", function() self:SetGender("f") end)
+        _UIKit:Connect(c .. "/HairPrev", function() self:Step("hair", -1) end)
+        _UIKit:Connect(c .. "/HairNext", function() self:Step("hair", 1) end)
+        _UIKit:Connect(c .. "/FacePrev", function() self:Step("face", -1) end)
+        _UIKit:Connect(c .. "/FaceNext", function() self:Step("face", 1) end)
+        _UIKit:Connect(c .. "/BtnRandom", function() self:Randomize() end)
+        _UIKit:Connect(c .. "/BtnCreate", function() self:Create() end)
+        _UIKit:Connect(c .. "/BtnCancel", function() self:CloseCreator() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
     end
 
@@ -42,12 +54,12 @@ script CharSelectWindow extends Logic
     end
 
     method table Slots(string digest)
-        -- "1|이름|레벨|난이도;2;…" → { [1] = { name, lv, diff } 또는 nil }
+        -- "1|이름|레벨|난이도|외형;2;…" → { [1] = { name, lv, diff, look } 또는 nil } (외형이 없던 예전 요약도 읽는다)
         local list = {}
         for entry in string.gmatch(digest .. ";", "([^;]*);") do
-            local no, name, lv, diff = string.match(entry, "^(%d+)|([^|]*)|(%d+)|(%d+)$")
+            local no, name, lv, diff, look = string.match(entry, "^(%d+)|([^|]*)|(%d+)|(%d+)|?(.*)$")
             if no ~= nil then
-                list[tonumber(no)] = { name = name, lv = tonumber(lv), diff = tonumber(diff) }
+                list[tonumber(no)] = { name = name, lv = tonumber(lv), diff = tonumber(diff), look = look ~= "" and look or "m-1-1" }
             end
         end
         return list
@@ -83,7 +95,7 @@ script CharSelectWindow extends Logic
                 end
             end
         end
-        local key = save.SlotDigest .. "#" .. tostring(self.Selected) .. "#" .. tostring(self.Busy)
+        local key = save.SlotDigest .. "#" .. tostring(self.Selected) .. "#" .. tostring(self.Busy) .. "#" .. tostring(self.Creating) .. "#" .. self:CurrentLook()
         if key == self.RenderKey then return end
         self.RenderKey = key
         local count = 0
@@ -91,16 +103,23 @@ script CharSelectWindow extends Logic
             local s = slots[i]
             local path = self.Win .. "/Box/S" .. tostring(i)
             if s ~= nil then count = count + 1 end
+            _UIKit:SetEnabled(path, not self.Creating)
             _UIKit:SetEnabled(path .. "/Pick", i == self.Selected)
-            _UIKit:SetText(path .. "/Name", s ~= nil and s.name or "<color=#6E6658>빈 칸</color>")
+            _UIKit:SetEnabled(path .. "/Plus", s == nil)
+            _UIKit:SetEnabled(path .. "/Avatar", s ~= nil)
+            if s ~= nil then self:Dress(path .. "/Avatar", s.look) end
+            _UIKit:SetText(path .. "/Name", s ~= nil and s.name or "<color=#8C8270>새 캐릭터</color>")
             _UIKit:SetText(path .. "/Level", s ~= nil and ("Lv " .. tostring(s.lv)) or "")
-            _UIKit:SetText(path .. "/Diff", s ~= nil and _GameConst:DifficultyName(s.diff) or "<color=#6E6658>새 캐릭터를 만들 수 있다</color>")
+            _UIKit:SetText(path .. "/Diff", s ~= nil and _GameConst:DifficultyName(s.diff) or "<color=#6E6658>눌러서 만들기</color>")
         end
         local sel = slots[self.Selected]
         local empty = sel == nil
-        _UIKit:SetText(self.Win .. "/Box/Info", string.format("캐릭터 %d / 4  ·  창고는 모든 캐릭터가 함께 쓴다  ·  칸을 누르고 %s", count, empty and "이름을 적은 뒤 「새 캐릭터」" or "「입장」"))
-        _UIKit:SetEnabled(self.Win .. "/Box/NameLabel", empty)
-        _UIKit:SetEnabled(self.Win .. "/Box/NameInput", empty)
+        _UIKit:SetText(self.Win .. "/Box/Info", self.Creating and "이름과 모습을 정하세요 — 데몬슬레이어의 피를 이은 술사"
+            or string.format("캐릭터 %d / 4  ·  창고는 모든 캐릭터가 함께 쓴다  ·  %s", count, empty and "빈 칸을 누르면 새 캐릭터를 만든다" or "칸을 고르고 「입장」"))
+        _UIKit:SetEnabled(self.Win .. "/Box/BtnEnter", not self.Creating)
+        _UIKit:SetEnabled(self.Win .. "/Box/BtnDelete", not self.Creating)
+        _UIKit:SetEnabled(self.Win .. "/Box/Create", self.Creating)
+        if self.Creating then self:RenderCreator() end
         _UIKit:SetText(self.Win .. "/Box/BtnEnter", empty and "새 캐릭터 만들기" or ("「" .. sel.name .. "」 입장"))
         self:SetButton("BtnEnter", not self.Busy)
         self:SetButton("BtnDelete", not empty and not self.Busy)
@@ -124,11 +143,119 @@ script CharSelectWindow extends Logic
         if slots[self.Selected] ~= nil then
             save:RequestSelectSlot(self.Selected)
         else
-            local input = _UIKit:Get(self.Win .. "/Box/NameInput")
-            local name = ""
-            if isvalid(input) and input.TextGUIRendererInputComponent ~= nil then name = input.TextGUIRendererInputComponent.Text end
-            save:RequestCreateSlot(self.Selected, name)
+            -- 빈 칸의 「새 캐릭터 만들기」: 만들기 판을 연다
+            self.Busy = false
+            self:OpenCreator()
         end
+    end
+
+    -- ───────── 캐릭터 만들기 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void PickSlot(integer index)
+        -- 칸 누르기: 캐릭터가 있으면 고르기, 빈 칸이면 바로 만들기 판
+        if self.Busy or self.Creating then return end
+        self.Selected = index
+        local save = self:Save()
+        if save ~= nil and self:Slots(save.SlotDigest)[index] == nil then
+            self:OpenCreator()
+            return
+        end
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OpenCreator()
+        self.Creating = true
+        self.Gender = "m"
+        self.HairIndex = 1
+        self.FaceIndex = 1
+        local input = _UIKit:Get(self.Win .. "/Box/Create/NameInput")
+        if isvalid(input) and input.TextGUIRendererInputComponent ~= nil then input.TextGUIRendererInputComponent.Text = "" end
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CloseCreator()
+        self.Creating = false
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    method string CurrentLook()
+        return self.Gender .. "-" .. tostring(self.HairIndex) .. "-" .. tostring(self.FaceIndex)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetGender(string g)
+        -- 성별을 바꾸면 같은 번호의 색을 유지한다 (남·녀 목록이 같은 색 순서)
+        self.Gender = g
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Step(string kind, integer delta)
+        local n = math.max(1, _GameData:LookOptionCount(kind, self.Gender))
+        if kind == "hair" then self.HairIndex = (self.HairIndex - 1 + delta) % n + 1
+        else self.FaceIndex = (self.FaceIndex - 1 + delta) % n + 1 end
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Randomize()
+        self.Gender = _UtilLogic:RandomDouble() < 0.5 and "m" or "f"
+        self.HairIndex = _UtilLogic:RandomIntegerRange(1, math.max(1, _GameData:LookOptionCount("hair", self.Gender)))
+        self.FaceIndex = _UtilLogic:RandomIntegerRange(1, math.max(1, _GameData:LookOptionCount("face", self.Gender)))
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderCreator()
+        local c = self.Win .. "/Box/Create"
+        local look = _GameData:ParseLook(self:CurrentLook())
+        self:Dress(c .. "/Stage/Avatar", self:CurrentLook())
+        _UIKit:SetText(c .. "/HairName", look.hairName .. "  " .. _UIKit:Colored("#8C8270", tostring(self.HairIndex) .. "/" .. tostring(_GameData:LookOptionCount("hair", self.Gender))))
+        _UIKit:SetText(c .. "/FaceName", look.faceName .. "  " .. _UIKit:Colored("#8C8270", tostring(self.FaceIndex) .. "/" .. tostring(_GameData:LookOptionCount("face", self.Gender))))
+        -- 고른 성별 단추는 밝게, 다른 쪽은 어둡게
+        _UIKit:SetColor(c .. "/BtnMale", self.Gender == "m" and Color(1, 0.86, 0.62, 1) or Color(0.45, 0.42, 0.4, 1))
+        _UIKit:SetColor(c .. "/BtnFemale", self.Gender == "f" and Color(1, 0.86, 0.62, 1) or Color(0.45, 0.42, 0.4, 1))
+        self:SetButton("Create/BtnCreate", not self.Busy)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Create()
+        local save = self:Save()
+        if save == nil or self.Busy or not self.Creating then return end
+        local input = _UIKit:Get(self.Win .. "/Box/Create/NameInput")
+        local name = ""
+        if isvalid(input) and input.TextGUIRendererInputComponent ~= nil then name = input.TextGUIRendererInputComponent.Text end
+        self.Busy = true
+        self.BusyUntil = _UtilLogic.ElapsedSeconds + 5
+        save:RequestCreateSlot(self.Selected, name, self:CurrentLook())
+        self.Creating = false
+        self.RenderKey = ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Dress(string path, string lookText)
+        -- UI 아바타에 외형 + 기본 로브를 입힌다 (게임 안 외형과 같은 규칙: PlayerInventory.ApplyAppearance)
+        if self.Previewed[path] == lookText then return end
+        local e = _UIKit:Get(path)
+        if not isvalid(e) or e.CostumeManagerComponent == nil then return end
+        local look = _GameData:ParseLook(lookText)
+        local cm = e.CostumeManagerComponent
+        cm.UseCustomEquipOnly = true
+        cm.CustomBodyEquip = _GameData:GetPlayerAppearance("body")
+        cm.CustomHairEquip = look.hair
+        cm.CustomFaceEquip = look.face
+        cm.CustomEarEquip = _GameData:GetPlayerAppearance("ear")
+        cm.CustomLongcoatEquip = _ItemData:AppearanceParts({}, "").armor
+        self.Previewed[path] = lookText
     end
 
     @ExecSpace("ClientOnly")

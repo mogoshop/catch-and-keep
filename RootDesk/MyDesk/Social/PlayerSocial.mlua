@@ -39,10 +39,10 @@ script PlayerSocial extends Component
         end
         other.PendingKind = kind
         other.PendingFrom = pc.UserId
-        other.PendingFromName = pc.Nickname
+        other.PendingFromName = _PartySystem:NameOf(self.Entity)
         other.PendingUntil = _UtilLogic.ElapsedSeconds + 20
         local names = { party = "파티 초대", duel = "결투 신청", trade = "거래 요청" }
-        _Util:Notify((names[kind] or kind) .. "를 보냈다: " .. target.PlayerComponent.Nickname, pc.UserId)
+        _Util:Notify((names[kind] or kind) .. "를 보냈다: " .. _PartySystem:NameOf(target), pc.UserId)
     end
 
     @ExecSpace("Server")
@@ -59,19 +59,23 @@ script PlayerSocial extends Component
         local from = _UserService:GetUserEntityByUserId(fromId)
         if not isvalid(from) then return end
         if not accept then
-            _Util:Notify(pc.Nickname .. "님이 거절했다", fromId)
+            _Util:Notify(_PartySystem:NameOf(self.Entity) .. "님이 거절했다", fromId)
             return
         end
         if kind == "party" then
             _PartySystem:Join(fromId, pc.UserId)
         elseif kind == "duel" then
             ---@type PlayerDuel
-            local a = from:GetComponent("script.PlayerDuel")
+            local da = from:GetComponent("script.PlayerDuel")
             ---@type PlayerDuel
-            local b = self.Entity:GetComponent("script.PlayerDuel")
-            if a ~= nil and b ~= nil and from.CurrentMap == self.Entity.CurrentMap and not _GameConst:IsTown(self.Entity.CurrentMap) then
-                a:Start(pc.UserId)
-                b:Start(fromId)
+            local db = self.Entity:GetComponent("script.PlayerDuel")
+            -- 이미 결투 중인 사람은 새 결투를 받지 않는다 (10-13: 상대가 덮어써져 한쪽만 때릴 수 있는 결투가 생겼다)
+            if da ~= nil and db ~= nil and (da.Opponent ~= "" or db.Opponent ~= "") then
+                _Util:Notify("이미 결투 중이다", fromId)
+                _Util:Notify("이미 결투 중이다", pc.UserId)
+            elseif da ~= nil and db ~= nil and from.CurrentMap == self.Entity.CurrentMap and not _GameConst:IsTown(self.Entity.CurrentMap) then
+                da:Start(pc.UserId)
+                db:Start(fromId)
             end
         elseif kind == "trade" then
             ---@type PlayerTrade

@@ -48,14 +48,19 @@ script SocialWindow extends Logic
         end
         local player = _UserService.LocalPlayer
         if not isvalid(player) then return end
+        -- 같은 채널의 모든 플레이어 (서버 PartySystem.Roster — 클라이언트는 같은 맵 사람만 알 수 있다 · 10-13)
         local ids = {}
         local names = {}
-        for _, u in pairs(_UserService.UserEntities) do
-            if isvalid(u) and u ~= player and #ids < 8 then
-                table.insert(ids, u.PlayerComponent.UserId)
-                local mapName = ""
-                if isvalid(u.CurrentMap) then mapName = u.CurrentMap.Name end
-                table.insert(names, u.PlayerComponent.Nickname .. "  " .. _UIKit:Colored("#888888", mapName))
+        local sameMap = {}
+        local me = player.PlayerComponent.UserId
+        local here = isvalid(player.CurrentMap) and player.CurrentMap.Name or ""
+        for entry in string.gmatch(_PartySystem.Roster .. ";", "([^;]*);") do
+            local uid, name, lv, place, mapName = string.match(entry, "^([^|]*)|([^|]*)|([^|]*)|([^|]*)|?(.*)$")
+            if uid ~= nil and uid ~= me and #ids < 8 then
+                table.insert(ids, uid)
+                local near = mapName ~= "" and mapName == here
+                table.insert(sameMap, near)
+                table.insert(names, name .. "  Lv" .. lv .. "  " .. _UIKit:Colored(near and "#9EE6A0" or "#888888", near and (place .. " · 같은 곳") or place))
             end
         end
         -- 아무도 없을 때도 한 번은 그린다 (예전에는 빈 목록 키가 처음 값 ""과 같아 버튼 24개가 그대로 떠 있었다)
@@ -65,9 +70,11 @@ script SocialWindow extends Logic
         self.Ids = ids
         for i = 1, 8 do
             local text = names[i] or ""
-            if i == 1 and #names == 0 then text = "주변에 다른 플레이어가 없습니다" end
+            if i == 1 and #names == 0 then text = "이 채널에 다른 플레이어가 없습니다" end
             _UIKit:SetText(self.Win .. "/Name" .. tostring(i), text)
-            for _, b in ipairs({ "Party", "Duel", "Trade" }) do _UIKit:SetEnabled(self.Win .. "/" .. b .. tostring(i), ids[i] ~= nil) end
+            -- 파티 초대는 채널 어디서나, 결투·거래는 같은 지역에서만 (서버 PlayerSocial.RequestAction과 같은 조건)
+            _UIKit:SetEnabled(self.Win .. "/Party" .. tostring(i), ids[i] ~= nil)
+            for _, b in ipairs({ "Duel", "Trade" }) do _UIKit:SetEnabled(self.Win .. "/" .. b .. tostring(i), ids[i] ~= nil and sameMap[i] == true) end
         end
     end
 
