@@ -76,13 +76,15 @@ script LootSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void FirstKillReward(Vector2 center, string userId, PlayerStats stats, string sourceId, integer monLevel)
-        -- 보스·최상위 첫 처치 (캐릭터·난이도마다 1회, D2 퀘스트 드롭): 전용 유니크 → 없으면 일반 유니크 → 세트 하나 확정
+        -- 보스·최상위 첫 처치 (캐릭터·난이도마다 1회, D2 퀘스트 드롭): 전용 유니크(확률) → 일반 유니크 → 세트 하나 확정
         if stats == nil or sourceId == "" then return end
         local key = sourceId .. "@" .. tostring(stats.Difficulty)
         if stats:HasFirstKill(key) then return end
         stats:MarkFirstKill(key)
         local s = ""
-        local u = _ItemData:PickUnique(monLevel, sourceId)
+        -- 전용 유니크는 bossSignatureChance 확률만 (10-13 사용자 결정: 확정이라 모든 캐릭터가 Lv12에 왕관 「모든 스킬 +2」를 얻었다). 나머지는 일반 유니크·세트
+        local u = nil
+        if _UtilLogic:RandomDouble() < _GameData.bossSignatureChance then u = _ItemData:PickUnique(monLevel, sourceId) end
         if u == nil then u = _ItemData:PickUnique(monLevel, "") end
         if u ~= nil then
             s = _ItemData:MakeUnique(u, monLevel)
