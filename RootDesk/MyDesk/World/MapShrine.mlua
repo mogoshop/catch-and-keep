@@ -46,6 +46,12 @@ script MapShrine extends Component
         self.ReadyAt = now + _GameData.shrineRefreshSec
         if self.Kind == "spring" then
             stats:Heal(999999, 999999)
+            -- 소환수도 함께 가득 (10-13 사용자 지적: 샘에서 체력·마나를 채워도 소환수는 그대로였다)
+            for _, c in ipairs(_Util:ListOf(player.CurrentMap, "script.ShadowUnit")) do
+                ---@type ShadowUnit
+                local u = c
+                if isvalid(u) and u.OwnerPlayer == player then u:HealFull() end
+            end
         else
             stats.ShrineKind = self.Kind
             stats.ShrineUntil = now + _GameData.shrineSeconds

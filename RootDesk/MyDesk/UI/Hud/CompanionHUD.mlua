@@ -26,7 +26,8 @@ script CompanionHUD extends Logic
                 t.Pivot = Vector2(0.5, 0)
                 t.anchoredPosition = Vector2(-60, 172)   -- 가운데 아래: 경험치·채팅 위, 대화 버튼 아래. 왼쪽으로 조금 — 오른쪽 혼 추출 단추와 안 겹치게 (docs/ui/mobile-layout.md)
             else
-                t.anchoredPosition = Vector2(24, 236)
+                -- PC: 채팅창(왼쪽 아래 16~536 · 210~510) 오른쪽, 아래 메뉴 줄(150~234) 위 (예전 (24,236)은 채팅창 위에 겹쳤다 — 10-13)
+                t.anchoredPosition = Vector2(550, 244)
             end
         end
         _UIKit:Connect(self.Strip .. "/Page", function() self:NextPage() end)
@@ -98,6 +99,8 @@ script CompanionHUD extends Logic
             if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == p and u.Hp > 0 and u.MaxHp > 0 then
                 -- 그림자는 원본 몬스터별로 따로 묶는다 (자칼·전갈이 한 칸에 섞이지 않게). 엔티티 이름 = Shadow_원본id
                 local src = string.match(u.Entity.Name, "^Shadow_(.+)$") or ""
+                -- 해골 전사는 필드 해골 전사(skel_warrior)의 초상으로 (발밑 피벗 프레임 그림을 그대로 쓰면 칸 위로 작게 밀렸다 — 10-13)
+                if src == "" and u.Kind == "skeleton" then src = "skel_warrior" end
                 local key = u.Kind == "shadow" and ("shadow:" .. src) or u.Kind
                 local g = byKind[key]
                 if g == nil then

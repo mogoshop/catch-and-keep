@@ -55,6 +55,7 @@ script MotionSmoother extends Logic
     property integer ShadowH = 12
     property number PixelUnit = 0.01         -- 픽셀 그림 1칸 = 0.01칸 (100px = 1칸)
     property any ShadowCache = nil
+    property any FrameIndex = nil            -- 프레임 몬스터의 첫 프레임 RUID → { set, act } (소환수 대역이 서기·걷기·공격 프레임을 넘긴다)
     property boolean UseProxy = true         -- 소환수는 몸 그림을 클라이언트 전용 자식(MSVis)으로 그린다 (아래 PlaceVis)
     property boolean MonsterProxy = true     -- 몬스터도 같은 대역으로 그린다 (10-11 QA: 몬스터도 끊긴다 — 루트에 쓴 위치는 서버 위치가 올 때마다 덮어써진다)
     property string AuraRingRUID = "ea61dc5ba8ce4ddd8287cba1d9566121"   -- 오오라 몬스터 발밑 원 (소환수 AllyRing과 같은 그림)
@@ -450,6 +451,43 @@ script MotionSmoother extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method string FrameClip(any r, string clip)
+        -- 소환수의 서기·걷기·공격 그림이 프레임 몬스터(코덱스 그림, data/monster_frames.csv)의 첫 프레임이면 그 동작 프레임을 시간에 맞춰 넘긴다.
+        -- (10-13 사용자 지적: 해골 전사 소환수가 걸을 때 걷는 프레임 없이 미끄러져 날아다니는 것처럼 보였다 — 서버는 첫 프레임 한 장만 준다)
+        if self.FrameIndex == nil then
+            self.FrameIndex = {}
+            _GameData:GetMonsterFrames("")   -- 표가 아직 안 만들어졌으면 만든다 (Ensure)
+            for _, set in pairs(_GameData.MonsterFrames or {}) do
+                for _, act in ipairs({ "stand", "move", "attack" }) do
+                    local f = set[act]
+                    if f ~= nil and f.r ~= nil and #f.r > 1 and self.FrameIndex[f.r[1]] == nil then self.FrameIndex[f.r[1]] = { f = f, act = act } end
+                end
+            end
+        end
+        local hit = self.FrameIndex[clip]
+        if hit == nil then
+            r.frameAct = nil
+            return clip
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        if r.frameAct ~= clip then
+            r.frameAct = clip
+            r.frameAt = now
+        end
+        local f = hit.f
+        local total = 0
+        for _, d in ipairs(f.d) do total = total + d end
+        if total <= 0 then return clip end
+        local t = now - r.frameAt
+        if f.loop then t = t % total elseif t >= total then return f.r[#f.r] end
+        for i, d in ipairs(f.d) do
+            if t < d then return f.r[i] end
+            t = t - d
+        end
+        return f.r[#f.r]
+    end
+
+    @ExecSpace("ClientOnly")
     method boolean PlaceVis(any r, number x, number y, Vector3 p, TransformComponent t)
         -- 10-10 6차 QA(움직이면서 뒤로 갔다 앞으로 갔다 껌뻑껌뻑): 서버 위치가 올 때마다 엔진이 루트 위치를 덮어쓰고, 그 프레임은
         -- 서버 위치(뒤)가 그대로 화면에 나왔다 (메이커는 매 프레임 덮어써 루트에 쓴 위치가 아예 안 보였다 — 띄워 그리기로 확인).
@@ -544,7 +582,7 @@ script MotionSmoother extends Logic
         if r.ring ~= nil and isvalid(r.ring) and r.visRing ~= nil and r.ring.Enable then r.ring:SetEnable(false, false, false) end
         -- 그림: 클립(서기/걷기는 LookUnit이 정한 r.visClip)·색·재생 속도·정렬
         local dst = vis.SpriteRendererComponent
-        local clip = r.visClip or src.SpriteRUID
+        local clip = self:FrameClip(r, r.visClip or src.SpriteRUID)
         if dst.SpriteRUID ~= clip then dst.SpriteRUID = clip end
         local c, d = src.Color, dst.Color
         if c.r ~= d.r or c.g ~= d.g or c.b ~= d.b or c.a ~= d.a then dst.Color = c end
@@ -739,8 +777,9 @@ script MotionSmoother extends Logic
         if stand ~= "" and move ~= "" and (r.srvClip == stand or r.srvClip == move) then
             want = r.moving and move or stand
         end
-        if want ~= nil and want ~= "" and want ~= cur then sprite.SpriteRUID = want end
-        r.myClip = want
+        local shown = want ~= nil and want ~= "" and self:FrameClip(r, want) or want
+        if shown ~= nil and shown ~= "" and shown ~= cur then sprite.SpriteRUID = shown end
+        r.myClip = shown
     end
 
     @ExecSpace("ClientOnly")

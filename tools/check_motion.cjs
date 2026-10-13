@@ -30,7 +30,7 @@ const must = [
   [SU, /@Sync\s+property Vector2 FormationOffset/, "FormationOffset 동기화가 빠졌다"],
   [SU, /@Sync\s+property number BaseSpeed/, "BaseSpeed 동기화가 빠졌다 → 클라이언트 걸음 빠르기가 틀어진다"],
   [SU, /@Sync\s+property Vector2 Wander/, "Wander 동기화가 빠졌다 → 대형 자리가 서버와 어긋난다"],
-  [SU, /property number TickInterval = 0\.05/, "소환수 판단 주기(20Hz)가 바뀌었다 → 서버 멈춤 재발 위험"],
+  [SU, /property number TickInterval = 0\.0667/, "소환수 판단 주기(15Hz, 10-13 3인 파티 부담 때문에 20 → 15)가 바뀌었다 → 빠르게 하면 서버 멈춤 재발 위험, 10Hz는 반응이 너무 둔하다(사용자 판단)"],
   [SU, /self\.OwnerVel > 0\.3 and self\.OwnerVelDir:Magnitude\(\) > 0\.5 then face = self\.OwnerVelDir/, "대형 방향을 실제 걷는 방향으로만 정하지 않는다 → 멈출 때 180° 돈다"],
   [SU, /face:Dot\(self\.OwnerFacing\) < 0\.99/, "OwnerFacing을 8°↑ 바뀔 때만 쓰지 않는다 → 동기화 값이 매 판단마다 나간다"],
   [SU, /property number PaceMax = /, "주인 속도 따라잡기 상한(PaceMax)이 빠졌다 → 걸을 때 전사가 앞으로 못 나간다"],

@@ -8,7 +8,9 @@ function run() {
   const b = UIBuilder.load(file);
   for (let i = 1; i <= 4; i++) {
     const unit = `SafeArea/Strip/Unit${i}`;
-    b.text(`${unit}/Count`, '', { anchor: 'top-right', pos: [-2, -2], rect_size: [64, 34], size: 26, bold: true, color: '#F6E3B0', alignment: 5, outline: true, outline_color: '#1A1410', outline_width: 0.3 });
+    b.text(`${unit}/Count`, '', { anchor: 'top-right', pos: [-6, -4], rect_size: [56, 28], size: 21, bold: true, color: '#F6E3B0', alignment: 5, outline: true, outline_color: '#1A1410', outline_width: 0.3 });
+    // 초상은 테두리(위 84) 한가운데 기준 — 그림 비율에 따라 크기가 달라도 가운데에 온다 (10-13: 위쪽 기준이라 작은 그림이 칸 위에 붙었다)
+    b.patch(`${unit}/Portrait`, { anchor: 'top-center', pivot: [0.5, 0.5], pos: [0, -42] });
   }
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;

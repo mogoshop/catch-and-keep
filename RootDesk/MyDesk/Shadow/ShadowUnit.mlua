@@ -60,7 +60,9 @@ script ShadowUnit extends AttackComponent
     property number TurnRate = 7              -- 초당 최대 회전(라디안, 약 400°). 90° 꺾기 ≈ 0.22초
     property number LastDelta = 0.02
     property number TickAcc = 0               -- 판단 주기 누적 시간
-    property number TickInterval = 0.05       -- 판단은 초당 20번 (이동은 그 사이에도 MovementComponent가 이어 간다)
+    property number TickInterval = 0.0667     -- 판단은 초당 15번 (이동은 그 사이에도 MovementComponent가 이어 간다). 10-13: 20 → 15 (3인 파티 서버 부담)
+    property number RegenAcc = 0              -- 체력 재생 누적 시간 (1초마다 적용)
+    property number LastHurtAt = 0            -- 마지막으로 맞은 시각 (쉬는 중 빠른 재생 판단)
     property Vector2 OwnerVelVec = Vector2(0, 0) -- 주인 속도 벡터 (평활)
     property Vector2 OwnerSmooth = Vector2(0, 0) -- 이 소환수가 따라가는 주인 위치: 서버가 보는 주인 위치(초당 약 10번 바뀜)를 예측·평활한 값
     property boolean OwnerSmoothReady = false
@@ -298,10 +300,31 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method void RegenTick(number delta)
+        -- 체력 재생 (10-13 사용자 지적: 소환수는 재생이 아예 없었다). 싸우는 중 summonRegenPct, summonRestDelay초 안 맞으면 summonRestRegenPct (초당 최대 생명 비율)
+        self.RegenAcc = self.RegenAcc + delta
+        if self.RegenAcc < 1 then return end
+        local elapsed = self.RegenAcc
+        self.RegenAcc = 0
+        if self.Hp >= self.MaxHp then return end
+        local resting = _UtilLogic.ElapsedSeconds - self.LastHurtAt >= _GameData.summonRestDelay
+        local rate = resting and _GameData.summonRestRegenPct or _GameData.summonRegenPct
+        self.Hp = math.min(self.MaxHp, self.Hp + self.MaxHp * rate * elapsed)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HealFull()
+        -- 회복 신전(샘) 등: 생명을 가득
+        if self.Dead then return end
+        if self.Hp < self.MaxHp then self.Hp = self.MaxHp end
+    end
+
+    @ExecSpace("ServerOnly")
     @EventSender("Self")
     handler HandleHitEvent(HitEvent event)
         -- 몬스터에게 맞으면 HP 감소, 0이면 주인에게 사망을 알린다 (재소환 대기는 주인이 관리)
         if self.Dead or self.ShadowId == "" then return end
+        self.LastHurtAt = _UtilLogic.ElapsedSeconds
         self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard")
         if self.Hp > 0 then return end
         self.Dead = true
@@ -349,6 +372,7 @@ script ShadowUnit extends AttackComponent
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
         if not self.RingPainted then self:PaintRing() end
+        self:RegenTick(delta)
         if not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= self.Entity.CurrentMap then
             self.Entity:Destroy()
             return
