@@ -252,7 +252,9 @@ script PlayerStats extends Component
         -- 생명은 정수라 1 미만은 RegenCarry에 모았다가 채운다 (낮은 레벨에서 1씩 올라 너무 빨랐던 것 수정)
         local pc = self.Entity.PlayerComponent
         if not _Util:IsAlive(self.Entity) then return end
-        self.Mana = math.min(self.MaxMana, self.Mana + self.MaxMana * _GameData.manaRegenPct + (self.Ene + self.BonusEne) * _GameData.manaRegenPerEne)
+        -- 가득 차 있으면 다시 쓰지 않는다 (@Sync — 10-13 3인 파티 끊김 점검)
+        local mana = math.min(self.MaxMana, self.Mana + self.MaxMana * _GameData.manaRegenPct + (self.Ene + self.BonusEne) * _GameData.manaRegenPerEne)
+        if mana ~= self.Mana then self.Mana = mana end
         if pc.Hp >= pc.MaxHp then
             self.RegenCarry = 0
             return

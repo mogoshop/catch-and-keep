@@ -2,6 +2,7 @@
 --   · 인원 보정 (D2 players X): 맵 안 인원 1명당 몬스터 생명 +coopHpPerPlayer. 처치 경험치·드롭은 PlayerStats.ExpForKill·LootSystem이 ExpMul·DropBonus로
 --   · 늦게 온 사람 (M1): 보스가 쓰러져 있는데 그 보스 의뢰가 남은 사람이 맵에 있으면 남은 대기를 bossQuestRespawnSec로 줄인다
 --   · 무임승차 방지: 보스·이름 있는 적이 있던 맵이 bossResetEmptySec 동안 비면 생명·기여자를 처음으로
+--   · 벽 속에 들어간 몬스터는 가장 가까운 바닥으로 (Unstick)
 -- 채널(월드 인스턴스)마다 따로 돈다 (@Logic). 심도 던전 인스턴스 방도 그 방 안에서만 센다.
 @Logic
 script CoopRules extends Logic
@@ -92,6 +93,7 @@ script CoopRules extends Logic
             ---@type Monster
             local m = c
             if math.abs(m.PlayerHpMul - mul) >= 0.001 then m:SetPlayerHpMul(mul) end
+            self:Unstick(map, m)
         end
     end
 
@@ -112,6 +114,17 @@ script CoopRules extends Logic
                 return
             end
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Unstick(Entity map, Monster m)
+        -- 벽 칸 위에 선 몬스터는 가장 가까운 바닥으로 (10-13: 도약·밀려남 등으로 벽 속에 들어가 숨은 채 끼어 있었다)
+        if m.IsDead or not isvalid(m.Entity) or not m.Entity.Enable then return end
+        local p = _Util:Pos2(m.Entity)
+        local q = _Util:NearestFreePoint(map, p, 4)
+        if q == nil or (q - p):Magnitude() < 0.001 then return end
+        m.Entity.MovementComponent:SetWorldPosition(q)
+        log(string.format("[VRF] unstuck %s (%.2f,%.2f) → (%.2f,%.2f)", m.SourceId, p.x, p.y, q.x, q.y))
     end
 
     method boolean IsBossQuest(table q, PlayerQuest quest)

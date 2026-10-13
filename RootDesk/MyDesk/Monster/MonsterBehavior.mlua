@@ -169,7 +169,7 @@ script MonsterBehavior extends Component
         if current == "ATTACK" or current == "HIT" or current == "DEAD" then return end
         local nextState = direction:Magnitude() > 0.01 and "MOVE" or "IDLE"
         if current ~= nextState then state:ChangeState(nextState) end
-        if math.abs(direction.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = direction.x > 0 end
+        if math.abs(direction.x) > 0.05 then _Util:SetFlipX(self.Entity, direction.x > 0) end
     end
 
     @ExecSpace("ServerOnly")
@@ -210,16 +210,16 @@ script MonsterBehavior extends Component
         -- 공격 회복/경직 해제도 특수 행동의 이동 소유권을 존중한다.
         local chase = self.Entity.AIChaseComponent
         if not self:CanBeginAttack() then
-            if isvalid(chase) then chase.Enable = false end
+            if isvalid(chase) and chase.Enable then chase.Enable = false end
             return
         end
         if self.Mode == "ranged" then self:RangedTick() return end
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil and attack.SpacingControlled then
-            if isvalid(chase) then chase.Enable = false end
+            if isvalid(chase) and chase.Enable then chase.Enable = false end
             return
         end
-        if isvalid(chase) then chase.Enable = true end
+        if isvalid(chase) and not chase.Enable then chase.Enable = true end
     end
 
     @ExecSpace("ServerOnly")
