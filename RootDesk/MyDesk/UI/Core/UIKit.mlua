@@ -81,6 +81,33 @@ script UIKit extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SetMonsterPortrait(string rel, string src, number box)
+        -- 몬스터 초상: 몸만 잘라 둔 초상 그림(monsters.csv portrait, 없으면 서 있는 프레임)을 box 칸 안에 원래 비율로.
+        -- 프레임 그림은 캔버스가 몸보다 넓고 피벗이 발밑이라, 칸에 늘리면(None) 찌그러지고 비율 유지(AspectOnly)면 작아지고 밀린다 (10-13 그림자 보관함 자칼)
+        local e = self:Get(rel)
+        if not isvalid(e) then return end
+        local stats = src ~= "" and _GameData:GetMonsterStats(src) or nil
+        if stats == nil then
+            self:SetIcon(rel, "")
+            return
+        end
+        local ruid = (stats.portrait ~= nil and stats.portrait ~= "") and stats.portrait or (stats.stand or "")
+        self:SetIcon(rel, ruid)
+        local sprite = e.SpriteGUIRendererComponent
+        if not isvalid(sprite) then return end
+        local w = (stats.pw ~= nil and stats.pw > 0) and stats.pw or (stats.w or 0)
+        local h = (stats.ph ~= nil and stats.ph > 0) and stats.ph or (stats.h or 0)
+        if w <= 0 or h <= 0 then
+            sprite.PreserveSprite = PreserveSpriteType.AspectOnly
+            e.UITransformComponent.RectSize = Vector2(box, box)
+            return
+        end
+        sprite.PreserveSprite = PreserveSpriteType.None
+        local k = box / math.max(w, h)
+        e.UITransformComponent.RectSize = Vector2(w * k, h * k)
+    end
+
+    @ExecSpace("ClientOnly")
     method void SetColor(string rel, Color color)
         -- 그림 색조 (칸 바탕의 등급색·선택 표시, 아이콘 흐리게)
         local e = self:Get(rel)
