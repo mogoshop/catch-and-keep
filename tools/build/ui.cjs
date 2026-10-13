@@ -152,10 +152,9 @@ function buildGameHud() {
   b.sprite("XP/Fill", { anchor: "middle-left", pos: [8, 0], rect_size: [944, 10], image_ruid: K.gauge_fill, color: "#58B024", alpha: 1, sprite_type: 3, fill_method: 0 });
   b.text("XP/Text", "Lv 1", { size: 15, anchor: "middle-center", pos: [0, 0], rect_size: [900, 20], ...outline });
 
-  // ── 생명·마나: PC는 D2 오브(양쪽 아래), 모바일은 가운데 아래 작게. 오브 그림은 코덱스 제작 전까지 임시 ──
-  for (const [name, side, fill, x, size, platform] of [
-    ["LifeOrb", "bottom-left", "orb_life", 12, 180, "pc"], ["ManaOrb", "bottom-right", "orb_mana", -12, 180, "pc"],
-    ["MLife", "bottom-center", "orb_life", -74, 124, "mobile"], ["MMana", "bottom-center", "orb_mana", 74, 124, "mobile"],
+  // ── 생명·마나: PC는 D2 오브(양쪽 아래). 오브 그림은 코덱스 제작 전까지 임시 ──
+  for (const [name, side, fill, x, size] of [
+    ["LifeOrb", "bottom-left", "orb_life", 12, 180], ["ManaOrb", "bottom-right", "orb_mana", -12, 180],
   ]) {
     const inner = Math.round(size * 240 / 256);
     b.empty(name, { anchor: side, pos: [x, 28], rect_size: [size, size] });
@@ -163,9 +162,22 @@ function buildGameHud() {
     b.sprite(`${name}/Fill`, { anchor: "middle-center", pos: [0, 0], rect_size: [inner, inner], ...part(fill), sprite_type: 3, fill_method: 1 });
     b.patchComponent(`${name}/Fill`, "MOD.Core.SpriteGUIRendererComponent", { FillOrigin: 0, FillAmount: 1 });
     b.sprite(`${name}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [size, size], ...part("orb_frame"), sprite_type: 0 });
-    b.text(`${name}/Text`, "0/0", { size: size > 150 ? 22 : 17, bold: true, anchor: "middle-center", pos: [0, 0], rect_size: [size, 40], ...outline });
-    if (platform === "pc") k.pc(name); else k.mobile(name);
+    b.text(`${name}/Text`, "0/0", { size: 22, bold: true, anchor: "middle-center", pos: [0, 0], rect_size: [size, 40], ...outline });
+    k.pc(name);
   }
+  // ── 모바일 캐릭터 틀 (왼쪽 위, 디아블로 이모탈식): 레벨 원 + 생명·마나 막대. 가운데 아래 오브는 없앴다 (10-13, docs/ui/mobile-layout.md) ──
+  b.panel("MFrame", { anchor: "top-left", pos: [24, -16], rect_size: [480, 108], ...part("hud_box"), sprite_type: 1 });
+  b.empty("MFrame/Lv", { anchor: "middle-left", pos: [6, 0], rect_size: [100, 100] });
+  b.sprite("MFrame/Lv/Bg", { anchor: "middle-center", pos: [0, 0], rect_size: [92, 92], ...part("orb_bg"), sprite_type: 0 });
+  b.sprite("MFrame/Lv/Frame", { anchor: "middle-center", pos: [0, 0], rect_size: [100, 100], ...part("orb_frame"), sprite_type: 0 });
+  b.text("MFrame/Lv/Text", "1", { size: 36, bold: true, color: C.title, anchor: "middle-center", pos: [0, -2], rect_size: [90, 50], ...outline });
+  b.text("MFrame/Lv/Cap", "Lv", { size: 18, color: C.gold, anchor: "top-center", pos: [0, -14], rect_size: [60, 24], ...outline });
+  for (const [name, y, h, color, size] of [["Hp", -12, 40, "#D8301F", 22], ["Mp", -60, 32, "#2F6FE6", 19]]) {
+    b.panel(`MFrame/${name}`, { anchor: "top-left", pos: [116, y], rect_size: [350, h], ...part("gauge_frame"), sprite_type: 1 });
+    b.sprite(`MFrame/${name}/Fill`, { anchor: "middle-left", pos: [8, 0], rect_size: [334, h - 14], image_ruid: K.gauge_fill, color, alpha: 1, sprite_type: 3, fill_method: 0 });
+    b.text(`MFrame/${name}/Text`, "0/0", { size, bold: true, anchor: "middle-center", pos: [0, 0], rect_size: [330, h], ...outline });
+  }
+  k.mobile("MFrame");
 
   // ── PC 아래 바: 스킬 5칸(A S D F 우클릭) + 벨트 4칸(1~4) + 미니 패널 아이콘 ──
   b.empty("Bottom", { anchor: "bottom-center", pos: [0, 30], rect_size: [1060, 112] });
@@ -535,8 +547,13 @@ function patchShadowHud() {
     if (s.find(`MobilePad/${old}`)) s.remove(`MobilePad/${old}`);
   }
   const center = { anchor: "bottom-right", pivot: [0.5, 0.5] };
-  // 오른쪽 아래 모서리 기준 중심 좌표 (엄지 반경 안, 서로 겹치지 않게)
-  s.button("MobilePad/Attack", "", { ...center, pos: [-180, 190], rect_size: [220, 220], ...bg("orb_bg"), sprite_type: 0 });
+  // 오른쪽 아래 모서리 기준 중심 좌표 (디아블로 이모탈식, docs/ui/mobile-layout.md): 큰 공격 + 반지름 250 호에 스킬 4칸 + 호 위 물약 줄 + 호 왼쪽 그림자 명령
+  // 묶음(Skills·Potions·Shadow)은 stretch라 부모 크기를 그대로 따라야 한다. 저장된 크기가 달라 생긴 여백(OffsetMin/Max)이 묶음 전체를 114px 옆·89px 아래로 밀어 물약 아랫줄이 화면 밖으로 잘렸다 (10-13)
+  // 엔진은 stretch 여백을 저장된 OffsetMin/Max가 아니라 「부모 RectSize − 내 RectSize」로 다시 계산한다 → 크기를 부모(1920×1080)와 같게 둔다
+  const fill = (path) => s.patchComponent(path, "MOD.Core.UITransformComponent", { RectSize: { x: 1920, y: 1080 }, OffsetMin: { x: 0, y: 0 }, OffsetMax: { x: 0, y: 0 } });
+  fill("/");   // 그룹 루트도 메이커가 저장할 때 2148×901로 여백을 남겼다 (가로 ±114 · 세로 ∓89)
+  fill("MobilePad");
+  s.button("MobilePad/Attack", "", { ...center, pos: [-170, 170], rect_size: [220, 220], ...bg("orb_bg"), sprite_type: 0 });
   s.sprite("MobilePad/Attack/Ring", { anchor: "middle-center", pos: [0, 0], rect_size: [234, 234], ...part("orb_frame"), sprite_type: 0 });
   k.pic("MobilePad/Attack/Icon", "icon_sword", { anchor: "middle-center", pos: [0, 14], rect_size: [100, 100] });
   b_label(s, "MobilePad/Attack/Label", "공격", 28, "bottom-center");
@@ -547,20 +564,28 @@ function patchShadowHud() {
     s.text(`${path}/Edit`, "+", { size, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], ...outline, enable: false });
   };
   editMark("MobilePad/Attack", 90);
-  const arc = [[-420, 120], [-390, 290], [-260, 410], [-100, 430]];
+  // 스킬 칸은 이모탈처럼 둥근 단추: 공격 중심(-170,170)에서 반지름 260, 180°·150°·120°·90° (네모 칸은 이웃 칸 모서리가 겹쳤다)
+  const arc = [[-430, 170], [-395, 300], [-300, 395], [-170, 430]];
   s.empty("MobilePad/Skills", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
+  fill("MobilePad/Skills");
   arc.forEach((p, i) => {
     const n = `MobilePad/Skills/S${i + 1}`;
-    k.slot(n, { ...center, pos: p, rect_size: [124, 124] }, 80, "slot_skill");
-    k.cooldown(n, 112);
+    s.button(n, "", { ...center, pos: p, rect_size: [120, 120], ...bg("orb_bg"), sprite_type: 0 });
+    s.sprite(`${n}/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [76, 76], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    k.aspect(`${n}/Icon`);
+    s.sprite(`${n}/Ring`, { anchor: "middle-center", pos: [0, 0], rect_size: [128, 128], ...part("orb_frame"), sprite_type: 0 });
+    s.patchComponent(`${n}/Ring`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+    k.cooldown(n, 112, true);
     editMark(n, 64);
     if (i === 0) k.badge(n);   // 상황 안내: 해골 전사를 넣을 칸
   });
   // 「편집 끝」: 스킬 창의 「스킬 편집」으로 편집 모드일 때만 보인다 (평소에는 화면에 떠 있지 않다)
-  k.btn("MobilePad/BtnSkillEdit", "편집 끝", { ...center, pos: [-180, 580], rect_size: [220, 88], font_size: 26, enable: false });
+  k.btn("MobilePad/BtnSkillEdit", "편집 끝", { ...center, pos: [-820, 448], rect_size: [220, 88], font_size: 26, enable: false });
   // 벨트 4칸 (2×2): 무엇을 넣을지는 플레이어가 정한다 (「스킬 편집」 중 칸을 누르면 지정). 그림·개수는 MobilePad가 채운다
+  // 물약은 공격 단추 왼쪽 맨 아래 한 줄 (엄지가 바로 닿는 높이, 경험치 막대 위). 호 위에 두면 펼친 지도와 겹쳤다
   s.empty("MobilePad/Potions", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
-  [[-700, 70], [-580, 70], [-700, 186], [-580, 186]].forEach(([x, y], i) => {
+  fill("MobilePad/Potions");
+  [[-560, 80], [-672, 80], [-784, 80], [-896, 80]].forEach(([x, y], i) => {
     const path = `MobilePad/Potions/Belt${i + 1}`;
     k.slot(path, { ...center, pos: [x, y], rect_size: [104, 104] }, 56);
     b_label(s, `${path}/Count`, "", 20, "bottom-right");
@@ -568,21 +593,23 @@ function patchShadowHud() {
   });
   // 그림자 명령: 버튼 하나를 누르면 소환·회수·집결이 위로 펼쳐진다 (배운 것만 보임)
   // 혼 추출: 손 닿는 거리에 내 혼이 있을 때만 나타난다 (그림자 소환을 배운 뒤). PC는 E 키·혼 클릭
-  k.slot("MobilePad/Extract", { ...center, pos: [-840, 460], rect_size: [120, 120] }, 70);
+  k.slot("MobilePad/Extract", { ...center, pos: [-716, 200], rect_size: [120, 120] }, 70);
   s.patchComponent("MobilePad/Extract/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: SKILL_ICON.extract_mastery }, Color: hexA("#FFFFFF", 1) });
   s.patch("MobilePad/Extract/Icon", { enable: true });
   b_label(s, "MobilePad/Extract/Label", "추출", 20, "bottom-center");
   s.patch("MobilePad/Extract", { enable: false });
   k.badge("MobilePad/Extract");
   s.empty("MobilePad/Shadow", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
-  k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-600, 320], rect_size: [104, 104] }, 64);
+  fill("MobilePad/Shadow");
+  k.slot("MobilePad/Shadow/Toggle", { ...center, pos: [-600, 200], rect_size: [104, 104] }, 64);
   s.patchComponent("MobilePad/Shadow/Toggle/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.icon_shadow }, Color: hexA(part("icon_shadow").color, 1) });
   s.patch("MobilePad/Shadow/Toggle/Icon", { enable: true });
   k.badge("MobilePad/Shadow/Toggle");
   s.empty("MobilePad/Shadow/Cmds", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
+  fill("MobilePad/Shadow/Cmds");
   [["Summon", "소환", SKILL_ICON.shadow_summon], ["Recall", "회수", K.icon_scroll], ["Rally", "집결", SKILL_ICON.rally]].forEach(([n, label, ruid], i) => {
     const path = `MobilePad/Shadow/Cmds/${n}`;
-    const p = [[-600, 440], [-600, 556], [-720, 440]][i];
+    const p = [[-600, 316], [-600, 432], [-716, 316]][i];   // 소환·회수는 펼침 단추 위, 집결은 그 왼쪽 (추출 단추 위)
     k.slot(path, { ...center, pos: p, rect_size: [100, 100] }, 56);
     s.patchComponent(`${path}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: ruid } });
     s.patch(`${path}/Icon`, { enable: true });

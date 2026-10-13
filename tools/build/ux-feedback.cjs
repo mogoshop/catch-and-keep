@@ -36,6 +36,8 @@ function run(){
    b.text(`${line}/Text`,'',{anchor:'middle-left',pivot:[0,.5],pos:[16,0],rect_size:[590,40],size:24,bold:true,color:'#EFE6D2',alignment:3});
   } else b.patch(line,{anchor:'bottom-left',pivot:[0,0],pos:[0,y],rect_size:[620,44]});
  }
+ // 루트는 화면 전체 그대로 (메이커가 저장할 때 2034×1170으로 여백을 남겨 왼쪽·위 요소가 화면 밖으로 57·45px 밀렸다, 10-13)
+ b.patchComponent('/','MOD.Core.UITransformComponent',{RectSize:{x:1920,y:1080},OffsetMin:{x:0,y:0},OffsetMax:{x:0,y:0}});
  b.write(file);
  return b.listEntities().length;
 }

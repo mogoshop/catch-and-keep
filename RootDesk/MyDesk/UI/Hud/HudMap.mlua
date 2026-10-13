@@ -697,22 +697,37 @@ script HudMap extends Logic
             self.LayoutKey = key
             local map = _UIKit:Get("MiniMap")
             local track = _UIKit:Get("QuestTrack")
+            -- 모바일 (디아블로 이모탈식, docs/ui/mobile-layout.md): 지도는 오른쪽 위(엔진 친구·메뉴 단추 아래), 의뢰 추적은 왼쪽 위 캐릭터 틀·버프 아래.
+            -- 지도를 펼쳐도 의뢰 추적은 그대로 (같은 열이 아니다)
             if isvalid(map) then
                 local t = map.UITransformComponent
-                t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
-                t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
-                t.anchoredPosition = mobile and Vector2(24, -180) or Vector2(-24, -150)
-                t.RectSize = Vector2(344, self.Expanded and 488 or 104)
+                t.AlignmentOption = AlignmentType.TopRight
+                t.Pivot = Vector2(1, 1)
+                t.anchoredPosition = mobile and Vector2(-24, -120) or Vector2(-24, -150)
+                -- 모바일: 범례·「다음 길」 줄을 빼서(의뢰 추적·여정 안내가 같은 내용) 펼친 높이 394, 0.75배 → 아래 끝이 위 416.
+                -- 그 아래에 안내 줄 두 줄이 스킬 호 위로 들어간다 (아이폰 가로 높이 1025 기준, tools/check_mobile_layout.cjs)
+                t.RectSize = Vector2(344, self.Expanded and (mobile and 394 or 488) or 104)
+                local k = mobile and 0.75 or 1
+                t.UIScale = Vector3(k, k, 1)
+                local body = _UIKit:Get("MiniMap/Body")
+                if isvalid(body) then body.UITransformComponent.RectSize = Vector2(344, mobile and 290 or 384) end
+                for i = 0, 3 do _UIKit:SetEnabled("MiniMap/Body/Legend" .. tostring(i), not mobile) end
+                _UIKit:SetEnabled("MiniMap/Body/FocusText", not mobile)
             end
             if isvalid(track) then
                 local t = track.UITransformComponent
                 t.AlignmentOption = mobile and AlignmentType.TopLeft or AlignmentType.TopRight
                 t.Pivot = mobile and Vector2(0, 1) or Vector2(1, 1)
-                t.anchoredPosition = mobile and Vector2(24, self.Expanded and -680 or -296) or Vector2(-24, self.Expanded and -658 or -270)
+                t.anchoredPosition = mobile and Vector2(24, -196) or Vector2(-24, self.Expanded and -658 or -270)
             end
-            -- 모바일 일지 버튼은 의뢰 추적 오른쪽에 나란히 (세로로 쌓으면 조이스틱 자리까지 내려온다)
+            -- 모바일 일지 단추는 오른쪽 위 메뉴 단추 왼쪽 (이모탈의 가방·메뉴 아이콘 줄). 의뢰 추적 옆에 두면 위 가운데 안내와 겹쳤다
             local journal = _UIKit:Get("JournalOpen")
-            if isvalid(journal) and mobile then journal.UITransformComponent.anchoredPosition = Vector2(456, self.Expanded and -680 or -296) end
+            if isvalid(journal) and mobile then
+                local t = journal.UITransformComponent
+                t.AlignmentOption = AlignmentType.TopRight
+                t.Pivot = Vector2(1, 1)
+                t.anchoredPosition = Vector2(-410, -120)
+            end
             _UIKit:SetText("MiniMap/Toggle/Hint", self.Expanded and "−" or "+")
         end
         _UIKit:SetEnabled("MiniMap", not _UIKit:AnyWindowOpen())

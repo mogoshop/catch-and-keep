@@ -6,6 +6,7 @@
 //   4. 모델·맵 참조                        (check_assets)
 //   4-1. 소환수 움직임 불변식               (check_motion, docs/motion-sync.md)
 //   4-2. 창이 HUD에 가려지지 않는가        (check_ui_layers — UI 그룹 순서·화면 좌표)
+//   4-3. 모바일 HUD 배치                   (check_mobile_layout — 화면 비율 4종에서 겹침·화면 밖, docs/ui/mobile-layout.md)
 //   5. 검사기 자가 테스트                  (tests/fixtures: 일부러 틀린 코드의 "-- EXPECT" 줄을 정확히 잡는가)
 //   6. --build: 빌드를 두 번 돌려 결과가 같은가 (멱등성, 파일을 다시 쓴다)
 // 사용: node tools/test.cjs [--build]
@@ -42,6 +43,7 @@ step("스크립트 참조", () => tool("check_scripts.cjs"));
 step("모델·맵 참조", () => tool("check_assets.cjs"));
 step("움직임 불변식", () => tool("check_motion.cjs"));
 step("창 가림 검사", () => tool("check_ui_layers.cjs"));
+step("모바일 HUD 배치", () => tool("check_mobile_layout.cjs"));
 
 step("검사기 자가 테스트", () => {
   const fixture = path.join(ROOT, "tests/fixtures/bad_scripts");
