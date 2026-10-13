@@ -252,6 +252,7 @@ script PlayerStats extends Component
         -- 생명은 정수라 1 미만은 RegenCarry에 모았다가 채운다 (낮은 레벨에서 1씩 올라 너무 빨랐던 것 수정)
         local pc = self.Entity.PlayerComponent
         if not _Util:IsAlive(self.Entity) then return end
+        self:RefreshSpeed()
         -- 가득 차 있으면 다시 쓰지 않는다 (@Sync — 10-13 3인 파티 끊김 점검)
         local mana = math.min(self.MaxMana, self.Mana + self.MaxMana * _GameData.manaRegenPct + (self.Ene + self.BonusEne) * _GameData.manaRegenPerEne)
         if mana ~= self.Mana then self.Mana = mana end
@@ -409,12 +410,17 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method void RefreshSpeed()
-        -- 기본 × (1 + 장비 %) × 냉기 둔화(0.6). 속도를 바꾸는 곳은 여기 하나
+        -- 기본 × (1 + 장비 %) × 냉기 둔화(0.6). 속도를 바꾸는 곳은 여기 하나. 바뀔 때만 쓴다
+        -- (10-13 사용자 지적: 디버프 없이 갑자기 아주 느려졌다 → Regen이 1초마다 이걸 불러, 둔화 끝 복구 타이머를 놓쳐도 다시 맞춘다)
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1 + self.BonusMs / 100
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
-        movement.InputSpeed = self.BaseSpeed * mult
+        local want = self.BaseSpeed * mult
+        if math.abs(movement.InputSpeed - want) > 0.001 then
+            if movement.InputSpeed < want * 0.9 then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
+            movement.InputSpeed = want
+        end
     end
 
     @ExecSpace("ServerOnly")

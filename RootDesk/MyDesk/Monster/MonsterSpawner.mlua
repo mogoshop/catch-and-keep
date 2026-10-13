@@ -19,6 +19,7 @@ script MonsterSpawner extends Component
     property integer PackSize = 1          -- 무리 크기 (1 = 흩어져 배치)
     property number RespawnSec = 10        -- 리스폰 대기 (음수 = 다시 나오지 않음)
     property boolean DebugLog = false
+    property any PackCenters = nil         -- 이번 SpawnAll에서 고른 무리 중심들 (서로 packSpacing 이상 떨어뜨린다)
 
     property table SafeZones = {}
     property Entity Terrain = nil
@@ -217,6 +218,7 @@ script MonsterSpawner extends Component
             table.insert(list, { id = modelId, count = tonumber(count), level = tonumber(level) })
         end
         local stats = { packs = 0, leaders = 0, mixed = 0, hordes = 0 }
+        self.PackCenters = {}
         for _, entry in ipairs(list) do
             local remaining = entry.count
             while remaining > 0 do
@@ -236,7 +238,7 @@ script MonsterSpawner extends Component
                     if escort ~= nil then stats.mixed = stats.mixed + 1 end
                 end
                 if leader then stats.leaders = stats.leaders + 1 end
-                local center = self:RandomPoint()
+                local center = self:PickPackCenter()
                 for i = 1, size do
                     if center ~= nil then
                         local p = center
@@ -332,6 +334,23 @@ script MonsterSpawner extends Component
             end
         end
         return true
+    end
+
+    method any PickPackCenter()
+        -- 무리 중심: 이미 놓인 무리들과 packSpacing칸 이상 떨어진 자리 (10-13 사용자 지적: 무리 여러 개가 한곳에 겹쳐 20마리가 뭉쳐 있었다).
+        -- 그런 자리가 없으면(좁은 맵) 후보 중 가장 먼 자리
+        local best, bestD = nil, -1
+        for i = 1, 14 do
+            local p = self:RandomPoint()
+            if p ~= nil then
+                local d = 999
+                for _, c in ipairs(self.PackCenters or {}) do d = math.min(d, (p - c):Magnitude()) end
+                if d >= _GameData.packSpacing then best = p bestD = d break end
+                if d > bestD then best, bestD = p, d end
+            end
+        end
+        if best ~= nil then table.insert(self.PackCenters, best) end
+        return best
     end
 
     method any RandomPoint()

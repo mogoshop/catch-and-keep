@@ -167,8 +167,22 @@ script MonsterNav extends Logic
                             end
                         end
                     end
-                    if best ~= nil then next[e.Id] = { monster = monster, target = best } end
+                    if best ~= nil then next[e.Id] = { monster = monster, target = best, d = bestD } end
                 end
+            end
+        end
+        -- 한 플레이어를 길찾기로 쫓는 몬스터는 가까운 navMaxChasers마리까지 (10-13: 미로에서 20마리가 줄지어 몰려왔다). 나머지는 제자리 추적에 맡긴다
+        local byTarget = {}
+        for id, a in pairs(next) do
+            local k = a.target.Id
+            if byTarget[k] == nil then byTarget[k] = {} end
+            table.insert(byTarget[k], { id = id, d = a.d })
+        end
+        local cap = math.max(1, math.floor(_GameData.navMaxChasers))
+        for _, list in pairs(byTarget) do
+            if #list > cap then
+                table.sort(list, function(x, y) return x.d < y.d end)
+                for i = cap + 1, #list do next[list[i].id] = nil end
             end
         end
         -- 길찾기에서 빠진 몬스터는 네이티브 추적으로 돌려준다
