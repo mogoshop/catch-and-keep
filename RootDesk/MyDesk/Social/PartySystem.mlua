@@ -197,11 +197,9 @@ script PartySystem extends Logic
             end
         end
         if #near < 2 then return false end
-        ---@type PlayerStats
-        local ks = killer:GetComponent("script.PlayerStats")
-        local base = ks:ExpForKill(monLevel, grade)
-        local total = base * (1 + 0.35 * (#near - 1))
-        for _, st in ipairs(near) do st:GainExp(math.max(1, math.floor(total * st.Level / levelSum))) end
+        -- 10-13 X1: 각자 자기 처치 경험치 100% + 근처 파티원 1명당 partyExpPerMember (예전 D2식 분배는 4명이면 1인 51%라 파티가 손해였다)
+        local bonus = 1 + _GameData.partyExpPerMember * (#near - 1)
+        for _, st in ipairs(near) do st:GainExp(math.max(1, math.floor(st:ExpForKill(monLevel, grade) * bonus + 0.5))) end
         return true
     end
 

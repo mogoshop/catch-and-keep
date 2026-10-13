@@ -49,7 +49,13 @@ script WarpGate extends Component
         if not isvalid(owner) then return false end
         local mine = player:GetComponent("script.PlayerSocial")
         local theirs = owner:GetComponent("script.PlayerSocial")
-        return mine ~= nil and theirs ~= nil and mine.PartyId > 0 and mine.PartyId == theirs.PartyId
+        if mine == nil or theirs == nil or mine.PartyId <= 0 or mine.PartyId ~= theirs.PartyId then return false end
+        -- 10-13: 파티원도 그 액트가 열려 있어야 (액트 1 캐릭터가 귀환 포털로 액트 3 보스 방에 따라 들어가 난이도를 여는 무임승차 방지)
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(self.TargetMap))
+        ---@type PlayerTravel
+        local travel = player:GetComponent("script.PlayerTravel")
+        if info ~= nil and travel ~= nil and not travel:ActUnlockedIn(_GameConst:DifficultyOfMap(self.TargetMap), math.floor(info.act or 1)) then return false end
+        return true
     end
 
     @ExecSpace("ServerOnly")

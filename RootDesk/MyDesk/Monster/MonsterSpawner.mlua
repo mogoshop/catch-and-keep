@@ -84,6 +84,13 @@ script MonsterSpawner extends Component
                 end
                 log("[VRF] map cleared " .. map.Name .. " total=" .. tostring(self.Total))
                 _GameEvents:Emit("MapCleared", { map = map, mapKey = base })
+            elseif self.Cleared then
+                -- 10-13 C1: 이미 정리된 맵에 정리 의뢰가 남은 사람이 들어오면 인정 (맵은 안에 아무도 없어야 다시 차서, 남이 있으면 끝없이 기다렸다)
+                for _, p in ipairs(players) do
+                    ---@type PlayerQuest
+                    local q = p:GetComponent("script.PlayerQuest")
+                    if q ~= nil then q:OnMapCleared(base, map) end
+                end
             end
         end
         if #players > 0 then

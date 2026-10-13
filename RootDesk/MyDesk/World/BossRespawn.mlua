@@ -17,6 +17,22 @@ script BossRespawn extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method boolean Hurry(string mapName, number seconds)
+        -- 그 맵의 쓰러진 보스들 남은 시간을 seconds 이하로 줄인다 (의뢰가 남은 사람이 왔을 때, CoopRules · 10-13 M1). 줄였으면 true
+        if self.Timers == nil then return false end
+        local cap = _UtilLogic.ServerElapsedSeconds + seconds
+        local changed = false
+        for _, t in pairs(self.Timers) do
+            if t.map == mapName and t.at > cap then
+                t.at = cap
+                changed = true
+            end
+        end
+        if changed then self:Publish() end
+        return changed
+    end
+
+    @ExecSpace("ServerOnly")
     method void Clear(string mapName, string bossName)
         if self.Timers == nil or self.Timers[mapName .. "|" .. bossName] == nil then return end
         self.Timers[mapName .. "|" .. bossName] = nil

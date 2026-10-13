@@ -17,7 +17,10 @@ script LootSystem extends Logic
             gf = stats.BonusGF
         end
         local d = _ItemData:GetDropTable(rank)
-        local picks = math.floor(d.picks)
+        -- 같은 맵 인원 보정: 추첨 횟수 + 비율 (소수 부분은 확률로, CoopRules · 10-13 X2)
+        local pickF = d.picks * (1 + _CoopRules:DropBonus(monster.CurrentMap))
+        local picks = math.floor(pickF)
+        if _UtilLogic:RandomDouble() < pickF - picks then picks = picks + 1 end
         local wNone, wGold, wPot, wItem, wRune = d.none, d.gold, d.potion, d.item, d.rune
         local goldMult = 1
         if rank == "elite" or rank == "champion" then goldMult = 2 elseif rank == "unique" or rank == "boss" then goldMult = 3 end

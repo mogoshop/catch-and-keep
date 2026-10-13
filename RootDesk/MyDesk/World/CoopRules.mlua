@@ -1,0 +1,140 @@
+-- 함께 하는 규칙 (서버, 1초마다) — docs/design/21 (10-13): 채널당 4명이 같은 맵을 함께 쓸 때
+--   · 인원 보정 (D2 players X): 맵 안 인원 1명당 몬스터 생명 +coopHpPerPlayer. 처치 경험치·드롭은 PlayerStats.ExpForKill·LootSystem이 ExpMul·DropBonus로
+--   · 늦게 온 사람 (M1): 보스가 쓰러져 있는데 그 보스 의뢰가 남은 사람이 맵에 있으면 남은 대기를 bossQuestRespawnSec로 줄인다
+--   · 무임승차 방지: 보스·이름 있는 적이 있던 맵이 bossResetEmptySec 동안 비면 생명·기여자를 처음으로
+-- 채널(월드 인스턴스)마다 따로 돈다 (@Logic). 심도 던전 인스턴스 방도 그 방 안에서만 센다.
+@Logic
+script CoopRules extends Logic
+
+    property table Counts = {}       -- 맵 엔티티 Id → 지금 인원
+    property table Watched = {}      -- 맵 엔티티 Id → { map, emptySince } (사람이 있었던 맵)
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 1)
+        log("[VRF] CoopRules ready hp+" .. tostring(_GameData.coopHpPerPlayer) .. "/player")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    -- ───────── 다른 시스템이 묻는 값 ─────────
+
+    method integer PlayersIn(Entity map)
+        -- 그 맵의 인원 (보정 상한까지, 최소 1)
+        if not isvalid(map) then return 1 end
+        local n = self.Counts[map.Id] or 1
+        return math.max(1, math.min(n, math.floor(_GameData.coopPlayerCap)))
+    end
+
+    method number HpMul(integer n)
+        return 1 + _GameData.coopHpPerPlayer * (math.max(1, n) - 1)
+    end
+
+    method number ExpMul(Entity map)
+        -- 처치 경험치 인원 보정 (PlayerStats.ExpForKill)
+        return 1 + _GameData.coopExpPerPlayer * (self:PlayersIn(map) - 1)
+    end
+
+    method number DropBonus(Entity map)
+        -- 드롭 추첨 횟수 + 비율 (LootSystem.RollDrops)
+        return _GameData.coopDropPerPlayer * (self:PlayersIn(map) - 1)
+    end
+
+    -- ───────── 1초마다 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        local now = _UtilLogic.ElapsedSeconds
+        local occupied = {}
+        for _, u in pairs(_UserService.UserEntities) do
+            if isvalid(u) and isvalid(u.CurrentMap) then
+                local id = u.CurrentMap.Id
+                local rec = occupied[id]
+                if rec == nil then
+                    rec = { map = u.CurrentMap, players = {} }
+                    occupied[id] = rec
+                end
+                table.insert(rec.players, u)
+            end
+        end
+        local counts = {}
+        for id, rec in pairs(occupied) do
+            counts[id] = #rec.players
+            self:ApplyHp(rec.map, #rec.players)
+            self:HurryForQuest(rec.map, rec.players)
+            self.Watched[id] = { map = rec.map, emptySince = 0 }
+        end
+        self.Counts = counts
+        for id, w in pairs(self.Watched) do
+            if occupied[id] == nil then
+                if not isvalid(w.map) then
+                    self.Watched[id] = nil
+                elseif w.emptySince == 0 then
+                    w.emptySince = now
+                elseif now - w.emptySince >= _GameData.bossResetEmptySec then
+                    self:ResetBosses(w.map)
+                    self.Watched[id] = nil
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyHp(Entity map, integer n)
+        -- 인원 보정을 맵의 몬스터에 (새로 나온 몬스터는 PlayerHpMul = 1이라 다음 틱에 곱해진다)
+        local mul = self:HpMul(math.min(n, math.floor(_GameData.coopPlayerCap)))
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if math.abs(m.PlayerHpMul - mul) >= 0.001 then m:SetPlayerHpMul(mul) end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HurryForQuest(Entity map, table players)
+        -- 쓰러진 보스가 있는 맵에 그 보스 의뢰가 남은 사람이 있으면 남은 대기를 줄인다
+        if _BossRespawn:MapRemaining(map.Name) <= _GameData.bossQuestRespawnSec then return end
+        local base = _GameConst:BaseMapName(map.Name)
+        for _, p in ipairs(players) do
+            ---@type PlayerQuest
+            local quest = p:GetComponent("script.PlayerQuest")
+            local q = quest ~= nil and quest:Current() or nil
+            if q ~= nil and q.map == base and quest:SameDifficulty(map) and self:IsBossQuest(q, quest) then
+                if _BossRespawn:Hurry(map.Name, _GameData.bossQuestRespawnSec) then
+                    _Util:NotifyMap(map, "의뢰가 남은 사람이 왔다 — 쓰러진 적이 " .. tostring(math.floor(_GameData.bossQuestRespawnSec)) .. "초 안에 다시 나타난다")
+                    log("[VRF] boss respawn hurried " .. map.Name .. " for " .. p.PlayerComponent.UserId)
+                end
+                return
+            end
+        end
+    end
+
+    method boolean IsBossQuest(table q, PlayerQuest quest)
+        -- 보스를 쓰러뜨려야 하는 의뢰: 이름 있는 적 · 의식 · 열쇠(아직 못 얻음) · 보스 맵의 처치 의뢰(액트 보스)
+        if q.kind == "boss" or q.kind == "ritual" then return true end
+        if q.kind == "chest" then return quest.Progress < 1 end
+        if q.kind ~= "kill" then return false end
+        local info = _GameData:GetMapInfo(q.map)
+        if info == nil or info.features == nil then return false end
+        for _, f in ipairs(info.features) do
+            if f.kind == "boss" then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetBosses(Entity map)
+        -- 비어 버린 맵의 보스·이름 있는 적은 처음 상태로 (일반 몬스터는 그대로 — 정리 진행을 지키려고)
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if m:IsFieldBoss() or m.NamedId ~= "" or m.Grade >= 3 then m:ResetForEmptyMap() end
+        end
+    end
+
+end
