@@ -107,7 +107,10 @@ script Monster extends Component
         local k = _GameData.monsterHpPerLevel
         local hp = self.BaseHp * (1 + k * (self.Level - 1)) / (1 + k * (self.BaseLevel - 1))
         if self.Grade == 2 and not self.Unique then hp = hp * _GameData.eliteHpMul end
-        if self.Grade >= 3 then hp = hp * _GameData.bossHpMul end   -- 10-10 QA: 보스가 너무 약했다
+        if self.Grade >= 3 then
+            -- 10-10 QA: 보스가 너무 약했다. 10-13 W2: 액트 2·3 보스는 「벽」 배율 (액트 1 여왕은 그대로)
+            hp = hp * (self.Level >= _GameData.bossWallFromLevel and _GameData.bossWallHpMul or _GameData.bossHpMul)
+        end
         hp = hp * self.StatMul
         local traits = self:Traits()
         if traits ~= nil then hp = hp * traits.HpMult end

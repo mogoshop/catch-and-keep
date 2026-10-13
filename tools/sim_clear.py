@@ -206,7 +206,7 @@ def mon(mid, L, statMul, elite=False):
     elif elite:
         hp *= C["eliteHpMul"]
     if int(m["grade"]) >= 3:
-        hp *= C["bossHpMul"]
+        hp *= C.get("bossWallHpMul", C["bossHpMul"]) if L >= C.get("bossWallFromLevel", 99) else C["bossHpMul"]
     hp *= statMul
     dmg = float(m["baseDmg"]) * (1 + C["monsterDmgPerLevel"] * (L - bl)) * statMul
     if int(m["grade"]) >= 3:
@@ -230,7 +230,7 @@ def exp_next(n):
     return round(C["expCurveCoef"] * n ** C["expCurveExp"])
 
 
-EXP_K = 0.0   # 수정안: Lv12 넘는 몬스터의 처치 경험치 +EXP_K × (몬스터 레벨 − 12) (액트 1은 그대로)
+EXP_K = C.get("expHighLevelPct", 0) / 100   # Lv12 넘는 몬스터의 처치 경험치 +EXP_K × (몬스터 레벨 − 12) (config expHighLevelPct, 10-13 W1)
 
 
 def kill_exp(pl, ml, grade):
@@ -243,7 +243,7 @@ def kill_exp(pl, ml, grade):
         b *= 1 - (d - 4) * 0.15
     if ml > pl + 5:
         b *= (pl + 5) / ml
-    return b * (1 + EXP_K * max(0, ml - 12))
+    return b * (1 + EXP_K * max(0, ml - C.get("expHighLevelFrom", 12)))
 
 
 def hits_to_die(b, dmg, element, pl, ml):
@@ -346,7 +346,7 @@ def farm_rate(prof, L, mapid):
 
 def walls(route):
     # 액트 보스 앞: 한 번씩 돌고 도착한 레벨, 그 레벨의 보스전(초·몇 대에 죽나), 보스 레벨−1까지 앞 맵을 다시 도는 시간
-    print("\n== 액트 보스 벽 (처치 경험치 보정 %.2f/레벨 · 보스 생명 배율 %.1f) ==" % (EXP_K, C["bossHpMul"]))
+    print("\n== 액트 보스 벽 (처치 경험치 보정 %.2f/레벨 · 액트 2·3 보스 생명 배율 %.1f) ==" % (EXP_K, C.get("bossWallHpMul", C["bossHpMul"])))
     for prof in PROFILES:
         rs = run(prof, 13, 0, route)
         d = {r["id"]: r for r in rs}
@@ -376,16 +376,17 @@ def main():
     ap.add_argument("--eff", type=float)
     ap.add_argument("--start", type=int, default=13)
     ap.add_argument("--walls", action="store_true", help="액트 보스 벽 표만")
-    ap.add_argument("--exp-k", type=float, default=0.0, help="Lv12 넘는 몬스터 처치 경험치 +k/레벨 (수정안)")
-    ap.add_argument("--boss-hp", type=float, help="보스 생명 배율 bossHpMul (수정안)")
+    ap.add_argument("--exp-k", type=float, help="Lv12 넘는 몬스터 처치 경험치 +k/레벨 (기본 config expHighLevelPct)")
+    ap.add_argument("--boss-hp", type=float, help="액트 2·3 보스 생명 배율 bossWallHpMul (수정안)")
     ap.add_argument("--route", default="quest", choices=["main", "quest", "all"], help="main 필드만 · quest 퀘스트 곁가지 포함(기본) · all 곁가지 전부")
     a = ap.parse_args()
     global EXP_K
     if a.eff:
         ASSUME["eff"] = a.eff
-    EXP_K = a.exp_k
+    if a.exp_k is not None:
+        EXP_K = a.exp_k
     if a.boss_hp:
-        C["bossHpMul"] = a.boss_hp
+        C["bossWallHpMul"] = a.boss_hp
     if a.walls:
         walls(a.route)
         return
