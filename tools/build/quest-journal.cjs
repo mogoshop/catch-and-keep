@@ -26,17 +26,27 @@ const win='SafeArea/QuestWin';
 b.panel(win,{rect_size:[1320,960],color:{r:.05,g:.045,b:.06,a:1},raycast:true,enable:false});
 b.sprite(win+'/Rim',{rect_size:[1360,1000],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
 // D2 의뢰 일지: 위 2×3 의뢰 그림(받을 수 있거나 끝낸 의뢰만 컬러, 나머지 어둡게) → 누르면 아래에 내용
-b.text(win+'/Title','의뢰 일지  ·  잿빛 변경',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[540,40],size:28,color:'#E6C88A',alignment:4,bold:true});
+b.text(win+'/Title','의뢰 일지',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[540,40],size:28,color:'#E6C88A',alignment:4,bold:true});
 b.button(win+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
 if(b.find(win+'/List'))b.remove(win+'/List');
-// 액트 탭 (10-10 QA: 액트 2 의뢰가 일지에 없었다) — 왼쪽 위, 고른 탭은 금빛
-for(const a of [1,2,3])b.button(win+'/Act'+a,'액트 '+a,{anchor:'top-left',pos:[20+(a-1)*124,-8],rect_size:[116,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22});   // 10-11 액트 3
+// 액트 넘김 막대 (10-20 사용자 선택: 예전 「액트1|액트2|액트3」 단추 줄은 좁고 액트가 늘면 안 들어갔다) — 왼쪽 위, GameHUD kit.actPager와 같은 모양
+for(const a of [1,2,3,4,5,6])if(b.find(win+'/Act'+a))b.remove(win+'/Act'+a);
+// 제목 띠·테두리 장식과 겹치지 않게 안쪽 왼쪽 칸에 (의뢰 그림 2×3은 그만큼 오른쪽으로)
+const bar=win+'/ActBar',bw=364;
+b.panel(bar,{anchor:'top-left',pivot:[0,1],pos:[34,-100],rect_size:[bw,76],image_ruid:icons.win_content,color:{r:0,g:0,b:0,a:0.3},sprite_type:1});
+b.button(bar+'/Prev','◀',{anchor:'middle-left',pos:[32,0],rect_size:[56,56],font_size:22,color:'#F6E3B0',image_ruid:icons.btn_frame,bg_color:'#FFFFFF',sprite_type:1});
+b.button(bar+'/Next','▶',{anchor:'middle-right',pos:[-32,0],rect_size:[56,56],font_size:22,color:'#F6E3B0',image_ruid:icons.btn_frame,bg_color:'#FFFFFF',sprite_type:1});
+b.text(bar+'/Title','',{anchor:'middle-center',pos:[0,9],rect_size:[bw-136,34],size:20,bold:true,color:'#F6E3B0',alignment:4,bestfit:true,min_size:15,max_size:20,outline:true,outline_color:'#2D2D2D'});
+for(let i=1;i<=6;i++){
+ b.sprite(bar+'/D'+i,{anchor:'middle-center',pos:[(i-3.5)*22,-20],rect_size:[12,12],image_ruid:icons.dot,sprite_type:0,color:'#FFFFFF'});
+ b.patchComponent(bar+'/D'+i,'MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:false});
+}
 for(let i=1;i<=6;i++){
  const n=win+'/Q'+i;
  for(const old of ['Icon','Title','Status','Frame'])if(b.find(n+'/'+old))b.remove(n+'/'+old);
  const col=(i-1)%3,row=Math.floor((i-1)/3);
  // 칸 자체가 테두리 그림, 그 위에 의뢰 그림·이름 (덮개 테두리는 그림을 가렸다)
- b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250,-96-row*236],rect_size:[220,224],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
+ b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250+120,-96-row*236],rect_size:[220,224],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
  b.sprite(n+'/Art',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],image_ruid:initialArt(i),color:'#FFFFFF',sprite_type:0});
  // 완료 표시(흑백 그림 위 도장) · 아직 못 읽는 의뢰는 반투명 검정 덮개 (그림 형태는 보인다)
  b.text(n+'/Done','완료',{anchor:'top-right',pivot:[1,1],pos:[-14,-14],rect_size:[84,32],size:20,bold:true,color:'#B9E6A0',outline:true,outline_color:'#101010',outline_width:0.3,enable:false});

@@ -16,10 +16,9 @@ script QuestWindow extends Logic
         _UIKit:SetEnabled("/ui/GameHUD/QuestWin", false)
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
-        for a = 1, _GameConst.ActCount do
-            local act = a
-            _UIKit:Connect(self.Win .. "/Act" .. tostring(a), function() self:SetAct(act) end)
-        end
+        -- 액트 넘김 막대 (◀ ▶, 10-20 — 액트가 늘어도 그대로)
+        _UIKit:Connect(self.Win .. "/ActBar/Prev", function() self:SetAct(self.ViewAct - 1) end)
+        _UIKit:Connect(self.Win .. "/ActBar/Next", function() self:SetAct(self.ViewAct + 1) end)
         for i = 1, 6 do
             local index = i
             _UIKit:Connect(self.Win .. "/Q" .. tostring(i), function() self:Select((self.ViewAct - 1) * 6 + index) end)
@@ -40,7 +39,7 @@ script QuestWindow extends Logic
         -- 액트 탭: 그 액트에서 읽을 수 있는 마지막 의뢰(진행 중이면 그것)를 고른다. 아직 열리지 않은 액트는 첫 의뢰를 잠긴 채 보여 준다
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
-        if quest == nil then return end
+        if quest == nil or act < 1 or act > _GameConst.ActCount then return end
         self.ViewAct = act
         local first = (act - 1) * 6 + 1
         self.Selected = math.max(first, math.min(first + 5, quest.Index))
@@ -104,13 +103,13 @@ script QuestWindow extends Logic
         log("[VRF] QuestWindow art1=" .. _GameData:GetUiIcon("quest_art1") .. " index=" .. tostring(quest.Index))
         -- 제목과 상태를 분리하고 선택한 의뢰만 강조한다. 미수락 내용·보상은 숨긴다.
         -- 2×3 의뢰 그림 (D2 의뢰 일지): 완료 = 흑백 그림, 현재·열람 가능 = 컬러, 아직 못 읽는 의뢰 = 컬러 위 반투명 검정 덮개(누를 수 없음)
-        -- 액트 탭: 고른 탭 금빛, 아직 의뢰가 하나도 안 열린 액트는 흐리게
+        -- 액트 넘김 막대: 아직 의뢰가 하나도 안 열린 액트는 점을 어둡게 (넘겨 보면 첫 의뢰가 잠긴 채 보인다)
+        local locked = ""
         for a = 1, _GameConst.ActCount do
             local first = (a - 1) * 6 + 1
-            local open = _QuestData:Get(first) ~= nil and first <= quest.Index
-            _UIKit:SetColor(self.Win .. "/Act" .. tostring(a), a == self.ViewAct and Color(1, 0.86, 0.5, 1) or (open and Color(1, 1, 1, 1) or Color(0.45, 0.45, 0.45, 1)))
+            locked = locked .. ((_QuestData:Get(first) ~= nil and first <= quest.Index) and "0" or "1")
         end
-        _UIKit:SetText(self.Win .. "/Title", "의뢰 일지  ·  " .. _GameConst:ActRegionName(self.ViewAct))
+        _UIKit:SetActPager(self.Win .. "/ActBar", self.ViewAct, _GameConst.ActCount, "액트 " .. tostring(self.ViewAct) .. " · " .. _GameConst:ActRegionName(self.ViewAct), locked)
         for c = 1, 6 do
             local i = (self.ViewAct - 1) * 6 + c
             local cell = self.Win .. "/Q" .. tostring(c)

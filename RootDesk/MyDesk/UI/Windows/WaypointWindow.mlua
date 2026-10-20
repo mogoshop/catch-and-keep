@@ -1,6 +1,6 @@
 -- 웨이포인트 창: 문양 위(반경 1.5)에서 멈추면 열린다. B·대화 버튼으로 바로 열 수도 있다. 통과 중에는 입력을 가로채지 않는다.
 -- (클릭 이동의 목적지가 문양 안쪽에서 끝나지 않으면 '이동 중'이 남아 창이 영영 안 열리던 문제 — 실제 위치 변화와 전투만 본다)
--- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환. 액트 탭(액트 1 · 액트 2): 열린 액트의 웨이포인트로 바로 이동 (D2).
+-- 발견한 곳으로 이동, 난이도(보통·악몽·지옥) 전환. 액트 넘김 막대(◀ 액트 2 · 모래 폐허 ▶): 열린 액트의 웨이포인트로 바로 이동 (D2).
 @Logic
 script WaypointWindow extends Logic
 
@@ -33,10 +33,9 @@ script WaypointWindow extends Logic
             local index = i
             _UIKit:Connect(self.Win .. "/Wp" .. tostring(i), function() self:TravelTo(index) end)
         end
-        for a = 1, _GameConst.ActCount do
-            local act = a
-            _UIKit:Connect(self.Win .. "/Act" .. tostring(a), function() self:SelectAct(act) end)
-        end
+        -- 액트 넘김 막대 (◀ ▶, 10-20 사용자 선택 — 액트가 늘어도 그대로)
+        _UIKit:Connect(self.Win .. "/ActBar/Prev", function() self:SelectAct(self.ViewAct - 1) end)
+        _UIKit:Connect(self.Win .. "/ActBar/Next", function() self:SelectAct(self.ViewAct + 1) end)
         for d = 0, 2 do
             local diff = d
             _UIKit:Connect(self.Win .. "/Diff" .. tostring(d), function() self:SelectDiff(diff) end)
@@ -128,12 +127,9 @@ script WaypointWindow extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         local list = _WaypointData:ListOfAct(self.ViewAct)
-        for a = 1, _GameConst.ActCount do
-            local label = "액트 " .. tostring(a)
-            if a == self.ViewAct then label = "▶" .. label
-            elseif not travel:ActUnlockedIn(self.ViewDiff, a) then label = _UIKit:Colored("#666666", label .. " (잠김)") end
-            _UIKit:SetText(self.Win .. "/Act" .. tostring(a), label)
-        end
+        local locked = ""
+        for a = 1, _GameConst.ActCount do locked = locked .. (travel:ActUnlockedIn(self.ViewDiff, a) and "0" or "1") end
+        _UIKit:SetActPager(self.Win .. "/ActBar", self.ViewAct, _GameConst.ActCount, "액트 " .. tostring(self.ViewAct) .. " · " .. _GameConst:ActRegionName(self.ViewAct), locked)
         for i = 1, 6 do
             local w = list[i]
             local text = ""
@@ -183,7 +179,7 @@ script WaypointWindow extends Logic
     method void SelectAct(integer act)
         -- 액트 탭: 열린 액트만 (잠긴 액트는 이유 안내)
         local travel = self:Travel()
-        if travel == nil then return end
+        if travel == nil or act < 1 or act > _GameConst.ActCount then return end
         if not travel:ActUnlockedIn(self.ViewDiff, act) then
             _UXFeedback:Show("액트 " .. tostring(act) .. " 잠김", "묘지기 여왕을 쓰러뜨리고 사제 오렌에게 알리면 열립니다", _GameData:GetUiIcon("icon_waypoint"))
             return

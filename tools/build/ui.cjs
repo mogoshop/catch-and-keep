@@ -90,6 +90,18 @@ function kit(b) {
       b.empty(`${name}/Body`, { anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, size[1]] });
       b.text(`${name}/Body/Text`, "", { alignment: 0, anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, size[1]], overflow: 0, ...textOpts });
     },
+    // 액트 넘김 막대 (10-20 사용자 선택): ◀ 「액트 2 · 모래 폐허」 ▶ + 아래 점(몇 번째 액트). 액트가 6개까지 늘어도 모양이 그대로
+    //   예전 「액트1|액트2|액트3」 단추 줄은 좁아 보였고 액트가 늘면 들어가지 않았다. 내용은 UIKit.SetActPager가 채운다
+    actPager(name, anchor, pos, w) {
+      b.panel(name, { anchor, pos, rect_size: [w, 76], ...part("win_content"), sprite_type: 1 });
+      b.button(`${name}/Prev`, "◀", { anchor: "middle-left", pos: [38, 0], rect_size: [64, 64], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+      b.button(`${name}/Next`, "▶", { anchor: "middle-right", pos: [-38, 0], rect_size: [64, 64], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+      b.text(`${name}/Title`, "", { size: 23, bold: true, color: C.title, anchor: "middle-center", pos: [0, 9], rect_size: [w - 170, 34], alignment: 4, bestfit: true, min_size: 16, max_size: 23, ...outline });
+      for (let i = 1; i <= 6; i++) {
+        b.sprite(`${name}/D${i}`, { anchor: "middle-center", pos: [(i - 3.5) * 22, -20], rect_size: [12, 12], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1 });
+        b.patchComponent(`${name}/D${i}`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      }
+    },
     // 오른쪽 위 빨간 점 (쓸 포인트가 있을 때)
     badge(name) {
       b.sprite(`${name}/Badge`, { anchor: "top-right", pos: [4, 4], rect_size: [26, 26], ...part("red_dot"), sprite_type: 0, enable: false });
@@ -416,16 +428,14 @@ function buildGameHud() {
   });
 
   // ── 웨이포인트 창 ──
-  k.frame("WpWin", "middle-center", [0, 60], [600, 640], "웨이포인트");
+  k.frame("WpWin", "middle-center", [0, 60], [600, 700], "웨이포인트");
+  // 액트 넘김 막대 (WaypointWindow가 고른 액트의 웨이포인트만 보여 준다)
+  k.actPager("WpWin/ActBar", "top-center", [0, -110], 520);
   for (let i = 1; i <= 6; i++) {
     const n = `WpWin/Wp${i}`;
-    k.btn(n, "", { anchor: "top-left", pos: [40, -84 - (i - 1) * 56], rect_size: [520, 52], font_size: 20 });
+    k.btn(n, "", { anchor: "top-left", pos: [40, -186 - (i - 1) * 56], rect_size: [520, 52], font_size: 20 });
     k.pic(`${n}/Icon`, "icon_waypoint", { anchor: "middle-left", pos: [10, 0], rect_size: [38, 38] });
   }
-  // 액트 탭 (WaypointWindow가 고른 액트의 웨이포인트만 보여 준다)
-  [["Act1", "액트 1", -180], ["Act2", "액트 2", 0], ["Act3", "액트 3", 180]].forEach(([n, t, x]) => {
-    k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 146], rect_size: [170, 56], font_size: 20 });
-  });
   b.text("WpWin/DiffTitle", "난이도", { size: 19, color: C.gold, anchor: "bottom-center", pos: [0, 100], rect_size: [500, 28], ...outline });
   [["Diff0", "보통", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {
     k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 26], rect_size: [170, 64], font_size: 20 });
@@ -436,12 +446,10 @@ function buildGameHud() {
   [["TabDepth", "심연 최고 층", -150], ["TabQueen", "묘지기 여왕 처치 시간", 150]].forEach(([n, t, x]) => {
     k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [280, 56], font_size: 18 });
   });
-  // 심연 기록은 액트별 (10-20) — 심도 탭 아래 액트 단추 3개 (RankWindow.SetAct)
-  [1, 2, 3].forEach((a, i) => {
-    k.btn(`RankWin/Act${a}`, `액트 ${a}`, { anchor: "top-center", pos: [(i - 1) * 192, -152], rect_size: [184, 50], font_size: 16 });
-  });
-  k.inner("RankWin/Paper", "top-center", [0, -212], [580, 420], "win_content");
-  b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 390] });
+  // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김)
+  k.actPager("RankWin/ActBar", "top-center", [0, -166], 580);
+  k.inner("RankWin/Paper", "top-center", [0, -218], [580, 414], "win_content");
+  b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 384] });
 
   // ── 채널 창 (메뉴 「채널 변경」): 채널별 인원, 고르면 확인 후 이동 (ChannelWindow.mlua) ──
   k.frame("ChanWin", "middle-center", [0, 40], [620, 700], "채널");

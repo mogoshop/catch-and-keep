@@ -203,6 +203,28 @@ script UIKit extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SetActPager(string bar, integer act, integer count, string title, string locked)
+        -- 액트 넘김 막대 (kit.actPager): 제목 · 끝에선 ◀/▶를 흐리게 (숨기면 막대가 한쪽으로 기울어 보였다) · 점은 액트 수만큼 가운데 정렬 (지금 금색 · 열림 흰 · 잠김 어둡게)
+        -- locked: 액트마다 한 글자, "1" = 잠김 (예: "001"). 끝에서 누르면 창 쪽 SetAct가 범위 밖이라 무시한다
+        self:SetText(bar .. "/Title", title)
+        self:SetText(bar .. "/Prev", act > 1 and "◀" or self:Colored("#7A7268", "◀"))
+        self:SetText(bar .. "/Next", act < count and "▶" or self:Colored("#7A7268", "▶"))
+        self:SetColor(bar .. "/Prev", Color(1, 1, 1, act > 1 and 1 or 0.55))
+        self:SetColor(bar .. "/Next", Color(1, 1, 1, act < count and 1 or 0.55))
+        for i = 1, 6 do
+            local dot = bar .. "/D" .. tostring(i)
+            self:SetEnabled(dot, i <= count and count > 1)
+            if i <= count then
+                self:SetPos(dot, Vector2((i - (count + 1) / 2) * 22, -20))
+                local color = Color(0.78, 0.75, 0.7, 1)
+                if i == act then color = Color(1, 0.8, 0.42, 1)
+                elseif string.sub(locked, i, i) == "1" then color = Color(0.3, 0.28, 0.33, 1) end
+                self:SetColor(dot, color)
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
     method void SetEnabled(string rel, boolean enabled)
         local e = self:Get(rel)
         if isvalid(e) and e.Enable ~= enabled then e.Enable = enabled end
