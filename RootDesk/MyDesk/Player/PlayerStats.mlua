@@ -415,6 +415,13 @@ script PlayerStats extends Component
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1 + self.BonusMs / 100
+        -- 망령 걸음 「가벼운 걸음」 (10-20): 장비 이동 속도와 더한다
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book ~= nil then
+            local step = book:GetPowerLevel("swift_step")
+            if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 end
+        end
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
         local want = self.BaseSpeed * mult
         if math.abs(movement.InputSpeed - want) > 0.001 then

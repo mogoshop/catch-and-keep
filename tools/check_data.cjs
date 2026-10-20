@@ -135,7 +135,7 @@ T.runewords.forEach((r, i) => {
 
 // ── 스킬 ──
 T.skills.forEach((r, i) => {
-  if (!["command", "soul", "curse"].includes(r.tree)) err("skills", i, `tree '${r.tree}' 알 수 없음`);
+  if (!["command", "soul", "curse", "move"].includes(r.tree)) err("skills", i, `tree '${r.tree}' 알 수 없음`);   // move = 망령 걸음 (기동, 10-20)
   if (r.prereq !== "" && !skillIds.has(r.prereq)) err("skills", i, `prereq '${r.prereq}' — skills.csv에 없음`);
   if (num(r.maxLv) < 1) err("skills", i, "maxLv < 1");
   if (r.nextLv !== "" && num(r.nextLv) > 0 && num(r.nextLv) <= num(r.row)) err("skills", i, `nextLv ${r.nextLv} — 요구 레벨(row ${r.row})보다 커야 함`);
@@ -147,7 +147,7 @@ T.skills.forEach((r, i) => {
     else if (num(r.need) > num(parent.maxLv)) err("skills", i, `need ${r.need} — 메인 최대 랭크 ${parent.maxLv}보다 큼`);
   } else if ((r.parent || "") !== "") err("skills", i, "메인 스킬에 parent가 있음");
 });
-for (const tree of ["command", "soul", "curse"]) {
+for (const tree of ["command", "soul", "curse", "move"]) {
   // 10-11: 트리 칸 제한 없음 — 스킬 창은 해금 레벨 순 목록 (docs/design/16)
 }
 

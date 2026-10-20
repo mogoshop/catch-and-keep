@@ -22,6 +22,11 @@ script SkillBook extends Component
     @Sync
     property string RightSkill = ""
     property boolean NeedRework = false       -- 10-11 스킬·능력치 개편 전 저장 (sv < 3): 불러오기 끝에 전부 돌려준다 (docs/design/16)
+    property integer DashCharges = 1          -- 망령 질주 남은 횟수 (서버). 강화 「여분 숨」이면 최대 1 + 랭크
+    property number DashRechargeAt = 0        -- 다음 한 번이 다시 차는 시각 (서버, ElapsedSeconds)
+    @Sync
+    property integer DashShown = 1            -- HUD 질주 단추 숫자 (남은 횟수)
+    property number MovePredictAt = -10       -- 클라이언트: 질주·도약을 마지막으로 직접 움직인 시각 (연타로 두 번 움직이지 않게)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -61,6 +66,7 @@ script SkillBook extends Component
         for id, lv in pairs(self.Levels) do table.insert(parts, id .. ":" .. tostring(lv)) end
         table.sort(parts)
         self.SkillDigest = table.concat(parts, ";")
+        if (self.Levels.wraith_dash or 0) > 0 then self:RefillDash() end   -- 질주 단추 숫자를 배우자마자 맞춘다
     end
 
     method integer RankCap(string id, integer playerLevel)
@@ -147,15 +153,17 @@ script SkillBook extends Component
         -- 알림 판은 두 줄뿐이라 「(Lv12 기준)」 같은 꼬리는 뺀다 (스킬 창 설명에는 그대로 있다)
         local detail = string.gsub(after, "%s*%([^%(%)]*기준%)", "")
         local hint = ""
-        if def.kind == "passive" or def.kind == "node" then
+        if def.kind == "passive" or def.kind == "node" or def.kind == "aura" then
             hint = "자동 적용"
-            if id == "skeleton_mastery" or id == "command_mastery" or id == "skel_legion" or id == "mage_legion" or id == "mage_focus" or id == "revive_legion" or id == "revive_long" then hint = "다음 소환부터 적용" end
+            if id == "skeleton_mastery" or id == "command_mastery" or id == "skel_legion" or id == "mage_legion" or id == "mage_focus" or id == "command_aura" or id == "legion_rush" then hint = "다음 소환부터 적용" end
+        elseif id == "wraith_dash" then
+            hint = Environment:IsMobilePlatform() and "질주 단추로 사용" or "스페이스로 사용"
         elseif slot > 0 then
             local keys = { "A", "S", "D", "F", "우클릭" }
             hint = keys[slot] .. " 배정"
             if Environment:IsMobilePlatform() then hint = slot == 5 and "큰 버튼 배정" or (tostring(slot) .. "번 칸 배정") end
         else hint = "스킬 창의 「스킬 편집」으로 칸에 넣으세요" end
-        if id == "raise_skeleton" or id == "raise_mage" or id == "revive" then
+        if id == "raise_skeleton" or id == "raise_mage" then
             if level == 1 and slot > 0 then hint = hint .. " · 처치 후 혼에 사용"
             elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         end
@@ -183,7 +191,8 @@ script SkillBook extends Component
             local alv = ast ~= nil and ast.Level or 1
             return math.floor(raw * (1 + 0.1 * (alv - 1)))
         end
-        local flat = { terror = true, confusion = true, lure = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true }
+        local flat = { terror = true, confusion = true, lure = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true,
+            skel_bomb = true, bone_offering = true, swift_step = true, legion_rush = true, plague_curse = true, wraith_dash = true, wraith_blink = true }
         if flat[id] then return raw end
         -- 공격 스킬 피해는 캐릭터 레벨을 따라 커진다 (몬스터 생명이 레벨마다 +30% 오르는데 스킬은 스킬 레벨만 따라가 금방 약해졌다)
         local scale = 1
@@ -192,7 +201,7 @@ script SkillBook extends Component
     end
 
     method boolean IsDamageSkill(string id)
-        local ids = { bone_shard = true, poison_mist = true, corpse_blast = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, bone_spear = true }
+        local ids = { bone_shard = true, poison_mist = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, bone_spear = true, hex_flame = true, frost_soul = true }
         return ids[id] == true
     end
 
@@ -238,7 +247,15 @@ script SkillBook extends Component
         if level <= 0 then return 0 end
         if id == "bone_shard" then return (10 + 6 * (level - 1)) * _GameData.boneShardDmgMul end   -- 10-13 사용자 결정 −40%
         if id == "poison_mist" then return 4 + 2 * level end
-        if id == "corpse_blast" then return 24 + 10 * (level - 1) end   -- 10-11: 30+12 → 24+10 (1레벨 범위 피해가 골편 3발 분량이었다)
+        if id == "hex_flame" then return 12 + 5 * (level - 1) end      -- 불꽃 화살 한 발 (저주 걸린 적 +50% · 10-20 망자 폭쇄 대신)
+        if id == "frost_soul" then return 22 + 9 * (level - 1) end     -- 서리 혼 (관통 · 둔화)
+        if id == "skel_bomb" then return 2.5 + 0.15 * (level - 1) end  -- 해골 공격력 배율 (해골 공격력이 이미 캐릭터 레벨을 따른다)
+        if id == "bone_offering" then return 25 + 1.5 * (level - 1) end   -- 소환수 최대 생명 대비 회복 %
+        if id == "swift_step" then return 4 + (level - 1) end          -- 이동 속도 %
+        if id == "legion_rush" then return 15 + (level - 1) end        -- 소환수 이동 %
+        if id == "plague_curse" then return 3 + level // 5 end         -- 저주가 옮는 적 수
+        if id == "wraith_dash" then return 3 + 0.05 * (level - 1) end  -- 질주 거리 (칸)
+        if id == "wraith_blink" then return 7 end                      -- 도약 거리 (칸)
         if id == "soul_drain" then return 15 + 8 * level end
         if id == "bone_storm" then return 4 + 2 * level end   -- 0.5초마다 12번 (10-11: 절반 — 마나 20에 적 하나당 망자 폭쇄 5번 분량이었다)
         if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
@@ -270,10 +287,13 @@ script SkillBook extends Component
 
     method table GetCommandAura()
         -- 호령(항상 켜짐): 소환수 공격·생명 %, 이동 속도 %, 모든 저항 %p. 다음 소환부터 적용한다.
+        -- 군단 질주(오라)의 이동 %도 여기서 더한다 (소환할 때 확정 — 그림자·해골 공통)
+        local rushLv = self:GetPowerLevel("legion_rush")
+        local rush = rushLv > 0 and self:GetEffectPower("legion_rush", rushLv) or 0
         local lv = self:GetPowerLevel("command_aura")
-        if lv <= 0 then return { atk = 0, speed = 0, resist = 0 } end
+        if lv <= 0 then return { atk = 0, speed = rush, resist = 0 } end
         local deep = 1 + 0.2 * self:Node("aura_deep")   -- 강화 「깊은 울림」
-        return { atk = self:GetEffectPower("command_aura", lv) * deep, speed = 5 + 0.5 * (lv - 1), resist = 5 + (lv - 1) }
+        return { atk = self:GetEffectPower("command_aura", lv) * deep, speed = 5 + 0.5 * (lv - 1) + rush, resist = 5 + (lv - 1) }
     end
 
     method string GetRankSummary(string id, integer level)
@@ -316,24 +336,31 @@ script SkillBook extends Component
             skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
             shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
             shard_spike = string.format("꿰뚫을 때마다 피해 +%d%%", 10 * level),
-            blast_chain = string.format("주변 일반 혼 %d개가 따라 터짐", level),
-            blast_save = string.format("%d%% 확률로 혼을 남김", 20 * level),
+            bomb_wide = string.format("해골 폭탄 범위 %.2f", 1.6 * (1 + 0.15 * level)),
+            bomb_marrow = string.format("해골 폭탄 피해 +%d%%", 20 * level),
+            bomb_pair = "해골 2기가 함께 돌진",
+            flame_hex = string.format("저주 걸린 적에게 피해 +%d%%", 50 + 20 * level),
+            flame_twin = string.format("불꽃 화살 %d발", 1 + level),
+            frost_long = string.format("둔화 %d초", 3 + level),
+            frost_shatter = string.format("느려진 적이 죽으면 서리 혼 피해의 %d%% 파편", 30 * level),
+            offering_heal = string.format("뼈 성찬 회복량 +%d%%", 20 * level),
+            offering_wide = string.format("뼈 성찬 범위 %.1f", 4 * (1 + 0.25 * level)),
+            offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
+            dash_ghost = string.format("질주 무적 %.1f초", 0.3 + 0.1 * level),
+            dash_charge = string.format("질주 %d번 연달아", 1 + level),
+            dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
             elite_twin = "정예 2기까지 유지",
             mist_wide = string.format("독안개 범위 +%d%%", 20 * level),
             mist_thick = string.format("독안개 지속 +%d초", level),
-            blast_wide = string.format("망자 폭쇄 범위 +%d%%", 15 * level),
             mage_legion = string.format("해골 마법사 최대 수 +%d", level),
             mage_focus = string.format("해골 마법사 피해 +%d%%", 10 * level),
             enfeeble_deep = string.format("쇠약 공격력 감소 +%d%%p", 3 * level),
             prison_wide = string.format("골격 감옥 범위 +%d%%", 15 * level),
             drain_share = string.format("소환수 회복 +%d%%", 25 * level),
-            revive_long = string.format("되살림 지속 +%d초", 30 * level),
-            revive_legion = string.format("되살림 최대 수 +%d", level),
             aura_deep = string.format("호령 공격·생명 효과 +%d%%", 20 * level),
         }
         if nodeText[id] ~= nil then return nodeText[id] end
-        if id == "revive" then return string.format("최대 %d기 · 능력치 ×%.2f · %g초", _UndeadSystem:ReviveCountFor(level), _UndeadSystem:GetReviveMultiplier(level), _GameData.reviveSeconds) end
         local power = self:GetEffectPower(id, level)
         local cm = self:GetCursePowerMult(id)
         if cm ~= 1 then power = math.floor(power * cm * 10 + 0.5) / 10 end
@@ -354,6 +381,15 @@ script SkillBook extends Component
             return string.format("소환수 공격·생명 +%g%% · 이동 +%g%% · 저항 +%g", aura.atk, aura.speed, aura.resist)
         end
         if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
+        if id == "skel_bomb" then return string.format("해골 공격력 ×%.2f · 반경 %.2f%s", power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and " · 2기" or "") end
+        if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * (1 + 0.2 * self:Node("offering_heal")) * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
+        if id == "swift_step" then return string.format("이동 속도 +%g%%", power) end
+        if id == "legion_rush" then return string.format("소환수 이동 +%g%% · 6칸 밖이면 곁으로", power) end
+        if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
+        if id == "wraith_dash" then return string.format("%.2f칸 질주 · 무적 %.1f초 · 재사용 %.1f초", power, 0.3 + 0.1 * self:Node("dash_ghost"), self:DashCooldown(level)) end
+        if id == "wraith_blink" then return string.format("최대 %g칸 순간이동 · 마나 %d", power, math.floor(self:GetManaCost(id, level))) end
+        if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%%", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex")) end
+        if id == "frost_soul" then return string.format("관통 서리 혼 · 기준 피해 %.1f · %d초 둔화", power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long")) end
         if id == "bone_spear" then return string.format("관통 창 %s · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
         if id == "bone_shard" then return string.format("뼛조각 %d발 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
@@ -361,7 +397,6 @@ script SkillBook extends Component
         if power > 0 then
             local label = "기준 피해"
             if id == "poison_mist" then label = "초당 기준 피해"
-            elseif id == "corpse_blast" then label = "일반 혼 기준 피해"
             elseif id == "bone_storm" then label = "0.5초당 기준 피해" end
             return label .. " " .. string.format("%.1f", power * (1 + stats:GetSpellPowerPct() / 100))
         end
@@ -381,6 +416,9 @@ script SkillBook extends Component
         local def = _SkillData:Get(id)
         if def == nil or def.kind == "passive" then return 0 end
         local cost = def.mana + math.floor(math.max(1, level) / 4)
+        -- 망령 도약: 랭크가 오를수록 싸진다 (20 → 20랭크 11). 질주는 늘 4
+        if id == "wraith_blink" then cost = math.max(8, def.mana - math.floor(0.5 * (math.max(1, level) - 1))) end
+        if id == "wraith_dash" then cost = def.mana end
         -- 골편 투척: 부채꼴 발 수만큼 비싸다 (2발 +2 · 5발 +8)
         if id == "bone_shard" then cost = cost + _GameData.boneShardManaPerExtra * (self:GetBoneShardCount(math.max(1, level)) - 1) end
         return cost
@@ -417,7 +455,7 @@ script SkillBook extends Component
     method void AutoSlot(string id)
         -- 처음 배운 액티브·저주는 빈 칸(A S D F 순)에 자동으로 넣는다. 우클릭은 플레이어가 직접 지정할 때만
         -- (우클릭에 자동으로 들어가면 클릭 조작 중 마법이 저절로 나간다)
-        if not self:IsSlottable(id) then return end
+        if not self:IsSlottable(id) or id == "wraith_dash" then return end   -- 질주는 스페이스·모바일 질주 단추 (칸에 넣고 싶으면 직접)
         if self.RightSkill == id then return end
         local list = self:SlotList()
         for i = 1, 4 do if list[i] == id then return end end
@@ -476,6 +514,7 @@ script SkillBook extends Component
         end
         local now = _UtilLogic.ElapsedSeconds
         if now < (self.ReadyAt[id] or 0) then return false end
+        if id == "wraith_dash" and self:RefillDash() < 1 then return false end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return false end
@@ -486,7 +525,8 @@ script SkillBook extends Component
         end
         local me = _Util:Pos2(self.Entity)
         if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
-        local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave" or id == "bone_armor"
+        local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave" or id == "bone_armor" or id == "bone_offering"
+        local move = id == "wraith_dash" or id == "wraith_blink"
         local lock = nil
         if id == "bone_shard" then
             -- 10-10 2차 QA: 커서가 몬스터 위가 아니면 오른쪽 몬스터를 두고 왼쪽으로 날아갔다.
@@ -503,13 +543,15 @@ script SkillBook extends Component
         end
         local ray = target - me
         if selfCast then target = me
+        elseif move then
+            -- 질주·도약: 내 클라이언트가 이미 움직였고 target은 도착점이다. 서버 위치는 조금 늦으니 1.5칸 여유
+            if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
-        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
+        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear" or id == "hex_flame" or id == "frost_soul" or id == "skel_bomb") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
-        elseif id == "raise_mage" then kind = "mage"
-        elseif id == "revive" then kind = "revive" end
+        elseif id == "raise_mage" then kind = "mage" end
         if kind ~= "" or id == "bone_shard" then
             local epoch = self.CastEpoch
             self.PendingCasts[id] = true
@@ -541,17 +583,132 @@ script SkillBook extends Component
         local effects = self.Entity:GetComponent("script.SkillEffects")
         if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
         stats:SpendMana(cost)
-        self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
+        if id == "wraith_dash" then self:UseDashCharge(lv)
+        else self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult()) end
         self:PresentCast(id, target - me, userId)
         return true
+    end
+
+    method number DashCooldown(integer level)
+        -- 망령 질주 한 번이 다시 차는 시간: 4초, 랭크마다 -0.1초 (20랭크 2.1초)
+        return math.max(1, 4 - 0.1 * (math.max(1, level) - 1))
+    end
+
+    method integer DashTrailDamage(integer rank)
+        -- 강화 「망령 자취」 피해: (8 + 캐릭터 레벨 × 3) × 랭크
+        ---@type PlayerStats
+        local st = self.Entity:GetComponent("script.PlayerStats")
+        local lv = st ~= nil and st.Level or 1
+        return math.floor((8 + 3 * lv) * rank)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer RefillDash()
+        -- 남은 질주 횟수를 시간에 맞춰 채운다 (최대 1 + 「여분 숨」)
+        local max = 1 + self:Node("dash_charge")
+        local now = _UtilLogic.ElapsedSeconds
+        local cd = self:DashCooldown(self:GetPowerLevel("wraith_dash"))
+        -- 다시 차는 중이 아니면 가득 (처음 · 「여분 숨」을 새로 찍었을 때도)
+        if self.DashRechargeAt <= 0 or self.DashCharges > max then self.DashCharges = max end
+        while self.DashCharges < max and self.DashRechargeAt > 0 and now >= self.DashRechargeAt do
+            self.DashCharges = self.DashCharges + 1
+            self.DashRechargeAt = self.DashCharges < max and (self.DashRechargeAt + cd) or 0
+        end
+        if self.DashShown ~= self.DashCharges then self.DashShown = self.DashCharges end
+        return self.DashCharges
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UseDashCharge(integer level)
+        -- 한 번 쓰고, 다 쓰면 다음 한 번이 찰 때까지 쿨다운 덮개를 건다
+        local now = _UtilLogic.ElapsedSeconds
+        self.DashCharges = math.max(0, self.DashCharges - 1)
+        if self.DashRechargeAt <= 0 then self.DashRechargeAt = now + self:DashCooldown(level) end
+        self.DashShown = self.DashCharges
+        if self.DashCharges <= 0 then self:SetCooldown("wraith_dash", math.max(0.1, self.DashRechargeAt - now)) end
+        local left = self.DashRechargeAt - now
+        _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self:RefillDash() end end, left + 0.05)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CastMove(string id)
+        -- 질주(스페이스·모바일 질주 단추)·도약: 내 화면에서 바로 움직이고 서버는 마나·쿨다운·무적만 맡는다.
+        -- 플레이어 위치는 클라이언트가 쥐고 있어 서버가 옮길 수 없다 (메이커 실측 10-10). 벽은 ReachablePoint로 막는다
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() or not _Util:IsAlive(self.Entity) then return end
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) or _GameConst:IsTown(map) then return end
+        local lv = self:GetPowerLevel(id)
+        if lv <= 0 then
+            if id == "wraith_dash" then _HudMain:ShowWarn("망령 질주는 Lv6부터 스킬 창(K) 「망령 걸음」에서 배운다") end
+            return
+        end
+        if self:CooldownLeft(id) > 0.05 or _UtilLogic.ElapsedSeconds - self.MovePredictAt < 0.25 then return end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil or stats.Mana < self:GetManaCost(id, lv) then return end
+        local me = _Util:Pos2(self.Entity)
+        local range = self:GetEffectPower(id, lv)
+        local dest
+        if id == "wraith_blink" then
+            local aim = self:GetAimPoint(id)
+            local ray = aim - me
+            if ray:Magnitude() > range then aim = me + ray:Normalize() * range end
+            dest = _Util:ReachablePoint(map, me, aim, 0.25)
+        else
+            local dir = self:MoveDirection()
+            dest = _Util:ReachablePoint(map, me, me + dir * range, 0.25)
+        end
+        if (dest - me):Magnitude() < 0.3 then return end
+        self.MovePredictAt = _UtilLogic.ElapsedSeconds
+        self:RequestCast(id, dest)
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if click ~= nil then
+            click:Cancel()
+            click.AttackTimer = math.max(click.AttackTimer, 0.3)
+        end
+        if math.abs(dest.x - me.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dest.x >= me.x and 1 or -1 end
+        _SoundDirector:PlaySkillCue(id)
+        if id == "wraith_blink" then
+            self.Entity.MovementComponent:SetWorldPosition(dest)
+            return
+        end
+        -- 질주: 0.16초 동안 미끄러지듯 (매 프레임 자리 쓰기)
+        local steps = 8
+        for i = 1, steps do
+            local t = i / steps
+            _TimerService:SetTimerOnce(function()
+                if not _Util:IsAlive(self.Entity) or self.Entity.CurrentMap ~= map then return end
+                local ease = 1 - (1 - t) * (1 - t)
+                self.Entity.MovementComponent:SetWorldPosition(me + (dest - me) * ease)
+            end, 0.02 * i)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Vector2 MoveDirection()
+        -- 질주 방향: PC 마우스 모드는 커서 쪽, 아니면 모바일 조준 끌기 → 누르고 있는 방향키·마지막으로 움직인 쪽 → 바라보는 쪽
+        local me = _Util:Pos2(self.Entity)
+        ---@type ClickControl
+        local cc = self.Entity:GetComponent("script.ClickControl")
+        if Environment:IsPCPlatform() and cc ~= nil and cc.MouseMode then
+            local d = _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition()) - me
+            if d:Magnitude() > 0.2 then return d:Normalize() end
+        end
+        ---@type PlayerAttack
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        if attack ~= nil and attack.LocalAimActive and attack.LocalAimDirection:Magnitude() > 0.1 then return attack.LocalAimDirection:Normalize() end
+        if cc ~= nil and cc.FacingDir:Magnitude() > 0.5 then return cc.FacingDir:Normalize() end
+        return Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0)
     end
 
     @ExecSpace("Client")
     method void PresentCast(string id, Vector2 dir)
         -- 성공한 시전만 소유자 클라이언트에서 재생한다. 소환/집결은 바라보는 방향을 바꾸지 않는다.
         if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
-        -- 골편은 누를 때 이미 재생했다 (PredictBoneShard)
+        -- 골편은 누를 때 이미 재생했다 (PredictBoneShard). 질주·도약은 몸짓 없이 움직임만 (CastMove)
         if id == "bone_shard" and _UtilLogic.ElapsedSeconds - self.PredictedCastAt < 1.5 then return end
+        if id == "wraith_dash" or id == "wraith_blink" then return end
         self:PlayCastGesture(id, dir)
     end
 
@@ -559,7 +716,7 @@ script SkillBook extends Component
     method void PlayCastGesture(string id, Vector2 dir)
         -- 시전 소리·방향·몸짓 (서버 확인 후 PresentCast, 골편은 누르는 순간 PredictBoneShard)
         _SoundDirector:PlaySkillCue(id)
-        local command = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
+        local command = id == "raise_skeleton" or id == "raise_mage" or id == "skel_bomb" or id == "bone_offering" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
         if not command and math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         if id == "bone_shard" then
             -- 10-11 QA 「발사 때 캐릭터 옆 파란 이펙트」: ATTACK 상태로 바꾸면 무기 휘두르기 동작과 그 잔상(검기)이 함께 나왔다.
@@ -629,7 +786,12 @@ script SkillBook extends Component
         elseif key == KeyboardKey.S then slot = 2
         elseif key == KeyboardKey.D then slot = 3
         elseif key == KeyboardKey.F then slot = 4
-        elseif key == KeyboardKey.Mouse1 then slot = 5 end
+        elseif key == KeyboardKey.Mouse1 then slot = 5
+        elseif key == KeyboardKey.Space then
+            -- 망령 질주 (10-20): 스킬 칸과 상관없이 스페이스 (마을에서는 NPC 대화가 스페이스를 쓴다 — CastMove가 마을을 건너뛴다)
+            self:CastMove("wraith_dash")
+            return
+        end
         if slot > 0 then self:CastSlot(slot) end
     end
 
@@ -650,6 +812,7 @@ script SkillBook extends Component
         -- 쿨다운 중이면 서버에 보내지 않는다 (칸의 덮개가 남은 시간을 보여 준다)
         local id = self:GetSlotSkill(slot)
         if id == "" or self:CooldownLeft(id) > 0.05 then return end
+        if id == "wraith_dash" or id == "wraith_blink" then self:CastMove(id) return end
         if id == "bone_shard" then
             -- 서버 쿨다운이 화면에 오기 전 연타로 예측만 더 나가지 않게, 방금 그린 시전의 쿨다운은 여기서 막는다
             local def = _SkillData:Get(id)
@@ -707,7 +870,7 @@ script SkillBook extends Component
             return _UILogic:ScreenToWorldPosition(_InputService:GetCursorPosition())
         end
         local me = _Util:Pos2(self.Entity)
-        local corpse = id == "raise_skeleton" or id == "raise_mage" or id == "revive" or id == "corpse_blast"
+        local corpse = id == "raise_skeleton" or id == "raise_mage"
         ---@type PlayerAttack
         local attack = self.Entity:GetComponent("script.PlayerAttack")
         if attack ~= nil and attack.LocalAimActive then

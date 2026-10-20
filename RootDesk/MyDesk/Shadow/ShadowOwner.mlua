@@ -152,17 +152,60 @@ script ShadowOwner extends Component
             return false
         end
         local cost = _ShadowConfig:GetUpgradeCost(plus, shadow.grade)
+        local uid = self.Entity.PlayerComponent.UserId
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv == nil or not inv:TakeStack("essence", cost) then
-            _Util:Notify("정수가 부족하다", self.Entity.PlayerComponent.UserId)
+        if inv == nil or inv:CountStack("essence") < cost then
+            _Util:Notify("정수가 부족하다", uid)
+            return false
+        end
+        -- +6부터 룬 1개 + 성공 확률 (10-20 사용자 결정). 실패해도 단계는 내려가지 않고 정수·룬만 사라진다
+        local tier = _ShadowConfig:UpgradeRuneTier(plus, shadow.grade)
+        local runeIndex = 0
+        if tier > 0 then
+            runeIndex = _ShadowConfig:FindUpgradeRune(inv.Bag, tier)
+            if runeIndex <= 0 then
+                _Util:Notify("+" .. tostring(plus + 1) .. " 강화에는 " .. _ShadowConfig:TierName(tier) .. " 이상 룬 1개가 필요하다", uid)
+                return false
+            end
+        end
+        local runeName = ""
+        if runeIndex > 0 then
+            local rune = _ItemData:GetRune(_ItemData:Parse(inv.Bag[runeIndex]).base)
+            runeName = rune ~= nil and rune.name or "룬"
+            inv:TakeBagItem(runeIndex)
+        end
+        inv:TakeStack("essence", cost)
+        local chance = _ShadowConfig:UpgradeChance(plus)
+        local name = _GameData:GetMonsterName(shadow.sourceId)
+        if chance < 1 and _UtilLogic:RandomDouble() >= chance then
+            _Util:Banner("그림자 강화 실패", string.format("%s +%d 그대로 — 정수 %d · %s 룬이 사라졌다 (성공 %d%%)", name, plus, cost, runeName, math.floor(chance * 100 + 0.5)), uid)
+            log(string.format("[VRF] shadow upgrade fail +%d chance=%.2f rune=%s", plus, chance, runeName))
             return false
         end
         shadow.plus = plus + 1
+        if tier > 0 then _Util:Banner("그림자 강화 성공", string.format("%s +%d → +%d (%s 룬 · 성공 %d%%)", name, plus, plus + 1, runeName, math.floor(chance * 100 + 0.5)), uid) end
+        log(string.format("[VRF] shadow upgrade ok +%d rune=%s", plus + 1, runeName))
         local commander = self:Commander()
         if commander ~= nil then commander:RefreshUnitStats(id) end
         self:RefreshDigest()
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RestAll()
+        -- 마을에 들르면 정예·보스 그림자의 사망 횟수를 지운다 (다시 소환할 수 있다)
+        local changed = false
+        for _, s in pairs(self.Storage) do
+            if (s.deaths or 0) > 0 then
+                s.deaths = 0
+                changed = true
+            end
+        end
+        if changed then
+            self:RefreshDigest()
+            _Util:Notify("마을에서 쉬어 지친 그림자가 다시 싸울 수 있다", self.Entity.PlayerComponent.UserId)
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -214,7 +257,8 @@ script ShadowOwner extends Component
         local rows = {}
         for id, s in pairs(self.Storage) do
             local need = _ShadowConfig:ExpToNext(s.level)
-            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s|%d|%d|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or "", s.at or 0, s.plus or 0, math.floor(100 * (s.xp or 0) / math.max(1, need))))
+            -- 마지막 칸 = 이번 외출에서 쓰러진 횟수 (정예·보스 사망 한도, 10-20)
+            table.insert(rows, string.format("%s|%s|%d|%d|%d|%.1f|%s|%d|%d|%d|%d", id, s.sourceId, s.grade, s.level, s.deployed and 1 or 0, s.respawnReadyAt, s.variant or "", s.at or 0, s.plus or 0, math.floor(100 * (s.xp or 0) / math.max(1, need)), s.deaths or 0))
         end
         table.sort(rows)
         self.StorageDigest = table.concat(rows, ";")

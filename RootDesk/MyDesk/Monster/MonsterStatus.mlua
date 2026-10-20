@@ -49,6 +49,10 @@ script MonsterStatus extends Component
     property number ResistBreakPct = 0
     property number RootUntil = 0             -- 골격 감옥: 제자리에 묶인다 (공격은 가능)
     property boolean ControlHeld = false      -- 공포·혼란이 이동을 쥐고 있었는가 (끝나면 추적 복구)
+    property Entity CurseSource = nil         -- 마지막으로 저주를 건 플레이어 (역병 저주가 그 사람의 스킬 레벨로 옮긴다, 10-20)
+    property Entity FrostSource = nil         -- 서리 혼으로 얼린 플레이어 (「파쇄」)
+    property number FrostUntil = 0
+    property number FrostDamage = 0
 
     method Monster Body()
         ---@type Monster
@@ -68,6 +72,7 @@ script MonsterStatus extends Component
         local now = _UtilLogic.ElapsedSeconds
         local body = self:Body()
         local boss = body ~= nil and body.Grade >= 3
+        if isvalid(source) and isvalid(source.PlayerComponent) then self.CurseSource = source end
         if kind == "amp" then
             if now >= self.AmpUntil then self.AmpPct = 0 end
             self.AmpPct = math.max(self.AmpPct, pct)
@@ -376,6 +381,82 @@ script MonsterStatus extends Component
         self.PoisonDps = 0
     end
 
+    method boolean HasCurse()
+        -- 플레이어 저주(골격 감옥 제외)가 하나라도 남아 있나
+        local now = _UtilLogic.ElapsedSeconds
+        for _, def in ipairs(self:CurseDefs()) do
+            if def.kind ~= "root" and now < self:CurseEndsAt(def.kind) then return true end
+        end
+        return false
+    end
+
+    method number CursePct(string kind)
+        -- 옮길 때 쓰는 저주 세기 (공포·혼란은 세기 없음)
+        if kind == "amp" then return self.AmpPct end
+        if kind == "weaken" then return self.WeakenPct end
+        if kind == "thorn" then return self.ThornPct end
+        if kind == "lifetap" then return self.LifeTapPct end
+        if kind == "decay" then return self.DecayPct end
+        if kind == "resist" then return self.ResistBreakPct end
+        return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyFrost(number seconds, Entity source, number damage)
+        -- 서리 혼: 둔화 + 누가 얼렸는지 기억 (강화 「파쇄」)
+        self:ApplyChill(seconds)
+        self.FrostSource = source
+        self.FrostUntil = _UtilLogic.ElapsedSeconds + seconds
+        self.FrostDamage = damage
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnDeathSpread()
+        -- 죽는 순간: 역병 저주(남은 저주를 주변 적에게) · 「파쇄」(서리 혼에 얼은 채 죽으면 냉기 파편)
+        local now = _UtilLogic.ElapsedSeconds
+        local p = _Util:Pos2(self.Entity)
+        local map = self.Entity.CurrentMap
+        local src = self.CurseSource
+        if isvalid(src) and _Util:IsAlive(src) and src.CurrentMap == map and self:HasCurse() then
+            ---@type SkillBook
+            local book = src:GetComponent("script.SkillBook")
+            local lv = book ~= nil and book:GetPowerLevel("plague_curse") or 0
+            if lv > 0 then
+                local count = math.floor(book:GetEffectPower("plague_curse", lv))
+                local near = {}
+                for _, m in ipairs(_Util:MonstersNear(map, p, 2.5)) do
+                    if m.Entity ~= self.Entity and not m.IsDead then table.insert(near, { m = m, d = (_Util:Pos2(m.Entity) - p):Magnitude() }) end
+                end
+                table.sort(near, function(a, b) return a.d < b.d end)
+                local spread = 0
+                for i = 1, math.min(count, #near) do
+                    for _, def in ipairs(self:CurseDefs()) do
+                        local left = self:CurseEndsAt(def.kind) - now
+                        if def.kind ~= "root" and left > 0.2 then near[i].m:ApplyCurseFrom(def.kind, self:CursePct(def.kind), left, src) end
+                    end
+                    spread = spread + 1
+                end
+                if spread > 0 then
+                    ---@type SkillEffects
+                    local fx = src:GetComponent("script.SkillEffects")
+                    if fx ~= nil then fx:Fx("plague", Vector3(p.x, p.y, 0), 2.5) end
+                    log("[VRF] plague spread n=" .. tostring(spread))
+                end
+            end
+        end
+        local frost = self.FrostSource
+        if now < self.FrostUntil and isvalid(frost) and _Util:IsAlive(frost) and frost.CurrentMap == map then
+            ---@type SkillBook
+            local book = frost:GetComponent("script.SkillBook")
+            local rank = book ~= nil and book:Node("frost_shatter") or 0
+            if rank > 0 then
+                ---@type SkillEffects
+                local fx = frost:GetComponent("script.SkillEffects")
+                if fx ~= nil then fx:FrostShatter(p, self.FrostDamage * 0.3 * rank) end
+            end
+        end
+    end
+
     @ExecSpace("ServerOnly")
     method void ApplyChill(number seconds)
         -- 냉기 둔화 (냉기 면역이면 무시). 끝나는 시점에 속도를 다시 계산한다
@@ -529,6 +610,9 @@ script MonsterStatus extends Component
         self.RootUntil = 0
         self.ControlHeld = false
         self.ChillUntil = 0
+        self.FrostUntil = 0
+        self.FrostSource = nil
+        self.CurseSource = nil
         self.AuraUntil = 0
         self.PoisonUntil = 0
         self.KnockUntil = 0

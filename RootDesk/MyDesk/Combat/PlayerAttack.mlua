@@ -470,8 +470,19 @@ script PlayerAttack extends AttackComponent
     end
 
     method string SkillElement(string attackInfo)
-        if attackInfo == "skill.corpse_blast" then return "fire" end
+        if attackInfo == "skill.hex_flame" then return "fire" end
+        if attackInfo == "skill.frost_soul" or attackInfo == "skill.frost_shatter" then return "cold" end
         return "magic"
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SkillHitExtra(Monster monster, string attackInfo, number damage)
+        -- 맞는 순간의 부가 효과: 서리 혼 둔화(3초 + 「시린 혼」) — 「파쇄」를 위해 누가 얼렸는지 기억한다
+        if attackInfo ~= "skill.frost_soul" then return end
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        local seconds = 3 + (book ~= nil and book:Node("frost_long") or 0)
+        monster:ApplyFrost(seconds, self.Entity, damage)
     end
 
     method number ResistFactor(Entity defender, Monster monster, string element)
@@ -541,6 +552,13 @@ script PlayerAttack extends AttackComponent
         local monster = defender:GetComponent("script.Monster")
         if string.sub(attackInfo, 1, 6) == "skill." then
             dmg = self.SkillDamage * self:ResistFactor(defender, monster, self:SkillElement(attackInfo))
+            if monster ~= nil and self:IsServer() then self:SkillHitExtra(monster, attackInfo, self.SkillDamage) end
+            -- 저주 불꽃: 저주 걸린 적에게 +50% (「낙인 연소」 랭크마다 +20%p)
+            if attackInfo == "skill.hex_flame" and monster ~= nil and monster:IsCursed() then
+                ---@type SkillBook
+                local book = self.Entity:GetComponent("script.SkillBook")
+                dmg = dmg * (1.5 + 0.2 * (book ~= nil and book:Node("flame_hex") or 0))
+            end
         else
             dmg = self:GetBasicPhysicalDamage()
             dmg = dmg * self:ResistFactor(defender, monster, "phys")

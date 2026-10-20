@@ -226,13 +226,14 @@ script ShadowHUD extends Logic
         for i, id in ipairs(owner:AssignedList()) do order[id] = i end
         local list = {}
         for row in string.gmatch(owner.StorageDigest, "[^;]+") do
-            local id, src, grade, level, deployed, readyAt, variant, at, plus, xp = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)|(%d+)|(%d+)$")
+            local id, src, grade, level, deployed, readyAt, variant, at, plus, xp, deaths = string.match(row, "^(.-)|(.-)|(%d+)|(%d+)|(%d)|([%d%.]+)|(.-)|(%d+)|(%d+)|(%d+)|(%d+)$")
             if id ~= nil then
                 local g = tonumber(grade)
                 local tier = math.min(3, g)
                 if self.Filter == 0 or self.Filter == tier then
                     local serial = tonumber(string.match(id, "_(%d+)$")) or 0
-                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), plus = tonumber(plus) or 0, xp = tonumber(xp) or 0, deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial, assign = order[id] or 0 })
+                    table.insert(list, { id = id, src = src, grade = g, level = tonumber(level), plus = tonumber(plus) or 0, xp = tonumber(xp) or 0, deployed = deployed == "1", wait = math.max(0, math.ceil(tonumber(readyAt) - now)), variant = variant, at = tonumber(at) or 0, serial = serial, assign = order[id] or 0,
+                        deaths = tonumber(deaths) or 0, limit = _ShadowConfig:GetDeathLimit(g) })
                 end
             end
         end
@@ -291,7 +292,9 @@ script ShadowHUD extends Logic
             if e ~= nil then
                 _UIKit:SetText(base .. "/Label", self:RowLabel(e))
                 local state = ""
-                if e.deployed then state = _UIKit:Colored("#9EE6A0", "소환 중") elseif e.wait > 0 then state = "회복 " .. tostring(e.wait) .. "초" end
+                if e.deployed then state = _UIKit:Colored("#9EE6A0", "소환 중")
+                elseif e.limit > 0 and e.deaths >= e.limit then state = _UIKit:Colored("#FF9A8A", "지침")
+                elseif e.wait > 0 then state = "회복 " .. tostring(e.wait) .. "초" end
                 if self.Multi and self.Picked[e.id] then state = _UIKit:Colored("#9EE6A0", "분해 선택") end
                 _UIKit:SetText(base .. "/State", state)
                 local m = _GameData:GetMonsterStats(e.src)
@@ -332,6 +335,11 @@ script ShadowHUD extends Logic
         local full = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(self:EffPlus(e), e.grade))
         local element = p.element ~= "" and (" · " .. _ShadowConfig:ElementName(p.element) .. " 속성") or ""
         local state = e.deployed and " · 소환 중" or (e.wait > 0 and (" · 회복 " .. tostring(e.wait) .. "초") or "")
+        if e.limit > 0 then
+            -- 정예·보스 사망 한도 (10-20): 다 쓰러지면 마을에 들를 때까지 지침
+            if e.deaths >= e.limit then state = state .. _UIKit:Colored("#FF9A8A", " · 지침 (마을에서 회복)")
+            else state = state .. _UIKit:Colored("#C9B17E", string.format(" · 쓰러짐 %d/%d", e.deaths, e.limit)) end
+        end
         _UIKit:SetText(d .. "/Grade", "[" .. gradeName .. "]" .. element .. state)
         local resist = {}
         for k, v in pairs(p.resists or {}) do if v ~= 0 then table.insert(resist, _ShadowConfig:ElementName(k) .. " " .. tostring(v)) end end
@@ -360,6 +368,8 @@ script ShadowHUD extends Logic
         self:SetEssence(owner.Essence)
         _UIKit:SetText(d .. "/BtnDeployNote", e.assign > 0 and ("소환 순서 " .. tostring(e.assign) .. "번째") or string.format("지정 %d / %d", #owner:AssignedList(), limit))
         local upNote = string.format("+%d→+%d · 정수 %d", e.plus, e.plus + 1, cost)
+        local runeTier = _ShadowConfig:UpgradeRuneTier(e.plus, e.grade)
+        if runeTier > 0 then upNote = string.format("+%d→+%d · %s룬 · %d%%", e.plus, e.plus + 1, _ShadowConfig:TierName(runeTier), math.floor(_ShadowConfig:UpgradeChance(e.plus) * 100 + 0.5)) end
         if e.plus >= _ShadowConfig:GetPlusMax() then upNote = "최대 강화"
         elseif e.plus >= cap then upNote = string.format("Lv%d에 +%d", _ShadowConfig:NextCapLevel(e.plus + 1), e.plus + 1) end
         _UIKit:SetText(d .. "/BtnUpgradeNote", upNote)
@@ -550,7 +560,9 @@ script ShadowHUD extends Logic
         local gradeName = "일반"
         if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
         local state = ""
-        if e.deployed then state = "  · 소환 중" elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
+        if e.deployed then state = "  · 소환 중"
+        elseif e.limit > 0 and e.deaths >= e.limit then state = "  · 지침"
+        elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
         -- 원본 몬스터 개성: 속성 표시
         local trait = ""
         local m = _GameData:GetMonsterStats(e.src)
@@ -605,12 +617,31 @@ script ShadowHUD extends Logic
             local curP = _ShadowConfig:GetProfile(e.src, e.grade, self:PowerLevel(e), _ShadowConfig:GetPlusMult(e.plus, e.grade))
             local body = name .. "  +" .. tostring(e.plus) .. " → +" .. tostring(e.plus + 1) .. "  (레벨은 그대로)\n공격 " .. tostring(curP.atk) .. " → " .. tostring(nextP.atk) .. " · 생명 " .. tostring(curP.hp) .. " → " .. tostring(nextP.hp)
                 .. "\n정수 " .. tostring(cost) .. " 사용 (보유 " .. tostring(owner.Essence) .. ")  ·  강화 1당 공격·생명 +" .. tostring(_ShadowConfig:GetPlusPct(e.grade)) .. "% · 지금 레벨 상한 +" .. tostring(cap)
+            -- +6부터 룬 1개 + 성공 확률 (10-20): 가방에서 쓸 룬을 미리 보여 준다 (등급 하한 이상 중 가장 흔한 것)
+            local runeTier = _ShadowConfig:UpgradeRuneTier(e.plus, e.grade)
+            local runeMissing = false
+            if runeTier > 0 then
+                ---@type PlayerInventory
+                local inv = _UIKit:Comp("script.PlayerInventory")
+                local bag = inv ~= nil and inv:GetBagList() or {}
+                local index = _ShadowConfig:FindUpgradeRune(bag, runeTier)
+                local pct = math.floor(_ShadowConfig:UpgradeChance(e.plus) * 100 + 0.5)
+                if index > 0 then
+                    local rune = _ItemData:GetRune(_ItemData:Parse(bag[index]).base)
+                    body = body .. "\n" .. _UIKit:Colored("#C9A2FF", string.format("룬 「%s」 1개 사용 · 성공 %d%% — 실패하면 정수·룬만 사라지고 +%d 그대로", rune ~= nil and rune.name or "룬", pct, e.plus))
+                else
+                    runeMissing = true
+                    body = body .. "\n" .. _UIKit:Colored("#FF8888", string.format("%s 이상 룬 1개가 필요합니다 (성공 %d%%)", _ShadowConfig:TierName(runeTier), pct))
+                end
+            end
             if e.plus >= _ShadowConfig:GetPlusMax() then
                 _ConfirmDialog:ShowIcon("그림자 강화 불가", name .. "\n이미 최대 강화(+" .. tostring(e.plus) .. ")입니다.", "닫기", essence, nil)
             elseif e.plus >= cap then
                 _ConfirmDialog:ShowIcon("그림자 강화 불가", name .. "\n강화는 주인 레벨 3마다 +1까지 할 수 있습니다 (지금 +" .. tostring(cap) .. ").\nLv" .. tostring(_ShadowConfig:NextCapLevel(e.plus + 1)) .. "이 되면 +" .. tostring(e.plus + 1) .. "로 강화할 수 있습니다.", "닫기", essence, nil)
             elseif owner.Essence < cost then
                 _ConfirmDialog:ShowIcon("그림자 강화 불가", body .. "\n" .. _UIKit:Colored("#FF8888", "정수가 부족합니다 — 그림자를 분해하면 정수를 얻습니다."), "닫기", essence, nil)
+            elseif runeMissing then
+                _ConfirmDialog:ShowIcon("그림자 강화 불가", body, "닫기", essence, nil)
             else
                 _ConfirmDialog:ShowIcon("그림자 강화", body, "강화", essence, function() owner:RequestUpgrade(id) end)
             end

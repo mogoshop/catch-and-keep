@@ -1,4 +1,4 @@
--- 스킬 창 (K) — 10-11 개편 (docs/design/16): 메인 스킬 카드 6×5 (해금 레벨 순) + 오른쪽 강화 패널.
+-- 스킬 창 (K) — 10-11 개편 (docs/design/16): 트리 탭(소환·영혼·저주·망령 걸음, 10-20) + 메인 스킬 카드 6×4 (해금 레벨 순) + 오른쪽 강화 패널.
 --   카드·강화를 고르면 아래 설명에 지금/다음 효과·조건. 고른 것을 한 번 더 누르면 바로 +1 (첫 클릭은 설명 보기라 실수로 찍히지 않는다).
 --   메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2 → 남는 포인트는 예전 메인 스킬의 강화로.
 -- 칸 지정: 「스킬 편집」 하나 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
@@ -10,6 +10,7 @@ script SkillWindow extends Logic
     property string SelMain = ""            -- 오른쪽 패널에 보이는 메인 스킬
     property table Cards = {}               -- 카드 번호 → 메인 스킬 id
     property table NodeIds = {}             -- 강화 칸 번호 → 노드 id
+    property string Tab = "command"         -- 보고 있는 트리 (command · soul · curse · move)
     property string RenderKey = ""
     property integer TimerId = 0
 
@@ -17,9 +18,13 @@ script SkillWindow extends Logic
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
-        for i = 1, 30 do
+        for i = 1, 24 do
             local index = i
             _UIKit:Connect(self.Win .. "/Grid/M" .. tostring(i), function() self:Pick(self.Cards[index]) end)
+        end
+        for i, tree in ipairs(self:Trees()) do
+            local t = tree
+            _UIKit:Connect(self.Win .. "/Tab" .. tostring(i), function() self:SetTab(t) end)
         end
         for i = 1, 3 do
             local index = i
@@ -58,15 +63,28 @@ script SkillWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
         local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold) .. "#" .. self:GearLevelKey(st)
+        key = key .. "#" .. self.Tab
         if key == self.RenderKey then return end
         self.RenderKey = key
+        -- 탭: 고른 트리는 밝게, 배울 수 있는 스킬이 있는 트리는 이름 옆 「+」
+        for i, tree in ipairs(self:Trees()) do
+            local chosen = tree == self.Tab
+            local learnable = false
+            if st.SkillPoints > 0 then
+                for _, id in ipairs(self:MainsOf(tree)) do
+                    if book:CanLearn(id, st.Level, st.SkillPoints) == "" then learnable = true break end
+                end
+            end
+            _UIKit:SetText(self.Win .. "/Tab" .. tostring(i), _UIKit:Colored(chosen and "#FFE9A8" or "#A99F8E", _SkillData:TreeName(tree)) .. (learnable and _UIKit:Colored("#7CFF7A", " +") or ""))
+            _UIKit:SetColor(self.Win .. "/Tab" .. tostring(i), chosen and Color(1, 0.92, 0.7, 1) or Color(0.6, 0.6, 0.6, 0.85))
+        end
         _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints) .. _UIKit:Colored("#A99F8E", "   · 레벨업마다 +" .. tostring(math.floor(_GameData.skillPerLevel))))
         local cost = book:RespecCost(st.Level)
         _UIKit:SetText(self.Win .. "/BtnReset", cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드"))
-        -- 카드: 해금 레벨 순 메인 스킬
-        local mains = _SkillData:Mains()
+        -- 카드: 고른 트리의 메인 스킬 (해금 레벨 순)
+        local mains = self:MainsOf(self.Tab)
         self.Cards = {}
-        for i = 1, 30 do
+        for i = 1, 24 do
             local id = mains[i]
             local path = self.Win .. "/Grid/M" .. tostring(i)
             _UIKit:SetEnabled(path, id ~= nil)
@@ -176,6 +194,35 @@ script SkillWindow extends Logic
         return tostring(st.BonusAllSkills) .. tostring(st.BonusTreeCommand) .. tostring(st.BonusTreeSoul) .. tostring(st.BonusTreeCurse) .. st.BonusSkillLv .. "#" .. tostring(st.BonusCurseDur) .. "#" .. tostring(st.BonusCurseEff) .. "#" .. tostring(st.BonusSpellDmg)
     end
 
+    method table Trees()
+        return { "command", "soul", "curse", "move" }
+    end
+
+    method table MainsOf(string tree)
+        -- 그 트리의 메인 스킬 (해금 레벨 순)
+        local list = {}
+        for _, id in ipairs(_SkillData:Mains()) do
+            if _SkillData:Get(id).tree == tree then table.insert(list, id) end
+        end
+        return list
+    end
+
+    method integer TabIndex(string tree)
+        for i, t in ipairs(self:Trees()) do if t == tree then return i end end
+        return 1
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetTab(string tree)
+        -- 탭을 바꾸면 그 트리의 첫 스킬을 오른쪽에 보인다
+        if tree == self.Tab then return end
+        self.Tab = tree
+        local mains = self:MainsOf(tree)
+        self.SelMain = mains[1] or ""
+        self.Selected = ""
+        self.RenderKey = ""
+    end
+
     @ExecSpace("ClientOnly")
     method void EditSlots()
         -- 스킬 창을 내리고 PC는 스킬 지정 창(A S D F 우클릭 탭)을, 모바일은 패드 칸마다 +를 띄운다
@@ -198,6 +245,7 @@ script SkillWindow extends Logic
         self.Selected = id
         local def = _SkillData:Get(id)
         if def ~= nil and def.kind ~= "node" then self.SelMain = id end
+        if def ~= nil then self.Tab = def.tree end
         self.RenderKey = ""
     end
 

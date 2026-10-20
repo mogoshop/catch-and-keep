@@ -273,6 +273,19 @@ script Monster extends Component
         if status ~= nil then status:ApplyPoison(dps, duration, source) end
     end
 
+    method boolean IsCursed()
+        -- 플레이어 저주가 하나라도 걸려 있나 (저주 불꽃 추가 피해)
+        local status = self:Status()
+        return status ~= nil and status:HasCurse()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyFrost(number seconds, Entity source, number damage)
+        -- 서리 혼 둔화 + 「파쇄」용 출처 기억
+        local status = self:Status()
+        if status ~= nil then status:ApplyFrost(seconds, source, damage) end
+    end
+
     @ExecSpace("ServerOnly")
     method void ApplyChill(number seconds)
         local status = self:Status()
@@ -386,6 +399,8 @@ script Monster extends Component
         local sc = self.Entity.StateComponent
         if isvalid(sc) then sc:ChangeState("DEAD") end
         self:SpreadPoison()
+        local status = self:Status()
+        if status ~= nil then status:OnDeathSpread() end   -- 역병 저주 · 서리 혼 「파쇄」 (10-20)
         self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
         local killer = _Util:OwnerPlayerOf(self.LastAttacker)
         _GameEvents:Emit("MonsterKilled", {

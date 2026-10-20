@@ -1,4 +1,4 @@
--- 모바일 패드 (모바일에서만 켜짐, ShadowHUD/MobilePad): 큰 공격 버튼 + 둘레 스킬 4칸 + 벨트 4칸(넣을 물건은 플레이어가 지정) + 그림자 명령(펼침, 배운 것만).
+-- 모바일 패드 (모바일에서만 켜짐, ShadowHUD/MobilePad): 큰 공격 버튼 + 둘레 스킬 4칸 + 망령 질주 단추(배운 뒤) + 벨트 4칸(넣을 물건은 플레이어가 지정) + 그림자 명령(펼침, 배운 것만).
 -- 스킬 칸 1~4 = 퀵슬롯 1~4, 큰 버튼 = 5번 칸(비우면 기본 공격, 스킬을 넣으면 그 스킬). PC의 A S D F·우클릭과 같은 칸.
 -- 스킬 편집: 스킬 창의 「스킬 편집」으로 시작(칸마다 +), 칸이나 큰 버튼을 누르면 SkillPicker로 그 칸에 넣을 스킬을 고른다. 「편집 끝」으로 마친다.
 @Logic
@@ -26,6 +26,12 @@ script MobilePad extends Logic
         self:BindAimButton(self.Root .. "/Attack", 5)
         for i = 1, 4 do self:BindAimButton(self.Root .. "/Skills/S" .. tostring(i), i) end
         _UIKit:Connect(self.Root .. "/BtnSkillEdit", function() self:ToggleEdit() end)
+        _UIKit:Connect(self.Root .. "/Dash", function()
+            -- 망령 질주: 조이스틱 방향(없으면 바라보는 쪽)으로 (SkillBook.CastMove)
+            ---@type SkillBook
+            local book = _UIKit:Comp("script.SkillBook")
+            if book ~= nil then book:CastMove("wraith_dash") end
+        end)
         for i = 1, 4 do
             local index = i
             _UIKit:Connect(self.Root .. "/Potions/Belt" .. tostring(i), function() self:Belt(index) end)
@@ -310,6 +316,13 @@ script MobilePad extends Logic
         -- 쿨다운 덮개는 매번 (시간이 흐르므로)
         for i = 1, 4 do _UIKit:ShowCooldown(self.Root .. "/Skills/S" .. tostring(i) .. "/Cd", book, book:GetSlotSkill(i)) end
         _UIKit:ShowCooldown(self.Root .. "/Attack/Cd", book, book:GetSlotSkill(5))
+        -- 망령 질주 단추: 배운 뒤에만, 남은 횟수는 「여분 숨」으로 2번 이상일 때만 숫자
+        local dash = book:GetLevel("wraith_dash") > 0
+        _UIKit:SetEnabled(self.Root .. "/Dash", dash)
+        if dash then
+            _UIKit:ShowCooldown(self.Root .. "/Dash/Cd", book, "wraith_dash")
+            _UIKit:SetText(self.Root .. "/Dash/Count", book:GetLevel("dash_charge") > 0 and tostring(book.DashShown) or "")
+        end
         local summon = book:GetLevel("shadow_summon") > 0
         local rally = book:GetLevel("rally") > 0
         local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(self.EditMode) .. "#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(belt:CountOf("tp")) .. "#" .. tostring(summon) .. tostring(rally)

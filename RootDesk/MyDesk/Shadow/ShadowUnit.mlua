@@ -116,6 +116,21 @@ script ShadowUnit extends AttackComponent
         log("[ShadowUnit] 정예 승격 " .. self.ShadowId .. " ATK " .. tostring(self.Atk))
     end
 
+    -- 해골 폭탄 (10-20): 붉게 깜빡이며 돌진해 터진다
+    property boolean Bombing = false
+    property Entity BombTarget = nil
+    property Vector2 BombPoint = Vector2(0, 0)
+    property number BombDamage = 0
+    property number BombRadius = 1.6
+    property number BombUntil = 0
+    property integer FlashTimer = 0           -- 클라이언트: 붉은 깜빡임
+    -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
+    property number OfferUntil = 0
+    property number FrenzyUntil = 0
+    property number FrenzyPct = 0
+    property number RushCheckAt = 0           -- 주인의 군단 질주 확인 시각 (1초마다)
+    property boolean RushLeash = false        -- 군단 질주: 6칸 넘게 떨어지면 곁으로 순간이동
+
     property Entity Target = nil
     property boolean RingPainted = false
     property number PartyAuraTimer = 0
@@ -325,8 +340,10 @@ script ShadowUnit extends AttackComponent
         -- 몬스터에게 맞으면 HP 감소, 0이면 주인에게 사망을 알린다 (재소환 대기는 주인이 관리)
         if self.Dead or self.ShadowId == "" then return end
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
-        self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard")
+        local offered = _UtilLogic.ElapsedSeconds < self.OfferUntil and 0.8 or 1   -- 뼈 성찬: 3초간 받는 피해 -20%
+        self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard") * offered
         if self.Hp > 0 then return end
+        if self.Bombing then self:BombExplode() return end   -- 돌진 중 쓰러지면 그 자리에서 터진다
         self.Dead = true
         -- 실제 피격 사망만 알린다. 이동·회수·수명 종료의 Destroy에는 이 경로가 없다.
         if _Util:IsAlive(self.OwnerPlayer) and isvalid(self.Entity.CurrentMap) then
@@ -371,6 +388,7 @@ script ShadowUnit extends AttackComponent
         self.LastDelta = delta
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
+        if self.Bombing then self:BombTick() return end
         if not self.RingPainted then self:PaintRing() end
         self:RegenTick(delta)
         if not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= self.Entity.CurrentMap then
@@ -403,7 +421,14 @@ script ShadowUnit extends AttackComponent
         local follow0 = self:SmoothOwner(Vector2(o.x, o.y), delta)
         local slot = self:FreeSlot(follow0, self:FormationSlot(follow0) + self.Wander)
         local toSlot = slot - myPos
-        if toSlot:Magnitude() > self.LeashDistance then
+        -- 군단 질주(주인 오라): 6칸 넘게 떨어지면 바로 곁으로 (도약을 따라온다). 1초마다 주인 스킬을 확인
+        if _UtilLogic.ElapsedSeconds >= self.RushCheckAt then
+            self.RushCheckAt = _UtilLogic.ElapsedSeconds + 1
+            ---@type SkillBook
+            local book = self.OwnerPlayer:GetComponent("script.SkillBook")
+            self.RushLeash = book ~= nil and book:GetPowerLevel("legion_rush") > 0
+        end
+        if toSlot:Magnitude() > (self.RushLeash and 6 or self.LeashDistance) then
             -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
             self.Target = nil
             self:CancelPendingAttack()
@@ -444,7 +469,8 @@ script ShadowUnit extends AttackComponent
                 end
                 self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
-                    self.AttackTimer = self.AttackCooldown / (self:AuraMult("haste") * (1 + self:OwnerBonus("ias") / 100))
+                    local frenzy = _UtilLogic.ElapsedSeconds < self.FrenzyUntil and (1 + self.FrenzyPct / 100) or 1   -- 뼈 성찬 「피의 고양」
+                    self.AttackTimer = self.AttackCooldown / (self:AuraMult("haste") * (1 + self:OwnerBonus("ias") / 100) * frenzy)
                     self:DoAttack(myPos, toTarget)
                 end
             end
@@ -605,9 +631,96 @@ script ShadowUnit extends AttackComponent
         if isvalid(mv) then mv.InputSpeed = speed end
     end
 
+    -- ───────── 해골 폭탄 (10-20) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void StartBomb(Entity foe, Vector2 point, number damage, number radius)
+        -- UndeadSystem.SkeletonBomb이 부른다 (이미 목록에서 빠졌다). 최대 2초 돌진 → 적에 닿거나 시간이 끝나면 폭발
+        self.Bombing = true
+        self.BombTarget = foe
+        self.BombPoint = point
+        self.BombDamage = damage
+        self.BombRadius = radius
+        self.BombUntil = _UtilLogic.ElapsedSeconds + 2
+        self.Target = nil
+        self.RallyTimer = 0
+        self:CancelPendingAttack()
+        self:ClearProjectiles()
+        self.CommandState = "bomb"
+        self:BombFlash(2.2)
+        self:SetSpeedMult(2.25)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BombTick()
+        -- 돌진: 살아 있는 적이면 그 적, 아니면 조준점으로. 0.7칸 안에 닿거나 2초가 지나면 터진다
+        if not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= self.Entity.CurrentMap then
+            self.Dead = true
+            self.Entity:Destroy()
+            return
+        end
+        local goal = self.BombPoint
+        if self:IsLiveTarget(self.BombTarget) then goal = _Util:Pos2(self.BombTarget) end
+        local me = _Util:Pos2(self.Entity)
+        local to = goal - me
+        if to:Magnitude() <= 0.7 or _UtilLogic.ElapsedSeconds >= self.BombUntil then
+            self:BombExplode()
+            return
+        end
+        self:SetSpeedMult(2.25)
+        self:MoveToward(to)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BombExplode()
+        -- 주인의 타격 판정으로 반경 BombRadius 피해 + 검붉은 폭발. 해골은 사라진다
+        if self.Dead then return end
+        self.Dead = true
+        local p = _Util:Pos2(self.Entity)
+        local owner = self.OwnerPlayer
+        if _Util:IsAlive(owner) then
+            ---@type PlayerAttack
+            local atk = owner:GetComponent("script.PlayerAttack")
+            if atk ~= nil then atk:SkillAttack(Vector2(p.x, p.y + 0.2), Vector2(self.BombRadius, 0), -1, "skill.skel_bomb", self.BombDamage) end
+            ---@type SkillEffects
+            local fx = owner:GetComponent("script.SkillEffects")
+            if fx ~= nil then
+                fx:BlastFx(Vector3(p.x, p.y + 0.2, 0), self.BombRadius, self.Entity.CurrentMap.Id)
+                fx:ClipFx(fx.FxBlast, Vector3(p.x, p.y + 0.5, 0), 0.75 * self.BombRadius / 1.6, 1.2, 0)
+            end
+        end
+        log(string.format("[VRF] skeleton bomb exploded dmg=%.0f r=%.2f", self.BombDamage, self.BombRadius))
+        self.Entity:Destroy()
+    end
+
+    @ExecSpace("Multicast")
+    method void BombFlash(number seconds)
+        -- 붉은 깜빡임 (정예 파란 덧칠처럼 몸 색을 바꾼다 · 그림 대역 MotionSmoother가 본체 색을 그대로 옮긴다)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local base = sprite.Color
+        local red = Color(1, 0.18, 0.12, 1)
+        local untilAt = _UtilLogic.ElapsedSeconds + seconds
+        local n = 0
+        if self.FlashTimer ~= 0 then _TimerService:ClearTimer(self.FlashTimer) end
+        self.FlashTimer = _TimerService:SetTimerRepeat(function()
+            if not isvalid(self.Entity) or _UtilLogic.ElapsedSeconds >= untilAt then
+                if self.FlashTimer ~= 0 then _TimerService:ClearTimer(self.FlashTimer) end
+                self.FlashTimer = 0
+                return
+            end
+            n = n + 1
+            local s2 = self.Entity.SpriteRendererComponent
+            if isvalid(s2) then s2.Color = n % 3 ~= 0 and red or base end   -- 빨강 2 : 원래 색 1 (한눈에 붉게 보이게)
+        end, 0.08)
+    end
+
     @ExecSpace("ServerOnly")
     method void UpdateCommandState()
         -- 실제 행동을 동기화해 HUD가 추종·집결·추격·공격을 구분한다.
+        if self.Bombing then return end
         local state = "follow"
         if self.RallyTimer > 0 then state = "rally"
         elseif _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then state = "attack"
@@ -655,6 +768,8 @@ script ShadowUnit extends AttackComponent
         if self:IsClient() then
             if self.ViewTimer ~= 0 then _TimerService:ClearTimer(self.ViewTimer) end
             self.ViewTimer = 0
+            if self.FlashTimer ~= 0 then _TimerService:ClearTimer(self.FlashTimer) end
+            self.FlashTimer = 0
             if self.HpBarTimer ~= 0 then _TimerService:ClearTimer(self.HpBarTimer) end
             self.HpBarTimer = 0
             return

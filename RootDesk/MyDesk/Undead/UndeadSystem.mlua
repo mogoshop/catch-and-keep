@@ -1,5 +1,6 @@
--- 언데드 (디아블로2 네크로맨서 소환): 해골 전사·해골 마법사·되살림. 혼 하나를 소모해 일으킨다.
--- 혼은 한 번만 쓴다 — 해골·되살림·추출·망자 폭쇄 중 하나 (D2의 시체와 같다).
+-- 언데드 (디아블로2 네크로맨서 소환): 해골 전사·해골 마법사. 혼 하나를 소모해 일으킨다.
+-- 혼은 한 번만 쓴다 — 해골·추출 중 하나 (D2의 시체와 같다).
+-- 해골 폭탄·뼈 성찬(10-20): 일으킨 해골을 소모하는 스킬. 되살림·망자 폭쇄는 10-20에 빠졌다 (되살림 코드는 kind "revive"로 남아 있지만 부르는 스킬이 없다).
 -- 수: D2 규칙 — 스킬 1~3레벨은 레벨만큼, 이후 2 + 레벨/3 (20레벨 8기, undeadCountMax). 꽉 차면 가장 오래된 것이 무너진다.
 -- 되살림: 원본 몬스터 그대로 reviveSeconds(180초), 동시 수 = 스킬 레벨 (reviveCountMax 5).
 -- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 영구 저장하지 않는다. 방 이동은 공유 메모리의 일회성 전달을 쓴다.
@@ -30,6 +31,91 @@ script UndeadSystem extends Logic
 
     method integer ReviveCountFor(integer slvl)
         return math.min(math.floor(_GameData.reviveCountMax), slvl)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table LiveUnits(Entity player, string kinds)
+        -- 살아 있는 해골 목록 { rec, unit } (kinds = "skeleton" 또는 "skeleton,mage"), 생명 낮은 순
+        local list = {}
+        for _, rec in ipairs(self:ListOf(player)) do
+            if string.find("," .. kinds .. ",", "," .. rec.kind .. ",", 1, true) ~= nil and isvalid(rec.entity) then
+                ---@type ShadowUnit
+                local u = rec.entity:GetComponent("script.ShadowUnit")
+                if u ~= nil and not u.Dead and u.Hp > 0 and not u.Bombing then table.insert(list, { rec = rec, unit = u }) end
+            end
+        end
+        table.sort(list, function(a, b) return a.unit.Hp / math.max(1, a.unit.MaxHp) < b.unit.Hp / math.max(1, b.unit.MaxHp) end)
+        return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Detach(Entity player, table rec)
+        -- 목록에서만 뺀다 (엔티티는 돌진·폭발이 끝날 때 스스로 사라진다). 수 표시를 바로 줄인다
+        local list = self:ListOf(player)
+        for i, r in ipairs(list) do
+            if r == rec then table.remove(list, i) break end
+        end
+        rec.entity = nil
+        self:RefreshSummary(player)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SkeletonBomb(Entity player, Vector2 target, number mult, number radius, integer count)
+        -- 해골 폭탄 (10-20 사용자 제안): 생명이 가장 낮은 해골 전사 count기가 붉게 깜빡이며 조준점 근처 적에게 돌진해 터진다.
+        -- 피해 = 그 해골 공격력 × mult (반경 radius). 돌진 중 쓰러져도 그 자리에서 터진다 (ShadowUnit.BombExplode)
+        local picks = self:LiveUnits(player, "skeleton")
+        if #picks == 0 then
+            _Util:Warn("터뜨릴 해골 전사가 없다 — 해골 전사를 먼저 일으키세요", player.PlayerComponent.UserId)
+            return false
+        end
+        local foe = _Util:NearestMonster(player.CurrentMap, target, 2.5)
+        for i = 1, math.min(count, #picks) do
+            local pick = picks[i]
+            self:Detach(player, pick.rec)
+            pick.unit:StartBomb(foe ~= nil and foe.Entity or nil, target, pick.unit.Atk * mult, radius)
+        end
+        log(string.format("[VRF] skeleton bomb n=%d mult=%.2f radius=%.2f foe=%s", math.min(count, #picks), mult, radius, tostring(foe ~= nil)))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BoneOffering(Entity player, number healPct, number radius, number frenzyPct)
+        -- 뼈 성찬 (10-20): 생명이 가장 낮은 해골(전사·마법사) 1기를 바쳐, 주인 반경 radius 안 모든 소환수(그림자·해골) 생명을
+        -- 최대 생명의 healPct% 회복하고 3초간 받는 피해 -20%. 강화 「피의 고양」이면 5초간 공격 속도 +frenzyPct%
+        local picks = self:LiveUnits(player, "skeleton,mage")
+        if #picks == 0 then
+            _Util:Warn("바칠 해골이 없다 — 해골 전사·마법사를 먼저 일으키세요", player.PlayerComponent.UserId)
+            return false
+        end
+        local pick = picks[1]
+        local from = _Util:Pos2(pick.unit.Entity)
+        self:Detach(player, pick.rec)
+        pick.unit.Dead = true
+        pick.unit.Entity:Destroy()
+        local center = _Util:Pos2(player)
+        local now = _UtilLogic.ElapsedSeconds
+        local healed = 0
+        for _, comp in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = comp
+            if u.OwnerPlayer == player and not u.Dead and u.Hp > 0 and isvalid(u.Entity) and (_Util:Pos2(u.Entity) - center):Magnitude() <= radius then
+                u.Hp = math.min(u.MaxHp, u.Hp + u.MaxHp * healPct / 100)
+                u.OfferUntil = now + 3
+                if frenzyPct > 0 then
+                    u.FrenzyUntil = now + 5
+                    u.FrenzyPct = frenzyPct
+                end
+                healed = healed + 1
+            end
+        end
+        ---@type SkillEffects
+        local fx = player:GetComponent("script.SkillEffects")
+        if fx ~= nil then
+            fx:ClipFx(fx.FxOffering, Vector3(center.x, center.y + 0.2, 0), 1.1 * radius / 4, 0.9, 0)
+            fx:ClipFx(fx.FxBlast, Vector3(from.x, from.y + 0.4, 0), 0.45, 0.8, 0)
+        end
+        log(string.format("[VRF] bone offering healed=%d pct=%.1f radius=%.1f", healed, healPct, radius))
+        return true
     end
 
     @ExecSpace("ServerOnly")

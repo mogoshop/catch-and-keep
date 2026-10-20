@@ -306,13 +306,19 @@ function buildGameHud() {
   k.btn("InvWin/BtnSell", "판매", { anchor: "bottom-right", pos: [-28, 30], rect_size: [260, 76] });
   b.text("InvWin/Hint", "룬: 고른 뒤 장비 칸 = 소켓\n장비 칸 누르기 = 해제", { size: 16, color: C.dim, alignment: 8, anchor: "bottom-right", pos: [-28, 210], rect_size: [260, 60] });
 
-  // ── 스킬 창 (10-11 개편, docs/design/16): 메인 스킬 카드 6×5 (해금 레벨 순) + 오른쪽 강화 패널 ──
+  // ── 스킬 창 (10-11 개편, docs/design/16): 트리 탭 4개(10-20 망령 걸음 추가) + 메인 스킬 카드 6×4 (해금 레벨 순) + 오른쪽 강화 패널 ──
   k.frame("SkillWin", "middle-center", [0, 30], [1020, 860], "스킬");
   for (const old of ["SkillWin/Col1", "SkillWin/Col2", "SkillWin/Col3", "SkillWin/Head1", "SkillWin/Head2", "SkillWin/Head3"]) if (b.find(old)) b.remove(old);
   b.text("SkillWin/Points", "", { size: 22, color: "#F4ED83", anchor: "top-left", pos: [40, -76], rect_size: [560, 30], alignment: 3, ...outline });
   k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-96, -70], rect_size: [330, 44], font_size: 18 });
-  b.empty("SkillWin/Grid", { anchor: "top-left", pos: [30, -118], rect_size: [648, 484] });
-  for (let i = 0; i < 30; i++) {
+  // 트리 탭: 한 트리 최대 12장이라 6×4 카드면 넉넉하다 (전체 34장을 한 판에 넣으면 6×5를 넘었다)
+  [["Tab1", "소환"], ["Tab2", "영혼"], ["Tab3", "저주"], ["Tab4", "망령 걸음"]].forEach(([n, t], i) => {
+    k.btn(`SkillWin/${n}`, t, { anchor: "top-left", pos: [30 + i * 164, -116], rect_size: [156, 54], font_size: 20 });
+    k.badge(`SkillWin/${n}`);   // 상황 안내가 다른 탭의 스킬을 가리킬 때
+  });
+  b.empty("SkillWin/Grid", { anchor: "top-left", pos: [30, -180], rect_size: [648, 392] });
+  for (let i = 24; i < 30; i++) if (b.find(`SkillWin/Grid/M${i + 1}`)) b.remove(`SkillWin/Grid/M${i + 1}`);
+  for (let i = 0; i < 24; i++) {
     const n = `SkillWin/Grid/M${i + 1}`;
     const col = i % 6, row = Math.floor(i / 6);
     b.button(n, "", { anchor: "top-left", pos: [col * 109, -row * 98], rect_size: [103, 92], bg_color: { r: 0, g: 0, b: 0, a: 0.3 } });
@@ -573,7 +579,7 @@ function patchShadowHud() {
   s.patchComponent("/", "MOD.Core.UIGroupComponent", { GroupOrder: 6 });
 
   // 모바일 패드: 조이스틱(왼쪽) + 오른쪽 공격 + 둘레 스킬 4칸 + 물약 2 + 그림자 명령(펼침) + 스킬 편집
-  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract"]) {
+  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Dash", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract"]) {
     if (s.find(`MobilePad/${old}`)) s.remove(`MobilePad/${old}`);
   }
   const center = { anchor: "bottom-right", pivot: [0.5, 0.5] };
@@ -594,6 +600,16 @@ function patchShadowHud() {
     s.text(`${path}/Edit`, "+", { size, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], ...outline, enable: false });
   };
   editMark("MobilePad/Attack", 90);
+  // 망령 질주 (10-20): 공격 단추 왼쪽 아래 — 스킬 칸과 별개로 늘 같은 자리 (배우기 전엔 숨김, 남은 횟수는 Count)
+  s.button("MobilePad/Dash", "", { ...center, pos: [-360, 60], rect_size: [96, 96], ...bg("orb_bg"), sprite_type: 0 });
+  s.sprite("MobilePad/Dash/Icon", { anchor: "middle-center", pos: [0, 0], rect_size: [60, 60], color: WHITE, alpha: 1, sprite_type: 0 });
+  s.patchComponent("MobilePad/Dash/Icon", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: SKILL_ICON.wraith_dash }, RaycastTarget: false });
+  k.aspect("MobilePad/Dash/Icon");
+  s.sprite("MobilePad/Dash/Ring", { anchor: "middle-center", pos: [0, 0], rect_size: [104, 104], ...part("orb_frame"), sprite_type: 0 });
+  s.patchComponent("MobilePad/Dash/Ring", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  k.cooldown("MobilePad/Dash", 90, true);
+  b_label(s, "MobilePad/Dash/Count", "", 20, "bottom-right");
+  s.patch("MobilePad/Dash", { enable: false });
   // 스킬 칸은 이모탈처럼 둥근 단추: 공격 중심(-170,170)에서 반지름 260, 180°·150°·120°·90° (네모 칸은 이웃 칸 모서리가 겹쳤다)
   const arc = [[-430, 170], [-395, 300], [-300, 395], [-170, 430]];
   s.empty("MobilePad/Skills", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
@@ -646,7 +662,7 @@ function patchShadowHud() {
     b_label(s, `${path}/Label`, label, 18, "bottom-center");
     if (n === "Summon") k.badge(path);
   });
-  for (const n of ["MobilePad/Attack", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
+  for (const n of ["MobilePad/Attack", "MobilePad/Dash", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
   // ui_lint L013이 stretch 묶음(Potions) 아래 물약 수 글자를 화면 밖으로 잘못 계산한다 (실제 위치는 물약 칸 안, 메이커 화면 확인). 오류로 빌드를 멈추지 않게 한다
   s.write(file, { strict: false });
   // 다시 만든 패드도 경로가 같으면 예전 UUID를 유지 (메이커가 새 UUID 묶음을 다시 불러오지 못하는 경우가 있었다)

@@ -40,6 +40,69 @@ script ShadowConfig extends Logic
         return math.floor((_GameData.shadowPlusCostBase + _GameData.shadowPlusCostStep * plus) * mul + 0.5)
     end
 
+    -- ───────── 사망 한도 · 룬 강화 (10-20 사용자 결정) ─────────
+
+    method integer GetDeathLimit(integer grade)
+        -- 정예·보스 그림자는 이만큼 쓰러지면 마을에 들를 때까지 소환할 수 없다 (0 = 한도 없음, 일반 그림자)
+        if grade >= 3 then return math.floor(_GameData.shadowDeathLimitBoss) end
+        if grade == 2 then return math.floor(_GameData.shadowDeathLimitElite) end
+        return 0
+    end
+
+    method integer GetRuneTier(string runeId)
+        -- 룬 등급: 1 하급(Lv1) · 2 중급(Lv12) · 3 상급(Lv23) · 4 최상급(Lv35) — runes.csv minLevel
+        local r = _ItemData:GetRune(runeId)
+        if r == nil then return 0 end
+        if r.minLevel >= 35 then return 4 end
+        if r.minLevel >= 23 then return 3 end
+        if r.minLevel >= 12 then return 2 end
+        return 1
+    end
+
+    method string TierName(integer tier)
+        local names = { "하급", "중급", "상급", "최상급" }
+        return names[math.max(1, math.min(4, tier))]
+    end
+
+    method integer UpgradeRuneTier(integer plus, integer grade)
+        -- +plus → +plus+1에 드는 룬 등급 하한 (0 = 룬 없이 정수만). 정예 +1 · 보스 +2 등급 (최대 4)
+        local nextP = plus + 1
+        if nextP < _GameData.shadowRuneFromPlus then return 0 end
+        local base = _GameData.shadowRuneTier10
+        if nextP <= 6 then base = _GameData.shadowRuneTier6
+        elseif nextP == 7 then base = _GameData.shadowRuneTier7
+        elseif nextP == 8 then base = _GameData.shadowRuneTier8
+        elseif nextP == 9 then base = _GameData.shadowRuneTier9 end
+        if grade == 2 then base = base + 1 elseif grade >= 3 then base = base + 2 end
+        return math.max(1, math.min(4, math.floor(base)))
+    end
+
+    method number UpgradeChance(integer plus)
+        -- +plus → +plus+1 성공 확률 (룬이 드는 단계부터. 그 전은 1)
+        local nextP = plus + 1
+        if nextP < _GameData.shadowRuneFromPlus then return 1 end
+        if nextP <= 6 then return _GameData.shadowPlusChance6 end
+        if nextP == 7 then return _GameData.shadowPlusChance7 end
+        if nextP == 8 then return _GameData.shadowPlusChance8 end
+        if nextP == 9 then return _GameData.shadowPlusChance9 end
+        return _GameData.shadowPlusChance10
+    end
+
+    method integer FindUpgradeRune(table bag, integer tier)
+        -- 가방(아이템 문자열 목록)에서 강화에 쓸 룬 칸 번호 (없으면 0): 등급 하한 이상 중 가장 낮은 등급 → 그중 가장 흔한 룬 (귀한 룬을 아낀다)
+        local best, bestTier, bestWeight = 0, 99, -1
+        for i, s in ipairs(bag) do
+            if _ItemData:IsRune(s) then
+                local id = _ItemData:Parse(s).base
+                local t = self:GetRuneTier(id)
+                local r = _ItemData:GetRune(id)
+                local w = r ~= nil and r.weight or 0
+                if t >= tier and (t < bestTier or (t == bestTier and w > bestWeight)) then best, bestTier, bestWeight = i, t, w end
+            end
+        end
+        return best
+    end
+
     method integer GetPlusMax()
         return math.floor(_GameData.shadowPlusMax)
     end

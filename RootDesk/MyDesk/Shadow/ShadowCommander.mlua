@@ -117,7 +117,11 @@ script ShadowCommander extends Component
 
     @ExecSpace("ServerOnly")
     method void OnMapEnter(Entity enteredMap)
-        -- 같은 방 안의 맵 이동: 도착 1초 뒤 기억한 그림자를 다시 부른다
+        -- 같은 방 안의 맵 이동: 도착 1초 뒤 기억한 그림자를 다시 부른다. 마을이면 지친 그림자가 쉰다 (사망 한도 초기화)
+        if _GameConst:IsTown(enteredMap) then
+            local owner = self:Owner()
+            if owner ~= nil then owner:RestAll() end
+        end
         self:ScheduleRedeploy(1)
     end
 
@@ -215,7 +219,14 @@ script ShadowCommander extends Component
         if self:GetSkillLevel("shadow_summon") <= 0 then return false end
         if self.DeployedCount >= self:GetDeployLimit() then return false end
         if shadow.grade >= 3 and self:DeployedBossCount() >= math.floor(_GameData.bossShadowDeployLimit) then return false end
+        if self:IsExhausted(shadow) then return false end
         return _UtilLogic.ServerElapsedSeconds >= shadow.respawnReadyAt
+    end
+
+    method boolean IsExhausted(any shadow)
+        -- 사망 한도를 채운 정예·보스 그림자 (마을에 들르면 풀린다)
+        local limit = _ShadowConfig:GetDeathLimit(shadow.grade)
+        return limit > 0 and (shadow.deaths or 0) >= limit
     end
 
     @ExecSpace("ServerOnly")
@@ -373,6 +384,18 @@ script ShadowCommander extends Component
             self.DeployedCount = math.max(0, self.DeployedCount - 1)
         end
         shadow.respawnReadyAt = _UtilLogic.ServerElapsedSeconds + _ShadowConfig:GetRespawnDelay()
+        -- 정예·보스 사망 한도 (10-20 사용자 결정): 한도만큼 쓰러지면 마을에 들를 때까지 소환할 수 없다
+        local limit = _ShadowConfig:GetDeathLimit(shadow.grade)
+        if limit > 0 then
+            shadow.deaths = (shadow.deaths or 0) + 1
+            local uid = self.Entity.PlayerComponent.UserId
+            local name = _GameData:GetMonsterName(shadow.sourceId)
+            if shadow.deaths >= limit then
+                _Util:Notify(name .. " 그림자가 지쳤다 — 마을에 들를 때까지 소환할 수 없다 (" .. tostring(limit) .. "번 쓰러짐)", uid)
+            else
+                _Util:Notify(string.format("%s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 못 부른다", name, shadow.deaths, limit), uid)
+            end
+        end
         owner:RefreshDigest()
         -- 사망 안내는 ShadowUnit의 소유자 전용 아이콘 알림으로 한 번만 전달한다.
     end
@@ -434,7 +457,7 @@ script ShadowCommander extends Component
             for _, s in pairs(owner.Storage) do
                 if not s.deployed then
                     stored = stored + 1
-                    if now < s.respawnReadyAt then waiting = waiting + 1 end
+                    if now < s.respawnReadyAt or self:IsExhausted(s) then waiting = waiting + 1 end
                 end
             end
         end
@@ -446,10 +469,10 @@ script ShadowCommander extends Component
             for _, id in ipairs(owner:AssignedList()) do
                 local s = owner:GetShadow(id)
                 if s ~= nil and not s.deployed then
-                    if now < s.respawnReadyAt then recovering = recovering + 1 else idle = idle + 1 end
+                    if now < s.respawnReadyAt or self:IsExhausted(s) then recovering = recovering + 1 else idle = idle + 1 end
                 end
             end
-            if recovering > 0 and idle == 0 then return "지정한 그림자가 아직 회복 중이다" end
+            if recovering > 0 and idle == 0 then return "지정한 그림자가 아직 회복 중이다 (지친 정예·보스는 마을에 들러야 한다)" end
             if idle == 0 then return "지정한 그림자가 모두 소환 중이다 — 보관함(H)에서 소환 지정을 바꿀 수 있다" end
         end
         if stored == 0 then return "부를 그림자가 없다 — 혼을 추출해 그림자를 모으세요" end
