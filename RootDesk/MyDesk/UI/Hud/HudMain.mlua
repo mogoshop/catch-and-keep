@@ -304,18 +304,20 @@ script HudMain extends Logic
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if book == nil or belt == nil then return end
-        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(belt:CountOf("tp"))
+        -- 벨트 칸은 다음에 마실 등급이 바뀌면 다시 그린다 (가방 내용이 키)
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. belt.Layout .. "#" .. (inv ~= nil and inv.BagDigest or "") .. "#" .. tostring(belt:CountOf("tp"))
         if key == self.SlotKey then return end
         self.SlotKey = key
         for i = 1, 5 do _UIKit:SetIcon("Bottom/Slots/Slot" .. tostring(i) .. "/Icon", self:SkillIcon(book:GetSlotSkill(i))) end
-        -- 벨트: 칸마다 플레이어가 넣은 물건 그림·개수 (빈 칸은 그림 없이)
+        -- 벨트: 칸마다 넣은 물건 — 물약은 다음에 마실 등급(낮은 것부터)의 그림·그 등급 개수 (빈 칸은 그림 없이)
         for i = 1, 4 do
             local path = "Bottom/Slots/Belt" .. tostring(i)
-            local kind = belt:SlotKind(i)
-            local count = belt:CountOf(kind)
-            _UIKit:SetIcon(path .. "/Icon", kind == "" and "" or _GameData:GetUiIcon(_GameConst:BeltIcon(kind)))
-            _UIKit:SetColor(path .. "/Icon", count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
-            _UIKit:SetText(path .. "/Count", kind == "" and "" or tostring(count))
+            local view = belt:SlotView(i)
+            _UIKit:SetIcon(path .. "/Icon", view.icon)
+            _UIKit:SetColor(path .. "/Icon", view.count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
+            _UIKit:SetText(path .. "/Count", view.count < 0 and "" or tostring(view.count))
         end
     end
 

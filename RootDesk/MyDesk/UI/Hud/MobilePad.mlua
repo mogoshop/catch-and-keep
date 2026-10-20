@@ -325,7 +325,7 @@ script MobilePad extends Logic
         end
         local summon = book:GetLevel("shadow_summon") > 0
         local rally = book:GetLevel("rally") > 0
-        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(self.EditMode) .. "#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. tostring(belt.RvPot) .. "#" .. tostring(belt:CountOf("tp")) .. "#" .. tostring(summon) .. tostring(rally)
+        local key = book.Slots .. "#" .. book.RightSkill .. "#" .. tostring(self.EditMode) .. "#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. "#" .. tostring(belt.MpPot) .. "#" .. (_UIKit:Comp("script.PlayerInventory") ~= nil and _UIKit:Comp("script.PlayerInventory").BagDigest or "") .. "#" .. tostring(belt:CountOf("tp")) .. "#" .. tostring(summon) .. tostring(rally)
         if key == self.RenderKey then return end
         self.RenderKey = key
         for i = 1, 4 do
@@ -346,11 +346,10 @@ script MobilePad extends Logic
         end
         for i = 1, 4 do
             local path = self.Root .. "/Potions/Belt" .. tostring(i)
-            local kind = belt:SlotKind(i)
-            local count = belt:CountOf(kind)
-            _UIKit:SetIcon(path .. "/Icon", kind == "" and "" or _GameData:GetUiIcon(_GameConst:BeltIcon(kind)))
-            _UIKit:SetColor(path .. "/Icon", count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
-            _UIKit:SetText(path .. "/Count", kind == "" and "" or tostring(count))
+            local view = belt:SlotView(i)   -- 물약은 다음에 마실 등급(낮은 것부터)의 그림·개수
+            _UIKit:SetIcon(path .. "/Icon", view.icon)
+            _UIKit:SetColor(path .. "/Icon", view.count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.35))
+            _UIKit:SetText(path .. "/Count", view.count < 0 and "" or tostring(view.count))
         end
         -- 그림자 명령 버튼은 그림자 소환을 배운 뒤에만, 집결은 「집결」을 배운 뒤에만
         _UIKit:SetEnabled(self.Root .. "/Shadow", summon)
