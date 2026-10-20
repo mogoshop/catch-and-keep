@@ -1,0 +1,243 @@
+-- 액트 4 최종 보스 「재의 왕」 기믹 (docs/design/27 §5). 내려찍기·장판·졸개는 같은 엔티티의 BossPattern을 쓴다.
+--   ① 깨어남 (70% 초과): 화염구·연사·지옥불 사제 소환 (BossPattern 기본)
+--   ② 혼 포식 (70% 이하): 이름판이 「심연의 군주」로 바뀐다. 8초마다 방 안의 혼 구슬을 전부 끌어당겨 먹는다 (SoulOrb.ForceSteal)
+--      — 먹을 때마다 혼 포식 한 겹(주는 피해 +15%, 최대 3겹). 16초마다 지옥불 사제 2 (졸개 4 이하)
+--   ③ 심장 노출 (40% 이하): 가슴의 혼각 세 조각이 드러나 받는 피해 +30% (Monster.GetDamageTakenMultiplier). 발밑 용암 장판 연속
+--   ④ 최후 (15% 이하): 10초마다 붉은 예고(1.6초) 뒤 전방위 폭발 — 군주가 보이는 자리(가린 벽 없음)의 플레이어는 최대 생명의 45% 화염 피해.
+--      담장·기둥 뒤로 숨으면 피한다 (Util.HasLineOfSight)
+-- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아간다.
+@Component
+script AshKingRite extends Component
+
+    @Sync
+    property integer Phase = 1
+    @Sync
+    property boolean Exposed = false        -- ③부터: 받는 피해 +ExposedPct%
+    property number ExposedPct = 30
+    property number DevourTimer = 0
+    property number DevourInterval = 8
+    property number SummonTimer = 0
+    property number SummonInterval = 16
+    property integer MinionCap = 4
+    property number BlastTimer = 0
+    property number BlastInterval = 10
+    property number BlastWarn = 1.6
+    property number BlastPct = 45
+    property number BlastRange = 30           -- 방 전체 (보이는지만 가른다)
+    property number BaseSlamInterval = 0
+    property string BasePoolElement = ""
+    property number BasePoolSeconds = 0
+    property string BaseName = ""
+    property integer HeartFx = 0             -- 클라이언트: 심장 노출 빛
+
+    method void OnBeginPlay()
+        if not self:IsServer() then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster ~= nil then self.BaseName = monster.DisplayName end
+        log("[VRF] AshKingRite ready name=" .. self.BaseName)
+    end
+
+    method void OnUpdate(number delta)
+        if self:IsClient() then self:ClientTick() return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            self:ResetRite()
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if self.Phase == 1 and ratio <= 0.7 then self:EnterPhase(2) end
+        if self.Phase == 2 and ratio <= 0.4 then self:EnterPhase(3) end
+        if self.Phase == 3 and ratio <= 0.15 then self:EnterPhase(4) end
+        if self.Phase >= 2 then
+            self.DevourTimer = self.DevourTimer - delta
+            if self.DevourTimer <= 0 then
+                self.DevourTimer = self.DevourInterval
+                self:Devour()
+            end
+            self.SummonTimer = self.SummonTimer - delta
+            if self.SummonTimer <= 0 then
+                self.SummonTimer = self.SummonInterval
+                self:RaisePriests()
+            end
+        end
+        if self.Phase >= 4 then
+            self.BlastTimer = self.BlastTimer - delta
+            if self.BlastTimer <= 0 then
+                self.BlastTimer = self.BlastInterval
+                self:StartBlast()
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnterPhase(integer phase)
+        self.Phase = phase
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if bp == nil or monster == nil then return end
+        if self.BaseSlamInterval <= 0 then
+            self.BaseSlamInterval = bp.SlamInterval
+            self.BasePoolElement = bp.PoolElement
+            self.BasePoolSeconds = bp.PoolSeconds
+        end
+        if phase == 2 then
+            monster.DisplayName = "심연의 군주"
+            self.DevourTimer = 1.5
+            self.SummonTimer = 0
+            bp:Announce("「교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.」 — 군주가 방 안의 혼을 빨아들인다! 혼은 서둘러 거둬라")
+            self:Speak("교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.", "혼을 먹을 때마다 강해진다 — 쓰러진 적의 혼은 서둘러 거둬라")
+        elseif phase == 3 then
+            self.Exposed = true
+            bp.PoolElement = "fire"
+            bp.PoolSeconds = 3
+            bp.SlamAtTarget = true
+            bp.SlamInterval = self.BaseSlamInterval * 0.7
+            bp:Announce("가슴의 혼각 세 조각이 드러났다 — 지금이 기회다 (받는 피해 +" .. tostring(math.floor(self.ExposedPct)) .. "%) · 발밑 용암을 피하라")
+        elseif phase == 4 then
+            self.BlastTimer = 2
+            bp.SlamInterval = self.BaseSlamInterval * 0.6
+            bp:Announce("옥좌가 무너진다! 붉은 빛이 차오르면 담장 뒤로 숨어라")
+            self:Speak("심장이 부서져도… 심연은 닫히지 않는다!", "붉은 빛이 차오르면 담장·기둥 뒤로 — 군주가 보이는 자리는 불탄다")
+        end
+        log("[VRF] ash king phase " .. tostring(phase))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로: 이름·장판·내려찍기 간격 복원
+        if self.Phase == 1 then return end
+        self.Phase = 1
+        self.Exposed = false
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster ~= nil and self.BaseName ~= "" then monster.DisplayName = self.BaseName end
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil and self.BaseSlamInterval > 0 then
+            bp.SlamInterval = self.BaseSlamInterval
+            bp.PoolElement = self.BasePoolElement
+            bp.PoolSeconds = self.BasePoolSeconds
+            bp.SlamAtTarget = false
+        end
+        log("[VRF] AshKingRite reset")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Devour()
+        -- 방 안 모든 혼 구슬을 군주가 끌어당긴다 (예고 시간 안에 추출하면 지킨다)
+        local n = 0
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.SoulOrb", true)) do
+            ---@type SoulOrb
+            local orb = c
+            if isvalid(c.Entity) and not orb.Consumed and not orb.Reserved then
+                orb:ForceSteal(self.Entity)
+                n = n + 1
+            end
+        end
+        if n > 0 then log("[VRF] ash king devour orbs=" .. tostring(n)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RaisePriests()
+        -- 지옥불 사제 2 (졸개 상한 미만일 때만) — 사제도 혼을 빼앗아 군주를 돕는다
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp == nil then return end
+        local alive = 0
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if c.Entity.Name == "BossMinion" and not m.IsDead and c.Entity.Enable then alive = alive + 1 end
+        end
+        if alive >= self.MinionCap then return end
+        bp.MinionModelId = "hellpriest"
+        bp.MinionCount = math.min(2, self.MinionCap - alive)
+        bp:SummonMinions()
+        bp.MinionCount = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartBlast()
+        -- 최후의 폭발: 예고 뒤, 군주가 보이는 자리의 플레이어만 맞는다
+        local center = _Util:Pos2(self.Entity)
+        self:BlastWarnFx(self.BlastWarn)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or self.Phase < 4 then return end
+            ---@type Monster
+            local monster = self.Entity:GetComponent("script.Monster")
+            if monster == nil or monster.IsDead then return end
+            local map = self.Entity.CurrentMap
+            local hit, hid = 0, 0
+            for _, p in ipairs(_Util:PlayersNear(map, center, self.BlastRange)) do
+                if _Util:IsAlive(p) then
+                    if _Util:HasLineOfSight(map, center, _Util:Pos2(p)) then
+                        ---@type PlayerVitals
+                        local vitals = p:GetComponent("script.PlayerVitals")
+                        ---@type PlayerStats
+                        local stats = p:GetComponent("script.PlayerStats")
+                        local resist = stats ~= nil and stats:GetResist("fire") or 0
+                        local dmg = p.PlayerComponent.MaxHp * self.BlastPct / 100 * math.max(0, 1 - math.max(-100, math.min(90, resist)) / 100)
+                        if vitals ~= nil then vitals:TakeTickDamage(dmg) end
+                        hit = hit + 1
+                    else
+                        hid = hid + 1
+                    end
+                end
+            end
+            self:BlastFx()
+            log(string.format("[VRF] ash king blast hit=%d hidden=%d", hit, hid))
+        end, self.BlastWarn)
+    end
+
+    @ExecSpace("Multicast")
+    method void BlastWarnFx(number seconds)
+        -- 붉은 빛이 차오른다: 군주 몸에 붉은 오라 + 화면 붉은 깜빡임
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local aura = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 1.2, 0), 0, Vector3(3, 3, 1), true, { Color = Color(1, 0.2, 0.1, 0.9) })
+        _UXFeedback:Show("붉은 빛이 차오른다", "담장·기둥 뒤로 숨어라 — 군주가 보이는 자리는 불탄다", _GameData:GetUiIcon("icon_sword"))
+        _TimerService:SetTimerOnce(function()
+            if aura ~= nil and aura ~= 0 then _ParticleService:RemoveParticle(aura) end
+        end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void BlastFx()
+        -- 전방위 폭발
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(3, 3, 1), false, { Color = Color(1, 0.35, 0.15, 1) })
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
+    end
+
+    @ExecSpace("Multicast")
+    method void Speak(string line, string detail)
+        -- 군주의 대사 (알림 판)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _UXFeedback:Show("「" .. line .. "」", detail, _GameData:GetUiIcon("icon_sword"))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 심장 노출 동안 가슴에 붉은 빛
+        if self.Exposed and self.HeartFx == 0 then
+            self.HeartFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 1.0, 0), 0, Vector3(1.2, 1.2, 1), true, { Color = Color(1, 0.3, 0.2, 0.85) })
+        elseif not self.Exposed and self.HeartFx ~= 0 then
+            _ParticleService:RemoveParticle(self.HeartFx)
+            self.HeartFx = 0
+        end
+    end
+
+    method void OnEndPlay()
+        if self:IsClient() and self.HeartFx ~= 0 then _ParticleService:RemoveParticle(self.HeartFx) end
+    end
+
+end

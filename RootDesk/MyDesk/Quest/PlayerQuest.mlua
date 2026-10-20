@@ -24,6 +24,7 @@ script PlayerQuest extends Component
     @Sync
     property integer PoisonBonus = 0          -- 의뢰 영구 보상 독 저항 + (「독침 여왕」 난이도마다 1회)
     property integer LightBonus = 0           -- 의뢰 영구 보상 번개 저항 + (「바위 집게 왕」 난이도마다 1회, 액트 3)
+    property integer FireBonus = 0            -- 의뢰 영구 보상 화염 저항 + (「유황 여왕」 난이도마다 1회, 액트 4)
     @Sync
     property string StorySeen = ";"           -- 본 이야기 카드 ";prologue;act1;end1;" (StoryCard, 캐릭터마다 한 번)
 
@@ -358,26 +359,30 @@ script PlayerQuest extends Component
         local bonus = 0
         local poison = 0
         local light = 0
+        local fire = 0
         for i = 1, _QuestData:Count() do
             local q = _QuestData:Get(i)
             local n = tonumber(string.match("," .. q.reward, ",deploy:(%d+)")) or 0
             local r = tonumber(string.match("," .. q.reward, ",respoison:(%d+)")) or 0
             local l = tonumber(string.match("," .. q.reward, ",reslight:(%d+)")) or 0
-            if n > 0 or r > 0 or l > 0 then
+            local f = tonumber(string.match("," .. q.reward, ",resfire:(%d+)")) or 0
+            if n > 0 or r > 0 or l > 0 or f > 0 then
                 for k = 0, 2 do
                     local d = self.ByDiff[tostring(k)]
                     if d ~= nil and d.i > i then
                         bonus = bonus + n
                         poison = poison + r
                         light = light + l
+                        fire = fire + f
                     end
                 end
             end
         end
         self.DeployBonus = bonus
-        if self.PoisonBonus ~= poison or self.LightBonus ~= light then
+        if self.PoisonBonus ~= poison or self.LightBonus ~= light or self.FireBonus ~= fire then
             self.PoisonBonus = poison
             self.LightBonus = light
+            self.FireBonus = fire
             ---@type PlayerStats
             local stats = self.Entity:GetComponent("script.PlayerStats")
             if stats ~= nil then stats:RefreshResists() end
