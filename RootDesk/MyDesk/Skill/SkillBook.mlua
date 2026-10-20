@@ -248,7 +248,7 @@ script SkillBook extends Component
         if id == "bone_shard" then return (10 + 6 * (level - 1)) * _GameData.boneShardDmgMul end   -- 10-13 사용자 결정 −40%
         if id == "poison_mist" then return 4 + 2 * level end
         if id == "hex_flame" then return 12 + 5 * (level - 1) end      -- 불꽃 화살 한 발 (저주 걸린 적 +50% · 10-20 망자 폭쇄 대신)
-        if id == "frost_soul" then return 22 + 9 * (level - 1) end     -- 서리 혼 (관통 · 둔화)
+        if id == "frost_soul" then return 30 + 12 * (level - 1) end    -- 서리 혼 (관통 · 둔화 · 10-20 밸런스: 뼈 창의 약 60%)
         if id == "skel_bomb" then return 2.5 + 0.15 * (level - 1) end  -- 해골 공격력 배율 (해골 공격력이 이미 캐릭터 레벨을 따른다)
         if id == "bone_offering" then return 25 + 1.5 * (level - 1) end   -- 소환수 최대 생명 대비 회복 %
         if id == "swift_step" then return 4 + (level - 1) end          -- 이동 속도 %
@@ -346,7 +346,7 @@ script SkillBook extends Component
             offering_heal = string.format("뼈 성찬 회복량 +%d%%", 20 * level),
             offering_wide = string.format("뼈 성찬 범위 %.1f", 4 * (1 + 0.25 * level)),
             offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
-            dash_ghost = string.format("질주 무적 %.1f초", 0.3 + 0.1 * level),
+            dash_ghost = string.format("질주 무적 %.2f초", 0.3 + 0.05 * level),
             dash_charge = string.format("질주 %d번 연달아", 1 + level),
             dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
@@ -386,7 +386,7 @@ script SkillBook extends Component
         if id == "swift_step" then return string.format("이동 속도 +%g%%", power) end
         if id == "legion_rush" then return string.format("소환수 이동 +%g%% · 6칸 밖이면 곁으로", power) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
-        if id == "wraith_dash" then return string.format("%.2f칸 질주 · 무적 %.1f초 · 재사용 %.1f초", power, 0.3 + 0.1 * self:Node("dash_ghost"), self:DashCooldown(level)) end
+        if id == "wraith_dash" then return string.format("%.2f칸 질주 · 무적 %.2f초 · 재사용 %.1f초", power, 0.3 + 0.05 * self:Node("dash_ghost"), self:DashCooldown(level)) end
         if id == "wraith_blink" then return string.format("최대 %g칸 순간이동 · 재사용 %.2f초 · 마나 %d", power, self:SkillCooldown(id, level), math.floor(self:GetManaCost(id, level))) end
         if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%%", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex")) end
         if id == "frost_soul" then return string.format("관통 서리 혼 · 기준 피해 %.1f · %d초 둔화", power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long")) end
@@ -416,8 +416,8 @@ script SkillBook extends Component
         local def = _SkillData:Get(id)
         if def == nil or def.kind == "passive" then return 0 end
         local cost = def.mana + math.floor(math.max(1, level) / 4)
-        -- 망령 도약: 랭크가 오를수록 싸진다 (20 → 20랭크 11). 질주는 늘 4
-        if id == "wraith_blink" then cost = math.max(8, def.mana - math.floor(0.5 * (math.max(1, level) - 1))) end
+        -- 망령 도약: 랭크가 오를수록 싸진다 (20 → 9랭크 16에서 멈춤). 질주는 늘 4
+        if id == "wraith_blink" then cost = math.max(16, def.mana - math.floor(0.5 * (math.max(1, level) - 1))) end   -- 10-20 밸런스: 최저 16 (0.2초 연타가 마나로 묶이게)
         if id == "wraith_dash" then cost = def.mana end
         -- 골편 투척: 부채꼴 발 수만큼 비싸다 (2발 +2 · 5발 +8)
         if id == "bone_shard" then cost = cost + _GameData.boneShardManaPerExtra * (self:GetBoneShardCount(math.max(1, level)) - 1) end
