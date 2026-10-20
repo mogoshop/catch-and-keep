@@ -113,21 +113,23 @@ script ItemData extends Logic
     end
 
     method boolean IsStack(string base)
-        return base == "essence" or self:Consumable(base) ~= nil
+        return base == "essence" or base == "abyss_key" or self:Consumable(base) ~= nil
     end
 
     method boolean IsSoulbound(string base)
-        -- 귀속 재료(정수): 버리면 파괴되고 거래·판매할 수 없다
-        return base == "essence"
+        -- 귀속 재료(정수·심연 열쇠): 버리면 파괴되고 거래·판매할 수 없다
+        return base == "essence" or base == "abyss_key"
     end
 
     method integer StackLimit(string base)
         if base == "essence" then return 9999 end
+        if base == "abyss_key" then return math.floor(_GameData.depthKeyCap) end
         return 20
     end
 
     method string StackName(string base)
         if base == "essence" then return "그림자 정수" end
+        if base == "abyss_key" then return "심연 열쇠" end
         local c = self:Consumable(base)
         if c ~= nil then return c.name end
         return base
@@ -151,6 +153,14 @@ script ItemData extends Logic
         local item = self:Parse(s)
         if item.base == "essence" then
             return "<color=#D9B8FF>그림자 정수</color>  ×" .. tostring(item.count) .. "\n그림자를 분해하면 얻고, 그림자 강화에 쓴다.\n<color=#FF9A5A>귀속 — 거래·판매할 수 없고 버리면 파괴된다</color>"
+        end
+        if item.base == "abyss_key" then
+            -- 10-20 사용자 요청: 열쇠를 누르면 어디에 쓰고 어떻게 얻는지 안내
+            return "<color=#FF6B5A>심연 열쇠</color>  ×" .. tostring(item.count) .. " / " .. tostring(math.floor(_GameData.depthKeyCap))
+                .. "\n마을의 <color=#FF6B5A>붉은 심도 포탈</color>을 밟으면 하나를 쓰고 심도에 들어간다 (근처 파티원도 함께, 열쇠는 한 개만)."
+                .. "\n얻는 법: 액트의 마지막 의뢰를 마치면 1개 · 이후 액트 최종 보스 처치마다 " .. tostring(math.floor(_GameData.depthKeyChance * 100 + 0.5)) .. "%"
+                .. "\n최대 " .. tostring(math.floor(_GameData.depthKeyCap)) .. "개까지만 가질 수 있다"
+                .. "\n<color=#FF9A5A>귀속 — 거래·판매할 수 없고 버리면 파괴된다</color>"
         end
         local c = self:Consumable(item.base)
         if c == nil then return item.name end
@@ -197,6 +207,7 @@ script ItemData extends Logic
     method string IconFor(string s)
         local item = self:Parse(s)
         if item.base == "essence" then return _GameData:GetUiIcon("essence") end
+        if item.base == "abyss_key" then return _GameData:GetUiIcon("abyss_key") end
         local c = self:Consumable(item.base)
         if c ~= nil then return c.icon end
         if self:IsRune(item.base) then

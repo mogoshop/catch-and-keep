@@ -1,6 +1,8 @@
 -- 심도 던전 문. Action:
---   "enter" : (마을) 밟으면 자신과 근처(6칸) 파티원을 심도 1층 인스턴스 룸으로 (입장 전에 저장)
---   "next" / "exit" : (심도 안) DepthDoorUsed 이벤트 → DepthDirector가 다음 층·귀환 처리
+--   "enter" : (액트 마을의 붉은 포탈) 그 액트를 해금하고 심연 열쇠가 있으면, 열쇠 1개로 자신과 근처(6칸) 파티원을 심도 1층으로 (입장 전에 저장)
+--             해금(액트 마지막 의뢰 완료) 전에는 클라이언트에서 보이지 않는다 (AbyssSystem)
+--   "next" / "exit" / "cashout" : (심도 안) DepthDoorUsed 이벤트 → DepthDirector가 다음 층·귀환·철수 처리
+--   모든 문은 depthEnterDwell초 머물러야 쓰인다 (10-20: 철수 뒤 상자를 열기 전에 귀환 문에 바로 빨려 나가지 않게)
 @Component
 script DepthGate extends Component
 
@@ -8,11 +10,14 @@ script DepthGate extends Component
     property string Action = "enter"
     @Sync
     property string Label = ""             -- 미니맵·문 위 이름 (심도 안: 「심도 N층」 / 「야영지」)
+    @Sync
+    property integer Act = 1                -- 어느 액트 심도인가 (마을 포탈: 그 마을의 액트)
+    property boolean Tinted = false
     property number Radius = 0.7
     property number PartyRange = 6
     property integer TimerId = 0
     property boolean Busy = false
-    property table Dwell = {}               -- userId → 문 위에 올라선 시각 (enter·next: 머물러야 이동)
+    property table Dwell = {}               -- userId → 문 위에 올라선 시각 (머물러야 이동)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -32,8 +37,8 @@ script DepthGate extends Component
             self.Dwell = {}
             return
         end
-        -- 입구·다음 층: 문 위에 depthEnterDwell초 머물러야 이동 (지나가다 들어가지 않게). 귀환은 바로
-        if self.Action ~= "exit" and not self:Ready(player) then return end
+        -- 모든 문: 문 위에 depthEnterDwell초 머물러야 이동 (지나가다 들어가지 않게)
+        if not self:Ready(player) then return end
         self.Dwell = {}
         self.Busy = true
         _TimerService:SetTimerOnce(function() self.Busy = false end, 3)
@@ -46,26 +51,44 @@ script DepthGate extends Component
 
     @ExecSpace("ServerOnly")
     method boolean Ready(Entity player)
-        -- 처음 밟으면 안내(권장 레벨·남은 시간), 머문 시간이 차면 true. 최소 레벨 미만이면 막는다
+        -- 처음 밟으면 안내, 머문 시간이 차면 true. 입구는 해금·열쇠가 없으면 막는다
         local uid = player.PlayerComponent.UserId
         local now = _UtilLogic.ElapsedSeconds
         ---@type PlayerStats
         local stats = player:GetComponent("script.PlayerStats")
         local level = stats ~= nil and stats.Level or 1
         local diff = stats ~= nil and stats.Difficulty or 0
-        local recommend = math.floor(_GameData.depthBaseLevel) + _GameData:GetDifficulty(diff).levelBonus
-        if self.Action == "enter" and level < _GameData.depthMinLevel then
-            if self.Dwell[uid] == nil then
-                self.Dwell[uid] = now
-                _Util:Warn("심도 던전은 Lv" .. tostring(math.floor(_GameData.depthMinLevel)) .. "부터 들어갈 수 있다 (권장 Lv" .. tostring(recommend) .. "+, 지금 Lv" .. tostring(level) .. ")", uid)
+        local band = _GameConst:DepthBand(self.Act, diff)
+        if self.Action == "enter" then
+            if not _AbyssSystem:IsUnlocked(player, self.Act) then
+                if self.Dwell[uid] == nil then
+                    self.Dwell[uid] = now
+                    _Util:Warn("아직 닫힌 심연이다 — " .. _GameConst:ActRegionName(self.Act) .. "의 마지막 의뢰를 마쳐야 열린다", uid)
+                end
+                return false
             end
-            return false
+            -- 예전 저장(이미 해금): 첫 열쇠를 아직 못 받았으면 여기서 준다
+            _AbyssSystem:EnsureFirstKey(player, self.Act)
+            ---@type PlayerInventory
+            local inv = player:GetComponent("script.PlayerInventory")
+            local keys = inv ~= nil and inv:CountStack("abyss_key") or 0
+            if keys <= 0 then
+                if self.Dwell[uid] == nil then
+                    self.Dwell[uid] = now
+                    _Util:Warn("심연 열쇠가 필요하다 (0/" .. tostring(math.floor(_GameData.depthKeyCap)) .. ") — " .. _GameConst:ActRegionName(self.Act) .. " 최종 보스가 " .. tostring(math.floor(_GameData.depthKeyChance * 100 + 0.5)) .. "% 확률로 떨군다", uid)
+                end
+                return false
+            end
         end
         if self.Dwell[uid] == nil then
             self.Dwell[uid] = now
-            local what = self.Action == "enter" and ("심도 던전 (권장 Lv" .. tostring(recommend) .. "+, 몬스터 Lv" .. tostring(recommend + 1) .. "~)") or "더 깊은 층"
-            local warn = (self.Action == "enter" and level < recommend) and " — 아직 위험하다!" or ""
-            _Util:Notify(what .. warn .. " · " .. tostring(math.floor(_GameData.depthEnterDwell)) .. "초 머무르면 들어간다", uid)
+            local what = "더 깊은 층"
+            if self.Action == "enter" then
+                local warn = level < band.min and " — 아직 위험하다!" or ""
+                what = "심연 (몬스터 Lv" .. tostring(band.min) .. "~" .. tostring(band.max) .. ")" .. warn .. " · 심연 열쇠 1개를 쓴다"
+            elseif self.Action == "exit" then what = "야영지로 귀환"
+            elseif self.Action == "cashout" then what = "철수 — 철수 보상 상자를 받고 이번 도전을 마친다" end
+            _Util:Notify(what .. " · " .. tostring(math.floor(_GameData.depthEnterDwell)) .. "초 머무르면 " .. (self.Action == "cashout" and "철수한다" or "이동한다"), uid)
             return false
         end
         return now - self.Dwell[uid] >= _GameData.depthEnterDwell
@@ -79,8 +102,12 @@ script DepthGate extends Component
         if stats ~= nil then diff = stats.Difficulty end
         ---@type PlayerSocial
         local social = player:GetComponent("script.PlayerSocial")
+        -- 심연 열쇠 1개 (파티 전체가 한 개로 들어간다). 입장에 실패하면 돌려준다
+        ---@type PlayerInventory
+        local inv = player:GetComponent("script.PlayerInventory")
+        if inv == nil or not inv:TakeStack("abyss_key", 1) then return end
         -- 고유값 끝 「~시작초」: 층을 옮겨도 유지돼 랭킹의 도전 시간(최고 층·걸린 시간)을 잰다
-        local key = _GameConst:MakeDepthKey(1, diff, player.PlayerComponent.UserId .. "~" .. tostring(math.floor(DateTime.UtcNow.Elapsed / 1000)))
+        local key = _GameConst:MakeDepthKey(1, diff, self.Act, player.PlayerComponent.UserId .. "~" .. tostring(math.floor(DateTime.UtcNow.Elapsed / 1000)))
         local ids = {}
         local prepared = {}
         for _, u in ipairs(_Util:PlayersNear(player.CurrentMap, _Util:Pos2(player), self.PartyRange)) do
@@ -94,6 +121,7 @@ script DepthGate extends Component
                 table.insert(prepared, u)
                 if not _UndeadSystem:StashForRoomTravel(u, key) then
                     self:Rollback(prepared)
+                    inv:AddStack("abyss_key", 1)
                     return
                 end
                 ---@type ShadowCommander
@@ -108,8 +136,14 @@ script DepthGate extends Component
                 table.insert(ids, u.PlayerComponent.UserId)
             end
         end
+        local keysLeft = inv:CountStack("abyss_key")   -- 이동하면 이 방의 가방이 사라지므로 미리 읽는다
         _RoomService:CreateInstanceRoom(key, { _GameConst:DepthMapFor(1) }, 30)
         local moved = _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst:DepthMapFor(1))
+        log("[VRF] depth enter act=" .. tostring(self.Act) .. " party=" .. tostring(#ids) .. " moved=" .. tostring(moved) .. " keysLeft=" .. tostring(keysLeft))
+        if (moved == nil or moved == 0) and isvalid(player) and player.CurrentMap == self.Entity.CurrentMap then
+            -- 아무도 못 들어갔으면 열쇠를 돌려준다 (들어간 사람의 가방은 이 방에서 이미 사라졌다)
+            inv:AddStack("abyss_key", 1)
+        end
         if moved == nil or moved < #ids then
             -- 들어가지 못한 사람은 준비를 되돌린다 (그림자 재소환·전달 예약 삭제). 이동 처리 시간을 두고 확인한다.
             local map = player.CurrentMap
@@ -122,6 +156,16 @@ script DepthGate extends Component
                 for _, u in ipairs(left) do _Util:Notify("심도 입장에 실패했습니다. 잠시 뒤 다시 시도하세요", u.PlayerComponent.UserId) end
             end, 3)
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tint()
+        -- 마을 심도 포탈은 붉게 (일반 포탈과 구별 — 10-20 사용자 요청). 한 번만
+        if self.Tinted then return end
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        sprite.Color = Color(1, 0.32, 0.3, 1)
+        self.Tinted = true
     end
 
     @ExecSpace("ServerOnly")

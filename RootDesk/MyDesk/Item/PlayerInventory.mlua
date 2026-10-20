@@ -183,6 +183,15 @@ script PlayerInventory extends Component
             self:NotifyPotionCap(pk)
             return count
         end
+        -- 심연 열쇠: 최대 depthKeyCap개 (넘치는 만큼은 받지 않는다)
+        if base == "abyss_key" then
+            local room = math.max(0, math.floor(_GameData.depthKeyCap) - self:CountStack(base))
+            if count > room then
+                _Util:Warn("심연 열쇠는 " .. tostring(math.floor(_GameData.depthKeyCap)) .. "개까지만 가질 수 있다", self.Entity.PlayerComponent.UserId)
+                if room <= 0 then return count end
+                return (count - room) + self:AddStack(base, room)
+            end
+        end
         local left = count
         local limit = _ItemData:StackLimit(base)
         for i, s in ipairs(self.Bag) do

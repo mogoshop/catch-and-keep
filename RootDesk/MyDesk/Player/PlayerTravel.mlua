@@ -75,7 +75,36 @@ script PlayerTravel extends Component
 
     @ExecSpace("ServerOnly")
     method void GoTown()
+        -- 인스턴스 방(심연)에서는 같은 방 안의 맵 이동(TeleportToMapPosition)으로 마을에 갈 수 없다 → 정적 방으로 옮긴다
+        -- (10-20 메이커 확인: 심연에서 쓰러진 뒤 마을 이동이 실패해 심연에 남은 채 다시 쓰러지기를 되풀이했다)
+        if _RoomService:IsInstanceRoom() then
+            self:LeaveInstanceToTown()
+            return
+        end
         self:Go(self:TownMap(), _GameConst:GetTownArrival())
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LeaveInstanceToTown()
+        -- 심연 문(DepthDirector.SaveAll)과 같은 순서: 언데드·그림자 맡기기 → 저장 → 정적 방의 그 액트 마을로
+        local uid = self.Entity.PlayerComponent.UserId
+        ---@type PlayerSave
+        local save = self.Entity:GetComponent("script.PlayerSave")
+        _UndeadSystem:StashForRoomTravel(self.Entity, _RoomService.StaticRoomKey)
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:StashForTravel() end
+        if save ~= nil then
+            save:ClearDepthTravel()
+            save:Save(true)
+            save:MarkSlotTravel()
+        end
+        local moved = _RoomService:MoveUsersToStaticRoom({ uid }, self:TownMap())
+        log("[VRF] leave instance → " .. self:TownMap() .. " moved=" .. tostring(moved))
+        if (moved == nil or moved == 0) and save ~= nil then
+            save:RollbackRoomTravel()
+            _Util:Notify("마을로 돌아가지 못했습니다. 잠시 뒤 다시 시도하세요", uid)
+        end
     end
 
     method boolean ActUnlocked(integer act)
@@ -213,6 +242,11 @@ script PlayerTravel extends Component
         if not isvalid(map) then return false end
         if _GameConst:IsTown(map) then
             _Util:Warn("이미 마을이다", pc.UserId)
+            return false
+        end
+        if map:GetComponent("script.DepthDirector") ~= nil then
+            -- 심연은 하강 도전 — 층을 정복하고 문으로 나간다 (돌아올 포털을 열 수 없다)
+            _Util:Warn("심연에서는 귀환 두루마리를 쓸 수 없다 — 층을 정복하고 왼쪽 문으로 나가라", pc.UserId)
             return false
         end
         ---@type PlayerInventory

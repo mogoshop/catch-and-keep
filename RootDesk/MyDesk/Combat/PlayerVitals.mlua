@@ -165,6 +165,18 @@ script PlayerVitals extends Component
         end
         local goldLost = 0
         local expLost = 0
+        -- 심도 (10-20 하강 구조): 목숨 하나 — 쓰러지면 그 도전이 끝나고 마을로. 사망 벌칙·시체는 없다
+        local depth = isvalid(self.Entity.CurrentMap) and self.Entity.CurrentMap:GetComponent("script.DepthDirector") or nil
+        ---@type DepthDirector
+        local dd = depth
+        local inDepth = dd ~= nil and dd.Floor > 0
+        if inDepth then
+            _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap })
+            self:NotifyDepthEnd(dd.Floor, pc.UserId)
+            log("[VRF] depth run over floor=" .. tostring(dd.Floor) .. " user=" .. pc.UserId)
+            _TimerService:SetTimerOnce(function() self:Revive(false) end, pc.RespawnDuration)
+            return
+        end
         if not inDuel then
             local lost = self:ApplyDeathPenalty()
             goldLost = lost.gold
@@ -204,6 +216,12 @@ script PlayerVitals extends Component
         ---@type PlayerTravel
         local travel = self.Entity:GetComponent("script.PlayerTravel")
         if travel ~= nil then travel:GoTown() end
+    end
+
+    @ExecSpace("Client")
+    method void NotifyDepthEnd(integer floor)
+        _NoticeFeed:Push("심연 " .. tostring(floor) .. "층에서 쓰러졌다 — 도전이 끝났다 (사망 벌칙 없음, 주운 것은 남는다)")
+        _UXFeedback:Show("심연 도전 끝 · " .. tostring(floor) .. "층", "쓰러지면 그 도전이 끝난다 · 사망 벌칙 없음 · 다시 들어가려면 심연 열쇠", _GameData:GetUiIcon("abyss_key"))
     end
 
     @ExecSpace("Client")

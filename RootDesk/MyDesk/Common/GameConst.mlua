@@ -191,19 +191,49 @@ script GameConst extends Logic
         return s ~= nil and math.floor(tonumber(s)) or 0
     end
 
-    method string MakeDepthKey(integer floor, integer difficulty, string nonce)
-        -- 심도 인스턴스 룸 키 "depth:층:난이도:고유값"
-        return "depth:" .. tostring(floor) .. ":" .. tostring(difficulty) .. ":" .. nonce
+    method string MakeDepthKey(integer floor, integer difficulty, integer act, string nonce)
+        -- 심도 인스턴스 룸 키 "depth:층:난이도:액트:고유값" (10-20: 심도는 액트별 — 액트마다 레벨대·몬스터가 다르다)
+        return "depth:" .. tostring(floor) .. ":" .. tostring(difficulty) .. ":" .. tostring(act) .. ":" .. nonce
     end
 
     method table ParseDepthKey(string key)
-        -- { floor, difficulty, nonce }. 심도 룸 키가 아니면 floor 0 (메이커는 다중 반환 선언을 등록하지 않는다)
+        -- { floor, difficulty, act, nonce }. 심도 룸 키가 아니면 floor 0 (메이커는 다중 반환 선언을 등록하지 않는다)
         local parts = {}
         for p in string.gmatch(key, "[^:]+") do table.insert(parts, p) end
         local f = tonumber(parts[2] or "")
         local d = tonumber(parts[3] or "")
-        if parts[1] ~= "depth" or #parts < 4 or f == nil or d == nil then return { floor = 0, difficulty = 0, nonce = "" } end
-        return { floor = math.floor(f), difficulty = math.floor(d), nonce = table.concat(parts, ":", 4) }
+        local a = tonumber(parts[4] or "")
+        if parts[1] ~= "depth" or #parts < 5 or f == nil or d == nil or a == nil then return { floor = 0, difficulty = 0, act = 1, nonce = "" } end
+        return { floor = math.floor(f), difficulty = math.floor(d), act = math.floor(a), nonce = table.concat(parts, ":", 5) }
+    end
+
+    method string ActBossSource(integer act)
+        -- 액트 최종 보스 sourceId (심연 열쇠를 떨군다). 묘지기 여왕 · 대사제 · 제독
+        local list = { "grave_queen", "high_priest", "admiral" }
+        return list[act] or ""
+    end
+
+    method integer ActOfBossSource(string sourceId)
+        -- 액트 최종 보스면 그 액트, 아니면 0
+        for act = 1, self.ActCount do
+            if self:ActBossSource(act) == sourceId then return act end
+        end
+        return 0
+    end
+
+    method table DepthBand(integer act, integer difficulty)
+        -- 심도 레벨대 { min, max } = 그 액트 보스 레벨 ~ +depthLevelSpan (+ 난이도 가산). 10-20: 깊이 내려가도 레벨이 액트를 앞지르지 않게
+        local m = _GameData:GetMonsterStats(self:ActBossSource(act))
+        local base = m ~= nil and m.level or 12
+        local bonus = _GameData:GetDifficulty(difficulty).levelBonus
+        return { min = base + bonus, max = base + bonus + math.floor(_GameData.depthLevelSpan) }
+    end
+
+    method table DepthBosses(integer act)
+        -- 5층마다 보스 층에 번갈아 나오는 그 액트의 이름 있는 적 (본선 최종 보스는 의뢰와 얽혀 쓰지 않는다)
+        if act == 2 then return { "serka", "tombking", "librarian" } end
+        if act == 3 then return { "smugglerboss", "crabking", "drownedpriest", "madkeeper" } end
+        return { "headsman", "skelcaptain", "relickeeper" }
     end
 
     method boolean IsTown(Entity map)

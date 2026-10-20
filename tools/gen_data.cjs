@@ -135,10 +135,11 @@ function genGameData() {
     "        self.Story = {}",
     ...load("story").map((r) => `        self.Story[${s(r.key)}] = ${s(r.text)}`),
     "        self.DepthPool = {}",
-    ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, ${s(m.id)})`),
+    // 심도는 액트별 (10-20): 액트 N 심도에는 그 지역(region) 몬스터만
+    ...mons.filter((m) => m.depth === "pool").map((m) => `        table.insert(self.DepthPool, { id = ${s(m.id)}, act = ${n(m.region || 1)} })`),
     "        self.DepthUniques = {}",
     ...mons.filter((m) => /^every\d+$/.test(m.depth)).sort((a, b) => num(b.depth.slice(5)) - num(a.depth.slice(5)))
-      .map((m) => `        table.insert(self.DepthUniques, { every = ${n(m.depth.slice(5))}, id = ${s(m.id)} })`),
+      .map((m) => `        table.insert(self.DepthUniques, { every = ${n(m.depth.slice(5))}, id = ${s(m.id)}, act = ${n(m.region || 1)} })`),
   ].join("\n");
   const extra = `
     method string GetPlayerAppearance(string slot)
@@ -261,17 +262,22 @@ function genGameData() {
         return self.MapSpawns[mapId]
     end
 
-    method table GetDepthPool()
-        -- 심도 던전에 나오는 몬스터 모델 id 목록 (monsters.csv depth=true)
+    method table GetDepthPool(integer act)
+        -- 그 액트 심도에 나오는 몬스터 모델 id 목록 (monsters.csv depth=pool, region = 액트). 없으면 액트 1
         self:Ensure()
-        return self.DepthPool
+        local list = {}
+        for _, e in ipairs(self.DepthPool) do
+            if e.act == act then table.insert(list, e.id) end
+        end
+        if #list == 0 and act ~= 1 then return self:GetDepthPool(1) end
+        return list
     end
 
-    method string GetDepthUnique(integer floor)
-        -- 이 층에 나올 최상위 몬스터 (monsters.csv depth=everyN, 큰 N 우선). 없으면 ""
+    method string GetDepthUnique(integer floor, integer act)
+        -- 이 층에 나올 그 액트 최상위 몬스터 (monsters.csv depth=everyN, 큰 N 우선). 없으면 ""
         self:Ensure()
         for _, u in ipairs(self.DepthUniques) do
-            if floor % u.every == 0 then return u.id end
+            if u.act == act and floor % u.every == 0 then return u.id end
         end
         return ""
     end

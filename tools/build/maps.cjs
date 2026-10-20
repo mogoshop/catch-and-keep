@@ -95,7 +95,8 @@ function desiredEntities(d, maps, ctx) {
   }
   for (const ex of list(d.extra)) {
     const x = at(ex);
-    if (x.name === "depthgate") place("DepthEntrance", "Objects/DepthGate", x.pos, { "script.DepthGate": { Action: "enter" } });
+    // 액트 마을마다 붉은 심도 포탈 (10-20: 심도는 액트별 — 그 액트 레벨대·몬스터, 해금은 액트 마지막 의뢰)
+    if (x.name === "depthgate") place("DepthEntrance", "Objects/DepthGate", x.pos, { "script.DepthGate": { Action: "enter", Act: num(d.act || 1) } });
     else if (x.name.startsWith("npc:")) {
       const n = ctx.npcs[x.name.slice(4)];
       place(n.model, `NPC/${n.model}`, x.pos);
