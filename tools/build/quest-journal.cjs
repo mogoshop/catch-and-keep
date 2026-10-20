@@ -29,11 +29,11 @@ b.sprite(win+'/Rim',{rect_size:[1360,1000],image_ruid:icons.win_frame,color:'#FF
 b.text(win+'/Title','의뢰 일지',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[540,40],size:28,color:'#E6C88A',alignment:4,bold:true});
 b.button(win+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
 if(b.find(win+'/List'))b.remove(win+'/List');
-// 액트 넘김 막대 (10-20 사용자 선택: 예전 「액트1|액트2|액트3」 단추 줄은 좁고 액트가 늘면 안 들어갔다) — 왼쪽 위, GameHUD kit.actPager와 같은 모양
+// 액트 넘김 막대 (10-20 사용자 선택: 예전 「액트1|액트2|액트3」 단추 줄은 좁고 액트가 늘면 안 들어갔다) — GameHUD kit.actPager와 같은 모양
 for(const a of [1,2,3,4,5,6])if(b.find(win+'/Act'+a))b.remove(win+'/Act'+a);
-// 제목 띠·테두리 장식과 겹치지 않게 안쪽 왼쪽 칸에 (의뢰 그림 2×3은 그만큼 오른쪽으로)
-const bar=win+'/ActBar',bw=364;
-b.panel(bar,{anchor:'top-left',pivot:[0,1],pos:[34,-100],rect_size:[bw,76],image_ruid:icons.win_content,color:{r:0,g:0,b:0,a:0.3},sprite_type:1});
+// 제목 바로 아래 가운데 (10-20 사용자: 왼쪽 칸은 별로) — 의뢰 그림 2×3은 그 아래 가운데
+const bar=win+'/ActBar',bw=520;
+b.panel(bar,{anchor:'top-center',pivot:[.5,1],pos:[0,-64],rect_size:[bw,72],image_ruid:icons.win_content,color:{r:0,g:0,b:0,a:0.3},sprite_type:1});
 b.button(bar+'/Prev','◀',{anchor:'middle-left',pos:[32,0],rect_size:[56,56],font_size:22,color:'#F6E3B0',image_ruid:icons.btn_frame,bg_color:'#FFFFFF',sprite_type:1});
 b.button(bar+'/Next','▶',{anchor:'middle-right',pos:[-32,0],rect_size:[56,56],font_size:22,color:'#F6E3B0',image_ruid:icons.btn_frame,bg_color:'#FFFFFF',sprite_type:1});
 b.text(bar+'/Title','',{anchor:'middle-center',pos:[0,9],rect_size:[bw-136,34],size:20,bold:true,color:'#F6E3B0',alignment:4,bestfit:true,min_size:15,max_size:20,outline:true,outline_color:'#2D2D2D'});
@@ -46,7 +46,7 @@ for(let i=1;i<=6;i++){
  for(const old of ['Icon','Title','Status','Frame'])if(b.find(n+'/'+old))b.remove(n+'/'+old);
  const col=(i-1)%3,row=Math.floor((i-1)/3);
  // 칸 자체가 테두리 그림, 그 위에 의뢰 그림·이름 (덮개 테두리는 그림을 가렸다)
- b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250+120,-96-row*236],rect_size:[220,224],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
+ b.button(n,'',{anchor:'top-center',pivot:[.5,1],pos:[(col-1)*250,-146-row*226],rect_size:[220,216],image_ruid:icons.btn_frame,bg_color:'#FFFFFF'});
  b.sprite(n+'/Art',{anchor:'top-center',pivot:[.5,1],pos:[0,-18],rect_size:[150,150],image_ruid:initialArt(i),color:'#FFFFFF',sprite_type:0});
  // 완료 표시(흑백 그림 위 도장) · 아직 못 읽는 의뢰는 반투명 검정 덮개 (그림 형태는 보인다)
  b.text(n+'/Done','완료',{anchor:'top-right',pivot:[1,1],pos:[-14,-14],rect_size:[84,32],size:20,bold:true,color:'#B9E6A0',outline:true,outline_color:'#101010',outline_width:0.3,enable:false});
@@ -54,7 +54,7 @@ for(let i=1;i<=6;i++){
  b.text(n+'/Name','',{anchor:'bottom-center',pivot:[.5,0],pos:[0,12],rect_size:[196,36],size:21,bold:true,color:'#E6DCC6',bestfit:true,min_size:17,max_size:21,overflow:2});
 }
 const d=win+'/Detail';
-b.panel(d,{anchor:'top-left',pos:[30,-584],rect_size:[1260,346],color:'#111018'});
+b.panel(d,{anchor:'top-left',pos:[30,-598],rect_size:[1260,340],color:'#111018'});
 b.text(d+'/Title','',{anchor:'top-left',pos:[24,-14],rect_size:[720,46],size:30,color:'#E6C88A',alignment:3,bold:true,bestfit:true,min_size:24,max_size:30});
 b.text(d+'/Status','',{anchor:'top-right',pivot:[1,1],pos:[-24,-14],rect_size:[460,46],size:24,color:'#D8CFBC',alignment:5});
 b.sprite(d+'/Progress',{anchor:'top-left',pos:[24,-66],rect_size:[1212,8],color:'#8A7651',sprite_type:3,fill_method:0});
