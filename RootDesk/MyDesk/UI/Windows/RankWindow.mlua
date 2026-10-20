@@ -1,6 +1,7 @@
 -- 랭킹 창 (L): 심연 도전 — 액트별 (최고 층 · 같은 층이면 빠른 순) / 마지막 액트 보스 최단 처치. 현재 난이도 기준.
 -- Show(kind)로 열면 서버에 요청 → RankingSystem이 OnData로 돌려준다.
 -- 10-20: 심연이 액트별(레벨대·몬스터가 다름)이라 기록판도 액트별. 심연 탭 아래 액트 넘김 막대(◀ ▶), 처음엔 지금 액트
+-- 10-20 B안: 「이번 주 심연」 탭 — 이번 주 규칙(WeeklyRules)과 주마다 새로 시작하는 기록판 (액트별)
 @Logic
 script RankWindow extends Logic
 
@@ -13,11 +14,12 @@ script RankWindow extends Logic
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         _UIKit:Connect(self.Win .. "/TabDepth", function() self:Show("depth") end)
+        _UIKit:Connect(self.Win .. "/TabWeek", function() self:Show("week") end)
         _UIKit:Connect(self.Win .. "/TabQueen", function() self:Show("boss_" .. _GameConst.FinalBossSourceId) end)
         _UIKit:Connect(self.Win .. "/ActBar/Prev", function() self:SetAct(self:CurrentAct() - 1) end)
         _UIKit:Connect(self.Win .. "/ActBar/Next", function() self:SetAct(self:CurrentAct() + 1) end)
         -- 탭 글자: 지금 마지막 액트 보스 (10-11 액트 3 → 익사한 제독 바렌)
-        _UIKit:SetText(self.Win .. "/TabQueen", _GameData:GetMonsterName(_GameConst.FinalBossSourceId) .. " 처치 시간")
+        _UIKit:SetText(self.Win .. "/TabQueen", _GameData:GetMonsterName(_GameConst.FinalBossSourceId) .. " 처치")
     end
 
     @ExecSpace("ClientOnly")
@@ -25,7 +27,7 @@ script RankWindow extends Logic
         -- ◀ ▶ 넘김 (액트 범위 안에서만)
         if act < 1 or act > _GameConst.ActCount then return end
         self.Act = act
-        self:Show("depth")
+        self:Show(self.Kind == "week" and "week" or "depth")
     end
 
     @ExecSpace("ClientOnly")
@@ -48,21 +50,33 @@ script RankWindow extends Logic
         if st ~= nil then diff = st.Difficulty end
         -- 액트 넘김 막대는 심연 탭에서만 (기록은 잠김 없이 모든 액트를 볼 수 있다)
         local act = self:CurrentAct()
-        _UIKit:SetEnabled(self.Win .. "/ActBar", kind == "depth")
-        if kind == "depth" then
+        local paged = kind == "depth" or kind == "week"
+        _UIKit:SetEnabled(self.Win .. "/ActBar", paged)
+        if paged then
             _UIKit:SetActPager(self.Win .. "/ActBar", act, _GameConst.ActCount, "액트 " .. tostring(act) .. " · " .. _GameConst:ActRegionName(act), "")
         end
-        _RankingSystem:RequestBoard(kind == "depth" and _RankingSystem:DepthKind(act) or kind, diff)
+        local board = kind
+        if kind == "depth" then board = _RankingSystem:DepthKind(act)
+        elseif kind == "week" then board = _WeeklyRules:BoardKind(act, _WeeklyRules:CurrentWeek()) end
+        _RankingSystem:RequestBoard(board, diff)
     end
 
     @ExecSpace("ClientOnly")
     method void OnData(string kind, integer diff, string digest)
-        local depth = string.sub(kind, 1, 10) == "depthrun_a"
-        if (depth and self.Kind ~= "depth") or (not depth and kind ~= self.Kind) then return end
-        if depth and kind ~= _RankingSystem:DepthKind(self:CurrentAct()) then return end
+        local week = string.sub(kind, 1, 9) == "weekrun_a"
+        local depth = string.sub(kind, 1, 10) == "depthrun_a" or week
+        if week then
+            if self.Kind ~= "week" or kind ~= _WeeklyRules:BoardKind(self:CurrentAct(), _WeeklyRules:CurrentWeek()) then return end
+        elseif (depth and self.Kind ~= "depth") or (not depth and kind ~= self.Kind) then return
+        elseif depth and kind ~= _RankingSystem:DepthKind(self:CurrentAct()) then return end
         local title = _GameData:GetMonsterName(_GameConst.FinalBossSourceId) .. " 최단 처치"
         if depth then title = "최고 층 · 같은 층이면 빠른 순" end   -- 액트는 위 넘김 막대에 있다
         local lines = { title .. "  (" .. _GameConst:DifficultyName(diff) .. ")", "" }
+        if week then
+            -- 이번 주 규칙 두 줄 + 남은 시간
+            local w = _WeeklyRules:CurrentWeek()
+            lines = { "이번 주 규칙 (" .. _WeeklyRules:EndsIn() .. ")", _WeeklyRules:Describe(w, "\n"), "", title .. "  (" .. _GameConst:DifficultyName(diff) .. ")" }
+        end
         local i = 0
         for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
             i = i + 1

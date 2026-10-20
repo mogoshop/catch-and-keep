@@ -449,8 +449,9 @@ function buildGameHud() {
 
   // ── 랭킹 창 ──
   k.frame("RankWin", "middle-center", [0, 60], [640, 660], "랭킹");
-  [["TabDepth", "심연 최고 층", -150], ["TabQueen", "묘지기 여왕 처치 시간", 150]].forEach(([n, t, x]) => {
-    k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [280, 56], font_size: 18 });
+  // 10-20 B안: 「이번 주 심연」 탭 (주간 규칙 + 주마다 새 기록판) — 탭 셋
+  [["TabDepth", "심연 최고 층", -196], ["TabWeek", "이번 주 심연", 0], ["TabQueen", "묘지기 여왕 처치 시간", 196]].forEach(([n, t, x]) => {
+    k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [188, 56], font_size: 17 });
   });
   // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김)
   k.actPager("RankWin/ActBar", "top-center", [0, -166], 580);

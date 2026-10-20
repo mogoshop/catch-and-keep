@@ -70,6 +70,7 @@ function genGameData() {
   const appearance = load("player_appearance");
   const ranks = load("monster_ranks");
   const variants = load("variants");
+  const weekly = load("weekly");
   const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
   // 프레임 애니메이션 (data/monster_frames.csv, 몬스터 id → sourceId 기준). 클립 RUID가 있는 동작은 클립을 쓴다
   const sourceOf = Object.fromEntries(mons.map((m) => [m.id, m.sourceId]));
@@ -101,6 +102,9 @@ function genGameData() {
     "        self.Variants = {}",
     "        self.VariantOrder = {}",
     ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
+    "        self.Weeklies = {}",
+    "        self.WeeklyOrder = {}",
+    ...weekly.map((w) => `        self.Weeklies[${s(w.id)}] = { id = ${s(w.id)}, name = ${s(w.name)}, desc = ${s(w.desc)}, elite = ${n(w.elite)}, stat = ${n(w.stat)}, speed = ${n(w.speed)}, mobs = ${n(w.mobs)}, curse = ${n(w.curse)}, rolls = ${n(w.rolls)}, extract = ${n(w.extract)}, light = ${n(w.light)}, skel = ${n(w.skel)} }\n        table.insert(self.WeeklyOrder, ${s(w.id)})`),
     "        self.Ranks = {}",
     ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, grade = ${n(r.shadowGrade)} }`),
     "        self.Shop = {}",
@@ -287,9 +291,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

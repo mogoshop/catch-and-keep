@@ -20,6 +20,8 @@ script DepthDirector extends Component
     property integer Difficulty = 0
     @Sync
     property integer Act = 1                -- 어느 액트 심도인가 (레벨대·몬스터·보스)
+    @Sync
+    property integer Week = 0               -- 이번 도전의 주 번호 (WeeklyRules: 1층에 들어간 주의 규칙을 끝까지 쓴다)
     property string Nonce = ""
     property table Doors = {}               -- action → 문 엔티티 (철수하면 다음 층 문을 닫는다)
     property boolean CashedOut = false
@@ -49,6 +51,8 @@ script DepthDirector extends Component
         self.Difficulty = key.difficulty
         self.Act = math.max(1, math.min(_GameConst.ActCount, key.act))
         self.Nonce = key.nonce
+        local start = _GameConst:DepthRunStart(self.Nonce)
+        self.Week = start > 0 and _WeeklyRules:WeekOf(start) or _WeeklyRules:CurrentWeek()
         self.Spawned = {}
         -- 저주·보스는 방이 열릴 때 정한다 (플레이어가 들어오기 전에 동기화돼 도착하자마자 안내가 뜬다)
         -- 저주 중첩 (10-20): 2층부터 1개, depthCurseStackEvery(10)층부터 2개, 20층부터 3개 — 서로 다른 저주
@@ -57,6 +61,7 @@ script DepthDirector extends Component
         elseif self.Floor >= 2 then
             local pool = { "fast", "elite", "poison", "dark" }
             local want = math.min(3, 1 + math.floor(self.Floor / math.max(1, math.floor(_GameData.depthCurseStackEvery))))
+            want = math.min(#pool, want + math.floor(_WeeklyRules:Add(self.Week, "curse")))   -- 이번 주 「저주 폭풍」
             local picked = {}
             for _ = 1, want do
                 local i = _UtilLogic:RandomIntegerRange(1, #pool)
@@ -113,8 +118,8 @@ script DepthDirector extends Component
     end
 
     method number StatMul()
-        -- 층마다 생명·공격 +depthStatPerFloor (레벨 대신 강해진다)
-        return 1 + _GameData.depthStatPerFloor * math.max(0, self.Floor - 1)
+        -- 층마다 생명·공격 +depthStatPerFloor (레벨 대신 강해진다) × 이번 주 규칙
+        return (1 + _GameData.depthStatPerFloor * math.max(0, self.Floor - 1)) * _WeeklyRules:Mul(self.Week, "stat")
     end
 
     method string CurseName(string curse)
@@ -157,9 +162,11 @@ script DepthDirector extends Component
         self.StartedAt = _UtilLogic.ElapsedSeconds
         -- 출현 몬스터·수·정예 확률은 data (monsters.csv depth, config.csv depth*). 저주 「정예 다수」는 정예 확률 +35%p
         local models = _GameData:GetDepthPool(self.Act)
-        local count = math.floor(math.min(_GameData.depthMobMax, _GameData.depthMobBase + self.Floor))
+        -- 이번 주 규칙(WeeklyRules): 몬스터 수 · 정예 배율
+        local count = math.floor(math.min(_GameData.depthMobMax, _GameData.depthMobBase + self.Floor) * _WeeklyRules:Mul(self.Week, "mobs"))
         local elite = math.min(_GameData.depthEliteMax, _GameData.depthEliteBase + _GameData.depthElitePerFloor * self.Floor)
         if self:HasCurse("elite") then elite = math.min(0.8, elite + 0.35) end
+        elite = math.min(0.85, elite * _WeeklyRules:Mul(self.Week, "elite"))
         if self:IsBossFloor() then
             -- 보스 층: 보스 하나 + 졸개 절반
             count = math.max(4, math.floor(count / 2))
@@ -176,7 +183,7 @@ script DepthDirector extends Component
             self.PoolTimerId = _TimerService:SetTimerRepeat(function() self:TickPools() end, 0.25)
         end
         self:Announce("심도 " .. tostring(self.Floor) .. "층 — 모든 적을 쓰러뜨려라")
-        log(string.format("[VRF] depth act=%d floor=%d lv=%d mul=%.2f map=%s curse=%s boss=%s mobs=%d nearest=%.1f", self.Act, self.Floor, self:BaseLevel(), self:StatMul(), map.Name, self.Curse, self.BossName, #self.Spawned, self.NearestSpawn))
+        log(string.format("[VRF] depth act=%d floor=%d lv=%d mul=%.2f map=%s curse=%s boss=%s mobs=%d elite=%.2f nearest=%.1f week=%d rules=%s", self.Act, self.Floor, self:BaseLevel(), self:StatMul(), map.Name, self.Curse, self.BossName, #self.Spawned, elite, self.NearestSpawn, self.Week, table.concat(_WeeklyRules:RulesOf(self.Week), ",")))
     end
 
     @ExecSpace("ServerOnly")
@@ -233,7 +240,8 @@ script DepthDirector extends Component
         local e = _SpawnService:SpawnByModelId(modelId, modelId, pos, map)
         if not isvalid(e) then return end
         table.insert(self.Spawned, e)
-        local fast = self:HasCurse("fast")
+        -- 이동 배율 = 저주 「신속」(1.35) × 이번 주 규칙
+        local speedMul = (self:HasCurse("fast") and 1.35 or 1) * _WeeklyRules:Mul(self.Week, "speed")
         local mul = self:StatMul()
         _Util:AfterSpawn(e, "script.Monster", function(comp)
             ---@type Monster
@@ -247,11 +255,11 @@ script DepthDirector extends Component
             end
             -- 심도에서도 변종 우두머리가 나온다 (층이 깊을수록 정예와 함께)
             if elite and _UtilLogic:RandomDouble() < _GameData.variantChance * 3 then m:MakeVariant(_GameData:RollVariant()) end
-            if fast then
-                -- 저주 「신속」: 기본 속도가 정해진 뒤(OnBeginPlay) 35% 올린다
+            if speedMul ~= 1 then
+                -- 저주 「신속」·이번 주 규칙: 기본 속도가 정해진 뒤(OnBeginPlay) 올린다
                 _TimerService:SetTimerOnce(function()
                     if not isvalid(m.Entity) or m.BaseSpeed <= 0 then return end
-                    m.BaseSpeed = m.BaseSpeed * 1.35
+                    m.BaseSpeed = m.BaseSpeed * speedMul
                     m:RefreshSpeed()
                 end, 0.5)
             end
@@ -335,7 +343,10 @@ script DepthDirector extends Component
         local runSeconds = start > 0 and math.max(0, math.floor(DateTime.UtcNow.Elapsed / 1000) - start) or 0
         for _, u in ipairs(_Util:PlayersInMap(map)) do
             _RankingSystem:RecordDepth(u, self.Difficulty, self.Act, self.Floor)
-            if start > 0 then _RankingSystem:RecordDepthRun(u, self.Difficulty, self.Act, self.Floor, runSeconds) end
+            if start > 0 then
+                _RankingSystem:RecordDepthRun(u, self.Difficulty, self.Act, self.Floor, runSeconds)
+                _RankingSystem:RecordWeekRun(u, self.Difficulty, self.Act, self.Week, self.Floor, runSeconds)   -- 이번 주 기록판
+            end
             _GameEvents:Emit("DepthCleared", { player = u, floor = self.Floor, difficulty = self.Difficulty })
         end
         local timeText = start > 0 and string.format(" (도전 %d분 %02d초)", math.floor(runSeconds / 60), runSeconds % 60) or ""
@@ -365,6 +376,7 @@ script DepthDirector extends Component
         if self:IsBossFloor() then rank = "boss" elseif self.Floor >= 10 then rank = "unique" end
         local rolls = math.min(5, 2 + math.floor(self.Floor / 5))   -- 1층도 2개 (1개는 메이커 확인 때 너무 허전했다)
         rolls = rolls + self:CurseCount()   -- 저주 하나마다 +1
+        rolls = math.max(1, rolls + math.floor(_WeeklyRules:Add(self.Week, "rolls")))   -- 이번 주 규칙
         local level = self:BaseLevel()
         local e = _SpawnService:SpawnByModelId("cursedchest", "DepthReward", Vector3(at.x, at.y, 0), map)
         if not isvalid(e) then return end
@@ -541,7 +553,7 @@ script DepthDirector extends Component
 
     @ExecSpace("ClientOnly")
     method void OnSyncProperty(string name, any value)
-        if name == "Curse" or name == "BossName" or name == "Floor" then
+        if name == "Curse" or name == "BossName" or name == "Floor" or name == "Week" then
             _DarkVision:RefreshDepthCurse()
             _SoundDirector:RefreshDepthBgm()
             self:ShowBanner()
@@ -568,6 +580,7 @@ script DepthDirector extends Component
             for c in string.gmatch(self.Curse, "[^,]+") do table.insert(details, self:CurseDetail(c)) end
             detail = table.concat(details, " / ") .. " · 보상 상자 +" .. tostring(self:CurseCount()) .. "회"
         end
+        if self.Week > 0 then detail = detail .. "\n이번 주: " .. _WeeklyRules:Names(self.Week) end
         _UXFeedback:Show(text, detail, _GameData:GetUiIcon(icon))
         _DarkVision:RefreshDepthCurse()
         _SoundDirector:RefreshDepthBgm()

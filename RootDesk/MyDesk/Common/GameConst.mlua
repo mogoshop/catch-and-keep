@@ -177,12 +177,36 @@ script GameConst extends Logic
         return baseMap .. _GameData:GetDifficulty(difficulty).suffix
     end
 
-    method string DepthMapFor(integer floor)
-        -- 심도 층별 방 모양 (10-11): 1층 작은 방 → 이후 납골 미로·바위 동굴·작은 방·담장 마당을 돌고, 5층마다 보스 층은 넓은 마당(depth3)
-        if floor % 5 == 0 then return "depth3" end
+    method string DepthMapFor(integer floor, string nonce)
+        -- 심도 층별 방 모양 (10-20 A안): 1층은 작은 방, 5층마다 보스 층은 넓은 마당 3종, 나머지는 9종에서 고른다.
+        -- 도전 고유값(nonce)과 층으로 정해지므로 파티원이 따로 방을 열어도 같은 맵이 나온다. 바로 앞 두 층과 같은 모양은 피한다
         if floor <= 1 then return self.MapDepth end
-        local list = { "depth2", "depth4", self.MapDepth, "depth3" }
-        return list[(floor - 2) % #list + 1]
+        local bosses = { "depth3", "depth10", "depth11" }
+        if floor % 5 == 0 then return bosses[self:DepthHash(nonce, floor) % #bosses + 1] end
+        local pool = { self.MapDepth, "depth2", "depth4", "depth5", "depth6", "depth7", "depth8", "depth9", "depth12" }
+        -- 바로 앞 두 층(보스 층 제외)과 겹치지 않게 다음 칸으로 민다
+        local prev, prev2 = self.MapDepth, ""
+        local pick = prev
+        for f = 2, floor do
+            if f % 5 ~= 0 then
+                local i = self:DepthHash(nonce, f) % #pool + 1
+                while pool[i] == prev or pool[i] == prev2 do i = i % #pool + 1 end
+                pick = pool[i]
+                prev2 = prev
+                prev = pick
+            end
+        end
+        return pick
+    end
+
+    method integer DepthHash(string nonce, integer floor)
+        -- 문자열 → 0 이상 정수 (같은 입력이면 어느 서버에서도 같은 값)
+        local h = 5381
+        local text = (nonce or "") .. ":" .. tostring(floor)
+        for i = 1, #text do h = (h * 33 + string.byte(text, i)) % 2147483647 end
+        -- 끝 글자만 다른 입력(층 2·3·4…)이 연속된 값이 되지 않게 곱해 섞고 윗자리를 쓴다
+        h = (h * 2654435761) % 4294967296
+        return math.floor(h / 65536)
     end
 
     method integer DepthRunStart(string nonce)

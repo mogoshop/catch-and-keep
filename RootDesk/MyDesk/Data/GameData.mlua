@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, weekly.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -233,6 +233,8 @@ script GameData extends Logic
     property table Shop = {}
     property table Variants = {}
     property table VariantOrder = {}
+    property table Weeklies = {}
+    property table WeeklyOrder = {}
     property table MonsterSourceOf = {}
     property table MonsterStats = {}
     property table MonsterFrames = {}
@@ -355,6 +357,24 @@ script GameData extends Logic
         table.insert(self.VariantOrder, "skill_barrage")
         self.Variants["skill_summon"] = { id = "skill_summon", name = "무리 부르기", kind = "skill", effect = "summon", value = 2, radius = 6, interval = 12, mult = 1, element = "", weight = 0.8 }
         table.insert(self.VariantOrder, "skill_summon")
+        self.Weeklies = {}
+        self.WeeklyOrder = {}
+        self.Weeklies["souls"] = { id = "souls", name = "망자의 주", desc = "정예 +50% · 그림자 추출 +5%p", elite = 1.5, stat = 1, speed = 1, mobs = 1, curse = 0, rolls = 0, extract = 0.05, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "souls")
+        self.Weeklies["greed"] = { id = "greed", name = "탐욕의 주", desc = "몬스터 생명·공격 +30% · 층 보상 상자 +2회", elite = 1, stat = 1.3, speed = 1, mobs = 1, curse = 0, rolls = 2, extract = 0, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "greed")
+        self.Weeklies["gloom"] = { id = "gloom", name = "짙은 어둠", desc = "내 주변 빛 −25%", elite = 1, stat = 1, speed = 1, mobs = 1, curse = 0, rolls = 0, extract = 0, light = 0.75, skel = 1 }
+        table.insert(self.WeeklyOrder, "gloom")
+        self.Weeklies["bones"] = { id = "bones", name = "뼈의 풍년", desc = "해골 전사·마법사 공격 +30%", elite = 1, stat = 1, speed = 1, mobs = 1, curse = 0, rolls = 0, extract = 0, light = 1, skel = 1.3 }
+        table.insert(self.WeeklyOrder, "bones")
+        self.Weeklies["haste"] = { id = "haste", name = "성급한 망자", desc = "몬스터 이동 +20%", elite = 1, stat = 1, speed = 1.2, mobs = 1, curse = 0, rolls = 0, extract = 0, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "haste")
+        self.Weeklies["curses"] = { id = "curses", name = "저주 폭풍", desc = "층마다 저주 +1 · 층 보상 상자 +1회", elite = 1, stat = 1, speed = 1, mobs = 1, curse = 1, rolls = 1, extract = 0, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "curses")
+        self.Weeklies["horde"] = { id = "horde", name = "무리의 주", desc = "몬스터 수 +30%", elite = 1, stat = 1, speed = 1, mobs = 1.3, curse = 0, rolls = 0, extract = 0, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "horde")
+        self.Weeklies["bloodmoon"] = { id = "bloodmoon", name = "피의 달", desc = "몬스터 생명·공격 +15% · 이동 +10% · 그림자 추출 +8%p", elite = 1, stat = 1.15, speed = 1.1, mobs = 1, curse = 0, rolls = 0, extract = 0.08, light = 1, skel = 1 }
+        table.insert(self.WeeklyOrder, "bloodmoon")
         self.Ranks = {}
         self.Ranks["normal"] = { name = "일반", hpMul = 1, dmgMul = 1, extract = 0.25, grade = 1 }
         self.Ranks["elite"] = { name = "정예", hpMul = 3, dmgMul = 1.3, extract = 0.15, grade = 2 }
@@ -658,6 +678,14 @@ script GameData extends Logic
         self.MapInfo["lighthouse2"] = { name = "폭풍 등대 2층 (Lv 29~30)", kind = "field", act = 3, w = 36, h = 20, maze = true, flavor = "렌즈 조각이 흩어진 등대 2층.", features = { { kind = "portal", x = -17, y = 0, label = "폭풍 등대 1층 (Lv 26~27)", targetMap = "lighthouse1" }, { kind = "portal", x = 17, y = 0, label = "폭풍 등대 3층 (Lv 30~31)", targetMap = "lighthouse3" } } }
         self.MapInfo["lighthouse3"] = { name = "폭풍 등대 3층 (Lv 30~31)", kind = "field", act = 3, w = 36, h = 20, maze = true, flavor = "꼭대기로 오르는 마지막 계단. 폭풍 소리가 가까워진다.", features = { { kind = "portal", x = -17, y = 0, label = "폭풍 등대 2층 (Lv 29~30)", targetMap = "lighthouse2" }, { kind = "portal", x = 17, y = 0, label = "폭풍의 눈 (등대 꼭대기)", targetMap = "stormeye" }, { kind = "waypoint", x = -14.2, y = 0, label = "", targetMap = "" } } }
         self.MapInfo["stormeye"] = { name = "폭풍의 눈 (등대 꼭대기)", kind = "field", act = 3, w = 20, h = 12, maze = true, flavor = "폭풍의 한가운데. 가라앉은 함대의 제독이 닻을 끌고 기다린다.", features = { { kind = "portal", x = -9, y = 0, label = "폭풍 등대 3층 (Lv 30~31)", targetMap = "lighthouse3" }, { kind = "portal", x = 9, y = 0, label = "소금바람 항구", targetMap = "harbor" }, { kind = "boss", x = 5, y = 0, label = "", targetMap = "" } } }
+        self.MapInfo["depth5"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth6"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth7"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth8"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth9"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth10"] = { name = "심도", kind = "instance", act = 1, w = 28, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth11"] = { name = "심도", kind = "instance", act = 1, w = 28, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["depth12"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
         self.UiIcons = {}
         self.UiIcons["win_panel"] = "6e8e561a4582462eaad762cb11d1f835"
         self.UiIcons["win_content"] = "6e8e561a4582462eaad762cb11d1f835"
