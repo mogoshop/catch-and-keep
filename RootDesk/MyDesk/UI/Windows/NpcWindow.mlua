@@ -194,13 +194,13 @@ script NpcWindow extends Logic
         if self.Kind == "shop" then self:RenderShop(st)
         elseif self.Kind == "merchant" then self:RenderMerchant(st)
         elseif self.Kind == "smith" then self:RenderSmith(st)
-        elseif self.Kind == "caravan" or self.Kind == "captain" then self:RenderCaravan()
+        elseif self.Kind == "caravan" or self.Kind == "captain" or self.Kind == "scout" then self:RenderCaravan()
         else self:RenderQuest() end
     end
 
     @ExecSpace("ClientOnly")
     method table CaravanTargets()
-        -- 지금 액트가 아닌 다른 액트들 (버튼 3·4). 카라반(야영지·오아시스)·선장(항구) 모두 열린 액트로 데려다준다
+        -- 지금 액트가 아닌 다른 액트들 (버튼 2·3·4). 카라반(야영지·오아시스)·선장(항구)·정찰병(초소) 모두 열린 액트로 데려다준다
         ---@type PlayerTravel
         local travel = _UIKit:Comp("script.PlayerTravel")
         local out = {}
@@ -222,17 +222,18 @@ script NpcWindow extends Logic
         for _, a in ipairs(targets) do key = key .. "#" .. tostring(travel:ActUnlocked(a)) end
         if key == self.RenderKey then return end
         self.RenderKey = key
-        local captain = self.NpcKind == "captain"
-        local body = captain and "어디로 가겠나? 폭풍이 거세도 이 배는 가라앉지 않네." or "어디로 가겠나? 낙타 등에 짐은 다 실었지."
+        local body = "어디로 가겠나? 낙타 등에 짐은 다 실었지."
+        if self.NpcKind == "captain" then body = "어디로 가겠나? 폭풍이 거세도 이 배는 가라앉지 않네." end
+        if self.NpcKind == "scout" then body = "어디로 가겠나? 협곡 아래 샛길은 나만 안다. 악마들 눈에 띄지 않게 데려다주지." end
         local buttons = { "", "", "", "", "닫기" }
-        local slot = 3
+        local slot = 2
         local locked = ""
         for _, a in ipairs(targets) do
             if travel:ActUnlocked(a) then
                 buttons[slot] = _GameConst:WithRo(_GameConst:ActTownName(a))
                 slot = slot + 1
             elseif locked == "" then
-                locked = _UIKit:StoryText(_GameData:GetStory(a == 3 and "lock_act3" or "lock_act2"), -1)
+                locked = _UIKit:StoryText(_GameData:GetStory("lock_act" .. tostring(a)), -1)
             end
         end
         if locked ~= "" then body = body .. "\n" .. locked end
@@ -247,6 +248,15 @@ script NpcWindow extends Logic
         local quest = _UIKit:Comp("script.PlayerQuest")
         local done = quest ~= nil and quest:IsActDone(2)
         local done3 = quest ~= nil and quest:IsActDone(3)
+        local done4 = quest ~= nil and quest:IsActDone(4)
+        if kind == "outpostcaptain" then
+            if done4 then return "재의 왕이 쓰러진 뒤로 행군이 끊겼다. 그래도 문 아래 어둠은 그대로다 — 악몽에선 더 짙을 거다." end
+            return "울타리가 사흘째 버티고 있다. 대장이 할 일은 버티는 것뿐이지."
+        end
+        if kind == "deserter" then
+            if done4 then return "심장이 부서졌어요. 교단이 백 년 동안 못 한 일을… 당신이 했어요." end
+            return "저는 교단을 버렸어요. 그들이 무엇을 나눠 숨겼는지 알게 된 뒤로요."
+        end
         if kind == "harbormaster" then
             if done3 then return "제독이 가라앉은 뒤로 바다가 잠잠하군. 악몽의 바다는 또 다를 테니 웨이포인트에서 난이도를 바꿔 보게." end
             return "배가 들어오지 않은 지 한 달이 넘었네. 장부엔 빈칸뿐이야."
@@ -529,10 +539,10 @@ script NpcWindow extends Logic
             end
             return
         end
-        if self.Kind == "caravan" or self.Kind == "captain" then
+        if self.Kind == "caravan" or self.Kind == "captain" or self.Kind == "scout" then
             if index == 5 then self:Dismiss() return end
-            if index == 3 or index == 4 then
-                -- 버튼 3·4 = 열린 다른 액트 (RenderCaravan과 같은 순서)
+            if index >= 2 and index <= 4 then
+                -- 버튼 2·3·4 = 열린 다른 액트 (RenderCaravan과 같은 순서)
                 ---@type PlayerTravel
                 local travel = _UIKit:Comp("script.PlayerTravel")
                 if travel == nil then return end
@@ -540,7 +550,7 @@ script NpcWindow extends Logic
                 for _, a in ipairs(self:CaravanTargets()) do
                     if travel:ActUnlocked(a) then table.insert(open, a) end
                 end
-                local target = open[index - 2]
+                local target = open[index - 1]
                 self:Dismiss()
                 if target ~= nil then travel:RequestActTravel(target) end
             end

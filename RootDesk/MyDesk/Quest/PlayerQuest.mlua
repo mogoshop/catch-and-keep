@@ -136,7 +136,7 @@ script PlayerQuest extends Component
     method boolean IsActDone(integer act)
         -- 지금 난이도에서 그 액트의 마지막 의뢰까지 보고를 마쳤다
         local last = _QuestData:LastOfAct(act)
-        return last > 0 and self.Index > last
+        return last > 0 and self.Index > last and _QuestData:ActClosed(act)
     end
 
     method integer CountFor(table q)
@@ -303,7 +303,7 @@ script PlayerQuest extends Component
         log("[PlayerQuest] 완료 " .. q.title .. " diff=" .. tostring(self.Diff))
         _GameEvents:Emit("QuestCompleted", { player = self.Entity, index = self.Index })
         -- 액트 마지막 의뢰면 장 마무리 내레이션 (docs/design/18 §3-4)
-        local actEnd = _QuestData:LastOfAct(q.act) == self.Index
+        local actEnd = _QuestData:LastOfAct(q.act) == self.Index and _QuestData:ActClosed(q.act)
         self.Index = self.Index + 1
         self.State = 0
         self.Progress = 0

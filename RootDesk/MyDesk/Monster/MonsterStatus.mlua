@@ -18,6 +18,8 @@ script MonsterStatus extends Component
     property number AuraHaste = 0
     property number AuraGuard = 0
     property number AuraUntil = 0
+    property integer SoulStacks = 0        -- 혼 포식 겹 (액트 4 혼 빼앗기: 지옥불 사제가 혼 구슬을 먹으면 곁의 악마까지 주는 피해 +soulFeedPct%)
+    property number SoulUntil = 0
     property boolean HasteRefreshPending = false
     @Sync
     property number KnockUntil = 0           -- 넉백·경직 (서버). 그동안 이동·공격·특수 행동을 멈춘다
@@ -326,6 +328,21 @@ script MonsterStatus extends Component
             if not isvalid(self.Entity) then return end
             if _UtilLogic.ElapsedSeconds >= self.AuraUntil then body:RefreshSpeed() else self:RefreshSpeedLater() end
         end, _GameData.auraHoldSec + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FeedSoul()
+        -- 혼 포식 한 겹 (최대 soulFeedMax, soulFeedSec초 — 새로 먹으면 시간이 다시 찬다)
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.SoulUntil then self.SoulStacks = 0 end
+        self.SoulStacks = math.min(math.floor(_GameData.soulFeedMax), self.SoulStacks + 1)
+        self.SoulUntil = now + _GameData.soulFeedSec
+    end
+
+    method number SoulMult()
+        -- 혼 포식 주는 피해 배율
+        if _UtilLogic.ElapsedSeconds >= self.SoulUntil then return 1 end
+        return 1 + self.SoulStacks * _GameData.soulFeedPct / 100
     end
 
     method number AuraMult(string kind)

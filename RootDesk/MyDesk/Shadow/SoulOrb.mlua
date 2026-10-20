@@ -22,6 +22,10 @@ script SoulOrb extends Component
     property boolean Consumed = false
 
     property number PulseTime = 0
+    property integer ThiefTimer = 0
+    @Sync
+    property Entity StealBy = nil           -- 혼 빼앗기: 끌어가는 몬스터 (액트 4 지옥불 사제)
+    property number StealAt = 0             -- 이 시각에 먹힌다 (그 전에 추출하면 지킨다)
 
     @ExecSpace("ServerOnly")
     method void Setup(string ownerUserId, string sourceId, integer grade, string rank, integer level, string variant, string standRuid, string moveRuid)
@@ -42,6 +46,93 @@ script SoulOrb extends Component
         _TimerService:SetTimerOnce(function()
             if isvalid(self.Entity) and not self.Consumed then self.Entity:Destroy() end
         end, self.LifeSeconds)
+        self.ThiefTimer = _TimerService:SetTimerRepeat(function() self:CheckThief() end, 0.25)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.ThiefTimer ~= 0 then _TimerService:ClearTimer(self.ThiefTimer) end
+        self.ThiefTimer = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckThief()
+        -- 혼 빼앗기 (액트 4, docs/design/27): 곁의 지옥불 사제가 혼을 soulStealSec초 동안 끌어당겨 먹는다.
+        -- 그 사이 추출(예약)하면 지킨다. 먹히면 사제와 곁의 악마가 혼 포식 한 겹(주는 피해 +soulFeedPct%)
+        if self.Consumed or not isvalid(self.Entity) then return end
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.StealBy ~= nil then
+            ---@type Monster
+            local thief = isvalid(self.StealBy) and self.StealBy:GetComponent("script.Monster") or nil
+            if self.Reserved or thief == nil or thief.IsDead or not self.StealBy.Enable then
+                self.StealBy = nil
+                return
+            end
+            -- 사제 쪽으로 천천히 끌려간다
+            local to = _Util:Pos2(self.StealBy)
+            local dest = here + (to - here) * 0.12
+            self.Entity.TransformComponent.WorldPosition = Vector3(dest.x, dest.y, 0)
+            if now < self.StealAt then return end
+            local fed = 0
+            for _, m in ipairs(_Util:MonstersNear(map, to, _GameData.soulFeedRadius)) do
+                local status = m:Status()
+                if status ~= nil then
+                    status:FeedSoul()
+                    fed = fed + 1
+                end
+            end
+            self:FeedFx(Vector3(to.x, to.y, 0))
+            log(string.format("[VRF] soul stolen by %s fed=%d", thief.SourceId, fed))
+            self:Consume()
+            return
+        end
+        if self.Reserved then return end
+        for _, m in ipairs(_Util:MonstersNear(map, here, _GameData.soulStealRange)) do
+            if string.find(_GameConst.SoulThieves, "," .. m.SourceId .. ",", 1, true) ~= nil then
+                self.StealBy = m.Entity
+                self.StealAt = now + _GameData.soulStealSec
+                self:StealFx(m.Entity, _GameData.soulStealSec)
+                return
+            end
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void StealFx(Entity thief, number seconds)
+        -- 혼과 사제를 잇는 붉은 실 (번개 줄기 그림을 붉게, 끌려가는 동안 따라 늘인다) + 혼이 붉게 물든다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local chains = {}
+        for ruid in string.gmatch(_GameConst.SpriteLightningChains, "[^|]+") do table.insert(chains, ruid) end
+        if #chains == 0 then return end
+        local serial = 0
+        local t = 0
+        local timer = 0
+        timer = _TimerService:SetTimerRepeat(function()
+            t = t + 0.1
+            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
+            if t >= seconds or not isvalid(self.Entity) or self.Consumed or not isvalid(thief) or self.StealBy == nil then
+                _TimerService:ClearTimer(timer)
+                return
+            end
+            local a = _Util:Pos2(self.Entity)
+            local b = _Util:Pos2(thief) + Vector2(0, 0.6)
+            local d = b - a
+            local len = d:Magnitude()
+            if len < 0.05 then return end
+            serial = _EffectService:PlayEffect(chains[1], self.Entity, Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0), math.deg(math.atan(d.y, d.x)), Vector3(len / 2.56, 0.5, 1), true,
+                { SortingLayer = "MapLayer0", OrderInLayer = 19, Color = Color(1, 0.2, 0.15, 0.85) })
+        end, 0.1)
+    end
+
+    @ExecSpace("Multicast")
+    method void FeedFx(Vector3 pos)
+        -- 먹힌 자리: 붉은 불꽃 폭발
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, me.CurrentMap, pos + Vector3(0, 0.6, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = Color(1, 0.25, 0.15, 1) })
     end
 
     @ExecSpace("ServerOnly")
@@ -64,7 +155,9 @@ script SoulOrb extends Component
         if sprite.Enable ~= mine then sprite.Enable = mine end
         if not mine then return end
         local a = 0.45 + 0.35 * math.abs(math.sin(self.PulseTime * 3))
-        if self.Variant ~= "" then
+        if self.StealBy ~= nil then
+            sprite.Color = Color(1.0, 0.2, 0.15, 0.6 + 0.4 * math.abs(math.sin(self.PulseTime * 12)))   -- 빼앗기는 중: 붉게 빠르게 깜빡임
+        elseif self.Variant ~= "" then
             sprite.Color = Color(1.0, 0.35, 0.9, a)     -- 변종 능력이 든 혼은 자홍색
         elseif self.Grade >= 2 then
             sprite.Color = Color(1.0, 0.75, 0.3, a)

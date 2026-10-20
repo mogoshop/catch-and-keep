@@ -5,7 +5,7 @@
 script MapEvents extends Logic
 
     @ExecSpace("ServerOnly")
-    method void Populate(MonsterSpawner spawner, table list, integer bonus)
+    method void Populate(MonsterSpawner spawner, table list, integer difficulty)
         local map = spawner.Entity.CurrentMap
         if not isvalid(map) or #list == 0 then return end
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
@@ -17,7 +17,7 @@ script MapEvents extends Logic
             sum = sum + e.level
             table.insert(ids, e.id)
         end
-        local level = math.floor(sum / #list + 0.5) + bonus
+        local level = _GameConst:ScaleLevel(math.floor(sum / #list + 0.5), difficulty)   -- 난이도 구간 (GameConst.ScaleLevel)
         local species = table.concat(ids, ";")
         local placed = { shrine = 0, chest = 0, nest = 0, rare = 0 }
         for i = 1, side and 1 or math.floor(_GameData.eventShrines) do

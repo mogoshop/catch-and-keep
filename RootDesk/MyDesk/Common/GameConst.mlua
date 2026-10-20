@@ -7,7 +7,8 @@ script GameConst extends Logic
     property string MapTown = "town"
     property string MapDepth = "depth"
     property string FinalBossSourceId = "admiral"   -- 처치 시 다음 난이도 개방 (지금 마지막 액트 = 액트 3 익사한 제독 바렌, 10-11)
-    property integer ActCount = 3                     -- 액트 수 (웨이포인트·의뢰 일지 탭, 액트 이동)
+    property integer ActCount = 4                     -- 액트 수 (웨이포인트·의뢰 일지 탭, 액트 이동 · 10-20 액트 4 「심연의 문」)
+    property string SoulThieves = ",hell_priest,"     -- 혼 빼앗기 (액트 4): 땅의 혼 구슬을 끌어가 먹는 몬스터 sourceId (SoulOrb.CheckThief)
 
     -- 레벨 차이 보정 (디아블로식): 나보다 높은 몬스터는 덜 아프게 맞고, 더 아프게 때리고, 혼도 잘 안 뽑힌다
     property number LevelGapGrace = 1             -- 이 레벨 차이까지는 보정 없음
@@ -142,12 +143,24 @@ script GameConst extends Logic
     end
 
     method string LevelText(string text, string mapName)
-        -- 이름 속 「(Lv a~b)」를 그 맵 난이도의 실제 레벨로 바꾼다 (difficulty.csv levelBonus — 지금 악몽 +20 · 지옥 +40). 맵 데이터는 보통 기준이라서
-        local bonus = _GameData:GetDifficulty(self:DifficultyOfMap(mapName)).levelBonus
-        if bonus == nil or bonus <= 0 then return text end
-        local out = string.gsub(text, "Lv%s*(%d+)%s*~%s*(%d+)", function(a, b) return "Lv " .. tostring(tonumber(a) + bonus) .. "~" .. tostring(tonumber(b) + bonus) end)
-        if out == text then out = string.gsub(text, "Lv%s*(%d+)", function(a) return "Lv " .. tostring(tonumber(a) + bonus) end) end
+        -- 이름 속 「(Lv a~b)」를 그 맵 난이도의 실제 레벨로 바꾼다 (ScaleLevel). 맵 데이터는 보통 기준이라서
+        local diff = self:DifficultyOfMap(mapName)
+        if diff <= 0 then return text end
+        local out = string.gsub(text, "Lv%s*(%d+)%s*~%s*(%d+)", function(a, b) return "Lv " .. tostring(self:ScaleLevel(math.floor(tonumber(a)), diff)) .. "~" .. tostring(self:ScaleLevel(math.floor(tonumber(b)), diff)) end)
+        if out == text then out = string.gsub(text, "Lv%s*(%d+)", function(a) return "Lv " .. tostring(self:ScaleLevel(math.floor(tonumber(a)), diff)) end) end
         return out
+    end
+
+    method integer ScaleLevel(integer level, integer difficulty)
+        -- 보통 몬스터 레벨 → 그 난이도 레벨 (10-20 액트 4 결정 「구간 눌러 담기」, difficulty.csv levelFrom~levelTo).
+        -- 보통 1~40을 악몽 41~70 · 지옥 71~99에 비율로 옮긴다. 보통 끝(40)을 넘는 값(심연 레벨대 끝)은 같은 기울기로 잇고 레벨 상한에서 멈춘다
+        if difficulty <= 0 then return level end
+        local normal = _GameData:GetDifficulty(0)
+        local d = _GameData:GetDifficulty(difficulty)
+        if d == nil or normal == nil then return level end
+        local span = math.max(1, normal.levelTo - 1)
+        local scaled = d.levelFrom + math.floor((level - 1) * (d.levelTo - d.levelFrom) / span + 0.5)
+        return math.max(1, math.min(math.floor(_GameData.levelCap), scaled))
     end
 
     method string BeltIcon(string kind)
@@ -233,7 +246,7 @@ script GameConst extends Logic
 
     method string ActBossSource(integer act)
         -- 액트 최종 보스 sourceId (심연 열쇠를 떨군다). 묘지기 여왕 · 대사제 · 제독
-        local list = { "grave_queen", "high_priest", "admiral" }
+        local list = { "grave_queen", "high_priest", "admiral", "ash_king" }   -- 액트 4 재의 왕 (3단계에서 들어온다)
         return list[act] or ""
     end
 
@@ -249,8 +262,8 @@ script GameConst extends Logic
         -- 심도 레벨대 { min, max } = 그 액트 보스 레벨 ~ +depthLevelSpan (+ 난이도 가산). 10-20: 깊이 내려가도 레벨이 액트를 앞지르지 않게
         local m = _GameData:GetMonsterStats(self:ActBossSource(act))
         local base = m ~= nil and m.level or 12
-        local bonus = _GameData:GetDifficulty(difficulty).levelBonus
-        return { min = base + bonus, max = base + bonus + math.floor(_GameData.depthLevelSpan) }
+        local min = self:ScaleLevel(base, difficulty)
+        return { min = min, max = math.min(math.floor(_GameData.levelCap), min + math.floor(_GameData.depthLevelSpan)) }
     end
 
     method table DepthBosses(integer act)
@@ -289,6 +302,7 @@ script GameConst extends Logic
         -- 액트 이름 (의뢰 일지 제목 등)
         if act == 2 then return "모래 폐허" end
         if act == 3 then return "폭풍 해안" end
+        if act == 4 then return "심연의 문" end
         return "잿빛 변경"
     end
 

@@ -209,7 +209,7 @@ script GameData extends Logic
     property number shadowDeathLimitElite = 3    -- 정예 그림자가 이만큼 쓰러지면 마을에 들를 때까지 소환할 수 없다 (10-20 사용자 결정 · 사망 패널티)
     property number shadowDeathLimitBoss = 2    -- 보스 그림자 사망 한도 (일반 그림자는 한도 없이 재소환 대기만)
     property number shadowRuneFromPlus = 6    -- 그림자 강화 이 단계(+N으로 올릴 때)부터 정수에 더해 룬 1개가 들고 성공 확률이 붙는다 (10-20 사용자 결정)
-    property number shadowRuneTier6 = 1    -- +6 강화에 드는 룬 등급 하한 (1 하급 Lv1 · 2 중급 Lv12 · 3 상급 Lv52 악몽 액트 3 · 4 최상급 Lv68 지옥). 보스 +1 등급 (최대 4 · 10-20 밸런스: 정예 +1·보스 +2에서 완화)
+    property number shadowRuneTier6 = 1    -- +6 강화에 드는 룬 등급 하한 (1 하급 Lv1 · 2 중급 Lv12 · 3 상급 Lv57 악몽 액트 3 · 4 최상급 Lv75 지옥). 보스 +1 등급 (최대 4 · 10-20 밸런스: 정예 +1·보스 +2에서 완화)
     property number shadowRuneTier7 = 1    -- +7 룬 등급 하한
     property number shadowRuneTier8 = 2    -- +8 룬 등급 하한
     property number shadowRuneTier9 = 2    -- +9 룬 등급 하한
@@ -220,6 +220,12 @@ script GameData extends Logic
     property number shadowPlusChance9 = 0.5    -- +9 성공 확률
     property number shadowPlusChance10 = 0.4    -- +10 성공 확률
     property number potionHealSeconds = 2.5    -- 물약 회복이 차오르는 시간(초) — 디아2처럼 점진적으로 · 디아2(약 7초)보다 빠르게 (10-20 사용자 결정)
+    property number soulStealRange = 3    -- 액트 4 혼 빼앗기: 지옥불 사제가 이 거리 안의 혼 구슬을 끌어당긴다
+    property number soulStealSec = 1.5    -- 혼 빼앗기 예고 시간(초) — 붉은 실이 이어진 동안 추출하면 지킨다
+    property number soulFeedPct = 15    -- 혼 포식 한 겹당 주는 피해 +%
+    property number soulFeedMax = 3    -- 혼 포식 최대 겹
+    property number soulFeedSec = 10    -- 혼 포식 지속(초) — 먹은 사제와 반경 soulFeedRadius 안 악마가 함께 받는다
+    property number soulFeedRadius = 3    -- 혼 포식이 퍼지는 반경
     property table PlayerAppearance = {}
     property table PlayerAppearanceName = {}
     property table Difficulties = {}
@@ -394,9 +400,9 @@ script GameData extends Logic
         self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
         self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
-        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1 }
-        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 30, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5 }
-        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 60, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 14 }
+        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1 }
+        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5 }
+        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 70, levelFrom = 71, levelTo = 99, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 14 }
         self.Sounds = {}
         self.Sounds["town"] = "93147bcf77494841b8d4478791ed9282"
         self.Sounds["field"] = "8efc5a3200114606a71e907036fe920f"
@@ -412,6 +418,7 @@ script GameData extends Logic
         self.Sounds["harbor"] = "f4588ee6624f45dbbff18efea7d451f6"
         self.Sounds["coast"] = "0c319c21fac3449f972215750e3f5515"
         self.Sounds["lighthouse"] = "1c8b1c570bbd4e72b40f4e9114e4c097"
+        self.Sounds["hellfield"] = "cf482892042145a79078dd8d3ecb7d0e"
         self.MonsterNames = {}
         self.MonsterNames["hellhound"] = "잿불 들개"
         self.MonsterNames["graveworm"] = "무덤 구더기"
@@ -455,6 +462,12 @@ script GameData extends Logic
         self.MonsterNames["drowned_priest"] = "물에 잠긴 사제"
         self.MonsterNames["mad_keeper"] = "미친 등대지기 하울"
         self.MonsterNames["admiral"] = "익사한 제독 바렌"
+        self.MonsterNames["demon_axe"] = "타락마족 도끼병"
+        self.MonsterNames["demon_shield"] = "타락마족 방패병"
+        self.MonsterNames["fire_bat"] = "화염 박쥐"
+        self.MonsterNames["hell_priest"] = "지옥불 사제"
+        self.MonsterNames["ash_wraith"] = "재의 망령"
+        self.MonsterNames["lava_golem"] = "용암 골렘"
         self.MonsterFrames = {}
         self.MonsterFrames["storm_caller"] = { stand = { r = { "da43342c3c6547a5b7177720687493b6", "8c23a18b448b4a24ad6f6e537d76bc6f", "043d804deba2470888fa9ebccec1e861", "8cb4a8e292404454a14299a4faea3c45" }, d = { 0.18, 0.18, 0.18, 0.18 }, loop = true }, move = { r = { "9a006d2cbd974b03a71c6f72e78a47cd", "924545c009b748ea9e81a44004a8f144", "ba33afb2b8084daf9aeb8a0e7516bc1f", "835f730b2b4d404eb303a59fa54e462b", "42984a0493054d6d8ea5466af1d09c6d", "ab1871f4a64f4178984ac352fe06ee94" }, d = { 0.12, 0.12, 0.12, 0.12, 0.12, 0.12 }, loop = true }, attack = { r = { "e290bbfb23d8439895ee64d897725471", "852f81c1fa4540a99a4e2e62bda29949", "c8d230a686ff4edf86772cd21913fef1", "a954fccf44b64e9595fec3d0687b695b", "124811b182614359b71f00ebcbdf7ac2", "5c3cf0bfb5f34a8e85136c7a0ea16406", "db9672b1187d432a8463f4bc7d9b4339", "c22ccb3244234f6288cee8e40ac8ba79" }, d = { 0.09, 0.09, 0.09, 0.09, 0.12, 0.09, 0.09, 0.09 }, loop = false, s = 5 }, hit = { r = { "be89f17c10184ab2916f150417ba2ac0", "38ebd661c7ec448a83ea34c589a1addb" }, d = { 0.15, 0.15 }, loop = false }, die = { r = { "a0958c78e36549fc8b64545dfc8c987e", "fb4c621b182f491293629340aa3f8a16", "2818f48c4b4741ea9b1f10b9c1d93c0e", "d1a204565c444d5286de1416882b3a95", "0e2d2b20d66c4bc0810626ce3c11a0a6", "b3e2d53ebb2340c3a48fb14db06e9d32" }, d = { 0.12, 0.12, 0.12, 0.12, 0.12, 0.12 }, loop = false } }
         self.MonsterFrames["drowned_sailor"] = { stand = { r = { "6ed083aa58cd49b2b8a156ac620b2212", "8dd93fce57b246d5a2cd1212d90d861d", "003fd813a64043cea595ed06dab098a1", "84f1aec589f44179be7f79167e0af955" }, d = { 0.18, 0.18, 0.18, 0.18 }, loop = true }, move = { r = { "a71adbd3fa5a4457b638c607291228c2", "1b75812435b04137add4ab9cf7b9f743", "30cb72a31be241b48619c3f7ffc0e0f0", "96b9b33964744db18fc99f08e43e11bd", "e2a3649f454a410b8ae5251499bab387", "44305cc5c03b45fbaf9e13a31433cd0e" }, d = { 0.12, 0.12, 0.12, 0.12, 0.12, 0.12 }, loop = true }, attack = { r = { "4ce1ff7c376246d39958b2fb5229538b", "cdf03d21b9664eb480568a310d2510db", "aebba1f3f62849a5a6bed58665839cee", "4b54409112c44d8689bfa82e00b19dd3", "dc315c1fc2044e56a27a233507563291", "8b9fa6b19d9c4302b65d2669e746c73e", "86b50e6b1a6e482f9359e649732d1956", "94ba98f3ffbb4344b90ec30603fbf3c9" }, d = { 0.09, 0.09, 0.09, 0.09, 0.12, 0.09, 0.09, 0.09 }, loop = false, s = 5 }, hit = { r = { "380265435fb9475fb67656458925cd35", "3e3379be0ed14cd7a8bc3085449ff967" }, d = { 0.15, 0.15 }, loop = false }, die = { r = { "366e0a69cd3341f7b069cf0538617952", "ca38640a8cd14936bc2f97dd0459a410", "47573111a2794ded94abd58a80794d7b", "c9de0f0c3c214bdf8ca830f2e546c020", "9800931e4fff46a5a2b63f52d40c23f7", "16ce52f925394067a5913fc03e76d2db" }, d = { 0.12, 0.12, 0.12, 0.12, 0.12, 0.12 }, loop = false } }
@@ -541,6 +554,12 @@ script GameData extends Logic
         self.MonsterSourceOf["drownedpriest"] = "drowned_priest"
         self.MonsterSourceOf["madkeeper"] = "mad_keeper"
         self.MonsterSourceOf["admiral"] = "admiral"
+        self.MonsterSourceOf["demonaxe"] = "demon_axe"
+        self.MonsterSourceOf["demonshield"] = "demon_shield"
+        self.MonsterSourceOf["firebat"] = "fire_bat"
+        self.MonsterSourceOf["hellpriest"] = "hell_priest"
+        self.MonsterSourceOf["ashwraith"] = "ash_wraith"
+        self.MonsterSourceOf["lavagolem"] = "lava_golem"
         self.MonsterStats = {}
         self.MonsterStats["hellhound"] = { level = 1, hp = 60, dmg = 5, interval = 1.5, speed = 1.5, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=50", behavior = "", stand = "143a84d2ef9c47aca0eb753f9f10cf9f", move = "ec47ba8826154e379fc9ebed96f69f33", attack = "0d39b9d4230e4183b648e4c453fb474e", innate = "", rank = "normal", summonScale = 1.167, mid = "hellhound", w = 139, h = 69, bh = 60, portrait = "b251e376de8b4b609cf23af082d3d301", pw = 94, ph = 60, chain = 0 }
         self.MonsterStats["graveworm"] = { level = 1, hp = 75, dmg = 5, interval = 1.5, speed = 0.8, range = 0.8, element = "", ratio = 0, resists = "poison=75", behavior = "burrow", stand = "79796d7b52a643e5b327ba2a4ca8646a", move = "58e38cbf651749f3b28af639f09e078e", attack = "4064997e24604c3d8b5738a2a83a9053", innate = "", rank = "normal", summonScale = 1.75, mid = "graveworm", w = 167, h = 77, bh = 40, portrait = "5d621fdf755a4f5f9d796b0f6c240aed", pw = 91, ph = 40, chain = 0 }
@@ -584,6 +603,12 @@ script GameData extends Logic
         self.MonsterStats["drowned_priest"] = { level = 1, hp = 1000, dmg = 12, interval = 1.8, speed = 0.9, range = 4, element = "cold", ratio = 1, resists = "cold=75,light=30", behavior = "ranged", stand = "276ffc86117045d5ab27dc28fc4341f0", move = "14232da7d0c84587b9627ccc39da7b4a", attack = "8d12f2eda1e346828424320c307f0039", innate = "", rank = "unique", summonScale = 0.95, mid = "drownedpriest", w = 247, h = 148, bh = 121, portrait = "c90e42f8488140bd9663c94a663cceb2", pw = 98, ph = 121, chain = 0 }
         self.MonsterStats["mad_keeper"] = { level = 1, hp = 1000, dmg = 13, interval = 2, speed = 0.95, range = 4.2, element = "light", ratio = 1, resists = "light=75,cold=30", behavior = "ranged", stand = "714f38f798ed4737bdc080eb94ec4d43", move = "063c6308101749268c6f637e6350adbc", attack = "8dd0f76edbde47a882609bda1110556c", innate = "", rank = "unique", summonScale = 0.958, mid = "madkeeper", w = 255, h = 145, bh = 120, portrait = "3271b393d4de40508c11b825ae01dc0a", pw = 106, ph = 120, chain = 4 }
         self.MonsterStats["admiral"] = { level = 30, hp = 16000, dmg = 55, interval = 1.8, speed = 0.9, range = 4.5, element = "light", ratio = 1, resists = "light=75,cold=50,poison=30", behavior = "ranged", stand = "2e30ed1c09b5449f818482135157abe6", move = "9eb372e454e04eb692dca0551a2bab69", attack = "f2b68eaaac4643edae2367bc75be7cb9", innate = "", rank = "boss", summonScale = 0.558, mid = "admiral", w = 615, h = 288, bh = 206, portrait = "731fe974347b4bd6aa45d792cb4c74ed", pw = 216, ph = 210, chain = 5 }
+        self.MonsterStats["demon_axe"] = { level = 1, hp = 135, dmg = 11, interval = 1.3, speed = 1.15, range = 0.8, element = "fire", ratio = 0.3, resists = "fire=40,poison=20", behavior = "", stand = "7a8121c63c2b47a395f91f5076eb2002", move = "d4620fcd5cb34e349529cdcb57c3b9ab", attack = "fe3b00e671364f738fbe3cf1155496e0", innate = "", rank = "normal", summonScale = 0.906, mid = "demonaxe", w = 141, h = 140, bh = 127, portrait = "a6d85dee68764203b492a6fffcb7f14d", pw = 100, ph = 127, chain = 0 }
+        self.MonsterStats["demon_shield"] = { level = 1, hp = 200, dmg = 9, interval = 1.6, speed = 0.8, range = 0.8, element = "", ratio = 0, resists = "fire=40,cold=30,light=20", behavior = "", stand = "bcbc05b261914511ba3a6bc6329b3f07", move = "0af20c0f731a4a698d3b34c91d115683", attack = "b0bfa7b504cf4c478deea8f61ddd493d", innate = "", rank = "normal", summonScale = 0.885, mid = "demonshield", w = 158, h = 141, bh = 130, portrait = "0de979b23cf74f789e2556614819d910", pw = 132, ph = 130, chain = 0 }
+        self.MonsterStats["fire_bat"] = { level = 1, hp = 32, dmg = 5, interval = 1, speed = 2, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=50", behavior = "", stand = "c0d1dd5966c945b9acb0af29c173faa0", move = "75e934529b26497699b4f7a34efd41da", attack = "898688a3be7b41e082db00b95e2dbe02", innate = "", rank = "normal", summonScale = 1.346, mid = "firebat", w = 83, h = 63, bh = 52, portrait = "a2a46dd5150e4f2ab73cda4e0261e9f5", pw = 63, ph = 52, chain = 0 }
+        self.MonsterStats["hell_priest"] = { level = 1, hp = 90, dmg = 11, interval = 2.2, speed = 0.95, range = 4, element = "fire", ratio = 1, resists = "fire=75,light=20", behavior = "ranged", stand = "873c7510931043a4be530146a7780f69", move = "313653bf27ce4b5fbfbb6d84e81162c7", attack = "ff74909344c747619b97cc5e6199b278", innate = "", rank = "normal", summonScale = 0.92, mid = "hellpriest", w = 148, h = 174, bh = 125, portrait = "d168c9f7dcb54991b5f4eb7e72a4c96e", pw = 96, ph = 125, chain = 0 }
+        self.MonsterStats["ash_wraith"] = { level = 1, hp = 85, dmg = 12, interval = 1.9, speed = 1.2, range = 3.8, element = "fire", ratio = 0.6, resists = "fire=60,poison=40", behavior = "ranged", stand = "f380be1366e74de1afded41916cbdbbd", move = "89b1e4fcdd0641768761abee399974dd", attack = "5d9ad5571eed4483a23fcc1e1946f29c", innate = "", rank = "normal", summonScale = 0.6, mid = "ashwraith", w = 346, h = 306, bh = 155, portrait = "519867ed0e1b4ccaa5a7bc7d659c891f", pw = 192, ph = 259, chain = 0 }
+        self.MonsterStats["lava_golem"] = { level = 1, hp = 300, dmg = 14, interval = 2.2, speed = 0.55, range = 0.8, element = "fire", ratio = 0.5, resists = "fire=75,poison=60,cold=-20", behavior = "", stand = "3f449baf32ab4d5ebd85e4cdc718b40d", move = "a17313b01ef84f3398ab6572899050b8", attack = "f4b5039950124b2a98dad8f8f3adddb1", innate = "", rank = "normal", summonScale = 0.625, mid = "lavagolem", w = 225, h = 219, bh = 184, portrait = "372d45869b0048dda681492aa2854094", pw = 136, ph = 184, chain = 0 }
         self.MapSpawns = {}
         self.MapSpawns["map01"] = { entries = "hellhound:17:1;fallenimp:22:1;hellhound:6:2", entriesNm = "hellhound:14:1;fallenimp:14:1;cultarcher:9:2;graveworm:8:2", entriesHell = "hellhound:12:2;fallenimp:10:1;skelwarrior:9:3;cultarcher:8:3;starvedwraith:6:3", pack = 3, elite = 0, variant = -1, respawn = 60, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
         self.MapSpawns["rotmarsh"] = { entries = "hellhound:11:3;graveworm:17:4;rotzombie:14:4", entriesNm = "graveworm:12:3;rotzombie:10:4;broodspider:10:4;hellhound:10:3", entriesHell = "graveworm:10:4;rotzombie:8:4;broodspider:8:5;starvedwraith:8:4;cultarcher:8:4", pack = 4, elite = 0.05, variant = -1, respawn = 60, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
@@ -626,6 +651,10 @@ script GameData extends Logic
         self.MapSpawns["lighthouse1"] = { entries = "drownedsailor:12:26;stormcaller:10:27;wreckgolem:4:27;sparkeel:10:26", entriesNm = "", entriesHell = "", pack = 3, elite = 0.15, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
         self.MapSpawns["lighthouse2"] = { entries = "stormcaller:12:30;brinewitch:10:29;wreckgolem:4:30;stormgulls:16:29", entriesNm = "", entriesHell = "", pack = 3, elite = 0.15, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
         self.MapSpawns["lighthouse3"] = { entries = "wreckgolem:6:31;stormcaller:12:31;sparkeel:10:30;drownedsailor:10:31", entriesNm = "", entriesHell = "", pack = 3, elite = 0.2, variant = -1, respawn = 45, minX = -15, maxX = 15, minY = -7.5, maxY = 8.5 }
+        self.MapSpawns["embercanyon"] = { entries = "firebat:24:31;demonaxe:18:32;firebat:8:32", entriesNm = "", entriesHell = "", pack = 5, elite = 0.12, variant = -1, respawn = 60, minX = -19, maxX = 19, minY = -9.5, maxY = 10.5 }
+        self.MapSpawns["demonroad"] = { entries = "demonaxe:16:32;demonshield:10:33;hellpriest:10:33;demonaxe:8:33", entriesNm = "", entriesHell = "", pack = 4, elite = 0.13, variant = -1, respawn = 60, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["sulfurmarsh"] = { entries = "ashwraith:12:33;firebat:20:34;hellpriest:10:34;ashwraith:6:34", entriesNm = "", entriesHell = "", pack = 4, elite = 0.15, variant = -1, respawn = 60, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
+        self.MapSpawns["burningkeep"] = { entries = "demonshield:12:34;demonaxe:12:35;hellpriest:10:35;lavagolem:4:35", entriesNm = "", entriesHell = "", pack = 4, elite = 0.15, variant = -1, respawn = 60, minX = -23, maxX = 23, minY = -11.5, maxY = 12.5 }
         self.MapInfo = {}
         self.MapInfo["town"] = { name = "잿불 야영지", kind = "town", act = 1, w = 24, h = 14, maze = true, flavor = "잿불이 꺼지지 않는 마지막 야영지. 살아 있는 자는 이곳에만 남았다.", features = { { kind = "portal", x = 0, y = -4, label = "피 묻은 황무지 (Lv 1~3)", targetMap = "map01" }, { kind = "waypoint", x = -5, y = 3, label = "", targetMap = "" }, { kind = "depth", x = 5, y = 3, label = "", targetMap = "" }, { kind = "npc", x = -3, y = 1, label = "잿빛 행상 고르", targetMap = "" }, { kind = "quest", x = 3, y = 1, label = "파문당한 사제 오렌", targetMap = "" }, { kind = "npc", x = 7, y = 1, label = "대장장이 하르크", targetMap = "" }, { kind = "npc", x = -7, y = 1, label = "떠돌이 상인 사디크", targetMap = "" }, { kind = "npc", x = 1.8, y = -1.8, label = "창고", targetMap = "" }, { kind = "npc", x = -9.5, y = 1, label = "카라반 대장 무하드", targetMap = "" } } }
         self.MapInfo["map01"] = { name = "피 묻은 황무지 (Lv 1~3)", kind = "field", act = 1, w = 44, h = 24, maze = false, flavor = "역병 수레가 멈춘 자리. 바람이 불 때마다 흙 속에서 뼈가 드러난다.", features = { { kind = "portal", x = -21, y = 0, label = "잿불 야영지", targetMap = "town" }, { kind = "portal", x = 21, y = 0, label = "썩은 갈대 늪 (Lv 3~5)", targetMap = "rotmarsh" }, { kind = "portal", x = 8, y = 8, label = "굶주린 굴 (Lv 2~3)", targetMap = "hollow" } } }
@@ -686,6 +715,11 @@ script GameData extends Logic
         self.MapInfo["depth10"] = { name = "심도", kind = "instance", act = 1, w = 28, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
         self.MapInfo["depth11"] = { name = "심도", kind = "instance", act = 1, w = 28, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
         self.MapInfo["depth12"] = { name = "심도", kind = "instance", act = 1, w = 24, h = 16, maze = true, flavor = "혼각이 흘러나온 깊은 곳. 내려갈수록 길이 낯설어진다.", features = {  } }
+        self.MapInfo["outpost"] = { name = "마지막 초소", kind = "town", act = 4, w = 24, h = 14, maze = true, flavor = "협곡 입구에 박힌 마지막 초소. 울타리 너머로 붉은 불빛이 밤새 꺼지지 않는다.", features = { { kind = "portal", x = 0, y = -4, label = "잿불 협곡 (Lv 31~32)", targetMap = "embercanyon" }, { kind = "waypoint", x = -5, y = 3, label = "", targetMap = "" }, { kind = "depth", x = -5, y = 3, label = "", targetMap = "" }, { kind = "npc", x = -7, y = 1, label = "정찰병 카이", targetMap = "" }, { kind = "npc", x = -3, y = 1, label = "잿빛 행상 고르", targetMap = "" }, { kind = "npc", x = 3, y = 1, label = "초소 대장 그레이브", targetMap = "" }, { kind = "npc", x = 7, y = 1, label = "대장장이 하르크", targetMap = "" }, { kind = "npc", x = 5, y = 3, label = "교단 탈주자 엘리안", targetMap = "" }, { kind = "npc", x = 1.8, y = -1.8, label = "창고", targetMap = "" } } }
+        self.MapInfo["embercanyon"] = { name = "잿불 협곡 (Lv 31~32)", kind = "field", act = 4, w = 44, h = 24, maze = true, flavor = "불붙은 박쥐 떼가 드나드는 협곡. 바위 틈마다 잿불이 숨 쉰다.", features = { { kind = "portal", x = -21, y = 0, label = "마지막 초소", targetMap = "outpost" }, { kind = "portal", x = 21, y = 0, label = "악마의 행군로 (Lv 32~33)", targetMap = "demonroad" } } }
+        self.MapInfo["demonroad"] = { name = "악마의 행군로 (Lv 32~33)", kind = "field", act = 4, w = 52, h = 28, maze = true, flavor = "문에서 초소까지 곧게 뻗은 길. 타락마족의 발자국이 녹은 돌에 찍혀 있다.", features = { { kind = "portal", x = -25, y = 0, label = "잿불 협곡 (Lv 31~32)", targetMap = "embercanyon" }, { kind = "portal", x = 25, y = 0, label = "유황 늪 (Lv 33~34)", targetMap = "sulfurmarsh" }, { kind = "waypoint", x = -20, y = 4, label = "", targetMap = "" } } }
+        self.MapInfo["sulfurmarsh"] = { name = "유황 늪 (Lv 33~34)", kind = "field", act = 4, w = 52, h = 28, maze = true, flavor = "노란 연기가 피어오르는 늪. 재의 망령이 혼을 잃은 자리를 맴돈다.", features = { { kind = "portal", x = -25, y = 0, label = "악마의 행군로 (Lv 32~33)", targetMap = "demonroad" }, { kind = "portal", x = 25, y = 0, label = "불타는 성채 외곽 (Lv 34~35)", targetMap = "burningkeep" }, { kind = "waypoint", x = -20, y = 4, label = "", targetMap = "" } } }
+        self.MapInfo["burningkeep"] = { name = "불타는 성채 외곽 (Lv 34~35)", kind = "field", act = 4, w = 52, h = 28, maze = true, flavor = "심연의 문을 지키는 성채. 성벽 위로 용암이 흘러내린다.", features = { { kind = "portal", x = -25, y = 0, label = "유황 늪 (Lv 33~34)", targetMap = "sulfurmarsh" }, { kind = "portal", x = 25, y = 0, label = "마지막 초소", targetMap = "outpost" }, { kind = "waypoint", x = -20, y = 4, label = "", targetMap = "" } } }
         self.UiIcons = {}
         self.UiIcons["win_panel"] = "6e8e561a4582462eaad762cb11d1f835"
         self.UiIcons["win_content"] = "6e8e561a4582462eaad762cb11d1f835"
@@ -816,13 +850,15 @@ script GameData extends Logic
         self.UiIcons["story_prologue5"] = "72e0c53c02c042d9af33c433b81d7559"
         self.UiIcons["abyss_key"] = "b273966a024d45819c6fbb29e3ad7aaa"
         self.Story = {}
-        self.Story["prologue"] = "잿빛 변경. 역병과 전쟁으로 무너진, 묘지기 여왕의 왕국./땅속에서 검은 돌 「혼각」이 떠오르자, 묻힌 자들이 다시 걷기 시작했다./혼각은 망자를 부린다. 그리고 그 돌을 쥔 자를 끝내 먹어 치운다./너는 마지막 네크로맨서. 망자를 부리지 않고, 혼을 등불에 거두는 자./{잿불 야영지}의 사제 오렌을 찾아가라."
+        self.Story["prologue"] = "잿빛 변경. 역병과 전쟁으로 무너진, 묘지기 여왕의 왕국./땅속에서 검은 돌 「혼각」이 떠오르자, 묻힌 자들이 다시 걷기 시작했다./혼각은 망자를 부린다. 그리고 그 돌을 쥔 자를 끝내 먹어 치운다./너는 마지막 네크로맨서. 망자를 노예로 부리던 교단과 달리, 거둔 혼과 함께 싸우는 자./{잿불 야영지}의 사제 오렌을 찾아가라."
         self.Story["act1_title"] = "제1장 · 잿빛 변경"
         self.Story["act1_sub"] = "무덤이 된 왕국, 깨어난 여왕"
         self.Story["act2_title"] = "제2장 · 모래 폐허"
         self.Story["act2_sub"] = "끝나지 않는 왕국을 꿈꾼 대사제"
         self.Story["act3_title"] = "제3장 · 폭풍 해안"
         self.Story["act3_sub"] = "가라앉은 함대와 꺼진 등대"
+        self.Story["act4_title"] = "제4장 · 심연의 문"
+        self.Story["act4_sub"] = "혼을 먹는 자, 심장을 되찾다"
         self.Story["act1_end"] = "여왕이 쓰러지자, 무덤 왕국에 처음으로 고요가 내렸다./그러나 관 속의 혼각은 조각이었다. 나머지는 사막으로 흘러갔다."
         self.Story["act2_end"] = "대사제가 쓰러지고, 사막의 모래가 가라앉았다./성소의 기록은 바다를 가리켰다. 검은 돌을 실은 함대, 제독 바렌."
         self.Story["act3_end"] = "폭풍이 걷히고 등대에 불이 돌아왔다./제독의 혼각은 북쪽을 가리킨다. 심연의 문이 있는 곳을."
@@ -832,6 +868,7 @@ script GameData extends Logic
         self.Story["idle_quest_2"] = "여왕이 쓰러졌다. …하지만 혼각의 조각이 사막에서 울린다. 카라반을 타라."
         self.Story["idle_smith_1"] = "망치질이 필요한가. 망자가 들고 있던 녹슨 칼도 손보면 쓸 만하다."
         self.Story["idle_smith_2"] = "교단 기록엔 「혼각을 여럿으로 나누었다」고 적혀 있었지. 네가 그걸 다 모을 셈인가?"
+        self.Story["lock_act4"] = "북쪽 길은 아직 닫혀 있다. 등대 꼭대기의 [익사한 제독 바렌]이 마지막 조각을 쥐고 있다 — 제독을 쓰러뜨리고 등대지기의 딸에게 알리면 떠난다."
         self.DepthPool = {}
         table.insert(self.DepthPool, { id = "hellhound", act = 1 })
         table.insert(self.DepthPool, { id = "graveworm", act = 1 })
@@ -857,6 +894,12 @@ script GameData extends Logic
         table.insert(self.DepthPool, { id = "sparkeel", act = 3 })
         table.insert(self.DepthPool, { id = "stormgulls", act = 3 })
         table.insert(self.DepthPool, { id = "wreckgolem", act = 3 })
+        table.insert(self.DepthPool, { id = "demonaxe", act = 4 })
+        table.insert(self.DepthPool, { id = "demonshield", act = 4 })
+        table.insert(self.DepthPool, { id = "firebat", act = 4 })
+        table.insert(self.DepthPool, { id = "hellpriest", act = 4 })
+        table.insert(self.DepthPool, { id = "ashwraith", act = 4 })
+        table.insert(self.DepthPool, { id = "lavagolem", act = 4 })
         self.DepthUniques = {}
         table.insert(self.DepthUniques, { every = 10, id = "headsman", act = 1 })
         table.insert(self.DepthUniques, { every = 5, id = "skelcaptain", act = 1 })

@@ -206,10 +206,11 @@ script MonsterSpawner extends Component
         self:LoadFromData(map.Name)
         self:BuildSafeZones()
         local total = 0
-        local bonus = 0
+        -- 난이도 레벨은 보통 레벨을 그 난이도 구간에 옮긴 값 (GameConst.ScaleLevel, 10-20 구간 눌러 담기)
+        local diff = 0
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
-        if amb ~= nil then bonus = amb.LevelBonus end
+        if amb ~= nil then diff = amb.Difficulty end
         local variantChance = self.VariantChance
         if variantChance < 0 then variantChance = _GameData.variantChance end
         local packSize = math.max(1, self.PackSize)
@@ -255,7 +256,7 @@ script MonsterSpawner extends Component
                             local elite = (leader and i == 1) or _UtilLogic:RandomDouble() < self.EliteChance
                             local variant = ""
                             if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
-                            self:Configure(e, kind.level + bonus, elite, variant)
+                            self:Configure(e, _GameConst:ScaleLevel(kind.level, diff), elite, variant)
                             total = total + 1
                         end
                     end
@@ -266,10 +267,10 @@ script MonsterSpawner extends Component
         -- 맵 레벨 = 출현 목록 평균 + 난이도 가산 (MapEvents와 같은 기준) → 끝방 우두머리·봉인 상자
         local sum = 0
         for _, e in ipairs(list) do sum = sum + e.level end
-        self.MapLevel = #list > 0 and math.floor(sum / #list + 0.5) + bonus or 1 + bonus
+        self.MapLevel = _GameConst:ScaleLevel(#list > 0 and math.floor(sum / #list + 0.5) or 1, diff)
         self:PlaceNamed(map, self.MapLevel)
         -- 맵 이벤트: 신전 · 저주받은 상자 · 뼈 둥지 · 드문 최상위 (사냥터·곁가지 던전만)
-        _MapEvents:Populate(self, list, bonus)
+        _MapEvents:Populate(self, list, diff)
         self.ClearMode = self.RespawnSec < 0
         self.Cleared = false
         self.Total = 0

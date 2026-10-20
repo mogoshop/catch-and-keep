@@ -270,7 +270,7 @@ T.quests.forEach((r, i) => {
   if (r.map !== "" && !mapIds.has(r.map)) err("quests", i, `map '${r.map}' — maps.csv에 없음`);
   if (r.kind === "chest" && !mapIds.has(r.map1)) err("quests", i, `chest 1단계 맵 '${r.map1}' — maps.csv에 없음`);
   if (!T.npcs.some((x) => x.kind === r.giver)) err("quests", i, `giver '${r.giver}' — npcs.csv kind에 없음`);
-  if (![1, 2, 3].includes(num(r.act))) err("quests", i, `act '${r.act}' — 1 / 2 / 3`);
+  if (![1, 2, 3, 4].includes(num(r.act))) err("quests", i, `act '${r.act}' — 1 ~ 4`);
   if (!(num(r.count) > 0)) err("quests", i, "count 양수여야 함");
   for (const part of r.reward.split(",")) {
     if (part === "") continue;
@@ -312,7 +312,7 @@ for (const need of ["WarpGate", "Brazier", "BloodAltar", "PlayerCorpse", "Waypoi
 const npcModels = unique("npcs", "model");
 T.npcs.forEach((r, i) => {
   if (!RUID.test(r.stand)) err("npcs", i, "stand RUID 형식 오류");
-  if (!["shop", "quest", "smith", "merchant", "stash", "caravan", "captain", "scholar", "apothecary", "harbormaster", "keeperdaughter"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
+  if (!["shop", "quest", "smith", "merchant", "stash", "caravan", "captain", "scholar", "apothecary", "harbormaster", "keeperdaughter", "scout", "outpostcaptain", "deserter"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
 });
 T.maps.forEach((r, i) => {
   if (!["town", "field", "instance", "side"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side`);

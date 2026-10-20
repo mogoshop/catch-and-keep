@@ -110,7 +110,7 @@ function genGameData() {
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
-    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)} }`),
+    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)} }`),
     "        self.Sounds = {}",
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",
@@ -418,6 +418,14 @@ function genQuests() {
         -- 의뢰인 NPC 종류 → 이름 (npcs.csv의 name)
         self:Ensure()
         return self.Givers[giver] or giver
+    end
+
+    method boolean ActClosed(integer act)
+        -- 그 액트의 마지막 의뢰가 액트 최종 보스 의뢰인가 (만드는 중인 액트는 의뢰가 다 들어오기 전까지 「끝」이 아니다 — 10-20 액트 4)
+        local last = self:LastOfAct(act)
+        if last <= 0 then return false end
+        local boss = _GameConst:ActBossSource(act)
+        return boss ~= "" and string.find("|" .. self.List[last].target .. "|", "|" .. boss .. "|", 1, true) ~= nil
     end
 
     method integer LastOfAct(integer act)
