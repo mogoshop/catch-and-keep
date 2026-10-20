@@ -1,10 +1,12 @@
--- 랭킹 창 (L): 심도 도전 (최고 층 · 같은 층이면 빠른 순) / 마지막 액트 보스 최단 처치. 현재 난이도 기준.
+-- 랭킹 창 (L): 심연 도전 — 액트별 (최고 층 · 같은 층이면 빠른 순) / 마지막 액트 보스 최단 처치. 현재 난이도 기준.
 -- Show(kind)로 열면 서버에 요청 → RankingSystem이 OnData로 돌려준다.
+-- 10-20: 심연이 액트별(레벨대·몬스터가 다름)이라 기록판도 액트별. 심도 탭 아래 「액트 1·2·3」 단추, 처음엔 지금 액트
 @Logic
 script RankWindow extends Logic
 
     property string Win = "RankWin"
     property string Kind = "depth"
+    property integer Act = 0                -- 심연 탭에서 보는 액트 (0 = 아직 안 고름 → 지금 액트)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -12,8 +14,28 @@ script RankWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         _UIKit:Connect(self.Win .. "/TabDepth", function() self:Show("depth") end)
         _UIKit:Connect(self.Win .. "/TabQueen", function() self:Show("boss_" .. _GameConst.FinalBossSourceId) end)
+        for act = 1, _GameConst.ActCount do
+            local a = act
+            _UIKit:Connect(self.Win .. "/Act" .. tostring(act), function() self:SetAct(a) end)
+            _UIKit:SetText(self.Win .. "/Act" .. tostring(act), "액트 " .. tostring(act) .. " · " .. _GameConst:ActRegionName(act))
+        end
         -- 탭 글자: 지금 마지막 액트 보스 (10-11 액트 3 → 익사한 제독 바렌)
         _UIKit:SetText(self.Win .. "/TabQueen", _GameData:GetMonsterName(_GameConst.FinalBossSourceId) .. " 처치 시간")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetAct(integer act)
+        self.Act = act
+        self:Show("depth")
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer CurrentAct()
+        -- 처음 열 때는 내가 지금 있는 액트
+        if self.Act > 0 then return self.Act end
+        ---@type PlayerTravel
+        local travel = _UIKit:Comp("script.PlayerTravel")
+        return travel ~= nil and math.max(1, math.min(_GameConst.ActCount, travel.Act)) or 1
     end
 
     @ExecSpace("ClientOnly")
@@ -25,22 +47,32 @@ script RankWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         local diff = 0
         if st ~= nil then diff = st.Difficulty end
-        -- 심도 탭은 10-11부터 도전 기록판(층 + 걸린 시간)을 읽는다
-        _RankingSystem:RequestBoard(kind == "depth" and "depthrun" or kind, diff)
+        -- 액트 단추는 심연 탭에서만, 고른 액트는 밝게
+        local act = self:CurrentAct()
+        for a = 1, _GameConst.ActCount do
+            local path = self.Win .. "/Act" .. tostring(a)
+            _UIKit:SetEnabled(path, kind == "depth")
+            local e = _UIKit:Get(path)
+            if isvalid(e) and e.SpriteGUIRendererComponent ~= nil then
+                e.SpriteGUIRendererComponent.Color = a == act and Color(1, 0.86, 0.62, 1) or Color(0.62, 0.6, 0.66, 1)
+            end
+        end
+        _RankingSystem:RequestBoard(kind == "depth" and _RankingSystem:DepthKind(act) or kind, diff)
     end
 
     @ExecSpace("ClientOnly")
     method void OnData(string kind, integer diff, string digest)
-        if kind == "depthrun" then kind = "depth" end
-        if kind ~= self.Kind then return end
+        local depth = string.sub(kind, 1, 10) == "depthrun_a"
+        if (depth and self.Kind ~= "depth") or (not depth and kind ~= self.Kind) then return end
+        if depth and kind ~= _RankingSystem:DepthKind(self:CurrentAct()) then return end
         local title = _GameData:GetMonsterName(_GameConst.FinalBossSourceId) .. " 최단 처치"
-        if kind == "depth" then title = "심도 도전 · 최고 층 (같은 층이면 빠른 순)" end
+        if depth then title = "심연 액트 " .. tostring(self:CurrentAct()) .. " · 최고 층 (같은 층이면 빠른 순)" end
         local lines = { title .. "  (" .. _GameConst:DifficultyName(diff) .. ")", "" }
         local i = 0
         for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
             i = i + 1
             local text = value .. "초"
-            if kind == "depth" then
+            if depth then
                 local v = tonumber(value) or 0
                 local floor = math.floor(v / 100000)
                 local secs = 99999 - v % 100000

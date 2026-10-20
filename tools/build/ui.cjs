@@ -433,11 +433,15 @@ function buildGameHud() {
 
   // ── 랭킹 창 ──
   k.frame("RankWin", "middle-center", [0, 60], [640, 660], "랭킹");
-  [["TabDepth", "심도 최고 층", -150], ["TabQueen", "묘지기 여왕 처치 시간", 150]].forEach(([n, t, x]) => {
+  [["TabDepth", "심연 최고 층", -150], ["TabQueen", "묘지기 여왕 처치 시간", 150]].forEach(([n, t, x]) => {
     k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [280, 56], font_size: 18 });
   });
-  k.inner("RankWin/Paper", "top-center", [0, -156], [580, 470], "win_content");
-  b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 440] });
+  // 심연 기록은 액트별 (10-20) — 심도 탭 아래 액트 단추 3개 (RankWindow.SetAct)
+  [1, 2, 3].forEach((a, i) => {
+    k.btn(`RankWin/Act${a}`, `액트 ${a}`, { anchor: "top-center", pos: [(i - 1) * 192, -152], rect_size: [184, 50], font_size: 16 });
+  });
+  k.inner("RankWin/Paper", "top-center", [0, -212], [580, 420], "win_content");
+  b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 390] });
 
   // ── 채널 창 (메뉴 「채널 변경」): 채널별 인원, 고르면 확인 후 이동 (ChannelWindow.mlua) ──
   k.frame("ChanWin", "middle-center", [0, 40], [620, 700], "채널");
