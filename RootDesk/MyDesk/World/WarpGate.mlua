@@ -16,6 +16,7 @@ script WarpGate extends Component
 
     property integer TimerId = 0
     property table LastWarp = {}
+    property number ArrivalGrace = 2.5        -- 맵에 막 들어온 사람은 이 시간 동안 포털이 반응하지 않는다 (10-20 첫 1시간 점검: 이동키를 누른 채 들어오면 바로 옆 귀환 포털로 튕겨 나갔다)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -34,7 +35,10 @@ script WarpGate extends Component
         local now = _UtilLogic.ElapsedSeconds
         for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
             local id = u.PlayerComponent.UserId
-            if self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
+            ---@type PlayerTravel
+            local travel = u:GetComponent("script.PlayerTravel")
+            local fresh = travel ~= nil and now - travel.ArrivedAt < self.ArrivalGrace
+            if not fresh and self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
                 self.LastWarp[id] = now
                 self:Warp(u)
             end

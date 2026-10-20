@@ -1,0 +1,242 @@
+-- 테스트 플레이 기록 (10-20, 밸런스를 숫자로 깎기 위한 장치). 서버만 동작한다.
+--   접속 한 번 = 세션 하나: 레벨업 시각 · 사망(레벨·맵·원인) · 처치 수(등급별) · 전리품(등급·룬 등급) · 물약 사용 · 의뢰 완료 시각 · 맵별 머문 시간
+--   5분마다와 퇴장 때 GlobalDataStorage "PlayTelemetry"에 세션 하나를 JSON으로 쓴다 (태그 "tel"). 「[TEL]」 로그로도 남긴다
+--   읽기: 메이커 서버 스크립트에서 _Telemetry:Dump(20) → 최근 세션 요약을 로그로 (레벨당 걸린 분, 사망 원인 상위, 시간당 처치·전리품)
+-- 게임 쪽은 _GameEvents로 알리기만 한다 (LevelUp · ItemLooted · PotionUsed · PlayerDied · MonsterKilled · QuestCompleted · ShadowExtracted)
+@Logic
+script Telemetry extends Logic
+
+    property table Sessions = {}             -- userId → 세션 표
+    property integer TickTimer = 0
+    property integer FlushTimer = 0
+    property number TickSec = 5               -- 맵 체류 시간 집계 간격
+    property number FlushSec = 300            -- 저장 간격
+    property string StorageName = "PlayTelemetry"
+    property boolean Enabled = true
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        if not self.Enabled then return end
+        self.Sessions = {}
+        _GameEvents:Subscribe("LevelUp", "Telemetry", function(e) self:OnLevelUp(e) end)
+        _GameEvents:Subscribe("PlayerDied", "Telemetry", function(e) self:OnDied(e) end)
+        _GameEvents:Subscribe("MonsterKilled", "Telemetry", function(e) self:OnKill(e) end)
+        _GameEvents:Subscribe("ItemLooted", "Telemetry", function(e) self:OnLoot(e) end)
+        _GameEvents:Subscribe("PotionUsed", "Telemetry", function(e) self:Count(e.player, "potions", 1) end)
+        _GameEvents:Subscribe("ShadowExtracted", "Telemetry", function(e) self:Count(e.player, "extracts", 1) end)
+        _GameEvents:Subscribe("QuestCompleted", "Telemetry", function(e) self:OnQuest(e) end)
+        self.TickTimer = _TimerService:SetTimerRepeat(function() self:Tick() end, self.TickSec)
+        self.FlushTimer = _TimerService:SetTimerRepeat(function() self:FlushAll() end, self.FlushSec)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.TickTimer ~= 0 then _TimerService:ClearTimer(self.TickTimer) end
+        if self.FlushTimer ~= 0 then _TimerService:ClearTimer(self.FlushTimer) end
+        self.TickTimer = 0
+        self.FlushTimer = 0
+    end
+
+    -- ───────── 세션 ─────────
+
+    @ExecSpace("ServerOnly")
+    method any Session(Entity player)
+        -- 그 플레이어의 지금 세션 (불러오기가 끝난 뒤에만 — 캐릭터 선택 화면·시험 캐릭터는 세지 않는다)
+        if not isvalid(player) or not isvalid(player.PlayerComponent) then return nil end
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or not save.IsLoadSuccess then return nil end
+        local uid = player.PlayerComponent.UserId
+        local s = self.Sessions[uid]
+        if s == nil then
+            local now = math.floor(DateTime.UtcNow.Elapsed / 1000)
+            s = { uid = uid, start = now, t0 = _UtilLogic.ElapsedSeconds, lv0 = _GameConst:LevelOf(player), lv = _GameConst:LevelOf(player),
+                diff = self:Diff(player), kills = 0, elite = 0, boss = 0, potions = 0, extracts = 0,
+                maps = {}, levels = {}, deaths = {}, quests = {}, loot = { magic = 0, rare = 0, unique = 0, set = 0, runeword = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0 } }
+            self.Sessions[uid] = s
+            log(string.format("[TEL] start uid=%s lv=%d diff=%d", uid, s.lv0, s.diff))
+        end
+        return s
+    end
+
+    method integer Diff(Entity player)
+        ---@type PlayerStats
+        local st = player:GetComponent("script.PlayerStats")
+        return st ~= nil and st.Difficulty or 0
+    end
+
+    method number Minutes(any s)
+        return math.floor((_UtilLogic.ElapsedSeconds - s.t0) / 6 + 0.5) / 10
+    end
+
+    method string MapName(Entity player)
+        if not isvalid(player.CurrentMap) then return "?" end
+        return _GameConst:BaseMapName(player.CurrentMap.Name)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Count(Entity player, string field, integer n)
+        local s = self:Session(player)
+        if s ~= nil then s[field] = (s[field] or 0) + n end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        -- 맵별 머문 시간 (5초 단위)
+        for _, player in pairs(_UserService.UserEntities) do
+            local s = self:Session(player)
+            if s ~= nil then
+                local m = self:MapName(player)
+                s.maps[m] = (s.maps[m] or 0) + self.TickSec
+            end
+        end
+    end
+
+    -- ───────── 이벤트 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OnLevelUp(table e)
+        local s = self:Session(e.player)
+        if s == nil then return end
+        s.lv = e.level
+        table.insert(s.levels, { lv = e.level, min = self:Minutes(s), map = self:MapName(e.player) })
+        log(string.format("[TEL] levelup uid=%s lv=%d min=%.1f map=%s", s.uid, e.level, self:Minutes(s), self:MapName(e.player)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnDied(table e)
+        local s = self:Session(e.player)
+        if s == nil then return end
+        local cause = e.cause or "?"
+        table.insert(s.deaths, { lv = _GameConst:LevelOf(e.player), map = self:MapName(e.player), cause = cause, min = self:Minutes(s) })
+        log(string.format("[TEL] death uid=%s lv=%d map=%s cause=%s min=%.1f", s.uid, _GameConst:LevelOf(e.player), self:MapName(e.player), cause, self:Minutes(s)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnKill(table e)
+        -- 보상 받은 사람 모두 (파티 처치도 각자 센다)
+        for _, p in ipairs(e.players or { e.player }) do
+            local s = self:Session(p)
+            if s ~= nil then
+                s.kills = s.kills + 1
+                if (e.grade or 1) == 2 then s.elite = s.elite + 1 elseif (e.grade or 1) >= 3 then s.boss = s.boss + 1 end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnLoot(table e)
+        local s = self:Session(e.player)
+        if s == nil then return end
+        if e.kind == "rune" then
+            local item = _ItemData:Parse(e.item or "")
+            local t = _ShadowConfig:GetRuneTier(item.base)
+            if t >= 1 and t <= 4 then s.loot["r" .. tostring(t)] = s.loot["r" .. tostring(t)] + 1 end
+            return
+        end
+        if e.kind ~= "item" then return end
+        local r = e.rarity or 0
+        if r == 1 then s.loot.magic = s.loot.magic + 1
+        elseif r == 2 then s.loot.rare = s.loot.rare + 1
+        elseif r == 3 then s.loot.unique = s.loot.unique + 1
+        elseif r == 4 then s.loot.set = s.loot.set + 1 end
+        if r >= 3 then log(string.format("[TEL] loot uid=%s rarity=%d item=%s min=%.1f", s.uid, r, _ItemData:DisplayName(e.item or ""), self:Minutes(s))) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnQuest(table e)
+        local s = self:Session(e.player)
+        if s == nil then return end
+        table.insert(s.quests, { index = e.index or 0, lv = _GameConst:LevelOf(e.player), min = self:Minutes(s) })
+        log(string.format("[TEL] quest uid=%s index=%s lv=%d min=%.1f", s.uid, tostring(e.index), _GameConst:LevelOf(e.player), self:Minutes(s)))
+    end
+
+    -- ───────── 저장 · 읽기 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Flush(string uid, boolean final)
+        local s = self.Sessions[uid]
+        if s == nil then return end
+        s.minutes = self:Minutes(s)
+        local storage = _DataStorageService:GetGlobalDataStorage(self.StorageName)
+        if storage == nil then return end
+        local saved = {}
+        for k, v in pairs(s) do if k ~= "t0" then saved[k] = v end end
+        local ok, json = pcall(function() return _HttpService:JSONEncode(saved) end)
+        if not ok then return end
+        local key = uid .. "_" .. tostring(s.start)
+        storage:SetByInfoAsync(DataStorageKeyInfo(key, "", "tel"), json, function(code, info)
+            if code ~= 0 then log_warning("[TEL] save failed code=" .. tostring(code)) end
+        end)
+        if final then
+            log(string.format("[TEL] end uid=%s min=%.1f lv %d→%d kills=%d deaths=%d", uid, s.minutes, s.lv0, s.lv, s.kills, #s.deaths))
+            self.Sessions[uid] = nil
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FlushAll()
+        for uid, _ in pairs(self.Sessions) do self:Flush(uid, false) end
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        self:Flush(event.UserId, true)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Dump(integer limit)
+        -- 저장된 세션을 읽어 요약을 로그로 (메이커 서버 스크립트에서 부른다). 레벨당 평균 분 · 사망 원인 상위 · 시간당 처치·전리품
+        local storage = _DataStorageService:GetGlobalDataStorage(self.StorageName)
+        if storage == nil then return end
+        local code, pages = storage:GetPagesAndWait("tel")
+        if code ~= 0 or pages == nil then
+            log("[TEL] dump failed code=" .. tostring(code))
+            return
+        end
+        local n, minutes, kills = 0, 0, 0
+        local perLevel = {}     -- 레벨 → { 합, 수 }
+        local causes = {}
+        local loot = { magic = 0, rare = 0, unique = 0, set = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0 }
+        while true do
+            for _, item in ipairs(pages:GetCurrentPageDatas()) do
+                if n < limit then
+                    local ok, s = pcall(function() return _HttpService:JSONDecode(item.Value) end)
+                    if ok and type(s) == "table" then
+                        n = n + 1
+                        minutes = minutes + (tonumber(s.minutes) or 0)
+                        kills = kills + (tonumber(s.kills) or 0)
+                        local prev = 0
+                        for _, l in ipairs(s.levels or {}) do
+                            local b = perLevel[l.lv] or { 0, 0 }
+                            b[1] = b[1] + (l.min - prev)
+                            b[2] = b[2] + 1
+                            perLevel[l.lv] = b
+                            prev = l.min
+                        end
+                        for _, d in ipairs(s.deaths or {}) do causes[d.cause] = (causes[d.cause] or 0) + 1 end
+                        for k, _ in pairs(loot) do loot[k] = loot[k] + (tonumber((s.loot or {})[k]) or 0) end
+                    end
+                end
+            end
+            if pages.IsLastPage or n >= limit then break end
+            pages:MoveToNextPageAndWait()
+        end
+        local hours = math.max(0.01, minutes / 60)
+        log(string.format("[TEL] dump sessions=%d hours=%.1f kills/h=%.0f · 마법 %d 레어 %d 유니크 %d 세트 %d · 룬 하%d 중%d 상%d 최%d", n, hours, kills / hours, loot.magic, loot.rare, loot.unique, loot.set, loot.r1, loot.r2, loot.r3, loot.r4))
+        local lvls = {}
+        for lv, b in pairs(perLevel) do table.insert(lvls, lv) end
+        table.sort(lvls)
+        local parts = {}
+        for _, lv in ipairs(lvls) do table.insert(parts, string.format("Lv%d %.1f분", lv, perLevel[lv][1] / perLevel[lv][2])) end
+        log("[TEL] dump 레벨당 평균: " .. table.concat(parts, " · "))
+        local list = {}
+        for c, k in pairs(causes) do table.insert(list, { c = c, k = k }) end
+        table.sort(list, function(a, b) return a.k > b.k end)
+        local top = {}
+        for i = 1, math.min(8, #list) do table.insert(top, list[i].c .. " " .. tostring(list[i].k)) end
+        log("[TEL] dump 사망 원인: " .. table.concat(top, " · "))
+    end
+
+end

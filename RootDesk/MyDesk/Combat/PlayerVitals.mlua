@@ -14,6 +14,7 @@ script PlayerVitals extends Component
     property boolean HitStateDetached = false
     property string LastHitBy = ""           -- 마지막으로 때린 플레이어 userId (소환수면 주인, 몬스터·장판이면 "") — 결투 패배 판정용
     property number LastHitAt = 0
+    property string LastHitSource = ""       -- 마지막으로 때린 것 (몬스터 이름 · 플레이어 · 장판) — 테스트 플레이 기록의 사망 원인
     property number BlinkUntil = 0           -- 클라이언트: 피격 무적 깜빡임이 끝나는 시각 (내 시계)
     property number BlinkStart = 0
 
@@ -60,10 +61,26 @@ script PlayerVitals extends Component
         if self.Dying or amount <= 0 then return end
         self.LastHitBy = ""
         self.LastHitAt = _UtilLogic.ElapsedSeconds
+        self.LastHitSource = "장판·지속 피해"
         local pc = self.Entity.PlayerComponent
         if pc.Hp <= 0 then return end
         pc.Hp = math.max(0, pc.Hp - math.floor(amount + 0.5))
         self:CheckDeath()
+    end
+
+    method string SourceName(Entity attacker, Entity owner)
+        -- 사망 원인 표시용 이름: 몬스터 이름(정예·보스 구분) · 플레이어 · 모르면 엔티티 이름
+        if isvalid(owner) and isvalid(owner.PlayerComponent) then return "플레이어" end
+        if not isvalid(attacker) then return "?" end
+        ---@type Monster
+        local m = attacker:GetComponent("script.Monster")
+        if m == nil then
+            ---@type Projectile
+            local proj = attacker:GetComponent("script.Projectile")
+            if proj ~= nil and isvalid(proj.Owner) then m = proj.Owner:GetComponent("script.Monster") end
+        end
+        if m ~= nil then return _GameData:GetMonsterName(m.SourceId) .. (m.Grade >= 3 and "(보스)" or (m.Grade == 2 and "(정예)" or "")) end
+        return attacker.Name
     end
 
     @ExecSpace("ServerOnly")
@@ -84,6 +101,7 @@ script PlayerVitals extends Component
         local owner = _Util:OwnerPlayerOf(event.AttackerEntity)
         self.LastHitBy = (isvalid(owner) and isvalid(owner.PlayerComponent)) and owner.PlayerComponent.UserId or ""
         self.LastHitAt = _UtilLogic.ElapsedSeconds
+        self.LastHitSource = self:SourceName(event.AttackerEntity, owner)
         self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.InvincibleSeconds
         self:CheckDeath()
         -- 큰 피해만 준비 중 공격을 끊는다. 가벼운 피해는 예약 타격과 조작을 유지한다.
@@ -171,7 +189,7 @@ script PlayerVitals extends Component
         local dd = depth
         local inDepth = dd ~= nil and dd.Floor > 0
         if inDepth then
-            _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap })
+            _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap, cause = self.LastHitSource })
             self:NotifyDepthEnd(dd.Floor, pc.UserId)
             log("[VRF] depth run over floor=" .. tostring(dd.Floor) .. " user=" .. pc.UserId)
             _TimerService:SetTimerOnce(function() self:Revive(false) end, pc.RespawnDuration)
@@ -185,7 +203,7 @@ script PlayerVitals extends Component
             local corpses = self.Entity:GetComponent("script.PlayerCorpses")
             if corpses ~= nil then corpses:LeaveCorpse(_Util:Pos2(self.Entity), math.floor(expLost * _GameData.deathExpRecover)) end
         end
-        _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap })
+        _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap, cause = self.LastHitSource })
         self:NotifyDeath(goldLost, expLost, inDuel, pc.UserId)
         _TimerService:SetTimerOnce(function() self:Revive(inDuel) end, pc.RespawnDuration)
     end
