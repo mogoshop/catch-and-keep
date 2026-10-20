@@ -387,7 +387,7 @@ script SkillBook extends Component
         if id == "legion_rush" then return string.format("소환수 이동 +%g%% · 6칸 밖이면 곁으로", power) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
         if id == "wraith_dash" then return string.format("%.2f칸 질주 · 무적 %.1f초 · 재사용 %.1f초", power, 0.3 + 0.1 * self:Node("dash_ghost"), self:DashCooldown(level)) end
-        if id == "wraith_blink" then return string.format("최대 %g칸 순간이동 · 마나 %d", power, math.floor(self:GetManaCost(id, level))) end
+        if id == "wraith_blink" then return string.format("최대 %g칸 순간이동 · 재사용 %.2f초 · 마나 %d", power, self:SkillCooldown(id, level), math.floor(self:GetManaCost(id, level))) end
         if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%%", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex")) end
         if id == "frost_soul" then return string.format("관통 서리 혼 · 기준 피해 %.1f · %d초 둔화", power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long")) end
         if id == "bone_spear" then return string.format("관통 창 %s · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
@@ -584,9 +584,17 @@ script SkillBook extends Component
         if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
         stats:SpendMana(cost)
         if id == "wraith_dash" then self:UseDashCharge(lv)
-        else self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult()) end
+        else self:SetCooldown(id, self:SkillCooldown(id, lv) * stats:GetCastCooldownMult()) end
         self:PresentCast(id, target - me, userId)
         return true
+    end
+
+    method number SkillCooldown(string id, integer level)
+        -- 재사용 시간 (시전 속도 적용 전). 망령 도약은 랭크마다 줄어 10랭크 0.2초, 그 아래로는 내려가지 않는다 (10-20 사용자 결정)
+        if id == "wraith_dash" then return self:DashCooldown(level) end
+        if id == "wraith_blink" then return math.max(0.2, 1 - 0.8 * (math.max(1, level) - 1) / 9) end
+        local def = _SkillData:Get(id)
+        return def ~= nil and def.cooldown or 0
     end
 
     method number DashCooldown(integer level)
@@ -642,7 +650,7 @@ script SkillBook extends Component
             if id == "wraith_dash" then _HudMain:ShowWarn("망령 질주는 Lv25부터 스킬 창(K) 「망령 걸음」에서 배운다") end
             return
         end
-        if self:CooldownLeft(id) > 0.05 or _UtilLogic.ElapsedSeconds - self.MovePredictAt < 0.25 then return end
+        if self:CooldownLeft(id) > 0.05 or _UtilLogic.ElapsedSeconds - self.MovePredictAt < 0.15 then return end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or stats.Mana < self:GetManaCost(id, lv) then return end
