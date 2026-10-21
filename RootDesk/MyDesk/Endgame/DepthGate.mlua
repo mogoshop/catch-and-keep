@@ -137,8 +137,15 @@ script DepthGate extends Component
             end
         end
         local keysLeft = inv:CountStack("abyss_key")   -- 이동하면 이 방의 가방이 사라지므로 미리 읽는다
-        _RoomService:CreateInstanceRoom(key, { _GameConst:DepthMapFor(1, "") }, 30)
-        local moved = _RoomService:MoveUsersToInstanceRoom(key, ids, _GameConst:DepthMapFor(1, ""))
+        -- 10-21 방 구조: 게임 방(인스턴스)에서 심연 방(인스턴스)으로 바로는 못 옮긴다 → 다음 목적지(1층)와 돌아올 게임 방을 적고 로비를 거친다
+        -- (로비의 PlayerSave.ContinueDepthTravel이 1층 방을 열어 넣는다)
+        for _, u in ipairs(prepared) do
+            ---@type PlayerSave
+            local s = u:GetComponent("script.PlayerSave")
+            if s ~= nil then s:StageDepthTravel(key) end
+            _RoomSystem:MarkReturn(u)
+        end
+        local moved = _RoomService:MoveUsersToStaticRoom(ids, _GameConst.MapLobby)
         log("[VRF] depth enter act=" .. tostring(self.Act) .. " party=" .. tostring(#ids) .. " moved=" .. tostring(moved) .. " keysLeft=" .. tostring(keysLeft))
         if (moved == nil or moved == 0) and isvalid(player) and player.CurrentMap == self.Entity.CurrentMap then
             -- 아무도 못 들어갔으면 열쇠를 돌려준다 (들어간 사람의 가방은 이 방에서 이미 사라졌다)
@@ -174,6 +181,7 @@ script DepthGate extends Component
             ---@type PlayerSave
             local save = isvalid(u) and u:GetComponent("script.PlayerSave") or nil
             if save ~= nil then save:RollbackRoomTravel() end
+            if isvalid(u) then _RoomSystem:ClearReturn(u.PlayerComponent.UserId) end   -- 못 떠났으면 돌아올 방 표시도 지운다
         end
     end
 

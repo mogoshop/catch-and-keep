@@ -316,15 +316,20 @@ function ambience(d) {
   };
 }
 
+const LOBBY = "map01";   // 월드 시작 맵 = 정적 방의 로비 (빌드하지 않는다)
+
 function buildNormal(d, maps, ctx) {
   const file = P.map(d.id);
-  const map = exists(file) ? MapBuilder.read(file) : MapBuilder.fromTemplate(MapBuilder.templatePath("rect"), d.id);
+  // 10-21 방 구조: map01은 월드 시작 맵이라 정적 방의 로비로 남고, 사냥터 「피 묻은 황무지」는 그 그림을 복제한 wasteland가 맡는다 (docs/design/30)
+  const seed = d.id === "wasteland" && !exists(file) && exists(P.map(LOBBY)) ? P.map(LOBBY) : null;
+  const map = exists(file) ? MapBuilder.read(file) : MapBuilder.fromTemplate(seed || MapBuilder.templatePath("rect"), d.id);
   if (map.component("RectTileMap", "MOD.Core.RectTileMapComponent")) {
     map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { TileSetRUID: PROJECT_TILESET });
   }
   map.upsertComponent(d.id, "script.MapAmbience", ambience(d));
 
-  if (d.kind === "instance") {
+  {
+    // 10-21 방 구조 (docs/design/30): 로비(map01) 말고 모든 맵이 인스턴스 맵 — 마을·사냥터·보스 방은 게임 방(game:) 안에, 심연은 심연 방(depth:) 안에.
     // 저장 파일의 필드 이름은 IsInstanceMap (스크립트 API 이름은 InstanceMap)
     const mc = Object.assign({}, map.component(d.id, "MOD.Core.MapComponent"));
     delete mc.InstanceMap;
@@ -333,7 +338,7 @@ function buildNormal(d, maps, ctx) {
     // 메이커는 파일 머리의 Usage(1 = 인스턴스 맵)로 정적/인스턴스 방을 가른다. IsInstanceMap만 켜면 정적 방에 실린다
     // (10-11: 새로 만든 depth2~4가 "must be set to instance map"으로 다음 층 이동 실패)
     map.data.Usage = 1;
-    map.upsertComponent(d.id, "script.DepthDirector", { "@type": "script.DepthDirector", Enable: true });
+    if (d.kind === "instance") map.upsertComponent(d.id, "script.DepthDirector", { "@type": "script.DepthDirector", Enable: true });
   }
 
   const desired = desiredEntities(d, maps, ctx);
@@ -351,7 +356,7 @@ function buildNormal(d, maps, ctx) {
   const layout = ctx.layoutCache[d.id];
   // 바닥 그림(ArtFloor)이 맵 전체를 덮는 맵: 메이커 장식(Decor_)은 그 그림 아래(순서 0, z 999)에 깔려 보이지 않는다.
   // 그런데 발밑을 충돌 칸으로 막아 「투명한데 못 지나가는 곳」이 됐다 (10-13 사용자 지적: 굶주린 굴 — 액트 1 지형 맵 43장에서 857칸).
-  // 보이지 않는 장식은 끄고 막지 않는다. 바닥 그림이 없는 손으로 꾸민 맵(map01)의 장식은 그대로 보이고 막는다
+  // 보이지 않는 장식은 끄고 막지 않는다. 바닥 그림이 없는 손으로 꾸민 맵(wasteland · 옛 map01)의 장식은 그대로 보이고 막는다
   const floorPainted = layout ? !!(ctx.layouts[d.id] || {}).floorArt : !!(ctx.art[d.id] || {}).floor;
   if (floorPainted) {
     for (const p of decorPositions(d)) map.patch(p.path, { enable: false });

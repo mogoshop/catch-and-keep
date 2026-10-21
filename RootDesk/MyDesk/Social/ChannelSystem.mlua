@@ -75,19 +75,21 @@ script ChannelSystem extends Logic
         end
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
-        if save ~= nil then save:WarpToChannel(instanceId) end
+        if save ~= nil then save:WarpToChannel(instanceId, "") end
     end
 
     @ExecSpace("ServerOnly")
     method void CheckOverflow(Entity player)
-        -- 접속 직후: 지금 채널이 상한(4명)을 넘었으면 자리가 있는 채널 중 사람이 가장 많은 곳으로 옮긴다 (출시 환경 전용)
+        -- 접속 직후 (로비): 지금 채널이 상한(6명, 방 예약 자리 포함)을 넘었으면 자리가 있는 채널 중 사람이 가장 많은 곳으로 옮긴다 (출시 환경 전용)
         if not isvalid(player) or _RoomService:IsInstanceRoom() or not Environment:IsPublishedPlay() then return end
         local list = self:Instances()
         if list == nil then return end
         local current = _WorldInstanceService.WorldInstanceId
         local mine = nil
         for _, w in ipairs(list) do if w.id == current then mine = w end end
-        if mine == nil or mine.max <= 0 or mine.cur <= mine.max then return end
+        -- 10-21: 이 채널 공개·비공개 방의 남은 자리(친구가 들어올 자리)도 찬 것으로 본다 (docs/design/30)
+        local reserved = _RoomSystem:ReservedSeats()
+        if mine == nil or mine.max <= 0 or mine.cur + reserved <= mine.max then return end
         local best = nil
         for _, w in ipairs(list) do
             if w.id ~= current and w.cur < w.max and (best == nil or w.cur > best.cur) then best = w end
@@ -101,7 +103,7 @@ script ChannelSystem extends Logic
         log("[VRF] channel: 상한 초과 " .. tostring(mine.cur) .. "/" .. tostring(mine.max) .. " → " .. best.id)
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
-        if save ~= nil then save:WarpToChannel(best.id) end
+        if save ~= nil then save:WarpToChannel(best.id, "") end
     end
 
     @ExecSpace("ServerOnly")

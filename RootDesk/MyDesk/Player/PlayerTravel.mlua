@@ -76,9 +76,9 @@ script PlayerTravel extends Component
 
     @ExecSpace("ServerOnly")
     method void GoTown()
-        -- 인스턴스 방(심연)에서는 같은 방 안의 맵 이동(TeleportToMapPosition)으로 마을에 갈 수 없다 → 정적 방으로 옮긴다
+        -- 10-21 방 구조: 게임 방에는 마을이 함께 있다 → 같은 방 안의 맵 이동. 심연(다른 방)에서는 로비를 거쳐 원래 게임 방으로
         -- (10-20 메이커 확인: 심연에서 쓰러진 뒤 마을 이동이 실패해 심연에 남은 채 다시 쓰러지기를 되풀이했다)
-        if _RoomService:IsInstanceRoom() then
+        if _RoomService:IsInstanceRoom() and not _GameConst:InGameRoom() then
             self:LeaveInstanceToTown()
             return
         end
@@ -87,7 +87,7 @@ script PlayerTravel extends Component
 
     @ExecSpace("ServerOnly")
     method void LeaveInstanceToTown()
-        -- 심연 문(DepthDirector.SaveAll)과 같은 순서: 언데드·그림자 맡기기 → 저장 → 정적 방의 그 액트 마을로
+        -- 심연 문(DepthDirector.SaveAll)과 같은 순서: 언데드·그림자 맡기기 → 저장 → 로비로 (RoomSystem이 돌아갈 게임 방으로 다시 넣는다)
         local uid = self.Entity.PlayerComponent.UserId
         ---@type PlayerSave
         local save = self.Entity:GetComponent("script.PlayerSave")
@@ -100,8 +100,8 @@ script PlayerTravel extends Component
             save:Save(true)
             save:MarkSlotTravel()
         end
-        local moved = _RoomService:MoveUsersToStaticRoom({ uid }, self:TownMap())
-        log("[VRF] leave instance → " .. self:TownMap() .. " moved=" .. tostring(moved))
+        local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
+        log("[VRF] leave instance → lobby moved=" .. tostring(moved))
         if (moved == nil or moved == 0) and save ~= nil then
             save:RollbackRoomTravel()
             _Util:Notify("마을로 돌아가지 못했습니다. 잠시 뒤 다시 시도하세요", uid)
@@ -189,6 +189,11 @@ script PlayerTravel extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty then return end
+        if diff ~= stats.Difficulty and _GameConst:InGameRoom() then
+            -- 게임 방은 만들 때 난이도가 정해진다 (방 안의 맵이 그 난이도뿐)
+            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어 간다", pc.UserId)
+            return
+        end
         local w = _WaypointData:Get(id)
         if w == nil or not self:IsKnownIn(diff, id) or not self:ActUnlockedIn(diff, math.floor(w.act or 1)) then return end
         if diff ~= stats.Difficulty then
@@ -212,6 +217,10 @@ script PlayerTravel extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty or diff == stats.Difficulty then return end
+        if _GameConst:InGameRoom() then
+            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어 간다", pc.UserId)
+            return
+        end
         stats.Difficulty = diff
         stats:RefreshResists()    -- 난이도 저항 페널티 다시 계산
         -- 난이도마다 웨이포인트·방문 기록·의뢰가 따로다 (처음 가는 난이도는 야영지 웨이포인트·1번 의뢰부터)
@@ -393,7 +402,8 @@ script PlayerTravel extends Component
     method table CurrentSpot()
         -- 저장할 현재 자리: 마을이 아닌 일반(정적) 사냥터에 살아 있을 때만
         local map = self.Entity.CurrentMap
-        if not isvalid(map) or _GameConst:IsTown(map) or _RoomService:IsInstanceRoom() or not _Util:IsAlive(self.Entity) then return nil end
+        -- 10-21 방 구조: 로비·게임 방은 이어하기 자리를 남기지 않는다 (방은 끊기면 사라진다 — 디아블로2처럼 로비에서 다시 고른다)
+        if not isvalid(map) or map.Name == _GameConst.MapLobby or _GameConst:IsTown(map) or _RoomService:IsInstanceRoom() or not _Util:IsAlive(self.Entity) then return nil end
         if not isvalid(_EntityService:GetEntityByPath("/maps/" .. map.Name)) then return nil end
         local p = _Util:Pos2(self.Entity)
         return { m = map.Name, x = p.x, y = p.y, t = DateTime.UtcNow.Elapsed }

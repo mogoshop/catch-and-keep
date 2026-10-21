@@ -1,0 +1,399 @@
+-- 게임 방 (10-21 · docs/design/30): 디아블로2의 「게임 만들기」. 채널(월드 인스턴스) 안의 인스턴스 방 하나가 게임 한 판이다.
+--   로비 = 정적 방의 map01 (캐릭터·게임 고르기). 게임 방 = 그 난이도의 마을·사냥터·곁가지 전부(GameConst.GameRoomMaps).
+--   혼자 하기 = 나만의 방 (목록에 안 보임) · 공개 방 = 목록에 보임 · 비공개 방 = 목록에 자물쇠, 비밀번호로 들어감. 최대 4명.
+--   방 목록은 모든 채널이 함께 보는 월드 공유 메모리(GameRoomsV1)에 둔다 (ETag로 겹쳐 쓰기 방지). 게임 방 서버가 10초마다 인원을 적고,
+--   60초 넘게 소식이 없는 방은 목록에서 지운다. 다른 채널의 방에 들어가면 그 채널로 옮긴 뒤(워프 데이터 kind=room) 들어간다.
+--   방과 방 사이(게임 ↔ 심연)는 로비를 거친다 — 돌아올 게임 방은 RoomReturnV1(채널 공유 메모리)에 적어 둔다.
+@Logic
+script RoomSystem extends Logic
+
+    property string MemoryName = "GameRoomsV1"
+    property string ReturnMemory = "RoomReturnV1"
+    property number StaleSec = 60
+    property integer HeartbeatTimer = 0
+    property table LastAsk = nil              -- 서버: userId → 마지막 요청 시각 (연타 방지)
+
+    -- ───────── 목록 저장소 ─────────
+
+    @ExecSpace("ServerOnly")
+    method any Memory()
+        local ok, code, memory = pcall(function() return _WorldInstanceService:GetSharedMemory(self.MemoryName) end)
+        if not ok or code ~= SharedMemoryResultCode.OK or memory == nil then return nil end
+        return memory
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ReadRooms()
+        -- 지금 방 목록 { id → 방 } 과 ETag (없으면 빈 목록 · "")
+        local memory = self:Memory()
+        if memory == nil then return { rooms = {}, etag = "", ok = false } end
+        local result = memory:GetVariableAndWait("list")
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return { rooms = {}, etag = "", ok = true } end
+        local okJson, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+        if not okJson or type(data) ~= "table" or type(data.rooms) ~= "table" then return { rooms = {}, etag = result.Info.ETag, ok = true } end
+        return { rooms = data.rooms, etag = result.Info.ETag, ok = true }
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Mutate(any change)
+        -- 목록을 읽어 change(rooms)로 고치고 다시 쓴다. 그사이 다른 채널이 썼으면(ETag 다름) 다시 읽어 3번까지
+        local memory = self:Memory()
+        if memory == nil then return false end
+        for attempt = 1, 3 do
+            local cur = self:ReadRooms()
+            local rooms = cur.rooms
+            change(rooms)
+            -- 오래 소식 없는 방은 지운다
+            local now = DateTime.UtcNow.Elapsed
+            for id, r in pairs(rooms) do
+                if type(r) ~= "table" or type(r.u) ~= "number" or now - r.u > self.StaleSec * 1000 then rooms[id] = nil end
+            end
+            local n = 0
+            for _ in pairs(rooms) do n = n + 1 end
+            local value = n > 0 and _HttpService:JSONEncode({ v = 1, rooms = rooms }) or "{\"v\":1}"
+            local result = nil
+            if cur.etag == "" then
+                result = memory:CreateVariableAndWait("list", value)
+                if result.Code == SharedMemoryResultCode.AlreadyExists then result = nil end
+            else
+                result = memory:UpdateVariableAndWait(SharedVariableKeyInfo("list", cur.etag), value)
+            end
+            if result ~= nil and result.Code == SharedMemoryResultCode.OK then return true end
+            log("[VRF] rooms write retry " .. tostring(attempt) .. " code=" .. tostring(result ~= nil and result.Code or "exists"))
+        end
+        return false
+    end
+
+    method string Hash(string pw, string id)
+        -- 비밀번호는 그대로 두지 않는다 (방 id를 소금으로 섞은 짧은 해시)
+        local h = 5381
+        local text = id .. ":" .. pw
+        for i = 1, string.len(text) do h = (h * 33 + string.byte(text, i)) % 4294967296 end
+        return string.format("%08x", h)
+    end
+
+    method string CleanName(string name)
+        local s = string.gsub(name or "", "[|;\n\r\t]", "")
+        s = string.gsub(s, "^%s+", "")
+        s = string.gsub(s, "%s+$", "")
+        return _UIKit:Clip(s, 16)
+    end
+
+    method string NewId()
+        -- 짧은 방 id (시각 + 무작위)
+        local t = math.floor(DateTime.UtcNow.Elapsed / 1000) % 100000000
+        return string.format("%x%04x", t, _UtilLogic:RandomIntegerRange(0, 65535))
+    end
+
+    method boolean Throttle(string uid)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.LastAsk == nil then self.LastAsk = {} end
+        if self.LastAsk[uid] ~= nil and now - self.LastAsk[uid] < 1.0 then return true end
+        self.LastAsk[uid] = now
+        return false
+    end
+
+    -- ───────── 로비: 목록 · 혼자 하기 · 만들기 · 들어가기 ─────────
+
+    @ExecSpace("Server")
+    method void RequestRooms()
+        -- 방 창 → 목록 (그 사람에게만). 줄 = "id|이름|잠금(1/0)|난이도|인원|최대|같은 채널(1/0)"
+        local uid = senderUserId
+        if self:Throttle(uid .. ":list") then return end
+        local cur = self:ReadRooms()
+        local here = _WorldInstanceService.WorldInstanceId
+        local rows = {}
+        local now = DateTime.UtcNow.Elapsed
+        for id, r in pairs(cur.rooms) do
+            if type(r) == "table" and type(r.u) == "number" and now - r.u <= self.StaleSec * 1000 and r.m ~= "solo" then
+                table.insert(rows, { id = id, text = table.concat({ id, tostring(r.n or "게임"), r.m == "private" and "1" or "0", tostring(r.d or 0), tostring(r.c or 0), tostring(r.x or 4), r.ch == here and "1" or "0" }, "|"), c = r.c or 0 })
+            end
+        end
+        table.sort(rows, function(a, b) return a.c > b.c end)
+        local out = {}
+        for _, row in ipairs(rows) do table.insert(out, row.text) end
+        self:ShowRooms(table.concat(out, ";"), cur.ok, uid)
+    end
+
+    @ExecSpace("Client")
+    method void ShowRooms(string digest, boolean shared)
+        _RoomWindow:OnRooms(digest, shared)
+    end
+
+    @ExecSpace("Server")
+    method void RequestSolo()
+        -- 혼자 하기: 목록에 안 보이는 나만의 방을 열고 들어간다
+        local player = self:LobbyPlayer(senderUserId)
+        if player == nil then return end
+        local id = "s" .. self:NewId()
+        self:Enter(player, id, self:DiffOf(player), true)
+    end
+
+    @ExecSpace("Server")
+    method void RequestCreate(string name, boolean locked, string pw, integer max)
+        -- 방 만들기: 이름 · 공개/비공개(비밀번호) · 최대 인원 2~4. 난이도 = 지금 캐릭터의 난이도
+        local player = self:LobbyPlayer(senderUserId)
+        if player == nil then return end
+        local uid = senderUserId
+        local clean = self:CleanName(name)
+        if clean == "" then
+            ---@type PlayerSave
+            local save = player:GetComponent("script.PlayerSave")
+            clean = (save ~= nil and save:CharName() or "망자") .. "의 게임"
+        end
+        if locked and string.len(pw or "") < 1 then
+            _Util:Notify("비공개 방은 비밀번호가 필요합니다", uid)
+            return
+        end
+        local cap = math.max(2, math.min(_GameConst.RoomMaxMembers, max))
+        local id = self:NewId()
+        local diff = self:DiffOf(player)
+        local ok = self:Mutate(function(rooms)
+            rooms[id] = { n = clean, m = locked and "private" or "public", h = locked and self:Hash(pw, id) or "", x = cap, d = diff, c = 0, ch = _WorldInstanceService.WorldInstanceId, u = DateTime.UtcNow.Elapsed }
+        end)
+        if not ok then log_warning("[RoomSystem] 방 목록에 쓰지 못함 — 방은 열지만 목록에 늦게 보일 수 있다") end
+        log("[VRF] room create " .. id .. " name=" .. clean .. " locked=" .. tostring(locked) .. " max=" .. tostring(cap) .. " diff=" .. tostring(diff))
+        if not self:Enter(player, id, diff, true) then
+            -- 못 들어갔으면 목록에서 바로 지운다
+            self:Mutate(function(rooms) rooms[id] = nil end)
+        end
+    end
+
+    @ExecSpace("Server")
+    method void RequestJoin(string id, string pw)
+        -- 목록의 방에 들어가기: 비밀번호·인원·난이도 확인. 다른 채널이면 그 채널로 옮긴 뒤 들어간다
+        local uid = senderUserId
+        if self:Throttle(uid .. ":join") then return end
+        local player = self:LobbyPlayer(uid)
+        if player == nil then return end
+        local r = self:ReadRooms().rooms[id]
+        if type(r) ~= "table" or r.m == "solo" then
+            _Util:Notify("그 방은 이제 없다 — 목록을 새로 불러오세요", uid)
+            self:RequestRoomsFor(uid)
+            return
+        end
+        if r.m == "private" and self:Hash(pw or "", id) ~= r.h then
+            _Util:Notify("비밀번호가 맞지 않다", uid)
+            return
+        end
+        if (r.c or 0) >= (r.x or 4) then
+            _Util:Notify("방이 가득 찼다", uid)
+            return
+        end
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        local diff = math.floor(r.d or 0)
+        if stats ~= nil and diff > stats.MaxDifficulty then
+            _Util:Notify("아직 열지 않은 난이도의 방이다", uid)
+            return
+        end
+        if r.ch ~= _WorldInstanceService.WorldInstanceId then
+            ---@type PlayerSave
+            local save = player:GetComponent("script.PlayerSave")
+            if save ~= nil then save:WarpToChannel(r.ch, id) end
+            return
+        end
+        self:Enter(player, id, diff, false)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RequestRoomsFor(string uid)
+        -- 서버 안에서 목록을 다시 보낼 때 (RequestRooms는 senderUserId를 쓴다)
+        local cur = self:ReadRooms()
+        local here = _WorldInstanceService.WorldInstanceId
+        local out = {}
+        for id, r in pairs(cur.rooms) do
+            if type(r) == "table" and r.m ~= "solo" then
+                table.insert(out, table.concat({ id, tostring(r.n or "게임"), r.m == "private" and "1" or "0", tostring(r.d or 0), tostring(r.c or 0), tostring(r.x or 4), r.ch == here and "1" or "0" }, "|"))
+            end
+        end
+        self:ShowRooms(table.concat(out, ";"), cur.ok, uid)
+    end
+
+    method Entity LobbyPlayer(string uid)
+        -- 로비에서 캐릭터를 불러온 살아 있는 사람만 방을 고른다
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) or _GameConst:RoomKind() ~= "lobby" then return nil end
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or not save.IsLoadSuccess or save.Selecting or save.Switching or save.Slot <= 0 then return nil end
+        return player
+    end
+
+    method integer DiffOf(Entity player)
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        return stats ~= nil and stats.Difficulty or 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Enter(Entity player, string id, integer diff, boolean fresh)
+        -- 방에 들어간다: (난이도를 맞추고) 저장 → 그림자·언데드 맡기기 → 게임 방을 열거나 찾아 그 액트 마을로
+        local uid = player.PlayerComponent.UserId
+        local key = "game:" .. id
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        ---@type PlayerTravel
+        local travel = player:GetComponent("script.PlayerTravel")
+        if stats ~= nil and travel ~= nil and stats.Difficulty ~= diff then
+            stats.Difficulty = diff
+            stats:RefreshResists()
+            travel:SwitchDifficulty(diff)
+            ---@type PlayerQuest
+            local quest = player:GetComponent("script.PlayerQuest")
+            if quest ~= nil then quest:SwitchDifficulty(diff) end
+            travel:SyncDiffInfo()
+        end
+        if travel ~= nil and not travel:ActUnlocked(travel.Act) then travel.Act = 1 end
+        local town = travel ~= nil and travel:TownMap() or _GameConst:MapFor(_GameConst.MapTown, diff)
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or not save:PrepareRoomMove(key) then return false end
+        local exists = _RoomService.InstanceRooms[key] ~= nil
+        local ok, moved = pcall(function()
+            if not exists then _RoomService:CreateInstanceRoom(key, _GameConst:GameRoomMaps(diff), 60) end
+            return _RoomService:MoveUserToInstanceRoom(key, uid, town)
+        end)
+        log("[VRF] room enter " .. key .. " town=" .. town .. " created=" .. tostring(not exists) .. " ok=" .. tostring(ok) .. " moved=" .. tostring(moved))
+        if not ok or not moved then
+            save:CancelRoomMove()
+            _Util:Notify("방에 들어가지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            return false
+        end
+        return true
+    end
+
+    -- ───────── 로비 도착 (PlayerSave.FinishLoad) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OnLobbyReady(Entity player)
+        -- 심연·캐릭터 선택에서 돌아왔으면 원래 게임 방으로, 다른 채널의 방을 골라 왔으면 그 방으로, 아니면 방 창을 연다
+        if not isvalid(player) then return end
+        local uid = player.PlayerComponent.UserId
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        local back = self:TakeReturn(uid)
+        if back ~= nil then
+            log("[VRF] room return → " .. back.id)
+            self:Enter(player, back.id, math.floor(back.d or 0), false)
+            return
+        end
+        if save ~= nil and save.PendingRoom ~= "" then
+            local id = save.PendingRoom
+            save.PendingRoom = ""
+            local r = self:ReadRooms().rooms[id]
+            if type(r) == "table" and (r.c or 0) < (r.x or 4) then
+                log("[VRF] room join after warp → " .. id)
+                self:Enter(player, id, math.floor(r.d or 0), false)
+                return
+            end
+            _Util:Notify("그 방이 닫혔거나 가득 찼다 — 다른 방을 고르세요", uid)
+        end
+        self:OpenPicker(uid)
+    end
+
+    @ExecSpace("Client")
+    method void OpenPicker()
+        _RoomWindow:Show()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MarkReturn(Entity player)
+        -- 게임 방에서 심연으로 떠나기 직전: 돌아올 방을 적어 둔다 (로비를 거쳐 다시 들어온다)
+        if not _GameConst:InGameRoom() or not isvalid(player) then return end
+        local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
+        if id == nil then return end
+        local code, memory = _RoomService:GetSharedMemory(self.ReturnMemory)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        memory:SetVariableAndWait(player.PlayerComponent.UserId, _HttpService:JSONEncode({ id = id, d = stats ~= nil and stats.Difficulty or 0, t = DateTime.UtcNow.Elapsed }))
+    end
+
+    @ExecSpace("ServerOnly")
+    method any TakeReturn(string uid)
+        -- 돌아올 게임 방 (30분 안 · 한 번만)
+        local code, memory = _RoomService:GetSharedMemory(self.ReturnMemory)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return nil end
+        local result = memory:GetVariableAndWait(uid)
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return nil end
+        memory:DeleteVariableAndWait(uid)
+        local ok, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+        if not ok or type(data) ~= "table" or type(data.id) ~= "string" or type(data.t) ~= "number" then return nil end
+        if DateTime.UtcNow.Elapsed - data.t > 1800000 then return nil end
+        return data
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearReturn(string uid)
+        local code, memory = _RoomService:GetSharedMemory(self.ReturnMemory)
+        if code == SharedMemoryResultCode.OK and memory ~= nil then memory:DeleteVariableAndWait(uid) end
+    end
+
+    -- ───────── 게임 방: 나가기 · 인원 알리기 ─────────
+
+    @ExecSpace("Server")
+    method void RequestLeaveGame()
+        -- 메뉴 「게임 나가기」: 저장하고 로비로 (방 창이 다시 열린다)
+        local uid = senderUserId
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) or not _GameConst:InGameRoom() then return end
+        if not _Util:IsAlive(player) then
+            _Util:Notify("쓰러진 상태에서는 나갈 수 없다", uid)
+            return
+        end
+        self:ClearReturn(uid)
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or not save:PrepareRoomMove(_RoomService.StaticRoomKey) then return end
+        local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
+        log("[VRF] room leave → lobby moved=" .. tostring(moved))
+        if moved == nil or moved == 0 then
+            save:CancelRoomMove()
+            _Util:Notify("로비로 나가지 못했다. 잠시 뒤 다시 시도하세요", uid)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 게임 방 서버: 10초마다 인원을 방 목록에 적는다 (혼자 방은 적지 않는다)
+        if not _GameConst:InGameRoom() then return end
+        self.HeartbeatTimer = _TimerService:SetTimerRepeat(function() self:Heartbeat() end, 10)
+        _TimerService:SetTimerOnce(function() self:Heartbeat() end, 2)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.HeartbeatTimer ~= 0 then _TimerService:ClearTimer(self.HeartbeatTimer) end
+        self.HeartbeatTimer = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Heartbeat()
+        local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
+        if id == nil or string.sub(id, 1, 1) == "s" then return end
+        local count = _UserService:GetUserCount()
+        self:Mutate(function(rooms)
+            local r = rooms[id]
+            if type(r) ~= "table" then return end
+            if count <= 0 then
+                rooms[id] = nil
+                return
+            end
+            r.c = count
+            r.u = DateTime.UtcNow.Elapsed
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer ReservedSeats()
+        -- 이 채널의 공개·비공개 방에 남은 자리 합 (ChannelSystem.CheckOverflow — 방에 친구가 들어올 자리를 남긴다)
+        local here = _WorldInstanceService.WorldInstanceId
+        local n = 0
+        for _, r in pairs(self:ReadRooms().rooms) do
+            if type(r) == "table" and r.ch == here and r.m ~= "solo" then n = n + math.max(0, (r.x or 4) - (r.c or 0)) end
+        end
+        return n
+    end
+
+end

@@ -38,8 +38,8 @@ script MonsterSpawner extends Component
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        -- 맵이 다 준비된 뒤 소환
-        _TimerService:SetTimerOnce(function() self:SpawnAll() end, 0.5)
+        -- 10-21 방 구조: 게임 방에는 맵이 수십 장 함께 실린다 → 사람이 처음 들어온 맵만 채운다 (Poll). 로비(정적 방)는 채우지 않는다
+        if self.Entity.CurrentMap.Name == _GameConst.MapLobby then return end
         self.PollTimer = _TimerService:SetTimerRepeat(function() self:Poll() end, 1)
     end
 
@@ -51,11 +51,15 @@ script MonsterSpawner extends Component
 
     @ExecSpace("ServerOnly")
     method void Poll()
-        -- 1초마다: 정리 맵 남은 수·완료, 빈 맵 다시 채우기
+        -- 1초마다: 처음 사람이 들어오면 채우기, 정리 맵 남은 수·완료, 빈 맵 다시 채우기
         local map = self.Entity.CurrentMap
-        if not isvalid(map) or self.SpawnedAt <= 0 then return end
+        if not isvalid(map) then return end
         local now = _UtilLogic.ElapsedSeconds
         local players = _Util:PlayersInMap(map)
+        if self.SpawnedAt <= 0 then
+            if #players > 0 then self:SpawnAll() end
+            return
+        end
         self:TrackNamed(map, #players > 0)
         if self.ClearMode and now - self.SpawnedAt > 2 then
             local alive = 0

@@ -87,7 +87,11 @@ script HudMain extends Logic
         _UIKit:Connect("MenuWin/Input", function() self:FromMenu("AudioWin") end)
         _UIKit:Connect("MenuWin/BtnClose", function() _UIKit:Close("MenuWin") end)
         _UIKit:Connect("MenuWin/CharSel", function() self:FromMenu("") self:AskCharSelect() end)
-        _UIKit:Connect("MenuWin/Channel", function() self:FromMenu("") _ChannelWindow:Show() end)
+        -- 10-21 방 구조: 게임 방에서는 「게임 나가기」(로비로), 로비에서는 「채널 변경」
+        _UIKit:Connect("MenuWin/Channel", function()
+            self:FromMenu("")
+            if self:InLobby() then _ChannelWindow:Show() else self:AskLeaveGame() end
+        end)
         _UIKit:Connect("MenuWin/Guide", function() self:FromMenu("") _GuideWindow:Show(1) end)
         _UIKit:Connect("BtnMenu", function() _UIKit:Toggle("MenuWin") end)
         _UIKit:Connect("QuestTrack", function() self:OpenQuestFromTrack() end)
@@ -112,6 +116,20 @@ script HudMain extends Logic
         elseif k == KeyboardKey.P then _UIKit:Toggle("SocialWin")
         elseif k == KeyboardKey.L then _RankWindow:Show("depth")
         elseif k == KeyboardKey.M then _UIKit:Toggle("MenuWin") end
+    end
+
+    method boolean InLobby()
+        -- 로비(정적 방 map01)에 있는가 — 클라이언트는 방 키를 모르므로 맵 이름으로 본다
+        local me = _UserService.LocalPlayer
+        return isvalid(me) and isvalid(me.CurrentMap) and me.CurrentMap.Name == _GameConst.MapLobby
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AskLeaveGame()
+        -- 메뉴 「게임 나가기」: 확인 후 저장하고 로비로 (RoomSystem.RequestLeaveGame) — 방 창에서 다른 게임을 고른다
+        _ConfirmDialog:Show("게임 나가기", "지금 캐릭터를 저장하고 로비로 나갑니다.\n혼자 하기·방 만들기·다른 방 들어가기를 다시 고를 수 있습니다.", "나가기", function()
+            _RoomSystem:RequestLeaveGame()
+        end)
     end
 
     @ExecSpace("ClientOnly")
@@ -223,6 +241,7 @@ script HudMain extends Logic
         self:RenderQuestTrack(player)
         _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack() and self.QuestTrackKey ~= self.QuestTrackSeen)
         self:RenderParty()
+        _UIKit:SetText("MenuWin/Channel", self:InLobby() and "채널 변경" or "게임 나가기")
         self:RenderTip(player, st)
         self:RenderSoulUi(player)
     end

@@ -44,6 +44,7 @@ script PlayerSave extends Component
     @Sync
     property string GuideCards = ""            -- 본 상황 안내 카드 키 ","로 (Account 키의 cards) — 그림자 해금·첫 그림자·군단 확장 (GuideCoach)
     property string SlotMemoryName = "CharSlotV1"
+    property string PendingRoom = ""           -- 다른 채널의 방을 골라 워프해 왔다 → 로비에 도착하면 그 방으로 (RoomSystem.OnLobbyReady)
     property boolean InSelectRoom = false      -- 메뉴 「캐릭터 선택으로」로 온 선택용 인스턴스 방 (고르면 정적 방으로 돌아간다)
     property boolean Switching = false         -- 방 이동을 요청한 뒤 (중복 요청 막기)
 
@@ -137,12 +138,7 @@ script PlayerSave extends Component
         self.InSelectRoom = slot < 0 and _RoomService:IsInstanceRoom()
         self.Selecting = true
         self.BootDone = true
-        if not _RoomService:IsInstanceRoom() then
-            ---@type PlayerTravel
-            local travel = self.Entity:GetComponent("script.PlayerTravel")
-            local map = self.Entity.CurrentMap
-            if travel ~= nil and (not isvalid(map) or map.Name ~= _GameConst.MapTown) then travel:Go(_GameConst.MapTown, _GameConst:GetTownArrival()) end
-        end
+        -- 10-21 방 구조: 캐릭터는 로비(정적 방 map01)에서 고른다 — 마을은 게임 방 안에 있다 (docs/design/30)
         log("[VRF] slots: 캐릭터 선택 대기 " .. self.SlotDigest)
     end
 
@@ -263,26 +259,31 @@ script PlayerSave extends Component
             travelInfo:SyncDiffInfo()
             travelInfo:MigrateScrolls()   -- 10-11: 귀환 두루마리가 가방 물건이 됐다
         end
-        -- 짧게 끊겼다 돌아오면(15분 이내) 마지막 사냥터 자리로, 아니면 (저장된 난이도의) 마을에서 시작한다.
-        if not _RoomService:IsInstanceRoom() then
+        -- 10-21 방 구조: 게임 방에 막 들어왔으면 그 액트 마을의 도착 자리로 (방 이동은 맵의 기본 자리에 놓는다).
+        -- 로비면 아래에서 심연 이어가기 → 돌아갈 게임 방 → 방 창 (RoomSystem.OnLobbyReady)
+        local roomKind = _GameConst:RoomKind()
+        if roomKind == "game" then
             ---@type PlayerTravel
             local travel = self.Entity:GetComponent("script.PlayerTravel")
-            local want = travel ~= nil and travel:TownMap() or _GameConst.MapTown
             local map = self.Entity.CurrentMap
-            if travel ~= nil and not travel:TryResume() and (not isvalid(map) or map.Name ~= want) then travel:GoTown() end
+            if travel ~= nil and isvalid(map) and _GameConst:IsTown(map) then travel:Go(map.Name, _GameConst:GetTownArrival()) end
         end
         -- 10-11 스킬·능력치 개편 전 저장이면 포인트를 모두 돌려준다 (docs/design/16)
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book ~= nil then book:MigrateRework() end
         _UndeadSystem:RestoreRoomTravel(self.Entity)
-        self:ContinueDepthTravel()
+        local continuing = self:ContinueDepthTravel()
         ---@type PlayerQuest
         local quest = self.Entity:GetComponent("script.PlayerQuest")
         if quest ~= nil then quest:OnLoadFinished() end
-        -- 채널 상한(4명) 초과 확인 — 불러오기·저장이 끝난 뒤 (출시 환경 전용 · ChannelSystem)
         local me = self.Entity
-        _TimerService:SetTimerOnce(function() if isvalid(me) and self.IsLoadSuccess then _ChannelSystem:CheckOverflow(me) end end, 3)
+        if roomKind == "lobby" and not continuing then
+            -- 로비: 돌아갈 방·워프로 고른 방이 없으면 방 창. 채널 상한(+방 예약 자리) 초과 확인은 방을 고르기 전에만 (출시 환경 전용 · ChannelSystem)
+            local joining = self.PendingRoom ~= ""
+            _RoomSystem:OnLobbyReady(me)
+            if not joining then _TimerService:SetTimerOnce(function() if isvalid(me) and self.IsLoadSuccess and _GameConst:RoomKind() == "lobby" then _ChannelSystem:CheckOverflow(me) end end, 3) end
+        end
         log("[PlayerSave] 불러오기 완료 (슬롯 " .. tostring(self.Slot) .. ", 새 캐릭터 " .. tostring(isNew) .. ")")
     end
 
@@ -352,6 +353,19 @@ script PlayerSave extends Component
         self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
         self.Switching = true
         self:MarkTravel(-1)
+        if _RoomService:IsInstanceRoom() then
+            -- 게임 방 → 로비에서 고른다 (인스턴스 방끼리는 바로 못 옮긴다). 로비 Load가 -1을 받아 선택 창을 연다
+            _RoomSystem:ClearReturn(uid)
+            local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
+            if moved == nil or moved == 0 then
+                self:TakeSlotTravel()
+                self.IsLoadSuccess = true
+                self.Switching = false
+                _Util:Notify("캐릭터 선택으로 이동하지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            end
+            log("[VRF] slots: 게임 방 → 로비 캐릭터 선택 moved=" .. tostring(moved))
+            return
+        end
         -- 인스턴스 방에는 인스턴스 맵만 쓸 수 있다 → 심도 맵을 배경으로 (룸 키가 "depth:"가 아니면 DepthDirector는 아무것도 하지 않는다)
         local key = "charsel:" .. uid
         local ok, moved = pcall(function()
@@ -375,7 +389,7 @@ script PlayerSave extends Component
         local info = self:SlotInfo(slot)
         self.Switching = true
         self:MarkTravel(slot)
-        local town = _GameConst:MapFor(_GameConst.MapTown, info ~= nil and math.floor(tonumber(info.diff) or 0) or 0)
+        local town = _GameConst.MapLobby   -- 10-21: 로비로 돌아가 그 캐릭터를 불러온 뒤 방을 고른다
         local ok, moved = pcall(function() return _RoomService:MoveUserToStaticRoom(uid, town) end)
         if not ok or not moved then
             self:TakeSlotTravel()
@@ -444,14 +458,15 @@ script PlayerSave extends Component
         local ok, record = pcall(function() return _TeleportService:GetWarpRecord(self.Entity.PlayerComponent.UserId) end)
         if not ok or record == nil or record.Data == nil or record.Data == "" then return 0 end
         local okData, data = pcall(function() return _HttpService:JSONDecode(record.Data) end)
-        if not okData or type(data) ~= "table" or data.kind ~= "channel" or type(data.created) ~= "number" then return 0 end
+        if not okData or type(data) ~= "table" or (data.kind ~= "channel" and data.kind ~= "room") or type(data.created) ~= "number" then return 0 end
         if DateTime.UtcNow.Elapsed - data.created > 120000 then return 0 end
+        if data.kind == "room" and type(data.room) == "string" then self.PendingRoom = data.room end   -- 다른 채널의 방을 골라 왔다
         log("[VRF] channel: 워프로 도착 → 슬롯 " .. tostring(data.slot))
         return math.floor(tonumber(data.slot) or 0)
     end
 
     @ExecSpace("ServerOnly")
-    method void WarpToChannel(string instanceId)
+    method void WarpToChannel(string instanceId, string roomId)
         -- 채널 이동 (ChannelSystem.RequestMove): 지금 캐릭터를 저장하고 그 월드 인스턴스로 워프한다. 도착하면 TakeWarpSlot이 같은 캐릭터를 불러온다.
         -- 되살린 언데드·버프는 캐릭터 선택과 같이 이어지지 않는다 (그림자 군단은 저장돼 있다)
         local uid = self.Entity.PlayerComponent.UserId
@@ -469,7 +484,8 @@ script PlayerSave extends Component
         end
         self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
         self.Switching = true
-        local data = _HttpService:JSONEncode({ kind = "channel", slot = self.Slot, created = DateTime.UtcNow.Elapsed })
+        -- roomId가 있으면 도착한 채널의 로비에서 그 방으로 바로 들어간다 (RoomSystem.RequestJoin)
+        local data = _HttpService:JSONEncode({ kind = roomId ~= "" and "room" or "channel", room = roomId, slot = self.Slot, created = DateTime.UtcNow.Elapsed })
         local ok, moved = pcall(function() return _TeleportService:WarpUserToWorldInstanceAndWait(uid, instanceId, data) end)
         if not ok or not moved then
             -- 메이커는 nil (출시 환경 전용). 실패하면 이 자리에서 계속 논다
@@ -510,22 +526,23 @@ script PlayerSave extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void ContinueDepthTravel()
-        -- 서로 다른 인스턴스 방 사이에는 정적 방을 거친다. 소환수 전달은 최종 목적지에서만 소비한다.
-        if _RoomService:IsInstanceRoom() then return end
+    method boolean ContinueDepthTravel()
+        -- 서로 다른 인스턴스 방 사이에는 정적 방을 거친다. 소환수 전달은 최종 목적지에서만 소비한다. 이어가면 true
+        -- 10-21: 게임 방 → 심연 1층도 로비를 거친다 (DepthGate)
+        if _RoomService:IsInstanceRoom() then return false end
         local code, memory = _RoomService:GetSharedMemory("DepthContinuationV1")
-        if code ~= SharedMemoryResultCode.OK or memory == nil then return end
+        if code ~= SharedMemoryResultCode.OK or memory == nil then return false end
         local uid = self.Entity.PlayerComponent.UserId
         local result = memory:GetVariableAndWait(uid)
-        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return end
+        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return false end
         local ok, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
         if not ok or type(data) ~= "table" or type(data.created) ~= "number" or DateTime.UtcNow.Elapsed - data.created > 120000 then
             memory:DeleteVariableAndWait(uid)
-            return
+            return false
         end
         local key = _GameConst:ParseDepthKey(data.destination or "")
-        if key.floor <= 1 or key.difficulty < 0 or key.difficulty > 2 then return end
-        if memory:DeleteVariableAndWait(uid) ~= SharedMemoryResultCode.OK then return end
+        if key.floor < 1 or key.difficulty < 0 or key.difficulty > 2 then return false end
+        if memory:DeleteVariableAndWait(uid) ~= SharedMemoryResultCode.OK then return false end
         _TimerService:SetTimerOnce(function()
             if not _Util:IsAlive(self.Entity) then return end
             self:MarkSlotTravel()
@@ -547,8 +564,41 @@ script PlayerSave extends Component
                 _UndeadSystem:RetargetRoomTravel(self.Entity, _RoomService.StaticRoomKey)
                 _UndeadSystem:RestoreRoomTravel(self.Entity)
                 _Util:Notify("다음 층 이동에 실패했습니다. 마을에서 다시 입장하세요", uid)
+                _RoomSystem:OnLobbyReady(self.Entity)
             end
         end, 0.5)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean PrepareRoomMove(string destKey)
+        -- 방을 옮기기 직전 (게임 방 들어가기·나가기 · RoomSystem): 저장 확인 → 더 저장하지 않게 → 그림자·언데드 맡기기 → 같은 캐릭터 이어 불러오기 표시
+        local uid = self.Entity.PlayerComponent.UserId
+        if not self.IsLoadSuccess or self.Selecting or self.Switching or self.Slot <= 0 then return false end
+        self:Save(true)
+        for k, v in pairs(self:Collect()) do
+            if self.LastSaved[k] ~= v then
+                _Util:Notify("저장에 실패해 이동하지 않았다. 잠시 뒤 다시 시도하세요", uid)
+                return false
+            end
+        end
+        _UndeadSystem:StashForRoomTravel(self.Entity, destKey)
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:StashForTravel() end
+        self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
+        self.Switching = true
+        self:MarkSlotTravel()
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CancelRoomMove()
+        -- 방 이동 실패: 저장 허용·이어 불러오기 표시 지우기·맡긴 그림자 되돌리기
+        self:TakeSlotTravel()
+        self.IsLoadSuccess = true
+        self.Switching = false
+        self:RollbackRoomTravel()
     end
 
     @ExecSpace("ServerOnly")

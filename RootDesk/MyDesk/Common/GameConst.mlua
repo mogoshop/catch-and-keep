@@ -6,6 +6,8 @@ script GameConst extends Logic
     -- 맵 (보통 난이도 이름. 악몽·지옥은 MapFor가 접미사를 붙인다)
     property string MapTown = "town"
     property string MapDepth = "depth"
+    property string MapLobby = "map01"                -- 월드 시작 맵 = 정적 방의 로비 (캐릭터·게임 고르기). 나머지 맵은 모두 인스턴스 맵 (docs/design/30)
+    property integer RoomMaxMembers = 4               -- 게임 방(공개·비공개) 최대 인원
     property string FinalBossSourceId = "ash_king"   -- 처치 시 다음 난이도 개방 (마지막 액트 = 액트 4 재의 왕, 10-20 · 이전: 바렌)
     property integer ActCount = 4                     -- 액트 수 (웨이포인트·의뢰 일지 탭, 액트 이동 · 10-20 액트 4 「심연의 문」)
     property string SoulThieves = ",hell_priest,"     -- 혼 빼앗기 (액트 4): 땅의 혼 구슬을 끌어가 먹는 몬스터 sourceId (SoulOrb.CheckThief)
@@ -282,6 +284,28 @@ script GameConst extends Logic
         if act == 3 then return { "smugglerboss", "crabking", "drownedpriest", "madkeeper" } end
         if act == 4 then return { "sulfurqueen", "prisonwarden", "forgedemon", "apostate", "fallenknight" } end
         return { "headsman", "skelcaptain", "relickeeper" }
+    end
+
+    method string RoomKind()
+        -- 지금 방 종류: "lobby"(정적 방) · "game"(게임 방 game:…) · "depth"(심연 depth:…) · "charsel"(옛 선택 방) · 그 밖 ""
+        if not _RoomService:IsInstanceRoom() then return "lobby" end
+        local key = _RoomService.RoomKey or ""
+        local kind = string.match(key, "^(%a+):")
+        return kind or ""
+    end
+
+    method boolean InGameRoom()
+        return self:RoomKind() == "game"
+    end
+
+    method table GameRoomMaps(integer difficulty)
+        -- 게임 방에 담는 맵: 그 난이도의 마을·사냥터·곁가지 전부 (심연·로비 제외)
+        local list = {}
+        for id, info in pairs(_GameData.MapInfo) do
+            if info.kind ~= "instance" then table.insert(list, self:MapFor(id, difficulty)) end
+        end
+        table.sort(list)
+        return list
     end
 
     method boolean IsTown(Entity map)
