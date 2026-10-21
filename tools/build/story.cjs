@@ -10,7 +10,7 @@ function run() {
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const c = 'SafeArea/Card';
   // 넓은 화면에서도 가장자리가 비지 않게 화면보다 크게 덮는다 (stretch는 다시 불러올 때 크기 0으로 접힌다)
-  b.button(c, '', { anchor: 'middle-center', rect_size: [4000, 3000], bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 0.92 }, enable: false });
+  b.button(c, '', { anchor: 'middle-center', rect_size: [4000, 3000], bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, enable: false });   // 불투명 (10-20 점검: 0.92면 카드 뒤로 HUD·캐릭터가 비쳤다)
   // 그림: 전체 배경(story_* 그림, 코덱스 요청 docs/requests/codex-story-art-20261012.md)이 있으면 어둡게 깔고,
   // 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로 (StoryCard.ShowArt)
   b.sprite(c + '/Art', { anchor: 'middle-center', rect_size: [1920, 1080], color: '#FFFFFF', alpha: 0.5, sprite_type: 0, enable: false });

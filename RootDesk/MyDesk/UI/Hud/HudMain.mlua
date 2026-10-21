@@ -23,6 +23,11 @@ script HudMain extends Logic
     property string TipMap = ""
     property number TipUntil = 0
     property number TipSeconds = 8
+    property any ShadowLocked = nil             -- 그림자 메뉴 잠김 표시 상태 (바뀔 때만 다시 그린다)
+    property any LockIconColors = nil           -- 잠그기 전 아이콘 원래 색
+    property string TipShownText = ""           -- 같은 안내를 맵마다 다시 띄우지 않는다 (10-21: 맵을 옮길 때마다 같은 띠가 NPC 머리를 가렸다)
+    property number TipShownAt = -999
+    property number TipRepeatGap = 120          -- 같은 안내는 이 초 안에는 맵에 들어와도 다시 띄우지 않는다
     property any TunedCamera = nil
     property Vector2 CamScreenOffset = Vector2(0.5, 0.45)
     property Vector2 CamDamping = Vector2(0.8, 0.8)
@@ -37,6 +42,12 @@ script HudMain extends Logic
         if isvalid(target) then target.UITransformComponent.RectSize = Vector2(460, 114) end
         if isvalid(targetStatus) then targetStatus.UITransformComponent.RectSize = Vector2(440, 44) end
         _UIKit:SetEnabled("Tip", false)
+        -- 안내 띠는 반투명 (뒤의 NPC 머리·이름이 비쳐 보이게)
+        local tipBox = _UIKit:Get("Tip")
+        if isvalid(tipBox) then
+            local c = tipBox.SpriteGUIRendererComponent.Color
+            tipBox.SpriteGUIRendererComponent.Color = Color(c.r, c.g, c.b, 0.62)
+        end
         _UIKit:RegisterWindow("MenuWin")
         -- 버프 칩: 누르면 효과 설명 (모바일은 마우스를 올릴 수 없다)
         self.BuffDescs = {}
@@ -205,6 +216,7 @@ script HudMain extends Logic
         self:RenderSlots()
         self:RenderCooldowns()
         self:RenderBadges(st)
+        self:RenderLocks(st)
         self:RenderMinions()
         self:RenderTarget(player)
         _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack())
@@ -337,6 +349,28 @@ script HudMain extends Logic
         local def = _SkillData:Get(id)
         if def == nil then return "" end
         return def.icon
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderLocks(PlayerStats st)
+        -- 그림자 메뉴는 「그림자 소환」이 열리는 레벨(Lv5) 전에는 흐리게 + 「Lv5」 (10-20 첫 1시간 점검: Lv1에 눌러도 못 쓰는 메뉴가 보였다)
+        local need = _SkillData:Get("shadow_summon").row
+        local locked = st.Level < need
+        if locked == self.ShadowLocked then return end
+        self.ShadowLocked = locked
+        if self.LockIconColors == nil then self.LockIconColors = {} end
+        for _, p in ipairs({ { "Bottom/Menu/BtnShadow", "그림자" }, { "Bottom/Menu/BtnExtract", "그림자 추출" }, { "MenuWin/Shadow", "그림자" } }) do
+            local icon = _UIKit:Get(p[1] .. "/Icon")
+            if isvalid(icon) then
+                local base = self.LockIconColors[p[1]]
+                if base == nil then
+                    base = icon.SpriteGUIRendererComponent.Color
+                    self.LockIconColors[p[1]] = base
+                end
+                icon.SpriteGUIRendererComponent.Color = locked and Color(base.r * 0.4, base.g * 0.4, base.b * 0.4, base.a * 0.8) or base
+            end
+            _UIKit:SetText(p[1] .. "/Label", locked and ("Lv" .. tostring(need) .. "부터") or p[2])
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -502,9 +536,16 @@ script HudMain extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local mapId = isvalid(player.CurrentMap) and player.CurrentMap.Id or ""
         if tip ~= self.TipText or mapId ~= self.TipMap then
+            local seenRecently = tip == self.TipShownText and now - self.TipShownAt < self.TipRepeatGap
             self.TipText = tip
             self.TipMap = mapId
-            self.TipUntil = tip ~= "" and now + self.TipSeconds or 0
+            if tip == "" then
+                self.TipUntil = 0
+            elseif not seenRecently then
+                self.TipUntil = now + self.TipSeconds
+                self.TipShownText = tip
+                self.TipShownAt = now
+            end
         end
         -- 상황 안내는 창을 연 채 바뀌면(스킬 창에서 습득 등) 창을 닫은 뒤에 보이도록 시간을 붙잡아 둔다
         if tip ~= "" and tip == guide and _UIKit:AnyWindowOpen() then self.TipUntil = math.max(self.TipUntil, now + self.TipSeconds) end
@@ -631,7 +672,7 @@ script HudMain extends Logic
         -- 처음 보는 붉은 바닥 원이 무엇인지 한 번만 알려 준다 (접속마다 1회)
         if self.DangerHinted then return end
         self.DangerHinted = true
-        _UXFeedback:Show("붉은 원 = 적의 범위 공격", "곧 원 안이 터집니다 — 테두리 밖으로 걸어 나가면 피할 수 있습니다", _GameData:GetUiIcon("red_dot"))
+        _UXFeedback:ShowTinted("붉은 원 = 적의 범위 공격", "곧 원 안이 터집니다 — 테두리 밖으로 걸어 나가면 피할 수 있습니다", _GameData:GetUiIcon("red_dot"), Color(0.89, 0.34, 0.23, 1))
     end
 
     @ExecSpace("ClientOnly")

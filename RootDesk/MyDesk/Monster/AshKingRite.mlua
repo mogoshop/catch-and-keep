@@ -29,6 +29,8 @@ script AshKingRite extends Component
     property number BasePoolSeconds = 0
     property string BaseName = ""
     property integer HeartFx = 0             -- 클라이언트: 심장 노출 빛
+    property number HeartNext = 0            -- 클라이언트: 다음 고리 프레임 시각
+    property integer HeartFrame = 0
 
     method void OnBeginPlay()
         if not self:IsServer() then return end
@@ -212,7 +214,8 @@ script AshKingRite extends Component
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local p = self.Entity.TransformComponent.WorldPosition
-        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(3, 3, 1), false, { Color = Color(1, 0.35, 0.15, 1) })
+        -- 커지는 속 빈 붉은 파동 (코덱스 256×256 4장 · 방을 덮게 6배)
+        _Util:PlayFrames(_GameConst.SpriteFinalBlast, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(6, 6, 1), 0.1, Color(1, 1, 1, 0.95), 25)
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
     end
@@ -227,17 +230,22 @@ script AshKingRite extends Component
 
     @ExecSpace("ClientOnly")
     method void ClientTick()
-        -- 심장 노출 동안 가슴에 붉은 빛
-        if self.Exposed and self.HeartFx == 0 then
-            self.HeartFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 1.0, 0), 0, Vector3(1.2, 1.2, 1), true, { Color = Color(1, 0.3, 0.2, 0.85) })
+        -- 심장 노출 동안 가슴에 혼각 세 조각 고리 (코덱스 128×128 4장을 0.15초마다 돌린다)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.Exposed and now >= self.HeartNext then
+            self.HeartNext = now + 0.15
+            if self.HeartFx ~= 0 then _EffectService:RemoveEffect(self.HeartFx) end
+            local frames = _Util:Frames(_GameConst.SpriteHeartExposed)
+            self.HeartFrame = self.HeartFrame % #frames + 1
+            self.HeartFx = _EffectService:PlayEffectAttached(frames[self.HeartFrame], self.Entity, Vector3(0, 1.4, 0), 0, Vector3(1.4, 1.4, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 21, Color = Color(1, 1, 1, 0.9) })
         elseif not self.Exposed and self.HeartFx ~= 0 then
-            _ParticleService:RemoveParticle(self.HeartFx)
+            _EffectService:RemoveEffect(self.HeartFx)
             self.HeartFx = 0
         end
     end
 
     method void OnEndPlay()
-        if self:IsClient() and self.HeartFx ~= 0 then _ParticleService:RemoveParticle(self.HeartFx) end
+        if self:IsClient() and self.HeartFx ~= 0 then _EffectService:RemoveEffect(self.HeartFx) end
     end
 
 end

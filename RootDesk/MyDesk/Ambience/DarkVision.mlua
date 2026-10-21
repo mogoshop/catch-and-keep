@@ -133,7 +133,10 @@ script DarkVision extends Logic
         self.Active = true
         _OverlayLightService:SetOverlayLightEnabled(true)
         -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
-        local ambient = math.max(amb.Ambient, _GameData.darkMinAmbient)
+        -- 밝기는 maps.csv가 기준 (맵을 다시 빌드하지 않아도 표 값이 바로 반영된다). 표에 없으면 맵에 저장된 값
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local base = (info ~= nil and info.ambient ~= nil and info.ambient > 0) and info.ambient or amb.Ambient
+        local ambient = math.max(base, _GameData.darkMinAmbient)
         local color = amb.AmbientColor
         if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
         -- 심도는 전용 조명: 일반 맵 하한보다 어둡고 보랏빛이다 (횃불·내 주변 빛으로 길을 읽는다)

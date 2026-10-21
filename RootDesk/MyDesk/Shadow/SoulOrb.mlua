@@ -110,11 +110,10 @@ script SoulOrb extends Component
 
     @ExecSpace("Multicast")
     method void StealFx(Entity thief, number seconds)
-        -- 혼과 사제를 잇는 붉은 실 (번개 줄기 그림을 붉게, 끌려가는 동안 따라 늘인다) + 혼이 붉게 물든다
+        -- 혼과 사제를 잇는 붉은 실 (코덱스 붉은 실 4장을 돌려 가며, 끌려가는 동안 따라 늘인다) + 혼이 붉게 물든다
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        local chains = {}
-        for ruid in string.gmatch(_GameConst.SpriteLightningChains, "[^|]+") do table.insert(chains, ruid) end
+        local chains = _Util:Frames(_GameConst.SpriteSoulThreads)
         if #chains == 0 then return end
         local serial = 0
         local t = 0
@@ -131,17 +130,18 @@ script SoulOrb extends Component
             local d = b - a
             local len = d:Magnitude()
             if len < 0.05 then return end
-            serial = _EffectService:PlayEffect(chains[1], self.Entity, Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0), math.deg(math.atan(d.y, d.x)), Vector3(len / 2.56, 0.5, 1), true,
-                { SortingLayer = "MapLayer0", OrderInLayer = 19, Color = Color(1, 0.2, 0.15, 0.85) })
+            local frame = chains[math.floor(t / 0.1) % #chains + 1]
+            serial = _EffectService:PlayEffect(frame, self.Entity, Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0), math.deg(math.atan(d.y, d.x)), Vector3(len / 2.56, 1, 1), true,
+                { SortingLayer = "MapLayer0", OrderInLayer = 19, Color = Color(1, 1, 1, 0.95) })
         end, 0.1)
     end
 
     @ExecSpace("Multicast")
     method void FeedFx(Vector3 pos)
-        -- 먹힌 자리: 붉은 불꽃 폭발
+        -- 먹힌 자리: 혼이 삼켜지는 붉은 불꽃 (코덱스 4장, 한 번)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, me.CurrentMap, pos + Vector3(0, 0.6, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = Color(1, 0.25, 0.15, 1) })
+        _Util:PlayFrames(_GameConst.SpriteSoulConsume, me.CurrentMap, pos + Vector3(0, 0.6, 0), 0, Vector3(1.2, 1.2, 1), 0.08, Color(1, 1, 1, 1), 20)
     end
 
     @ExecSpace("ServerOnly")

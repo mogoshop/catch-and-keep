@@ -12,6 +12,7 @@ script SkillWindow extends Logic
     property table NodeIds = {}             -- 강화 칸 번호 → 노드 id
     property string Tab = "command"         -- 보고 있는 트리 (command · soul · curse · move)
     property string RenderKey = ""
+    property integer LockedFold = 10        -- 지금 레벨 + 이 값보다 늦게 열리는 카드는 한 장으로 접는다
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
@@ -81,13 +82,30 @@ script SkillWindow extends Logic
         _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints) .. _UIKit:Colored("#A99F8E", "   · 레벨업마다 +" .. tostring(math.floor(_GameData.skillPerLevel))))
         local cost = book:RespecCost(st.Level)
         _UIKit:SetText(self.Win .. "/BtnReset", cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드"))
-        -- 카드: 고른 트리의 메인 스킬 (해금 레벨 순)
-        local mains = self:MainsOf(self.Tab)
+        -- 카드: 고른 트리의 메인 스킬 (해금 레벨 순). 지금 레벨 +LockedFold 밖의 잠긴 카드는 마지막 한 장으로 접는다
+        -- (10-20 첫 1시간 점검: Lv1 소환 탭 9장 중 8장이 잠김이라 무엇을 배울지 안 보였다)
+        local all = self:MainsOf(self.Tab)
+        local mains, folded, foldFrom = {}, 0, 0
+        for _, id in ipairs(all) do
+            local row = _SkillData:Get(id).row
+            if row <= st.Level + self.LockedFold then
+                table.insert(mains, id)
+            else
+                folded = folded + 1
+                if foldFrom == 0 then foldFrom = row end
+            end
+        end
         self.Cards = {}
         for i = 1, 24 do
             local id = mains[i]
             local path = self.Win .. "/Grid/M" .. tostring(i)
-            _UIKit:SetEnabled(path, id ~= nil)
+            local summary = id == nil and folded > 0 and i == #mains + 1
+            _UIKit:SetEnabled(path, id ~= nil or summary)
+            if summary then
+                _UIKit:SetText(path .. "/Label", _UIKit:Colored("#8C99B4", "Lv" .. tostring(foldFrom) .. " 이후\n스킬 " .. tostring(folded) .. "개"))
+                _UIKit:SetIcon(path .. "/Icon", "")
+                _UIKit:SetColor(path, Color(0, 0, 0, 0.18))
+            end
             if id ~= nil then
                 self.Cards[i] = id
                 local def = _SkillData:Get(id)

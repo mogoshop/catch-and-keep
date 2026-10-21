@@ -328,4 +328,29 @@ script Util extends Logic
         return _EffectService:PlayEffect(ruid, instigator, center - Vector3(0, height * 0.5, 0), 0, Vector3(scale, scale, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 2, Color = tint })
     end
 
+    method table Frames(string ruids)
+        -- 「|」로 이은 프레임 RUID → 목록
+        local list = {}
+        for r in string.gmatch(ruids, "[^|]+") do table.insert(list, r) end
+        return list
+    end
+
+    method void PlayFrames(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, Color tint, integer order)
+        -- 프레임 그림 여러 장을 한 번 재생한다 (클라이언트에서 부른다 · 액트 4 이펙트 등)
+        local list = self:Frames(ruids)
+        if #list == 0 or not isvalid(instigator) then return end
+        local i = 1
+        local serial = _EffectService:PlayEffect(list[1], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+        local timer = 0
+        timer = _TimerService:SetTimerRepeat(function()
+            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
+            i = i + 1
+            if i > #list or not isvalid(instigator) then
+                _TimerService:ClearTimer(timer)
+                return
+            end
+            serial = _EffectService:PlayEffect(list[i], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+        end, frameSec)
+    end
+
 end

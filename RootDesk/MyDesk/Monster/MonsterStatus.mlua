@@ -20,6 +20,7 @@ script MonsterStatus extends Component
     property number AuraUntil = 0
     property integer SoulStacks = 0        -- 혼 포식 겹 (액트 4 혼 빼앗기: 지옥불 사제가 혼 구슬을 먹으면 곁의 악마까지 주는 피해 +soulFeedPct%)
     property number SoulUntil = 0
+    property integer SoulMarkSerial = 0     -- 클라이언트: 혼 포식 겹 표식 이펙트
     property boolean HasteRefreshPending = false
     @Sync
     property number KnockUntil = 0           -- 넉백·경직 (서버). 그동안 이동·공격·특수 행동을 멈춘다
@@ -337,6 +338,32 @@ script MonsterStatus extends Component
         if now >= self.SoulUntil then self.SoulStacks = 0 end
         self.SoulStacks = math.min(math.floor(_GameData.soulFeedMax), self.SoulStacks + 1)
         self.SoulUntil = now + _GameData.soulFeedSec
+        self:SoulMarkFx(self.SoulStacks, _GameData.soulFeedSec)
+    end
+
+    @ExecSpace("Multicast")
+    method void SoulMarkFx(integer stacks, number seconds)
+        -- 혼 포식 겹 표식: 머리 위 붉은 불꽃 1~3개 (코덱스 64×64 · 겹 수별 한 장). 새로 먹으면 바꿔 단다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        if self.SoulMarkSerial ~= 0 then _EffectService:RemoveEffect(self.SoulMarkSerial) self.SoulMarkSerial = 0 end
+        local frames = _Util:Frames(_GameConst.SpriteSoulMarks)
+        if #frames == 0 then return end
+        local head = 1.3
+        ---@type Monster
+        local m = self.Entity:GetComponent("script.Monster")
+        if m ~= nil then
+            local st = _GameData:GetMonsterStats(m.SourceId)
+            if st ~= nil and st.bh ~= nil and st.bh > 0 then head = st.bh / 100 + 0.35 end
+        end
+        local serial = _EffectService:PlayEffectAttached(frames[math.max(1, math.min(#frames, stacks))], self.Entity, Vector3(0, head, 0), 0, Vector3(0.9, 0.9, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 22 })
+        self.SoulMarkSerial = serial
+        _TimerService:SetTimerOnce(function()
+            if self.SoulMarkSerial == serial then
+                _EffectService:RemoveEffect(serial)
+                self.SoulMarkSerial = 0
+            end
+        end, seconds)
     end
 
     method number SoulMult()

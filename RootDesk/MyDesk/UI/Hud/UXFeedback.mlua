@@ -45,8 +45,14 @@ script UXFeedback extends Logic
 
     @ExecSpace("ClientOnly")
     method void Show(string title, string detail, string icon)
+        self:ShowTinted(title, detail, icon, Color(1, 1, 1, 1))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowTinted(string title, string detail, string icon, Color tint)
+        -- 흰 그림에 색을 입혀 쓰는 아이콘(red_dot 등)은 색을 함께 넘긴다 (10-21: 「붉은 원」 알림이 흰 원으로 보였다)
         if #self.Queue >= 5 then table.remove(self.Queue, 1) end
-        table.insert(self.Queue, { title = title, detail = detail, icon = icon, src = "" })
+        table.insert(self.Queue, { title = title, detail = detail, icon = icon, src = "", tint = tint })
         self:Tick()
     end
 
@@ -71,12 +77,16 @@ script UXFeedback extends Logic
             root.Enable = false
             return
         end
+        -- 맵 배너가 떠 있는 동안은 다음 알림을 기다린다 (10-21: 맵 제목과 알림이 한꺼번에 떠 정신없었다)
+        if _HudMap:BannerShowing() then return end
         local msg = table.remove(self.Queue, 1)
         _UIKit:SetText("/ui/RewardHUD/Toast/Title", msg.title)
         _UIKit:SetText("/ui/RewardHUD/Toast/Body", msg.detail)
         local iconPath = "/ui/RewardHUD/Toast/Icon"
         if msg.src ~= "" and _GameData:GetMonsterStats(msg.src) ~= nil then
             _UIKit:SetMonsterPortrait(iconPath, msg.src, self.IconBox)
+            local portrait = _UIKit:Get(iconPath)
+            if isvalid(portrait) then portrait.SpriteGUIRendererComponent.Color = Color(1, 1, 1, 1) end
         else
             -- 일반 아이콘은 칸 크기 그대로 (앞 알림이 몬스터 초상으로 칸을 바꿨을 수 있다)
             local icon = _UIKit:Get(iconPath)
@@ -85,6 +95,7 @@ script UXFeedback extends Logic
                 icon.SpriteGUIRendererComponent.PreserveSprite = PreserveSpriteType.None
             end
             _UIKit:SetIcon(iconPath, msg.icon)
+            if isvalid(icon) then icon.SpriteGUIRendererComponent.Color = msg.tint or Color(1, 1, 1, 1) end
         end
         root.CanvasGroupComponent.GroupAlpha = 1
         root.Enable = true
