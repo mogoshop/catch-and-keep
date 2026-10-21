@@ -131,25 +131,29 @@ async function uploadRes(pack, argv) {
   const root = path.join(__dirname, "..");
   const resFile = path.join(root, pack, "resource-mapping.csv");
   const t = parseQuoted(fs.readFileSync(resFile, "utf8"));
-  const c = (name) => t.head.indexOf(name);
+  // 코덱스 새 표 형식(resource_name·ruid·entity)도 읽는다
+  const alias = { upload_name: "resource_name", RUID: "ruid", key: "entity" };
+  const c = (name) => (t.head.indexOf(name) >= 0 ? t.head.indexOf(name) : t.head.indexOf(alias[name] || name));
   const opt = (k) => ((argv.find((a) => a.startsWith(`--${k}=`)) || "").split("=")[1] || "").split(",").filter(Boolean);
   const skipCat = opt("skip"), skipKey = opt("skip-key");
-  const bottom = (r) => ["monster-frame", "npc", "prop"].includes(r[c("category")]) || /-ground/.test(r[c("key")]);
+  const bottom = (r) => ["monster-frame", "npc", "prop", "Monster", "NPC"].includes(r[c("category")]) || /-ground/.test(r[c("key")] || "");
   // 팩에 resource-properties.csv(name,pivot_x,pivot_y,wrap_mode)가 있으면 그림마다 그 피벗을 쓴다 (발이 캔버스 바닥이 아닌 장식·넓은 캔버스)
   const propFile = path.join(root, pack, "resource-properties.csv");
   const pivots = {};
   if (fs.existsSync(propFile)) {
     const p = parseQuoted(fs.readFileSync(propFile, "utf8"));
     const pc = (n) => p.head.indexOf(n);
-    for (const r of p.rows) pivots[r[pc("name")]] = { x: r[pc("pivot_x")], y: r[pc("pivot_y")], wrap: r[pc("wrap_mode")] || "Clamp" };
+    const px = pc("pivot_x") >= 0 ? pc("pivot_x") : pc("pivot_x_normalized"), py = pc("pivot_y") >= 0 ? pc("pivot_y") : pc("pivot_y_normalized_from_bottom");
+    const pn = pc("name") >= 0 ? pc("name") : pc("resource_name");
+    for (const r of p.rows) pivots[r[pn]] = { x: r[px], y: r[py], wrap: r[pc("wrap_mode")] || "Clamp" };
   }
-  const todo = t.rows.filter((r) => !/^[0-9a-f]{32}$/.test(r[c("RUID")]) && !skipCat.includes(r[c("category")]) && !skipKey.some((k) => r[c("key")].startsWith(k) || r[c("upload_name")].includes(k)));
+  const todo = t.rows.filter((r) => !/^[0-9a-f]{32}$/.test(r[c("RUID")]) && !skipCat.includes(r[c("category")]) && !skipKey.some((k) => (r[c("key")] || "").startsWith(k) || r[c("upload_name")].includes(k)));
   console.log(`올릴 그림 ${todo.length}장 (건너뜀: ${skipCat.join("/") || "-"} · ${skipKey.join("/") || "-"})`);
   if (argv.includes("--dry")) return;
   await connect();
   let n = 0;
   for (const r of todo) {
-    const name = r[c("upload_name")], rel = r[c("file")], group = r[c("group")] || "OJYYQ";
+    const name = r[c("upload_name")], rel = r[c("file")], group = (c("group") >= 0 && r[c("group")]) || "OJYYQ";
     const body = fs.readFileSync(path.join(root, pack, rel));
     const args = { groupCode: group, category: "sprite", subcategory: "object", name, description: `${pack.split("/").pop()} ${r[c("category")]}`, contentLength: body.length };
     const first = pickJson(await callTool("asset_create_group_resource_storage_item", args));
@@ -167,7 +171,7 @@ async function uploadRes(pack, argv) {
       ] });
     }
     r[c("RUID")] = ruid;
-    r[c("status")] = "uploaded";
+    if (c("status") >= 0) r[c("status")] = "uploaded";
     writeQuoted(resFile, t);
     n++;
     if (n % 10 === 0 || n === todo.length) console.log(`  ${n}/${todo.length} ${name}`);
