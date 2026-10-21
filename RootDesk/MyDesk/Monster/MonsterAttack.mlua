@@ -35,7 +35,8 @@ script MonsterAttack extends AttackComponent
     property integer WarningSerial = 0
     property integer WarningTimer = 0
     property integer NovaTimer = 0
-    property number NovaLineWidth = 0.12
+    property integer NovaTele = 0             -- 클라이언트: 범위 기술 예고 (Util.Telegraph id)
+    property integer WindupTele = 0           -- 클라이언트: 근접 강타 예고 (Util.Telegraph id)
     property number WarnLineWidth = 0.1      -- 정예·변종 평타 예고 선 두께 (예전 0.65는 꽉 찬 붉은 점처럼 보였다)
     property string WarningOwner = ""
     property integer WarningEpoch = -1
@@ -434,7 +435,7 @@ script MonsterAttack extends AttackComponent
         self.WarningEpoch = epoch
         local drawn = false
         if self.AttackRange > 1.5 then drawn = self:DrawRangedWarning(dir)
-        else drawn = self:DrawMeleeWarning(dir) end
+        else drawn = self:DrawMeleeWarning(dir, duration) end
         if not drawn then
             local reach = math.max(0.4, self.AttackRange * 0.55)
             if self.AttackRange > 1.5 then reach = 0.3 end
@@ -459,22 +460,14 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("ClientOnly")
-    method boolean DrawMeleeWarning(Vector2 dir)
-        -- 올라오는 입자 대신 실제 공격 원의 경계를 표시해 옆·뒤 회피 거리를 읽게 한다.
-        local line = self.Entity.LineRendererComponent
-        if not isvalid(line) or dir:Magnitude() < 0.05 then return false end
-        local transform = self.Entity.TransformComponent
+    method boolean DrawMeleeWarning(Vector2 dir, number duration)
+        -- 실제 공격 원 반경의 흐린 빛 테두리 + 차오르는 원판 (Util.Telegraph) — 옆·뒤 회피 거리와 남은 시간을 함께 읽는다.
+        if dir:Magnitude() < 0.05 then return false end
         local center = self:MeleeCenter(dir:Normalize())
         local radius = self:MeleeReach()
-        local color = Color(1, 0.45, 0.2, 0.9)
-        line.Points:Clear()
-        for i = 0, 24 do
-            local angle = math.pi * 2 * i / 24
-            local point = center + Vector2(math.cos(angle), math.sin(angle)) * radius
-            local localPoint = transform:ToLocalPoint(Vector3(point.x, point.y, transform.WorldPosition.z))
-            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, self.WarnLineWidth))
-        end
-        if self.DebugCombat then log("[VRF] melee warning points=25 center=" .. tostring(center) .. " radius=" .. tostring(radius)) end
+        if self.WindupTele ~= 0 then _Util:StopTelegraph(self.WindupTele) end
+        self.WindupTele = _Util:Telegraph(self.Entity, center, radius, "", duration)
+        if self.DebugCombat then log("[VRF] melee warning telegraph center=" .. tostring(center) .. " radius=" .. tostring(radius)) end
         return true
     end
 
@@ -515,26 +508,20 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("ClientOnly")
-    method void DrawNovaWarning(Vector2 center, number radius, Color color, number duration)
-        -- 변종 범위 기술 예고: 실제 판정 원(CircleShape)의 경계를 선명한 선으로 그린다. duration 뒤 같은 자리에서 터진다.
-        local line = self.Entity.LineRendererComponent
-        if not isvalid(line) then return end
+    method void DrawNovaWarning(Vector2 center, number radius, string element, number duration)
+        -- 범위 기술 예고: 실제 판정 원(CircleShape) 반경의 흐린 빛 테두리 + 차오르는 원판 (Util.Telegraph). duration 뒤 같은 자리에서 터진다.
         self:ClearWindup()
         if self.WarningOwner == "ult" then return end
-        if self.WarningOwner == "basic" or self.WarningOwner == "" then line.Points:Clear() end
+        local line = self.Entity.LineRendererComponent
+        if self.WarningOwner == "basic" and isvalid(line) then line.Points:Clear() end
         self.WarningOwner = "nova"
-        local transform = self.Entity.TransformComponent
-        for i = 0, 40 do
-            local angle = math.pi * 2 * i / 40
-            local p = center + Vector2(math.cos(angle), math.sin(angle)) * radius
-            local localPoint = transform:ToLocalPoint(Vector3(p.x, p.y, transform.WorldPosition.z))
-            line.Points:Add(LinePoint(Vector2(localPoint.x, localPoint.y), color, self.NovaLineWidth))
-        end
+        if self.NovaTele ~= 0 then _Util:StopTelegraph(self.NovaTele) end
+        self.NovaTele = _Util:Telegraph(self.Entity, center, radius, element, duration)
         if self.NovaTimer ~= 0 then _TimerService:ClearTimer(self.NovaTimer) end
         self.NovaTimer = _TimerService:SetTimerOnce(function()
             self.NovaTimer = 0
+            self.NovaTele = 0
             if not isvalid(self.Entity) or self.WarningOwner ~= "nova" then return end
-            if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
             self.WarningOwner = ""
         end, duration)
     end
@@ -550,6 +537,7 @@ script MonsterAttack extends AttackComponent
         -- 경고 입자와 제거 타이머를 함께 정리한다.
         if self.WarningTimer ~= 0 then _TimerService:ClearTimer(self.WarningTimer) self.WarningTimer = 0 end
         if self.WarningSerial ~= 0 then _ParticleService:RemoveParticle(self.WarningSerial) self.WarningSerial = 0 end
+        if self.WindupTele ~= 0 then _Util:StopTelegraph(self.WindupTele) self.WindupTele = 0 end
         if self.WarningOwner == "basic" then
             if isvalid(self.Entity.LineRendererComponent) then self.Entity.LineRendererComponent.Points:Clear() end
             self.WarningOwner = ""
@@ -559,7 +547,13 @@ script MonsterAttack extends AttackComponent
 
     method void OnEndPlay()
         -- 폐기한 적의 판정과 경고가 다음 세션에 남지 않게 한다.
-        if self:IsServer() then self:CancelPending() else self:ClearWindup() end
+        if self:IsServer() then
+            self:CancelPending()
+        else
+            self:ClearWindup()
+            if self.NovaTele ~= 0 then _Util:StopTelegraph(self.NovaTele) end
+            self.NovaTele = 0
+        end
     end
 
     @ExecSpace("Multicast")
@@ -704,7 +698,7 @@ script MonsterAttack extends AttackComponent
         -- 첫 대상 발밑 파란 예고 원 + 코덱스 번개 예고 타원 (예고 시간 동안)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        self:DrawNovaWarning(Vector2(pos.x, pos.y), 0.55, Color(0.45, 0.75, 1, 0.95), seconds)
+        self:DrawNovaWarning(Vector2(pos.x, pos.y), 0.55, "light", seconds)
         local mark = _EffectService:PlayEffect(_GameConst.SpriteLightningWarning, self.Entity, pos, 0, Vector3(1.15, 1.15, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 3 })
         _TimerService:SetTimerOnce(function()
             if mark ~= nil and mark ~= 0 then _EffectService:RemoveEffect(mark) end

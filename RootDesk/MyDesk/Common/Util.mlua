@@ -10,6 +10,8 @@ script Util extends Logic
     property number SpawnRetryInterval = 0.1
     property any ListMemo = nil               -- 맵Id·종류 → { at, list } 맵 전체 컴포넌트 목록 (0.2초 재사용)
     property number ListMemoSec = 0.2
+    property table Telegraphs = {}            -- 클라이언트: 범위 예고 id → { rim, fill, decal, timer }
+    property integer TelegraphSeq = 0
     property any TileMemo = nil               -- 맵Id → { tiles, ox, oy, gx, gy, cells = 칸키 → 막힘 } (일반 Lua 테이블이라 any)
 
     @ExecSpace("Client")
@@ -326,6 +328,73 @@ script Util extends Logic
         local scale = (radius * 2) / (pxW / 100)
         local height = (pxH / 100) * scale
         return _EffectService:PlayEffect(ruid, instigator, center - Vector3(0, height * 0.5, 0), 0, Vector3(scale, scale, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 2, Color = tint })
+    end
+
+    method string TeleSprite(string list, string element)
+        -- "phys=ruid;fire=ruid…" 목록에서 속성 그림 (모르는 속성·물리·마법은 phys)
+        local key = (element == "fire" or element == "poison" or element == "cold" or element == "light") and element or "phys"
+        for k, v in string.gmatch(list, "(%w+)=(%w+)") do
+            if k == key then return v end
+        end
+        return ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer Telegraph(Entity instigator, Vector2 center, number radius, string element, number seconds)
+        -- 범위 예고 (10-21): 실선 원 대신 흐린 빛 테두리(판정 반경 그대로) + 가운데서 바깥으로 차오르는 원판 — 테두리까지 차면 터진다.
+        -- 속성 기술은 그 속성 바닥 그림을 테두리 안에 옅게 깐다. seconds 뒤(또는 StopTelegraph) 모두 지운다. 반환값 = 예고 id
+        if not isvalid(instigator) or radius <= 0 then return 0 end
+        local opt = function(order) return { SortingLayer = "MapLayer0", OrderInLayer = order } end
+        local size = 2.56   -- 256px 그림 = 2.56칸
+        local pos = Vector3(center.x, center.y, 0)
+        local full = radius * 2 / size
+        self.TelegraphSeq = self.TelegraphSeq + 1
+        local id = self.TelegraphSeq
+        local rec = { rim = 0, fill = 0, decal = 0, timer = 0 }
+        self.Telegraphs[id] = rec
+        -- 바닥(0)과 몬스터·플레이어(2) 사이 1 — 예고가 몸을 덮지 않는다
+        rec.rim = _EffectService:PlayEffect(self:TeleSprite(_GameConst.SpriteTeleRim, element), instigator, pos, 0, Vector3(full, full, 1), true, opt(1))
+        local ground = ""
+        local gw, gh = 140, 70
+        if element == "poison" then ground = _GameConst.SpriteGroundPoison gw, gh = 160, 80
+        elseif element == "fire" then ground = _GameConst.SpriteGroundFire
+        elseif element == "cold" then ground = _GameConst.SpriteGroundCold
+        elseif element == "light" then ground = _GameConst.SpriteGroundLantern end
+        if ground ~= "" then
+            local gs = (radius * 0.85 * 2) / (gw / 100)
+            rec.decal = _EffectService:PlayEffect(ground, instigator, pos - Vector3(0, (gh / 100) * gs * 0.5, 0), 0, Vector3(gs, gs, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(1, 1, 1, 0.55) })
+        end
+        local fillRuid = self:TeleSprite(_GameConst.SpriteTeleFill, element)
+        local t = 0
+        local step = 0.06
+        local function grow()
+            local k = 0.12 + 0.88 * math.min(1, t / math.max(0.1, seconds))
+            local old = rec.fill
+            rec.fill = _EffectService:PlayEffect(fillRuid, instigator, pos, 0, Vector3(full * k, full * k, 1), true, opt(1))
+            if old ~= 0 then _EffectService:RemoveEffect(old) end
+        end
+        grow()
+        rec.timer = _TimerService:SetTimerRepeat(function()
+            t = t + step
+            if t >= seconds or self.Telegraphs[id] == nil then
+                self:StopTelegraph(id)
+                return
+            end
+            grow()
+        end, step)
+        return id
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopTelegraph(integer id)
+        -- 범위 예고 지우기 (공격이 끊기거나 시간이 다 됐을 때)
+        local rec = self.Telegraphs[id]
+        if rec == nil then return end
+        self.Telegraphs[id] = nil
+        if rec.timer ~= 0 then _TimerService:ClearTimer(rec.timer) end
+        if rec.rim ~= 0 then _EffectService:RemoveEffect(rec.rim) end
+        if rec.fill ~= 0 then _EffectService:RemoveEffect(rec.fill) end
+        if rec.decal ~= nil and rec.decal ~= 0 then _EffectService:RemoveEffect(rec.decal) end
     end
 
     method table Frames(string ruids)
