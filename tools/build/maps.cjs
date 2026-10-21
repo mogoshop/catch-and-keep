@@ -269,11 +269,16 @@ function artEntities(d, maps, ctx, layout) {
     walls(layout, spec.wall, spec.tint, "ArtWall");
     const props = list(spec.props || "");
     if (props.length) {
+      // 장식 이름 뒤 「*배율」은 그 장식만 크게 (예: wreck-hull*1.8 — 배 한 척이 상자만 하게 찍혀 보였다, 10-21 사용자 지적).
+      // 배율을 하나라도 적은 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
+      const vary = props.some((x) => x.includes("*"));
       layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
-        const name = props[p.pick % props.length];
-        const ps = pscale(name, 0.8);
+        const [name, mul] = props[p.pick % props.length].split("*");
+        const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? 0.88 + ((p.pick * 7) % 25) / 100 : 1);
+        const o = sprite(ruid(name), null, 1);
+        if (vary) o["MOD.Core.SpriteRendererComponent"].FlipX = (p.pick >> 3) % 2 === 1;
         block(name, p.x + 0.5, p.y + 0.2, ps);
-        out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(ps), y: r3(ps), z: 1 } } }) });
+        out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(ps), y: r3(ps), z: 1 } } }) });
       });
     }
   } else if (art.border) {
