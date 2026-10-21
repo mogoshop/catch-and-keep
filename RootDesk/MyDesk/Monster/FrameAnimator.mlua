@@ -4,11 +4,15 @@
 -- stand·move는 반복, attack·hit·die는 한 번 재생 후 마지막 프레임 유지 (사망은 숨겨질 때까지 쓰러진 모습).
 -- attack: 타격 칸(clip.s)이 실제 피해 시점(MonsterAttack.AttackWindup)에 오도록 칸 시간을 늘이거나 줄인다.
 -- cast: 보스 내려찍기 준비(BossPattern.SlamPhase = windup) 동안 주문 동작 (프레임이 있는 보스만).
+-- 변신(FormKey): 서버가 정하면 그 프레임 묶음으로 바꾼다 (재의 왕 70% → 심연의 군주 form_abysslord). 비면 FrameKey.
 -- 잠깐 동작(Flash): 방패 막기 block · 짐승 덮치기 leap · 사제 혼 빼앗기 steal. 사망·공격이 아니면 정한 시간 동안 그 동작 (프레임이 있는 몬스터만).
 @Component
 script FrameAnimator extends Component
 
     property string FrameKey = ""            -- 몬스터 sourceId (빌드가 모델에 넣는다)
+    @Sync
+    property string FormKey = ""             -- 변신 모습 프레임 키 (서버가 정한다, 비면 FrameKey)
+    property string LoadedKey = ""
     property any Set = nil                   -- GameData 프레임 묶음 (클라이언트)
     property string Action = ""
     property integer Frame = 1
@@ -20,17 +24,31 @@ script FrameAnimator extends Component
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         -- 프레임 묶음을 찾고 첫 프레임을 건다
-        self.Set = _GameData:GetMonsterFrames(self.FrameKey)
+        self:LoadSet()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LoadSet()
+        -- 지금 모습(FormKey 또는 FrameKey)의 프레임 묶음을 걸고 지금 동작을 처음부터
+        local key = self.FormKey ~= "" and self.FormKey or self.FrameKey
+        self.LoadedKey = key
+        self.Set = _GameData:GetMonsterFrames(key)
+        if self.Set == nil and key ~= self.FrameKey then self.Set = _GameData:GetMonsterFrames(self.FrameKey) end
         if self.Set == nil then
-            log_warning("[FrameAnimator] 프레임 없음 " .. self.FrameKey)
+            log_warning("[FrameAnimator] 프레임 없음 " .. key)
             return
         end
+        self.Action = ""
         self:Play(self:ActionOf())
     end
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
-        -- 상태가 바뀌면 그 동작 처음부터, 아니면 프레임 시간만큼 다음 프레임
+        -- 상태가 바뀌면 그 동작 처음부터, 아니면 프레임 시간만큼 다음 프레임 (모습이 바뀌면 묶음부터 다시)
+        if (self.FormKey ~= "" and self.FormKey or self.FrameKey) ~= self.LoadedKey then
+            self:LoadSet()
+            return
+        end
         local set = self.Set
         if set == nil then return end
         local action = self:ActionOf()

@@ -251,14 +251,14 @@ script MonsterAttack extends AttackComponent
 
     @ExecSpace("Multicast")
     method void DashFx(boolean beast, number seconds)
-        -- 덮치기: 도약 동작(있으면) + 발밑 흙먼지 · 돌아 들어가기: 잔상처럼 몸이 잠깐 옅어진다 (seconds = 웅크림 + 돌진)
+        -- 덮치기: 도약 동작(있으면) + 발밑 흙먼지 · 돌아 들어가기: 돌진 동작(있으면) + 잔상처럼 몸이 잠깐 옅어진다 (seconds = 웅크림 + 돌진)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local p = self.Entity.TransformComponent.WorldPosition
+        ---@type FrameAnimator
+        local anim = self.Entity:GetComponent("script.FrameAnimator")
+        if anim ~= nil then anim:Flash(beast and "leap" or "dash", seconds) end
         if beast then
-            ---@type FrameAnimator
-            local anim = self.Entity:GetComponent("script.FrameAnimator")
-            if anim ~= nil then anim:Flash("leap", seconds) end
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x, p.y + 0.1, p.z), 0, Vector3(0.5, 0.3, 1), false, { Color = Color(0.75, 0.62, 0.48, 0.6) })
             return
         end

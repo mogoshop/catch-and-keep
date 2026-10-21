@@ -77,7 +77,7 @@ function genGameData() {
   const sourceOf = Object.fromEntries(mons.map((m) => [m.id, m.sourceId]));
   const frames = {};
   for (const f of load("monster_frames")) {
-    const src = sourceOf[f.monster];
+    const src = sourceOf[f.monster] || f.monster.replace(/^form_/, "");   // form_<키>: 변신 모습 (몬스터 행 없음)
     (frames[src] = frames[src] || {})[f.state] = f;
   }
   const firstFrame = (src, state, fallback) => (frames[src] && frames[src][state] ? frames[src][state].frames.split(";")[0] : fallback);

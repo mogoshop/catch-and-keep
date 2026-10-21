@@ -2,6 +2,7 @@
 // 클립을 메이커에서 만들지 않고 프레임 스프라이트를 FrameAnimator가 직접 재생한다 (클립 RUID가 있으면 그 동작은 클립).
 //   node tools/import_frames.cjs <팩 폴더> <코덱스 entity=monsters.csv id,...>
 //   예) node tools/import_frames.cjs assets/codex-act2-v1 jackal=jackal
+//   변신 모습) node tools/import_frames.cjs assets/codex-art-appeal-full-v4 abysslord=form_abysslord
 // 이미 있는 다른 몬스터 행은 그대로 두고, 지정한 몬스터 행만 새로 쓴다.
 "use strict";
 const fs = require("fs");
@@ -37,7 +38,8 @@ function main() {
   if (!pack || !mapArg) throw new Error("사용법: node tools/import_frames.cjs <팩 폴더> <entity=monster,...>");
   const map = Object.fromEntries(mapArg.split(",").map((p) => p.split("=")));
   const monsterIds = new Set(load("monsters").map((m) => m.id));
-  for (const id of Object.values(map)) if (!monsterIds.has(id)) throw new Error(`monsters.csv에 '${id}' 없음`);
+  // form_<키> = 몬스터 행이 없는 변신 모습 (예: 재의 왕 → form_abysslord). GameData.MonsterFrames[<키>]로 들어간다
+  for (const id of Object.values(map)) if (!monsterIds.has(id) && !id.startsWith("form_")) throw new Error(`monsters.csv에 '${id}' 없음`);
   const reg = parseCsv(fs.readFileSync(path.join(ROOT, pack, "animation-registration.csv"), "utf8"));
   const keep = fs.existsSync(OUT) ? fs.readFileSync(OUT, "utf8").split("\n").slice(1).filter((l) => l && !Object.values(map).includes(l.split(",")[0])) : [];
   const added = [];

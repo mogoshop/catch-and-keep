@@ -62,8 +62,14 @@ def main():
             if (i, s) in first:
                 m[s] = first[(i, s)]
         d = dims[i]
-        m["w"], m["h"] = d["frame_canvas_width"], d["frame_canvas_height"]
-        vw, vh = float(d["stand_visible_width"]), float(d["stand_visible_height"])
+        if "frame_canvas_width" in d:
+            m["w"], m["h"] = d["frame_canvas_width"], d["frame_canvas_height"]
+            vw, vh = float(d["stand_visible_width"]), float(d["stand_visible_height"])
+        else:
+            # 크기 표가 캔버스만 줄 때(v4): 서 있는 첫 그림의 보이는 영역을 직접 잰다
+            m["w"], m["h"] = d["width"], d["height"]
+            box = Image.open(os.path.join(P, f"png/monsters/{i}/stand/0.png")).getchannel("A").getbbox()
+            vw, vh = float(box[2] - box[0]), float(box[3] - box[1])
         sc = float(m["scale"] or 1)
         m["bodyH"] = str(round(vh))
         if "--skip-hit" not in sys.argv:

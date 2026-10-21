@@ -11,6 +11,7 @@ script AshKingRite extends Component
 
     @Sync
     property integer Phase = 1
+    property boolean Formed = false         -- 심연의 군주 모습인가 (FrameAnimator.FormKey)
     @Sync
     property boolean Exposed = false        -- ③부터: 받는 피해 +ExposedPct%
     property number ExposedPct = 30
@@ -49,6 +50,7 @@ script AshKingRite extends Component
             self:ResetRite()
             return
         end
+        if self.Phase == 1 and self.Formed then self:SetForm("") end
         local ratio = monster.Hp / math.max(1, monster.MaxHp)
         if self.Phase == 1 and ratio <= 0.7 then self:EnterPhase(2) end
         if self.Phase == 2 and ratio <= 0.4 then self:EnterPhase(3) end
@@ -89,6 +91,8 @@ script AshKingRite extends Component
         end
         if phase == 2 then
             monster.DisplayName = "심연의 군주"
+            self:SetForm("abysslord")
+            self:TransformFx()
             self.DevourTimer = 1.5
             self.SummonTimer = 0
             bp:Announce("「교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.」 — 군주가 방 안의 혼을 빨아들인다! 혼은 서둘러 거둬라")
@@ -118,6 +122,7 @@ script AshKingRite extends Component
         ---@type Monster
         local monster = self.Entity:GetComponent("script.Monster")
         if monster ~= nil and self.BaseName ~= "" then monster.DisplayName = self.BaseName end
+        if monster == nil or not monster.IsDead then self:SetForm("") end   -- 죽을 때는 군주 모습으로 쓰러진다 (다시 나타나면 아래에서 되돌린다)
         ---@type BossPattern
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil and self.BaseSlamInterval > 0 then
@@ -194,6 +199,27 @@ script AshKingRite extends Component
             self:BlastFx()
             log(string.format("[VRF] ash king blast hit=%d hidden=%d", hit, hid))
         end, self.BlastWarn)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetForm(string key)
+        -- 모습 바꾸기: 망토 두른 재의 왕 ↔ 보라 균열의 심연의 군주 (같은 캔버스·발 원점이라 자리가 튀지 않는다)
+        ---@type FrameAnimator
+        local anim = self.Entity:GetComponent("script.FrameAnimator")
+        if anim ~= nil then anim.FormKey = key end
+        self.Formed = key ~= ""
+    end
+
+    @ExecSpace("Multicast")
+    method void TransformFx()
+        -- 변신: 재 망토가 타서 흩어지고 보라 기운이 터진다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x, p.y + 1.2, p.z), 0, Vector3(3.2, 3.2, 1), false, { Color = Color(0.7, 0.3, 1, 0.9) })
+        _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, Vector3(p.x, p.y + 0.8, p.z), 0, Vector3(1.6, 1.6, 1), false, { Color = Color(0.35, 0.3, 0.35, 0.8) })
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
     end
 
     @ExecSpace("Multicast")
