@@ -4,6 +4,8 @@
 @Logic
 script HudMain extends Logic
 
+    property string QuestTrackKey = ""       -- 지금 의뢰·단계 (번호:상태)
+    property string QuestTrackSeen = ""      -- 눌러서 닫은 의뢰 알림 카드의 키 (같은 키면 다시 안 띄움)
     property number PollInterval = 0.15
     property integer TimerId = 0
     property string SlotKey = ""
@@ -88,7 +90,7 @@ script HudMain extends Logic
         _UIKit:Connect("MenuWin/Channel", function() self:FromMenu("") _ChannelWindow:Show() end)
         _UIKit:Connect("MenuWin/Guide", function() self:FromMenu("") _GuideWindow:Show(1) end)
         _UIKit:Connect("BtnMenu", function() _UIKit:Toggle("MenuWin") end)
-        _UIKit:Connect("QuestTrack", function() _UIKit:Toggle("QuestWin") end)
+        _UIKit:Connect("QuestTrack", function() self:OpenQuestFromTrack() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
         log("[HudMain] 시작")
     end
@@ -218,8 +220,8 @@ script HudMain extends Logic
         self:RenderLocks(st)
         self:RenderMinions()
         self:RenderTarget(player)
-        _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack())
         self:RenderQuestTrack(player)
+        _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack() and self.QuestTrackKey ~= self.QuestTrackSeen)
         self:RenderParty()
         self:RenderTip(player, st)
         self:RenderSoulUi(player)
@@ -467,13 +469,23 @@ script HudMain extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void OpenQuestFromTrack()
+        -- 의뢰 알림 카드를 누르면 카드는 닫히고 의뢰 창이 열린다. 같은 의뢰·같은 단계의 카드는 다시 띄우지 않는다 (10-21 사용자: 화면 UI 줄이기)
+        self.QuestTrackSeen = self.QuestTrackKey
+        _UIKit:SetEnabled("QuestTrack", false)
+        _UIKit:Open("QuestWin")
+    end
+
+    @ExecSpace("ClientOnly")
     method void RenderQuestTrack(Entity player)
-        -- 의뢰 추적(글자만): 뱃지 → 제목 → 지역 → 완료 조건·진행. 누르면 퀘스트 창
+        -- 의뢰 알림 카드(글자만): 뱃지 → 제목 → 지역 → 지금 할 일. 의뢰가 바뀌거나 단계(받기 → 진행 → 보고)가 바뀔 때 한 번 뜨고,
+        -- 누르면 닫히며 의뢰 창이 열린다. 그 뒤 진행은 의뢰 창(퀘스트 Q)에서 본다
         ---@type PlayerQuest
         local quest = player:GetComponent("script.PlayerQuest")
         if quest == nil then return end
         local q = _QuestData:Get(quest.Index)
         local total = _QuestData:Count()
+        self.QuestTrackKey = tostring(quest.Index) .. ":" .. tostring(quest.State)
         local badge, title, caption, goal = "", "", "", ""
         if q == nil then
             badge, title, caption, goal = "완료", "모든 의뢰 완료", "심도 던전·높은 난이도", "새로운 도전을 찾아보세요"
