@@ -98,7 +98,8 @@ function genGameData() {
       const src = (mons.find((m) => m.id === b.id) || {}).sourceId || b.id;
       // 무리 부르기: 보스는 자기 복제가 아니라 bosses.csv의 졸개(minion)를 부른다 (sourceId로 바꿔 둔다)
       const minion = b.minion ? (mons.find((m) => m.id === b.minion) || {}).sourceId || "" : "";
-      return `        self.BossSkills[${s(src)}] = { skills = ${s(b.skills)}, interval = ${n(b.skillInterval || 5)}, minion = ${s(minion)} }`;
+      // 레이드 강화 (10-21): 몸 주위 오라(aura·반경·공격력 배율/0.5초) · 생명 25% 궁극기(ult 모양·이름·배율·횟수)
+      return `        self.BossSkills[${s(src)}] = { skills = ${s(b.skills)}, interval = ${n(b.skillInterval || 5)}, minion = ${s(minion)}, aura = ${s(b.aura || "")}, auraR = ${n(b.auraRadius || 0)}, auraMult = ${n(b.auraMult || 0)}, ult = ${s(b.ult || "")}, ultName = ${s(b.ultName || "")}, ultMult = ${n(b.ultMult || 0)}, ultWaves = ${n(b.ultWaves || 1)} }`;
     }),
     "        self.Variants = {}",
     "        self.VariantOrder = {}",

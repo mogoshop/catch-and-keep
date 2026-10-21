@@ -1,0 +1,149 @@
+-- 액트 1 보스 「묘지기 여왕」 단계 (10-21 레이드 강화). 내려찍기·기술·오라·궁극기는 같은 엔티티의 BossPattern을 쓴다.
+--   ① (66% 초과): 기본 패턴
+--   ② 무덤 열기 (66% 이하): 여왕 주위에 무덤(뼈 둥지) 3개 — 부수지 않으면 구더기가 계속 기어 나온다
+--   ③ 여왕의 비명 (33% 이하): 12초마다 1.3초 예고 뒤 반경 ScreamRadius 안 플레이어에게 피해 + 1.5초 휘청 (멀리 떨어지면 피한다)
+-- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아가고 남은 무덤을 치운다.
+@Component
+script GraveQueenRite extends Component
+
+    property integer Phase = 1
+    property table Nests = {}
+    property integer NestCount = 3
+    property number ScreamTimer = 0
+    property number ScreamInterval = 12
+    property number ScreamWarn = 1.3
+    property number ScreamRadius = 6
+    property number ScreamMult = 0.8
+    property integer ScreamCount = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        log("[VRF] GraveQueenRite ready")
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버만: 생명 비율로 단계를 넘기고 3단계에서는 비명 타이머를 돌린다
+        if not self:IsServer() then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            self:ResetRite()
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if self.Phase == 1 and ratio <= 0.66 then self:EnterPhase(2) end
+        if self.Phase == 2 and ratio <= 0.33 then self:EnterPhase(3) end
+        if self.Phase >= 3 then
+            self.ScreamTimer = self.ScreamTimer - delta
+            if self.ScreamTimer <= 0 then
+                self.ScreamTimer = self.ScreamInterval
+                self:Scream()
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnterPhase(integer phase)
+        self.Phase = phase
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if phase == 2 then
+            self:OpenGraves()
+            if bp ~= nil then bp:Announce("여왕이 무덤 셋을 열었다 — 무덤을 부수지 않으면 구더기가 끝없이 기어 나온다") end
+        elseif phase == 3 then
+            self.ScreamTimer = 2
+            if bp ~= nil then bp:Announce("여왕이 울부짖으려 한다 — 붉은 빛이 차오르면 멀리 떨어져라") end
+        end
+        log("[VRF] grave queen phase " .. tostring(phase))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OpenGraves()
+        -- 여왕 주위 원 위에 무덤(뼈 둥지) — 구더기를 낳는다. 다시 나타나지 않는다
+        ---@type Monster
+        local boss = self.Entity:GetComponent("script.Monster")
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local level = boss ~= nil and math.max(1, boss.Level - 1) or 1
+        self.Nests = {}
+        for i = 1, self.NestCount do
+            local ang = math.pi * 2 * i / self.NestCount + 0.5
+            local at = _Util:ReachablePoint(map, here, here + Vector2(math.cos(ang) * 2.8, math.sin(ang) * 2.0), 0.4)
+            local e = _SpawnService:SpawnByModelId("bonenest", "QueenGrave", Vector3(at.x, at.y, 0), map)
+            if isvalid(e) then
+                table.insert(self.Nests, e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
+                    ---@type MonsterNest
+                    local nest = e:GetComponent("script.MonsterNest")
+                    if nest ~= nil then nest.Minions = "graveworm" end
+                end, nil)
+            end
+        end
+        log("[VRF] grave queen graves " .. tostring(#self.Nests))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Scream()
+        -- 비명: 예고(붉은 큰 원) 뒤 반경 안 플레이어에게 피해 + 휘청
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk == nil then return end
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        self.ScreamCount = self.ScreamCount + 1
+        self:ScreamWarnFx(Vector3(here.x, here.y, 0), self.ScreamRadius, self.ScreamWarn)
+        _TimerService:SetTimerOnce(function()
+            ---@type Monster
+            local monster = self.Entity:GetComponent("script.Monster")
+            if not isvalid(self.Entity) or monster == nil or monster.IsDead or self.Entity.CurrentMap ~= map then return end
+            atk:SlamWithElement(here, self.ScreamRadius, atk.Damage * self.ScreamMult, "")
+            for _, p in ipairs(_Util:PlayersNear(map, here, self.ScreamRadius)) do
+                ---@type PlayerStats
+                local st = p:GetComponent("script.PlayerStats")
+                if st ~= nil then st:ApplyStagger(1.5) end
+            end
+            self:ScreamFx(Vector3(here.x, here.y, 0), self.ScreamRadius)
+            log("[VRF] grave queen scream " .. tostring(self.ScreamCount))
+        end, self.ScreamWarn)
+    end
+
+    @ExecSpace("Multicast")
+    method void ScreamWarnFx(Vector3 pos, number radius, number seconds)
+        -- 비명 예고: 큰 붉은 원 + 여왕 몸에 붉은 기운
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        if atk ~= nil then atk:DrawNovaWarning(Vector2(pos.x, pos.y), radius, Color(1, 0.2, 0.2, 0.95), seconds) end
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.2, 1.2, 1), false, { Color = Color(1, 0.25, 0.2, 1) })
+        if (_Util:Pos2(me) - Vector2(pos.x, pos.y)):Magnitude() <= radius + 1 then _HudMain:HintDanger("nova") end
+    end
+
+    @ExecSpace("Multicast")
+    method void ScreamFx(Vector3 pos, number radius)
+        -- 비명: 퍼지는 충격 + 화면 흔들림
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = Color(0.9, 0.2, 0.25, 0.55) })
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로: 남은 무덤을 치운다
+        if self.Phase == 1 then return end
+        self.Phase = 1
+        for _, e in ipairs(self.Nests) do
+            if isvalid(e) then e:Destroy() end
+        end
+        self.Nests = {}
+        log("[VRF] GraveQueenRite reset")
+    end
+
+end

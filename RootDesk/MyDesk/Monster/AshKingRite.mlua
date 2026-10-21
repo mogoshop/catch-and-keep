@@ -1,6 +1,6 @@
 -- 액트 4 최종 보스 「재의 왕」 기믹 (docs/design/27 §5). 내려찍기·장판·졸개는 같은 엔티티의 BossPattern을 쓴다.
 --   ① 깨어남 (70% 초과): 화염구·연사·지옥불 사제 소환 (BossPattern 기본)
---   ② 혼 포식 (70% 이하): 이름판이 「심연의 군주」로 바뀐다. 8초마다 방 안의 혼 구슬을 전부 끌어당겨 먹는다 (SoulOrb.ForceSteal)
+--   ② 혼 포식 (70% 이하): 「심연의 군주」로 변신 (그림·이름, 화염 오라 반경 ×1.5). 8초마다 방 안의 혼 구슬을 전부 끌어당겨 먹는다 (SoulOrb.ForceSteal)
 --      — 먹을 때마다 혼 포식 한 겹(주는 피해 +15%, 최대 3겹). 16초마다 지옥불 사제 2 (졸개 4 이하)
 --   ③ 심장 노출 (40% 이하): 가슴의 혼각 세 조각이 드러나 받는 피해 +30% (Monster.GetDamageTakenMultiplier). 발밑 용암 장판 연속
 --   ④ 최후 (15% 이하): 10초마다 붉은 예고(1.6초) 뒤 전방위 폭발 — 군주가 보이는 자리(가린 벽 없음)의 플레이어는 최대 생명의 45% 화염 피해.
@@ -11,6 +11,7 @@ script AshKingRite extends Component
 
     @Sync
     property integer Phase = 1
+    property number BaseAuraRadius = 0
     property boolean Formed = false         -- 심연의 군주 모습인가 (FrameAnimator.FormKey)
     @Sync
     property boolean Exposed = false        -- ③부터: 받는 피해 +ExposedPct%
@@ -93,6 +94,8 @@ script AshKingRite extends Component
             monster.DisplayName = "심연의 군주"
             self:SetForm("abysslord")
             self:TransformFx()
+            if self.BaseAuraRadius <= 0 then self.BaseAuraRadius = bp.AuraRadius end
+            bp.AuraRadius = self.BaseAuraRadius * 1.5   -- 군주가 되면 화염 오라가 넓어진다
             self.DevourTimer = 1.5
             self.SummonTimer = 0
             bp:Announce("「교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.」 — 군주가 방 안의 혼을 빨아들인다! 혼은 서둘러 거둬라")
@@ -131,6 +134,7 @@ script AshKingRite extends Component
             bp.PoolSeconds = self.BasePoolSeconds
             bp.SlamAtTarget = false
         end
+        if bp ~= nil and self.BaseAuraRadius > 0 then bp.AuraRadius = self.BaseAuraRadius end
         log("[VRF] AshKingRite reset")
     end
 

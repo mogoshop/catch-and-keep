@@ -197,6 +197,10 @@ T.bosses.forEach((r, i) => {
   if (num(r.poolSec, 0) > 0 && (r.poolElement === "" || !ELEMENTS.has(r.poolElement))) err("bosses", i, `poolElement '${r.poolElement}' 알 수 없음`);
   if (num(r.poolSec, 0) >= num(r.slamInterval) - 1) err("bosses", i, "poolSec는 slamInterval보다 1초 이상 짧아야 함 (예고 원과 겹침)");
   if (!["true", "false", ""].includes(r.atTarget)) err("bosses", i, `atTarget '${r.atTarget}' — true / false`);
+  if (r.aura && !ELEMENTS.has(r.aura)) err("bosses", i, `aura '${r.aura}' — 속성 이름`);
+  if (r.aura && !(num(r.auraRadius, 0) > 0 && num(r.auraMult, 0) > 0)) err("bosses", i, "aura가 있으면 auraRadius·auraMult > 0");
+  if (r.ult && !["marks", "half"].includes(r.ult)) err("bosses", i, `ult '${r.ult}' — marks / half`);
+  if (r.ult && !(num(r.ultMult, 0) > 0 && r.ultName)) err("bosses", i, "ult가 있으면 ultName·ultMult 필요");
   if (r.bond && !/^[a-z0-9_]+$/.test(r.bond)) err("bosses", i, `bond '${r.bond}' — 형제 묶음 이름 (영문 소문자)`);
   if (r.extra && !fs.existsSync(path.join(ROOT, "RootDesk/MyDesk/Monster", r.extra.replace(/^script\./, "") + ".mlua"))) err("bosses", i, `extra '${r.extra}' — RootDesk/MyDesk/Monster에 스크립트 없음`);
 });

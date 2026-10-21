@@ -424,7 +424,7 @@ script MonsterAttack extends AttackComponent
         local boss = self.Entity:GetComponent("script.BossPattern")
         if boss ~= nil and boss.SlamPhase ~= "idle" then return end
         -- 범위 기술 예고(nova)가 떠 있는 동안에는 더 큰 위험을 덮어쓰지 않는다
-        if self.WarningOwner == "nova" then return end
+        if self.WarningOwner == "nova" or self.WarningOwner == "ult" then return end   -- 보스 궁극기 예고도 덮지 않는다
         -- D2·이모탈처럼 일반 몬스터의 평타에는 바닥 표시를 하지 않는다 (몸짓으로 읽는다). 정예·변종·보스만 얇은 테두리로 예고
         local body = self:Body()
         -- 거구의 크게 드는 강타는 일반 몬스터라도 예고한다 (피하라고 만든 한 방)
@@ -520,6 +520,7 @@ script MonsterAttack extends AttackComponent
         local line = self.Entity.LineRendererComponent
         if not isvalid(line) then return end
         self:ClearWindup()
+        if self.WarningOwner == "ult" then return end
         if self.WarningOwner == "basic" or self.WarningOwner == "" then line.Points:Clear() end
         self.WarningOwner = "nova"
         local transform = self.Entity.TransformComponent
