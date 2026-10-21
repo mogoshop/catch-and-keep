@@ -48,6 +48,13 @@ script MonsterAttack extends AttackComponent
     property number ChainMul = 1              -- 연쇄 한 번의 피해 배율 (튕길 때마다 ×0.85)
     property number ChainRange = 3            -- 다음 대상을 찾는 거리
     property Entity ChainTarget = nil         -- 지금 연쇄가 때리는 대상 하나
+    @Sync
+    property string Arch = ""                 -- 유형 동작 (archetypes.csv · docs/design/29). 보스·보스 패턴 몬스터는 "" (자기 패턴만)
+    property number ReachMul = 1              -- 거구: 내려치기 범위 ×1.35
+    property number ArchReadyAt = 0           -- 짐승 덮치기 · 암살자 돌아 들어가기 다음 가능 시각
+    property integer ArchSerial = 0
+    property integer DashCount = 0            -- 덮치기·돌아 들어가기 횟수 (검증용)
+    property integer StaggerCount = 0         -- 거구 강타로 휘청이게 한 횟수 (검증용)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -81,6 +88,18 @@ script MonsterAttack extends AttackComponent
             self.AttackWindup = 0.48
             self.AttackAnimationSeconds = 0.8
         end
+        -- 유형 동작: 거구는 크게 들었다 내려친다 (예고가 길고 범위가 넓다) · 짐승·암살자는 짧고 빠르다
+        local bossLike = body == nil or body.Grade >= 3 or self.Entity:GetComponent("script.BossPattern") ~= nil
+        self.Arch = bossLike and "" or _GameData:ArchetypeOf(source)
+        if self.Arch == "brute" then
+            self.AttackWindup = 0.8
+            self.AttackAnimationSeconds = 1.2
+            self.ReachMul = 1.35
+        elseif self.Arch == "beast" or self.Arch == "assassin" then
+            self.AttackWindup = 0.24
+            self.AttackAnimationSeconds = 0.5
+        end
+        self.ArchReadyAt = _UtilLogic.ElapsedSeconds + 1 + _UtilLogic:RandomDouble() * 2
         local stats = _GameData:GetMonsterStats(source)
         self.ChainJumps = stats ~= nil and math.floor(stats.chain or 0) or 0
         if self.ChainJumps > 0 then
@@ -135,6 +154,7 @@ script MonsterAttack extends AttackComponent
         self.CooldownTimer = self.CooldownTimer - delta
         self.ScanTimer = self.ScanTimer - delta
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
+        if self:TryArchMove() then return end
         self:UpdateMeleeSpacing(delta)
         if self.CooldownTimer > 0 or self.ScanTimer > 0 then return end
         self.ScanTimer = self.ScanInterval
@@ -142,6 +162,113 @@ script MonsterAttack extends AttackComponent
         if target == nil then return end
         self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
         self:BeginAttack(target)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TryArchMove()
+        -- 짐승: 2~3칸 떨어진 대상에게 덮쳐 문다 · 암살자: 대상 옆으로 빠르게 돌아 들어가 찌른다. 4초 남짓에 한 번
+        if self.Arch ~= "beast" and self.Arch ~= "assassin" then return false end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.ArchReadyAt or self.CooldownTimer > 0.3 then return false end
+        local beast = self.Arch == "beast"
+        local target = self:FindDefender(beast and 3.2 or 2.8)
+        if target == nil then return false end
+        local p = _Util:Pos2(self.Entity)
+        local to = _Util:Pos2(target) - p
+        local d = to:Magnitude()
+        if d < (beast and 1.4 or 1.0) then return false end
+        self.ArchReadyAt = now + (beast and 4.5 or 4) + _UtilLogic:RandomDouble() * 1.5
+        local aim = _Util:Pos2(target)
+        if not beast then
+            -- 대상의 옆 (지금 내가 있는 쪽으로 90°), 살짝 지나친 자리
+            local dir = to:Normalize()
+            local side = Vector2(-dir.y, dir.x)
+            if _UtilLogic:RandomDouble() < 0.5 then side = side * -1 end
+            aim = aim + side * 0.85 + dir * 0.25
+            if not _Util:HasLineOfSight(self.Entity.CurrentMap, p, aim) then aim = _Util:Pos2(target) - dir * 0.6 end
+        else
+            aim = aim - to:Normalize() * 0.55
+        end
+        self:Dash(target, aim, beast and 0.22 or 0.1)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Dash(Entity target, Vector2 aim, number crouch)
+        -- 잠깐 웅크렸다가(crouch초) 빠르게 aim까지 달려가 바로 공격한다. 맞거나 경직되면 중단 (속도는 늘 되돌린다)
+        local body = self:Body()
+        local movement = self.Entity.MovementComponent
+        if body == nil or not isvalid(movement) then return end
+        self.ArchSerial = self.ArchSerial + 1
+        local serial = self.ArchSerial
+        local epoch = self.AttackEpoch
+        local map = self.Entity.CurrentMap
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase.Enable = false end
+        movement:MoveToDirection(Vector2(0, 0), 0)
+        local from = _Util:Pos2(self.Entity)
+        local path = aim - from
+        local dist = path:Magnitude()
+        local dashSec = math.max(0.18, math.min(0.4, dist / 7))
+        self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + crouch + dashSec + 0.1
+        if math.abs(path.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = path.x > 0 end
+        self.DashCount = self.DashCount + 1
+        self:DashFx(self.Arch == "beast", crouch)
+        local function resume()
+            local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+            if behavior ~= nil then behavior:ResumeMovement() elseif isvalid(chase) then chase.Enable = true end
+        end
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or serial ~= self.ArchSerial or epoch ~= self.AttackEpoch or body.IsDead or self.Entity.CurrentMap ~= map then return end
+            local status = body:Status()
+            if status ~= nil and status:IsStunned() then return end
+            local now = _Util:Pos2(self.Entity)
+            local go = aim - now
+            if go:Magnitude() < 0.05 then return end
+            -- RectTile 맵 InputSpeed 1 ≈ 초당 0.836칸 (메이커 실측 — ShadowUnit.WorldPerInput)
+            movement.InputSpeed = math.max(2, math.min(12, go:Magnitude() / dashSec / 0.836))
+            movement:MoveToDirection(go:Normalize(), 0)
+            local state = self.Entity.StateComponent
+            if isvalid(state) and state.CurrentStateName ~= "MOVE" then state:ChangeState("MOVE") end
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(self.Entity) or serial ~= self.ArchSerial then return end
+                local st = body:Status()
+                local stunned = st ~= nil and st:IsStunned()
+                if not stunned then
+                    movement:MoveToDirection(Vector2(0, 0), 0)
+                    body:RefreshSpeed()
+                end
+                self.AttackAnimationUntil = 0
+                if epoch ~= self.AttackEpoch or body.IsDead or stunned or self.Entity.CurrentMap ~= map then return end
+                resume()
+                if self:IsLiveDefender(target) and _Util:Distance(target, self.Entity) <= self.AttackRange + 0.45 then
+                    self.CooldownTimer = self.AttackCooldown / body:GetAttackSpeedMultiplier()
+                    self:BeginAttack(target)
+                end
+            end, dashSec)
+        end, crouch)
+    end
+
+    @ExecSpace("Multicast")
+    method void DashFx(boolean beast, number crouch)
+        -- 덮치기: 발밑 흙먼지 · 돌아 들어가기: 잔상처럼 몸이 잠깐 옅어진다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        if beast then
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x, p.y + 0.1, p.z), 0, Vector3(0.5, 0.3, 1), false, { Color = Color(0.75, 0.62, 0.48, 0.6) })
+            return
+        end
+        local r = self.Entity.SpriteRendererComponent
+        if not isvalid(r) then return end
+        local c = r.Color
+        r.Color = Color(c.r, c.g, c.b, 0.45)
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and isvalid(r) then
+                local now = r.Color
+                r.Color = Color(now.r, now.g, now.b, 1)
+            end
+        end, crouch + 0.35)
     end
 
     @ExecSpace("ServerOnly")
@@ -297,7 +424,8 @@ script MonsterAttack extends AttackComponent
         if self.WarningOwner == "nova" then return end
         -- D2·이모탈처럼 일반 몬스터의 평타에는 바닥 표시를 하지 않는다 (몸짓으로 읽는다). 정예·변종·보스만 얇은 테두리로 예고
         local body = self:Body()
-        if body ~= nil and body.Grade < 2 and body:GetVariant() == "" then return end
+        -- 거구의 크게 드는 강타는 일반 몬스터라도 예고한다 (피하라고 만든 한 방)
+        if body ~= nil and body.Grade < 2 and body:GetVariant() == "" and self.Arch ~= "brute" then return end
         self:ClearWindup()
         self.WarningOwner = "basic"
         self.WarningEpoch = epoch
@@ -319,7 +447,7 @@ script MonsterAttack extends AttackComponent
 
     method number MeleeReach()
         -- 근접 예고와 실제 원형 판정이 같은 반경을 사용한다.
-        return math.max(0.4, self.AttackRange * 0.55)
+        return math.max(0.4, self.AttackRange * 0.55) * self.ReachMul
     end
 
     method Vector2 MeleeCenter(Vector2 dir)
@@ -439,7 +567,8 @@ script MonsterAttack extends AttackComponent
         local rot = math.deg(math.atan(dir.y, dir.x))
         if not right then rot = rot - 180 end
         if rot > 180 then rot = rot - 360 elseif rot < -180 then rot = rot + 360 end
-        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, rot, Vector3(0.45, 0.45, 1), false, { FlipX = right, PlayRate = 1.4, Color = Color(1, 0.45, 0.4, 0.85) })
+        local s = self.Arch == "brute" and 0.72 or 0.45
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, rot, Vector3(s, s, 1), false, { FlipX = right, PlayRate = 1.4, Color = Color(1, 0.45, 0.4, 0.85) })
     end
 
     method boolean IsLiveDefender(Entity target)
@@ -623,6 +752,9 @@ script MonsterAttack extends AttackComponent
     @ExecSpace("ServerOnly")
     method Entity FindTarget()
         -- 공격과 거리 유지가 같은 대상 선정 기준을 사용한다.
+        -- 근접은 +0.15 여유: 거리 유지(UpdateMeleeSpacing)가 사거리 0.8 ~ 0.9 사이에서 멈추면 영영 못 쳤다
+        -- (10-21 메이커: 용암 골렘·방패병이 0.83에 붙어 9초간 0타). 판정 원은 그 거리까지 닿는다
+        if self.AttackRange <= 1.5 then return self:FindDefender(self.AttackRange + 0.15) end
         return self:FindDefender(self.AttackRange)
     end
 
@@ -679,6 +811,7 @@ script MonsterAttack extends AttackComponent
         end
         ---@type ShadowUnit
         local shadow = defender:GetComponent("script.ShadowUnit")
+        if shadow ~= nil then dmg = dmg * shadow:ArchTakenMult() end   -- 방패 그림자 -25%
         if shadow ~= nil and ratio > 0 then
             -- 그림자도 원본 몬스터의 저항을 이어받는다
             local elem = dmg * ratio
@@ -748,6 +881,15 @@ script MonsterAttack extends AttackComponent
             ---@type PlayerStats
             local stats = defender:GetComponent("script.PlayerStats")
             if stats ~= nil then stats:ApplyChill(1.5) end
+        end
+        -- 거구 강타: 맞으면 0.6초 휘청 (이동 ×0.5)
+        if self.Arch == "brute" and isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local st = defender:GetComponent("script.PlayerStats")
+            if st ~= nil then
+                st:ApplyStagger(0.6)
+                self.StaggerCount = self.StaggerCount + 1
+            end
         end
         ---@type MonsterBehavior
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")

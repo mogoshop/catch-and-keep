@@ -36,6 +36,7 @@ const runeIds = unique("runes", "id");
 const skillIds = unique("skills", "id");
 const monsterIds = unique("monsters", "id");
 const sourceIds = unique("monsters", "sourceId");
+const archIds = new Set(load("archetypes").map((r) => r.id));
 const mapIds = unique("maps", "id");
 const soundKeys = unique("sounds", "key");
 const wpIds = unique("waypoints", "id");
@@ -183,6 +184,7 @@ T.monsters.forEach((r, i) => {
   for (const c of ["stand", "move", "hit", "die"]) if (!RUID.test(r[c])) err("monsters", i, `${c} RUID 형식 오류 ('${r[c]}')`);
   if (r.attack !== "" && !RUID.test(r.attack)) err("monsters", i, `attack RUID 형식 오류`);
   if (r.depth !== "" && r.depth !== "pool" && !/^every\d+$/.test(r.depth)) err("monsters", i, `depth '${r.depth}' — pool / everyN / 빈칸`);
+  if (!archIds.has(r.archetype)) err("monsters", i, `archetype '${r.archetype}' — archetypes.csv에 없음`);
   if (!["", "burrow", "hitrun", "coward", "ranged", "nest", "phase"].includes(r.behavior)) err("monsters", i, `behavior '${r.behavior}' 알 수 없음`);
 });
 const bossIds = new Set();

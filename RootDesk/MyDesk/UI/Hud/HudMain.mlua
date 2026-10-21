@@ -431,7 +431,9 @@ script HudMain extends Logic
             prefix = "정예 "
             color = "#6E8CFF"
         end
-        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. (m.DisplayName ~= "" and m.DisplayName or _GameData:GetMonsterName(m.SourceId))) .. "  Lv" .. tostring(m.Level))
+        -- 유형 (archetypes.csv): 동작을 쓰는 몬스터만 이름 옆에 옅게
+        local arch = (m.Arch ~= "" and m:ArchActive(m.Arch)) and ("  " .. _UIKit:Colored("#A99F8E", _GameData:GetArchetype(m.Arch).name)) or ""
+        _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. (m.DisplayName ~= "" and m.DisplayName or _GameData:GetMonsterName(m.SourceId))) .. "  Lv" .. tostring(m.Level) .. arch)
         _UIKit:SetFill("Target/Bar/Fill", m.Hp / math.max(1, m.MaxHp))
         _UIKit:SetText("Target/Curse", self:TargetStatus(m))
     end
@@ -454,6 +456,11 @@ script HudMain extends Logic
             end
         else
             text = monster:GetAffixName()
+        end
+        -- 유형 버릇 한 줄 (거구 「예고 강타 (피하기)」 · 방패 「정면 방어 (옆·뒤가 약점)」). 광전사가 광폭하면 붉게
+        if monster.Arch ~= "" and monster:ArchActive(monster.Arch) then
+            local habit = monster.Enraged and _UIKit:Colored("#FF7A5A", "광폭! 공격·이동이 빨라졌다") or _GameData:GetArchetype(monster.Arch).trait
+            if monster.Arch ~= "soldier" then text = text == "" and habit or (text .. " · " .. habit) end
         end
         local curse = monster:GetCurseTag()
         if curse ~= "" then text = text == "" and curse or (text .. "\n" .. curse) end

@@ -35,6 +35,12 @@ script Monster extends Component
     property Entity LastAttacker = nil
     property table Contributors = {}        -- 이번 생에 피해를 준 플레이어(소환수는 주인) userId → 플레이어 (개인 보상 대상)
     property Vector2 SpawnPosition = Vector2(0, 0)
+    @Sync
+    property string Arch = ""                -- 몬스터 유형 (archetypes.csv: beast·swarm·brute·guard·ranged·assassin·berserker·soldier)
+    @Sync
+    property boolean Enraged = false         -- 광전사: 생명 절반 아래에서 광폭 (공격 속도 +40% · 이동 +20%)
+    property number BlockFxAt = 0
+    property integer BlockCount = 0
 
     method MonsterStatus Status()
         ---@type MonsterStatus
@@ -63,6 +69,7 @@ script Monster extends Component
         if isvalid(movement) then self.BaseSpeed = movement.InputSpeed end
         local p = self.Entity.TransformComponent.WorldPosition
         self.SpawnPosition = Vector2(p.x, p.y)
+        self.Arch = _GameData:ArchetypeOf(self.SourceId)
         self:Reroll()
         -- 맵에 고정 배치된 몬스터(최상위·보스)는 맵의 난이도 레벨 가산을 받는다 (스포너 몬스터는 스포너가 ApplyLevel)
         _TimerService:SetTimerOnce(function()
@@ -98,6 +105,7 @@ script Monster extends Component
         -- 등장할 때마다: 수식어 다시 굴림 → 최대 생명·속도 다시 계산 → 생명 가득
         local traits = self:Traits()
         if traits ~= nil then traits:Roll(self.Grade) end
+        self.Enraged = false
         self:RecomputeMaxHp()
         self:RefreshSpeed()
         self.Hp = self.MaxHp
@@ -130,6 +138,7 @@ script Monster extends Component
         if traits ~= nil then mult = mult * traits.SpeedMult end
         local status = self:Status()
         if status ~= nil then mult = mult * status:SpeedMult() end
+        if self.Enraged then mult = mult * 1.2 end
         movement.InputSpeed = self.BaseSpeed * mult
     end
 
@@ -191,7 +200,65 @@ script Monster extends Component
         ---@type BossPattern
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil and bp.RageMult > 1 then m = m * 1.3 end
+        if self.Enraged then m = m * 1.4 end
         return m
+    end
+
+    -- ───────── 몬스터 유형 (archetypes.csv · docs/design/29) ─────────
+
+    method boolean ArchActive(string arch)
+        -- 이 유형의 동작을 쓰는가. 보스·보스 패턴(BossPattern)이 있는 고유 몬스터는 자기 패턴만 쓴다
+        if self.Arch ~= arch or self.Grade >= 3 then return false end
+        return self.Entity:GetComponent("script.BossPattern") == nil
+    end
+
+    method number GuardMult(Entity attacker)
+        -- 방패: 바라보는 쪽(앞)에서 온 공격은 35% 막는다. 옆·뒤는 그대로. 리소스가 왼쪽을 보므로 FlipX = 오른쪽
+        if not self:ArchActive("guard") or self.IsDead or not isvalid(attacker) then return 1 end
+        local renderer = self.Entity.SpriteRendererComponent
+        if not isvalid(renderer) then return 1 end
+        local facing = renderer.FlipX and 1 or -1
+        local dx = _Util:Pos2(attacker).x - _Util:Pos2(self.Entity).x
+        if dx * facing < 0.15 then return 1 end
+        self.BlockCount = self.BlockCount + 1
+        local now = _UtilLogic.ElapsedSeconds
+        if self:IsServer() and now >= self.BlockFxAt then
+            self.BlockFxAt = now + 0.7
+            self:BlockFx(facing)
+        end
+        return 0.65
+    end
+
+    @ExecSpace("Multicast")
+    method void BlockFx(integer facing)
+        -- 막음: 몸 앞쪽에 짧은 흰 불꽃
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        local hit = self.Entity.HitComponent
+        local h = isvalid(hit) and hit.BoxSize.y or 0.6
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x + facing * 0.35, p.y + h * 0.55, p.z), 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.85, 0.9, 1, 0.8) })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckEnrage()
+        -- 광전사: 생명 절반 아래로 처음 떨어지면 광폭 (다시 등장하면 풀린다)
+        if self.Enraged or self.IsDead or self.Hp <= 0 or self.Hp > self.MaxHp * 0.5 then return end
+        if not self:ArchActive("berserker") then return end
+        self.Enraged = true
+        self:RefreshSpeed()
+        local traits = self:Traits()
+        if traits ~= nil then traits.TintSync = "1,0.55,0.5" end   -- 붉게 (다시 등장하면 Roll이 원래 색으로)
+        self:EnrageFx()
+    end
+
+    @ExecSpace("Multicast")
+    method void EnrageFx()
+        -- 광폭: 붉은 기운이 한 번 터진다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x, p.y + 0.5, p.z), 0, Vector3(0.9, 0.9, 1), false, { Color = Color(1, 0.25, 0.15, 0.85) })
     end
 
     method string GetVariant()
@@ -319,7 +386,7 @@ script Monster extends Component
             self.TickShownAt = now
             if shown > 0 then self:ShowTickDamage(shown) end
         end
-        if self.Hp <= 0 then self:Die() end
+        if self.Hp <= 0 then self:Die() else self:CheckEnrage() end
     end
 
     @ExecSpace("Multicast")
@@ -344,6 +411,7 @@ script Monster extends Component
         end
         self.Hp = self.Hp - event.TotalDamage
         self:LifeTapFor(event.AttackerEntity, event.TotalDamage)
+        self:CheckEnrage()
         local pos = self.Entity.TransformComponent.WorldPosition
         local heavy = event.TotalDamage >= self.MaxHp * _GameData.heavyHitPct
         if isvalid(event.AttackerEntity) then

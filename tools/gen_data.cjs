@@ -70,6 +70,7 @@ function genGameData() {
   const appearance = load("player_appearance");
   const ranks = load("monster_ranks");
   const variants = load("variants");
+  const archetypes = load("archetypes");
   const weekly = load("weekly");
   const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
   // 프레임 애니메이션 (data/monster_frames.csv, 몬스터 id → sourceId 기준). 클립 RUID가 있는 동작은 클립을 쓴다
@@ -102,6 +103,8 @@ function genGameData() {
     "        self.Variants = {}",
     "        self.VariantOrder = {}",
     ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
+    "        self.Archetypes = {}",
+    ...archetypes.map((a) => `        self.Archetypes[${s(a.id)}] = { id = ${s(a.id)}, name = ${s(a.name)}, trait = ${s(a.trait)}, monster = ${s(a.monster)}, shadow = ${s(a.shadow)} }`),
     "        self.Weeklies = {}",
     "        self.WeeklyOrder = {}",
     ...weekly.map((w) => `        self.Weeklies[${s(w.id)}] = { id = ${s(w.id)}, name = ${s(w.name)}, desc = ${s(w.desc)}, elite = ${n(w.elite)}, stat = ${n(w.stat)}, speed = ${n(w.speed)}, mobs = ${n(w.mobs)}, curse = ${n(w.curse)}, rolls = ${n(w.rolls)}, extract = ${n(w.extract)}, light = ${n(w.light)}, skel = ${n(w.skel)} }\n        table.insert(self.WeeklyOrder, ${s(w.id)})`),
@@ -120,7 +123,7 @@ function genGameData() {
     "        self.MonsterSourceOf = {}",
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
-    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)}, bh = ${n(m.bodyH || 0)}, portrait = ${s(m.portrait || "")}, pw = ${n(m.pw || 0)}, ph = ${n(m.ph || 0)}, chain = ${n(m.chain || 0)} }`),
+    ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)}, bh = ${n(m.bodyH || 0)}, portrait = ${s(m.portrait || "")}, pw = ${n(m.pw || 0)}, ph = ${n(m.ph || 0)}, chain = ${n(m.chain || 0)}, arch = ${s(m.archetype || "soldier")} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
@@ -195,6 +198,19 @@ function genGameData() {
         -- 보스가 내려찍기 사이에 쓰는 기술 (bosses.csv skills · skillInterval). 없으면 nil
         self:Ensure()
         return self.BossSkills[sourceId]
+    end
+
+    method any GetArchetype(string id)
+        -- 몬스터 유형 (archetypes.csv: 짐승·무리·거구·방패·사수·암살자·광전사·병사). 없으면 병사
+        self:Ensure()
+        return self.Archetypes[id] or self.Archetypes["soldier"]
+    end
+
+    method string ArchetypeOf(string sourceId)
+        -- 원본 몬스터의 유형 id (monsters.csv archetype). 모르는 종은 ""
+        self:Ensure()
+        local m = self.MonsterStats[sourceId]
+        return m ~= nil and m.arch or ""
     end
 
     method any GetVariant(string id)
@@ -291,9 +307,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, weekly.csv, maps.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Archetypes = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
@@ -523,7 +539,7 @@ function genJournal() {
   const body = ["        self.Dailies = {}", "        self.Achievements = {}", "        self.Monsters = {}",
     ...dailies.map((r) => `        table.insert(self.Dailies, { id = ${s(r.id)}, name = ${s(r.name)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)}, expPct = ${n(r.expPct)} })`),
     ...ach.map((r) => `        table.insert(self.Achievements, { id = ${s(r.id)}, name = ${s(r.name)}, desc = ${s(r.desc)}, kind = ${s(r.kind)}, target = ${s(r.target || "")}, count = ${n(r.count)}, gold = ${n(r.gold)} })`),
-    ...mons.map((r) => `        table.insert(self.Monsters, { id = ${s(r.id)}, name = ${s(r.name)}, grade = ${n(r.grade)}, unique = ${b(r.unique)}, lore = ${s(r.lore || "")} })`)].join("\n");
+    ...mons.map((r) => `        table.insert(self.Monsters, { id = ${s(r.id)}, name = ${s(r.name)}, grade = ${n(r.grade)}, unique = ${b(r.unique)}, arch = ${s(r.archetype || "")}, lore = ${s(r.lore || "")} })`)].join("\n");
   const extra = `
     method table GetDailies()
         self:Ensure()

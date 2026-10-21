@@ -123,6 +123,7 @@ script PlayerStats extends Component
     property number BoneArmorMax = 0
     @Sync
     property number ChillUntil = 0           -- 냉기 둔화가 끝나는 서버 시각 (버프 줄 표시용 동기화)
+    property number StaggerUntil = 0         -- 거구 몬스터 강타에 휘청임 (이동 ×0.5, 짧다)
     @Sync
     property number ShockUntil = 0           -- 번개 연쇄에 맞은 표시가 끝나는 서버 시각 (버프 줄 「감전」 칩, 표시만)
     property integer RegenTimer = 0
@@ -425,6 +426,7 @@ script PlayerStats extends Component
             if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 end
         end
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
+        if _UtilLogic.ServerElapsedSeconds < self.StaggerUntil then mult = mult * 0.5 end
         local want = self.BaseSpeed * mult
         if math.abs(movement.InputSpeed - want) > 0.001 then
             if movement.InputSpeed < want * 0.9 then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
@@ -441,6 +443,16 @@ script PlayerStats extends Component
         _TimerService:SetTimerOnce(function()
             if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.ChillUntil then self:RefreshSpeed() end
         end, dur + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyStagger(number seconds)
+        -- 거구 몬스터(archetypes.csv brute) 강타에 맞으면 잠깐 휘청인다 (이동 ×0.5). 냉기 둔화와 따로 겹친다
+        self.StaggerUntil = math.max(self.StaggerUntil, _UtilLogic.ServerElapsedSeconds + seconds)
+        self:RefreshSpeed()
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.StaggerUntil then self:RefreshSpeed() end
+        end, seconds + 0.05)
     end
 
     -- ───────── 피해 계산 보조 ─────────

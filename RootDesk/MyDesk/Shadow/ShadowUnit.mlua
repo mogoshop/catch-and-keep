@@ -83,6 +83,11 @@ script ShadowUnit extends AttackComponent
     property table Resists = {}              -- 원본 몬스터의 저항 { fire = 50 }
     property number BonusResist = 0          -- 호령 오라로 모든 저항 +
     property string Variant = ""             -- 원본 변종 능력 (오오라·특수 기술, variants.csv)
+    property string Arch = ""                -- 원본 몬스터 유형 (archetypes.csv shadow 칸의 특기). 보관함 그림자만
+    property boolean ArchReady = false
+    property integer CritCount = 0           -- 암살자 치명타 · 무리 회피 · 거구 경직 횟수 (검증용)
+    property integer DodgeCount = 0
+    property integer StunCount = 0
     property number AbilityTimer = 2
     property string LastInfo = ""
     property number AuraDmg = 0              -- 받은 오오라 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다)
@@ -339,6 +344,11 @@ script ShadowUnit extends AttackComponent
     handler HandleHitEvent(HitEvent event)
         -- 몬스터에게 맞으면 HP 감소, 0이면 주인에게 사망을 알린다 (재소환 대기는 주인이 관리)
         if self.Dead or self.ShadowId == "" then return end
+        -- 무리 그림자: 25% 회피
+        if self:GetArch() == "swarm" and _UtilLogic:RandomDouble() < 0.25 then
+            self.DodgeCount = self.DodgeCount + 1
+            return
+        end
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
         local offered = _UtilLogic.ElapsedSeconds < self.OfferUntil and 0.8 or 1   -- 뼈 성찬: 3초간 받는 피해 -20%
         self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard") * offered
@@ -365,6 +375,29 @@ script ShadowUnit extends AttackComponent
             end
         end
         self.Entity:Destroy()
+    end
+
+    method string GetArch()
+        -- 원본 몬스터 유형 (그림자 이름 Shadow_<sourceId>). 언데드(해골·마법사)는 ""
+        if not self.ArchReady then
+            self.ArchReady = true
+            local src = self.Kind == "shadow" and string.match(self.Entity.Name, "^Shadow_(.+)$") or nil
+            self.Arch = src ~= nil and _GameData:ArchetypeOf(src) or ""
+        end
+        return self.Arch
+    end
+
+    method number ArchTakenMult()
+        -- 방패 그림자: 받는 피해 -25% (MonsterAttack.CalcDamage가 곱한다)
+        return self:GetArch() == "guard" and 0.75 or 1
+    end
+
+    method number ArchHaste()
+        -- 짐승: 공격 속도 +15% · 광전사: 자기 생명 절반 아래면 +40%
+        local arch = self:GetArch()
+        if arch == "beast" then return 1.15 end
+        if arch == "berserker" and self.Hp < self.MaxHp * 0.5 then return 1.4 end
+        return 1
     end
 
     @ExecSpace("ServerOnly")
@@ -470,7 +503,7 @@ script ShadowUnit extends AttackComponent
                 self:StopMove(toTarget.x)
                 if self.AttackTimer <= 0 then
                     local frenzy = _UtilLogic.ElapsedSeconds < self.FrenzyUntil and (1 + self.FrenzyPct / 100) or 1   -- 뼈 성찬 「피의 고양」
-                    self.AttackTimer = self.AttackCooldown / (self:AuraMult("haste") * (1 + self:OwnerBonus("ias") / 100) * frenzy)
+                    self.AttackTimer = self.AttackCooldown / (self:AuraMult("haste") * (1 + self:OwnerBonus("ias") / 100) * frenzy * self:ArchHaste())
                     self:DoAttack(myPos, toTarget)
                 end
             end
@@ -924,7 +957,9 @@ script ShadowUnit extends AttackComponent
                 local dir = delta:Magnitude() > 0.05 and delta:Normalize() or Vector2(1, 0)
                 local center = at + dir * 0.4 + Vector2(0, 0.2)
                 self:SwingFx(Vector3(center.x, center.y, 0), dir)
-                self:AttackFast(CircleShape(center, self.AttackRadius), "shadow.basic", nil)
+                -- 거구 그림자: 타격 범위 +40%
+                local radius = self:GetArch() == "brute" and self.AttackRadius * 1.4 or self.AttackRadius
+                self:AttackFast(CircleShape(center, radius), "shadow.basic", nil)
             end
         end, self.AttackWindup)
     end
@@ -1008,9 +1043,16 @@ script ShadowUnit extends AttackComponent
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 잿불 들개 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
+        -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)
+        if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
+            dmg = dmg * 1.8
+            if self:IsServer() then self.CritCount = self.CritCount + 1 end
+        end
         -- 레벨 차이: 주인보다 높은 몬스터에게는 덜 들어간다
         ---@type Monster
         local foe = defender:GetComponent("script.Monster")
+        -- 방패 몬스터는 앞에서 오는 공격을 막는다 (그림자는 옆·뒤로 돌아 치기 쉽다)
+        if foe ~= nil then dmg = dmg * foe:GuardMult(self.Entity) end
         if foe ~= nil and isvalid(self.OwnerPlayer) then
             local lv = _GameConst:LevelOf(self.OwnerPlayer)
             if lv > 0 then dmg = dmg * _GameConst:LevelGapDealt(lv, foe.Level) end
@@ -1142,6 +1184,18 @@ script ShadowUnit extends AttackComponent
     method void OnAttack(Entity defender)
         -- 주인 장비의 「소환수 독」(룬워드 「무덤의 속삭임」): 맞은 몬스터에 3초 독
         if not self:IsServer() or not isvalid(self.OwnerPlayer) then return end
+        -- 거구 그림자: 맞은 적 35% 확률로 경직 (보스는 MonsterStatus.Stagger가 거른다)
+        if self:GetArch() == "brute" and _UtilLogic:RandomDouble() < 0.35 then
+            ---@type Monster
+            local struck = defender:GetComponent("script.Monster")
+            local st = struck ~= nil and not struck.IsDead and struck:Status() or nil
+            -- 경직 회복 시간(InterruptReadyAt)을 같이 써서 여러 마리가 묶어 두지 못하게
+            if st ~= nil and _UtilLogic.ElapsedSeconds >= st.InterruptReadyAt then
+                st.InterruptReadyAt = _UtilLogic.ElapsedSeconds + 1.5
+                st:Stagger()
+                self.StunCount = self.StunCount + 1
+            end
+        end
         if self.LastInfo == "shadow.skill" then
             local v = _GameData:GetVariant(self.Variant)
             ---@type Monster

@@ -310,6 +310,16 @@ script ShadowHUD extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method string ArchLine(string src, string role)
+        -- 상세의 「유형」 줄: 원본 몬스터 유형과 그림자 특기 (archetypes.csv shadow 칸)
+        local id = _GameData:ArchetypeOf(src)
+        if id == "" or id == "boss" then return "싸움 방식: " .. role end
+        local a = _GameData:GetArchetype(id)
+        local perk = (a.shadow ~= "" and a.shadow ~= "—") and ("  ·  " .. _UIKit:Colored("#C9A2FF", "특기 " .. a.shadow)) or ""
+        return "유형: " .. a.name .. " (" .. role .. ")" .. perk
+    end
+
+    @ExecSpace("ClientOnly")
     method void RenderDetail(ShadowOwner owner, any e)
         -- 왼쪽 상세: 모습(원본 몬스터, 그림자 보라빛) · 등급·속성 · 능력치 · 고유 능력(변종 기술·오오라)
         local d = self.Win .. "/Detail"
@@ -351,7 +361,7 @@ script ShadowHUD extends Logic
                 or _UIKit:Colored("#9EE6A0", string.format("경험치 %d%% — 소환해 데리고 다니며 처치하면 오른다", e.xp)),
             string.format("공격 간격 %.1f초  ·  사거리 %.1f  ·  이동 %.1f", p.cooldown, p.range, p.speed),
             "저항: " .. (#resist > 0 and table.concat(resist, " · ") or "없음"),
-            "싸움 방식: " .. (roles[p.behavior] or "근접 돌격"),
+            self:ArchLine(e.src, roles[p.behavior] or "근접 돌격"),
             _UIKit:Colored("#8C99B4", "(장비·스킬 보너스 전 · 노란 +는 강화로 오른 몫)"),
         }
         self:FitInfo(table.concat(lines, "\n"), self:TraitText(e))
@@ -566,7 +576,9 @@ script ShadowHUD extends Logic
         -- 원본 몬스터 개성: 속성 표시
         local trait = ""
         local m = _GameData:GetMonsterStats(e.src)
-        if m ~= nil and m.element ~= "" then trait = " " .. _ShadowConfig:ElementName(m.element) end
+        local archId = _GameData:ArchetypeOf(e.src)
+        if archId ~= "" and archId ~= "boss" and archId ~= "soldier" then trait = " " .. _GameData:GetArchetype(archId).name end
+        if m ~= nil and m.element ~= "" then trait = trait .. " " .. _ShadowConfig:ElementName(m.element) end
         local v = _GameData:GetVariant(e.variant)
         if v ~= nil then trait = trait .. " · " .. v.name end
         local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
