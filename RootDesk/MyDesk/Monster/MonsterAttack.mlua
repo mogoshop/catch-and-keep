@@ -213,7 +213,7 @@ script MonsterAttack extends AttackComponent
         self.AttackAnimationUntil = _UtilLogic.ElapsedSeconds + crouch + dashSec + 0.1
         if math.abs(path.x) > 0.05 then self.Entity.SpriteRendererComponent.FlipX = path.x > 0 end
         self.DashCount = self.DashCount + 1
-        self:DashFx(self.Arch == "beast", crouch)
+        self:DashFx(self.Arch == "beast", crouch + dashSec)
         local function resume()
             local behavior = self.Entity:GetComponent("script.MonsterBehavior")
             if behavior ~= nil then behavior:ResumeMovement() elseif isvalid(chase) then chase.Enable = true end
@@ -250,12 +250,15 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("Multicast")
-    method void DashFx(boolean beast, number crouch)
-        -- 덮치기: 발밑 흙먼지 · 돌아 들어가기: 잔상처럼 몸이 잠깐 옅어진다
+    method void DashFx(boolean beast, number seconds)
+        -- 덮치기: 도약 동작(있으면) + 발밑 흙먼지 · 돌아 들어가기: 잔상처럼 몸이 잠깐 옅어진다 (seconds = 웅크림 + 돌진)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local p = self.Entity.TransformComponent.WorldPosition
         if beast then
+            ---@type FrameAnimator
+            local anim = self.Entity:GetComponent("script.FrameAnimator")
+            if anim ~= nil then anim:Flash("leap", seconds) end
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, Vector3(p.x, p.y + 0.1, p.z), 0, Vector3(0.5, 0.3, 1), false, { Color = Color(0.75, 0.62, 0.48, 0.6) })
             return
         end
@@ -268,7 +271,7 @@ script MonsterAttack extends AttackComponent
                 local now = r.Color
                 r.Color = Color(now.r, now.g, now.b, 1)
             end
-        end, crouch + 0.35)
+        end, seconds + 0.1)
     end
 
     @ExecSpace("ServerOnly")

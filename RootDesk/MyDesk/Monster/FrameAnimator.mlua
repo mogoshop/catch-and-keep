@@ -4,6 +4,7 @@
 -- stand·move는 반복, attack·hit·die는 한 번 재생 후 마지막 프레임 유지 (사망은 숨겨질 때까지 쓰러진 모습).
 -- attack: 타격 칸(clip.s)이 실제 피해 시점(MonsterAttack.AttackWindup)에 오도록 칸 시간을 늘이거나 줄인다.
 -- cast: 보스 내려찍기 준비(BossPattern.SlamPhase = windup) 동안 주문 동작 (프레임이 있는 보스만).
+-- 잠깐 동작(Flash): 방패 막기 block · 짐승 덮치기 leap · 사제 혼 빼앗기 steal. 사망·공격이 아니면 정한 시간 동안 그 동작 (프레임이 있는 몬스터만).
 @Component
 script FrameAnimator extends Component
 
@@ -13,6 +14,8 @@ script FrameAnimator extends Component
     property integer Frame = 1
     property number Elapsed = 0
     property any Delays = nil                -- 지금 동작의 칸 시간 (공격은 피해 시점에 맞춘 값)
+    property string FlashAction = ""
+    property number FlashUntil = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -56,9 +59,13 @@ script FrameAnimator extends Component
         -- 상태 이름 → 동작 이름 (모르는 상태는 대기)
         local state = self.Entity.StateComponent
         local name = isvalid(state) and state.CurrentStateName or "IDLE"
-        if name == "ATTACK" then return "attack" end
-        if name == "HIT" then return "hit" end
         if name == "DEAD" or name == "DIE" then return "die" end
+        if name == "ATTACK" then return "attack" end
+        if self.FlashAction ~= "" then
+            if _UtilLogic.ElapsedSeconds < self.FlashUntil then return self.FlashAction end
+            self.FlashAction = ""
+        end
+        if name == "HIT" then return "hit" end
         if self.Set.cast ~= nil then
             ---@type BossPattern
             local boss = self.Entity:GetComponent("script.BossPattern")
@@ -69,6 +76,14 @@ script FrameAnimator extends Component
         if visual == 1 then return "move" elseif visual == 0 then return "stand" end
         if name == "MOVE" or name == "WALK" or name == "CHASE" then return "move" end
         return "stand"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Flash(string action, number seconds)
+        -- 잠깐 동작을 seconds초 보여 준다 (그 동작 프레임이 없거나 공격 중이면 무시)
+        if self.Set == nil or self.Set[action] == nil or self.Action == "attack" then return end
+        self.FlashAction = action
+        self.FlashUntil = _UtilLogic.ElapsedSeconds + seconds
     end
 
     @ExecSpace("ClientOnly")

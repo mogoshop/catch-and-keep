@@ -10,7 +10,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
 def read(path):
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:   # 코덱스 표는 BOM으로 시작하기도 한다
         return list(csv.DictReader(f))
 
 

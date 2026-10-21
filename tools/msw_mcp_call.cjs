@@ -99,6 +99,7 @@ async function upload(pack, limitArg, dry) {
 
 // 따옴표 CSV (코덱스 resource-mapping.csv 형식)
 function parseQuoted(text) {
+  text = text.replace(/^\uFEFF/, "");   // 코덱스 표는 BOM으로 시작하기도 한다
   const rows = [];
   let row = [], cell = "", q = false;
   for (let i = 0; i < text.length; i++) {
