@@ -5,6 +5,7 @@ script ConfirmDialog extends Logic
 
     property string Root = "/ui/ConfirmHUD/SafeArea/Dim"
     property any OnYes = nil
+    property any OnNo = nil
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -27,10 +28,20 @@ script ConfirmDialog extends Logic
         _UIKit:SetText(self.Root .. "/Box/Title", title)
         _UIKit:SetText(self.Root .. "/Box/Body", body)
         _UIKit:SetText(self.Root .. "/Box/BtnYes", yesLabel ~= "" and yesLabel or "확인")
+        _UIKit:SetText(self.Root .. "/Box/BtnNo", "취소")
+        self.OnNo = nil
         _UIKit:SetEnabled(self.Root, true)
         local e = _UIKit:Get(self.Root)
         if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
         log("[VRF] confirm show " .. title)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowChoice(string title, string body, string yesLabel, string noLabel, any onYes, any onNo)
+        -- 두 갈래 고르기 (예: 이동 방식 마우스 / 키보드). 아니오 쪽도 실행할 함수가 있다. Esc는 아니오와 같다
+        self:ShowIcon(title, body, yesLabel, "", onYes)
+        _UIKit:SetText(self.Root .. "/Box/BtnNo", noLabel)
+        self.OnNo = onNo
     end
 
     @ExecSpace("ClientOnly")
@@ -41,9 +52,12 @@ script ConfirmDialog extends Logic
     @ExecSpace("ClientOnly")
     method void Answer(boolean yes)
         local callback = self.OnYes
+        local other = self.OnNo
         self.OnYes = nil
+        self.OnNo = nil
         _UIKit:SetEnabled(self.Root, false)
         if yes and callback ~= nil then callback() end
+        if not yes and other ~= nil then other() end
     end
 
     @ExecSpace("ClientOnly")

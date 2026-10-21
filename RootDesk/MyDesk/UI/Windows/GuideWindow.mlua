@@ -14,6 +14,8 @@ script GuideWindow extends Logic
     property number ReadyDelay = 2.5
     property boolean AutoDone = false        -- 이번 접속에서 저절로 띄우기를 끝냈다
     property table Pages = {}
+    property boolean InputDone = false       -- 이번 접속에서 이동 방식을 적용했거나 물었다
+    property number InputReadyFor = 0
     property boolean CardMode = false        -- 상황 카드 한 장을 보이는 중 (닫거나 메뉴로 열면 안내 쪽으로 돌아간다)
 
     @ExecSpace("ClientOnly")
@@ -24,7 +26,10 @@ script GuideWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
-        self.TimerId = _TimerService:SetTimerRepeat(function() self:CheckFirstEntry(0.5) end, 0.5)
+        self.TimerId = _TimerService:SetTimerRepeat(function()
+            self:CheckFirstEntry(0.5)
+            self:CheckInputChoice(0.5)
+        end, 0.5)
         log("[VRF] GuideWindow ready pages=" .. tostring(#self.Pages) .. " mobile=" .. tostring(_ApplicationService:IsMobilePlatform()))
     end
 
@@ -107,6 +112,61 @@ script GuideWindow extends Logic
         save:RequestGuideSeen()
         self:Show(1)
         log("[VRF] guide auto-opened on first entry")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckInputChoice(number delta)
+        -- PC 이동 방식: 고른 적이 있으면 그대로 적용, 처음이면 게임 안내를 닫은 뒤 「마우스 / 키보드」를 묻는다 (10-21 사용자)
+        if self.InputDone then return end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil or not save.BootDone or save.Selecting or save.Slot <= 0 then
+            self.InputReadyFor = 0
+            return
+        end
+        if not Environment:IsPCPlatform() then
+            self.InputDone = true
+            return
+        end
+        if save.InputMode > 0 then
+            self.InputDone = true
+            self:ApplyInputMode(save.InputMode == 1)
+            return
+        end
+        -- 처음: 안내 창·이야기 카드·다른 창이 모두 닫힌 뒤 잠깐 있다가
+        if not self.AutoDone or _UIKit:IsOpen(self.Win) or _StoryCard.Active or #_StoryCard.Queue > 0 or _UIKit:AnyWindowOpen() or _ConfirmDialog:IsOpen() then
+            self.InputReadyFor = 0
+            return
+        end
+        self.InputReadyFor = self.InputReadyFor + delta
+        if self.InputReadyFor < 1 then return end
+        self.InputDone = true
+        local g = function(t) return "<color=#E8C66B>" .. t .. "</color>" end
+        _ConfirmDialog:ShowChoice("이동 방식 고르기",
+            g("마우스") .. " — 바닥을 눌러 이동, 적을 눌러 공격 (디아블로식)\n" .. g("키보드") .. " — 방향키로 이동, Ctrl로 공격 (메이플식)\n\n나중에 메뉴 → 설정에서 바꿀 수 있습니다.",
+            "마우스", "키보드",
+            function() self:ChooseInput(true) end,
+            function() self:ChooseInput(false) end)
+        log("[VRF] input choice asked")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ChooseInput(boolean mouse)
+        -- 고른 방식을 바로 적용하고 계정에 남긴다
+        self:ApplyInputMode(mouse)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestInputMode(mouse and 1 or 2) end
+        log("[VRF] input chosen mouse=" .. tostring(mouse))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyInputMode(boolean mouse)
+        ---@type ClickControl
+        local cc = _UIKit:Comp("script.ClickControl")
+        if cc == nil then return end
+        if cc.MouseMode ~= mouse then cc:SetMouseMode(mouse) end
+        _ShadowHUD:RefreshInputLabel()
     end
 
     method table BuildPages(boolean mobile)
