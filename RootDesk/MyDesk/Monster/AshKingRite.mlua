@@ -98,20 +98,15 @@ script AshKingRite extends Component
             bp.AuraRadius = self.BaseAuraRadius * 1.5   -- 군주가 되면 화염 오라가 넓어진다
             self.DevourTimer = 1.5
             self.SummonTimer = 0
-            bp:Announce("「교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.」 — 군주가 방 안의 혼을 빨아들인다! 혼은 서둘러 거둬라")
-            self:Speak("교단은 나를 재의 왕이라 불렀지. 내 이름은 심연이다.", "혼을 먹을 때마다 강해진다 — 쓰러진 적의 혼은 서둘러 거둬라")
         elseif phase == 3 then
             self.Exposed = true
             bp.PoolElement = "fire"
             bp.PoolSeconds = 3
             bp.SlamAtTarget = true
             bp.SlamInterval = self.BaseSlamInterval * 0.7
-            bp:Announce("가슴의 혼각 세 조각이 드러났다 — 지금이 기회다 (받는 피해 +" .. tostring(math.floor(self.ExposedPct)) .. "%) · 발밑 용암을 피하라")
         elseif phase == 4 then
             self.BlastTimer = 2
             bp.SlamInterval = self.BaseSlamInterval * 0.6
-            bp:Announce("옥좌가 무너진다! 붉은 빛이 차오르면 담장 뒤로 숨어라")
-            self:Speak("심장이 부서져도… 심연은 닫히지 않는다!", "붉은 빛이 차오르면 담장·기둥 뒤로 — 군주가 보이는 자리는 불탄다")
         end
         log("[VRF] ash king phase " .. tostring(phase))
     end
@@ -232,7 +227,6 @@ script AshKingRite extends Component
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local aura = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 1.2, 0), 0, Vector3(3, 3, 1), true, { Color = Color(1, 0.2, 0.1, 0.9) })
-        _UXFeedback:Show("붉은 빛이 차오른다", "담장·기둥 뒤로 숨어라 — 군주가 보이는 자리는 불탄다", _GameData:GetUiIcon("icon_sword"))
         _TimerService:SetTimerOnce(function()
             if aura ~= nil and aura ~= 0 then _ParticleService:RemoveParticle(aura) end
         end, seconds)
@@ -248,14 +242,6 @@ script AshKingRite extends Component
         _Util:PlayFrames(_GameConst.SpriteFinalBlast, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(6, 6, 1), 0.1, Color(1, 1, 1, 0.95), 25)
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
-    end
-
-    @ExecSpace("Multicast")
-    method void Speak(string line, string detail)
-        -- 군주의 대사 (알림 판)
-        local me = _UserService.LocalPlayer
-        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _UXFeedback:Show("「" .. line .. "」", detail, _GameData:GetUiIcon("icon_sword"))
     end
 
     @ExecSpace("ClientOnly")

@@ -164,7 +164,6 @@ script BossPattern extends Component
         if not self.Enraged and monster.Hp <= monster.MaxHp * 0.5 then
             self.Enraged = true
             self:SummonMinions()
-            self:Announce(self.BossName .. "이(가) 분노했다!")
         end
         self.SlamTimer = self.SlamTimer - delta
         self.SkillTimer = self.SkillTimer - delta
@@ -248,7 +247,6 @@ script BossPattern extends Component
             self.TwinSeenAlive = false
             self.RageMult = 1.5
             self.Entity.TransformComponent.Scale = self.Entity.TransformComponent.Scale * 1.15
-            self:Announce("형제를 잃은 문지기가 분노했다! (공격 +50%)")
             log("[VRF] bond rage " .. me.SourceId .. " group " .. self.BondGroup)
         end
     end
@@ -507,9 +505,7 @@ script BossPattern extends Component
         self.UltCount = self.UltCount + 1
         self:HoldMotion()
         if self.Entity.StateComponent.CurrentStateName ~= "IDLE" then self.Entity.StateComponent:ChangeState("IDLE") end
-        local hint = self.UltKind == "half" and "보스 반대쪽으로 피하라 — 표시된 큰 원 밖으로!" or "발밑의 원이 따라온다 — 예고가 뜨면 바로 옮겨라"
-        self:UltBanner(self.UltName, hint)
-        self:Announce(self.BossName .. "의 궁극기 「" .. self.UltName .. "」!")
+        self:UltBanner()
         log("[VRF] boss ult " .. self.UltName .. " kind=" .. self.UltKind .. " waves=" .. tostring(self.UltWaves))
         local map = self.Entity.CurrentMap
         local serial = self.UltCount
@@ -569,10 +565,9 @@ script BossPattern extends Component
     end
 
     @ExecSpace("Multicast")
-    method void UltBanner(string title, string hint)
-        -- 궁극기 알림: 화면 가운데 큰 띠 + 보스가 기를 모으는 빛
+    method void UltBanner()
+        -- 궁극기 기 모으기: 보스 몸에 속성 빛 + 화면 흔들림 (글 알림은 띄우지 않는다 — 10-21 사용자: 대사·공략 문구 금지)
         if not self:HasLocalAudience() then return end
-        _UXFeedback:Show(title, hint, _GameData:GetUiIcon("icon_sword"))
         local c = self:ElementTint(self.AuraKind)
         _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.4, 1.4, 1), false, { Color = c })
         local cam = _CameraService:GetCurrentCameraComponent()
@@ -590,13 +585,10 @@ script BossPattern extends Component
         local edge = Color(c.r, c.g, c.b, 0.95)
         local clear = Color(c.r, c.g, c.b, 0)
         local transform = self.Entity.TransformComponent
-        local me = _Util:Pos2(_UserService.LocalPlayer)
-        local danger = false
         if atk ~= nil and isvalid(line) then
             line.Points:Clear()
             for i = 1, #centers, 2 do
                 local center = Vector2(centers[i], centers[i + 1])
-                if (me - center):Magnitude() <= radius + 1 then danger = true end
                 for k = 0, 40 do
                     local angle = math.pi * 2 * k / 40
                     local p = center + Vector2(math.cos(angle), math.sin(angle)) * radius
@@ -616,7 +608,6 @@ script BossPattern extends Component
                 end
             end, seconds)
         end
-        if danger then _HudMain:HintDanger("nova") end
     end
 
     @ExecSpace("Multicast")
