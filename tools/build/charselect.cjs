@@ -85,9 +85,13 @@ function run() {
   const boot = 'SafeArea/Boot';
   if (!b.find(boot)) {
     b.panel(boot, { anchor: 'middle-center', rect_size: [3840, 2160], color: { r: 0.02, g: 0.015, b: 0.03, a: 1 }, raycast: true });
-    b.text(boot + '/Title', '잡으면 내편', { anchor: 'middle-center', pos: [0, 40], rect_size: [900, 90], size: 64, bold: true, color: '#E6C88A', alignment: 4 });
-    b.text(boot + '/Status', '불러오는 중…', { anchor: 'middle-center', pos: [0, -40], rect_size: [900, 50], size: 28, color: '#A99F8E', alignment: 4 });
+    b.text(boot + '/Status', '불러오는 중…', { anchor: 'middle-center', pos: [0, -70], rect_size: [900, 50], size: 28, color: '#A99F8E', alignment: 4 });
   }
+  // 10-22 이름 확정: 「메이플 리저렉션」 · 부제 「네크로맨서 편」 (디아블로처럼 직업이 여럿일 것 같은 제목이라 지금 직업을 부제로 밝힌다)
+  for (const n of ['Title', 'Subtitle']) if (b.find(boot + '/' + n)) b.remove(boot + '/' + n);
+  b.text(boot + '/Title', '메이플 리저렉션', { anchor: 'middle-center', pos: [0, 60], rect_size: [1000, 90], size: 64, bold: true, color: '#E6C88A', alignment: 4 });
+  b.text(boot + '/Subtitle', '네크로맨서 편', { anchor: 'middle-center', pos: [0, -2], rect_size: [900, 46], size: 30, color: '#B79AD8', alignment: 4 });
+  b.patch(boot + '/Status', { pos: [0, -70] });
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
 }
