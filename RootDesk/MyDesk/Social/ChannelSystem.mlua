@@ -1,12 +1,15 @@
 -- 채널 (10-11): MSW 월드 인스턴스 = 채널. 출시 설정의 「최대 인원」을 넘으면 엔진이 새 인스턴스를 연다.
--- 10-12: 소환수가 많아 채널당 4명 (config channelMaxPlayers). 출시 설정 값과 이 값 중 작은 쪽을 상한으로 쓰고,
--- 접속했는데 상한을 넘은 채널이면(동시 이동 경쟁 등) 자리가 있는 채널로 옮긴다.
--- 같은 채널끼리만 만나고 파티를 맺으므로, 목록을 보여 주고 고른 채널로 옮긴다 (TeleportService 워프).
+-- 10-22 (docs/design/30 §3): 게임 방끼리는 서버에서 따로 돈다(메이커 실측) → 채널 상한 20명 (config channelMaxPlayers).
+--   엔진은 새로 온 사람을 「빈자리 있는 채널 중 가장 붐비는 곳」에 넣고, 가득 찬 채널로 워프하면 월드 밖으로 튕긴다.
+--   그래서 파티가 함께 들어갈 채널은 Fit으로 고르고(RoomSystem 출발), 곧 도착할 파티원·기다리는 친구 자리(RoomSystem.PendingByChannel)를
+--   새로 온 사람이 차지하면 자리가 있는 다른 채널로 돌린다 (CheckOverflow).
 -- 목록·워프 API는 출시 환경 전용이라 메이커에서는 「지금 채널 하나」만 보인다.
 @Logic
 script ChannelSystem extends Logic
 
     property table LastAsk = nil   -- 서버: userId → 마지막 목록 요청 시각 (연타 방지)
+    property any CacheList = nil   -- 서버: 마지막 채널 목록 (InstancesCached)
+    property number CacheAt = -100
 
     @ExecSpace("Server")
     method void RequestList()
@@ -22,6 +25,7 @@ script ChannelSystem extends Logic
     @ExecSpace("ServerOnly")
     method any Instances()
         -- 모든 채널 (Id 순 — 채널 번호가 자주 바뀌지 않게). 메이커·실패 = nil
+        if not Environment:IsPublishedPlay() then return nil end
         local ok, success, pages = pcall(function() return _WorldInstanceService:GetWorldInstanceInfoPagesAndWait() end)
         if not ok or not success or pages == nil then return nil end
         local list = {}
@@ -36,6 +40,40 @@ script ChannelSystem extends Logic
         end
         table.sort(list, function(a, b) return a.id < b.id end)
         return list
+    end
+
+    @ExecSpace("ServerOnly")
+    method any InstancesCached(number maxAge)
+        -- 방 목록·대기열이 자주 묻는다: maxAge초 안에 읽은 목록이면 다시 쓴다
+        local now = _UtilLogic.ElapsedSeconds
+        if self.CacheList ~= nil and now - self.CacheAt <= maxAge then return self.CacheList end
+        self.CacheList = self:Instances()
+        self.CacheAt = now
+        return self.CacheList
+    end
+
+    method any Find(any list, string id)
+        if list == nil then return nil end
+        for _, w in ipairs(list) do if w.id == id then return w end end
+        return nil
+    end
+
+    method any Fit(any list, table pending, table need)
+        -- 자리 고르기 (순수 함수 · SelfTest): need[채널 id] 또는 need["*"] 명이 더 들어갈 수 있는 채널 중 가장 붐비는 곳 (채널 수를 늘리지 않게 채워 넣는다).
+        --   들어갈 수 있다 = 지금 인원 + 곧 올 자리(pending) + need ≤ 최대. 같은 붐빔이면 더 옮길 사람이 적은 곳. 없으면 nil
+        if list == nil then return nil end
+        local best, bestLoad, bestNeed = nil, -1, 0
+        for _, w in ipairs(list) do
+            local n = need[w.id]
+            if n == nil then n = need["*"] end
+            if n ~= nil and n >= 0 then
+                local load = w.cur + (pending[w.id] or 0)
+                if w.max > 0 and load + n <= w.max and (load > bestLoad or (load == bestLoad and n < bestNeed)) then
+                    best, bestLoad, bestNeed = w, load, n
+                end
+            end
+        end
+        return best
     end
 
     @ExecSpace("Client")
@@ -80,27 +118,24 @@ script ChannelSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void CheckOverflow(Entity player)
-        -- 접속 직후 (로비): 지금 채널이 상한(6명, 방 예약 자리 포함)을 넘었으면 자리가 있는 채널 중 사람이 가장 많은 곳으로 옮긴다 (출시 환경 전용)
+        -- 접속 직후 (로비): 이 채널의 곧 올 자리(출발한 파티원 · 자리를 기다리는 친구)까지 넘쳤으면 자리가 있는 다른 채널로 돌린다 (출시 환경 전용)
         if not isvalid(player) or _RoomService:IsInstanceRoom() or not Environment:IsPublishedPlay() then return end
-        local list = self:Instances()
+        local list = self:InstancesCached(2)
         if list == nil then return end
         local current = _WorldInstanceService.WorldInstanceId
-        local mine = nil
-        for _, w in ipairs(list) do if w.id == current then mine = w end end
-        -- 10-21: 이 채널 공개·비공개 방의 남은 자리(친구가 들어올 자리)도 찬 것으로 본다 (docs/design/30)
-        local reserved = _RoomSystem:ReservedSeats()
-        if mine == nil or mine.max <= 0 or mine.cur + reserved <= mine.max then return end
-        local best = nil
-        for _, w in ipairs(list) do
-            if w.id ~= current and w.cur < w.max and (best == nil or w.cur > best.cur) then best = w end
-        end
+        local mine = self:Find(list, current)
+        local pending = _RoomSystem:PendingByChannel(_RoomSystem:ReadRooms(2).rooms)
+        if mine == nil or mine.max <= 0 or mine.cur + (pending[current] or 0) <= mine.max then return end
+        local need = { ["*"] = 1 }
+        need[current] = -1
+        local best = self:Fit(list, pending, need)
         local uid = player.PlayerComponent.UserId
         if best == nil then
-            log("[VRF] channel: 상한 초과 " .. tostring(mine.cur) .. "/" .. tostring(mine.max) .. " — 옮길 채널 없음")
+            log("[VRF] channel: 자리 예약 초과 " .. tostring(mine.cur) .. "+" .. tostring(pending[current]) .. "/" .. tostring(mine.max) .. " — 옮길 채널 없음")
             return
         end
-        _Util:Notify("이 채널이 가득 차 자리가 있는 채널로 옮깁니다", uid)
-        log("[VRF] channel: 상한 초과 " .. tostring(mine.cur) .. "/" .. tostring(mine.max) .. " → " .. best.id)
+        _Util:Notify("이 채널은 곧 들어올 파티의 자리라 자리가 있는 채널로 옮깁니다", uid)
+        log("[VRF] channel: 자리 예약 초과 " .. tostring(mine.cur) .. "+" .. tostring(pending[current]) .. "/" .. tostring(mine.max) .. " → " .. best.id)
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
         if save ~= nil then save:WarpToChannel(best.id, "") end

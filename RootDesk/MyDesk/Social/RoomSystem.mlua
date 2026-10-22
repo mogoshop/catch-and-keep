@@ -1,17 +1,34 @@
 -- 게임 방 (10-21 · docs/design/30): 디아블로2의 「게임 만들기」. 채널(월드 인스턴스) 안의 인스턴스 방 하나가 게임 한 판이다.
 --   로비 = 정적 방의 map01 (캐릭터·게임 고르기). 게임 방 = 그 난이도의 마을·사냥터·곁가지 전부(GameConst.GameRoomMaps).
 --   혼자 하기 = 나만의 방 (목록에 안 보임) · 공개 방 = 목록에 보임 · 비공개 방 = 목록에 자물쇠, 비밀번호로 들어감. 최대 4명.
---   방 목록은 모든 채널이 함께 보는 월드 공유 메모리(GameRoomsV1)에 둔다 (ETag로 겹쳐 쓰기 방지). 게임 방 서버가 10초마다 인원을 적고,
---   60초 넘게 소식이 없는 방은 목록에서 지운다. 다른 채널의 방에 들어가면 그 채널로 옮긴 뒤(워프 데이터 kind=room) 들어간다.
+--   방 목록은 모든 채널이 함께 보는 월드 공유 메모리(GameRoomsV1)에 둔다 (ETag로 겹쳐 쓰기 방지).
+--   10-22 「모여서 함께 출발」(docs/design/30 §3): 방을 만들면 먼저 모집(s=wait) — 친구는 어느 채널에서든 목록에서 들어와 모인다.
+--   팀장이 출발하면(s=go) 모두 함께 들어갈 자리가 있는 채널을 골라(ChannelSystem.Fit) 그 채널에서 방을 열고 다 같이 옮긴다.
+--   출발한 방(s=play)에 나중에 오는 친구는 그 채널에 자리가 없으면 기다렸다가(대기열 q) 자리가 나면 자동으로 들어간다.
+--   곧 올 파티원·기다리는 친구 자리는 그 채널에 새로 온 사람이 못 차지하게 다른 채널로 돌린다 (ChannelSystem.CheckOverflow).
+--   공유 메모리 호출은 월드 전체 분당 1000번이 한도라 인원이 바뀔 때·30초마다만 쓰고, 읽기는 잠깐 모아 쓴다 (ReadRooms 캐시).
 --   방과 방 사이(게임 ↔ 심연)는 로비를 거친다 — 돌아올 게임 방은 RoomReturnV1(채널 공유 메모리)에 적어 둔다.
 @Logic
 script RoomSystem extends Logic
 
     property string MemoryName = "GameRoomsV1"
     property string ReturnMemory = "RoomReturnV1"
-    property number StaleSec = 60
+    property number StaleSec = 75             -- 출발한 방: 이만큼 소식이 없으면 목록에서 지운다 (게임 방이 30초마다 알린다)
+    property number WaitStaleSec = 40         -- 모집 중인 사람·방: 이만큼 소식이 없으면 뺀다 (로비가 10초마다 알린다)
+    property number PendingSec = 60           -- 출발 뒤 이만큼 동안은 아직 안 온 파티원 자리를 비워 둔다
+    property number QueueSec = 300            -- 나중에 온 친구가 자리를 기다리는 최대 시간
     property integer HeartbeatTimer = 0
+    property integer PollTimer = 0
+    property integer LastBeatCount = -1
+    property number LastBeatAt = -100
     property table LastAsk = nil              -- 서버: userId → 마지막 요청 시각 (연타 방지)
+    property table Party = nil                -- 로비 서버: userId → 모집 중인 방 id
+    property table Queue = nil                -- 로비 서버: userId → { id = 방, start = 시각 } (출발한 방 자리 기다리기)
+    property table Retry = nil                -- 로비 서버: 팀장 userId → 출발 다시 시도 시작 시각 (함께 들어갈 채널이 없을 때)
+    property table Shown = nil                -- 로비 서버: userId → 마지막으로 보낸 모집 창 내용
+    property any Cache = nil                  -- 서버: 마지막으로 읽은 방 목록
+    property number CacheAt = -100
+    property number LastTouch = -100
 
     -- ───────── 목록 저장소 ─────────
 
@@ -23,33 +40,98 @@ script RoomSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method table ReadRooms()
-        -- 지금 방 목록 { id → 방 } 과 ETag (없으면 빈 목록 · "")
+    method table ReadRooms(number maxAge)
+        -- 지금 방 목록 { id → 방 } 과 ETag (없으면 빈 목록 · ""). maxAge초 안에 읽었으면 그 값을 다시 쓴다 (0 = 새로 읽기)
+        local now = _UtilLogic.ElapsedSeconds
+        if maxAge > 0 and self.Cache ~= nil and now - self.CacheAt <= maxAge then return self.Cache end
         local memory = self:Memory()
-        if memory == nil then return { rooms = {}, etag = "", ok = false } end
-        local result = memory:GetVariableAndWait("list")
-        if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then return { rooms = {}, etag = "", ok = true } end
-        local okJson, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
-        if not okJson or type(data) ~= "table" or type(data.rooms) ~= "table" then return { rooms = {}, etag = result.Info.ETag, ok = true } end
-        return { rooms = data.rooms, etag = result.Info.ETag, ok = true }
+        local out = nil
+        if memory == nil then
+            out = { rooms = {}, etag = "", ok = false }
+        else
+            local result = memory:GetVariableAndWait("list")
+            if result.Code ~= SharedMemoryResultCode.OK or result.Info == nil then
+                out = { rooms = {}, etag = "", ok = true }
+            else
+                local okJson, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+                if not okJson or type(data) ~= "table" or type(data.rooms) ~= "table" then
+                    out = { rooms = {}, etag = result.Info.ETag, ok = true }
+                else
+                    out = { rooms = data.rooms, etag = result.Info.ETag, ok = true }
+                end
+            end
+        end
+        self.Cache = out
+        self.CacheAt = now
+        return out
+    end
+
+    method integer Count(any t)
+        local n = 0
+        if type(t) == "table" then for _ in pairs(t) do n = n + 1 end end
+        return n
+    end
+
+    method void Prune(table rooms, number now)
+        -- 오래 소식 없는 방·사람을 지운다 (Mutate가 쓸 때마다). 모집 중인 방은 팀장이 빠지면 없어진다
+        for id, r in pairs(rooms) do
+            if type(r) ~= "table" or type(r.u) ~= "number" then
+                rooms[id] = nil
+            elseif r.s == "wait" then
+                if type(r.w) == "table" then
+                    for uid, m in pairs(r.w) do
+                        if type(m) ~= "table" or type(m.t) ~= "number" or now - m.t > self.WaitStaleSec * 1000 then r.w[uid] = nil end
+                    end
+                end
+                if now - r.u > self.WaitStaleSec * 1000 or type(r.w) ~= "table" or r.w[r.L or ""] == nil then
+                    rooms[id] = nil
+                else
+                    r.c = self:Count(r.w)
+                end
+            elseif now - r.u > self.StaleSec * 1000 then
+                rooms[id] = nil
+            else
+                if type(r.g) == "number" and now - r.g > self.PendingSec * 1000 then r.w = nil end
+                if type(r.q) == "table" then
+                    for uid, t in pairs(r.q) do
+                        if type(t) ~= "number" or now - t > 20000 then r.q[uid] = nil end
+                    end
+                    if self:Count(r.q) == 0 then r.q = nil end
+                end
+            end
+        end
+    end
+
+    method table PendingByChannel(table rooms)
+        -- 채널 id → 곧 올 자리 수 (순수 · SelfTest): 출발한 지 얼마 안 된 방의 아직 안 온 파티원 + 자리를 기다리는 친구
+        local now = DateTime.UtcNow.Elapsed
+        local out = {}
+        for _, r in pairs(rooms) do
+            if type(r) == "table" and type(r.ch) == "string" and r.s ~= "wait" then
+                local n = 0
+                if type(r.w) == "table" and type(r.g) == "number" and now - r.g <= self.PendingSec * 1000 then
+                    n = math.max(0, self:Count(r.w) - math.floor(r.a or 0))
+                end
+                if type(r.q) == "table" then
+                    for _, t in pairs(r.q) do if type(t) == "number" and now - t <= 20000 then n = n + 1 end end
+                end
+                if n > 0 then out[r.ch] = (out[r.ch] or 0) + n end
+            end
+        end
+        return out
     end
 
     @ExecSpace("ServerOnly")
     method boolean Mutate(any change)
-        -- 목록을 읽어 change(rooms)로 고치고 다시 쓴다. 그사이 다른 채널이 썼으면(ETag 다름) 다시 읽어 3번까지
+        -- 목록을 새로 읽어 change(rooms)로 고치고 다시 쓴다. 그사이 다른 채널이 썼으면(ETag 다름) 다시 읽어 3번까지
         local memory = self:Memory()
         if memory == nil then return false end
         for attempt = 1, 3 do
-            local cur = self:ReadRooms()
+            local cur = self:ReadRooms(0)
             local rooms = cur.rooms
             change(rooms)
-            -- 오래 소식 없는 방은 지운다
-            local now = DateTime.UtcNow.Elapsed
-            for id, r in pairs(rooms) do
-                if type(r) ~= "table" or type(r.u) ~= "number" or now - r.u > self.StaleSec * 1000 then rooms[id] = nil end
-            end
-            local n = 0
-            for _ in pairs(rooms) do n = n + 1 end
+            self:Prune(rooms, DateTime.UtcNow.Elapsed)
+            local n = self:Count(rooms)
             local value = n > 0 and _HttpService:JSONEncode({ v = 1, rooms = rooms }) or "{\"v\":1}"
             local result = nil
             if cur.etag == "" then
@@ -58,7 +140,12 @@ script RoomSystem extends Logic
             else
                 result = memory:UpdateVariableAndWait(SharedVariableKeyInfo("list", cur.etag), value)
             end
-            if result ~= nil and result.Code == SharedMemoryResultCode.OK then return true end
+            if result ~= nil and result.Code == SharedMemoryResultCode.OK then
+                self.Cache = { rooms = rooms, etag = result.Info ~= nil and result.Info.ETag or "", ok = true }
+                self.CacheAt = _UtilLogic.ElapsedSeconds
+                return true
+            end
+            self.Cache = nil
             log("[VRF] rooms write retry " .. tostring(attempt) .. " code=" .. tostring(result ~= nil and result.Code or "exists"))
         end
         return false
@@ -97,19 +184,32 @@ script RoomSystem extends Logic
 
     @ExecSpace("Server")
     method void RequestRooms()
-        -- 방 창 → 목록 (그 사람에게만). 줄 = "id|이름|잠금(1/0)|난이도|인원|최대|같은 채널(1/0)"
+        -- 방 창 → 목록 (그 사람에게만)
         local uid = senderUserId
         if self:Throttle(uid .. ":list") then return end
-        local cur = self:ReadRooms()
+        self:RequestRoomsFor(uid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RequestRoomsFor(string uid)
+        -- 줄 = "id|이름|잠금(1/0)|난이도|인원|최대|같은 채널(1/0)|상태(w 모집 · p 진행)|지금 들어갈 수 있나(1/0 · 0 = 채널이 가득 차 기다려야 함)"
+        local cur = self:ReadRooms(3)
         local here = _WorldInstanceService.WorldInstanceId
+        local list = _ChannelSystem:InstancesCached(5)
         local rows = {}
-        local now = DateTime.UtcNow.Elapsed
         for id, r in pairs(cur.rooms) do
-            if type(r) == "table" and type(r.u) == "number" and now - r.u <= self.StaleSec * 1000 and r.m ~= "solo" then
-                table.insert(rows, { id = id, text = table.concat({ id, tostring(r.n or "게임"), r.m == "private" and "1" or "0", tostring(r.d or 0), tostring(r.c or 0), tostring(r.x or 4), r.ch == here and "1" or "0" }, "|"), c = r.c or 0 })
+            if type(r) == "table" and r.m ~= "solo" then
+                local open = "1"
+                if r.s ~= "wait" and r.ch ~= here then
+                    local w = _ChannelSystem:Find(list, r.ch)
+                    if w ~= nil and w.max > 0 and w.cur >= w.max then open = "0" end
+                end
+                local fields = { id, tostring(r.n or "게임"), r.m == "private" and "1" or "0", tostring(r.d or 0), tostring(r.c or 0), tostring(r.x or 4), r.ch == here and "1" or "0", r.s == "wait" and "w" or "p", open }
+                -- 모집 중인 방을 위로, 그다음 사람이 많은 방
+                table.insert(rows, { text = table.concat(fields, "|"), key = (r.s == "wait" and 100 or 0) + (r.c or 0) })
             end
         end
-        table.sort(rows, function(a, b) return a.c > b.c end)
+        table.sort(rows, function(x, y) return x.key > y.key end)
         local out = {}
         for _, row in ipairs(rows) do table.insert(out, row.text) end
         self:ShowRooms(table.concat(out, ";"), cur.ok, uid)
@@ -125,48 +225,54 @@ script RoomSystem extends Logic
         -- 혼자 하기: 목록에 안 보이는 나만의 방을 열고 들어간다
         local player = self:LobbyPlayer(senderUserId)
         if player == nil then return end
+        self:Forget(senderUserId)
         local id = "s" .. self:NewId()
         self:Enter(player, id, self:DiffOf(player), true)
     end
 
     @ExecSpace("Server")
     method void RequestCreate(string name, boolean locked, string pw, integer max)
-        -- 방 만들기: 이름 · 공개/비공개(비밀번호) · 최대 인원 2~4. 난이도 = 지금 캐릭터의 난이도
+        -- 방 만들기: 이름 · 공개/비공개(비밀번호) · 최대 인원 2~4. 난이도 = 지금 캐릭터의 난이도. 먼저 모집 (팀장이 출발하면 함께 들어간다)
         local player = self:LobbyPlayer(senderUserId)
         if player == nil then return end
         local uid = senderUserId
+        if self:Throttle(uid .. ":make") then return end
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
         local clean = self:CleanName(name)
-        if clean == "" then
-            ---@type PlayerSave
-            local save = player:GetComponent("script.PlayerSave")
-            clean = (save ~= nil and save:CharName() or "망자") .. "의 게임"
-        end
+        if clean == "" then clean = (save ~= nil and save:CharName() or "망자") .. "의 게임" end
         if locked and string.len(pw or "") < 1 then
             _Util:Notify("비공개 방은 비밀번호가 필요합니다", uid)
             return
         end
+        self:Forget(uid)
         local cap = math.max(2, math.min(_GameConst.RoomMaxMembers, max))
         local id = self:NewId()
         local diff = self:DiffOf(player)
+        local here = _WorldInstanceService.WorldInstanceId
+        local now = DateTime.UtcNow.Elapsed
+        local members = {}
+        members[uid] = { n = self:NickOf(player), ch = here, t = now }
         local ok = self:Mutate(function(rooms)
-            rooms[id] = { n = clean, m = locked and "private" or "public", h = locked and self:Hash(pw, id) or "", x = cap, d = diff, c = 0, ch = _WorldInstanceService.WorldInstanceId, u = DateTime.UtcNow.Elapsed }
+            rooms[id] = { n = clean, m = locked and "private" or "public", h = locked and self:Hash(pw, id) or "", x = cap, d = diff, c = 1, ch = here, u = now, s = "wait", L = uid, w = members }
         end)
-        if not ok then log_warning("[RoomSystem] 방 목록에 쓰지 못함 — 방은 열지만 목록에 늦게 보일 수 있다") end
-        log("[VRF] room create " .. id .. " name=" .. clean .. " locked=" .. tostring(locked) .. " max=" .. tostring(cap) .. " diff=" .. tostring(diff))
-        if not self:Enter(player, id, diff, true) then
-            -- 못 들어갔으면 목록에서 바로 지운다
-            self:Mutate(function(rooms) rooms[id] = nil end)
+        log("[VRF] room create " .. id .. " name=" .. clean .. " locked=" .. tostring(locked) .. " max=" .. tostring(cap) .. " diff=" .. tostring(diff) .. " written=" .. tostring(ok))
+        if not ok then
+            _Util:Notify("방 목록에 쓰지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            return
         end
+        self.Party[uid] = id
+        self:SendParty(uid, true)
     end
 
     @ExecSpace("Server")
     method void RequestJoin(string id, string pw)
-        -- 목록의 방에 들어가기: 비밀번호·인원·난이도 확인. 다른 채널이면 그 채널로 옮긴 뒤 들어간다
+        -- 목록의 방에 들어가기: 비밀번호·인원·난이도 확인. 모집 중이면 모집에 끼고, 출발한 방이면 그 방으로 (다른 채널이면 자리를 확인하고 옮긴다)
         local uid = senderUserId
         if self:Throttle(uid .. ":join") then return end
         local player = self:LobbyPlayer(uid)
         if player == nil then return end
-        local r = self:ReadRooms().rooms[id]
+        local r = self:ReadRooms(0).rooms[id]
         if type(r) ~= "table" or r.m == "solo" then
             _Util:Notify("그 방은 이제 없다 — 목록을 새로 불러오세요", uid)
             self:RequestRoomsFor(uid)
@@ -176,7 +282,7 @@ script RoomSystem extends Logic
             _Util:Notify("비밀번호가 맞지 않다", uid)
             return
         end
-        if (r.c or 0) >= (r.x or 4) then
+        if (r.c or 0) >= (r.x or 4) and not (type(r.w) == "table" and r.w[uid] ~= nil) then
             _Util:Notify("방이 가득 찼다", uid)
             return
         end
@@ -187,27 +293,290 @@ script RoomSystem extends Logic
             _Util:Notify("아직 열지 않은 난이도의 방이다", uid)
             return
         end
-        if r.ch ~= _WorldInstanceService.WorldInstanceId then
+        self:Forget(uid)
+        if r.s == "wait" then
+            local here = _WorldInstanceService.WorldInstanceId
+            local nick = self:NickOf(player)
+            local joined = false
+            local ok = self:Mutate(function(rooms)
+                local room = rooms[id]
+                if type(room) ~= "table" or room.s ~= "wait" or type(room.w) ~= "table" then return end
+                if room.w[uid] == nil and self:Count(room.w) >= (room.x or 4) then return end
+                room.w[uid] = { n = nick, ch = here, t = DateTime.UtcNow.Elapsed }
+                room.c = self:Count(room.w)
+                joined = true
+            end)
+            if not ok or not joined then
+                _Util:Notify("모집에 끼지 못했다 (가득 찼거나 출발함) — 목록을 새로 불러오세요", uid)
+                self:RequestRoomsFor(uid)
+                return
+            end
+            log("[VRF] room party join " .. id .. " uid=" .. uid)
+            self.Party[uid] = id
+            self:SendParty(uid, true)
+            return
+        end
+        self:GoTo(player, id, r)
+    end
+
+    @ExecSpace("Server")
+    method void RequestStart()
+        -- 팀장 「출발」: 모인 사람 모두가 함께 들어갈 자리가 있는 채널을 골라 그 채널에서 방을 연다
+        local uid = senderUserId
+        if self:Throttle(uid .. ":start") then return end
+        if self.Party[uid] == nil then return end
+        self:TryStart(uid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TryStart(string uid)
+        local id = self.Party[uid]
+        local rooms = self:ReadRooms(0).rooms
+        local r = rooms[id]
+        if type(r) ~= "table" or r.s ~= "wait" or r.L ~= uid or type(r.w) ~= "table" then
+            self.Retry[uid] = nil
+            return
+        end
+        -- 채널마다 더 들어가야 할 사람 수 (이미 그 채널에 있는 파티원은 자리가 필요 없다)
+        local list = _ChannelSystem:InstancesCached(1)
+        local target = _WorldInstanceService.WorldInstanceId
+        if list ~= nil then
+            local total = self:Count(r.w)
+            local need = {}
+            for _, w in ipairs(list) do
+                local there = 0
+                for _, m in pairs(r.w) do if type(m) == "table" and m.ch == w.id then there = there + 1 end end
+                need[w.id] = total - there
+            end
+            local best = _ChannelSystem:Fit(list, self:PendingByChannel(rooms), need)
+            if best == nil then
+                if self.Retry[uid] == nil then
+                    self.Retry[uid] = _UtilLogic.ElapsedSeconds
+                    _Util:Notify("지금은 " .. tostring(total) .. "명이 함께 들어갈 채널이 없어 자리가 나는 대로 출발합니다", uid)
+                end
+                self:SendParty(uid, true)
+                return
+            end
+            target = best.id
+        end
+        self.Retry[uid] = nil
+        local ok = self:Mutate(function(rooms)
+            local room = rooms[id]
+            if type(room) ~= "table" or room.s ~= "wait" or room.L ~= uid then return end
+            local now = DateTime.UtcNow.Elapsed
+            room.s = "go"
+            room.ch = target
+            room.g = now
+            room.u = now
+            room.a = 0
+            room.c = self:Count(room.w)
+        end)
+        log("[VRF] room start " .. id .. " → channel " .. target .. " ok=" .. tostring(ok))
+        if not ok then
+            _Util:Notify("출발하지 못했다. 잠시 뒤 다시 누르세요", uid)
+            return
+        end
+        self:Poll()
+    end
+
+    @ExecSpace("Server")
+    method void RequestLeaveParty()
+        -- 모집 창 「나가기」: 모집에서 빠진다 (팀장이 나가면 방이 없어진다)
+        local uid = senderUserId
+        if self:Throttle(uid .. ":leave") then return end
+        self:Forget(uid)
+        self:OpenPicker(uid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Forget(string uid)
+        -- 이 사람의 모집·대기 표시를 지운다 (다른 걸 고르면 앞의 것은 취소)
+        local id = self.Party[uid]
+        self.Party[uid] = nil
+        self.Retry[uid] = nil
+        self.Shown[uid] = nil
+        local queued = self.Queue[uid]
+        self.Queue[uid] = nil
+        if id == nil and queued == nil then return end
+        self:Mutate(function(rooms)
+            local room = id ~= nil and rooms[id] or nil
+            if type(room) == "table" and room.s == "wait" and type(room.w) == "table" then
+                room.w[uid] = nil
+                if room.L == uid then rooms[id] = nil end
+            end
+            local q = queued ~= nil and rooms[queued.id] or nil
+            if type(q) == "table" and type(q.q) == "table" then q.q[uid] = nil end
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GoTo(Entity player, string id, table r)
+        -- 출발한 방으로: 같은 채널이면 바로, 다른 채널이면 그 채널에 자리가 있을 때만 옮긴다 (가득 찬 채널로 워프하면 월드 밖으로 튕긴다).
+        --   자리가 없으면 대기열 — 자리가 나면 자동으로 (Poll)
+        local uid = player.PlayerComponent.UserId
+        local here = _WorldInstanceService.WorldInstanceId
+        if r.ch == here then
+            self:Enter(player, id, math.floor(r.d or 0), false)
+            return
+        end
+        local w = _ChannelSystem:Find(_ChannelSystem:InstancesCached(1), r.ch)
+        if w ~= nil and (w.max <= 0 or w.cur < w.max) then
             ---@type PlayerSave
             local save = player:GetComponent("script.PlayerSave")
             if save ~= nil then save:WarpToChannel(r.ch, id) end
             return
         end
-        self:Enter(player, id, diff, false)
+        if w == nil and _ChannelSystem:InstancesCached(1) ~= nil then
+            _Util:Notify("그 방이 있던 채널이 닫혔다 — 다른 방을 고르세요", uid)
+            return
+        end
+        if self.Queue[uid] == nil then
+            self.Queue[uid] = { id = id, start = _UtilLogic.ElapsedSeconds }
+            _Util:Notify("그 방의 채널이 가득 찼다 — 자리가 나면 자동으로 들어갑니다 (최대 5분)", uid)
+            self:SendQueue(uid, true)
+            log("[VRF] room queue " .. id .. " uid=" .. uid)
+        end
+        self:Touch(true)
+    end
+
+    -- ───────── 로비 서버: 모집·대기 돌보기 (2초마다) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Poll()
+        -- 모집 중인 사람: 출발했으면 따라 들어가고, 아니면 모집 창을 새로 그린다. 대기열: 자리가 나면 들어간다. 팀장 출발 다시 시도
+        if next(self.Party) == nil and next(self.Queue) == nil then return end
+        local rooms = self:ReadRooms(2).rooms
+        for uid, id in pairs(self.Party) do
+            local player = self:LobbyPlayer(uid)
+            local r = rooms[id]
+            if player == nil then
+                self:Forget(uid)
+            elseif type(r) ~= "table" or (r.s == "wait" and (type(r.w) ~= "table" or r.w[uid] == nil)) then
+                self.Party[uid] = nil
+                self.Shown[uid] = nil
+                _Util:Notify("모집이 끝났다 (팀장이 나갔거나 오래 소식이 없음)", uid)
+                self:OpenPicker(uid)
+            elseif r.s ~= "wait" then
+                self.Party[uid] = nil
+                self.Shown[uid] = nil
+                self:CloseParty(uid)
+                log("[VRF] room party go " .. id .. " uid=" .. uid .. " → " .. tostring(r.ch))
+                self:GoTo(player, id, r)
+            else
+                if self.Retry[uid] ~= nil then
+                    if _UtilLogic.ElapsedSeconds - self.Retry[uid] > 120 then
+                        self.Retry[uid] = nil
+                        _Util:Notify("함께 들어갈 채널을 찾지 못했다 — 잠시 뒤 다시 출발해 보세요", uid)
+                    else
+                        self:TryStart(uid)
+                    end
+                end
+                self:SendParty(uid, false)
+            end
+        end
+        for uid, q in pairs(self.Queue) do
+            local player = self:LobbyPlayer(uid)
+            local r = rooms[q.id]
+            if player == nil then
+                self:Forget(uid)
+            elseif type(r) ~= "table" or (r.c or 0) >= (r.x or 4) then
+                self.Queue[uid] = nil
+                _Util:Notify("기다리던 방이 닫혔거나 가득 찼다 — 다른 방을 고르세요", uid)
+                self:SendQueue(uid, false)
+            elseif _UtilLogic.ElapsedSeconds - q.start > self.QueueSec then
+                self:Forget(uid)
+                _Util:Notify("5분 동안 자리가 나지 않았다 — 다른 방을 고르거나 다시 시도하세요", uid)
+                self:SendQueue(uid, false)
+            else
+                local w = _ChannelSystem:Find(_ChannelSystem:InstancesCached(2), r.ch)
+                if r.ch == _WorldInstanceService.WorldInstanceId or (w ~= nil and w.cur < w.max) then
+                    self.Queue[uid] = nil
+                    self:SendQueue(uid, false)
+                    log("[VRF] room queue → enter " .. q.id .. " uid=" .. uid)
+                    self:GoTo(player, q.id, r)
+                end
+            end
+        end
+        self:Touch(false)
     end
 
     @ExecSpace("ServerOnly")
-    method void RequestRoomsFor(string uid)
-        -- 서버 안에서 목록을 다시 보낼 때 (RequestRooms는 senderUserId를 쓴다)
-        local cur = self:ReadRooms()
+    method void Touch(boolean force)
+        -- 10초마다 (또는 바로): 이 로비에서 모집 중인 사람·기다리는 사람이 아직 있다고 적는다 (한 번에 묶어 쓴다)
+        local now = _UtilLogic.ElapsedSeconds
+        if not force and now - self.LastTouch < 10 then return end
+        if next(self.Party) == nil and next(self.Queue) == nil then return end
+        self.LastTouch = now
         local here = _WorldInstanceService.WorldInstanceId
-        local out = {}
-        for id, r in pairs(cur.rooms) do
-            if type(r) == "table" and r.m ~= "solo" then
-                table.insert(out, table.concat({ id, tostring(r.n or "게임"), r.m == "private" and "1" or "0", tostring(r.d or 0), tostring(r.c or 0), tostring(r.x or 4), r.ch == here and "1" or "0" }, "|"))
+        self:Mutate(function(rooms)
+            local t = DateTime.UtcNow.Elapsed
+            for uid, id in pairs(self.Party) do
+                local room = rooms[id]
+                if type(room) == "table" and room.s == "wait" and type(room.w) == "table" and type(room.w[uid]) == "table" then
+                    room.w[uid].t = t
+                    room.w[uid].ch = here
+                    if room.L == uid then room.u = t end
+                end
             end
+            for uid, q in pairs(self.Queue) do
+                local room = rooms[q.id]
+                if type(room) == "table" and room.s ~= "wait" then
+                    if type(room.q) ~= "table" then room.q = {} end
+                    room.q[uid] = t
+                end
+            end
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendParty(string uid, boolean force)
+        -- 모집 창 내용: "제목\t팀장(1/0)\t최대\t출발 대기(1/0)\t이름~같은 채널(1/0)~팀장(1/0);…"
+        local id = self.Party[uid]
+        if id == nil then return end
+        local r = self:ReadRooms(2).rooms[id]
+        if type(r) ~= "table" or type(r.w) ~= "table" then return end
+        local here = _WorldInstanceService.WorldInstanceId
+        local names = {}
+        for mid, m in pairs(r.w) do
+            if type(m) == "table" then table.insert(names, { text = table.concat({ tostring(m.n or "?"), m.ch == here and "1" or "0", mid == r.L and "1" or "0" }, "~"), lead = mid == r.L }) end
         end
-        self:ShowRooms(table.concat(out, ";"), cur.ok, uid)
+        table.sort(names, function(x, y) return x.lead and not y.lead end)
+        local parts = {}
+        for _, n in ipairs(names) do table.insert(parts, n.text) end
+        local title = (r.m == "private" and "[비공개] " or "") .. tostring(r.n or "게임") .. "  [" .. _GameConst:DifficultyName(math.floor(r.d or 0)) .. "]"
+        local digest = table.concat({ title, r.L == uid and "1" or "0", tostring(r.x or 4), self.Retry[r.L or ""] ~= nil and "1" or "0", table.concat(parts, ";") }, "\t")
+        if not force and self.Shown[uid] == digest then return end
+        self.Shown[uid] = digest
+        self:ShowParty(digest, uid)
+    end
+
+    @ExecSpace("Client")
+    method void ShowParty(string digest)
+        _RoomWindow:OnParty(digest)
+    end
+
+    @ExecSpace("Client")
+    method void CloseParty()
+        _RoomWindow:OnPartyGo()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendQueue(string uid, boolean waiting)
+        self:ShowQueue(waiting, uid)
+    end
+
+    @ExecSpace("Client")
+    method void ShowQueue(boolean waiting)
+        _RoomWindow:OnQueue(waiting)
+    end
+
+    method string NickOf(Entity player)
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        local name = save ~= nil and save:CharName() or ""
+        if name == "" then name = player.PlayerComponent.Nickname or "망자" end
+        local clean = string.gsub(name, "[|;~\t\n\r]", "")
+        return clean
     end
 
     method Entity LobbyPlayer(string uid)
@@ -281,8 +650,8 @@ script RoomSystem extends Logic
         if save ~= nil and save.PendingRoom ~= "" then
             local id = save.PendingRoom
             save.PendingRoom = ""
-            local r = self:ReadRooms().rooms[id]
-            if type(r) == "table" and (r.c or 0) < (r.x or 4) then
+            local r = self:ReadRooms(0).rooms[id]
+            if type(r) == "table" and ((type(r.w) == "table" and r.w[uid] ~= nil) or (r.c or 0) < (r.x or 4)) then
                 log("[VRF] room join after warp → " .. id)
                 self:Enter(player, id, math.floor(r.d or 0), false)
                 return
@@ -356,7 +725,15 @@ script RoomSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        -- 게임 방 서버: 10초마다 인원을 방 목록에 적는다 (혼자 방은 적지 않는다)
+        -- 로비: 2초마다 모집·대기 돌보기. 게임 방: 10초마다 인원을 보고 바뀌었거나 30초가 지났으면 방 목록에 적는다 (혼자 방은 적지 않는다)
+        self.Party = {}
+        self.Queue = {}
+        self.Retry = {}
+        self.Shown = {}
+        if _GameConst:RoomKind() == "lobby" then
+            self.PollTimer = _TimerService:SetTimerRepeat(function() self:Poll() end, 2)
+            return
+        end
         if not _GameConst:InGameRoom() then return end
         self.HeartbeatTimer = _TimerService:SetTimerRepeat(function() self:Heartbeat() end, 10)
         _TimerService:SetTimerOnce(function() self:Heartbeat() end, 2)
@@ -365,7 +742,9 @@ script RoomSystem extends Logic
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.HeartbeatTimer ~= 0 then _TimerService:ClearTimer(self.HeartbeatTimer) end
+        if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
         self.HeartbeatTimer = 0
+        self.PollTimer = 0
     end
 
     @ExecSpace("ServerOnly")
@@ -373,27 +752,25 @@ script RoomSystem extends Logic
         local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
         if id == nil or string.sub(id, 1, 1) == "s" then return end
         local count = _UserService:GetUserCount()
-        self:Mutate(function(rooms)
+        local now = _UtilLogic.ElapsedSeconds
+        if count == self.LastBeatCount and now - self.LastBeatAt < 30 then return end
+        local ok = self:Mutate(function(rooms)
             local r = rooms[id]
             if type(r) ~= "table" then return end
             if count <= 0 then
                 rooms[id] = nil
                 return
             end
-            r.c = count
+            r.s = "play"
+            r.c = math.max(count, (type(r.w) == "table" and type(r.g) == "number") and self:Count(r.w) or 0)
+            r.a = count
+            r.ch = _WorldInstanceService.WorldInstanceId
             r.u = DateTime.UtcNow.Elapsed
         end)
-    end
-
-    @ExecSpace("ServerOnly")
-    method integer ReservedSeats()
-        -- 이 채널의 공개·비공개 방에 남은 자리 합 (ChannelSystem.CheckOverflow — 방에 친구가 들어올 자리를 남긴다)
-        local here = _WorldInstanceService.WorldInstanceId
-        local n = 0
-        for _, r in pairs(self:ReadRooms().rooms) do
-            if type(r) == "table" and r.ch == here and r.m ~= "solo" then n = n + math.max(0, (r.x or 4) - (r.c or 0)) end
+        if ok then
+            self.LastBeatCount = count
+            self.LastBeatAt = now
         end
-        return n
     end
 
 end

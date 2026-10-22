@@ -40,6 +40,7 @@ script SelfTest extends Logic
         self:Run("items", function() self:TestItems() end)
         self:Run("const", function() self:TestConst() end)
         self:Run("events", function() self:TestEvents() end)
+        self:Run("rooms", function() self:TestRooms() end)
         local line = string.format("[SelfTest] 통과 %d / 실패 %d", self.Passed, self.Failed)
         if self.Failed > 0 then log_error(line) else log(line) end
     end
@@ -238,6 +239,84 @@ script SelfTest extends Logic
         _GameEvents:Unsubscribe("SelfTestEvent", "count")
         _GameEvents:Emit("SelfTestEvent", { n = 5 })
         self:Check("event unsubscribe", got == 2, "got " .. tostring(got))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TestRooms()
+        -- 채널 고르기 (ChannelSystem.Fit · docs/design/30 §3)
+        local list = { { id = "A", cur = 18, max = 20 }, { id = "B", cur = 12, max = 20 }, { id = "C", cur = 3, max = 20 } }
+        local fit = _ChannelSystem:Fit(list, {}, { ["*"] = 4 })
+        self:Check("fit pack", fit ~= nil and fit.id == "B", "4명 → 자리 있는 곳 중 가장 붐비는 B")
+        fit = _ChannelSystem:Fit(list, { B = 6 }, { ["*"] = 4 })
+        self:Check("fit pending", fit ~= nil and fit.id == "C", "B는 곧 올 6자리 → C")
+        fit = _ChannelSystem:Fit(list, {}, { A = 1, B = 4, C = 4 })
+        self:Check("fit already there", fit ~= nil and fit.id == "A", "A에 이미 3명 → 1명만 더: 18+1 ≤ 20, 가장 붐비는 A")
+        self:Check("fit none", _ChannelSystem:Fit({ { id = "A", cur = 20, max = 20 } }, {}, { ["*"] = 1 }) == nil, "가득 → 없음")
+        -- 곧 올 자리: 출발 1초 뒤 파티 3명 중 1명 도착 + 기다리는 친구 1명
+        local now = DateTime.UtcNow.Elapsed
+        local pend = _RoomSystem:PendingByChannel({ r1 = { ch = "B", s = "go", g = now - 1000, a = 1, w = { a = {}, b = {}, c = {} }, q = { z = now } }, r2 = { ch = "B", s = "wait", w = { d = {} } } })
+        self:Check("pending seats", pend.B == 3, "2 + 1, 모집 중 방은 세지 않는다 (" .. tostring(pend.B) .. ")")
+        -- 사용자 시나리오 (10-22): 30명이 차례로 · 솔로 5 · 4인 친구 1팀 · 3인 친구 2팀 · 나머지 공개. 친구는 흩어져 도착해 모인 뒤 출발
+        for _, cap in ipairs({ 20, 6 }) do
+            local r = self:SimRooms(cap)
+            self:Check("sim kicks " .. tostring(cap), r.kicks == 0, "가득 찬 채널로 옮기기 " .. tostring(r.kicks))
+            self:Check("sim together " .. tostring(cap), r.split == 0, "출발한 팀이 갈라짐 " .. tostring(r.split))
+            if cap == 20 then self:Check("sim all started", r.started == 3 and r.channels == 2, "팀 3개 출발 · 채널 " .. tostring(r.channels)) end
+            log(string.format("[VRF] room sim cap=%d channels=%d started=%d waiting=%d moves=%d", cap, r.channels, r.started, r.waiting, r.moves))
+        end
+    end
+
+    method table SimRooms(integer cap)
+        -- 엔진 흉내: 새로 온 사람은 빈자리 채널 중 가장 붐비는 곳, 없으면 새 채널. 팀은 마지막 사람이 오면 Fit으로 고른 채널에 함께 모인다
+        local list = {}
+        local where = {}   -- 사람 → 채널 표
+        local function engine()
+            local best = nil
+            for _, w in ipairs(list) do if w.cur < w.max and (best == nil or w.cur > best.cur) then best = w end end
+            if best == nil then
+                best = { id = "ch" .. tostring(#list + 1), cur = 0, max = cap }
+                table.insert(list, best)
+            end
+            best.cur = best.cur + 1
+            return best
+        end
+        local order = { "s", "p", "T4", "p", "s", "T3a", "p", "T4", "p", "T3b", "s", "p", "T3a", "p", "T4", "p", "T3b", "p", "s", "T3a", "p", "T4", "p", "T3b", "p", "s", "p", "p", "p", "p" }
+        local size = { T4 = 4, T3a = 3, T3b = 3 }
+        local members = { T4 = {}, T3a = {}, T3b = {} }
+        local out = { kicks = 0, split = 0, started = 0, waiting = 0, moves = 0, channels = 0 }
+        for i, who in ipairs(order) do
+            local w = engine()
+            where[i] = w
+            if members[who] ~= nil then
+                table.insert(members[who], i)
+                if #members[who] == size[who] then
+                    local need = {}
+                    for _, c in ipairs(list) do
+                        local there = 0
+                        for _, m in ipairs(members[who]) do if where[m] == c then there = there + 1 end end
+                        need[c.id] = size[who] - there
+                    end
+                    local target = _ChannelSystem:Fit(list, {}, need)
+                    if target == nil then
+                        out.waiting = out.waiting + 1
+                    else
+                        for _, m in ipairs(members[who]) do
+                            if where[m] ~= target then
+                                if target.cur >= target.max then out.kicks = out.kicks + 1 end
+                                where[m].cur = where[m].cur - 1
+                                target.cur = target.cur + 1
+                                where[m] = target
+                                out.moves = out.moves + 1
+                            end
+                        end
+                        for _, m in ipairs(members[who]) do if where[m] ~= target then out.split = out.split + 1 end end
+                        out.started = out.started + 1
+                    end
+                end
+            end
+        end
+        out.channels = #list
+        return out
     end
 
 end

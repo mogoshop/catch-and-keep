@@ -479,7 +479,7 @@ function buildGameHud() {
   k.btn("RoomWin/BtnChar", "캐릭터 선택", { anchor: "bottom-left", pos: [40, 22], rect_size: [240, 64], font_size: 20 });
   k.btn("RoomWin/BtnChannel", "채널 변경", { anchor: "bottom-left", pos: [296, 22], rect_size: [240, 64], font_size: 20 });
   // 방 만들기 칸 (같은 창 위에 덮는다): 이름 · 공개/비공개 · 비밀번호 · 인원 2~4 · 만들기/뒤로
-  b.panel("RoomWin/Create", { anchor: "middle-center", pos: [0, -30], rect_size: [960, 600], color: DARK, sprite_type: 1, raycast: true, enable: false });
+  b.panel("RoomWin/Create", { anchor: "middle-center", pos: [0, -36], rect_size: [990, 690], color: DARK, sprite_type: 1, raycast: true, enable: false });
   k.rim("RoomWin/Create", "win_content");
   b.text("RoomWin/Create/Title", "방 만들기", { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -24], rect_size: [600, 40], ...outline });
   b.text("RoomWin/Create/NameLabel", "방 이름", { size: 21, color: C.gold, alignment: 3, anchor: "top-left", pos: [60, -96], rect_size: [180, 60] });
@@ -492,7 +492,7 @@ function buildGameHud() {
   b.text("RoomWin/Create/MaxLabel", "최대 인원", { size: 21, color: C.gold, alignment: 3, anchor: "top-left", pos: [60, -396], rect_size: [180, 60] });
   [2, 3, 4].forEach((n, i) => k.btn(`RoomWin/Create/Max${n}`, `${n}명`, { anchor: "top-left", pos: [250 + i * 150, -390], rect_size: [136, 68], font_size: 22 }));
   k.btn("RoomWin/Create/BtnBack", "뒤로", { anchor: "bottom-left", pos: [60, 30], rect_size: [240, 72], font_size: 22 });
-  k.ok("RoomWin/Create/BtnMake", "만들고 들어가기", { anchor: "bottom-right", pos: [-60, 30], rect_size: [320, 72], font_size: 24 });
+  k.ok("RoomWin/Create/BtnMake", "만들고 친구 모으기", { anchor: "bottom-right", pos: [-60, 30], rect_size: [320, 72], font_size: 24 });
   // 비공개 방 비밀번호 묻기
   b.panel("RoomWin/Ask", { anchor: "middle-center", pos: [0, -30], rect_size: [700, 340], color: DARK, sprite_type: 1, raycast: true, enable: false });
   k.rim("RoomWin/Ask", "win_content");
@@ -500,6 +500,14 @@ function buildGameHud() {
   b.textInput("RoomWin/Ask/Pw", { anchor: "top-center", pivot: [0.5, 1], pos: [0, -96], rect_size: [520, 72], placeholder: "비밀번호", char_limit: 12, line_type: 0, font_size: 24, color: "#F3E7CC", ...part("win_content"), bg_color: part("win_content").color, sprite_type: 1 });
   k.btn("RoomWin/Ask/BtnCancel", "취소", { anchor: "bottom-left", pos: [60, 30], rect_size: [240, 72], font_size: 22 });
   k.ok("RoomWin/Ask/BtnJoin", "들어가기", { anchor: "bottom-right", pos: [-60, 30], rect_size: [240, 72], font_size: 22 });
+  // 모집 창 (10-22 · docs/design/30 §3): 모인 사람 · 팀장 「출발」 → 모두 함께 들어갈 자리가 있는 채널로
+  b.panel("RoomWin/Party", { anchor: "middle-center", pos: [0, -36], rect_size: [990, 690], color: DARK, sprite_type: 1, raycast: true, enable: false });
+  k.rim("RoomWin/Party", "win_content");
+  b.text("RoomWin/Party/Title", "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -24], rect_size: [880, 40], bestfit: true, min_size: 16, max_size: 24, ...outline });
+  b.text("RoomWin/Party/Members", "", { size: 24, color: C.white, alignment: 0, anchor: "top-left", pos: [80, -96], rect_size: [800, 240] });
+  b.text("RoomWin/Party/Note", "", { size: 19, color: C.dim, anchor: "bottom-center", pos: [0, 120], rect_size: [860, 80], bestfit: true, min_size: 14, max_size: 19 });
+  k.btn("RoomWin/Party/BtnLeave", "나가기", { anchor: "bottom-left", pos: [60, 30], rect_size: [240, 72], font_size: 22 });
+  k.ok("RoomWin/Party/BtnStart", "출발", { anchor: "bottom-right", pos: [-60, 30], rect_size: [320, 72], font_size: 26 });
 
   // ── 룬워드 조합법 (메뉴 「룬워드」): 조합·부위·효과, 룬별 효과 (RuneWindow.mlua) ──
   k.frame("RuneWin", "middle-center", [0, 20], [960, 760], "룬워드 조합법");
