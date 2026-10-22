@@ -12,6 +12,7 @@ script Util extends Logic
     property number ListMemoSec = 0.2
     property table Telegraphs = {}            -- 클라이언트: 범위 예고 id → { rim, fill, decal, timer }
     property integer TelegraphSeq = 0
+    property number BossRimSpin = 40           -- 보스 범위 예고 고리가 도는 빠르기 (도/초, 시계 방향)
     property any TileMemo = nil               -- 맵Id → { tiles, ox, oy, gx, gy, cells = 칸키 → 막힘 } (일반 Lua 테이블이라 any)
 
     @ExecSpace("Client")
@@ -327,7 +328,7 @@ script Util extends Logic
         -- (코덱스 장판 그림 poison-ground 160×80 · fire-ground 140×70 등. 그림 높이는 지름의 pxH/pxW)
         local scale = (radius * 2) / (pxW / 100)
         local height = (pxH / 100) * scale
-        return _EffectService:PlayEffect(ruid, instigator, center - Vector3(0, height * 0.5, 0), 0, Vector3(scale, scale, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 2, Color = tint })
+        return _EffectService:PlayEffect(ruid, instigator, center - Vector3(0, height * 0.5, 0), 0, Vector3(scale, scale, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = tint })   -- 바닥(0)과 몸(2) 사이: 몸을 덮지 않는다
     end
 
     method string TeleSprite(string list, string element)
@@ -342,6 +343,7 @@ script Util extends Logic
     @ExecSpace("ClientOnly")
     method integer Telegraph(Entity instigator, Vector2 center, number radius, string element, number seconds)
         -- 범위 예고 (10-21): 실선 원 대신 흐린 빛 테두리(판정 반경 그대로) + 가운데서 바깥으로 차오르는 원판 — 테두리까지 차면 터진다.
+        -- 10-22: 보스(BossPattern)가 쓰면 실금 고리가 천천히 돈다 — 일반 몬스터의 흐린 고리와 한눈에 구분된다
         -- 속성 기술은 그 속성 바닥 그림을 테두리 안에 옅게 깐다. seconds 뒤(또는 StopTelegraph) 모두 지운다. 반환값 = 예고 id
         if not isvalid(instigator) or radius <= 0 then return 0 end
         local opt = function(order) return { SortingLayer = "MapLayer0", OrderInLayer = order } end
@@ -353,7 +355,9 @@ script Util extends Logic
         local rec = { rim = 0, fill = 0, decal = 0, timer = 0 }
         self.Telegraphs[id] = rec
         -- 바닥(0)과 몬스터·플레이어(2) 사이 1 — 예고가 몸을 덮지 않는다
-        rec.rim = _EffectService:PlayEffect(self:TeleSprite(_GameConst.SpriteTeleRim, element), instigator, pos, 0, Vector3(full, full, 1), true, opt(1))
+        local boss = instigator:GetComponent("script.BossPattern") ~= nil
+        local rimRuid = self:TeleSprite(boss and _GameConst.SpriteTeleRimBoss or _GameConst.SpriteTeleRim, element)
+        rec.rim = _EffectService:PlayEffect(rimRuid, instigator, pos, 0, Vector3(full, full, 1), true, opt(1))
         local ground = ""
         local gw, gh = 140, 70
         if element == "poison" then ground = _GameConst.SpriteGroundPoison gw, gh = 160, 80
@@ -372,6 +376,11 @@ script Util extends Logic
             local old = rec.fill
             rec.fill = _EffectService:PlayEffect(fillRuid, instigator, pos, 0, Vector3(full * k, full * k, 1), true, opt(1))
             if old ~= 0 then _EffectService:RemoveEffect(old) end
+            if boss and t > 0 then
+                local oldRim = rec.rim
+                rec.rim = _EffectService:PlayEffect(rimRuid, instigator, pos, -t * self.BossRimSpin, Vector3(full, full, 1), true, opt(1))
+                if oldRim ~= 0 then _EffectService:RemoveEffect(oldRim) end
+            end
         end
         grow()
         rec.timer = _TimerService:SetTimerRepeat(function()

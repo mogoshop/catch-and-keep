@@ -20,7 +20,8 @@ script BossPattern extends Component
     property string MinionModelId = "graveworm"
     property integer MinionCount = 3
     property number PoolSeconds = 0
-    property string PoolElement = ""
+    @Sync
+    property string PoolElement = ""         -- 10-22 동기화: 액트 3·재의 왕은 단계마다 서버에서 바꾼다 → 예고 고리 색이 따라가야 한다
     property boolean SlamAtTarget = false
     @Sync
     property boolean PoolActive = false
@@ -53,7 +54,8 @@ script BossPattern extends Component
     property boolean WasDead = false
     property number EngageStart = 0        -- 처음 플레이어와 마주친 시각 (처치 시간 랭킹)
 
-    property string AuraKind = ""            -- 오라 속성 (비면 없음)
+    @Sync
+    property string AuraKind = ""            -- 오라 속성 (비면 없음 · 서버가 bosses.csv에서 채운다 → 오라 색을 위해 동기화)
     @Sync
     property number AuraRadius = 0
     property number AuraMult = 0
@@ -449,8 +451,9 @@ script BossPattern extends Component
 
     @ExecSpace("ClientOnly")
     method void UpdateAuraFx()
-        -- 오라 지대: 보스를 따라다니는 속성 색 소용돌이 (반경이 바뀌면 다시 건다)
-        local want = self.AuraOn and self.AuraRadius > 0 and self:HasLocalAudience()
+        -- 오라 지대: 보스를 따라다니는 속성 색 소용돌이 (반경이 바뀌면 다시 건다).
+        -- 10-22: 바닥 층(몸 아래)에 옅게 깔고, 내려찍기 예고·충격 동안은 끈다 — 예고 고리와 겹쳐 난잡해 보였다
+        local want = self.AuraOn and self.AuraRadius > 0 and self.SlamPhase == "idle" and self:HasLocalAudience()
         if self.AuraFx ~= 0 and (not want or self.AuraFxRadius ~= self.AuraRadius) then
             _ParticleService:RemoveParticle(self.AuraFx)
             self.AuraFx = 0
@@ -459,7 +462,7 @@ script BossPattern extends Component
         local c = self:ElementTint(self.AuraKind)
         local r = self.AuraRadius
         self.AuraFxRadius = r
-        self.AuraFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, self.Entity, Vector3(0, 0.05, 0), 0, Vector3(r, r * 0.4, 1), true, { Color = Color(c.r, c.g, c.b, 0.45) })
+        self.AuraFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, self.Entity, Vector3(0, 0.05, 0), 0, Vector3(r, r * 0.4, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(c.r, c.g, c.b, 0.3) })
     end
 
     method Color ElementTint(string element)
@@ -634,8 +637,8 @@ script BossPattern extends Component
         elseif element == "light" then tint = Color(0.75, 0.9, 1, 0.55) end
         local serials = {}
         local full = radius * 0.9 * 2 / 2.56
-        local rim = _EffectService:PlayEffect(_Util:TeleSprite(_GameConst.SpriteTeleRim, element), self.Entity, pos, 0, Vector3(full, full, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 })   -- 장판 범위 테두리 (실선 대신 흐린 빛)
-        table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { Color = Color(tint.r, tint.g, tint.b, 0.3) }))
+        local rim = _EffectService:PlayEffect(_Util:TeleSprite(_GameConst.SpriteTeleRimBoss, element), self.Entity, pos, 0, Vector3(full, full, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 })   -- 장판 범위 테두리 (보스 실금 고리)
+        table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(tint.r, tint.g, tint.b, 0.3) }))
         if element == "fire" then
             table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
         end
