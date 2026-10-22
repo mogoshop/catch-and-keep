@@ -46,7 +46,7 @@ function run() {
   b.text(home + '/Info', '어떻게 플레이할까요?', { anchor: 'top-center', pos: [0, -92], rect_size: [1300, 40], size: 24, color: DIM, alignment: 4 });
   const card = (name, x, art, title, desc) => {
     const c = home + '/' + name;
-    b.button(c, '', { anchor: 'middle-center', pos: [x, -14], rect_size: [660, 540], image_ruid: icons.btn_frame, bg_color: '#1A1622', sprite_type: 1 });
+    b.button(c, '', { anchor: 'middle-center', pos: [x, 8], rect_size: [660, 540], image_ruid: icons.btn_frame, bg_color: '#1A1622', sprite_type: 1 });
     b.sprite(c + '/Art', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -22], rect_size: [616, 350], image_ruid: art, color: '#FFFFFF', sprite_type: 0 });
     b.patchComponent(c + '/Art', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
     b.text(c + '/Name', title, { anchor: 'bottom-center', pos: [0, 104], rect_size: [600, 60], size: 42, bold: true, color: GOLD, alignment: 4 });
@@ -54,9 +54,10 @@ function run() {
   };
   card('Solo', -350, CARD_SOLO, '솔로 플레이', '나만의 게임 · 다른 사람은 들어오지 않는다');
   card('Party', 350, CARD_PARTY, '파티 플레이', '방에 들어가거나 직접 만든다 · 최대 4명');
-  btn(home + '/BtnChar', '캐릭터 선택', { anchor: 'bottom-left', pos: [40, 22], rect_size: [240, 64], font_size: 20 });
-  btn(home + '/BtnChannel', '채널 변경', { anchor: 'bottom-left', pos: [296, 22], rect_size: [240, 64], font_size: 20 });
-  b.text(home + '/Note', '', { anchor: 'bottom-right', pos: [-40, 38], rect_size: [880, 36], size: 18, color: DIM, alignment: 5, bestfit: true, min_size: 14, max_size: 18 });
+  // 10-22 사용자: 왼쪽 아래 모서리에 붙은 두 버튼이 새 카드 그림과 어색했다 → 카드 아래 가운데에 나란히, 안내 줄은 그 위
+  b.text(home + '/Note', '', { anchor: 'middle-center', pos: [0, -290], rect_size: [1300, 32], size: 18, color: DIM, alignment: 4, bestfit: true, min_size: 14, max_size: 18 });
+  btn(home + '/BtnChar', '캐릭터 선택', { anchor: 'middle-center', pos: [-160, -342], rect_size: [290, 66], font_size: 22 });
+  btn(home + '/BtnChannel', '채널 변경', { anchor: 'middle-center', pos: [160, -342], rect_size: [290, 66], font_size: 22 });
 
   // ── 파티 플레이: 방 목록 ──
   const list = box + '/List';

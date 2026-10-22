@@ -38,8 +38,8 @@ function run() {
   }
   b.panel(box + '/PortraitBox', { anchor: 'middle-center', pos: [-678, -20], rect_size: [210, 200], image_ruid: icons.win_content, color: '#000000', alpha: 0.4, sprite_type: 1, raycast: false });
   b.sprite(box + '/PortraitBox/Portrait', { anchor: 'middle-center', pos: [0, -42], rect_size: [176, 168], color: '#FFFFFF', sprite_type: 0, preserve_aspect: true, enable: false });
-  b.text(box + '/Name', '', { anchor: 'middle-center', pos: [0, 113], rect_size: [900, 40], size: 28, bold: true, color: '#F0D9A0', alignment: 4, outline: true, outline_color: '#1A1410' });
-  b.text(box + '/Body', '', { anchor: 'middle-center', pos: [110, -28], rect_size: [1320, 160], size: 30, color: '#ECE4D4', alignment: 0 });
+  b.text(box + '/Name', '', { anchor: 'middle-center', pos: [0, 103], rect_size: [900, 40], size: 28, bold: true, color: '#F0D9A0', alignment: 4, outline: true, outline_color: '#1A1410' });
+  b.text(box + '/Body', '', { anchor: 'middle-center', pos: [110, -12], rect_size: [1320, 190], size: 30, color: '#ECE4D4', alignment: 3 });   // 이름 띠 아래 칸에서 세로 가운데 (10-22)
   b.text(box + '/Hint', '', { anchor: 'middle-center', pos: [560, -104], rect_size: [400, 28], size: 20, color: '#9C9488', alignment: 5 });
   ['Art', 'Plate', 'Shade', 'BigTitle', 'BigSub', 'Title', 'Sub', 'Box'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
   // 맵 이동 화면 (MapTransition): 이동 순간 검게 덮고 도착지 이름을 보여 준 뒤, 새 맵·카메라가 자리 잡으면 걷어 낸다.
