@@ -8,17 +8,19 @@ const path = require('path'), fs = require('fs');
 const root = process.env.MSW_WORLD_ROOT || path.resolve(__dirname, '../..');
 const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
+const { readIfExists, preserveIds } = require('./lib.cjs');
 const rows = load('ui_icons');
 const icons = Object.fromEntries(rows.map((x) => [x.key, x.ruid]));
 const part = (key) => { const r = rows.find((x) => x.key === key); return { image_ruid: r.ruid, color: r.color, alpha: Number(r.alpha) }; };
 
-const CARD_SOLO = '5f87a858f9fe4e9796df8304a96381cb';    // v5 04 후드 초상 일부 880×500
-const CARD_PARTY = '4a4f9e73916d4ccf94c8294933e436a0';   // v5 01 모닥불 일부 880×500
+const CARD_SOLO = 'b02bf701dc0743b3b0d79d02ec113a5f';    // 코덱스 게임 고르기 카드 v1 솔로 1320×750 (10-22 사용자 확정)
+const CARD_PARTY = '8bac69b9e8fa4c17ad815abb5f38b3fb';   // 코덱스 게임 고르기 카드 v1 파티 1320×750 (10-22 사용자 확정)
 const GOLD = '#E6C88A', TEXT = '#E6DCC6', DIM = '#A8A090';
 const ROWS = 7;
 
 function run() {
   const file = path.join(root, 'ui', 'CharSelectHUD.' + 'ui');
+  const previous = readIfExists(file);   // 다시 지어도 같은 경로는 옛 id 그대로 (10-22: 빌드마다 id가 바뀌어 메이커가 게임 고르기 하위 요소를 놓쳤다)
   const b = UIBuilder.read(file);
   const R = 'SafeArea/Room';
   if (b.find(R)) b.remove(R);
@@ -109,6 +111,7 @@ function run() {
   b.text(box + '/Loading', '캐릭터를 불러오는 중…', { anchor: 'middle-center', pos: [0, 0], rect_size: [1000, 60], size: 30, color: DIM, alignment: 4, enable: false });
 
   b.write(file, { lint_verbose: false });
+  preserveIds(file, previous);
   return b.listEntities().length;
 }
 

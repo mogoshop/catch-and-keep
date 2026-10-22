@@ -3,7 +3,9 @@
 --   act1~3   : 그 액트 마을에 처음 들어올 때 — 큰 제목 + 부제만, 3.5초 뒤 저절로 닫힌다
 --   end1~3   : 액트 마지막 의뢰를 보고했을 때 — 서버 PlayerQuest:TurnIn → ShowStory
 --   scene1~3·reveal·scene5 : 오렌과 고르의 장면 대화 (docs/design/31 §4). 쪽마다 「화자|대사」 — 화자 그림(Who)·이름(Sub)을 바꾼다. 화자가 비면 내레이션
--- 글은 story.csv (_GameData:GetStory). "/"로 쪽을 나누고 글자가 차례로 나온다 ({장소} 금색 · [적] 붉은색).
+-- 글은 story.csv (_GameData:GetStory). "/"로 쪽을 나누고 글자가 차례로 나온다 ({장소} 금색 · [적] 붉은색 · ^ 줄바꿈).
+-- 10-22 개편 (사용자 C안): 그림은 화면 전체(천천히 다가온다) · 장면 제목 왼쪽 위 · 아래 대화 상자(큰 초상화 + 이름 + 여러 줄 대사).
+--   장 제목 카드(act1~4)는 가운데 큰 제목만. 그림은 한 장면 안에서 바꾸지 않는다 (시작 내레이션만 쪽마다 내용에 맞는 그림)
 -- 누르기·Space·Enter = 글자 끝까지 → 다음 쪽 → 닫기. 본 카드는 PlayerQuest.StorySeen에 남아 캐릭터마다 한 번만 나온다.
 @Logic
 script StoryCard extends Logic
@@ -24,6 +26,9 @@ script StoryCard extends Logic
     property number TypeSpeed = 28           -- 초당 글자 수 (대화 창보다 천천히)
     property boolean Scene = false           -- 장면 대화 카드인가 (쪽마다 화자)
     property table Speakers = {}             -- 쪽 → 화자 이름 ("" = 내레이션)
+    property string Body = "/ui/StoryHUD/SafeArea/Card/Box/Body"
+    property string ArtNow = ""              -- 지금 그림 (같은 그림이면 다가가는 움직임을 이어 간다)
+    property number ArtAt = 0                -- 그림을 바꾼 시각 (밝아짐 · 천천히 다가감)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -92,8 +97,9 @@ script StoryCard extends Logic
                 local before = math.floor(self.TypeShown)
                 self.TypeShown = math.min(self.TypeTotal, self.TypeShown + delta * self.TypeSpeed)
                 local now = math.floor(self.TypeShown)
-                if now ~= before then _UIKit:SetText(self.Card .. "/Body", _UIKit:StoryText(self.TypeFull, now)) end
+                if now ~= before then _UIKit:SetText(self.Body, _UIKit:StoryText(self.TypeFull, now)) end
             end
+            self:MoveArt()
             if self.AutoClose > 0 and _UtilLogic.ElapsedSeconds >= self.AutoClose then self:Close() end
             return
         end
@@ -137,16 +143,18 @@ script StoryCard extends Logic
         local act = string.match(key, "^act(%d)$")
         local endAct = string.match(key, "^end(%d)$")
         if key == "prologue" then
+            title = _GameData:GetStory("prologue_title")
             text = _GameData:GetStory("prologue")
         elseif act ~= nil then
             title = _GameData:GetStory("act" .. act .. "_title")
             sub = _GameData:GetStory("act" .. act .. "_sub")
         elseif endAct ~= nil then
             title = _GameData:GetStory("act" .. endAct .. "_title")
-            sub = "— 끝 —"
+            sub = "이야기의 끝"
             text = _GameData:GetStory("act" .. endAct .. "_end")
         else
             title = _GameData:GetStory(key .. "_title")
+            sub = _GameData:GetStory(key .. "_sub")
             text = _GameData:GetStory(key)
         end
         self.Key = key
@@ -163,10 +171,17 @@ script StoryCard extends Logic
                 table.insert(self.Speakers, "")
             end
         end
-        _UIKit:SetText(self.Card .. "/Title", title)
-        _UIKit:SetText(self.Card .. "/Sub", sub)
+        -- 장 제목 카드는 가운데 큰 글자만, 나머지는 왼쪽 위 제목 + 아래 대화 상자
+        local big = #self.Pages == 0
+        _UIKit:SetText(self.Card .. "/BigTitle", big and title or "")
+        _UIKit:SetText(self.Card .. "/BigSub", big and sub or "")
+        _UIKit:SetText(self.Card .. "/Title", big and "" or title)
+        _UIKit:SetText(self.Card .. "/Sub", big and "" or sub)
+        _UIKit:SetEnabled(self.Card .. "/Box", not big)
+        _UIKit:SetEnabled(self.Card .. "/Shade", not big)
+        self.ArtNow = ""
         self.Active = true
-        self.AutoClose = #self.Pages == 0 and (_UtilLogic.ElapsedSeconds + 3.5) or 0
+        self.AutoClose = big and (_UtilLogic.ElapsedSeconds + 3.5) or 0
         _UIKit:Open(self.Card)
         self:ShowPage(1)
         log("[VRF] story shown " .. key .. " pages=" .. tostring(#self.Pages))
@@ -176,43 +191,76 @@ script StoryCard extends Logic
     method void ShowPage(integer page)
         self.Page = page
         self:ShowArt(page)
-        local text = self.Pages[page] or ""
+        local text = string.gsub(self.Pages[page] or "", "%^", "\n")
         self.TypeFull = text
         self.TypeShown = 0
         self.TypeTotal = _UIKit:StoryLength(text)
-        _UIKit:SetText(self.Card .. "/Body", "")
-        if self.Scene then self:ShowSpeaker(self.Speakers[page] or "") end
+        _UIKit:SetText(self.Body, "")
+        self:ShowSpeaker(self.Speakers[page] or "")
         local count = #self.Pages
         local hint = ""
         if count > 0 then
-            hint = page < count and "눌러서 계속" or "눌러서 닫기"
-            if count > 1 then hint = tostring(page) .. " / " .. tostring(count) .. "   ·   " .. hint end
+            hint = page < count and "눌러서 계속 ▶" or "눌러서 닫기"
+            if count > 1 then hint = tostring(page) .. " / " .. tostring(count) .. "   " .. hint end
         end
-        _UIKit:SetText(self.Card .. "/Hint", hint)
+        _UIKit:SetText(self.Card .. "/Box/Hint", hint)
     end
 
     @ExecSpace("ClientOnly")
     method void ShowSpeaker(string who)
-        -- 장면 대화: 화자 그림·이름. 고르(행상)는 귀여운 메이플 그림 그대로 둔다 — 어두운 장면 속에서 오히려 섬뜩하다 (사용자 10-22)
+        -- 대화 상자: 화자가 있으면 왼쪽 큰 초상화 + 이름, 내레이션이면 상자 전체에 글만.
+        -- 고르(행상)는 귀여운 메이플 그림 그대로 둔다 — 어두운 장면 속에서 오히려 섬뜩하다 (사용자 10-22)
         local icons = { ["오렌"] = "who_oren", ["고르"] = "who_gor", ["고르바스"] = "who_gorbas", ["엘리안"] = "who_elian" }
         local colors = { ["오렌"] = "#E6C88A", ["고르"] = "#B7AFC4", ["고르바스"] = "#E8705C", ["엘리안"] = "#9FC7E8" }
-        local icon = icons[who]
-        _UIKit:SetIcon(self.Card .. "/Who", icon ~= nil and _GameData:GetUiIcon(icon) or "")
-        _UIKit:SetText(self.Card .. "/Sub", who ~= "" and _UIKit:Colored(colors[who] or "#ECE4D4", who) or "")
+        local box = self.Card .. "/Box"
+        local icon = icons[who] ~= nil and _GameData:GetUiIcon(icons[who]) or ""
+        local talking = who ~= ""
+        _UIKit:SetEnabled(box .. "/PortraitBox", talking and icon ~= "")
+        _UIKit:SetIcon(box .. "/PortraitBox/Portrait", icon)
+        _UIKit:SetText(box .. "/Name", talking and _UIKit:Colored(colors[who] or "#F0D9A0", who) or "")
+        -- 글 칸: 화자가 있으면 초상화 오른쪽, 내레이션이면 상자 가운데 넓게
+        if talking and icon ~= "" then
+            _UIKit:SetPos(box .. "/Body", Vector2(110, -28))
+            _UIKit:SetSize(box .. "/Body", Vector2(1320, 160))
+        else
+            _UIKit:SetPos(box .. "/Body", Vector2(0, -28))
+            _UIKit:SetSize(box .. "/Body", Vector2(1500, 160))
+        end
     end
 
     @ExecSpace("ClientOnly")
     method void ShowArt(integer page)
-        -- 배경 그림 ui_icons story_<key> (시작 내레이션은 쪽마다 story_prologue1~5). 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로
+        -- 그림 ui_icons story_<key> (시작 내레이션은 쪽마다 story_prologue1~5). 같은 장면 안에서는 바꾸지 않는다.
+        -- 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로
         local key = "story_" .. self.Key
         if self.Key == "prologue" then key = key .. tostring(math.max(1, page)) end
         local art = _GameData:GetUiIcon(key)
         local plate = ""
         local act = tonumber(string.match(self.Key, "(%d)$") or "0") or 0
         if art == "" and act > 0 and not self.Scene then plate = _GameData:GetUiIcon("quest_art" .. tostring(_QuestData:LastOfAct(act))) end
-        _UIKit:SetIcon(self.Card .. "/Art", art)
         _UIKit:SetIcon(self.Card .. "/Plate", plate)
-        if not self.Scene then _UIKit:SetIcon(self.Card .. "/Who", "") end
+        if art ~= self.ArtNow then
+            self.ArtNow = art
+            self.ArtAt = _UtilLogic.ElapsedSeconds
+            _UIKit:SetIcon(self.Card .. "/Art", art)
+            self:MoveArt()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MoveArt()
+        -- 그림이 바뀌면 0.6초 동안 어둠에서 밝아지고, 그 뒤 16초에 걸쳐 6% 천천히 다가간다 (멈춘 배경이 아니라 장면처럼)
+        local e = _UIKit:Get(self.Card .. "/Art")
+        if not isvalid(e) or self.ArtNow == "" then return end
+        local t = _UtilLogic.ElapsedSeconds - self.ArtAt
+        local k = math.min(1, t / 16)
+        local ease = k * (2 - k)
+        local sc = 1 + 0.06 * ease
+        e.UITransformComponent.UIScale = Vector3(sc, sc, 1)
+        e.UITransformComponent.anchoredPosition = Vector2(-18 * ease, 10 * ease)
+        local a = 0.85 * math.min(1, t / 0.6)
+        local sr = e.SpriteGUIRendererComponent
+        if math.abs(sr.Color.a - a) > 0.01 then sr.Color = Color(1, 1, 1, a) end
     end
 
     @ExecSpace("ClientOnly")
@@ -220,7 +268,7 @@ script StoryCard extends Logic
         if not self.Active then return end
         if self.TypeTotal > 0 and self.TypeShown < self.TypeTotal then
             self.TypeShown = self.TypeTotal
-            _UIKit:SetText(self.Card .. "/Body", _UIKit:StoryText(self.TypeFull, -1))
+            _UIKit:SetText(self.Body, _UIKit:StoryText(self.TypeFull, -1))
             return
         end
         if self.Page < #self.Pages then
