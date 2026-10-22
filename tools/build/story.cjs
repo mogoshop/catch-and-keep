@@ -3,6 +3,7 @@
 // 컨트롤러는 RootDesk/MyDesk/UI/Hud/StoryCard.mlua (_StoryCard). 카드 전체가 버튼이라 아무 곳이나 누르면 넘어간다.
 const { UIBuilder, P, load } = require('./lib.cjs');
 const icons = Object.fromEntries(load('ui_icons').map((r) => [r.key, r.ruid]));
+const { FRAME, COLOR, DIALOG, dialogLayout } = require('./ui-tokens.cjs');
 
 function run() {
   const file = P.ui('StoryHUD');
@@ -13,7 +14,6 @@ function run() {
   // 아래 = NPC 대화창 모양 상자(큰 초상화 + 이름 + 여러 줄 대사). 장 제목 카드는 가운데 큰 글자(BigTitle)만
   // 예전 배치의 칸(가운데 글·화자 그림)은 지운다. 나머지는 같은 경로를 고쳐 쓰므로 엔티티 id가 그대로다
   for (const old of ['Who', 'Body', 'Hint']) { try { b.remove(c + '/' + old); } catch (e) { /* 이미 없다 */ } }
-  const DARK = { r: 0.04, g: 0.035, b: 0.05, a: 0.92 };
   // 넓은 화면에서도 가장자리가 비지 않게 화면보다 크게 덮는다 (stretch는 다시 불러올 때 크기 0으로 접힌다)
   b.button(c, '', { anchor: 'middle-center', rect_size: [4000, 3000], bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, enable: false });   // 불투명 (카드 뒤로 HUD·캐릭터가 비치지 않게)
   b.sprite(c + '/Art', { anchor: 'middle-center', rect_size: [1920, 1080], color: '#FFFFFF', alpha: 0.85, sprite_type: 0, enable: false });
@@ -28,19 +28,24 @@ function run() {
   b.text(c + '/Title', '', { anchor: 'middle-center', pos: [-470, 455], rect_size: [900, 56], size: 40, bold: true, color: '#F0D9A0', alignment: 3, outline: true, outline_color: '#1A1410' });
   b.patchComponent(c + '/Title', 'MOD.Core.TextGUIRendererComponent', { Font: 'Maple' });
   b.text(c + '/Sub', '', { anchor: 'middle-center', pos: [-470, 408], rect_size: [900, 34], size: 24, color: '#CFC3AE', alignment: 3, outline: true, outline_color: '#1A1410' });
-  // 대화 상자 (NPC 대화창과 같은 테두리)
+  // 대화 상자: NPC 대화창과 같은 공통 규격 (tools/build/ui-tokens.cjs) — 테두리 · 이름 띠 · 초상화 칸 · 글 칸(Paper) · 쪽 표시
   const box = c + '/Box';
-  b.panel(box, { anchor: 'middle-center', pos: [0, -372], rect_size: [1640, 280], color: DARK, sprite_type: 1, raycast: false });
-  {
-    const size = b.getComponent(box, 'MOD.Core.UITransformComponent').RectSize;
-    b.sprite(box + '/Rim', { anchor: 'middle-center', pos: [0, 0], rect_size: [size.x + 40, size.y + 40], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
-    b.patchComponent(box + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
-  }
-  b.panel(box + '/PortraitBox', { anchor: 'middle-center', pos: [-678, -20], rect_size: [210, 200], image_ruid: icons.win_content, color: '#000000', alpha: 0.4, sprite_type: 1, raycast: false });
-  b.sprite(box + '/PortraitBox/Portrait', { anchor: 'middle-center', pos: [0, -42], rect_size: [176, 168], color: '#FFFFFF', sprite_type: 0, preserve_aspect: true, enable: false });
-  b.text(box + '/Name', '', { anchor: 'middle-center', pos: [0, 103], rect_size: [900, 40], size: 28, bold: true, color: '#F0D9A0', alignment: 4, outline: true, outline_color: '#1A1410' });
-  b.text(box + '/Body', '', { anchor: 'middle-center', pos: [110, -12], rect_size: [1320, 190], size: 30, color: '#ECE4D4', alignment: 3 });   // 이름 띠 아래 칸에서 세로 가운데 (10-22)
-  b.text(box + '/Hint', '', { anchor: 'middle-center', pos: [560, -104], rect_size: [400, 28], size: 20, color: '#9C9488', alignment: 5 });
+  const H = FRAME.contentTop + DIALOG.storyPaperH + FRAME.padBottom;
+  const L = dialogLayout(H, true);
+  for (const old of ['Body', 'Hint']) { try { b.remove(box + '/' + old); } catch (e) { /* 이미 Paper 안으로 옮겼다 */ } }
+  // 카드(4000×3000) 가운데 = 화면 가운데 → 화면 아래에서 48 띄운 자리 (1080 화면 기준)
+  b.panel(box, { anchor: 'middle-center', pos: [0, -(540 - 48 - H / 2)], rect_size: [DIALOG.width, H], color: COLOR.panel, sprite_type: 1, raycast: false });
+  b.sprite(box + '/Rim', { anchor: 'middle-center', pos: [0, 0], rect_size: [DIALOG.width + FRAME.rimOut * 2, H + FRAME.rimOut * 2], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
+  b.patchComponent(box + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
+  // 이름 = 창 제목과 같은 규칙 (위에서 titleTop · 띠 세로 가운데 · 모든 화자 같은 색)
+  b.text(box + '/Name', '', { anchor: 'top-center', pos: [0, -FRAME.titleTop], rect_size: [DIALOG.width - 260, FRAME.titleH], size: FRAME.titleSize, bold: true, color: COLOR.title, alignment: 4, outline: true, outline_color: '#2D2D2D' });
+  b.panel(box + '/PortraitBox', { anchor: 'top-left', pivot: [0, 1], pos: [L.portraitX, -FRAME.contentTop], rect_size: [DIALOG.portrait.w, L.paperH], image_ruid: icons.win_content, color: '#000000', alpha: 0.35, sprite_type: 1, raycast: false });
+  b.sprite(box + '/PortraitBox/Portrait', { anchor: 'middle-center', pos: [0, 0], rect_size: [DIALOG.portrait.w - DIALOG.portrait.inset * 2, L.paperH - DIALOG.portrait.inset * 2], color: '#FFFFFF', sprite_type: 0, preserve_aspect: true, enable: false });
+  b.panel(box + '/Paper', { anchor: 'top-left', pivot: [0, 1], pos: [L.paperX, -FRAME.contentTop], rect_size: [L.paperW, L.paperH], image_ruid: icons.win_content, color: '#000000', alpha: 0.3, sprite_type: 1, raycast: false });
+  b.text(box + '/Paper/Body', '', { anchor: 'top-left', pos: [DIALOG.textPad.x, -DIALOG.textPad.y], rect_size: [L.paperW - DIALOG.textPad.x * 2, L.paperH - DIALOG.textPad.y * 2 - DIALOG.pageNo.h + DIALOG.pageNo.bottom], size: DIALOG.font.pc, color: COLOR.body, alignment: 0 });
+  b.patchComponent(box + '/Paper/Body', 'MOD.Core.TextGUIRendererComponent', { BestFit: true, MinSize: DIALOG.font.min, MaxSize: DIALOG.font.pc });
+  b.text(box + '/Paper/Hint', '', { anchor: 'bottom-right', pos: [-DIALOG.pageNo.right, DIALOG.pageNo.bottom], rect_size: [DIALOG.pageNo.w, DIALOG.pageNo.h], size: DIALOG.pageNo.size, color: COLOR.dim, alignment: 8 });
+  ['Rim', 'Name', 'PortraitBox', 'Paper'].forEach((n, i) => b.patch(box + '/' + n, { display_order: i }));
   ['Art', 'Plate', 'Shade', 'BigTitle', 'BigSub', 'Title', 'Sub', 'Box'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
   // 맵 이동 화면 (MapTransition): 이동 순간 검게 덮고 도착지 이름을 보여 준 뒤, 새 맵·카메라가 자리 잡으면 걷어 낸다.
   // 이야기 카드보다 위 (이동 중에는 다른 것을 보지 않는다). 그림은 loading_act1~3 (코덱스 요청) — 없으면 검은 바탕만

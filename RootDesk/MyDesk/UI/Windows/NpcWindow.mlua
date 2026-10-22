@@ -30,9 +30,8 @@ script NpcWindow extends Logic
     property number TypeShown = 0
     property integer TypeTotal = 0
     property number TypeSpeed = 45           -- 초당 글자 수
-    property number PaperWide = 1006         -- 글 칸 너비 (ux-layout.cjs NpcWin과 맞춘다)
-    property number PaperNarrow = 820        -- 의뢰 그림이 있을 때
-    property number PaperHeight = 156
+    property number PaperHeight = 150        -- 글 칸 높이 (ui-tokens.cjs DIALOG.npcPaperH · 너비·여백은 UIKit 대화 상자 규격)
+    property number ArtReserve = 186         -- 의뢰 그림(170) + 칸 사이(16)
     property string CheerText = ""           -- 액트 보스를 쓰러뜨린 뒤의 격려 한마디 (말을 건 첫 쪽, docs/design/31 §7)
 
     @ExecSpace("ClientOnly")
@@ -121,7 +120,7 @@ script NpcWindow extends Logic
             quest:RequestCheer(act, npc.Kind)
         end
         local stand = isvalid(npc.Entity.SpriteRendererComponent) and npc.Entity.SpriteRendererComponent.SpriteRUID or ""
-        _UIKit:SetIcon(self.Win .. "/PortraitBox/Portrait", stand ~= "" and ("thumbnail://" .. stand) or "")
+        _UIKit:SetPortrait(self.Win .. "/PortraitBox/Portrait", stand)
         self.TypeTotal = 0
         self:ShowPage(1, 1, 0)
         self.Dismissed = false
@@ -472,9 +471,7 @@ script NpcWindow extends Logic
         _UIKit:SetText(self.Win .. "/Paper/PageNo", count > 1 and (tostring(page) .. " / " .. tostring(count)) or "")
         local art = artIndex > 0 and _GameData:GetUiIcon("quest_art" .. tostring(artIndex)) or ""
         _UIKit:SetIcon(self.Win .. "/Art", art)
-        local w = art ~= "" and self.PaperNarrow or self.PaperWide
-        _UIKit:SetSize(self.Win .. "/Paper", Vector2(w, self.PaperHeight))
-        _UIKit:SetSize(self.Win .. "/Paper/Body", Vector2(w - 40, self.PaperHeight - 40))
+        _UIKit:LayoutDialog(self.Win, true, self.PaperHeight, art ~= "" and self.ArtReserve or 0)
     end
 
     @ExecSpace("ClientOnly")

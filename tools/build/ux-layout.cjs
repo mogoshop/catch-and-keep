@@ -1,6 +1,7 @@
 // 기존 HUD의 UUID를 보존하면서 터치 크기와 실제 통로 표시를 보강한다.
 'use strict';
 const {UIBuilder,P,load,quiet}=require('./lib.cjs');
+const {dialogLayout}=require('./ui-tokens.cjs');
 const K=Object.fromEntries(load('ui_icons').map(r=>[r.key,r.ruid]));
 function run(){quiet(()=>{
  const b=UIBuilder.load(P.ui('GameHUD'));
@@ -15,15 +16,18 @@ function run(){quiet(()=>{
  b.text('QuestTrack/Progress','',{anchor:'bottom-right',pos:[-28,16],rect_size:[300,30],size:24,color:'#E6C88A',alignment:8});
  // 의뢰 요약과 보상은 별도 마지막 페이지로 보여서 대사와 겹치지 않는다.
  // 10-12 스토리 개편 (docs/design/18 §3-3): 낮은 창 · 왼쪽 NPC 초상 · 글 칸 · 쪽 표시 · 수락 쪽 의뢰 그림. 하단 메뉴를 가리지 않게 위로
- b.patch('NpcWin',{pos:[0,200],rect_size:[1300,360]});b.patch('NpcWin/Rim',{rect_size:[1340,400]});
- b.panel('NpcWin/PortraitBox',{anchor:'top-left',pos:[28,-74],rect_size:[220,258],image_ruid:K.win_content,color:'#000000',alpha:0.35,sprite_type:1});
- b.sprite('NpcWin/PortraitBox/Portrait',{anchor:'middle-center',pos:[0,0],rect_size:[196,234],color:'#FFFFFF',sprite_type:0,enable:false});
+ // 대화 상자 공통 규격 (tools/build/ui-tokens.cjs — 이야기 카드와 같은 값)
+ { const {FRAME,DIALOG,BUTTON}=require('./ui-tokens.cjs'); const H=DIALOG.npcHeight, L=dialogLayout(H,true), paperH=DIALOG.npcPaperH;
+ b.patch('NpcWin',{pos:[0,200],rect_size:[DIALOG.width,H]});b.patch('NpcWin/Rim',{rect_size:[DIALOG.width+FRAME.rimOut*2,H+FRAME.rimOut*2]});
+ b.panel('NpcWin/PortraitBox',{anchor:'top-left',pos:[L.portraitX,-FRAME.contentTop],rect_size:[DIALOG.portrait.w,L.paperH],image_ruid:K.win_content,color:'#000000',alpha:0.35,sprite_type:1});
+ b.sprite('NpcWin/PortraitBox/Portrait',{anchor:'middle-center',pos:[0,0],rect_size:[DIALOG.portrait.w-DIALOG.portrait.inset*2,L.paperH-DIALOG.portrait.inset*2],color:'#FFFFFF',sprite_type:0,enable:false});
  b.patchComponent('NpcWin/PortraitBox/Portrait','MOD.Core.SpriteGUIRendererComponent',{PreserveSprite:1});
- b.patch('NpcWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[264,-74],rect_size:[1006,156]});b.patch('NpcWin/Paper/Body',{rect_size:[966,116],pos:[20,-14]});
- b.patchComponent('NpcWin/Paper/Body','MOD.Core.TextGUIRendererComponent',{FontSize:26,BestFit:true,MinSize:18,MaxSize:26}); // 대장장이·상점 안내처럼 긴 글은 줄여서 칸 안에
- b.text('NpcWin/Paper/PageNo','',{anchor:'bottom-right',pos:[-14,6],rect_size:[120,28],size:18,color:'#9C9488',alignment:8});
- b.sprite('NpcWin/Art',{anchor:'top-right',pos:[-28,-74],rect_size:[170,170],color:'#FFFFFF',sprite_type:0,enable:false});
- for(let i=1;i<=5;i++)b.patch('NpcWin/Btn'+i,{rect_size:[184,88]});
+ b.patch('NpcWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[L.paperX,-FRAME.contentTop],rect_size:[L.paperW,paperH]});
+ b.patch('NpcWin/Paper/Body',{rect_size:[L.paperW-DIALOG.textPad.x*2,paperH-DIALOG.textPad.y*2-DIALOG.pageNo.h+DIALOG.pageNo.bottom],pos:[DIALOG.textPad.x,-DIALOG.textPad.y]});
+ b.patchComponent('NpcWin/Paper/Body','MOD.Core.TextGUIRendererComponent',{FontSize:DIALOG.font.pc,BestFit:true,MinSize:DIALOG.font.min,MaxSize:DIALOG.font.pc}); // 대장장이·상점 안내처럼 긴 글은 줄여서 칸 안에 (모바일 크기는 UIKit.ApplyDialogFont)
+ b.text('NpcWin/Paper/PageNo','',{anchor:'bottom-right',pos:[-DIALOG.pageNo.right,DIALOG.pageNo.bottom],rect_size:[DIALOG.pageNo.w,DIALOG.pageNo.h],size:DIALOG.pageNo.size,color:'#9C9488',alignment:8});
+ b.sprite('NpcWin/Art',{anchor:'top-right',pos:[-FRAME.padX,-FRAME.contentTop],rect_size:[170,170],color:'#FFFFFF',sprite_type:0,enable:false});
+ for(let i=1;i<=5;i++)b.patch('NpcWin/Btn'+i,{rect_size:[DIALOG.npcButtonW,BUTTON.h],pos:[-FRAME.padX-(5-i)*(DIALOG.npcButtonW+FRAME.gap),FRAME.buttonBottom]}); }
  // 맵 한 줄 소개 (maps.csv flavor): 이름·부제 아래 (HudMap.OnMapChanged)
  if(b.find('Banner/Flavor'))b.remove('Banner/Flavor');
  b.panel('Banner/FlavorBg',{anchor:'middle-center',pos:[0,-70],rect_size:[820,36],color:'#000000',alpha:0.6,enable:true}); // 배너 틀 아래 바닥 위라 검은 띠를 깐다

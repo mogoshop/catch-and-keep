@@ -26,7 +26,8 @@ script StoryCard extends Logic
     property number TypeSpeed = 28           -- 초당 글자 수 (대화 창보다 천천히)
     property boolean Scene = false           -- 장면 대화 카드인가 (쪽마다 화자)
     property table Speakers = {}             -- 쪽 → 화자 이름 ("" = 내레이션)
-    property string Body = "/ui/StoryHUD/SafeArea/Card/Box/Body"
+    property string Body = "/ui/StoryHUD/SafeArea/Card/Box/Paper/Body"
+    property number PaperH = 200             -- 글 칸 높이 (ui-tokens.cjs DIALOG.storyPaperH · 나머지 배치는 UIKit 대화 상자 규격)
     property string ArtNow = ""              -- 지금 그림 (같은 그림이면 다가가는 움직임을 이어 간다)
     property number ArtAt = 0                -- 그림을 바꾼 시각 (밝아짐 · 천천히 다가감)
 
@@ -203,29 +204,21 @@ script StoryCard extends Logic
             hint = page < count and "눌러서 계속 ▶" or "눌러서 닫기"
             if count > 1 then hint = tostring(page) .. " / " .. tostring(count) .. "   " .. hint end
         end
-        _UIKit:SetText(self.Card .. "/Box/Hint", hint)
+        _UIKit:SetText(self.Card .. "/Box/Paper/Hint", hint)
     end
 
     @ExecSpace("ClientOnly")
     method void ShowSpeaker(string who)
-        -- 대화 상자: 화자가 있으면 왼쪽 큰 초상화 + 이름, 내레이션이면 상자 전체에 글만.
-        -- 고르(행상)는 귀여운 메이플 그림 그대로 둔다 — 어두운 장면 속에서 오히려 섬뜩하다 (사용자 10-22)
+        -- 대화 상자 (NPC 대화창과 같은 공통 규격): 화자가 있으면 이름 띠 + 왼쪽 초상화, 내레이션이면 글 칸이 상자 왼쪽부터.
+        -- 이름 색은 모든 화자 같은 창 제목 색 (빌더 COLOR.title). 고르(행상)는 귀여운 메이플 그림 그대로 — 어두운 장면 속에서 오히려 섬뜩하다 (사용자 10-22)
         local icons = { ["오렌"] = "who_oren", ["고르"] = "who_gor", ["고르바스"] = "who_gorbas", ["엘리안"] = "who_elian" }
-        local colors = { ["오렌"] = "#E6C88A", ["고르"] = "#B7AFC4", ["고르바스"] = "#E8705C", ["엘리안"] = "#9FC7E8" }
         local box = self.Card .. "/Box"
         local icon = icons[who] ~= nil and _GameData:GetUiIcon(icons[who]) or ""
-        local talking = who ~= ""
-        _UIKit:SetEnabled(box .. "/PortraitBox", talking and icon ~= "")
-        _UIKit:SetIcon(box .. "/PortraitBox/Portrait", icon)
-        _UIKit:SetText(box .. "/Name", talking and _UIKit:Colored(colors[who] or "#F0D9A0", who) or "")
-        -- 글 칸: 화자가 있으면 초상화 오른쪽, 내레이션이면 상자 가운데 넓게
-        if talking and icon ~= "" then
-            _UIKit:SetPos(box .. "/Body", Vector2(110, -12))
-            _UIKit:SetSize(box .. "/Body", Vector2(1320, 190))
-        else
-            _UIKit:SetPos(box .. "/Body", Vector2(0, -12))
-            _UIKit:SetSize(box .. "/Body", Vector2(1500, 190))
-        end
+        local portrait = who ~= "" and icon ~= ""
+        _UIKit:SetEnabled(box .. "/PortraitBox", portrait)
+        _UIKit:SetPortrait(box .. "/PortraitBox/Portrait", icon)
+        _UIKit:SetText(box .. "/Name", who)
+        _UIKit:LayoutDialog(box, portrait, self.PaperH, 0)
     end
 
     @ExecSpace("ClientOnly")
