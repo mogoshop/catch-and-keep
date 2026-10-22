@@ -10,7 +10,7 @@ const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scri
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
 const { readIfExists, preserveIds } = require('./lib.cjs');
 // 여백·버튼은 공통 규격만 쓴다 (10-22 사용자: 화면마다 제각각이던 22·34·44·60 여백 정리)
-const { FRAME, INNER, BUTTON, SPACE } = require('./ui-tokens.cjs');
+const { FRAME, INNER, BUTTON, SPACE, buttonText } = require('./ui-tokens.cjs');
 const rows = load('ui_icons');
 const icons = Object.fromEntries(rows.map((x) => [x.key, x.ruid]));
 const part = (key) => { const r = rows.find((x) => x.key === key); return { image_ruid: r.ruid, color: r.color, alpha: Number(r.alpha) }; };
@@ -26,7 +26,11 @@ function run() {
   const b = UIBuilder.read(file);
   const R = 'SafeArea/Room';
   if (b.find(R)) b.remove(R);
-  const btn = (name, text, opts) => b.button(name, text, { image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: TEXT, ...opts });
+  const btn = (name, text, opts) => {
+    const o = { image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: TEXT, ...opts };
+    b.button(name, text, o);
+    b.patchComponent(name, 'MOD.Core.TextGUIRendererComponent', buttonText(o.font_size));
+  };
   const ok = (name, text, opts) => btn(name, text, { bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, color: '#F4E2B0', ...opts });
   const rim = (name, key, w, h) => {
     b.sprite(name + '/Rim', { anchor: 'middle-center', pos: [0, 0], rect_size: [w, h], ...part(key), sprite_type: 1 });

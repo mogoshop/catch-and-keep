@@ -24,7 +24,13 @@ const FRAME = {
 const INNER = { pad: 24 };
 
 // 버튼 (모든 창 공통 · 터치 88 이상)
-const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26 };
+const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
+  padX: 30,        // 버튼 그림(btn_frame) 양 끝 장식 안쪽부터 글자 (장식에 글자가 닿지 않게)
+  minFont: 14 };   // 글이 길면 이 크기까지 줄인다 (「다음 ▶ [Space]」 같은 PC 단축키 안내)
+// 테두리 버튼 글자 칸 (모든 빌더 공통): 장식 안쪽 여백 + 넘치면 줄이기
+function buttonText(fontSize) {
+  return { Padding: { left: BUTTON.padX, right: BUTTON.padX, top: 0, bottom: 0 }, BestFit: true, MinSize: BUTTON.minFont, MaxSize: fontSize };
+}
 
 const COLOR = {
   title: '#F6E3B0',   // 창 제목 · 대화 상자 이름 (모든 화자 공통)
@@ -55,4 +61,4 @@ function dialogLayout(height, withPortrait) {
   return { portraitX, paperX, paperW, paperH };
 }
 
-module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, COLOR, DIALOG, dialogLayout };
+module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, COLOR, DIALOG, dialogLayout, buttonText };

@@ -244,7 +244,7 @@ script NpcWindow extends Logic
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
         local body = quest ~= nil and quest:StoryLine("idle_" .. self.NpcKind) or ""
-        if body == "" then body = "어디로 가겠나?" end
+        if body == "" then body = self:Stock(self.NpcKind, "travel") end
         local buttons = { "", "", "", "", "닫기" }
         local slot = 2
         local locked = ""
@@ -256,9 +256,30 @@ script NpcWindow extends Logic
                 locked = _UIKit:StoryText(_GameData:GetStory("lock_act" .. tostring(a)), -1)
             end
         end
-        if locked ~= "" then body = body .. "\n" .. locked end
+        if locked ~= "" then body = body .. "\n<color=#9C9488>" .. locked .. "</color>" end
         self:SetButtons(buttons)
         _UIKit:SetText(self.Win .. "/Paper/Body", body)
+    end
+
+    @ExecSpace("ClientOnly")
+    method string Stock(string kind, string key)
+        -- NPC가 공통으로 하는 짧은 말 (의뢰 진행 중·다른 의뢰인 차례·이동 인사)을 그 인물의 말투로 (npcs.csv voice, docs/design/32)
+        -- done·wait는 string.format(의뢰 이름, 의뢰인 이름)
+        local v = _QuestData:Voice(kind)
+        local T = {
+            haera = { go = "어서 다녀오너라.", none = "지금은 할 이야기가 없다.", travel = "어디로 갈 테냐?",
+                done = "「%s」 일을 해냈다고? %s에게 알려라. 보상은 그쪽에서 받을 거다.", wait = "「%s」 일로 %s 쪽에서 너를 찾고 있다. 먼저 가 보아라." },
+            hage = { go = "어서 다녀오게.", none = "지금은 할 이야기가 없네.", travel = "어디로 가겠나?",
+                done = "「%s」 일을 해냈다고? %s에게 알려 주게. 보상은 그쪽에서 받을 걸세.", wait = "「%s」 일로 %s 쪽에서 자네를 찾고 있더군. 먼저 가 보게." },
+            haeyo = { go = "조심해서 다녀오세요.", none = "지금은 드릴 말씀이 없어요.", travel = "어디로 가실 건가요?",
+                done = "「%s」 일을 해내셨군요! %s에게 알려 주세요. 보상은 그쪽에서 받으실 거예요.", wait = "「%s」 일로 %s 쪽에서 당신을 찾고 있어요. 먼저 가 보세요." },
+            hasipsio = { go = "조심히 다녀오십시오.", none = "지금은 드릴 말씀이 없습니다.", travel = "어디로 모실까요?",
+                done = "「%s」 일을 해내셨군요. %s에게 알려 주십시오. 보상은 그쪽에서 받으실 겁니다.", wait = "「%s」 일로 %s 쪽에서 손님을 찾고 있습니다. 먼저 가 보십시오." },
+            hao = { go = "조심히 다녀오시오.", none = "지금은 할 이야기가 없소.", travel = "어디로 가시겠소?",
+                done = "「%s」 일을 해냈다니 대단하오. %s에게 알리시오. 보상은 그쪽에서 받을 거요.", wait = "「%s」 일로 %s 쪽에서 당신을 찾고 있소. 먼저 가 보시오." },
+        }
+        local set = T[v] or T.haera
+        return set[key] or ""
     end
 
     @ExecSpace("ClientOnly")
@@ -267,7 +288,7 @@ script NpcWindow extends Logic
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
         local line = quest ~= nil and quest:StoryLine("idle_" .. kind) or ""
-        if line == "" then line = "할 이야기가 없다." end
+        if line == "" then line = self:Stock(kind, "none") end
         return line
     end
 
@@ -305,7 +326,7 @@ script NpcWindow extends Logic
             local label = labels[i] or ""
             _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), label ~= "")
             -- PC 의뢰 대화의 주 버튼에는 키 안내를 붙인다 (처리 중 표시는 제외)
-            if label ~= "" and i == 4 and self.Kind == "quest" and Environment:IsPCPlatform() and label ~= "처리 중…" then label = label .. " [Space]" end
+            if label ~= "" and i == 4 and self.Kind == "quest" and Environment:IsPCPlatform() and label ~= "처리 중…" then label = label .. " <size=15><color=#B8AE9C>Space</color></size>" end
             if label ~= "" then _UIKit:SetText(self.Win .. "/Btn" .. tostring(i), label) end
         end
     end
@@ -329,8 +350,8 @@ script NpcWindow extends Logic
         local quest = _UIKit:Comp("script.PlayerQuest")
         local stage = quest ~= nil and quest:StoryStage() or "0"
         local hello = quest ~= nil and quest:StoryLine((stage == "r" or stage == "4") and "idle_qm" or "idle_shop") or ""
-        if hello == "" then hello = "물약이 필요한가, 아니면 짐을 덜고 싶은가." end
-        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("%s\n이 좌판에선 %s · 귀환 두루마리 · 도박을 판다. 쓸모없는 물건은 사 준다.  <color=#9C9488>가진 골드 %d</color>", hello, tiers[diff + 1] or tiers[1], st.Gold))
+        if hello == "" then hello = "물약이 필요하십니까, 아니면 짐을 덜고 싶으십니까?" end
+        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("%s\n<color=#9C9488>파는 물건: %s · 귀환 두루마리 · 도박 — 안 쓰는 물건은 팔 수 있다 · 가진 골드 %d</color>", hello, tiers[diff + 1] or tiers[1], st.Gold))
     end
 
     method table StockList()
@@ -355,9 +376,9 @@ script NpcWindow extends Logic
         if key == self.RenderKey then return end
         self.RenderKey = key
         self:SetButtons({ "", "", "", "물건 보기", "닫기" })
-        local body = string.format("먼 길을 왔지. 오늘 들고 온 장비가 %d점 남았다.\n그림과 옵션을 보고 골라라. 열 분마다 짐이 바뀐다.\n<color=#9C9488>가진 골드 %d · 다음 입고 %d분 %02d초</color>", count, st.Gold, left // 60, left % 60)
+        local body = string.format("먼 길을 왔소. 오늘 들고 온 장비가 %d점 남았소.\n그림과 옵션을 보고 고르시오.\n<color=#9C9488>가진 골드 %d · 다음 입고 %d분 %02d초</color>", count, st.Gold, left // 60, left % 60)
         -- 말을 건 직후 서버가 짐을 풀기 전(입고 시각 0)에는 「다 팔렸다」가 아니라 짐 푸는 중
-        if count == 0 then body = shop.StockNextAt <= 0 and "짐을 푸는 중이다… 잠시만." or ("오늘 물건은 다 팔렸다. 다음 입고까지 " .. string.format("%d분 %02d초", left // 60, left % 60) .. ".") end
+        if count == 0 then body = shop.StockNextAt <= 0 and "짐을 푸는 중이오… 잠시만 기다리시오." or ("오늘 물건은 다 팔렸소.\n<color=#9C9488>다음 입고까지 " .. string.format("%d분 %02d초", left // 60, left % 60) .. "</color>") end
         _UIKit:SetText(self.Win .. "/Paper/Body", body)
     end
 
@@ -429,14 +450,13 @@ script NpcWindow extends Logic
         elseif q.giver ~= self.NpcKind and quest.State ~= 1 then
             -- 다른 의뢰인의 차례: 그 사람에게 보낸다
             local who = _QuestData:GiverName(q.giver)
-            body = quest.State == 2 and ("「" .. q.title .. "」을 해냈다고? " .. who .. "에게 알려 주게. 보상은 그쪽에서 받을 거다.")
-                or ("「" .. q.title .. "」 — " .. who .. "이(가) 자네를 찾고 있더군. 먼저 가 보게.")
+            body = string.format(self:Stock(self.NpcKind, quest.State == 2 and "done" or "wait"), q.title, who)
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
         elseif quest.State == 1 then
             local count = quest:CountFor(q)
             local progress = count > 0 and ("  진행 " .. tostring(quest.Progress) .. " / " .. tostring(count)) or ""
-            body = "「" .. q.title .. "」" .. progress .. "\n" .. q.desc .. "\n어서 다녀오게."
+            body = "「" .. q.title .. "」" .. progress .. "\n" .. q.desc .. "\n" .. self:Stock(self.NpcKind, "go")
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
         else

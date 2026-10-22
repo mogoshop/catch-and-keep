@@ -58,7 +58,11 @@ function kit(b) {
       b.panel(name, { anchor, pos, rect_size: size, ...part(key), sprite_type: 1 });
     },
     // 버튼 (흰 글자)
-    btn(name, text, opts) { b.button(name, text, { font_size: 24, color: C.gold, ...bg("btn_frame"), sprite_type: 1, ...opts }); },
+    btn(name, text, opts) {
+      const o = { font_size: 24, color: C.gold, ...bg("btn_frame"), sprite_type: 1, ...opts };
+      b.button(name, text, o);
+      b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", require("./ui-tokens.cjs").buttonText(o.font_size));
+    },
     ok(name, text, opts) { b.button(name, text, { font_size: 24, color: "#F4E2B0", ...bg("btn_frame"), bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, ...opts }); },
     // 아이콘 칸: 어두운 바탕 + Icon(꺼짐, 컨트롤러가 그림을 넣고 켠다) + Rim(청동 테두리, 등급은 테두리 색으로)
     slot(name, opts, iconSize = 60, key = "slot") {
@@ -397,7 +401,7 @@ function buildGameHud() {
   }
 
   // ── 퀘스트 창 (Q) ──
-  k.frame("QuestWin", "middle-center", [0, 60], [800, 620], "퀘스트 — 잿빛 변경");
+  k.frame("QuestWin", "middle-center", [0, 60], [800, 620], "퀘스트 — 무덤 왕국");
   for (let i = 1; i <= 6; i++) {
     const n = `QuestWin/Q${i}`;
     k.btn(n, "", { anchor: "top-left", pos: [40, -88 - (i - 1) * 60], rect_size: [720, 54], font_size: 19 });

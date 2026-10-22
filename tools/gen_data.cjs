@@ -410,7 +410,9 @@ function genQuests() {
   const body = ["        self.List = {}",
     ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
     "        self.Givers = {}",
-    ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`)].join("\n");
+    ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`),
+    "        self.Voices = {}",
+    ...load("npcs").map((x) => `        self.Voices[${s(x.kind)}] = ${s(x.voice || "haera")}`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
@@ -429,6 +431,12 @@ function genQuests() {
             if q.kind == kind and q.target == target then return i end
         end
         return 0
+    end
+
+    method string Voice(string kind)
+        -- NPC 말투 (npcs.csv voice: haera 해라체 · hage 하게체 · haeyo 해요체 · hasipsio 하십시오체 · hao 하오체, docs/design/32)
+        self:Ensure()
+        return self.Voices[kind] or "haera"
     end
 
     method string GiverName(string giver)
@@ -477,7 +485,7 @@ function genQuests() {
         return table.concat(parts, ", ")
     end
 `;
-  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n"));
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n"));
 }
 
 // ── NamedData: 곁가지 끝방의 이름 있는 적 · 봉인 상자 · 의식의 주인 ──
