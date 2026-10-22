@@ -32,7 +32,7 @@ function run(){quiet(()=>{
  b.patch('Tip',{rect_size:[900,74],pos:[0,-130]});b.patch('Tip/Text',{rect_size:[860,66]});b.patchComponent('Tip/Text','MOD.Core.TextGUIRendererComponent',{FontSize:26,BestFit:true,MinSize:20,MaxSize:26});
  // 위쪽 가운데 한 칸 (docs/ui/message-rules.md): 맵 배너를 대상 체력바 바로 아래 맨 위로 — 여정 안내는 배너가 끝난 뒤 같은 자리에
  b.patch('Banner',{pos:[0,-160],rect_size:[820,148]}); // 1000폭이면 오른쪽 끝이 「메뉴」 버튼에 겹친다
- b.patch('Banner/Title',{pos:[0,10],rect_size:[620,44]});b.patch('Banner/Sub',{pos:[0,-20],rect_size:[620,28]});
+ b.patch('Banner/Title',{pos:[0,0],rect_size:[620,44]});b.patch('Banner/Sub',{pos:[0,-20],rect_size:[620,28]});
  for(const e of b.listEntities())if(e.name==='BtnClose'){b.patch(e.path,{rect_size:[88,88]});}
  // 소지품: 30칸 모두 88px 이상. 선택 설명은 읽을 수 있는 크기로 분리.
  b.patch('InvWin',{anchor:'middle-center',pivot:[0.5,0.5],pos:[0,0],rect_size:[1280,960]});b.patch('InvWin/Rim',{rect_size:[1320,1000]});
