@@ -12,12 +12,20 @@ script ChannelWindow extends Logic
         self.Ids = {}
         self.Names = {}
         _UIKit:RegisterWindow(self.Win)
-        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self:Close() end)
         _UIKit:Connect(self.Win .. "/BtnRefresh", function() self:Show() end)
         for i = 1, self.Rows do
             local row = i
             _UIKit:Connect(self.Win .. "/Ch" .. tostring(i), function() self:Pick(row) end)
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Close()
+        -- 로비(게임 고르기에서 연 채널 창)면 닫을 때 게임 고르기로 돌아간다 — 로비에 그냥 남지 않게 (10-22)
+        _UIKit:Close(self.Win)
+        local me = _UserService.LocalPlayer
+        if isvalid(me) and isvalid(me.CurrentMap) and me.CurrentMap.Name == _GameConst.MapLobby then _RoomWindow:Show() end
     end
 
     @ExecSpace("ClientOnly")

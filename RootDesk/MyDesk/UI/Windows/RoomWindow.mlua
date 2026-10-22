@@ -1,7 +1,7 @@
--- 게임 고르기 창 (10-21 방 구조 · docs/design/30): 로비에 들어오면 열린다 (RoomSystem.OpenPicker).
---   혼자 하기 · 방 만들기(이름 · 공개/비공개 + 비밀번호 · 최대 2~4명) · 공개·비공개 방 목록(다른 채널 방 포함) · 캐릭터 선택 · 채널 변경.
---   10-22 모집 창(Party): 방을 만들거나 모집 중인 방에 들어가면 모인 사람을 보여 준다. 팀장이 「출발」하면 함께 들어간다.
---   로비에는 할 일이 없어 닫지 않는다 (닫기 단추 숨김). 메뉴 「게임 나가기」로 게임 방에서 로비로 돌아온다.
+-- 게임 고르기 (10-21 방 구조 · 10-22 개편 · docs/design/30): 캐릭터 선택과 같은 어두운 전체 화면(CharSelectHUD/SafeArea/Room)에 이어서 뜬다.
+--   첫 화면 = 그림 카드 「솔로 플레이」 「파티 플레이」 + 캐릭터 선택 · 채널 변경.
+--   파티 플레이 = 방 목록(다른 채널 방 포함) + 새로 고침 · 방 만들기 · 뒤로. 덮는 판: 방 만들기 · 비밀번호 · 모집 · 불러오는 중.
+--   캐릭터 선택 「입장」을 누르면 바로 이 화면(불러오는 중)이 덮여 로비가 비치지 않는다. 로비를 떠나면(게임 방·심연) 저절로 닫힌다.
 @Logic
 script RoomWindow extends Logic
 
@@ -13,6 +13,8 @@ script RoomWindow extends Logic
     property boolean MakePrivate = false
     property integer MakeMax = 4
     property string AskId = ""
+    property string View = "home"   -- home · list
+    property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -20,15 +22,17 @@ script RoomWindow extends Logic
         self.Locked = {}
         self.Names = {}
         _UIKit:RegisterWindow(self.Win)
-        local w = self.Win
-        _UIKit:Connect(w .. "/BtnSolo", function() self:Solo() end)
-        _UIKit:Connect(w .. "/BtnCreate", function() self:OpenCreate() end)
-        _UIKit:Connect(w .. "/BtnRefresh", function() self:Refresh() end)
-        _UIKit:Connect(w .. "/BtnChar", function() _HudMain:AskCharSelect() end)
-        _UIKit:Connect(w .. "/BtnChannel", function() _ChannelWindow:Show() end)
+        local w = self.Win .. "/Box"
+        _UIKit:Connect(w .. "/Home/Solo", function() self:Solo() end)
+        _UIKit:Connect(w .. "/Home/Party", function() self:SetView("list") end)
+        _UIKit:Connect(w .. "/Home/BtnChar", function() _HudMain:AskCharSelect() end)
+        _UIKit:Connect(w .. "/Home/BtnChannel", function() _ChannelWindow:Show() end)
+        _UIKit:Connect(w .. "/List/BtnBack", function() self:SetView("home") end)
+        _UIKit:Connect(w .. "/List/BtnRefresh", function() self:Refresh() end)
+        _UIKit:Connect(w .. "/List/BtnCreate", function() self:OpenCreate() end)
         for i = 1, self.Rows do
             local row = i
-            _UIKit:Connect(w .. "/R" .. tostring(i), function() self:Pick(row) end)
+            _UIKit:Connect(w .. "/List/R" .. tostring(i), function() self:Pick(row) end)
         end
         _UIKit:Connect(w .. "/Create/BtnPublic", function() self:SetPrivate(false) end)
         _UIKit:Connect(w .. "/Create/BtnPrivate", function() self:SetPrivate(true) end)
@@ -36,31 +40,88 @@ script RoomWindow extends Logic
             local count = n
             _UIKit:Connect(w .. "/Create/Max" .. tostring(n), function() self:SetMax(count) end)
         end
-        _UIKit:Connect(w .. "/Create/BtnBack", function() _UIKit:SetEnabled(self.Win .. "/Create", false) end)
+        _UIKit:Connect(w .. "/Create/BtnBack", function() self:Overlay("") end)
         _UIKit:Connect(w .. "/Create/BtnMake", function() self:Make() end)
-        _UIKit:Connect(w .. "/Ask/BtnCancel", function() _UIKit:SetEnabled(self.Win .. "/Ask", false) end)
+        _UIKit:Connect(w .. "/Ask/BtnCancel", function() self:Overlay("") end)
         _UIKit:Connect(w .. "/Ask/BtnJoin", function() self:JoinAsked() end)
         _UIKit:Connect(w .. "/Party/BtnStart", function() self:Start() end)
         _UIKit:Connect(w .. "/Party/BtnLeave", function() self:LeaveParty() end)
-        _UIKit:SetEnabled(w .. "/BtnClose", false)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Guard() end, 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Guard()
+        -- 로비가 아닌 곳(게임 방·심연)에 들어갔으면 닫는다 — 불러오는 중 화면이 남지 않게
+        if not _UIKit:IsOpen(self.Win) then return end
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not isvalid(me.CurrentMap) then return end
+        if me.CurrentMap.Name ~= _GameConst.MapLobby then _UIKit:Close(self.Win) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowLoading()
+        -- 캐릭터 선택 「입장」 직후: 같은 어두운 화면을 바로 덮는다 (캐릭터 선택 창 위 · 다른 창은 건드리지 않는다)
+        _UIKit:SetEnabled(self.Win, true)
+        for _, n in ipairs({ "Create", "Ask", "Party" }) do _UIKit:SetEnabled(self.Win .. "/Box/" .. n, false) end
+        self:ShowParts(false, false)
+        _UIKit:SetEnabled(self.Win .. "/Box/Loading", true)
+        _UIKit:SetText(self.Win .. "/Box/Title", "게임 고르기")
     end
 
     @ExecSpace("ClientOnly")
     method void Show()
-        -- 로비 도착: 창을 열고 목록을 불러온다
+        -- 로비 도착: 첫 화면(카드 두 장)
         _UIKit:Open(self.Win)
-        _UIKit:SetEnabled(self.Win .. "/Create", false)
-        _UIKit:SetEnabled(self.Win .. "/Ask", false)
-        _UIKit:SetEnabled(self.Win .. "/Party", false)
-        self:SetBase(true)
-        self:Refresh()
+        _UIKit:SetEnabled(self.Win .. "/Box/Loading", false)
+        self.View = "home"
+        self:Overlay("")
+        self:SetView("home")
         log("[VRF] RoomWindow show")
     end
 
     @ExecSpace("ClientOnly")
+    method void ShowParts(boolean home, boolean list)
+        _UIKit:SetEnabled(self.Win .. "/Box/Home", home)
+        _UIKit:SetEnabled(self.Win .. "/Box/List", list)
+        _UIKit:SetEnabled(self.Win .. "/Box/Loading", false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Overlay(string name)
+        -- 덮는 판 하나만 (빈 이름 = 모두 닫기). 판이 떠 있는 동안 아래 화면을 숨긴다 (판 그림이 반투명이라 비친다)
+        for _, n in ipairs({ "Create", "Ask", "Party" }) do _UIKit:SetEnabled(self.Win .. "/Box/" .. n, n == name) end
+        local loading = _UIKit:IsOpen(self.Win .. "/Box/Loading")
+        if not loading then self:ShowParts(name == "" and self.View == "home", name == "" and self.View == "list") end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetView(string view)
+        self.View = view
+        self:ShowParts(view == "home", view == "list")
+        _UIKit:SetText(self.Win .. "/Box/Title", view == "list" and "파티 플레이" or "게임 고르기")
+        if view == "list" then
+            self:Refresh()
+        else
+            _UIKit:SetText(self.Win .. "/Box/Home/Note", "")
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Note(string text)
+        _UIKit:SetText(self.Win .. (self.View == "list" and "/Box/List/Note" or "/Box/Home/Note"), text)
+    end
+
+    @ExecSpace("ClientOnly")
     method void Refresh()
-        for i = 1, self.Rows do _UIKit:SetEnabled(self.Win .. "/R" .. tostring(i), false) end
-        _UIKit:SetText(self.Win .. "/Note", "방 목록을 불러오는 중...")
+        for i = 1, self.Rows do _UIKit:SetEnabled(self.Win .. "/Box/List/R" .. tostring(i), false) end
+        _UIKit:SetEnabled(self.Win .. "/Box/List/Empty", false)
+        _UIKit:SetText(self.Win .. "/Box/List/Note", "방 목록을 불러오는 중...")
         _RoomSystem:RequestRooms()
     end
 
@@ -84,31 +145,31 @@ script RoomWindow extends Logic
                 self.Ids[n] = id
                 self.Locked[n] = lock == "1"
                 self.Names[n] = name
-                local path = self.Win .. "/R" .. tostring(n)
+                local path = self.Win .. "/Box/List/R" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
                 _UIKit:SetText(path, text)
             end
         end
-        local note = "함께 하려면 방을 만들어 친구를 모은 뒤 「출발」 — 모두 함께 들어갈 자리가 있는 채널로 갑니다 (방 최대 4명)"
-        if n == 0 then note = "열린 방이 없습니다 — 「방 만들기」로 먼저 열어 보세요" end
+        local note = "방을 눌러 들어가거나 「방 만들기」로 친구를 모으세요 — 모이면 함께 출발합니다"
+        _UIKit:SetEnabled(self.Win .. "/Box/List/Empty", n == 0 and shared)
+        if n == 0 then note = "" end
         if n > self.Rows then note = string.format("그 밖에 방 %d개 — 새로 고침하면 순서가 바뀝니다", n - self.Rows) end
-        if not shared then note = "방 목록을 읽지 못했습니다 (혼자 하기·방 만들기는 됩니다)" end
-        _UIKit:SetText(self.Win .. "/Note", note)
+        if not shared then note = "방 목록을 읽지 못했습니다 (솔로 플레이·방 만들기는 됩니다)" end
+        _UIKit:SetText(self.Win .. "/Box/List/Note", note)
         log("[VRF] RoomWindow rooms=" .. tostring(n))
     end
 
     @ExecSpace("ClientOnly")
     method void Solo()
-        _UIKit:SetText(self.Win .. "/Note", "나만의 방을 여는 중...")
+        self:Note("나만의 게임을 여는 중...")
         _RoomSystem:RequestSolo()
     end
 
     @ExecSpace("ClientOnly")
     method void OpenCreate()
-        _UIKit:SetEnabled(self.Win .. "/Ask", false)
-        _UIKit:SetEnabled(self.Win .. "/Create", true)
-        self:SetInput(self.Win .. "/Create/Name", "")
-        self:SetInput(self.Win .. "/Create/Pw", "")
+        self:Overlay("Create")
+        self:SetInput(self.Win .. "/Box/Create/Name", "")
+        self:SetInput(self.Win .. "/Box/Create/Pw", "")
         self:SetPrivate(false)
         self:SetMax(4)
     end
@@ -117,16 +178,16 @@ script RoomWindow extends Logic
     method void SetPrivate(boolean on)
         -- 고른 쪽 단추를 밝게, 비밀번호 칸은 비공개일 때만
         self.MakePrivate = on
-        self:Mark(self.Win .. "/Create/BtnPublic", not on)
-        self:Mark(self.Win .. "/Create/BtnPrivate", on)
-        _UIKit:SetEnabled(self.Win .. "/Create/Pw", on)
-        _UIKit:SetEnabled(self.Win .. "/Create/PwLabel", on)
+        self:Mark(self.Win .. "/Box/Create/BtnPublic", not on)
+        self:Mark(self.Win .. "/Box/Create/BtnPrivate", on)
+        _UIKit:SetEnabled(self.Win .. "/Box/Create/Pw", on)
+        _UIKit:SetEnabled(self.Win .. "/Box/Create/PwLabel", on)
     end
 
     @ExecSpace("ClientOnly")
     method void SetMax(integer n)
         self.MakeMax = n
-        for _, k in ipairs({ 2, 3, 4 }) do self:Mark(self.Win .. "/Create/Max" .. tostring(k), k == n) end
+        for _, k in ipairs({ 2, 3, 4 }) do self:Mark(self.Win .. "/Box/Create/Max" .. tostring(k), k == n) end
     end
 
     @ExecSpace("ClientOnly")
@@ -138,13 +199,13 @@ script RoomWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Make()
-        local name = self:GetInput(self.Win .. "/Create/Name")
-        local pw = self.MakePrivate and self:GetInput(self.Win .. "/Create/Pw") or ""
+        local name = self:GetInput(self.Win .. "/Box/Create/Name")
+        local pw = self.MakePrivate and self:GetInput(self.Win .. "/Box/Create/Pw") or ""
         if self.MakePrivate and pw == "" then
             _UXFeedback:Show("비밀번호", "비공개 방은 비밀번호를 정해야 합니다", _GameData:GetUiIcon("icon_gear"))
             return
         end
-        _UIKit:SetText(self.Win .. "/Note", "방을 여는 중...")
+        self:Note("방을 여는 중...")
         _RoomSystem:RequestCreate(name, self.MakePrivate, pw, self.MakeMax)
     end
 
@@ -154,53 +215,38 @@ script RoomWindow extends Logic
         if id == nil then return end
         if self.Locked[row] then
             self.AskId = id
-            _UIKit:SetEnabled(self.Win .. "/Create", false)
-            _UIKit:SetEnabled(self.Win .. "/Ask", true)
-            _UIKit:SetText(self.Win .. "/Ask/Title", "[비공개] " .. (self.Names[row] or "비공개 방"))
-            self:SetInput(self.Win .. "/Ask/Pw", "")
+            self:Overlay("Ask")
+            _UIKit:SetText(self.Win .. "/Box/Ask/Title", "[비공개] " .. (self.Names[row] or "비공개 방"))
+            self:SetInput(self.Win .. "/Box/Ask/Pw", "")
             return
         end
-        _UIKit:SetText(self.Win .. "/Note", "방에 들어가는 중...")
+        self:Note("방에 들어가는 중...")
         _RoomSystem:RequestJoin(id, "")
     end
 
     @ExecSpace("ClientOnly")
     method void JoinAsked()
         if self.AskId == "" then return end
-        _UIKit:SetText(self.Win .. "/Note", "방에 들어가는 중...")
-        _RoomSystem:RequestJoin(self.AskId, self:GetInput(self.Win .. "/Ask/Pw"))
-        _UIKit:SetEnabled(self.Win .. "/Ask", false)
+        self:Note("방에 들어가는 중...")
+        _RoomSystem:RequestJoin(self.AskId, self:GetInput(self.Win .. "/Box/Ask/Pw"))
+        self:Overlay("")
     end
 
     @ExecSpace("ClientOnly")
     method void Start()
-        _UIKit:SetText(self.Win .. "/Party/Note", "함께 들어갈 채널을 찾는 중...")
+        _UIKit:SetText(self.Win .. "/Box/Party/Note", "함께 들어갈 채널을 찾는 중...")
         _RoomSystem:RequestStart()
     end
 
     @ExecSpace("ClientOnly")
-    method void SetBase(boolean on)
-        -- 모집 창이 떠 있는 동안 아래 창(단추·목록)을 숨긴다 (비쳐 보이지 않게, 잘못 누르지 않게)
-        for _, name in ipairs({ "BtnSolo", "BtnCreate", "BtnRefresh", "Head", "Note", "BtnChar", "BtnChannel" }) do
-            local e = _UIKit:Get(self.Win .. "/" .. name)
-            if isvalid(e) then e.Visible = on end
-        end
-        for i = 1, self.Rows do
-            local e = _UIKit:Get(self.Win .. "/R" .. tostring(i))
-            if isvalid(e) then e.Visible = on end
-        end
-    end
-
-    @ExecSpace("ClientOnly")
     method void LeaveParty()
-        _UIKit:SetEnabled(self.Win .. "/Party", false)
-        self:SetBase(true)
+        self:Overlay("")
         _RoomSystem:RequestLeaveParty()
     end
 
     @ExecSpace("ClientOnly")
     method void OnParty(string digest)
-        -- 모집 창: "제목\t팀장(1/0)\t최대\t출발 대기(1/0)\t이름~같은 채널~팀장;…" (RoomSystem.SendParty)
+        -- 모집 판: "제목\t팀장(1/0)\t최대\t출발 대기(1/0)\t이름~같은 채널~팀장;…" (RoomSystem.SendParty)
         local parts = {}
         for piece in string.gmatch(digest .. "\t", "([^\t]*)\t") do table.insert(parts, piece) end
         if #parts < 5 then return end
@@ -213,30 +259,28 @@ script RoomWindow extends Logic
             table.insert(lines, string.format("%d.  %s%s%s", n, name, lead == "1" and "  (팀장)" or "", here == "1" and "" or "   · 다른 채널"))
         end
         for i = n + 1, max do table.insert(lines, string.format("%d.  (빈자리)", i)) end
-        _UIKit:Open(self.Win)
-        _UIKit:SetEnabled(self.Win .. "/Create", false)
-        _UIKit:SetEnabled(self.Win .. "/Ask", false)
-        _UIKit:SetEnabled(self.Win .. "/Party", true)
-        self:SetBase(false)
-        _UIKit:SetText(self.Win .. "/Party/Title", parts[1] .. string.format("   —   모집 중 %d / %d", n, max))
-        _UIKit:SetText(self.Win .. "/Party/Members", table.concat(lines, "\n"))
-        _UIKit:SetEnabled(self.Win .. "/Party/BtnStart", leader)
+        if not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win) end
+        if self.View ~= "list" then self:SetView("list") end
+        self:Overlay("Party")
+        _UIKit:SetText(self.Win .. "/Box/Party/Title", parts[1] .. string.format("   —   모집 중 %d / %d", n, max))
+        _UIKit:SetText(self.Win .. "/Box/Party/Members", table.concat(lines, "\n"))
+        _UIKit:SetEnabled(self.Win .. "/Box/Party/BtnStart", leader)
         local note = "팀장이 「출발」하면 함께 들어갑니다. 다른 채널에 있어도 됩니다"
         if leader then note = "친구가 모이면 「출발」 — 모두 함께 들어갈 자리가 있는 채널로 갑니다. 먼저 출발해도 친구는 나중에 들어올 수 있습니다" end
         if parts[4] == "1" then note = "지금은 모두 함께 들어갈 채널이 없어 자리가 나는 대로 출발합니다..." end
-        _UIKit:SetText(self.Win .. "/Party/Note", note)
+        _UIKit:SetText(self.Win .. "/Box/Party/Note", note)
         log("[VRF] RoomWindow party n=" .. tostring(n) .. "/" .. tostring(max) .. " leader=" .. tostring(leader))
     end
 
     @ExecSpace("ClientOnly")
     method void OnPartyGo()
-        _UIKit:SetText(self.Win .. "/Party/Note", "출발! 게임에 들어가는 중...")
-        _UIKit:SetEnabled(self.Win .. "/Party/BtnStart", false)
+        _UIKit:SetText(self.Win .. "/Box/Party/Note", "출발! 게임에 들어가는 중...")
+        _UIKit:SetEnabled(self.Win .. "/Box/Party/BtnStart", false)
     end
 
     @ExecSpace("ClientOnly")
     method void OnQueue(boolean waiting)
-        _UIKit:SetText(self.Win .. "/Note", waiting and "방의 채널에 자리가 나기를 기다리는 중... 자리가 나면 자동으로 들어갑니다" or "")
+        _UIKit:SetText(self.Win .. "/Box/List/Note", waiting and "방의 채널에 자리가 나기를 기다리는 중... 자리가 나면 자동으로 들어갑니다" or "")
     end
 
     @ExecSpace("ClientOnly")
