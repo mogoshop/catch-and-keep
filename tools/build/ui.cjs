@@ -164,6 +164,10 @@ function buildGameHud() {
 
   // ── NPC 머리 위 의뢰 표시 「!」 (새 의뢰 노랑 · 완료 보고 초록, 화면 좌표로 따라다닌다) ──
   b.text("NpcMark", "!", { size: 96, bold: true, color: "#FFD23F", anchor: "middle-center", pos: [0, 0], rect_size: [90, 120], outline: true, outline_color: "#2A1A05", outline_width: 0.3, enable: false });
+  // ── 액트 보스를 쓰러뜨린 뒤 마을 사람 머리 위 「!」 (격려 한마디, docs/design/31 §7 · HudMap.RenderCheerMarks) ──
+  for (let i = 1; i <= 8; i++) b.text(`CheerMark${i}`, "!", { size: 84, bold: true, color: "#FFB04A", anchor: "middle-center", pos: [0, 0], rect_size: [80, 110], outline: true, outline_color: "#2A1405", outline_width: 0.3, enable: false });
+  // ── 액트 보스 처치 섬광 (ActClearFx) — 화면 전체 흰 판, 누르기를 막지 않는다 ──
+  b.panel("BossFlash", { anchor: "middle-center", pos: [0, 0], rect_size: [4000, 3000], color: { r: 1, g: 0.97, b: 0.9, a: 0.85 }, raycast: false, enable: false });
 
   // ── 안내 (첫 진입·포인트) ──
   b.panel("Tip", { anchor: "top-center", pos: [0, -122], rect_size: [780, 50], ...part("hud_box"), sprite_type: 1, enable: false });

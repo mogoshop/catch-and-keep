@@ -12,6 +12,8 @@ script GameConst extends Logic
     property string FinalBossSourceId = "ash_king"   -- 처치 시 다음 난이도 개방 (마지막 액트 = 액트 4 재의 왕, 10-20 · 이전: 바렌)
     property integer ActCount = 4                     -- 액트 수 (웨이포인트·의뢰 일지 탭, 액트 이동 · 10-20 액트 4 「심연의 문」)
     property string SoulThieves = ",hell_priest,"     -- 혼 빼앗기 (액트 4): 땅의 혼 구슬을 끌어가 먹는 몬스터 sourceId (SoulOrb.CheckThief)
+    property string NoSoulSources = "|apostate_archbishop|shade_smith|shade_keeperdaughter|shade_deserter|"   -- 쓰러져도 혼이 나오지 않는다 (docs/design/31: 오렌의 혼은 조각이 문 아래로 끌고 갔다 · 그림자 인형은 주인에게 돌아간다)
+    property string ShadeSources = "shade_smith,shade_keeperdaughter,shade_deserter"   -- 재의 왕이 불러내는 그림자 인형 (하르크 · 미라 · 엘리안, AshKingRite)
 
     -- 레벨 차이 보정 (디아블로식): 나보다 높은 몬스터는 덜 아프게 맞고, 더 아프게 때리고, 혼도 잘 안 뽑힌다
     property number LevelGapGrace = 1             -- 이 레벨 차이까지는 보정 없음
@@ -257,6 +259,16 @@ script GameConst extends Logic
         local a = tonumber(parts[4] or "")
         if parts[1] ~= "depth" or #parts < 5 or f == nil or d == nil or a == nil then return { floor = 0, difficulty = 0, act = 1, nonce = "" } end
         return { floor = math.floor(f), difficulty = math.floor(d), act = math.floor(a), nonce = table.concat(parts, ":", 5) }
+    end
+
+    method boolean NoSoul(string sourceId)
+        -- 혼 구슬을 남기지 않는 적 (ShadowSystem)
+        return string.find(self.NoSoulSources, "|" .. sourceId .. "|", 1, true) ~= nil
+    end
+
+    method boolean IsShade(string sourceId)
+        -- 재의 왕의 그림자 인형 (전리품 없음 · 쓰러지면 주인에게 돌아간다)
+        return string.sub(sourceId, 1, 6) == "shade_"
     end
 
     method string ActBossSource(integer act)

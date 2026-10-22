@@ -100,6 +100,10 @@ function desiredEntities(d, maps, ctx) {
     else if (x.name.startsWith("npc:")) {
       const n = ctx.npcs[x.name.slice(4)];
       place(n.model, `NPC/${n.model}`, x.pos);
+      // 발밑 그림자 (docs/design/31 §5): 맵 그림(Art*)으로 바닥 위·NPC 아래. 의뢰 23 뒤 하르크·미라·엘리안 것만 클라이언트가 끈다 (StoryPresence)
+      if (n.kind !== "stash") place(`ArtShadow${n.model}`, "Objects/ArtSprite", [x.pos[0], x.pos[1] + 0.02, -0.02], {
+        "MOD.Core.SpriteRendererComponent": { SpriteRUID: FOOT_SHADOW, SortingLayer: "MapLayer0", OrderInLayer: 1, DrawMode: 0 },
+      });
     } else if (x.name.startsWith("altar:")) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
@@ -124,6 +128,9 @@ function decorPositions(d) {
 }
 
 // 메이커 장식(Decor_) 발밑 폭(월드 단위, 배율 1 기준). 다리는 밟고 지나가는 장식이라 막지 않는다
+// NPC 발밑 그림자 (assets/claude-story-v1 foot-shadow · 그룹 OJYYQ)
+const FOOT_SHADOW = "cabd4773c16c465a90cb46d571d1d623";
+
 const DECOR_FOOT = { decorfence: 2.5, decorruins: 2, decordeadtree: 1, decorsarcophagus: 1.5, decorrockedge: 2, decorabyss: 3, decorwell: 1.5, decorbridge: 0 };
 
 // 장식(Decor_) 발밑 칸을 막는다. 길·기능 자리 둘레(2칸)는 피하고, 지형 생성 맵에선 막아서 길이 끊기는 장식은 통과로 둔다

@@ -18,6 +18,12 @@ script DarkVision extends Logic
     property any WallBase = nil             -- 벽 그림 엔티티 id → 원래 색 (다시 들어와도 배율이 겹치지 않게)
     property any ArtZ = nil                 -- 맵 그림 엔티티 id → 원래 z (다시 들어와도 뒤로 미는 값이 겹치지 않게)
     property number ArtBack = 0.05          -- 맵 그림을 이만큼 뒤로 (z가 클수록 뒤)
+    property boolean Cleared = false        -- 이 맵 액트의 최종 보스를 지금 난이도에서 쓰러뜨렸다 → 어둠이 걷힌 밝기 (docs/design/31 §7)
+    property number DarkAmbient = 0         -- 이 맵의 원래 밝기
+    property Color DarkColor = Color(1, 1, 1, 1)
+    property number FadeFrom = 0            -- 밝아지는 중: 시작 밝기 (0이면 멈춤)
+    property number FadeAt = 0              -- 밝아지기 시작한 시각
+    property number FadeSeconds = 3.5
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -59,6 +65,7 @@ script DarkVision extends Logic
         if not isvalid(map) then return end
         if map ~= self.CurrentMap then self:EnterMap(player, map) end
         if not self.Active then return end
+        self:TickCleared(player, map)
         -- 사라진 대상의 조명 정리
         for id, l in pairs(self.Lights) do
             if not isvalid(l.entity) or not l.entity.Enable or l.entity.CurrentMap ~= map
@@ -145,6 +152,15 @@ script DarkVision extends Logic
             ambient = _GameData.depthAmbient
             color = Color(0.62, 0.48, 0.9, 1)
         end
+        self.DarkAmbient = ambient
+        self.DarkColor = color
+        self.FadeFrom = 0
+        self.Cleared = depth == nil and self:ActCleared(player, map)
+        if self.Cleared then
+            local lit = self:ClearedLight(1)
+            ambient = lit.ambient
+            color = lit.color
+        end
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
         -- 카메라를 뺀 만큼(cameraZoom) 시야도 넓혀 화면 대비 밝은 범위를 유지한다
         local r = math.max(amb.PlayerLightRadius, _GameData.darkMinLightRadius) * _GameData.visionZoomMul
@@ -212,6 +228,45 @@ script DarkVision extends Logic
         if dark == self.CurseDark then return end
         self.CurseDark = dark
         if self.Active then self:ApplyPlayerLight(_UserService.LocalPlayer) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ActCleared(Entity player, Entity map)
+        -- 이 맵 액트의 최종 보스를 지금 난이도에서 쓰러뜨렸다 (마을·심도 제외)
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest == nil or map:GetComponent("script.DepthDirector") ~= nil then return false end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil or info.kind == "town" then return false end
+        return quest:ActBossDown(_GameConst:ActOfMap(map.Name))
+    end
+
+    @ExecSpace("ClientOnly")
+    method table ClearedLight(number t)
+        -- 해방된 밝기·색 (t = 0 원래 → 1 해방). 어둠이 걷혀도 밤의 기운은 조금 남긴다
+        local target = math.max(self.DarkAmbient, _GameData.clearedAmbient)
+        local c0 = self.DarkColor
+        local c1 = Color(1, 0.97, 0.92, 1)
+        local k = math.max(0, math.min(1, t))
+        return { ambient = self.DarkAmbient + (target - self.DarkAmbient) * k,
+            color = Color(c0.r + (c1.r - c0.r) * k, c0.g + (c1.g - c0.g) * k, c0.b + (c1.b - c0.b) * k, 1) }
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickCleared(Entity player, Entity map)
+        -- 이 맵에서 보스를 쓰러뜨리면(의뢰 목표 달성이 동기화되면) FadeSeconds 동안 천천히 밝아진다
+        if not self.Cleared and self:ActCleared(player, map) then
+            self.Cleared = true
+            self.FadeFrom = 1
+            self.FadeAt = _UtilLogic.ElapsedSeconds
+            log("[VRF] DarkVision 어둠이 걷힌다 " .. map.Name)
+        end
+        if self.FadeFrom <= 0 then return end
+        local t = (_UtilLogic.ElapsedSeconds - self.FadeAt) / self.FadeSeconds
+        if t >= 1 then self.FadeFrom = 0 end
+        local lit = self:ClearedLight(t)
+        if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, lit.color, lit.ambient))
     end
 
     @ExecSpace("ClientOnly")

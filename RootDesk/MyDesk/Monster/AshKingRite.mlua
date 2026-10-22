@@ -5,6 +5,8 @@
 --   ③ 심장 노출 (40% 이하): 가슴의 혼각 세 조각이 드러나 받는 피해 +30% (Monster.GetDamageTakenMultiplier). 발밑 용암 장판 연속
 --   ④ 최후 (15% 이하): 10초마다 붉은 예고(1.6초) 뒤 전방위 폭발 — 군주가 보이는 자리(가린 벽 없음)의 플레이어는 최대 생명의 45% 화염 피해.
 --      담장·기둥 뒤로 숨으면 피한다 (Util.HasLineOfSight)
+--   그림자 인형 (85% 이하, 한 번): 고르 시절 떼어 간 하르크·미라·엘리안의 그림자를 불러낸다 (docs/design/31 §6).
+--      인형이 남아 있는 동안 왕이 받는 피해 × ShadeGuard. 인형은 혼·전리품 없이 쓰러지면 주인에게 돌아간다 (ProgressionSystem)
 -- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아간다.
 @Component
 script AshKingRite extends Component
@@ -33,6 +35,12 @@ script AshKingRite extends Component
     property integer HeartFx = 0             -- 클라이언트: 심장 노출 빛
     property number HeartNext = 0            -- 클라이언트: 다음 고리 프레임 시각
     property integer HeartFrame = 0
+    property number ShadeAt = 0.85            -- 이 생명 비율 아래로 내려가면 그림자 인형
+    property number ShadeGuard = 0.15         -- 인형이 남아 있는 동안 왕이 받는 피해 배율
+    property boolean ShadesCalled = false
+    @Sync
+    property integer ShadesAlive = 0
+    property table Shades = {}
 
     method void OnBeginPlay()
         if not self:IsServer() then return end
@@ -53,6 +61,8 @@ script AshKingRite extends Component
         end
         if self.Phase == 1 and self.Formed then self:SetForm("") end
         local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if not self.ShadesCalled and ratio <= self.ShadeAt then self:CallShades() end
+        self:CountShades()
         if self.Phase == 1 and ratio <= 0.7 then self:EnterPhase(2) end
         if self.Phase == 2 and ratio <= 0.4 then self:EnterPhase(3) end
         if self.Phase == 3 and ratio <= 0.15 then self:EnterPhase(4) end
@@ -113,7 +123,15 @@ script AshKingRite extends Component
 
     @ExecSpace("ServerOnly")
     method void ResetRite()
-        -- 처음 상태로: 이름·장판·내려찍기 간격 복원
+        -- 처음 상태로: 이름·장판·내려찍기 간격 복원 (남은 그림자 인형은 거둔다)
+        if self.ShadesCalled then
+            for _, e in ipairs(self.Shades) do
+                if isvalid(e) then e:Destroy() end
+            end
+            self.Shades = {}
+            self.ShadesCalled = false
+            self.ShadesAlive = 0
+        end
         if self.Phase == 1 then return end
         self.Phase = 1
         self.Exposed = false
@@ -131,6 +149,55 @@ script AshKingRite extends Component
         end
         if bp ~= nil and self.BaseAuraRadius > 0 then bp.AuraRadius = self.BaseAuraRadius end
         log("[VRF] AshKingRite reset")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CallShades()
+        -- 하르크·미라·엘리안의 그림자 인형 셋 (왕 레벨 -2, 다시 나오지 않음)
+        self.ShadesCalled = true
+        self.Shades = {}
+        ---@type Monster
+        local boss = self.Entity:GetComponent("script.Monster")
+        local level = boss ~= nil and math.max(1, boss.Level - 2) or 1
+        local map = self.Entity.CurrentMap
+        local p = self.Entity.TransformComponent.WorldPosition
+        local ids = { "shadesmith", "shadekeeper", "shadedeserter" }
+        for i, id in ipairs(ids) do
+            local ang = math.pi * (0.75 + 0.5 * (i - 1))
+            local pos = Vector3(p.x + math.cos(ang) * 2.2, p.y + math.sin(ang) * 1.6, 0)
+            local e = _SpawnService:SpawnByModelId(id, "BossShade", pos, map)
+            if isvalid(e) then
+                table.insert(self.Shades, e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m.DisplayName = _GameData:GetMonsterName(m.SourceId)   -- 이름표: 「하르크의 그림자」 (최상위 표시 없이)
+                    m:ApplyLevel(level, false)
+                end, nil)
+            end
+        end
+        self:CountShades()
+        for _, u in ipairs(_Util:PlayersInMap(map)) do
+            if isvalid(u) and isvalid(u.PlayerComponent) then
+                _Util:Banner("재의 왕 고르바스", "「네가 아끼던 자들의 그림자다. 베어 봐라 — 네 손으로.」", u.PlayerComponent.UserId)
+            end
+        end
+        log("[VRF] ash king shades " .. tostring(#self.Shades))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CountShades()
+        -- 살아 있는 그림자 인형 수 (왕이 받는 피해를 줄인다 · Monster.GetDamageTakenMultiplier)
+        local n = 0
+        for _, e in ipairs(self.Shades) do
+            if isvalid(e) and e.Enable then
+                ---@type Monster
+                local m = e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead and m.Hp > 0 then n = n + 1 end
+            end
+        end
+        if self.ShadesAlive ~= n then self.ShadesAlive = n end
     end
 
     @ExecSpace("ServerOnly")

@@ -12,6 +12,15 @@ script ProgressionSystem extends Logic
     @ExecSpace("ServerOnly")
     method void OnMonsterKilled(table e)
         if e.grade ~= nil and e.grade >= 3 and isvalid(e.map) then self:AnnounceActBoss(e) end
+        if isvalid(e.map) and _GameConst:ActOfBossSource(e.sourceId or "") > 0 then self:PlayActClear(e) end
+        if isvalid(e.map) and _GameConst:IsShade(e.sourceId or "") then
+            -- 그림자 인형: 주인에게 돌아가며 그 사람의 목소리로 한마디 (story.csv shade_<주인>)
+            local line = _GameData:GetStory(e.sourceId)
+            local name = _GameData:GetMonsterName(e.sourceId)
+            for _, u in ipairs(_Util:PlayersInMap(e.map)) do
+                if isvalid(u) and isvalid(u.PlayerComponent) then _Util:Banner(name .. " — 주인에게 돌아갔다", "「" .. line .. "」", u.PlayerComponent.UserId) end
+            end
+        end
         if e.sourceId ~= _GameConst.FinalBossSourceId or not isvalid(e.map) then return end
         local diff = 0
         ---@type MapAmbience
@@ -35,6 +44,20 @@ script ProgressionSystem extends Logic
             end
             if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PlayActClear(table e)
+        -- 액트 최종 보스가 쓰러진 순간: 그 맵의 모든 플레이어 화면에 큰 연출 (docs/design/31 §7 · ActClearFx)
+        local act = _GameConst:ActOfBossSource(e.sourceId or "")
+        ---@type Monster
+        local body = isvalid(e.monster) and e.monster:GetComponent("script.Monster") or nil
+        local name = body ~= nil and body:ShownName() or _GameData:GetMonsterName(e.sourceId)
+        local pos = isvalid(e.monster) and e.monster.TransformComponent.WorldPosition or Vector3(0, 0, 0)
+        for _, u in ipairs(_Util:PlayersInMap(e.map)) do
+            if isvalid(u) and isvalid(u.PlayerComponent) then _ActClearFx:Play(pos, act, name, u.PlayerComponent.UserId) end
+        end
+        log("[VRF] act clear act=" .. tostring(act) .. " " .. name)
     end
 
     @ExecSpace("ServerOnly")

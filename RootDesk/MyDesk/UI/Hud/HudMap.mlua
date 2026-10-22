@@ -53,6 +53,8 @@ script HudMap extends Logic
     property string BossShown = ""             -- 머리글에 지금 보이는 보스 남은 시간 (바뀔 때만 다시 쓴다)
     property number NextBossAt = 0
 
+    property integer CheerMarkCount = 8     -- 격려 「!」 칸 수 (ui.cjs CheerMark1~8)
+
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         -- 플레이 재시작 시 이전 맵과 동적 포털 캐시를 이어 쓰지 않는다.
@@ -72,6 +74,7 @@ script HudMap extends Logic
         self:RenderZoomButtons()
         _UIKit:SetEnabled("Banner", false)
         _UIKit:SetEnabled("NpcMark", false)
+        for i = 1, self.CheerMarkCount do _UIKit:SetEnabled("CheerMark" .. tostring(i), false) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
         self.PulseTimerId = _TimerService:SetTimerRepeat(function() self:PulseFocus() end, 0.05)
     end
@@ -141,6 +144,7 @@ script HudMap extends Logic
         self.LastMePos = me
         self:RenderParty(player)
         self:RenderNpcMark(player)
+        self:RenderCheerMarks(player)
         self:RenderGates(player)
     end
 
@@ -427,6 +431,11 @@ script HudMap extends Logic
             for _, component in ipairs(map:GetChildComponentsByTypeName(spec[1], true)) do
                 -- 숨겨진 심도 문(해금 전)도 「실제 문이 있다」로 쳐서 맵 표의 고정 표식이 대신 나오지 않게 한다 (10-20 점검: Lv1에 「심도」 점이 보였다)
                 if isvalid(component.Entity) and spec[2] == "depth" then liveKinds["depth"] = true end
+                -- 이야기 진행으로 숨긴 마을 사람(StoryPresence — 다른 마을로 떠난 오렌 등)도 맵 표의 고정 「! 오렌」이 대신 나오지 않게 한다
+                if isvalid(component.Entity) and spec[2] == "npc" then
+                    liveKinds["npc"] = true
+                    liveKinds["quest"] = true
+                end
                 if isvalid(component.Entity) and component.Entity.Enable then
                     local kind = spec[2]
                     local label = ""
@@ -1006,6 +1015,39 @@ script HudMap extends Logic
         if distance > math.max(1.8, (gate.radius or 0.6) + 0.8) then return false end
         if distance <= (gate.radius or 0.6) + 0.4 then return true end
         return _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 4) == nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderCheerMarks(Entity player)
+        -- 액트 보스를 쓰러뜨린 뒤 마을 사람 머리 위 주황 「!」 — 격려 한마디를 아직 듣지 않은 사람 (docs/design/31 §7).
+        -- 의뢰 「!」(NpcMark)가 떠 있는 의뢰인은 겹치지 않게 뺀다. 화면 밖 사람은 표시하지 않는다
+        local n = 0
+        local map = player.CurrentMap
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        local root = _UIKit:Get("/ui/GameHUD")
+        local info = isvalid(map) and _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name)) or nil
+        if quest ~= nil and isvalid(root) and info ~= nil and info.kind == "town" and not _UIKit:AnyWindowOpen() then
+            local act = _GameConst:ActOfMap(map.Name)
+            local q = _QuestData:Get(quest.Index)
+            local half = root.UITransformComponent.RectSize * 0.5
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+                ---@type WorldNPC
+                local npc = c
+                local giverMark = q ~= nil and q.giver == npc.Kind and quest.State ~= 1
+                if n < self.CheerMarkCount and npc.Entity.Enable and not giverMark and quest:CheerWaiting(act, npc.Kind) then
+                    local screen = _UILogic:WorldToScreenPosition(_Util:Pos2(npc.Entity) + Vector2(0, 1.35))
+                    local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
+                    if math.abs(ui.x) < half.x - 40 and math.abs(ui.y) < half.y - 40 then
+                        n = n + 1
+                        local bob = math.sin(_UtilLogic.ElapsedSeconds * 4 + n) * 6
+                        _UIKit:SetEnabled("CheerMark" .. tostring(n), true)
+                        _UIKit:SetPos("CheerMark" .. tostring(n), Vector2(ui.x, ui.y + bob))
+                    end
+                end
+            end
+        end
+        for i = n + 1, self.CheerMarkCount do _UIKit:SetEnabled("CheerMark" .. tostring(i), false) end
     end
 
     @ExecSpace("ClientOnly")

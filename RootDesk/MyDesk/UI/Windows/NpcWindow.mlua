@@ -33,6 +33,7 @@ script NpcWindow extends Logic
     property number PaperWide = 1006         -- 글 칸 너비 (ux-layout.cjs NpcWin과 맞춘다)
     property number PaperNarrow = 820        -- 의뢰 그림이 있을 때
     property number PaperHeight = 156
+    property string CheerText = ""           -- 액트 보스를 쓰러뜨린 뒤의 격려 한마디 (말을 건 첫 쪽, docs/design/31 §7)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -111,6 +112,14 @@ script NpcWindow extends Logic
             if shop ~= nil then shop:RequestOpenMerchant() end
         end
         self.ActiveNpc = npc.Entity
+        self.CheerText = ""
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local act = _GameConst:ActOfMap(player.CurrentMap.Name)
+        if quest ~= nil and quest:CheerWaiting(act, npc.Kind) then
+            self.CheerText = _GameData:GetStory("cheer_" .. tostring(act) .. "_" .. npc.Kind)
+            quest:RequestCheer(act, npc.Kind)
+        end
         local stand = isvalid(npc.Entity.SpriteRendererComponent) and npc.Entity.SpriteRendererComponent.SpriteRUID or ""
         _UIKit:SetIcon(self.Win .. "/PortraitBox/Portrait", stand ~= "" and ("thumbnail://" .. stand) or "")
         self.TypeTotal = 0
@@ -131,7 +140,7 @@ script NpcWindow extends Logic
         -- 대화 중에는 Space·Enter로 주 버튼(다음·수락·보상 받기)을 누른다. 마우스 없이도 의뢰를 진행할 수 있게.
         if _StoryCard.Active then return end   -- 이야기 카드가 Space를 쓴다
         if (event.key == KeyboardKey.Space or event.key == KeyboardKey.Return) and _UIKit:IsOpen(self.Win) then
-            if self.Kind == "quest" and self:ButtonShown(4) then self:Action(4) end
+            if self.CheerText ~= "" or (self.Kind == "quest" and self:ButtonShown(4)) then self:Action(4) end
             return
         end
         -- 10-11 팀 QA: 대화 키가 B라 찾기 어려웠다 → Space로 연다 (B도 그대로 둔다)
@@ -191,6 +200,15 @@ script NpcWindow extends Logic
             self.RenderKey = ""
         end
         _UIKit:SetText(self.Win .. "/Title", npc.NpcName)
+        if self.CheerText ~= "" then
+            if self.RenderKey ~= "cheer" then
+                self.RenderKey = "cheer"
+                self:SetButtons({ "", "", "", "계속 ▶", "닫기" })
+                self:ShowPage(1, 1, 0)
+                self:ShowBody(self.CheerText, true)
+            end
+            return
+        end
         if self.Kind == "shop" then self:RenderShop(st)
         elseif self.Kind == "merchant" then self:RenderMerchant(st)
         elseif self.Kind == "smith" then self:RenderSmith(st)
@@ -218,13 +236,16 @@ script NpcWindow extends Logic
         local travel = _UIKit:Comp("script.PlayerTravel")
         if travel == nil then return end
         local targets = self:CaravanTargets()
-        local key = self.NpcKind .. "#" .. tostring(travel.Act)
+        ---@type PlayerQuest
+        local q0 = _UIKit:Comp("script.PlayerQuest")
+        local key = self.NpcKind .. "#" .. tostring(travel.Act) .. "#" .. (q0 ~= nil and q0:StoryStage() or "")
         for _, a in ipairs(targets) do key = key .. "#" .. tostring(travel:ActUnlocked(a)) end
         if key == self.RenderKey then return end
         self.RenderKey = key
-        local body = "어디로 가겠나? 낙타 등에 짐은 다 실었지."
-        if self.NpcKind == "captain" then body = "어디로 가겠나? 폭풍이 거세도 이 배는 가라앉지 않네." end
-        if self.NpcKind == "scout" then body = "어디로 가겠나? 협곡 아래 샛길은 나만 안다. 악마들 눈에 띄지 않게 데려다주지." end
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local body = quest ~= nil and quest:StoryLine("idle_" .. self.NpcKind) or ""
+        if body == "" then body = "어디로 가겠나?" end
         local buttons = { "", "", "", "", "닫기" }
         local slot = 2
         local locked = ""
@@ -241,39 +262,14 @@ script NpcWindow extends Logic
         _UIKit:SetText(self.Win .. "/Paper/Body", body)
     end
 
+    @ExecSpace("ClientOnly")
     method string IdleLine(string kind)
-        -- 자기 의뢰 차례가 아닐 때 의뢰인 NPC의 한마디
-        -- 액트 2를 끝냈으면 끝난 뒤의 대사 (악몽·지옥 안내)
+        -- 자기 의뢰 차례가 아닐 때 마을 사람의 한마디: 이야기 단계별 (story.csv idle_<종류>_<단계>, docs/design/31)
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
-        local done = quest ~= nil and quest:IsActDone(2)
-        local done3 = quest ~= nil and quest:IsActDone(3)
-        local done4 = quest ~= nil and quest:IsActDone(4)
-        if kind == "outpostcaptain" then
-            if done4 then return "재의 왕이 쓰러진 뒤로 행군이 끊겼다. 그래도 문 아래 어둠은 그대로다 — 악몽에선 더 짙을 거다." end
-            return "울타리가 사흘째 버티고 있다. 대장이 할 일은 버티는 것뿐이지."
-        end
-        if kind == "deserter" then
-            if done4 then return "심장이 부서졌어요. 교단이 백 년 동안 못 한 일을… 당신이 했어요." end
-            return "저는 교단을 버렸어요. 그들이 무엇을 나눠 숨겼는지 알게 된 뒤로요."
-        end
-        if kind == "harbormaster" then
-            if done3 then return "제독이 가라앉은 뒤로 바다가 잠잠하군. 그 검은 돌이 북쪽을 가리켰다지? 선장 하그로가 북쪽 마지막 초소까지 데려다줄 걸세." end
-            return "배가 들어오지 않은 지 한 달이 넘었네. 장부엔 빈칸뿐이야."
-        end
-        if kind == "keeperdaughter" then
-            if done3 then return "등대에 다시 불이 들어왔어요. 아버지도… 이제 편히 쉬시겠죠." end
-            return "등대 불이 꺼진 날부터 아버지가 돌아오지 않았어요."
-        end
-        if kind == "scholar" then
-            if done then return "대사제가 쓰러진 뒤로 사막이 조용하군. 바다 쪽 폭풍이 심상치 않다던데 — 선장에게 가 보게." end
-            return "사원의 비밀은 아직 모래 아래 잠들어 있다. 길이 열리면 자네에게 부탁할 일이 생길 걸세."
-        end
-        if kind == "apothecary" then
-            if done then return "모래폭풍이 잦아들었어. 바다로 간다면 번개를 조심해 — 몸을 붙이고 있으면 한꺼번에 맞아." end
-            return "사막에선 물 한 모금이 목숨이야. 다치면 서두르지 말고 물약부터 챙겨."
-        end
-        return "할 이야기가 없다."
+        local line = quest ~= nil and quest:StoryLine("idle_" .. kind) or ""
+        if line == "" then line = "할 이야기가 없다." end
+        return line
     end
 
     @ExecSpace("ClientOnly")
@@ -291,6 +287,7 @@ script NpcWindow extends Logic
         -- 닫은 뒤에도 근처에서 버튼으로 다시 대화할 수 있다. 자동 재열기는 없다.
         self.Dismissed = true
         self.ActiveNpc = nil
+        self.CheerText = ""
         self.Kind = ""
         self.RenderKey = ""
         self.PageKey = ""
@@ -328,7 +325,13 @@ script NpcWindow extends Logic
         self.RenderKey = key
         local tiers = { "하급 물약", "중급 물약까지", "고급 물약까지" }
         self:SetButtons({ "", "", "", "거래", "닫기" })
-        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("살아 돌아왔군. 물약이 필요한가, 아니면 짐을 덜고 싶은가.\n이 야영지에선 %s · 귀환 두루마리 · 도박을 판다.\n쓸모없는 물건은 사 주지.  <color=#9C9488>가진 골드 %d</color>", tiers[diff + 1] or tiers[1], st.Gold))
+        -- 인사: 고르(정체가 드러나기 전) / 카라반 보급관 (docs/design/31 §5)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local stage = quest ~= nil and quest:StoryStage() or "0"
+        local hello = quest ~= nil and quest:StoryLine((stage == "r" or stage == "4") and "idle_qm" or "idle_shop") or ""
+        if hello == "" then hello = "물약이 필요한가, 아니면 짐을 덜고 싶은가." end
+        _UIKit:SetText(self.Win .. "/Paper/Body", string.format("%s\n이 좌판에선 %s · 귀환 두루마리 · 도박을 판다. 쓸모없는 물건은 사 준다.  <color=#9C9488>가진 골드 %d</color>", hello, tiers[diff + 1] or tiers[1], st.Gold))
     end
 
     method table StockList()
@@ -371,7 +374,8 @@ script NpcWindow extends Logic
         -- 첫마디는 진행에 따라 (교단 기록을 찾은 3번 의뢰 뒤로는 혼각 이야기)
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
-        local idle = _GameData:GetStory((quest ~= nil and quest.Index > 3) and "idle_smith_2" or "idle_smith_1")
+        local idle = quest ~= nil and quest:StoryLine("idle_smith") or ""
+        if quest ~= nil and quest:StoryStage() == "0" and quest.Index > 3 then idle = _GameData:GetStory("idle_smith_q3") end
         _UIKit:SetText(self.Win .. "/Paper/Body", string.format("%s 소지품에서 물건을 고르면 손봐 주지.  (가진 골드 %d)\n· 옵션 바꾸기: 마법·레어 장비의 옵션을 새로 새긴다 (레벨이 높을수록 비쌈, 레어는 3배)\n· 소켓 뚫기: 소켓 없는 무기·등불·투구·갑옷. 소켓권 %d장 — 소켓권이 있으면 확실히, 없으면 골드로 %d%% 확률\n  (일반 2~최대 · 마법 1~2 · 레어·유니크·세트 1개)",
             idle, st.Gold, tokens, math.floor(_GameData.punchChance * 100 + 0.5)))
     end
@@ -419,7 +423,8 @@ script NpcWindow extends Logic
             self:SetButtons({ "", "", "", "", "닫기" })
         elseif self.NpcKind == "quest" and q.act > 1 then
             -- 액트 1을 끝낸 뒤의 오렌: 사막으로 보낸다
-            body = _GameData:GetStory("idle_quest_2")
+            body = quest:StoryLine("idle_quest")
+            if body == "" then body = "조각을 찾아라. 목소리가 그렇게 말했다." end
             self.PageCount = 1
             self:SetButtons({ "", "", "", "", "닫기" })
         elseif q.giver ~= self.NpcKind and quest.State ~= 1 then
@@ -497,7 +502,7 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
-        if self.TypeTotal <= 0 or self.TypeShown >= self.TypeTotal or self.Kind ~= "quest" or not _UIKit:IsOpen(self.Win) then return end
+        if self.TypeTotal <= 0 or self.TypeShown >= self.TypeTotal or (self.Kind ~= "quest" and self.CheerText == "") or not _UIKit:IsOpen(self.Win) then return end
         local before = math.floor(self.TypeShown)
         self.TypeShown = math.min(self.TypeTotal, self.TypeShown + delta * self.TypeSpeed)
         local now = math.floor(self.TypeShown)
@@ -511,6 +516,17 @@ script NpcWindow extends Logic
         ---@type WorldNPC
         local npc = self.ActiveNpc:GetComponent("script.WorldNPC")
         if not self:CanTalkTo(_UserService.LocalPlayer, npc) or _UIKit:AnyOtherWindowOpen(self.Win) then return end
+        if self.CheerText ~= "" then
+            -- 격려 한마디 → 계속(평소 대화) / 닫기
+            if index == 5 then self:Dismiss() return end
+            if index == 4 then
+                if self:FinishTyping() then return end
+                self.CheerText = ""
+                self.RenderKey = ""
+                self:Poll()
+            end
+            return
+        end
         if self.Kind == "shop" then
             -- 거래 = 거래 창 (이 대화 창은 닫는다)
             if index == 5 then self:Dismiss() return end

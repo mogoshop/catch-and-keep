@@ -15,13 +15,15 @@ function run() {
   // 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로 (StoryCard.ShowArt)
   b.sprite(c + '/Art', { anchor: 'middle-center', rect_size: [1920, 1080], color: '#FFFFFF', alpha: 0.5, sprite_type: 0, enable: false });
   b.sprite(c + '/Plate', { anchor: 'middle-center', pos: [0, 352], rect_size: [270, 270], color: '#FFFFFF', sprite_type: 0, enable: false });
+  // 장면 대화(docs/design/31 §4)의 화자 그림 — 제목 위, 그림 비율 그대로
+  b.sprite(c + '/Who', { anchor: 'middle-center', pos: [0, 200], rect_size: [220, 200], color: '#FFFFFF', sprite_type: 0, preserve_aspect: true, enable: false });
   b.text(c + '/Title', '', { anchor: 'middle-center', pos: [0, 150], rect_size: [1500, 80], size: 52, bold: true, color: '#E6C88A', alignment: 4 });
   b.patchComponent(c + '/Title', 'MOD.Core.TextGUIRendererComponent', { Font: 'Maple' });
   b.text(c + '/Sub', '', { anchor: 'middle-center', pos: [0, 84], rect_size: [1500, 44], size: 28, color: '#B8AFA0', alignment: 4 });
   b.text(c + '/Body', '', { anchor: 'middle-center', pos: [0, -40], rect_size: [1300, 200], size: 32, color: '#ECE4D4', alignment: 4 });
   b.text(c + '/Hint', '', { anchor: 'middle-center', pos: [0, -300], rect_size: [900, 36], size: 21, color: '#857D70', alignment: 4 });
   // 그림이 글자 아래에 오게 순서를 정한다 (기존 파일에 새로 붙인 칸은 맨 뒤 = 맨 위에 그려진다)
-  ['Art', 'Plate', 'Title', 'Sub', 'Body', 'Hint'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
+  ['Art', 'Plate', 'Who', 'Title', 'Sub', 'Body', 'Hint'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
   // 맵 이동 화면 (MapTransition): 이동 순간 검게 덮고 도착지 이름을 보여 준 뒤, 새 맵·카메라가 자리 잡으면 걷어 낸다.
   // 이야기 카드보다 위 (이동 중에는 다른 것을 보지 않는다). 그림은 loading_act1~3 (코덱스 요청) — 없으면 검은 바탕만
   const f = 'SafeArea/Fade';

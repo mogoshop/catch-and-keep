@@ -27,6 +27,9 @@ script PlayerQuest extends Component
     property integer FireBonus = 0            -- 의뢰 영구 보상 화염 저항 + (「유황 여왕」 난이도마다 1회, 액트 4)
     @Sync
     property string StorySeen = ";"           -- 본 이야기 카드 ";prologue;act1;end1;" (StoryCard, 캐릭터마다 한 번)
+    property table Cheered = {}               -- "0"/"1"/"2" → ";1:smith;2:shop;" 그 난이도에서 들은 액트 보스 격려 (docs/design/31 §7)
+    @Sync
+    property string CheerNow = ";"            -- 지금 난이도에서 들은 격려 (마을 사람 머리 위 「!」를 끈다)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -138,6 +141,54 @@ script PlayerQuest extends Component
         -- 지금 난이도에서 그 액트의 마지막 의뢰까지 보고를 마쳤다
         local last = _QuestData:LastOfAct(act)
         return last > 0 and self.Index > last and _QuestData:ActClosed(act)
+    end
+
+    method boolean ActBossDown(integer act)
+        -- 지금 난이도에서 그 액트 최종 보스를 쓰러뜨렸다 (보고 전 = 마지막 의뢰 목표 달성도 포함)
+        if self:IsActDone(act) then return true end
+        local last = _QuestData:LastOfAct(act)
+        return last > 0 and self.Index == last and self.State == 2 and _QuestData:ActClosed(act)
+    end
+
+    method string StoryStage()
+        -- 이야기 단계 (docs/design/31 §5): "0" 처음 · "1"~"4" 그 장을 끝냄 · "r" 고르의 정체가 드러남 (의뢰 23 보고 뒤)
+        if self:IsActDone(4) then return "4" end
+        local reveal = _QuestData:IndexOf("boss", "apostate_archbishop")
+        if reveal > 0 and self.Index > reveal then return "r" end
+        for a = 3, 1, -1 do
+            if self:IsActDone(a) then return tostring(a) end
+        end
+        return "0"
+    end
+
+    method string StoryLine(string prefix)
+        -- 단계별 문구 (story.csv prefix_<단계>). 지금 단계에 없으면 앞 단계 것을 쓴다. 없으면 ""
+        local order = { "0", "1", "2", "3", "r", "4" }
+        local stage = self:StoryStage()
+        local at = 1
+        for i, k in ipairs(order) do if k == stage then at = i end end
+        for i = at, 1, -1 do
+            local line = _GameData:GetStory(prefix .. "_" .. order[i])
+            if line ~= "" then return line end
+        end
+        return ""
+    end
+
+    method boolean CheerWaiting(integer act, string kind)
+        -- 그 액트 보스를 쓰러뜨린 뒤 이 마을 사람에게 아직 격려를 듣지 않았다 (격려 문구가 있는 사람만)
+        if act < 1 or not self:ActBossDown(act) then return false end
+        if _GameData:GetStory("cheer_" .. tostring(act) .. "_" .. kind) == "" then return false end
+        return string.find(self.CheerNow, ";" .. tostring(act) .. ":" .. kind .. ";", 1, true) == nil
+    end
+
+    @ExecSpace("Server")
+    method void RequestCheer(integer act, string kind)
+        -- 격려를 들었다 → 「!」를 끈다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or string.match(kind, "^%a+$") == nil then return end
+        local key = tostring(act) .. ":" .. kind
+        if string.find(self.CheerNow, ";" .. key .. ";", 1, true) ~= nil then return end
+        self.CheerNow = self.CheerNow .. key .. ";"
+        self.Cheered[tostring(self.Diff)] = self.CheerNow
     end
 
     method integer CountFor(table q)
@@ -309,7 +360,13 @@ script PlayerQuest extends Component
         self.Progress = 0
         self.Goal = 0
         self:RefreshPermanent()
-        if actEnd then self:SendStory("end" .. tostring(q.act)) end
+        if actEnd then
+            self:SendStory("end" .. tostring(q.act))
+            -- 장 마무리 뒤 오렌과 고르의 장면 (docs/design/31 §4) — 4장은 결말 「문 아래로」
+            local scene = q.act == 4 and "scene5" or ("scene" .. tostring(q.act))
+            if _GameData:GetStory(scene) ~= "" then self:SendStory(scene) end
+        end
+        if q.kind == "boss" and q.target == "apostate_archbishop" then self:SendStory("reveal") end
     end
 
     -- ───────── 이야기 카드 (StoryCard) ─────────
@@ -407,6 +464,7 @@ script PlayerQuest extends Component
         self.Progress = d ~= nil and d.p or 0
         self.Goal = 0
         self.SealedNow = self.Sealed[tostring(diff)] or ";"
+        self.CheerNow = self.Cheered[tostring(diff)] or ";"
     end
 
     @ExecSpace("ServerOnly")
@@ -425,6 +483,11 @@ script PlayerQuest extends Component
             if sc ~= nil and sc ~= ";" then out["sc" .. tostring(k)] = sc end
         end
         if self.StorySeen ~= ";" then out.st = self.StorySeen end
+        self.Cheered[tostring(self.Diff)] = self.CheerNow
+        for k = 0, 2 do
+            local ch = self.Cheered[tostring(k)]
+            if ch ~= nil and ch ~= ";" then out["ch" .. tostring(k)] = ch end
+        end
         return out
     end
 
@@ -447,6 +510,11 @@ script PlayerQuest extends Component
             end
         end
         self.StorySeen = type(d.st) == "string" and d.st or ";"
+        self.Cheered = {}
+        for k = 0, 2 do
+            local ch = d["ch" .. tostring(k)]
+            if type(ch) == "string" then self.Cheered[tostring(k)] = ch end
+        end
         self.Sealed = {}
         for k = 0, 2 do
             local sc = d["sc" .. tostring(k)]
@@ -462,6 +530,7 @@ script PlayerQuest extends Component
         self.Progress = cur ~= nil and cur.p or 0
         self.Goal = 0
         self.SealedNow = self.Sealed[tostring(diff)] or ";"
+        self.CheerNow = self.Cheered[tostring(diff)] or ";"
         self:RefreshPermanent()
     end
 

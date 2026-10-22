@@ -1,0 +1,101 @@
+-- 마을 사람의 자리 (클라이언트, docs/design/31 §5): 지금 난이도의 의뢰 진행으로 누가 어느 마을에 서 있는지 정한다.
+--   오렌      : 진행 중인 액트의 마을에만 (1장 야영지 → 2장 오아시스 → 3장 항구 → 4장 없음 — 조각을 들고 먼저 북쪽 수도원으로 갔다)
+--   미라      : 3장을 끝내면 항구를 떠나 마지막 초소에
+--   좌판      : 고르의 정체가 드러난 뒤(의뢰 23 보고)에는 카라반 보급관 자파르 (메이플 기본 그림 그대로 — 사용자 10-22)
+--   발밑 그림자: 맵 빌드가 NPC마다 깐 ArtShadow<모델>. 의뢰 23 뒤 ~ 재의 왕 전까지 하르크·미라·엘리안 것은 없다 (고르바스가 떼어 갔다)
+-- 맵 엔티티는 서버가 바꾸지 않는 정적 엔티티라 클라이언트에서 보이기만 바꾼다 (말 걸기는 NpcWindow.CanTalkTo가 Enable을 본다).
+@Logic
+script StoryPresence extends Logic
+
+    property integer TimerId = 0
+    property string Applied = ""             -- 마지막으로 맞춘 상태 (맵 · 단계 · 의뢰 진행) — 바뀔 때만 다시 맞춘다
+    property table Original = {}             -- 좌판 엔티티 id → { sprite, name } (보급관으로 바꾸기 전, 악몽에서 되돌릴 때)
+    property string QuartermasterName = "카라반 보급관 자파르"
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        self.Applied = ""
+        self.Original = {}
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tick()
+        -- 마을에 있을 때 진행이 바뀌었으면 다시 맞춘다
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return end
+        local map = player.CurrentMap
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil or info.kind ~= "town" then return end
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest == nil then return end
+        local stage = quest:StoryStage()
+        local key = map.Id .. "#" .. stage .. "#" .. tostring(quest.Index) .. "#" .. tostring(quest.State) .. "#" .. tostring(quest.Diff)
+        if key == self.Applied then return end
+        self.Applied = key
+        self:Apply(map, math.floor(info.act or 1), quest, stage)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Apply(Entity map, integer act, Component questComp, string stage)
+        ---@type PlayerQuest
+        local quest = questComp
+        local orenAct = 0
+        for a = 1, 3 do
+            if orenAct == 0 and not quest:IsActDone(a) then orenAct = a end
+        end
+        local done3 = quest:IsActDone(3)
+        local revealed = stage == "r" or stage == "4"
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            local shown = true
+            if npc.Kind == "quest" then shown = act == orenAct
+            elseif npc.Kind == "keeperdaughter" then shown = (act == 3 and not done3) or (act == 4 and done3)
+            elseif npc.Kind == "shop" then self:ApplyShop(c, revealed) end
+            if npc.Entity.Enable ~= shown then npc.Entity.Enable = shown end
+            -- 그림자를 빼앗긴 세 사람 (의뢰 23 뒤 ~ 재의 왕 처치 전)
+            local stolen = stage == "r" and (npc.Kind == "smith" or npc.Kind == "keeperdaughter" or npc.Kind == "deserter")
+            local shadow = map:GetChildByName("ArtShadow" .. npc.Entity.Name, false)
+            if isvalid(shadow) then
+                local want = shown and not stolen
+                if shadow.Enable ~= want then shadow.Enable = want end
+            end
+        end
+        log("[VRF] StoryPresence " .. map.Name .. " act=" .. tostring(act) .. " stage=" .. stage .. " oren=" .. tostring(orenAct))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyShop(Component comp, boolean revealed)
+        ---@type WorldNPC
+        local npc = comp
+        -- 좌판 주인: 고르 ↔ 보급관 (그림 · 이름표 · 대화 이름)
+        local e = npc.Entity
+        local sr = e.SpriteRendererComponent
+        local tag = e.NameTagComponent
+        if not isvalid(sr) then return end
+        local orig = self.Original[e.Id]
+        if orig == nil then
+            orig = { sprite = sr.SpriteRUID, name = npc.NpcName }
+            self.Original[e.Id] = orig
+        end
+        local sprite = revealed and _GameData:GetUiIcon("npc_quartermaster") or orig.sprite
+        local name = revealed and self.QuartermasterName or orig.name
+        if sprite == "" then return end
+        if sr.SpriteRUID ~= sprite then
+            sr.SpriteRUID = sprite
+            -- 서 있는 모습 클립이 그림을 되돌리지 않게 같은 그림으로
+            if isvalid(e.StateAnimationComponent) then e.StateAnimationComponent:SetActionSheet("stand", sprite) end
+        end
+        npc.NpcName = name
+        if isvalid(tag) and tag.Name ~= name then tag.Name = name end
+    end
+
+end
