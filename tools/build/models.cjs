@@ -38,7 +38,10 @@ function buildMonster(m, boss) {
   // 몸(순서 2) 아래 순서 1 — NPC 발밑 그림자(maps.cjs ArtShadow)와 같은 그림
   if (m.shadow) {
     const k = num(m.shadow);
-    b.child("FootShadow", ["MOD.Core.TransformComponent", "MOD.Core.SpriteRendererComponent"])
+    // 자식 id는 몬스터 id에서 만든 고정값 (빌드할 때마다 바뀌어 모델 파일이 흔들리지 않게)
+    const h = require("crypto").createHash("md5").update(`${m.id}/FootShadow`).digest("hex");
+    const cid = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+    b.child("FootShadow", { components: ["MOD.Core.TransformComponent", "MOD.Core.SpriteRendererComponent"], id: cid })
       .childValue("FootShadow", "MOD.Core.TransformComponent", "Position", { x: 0, y: 0.02, z: 0 }, "vector3")
       .childValue("FootShadow", "MOD.Core.TransformComponent", "Scale", { x: k, y: k, z: 1 }, "vector3")
       .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "SpriteRUID", FOOT_SHADOW, "string")
