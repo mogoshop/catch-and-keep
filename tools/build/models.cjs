@@ -5,6 +5,8 @@ const { ModelBuilder, P, list, load, num, bool, quiet } = require("./lib.cjs");
 
 // 몬스터 공통 구성: 템플릿(네이티브 9종: Transform·StateAnimation·SpriteRenderer·Movement·AIChase·State·Hit·DamageSkinSpawner·Kinematicbody)
 // + 스크립트. 탑다운(RectTile)이라 Body는 Kinematicbody.
+// NPC·보스 발밑 그림자 (assets/claude-story-v1 foot-shadow · 그룹 OJYYQ, maps.cjs와 같은 그림)
+const FOOT_SHADOW = "cabd4773c16c465a90cb46d571d1d623";
 const MONSTER_SCRIPTS = ["script.Monster", "script.MonsterStatus", "script.MonsterTraits", "script.MonsterAttack"];
 
 // 프레임 애니메이션 몬스터 (data/monster_frames.csv): 상태 애니메이션 컴포넌트 대신 FrameAnimator가 스프라이트를 직접 넘긴다
@@ -32,6 +34,17 @@ function buildMonster(m, boss) {
   }
   const s = num(m.scale, 1);
   b.value("MOD.Core.TransformComponent", "Scale", { x: s, y: s, z: 1 }, "vector3");
+  // 발밑 그림자 (monsters.csv shadow = 그림자 배율, 비우면 없음): 그림에 그림자가 없는 큰 몸이 바닥에서 떠 보이지 않게 (10-22 사용자: 심장의 사도).
+  // 몸(순서 2) 아래 순서 1 — NPC 발밑 그림자(maps.cjs ArtShadow)와 같은 그림
+  if (m.shadow) {
+    const k = num(m.shadow);
+    b.child("FootShadow", ["MOD.Core.TransformComponent", "MOD.Core.SpriteRendererComponent"])
+      .childValue("FootShadow", "MOD.Core.TransformComponent", "Position", { x: 0, y: 0.02, z: 0 }, "vector3")
+      .childValue("FootShadow", "MOD.Core.TransformComponent", "Scale", { x: k, y: k, z: 1 }, "vector3")
+      .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "SpriteRUID", FOOT_SHADOW, "string")
+      .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "SortingLayer", "MapLayer0", "string")
+      .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "OrderInLayer", 1, "int");
+  }
   // 히트 박스: 스프라이트 크기(px)의 60% × 배율, 최소 0.4. hitW/hitH가 있으면 그 값
   const bw = m.hitW !== "" ? num(m.hitW) : Math.max(0.4, (num(m.w) / 100) * 0.6 * s);
   const bh = m.hitH !== "" ? num(m.hitH) : Math.max(0.4, (num(m.h) / 100) * 0.6 * s);
