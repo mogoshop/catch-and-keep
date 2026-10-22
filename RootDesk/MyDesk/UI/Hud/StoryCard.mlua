@@ -214,7 +214,10 @@ script StoryCard extends Logic
         local icons = { ["오렌"] = "who_oren", ["고르"] = "who_gor", ["고르바스"] = "who_gorbas", ["엘리안"] = "who_elian" }
         if self.Key == "reveal" then icons["고르"] = "who_gor_reveal" end
         local box = self.Card .. "/Box"
-        local icon = icons[who] ~= nil and _GameData:GetUiIcon(icons[who]) or ""
+        -- 장면 N은 N장의 일 — 그 장의 판이 있으면 그 판 (숯을 안은 오렌 2장 · 숯 없는 오렌 3장)
+        local scene = tonumber(string.match(self.Key, "^scene(%d)$") or "0") or 0
+        local icon = (icons[who] ~= nil and scene > 0) and _GameData:GetUiIcon(icons[who] .. "_act" .. tostring(scene)) or ""
+        if icon == "" and icons[who] ~= nil then icon = _GameData:GetUiIcon(icons[who]) end
         local portrait = who ~= "" and icon ~= ""
         _UIKit:SetEnabled(box .. "/PortraitBox", portrait)
         _UIKit:SetPortrait(box .. "/PortraitBox/Portrait", icon)
