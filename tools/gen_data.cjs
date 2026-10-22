@@ -412,7 +412,9 @@ function genQuests() {
     "        self.Givers = {}",
     ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`),
     "        self.Voices = {}",
-    ...load("npcs").map((x) => `        self.Voices[${s(x.kind)}] = ${s(x.voice || "haera")}`)].join("\n");
+    ...load("npcs").map((x) => `        self.Voices[${s(x.kind)}] = ${s(x.voice || "haera")}`),
+    "        self.Portraits = {}",
+    ...load("npcs").filter((x) => x.portrait).map((x) => `        self.Portraits[${s(x.kind)}] = ${s(x.portrait)}`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
@@ -437,6 +439,12 @@ function genQuests() {
         -- NPC 말투 (npcs.csv voice: haera 해라체 · hage 하게체 · haeyo 해요체 · hasipsio 하십시오체 · hao 하오체, docs/design/32)
         self:Ensure()
         return self.Voices[kind] or "haera"
+    end
+
+    method string Portrait(string kind)
+        -- 대화창 초상화로 쓸 ui_icons 키 (npcs.csv portrait — 주요 인물만 가슴 위 그림, 없으면 "" = 서 있는 그림)
+        self:Ensure()
+        return self.Portraits[kind] or ""
     end
 
     method string GiverName(string giver)
@@ -485,7 +493,7 @@ function genQuests() {
         return table.concat(parts, ", ")
     end
 `;
-  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n"));
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n    property table Portraits = {}\n"));
 }
 
 // ── NamedData: 곁가지 끝방의 이름 있는 적 · 봉인 상자 · 의식의 주인 ──

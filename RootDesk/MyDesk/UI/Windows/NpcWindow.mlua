@@ -119,8 +119,15 @@ script NpcWindow extends Logic
             self.CheerText = _GameData:GetStory("cheer_" .. tostring(act) .. "_" .. npc.Kind)
             quest:RequestCheer(act, npc.Kind)
         end
-        local stand = isvalid(npc.Entity.SpriteRendererComponent) and npc.Entity.SpriteRendererComponent.SpriteRUID or ""
-        _UIKit:SetPortrait(self.Win .. "/PortraitBox/Portrait", stand)
+        -- 초상화: 주요 인물은 가슴 위 그림(npcs.csv portrait → ui_icons), 나머지는 서 있는 그림
+        local portraitKey = _QuestData:Portrait(npc.Kind)
+        local bust = portraitKey ~= "" and _GameData:GetUiIcon(portraitKey) or ""
+        if bust ~= "" then
+            _UIKit:SetIcon(self.Win .. "/PortraitBox/Portrait", bust)
+        else
+            local stand = isvalid(npc.Entity.SpriteRendererComponent) and npc.Entity.SpriteRendererComponent.SpriteRUID or ""
+            _UIKit:SetPortrait(self.Win .. "/PortraitBox/Portrait", stand)
+        end
         self.TypeTotal = 0
         self:ShowPage(1, 1, 0)
         self.Dismissed = false
