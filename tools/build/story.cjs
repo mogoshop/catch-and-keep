@@ -3,7 +3,7 @@
 // 컨트롤러는 RootDesk/MyDesk/UI/Hud/StoryCard.mlua (_StoryCard). 카드 전체가 버튼이라 아무 곳이나 누르면 넘어간다.
 const { UIBuilder, P, load } = require('./lib.cjs');
 const icons = Object.fromEntries(load('ui_icons').map((r) => [r.key, r.ruid]));
-const { FRAME, COLOR, DIALOG, dialogLayout } = require('./ui-tokens.cjs');
+const { FRAME, COLOR, DIALOG, dialogLayout, portraitSprite } = require('./ui-tokens.cjs');
 
 function run() {
   const file = P.ui('StoryHUD');
@@ -40,7 +40,8 @@ function run() {
   // 이름 = 창 제목과 같은 규칙 (위에서 titleTop · 띠 세로 가운데 · 모든 화자 같은 색)
   b.text(box + '/Name', '', { anchor: 'top-center', pos: [0, -FRAME.titleTop], rect_size: [DIALOG.width - 260, FRAME.titleH], size: FRAME.titleSize, bold: true, color: COLOR.title, alignment: 4, outline: true, outline_color: '#2D2D2D' });
   b.panel(box + '/PortraitBox', { anchor: 'top-left', pivot: [0, 1], pos: [L.portraitX, -FRAME.contentTop], rect_size: [DIALOG.portrait.w, L.paperH], image_ruid: icons.win_content, color: '#000000', alpha: 0.35, sprite_type: 1, raycast: false });
-  b.sprite(box + '/PortraitBox/Portrait', { anchor: 'middle-center', pos: [0, 0], rect_size: [DIALOG.portrait.w - DIALOG.portrait.inset * 2, L.paperH - DIALOG.portrait.inset * 2], color: '#FFFFFF', sprite_type: 0, preserve_aspect: true, enable: false });
+  b.sprite(box + '/PortraitBox/Portrait', { ...portraitSprite(L.paperH), enable: false });
+  b.patchComponent(box + '/PortraitBox/Portrait', 'MOD.Core.SpriteGUIRendererComponent', { PreserveSprite: 0 });
   b.panel(box + '/Paper', { anchor: 'top-left', pivot: [0, 1], pos: [L.paperX, -FRAME.contentTop], rect_size: [L.paperW, L.paperH], image_ruid: icons.win_content, color: '#000000', alpha: 0.3, sprite_type: 1, raycast: false });
   b.text(box + '/Paper/Body', '', { anchor: 'top-left', pos: [DIALOG.textPad.x, -DIALOG.textPad.y], rect_size: [L.paperW - DIALOG.textPad.x * 2, L.paperH - DIALOG.textPad.y * 2 - DIALOG.pageNo.h + DIALOG.pageNo.bottom], size: DIALOG.font.pc, color: COLOR.body, alignment: 0 });
   b.patchComponent(box + '/Paper/Body', 'MOD.Core.TextGUIRendererComponent', { BestFit: true, MinSize: DIALOG.font.min, MaxSize: DIALOG.font.pc });

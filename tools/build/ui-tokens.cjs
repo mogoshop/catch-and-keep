@@ -52,6 +52,13 @@ const DIALOG = {
   npcButtonW: 184,                       // NPC 대화창 버튼 다섯 개 (184 × 5 + 칸 사이 16 × 4)
 };
 
+// 대화 상자 초상화: 발밑 기준. 코덱스 NPC 그림은 기준점이 발밑(pivot_y 0)이라 「비율 유지」로 가운데에 두면 그림이 칸 위로 밀려난다 (10-22 무하드).
+// 칸 아래 가운데에 발을 붙이고 PreserveSprite 0(그대로 맞춤)으로 그린다 — 메이플 그림(thumbnail://)도 같은 방식으로 맞는다 (메이커 실측)
+function portraitSprite(paperH) {
+  return { anchor: 'bottom-center', pivot: [0.5, 0], pos: [0, DIALOG.portrait.inset],
+    rect_size: [DIALOG.portrait.w - DIALOG.portrait.inset * 2, paperH - DIALOG.portrait.inset * 2], color: '#FFFFFF', sprite_type: 0 };
+}
+
 // 대화 상자 안 배치 (x는 바탕 왼쪽에서, y는 바탕 위에서 아래로)
 function dialogLayout(height, withPortrait) {
   const paperH = height - FRAME.contentTop - FRAME.padBottom;
@@ -61,4 +68,4 @@ function dialogLayout(height, withPortrait) {
   return { portraitX, paperX, paperW, paperH };
 }
 
-module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, COLOR, DIALOG, dialogLayout, buttonText };
+module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };

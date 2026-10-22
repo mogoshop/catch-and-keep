@@ -20,8 +20,8 @@ function run(){quiet(()=>{
  { const {FRAME,DIALOG,BUTTON}=require('./ui-tokens.cjs'); const H=DIALOG.npcHeight, L=dialogLayout(H,true), paperH=DIALOG.npcPaperH;
  b.patch('NpcWin',{pos:[0,200],rect_size:[DIALOG.width,H]});b.patch('NpcWin/Rim',{rect_size:[DIALOG.width+FRAME.rimOut*2,H+FRAME.rimOut*2]});
  b.panel('NpcWin/PortraitBox',{anchor:'top-left',pos:[L.portraitX,-FRAME.contentTop],rect_size:[DIALOG.portrait.w,L.paperH],image_ruid:K.win_content,color:'#000000',alpha:0.35,sprite_type:1});
- b.sprite('NpcWin/PortraitBox/Portrait',{anchor:'middle-center',pos:[0,0],rect_size:[DIALOG.portrait.w-DIALOG.portrait.inset*2,L.paperH-DIALOG.portrait.inset*2],color:'#FFFFFF',sprite_type:0,enable:false});
- b.patchComponent('NpcWin/PortraitBox/Portrait','MOD.Core.SpriteGUIRendererComponent',{PreserveSprite:1});
+ b.sprite('NpcWin/PortraitBox/Portrait',{...require('./ui-tokens.cjs').portraitSprite(L.paperH),enable:false});
+ b.patchComponent('NpcWin/PortraitBox/Portrait','MOD.Core.SpriteGUIRendererComponent',{PreserveSprite:0});
  b.patch('NpcWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[L.paperX,-FRAME.contentTop],rect_size:[L.paperW,paperH]});
  b.patch('NpcWin/Paper/Body',{rect_size:[L.paperW-DIALOG.textPad.x*2,paperH-DIALOG.textPad.y*2-DIALOG.pageNo.h+DIALOG.pageNo.bottom],pos:[DIALOG.textPad.x,-DIALOG.textPad.y]});
  b.patchComponent('NpcWin/Paper/Body','MOD.Core.TextGUIRendererComponent',{FontSize:DIALOG.font.pc,BestFit:true,MinSize:DIALOG.font.min,MaxSize:DIALOG.font.pc}); // 대장장이·상점 안내처럼 긴 글은 줄여서 칸 안에 (모바일 크기는 UIKit.ApplyDialogFont)
