@@ -395,6 +395,27 @@ script Util extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void ElementBurst(Entity instigator, Vector3 pos, number radius, string element, Color color)
+        -- 범위 기술이 터지는 순간 (10-22): BigExplosion은 Color 옵션을 무시하고 늘 주황 불덩이라(메이커 실측) 화염·물리에만 쓴다.
+        -- 냉기·독·번개는 색이 먹는 SparkExplosion + 옅은 Aura로 그 속성 색 그대로 터진다
+        if element == "fire" or element == "" or element == "phys" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, instigator, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, nil)
+            return
+        end
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, instigator, pos, 0, Vector3(radius * 0.55, radius * 0.55, 1), false, { Color = color })
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, instigator, pos, 0, Vector3(radius * 0.8, radius * 0.8, 1), false, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(color.r, color.g, color.b, 0.55) })
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer ZoneRim(Entity instigator, Vector2 center, number radius, string element)
+        -- 남아 있는 장판·안개의 범위 고리 (차오름 없음 · 반복 재생 → _EffectService:RemoveEffect). 보스면 실금 고리, 아니면 흐린 고리
+        if not isvalid(instigator) or radius <= 0 then return 0 end
+        local boss = instigator:GetComponent("script.BossPattern") ~= nil
+        local full = radius * 2 / 2.56
+        return _EffectService:PlayEffect(self:TeleSprite(boss and _GameConst.SpriteTeleRimBoss or _GameConst.SpriteTeleRim, element), instigator, Vector3(center.x, center.y, 0), 0, Vector3(full, full, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 })
+    end
+
+    @ExecSpace("ClientOnly")
     method void StopTelegraph(integer id)
         -- 범위 예고 지우기 (공격이 끊기거나 시간이 다 됐을 때)
         local rec = self.Telegraphs[id]

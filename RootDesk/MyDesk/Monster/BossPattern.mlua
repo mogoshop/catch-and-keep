@@ -75,6 +75,8 @@ script BossPattern extends Component
 
     method void OnBeginPlay()
         -- 내려찍기는 소유 타이머 없는 단계 갱신으로 예고·타격·회복을 순서대로 실행한다.
+        -- 10-22: 내려찍기 반경 최소 BossSkillMinRadius — 서버(판정)·클라이언트(예고 고리) 둘 다 같은 값으로
+        self.SlamRadius = math.max(self.SlamRadius, _GameConst.BossSkillMinRadius)
         if self:IsServer() then
             ---@type Monster
             local monster = self.Entity:GetComponent("script.Monster")
@@ -580,8 +582,7 @@ script BossPattern extends Component
         local c = self:ElementTint(element)
         for i = 1, #centers, 2 do
             local pos = Vector3(centers[i], centers[i + 1], 0)
-            _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.3, radius * 0.3, 1), false, { Color = c })
-            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, Vector3(radius, radius, 1), false, { Color = Color(c.r, c.g, c.b, 0.7) })
+            _Util:ElementBurst(self.Entity, pos, radius, element, c)   -- 10-22: 독·냉기 궁극기가 주황 불덩이로 터지던 것
         end
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(0.4, 0.35) end
@@ -614,7 +615,7 @@ script BossPattern extends Component
     method void SlamFx(Vector3 pos, number radius)
         -- 같은 맵에서만 충격을 보여 주고 가까운 관전자만 카메라를 흔든다.
         if not self:HasLocalAudience() then return end
-        _ParticleService:PlayBasicParticle(BasicParticleType.BigExplosion, self.Entity, pos, 0, Vector3(radius * 0.25, radius * 0.25, 1), false, nil)
+        _Util:ElementBurst(self.Entity, pos, radius * 0.85, self.PoolElement, self:ElementTint(self.PoolElement))   -- 10-22: 독·냉기 보스의 내려찍기도 그 속성 색으로
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) and (_Util:Pos2(_UserService.LocalPlayer) - Vector2(pos.x, pos.y)):Magnitude() <= 10 then cam:ShakeCamera(0.25, 0.2) end
     end
@@ -640,7 +641,7 @@ script BossPattern extends Component
         local rim = _EffectService:PlayEffect(_Util:TeleSprite(_GameConst.SpriteTeleRimBoss, element), self.Entity, pos, 0, Vector3(full, full, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 })   -- 장판 범위 테두리 (보스 실금 고리)
         table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SpinField, self.Entity, pos, 0, Vector3(radius, radius * 0.35, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(tint.r, tint.g, tint.b, 0.3) }))
         if element == "fire" then
-            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, nil))
+            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.FireField, self.Entity, pos, 0, Vector3(radius * 0.45, radius * 0.3, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 }))   -- 몸 아래 층 (10-22)
         end
         -- 바닥 그림 (코덱스 독·화염 장판 · 액트 3 냉기·등불빛 장판). 이펙트 Color 옵션은 스프라이트 색을 못 바꾸므로 속성마다 전용 그림
         local decal = 0
@@ -652,7 +653,7 @@ script BossPattern extends Component
             -- 꽂히는 순간 낙뢰 그림 0.4초
             impact = _Util:GroundDecal(_GameConst.SpriteGroundLightningImpact, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 1))
             _TimerService:SetTimerOnce(function() if impact ~= 0 then _EffectService:RemoveEffect(impact) end end, 0.4)
-            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SparkLoop, self.Entity, pos, 0, Vector3(radius * 0.5, radius * 0.3, 1), true, { Color = Color(0.75, 0.9, 1, 0.9) }))
+            table.insert(serials, _ParticleService:PlayBasicParticle(BasicParticleType.SparkLoop, self.Entity, pos, 0, Vector3(radius * 0.5, radius * 0.3, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(0.75, 0.9, 1, 0.9) }))
             _ParticleService:PlayBasicParticle(BasicParticleType.LightningStrikeSharpTall, self.Entity, pos, 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.7, 0.88, 1, 1) })
         elseif _GameConst:ActOfMap(self.Entity.CurrentMap.Name) == 4 then decal = _Util:GroundDecal(_GameConst.SpriteGroundLava, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.9))   -- 액트 4: 용암 장판
         else decal = _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, pos, radius, Color(1, 1, 1, 0.85)) end
