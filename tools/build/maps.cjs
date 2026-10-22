@@ -104,6 +104,10 @@ function desiredEntities(d, maps, ctx) {
       if (n.kind !== "stash") place(`ArtShadow${n.model}`, "Objects/ArtSprite", [x.pos[0], x.pos[1] + 0.02, -0.02], {
         "MOD.Core.SpriteRendererComponent": { SpriteRUID: FOOT_SHADOW, SortingLayer: "MapLayer0", OrderInLayer: 1, DrawMode: 0 },
       });
+      // 숯 (오렌의 고양이): 3장을 끝내면 하르크 오른쪽 발치에 앉는다. 그림은 StoryPresence가 ui_icons soot로 넣고 켠다
+      if (n.kind === "smith") place("ArtSoot", "Objects/ArtSprite", [x.pos[0] + 0.6, x.pos[1] - 0.05, -0.03], {
+        "MOD.Core.SpriteRendererComponent": { SpriteRUID: "", SortingLayer: "MapLayer0", OrderInLayer: 2, DrawMode: 0 },
+      });
     } else if (x.name.startsWith("altar:")) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);

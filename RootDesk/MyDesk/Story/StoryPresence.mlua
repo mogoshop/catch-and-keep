@@ -1,7 +1,9 @@
 -- 마을 사람의 자리 (클라이언트, docs/design/31 §5): 지금 난이도의 의뢰 진행으로 누가 어느 마을에 서 있는지 정한다.
 --   오렌      : 진행 중인 액트의 마을에만 (1장 야영지 → 2장 오아시스 → 3장 항구 → 4장 없음 — 조각을 들고 먼저 북쪽 수도원으로 갔다)
 --   미라      : 3장을 끝내면 항구를 떠나 마지막 초소에
---   좌판      : 고르의 정체가 드러난 뒤(의뢰 23 보고)에는 카라반 보급관 자파르 (메이플 기본 그림 그대로 — 사용자 10-22)
+--   좌판      : 고르는 장마다 다른 그림(ui_icons npc_gor_act1~4 — 짐이 늘고 외투가 재에 덮여 간다). 정체가 드러난 뒤(의뢰 23 보고)에는 카라반 보급관 자파르 (메이플 기본 그림 그대로 — 사용자 10-22)
+--   오렌 그림 : ui_icons npc_oren_act1~3가 있으면 그 장 그림 (숯을 어깨에 → 품에 → 없음). 없으면 모델 그림 그대로
+--   숯        : 3장을 끝내면 오렌이 아빠에게 보낸 고양이가 하르크 곁(ArtSoot, 맵 빌드가 깐다)에 앉는다
 --   발밑 그림자: 맵 빌드가 NPC마다 깐 ArtShadow<모델>. 의뢰 23 뒤 ~ 재의 왕 전까지 하르크·미라·엘리안 것은 없다 (고르바스가 떼어 갔다)
 -- 맵 엔티티는 서버가 바꾸지 않는 정적 엔티티라 클라이언트에서 보이기만 바꾼다 (말 걸기는 NpcWindow.CanTalkTo가 Enable을 본다).
 @Logic
@@ -57,9 +59,11 @@ script StoryPresence extends Logic
             ---@type WorldNPC
             local npc = c
             local shown = true
-            if npc.Kind == "quest" then shown = act == orenAct
+            if npc.Kind == "quest" then
+                shown = act == orenAct
+                self:SetStand(npc.Entity, _GameData:GetUiIcon("npc_oren_act" .. tostring(act)))
             elseif npc.Kind == "keeperdaughter" then shown = (act == 3 and not done3) or (act == 4 and done3)
-            elseif npc.Kind == "shop" then self:ApplyShop(c, revealed) end
+            elseif npc.Kind == "shop" then self:ApplyShop(c, revealed, act) end
             if npc.Entity.Enable ~= shown then npc.Entity.Enable = shown end
             -- 그림자를 빼앗긴 세 사람 (의뢰 23 뒤 ~ 재의 왕 처치 전)
             local stolen = stage == "r" and (npc.Kind == "smith" or npc.Kind == "keeperdaughter" or npc.Kind == "deserter")
@@ -69,11 +73,19 @@ script StoryPresence extends Logic
                 if shadow.Enable ~= want then shadow.Enable = want end
             end
         end
+        -- 숯: 하르크 곁 (3장을 끝낸 뒤 모든 마을)
+        local soot = map:GetChildByName("ArtSoot", false)
+        if isvalid(soot) then
+            local ruid = _GameData:GetUiIcon("soot")
+            if done3 and ruid ~= "" and isvalid(soot.SpriteRendererComponent) and soot.SpriteRendererComponent.SpriteRUID ~= ruid then soot.SpriteRendererComponent.SpriteRUID = ruid end
+            local want = done3 and ruid ~= ""
+            if soot.Enable ~= want then soot.Enable = want end
+        end
         log("[VRF] StoryPresence " .. map.Name .. " act=" .. tostring(act) .. " stage=" .. stage .. " oren=" .. tostring(orenAct))
     end
 
     @ExecSpace("ClientOnly")
-    method void ApplyShop(Component comp, boolean revealed)
+    method void ApplyShop(Component comp, boolean revealed, integer act)
         ---@type WorldNPC
         local npc = comp
         -- 좌판 주인: 고르 ↔ 보급관 (그림 · 이름표 · 대화 이름)
@@ -86,16 +98,23 @@ script StoryPresence extends Logic
             orig = { sprite = sr.SpriteRUID, name = npc.NpcName }
             self.Original[e.Id] = orig
         end
-        local sprite = revealed and _GameData:GetUiIcon("npc_quartermaster") or orig.sprite
+        local gor = _GameData:GetUiIcon("npc_gor_act" .. tostring(act))
+        if gor == "" then gor = orig.sprite end
+        local sprite = revealed and _GameData:GetUiIcon("npc_quartermaster") or gor
         local name = revealed and self.QuartermasterName or orig.name
         if sprite == "" then return end
-        if sr.SpriteRUID ~= sprite then
-            sr.SpriteRUID = sprite
-            -- 서 있는 모습 클립이 그림을 되돌리지 않게 같은 그림으로
-            if isvalid(e.StateAnimationComponent) then e.StateAnimationComponent:SetActionSheet("stand", sprite) end
-        end
+        self:SetStand(e, sprite)
         npc.NpcName = name
         if isvalid(tag) and tag.Name ~= name then tag.Name = name end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetStand(Entity e, string sprite)
+        -- NPC 서 있는 그림 바꾸기 (빈 값이면 그대로). 서 있는 모습 클립이 그림을 되돌리지 않게 같은 그림으로
+        local sr = e.SpriteRendererComponent
+        if sprite == "" or not isvalid(sr) or sr.SpriteRUID == sprite then return end
+        sr.SpriteRUID = sprite
+        if isvalid(e.StateAnimationComponent) then e.StateAnimationComponent:SetActionSheet("stand", sprite) end
     end
 
 end

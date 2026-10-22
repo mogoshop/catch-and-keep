@@ -199,3 +199,23 @@
 - 폴더: `assets/codex-story-scenes-v2/` — `upload/`에 최종 PNG, `resource-mapping.csv`에 `파일,키` (키 = `story_prologue1~5` · `story_act1~4` · `story_scene1~3` · `story_reveal` · `story_scene5` · `story_end1~4` · `quest_artN` · `quest_art_grayN` · `who_oren` · `who_gor` · `who_gor_reveal` · `oren-act1-npc`·`oren-act3-npc` · `oren-boss-*` · `soot`).
 - 이야기 카드 1600×900, 의뢰 그림 256×256, 글자 없음.
 - 다 묶지 않아도 된다. **통과분 먼저 한 번**, 나머지는 끝나는 대로 같은 폴더에 추가하고 `resource-mapping.csv`에 줄을 더한다. Claude가 폴더를 계속 보고 있다가 새 줄을 연결한다.
+
+## 10-22 19:25 v2 납품 검수·연결 (Claude)
+
+`assets/codex-story-scenes-v2` 받음. **검수 통과 24장은 업로드하고 게임에 연결했다** (resource-mapping.csv RUID 칸에 적어 둠).
+
+### 연결 완료 (게임에서 확인)
+- 이야기 카드: story_prologue2·3·4 · story_act1~4 · story_reveal · story_scene5 · story_end3 · story_end4
+- 의뢰 그림: quest_art1·2·3 + 흑백판
+- 고르: 마을 NPC 1~4장 → ui_icons `npc_gor_act1~4` — 좌판이 **장마다 그 장 그림으로 바뀐다** (StoryPresence) · 초상화 `who_gor`(눈 감은 웃음) · `reveal`에서만 `who_gor_reveal`(눈 뜬 판)으로 바뀐다
+- 숯: ui_icons `soot` — **3장을 끝내면 모든 마을에서 하르크 오른쪽 발치에 앉는다** (맵 엔티티 ArtSoot)
+- 메이커에서 확인: 잿불 야영지 좌판 = 고르 1장 그림, 숯 자리·크기, 「행상의 정체」 카드 그림·눈 뜬 고르 초상화.
+
+### 오렌이 나오는 것 — 사용자 승인 뒤 바로 연결 (코드는 준비됨)
+- story_prologue1·5 · scene1·2·3 · end1·2 · quest_art23(+흑백판) · oren-act1~3-npc · who_oren · who_oren_act2·3
+- 오렌 마을 그림은 ui_icons `npc_oren_act1~3`에 넣기만 하면 장마다 바뀐다 (StoryPresence가 이미 읽는다).
+
+### 심장의 사도 보스 26프레임 (미리보기만 받음)
+- 그림 좋다: 대기의 재 고양이, 공격에서 가슴 조각이 빛나고 손끝으로 쏘는 흐름, **죽을 때 세 조각이 빠져나와 떠오르는 것**이 `reveal` 첫 줄과 딱 맞다.
+- 고칠 것: **attack 04·05 프레임 가장자리가 잘렸다** (04는 오른쪽 재 자락이 세로로 끊기고, 05는 왼쪽 보라빛이 세로로 끊김). 26프레임 모두 같은 크기의 넉넉한 캔버스에 발밑 위치를 맞춰 다시 내보낸다.
+- 납품: `upload/oren-boss-<동작>-<번호>.png` + resource-mapping에 `category=monster-frame`, `entity=oren-boss`, `state=stand|move|attack|hit|die`, `index`. 오렌 승인과 함께 연결한다.
