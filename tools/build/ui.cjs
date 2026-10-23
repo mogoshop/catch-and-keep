@@ -341,30 +341,37 @@ function buildGameHud() {
     k.btn(`SkillWin/${n}`, t, { anchor: "top-left", pos: [30 + i * 164, -116], rect_size: [156, 54], font_size: 20 });
     k.badge(`SkillWin/${n}`);   // 상황 안내가 다른 탭의 스킬을 가리킬 때
   });
-  b.empty("SkillWin/Grid", { anchor: "top-left", pos: [30, -180], rect_size: [648, 392] });
-  for (let i = 24; i < 30; i++) if (b.find(`SkillWin/Grid/M${i + 1}`)) b.remove(`SkillWin/Grid/M${i + 1}`);
+  // 10-24 사용자: 오른쪽 상세 패널 대신 고른 카드 아래 아코디언 — 카드 8칸 × 줄, 고른 줄 바로 아래에 상세(Acc)가 펼쳐지고 아랫줄은 그만큼 밀린다.
+  // 카드·아코디언 위치는 실행 중에 SkillWindow.Layout이 정한다 (여기 값은 첫 줄 고른 상태 기준)
+  if (b.find("SkillWin/Detail")) b.remove("SkillWin/Detail");
+  if (b.find("SkillWin/Grid")) b.remove("SkillWin/Grid");
+  b.empty("SkillWin/Grid", { anchor: "top-left", pos: [30, -180], rect_size: [960, 500] });
   for (let i = 0; i < 24; i++) {
     const n = `SkillWin/Grid/M${i + 1}`;
-    const col = i % 6, row = Math.floor(i / 6);
-    b.button(n, "", { anchor: "top-left", pos: [col * 109, -row * 98], rect_size: [103, 92], bg_color: { r: 0, g: 0, b: 0, a: 0.3 } });
+    const col = i % 8, row = Math.floor(i / 8);
+    b.button(n, "", { anchor: "top-left", pos: [col * 120, -row * 98 - (row > 0 ? 300 : 0)], rect_size: [114, 92], bg_color: { r: 0, g: 0, b: 0, a: 0.3 } });
     b.sprite(`${n}/Icon`, { anchor: "top-center", pos: [0, -4], rect_size: [42, 42], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     k.aspect(`${n}/Icon`);
-    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 4, anchor: "bottom-center", pos: [0, 2], rect_size: [101, 44], bestfit: true, min_size: 11, max_size: 14 });
+    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 4, anchor: "bottom-center", pos: [0, 2], rect_size: [112, 44], bestfit: true, min_size: 11, max_size: 14 });
     k.badge(n);   // 상황 안내가 배울 스킬 카드를 가리킨다 (GuideCoach)
   }
-  k.inner("SkillWin/Detail", "top-left", [690, -118], [300, 484], "win_content");
-  b.text("SkillWin/Detail/Name", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [14, -10], rect_size: [272, 32], ...outline });
-  b.text("SkillWin/Detail/Desc", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -46], rect_size: [272, 150] });
-  // 스킬 강화 (10-24 사용자: 「눌러야 하는지 모르겠다」) — 제목 + 안내 한 줄, 칸마다 아이콘 · 이름/효과 · 오른쪽 상태 칩(+1 / 잠김 / 완료)
-  b.text("SkillWin/Detail/NodeHead", "스킬 강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -196], rect_size: [272, 22] });
-  b.text("SkillWin/Detail/NodeHint", "칸을 눌러 고른 뒤 「강화 +1」", { size: 13, color: "#9C9488", alignment: 3, anchor: "top-left", pos: [14, -218], rect_size: [272, 18] });
+  // 아코디언: 이름·랭크 / 설명 / 지금·다음 효과·마나 / 스킬 강화 3칸 (아이콘 · 이름·효과 · 상태 칩)
+  const acc = "SkillWin/Grid/Acc";
+  k.inner(acc, "top-left", [0, -98], [954, 296]);
+  // 고른 카드와 아코디언을 잇는 띠 (카드 폭 · 고른 카드와 같은 색) — x는 실행 중에 고른 카드 열로
+  b.sprite(`${acc}/Pointer`, { anchor: "top-left", pos: [0, 8], rect_size: [114, 10], color: { r: 0.55, g: 0.65, b: 0.9, a: 0.55 }, sprite_type: 0 });
+  b.text(`${acc}/Name`, "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [18, -12], rect_size: [918, 30], ...outline });
+  b.text(`${acc}/Desc`, "", { size: 16, color: C.gold, alignment: 0, anchor: "top-left", pos: [18, -46], rect_size: [918, 48], bestfit: true, min_size: 12, max_size: 16 });
+  b.text(`${acc}/Stat`, "", { size: 16, color: "#F4ED83", alignment: 0, anchor: "top-left", pos: [18, -96], rect_size: [918, 48], bestfit: true, min_size: 12, max_size: 16 });
+  b.text(`${acc}/NodeHead`, "스킬 강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [18, -150], rect_size: [120, 24] });
+  b.text(`${acc}/NodeHint`, "칸을 눌러 고른 뒤 「강화 +1」 (한 번 더 눌러도 +1)", { size: 14, color: "#9C9488", alignment: 3, anchor: "top-left", pos: [140, -152], rect_size: [600, 22] });
   for (let i = 0; i < 3; i++) {
-    const n = `SkillWin/Detail/N${i + 1}`;
-    b.button(n, "", { anchor: "top-left", pos: [10, -240 - i * 80], rect_size: [280, 76], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
-    b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [10, 0], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0 });
+    const n = `${acc}/N${i + 1}`;
+    b.button(n, "", { anchor: "top-left", pos: [12 + i * 312, -182], rect_size: [306, 102], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
+    b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [10, 0], rect_size: [44, 44], color: WHITE, alpha: 1, sprite_type: 0 });
     k.aspect(`${n}/Icon`);
-    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 3, anchor: "middle-left", pos: [58, 0], rect_size: [164, 72], bestfit: true, min_size: 11, max_size: 14 });
-    b.text(`${n}/Chip`, "", { size: 15, bold: true, color: C.white, alignment: 4, anchor: "middle-right", pos: [-8, 0], rect_size: [50, 40], bestfit: true, min_size: 11, max_size: 15, ...outline });
+    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 3, anchor: "middle-left", pos: [62, 0], rect_size: [180, 96], bestfit: true, min_size: 11, max_size: 15 });
+    b.text(`${n}/Chip`, "", { size: 15, bold: true, color: C.white, alignment: 4, anchor: "middle-right", pos: [-8, 0], rect_size: [56, 44], bestfit: true, min_size: 11, max_size: 15, ...outline });
   }
   k.inner("SkillWin/DescBox", "bottom-left", [30, 110], [700, 120], "win_content");
   b.text("SkillWin/DescBox/Desc", "", { size: 16, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [672, 114] });
