@@ -1213,6 +1213,12 @@ script ShadowUnit extends AttackComponent
                     -- 부식(약화 오오라): 주변 몬스터의 모든 저항을 깎는다
                     for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, myPos, aura.radius)) do m:ReceiveAura("corrode", aura.amount) end
                 else
+                    -- 플레이어도 받는다 (10-24 사용자 — 주인·파티원 등 반경 안 모든 플레이어)
+                    for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, myPos, aura.radius)) do
+                        ---@type PlayerStats
+                        local ps = p:GetComponent("script.PlayerStats")
+                        if ps ~= nil then ps:ReceiveAura(aura.effect, aura.amount) end
+                    end
                     for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
                         -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
                         ---@type ShadowUnit

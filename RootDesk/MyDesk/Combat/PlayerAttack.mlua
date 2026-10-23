@@ -599,6 +599,12 @@ script PlayerAttack extends AttackComponent
         if monster ~= nil and stats ~= nil then dmg = dmg * _GameConst:LevelGapDealt(stats.Level, monster.Level) end
         -- 분노의 신전: 주는 피해 +25%
         if stats ~= nil then dmg = dmg * (1 + 0.25 * stats:ShrineBonus("fury")) end
+        -- 그림자 오오라 (10-24 사용자: 플레이어에게도): 광기 피해 · 냉혹 치명타 (×1.5)
+        if stats ~= nil and monster ~= nil then
+            dmg = dmg * stats:AuraMult("dmg")
+            local crit = stats:AuraAmount("crit")
+            if crit > 0 and _UtilLogic:RandomDouble() < crit / 100 then dmg = dmg * 1.5 end
+        end
         -- 결투(PvP): 플레이어 대상 피해는 1/4 (D2도 PvP 피해를 크게 줄인다) × 상대에게 건 낙인. 내가 쇠약·쇠퇴에 걸렸으면 덜 들어간다
         if stats ~= nil then dmg = dmg * stats:PvpDealtMult() end
         if isvalid(defender.PlayerComponent) then

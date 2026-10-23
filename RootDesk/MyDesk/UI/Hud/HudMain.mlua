@@ -240,7 +240,7 @@ script HudMain extends Logic
         local map = player.CurrentMap
         if not isvalid(map) then return end
         local units = map:GetChildComponentsByTypeName("script.ShadowUnit", true)
-        local mine = {}
+        local mine = { _Util:Pos2(player) }   -- 나도 그림자 오오라를 받는다 (10-24)
         for _, c in ipairs(units) do
             ---@type ShadowUnit
             local u = c
@@ -266,13 +266,13 @@ script HudMain extends Logic
         for _, effect in ipairs({ "dmg", "haste", "move", "guard", "regen", "resist", "thorns", "crit", "corrode" }) do
             local b = best[effect]
             if b ~= nil then
-                local whom = effect == "corrode" and ("반경 %g 안 적") or ("반경 %g 안 소환수")
+                local whom = effect == "corrode" and ("반경 %g 안 적") or ("반경 %g 안 나와 소환수")
                 table.insert(list, { key = "aura_" .. effect, label = string.match(b.v.name, "^(%S+)") or b.v.name, color = _GameConst:AuraColor(effect), left = -1,
                     desc = string.format("%s · " .. whom .. " %s (%s)", b.v.label, b.v.radius, b.v.text, b.from) })
             end
         end
         -- 근처 다른 플레이어의 호령은 내 소환수에도 닿는다 (ShadowUnit.PartyAuraTick · 반경 6)
-        if #mine > 0 then
+        if #mine > 1 then   -- 나 말고 소환수가 있을 때 (호령은 소환수에게만)
             local me = _Util:Pos2(player)
             for _, p in ipairs(_UserService:GetUsersByMapComponent(map.MapComponent) or {}) do
                 if p ~= player and isvalid(p) and (_Util:Pos2(p) - me):Magnitude() <= 6 then
