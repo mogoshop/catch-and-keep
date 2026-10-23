@@ -433,7 +433,11 @@ function genQuests() {
     "        self.Voices = {}",
     ...load("npcs").map((x) => `        self.Voices[${s(x.kind)}] = ${s(x.voice || "haera")}`),
     "        self.Portraits = {}",
-    ...load("npcs").filter((x) => x.portrait).map((x) => `        self.Portraits[${s(x.kind)}] = ${s(x.portrait)}`)].join("\n");
+    ...load("npcs").filter((x) => x.portrait).map((x) => `        self.Portraits[${s(x.kind)}] = ${s(x.portrait)}`),
+    // 10-23: 그림(스프라이트)인 NPC 서 있는 모습 — 대화창 초상화를 thumbnail:// 대신 원본으로 (썸네일은 작게 줄인 미리보기라 흐렸다)
+    "        self.SpriteStands = {}",
+    ...[...new Set([...load("npcs").map((x) => x.stand), ...load("ui_icons").filter((x) => /^npc_/.test(x.key)).map((x) => x.ruid)].filter((r) => /^[0-9a-f]{32}$/.test(r || "")))]
+      .map((r) => `        self.SpriteStands[${s(r)}] = true`)].join("\n");
   const extra = `
     method any Get(integer index)
         self:Ensure()
@@ -464,6 +468,12 @@ function genQuests() {
         -- 대화창 초상화로 쓸 ui_icons 키 (npcs.csv portrait — 주요 인물만 가슴 위 그림, 없으면 "" = 서 있는 그림)
         self:Ensure()
         return self.Portraits[kind] or ""
+    end
+
+    method boolean IsSpriteStand(string ruid)
+        -- 이 RUID가 그림 한 장(스프라이트)인 NPC 서 있는 모습인가 (애니메이션 클립은 thumbnail://이 필요하다)
+        self:Ensure()
+        return self.SpriteStands[ruid] == true
     end
 
     method string GiverName(string giver)
@@ -524,7 +534,7 @@ function genQuests() {
         return math.floor(share * need(to) + 0.5)
     end
 `;
-  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n    property table Portraits = {}\n"));
+  write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n    property table Portraits = {}\n    property table SpriteStands = {}\n"));
 }
 
 // ── NamedData: 곁가지 끝방의 이름 있는 적 · 봉인 상자 · 의식의 주인 ──
