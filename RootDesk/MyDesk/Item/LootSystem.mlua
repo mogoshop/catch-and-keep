@@ -26,9 +26,13 @@ script LootSystem extends Logic
         if _UtilLogic:RandomDouble() < pickF - picks then picks = picks + 1 end
         local wNone, wGold, wPot, wItem, wRune = d.none, d.gold, d.potion, d.item, d.rune
         if diff ~= nil then
+            local others = wNone + wGold + wPot + wRune
             wNone = wNone * (diff.dropNoneMul or 1)
             wGold = wGold * (diff.dropGoldMul or 1)
             wRune = wRune * (diff.dropRuneMul or 1)
+            -- 골드·룬 가중치가 커진 만큼 장비 몫이 줄지 않게 장비 가중치도 같은 비율로 (보스는 「없음」이 작아 지옥 장비가 보통보다 적었다 · 10-24 출시 점검)
+            local othersNow = wNone + wGold + wPot + wRune
+            if others > 0 and othersNow > others then wItem = wItem * othersNow / others end
         end
         _ItemData.DropDiff = diffIndex
         local goldMult = 1

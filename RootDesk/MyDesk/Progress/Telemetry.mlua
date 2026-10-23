@@ -99,6 +99,7 @@ script Telemetry extends Logic
         local s = self:Session(e.player)
         if s == nil then return end
         s.lv = e.level
+        if #s.levels >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.levels, { lv = e.level, min = self:Minutes(s), map = self:MapName(e.player) })
         log(string.format("[TEL] levelup uid=%s lv=%d min=%.1f map=%s", s.uid, e.level, self:Minutes(s), self:MapName(e.player)))
     end
@@ -108,6 +109,7 @@ script Telemetry extends Logic
         local s = self:Session(e.player)
         if s == nil then return end
         local cause = e.cause or "?"
+        if #s.deaths >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.deaths, { lv = _GameConst:LevelOf(e.player), map = self:MapName(e.player), cause = cause, min = self:Minutes(s) })
         log(string.format("[TEL] death uid=%s lv=%d map=%s cause=%s min=%.1f", s.uid, _GameConst:LevelOf(e.player), self:MapName(e.player), cause, self:Minutes(s)))
     end
@@ -147,6 +149,7 @@ script Telemetry extends Logic
     method void OnQuest(table e)
         local s = self:Session(e.player)
         if s == nil then return end
+        if #s.quests >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.quests, { index = e.index or 0, lv = _GameConst:LevelOf(e.player), min = self:Minutes(s) })
         log(string.format("[TEL] quest uid=%s index=%s lv=%d min=%.1f", s.uid, tostring(e.index), _GameConst:LevelOf(e.player), self:Minutes(s)))
     end

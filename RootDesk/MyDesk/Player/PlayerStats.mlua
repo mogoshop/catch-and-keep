@@ -202,13 +202,13 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method integer ExpForKill(integer monsterLevel, integer grade)
-        -- killExpCoef(15) × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 감쇠, 10 이상이면 5%, 5레벨 넘게 높아도 감쇠
+        -- killExpCoef(15) × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 레벨마다 15%씩 감쇠(최저 5%), 5레벨 넘게 높아도 감쇠
         local gradeMult = 1
         if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
         local base = _GameData.killExpCoef * (monsterLevel ^ 1.3) * gradeMult
         local diff = self.Level - monsterLevel
-        if diff >= 10 then base = base * 0.05
-        elseif diff >= 5 then base = base * (1 - (diff - 4) * 0.15) end
+        -- 낮은 몬스터 감쇠: 5레벨부터 레벨마다 15%씩, 최저 5% (예전엔 9 → 10에서 25% → 5%로 한 번에 떨어졌다 · 10-24 출시 점검)
+        if diff >= 5 then base = base * math.max(0.05, 1 - (diff - 4) * 0.15) end
         -- 너무 높은 몬스터(내 레벨 +5 초과)는 경험치를 (내 레벨+5)/몬스터 레벨로 줄인다 — 높은 난이도로 건너뛰어 레벨을 날로 먹지 않게
         local grace = _GameConst.ExpHighMonsterGrace
         if monsterLevel > self.Level + grace then base = base * (self.Level + grace) / monsterLevel end
@@ -481,7 +481,7 @@ script PlayerStats extends Component
         if _UtilLogic.ServerElapsedSeconds < self.RootUntil then mult = 0 end
         local want = self.BaseSpeed * mult
         if math.abs(movement.InputSpeed - want) > 0.001 then
-            if movement.InputSpeed < want * 0.9 then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
+            if movement.InputSpeed < want * 0.9 and not Environment:IsPublishedPlay() then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
             movement.InputSpeed = want
         end
     end

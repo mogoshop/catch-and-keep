@@ -369,7 +369,8 @@ script SkillBook extends Component
         end
         if id == "extract_mastery" then return string.format("추출 확률 +%g%%p", _GameData.extractMasteryPerLv * level * 100) end
         if id == "deploy_expand" then
-            local bonus = _ShadowConfig:GetDeploySkillBonus(level)
+            -- 캐릭터 레벨이 모자라 아직 효과가 없는 랭크는 빼고 보여 준다 (실제 한도 GetDeployBonus와 같은 규칙)
+            local bonus = _ShadowConfig:GetDeploySkillBonus(self:NodeUsable(id, level, stats.Level))
             ---@type ShadowCommander
             local cmd = self.Entity:GetComponent("script.ShadowCommander")
             local limit = cmd ~= nil and cmd:GetDeployLimit() or _ShadowConfig:GetDeployLimit(bonus + stats.BonusDeploy, stats.BonusShadowCap)
@@ -620,7 +621,7 @@ script SkillBook extends Component
                 if not stats:SpendMana(cost) then return end
                 self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
                 self:PresentCast(id, target - me, userId)
-                log("[VRF] cast committed " .. id .. " mana=" .. tostring(cost))
+                if not Environment:IsPublishedPlay() then log("[VRF] cast committed " .. id .. " mana=" .. tostring(cost)) end   -- 시전·추출·소환마다 찍히므로 출시 서버에서는 끈다
             end
             local canCommit = function()
                 return epoch == self.CastEpoch and self.PendingCasts[id] == true and _Util:IsAlive(self.Entity) and stats.Mana >= cost
