@@ -304,7 +304,8 @@ def kill_exp(pl, ml, grade):
     if pl < C["earlyExpLevel"]:
         b *= C["earlyExpMult"]
     if ml > C["expHighLevelFrom"]:
-        b *= 1 + C["expHighLevelPct"] / 100 * (ml - C["expHighLevelFrom"])
+        top = C.get("expHighLevelTo", 999) or 999
+        b *= 1 + C["expHighLevelPct"] / 100 * (min(ml, top) - C["expHighLevelFrom"])
     return b
 
 
