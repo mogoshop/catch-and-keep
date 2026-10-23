@@ -26,6 +26,10 @@ script DarkVision extends Logic
     property number FadeSeconds = 3.5
     property boolean Awake = false          -- 재의 왕이 깨어난 4장 (AshAwakening): 하늘이 더 붉고, 심장 박동처럼 밝기가 뛴다
     property number BeatPeriod = 2.6        -- 박동 한 번(초)
+    -- 10-23 2차 (사용자: 빨간 하늘이 잘 안 보인다): 전체 조명은 더 짙은 핏빛 + 조금 밝게, 내 주변 빛도 붉게 물든다 (어두운 맵이라 화면 대부분이 내 주변 빛)
+    property Color AwakeColor = Color(1, 0.14, 0.08, 1)
+    property number AwakeAmbientAdd = 0.06  -- 깨어난 하늘 밝기 가산 (붉은빛이 보이게)
+    property Color AwakePlayerLight = Color(1, 0.58, 0.46, 1)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -148,10 +152,12 @@ script DarkVision extends Logic
         local base = (info ~= nil and info.ambient ~= nil and info.ambient > 0) and info.ambient or amb.Ambient
         local ambient = math.max(base, _GameData.darkMinAmbient)
         local color = amb.AmbientColor
-        if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
-        if self:AwakeHere(map) then color = Color(1, 0.3, 0.22, 1) end                   -- 재의 왕이 깨어난 뒤: 핏빛 하늘 (AshAwakening)
         -- 심도는 전용 조명: 일반 맵 하한보다 어둡고 보랏빛이다 (횃불·내 주변 빛으로 길을 읽는다)
         local depth = map:GetComponent("script.DepthDirector")
+        -- 이 맵 액트의 최종 보스를 쓰러뜨렸는지 먼저 본다 (붉은 하늘 여부 AwakeHere가 이 값을 쓴다)
+        self.Cleared = depth == nil and self:ActCleared(player, map)
+        if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
+        if self:AwakeHere(map) then color = self.AwakeColor end                          -- 재의 왕이 깨어난 뒤: 핏빛 하늘 (AshAwakening)
         if depth ~= nil then
             ambient = _GameData.depthAmbient
             color = Color(0.62, 0.48, 0.9, 1)
@@ -159,7 +165,6 @@ script DarkVision extends Logic
         self.DarkAmbient = ambient
         self.DarkColor = color
         self.FadeFrom = 0
-        self.Cleared = depth == nil and self:ActCleared(player, map)
         if self.Cleared then
             local lit = self:ClearedLight(1)
             ambient = lit.ambient
@@ -286,12 +291,15 @@ script DarkVision extends Logic
         local map = self.CurrentMap
         if not self.Active or not isvalid(map) or map:GetComponent("script.DepthDirector") ~= nil then return end
         local color = self.DarkColor
-        if self:AwakeHere(map) then color = Color(1, 0.3, 0.22, 1)
+        if self:AwakeHere(map) then color = self.AwakeColor
         elseif _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end
         self.DarkColor = color
+        -- 내 주변 빛 색도 바꾼다 (재의 왕을 쓰러뜨려 밝아지는 중이어도 붉은 빛은 걷힌다)
+        self:ApplyPlayerLight(_UserService.LocalPlayer)
         if self.Cleared then return end
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, self.DarkAmbient))
+        local ambient = self.DarkAmbient + (self:AwakeHere(map) and self.AwakeAmbientAdd or 0)
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
     end
 
     @ExecSpace("ClientOnly")
@@ -300,8 +308,9 @@ script DarkVision extends Logic
         if not self:AwakeHere(map) or self.FadeFrom > 0 then return end
         local t = (_UtilLogic.ElapsedSeconds % self.BeatPeriod) / self.BeatPeriod
         local beat = math.max(0, 1 - math.abs(t - 0.14) / 0.16) + 0.6 * math.max(0, 1 - math.abs(t - 0.42) / 0.16)
-        local ambient = self.DarkAmbient * 0.9 + 0.08 * beat
-        local color = Color(1, 0.3 - 0.08 * beat, 0.22 - 0.06 * beat, 1)
+        local ambient = self.DarkAmbient + self.AwakeAmbientAdd * 0.6 + 0.13 * beat
+        local c = self.AwakeColor
+        local color = Color(1, math.max(0, c.g - 0.08 * beat), math.max(0, c.b - 0.06 * beat), 1)
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
     end
@@ -317,7 +326,8 @@ script DarkVision extends Logic
         end
         local storm = math.max(self.MapStorm, self.BossStorm)
         local r = self.BaseRadius * (1 - storm) * (1 - self.CurseDark)
-        self:Attach(player, Color(1, 0.92, 0.8, 1), 1, r * 0.6, r)
+        local tint = self:AwakeHere(self.CurrentMap) and self.AwakePlayerLight or Color(1, 0.92, 0.8, 1)
+        self:Attach(player, tint, 1, r * 0.6, r)
         if storm > 0 and self.DustSerial == 0 then
             self.DustSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.DustStorm, player, Vector3(0, 0.6, 0), 0, Vector3(4, 3, 1), true, { Color = Color(0.95, 0.8, 0.55, 0.35) })
         elseif storm <= 0 and self.DustSerial ~= 0 then

@@ -934,6 +934,20 @@ script HudMap extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void ShowAlert(string title, string line, number seconds)
+        -- 맵 배너 자리(위쪽 가운데)에 급한 사건 안내: 붉은 제목 + 한 줄 (재의 왕이 깨어난 4장 — AshAwakening). 맵 배너처럼 끝에 흐려진다
+        _UIKit:SetText("Banner/Title", _UIKit:Colored("#FF5A46", title))
+        _UIKit:SetText("Banner/Sub", "")
+        _UIKit:SetEnabled("Banner/Sub", false)
+        _UIKit:SetText("Banner/FlavorBg/Text", line)
+        _UIKit:SetEnabled("Banner/FlavorBg", line ~= "")
+        _UIKit:SetEnabled("Banner", true)
+        self.BannerLength = seconds
+        self.BannerUntil = _UtilLogic.ElapsedSeconds + seconds
+        self:SetBannerAlpha(1)
+    end
+
+    @ExecSpace("ClientOnly")
     method void SetBannerAlpha(number a)
         for _, path in ipairs({ "Banner/Title", "Banner/Sub", "Banner/FlavorBg/Text" }) do
             local e = _UIKit:Get(path)

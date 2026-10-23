@@ -55,8 +55,9 @@ function desiredEntities(d, maps, ctx) {
     const prev = i === 0 ? town : fields[i - 1];
     const next = i === fields.length - 1 ? town : fields[i + 1];
     place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
-    // 봉인 문 (10-23): 다음 맵이 gate 의뢰의 보스 맵이면 그 의뢰의 문지기를 쓰러뜨려야 지난다 (WarpGate.SealGate)
-    const sealQ = (ctx.quests || []).find((q) => q.kind === "gate" && q.map === next.id && q.gate);
+    // 봉인 문 (10-23): 이 맵이 gate 의뢰의 문지기 맵(map1)이면 앞으로 가는 문은 그 문지기를 쓰러뜨려야 지난다 (WarpGate.SealGate).
+    // 문지기 맵과 보스 맵 사이에 맵이 더 있어도(심연의 문 3층 → 재의 회랑 · 심장의 다리 · 옥좌의 전실 → 옥좌) 문지기 맵을 나가는 문 하나만 잠근다
+    const sealQ = (ctx.quests || []).find((q) => q.kind === "gate" && q.map1 === d.id && q.gate);
     const nextGate = gate(next.id, next === town ? townArrival : arriveLeft(next), next.name);
     if (sealQ) nextGate.SealGate = sealQ.gate;
     place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": nextGate });

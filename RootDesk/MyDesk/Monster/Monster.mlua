@@ -39,6 +39,7 @@ script Monster extends Component
     property string Arch = ""                -- 몬스터 유형 (archetypes.csv: beast·swarm·brute·guard·ranged·assassin·berserker·soldier)
     @Sync
     property boolean Enraged = false         -- 광전사: 생명 절반 아래에서 광폭 (공격 속도 +40% · 이동 +20%)
+    property number AwakenMul = 1            -- 재의 왕이 깨어난 4장의 군세 (AshAwakening): 이동·공격 속도 배율 (1 = 평소)
     property number BlockFxAt = 0
     property integer BlockCount = 0
 
@@ -130,7 +131,7 @@ script Monster extends Component
 
     @ExecSpace("ServerOnly")
     method void RefreshSpeed()
-        -- 기본 속도 × 수식어(신속한) × 상태(냉기 둔화)
+        -- 기본 속도 × 수식어(신속한) × 상태(냉기 둔화) × 군세 각성
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1
@@ -139,7 +140,7 @@ script Monster extends Component
         local status = self:Status()
         if status ~= nil then mult = mult * status:SpeedMult() end
         if self.Enraged then mult = mult * 1.2 end
-        movement.InputSpeed = self.BaseSpeed * mult
+        movement.InputSpeed = self.BaseSpeed * mult * self.AwakenMul
     end
 
     -- ───────── 창구 (다른 시스템은 이것만 쓴다) ─────────
@@ -194,7 +195,7 @@ script Monster extends Component
     end
 
     method number GetAttackSpeedMultiplier()
-        -- 질풍 오오라 × 형제 분노(+30%)
+        -- 질풍 오오라 × 형제 분노(+30%) × 군세 각성
         local m = 1
         local status = self:Status()
         if status ~= nil then m = status:AuraMult("haste") end
@@ -202,7 +203,7 @@ script Monster extends Component
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil and bp.RageMult > 1 then m = m * 1.3 end
         if self.Enraged then m = m * 1.4 end
-        return m
+        return m * self.AwakenMul
     end
 
     -- ───────── 몬스터 유형 (archetypes.csv · docs/design/29) ─────────
