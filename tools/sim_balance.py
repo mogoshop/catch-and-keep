@@ -226,9 +226,9 @@ def build(prof, L, act=1, diff=0):
             if lv >= C["pierceTier%dLv" % t]: return C["pierceHits%d" % t]
         return C["pierceHits1"]
     if rk.get("bone_shard"):
-        spell += (10 + 6 * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.5, pierce_cap(rk["bone_shard"])) / 0.75 * 0.25
+        spell += (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.5, pierce_cap(rk["bone_shard"])) / 0.75 * 0.25
     if rk.get("bone_spear"):
-        spell += (30 + 12 * (rk["bone_spear"] - 1)) * scale * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
+        spell += 1.3 * (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_spear"] + 7 - 1)) * scale   # 공통 곡선 (뼈 창 Lv15 → 가상 +7 · 배율 1.3 · SkillBook.DamageCurve) * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
     dps = {
         "그림자": ((n_sh - n_el) * sh_n + n_el * sh_e) / sh_iv,
         "해골": n_sk * sk_atk / C["skeletonCooldown"],
