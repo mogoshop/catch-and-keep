@@ -1,6 +1,7 @@
 -- 함께 하는 규칙 (서버, 1초마다) — docs/design/21 (10-13): 채널당 4명이 같은 맵을 함께 쓸 때
 --   · 인원 보정 (D2 players X): 맵 안 인원 1명당 몬스터 생명 +coopHpPerPlayer. 처치 경험치·드롭은 PlayerStats.ExpForKill·LootSystem이 ExpMul·DropBonus로
 --   · 늦게 온 사람 (M1): 보스가 쓰러져 있는데 그 보스 의뢰가 남은 사람이 맵에 있으면 남은 대기를 bossQuestRespawnSec로 줄인다
+--     10-23 사용자: 디아블로 2와 똑같이 — bossQuestRespawnSec < 0 이면 끈다 (그 방에서 쓰러진 보스는 다시 나오지 않는다 · 새 게임을 연다)
 --   · 무임승차 방지: 보스·이름 있는 적이 있던 맵이 bossResetEmptySec 동안 비면 생명·기여자를 처음으로
 --   · 벽 속에 들어간 몬스터는 가장 가까운 바닥으로 (Unstick)
 -- 채널(월드 인스턴스)마다 따로 돈다 (@Logic). 심도 던전 인스턴스 방도 그 방 안에서만 센다.
@@ -100,6 +101,7 @@ script CoopRules extends Logic
     @ExecSpace("ServerOnly")
     method void HurryForQuest(Entity map, table players)
         -- 쓰러진 보스가 있는 맵에 그 보스 의뢰가 남은 사람이 있으면 남은 대기를 줄인다
+        if _GameData.bossQuestRespawnSec < 0 then return end
         if _BossRespawn:MapRemaining(map.Name) <= _GameData.bossQuestRespawnSec then return end
         local base = _GameConst:BaseMapName(map.Name)
         for _, p in ipairs(players) do

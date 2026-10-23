@@ -428,22 +428,58 @@ function buildGameHud() {
   k.btn("Request/BtnNo", "거절", { anchor: "bottom-center", pos: [100, 20], rect_size: [180, 62] });
 
   // ── 거래 창 ──
-  // 10-23: 상대 물건을 누르면 아래 설명 칸에 옵션·내 장비 비교 (옵션을 못 봐 사기를 막을 수 없었다) · 골드 ±100/±1천/±1만 · 제목에 상대 이름
-  k.frame("TradeWin", "middle-left", [30, 10], [660, 940], "거래");
-  b.text("TradeWin/MyTitle", "내 제안 (누르면 회수)", { size: 18, color: C.white, anchor: "top-left", pos: [34, -78], rect_size: [292, 30], ...outline });
-  b.text("TradeWin/TheirTitle", "상대 제안 (누르면 옵션)", { size: 18, color: C.gold, anchor: "top-left", pos: [340, -78], rect_size: [292, 30], ...outline });
-  for (let i = 1; i <= 8; i++) {
-    k.btn(`TradeWin/My${i}`, "", { anchor: "top-left", pos: [30, -112 - (i - 1) * 46], rect_size: [292, 42], font_size: 15 });
-    k.btn(`TradeWin/Their${i}`, "", { anchor: "top-left", pos: [338, -112 - (i - 1) * 46], rect_size: [292, 42], font_size: 15 });
+  // 10-23 4차 (사용자: 글자 2열 목록은 가독성이 떨어지고 모바일에 맞지 않는다 · 인벤토리처럼 위아래 · 금액은 오른쪽 아래 고정, 누르면 직접 입력):
+  // 소지품 창(가운데 1280×960)과 같은 크기의 창 하나로 — 왼쪽 위부터 상대 제안 8칸 · 내 제안 8칸 · 내 가방 6×5(2쪽), 오른쪽 = 고른 물건 설명 · 올리기/되돌리기 · 확인 · 취소.
+  // 거래 중에는 소지품 창을 따로 열지 않는다 (가운데 큰 창이라 거래창을 덮었다)
+  if (b.find("TradeWin")) b.remove("TradeWin");
+  k.frame("TradeWin", "middle-center", [0, 0], [1280, 960], "거래");
+  // 소지품 창처럼 바탕을 불투명하게 (뒤의 미니맵·의뢰 글이 비쳤다)
+  b.patchComponent("TradeWin", "MOD.Core.SpriteGUIRendererComponent", { Color: { r: 0.05, g: 0.045, b: 0.06, a: 1 } });
+  const tradeRow = (side, y) => {
+    k.inner(`TradeWin/${side}Row`, "top-left", [24, y], [628, 100]);
+    for (let i = 0; i < 8; i++) {
+      const slot = `TradeWin/${side}Row/S${i + 1}`;
+      k.slot(slot, { anchor: "top-left", pos: [8 + i * 77, -8], rect_size: [74, 84] }, 54);
+      b.text(`${slot}/Count`, "", { size: 14, color: C.white, alignment: 8, anchor: "bottom-right", pos: [-4, 2], rect_size: [50, 20], ...outline });
+    }
+  };
+  b.text("TradeWin/TheirLabel", "상대 제안", { size: 21, color: C.gold, alignment: 3, anchor: "top-left", pos: [28, -78], rect_size: [620, 32], ...outline });
+  tradeRow("Their", -112);
+  // 골드 = 소지품 창과 같은 금화 아이콘 + 금액 (10-23 사용자: 「골드」 글자 대신 아이콘). 확인 상태는 그 왼쪽
+  const GOLD_ICON = "94b7d89e2f514e269e04250dd4b7d989";
+  const goldIcon = (name, y) => b.sprite(name, { anchor: "top-left", pos: [368, y], rect_size: [36, 36], image_ruid: GOLD_ICON, color: "#FFFFFF", sprite_type: 0 });
+  b.text("TradeWin/TheirState", "", { size: 20, color: C.white, alignment: 5, anchor: "top-left", pos: [24, -216], rect_size: [330, 40], ...outline });
+  goldIcon("TradeWin/TheirGoldIcon", -218);
+  // 상대 금액도 내 골드 칸과 같은 상자 (고칠 수는 없다)
+  b.panel("TradeWin/TheirGoldBox", { anchor: "top-left", pos: [412, -214], rect_size: [240, 44], color: { r: 0.02, g: 0.02, b: 0.03, a: 0.95 }, sprite_type: 1 });
+  k.rim("TradeWin/TheirGoldBox", "slot_frame");
+  b.text("TradeWin/TheirGoldBox/TheirGold", "", { size: 22, color: "#F4ED83", alignment: 5, anchor: "middle-center", pos: [-7, 0], rect_size: [212, 40], ...outline });
+  b.text("TradeWin/MyLabel", "내 제안", { size: 21, color: C.white, alignment: 3, anchor: "top-left", pos: [28, -256], rect_size: [300, 32], ...outline });
+  tradeRow("My", -290);
+  b.text("TradeWin/MyState", "", { size: 20, color: C.white, alignment: 5, anchor: "top-left", pos: [24, -396], rect_size: [330, 40], ...outline });
+  goldIcon("TradeWin/MyGoldIcon", -398);
+  // 내 골드 칸: 글자색은 part() 뒤에 둬야 한다 (part의 color가 글자색을 검정으로 덮었다)
+  b.textInput("TradeWin/MyGold", { anchor: "top-left", pos: [412, -394], rect_size: [240, 44], placeholder: "골드 입력", char_limit: 9, line_type: 0, font_size: 22, ...part("win_content"), color: "#F4ED83", bg_color: { r: 0.02, g: 0.02, b: 0.03, a: 0.95 }, alpha: 0.95, sprite_type: 1 });
+  b.patchComponent("TradeWin/MyGold", "MOD.Core.TextGUIRendererComponent", { HorizontalAlignment: 2, Padding: { left: 0, right: 14, top: 0, bottom: 0 }, OutlineWidth: 0.2, OutlineColor: { r: 0, g: 0, b: 0, a: 1 } });
+  b.patchComponent("TradeWin/MyGold", "MOD.Core.TextGUIRendererInputComponent", { PlaceHolderColor: { r: 0.66, g: 0.62, b: 0.55, a: 0.8 } });
+  k.rim("TradeWin/MyGold", "slot_frame");
+  b.text("TradeWin/BagLabel", "내 가방 · 누르면 설명, 「올리기」로 제안", { size: 19, color: C.dim, alignment: 3, anchor: "top-left", pos: [44, -448], rect_size: [464, 30], ...outline });
+  k.btn("TradeWin/BagPrev", "◀", { anchor: "top-left", pos: [520, -444], rect_size: [60, 40], font_size: 18 });
+  k.btn("TradeWin/BagNext", "▶", { anchor: "top-left", pos: [592, -444], rect_size: [60, 40], font_size: 18 });
+  k.inner("TradeWin/Bag", "top-left", [24, -490], [628, 444]);
+  for (let i = 0; i < 30; i++) {
+    const col = i % 6, row = Math.floor(i / 6);
+    const slot = `TradeWin/Bag/B${i + 1}`;
+    k.slot(slot, { anchor: "top-left", pos: [10 + col * 102, -10 - row * 86], rect_size: [96, 80] }, 56);
+    b.text(`${slot}/Count`, "", { size: 14, color: C.white, alignment: 8, anchor: "bottom-right", pos: [-4, 2], rect_size: [50, 20], ...outline });
   }
-  k.inner("TradeWin/Detail", "top-left", [30, -486], [600, 250]);
-  b.text("TradeWin/Detail/Text", "", { size: 15, color: C.white, alignment: 0, anchor: "middle-center", pos: [0, 0], rect_size: [576, 234], ...outline });
-  b.text("TradeWin/Gold", "", { size: 17, color: "#F4ED83", alignment: 6, anchor: "bottom-left", pos: [34, 150], rect_size: [592, 48], ...outline });
-  [["BtnGoldM10000", "-1만"], ["BtnGoldM1000", "-1천"], ["BtnGoldMinus", "-100"], ["BtnGoldPlus", "+100"], ["BtnGoldP1000", "+1천"], ["BtnGoldP10000", "+1만"]].forEach(([n, t], i) => {
-    k.btn(`TradeWin/${n}`, t, { anchor: "bottom-left", pos: [30 + i * 101, 96], rect_size: [95, 48], font_size: 17 });
-  });
-  k.ok("TradeWin/BtnConfirm", "확인", { anchor: "bottom-left", pos: [30, 24], rect_size: [292, 62], font_size: 20 });
-  k.btn("TradeWin/BtnCancel", "취소", { anchor: "bottom-left", pos: [338, 24], rect_size: [292, 62], font_size: 20 });
+  k.inner("TradeWin/Info", "top-right", [-24, -78], [588, 744]);
+  k.slot("TradeWin/Info/Pick", { anchor: "top-left", pos: [18, -18], rect_size: [120, 120] }, 88);
+  b.text("TradeWin/Info/Head", "", { size: 22, color: C.gold, alignment: 3, anchor: "top-left", pos: [154, -18], rect_size: [416, 120], ...outline });
+  b.text("TradeWin/Info/Text", "", { size: 19, color: C.white, alignment: 0, anchor: "top-left", pos: [18, -152], rect_size: [552, 492], ...outline });
+  k.btn("TradeWin/Info/BtnAct", "올리기", { anchor: "bottom-center", pos: [0, 16], rect_size: [260, 72], font_size: 22 });
+  k.ok("TradeWin/BtnConfirm", "확인", { anchor: "bottom-right", pos: [-326, 28], rect_size: [286, 88], font_size: 24 });
+  k.btn("TradeWin/BtnCancel", "취소", { anchor: "bottom-right", pos: [-24, 28], rect_size: [286, 88], font_size: 24 });
 
   // ── 웨이포인트 창 ──
   k.frame("WpWin", "middle-center", [0, 60], [600, 700], "웨이포인트");

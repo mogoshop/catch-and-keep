@@ -1,5 +1,6 @@
--- 거래 창: 거래가 성립하면 자동으로 열리고 소지품 창도 함께 연다 (가방 칸을 누르면 올라감 — InventoryWindow).
--- 내 칸을 누르면 회수, 상대 칸을 누르면 아래 설명 칸에 옵션과 내 장비 비교 (10-23), 골드 ±100·±1천·±1만, 양쪽 확인 시 교환. 닫기 = 거래 취소.
+-- 거래 창: 거래가 성립하면 자동으로 열린다. 소지품 창과 같은 크기의 창 하나로 다 한다 (소지품 창을 따로 열지 않는다).
+-- 10-23 4차: 왼쪽 위부터 상대 제안 8칸 · 내 제안 8칸 · 내 가방 6×5 (◀▶ 두 쪽), 오른쪽 = 고른 물건 설명 · 올리기/되돌리기 · 확인 · 취소.
+-- 칸을 누르면 설명(상대 물건은 내 장비와 비교). 골드는 각 제안 줄 오른쪽 아래 금화 아이콘 옆 — 내 골드 칸을 눌러 바로 숫자를 고친다. 닫기 = 거래 취소.
 @Logic
 script TradeWindow extends Logic
 
@@ -8,35 +9,36 @@ script TradeWindow extends Logic
     property integer TimerId = 0
     property integer SeenRevision = 0
     property number ChangedAt = -100
-    property integer Inspect = 0               -- 설명 칸에 보이는 상대 물건 칸 (0 = 없음)
+    property string PickSide = ""              -- 설명 칸에 보이는 물건: "their" / "my" / "" (없음)
+    property integer PickIndex = 0
+    property integer BagPage = 0               -- 내 가방 쪽 (0 = 1~30, 1 = 31~60)
+    property string ShownGold = ""             -- 내 골드 칸에 마지막으로 쓴 글자 (고치는 중에는 덮어쓰지 않는다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:SetEnabled(self.Win, false)
-        -- 설명 칸: 옵션·비교가 길면 칸 안에 들어가게 글자를 줄인다 (넘쳐 골드 줄과 겹쳤다)
-        local detail = _UIKit:Get(self.Win .. "/Detail/Text")
-        if isvalid(detail) and detail.TextGUIRendererComponent ~= nil then
-            local fit = detail.TextGUIRendererComponent
+        -- 설명이 길면 칸 안에 들어가게 글자를 줄인다
+        local info = _UIKit:Get(self.Win .. "/Info/Text")
+        if isvalid(info) and info.TextGUIRendererComponent ~= nil then
+            local fit = info.TextGUIRendererComponent
             fit.BestFit = true
-            fit.MinSize = 11
-            fit.MaxSize = 15
+            fit.MinSize = 14
+            fit.MaxSize = 21
         end
         for i = 1, 8 do
             local index = i
-            _UIKit:Connect(self.Win .. "/My" .. tostring(i), function()
-                local t = self:Trade()
-                if t ~= nil and t.Partner ~= "" then t:RequestRetract(index) end
-            end)
-            _UIKit:Connect(self.Win .. "/Their" .. tostring(i), function()
-                self.Inspect = index
-                self.RenderKey = "#"
-                self:Poll()
-            end)
+            _UIKit:Connect(self.Win .. "/TheirRow/S" .. tostring(i), function() self:Pick("their", index) end)
+            _UIKit:Connect(self.Win .. "/MyRow/S" .. tostring(i), function() self:Pick("my", index) end)
         end
-        for _, g in ipairs({ { "BtnGoldM10000", -10000 }, { "BtnGoldM1000", -1000 }, { "BtnGoldMinus", -100 }, { "BtnGoldPlus", 100 }, { "BtnGoldP1000", 1000 }, { "BtnGoldP10000", 10000 } }) do
-            local delta = g[2]
-            _UIKit:Connect(self.Win .. "/" .. g[1], function() local t = self:Trade() if t ~= nil then t:RequestGold(delta) end end)
+        for i = 1, 30 do
+            local slot = i
+            _UIKit:Connect(self.Win .. "/Bag/B" .. tostring(i), function() self:Pick("bag", self.BagPage * 30 + slot) end)
         end
+        _UIKit:Connect(self.Win .. "/BagPrev", function() self:Page(-1) end)
+        _UIKit:Connect(self.Win .. "/BagNext", function() self:Page(1) end)
+        _UIKit:Connect(self.Win .. "/Info/BtnAct", function() self:Act() end)
+        local gold = _UIKit:Get(self.Win .. "/MyGold")
+        if isvalid(gold) then gold:ConnectEvent(TextInputEndEditEvent, function(ev) self:SetGold(ev.text) end) end
         _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm(t.TheirRevision) end end)
         _UIKit:Connect(self.Win .. "/BtnCancel", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
         _UIKit:Connect(self.Win .. "/BtnClose", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
@@ -55,6 +57,65 @@ script TradeWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void Pick(string side, integer index)
+        -- 칸을 눌렀다: 그 물건을 설명 칸에 (빈 칸이면 설명이 비고 안내가 나온다)
+        self.PickSide = side
+        self.PickIndex = index
+        self.RenderKey = "#"
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Page(integer delta)
+        -- 내 가방 쪽 넘기기 (가방 60칸 = 두 쪽)
+        local inv = self:Inv()
+        local pages = inv ~= nil and math.max(1, math.ceil(inv.BagSize / 30)) or 1
+        self.BagPage = (self.BagPage + delta) % pages
+        self.RenderKey = "#"
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Act()
+        -- 설명 칸 단추: 가방 물건은 올리기, 내 제안은 되돌리기
+        local t = self:Trade()
+        if t == nil or t.Partner == "" or self.PickIndex <= 0 then return end
+        if self.PickSide == "bag" then
+            local inv = self:Inv()
+            local seen = inv ~= nil and (inv:GetBagList()[self.PickIndex] or "") or ""
+            if seen == "" then return end
+            -- 누를 때 이 칸에 보이던 물건을 함께 보낸다 (서버가 같은 물건일 때만 올린다)
+            t:RequestOffer(self.PickIndex, seen)
+        elseif self.PickSide == "my" then
+            t:RequestRetract(self.PickIndex)
+        else
+            return
+        end
+        self.PickSide = ""
+        self.PickIndex = 0
+        self.RenderKey = "#"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetGold(string text)
+        -- 내 골드 칸을 고쳤다: 그 금액으로 맞춘다 (서버가 0 ~ 가진 골드로 자른다). 빈 칸이면 그대로 둔다
+        local t = self:Trade()
+        if t == nil or t.Partner == "" then return end
+        local digits = (string.gsub(text or "", "[^%d]", ""))
+        self.ShownGold = ""
+        self.RenderKey = "#"
+        if digits == "" then return end
+        local want = math.floor(tonumber(digits) or 0)
+        if want ~= t.MyGold then t:RequestGold(want - t.MyGold) end
+    end
+
+    method PlayerInventory Inv()
+        ---@type PlayerInventory
+        local c = _UIKit:Comp("script.PlayerInventory")
+        return c
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
         local t = self:Trade()
         if t == nil then return end
@@ -62,7 +123,10 @@ script TradeWindow extends Logic
         _UIKit:SetEnabled(self.Win, active)
         if not active then
             self.RenderKey = ""
-            self.Inspect = 0
+            self.PickSide = ""
+            self.PickIndex = 0
+            self.BagPage = 0
+            self.ShownGold = ""
             return
         end
         -- 상대가 바꾼 뒤 3초 동안은 「방금 바뀜」을 붉게 (서버도 그동안 확인을 받지 않는다)
@@ -72,45 +136,94 @@ script TradeWindow extends Logic
             self.ChangedAt = now
         end
         local fresh = t.TheirRevision > 0 and now < self.ChangedAt + 3
-        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm) .. tostring(fresh) .. "#" .. tostring(self.Inspect) .. "#" .. t.PartnerName
+        local inv = self:Inv()
+        local bag = inv ~= nil and inv:GetBagList() or {}
+        local key = table.concat({ t.MyOffer, t.TheirOffer, tostring(t.MyGold), tostring(t.TheirGold), tostring(t.MyConfirm), tostring(t.TheirConfirm),
+            tostring(fresh), self.PickSide, tostring(self.PickIndex), t.PartnerName, tostring(self.BagPage), table.concat(bag, ";") }, "#")
+        self:DrawGold(t)
         if key == self.RenderKey then return end
-        if self.RenderKey == "" then _UIKit:Open("InvWin") end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Title", t.PartnerName ~= "" and ("거래 — " .. t.PartnerName) or "거래")
         local mine = self:Split(t.MyOffer)
         local theirs = self:Split(t.TheirOffer)
+        local plain = Color(0.05, 0.045, 0.06, 0.94)
+        local lit = Color(0.3, 0.26, 0.16, 0.95)
         for i = 1, 8 do
-            _UIKit:SetText(self.Win .. "/My" .. tostring(i), mine[i] ~= nil and _ItemData:DisplayName(mine[i]) or "")
-            local label = theirs[i] ~= nil and _ItemData:DisplayName(theirs[i]) or ""
-            if label ~= "" and i == self.Inspect then label = "▶ " .. label end
-            _UIKit:SetText(self.Win .. "/Their" .. tostring(i), label)
+            _InventoryWindow:DrawItem(self.Win .. "/TheirRow/S" .. tostring(i), theirs[i])
+            _InventoryWindow:DrawItem(self.Win .. "/MyRow/S" .. tostring(i), mine[i])
+            -- 고른 칸은 바탕을 밝게
+            _UIKit:SetColor(self.Win .. "/TheirRow/S" .. tostring(i), (self.PickSide == "their" and self.PickIndex == i) and lit or plain)
+            _UIKit:SetColor(self.Win .. "/MyRow/S" .. tostring(i), (self.PickSide == "my" and self.PickIndex == i) and lit or plain)
         end
-        _UIKit:SetText(self.Win .. "/Detail/Text", self:DetailText(theirs, fresh))
-        _UIKit:SetText(self.Win .. "/Gold", "내 골드 " .. tostring(t.MyGold) .. "  " .. self:ConfirmText(t.MyConfirm)
-            .. "\n상대 골드 " .. tostring(t.TheirGold) .. "  " .. self:ConfirmText(t.TheirConfirm)
-            .. (fresh and ("   " .. _UIKit:Colored("#FF6A50", "상대가 방금 내용을 바꿨다")) or "   (소지품 칸을 누르면 올라간다)"))
+        local pages = inv ~= nil and math.max(1, math.ceil(inv.BagSize / 30)) or 1
+        for i = 1, 30 do
+            local index = self.BagPage * 30 + i
+            local path = self.Win .. "/Bag/B" .. tostring(i)
+            _UIKit:SetEnabled(path, inv == nil or index <= inv.BagSize)
+            _InventoryWindow:DrawItem(path, bag[index])
+            _UIKit:SetColor(path, (self.PickSide == "bag" and self.PickIndex == index) and lit or plain)
+        end
+        _UIKit:SetEnabled(self.Win .. "/BagPrev", pages > 1)
+        _UIKit:SetEnabled(self.Win .. "/BagNext", pages > 1)
+        _UIKit:SetText(self.Win .. "/BagLabel", "내 가방 " .. tostring(self.BagPage + 1) .. "/" .. tostring(pages) .. " · 누르고 「올리기」로 제안")
+        _UIKit:SetText(self.Win .. "/TheirLabel", "상대 제안" .. (fresh and ("  " .. _UIKit:Colored("#FF6A50", "방금 바뀌었다")) or ""))
+        _UIKit:SetText(self.Win .. "/TheirState", self:ConfirmText(t.TheirConfirm))
+        _UIKit:SetText(self.Win .. "/TheirGoldBox/TheirGold", self:Num(t.TheirGold))
+        _UIKit:SetText(self.Win .. "/MyState", self:ConfirmText(t.MyConfirm))
+        self:RenderInfo(theirs, mine, bag, fresh)
     end
 
     @ExecSpace("ClientOnly")
-    method string DetailText(table theirs, boolean fresh)
-        -- 고른 상대 물건의 옵션 전체 + 같은 부위 내 장비와 비교 (고른 칸이 비었으면 안내)
-        local s = theirs[self.Inspect]
+    method void DrawGold(PlayerTrade t)
+        -- 내 골드 칸: 지금 건 금액을 보여 준다 (누르고 고치는 중에는 그대로 둔다)
+        local e = _UIKit:Get(self.Win .. "/MyGold")
+        if not isvalid(e) or e.TextGUIRendererInputComponent == nil then return end
+        local input = e.TextGUIRendererInputComponent
+        if input.IsFocused then return end
+        local want = self:Num(t.MyGold)
+        if want == self.ShownGold then return end
+        self.ShownGold = want
+        input.Text = want
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderInfo(table theirs, table mine, table bag, boolean fresh)
+        -- 오른쪽 설명 칸: 고른 물건 그림 · 이름 · 옵션 (상대 물건은 같은 부위 내 장비와 비교) + 가방 물건 「올리기」 · 내 제안 「되돌리기」
+        local s = nil
+        if self.PickSide == "their" then s = theirs[self.PickIndex] elseif self.PickSide == "my" then s = mine[self.PickIndex] elseif self.PickSide == "bag" then s = bag[self.PickIndex] end
+        local canAct = s ~= nil and (self.PickSide == "my" or (self.PickSide == "bag" and #mine < 8))
+        _UIKit:SetEnabled(self.Win .. "/Info/BtnAct", canAct)
+        _UIKit:SetText(self.Win .. "/Info/BtnAct", self.PickSide == "my" and "되돌리기" or "올리기")
+        _InventoryWindow:DrawItem(self.Win .. "/Info/Pick", s)
         if s == nil then
-            self.Inspect = 0
-            return _UIKit:Colored("#A99F8E", "상대 제안의 물건을 누르면 옵션과 요구 레벨, 지금 내 장비와의 차이가 여기 보입니다.")
+            _UIKit:SetText(self.Win .. "/Info/Head", "")
+            _UIKit:SetText(self.Win .. "/Info/Text", _UIKit:Colored("#A99F8E", "칸을 누르면 그 물건의 옵션과 요구 레벨이 여기 보입니다.\n\n가방 물건은 「올리기」로 제안하고, 내 제안은 「되돌리기」로 가방에 돌려받습니다.\n상대 물건은 지금 내 장비와 무엇이 달라지는지도 함께 보여 줍니다.\n\n골드는 「내 제안」 오른쪽 아래 금화 칸을 눌러 금액을 바로 적습니다."))
+            return
         end
+        local heads = { their = "상대 제안\n", my = "내 제안\n", bag = "내 가방\n" }
+        _UIKit:SetText(self.Win .. "/Info/Head", heads[self.PickSide] .. _ItemData:DisplayName(s))
         local text = _ItemData:DescribeDetailed(s)
-        local base = _ItemData:GetBase(_ItemData:Parse(s).base)
-        ---@type PlayerInventory
-        local inv = _UIKit:Comp("script.PlayerInventory")
-        if base ~= nil and inv ~= nil and base.slot ~= nil and base.slot ~= "" then
-            local eq = inv:GetEquipMap()
-            local slot = base.slot == "ring" and "ring1" or base.slot
-            -- 같은 부위에 낀 것이 있을 때만 비교 (빈 칸이면 위 옵션과 같은 줄이 되풀이된다)
-            if eq[slot] ~= nil and eq[slot] ~= "" then text = text .. "\n\n" .. _ItemData:CompareText(s, eq[slot]) end
+        if self.PickSide == "their" then
+            local base = _ItemData:GetBase(_ItemData:Parse(s).base)
+            ---@type PlayerInventory
+            local inv = _UIKit:Comp("script.PlayerInventory")
+            if base ~= nil and inv ~= nil and base.slot ~= nil and base.slot ~= "" then
+                local eq = inv:GetEquipMap()
+                local slot = base.slot == "ring" and "ring1" or base.slot
+                -- 같은 부위에 낀 것이 있을 때만 비교 (빈 칸이면 위 옵션과 같은 줄이 되풀이된다)
+                if eq[slot] ~= nil and eq[slot] ~= "" then text = text .. "\n\n" .. _ItemData:CompareText(s, eq[slot]) end
+            end
+            if fresh then text = _UIKit:Colored("#FF6A50", "방금 바뀐 내용 — 다시 확인하세요") .. "\n" .. text end
         end
-        if fresh then text = _UIKit:Colored("#FF6A50", "방금 바뀐 내용 — 다시 확인하세요") .. "\n" .. text end
-        return text
+        _UIKit:SetText(self.Win .. "/Info/Text", text)
+    end
+
+    method string Num(integer n)
+        -- 1234567 → 「1,234,567」
+        local s = tostring(math.floor(n))
+        local grouped = (string.gsub(string.reverse(s), "(%d%d%d)", "%1,"))
+        local out = string.reverse(grouped)
+        return (string.gsub(out, "^,", ""))
     end
 
     method table Split(string digest)
