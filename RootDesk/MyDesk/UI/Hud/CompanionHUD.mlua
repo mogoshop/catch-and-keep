@@ -1,4 +1,5 @@
--- 소환수 종류별 초상 하나 + 「×N」·합친 생명·행동 상태 (해골 3마리 = 해골 초상 ×3). 다른 창에서는 숨긴다.
+-- 소환수 종류별 초상 하나 + 「×N」·합친 생명·내뿜는 오오라 (해골 3마리 = 해골 초상 ×3). 다른 창에서는 숨긴다.
+-- 공격·추격 같은 행동 글자는 수시로 바뀌어 산만해서 뺐다 (10-24 사용자) — 그 자리에 변종 그림자의 오오라 이름만 둔다.
 -- 위치: PC는 생명 오브 위(왼쪽 아래), 모바일은 의뢰 추적·일지 버튼과 겹치지 않게 가운데 아래 생명·마나 오브 위.
 @Logic
 script CompanionHUD extends Logic
@@ -114,6 +115,8 @@ script CompanionHUD extends Logic
                 g.lowest = math.min(g.lowest, u.Hp / math.max(1, u.MaxHp))
                 if u.Promoted then g.promoted = true end
                 if u.Entity.Id < g.first then g.first = u.Entity.Id g.state = u.CommandState g.portrait = u.StandRUID end
+                local v = u.Variant ~= "" and _GameData:GetVariant(u.Variant) or nil
+                if v ~= nil and v.kind == "aura" then g.aura = v.effect g.auraName = v.name end
             end
         end
         table.sort(groups, function(a, b) return self:KindOrder(a.kind) < self:KindOrder(b.kind) end)
@@ -160,7 +163,7 @@ script CompanionHUD extends Logic
                 if g.promoted then frame = Color(1, 0.86, 0.56, 1) end
                 if g.lowest <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
                 _UIKit:SetColor(base .. "/Frame", frame)
-                _UIKit:SetText(base .. "/State", self:StateLabel(g.state))
+                _UIKit:SetText(base .. "/State", g.aura ~= nil and _UIKit:Colored(_GameConst:AuraHex(g.aura), g.auraName) or "")
                 _UIKit:SetText(base .. "/Count", g.count > 1 and ("×" .. tostring(g.count)) or "")
             end
         end
@@ -192,14 +195,6 @@ script CompanionHUD extends Logic
         if kind == "mage" then return 2 end
         if kind == "revive" then return 3 end
         return 4
-    end
-
-    method string StateLabel(string state)
-        -- 색만으로 구별하기 어려운 상태는 짧은 글자로도 표시한다.
-        if state == "rally" then return "집결" end
-        if state == "attack" then return "공격" end
-        if state == "combat" then return "추격" end
-        return "추종"
     end
 
     method string FallbackIcon(string kind)

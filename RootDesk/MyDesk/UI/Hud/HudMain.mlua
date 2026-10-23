@@ -169,6 +169,7 @@ script HudMain extends Logic
             table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
                 desc = string.format("호령 · 그림자·언데드 공격·생명 +%d%%, 이동 +%d%%, 모든 저항 +%d", math.floor(aura.atk), math.floor(aura.speed), math.floor(aura.resist)) })
         end
+        self:AddAuraBuffs(player, book, list)
         if st.BoneArmor > 0 then
             table.insert(list, { key = "buff_bone_armor", label = "뼈갑옷", color = Color(0.85, 0.8, 0.65, 1), left = -1, timeText = tostring(math.floor(st.BoneArmor)), desc = string.format("뼈 갑옷 · 피해 흡수 %d / %d 남음", math.floor(st.BoneArmor), math.floor(st.BoneArmorMax)) })
         end
@@ -190,7 +191,7 @@ script HudMain extends Logic
                 _UIKit:SetPos(path, Vector2((i - 1) * 64, 0))   -- 칩 피벗이 왼쪽 가운데
                 self.BuffDescs[i] = b.desc
                 -- 칩 그림(ui_icons.csv의 buff_*·debuff_* — 코덱스)이 있으면 그림 + 남은 시간만, 없으면 색 원 + 짧은 이름
-                local icon = _GameData:GetUiIcon(b.key)
+                local icon = b.icon or _GameData:GetUiIcon(b.key)
                 _UIKit:SetEnabled(path .. "/Frame", b.debuff == true and icon ~= "")
                 if icon ~= "" then
                     _UIKit:SetIcon(path, icon)
@@ -203,6 +204,78 @@ script HudMain extends Logic
                     _UIKit:SetText(path .. "/Label", _UIKit:Colored(b.debuff and "#FFB0B0" or "#FFFFFF", b.label))
                 end
                 _UIKit:SetText(path .. "/Time", b.timeText or (b.left >= 0 and (tostring(math.ceil(b.left)) .. "초") or ""))
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AddAuraBuffs(Entity player, SkillBook book, table list)
+        -- 나·소환수에게 지금 닿는 오오라 (10-24 사용자): 항상 켜진 스킬 오오라 + 변종 그림자의 오오라(내 소환수가 반경 안일 때) + 근처 다른 플레이어의 호령
+        if book ~= nil then
+            local stepLv = book:GetPowerLevel("swift_step")
+            if stepLv > 0 then
+                local def = _SkillData:Get("swift_step")
+                table.insert(list, { key = "buff_swift_step", icon = def ~= nil and def.icon or nil, label = "걸음", color = Color(0.6, 0.85, 0.7, 1), left = -1,
+                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv)) })
+            end
+            local rushLv = book:GetPowerLevel("legion_rush")
+            if rushLv > 0 then
+                local def = _SkillData:Get("legion_rush")
+                table.insert(list, { key = "buff_legion_rush", icon = def ~= nil and def.icon or nil, label = "질주", color = Color(0.75, 0.6, 0.95, 1), left = -1,
+                    desc = string.format("군단 질주 · 소환수 이동 +%g%%", book:GetEffectPower("legion_rush", rushLv)) })
+            end
+        end
+        local map = player.CurrentMap
+        if not isvalid(map) then return end
+        local units = map:GetChildComponentsByTypeName("script.ShadowUnit", true)
+        local mine = {}
+        for _, c in ipairs(units) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == player and u.Hp > 0 then table.insert(mine, _Util:Pos2(u.Entity)) end
+        end
+        -- 변종 그림자 오오라: 같은 효과는 가장 센 것 하나만 (서버 ReceiveAura도 최댓값만 쓴다)
+        local best = {}
+        for _, c in ipairs(units) do
+            ---@type ShadowUnit
+            local u = c
+            local v = (isvalid(u.Entity) and u.Entity.Enable and u.Hp > 0 and u.Variant ~= "") and _GameData:GetVariant(u.Variant) or nil
+            if v ~= nil and v.kind == "aura" and (best[v.effect] == nil or v.value > best[v.effect].v.value) then
+                local src = _Util:Pos2(u.Entity)
+                for _, q in ipairs(mine) do
+                    if (q - src):Magnitude() <= v.radius then
+                        local name = _GameData:GetMonsterName(string.match(u.Entity.Name, "^Shadow_(.+)$") or "")
+                        best[v.effect] = { v = v, from = u.OwnerPlayer == player and ("내 그림자 " .. name) or ("다른 플레이어의 그림자 " .. name) }
+                        break
+                    end
+                end
+            end
+        end
+        local labels = { dmg = "피해", haste = "공격·이동 속도", guard = "받는 피해 감소" }
+        local short = { dmg = "광기", haste = "질풍", guard = "수호" }
+        for _, effect in ipairs({ "dmg", "haste", "guard" }) do
+            local b = best[effect]
+            if b ~= nil then
+                local hex = _GameConst:AuraHex(effect)
+                local c = Color(tonumber(string.sub(hex, 2, 3), 16) / 255, tonumber(string.sub(hex, 4, 5), 16) / 255, tonumber(string.sub(hex, 6, 7), 16) / 255, 1)
+                table.insert(list, { key = "buff_aura_" .. effect, label = short[effect], color = c, left = -1,
+                    desc = string.format("%s · 반경 %g 안 소환수 %s %s%d%% (%s)", b.v.name, b.v.radius, labels[effect], effect == "guard" and "-" or "+", math.floor(b.v.value), b.from) })
+            end
+        end
+        -- 근처 다른 플레이어의 호령은 내 소환수에도 닿는다 (ShadowUnit.PartyAuraTick · 반경 6)
+        if #mine > 0 then
+            local me = _Util:Pos2(player)
+            for _, p in ipairs(_UserService:GetUsersByMapComponent(map.MapComponent) or {}) do
+                if p ~= player and isvalid(p) and (_Util:Pos2(p) - me):Magnitude() <= 6 then
+                    ---@type SkillBook
+                    local other = p:GetComponent("script.SkillBook")
+                    if other ~= nil and other:GetLevel("command_aura") > 0 then
+                        local aura = other:GetCommandAura()
+                        table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
+                            desc = string.format("동료의 호령 · 내 소환수 공격 +%d%%, 이동 +%d%%", math.floor(aura.atk), math.floor(aura.speed)) })
+                        break
+                    end
+                end
             end
         end
     end
