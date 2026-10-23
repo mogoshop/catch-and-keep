@@ -8,10 +8,11 @@ script PetSystem extends Logic
     property string FreePassId = ""            -- 「오픈 기념 고양이 재」 무료 패스 (판매 기간 30일)
     property string PaidPassId = ""            -- 「고양이 재」 유료 패스 (상시)
     property string PetName = "재"
-    property string IdleFrames = "d2592c488ab7467bbcb4d582bbabca15"   -- 코덱스 프레임이 오기 전: 숯 아이콘 한 장 (ui_icons soot)
-    property string RunFrames = ""
-    property number FrameSeconds = 0.12
-    property number Scale = 0.9
+    property string IdleFrames = "7c216ee242a8403f9cf3d244580657bd,2ed72a08025e4e29b304c203e3f8b135,cb094500224b4c5591630c85a682abfd,2e457e02efad4d64a97752cf3132f12f"   -- 코덱스 v1 대기 4장 (꼬리 살랑, 128px 발밑 피벗)
+    property string RunFrames = "f0ee0460b026402390c1810c60ddec94,e3db33f11e314938a0e50ae349b37755,78fab61e8be34d488f8201b0049e4228,c1350a35f3064308bea959d1abdca50e,e7772e6e707e42cb961311fe8354429f,1f2de66c79b646bb81814c380c641114"   -- 달리기 6장
+    property number FrameSeconds = 0.11
+    property number IdleFrameSeconds = 0.22
+    property number Scale = 1.0
     property number Reach = 6                  -- 주인에게서 이 거리 안의 전리품만
     property number Speed = 7                  -- 주워 오는 속도 (초당 월드 단위)
     property number FollowSpeed = 6
@@ -236,7 +237,7 @@ script PetSystem extends Logic
         v.moving = dist > 0.08
         if v.moving then
             if dist <= step then v.pos = target else v.pos = v.pos + d * (step / dist) end
-            if math.abs(d.x) > 0.02 then v.flip = d.x > 0 and -1 or 1 end
+            if math.abs(d.x) > 0.02 then v.flip = d.x > 0 and 1 or -1 end   -- 코덱스 그림은 오른쪽을 본다
         end
         local bob = v.moving and math.abs(math.sin(now * 14)) * 0.06 or math.sin(now * 2.4) * 0.015
         local t = v.e.TransformComponent
@@ -244,7 +245,7 @@ script PetSystem extends Logic
         t.Scale = Vector3(self.Scale * v.flip, self.Scale, 1)
         -- 프레임: 달리기 그림이 있으면 움직일 때 바꾼다
         local frames = (v.moving and self.RunFrames ~= "") and self.RunFrames or self.IdleFrames
-        local f = math.floor(now / self.FrameSeconds)
+        local f = math.floor(now / (v.moving and self.FrameSeconds or self.IdleFrameSeconds))
         local ruid = self:Frame(frames, f)
         if v.e.SpriteRendererComponent.SpriteRUID ~= ruid then v.e.SpriteRendererComponent.SpriteRUID = ruid end
     end

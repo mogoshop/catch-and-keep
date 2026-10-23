@@ -268,7 +268,7 @@ function buildGameHud() {
   k.frame("PetWin", "middle-center", [0, 20], [960, 700], "고양이 재");
   b.patchComponent("PetWin", "MOD.Core.SpriteGUIRendererComponent", { Color: { r: 0.05, g: 0.045, b: 0.06, a: 1 } });
   k.inner("PetWin/Art", "top-left", [40, -90], [300, 300]);
-  b.sprite("PetWin/Art/Pic", { anchor: "middle-center", pos: [0, 0], rect_size: [220, 220], image_ruid: K.soot, sprite_type: 0, color: WHITE, alpha: 1 });
+  b.sprite("PetWin/Art/Pic", { anchor: "middle-center", pos: [0, 0], rect_size: [220, 220], image_ruid: K.pet_jae, sprite_type: 0, color: WHITE, alpha: 1 });
   k.aspect("PetWin/Art/Pic");
   b.text("PetWin/Status", "", { size: 22, color: C.white, alignment: 0, anchor: "top-left", pos: [370, -96], rect_size: [550, 210], ...outline });
   k.ok("PetWin/BtnGet", "무료로 받기", { anchor: "top-left", pos: [370, -318], rect_size: [300, 76], font_size: 24 });
