@@ -4,6 +4,8 @@
 @Component
 script MonsterAttack extends AttackComponent
 
+    property Entity Taunter = nil              -- 방패 해골 도발 (TauntBy)
+    property number TauntUntil = 0
     property integer Damage = 8
     property string Element = ""          -- 공격 속성 (fire/cold/light/poison). ElementRatio만큼이 그 속성
     property number ElementRatio = 0.5
@@ -771,6 +773,15 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    @ExecSpace("ServerOnly")
+    method void TauntBy(Entity taunter, number seconds)
+        -- 방패 해골의 도발: seconds 동안 사거리 안이면 그 해골부터 노리고, 쫓을 대상도 그 해골로
+        self.Taunter = taunter
+        self.TauntUntil = _UtilLogic.ElapsedSeconds + seconds
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) then chase:SetTarget(taunter) end
+    end
+
     method Entity FindTarget()
         -- 공격과 거리 유지가 같은 대상 선정 기준을 사용한다.
         -- 근접은 +0.15 여유: 거리 유지(UpdateMeleeSpacing)가 사거리 0.8 ~ 0.9 사이에서 멈추면 영영 못 쳤다
@@ -787,6 +798,11 @@ script MonsterAttack extends AttackComponent
         local best = nil
         if not isvalid(map) then return nil end
         local bestDist = range
+        -- 방패 해골에게 도발당했으면 그 해골이 닿는 동안 먼저
+        if self.Taunter ~= nil and _UtilLogic.ElapsedSeconds < self.TauntUntil and isvalid(self.Taunter) and self:IsLiveDefender(self.Taunter)
+            and _Util:Distance(self.Taunter, self.Entity) <= range and _Util:HasLineOfSight(map, myPos, _Util:Pos2(self.Taunter)) then
+            return self.Taunter
+        end
         for _, u in ipairs(_Util:PlayersNear(map, myPos, range)) do
             local d = _Util:Distance(u, self.Entity)
             if d <= bestDist and self:IsLiveDefender(u) and _Util:HasLineOfSight(map, myPos, _Util:Pos2(u)) then

@@ -91,6 +91,11 @@ script ShadowUnit extends AttackComponent
     property integer StunCount = 0
     property number AbilityTimer = 2
     property number AuraTimer = 0            -- 오오라 다음 전파까지 (기술 AbilityTimer와 따로)
+    property number RadiusMult = 1           -- 해골 변이 대검: 근접 범위 배율
+    property number BasicMult = 1            -- 해골 변이 대검: 평타 피해 배율
+    property number GuardPct = 0             -- 해골 변이 방패: 받는 피해 -%
+    property boolean Taunt = false           -- 해골 변이 방패: 4초마다 주변 적 도발
+    property number TauntTimer = 1
     property string LastInfo = ""
     property table AuraVals = {}             -- 받은 오오라 효과 → 효과량 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다 · 같은 효과는 가장 센 것 · corrode는 적 몬스터가 거는 약화)
     property number AuraUntil = 0
@@ -321,6 +326,28 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method void TauntTick(number delta)
+        -- 방패 해골: 4초마다 주변 2.5칸 적(보스 제외)이 4초 동안 이 해골을 노린다
+        if not self.Taunt or self.Dead then return end
+        self.TauntTimer = self.TauntTimer - delta
+        if self.TauntTimer > 0 then return end
+        self.TauntTimer = 4
+        local me = _Util:Pos2(self.Entity)
+        local pulled = 0
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, 2.5)) do
+            if m.Grade < 3 then
+                ---@type MonsterAttack
+                local atk = m.Entity:GetComponent("script.MonsterAttack")
+                if atk ~= nil then
+                    atk:TauntBy(self.Entity, 4)
+                    pulled = pulled + 1
+                end
+            end
+        end
+        if pulled > 0 then self:SwingFx(Vector3(me.x, me.y + 0.3, 0), Vector2(1, 0)) end
+    end
+
+    @ExecSpace("ServerOnly")
     method void RegenTick(number delta)
         -- 체력 재생 (10-13 사용자 지적: 소환수는 재생이 아예 없었다). 싸우는 중 summonRegenPct, summonRestDelay초 안 맞으면 summonRestRegenPct (초당 최대 생명 비율)
         self.RegenAcc = self.RegenAcc + delta
@@ -352,7 +379,7 @@ script ShadowUnit extends AttackComponent
         end
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
         local offered = _UtilLogic.ElapsedSeconds < self.OfferUntil and 0.8 or 1   -- 뼈 성찬: 3초간 받는 피해 -20%
-        self:Hurt(event.TotalDamage * self:AuraMult("guard") * offered)
+        self:Hurt(event.TotalDamage * self:AuraMult("guard") * offered * math.max(0.1, 1 - self.GuardPct / 100))   -- 방패 해골
     end
 
     @ExecSpace("ServerOnly")
@@ -432,6 +459,7 @@ script ShadowUnit extends AttackComponent
         if self.Bombing then self:BombTick() return end
         if not self.RingPainted then self:PaintRing() end
         self:RegenTick(delta)
+        self:TauntTick(delta)
         if not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= self.Entity.CurrentMap then
             self.Entity:Destroy()
             return
@@ -975,7 +1003,7 @@ script ShadowUnit extends AttackComponent
                 local center = at + dir * 0.4 + Vector2(0, 0.2)
                 self:SwingFx(Vector3(center.x, center.y, 0), dir)
                 -- 거구 그림자: 타격 범위 +40%
-                local radius = self:GetArch() == "brute" and self.AttackRadius * 1.4 or self.AttackRadius
+                local radius = (self:GetArch() == "brute" and self.AttackRadius * 1.4 or self.AttackRadius) * self.RadiusMult
                 self:AttackFast(CircleShape(center, radius), "shadow.basic", nil)
             end
         end, self.AttackWindup)
@@ -1060,6 +1088,7 @@ script ShadowUnit extends AttackComponent
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 잿불 들개 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
+        if attackInfo == "shadow.basic" then dmg = dmg * self.BasicMult end   -- 대검 해골 범위 베기
         -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)
         if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
             dmg = dmg * 1.8

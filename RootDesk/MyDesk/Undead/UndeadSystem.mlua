@@ -309,6 +309,7 @@ script UndeadSystem extends Logic
             rec.attack = m ~= nil and m.attack or ""
             rec.scale = 0.55          -- 필드의 해골 전사(1배)보다 확실히 작게
             rec.tint = Color(0.92, 0.9, 0.82, 1)
+            self:ApplySkeletonForm(player, rec)
         elseif kind == "mage" then
             local elements = self:Elements()
             rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
@@ -382,6 +383,41 @@ script UndeadSystem extends Logic
         return { atk = math.floor(atkBase * atkGrow * skill * mastery), hp = math.floor(hpBase * hpGrow * skill * mastery) }
     end
 
+    @ExecSpace("ServerOnly")
+    method void ApplySkeletonForm(Entity player, table rec)
+        -- 해골 전사 변이 (10-24 사용자 B안 · 셋 중 하나): 대검 = 범위 베기·느림·단단 / 방패 = 받는 피해↓·도발 / 쌍칼 = 빠름·약함
+        local gs = self:SkillLevel(player, "skel_greatsword")
+        local sh = self:SkillLevel(player, "skel_shield")
+        local tw = self:SkillLevel(player, "skel_twin")
+        rec.form = ""
+        if gs > 0 then
+            rec.form = "greatsword"
+            rec.hp = math.floor(rec.hp * 1.2)
+            rec.cooldown = rec.cooldown * 1.4
+            rec.radiusMul = 1.8
+            rec.basicMul = 0.65 + 0.15 * gs
+            -- 그림: 필드의 큰 해골 「근위대장 바르그」(대검)를 작게
+            local cap = _GameData:GetMonsterStats("skel_captain")
+            if cap ~= nil and cap.stand ~= "" then
+                rec.stand = cap.stand
+                rec.move = cap.move
+                rec.attack = cap.attack
+                rec.scale = 0.42
+            end
+        elseif sh > 0 then
+            rec.form = "shield"
+            rec.hp = math.floor(rec.hp * 1.1)
+            rec.guard = 15 + 5 * sh
+            rec.taunt = true
+            rec.tint = Color(0.78, 0.86, 1, 1)
+        elseif tw > 0 then
+            rec.form = "twin"
+            rec.hp = math.floor(rec.hp * 0.85)
+            rec.cooldown = rec.cooldown / (1.2 + 0.1 * tw)
+            rec.tint = Color(1, 0.78, 0.72, 1)
+        end
+    end
+
     method number GetReviveMultiplier(integer level)
         -- 다음 소환 미리보기와 실제 생성에서 같은 배율을 사용한다.
         return _GameData.reviveStatMul * (1 + math.max(0, level - 1) * _GameData.reviveStatPerLvPct / 100)
@@ -443,6 +479,10 @@ script UndeadSystem extends Logic
             u.Resists = rec.resists or {}
             u.BonusResist = rec.auraResist or 0
             u.Variant = rec.variant or ""
+            u.RadiusMult = rec.radiusMul or 1   -- 해골 변이 (ApplySkeletonForm)
+            u.BasicMult = rec.basicMul or 1
+            u.GuardPct = rec.guard or 0
+            u.Taunt = rec.taunt == true
             u.ShadowTint = rec.tint
             unit.SpriteRendererComponent.Color = rec.tint
             u:SetBaseSpeed(rec.speed)
