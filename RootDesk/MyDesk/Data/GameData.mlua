@@ -5,7 +5,7 @@ script GameData extends Logic
 
     property boolean Built = false
     property number deployBase = 2    -- 배치 기본 한도 (Lv15 shadowFullLevel부터 · 10-24 사용자: 5면 Lv15에 1기 → 5기로 뛰어 Lv17에 장비·의뢰 포함 7기였다 → 2)
-    property number deployExpandFromLv = 15    -- 그림자 소환 강화 「그림자 증원」 1랭크가 열리는 캐릭터 레벨 (10-24 사용자: 캐릭터 레벨 기준 — 15·21·27)
+    property number deployExpandFromLv = 17    -- 그림자 소환 강화 「그림자 증원」 1랭크가 열리는 캐릭터 레벨 (10-24 사용자: 캐릭터 레벨 기준 15·21·27 → B안 17·23·29 — Lv15에 장비 보너스와 한꺼번에 켜져 2기 → 6기로 뛰었다)
     property number deployExpandStep = 6    -- 그림자 증원 다음 랭크까지 캐릭터 레벨 간격 (5랭크부터 레벨업마다 찍혔다 → 6레벨마다)
     property number hardCap = 8    -- 배치 절대 상한 (스킬·장비 보너스 포함)
     property number extractReach = 1.2    -- 혼 추출 가능 거리
@@ -68,7 +68,7 @@ script GameData extends Logic
     property number expHighLevelPct = 8    -- (몬스터 레벨 − expHighLevelFrom) × 이 %만큼 처치 경험치 + (10-13 W1: Lv17 +40% · Lv27 +120% — 액트 3 벽 사냥 53분 → 12분, docs/design/20 §5)
     property number expHighLevelTo = 50    -- 높은 레벨 보정이 이 몬스터 레벨까지만 오른다 (10-23: 상한이 없으면 지옥 끝 Lv96 — Lv70 넘는 몬스터에 +460% 이상 · 50이면 악몽 끝 Lv66 · 지옥 끝 Lv87)
     property number extractMasteryPerLv = 0.03    -- 그림자 소환 강화 「추출 숙련」 랭크당 추출 확률 (10-11: 0.015 → 0.03 · 최대 5랭크)
-    property number extractChanceCap = 0.75    -- 추출 확률 상한 (보스 포함)
+    property number extractChanceCap = 0.75    -- 추출 확률 전체 상한 (등급별 상한은 monster_ranks.csv extractCap — 보스 0.15 · 정예 0.4)
     property number bossShadowDeployLimit = 1    -- 보스 그림자 동시 소환 수
     property number shadowRefHp = 60    -- 그림자 개성 기준: 일반 몬스터 평균 생명 (원본 생명 / 이 값 = 생명 배율)
     property number shadowRefDmg = 7    -- 그림자 개성 기준: 일반 몬스터 평균 공격 (원본 공격 / 이 값 = 공격 배율)
@@ -114,7 +114,7 @@ script GameData extends Logic
     property number basicCritPerDex = 0.14    -- 민첩 1당 평타 치명타 확률 증가(%p) — 주문·소환수 제외 (10-09 30% 하향)
     property number basicCritChanceCap = 40    -- 평타 치명타 확률 상한(%)
     property number basicCritMultiplier = 1.5    -- 평타 치명타 피해 배율
-    property number shadowCapBonusMax = 2    -- 세트로 늘릴 수 있는 그림자 상한 합계 최대 (hardCap 8 → 10)
+    property number shadowCapBonusMax = 2    -- 장비로 늘릴 수 있는 그림자 상한 합계 최대 (hardCap 8 → 10) — 의뢰 보너스까지 합쳐도 10을 넘지 않는다 (10-24 B안 · 예전 최대 12기)
     property number shadowFullLevel = 15    -- 이 캐릭터 레벨 전에는 그림자 배치가 shadowEarlyDeployLimit로 묶인다 (Lv5 맛보기 → Lv15 본격)
     property number shadowEarlyDeployLimit = 1    -- Lv15 전 그림자 동시 배치 수
     property number bossExclusiveShare = 0.5    -- 보스·최상위가 유니크를 떨굴 때 그 몬스터 전용 유니크일 확률
@@ -446,11 +446,11 @@ script GameData extends Logic
         self.Weeklies["bloodmoon"] = { id = "bloodmoon", name = "피의 달", desc = "몬스터 생명·공격 +15% · 이동 +10% · 그림자 추출 +8%p", elite = 1, stat = 1.15, speed = 1.1, mobs = 1, curse = 0, rolls = 0, extract = 0.08, light = 1, skel = 1 }
         table.insert(self.WeeklyOrder, "bloodmoon")
         self.Ranks = {}
-        self.Ranks["normal"] = { name = "일반", hpMul = 1, dmgMul = 1, extract = 0.25, grade = 1 }
-        self.Ranks["elite"] = { name = "정예", hpMul = 3, dmgMul = 1.3, extract = 0.15, grade = 2 }
-        self.Ranks["champion"] = { name = "무리 우두머리", hpMul = 4, dmgMul = 1.5, extract = 0.15, grade = 2 }
-        self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, grade = 2 }
-        self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.05, grade = 3 }
+        self.Ranks["normal"] = { name = "일반", hpMul = 1, dmgMul = 1, extract = 0.25, extractCap = 0.75, grade = 1 }
+        self.Ranks["elite"] = { name = "정예", hpMul = 3, dmgMul = 1.3, extract = 0.15, extractCap = 0.4, grade = 2 }
+        self.Ranks["champion"] = { name = "무리 우두머리", hpMul = 4, dmgMul = 1.5, extract = 0.15, extractCap = 0.4, grade = 2 }
+        self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, extractCap = 0.25, grade = 2 }
+        self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.05, extractCap = 0.15, grade = 3 }
         self.Shop = {}
         self.Shop["hp"] = { name = "생명 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "hp", tier = 0, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
         self.Shop["mp"] = { name = "마나 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "mp", tier = 0, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }

@@ -300,6 +300,8 @@ for (const k of ["normal", "elite", "unique", "boss"]) if (!rankIds.has(k)) err(
 T.monster_ranks.forEach((r, i) => {
   const c = num(r.extractChance, -1);
   if (!(c > 0 && c <= 1)) err("monster_ranks", i, `extractChance ${r.extractChance} — 0 초과 1 이하`);
+  const cap = num(r.extractCap, -1);
+  if (!(cap >= c && cap <= 1)) err("monster_ranks", i, `extractCap ${r.extractCap} — extractChance 이상 1 이하`);
   if (![1, 2, 3].includes(num(r.shadowGrade))) err("monster_ranks", i, "shadowGrade 1~3");
 });
 

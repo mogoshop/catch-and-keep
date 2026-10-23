@@ -191,11 +191,12 @@ script ShadowCommander extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil and stats.Level < _GameData.shadowFullLevel then limit = math.min(limit, math.floor(_GameData.shadowEarlyDeployLimit)) end
-        -- 의뢰 영구 보상(가라앉은 지하실의 수장, 난이도마다 +1)은 초반 한도·절대 상한 위에 더한다 — 받은 순간부터 체감되게
+        -- 의뢰 영구 보상(가라앉은 지하실의 수장, 난이도마다 +1)은 초반 한도 위에 더한다 — 받은 순간부터 체감되게.
+        -- 다만 모든 보너스를 합쳐도 hardCap + 장비 상한 최대(8 + 2 = 10기)를 넘지 않는다 (10-24 사용자 B안 · 예전엔 의뢰가 상한 밖이라 12기)
         ---@type PlayerQuest
         local quest = self.Entity:GetComponent("script.PlayerQuest")
         if quest ~= nil then limit = limit + quest.DeployBonus end
-        return limit
+        return math.min(limit, _ShadowConfig:GetHardCap() + math.floor(_GameData.shadowCapBonusMax))
     end
 
     @ExecSpace("ServerOnly")

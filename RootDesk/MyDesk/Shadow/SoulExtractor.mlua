@@ -44,14 +44,14 @@ script SoulExtractor extends Component
     end
 
     method number ChanceFor(SoulOrb orb)
-        -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한 extractChanceCap. 보스도 확정이 아니다 (클라이언트 표시도 같은 식)
+        -- 확률: 등급 기본(monster_ranks.csv) + 추출 숙련 + 장비, 상한은 등급별 extractCap (보스 15% · 정예 40% · 일반 75%). 보스도 확정이 아니다 (클라이언트 표시도 같은 식)
         -- 나보다 높은 몬스터의 혼은 레벨 차이만큼 덜 뽑힌다 (_GameConst.LevelGapExtract)
         local chance = _ShadowConfig:GetExtractChance(orb.Rank) + _GameData.extractMasteryPerLv * self:SkillLevel("extract_mastery") + self:ExtractBonus() / 100
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil then chance = chance * _GameConst:LevelGapExtract(stats.Level, orb.Level) + 0.15 * stats:ShrineBonus("soul") end
         chance = chance + _WeeklyRules:MapAdd(self.Entity.CurrentMap, "extract")   -- 이번 주 심연 규칙
-        return math.min(_GameData.extractChanceCap, chance)
+        return math.min(_ShadowConfig:GetExtractCap(orb.Rank), chance)
     end
 
     method boolean CanExtract()

@@ -113,7 +113,7 @@ function genGameData() {
     "        self.WeeklyOrder = {}",
     ...weekly.map((w) => `        self.Weeklies[${s(w.id)}] = { id = ${s(w.id)}, name = ${s(w.name)}, desc = ${s(w.desc)}, elite = ${n(w.elite)}, stat = ${n(w.stat)}, speed = ${n(w.speed)}, mobs = ${n(w.mobs)}, curse = ${n(w.curse)}, rolls = ${n(w.rolls)}, extract = ${n(w.extract)}, light = ${n(w.light)}, skel = ${n(w.skel)} }\n        table.insert(self.WeeklyOrder, ${s(w.id)})`),
     "        self.Ranks = {}",
-    ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, grade = ${n(r.shadowGrade)} }`),
+    ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, extractCap = ${n(r.extractCap || 0.75)}, grade = ${n(r.shadowGrade)} }`),
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
