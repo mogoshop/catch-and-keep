@@ -229,7 +229,7 @@ function artEntities(d, maps, ctx, layout) {
   ctx.propBlocked[d.id] = blocked;
   const block = (name, x, y, scale) => { for (const k of propFootprint(x, y, (ctx.sprites[name] || {}).w, scale)) blocked.add(k); };
   // 메이플식 장식(art_sprites kind prop-1x)은 예전 그림 × 0.8 크기로 원본 크기에 그렸다 → 배율을 1/0.8 하여 화면 크기는 그대로, 픽셀은 1:1
-  const pscale = (name, sc) => ((ctx.sprites[name] || {}).kind === "prop-1x" ? sc / 0.8 : sc);
+  const pscale = (name, sc) => ((ctx.sprites[name] || {}).kind === "prop-1x" ? sc / 0.8 : sc) * (ctx.propScale[name] || 1);
   const ruid = (name) => {
     const s = ctx.sprites[name];
     if (!s) throw new Error(`map_art ${d.id}: 그림 '${name}'이 art_sprites.csv에 없음`);
@@ -285,9 +285,9 @@ function artEntities(d, maps, ctx, layout) {
     walls(layout, spec.wall, spec.tint, "ArtWall");
     const props = list(spec.props || "");
     if (props.length) {
-      // 장식 이름 뒤 「*배율」은 그 장식만 크게 (예: wreck-hull*1.8 — 배 한 척이 상자만 하게 찍혀 보였다, 10-21 사용자 지적).
-      // 배율을 하나라도 적은 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
-      const vary = props.some((x) => x.includes("*"));
+      // 장식 이름 뒤 「*배율」은 이 맵에서만 그 장식을 더 키운다 (장식 자체 크기는 art_scale.csv).
+      // 크기를 바꾼 장식이 하나라도 있는 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
+      const vary = props.some((x) => x.includes("*") || (ctx.propScale[x.split("*")[0]] || 1) !== 1);
       layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
         const [name, mul] = props[p.pick % props.length].split("*");
         const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? 0.88 + ((p.pick * 7) % 25) / 100 : 1);
@@ -460,6 +460,8 @@ function context() {
     quests: load("quests"),
     art: Object.fromEntries(load("map_art").map((a) => [a.map, a])),
     sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
+    // 장식별 크기 배율 (art_scale.csv — 천막·배·탑 같은 큰 구조물은 크게, 작은 잔해는 조금만. 10-24 사용자: 전부 같은 값이라 마을 천막이 너무 작았다)
+    propScale: Object.fromEntries(load("art_scale").map((s) => [s.name, num(s.scale, 1)])),
     layouts: Object.fromEntries(load("map_layouts").map((l) => [l.map, l])),
     layoutCache: {},
     propBlocked: {},
