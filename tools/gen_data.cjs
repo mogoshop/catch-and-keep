@@ -408,7 +408,7 @@ function genQuests() {
   const rows = load("quests");
   const givers = load("npcs").filter((x) => rows.some((r) => r.giver === x.kind));
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, level = ${n(r.level || 1)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, level = ${n(r.level || 1)}, gate = ${s(r.gate || "")}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
     "        self.Givers = {}",
     ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`),
     "        self.Voices = {}",

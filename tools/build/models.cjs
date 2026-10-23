@@ -7,6 +7,17 @@ const { ModelBuilder, P, list, load, num, bool, quiet } = require("./lib.cjs");
 // + 스크립트. 탑다운(RectTile)이라 Body는 Kinematicbody.
 // NPC·보스 발밑 그림자 (assets/claude-story-v1 foot-shadow · 그룹 OJYYQ, maps.cjs와 같은 그림)
 const FOOT_SHADOW = "cabd4773c16c465a90cb46d571d1d623";
+const FOOT_SHADOW_MODEL = "footshadow";   // 공용 발밑 그림자 모델 — 맵에 고정 배치되는 몬스터의 자식도 등록된 모델을 가리켜야 한다 (check_assets)
+
+function buildFootShadow() {
+  const b = ModelBuilder.fromTemplate(P.skillModel("TransformOnly"), "FootShadow", { model_id: FOOT_SHADOW_MODEL });
+  b.component("MOD.Core.SpriteRendererComponent")
+    .value("MOD.Core.SpriteRendererComponent", "SpriteRUID", FOOT_SHADOW, "string")
+    .value("MOD.Core.SpriteRendererComponent", "SortingLayer", "MapLayer0", "string")
+    .value("MOD.Core.SpriteRendererComponent", "OrderInLayer", 1, "int");
+  b.write(P.model("Effects/FootShadow"));
+}
+
 const MONSTER_SCRIPTS = ["script.Monster", "script.MonsterStatus", "script.MonsterTraits", "script.MonsterAttack"];
 
 // 프레임 애니메이션 몬스터 (data/monster_frames.csv): 상태 애니메이션 컴포넌트 대신 FrameAnimator가 스프라이트를 직접 넘긴다
@@ -41,7 +52,7 @@ function buildMonster(m, boss) {
     // 자식 id는 몬스터 id에서 만든 고정값 (빌드할 때마다 바뀌어 모델 파일이 흔들리지 않게)
     const h = require("crypto").createHash("md5").update(`${m.id}/FootShadow`).digest("hex");
     const cid = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-    b.child("FootShadow", { components: ["MOD.Core.TransformComponent", "MOD.Core.SpriteRendererComponent"], id: cid })
+    b.child("FootShadow", { components: ["MOD.Core.TransformComponent", "MOD.Core.SpriteRendererComponent"], id: cid, model_id: FOOT_SHADOW_MODEL })
       .childValue("FootShadow", "MOD.Core.TransformComponent", "Position", { x: 0, y: 0.02, z: 0 }, "vector3")
       .childValue("FootShadow", "MOD.Core.TransformComponent", "Scale", { x: k, y: k, z: 1 }, "vector3")
       .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "SpriteRUID", FOOT_SHADOW, "string")
@@ -142,6 +153,7 @@ function run() {
   const objects = load("objects");
   const npcs = load("npcs");
   quiet(() => {
+    buildFootShadow();
     for (const m of monsters) buildMonster(m, bosses[m.id]);
     for (const o of objects) buildObject(o);
     for (const n of npcs) buildNpc(n);

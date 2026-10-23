@@ -1,0 +1,174 @@
+-- 재의 왕이 깨어난 뒤의 4장 (10-23 사용자: 「오렌을 잡고 나서 재의 왕이 부활하니 더 긴박하게 — 화면이 붉어지고, 한 번씩 떨리고, 메테오가 무작위로」).
+-- 켜지는 때: 지금 난이도에서 고르의 정체가 드러났고(PlayerQuest.StoryStage == "r" — 심장의 사도를 쓰러뜨린 순간부터) 4장 맵에 있을 때.
+-- 재의 왕을 쓰러뜨리면(단계 "4") 꺼진다. 심연(DepthDirector)은 제외.
+--   클라이언트: 붉은 하늘 · 심장 박동처럼 밝기가 뛴다 (DarkVision.SetAwake) · 이따금 땅울림
+--   서버: 사냥터(마을·옥좌 제외)에서 플레이어마다 이따금 운석 — 예고 원 뒤 그 자리에 떨어져 화염 피해 (최대 생명의 %, 화염 저항 적용)
+@Logic
+script AshAwakening extends Logic
+
+    property number MeteorEvery = 11          -- 플레이어마다 평균 간격(초) ± MeteorJitter
+    property number MeteorJitter = 4
+    property number MeteorRadius = 1.3
+    property number MeteorWarn = 1.4          -- 예고 원이 차오르는 시간
+    property number MeteorHpPct = 0.16        -- 최대 생명의 16% (화염 저항만큼 줄어든다, 저항은 최대 75%)
+    property number TremorMin = 14            -- 땅울림 간격(초)
+    property number TremorMax = 26
+    property integer TimerId = 0
+    property table NextMeteor = {}            -- 서버: userId → 다음 운석 시각
+    property number NextTremor = 0            -- 클라이언트
+    property boolean ClientAwake = false
+
+    method void OnBeginPlay()
+        -- 서버는 운석, 클라이언트는 하늘빛·땅울림 (한 스크립트, 실행 쪽마다 다른 주기)
+        self.NextMeteor = {}
+        self.ClientAwake = false
+        if self:IsServer() then
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:ServerTick() end, 0.5)
+        else
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:ClientTick() end, 0.5)
+        end
+    end
+
+    method void OnEndPlay()
+        -- 세션 종료 시 주기 타이머를 해제한다
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method boolean IsAwake(Entity player, Entity map)
+        -- 이 플레이어에게 재의 왕이 깨어난 4장인가
+        if not isvalid(player) or not isvalid(map) then return false end
+        if map:GetComponent("script.DepthDirector") ~= nil then return false end
+        if _GameConst:ActOfMap(map.Name) ~= 4 then return false end
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        -- 재의 왕을 쓰러뜨린 순간(보고 전)부터 끈다 — 하늘이 밝아지는 것(DarkVision.Cleared)과 같은 때
+        return quest ~= nil and quest:StoryStage() == "r" and not quest:ActBossDown(4)
+    end
+
+    method boolean MeteorMap(Entity map)
+        -- 운석은 사냥터에서만: 마을 · 옥좌(재의 왕 결전은 그 나름의 불기둥이 있다) 제외
+        if _GameConst:IsTown(map) then return false end
+        return _GameConst:BaseMapName(map.Name) ~= "throne"
+    end
+
+    method number Rand(number lo, number hi)
+        -- lo ~ hi 사이 실수
+        return lo + (hi - lo) * _UtilLogic:RandomDouble()
+    end
+
+    -- ───────── 서버: 운석 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void ServerTick()
+        -- 플레이어마다 다음 운석 시각이 되면 그 곁에 떨어뜨린다. 조건이 깨지면 시계를 지운다 (다시 들어오면 처음부터 기다린다)
+        local now = _UtilLogic.ElapsedSeconds
+        for id, p in pairs(_UserService.UserEntities) do
+            local map = isvalid(p) and p.CurrentMap or nil
+            if isvalid(map) and _Util:IsAlive(p) and self:IsAwake(p, map) and self:MeteorMap(map) then
+                local at = self.NextMeteor[id]
+                if at == nil then
+                    self.NextMeteor[id] = now + self:Rand(self.MeteorEvery - self.MeteorJitter, self.MeteorEvery + self.MeteorJitter)
+                elseif now >= at then
+                    self.NextMeteor[id] = now + self:Rand(self.MeteorEvery - self.MeteorJitter, self.MeteorEvery + self.MeteorJitter)
+                    self:DropMeteor(p, map)
+                end
+            else
+                self.NextMeteor[id] = nil
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DropMeteor(Entity player, Entity map)
+        -- 플레이어 곁(0~2.2칸) 한 곳: 예고 → MeteorWarn초 뒤 그 자리에 있는 플레이어 모두 화염 피해 (피할 수 있게 발밑 바로 아래는 드물다)
+        local at = _Util:Pos2(player)
+        local a = self:Rand(0, math.pi * 2)
+        local r = self:Rand(0.4, 2.2)
+        local c = Vector2(at.x + math.cos(a) * r, at.y + math.sin(a) * r * 0.7)
+        self:MeteorWarnFx(map.Name, c, self.MeteorRadius, self.MeteorWarn)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(map) then return end
+            self:MeteorBoomFx(map.Name, c, self.MeteorRadius)
+            for _, u in ipairs(_Util:PlayersNear(map, c, self.MeteorRadius)) do
+                ---@type PlayerVitals
+                local vitals = u:GetComponent("script.PlayerVitals")
+                ---@type PlayerStats
+                local st = u:GetComponent("script.PlayerStats")
+                if vitals ~= nil then
+                    local res = st ~= nil and math.max(0, math.min(75, st:GetResist("fire"))) or 0
+                    vitals:TakeTickDamage(u.PlayerComponent.MaxHp * self.MeteorHpPct * (1 - res / 100))
+                end
+            end
+        end, self.MeteorWarn)
+        log(string.format("[VRF] AshAwakening meteor %s (%.1f,%.1f)", map.Name, c.x, c.y))
+    end
+
+    @ExecSpace("Multicast")
+    method void MeteorWarnFx(string mapName, Vector2 c, number radius, number seconds)
+        -- 예고: 화염 장판 원 + 끝무렵 하늘에서 불덩이가 내려온다 (같은 맵에 있는 사람만)
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) or not isvalid(p.CurrentMap) or p.CurrentMap.Name ~= mapName then return end
+        local map = p.CurrentMap
+        _Util:Telegraph(map, c, radius, "fire", seconds)
+        local drops = { { 0.42, 3.0, 0.5 }, { 0.28, 1.9, 0.6 }, { 0.14, 0.9, 0.7 } }
+        for _, d in ipairs(drops) do
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(map) then return end
+                _ParticleService:PlayBasicParticle(BasicParticleType.FireBall, map, Vector3(c.x + d[2] * 0.35, c.y + d[2], 0), 0, Vector3(d[3], d[3], 1), false, { SortingLayer = "MapLayer0", OrderInLayer = 6 })
+            end, math.max(0, seconds - d[1]))
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void MeteorBoomFx(string mapName, Vector2 c, number radius)
+        -- 떨어짐: 불 폭발 + 가까우면 화면이 흔들린다
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) or not isvalid(p.CurrentMap) or p.CurrentMap.Name ~= mapName then return end
+        local map = p.CurrentMap
+        _Util:ElementBurst(map, Vector3(c.x, c.y, 0), radius, "fire", Color(1, 0.5, 0.3, 1))
+        _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, map, Vector3(c.x, c.y, 0), 0, Vector3(radius * 0.6, radius * 0.6, 1), false, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(0.5, 0.42, 0.38, 0.8) })
+        local d = (_Util:Pos2(p) - c):Magnitude()
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) and d < 6 then cam:ShakeCamera(d < 2 and 0.3 or 0.15, 0.3) end
+        if d < 7 then _SoundDirector:PlayEffect(_GameConst.SfxImpact, d < 2 and 0.8 or 0.45) end
+    end
+
+    -- ───────── 클라이언트: 붉은 하늘 · 땅울림 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 깨어남이 바뀌면 하늘빛을 바꾸고, 켜져 있는 동안 이따금 땅이 울린다
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) then return end
+        local awake = self:IsAwake(p, p.CurrentMap)
+        local now = _UtilLogic.ElapsedSeconds
+        if awake ~= self.ClientAwake then
+            self.ClientAwake = awake
+            _DarkVision:SetAwake(awake)
+            if awake then self.NextTremor = now + 5 end
+            log("[VRF] AshAwakening " .. (awake and "on" or "off"))
+        end
+        if awake and now >= self.NextTremor then
+            self.NextTremor = now + self:Rand(self.TremorMin, self.TremorMax)
+            self:Tremor(p.CurrentMap)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tremor(Entity map)
+        -- 땅울림: 길게 흔들리고 낮은 울림, 주변에 먼지가 인다
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.28, 1.5) end
+        _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.7)
+        local p = _UserService.LocalPlayer
+        if not isvalid(map) or not isvalid(p) then return end
+        local at = _Util:Pos2(p)
+        for i = 1, 3 do
+            local x = at.x + self:Rand(-4, 4)
+            local y = at.y + self:Rand(-2, 2)
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, map, Vector3(x, y, 0), 0, Vector3(0.8, 0.8, 1), false, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(0.45, 0.38, 0.34, 0.7) })
+        end
+    end
+
+end

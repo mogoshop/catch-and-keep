@@ -24,6 +24,8 @@ script DarkVision extends Logic
     property number FadeFrom = 0            -- 밝아지는 중: 시작 밝기 (0이면 멈춤)
     property number FadeAt = 0              -- 밝아지기 시작한 시각
     property number FadeSeconds = 3.5
+    property boolean Awake = false          -- 재의 왕이 깨어난 4장 (AshAwakening): 하늘이 더 붉고, 심장 박동처럼 밝기가 뛴다
+    property number BeatPeriod = 2.6        -- 박동 한 번(초)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -66,6 +68,7 @@ script DarkVision extends Logic
         if map ~= self.CurrentMap then self:EnterMap(player, map) end
         if not self.Active then return end
         self:TickCleared(player, map)
+        self:TickHeartbeat(map)
         -- 사라진 대상의 조명 정리
         for id, l in pairs(self.Lights) do
             if not isvalid(l.entity) or not l.entity.Enable or l.entity.CurrentMap ~= map
@@ -146,6 +149,7 @@ script DarkVision extends Logic
         local ambient = math.max(base, _GameData.darkMinAmbient)
         local color = amb.AmbientColor
         if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
+        if self:AwakeHere(map) then color = Color(1, 0.3, 0.22, 1) end                   -- 재의 왕이 깨어난 뒤: 핏빛 하늘 (AshAwakening)
         -- 심도는 전용 조명: 일반 맵 하한보다 어둡고 보랏빛이다 (횃불·내 주변 빛으로 길을 읽는다)
         local depth = map:GetComponent("script.DepthDirector")
         if depth ~= nil then
@@ -267,6 +271,39 @@ script DarkVision extends Logic
         local lit = self:ClearedLight(t)
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, lit.color, lit.ambient))
+    end
+
+    method boolean AwakeHere(Entity map)
+        -- 붉은 하늘을 이 맵에 쓸까: 깨어남 · 4장 · 심도 아님 · 아직 재의 왕을 쓰러뜨리지 않음
+        return self.Awake and isvalid(map) and _GameConst:ActOfMap(map.Name) == 4 and map:GetComponent("script.DepthDirector") == nil and not self.Cleared
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetAwake(boolean on)
+        -- AshAwakening이 바꾼다. 지금 맵의 전체 조명을 바로 다시 만든다 (다음 맵은 EnterMap이 Awake를 보고 고른다)
+        if self.Awake == on then return end
+        self.Awake = on
+        local map = self.CurrentMap
+        if not self.Active or not isvalid(map) or map:GetComponent("script.DepthDirector") ~= nil then return end
+        local color = self.DarkColor
+        if self:AwakeHere(map) then color = Color(1, 0.3, 0.22, 1)
+        elseif _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end
+        self.DarkColor = color
+        if self.Cleared then return end
+        if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, self.DarkAmbient))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickHeartbeat(Entity map)
+        -- 깨어난 4장: 맵 전체가 심장 박동처럼 두 번씩 붉게 밝아졌다 어두워진다 (스캔 주기마다 전체 조명을 다시 만든다)
+        if not self:AwakeHere(map) or self.FadeFrom > 0 then return end
+        local t = (_UtilLogic.ElapsedSeconds % self.BeatPeriod) / self.BeatPeriod
+        local beat = math.max(0, 1 - math.abs(t - 0.14) / 0.16) + 0.6 * math.max(0, 1 - math.abs(t - 0.42) / 0.16)
+        local ambient = self.DarkAmbient * 0.9 + 0.08 * beat
+        local color = Color(1, 0.3 - 0.08 * beat, 0.22 - 0.06 * beat, 1)
+        if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
+        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
     end
 
     @ExecSpace("ClientOnly")

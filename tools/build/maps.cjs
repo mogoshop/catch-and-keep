@@ -55,7 +55,11 @@ function desiredEntities(d, maps, ctx) {
     const prev = i === 0 ? town : fields[i - 1];
     const next = i === fields.length - 1 ? town : fields[i + 1];
     place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
-    place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": gate(next.id, next === town ? townArrival : arriveLeft(next), next.name) });
+    // 봉인 문 (10-23): 다음 맵이 gate 의뢰의 보스 맵이면 그 의뢰의 문지기를 쓰러뜨려야 지난다 (WarpGate.SealGate)
+    const sealQ = (ctx.quests || []).find((q) => q.kind === "gate" && q.map === next.id && q.gate);
+    const nextGate = gate(next.id, next === town ? townArrival : arriveLeft(next), next.name);
+    if (sealQ) nextGate.SealGate = sealQ.gate;
+    place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": nextGate });
     // 이 필드에 딸린 곁가지 던전 입구 (던전마다 하나)
     for (const firstFloor of maps.filter((m) => m.kind === "side" && m.parent === d.id && m.entry !== "")) {
       const p = pos(firstFloor.entry);
@@ -452,6 +456,7 @@ function context() {
     monsters: Object.fromEntries(monsters.map((m) => [m.id, m])),
     npcs: Object.fromEntries(npcs.map((n) => [n.model, n])),
     managed: managedModelIds(monsters, npcs),
+    quests: load("quests"),
     art: Object.fromEntries(load("map_art").map((a) => [a.map, a])),
     sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
     layouts: Object.fromEntries(load("map_layouts").map((l) => [l.map, l])),

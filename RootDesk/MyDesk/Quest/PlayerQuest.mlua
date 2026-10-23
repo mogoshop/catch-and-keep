@@ -2,6 +2,7 @@
 -- 난이도마다 진행이 따로다 (D2): Index/State/Progress는 지금 난이도의 것, 다른 난이도는 ByDiff에 둔다. 보상은 난이도 배율(difficulty.csv questRewardMul).
 -- 진행: QuestSystem이 게임 이벤트(처치·정리·봉인 상자·추출·소환·도달)를 넘긴다. 수락·보고는 의뢰인(giver) NPC 근처에서만.
 -- 목표 종류 (14장 §6): kill / raise / extract / reach / clear(맵 전멸) / boss·ritual(이름 있는 적) / chest(열쇠 적 → 봉인 상자)
+--   gate(문지기 → 보스, 10-23): 1단계 q.gate(문지기, 맵 map1)를 쓰러뜨리면 Progress 1 · 봉인 문(WarpGate.SealGate)이 열린다 → 2단계 q.target(맵 map) 처치
 -- 영구 보상(스킬·능력치 포인트·그림자 배치)은 그 난이도에서 의뢰를 끝낼 때 한 번 → 난이도마다 1회.
 @Component
 script PlayerQuest extends Component
@@ -53,6 +54,15 @@ script PlayerQuest extends Component
         local q = self:Current()
         if q == nil or not self:SameDifficulty(map) then return end
         if q.kind == "kill" and self:IsTarget(q.target, sourceId) then self:Advance(q) end
+        if q.kind == "gate" then
+            if q.gate == sourceId and self.Progress < 1 then
+                self.Progress = 1
+                self:GateFallen(_GameData:GetStory("gate_" .. sourceId), self.Entity.PlayerComponent.UserId)
+                log("[VRF] quest gate open " .. sourceId)
+            elseif self.Progress >= 1 and self:IsTarget(q.target, sourceId) then
+                self:Advance(q)
+            end
+        end
         if q.kind == "chest" and q.target == sourceId and self.Progress < 1 then
             -- 열쇠 단계: 열쇠를 지닌 적을 쓰러뜨렸다 → 봉인 상자로
             self.Progress = 1
@@ -162,8 +172,9 @@ script PlayerQuest extends Component
     method string StoryStage()
         -- 이야기 단계 (docs/design/31 §5): "0" 처음 · "1"~"4" 그 장을 끝냄 · "r" 고르의 정체가 드러남 (의뢰 23 보고 뒤)
         if self:IsActDone(4) then return "4" end
+        -- 심장의 사도를 쓰러뜨린 순간(목표 달성)부터 드러난 것으로 친다 — 그 자리에서 「꺼져 가는 불씨」·「행상의 정체」가 나온다 (10-23)
         local reveal = _QuestData:IndexOf("boss", "apostate_archbishop")
-        if reveal > 0 and self.Index > reveal then return "r" end
+        if reveal > 0 and (self.Index > reveal or (self.Index == reveal and self.State == 2)) then return "r" end
         for a = 3, 1, -1 do
             if self:IsActDone(a) then return tostring(a) end
         end
@@ -208,7 +219,7 @@ script PlayerQuest extends Component
 
     method string GoalMap(table q)
         -- 지금 단계의 목표 맵 (보통 맵 id). chest는 열쇠 단계(map1) → 상자(map)
-        if q.kind == "chest" and self.Progress < 1 and q.map1 ~= "" then return q.map1 end
+        if (q.kind == "chest" or q.kind == "gate") and self.Progress < 1 and q.map1 ~= "" then return q.map1 end
         return q.map
     end
 
@@ -222,6 +233,10 @@ script PlayerQuest extends Component
     method string StepZone(table q)
         -- 지금 단계의 목적지 한 곳. 열쇠 → 상자 의뢰는 「교수대 숲 · 목매단 동굴」을 함께 보여 줘서
         -- 처형인을 찾아 동굴로 먼저 가는 일이 있었다 (10-11 QA) → 단계마다 그 맵만
+        if q.kind == "gate" then
+            if self.Progress < 1 then return "1단계 · " .. self:MapLabel(self:GoalMap(q)) .. " 끝" end
+            return "2단계 · " .. self:MapLabel(q.map)
+        end
         if q.kind ~= "chest" then return q.zone end
         if self.Progress < 1 then return "1단계 · " .. self:MapLabel(self:GoalMap(q)) end
         return "2단계 · " .. self:MapLabel(q.map) .. " 끝방"
@@ -229,6 +244,10 @@ script PlayerQuest extends Component
 
     method string StepGoal(table q)
         -- 지금 단계의 할 일 한 줄 (열쇠 → 상자 의뢰)
+        if q.kind == "gate" then
+            if self.Progress >= 1 then return "봉인이 풀렸다 → " .. _GameData:GetMonsterName(q.target) .. " 처치" end
+            return _GameData:GetMonsterName(q.gate) .. " 처치 → 옥좌의 봉인 풀기"
+        end
         if q.kind ~= "chest" then return q.objective end
         if self.Progress >= 1 then return "열쇠 획득 → 끝방 봉인 상자를 여세요" end
         return _GameData:GetMonsterName(q.target) .. " 처치 → 열쇠 얻기"
@@ -241,6 +260,17 @@ script PlayerQuest extends Component
         for i = 1, _QuestData:Count() do
             local q = _QuestData:Get(i)
             if q.kind == "chest" and q.map == mapKey then
+                return self.Index > i or (self.Index == i and self.State >= 1 and self.Progress >= 1)
+            end
+        end
+        return true
+    end
+
+    method boolean GatePassed(string gateSourceId)
+        -- 그 문지기의 봉인: 이 난이도에서 gate 의뢰 1단계를 마쳤거나 의뢰를 이미 끝냈다 (WarpGate.SealGate가 본다)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if q.kind == "gate" and q.gate == gateSourceId then
                 return self.Index > i or (self.Index == i and self.State >= 1 and self.Progress >= 1)
             end
         end
@@ -451,6 +481,15 @@ script PlayerQuest extends Component
             local stats = self.Entity:GetComponent("script.PlayerStats")
             if stats ~= nil then stats:RefreshResists() end
         end
+    end
+
+    @ExecSpace("Client")
+    method void GateFallen(string lastWords)
+        -- 문지기가 쓰러졌다: 마지막 말 + 봉인이 풀렸다는 알림 (따로 이야기 카드를 띄우지 않는다 — 최종전으로 가는 흐름을 끊지 않게)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.3, 0.9) end
+        _UXFeedback:ShowTinted("옥좌의 봉인이 풀렸다", lastWords, _GameData:GetUiIcon("q_done"), Color(1, 0.55, 0.45, 1))
     end
 
     @ExecSpace("Client")

@@ -262,7 +262,7 @@ T.named.forEach((r, i) => {
 });
 
 // ── 의뢰 ──
-const KINDS = ["kill", "extract", "reach", "raise", "clear", "boss", "ritual", "chest"];
+const KINDS = ["kill", "extract", "reach", "raise", "clear", "boss", "ritual", "chest", "gate"];
 T.quests.forEach((r, i) => {
   if (!KINDS.includes(r.kind)) err("quests", i, `kind '${r.kind}' 알 수 없음`);
   // kill 대상은 '|'로 여러 종류 (예: 창·방패 문지기)

@@ -13,6 +13,8 @@ script WarpGate extends Component
     property number Cooldown = 2
     @Sync
     property string OwnerUserId = ""
+    property string SealGate = ""             -- 봉인 문: 이 문지기(몬스터 sourceId)를 쓰러뜨린 사람만 지난다 (PlayerQuest.GatePassed, gate 의뢰 · 10-23 옥좌의 문)
+    property table SealWarned = {}
 
     property integer TimerId = 0
     property table LastWarp = {}
@@ -48,6 +50,19 @@ script WarpGate extends Component
     method boolean CanUse(Entity player)
         -- 귀환 포털은 주인과 같은 파티만 공유한다. 일반 지역 출구는 모두에게 열린다.
         if not isvalid(player) or player.PlayerComponent == nil then return false end
+        if self.SealGate ~= "" then
+            ---@type PlayerQuest
+            local quest = player:GetComponent("script.PlayerQuest")
+            if quest ~= nil and not quest:GatePassed(self.SealGate) then
+                local id = player.PlayerComponent.UserId
+                local now = _UtilLogic.ElapsedSeconds
+                if now - (self.SealWarned[id] or -100) > 4 then
+                    self.SealWarned[id] = now
+                    _Util:Warn("옥좌로 가는 문이 봉인되어 있다 — " .. _GameData:GetMonsterName(self.SealGate) .. "를 쓰러뜨려라", id)
+                end
+                return false
+            end
+        end
         if self.OwnerUserId == "" or player.PlayerComponent.UserId == self.OwnerUserId then return true end
         local owner = _UserService:GetUserEntityByUserId(self.OwnerUserId)
         if not isvalid(owner) then return false end
