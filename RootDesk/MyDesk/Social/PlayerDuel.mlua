@@ -1,32 +1,45 @@
--- 결투 (D2의 적대 선언을 "요청·수락"으로). 결투 중인 두 사람만 서로 공격할 수 있다 (피해 1/4).
--- 진 쪽은 장비를 떨구지 않고 제자리에서 부활, 이긴 쪽은 전리품 「귀」를 얻는다. 맵이 달라지면 결투 종료.
+-- 결투 (D2의 적대 선언을 "요청·수락"으로). 결투 중인 두 사람만 서로 공격할 수 있다 (피해 1/4). 시작 3초는 서로 맞지 않는다.
+-- 진 쪽 (10-23): 일반 사망처럼 시체(장비)를 남기고 마을에서 부활, 경험치는 잃지 않고 골드 duelGoldDropPct%를 떨군다 (이긴 사람 몫 — PlayerVitals.DropDuelGold).
+-- 승리 전리품 「귀」는 10-13에 없앴다. 맵이 달라지거나 마을로 가면 결투 종료.
 @Component
 script PlayerDuel extends Component
 
     @Sync
     property string Opponent = ""            -- 상대 userId
     property integer TimerId = 0
+    property number StartedAt = 0             -- 서버 시각 (시작 GraceSeconds 동안은 서로 맞지 않는다)
+    property number GraceSeconds = 3
 
     method boolean IsOpponent(Entity e)
-        return self.Opponent ~= "" and isvalid(e) and isvalid(e.PlayerComponent) and e.PlayerComponent.UserId == self.Opponent
+        -- 공격 판정 (서버 PlayerAttack.IsAttackTarget): 결투 상대이고 시작 유예가 지났다
+        if self.Opponent == "" or not isvalid(e) or not isvalid(e.PlayerComponent) or e.PlayerComponent.UserId ~= self.Opponent then return false end
+        return _UtilLogic.ElapsedSeconds >= self.StartedAt + self.GraceSeconds
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        -- 나가면 반복 타이머를 정리한다
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
     end
 
     @ExecSpace("ServerOnly")
     method void Start(string opponentUserId)
         self.Opponent = opponentUserId
+        self.StartedAt = _UtilLogic.ElapsedSeconds
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
         local o = _UserService:GetUserEntityByUserId(opponentUserId)
         local name = "?"
         if isvalid(o) then name = _PartySystem:NameOf(o) end
-        _Util:Notify("결투 시작: " .. name, self.Entity.PlayerComponent.UserId)
+        _Util:Banner("결투 시작: " .. name, "3초 뒤부터 서로 공격할 수 있다 · 지면 시체를 남기고 골드 " .. tostring(math.floor(_GameData.duelGoldDropPct)) .. "%를 떨군다", self.Entity.PlayerComponent.UserId)
     end
 
     @ExecSpace("ServerOnly")
     method void Check()
-        -- 상대가 사라지거나 다른 맵이면 끝
+        -- 상대가 사라지거나 다른 맵이거나 마을이면 끝
         local o = _UserService:GetUserEntityByUserId(self.Opponent)
-        if not isvalid(o) or o.CurrentMap ~= self.Entity.CurrentMap then self:End("결투가 끝났다") end
+        if not isvalid(o) or o.CurrentMap ~= self.Entity.CurrentMap or _GameConst:IsTown(self.Entity.CurrentMap) then self:End("결투가 끝났다") end
     end
 
     @ExecSpace("ServerOnly")

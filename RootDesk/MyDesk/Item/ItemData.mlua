@@ -606,7 +606,10 @@ script ItemData extends Logic
         if extra <= 0 then extra = 1 end
         for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do
             local value = tonumber(v)
-            if not self:IsCountStat(k) then
+            if value < 0 then
+                -- 단점 옵션 (쓸모없는 유니크의 「독 저항 -10」 등): 굴리지 않고 그대로 깎는다 (예전엔 1로 올라가 +1이 됐다)
+                value = -math.max(1, math.floor(-value * _GameData.gearMult * extra + 0.5))
+            elseif not self:IsCountStat(k) then
                 local roll = _GameData.uniqueRollMin + (1 - _GameData.uniqueRollMin) * _UtilLogic:RandomDouble()
                 value = math.max(1, math.floor(value * _GameData.gearMult * extra * roll + 0.5))
             end
@@ -619,7 +622,8 @@ script ItemData extends Logic
         local parts = {}
         for k, v in string.gmatch(mods, "([%w_]+)=([%-%d%.]+)") do
             local value = tonumber(v)
-            if not self:IsCountStat(k) then value = math.max(1, math.floor(value * _GameData.gearMult + 0.5)) end
+            if value < 0 then value = -math.max(1, math.floor(-value * _GameData.gearMult + 0.5))
+            elseif not self:IsCountStat(k) then value = math.max(1, math.floor(value * _GameData.gearMult + 0.5)) end
             table.insert(parts, k .. "=" .. tostring(math.floor(value)))
         end
         return table.concat(parts, ",")
@@ -889,7 +893,11 @@ script ItemData extends Logic
         local keys = {}
         for k, _ in pairs(total) do table.insert(keys, k) end
         table.sort(keys)
-        for _, k in ipairs(keys) do table.insert(parts, self:StatName(k) .. "+" .. tostring(math.floor(total[k]))) end
+        -- 단점 옵션(음수)은 「-10」으로 (예전엔 「+-10」)
+        for _, k in ipairs(keys) do
+            local v = math.floor(total[k])
+            table.insert(parts, self:StatName(k) .. (v < 0 and "" or "+") .. tostring(v))
+        end
         local req = ""
         if base ~= nil and base.reqLv > 1 then req = " (Lv" .. tostring(base.reqLv) .. ")" end
         local text = self:DisplayName(s) .. req .. "  " .. table.concat(parts, " ")

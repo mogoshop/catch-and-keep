@@ -172,15 +172,17 @@ script PlayerVitals extends Component
         -- 결투 패배는 결투 상대(또는 그 소환수)에게 맞아 쓰러졌을 때만 (10-13: 결투를 걸어 두고 몬스터에게 죽어도 사망 벌칙이 없던 구멍)
         local byOpponent = duel ~= nil and duel.Opponent ~= "" and self.LastHitBy == duel.Opponent and _UtilLogic.ElapsedSeconds - self.LastHitAt <= 5
         local inDuel = false
-        if byOpponent then inDuel = duel:OnOwnerDied()
+        local duelWinner = ""
+        if byOpponent then
+            duelWinner = duel.Opponent
+            inDuel = duel:OnOwnerDied()
         elseif duel ~= nil and duel.Opponent ~= "" then duel:Abort("결투 중 다른 원인으로 쓰러져 결투가 중단됐다") end
-        if not inDuel then
-            -- 결투 패배가 아니면 소환수가 무너진다 (D2). 결투에서 진 경우는 군단을 그대로 둔다
-            ---@type ShadowCommander
-            local commander = self.Entity:GetComponent("script.ShadowCommander")
-            if commander ~= nil then commander:RecallAll() end
-            _UndeadSystem:DismissAll(self.Entity)
-        end
+        -- 소환수가 무너진다 (D2). 결투에서 져도 같다 — 10-23: 예전엔 결투 패배면 군단을 두고 제자리에서 체력 가득 부활해,
+        -- 보스전에서 친구에게 마지막 일격을 맞아 무료로 되살아나는 구멍이 됐다
+        ---@type ShadowCommander
+        local commander = self.Entity:GetComponent("script.ShadowCommander")
+        if commander ~= nil then commander:RecallAll() end
+        _UndeadSystem:DismissAll(self.Entity)
         local goldLost = 0
         local expLost = 0
         -- 심도 (10-20 하강 구조): 목숨 하나 — 쓰러지면 그 도전이 끝나고 마을로. 사망 벌칙·시체는 없다
@@ -195,17 +197,36 @@ script PlayerVitals extends Component
             _TimerService:SetTimerOnce(function() self:Revive(false) end, pc.RespawnDuration)
             return
         end
-        if not inDuel then
+        if inDuel then
+            -- 결투 패배 (10-23 사용자): 경험치는 잃지 않고, 가진 골드의 duelGoldDropPct%를 그 자리에 떨군다 (이긴 사람 몫)
+            goldLost = self:DropDuelGold(duelWinner)
+        else
             local lost = self:ApplyDeathPenalty()
             goldLost = lost.gold
             expLost = lost.exp
-            ---@type PlayerCorpses
-            local corpses = self.Entity:GetComponent("script.PlayerCorpses")
-            if corpses ~= nil then corpses:LeaveCorpse(_Util:Pos2(self.Entity), math.floor(expLost * _GameData.deathExpRecover)) end
         end
+        -- 시체: 착용 장비와 되찾을 경험치 (결투 패배도 같다 — 장비는 주인만 되찾는다)
+        ---@type PlayerCorpses
+        local corpses = self.Entity:GetComponent("script.PlayerCorpses")
+        if corpses ~= nil then corpses:LeaveCorpse(_Util:Pos2(self.Entity), math.floor(expLost * _GameData.deathExpRecover)) end
         _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap, cause = self.LastHitSource })
         self:NotifyDeath(goldLost, expLost, inDuel, pc.UserId)
-        _TimerService:SetTimerOnce(function() self:Revive(inDuel) end, pc.RespawnDuration)
+        _TimerService:SetTimerOnce(function() self:Revive(false) end, pc.RespawnDuration)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer DropDuelGold(string winnerUserId)
+        -- 결투 패배: 골드 duelGoldDropPct%를 쓰러진 자리에 떨군다. 이긴 사람만 줍는다 (이긴 사람이 맵에 없으면 떨구지 않는다)
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local winner = _UserService:GetUserEntityByUserId(winnerUserId)
+        if stats == nil or not isvalid(winner) or winner.CurrentMap ~= self.Entity.CurrentMap then return 0 end
+        local amount = math.floor(stats.Gold * _GameData.duelGoldDropPct / 100)
+        if amount <= 0 then return 0 end
+        stats:AddGold(-amount)
+        _LootSystem:Spawn(_Util:Pos2(self.Entity), winnerUserId, "gold", "", amount, 0)
+        log("[VRF] duel gold drop " .. tostring(amount) .. " → " .. winnerUserId)
+        return amount
     end
 
     @ExecSpace("ServerOnly")
@@ -245,7 +266,7 @@ script PlayerVitals extends Component
     @ExecSpace("Client")
     method void NotifyDeath(integer goldLost, integer expLost, boolean inDuel)
         if inDuel then
-            _NoticeFeed:Push("결투에서 패배했다")
+            _NoticeFeed:Push("결투에서 패배했다... 골드 " .. tostring(goldLost) .. "을(를) 떨어뜨렸다. 장비는 시체에 남았다")
             return
         end
         local text = "사망했다... 골드 " .. tostring(goldLost) .. " 손실. 장비는 시체에 남았다"

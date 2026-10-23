@@ -6,6 +6,8 @@ script TradeWindow extends Logic
     property string Win = "TradeWin"
     property string RenderKey = ""
     property integer TimerId = 0
+    property integer SeenRevision = 0
+    property number ChangedAt = -100
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -19,7 +21,7 @@ script TradeWindow extends Logic
         end
         _UIKit:Connect(self.Win .. "/BtnGoldMinus", function() local t = self:Trade() if t ~= nil then t:RequestGold(-100) end end)
         _UIKit:Connect(self.Win .. "/BtnGoldPlus", function() local t = self:Trade() if t ~= nil then t:RequestGold(100) end end)
-        _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm() end end)
+        _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm(t.TheirRevision) end end)
         _UIKit:Connect(self.Win .. "/BtnCancel", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
         _UIKit:Connect(self.Win .. "/BtnClose", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
@@ -46,7 +48,14 @@ script TradeWindow extends Logic
             self.RenderKey = ""
             return
         end
-        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm)
+        -- 상대가 바꾼 뒤 3초 동안은 「방금 바뀜」을 붉게 (서버도 그동안 확인을 받지 않는다)
+        local now = _UtilLogic.ElapsedSeconds
+        if t.TheirRevision ~= self.SeenRevision then
+            self.SeenRevision = t.TheirRevision
+            self.ChangedAt = now
+        end
+        local fresh = t.TheirRevision > 0 and now < self.ChangedAt + 3
+        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm) .. tostring(fresh)
         if key == self.RenderKey then return end
         if self.RenderKey == "" then _UIKit:Open("InvWin") end
         self.RenderKey = key
@@ -57,7 +66,8 @@ script TradeWindow extends Logic
             _UIKit:SetText(self.Win .. "/Their" .. tostring(i), theirs[i] ~= nil and _ItemData:DisplayName(theirs[i]) or "")
         end
         _UIKit:SetText(self.Win .. "/Gold", "내 골드 " .. tostring(t.MyGold) .. "  " .. self:ConfirmText(t.MyConfirm)
-            .. "\n상대 골드 " .. tostring(t.TheirGold) .. "  " .. self:ConfirmText(t.TheirConfirm) .. "   (소지품 칸을 누르면 올라간다)")
+            .. "\n상대 골드 " .. tostring(t.TheirGold) .. "  " .. self:ConfirmText(t.TheirConfirm)
+            .. (fresh and ("   " .. _UIKit:Colored("#FF6A50", "상대가 방금 내용을 바꿨다")) or "   (소지품 칸을 누르면 올라간다)"))
     end
 
     method table Split(string digest)

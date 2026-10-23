@@ -18,6 +18,10 @@ script PlayerTrade extends Component
     property integer TheirGold = 0
     @Sync
     property boolean TheirConfirm = false
+    @Sync
+    property integer TheirRevision = 0    -- 상대 제안이 바뀐 횟수 (바꿔치기 방지 — 내가 본 판만 확인할 수 있다)
+    property number TheirChangedAt = -100 -- 서버: 상대 제안이 마지막으로 바뀐 시각 (바뀐 뒤 ConfirmLockSeconds 동안 확인 불가)
+    property number ConfirmLockSeconds = 3
     property table Escrow = {}
     property integer TimerId = 0
     property integer MaxItems = 8
@@ -32,6 +36,8 @@ script PlayerTrade extends Component
         self.TheirOffer = ""
         self.TheirGold = 0
         self.TheirConfirm = false
+        self.TheirRevision = 0
+        self.TheirChangedAt = -100
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
     end
@@ -62,6 +68,8 @@ script PlayerTrade extends Component
             o.TheirOffer = self.MyOffer
             o.TheirGold = self.MyGold
             o.TheirConfirm = false
+            o.TheirRevision = o.TheirRevision + 1
+            o.TheirChangedAt = _UtilLogic.ElapsedSeconds
             self.TheirConfirm = false
         end
     end
@@ -110,11 +118,20 @@ script PlayerTrade extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestConfirm()
+    method void RequestConfirm(integer seenRevision)
+        -- seenRevision = 확인을 누를 때 내 화면에 보이던 상대 제안 판 (10-23 바꿔치기 방지: 다르면 거절)
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId or self.Partner == "" then return end
         local o = self:Other()
-        if o == nil then return end
+        if o == nil or o.Partner ~= pc.UserId then return end
+        if seenRevision ~= self.TheirRevision then
+            _Util:Warn("상대가 거래 내용을 바꿨다 — 다시 보고 확인하라", pc.UserId)
+            return
+        end
+        if _UtilLogic.ElapsedSeconds < self.TheirChangedAt + self.ConfirmLockSeconds then
+            _Util:Warn("상대가 방금 내용을 바꿨다 — 잠시 뒤 확인할 수 있다", pc.UserId)
+            return
+        end
         self.MyConfirm = true
         o.TheirConfirm = true
         if o.MyConfirm then self:Complete(o) end
