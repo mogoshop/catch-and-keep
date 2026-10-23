@@ -385,10 +385,21 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void ApplySkeletonForm(Entity player, table rec)
-        -- 해골 전사 변이 (10-24 사용자 B안 · 셋 중 하나): 대검 = 범위 베기·느림·단단 / 방패 = 받는 피해↓·도발 / 쌍칼 = 빠름·약함
-        local gs = self:SkillLevel(player, "skel_greatsword")
-        local sh = self:SkillLevel(player, "skel_shield")
-        local tw = self:SkillLevel(player, "skel_twin")
+        -- 해골 전사 변이 편성 (10-24 사용자 C안): 변이마다 랭크 수만큼 해골이 그 모습으로 선다. 일으킬 때 아직 자리가 남은 변이를
+        -- 방패 → 대검 → 쌍칼 순으로 채우고, 다 차면 일반 해골. 쓰러진 해골의 자리는 다음에 일으키는 해골이 잇는다
+        -- 대검 = 범위 베기·느림·단단 / 방패 = 받는 피해↓·도발 / 쌍칼 = 빠름·약함
+        local quota = { shield = self:SkillLevel(player, "skel_shield"), greatsword = self:SkillLevel(player, "skel_greatsword"), twin = self:SkillLevel(player, "skel_twin") }
+        local used = { shield = 0, greatsword = 0, twin = 0 }
+        for _, other in ipairs(self:ListOf(player)) do
+            if other ~= rec and other.kind == "skeleton" and used[other.form or ""] ~= nil then used[other.form] = used[other.form] + 1 end
+        end
+        local pick = ""
+        for _, form in ipairs({ "shield", "greatsword", "twin" }) do
+            if pick == "" and used[form] < quota[form] then pick = form end
+        end
+        local gs = pick == "greatsword" and quota.greatsword or 0
+        local sh = pick == "shield" and quota.shield or 0
+        local tw = pick == "twin" and quota.twin or 0
         rec.form = ""
         if gs > 0 then
             rec.form = "greatsword"
@@ -600,7 +611,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist" }
+        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt" }   -- form~taunt: 해골 변이 편성
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end

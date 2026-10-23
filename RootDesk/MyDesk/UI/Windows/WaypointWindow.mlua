@@ -110,8 +110,8 @@ script WaypointWindow extends Logic
         end
         local open = eligible and (shown or now - self.QuietSince >= self.OpenDelay)
         if open and not shown then
-            -- 열 때는 지금 액트의 탭부터
-            self.ViewAct = travel.Act
+            -- 열 때는 지금 있는 맵의 액트 탭부터 (10-24: PlayerTravel.Act는 서버 값이라 클라이언트에서 늘 1 — 오아시스에서 액트 1이 열렸다)
+            self.ViewAct = self:CurrentAct(player)
             self.ViewDiff = st.Difficulty
             _UIKit:Open(self.Win)
         elseif not open then _UIKit:Close(self.Win) end
@@ -165,7 +165,7 @@ script WaypointWindow extends Logic
         self.LastPosition = _Util:Pos2(player)
         self.RenderKey = ""
         local travel = self:Travel()
-        if travel ~= nil then self.ViewAct = travel.Act end
+        if travel ~= nil then self.ViewAct = self:CurrentAct(_UserService.LocalPlayer) end
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if st ~= nil then self.ViewDiff = st.Difficulty end
@@ -173,6 +173,13 @@ script WaypointWindow extends Logic
         self.WasOpen = true
         self:Poll()
         return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer CurrentAct(Entity player)
+        -- 지금 있는 맵의 액트 (마을·사냥터 공통, 모르면 1)
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return 1 end
+        return math.max(1, _GameConst:ActOfMap(_GameConst:BaseMapName(player.CurrentMap.Name)))
     end
 
     @ExecSpace("ClientOnly")
