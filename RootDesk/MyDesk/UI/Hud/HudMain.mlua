@@ -16,7 +16,8 @@ script HudMain extends Logic
     property Vector2 PopPos = Vector2(0, 0)
     property number PopUntil = 0
     property number PopSeconds = 1.8
-    property table BuffDescs = {}               -- 버프 칩 번호 → 효과 설명 (누르면 안내 줄에)
+    property table BuffDescs = {}               -- 버프 칩 번호 → 효과 설명 (PC 마우스 올리면 설명 상자 · 모바일 누르면 안내 줄)
+    property integer HoverBuff = 0              -- PC: 마우스가 올라가 있는 칩 번호 (0 = 없음)
     property number WarnUntil = 0               -- 머리 위 경고 글씨 (ShowWarn)
     property number WarnSeconds = 1.3
     property string WarnText = ""
@@ -50,14 +51,21 @@ script HudMain extends Logic
             tipBox.SpriteGUIRendererComponent.Color = Color(c.r, c.g, c.b, 0.62)
         end
         _UIKit:RegisterWindow("MenuWin")
-        -- 버프 칩: 누르면 효과 설명 (모바일은 마우스를 올릴 수 없다)
+        -- 버프 칩: PC는 마우스를 올리면 설명 상자, 모바일은 누르면 안내 줄 (모바일은 마우스를 올릴 수 없다 · 10-24 사용자)
         self.BuffDescs = {}
+        _UIKit:SetEnabled("Buffs/Tip", false)
+        local mobile = Environment:IsMobilePlatform()
         for i = 1, 8 do
             local index = i
-            _UIKit:Connect("Buffs/B" .. tostring(i), function()
-                local d = self.BuffDescs[index]
-                if d ~= nil then _NoticeFeed:Push(d) end
-            end)
+            if mobile then
+                _UIKit:Connect("Buffs/B" .. tostring(i), function()
+                    local d = self.BuffDescs[index]
+                    if d ~= nil then _NoticeFeed:Push(d) end
+                end)
+            else
+                local chip = _UIKit:Get("Buffs/B" .. tostring(i))
+                if isvalid(chip) then chip:ConnectEvent(ButtonStateChangeEvent, function(event) self:OnBuffHover(index, event.state) end) end
+            end
         end
         -- 스킬 칸: 누르면 그 칸에 넣을 스킬을 고른다 (시전은 A S D F·우클릭)
         for i = 1, 5 do
@@ -206,6 +214,7 @@ script HudMain extends Logic
                 _UIKit:SetText(path .. "/Time", b.timeText or (b.left >= 0 and (tostring(math.ceil(b.left)) .. "초") or ""))
             end
         end
+        if self.HoverBuff > 0 then self:RenderBuffTip() end
     end
 
     @ExecSpace("ClientOnly")
@@ -258,7 +267,7 @@ script HudMain extends Logic
             if b ~= nil then
                 local hex = _GameConst:AuraHex(effect)
                 local c = Color(tonumber(string.sub(hex, 2, 3), 16) / 255, tonumber(string.sub(hex, 4, 5), 16) / 255, tonumber(string.sub(hex, 6, 7), 16) / 255, 1)
-                table.insert(list, { key = "buff_aura_" .. effect, label = short[effect], color = c, left = -1,
+                table.insert(list, { key = "aura_" .. effect, label = short[effect], color = c, left = -1,
                     desc = string.format("%s · 반경 %g 안 소환수 %s %s%d%% (%s)", b.v.name, b.v.radius, labels[effect], effect == "guard" and "-" or "+", math.floor(b.v.value), b.from) })
             end
         end
@@ -278,6 +287,28 @@ script HudMain extends Logic
                 end
             end
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnBuffHover(integer index, ButtonState state)
+        -- 마우스가 칩 위에 있는 동안만 설명 상자 (칩 줄 바로 위, 그 칩 왼쪽에 맞춘다)
+        if state == ButtonState.Normal and self.HoverBuff == index then self.HoverBuff = 0 end
+        if state == ButtonState.Hover then self.HoverBuff = index end
+        self:RenderBuffTip()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderBuffTip()
+        -- 칩이 사라지거나 바뀌어도 설명 상자를 지금 칩 내용에 맞춘다 (남은 초가 바뀌는 신전 축복 등)
+        local index = self.HoverBuff
+        local d = index > 0 and self.BuffDescs[index] or nil
+        if d == nil then
+            _UIKit:SetEnabled("Buffs/Tip", false)
+            return
+        end
+        _UIKit:SetText("Buffs/Tip/Text", d)
+        _UIKit:SetPos("Buffs/Tip", Vector2((index - 1) * 64, 64))
+        _UIKit:SetEnabled("Buffs/Tip", true)
     end
 
     method string Hex(Color c)

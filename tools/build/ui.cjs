@@ -417,9 +417,9 @@ function buildGameHud() {
   }
 
   // ── 버프·디버프 줄 (10-11 팀 QA: 신전 축복만 위쪽 글자로 보이고 둔화·저주는 안 보였다) ──
-  // 왼쪽 위(D2·PoE처럼)에 둥근 칩 최대 8개: 색 원 + 짧은 이름 + 남은 초. 누르면 효과 설명 (HudMain.RenderBuffs)
-  // (처음엔 아래 가운데였는데 NPC 대화 안내 「[Space] 이름」과 겹쳤다)
-  b.empty("Buffs", { anchor: "top-left", pos: [24, -34], rect_size: [8 * 64, 60] });   // top-left 프리셋은 피벗도 왼쪽 위
+  // 둥근 칩 최대 8개: 그림(코덱스 buff_*) 또는 색 원 + 짧은 이름 + 남은 초 (HudMain.RenderBuffs)
+  // 10-24 사용자: PC는 생명 오브(바닥 28 + 180) 바로 위, 마우스를 올리면 설명 상자(Tip). 모바일은 MobileLayout이 왼쪽 위로 옮기고 누르면 설명
+  b.empty("Buffs", { anchor: "bottom-left", pos: [20, 214], rect_size: [8 * 64, 60] });
   for (let i = 1; i <= 8; i++) {
     const path = `Buffs/B${i}`;
     b.button(path, "", { anchor: "middle-left", pos: [(i - 1) * 64, 0], rect_size: [56, 56], image_ruid: K.circle, bg_color: "#FFFFFF", sprite_type: 0, enable: false });
@@ -428,6 +428,10 @@ function buildGameHud() {
     // 디버프 칩 위에 코덱스 붉은 테두리 (debuff_frame, 가운데 투명). 버프와 한눈에 갈린다
     b.sprite(`${path}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], image_ruid: K.debuff_frame, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
   }
+  // 마우스를 올린 칩의 설명 (칩 줄 바로 위, x는 실행 중에 그 칩에 맞춘다)
+  b.panel("Buffs/Tip", { anchor: "bottom-left", pos: [0, 64], rect_size: [440, 84], ...part("hud_box"), sprite_type: 1, enable: false });
+  b.patchComponent("Buffs/Tip", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b.text("Buffs/Tip/Text", "", { size: 17, color: C.white, alignment: 3, anchor: "middle-center", pos: [0, 0], rect_size: [412, 76], bestfit: true, min_size: 12, max_size: 17 });
 
   // ── 퀘스트 창 (Q) ──
   k.frame("QuestWin", "middle-center", [0, 60], [800, 620], "퀘스트 — 무덤 왕국");

@@ -1,5 +1,5 @@
--- 소환수 종류별 초상 하나 + 「×N」·합친 생명·내뿜는 오오라 (해골 3마리 = 해골 초상 ×3). 다른 창에서는 숨긴다.
--- 공격·추격 같은 행동 글자는 수시로 바뀌어 산만해서 뺐다 (10-24 사용자) — 그 자리에 변종 그림자의 오오라 이름만 둔다.
+-- 소환수 종류별 초상 하나 + 「×N」·합친 생명·내뿜는 오오라 아이콘 (해골 3마리 = 해골 초상 ×3). 다른 창에서는 숨긴다.
+-- 공격·추격 같은 행동 글자와 오오라 이름 글자는 뺐다 (10-24 사용자) — 오오라는 칸 오른쪽 위 작은 아이콘.
 -- 위치: PC는 생명 오브 위(왼쪽 아래), 모바일은 의뢰 추적·일지 버튼과 겹치지 않게 가운데 아래 생명·마나 오브 위.
 @Logic
 script CompanionHUD extends Logic
@@ -163,7 +163,15 @@ script CompanionHUD extends Logic
                 if g.promoted then frame = Color(1, 0.86, 0.56, 1) end
                 if g.lowest <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
                 _UIKit:SetColor(base .. "/Frame", frame)
-                _UIKit:SetText(base .. "/State", g.aura ~= nil and _UIKit:Colored(_GameConst:AuraHex(g.aura), g.auraName) or "")
+                _UIKit:SetText(base .. "/State", "")
+                -- 오오라는 오른쪽 위 작은 아이콘만 (설명은 생명 오브 위 버프 칩 · 10-24 사용자). 코덱스 아이콘(ui_icons aura_*) 전에는 오오라 색 원
+                _UIKit:SetEnabled(base .. "/Aura", g.aura ~= nil)
+                if g.aura ~= nil then
+                    local icon = _GameData:GetUiIcon("aura_" .. g.aura)
+                    _UIKit:SetIcon(base .. "/Aura", icon ~= "" and icon or _GameData:GetUiIcon("circle"))
+                    _UIKit:SetColor(base .. "/Aura", icon ~= "" and Color(1, 1, 1, 1) or _GameConst:AuraColor(g.aura))
+                end
+                _UIKit:SetPos(base .. "/Count", Vector2(g.aura ~= nil and -34 or -6, -4))
                 _UIKit:SetText(base .. "/Count", g.count > 1 and ("×" .. tostring(g.count)) or "")
             end
         end

@@ -69,13 +69,26 @@ script WarpGate extends Component
         if not isvalid(owner) then return false end
         local mine = player:GetComponent("script.PlayerSocial")
         local theirs = owner:GetComponent("script.PlayerSocial")
-        if mine == nil or theirs == nil or mine.PartyId <= 0 or mine.PartyId ~= theirs.PartyId then return false end
+        if mine == nil or theirs == nil or mine.PartyId <= 0 or mine.PartyId ~= theirs.PartyId then
+            self:WarnOnce(player, "다른 사람의 귀환 포털이다 — 같은 파티여야 들어갈 수 있다")
+            return false
+        end
         -- 10-13: 파티원도 그 액트가 열려 있어야 (액트 1 캐릭터가 귀환 포털로 액트 3 보스 방에 따라 들어가 난이도를 여는 무임승차 방지)
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(self.TargetMap))
         ---@type PlayerTravel
         local travel = player:GetComponent("script.PlayerTravel")
         if info ~= nil and travel ~= nil and not travel:ActUnlockedIn(_GameConst:DifficultyOfMap(self.TargetMap), math.floor(info.act or 1)) then return false end
         return true
+    end
+
+    method void WarnOnce(Entity player, string text)
+        -- 포털 위에 서 있는 동안 0.3초마다 막히므로 사람마다 4초에 한 번만 알린다 (서버에서만 — 미니맵의 CanUse 확인은 클라이언트)
+        if not self:IsServer() then return end
+        local id = player.PlayerComponent.UserId
+        local now = _UtilLogic.ElapsedSeconds
+        if now - (self.SealWarned[id] or -100) <= 4 then return end
+        self.SealWarned[id] = now
+        _Util:Warn(text, id)
     end
 
     @ExecSpace("ServerOnly")

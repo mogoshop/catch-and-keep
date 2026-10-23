@@ -9,6 +9,9 @@ function run() {
   for (let i = 1; i <= 4; i++) {
     const unit = `SafeArea/Strip/Unit${i}`;
     b.text(`${unit}/Count`, '', { anchor: 'top-right', pos: [-6, -4], rect_size: [56, 28], size: 21, bold: true, color: '#F6E3B0', alignment: 5, outline: true, outline_color: '#1A1410', outline_width: 0.3 });
+    // 그 칸 소환수가 내뿜는 오오라 (변종 그림자): 오른쪽 위 작은 아이콘 — 효과 설명은 생명 오브 위 버프 칩에서 (10-24 사용자). 오오라가 있으면 「×N」은 왼쪽으로 비킨다
+    b.sprite(`${unit}/Aura`, { anchor: 'top-right', pos: [-4, -4], rect_size: [28, 28], color: '#FFFFFF', sprite_type: 0, enable: false });
+    b.patchComponent(`${unit}/Aura`, 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false, PreserveSprite: 0 });
     // 초상은 테두리(위 84) 한가운데 기준 — 그림 비율에 따라 크기가 달라도 가운데에 온다 (10-13: 위쪽 기준이라 작은 그림이 칸 위에 붙었다)
     b.patch(`${unit}/Portrait`, { anchor: 'top-center', pivot: [0.5, 0.5], pos: [0, -42] });
   }

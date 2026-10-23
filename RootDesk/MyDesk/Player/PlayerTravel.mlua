@@ -292,9 +292,11 @@ script PlayerTravel extends Component
         self:ClosePortal(0)
         local name = self:OwnerName()
         local fieldSpot = self:FreeSpot(field, here, { Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1), Vector2(0.7, 0.7), Vector2(-0.7, 0.7), Vector2(0.7, -0.7), Vector2(-0.7, -0.7) }, self.PortalGap)
-        local townSpot = self:FreeSpot(town, Vector2(4, -3.6), { Vector2(0, 0), Vector2(1, 0), Vector2(-1, 0), Vector2(2, 0), Vector2(-2, 0), Vector2(0, -1), Vector2(1, -1), Vector2(-1, -1) }, 1.4)
-        self.FieldGate = self:SpawnPortal(field, fieldSpot, town.Name, Vector2(0, 0), "마을 · " .. name, false)
-        self.TownGate = self:SpawnPortal(town, townSpot, field.Name, here, "되돌아가기 · " .. name, true)
+        -- 마을 쪽은 파티원 포털끼리 이름표가 겹치지 않게 넓게 (10-24: 1.4 간격이면 「되돌아가기 · 이름」 두 줄이 겹쳤다)
+        local townSpot = self:FreeSpot(town, Vector2(4, -3.6), { Vector2(0, 0), Vector2(-1, 0), Vector2(1, 0), Vector2(-2, 0), Vector2(0, -0.7), Vector2(-1, -0.7), Vector2(1, -0.7), Vector2(-2, -0.7) }, 2.6)
+        -- 이름표 「{가는 곳} - {주인}」 (10-24 사용자: 누구 포털인지·어디로 가는지 구분)
+        self.FieldGate = self:SpawnPortal(field, fieldSpot, town.Name, Vector2(0, 0), self:PlaceName(town.Name) .. " - " .. name, false)
+        self.TownGate = self:SpawnPortal(town, townSpot, field.Name, here, self:PlaceName(field.Name) .. " - " .. name, true)
         log("[VRF] 귀환 포털 열림 " .. field.Name .. " (" .. string.format("%.1f,%.1f", fieldSpot.x, fieldSpot.y) .. ") ↔ " .. town.Name)
     end
 
@@ -328,6 +330,13 @@ script PlayerTravel extends Component
             if b ~= nil and isvalid(b) then b:Destroy() end
         end
         if delay <= 0 then close() else _TimerService:SetTimerOnce(close, delay) end
+    end
+
+    method string PlaceName(string mapName)
+        -- 맵 표시 이름 (난이도 접미사 뗀 maps.csv name, 없으면 맵 id)
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(mapName))
+        if info ~= nil and info.name ~= nil and info.name ~= "" then return tostring(info.name) end
+        return mapName
     end
 
     method string OwnerName()
