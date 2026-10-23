@@ -1,12 +1,12 @@
 -- 재의 왕이 깨어난 뒤의 4장 (10-23 사용자: 「오렌을 잡고 나서 재의 왕이 부활하니 더 긴박하게 — 화면이 붉어지고, 한 번씩 떨리고, 메테오가 무작위로」).
 -- 켜지는 때: 지금 난이도에서 고르의 정체가 드러났고(PlayerQuest.StoryStage == "r" — 심장의 사도를 쓰러뜨린 순간부터) 4장 맵에 있을 때.
 -- 재의 왕을 쓰러뜨리면(단계 "4") 꺼진다. 심연(DepthDirector)은 제외.
--- 10-23 2차 (사용자: 「빨갛게 - 땅울림 - 메테오 - 유닛 각성까지 안내문과 같이 진행해서 긴박함을」): 이야기 카드가 닫힌 뒤 네 단계를 차례로 연다.
---   1 붉은 하늘  : 하늘이 핏빛 · 심장 박동처럼 밝기가 뛴다 (DarkVision.SetAwake)
---   2 땅울림     : 이따금 길게 흔들린다
---   3 운석       : 서버가 사냥터(마을·옥좌 제외)에서 플레이어마다 이따금 운석 — 예고 원 뒤 그 자리에 화염 피해 (최대 생명의 %, 화염 저항 적용)
---   4 군세 각성  : 그 플레이어가 있는 4장 맵의 모든 몬스터에 몬스터 상태 「각성」 (monster_states.csv awaken — 이동·공격 속도 +20% · 붉은 몸 · 이름 아래 「각성」)
--- 단계마다 위쪽 가운데 붉은 안내 (HudMap.ShowAlert). 클라이언트가 단계를 열 때마다 서버에 알린다 (ReachPhase) — 안내보다 운석·각성이 먼저 오지 않게.
+-- 10-23 2차: 이야기 카드가 닫히고 4초 뒤 한 번에 깨어난다 — 안내 하나 (사용자: 「하늘이 핏빛으로 물든다 - 몬스터가 각성 상태가 됩니다」 하나로)
+--   붉은 하늘   : 하늘이 핏빛 · 심장 박동처럼 밝기가 뛴다 (DarkVision.SetAwake)
+--   땅울림      : 깨어날 때 크게 한 번, 그 뒤 이따금 길게 흔들린다
+--   군세 각성   : 그 플레이어가 있는 4장 맵의 모든 몬스터에 몬스터 상태 「각성」 (monster_states.csv awaken — 이동·공격 속도 +20% · 붉은 몸 · 이름 아래 「각성」)
+--   운석        : 몇 초 뒤부터 서버가 사냥터(마을·옥좌 제외)에서 플레이어마다 이따금 — 예고 원 뒤 그 자리에 화염 피해 (최대 생명의 %, 화염 저항 적용)
+-- 위쪽 가운데 붉은 안내 (HudMap.ShowAlert). 클라이언트가 깨어날 때 서버에 알린다 (ReachPhase 4) — 안내보다 운석·각성이 먼저 오지 않게.
 -- 접속할 때마다 처음부터 다시 연다 (서버 기록은 나가면 지운다).
 @Logic
 script AshAwakening extends Logic
@@ -19,8 +19,8 @@ script AshAwakening extends Logic
     property number TremorMin = 14            -- 땅울림 간격(초)
     property number TremorMax = 26
     property string StateId = "awaken"        -- 군세 각성 때 몬스터에 붙이는 상태 (monster_states.csv — 배율·색·이름은 표에서)
-    property number PhaseGap = 5              -- 단계 사이 간격(초)
-    property number AlertSeconds = 3.8        -- 단계 안내가 떠 있는 시간
+    property number AlertSeconds = 4.2        -- 깨어남 안내가 떠 있는 시간
+    property number FirstMeteorDelay = 4      -- 깨어난 뒤 첫 운석까지(초) — 안내를 읽을 틈
     property integer TimerId = 0
     -- 서버
     property table NextMeteor = {}            -- userId → 다음 운석 시각
@@ -28,11 +28,10 @@ script AshAwakening extends Logic
     property table AwakenedMaps = {}          -- 맵 id → 맵 (군세가 깨어난 맵 — 조건이 깨지면 되돌린다)
     property integer TickCount = 0
     -- 클라이언트
-    property integer ClientPhase = 0
-    property number SeqAt = 0                 -- 첫 단계를 연 시각 (0 = 아직)
+    property integer ClientPhase = 0          -- 0 = 아직 · 4 = 깨어남 (서버 Phase와 같은 값)
+    property number SeqAt = 0                 -- 깨어난 시각 (0 = 아직)
     property number AwakeSince = 0            -- 처음 깨어난 것을 본 시각 (0 = 아직)
-    property number StartDelay = 4            -- 깨어난 뒤 이만큼 기다렸다가 첫 단계 (심장의 사도 처치 2.5초 뒤에 이야기 카드가 온다 — 그 전에 시작하면 카드 뒤에 묻힌다)
-    property number LastPhaseAt = 0
+    property number StartDelay = 4            -- 깨어난 뒤 이만큼 기다렸다가 연출 (심장의 사도 처치 2.5초 뒤에 이야기 카드가 온다 — 그 전에 시작하면 카드 뒤에 묻힌다)
     property number NextTremor = 0
     property boolean ClientAwake = false
 
@@ -84,10 +83,10 @@ script AshAwakening extends Logic
 
     @ExecSpace("Server")
     method void ReachPhase(integer phase)
-        -- 클라이언트가 단계 안내를 띄웠다. 운석 단계면 첫 운석을 곧 떨어뜨린다 (안내 직후에 실제로 보이게)
+        -- 클라이언트가 깨어남 안내를 띄웠다 (4). 첫 운석은 안내를 읽을 틈을 두고 떨어뜨린다
         if senderUserId == nil or senderUserId == "" then return end
         self.Phase[senderUserId] = math.max(0, math.min(4, phase))
-        if phase == 3 then self.NextMeteor[senderUserId] = _UtilLogic.ElapsedSeconds + 1.5 end
+        if phase >= 3 then self.NextMeteor[senderUserId] = _UtilLogic.ElapsedSeconds + self.FirstMeteorDelay end
         log("[VRF] AshAwakening phase " .. tostring(phase) .. " " .. senderUserId)
     end
 
@@ -214,7 +213,7 @@ script AshAwakening extends Logic
 
     @ExecSpace("ClientOnly")
     method void ClientTick()
-        -- 깨어났으면 이야기 카드가 닫힌 뒤 단계를 하나씩 연다. 켜져 있는 동안 하늘빛을 맞추고 이따금 땅이 울린다
+        -- 깨어났으면 이야기 카드가 닫힌 뒤 한 번에 연출한다. 켜져 있는 동안 하늘빛을 맞추고 이따금 땅이 울린다
         local p = _UserService.LocalPlayer
         if not isvalid(p) then return end
         local map = p.CurrentMap
@@ -222,15 +221,11 @@ script AshAwakening extends Logic
         local now = _UtilLogic.ElapsedSeconds
         if awake and self.AwakeSince == 0 then self.AwakeSince = now end
         local settled = self.AwakeSince > 0 and now >= self.AwakeSince + self.StartDelay
-        if awake and settled and self.ClientPhase < 4 and not self:StoryBusy() and not _HudMap:BannerShowing() then
-            local due = self.ClientPhase == 0 or now >= self.LastPhaseAt + self.PhaseGap
-            if due then
-                self.ClientPhase = self.ClientPhase + 1
-                self.LastPhaseAt = now
-                if self.SeqAt == 0 then self.SeqAt = now end
-                self:EnterPhase(self.ClientPhase, map)
-                self:ReachPhase(self.ClientPhase)
-            end
+        if awake and settled and self.ClientPhase == 0 and not self:StoryBusy() and not _HudMap:BannerShowing() then
+            self.ClientPhase = 4
+            self.SeqAt = now
+            self:Awaken(map)
+            self:ReachPhase(4)
         end
         local sky = awake and self.ClientPhase >= 1
         if sky ~= self.ClientAwake then
@@ -245,32 +240,17 @@ script AshAwakening extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void EnterPhase(integer phase, Entity map)
-        -- 단계 안내 + 그 단계의 첫 연출
-        local cam = _CameraService:GetCurrentCameraComponent()
-        if phase == 1 then
-            _DarkVision:SetAwake(true)
-            self.ClientAwake = true
-            if isvalid(cam) then cam:ShakeCamera(0.18, 0.8) end
-            _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
-            _HudMap:ShowAlert("하늘이 핏빛으로 물든다", "재의 왕 고르바스가 깨어났다 — 옥좌에서 심장이 뛴다", self.AlertSeconds)
-        elseif phase == 2 then
-            self:Tremor(map, true)
-            self.NextTremor = _UtilLogic.ElapsedSeconds + self:Rand(8, 12)
-            _HudMap:ShowAlert("땅이 울린다", "심장이 뛸 때마다 심연 전체가 흔들린다", self.AlertSeconds)
-        elseif phase == 3 then
-            if isvalid(cam) then cam:ShakeCamera(0.15, 0.5) end
-            _SoundDirector:PlayEffect(_GameConst.SfxImpact, 0.7)
-            _HudMap:ShowAlert("하늘에서 불덩이가 떨어진다", "붉은 원이 차오르면 벗어나라 — 화염 저항이 피해를 줄인다", self.AlertSeconds)
-        elseif phase == 4 then
-            if isvalid(cam) then cam:ShakeCamera(0.22, 1.0) end
-            _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.9)
-            self:AwakenFx(map)
-            local st = _GameData:GetMonsterState(self.StateId)
-            local detail = st ~= nil and ("4장의 모든 마물이 「" .. st.name .. "」 — 이동 +" .. tostring(math.floor(st.speedPct)) .. "% · 공격 속도 +" .. tostring(math.floor(st.attackPct)) .. "%") or ""
-            _HudMap:ShowAlert("심연의 군세가 깨어난다", detail, self.AlertSeconds)
-        end
-        log("[VRF] AshAwakening client phase " .. tostring(phase))
+    method void Awaken(Entity map)
+        -- 깨어나는 순간: 안내 하나 + 붉은 하늘 · 큰 땅울림 · 몬스터마다 붉은 불티
+        _DarkVision:SetAwake(true)
+        self.ClientAwake = true
+        self:Tremor(map, true)
+        self.NextTremor = _UtilLogic.ElapsedSeconds + self:Rand(8, 12)
+        _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
+        self:AwakenFx(map)
+        local st = _GameData:GetMonsterState(self.StateId)
+        _HudMap:ShowAlert("하늘이 핏빛으로 물든다", "몬스터가 「" .. (st ~= nil and st.name or "각성") .. "」 상태가 됩니다", self.AlertSeconds)
+        log("[VRF] AshAwakening client awaken")
     end
 
     @ExecSpace("ClientOnly")
