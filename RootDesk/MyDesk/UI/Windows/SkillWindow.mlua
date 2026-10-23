@@ -131,6 +131,7 @@ script SkillWindow extends Logic
         if self.SelMain == "" and #mains > 0 then self.SelMain = mains[1] end
         self:RenderDetail(book, st)
         _UIKit:SetText(self.Win .. "/DescBox/Desc", self:Describe(book, st))
+        self:RenderLearnButton(book, st)
     end
 
     @ExecSpace("ClientOnly")
@@ -146,6 +147,7 @@ script SkillWindow extends Logic
         _UIKit:SetText(self.Win .. "/Detail/Desc", desc)
         local nodes = _SkillData:NodesOf(self.SelMain)
         _UIKit:SetEnabled(self.Win .. "/Detail/NodeHead", #nodes > 0)
+        _UIKit:SetEnabled(self.Win .. "/Detail/NodeHint", #nodes > 0)
         self.NodeIds = {}
         for i = 1, 3 do
             local nid = nodes[i]
@@ -166,13 +168,37 @@ script SkillWindow extends Logic
                 end
                 _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, nd.name .. "  " .. tostring(nlv) .. "/" .. tostring(nd.maxLv)) .. "\n" .. line2)
                 _UIKit:SetColor(path, nid == self.Selected and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.35))
+                -- 아이콘 + 오른쪽 상태 칩: 지금 찍을 수 있으면 초록 「+1」, 다 찍었으면 「완료」, 조건이 모자라면 「잠김」 (10-24 사용자: 눌러야 하는지 몰랐다)
+                _UIKit:SetIcon(path .. "/Icon", nd.icon)
+                _UIKit:SetColor(path .. "/Icon", nlv > 0 and Color(1, 1, 1, 1) or (reason == "" and Color(0.85, 0.85, 0.85, 1) or Color(0.4, 0.4, 0.4, 0.8)))
+                local chip = _UIKit:Colored("#8A8A8A", "잠김")
+                if nlv >= nd.maxLv then chip = _UIKit:Colored("#F4ED83", "완료")
+                elseif book:CanLearn(nid, st.Level, st.SkillPoints) == "" then chip = _UIKit:Colored("#7CFF7A", "+1")
+                elseif reason == "" then chip = _UIKit:Colored("#B8B0A0", "포인트\n부족") end
+                _UIKit:SetText(path .. "/Chip", chip)
             end
         end
     end
 
+    @ExecSpace("ClientOnly")
+    method void RenderLearnButton(SkillBook book, PlayerStats st)
+        -- 버튼 글자가 지금 고른 것에 맞게: 배우기 +1 / 레벨 업 +1 / 강화 +1. 못 찍으면 흐리게 (이유는 왼쪽 설명)
+        local id = self.Selected ~= "" and self.Selected or self.SelMain
+        local def = _SkillData:Get(id)
+        local label = "습득 +1"
+        if def ~= nil then
+            if def.kind == "node" then label = "강화 +1"
+            elseif book:GetLevel(id) > 0 then label = "레벨 업 +1"
+            else label = "배우기 +1" end
+        end
+        local ok = def ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == ""
+        _UIKit:SetText(self.Win .. "/BtnLearn", ok and label or _UIKit:Colored("#8A8A8A", label))
+        _UIKit:SetColor(self.Win .. "/BtnLearn", ok and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
+    end
+
     method string Describe(SkillBook book, PlayerStats st)
         -- 고른 메인/강화의 지금·다음 효과, 마나·재사용, 배울 수 있는지(아니면 이유)
-        if self.Selected == "" then return "스킬 카드나 강화를 고르세요. 고른 것을 한 번 더 누르면 바로 +1." end
+        if self.Selected == "" then return "위의 스킬 카드나 오른쪽 「스킬 강화」 칸을 누르면 여기에 효과가 나온다. 고른 것을 한 번 더 누르거나 오른쪽 아래 버튼으로 +1." end
         local def = _SkillData:Get(self.Selected)
         if def == nil then return "다시 고르세요." end
         local reason = book:CanLearn(self.Selected, st.Level, st.SkillPoints)
@@ -203,7 +229,7 @@ script SkillWindow extends Logic
             local cd = book:SkillCooldown(self.Selected, lv)
             if cd > 0 then mana = mana .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
         end
-        local learn = _UIKit:Colored("#AACCAA", "배울 수 있음 · 한 번 더 누르면 +1")
+        local learn = _UIKit:Colored("#AACCAA", (isNode and "강화할 수 있음" or "배울 수 있음") .. " · 한 번 더 누르거나 오른쪽 아래 버튼으로 +1")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         return head .. growth .. mana .. "\n" .. learn
     end

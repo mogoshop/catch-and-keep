@@ -355,11 +355,16 @@ function buildGameHud() {
   k.inner("SkillWin/Detail", "top-left", [690, -118], [300, 484], "win_content");
   b.text("SkillWin/Detail/Name", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [14, -10], rect_size: [272, 32], ...outline });
   b.text("SkillWin/Detail/Desc", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -46], rect_size: [272, 150] });
-  b.text("SkillWin/Detail/NodeHead", "강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -200], rect_size: [272, 24] });
+  // 스킬 강화 (10-24 사용자: 「눌러야 하는지 모르겠다」) — 제목 + 안내 한 줄, 칸마다 아이콘 · 이름/효과 · 오른쪽 상태 칩(+1 / 잠김 / 완료)
+  b.text("SkillWin/Detail/NodeHead", "스킬 강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -196], rect_size: [272, 22] });
+  b.text("SkillWin/Detail/NodeHint", "칸을 눌러 고른 뒤 「강화 +1」", { size: 13, color: "#9C9488", alignment: 3, anchor: "top-left", pos: [14, -218], rect_size: [272, 18] });
   for (let i = 0; i < 3; i++) {
     const n = `SkillWin/Detail/N${i + 1}`;
-    b.button(n, "", { anchor: "top-left", pos: [10, -228 - i * 84], rect_size: [280, 78], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
-    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 3, anchor: "middle-left", pos: [10, 0], rect_size: [262, 74], bestfit: true, min_size: 11, max_size: 14 });
+    b.button(n, "", { anchor: "top-left", pos: [10, -240 - i * 80], rect_size: [280, 76], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
+    b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [10, 0], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0 });
+    k.aspect(`${n}/Icon`);
+    b.text(`${n}/Label`, "", { size: 14, color: C.white, alignment: 3, anchor: "middle-left", pos: [58, 0], rect_size: [164, 72], bestfit: true, min_size: 11, max_size: 14 });
+    b.text(`${n}/Chip`, "", { size: 15, bold: true, color: C.white, alignment: 4, anchor: "middle-right", pos: [-8, 0], rect_size: [50, 40], bestfit: true, min_size: 11, max_size: 15, ...outline });
   }
   k.inner("SkillWin/DescBox", "bottom-left", [30, 110], [700, 120], "win_content");
   b.text("SkillWin/DescBox/Desc", "", { size: 16, color: C.gold, alignment: 3, anchor: "middle-left", pos: [14, 0], rect_size: [672, 114] });
