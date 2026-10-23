@@ -308,12 +308,14 @@ function artEntities(d, maps, ctx, layout) {
     const frame = { bounds: { x0: tb.x0 - 2, x1: tb.x1 + 2, y0: tb.y0 - 2, y1: tb.y1 + 2 }, isFloor: (x, y) => inTiles(x, y) || gap(x, y) };
     walls(frame, art.border, "1/1/1", "ArtBorder");
   }
+  // 지형 생성 맵에 고정 장식을 더하면(map_art 같은 맵 행) 자동 장식 다음 번호부터 — 이름이 겹치면 엔티티 경로가 둘이 된다
+  const placed = out.filter((e) => /^ArtProp\d+$/.test(e.name)).length;
   list(art.props || "").forEach((p, k) => {
     const [name, at, sc] = p.split("@").concat([]);
     const [x, y] = at.split("/").map(Number);
     const s = pscale(name, num(sc, 0.8));
     block(name, x, y, s);
-    out.push({ name: `ArtProp${k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
+    out.push({ name: `ArtProp${placed + k + 1}`, pos: [x, y, -0.03], overrides: Object.assign(sprite(ruid(name), null, 1), { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
   });
   return out;
 }
