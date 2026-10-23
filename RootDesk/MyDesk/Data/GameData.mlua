@@ -370,12 +370,24 @@ script GameData extends Logic
         self.BossSkills["ash_king"] = { skills = "skill_fire;skill_barrage;skill_leap;skill_summon", interval = 4.5, minion = "hell_priest", aura = "fire", auraR = 2.5, auraMult = 0.15, ult = "marks", ultName = "심연의 불기둥", ultMult = 2.2, ultWaves = 3 }
         self.Variants = {}
         self.VariantOrder = {}
-        self.Variants["aura_might"] = { id = "aura_might", name = "광기 오오라", kind = "aura", effect = "dmg", value = 25, radius = 3, interval = 0, mult = 0, element = "", weight = 0.6 }
+        self.Variants["aura_might"] = { id = "aura_might", name = "광기 오오라", kind = "aura", effect = "dmg", value = 25, radius = 3, interval = 0, mult = 1, element = "", weight = 0.25 }
         table.insert(self.VariantOrder, "aura_might")
-        self.Variants["aura_haste"] = { id = "aura_haste", name = "질풍 오오라", kind = "aura", effect = "haste", value = 20, radius = 3, interval = 0, mult = 0, element = "", weight = 0.6 }
+        self.Variants["aura_haste"] = { id = "aura_haste", name = "신속 오오라", kind = "aura", effect = "haste", value = 20, radius = 3, interval = 0, mult = 1, element = "", weight = 0.25 }
         table.insert(self.VariantOrder, "aura_haste")
-        self.Variants["aura_guard"] = { id = "aura_guard", name = "수호 오오라", kind = "aura", effect = "guard", value = 20, radius = 3, interval = 0, mult = 0, element = "", weight = 0.6 }
+        self.Variants["aura_swift"] = { id = "aura_swift", name = "기동 오오라", kind = "aura", effect = "move", value = 20, radius = 3, interval = 0, mult = 1, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_swift")
+        self.Variants["aura_guard"] = { id = "aura_guard", name = "수호 오오라", kind = "aura", effect = "guard", value = 20, radius = 3, interval = 0, mult = 1, element = "", weight = 0.25 }
         table.insert(self.VariantOrder, "aura_guard")
+        self.Variants["aura_regen"] = { id = "aura_regen", name = "재생 오오라", kind = "aura", effect = "regen", value = 15, radius = 3, interval = 0, mult = 0.1, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_regen")
+        self.Variants["aura_resist"] = { id = "aura_resist", name = "저항 오오라", kind = "aura", effect = "resist", value = 15, radius = 3, interval = 0, mult = 1.5, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_resist")
+        self.Variants["aura_thorns"] = { id = "aura_thorns", name = "가시 오오라", kind = "aura", effect = "thorns", value = 15, radius = 3, interval = 0, mult = 3, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_thorns")
+        self.Variants["aura_crit"] = { id = "aura_crit", name = "냉혹 오오라", kind = "aura", effect = "crit", value = 15, radius = 3, interval = 0, mult = 0.5, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_crit")
+        self.Variants["aura_corrode"] = { id = "aura_corrode", name = "부식 오오라", kind = "aura", effect = "corrode", value = 15, radius = 3, interval = 0, mult = 1.5, element = "", weight = 0.25 }
+        table.insert(self.VariantOrder, "aura_corrode")
         self.Variants["skill_nova"] = { id = "skill_nova", name = "충격파", kind = "skill", effect = "nova", value = 0, radius = 2, interval = 6, mult = 1.5, element = "", weight = 0.6 }
         table.insert(self.VariantOrder, "skill_nova")
         self.Variants["skill_frost"] = { id = "skill_frost", name = "냉기 파동", kind = "skill", effect = "nova", value = 0, radius = 2, interval = 7, mult = 1, element = "cold", weight = 0.7 }
@@ -1303,9 +1315,14 @@ script GameData extends Logic
                 if val ~= nil and val ~= "" then v.value = tonumber(val) end
                 v.tier = 0
                 v.label = v.name
+                v.amount = 0
+                v.text = ""
                 if v.kind == "aura" then
+                    -- 수치(10~25) × variants.csv mult = 실제 효과량 (재생 ×0.1 · 저항 ×1.5 · 가시 ×3 · 치명 ×0.5 · 나머지 ×1)
                     v.tier = self:AuraTier(v.value)
-                    v.label = self:AuraTierName(v.tier) .. " " .. v.name .. " " .. string.format("+%d%%", math.floor(v.value))
+                    v.amount = v.value * (v.mult > 0 and v.mult or 1)
+                    v.text = self:AuraEffectText(v.effect, v.amount)
+                    v.label = self:AuraTierName(v.tier) .. " " .. v.name
                 end
                 table.insert(list, v)
             end
@@ -1333,6 +1350,21 @@ script GameData extends Logic
         local names = {}
         for _, v in ipairs(self:ParseVariant(code)) do table.insert(names, v.label) end
         return table.concat(names, " · ")
+    end
+
+    method string AuraEffectText(string effect, number amount)
+        -- 오오라 효과 한 줄 (대상 창·그림자 창·버프 설명 공통)
+        local n = math.floor(amount + 0.5)
+        if effect == "dmg" then return string.format("피해 +%d%%", n) end
+        if effect == "haste" then return string.format("공격 속도 +%d%%", n) end
+        if effect == "move" then return string.format("이동 속도 +%d%%", n) end
+        if effect == "guard" then return string.format("받는 피해 -%d%%", n) end
+        if effect == "regen" then return string.format("초당 생명 %.1f%% 회복", amount) end
+        if effect == "resist" then return string.format("모든 저항 +%d", n) end
+        if effect == "thorns" then return string.format("근접 평타 피해 %d%% 반사", n) end
+        if effect == "crit" then return string.format("치명타 확률 +%d%% (×1.5)", n) end
+        if effect == "corrode" then return string.format("주변 적 모든 저항 -%d", n) end
+        return ""
     end
 
     method integer AuraTier(number value)

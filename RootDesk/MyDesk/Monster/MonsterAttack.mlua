@@ -817,6 +817,9 @@ script MonsterAttack extends AttackComponent
         elseif self.BasicMul ~= 1 and (attackInfo == "monster.basic" or attackInfo == "monster.chain") then dmg = dmg * self.BasicMul end
         local body = self:Body()
         if body ~= nil then dmg = dmg * body:GetDamageDealtMultiplier() end
+        -- 냉혹 오오라: 치명타 확률 (×1.5)
+        local cstatus = body ~= nil and body:Status() or nil
+        if cstatus ~= nil and cstatus:AuraAmount("crit") > 0 and _UtilLogic:RandomDouble() < cstatus:AuraAmount("crit") / 100 then dmg = dmg * 1.5 end
         local element = self:GetElement()
         local ratio = 0
         if element ~= "" then ratio = self.ElementRatio end
@@ -883,6 +886,14 @@ script MonsterAttack extends AttackComponent
                     end, 0.05)
                 end
             end
+        end
+        -- 가시 오오라를 받은 그림자를 평타로 때리면 그 일부가 돌아온다 (10-24 B안)
+        if shadow ~= nil and attackInfo == "monster.basic" and self:IsServer() and body ~= nil and shadow:AuraAmount("thorns") > 0 then
+            local back = final * shadow:AuraAmount("thorns") / 100
+            local owner = shadow.OwnerPlayer
+            _TimerService:SetTimerOnce(function()
+                if isvalid(self.Entity) and not body.IsDead then body:TakeDamage(back, owner) end
+            end, 0.05)
         end
         -- 가시 저주: 준 피해의 일부를 되돌려 받는다 (판정 흐름이 끝난 뒤 적용)
         local status = body ~= nil and body:Status() or nil

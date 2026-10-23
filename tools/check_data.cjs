@@ -306,7 +306,8 @@ T.monster_ranks.forEach((r, i) => {
 // ── 변종 능력 ──
 const variantIds = unique("variants", "id");
 T.variants.forEach((r, i) => {
-  if (r.kind === "aura" && !["dmg", "haste", "guard"].includes(r.effect)) err("variants", i, `오오라 effect '${r.effect}' — dmg / haste / guard`);
+  const AURA_EFFECTS = ["dmg", "haste", "move", "guard", "regen", "resist", "thorns", "crit", "corrode"];   // 10-24 B안 9종 (MonsterStatus·ShadowUnit.AuraAmount)
+  if (r.kind === "aura" && !AURA_EFFECTS.includes(r.effect)) err("variants", i, `오오라 effect '${r.effect}' — ${AURA_EFFECTS.join(" / ")}`);
   if ((r.kind === "skill" || r.kind === "cloud") && !(num(r.interval) > 0 && num(r.mult) > 0)) err("variants", i, "기술은 interval·mult 양수");
   if (!["aura", "skill", "cloud"].includes(r.kind)) err("variants", i, `kind '${r.kind}' — aura / skill / cloud`);
   if (!(num(r.radius) > 0)) err("variants", i, "radius 양수");

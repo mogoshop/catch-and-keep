@@ -92,10 +92,9 @@ script ShadowUnit extends AttackComponent
     property number AbilityTimer = 2
     property number AuraTimer = 0            -- 오오라 다음 전파까지 (기술 AbilityTimer와 따로)
     property string LastInfo = ""
-    property number AuraDmg = 0              -- 받은 오오라 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다)
-    property number AuraHaste = 0
-    property number AuraGuard = 0
+    property table AuraVals = {}             -- 받은 오오라 효과 → 효과량 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다 · 같은 효과는 가장 센 것 · corrode는 적 몬스터가 거는 약화)
     property number AuraUntil = 0
+    property number AuraRegenAt = 0
 
     @Sync
     property number MaxHp = 30
@@ -277,7 +276,7 @@ script ShadowUnit extends AttackComponent
                 if book ~= nil then
                     local aura = book:GetCommandAura()
                     if aura.atk > 0 then self:ReceiveAura("dmg", aura.atk) end
-                    if aura.speed > 0 then self:ReceiveAura("haste", aura.speed) end
+                    if aura.speed > 0 then self:ReceiveAura("move", aura.speed) end   -- 호령 이동 % = 기동
                 end
             end
         end
@@ -353,7 +352,14 @@ script ShadowUnit extends AttackComponent
         end
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
         local offered = _UtilLogic.ElapsedSeconds < self.OfferUntil and 0.8 or 1   -- 뼈 성찬: 3초간 받는 피해 -20%
-        self.Hp = self.Hp - event.TotalDamage * self:AuraMult("guard") * offered
+        self:Hurt(event.TotalDamage * self:AuraMult("guard") * offered)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Hurt(number amount)
+        -- 생명을 깎고 0이면 쓰러진다 (피격 · 가시 오오라 반사 공통)
+        if self.Dead or self.ShadowId == "" then return end
+        self.Hp = self.Hp - amount
         if self.Hp > 0 then return end
         if self.Bombing then self:BombExplode() return end   -- 돌진 중 쓰러지면 그 자리에서 터진다
         self.Dead = true
@@ -641,7 +647,8 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void SetSpeedMult(number mult)
-        -- 배율이 충분히 바뀔 때만 이동 속도·걷기 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다)
+        -- 배율이 충분히 바뀔 때만 이동 속도·걷기 속도를 쓴다 (매 프레임 동기화 값을 쓰지 않는다). 기동 오오라를 곱한다
+        mult = mult * self:AuraMult("move")
         -- 10-10 4차 QA: 실제 서버에서는 11마리의 동기화 값이 위치와 함께 몰려 끊김을 키운다 → 0.15 이상 바뀔 때만, 0.15 단위로
         if math.abs(mult - self.SpeedMult) < 0.15 then return end
         local q = math.floor(mult / 0.15 + 0.5) * 0.15
@@ -1057,6 +1064,8 @@ script ShadowUnit extends AttackComponent
         if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
             dmg = dmg * 1.8
             if self:IsServer() then self.CritCount = self.CritCount + 1 end
+        elseif self:AuraAmount("crit") > 0 and _UtilLogic:RandomDouble() < self:AuraAmount("crit") / 100 then
+            dmg = dmg * 1.5   -- 냉혹 오오라
         end
         -- 레벨 차이: 주인보다 높은 몬스터에게는 덜 들어간다
         ---@type Monster
@@ -1106,6 +1115,15 @@ script ShadowUnit extends AttackComponent
             local armorSt = defender:GetComponent("script.PlayerStats")
             if armorSt ~= nil then final = armorSt:AbsorbBoneArmor(final) end
         end
+        -- 가시 오오라를 받은 몬스터를 평타로 때리면 그 일부가 돌아온다 (서버 · 판정이 끝난 뒤)
+        if foe ~= nil and attackInfo == "shadow.basic" and self:IsServer() then
+            local status = foe:Status()
+            local pct = status ~= nil and status:AuraAmount("thorns") or 0
+            if pct > 0 then
+                local back = final * pct / 100
+                _TimerService:SetTimerOnce(function() if isvalid(self.Entity) and not self.Dead then self:Hurt(back) end end, 0.05)
+            end
+        end
         return final
     end
 
@@ -1133,7 +1151,7 @@ script ShadowUnit extends AttackComponent
 
     method number GetResist(string element)
         -- 장비 「소환수 모든 저항」은 합계가 저항 상한(resistCap)을 넘지 않게만 더한다 (원래 면역인 그림자는 그대로)
-        local r = (self.Resists[element] or 0) + self.BonusResist
+        local r = (self.Resists[element] or 0) + self.BonusResist + self:AuraAmount("resist") - self:AuraAmount("corrode")   -- 저항 오오라 · 적의 부식 오오라
         local gear = self:OwnerBonus("res")
         if gear <= 0 then return r end
         return math.max(r, math.min(_GameData.resistCap, r + gear))
@@ -1162,13 +1180,18 @@ script ShadowUnit extends AttackComponent
             self.AuraTimer = self.AuraTimer - delta
             if self.AuraTimer <= 0 then
                 self.AuraTimer = _GameData.auraTickSec
-                for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
-                    -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
-                    ---@type ShadowUnit
-                    local ally = c
-                    if isvalid(c) and not ally.Dead then
-                        local q = c.Entity.TransformComponent.WorldPosition
-                        if (Vector2(q.x, q.y) - myPos):Magnitude() <= aura.radius then ally:ReceiveAura(aura.effect, aura.value) end
+                if aura.effect == "corrode" then
+                    -- 부식(약화 오오라): 주변 몬스터의 모든 저항을 깎는다
+                    for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, myPos, aura.radius)) do m:ReceiveAura("corrode", aura.amount) end
+                else
+                    for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
+                        -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
+                        ---@type ShadowUnit
+                        local ally = c
+                        if isvalid(c) and not ally.Dead then
+                            local q = c.Entity.TransformComponent.WorldPosition
+                            if (Vector2(q.x, q.y) - myPos):Magnitude() <= aura.radius then ally:ReceiveAura(aura.effect, aura.amount) end
+                        end
                     end
                 end
             end
@@ -1195,24 +1218,26 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void ReceiveAura(string effect, number value)
+        -- value = 효과량 (ParseVariant amount). 재생은 auraTickSec마다 한 번만 회복
         local now = _UtilLogic.ElapsedSeconds
-        if now >= self.AuraUntil then
-            self.AuraDmg = 0
-            self.AuraHaste = 0
-            self.AuraGuard = 0
-        end
-        if effect == "dmg" then self.AuraDmg = math.max(self.AuraDmg, value)
-        elseif effect == "haste" then self.AuraHaste = math.max(self.AuraHaste, value)
-        elseif effect == "guard" then self.AuraGuard = math.max(self.AuraGuard, value) end
+        if now >= self.AuraUntil then self.AuraVals = {} end
+        self.AuraVals[effect] = math.max(self.AuraVals[effect] or 0, value)
         self.AuraUntil = now + _GameData.auraHoldSec
+        if effect == "regen" and not self.Dead and now - self.AuraRegenAt >= _GameData.auraTickSec * 0.9 then
+            self.AuraRegenAt = now
+            if self.Hp < self.MaxHp then self.Hp = math.min(self.MaxHp, self.Hp + self.MaxHp * value / 100 * _GameData.auraTickSec) end
+        end
+    end
+
+    method number AuraAmount(string effect)
+        if _UtilLogic.ElapsedSeconds >= self.AuraUntil then return 0 end
+        return self.AuraVals[effect] or 0
     end
 
     method number AuraMult(string kind)
-        if _UtilLogic.ElapsedSeconds >= self.AuraUntil then return 1 end
-        if kind == "dmg" then return 1 + self.AuraDmg / 100 end
-        if kind == "haste" then return 1 + self.AuraHaste / 100 end
-        if kind == "guard" then return math.max(0.1, 1 - self.AuraGuard / 100) end
-        return 1
+        -- dmg 주는 피해 / haste 공격 속도 / move 이동 속도 / guard 받는 피해
+        if kind == "guard" then return math.max(0.1, 1 - self:AuraAmount("guard") / 100) end
+        return 1 + self:AuraAmount(kind) / 100
     end
 
     @ExecSpace("Multicast")

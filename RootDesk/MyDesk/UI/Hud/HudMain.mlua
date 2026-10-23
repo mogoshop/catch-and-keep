@@ -184,6 +184,9 @@ script HudMain extends Logic
         if st.ChillUntil > now then
             table.insert(list, { key = "debuff_chill", label = "둔화", color = Color(0.4, 0.65, 1, 1), left = st.ChillUntil - now, desc = "냉기 둔화 · 이동 속도 -40% (냉기 저항이 높을수록 짧다)", debuff = true })
         end
+        if st.CorrodeUntil > now and st.CorrodeAmount > 0 then
+            table.insert(list, { key = "aura_corrode", label = "부식", color = _GameConst:AuraColor("corrode"), left = -1, desc = string.format("부식 오오라 · 내 모든 저항 -%d (변종 몬스터 곁 — 벗어나면 풀린다)", st.CorrodeAmount), debuff = true })
+        end
         if st.ShockUntil > now then
             table.insert(list, { key = "debuff_shock", label = "감전", color = Color(0.7, 0.88, 1, 1), left = st.ShockUntil - now, desc = "감전 · 번개 연쇄에 맞았다 (번개 저항이 높을수록 피해가 줄어든다)", debuff = true })
         end
@@ -260,15 +263,12 @@ script HudMain extends Logic
                 end
             end
         end
-        local labels = { dmg = "피해", haste = "공격·이동 속도", guard = "받는 피해 감소" }
-        local short = { dmg = "광기", haste = "질풍", guard = "수호" }
-        for _, effect in ipairs({ "dmg", "haste", "guard" }) do
+        for _, effect in ipairs({ "dmg", "haste", "move", "guard", "regen", "resist", "thorns", "crit", "corrode" }) do
             local b = best[effect]
             if b ~= nil then
-                local hex = _GameConst:AuraHex(effect)
-                local c = Color(tonumber(string.sub(hex, 2, 3), 16) / 255, tonumber(string.sub(hex, 4, 5), 16) / 255, tonumber(string.sub(hex, 6, 7), 16) / 255, 1)
-                table.insert(list, { key = "aura_" .. effect, label = short[effect], color = c, left = -1,
-                    desc = string.format("%s · 반경 %g 안 소환수 %s %s%d%% (%s)", _GameData:AuraTierName(b.v.tier) .. " " .. b.v.name, b.v.radius, labels[effect], effect == "guard" and "-" or "+", math.floor(b.v.value), b.from) })
+                local whom = effect == "corrode" and ("반경 %g 안 적") or ("반경 %g 안 소환수")
+                table.insert(list, { key = "aura_" .. effect, label = string.match(b.v.name, "^(%S+)") or b.v.name, color = _GameConst:AuraColor(effect), left = -1,
+                    desc = string.format("%s · " .. whom .. " %s (%s)", b.v.label, b.v.radius, b.v.text, b.from) })
             end
         end
         -- 근처 다른 플레이어의 호령은 내 소환수에도 닿는다 (ShadowUnit.PartyAuraTick · 반경 6)
@@ -570,10 +570,9 @@ script HudMain extends Logic
         local parts = {}
         for _, variant in ipairs(_GameData:ParseVariant(monster:GetVariant())) do
             if variant.kind == "aura" then
-                local labels = { dmg = "피해", haste = "공격·이동", guard = "피해 감소" }
-                local label = labels[variant.effect] or "전투력"
                 local tierColor = variant.tier >= 3 and "#FFB04A" or (variant.tier == 2 and "#9FD0FF" or "#C9BFA8")
-                table.insert(parts, _UIKit:Colored(tierColor, _GameData:AuraTierName(variant.tier) .. " " .. variant.name) .. " · 주변 적 " .. label .. (variant.effect == "guard" and " -" or " +") .. tostring(math.floor(variant.value)) .. "%")
+                local whom = variant.effect == "corrode" and "" or "주변 적 "
+                table.insert(parts, _UIKit:Colored(tierColor, variant.label) .. " · " .. whom .. variant.text)
             elseif variant.kind == "skill" then
                 local names = { fire = "화염 ", cold = "냉기 ", light = "번개 " }
                 table.insert(parts, variant.name .. " · " .. (names[variant.element] or "") .. "범위 공격")

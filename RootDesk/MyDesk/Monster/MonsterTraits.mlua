@@ -108,11 +108,10 @@ script MonsterTraits extends Component
     end
 
     method Color AuraColor(string effect)
-        -- 발밑 원 색: 광기 붉은색 · 질풍 노란색 · 수호 하늘색 · 기술형 우두머리 짙은 파랑
-        if effect == "dmg" then return Color(1, 0.32, 0.22, 0.95) end
-        if effect == "haste" then return Color(1, 0.85, 0.3, 0.95) end
+        -- 발밑 원 색: 오오라 계열 색(GameConst.AuraColor — 공격 붉은 · 속도 노랑 · 방어 하늘 · 회복 초록 · 약화 보라) · 기술형 우두머리 짙은 파랑
         if effect == "champion" then return Color(0.25, 0.45, 1, 0.95) end
-        return Color(0.35, 0.8, 1, 0.95)
+        local c = _GameConst:AuraColor(effect)
+        return Color(c.r, c.g, c.b, 0.95)
     end
 
     method string InnateVariant()
@@ -145,7 +144,21 @@ script MonsterTraits extends Component
             self.AuraTimer = self.AuraTimer - delta
             if self.AuraTimer <= 0 then
                 self.AuraTimer = _GameData.auraTickSec
-                for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, pos, aura.radius)) do m:ReceiveAura(aura.effect, aura.value) end
+                if aura.effect == "corrode" then
+                    -- 부식(약화 오오라): 반대편 — 주변 플레이어와 그 소환수의 모든 저항을 깎는다
+                    for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, pos, aura.radius)) do
+                        ---@type PlayerStats
+                        local ps = u:GetComponent("script.PlayerStats")
+                        if ps ~= nil then ps:ReceiveCorrode(aura.amount) end
+                    end
+                    for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
+                        ---@type ShadowUnit
+                        local unit = c
+                        if isvalid(c) and not unit.Dead and (_Util:Pos2(c.Entity) - pos):Magnitude() <= aura.radius then unit:ReceiveAura("corrode", aura.amount) end
+                    end
+                else
+                    for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, pos, aura.radius)) do m:ReceiveAura(aura.effect, aura.amount) end
+                end
             end
         end
         local v = _GameData:GetVariantOf(self.Variant, "skill")

@@ -246,9 +246,14 @@ function genGameData() {
                 if val ~= nil and val ~= "" then v.value = tonumber(val) end
                 v.tier = 0
                 v.label = v.name
+                v.amount = 0
+                v.text = ""
                 if v.kind == "aura" then
+                    -- 수치(10~25) × variants.csv mult = 실제 효과량 (재생 ×0.1 · 저항 ×1.5 · 가시 ×3 · 치명 ×0.5 · 나머지 ×1)
                     v.tier = self:AuraTier(v.value)
-                    v.label = self:AuraTierName(v.tier) .. " " .. v.name .. " " .. string.format("+%d%%", math.floor(v.value))
+                    v.amount = v.value * (v.mult > 0 and v.mult or 1)
+                    v.text = self:AuraEffectText(v.effect, v.amount)
+                    v.label = self:AuraTierName(v.tier) .. " " .. v.name
                 end
                 table.insert(list, v)
             end
@@ -276,6 +281,21 @@ function genGameData() {
         local names = {}
         for _, v in ipairs(self:ParseVariant(code)) do table.insert(names, v.label) end
         return table.concat(names, " · ")
+    end
+
+    method string AuraEffectText(string effect, number amount)
+        -- 오오라 효과 한 줄 (대상 창·그림자 창·버프 설명 공통)
+        local n = math.floor(amount + 0.5)
+        if effect == "dmg" then return string.format("피해 +%d%%", n) end
+        if effect == "haste" then return string.format("공격 속도 +%d%%", n) end
+        if effect == "move" then return string.format("이동 속도 +%d%%", n) end
+        if effect == "guard" then return string.format("받는 피해 -%d%%", n) end
+        if effect == "regen" then return string.format("초당 생명 %.1f%% 회복", amount) end
+        if effect == "resist" then return string.format("모든 저항 +%d", n) end
+        if effect == "thorns" then return string.format("근접 평타 피해 %d%% 반사", n) end
+        if effect == "crit" then return string.format("치명타 확률 +%d%% (×1.5)", n) end
+        if effect == "corrode" then return string.format("주변 적 모든 저항 -%d", n) end
+        return ""
     end
 
     method integer AuraTier(number value)

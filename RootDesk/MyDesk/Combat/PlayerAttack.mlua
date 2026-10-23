@@ -619,6 +619,18 @@ script PlayerAttack extends AttackComponent
             local pc = self.Entity.PlayerComponent
             if pc.Hp > 0 then pc.Hp = math.min(pc.MaxHp, pc.Hp + math.max(1, math.floor(final * stats.BonusLeech / 100))) end
         end
+        -- 가시 오오라를 받은 몬스터를 평타로 때리면 그 일부가 돌아온다 (스킬은 반사되지 않는다 · 10-24 B안)
+        if self:IsServer() and attackInfo == "player.basic" then
+            ---@type Monster
+            local thorny = defender:GetComponent("script.Monster")
+            local tstatus = thorny ~= nil and thorny:Status() or nil
+            local pct = tstatus ~= nil and tstatus:AuraAmount("thorns") or 0
+            if pct > 0 then
+                local back = final * pct / 100
+                local vitals = self.Entity:GetComponent("script.PlayerVitals")
+                _TimerService:SetTimerOnce(function() if vitals ~= nil and isvalid(self.Entity) then vitals:TakeTickDamage(back) end end, 0.05)
+            end
+        end
         return final
     end
 

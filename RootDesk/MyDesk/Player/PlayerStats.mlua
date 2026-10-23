@@ -28,6 +28,10 @@ script PlayerStats extends Component
     @Sync
     property integer SkillPoints = 1
     @Sync
+    property integer CorrodeAmount = 0         -- 부식 오오라로 깎인 모든 저항 (CorrodeUntil까지 · 서버 시각)
+    @Sync
+    property number CorrodeUntil = 0
+    @Sync
     property number Mana = 25
     @Sync
     property number MaxMana = 25
@@ -407,11 +411,22 @@ script PlayerStats extends Component
     end
 
     method number GetResist(string element)
-        if element == "fire" then return self.ResFire end
-        if element == "cold" then return self.ResCold end
-        if element == "light" then return self.ResLight end
-        if element == "poison" then return self.ResPoison end
+        -- 변종 몬스터의 부식 오오라 안에 있으면 모든 저항이 깎인다 (10-24 B안)
+        local corrode = _UtilLogic.ServerElapsedSeconds < self.CorrodeUntil and self.CorrodeAmount or 0
+        if element == "fire" then return self.ResFire - corrode end
+        if element == "cold" then return self.ResCold - corrode end
+        if element == "light" then return self.ResLight - corrode end
+        if element == "poison" then return self.ResPoison - corrode end
         return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReceiveCorrode(number amount)
+        -- 부식 오오라 범위 안: auraHoldSec 동안 저항 -amount (가장 센 것 하나). 버프 줄에 약화로 보인다
+        local now = _UtilLogic.ServerElapsedSeconds
+        if now >= self.CorrodeUntil then self.CorrodeAmount = 0 end
+        self.CorrodeAmount = math.max(self.CorrodeAmount, math.floor(amount + 0.5))
+        self.CorrodeUntil = now + _GameData.auraHoldSec
     end
 
     method number GetElemDamage(string element)
