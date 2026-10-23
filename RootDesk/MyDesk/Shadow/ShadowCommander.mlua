@@ -206,7 +206,9 @@ script ShadowCommander extends Component
         local equip = 0
         if stats ~= nil then equip = stats:GetMinionPct() end   -- 장비 + 통솔
         local summon = _GameData.shadowSummonPerLvPct * math.max(0, self:GetSkillLevel("shadow_summon") - 1)
-        return 1 + (summon + _GameData.commandMasteryPct * self:GetSkillLevel("command_mastery") + equip + self:CommandAura().atk) / 100
+        -- 군령: 그림자 소환 commandMasteryStep 랭크마다 한 랭크만 효과 (예전에 미리 찍어 둔 저장도 같은 규칙 · 10-24 C안)
+        local command = math.min(self:GetSkillLevel("command_mastery"), self:GetSkillLevel("shadow_summon") // math.max(1, math.floor(_GameData.commandMasteryStep)))
+        return 1 + (summon + _GameData.commandMasteryPct * command + equip + self:CommandAura().atk) / 100
     end
 
     method table CommandAura()
