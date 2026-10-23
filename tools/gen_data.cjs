@@ -625,7 +625,7 @@ function genQuests() {
             elseif key == "item" then table.insert(parts, _ItemData:Parse(val).name)
             elseif key == "skp" then table.insert(parts, "스킬 포인트 " .. val)
             elseif key == "stp" then table.insert(parts, "능력치 포인트 " .. val)
-            elseif key == "deploy" then table.insert(parts, "그림자 배치 +" .. val .. " (영구 · 난이도마다)")
+            elseif key == "deploy" then table.insert(parts, "그림자 수 +" .. val .. "기 (영구 · 난이도마다)")
             elseif key == "respoison" then table.insert(parts, "독 저항 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "reslight" then table.insert(parts, "번개 저항 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "resfire" then table.insert(parts, "화염 저항 +" .. val .. " (영구 · 난이도마다)")

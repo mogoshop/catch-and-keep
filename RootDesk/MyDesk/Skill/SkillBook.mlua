@@ -171,8 +171,8 @@ script SkillBook extends Component
         if id == "shadow_summon" and level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         if id == "deploy_expand" then
             -- 작은 알림은 두 줄 안에 보너스와 다음 목표만 표시한다.
-            detail = string.format("배치 보너스 +%d기", _ShadowConfig:GetDeploySkillBonus(level))
-            hint = "배치 확장 최대 단계 달성"
+            detail = string.format("그림자 +%d기", _ShadowConfig:GetDeploySkillBonus(level))
+            hint = "그림자 증원 최대 단계 달성"
             if level < def.maxLv then
                 hint = string.format("다음 랭크는 그림자 소환 %d랭크부터", self:NodeNeed(id, level + 1))
             end
@@ -342,8 +342,10 @@ script SkillBook extends Component
         if id == "extract_mastery" then return string.format("추출 확률 +%g%%p", _GameData.extractMasteryPerLv * level * 100) end
         if id == "deploy_expand" then
             local bonus = _ShadowConfig:GetDeploySkillBonus(level)
-            local limit = _ShadowConfig:GetDeployLimit(bonus + stats.BonusDeploy, stats.BonusShadowCap)
-            return string.format("그림자 배치 +%d기 · 현재 최대 %d기", bonus, limit)
+            ---@type ShadowCommander
+            local cmd = self.Entity:GetComponent("script.ShadowCommander")
+            local limit = cmd ~= nil and cmd:GetDeployLimit() or _ShadowConfig:GetDeployLimit(bonus + stats.BonusDeploy, stats.BonusShadowCap)
+            return string.format("그림자 +%d기 · 지금 함께 다닐 수 있는 그림자 %d기", bonus, limit)
         end
         -- 강화 노드 (docs/design/16)
         local nodeText = {
