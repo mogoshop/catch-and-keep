@@ -5,6 +5,7 @@
 script TradeWindow extends Logic
 
     property string Win = "TradeWin"
+    property boolean WasActive = false
     property string RenderKey = ""
     property integer TimerId = 0
     property integer SeenRevision = 0
@@ -121,6 +122,13 @@ script TradeWindow extends Logic
         if t == nil then return end
         local active = t.Partner ~= ""
         _UIKit:SetEnabled(self.Win, active)
+        if active and not self.WasActive then
+            -- 거래가 열리는 순간 다른 창(거래를 건 플레이어 창 등)을 닫고 맨 위로 (10-24: 플레이어 창이 거래창을 가렸다)
+            for _, win in ipairs(_UIKit.Windows) do _UIKit:Close(win) end
+            local e = _UIKit:Get(self.Win)
+            if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
+        end
+        self.WasActive = active
         if not active then
             self.RenderKey = ""
             self.PickSide = ""

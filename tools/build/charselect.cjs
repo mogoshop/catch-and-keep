@@ -62,7 +62,7 @@ function run() {
   const row = (name, label, y) => b.text(c + '/' + name, label, { anchor: 'top-left', pos: [520, y], rect_size: [180, 60], size: 26, color: '#C9BBA0', alignment: 3 });
   // 이름
   row('NameLabel', '이름', -100);
-  b.textInput(c + '/NameInput', { anchor: 'top-left', pivot: [0, 1], pos: [720, -94], rect_size: [560, 76], placeholder: '이름 (최대 10글자)', char_limit: 10, line_type: 0, font_size: 26, ...part('win_content'), color: '#F3E7CC', placeholder_color: '#8A8172', bg_color: part('win_content').color, sprite_type: 1 });
+  b.textInput(c + '/NameInput', { anchor: 'top-left', pivot: [0, 1], pos: [720, -94], rect_size: [560, 76], placeholder: '이름 (최대 10글자)', char_limit: 10, line_type: 0, font_size: 26, ...part('win_content'), color: '#FFFFFF', placeholder_color: '#8A8172', bg_color: part('win_content').color, sprite_type: 1 });
   // 성별
   row('GenderLabel', '성별', -200);
   b.button(c + '/BtnMale', '남', { anchor: 'top-left', pivot: [0, 1], pos: [720, -194], rect_size: [200, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 28, color: '#E6DCC6' });

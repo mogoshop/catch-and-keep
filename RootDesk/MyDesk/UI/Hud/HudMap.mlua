@@ -296,7 +296,7 @@ script HudMap extends Logic
             local pos = self:ToMini(Vector2(f.x, f.y))
             local path = "MiniMap/Body/Area/F" .. tostring(i)
             -- 안개 속(아직 안 가본 곳)의 출구·보스·제단 등은 점도 이름도 숨긴다
-            local seen = self:IsRevealedPos(Vector2(f.x, f.y))
+            local seen = f.kind == "corpse" or self:IsRevealedPos(Vector2(f.x, f.y))
             _UIKit:SetEnabled(path, seen)
             _UIKit:SetPos(path, pos)
             if seen then table.insert(order, { index = i, f = f, pos = pos, rank = self:FeatureRank(f.kind) }) end
@@ -306,7 +306,7 @@ script HudMap extends Logic
         for _, o in ipairs(order) do
             local label = self:FeatureLabel(o.f)
             -- 원 가장자리에 붙은 표식(멀리 있는 것)은 출구·의뢰만 이름을 단다
-            if label ~= "" and o.pos:Magnitude() >= self.MiniRadius - 0.5 and o.f.kind ~= "portal" and o.f.kind ~= "quest" then label = "" end
+            if label ~= "" and o.pos:Magnitude() >= self.MiniRadius - 0.5 and o.f.kind ~= "portal" and o.f.kind ~= "quest" and o.f.kind ~= "corpse" then label = "" end
             if label ~= "" then
                 local w = _UIKit:CharCount(label) * 15 + 8
                 local cx = o.pos.x
@@ -324,7 +324,7 @@ script HudMap extends Logic
     end
 
     method integer FeatureRank(string kind)
-        local ranks = { quest = 1, portal = 2, waypoint = 3, depth = 4, boss = 5, altar = 6, npc = 7 }
+        local ranks = { corpse = 0, quest = 1, portal = 2, waypoint = 3, depth = 4, boss = 5, altar = 6, npc = 7 }
         return ranks[kind] or 8
     end
 
@@ -370,13 +370,14 @@ script HudMap extends Logic
     end
 
     method Color FeatureColor(string kind)
-        -- 출구 빨강 · 의뢰 노랑 · 웨이포인트 파랑 · NPC 흰색 · 심도 보라 · 제단 주황 · 보스 진홍
+        -- 출구 빨강 · 의뢰 노랑 · 웨이포인트 파랑 · NPC 흰색 · 심도 보라 · 제단 주황 · 보스 진홍 · 내 시체 연초록
         if kind == "portal" then return Color(1, 0.35, 0.29, 1) end
         if kind == "quest" then return Color(1, 0.82, 0.25, 1) end
         if kind == "waypoint" then return Color(0.44, 0.7, 1, 1) end
         if kind == "depth" then return Color(0.72, 0.45, 1, 1) end
         if kind == "altar" then return Color(1, 0.6, 0.25, 1) end
         if kind == "boss" then return Color(0.9, 0.15, 0.2, 1) end
+        if kind == "corpse" then return Color(0.62, 1, 0.78, 1) end
         return Color(0.91, 0.88, 0.83, 1)
     end
 
@@ -395,6 +396,7 @@ script HudMap extends Logic
         if f.kind == "depth" then return (f.label ~= nil and f.label ~= "") and f.label or "심도" end
         if f.kind == "altar" then return "제단" end
         if f.kind == "boss" then return "보스" end
+        if f.kind == "corpse" then return "내 시체" end
         return ""
     end
 
@@ -466,6 +468,15 @@ script HudMap extends Logic
                         liveKinds[kind] = true
                     end
                 end
+            end
+        end
+        -- 내 시체 (D2 사망 규칙 — 장비를 담고 죽은 자리에 남는다, PlayerCorpse): 되찾으러 갈 곳이라 안개와 상관없이 늘 보인다 (10-24 사용자)
+        for _, component in ipairs(map:GetChildComponentsByTypeName("script.PlayerCorpse", true)) do
+            ---@type PlayerCorpse
+            local corpse = component
+            if isvalid(component.Entity) and isvalid(player) and corpse.OwnerUserId == player.PlayerComponent.UserId then
+                local pos = _Util:Pos2(component.Entity)
+                table.insert(result, { kind = "corpse", x = pos.x, y = pos.y, label = "내 시체" })
             end
         end
         -- 보스 자리는 맵 표의 고정 표시라, 쓰러져 다시 나오기를 기다리는 동안(머리글에 「이름 0:28」)은 뺀다 (10-13 지적)

@@ -116,7 +116,8 @@ function applyValues(b, text) {
   for (const part of list(text)) {
     const [lhs, v] = part.split("=");
     const dot = lhs.lastIndexOf(".");
-    b.value(lhs.slice(0, dot), lhs.slice(dot + 1), Number(v), "double");
+    const name = lhs.slice(dot + 1);
+    b.value(lhs.slice(0, dot), name, Number(v), name === "OrderInLayer" ? "int" : "double");
   }
 }
 
