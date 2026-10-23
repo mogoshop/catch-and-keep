@@ -220,10 +220,15 @@ def build(prof, L, act=1, diff=0):
     spell_pct = Ene + 0
     scale = C["skillPowerMult"] * (1 + C["skillDmgPerCharLevel"] * (L - 1)) * C["skillDmgMult"] * (1 + spell_pct / 100)
     spell = 0
+    def pierce_cap(lv):
+        # 관통 상한 (SkillBook.GetPierceCap · 10-24): 스킬 레벨 구간마다 1·3·5·10마리
+        for t in (4, 3, 2):
+            if lv >= C["pierceTier%dLv" % t]: return C["pierceHits%d" % t]
+        return C["pierceHits1"]
     if rk.get("bone_shard"):
-        spell += (10 + 6 * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * 1.5 / 0.75 * 0.25
+        spell += (10 + 6 * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.5, pierce_cap(rk["bone_shard"])) / 0.75 * 0.25
     if rk.get("bone_spear"):
-        spell += (30 + 12 * (rk["bone_spear"] - 1)) * scale * 2.0 / 1.2 * 0.25
+        spell += (30 + 12 * (rk["bone_spear"] - 1)) * scale * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
     dps = {
         "그림자": ((n_sh - n_el) * sh_n + n_el * sh_e) / sh_iv,
         "해골": n_sk * sk_atk / C["skeletonCooldown"],

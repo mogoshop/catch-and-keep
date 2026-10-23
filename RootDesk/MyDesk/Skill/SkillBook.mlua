@@ -221,6 +221,21 @@ script SkillBook extends Component
         return math.min(math.floor(_GameData.boneShardMaxCount), 1 + usable)
     end
 
+    method integer GetPierceCap(integer level)
+        -- 관통 투사체(골편 투척·뼈 창·서리 혼) 한 발이 맞히는 최대 적 수. 레벨마다 조금씩이 아니라 구간마다 껑충 (config pierceTier* · 10-24 사용자 결정)
+        if level < _GameData.pierceTier2Lv then return math.floor(_GameData.pierceHits1) end
+        if level < _GameData.pierceTier3Lv then return math.floor(_GameData.pierceHits2) end
+        if level < _GameData.pierceTier4Lv then return math.floor(_GameData.pierceHits3) end
+        return math.floor(_GameData.pierceHits4)
+    end
+
+    method string PierceText(integer level)
+        -- 스킬 요약용: 「1마리 명중」 / 「최대 3마리 관통」
+        local cap = self:GetPierceCap(level)
+        if cap <= 1 then return "1마리 명중" end
+        return string.format("최대 %d마리 관통", cap)
+    end
+
     method number GetCurseDuration(integer level)
         -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 20.5초)
         if level <= 0 then return 0 end
@@ -389,9 +404,9 @@ script SkillBook extends Component
         if id == "wraith_dash" then return string.format("%.2f칸 질주 · 무적 %.2f초 · 재사용 %.1f초", power, 0.3 + 0.05 * self:Node("dash_ghost"), self:DashCooldown(level)) end
         if id == "wraith_blink" then return string.format("최대 %g칸 순간이동 · 재사용 %.2f초 · 마나 %d", power, self:SkillCooldown(id, level), math.floor(self:GetManaCost(id, level))) end
         if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%%", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex")) end
-        if id == "frost_soul" then return string.format("관통 서리 혼 · 기준 피해 %.1f · %d초 둔화", power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long")) end
-        if id == "bone_spear" then return string.format("관통 창 %s · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
-        if id == "bone_shard" then return string.format("뼛조각 %d발 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
+        if id == "frost_soul" then return string.format("서리 혼 · %s · 기준 피해 %.1f · %d초 둔화", self:PierceText(level), power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long")) end
+        if id == "bone_spear" then return string.format("창 %s · %s · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", self:PierceText(level), power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
+        if id == "bone_shard" then return string.format("뼛조각 %d발 · %s · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), self:PierceText(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
         if power > 0 then
@@ -863,7 +878,7 @@ script SkillBook extends Component
         ---@type SkillEffects
         local effects = self.Entity:GetComponent("script.SkillEffects")
         if effects == nil then return end
-        effects:PredictBoneShard(target, self:GetBoneShardCount(lv), lock)
+        effects:PredictBoneShard(target, self:GetBoneShardCount(lv), lock, self:GetPierceCap(lv))
         self:PlayCastGesture("bone_shard", target - me)
         self.PredictedCastAt = _UtilLogic.ElapsedSeconds
     end

@@ -78,6 +78,14 @@ script SkillEffects extends Component
         return ok
     end
 
+    method integer PierceCap(string id)
+        -- 관통 투사체 한 발의 최대 적 수 (SkillBook.GetPierceCap, 장비 스킬 레벨 포함)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return 1 end
+        return book:GetPierceCap(book:GetPowerLevel(id))
+    end
+
     method integer Node(string id)
         -- 강화 노드 랭크 (docs/design/16)
         ---@type SkillBook
@@ -206,7 +214,7 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("ClientOnly")
-    method void PredictBoneShard(Vector2 target, integer count, Entity lock)
+    method void PredictBoneShard(Vector2 target, integer count, Entity lock, integer maxHits)
         -- 10-11 QA 「누르자마자 안 나가고 0.5초쯤 늦다」: 서버 투사체는 왕복·생성 동기화만큼 늦게 보였다.
         -- 내 화면에서는 누르는 순간 서버와 같은 각도·속도·사거리로 뼛조각을 직접 그리고, 서버 투사체는 숨긴다 (판정·피해는 서버)
         local map = self.Entity.CurrentMap
@@ -226,6 +234,7 @@ script SkillEffects extends Component
             if proj ~= nil then
                 ---@type Projectile
                 local p = proj
+                p.MaxHits = maxHits   -- 서버와 같은 마릿수에서 멈춘다 (관통 상한)
                 p:PlayLocal(self.Entity, d, 12, 6.5, self.FxShardShot, 0.55, i == center and lock or nil)
             elseif isvalid(e) then
                 e:Destroy()
@@ -278,6 +287,7 @@ script SkillEffects extends Component
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
                     proj:Skin(self.FxShardShot, 0.95)
                     proj:Tint(Color(0.95, 0.9, 0.78, 1))
+                    proj.MaxHits = self:PierceCap("bone_spear")
                     proj:Launch(owner, fly, 14, range, damage, "skill.bone_spear", true)
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
@@ -313,6 +323,7 @@ script SkillEffects extends Component
             if isvalid(target) then proj.Lock = target end
             proj.SpikePct = spikePct
             proj.Bounces = bouncesLeft
+            proj.MaxHits = 1   -- 튕긴 뼛조각은 한 마리만 (튕김 횟수는 강화 랭크가 정한다)
             proj:Launch(owner, dir, 12, bestD + 1.5, damage, "skill.bone_shard", true)
         end, function() if isvalid(shot) then shot:Destroy() end end)
     end
@@ -325,7 +336,7 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method boolean BoneShard(Vector2 me, Vector2 target, number damage, any onComplete, any canCommit, Entity lock)
-        -- 조준 방향으로 뼛조각이 날아간다 (초속 12, 사거리 6.5, 관통). 지나가며 닿은 적만 맞는다
+        -- 조준 방향으로 뼛조각이 날아간다 (초속 12, 사거리 6.5). 스킬 레벨 구간만큼 꿰뚫고(PierceCap) 그 수를 채우면 멈춘다
         -- lock(고정 대상)이 있으면 그 몬스터를 따라가 닿는 순간 터진다 (가는 길의 적도 맞는다)
         local dir = target - me
         if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
@@ -361,6 +372,7 @@ script SkillEffects extends Component
             if isvalid(lock) then proj.Lock = lock end
             proj.SpikePct = 10 * self:Node("shard_spike")   -- 강화 「뼈 가시」
             proj.Bounces = self:Node("shard_bounce")        -- 강화 「튕김」
+            proj.MaxHits = self:PierceCap("bone_shard")      -- 관통 상한 (스킬 레벨 구간)
             proj:Launch(owner, dir, 12, 6.5, damage, "skill.bone_shard", true)
             finish(true)
         end, function() finish(false) end)
@@ -456,6 +468,7 @@ script SkillEffects extends Component
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
             proj:Skin(self.FxFrostShot, 0.6)
             proj:Tint(Color(0.85, 0.95, 1, 1))
+            proj.MaxHits = self:PierceCap("frost_soul")
             proj:Launch(owner, dir, 9, 8, damage, "skill.frost_soul", true)
         end, function() if isvalid(shot) then shot:Destroy() end end)
         return true

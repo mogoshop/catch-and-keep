@@ -1,6 +1,6 @@
 -- 날아가는 투사체. 판정은 서버가 내부 위치(SimPos)로 하고, 그림은 각 클라이언트가 발사 위치·방향·속도·서버 시각으로
 -- 매 프레임 직접 그린다 (10-10 QA: 서버가 위치를 옮기면 동기화 간격만큼 뚝뚝 끊겨 「스티커가 날아가는」 것처럼 보였다).
--- 지나가며 닿은 상대만 맞고, Pierce면 꿰뚫어 사거리 끝까지 간다.
+-- 지나가며 닿은 상대만 맞고, Pierce면 꿰뚫어 사거리 끝까지 간다 (MaxHits가 있으면 그만큼 맞히고 멈춘다).
 --   Team "player" (기본): 몬스터를 맞힌다. 피해는 쏜 플레이어의 PlayerAttack.SkillHitOne (HitEvent 경로)
 --   Team "monster": 플레이어·그림자를 맞힌다. 피해는 쏜 몬스터의 MonsterAttack.HitOne — 움직여서 피할 수 있다
 -- 모양·스프라이트는 Projectile 모델 (Body 없음, Translate로 이동). 몬스터 화살은 쏠 때 그림을 바꾼다.
@@ -42,6 +42,7 @@ script Projectile extends Component
     property boolean Pierce = true
     property number SpikePct = 0             -- 골편 강화 「뼈 가시」: 꿰뚫을 때마다 피해 +% (docs/design/16)
     property integer PierceHits = 0          -- 지금까지 맞힌 적 수
+    property integer MaxHits = 0             -- 관통해도 이만큼 맞히면 멈춘다 (0 = 제한 없음 · 스킬 레벨 구간 SkillBook.GetPierceCap, 10-24)
     property integer Bounces = 0             -- 골편 강화 「튕김」: 맞힌 뒤 가까운 다른 적에게 튈 남은 횟수
     property string Team = "player"
     property boolean Launched = false
@@ -194,8 +195,13 @@ script Projectile extends Component
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
         t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
-        -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
-        if self.LocalView and (self.ViewDist >= self.Range - 0.01 or _Util:TileBlocked(self.Terrain, self.ViewPos - Vector2(0, self.HeightOffset))) then
+        -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝·관통 상한에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
+        if self.LocalView and self.MaxHits > 0 then
+            for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, self.ViewPos - Vector2(0, self.HeightOffset), self.Radius)) do
+                self.HitIds[m.Entity.Id] = true
+            end
+        end
+        if self.LocalView and (self.ViewDist >= self.Range - 0.01 or self:HitCapReached() or _Util:TileBlocked(self.Terrain, self.ViewPos - Vector2(0, self.HeightOffset))) then
             self.Flying = false
             self.Entity:Destroy()
         end
@@ -221,6 +227,7 @@ script Projectile extends Component
     method void PlayLocal(Entity shooter, Vector2 dir, number speed, number range, string skin, number scale, Entity lock)
         -- 클라이언트 전용 예측 투사체: 서버 Launch와 같은 값으로 날리고 그림만 그린다 (판정·피해 없음)
         self.LocalView = true
+        self.HitIds = {}
         self.Shooter = shooter
         local tiles = self.Entity.CurrentMap:GetFirstChildComponentByTypeName("RectTileMapComponent", true)
         self.Terrain = tiles ~= nil and tiles.Entity or nil
@@ -362,7 +369,7 @@ script Projectile extends Component
                 end
                 -- 10-11 QA: 고른 적에 닿아도 사라지지 않고 꿰뚫어 그 방향 그대로 사거리 끝까지 간다 (맞은 자리엔 타격 이펙트만 남는다)
                 if m.Entity == self.Lock then self.Lock = nil end
-                if not self.Pierce then self:Finish() return end
+                if not self.Pierce or self:HitCapReached() then self:Finish() return end
             end
         end
         -- 결투 상대 플레이어·그 소환수 (10-23 결투 군단전: 예전엔 몬스터만 봐서 뼈 창·골편·화살이 상대에게 맞지 않았다)
@@ -382,9 +389,17 @@ script Projectile extends Component
                 end
                 self:HitFx(hitPos, self.TintColor)
                 if foe == self.Lock then self.Lock = nil end
-                if not self.Pierce then self:Finish() return end
+                if not self.Pierce or self:HitCapReached() then self:Finish() return end
             end
         end
+    end
+
+    method boolean HitCapReached()
+        -- 관통 상한: 맞힌 적 수가 MaxHits에 닿았다
+        if self.MaxHits <= 0 then return false end
+        local n = 0
+        for _ in pairs(self.HitIds) do n = n + 1 end
+        return n >= self.MaxHits
     end
 
     @ExecSpace("ServerOnly")
