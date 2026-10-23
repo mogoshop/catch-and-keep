@@ -97,6 +97,10 @@ script GameData extends Logic
     property number commandMasteryPct = 8    -- 그림자 소환 강화 「군령」 랭크당 그림자 공격력·생명 % (10-11: 5.5 → 8 · 최대 5랭크)
     property number shadowSummonPerLvPct = 3    -- 그림자 소환 추가 스킬 레벨당 공격력·생명 증가율
     property number variantChance = 0.032    -- 스포너 몬스터가 변종 우두머리(오오라·특수 기술)로 나올 확률
+    property number auraMin = 10    -- 변종 오오라 수치 최저 % (10-24 C안: 무작위 수치 + 등급 — 난이도별 등급 확률은 difficulty.csv auraW1~3)
+    property number auraTier2From = 15    -- 이 수치부터 「짙은」 오오라 (아래는 「옅은」)
+    property number auraTier3From = 20    -- 이 수치부터 「극한」 오오라
+    property number auraMax = 25    -- 변종 오오라 수치 최고 %
     property number auraTickSec = 0.5    -- 오오라 갱신 간격
     property number auraHoldSec = 1.2    -- 오오라 유지 시간 (범위를 벗어나면 이만큼 뒤 사라짐)
     property number iasCap = 75    -- 공격 속도 상한 %
@@ -255,6 +259,7 @@ script GameData extends Logic
     property table Shop = {}
     property table Variants = {}
     property table VariantOrder = {}
+    property table VariantCache = {}
     property table Archetypes = {}
     property table MonsterStates = {}
     property table Weeklies = {}
@@ -439,9 +444,9 @@ script GameData extends Logic
         self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
         self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
-        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1, monsterHpMul = 1, monsterDmgMul = 1, dropQualityMul = 1, dropMagicMul = 1, dropGoldMul = 1, dropRuneMul = 1, dropNoneMul = 1 }
-        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5, monsterHpMul = 2.4, monsterDmgMul = 1.2, dropQualityMul = 1.5, dropMagicMul = 1.2, dropGoldMul = 1.5, dropRuneMul = 1.5, dropNoneMul = 0.85 }
-        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 70, levelFrom = 71, levelTo = 99, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 14, monsterHpMul = 2.6, monsterDmgMul = 1.2, dropQualityMul = 2, dropMagicMul = 1.4, dropGoldMul = 2, dropRuneMul = 2.25, dropNoneMul = 0.7 }
+        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1, monsterHpMul = 1, monsterDmgMul = 1, dropQualityMul = 1, dropMagicMul = 1, dropGoldMul = 1, dropRuneMul = 1, dropNoneMul = 1, auraW1 = 60, auraW2 = 30, auraW3 = 10, eliteVariantChance = 0, championDual = 0 }
+        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5, monsterHpMul = 2.4, monsterDmgMul = 1.2, dropQualityMul = 1.5, dropMagicMul = 1.2, dropGoldMul = 1.5, dropRuneMul = 1.5, dropNoneMul = 0.85, auraW1 = 45, auraW2 = 38, auraW3 = 17, eliteVariantChance = 0.15, championDual = 1 }
+        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 70, levelFrom = 71, levelTo = 99, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 14, monsterHpMul = 2.6, monsterDmgMul = 1.2, dropQualityMul = 2, dropMagicMul = 1.4, dropGoldMul = 2, dropRuneMul = 2.25, dropNoneMul = 0.7, auraW1 = 30, auraW2 = 42, auraW3 = 28, eliteVariantChance = 0.15, championDual = 1 }
         self.Sounds = {}
         self.Sounds["town"] = "93147bcf77494841b8d4478791ed9282"
         self.Sounds["field"] = "8efc5a3200114606a71e907036fe920f"
@@ -1279,25 +1284,120 @@ script GameData extends Logic
         return m ~= nil and m.arch or ""
     end
 
-    method any GetVariant(string id)
-        -- 변종 능력 (variants.csv). 없으면 nil
+    -- 변종 능력 코드 (10-24 C안): "능력[:오오라 수치]" 를 "+"로 잇는다. 예) "aura_haste:23+skill_fire"
+    -- 예전 저장의 "aura_haste" 처럼 수치가 없으면 variants.csv 값. 오오라 등급: 옅은 · 짙은 · 극한 (config auraTier2From·auraTier3From)
+    method table ParseVariant(string code)
+        -- 코드 → 능력 표 목록 (각각 variants.csv 행의 복사 + value·tier·label)
         self:Ensure()
-        if id == nil or id == "" then return nil end
-        return self.Variants[id]
+        if code == nil or code == "" then return {} end
+        -- 몬스터·그림자가 매 프레임 묻는다 → 코드별로 한 번만 풀어 둔다 (돌려준 표는 고치지 않는다)
+        local hit = self.VariantCache[code]
+        if hit ~= nil then return hit end
+        local list = {}
+        for part in string.gmatch(code, "[^+]+") do
+            local id, val = string.match(part, "^([^:]+):?(%d*)$")
+            local base = id ~= nil and self.Variants[id] or nil
+            if base ~= nil then
+                local v = {}
+                for k, x in pairs(base) do v[k] = x end
+                if val ~= nil and val ~= "" then v.value = tonumber(val) end
+                v.tier = 0
+                v.label = v.name
+                if v.kind == "aura" then
+                    v.tier = self:AuraTier(v.value)
+                    v.label = self:AuraTierName(v.tier) .. " " .. v.name .. " " .. string.format("+%d%%", math.floor(v.value))
+                end
+                table.insert(list, v)
+            end
+        end
+        self.VariantCache[code] = list
+        return list
     end
 
-    method string RollVariant()
-        -- 무작위 변종 (weight 비례, 0은 고유 전용)
+    method any GetVariant(string code)
+        -- 첫 능력 (예전 한 능력 호출 호환). 없으면 nil
+        local list = self:ParseVariant(code)
+        return list[1]
+    end
+
+    method any GetVariantOf(string code, string want)
+        -- want = "aura" → 오오라 능력, "skill" → 오오라가 아닌 능력(기술·독안개). 없으면 nil
+        for _, v in ipairs(self:ParseVariant(code)) do
+            if (want == "aura") == (v.kind == "aura") then return v end
+        end
+        return nil
+    end
+
+    method string VariantLabel(string code)
+        -- 이름표·창 표시: "극한 질풍 오오라 +23% · 화염 폭발"
+        local names = {}
+        for _, v in ipairs(self:ParseVariant(code)) do table.insert(names, v.label) end
+        return table.concat(names, " · ")
+    end
+
+    method integer AuraTier(number value)
+        if value >= self.auraTier3From then return 3 end
+        if value >= self.auraTier2From then return 2 end
+        return 1
+    end
+
+    method string AuraTierName(integer tier)
+        if tier >= 3 then return "극한" end
+        if tier == 2 then return "짙은" end
+        return "옅은"
+    end
+
+    method integer RollAuraValue(integer difficulty)
+        -- 등급을 난이도별 확률(difficulty.csv auraW1~3)로 고른 뒤 그 등급 범위 안에서 수치
+        local d = self:GetDifficulty(difficulty)
+        local w1, w2, w3 = d.auraW1, d.auraW2, d.auraW3
+        local roll = _UtilLogic:RandomDouble() * (w1 + w2 + w3)
+        local lo, hi = math.floor(self.auraMin), math.floor(self.auraTier2From) - 1
+        if roll >= w1 + w2 then lo, hi = math.floor(self.auraTier3From), math.floor(self.auraMax)
+        elseif roll >= w1 then lo, hi = math.floor(self.auraTier2From), math.floor(self.auraTier3From) - 1 end
+        return _UtilLogic:RandomIntegerRange(lo, hi)
+    end
+
+    method string RollAbility(string want)
+        -- 무작위 능력 id (weight 비례, 0은 고유 전용). want = "" 아무거나 · "aura" · "skill"
         self:Ensure()
         local total = 0
-        for _, id in ipairs(self.VariantOrder) do total = total + self.Variants[id].weight end
+        local ok = function(v) return v.weight > 0 and (want == "" or (want == "aura") == (v.kind == "aura")) end
+        for _, id in ipairs(self.VariantOrder) do if ok(self.Variants[id]) then total = total + self.Variants[id].weight end end
         if total <= 0 then return "" end
         local roll = _UtilLogic:RandomDouble() * total
         for _, id in ipairs(self.VariantOrder) do
-            roll = roll - self.Variants[id].weight
-            if roll <= 0 and self.Variants[id].weight > 0 then return id end
+            local v = self.Variants[id]
+            if ok(v) then
+                roll = roll - v.weight
+                if roll <= 0 then return id end
+            end
         end
         return ""
+    end
+
+    method string AbilityCode(string id, integer difficulty)
+        -- 능력 id → 코드 조각 (오오라면 수치를 굴려 붙인다)
+        if id == "" then return "" end
+        local v = self.Variants[id]
+        if v ~= nil and v.kind == "aura" then return id .. ":" .. tostring(self:RollAuraValue(difficulty)) end
+        return id
+    end
+
+    method string RollVariant(integer difficulty)
+        -- 변종 우두머리 능력: 보통은 하나, 악몽부터(difficulty.csv championDual)는 오오라 + 기술 둘
+        local d = self:GetDifficulty(difficulty)
+        if d.championDual > 0 then
+            return self:AbilityCode(self:RollAbility("aura"), difficulty) .. "+" .. self:RollAbility("skill")
+        end
+        return self:AbilityCode(self:RollAbility(""), difficulty)
+    end
+
+    method string RollEliteVariant(integer difficulty)
+        -- 악몽부터 정예도 difficulty.csv eliteVariantChance 확률로 능력 하나 (없으면 "")
+        local d = self:GetDifficulty(difficulty)
+        if d.eliteVariantChance <= 0 or _UtilLogic:RandomDouble() >= d.eliteVariantChance then return "" end
+        return self:AbilityCode(self:RollAbility(""), difficulty)
     end
 
     method any GetShopItem(string key)

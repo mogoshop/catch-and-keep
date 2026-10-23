@@ -248,8 +248,8 @@ script HudMain extends Logic
         for _, c in ipairs(units) do
             ---@type ShadowUnit
             local u = c
-            local v = (isvalid(u.Entity) and u.Entity.Enable and u.Hp > 0 and u.Variant ~= "") and _GameData:GetVariant(u.Variant) or nil
-            if v ~= nil and v.kind == "aura" and (best[v.effect] == nil or v.value > best[v.effect].v.value) then
+            local v = (isvalid(u.Entity) and u.Entity.Enable and u.Hp > 0 and u.Variant ~= "") and _GameData:GetVariantOf(u.Variant, "aura") or nil
+            if v ~= nil and (best[v.effect] == nil or v.value > best[v.effect].v.value) then
                 local src = _Util:Pos2(u.Entity)
                 for _, q in ipairs(mine) do
                     if (q - src):Magnitude() <= v.radius then
@@ -268,7 +268,7 @@ script HudMain extends Logic
                 local hex = _GameConst:AuraHex(effect)
                 local c = Color(tonumber(string.sub(hex, 2, 3), 16) / 255, tonumber(string.sub(hex, 4, 5), 16) / 255, tonumber(string.sub(hex, 6, 7), 16) / 255, 1)
                 table.insert(list, { key = "aura_" .. effect, label = short[effect], color = c, left = -1,
-                    desc = string.format("%s · 반경 %g 안 소환수 %s %s%d%% (%s)", b.v.name, b.v.radius, labels[effect], effect == "guard" and "-" or "+", math.floor(b.v.value), b.from) })
+                    desc = string.format("%s · 반경 %g 안 소환수 %s %s%d%% (%s)", _GameData:AuraTierName(b.v.tier) .. " " .. b.v.name, b.v.radius, labels[effect], effect == "guard" and "-" or "+", math.floor(b.v.value), b.from) })
             end
         end
         -- 근처 다른 플레이어의 호령은 내 소환수에도 닿는다 (ShadowUnit.PartyAuraTick · 반경 6)
@@ -548,7 +548,7 @@ script HudMain extends Logic
         elseif m.Unique then
             prefix = "최상위 "
             color = "#C8A050"
-        elseif m:GetVariant() ~= "" then
+        elseif m:GetRank() == "champion" then
             prefix = "우두머리 "
             color = "#E070FF"            -- 변종 우두머리 (오오라·기술): 이름표에 능력 이름
         elseif m.Grade == 2 then
@@ -566,19 +566,27 @@ script HudMain extends Logic
     method string TargetStatus(Monster monster)
         -- 적의 지원 능력과 현재 저주를 짧게 함께 보여 주어 먼저 잡을 대상을 고를 수 있게 한다.
         local text = ""
-        local variant = _GameData:GetVariant(monster:GetVariant())
-        if variant ~= nil then
+        -- 능력이 둘이면 (악몽부터 우두머리 오오라 + 기술) 둘 다, 능력 붙은 정예는 수식어도 앞에
+        local parts = {}
+        for _, variant in ipairs(_GameData:ParseVariant(monster:GetVariant())) do
             if variant.kind == "aura" then
                 local labels = { dmg = "피해", haste = "공격·이동", guard = "피해 감소" }
                 local label = labels[variant.effect] or "전투력"
-                text = variant.name .. " · 주변 적 " .. label .. " +" .. tostring(math.floor(variant.value)) .. "%"
+                local tierColor = variant.tier >= 3 and "#FFB04A" or (variant.tier == 2 and "#9FD0FF" or "#C9BFA8")
+                table.insert(parts, _UIKit:Colored(tierColor, _GameData:AuraTierName(variant.tier) .. " " .. variant.name) .. " · 주변 적 " .. label .. (variant.effect == "guard" and " -" or " +") .. tostring(math.floor(variant.value)) .. "%")
             elseif variant.kind == "skill" then
                 local names = { fire = "화염 ", cold = "냉기 ", light = "번개 " }
-                text = variant.name .. " · " .. (names[variant.element] or "") .. "범위 공격"
+                table.insert(parts, variant.name .. " · " .. (names[variant.element] or "") .. "범위 공격")
             elseif variant.kind == "cloud" then
-                text = variant.name .. " · 독안개가 남는다"
+                table.insert(parts, variant.name .. " · 독안개가 남는다")
             end
-        else
+        end
+        text = table.concat(parts, " / ")
+        if monster.Grade == 2 and monster:GetRank() ~= "champion" then
+            local affix = string.match(monster:GetAffixName(), "^([^·]+)") or ""
+            affix = string.gsub(affix, "%s+$", "")
+            text = text == "" and monster:GetAffixName() or (affix ~= "" and (affix .. " · " .. text) or text)
+        elseif text == "" then
             text = monster:GetAffixName()
         end
         -- 유형 버릇 한 줄 (거구 「예고 강타 (피하기)」 · 방패 「정면 방어 (옆·뒤가 약점)」). 광전사가 광폭하면 붉게

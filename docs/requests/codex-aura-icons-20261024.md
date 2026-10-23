@@ -20,8 +20,20 @@
 - 칩 바깥 원 테두리는 버프 칩 세트와 같게. 글자 넣지 않는다.
 - 네크로맨서 군단의 그림자 소환수가 내뿜는 기운이라 바탕은 어두운 보라 톤 + 오오라 색 빛.
 
+## 등급 테두리 3장 (10-24 C안 추가)
+
+오오라는 같은 종류도 수치가 10~25%로 달라 등급이 있다: **옅은**(10~14) · **짙은**(15~19) · **극한**(20~25). 아이콘 위에 덧씌우는 원형 테두리 3장.
+
+| 키 | 등급 | 색 |
+|---|---|---|
+| `aura_tier1` | 옅은 | 바랜 뼈색 `#C9BFA8` 얇은 테 |
+| `aura_tier2` | 짙은 | 차가운 푸른 `#9FD0FF` 테 + 작은 빛 점 |
+| `aura_tier3` | 극한 | 주황 금빛 `#FFB04A` 두꺼운 테 + 불꽃 같은 가장자리 |
+
+- 128×128 PNG, 가운데는 투명(아이콘이 비쳐 보이게). 28px로 줄여도 세 등급 색이 갈리게.
+
 ## 업로드·돌려줄 것
 
-- 그룹 리소스(그룹 OJYYQ)에 `ui_aura_haste`, `ui_aura_dmg`, `ui_aura_guard`로 올리고 RUID 3개를 돌려준다.
+- 그룹 리소스(그룹 OJYYQ)에 `ui_aura_haste`, `ui_aura_dmg`, `ui_aura_guard`, `ui_aura_tier1~3`으로 올리고 RUID 6개를 돌려준다.
 - `assets/codex-aura-icons-v1/` — 원본 PNG 3장 + 56px·28px 축소 확인판 (기존 `buff_command` 칩과 나란히).
 - Claude가 `data/ui_icons.csv`에 `aura_haste` · `aura_dmg` · `aura_guard` 행을 넣으면 게임이 바로 쓴다 (HudMain 버프 칩 · CompanionHUD 칸 오른쪽 위 — 아이콘이 없으면 지금은 오오라 색 원).

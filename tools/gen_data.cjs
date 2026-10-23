@@ -117,7 +117,7 @@ function genGameData() {
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
-    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)}, monsterHpMul = ${n(d.monsterHpMul || 1)}, monsterDmgMul = ${n(d.monsterDmgMul || 1)}, dropQualityMul = ${n(d.dropQualityMul || 1)}, dropMagicMul = ${n(d.dropMagicMul || 1)}, dropGoldMul = ${n(d.dropGoldMul || 1)}, dropRuneMul = ${n(d.dropRuneMul || 1)}, dropNoneMul = ${n(d.dropNoneMul || 1)} }`),
+    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)}, monsterHpMul = ${n(d.monsterHpMul || 1)}, monsterDmgMul = ${n(d.monsterDmgMul || 1)}, dropQualityMul = ${n(d.dropQualityMul || 1)}, dropMagicMul = ${n(d.dropMagicMul || 1)}, dropGoldMul = ${n(d.dropGoldMul || 1)}, dropRuneMul = ${n(d.dropRuneMul || 1)}, dropNoneMul = ${n(d.dropNoneMul || 1)}, auraW1 = ${n(d.auraW1 || 60)}, auraW2 = ${n(d.auraW2 || 30)}, auraW3 = ${n(d.auraW3 || 10)}, eliteVariantChance = ${n(d.eliteVariantChance || 0)}, championDual = ${n(d.championDual || 0)} }`),
     "        self.Sounds = {}",
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",
@@ -227,25 +227,120 @@ function genGameData() {
         return m ~= nil and m.arch or ""
     end
 
-    method any GetVariant(string id)
-        -- 변종 능력 (variants.csv). 없으면 nil
+    -- 변종 능력 코드 (10-24 C안): "능력[:오오라 수치]" 를 "+"로 잇는다. 예) "aura_haste:23+skill_fire"
+    -- 예전 저장의 "aura_haste" 처럼 수치가 없으면 variants.csv 값. 오오라 등급: 옅은 · 짙은 · 극한 (config auraTier2From·auraTier3From)
+    method table ParseVariant(string code)
+        -- 코드 → 능력 표 목록 (각각 variants.csv 행의 복사 + value·tier·label)
         self:Ensure()
-        if id == nil or id == "" then return nil end
-        return self.Variants[id]
+        if code == nil or code == "" then return {} end
+        -- 몬스터·그림자가 매 프레임 묻는다 → 코드별로 한 번만 풀어 둔다 (돌려준 표는 고치지 않는다)
+        local hit = self.VariantCache[code]
+        if hit ~= nil then return hit end
+        local list = {}
+        for part in string.gmatch(code, "[^+]+") do
+            local id, val = string.match(part, "^([^:]+):?(%d*)$")
+            local base = id ~= nil and self.Variants[id] or nil
+            if base ~= nil then
+                local v = {}
+                for k, x in pairs(base) do v[k] = x end
+                if val ~= nil and val ~= "" then v.value = tonumber(val) end
+                v.tier = 0
+                v.label = v.name
+                if v.kind == "aura" then
+                    v.tier = self:AuraTier(v.value)
+                    v.label = self:AuraTierName(v.tier) .. " " .. v.name .. " " .. string.format("+%d%%", math.floor(v.value))
+                end
+                table.insert(list, v)
+            end
+        end
+        self.VariantCache[code] = list
+        return list
     end
 
-    method string RollVariant()
-        -- 무작위 변종 (weight 비례, 0은 고유 전용)
+    method any GetVariant(string code)
+        -- 첫 능력 (예전 한 능력 호출 호환). 없으면 nil
+        local list = self:ParseVariant(code)
+        return list[1]
+    end
+
+    method any GetVariantOf(string code, string want)
+        -- want = "aura" → 오오라 능력, "skill" → 오오라가 아닌 능력(기술·독안개). 없으면 nil
+        for _, v in ipairs(self:ParseVariant(code)) do
+            if (want == "aura") == (v.kind == "aura") then return v end
+        end
+        return nil
+    end
+
+    method string VariantLabel(string code)
+        -- 이름표·창 표시: "극한 질풍 오오라 +23% · 화염 폭발"
+        local names = {}
+        for _, v in ipairs(self:ParseVariant(code)) do table.insert(names, v.label) end
+        return table.concat(names, " · ")
+    end
+
+    method integer AuraTier(number value)
+        if value >= self.auraTier3From then return 3 end
+        if value >= self.auraTier2From then return 2 end
+        return 1
+    end
+
+    method string AuraTierName(integer tier)
+        if tier >= 3 then return "극한" end
+        if tier == 2 then return "짙은" end
+        return "옅은"
+    end
+
+    method integer RollAuraValue(integer difficulty)
+        -- 등급을 난이도별 확률(difficulty.csv auraW1~3)로 고른 뒤 그 등급 범위 안에서 수치
+        local d = self:GetDifficulty(difficulty)
+        local w1, w2, w3 = d.auraW1, d.auraW2, d.auraW3
+        local roll = _UtilLogic:RandomDouble() * (w1 + w2 + w3)
+        local lo, hi = math.floor(self.auraMin), math.floor(self.auraTier2From) - 1
+        if roll >= w1 + w2 then lo, hi = math.floor(self.auraTier3From), math.floor(self.auraMax)
+        elseif roll >= w1 then lo, hi = math.floor(self.auraTier2From), math.floor(self.auraTier3From) - 1 end
+        return _UtilLogic:RandomIntegerRange(lo, hi)
+    end
+
+    method string RollAbility(string want)
+        -- 무작위 능력 id (weight 비례, 0은 고유 전용). want = "" 아무거나 · "aura" · "skill"
         self:Ensure()
         local total = 0
-        for _, id in ipairs(self.VariantOrder) do total = total + self.Variants[id].weight end
+        local ok = function(v) return v.weight > 0 and (want == "" or (want == "aura") == (v.kind == "aura")) end
+        for _, id in ipairs(self.VariantOrder) do if ok(self.Variants[id]) then total = total + self.Variants[id].weight end end
         if total <= 0 then return "" end
         local roll = _UtilLogic:RandomDouble() * total
         for _, id in ipairs(self.VariantOrder) do
-            roll = roll - self.Variants[id].weight
-            if roll <= 0 and self.Variants[id].weight > 0 then return id end
+            local v = self.Variants[id]
+            if ok(v) then
+                roll = roll - v.weight
+                if roll <= 0 then return id end
+            end
         end
         return ""
+    end
+
+    method string AbilityCode(string id, integer difficulty)
+        -- 능력 id → 코드 조각 (오오라면 수치를 굴려 붙인다)
+        if id == "" then return "" end
+        local v = self.Variants[id]
+        if v ~= nil and v.kind == "aura" then return id .. ":" .. tostring(self:RollAuraValue(difficulty)) end
+        return id
+    end
+
+    method string RollVariant(integer difficulty)
+        -- 변종 우두머리 능력: 보통은 하나, 악몽부터(difficulty.csv championDual)는 오오라 + 기술 둘
+        local d = self:GetDifficulty(difficulty)
+        if d.championDual > 0 then
+            return self:AbilityCode(self:RollAbility("aura"), difficulty) .. "+" .. self:RollAbility("skill")
+        end
+        return self:AbilityCode(self:RollAbility(""), difficulty)
+    end
+
+    method string RollEliteVariant(integer difficulty)
+        -- 악몽부터 정예도 difficulty.csv eliteVariantChance 확률로 능력 하나 (없으면 "")
+        local d = self:GetDifficulty(difficulty)
+        if d.eliteVariantChance <= 0 or _UtilLogic:RandomDouble() >= d.eliteVariantChance then return "" end
+        return self:AbilityCode(self:RollAbility(""), difficulty)
     end
 
     method any GetShopItem(string key)
@@ -329,7 +424,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table VariantCache = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

@@ -86,8 +86,16 @@ script SelfTest extends Logic
         self:Check("skill nodes", mastery ~= nil and mastery.kind == "node" and mastery.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 3, "단련된 뼈 = 해골 전사 강화, 그림자 소환 강화 3개")
         self:Check("deploy rank", _ShadowConfig:GetDeploySkillBonus(1) == 1 and _ShadowConfig:GetDeploySkillBonus(3) == 3, "배치 확장 랭크 = 추가 기수")
         -- 변종 능력: 무작위는 weight > 0 만, 고유는 표에서
-        local rolled = _GameData:RollVariant()
+        local rolled = _GameData:RollVariant(0)
         self:Check("variant roll", rolled ~= "" and _GameData:GetVariant(rolled).weight > 0, "무작위 변종 " .. rolled)
+        -- 10-24 C안: 오오라 수치·등급 코드, 악몽부터 오오라 + 기술 둘
+        local parsed = _GameData:ParseVariant("aura_haste:23+skill_fire")
+        self:Check("variant code", #parsed == 2 and parsed[1].value == 23 and parsed[1].tier == 3 and parsed[2].id == "skill_fire" and _GameData:GetVariantOf("aura_haste:23+skill_fire", "skill").id == "skill_fire", "aura_haste:23+skill_fire = 극한 질풍 23% + 화염 폭발")
+        self:Check("variant legacy", _GameData:GetVariant("aura_haste").value == 20 and _GameData:GetVariantOf("skill_nova", "aura") == nil, "수치 없는 예전 코드 = 표 값")
+        local nm = _GameData:RollVariant(1)
+        local nmParts = _GameData:ParseVariant(nm)
+        local auraValue = _GameData:RollAuraValue(2)
+        self:Check("variant nightmare", #nmParts == 2 and nmParts[1].kind == "aura" and nmParts[2].kind ~= "aura" and auraValue >= 10 and auraValue <= 25, "악몽 우두머리 " .. nm .. " · 지옥 오오라 " .. tostring(auraValue))
         self:Check("variant innate", _GameData:GetMonsterStats("grave_queen").innate == "skill_slam", "여왕 고유 = 내려찍기")
         self:Check("josa ro", _GameConst:WithRo("오아시스 시장") == "오아시스 시장으로" and _GameConst:WithRo("잿불 야영지") == "잿불 야영지로" and _GameConst:WithRo("서울") == "서울로", "받침 → 으로 · 없음/ㄹ → 로")
         self:Check("quests", _QuestData:LastOfAct(1) == 6 and _QuestData:LastOfAct(2) == 12 and _QuestData:Count() >= 13 and _QuestData:Get(13).act == 3, "quests.csv 액트 1 6개 + 액트 2 6개 + 액트 3 (13번부터), 실제 " .. tostring(_QuestData:Count()))

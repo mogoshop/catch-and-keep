@@ -259,8 +259,10 @@ script MonsterSpawner extends Component
                         if isvalid(e) then
                             local elite = (leader and i == 1) or _UtilLogic:RandomDouble() < self.EliteChance
                             local variant = ""
-                            if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant() end
-                            self:Configure(e, _GameConst:ScaleLevel(kind.level, diff), elite, variant)
+                            local eliteVariant = ""
+                            if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant(diff)
+                            elseif elite then eliteVariant = _GameData:RollEliteVariant(diff) end   -- 악몽부터 정예 능력 (10-24 C안)
+                            self:Configure(e, _GameConst:ScaleLevel(kind.level, diff), elite, variant, eliteVariant)
                             total = total + 1
                         end
                     end
@@ -380,14 +382,15 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void Configure(Entity e, integer level, boolean elite, string variant)
+    method void Configure(Entity e, integer level, boolean elite, string variant, string eliteVariant)
         local respawn = self.RespawnSec
         _Util:AfterSpawn(e, "script.Monster", function(comp)
             ---@type Monster
             local m = comp
             m.RespawnDelay = respawn
             m:ApplyLevel(level, elite)
-            if variant ~= "" then m:MakeVariant(variant) end
+            if variant ~= "" then m:MakeVariant(variant)
+            elseif eliteVariant ~= "" then m:MakeEliteVariant(eliteVariant) end
         end, nil)
     end
 

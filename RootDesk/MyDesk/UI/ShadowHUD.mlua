@@ -550,12 +550,13 @@ script ShadowHUD extends Logic
 
     method string TraitText(table e)
         -- 고유 능력: 변종 우두머리의 오오라·범위 기술, 정예·보스의 등급 보정
-        local v = _GameData:GetVariant(e.variant)
         local lines = {}
-        if v ~= nil then
+        for _, v in ipairs(_GameData:ParseVariant(e.variant)) do
             if v.kind == "aura" then
+                -- 등급(옅은·짙은·극한)과 수치 (10-24 C안: 같은 오오라도 10~25%)
                 local labels = { dmg = "피해", haste = "공격·이동 속도", guard = "받는 피해 감소" }
-                table.insert(lines, "고유 오오라 「" .. v.name .. "」: 주변 아군 " .. (labels[v.effect] or "능력") .. " +" .. tostring(math.floor(v.value)) .. "% (반경 " .. tostring(v.radius) .. ")")
+                local tierColor = v.tier >= 3 and "#FFB04A" or (v.tier == 2 and "#9FD0FF" or "#C9BFA8")
+                table.insert(lines, "고유 오오라 「" .. _UIKit:Colored(tierColor, v.label) .. "」: 주변 아군 " .. (labels[v.effect] or "능력") .. (v.effect == "guard" and " -" or " +") .. tostring(math.floor(v.value)) .. "% (반경 " .. tostring(v.radius) .. ")")
             elseif v.kind == "cloud" then
                 table.insert(lines, "고유 기술 「" .. v.name .. "」: " .. tostring(v.interval) .. "초마다 주위 적에게 독 (4초 동안 공격력 ×" .. tostring(v.mult) .. ", 반경 " .. tostring(v.radius) .. ")")
             else
@@ -582,8 +583,8 @@ script ShadowHUD extends Logic
         local archId = _GameData:ArchetypeOf(e.src)
         if archId ~= "" and archId ~= "boss" and archId ~= "soldier" then trait = " " .. _GameData:GetArchetype(archId).name end
         if m ~= nil and m.element ~= "" then trait = trait .. " " .. _ShadowConfig:ElementName(m.element) end
-        local v = _GameData:GetVariant(e.variant)
-        if v ~= nil then trait = trait .. " · " .. v.name end
+        local label = _GameData:VariantLabel(e.variant)
+        if label ~= "" then trait = trait .. " · " .. label end
         local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
         local assign = e.assign > 0 and (_UIKit:Colored("#FFD27A", "[지정 " .. tostring(e.assign) .. "] ")) or ""
         return assign .. string.format("%s  [%s%s]  %s", self:ShadowName(e.src), gradeName, trait, self:LevelLabel(e)) .. plus .. state

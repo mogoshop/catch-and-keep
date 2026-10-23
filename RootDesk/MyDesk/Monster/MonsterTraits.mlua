@@ -13,11 +13,12 @@ script MonsterTraits extends Component
     @Sync
     property number NovaWarnSeconds = 1.7     -- 변종 범위 기술 예고 시간 (10-10 QA: 1.2초는 너무 빨라 피하기 어려웠다)
     @Sync
-    property string Variant = ""             -- 변종 능력 id (오오라·특수 기술)
+    property string Variant = ""             -- 변종 능력 코드 (오오라·특수 기술 — "aura_haste:23+skill_fire", GameData.ParseVariant)
     @Sync
     property boolean Champion = false        -- 스포너가 만든 변종 우두머리 (몸을 푸르게 — 고유 몬스터의 타고난 변종은 아니다)
     property string ChampionTint = "0.3,0.5,1"   -- 변종 우두머리 몸 색 (10-12 사용자: 어떤 몬스터든 티 나게 — 0.55,0.72는 푸른 들개에서 약했다. 1 넘는 값은 화면에서 잘린다)
-    property number AbilityTimer = 1
+    property number AbilityTimer = 1          -- 기술 다음 발동까지
+    property number AuraTimer = 0             -- 오오라 다음 전파까지 (악몽부터 오오라 + 기술을 함께 가진다)
     property number CloudSeconds = 4          -- 독안개 지속
     property number CloudTick = 0.5           -- 독안개 피해 간격
     @Sync
@@ -58,9 +59,10 @@ script MonsterTraits extends Component
         if mon ~= nil and _GameConst:IsShade(mon.SourceId) then return end
         if self.Variant == "" then self.Variant = self:InnateVariant() end
         local v = _GameData:GetVariant(self.Variant)
-        if v ~= nil and v.weight > 0 then
-            -- 변종 우두머리: 이름표는 능력 이름 (수식어 대신)
-            self.Affix = v.name .. " 우두머리"
+        local ability = (v ~= nil and v.weight > 0) and _GameData:VariantLabel(self.Variant) or ""
+        if ability ~= "" and (self.Champion or grade ~= 2) then
+            -- 변종 우두머리: 이름표는 능력 이름 (수식어 대신 · 악몽부터 둘)
+            self.Affix = ability .. " 우두머리"
             return
         end
         if grade ~= 2 then return end
@@ -84,13 +86,15 @@ script MonsterTraits extends Component
             self.Affix = "번개 인챈트"
             self.AffixElement = "light"
         end
+        -- 악몽부터 능력이 붙은 정예: 수식어 + 능력 (10-24 C안)
+        if ability ~= "" then self.Affix = self.Affix .. " · " .. ability end
     end
 
     method string AuraEffect()
         -- 오오라 변종이면 효과 이름(dmg·haste·guard), 아니면 "" — 발밑 오오라 표시용 (MotionSmoother.PlaceAura)
         if self.Variant == "" then return "" end
-        local v = _GameData:GetVariant(self.Variant)
-        if v == nil or v.kind ~= "aura" then return "" end
+        local v = _GameData:GetVariantOf(self.Variant, "aura")
+        if v == nil then return "" end
         return v.effect
     end
 
@@ -130,23 +134,24 @@ script MonsterTraits extends Component
 
     @ExecSpace("ServerOnly")
     method void AbilityTick(number delta)
-        -- 변종 능력 실행: 오오라는 주기적으로 주변 몬스터에게, 기술은 플레이어·그림자가 가까우면
+        -- 변종 능력 실행: 오오라는 주기적으로 주변 몬스터에게, 기술은 플레이어·그림자가 가까우면. 둘 다 가지면 따로 돈다 (10-24 C안)
         if self.Variant == "" then return end
-        self.AbilityTimer = self.AbilityTimer - delta
-        if self.AbilityTimer > 0 then return end
         ---@type Monster
         local body = self.Entity:GetComponent("script.Monster")
-        local v = _GameData:GetVariant(self.Variant)
-        if body == nil or v == nil or body.IsDead or not self.Entity.Enable then
-            self.AbilityTimer = 1
-            return
-        end
+        if body == nil or body.IsDead or not self.Entity.Enable then return end
         local pos = _Util:Pos2(self.Entity)
-        if v.kind == "aura" then
-            self.AbilityTimer = _GameData.auraTickSec
-            for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, pos, v.radius)) do m:ReceiveAura(v.effect, v.value) end
-            return
+        local aura = _GameData:GetVariantOf(self.Variant, "aura")
+        if aura ~= nil then
+            self.AuraTimer = self.AuraTimer - delta
+            if self.AuraTimer <= 0 then
+                self.AuraTimer = _GameData.auraTickSec
+                for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, pos, aura.radius)) do m:ReceiveAura(aura.effect, aura.value) end
+            end
         end
+        local v = _GameData:GetVariantOf(self.Variant, "skill")
+        if v == nil then return end
+        self.AbilityTimer = self.AbilityTimer - delta
+        if self.AbilityTimer > 0 then return end
         -- 기술: 보스는 BossPattern이 따로 쓰므로 건너뛴다
         if self.Entity:GetComponent("script.BossPattern") ~= nil then
             self.AbilityTimer = 999
@@ -161,7 +166,7 @@ script MonsterTraits extends Component
             return
         end
         self.AbilityTimer = v.interval
-        self:CastSkill(self.Variant, players[1])
+        self:CastSkill(v.id, players[1])
     end
 
     @ExecSpace("ServerOnly")

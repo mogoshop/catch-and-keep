@@ -83,13 +83,14 @@ script ShadowUnit extends AttackComponent
     property table Resists = {}              -- 원본 몬스터의 저항 { fire = 50 }
     property number BonusResist = 0          -- 호령 오라로 모든 저항 +
     @Sync
-    property string Variant = ""             -- 원본 변종 능력 (오오라·특수 기술, variants.csv) — 클라이언트가 소환수 띠·버프 줄에 오오라를 표시한다
+    property string Variant = ""             -- 원본 변종 능력 코드 (오오라 수치·기술 — GameData.ParseVariant) — 클라이언트가 소환수 띠·버프 줄에 오오라를 표시한다
     property string Arch = ""                -- 원본 몬스터 유형 (archetypes.csv shadow 칸의 특기). 보관함 그림자만
     property boolean ArchReady = false
     property integer CritCount = 0           -- 암살자 치명타 · 무리 회피 · 거구 경직 횟수 (검증용)
     property integer DodgeCount = 0
     property integer StunCount = 0
     property number AbilityTimer = 2
+    property number AuraTimer = 0            -- 오오라 다음 전파까지 (기술 AbilityTimer와 따로)
     property string LastInfo = ""
     property number AuraDmg = 0              -- 받은 오오라 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다)
     property number AuraHaste = 0
@@ -1077,7 +1078,7 @@ script ShadowUnit extends AttackComponent
         end
         if attackInfo == "shadow.skill" then
             -- 원본 변종 기술: 배율, 기술 속성이 있으면 전부 그 속성
-            local v = _GameData:GetVariant(self.Variant)
+            local v = _GameData:GetVariantOf(self.Variant, "skill")
             if v ~= nil then
                 dmg = dmg * v.mult
                 if v.element ~= "" then
@@ -1152,30 +1153,30 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void AbilityTick(number delta)
-        -- 오오라: auraTickSec마다 같은 주인의 소환수(그림자·언데드)에게 / 기술: 대상이 범위 안이면 interval마다
+        -- 오오라: auraTickSec마다 주변 소환수(그림자·언데드)에게 / 기술: 대상이 범위 안이면 interval마다. 둘 다 이어받았으면 따로 돈다 (10-24 C안)
         if self.Variant == "" then return end
-        self.AbilityTimer = self.AbilityTimer - delta
-        if self.AbilityTimer > 0 then return end
-        local v = _GameData:GetVariant(self.Variant)
-        if v == nil then
-            self.AbilityTimer = 999
-            return
-        end
         local p = self.Entity.TransformComponent.WorldPosition
         local myPos = Vector2(p.x, p.y)
-        if v.kind == "aura" then
-            self.AbilityTimer = _GameData.auraTickSec
-            for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
-                -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
-                ---@type ShadowUnit
-                local ally = c
-                if isvalid(c) and not ally.Dead then
-                    local q = c.Entity.TransformComponent.WorldPosition
-                    if (Vector2(q.x, q.y) - myPos):Magnitude() <= v.radius then ally:ReceiveAura(v.effect, v.value) end
+        local aura = _GameData:GetVariantOf(self.Variant, "aura")
+        if aura ~= nil then
+            self.AuraTimer = self.AuraTimer - delta
+            if self.AuraTimer <= 0 then
+                self.AuraTimer = _GameData.auraTickSec
+                for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.ShadowUnit")) do
+                    -- 버프는 섞인다: 파티원·다른 플레이어의 소환수에게도 닿는다
+                    ---@type ShadowUnit
+                    local ally = c
+                    if isvalid(c) and not ally.Dead then
+                        local q = c.Entity.TransformComponent.WorldPosition
+                        if (Vector2(q.x, q.y) - myPos):Magnitude() <= aura.radius then ally:ReceiveAura(aura.effect, aura.value) end
+                    end
                 end
             end
-            return
         end
+        local v = _GameData:GetVariantOf(self.Variant, "skill")
+        if v == nil then return end
+        self.AbilityTimer = self.AbilityTimer - delta
+        if self.AbilityTimer > 0 then return end
         if not self:IsLiveTarget(self.Target) then
             self.AbilityTimer = 0.5
             return
@@ -1240,7 +1241,7 @@ script ShadowUnit extends AttackComponent
             end
         end
         if self.LastInfo == "shadow.skill" then
-            local v = _GameData:GetVariant(self.Variant)
+            local v = _GameData:GetVariantOf(self.Variant, "skill")
             ---@type Monster
             local hit = defender:GetComponent("script.Monster")
             if v ~= nil and v.element == "cold" and hit ~= nil and not hit.IsDead then hit:ApplyChill(1.5) end

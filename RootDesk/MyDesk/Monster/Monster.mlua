@@ -162,7 +162,8 @@ script Monster extends Component
         -- monster_ranks.csv의 등급: boss / unique(고유 이름) / elite / normal
         if self.Grade >= 3 then return "boss" end
         if self.Unique then return "unique" end
-        if self:GetVariant() ~= "" then return "champion" end
+        local traits = self:Traits()
+        if traits ~= nil and traits.Champion then return "champion" end   -- 변종 우두머리 (악몽 이후 능력 붙은 정예는 정예 그대로)
         if self.Grade == 2 then return "elite" end
         return "normal"
     end
@@ -284,6 +285,15 @@ script Monster extends Component
         local traits = self:Traits()
         if traits == nil then return "" end
         return traits.Variant
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MakeEliteVariant(string code)
+        -- 악몽부터: 정예에게 능력 하나 (우두머리 몸 색·등급은 그대로 정예 — 10-24 C안)
+        local traits = self:Traits()
+        if traits == nil or code == "" or self.Grade ~= 2 then return end
+        traits.Variant = code
+        self:Reroll()
     end
 
     @ExecSpace("ServerOnly")
