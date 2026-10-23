@@ -68,6 +68,20 @@ script PlayerVitals extends Component
         self:CheckDeath()
     end
 
+    @ExecSpace("ServerOnly")
+    method void TakeDuelDamage(number amount, Entity source)
+        -- 결투 상대의 지속 피해(독안개 · 혼 흡수): 틱 피해처럼 무적 없이 깎되, 쓰러지면 결투 패배로 판정되게 때린 사람을 남긴다
+        if self.Dying or amount <= 0 then return end
+        local owner = _Util:OwnerPlayerOf(source)
+        self.LastHitBy = (isvalid(owner) and isvalid(owner.PlayerComponent)) and owner.PlayerComponent.UserId or ""
+        self.LastHitAt = _UtilLogic.ElapsedSeconds
+        self.LastHitSource = "플레이어"
+        local pc = self.Entity.PlayerComponent
+        if pc.Hp <= 0 then return end
+        pc.Hp = math.max(0, pc.Hp - math.floor(amount + 0.5))
+        self:CheckDeath()
+    end
+
     method string SourceName(Entity attacker, Entity owner)
         -- 사망 원인 표시용 이름: 몬스터 이름(정예·보스 구분) · 플레이어 · 모르면 엔티티 이름
         if isvalid(owner) and isvalid(owner.PlayerComponent) then return "플레이어" end

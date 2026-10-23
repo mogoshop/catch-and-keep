@@ -124,6 +124,16 @@ script PlayerStats extends Component
     @Sync
     property number ChillUntil = 0           -- 냉기 둔화가 끝나는 서버 시각 (버프 줄 표시용 동기화)
     property number StaggerUntil = 0         -- 거구 몬스터 강타에 휘청임 (이동 ×0.5, 짧다)
+    -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
+    property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
+    property number PvpAmpUntil = 0
+    property number PvpWeakenPct = 0         -- 쇠약: 주는 피해 −%
+    property number PvpWeakenUntil = 0
+    property number PvpDecayPct = 0          -- 쇠퇴: 이동·주는 피해 −%
+    property number PvpDecayUntil = 0
+    property number RootUntil = 0            -- 뼈 감옥: 이동 불가
+    property number PvpPoisonUntil = 0
+    property integer PvpPoisonTimer = 0
     @Sync
     property number ShockUntil = 0           -- 번개 연쇄에 맞은 표시가 끝나는 서버 시각 (버프 줄 「감전」 칩, 표시만)
     property integer RegenTimer = 0
@@ -427,6 +437,8 @@ script PlayerStats extends Component
         end
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
         if _UtilLogic.ServerElapsedSeconds < self.StaggerUntil then mult = mult * 0.5 end
+        if _UtilLogic.ServerElapsedSeconds < self.PvpDecayUntil then mult = mult * math.max(0.3, 1 - self.PvpDecayPct / 100) end
+        if _UtilLogic.ServerElapsedSeconds < self.RootUntil then mult = 0 end
         local want = self.BaseSpeed * mult
         if math.abs(movement.InputSpeed - want) > 0.001 then
             if movement.InputSpeed < want * 0.9 then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
@@ -443,6 +455,87 @@ script PlayerStats extends Component
         _TimerService:SetTimerOnce(function()
             if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.ChillUntil then self:RefreshSpeed() end
         end, dur + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ApplyPvpCurse(string kind, number pct, number duration, Entity source)
+        -- 결투 상대의 저주: 낙인(amp) · 쇠약(weaken) · 쇠퇴(decay)만 플레이어에게 듣는다 (공포·혼란 등은 보스처럼 면역). 걸리면 true
+        local now = _UtilLogic.ServerElapsedSeconds
+        local name = ""
+        if kind == "amp" then
+            self.PvpAmpPct = now < self.PvpAmpUntil and math.max(self.PvpAmpPct, pct) or pct
+            self.PvpAmpUntil = now + duration
+            name = "약화의 낙인"
+        elseif kind == "weaken" then
+            self.PvpWeakenPct = now < self.PvpWeakenUntil and math.max(self.PvpWeakenPct, pct) or pct
+            self.PvpWeakenUntil = now + duration
+            name = "쇠약"
+        elseif kind == "decay" then
+            self.PvpDecayPct = now < self.PvpDecayUntil and math.max(self.PvpDecayPct, pct) or pct
+            self.PvpDecayUntil = now + duration
+            name = "쇠퇴"
+            self:RefreshSpeed()
+            _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self:RefreshSpeed() end end, duration + 0.05)
+        else
+            return false
+        end
+        _Util:Warn(name .. "에 걸렸다 (" .. string.format("%.0f", duration) .. "초)", self.Entity.PlayerComponent.UserId)
+        return true
+    end
+
+    method number PvpTakenMult()
+        -- 결투 상대에게 받는 피해 배율 (낙인)
+        if _UtilLogic.ServerElapsedSeconds >= self.PvpAmpUntil then return 1 end
+        return 1 + self.PvpAmpPct / 100
+    end
+
+    method number PvpDealtMult()
+        -- 내가 주는 피해 배율 (쇠약 · 쇠퇴)
+        local now = _UtilLogic.ServerElapsedSeconds
+        local m = 1
+        if now < self.PvpWeakenUntil then m = m * math.max(0.1, 1 - self.PvpWeakenPct / 100) end
+        if now < self.PvpDecayUntil then m = m * math.max(0.1, 1 - self.PvpDecayPct / 100) end
+        return m
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyRoot(number seconds)
+        -- 결투 상대의 뼈 감옥: seconds 동안 이동 불가 (공격·스킬은 된다)
+        self.RootUntil = math.max(self.RootUntil, _UtilLogic.ServerElapsedSeconds + seconds)
+        self:RefreshSpeed()
+        _Util:Warn("뼈 감옥에 갇혔다", self.Entity.PlayerComponent.UserId)
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.RootUntil then self:RefreshSpeed() end
+        end, seconds + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyPvpPoison(number dps, number seconds, Entity source)
+        -- 결투 상대의 독: 0.5초마다 dps×0.5를 독 저항만큼 줄여 깎는다 (다시 걸면 시간만 새로)
+        self.PvpPoisonUntil = _UtilLogic.ServerElapsedSeconds + seconds
+        if self.PvpPoisonTimer ~= 0 then return end
+        local tick = dps * 0.5 * math.max(0, 1 - self:GetResist("poison") / 100)
+        self.PvpPoisonTimer = _TimerService:SetTimerRepeat(function()
+            ---@type PlayerVitals
+            local vitals = isvalid(self.Entity) and self.Entity:GetComponent("script.PlayerVitals") or nil
+            if vitals == nil or _UtilLogic.ServerElapsedSeconds >= self.PvpPoisonUntil then
+                _TimerService:ClearTimer(self.PvpPoisonTimer)
+                self.PvpPoisonTimer = 0
+                return
+            end
+            vitals:TakeDuelDamage(tick, source)
+        end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearPvpEffects()
+        -- 결투가 끝나면 남은 저주·속박·독을 지운다
+        self.PvpAmpUntil = 0
+        self.PvpWeakenUntil = 0
+        self.PvpDecayUntil = 0
+        self.RootUntil = 0
+        self.PvpPoisonUntil = 0
+        self:RefreshSpeed()
     end
 
     @ExecSpace("ServerOnly")

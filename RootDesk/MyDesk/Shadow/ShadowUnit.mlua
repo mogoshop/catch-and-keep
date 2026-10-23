@@ -813,11 +813,16 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method boolean IsLiveTarget(Entity e)
-        -- 살아 있는 추출 대상 몬스터인지
+        -- 살아 있는 몬스터, 또는 주인의 결투 상대(플레이어·그 소환수)인지
         if not isvalid(e) or not e.Enable or e.CurrentMap ~= self.Entity.CurrentMap then return false end
         ---@type Monster
         local monster = e:GetComponent("script.Monster")
-        return monster ~= nil and not monster.IsDead and monster.Hp > 0
+        if monster ~= nil then return not monster.IsDead and monster.Hp > 0 end
+        if not _Util:IsDuelFoe(self.Entity, e) then return false end
+        if isvalid(e.PlayerComponent) then return e.PlayerComponent.Hp > 0 end
+        ---@type ShadowUnit
+        local unit = e:GetComponent("script.ShadowUnit")
+        return unit ~= nil and not unit.Dead and unit.Hp > 0
     end
 
     @ExecSpace("ServerOnly")
@@ -853,8 +858,11 @@ script ShadowUnit extends AttackComponent
         end
         local best = nil
         local bestScore = self.DetectRange
-        for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, _Util:Pos2(self.OwnerPlayer), self.OwnerGuardRange)) do
-            local target = monster.Entity
+        -- 결투 중이면 상대 플레이어·그 소환수도 후보 (10-23 결투 군단전)
+        local candidates = {}
+        for _, monster in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, _Util:Pos2(self.OwnerPlayer), self.OwnerGuardRange)) do table.insert(candidates, monster.Entity) end
+        for _, foe in ipairs(_Util:DuelFoesNear(self.Entity, self.Entity.CurrentMap, _Util:Pos2(self.OwnerPlayer), self.OwnerGuardRange, false)) do table.insert(candidates, foe) end
+        for _, target in ipairs(candidates) do
             local d = (_Util:Pos2(target) - myPos):Magnitude()
             local score = d + 0.9 * (engaged[target.Id] or 0)
             if d <= self.DetectRange and score <= bestScore and self:IsOwnerCombatTarget(target, self.OwnerGuardRange)
@@ -1074,7 +1082,8 @@ script ShadowUnit extends AttackComponent
                 if v.element ~= "" then
                     ---@type Monster
                     local target = defender:GetComponent("script.Monster")
-                    if target ~= nil then dmg = dmg * math.max(0, 1 - target:GetResist(v.element) / 100) end
+                    if target == nil then return math.max(1, math.floor(self:DuelDamage(defender, dmg) + 0.5)) end
+                    dmg = dmg * math.max(0, 1 - target:GetResist(v.element) / 100)
                     return math.max(1, math.floor(dmg + 0.5))
                 end
             end
@@ -1087,7 +1096,30 @@ script ShadowUnit extends AttackComponent
                 dmg = dmg - elem + elem * math.max(0, 1 - monster:GetResist(self.Element) / 100)
             end
         end
+        if foe == nil then dmg = self:DuelDamage(defender, dmg) end
         return math.max(1, math.floor(dmg + 0.5))
+    end
+
+    method number DuelDamage(Entity defender, number dmg)
+        -- 결투 상대에게: 플레이어는 물리 몫을 방어로·속성 몫을 저항으로 줄이고 PvP 배율·낙인을 곱한다. 소환수는 방패 유형·저항만
+        local ratio = self.Element ~= "" and self.ElementRatio or 0
+        local phys = dmg * (1 - ratio)
+        local elem = dmg * ratio
+        if isvalid(defender.PlayerComponent) then
+            ---@type PlayerStats
+            local ds = defender:GetComponent("script.PlayerStats")
+            if ds ~= nil then
+                phys = phys * 100 / (100 + ds:GetDefense())
+                if ratio > 0 then elem = elem * math.max(0, 1 - ds:GetResist(self.Element) / 100) end
+                return (phys + elem) * _GameData.pvpDamageMult * ds:PvpTakenMult()
+            end
+            return (phys + elem) * _GameData.pvpDamageMult
+        end
+        ---@type ShadowUnit
+        local unit = defender:GetComponent("script.ShadowUnit")
+        if unit == nil then return dmg end
+        if ratio > 0 then elem = elem * math.max(0, 1 - unit:GetResist(self.Element) / 100) end
+        return (phys + elem) * unit:ArchTakenMult()
     end
 
     method number GetResist(string element)
@@ -1216,10 +1248,21 @@ script ShadowUnit extends AttackComponent
     end
 
     method boolean IsAttackTarget(Entity defender, string attackInfo)
-        -- 살아 있는 몬스터만 때린다 (플레이어·다른 그림자 제외)
+        -- 살아 있는 몬스터만 때린다. 결투 중이면 상대 플레이어(무적이 아닐 때)·상대 소환수도
         ---@type Monster
         local monster = defender:GetComponent("script.Monster")
-        if monster == nil or monster.IsDead then return false end
+        if monster == nil then
+            if not _Util:IsDuelFoe(self.Entity, defender) then return false end
+            if isvalid(defender.PlayerComponent) then
+                ---@type PlayerVitals
+                local vitals = defender:GetComponent("script.PlayerVitals")
+                if vitals ~= nil and not vitals:CanBeHit() then return false end
+            else
+                ---@type ShadowUnit
+                local unit = defender:GetComponent("script.ShadowUnit")
+                if unit == nil or unit.Dead then return false end
+            end
+        elseif monster.IsDead then return false end
         if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
         if attackInfo == "shadow.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         return __base:IsAttackTarget(defender, attackInfo)

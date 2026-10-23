@@ -494,6 +494,11 @@ script PlayerAttack extends AttackComponent
             ---@type PlayerStats
             local ds = defender:GetComponent("script.PlayerStats")
             if ds ~= nil then res = ds:GetResist(element) end
+        else
+            -- 결투 상대의 소환수: 원본 몬스터 저항 + 장비 「소환수 저항」
+            ---@type ShadowUnit
+            local unit = defender:GetComponent("script.ShadowUnit")
+            if unit ~= nil and element ~= "phys" then res = unit:GetResist(element) end
         end
         return math.max(0, 1 - res / 100)
     end
@@ -506,7 +511,13 @@ script PlayerAttack extends AttackComponent
         if stats == nil or stats:GetElemDamage("cold") <= 0 then return end
         ---@type Monster
         local monster = defender:GetComponent("script.Monster")
-        if monster ~= nil then monster:ApplyChill(2) end
+        if monster ~= nil then monster:ApplyChill(2)
+        elseif isvalid(defender.PlayerComponent) then
+            -- 결투 상대도 냉기 무기에 둔화
+            ---@type PlayerStats
+            local fs = defender:GetComponent("script.PlayerStats")
+            if fs ~= nil then fs:ApplyChill(2 * _GameData.pvpDurationMul) end
+        end
     end
 
     @ExecSpace("Multicast")
@@ -553,6 +564,12 @@ script PlayerAttack extends AttackComponent
         if string.sub(attackInfo, 1, 6) == "skill." then
             dmg = self.SkillDamage * self:ResistFactor(defender, monster, self:SkillElement(attackInfo))
             if monster ~= nil and self:IsServer() then self:SkillHitExtra(monster, attackInfo, self.SkillDamage) end
+            -- 결투: 서리 혼은 상대 플레이어도 둔화 (냉기 저항만큼 짧게 · 지속 PvpDurationMul배)
+            if monster == nil and attackInfo == "skill.frost_soul" and isvalid(defender.PlayerComponent) and self:IsServer() then
+                ---@type PlayerStats
+                local fs = defender:GetComponent("script.PlayerStats")
+                if fs ~= nil then fs:ApplyChill(3 * _GameData.pvpDurationMul) end
+            end
             -- 저주 불꽃: 저주 걸린 적에게 +50% (「낙인 연소」 랭크마다 +20%p)
             if attackInfo == "skill.hex_flame" and monster ~= nil and monster:IsCursed() then
                 ---@type SkillBook
@@ -562,6 +579,12 @@ script PlayerAttack extends AttackComponent
         else
             dmg = self:GetBasicPhysicalDamage()
             dmg = dmg * self:ResistFactor(defender, monster, "phys")
+            if isvalid(defender.PlayerComponent) then
+                -- 결투: 물리 몫은 상대 방어로 줄인다 (몬스터가 플레이어를 칠 때와 같은 100/(100+방어))
+                ---@type PlayerStats
+                local ds = defender:GetComponent("script.PlayerStats")
+                if ds ~= nil then dmg = dmg * 100 / (100 + ds:GetDefense()) end
+            end
             if stats ~= nil then
                 for _, e in ipairs({ "fire", "cold", "light", "poison" }) do
                     local v = stats:GetElemDamage(e)
@@ -576,8 +599,14 @@ script PlayerAttack extends AttackComponent
         if monster ~= nil and stats ~= nil then dmg = dmg * _GameConst:LevelGapDealt(stats.Level, monster.Level) end
         -- 분노의 신전: 주는 피해 +25%
         if stats ~= nil then dmg = dmg * (1 + 0.25 * stats:ShrineBonus("fury")) end
-        -- 결투(PvP): 플레이어 대상 피해는 1/4 (D2도 PvP 피해를 크게 줄인다)
-        if isvalid(defender.PlayerComponent) then dmg = dmg * 0.25 end
+        -- 결투(PvP): 플레이어 대상 피해는 1/4 (D2도 PvP 피해를 크게 줄인다) × 상대에게 건 낙인. 내가 쇠약·쇠퇴에 걸렸으면 덜 들어간다
+        if stats ~= nil then dmg = dmg * stats:PvpDealtMult() end
+        if isvalid(defender.PlayerComponent) then
+            dmg = dmg * _GameData.pvpDamageMult
+            ---@type PlayerStats
+            local ds = defender:GetComponent("script.PlayerStats")
+            if ds ~= nil then dmg = dmg * ds:PvpTakenMult() end
+        end
         local final = math.max(1, math.floor(dmg + 0.5))
         -- 생명력 흡수 (룬 드락, 룬워드 「검은 서약」)
         if self:IsServer() and stats ~= nil and stats.BonusLeech > 0 then
@@ -598,10 +627,20 @@ script PlayerAttack extends AttackComponent
             ---@type PlayerVitals
             local vitals = defender:GetComponent("script.PlayerVitals")
             if vitals ~= nil and not vitals:CanBeHit() then return false end
+            -- 대상 하나 판정(투사체)·평타 시야도 몬스터와 같게 (10-23: 몬스터 옆에 있으면 투사체가 같이 맞고, 벽 너머 평타가 들어갔다)
+            if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
+            if attackInfo == "player.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
             return __base:IsAttackTarget(defender, attackInfo)
         end
         if attackInfo == "player.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
-        if defender:GetComponent("script.ShadowUnit") ~= nil then return false end
+        ---@type ShadowUnit
+        local unit = defender:GetComponent("script.ShadowUnit")
+        if unit ~= nil then
+            -- 소환수는 결투 상대의 것만 (내 것·남의 것은 맞지 않는다)
+            if unit.Dead or not _Util:IsDuelFoe(self.Entity, defender) then return false end
+            if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
+            return __base:IsAttackTarget(defender, attackInfo)
+        end
         if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
         ---@type Monster
         local monster = defender:GetComponent("script.Monster")

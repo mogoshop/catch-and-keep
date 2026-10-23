@@ -111,6 +111,12 @@ script SkillEffects extends Component
         return _Util:MonstersNear(self.Entity.CurrentMap, center, radius)
     end
 
+    @ExecSpace("ServerOnly")
+    method table FoePlayers(Vector2 center, number radius)
+        -- 결투 상대 플레이어가 반경 안에 있으면 { 엔티티 } (저주·독안개·흡수·감옥이 플레이어에게도 — 지속은 몬스터의 PvpDurationMul배)
+        return _Util:DuelFoesNear(self.Entity, self.Entity.CurrentMap, center, radius, true)
+    end
+
     -- ───────── 혼술 ─────────
 
     @ExecSpace("ClientOnly")
@@ -372,6 +378,11 @@ script SkillEffects extends Component
         local radius = 1.3 * (1 + 0.2 * self:Node("mist_wide"))   -- 강화 「넓은 안개」
         local tick = function()
             for _, m in ipairs(_Util:MonstersNear(map, target, radius)) do m:ApplyPoison(dps, 2, self.Entity) end
+            for _, foe in ipairs(self:FoePlayers(target, radius)) do
+                ---@type PlayerStats
+                local fs = foe:GetComponent("script.PlayerStats")
+                if fs ~= nil then fs:ApplyPvpPoison(dps * _GameData.pvpDamageMult, 2, self.Entity) end
+            end
         end
         tick()
         local timerId = 0
@@ -509,8 +520,24 @@ script SkillEffects extends Component
         -- 가장 가까운 적 하나의 생명을 흡수 → 피해의 50% 회복, 소환수도 30% 회복 (마법)
         local m = self:Targets(target, 1.5)[1]
         if m == nil then
-            self:Fail("흡수할 대상이 없다")
-            return false
+            -- 결투 상대 플레이어 흡수 (마법 저항 · PvP 배율)
+            local foe = self:FoePlayers(target, 1.5)[1]
+            if foe == nil then
+                self:Fail("흡수할 대상이 없다")
+                return false
+            end
+            ---@type PlayerStats
+            local fs = foe:GetComponent("script.PlayerStats")
+            ---@type PlayerVitals
+            local fv = foe:GetComponent("script.PlayerVitals")
+            local dealt = damage * _GameData.pvpDamageMult * (fs ~= nil and fs:PvpTakenMult() or 1)
+            if fv ~= nil then fv:TakeDuelDamage(dealt, self.Entity) end
+            ---@type PlayerStats
+            local mine = self.Entity:GetComponent("script.PlayerStats")
+            if mine ~= nil then mine:Heal(dealt * 0.5, 0) end
+            self:Fx("drain", foe.TransformComponent.WorldPosition, 0.8)
+            self:ClipFx(self.FxDrain, foe.TransformComponent.WorldPosition + Vector3(0, 0.4, 0), 0.6, 0.7, 0)
+            return true
         end
         damage = damage * math.max(0, 1 - m:GetResist("magic") / 100)
         m:TakeDamage(damage, self.Entity)
@@ -610,11 +637,17 @@ script SkillEffects extends Component
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil then radius = radius * (1 + stats.BonusCurse / 100 + 0.15 * self:Node("curse_area")) end   -- 장비 + 강화 「저주 범위」
         local list = self:Targets(target, radius)
-        if #list == 0 then
+        local foes = self:FoePlayers(target, radius)
+        if #list == 0 and #foes == 0 then
             self:Fail("저주할 적이 범위 안에 없다")
             return false
         end
         for _, m in ipairs(list) do m:ApplyCurseFrom(kind, pct, duration, self.Entity) end
+        for _, foe in ipairs(foes) do
+            ---@type PlayerStats
+            local fs = foe:GetComponent("script.PlayerStats")
+            if fs ~= nil then fs:ApplyPvpCurse(kind, pct, duration * _GameData.pvpDurationMul, self.Entity) end
+        end
         self:Fx(kind, Vector3(target.x, target.y, 0), radius)
         return true
     end
@@ -656,11 +689,17 @@ script SkillEffects extends Component
         -- 조준점 반경 1.3 안의 적을 뼈 장벽으로 묶는다 (이동만 막고 공격은 가능)
         local radius = 1.3 * (1 + 0.15 * self:Node("prison_wide"))   -- 강화 「넓은 감옥」
         local list = self:Targets(target, radius)
-        if #list == 0 then
+        local foes = self:FoePlayers(target, radius)
+        if #list == 0 and #foes == 0 then
             self:Fail("가둘 적이 범위 안에 없다")
             return false
         end
         for _, m in ipairs(list) do m:ApplyRoot(seconds, self.Entity) end
+        for _, foe in ipairs(foes) do
+            ---@type PlayerStats
+            local fs = foe:GetComponent("script.PlayerStats")
+            if fs ~= nil then fs:ApplyRoot(seconds * _GameData.pvpDurationMul) end
+        end
         self:Fx("prison", Vector3(target.x, target.y, 0), radius)
         return true
     end

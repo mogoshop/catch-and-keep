@@ -119,6 +119,37 @@ script Util extends Logic
         return nil
     end
 
+    method boolean IsDuelFoe(Entity a, Entity b)
+        -- a·b(플레이어 또는 그 소환수)의 주인이 서로 결투 중이고 시작 유예가 지났나 (PvP 적중 판정 — 10-23 결투 군단전)
+        local oa = self:OwnerPlayerOf(a)
+        local ob = self:OwnerPlayerOf(b)
+        if not isvalid(oa) or not isvalid(ob) or oa == ob then return false end
+        ---@type PlayerDuel
+        local duel = oa:GetComponent("script.PlayerDuel")
+        return duel ~= nil and duel:IsOpponent(ob)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table DuelFoesNear(Entity me, Entity map, Vector2 center, number radius, boolean playersOnly)
+        -- me(플레이어·소환수)의 결투 상대 플레이어와 그 소환수 중 반경 안에 살아 있는 것 (엔티티 목록, 플레이어 먼저)
+        local out = {}
+        local owner = self:OwnerPlayerOf(me)
+        if not isvalid(owner) or not isvalid(map) then return out end
+        ---@type PlayerDuel
+        local duel = owner:GetComponent("script.PlayerDuel")
+        if duel == nil or duel.Opponent == "" then return out end
+        local foe = _UserService:GetUserEntityByUserId(duel.Opponent)
+        if not isvalid(foe) or foe.CurrentMap ~= map or not duel:IsOpponent(foe) then return out end
+        if foe.PlayerComponent.Hp > 0 and (self:Pos2(foe) - center):Magnitude() <= radius then table.insert(out, foe) end
+        if playersOnly then return out end
+        for _, c in ipairs(self:ListOf(map, "script.ShadowUnit")) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(c) and u.OwnerPlayer == foe and not u.Dead and u.Hp > 0 and (self:Pos2(u.Entity) - center):Magnitude() <= radius then table.insert(out, u.Entity) end
+        end
+        return out
+    end
+
     method any TerrainMemo(Entity map)
         -- 맵의 타일맵과 칸 계산값. 맵마다 한 번만 찾고, 칸별 막힘 결과를 계속 기억한다 (실행 중 타일을 바꾸는 코드는 없다).
         if not isvalid(map) then return nil end

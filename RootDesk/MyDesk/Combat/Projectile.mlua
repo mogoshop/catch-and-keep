@@ -365,6 +365,26 @@ script Projectile extends Component
                 if not self.Pierce then self:Finish() return end
             end
         end
+        -- 결투 상대 플레이어·그 소환수 (10-23 결투 군단전: 예전엔 몬스터만 봐서 뼈 창·골편·화살이 상대에게 맞지 않았다)
+        for _, foe in ipairs(_Util:DuelFoesNear(self.Owner, self.Entity.CurrentMap, p, self.Radius + 0.25, false)) do
+            local key = foe.Id
+            if not self.HitIds[key] then
+                self.HitIds[key] = true
+                local hitPos = foe.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0)
+                if self.Team == "minion" then
+                    local unit = self.Owner:GetComponent("script.ShadowUnit")
+                    if unit ~= nil then unit:HitOne(foe) end
+                else
+                    local atk = self.Owner:GetComponent("script.PlayerAttack")
+                    local dmg = self.Damage * (1 + self.SpikePct / 100 * self.PierceHits)
+                    self.PierceHits = self.PierceHits + 1
+                    if atk ~= nil then atk:SkillHitOne(foe, self.Info, dmg) end
+                end
+                self:HitFx(hitPos, self.TintColor)
+                if foe == self.Lock then self.Lock = nil end
+                if not self.Pierce then self:Finish() return end
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")
