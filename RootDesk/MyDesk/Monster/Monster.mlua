@@ -82,7 +82,59 @@ script Monster extends Component
             local amb = self.Entity.CurrentMap:GetComponent("script.MapAmbience")
             if amb ~= nil and amb.Difficulty > 0 then self:ApplyLevel(_GameConst:ScaleLevel(self.Level, amb.Difficulty), false)
             elseif amb ~= nil and amb.StatMul ~= 1 then self:ApplyLevel(self.Level, false) end
+            self:StartQuestGate()
         end, 0.3)
+    end
+
+    -- ───────── 의뢰 차례 전에는 숨는 고정 보스 (10-24 사용자) ─────────
+    -- 교수대 숲 「목 없는 처형인 고드릭」은 피의 제단 다음 의뢰의 열쇠 적인데, 맵에 늘 서 있어 의뢰 전에 잡히면
+    -- 열쇠를 못 얻고 그 게임에서 다시 나오지 않았다. 맵에 고정 배치된 의뢰 대상(정예 이상)은 그 의뢰 차례가 된
+    -- 사람(받을 수 있음·진행 중·이미 지남, 또는 바로 앞 의뢰를 끝내고 보고만 남음)이 맵에 있을 때만 나타난다.
+
+    @ExecSpace("ServerOnly")
+    method void StartQuestGate()
+        if self.Grade < 2 and not self.Unique then return end
+        local qi = self:QuestGateIndex()
+        if qi <= 0 or self:QuestReached(qi) then return end
+        self.Entity.Enable = false
+        log("[VRF] quest gate hide " .. self.SourceId .. " until quest " .. tostring(qi))
+        local timerId = 0
+        timerId = _TimerService:SetTimerRepeat(function()
+            if not isvalid(self.Entity) or self.IsDead then
+                _TimerService:ClearTimer(timerId)
+                return
+            end
+            if not self:QuestReached(qi) then return end
+            _TimerService:ClearTimer(timerId)
+            self.Entity.Enable = true
+            log("[VRF] quest gate show " .. self.SourceId .. " quest " .. tostring(qi))
+        end, 1.5)
+    end
+
+    method integer QuestGateIndex()
+        -- 이 맵에 고정 배치된 의뢰 대상이면 그 의뢰 번호 (보스·열쇠 적은 map 또는 map1, 문지기는 map1). 아니면 0
+        local base = _GameConst:BaseMapName(self.Entity.CurrentMap.Name)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if q ~= nil and q.kind ~= "ritual" and q.kind ~= "clear" and q.kind ~= "extract" and (q.map == base or q.map1 == base) then
+                for id in string.gmatch(q.target .. "|" .. (q.gate or ""), "[^|]+") do
+                    if id == self.SourceId then return i end
+                end
+            end
+        end
+        return 0
+    end
+
+    method boolean QuestReached(integer qi)
+        -- 맵에 있는 누군가가 그 의뢰 차례에 왔는가
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return false end
+        for _, u in ipairs(_UserService:GetUsersByMapComponent(map.MapComponent) or {}) do
+            ---@type PlayerQuest
+            local pq = isvalid(u) and u:GetComponent("script.PlayerQuest") or nil
+            if pq ~= nil and (pq.Index >= qi or (pq.Index == qi - 1 and pq.State == 2)) then return true end
+        end
+        return false
     end
 
     -- ───────── 레벨·생명 ─────────
