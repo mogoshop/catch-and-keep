@@ -56,6 +56,8 @@ script StoryCard extends Logic
         -- 카드 배경은 큰 그림이라 접속 때 받지 않고 차례가 오면 받는다 (UIKit.PreloadItemIcons에서 뺐다)
         local list = {}
         local keys = { "story_" .. key }
+        -- 쪽별 그림 (story_<key>_<쪽>)도 미리
+        for pg = 1, 9 do table.insert(keys, "story_" .. key .. "_" .. tostring(pg)) end
         if key == "prologue" then keys = { "story_prologue1", "story_prologue2", "story_prologue3", "story_prologue4", "story_prologue5" } end
         for _, k in ipairs(keys) do
             local ruid = _GameData:GetUiIcon(k)
@@ -234,11 +236,16 @@ script StoryCard extends Logic
 
     @ExecSpace("ClientOnly")
     method void ShowArt(integer page)
-        -- 그림 ui_icons story_<key> (시작 내레이션은 쪽마다 story_prologue1~5). 같은 장면 안에서는 바꾸지 않는다.
+        -- 그림 ui_icons story_<key> (시작 내레이션은 쪽마다 story_prologue1~5).
+        -- 장면은 쪽별 그림 story_<key>_<쪽>이 있으면 그 쪽부터 다음 쪽별 그림 전까지 그 그림 (10-23: 오렌의 마지막 · 재의 왕이 깨어남)
         -- 없으면 그 액트 보스 의뢰 그림을 제목 위 액자로
         local key = "story_" .. self.Key
         if self.Key == "prologue" then key = key .. tostring(math.max(1, page)) end
-        local art = _GameData:GetUiIcon(key)
+        local art = ""
+        for pg = page, 1, -1 do
+            if art == "" then art = _GameData:GetUiIcon("story_" .. self.Key .. "_" .. tostring(pg)) end
+        end
+        if art == "" then art = _GameData:GetUiIcon(key) end
         local plate = ""
         local act = tonumber(string.match(self.Key, "(%d)$") or "0") or 0
         if art == "" and act > 0 and not self.Scene then plate = _GameData:GetUiIcon("quest_art" .. tostring(_QuestData:LastOfAct(act))) end
