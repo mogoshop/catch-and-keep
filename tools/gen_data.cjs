@@ -117,7 +117,7 @@ function genGameData() {
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
-    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)} }`),
+    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resistPenalty))}, deathExpLossPct = ${n(d.deathExpLossPct)}, questRewardMul = ${n(d.questRewardMul)}, monsterHpMul = ${n(d.monsterHpMul || 1)}, monsterDmgMul = ${n(d.monsterDmgMul || 1)}, dropQualityMul = ${n(d.dropQualityMul || 1)}, dropMagicMul = ${n(d.dropMagicMul || 1)}, dropGoldMul = ${n(d.dropGoldMul || 1)}, dropRuneMul = ${n(d.dropRuneMul || 1)}, dropNoneMul = ${n(d.dropNoneMul || 1)} }`),
     "        self.Sounds = {}",
     ...sounds.map((r) => `        self.Sounds[${s(r.key)}] = ${s(r.ruid)}`),
     "        self.MonsterNames = {}",

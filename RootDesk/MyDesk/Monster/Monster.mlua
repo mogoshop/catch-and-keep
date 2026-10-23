@@ -31,6 +31,8 @@ script Monster extends Component
     property number BaseSpeed = 0
     property boolean LevelApplied = false
     property number StatMul = 1              -- 맵 생명·공격 배율 (MapAmbience.StatMul)
+    property number DiffHpMul = 1            -- 난이도 생명 배율 (difficulty.csv monsterHpMul — 악몽·지옥, 10-23)
+    property number DiffDmgMul = 1           -- 난이도 공격 배율 (difficulty.csv monsterDmgMul)
     property number PlayerHpMul = 1          -- 같은 맵 인원 보정 (CoopRules — D2 players X). MaxHp에 이미 곱해져 있다
     property Entity LastAttacker = nil
     property table Contributors = {}        -- 이번 생에 피해를 준 플레이어(소환수는 주인) userId → 플레이어 (개인 보상 대상)
@@ -95,6 +97,16 @@ script Monster extends Component
         ---@type MapAmbience
         local amb = isvalid(map) and map:GetComponent("script.MapAmbience") or nil
         self.StatMul = (amb ~= nil and amb.StatMul > 0) and amb.StatMul or 1
+        -- 난이도 배율 (10-23: 레벨만 올리면 악몽·지옥이 보통보다 쉬웠다 — 플레이어 군단이 몬스터 생명보다 빨리 자란다). 심연은 DepthDirector 난이도
+        local diff = (amb ~= nil and amb.Difficulty) or 0
+        if isvalid(map) then
+            ---@type DepthDirector
+            local depth = map:GetComponent("script.DepthDirector")
+            if depth ~= nil then diff = depth.Difficulty end
+        end
+        local d = _GameData:GetDifficulty(diff)
+        self.DiffHpMul = (d ~= nil and d.monsterHpMul) or 1
+        self.DiffDmgMul = (d ~= nil and d.monsterDmgMul) or 1
         if elite and self.Grade == 1 then self.Grade = 2 end
         ---@type MonsterAttack
         local atk = self.Entity:GetComponent("script.MonsterAttack")
@@ -122,7 +134,7 @@ script Monster extends Component
             -- 10-10 QA: 보스가 너무 약했다. 10-13 W2: 액트 2·3 보스는 「벽」 배율 (액트 1 여왕은 그대로)
             hp = hp * (self.Level >= _GameData.bossWallFromLevel and _GameData.bossWallHpMul or _GameData.bossHpMul)
         end
-        hp = hp * self.StatMul
+        hp = hp * self.StatMul * self.DiffHpMul
         local traits = self:Traits()
         if traits ~= nil then hp = hp * traits.HpMult end
         self.MaxHp = math.max(1, hp)

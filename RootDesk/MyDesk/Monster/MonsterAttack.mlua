@@ -124,8 +124,11 @@ script MonsterAttack extends AttackComponent
         -- Monster.ApplyLevel이 부른다: 모델 기본 피해 기준으로 레벨 보정
         if self.BaseDamage <= 0 then self.BaseDamage = self.Damage end
         local body = self:Body()
-        local mul = body ~= nil and body.StatMul or 1   -- 맵 공격 배율 (MapAmbience.StatMul)
-        self.Damage = math.floor(self.BaseDamage * (1 + _GameData.monsterDmgPerLevel * (level - baseLevel)) * mul + 0.5)
+        local mul = body ~= nil and (body.StatMul * body.DiffDmgMul) or 1   -- 맵 공격 배율 (MapAmbience.StatMul) × 난이도 공격 배율
+        -- 생명(Monster.RecomputeMaxHp)과 같은 비율식 (10-23: 예전 1 + 0.2(L − 모델 레벨)은 모델 레벨이 높은 보스가 악몽·지옥에서 생명 ×1.7인데 공격 ×7이 됐다.
+        --  모델 레벨이 1인 몬스터와 제 레벨에 놓인 보스는 값이 같다)
+        local k = _GameData.monsterDmgPerLevel
+        self.Damage = math.floor(self.BaseDamage * (1 + k * (level - 1)) / (1 + k * (math.max(1, baseLevel) - 1)) * mul + 0.5)
     end
 
     @ExecSpace("ServerOnly")

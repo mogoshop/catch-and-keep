@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""보통 난이도 액트 1~4 전체 난이도 추정 (표준 라이브러리만, data/*.csv 직접 읽기). 2026-10-23 출시 전 최종 점검.
+"""보통 · 악몽 · 지옥 액트 1~4 전체 난이도 추정 (표준 라이브러리만, data/*.csv 직접 읽기). 2026-10-23 출시 전 최종 점검.
 
 게임 코드 공식 (10-23 기준 — 출처는 docs/design/33-balance-final-20261023.md):
   몬스터 생명   baseHp × (1+0.3(L−1))/(1+0.3(bl−1)) × statMul × 정예 3 × 보스(L<13 2.7 · 그 위 4.5)        Monster.RecomputeMaxHp
@@ -15,6 +15,13 @@
 가정(코드에 없는 값)은 ASSUME · PROFILES에 모았다. 사용:
   python3 tools/sim_balance.py            # P100 · P60 비교 + P60 액트 1~4 진행 표
   python3 tools/sim_balance.py --eff 0.5  # 군단 전투 효율 가정만 바꿔 보기
+  python3 tools/sim_balance.py --diff all  # 보통 → 악몽 → 지옥 이어서 (레벨·경험치 이어받기, 10-23 추가)
+
+악몽·지옥 (difficulty.csv · 10-23 추가):
+  몬스터 레벨  보통 1~40을 levelFrom~levelTo로 비율 이동 (GameConst.ScaleLevel) — 고정 보스·최상위도 같은 변환
+  저항         장비 저항 − resistPenalty, 상한 resistCap (PlayerStats.RefreshResists)
+  의뢰 경험치  그 난이도 레벨 필요 경험치의 같은 비율 (QuestData.ExpFor) · 스킬/능력치/배치 보상은 난이도마다 다시
+  장비         Lv40 넘는 장비는 옵션 단계(item_affixes tier 1 = ilvl31 · tier 2 = ilvl61)를 따라 이은 가정값 (GEAR)
 """
 import argparse, csv, math, pathlib
 
@@ -58,13 +65,37 @@ ASSUME = {
 
 # 레벨대별 장비 (액트 끝 레벨 1·6·12·22·31·40 사이를 잇는다). 아이템 점검(공식 정리 ③)의 「60% 장비 모델」과 최대 투자 장비.
 # 시작 등불(소환수 +20%)은 둘 다 낀다.
+# Lv55·70·85·99 = 악몽·지옥 장비 가정 (옵션 단계가 보통 끝의 약 1.6배 · 2.6배 — item_affixes tier 1·2). res는 난이도 페널티 전 값
 GEAR = {
-    "P100": dict(minion=(20, 28, 45, 60, 75, 95), tree=(0, 1, 1, 2, 3, 3), life=(5, 15, 30, 55, 80, 110),
-                 defense=(20, 40, 60, 90, 120, 170), res=(10, 20, 30, 45, 55, 65), deploy=(0, 0, 1, 1, 1, 2)),
-    "P60": dict(minion=(20, 22, 30, 40, 50, 62), tree=(0, 0, 0, 1, 1, 2), life=(0, 3, 10, 22, 35, 52),
-                defense=(13, 25, 35, 50, 70, 110), res=(2, 6, 9, 15, 22, 30), deploy=(0, 0, 0, 0, 0, 1)),
+    "P100": dict(minion=(20, 28, 45, 60, 75, 95, 120, 150, 185, 220), tree=(0, 1, 1, 2, 3, 3, 4, 4, 5, 5),
+                 life=(5, 15, 30, 55, 80, 110, 150, 190, 240, 290), defense=(20, 40, 60, 90, 120, 170, 230, 300, 380, 460),
+                 res=(10, 20, 30, 45, 55, 65, 85, 100, 120, 135), deploy=(0, 0, 1, 1, 1, 2, 2, 2, 2, 2)),
+    "P60": dict(minion=(20, 22, 30, 40, 50, 62, 80, 100, 125, 150), tree=(0, 0, 0, 1, 1, 2, 2, 2, 3, 3),
+                life=(0, 3, 10, 22, 35, 52, 72, 95, 122, 150), defense=(13, 25, 35, 50, 70, 110, 150, 200, 260, 320),
+                res=(2, 6, 9, 15, 22, 30, 42, 55, 70, 85), deploy=(0, 0, 0, 0, 0, 1, 1, 1, 1, 1)),
 }
-GEAR_L = (1, 6, 12, 22, 31, 40)
+GEAR_L = (1, 6, 12, 22, 31, 40, 55, 70, 85, 99)
+DIFF = {int(num(r["index"])): r for r in rows("difficulty.csv")}
+
+
+def scale_level(L, diff):
+    # GameConst.ScaleLevel
+    if diff <= 0:
+        return L
+    n, d = DIFF[0], DIFF[diff]
+    span = max(1, num(n["levelTo"]) - 1)
+    out = num(d["levelFrom"]) + math.floor((L - 1) * (num(d["levelTo"]) - num(d["levelFrom"])) / span + 0.5)
+    return int(max(1, min(C["levelCap"], out)))
+
+
+def quest_exp(q, diff):
+    # QuestData.ExpFor
+    e = num(q["exp"])
+    if e <= 0 or diff <= 0:
+        return e
+    lv = max(1, int(num(q["level"], 1)))
+    need = lambda l: C["expCurveCoef"] * l ** C["expCurveExp"]
+    return math.floor(min(1, e / need(lv)) * need(scale_level(lv, diff)) + 0.5)
 
 PROFILES = {
     # 최대 투자: 군단 위주 최적 순서 · 통솔 50 · 활력 40 · 민첩 10% · 좋은 원본(공격비 1.8) · 정예 그림자 2 · 강화 상한 · 낙인 상시
@@ -111,8 +142,11 @@ def rank_cap(sid, L, rk):
     return min(mx, 1 + (L - row) // 2)
 
 
+DONE = {"runs": 0}   # 이미 끝낸 난이도 수 (의뢰 스킬·능력치·배치 보상은 난이도마다 다시 준다)
+
+
 def skill_points(L):
-    return 1 + int(C["skillPerLevel"]) * (L - 1) + 2 * sum(1 for x in SKP_LEVELS if x <= L)
+    return 1 + int(C["skillPerLevel"]) * (L - 1) + 2 * (sum(1 for x in SKP_LEVELS if x <= L) + DONE["runs"] * len(SKP_LEVELS))
 
 
 def allocate(order, L):
@@ -132,10 +166,10 @@ def allocate(order, L):
     return rk, pts
 
 
-def build(prof, L, act=1):
+def build(prof, L, act=1, diff=0):
     p = PROFILES[prof]
     rk, left = allocate(p["order"], L)
-    sp = 5 * (L - 1) + 5 * sum(1 for x in STP_LEVELS if x <= L)
+    sp = 5 * (L - 1) + 5 * (sum(1 for x in STP_LEVELS if x <= L) + DONE["runs"] * len(STP_LEVELS))
     st = {k: int(sp * v) for k, v in p["stat"].items()}
     Str, Vit, Dex, Ene = 15 + st["str"], 15 + st["vit"], 25 + st["dex"], 25 + st["ene"]
     minion = lerp_gear(prof, "minion", L) + (Str - 15) * C["strMinionPct"]
@@ -166,7 +200,7 @@ def build(prof, L, act=1):
     sm = (1 + (3 * max(0, ss - 1) + 8 * rk.get("command_mastery", 0) + minion) / 100) * (1 + 0.06 * plus)
     grow_a = 1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)
     grow_h = 1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)
-    deploy_quest = sum(1 for x in DEPLOY_LEVELS if x <= L)
+    deploy_quest = sum(1 for x in DEPLOY_LEVELS if x <= L) + DONE["runs"] * len(DEPLOY_LEVELS)
     if ss <= 0:
         n_sh = 0
     elif L < C["shadowFullLevel"]:
@@ -180,7 +214,7 @@ def build(prof, L, act=1):
     sh_e = math.floor(50 * min(2.5, p["dmgRatio"] * 1.1) * 0.6 * grow_a * sm)
     sh_hp = math.floor(60 * p["hpRatio"] * 1.2 * grow_h * sm)
     # 플레이어: 평타 30% 가동 + (P60) 골편 · 뼈 창
-    wpn = 6 if L < 8 else (11 if L < 18 else (18 if L < 33 else 40))
+    wpn = 6 if L < 8 else (11 if L < 18 else (18 if L < 33 else (40 if L < 55 else (70 if L < 80 else 110))))
     ias = min(75, Dex * 0.3)
     melee = (12 + wpn) * (1 + Dex * 0.005) / (0.45 / (1 + ias / 100))
     spell_pct = Ene + 0
@@ -206,11 +240,20 @@ def build(prof, L, act=1):
         if lv <= L:
             el = {"respoison": "poison", "reslight": "light", "resfire": "fire"}[rw.split(":")[0]]
             res[el] += num(rw.split(":")[1])
-    res = {k: min(75, v) for k, v in res.items()}
+    pen = num(DIFF[diff]["resistPenalty"]) if diff in DIFF else 0
+    res = {k: min(C["resistCap"], v + pen) for k, v in res.items()}
     bone_armor = math.floor((20 + 10 * (rk.get("bone_armor", 0) - 1)) * (1 + 0.1 * (L - 1))) if rk.get("bone_armor") else 0
     return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul, hp=hp, defense=defense,
                 res=res, n_sk=n_sk, n_mg=n_mg, n_sh=n_sh, n_el=n_el, plus=plus, minion=minion, sk_hp=sk_hp, sh_hp=sh_hp, sh_n=sh_n,
                 bone_armor=bone_armor, amp=amp * p["markUp"], Str=Str, Vit=Vit)
+
+
+DIFF_NOW = {"d": 0}
+
+
+def diff_mul(key):
+    # difficulty.csv monsterHpMul · monsterDmgMul (10-23 추가, 없으면 1)
+    return num(DIFF[DIFF_NOW["d"]].get(key), 1) or 1
 
 
 def mon_stats(mid, L, statMul, elite=False):
@@ -223,8 +266,10 @@ def mon_stats(mid, L, statMul, elite=False):
         hp *= C["eliteHpMul"]
     if grade >= 3:
         hp *= C["bossWallHpMul"] if L >= C["bossWallFromLevel"] else C["bossHpMul"]
-    hp *= statMul
-    dmg = math.floor(num(m["baseDmg"]) * (1 + C["monsterDmgPerLevel"] * (L - bl)) * statMul + 0.5)
+    hp *= statMul * diff_mul("monsterHpMul")
+    # MonsterAttack.ScaleToLevel — 10-23: 생명처럼 비율 (예전 1+0.2(L−bl)은 모델 레벨이 높은 보스가 악몽·지옥에서 생명 ×1.7인데 공격 ×7이 됐다)
+    k = C["monsterDmgPerLevel"]
+    dmg = math.floor(num(m["baseDmg"]) * (1 + k * (L - 1)) / (1 + k * (bl - 1)) * statMul * diff_mul("monsterDmgMul") + 0.5)
     if grade >= 3:
         dmg *= C["bossDmgMul"]
     if m["behavior"] == "phase":
@@ -318,7 +363,8 @@ def boss_fight(b, prof, bid, L, ml, statMul, hp_override=None, extra_hp=0, expos
     bp = BOSS.get(bid, {})
     m = MON[bid]
     base_dmg = num(m["baseDmg"])
-    atk_dmg = math.floor(base_dmg * (1 + C["monsterDmgPerLevel"] * (ml - int(num(m["baseLevel"])))) * statMul + 0.5)
+    k = C["monsterDmgPerLevel"]
+    atk_dmg = math.floor(base_dmg * (1 + k * (ml - 1)) / (1 + k * (int(num(m["baseLevel"])) - 1)) * statMul * diff_mul("monsterDmgMul") + 0.5)
     slam = num(bp.get("slamDamage")) * atk_dmg / max(1, base_dmg) * (C["bossDmgMul"] if grade >= 3 else 1)
     slam_iv = max(1.0, num(bp.get("slamInterval"), 6))
     per_basic = hit_taken(b, dmg, el, ratio, L, ml)
@@ -332,23 +378,24 @@ def boss_fight(b, prof, bid, L, ml, statMul, hp_override=None, extra_hp=0, expos
                 htd_slam=b["hp"] / max(1, per_slam), name=m["name"])
 
 
-def run(prof, eff=None):
+def run(prof, eff=None, diff=0, L=1, exp=0.0):
     if eff:
         ASSUME["eff"] = eff
-    L, exp, total = 1, 0.0, 0.0
+    total = 0.0
+    DIFF_NOW["d"] = diff
     out = []
     awakened = False
     for mp in ordered_route():
         sm = num(mp["statMul"], 1) or 1
         act = int(num(mp["act"], 1))
-        b = build(prof, L, act)
+        b = build(prof, L, act, diff)
         awaken = 1.2 if (act == 4 and awakened) else 1.0
         t_combat, gained, worst = 0.0, 0.0, (999, "", 0)
         spawns = [t for t in mp["spawns"].split(";") if t]
         ec = num(mp["eliteChance"]) + 0.2 / max(1, num(mp["packSize"], 3))
         for tok in spawns:
             mid, n, ml = tok.split(":")
-            n, ml = int(n), int(ml)
+            n, ml = int(n), scale_level(int(ml), diff)
             hp, dmg, iv, el, ratio, grade = mon_stats(mid, ml, sm)
             ehp = mon_stats(mid, ml, sm, elite=True)[0]
             g2 = grade == 2
@@ -364,7 +411,7 @@ def run(prof, eff=None):
         nm = NAMED.get(mp["id"])
         if nm and nm["model"] in MON and nm["id"]:
             lvls = [int(t.split(":")[2]) for t in spawns] or [L]
-            ml = round(sum(lvls) / len(lvls)) + int(num(nm["levelAdd"]))
+            ml = scale_level(round(sum(lvls) / len(lvls)), diff) + int(num(nm["levelAdd"]))
             hp = mon_stats(nm["model"], ml, sm)[0] * num(nm["hpMul"], 1)
             if nm["model"] == "apostate":
                 awakened = True
@@ -374,11 +421,11 @@ def run(prof, eff=None):
         for tok in [t for t in mp["fixed"].split(";") if t]:
             bid = tok.split("@")[0]
             m = MON[bid]
-            ml = int(num(m["baseLevel"]))
+            ml = scale_level(int(num(m["baseLevel"])), diff)
             extra = 0
             exposed = False
             if bid == "ashking":
-                extra = 3 * mon_stats("shadesmith", 38, sm)[0] if "shadesmith" in MON else 0
+                extra = 3 * mon_stats("shadesmith", scale_level(38, diff), sm)[0] if "shadesmith" in MON else 0
                 exposed = True
             f = boss_fight(b, prof, bid, L, ml, sm, extra_hp=extra, exposed=exposed, awaken=1.2 if act == 4 and awakened else 1.0)
             bosses.append((m["name"], ml, f))
@@ -388,18 +435,18 @@ def run(prof, eff=None):
         travel = num(mp["w"]) * (ASSUME["routeMul"] if spawns else 1) / ASSUME["speed"]
         t = t_combat + travel + ASSUME["overhead"]
         total += t
-        qexp = sum(num(q["exp"]) for q in QUESTS if q["map"] == mp["id"])
+        qexp = sum(quest_exp(q, diff) for q in QUESTS if q["map"] == mp["id"])
         exp += gained + qexp
         L0 = L
         while exp >= exp_next(L):
             exp -= exp_next(L)
             L += 1
-        lv = [int(t.split(":")[2]) for t in spawns] or [int(num(MON[t.split("@")[0]]["baseLevel"])) for t in mp["fixed"].split(";") if t]
+        lv = [scale_level(int(t.split(":")[2]), diff) for t in spawns] or [scale_level(int(num(MON[t.split("@")[0]]["baseLevel"])), diff) for t in mp["fixed"].split(";") if t]
         meteor = 0
         if act == 4 and awakened and mp["kind"] != "town" and mp["id"] != "throne":
             meteor = b["hp"] * 0.16 * (1 - b["res"]["fire"] / 100)
         out.append(dict(mp=mp, act=act, L0=L0, L1=L, mlv=(min(lv), max(lv)) if lv else (0, 0), combat=t_combat, travel=travel, t=t,
-                        total=total, worst=worst, bosses=bosses, b=b, meteor=meteor))
+                        total=total, worst=worst, bosses=bosses, b=b, meteor=meteor, exp=exp))
     return out
 
 
@@ -411,7 +458,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eff", type=float)
     ap.add_argument("--profile", default="P60")
+    ap.add_argument("--diff", default="0", help="0 보통 · 1 악몽 · 2 지옥 · all 이어서")
     a = ap.parse_args()
+    diffs = [0, 1, 2] if a.diff == "all" else [int(a.diff)]
     print("== 빌드 비교 (군단 초당 피해 · 괄호는 P100 대비) ==")
     for L in (6, 12, 21, 30, 40):
         ref = build("P100", L)["total"]
@@ -421,9 +470,20 @@ def main():
                 L, prof, b["total"], 100 * b["total"] / ref, b["pts"], b["left"], b["n_sh"], b["n_el"], b["plus"], b["n_sk"], b["n_mg"],
                 b["minion"], b["hp"], b["defense"], b["res"]["fire"], " ".join("%s %.0f" % kv for kv in b["dps"].items())))
     for prof in ([a.profile] if a.profile != "all" else list(PROFILES)):
-        print("\n== %s · 보통 액트 1~4 (의뢰 경로) ==" % prof)
+      DONE["runs"] = 0
+      L, exp = 1, 0.0
+      for diff in ([0, 1, 2] if diffs[-1] > 0 else diffs):
+        last = None
+        if diff not in diffs:
+            for r in run(prof, a.eff, diff, L, exp):
+                last = r
+            L, exp = last["L1"], last["exp"]
+            DONE["runs"] += 1
+            continue
+        print("\n== %s · %s 액트 1~4 (의뢰 경로, 시작 Lv%d) ==" % (prof, DIFF[diff]["name"], L))
         acts = {}
-        for r in run(prof, a.eff):
+        for r in run(prof, a.eff, diff, L, exp):
+            last = r
             mp = r["mp"]
             acts.setdefault(r["act"], [0, r["L0"], 0])
             acts[r["act"]][0] += r["t"]
@@ -439,6 +499,8 @@ def main():
                     name, ml, f["hp"], f["ttk"], f["per_basic"], f["per_slam"], f["htd_slam"], f["incoming"], f["survive"],
                     "여유" if f["survive"] > f["ttk"] * 1.5 else ("빠듯" if f["survive"] > f["ttk"] else "위험")))
         print(" 액트별: " + " · ".join("A%d %s (Lv%d→%d)" % (k, fmt(v[0]), v[1], v[2]) for k, v in sorted(acts.items())))
+        L, exp = last["L1"], last["exp"]
+        DONE["runs"] += 1
 
 
 if __name__ == "__main__":

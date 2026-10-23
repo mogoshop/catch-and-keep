@@ -17,11 +17,20 @@ script LootSystem extends Logic
             gf = stats.BonusGF
         end
         local d = _ItemData:GetDropTable(rank)
+        -- 악몽·지옥: 없음 줄이고 골드·룬·장비 품질을 올린다 (difficulty.csv drop*Mul — 10-23 사용자: 디아2처럼 난이도가 오를수록 드롭이 좋아야)
+        local diffIndex = self:DifficultyAt(monster.CurrentMap)
+        local diff = _GameData:GetDifficulty(diffIndex)
         -- 같은 맵 인원 보정: 추첨 횟수 + 비율 (소수 부분은 확률로, CoopRules · 10-13 X2)
         local pickF = d.picks * (1 + _CoopRules:DropBonus(monster.CurrentMap))
         local picks = math.floor(pickF)
         if _UtilLogic:RandomDouble() < pickF - picks then picks = picks + 1 end
         local wNone, wGold, wPot, wItem, wRune = d.none, d.gold, d.potion, d.item, d.rune
+        if diff ~= nil then
+            wNone = wNone * (diff.dropNoneMul or 1)
+            wGold = wGold * (diff.dropGoldMul or 1)
+            wRune = wRune * (diff.dropRuneMul or 1)
+        end
+        _ItemData.DropDiff = diffIndex
         local goldMult = 1
         if rank == "elite" or rank == "champion" then goldMult = 2 elseif rank == "unique" or rank == "boss" then goldMult = 3 end
         local userId = killer.PlayerComponent.UserId
@@ -70,7 +79,17 @@ script LootSystem extends Logic
                 self:Spawn(center, userId, "rune", _ItemData:MakeRune(monLevel), 1, 0)
             end
         end
+        _ItemData.DropDiff = 0
         -- 룬은 D2처럼 희귀한 엔드 재료: 보스 확정 룬은 없앴다 (10-09). 의뢰 룬은 마지막 의뢰(묘지기 여왕)에서만
+    end
+
+    method integer DifficultyAt(Entity map)
+        -- 드롭이 나온 맵의 난이도 (심연은 그 층의 난이도)
+        if not isvalid(map) then return 0 end
+        ---@type DepthDirector
+        local depth = map:GetComponent("script.DepthDirector")
+        if depth ~= nil then return depth.Difficulty end
+        return _GameConst:DifficultyOfMap(map.Name)
     end
 
     @ExecSpace("ServerOnly")
