@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, weekly.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -241,6 +241,7 @@ script GameData extends Logic
     property table Variants = {}
     property table VariantOrder = {}
     property table Archetypes = {}
+    property table MonsterStates = {}
     property table Weeklies = {}
     property table WeeklyOrder = {}
     property table MonsterSourceOf = {}
@@ -383,6 +384,8 @@ script GameData extends Logic
         self.Archetypes["soldier"] = { id = "soldier", name = "병사", trait = "균형", monster = "특별한 버릇 없이 고르게 싸운다", shadow = "—" }
         self.Archetypes["boss"] = { id = "boss", name = "보스", trait = "고유 기술", monster = "고유 기술을 쓴다", shadow = "—" }
         self.Archetypes["nest"] = { id = "nest", name = "둥지", trait = "졸개 생성", monster = "움직이지 않고 졸개를 낳는다", shadow = "—" }
+        self.MonsterStates = {}
+        self.MonsterStates["awaken"] = { id = "awaken", name = "각성", speedPct = 20, attackPct = 20, tint = "1,0.5,0.45", color = "#FF6A50", desc = "재의 왕이 깨어나 심연의 군세가 날뛴다 — 이동·공격 속도 +20%" }
         self.Weeklies = {}
         self.WeeklyOrder = {}
         self.Weeklies["souls"] = { id = "souls", name = "망자의 주", desc = "정예 +50% · 그림자 추출 +5%p", elite = 1.5, stat = 1, speed = 1, mobs = 1, curse = 0, rolls = 0, extract = 0.05, light = 1, skel = 1 }
@@ -1184,6 +1187,13 @@ script GameData extends Logic
         -- 몬스터 유형 (archetypes.csv: 짐승·무리·거구·방패·사수·암살자·광전사·병사). 없으면 병사
         self:Ensure()
         return self.Archetypes[id] or self.Archetypes["soldier"]
+    end
+
+    method any GetMonsterState(string id)
+        -- 몬스터 상태 (monster_states.csv: 각성 등 — 이름 아래 특성 줄에 붙고 몸 색·속도에 반영). 없으면 nil
+        self:Ensure()
+        if id == "" then return nil end
+        return self.MonsterStates[id]
     end
 
     method string ArchetypeOf(string sourceId)

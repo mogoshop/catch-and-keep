@@ -5,7 +5,7 @@
 --   1 붉은 하늘  : 하늘이 핏빛 · 심장 박동처럼 밝기가 뛴다 (DarkVision.SetAwake)
 --   2 땅울림     : 이따금 길게 흔들린다
 --   3 운석       : 서버가 사냥터(마을·옥좌 제외)에서 플레이어마다 이따금 운석 — 예고 원 뒤 그 자리에 화염 피해 (최대 생명의 %, 화염 저항 적용)
---   4 군세 각성  : 그 플레이어가 있는 4장 맵의 모든 몬스터가 이동·공격 속도 +20% (Monster.AwakenMul)
+--   4 군세 각성  : 그 플레이어가 있는 4장 맵의 모든 몬스터에 몬스터 상태 「각성」 (monster_states.csv awaken — 이동·공격 속도 +20% · 붉은 몸 · 이름 아래 「각성」)
 -- 단계마다 위쪽 가운데 붉은 안내 (HudMap.ShowAlert). 클라이언트가 단계를 열 때마다 서버에 알린다 (ReachPhase) — 안내보다 운석·각성이 먼저 오지 않게.
 -- 접속할 때마다 처음부터 다시 연다 (서버 기록은 나가면 지운다).
 @Logic
@@ -18,7 +18,7 @@ script AshAwakening extends Logic
     property number MeteorHpPct = 0.16        -- 최대 생명의 16% (화염 저항만큼 줄어든다, 저항은 최대 75%)
     property number TremorMin = 14            -- 땅울림 간격(초)
     property number TremorMax = 26
-    property number HasteMul = 1.2            -- 군세 각성: 이동·공격 속도 배율
+    property string StateId = "awaken"        -- 군세 각성 때 몬스터에 붙이는 상태 (monster_states.csv — 배율·색·이름은 표에서)
     property number PhaseGap = 5              -- 단계 사이 간격(초)
     property number AlertSeconds = 3.8        -- 단계 안내가 떠 있는 시간
     property integer TimerId = 0
@@ -124,30 +124,29 @@ script AshAwakening extends Logic
         if self.TickCount % 2 ~= 0 then return end
         for mapId, map in pairs(self.AwakenedMaps) do
             if wantMaps[mapId] == nil then
-                if isvalid(map) then self:SetHaste(map, 1) end
+                if isvalid(map) then self:SetState(map, "") end
                 self.AwakenedMaps[mapId] = nil
             end
         end
         for mapId, map in pairs(wantMaps) do
             self.AwakenedMaps[mapId] = map
-            self:SetHaste(map, self.HasteMul)
+            self:SetState(map, self.StateId)
         end
     end
 
     @ExecSpace("ServerOnly")
-    method void SetHaste(Entity map, number mul)
-        -- 이 맵 몬스터의 각성 배율을 맞춘다 (바뀐 몬스터만 속도를 다시 계산)
+    method void SetState(Entity map, string id)
+        -- 이 맵 몬스터의 상태를 맞춘다 (각성을 붙이거나 뗀다 — 바뀐 몬스터만 Monster.SetMonsterState가 속도를 다시 계산)
         local changed = 0
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
             ---@type Monster
             local m = c
-            if m.AwakenMul ~= mul then
-                m.AwakenMul = mul
-                m:RefreshSpeed()
+            if m.MonsterState ~= id then
+                m:SetMonsterState(id)
                 changed = changed + 1
             end
         end
-        if changed > 0 then log(string.format("[VRF] AshAwakening haste %s x%.2f n=%d", map.Name, mul, changed)) end
+        if changed > 0 then log(string.format("[VRF] AshAwakening state %s '%s' n=%d", map.Name, id, changed)) end
     end
 
     @ExecSpace("ServerOnly")
@@ -267,7 +266,9 @@ script AshAwakening extends Logic
             if isvalid(cam) then cam:ShakeCamera(0.22, 1.0) end
             _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.9)
             self:AwakenFx(map)
-            _HudMap:ShowAlert("심연의 군세가 깨어난다", "4장의 모든 마물이 20% 더 빠르게 움직이고 공격한다", self.AlertSeconds)
+            local st = _GameData:GetMonsterState(self.StateId)
+            local detail = st ~= nil and ("4장의 모든 마물이 「" .. st.name .. "」 — 이동 +" .. tostring(math.floor(st.speedPct)) .. "% · 공격 속도 +" .. tostring(math.floor(st.attackPct)) .. "%") or ""
+            _HudMap:ShowAlert("심연의 군세가 깨어난다", detail, self.AlertSeconds)
         end
         log("[VRF] AshAwakening client phase " .. tostring(phase))
     end

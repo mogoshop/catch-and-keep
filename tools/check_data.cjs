@@ -37,6 +37,12 @@ const skillIds = unique("skills", "id");
 const monsterIds = unique("monsters", "id");
 const sourceIds = unique("monsters", "sourceId");
 const archIds = new Set(load("archetypes").map((r) => r.id));
+// 몬스터 상태 (각성 등): 속도 배율은 숫자, 색조는 "r,g,b", 글자색은 #RRGGBB
+load("monster_states").forEach((r, i) => {
+  for (const k of ["speedPct", "attackPct"]) if (r[k] === "" || isNaN(Number(r[k]))) err("monster_states", i, `${k} '${r[k]}' — 숫자가 아님`);
+  if (r.tint !== "" && !/^[\d.]+,[\d.]+,[\d.]+$/.test(r.tint)) err("monster_states", i, `tint '${r.tint}' — "r,g,b"가 아님`);
+  if (!/^#[0-9A-Fa-f]{6}$/.test(r.color)) err("monster_states", i, `color '${r.color}' — #RRGGBB가 아님`);
+});
 const mapIds = unique("maps", "id");
 const soundKeys = unique("sounds", "key");
 const wpIds = unique("waypoints", "id");
