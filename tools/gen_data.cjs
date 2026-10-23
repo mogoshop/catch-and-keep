@@ -128,6 +128,9 @@ function genGameData() {
     ...mons.map((m) => `        self.MonsterSourceOf[${s(m.id)}] = ${s(m.sourceId)}`),
     "        self.MonsterStats = {}",
     ...mons.map((m) => `        self.MonsterStats[${s(m.sourceId)}] = { level = ${n(m.baseLevel)}, hp = ${n(m.baseHp)}, dmg = ${n(m.baseDmg)}, interval = ${n(m.atkIntervalSec)}, speed = ${n(m.speed)}, range = ${n(m.attackRange || 0.8)}, element = ${s(m.element)}, ratio = ${n(m.elementRatio)}, resists = ${s(m.resists)}, behavior = ${s(m.behavior)}, stand = ${s(firstFrame(m.sourceId, "stand", m.stand))}, move = ${s(firstFrame(m.sourceId, "move", m.move))}, attack = ${s(strikeFrame(m.sourceId, m.attack))}, innate = ${s(m.innate)}, rank = ${s(num(m.grade) >= 3 ? "boss" : bool(m.unique) ? "unique" : "normal")}, summonScale = ${n(summonScale(m))}, mid = ${s(m.id)}, w = ${n(m.w || 0)}, h = ${n(m.h || 0)}, bh = ${n(m.bodyH || 0)}, portrait = ${s(m.portrait || "")}, pw = ${n(m.pw || 0)}, ph = ${n(m.ph || 0)}, chain = ${n(m.chain || 0)}, arch = ${s(m.archetype || "soldier")} }`),
+    // 몬스터 피격·사망음 (data/monster_sounds.csv — 메이플 몬스터 팩의 _audio/Damage · Die, 10-23)
+    "        self.MonsterSfx = {}",
+    ...load("monster_sounds").map((r) => `        self.MonsterSfx[${s((mons.find((m) => m.id === r.monster) || {}).sourceId || r.monster)}] = { hit = ${s(r.hit)}, die = ${s(r.die)} }`),
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
@@ -257,6 +260,12 @@ function genGameData() {
         return self.MonsterFrames[sourceId]
     end
 
+    method any GetMonsterSfx(string sourceId)
+        -- 몬스터 피격·사망음 { hit, die } (monster_sounds.csv, sourceId 기준). 없으면 nil
+        self:Ensure()
+        return self.MonsterSfx[sourceId]
+    end
+
     method any GetMonsterStats(string sourceId)
         -- 원본 몬스터 능력치 (monsters.csv, sourceId 기준). 그림자 개성의 원천. 없으면 nil
         self:Ensure()
@@ -320,7 +329,7 @@ function genGameData() {
 `;
   write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──

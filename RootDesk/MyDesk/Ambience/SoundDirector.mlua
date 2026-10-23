@@ -119,8 +119,10 @@ script SoundDirector extends Logic
         local now = _UtilLogic.ElapsedSeconds
         if now - self.CombatWindowAt >= 0.1 then self.CombatWindowAt = now self.CombatVoices = 0 end
         local key = ruid .. ":" .. tostring(priority)
-        local gap = priority > 0 and 0.035 or 0.09
-        local cap = priority > 0 and 5 or 3
+        -- 타격음 방식 1·2 (B·A): 재생 한도를 넓혀 군단 연타도 더 자주 들린다 (config hitSoundMode, 10-23)
+        local loud = _GameData.hitSoundMode >= 1
+        local gap = priority > 0 and 0.035 or (loud and 0.05 or 0.09)
+        local cap = priority > 0 and (loud and 8 or 5) or (loud and 6 or 3)
         if self.CombatVoices >= cap or now - (self.LastCombatSounds[key] or -99) < gap then
             self.SuppressedCombatCount = self.SuppressedCombatCount + 1
             return
@@ -135,10 +137,35 @@ script SoundDirector extends Logic
     @ExecSpace("ClientOnly")
     method void PlayContact(string material, Vector3 pos, boolean heavy, boolean owned)
         -- 뼈는 짧은 접촉음, 살/영체는 충격음을 사용하며 내 강타를 소환수 연타보다 우선한다.
+        self:PlayMonsterHit("", material, pos, heavy, owned)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayMonsterHit(string sourceId, string material, Vector3 pos, boolean heavy, boolean owned)
+        -- 맞은 몬스터의 소리. 방식 2(A)는 그 몬스터의 메이플 피격음(monster_sounds.csv), 아니면 재질별 공용음.
+        -- 방식 1·2는 크기를 올린다 (예전 내 타격 0.45 · 소환수 0.22 — 군단전에서 거의 안 들렸다)
+        local mode = _GameData.hitSoundMode
         local ruid = material == "bone" and _GameConst.SfxHit or _GameConst.SfxImpact
+        if mode >= 2 and sourceId ~= "" then
+            local sfx = _GameData:GetMonsterSfx(sourceId)
+            if sfx ~= nil and sfx.hit ~= "" then ruid = sfx.hit end
+        end
         local volume = owned and 0.45 or 0.22
+        if mode >= 1 then volume = owned and 0.75 or 0.42 end
         if heavy then volume = volume + 0.12 end
         self:PlayCombat(ruid, pos, volume, owned and (heavy and 2 or 1) or 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayMonsterDeath(string sourceId, Vector3 pos)
+        -- 쓰러질 때: 방식 2(A)는 그 몬스터의 메이플 사망음, 아니면 공용 사망음 (방식 1·2는 더 크게)
+        local mode = _GameData.hitSoundMode
+        local ruid = _GameConst.SfxDeath
+        if mode >= 2 and sourceId ~= "" then
+            local sfx = _GameData:GetMonsterSfx(sourceId)
+            if sfx ~= nil and sfx.die ~= "" then ruid = sfx.die end
+        end
+        self:PlayCombat(ruid, pos, mode >= 1 and 0.85 or 0.6, mode >= 1 and 1 or 0)
     end
 
     @ExecSpace("ClientOnly")
