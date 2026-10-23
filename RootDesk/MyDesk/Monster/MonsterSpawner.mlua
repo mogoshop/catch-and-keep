@@ -323,9 +323,11 @@ script MonsterSpawner extends Component
         self.Terrain = tiles ~= nil and tiles.Entity or nil
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
         if info == nil then return end
+        -- 들어오는 곳(포털·웨이포인트·심도 입구) 둘레는 처음 배치·되살아남 모두 비운다 (10-24 팀원: 들어가자마자 죽었다)
+        local radius = _GameConst:EntrySafeRadius(map.Name)
         for _,f in ipairs(info.features) do
-            if f.kind == "portal" or f.kind == "waypoint" then
-                table.insert(self.SafeZones, { pos = Vector2(f.x, f.y), radius = f.kind == "portal" and 6 or 5.5 })
+            if f.kind == "portal" or f.kind == "waypoint" or f.kind == "depth" then
+                table.insert(self.SafeZones, { pos = Vector2(f.x, f.y), radius = radius })
             end
         end
     end

@@ -202,6 +202,16 @@ script GameConst extends Logic
         return Vector2(_GameData.townArrivalX, _GameData.townArrivalY)
     end
 
+    method number EntrySafeRadius(string mapName)
+        -- 입구·출구 둘레에 몬스터를 두지 않는 반경 (config entrySafeRadius — 작은 맵은 짧은 변 비율까지 줄인다)
+        local r = _GameData.entrySafeRadius
+        local info = _GameData:GetMapInfo(self:BaseMapName(mapName))
+        if info ~= nil and info.w ~= nil and info.h ~= nil then
+            r = math.min(r, math.max(_GameData.entrySafeMin, math.min(info.w, info.h) * _GameData.entrySafeMapFrac))
+        end
+        return r
+    end
+
     method string MapFor(string baseMap, integer difficulty)
         -- 난이도별 맵 이름 = 보통 맵 + difficulty.csv mapSuffix (_nm / _hell)
         return baseMap .. _GameData:GetDifficulty(difficulty).suffix

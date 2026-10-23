@@ -679,7 +679,12 @@ script Monster extends Component
         local hide = _GameData.respawnHideRadius
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(self.Entity.CurrentMap.Name))
         if info ~= nil and info.w ~= nil and info.h ~= nil then hide = math.min(hide, math.max(3, math.min(info.w, info.h) * 0.25)) end
-        if _Util:NearestPlayerDistance(self.Entity.CurrentMap, self.SpawnPosition) < hide then
+        -- 포털(플레이어가 연 마을 포털 포함)·웨이포인트 곁 자리는 되살아나지 않고 미룬다 — 그 포털로 돌아온 사람이 바로 둘러싸이지 않게
+        local map = self.Entity.CurrentMap
+        local safe = _GameConst:EntrySafeRadius(map.Name)
+        local nearGate = _Util:NearestComponent(map, "script.WarpGate", self.SpawnPosition, safe) ~= nil
+            or _Util:NearestComponent(map, "script.Waypoint", self.SpawnPosition, safe) ~= nil
+        if nearGate or _Util:NearestPlayerDistance(map, self.SpawnPosition) < hide then
             _TimerService:SetTimerOnce(function() self:TryRespawn() end, 5)
             return
         end

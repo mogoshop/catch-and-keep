@@ -578,7 +578,13 @@ script MonsterAttack extends AttackComponent
 
     method boolean IsLiveDefender(Entity target)
         if not isvalid(target) or not target.Enable or target.CurrentMap ~= self.Entity.CurrentMap then return false end
-        if isvalid(target.PlayerComponent) then return target.PlayerComponent.Hp > 0 end
+        if isvalid(target.PlayerComponent) then
+            if target.PlayerComponent.Hp <= 0 then return false end
+            -- 맵에 막 들어온 사람은 arrivalShieldSec 동안 새로 노리지 않는다 (로딩 직후 둘러볼 틈)
+            ---@type PlayerTravel
+            local travel = target:GetComponent("script.PlayerTravel")
+            return travel == nil or _UtilLogic.ElapsedSeconds - travel.ArrivedAt >= _GameData.arrivalShieldSec
+        end
         local unit = target:GetComponent("script.ShadowUnit")
         return unit ~= nil and not unit.Dead and unit.Hp > 0
     end
