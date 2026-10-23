@@ -428,6 +428,9 @@ function buildGameHud() {
     b.text(`${path}/Time`, "", { size: 13, anchor: "middle-center", pos: [0, -12], rect_size: [56, 18], ...outline });
     // 디버프 칩 위에 코덱스 붉은 테두리 (debuff_frame, 가운데 투명). 버프와 한눈에 갈린다
     b.sprite(`${path}/Frame`, { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], image_ruid: K.debuff_frame, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    // 오오라 칩 위에 등급 테두리 (aura_tier1~3 옅은·짙은·극한, 가운데 투명 — 코덱스 10-24)
+    b.sprite(`${path}/Tier`, { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    b.patchComponent(`${path}/Tier`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   }
   // 마우스를 올린 칩의 설명 (칩 줄 바로 위, x는 실행 중에 그 칩에 맞춘다)
   b.panel("Buffs/Tip", { anchor: "bottom-left", pos: [0, 64], rect_size: [440, 84], ...part("hud_box"), sprite_type: 1, enable: false });

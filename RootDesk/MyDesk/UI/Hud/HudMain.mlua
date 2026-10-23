@@ -204,6 +204,10 @@ script HudMain extends Logic
                 -- 칩 그림(ui_icons.csv의 buff_*·debuff_* — 코덱스)이 있으면 그림 + 남은 시간만, 없으면 색 원 + 짧은 이름
                 local icon = b.icon or _GameData:GetUiIcon(b.key)
                 _UIKit:SetEnabled(path .. "/Frame", b.debuff == true and icon ~= "")
+                -- 오오라 칩은 등급 테두리 (옅은·짙은·극한)
+                local tierIcon = (b.tier ~= nil and icon ~= "") and _GameData:GetUiIcon("aura_tier" .. tostring(b.tier)) or ""
+                _UIKit:SetEnabled(path .. "/Tier", tierIcon ~= "")
+                if tierIcon ~= "" then _UIKit:SetIcon(path .. "/Tier", tierIcon) end
                 if icon ~= "" then
                     _UIKit:SetIcon(path, icon)
                     _UIKit:SetColor(path, Color(1, 1, 1, 1))
@@ -267,7 +271,7 @@ script HudMain extends Logic
             local b = best[effect]
             if b ~= nil then
                 local whom = effect == "corrode" and ("반경 %g 안 적") or ("반경 %g 안 나와 소환수")
-                table.insert(list, { key = "aura_" .. effect, label = string.match(b.v.name, "^(%S+)") or b.v.name, color = _GameConst:AuraColor(effect), left = -1,
+                table.insert(list, { key = "aura_" .. effect, label = string.match(b.v.name, "^(%S+)") or b.v.name, color = _GameConst:AuraColor(effect), left = -1, tier = _GameData:AuraTier(b.v.value),
                     desc = string.format("%s · " .. whom .. " %s (%s)", b.v.label, b.v.radius, b.v.text, b.from) })
             end
         end
