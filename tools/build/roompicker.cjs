@@ -36,7 +36,7 @@ function run() {
     b.sprite(name + '/Rim', { anchor: 'middle-center', pos: [0, 0], rect_size: [w, h], ...part(key), sprite_type: 1 });
     b.patchComponent(name + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
   };
-  const input = (name, opts) => b.textInput(name, { line_type: 0, font_size: 24, color: '#F3E7CC', ...part('win_content'), bg_color: part('win_content').color, sprite_type: 1, ...opts });
+  const input = (name, opts) => b.textInput(name, { line_type: 0, font_size: 24, ...part('win_content'), color: '#F3E7CC', placeholder_color: '#8A8172', bg_color: part('win_content').color, sprite_type: 1, ...opts });
 
   // 화면 전체를 덮는 어두운 바탕 (캐릭터 선택과 같은 색 · 뒤의 로비와 HUD를 가리고 입력을 막는다)
   b.panel(R, { anchor: 'middle-center', rect_size: [1920, 1080], color: { r: 0.03, g: 0.02, b: 0.04, a: 0.96 }, raycast: true, enable: false });
