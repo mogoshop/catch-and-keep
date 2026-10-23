@@ -9,6 +9,7 @@ script PartySystem extends Logic
     property integer NextId = 1
     property table Known = nil            -- userId → { name, lv } 마지막으로 본 값 (다른 방(심도 등)에 가 있어 안 보이는 파티원 표시용)
     property integer TimerId = 0
+    property table OptOut = {}            -- 게임 방 자동 파티에서 스스로 「파티 탈퇴」한 사람 (그 방에 있는 동안 다시 묶지 않는다)
     @Sync
     property string Roster = ""           -- 이 채널의 모든 플레이어 "userId|캐릭터 이름|레벨|위치|맵 이름;..." (D2처럼 같은 채널이면 보인다 · 10-13). 2초마다
 
@@ -27,8 +28,43 @@ script PartySystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void RefreshAll()
+        self:AutoPartyRoom()
         for pid, _ in pairs(self.Parties) do self:Refresh(pid) end
         self:RefreshRoster()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AutoPartyRoom()
+        -- 게임 방 = 함께 출발한 파티 (10-24 사용자: 「나가지도 않았는데 파티가 풀린다」). 파티 명단은 방마다 따로라
+        -- 심도(다른 방)에 다녀오거나 잠깐 끊겼다 돌아오면 원래 방에서 빠졌었다 → 게임 방에 같이 있는 사람은 2초마다 한 파티로 다시 묶는다.
+        -- 스스로 「파티 탈퇴」한 사람(OptOut)은 그 방에 있는 동안 빼 둔다
+        if not _GameConst:InGameRoom() then return end
+        local users = {}
+        for _, p in pairs(_UserService.UserEntities) do
+            if isvalid(p) and isvalid(p.PlayerComponent) and not self.OptOut[p.PlayerComponent.UserId] then table.insert(users, p) end
+        end
+        if #users < 2 then return end
+        table.sort(users, function(a, b) return a.PlayerComponent.UserId < b.PlayerComponent.UserId end)
+        -- 이미 파티가 있는 사람의 파티를 기준으로 (없으면 첫 사람이 새로 연다)
+        local anchor = nil
+        for _, p in ipairs(users) do
+            ---@type PlayerSocial
+            local s = p:GetComponent("script.PlayerSocial")
+            if anchor == nil and s ~= nil and s.PartyId ~= 0 and self.Parties[s.PartyId] ~= nil then anchor = p.PlayerComponent.UserId end
+        end
+        if anchor == nil then anchor = users[1].PlayerComponent.UserId end
+        ---@type PlayerSocial
+        local lead = self:Social(anchor)
+        for _, p in ipairs(users) do
+            local uid = p.PlayerComponent.UserId
+            ---@type PlayerSocial
+            local s = p:GetComponent("script.PlayerSocial")
+            if uid ~= anchor and s ~= nil and (s.PartyId == 0 or lead == nil or s.PartyId ~= lead.PartyId) then
+                self:Join(anchor, uid)
+                lead = self:Social(anchor)
+                log("[VRF] auto party join " .. uid .. " → " .. anchor)
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -235,6 +271,7 @@ script PartySystem extends Logic
     @EventSender("Service", "UserService")
     handler HandleUserLeaveEvent(UserLeaveEvent event)
         self:Leave(event.UserId)
+        self.OptOut[event.UserId] = nil
     end
 
 end
