@@ -444,16 +444,23 @@ function buildGameHud() {
   k.inner("QuestWin/DescBox", "bottom-center", [0, 24], [720, 120], "win_content");
   b.text("QuestWin/DescBox/Desc", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -10], rect_size: [692, 100] });
 
-  // ── 플레이어 창 (P): 파티 초대 / 결투 / 거래, 파티 탈퇴 ──
+  // ── 플레이어 창 (P): 파티 초대 / 결투 / 거래 / 살펴보기(10-24), 파티 탈퇴 ──
   k.frame("SocialWin", "middle-center", [0, 60], [800, 660], "플레이어");
   for (let i = 1; i <= 8; i++) {
     const y = -88 - (i - 1) * 62;
-    b.text(`SocialWin/Name${i}`, "", { size: 19, color: C.gold, alignment: 3, anchor: "top-left", pos: [40, y], rect_size: [300, 54], ...outline });
-    k.btn(`SocialWin/Party${i}`, "파티", { anchor: "top-left", pos: [350, y], rect_size: [124, 54], font_size: 18 });
-    k.btn(`SocialWin/Duel${i}`, "결투", { anchor: "top-left", pos: [482, y], rect_size: [124, 54], font_size: 18 });
-    k.btn(`SocialWin/Trade${i}`, "거래", { anchor: "top-left", pos: [614, y], rect_size: [124, 54], font_size: 18 });
+    b.text(`SocialWin/Name${i}`, "", { size: 19, color: C.gold, alignment: 3, anchor: "top-left", pos: [40, y], rect_size: [262, 54], bestfit: true, min_size: 13, max_size: 19, ...outline });
+    k.btn(`SocialWin/Party${i}`, "파티", { anchor: "top-left", pos: [310, y], rect_size: [104, 54], font_size: 17 });
+    k.btn(`SocialWin/Duel${i}`, "결투", { anchor: "top-left", pos: [418, y], rect_size: [104, 54], font_size: 17 });
+    k.btn(`SocialWin/Trade${i}`, "거래", { anchor: "top-left", pos: [526, y], rect_size: [104, 54], font_size: 17 });
+    k.btn(`SocialWin/Inspect${i}`, "살펴보기", { anchor: "top-left", pos: [634, y], rect_size: [128, 54], font_size: 17 });
   }
   k.btn("SocialWin/BtnLeave", "파티 탈퇴", { anchor: "bottom-left", pos: [40, 22], rect_size: [200, 62], font_size: 19 });
+  // 살펴보기 판: 같은 창 위에 덮는다 — 왼쪽 능력치·스킬, 오른쪽 착용 장비 (SocialWindow.OnInspect)
+  b.panel("SocialWin/Inspect", { anchor: "top-left", pos: [24, -76], rect_size: [752, 560], color: { r: 0.05, g: 0.045, b: 0.06, a: 1 }, raycast: true, enable: false });
+  b.text("SocialWin/Inspect/Title", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -10], rect_size: [560, 32], ...outline });
+  b.text("SocialWin/Inspect/Stats", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [16, -50], rect_size: [300, 500], bestfit: true, min_size: 11, max_size: 15 });
+  b.text("SocialWin/Inspect/Gear", "", { size: 15, color: C.white, alignment: 0, anchor: "top-left", pos: [328, -50], rect_size: [410, 500], bestfit: true, min_size: 10, max_size: 15 });
+  k.btn("SocialWin/Inspect/BtnBack", "돌아가기", { anchor: "top-right", pos: [-12, -6], rect_size: [150, 44], font_size: 17 });
 
   // ── 받은 요청 (수락/거절) ──
   b.panel("Request", { anchor: "top-center", pos: [0, -250], rect_size: [600, 170], ...part("win_panel"), sprite_type: 1, raycast: true });

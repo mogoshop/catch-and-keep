@@ -110,6 +110,64 @@ script PlayerSocial extends Component
     end
 
     @ExecSpace("Server")
+    method void RequestInspect(string targetId)
+        -- 살펴보기 (10-24): 같은 채널 플레이어의 능력치·스킬·장비 요약을 요청한 사람에게만
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        local target = _UserService:GetUserEntityByUserId(targetId)
+        if not isvalid(target) then
+            self:ShowInspect("이 채널에 없다", "", "", senderUserId)
+            return
+        end
+        ---@type PlayerStats
+        local st = target:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = target:GetComponent("script.PlayerInventory")
+        ---@type SkillBook
+        local book = target:GetComponent("script.SkillBook")
+        ---@type ShadowCommander
+        local cmd = target:GetComponent("script.ShadowCommander")
+        if st == nil then return end
+        local pc = target.PlayerComponent
+        local title = _PartySystem:NameOf(target) .. "  Lv" .. tostring(st.Level) .. "  " .. _GameConst:DifficultyName(st.Difficulty)
+        local function stat(name, base, bonus) return string.format("%s %d", name, base + bonus) .. (bonus ~= 0 and string.format(" (+%d)", bonus) or "") end
+        local lines = {
+            stat("통솔", st.Str, st.BonusStr) .. "  ·  " .. stat("활력", st.Vit, st.BonusVit),
+            stat("민첩", st.Dex, st.BonusDex) .. "  ·  " .. stat("정신", st.Ene, st.BonusEne),
+            string.format("생명 %d  ·  마나 %d  ·  방어 %d", math.floor(pc.MaxHp), math.floor(st.MaxMana), math.floor(st:GetDefense())),
+            string.format("저항  화염 %d · 냉기 %d · 번개 %d · 독 %d", st.ResFire, st.ResCold, st.ResLight, st.ResPoison),
+            string.format("소환수 공격·생명 +%d%%  ·  스킬 피해 +%d%%", math.floor(st:GetMinionPct()), math.floor(st:GetSpellPowerPct())),
+            string.format("공격 속도 +%d%%  ·  시전 속도 +%d%%", math.floor(st:GetIas()), math.floor(st:GetFcr())),
+        }
+        if cmd ~= nil then table.insert(lines, string.format("함께 다닐 수 있는 그림자 %d기", cmd:GetDeployLimit())) end
+        -- 스킬: 투자한 메인 스킬을 랭크 높은 순으로
+        if book ~= nil then
+            local skills = {}
+            for _, id in ipairs(_SkillData:Mains()) do
+                local lv = book.Levels[id] or 0
+                if lv > 0 then table.insert(skills, { name = _SkillData:Get(id).name, lv = lv }) end
+            end
+            table.sort(skills, function(a, b) return a.lv > b.lv end)
+            local parts = {}
+            for i, sk in ipairs(skills) do if i <= 10 then table.insert(parts, sk.name .. " " .. tostring(sk.lv)) end end
+            table.insert(lines, "")
+            table.insert(lines, "스킬  " .. (#parts > 0 and table.concat(parts, " · ") or "없음"))
+        end
+        local equip = {}
+        if inv ~= nil then
+            for slot in string.gmatch(inv.SlotOrder, "[^,]+") do
+                local item = inv.Equip[slot]
+                if item ~= nil and item ~= "" then table.insert(equip, slot .. ">" .. item) end
+            end
+        end
+        self:ShowInspect(title, table.concat(lines, "\n"), table.concat(equip, ";"), senderUserId)
+    end
+
+    @ExecSpace("Client")
+    method void ShowInspect(string title, string stats, string equipDigest)
+        _SocialWindow:OnInspect(title, stats, equipDigest)
+    end
+
+    @ExecSpace("Server")
     method void RequestLeaveParty()
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
         _PartySystem.OptOut[senderUserId] = true   -- 게임 방 자동 파티에서도 빠진 채로 둔다

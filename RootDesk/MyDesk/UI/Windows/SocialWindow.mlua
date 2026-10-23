@@ -18,7 +18,10 @@ script SocialWindow extends Logic
             _UIKit:Connect(self.Win .. "/Party" .. tostring(i), function() self:Act(index, "party") end)
             _UIKit:Connect(self.Win .. "/Duel" .. tostring(i), function() self:Act(index, "duel") end)
             _UIKit:Connect(self.Win .. "/Trade" .. tostring(i), function() self:Act(index, "trade") end)
+            _UIKit:Connect(self.Win .. "/Inspect" .. tostring(i), function() self:Inspect(index) end)
         end
+        _UIKit:SetEnabled(self.Win .. "/Inspect", false)
+        _UIKit:Connect(self.Win .. "/Inspect/BtnBack", function() _UIKit:SetEnabled(self.Win .. "/Inspect", false) end)
         _UIKit:Connect(self.Win .. "/BtnLeave", function()
             local s = self:Social()
             if s ~= nil then s:RequestLeaveParty() end
@@ -94,7 +97,37 @@ script SocialWindow extends Logic
             _UIKit:SetText(self.Win .. "/Duel" .. tostring(i), dueling and _UIKit:Colored("#FF6A50", "포기") or "결투")
             _UIKit:SetEnabled(self.Win .. "/Duel" .. tostring(i), dueling or (ids[i] ~= nil and sameMap[i] == true and duelOk[i] == true))
             _UIKit:SetEnabled(self.Win .. "/Trade" .. tostring(i), ids[i] ~= nil and sameMap[i] == true)
+            _UIKit:SetEnabled(self.Win .. "/Inspect" .. tostring(i), ids[i] ~= nil)   -- 살펴보기는 채널 어디서나
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Inspect(integer index)
+        -- 그 사람의 능력치·스킬·장비를 서버에 묻는다 (다른 맵에 있어도 같은 채널이면 된다)
+        local id = self.Ids[index]
+        local s = self:Social()
+        if id == nil or s == nil then return end
+        _UIKit:SetText(self.Win .. "/Inspect/Title", "불러오는 중…")
+        _UIKit:SetText(self.Win .. "/Inspect/Stats", "")
+        _UIKit:SetText(self.Win .. "/Inspect/Gear", "")
+        _UIKit:SetEnabled(self.Win .. "/Inspect", true)
+        s:RequestInspect(id)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnInspect(string title, string stats, string equipDigest)
+        -- 서버가 보낸 요약을 그린다. 장비는 아이템 문자열을 받아 이 화면에서 이름·옵션으로 푼다
+        local slotNames = { weapon = "무기", offhand = "보조", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "장화", belt = "허리띠", amulet = "목걸이", ring1 = "반지", ring2 = "반지" }
+        local lines = {}
+        for slot, item in string.gmatch(equipDigest, "([^;>]+)>([^;]+)") do
+            local text = _ItemData:Describe(item)
+            table.insert(lines, _UIKit:Colored("#9C9488", (slotNames[slot] or slot) .. "  ") .. string.gsub(text, "\n", "\n      "))
+        end
+        if #lines == 0 then lines = { _UIKit:Colored("#9C9488", "착용한 장비가 없다") } end
+        _UIKit:SetText(self.Win .. "/Inspect/Title", title)
+        _UIKit:SetText(self.Win .. "/Inspect/Stats", stats)
+        _UIKit:SetText(self.Win .. "/Inspect/Gear", table.concat(lines, "\n"))
+        _UIKit:SetEnabled(self.Win .. "/Inspect", true)
     end
 
     @ExecSpace("ClientOnly")
