@@ -45,7 +45,8 @@ script SkillBook extends Component
         local lv = self:GetLevel(id)
         if lv <= 0 then return 0 end
         local def = _SkillData:Get(id)
-        if def == nil or def.kind == "node" then return lv end
+        if def == nil then return lv end
+        if def.kind == "node" then return self:Node(id) end   -- 강화: 지금 캐릭터 레벨에서 효과가 나는 랭크만
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return lv end
@@ -95,9 +96,16 @@ script SkillBook extends Component
     end
 
     method integer NodeLevel(string id, integer rank)
-        -- 강화 rank랭크에 필요한 캐릭터 레벨 (0 = 조건 없음). 그림자 증원: Lv15·21·27 (10-24 사용자 — 캐릭터 레벨 6마다)
+        -- 강화 rank랭크에 필요한 캐릭터 레벨 (0 = 조건 없음). 10-24 사용자: 강화는 열린 뒤 nodeLevelStep(4)레벨마다 한 랭크
+        --   (예전엔 열리는 순간 모든 랭크를 한 번에 찍었다 — 단련된 뼈 Lv5에 5랭크). 처음 열리는 레벨 = 메인 스킬을 need 랭크로 올릴 수 있는 가장 이른 레벨
+        -- 예외: 그림자 증원 Lv15·21·27 · 다중 투사체·군령은 메인 스킬 랭크 간격(NodeNeed)으로 이미 벌어진다
         if id == "deploy_expand" then return math.floor(_GameData.deployExpandFromLv + _GameData.deployExpandStep * (math.max(1, rank) - 1)) end
-        return 0
+        if id == "shard_multi" or id == "command_mastery" then return 0 end
+        local def = _SkillData:Get(id)
+        if def == nil or def.kind ~= "node" then return 0 end
+        local parent = _SkillData:Get(def.parent)
+        local first = (parent ~= nil and parent.row or 1) + 2 * (math.max(1, def.need) - 1)
+        return math.floor(first + _GameData.nodeLevelStep * (math.max(1, rank) - 1))
     end
 
     method integer NodeUsable(string id, integer rank, integer playerLevel)
@@ -108,8 +116,13 @@ script SkillBook extends Component
     end
 
     method integer Node(string id)
-        -- 강화 노드 랭크 (효과 계산용)
-        return self:GetLevel(id)
+        -- 강화 노드 랭크 (효과 계산용): 찍은 랭크 중 지금 캐릭터 레벨에서 열린 랭크만 (예전에 한 번에 찍어 둔 저장도 같은 규칙 · 10-24)
+        local lv = self:GetLevel(id)
+        if lv <= 0 then return 0 end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return lv end
+        return self:NodeUsable(id, lv, stats.Level)
     end
 
     method string CanLearn(string id, integer playerLevel, integer skillPoints)
