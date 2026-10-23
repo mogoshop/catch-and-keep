@@ -254,10 +254,15 @@ script RoomWindow extends Logic
         local max = tonumber(parts[3]) or 4
         local lines = {}
         local n = 0
-        for name, here, lead in string.gmatch(parts[5], "([^~;]+)~(%d)~(%d)") do
+        -- 이름~같은 채널~팀장~채널 번호 (채널 번호 0 = 메이커처럼 목록을 모를 때)
+        local mine = parts[6] or "0"
+        for name, here, lead, chan in string.gmatch(parts[5], "([^~;]+)~(%d)~(%d)~?(%d*)") do
             n = n + 1
-            table.insert(lines, string.format("%d.  %s%s%s", n, name, lead == "1" and "  (팀장)" or "", here == "1" and "" or "   · 다른 채널"))
+            local where = ""
+            if here ~= "1" then where = (chan ~= nil and chan ~= "" and chan ~= "0") and ("   · 채널 " .. chan) or "   · 다른 채널" end
+            table.insert(lines, string.format("%d.  %s%s%s", n, name, lead == "1" and "  (팀장)" or "", where))
         end
+        if mine ~= "0" then table.insert(lines, 1, "(나: 채널 " .. mine .. ")") end
         for i = n + 1, max do table.insert(lines, string.format("%d.  (빈자리)", i)) end
         if not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win) end
         if self.View ~= "list" then self:SetView("list") end

@@ -13,7 +13,7 @@ script RoomSystem extends Logic
 
     property string MemoryName = "GameRoomsV1"
     property string ReturnMemory = "RoomReturnV1"
-    property number StaleSec = 75             -- 출발한 방: 이만큼 소식이 없으면 목록에서 지운다 (게임 방이 30초마다 알린다)
+    property number StaleSec = 45             -- 출발한 방: 이만큼 소식이 없으면 목록에서 지운다 (게임 방이 30초마다 알린다 · 10-23: 75 → 45, 빈 방이 오래 남았다)
     property number WaitStaleSec = 40         -- 모집 중인 사람·방: 이만큼 소식이 없으면 뺀다 (로비가 10초마다 알린다)
     property number PendingSec = 60           -- 출발 뒤 이만큼 동안은 아직 안 온 파티원 자리를 비워 둔다
     property number QueueSec = 300            -- 나중에 온 친구가 자리를 기다리는 최대 시간
@@ -29,6 +29,7 @@ script RoomSystem extends Logic
     property any Cache = nil                  -- 서버: 마지막으로 읽은 방 목록
     property number CacheAt = -100
     property number LastTouch = -100
+    property any LeaveHandler = nil           -- 게임 방: 사람이 나가면 바로 인원을 다시 적는다
 
     -- ───────── 목록 저장소 ─────────
 
@@ -423,7 +424,14 @@ script RoomSystem extends Logic
         if w ~= nil and (w.max <= 0 or w.cur < w.max) then
             ---@type PlayerSave
             local save = player:GetComponent("script.PlayerSave")
-            if save ~= nil then save:WarpToChannel(r.ch, id) end
+            if save ~= nil and save:WarpToChannel(r.ch, id) then return end
+            -- 10-23: 워프가 실패하면 (그 사이 채널이 찼거나 닫히는 중) 로비에 남겨 두지 말고 대기열로 — 자리가 나면 다시 시도한다
+            if self.Queue[uid] == nil then
+                self.Queue[uid] = { id = id, start = _UtilLogic.ElapsedSeconds }
+                self:SendQueue(uid, true)
+                log("[VRF] room warp failed → queue " .. id .. " uid=" .. uid)
+            end
+            self:Touch(true)
             return
         end
         if w == nil and _ChannelSystem:InstancesCached(1) ~= nil then
@@ -536,15 +544,22 @@ script RoomSystem extends Logic
         local r = self:ReadRooms(2).rooms[id]
         if type(r) ~= "table" or type(r.w) ~= "table" then return end
         local here = _WorldInstanceService.WorldInstanceId
+        -- 10-23: 「다른 채널」 대신 채널 번호 (채널 창과 같은 번호 — 하나뿐인데 다른 채널로 보인다는 제보를 확인할 수 있게)
+        local list = _ChannelSystem:InstancesCached(5)
+        local function chanNo(ch)
+            if list == nil then return "0" end
+            for i, w in ipairs(list) do if w.id == ch then return tostring(i) end end
+            return "0"
+        end
         local names = {}
         for mid, m in pairs(r.w) do
-            if type(m) == "table" then table.insert(names, { text = table.concat({ tostring(m.n or "?"), m.ch == here and "1" or "0", mid == r.L and "1" or "0" }, "~"), lead = mid == r.L }) end
+            if type(m) == "table" then table.insert(names, { text = table.concat({ tostring(m.n or "?"), m.ch == here and "1" or "0", mid == r.L and "1" or "0", chanNo(m.ch) }, "~"), lead = mid == r.L }) end
         end
         table.sort(names, function(x, y) return x.lead and not y.lead end)
         local parts = {}
         for _, n in ipairs(names) do table.insert(parts, n.text) end
         local title = (r.m == "private" and "[비공개] " or "") .. tostring(r.n or "게임") .. "  [" .. _GameConst:DifficultyName(math.floor(r.d or 0)) .. "]"
-        local digest = table.concat({ title, r.L == uid and "1" or "0", tostring(r.x or 4), self.Retry[r.L or ""] ~= nil and "1" or "0", table.concat(parts, ";") }, "\t")
+        local digest = table.concat({ title, r.L == uid and "1" or "0", tostring(r.x or 4), self.Retry[r.L or ""] ~= nil and "1" or "0", table.concat(parts, ";"), chanNo(here) }, "\t")
         if not force and self.Shown[uid] == digest then return end
         self.Shown[uid] = digest
         self:ShowParty(digest, uid)
@@ -715,6 +730,8 @@ script RoomSystem extends Logic
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
         if save == nil or not save:PrepareRoomMove(_RoomService.StaticRoomKey) then return end
+        -- 10-23: 나가는 사람을 뺀 인원을 바로 적는다 (마지막 사람이면 목록에서 지운다 — 빈 방이 「가득」으로 남아 보였다)
+        self:WriteCount(_UserService:GetUserCount() - 1)
         local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
         log("[VRF] room leave → lobby moved=" .. tostring(moved))
         if moved == nil or moved == 0 then
@@ -737,11 +754,18 @@ script RoomSystem extends Logic
         if not _GameConst:InGameRoom() then return end
         self.HeartbeatTimer = _TimerService:SetTimerRepeat(function() self:Heartbeat() end, 10)
         _TimerService:SetTimerOnce(function() self:Heartbeat() end, 2)
+        -- 접속이 끊겨 나간 사람도 바로 인원에서 뺀다 (예전에는 다음 하트비트까지 최대 30초 · 마지막 사람이면 방이 닫혀 그대로 남았다)
+        self.LeaveHandler = _UserService:ConnectEvent(UserLeaveEvent, function(ev)
+            local left = math.max(0, _UserService:GetUserCount() - 1)
+            self:WriteCount(left)
+        end)
     end
 
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.HeartbeatTimer ~= 0 then _TimerService:ClearTimer(self.HeartbeatTimer) end
+        if self.LeaveHandler ~= nil then _UserService:DisconnectEvent(UserLeaveEvent, self.LeaveHandler) end
+        self.LeaveHandler = nil
         if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
         self.HeartbeatTimer = 0
         self.PollTimer = 0
@@ -749,11 +773,18 @@ script RoomSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void Heartbeat()
-        local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
-        if id == nil or string.sub(id, 1, 1) == "s" then return end
         local count = _UserService:GetUserCount()
         local now = _UtilLogic.ElapsedSeconds
         if count == self.LastBeatCount and now - self.LastBeatAt < 30 then return end
+        self:WriteCount(count)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WriteCount(integer count)
+        -- 이 게임 방의 지금 인원을 방 목록에 적는다 (0이면 지운다). 혼자 방은 목록에 없다
+        local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
+        if id == nil or string.sub(id, 1, 1) == "s" then return end
+        local now = _UtilLogic.ElapsedSeconds
         local ok = self:Mutate(function(rooms)
             local r = rooms[id]
             if type(r) ~= "table" then return end

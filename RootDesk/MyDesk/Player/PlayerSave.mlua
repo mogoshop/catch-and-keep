@@ -467,20 +467,20 @@ script PlayerSave extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void WarpToChannel(string instanceId, string roomId)
+    method boolean WarpToChannel(string instanceId, string roomId)
         -- 채널 이동 (ChannelSystem.RequestMove): 지금 캐릭터를 저장하고 그 월드 인스턴스로 워프한다. 도착하면 TakeWarpSlot이 같은 캐릭터를 불러온다.
         -- 되살린 언데드·버프는 캐릭터 선택과 같이 이어지지 않는다 (그림자 군단은 저장돼 있다)
         local uid = self.Entity.PlayerComponent.UserId
-        if not self.IsLoadSuccess or self.Selecting or self.Switching or self.Slot <= 0 then return end
+        if not self.IsLoadSuccess or self.Selecting or self.Switching or self.Slot <= 0 then return false end
         if not _Util:IsAlive(self.Entity) then
             _Util:Notify("쓰러진 상태에서는 채널을 옮길 수 없다", uid)
-            return
+            return false
         end
         self:Save(true)
         for k, v in pairs(self:Collect()) do
             if self.LastSaved[k] ~= v then
                 _Util:Notify("저장에 실패해 채널을 옮기지 않았다. 잠시 뒤 다시 시도하세요", uid)
-                return
+                return false
             end
         end
         self.IsLoadSuccess = false   -- 옮기는 동안 더 저장하지 않는다 (이미 저장됨)
@@ -494,9 +494,10 @@ script PlayerSave extends Component
             self.Switching = false
             _Util:Notify("채널을 옮기지 못했다 (가득 찼거나 닫히는 채널). 다른 채널을 고르세요", uid)
             log("[VRF] channel: 워프 실패 ok=" .. tostring(ok) .. " moved=" .. tostring(moved))
-            return
+            return false
         end
         log("[VRF] channel: 워프 → " .. instanceId .. " (슬롯 " .. tostring(self.Slot) .. ")")
+        return true
     end
 
     @ExecSpace("ServerOnly")
