@@ -163,8 +163,13 @@ script ShadowCommander extends Component
 
     method integer GetDeployBonus()
         -- 배치 확장 랭크(최대 +3) + 장비. 절대 상한은 hardCap
-        -- 랭크 N은 그림자 소환 N×deployExpandStep 랭크부터 효과 (예전에 미리 찍어 둔 저장도 같은 규칙 — 10-24)
-        local lv = math.min(self:GetSkillLevel("deploy_expand"), self:GetSkillLevel("shadow_summon") // math.max(1, math.floor(_GameData.deployExpandStep)))
+        -- 랭크 N은 캐릭터 Lv deployExpandFromLv + step×(N-1)부터 효과 (예전에 미리 찍어 둔 저장도 같은 규칙 — 10-24)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        ---@type PlayerStats
+        local ps = self.Entity:GetComponent("script.PlayerStats")
+        local lv = self:GetSkillLevel("deploy_expand")
+        if book ~= nil and ps ~= nil then lv = book:NodeUsable("deploy_expand", lv, ps.Level) end
         local bonus = _ShadowConfig:GetDeploySkillBonus(lv)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")

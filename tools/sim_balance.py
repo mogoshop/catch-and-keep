@@ -207,8 +207,9 @@ def build(prof, L, act=1, diff=0):
         n_sh = int(C["shadowEarlyDeployLimit"]) + deploy_quest
     else:
         gear_dep = int(lerp_gear(prof, "deploy", L))
-        # 배치 확장 랭크는 그림자 소환 deployExpandStep 랭크마다 하나씩만 쓴다 (SkillBook.NodeNeed · ShadowCommander.GetDeployBonus)
-        usable = min(3, rk.get("deploy_expand", 0), rk.get("shadow_summon", 0) // int(C.get("deployExpandStep", 1)))
+        # 그림자 증원 랭크는 캐릭터 Lv deployExpandFromLv부터 deployExpandStep마다 하나씩 (SkillBook.NodeLevel)
+        open_ranks = 0 if L < C["deployExpandFromLv"] else int((L - C["deployExpandFromLv"]) // C["deployExpandStep"]) + 1
+        usable = min(3, rk.get("deploy_expand", 0), open_ranks)
         n_sh = min(int(C["deployBase"]) + usable + min(2, gear_dep), int(C["hardCap"])) + deploy_quest
     n_el = min(p["elites"], n_sh)
     sh_iv = 1.6 * C["shadowCooldownMul"]

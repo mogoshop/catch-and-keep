@@ -90,8 +90,20 @@ script SkillBook extends Component
         local def = _SkillData:Get(id)
         if def == nil then return 0 end
         if id == "shard_multi" then return math.max(def.need, math.floor(_GameData.boneShardMultiStep) * math.max(1, rank)) end
-        if id == "deploy_expand" then return math.max(def.need, math.floor(_GameData.deployExpandStep) * math.max(1, rank)) end   -- 10-24 사용자: 6·12·18
         return def.need
+    end
+
+    method integer NodeLevel(string id, integer rank)
+        -- 강화 rank랭크에 필요한 캐릭터 레벨 (0 = 조건 없음). 그림자 증원: Lv15·21·27 (10-24 사용자 — 캐릭터 레벨 6마다)
+        if id == "deploy_expand" then return math.floor(_GameData.deployExpandFromLv + _GameData.deployExpandStep * (math.max(1, rank) - 1)) end
+        return 0
+    end
+
+    method integer NodeUsable(string id, integer rank, integer playerLevel)
+        -- 찍은 랭크 중 지금 캐릭터 레벨에서 효과가 나는 랭크 (예전에 미리 찍어 둔 저장도 같은 규칙)
+        local usable = rank
+        while usable > 0 and playerLevel < self:NodeLevel(id, usable) do usable = usable - 1 end
+        return usable
     end
 
     method integer Node(string id)
@@ -114,6 +126,8 @@ script SkillBook extends Component
             if self:GetLevel(def.parent) <= 0 then return "먼저 「" .. name .. "」을(를) 배우세요" end
             local need = self:NodeNeed(id, lv + 1)
             if self:GetLevel(def.parent) < need then return "「" .. name .. "」 " .. tostring(need) .. "랭크부터" end
+            local needLv = self:NodeLevel(id, lv + 1)
+            if playerLevel < needLv then return "캐릭터 Lv" .. tostring(needLv) .. "에 다음 랭크" end
         else
             if playerLevel < def.row then return "Lv" .. tostring(def.row) .. "에 열림" end
             if lv >= self:RankCap(id, playerLevel) then return "Lv" .. tostring(self:NextRankLevel(id, lv + 1)) .. "에 다음 랭크" end
@@ -174,7 +188,7 @@ script SkillBook extends Component
             detail = string.format("그림자 +%d기", _ShadowConfig:GetDeploySkillBonus(level))
             hint = "그림자 증원 최대 단계 달성"
             if level < def.maxLv then
-                hint = string.format("다음 랭크는 그림자 소환 %d랭크부터", self:NodeNeed(id, level + 1))
+                hint = string.format("다음 랭크는 캐릭터 Lv%d부터", self:NodeLevel(id, level + 1))
             end
         end
         if detail ~= "" then detail = detail .. "\n" end
