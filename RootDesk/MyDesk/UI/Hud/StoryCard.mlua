@@ -2,7 +2,7 @@
 --   prologue : 새 캐릭터 첫 접속 — 서버 PlayerQuest:OnLoadFinished → ShowStory
 --   act1~3   : 그 액트 마을에 처음 들어올 때 — 큰 제목 + 부제만, 3.5초 뒤 저절로 닫힌다
 --   end1~3   : 액트 마지막 의뢰를 보고했을 때 — 서버 PlayerQuest:TurnIn → ShowStory
---   scene1~3·reveal·scene5 : 오렌과 고르의 장면 대화 (docs/design/31 §4). 쪽마다 「화자|대사」 — 화자 그림(Who)·이름(Sub)을 바꾼다. 화자가 비면 내레이션
+--   scene1~3·fall·reveal·scene5 : 오렌과 고르의 장면 대화 (docs/design/31 §4). 쪽마다 「화자|대사」 — 화자 그림(Who)·이름(Sub)을 바꾼다. 화자가 비면 내레이션
 -- 글은 story.csv (_GameData:GetStory). "/"로 쪽을 나누고 글자가 차례로 나온다 ({장소} 금색 · [적] 붉은색 · ^ 줄바꿈).
 -- 10-22 개편 (사용자 C안): 그림은 화면 전체(천천히 다가온다) · 장면 제목 왼쪽 위 · 아래 대화 상자(큰 초상화 + 이름 + 여러 줄 대사).
 --   장 제목 카드(act1~4)는 가운데 큰 제목만. 그림은 한 장면 안에서 바꾸지 않는다 (시작 내레이션만 쪽마다 내용에 맞는 그림)
@@ -214,10 +214,17 @@ script StoryCard extends Logic
         local icons = { ["오렌"] = "who_oren", ["고르"] = "who_gor", ["고르바스"] = "who_gorbas", ["엘리안"] = "who_elian" }
         if self.Key == "reveal" then icons["고르"] = "who_gor_reveal" end
         local box = self.Card .. "/Box"
-        -- 장면 N은 N장의 일 — 그 장의 판이 있으면 그 판 (숯을 안은 오렌 2장 · 숯 없는 오렌 3장)
+        -- 장면 N은 N장의 일 — 그 장(없으면 그 앞 장) 판 (숯을 안은 오렌 2장 · 숯 없는 오렌 3장).
+        -- 4장의 일(오렌의 마지막 · 정체 · 문 아래)은 숯을 아빠에게 보낸 뒤라 숯 없는 판 (10-23 사용자)
         local scene = tonumber(string.match(self.Key, "^scene(%d)$") or "0") or 0
-        local icon = (icons[who] ~= nil and scene > 0) and _GameData:GetUiIcon(icons[who] .. "_act" .. tostring(scene)) or ""
-        if icon == "" and icons[who] ~= nil then icon = _GameData:GetUiIcon(icons[who]) end
+        if self.Key == "fall" or self.Key == "reveal" then scene = 4 end
+        local icon = ""
+        if icons[who] ~= nil then
+            for a = scene, 2, -1 do
+                if icon == "" then icon = _GameData:GetUiIcon(icons[who] .. "_act" .. tostring(a)) end
+            end
+            if icon == "" then icon = _GameData:GetUiIcon(icons[who]) end
+        end
         local portrait = who ~= "" and icon ~= ""
         _UIKit:SetEnabled(box .. "/PortraitBox", portrait)
         _UIKit:SetPortrait(box .. "/PortraitBox/Portrait", icon)

@@ -135,6 +135,15 @@ script PlayerQuest extends Component
         self.State = 2
         self:NotifyQuest("목표 달성", q.title .. " — " .. _QuestData:GiverName(q.giver) .. "에게 보고", _GameData:GetUiIcon("q_done"), self.Entity.PlayerComponent.UserId)
         log("[VRF] quest goal " .. q.title .. " diff=" .. tostring(self.Diff))
+        if q.kind == "boss" and q.target == "apostate_archbishop" then
+            -- 심장의 사도를 쓰러뜨린 그 자리에서: 오렌의 마지막 → 고르의 정체·재의 왕의 부활 (10-23 사용자: 「중요한 서사라 잡고 나서 바로」)
+            -- 죽는 모습(약 0.7초)과 처치 알림을 본 뒤에 카드가 오게 잠깐 기다린다
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(self.Entity) then return end
+                self:SendStory("fall")
+                self:SendStory("reveal")
+            end, 2.5)
+        end
     end
 
     method boolean IsActDone(integer act)
@@ -366,7 +375,6 @@ script PlayerQuest extends Component
             local scene = q.act == 4 and "scene5" or ("scene" .. tostring(q.act))
             if _GameData:GetStory(scene) ~= "" then self:SendStory(scene) end
         end
-        if q.kind == "boss" and q.target == "apostate_archbishop" then self:SendStory("reveal") end
     end
 
     -- ───────── 이야기 카드 (StoryCard) ─────────

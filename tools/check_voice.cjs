@@ -77,7 +77,7 @@ for (const r of parse('story.csv')) {
   if (r.key !== 'prologue' && r.text.includes('혼각')) bad(where, '대사에 「혼각」 — 대사는 「조각」으로');
   const m = r.key.match(/^(?:idle|cheer_\d|shade)_([a-z]+)/);
   if (m && voiceOf[m[1]]) voiceCheck(where, voiceOf[m[1]], r.text);
-  if (/^(scene\d|reveal)$/.test(r.key)) {
+  if (/^(scene\d|reveal|fall)$/.test(r.key)) {
     for (const page of r.text.split('/')) {
       const [who, line] = page.includes('|') ? page.split('|') : ['', page];
       // 고르는 정체가 드러나는 reveal에서만 공손함을 버린다 (연출)
