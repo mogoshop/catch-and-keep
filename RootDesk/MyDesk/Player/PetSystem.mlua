@@ -1,0 +1,260 @@
+-- 고양이 「재」 (숯의 동생): 주인 곁을 따라다니며 바닥 전리품을 주워 온다 (10-23 사용자 결정 — 오픈 30일 무료 패스는 받으면 영구, 그 뒤 유료 패스).
+-- 소유 = 월드 상점 패스 둘 중 하나 (FreePassId · PaidPassId, 크리에이터 센터에 등록한 상품 ID). 받기 기록이 플랫폼에 남아 저장 데이터와 무관하다.
+-- 줍는 물건 = 캐릭터마다 고르는 등급 (PlayerSave.PetFilter: 0 쉬기 · 1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬).
+-- 서버는 목표·도착 시각·줍기만 정하고, 고양이 그림은 클라이언트마다 맵 아래 artsprite로 그린다 (MotionSmoother 대역과 같은 방식 — 서버 위치를 쓰지 않아 끊기지 않는다).
+@Logic
+script PetSystem extends Logic
+
+    property string FreePassId = ""            -- 「오픈 기념 고양이 재」 무료 패스 (판매 기간 30일)
+    property string PaidPassId = ""            -- 「고양이 재」 유료 패스 (상시)
+    property string PetName = "재"
+    property string IdleFrames = "d2592c488ab7467bbcb4d582bbabca15"   -- 코덱스 프레임이 오기 전: 숯 아이콘 한 장 (ui_icons soot)
+    property string RunFrames = ""
+    property number FrameSeconds = 0.12
+    property number Scale = 0.9
+    property number Reach = 6                  -- 주인에게서 이 거리 안의 전리품만
+    property number Speed = 7                  -- 주워 오는 속도 (초당 월드 단위)
+    property number FollowSpeed = 6
+    property integer TimerId = 0
+    @Sync property SyncTable<string, integer> Owned   -- userId → 1 (패스 보유)
+    property any Checked = nil                 -- 서버: userId → 확인 시각
+    property any Jobs = nil                    -- 서버: userId → { drop, at, pos }
+    property any Skip = nil                    -- 서버: drop entity id → 다시 볼 시각 (가방이 가득 차 못 주운 것)
+    property any Vis = nil                     -- 클라이언트: userId → { e, pos, goal, goalUntil, frame, flip }
+    property number LastFrameAt = 0
+
+    method void OnBeginPlay()
+        -- 서버: 상점 구매 처리 · 보유 확인 · 줍기 / 클라이언트: 고양이 그리기
+        self.Checked = {}
+        self.Jobs = {}
+        self.Skip = {}
+        self.Vis = {}
+        if self:IsServer() then
+            _WorldShopService:SetProcessPurchaseCallback(function(info) return self:ProcessPurchase(info) end)
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:ServerTick() end, 0.15)
+            log("[VRF] PetSystem server ready free=" .. self.FreePassId .. " paid=" .. self.PaidPassId)
+        else
+            log("[VRF] PetSystem client ready")
+        end
+    end
+
+    method void OnEndPlay()
+        -- 주기 타이머 해제 (클라이언트는 고양이 그림도 지운다)
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+        if self.Vis ~= nil then
+            for _, v in pairs(self.Vis) do if isvalid(v.e) then v.e:Destroy() end end
+        end
+        self.Vis = {}
+    end
+
+    method boolean HasPet(string userId)
+        -- 이 사람에게 고양이가 있는가 (서버·클라이언트 공용)
+        return userId ~= "" and (self.Owned[userId] or 0) == 1
+    end
+
+    -- ───────── 서버: 상점 ─────────
+
+    @ExecSpace("ServerOnly")
+    method boolean ProcessPurchase(any info)
+        -- 월드 상점 구매 지급. 고양이 패스면 바로 보유로 표시한다 (다른 상품은 아직 없다 — 모르는 상품은 실패로 두어 다음 접속 때 다시 온다)
+        if info == nil then return false end
+        local id = info.ProductId
+        if id ~= "" and (id == self.FreePassId or id == self.PaidPassId) then
+            self.Owned[info.UserId] = 1
+            _LogStorageService:LogPurchaseInfo(info, "pet " .. id)
+            local p = _UserService:GetUserEntityByUserId(info.UserId)
+            if isvalid(p) then _Util:Notify("고양이 「" .. self.PetName .. "」가 곁에 왔다 — 메뉴 → 고양이에서 주울 물건을 고르세요", info.UserId) end
+            log("[VRF] PetSystem purchase " .. id .. " " .. info.UserId)
+            return true
+        end
+        log_warning("[PetSystem] 모르는 상품 구매 " .. tostring(id))
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckOwner(string userId)
+        -- 접속한 사람의 패스 보유를 플랫폼에 묻는다 (기다리는 호출이라 타이머 안에서)
+        self.Checked[userId] = _UtilLogic.ElapsedSeconds
+        _TimerService:SetTimerOnce(function()
+            local has = false
+            for _, id in ipairs({ self.FreePassId, self.PaidPassId }) do
+                if not has and id ~= "" then
+                    local ok, r = pcall(function() return _WorldShopService:UserHasPassAndWait(userId, id) end)
+                    if ok and r == true then has = true end
+                end
+            end
+            if has then self.Owned[userId] = 1 end
+            log("[VRF] PetSystem owner check " .. userId .. " = " .. tostring(has))
+        end, 0.1)
+    end
+
+    -- ───────── 서버: 줍기 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void ServerTick()
+        -- 사람마다: 하던 심부름이 끝났으면 줍고, 놀고 있으면 가장 가까운 주울 물건으로 보낸다
+        local now = _UtilLogic.ElapsedSeconds
+        local present = {}
+        for id, p in pairs(_UserService.UserEntities) do
+            present[id] = true
+            if self.Checked[id] == nil then self:CheckOwner(id) end
+            if self:HasPet(id) and isvalid(p) then self:TickOwner(id, p, now) end
+        end
+        for id, _ in pairs(self.Jobs) do if not present[id] then self.Jobs[id] = nil end end
+        for id, _ in pairs(self.Checked) do if not present[id] then self.Checked[id] = nil end end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TickOwner(string userId, Entity p, number now)
+        local job = self.Jobs[userId]
+        if job ~= nil and now < job.at then return end
+        local from = _Util:Pos2(p)
+        if job ~= nil then
+            -- 도착: 아직 바닥에 있고 주울 수 있으면 줍는다 (가방이 가득 차 못 주우면 잠시 건너뛴다)
+            self.Jobs[userId] = nil
+            from = job.pos
+            if isvalid(job.drop) and p.CurrentMap == job.map then
+                ---@type LootDrop
+                local drop = job.drop:GetComponent("script.LootDrop")
+                ---@type PlayerInventory
+                local inv = p:GetComponent("script.PlayerInventory")
+                if drop ~= nil and inv ~= nil and drop:CanTake(userId) then
+                    inv:Pickup(drop)
+                    if isvalid(job.drop) and not drop.Taken then self.Skip[job.drop.Id] = now + 8 end
+                end
+            end
+        end
+        if p.PlayerComponent.Hp <= 0 then return end
+        ---@type PlayerSave
+        local save = p:GetComponent("script.PlayerSave")
+        local filter = save ~= nil and save.PetFilter or 2
+        if filter <= 0 then return end
+        local map = p.CurrentMap
+        if not isvalid(map) then return end
+        local me = _Util:Pos2(p)
+        local best, bestD = nil, 1e9
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.LootDrop", true)) do
+            ---@type LootDrop
+            local drop = c
+            local skipUntil = self.Skip[c.Entity.Id]
+            if (skipUntil == nil or now >= skipUntil) and drop:CanTake(userId) and self:Wants(drop, filter) then
+                local q = _Util:Pos2(c.Entity)
+                if (q - me):Magnitude() <= self.Reach then
+                    local d = (q - from):Magnitude()
+                    if d < bestD then best, bestD = c.Entity, d end
+                end
+            end
+        end
+        if best == nil then return end
+        local goal = _Util:Pos2(best)
+        local secs = 0.15 + bestD / self.Speed
+        self.Jobs[userId] = { drop = best, at = now + secs, pos = goal, map = map }
+        self:ShowFetch(userId, goal.x, goal.y, secs)
+    end
+
+    method boolean Wants(LootDrop drop, integer filter)
+        -- 고른 등급에 맞는 물건인가 (1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬)
+        local kind = drop.Kind
+        if kind == "rune" then return true end
+        if kind == "gold" then return filter <= 3 end
+        if kind == "tp" or kind == "hp" or kind == "mp" then return filter <= 2 end
+        if kind ~= "item" then return false end
+        if drop.ItemString ~= "" and _ItemData:IsStack(_ItemData:Parse(drop.ItemString).base) then return filter <= 2 end
+        local need = { 0, 1, 2, 3 }
+        return drop.Rarity >= (need[filter] or 0)
+    end
+
+    @ExecSpace("Multicast")
+    method void ShowFetch(string userId, number x, number y, number secs)
+        -- 모든 화면: 이 사람의 고양이가 (x, y)로 secs초 안에 달려간다
+        if self.Vis == nil then return end
+        local v = self.Vis[userId]
+        if v == nil then return end
+        v.goal = Vector2(x, y)
+        v.goalUntil = _UtilLogic.ElapsedSeconds + secs + 0.25
+        v.speed = math.max(self.Speed, (Vector2(x, y) - v.pos):Magnitude() / math.max(0.1, secs))
+    end
+
+    -- ───────── 클라이언트: 그리기 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 내 맵의 고양이 주인마다 그림을 하나씩 두고 따라가게 한다 (심부름 중이면 목표로)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or self.Vis == nil then return end
+        local map = me.CurrentMap
+        local now = _UtilLogic.ElapsedSeconds
+        local seen = {}
+        for id, p in pairs(_UserService.UserEntities) do
+            if isvalid(p) and p.CurrentMap == map and self:HasPet(id) and isvalid(map) then
+                seen[id] = true
+                self:DrawPet(id, p, map, now, delta)
+            end
+        end
+        for id, v in pairs(self.Vis) do
+            if not seen[id] or v.map ~= map then
+                if isvalid(v.e) then v.e:Destroy() end
+                self.Vis[id] = nil
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawPet(string id, Entity p, Entity map, number now, number delta)
+        local owner = _Util:Pos2(p)
+        local v = self.Vis[id]
+        if v == nil or not isvalid(v.e) then
+            local start = owner + Vector2(-0.7, -0.1)
+            local e = _SpawnService:SpawnByModelId("artsprite", "Pet_" .. id, Vector3(start.x, start.y, 0), map)
+            if not isvalid(e) then return end
+            local sr = e.SpriteRendererComponent
+            sr.SpriteRUID = self:Frame(self.IdleFrames, 0)
+            local psr = p.AvatarRendererComponent
+            if isvalid(psr) then
+                sr.SortingLayer = psr.SortingLayer
+                sr.OrderInLayer = psr.OrderInLayer
+            end
+            v = { e = e, pos = start, goal = nil, goalUntil = 0, speed = self.Speed, frame = 0, flip = 1, last = owner, map = map, moving = false }
+            self.Vis[id] = v
+        end
+        -- 주인이 움직인 방향의 반대편 뒤쪽에 선다
+        local moved = owner - v.last
+        v.last = owner
+        if moved:Magnitude() > 0.001 then v.side = moved.x > 0 and -1 or (moved.x < 0 and 1 or (v.side or -1)) end
+        local target = owner + Vector2(0.75 * (v.side or -1), -0.15)
+        local speed = self.FollowSpeed
+        if v.goal ~= nil then
+            if now < v.goalUntil then target = v.goal speed = v.speed
+            else v.goal = nil end
+        end
+        local d = target - v.pos
+        local dist = d:Magnitude()
+        -- 너무 멀어지면 (맵 이동·순간이동) 곧장 곁으로
+        if dist > 9 then v.pos = target dist = 0 end
+        local step = speed * delta
+        v.moving = dist > 0.08
+        if v.moving then
+            if dist <= step then v.pos = target else v.pos = v.pos + d * (step / dist) end
+            if math.abs(d.x) > 0.02 then v.flip = d.x > 0 and -1 or 1 end
+        end
+        local bob = v.moving and math.abs(math.sin(now * 14)) * 0.06 or math.sin(now * 2.4) * 0.015
+        local t = v.e.TransformComponent
+        t.WorldPosition = Vector3(v.pos.x, v.pos.y + bob, 0)
+        t.Scale = Vector3(self.Scale * v.flip, self.Scale, 1)
+        -- 프레임: 달리기 그림이 있으면 움직일 때 바꾼다
+        local frames = (v.moving and self.RunFrames ~= "") and self.RunFrames or self.IdleFrames
+        local f = math.floor(now / self.FrameSeconds)
+        local ruid = self:Frame(frames, f)
+        if v.e.SpriteRendererComponent.SpriteRUID ~= ruid then v.e.SpriteRendererComponent.SpriteRUID = ruid end
+    end
+
+    method string Frame(string list, integer i)
+        -- "a,b,c"에서 i번째 (돌아가며)
+        local out = {}
+        for x in string.gmatch(list, "[^,]+") do table.insert(out, x) end
+        if #out == 0 then return "" end
+        return out[(i % #out) + 1]
+    end
+
+end

@@ -24,6 +24,7 @@ script PlayerSave extends Component
     property string AudioDigest = ""
     @Sync
     property string AudioSavedDigest = ""
+    @TargetUserSync property integer PetFilter = 2   -- 고양이 재가 주워 올 물건 (PetSystem.Wants: 0 쉬기 · 1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬), Char.settings에 함께 저장
     property integer MaxSlots = 4
     @Sync
     property integer Slot = 0                 -- 고른 캐릭터 슬롯 (0 = 아직 안 고름)
@@ -818,12 +819,30 @@ script PlayerSave extends Component
     @ExecSpace("ServerOnly")
     method table GetSaveData()
         -- Char.settings에 함께 저장한다. 슬라이더/버튼 입력마다 저장소를 호출하지 않는다.
-        return self:NormalizeAudio(self.AudioSettings)
+        local data = self:NormalizeAudio(self.AudioSettings)
+        data.petFilter = self.PetFilter
+        return data
     end
 
     @ExecSpace("ServerOnly")
     method void LoadSaveData(any data)
         self.AudioSettings = self:NormalizeAudio(data)
+        local pet = type(data) == "table" and data.petFilter or nil
+        self.PetFilter = (type(pet) == "number" and pet == pet) and math.floor(math.max(0, math.min(4, pet))) or 2
+    end
+
+    @ExecSpace("Server")
+    method void RequestPetFilter(integer filter)
+        -- 고양이 창에서 고른 등급 (저장은 소리 설정처럼 2초 뒤 한 번)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.IsLoadSuccess then return end
+        local f = math.floor(math.max(0, math.min(4, filter)))
+        if f == self.PetFilter then return end
+        self.PetFilter = f
+        self:CancelAudioSave()
+        self.AudioSaveTimer = _TimerService:SetTimer(self, function()
+            self.AudioSaveTimer = 0
+            self:Save(false)
+        end, 2, false, 2)
     end
 
     @ExecSpace("Server")

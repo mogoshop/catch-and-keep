@@ -254,11 +254,28 @@ function buildGameHud() {
     if (n === "Char" || n === "Skill" || n === "Shadow") k.badge(path);
   });
   // 아래 줄 3칸 (위 격자와 같은 열): 캐릭터 선택으로 (저장 후 선택 창 — CharSelectWindow · PlayerSave.RequestCharSelect)
-  k.btn("MenuWin/CharSel", "캐릭터 선택", { anchor: "top-left", pos: [64, -576], rect_size: [212, 72], font_size: 22 });
+  //   10-23: 고양이 재(PetWindow)를 넣어 4칸 — 폭 212 → 163
+  k.btn("MenuWin/CharSel", "캐릭터 선택", { anchor: "top-left", pos: [64, -576], rect_size: [163, 72], font_size: 20 });
   // 채널 변경 (ChannelWindow · ChannelSystem — 같은 채널끼리만 만나고 파티를 맺는다)
-  k.btn("MenuWin/Channel", "채널 변경", { anchor: "top-left", pos: [294, -576], rect_size: [212, 72], font_size: 22 });
+  k.btn("MenuWin/Channel", "채널 변경", { anchor: "top-left", pos: [239, -576], rect_size: [163, 72], font_size: 20 });
   // 게임 안내 (GuideWindow — 첫 진입 때 한 번 저절로 뜨고, 여기서 다시 본다)
-  k.btn("MenuWin/Guide", "게임 안내", { anchor: "top-left", pos: [524, -576], rect_size: [212, 72], font_size: 22 });
+  k.btn("MenuWin/Guide", "게임 안내", { anchor: "top-left", pos: [414, -576], rect_size: [163, 72], font_size: 20 });
+  // 고양이 재 (PetWindow — 오픈 기념 무료 받기 · 주울 물건 고르기)
+  k.ok("MenuWin/Pet", "고양이 재", { anchor: "top-left", pos: [589, -576], rect_size: [163, 72], font_size: 20 });
+
+  // ── 고양이 재 창 (PetWindow · PetSystem): 그림 · 받기/구매 · 주울 물건 5단계 ──
+  if (b.find("PetWin")) b.remove("PetWin");
+  k.frame("PetWin", "middle-center", [0, 20], [960, 700], "고양이 재");
+  b.patchComponent("PetWin", "MOD.Core.SpriteGUIRendererComponent", { Color: { r: 0.05, g: 0.045, b: 0.06, a: 1 } });
+  k.inner("PetWin/Art", "top-left", [40, -90], [300, 300]);
+  b.sprite("PetWin/Art/Pic", { anchor: "middle-center", pos: [0, 0], rect_size: [220, 220], image_ruid: K.soot, sprite_type: 0, color: WHITE, alpha: 1 });
+  k.aspect("PetWin/Art/Pic");
+  b.text("PetWin/Status", "", { size: 22, color: C.white, alignment: 0, anchor: "top-left", pos: [370, -96], rect_size: [550, 210], ...outline });
+  k.ok("PetWin/BtnGet", "무료로 받기", { anchor: "top-left", pos: [370, -318], rect_size: [300, 76], font_size: 24 });
+  b.text("PetWin/FilterLabel", "주워 올 물건", { size: 22, color: C.gold, alignment: 3, anchor: "top-left", pos: [44, -420], rect_size: [600, 34], ...outline });
+  ["쉬기", "전부", "쓸 만한 것", "희귀 이상", "유니크·세트"].forEach((t, i) =>
+    k.btn(`PetWin/F${i}`, t, { anchor: "top-left", pos: [40 + i * 178, -462], rect_size: [168, 72], font_size: 20 }));
+  b.text("PetWin/FilterDesc", "", { size: 19, color: C.dim, alignment: 0, anchor: "top-left", pos: [44, -548], rect_size: [880, 110], ...outline });
   b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
