@@ -11,15 +11,8 @@ const icons = Object.fromEntries(rows.map((x) => [x.key, x.ruid]));
 const part = (key) => { const r = rows.find((x) => x.key === key); return { image_ruid: r.ruid, color: r.color, alpha: Number(r.alpha) }; };
 const SLOTS = 4;
 
-// UI 아바타: 비어 있는 그림 자리 + 옷장(CostumeManager, 계정 옷 무시) + 아바타 그리기 — 옷은 CharSelectWindow가 칸마다 입힌다
-function avatarOf(b) {
-  return (name, opts) => {
-    b.avatar(name, { ...opts, raycast: false, preserve_avatar: 1 });
-    if (!b.hasComponent || !b.hasComponent(name, 'MOD.Core.CostumeManagerComponent')) {
-      try { b.addComponent(name, 'MOD.Core.CostumeManagerComponent', { UseCustomEquipOnly: true }); } catch (e) { b.patchComponent(name, 'MOD.Core.CostumeManagerComponent', { UseCustomEquipOnly: true }); }
-    }
-  };
-}
+// UI 아바타는 파티 모집 판과 함께 쓴다 (tools/build/char-card.cjs)
+const { avatarOf } = require('./char-card.cjs');
 
 function run() {
   const file = path.join(root, 'ui', 'CharSelectHUD.' + 'ui');

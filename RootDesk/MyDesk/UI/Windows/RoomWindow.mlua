@@ -252,29 +252,54 @@ script RoomWindow extends Logic
         if #parts < 5 then return end
         local leader = parts[2] == "1"
         local max = tonumber(parts[3]) or 4
-        local lines = {}
-        local n = 0
-        -- 이름~같은 채널~팀장~채널 번호 (채널 번호 0 = 메이커처럼 목록을 모를 때)
+        local members = {}
+        -- 이름~같은 채널~팀장~채널 번호(0 = 메이커처럼 목록을 모를 때)~외형~레벨
         local mine = parts[6] or "0"
-        for name, here, lead, chan in string.gmatch(parts[5], "([^~;]+)~(%d)~(%d)~?(%d*)") do
-            n = n + 1
-            local where = ""
-            if here ~= "1" then where = (chan ~= nil and chan ~= "" and chan ~= "0") and ("   · 채널 " .. chan) or "   · 다른 채널" end
-            table.insert(lines, string.format("%d.  %s%s%s", n, name, lead == "1" and "  (팀장)" or "", where))
+        for entry in string.gmatch(parts[5] .. ";", "([^;]*);") do
+            local f = {}
+            for v in string.gmatch(entry .. "~", "([^~]*)~") do table.insert(f, v) end
+            if #f >= 3 and f[1] ~= "" then table.insert(members, { name = f[1], here = f[2] == "1", lead = f[3] == "1", chan = f[4] or "", look = (f[5] ~= nil and f[5] ~= "") and f[5] or "m-1-1", lv = tonumber(f[6] or "") or 0 }) end
         end
-        if mine ~= "0" then table.insert(lines, 1, "(나: 채널 " .. mine .. ")") end
-        for i = n + 1, max do table.insert(lines, string.format("%d.  (빈자리)", i)) end
+        local n = #members
         if not _UIKit:IsOpen(self.Win) then _UIKit:Open(self.Win) end
         if self.View ~= "list" then self:SetView("list") end
         self:Overlay("Party")
         _UIKit:SetText(self.Win .. "/Box/Party/Title", parts[1] .. string.format("   —   모집 중 %d / %d", n, max))
-        _UIKit:SetText(self.Win .. "/Box/Party/Members", table.concat(lines, "\n"))
+        self:RenderPartyCards(members, max, mine)
         _UIKit:SetEnabled(self.Win .. "/Box/Party/BtnStart", leader)
         local note = "팀장이 「출발」하면 함께 들어갑니다. 다른 채널에 있어도 됩니다"
         if leader then note = "친구가 모이면 「출발」 — 모두 함께 들어갈 자리가 있는 채널로 갑니다. 먼저 출발해도 친구는 나중에 들어올 수 있습니다" end
         if parts[4] == "1" then note = "지금은 모두 함께 들어갈 채널이 없어 자리가 나는 대로 출발합니다..." end
         _UIKit:SetText(self.Win .. "/Box/Party/Note", note)
         log("[VRF] RoomWindow party n=" .. tostring(n) .. "/" .. tostring(max) .. " leader=" .. tostring(leader))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderPartyCards(table members, integer max, string mine)
+        -- 모집 판 4칸: 캐릭터 선택과 같은 카드 (모습 · 이름 · 레벨 · 팀장/채널). 방 인원보다 많은 칸은 숨기고, 빈 칸은 「빈자리」
+        local base = self.Win .. "/Box/Party/M"
+        for i = 1, 4 do
+            local path = base .. tostring(i)
+            local m = members[i]
+            _UIKit:SetEnabled(path, i <= max)
+            _UIKit:SetEnabled(path .. "/Avatar", m ~= nil)
+            _UIKit:SetEnabled(path .. "/Empty", m == nil)
+            if m ~= nil then
+                _CharSelectWindow:Dress(path .. "/Avatar", m.look)   -- 캐릭터 선택 카드와 같은 외형 입히기
+                _UIKit:SetText(path .. "/Name", m.name)
+                local info = m.lv > 0 and ("Lv " .. tostring(m.lv)) or ""
+                if m.lead then info = info .. (info ~= "" and "  ·  " or "") .. _UIKit:Colored("#E6C88A", "팀장") end
+                if not m.here then
+                    local where = (m.chan ~= "" and m.chan ~= "0") and ("채널 " .. m.chan) or "다른 채널"
+                    info = info .. (info ~= "" and "  ·  " or "") .. _UIKit:Colored("#8C99B4", where)
+                end
+                _UIKit:SetText(path .. "/Info", info)
+            else
+                _UIKit:SetText(path .. "/Name", "")
+                _UIKit:SetText(path .. "/Info", "")
+            end
+        end
+        _UIKit:SetText(self.Win .. "/Box/Party/Mine", mine ~= "0" and ("나: 채널 " .. mine) or "")
     end
 
     @ExecSpace("ClientOnly")

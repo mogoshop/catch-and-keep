@@ -253,7 +253,7 @@ script RoomSystem extends Logic
         local here = _WorldInstanceService.WorldInstanceId
         local now = DateTime.UtcNow.Elapsed
         local members = {}
-        members[uid] = { n = self:NickOf(player), ch = here, t = now }
+        members[uid] = { n = self:NickOf(player), ch = here, t = now, a = self:LookOf(player), l = self:LevelOf(player) }
         local ok = self:Mutate(function(rooms)
             rooms[id] = { n = clean, m = locked and "private" or "public", h = locked and self:Hash(pw, id) or "", x = cap, d = diff, c = 1, ch = here, u = now, s = "wait", L = uid, w = members }
         end)
@@ -298,12 +298,14 @@ script RoomSystem extends Logic
         if r.s == "wait" then
             local here = _WorldInstanceService.WorldInstanceId
             local nick = self:NickOf(player)
+            local look = self:LookOf(player)
+            local level = self:LevelOf(player)
             local joined = false
             local ok = self:Mutate(function(rooms)
                 local room = rooms[id]
                 if type(room) ~= "table" or room.s ~= "wait" or type(room.w) ~= "table" then return end
                 if room.w[uid] == nil and self:Count(room.w) >= (room.x or 4) then return end
-                room.w[uid] = { n = nick, ch = here, t = DateTime.UtcNow.Elapsed }
+                room.w[uid] = { n = nick, ch = here, t = DateTime.UtcNow.Elapsed, a = look, l = level }
                 room.c = self:Count(room.w)
                 joined = true
             end)
@@ -553,7 +555,8 @@ script RoomSystem extends Logic
         end
         local names = {}
         for mid, m in pairs(r.w) do
-            if type(m) == "table" then table.insert(names, { text = table.concat({ tostring(m.n or "?"), m.ch == here and "1" or "0", mid == r.L and "1" or "0", chanNo(m.ch) }, "~"), lead = mid == r.L }) end
+            -- 이름~같은 채널~팀장~채널 번호~외형~레벨 (모집 판 캐릭터 카드 — 10-24, 예전 기록은 외형·레벨 없음)
+            if type(m) == "table" then table.insert(names, { text = table.concat({ tostring(m.n or "?"), m.ch == here and "1" or "0", mid == r.L and "1" or "0", chanNo(m.ch), string.gsub(tostring(m.a or ""), "[^%w%-]", ""), tostring(math.floor(tonumber(m.l) or 0)) }, "~"), lead = mid == r.L }) end
         end
         table.sort(names, function(x, y) return x.lead and not y.lead end)
         local parts = {}
@@ -583,6 +586,21 @@ script RoomSystem extends Logic
     @ExecSpace("Client")
     method void ShowQueue(boolean waiting)
         _RoomWindow:OnQueue(waiting)
+    end
+
+    method string LookOf(Entity player)
+        -- 지금 캐릭터 외형 ("m-1-1" 꼴 — 모집 판 카드가 캐릭터 선택과 같은 모습으로 그린다)
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or save.Slot <= 0 then return "m-1-1" end
+        return save:LookOf(save:SlotInfo(save.Slot))
+    end
+
+    method integer LevelOf(Entity player)
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        if stats == nil then return 0 end
+        return stats.Level
     end
 
     method string NickOf(Entity player)

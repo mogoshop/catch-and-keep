@@ -9,6 +9,7 @@ const root = process.env.MSW_WORLD_ROOT || path.resolve(__dirname, '../..');
 const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
 const { readIfExists, preserveIds } = require('./lib.cjs');
+const { memberCard } = require('./char-card.cjs');
 // 여백·버튼은 공통 규격만 쓴다 (10-22 사용자: 화면마다 제각각이던 22·34·44·60 여백 정리)
 const { FRAME, INNER, BUTTON, SPACE, buttonText } = require('./ui-tokens.cjs');
 const rows = load('ui_icons');
@@ -118,7 +119,10 @@ function run() {
   const party = box + '/Party';
   sheet(party);
   b.text(party + '/Title', '', { anchor: 'top-center', pos: [0, -INNER.pad], rect_size: [1300, 44], size: 26, bold: true, color: GOLD, alignment: 4, bestfit: true, min_size: 18, max_size: 26 });
-  b.text(party + '/Members', '', { anchor: 'top-left', pos: [160, -110], rect_size: [1120, 300], size: 26, color: '#FFFFFF', alignment: 0 });
+  // 모인 사람: 캐릭터 선택과 같은 카드 4칸 (모습 · 이름 · 레벨 · 팀장/채널 — 10-24 사용자)
+  const memW = 312, memGap = 24, memH = 380, memX0 = Math.round((innerW - (memW * 4 + memGap * 3)) / 2);
+  for (let i = 0; i < 4; i++) memberCard(b, party + '/M' + (i + 1), { x: memX0 + i * (memW + memGap), y: -84, w: memW, h: memH, panel: { color: '#17141F' } });
+  b.text(party + '/Mine', '', { anchor: 'top-right', pos: [-INNER.pad, -INNER.pad], rect_size: [260, 44], size: 18, color: DIM, alignment: 5 });
   b.text(party + '/Note', '', { anchor: 'bottom-center', pos: [0, INNER.pad + BUTTON.h + FRAME.gap], rect_size: [1300, 70], size: 20, color: DIM, alignment: 4, bestfit: true, min_size: 14, max_size: 20 });
   btn(party + '/BtnLeave', '나가기', { anchor: 'bottom-left', pos: [INNER.pad, INNER.pad], rect_size: [BUTTON.w, BUTTON.h], font_size: BUTTON.font });
   ok(party + '/BtnStart', '출발', { anchor: 'bottom-right', pos: [-INNER.pad, INNER.pad], rect_size: [BUTTON.wide, BUTTON.h], font_size: BUTTON.fontMain + 2 });
