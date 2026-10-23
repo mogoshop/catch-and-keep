@@ -19,6 +19,8 @@ script PlayerTrade extends Component
     @Sync
     property boolean TheirConfirm = false
     @Sync
+    property string PartnerName = ""      -- 창 제목 「거래 — 이름」
+    @Sync
     property integer TheirRevision = 0    -- 상대 제안이 바뀐 횟수 (바꿔치기 방지 — 내가 본 판만 확인할 수 있다)
     property number TheirChangedAt = -100 -- 서버: 상대 제안이 마지막으로 바뀐 시각 (바뀐 뒤 ConfirmLockSeconds 동안 확인 불가)
     property number ConfirmLockSeconds = 3
@@ -38,6 +40,8 @@ script PlayerTrade extends Component
         self.TheirConfirm = false
         self.TheirRevision = 0
         self.TheirChangedAt = -100
+        local partner = _UserService:GetUserEntityByUserId(partnerUserId)
+        self.PartnerName = isvalid(partner) and _PartySystem:NameOf(partner) or ""
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 1)
     end
@@ -75,15 +79,15 @@ script PlayerTrade extends Component
     end
 
     @ExecSpace("Server")
-    method void RequestOffer(integer bagIndex)
-        -- 가방 아이템을 거래창에 올린다
+    method void RequestOffer(integer bagIndex, string expectedItem)
+        -- 가방 아이템을 거래창에 올린다. expectedItem = 누를 때 그 칸에 보이던 물건 (빠르게 두 번 누르면 칸이 당겨져 옆 물건이 올라가던 문제, 10-23)
         local pc = self.Entity.PlayerComponent
         if senderUserId ~= pc.UserId or self.Partner == "" or #self.Escrow >= self.MaxItems then return end
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
         if inv == nil then return end
         local s = inv.Bag[bagIndex]
-        if s == nil then return end
+        if s == nil or s ~= expectedItem then return end
         if _ItemData:IsBound(s) then
             _Util:Notify("귀속 아이템은 거래할 수 없다", pc.UserId)
             return
@@ -99,10 +103,15 @@ script PlayerTrade extends Component
         if senderUserId ~= pc.UserId then return end
         local s = self.Escrow[index]
         if s == nil then return end
-        table.remove(self.Escrow, index)
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then inv:PutBagItems({ s }) end
+        if inv == nil then return end
+        if #inv.Bag >= inv.BagSize then
+            _Util:Warn("가방이 가득 차 되돌릴 수 없다", pc.UserId)
+            return
+        end
+        table.remove(self.Escrow, index)
+        inv:PutBagItems({ s })
         self:Changed()
     end
 
@@ -208,7 +217,10 @@ script PlayerTrade extends Component
     method void ReturnEscrow()
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv ~= nil then inv:PutBagItems(self.Escrow) end
+        if inv ~= nil and #self.Escrow > 0 then
+            local stashed = inv:ReturnItems(self.Escrow)
+            if stashed > 0 then _Util:Notify("가방이 가득 차 돌려받은 물건 " .. tostring(stashed) .. "개를 창고에 넣었다", self.Entity.PlayerComponent.UserId) end
+        end
         self.Escrow = {}
     end
 
@@ -216,6 +228,7 @@ script PlayerTrade extends Component
     method void Finish(string message)
         if self.Partner == "" then return end
         self.Partner = ""
+        self.PartnerName = ""
         self.MyOffer = ""
         self.MyGold = 0
         self.MyConfirm = false

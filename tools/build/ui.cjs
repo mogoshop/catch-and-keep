@@ -428,18 +428,22 @@ function buildGameHud() {
   k.btn("Request/BtnNo", "거절", { anchor: "bottom-center", pos: [100, 20], rect_size: [180, 62] });
 
   // ── 거래 창 ──
-  k.frame("TradeWin", "middle-left", [30, 10], [660, 700], "거래");
-  b.text("TradeWin/MyTitle", "내 제안", { size: 20, color: C.white, anchor: "top-left", pos: [34, -78], rect_size: [280, 30], ...outline });
-  b.text("TradeWin/TheirTitle", "상대 제안", { size: 20, color: C.gold, anchor: "top-left", pos: [340, -78], rect_size: [200, 30], ...outline });
+  // 10-23: 상대 물건을 누르면 아래 설명 칸에 옵션·내 장비 비교 (옵션을 못 봐 사기를 막을 수 없었다) · 골드 ±100/±1천/±1만 · 제목에 상대 이름
+  k.frame("TradeWin", "middle-left", [30, 10], [660, 940], "거래");
+  b.text("TradeWin/MyTitle", "내 제안 (누르면 회수)", { size: 18, color: C.white, anchor: "top-left", pos: [34, -78], rect_size: [292, 30], ...outline });
+  b.text("TradeWin/TheirTitle", "상대 제안 (누르면 옵션)", { size: 18, color: C.gold, anchor: "top-left", pos: [340, -78], rect_size: [292, 30], ...outline });
   for (let i = 1; i <= 8; i++) {
-    k.btn(`TradeWin/My${i}`, "", { anchor: "top-left", pos: [30, -112 - (i - 1) * 52], rect_size: [292, 48], font_size: 15 });
-    b.text(`TradeWin/Their${i}`, "", { size: 15, color: C.white, anchor: "top-left", pos: [340, -112 - (i - 1) * 52], rect_size: [292, 48], ...outline });
+    k.btn(`TradeWin/My${i}`, "", { anchor: "top-left", pos: [30, -112 - (i - 1) * 46], rect_size: [292, 42], font_size: 15 });
+    k.btn(`TradeWin/Their${i}`, "", { anchor: "top-left", pos: [338, -112 - (i - 1) * 46], rect_size: [292, 42], font_size: 15 });
   }
-  b.text("TradeWin/Gold", "", { size: 18, color: "#F4ED83", alignment: 6, anchor: "bottom-left", pos: [34, 96], rect_size: [592, 50], ...outline });
-  [["BtnGoldMinus", "-100골드", 30], ["BtnGoldPlus", "+100골드", 182], ["BtnConfirm", "확인", 334], ["BtnCancel", "취소", 486]].forEach(([n, t, x]) => {
-    const opts = { anchor: "bottom-left", pos: [x, 24], rect_size: [144, 62], font_size: 18 };
-    if (n === "BtnConfirm") k.ok(`TradeWin/${n}`, t, opts); else k.btn(`TradeWin/${n}`, t, opts);
+  k.inner("TradeWin/Detail", "top-left", [30, -486], [600, 250]);
+  b.text("TradeWin/Detail/Text", "", { size: 15, color: C.white, alignment: 0, anchor: "middle-center", pos: [0, 0], rect_size: [576, 234], ...outline });
+  b.text("TradeWin/Gold", "", { size: 17, color: "#F4ED83", alignment: 6, anchor: "bottom-left", pos: [34, 150], rect_size: [592, 48], ...outline });
+  [["BtnGoldM10000", "-1만"], ["BtnGoldM1000", "-1천"], ["BtnGoldMinus", "-100"], ["BtnGoldPlus", "+100"], ["BtnGoldP1000", "+1천"], ["BtnGoldP10000", "+1만"]].forEach(([n, t], i) => {
+    k.btn(`TradeWin/${n}`, t, { anchor: "bottom-left", pos: [30 + i * 101, 96], rect_size: [95, 48], font_size: 17 });
   });
+  k.ok("TradeWin/BtnConfirm", "확인", { anchor: "bottom-left", pos: [30, 24], rect_size: [292, 62], font_size: 20 });
+  k.btn("TradeWin/BtnCancel", "취소", { anchor: "bottom-left", pos: [338, 24], rect_size: [292, 62], font_size: 20 });
 
   // ── 웨이포인트 창 ──
   k.frame("WpWin", "middle-center", [0, 60], [600, 700], "웨이포인트");

@@ -1097,7 +1097,14 @@ script ShadowUnit extends AttackComponent
             end
         end
         if foe == nil then dmg = self:DuelDamage(defender, dmg) end
-        return math.max(1, math.floor(dmg + 0.5))
+        local final = math.max(1, math.floor(dmg + 0.5))
+        if foe == nil and isvalid(defender.PlayerComponent) and self:IsServer() then
+            -- 결투: 상대의 뼈 갑옷이 먼저 받는다
+            ---@type PlayerStats
+            local armorSt = defender:GetComponent("script.PlayerStats")
+            if armorSt ~= nil then final = armorSt:AbsorbBoneArmor(final) end
+        end
+        return final
     end
 
     method number DuelDamage(Entity defender, number dmg)

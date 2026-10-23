@@ -102,6 +102,8 @@ function buildMonster(m, boss) {
     b.value("script.BossPattern", "PoolElement", boss.poolElement || "", "string");
     b.value("script.BossPattern", "SlamAtTarget", bool(boss.atTarget), "bool");
     b.value("script.BossPattern", "BondGroup", boss.bond || "", "string");
+    // 기본 공격 배율 (bosses.csv basicMul, 10-23): 보스 모델은 자기 레벨로 만들어 레벨 보정이 없어 기본 공격이 주변 몹보다 약했다 — 기본 공격·화살·연쇄만 (기술·오오라·궁극기는 그대로)
+    if (boss.basicMul) b.value("script.MonsterAttack", "BasicMul", num(boss.basicMul), "double");
     if (boss.extra) b.component(boss.extra);
   }
   b.write(P.model(`Region${m.region}/${m.model}`));

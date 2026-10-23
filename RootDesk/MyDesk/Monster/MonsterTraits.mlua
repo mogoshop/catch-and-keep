@@ -292,7 +292,13 @@ script MonsterTraits extends Component
             end
             ---@type MonsterAttack
             local atk = self.Entity:GetComponent("script.MonsterAttack")
-            if atk ~= nil then atk:SlamWithElement(pos, radius, totalDamage / ticks, element) end
+            if atk ~= nil then
+                -- 소환수는 범위 판정으로, 플레이어는 무적 없는 지속 피해로 (10-23: 0.5초마다 맞을 때마다 0.8초 무적이 걸려 독안개가 큰 공격을 막아 줬다)
+                atk.SkipPlayers = true
+                atk:SlamWithElement(pos, radius, totalDamage / ticks, element)
+                atk.SkipPlayers = false
+                for _, p in ipairs(_Util:PlayersNear(map, pos, radius)) do atk:TickPlayer(p, totalDamage / ticks, element) end
+            end
             if n % 2 == 1 then self:CloudFx(Vector3(pos.x, pos.y, 0), radius) end
         end, self.CloudTick)
         self:CloudZoneFx(Vector3(pos.x, pos.y, 0), radius, self.CloudSeconds)

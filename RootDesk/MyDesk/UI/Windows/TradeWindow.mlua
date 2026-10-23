@@ -1,5 +1,5 @@
 -- 거래 창: 거래가 성립하면 자동으로 열리고 소지품 창도 함께 연다 (가방 칸을 누르면 올라감 — InventoryWindow).
--- 내 칸을 누르면 회수, 골드 ±100, 양쪽 확인 시 교환. 닫기 = 거래 취소.
+-- 내 칸을 누르면 회수, 상대 칸을 누르면 아래 설명 칸에 옵션과 내 장비 비교 (10-23), 골드 ±100·±1천·±1만, 양쪽 확인 시 교환. 닫기 = 거래 취소.
 @Logic
 script TradeWindow extends Logic
 
@@ -8,19 +8,35 @@ script TradeWindow extends Logic
     property integer TimerId = 0
     property integer SeenRevision = 0
     property number ChangedAt = -100
+    property integer Inspect = 0               -- 설명 칸에 보이는 상대 물건 칸 (0 = 없음)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:SetEnabled(self.Win, false)
+        -- 설명 칸: 옵션·비교가 길면 칸 안에 들어가게 글자를 줄인다 (넘쳐 골드 줄과 겹쳤다)
+        local detail = _UIKit:Get(self.Win .. "/Detail/Text")
+        if isvalid(detail) and detail.TextGUIRendererComponent ~= nil then
+            local fit = detail.TextGUIRendererComponent
+            fit.BestFit = true
+            fit.MinSize = 11
+            fit.MaxSize = 15
+        end
         for i = 1, 8 do
             local index = i
             _UIKit:Connect(self.Win .. "/My" .. tostring(i), function()
                 local t = self:Trade()
                 if t ~= nil and t.Partner ~= "" then t:RequestRetract(index) end
             end)
+            _UIKit:Connect(self.Win .. "/Their" .. tostring(i), function()
+                self.Inspect = index
+                self.RenderKey = "#"
+                self:Poll()
+            end)
         end
-        _UIKit:Connect(self.Win .. "/BtnGoldMinus", function() local t = self:Trade() if t ~= nil then t:RequestGold(-100) end end)
-        _UIKit:Connect(self.Win .. "/BtnGoldPlus", function() local t = self:Trade() if t ~= nil then t:RequestGold(100) end end)
+        for _, g in ipairs({ { "BtnGoldM10000", -10000 }, { "BtnGoldM1000", -1000 }, { "BtnGoldMinus", -100 }, { "BtnGoldPlus", 100 }, { "BtnGoldP1000", 1000 }, { "BtnGoldP10000", 10000 } }) do
+            local delta = g[2]
+            _UIKit:Connect(self.Win .. "/" .. g[1], function() local t = self:Trade() if t ~= nil then t:RequestGold(delta) end end)
+        end
         _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm(t.TheirRevision) end end)
         _UIKit:Connect(self.Win .. "/BtnCancel", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
         _UIKit:Connect(self.Win .. "/BtnClose", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
@@ -46,6 +62,7 @@ script TradeWindow extends Logic
         _UIKit:SetEnabled(self.Win, active)
         if not active then
             self.RenderKey = ""
+            self.Inspect = 0
             return
         end
         -- 상대가 바꾼 뒤 3초 동안은 「방금 바뀜」을 붉게 (서버도 그동안 확인을 받지 않는다)
@@ -55,19 +72,45 @@ script TradeWindow extends Logic
             self.ChangedAt = now
         end
         local fresh = t.TheirRevision > 0 and now < self.ChangedAt + 3
-        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm) .. tostring(fresh)
+        local key = t.MyOffer .. "#" .. t.TheirOffer .. "#" .. tostring(t.MyGold) .. "#" .. tostring(t.TheirGold) .. "#" .. tostring(t.MyConfirm) .. tostring(t.TheirConfirm) .. tostring(fresh) .. "#" .. tostring(self.Inspect) .. "#" .. t.PartnerName
         if key == self.RenderKey then return end
         if self.RenderKey == "" then _UIKit:Open("InvWin") end
         self.RenderKey = key
+        _UIKit:SetText(self.Win .. "/Title", t.PartnerName ~= "" and ("거래 — " .. t.PartnerName) or "거래")
         local mine = self:Split(t.MyOffer)
         local theirs = self:Split(t.TheirOffer)
         for i = 1, 8 do
             _UIKit:SetText(self.Win .. "/My" .. tostring(i), mine[i] ~= nil and _ItemData:DisplayName(mine[i]) or "")
-            _UIKit:SetText(self.Win .. "/Their" .. tostring(i), theirs[i] ~= nil and _ItemData:DisplayName(theirs[i]) or "")
+            local label = theirs[i] ~= nil and _ItemData:DisplayName(theirs[i]) or ""
+            if label ~= "" and i == self.Inspect then label = "▶ " .. label end
+            _UIKit:SetText(self.Win .. "/Their" .. tostring(i), label)
         end
+        _UIKit:SetText(self.Win .. "/Detail/Text", self:DetailText(theirs, fresh))
         _UIKit:SetText(self.Win .. "/Gold", "내 골드 " .. tostring(t.MyGold) .. "  " .. self:ConfirmText(t.MyConfirm)
             .. "\n상대 골드 " .. tostring(t.TheirGold) .. "  " .. self:ConfirmText(t.TheirConfirm)
             .. (fresh and ("   " .. _UIKit:Colored("#FF6A50", "상대가 방금 내용을 바꿨다")) or "   (소지품 칸을 누르면 올라간다)"))
+    end
+
+    @ExecSpace("ClientOnly")
+    method string DetailText(table theirs, boolean fresh)
+        -- 고른 상대 물건의 옵션 전체 + 같은 부위 내 장비와 비교 (고른 칸이 비었으면 안내)
+        local s = theirs[self.Inspect]
+        if s == nil then
+            self.Inspect = 0
+            return _UIKit:Colored("#A99F8E", "상대 제안의 물건을 누르면 옵션과 요구 레벨, 지금 내 장비와의 차이가 여기 보입니다.")
+        end
+        local text = _ItemData:DescribeDetailed(s)
+        local base = _ItemData:GetBase(_ItemData:Parse(s).base)
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        if base ~= nil and inv ~= nil and base.slot ~= nil and base.slot ~= "" then
+            local eq = inv:GetEquipMap()
+            local slot = base.slot == "ring" and "ring1" or base.slot
+            -- 같은 부위에 낀 것이 있을 때만 비교 (빈 칸이면 위 옵션과 같은 줄이 되풀이된다)
+            if eq[slot] ~= nil and eq[slot] ~= "" then text = text .. "\n\n" .. _ItemData:CompareText(s, eq[slot]) end
+        end
+        if fresh then text = _UIKit:Colored("#FF6A50", "방금 바뀐 내용 — 다시 확인하세요") .. "\n" .. text end
+        return text
     end
 
     method table Split(string digest)

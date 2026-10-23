@@ -1,4 +1,7 @@
--- 보스 다시 나타나기까지 (10-11, 팰월드처럼): 고정 보스·곁가지 끝방 보스·피의 제단 의식은 쓰러진 뒤 bossRespawnSec(5분) 동안 다시 나오지 않는다.
+-- 보스 다시 나타나기까지: 고정 보스·곁가지 끝방 보스·피의 제단 의식.
+-- 10-23 (사용자: 디아블로 2처럼): bossRespawnSec < 0 이면 「그 게임(방)에서 한 번」 — 쓰러지면 그 방에서는 다시 나오지 않고, 새 게임을 열면 다시 나온다.
+--   (게임 방은 파티마다 따로 열리고 모두 나가면 사라진다 — docs/design/30). 단 그 보스 의뢰가 남은 사람이 맵에 오면 CoopRules가 bossQuestRespawnSec로 줄여 준다.
+-- 예전(10-11): 쓰러진 뒤 5분이면 다시 — 채널을 함께 쓰던 때 다른 사람 몫을 남기려던 규칙.
 -- 맵마다 남은 시간을 클라이언트에 알려 미니맵 머리글에 「처형인 4:32」처럼 보여 준다 (HudMap).
 -- 예전에는 고정 보스 90~120초, 끝방 보스는 맵이 3초 비면 맵 전체와 함께, 제단은 맵이 5초 비면 다시 나와 포털로 끝없이 잡을 수 있었다.
 @Logic
@@ -7,12 +10,13 @@ script BossRespawn extends Logic
     @Sync
     property string Digest = ""        -- "맵 이름|보스 이름|다시 나오는 서버 시각;..." (ServerElapsedSeconds)
     property table Timers = nil         -- 서버: "맵|이름" → { map, name, at }
+    property number OnceSeconds = 100000000   -- 「한 게임에 한 번」일 때 대기 (방이 그 전에 사라진다)
 
     @ExecSpace("ServerOnly")
     method void Start(string mapName, string bossName)
         -- 보스가 쓰러졌다: 지금부터 bossRespawnSec 뒤에 다시 나올 수 있다
         if self.Timers == nil then self.Timers = {} end
-        self.Timers[mapName .. "|" .. bossName] = { map = mapName, name = bossName, at = _UtilLogic.ServerElapsedSeconds + _GameData.bossRespawnSec }
+        self.Timers[mapName .. "|" .. bossName] = { map = mapName, name = bossName, at = _UtilLogic.ServerElapsedSeconds + self:Delay() }
         self:Publish()
     end
 
@@ -59,6 +63,23 @@ script BossRespawn extends Logic
         return math.max(0, best)
     end
 
+    method boolean OncePerGame()
+        -- 쓰러진 보스가 그 게임(방)에서는 다시 나오지 않는 규칙인가
+        return _GameData.bossRespawnSec < 0
+    end
+
+    method number Delay()
+        -- 다시 나오기까지(초). 한 게임에 한 번이면 아주 큰 값 (방이 사라질 때까지)
+        if self:OncePerGame() then return self.OnceSeconds end
+        return _GameData.bossRespawnSec
+    end
+
+    method string DownText(string bossName)
+        -- 보스가 쓰러졌을 때 맵 알림
+        if self:OncePerGame() then return bossName .. " — 이 게임에서는 다시 나타나지 않는다 (새 게임을 열면 다시 나온다)" end
+        return bossName .. " — " .. self:WaitText() .. " 뒤 다시 나타난다"
+    end
+
     method string WaitText()
         -- 알림용 대기 시간 「5분」 (1분이 안 되면 「20초」, 나머지 초가 있으면 「2분 30초」)
         local sec = math.floor(_GameData.bossRespawnSec)
@@ -86,7 +107,14 @@ script BossRespawn extends Logic
         local count = 0
         for map, name, at in string.gmatch(self.Digest, "([^|;]+)|([^|;]+)|(%d+)") do
             local left = math.floor(tonumber(at) - now)
-            if map == mapName and left > 0 then
+            if map == mapName and left > 0 and left > 86400 then
+                -- 한 게임에 한 번: 남은 시간 대신 「처치」
+                count = count + 1
+                if bestLeft < 86400 * 2 then
+                    bestLeft = left
+                    bestName = name
+                end
+            elseif map == mapName and left > 0 then
                 count = count + 1
                 if left > bestLeft then
                     bestLeft = left
@@ -95,7 +123,7 @@ script BossRespawn extends Logic
             end
         end
         if count == 0 then return "" end
-        local text = bestName .. " " .. string.format("%d:%02d", math.floor(bestLeft / 60), bestLeft % 60)
+        local text = bestLeft > 86400 and (bestName .. " 처치") or (bestName .. " " .. string.format("%d:%02d", math.floor(bestLeft / 60), bestLeft % 60))
         if count > 1 then text = text .. " 외 " .. tostring(count - 1) end
         return text
     end

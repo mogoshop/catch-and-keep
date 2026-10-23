@@ -75,7 +75,11 @@ script SocialWindow extends Logic
             names[i] = r.name .. "  Lv" .. tostring(r.lv) .. "  " .. where
         end
         -- 아무도 없을 때도 한 번은 그린다 (예전에는 빈 목록 키가 처음 값 ""과 같아 버튼 24개가 그대로 떠 있었다)
-        local key = "n" .. tostring(#names) .. ":" .. tostring(myLv) .. ":" .. table.concat(names, ";")
+        -- 결투 중인 상대의 줄은 「포기」 단추 (10-23: 결투를 끝낼 방법이 맵을 떠나는 것뿐이었다)
+        ---@type PlayerDuel
+        local duel = _UIKit:Comp("script.PlayerDuel")
+        local foe = duel ~= nil and duel.Opponent or ""
+        local key = "n" .. tostring(#names) .. ":" .. tostring(myLv) .. ":" .. foe .. ":" .. table.concat(names, ";")
         if key == self.RenderKey then return end
         self.RenderKey = key
         self.Ids = ids
@@ -86,7 +90,9 @@ script SocialWindow extends Logic
             -- 파티 초대는 채널 어디서나, 결투·거래는 같은 지역에서만 (서버 PlayerSocial.RequestAction과 같은 조건)
             _UIKit:SetEnabled(self.Win .. "/Party" .. tostring(i), ids[i] ~= nil)
             -- 결투는 레벨 차 duelMaxLevelGap 이하만 (10-13)
-            _UIKit:SetEnabled(self.Win .. "/Duel" .. tostring(i), ids[i] ~= nil and sameMap[i] == true and duelOk[i] == true)
+            local dueling = ids[i] ~= nil and ids[i] == foe
+            _UIKit:SetText(self.Win .. "/Duel" .. tostring(i), dueling and _UIKit:Colored("#FF6A50", "포기") or "결투")
+            _UIKit:SetEnabled(self.Win .. "/Duel" .. tostring(i), dueling or (ids[i] ~= nil and sameMap[i] == true and duelOk[i] == true))
             _UIKit:SetEnabled(self.Win .. "/Trade" .. tostring(i), ids[i] ~= nil and sameMap[i] == true)
         end
     end
@@ -104,6 +110,12 @@ script SocialWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Act(integer index, string kind)
         local id = self.Ids[index]
+        ---@type PlayerDuel
+        local duel = _UIKit:Comp("script.PlayerDuel")
+        if kind == "duel" and id ~= nil and duel ~= nil and duel.Opponent == id then
+            duel:RequestForfeit()
+            return
+        end
         local s = self:Social()
         if id ~= nil and s ~= nil then s:RequestAction(kind, id) end
     end

@@ -10,6 +10,8 @@ script MonsterAttack extends AttackComponent
     property number AttackRange = 0.8
     property number AttackRadius = 0.5
     property number AttackCooldown = 1.5
+    property boolean SkipPlayers = false      -- 지속 피해(독안개) 판정 중: 플레이어는 TickPlayer로 따로 (맞을 때마다 0.8초 무적이 걸리지 않게)
+    property number BasicMul = 1              -- 기본 공격(근접·화살·연쇄)에만 곱하는 배율 (bosses.csv basicMul — 액트 보스가 주변 몹보다 약하게 때리던 문제, 10-23)
     property number ScanInterval = 0.4
 
     property integer BaseDamage = 0
@@ -628,6 +630,24 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method void TickPlayer(Entity player, number damage, string element)
+        -- 지속 피해 한 번 (독안개 등): 주는 피해 배율 · 그 속성 저항 · 레벨 차를 반영해 무적 없이 깎는다 (장판과 같은 TakeTickDamage)
+        if not isvalid(player) or not isvalid(player.PlayerComponent) then return end
+        ---@type PlayerVitals
+        local vitals = player:GetComponent("script.PlayerVitals")
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        if vitals == nil then return end
+        local body = self:Body()
+        local dmg = damage * (body ~= nil and body:GetDamageDealtMultiplier() or 1)
+        if stats ~= nil then
+            dmg = dmg * math.max(0, 1 - stats:GetResist(element ~= "" and element or "poison") / 100)
+            if body ~= nil then dmg = dmg * _GameConst:LevelGapTaken(body.Level, stats.Level) end
+        end
+        vitals:TakeTickDamage(dmg)
+    end
+
+    @ExecSpace("ServerOnly")
     method void HitOne(Entity target)
         -- 투사체가 닿은 대상 하나에 기본 공격 피해 (IsAttackTarget이 CurrentTarget만 통과시킨다)
         if not isvalid(target) then return end
@@ -790,7 +810,8 @@ script MonsterAttack extends AttackComponent
 
     method integer CalcDamage(Entity attacker, Entity defender, string attackInfo)
         local dmg = self.Damage
-        if attackInfo == "monster.slam" then dmg = self.SlamDamage end
+        if attackInfo == "monster.slam" then dmg = self.SlamDamage
+        elseif self.BasicMul ~= 1 and (attackInfo == "monster.basic" or attackInfo == "monster.chain") then dmg = dmg * self.BasicMul end
         local body = self:Body()
         if body ~= nil then dmg = dmg * body:GetDamageDealtMultiplier() end
         local element = self:GetElement()
@@ -901,7 +922,7 @@ script MonsterAttack extends AttackComponent
         elseif attackInfo ~= "monster.slam" and defender ~= self.CurrentTarget then return false end
         if attackInfo == "monster.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         if isvalid(defender.PlayerComponent) then
-            if defender.PlayerComponent:IsDead() then return false end
+            if self.SkipPlayers or defender.PlayerComponent:IsDead() then return false end
             -- 무적 시간·사망 처리 중이면 제외 (엔진이 맞자마자 생명을 깎으므로 여기서 막아야 한다)
             ---@type PlayerVitals
             local vitals = defender:GetComponent("script.PlayerVitals")

@@ -483,6 +483,15 @@ script PlayerStats extends Component
         return true
     end
 
+    @ExecSpace("ServerOnly")
+    method number AbsorbBoneArmor(number final)
+        -- 결투 상대의 공격도 뼈 갑옷이 먼저 받는다 (몬스터 공격은 MonsterAttack.CalcDamage가 따로). 남은 피해를 돌려준다
+        if self.BoneArmor <= 0 or final <= 0 then return final end
+        local absorbed = math.min(final, self.BoneArmor)
+        self.BoneArmor = self.BoneArmor - absorbed
+        return final - math.floor(absorbed)
+    end
+
     method number PvpTakenMult()
         -- 결투 상대에게 받는 피해 배율 (낙인)
         if _UtilLogic.ServerElapsedSeconds >= self.PvpAmpUntil then return 1 end

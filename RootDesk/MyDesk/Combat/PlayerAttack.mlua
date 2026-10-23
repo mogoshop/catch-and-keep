@@ -608,6 +608,12 @@ script PlayerAttack extends AttackComponent
             if ds ~= nil then dmg = dmg * ds:PvpTakenMult() end
         end
         local final = math.max(1, math.floor(dmg + 0.5))
+        -- 결투: 상대의 뼈 갑옷이 먼저 받는다
+        if isvalid(defender.PlayerComponent) and self:IsServer() then
+            ---@type PlayerStats
+            local armorSt = defender:GetComponent("script.PlayerStats")
+            if armorSt ~= nil then final = armorSt:AbsorbBoneArmor(final) end
+        end
         -- 생명력 흡수 (룬 드락, 룬워드 「검은 서약」)
         if self:IsServer() and stats ~= nil and stats.BonusLeech > 0 then
             local pc = self.Entity.PlayerComponent

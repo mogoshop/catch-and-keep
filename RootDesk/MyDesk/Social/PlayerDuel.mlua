@@ -9,6 +9,9 @@ script PlayerDuel extends Component
     property integer TimerId = 0
     property number StartedAt = 0             -- 서버 시각 (시작 GraceSeconds 동안은 서로 맞지 않는다)
     property number GraceSeconds = 3
+    property integer TagTimer = 0             -- 클라이언트: 상대 이름표를 붉게 칠하는 주기
+    property string TaggedId = ""             -- 클라이언트: 지금 붉게 칠한 상대 userId
+    property Color TagRestore = Color(1, 1, 1, 1)
 
     method boolean IsOpponent(Entity e)
         -- 공격 판정 (서버 PlayerAttack.IsAttackTarget): 결투 상대이고 시작 유예가 지났다
@@ -16,11 +19,50 @@ script PlayerDuel extends Component
         return _UtilLogic.ElapsedSeconds >= self.StartedAt + self.GraceSeconds
     end
 
-    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 클라이언트(내 캐릭터만): 결투 상대의 이름표를 붉게
+        if self:IsClient() then self.TagTimer = _TimerService:SetTimerRepeat(function() self:TagTick() end, 0.5) end
+    end
+
     method void OnEndPlay()
         -- 나가면 반복 타이머를 정리한다
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
+        if self.TagTimer ~= 0 then _TimerService:ClearTimer(self.TagTimer) end
+        self.TagTimer = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TagTick()
+        -- 내 결투 상대 이름표 = 붉은색, 결투가 끝나면 원래 색 (10-23: 누구와 싸우는지 화면에서 알 수 없었다)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if self.TaggedId ~= "" and self.TaggedId ~= self.Opponent then
+            local old = _UserService:GetUserEntityByUserId(self.TaggedId)
+            if isvalid(old) and isvalid(old.NameTagComponent) then old.NameTagComponent.FontColor = self.TagRestore end
+            self.TaggedId = ""
+        end
+        if self.Opponent == "" then return end
+        local foe = _UserService:GetUserEntityByUserId(self.Opponent)
+        if not isvalid(foe) or not isvalid(foe.NameTagComponent) then return end
+        if self.TaggedId == "" then
+            self.TagRestore = foe.NameTagComponent.FontColor
+            self.TaggedId = self.Opponent
+        end
+        foe.NameTagComponent.FontColor = Color(1, 0.35, 0.3, 1)
+    end
+
+    @ExecSpace("Server")
+    method void RequestForfeit()
+        -- 결투 포기 (플레이어 창 「포기」): 벌칙 없이 양쪽 결투를 끝낸다. 상대에게는 승리 알림
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or self.Opponent == "" then return end
+        local o = _UserService:GetUserEntityByUserId(self.Opponent)
+        local myName = _PartySystem:NameOf(self.Entity)
+        if isvalid(o) then
+            ---@type PlayerDuel
+            local od = o:GetComponent("script.PlayerDuel")
+            if od ~= nil and od.Opponent == self.Entity.PlayerComponent.UserId then od:End(myName .. "이(가) 결투를 포기했다 — 승리") end
+        end
+        self:End("결투를 포기했다")
     end
 
     @ExecSpace("ServerOnly")
@@ -32,7 +74,7 @@ script PlayerDuel extends Component
         local o = _UserService:GetUserEntityByUserId(opponentUserId)
         local name = "?"
         if isvalid(o) then name = _PartySystem:NameOf(o) end
-        _Util:Banner("결투 시작: " .. name, "3초 뒤부터 서로 공격할 수 있다 · 지면 시체를 남기고 골드 " .. tostring(math.floor(_GameData.duelGoldDropPct)) .. "%를 떨군다", self.Entity.PlayerComponent.UserId)
+        _Util:Banner("결투 시작: " .. name, "3초 뒤부터 서로 공격할 수 있다 · 지면 시체를 남기고 골드 " .. tostring(math.floor(_GameData.duelGoldDropPct)) .. "%를 떨군다 · 포기는 플레이어 창(P)", self.Entity.PlayerComponent.UserId)
     end
 
     @ExecSpace("ServerOnly")
