@@ -675,7 +675,11 @@ script Monster extends Component
             _Util:NotifyMap(self.Entity.CurrentMap, self:ShownName() .. "이(가) 다시 나타났다")
             return
         end
-        if _Util:NearestPlayerDistance(self.Entity.CurrentMap, self.SpawnPosition) < _GameData.respawnHideRadius then
+        -- 작은 맵(버려진 우물 24×16 등)은 어디서나 6칸 안에 걸려 거의 되살아나지 않았다 → 숨는 거리를 맵 짧은 변의 1/4까지 줄인다 (10-24)
+        local hide = _GameData.respawnHideRadius
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(self.Entity.CurrentMap.Name))
+        if info ~= nil and info.w ~= nil and info.h ~= nil then hide = math.min(hide, math.max(3, math.min(info.w, info.h) * 0.25)) end
+        if _Util:NearestPlayerDistance(self.Entity.CurrentMap, self.SpawnPosition) < hide then
             _TimerService:SetTimerOnce(function() self:TryRespawn() end, 5)
             return
         end
