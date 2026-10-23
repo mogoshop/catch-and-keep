@@ -207,12 +207,14 @@ def build(prof, L, act=1, diff=0):
         n_sh = int(C["shadowEarlyDeployLimit"]) + deploy_quest
     else:
         gear_dep = int(lerp_gear(prof, "deploy", L))
-        n_sh = min(int(C["deployBase"]) + min(3, rk.get("deploy_expand", 0)) + min(2, gear_dep), int(C["hardCap"])) + deploy_quest
+        # 배치 확장 랭크는 그림자 소환 deployExpandStep 랭크마다 하나씩만 쓴다 (SkillBook.NodeNeed · ShadowCommander.GetDeployBonus)
+        usable = min(3, rk.get("deploy_expand", 0), rk.get("shadow_summon", 0) // int(C.get("deployExpandStep", 1)))
+        n_sh = min(int(C["deployBase"]) + usable + min(2, gear_dep), int(C["hardCap"])) + deploy_quest
     n_el = min(p["elites"], n_sh)
     sh_iv = 1.6 * C["shadowCooldownMul"]
-    sh_n = math.floor(25 * p["dmgRatio"] * 0.6 * grow_a * sm)
-    sh_e = math.floor(50 * min(2.5, p["dmgRatio"] * 1.1) * 0.6 * grow_a * sm)
-    sh_hp = math.floor(60 * p["hpRatio"] * 1.2 * grow_h * sm)
+    sh_n = math.floor(25 * p["dmgRatio"] * C["shadowStatMul"] * grow_a * sm)
+    sh_e = math.floor(50 * min(2.5, p["dmgRatio"] * 1.1) * C["shadowStatMul"] * grow_a * sm)
+    sh_hp = math.floor(60 * p["hpRatio"] * C["shadowHpMul"] * grow_h * sm)
     # 플레이어: 평타 30% 가동 + (P60) 골편 · 뼈 창
     wpn = 6 if L < 8 else (11 if L < 18 else (18 if L < 33 else (40 if L < 55 else (70 if L < 80 else 110))))
     ias = min(75, Dex * 0.3)
