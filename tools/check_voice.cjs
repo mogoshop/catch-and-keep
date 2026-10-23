@@ -73,6 +73,8 @@ for (const r of parse('story.csv')) {
   const where = `story.csv ${r.key}`;
   if (/^lock_act|_title$|_sub$/.test(r.key)) { scan(where, r.text, { digits: false }); continue; }
   scan(where, r.text);
+  // 「혼각」은 프롤로그가 이름을 붙일 때 한 번만 — 대사는 모두 「조각」 (10-23 사용자: 누구는 혼각, 누구는 조각)
+  if (r.key !== 'prologue' && r.text.includes('혼각')) bad(where, '대사에 「혼각」 — 대사는 「조각」으로');
   const m = r.key.match(/^(?:idle|cheer_\d|shade)_([a-z]+)/);
   if (m && voiceOf[m[1]]) voiceCheck(where, voiceOf[m[1]], r.text);
   if (/^(scene\d|reveal)$/.test(r.key)) {
@@ -89,6 +91,7 @@ for (const q of parse('quests.csv')) {
   for (const col of ['intro', 'outro']) {
     const where = `quests.csv 「${q.title}」 ${col}`;
     scan(where, q[col]);
+    if (q[col].includes('혼각')) bad(where, '대사에 「혼각」 — 대사는 「조각」으로');
     if (voiceOf[q.giver]) voiceCheck(where, voiceOf[q.giver], q[col]);
   }
   for (const col of ['title', 'desc', 'objective', 'zone']) {

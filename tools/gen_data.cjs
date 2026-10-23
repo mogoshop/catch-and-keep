@@ -408,7 +408,7 @@ function genQuests() {
   const rows = load("quests");
   const givers = load("npcs").filter((x) => rows.some((r) => r.giver === x.kind));
   const body = ["        self.List = {}",
-    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
+    ...rows.map((r) => `        table.insert(self.List, { title = ${s(r.title)}, desc = ${s(r.desc)}, zone = ${s(r.zone || "")}, objective = ${s(r.objective || "")}, kind = ${s(r.kind)}, target = ${s(r.target)}, map = ${s(r.map || "")}, map1 = ${s(r.map1 || "")}, giver = ${s(r.giver || "quest")}, act = ${n(r.act || 1)}, count = ${n(r.count)}, exp = ${n(r.exp)}, level = ${n(r.level || 1)}, gold = ${n(r.gold)}, reward = ${s(r.reward)}, intro = ${s(r.intro || "")}, outro = ${s(r.outro || "")} })`),
     "        self.Givers = {}",
     ...givers.map((x) => `        self.Givers[${s(x.kind)}] = ${s(x.name)}`),
     "        self.Voices = {}",
@@ -485,12 +485,24 @@ function genQuests() {
             elseif key == "respoison" then table.insert(parts, "독 저항 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "reslight" then table.insert(parts, "번개 저항 +" .. val .. " (영구 · 난이도마다)")
             elseif key == "resfire" then table.insert(parts, "화염 저항 +" .. val .. " (영구 · 난이도마다)")
-            elseif key == "unique" then table.insert(parts, "유니크 장비 " .. val .. " (보장)")
+            elseif key == "unique" then table.insert(parts, "유니크 장비 " .. val)
             elseif key == "runes" then table.insert(parts, "룬 " .. val .. "개")
             elseif key == "socket" then table.insert(parts, "소켓권 " .. val .. "장")
-            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비 (보장)" or "마법 장비") end
+            elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
         end
         return table.concat(parts, ", ")
+    end
+
+    method integer ExpFor(table q, integer difficulty)
+        -- 의뢰 경험치: 보통의 q.exp가 그 레벨(q.level)에서 레벨 몇 분의 몇인지를 그대로 두고, 악몽·지옥에선 그 난이도 레벨의 필요 경험치로 바꾼다
+        -- (10-23 사용자: 「보통 3장 6만이면 악몽 3장은 그 레벨에 맞게」 — 고정 배율 ×5·×14는 1장에서 거의 0이 됐다)
+        if q.exp <= 0 or difficulty <= 0 then return q.exp end
+        local lv = math.max(1, q.level or 1)
+        local to = _GameConst:ScaleLevel(lv, difficulty)
+        local need = function(l) return _GameData.expCurveCoef * (l ^ _GameData.expCurveExp) end
+        -- 한 의뢰는 그 난이도에서 레벨 하나를 넘지 않는다 (보통 1·4번은 첫 레벨을 끌어올리려고 2.8·1.1레벨치를 준다)
+        local share = math.min(1, q.exp / need(lv))
+        return math.floor(share * need(to) + 0.5)
     end
 `;
   write("QuestData.mlua", "quests.csv", logic("QuestData", "의뢰 목록 (순서대로 진행). kind: kill / extract / reach / raise / clear(맵 전멸) / boss(이름 있는 적) / ritual(제단 의식) / chest(열쇠 → 봉인 상자). act = 액트", body, extra, "    property table List = {}\n    property table Givers = {}\n    property table Voices = {}\n    property table Portraits = {}\n"));

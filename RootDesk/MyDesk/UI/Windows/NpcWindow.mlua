@@ -32,6 +32,8 @@ script NpcWindow extends Logic
     property number TypeSpeed = 45           -- 초당 글자 수
     property number PaperHeight = 150        -- 글 칸 높이 (ui-tokens.cjs DIALOG.npcPaperH · 너비·여백은 UIKit 대화 상자 규격)
     property number ArtReserve = 186         -- 의뢰 그림(170) + 칸 사이(16)
+    property Vector2 Btn4Home = Vector2(0, 0)   -- 주 버튼 원래 자리 (혼자일 때 닫기 자리로 옮겼다 되돌린다)
+    property boolean Btn4HomeSet = false
     property string CheerText = ""           -- 액트 보스를 쓰러뜨린 뒤의 격려 한마디 (말을 건 첫 쪽, docs/design/31 §7)
 
     @ExecSpace("ClientOnly")
@@ -330,7 +332,18 @@ script NpcWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void SetButtons(table labels)
-        -- labels[i] = 글자 ("" = 숨김)
+        -- labels[i] = 글자 ("" = 숨김). 의뢰 대화처럼 주 버튼(4)만 있으면 그 버튼이 닫기(5) 자리 — 오른쪽 끝 — 에 온다
+        local b4 = _UIKit:Get(self.Win .. "/Btn4")
+        local b5 = _UIKit:Get(self.Win .. "/Btn5")
+        if isvalid(b4) and isvalid(b5) then
+            if not self.Btn4HomeSet then
+                self.Btn4Home = b4.UITransformComponent.anchoredPosition
+                self.Btn4HomeSet = true
+            end
+            local alone = (labels[4] or "") ~= "" and (labels[5] or "") == ""
+            local want = alone and b5.UITransformComponent.anchoredPosition or self.Btn4Home
+            if b4.UITransformComponent.anchoredPosition ~= want then b4.UITransformComponent.anchoredPosition = want end
+        end
         for i = 1, 5 do
             local label = labels[i] or ""
             _UIKit:SetEnabled(self.Win .. "/Btn" .. tostring(i), label ~= "")
@@ -418,12 +431,18 @@ script NpcWindow extends Logic
     end
 
     method string RewardText(table q)
-        -- 대표 보상을 앞에, 경험치는 주는 의뢰만 (14장 §2). 악몽·지옥 배율은 보고할 때 붙는다
+        -- 대표 보상을 앞에, 경험치는 주는 의뢰만 (14장 §2). 경험치·골드는 지금 난이도에서 실제로 받는 값
         local extra = _QuestData:RewardText(q.reward)
         local parts = {}
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local diff = quest ~= nil and quest.Diff or 0
+        local d = _GameData:GetDifficulty(diff)
+        local mul = d ~= nil and (d.questRewardMul or 1) or 1
+        local exp = _QuestData:ExpFor(q, diff)
         if extra ~= "" then table.insert(parts, extra) end
-        if q.exp > 0 then table.insert(parts, "경험치 " .. tostring(q.exp)) end
-        table.insert(parts, "골드 " .. tostring(q.gold))
+        if exp > 0 then table.insert(parts, "경험치 " .. tostring(exp)) end
+        table.insert(parts, "골드 " .. tostring(math.floor(q.gold * mul)))
         return "보상: " .. table.concat(parts, ", ")
     end
 
@@ -477,14 +496,14 @@ script NpcWindow extends Logic
             body = lines[page] or ""
             local accept = false
             if page < self.PageCount then
-                self:SetButtons({ "", "", "", "다음 ▶", "닫기" })
+                self:SetButtons({ "", "", "", "다음 ▶", "" })
             elseif quest.State == 0 then
                 body = "의뢰 「" .. q.title .. "」\n" .. q.desc .. "\n\n" .. self:RewardText(q)
                 accept = true
-                self:SetButtons({ "", "", "", "수락", "거절" })
+                self:SetButtons({ "", "", "", "수락", "" })
             else
                 body = body .. "\n\n" .. self:RewardText(q)
-                self:SetButtons({ "", "", "", "보상 받기", "닫기" })
+                self:SetButtons({ "", "", "", "보상 받기", "" })
             end
             self:ShowPage(page, self.PageCount, accept and quest.Index or 0)
             self:ShowBody(body, not accept)
@@ -628,10 +647,12 @@ script NpcWindow extends Logic
             self.PendingIndex = quest.Index
             self.PendingState = quest.State
             self.PendingUntil = _UtilLogic.ElapsedSeconds + 3
-            self:SetButtons({ "", "", "", "처리 중…", "닫기" })
+            self:SetButtons({ "", "", "", "처리 중…", "" })
             if quest.State == 0 then quest:RequestAccept(quest.Index) else quest:RequestTurnIn(quest.Index) end
         end
         self.RenderKey = ""
+        -- 넘긴 쪽을 바로 그린다 (0.2초 주기 Poll을 기다리면 Space를 빨리 누를 때 보이지 않은 쪽 · 수락 쪽을 건너뛰었다)
+        if self.PendingIndex == 0 then self:Poll() end
     end
 
 end

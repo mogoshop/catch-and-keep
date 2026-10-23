@@ -38,7 +38,7 @@ function run() {
   b.sprite(box + '/Rim', { anchor: 'middle-center', pos: [0, 0], rect_size: [DIALOG.width + FRAME.rimOut * 2, H + FRAME.rimOut * 2], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
   b.patchComponent(box + '/Rim', 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
   // 이름 = 창 제목과 같은 규칙 (위에서 titleTop · 띠 세로 가운데 · 모든 화자 같은 색)
-  b.text(box + '/Name', '', { anchor: 'top-center', pos: [0, -FRAME.titleTop], rect_size: [DIALOG.width - 260, FRAME.titleH], size: FRAME.titleSize, bold: true, color: COLOR.title, alignment: 4, outline: true, outline_color: '#2D2D2D' });
+  b.text(box + '/Name', '', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -FRAME.titleTop], rect_size: [DIALOG.width - 260, FRAME.titleH], size: FRAME.titleSize, bold: true, color: COLOR.title, alignment: 4, outline: true, outline_color: '#2D2D2D' });
   b.panel(box + '/PortraitBox', { anchor: 'top-left', pivot: [0, 1], pos: [L.portraitX, -FRAME.contentTop], rect_size: [DIALOG.portrait.w, L.paperH], image_ruid: icons.win_content, color: '#000000', alpha: 0.35, sprite_type: 1, raycast: false });
   b.sprite(box + '/PortraitBox/Portrait', { ...portraitSprite(L.paperH), enable: false });
   b.patchComponent(box + '/PortraitBox/Portrait', 'MOD.Core.SpriteGUIRendererComponent', { PreserveSprite: 0 });
