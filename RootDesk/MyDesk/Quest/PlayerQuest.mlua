@@ -230,16 +230,34 @@ script PlayerQuest extends Component
         return (string.gsub(info.name, "%s*%(Lv[^%)]*%)", ""))
     end
 
+    method string PlaceLabel(string mapId)
+        -- 곁가지 던전은 어느 필드에 붙었는지 함께 (「번개 절벽 · 밀수꾼 동굴 2층」 — 10-24 팀원: 밀수꾼 동굴이 어딘지 안 나왔다)
+        local label = self:MapLabel(mapId)
+        local info = _GameData:GetMapInfo(mapId)
+        if info ~= nil and info.kind == "side" and (info.parent or "") ~= "" then return self:MapLabel(info.parent) .. " · " .. label end
+        return label
+    end
+
+    method string ZoneText(table q)
+        -- 의뢰 칸의 장소 줄: 곁가지 던전 목표인데 부모 필드 이름이 없으면 앞에 붙인다
+        local info = _GameData:GetMapInfo(q.map)
+        if info ~= nil and info.kind == "side" and (info.parent or "") ~= "" then
+            local parent = self:MapLabel(info.parent)
+            if string.find(q.zone, parent, 1, true) == nil then return parent .. " · " .. q.zone end
+        end
+        return q.zone
+    end
+
     method string StepZone(table q)
         -- 지금 단계의 목적지 한 곳. 열쇠 → 상자 의뢰는 「교수대 숲 · 목매단 동굴」을 함께 보여 줘서
         -- 처형인을 찾아 동굴로 먼저 가는 일이 있었다 (10-11 QA) → 단계마다 그 맵만
         if q.kind == "gate" then
-            if self.Progress < 1 then return "1단계 · " .. self:MapLabel(self:GoalMap(q)) .. " 끝" end
-            return "2단계 · " .. self:MapLabel(q.map)
+            if self.Progress < 1 then return "1단계 · " .. self:PlaceLabel(self:GoalMap(q)) .. " 끝" end
+            return "2단계 · " .. self:PlaceLabel(q.map)
         end
-        if q.kind ~= "chest" then return q.zone end
-        if self.Progress < 1 then return "1단계 · " .. self:MapLabel(self:GoalMap(q)) end
-        return "2단계 · " .. self:MapLabel(q.map) .. " 끝방"
+        if q.kind ~= "chest" then return self:ZoneText(q) end
+        if self.Progress < 1 then return "1단계 · " .. self:PlaceLabel(self:GoalMap(q)) end
+        return "2단계 · " .. self:PlaceLabel(q.map) .. " 끝방"
     end
 
     method string StepGoal(table q)
