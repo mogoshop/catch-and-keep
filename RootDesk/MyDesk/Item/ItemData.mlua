@@ -726,11 +726,18 @@ script ItemData extends Logic
     end
 
     method integer SellValue(string s)
+        -- 팔 때 받는 골드. 장비는 기준 값 × sellValueMult (10-24 사용자 G-B: 0.7 — 소모품·룬은 그대로)
         local item = self:Parse(s)
         if self:IsSoulbound(item.base) then return 0 end
         local c = self:Consumable(item.base)
         if c ~= nil then return math.max(1, math.floor(c.price / 4)) * item.count end
         if self:IsRune(item.base) then return 20 + item.ilvl * 2 end
+        return math.max(1, math.floor(self:BaseValue(s) * _GameData.sellValueMult))
+    end
+
+    method integer BaseValue(string s)
+        -- 장비 기준 값 (판매가 배율 적용 전) — 떠돌이 상인 가격의 바탕 (PlayerShop.StockPrice)
+        local item = self:Parse(s)
         return math.floor((10 + item.ilvl * 3) * (1 + item.rarity * 2))
     end
 

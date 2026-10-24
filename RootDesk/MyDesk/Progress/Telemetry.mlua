@@ -1,6 +1,7 @@
 -- 테스트 플레이 기록 (10-20, 밸런스를 숫자로 깎기 위한 장치). 서버만 동작한다.
 --   접속 한 번 = 세션 하나: 레벨업 시각 · 사망(레벨·맵·원인) · 처치 수(등급별) · 전리품(등급·룬 등급) · 물약 사용 · 의뢰 완료 시각 · 맵별 머문 시간
 --   5분마다와 퇴장 때 GlobalDataStorage "PlayTelemetry"에 세션 하나를 JSON으로 쓴다 (태그 "tel"). 「[TEL]」 로그로도 남긴다
+--   기간: config telemetryEndUnix(출시 10-25부터 한 달 — 2026-11-26 0시 한국 시간)가 지나면 새로 쓰지 않는다. 출시 서버에서는 「[TEL]」 로그를 끈다 (10-24 사용자 T-B)
 --   읽기: 메이커 서버 스크립트에서 _Telemetry:Dump(20) → 최근 세션 요약을 로그로 (레벨당 걸린 분, 사망 원인 상위, 시간당 처치·전리품)
 -- 게임 쪽은 _GameEvents로 알리기만 한다 (LevelUp · ItemLooted · PotionUsed · PlayerDied · MonsterKilled · QuestCompleted · ShadowExtracted)
 @Logic
@@ -16,7 +17,7 @@ script Telemetry extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        if not self.Enabled then return end
+        if not self:Active() then return end
         self.Sessions = {}
         _GameEvents:Subscribe("LevelUp", "Telemetry", function(e) self:OnLevelUp(e) end)
         _GameEvents:Subscribe("PlayerDied", "Telemetry", function(e) self:OnDied(e) end)
@@ -54,7 +55,7 @@ script Telemetry extends Logic
                 diff = self:Diff(player), kills = 0, elite = 0, boss = 0, potions = 0, extracts = 0,
                 maps = {}, levels = {}, deaths = {}, quests = {}, loot = { magic = 0, rare = 0, unique = 0, set = 0, runeword = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0 } }
             self.Sessions[uid] = s
-            log(string.format("[TEL] start uid=%s lv=%d diff=%d", uid, s.lv0, s.diff))
+            self:Say(string.format("[TEL] start uid=%s lv=%d diff=%d", uid, s.lv0, s.diff))
         end
         return s
     end
@@ -101,7 +102,7 @@ script Telemetry extends Logic
         s.lv = e.level
         if #s.levels >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.levels, { lv = e.level, min = self:Minutes(s), map = self:MapName(e.player) })
-        log(string.format("[TEL] levelup uid=%s lv=%d min=%.1f map=%s", s.uid, e.level, self:Minutes(s), self:MapName(e.player)))
+        self:Say(string.format("[TEL] levelup uid=%s lv=%d min=%.1f map=%s", s.uid, e.level, self:Minutes(s), self:MapName(e.player)))
     end
 
     @ExecSpace("ServerOnly")
@@ -111,7 +112,7 @@ script Telemetry extends Logic
         local cause = e.cause or "?"
         if #s.deaths >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.deaths, { lv = _GameConst:LevelOf(e.player), map = self:MapName(e.player), cause = cause, min = self:Minutes(s) })
-        log(string.format("[TEL] death uid=%s lv=%d map=%s cause=%s min=%.1f", s.uid, _GameConst:LevelOf(e.player), self:MapName(e.player), cause, self:Minutes(s)))
+        self:Say(string.format("[TEL] death uid=%s lv=%d map=%s cause=%s min=%.1f", s.uid, _GameConst:LevelOf(e.player), self:MapName(e.player), cause, self:Minutes(s)))
     end
 
     @ExecSpace("ServerOnly")
@@ -142,7 +143,7 @@ script Telemetry extends Logic
         elseif r == 2 then s.loot.rare = s.loot.rare + 1
         elseif r == 3 then s.loot.unique = s.loot.unique + 1
         elseif r == 4 then s.loot.set = s.loot.set + 1 end
-        if r >= 3 then log(string.format("[TEL] loot uid=%s rarity=%d item=%s min=%.1f", s.uid, r, _ItemData:DisplayName(e.item or ""), self:Minutes(s))) end
+        if r >= 3 then self:Say(string.format("[TEL] loot uid=%s rarity=%d item=%s min=%.1f", s.uid, r, _ItemData:DisplayName(e.item or ""), self:Minutes(s))) end
     end
 
     @ExecSpace("ServerOnly")
@@ -151,15 +152,33 @@ script Telemetry extends Logic
         if s == nil then return end
         if #s.quests >= 60 then return end   -- 긴 세션도 저장값 크기 한도에 걸리지 않게 60개까지만 (10-24 출시 점검)
         table.insert(s.quests, { index = e.index or 0, lv = _GameConst:LevelOf(e.player), min = self:Minutes(s) })
-        log(string.format("[TEL] quest uid=%s index=%s lv=%d min=%.1f", s.uid, tostring(e.index), _GameConst:LevelOf(e.player), self:Minutes(s)))
+        self:Say(string.format("[TEL] quest uid=%s index=%s lv=%d min=%.1f", s.uid, tostring(e.index), _GameConst:LevelOf(e.player), self:Minutes(s)))
     end
 
     -- ───────── 저장 · 읽기 ─────────
+
+    method boolean Active()
+        -- 기록 중인가: 켜져 있고 끝나는 시각(config telemetryEndUnix, 0이면 끝없이) 전
+        if not self.Enabled then return false end
+        local endAt = _GameData.telemetryEndUnix
+        -- DateTime.Elapsed는 서기 1년 1월 1일부터의 밀리초다 (메이커 실측 10-24) → 유닉스 초로 바꾼다 (1970-01-01 = 62135596800초)
+        return endAt <= 0 or DateTime.UtcNow.Elapsed / 1000 - 62135596800 < endAt
+    end
+
+    method void Say(string text)
+        -- 「[TEL]」 로그는 메이커 테스트에서만 (출시 서버 로그를 채우지 않게)
+        if not Environment:IsPublishedPlay() then log(text) end
+    end
 
     @ExecSpace("ServerOnly")
     method void Flush(string uid, boolean final)
         local s = self.Sessions[uid]
         if s == nil then return end
+        if not self:Active() then
+            -- 기록 기간이 끝났다: 쓰지 않고 세션만 버린다
+            if final then self.Sessions[uid] = nil end
+            return
+        end
         s.minutes = self:Minutes(s)
         local storage = _DataStorageService:GetGlobalDataStorage(self.StorageName)
         if storage == nil then return end
@@ -172,7 +191,7 @@ script Telemetry extends Logic
             if code ~= 0 then log_warning("[TEL] save failed code=" .. tostring(code)) end
         end)
         if final then
-            log(string.format("[TEL] end uid=%s min=%.1f lv %d→%d kills=%d deaths=%d", uid, s.minutes, s.lv0, s.lv, s.kills, #s.deaths))
+            self:Say(string.format("[TEL] end uid=%s min=%.1f lv %d→%d kills=%d deaths=%d", uid, s.minutes, s.lv0, s.lv, s.kills, #s.deaths))
             self.Sessions[uid] = nil
         end
     end
@@ -227,7 +246,7 @@ script Telemetry extends Logic
             pages:MoveToNextPageAndWait()
         end
         local hours = math.max(0.01, minutes / 60)
-        log(string.format("[TEL] dump sessions=%d hours=%.1f kills/h=%.0f · 마법 %d 레어 %d 유니크 %d 세트 %d · 룬 하%d 중%d 상%d 최%d", n, hours, kills / hours, loot.magic, loot.rare, loot.unique, loot.set, loot.r1, loot.r2, loot.r3, loot.r4))
+        self:Say(string.format("[TEL] dump sessions=%d hours=%.1f kills/h=%.0f · 마법 %d 레어 %d 유니크 %d 세트 %d · 룬 하%d 중%d 상%d 최%d", n, hours, kills / hours, loot.magic, loot.rare, loot.unique, loot.set, loot.r1, loot.r2, loot.r3, loot.r4))
         local lvls = {}
         for lv, b in pairs(perLevel) do table.insert(lvls, lv) end
         table.sort(lvls)
