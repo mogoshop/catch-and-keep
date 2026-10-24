@@ -314,7 +314,7 @@ script UndeadSystem extends Logic
             local elements = self:Elements()
             rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
             rec.ratio = 1
-            rec.atk = base.atk * (1 + 0.1 * self:SkillLevel(player, "mage_focus"))   -- 강화 「원소 집중」
+            rec.atk = base.atk * (1 + _GameData.mageFocusPct / 100 * self:SkillLevel(player, "mage_focus"))   -- 강화 「원소 집중」
             rec.hp = base.hp
             rec.cooldown = _GameData.mageCooldown
             rec.range = _GameData.mageRange
@@ -325,6 +325,7 @@ script UndeadSystem extends Logic
             rec.attack = self.MageAttack
             rec.scale = 0.5
             rec.tint = self:ElementTint(rec.element)
+            self:ApplyMageForm(player, rec)
         else
             -- 동시 개체 수 상한 이후에도 투자 레벨에 따라 능력치가 성장한다.
             local mul = self:GetReviveMultiplier(slvl) / _GameData.shadowStatMul
@@ -421,6 +422,40 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void ApplyMageForm(Entity player, table rec)
+        -- 해골 마법사 변이 편성 (10-24 사용자: 마법사도 변이 — 중반 A안 저주·쌍발·관통, 후반 B·C안 광기 오오라 Lv30 · 폭발 Lv38).
+        -- 해골 전사 변이와 같은 규칙: 변이마다 랭크 수만큼 마법사가 그 모습. 광기 → 저주 → 쌍발 → 관통 → 폭발 순으로 채우고 남으면 일반
+        local order = { "aura", "hex", "twin", "pierce", "blast" }
+        local quota = {}
+        local used = {}
+        for _, form in ipairs(order) do
+            quota[form] = self:SkillLevel(player, "mage_" .. form)
+            used[form] = 0
+        end
+        for _, other in ipairs(self:ListOf(player)) do
+            if other ~= rec and other.kind == "mage" and used[other.form or ""] ~= nil then used[other.form] = used[other.form] + 1 end
+        end
+        rec.form = ""
+        for _, form in ipairs(order) do
+            if rec.form == "" and used[form] < quota[form] then rec.form = form end
+        end
+        local r = rec.form ~= "" and quota[rec.form] or 0
+        if rec.form == "aura" then
+            rec.variant = "aura_might:" .. tostring(8 + 4 * r)          -- 반경 3 나·소환수 피해 +12/16/20%
+        elseif rec.form == "hex" then
+            rec.hex = 4 + 4 * r                                          -- 맞은 적 4초 받는 피해 +8/12/16%
+        elseif rec.form == "twin" then
+            rec.bolts = 2
+            rec.boltMul = 0.55 + 0.1 * r                                 -- 한 발 ×0.65/0.75/0.85
+        elseif rec.form == "pierce" then
+            rec.pierce = 1 + r                                           -- 2/3/4마리
+            rec.boltMul = 0.85
+        elseif rec.form == "blast" then
+            rec.blast = 0.35 + 0.15 * r                                  -- 주변 적 ×0.5/0.65/0.8
+        end
+    end
+
+    @ExecSpace("ServerOnly")
     method void ApplyFormLook(table rec)
         -- 변이 해골 그림 = 코덱스 전용 프레임 (monster_frames.csv form_skelform_<변이> · 10-24 사용자 승인). 서기·걷기 첫 장과 공격 타격 장을 주면
         -- 클라이언트(MotionSmoother.FrameClip)가 프레임을 넘긴다. 그림 자체에 색이 있어 물들이지 않는다 (예전 임시: 바르그 축소 · 푸른/붉은 물들이기)
@@ -499,6 +534,11 @@ script UndeadSystem extends Logic
             u.BasicMult = rec.basicMul or 1
             u.GuardPct = rec.guard or 0
             u.Taunt = rec.taunt == true
+            u.BoltCount = rec.bolts or 1       -- 해골 마법사 변이 (ApplyMageForm)
+            u.BoltMult = rec.boltMul or 1
+            u.BoltPierce = rec.pierce or 0
+            u.HexPct = rec.hex or 0
+            u.BlastMult = rec.blast or 0
             u.ShadowTint = rec.tint
             unit.SpriteRendererComponent.Color = rec.tint
             u:SetBaseSpeed(rec.speed)
@@ -616,7 +656,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt" }   -- form~taunt: 해골 변이 편성
+        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 마법사 변이
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end

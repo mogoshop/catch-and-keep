@@ -28,7 +28,7 @@ script SkillWindow extends Logic
             local t = tree
             _UIKit:Connect(self.Win .. "/Tab" .. tostring(i), function() self:SetTab(t) end)
         end
-        for i = 1, 6 do
+        for i = 1, 8 do
             local index = i
             _UIKit:Connect(self.Win .. "/Grid/Acc/N" .. tostring(i), function() self:Pick(self.NodeIds[index]) end)
         end
@@ -162,8 +162,25 @@ script SkillWindow extends Logic
         end
     end
 
+    @ExecSpace("ClientOnly")
+    method void LayoutNodes(string acc, integer n)
+        -- 강화 칸: 6개까지 3칸씩(폭 306), 7개 이상(해골 마법사 변이)은 4칸씩(폭 228) 두 줄
+        local cols = n > 6 and 4 or 3
+        local w = n > 6 and 228 or 306
+        for i = 1, 8 do
+            local path = acc .. "/N" .. tostring(i)
+            local e = _UIKit:Get(path)
+            if isvalid(e) then
+                e.UITransformComponent.RectSize = Vector2(w, 72)
+                _UIKit:SetPos(path, Vector2(12 + ((i - 1) % cols) * (w + 6), -154 - ((i - 1) // cols) * 78))
+                local label = _UIKit:Get(path .. "/Label")
+                if isvalid(label) then label.UITransformComponent.RectSize = Vector2(w - 120, 68) end
+            end
+        end
+    end
+
     method number AccHeight()
-        -- 강화 수에 맞춘다: 없음(집결·망령 도약 등) 128 · 3개까지 한 줄 232 · 4~6개(해골 전사 변이) 두 줄 310
+        -- 강화 수에 맞춘다: 없음(집결·망령 도약 등) 128 · 3개까지 한 줄 232 · 4~8개(해골 전사·마법사 변이) 두 줄 310
         local n = #_SkillData:NodesOf(self.SelMain)
         if n == 0 then return 128 end
         if n <= 3 then return 232 end
@@ -187,7 +204,8 @@ script SkillWindow extends Logic
         _UIKit:SetEnabled(acc .. "/NodeHead", #nodes > 0)
         _UIKit:SetEnabled(acc .. "/NodeHint", #nodes > 0)
         self.NodeIds = {}
-        for i = 1, 6 do
+        self:LayoutNodes(acc, #nodes)
+        for i = 1, 8 do
             local nid = nodes[i]
             local path = acc .. "/N" .. tostring(i)
             _UIKit:SetEnabled(path, nid ~= nil)

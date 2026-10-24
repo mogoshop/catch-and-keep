@@ -95,6 +95,12 @@ script ShadowUnit extends AttackComponent
     property number BasicMult = 1            -- 해골 변이 대검: 평타 피해 배율
     property number GuardPct = 0             -- 해골 변이 방패: 받는 피해 -%
     property boolean Taunt = false           -- 해골 변이 방패: 4초마다 주변 적 도발
+    property integer BoltCount = 1           -- 해골 마법사 변이 쌍발: 화살 수
+    property number BoltMult = 1             -- 마법사 화살 피해 배율 (쌍발 ×0.65~0.85 · 관통 ×0.85)
+    property integer BoltPierce = 0          -- 관통: 화살이 꿰뚫는 적 수 (0 = 첫 적에서 멈춤)
+    property number HexPct = 0               -- 저주: 맞은 적 4초 받는 피해 +%
+    property number BlastMult = 0            -- 폭발: 맞은 자리 반경 1.3 다른 적에게 화살 피해 × 이 값
+    property Entity BlastSkip = nil          -- 폭발이 처음 맞은 적은 다시 때리지 않는다
     property number TauntTimer = 1
     property string LastInfo = ""
     property table AuraVals = {}             -- 받은 오오라 효과 → 효과량 (아군 소환수의 변종 오오라 · 파티원의 호령, 주인 상관없이 섞인다 · 같은 효과는 가장 센 것 · corrode는 적 몬스터가 거는 약화)
@@ -1011,9 +1017,21 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void ShootBolt(Vector2 aim)
+        -- 화살 BoltCount발 (해골 마법사 변이 쌍발: 2발을 ±7° 부채꼴로)
         local me = _Util:Pos2(self.Entity)
         local dir = aim - me
         if dir:Magnitude() < 0.05 then return end
+        local n = math.max(1, self.BoltCount)
+        for i = 1, n do
+            local spread = n > 1 and math.rad(-7 + 14 * (i - 1) / (n - 1)) or 0
+            local c, s = math.cos(spread), math.sin(spread)
+            self:ShootOneBolt(Vector2(dir.x * c - dir.y * s, dir.x * s + dir.y * c))
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ShootOneBolt(Vector2 dir)
+        local me = _Util:Pos2(self.Entity)
         local map = self.Entity.CurrentMap
         self.ShotCount = self.ShotCount + 1
         local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "MinionBolt_" .. tostring(self.ShotCount), Vector3(me.x, me.y + 0.3, 0), map)
@@ -1031,7 +1049,8 @@ script ShadowUnit extends AttackComponent
             proj:Tint(self:BoltColor())
             proj.Team = "minion"
             proj.Radius = 0.3
-            proj:Launch(self.Entity, dir, 7, self.AttackRange + 0.8, self.Atk, "shadow.ranged", false)
+            proj:Launch(self.Entity, dir, 7, self.AttackRange + 0.8, self.Atk, "shadow.ranged", self.BoltPierce > 1)
+            if self.BoltPierce > 1 then proj.MaxHits = self.BoltPierce end   -- 관통 마법사: 2~4마리
         end, function() if isvalid(shot) then shot:Destroy() end end)
     end
 
@@ -1048,8 +1067,17 @@ script ShadowUnit extends AttackComponent
         if not self:IsLiveTarget(target) then return end
         self.OnlyTarget = target
         local q = _Util:Pos2(target) + Vector2(0, 0.3)
+        self.LastInfo = "shadow.ranged"   -- OnAttack이 화살 적중을 안다 (저주 마법사)
         self:AttackFast(CircleShape(q, 0.5), "shadow.ranged", nil)
+        self.LastInfo = ""
         self.OnlyTarget = nil
+        if self.BlastMult > 0 and self.Kind == "mage" then
+            -- 폭발 마법사: 맞은 자리 반경 1.3 안 다른 적에게 화살 피해 × BlastMult
+            self.BlastSkip = target
+            self:AttackFast(CircleShape(q, 1.3), "shadow.blast", nil)
+            self.BlastSkip = nil
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(q.x, q.y, 0), 0, Vector3(0.7, 0.7, 1), false, { Color = self:BoltColor() })
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -1089,6 +1117,8 @@ script ShadowUnit extends AttackComponent
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 잿불 들개 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
         if attackInfo == "shadow.basic" then dmg = dmg * self.BasicMult end   -- 대검 해골 범위 베기
+        if attackInfo == "shadow.ranged" then dmg = dmg * self.BoltMult end   -- 마법사 변이 쌍발·관통
+        if attackInfo == "shadow.blast" then dmg = dmg * self.BoltMult * self.BlastMult end   -- 폭발 마법사
         -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)
         if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
             dmg = dmg * 1.8
@@ -1300,6 +1330,13 @@ script ShadowUnit extends AttackComponent
                 self.StunCount = self.StunCount + 1
             end
         end
+        if self.HexPct > 0 and self.LastInfo == "shadow.ranged" then
+            -- 저주 마법사: 맞은 적 4초 받는 피해 +HexPct%
+            ---@type Monster
+            local cursed = defender:GetComponent("script.Monster")
+            local cst = cursed ~= nil and not cursed.IsDead and cursed:Status() or nil
+            if cst ~= nil then cst:ApplyHex(self.HexPct, 4) end
+        end
         if self.LastInfo == "shadow.skill" then
             local v = _GameData:GetVariantOf(self.Variant, "skill")
             ---@type Monster
@@ -1333,6 +1370,7 @@ script ShadowUnit extends AttackComponent
             end
         elseif monster.IsDead then return false end
         if self.OnlyTarget ~= nil and defender ~= self.OnlyTarget then return false end
+        if self.BlastSkip ~= nil and defender == self.BlastSkip then return false end
         if attackInfo == "shadow.basic" and not _Util:HasLineOfSight(self.Entity.CurrentMap, _Util:Pos2(self.Entity), _Util:Pos2(defender)) then return false end
         return __base:IsAttackTarget(defender, attackInfo)
     end

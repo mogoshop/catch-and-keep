@@ -366,7 +366,8 @@ function buildGameHud() {
   b.text(`${acc}/Stat`, "", { size: 15, color: "#F4ED83", alignment: 0, anchor: "top-left", pos: [18, -84], rect_size: [918, 40], bestfit: true, min_size: 12, max_size: 15 });
   b.text(`${acc}/NodeHead`, "스킬 강화", { size: 17, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [18, -128], rect_size: [120, 22] });
   b.text(`${acc}/NodeHint`, "칸을 눌러 고른 뒤 「강화 +1」 (한 번 더 눌러도 +1)", { size: 14, color: "#9C9488", alignment: 3, anchor: "top-left", pos: [140, -130], rect_size: [600, 20] });
-  for (let i = 0; i < 6; i++) {
+  // 10-24: 해골 마법사 강화 7개(증원·원소 집중 + 변이 5) — 8칸까지 만들고, 7개 이상이면 실행 중에 4칸씩 2줄로 좁힌다 (SkillWindow.LayoutNodes)
+  for (let i = 0; i < 8; i++) {
     const n = `${acc}/N${i + 1}`;
     b.button(n, "", { anchor: "top-left", pos: [12 + (i % 3) * 312, -154 - Math.floor(i / 3) * 78], rect_size: [306, 72], bg_color: { r: 0, g: 0, b: 0, a: 0.35 } });
     b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [10, 0], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0 });
