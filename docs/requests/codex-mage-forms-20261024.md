@@ -30,6 +30,14 @@
 - `assets/codex-mage-forms-v1/png/` — `aura_stand_sample.png` · `hex_stand_sample.png` · `twin_stand_sample.png` · `pierce_stand_sample.png` · `blast_stand_sample.png` (각 192×128)
 - `previews/mage-forms-lineup.png` — 다섯 마법사 + 해골 전사 변이 3종을 한 판에 (2배 확대 + 0.5배 축소)
 
+## ✅ 사용자 승인 (10-24) — 다섯 변이 전체 프레임 제작
+
+`previews/mage-forms-lineup.png`의 다섯 샘플을 **그대로** 승인: 광기 `png/aura_stand_sample.png` · 저주 `png/hex_stand_sample.png` · 쌍발 `png/twin_stand_sample.png` · 관통 `png/pierce_stand_sample.png` · 폭발 `png/blast_stand_sample.png`. 샘플의 얼굴·색·장비·크기를 모든 프레임에서 바꾸지 않는다 (각 변이 stand 1번 = 승인 샘플 그대로). 아래 표대로 130장을 만든다.
+
+- 발 기준점 (96,123) · 정규화 피벗 (0.5, 0.0390625)을 모든 프레임에서 고정 (관통의 긴 작살이 캔버스를 넘지 않게 — 넘치면 알려 주면 Claude가 캔버스 폭을 정한다).
+- 프레임 지연은 해골 전사 변이와 같게 (stand 0.18 · move 0.12 · attack 0.09/0.12 · hit 0.15 · die 0.12) — `animation-timing-frames.json`에 함께 적어 준다.
+- 확인판: 변이마다 상태별 한 줄 시트 `previews/<변이>-frames-sheet.png` + 다섯 변이 공격 4번째(발사) 프레임을 나란히 놓은 판 `previews/mage-forms-attack4.png`.
+
 ## 승인 뒤 전체 프레임 (해골 전사 변이와 같은 장수·타이밍 — Claude가 바로 연결)
 
 | 상태 | 장수 | 내용 |
