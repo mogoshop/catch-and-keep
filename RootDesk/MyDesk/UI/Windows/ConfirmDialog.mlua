@@ -1,17 +1,40 @@
 -- 공용 확인 창 (ConfirmHUD): Show(제목, 본문, 확인 글자, 확인 시 실행할 함수). 취소·Esc·바깥 누르기는 아무것도 하지 않는다.
--- 쓰는 곳: 그림자 소환·강화·분해(ShadowHUD), 소지품 버리기·판매(InventoryWindow).
+-- 쓰는 곳: 그림자 소환·강화·분해(ShadowHUD), 소지품 버리기·판매(InventoryWindow). ShowInputPick = PC 첫 진입 조작 방식 고르기 (GuideWindow).
 @Logic
 script ConfirmDialog extends Logic
 
     property string Root = "/ui/ConfirmHUD/SafeArea/Dim"
     property any OnYes = nil
     property any OnNo = nil
+    property string PickRoot = "/ui/ConfirmHUD/SafeArea/Pick"   -- 조작 방식 고르기 (카드 두 장)
+    property any OnPick = nil
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:SetEnabled(self.Root, false)
         _UIKit:Connect(self.Root .. "/Box/BtnYes", function() self:Answer(true) end)
         _UIKit:Connect(self.Root .. "/Box/BtnNo", function() self:Answer(false) end)
+        _UIKit:SetEnabled(self.PickRoot, false)
+        _UIKit:Connect(self.PickRoot .. "/Box/Mouse/Btn", function() self:Pick(true) end)
+        _UIKit:Connect(self.PickRoot .. "/Box/Keys/Btn", function() self:Pick(false) end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowInputPick(any onPick)
+        -- PC 첫 진입: 마우스 / 키보드 카드 (그림 + 이동·공격·스킬·질주 키). 골라야 닫힌다 (Esc로 넘기지 않는다)
+        self.OnPick = onPick
+        _UIKit:SetEnabled(self.PickRoot, true)
+        local e = _UIKit:Get(self.PickRoot)
+        if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
+        log("[VRF] input pick show")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Pick(boolean mouse)
+        local callback = self.OnPick
+        self.OnPick = nil
+        _UIKit:SetEnabled(self.PickRoot, false)
+        if callback ~= nil then callback(mouse) end
     end
 
     @ExecSpace("ClientOnly")
@@ -46,7 +69,7 @@ script ConfirmDialog extends Logic
 
     @ExecSpace("ClientOnly")
     method boolean IsOpen()
-        return _UIKit:IsOpen(self.Root)
+        return _UIKit:IsOpen(self.Root) or _UIKit:IsOpen(self.PickRoot)
     end
 
     @ExecSpace("ClientOnly")
@@ -64,7 +87,7 @@ script ConfirmDialog extends Logic
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         -- Esc = 취소, Enter = 확인
-        if not self:IsOpen() then return end
+        if not _UIKit:IsOpen(self.Root) then return end
         if event.key == KeyboardKey.Escape then self:Answer(false)
         elseif event.key == KeyboardKey.Return then self:Answer(true) end
     end
