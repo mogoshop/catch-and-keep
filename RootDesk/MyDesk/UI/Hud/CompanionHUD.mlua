@@ -102,7 +102,8 @@ script CompanionHUD extends Logic
                 local src = string.match(u.Entity.Name, "^Shadow_(.+)$") or ""
                 -- 해골 전사는 필드 해골 전사(skel_warrior)의 초상으로 (발밑 피벗 프레임 그림을 그대로 쓰면 칸 위로 작게 밀렸다 — 10-13)
                 if src == "" and u.Kind == "skeleton" then src = self:SkeletonForm(u.StandRUID) end
-                local key = u.Kind == "shadow" and ("shadow:" .. src) or (u.Kind == "skeleton" and ("skeleton:" .. src) or u.Kind)
+                if src == "" and u.Kind == "mage" then src = self:MageForm(u.StandRUID) end
+                local key = u.Kind == "shadow" and ("shadow:" .. src) or ((u.Kind == "skeleton" or u.Kind == "mage") and (u.Kind .. ":" .. src) or u.Kind)
                 local g = byKind[key]
                 if g == nil then
                     g = { kind = u.Kind, src = src, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id }
@@ -158,7 +159,7 @@ script CompanionHUD extends Logic
                 local pst = g.src ~= "" and _GameData:GetMonsterStats(g.src) or nil
                 if pst ~= nil and pst.portrait ~= nil and pst.portrait ~= "" then portrait = pst.portrait end
                 -- 해골 변이: 몸만 잘라 둔 정사각형 초상 (프레임 그림은 캔버스가 넓고 피벗이 발밑이라 칸에서 찌그러졌다)
-                if string.sub(g.src, 1, 9) == "skelform_" then
+                if string.sub(g.src, 1, 9) == "skelform_" or string.sub(g.src, 1, 9) == "mageform_" then
                     local icon = _GameData:GetUiIcon(g.src .. "_portrait")
                     if icon ~= "" then portrait = icon end
                 end
@@ -183,6 +184,15 @@ script CompanionHUD extends Logic
                 _UIKit:SetText(base .. "/Count", g.count > 1 and ("×" .. tostring(g.count)) or "")
             end
         end
+    end
+
+    method string MageForm(string stand)
+        -- 해골 마법사 변이(광기·저주·쌍발·관통·폭발)도 서기 첫 프레임으로 알아내 따로 묶는다. 일반 마법사는 ""
+        for _, form in ipairs({ "aura", "hex", "twin", "pierce", "blast" }) do
+            local f = _GameData:GetMonsterFrames("mageform_" .. form)
+            if f ~= nil and f.stand ~= nil and f.stand.r[1] == stand then return "mageform_" .. form end
+        end
+        return ""
     end
 
     method string SkeletonForm(string stand)
