@@ -224,6 +224,29 @@ function propFootprint(x, y, wPx, scale) {
   return out;
 }
 
+// 넓은 빈터 자리 고르기 (랜드마크 · 바닥 무늬 공용, 시드 고정): free(x, y)가 참인 칸 중 반경 r 안이 모두 free인 곳,
+// 피할 점들(avoid: [x, y, 거리])에서 떨어지고 고른 자리끼리 gap 이상 떨어지게 count개
+function pickSpots(bounds, free, r, count, seed, avoid, gap) {
+  const rand = layoutGen.rng(seed);
+  const cands = [];
+  for (let x = bounds.x0 + 1; x < bounds.x1; x++) for (let y = bounds.y0 + 1; y < bounds.y1; y++) {
+    let ok = true;
+    for (let dx = -r; dx <= r && ok; dx++) for (let dy = -r; dy <= r && ok; dy++) if (!free(x + dx, y + dy)) ok = false;
+    if (!ok) continue;
+    const px = x + 0.5, py = y + 0.2;
+    if (avoid.some(([ax, ay, d]) => Math.hypot(px - ax, py - ay) < d)) continue;
+    cands.push({ x: px, y: py, k: rand() });
+  }
+  cands.sort((a, b) => a.k - b.k);
+  const out = [];
+  for (const c of cands) {
+    if (out.length >= count) break;
+    if (out.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < gap)) continue;
+    out.push(c);
+  }
+  return out.map((c) => Object.assign(c, { pick: Math.floor(rand() * 1000) }));
+}
+
 function artEntities(d, maps, ctx, layout, fixed) {
   const art = ctx.art[d.id] || (layout ? {} : null);
   if (!art) return [];
@@ -247,6 +270,35 @@ function artEntities(d, maps, ctx, layout, fixed) {
       size ? { DrawMode: 2, TiledSize: { x: r3(size[0]), y: r3(size[1]) } } : { DrawMode: 0 }),
   });
   const S = 1.28;
+  const seedOf = (salt) => [...d.id].reduce((acc, ch) => acc * 31 + ch.charCodeAt(0), salt) >>> 0;
+  const scaled = (o, sc) => Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(sc), y: r3(sc), z: 1 } } });
+  // 랜드마크 (map_layouts·map_art landmarks): 사냥터마다 1~2개, 넓은 빈터 한가운데. 장식처럼 발밑 칸을 막는다
+  // 10-25 사용자: 코덱스 맵 다채화 77종 — 「돌려 쓸 생각만 하지 말고 과감하게」
+  const placeLandmarks = (names, bounds, free, avoid) => {
+    // 7×7 빈터가 없으면 5×5로 (늪처럼 웅덩이가 촘촘한 맵)
+    let spots = pickSpots(bounds, free, 3, names.length, seedOf(17), avoid, 12);
+    if (spots.length < names.length) spots = pickSpots(bounds, free, 2, names.length, seedOf(17), avoid, 12);
+    spots.forEach((c, i) => {
+      const name = names[i];
+      const sc = pscale(name, 0.8);
+      const o = sprite(ruid(name), null, 1);
+      o["MOD.Core.SpriteRendererComponent"].FlipX = c.pick % 2 === 1;
+      block(name, c.x, c.y, sc);
+      out.push({ name: `ArtLandmark${i + 1}`, pos: [r3(c.x), r3(c.y), -0.03], overrides: scaled(o, sc) });
+    });
+    return spots;
+  };
+  // 바닥 무늬 (decals · decalCount): 밟고 지나가는 납작한 그림 — 막지 않는다. 바닥·길 위, 장식 발밑은 피한다
+  const placeDecals = (names, count, bounds, free, avoid) => {
+    if (!names.length) return;
+    pickSpots(bounds, free, 0, count, seedOf(29), avoid, 3.2).forEach((c, i) => {
+      const name = names[c.pick % names.length];
+      const sc = pscale(name, 0.8) * (0.9 + (c.pick % 21) / 100);
+      const o = sprite(ruid(name), null, 1);
+      o["MOD.Core.SpriteRendererComponent"].FlipX = (c.pick >> 2) % 2 === 1;
+      out.push({ name: `ArtDecal${i + 1}`, pos: [r3(c.x), r3(c.y), -0.015], overrides: scaled(o, sc) });
+    });
+  };
   // 중심 (x, y) · 크기 (rw, rh)인 월드 사각형을 반복 그리기로 덮는 배치
   const tiled = (name, rid, x, y, rw, rh, z) => ({ name, pos: [r3(x - rw / 2 + S / 2), r3(y - rh / 2 + S / 2), z], overrides: sprite(rid, [rw / S, rh / S], 1) });
   const out = [];
@@ -292,12 +344,15 @@ function artEntities(d, maps, ctx, layout, fixed) {
       });
     }
     walls(layout, spec.wall, spec.tint, "ArtWall");
+    const anchorsAvoid = (layout.anchors || []).filter((a) => a.kind !== "decor").map((a) => [a.x, a.y, 4]);
+    const openFloor = (x, y) => layout.isFloor(x, y) && !(layout.isRoad && layout.isRoad(x, y));
+    const marks = placeLandmarks(list(spec.landmarks || ""), layout.bounds, openFloor, anchorsAvoid);
     const props = list(spec.props || "");
     if (props.length) {
       // 장식 이름 뒤 「*배율」은 이 맵에서만 그 장식을 더 키운다 (장식 자체 크기는 art_scale.csv).
       // 크기를 바꾼 장식이 하나라도 있는 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
       const vary = props.some((x) => x.includes("*") || (ctx.propScale[x.split("*")[0]] || 1) !== 1);
-      layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).forEach((p, i) => {
+      layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).filter((p) => !marks.some((m) => Math.hypot(p.x + 0.5 - m.x, p.y + 0.2 - m.y) < 4)).forEach((p, i) => {
         const [name, mul] = props[p.pick % props.length].split("*");
         const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? 0.88 + ((p.pick * 7) % 25) / 100 : 1);
         const o = sprite(ruid(name), null, 1);
@@ -306,6 +361,8 @@ function artEntities(d, maps, ctx, layout, fixed) {
         out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(ps), y: r3(ps), z: 1 } } }) });
       });
     }
+    const solid = out.filter((e) => /^Art(Prop|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]);
+    placeDecals(list(spec.decals || ""), num(spec.decalCount, 0), layout.bounds, (x, y) => layout.isFloor(x, y), anchorsAvoid.map(([x, y]) => [x, y, 2]).concat(solid));
   } else if (art.border) {
     // 열린 맵: 걷는 타일 바깥 두 칸에 바위 테두리 → 그림 경계 = 통행 경계 (테두리 위를 걸어 다니지 않는다)
     // 포털(GateBack 왼쪽 · GateNext 오른쪽)이 있는 쪽은 가운데 네 칸(y -2 ~ 2)을 어둡게 비워 출구로 보이게 한다
@@ -318,18 +375,25 @@ function artEntities(d, maps, ctx, layout, fixed) {
     walls(frame, art.border, "1/1/1", "ArtBorder");
     // 흩뿌림 장식 (map_art scatter · scatterCount): 열린 맵 안쪽 빈 땅에 시드 고정으로 뿌린다.
     // 10-24 사용자: 액트 2 사냥터가 네 귀퉁이 장식 6개뿐이라 맨 모래밭이었다 — 길·포털 앞·기능 자리(제단·화로·웨이포인트)·고정 장식 곁은 비운다
+    const fixedAvoid = (fixed || []).filter((e) => !/^Art/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 4.5])
+      .concat(list(art.props || "").map((p) => p.split("@")[1].split("/").map(Number).concat([4])));
+    const roadRects = list(art.roads || "").map((r) => r.split("/").map(Number));
+    const inOpen = (x, y) => inTiles(x, y) && !roadRects.some(([rx, ry, rw, rh]) => Math.abs(x + 0.5 - rx) < rw / 2 + 0.8 && Math.abs(y + 0.2 - ry) < rh / 2 + 1.2)
+      && !(y > -4 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3)));
+    const openMarks = placeLandmarks(list(art.landmarks || ""), tb, inOpen, fixedAvoid);
     const kinds = list(art.scatter || "");
     if (kinds.length) {
       const rand = layoutGen.rng([...d.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
       const roads = list(art.roads || "").map((r) => r.split("/").map(Number));
       const onRoad = (x, y) => roads.some(([rx, ry, rw, rh]) => Math.abs(x - rx) < rw / 2 + 0.8 && Math.abs(y - ry) < rh / 2 + 1.2);
       const keepOut = (fixed || []).filter((e) => !/^Art/.test(e.name)).map((e) => e.pos)
-        .concat(list(art.props || "").map((p) => p.split("@")[1].split("/").map(Number)));
+        .concat(list(art.props || "").map((p) => p.split("@")[1].split("/").map(Number)))
+        .concat(openMarks.map((m) => [m.x, m.y, 4.5]));
       const nearPortal = (x, y) => y > -3.5 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3));
       const cands = [];
       for (let x = tb.x0 + 2; x <= tb.x1 - 1; x++) for (let y = tb.y0 + 1; y <= tb.y1 - 1; y++) {
         const px = x + 0.5, py = y + 0.2;
-        if (onRoad(px, py) || nearPortal(px, py) || keepOut.some(([kx, ky]) => Math.hypot(px - kx, py - ky) < 3)) continue;
+        if (onRoad(px, py) || nearPortal(px, py) || keepOut.some(([kx, ky, kd]) => Math.hypot(px - kx, py - ky) < (kd || 3))) continue;
         cands.push({ x: px, y: py, k: rand() });
       }
       cands.sort((p, q) => p.k - q.k);
@@ -348,6 +412,8 @@ function artEntities(d, maps, ctx, layout, fixed) {
         out.push({ name: `ArtScatter${i + 1}`, pos: [r3(c.x), r3(c.y), -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
       });
     }
+    const solidOpen = out.filter((e) => /^Art(Prop|Scatter|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]);
+    placeDecals(list(art.decals || ""), num(art.decalCount, 0), tb, inTiles, fixedAvoid.map(([x, y]) => [x, y, 2]).concat(solidOpen));
   }
   // 지형 생성 맵에 고정 장식을 더하면(map_art 같은 맵 행) 자동 장식 다음 번호부터 — 이름이 겹치면 엔티티 경로가 둘이 된다
   const placed = out.filter((e) => /^ArtProp\d+$/.test(e.name)).length;
