@@ -25,6 +25,7 @@ script PlayerSave extends Component
     @Sync
     property string AudioSavedDigest = ""
     @TargetUserSync property integer PetFilter = 2   -- 고양이 재가 주워 올 물건 (PetSystem.Wants: 0 쉬기 · 1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬), Char.settings에 함께 저장
+    @Sync property string PetPick = ""        -- 데리고 다닐 펫 (pets.csv key · 빈칸 = 가진 펫 중 첫째). 다른 사람 화면도 그 모습으로 그려 @Sync, Char.settings에 함께 저장 (10-24)
     property integer MaxSlots = 4
     @Sync
     property integer Slot = 0                 -- 고른 캐릭터 슬롯 (0 = 아직 안 고름)
@@ -826,6 +827,7 @@ script PlayerSave extends Component
         -- Char.settings에 함께 저장한다. 슬라이더/버튼 입력마다 저장소를 호출하지 않는다.
         local data = self:NormalizeAudio(self.AudioSettings)
         data.petFilter = self.PetFilter
+        data.petPick = self.PetPick
         return data
     end
 
@@ -834,6 +836,21 @@ script PlayerSave extends Component
         self.AudioSettings = self:NormalizeAudio(data)
         local pet = type(data) == "table" and data.petFilter or nil
         self.PetFilter = (type(pet) == "number" and pet == pet) and math.floor(math.max(0, math.min(4, pet))) or 2
+        local pick = type(data) == "table" and data.petPick or nil
+        self.PetPick = (type(pick) == "string" and _GameData:GetPet(pick) ~= nil) and pick or ""
+    end
+
+    @ExecSpace("Server")
+    method void RequestPetPick(string key)
+        -- 펫 창에서 「함께하기」: 가진 펫만 고를 수 있다 (저장은 줍기 등급처럼 2초 뒤 한 번)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.IsLoadSuccess then return end
+        if key == self.PetPick or _GameData:GetPet(key) == nil or not _PetSystem:Owns(senderUserId, key) then return end
+        self.PetPick = key
+        self:CancelAudioSave()
+        self.AudioSaveTimer = _TimerService:SetTimer(self, function()
+            self.AudioSaveTimer = 0
+            self:Save(false)
+        end, 2, false, 2)
     end
 
     @ExecSpace("Server")

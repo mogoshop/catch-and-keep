@@ -1,15 +1,14 @@
--- 고양이 「재」 (숯의 동생): 주인 곁을 따라다니며 바닥 전리품을 주워 온다 (10-23 사용자 결정 — 오픈 30일 무료 패스는 받으면 영구, 그 뒤 유료 패스).
--- 소유 = 월드 상점 패스 둘 중 하나 (FreePassId · PaidPassId, 크리에이터 센터에 등록한 상품 ID). 받기 기록이 플랫폼에 남아 저장 데이터와 무관하다.
+-- 펫: 주인 곁을 따라다니며 바닥 전리품을 주워 온다. 첫 펫은 고양이 「재」(숯의 동생 — 10-23 사용자 결정: 오픈 30일 무료 패스는 받으면 영구, 그 뒤 유료 패스).
+-- 10-24 사용자: 능력은 모두 재와 같고 모습만 다른 펫을 여러 마리 판다 (data/pets.csv — 닥스훈트 먼지 · 여우 불씨 · 부엉이 등불 · 고슴도치 가시 · 박쥐 그을음).
+-- 소유 = 펫마다 월드 상점 패스 (freePass · paidPass, 크리에이터 센터에 등록한 상품 ID). 받기 기록이 플랫폼에 남아 저장 데이터와 무관하다.
+-- 데리고 다니는 펫 = PlayerSave.PetPick (캐릭터마다, 없으면 가진 펫 중 pets.csv 순서 첫째) — 펫은 한 번에 한 마리.
 -- 줍는 물건 = 캐릭터마다 고르는 등급 (PlayerSave.PetFilter: 0 쉬기 · 1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬).
 -- 서버는 목표·도착 시각·줍기만 정하고, 고양이 그림은 클라이언트마다 맵 아래 artsprite로 그린다 (MotionSmoother 대역과 같은 방식 — 서버 위치를 쓰지 않아 끊기지 않는다).
 @Logic
 script PetSystem extends Logic
 
-    property string FreePassId = "I41RHM870"   -- 「오픈 기념 고양이 재」 무료 패스 (판매 10-25 ~ 11-25 · 크리에이터 센터 10-24 등록)
+    property string FreePassId = "I41RHM870"   -- 「오픈 기념 고양이 재」 무료 패스 (판매 10-25 ~ 11-25 · 크리에이터 센터 10-24 등록) — pets.csv jae와 같다
     property string PaidPassId = "Q0TQOT864"   -- 「고양이 재」 유료 패스 (상시 · 300 코인 · 10-24 등록)
-    property string PetName = "재"
-    property string IdleFrames = "7c216ee242a8403f9cf3d244580657bd,2ed72a08025e4e29b304c203e3f8b135,cb094500224b4c5591630c85a682abfd,2e457e02efad4d64a97752cf3132f12f"   -- 코덱스 v1 대기 4장 (꼬리 살랑, 128px 발밑 피벗)
-    property string RunFrames = "f0ee0460b026402390c1810c60ddec94,e3db33f11e314938a0e50ae349b37755,78fab61e8be34d488f8201b0049e4228,c1350a35f3064308bea959d1abdca50e,e7772e6e707e42cb961311fe8354429f,1f2de66c79b646bb81814c380c641114"   -- 달리기 6장
     property number FrameSeconds = 0.11
     property number IdleFrameSeconds = 0.22
     property number Scale = 1.0
@@ -20,7 +19,7 @@ script PetSystem extends Logic
     property number RoamRadius = 2.6           -- 주인 둘레 이 안에서 갈 곳을 고른다
     property number LeashFar = 4.6             -- 주인과 이만큼 벌어지면 따라붙는다 (붙으면 RoamRadius 안까지)
     property integer TimerId = 0
-    @Sync property SyncTable<string, integer> Owned   -- userId → 1 (패스 보유)
+    @Sync property SyncTable<string, integer> Owned   -- userId → 1 (펫이 한 마리라도 있다) · "userId|펫 key" → 1 (그 펫의 패스 보유)
     property any Checked = nil                 -- 서버: userId → 확인 시각
     property any Jobs = nil                    -- 서버: userId → { drop, at, pos }
     property any Skip = nil                    -- 서버: drop entity id → 다시 볼 시각 (가방이 가득 차 못 주운 것)
@@ -53,22 +52,60 @@ script PetSystem extends Logic
     end
 
     method boolean HasPet(string userId)
-        -- 이 사람에게 고양이가 있는가 (서버·클라이언트 공용)
+        -- 이 사람에게 펫이 한 마리라도 있는가 (서버·클라이언트 공용)
         return userId ~= "" and (self.Owned[userId] or 0) == 1
+    end
+
+    method boolean Owns(string userId, string key)
+        -- 이 사람이 그 펫의 패스를 가졌는가
+        return userId ~= "" and (self.Owned[userId .. "|" .. key] or 0) == 1
+    end
+
+    method any ActivePet(string userId, Entity p)
+        -- 데리고 다니는 펫: 고른 펫(PlayerSave.PetPick)을 가졌으면 그 펫, 아니면 가진 펫 중 첫째 (없으면 nil)
+        if not self:HasPet(userId) then return nil end
+        local pick = ""
+        if isvalid(p) then
+            ---@type PlayerSave
+            local save = p:GetComponent("script.PlayerSave")
+            if save ~= nil then pick = save.PetPick end
+        end
+        if pick ~= "" and self:Owns(userId, pick) then return _GameData:GetPet(pick) end
+        for _, pet in ipairs(_GameData:GetPets()) do
+            if self:Owns(userId, pet.key) then return pet end
+        end
+        return nil
+    end
+
+    method any PetOfProduct(string productId)
+        -- 상품 ID → 펫 (무료·유료 패스 모두)
+        if productId == "" then return nil end
+        for _, pet in ipairs(_GameData:GetPets()) do
+            if pet.freePass == productId or pet.paidPass == productId then return pet end
+        end
+        return nil
     end
 
     -- ───────── 서버: 상점 ─────────
 
     @ExecSpace("ServerOnly")
     method boolean ProcessPurchase(any info)
-        -- 월드 상점 구매 지급. 고양이 패스면 바로 보유로 표시한다 (다른 상품은 아직 없다 — 모르는 상품은 실패로 두어 다음 접속 때 다시 온다)
+        -- 월드 상점 구매 지급. 펫 패스면 바로 보유로 표시한다 (모르는 상품은 실패로 두어 다음 접속 때 다시 온다)
         if info == nil then return false end
         local id = info.ProductId
-        if id ~= "" and (id == self.FreePassId or id == self.PaidPassId) then
+        local pet = self:PetOfProduct(id)
+        if pet ~= nil then
+            self.Owned[info.UserId .. "|" .. pet.key] = 1
             self.Owned[info.UserId] = 1
             _LogStorageService:LogPurchaseInfo(info, "pet " .. id)
             local p = _UserService:GetUserEntityByUserId(info.UserId)
-            if isvalid(p) then _Util:Notify("고양이 「" .. self.PetName .. "」가 곁에 왔다 — 메뉴 → 고양이에서 주울 물건을 고르세요", info.UserId) end
+            if isvalid(p) then
+                -- 새로 산 펫을 바로 데리고 다닌다
+                ---@type PlayerSave
+                local save = p:GetComponent("script.PlayerSave")
+                if save ~= nil and save.IsLoadSuccess then save.PetPick = pet.key end
+                _Util:Notify("펫 「" .. pet.name .. "」가 곁에 왔다 — 메뉴 → 펫에서 주울 물건을 고르세요", info.UserId)
+            end
             log("[VRF] PetSystem purchase " .. id .. " " .. info.UserId)
             return true
         end
@@ -78,18 +115,25 @@ script PetSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void CheckOwner(string userId)
-        -- 접속한 사람의 패스 보유를 플랫폼에 묻는다 (기다리는 호출이라 타이머 안에서)
+        -- 접속한 사람의 패스 보유를 펫마다 플랫폼에 묻는다 (기다리는 호출이라 타이머 안에서)
         self.Checked[userId] = _UtilLogic.ElapsedSeconds
         _TimerService:SetTimerOnce(function()
-            local has = false
-            for _, id in ipairs({ self.FreePassId, self.PaidPassId }) do
-                if not has and id ~= "" then
-                    local ok, r = pcall(function() return _WorldShopService:UserHasPassAndWait(userId, id) end)
-                    if ok and r == true then has = true end
+            local owned = {}
+            for _, pet in ipairs(_GameData:GetPets()) do
+                local has = false
+                for _, id in ipairs({ pet.freePass, pet.paidPass }) do
+                    if not has and id ~= "" then
+                        local ok, r = pcall(function() return _WorldShopService:UserHasPassAndWait(userId, id) end)
+                        if ok and r == true then has = true end
+                    end
+                end
+                if has then
+                    self.Owned[userId .. "|" .. pet.key] = 1
+                    self.Owned[userId] = 1
+                    table.insert(owned, pet.key)
                 end
             end
-            if has then self.Owned[userId] = 1 end
-            log("[VRF] PetSystem owner check " .. userId .. " = " .. tostring(has))
+            log("[VRF] PetSystem owner check " .. userId .. " = " .. table.concat(owned, ","))
         end, 0.1)
     end
 
@@ -171,7 +215,7 @@ script PetSystem extends Logic
 
     @ExecSpace("Multicast")
     method void ShowFetch(string userId, number x, number y, number secs)
-        -- 모든 화면: 이 사람의 고양이가 (x, y)로 secs초 안에 달려간다
+        -- 모든 화면: 이 사람의 펫이 (x, y)로 secs초 안에 달려간다
         if self.Vis == nil then return end
         local v = self.Vis[userId]
         if v == nil then return end
@@ -184,7 +228,7 @@ script PetSystem extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
-        -- 내 맵의 고양이 주인마다 그림을 하나씩 두고 따라가게 한다 (심부름 중이면 목표로)
+        -- 내 맵의 펫 주인마다 그림을 하나씩 두고 따라가게 한다 (심부름 중이면 목표로)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or self.Vis == nil then return end
         local map = me.CurrentMap
@@ -192,8 +236,11 @@ script PetSystem extends Logic
         local seen = {}
         for id, p in pairs(_UserService.UserEntities) do
             if isvalid(p) and p.CurrentMap == map and self:HasPet(id) and isvalid(map) then
-                seen[id] = true
-                self:DrawPet(id, p, map, now, delta)
+                local pet = self:ActivePet(id, p)
+                if pet ~= nil then
+                    seen[id] = true
+                    self:DrawPet(id, p, map, now, delta, pet)
+                end
             end
         end
         for id, v in pairs(self.Vis) do
@@ -205,7 +252,7 @@ script PetSystem extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void DrawPet(string id, Entity p, Entity map, number now, number delta)
+    method void DrawPet(string id, Entity p, Entity map, number now, number delta, table pet)
         -- 고양이 혼자 노는 움직임 (10-24 사용자: 캐릭터 뒤를 매 프레임 쫓아가 달리기·서기가 계속 바뀌며 버벅였다).
         --   쉬기 → 주인 둘레(RoamRadius)에서 갈 곳을 골라 걷기 → 도착하면 잠깐 쉬기 → 반복
         --   주인과 LeashFar 넘게 벌어지면 주인이 가는 쪽 앞으로 달려가 따라붙는다 · 심부름(ShowFetch)이 오면 그 자리로 달린다
@@ -216,7 +263,7 @@ script PetSystem extends Logic
             local e = _SpawnService:SpawnByModelId("artsprite", "Pet_" .. id, Vector3(start.x, start.y, 0), map)
             if not isvalid(e) then return end
             local sr = e.SpriteRendererComponent
-            sr.SpriteRUID = self:Frame(self.IdleFrames, 0)
+            sr.SpriteRUID = self:Frame(pet.idle, 0)
             local psr = p.AvatarRendererComponent
             if isvalid(psr) then
                 sr.SortingLayer = psr.SortingLayer
@@ -299,9 +346,10 @@ script PetSystem extends Logic
         local bob = v.moving and math.abs(math.sin(now * 14)) * 0.06 or math.sin(now * 2.4) * 0.015
         local t = v.e.TransformComponent
         t.WorldPosition = Vector3(v.pos.x, v.pos.y + bob, 0)
-        t.Scale = Vector3(self.Scale * v.flip, self.Scale, 1)
-        -- 프레임: 걷기·달리기는 달리기 그림 (걸을 때는 조금 느리게), 쉬면 대기 그림
-        local frames = (v.moving and self.RunFrames ~= "") and self.RunFrames or self.IdleFrames
+        local scale = self.Scale * pet.scale
+        t.Scale = Vector3(scale * v.flip, scale, 1)
+        -- 프레임: 걷기·달리기는 달리기 그림 (걸을 때는 조금 느리게), 쉬면 대기 그림 (펫을 바꾸면 다음 프레임부터 그 펫 그림)
+        local frames = (v.moving and pet.run ~= "") and pet.run or pet.idle
         local frameSec = v.moving and (speed <= self.RoamSpeed and self.FrameSeconds * 1.4 or self.FrameSeconds) or self.IdleFrameSeconds
         local f = math.floor(now / frameSec)
         local ruid = self:Frame(frames, f)

@@ -1,23 +1,28 @@
--- 고양이 재 창 (메뉴 → 고양이 재): 받기·구매 (월드 상점 패스) + 주워 올 물건 5단계 (PlayerSave.PetFilter).
--- 오픈 기념 무료 패스가 판매 중이고 아직 없으면, 게임에 들어온 뒤 한 번 저절로 연다 (접속마다 한 번).
+-- 펫 창 (메뉴 → 펫): 위 줄 펫 칸(data/pets.csv 순서) → 고른 펫의 그림 · 받기/구매/함께하기 + 주워 올 물건 5단계 (PlayerSave.PetFilter).
+-- 10-24 사용자: 능력은 모두 고양이 재와 같고 모습만 다른 펫을 여러 마리 판다. 데리고 다니는 펫은 한 마리 (PlayerSave.PetPick).
+-- 오픈 기념 무료 패스(고양이 재)가 판매 중이고 펫이 없으면, 게임에 들어온 뒤 한 번 저절로 연다 (접속마다 한 번).
 @Logic
 script PetWindow extends Logic
 
     property string Win = "PetWin"
     property integer TimerId = 0
     property string RenderKey = ""
-    property string FreeState = ""             -- "ing" 판매 중 · "wait" 판매 대기 · "end" 끝남 · "" 모름/없음
+    property string FreeState = ""             -- 고양이 재 무료 패스: "ing" 판매 중 · "wait" 판매 대기 · "end" 끝남 · "" 모름/없음
     property string FreeUntil = ""             -- "11월 25일"
     property string FreeFrom = ""              -- "10월 25일 11시" (한국 시간)
-    property string PaidState = ""             -- "ing" 살 수 있음 · "" 아직 (미출시 상품은 출시 월드에서 조회되지 않는다)
-    property integer PaidPrice = 0
-    property boolean Asked = false              -- 상품 정보를 물었다
+    property any PaidState = nil               -- 펫 key → "ing" 살 수 있음 (미출시 상품은 출시 월드에서 조회되지 않는다)
+    property any PaidPrice = nil               -- 펫 key → 가격
+    property string Sel = ""                   -- 창에서 보고 있는 펫 key
+    property boolean Asked = false             -- 상품 정보를 물었다
     property boolean AutoShown = false
     property number EnteredAt = 0
+    property integer Slots = 6                 -- 펫 칸 수 (UI P1~P6)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         -- 창 등록 · 버튼 연결 · 0.25초마다 갱신
+        self.PaidState = {}
+        self.PaidPrice = {}
         _UIKit:RegisterWindow(self.Win)
         _UIKit:SetEnabled(self.Win, false)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
@@ -27,8 +32,12 @@ script PetWindow extends Logic
             local f = i
             _UIKit:Connect(self.Win .. "/F" .. tostring(i), function() self:SetFilter(f) end)
         end
+        for i = 1, self.Slots do
+            local n = i
+            _UIKit:Connect(self.Win .. "/P" .. tostring(i), function() self:Pick(n) end)
+        end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
-        log("[VRF] PetWindow ready")
+        log("[VRF] PetWindow ready pets=" .. tostring(#_GameData:GetPets()))
     end
 
     @ExecSpace("ClientOnly")
@@ -39,21 +48,33 @@ script PetWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Show()
-        -- 창을 연다 (상품 정보는 처음 한 번 묻는다)
+        -- 창을 연다: 데리고 다니는 펫(없으면 첫 펫)을 보여 준다 (상품 정보는 처음 한 번 묻는다)
         self:AskProducts()
+        local me = _UserService.LocalPlayer
+        local active = isvalid(me) and _PetSystem:ActivePet(me.PlayerComponent.UserId, me) or nil
+        self.Sel = active ~= nil and active.key or _GameData:GetPets()[1].key
         self.RenderKey = ""
         _UIKit:Open(self.Win)
         self:Poll()
     end
 
     @ExecSpace("ClientOnly")
+    method void Pick(integer i)
+        -- 펫 칸 누르기: 그 펫을 본다
+        local pet = _GameData:GetPets()[i]
+        if pet == nil then return end
+        self.Sel = pet.key
+        self.RenderKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
     method void AskProducts()
-        -- 무료 패스가 판매 중인지 · 끝나는 날 · 유료 패스 가격 (기다리는 호출이라 타이머 안에서)
+        -- 고양이 재 무료 패스가 판매 중인지 · 끝나는 날 · 펫마다 유료 패스 가격 (기다리는 호출이라 타이머 안에서)
         if self.Asked then return end
         self.Asked = true
         _TimerService:SetTimerOnce(function()
             local free = _PetSystem.FreePassId
-            local paid = _PetSystem.PaidPassId
             if free ~= "" then
                 local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(free) end)
                 if ok and prod ~= nil then
@@ -67,18 +88,22 @@ script PetWindow extends Logic
                     end
                 end
             end
-            if paid ~= "" then
-                local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(paid) end)
-                if ok and prod ~= nil then
-                    self.PaidPrice = prod.Price
-                    -- 판매 중일 때만 산다. 메이커는 미출시 상품도 시험 구매할 수 있어 끝나지 않은 상품이면 연다
-                    local st = prod.Status
-                    local test = not Environment:IsPublishedPlay() and st ~= WorldShopProductStatus.End and st ~= WorldShopProductStatus.Deleted
-                    self.PaidState = (st == WorldShopProductStatus.Ing or test) and "ing" or ""
+            for _, pet in ipairs(_GameData:GetPets()) do
+                if pet.paidPass ~= "" then
+                    local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(pet.paidPass) end)
+                    if ok and prod ~= nil then
+                        self.PaidPrice[pet.key] = prod.Price
+                        -- 판매 중일 때만 산다. 메이커는 미출시 상품도 시험 구매할 수 있어 끝나지 않은 상품이면 연다
+                        local st = prod.Status
+                        local test = not Environment:IsPublishedPlay() and st ~= WorldShopProductStatus.End and st ~= WorldShopProductStatus.Deleted
+                        if st == WorldShopProductStatus.Ing or test then self.PaidState[pet.key] = "ing" end
+                    end
                 end
             end
             self.RenderKey = ""
-            log("[VRF] PetWindow products free=" .. self.FreeState .. " from=" .. self.FreeFrom .. " until=" .. self.FreeUntil .. " paid=" .. self.PaidState .. " price=" .. tostring(self.PaidPrice))
+            local open = {}
+            for k, _ in pairs(self.PaidState) do table.insert(open, k) end
+            log("[VRF] PetWindow products free=" .. self.FreeState .. " from=" .. self.FreeFrom .. " until=" .. self.FreeUntil .. " paid=" .. table.concat(open, ","))
         end, 0.1)
     end
 
@@ -98,12 +123,20 @@ script PetWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Get()
-        -- 받기·구매: 무료 기간이면 무료 패스, 아니면 유료 패스 구매 창 (플랫폼 창이 결제·확인을 맡는다)
+        -- 고른 펫: 가졌으면 함께하기, 아니면 받기·구매 (무료 기간이면 무료 패스, 아니면 유료 패스 — 플랫폼 창이 결제·확인을 맡는다)
         local me = _UserService.LocalPlayer
-        if not isvalid(me) or _PetSystem:HasPet(me.PlayerComponent.UserId) then return end
+        local pet = _GameData:GetPet(self.Sel)
+        if not isvalid(me) or pet == nil then return end
+        local uid = me.PlayerComponent.UserId
+        if _PetSystem:Owns(uid, pet.key) then
+            ---@type PlayerSave
+            local save = _UIKit:Comp("script.PlayerSave")
+            if save ~= nil then save:RequestPetPick(pet.key) end
+            return
+        end
         local id = ""
-        if self.FreeState == "ing" then id = _PetSystem.FreePassId
-        elseif self.PaidState == "ing" then id = _PetSystem.PaidPassId end
+        if pet.freePass ~= "" and self.FreeState == "ing" then id = pet.freePass
+        elseif self.PaidState[pet.key] == "ing" then id = pet.paidPass end
         if id == "" then return end
         _WorldShopService:PromptPurchase(id)
     end
@@ -127,25 +160,54 @@ script PetWindow extends Logic
         ---@type PlayerSave
         local save = _UIKit:Comp("script.PlayerSave")
         local filter = save ~= nil and save.PetFilter or 2
-        local key = table.concat({ tostring(has), tostring(filter), self.FreeState, self.FreeFrom, self.FreeUntil, self.PaidState, tostring(self.PaidPrice) }, "#")
+        local pets = _GameData:GetPets()
+        local pet = _GameData:GetPet(self.Sel) or pets[1]
+        local active = _PetSystem:ActivePet(uid, me)
+        local activeKey = active ~= nil and active.key or ""
+        local owned = {}
+        for _, p in ipairs(pets) do table.insert(owned, _PetSystem:Owns(uid, p.key) and "1" or "0") end
+        local key = table.concat({ pet.key, activeKey, table.concat(owned), tostring(filter), self.FreeState, self.FreeFrom, self.FreeUntil,
+            tostring(self.PaidState[pet.key]), tostring(self.PaidPrice[pet.key]) }, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
-        local name = _PetSystem.PetName
+        -- 펫 칸: 그림 · 이름 (데리고 다니는 펫은 금색 「함께」, 가진 펫은 흰 이름, 없는 펫은 어둡게) · 고른 칸 테두리
+        for i = 1, self.Slots do
+            local p = pets[i]
+            local path = self.Win .. "/P" .. tostring(i)
+            _UIKit:SetEnabled(path, p ~= nil)
+            if p ~= nil then
+                local mine = _PetSystem:Owns(uid, p.key)
+                _UIKit:SetIcon(path .. "/Icon", p.icon)
+                _UIKit:SetColor(path .. "/Icon", mine and Color(1, 1, 1, 1) or Color(0.55, 0.52, 0.5, 1))
+                _UIKit:SetText(path .. "/Name", p.key == activeKey and _UIKit:Colored("#FFD27A", p.name .. " · 함께")
+                    or (mine and p.name or _UIKit:Colored("#8C8270", p.name)))
+                _UIKit:SetEnabled(path .. "/Sel", p.key == pet.key)
+            end
+        end
+        _UIKit:SetIcon(self.Win .. "/Art/Pic", pet.icon)
+        local mine = _PetSystem:Owns(uid, pet.key)
+        local about = pet.desc .. " 「" .. pet.name .. "」.\n곁을 따라다니며 바닥에 떨어진 전리품을 주워 옵니다."
         local status = ""
         local btn = ""
-        if has then
-            status = _UIKit:Colored("#8CF08C", "함께하는 중") .. "\n숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n곁을 따라다니며 바닥에 떨어진 전리품을 주워 옵니다.\n주인에게서 6칸 안 · 가방이 가득 차면 남겨 둡니다."
-        elseif self.FreeState == "ing" then
-            status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeUntil ~= "" and (" · " .. self.FreeUntil .. "까지") or "")) .. "\n숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n지금 받으면 계정에 영원히 남습니다.\n기간이 지나면 유료 상품이 됩니다."
+        if mine then
+            if pet.key == activeKey then
+                status = _UIKit:Colored("#8CF08C", "함께하는 중") .. "\n" .. about .. "\n주인에게서 6칸 안 · 가방이 가득 차면 남겨 둡니다."
+            else
+                status = _UIKit:Colored("#8CF08C", "데리고 있음") .. "\n" .. about .. "\n「함께하기」를 누르면 이 펫이 따라다닙니다. (한 번에 한 마리)"
+                btn = "함께하기"
+            end
+        elseif pet.freePass ~= "" and self.FreeState == "ing" then
+            status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeUntil ~= "" and (" · " .. self.FreeUntil .. "까지") or "")) .. "\n" .. about .. "\n지금 받으면 계정에 영원히 남습니다.\n기간이 지나면 유료 상품이 됩니다."
             btn = "무료로 받기"
-        elseif self.FreeState == "wait" then
+        elseif pet.freePass ~= "" and self.FreeState == "wait" then
             -- 무료 기간 전 (10-24 사용자: 유료 상품은 무료 기간이 끝난 뒤 연다 — 그 전엔 사는 단추를 보이지 않는다)
-            status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeFrom ~= "" and (" · " .. self.FreeFrom .. "부터") or "")) .. "\n숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n기간 안에 받으면 계정에 영원히 남습니다."
-        elseif self.PaidState == "ing" then
-            status = "숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n곁을 따라다니며 바닥에 떨어진 전리품을 주워 옵니다.\n한 번 사면 계정의 모든 캐릭터가 함께합니다." .. (self.PaidPrice > 0 and ("\n가격 " .. tostring(self.PaidPrice) .. " 월드 코인") or "")
+            status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeFrom ~= "" and (" · " .. self.FreeFrom .. "부터") or "")) .. "\n" .. about .. "\n기간 안에 받으면 계정에 영원히 남습니다."
+        elseif self.PaidState[pet.key] == "ing" then
+            local price = self.PaidPrice[pet.key] or 0
+            status = about .. "\n모습만 다르고 줍는 능력은 모든 펫이 같습니다.\n한 번 사면 계정의 모든 캐릭터가 함께합니다." .. (price > 0 and ("\n가격 " .. tostring(price) .. " 월드 코인") or "")
             btn = "데려오기"
         else
-            status = "숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n" .. _UIKit:Colored("#A99F8E", "곧 만날 수 있습니다.")
+            status = about .. "\n" .. _UIKit:Colored("#A99F8E", "곧 만날 수 있습니다.")
         end
         _UIKit:SetText(self.Win .. "/Status", status)
         _UIKit:SetEnabled(self.Win .. "/BtnGet", btn ~= "")
@@ -164,12 +226,12 @@ script PetWindow extends Logic
             "희귀 이상 — 골드 · 룬 · 희귀 · 유니크 · 세트 장비.",
             "유니크·세트 — 룬 · 유니크 · 세트 장비만.",
         }
-        _UIKit:SetText(self.Win .. "/FilterDesc", has and descs[filter + 1] or _UIKit:Colored("#A99F8E", "고양이를 데려오면 주워 올 물건을 고를 수 있습니다."))
+        _UIKit:SetText(self.Win .. "/FilterDesc", has and descs[filter + 1] or _UIKit:Colored("#A99F8E", "펫을 데려오면 주워 올 물건을 고를 수 있습니다."))
     end
 
     @ExecSpace("ClientOnly")
     method void MaybeAutoOpen(boolean has)
-        -- 게임 방에 들어와 12초 뒤, 무료 패스 판매 중이고 아직 없으면 한 번 (다른 창·이야기 카드가 없을 때)
+        -- 게임 방에 들어와 12초 뒤, 무료 패스 판매 중이고 아직 펫이 없으면 한 번 (다른 창·이야기 카드가 없을 때)
         if self.AutoShown or has or _HudMain:InLobby() then
             if _HudMain:InLobby() then self.EnteredAt = 0 end
             return

@@ -179,10 +179,48 @@ async function uploadRes(pack, argv) {
   }
 }
 
+// 펫 유료 패스 등록: data/pets.csv에서 paidPass가 빈 펫마다 상점 썸네일을 올리고 PASS 상품을 「비공개」로 만든 뒤 상품 ID를 그 표에 적는다.
+// 공개·판매 기간은 사용자가 크리에이터 센터에서 정한다 (10-24: API가 판매 기간을 거절했다).
+//   node tools/msw_mcp_call.cjs pet-pass <썸네일 폴더> [--price=300] [--dry]
+async function petPass(dir, argv) {
+  const root = path.join(__dirname, "..");
+  const file = path.join(root, "data", "pets.csv");
+  const t = parseQuoted(fs.readFileSync(file, "utf8"));
+  const c = (n) => t.head.indexOf(n);
+  const price = Number(((argv.find((a) => a.startsWith("--price=")) || "").split("=")[1]) || 300);
+  const world = "b1825465e98b4bd49d20d629f2ff8c94";
+  const todo = t.rows.filter((r) => r[c("paidPass")] === "");
+  console.log(`등록할 펫 ${todo.length}마리 (${todo.map((r) => r[c("name")]).join(", ")}) · ${price} 코인`);
+  if (argv.includes("--dry")) return;
+  await connect();
+  for (const r of todo) {
+    const key = r[c("key")], name = r[c("name")];
+    const body = fs.readFileSync(path.join(root, dir, `${key}_shop.png`));
+    const up = { worldId: world, fileExtension: "png", contentLength: body.length };
+    const first = pickJson(await callTool("world_item_upload_thumbnail", up));
+    const url = findKey(first, /presigned/i);
+    if (!url) throw new Error(`${name}: 썸네일 업로드 주소를 못 받음 (${Object.keys(first).join(",")})`);
+    const put = await fetch(url, { method: "PUT", body, headers: { "Content-Length": String(body.length) } });
+    if (!put.ok) throw new Error(`${name}: 썸네일 올리기 실패 HTTP ${put.status}`);
+    const done = pickJson(await callTool("world_item_upload_thumbnail", Object.assign({}, up, { fileUrl: url })));
+    const thumb = findKey(done, /thumbnail.*url|^url$|imageUrl/i), thumbName = findKey(done, /file.*name/i);
+    if (!thumb) throw new Error(`${name}: 썸네일 주소를 못 받음 (${Object.keys(done).join(",")})`);
+    const desc = `${r[c("desc")]} 「${name}」가 곁을 따라다니며 바닥에 떨어진 전리품을 주워 옵니다. 주울 물건은 메뉴 → 펫에서 등급별로 고를 수 있습니다. 한 번 사면 모든 캐릭터와 영구히 함께합니다. (모습만 다르고 줍는 능력은 고양이 재와 같습니다 · 공격·능력치 효과는 없습니다)`;
+    const created = pickJson(await callTool("world_item_create", { worldId: world, itemType: "PASS", itemName: `펫 ${name}`, hasItemPrice: true, itemPrice: price,
+      itemThumbnailUrl: thumb, itemThumbnailFileName: thumbName || `${key}_shop.png`, hasSalesPeriod: false, itemDescription: desc, isPublished: false, language: "ko" }));
+    const id = findKey(created, /^itemId$|^id$/i);
+    if (!id) throw new Error(`${name}: 상품 ID를 못 받음 (${JSON.stringify(created).slice(0, 200)})`);
+    r[c("paidPass")] = id;
+    writeQuoted(file, t);
+    console.log(`  ${name} → ${id}`);
+  }
+}
+
 async function main() {
   const [cmd, file, px, py] = process.argv.slice(2);
   if (cmd === "upload") return upload(file, px, process.argv.includes("--dry"));
   if (cmd === "upload-res") return uploadRes(file, process.argv.slice(4));
+  if (cmd === "pet-pass") return petPass(file, process.argv.slice(4));
   if (cmd !== "pivot") throw new Error("사용법: node tools/msw_mcp_call.cjs pivot <guid-list-file> [pivot_x] [pivot_y] | upload <팩 폴더> [최대 개수]");
   const rows = fs.readFileSync(file, "utf8").split(/\r?\n/).map((l) => l.trim().split(",")).filter((r) => /^[0-9a-f]{32}$/.test(r[0]) && r[1] && r[2]);
   await connect();

@@ -114,6 +114,9 @@ function genGameData() {
     ...weekly.map((w) => `        self.Weeklies[${s(w.id)}] = { id = ${s(w.id)}, name = ${s(w.name)}, desc = ${s(w.desc)}, elite = ${n(w.elite)}, stat = ${n(w.stat)}, speed = ${n(w.speed)}, mobs = ${n(w.mobs)}, curse = ${n(w.curse)}, rolls = ${n(w.rolls)}, extract = ${n(w.extract)}, light = ${n(w.light)}, skel = ${n(w.skel)} }\n        table.insert(self.WeeklyOrder, ${s(w.id)})`),
     "        self.Ranks = {}",
     ...ranks.map((r) => `        self.Ranks[${s(r.rank)}] = { name = ${s(r.name)}, hpMul = ${n(r.hpMul)}, dmgMul = ${n(r.dmgMul)}, extract = ${n(r.extractChance)}, extractCap = ${n(r.extractCap || 0.75)}, grade = ${n(r.shadowGrade)} }`),
+    // 펫 (data/pets.csv — 10-24 사용자: 능력은 모두 고양이 재와 같고 모습만 다른 펫 여러 마리). 순서 = 펫 창 칸 순서
+    "        self.Pets = {}",
+    ...load("pets").map((r) => `        table.insert(self.Pets, { key = ${s(r.key)}, name = ${s(r.name)}, desc = ${s(r.desc)}, freePass = ${s(r.freePass)}, paidPass = ${s(r.paidPass)}, idle = ${s(r.idle.replace(/;/g, ","))}, run = ${s(r.run.replace(/;/g, ","))}, icon = ${s(r.icon)}, scale = ${n(r.scale || 1)} })`),
     "        self.Shop = {}",
     ...shop.map((r) => `        self.Shop[${s(r.key)}] = { name = ${s(r.name)}, price = ${n(r.price)}, perLevel = ${n(r.pricePerLevel)}, hpPct = ${n(r.hpPct)}, manaPct = ${n(r.manaPct)}, hpFlat = ${n(r.hpFlat || 0)}, manaFlat = ${n(r.manaFlat || 0)}, kind = ${s(r.kind || r.key)}, tier = ${n(r.tier || 0)}, minLevel = ${n(r.minLevel || 1)}, icon = ${s(r.icon || "")}, iconPx = ${n(r.iconPx || 0)} }`),
     "        self.Difficulties = {}",
@@ -202,6 +205,19 @@ function genGameData() {
     method string LookText(table look)
         -- ParseLook 결과 → 저장 문자열 "g-h-f-s-t"
         return look.g .. "-" .. tostring(look.h) .. "-" .. tostring(look.f) .. "-" .. tostring(look.s) .. "-" .. tostring(look.t)
+    end
+
+    method table GetPets()
+        -- 펫 목록 (pets.csv 순서) — { key, name, desc, freePass, paidPass, idle, run, icon, scale }
+        self:Ensure()
+        return self.Pets
+    end
+
+    method any GetPet(string key)
+        -- key로 펫 하나 (없으면 nil)
+        self:Ensure()
+        for _, p in ipairs(self.Pets) do if p.key == key then return p end end
+        return nil
     end
 
     method any GetDifficulty(integer index)
@@ -463,9 +479,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, pets.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table VariantCache = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Pets = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table VariantCache = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
