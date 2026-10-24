@@ -31,6 +31,12 @@ script MonsterTraits extends Component
     property string AppliedTint = ""
     property number FlashUntil = 0           -- 피격 번쩍임 (클라이언트)
     property Color FlashRestore = Color(1, 1, 1, 1)
+    -- 재의 왕 그림자 인형 (BossShade) 움직임 — 클라이언트 (10-24 사용자: NPC 그림이라 동작이 없어 멀뚱히 서 있었다)
+    property number GhostBaseY = 0
+    property number GhostPhase = -1
+    property Vector2 GhostLastPos = Vector2(0, 0)
+    property number GhostLean = 0
+    property boolean GhostWasAttack = false
     property number PauseUntil = 0
     property number NextPauseAt = 0
     property number PauseRestoreRate = 1
@@ -128,6 +134,7 @@ script MonsterTraits extends Component
         if self:IsServer() then self:AbilityTick(delta) else
             self:TintTick()
             self:FlashTick()
+            if self.Entity.Name == "BossShade" then self:GhostTick(delta) end
         end
     end
 
@@ -453,6 +460,44 @@ script MonsterTraits extends Component
         end
         self.PauseUntil = 0
         self.FlashUntil = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void GhostTick(number delta)
+        -- 그림자 인형은 걷기·공격 그림이 없는 NPC 그림이다 → 발을 축으로 흔들리며 떠 있고(숨 쉬듯 늘었다 줄고 · 흐릿하게 깜빡임),
+        -- 움직이는 쪽으로 기울고, 공격할 때 앞으로 크게 덮쳐 든다 (회전·세로 크기·투명도만 — 자리·좌우는 서버 그대로)
+        local tr = self.Entity.TransformComponent
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(tr) or not isvalid(sprite) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local pos = _Util:Pos2(self.Entity)
+        if self.GhostPhase < 0 then
+            self.GhostPhase = _UtilLogic:RandomDouble() * 6.28
+            self.GhostBaseY = tr.Scale.y
+            self.GhostLastPos = pos
+        end
+        ---@type Monster
+        local body = self.Entity:GetComponent("script.Monster")
+        if body ~= nil and body.IsDead then return end
+        local vx = (pos.x - self.GhostLastPos.x) / math.max(0.001, delta)
+        self.GhostLastPos = pos
+        local attack = self.Entity.StateComponent ~= nil and self.Entity.StateComponent.CurrentStateName == "ATTACK"
+        local face = sprite.FlipX and 1 or -1
+        local want = math.max(-1, math.min(1, vx / 2)) * -9          -- 움직이는 쪽으로 최대 9°
+        if attack then want = face * -16 end                        -- 공격: 바라보는 쪽으로 덮쳐 든다
+        self.GhostLean = self.GhostLean + (want - self.GhostLean) * math.min(1, delta * (attack and 14 or 6))
+        local t = now + self.GhostPhase
+        tr.ZRotation = self.GhostLean + math.sin(t * 2.2) * 4
+        local stretch = attack and 1.12 or 1
+        tr.Scale = Vector3(tr.Scale.x, self.GhostBaseY * stretch * (1 + 0.04 * math.sin(t * 3.1)), tr.Scale.z)
+        if self.FlashUntil <= 0 then
+            local c = sprite.Color
+            sprite.Color = Color(c.r, c.g, c.b, 0.72 + 0.14 * math.sin(t * 4.7))
+        end
+        if attack and not self.GhostWasAttack then
+            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity.CurrentMap, Vector3(pos.x, pos.y + 0.6, 0), 0, Vector3(1.1, 1.1, 1), false, { Color = Color(0.45, 0.3, 0.7, 0.9) })
+        end
+        self.GhostWasAttack = attack
     end
 
     @ExecSpace("ClientOnly")

@@ -175,11 +175,12 @@ def build(prof, L, act=1, diff=0):
     minion = lerp_gear(prof, "minion", L) + (Str - 15) * C["strMinionPct"]
     tree = int(round(lerp_gear(prof, "tree", L)))
     # 해골 전사 · 마법사 (UndeadSystem)
-    def undead(base_atk, base_hp, slv, mast):
+    def undead(base_atk, base_hp, slv, mast, pct=None):
         if slv <= 0:
             return 0, 0
-        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + C["undeadSkillLvPct"] / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
-        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + C["undeadSkillLvPct"] / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
+        pct = C["undeadSkillLvPct"] if pct is None else pct
+        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
+        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
         return a * (1 + minion / 100), h * (1 + minion / 100)
 
     def count(slv, legion):
@@ -188,7 +189,7 @@ def build(prof, L, act=1, diff=0):
         return (slv if slv <= 3 else min(8, 2 + slv // 3)) + legion
 
     sl = rk.get("raise_skeleton", 0) + (tree if rk.get("raise_skeleton", 0) else 0)
-    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl, rk.get("skeleton_mastery", 0))
+    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl, rk.get("skeleton_mastery", 0), C.get("skeletonSkillLvPct", C["undeadSkillLvPct"]))
     n_sk = count(sl, rk.get("skel_legion", 0))
     ml = rk.get("raise_mage", 0) + (tree if rk.get("raise_mage", 0) else 0)
     mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml, rk.get("skeleton_mastery", 0))
@@ -305,10 +306,8 @@ def kill_exp(pl, ml, grade):
     g = 1 if grade == 1 else (3 if grade == 2 else 12)
     b = C["killExpCoef"] * ml ** 1.3 * g
     d = pl - ml
-    if d >= 10:
-        b *= 0.05
-    elif d >= 5:
-        b *= 1 - (d - 4) * 0.15
+    if d >= 3:   # PlayerStats.ExpForKill — 10-24 L-B: 3레벨부터 레벨마다 -15%, 최저 5%
+        b *= max(0.05, 1 - (d - 2) * 0.15)
     if ml > pl + 5:
         b *= (pl + 5) / ml
     if pl < C["earlyExpLevel"]:

@@ -77,7 +77,8 @@ script AbyssSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnQuestCompleted(table e)
-        -- 액트 마지막 의뢰를 마친 순간 (PlayerQuest가 Index를 올린 뒤에 확인)
+        -- 액트 마지막 의뢰를 마친 순간 (PlayerQuest가 Index를 올린 뒤에 확인). 심연을 숨긴 동안(depthEnabled 0)은 열쇠를 주지 않는다
+        if _GameData.depthEnabled < 1 then return end
         local player = e.player
         if not isvalid(player) then return end
         for act = 1, _GameConst.ActCount do
@@ -91,7 +92,7 @@ script AbyssSystem extends Logic
     method void OnMonsterKilled(table e)
         -- 액트 최종 보스: 심도를 해금한 기여자마다 depthKeyChance로 열쇠 (해금 전 처치는 의뢰 완료가 첫 열쇠를 준다)
         local act = _GameConst:ActOfBossSource(e.sourceId or "")
-        if act <= 0 then return end
+        if act <= 0 or _GameData.depthEnabled < 1 then return end
         for _, p in ipairs(e.players or { e.player }) do
             if isvalid(p) and self:IsUnlocked(p, act) and not self:EnsureFirstKey(p, act) and _UtilLogic:RandomDouble() < _GameData.depthKeyChance then
                 self:GiveKey(p, _GameData:GetMonsterName(e.sourceId) .. "에게서 심연 열쇠를 얻었다")

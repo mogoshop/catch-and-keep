@@ -1,4 +1,5 @@
--- 랭킹 (11장: 최고 심도 층, 보스 처치 시간). SortableDataStorage에 기록하고, 이름은 GlobalDataStorage에 따로 둔다.
+-- 랭킹 (11장: 보스 처치 시간 · 10-24 성장 순위 — 모든 사용자를 레벨 + 가장 멀리 간 난이도·액트로). SortableDataStorage에 기록하고, 이름은 GlobalDataStorage에 따로 둔다.
+-- 심연 기록판(심도·이번 주)은 심연을 숨긴 동안(config depthEnabled 0) 창에서 감춘다.
 -- 비용 규칙(datastorage.md): 기록이 좋아졌을 때만 쓴다. 조회는 창을 열 때만, 서버에서 60초 캐시.
 @Logic
 script RankingSystem extends Logic
@@ -42,6 +43,56 @@ script RankingSystem extends Logic
     method void RecordBossTime(Entity player, integer diff, integer seconds)
         -- 짧을수록 좋음. 마지막 액트 보스(FinalBossSourceId)마다 따로 (예전 「queen」판은 여왕 → 대사제 기록이 섞였다)
         self:Record(player, self:BoardName("boss_" .. _GameConst.FinalBossSourceId, diff), seconds, true)
+    end
+
+    method void OnBeginPlay()
+        -- 성장 순위: 레벨이 오르거나 의뢰를 마칠 때 다시 적는다 (좋아졌을 때만 쓴다 — Record)
+        if not self:IsServer() then return end
+        _GameEvents:Subscribe("LevelUp", "RankingSystem", function(e) self:RecordProgressLater(e.player) end)
+        _GameEvents:Subscribe("QuestCompleted", "RankingSystem", function(e) self:RecordProgressLater(e.player) end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecordProgressLater(Entity player)
+        -- 이벤트를 보낸 쪽을 기다리게 하지 않게 (기록 조회는 GetAndWait) 잠깐 뒤에 적는다
+        _TimerService:SetTimerOnce(function() if isvalid(player) then self:RecordProgress(player) end end, 0.5)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer ProgressValue(Entity player)
+        -- 성장 값 = 레벨 × 100 + 난이도 × 10 + 액트 (그 난이도에서 지금 하는 액트 1~4, 다 깼으면 5). 높을수록 위
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if stats == nil or quest == nil then return 0 end
+        local diff = stats.MaxDifficulty
+        local index = 1
+        if quest.Diff == diff then index = quest.Index
+        else
+            local saved = quest.ByDiff[tostring(diff)]
+            if saved ~= nil and saved.i ~= nil then index = saved.i end
+        end
+        local act = _GameConst.ActCount + 1
+        local q = _QuestData:Get(index)
+        if q ~= nil then act = math.max(1, math.min(_GameConst.ActCount, q.act)) end
+        return stats.Level * 100 + diff * 10 + act
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RecordProgress(Entity player)
+        -- 모든 사용자의 성장 기록 (난이도 하나의 판 — 「progress」)
+        local value = self:ProgressValue(player)
+        if value > 0 then self:Record(player, self:BoardName("progress", 0), value, false) end
+    end
+
+    method string ProgressText(integer value)
+        -- 「Lv44 · 노말 액트 4」 / 다 깼으면 「Lv60 · 악몽 완료」
+        local level = value // 100
+        local diff = (value % 100) // 10
+        local act = value % 10
+        if act > _GameConst.ActCount then return string.format("Lv%d · %s 완료", level, _GameConst:DifficultyName(diff)) end
+        return string.format("Lv%d · %s 액트 %d", level, _GameConst:DifficultyName(diff), act)
     end
 
     @ExecSpace("ServerOnly")
@@ -105,6 +156,7 @@ script RankingSystem extends Logic
     @ExecSpace("Server")
     method void RequestBoard(string kind, integer diff)
         -- 클라이언트 랭킹 창 → 결과는 그 사람에게만
+        if kind == "progress" then diff = 0 end   -- 성장 순위는 난이도 하나의 판
         local digest = self:GetTop(self:BoardName(kind, diff), kind == "queen" or string.sub(kind, 1, 5) == "boss_")
         self:ShowBoard(kind, diff, digest, senderUserId)
     end

@@ -53,7 +53,6 @@ script SkillEffects extends Component
         elseif id == "skel_bomb" then ok = _UndeadSystem:SkeletonBomb(self.Entity, target, power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), 1 + self:Node("bomb_pair"))
         elseif id == "bone_offering" then ok = _UndeadSystem:BoneOffering(self.Entity, power * (1 + 0.2 * self:Node("offering_heal")), 4 * (1 + 0.25 * self:Node("offering_wide")), 10 * self:Node("offering_frenzy"))
         elseif id == "wraith_dash" then ok = self:WraithDash(me, target)
-        elseif id == "wraith_blink" then ok = self:WraithBlink(me, target)
         elseif id == "soul_drain" then ok = self:SoulDrain(target, power * spell)
         elseif id == "bone_storm" then ok = self:BoneStorm(power * spell)
         elseif id == "mark_weakness" then ok = self:Curse(target, "amp", power, 1.5, duration)
@@ -483,7 +482,7 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method boolean WraithDash(Vector2 me, Vector2 dest)
-        -- 망령 질주: 내 클라이언트가 이미 움직였다 (SkillBook.CastMove). 여기서는 무적·연출, 강화 「망령 자취」 피해·둔화만
+        -- 망령 질주: 내 클라이언트가 이미 움직였다 (SkillBook.CastMove). 여기서는 무적·연출, 강화 「망령 자취」 피해·둔화, 「군단 질주」 소환수 도약
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         local ghost = book ~= nil and book:Node("dash_ghost") or 0
@@ -516,15 +515,22 @@ script SkillEffects extends Component
                 end
             end
         end
-        self:ClipFx(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.45, 0.4, 0)
-        return true
-    end
-
-    @ExecSpace("ServerOnly")
-    method boolean WraithBlink(Vector2 me, Vector2 dest)
-        -- 망령 도약: 내 클라이언트가 이미 옮겼다. 떠난 자리·도착 자리에 섬광 (군단 질주가 있으면 소환수가 곁으로 따라온다 — ShadowUnit)
-        self:ClipFx(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.6, 0.45, 0)
-        self:ClipFx(self.FxBlink, Vector3(dest.x, dest.y + 0.3, 0), 0.6, 0.45, 0)
+        if book ~= nil and book:Node("dash_legion") > 0 then
+            -- 소환수는 주인 서버 위치(조금 늦다)를 따라 자리를 잡으므로, 0.8초 동안 3칸 밖이면 곁으로 도약한다 (ShadowUnit 끈)
+            local untilAt = _UtilLogic.ElapsedSeconds + 0.8
+            for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                ---@type ShadowUnit
+                local u = c
+                if u.OwnerPlayer == self.Entity then u.LeapUntil = untilAt end
+            end
+        end
+        if book ~= nil and book:Node("dash_blink") > 0 then
+            -- 강화 「망령 도약」: 떠난 자리·도착 자리에 섬광
+            self:ClipFx(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.6, 0.45, 0)
+            self:ClipFx(self.FxBlink, Vector3(dest.x, dest.y + 0.3, 0), 0.6, 0.45, 0)
+        else
+            self:ClipFx(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.45, 0.4, 0)
+        end
         return true
     end
 

@@ -130,6 +130,8 @@ script PlayerStats extends Component
     @Sync
     property number ChillUntil = 0           -- 냉기 둔화가 끝나는 서버 시각 (버프 줄 표시용 동기화)
     property number StaggerUntil = 0         -- 거구 몬스터 강타에 휘청임 (이동 ×0.5, 짧다)
+    @Sync
+    property number HuntUntil = 0            -- 강화 「사냥꾼의 걸음」: 처치 뒤 이동 속도가 오르는 서버 시각 (버프 줄 표시용 동기화)
     -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
     property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
     property number PvpAmpUntil = 0
@@ -202,13 +204,13 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method integer ExpForKill(integer monsterLevel, integer grade)
-        -- killExpCoef(15) × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 5레벨 이상 낮으면 레벨마다 15%씩 감쇠(최저 5%), 5레벨 넘게 높아도 감쇠
+        -- killExpCoef(15) × 레벨^1.3 × 등급 배율(1/3/12). 몬스터가 3레벨 이상 낮으면 레벨마다 15%씩 감쇠(최저 5%), 5레벨 넘게 높아도 감쇠
         local gradeMult = 1
         if grade == 2 then gradeMult = 3 elseif grade >= 3 then gradeMult = 12 end
         local base = _GameData.killExpCoef * (monsterLevel ^ 1.3) * gradeMult
         local diff = self.Level - monsterLevel
-        -- 낮은 몬스터 감쇠: 5레벨부터 레벨마다 15%씩, 최저 5% (예전엔 9 → 10에서 25% → 5%로 한 번에 떨어졌다 · 10-24 출시 점검)
-        if diff >= 5 then base = base * math.max(0.05, 1 - (diff - 4) * 0.15) end
+        -- 낮은 몬스터 감쇠: 3레벨부터 레벨마다 15%씩, 최저 5% (10-24 사용자 L-B: 5레벨부터면 노말 끝이 Lv44까지 앞서갔다)
+        if diff >= 3 then base = base * math.max(0.05, 1 - (diff - 2) * 0.15) end
         -- 너무 높은 몬스터(내 레벨 +5 초과)는 경험치를 (내 레벨+5)/몬스터 레벨로 줄인다 — 높은 난이도로 건너뛰어 레벨을 날로 먹지 않게
         local grace = _GameConst.ExpHighMonsterGrace
         if monsterLevel > self.Level + grace then base = base * (self.Level + grace) / monsterLevel end
@@ -468,12 +470,13 @@ script PlayerStats extends Component
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1 + self.BonusMs / 100 + self:AuraAmount("move") / 100   -- 그림자 기동 오오라
-        -- 망령 걸음 「가벼운 걸음」 (10-20): 장비 이동 속도와 더한다
+        -- 이동 「가벼운 걸음」 (10-20) + 강화 「질풍 걸음」·「사냥꾼의 걸음」 (10-24): 장비 이동 속도와 더한다
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book ~= nil then
             local step = book:GetPowerLevel("swift_step")
-            if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 end
+            if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 + 0.02 * book:Node("step_gale") end
+            if _UtilLogic.ServerElapsedSeconds < self.HuntUntil then mult = mult + 0.04 * book:Node("step_hunt") end
         end
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
         if _UtilLogic.ServerElapsedSeconds < self.StaggerUntil then mult = mult * 0.5 end
@@ -484,6 +487,20 @@ script PlayerStats extends Component
             if movement.InputSpeed < want * 0.9 and not Environment:IsPublishedPlay() then log(string.format("[VRF] speed restored %.2f → %.2f", movement.InputSpeed, want)) end
             movement.InputSpeed = want
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnHuntKill()
+        -- 강화 「사냥꾼의 걸음」: 나나 내 소환수가 처치하면 3초간 이동 속도 +4%/랭크 (RewardSystem이 기여자마다 부른다)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil or book:Node("step_hunt") <= 0 then return end
+        local fresh = _UtilLogic.ServerElapsedSeconds >= self.HuntUntil
+        self.HuntUntil = _UtilLogic.ServerElapsedSeconds + 3
+        if fresh then self:RefreshSpeed() end
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.HuntUntil then self:RefreshSpeed() end
+        end, 3.05)
     end
 
     @ExecSpace("ServerOnly")

@@ -175,10 +175,19 @@ script PlayerJournal extends Component
     method void EnsureDaily()
         -- 날짜가 바뀌면 새 3개를 고른다. 같은 날에는 모두 같은 의뢰 (날짜로 섞는다)
         local today = self:Today()
-        if self.DailyDay == today and #self.Daily > 0 then return end
+        local stale = false
+        for _, slot in ipairs(self.Daily) do
+            local def = _JournalData:GetDaily(slot.id)
+            if def ~= nil and def.kind == "depth" and _GameData.depthEnabled < 1 then stale = true end   -- 심연을 숨긴 뒤 남은 심도 의뢰는 새로 고른다
+        end
+        if self.DailyDay == today and #self.Daily > 0 and not stale then return end
         self.DailyDay = today
         self.Daily = {}
-        local pool = _JournalData:GetDailies()
+        local pool = {}
+        for _, def in ipairs(_JournalData:GetDailies()) do
+            -- 심연을 숨긴 동안(config depthEnabled 0)은 심도 의뢰를 고르지 않는다 (10-24)
+            if def.kind ~= "depth" or _GameData.depthEnabled >= 1 then table.insert(pool, def) end
+        end
         if #pool == 0 then return end
         local start = (today * 7) % #pool
         local step = 3
@@ -210,6 +219,7 @@ script PlayerJournal extends Component
             if def ~= nil then table.insert(view.daily, { n = def.name, p = slot.p, c = def.count, d = slot.done, g = def.gold, x = def.expPct }) end
         end
         for _, a in ipairs(_JournalData:GetAchievements()) do
+            if a.kind == "depth" and _GameData.depthEnabled < 1 then continue end   -- 심연을 숨긴 동안 심도 업적도 감춘다
             table.insert(view.ach, { n = a.name, s = a.desc, p = math.min(a.count, self:Progress(a)), c = a.count, d = self.AchDone[a.id] == true, g = a.gold })
         end
         for _, m in ipairs(_JournalData:GetMonsters()) do

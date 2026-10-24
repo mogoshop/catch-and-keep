@@ -101,7 +101,8 @@ function desiredEntities(d, maps, ctx) {
   for (const ex of list(d.extra)) {
     const x = at(ex);
     // 액트 마을마다 붉은 심도 포탈 (10-20: 심도는 액트별 — 그 액트 레벨대·몬스터, 해금은 액트 마지막 의뢰)
-    if (x.name === "depthgate") place("DepthEntrance", "Objects/DepthGate", x.pos, { "script.DepthGate": { Action: "enter", Act: num(d.act || 1) } });
+    // 10-24 사용자: 심연은 일단 숨긴다 (config depthEnabled 0이면 포탈을 놓지 않는다 — 다시 켜면 1)
+    if (x.name === "depthgate") { if (DEPTH_ON) place("DepthEntrance", "Objects/DepthGate", x.pos, { "script.DepthGate": { Action: "enter", Act: num(d.act || 1) } }); }
     else if (x.name.startsWith("npc:")) {
       const n = ctx.npcs[x.name.slice(4)];
       place(n.model, `NPC/${n.model}`, x.pos);
@@ -209,6 +210,7 @@ function layoutOf(d, entities, ctx) {
 const PROP_WALL_TILE = 269;   // AshCampTiles 충돌 타일 (모든 맵 같은 타일셋)
 // 모든 맵이 쓰는 타일셋. 새 맵은 빌더 템플릿 타일셋(번호가 다름)으로 만들어지므로 이것으로 바꾼다
 // (10-11: depth2~4가 템플릿 타일셋으로 생겨 벽·충돌·미니맵 지형이 전부 어긋났다)
+const DEPTH_ON = num((load("config").find((r) => r.key === "depthEnabled") || {}).value) > 0;
 const PROJECT_TILESET = JSON.parse(fs.readFileSync(require("path").join(__dirname, "../../RootDesk/MyDesk/AshCampTiles.tileset"), "utf8")).EntryKey;
 // 옆 칸은 그림이 그 칸의 35% 이상을 덮을 때만 막는다 (9차 QA: 폭 1.76칸 선반이 양옆으로 0.03칸 걸쳐 3칸을 막아,
 // 선반 두 개와 벽이 이어진 줄이 8칸짜리 보이지 않는 벽이 됐다)

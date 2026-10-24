@@ -14,6 +14,21 @@ script BossPattern extends Component
     property string BossName = "보스"
     property number SlamInterval = 6
     property number SlamWindup = 1.0
+    property number TargetSlamWindup = 1.8   -- 플레이어 발밑 내려찍기 예고 (10-24 사용자: 대사제·제독 발밑 폭발이 1초라 반경 2.4를 못 벗어났다 — 변종 범위 기술 1.7초와 맞춤)
+    -- 10-24 사용자 S-A·S-D (docs/design/34): 액트 마지막 보스(궁극기가 있는 보스)는 소환수 물량을 그냥 맞지 않는다
+    property number SweepInterval = 11       -- 소환수 쓸기 간격(초) — 근처 소환수가 SweepMin기 이상일 때만
+    property number SweepWarn = 3            -- 쓸기 예고(초)
+    property number SweepRadius = 2.6
+    property number SweepPct = 0.4           -- 맞은 소환수 최대 생명의 40%
+    property integer SweepMin = 4
+    property number SweepTimer = 8
+    property number WardSeconds = 2          -- 생명 50%·25%: 2초 무적 + 졸개 무리, 근처 소환수는 졸개부터 상대한다
+    property integer WardAdds = 3
+    @Sync
+    property number WardUntil = 0
+    property integer WardStep = 0            -- 0 = 아직 · 1 = 50% 지남 · 2 = 25% 지남
+    @Sync
+    property number WindupNow = 1.0          -- 이번 내려찍기 예고 시간 (클라이언트 예고 고리가 같은 시간으로 찬다)
     property number SlamRadius = 2.2
     property number SlamDamage = 22
     property number EngageRange = 5
@@ -119,6 +134,9 @@ script BossPattern extends Component
             self.AuraOn = false
             self.UltDone = false
             self.UltBusyUntil = 0
+            self.WardStep = 0
+            self.WardUntil = 0
+            self.SweepTimer = 8
             return
         end
         self.WasDead = false
@@ -166,6 +184,18 @@ script BossPattern extends Component
             return
         end
         if self.EngageStart <= 0 then self.EngageStart = _UtilLogic.ElapsedSeconds end
+        if self.UltKind ~= "" then
+            local ratio = monster.Hp / math.max(1, monster.MaxHp)
+            if (self.WardStep == 0 and ratio <= 0.5) or (self.WardStep == 1 and ratio <= 0.25) then
+                self.WardStep = ratio <= 0.25 and 2 or 1
+                self:BeginWard()
+            end
+            self.SweepTimer = self.SweepTimer - delta
+            if self.SweepTimer <= 0 and self.SlamPhase == "idle" then
+                self.SweepTimer = self.Enraged and self.SweepInterval * 0.8 or self.SweepInterval
+                self:BeginSweep()
+            end
+        end
         if not self.Enraged and monster.Hp <= monster.MaxHp * 0.5 then
             self.Enraged = true
             self:SummonMinions()
@@ -209,8 +239,9 @@ script BossPattern extends Component
         self.ResumeWander = isvalid(wander) and wander.Enable
         atk:CancelPending()
         self.SlamCenter = self:PickSlamCenter()
+        self.WindupNow = math.max(0.1, self.SlamAtTarget and self.TargetSlamWindup or self.SlamWindup)
         self.SlamPhase = "windup"
-        self.PhaseRemaining = math.max(0.1, self.SlamWindup)
+        self.PhaseRemaining = self.WindupNow
         if self.PoolElement == "light" then self:LightWarnFx(Vector3(self.SlamCenter.x, self.SlamCenter.y, 0), self.SlamRadius, self.PhaseRemaining) end
         local interval = self.Enraged and self.SlamInterval * 0.65 or self.SlamInterval
         self.SlamTimer = math.max(0.5, interval - self.PhaseRemaining - self.SlamRecovery)
@@ -375,7 +406,7 @@ script BossPattern extends Component
         -- 준비가 중간에 끊기면 지운다. 장판은 PoolFx가 바닥 그림 + 테두리로 보여 준다
         local windup = self.SlamPhase == "windup" and self:HasLocalAudience()
         if windup and self.SlamTele == 0 then
-            self.SlamTele = _Util:Telegraph(self.Entity, self.SlamCenter, self.SlamRadius, self.PoolElement, math.max(0.1, self.SlamWindup))
+            self.SlamTele = _Util:Telegraph(self.Entity, self.SlamCenter, self.SlamRadius, self.PoolElement, math.max(0.1, self.WindupNow))
         elseif not windup and self.SlamTele ~= 0 then
             _Util:StopTelegraph(self.SlamTele)
             self.SlamTele = 0
@@ -586,6 +617,107 @@ script BossPattern extends Component
         end
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(0.4, 0.35) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeginSweep()
+        -- 소환수 쓸기 (S-A): 소환수가 가장 많이 뭉친 자리에 3초 예고 → 그 원 안 소환수는 최대 생명의 40% 피해 (플레이어도 맞는다 — 보스 공격력 ×1)
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local units = {}
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and not u.Dead and (_Util:Pos2(u.Entity) - here):Magnitude() <= 10 then table.insert(units, _Util:Pos2(u.Entity)) end
+        end
+        if #units < self.SweepMin then return end
+        local best = units[1]
+        local bestN = 0
+        for _, a in ipairs(units) do
+            local n = 0
+            for _, b in ipairs(units) do if (a - b):Magnitude() <= self.SweepRadius then n = n + 1 end end
+            if n > bestN then
+                best = a
+                bestN = n
+            end
+        end
+        local center = best
+        self:UltWarnFx({ center.x, center.y }, self.SweepRadius, self.AuraKind ~= "" and self.AuraKind or "fire", self.SweepWarn)
+        log(string.format("[VRF] boss sweep %s n=%d at (%.1f,%.1f)", self.BossName, bestN, center.x, center.y))
+        _TimerService:SetTimerOnce(function()
+            ---@type Monster
+            local monster = self.Entity:GetComponent("script.Monster")
+            if not isvalid(self.Entity) or monster == nil or monster.IsDead or self.Entity.CurrentMap ~= map then return end
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            if atk ~= nil then atk:SlamWithElement(center, self.SweepRadius, atk.Damage, self.AuraKind) end
+            local hit = 0
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                ---@type ShadowUnit
+                local u = c
+                if isvalid(u.Entity) and u.Entity.Enable and not u.Dead and (_Util:Pos2(u.Entity) - center):Magnitude() <= self.SweepRadius then
+                    u:Hurt(math.floor(u.MaxHp * self.SweepPct))
+                    hit = hit + 1
+                end
+            end
+            self:UltBoomFx({ center.x, center.y }, self.SweepRadius, self.AuraKind)
+            log("[VRF] boss sweep hit summons=" .. tostring(hit))
+        end, self.SweepWarn)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeginWard()
+        -- 보스 위상 (S-D): 2초 무적 + 자기 졸개 무리. 근처 소환수는 졸개부터 상대한다 (보스를 둘러싼 물량이 한 번 흩어진다)
+        self.WardUntil = _UtilLogic.ElapsedSeconds + self.WardSeconds
+        local keep = self.MinionCount
+        self.MinionCount = self.WardAdds
+        self:SummonMinions()
+        self.MinionCount = keep
+        self:WardFx(self.WardSeconds)
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        _TimerService:SetTimerOnce(function()
+            -- 졸개가 생긴 뒤 근처 소환수의 대상을 가장 가까운 졸개로 돌린다
+            if not isvalid(self.Entity) or self.Entity.CurrentMap ~= map then return end
+            local adds = {}
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+                ---@type Monster
+                local m = c
+                if c.Entity.Name == "BossMinion" and not m.IsDead and c.Entity.Enable then table.insert(adds, c.Entity) end
+            end
+            if #adds == 0 then return end
+            local turned = 0
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                ---@type ShadowUnit
+                local u = c
+                if isvalid(u.Entity) and u.Entity.Enable and not u.Dead and (_Util:Pos2(u.Entity) - here):Magnitude() <= 12 then
+                    local pos = _Util:Pos2(u.Entity)
+                    local best = nil
+                    local bestD = 999
+                    for _, a in ipairs(adds) do
+                        local d = (_Util:Pos2(a) - pos):Magnitude()
+                        if d < bestD then
+                            best = a
+                            bestD = d
+                        end
+                    end
+                    u.Target = best
+                    u.RetargetTimer = 4
+                    turned = turned + 1
+                end
+            end
+            log(string.format("[VRF] boss ward %s step=%d adds=%d turned=%d", self.BossName, self.WardStep, #adds, turned))
+        end, 0.3)
+    end
+
+    @ExecSpace("Multicast")
+    method void WardFx(number seconds)
+        -- 무적 동안 보스 몸에 흰 빛 + 화면 흔들림
+        if not self:HasLocalAudience() then return end
+        local fx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.8, 1.8, 1), true, { Color = Color(1, 0.95, 0.75, 0.85) })
+        _TimerService:SetTimerOnce(function() if fx ~= 0 then _ParticleService:RemoveParticle(fx) end end, seconds)
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.2, 0.3) end
     end
 
     @ExecSpace("ServerOnly")

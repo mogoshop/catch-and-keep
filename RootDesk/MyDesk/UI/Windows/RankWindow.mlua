@@ -1,4 +1,5 @@
--- 랭킹 창 (L): 심연 도전 — 액트별 (최고 층 · 같은 층이면 빠른 순) / 마지막 액트 보스 최단 처치. 현재 난이도 기준.
+-- 랭킹 창 (L): 성장 순위 (10-24 사용자: 모든 사용자를 레벨 + 가장 멀리 간 난이도·액트로) / 마지막 액트 보스 최단 처치 (현재 난이도).
+-- 심연 기록판(심도 · 이번 주)은 심연을 숨긴 동안(config depthEnabled 0) 탭을 감춘다.
 -- Show(kind)로 열면 서버에 요청 → RankingSystem이 OnData로 돌려준다.
 -- 10-20: 심연이 액트별(레벨대·몬스터가 다름)이라 기록판도 액트별. 심연 탭 아래 액트 넘김 막대(◀ ▶), 처음엔 지금 액트
 -- 10-20 B안: 「이번 주 심연」 탭 — 이번 주 규칙(WeeklyRules)과 주마다 새로 시작하는 기록판 (액트별)
@@ -6,15 +7,18 @@
 script RankWindow extends Logic
 
     property string Win = "RankWin"
-    property string Kind = "depth"
+    property string Kind = "progress"
     property integer Act = 0                -- 심연 탭에서 보는 액트 (0 = 아직 안 고름 → 지금 액트)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/TabProgress", function() self:Show("progress") end)
         _UIKit:Connect(self.Win .. "/TabDepth", function() self:Show("depth") end)
         _UIKit:Connect(self.Win .. "/TabWeek", function() self:Show("week") end)
+        _UIKit:SetEnabled(self.Win .. "/TabDepth", _GameData.depthEnabled >= 1)
+        _UIKit:SetEnabled(self.Win .. "/TabWeek", _GameData.depthEnabled >= 1)
         _UIKit:Connect(self.Win .. "/TabQueen", function() self:Show("boss_" .. _GameConst.FinalBossSourceId) end)
         _UIKit:Connect(self.Win .. "/ActBar/Prev", function() self:SetAct(self:CurrentAct() - 1) end)
         _UIKit:Connect(self.Win .. "/ActBar/Next", function() self:SetAct(self:CurrentAct() + 1) end)
@@ -63,6 +67,19 @@ script RankWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnData(string kind, integer diff, string digest)
+        if kind == "progress" then
+            -- 성장 순위: 레벨 → 난이도 → 액트 순
+            if self.Kind ~= "progress" then return end
+            local rows = { "레벨 · 가장 멀리 간 난이도·액트", "" }
+            local n = 0
+            for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
+                n = n + 1
+                table.insert(rows, string.format("%2d.  %s   %s", n, name, _RankingSystem:ProgressText(tonumber(value) or 0)))
+            end
+            if n == 0 then table.insert(rows, "아직 기록이 없다") end
+            _UIKit:SetText(self.Win .. "/Paper/List", table.concat(rows, "\n"))
+            return
+        end
         local week = string.sub(kind, 1, 9) == "weekrun_a"
         local depth = string.sub(kind, 1, 10) == "depthrun_a" or week
         if week then

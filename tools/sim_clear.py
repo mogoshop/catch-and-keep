@@ -129,15 +129,15 @@ def build(name, L):
     mast = 1 + C["skeletonMasteryPct"] * rk.get("skeleton_mastery", 0) / 100
     atkGrow = 1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)
     hpGrow = 1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)
-    def undead(base_atk, base_hp, lvl):
-        sk = 1 + C["undeadSkillLvPct"] * max(0, lvl - 1) / 100
+    def undead(base_atk, base_hp, lvl, pct=None):
+        sk = 1 + (C["undeadSkillLvPct"] if pct is None else pct) * max(0, lvl - 1) / 100
         return (math.floor(base_atk * atkGrow * sk * mast) * (1 + minion / 100),
                 math.floor(base_hp * hpGrow * sk * mast) * (1 + minion / 100))
     def count(lvl, legion):
         if lvl <= 0:
             return 0
         return (lvl if lvl <= 3 else min(8, 2 + lvl // 3)) + legion
-    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl)
+    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl, C.get("skeletonSkillLvPct", C["undeadSkillLvPct"]))
     n_sk = count(sl, rk.get("skel_legion", 0))
     ml = rk.get("raise_mage", 0) + (tree if rk.get("raise_mage", 0) else 0)
     mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml)

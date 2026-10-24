@@ -145,8 +145,9 @@ script ShadowUnit extends AttackComponent
     property number OfferUntil = 0
     property number FrenzyUntil = 0
     property number FrenzyPct = 0
-    property number RushCheckAt = 0           -- 주인의 군단 질주 확인 시각 (1초마다)
+    property number RushCheckAt = 0           -- 주인의 질주 강화 「군단 질주」 확인 시각 (1초마다)
     property boolean RushLeash = false        -- 군단 질주: 6칸 넘게 떨어지면 곁으로 순간이동
+    property number LeapUntil = 0             -- 군단 질주: 주인이 막 질주했다 — 이 시각까지는 3칸만 떨어져도 곁으로 도약 (SkillEffects.WraithDash)
 
     property Entity Target = nil
     property boolean RingPainted = false
@@ -496,14 +497,16 @@ script ShadowUnit extends AttackComponent
         local follow0 = self:SmoothOwner(Vector2(o.x, o.y), delta)
         local slot = self:FreeSlot(follow0, self:FormationSlot(follow0) + self.Wander)
         local toSlot = slot - myPos
-        -- 군단 질주(주인 오라): 6칸 넘게 떨어지면 바로 곁으로 (도약을 따라온다). 1초마다 주인 스킬을 확인
+        -- 군단 질주(주인 질주 강화): 6칸 넘게 떨어지면 바로 곁으로, 주인이 막 질주했으면 3칸만 떨어져도 따라 도약. 1초마다 주인 스킬을 확인
         if _UtilLogic.ElapsedSeconds >= self.RushCheckAt then
             self.RushCheckAt = _UtilLogic.ElapsedSeconds + 1
             ---@type SkillBook
             local book = self.OwnerPlayer:GetComponent("script.SkillBook")
-            self.RushLeash = book ~= nil and book:GetPowerLevel("legion_rush") > 0
+            self.RushLeash = book ~= nil and book:Node("dash_legion") > 0
         end
-        if toSlot:Magnitude() > (self.RushLeash and 6 or self.LeashDistance) then
+        local leash = self.RushLeash and 6 or self.LeashDistance
+        if _UtilLogic.ElapsedSeconds < self.LeapUntil then leash = 3 end
+        if toSlot:Magnitude() > leash then
             -- 너무 멀어지면 자기 자리로 순간이동 (끼임 방지)
             self.Target = nil
             self:CancelPendingAttack()

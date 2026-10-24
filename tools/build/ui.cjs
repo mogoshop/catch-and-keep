@@ -331,13 +331,13 @@ function buildGameHud() {
   k.btn("InvWin/BtnSell", "판매", { anchor: "bottom-right", pos: [-28, 30], rect_size: [260, 76] });
   b.text("InvWin/Hint", "룬: 고른 뒤 장비 칸 = 소켓\n장비 칸 누르기 = 해제", { size: 16, color: C.dim, alignment: 8, anchor: "bottom-right", pos: [-28, 210], rect_size: [260, 60] });
 
-  // ── 스킬 창 (10-11 개편, docs/design/16): 트리 탭 4개(10-20 망령 걸음 추가) + 메인 스킬 카드 6×4 (해금 레벨 순) + 오른쪽 강화 패널 ──
+  // ── 스킬 창 (10-11 개편, docs/design/16): 트리 탭 4개(10-20 기동 추가 · 10-24 「이동」으로 이름 변경) + 메인 스킬 카드 6×4 (해금 레벨 순) + 오른쪽 강화 패널 ──
   k.frame("SkillWin", "middle-center", [0, 30], [1020, 860], "스킬");
   for (const old of ["SkillWin/Col1", "SkillWin/Col2", "SkillWin/Col3", "SkillWin/Head1", "SkillWin/Head2", "SkillWin/Head3"]) if (b.find(old)) b.remove(old);
   b.text("SkillWin/Points", "", { size: 22, color: "#F4ED83", anchor: "top-left", pos: [40, -76], rect_size: [560, 30], alignment: 3, ...outline });
   k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-96, -70], rect_size: [330, 44], font_size: 18 });
   // 트리 탭: 한 트리 최대 12장이라 6×4 카드면 넉넉하다 (전체 34장을 한 판에 넣으면 6×5를 넘었다)
-  [["Tab1", "소환"], ["Tab2", "영혼"], ["Tab3", "저주"], ["Tab4", "망령 걸음"]].forEach(([n, t], i) => {
+  [["Tab1", "소환"], ["Tab2", "영혼"], ["Tab3", "저주"], ["Tab4", "이동"]].forEach(([n, t], i) => {
     k.btn(`SkillWin/${n}`, t, { anchor: "top-left", pos: [30 + i * 164, -116], rect_size: [156, 54], font_size: 20 });
     k.badge(`SkillWin/${n}`);   // 상황 안내가 다른 탭의 스킬을 가리킬 때
   });
@@ -542,9 +542,10 @@ function buildGameHud() {
 
   // ── 랭킹 창 ──
   k.frame("RankWin", "middle-center", [0, 60], [640, 660], "랭킹");
-  // 10-20 B안: 「이번 주 심연」 탭 (주간 규칙 + 주마다 새 기록판) — 탭 셋
-  [["TabDepth", "심연 최고 층", -196], ["TabWeek", "이번 주 심연", 0], ["TabQueen", "묘지기 여왕 처치 시간", 196]].forEach(([n, t, x]) => {
-    k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [188, 56], font_size: 17 });
+  // 10-20 B안: 「이번 주 심연」 탭 (주간 규칙 + 주마다 새 기록판) · 10-24 「성장 순위」 탭 (레벨 + 가장 멀리 간 난이도·액트) — 탭 넷.
+  // 심연을 숨긴 동안(config depthEnabled 0) 심연 두 탭은 RankWindow가 끈다 → 앞 두 칸(성장·보스)만 보인다
+  [["TabProgress", "성장 순위", -228], ["TabQueen", "묘지기 여왕 처치 시간", -76], ["TabDepth", "심연 최고 층", 76], ["TabWeek", "이번 주 심연", 228]].forEach(([n, t, x]) => {
+    k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [148, 56], font_size: 16 });
   });
   // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김)
   k.actPager("RankWin/ActBar", "top-center", [0, -166], 580);

@@ -85,11 +85,11 @@ script HudMain extends Logic
             _UIKit:Connect("MenuWin/" .. m[1], function() self:FromMenu(win) end)
         end
         _UIKit:Connect("Bottom/Menu/BtnShadow", function() _ShadowHUD:ToggleWindow() end)
-        _UIKit:Connect("Bottom/Menu/BtnRank", function() _RankWindow:Show("depth") end)
+        _UIKit:Connect("Bottom/Menu/BtnRank", function() _RankWindow:Show("progress") end)
         _UIKit:Connect("Bottom/Menu/BtnExtract", function() self:Extract() end)
         self:CompactMenuRow()
         _UIKit:Connect("MenuWin/Shadow", function() self:FromMenu("") _ShadowHUD:ToggleWindow() end)
-        _UIKit:Connect("MenuWin/Rank", function() self:FromMenu("") _RankWindow:Show("depth") end)
+        _UIKit:Connect("MenuWin/Rank", function() self:FromMenu("") _RankWindow:Show("progress") end)
         _UIKit:Connect("MenuWin/Rune", function() self:FromMenu("") _RuneWindow:Show("words") end)
         _UIKit:SetText("MenuWin/Input/Label", "설정")
         _UIKit:Connect("MenuWin/Input", function() self:FromMenu("AudioWin") end)
@@ -122,7 +122,7 @@ script HudMain extends Logic
         elseif k == KeyboardKey.K then _UIKit:Toggle("SkillWin")
         elseif k == KeyboardKey.Q then _UIKit:Toggle("QuestWin")
         elseif k == KeyboardKey.P then _UIKit:Toggle("SocialWin")
-        elseif k == KeyboardKey.L then _RankWindow:Show("depth")
+        elseif k == KeyboardKey.L then _RankWindow:Show("progress")
         elseif k == KeyboardKey.M then _UIKit:Toggle("MenuWin") end
     end
 
@@ -166,12 +166,22 @@ script HudMain extends Logic
         _UIKit:SetEnabled("ShrineBuff", false)
         local now = _UtilLogic.ServerElapsedSeconds
         local list = {}
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        if book ~= nil and book:GetLevel("wraith_dash") > 0 and not Environment:IsMobilePlatform() and not _GameConst:IsTown(player.CurrentMap) then
+            -- 망령 질주 칸 (10-24 사용자: 스페이스에 고정이라 쿨타임이 안 보였다 · 모바일은 질주 단추가 보여 준다) — 맨 앞에 남은 횟수, 다 쓰면 어둡게 + 남은 초
+            local def = _SkillData:Get("wraith_dash")
+            local cd = book:CooldownLeft("wraith_dash")
+            local max = 1 + book:Node("dash_charge")
+            local name = book:Node("dash_blink") > 0 and "망령 도약" or "망령 질주"
+            table.insert(list, { key = "skill_dash", icon = def ~= nil and def.icon or nil, label = "질주", color = Color(0.55, 0.75, 1, 1), left = -1, dim = cd > 0.05,
+                timeText = cd > 0.05 and string.format("%.1f초", cd) or (max > 1 and (tostring(book.DashShown) .. "/" .. tostring(max)) or ""),
+                desc = string.format("%s · %s · 남은 횟수 %d/%d", name, Environment:IsMobilePlatform() and "질주 단추" or "스페이스", book.DashShown, max) })
+        end
         local info = _GameConst:ShrineInfo(st.ShrineKind)
         if info ~= nil and st.ShrineUntil > now then
             table.insert(list, { key = "buff_" .. st.ShrineKind, label = info.short or info.name, color = info.color, left = st.ShrineUntil - now, desc = info.name .. " · " .. info.desc })
         end
-        ---@type SkillBook
-        local book = player:GetComponent("script.SkillBook")
         if book ~= nil and book:GetLevel("command_aura") > 0 then
             local aura = book:GetCommandAura()
             table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
@@ -210,7 +220,7 @@ script HudMain extends Logic
                 if tierIcon ~= "" then _UIKit:SetIcon(path .. "/Tier", tierIcon) end
                 if icon ~= "" then
                     _UIKit:SetIcon(path, icon)
-                    _UIKit:SetColor(path, Color(1, 1, 1, 1))
+                    _UIKit:SetColor(path, b.dim == true and Color(0.4, 0.4, 0.45, 1) or Color(1, 1, 1, 1))
                     _UIKit:SetText(path .. "/Label", "")
                 else
                     local c = b.color
@@ -232,13 +242,13 @@ script HudMain extends Logic
             if stepLv > 0 then
                 local def = _SkillData:Get("swift_step")
                 table.insert(list, { key = "buff_swift_step", icon = def ~= nil and def.icon or nil, label = "걸음", color = Color(0.6, 0.85, 0.7, 1), left = -1,
-                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv)) })
+                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv) + 2 * book:Node("step_gale")) })
             end
-            local rushLv = book:GetPowerLevel("legion_rush")
-            if rushLv > 0 then
-                local def = _SkillData:Get("legion_rush")
-                table.insert(list, { key = "buff_legion_rush", icon = def ~= nil and def.icon or nil, label = "질주", color = Color(0.75, 0.6, 0.95, 1), left = -1,
-                    desc = string.format("군단 질주 · 소환수 이동 +%g%%", book:GetEffectPower("legion_rush", rushLv)) })
+            ---@type PlayerStats
+            local st = player:GetComponent("script.PlayerStats")
+            if st ~= nil and st.HuntUntil > _UtilLogic.ServerElapsedSeconds and book:Node("step_hunt") > 0 then
+                table.insert(list, { key = "buff_step_hunt", label = "사냥", color = Color(0.95, 0.7, 0.4, 1), left = st.HuntUntil - _UtilLogic.ServerElapsedSeconds,
+                    desc = string.format("사냥꾼의 걸음 · 처치 뒤 이동 속도 +%d%%", 4 * book:Node("step_hunt")) })
             end
         end
         local map = player.CurrentMap
