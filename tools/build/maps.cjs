@@ -330,12 +330,26 @@ function artEntities(d, maps, ctx, layout, fixed) {
       const c = spots[0];
       const mirror = (c.k * 1000) % 2 < 1 ? 1 : -1;   // 세트마다 통째로 좌우를 뒤집어 같은 세트도 다르게
       centers.push(c);
+      placePieces(rows, c, mirror, free, `ArtSet${si + 1}`, funcSpots);
+    });
+    return centers;
+  };
+  // 세트 그림들을 중심 c 둘레에 놓는다 (장면 세트 · 보스 무대 공용)
+  // nudge: 보스 무대는 그림이 벽·기능 자리에 걸리면 버리지 않고 가까운 빈자리로 조금 옮긴다 (보스 발밑 1.2칸 안은 피한다)
+  const NUDGE = [[0, 0], [0, 0.7], [0, -0.7], [0.7, 0], [-0.7, 0], [0.8, 0.8], [-0.8, 0.8], [0.8, -0.8], [-0.8, -0.8], [0, 1.4], [0, -1.4], [1.4, 0], [-1.4, 0]];
+  const placePieces = (rows, c, mirror, free, tag, funcSpots, nudge) => {
       rows.forEach((r, k) => {
         const decal = r.piece.startsWith("d:");
         const name = decal ? r.piece.slice(2) : r.piece;
-        const x = c.x + num(r.dx) * mirror, y = c.y + num(r.dy);
-        if (!free(Math.floor(x), Math.floor(y))) return;   // 벽 위에 걸치는 소품은 뺀다
-        if (!decal && funcSpots.some(([fx, fy]) => Math.abs(fx - x) < 2.2 && Math.abs(fy - y) < 1.4)) return;   // 횃불·제단·포털 같은 기능 자리 곁은 비운다
+        const ok = (x, y) => free(Math.floor(x), Math.floor(y))   // 벽 위에 걸치는 소품은 뺀다
+          && (decal || !funcSpots.some(([fx, fy]) => Math.abs(fx - x) < 2.2 && Math.abs(fy - y) < 1.4))   // 횃불·제단·포털 같은 기능 자리 곁은 비운다
+          && (decal || !nudge || Math.abs(x - c.x) > 1.2 || Math.abs(y - c.y) > 1.0);
+        let x = c.x + num(r.dx) * mirror, y = c.y + num(r.dy);
+        const tries = nudge ? NUDGE : [[0, 0]];
+        const hit = tries.find(([nx, ny]) => ok(x + nx, y + ny));
+        if (!hit) return;
+        x += hit[0];
+        y += hit[1];
         const sc = pscale(name, 0.8) * num(r.scale, 1);
         const o = sprite(ruid(name), null, 1);
         o["MOD.Core.SpriteRendererComponent"].FlipX = (num(r.flip) === 1) !== (mirror < 0);
@@ -343,8 +357,23 @@ function artEntities(d, maps, ctx, layout, fixed) {
         if (!decal) block(name, x, y, sc);
         // 앞뒤: 아래쪽(앞) 그림일수록 z를 더 작게 (장식 -0.03 기준 ±0.004 안)
         const z = decal ? -0.015 : -0.03 - (2 - num(r.dy)) * 0.001;
-        out.push({ name: `ArtSet${si + 1}_${k + 1}`, pos: [r3(x), r3(y), r3(z * 1000) / 1000], overrides: scaled(o, sc) });
+        out.push({ name: `${tag}_${k + 1}`, pos: [r3(x), r3(y), r3(z * 1000) / 1000], overrides: scaled(o, sc) });
       });
+  };
+  // 보스 무대 (map_layouts·map_art bossSets = "세트@x/y"): 보스가 서는 자리에 맞춘 세트 — +dx가 보스 뒤(플레이어가 오는 반대편)
+  // 10-25 사용자: 액트마다 중간보스·최종보스 자리에 보스를 더 부각해 주는 요소를 장면 세트처럼
+  const placeBossSets = (specs, free) => {
+    // 보스(고정 몬스터 RegionN/…) 자신은 기능 자리에서 뺀다 — 무대가 보스를 둘러싸야 한다. 포털·횃불·제단 같은 다른 기능 자리만 비운다
+    const funcSpots = (fixed || []).filter((e) => !/^Art/.test(e.name) && !/^Region/.test(String(e["mo" + "del"] || ""))).map((e) => e.pos);
+    const centers = [];
+    specs.forEach((spec, i) => {
+      const [setName, at] = spec.split("@");
+      const rows = ctx.sets[setName];
+      if (!rows) throw new Error(`${d.id}: 보스 무대 '${setName}'이 map_sets.csv에 없음`);
+      const [x, y] = at.split("/").map(Number);
+      const c = { x, y };
+      centers.push(c);
+      placePieces(rows, c, 1, free, `ArtBoss${i + 1}`, funcSpots, true);
     });
     return centers;
   };
@@ -410,6 +439,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
     const marks = placeLandmarks(list(spec.landmarks || ""), layout.bounds, openFloor, anchorsAvoid);
     const setCenters = placeSets(list(spec.sets || ""), layout.bounds, openFloor, anchorsAvoid.concat(marks.map((m) => [m.x, m.y, 9])), (x, y) => !layout.isFloor(x, y));
     marks.push(...setCenters);
+    marks.push(...placeBossSets(list(spec.bossSets || ""), (x, y) => layout.isFloor(x, y)));
     const props = list(spec.props || "");
     if (props.length) {
       // 장식 이름 뒤 「*배율」은 이 맵에서만 그 장식을 더 키운다 (장식 자체 크기는 art_scale.csv).
@@ -445,6 +475,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
       && !(y > -4 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3)));
     const openMarks = placeLandmarks(list(art.landmarks || ""), tb, inOpen, fixedAvoid);
     openMarks.push(...placeSets(list(art.sets || ""), tb, inOpen, fixedAvoid.concat(openMarks.map((m) => [m.x, m.y, 9])), null));
+    openMarks.push(...placeBossSets(list(art.bossSets || ""), inTiles));
     const kinds = list(art.scatter || "");
     if (kinds.length) {
       const rand = layoutGen.rng([...d.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
