@@ -73,13 +73,17 @@ script PlayerShop extends Component
     end
 
     method table Goods(integer diff)
-        -- 거래 창 왼쪽 상품: 물약은 난이도만큼 등급이 열린다 + 귀환 두루마리 · 도박
+        -- 거래 창 왼쪽 상품: 물약 등급은 액트·난이도만큼 열린다 + 귀환 두루마리 · 도박
+        -- (10-24 사용자: 액트 2에서 체력이 200쯤인데 하급(60)만 팔았다 → 보통 액트 2·3 중급 · 액트 4 고급, 악몽은 한 단계 위부터)
+        local act = 1
+        if isvalid(self.Entity.CurrentMap) then act = _GameConst:ActOfMap(_GameConst:BaseMapName(self.Entity.CurrentMap.Name)) end
+        local tier = math.min(3, 1 + diff + (act >= 2 and 1 or 0) + (act >= 4 and 1 or 0))
         local list = { "hp1", "mp1" }
-        if diff >= 1 then
+        if tier >= 2 then
             table.insert(list, "hp2")
             table.insert(list, "mp2")
         end
-        if diff >= 2 then
+        if tier >= 3 then
             table.insert(list, "hp3")
             table.insert(list, "mp3")
         end

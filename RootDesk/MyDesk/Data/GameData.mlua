@@ -228,7 +228,8 @@ script GameData extends Logic
     property number coopDropPerPlayer = 0.05    -- 같은 맵 플레이어 1명이 늘 때마다 드롭 추첨 횟수 +이 비율 (10-13 X2)
     property number partyExpPerMember = 0.1    -- 근처 파티원 1명이 늘 때마다 각자 처치 경험치 +이 비율 — 파티원 각자 100%에 더한다 (10-13 X1: 예전 D2식 분배는 4명이면 1인 51%라 파티가 손해였다)
     property number respecFreeLevel = 15    -- 이 레벨까지 스킬·능력치 초기화 무료 (10-11 사용자 결정 · docs/design/16)
-    property number respecGoldPerLevel = 200    -- 그 뒤 초기화 비용 = 이 값 × 캐릭터 레벨 골드 (야영지 사제 오렌 곁에서)
+    property number respecGoldBase = 50000    -- Lv16 첫 유료 초기화 비용 (10-24 사용자: 200×레벨 = 3200은 액트 1을 마치면 2만 골드라 사실상 무제한 → 5만부터 · 스킬을 위해 모아야 한다)
+    property number respecGoldPerLevel = 2500    -- 그 뒤 레벨마다 초기화 비용 + (Lv20 6만 · Lv30 8.5만 · Lv40 11만 — 야영지 사제 오렌 곁에서)
     property number strMinionPct = 0.5    -- 통솔(예전 힘) 1당 소환수(해골·마법사·되살림·그림자) 공격·생명 % — 시작값 15를 넘은 만큼 (10-11 능력치 개편 · 10-24: 1 → 0.5 통솔 몰아주기로 소환수가 너무 단단했다)
     property number dexMeleePct = 0.5    -- 민첩 1당 평타 물리 피해 % (10-11: 힘 대신)
     property number dexFcrPct = 0.3    -- 민첩 1당 시전 속도 % (10-11)
@@ -454,15 +455,15 @@ script GameData extends Logic
         self.Shop = {}
         self.Shop["hp"] = { name = "생명 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "hp", tier = 0, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
         self.Shop["mp"] = { name = "마나 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "mp", tier = 0, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
-        self.Shop["hp1"] = { name = "하급 생명 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 60, manaFlat = 0, kind = "hp", tier = 1, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
-        self.Shop["hp2"] = { name = "중급 생명 물약", price = 140, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 150, manaFlat = 0, kind = "hp", tier = 2, minLevel = 10, icon = "11adab8d62184c0f8650418def608ece", iconPx = 128 }
-        self.Shop["hp3"] = { name = "고급 생명 물약", price = 360, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 360, manaFlat = 0, kind = "hp", tier = 3, minLevel = 30, icon = "fd1b061e9ef042649d8b357149f9c100", iconPx = 128 }
-        self.Shop["mp1"] = { name = "하급 마나 물약", price = 50, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 40, kind = "mp", tier = 1, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
-        self.Shop["mp2"] = { name = "중급 마나 물약", price = 140, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 90, kind = "mp", tier = 2, minLevel = 10, icon = "bd12aecc8bd94d47ae4c6dd86e98ab93", iconPx = 128 }
-        self.Shop["mp3"] = { name = "고급 마나 물약", price = 360, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 220, kind = "mp", tier = 3, minLevel = 30, icon = "0a7131b3837042e8a51873132b64e18f", iconPx = 128 }
+        self.Shop["hp1"] = { name = "하급 생명 물약", price = 90, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 60, manaFlat = 0, kind = "hp", tier = 1, minLevel = 1, icon = "85202b477bab46c4ad7667269d15b269", iconPx = 128 }
+        self.Shop["hp2"] = { name = "중급 생명 물약", price = 280, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 150, manaFlat = 0, kind = "hp", tier = 2, minLevel = 10, icon = "11adab8d62184c0f8650418def608ece", iconPx = 128 }
+        self.Shop["hp3"] = { name = "고급 생명 물약", price = 700, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 360, manaFlat = 0, kind = "hp", tier = 3, minLevel = 30, icon = "fd1b061e9ef042649d8b357149f9c100", iconPx = 128 }
+        self.Shop["mp1"] = { name = "하급 마나 물약", price = 90, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 40, kind = "mp", tier = 1, minLevel = 1, icon = "3abbee4f79e8467fa0df35f8c75c1dcc", iconPx = 128 }
+        self.Shop["mp2"] = { name = "중급 마나 물약", price = 280, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 90, kind = "mp", tier = 2, minLevel = 10, icon = "bd12aecc8bd94d47ae4c6dd86e98ab93", iconPx = 128 }
+        self.Shop["mp3"] = { name = "고급 마나 물약", price = 700, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 220, kind = "mp", tier = 3, minLevel = 30, icon = "0a7131b3837042e8a51873132b64e18f", iconPx = 128 }
         self.Shop["rv"] = { name = "회복 물약", price = 240, perLevel = 0, hpPct = 35, manaPct = 35, hpFlat = 0, manaFlat = 0, kind = "rv", tier = 1, minLevel = 1, icon = "b44c403aa54d433b8a1cd66b0acd02f0", iconPx = 128 }
-        self.Shop["tp"] = { name = "귀환 두루마리", price = 40, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
-        self.Shop["gamble"] = { name = "도박", price = 150, perLevel = 30, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
+        self.Shop["tp"] = { name = "귀환 두루마리", price = 80, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
+        self.Shop["gamble"] = { name = "도박", price = 600, perLevel = 120, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
         self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 1, monsterHpMul = 1, monsterDmgMul = 1, dropQualityMul = 1, dropMagicMul = 1, dropGoldMul = 1, dropRuneMul = 1, dropNoneMul = 1, auraW1 = 60, auraW2 = 30, auraW3 = 10, eliteVariantChance = 0, championDual = 0 }
         self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 5, monsterHpMul = 2.4, monsterDmgMul = 1.2, dropQualityMul = 1.5, dropMagicMul = 1.2, dropGoldMul = 1.5, dropRuneMul = 1.5, dropNoneMul = 0.85, auraW1 = 45, auraW2 = 38, auraW3 = 17, eliteVariantChance = 0.15, championDual = 1 }
