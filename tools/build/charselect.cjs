@@ -60,16 +60,19 @@ function run() {
   row('GenderLabel', '성별', -200);
   b.button(c + '/BtnMale', '남', { anchor: 'top-left', pivot: [0, 1], pos: [720, -194], rect_size: [200, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 28, color: '#E6DCC6' });
   b.button(c + '/BtnFemale', '여', { anchor: 'top-left', pivot: [0, 1], pos: [940, -194], rect_size: [200, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 28, color: '#E6DCC6' });
-  // 머리 색 · 눈 색: ◀ 이름 ▶
-  const pick = (key, label, y) => {
-    row(key + 'Label', label, y);
-    b.button(c + '/' + key + 'Prev', '◀', { anchor: 'top-left', pivot: [0, 1], pos: [720, y + 6], rect_size: [96, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 28, color: '#E6DCC6' });
-    b.text(c + '/' + key + 'Name', '', { anchor: 'top-left', pos: [828, y], rect_size: [340, 64], size: 28, bold: true, color: '#F3E7CC', alignment: 4 });
-    b.button(c + '/' + key + 'Next', '▶', { anchor: 'top-left', pivot: [0, 1], pos: [1184, y + 6], rect_size: [96, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 28, color: '#E6DCC6' });
+  // 머리 모양·머리 색 / 얼굴·눈 색: 두 줄 두 칸 「◀ (항목 이름 + 고른 값) ▶」 (10-24 사용자: 캐릭터 커스텀을 더 신경 써 달라 — 머리 모양 7 · 얼굴 4 추가)
+  // 항목 이름은 값 글씨 위에 작게 함께 쓴다 (CharSelectWindow.SetPick). 예전 왼쪽 항목 글씨(HairLabel·FaceLabel)는 지운다
+  for (const old of ['HairLabel', 'FaceLabel']) if (b.find(c + '/' + old)) b.remove(c + '/' + old);
+  const pick = (key, x, y) => {
+    b.button(c + '/' + key + 'Prev', '◀', { anchor: 'top-left', pivot: [0, 1], pos: [x, y], rect_size: [80, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 26, color: '#E6DCC6' });
+    b.text(c + '/' + key + 'Name', '', { anchor: 'top-left', pivot: [0, 1], pos: [x + 84, y], rect_size: [262, 88], size: 26, bold: true, color: '#F3E7CC', alignment: 4, bestfit: true, min_size: 18, max_size: 26 });
+    b.button(c + '/' + key + 'Next', '▶', { anchor: 'top-left', pivot: [0, 1], pos: [x + 350, y], rect_size: [80, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 26, color: '#E6DCC6' });
   };
-  pick('Hair', '머리 색', -300);
-  pick('Face', '눈 색', -400);
-  b.button(c + '/BtnRandom', '무작위', { anchor: 'top-left', pivot: [0, 1], pos: [720, -494], rect_size: [260, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
+  pick('HairStyle', 520, -290);
+  pick('Hair', 970, -290);
+  pick('FaceStyle', 520, -396);
+  pick('Face', 970, -396);
+  b.button(c + '/BtnRandom', '무작위', { anchor: 'top-left', pivot: [0, 1], pos: [1160, -194], rect_size: [240, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
   b.text(c + '/Note', '외형은 나중에 바꿀 수 없다\n장비를 입으면 옷과 무기 모습이 바뀐다', { anchor: 'top-left', pos: [40, -592], rect_size: [420, 70], size: 19, color: '#8C8270', alignment: 4 });
   b.button(c + '/BtnCancel', '취소', { anchor: 'bottom-right', pivot: [1, 0], pos: [-660, 24], rect_size: [220, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
   b.button(c + '/BtnCreate', '만들기', { anchor: 'bottom-right', pivot: [1, 0], pos: [-40, 24], rect_size: [592, 88], image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, font_size: 30, color: '#F4E2B0' });

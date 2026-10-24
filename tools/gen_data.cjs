@@ -163,26 +163,45 @@ function genGameData() {
     end
 
     method integer LookOptionCount(string kind, string gender)
-        -- 캐릭터 만들기 선택지 수: kind = "hair" | "face", gender = "m" | "f" (player_appearance.csv의 hair.m.1 …)
+        -- 캐릭터 만들기 선택지 수: kind = "hair" | "face" (색 — player_appearance.csv의 hair.m.1 …) · "hairstyle" | "facestyle" (모양)
         self:Ensure()
         local n = 0
-        while self.PlayerAppearance[kind .. "." .. gender .. "." .. tostring(n + 1)] ~= nil do n = n + 1 end
+        while self.PlayerAppearanceName[kind .. "." .. gender .. "." .. tostring(n + 1)] ~= nil do n = n + 1 end
         return n
     end
 
     method table ParseLook(string look)
-        -- 캐릭터 외형 "m-1-1" (성별-머리 색-눈 색) → { g, h, f, hair, face, hairName, faceName }. 모르면 기본(남·1·1)
+        -- 캐릭터 외형 "m-1-1-2-3" (성별-머리 색-눈 색-머리 모양-얼굴 모양) → { g, h, f, s, t, hair, face, hairName, faceName, hairStyleName, faceStyleName }.
+        -- 예전 "m-1-1"은 모양 1(데모닉 컷 · 마족의 눈). 모르면 기본(남·1·1·1·1)
+        -- 모양 1은 hair.<성별>.<색>, 모양 2부터 hair.<성별>.<색>.<모양> (10-24 사용자: 캐릭터 커스텀을 더 신경 써 달라 — 머리 모양 7 · 얼굴 4)
         self:Ensure()
-        local g, h, f = string.match(look or "", "^([mf])%-(%d+)%-(%d+)$")
-        if g == nil then g, h, f = "m", "1", "1" end
-        local hairKey = "hair." .. g .. "." .. h
-        local faceKey = "face." .. g .. "." .. f
-        if self.PlayerAppearance[hairKey] == nil then hairKey = "hair." .. g .. ".1" end
-        if self.PlayerAppearance[faceKey] == nil then faceKey = "face." .. g .. ".1" end
-        return { g = g, h = tonumber(h) or 1, f = tonumber(f) or 1,
+        local g, h, f, hs, fs = string.match(look or "", "^([mf])%-(%d+)%-(%d+)%-?(%d*)%-?(%d*)$")
+        if g == nil then g, h, f, hs, fs = "m", "1", "1", "1", "1" end
+        local s = tonumber(hs) or 1
+        local t = tonumber(fs) or 1
+        if self.PlayerAppearanceName["hairstyle." .. g .. "." .. tostring(s)] == nil then s = 1 end
+        if self.PlayerAppearanceName["facestyle." .. g .. "." .. tostring(t)] == nil then t = 1 end
+        local hairKey = "hair." .. g .. "." .. h .. (s > 1 and ("." .. tostring(s)) or "")
+        local faceKey = "face." .. g .. "." .. f .. (t > 1 and ("." .. tostring(t)) or "")
+        if self.PlayerAppearance[hairKey] == nil then
+            h = "1"
+            hairKey = "hair." .. g .. ".1" .. (s > 1 and ("." .. tostring(s)) or "")
+        end
+        if self.PlayerAppearance[faceKey] == nil then
+            f = "1"
+            faceKey = "face." .. g .. ".1" .. (t > 1 and ("." .. tostring(t)) or "")
+        end
+        return { g = g, h = tonumber(h) or 1, f = tonumber(f) or 1, s = s, t = t,
             hair = self.PlayerAppearance[hairKey] or self.PlayerAppearance["hair"] or "",
             face = self.PlayerAppearance[faceKey] or self.PlayerAppearance["face"] or "",
-            hairName = self.PlayerAppearanceName[hairKey] or "", faceName = self.PlayerAppearanceName[faceKey] or "" }
+            hairName = self.PlayerAppearanceName[hairKey] or "", faceName = self.PlayerAppearanceName[faceKey] or "",
+            hairStyleName = self.PlayerAppearanceName["hairstyle." .. g .. "." .. tostring(s)] or "",
+            faceStyleName = self.PlayerAppearanceName["facestyle." .. g .. "." .. tostring(t)] or "" }
+    end
+
+    method string LookText(table look)
+        -- ParseLook 결과 → 저장 문자열 "g-h-f-s-t"
+        return look.g .. "-" .. tostring(look.h) .. "-" .. tostring(look.f) .. "-" .. tostring(look.s) .. "-" .. tostring(look.t)
     end
 
     method any GetDifficulty(integer index)
