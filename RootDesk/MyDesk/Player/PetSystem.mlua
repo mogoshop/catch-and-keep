@@ -260,10 +260,17 @@ script PetSystem extends Logic
                 end
             else
                 -- 혼자 놀기: 쉬는 중이 아니면 갈 곳으로, 갈 곳이 없으면 새로 고른다 (벽 너머는 안 고른다)
+                -- 주인이 걸어가며 둘레를 벗어나면 쉬다 말고 일어나 주인이 가는 쪽으로 자리를 옮긴다 (메이커 실측: 4칸 넘게 남겨졌다)
+                local walking = v.ownerVel:Magnitude() > 0.5
+                if walking and fromOwner > self.RoamRadius and (v.dest == nil or (v.dest - owner):Magnitude() > self.RoamRadius) then
+                    v.dest = nil
+                    v.restUntil = now
+                end
                 if v.dest == nil and now >= v.restUntil then
                     local a = _UtilLogic:RandomDouble() * math.pi * 2
                     local rr = 0.8 + _UtilLogic:RandomDouble() * (self.RoamRadius - 0.8)
-                    local want = owner + Vector2(math.cos(a) * rr, math.sin(a) * rr * 0.7)
+                    local center = walking and (owner + v.ownerVel:Normalize() * 1.2) or owner
+                    local want = center + Vector2(math.cos(a) * rr, math.sin(a) * rr * 0.7)
                     v.dest = _Util:ReachablePoint(map, owner, want, 0.25)
                 end
                 target = v.dest
