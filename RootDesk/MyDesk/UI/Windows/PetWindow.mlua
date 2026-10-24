@@ -6,8 +6,10 @@ script PetWindow extends Logic
     property string Win = "PetWin"
     property integer TimerId = 0
     property string RenderKey = ""
-    property string FreeState = ""             -- "ing" 판매 중 · "end" 끝남 · "" 모름/없음
-    property string FreeUntil = ""             -- "11월 23일"
+    property string FreeState = ""             -- "ing" 판매 중 · "wait" 판매 대기 · "end" 끝남 · "" 모름/없음
+    property string FreeUntil = ""             -- "11월 25일"
+    property string FreeFrom = ""              -- "10월 25일 11시" (한국 시간)
+    property string PaidState = ""             -- "ing" 살 수 있음 · "" 아직 (미출시 상품은 출시 월드에서 조회되지 않는다)
     property integer PaidPrice = 0
     property boolean Asked = false              -- 상품 정보를 물었다
     property boolean AutoShown = false
@@ -55,19 +57,41 @@ script PetWindow extends Logic
             if free ~= "" then
                 local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(free) end)
                 if ok and prod ~= nil then
-                    self.FreeState = prod.Status == WorldShopProductStatus.Ing and "ing" or (prod.Status == WorldShopProductStatus.End and "end" or "")
+                    local st = prod.Status
+                    self.FreeState = st == WorldShopProductStatus.Ing and "ing" or (st == WorldShopProductStatus.Waiting and "wait" or (st == WorldShopProductStatus.End and "end" or ""))
                     if prod.HasSalesPeriod and prod.EndSalesPeriod ~= nil then
-                        self.FreeUntil = tostring(prod.EndSalesPeriod.Month) .. "월 " .. tostring(prod.EndSalesPeriod.Day) .. "일"
+                        self.FreeUntil = self:KstText(prod.EndSalesPeriod, false)
+                        self.FreeFrom = self:KstText(prod.StartSalesPeriod, true)
                     end
                 end
             end
             if paid ~= "" then
                 local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(paid) end)
-                if ok and prod ~= nil then self.PaidPrice = prod.Price end
+                if ok and prod ~= nil then
+                    self.PaidPrice = prod.Price
+                    -- 판매 중일 때만 산다. 메이커는 미출시 상품도 시험 구매할 수 있어 끝나지 않은 상품이면 연다
+                    local st = prod.Status
+                    local test = not Environment:IsPublishedPlay() and st ~= WorldShopProductStatus.End and st ~= WorldShopProductStatus.Deleted
+                    self.PaidState = (st == WorldShopProductStatus.Ing or test) and "ing" or ""
+                end
             end
             self.RenderKey = ""
-            log("[VRF] PetWindow products free=" .. self.FreeState .. " until=" .. self.FreeUntil .. " price=" .. tostring(self.PaidPrice))
+            log("[VRF] PetWindow products free=" .. self.FreeState .. " from=" .. self.FreeFrom .. " until=" .. self.FreeUntil .. " paid=" .. self.PaidState .. " price=" .. tostring(self.PaidPrice))
         end, 0.1)
+    end
+
+    method string KstText(any t, boolean withHour)
+        -- 상점 판매 시각(UTC)을 한국 시간 「10월 25일 11시」로 (달이 바뀌는 날은 드물어 날짜만 하루 넘긴다)
+        if t == nil then return "" end
+        local hour = t.Hour + (t:IsLocalTime() and 0 or 9)
+        local day = t.Day
+        if hour >= 24 then
+            hour = hour - 24
+            day = day + 1
+        end
+        local text = tostring(t.Month) .. "월 " .. tostring(day) .. "일"
+        if withHour then text = text .. " " .. tostring(hour) .. "시" end
+        return text
     end
 
     @ExecSpace("ClientOnly")
@@ -75,7 +99,9 @@ script PetWindow extends Logic
         -- 받기·구매: 무료 기간이면 무료 패스, 아니면 유료 패스 구매 창 (플랫폼 창이 결제·확인을 맡는다)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or _PetSystem:HasPet(me.PlayerComponent.UserId) then return end
-        local id = self.FreeState == "ing" and _PetSystem.FreePassId or _PetSystem.PaidPassId
+        local id = ""
+        if self.FreeState == "ing" then id = _PetSystem.FreePassId
+        elseif self.PaidState == "ing" then id = _PetSystem.PaidPassId end
         if id == "" then return end
         _WorldShopService:PromptPurchase(id)
     end
@@ -99,7 +125,7 @@ script PetWindow extends Logic
         ---@type PlayerSave
         local save = _UIKit:Comp("script.PlayerSave")
         local filter = save ~= nil and save.PetFilter or 2
-        local key = table.concat({ tostring(has), tostring(filter), self.FreeState, self.FreeUntil, tostring(self.PaidPrice) }, "#")
+        local key = table.concat({ tostring(has), tostring(filter), self.FreeState, self.FreeFrom, self.FreeUntil, self.PaidState, tostring(self.PaidPrice) }, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         local name = _PetSystem.PetName
@@ -110,7 +136,10 @@ script PetWindow extends Logic
         elseif self.FreeState == "ing" then
             status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeUntil ~= "" and (" · " .. self.FreeUntil .. "까지") or "")) .. "\n숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n지금 받으면 계정에 영원히 남습니다.\n기간이 지나면 유료 상품이 됩니다."
             btn = "무료로 받기"
-        elseif _PetSystem.PaidPassId ~= "" then
+        elseif self.FreeState == "wait" then
+            -- 무료 기간 전 (10-24 사용자: 유료 상품은 무료 기간이 끝난 뒤 연다 — 그 전엔 사는 단추를 보이지 않는다)
+            status = _UIKit:Colored("#FFD27A", "오픈 기념 무료" .. (self.FreeFrom ~= "" and (" · " .. self.FreeFrom .. "부터") or "")) .. "\n숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n기간 안에 받으면 계정에 영원히 남습니다."
+        elseif self.PaidState == "ing" then
             status = "숯의 동생, 잿빛 아기 고양이 「" .. name .. "」.\n곁을 따라다니며 바닥에 떨어진 전리품을 주워 옵니다.\n한 번 사면 계정의 모든 캐릭터가 함께합니다." .. (self.PaidPrice > 0 and ("\n가격 " .. tostring(self.PaidPrice) .. " 월드 코인") or "")
             btn = "데려오기"
         else
