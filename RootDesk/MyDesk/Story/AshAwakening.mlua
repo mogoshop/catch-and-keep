@@ -13,9 +13,10 @@ script AshAwakening extends Logic
 
     property number MeteorEvery = 11          -- 플레이어마다 평균 간격(초) ± MeteorJitter
     property number MeteorJitter = 4
-    property number MeteorRadius = 1.3
+    property number MeteorRadius = 1.6        -- 10-24 1.3 → 1.6 (피해가 너무 약했다)
     property number MeteorWarn = 1.4          -- 예고 원이 차오르는 시간
-    property number MeteorHpPct = 0.16        -- 최대 생명의 16% (화염 저항만큼 줄어든다, 저항은 최대 75%)
+    property number MeteorHpPct = 0.3         -- 최대 생명의 30% (10-24 사용자: 운석이 너무 약했다 — 16% · 저항 64면 6%). 화염 저항은 절반만 듣는다
+    property number MeteorSummonPct = 0.35    -- 맞은 소환수(그림자·해골)도 최대 생명의 35% — 물량으로 밀어붙이는 군단도 흩어 놓게
     property number TremorMin = 14            -- 땅울림 간격(초)
     property number TremorMax = 26
     property string StateId = "awaken"        -- 군세 각성 때 몬스터에 붙이는 상태 (monster_states.csv — 배율·색·이름은 표에서)
@@ -34,6 +35,7 @@ script AshAwakening extends Logic
     property number StartDelay = 4            -- 깨어난 뒤 이만큼 기다렸다가 연출 (심장의 사도 처치 2.5초 뒤에 이야기 카드가 온다 — 그 전에 시작하면 카드 뒤에 묻힌다)
     property number NextTremor = 0
     property boolean ClientAwake = false
+    property boolean ClientBgmAwake = false   -- 배경음이 각성 곡인지 (SoundDirector.RefreshAwakeBgm)
 
     method void OnBeginPlay()
         -- 서버는 운석·군세, 클라이언트는 단계 진행·하늘빛·땅울림 (한 스크립트, 실행 쪽마다 다른 주기)
@@ -166,7 +168,14 @@ script AshAwakening extends Logic
                 local st = u:GetComponent("script.PlayerStats")
                 if vitals ~= nil then
                     local res = st ~= nil and math.max(0, math.min(75, st:GetResist("fire"))) or 0
-                    vitals:TakeTickDamage(u.PlayerComponent.MaxHp * self.MeteorHpPct * (1 - res / 100))
+                    vitals:TakeTickDamage(u.PlayerComponent.MaxHp * self.MeteorHpPct * (1 - res / 200))
+                end
+            end
+            for _, c2 in ipairs(_Util:ListOf(map, "script.ShadowUnit")) do
+                ---@type ShadowUnit
+                local unit = c2
+                if isvalid(unit.Entity) and unit.Entity.Enable and not unit.Dead and (_Util:Pos2(unit.Entity) - c):Magnitude() <= self.MeteorRadius then
+                    unit:Hurt(math.floor(unit.MaxHp * self.MeteorSummonPct))
                 end
             end
         end, self.MeteorWarn)
@@ -226,6 +235,10 @@ script AshAwakening extends Logic
             self.SeqAt = now
             self:Awaken(map)
             self:ReachPhase(4)
+        end
+        if awake ~= self.ClientBgmAwake then
+            self.ClientBgmAwake = awake
+            _SoundDirector:RefreshAwakeBgm()   -- 각성 뒤 급박한 곡 · 재의 왕 처치 뒤 원래 곡
         end
         local sky = awake and self.ClientPhase >= 1
         if sky ~= self.ClientAwake then

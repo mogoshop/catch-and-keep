@@ -27,6 +27,9 @@ script LootDrop extends Component
     property number LockedUntil = 0       -- 서버 경과 초. 이 시각까지는 아무도 못 줍는다 (버린 물건, 깜빡임)
     property number DiscardLockSeconds = 10
     property number ThumbScale = 0.4      -- 장비 외형 썸네일
+    property any Beam = nil               -- 유니크·세트 빛기둥 (클라이언트 전용 자식)
+    property any Glow = nil               -- 유니크·세트 바닥 빛
+    property number BeamHeight = 4.2      -- 빛기둥 높이 (월드 단위 · 화면 위까지 닿게)
 
     @ExecSpace("ServerOnly")
     method void Setup(string ownerUserId, string kind, string itemString, integer amount, integer rarity)
@@ -67,6 +70,45 @@ script LootDrop extends Component
         self.Entity:Destroy()
     end
 
+    method Color BeamColor()
+        -- 유니크 금빛 · 세트 초록 (바닥 깜빡임과 같은 계열, 조금 더 밝게)
+        if self.Rarity == 4 then return Color(0.35, 1, 0.4, 1) end
+        return Color(1, 0.72, 0.25, 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MakeBeam(number parentScale)
+        -- 유니크·세트가 떨어지면 하늘로 솟는 빛기둥 + 바닥 빛 (10-24 사용자: 좋은 템이 떨어져도 티가 덜 났다).
+        -- 바닥 물건의 자식으로 만들어 주우면·사라지면 같이 없어진다. 부모가 작게 줄어 있어 배율을 되돌린다
+        local k = 1 / math.max(0.01, parentScale)
+        local beam = _SpawnService:SpawnByModelId("artsprite", "LootBeam", self.Entity.TransformComponent.WorldPosition, self.Entity)
+        if isvalid(beam) then
+            local sr = beam.SpriteRendererComponent
+            sr.SpriteRUID = _GameData:GetUiIcon("fx_loot_beam")
+            local own = self.Entity.SpriteRendererComponent
+            if isvalid(own) then
+                sr.SortingLayer = own.SortingLayer
+                sr.OrderInLayer = own.OrderInLayer - 1
+            end
+            beam.TransformComponent.Position = Vector3(0, 0, 0)
+            beam.TransformComponent.Scale = Vector3(0.6 * k, self.BeamHeight / 6.4 * k, 1)
+            self.Beam = beam
+        end
+        local glow = _SpawnService:SpawnByModelId("artsprite", "LootGlow", self.Entity.TransformComponent.WorldPosition, self.Entity)
+        if isvalid(glow) then
+            local sr = glow.SpriteRendererComponent
+            sr.SpriteRUID = _GameData:GetUiIcon("fx_loot_glow")
+            local own = self.Entity.SpriteRendererComponent
+            if isvalid(own) then
+                sr.SortingLayer = own.SortingLayer
+                sr.OrderInLayer = own.OrderInLayer - 1
+            end
+            glow.TransformComponent.Position = Vector3(0, 0, 0)
+            glow.TransformComponent.Scale = Vector3(0.9 * k, 0.9 * k, 1)
+            self.Glow = glow
+        end
+    end
+
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
         -- 종류별 아이콘, 장비는 등급 색으로 깜빡임 (희귀 이상은 더 크게)
@@ -98,6 +140,7 @@ script LootDrop extends Component
             if px > 0 then scale = self.IconWorldSize / (px / 100)
             elseif string.sub(ruid, 1, 12) == "thumbnail://" then scale = self.ThumbScale end
             self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
+            if self.Kind == "item" and self.Rarity >= 3 then self:MakeBeam(scale) end
         end
         if self.Kind ~= "item" and self.Kind ~= "rune" then return end
         self.PulseTime = self.PulseTime + delta
@@ -108,6 +151,12 @@ script LootDrop extends Component
             return
         end
         local a = 0.75 + 0.25 * math.abs(math.sin(self.PulseTime * 4))
+        if self.Beam ~= nil and isvalid(self.Beam) then
+            local c = self:BeamColor()
+            local b = 0.55 + 0.25 * math.abs(math.sin(self.PulseTime * 2.2))
+            self.Beam.SpriteRendererComponent.Color = Color(c.r, c.g, c.b, b)
+            if self.Glow ~= nil and isvalid(self.Glow) then self.Glow.SpriteRendererComponent.Color = Color(c.r, c.g, c.b, b * 0.8) end
+        end
         if self.Kind == "rune" then sprite.Color = Color(1, 0.6, 0.2, a)
         elseif self.Rarity == 1 then sprite.Color = Color(0.5, 0.6, 1, a)
         elseif self.Rarity == 2 then sprite.Color = Color(1, 0.9, 0.35, a)

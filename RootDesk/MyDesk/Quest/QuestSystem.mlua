@@ -13,7 +13,11 @@ script QuestSystem extends Logic
             -- 일반 처치: 함께 싸운 사람(피해를 준 사람·근처 파티원). 이름 있는 적·열쇠 적은 맵 전원 + 파티원
             local credited = self:CreditSet(e.map, e.player)
             local killers = e.players or { e.player }
-            if e.boss then killers = credited end   -- 맵 보스(액트 보스·고유 보스): 맵 안 전원 (10-13 M1, 곁가지 보스와 같게)
+            -- 맵 보스(액트 보스·고유 보스): 맵 안 전원 + 파티원은 어디 있든 (10-24 팀원: 내가 죽어 마을에 있는 동안 파티원이 재의 왕을 잡으니 내 의뢰가 안 깨졌다)
+            if e.boss then
+                credited = self:WithWholeParty(credited)
+                killers = credited
+            end
             for _, p in ipairs(killers) do
                 local q = self:QuestOf(p)
                 if q ~= nil then q:OnKill(e.sourceId, e.map) end
@@ -57,6 +61,24 @@ script QuestSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method table WithWholeParty(table list)
+        -- list + 그 사람들의 파티원 전원 (맵·생사 무관 — 같은 게임 방 파티) · 중복 없이
+        local out = {}
+        local seen = {}
+        local function add(p)
+            if not isvalid(p) or not isvalid(p.PlayerComponent) then return end
+            local id = p.PlayerComponent.UserId
+            if seen[id] then return end
+            seen[id] = true
+            table.insert(out, p)
+        end
+        for _, p in ipairs(list) do add(p) end
+        for _, p in ipairs(list) do
+            for _, m in ipairs(_PartySystem:Members(p)) do add(m) end
+        end
+        return out
+    end
+
     method table CreditSet(Entity map, Entity player)
         -- 맵 안의 모든 플레이어 + player, 그리고 그들의 파티원 중 같은 맵에 있는 사람 (중복 없이). 난이도 확인은 PlayerQuest가 한다
         local out = {}

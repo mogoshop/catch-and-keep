@@ -89,6 +89,7 @@ script SoundDirector extends Logic
             ---@type DepthDirector
             local dd = depth
             if dd ~= nil and dd.BossName ~= "" then bgm = "abyssboss" end
+            bgm = self:AwakeBgm(map, bgm)
             local keyed = _GameData:GetSound(bgm)
             if keyed ~= "" then bgm = keyed end
             wind = amb.Wind
@@ -198,6 +199,29 @@ script SoundDirector extends Logic
     method void StopEffects()
         for ruid, _ in pairs(self.PlayedEffects) do _SoundService:StopSound(ruid) end
         self.PlayedEffects = {}
+    end
+
+    method string AwakeBgm(Entity map, string bgm)
+        -- 액트 4 군세 각성(오렌 다음 「재의 왕이 깨어났다」) 뒤에는 어느 맵이든 급박한 곡 하나로 (10-24 사용자) · 옥좌는 재의 왕 보스곡 그대로
+        local p = _UserService.LocalPlayer
+        if not isvalid(p) or not isvalid(map) then return bgm end
+        if _GameConst:BaseMapName(map.Name) == "throne" then return bgm end
+        if _AshAwakening:IsAwake(p, map) then return "awaken" end
+        return bgm
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshAwakeBgm()
+        -- 각성 상태가 맵 안에서 바뀌면(깨어남 · 재의 왕 처치) 배경음을 다시 고른다
+        if not isvalid(self.CurrentMap) then return end
+        ---@type MapAmbience
+        local amb = self.CurrentMap:GetComponent("script.MapAmbience")
+        if amb == nil then return end
+        local bgm = _GameData:GetSound(self:AwakeBgm(self.CurrentMap, amb.Bgm))
+        if bgm ~= "" and bgm ~= self.CurrentBgm then
+            self.CurrentBgm = bgm
+            _SoundService:PlayBGM(bgm, self.BgmVolume)
+        end
     end
 
     @ExecSpace("ClientOnly")

@@ -31,8 +31,10 @@ script ProgressionSystem extends Logic
         local seconds = 0
         if pattern ~= nil and pattern.EngageStart > 0 then seconds = math.floor(_UtilLogic.ElapsedSeconds - pattern.EngageStart) end
         local last = _QuestData:LastOfAct(3)
-        for _, u in ipairs(e.players or {}) do
-            -- (위: 함께 싸운 사람만)
+        local fought = {}
+        for _, u in ipairs(e.players or {}) do fought[u] = true end
+        for _, u in ipairs(_QuestSystem:WithWholeParty(e.players or {})) do
+            -- 함께 싸운 사람 + 파티원 전원 (마을에 있거나 쓰러져 있어도 — 의뢰 인정과 같게 · 10-24)
             ---@type PlayerQuest
             local quest = u:GetComponent("script.PlayerQuest")
             local reached = quest ~= nil and quest:SameDifficulty(e.map) and last > 0 and quest.Index >= last
@@ -42,7 +44,7 @@ script ProgressionSystem extends Logic
                 st.MaxDifficulty = diff + 1
                 _Util:Banner(_GameConst:DifficultyName(diff + 1) .. " 난이도가 열렸다!", "웨이포인트에서 난이도를 바꿀 수 있다", u.PlayerComponent.UserId)
             end
-            if seconds > 0 then _RankingSystem:RecordBossTime(u, diff, seconds) end
+            if seconds > 0 and fought[u] then _RankingSystem:RecordBossTime(u, diff, seconds) end   -- 기록은 직접 싸운 사람만
         end
     end
 
