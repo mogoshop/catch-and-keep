@@ -407,26 +407,31 @@ script UndeadSystem extends Logic
             rec.cooldown = rec.cooldown * 1.4
             rec.radiusMul = 1.8
             rec.basicMul = 0.65 + 0.15 * gs
-            -- 그림: 필드의 큰 해골 「근위대장 바르그」(대검)를 작게
-            local cap = _GameData:GetMonsterStats("skel_captain")
-            if cap ~= nil and cap.stand ~= "" then
-                rec.stand = cap.stand
-                rec.move = cap.move
-                rec.attack = cap.attack
-                rec.scale = 0.42
-            end
         elseif sh > 0 then
             rec.form = "shield"
             rec.hp = math.floor(rec.hp * 1.1)
             rec.guard = 15 + 5 * sh
             rec.taunt = true
-            rec.tint = Color(0.78, 0.86, 1, 1)
         elseif tw > 0 then
             rec.form = "twin"
             rec.hp = math.floor(rec.hp * 0.85)
             rec.cooldown = rec.cooldown / (1.2 + 0.1 * tw)
-            rec.tint = Color(1, 0.78, 0.72, 1)
         end
+        self:ApplyFormLook(rec)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyFormLook(table rec)
+        -- 변이 해골 그림 = 코덱스 전용 프레임 (monster_frames.csv form_skelform_<변이> · 10-24 사용자 승인). 서기·걷기 첫 장과 공격 타격 장을 주면
+        -- 클라이언트(MotionSmoother.FrameClip)가 프레임을 넘긴다. 그림 자체에 색이 있어 물들이지 않는다 (예전 임시: 바르그 축소 · 푸른/붉은 물들이기)
+        if rec.kind ~= "skeleton" or (rec.form or "") == "" then return end
+        local frames = _GameData:GetMonsterFrames("skelform_" .. rec.form)
+        if frames == nil or frames.stand == nil then return end
+        rec.stand = frames.stand.r[1]
+        rec.move = frames.move ~= nil and frames.move.r[1] or rec.stand
+        if frames.attack ~= nil then rec.attack = frames.attack.r[math.min(#frames.attack.r, frames.attack.s or math.floor(#frames.attack.r / 2) + 1)] end
+        rec.scale = 0.55   -- 일반 해골과 같은 몸 크기 (대검은 칼 때문에 캔버스만 넓다)
+        rec.tint = Color(1, 1, 1, 1)
     end
 
     method number GetReviveMultiplier(integer level)
@@ -692,6 +697,7 @@ script UndeadSystem extends Logic
                 data.expireAt = data.expires > 0 and (_UtilLogic.ElapsedSeconds + (data.expires - utc) / 1000) or 0
                 local tint = data.tint
                 data.tint = Color(tint[1], tint[2], tint[3], tint[4])
+                self:ApplyFormLook(data)   -- 예전 임시 그림으로 저장된 변이 해골도 새 그림으로
                 table.insert(list, data)
             end
         end
