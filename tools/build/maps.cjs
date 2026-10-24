@@ -276,10 +276,17 @@ function artEntities(d, maps, ctx, layout) {
     const spec = ctx.layouts[d.id];
     const k = 1 / S;
     const cellScale = { "$type": "MOD.Core.MODVector3, MOD.Core", x: k, y: k, z: 1 };
-    if (spec.floorArt) out.push(tiled("ArtFloor", ruid(spec.floorArt), cx, cy, w, h, 0));
+    // 바닥·길 색 (map_layouts floorTint · roadTint — 10-24 사용자: 액트 3 바다 맵이 액트 1 회색 바닥 그대로라 무채색이었다)
+    const tintOf = (t) => { const [r, g, bl] = (t || "1/1/1").split("/").map(Number); return { r, g, b: bl, a: 1 }; };
+    if (spec.floorArt) {
+      const f = tiled("ArtFloor", ruid(spec.floorArt), cx, cy, w, h, 0);
+      if (spec.floorTint) f.overrides["MOD.Core.SpriteRendererComponent"].Color = tintOf(spec.floorTint);
+      out.push(f);
+    }
     if (spec.roadArt) {
       layoutGen.roadRuns(layout).forEach((r, i) => {
         const o = sprite(ruid(spec.roadArt), [r.len, 1], 1);
+        if (spec.roadTint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(spec.roadTint);
         o["MOD.Core.TransformComponent"] = { Scale: cellScale };
         out.push({ name: `ArtRoad${i + 1}`, pos: [r.x + 0.5, r.y + 0.5, -0.01], overrides: o });
       });
