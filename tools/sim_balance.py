@@ -178,8 +178,8 @@ def build(prof, L, act=1, diff=0):
     def undead(base_atk, base_hp, slv, mast):
         if slv <= 0:
             return 0, 0
-        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + 0.1 * (slv - 1)) * (1 + 0.08 * mast))
-        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + 0.1 * (slv - 1)) * (1 + 0.08 * mast))
+        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + C["undeadSkillLvPct"] / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
+        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + C["undeadSkillLvPct"] / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
         return a * (1 + minion / 100), h * (1 + minion / 100)
 
     def count(slv, legion):
@@ -192,7 +192,7 @@ def build(prof, L, act=1, diff=0):
     n_sk = count(sl, rk.get("skel_legion", 0))
     ml = rk.get("raise_mage", 0) + (tree if rk.get("raise_mage", 0) else 0)
     mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml, rk.get("skeleton_mastery", 0))
-    mg_atk *= 1 + 0.1 * rk.get("mage_focus", 0)
+    mg_atk *= 1 + C.get("mageFocusPct", 10) / 100 * rk.get("mage_focus", 0)
     n_mg = count(ml, rk.get("mage_legion", 0))
     # 그림자 (ShadowConfig · ShadowCommander)
     ss = rk.get("shadow_summon", 0) + (tree if rk.get("shadow_summon", 0) else 0)

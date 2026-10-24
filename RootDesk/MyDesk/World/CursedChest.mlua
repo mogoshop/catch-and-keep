@@ -98,6 +98,16 @@ script CursedChest extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void SpawnGoldPiles(Vector2 center, string userId, integer piles)
+        -- 상자 골드 더미: 더미마다 상자 레벨 × sealedChestGoldMin~Max (여러 개로 흩어져 떨어진다)
+        for i = 1, piles do
+            local amount = _UtilLogic:RandomIntegerRange(math.floor(self.Level * _GameData.sealedChestGoldMin), math.floor(self.Level * _GameData.sealedChestGoldMax))
+            local a = (i / math.max(1, piles)) * math.pi * 2
+            _LootSystem:Spawn(center + Vector2(math.cos(a) * 0.6, math.sin(a) * 0.35), userId, "gold", "", amount, 0)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
     method void OpenSealed(Entity player)
         -- 봉인 상자: 열쇠 확인 → 이 플레이어에게만 보물 → 첫 개봉 기록 → SealedChestOpened (의뢰 chest 판정)
         local userId = player.PlayerComponent.UserId
@@ -123,14 +133,21 @@ script CursedChest extends Component
         -- 첫 개봉 보장은 의뢰 상자(의뢰 종류 chest가 가리키는 맵 — 장마다 하나)만 (10-23 사용자: 봉인 상자 20개 보장이 디아블로 2보다 후했다).
         -- 나머지 곁가지 끝방 상자는 처음에도 정예급 보물
         if first and self:IsQuestChest() then
-            -- 그 난이도 첫 개봉: 희귀 이상 1 보장 + 룬은 sealedChestRuneChance 확률 (10-13 사용자 지적: 액트 1에 룬 12개 → 룬 출처마다 절반)
-            local item = _ItemData:GenerateWithMinimum(self.Level + 2, "boss", 300, 2)
-            _LootSystem:Spawn(center, userId, "item", item, 1, _ItemData:Parse(item).rarity)
+            -- 그 난이도 첫 개봉: 희귀 이상 sealedChestRares개 보장 + 보스 표 sealedChestBossRolls번 + 골드 더미 + 룬은 sealedChestRuneChance 확률
+            -- (10-24 사용자: 의뢰를 깨고 여는 상자인데 희귀 하나뿐이라 보상이 너무 낮았다)
+            for _ = 1, math.max(1, math.floor(_GameData.sealedChestRares)) do
+                local item = _ItemData:GenerateWithMinimum(self.Level + 2, "boss", 300, 2)
+                _LootSystem:Spawn(center, userId, "item", item, 1, _ItemData:Parse(item).rarity)
+            end
+            for _ = 1, math.floor(_GameData.sealedChestBossRolls) do _LootSystem:RollDrops(self.Entity, self.Level, "boss", player) end
+            self:SpawnGoldPiles(center, userId, math.floor(_GameData.sealedChestGoldPiles))
             local rune = _UtilLogic:RandomDouble() < _GameData.sealedChestRuneChance
             if rune then _LootSystem:Spawn(center, userId, "rune", _ItemData:MakeRune(self.Level + 4), 1, 0) end
             _Util:Banner("봉인 상자를 열었다", rune and "이 난이도 첫 개봉 · 희귀 장비와 룬" or "이 난이도 첫 개봉 · 희귀 장비", userId)
         else
-            _LootSystem:RollDrops(self.Entity, self.Level, "elite", player)
+            -- 다시 열거나 의뢰 밖 끝방 상자: 최상위 몬스터 표 + 골드 더미 (10-24: 정예 표 한 번은 일반 몬스터 무리보다 못했다)
+            _LootSystem:RollDrops(self.Entity, self.Level, "unique", player)
+            self:SpawnGoldPiles(center, userId, math.floor(_GameData.sealedChestRepeatGoldPiles))
             _Util:Notify("봉인 상자를 열었다", userId)
         end
         local q = self.Entity.TransformComponent.WorldPosition
