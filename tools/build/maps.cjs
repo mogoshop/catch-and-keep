@@ -224,6 +224,10 @@ function propFootprint(x, y, wPx, scale) {
   return out;
 }
 
+// 자리마다 크기 흔들기 (0~999 뽑기 → 배율). 10-25 사용자: 「에셋 크기들이 다 너무 똑같아서 별로」
+// 대부분은 0.8~1.15, 열에 둘은 확 작거나(0.65) 확 크게(1.35~1.5) — 같은 그림도 들쭉날쭉해 보이게
+const SIZE_STEPS = [0.65, 0.78, 0.86, 0.93, 1, 1, 1.07, 1.15, 1.25, 1.4];
+const sizeVar = (pick) => SIZE_STEPS[pick % SIZE_STEPS.length] * (0.97 + ((pick >> 4) % 7) / 100);
 // 넓은 빈터 자리 고르기 (랜드마크 · 바닥 무늬 공용, 시드 고정): free(x, y)가 참인 칸 중 반경 r 안이 모두 free인 곳,
 // 피할 점들(avoid: [x, y, 거리])에서 떨어지고 고른 자리끼리 gap 이상 떨어지게 count개
 function pickSpots(bounds, free, r, count, seed, avoid, gap) {
@@ -280,7 +284,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
     if (spots.length < names.length) spots = pickSpots(bounds, free, 2, names.length, seedOf(17), avoid, 12);
     spots.forEach((c, i) => {
       const name = names[i];
-      const sc = pscale(name, 0.8);
+      const sc = pscale(name, 0.8) * (0.92 + (c.pick % 20) / 100);
       const o = sprite(ruid(name), null, 1);
       o["MOD.Core.SpriteRendererComponent"].FlipX = c.pick % 2 === 1;
       block(name, c.x, c.y, sc);
@@ -293,7 +297,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
     if (!names.length) return;
     pickSpots(bounds, free, 0, count, seedOf(29), avoid, 3.2).forEach((c, i) => {
       const name = names[c.pick % names.length];
-      const sc = pscale(name, 0.8) * (0.9 + (c.pick % 21) / 100);
+      const sc = pscale(name, 0.8) * sizeVar(c.pick) * 1.05;
       const o = sprite(ruid(name), null, 1);
       o["MOD.Core.SpriteRendererComponent"].FlipX = (c.pick >> 2) % 2 === 1;
       out.push({ name: `ArtDecal${i + 1}`, pos: [r3(c.x), r3(c.y), -0.015], overrides: scaled(o, sc) });
@@ -351,10 +355,10 @@ function artEntities(d, maps, ctx, layout, fixed) {
     if (props.length) {
       // 장식 이름 뒤 「*배율」은 이 맵에서만 그 장식을 더 키운다 (장식 자체 크기는 art_scale.csv).
       // 크기를 바꾼 장식이 하나라도 있는 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
-      const vary = props.some((x) => x.includes("*") || (ctx.propScale[x.split("*")[0]] || 1) !== 1);
+      const vary = true;   // 10-25: 모든 맵에서 크기·좌우를 섞는다 (예전엔 배율을 바꾼 장식이 있는 맵만)
       layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).filter((p) => !marks.some((m) => Math.hypot(p.x + 0.5 - m.x, p.y + 0.2 - m.y) < 4)).forEach((p, i) => {
         const [name, mul] = props[p.pick % props.length].split("*");
-        const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? 0.88 + ((p.pick * 7) % 25) / 100 : 1);
+        const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? sizeVar(p.pick * 7 + 3) : 1);
         const o = sprite(ruid(name), null, 1);
         if (vary) o["MOD.Core.SpriteRendererComponent"].FlipX = (p.pick >> 3) % 2 === 1;
         block(name, p.x + 0.5, p.y + 0.2, ps);
@@ -405,7 +409,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
       }
       picked.forEach((c, i) => {
         const name = kinds[Math.floor(rand() * kinds.length)];
-        const s = pscale(name, 0.8) * (0.88 + rand() * 0.24);
+        const s = pscale(name, 0.8) * sizeVar(Math.floor(rand() * 1000));
         const o = sprite(ruid(name), null, 1);
         o["MOD.Core.SpriteRendererComponent"].FlipX = rand() < 0.5;
         block(name, c.x, c.y, s);
