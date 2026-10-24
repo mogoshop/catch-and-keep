@@ -12,7 +12,11 @@ let failed = false;
 const fail = (msg) => { failed = true; console.log("실패  " + msg); };
 
 // Porcelain 상태 코드 앞 공백을 보존한다. trim()은 첫 경로의 첫 글자를 잘라낸다.
+// 커밋하지 않는 작업물(코덱스 그림 원본 assets/ · 납품 문서 docs/)은 월드에 실리지 않는다 — 추적하지 않는 새 파일(??)이면 건너뛴다 (10-24).
+// 이미 추적 중인 파일이 바뀐 것은 그대로 잡는다.
+const UNTRACKED_OK = [/^assets\//, /^docs\//];
 const dirty = execSync("git status --porcelain", { encoding: "utf8" }).split("\n").filter(Boolean)
+  .filter((l) => !(l.startsWith("??") && UNTRACKED_OK.some((r) => r.test(l.slice(3)))))
   .map((l) => l.slice(3)).filter((p) => !IGNORE.some((r) => r.test(p)));
 if (dirty.length > 0) {
   fail(`커밋하지 않은 변경 ${dirty.length}개 — 메이커 재저장분이면 'chore(maker)' 커밋으로 정리하거나 되돌린 뒤 출시`);
