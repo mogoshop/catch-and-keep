@@ -32,7 +32,7 @@ for (const file of fs.readdirSync(path.join(ROOT, "map")).filter((f) => f.endsWi
   let touched = false;
   for (const e of b.listEntities()) {
     const name = String(e.path || e.name).split("/").pop();
-    if (/^ArtProp\d+$/.test(name)) {
+    if (/^Art(Prop|Scatter)\d+$/.test(name)) {
       const sr = b.component(name, "MOD.Core.SpriteRendererComponent");
       const art = sr && byRuid[typeof sr.SpriteRUID === "string" ? sr.SpriteRUID : (sr.SpriteRUID || {}).DataId];
       if (!art || !changed.includes(art)) continue;

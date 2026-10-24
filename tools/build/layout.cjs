@@ -377,4 +377,4 @@ function propSpots(layout, count, seed) {
   return out.map((c, i) => ({ x: c.x, y: c.y, pick: Math.floor(rng(i + 11 + (Number(seed) || 1))() * 1000) }));
 }
 
-module.exports = { bounds, generate, tiles, wallRuns, roadRuns, propSpots };
+module.exports = { bounds, generate, tiles, wallRuns, roadRuns, propSpots, rng };

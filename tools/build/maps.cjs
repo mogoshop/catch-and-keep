@@ -119,7 +119,7 @@ function desiredEntities(d, maps, ctx) {
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
   const layout = layoutOf(d, out, ctx);
-  for (const a of artEntities(d, maps, ctx, layout)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
+  for (const a of artEntities(d, maps, ctx, layout, out)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
   return out;
 }
 
@@ -224,7 +224,7 @@ function propFootprint(x, y, wPx, scale) {
   return out;
 }
 
-function artEntities(d, maps, ctx, layout) {
+function artEntities(d, maps, ctx, layout, fixed) {
   const art = ctx.art[d.id] || (layout ? {} : null);
   if (!art) return [];
   const blocked = new Set();
@@ -316,6 +316,38 @@ function artEntities(d, maps, ctx, layout) {
     const gap = (x, y) => y >= -2 && y <= 1 && ((portalAt.w && x < tb.x0) || (portalAt.e && x > tb.x1));
     const frame = { bounds: { x0: tb.x0 - 2, x1: tb.x1 + 2, y0: tb.y0 - 2, y1: tb.y1 + 2 }, isFloor: (x, y) => inTiles(x, y) || gap(x, y) };
     walls(frame, art.border, "1/1/1", "ArtBorder");
+    // 흩뿌림 장식 (map_art scatter · scatterCount): 열린 맵 안쪽 빈 땅에 시드 고정으로 뿌린다.
+    // 10-24 사용자: 액트 2 사냥터가 네 귀퉁이 장식 6개뿐이라 맨 모래밭이었다 — 길·포털 앞·기능 자리(제단·화로·웨이포인트)·고정 장식 곁은 비운다
+    const kinds = list(art.scatter || "");
+    if (kinds.length) {
+      const rand = layoutGen.rng([...d.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
+      const roads = list(art.roads || "").map((r) => r.split("/").map(Number));
+      const onRoad = (x, y) => roads.some(([rx, ry, rw, rh]) => Math.abs(x - rx) < rw / 2 + 0.8 && Math.abs(y - ry) < rh / 2 + 1.2);
+      const keepOut = (fixed || []).filter((e) => !/^Art/.test(e.name)).map((e) => e.pos)
+        .concat(list(art.props || "").map((p) => p.split("@")[1].split("/").map(Number)));
+      const nearPortal = (x, y) => y > -3.5 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3));
+      const cands = [];
+      for (let x = tb.x0 + 2; x <= tb.x1 - 1; x++) for (let y = tb.y0 + 1; y <= tb.y1 - 1; y++) {
+        const px = x + 0.5, py = y + 0.2;
+        if (onRoad(px, py) || nearPortal(px, py) || keepOut.some(([kx, ky]) => Math.hypot(px - kx, py - ky) < 3)) continue;
+        cands.push({ x: px, y: py, k: rand() });
+      }
+      cands.sort((p, q) => p.k - q.k);
+      const picked = [];
+      for (const c of cands) {
+        if (picked.length >= num(art.scatterCount, 12)) break;
+        if (picked.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < 4.2)) continue;
+        picked.push(c);
+      }
+      picked.forEach((c, i) => {
+        const name = kinds[Math.floor(rand() * kinds.length)];
+        const s = pscale(name, 0.8) * (0.88 + rand() * 0.24);
+        const o = sprite(ruid(name), null, 1);
+        o["MOD.Core.SpriteRendererComponent"].FlipX = rand() < 0.5;
+        block(name, c.x, c.y, s);
+        out.push({ name: `ArtScatter${i + 1}`, pos: [r3(c.x), r3(c.y), -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
+      });
+    }
   }
   // 지형 생성 맵에 고정 장식을 더하면(map_art 같은 맵 행) 자동 장식 다음 번호부터 — 이름이 겹치면 엔티티 경로가 둘이 된다
   const placed = out.filter((e) => /^ArtProp\d+$/.test(e.name)).length;
