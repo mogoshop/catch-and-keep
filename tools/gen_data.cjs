@@ -389,7 +389,9 @@ function genGameData() {
 
     method string GetStory(string key)
         -- 이야기 문구 (data/story.csv). 없으면 ""
+        -- 심연을 숨긴 동안(config depthEnabled 0)은 「<키>_nodepth」 판이 있으면 그것을 쓴다 (붉은 포탈을 말하지 않는 문구 · 10-24)
         self:Ensure()
+        if self.depthEnabled < 1 and self.Story[key .. "_nodepth"] ~= nil then return self.Story[key .. "_nodepth"] end
         return self.Story[key] or ""
     end
 
