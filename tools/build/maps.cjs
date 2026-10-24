@@ -226,7 +226,10 @@ function propFootprint(x, y, wPx, scale) {
 
 // 자리마다 크기 흔들기 (0~999 뽑기 → 배율). 10-25 사용자: 「에셋 크기들이 다 너무 똑같아서 별로」
 // 대부분은 0.8~1.15, 열에 둘은 확 작거나(0.65) 확 크게(1.35~1.5) — 같은 그림도 들쭉날쭉해 보이게
-const SIZE_STEPS = [0.65, 0.78, 0.86, 0.93, 1, 1, 1.07, 1.15, 1.25, 1.4];
+// 10-25 2차: 크기만 뒤죽박죽이라는 지적 — 흩뿌리는 풍경 장식은 0.82~1.18로만 흔들고, 장소 분위기는 세트(map_sets.csv)로 만든다
+// 바닥 무늬 색 눌러 주기: 그을음·재 무늬는 원본이 밝은 회색이라 어두운 현무암 바닥에서 흰 별처럼 튀었다 (10-25 메이커 실측)
+const DECAL_TINT = { "a4-decal-scorch": 0.32, "a4-decal-ash-heap": 0.5 };
+const SIZE_STEPS = [0.82, 0.9, 0.95, 1, 1, 1.05, 1.1, 1.18];
 const sizeVar = (pick) => SIZE_STEPS[pick % SIZE_STEPS.length] * (0.97 + ((pick >> 4) % 7) / 100);
 // 넓은 빈터 자리 고르기 (랜드마크 · 바닥 무늬 공용, 시드 고정): free(x, y)가 참인 칸 중 반경 r 안이 모두 free인 곳,
 // 피할 점들(avoid: [x, y, 거리])에서 떨어지고 고른 자리끼리 gap 이상 떨어지게 count개
@@ -292,6 +295,59 @@ function artEntities(d, maps, ctx, layout, fixed) {
     });
     return spots;
   };
+  // 장면 세트 (map_layouts·map_art sets → data/map_sets.csv): 중심 구조물 + 주변 소품 + 바닥 무늬를 실제 자리 관계로 한 묶음.
+  // 10-25 사용자: 「에셋을 흩뿌려 크기만 키운 게 아니라, 특정 장소에 실제로 있는 공간처럼 세트로 설치해 전반적 분위기를 만들어 달라」
+  //   back=1 세트(문·석상·경계탑)는 벽을 등진 자리(중심 3칸 위가 벽)를 먼저 찾는다 — 빈터 한가운데 덩그러니 선 문이 되지 않게
+  //   세트 안 그림은 크기를 흔들지 않고, 앞(아래)에 있는 그림일수록 앞에 그린다
+  const placeSets = (names, bounds, free, avoid, wallAt) => {
+    const funcSpots = (fixed || []).filter((e) => !/^Art/.test(e.name)).map((e) => e.pos);
+    const centers = [];
+    names.forEach((setName, si) => {
+      const rows = ctx.sets[setName];
+      if (!rows) throw new Error(`${d.id}: 세트 '${setName}'이 map_sets.csv에 없음`);
+      const back = rows[0].back === "1" && wallAt;
+      const avoidAll = avoid.concat(centers.map((c) => [c.x, c.y, 9]));
+      let spots = [];
+      if (back) {
+        // 벽을 등진 자리: 중심 둘레 5×4가 비고, 중심 바로 위 2~3칸 줄이 벽
+        const rand = layoutGen.rng(seedOf(53 + si));
+        const cands = [];
+        for (let x = bounds.x0 + 3; x < bounds.x1 - 2; x++) for (let y = bounds.y0 + 3; y < bounds.y1 - 3; y++) {
+          let ok = true;
+          for (let dx = -2; dx <= 2 && ok; dx++) for (let dy = -2; dy <= 1 && ok; dy++) if (!free(x + dx, y + dy)) ok = false;
+          if (!ok) continue;
+          if (![-1, 0, 1].every((dx) => wallAt(x + dx, y + 3) || wallAt(x + dx, y + 2))) continue;
+          const px = x + 0.5, py = y + 0.2;
+          if (avoidAll.some(([ax, ay, dd]) => Math.hypot(px - ax, py - ay) < dd)) continue;
+          cands.push({ x: px, y: py, k: rand() });
+        }
+        cands.sort((a, b) => a.k - b.k);
+        if (cands.length) spots = [cands[0]];
+      }
+      if (!spots.length) spots = pickSpots(bounds, free, 3, 1, seedOf(41 + si), avoidAll, 9);
+      if (!spots.length) spots = pickSpots(bounds, free, 2, 1, seedOf(41 + si), avoidAll, 9);
+      if (!spots.length) return;
+      const c = spots[0];
+      const mirror = (c.k * 1000) % 2 < 1 ? 1 : -1;   // 세트마다 통째로 좌우를 뒤집어 같은 세트도 다르게
+      centers.push(c);
+      rows.forEach((r, k) => {
+        const decal = r.piece.startsWith("d:");
+        const name = decal ? r.piece.slice(2) : r.piece;
+        const x = c.x + num(r.dx) * mirror, y = c.y + num(r.dy);
+        if (!free(Math.floor(x), Math.floor(y))) return;   // 벽 위에 걸치는 소품은 뺀다
+        if (!decal && funcSpots.some(([fx, fy]) => Math.abs(fx - x) < 2.2 && Math.abs(fy - y) < 1.4)) return;   // 횃불·제단·포털 같은 기능 자리 곁은 비운다
+        const sc = pscale(name, 0.8) * num(r.scale, 1);
+        const o = sprite(ruid(name), null, 1);
+        o["MOD.Core.SpriteRendererComponent"].FlipX = (num(r.flip) === 1) !== (mirror < 0);
+        if (decal && DECAL_TINT[name]) o["MOD.Core.SpriteRendererComponent"].Color = { r: DECAL_TINT[name], g: DECAL_TINT[name] * 0.92, b: DECAL_TINT[name] * 0.9, a: 1 };
+        if (!decal) block(name, x, y, sc);
+        // 앞뒤: 아래쪽(앞) 그림일수록 z를 더 작게 (장식 -0.03 기준 ±0.004 안)
+        const z = decal ? -0.015 : -0.03 - (2 - num(r.dy)) * 0.001;
+        out.push({ name: `ArtSet${si + 1}_${k + 1}`, pos: [r3(x), r3(y), r3(z * 1000) / 1000], overrides: scaled(o, sc) });
+      });
+    });
+    return centers;
+  };
   // 바닥 무늬 (decals · decalCount): 밟고 지나가는 납작한 그림 — 막지 않는다. 바닥·길 위, 장식 발밑은 피한다
   const placeDecals = (names, count, bounds, free, avoid) => {
     if (!names.length) return;
@@ -300,6 +356,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
       const sc = pscale(name, 0.8) * sizeVar(c.pick) * 1.05;
       const o = sprite(ruid(name), null, 1);
       o["MOD.Core.SpriteRendererComponent"].FlipX = (c.pick >> 2) % 2 === 1;
+      if (DECAL_TINT[name]) o["MOD.Core.SpriteRendererComponent"].Color = { r: DECAL_TINT[name], g: DECAL_TINT[name] * 0.92, b: DECAL_TINT[name] * 0.9, a: 1 };
       out.push({ name: `ArtDecal${i + 1}`, pos: [r3(c.x), r3(c.y), -0.015], overrides: scaled(o, sc) });
     });
   };
@@ -351,12 +408,14 @@ function artEntities(d, maps, ctx, layout, fixed) {
     const anchorsAvoid = (layout.anchors || []).filter((a) => a.kind !== "decor").map((a) => [a.x, a.y, 4]);
     const openFloor = (x, y) => layout.isFloor(x, y) && !(layout.isRoad && layout.isRoad(x, y));
     const marks = placeLandmarks(list(spec.landmarks || ""), layout.bounds, openFloor, anchorsAvoid);
+    const setCenters = placeSets(list(spec.sets || ""), layout.bounds, openFloor, anchorsAvoid.concat(marks.map((m) => [m.x, m.y, 9])), (x, y) => !layout.isFloor(x, y));
+    marks.push(...setCenters);
     const props = list(spec.props || "");
     if (props.length) {
       // 장식 이름 뒤 「*배율」은 이 맵에서만 그 장식을 더 키운다 (장식 자체 크기는 art_scale.csv).
       // 크기를 바꾼 장식이 하나라도 있는 맵은 같은 그림이 똑같이 찍혀 보이지 않게 자리마다 크기 ±12%와 좌우 뒤집기를 섞는다 (시드 고정이라 빌드마다 같다)
       const vary = true;   // 10-25: 모든 맵에서 크기·좌우를 섞는다 (예전엔 배율을 바꾼 장식이 있는 맵만)
-      layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).filter((p) => !marks.some((m) => Math.hypot(p.x + 0.5 - m.x, p.y + 0.2 - m.y) < 4)).forEach((p, i) => {
+      layoutGen.propSpots(layout, num(spec.propCount, 6), spec.seed).filter((p) => !marks.some((m) => Math.hypot(p.x + 0.5 - m.x, p.y + 0.2 - m.y) < 4.5)).forEach((p, i) => {
         const [name, mul] = props[p.pick % props.length].split("*");
         const ps = pscale(name, 0.8) * num(mul, 1) * (vary ? sizeVar(p.pick * 7 + 3) : 1);
         const o = sprite(ruid(name), null, 1);
@@ -365,7 +424,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
         out.push({ name: `ArtProp${i + 1}`, pos: [p.x + 0.5, p.y + 0.2, -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(ps), y: r3(ps), z: 1 } } }) });
       });
     }
-    const solid = out.filter((e) => /^Art(Prop|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]);
+    const solid = out.filter((e) => /^Art(Prop|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]).concat(marks.map((m) => [m.x, m.y, 4]));
     placeDecals(list(spec.decals || ""), num(spec.decalCount, 0), layout.bounds, (x, y) => layout.isFloor(x, y), anchorsAvoid.map(([x, y]) => [x, y, 2]).concat(solid));
   } else if (art.border) {
     // 열린 맵: 걷는 타일 바깥 두 칸에 바위 테두리 → 그림 경계 = 통행 경계 (테두리 위를 걸어 다니지 않는다)
@@ -385,6 +444,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
     const inOpen = (x, y) => inTiles(x, y) && !roadRects.some(([rx, ry, rw, rh]) => Math.abs(x + 0.5 - rx) < rw / 2 + 0.8 && Math.abs(y + 0.2 - ry) < rh / 2 + 1.2)
       && !(y > -4 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3)));
     const openMarks = placeLandmarks(list(art.landmarks || ""), tb, inOpen, fixedAvoid);
+    openMarks.push(...placeSets(list(art.sets || ""), tb, inOpen, fixedAvoid.concat(openMarks.map((m) => [m.x, m.y, 9])), null));
     const kinds = list(art.scatter || "");
     if (kinds.length) {
       const rand = layoutGen.rng([...d.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
@@ -392,7 +452,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
       const onRoad = (x, y) => roads.some(([rx, ry, rw, rh]) => Math.abs(x - rx) < rw / 2 + 0.8 && Math.abs(y - ry) < rh / 2 + 1.2);
       const keepOut = (fixed || []).filter((e) => !/^Art/.test(e.name)).map((e) => e.pos)
         .concat(list(art.props || "").map((p) => p.split("@")[1].split("/").map(Number)))
-        .concat(openMarks.map((m) => [m.x, m.y, 4.5]));
+        .concat(openMarks.map((m) => [m.x, m.y, 5]));
       const nearPortal = (x, y) => y > -3.5 && y < 3 && ((portalAt.w && x < tb.x0 + 4) || (portalAt.e && x > tb.x1 - 3));
       const cands = [];
       for (let x = tb.x0 + 2; x <= tb.x1 - 1; x++) for (let y = tb.y0 + 1; y <= tb.y1 - 1; y++) {
@@ -416,7 +476,7 @@ function artEntities(d, maps, ctx, layout, fixed) {
         out.push({ name: `ArtScatter${i + 1}`, pos: [r3(c.x), r3(c.y), -0.03], overrides: Object.assign(o, { "MOD.Core.TransformComponent": { Scale: { "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(s), y: r3(s), z: 1 } } }) });
       });
     }
-    const solidOpen = out.filter((e) => /^Art(Prop|Scatter|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]);
+    const solidOpen = out.filter((e) => /^Art(Prop|Scatter|Landmark)\d+$/.test(e.name)).map((e) => [e.pos[0], e.pos[1], 1.6]).concat(openMarks.map((m) => [m.x, m.y, 4]));
     placeDecals(list(art.decals || ""), num(art.decalCount, 0), tb, inTiles, fixedAvoid.map(([x, y]) => [x, y, 2]).concat(solidOpen));
   }
   // 지형 생성 맵에 고정 장식을 더하면(map_art 같은 맵 행) 자동 장식 다음 번호부터 — 이름이 겹치면 엔티티 경로가 둘이 된다
@@ -572,6 +632,7 @@ function context() {
     managed: managedModelIds(monsters, npcs),
     quests: load("quests"),
     art: Object.fromEntries(load("map_art").map((a) => [a.map, a])),
+    sets: load("map_sets").reduce((m, r) => { (m[r.set] = m[r.set] || []).push(r); return m; }, {}),
     sprites: Object.fromEntries(load("art_sprites").map((s) => [s.name, s])),
     // 장식별 크기 배율 (art_scale.csv — 천막·배·탑 같은 큰 구조물은 크게, 작은 잔해는 조금만. 10-24 사용자: 전부 같은 값이라 마을 천막이 너무 작았다)
     propScale: Object.fromEntries(load("art_scale").map((s) => [s.name, num(s.scale, 1)])),
