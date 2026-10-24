@@ -21,6 +21,7 @@ script MotionSmoother extends Logic
     property number Range = 12               -- 플레이어에게서 이 거리 안의 개체만 (화면 밖은 그대로)
     property number Delay = 0.1              -- 그리는 시점을 이만큼 늦춘다 (기본값, 최근 가장 늦은 기록 간격에 맞춰 0.08~0.3으로 조절)
     property number SnapDistance = 2.5       -- 기록 사이가 이보다 멀면 순간이동(도약·재배치)으로 보고 바로 옮긴다
+    property number AttackWindup = 0.18     -- 소환수 공격 타격 시점 (ShadowUnit.AttackWindup과 같게) — 공격 프레임의 타격 장을 이때 보인다
     property number ScanTimer = 0
     property any Map = nil
     property any Recs = nil                  -- 개체 Id → { e, buf = { {t, x, y} … }, wx, wy, gap, peak, v, rt }
@@ -462,6 +463,14 @@ script MotionSmoother extends Logic
                     local f = set[act]
                     if f ~= nil and f.r ~= nil and #f.r > 1 and self.FrameIndex[f.r[1]] == nil then self.FrameIndex[f.r[1]] = { f = f, act = act } end
                 end
+                -- 공격: 서버는 타격 프레임 한 장(공격 클립)을 공격 시작에 넣는다 → 그 장을 보면 공격 프레임 전체를 처음부터 한 번 (10-24 사용자).
+                -- 타격 프레임이 서버의 실제 피해 시점(ShadowUnit.AttackWindup)에 오도록 시간을 줄인다
+                local a = set.attack
+                if a ~= nil and a.r ~= nil and #a.r > 1 and a.s ~= nil and a.s > 1 and self.FrameIndex[a.r[a.s]] == nil then
+                    local impact = 0
+                    for i = 1, a.s - 1 do impact = impact + (a.d[i] or 0) end
+                    self.FrameIndex[a.r[a.s]] = { f = a, act = "attack", scale = impact > 0 and (impact / self.AttackWindup) or 1 }
+                end
             end
         end
         local hit = self.FrameIndex[clip]
@@ -478,7 +487,7 @@ script MotionSmoother extends Logic
         local total = 0
         for _, d in ipairs(f.d) do total = total + d end
         if total <= 0 then return clip end
-        local t = now - r.frameAt
+        local t = (now - r.frameAt) * (hit.scale or 1)
         if f.loop then t = t % total elseif t >= total then return f.r[#f.r] end
         for i, d in ipairs(f.d) do
             if t < d then return f.r[i] end
