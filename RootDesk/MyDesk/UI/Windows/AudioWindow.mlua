@@ -9,6 +9,11 @@ script AudioWindow extends Logic
     property Entity Player = nil
     property boolean Ready = false
     property integer TimerId = 0
+    property string SupportPath = "/ui/AudioSettingsHUD/Modal/SafeArea/Support"   -- 개발자 응원하기 판 (설정 판과 번갈아 켠다)
+    property boolean SupportShown = false
+    property boolean PricesAsked = false
+    property any SupportPrices = nil            -- 단계 → 가격 (상점에서 한 번 읽는다)
+    property any SupportOpen = nil              -- 단계 → 살 수 있음 (판매 중 · 메이커는 시험 구매)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -22,6 +27,15 @@ script AudioWindow extends Logic
         _UIKit:Connect(self.Body .. "/Reset", function() self:ResetVolumes() end)
         _UIKit:Connect(self.Body .. "/Input", function() _ShadowHUD:ToggleInputMode() end)
         _UIKit:Connect(self.Body .. "/Back", function() _UIKit:Open("MenuWin") end)
+        -- 개발자 응원하기 (10-25 후원 패스 — Shop/Supporter)
+        self.SupportPrices = {}
+        self.SupportOpen = {}
+        _UIKit:Connect(self.Body .. "/Support", function() self:ShowSupport(true) end)
+        _UIKit:Connect(self.SupportPath .. "/Back", function() self:ShowSupport(false) end)
+        for i = 1, 3 do
+            local tier = i
+            _UIKit:Connect(self.SupportPath .. "/Card" .. tostring(i) .. "/Btn", function() self:BuySupport(tier) end)
+        end
         self.TimerId = _TimerService:SetTimer(self, function() self:Poll() end, 0.2, true, 0.2)
     end
 
@@ -48,7 +62,11 @@ script AudioWindow extends Logic
                 self:Apply()
             end
         end
-        if not _UIKit:IsOpen(self.Win) then return end
+        if not _UIKit:IsOpen(self.Win) then
+            if self.SupportShown then self:ShowSupport(false) end   -- 다시 열면 설정 판부터
+            return
+        end
+        if self.SupportShown then self:RenderSupport() end
         for _, key in ipairs({ "bgm", "effects", "ambience" }) do
             local value = self.Values[key]
             _UIKit:SetText(self.Body .. "/" .. key .. "/Value", self.Ready and (tostring(value) .. "%") or "—")
@@ -61,6 +79,63 @@ script AudioWindow extends Logic
         local status = "저장 데이터를 불러온 뒤 변경할 수 있습니다"
         if self.Ready then status = save.AudioSavedDigest == self:Key() and "저장 완료" or "저장 대기 중" end
         _UIKit:SetText(self.Body .. "/Status", status)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowSupport(boolean on)
+        -- 설정 판 ↔ 개발자 응원하기 판
+        self.SupportShown = on
+        _UIKit:SetEnabled(self.Body, not on)
+        _UIKit:SetEnabled(self.SupportPath, on)
+        if on then
+            self:AskSupportPrices()
+            self:RenderSupport()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AskSupportPrices()
+        -- 상점 가격·판매 상태를 한 번 읽는다 (기다리는 호출이라 타이머 안에서). 메이커는 판매 전 상품도 시험 구매할 수 있다
+        if self.PricesAsked then return end
+        self.PricesAsked = true
+        _TimerService:SetTimerOnce(function()
+            for i, id in ipairs(_Supporter:PassList()) do
+                local ok, prod = pcall(function() return _WorldShopService:GetProductAndWait(id) end)
+                if ok and prod ~= nil then
+                    self.SupportPrices[i] = prod.Price
+                    local st = prod.Status
+                    local test = not Environment:IsPublishedPlay() and st ~= WorldShopProductStatus.End and st ~= WorldShopProductStatus.Deleted
+                    self.SupportOpen[i] = st == WorldShopProductStatus.Ing or test
+                end
+            end
+            log("[VRF] Support prices " .. tostring(self.SupportPrices[1]) .. "/" .. tostring(self.SupportPrices[2]) .. "/" .. tostring(self.SupportPrices[3]))
+        end, 0.1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderSupport()
+        -- 카드마다 가격 · 버튼 (이미 그 단계 이상이면 「응원 완료」)
+        local me = _UserService.LocalPlayer
+        local tier = isvalid(me) and (_Supporter.Tier[me.PlayerComponent.UserId] or 0) or 0
+        for i = 1, 3 do
+            local card = self.SupportPath .. "/Card" .. tostring(i)
+            local price = self.SupportPrices[i]
+            _UIKit:SetText(card .. "/Price", price ~= nil and (tostring(price) .. " 월드 코인") or "")
+            local label = "응원하기"
+            if tier >= i then label = "응원 완료 ♥"
+            elseif not self.SupportOpen[i] then label = "준비 중" end
+            _UIKit:SetText(card .. "/Btn", label)
+            _UIKit:SetColor(card .. "/Btn", (tier < i and self.SupportOpen[i]) and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BuySupport(integer tier)
+        -- 플랫폼 구매 창 (결제·확인은 플랫폼이 맡는다). 지급은 Supporter.ProcessPurchase
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or (_Supporter.Tier[me.PlayerComponent.UserId] or 0) >= tier or not self.SupportOpen[tier] then return end
+        local id = _Supporter:PassList()[tier]
+        if id ~= nil then _WorldShopService:PromptPurchase(id) end
     end
 
     method string Key()
