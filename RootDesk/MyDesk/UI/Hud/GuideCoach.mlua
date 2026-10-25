@@ -39,10 +39,14 @@ script GuideCoach extends Logic
             self:Evaluate(self.CheckEvery)
         end
         self.PulseTime = self.PulseTime + delta
-        local s = 1 + 0.35 * math.abs(math.sin(self.PulseTime * 4))
+        -- 깜빡임: 0.9초마다 0.6초 켜짐 · 0.3초 흐림 (10-25 사용자: 커졌다 작아지는 점은 픽셀이 깨져 보였다 — 크기는 그대로 둔다)
+        local alpha = (self.PulseTime % 0.9) < 0.6 and 1 or 0.2
         for path, _ in pairs(self.Points) do
             local e = _UIKit:Get(path)
-            if isvalid(e) then e.UITransformComponent.UIScale = Vector3(s, s, 1) end
+            if isvalid(e) and e.SpriteGUIRendererComponent ~= nil then
+                local c = e.SpriteGUIRendererComponent.Color
+                if c.a ~= alpha then e.SpriteGUIRendererComponent.Color = Color(c.r, c.g, c.b, alpha) end
+            end
         end
     end
 
@@ -210,7 +214,7 @@ script GuideCoach extends Logic
 
     @ExecSpace("ClientOnly")
     method void ApplyPoints(table points)
-        -- 새 목록으로 바꾼다: 빠진 점은 크기를 되돌리고 (내가 켠 점이면 끈다), 새 점은 켠다 (HudMain 점은 RenderBadges가 켠다)
+        -- 새 목록으로 바꾼다: 빠진 점은 밝기를 되돌리고 (내가 켠 점이면 끈다), 새 점은 켠다 (HudMain 점은 RenderBadges가 켠다)
         local keys = {}
         for path, _ in pairs(points) do table.insert(keys, path) end
         table.sort(keys)
@@ -219,7 +223,10 @@ script GuideCoach extends Logic
         for path, _ in pairs(self.Points) do
             if not points[path] then
                 local e = _UIKit:Get(path)
-                if isvalid(e) then e.UITransformComponent.UIScale = Vector3(1, 1, 1) end
+                if isvalid(e) and e.SpriteGUIRendererComponent ~= nil then
+                    local c = e.SpriteGUIRendererComponent.Color
+                    e.SpriteGUIRendererComponent.Color = Color(c.r, c.g, c.b, 1)
+                end
                 if self.Owned[path] then
                     _UIKit:SetEnabled(path, false)
                     self.Owned[path] = nil

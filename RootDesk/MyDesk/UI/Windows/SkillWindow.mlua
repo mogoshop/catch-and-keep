@@ -80,7 +80,8 @@ script SkillWindow extends Logic
             _UIKit:SetText(self.Win .. "/Tab" .. tostring(i), _UIKit:Colored(chosen and "#FFE9A8" or "#A99F8E", _SkillData:TreeName(tree)) .. (learnable and _UIKit:Colored("#7CFF7A", " +") or ""))
             _UIKit:SetColor(self.Win .. "/Tab" .. tostring(i), chosen and Color(1, 0.92, 0.7, 1) or Color(0.6, 0.6, 0.6, 0.85))
         end
-        _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints) .. _UIKit:Colored("#A99F8E", "   · 레벨업마다 +" .. tostring(math.floor(_GameData.skillPerLevel))))
+        -- 10-25 사용자: 스킬 창 글자가 지저분하다 — 「레벨업마다 +1」 · 카드 「에 열림」 · 「(최대 N)」 · 강화 안내 줄 · 버튼 「+1」을 뺐다
+        _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints))
         local cost = book:RespecCost(st.Level)
         _UIKit:SetText(self.Win .. "/BtnReset", cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드"))
         -- 카드: 고른 트리의 메인 스킬 (해금 레벨 순). 지금 레벨 +LockedFold 밖의 잠긴 카드는 마지막 한 장으로 접는다
@@ -115,7 +116,7 @@ script SkillWindow extends Logic
                 local status
                 local color = "#8A8A8A"
                 if st.Level < def.row then
-                    status = _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
+                    status = _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row))
                 else
                     if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#B8E0B8" end
                     status = _UIKit:Colored(lv > 0 and "#F4ED83" or "#B8E0B8", tostring(lv) .. "/" .. tostring(cap)) .. (cap < def.maxLv and _UIKit:Colored("#8C99B4", " (" .. tostring(def.maxLv) .. ")") or "")
@@ -170,20 +171,21 @@ script SkillWindow extends Logic
             local path = acc .. "/N" .. tostring(i)
             local e = _UIKit:Get(path)
             if isvalid(e) then
-                e.UITransformComponent.RectSize = Vector2(w, 72)
-                _UIKit:SetPos(path, Vector2(12 + ((i - 1) % cols) * (w + 6), -154 - ((i - 1) // cols) * 78))
+                -- 10-25: 강화 칸 글자를 「이름 / 조건 / 효과」 세 줄로 나눠 칸 높이 72 → 90 (긴 변이 설명이 아래 칸과 겹쳤다)
+                e.UITransformComponent.RectSize = Vector2(w, 90)
+                _UIKit:SetPos(path, Vector2(12 + ((i - 1) % cols) * (w + 6), -154 - ((i - 1) // cols) * 96))
                 local label = _UIKit:Get(path .. "/Label")
-                if isvalid(label) then label.UITransformComponent.RectSize = Vector2(w - 120, 68) end
+                if isvalid(label) then label.UITransformComponent.RectSize = Vector2(w - 120, 86) end
             end
         end
     end
 
     method number AccHeight()
-        -- 강화 수에 맞춘다: 없음(집결·망령 도약 등) 128 · 3개까지 한 줄 232 · 4~8개(해골 전사·마법사 변이) 두 줄 310
+        -- 강화 수에 맞춘다: 없음(집결·망령 도약 등) 128 · 3개까지 한 줄 256 · 4~8개(해골 전사·마법사 변이) 두 줄 352
         local n = #_SkillData:NodesOf(self.SelMain)
         if n == 0 then return 128 end
-        if n <= 3 then return 232 end
-        return 310
+        if n <= 3 then return 256 end
+        return 352
     end
 
     @ExecSpace("ClientOnly")
@@ -195,13 +197,13 @@ script SkillWindow extends Logic
         local lv = book:GetLevel(self.SelMain)
         local cap = book:RankCap(self.SelMain, st.Level)
         local rank = st.Level < def.row and _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
-            or _UIKit:Colored("#F4ED83", "랭크 " .. tostring(lv) .. "/" .. tostring(cap)) .. (cap < def.maxLv and _UIKit:Colored("#8C99B4", " (최대 " .. tostring(def.maxLv) .. ")") or "")
+            or _UIKit:Colored("#F4ED83", "랭크 " .. tostring(lv) .. "/" .. tostring(def.maxLv))
         _UIKit:SetText(acc .. "/Name", def.name .. "  " .. _UIKit:Colored("#8C99B4", _SkillData:TreeName(def.tree)) .. "   " .. rank)
         _UIKit:SetText(acc .. "/Desc", def.desc)
         _UIKit:SetText(acc .. "/Stat", self:StatLine(book, st, self.SelMain))
         local nodes = _SkillData:NodesOf(self.SelMain)
         _UIKit:SetEnabled(acc .. "/NodeHead", #nodes > 0)
-        _UIKit:SetEnabled(acc .. "/NodeHint", #nodes > 0)
+        _UIKit:SetEnabled(acc .. "/NodeHint", false)
         self.NodeIds = {}
         self:LayoutNodes(acc, #nodes)
         for i = 1, 8 do
@@ -220,8 +222,9 @@ script SkillWindow extends Logic
                     -- 다음 랭크에 필요한 메인 랭크 (다중 투사체는 랭크마다 다르다 — SkillBook.NodeNeed) · 캐릭터 레벨 (그림자 증원 — NodeLevel)
                     local need = book:NodeNeed(nid, nlv + 1)
                     local needLv = book:NodeLevel(nid, nlv + 1)
-                    if nlv < nd.maxLv and lv < need then line2 = _UIKit:Colored("#FF9A8A", def.name .. " " .. tostring(need) .. "랭크부터") .. " · " .. nd.desc
-                    elseif nlv < nd.maxLv and st.Level < needLv then line2 = _UIKit:Colored("#FF9A8A", "캐릭터 Lv" .. tostring(needLv) .. "부터") .. " · " .. nd.desc end
+                    -- 조건은 제목 아래 한 줄, 효과는 그다음 줄 (10-25 사용자: 조건과 효과가 한 줄에 붙어 읽기 어려웠다)
+                    if nlv < nd.maxLv and lv < need then line2 = _UIKit:Colored("#FF9A8A", def.name .. " " .. tostring(need) .. "랭크부터") .. "\n" .. nd.desc
+                    elseif nlv < nd.maxLv and st.Level < needLv then line2 = _UIKit:Colored("#FF9A8A", "캐릭터 Lv" .. tostring(needLv) .. "부터") .. "\n" .. nd.desc end
                 end
                 _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, nd.name .. "  " .. tostring(nlv) .. "/" .. tostring(nd.maxLv)) .. "\n" .. line2)
                 _UIKit:SetColor(path, nid == self.Selected and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.35))
@@ -268,11 +271,11 @@ script SkillWindow extends Logic
         -- 버튼 글자가 지금 고른 것에 맞게: 배우기 +1 / 레벨 업 +1 / 강화 +1. 못 찍으면 흐리게 (이유는 왼쪽 설명)
         local id = self.Selected ~= "" and self.Selected or self.SelMain
         local def = _SkillData:Get(id)
-        local label = "습득 +1"
+        local label = "습득"
         if def ~= nil then
-            if def.kind == "node" then label = "강화 +1"
-            elseif book:GetLevel(id) > 0 then label = "레벨 업 +1"
-            else label = "배우기 +1" end
+            if def.kind == "node" then label = "강화"
+            elseif book:GetLevel(id) > 0 then label = "레벨 업"
+            else label = "배우기" end
         end
         local ok = def ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == ""
         _UIKit:SetText(self.Win .. "/BtnLearn", ok and label or _UIKit:Colored("#8A8A8A", label))
@@ -281,7 +284,7 @@ script SkillWindow extends Logic
 
     method string Describe(SkillBook book, PlayerStats st)
         -- 고른 메인/강화의 지금·다음 효과, 마나·재사용, 배울 수 있는지(아니면 이유)
-        if self.Selected == "" then return "스킬 카드나 카드 아래 「스킬 강화」 칸을 누르면 여기에 효과가 나온다. 고른 것을 한 번 더 누르거나 오른쪽 아래 버튼으로 +1." end
+        if self.Selected == "" then return "스킬 카드나 카드 아래 「스킬 강화」 칸을 누르면 여기에 효과가 나온다. 고른 것을 한 번 더 누르거나 오른쪽 아래 버튼으로 찍는다." end
         local def = _SkillData:Get(self.Selected)
         if def == nil then return "다시 고르세요." end
         local reason = book:CanLearn(self.Selected, st.Level, st.SkillPoints)
@@ -312,7 +315,7 @@ script SkillWindow extends Logic
             local cd = book:SkillCooldown(self.Selected, lv)
             if cd > 0 then mana = mana .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
         end
-        local learn = _UIKit:Colored("#AACCAA", (isNode and "강화할 수 있음" or "배울 수 있음") .. " · 한 번 더 누르거나 오른쪽 아래 버튼으로 +1")
+        local learn = _UIKit:Colored("#AACCAA", (isNode and "강화할 수 있음" or "배울 수 있음") .. " · 한 번 더 누르거나 오른쪽 아래 버튼")
         if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
         return head .. growth .. mana .. "\n" .. learn
     end
