@@ -1,11 +1,13 @@
 -- 후원 패스 (10-25 사용자 결정: 「개발자의 시간은 무료가 아니다」 — 능력치 없는 순수 후원, 3단계 100 · 500 · 1000 코인).
--- 보상은 머리 위 이름표 앞 하트 표식뿐이다 (♥ · ♥♥ · ♥♥♥, 계정의 가장 높은 단계 하나). 월드 상점 패스라 받기 기록이 플랫폼에 남는다.
+-- 보상은 머리 위 이름 아래 한 줄 칭호뿐이다 (계정의 가장 높은 단계 하나 · 이름보다 조금 작은 글씨 85% · 단계마다 색). 월드 상점 패스라 받기 기록이 플랫폼에 남는다.
+-- 10-25 사용자: 이름 앞 하트 대신 이름 밑 칭호 줄
 -- 상점 구매 지급 콜백은 하나뿐이라 PetSystem.ProcessPurchase가 펫이 아닌 상품을 여기로 넘긴다.
 @Logic
 script Supporter extends Logic
 
     property string PassIds = ""                -- "1단계,2단계,3단계" 상품 ID (크리에이터 센터 등록 후 채운다 · 빈칸이면 꺼짐)
-    property string Marks = "♥ ,♥♥ ,♥♥♥ "      -- 단계별 이름표 앞 표식
+    property string Titles = "후원자,든든한 후원자,전설의 후원자"   -- 단계별 칭호
+    property string TitleColors = "#D8CFC0,#E6C88A,#C9A0FF"          -- 단계별 칭호 색 (뼈색 · 금색 · 혼불 보라)
     @Sync property SyncTable<string, integer> Tier   -- userId → 가진 가장 높은 단계 (0 = 없음)
     property any Checked = nil                  -- 서버: userId → true (패스 보유를 물었다)
     property integer TimerId = 0
@@ -31,13 +33,15 @@ script Supporter extends Logic
         return out
     end
 
-    method string Mark(string userId)
-        -- 이름표 앞에 붙일 표식 (후원하지 않았으면 "")
+    method string TagText(string userId, string name)
+        -- 이름표 글자: 이름 + (후원했으면) 아래 줄 칭호 — 이름표는 리치 텍스트라 줄바꿈 · 크기(%) · 색을 쓴다
         local tier = self.Tier[userId] or 0
-        if tier <= 0 then return "" end
-        local marks = {}
-        for m in string.gmatch(self.Marks, "[^,]+") do table.insert(marks, m) end
-        return marks[math.min(tier, #marks)] or ""
+        if tier <= 0 then return name end
+        local titles, colors = {}, {}
+        for t in string.gmatch(self.Titles, "[^,]+") do table.insert(titles, t) end
+        for c in string.gmatch(self.TitleColors, "[^,]+") do table.insert(colors, c) end
+        local i = math.min(tier, #titles)
+        return name .. "\n<size=85%><color=" .. (colors[i] or "#E6C88A") .. ">" .. titles[i] .. "</color></size>"
     end
 
     @ExecSpace("ServerOnly")
@@ -95,14 +99,14 @@ script Supporter extends Logic
 
     @ExecSpace("ServerOnly")
     method void ApplyTag(string userId)
-        -- 머리 위 이름표 = 표식 + 캐릭터 이름 (캐릭터를 불러올 때 PlayerSave.FinishLoad도 부른다)
+        -- 머리 위 이름표 = 캐릭터 이름 + 칭호 줄 (캐릭터를 불러올 때 PlayerSave.FinishLoad도 부른다)
         local p = _UserService:GetUserEntityByUserId(userId)
         if not isvalid(p) then return end
         ---@type PlayerSave
         local save = p:GetComponent("script.PlayerSave")
         local tag = p.NameTagComponent
         if save == nil or not save.IsLoadSuccess or not isvalid(tag) then return end
-        tag.Name = self:Mark(userId) .. save:CharName()
+        tag.Name = self:TagText(userId, save:CharName())
     end
 
 end
