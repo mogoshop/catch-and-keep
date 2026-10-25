@@ -216,11 +216,48 @@ async function petPass(dir, argv) {
   }
 }
 
+// 후원 패스 등록: 확정 문구(아래 표)대로 썸네일을 올리고 PASS 상품 3개를 「비공개」로 만든다 → 상품 ID를 출력 (Shop/Supporter.mlua PassIds에 넣는다)
+//   node tools/msw_mcp_call.cjs supporter-pass <썸네일 폴더(supporter-1..3.png)> [--dry]
+//   문구 원본: docs/promo/supporter-pass-copy-20261025.md (10-25 사용자 확정)
+const SUPPORTER_PASSES = [
+  { file: "supporter-1.png", name: "개발자 커피 한 잔", price: 100, desc: "개발자의 시간은 무료가 아닙니다. 더 편하게 즐기실 수 있도록 노력할게요. (보상: 이름 아래 「후원자」 칭호 · 능력치 없음)" },
+  { file: "supporter-2.png", name: "개발자 커피 다섯 잔", price: 500, desc: "개발자의 시간은 무료가 아닙니다. 커피 다섯 잔만큼 더 열심히 만들게요. (보상: 이름 아래 「든든한 후원자」 칭호 · 능력치 없음)" },
+  { file: "supporter-3.png", name: "개발자 커피 열 잔", price: 1000, desc: "커피 열 잔이면 일어서서 타이핑합니다. 불편함 없는 게임이 되도록 끝까지 다듬겠습니다. (보상: 이름 아래 「키다리 후원자」 칭호 · 능력치 없음)" },
+];
+async function supporterPass(dir, argv) {
+  const root = path.join(__dirname, "..");
+  const world = "b1825465e98b4bd49d20d629f2ff8c94";
+  console.log(`등록할 후원 패스 ${SUPPORTER_PASSES.length}개 (${SUPPORTER_PASSES.map((p) => `${p.name} ${p.price}`).join(" · ")})`);
+  if (argv.includes("--dry")) return;
+  await connect();
+  const ids = [];
+  for (const p of SUPPORTER_PASSES) {
+    const body = fs.readFileSync(path.join(root, dir, p.file));
+    const up = { worldId: world, fileExtension: "png", contentLength: body.length };
+    const first = pickJson(await callTool("world_item_upload_thumbnail", up));
+    const url = findKey(first, /presigned/i);
+    if (!url) throw new Error(`${p.name}: 썸네일 업로드 주소를 못 받음`);
+    const put = await fetch(url, { method: "PUT", body, headers: { "Content-Length": String(body.length) } });
+    if (!put.ok) throw new Error(`${p.name}: 썸네일 올리기 실패 HTTP ${put.status}`);
+    const done = pickJson(await callTool("world_item_upload_thumbnail", Object.assign({}, up, { fileUrl: url })));
+    const thumb = findKey(done, /thumbnail.*url|^url$|imageUrl/i), thumbName = findKey(done, /file.*name/i);
+    if (!thumb) throw new Error(`${p.name}: 썸네일 주소를 못 받음`);
+    const created = pickJson(await callTool("world_item_create", { worldId: world, itemType: "PASS", itemName: p.name, hasItemPrice: true, itemPrice: p.price,
+      itemThumbnailUrl: thumb, itemThumbnailFileName: thumbName || p.file, hasSalesPeriod: false, itemDescription: p.desc, isPublished: false, language: "ko" }));
+    const id = findKey(created, /^itemId$|^id$/i);
+    if (!id) throw new Error(`${p.name}: 상품 ID를 못 받음 (${JSON.stringify(created).slice(0, 200)})`);
+    ids.push(id);
+    console.log(`  ${p.name} → ${id}`);
+  }
+  console.log(`PassIds = "${ids.join(",")}"`);
+}
+
 async function main() {
   const [cmd, file, px, py] = process.argv.slice(2);
   if (cmd === "upload") return upload(file, px, process.argv.includes("--dry"));
   if (cmd === "upload-res") return uploadRes(file, process.argv.slice(4));
   if (cmd === "pet-pass") return petPass(file, process.argv.slice(4));
+  if (cmd === "supporter-pass") return supporterPass(file, process.argv.slice(4));
   if (cmd !== "pivot") throw new Error("사용법: node tools/msw_mcp_call.cjs pivot <guid-list-file> [pivot_x] [pivot_y] | upload <팩 폴더> [최대 개수]");
   const rows = fs.readFileSync(file, "utf8").split(/\r?\n/).map((l) => l.trim().split(",")).filter((r) => /^[0-9a-f]{32}$/.test(r[0]) && r[1] && r[2]);
   await connect();
