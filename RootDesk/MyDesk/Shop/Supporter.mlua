@@ -1,0 +1,108 @@
+-- 후원 패스 (10-25 사용자 결정: 「개발자의 시간은 무료가 아니다」 — 능력치 없는 순수 후원, 3단계 100 · 500 · 1000 코인).
+-- 보상은 머리 위 이름표 앞 하트 표식뿐이다 (♥ · ♥♥ · ♥♥♥, 계정의 가장 높은 단계 하나). 월드 상점 패스라 받기 기록이 플랫폼에 남는다.
+-- 상점 구매 지급 콜백은 하나뿐이라 PetSystem.ProcessPurchase가 펫이 아닌 상품을 여기로 넘긴다.
+@Logic
+script Supporter extends Logic
+
+    property string PassIds = ""                -- "1단계,2단계,3단계" 상품 ID (크리에이터 센터 등록 후 채운다 · 빈칸이면 꺼짐)
+    property string Marks = "♥ ,♥♥ ,♥♥♥ "      -- 단계별 이름표 앞 표식
+    @Sync property SyncTable<string, integer> Tier   -- userId → 가진 가장 높은 단계 (0 = 없음)
+    property any Checked = nil                  -- 서버: userId → true (패스 보유를 물었다)
+    property integer TimerId = 0
+
+    method void OnBeginPlay()
+        -- 서버: 1초마다 새로 들어온 사람의 패스 보유를 묻는다
+        self.Checked = {}
+        if self:IsServer() then
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:ServerTick() end, 1)
+            log("[VRF] Supporter ready passes=" .. self.PassIds)
+        end
+    end
+
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method table PassList()
+        -- "a,b,c" → { "a", "b", "c" }
+        local out = {}
+        for id in string.gmatch(self.PassIds, "[^,]+") do table.insert(out, id) end
+        return out
+    end
+
+    method string Mark(string userId)
+        -- 이름표 앞에 붙일 표식 (후원하지 않았으면 "")
+        local tier = self.Tier[userId] or 0
+        if tier <= 0 then return "" end
+        local marks = {}
+        for m in string.gmatch(self.Marks, "[^,]+") do table.insert(marks, m) end
+        return marks[math.min(tier, #marks)] or ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ServerTick()
+        -- 처음 보는 사람만 패스 보유를 묻는다 (나간 사람은 잊는다)
+        if self.PassIds == "" then return end
+        local present = {}
+        for id, _ in pairs(_UserService.UserEntities) do
+            present[id] = true
+            if not self.Checked[id] then
+                self.Checked[id] = true
+                self:CheckOwner(id)
+            end
+        end
+        for id, _ in pairs(self.Checked) do if not present[id] then self.Checked[id] = nil end end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CheckOwner(string userId)
+        -- 높은 단계부터 묻고 처음 가진 단계를 기록한다 (기다리는 호출이라 타이머 안에서)
+        _TimerService:SetTimerOnce(function()
+            local passes = self:PassList()
+            local tier = 0
+            for i = #passes, 1, -1 do
+                local ok, has = pcall(function() return _WorldShopService:UserHasPassAndWait(userId, passes[i]) end)
+                if ok and has == true then
+                    tier = i
+                    break
+                end
+            end
+            if tier > 0 then
+                self.Tier[userId] = tier
+                self:ApplyTag(userId)
+            end
+            log("[VRF] Supporter check " .. userId .. " tier=" .. tostring(tier))
+        end, 0.1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ProcessPurchase(any info)
+        -- 후원 패스면 단계를 올리고 이름표를 바꾼다 (모르는 상품은 false — PetSystem이 실패로 돌려 다음 접속 때 다시 온다)
+        local passes = self:PassList()
+        for i, id in ipairs(passes) do
+            if info.ProductId == id then
+                self.Tier[info.UserId] = math.max(self.Tier[info.UserId] or 0, i)
+                _LogStorageService:LogPurchaseInfo(info, "supporter " .. id)
+                self:ApplyTag(info.UserId)
+                _Util:Notify("후원 고맙습니다! 개발자가 오늘 밤도 커피 마시고 패치하러 갑니다", info.UserId)
+                log("[VRF] Supporter purchase tier=" .. tostring(i) .. " " .. info.UserId)
+                return true
+            end
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyTag(string userId)
+        -- 머리 위 이름표 = 표식 + 캐릭터 이름 (캐릭터를 불러올 때 PlayerSave.FinishLoad도 부른다)
+        local p = _UserService:GetUserEntityByUserId(userId)
+        if not isvalid(p) then return end
+        ---@type PlayerSave
+        local save = p:GetComponent("script.PlayerSave")
+        local tag = p.NameTagComponent
+        if save == nil or not save.IsLoadSuccess or not isvalid(tag) then return end
+        tag.Name = self:Mark(userId) .. save:CharName()
+    end
+
+end
