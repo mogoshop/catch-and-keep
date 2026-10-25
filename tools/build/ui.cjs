@@ -370,7 +370,8 @@ function buildGameHud() {
   // 10-24: 강화 칸 최대 6개 (해골 전사 = 기존 3 + 변이 3) — 3칸씩 2줄, 위 설명 줄은 조금 줄였다. 높이는 실행 중에 강화 수로 (SkillWindow.AccHeight)
   k.inner(acc, "top-left", [0, -98], [954, 310]);
   // 고른 카드와 아코디언을 잇는 띠 (카드 폭 · 고른 카드와 같은 색) — x는 실행 중에 고른 카드 열로
-  b.sprite(`${acc}/Pointer`, { anchor: "top-left", pos: [0, 8], rect_size: [114, 10], color: { r: 0.55, g: 0.65, b: 0.9, a: 0.55 }, sprite_type: 0 });
+  // 고른 카드 아래 타원 표시는 뺐다 (10-25 사용자: 고른 카드는 이미 배경색이 밝아진다)
+  if (b.find(`${acc}/Pointer`)) b.remove(`${acc}/Pointer`);
   b.text(`${acc}/Name`, "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [18, -10], rect_size: [918, 30], ...outline });
   b.text(`${acc}/Desc`, "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [18, -42], rect_size: [918, 40], bestfit: true, min_size: 12, max_size: 15 });
   b.text(`${acc}/Stat`, "", { size: 15, color: "#F4ED83", alignment: 0, anchor: "top-left", pos: [18, -84], rect_size: [918, 40], bestfit: true, min_size: 12, max_size: 15 });
