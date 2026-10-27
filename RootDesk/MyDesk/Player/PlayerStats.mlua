@@ -322,6 +322,30 @@ script PlayerStats extends Component
             _TimerService:SetTimerOnce(function() if isvalid(fx) then fx.SpriteRendererComponent.SpriteRUID = ruid end end, t)
         end
         _TimerService:SetTimerOnce(function() if isvalid(fx) then fx:Destroy() end end, t + delays[8])
+        self:LevelUpRing()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LevelUpRing()
+        -- 빛기둥 발밑 고리 (코덱스 feel-fx-v2 6프레임 · 75ms씩): 바닥에 깔려 퍼지는 빛 — 캐릭터 뒤(바닥 쪽)에 그린다
+        local ruids = {}
+        for i = 1, 6 do table.insert(ruids, _GameData:GetUiIcon("fx_levelup_ring_" .. tostring(i))) end
+        if ruids[1] == "" then return end
+        local ring = _SpawnService:SpawnByModelId("artsprite", "LevelUpRing", self.Entity.TransformComponent.WorldPosition, self.Entity)
+        if not isvalid(ring) then return end
+        local sp = ring.SpriteRendererComponent
+        sp.SpriteRUID = ruids[1]
+        sp.SortingLayer = "MapLayer0"
+        sp.OrderInLayer = 1
+        ring.TransformComponent.Position = Vector3(0, 0, 0.01)
+        local ps = self.Entity.TransformComponent.Scale
+        ring.TransformComponent.Scale = Vector3(0.62 / math.max(0.1, math.abs(ps.x)), 0.62 / math.max(0.1, math.abs(ps.y)), 1)   -- 256×128px → 폭 1.6칸
+        for i = 2, 6 do
+            local ruid = ruids[i]
+            _TimerService:SetTimerOnce(function() if isvalid(ring) then ring.SpriteRendererComponent.SpriteRUID = ruid end end, 0.075 * (i - 1))
+        end
+        _TimerService:SetTimerOnce(function() if isvalid(ring) then ring:Destroy() end end, 0.075 * 6)
+        log("[VRF] levelup ring 6 frames")
     end
 
     -- ───────── 생명·마나 ─────────

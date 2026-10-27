@@ -71,8 +71,11 @@ script LootDrop extends Component
             if not isvalid(e.NameTagComponent) then e:AddComponent("NameTagComponent") end
             local tag = e.NameTagComponent
             if not isvalid(tag) then return end
+            -- 이름표 판: 코덱스 feel-fx-v2 9조각(테두리 12) — 없으면 내 이름표 판
+            local plate = _GameData:GetUiIcon("ui_loot_label")
             local me = _UserService.LocalPlayer
-            if isvalid(me) and isvalid(me.NameTagComponent) then tag.NameTagRUID = me.NameTagComponent.NameTagRUID end
+            if plate ~= "" then tag.NameTagRUID = plate
+            elseif isvalid(me) and isvalid(me.NameTagComponent) then tag.NameTagRUID = me.NameTagComponent.NameTagRUID end
             tag.FontSize = 1
             tag.OffsetY = 0.35
             tag.Name = self.Label
@@ -175,7 +178,19 @@ script LootDrop extends Component
             if (self.Kind == "item" or self.Kind == "rune") and self.IconRUID == "" then return end
             self.Dressed = true
             local ruid = _GameConst.IconItem
-            if self.Kind == "gold" then ruid = _GameConst.IconGold
+            local goldSize = 0
+            if self.Kind == "gold" then
+                -- 바닥 골드 3단 (10-28 코덱스 feel-fx-v2): 내 레벨의 평소 한 덩이(레벨×5.5+3.5, LootSystem 골드 양 가운데)와 견줘 작은·중간·큰 더미
+                local amount = tonumber(string.match(self.Label, "%d+")) or 0
+                local lv = 1
+                ---@type PlayerStats
+                local st = isvalid(me) and me:GetComponent("script.PlayerStats") or nil
+                if st ~= nil then lv = st.Level end
+                local ratio = amount / (lv * 5.5 + 3.5)
+                local key, size = "icon_gold_pile_large", 0.56
+                if ratio < 0.8 then key, size = "icon_gold_pile_small", 0.38 elseif ratio < 1.8 then key, size = "icon_gold_pile_mid", 0.46 end
+                ruid = _GameData:GetUiIcon(key)
+                if ruid == "" then ruid = _GameConst.IconGold else goldSize = size end
             -- 물약은 가방·벨트와 같은 코덱스 그림 (10-11 그림 감사: 바닥만 메이플 물약이었다)
             elseif self.Kind == "hp" then ruid = _GameData:GetUiIcon("potion_hp")
             elseif self.Kind == "mp" then ruid = _GameData:GetUiIcon("potion_mp")
@@ -190,6 +205,7 @@ script LootDrop extends Component
             -- 원본 크기를 아는 그림(iconPx)은 썸네일이어도 그 크기로 맞춘다 (직접 만든 후드 썸네일은 0.4배로도 몬스터만 했다)
             if px > 0 then scale = self.IconWorldSize / (px / 100)
             elseif string.sub(ruid, 1, 12) == "thumbnail://" then scale = self.ThumbScale end
+            if goldSize > 0 then scale = goldSize / 0.64 end   -- 골드 더미 64px → 바닥 크기 goldSize칸
             self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
             if self.Kind == "item" and self.Rarity >= 3 then self:MakeBeam(scale) end
             -- 드롭음 3단 (10-28 F2 A-1): 막 떨어진 것만 · 같은 순간 여러 개면 가장 높은 등급 하나 (LootSystem.PlayDropSound)

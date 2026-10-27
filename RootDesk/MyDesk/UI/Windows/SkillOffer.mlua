@@ -130,6 +130,11 @@ script SkillOffer extends Logic
                 else
                     kind, kindColor = "랭크 " .. tostring(lv) .. " → " .. tostring(lv + 1), "#D8D8E0"
                 end
+                -- 카드 그림 3종 (코덱스 skill-window-v3): 새 스킬 · 랭크 업 · 강화
+                local card = "sk_offer_card_rank"
+                if def.kind == "node" then card = "sk_offer_card_augment" elseif lv == 0 then card = "sk_offer_card_new" end
+                _UIKit:SetIcon(c, _GameData:GetUiIcon(card))
+                -- 카드 맨 위 띠 = 트리 색 (그림의 흰 띠 자리)
                 local tree = def.kind == "node" and _SkillData:Get(def.parent).tree or def.tree
                 _UIKit:SetColor(c .. "/Band", _SkillWindow:TreeColor(tree))
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(kindColor, kind))
@@ -170,8 +175,22 @@ script SkillOffer extends Logic
         if book == nil then return end
         book:RequestLearn(id)
         _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.6)
+        self:Flash(index)
         log("[VRF] offer choose " .. id)
         self.Shuffle = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Flash(integer index)
+        -- 고른 카드 위 반짝임 (코덱스 sk-offer-pick-01~06 · 80ms씩 · 480ms)
+        local path = self.Win .. "/Flash"
+        _UIKit:SetPos(path, Vector2(19 + (index - 1) * 354 + 170, -116 - 220))
+        _UIKit:SetIcon(path, _GameData:GetUiIcon("sk_offer_pick_01"))
+        for i = 2, 6 do
+            local ruid = _GameData:GetUiIcon("sk_offer_pick_0" .. tostring(i))
+            _TimerService:SetTimerOnce(function() _UIKit:SetIcon(path, ruid) end, 0.08 * (i - 1))
+        end
+        _TimerService:SetTimerOnce(function() _UIKit:SetEnabled(path, false) end, 0.48)
     end
 
     @ExecSpace("ClientOnly")

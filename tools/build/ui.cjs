@@ -406,10 +406,11 @@ function buildGameHud() {
   k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-51, -72], rect_size: [300, 48], font_size: 18 });
   // 해금 시간선
   const tl = "SkillWin/TL";
-  k.inner(tl, "top-left", [51, -134], [1298, 330]);
+  //   그림은 코덱스 skill-window-v3 전체 제작 (10-28): 바탕판 9조각 · 칸 테두리 4상태(64/96) · 화살표 · 지금 선/표지 · 초상 · 랭크 점 · 허브·연결선 · 노드 4상태
+  k.inner(tl, "top-left", [51, -134], [1298, 330], "sk_timeline_panel");
   b.text(`${tl}/Head`, "해금 시간선", { size: 18, bold: true, color: "#E6C88A", anchor: "top-left", pos: [16, -8], rect_size: [300, 24], alignment: 3 });
-  k.btn(`${tl}/Prev`, "◀", { anchor: "middle-left", pos: [4, 10], rect_size: [44, 88], font_size: 22 });
-  k.btn(`${tl}/NextPage`, "▶", { anchor: "middle-right", pos: [-4, 10], rect_size: [44, 88], font_size: 22 });
+  b.button(`${tl}/Prev`, "", { anchor: "middle-left", pos: [4, 10], rect_size: [44, 88], ...bg("sk_arrow_left_44"), sprite_type: 0 });
+  b.button(`${tl}/NextPage`, "", { anchor: "middle-right", pos: [-4, 10], rect_size: [44, 88], ...bg("sk_arrow_right_44"), sprite_type: 0 });
   k.badge(`${tl}/Prev`);
   k.badge(`${tl}/NextPage`);
   for (let c = 1; c <= 26; c++) {
@@ -419,7 +420,7 @@ function buildGameHud() {
     for (let r = 1; r <= 3; r++) {
       const s = `${col}/S${r}`;
       b.button(s, "", { anchor: "top-center", pos: [0, -22 - (r - 1) * 72], rect_size: [48, 48], bg_color: { r: 0.06, g: 0.05, b: 0.08, a: 0.95 }, sprite_type: 1 });
-      b.sprite(`${s}/Ring`, { anchor: "middle-center", pos: [0, 0], rect_size: [52, 52], ...part("slot_frame"), sprite_type: 1 });
+      b.sprite(`${s}/Ring`, { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], ...part("sk_tl_node_frame_64"), sprite_type: 0 });
       b.patchComponent(`${s}/Ring`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
       b.sprite(`${s}/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0 });
       k.aspect(`${s}/Icon`);
@@ -431,20 +432,21 @@ function buildGameHud() {
   b.panel(`${tl}/Bar`, { anchor: "bottom-left", pivot: [0, 0.5], pos: [44, 58], rect_size: [1210, 14], color: "#38323F" });
   b.sprite(`${tl}/Bar/Fill`, { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [1210, 14], color: "#B69B63", sprite_type: 3, fill_method: 0 });
   b.text(`${tl}/Bar/Now`, "", { size: 16, bold: true, color: "#FFE9A8", anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 22], rect_size: [80, 22], alignment: 4, ...outline });
-  b.panel(`${tl}/Bar/Mark`, { anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [4, 300], color: { r: 1, g: 0.86, b: 0.5, a: 0.75 } });
+  b.sprite(`${tl}/Bar/Mark`, { anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [4, 300], ...part("sk_tl_nowline"), sprite_type: 0 });
+  b.sprite(`${tl}/Bar/Mark/Pin`, { anchor: "top-center", pivot: [0.5, 0], pos: [0, 0], rect_size: [40, 48], ...part("sk_tl_marker"), sprite_type: 0 });
   b.text(`${tl}/Next`, "", { size: 18, color: C.gold, anchor: "bottom-center", pos: [0, 10], rect_size: [1200, 26], alignment: 4, ...outline });
   // 스킬 공방
   const ws = "SkillWin/WS";
-  k.inner(ws, "top-left", [51, -478], [1298, 432]);
+  k.inner(ws, "top-left", [51, -478], [1298, 432], "sk_workshop_panel");
   b.panel(`${ws}/Portrait`, { anchor: "top-left", pivot: [0, 1], pos: [18, -18], rect_size: [168, 168], color: { r: 0.03, g: 0.03, b: 0.05, a: 0.95 } });
-  k.rim(`${ws}/Portrait`, "slot_frame", -6);
+  k.rim(`${ws}/Portrait`, "sk_portrait_frame", -6);
   b.sprite(`${ws}/Portrait/Icon`, { anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], color: WHITE, alpha: 1, sprite_type: 0 });
   k.aspect(`${ws}/Portrait/Icon`);
   b.text(`${ws}/Name`, "", { size: 26, bold: true, color: C.title, anchor: "top-left", pos: [204, -16], rect_size: [320, 34], alignment: 3, ...outline });
   b.text(`${ws}/Info`, "", { size: 17, color: C.dim, anchor: "top-left", pos: [204, -54], rect_size: [320, 24], alignment: 3 });
   b.text(`${ws}/Desc`, "", { size: 17, color: C.gold, anchor: "top-left", pos: [204, -82], rect_size: [320, 96], alignment: 0, bestfit: true, min_size: 13, max_size: 17 });
   b.text(`${ws}/Stat`, "", { size: 17, color: "#F4ED83", anchor: "top-left", pos: [18, -196], rect_size: [508, 72], alignment: 0, bestfit: true, min_size: 13, max_size: 17 });
-  for (let i = 1; i <= 20; i++) b.panel(`${ws}/Pip${i}`, { anchor: "top-left", pos: [18 + (i - 1) * 25, -276], rect_size: [20, 20], color: "#2A2530" });
+  for (let i = 1; i <= 20; i++) b.sprite(`${ws}/Pip${i}`, { anchor: "top-left", pos: [18 + (i - 1) * 25, -276], rect_size: [20, 20], ...part("sk_rank_pip_empty"), sprite_type: 0 });
   b.text(`${ws}/RankNote`, "", { size: 15, color: "#8C99B4", anchor: "top-left", pos: [18, -302], rect_size: [508, 22], alignment: 3 });
   b.text(`${ws}/Reason`, "", { size: 15, color: "#FF9A8A", anchor: "top-left", pos: [18, -326], rect_size: [508, 22], alignment: 3, bestfit: true, min_size: 12, max_size: 15 });
   k.ok("SkillWin/BtnLearn", "배우기", { anchor: "bottom-left", pos: [69, 30], rect_size: [240, 88], font_size: 26 });
@@ -455,13 +457,13 @@ function buildGameHud() {
   b.panel(`${ws}/Div`, { anchor: "top-left", pos: [540, -16], rect_size: [2, 400], color: { r: 0.45, g: 0.38, b: 0.28, a: 0.6 } });
   b.text(`${ws}/TreeHead`, "스킬 강화", { size: 18, bold: true, color: "#E6C88A", anchor: "top-left", pos: [560, -12], rect_size: [200, 24], alignment: 3 });
   b.panel(`${ws}/Spine`, { anchor: "top-left", pivot: [0.5, 1], pos: [600, -60], rect_size: [4, 300], color: "#4A3F55" });
-  b.button(`${ws}/Hub`, "", { anchor: "top-left", pivot: [0.5, 0.5], pos: [600, -210], rect_size: [48, 48], image_ruid: K.circle, bg_color: "#C9A86A", sprite_type: 0 });
+  b.button(`${ws}/Hub`, "", { anchor: "top-left", pivot: [0.5, 0.5], pos: [600, -210], rect_size: [56, 56], image_ruid: K.sk_ws_hub, bg_color: "#FFFFFF", sprite_type: 0 });
   for (let i = 1; i <= 6; i++) b.text(`${ws}/Need${i}`, "", { size: 15, color: C.dim, anchor: "top-left", pivot: [0.5, 1], pos: [700 + (i - 1) * 108, -40], rect_size: [104, 20], alignment: 4 });
   for (let i = 1; i <= 8; i++) {
     const n = `${ws}/N${i}`;
-    b.panel(`${ws}/L${i}`, { anchor: "top-left", pivot: [0, 0.5], pos: [600, -100], rect_size: [80, 4], color: "#4A3F55" });
+    b.sprite(`${ws}/L${i}`, { anchor: "top-left", pivot: [0, 0.5], pos: [600, -100], rect_size: [80, 12], ...part("sk_ws_link_dark"), sprite_type: 1 });
     b.button(n, "", { anchor: "top-left", pivot: [0.5, 1], pos: [700, -64], rect_size: [100, 108], bg_color: { r: 0, g: 0, b: 0, a: 0.25 }, sprite_type: 1 });
-    b.sprite(`${n}/Ring`, { anchor: "top-center", pos: [0, -2], rect_size: [64, 64], image_ruid: K.circle, color: "#4A3F55", sprite_type: 0 });
+    b.sprite(`${n}/Ring`, { anchor: "top-center", pos: [0, 4], rect_size: [76, 76], ...part("sk_ws_node_frame_empty"), sprite_type: 0 });
     b.patchComponent(`${n}/Ring`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     b.sprite(`${n}/Icon`, { anchor: "top-center", pos: [0, -10], rect_size: [48, 48], color: WHITE, alpha: 1, sprite_type: 0 });
     k.aspect(`${n}/Icon`);
@@ -471,30 +473,34 @@ function buildGameHud() {
 
   // ── 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차, 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분) ──
   //   포인트가 생기면 HUD 띠 「혼의 제물 — 고르기」 → 카드 3장(새 스킬 · 쓰던 스킬 랭크 업 · 강화) + 다음 해금 미리보기. 컨트롤러 SkillOffer.mlua
-  b.button("OfferBand", "혼의 제물 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [440, 64], ...bg("btn_frame"), color: "#F4E2B0", font_size: 24, enable: false });
+  b.button("OfferBand", "혼의 제물 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [440, 72], ...bg("sk_offer_banner"), color: "#F4E2B0", font_size: 24, sprite_type: 1, enable: false });
   k.badge("OfferBand");
   k.frame("OfferWin", "middle-center", [0, 20], [1300, 700], "혼의 제물");
   b.text("OfferWin/Sub", "포인트를 바칠 곳을 고르세요", { size: 20, color: C.gold, anchor: "top-left", pos: [40, -76], rect_size: [700, 30], alignment: 3 });
   b.text("OfferWin/Left", "", { size: 22, bold: true, color: "#F4ED83", anchor: "top-right", pos: [-40, -76], rect_size: [300, 30], alignment: 5, ...outline });
   for (let i = 1; i <= 3; i++) {
     const c = `OfferWin/Card${i}`;
-    b.button(c, "", { anchor: "top-left", pos: [19 + (i - 1) * 354, -116], rect_size: [330, 440], bg_color: { r: 0.08, g: 0.07, b: 0.1, a: 0.97 }, sprite_type: 1 });
-    k.rim(c, "slot_frame", -4);
-    b.panel(`${c}/Band`, { anchor: "top-center", pos: [0, -8], rect_size: [300, 12], color: "#6FD9C2" });
-    b.text(`${c}/Kind`, "", { size: 22, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -28], rect_size: [300, 30], alignment: 4, ...outline });
-    b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -66], rect_size: [128, 128], color: WHITE, alpha: 1, sprite_type: 0 });
+    // 카드 그림 3종(새 스킬·랭크 업·강화)은 SkillOffer.Render가 종류마다 바꿔 낀다 (코덱스 skill-window-v3)
+    b.button(c, "", { anchor: "top-left", pos: [19 + (i - 1) * 354, -116], rect_size: [340, 440], ...bg("sk_offer_card_new"), sprite_type: 0 });
+    // 카드 그림 맨 위 흰 띠 = 트리 색을 입히는 자리 (코덱스 시안 offer-cards.png) → 같은 자리에 트리 색 띠를 덮는다
+    b.panel(`${c}/Band`, { anchor: "top-center", pos: [0, 0], rect_size: [340, 12], color: "#6FD9C2" });
+    b.text(`${c}/Kind`, "", { size: 22, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -58], rect_size: [280, 30], alignment: 4, ...outline });
+    b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -94], rect_size: [120, 120], color: WHITE, alpha: 1, sprite_type: 0 });
     k.aspect(`${c}/Icon`);
     b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-    b.text(`${c}/Name`, "", { size: 28, bold: true, color: C.title, anchor: "top-center", pos: [0, -202], rect_size: [310, 36], alignment: 4, ...outline });
-    b.text(`${c}/Effect`, "", { size: 18, color: C.gold, anchor: "top-center", pos: [0, -244], rect_size: [300, 76], alignment: 1, bestfit: true, min_size: 13, max_size: 18 });
-    b.text(`${c}/Change`, "", { size: 19, color: "#7CFF7A", anchor: "top-center", pos: [0, -326], rect_size: [300, 50], alignment: 1, bestfit: true, min_size: 13, max_size: 19 });
+    b.text(`${c}/Name`, "", { size: 28, bold: true, color: C.title, anchor: "top-center", pos: [0, -220], rect_size: [280, 36], alignment: 4, ...outline });
+    b.text(`${c}/Effect`, "", { size: 18, color: C.gold, anchor: "top-center", pos: [0, -260], rect_size: [270, 76], alignment: 1, bestfit: true, min_size: 13, max_size: 18 });
+    b.text(`${c}/Change`, "", { size: 19, color: "#7CFF7A", anchor: "top-center", pos: [0, -338], rect_size: [270, 44], alignment: 1, bestfit: true, min_size: 13, max_size: 19 });
     b.text(`${c}/Pick`, "이 카드로", { size: 22, bold: true, color: "#F4E2B0", anchor: "bottom-center", pos: [0, 18], rect_size: [300, 34], alignment: 4, ...outline });
   }
-  b.panel("OfferWin/Preview", { anchor: "top-left", pos: [19 + 3 * 354, -116], rect_size: [200, 440], color: { r: 0.08, g: 0.07, b: 0.1, a: 0.55 } });
+  b.sprite("OfferWin/Preview", { anchor: "top-left", pos: [19 + 3 * 354, -116], rect_size: [200, 440], ...part("sk_offer_card_preview"), sprite_type: 0 });
   b.text("OfferWin/Preview/Head", "다음 해금", { size: 20, bold: true, color: C.dim, anchor: "top-center", pos: [0, -24], rect_size: [190, 30], alignment: 4 });
   b.sprite("OfferWin/Preview/Icon", { anchor: "top-center", pos: [0, -80], rect_size: [96, 96], color: { r: 1, g: 1, b: 1, a: 0.45 }, sprite_type: 0 });
   k.aspect("OfferWin/Preview/Icon");
   b.text("OfferWin/Preview/Body", "", { size: 18, color: C.dim, anchor: "top-center", pos: [0, -196], rect_size: [186, 200], alignment: 1, bestfit: true, min_size: 13, max_size: 18 });
+  // 고른 카드 위 반짝임 6프레임 (코덱스 sk-offer-pick-01~06 · 80ms씩, SkillOffer.Flash)
+  b.sprite("OfferWin/Flash", { anchor: "top-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [400, 480], ...part("sk_offer_pick_01"), sprite_type: 0, enable: false });
+  b.patchComponent("OfferWin/Flash", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   k.btn("OfferWin/BtnReroll", "다시 섞기", { anchor: "bottom-left", pos: [19, 28], rect_size: [320, 88], font_size: 22 });
   k.btn("OfferWin/BtnBoard", "보드에서 직접 고르기 (K)", { anchor: "bottom-right", pos: [-19, 28], rect_size: [420, 88], font_size: 22 });
 
@@ -511,7 +517,14 @@ function buildGameHud() {
   }
 
   // 연쇄 처치 (10-28 피드백 F2 #14-B): 왼쪽 가운데 위 「12연속 처치」 — 10·25·50·100 단계마다 색이 짙어진다 (HudMain.RenderStreak)
-  b.text("KillStreak", "", { size: 40, bold: true, color: "#F0D9A0", anchor: "middle-left", pos: [48, 230], rect_size: [460, 60], alignment: 3, ...outline, outline_width: 0.25, enable: false });
+  //   판 그림은 코덱스 feel-fx-v2 ui-killstreak-plate-1~4 (단계마다 HudMain이 바꿔 낀다, 10-28 전체 제작)
+  b.sprite("KillStreak", { anchor: "middle-left", pos: [48 + 230, 230], rect_size: [460, 132], image_ruid: K.ui_killstreak_plate_1, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+  b.text("KillStreak/Text", "", { size: 40, bold: true, color: "#F0D9A0", anchor: "middle-center", pos: [0, 2], rect_size: [420, 60], alignment: 4, ...outline, outline_width: 0.25 });
+  // 줍기 단추 (10-28 #15-A 추가 지시 · PC 전용): 발밑 가까이 내 장비·룬이 떨어져 있을 때만 — 누르면 주변 것을 한 번에 줍는다 (HudMain.RenderPickup)
+  b.button("BtnPickup", "", { anchor: "bottom-center", pos: [-310, 236], rect_size: [96, 96], ...bg("btn_frame"), sprite_type: 1, enable: false });
+  b.sprite("BtnPickup/Icon", { anchor: "middle-center", pos: [0, 6], rect_size: [64, 64], image_ruid: K.icon_pickup, color: WHITE, alpha: 1, sprite_type: 0 });
+  b.text("BtnPickup/Key", "줍기", { size: 18, bold: true, color: "#F4E2B0", anchor: "bottom-center", pos: [0, -4], rect_size: [90, 24], ...outline });
+  k.pc("BtnPickup");
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)

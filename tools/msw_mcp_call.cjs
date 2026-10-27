@@ -125,6 +125,28 @@ function writeQuoted(file, t) {
   fs.writeFileSync(file, [t.head.join(","), ...t.rows.map((r) => r.map(q).join(","))].join("\n") + "\n");   // 헤더는 따옴표 없이 (코덱스 원본과 같게)
 }
 
+// 표의 border 칸: 「12」(네 변 같은 폭) · 「l,r,t,b」 · 「l/r/t/b」
+function borderOf(bd) {
+  if (!bd) return null;
+  const v = bd.split(/[,/]/).map((x) => x.trim()).filter(Boolean);
+  return v.length === 1 ? [v[0], v[0], v[0], v[0]] : v.length === 4 ? v : null;
+}
+// 이미 올린 그림의 9조각 테두리만 다시 넣는다: node tools/msw_mcp_call.cjs border-res <팩 폴더>
+async function borderRes(pack) {
+  const root = path.join(__dirname, "..");
+  const t = parseQuoted(fs.readFileSync(path.join(root, pack, "resource-mapping.csv"), "utf8"));
+  const c = (n) => t.head.indexOf(n);
+  const rows = t.rows.filter((r) => borderOf(String(r[c("border")] || "").trim()) && /^[0-9a-f]{32}$/.test(r[c("ruid")]));
+  await connect();
+  for (const r of rows) {
+    const b = borderOf(String(r[c("border")]).trim());
+    const props = [{ key: "pivot_x", value: "0.5" }, { key: "pivot_y", value: "0.5" }, { key: "filter_mode", value: "Point" }, { key: "wrap_mode", value: "Clamp" }];
+    ["border_left", "border_right", "border_top", "border_bottom"].forEach((k, i) => props.push({ key: k, value: String(b[i]) }));
+    await callTool("asset_update_resource_storage_info", { guid: r[c("ruid")], name: r[c("resource_name")], subcategory: "object", properties: props });
+    console.log(`  ${r[c("resource_name")]} 테두리 ${b.join("/")}`);
+  }
+}
+
 // 코덱스 팩의 resource-mapping.csv(따옴표 CSV)를 그대로 읽어 RUID가 빈 줄을 그룹 저장소에 올리고 RUID를 그 표에 적는다.
 // 올린 직후 몬스터 프레임·NPC·장식·바닥 장판은 발밑 가운데 피벗(0.5, 0)으로 둔다 (중간에 끊겨도 다시 실행하면 이어서).
 //   node tools/msw_mcp_call.cjs upload-res <팩 폴더> [--skip=floor,wall] [--skip-key=stormgulls] [--dry]
@@ -166,10 +188,15 @@ async function uploadRes(pack, argv) {
     const ruid = findKey(done, /^(ruid|guid|resourceId)$/i);
     if (!ruid || !/^[0-9a-f]{32}$/.test(ruid)) throw new Error(`${name}: RUID를 못 받음 (${JSON.stringify(done).slice(0, 200)})`);
     const pv = pivots[name];
-    if (pv || bottom(r)) {
-      await callTool("asset_update_resource_storage_info", { guid: ruid, name, subcategory: "object", properties: [
+    // 9조각 UI 그림: 표의 border 칸(한 값 = 네 변 같은 폭, 「l/r/t/b」 = 변마다)을 테두리 속성으로 (10-28 줍기 이름표 판)
+    const bd = c("border") >= 0 ? String(r[c("border")] || "").trim() : "";
+    const border = borderOf(bd);
+    if (pv || bottom(r) || border) {
+      const props = [
         { key: "pivot_x", value: pv ? String(pv.x) : "0.5" }, { key: "pivot_y", value: pv ? String(pv.y) : "0" }, { key: "filter_mode", value: "Point" }, { key: "wrap_mode", value: pv ? pv.wrap : "Clamp" },
-      ] });
+      ];
+      if (border) ["border_left", "border_right", "border_top", "border_bottom"].forEach((k, i) => props.push({ key: k, value: String(border[i]) }));
+      await callTool("asset_update_resource_storage_info", { guid: ruid, name, subcategory: "object", properties: props });
     }
     r[c("RUID")] = ruid;
     if (c("status") >= 0) r[c("status")] = "uploaded";
@@ -256,6 +283,7 @@ async function main() {
   const [cmd, file, px, py] = process.argv.slice(2);
   if (cmd === "upload") return upload(file, px, process.argv.includes("--dry"));
   if (cmd === "upload-res") return uploadRes(file, process.argv.slice(4));
+  if (cmd === "border-res") return borderRes(file);
   if (cmd === "pet-pass") return petPass(file, process.argv.slice(4));
   if (cmd === "supporter-pass") return supporterPass(file, process.argv.slice(4));
   if (cmd !== "pivot") throw new Error("사용법: node tools/msw_mcp_call.cjs pivot <guid-list-file> [pivot_x] [pivot_y] | upload <팩 폴더> [최대 개수]");

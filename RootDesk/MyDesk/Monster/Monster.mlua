@@ -600,7 +600,7 @@ script Monster extends Component
         self:SpreadPoison()
         local status = self:Status()
         if status ~= nil then status:OnDeathSpread() end   -- 역병 저주 · 서리 혼 「파쇄」 (10-20)
-        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition)
+        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition, self.Grade)
         local killer = _Util:OwnerPlayerOf(self.LastAttacker)
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = killer, players = self:RewardPlayers(killer),
@@ -725,12 +725,36 @@ script Monster extends Component
     end
 
     @ExecSpace("Multicast")
-    method void PlayDeathSound(Vector3 pos)
+    method void PlayDeathSound(Vector3 pos, integer grade)
         local me = _UserService.LocalPlayer
         if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then
             _SoundDirector:PlayMonsterDeath(self.SourceId, pos)   -- 몬스터별 사망음 (config hitSoundMode)
             _EffectService:PlayEffect(_GameConst.FxDeath, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), 0, Vector3(0.7, 0.7, 1), false, { PlayRate = 1.6 })
+            if grade == 2 then self:EliteBurst(me.CurrentMap, pos) end
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void EliteBurst(Entity map, Vector3 pos)
+        -- 정예 처치 파열 (코덱스 feel-fx-v2 6프레임 · 60~120ms): 정예를 잡았다는 손맛 — 클라이언트 전용 그림 하나를 잠깐 띄운다
+        local ruids = {}
+        for i = 1, 6 do table.insert(ruids, _GameData:GetUiIcon("fx_elite_burst_" .. tostring(i))) end
+        if ruids[1] == "" or not isvalid(map) then return end
+        local fx = _SpawnService:SpawnByModelId("artsprite", "EliteBurst", Vector3(pos.x, pos.y + 0.55, pos.z - 0.05), map)
+        if not isvalid(fx) then return end
+        local sp = fx.SpriteRendererComponent
+        sp.SpriteRUID = ruids[1]
+        sp.SortingLayer = "MapLayer0"
+        sp.OrderInLayer = 7
+        fx.TransformComponent.Scale = Vector3(0.85, 0.85, 1)   -- 256px → 2.2칸
+        local delays = { 0.06, 0.07, 0.09, 0.09, 0.1, 0.12 }
+        local t = 0
+        for i = 2, 6 do
+            t = t + delays[i - 1]
+            local ruid = ruids[i]
+            _TimerService:SetTimerOnce(function() if isvalid(fx) then fx.SpriteRendererComponent.SpriteRUID = ruid end end, t)
+        end
+        _TimerService:SetTimerOnce(function() if isvalid(fx) then fx:Destroy() end end, t + delays[6])
     end
 
     @ExecSpace("ServerOnly")

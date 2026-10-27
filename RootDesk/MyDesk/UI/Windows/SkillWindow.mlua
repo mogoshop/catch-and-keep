@@ -183,10 +183,14 @@ script SkillWindow extends Logic
                         local cap = book:RankCap(id, st.Level)
                         _UIKit:SetIcon(s .. "/Icon", def.icon)
                         _UIKit:SetColor(s .. "/Icon", lv > 0 and Color(1, 1, 1, 1) or (reached and Color(0.78, 0.78, 0.78, 1) or Color(0.32, 0.32, 0.34, 0.85)))
+                        -- 칸 테두리 4상태 (코덱스 skill-window-v3 · PC 64 / 모바일 96): 고름(금) · 잠김 · 배울 수 있음 · 그 밖(트리색으로 물들인 흰 테두리)
                         local tc = self:TreeColor(def.tree)
-                        local ring = reached and tc or Color(tc.r * 0.4, tc.g * 0.4, tc.b * 0.4, 0.8)
-                        if id == self.SelMain then ring = Color(1, 0.92, 0.6, 1) end
-                        _UIKit:SetColor(s .. "/Ring", ring)
+                        local key = "sk_tl_node_frame_"
+                        if id == self.SelMain then key = "sk_tl_node_selected_"
+                        elseif not reached then key = "sk_tl_node_locked_"
+                        elseif lv == 0 and book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then key = "sk_tl_node_learnable_" end
+                        _UIKit:SetIcon(s .. "/Ring", _GameData:GetUiIcon(key .. (mobile and "96" or "64")))
+                        _UIKit:SetColor(s .. "/Ring", key == "sk_tl_node_frame_" and tc or Color(1, 1, 1, 1))
                         local state
                         if not reached then state = _UIKit:Colored("#8C99B4", "Lv" .. tostring(col.row))
                         elseif lv > 0 then state = _UIKit:Colored("#F4ED83", tostring(lv) .. "/" .. tostring(cap))
@@ -240,7 +244,7 @@ script SkillWindow extends Logic
         if not isvalid(e) or math.abs(e.UITransformComponent.RectSize.x - btn) < 0.5 then return end
         e.UITransformComponent.RectSize = Vector2(btn, btn)
         local ring = _UIKit:Get(s .. "/Ring")
-        if isvalid(ring) then ring.UITransformComponent.RectSize = Vector2(btn + 4, btn + 4) end
+        if isvalid(ring) then ring.UITransformComponent.RectSize = Vector2(btn + 8, btn + 8) end
         local icon = _UIKit:Get(s .. "/Icon")
         if isvalid(icon) then icon.UITransformComponent.RectSize = Vector2(btn - 8, btn - 8) end
     end
@@ -265,12 +269,13 @@ script SkillWindow extends Logic
         _UIKit:SetText(ws .. "/Desc", def.desc)
         _UIKit:SetText(ws .. "/Stat", self:StatLine(book, st, self.SelMain))
         -- 랭크 사다리 20칸: 찍음(금) · 지금 상한까지(밝은 빈칸) · 상한 밖(어둠)
+        -- 랭크 점 3상태 (코덱스 skill-window-v3): 찍음 · 지금 상한까지 빈칸 · 상한 밖(잠긴 점) — 최대 랭크 밖은 감춘다
         for i = 1, 20 do
-            local c = Color(0.16, 0.15, 0.19, 1)
+            local key = ""
             if i <= def.maxLv then
-                if i <= lv then c = Color(0.85, 0.7, 0.35, 1) elseif i <= cap then c = Color(0.42, 0.4, 0.46, 1) end
-            else c = Color(0.08, 0.08, 0.1, 0.4) end
-            _UIKit:SetColor(ws .. "/Pip" .. tostring(i), c)
+                if i <= lv then key = "sk_rank_pip_filled" elseif i <= cap then key = "sk_rank_pip_empty" else key = "sk_rank_pip_capped" end
+            end
+            _UIKit:SetIcon(ws .. "/Pip" .. tostring(i), key == "" and "" or _GameData:GetUiIcon(key))
         end
         local note = ""
         if st.Level >= def.row and cap < def.maxLv then note = "랭크 " .. tostring(cap + 1) .. "은 Lv" .. tostring(book:NextRankLevel(self.SelMain, cap + 1)) .. "부터" end
@@ -332,14 +337,20 @@ script SkillWindow extends Logic
                 topY = math.max(topY, cy)
                 botY = math.min(botY, cy)
                 local link = _UIKit:Get(ws .. "/L" .. tostring(i))
-                if isvalid(link) then link.UITransformComponent.RectSize = Vector2(math.max(4, x - 50 - hubX), 4) end
+                if isvalid(link) then link.UITransformComponent.RectSize = Vector2(math.max(16, x - 50 - hubX), 12) end
                 _UIKit:SetPos(ws .. "/L" .. tostring(i), Vector2(hubX, cy))
                 local nlv = book:GetLevel(nid)
                 local can = book:CanLearn(nid, st.Level, st.SkillPoints) == ""
-                local ring = Color(0.29, 0.25, 0.33, 1)
-                if nlv > 0 then ring = tc elseif can then ring = Color(0.55, 0.85, 0.55, 1) end
+                -- 노드 테두리 4상태 (코덱스 skill-window-v3): 최대(금) · 배움(트리색) · 배울 수 있음(빈 테두리, 초록빛) · 잠김
+                local key, ring = "sk_ws_node_frame_locked", Color(1, 1, 1, 1)
+                if nlv >= nd.maxLv and nlv > 0 then key = "sk_ws_node_frame_max"
+                elseif nlv > 0 then key, ring = "sk_ws_node_frame_learned", tc
+                elseif can then key, ring = "sk_ws_node_frame_empty", Color(0.62, 0.92, 0.62, 1) end
+                _UIKit:SetIcon(n .. "/Ring", _GameData:GetUiIcon(key))
                 _UIKit:SetColor(n .. "/Ring", ring)
-                _UIKit:SetColor(ws .. "/L" .. tostring(i), nlv > 0 and tc or Color(0.29, 0.25, 0.33, 1))
+                -- 연결선: 배운 노드까지는 밝은 선(트리색), 아니면 어두운 선
+                _UIKit:SetIcon(ws .. "/L" .. tostring(i), _GameData:GetUiIcon(nlv > 0 and "sk_ws_link_lit" or "sk_ws_link_dark"))
+                _UIKit:SetColor(ws .. "/L" .. tostring(i), nlv > 0 and tc or Color(1, 1, 1, 1))
                 _UIKit:SetIcon(n .. "/Icon", nd.icon)
                 _UIKit:SetColor(n .. "/Icon", nlv > 0 and Color(1, 1, 1, 1) or (can and Color(0.85, 0.85, 0.85, 1) or Color(0.4, 0.4, 0.42, 0.85)))
                 local status = tostring(nlv) .. "/" .. tostring(nd.maxLv)
