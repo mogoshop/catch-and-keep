@@ -1,6 +1,8 @@
 -- 펫 창 (메뉴 → 펫): 위 줄 펫 칸(data/pets.csv 순서) → 고른 펫의 그림 · 받기/구매/함께하기 + 주워 올 물건 5단계 (PlayerSave.PetFilter).
 -- 10-24 사용자: 능력은 모두 고양이 재와 같고 모습만 다른 펫을 여러 마리 판다. 데리고 다니는 펫은 한 마리 (PlayerSave.PetPick).
--- 오픈 기념 무료 패스(고양이 재)가 판매 중이고 펫이 없으면, 게임에 들어온 뒤 한 번 저절로 연다 (접속마다 한 번).
+-- 오픈 기념 무료 패스(고양이 재)가 판매 중이고 펫이 없으면 메뉴 단추 아래 「재 받기」 뱃지(GameHUD/BtnJae · 빨간 점)를 띄운다.
+--   한 번 누르면 이 창을 열고 계정에 남겨(PlayerSave.GuideCards의 evt_jae) 다른 캐릭터·다음 접속에도 다시 띄우지 않는다.
+--   10-27 사용자: 예전엔 게임에 들어올 때마다 창이 저절로 열려 첫 진입 때 게임 안내·조작 방식 고르기와 창이 세 번 겹쳤다.
 @Logic
 script PetWindow extends Logic
 
@@ -14,8 +16,8 @@ script PetWindow extends Logic
     property any PaidPrice = nil               -- 펫 key → 가격
     property string Sel = ""                   -- 창에서 보고 있는 펫 key
     property boolean Asked = false             -- 상품 정보를 물었다
-    property boolean AutoShown = false
-    property number EnteredAt = 0
+    property boolean BadgeSeen = false         -- 이번 접속에서 뱃지를 눌렀다 (서버 저장 전에도 바로 끈다)
+    property string BadgeCard = "evt_jae"
     property integer Slots = 6                 -- 펫 칸 수 (UI P1~P6)
 
     @ExecSpace("ClientOnly")
@@ -27,6 +29,7 @@ script PetWindow extends Logic
         _UIKit:SetEnabled(self.Win, false)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         _UIKit:Connect("MenuWin/Pet", function() _UIKit:Close("MenuWin") self:Show() end)
+        _UIKit:Connect("BtnJae", function() self:OpenFromBadge() end)
         _UIKit:Connect(self.Win .. "/BtnGet", function() self:Get() end)
         for i = 0, 4 do
             local f = i
@@ -150,12 +153,12 @@ script PetWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Poll()
-        -- 처음 들어온 뒤 한 번 저절로 열기 + 열려 있으면 내용 갱신
+        -- 「재 받기」 뱃지 + 열려 있으면 내용 갱신
         local me = _UserService.LocalPlayer
         if not isvalid(me) then return end
         local uid = me.PlayerComponent.UserId
         local has = _PetSystem:HasPet(uid)
-        self:MaybeAutoOpen(has)
+        self:UpdateBadge(has)
         if not _UIKit:IsOpen(self.Win) then return end
         ---@type PlayerSave
         local save = _UIKit:Comp("script.PlayerSave")
@@ -230,19 +233,39 @@ script PetWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void MaybeAutoOpen(boolean has)
-        -- 게임 방에 들어와 12초 뒤, 무료 패스 판매 중이고 아직 펫이 없으면 한 번 (다른 창·이야기 카드가 없을 때)
-        if self.AutoShown or has or _HudMain:InLobby() then
-            if _HudMain:InLobby() then self.EnteredAt = 0 end
-            return
+    method void UpdateBadge(boolean has)
+        -- 게임 방에서, 무료 패스 판매 중 · 펫 없음 · 계정이 아직 안 누름이면 뱃지와 빨간 점을 켠다 (상품 정보는 처음 한 번 묻는다)
+        local show = false
+        if not _HudMain:InLobby() then
+            self:AskProducts()
+            show = self.FreeState == "ing" and not has and not self:BadgeDone()
         end
-        local now = _UtilLogic.ElapsedSeconds
-        if self.EnteredAt == 0 then self.EnteredAt = now self:AskProducts() return end
-        if now < self.EnteredAt + 12 or self.FreeState ~= "ing" then return end
-        if _UIKit:AnyWindowOpen() or _StoryCard.Active then return end
-        self.AutoShown = true
+        local e = _UIKit:Get("BtnJae")
+        if isvalid(e) and e.Enable ~= show then
+            e.Enable = show
+            _UIKit:SetEnabled("BtnJae/Badge", show)
+            log("[VRF] jae badge " .. (show and "shown" or "hidden") .. " free=" .. self.FreeState .. " has=" .. tostring(has))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean BadgeDone()
+        if self.BadgeSeen then return true end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil then return true end
+        return string.find("," .. save.GuideCards .. ",", "," .. self.BadgeCard .. ",", 1, true) ~= nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OpenFromBadge()
+        -- 뱃지를 누름: 창을 열고(첫 칸 = 고양이 재) 계정에 남겨 뱃지를 끈다
+        self.BadgeSeen = true
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestGuideCard(self.BadgeCard) end
         self:Show()
-        log("[VRF] PetWindow auto-open (free pass on sale)")
+        log("[VRF] jae badge clicked")
     end
 
 end

@@ -154,6 +154,10 @@ function buildGameHud() {
   b.button("BtnMenu", "", { anchor: "top-right", pos: [-456, -150], rect_size: [96, 96], ...bg("menu_btn"), sprite_type: 1 });
   b.text("BtnMenu/Label", "메뉴", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnMenu");
+  // 「재 받기」 뱃지 (오픈 기념 무료 펫 · 10-27 사용자): 메뉴 단추와 같은 크기로 그 아래(이름표 28 + 간격 16). 한 번 누르면 계정에 남아 다시 안 뜬다 (PetWindow.UpdateBadge)
+  b.button("BtnJae", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], ...bg("pet_jae"), sprite_type: 0, enable: false });
+  b.text("BtnJae/Label", "재 받기", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
+  k.badge("BtnJae");
 
   // ── 퀘스트 추적 (미니맵 아래) ──
   b.button("QuestTrack", "", { anchor: "top-right", pos: [-24, -432], rect_size: [420, 120], ...bg("btn_frame"), sprite_type: 1 });
@@ -615,6 +619,9 @@ function buildGameHud() {
     b.empty("GuideWin/Media/Video", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], enable: false });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.RawImageGUIRendererComponent", { "@type": "MOD.Core.RawImageGUIRendererComponent", Enable: true, MaterialId: "" });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.YoutubePlayerGUIComponent", { "@type": "MOD.Core.YoutubePlayerGUIComponent", Enable: true, Urls: ["https://www.youtube.com/watch?v=frX4-7REhRw"], Loop: true, PlayOnAwake: false, Shuffle: false, Volume: 0, PlaySpeed: 1 });
+    // 재생기를 새로 불러오는 동안 하얀 화면이 비쳤다 (10-27 첫 유저 녹화) → 영상 위 검은 가림판 (GuideWindow가 불러오는 동안만 켠다)
+    b.panel("GuideWin/Media/Cover", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, sprite_type: 0, enable: false });
+    b.text("GuideWin/Media/Cover/Text", "영상 불러오는 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
     b.text("GuideWin/Media/Empty", "화면 준비 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
     k.rim("GuideWin/Media", "slot_frame");
     const headY = top + mediaH + 12;

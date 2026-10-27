@@ -24,6 +24,22 @@ script MapTransition extends Logic
     method void OnBeginPlay()
         self.Active = false
         _UIKit:SetEnabled(self.Root, false)
+        -- 게임·심연 방에 막 들어왔다 (로비에서 솔로·파티로 이동): 맵이 그려지기 전 회색 빈 화면이 보였다 (10-27 첫 유저 녹화) → 처음부터 검게 덮고 도착하면 걷는다
+        if _GameConst:RoomKind() ~= "lobby" then
+            local now = _UtilLogic.ElapsedSeconds
+            self.Active = true
+            self.StartedAt = now
+            self.FadeStart = 0
+            self.Target = ""
+            self.FromMapId = ""
+            self.ArrivedAt = 0
+            _UIKit:SetText(self.Root .. "/Name", "")
+            _UIKit:SetText(self.Root .. "/Region", "")
+            _UIKit:SetIcon(self.Root .. "/Art", "")
+            self:SetAlpha(1)
+            _UIKit:SetEnabled(self.Root, true)
+            log("[VRF] map transition cover on room start (" .. _GameConst:RoomKind() .. ")")
+        end
     end
 
     @ExecSpace("ClientOnly")
