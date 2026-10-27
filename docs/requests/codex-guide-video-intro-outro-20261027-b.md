@@ -3,6 +3,8 @@
 1차 요청서: `docs/requests/codex-guide-video-intro-outro-20261027.md`
 1차 샘플(`io-logo-light` · `io-bg-intro` · `io-bg-outro` · `io-slot-video` · `io-slot-sub`) **사용자 승인 (10-27)**. 같은 결로 나머지를 확정본으로 받는다 (샘플 단계 없음).
 
+> **고를 안(A/B) 없음.** 1차에 나온 「B안」은 영상 구성(인트로 4초 · 아웃트로 10초 · 배경음)을 고른 것이고 이미 정해졌다. 이번은 그림마다 **한 가지씩 확정본**만 만들면 된다 — 시안 여러 개 만들지 말고 바로 진행.
+
 ## ⚠ 돌려줄 곳
 
 1차는 `~/Documents/New project/art-guide-intro-outro-20261027/delivery/`에 들어와 Claude가 옮겼다. 이번에는 **반드시 아래 폴더에 바로** 넣어 주기:
