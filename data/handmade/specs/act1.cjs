@@ -322,8 +322,10 @@ module.exports = {
     rocks: [rock(9, 5.5, 0.9, 0.9), rock(9, -5.5, 0.9, 0.9), rock(20, 6.5, 0.9, 0.9), rock(20, -6.5, 0.9, 0.9)],
     gates: { W: [-29, 0], E: [28, 0] },
     fixed: { skelcaptain: [15, 0] },
-    put: [["set", "boss_skelcaptain", 15.5, 0.5]],
+    // 10-28 사용자: 보스 그림에 맞춰 보스 자리를 — 해골 벽감 기둥(액트 1 코덱스 랜드마크)을 대장 등 뒤 북쪽 벽에 (동쪽은 계단 길이라 비운다)
+    put: [["set", "boss_skelcaptain", 15.5, 0.5], ["set", "a1_lm_ossuary", 15.5, 6.6]],
     dress: Object.assign({}, cryptDress, {
+      b: { props: ["crypt-sarcophagus", "crypt-bone-urn", "a1-grave-markers", "cave-burial-shroud"], n: 8, decals: ["a1-decal-ossuary-urn-shards", "a1-decal-scattered-bones"], dn: 4 },
       c: { sets: ["hm_last_guard"], props: ["waste-broken-spears", "a1-abandoned-shields", "crypt-candlestand", "a1-skull-banner"], n: 8, decals: ["a1-decal-scattered-bones"], dn: 3 },
       e: { props: ["a1-skull-banner", "crypt-candlestand"], n: 4, decals: ["a1-decal-cracked-earth", "a1-decal-scattered-bones"], dn: 5 },
     }),
@@ -356,10 +358,11 @@ module.exports = {
     rocks: [rock(6, 6.5, 1, 1), rock(6, -6.5, 1, 1), rock(24, 7.5, 1, 1), rock(24, -7.5, 1, 1)],
     gates: { W: [-29, 0], E: [26, 8] },
     fixed: { gravequeen: [17, 0] },
-    put: [["set", "boss_gravequeen", 17.5, 0.5]],
+    // 10-28 사용자: 보스 그림에 맞춰 보스 자리를 — 여왕 석관 제단(액트 1 코덱스 랜드마크)이 순장자들의 방에 있어 아레나가 비었다 → 여왕 등 뒤(동쪽)로. 출구는 동북 구석이라 북쪽은 비운다
+    put: [["set", "boss_gravequeen", 17.5, 0.5], ["set", "a1_lm_queen_altar", 23.5, 0.5]],
     dress: {
       a: { props: ["crypt-candlestand", "queen-blood-banner"], n: 3 },
-      b: { sets: ["a1_lm_queen_altar"], props: ["crypt-sarcophagus", "a1-open-coffin", "crypt-bone-urn", "pit-bone-heap"], n: 7, decals: ["a1-decal-pooled-wax", "a1-decal-scattered-bones"], dn: 3 },
+      b: { props: ["crypt-sarcophagus", "a1-open-coffin", "crypt-bone-urn", "pit-bone-heap"], n: 8, decals: ["a1-decal-pooled-wax", "a1-decal-scattered-bones"], dn: 3 },
       c: { props: ["crypt-broken-coffin", "crypt-candlestand", "cave-burial-shroud", "crypt-bone-urn"], n: 8, decals: ["a1-decal-blood-pool"], dn: 3 },
       d: { props: ["queen-great-candelabra"], n: 2 },
       e: { props: ["queen-blood-banner", "queen-great-candelabra", "crypt-bone-urn"], n: 6, decals: ["a1-decal-blood-pool", "a1-decal-scattered-bones"], dn: 6 },
