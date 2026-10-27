@@ -461,7 +461,7 @@ function buildGameHud() {
   }
 
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
-  b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [320, 34], ...outline, enable: false });
+  b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
   b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });
   b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });

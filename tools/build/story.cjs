@@ -47,7 +47,9 @@ function run() {
   b.patchComponent(box + '/Paper/Body', 'MOD.Core.TextGUIRendererComponent', { BestFit: true, MinSize: DIALOG.font.min, MaxSize: DIALOG.font.pc });
   b.text(box + '/Paper/Hint', '', { anchor: 'bottom-right', pos: [-DIALOG.pageNo.right, DIALOG.pageNo.bottom], rect_size: [DIALOG.pageNo.w, DIALOG.pageNo.h], size: DIALOG.pageNo.size, color: COLOR.dim, alignment: 8 });
   ['Rim', 'Name', 'PortraitBox', 'Paper'].forEach((n, i) => b.patch(box + '/' + n, { display_order: i }));
-  ['Art', 'Plate', 'Shade', 'BigTitle', 'BigSub', 'Title', 'Sub', 'Box'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
+  // 전체 건너뛰기 (10-28 피드백 F1 #7-A): 오른쪽 위 — 지금 카드와 이어서 대기 중인 이야기 카드를 모두 닫는다 (StoryCard.SkipAll)
+  b.button(c + '/Skip', '전체 건너뛰기  ▶▶', { anchor: 'middle-center', pos: [960 - 48 - 150, 540 - 40 - 44], rect_size: [300, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', color: COLOR.title, font_size: 26 });
+  ['Art', 'Plate', 'Shade', 'BigTitle', 'BigSub', 'Title', 'Sub', 'Box', 'Skip'].forEach((n, i) => b.patch(c + '/' + n, { display_order: i }));
   // 맵 이동 화면 (MapTransition): 이동 순간 검게 덮고 도착지 이름을 보여 준 뒤, 새 맵·카메라가 자리 잡으면 걷어 낸다.
   // 이야기 카드보다 위 (이동 중에는 다른 것을 보지 않는다). 그림은 loading_act1~3 (코덱스 요청) — 없으면 검은 바탕만
   const f = 'SafeArea/Fade';

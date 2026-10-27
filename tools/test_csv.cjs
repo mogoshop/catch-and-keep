@@ -25,5 +25,5 @@ const first=load('quests')[0];
 assert.equal(first.zone,'굶주린 굴');
 assert.equal(first.objective,'굴 안의 망자 모두 처치');
 assert.match(first.intro,/나는 오렌, 교단에서 쫓겨난 사제야/);
-assert.equal(first.reward,'skp:2');
+assert.equal(first.reward,'skp:2,gen:3');   // 10-28 피드백 F6: 굶주린 굴 보상에 희귀 보장 장비
 console.log('[test_csv] 인용·줄바꿈·빈 칸·열 개수·첫 퀘스트 회귀 검사 통과');

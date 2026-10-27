@@ -40,6 +40,24 @@ script StoryCard extends Logic
         -- 창으로 등록: 떠 있는 동안 전투·이동 입력을 막고 Esc로 닫힌다
         _UIKit:RegisterWindow(self.Card)
         _UIKit:Connect(self.Card, function() self:Advance() end)
+        _UIKit:Connect(self.Card .. "/Skip", function() self:SkipAll() end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SkipAll()
+        -- 「전체 건너뛰기」 (10-28 피드백 F1 #7-A): 지금 카드와 이어서 대기 중인 이야기 카드를 모두 닫는다 (본 것으로 기록하는 쪽은 Begin이 이미 했다)
+        if not self.Active then return end
+        log("[VRF] story skip all key=" .. self.Key .. " queued=" .. tostring(#self.Queue))
+        -- 대기 중인 장 표시 카드는 본 것으로 남겨 다음에 다시 뜨지 않게 (시작·마무리 카드는 서버가 이미 남겼다)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest ~= nil then
+            for _, k in ipairs(self.Queue) do
+                if string.sub(k, 1, 3) == "act" and not quest:HasSeenStory(k) then quest:MarkStory(k) end
+            end
+        end
+        self.Queue = {}
+        self:Close()
     end
 
     @ExecSpace("ClientOnly")
