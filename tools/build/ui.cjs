@@ -638,18 +638,20 @@ function buildGameHud() {
   if (b.find("RuneWin/Paper/List")) b.remove("RuneWin/Paper/List");
   if (b.find("RuneWin/Paper/Scroll")) b.remove("RuneWin/Paper/Scroll");
   b.text("RuneWin/Hint", "", { size: 17, color: "#9C9488", anchor: "top-center", pos: [0, -128], rect_size: [880, 30], alignment: 4, bestfit: true, min_size: 13, max_size: 17 });
-  for (let i = 1; i <= 5; i++) {
+  // 10-27 사용자: 「옵션이랑 룬이 너무 붙어 있다」 → 한 쪽 4줄 · 줄 높이 96 → 120, 세 띠로 나눔: 이름·부위(10~40) · 룬(46~80) · 효과(88~112)
+  if (b.find("RuneWin/Paper/W5")) b.remove("RuneWin/Paper/W5");
+  for (let i = 1; i <= 4; i++) {
     const n = `RuneWin/Paper/W${i}`;
-    b.panel(n, { anchor: "top-left", pos: [10, -6 - (i - 1) * 100], rect_size: [880, 96], color: "#17151D", enable: false });
-    b.text(`${n}/Name`, "", { size: 22, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -4], rect_size: [330, 30], bestfit: true, min_size: 16, max_size: 22 });
-    b.text(`${n}/Info`, "", { size: 17, color: "#A99F8E", alignment: 3, anchor: "top-left", pos: [350, -6], rect_size: [330, 26], bestfit: true, min_size: 13, max_size: 17 });
-    b.text(`${n}/Ready`, "", { size: 18, bold: true, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-14, -5], rect_size: [180, 28] });
+    b.panel(n, { anchor: "top-left", pos: [10, -6 - (i - 1) * 124], rect_size: [880, 120], color: "#17151D", enable: false });
+    b.text(`${n}/Name`, "", { size: 22, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [16, -10], rect_size: [330, 30], bestfit: true, min_size: 16, max_size: 22 });
+    b.text(`${n}/Info`, "", { size: 17, color: "#A99F8E", alignment: 3, anchor: "top-left", pos: [350, -12], rect_size: [330, 26], bestfit: true, min_size: 13, max_size: 17 });
+    b.text(`${n}/Ready`, "", { size: 18, bold: true, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-16, -11], rect_size: [180, 28] });
     for (let r = 1; r <= 6; r++) {
-      b.sprite(`${n}/R${r}`, { anchor: "top-left", pos: [36 + (r - 1) * 140, -47], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+      b.sprite(`${n}/R${r}`, { anchor: "top-left", pos: [36 + (r - 1) * 140, -46], rect_size: [34, 34], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
       k.aspect(`${n}/R${r}`);
-      b.text(`${n}/R${r}/Name`, "", { size: 18, color: "#F4E2B0", alignment: 3, anchor: "middle-right", pivot: [0, 0.5], pos: [6, 0], rect_size: [90, 30], bestfit: true, min_size: 12, max_size: 18 });
+      b.text(`${n}/R${r}/Name`, "", { size: 18, color: "#F4E2B0", alignment: 3, anchor: "middle-right", pivot: [0, 0.5], pos: [8, 0], rect_size: [92, 30], bestfit: true, min_size: 12, max_size: 18 });
     }
-    b.text(`${n}/Mods`, "", { size: 16, color: "#8FB4FF", alignment: 3, anchor: "bottom-left", pos: [14, 0], rect_size: [850, 22], bestfit: true, min_size: 12, max_size: 16 });
+    b.text(`${n}/Mods`, "", { size: 17, color: "#8FB4FF", alignment: 3, anchor: "bottom-left", pos: [16, 8], rect_size: [848, 24], bestfit: true, min_size: 12, max_size: 17 });
   }
   for (let i = 1; i <= 8; i++) {
     const n = `RuneWin/Paper/U${i}`;

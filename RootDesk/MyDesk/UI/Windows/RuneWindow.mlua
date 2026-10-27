@@ -83,8 +83,13 @@ script RuneWindow extends Logic
         end
         self.Page = math.min(self.Page, pages)
         _UIKit:SetText(self.Win .. "/Page", pages > 1 and (tostring(self.Page) .. " / " .. tostring(pages)) or "")
-        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
-        _UIKit:SetEnabled(self.Win .. "/BtnNext", self.Page < pages)
+        -- 넘길 쪽이 없는 단추는 숨기지 않고 흐리게 (일지와 같은 방식 · 한 쪽뿐이면 둘 다 숨김)
+        _UIKit:SetEnabled(self.Win .. "/BtnPrev", pages > 1)
+        _UIKit:SetEnabled(self.Win .. "/BtnNext", pages > 1)
+        _UIKit:SetText(self.Win .. "/BtnPrev", self.Page > 1 and "◀" or _UIKit:Colored("#6A6460", "◀"))
+        _UIKit:SetText(self.Win .. "/BtnNext", self.Page < pages and "▶" or _UIKit:Colored("#6A6460", "▶"))
+        _UIKit:SetColor(self.Win .. "/BtnPrev", Color(1, 1, 1, self.Page > 1 and 1 or 0.45))
+        _UIKit:SetColor(self.Win .. "/BtnNext", Color(1, 1, 1, self.Page < pages and 1 or 0.45))
     end
 
     @ExecSpace("ClientOnly")
@@ -92,12 +97,14 @@ script RuneWindow extends Logic
         -- 룬워드 한 줄: 이름 · 부위·소켓 · 룬 그림(순서대로, 가진 룬은 밝게 ×개수) · 효과 · 「만들 수 있음」
         _UIKit:SetText(self.Win .. "/Hint", "소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬워드가 됩니다 · 가진 룬은 밝게")
         local list = self:WordList(owned)
-        local pages = math.max(1, math.ceil(#list / 5))
+        -- 10-27: 한 쪽 4줄 (줄 높이를 키워 룬과 효과 사이를 띄웠다)
+        local per = 4
+        local pages = math.max(1, math.ceil(#list / per))
         local page = math.min(self.Page, pages)
         for i = 1, 8 do _UIKit:SetEnabled(self.Win .. "/Paper/U" .. tostring(i), false) end
-        for i = 1, 5 do
+        for i = 1, per do
             local row = self.Win .. "/Paper/W" .. tostring(i)
-            local e = list[(page - 1) * 5 + i]
+            local e = list[(page - 1) * per + i]
             _UIKit:SetEnabled(row, e ~= nil)
             if e ~= nil then
                 _UIKit:SetText(row .. "/Name", e.rw.name)
@@ -112,12 +119,15 @@ script RuneWindow extends Logic
                         local rune = _ItemData:GetRune(id)
                         local got = (owned[id] or 0) > 0
                         _UIKit:SetIcon(path, self:RuneIcon(id))
-                        _UIKit:SetColor(path, got and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.3))
+                        _UIKit:SetColor(path, got and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.45))
                         local name = rune ~= nil and rune.name or id
                         _UIKit:SetText(path .. "/Name", got and _UIKit:Colored("#F4E2B0", name .. " ×" .. tostring(owned[id])) or _UIKit:Colored("#6E6A62", name))
                     end
                 end
-                _UIKit:SetText(row .. "/Mods", _ItemData:ModsText(e.rw.mods))
+                -- 효과는 「·」로 나눠 한눈에 끊어 읽히게
+                local parts = {}
+                for key, v in string.gmatch(e.rw.mods, "([%w_]+)=([%-%d%.]+)") do table.insert(parts, _ItemData:StatValueText(key, tonumber(v) or 0)) end
+                _UIKit:SetText(row .. "/Mods", table.concat(parts, "  ·  "))
             end
         end
         return pages
@@ -127,7 +137,7 @@ script RuneWindow extends Logic
     method void RenderRunes(table owned, integer from, integer to)
         -- 룬 한 줄: 그림 · 이름 · Lv · 가진 개수 · 부위별 효과 (무기 / 방어구 / 등불)
         _UIKit:SetText(self.Win .. "/Hint", "룬은 끼우는 부위에 따라 효과가 다릅니다 (무기 / 방어구 / 등불) · 높은 룬일수록 깊은 곳에서 드물게")
-        for i = 1, 5 do _UIKit:SetEnabled(self.Win .. "/Paper/W" .. tostring(i), false) end
+        for i = 1, 4 do _UIKit:SetEnabled(self.Win .. "/Paper/W" .. tostring(i), false) end
         local order = _ItemData:T().RuneOrder
         for i = 1, 8 do
             local row = self.Win .. "/Paper/U" .. tostring(i)
