@@ -8,6 +8,8 @@ script Monster extends Component
     property number TickShownAt = -99
     property number SummonDmgAcc = 0        -- 소환수 피해 숫자 모음 (0.4초마다 하나 — 10-28 F5 #13-A)
     property integer SummonDmgTimer = 0
+    property integer SummonDmgHits = 0      -- 이번 묶음에 모인 소환수 타격 수 (검증 로그용)
+    property integer SummonDmgLogged = 0    -- 합산 숫자 로그는 몬스터마다 처음 2번만
     @Sync
     property number MaxHp = 60              -- 모델 값 = BaseLevel(=모델 Level)에서의 기본 생명
     @Sync
@@ -493,6 +495,7 @@ script Monster extends Component
     method void QueueSummonDamage(number amount)
         -- 소환수 타격 숫자는 0.4초 모아 하나로 (집중 대상당 초당 약 2.5회 · 내 타격 숫자가 묻히지 않게)
         self.SummonDmgAcc = self.SummonDmgAcc + amount
+        self.SummonDmgHits = self.SummonDmgHits + 1
         if self.SummonDmgTimer ~= 0 then return end
         self.SummonDmgTimer = _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self:FlushSummonDamage() end end, 0.4)
     end
@@ -504,6 +507,11 @@ script Monster extends Component
         self.SummonDmgTimer = 0
         local amount = math.floor(self.SummonDmgAcc + 0.5)
         self.SummonDmgAcc = 0
+        if amount > 0 and self.SummonDmgLogged < 2 then
+            self.SummonDmgLogged = self.SummonDmgLogged + 1
+            log(string.format("[VRF] summon sum %s shown=%d hits=%d", self.Entity.Name, amount, self.SummonDmgHits))
+        end
+        self.SummonDmgHits = 0
         if amount > 0 and isvalid(self.Entity) then self:ShowSummonDamage(amount) end
     end
 

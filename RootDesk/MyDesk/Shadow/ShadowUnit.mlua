@@ -168,9 +168,9 @@ script ShadowUnit extends AttackComponent
     property number AttackTimer = 0
     property number RallyTimer = 0
     property string CurrentClip = ""
-    property boolean ViewCombat = false        -- 클라이언트 전용: 교전 중(맞았거나 공격 그림) — 발밑 원을 숨기고 몸 톤을 낮춘다 (MotionSmoother.PlaceVis · 10-28 F5 B-1)
+    property boolean ViewCombat = false        -- 클라이언트 전용: 교전 중(맞았거나 공격·추격 중) — 발밑 원을 숨기고 몸 톤을 낮춘다 (MotionSmoother.PlaceVis · 10-28 F5 B-1)
     property number ViewHitAt = -99             -- 클라이언트 전용: 마지막으로 생명이 줄어든 때
-    property number ViewFightAt = -99           -- 클라이언트 전용: 마지막으로 공격 그림을 본 때
+    property number ViewFightAt = -99           -- 클라이언트 전용: 마지막으로 공격·추격 상태를 본 때
     property number ViewLastHp = -1
     @Sync
     property string CommandState = "follow"
@@ -258,8 +258,8 @@ script ShadowUnit extends AttackComponent
         -- 클라이언트가 아는 신호(생명 감소 · 공격 그림)로 교전 여부를 정한다 — 네트워크 0 (10-28 F5 B-1)
         if self.ViewLastHp >= 0 and self.Hp < self.ViewLastHp then self.ViewHitAt = now end
         self.ViewLastHp = self.Hp
-        local sp = self.Entity.SpriteRendererComponent
-        if isvalid(sp) and self.AttackRUID ~= "" and sp.SpriteRUID == self.AttackRUID then self.ViewFightAt = now end
+        -- AttackRUID는 동기화되지 않아 클라이언트에선 늘 비어 있다 → 서버가 동기화하는 행동 상태(공격·추격)를 쓴다 (10-28 메이커: 싸우는 중에도 원이 남았다)
+        if self.CommandState == "attack" or self.CommandState == "combat" then self.ViewFightAt = now end
         self.ViewCombat = now - math.max(self.ViewHitAt, self.ViewFightAt) < 3
         -- 발밑 원: 내 소환수가 교전 중이 아닐 때만 (MotionSmoother 대역 원은 이 색을 따라간다)
         local ring = self.Entity:GetChildByName("AllyRing")

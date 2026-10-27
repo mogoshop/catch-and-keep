@@ -46,8 +46,11 @@ script PlayerTravel extends Component
         local commander = self.Entity:GetComponent("script.ShadowCommander")
         if commander ~= nil then commander:StashForTravel() end
         _UndeadSystem:Follow(self.Entity)   -- 언데드는 도착 뒤 다시 일어나 따라온다 (D2)
+        local sameMap = isvalid(self.Entity.CurrentMap) and self.Entity.CurrentMap.Name == mapName
         self:ShowTravel(mapName, self.Entity.PlayerComponent.UserId)   -- 이동 화면으로 먼저 덮는다 (MapTransition)
         _TeleportService:TeleportToMapPosition(self.Entity, Vector3(pos.x, pos.y, 0), mapName)
+        -- 같은 맵 안 이동(같은 맵 웨이포인트 등)은 OnMapEnter가 없어 거둔 그림자가 돌아오지 않았다 (10-28 메이커 확인) → 여기서 다시 부른다
+        if sameMap and commander ~= nil then commander:ScheduleRedeploy(1) end
     end
 
     @ExecSpace("ServerOnly")
