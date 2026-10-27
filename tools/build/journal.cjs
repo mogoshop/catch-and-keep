@@ -38,11 +38,14 @@ function run() {
     b.sprite(n + '/BarBg', { anchor: 'middle-right', pos: [-230, 0], rect_size: [260, 14], color: '#2E2A34', sprite_type: 0 });
     b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [260, 14], color: '#8A7651', sprite_type: 0 });
     b.text(n + '/Value', '', { anchor: 'middle-right', pos: [-18, 0], rect_size: [200, 40], size: 24, color: '#E6C88A', alignment: 5, overflow: 2 });
+    // 업적 (10-27 A+C): 막대 위 난이도 별 3칸(보통 · 악몽 · 지옥 중 깬 곳) · 오른쪽 단추 = 「받기」(받을 보상) 또는 「칭호 달기/떼기」
+    b.text(n + '/Stars', '', { anchor: 'top-right', pos: [-230, -2], rect_size: [260, 26], size: 20, color: '#77707F', alignment: 4, enable: false });
+    b.button(n + '/BtnAct', '받기', { anchor: 'middle-right', pos: [-98, 0], rect_size: [170, 60], font_size: 22, bg_color: '#5A3E8C', color: '#FFF4D8', enable: false });
   }
   b.button(win + '/BtnPrev', '◀ 이전', { anchor: 'bottom-left', pos: [40, 14], rect_size: [200, 88], font_size: 24, bg_color: '#24212B' });
   b.button(win + '/BtnNext', '다음 ▶', { anchor: 'bottom-right', pos: [-40, 14], rect_size: [200, 88], font_size: 24, bg_color: '#24212B' });
   b.text(win + '/Page', '', { anchor: 'bottom-center', pos: [0, 46], rect_size: [300, 36], size: 24, color: '#B9B0A1' });
-  b.text(win + '/Hint', 'J 일지 · 일일 의뢰는 한국 시간 자정에 바뀌고, 달성하면 바로 보상', { anchor: 'bottom-center', pos: [0, 10], rect_size: [760, 30], size: 18, color: '#7F7868', bestfit: true, min_size: 16, max_size: 18 });
+  b.text(win + '/Hint', 'J 일지 · 일일 의뢰는 한국 시간 자정에 바뀝니다 · 업적은 난이도마다 따로, 달성하면 「받기」', { anchor: 'bottom-center', pos: [0, 10], rect_size: [760, 30], size: 18, color: '#7F7868', bestfit: true, min_size: 16, max_size: 18 });
   b.patchComponent(win + '/Hint', 'MOD.Core.UITransformComponent', { ActivePlatform: 1 });
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;

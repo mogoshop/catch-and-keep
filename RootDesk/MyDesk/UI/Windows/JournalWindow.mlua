@@ -1,4 +1,7 @@
 -- 일지 창: 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 (PlayerJournal.Digest를 그린다). PC는 J, 모바일은 의뢰 추적 아래 「일지」 버튼.
+-- 10-27 사용자: 업적 줄에 난이도 별 · 「받기」(골드 + 큰 업적 소켓권/상급 룬 + 칭호) · 「칭호 달기」.
+-- 일지 뱃지(GameHUD/BtnJournal): 진행이 10% 단계를 넘거나 끝나면(PlayerJournal.Pulse) journalPulseSeconds초 동안 진행 말풍선과 함께,
+--   받을 보상이 있으면(ClaimCount) 빨간 점과 함께 메뉴 아래에 뜬다. 누르면 그 줄이 있는 쪽을 열고 줄을 잠깐 밝힌다.
 @Logic
 script JournalWindow extends Logic
 
@@ -8,6 +11,15 @@ script JournalWindow extends Logic
     property integer Rows = 8
     property string RenderKey = ""
     property integer TimerId = 0
+    property table RowAct = {}                -- 줄 번호 → { kind = "claim"|"title", key }
+    property integer LastPulse = 0
+    property number PulseUntil = 0
+    property string PulseTab = "ach"
+    property integer PulseIndex = 0
+    property integer HiIndex = 0              -- 뱃지로 열었을 때 밝힐 줄 (목록 전체 번호)
+    property number HiUntil = 0
+    property boolean SeekClaim = false
+    property integer ViewDiff = 0        -- 뱃지로 열었는데 말풍선이 없다 → 첫 「받기」 줄로
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -20,6 +32,11 @@ script JournalWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
         _UIKit:Connect("JournalOpen", function() self:Toggle() end)
+        _UIKit:Connect("BtnJournal", function() self:OpenFromBadge() end)
+        for i = 1, self.Rows do
+            local row = i
+            _UIKit:Connect(self.Win .. "/List/R" .. tostring(i) .. "/BtnAct", function() self:RowAction(row) end)
+        end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
         log("[VRF] JournalWindow ready")
     end
@@ -66,16 +83,100 @@ script JournalWindow extends Logic
         -- 모바일 여는 버튼은 의뢰 추적 패널과 함께 보이고 접힌다 (전투 중·창 열림)
         -- PC는 J 키로 연다 (모바일 전용 버튼이 PC 화면에도 보였다)
         _UIKit:SetEnabled("JournalOpen", Environment:IsMobilePlatform() and _HudMap:ShouldShowQuestTrack())
-        if not _UIKit:IsOpen(self.Win) then return end
         ---@type PlayerJournal
         local journal = _UIKit:Comp("script.PlayerJournal")
+        self:UpdateBadge(journal)
+        if not _UIKit:IsOpen(self.Win) then return end
         if journal == nil then return end
-        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. journal.Digest
+        local hi = _UtilLogic.ElapsedSeconds < self.HiUntil
+        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. tostring(hi) .. "#" .. journal.Digest
         if key == self.RenderKey then return end
         self.RenderKey = key
         local ok, view = pcall(function() return _HttpService:JSONDecode(journal.Digest) end)
         if not ok or type(view) ~= "table" then view = { daily = {}, ach = {}, col = {}, it = "", left = 0 } end
         self:Render(view)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateBadge(any journal)
+        -- 메뉴 아래 일지 뱃지: 진행 말풍선(Pulse) 또는 받을 보상(ClaimCount)이 있을 때만
+        local now = _UtilLogic.ElapsedSeconds
+        local claims = 0
+        if journal ~= nil then
+            claims = journal.ClaimCount
+            if journal.Pulse ~= "" then
+                local ok, p = pcall(function() return _HttpService:JSONDecode(journal.Pulse) end)
+                if ok and type(p) == "table" and (p.q or 0) ~= self.LastPulse then
+                    self.LastPulse = p.q or 0
+                    self.PulseUntil = now + _GameData.journalPulseSeconds
+                    self.PulseTab = p.t or "ach"
+                    self.PulseIndex = p.i or 0
+                    local c = math.max(1, p.c or 1)
+                    _UIKit:SetText("BtnJournal/Tip/Name", (self.PulseTab == "daily" and "일일 의뢰 · " or "업적 · ") .. (p.n or ""))
+                    _UIKit:SetText("BtnJournal/Tip/Value", p.done and _UIKit:Colored("#9FD69B", "완료!") or (tostring(p.p or 0) .. " / " .. tostring(c)))
+                    _UIKit:SetSize("BtnJournal/Tip/Bar/Fill", Vector2(math.max(1, 200 * math.min(1, (p.p or 0) / c)), 12))
+                    log("[VRF] journal pulse " .. self.PulseTab .. "#" .. tostring(self.PulseIndex) .. " " .. tostring(p.p) .. "/" .. tostring(c))
+                end
+            end
+        end
+        local pulsing = now < self.PulseUntil
+        local show = not _HudMain:InLobby() and (pulsing or claims > 0)
+        local e = _UIKit:Get("BtnJournal")
+        if not isvalid(e) then return end
+        if show then self:PlaceBadge(e) end
+        if e.Enable ~= show then
+            e.Enable = show
+            log("[VRF] journal badge " .. (show and "shown" or "hidden") .. " claims=" .. tostring(claims))
+        end
+        _UIKit:SetEnabled("BtnJournal/Tip", show and pulsing)
+        _UIKit:SetEnabled("BtnJournal/Badge", show and claims > 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlaceBadge(Entity e)
+        -- 「재 받기」가 떠 있으면 그 왼쪽, 아니면 그 자리 (메뉴 단추 바로 아래 · MobileLayout과 같은 줄)
+        local jae = _UIKit:Get("BtnJae")
+        local shift = (isvalid(jae) and jae.Enable) and -(96 + 24) or 0
+        local t = e.UITransformComponent
+        if Environment:IsMobilePlatform() then
+            t.AlignmentOption = AlignmentType.TopRight
+            t.Pivot = Vector2(1, 1)
+            t.anchoredPosition = Vector2(-298 + shift, -120 - 96 - 28 - 16)
+        else
+            t.anchoredPosition = Vector2(-456 + shift, -150 - 96 - 28 - 16)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OpenFromBadge()
+        -- 말풍선이 떠 있으면 그 항목 쪽, 아니면 첫 「받기」 줄로 열고 그 줄을 잠깐 밝힌다
+        if _UtilLogic.ElapsedSeconds < self.PulseUntil and self.PulseIndex > 0 then
+            self.Tab = self.PulseTab
+            self.HiIndex = self.PulseIndex
+            self.SeekClaim = false
+        else
+            self.Tab = "ach"
+            self.HiIndex = 0
+            self.SeekClaim = true
+        end
+        self.Page = math.max(1, math.ceil(math.max(1, self.HiIndex) / self.Rows))
+        self.HiUntil = _UtilLogic.ElapsedSeconds + 3
+        self.PulseUntil = 0
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        self:Poll()
+        log("[VRF] journal badge clicked tab=" .. self.Tab .. " row=" .. tostring(self.HiIndex) .. " seekClaim=" .. tostring(self.SeekClaim))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RowAction(integer i)
+        local act = self.RowAct[i]
+        if act == nil then return end
+        ---@type PlayerJournal
+        local journal = _UIKit:Comp("script.PlayerJournal")
+        if journal == nil then return end
+        if act.kind == "claim" then journal:RequestClaim(act.key) else journal:RequestTitle(act.key) end
+        log("[VRF] journal row action " .. act.kind .. " " .. act.key)
     end
 
     @ExecSpace("ClientOnly")
@@ -89,7 +190,21 @@ script JournalWindow extends Logic
             list = view.ach or {}
             local done = 0
             for _, a in ipairs(list) do if a.d then done = done + 1 end end
-            info = string.format("달성 %d / %d", done, #list)
+            local diffs = { "보통", "악몽", "지옥" }
+            info = string.format("%s 달성 %d / %d", diffs[(view.diff or 0) + 1] or "보통", done, #list)
+            if (view.claims or 0) > 0 then info = info .. "  ·  " .. _UIKit:Colored("#C9A0FF", "받을 보상 " .. tostring(view.claims)) end
+            if self.SeekClaim then
+                -- 뱃지로 열었다: 첫 「받기」 줄이 있는 쪽으로
+                self.SeekClaim = false
+                for i, a in ipairs(list) do
+                    if (a.cl or "") ~= "" then
+                        self.HiIndex = i
+                        self.Page = math.ceil(i / self.Rows)
+                        break
+                    end
+                end
+            end
+            self.ViewDiff = view.diff or 0
         elseif self.Tab == "item" then
             -- 아이템 도감: ItemData.GrailList 순서 + Digest의 찾음 표시(1/0)
             list = {}
@@ -123,14 +238,16 @@ script JournalWindow extends Logic
             local index = (self.Page - 1) * self.Rows + i
             local item = list[index]
             _UIKit:SetEnabled(row, item ~= nil)
-            if item ~= nil then self:RenderRow(row, item, index) end
+            self.RowAct[i] = nil
+            if item ~= nil then self:RenderRow(row, item, index, i) end
         end
     end
 
     @ExecSpace("ClientOnly")
-    method void RenderRow(string row, table item, integer index)
+    method void RenderRow(string row, table item, integer index, integer slot)
         local name, desc, value, ratio = "", "", "", 0
         local finished = false
+        local act, stars = nil, ""
         if self.Tab == "item" then
             -- 이름은 처음부터 보인다 (무엇을 찾아야 하는지 알게). 찾은 것만 색이 들어온다
             local g = item.g
@@ -172,16 +289,48 @@ script JournalWindow extends Logic
             finished = item.d == true
             name = item.n or ""
             if self.Tab == "daily" then desc = "보상: 골드 " .. tostring(item.g or 0) .. " · 다음 레벨 경험치의 " .. tostring(item.x or 0) .. "%"
-            else desc = (item.s or "") .. "  ·  골드 " .. tostring(item.g or 0) end
+            else
+                -- 보상: 골드(난이도 배율) + 큰 업적은 악몽 소켓권 · 지옥 상급 룬 + 칭호
+                local d = item.pd and self.ViewDiff or 0
+                local extra = ""
+                if item.bonus and d == 1 then extra = " + 소켓권" elseif item.bonus and d == 2 then extra = " + 상급 룬" end
+                desc = (item.s or "") .. "  ·  골드 " .. tostring(item.g or 0) .. extra .. " + 칭호"
+                -- 난이도 별: 깬 난이도만 그 색 (난이도마다 따로 깨는 업적만 셋, 나머지는 하나)
+                local colors = { "#D8D2C4", "#C49BFF", "#FFC56A" }
+                local n = item.pd and 3 or 1
+                for k = 1, n do
+                    local got = string.sub(item.st or "", k, k) == "1"
+                    stars = stars .. _UIKit:Colored(got and colors[k] or "#4A4552", "★") .. (k < n and "  " or "")
+                end
+                if (item.cl or "") ~= "" then
+                    act = { kind = "claim", key = item.cl, label = "받기" }
+                elseif item.tt then
+                    act = { kind = "title", key = item.id or "", label = item.tp and "칭호 떼기" or "칭호 달기" }
+                end
+            end
             value = finished and "완료" or (tostring(p) .. " / " .. tostring(c))
             ratio = math.min(1, p / c)
         end
+        -- 업적 줄: 별 · 단추 (단추가 있으면 막대와 숫자 자리를 쓴다)
+        _UIKit:SetEnabled(row .. "/Stars", stars ~= "")
+        _UIKit:SetText(row .. "/Stars", stars)
+        _UIKit:SetEnabled(row .. "/BtnAct", act ~= nil)
+        if act ~= nil then
+            self.RowAct[slot] = act
+            _UIKit:SetText(row .. "/BtnAct", act.label)
+            _UIKit:SetColor(row .. "/BtnAct", act.kind == "claim" and Color(0.42, 0.27, 0.66, 1) or (item.tp and Color(0.45, 0.36, 0.18, 1) or Color(0.17, 0.16, 0.21, 1)))
+        end
+        local bg = Color(0.11, 0.10, 0.133, 1)
+        if act ~= nil and act.kind == "claim" then bg = Color(0.19, 0.13, 0.27, 1) end
+        if index == self.HiIndex and _UtilLogic.ElapsedSeconds < self.HiUntil then bg = Color(0.34, 0.27, 0.12, 1) end
+        _UIKit:SetColor(row, bg)
         _UIKit:SetText(row .. "/Name", finished and _UIKit:Colored("#9FD69B", name) or name)
         _UIKit:SetText(row .. "/Desc", desc)
         _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
         -- 도감: 진행 막대 대신 한 줄 설명을 넓게
         local codex = self.Tab == "col" or self.Tab == "item"
-        _UIKit:SetEnabled(row .. "/BarBg", not codex)
+        _UIKit:SetEnabled(row .. "/BarBg", not codex and act == nil)
+        _UIKit:SetEnabled(row .. "/Value", act == nil)
         _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 700, 30))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
         if isvalid(fill) then

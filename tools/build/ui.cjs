@@ -155,9 +155,25 @@ function buildGameHud() {
   b.text("BtnMenu/Label", "메뉴", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnMenu");
   // 「재 받기」 뱃지 (오픈 기념 무료 펫 · 10-27 사용자): 메뉴 단추와 같은 크기로 그 아래(이름표 28 + 간격 16). 한 번 누르면 계정에 남아 다시 안 뜬다 (PetWindow.UpdateBadge)
-  b.button("BtnJae", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], ...bg("pet_jae"), sprite_type: 0, enable: false });
+  // 메뉴 그림(menu_btn)은 96 칸 가운데 약 52px만 그려져 있어, 얼굴을 칸 가득 채우면 이름과의 간격이 달라 보였다 (10-27 사용자) → 투명 칸 + 가운데 56px 얼굴
+  b.button("BtnJae", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0, enable: false });
+  k.pic("BtnJae/Icon", "pet_jae", { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1 });
+  b.patchComponent("BtnJae/Icon", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("BtnJae/Label", "재 받기", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnJae");
+  // 「일지」 뱃지 (10-27 사용자: 일지는 잘 안 읽으니 해당 행동을 하면 띄운다 — 진행 10% 단계 · 완료 · 받을 보상). 자리는 JournalBadge가 정한다
+  //   (재 받기가 없으면 그 자리, 있으면 그 왼쪽). Tip = 왼쪽으로 뻗는 진행 말풍선(journalPulseSeconds초). 그림은 코덱스 jr_badge 오면 바꾼다
+  b.button("BtnJournal", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0, enable: false });
+  k.pic("BtnJournal/Icon", "icon_quest", { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1 });
+  b.patchComponent("BtnJournal/Icon", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b.text("BtnJournal/Label", "일지", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
+  k.badge("BtnJournal");
+  b.panel("BtnJournal/Tip", { anchor: "middle-left", pivot: [1, 0.5], pos: [-8, 0], rect_size: [330, 72], ...part("hud_box"), sprite_type: 1, enable: false });
+  b.patchComponent("BtnJournal/Tip", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b.text("BtnJournal/Tip/Name", "", { size: 20, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -6], rect_size: [300, 28], bestfit: true, min_size: 14, max_size: 20, ...outline });
+  b.sprite("BtnJournal/Tip/Bar", { anchor: "bottom-left", pivot: [0, 0], pos: [16, 14], rect_size: [200, 12], color: "#2E2A34", sprite_type: 0 });
+  b.sprite("BtnJournal/Tip/Bar/Fill", { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [200, 12], color: "#B48CFF", sprite_type: 0 });
+  b.text("BtnJournal/Tip/Value", "", { size: 18, color: C.white, alignment: 5, anchor: "bottom-right", pos: [-14, 6], rect_size: [100, 26], ...outline });
 
   // ── 퀘스트 추적 (미니맵 아래) ──
   b.button("QuestTrack", "", { anchor: "top-right", pos: [-24, -432], rect_size: [420, 120], ...bg("btn_frame"), sprite_type: 1 });
@@ -583,9 +599,36 @@ function buildGameHud() {
   [["TabWords", "룬워드 조합", -339], ["TabRunes1", "하급 룬", -113], ["TabRunes2", "중급 룬", 113], ["TabRunes3", "상급 룬", 339]].forEach(([n, t, x]) => {
     k.btn(`RuneWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [216, 56], font_size: 18 });
   });
-  k.inner("RuneWin/Paper", "top-center", [0, -156], [900, 572], "win_content");
+  // 10-27 사용자: 글 나열 → 줄마다 룬 그림 · 가진 표시 · 「만들 수 있음」. 룬워드 5줄 · 룬 8줄씩 쪽 넘김 (RuneWindow)
+  k.inner("RuneWin/Paper", "top-center", [0, -162], [900, 504], "win_content");
   if (b.find("RuneWin/Paper/List")) b.remove("RuneWin/Paper/List");
-  k.scrollText("RuneWin/Paper/Scroll", "top-left", [20, -14], [870, 544], { size: 18, color: C.white });
+  if (b.find("RuneWin/Paper/Scroll")) b.remove("RuneWin/Paper/Scroll");
+  b.text("RuneWin/Hint", "", { size: 17, color: "#9C9488", anchor: "top-center", pos: [0, -128], rect_size: [880, 30], alignment: 4, bestfit: true, min_size: 13, max_size: 17 });
+  for (let i = 1; i <= 5; i++) {
+    const n = `RuneWin/Paper/W${i}`;
+    b.panel(n, { anchor: "top-left", pos: [10, -6 - (i - 1) * 100], rect_size: [880, 96], color: "#17151D", enable: false });
+    b.text(`${n}/Name`, "", { size: 22, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [14, -4], rect_size: [330, 30], bestfit: true, min_size: 16, max_size: 22 });
+    b.text(`${n}/Info`, "", { size: 17, color: "#A99F8E", alignment: 3, anchor: "top-left", pos: [350, -6], rect_size: [330, 26], bestfit: true, min_size: 13, max_size: 17 });
+    b.text(`${n}/Ready`, "", { size: 18, bold: true, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-14, -5], rect_size: [180, 28] });
+    for (let r = 1; r <= 6; r++) {
+      b.sprite(`${n}/R${r}`, { anchor: "top-left", pos: [36 + (r - 1) * 140, -47], rect_size: [40, 40], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+      k.aspect(`${n}/R${r}`);
+      b.text(`${n}/R${r}/Name`, "", { size: 18, color: "#F4E2B0", alignment: 3, anchor: "middle-right", pivot: [0, 0.5], pos: [6, 0], rect_size: [90, 30], bestfit: true, min_size: 12, max_size: 18 });
+    }
+    b.text(`${n}/Mods`, "", { size: 16, color: "#8FB4FF", alignment: 3, anchor: "bottom-left", pos: [14, 0], rect_size: [850, 22], bestfit: true, min_size: 12, max_size: 16 });
+  }
+  for (let i = 1; i <= 8; i++) {
+    const n = `RuneWin/Paper/U${i}`;
+    b.panel(n, { anchor: "top-left", pos: [10, -6 - (i - 1) * 62], rect_size: [880, 58], color: "#17151D", enable: false });
+    b.sprite(`${n}/Icon`, { anchor: "middle-left", pos: [36, 0], rect_size: [46, 46], color: WHITE, alpha: 1, sprite_type: 0 });
+    k.aspect(`${n}/Icon`);
+    b.text(`${n}/Name`, "", { size: 20, bold: true, color: "#F4E2B0", alignment: 3, anchor: "top-left", pos: [72, -2], rect_size: [560, 28] });
+    b.text(`${n}/Own`, "", { size: 18, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-14, -3], rect_size: [200, 26] });
+    b.text(`${n}/Mods`, "", { size: 16, color: "#B9B0A1", alignment: 3, anchor: "bottom-left", pos: [72, 2], rect_size: [796, 24], bestfit: true, min_size: 12, max_size: 16 });
+  }
+  k.btn("RuneWin/BtnPrev", "◀", { anchor: "bottom-left", pos: [100, 48], rect_size: [120, 56], font_size: 20 });
+  k.btn("RuneWin/BtnNext", "▶", { anchor: "bottom-right", pos: [-100, 48], rect_size: [120, 56], font_size: 20 });
+  b.text("RuneWin/Page", "", { size: 20, color: "#B9B0A1", anchor: "bottom-center", pos: [0, 48], rect_size: [200, 40], alignment: 4 });
 
   // ── 게임 안내 (메뉴 「게임 안내」 · 첫 진입 때 책갈피 1~4 · 상황 카드): docs/design/35 (10-27 사용자 B안) ──
   //   왼쪽 책갈피 7 (T1~T7: 그림 + 이름 + 안 본 표시) · 오른쪽 16:9 화면(Media/Shot = 움짤 animationclip 또는 캡처, 없으면 Media/Empty)
@@ -624,9 +667,9 @@ function buildGameHud() {
     b.empty("GuideWin/Media/Video", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], enable: false });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.RawImageGUIRendererComponent", { "@type": "MOD.Core.RawImageGUIRendererComponent", Enable: true, MaterialId: "" });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.YoutubePlayerGUIComponent", { "@type": "MOD.Core.YoutubePlayerGUIComponent", Enable: true, Urls: ["https://www.youtube.com/watch?v=frX4-7REhRw"], Loop: true, PlayOnAwake: false, Shuffle: false, Volume: 0, PlaySpeed: 1 });
-    // 재생기를 새로 불러오는 동안 하얀 화면이 비쳤다 (10-27 첫 유저 녹화) → 영상 위 검은 가림판 (GuideWindow가 불러오는 동안만 켠다)
-    b.panel("GuideWin/Media/Cover", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, sprite_type: 0, enable: false });
-    b.text("GuideWin/Media/Cover/Text", "영상 불러오는 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
+    // 재생기를 새로 불러오는 동안 하얀 화면이 비쳤다 (10-27 첫 유저 녹화) → 영상 위 가림 그림 = 안내 영상 인트로 고정 그림 (글 없음 · 10-27 사용자). GuideWindow가 불러오는 동안만 켠다
+    b.sprite("GuideWin/Media/Cover", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], image_ruid: K.guide_video_cover, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    if (b.find("GuideWin/Media/Cover/Text")) b.remove("GuideWin/Media/Cover/Text");
     b.text("GuideWin/Media/Empty", "화면 준비 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
     k.rim("GuideWin/Media", "slot_frame");
     const headY = top + mediaH + 12;

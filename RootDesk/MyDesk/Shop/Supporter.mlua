@@ -35,13 +35,25 @@ script Supporter extends Logic
 
     method string TagText(string userId, string name)
         -- 이름표 글자: 이름 + (후원했으면) 아래 줄 칭호 — 이름표는 리치 텍스트라 줄바꿈 · 크기(%) · 색을 쓴다
+        -- 10-27: 일지 업적 칭호(PlayerJournal.TitleText)도 같은 줄에 — 「업적 칭호 · 후원 칭호」
+        local parts = {}
+        local p = _UserService:GetUserEntityByUserId(userId)
+        ---@type PlayerJournal
+        local journal = isvalid(p) and p:GetComponent("script.PlayerJournal") or nil
+        if journal ~= nil then
+            local t = journal:TitleText()
+            if t ~= "" then table.insert(parts, t) end
+        end
         local tier = self.Tier[userId] or 0
-        if tier <= 0 then return name end
-        local titles, colors = {}, {}
-        for t in string.gmatch(self.Titles, "[^,]+") do table.insert(titles, t) end
-        for c in string.gmatch(self.TitleColors, "[^,]+") do table.insert(colors, c) end
-        local i = math.min(tier, #titles)
-        return name .. "\n<size=85%><color=" .. (colors[i] or "#E6C88A") .. ">" .. titles[i] .. "</color></size>"
+        if tier > 0 then
+            local titles, colors = {}, {}
+            for t in string.gmatch(self.Titles, "[^,]+") do table.insert(titles, t) end
+            for c in string.gmatch(self.TitleColors, "[^,]+") do table.insert(colors, c) end
+            local i = math.min(tier, #titles)
+            table.insert(parts, "<color=" .. (colors[i] or "#E6C88A") .. ">" .. titles[i] .. "</color>")
+        end
+        if #parts == 0 then return name end
+        return name .. "\n<size=85%>" .. table.concat(parts, " · ") .. "</size>"
     end
 
     @ExecSpace("ServerOnly")

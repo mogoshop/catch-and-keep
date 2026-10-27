@@ -1,11 +1,13 @@
 -- 룬워드 조합법 창 (메뉴 「룬워드」): 룬워드마다 넣을 룬 순서·부위·소켓 수·효과, 그리고 룬 하나하나의 부위별 효과.
 -- 가방에 가진 룬은 밝게, 없는 룬은 어둡게 보여 준다 (조합에 무엇이 모자란지 바로 보이게).
+-- 10-27 사용자: 글 나열 → 줄마다 룬 그림(runes.csv icon) · 가진 개수 · 룬이 다 있으면 「만들 수 있음」, 룬 탭 이름에 가진 개수.
 @Logic
 script RuneWindow extends Logic
 
     property string Win = "RuneWin"
     property string Tab = "words"
     property string LastKey = ""
+    property integer Page = 1
     property integer TimerId = 0
 
     @ExecSpace("ClientOnly")
@@ -17,6 +19,8 @@ script RuneWindow extends Logic
         _UIKit:Connect(self.Win .. "/TabRunes1", function() self:Show("runes1") end)
         _UIKit:Connect(self.Win .. "/TabRunes2", function() self:Show("runes2") end)
         _UIKit:Connect(self.Win .. "/TabRunes3", function() self:Show("runes3") end)
+        _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
+        _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.5)
     end
 
@@ -31,36 +35,147 @@ script RuneWindow extends Logic
     method void Show(string tab)
         -- 탭을 골라 창을 연다
         self.Tab = tab
+        self.Page = 1
         self.LastKey = ""
         _UIKit:Open(self.Win)
         self:Poll()
     end
 
     @ExecSpace("ClientOnly")
+    method void Turn(integer delta)
+        self.Page = math.max(1, self.Page + delta)
+        self.LastKey = ""
+        self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
-        -- 열려 있을 때만, 탭이나 가방이 바뀌었으면 다시 쓴다
+        -- 열려 있을 때만, 탭·쪽이나 가방이 바뀌었으면 다시 그린다
         if not _UIKit:IsOpen(self.Win) then return end
         ---@type PlayerInventory
         local inv = _UIKit:Comp("script.PlayerInventory")
         local bag = ""
         if inv ~= nil then bag = inv.BagDigest end
-        local key = self.Tab .. "#" .. bag
+        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. bag
         if key == self.LastKey then return end
         self.LastKey = key
         local owned = self:OwnedRunes(bag)
-        -- 고른 탭 버튼은 밝게, 나머지는 어둡게
-        for _, t in ipairs({ { "TabWords", "words" }, { "TabRunes1", "runes1" }, { "TabRunes2", "runes2" }, { "TabRunes3", "runes3" } }) do
+        -- 고른 탭 버튼은 밝게, 나머지는 어둡게 · 룬 탭 이름에 가진 개수
+        local order = _ItemData:T().RuneOrder
+        local tabs = { { "TabWords", "words", "룬워드 조합", 0, 0 }, { "TabRunes1", "runes1", "하급 룬", 1, 8 }, { "TabRunes2", "runes2", "중급 룬", 9, 16 }, { "TabRunes3", "runes3", "상급 룬", 17, 99 } }
+        for _, t in ipairs(tabs) do
             _UIKit:SetColor(self.Win .. "/" .. t[1], t[2] == self.Tab and Color(1, 0.9, 0.7, 1) or Color(0.55, 0.52, 0.5, 1))
+            local label = t[3]
+            if t[4] > 0 then
+                local n = 0
+                for i = t[4], math.min(t[5], #order) do n = n + (owned[order[i]] or 0) end
+                if n > 0 then label = label .. "  " .. _UIKit:Colored("#7CD67C", tostring(n)) end
+            end
+            _UIKit:SetText(self.Win .. "/" .. t[1], label)
         end
+        local pages = 1
         if self.Tab == "words" then
-            _UIKit:SetScrollText(self.Win .. "/Paper/Scroll", self:WordsText(owned))
-        elseif self.Tab == "runes1" then
-            _UIKit:SetScrollText(self.Win .. "/Paper/Scroll", self:RunesText(owned, 1, 8))
-        elseif self.Tab == "runes2" then
-            _UIKit:SetScrollText(self.Win .. "/Paper/Scroll", self:RunesText(owned, 9, 16))
+            pages = self:RenderWords(owned)
         else
-            _UIKit:SetScrollText(self.Win .. "/Paper/Scroll", self:RunesText(owned, 17, 99))
+            local ranges = { runes1 = { 1, 8 }, runes2 = { 9, 16 }, runes3 = { 17, 24 } }
+            local r = ranges[self.Tab] or ranges.runes1
+            self:RenderRunes(owned, r[1], r[2])
         end
+        self.Page = math.min(self.Page, pages)
+        _UIKit:SetText(self.Win .. "/Page", pages > 1 and (tostring(self.Page) .. " / " .. tostring(pages)) or "")
+        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
+        _UIKit:SetEnabled(self.Win .. "/BtnNext", self.Page < pages)
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer RenderWords(table owned)
+        -- 룬워드 한 줄: 이름 · 부위·소켓 · 룬 그림(순서대로, 가진 룬은 밝게 ×개수) · 효과 · 「만들 수 있음」
+        _UIKit:SetText(self.Win .. "/Hint", "소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬워드가 됩니다 · 가진 룬은 밝게")
+        local list = self:WordList(owned)
+        local pages = math.max(1, math.ceil(#list / 5))
+        local page = math.min(self.Page, pages)
+        for i = 1, 8 do _UIKit:SetEnabled(self.Win .. "/Paper/U" .. tostring(i), false) end
+        for i = 1, 5 do
+            local row = self.Win .. "/Paper/W" .. tostring(i)
+            local e = list[(page - 1) * 5 + i]
+            _UIKit:SetEnabled(row, e ~= nil)
+            if e ~= nil then
+                _UIKit:SetText(row .. "/Name", e.rw.name)
+                _UIKit:SetText(row .. "/Info", self:SlotName(e.rw.slots) .. " · 소켓 " .. tostring(#e.ids) .. "칸 · Lv" .. tostring(e.need))
+                _UIKit:SetText(row .. "/Ready", e.have >= #e.ids and "만들 수 있음" or _UIKit:Colored("#8A8478", "룬 " .. tostring(e.have) .. " / " .. tostring(#e.ids)))
+                for r = 1, 6 do
+                    local id = e.ids[r]
+                    local path = row .. "/R" .. tostring(r)
+                    if id == nil then
+                        _UIKit:SetEnabled(path, false)
+                    else
+                        local rune = _ItemData:GetRune(id)
+                        local got = (owned[id] or 0) > 0
+                        _UIKit:SetIcon(path, self:RuneIcon(id))
+                        _UIKit:SetColor(path, got and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.3))
+                        local name = rune ~= nil and rune.name or id
+                        _UIKit:SetText(path .. "/Name", got and _UIKit:Colored("#F4E2B0", name .. " ×" .. tostring(owned[id])) or _UIKit:Colored("#6E6A62", name))
+                    end
+                end
+                _UIKit:SetText(row .. "/Mods", _ItemData:ModsText(e.rw.mods))
+            end
+        end
+        return pages
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRunes(table owned, integer from, integer to)
+        -- 룬 한 줄: 그림 · 이름 · Lv · 가진 개수 · 부위별 효과 (무기 / 방어구 / 등불)
+        _UIKit:SetText(self.Win .. "/Hint", "룬은 끼우는 부위에 따라 효과가 다릅니다 (무기 / 방어구 / 등불) · 높은 룬일수록 깊은 곳에서 드물게")
+        for i = 1, 5 do _UIKit:SetEnabled(self.Win .. "/Paper/W" .. tostring(i), false) end
+        local order = _ItemData:T().RuneOrder
+        for i = 1, 8 do
+            local row = self.Win .. "/Paper/U" .. tostring(i)
+            local idx = from + i - 1
+            local rune = idx <= to and order[idx] ~= nil and _ItemData:GetRune(order[idx]) or nil
+            _UIKit:SetEnabled(row, rune ~= nil)
+            if rune ~= nil then
+                local count = owned[rune.id] or 0
+                _UIKit:SetIcon(row .. "/Icon", self:RuneIcon(rune.id))
+                _UIKit:SetColor(row .. "/Icon", count > 0 and Color(1, 1, 1, 1) or Color(1, 1, 1, 0.3))
+                _UIKit:SetText(row .. "/Name", tostring(idx) .. ". " .. (count > 0 and rune.name or _UIKit:Colored("#8A8478", rune.name)) .. "   " .. _UIKit:Colored("#9C9488", "Lv" .. tostring(rune.minLevel) .. "부터"))
+                _UIKit:SetText(row .. "/Own", count > 0 and ("가짐 ×" .. tostring(count)) or "")
+                _UIKit:SetText(row .. "/Mods", "무기 " .. _ItemData:ModsText(rune.weapon) .. "  ·  방어구 " .. _ItemData:ModsText(rune.armor) .. "  ·  등불 " .. _ItemData:ModsText(rune.lamp))
+            end
+        end
+    end
+
+    method string RuneIcon(string id)
+        local rune = _ItemData:GetRune(id)
+        if rune ~= nil and (rune.icon or "") ~= "" then return rune.icon end
+        return _GameData:GetUiIcon("rune")
+    end
+
+    method table WordList(table owned)
+        -- 룬워드 목록: 가장 높은 룬의 레벨이 낮은 것부터 (같으면 룬 수가 적은 것부터). have = 가진 룬 칸 수
+        local list = {}
+        for key, rw in pairs(_ItemData:T().Runewords) do
+            local need, have = 0, 0
+            local ids = {}
+            local left = {}
+            for id, n in pairs(owned) do left[id] = n end
+            for id in string.gmatch(key, "[^,]+") do
+                table.insert(ids, id)
+                local rune = _ItemData:GetRune(id)
+                if rune ~= nil then need = math.max(need, rune.minLevel) end
+                if (left[id] or 0) > 0 then
+                    have = have + 1
+                    left[id] = left[id] - 1
+                end
+            end
+            table.insert(list, { key = key, rw = rw, ids = ids, need = need, have = have })
+        end
+        table.sort(list, function(a, b)
+            if a.need ~= b.need then return a.need < b.need end
+            if #a.ids ~= #b.ids then return #a.ids < #b.ids end
+            return a.rw.name < b.rw.name
+        end)
+        return list
     end
 
     method table OwnedRunes(string bag)
@@ -82,66 +197,6 @@ script RuneWindow extends Logic
         local out = {}
         for slot in string.gmatch(slots, "[^,]+") do table.insert(out, names[slot] or slot) end
         return table.concat(out, " · ")
-    end
-
-    method string RuneLabel(string id, table owned)
-        -- 룬 이름 (가졌으면 밝게 ×개수, 없으면 어둡게)
-        local rune = _ItemData:GetRune(id)
-        local name = id
-        if rune ~= nil then name = rune.name end
-        local count = owned[id] or 0
-        if count > 0 then return _UIKit:Colored("#F4E2B0", name .. " ×" .. tostring(count)) end
-        return _UIKit:Colored("#6E6A62", name)
-    end
-
-    method string WordsText(table owned)
-        -- 룬워드 목록: 필요한 룬이 낮은 것부터
-        local list = {}
-        for key, rw in pairs(_ItemData:T().Runewords) do
-            local need = 0
-            local ids = {}
-            for id in string.gmatch(key, "[^,]+") do
-                table.insert(ids, id)
-                local rune = _ItemData:GetRune(id)
-                if rune ~= nil then need = math.max(need, rune.minLevel) end
-            end
-            table.insert(list, { key = key, rw = rw, ids = ids, need = need })
-        end
-        table.sort(list, function(a, b)
-            if a.need ~= b.need then return a.need < b.need end
-            return #a.ids < #b.ids
-        end)
-        local lines = { _UIKit:Colored("#9C9488", "소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬워드가 된다. 가진 룬은 밝게 보인다.") }
-        for _, e in ipairs(list) do
-            local names = {}
-            local ready = true
-            for _, id in ipairs(e.ids) do
-                table.insert(names, self:RuneLabel(id, owned))
-                if (owned[id] or 0) <= 0 then ready = false end
-            end
-            local head = _UIKit:Colored("#E6C88A", e.rw.name) .. "   " .. self:SlotName(e.rw.slots) .. " · 소켓 " .. tostring(#e.ids) .. "칸"
-            if ready then head = head .. "   " .. _UIKit:Colored("#7CD67C", "룬 모두 있음") end
-            table.insert(lines, "")
-            table.insert(lines, head)
-            table.insert(lines, "   룬: " .. table.concat(names, " → "))
-            table.insert(lines, "   " .. _UIKit:Colored("#8FB4FF", _ItemData:ModsText(e.rw.mods)))
-        end
-        return table.concat(lines, "\n")
-    end
-
-    method string RunesText(table owned, integer from, integer to)
-        -- 룬 하나하나의 부위별 효과 (드롭 순서 = 낮은 룬부터)
-        local lines = { _UIKit:Colored("#9C9488", "룬을 소켓에 끼우면 부위에 따라 효과가 다르다 (무기 / 방어구 / 등불). 높은 룬일수록 깊은 곳에서 드물게 나온다.") }
-        local order = _ItemData:T().RuneOrder
-        for i = from, math.min(to, #order) do
-            local rune = _ItemData:GetRune(order[i])
-            if rune ~= nil then
-                table.insert(lines, "")
-                table.insert(lines, tostring(i) .. ". " .. self:RuneLabel(rune.id, owned) .. "   " .. _UIKit:Colored("#9C9488", "Lv" .. tostring(rune.minLevel) .. "부터"))
-                table.insert(lines, "   무기 " .. _ItemData:ModsText(rune.weapon) .. "  ·  방어구 " .. _ItemData:ModsText(rune.armor) .. "  ·  등불 " .. _ItemData:ModsText(rune.lamp))
-            end
-        end
-        return table.concat(lines, "\n")
     end
 
 end

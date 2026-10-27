@@ -2,13 +2,23 @@
 -- 아이템 도감(유니크·세트 조각·룬워드를 처음 얻으면 기록 — 계정 공용, PlayerSave가 Account 키에 저장 · docs/design/19 §2-6).
 -- 집계는 JournalSystem이 게임 이벤트를 받아 Record로 넘긴다. 저장은 PlayerSave "Char" 구역의 journal.
 -- 화면은 Digest(JSON, 본인에게만 동기화)를 읽어 그린다.
+-- 10-27 사용자(A+C): 업적은 난이도마다 한 번씩(키 "id@난이도") — 처치·포획·일으키기·정예·보스·의뢰·일일은 난이도별로 따로 세고,
+--   레벨·도감·수집 업적은 보통에서만. 달성하면 「받을 보상」으로 남고 일지에서 받는다(RequestClaim):
+--   골드 = 업적 골드 × 의뢰 배율 × journalGoldScale · 큰 업적(journalBonusGold 이상)은 악몽 소켓권 1 · 지옥 상급 룬 1 · 칭호(업적 이름, 깬 최고 난이도 색).
+--   칭호는 머리 위 이름표 둘째 줄에 단다(RequestTitle → Supporter.ApplyTag). 진행이 10% 단계를 넘거나 끝나면 Pulse로 일지 뱃지를 띄운다(JournalBadge).
 @Component
 script PlayerJournal extends Component
 
     property table Counters = {}              -- kill·kill_elite·kill_boss·capture·raise·depth(최고 층)·quest·daily
     property table Kills = {}                 -- 몬스터 sourceId → 처치 수
     property table Captures = {}              -- 몬스터 sourceId → 포획(혼 추출) 수
-    property table AchDone = {}               -- 업적 id → true
+    property table AchDone = {}               -- 업적 "id@난이도" → true (예전 저장의 "id"는 보통으로 옮긴다)
+    property table AchClaim = {}              -- 받을 보상이 남은 업적 "id@난이도" → true
+    property table Titles = {}                -- 칭호를 얻은 업적 id → 깬 최고 난이도 (0 보통 · 1 악몽 · 2 지옥)
+    property string TitlePick = ""            -- 이름표에 단 칭호(업적 id)
+    property table PulseStep = {}             -- 진행 알림을 마지막으로 띄운 10% 단계 (키 → 단계)
+    property integer PulseSeq = 0
+    property any PulseNext = nil              -- 이번 기록에서 띄울 알림 후보 (EmitPulse)
     property table Found = {}                 -- 아이템 도감 key("u:id"·"s:베이스"·"r:이름") → true (계정 공용)
     property integer DailyDay = 0             -- 한국 시간 기준 날짜 번호
     property table Daily = {}                 -- { { id, p, done }, ... } 3개
@@ -16,6 +26,10 @@ script PlayerJournal extends Component
     property integer FlushTimer = 0
     @TargetUserSync
     property string Digest = ""
+    @TargetUserSync
+    property integer ClaimCount = 0           -- 받을 보상이 남은 업적 수 (일지 뱃지 빨간 점)
+    @TargetUserSync
+    property string Pulse = ""                -- 일지 뱃지 알림 JSON { q 번호, n 이름, p, c, t 탭, i 줄 번호, done }
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -39,14 +53,22 @@ script PlayerJournal extends Component
             self.Counters.depth = math.max(self.Counters.depth or 0, amount)
         else
             self.Counters[kind] = (self.Counters[kind] or 0) + amount
+            local key = kind .. "@" .. tostring(self:Diff())
+            self.Counters[key] = (self.Counters[key] or 0) + amount
         end
-        if kind == "kill" and target ~= "" then self.Kills[target] = (self.Kills[target] or 0) + amount end
+        if kind == "kill" and target ~= "" then
+            self.Kills[target] = (self.Kills[target] or 0) + amount
+            local key = "src:" .. target .. "@" .. tostring(self:Diff())
+            self.Counters[key] = (self.Counters[key] or 0) + amount
+        end
         if kind == "capture" and target ~= "" then self.Captures[target] = (self.Captures[target] or 0) + amount end
         -- 일일 의뢰 진행 (depth는 정복한 층 수만큼 1씩)
         for _, slot in ipairs(self.Daily) do
             local def = _JournalData:GetDaily(slot.id)
             if def ~= nil and not slot.done and def.kind == kind then
+                local before = slot.p
                 slot.p = math.min(def.count, slot.p + (kind == "depth" and 1 or amount))
+                self:MaybePulse("d:" .. slot.id, def.name, before, slot.p, def.count, "daily", self:DailyIndex(slot.id))
                 if slot.p >= def.count then self:CompleteDaily(slot, def) end
             end
         end
@@ -59,20 +81,60 @@ script PlayerJournal extends Component
         -- 달성 즉시 보상: 골드 + 현재 레벨 다음 단계까지 필요한 경험치의 expPct%
         slot.done = true
         self.Counters.daily = (self.Counters.daily or 0) + 1
+        local dkey = "daily@" .. tostring(self:Diff())
+        self.Counters[dkey] = (self.Counters[dkey] or 0) + 1
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local exp = 0
+        local gold = self:DailyGold(def)
         if stats ~= nil then
-            stats.Gold = stats.Gold + def.gold
+            stats.Gold = stats.Gold + gold
             exp = math.floor(stats.ExpToNext * def.expPct / 100)
             stats:GainExp(exp)
         end
-        _Util:Banner("일일 의뢰 완료 · " .. def.name, "골드 +" .. tostring(def.gold) .. " · 경험치 +" .. tostring(exp), self.Entity.PlayerComponent.UserId)
+        _Util:Banner("일일 의뢰 완료 · " .. def.name, "골드 +" .. tostring(gold) .. " · 경험치 +" .. tostring(exp), self.Entity.PlayerComponent.UserId)
         log("[VRF] daily complete " .. def.id .. " exp=" .. tostring(exp))
     end
 
+    method integer Diff()
+        -- 지금 난이도 (0 보통 · 1 악몽 · 2 지옥)
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        return quest ~= nil and quest.Diff or 0
+    end
+
+    method boolean PerDiff(any a)
+        -- 난이도마다 다시 깨는 업적 (그 난이도에서 센 값으로). 나머지(레벨·도감·수집)는 보통에서만
+        local k = a.kind
+        return k == "kill" or k == "kill_elite" or k == "kill_boss" or k == "capture" or k == "raise" or k == "quest" or k == "daily" or k == "kill_source"
+    end
+
+    method integer ProgressAt(any a, integer d)
+        -- 난이도 d에서의 진행 값
+        if not self:PerDiff(a) then return self:Progress(a) end
+        if a.kind == "kill_source" then return self.Counters["src:" .. a.target .. "@" .. tostring(d)] or 0 end
+        return self.Counters[a.kind .. "@" .. tostring(d)] or 0
+    end
+
+    method integer DailyGold(any def)
+        -- 일일 의뢰 골드: 보통 값 × (난이도 의뢰 배율 ÷ 보통 의뢰 배율) — 악몽 ×3.75 · 지옥 ×8.75
+        local base = _GameData:GetDifficulty(0).questRewardMul or 1
+        local mul = _GameData:GetDifficulty(self:Diff()).questRewardMul or base
+        return math.floor(def.gold * mul / math.max(0.01, base))
+    end
+
+    method integer AchGold(any a, integer d)
+        local mul = _GameData:GetDifficulty(d).questRewardMul or 1
+        return math.floor(a.gold * mul * _GameData.journalGoldScale / 10 + 0.5) * 10
+    end
+
+    method integer DailyIndex(string id)
+        for i, slot in ipairs(self.Daily) do if slot.id == id then return i end end
+        return 1
+    end
+
     method integer Progress(any a)
-        -- 업적 하나의 현재 진행 값
+        -- 업적 하나의 현재 진행 값 (캐릭터 전체)
         if a.kind == "level" then
             ---@type PlayerStats
             local stats = self.Entity:GetComponent("script.PlayerStats")
@@ -113,17 +175,140 @@ script PlayerJournal extends Component
 
     @ExecSpace("ServerOnly")
     method void CheckAchievements()
-        -- 새로 달성한 업적은 한 번만 보상한다
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
+        -- 지금 난이도에서 새로 달성한 업적을 「받을 보상」으로 남긴다 (보상은 일지에서 받기 — RequestClaim)
+        local d = self:Diff()
+        local vi = 0   -- 일지 화면 줄 번호 (심연을 숨긴 동안 심도 업적은 화면에 없다 — Flush와 같은 순서)
         for _, a in ipairs(_JournalData:GetAchievements()) do
-            if not self.AchDone[a.id] and self:Progress(a) >= a.count then
-                self.AchDone[a.id] = true
-                if stats ~= nil then stats.Gold = stats.Gold + a.gold end
-                _Util:Banner("업적 달성 · " .. a.name, "골드 +" .. tostring(a.gold), self.Entity.PlayerComponent.UserId)
-                self.Dirty = true
+            if a.kind == "depth" and _GameData.depthEnabled < 1 then continue end
+            vi = vi + 1
+            local at = self:PerDiff(a) and d or 0
+            local key = a.id .. "@" .. tostring(at)
+            local p = self:ProgressAt(a, at)
+            if not self.AchDone[key] then
+                self:MaybePulse("a:" .. key, a.name, -1, p, a.count, "ach", vi)
+                if p >= a.count then
+                    self.AchDone[key] = true
+                    self.AchClaim[key] = true
+                    self:CountClaims()
+                    _Util:Banner("업적 달성 · " .. a.name .. (at > 0 and (" (" .. _GameData:GetDifficulty(at).name .. ")") or ""), "일지에서 보상을 받으세요", self.Entity.PlayerComponent.UserId)
+                    log("[VRF] achievement done " .. key)
+                    self.Dirty = true
+                end
             end
         end
+        self:EmitPulse()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MaybePulse(string key, string name, integer before, integer p, integer c, string tab, integer index)
+        -- 진행이 10% 단계를 넘었거나 끝났으면 일지 뱃지에 띄운다 (같은 단계는 한 번만)
+        if c <= 0 then return end
+        local step = math.floor(math.min(p, c) * 10 / c)
+        local last = self.PulseStep[key]
+        if last == nil then
+            -- 처음 보는 항목: 지금 단계를 기억만 하고 띄우지 않는다 (접속하자마자 몰아서 뜨지 않게)
+            self.PulseStep[key] = step
+            if before < 0 then return end
+            last = math.floor(math.max(0, before) * 10 / c)
+        end
+        if step <= last then return end
+        self.PulseStep[key] = step
+        -- 후보로만 남기고 CheckAchievements 끝에 하나만 띄운다: 한 번에 여러 항목이 넘으면 「완료」 쪽 (처치 100 완료 + 처치 1000의 10%)
+        local done = p >= c
+        if self.PulseNext ~= nil and self.PulseNext.done and not done then return end
+        self.PulseNext = { n = name, p = math.min(p, c), c = c, t = tab, i = index, done = done }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EmitPulse()
+        if self.PulseNext == nil then return end
+        self.PulseSeq = self.PulseSeq + 1
+        self.PulseNext.q = self.PulseSeq
+        self.Pulse = _HttpService:JSONEncode(self.PulseNext)
+        self.PulseNext = nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CountClaims()
+        local n = 0
+        for _, v in pairs(self.AchClaim) do if v then n = n + 1 end end
+        self.ClaimCount = n
+    end
+
+    @ExecSpace("Server")
+    method void RequestClaim(string key)
+        -- 일지 「받기」: 골드 + (큰 업적) 악몽 소켓권 · 지옥 상급 룬 + 칭호
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.AchClaim[key] then return end
+        local id, ds = string.match(key, "^(.+)@(%d)$")
+        local a = id ~= nil and _JournalData:GetAchievement(id) or nil
+        if a == nil then return end
+        local d = tonumber(ds) or 0
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if stats == nil or inv == nil then return end
+        local parts = {}
+        local gold = self:AchGold(a, d)
+        stats:AddGold(gold)
+        table.insert(parts, "골드 +" .. tostring(gold))
+        if a.gold >= _GameData.journalBonusGold and d == 1 then
+            inv.SocketTokens = inv.SocketTokens + 1
+            table.insert(parts, "소켓권 1")
+        elseif a.gold >= _GameData.journalBonusGold and d == 2 then
+            local rune = self:PickBonusRune()
+            if rune ~= "" then
+                inv:PutBagItems({ _ItemData:MakeRuneString(rune, 75) })
+                table.insert(parts, _ItemData:GetRune(rune).name .. " 룬")
+            end
+        end
+        self.AchClaim[key] = nil
+        self:CountClaims()
+        local had = self.Titles[a.id]
+        if had == nil or had < d then self.Titles[a.id] = d end
+        table.insert(parts, "칭호 「" .. a.name .. "」")
+        if self.TitlePick == "" then self:SetTitle(a.id) end
+        _Util:Banner("업적 보상 · " .. a.name, table.concat(parts, " · "), self.Entity.PlayerComponent.UserId)
+        log("[VRF] achievement claim " .. key .. " " .. table.concat(parts, ","))
+        self.Dirty = true
+    end
+
+    method string PickBonusRune()
+        -- 지옥 큰 업적 보상: 상급 룬(Lv57~74) 중 하나
+        _ItemTables:Ensure()
+        local list = {}
+        for _, id in ipairs(_ItemTables.RuneOrder) do
+            local r = _ItemData:GetRune(id)
+            if r ~= nil and r.minLevel >= 57 and r.minLevel < 75 then table.insert(list, id) end
+        end
+        if #list == 0 then return "" end
+        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+    end
+
+    @ExecSpace("Server")
+    method void RequestTitle(string id)
+        -- 이름표 칭호 달기 / 떼기 (같은 것을 다시 누르면 뗀다)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if id == self.TitlePick or id == "" then self:SetTitle("") return end
+        if self.Titles[id] == nil then return end
+        self:SetTitle(id)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SetTitle(string id)
+        self.TitlePick = id
+        self.Dirty = true
+        _Supporter:ApplyTag(self.Entity.PlayerComponent.UserId)
+    end
+
+    method string TitleText()
+        -- 이름표 둘째 줄 칭호 (깬 최고 난이도 색: 보통 은 · 악몽 보라 · 지옥 금)
+        if self.TitlePick == "" then return "" end
+        local a = _JournalData:GetAchievement(self.TitlePick)
+        local d = self.Titles[self.TitlePick]
+        if a == nil or d == nil then return "" end
+        local colors = { "#D8D2C4", "#C49BFF", "#FFC56A" }
+        return "<color=" .. colors[d + 1] .. ">" .. a.name .. "</color>"
     end
 
     -- ───────── 아이템 도감 ─────────
@@ -218,10 +403,23 @@ script PlayerJournal extends Component
             local def = _JournalData:GetDaily(slot.id)
             if def ~= nil then table.insert(view.daily, { n = def.name, p = slot.p, c = def.count, d = slot.done, g = def.gold, x = def.expPct }) end
         end
+        local d = self:Diff()
         for _, a in ipairs(_JournalData:GetAchievements()) do
             if a.kind == "depth" and _GameData.depthEnabled < 1 then continue end   -- 심연을 숨긴 동안 심도 업적도 감춘다
-            table.insert(view.ach, { n = a.name, s = a.desc, p = math.min(a.count, self:Progress(a)), c = a.count, d = self.AchDone[a.id] == true, g = a.gold })
+            -- 줄 = 지금 난이도의 진행 (보통 전용 업적은 보통) · 깬 난이도 3칸 · 받을 보상 키 · 칭호
+            local at = self:PerDiff(a) and d or 0
+            local key = a.id .. "@" .. tostring(at)
+            local stars = ""
+            for i = 0, 2 do stars = stars .. (self.AchDone[a.id .. "@" .. tostring(i)] and "1" or "0") end
+            local claim = ""
+            for i = 0, 2 do if self.AchClaim[a.id .. "@" .. tostring(i)] then claim = a.id .. "@" .. tostring(i) break end end
+            table.insert(view.ach, { id = a.id, n = a.name, s = a.desc, p = math.min(a.count, self:ProgressAt(a, at)), c = a.count, d = self.AchDone[key] == true,
+                g = self:AchGold(a, at), st = stars, pd = self:PerDiff(a), cl = claim, bonus = a.gold >= _GameData.journalBonusGold, tt = self.Titles[a.id] ~= nil, tp = self.TitlePick == a.id })
         end
+        view.diff = d
+        local claims = 0
+        for _, v in pairs(self.AchClaim) do if v then claims = claims + 1 end end
+        view.claims = claims
         for _, m in ipairs(_JournalData:GetMonsters()) do
             table.insert(view.col, { n = m.name, k = self.Kills[m.id] or 0, c = self.Captures[m.id] or 0, g = m.grade, u = m.unique })
         end
@@ -247,6 +445,11 @@ script PlayerJournal extends Component
         local done = {}
         for id, v in pairs(self.AchDone) do if v then table.insert(done, id) end end
         if #done > 0 then d.a = done end
+        local claim = {}
+        for id, v in pairs(self.AchClaim) do if v then table.insert(claim, id) end end
+        if #claim > 0 then d.ac = claim end
+        if next(self.Titles) ~= nil then d.tt = self.Titles end
+        if self.TitlePick ~= "" then d.tp = self.TitlePick end
         if #self.Daily > 0 then d.d = self.Daily end
         return d
     end
@@ -259,9 +462,33 @@ script PlayerJournal extends Component
         end
         self.Counters = type(d.c) == "table" and d.c or {}
         self.Kills = type(d.k) == "table" and d.k or {}
+        -- 10-27 전 저장에는 난이도별 수가 없다 → 그때까지 센 수를 보통으로 옮긴다 (보통 업적 진행이 0으로 돌아가지 않게)
+        if self.Counters["kill@0"] == nil then
+            for _, k in ipairs({ "kill", "kill_elite", "kill_boss", "capture", "raise", "quest", "daily" }) do
+                if (self.Counters[k] or 0) > 0 then self.Counters[k .. "@0"] = self.Counters[k] end
+            end
+            for target, n in pairs(self.Kills) do self.Counters["src:" .. target .. "@0"] = n end
+            self.Counters["kill@0"] = self.Counters["kill@0"] or 0
+        end
         self.Captures = type(d.cp) == "table" and d.cp or {}
         self.AchDone = {}
-        if type(d.a) == "table" then for _, id in ipairs(d.a) do self.AchDone[id] = true end end
+        self.AchClaim = {}
+        self.Titles = {}
+        if type(d.a) == "table" then
+            for _, id in ipairs(d.a) do
+                -- 10-27 전 저장은 「id」만 있다 → 보통에서 깬 것으로 (보상은 그때 이미 받았다) · 칭호는 준다
+                if string.find(id, "@", 1, true) == nil then
+                    self.AchDone[id .. "@0"] = true
+                    self.Titles[id] = self.Titles[id] or 0
+                else
+                    self.AchDone[id] = true
+                end
+            end
+        end
+        if type(d.ac) == "table" then for _, id in ipairs(d.ac) do self.AchClaim[id] = true end end
+        self:CountClaims()
+        if type(d.tt) == "table" then for id, v in pairs(d.tt) do self.Titles[id] = tonumber(v) or 0 end end
+        self.TitlePick = type(d.tp) == "string" and d.tp or ""
         self.DailyDay = d.dd or 0
         self.Daily = {}
         if type(d.d) == "table" then

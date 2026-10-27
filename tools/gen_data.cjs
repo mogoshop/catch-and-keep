@@ -771,6 +771,12 @@ function genJournal() {
         for _, d in ipairs(self.Dailies) do if d.id == id then return d end end
         return nil
     end
+
+    method any GetAchievement(string id)
+        self:Ensure()
+        for _, a in ipairs(self.Achievements) do if a.id == id then return a end end
+        return nil
+    end
 `;
   write("JournalData.mlua", "dailies.csv·achievements.csv·monsters.csv", logic("JournalData", "일지 데이터: 일일 의뢰 후보, 업적, 도감 몬스터 순서", body, extra, "    property table Dailies = {}\n    property table Achievements = {}\n    property table Monsters = {}\n"));
 }
