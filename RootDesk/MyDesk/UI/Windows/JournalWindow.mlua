@@ -251,7 +251,7 @@ script JournalWindow extends Logic
     method void RenderRow(string row, table item, integer index, integer slot)
         local name, desc, value, ratio = "", "", "", 0
         local finished = false
-        local act, stars = nil, ""
+        local act, stars, gold = nil, "", 0
         if self.Tab == "item" then
             -- 이름은 처음부터 보인다 (무엇을 찾아야 하는지 알게). 찾은 것만 색이 들어온다
             local g = item.g
@@ -292,13 +292,15 @@ script JournalWindow extends Logic
             local p, c = item.p or 0, math.max(1, item.c or 1)
             finished = item.d == true
             name = item.n or ""
-            if self.Tab == "daily" then desc = "보상: 골드 " .. tostring(item.g or 0) .. " · 다음 레벨 경험치의 " .. tostring(item.x or 0) .. "%"
+            gold = item.g or 0
+            if self.Tab == "daily" then desc = "보상 경험치: 다음 레벨의 " .. tostring(item.x or 0) .. "%"
             else
-                -- 보상: 골드(난이도 배율) + 큰 업적은 악몽 소켓권 · 지옥 상급 룬 + 칭호
+                -- 보상: 골드(난이도 배율, 오른쪽 보상 칸에 주머니 그림 + 숫자) + 큰 업적은 악몽 소켓권 · 지옥 상급 룬 + 칭호(줄기 끝 8개만)
                 local d = item.pd and self.ViewDiff or 0
-                local extra = ""
-                if item.bonus and d == 1 then extra = " + 소켓권" elseif item.bonus and d == 2 then extra = " + 상급 룬" end
-                desc = (item.s or "") .. "  ·  골드 " .. tostring(item.g or 0) .. extra .. " + 칭호"
+                local extra = {}
+                if item.bonus and d == 1 then table.insert(extra, "소켓권") elseif item.bonus and d == 2 then table.insert(extra, "상급 룬") end
+                if item.ti then table.insert(extra, _UIKit:Colored("#C9B17E", "칭호")) end
+                desc = (item.s or "") .. (#extra > 0 and ("  ·  + " .. table.concat(extra, " + ")) or "")
                 -- 난이도 별: 깬 곳 "1" · 못 깬 곳 "0" (난이도마다 따로 깨는 업적만 셋, 나머지는 하나)
                 stars = string.sub((item.st or "") .. "000", 1, item.pd and 3 or 1)
                 if (item.cl or "") ~= "" then
@@ -349,13 +351,16 @@ script JournalWindow extends Logic
         local codex = self.Tab == "col" or self.Tab == "item"
         _UIKit:SetEnabled(row .. "/BarBg", not codex and act == nil)
         _UIKit:SetEnabled(row .. "/Value", act == nil)
-        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 900 or 490, 24))
-        _UIKit:SetSize(row .. "/Name", Vector2(codex and 900 or 490, 34))
+        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 900 or 420, 24))
+        _UIKit:SetSize(row .. "/Name", Vector2(codex and 900 or 420, 34))
+        _UIKit:SetEnabled(row .. "/Reward", not codex and gold > 0)
+        _UIKit:SetText(row .. "/Reward/Text", tostring(gold))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
         if isvalid(fill) then
             -- 채움 그림은 양 끝 8px씩 고정(9-slice)이라 16px보다 짧게 줄이지 않는다
             local t = fill.UITransformComponent
-            t.RectSize = Vector2(math.max(16, 260 * ratio), t.RectSize.y)
+            local full = fill.Parent.UITransformComponent.RectSize.x
+            t.RectSize = Vector2(math.max(16, full * ratio), t.RectSize.y)
             fill.Enable = ratio > 0
         end
     end

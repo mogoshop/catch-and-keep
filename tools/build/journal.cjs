@@ -8,8 +8,9 @@ const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
 const icons = Object.fromEntries(load('ui_icons').map((x) => [x.key, x.ruid]));
 const T = require(path.join(root, 'tools/build/ui-tokens.cjs'));
 const ROWS = 8;
-// 줄 오른쪽 세로 칸 (줄 오른쪽 끝에서): 단추·숫자 칸 200 → 상자 → 진행 막대 260 → 난이도 별 110. 단추와 숫자가 같은 칸에 가운데 맞춤으로 선다 (10-27 사용자: 「오른쪽 계층 엉망」)
-const COL = { act: { x: -20, w: 200 }, chest: -228, bar: { x: -236, w: 260 }, stars: { x: -512, w: 110 }, text: 490 };
+// 줄 오른쪽 세로 칸 (줄 오른쪽 끝에서): 단추·숫자 칸 200 → 상자 → 진행 막대 220 → 보상 골드 120 → 난이도 별 100. 단추와 숫자가 같은 칸에 가운데 맞춤으로 선다 (10-27 사용자: 「오른쪽 계층 엉망」)
+// 보상 골드는 글 대신 골드 주머니 그림 + 숫자 (10-27 사용자: 「골드 아이콘 사용」)
+const COL = { act: { x: -20, w: 200 }, chest: -228, bar: { x: -236, w: 220 }, reward: { x: -466, w: 120 }, stars: { x: -596, w: 100 }, text: 420 };
 
 function run() {
   const file = path.join(root, 'ui/JournalHUD.u' + 'i');
@@ -42,10 +43,12 @@ function run() {
     b.text(n + '/Desc', '', { anchor: 'bottom-left', pos: [112, 9], rect_size: [COL.text, 24], size: 17, color: '#A99F8E', alignment: 3, overflow: 1, bestfit: true, min_size: 13, max_size: 17 });
     b.sprite(n + '/BarBg', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.bar.x, 0], rect_size: [COL.bar.w, 16], image_ruid: icons.jr_bar_bg, color: '#FFFFFF', sprite_type: 1 });
     b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [COL.bar.w, 16], image_ruid: icons.jr_bar_fill, color: '#FFFFFF', sprite_type: 1 });
+    b.empty(n + '/Reward', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.reward.x, 0], rect_size: [COL.reward.w, 30], enable: false });
+    b.sprite(n + '/Reward/Icon', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [28, 28], image_ruid: icons.icon_gold, color: '#FFFFFF', sprite_type: 0 });
+    b.text(n + '/Reward/Text', '', { anchor: 'middle-left', pivot: [0, 0.5], pos: [32, 0], rect_size: [COL.reward.w - 32, 30], size: 20, bold: true, color: '#E6C88A', alignment: 3, bestfit: true, min_size: 15, max_size: 20 });
     b.text(n + '/Value', '', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.act.x, 0], rect_size: [COL.act.w, 40], size: 24, color: '#E6C88A', alignment: 4, overflow: 2 });
     // 업적 (10-27 A+C): 막대 왼쪽 난이도 별 3칸(보통 · 악몽 · 지옥 중 깬 곳) · 오른쪽 단추 = 「받기」(받을 보상) 또는 「칭호 달기/떼기」 — 게임 공통 단추 그림(btn_frame)
     // 난이도 별 그림 3칸(jr_diff_n · nm · hell, 28px · 사이 6). 못 깬 난이도는 같은 그림을 30%로. 난이도마다 따로 깨지 않는 업적은 가운데 하나만 (JournalWindow.RenderRow)
-    if (b.find(n + '/Stars')) b.remove(n + '/Stars');
     b.empty(n + '/Stars', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.stars.x, 0], rect_size: [COL.stars.w, 30], enable: false });
     ['jr_diff_n', 'jr_diff_nm', 'jr_diff_hell'].forEach((key, k) => {
       b.sprite(n + '/Stars/S' + (k + 1), { anchor: 'middle-center', pos: [(k - 1) * 34, 0], rect_size: [28, 28], image_ruid: icons[key], color: '#FFFFFF', sprite_type: 0 });
