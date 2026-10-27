@@ -320,10 +320,13 @@ script JournalWindow extends Logic
             _UIKit:SetText(row .. "/BtnAct", act.label)
             _UIKit:SetColor(row .. "/BtnAct", act.kind == "claim" and Color(0.42, 0.27, 0.66, 1) or (item.tp and Color(0.45, 0.36, 0.18, 1) or Color(0.17, 0.16, 0.21, 1)))
         end
-        local bg = Color(0.11, 0.10, 0.133, 1)
-        if act ~= nil and act.kind == "claim" then bg = Color(0.19, 0.13, 0.27, 1) end
-        if index == self.HiIndex and _UtilLogic.ElapsedSeconds < self.HiUntil then bg = Color(0.34, 0.27, 0.12, 1) end
-        _UIKit:SetColor(row, bg)
+        -- 10-27 코덱스 줄 칸: 받을 보상(보라) · 완료(금테) · 진행 중. 뱃지로 연 줄은 잠깐 금빛으로 물들인다
+        local claim = act ~= nil and act.kind == "claim"
+        _UIKit:SetIcon(row, _GameData:GetUiIcon(claim and "jr_row_claim" or (finished and "jr_row_done" or "jr_row")))
+        local hi = index == self.HiIndex and _UtilLogic.ElapsedSeconds < self.HiUntil
+        _UIKit:SetColor(row, hi and Color(1, 0.86, 0.55, 1) or Color(1, 1, 1, 1))
+        _UIKit:SetIcon(row .. "/Icon", _GameData:GetUiIcon(self:RowIcon(item)))
+        _UIKit:SetEnabled(row .. "/Chest", claim)
         _UIKit:SetText(row .. "/Name", finished and _UIKit:Colored("#9FD69B", name) or name)
         _UIKit:SetText(row .. "/Desc", desc)
         _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
@@ -331,13 +334,26 @@ script JournalWindow extends Logic
         local codex = self.Tab == "col" or self.Tab == "item"
         _UIKit:SetEnabled(row .. "/BarBg", not codex and act == nil)
         _UIKit:SetEnabled(row .. "/Value", act == nil)
-        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 700, 30))
+        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 600, 24))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
         if isvalid(fill) then
+            -- 채움 그림은 양 끝 8px씩 고정(9-slice)이라 16px보다 짧게 줄이지 않는다
             local t = fill.UITransformComponent
-            t.RectSize = Vector2(math.max(0.01, 260 * ratio), t.RectSize.y)
+            t.RectSize = Vector2(math.max(16, 260 * ratio), t.RectSize.y)
             fill.Enable = ratio > 0
         end
+    end
+
+    method string RowIcon(table item)
+        -- 줄 왼쪽 업적 문양: 처치(낫과 해골) · 수집(도감) · 탐험(지도와 횃불) · 일일(모래시계)
+        if self.Tab == "daily" then return "jr_icon_daily" end
+        if self.Tab == "col" then return "jr_icon_kill" end
+        if self.Tab == "item" then return "jr_icon_collect" end
+        local k = item.k or ""
+        if k == "kill" or k == "kill_elite" or k == "kill_boss" or k == "kill_source" then return "jr_icon_kill" end
+        if k == "depth" or k == "level" or k == "quest" then return "jr_icon_explore" end
+        if k == "daily" then return "jr_icon_daily" end
+        return "jr_icon_collect"
     end
 
 end

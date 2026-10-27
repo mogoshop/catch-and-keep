@@ -179,7 +179,7 @@ script InventoryWindow extends Logic
             local path = self.Win .. "/Doll/Eq_" .. slot
             self:DrawItem(path, eq[slot])
             _UIKit:SetEnabled(path .. "/Ghost", eq[slot] == nil)
-            _UIKit:SetText(path .. "/Sock", eq[slot] ~= nil and _ItemData:SocketDots(eq[slot]) or "")
+            self:DrawSockets(path, eq[slot])
             local chosen = slot == self.SelectedEquipSlot or slot == self.SocketSlot
             _UIKit:SetColor(path, chosen and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
@@ -518,6 +518,25 @@ script InventoryWindow extends Logic
             end
         end
         return first
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawSockets(string path, any s)
+        -- 장비 칸 아래 소켓 칸 (코덱스 socket_empty · 룬이 박히면 룬 그림 + socket_ring 고리), 개수만큼 가운데 정렬
+        local item = s ~= nil and _ItemData:Parse(s) or nil
+        local n = item ~= nil and math.min(6, item.sockets) or 0
+        local step = 14
+        for k = 1, 6 do
+            local e = path .. "/S" .. tostring(k)
+            if k <= n then
+                local rune = item.runes[k]
+                _UIKit:SetIcon(e, rune ~= nil and _ItemData:IconFor(rune) or _GameData:GetUiIcon("socket_empty"))
+                _UIKit:SetEnabled(e .. "/Ring", rune ~= nil)
+                _UIKit:SetPos(e, Vector2((k - (n + 1) / 2) * step, 10))
+            else
+                _UIKit:SetEnabled(e, false)
+            end
+        end
     end
 
     method string SlotLabel(string slot)

@@ -25,8 +25,10 @@ for(const [slot,pos]of Object.entries(slots)){
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
  b.sprite(n+'/Ghost',{rect_size:[56,56],image_ruid:icons['eq_'+slot.replace(/[0-9]/g,'')],color:{r:1,g:1,b:1,a:.42}});
  // 10-27 소켓 (docs/design/37 §5-5): 아래 소켓 점(●찬 칸 ○빈 칸) · 룬을 고르면 끼울 수 있는 칸에 금빛 테두리가 깜빡인다 (InventoryWindow.BlinkSockets)
- b.text(n+'/Sock','',{anchor:'bottom-center',pos:[0,2],rect_size:[84,20],size:16,bold:true,color:'#F4E2B0',alignment:4,outline:true,outline_color:'#000000'});
- b.sprite(n+'/Glow',{rect_size:[104,104],image_ruid:icons.slot_frame,color:'#FFD36A',sprite_type:1,enable:false});
+ b.text(n+'/Sock','',{anchor:'bottom-center',pos:[0,2],rect_size:[84,20],size:16,bold:true,color:'#F4E2B0',alignment:4,outline:true,outline_color:'#000000',enable:false});
+ // 소켓 칸 6개 (코덱스 socket_empty · 룬이 박히면 룬 그림 + socket_ring) — InventoryWindow.DrawSockets가 개수만큼 가운데로 켠다
+ for(let k=1;k<=6;k++){ b.sprite(n+'/S'+k,{anchor:'bottom-center',pos:[0,10],rect_size:[16,16],image_ruid:icons.socket_empty,color:'#FFFFFF',enable:false}); b.sprite(n+'/S'+k+'/Ring',{rect_size:[18,18],image_ruid:icons.socket_ring,color:'#FFFFFF',enable:false}); }
+ b.sprite(n+'/Glow',{rect_size:[104,104],image_ruid:icons.socket_glow,color:'#FFFFFF',sprite_type:0,enable:false});
  b.patchComponent(n+'/Glow','MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:false});
 }
 b.text(d+'/PreviewState','현재 착용 모습',{anchor:'top-left',pos:[118,-378],rect_size:[264,36],size:24,color:'#D2BF9B',alignment:4,bestfit:true,min_size:24,max_size:24});

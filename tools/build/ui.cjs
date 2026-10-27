@@ -164,7 +164,7 @@ function buildGameHud() {
   // 「일지」 뱃지 (10-27 사용자: 일지는 잘 안 읽으니 해당 행동을 하면 띄운다 — 진행 10% 단계 · 완료 · 받을 보상). 자리는 JournalBadge가 정한다
   //   (재 받기가 없으면 그 자리, 있으면 그 왼쪽). Tip = 왼쪽으로 뻗는 진행 말풍선(journalPulseSeconds초). 그림은 코덱스 jr_badge 오면 바꾼다
   b.button("BtnJournal", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0, enable: false });
-  k.pic("BtnJournal/Icon", "icon_quest", { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1 });
+  k.pic("BtnJournal/Icon", "jr_badge", { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1 });
   b.patchComponent("BtnJournal/Icon", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("BtnJournal/Label", "일지", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnJournal");
@@ -331,7 +331,8 @@ function buildGameHud() {
   k.frame("CharWin", "middle-center", [0, 0], [1140, 720], "능력치");
   const TL = { anchor: "top-left", pivot: [0, 1] };
   b.text("CharWin/Head", "", { ...TL, pos: [30, -80], rect_size: [540, 34], size: 24, bold: true, color: C.qTitle, alignment: 3 });
-  [["Sum1", K.icon_sword, "내 피해"], ["Sum2", K.potion_hp, "생존"], ["Sum3", K.icon_shadow, "소환수"]].forEach(([n, ruid, label], i) => {
+  // 요약 아이콘: 코덱스 stat_sum_* (내 피해는 수정본 오기 전까지 고유 낫 아이콘)
+  [["Sum1", K.icon_sword, "내 피해"], ["Sum2", K.stat_sum_life, "생존"], ["Sum3", K.stat_sum_minion, "소환수"]].forEach(([n, ruid, label], i) => {
     const p = `CharWin/${n}`;
     b.panel(p, { ...TL, pos: [30 + i * 184, -122], rect_size: [172, 118], color: "#17151D" });
     b.sprite(`${p}/Icon`, { ...TL, pos: [12, -12], rect_size: [44, 44], image_ruid: ruid, color: WHITE, alpha: 1, sprite_type: 0 });
@@ -340,18 +341,23 @@ function buildGameHud() {
     b.text(`${p}/Value`, "", { ...TL, pos: [12, -60], rect_size: [152, 36], size: 28, bold: true, color: "#F4E2B0", alignment: 3, bestfit: true, min_size: 18, max_size: 28 });
     b.text(`${p}/Sub`, "", { ...TL, pos: [12, -94], rect_size: [152, 20], size: 15, color: "#8A8478", alignment: 3, bestfit: true, min_size: 12, max_size: 15 });
   });
-  [["Res1", "#FF7A45"], ["Res2", "#7AB8FF"], ["Res3", "#FFE15A"], ["Res4", "#7CFF7A"]].forEach(([n, color], i) => {
+  // 저항 칩: 원소 아이콘(코덱스 stat_res_*, 40px) + 값
+  [["Res1", "#FF7A45", K.stat_res_fire], ["Res2", "#7AB8FF", K.stat_res_cold], ["Res3", "#FFE15A", K.stat_res_light], ["Res4", "#7CFF7A", K.stat_res_poison]].forEach(([n, color, ruid], i) => {
     const p = `CharWin/${n}`;
     b.panel(p, { ...TL, pos: [30 + i * 137, -256], rect_size: [129, 46], color: "#17151D" });
-    b.sprite(`${p}/Bar`, { ...TL, pos: [0, 0], rect_size: [6, 46], color, sprite_type: 0 });
-    b.text(`${p}/Text`, "", { ...TL, pos: [14, -6], rect_size: [110, 34], size: 20, color, alignment: 3, bestfit: true, min_size: 14, max_size: 20 });
+    b.sprite(`${p}/Icon`, { ...TL, pos: [4, -3], rect_size: [40, 40], image_ruid: ruid, color: WHITE, alpha: 1, sprite_type: 0 });
+    k.aspect(`${p}/Icon`);
+    b.text(`${p}/Text`, "", { ...TL, pos: [44, -6], rect_size: [82, 34], size: 20, color, alignment: 3, bestfit: true, min_size: 14, max_size: 20 });
   });
   [["Tab1", "공격"], ["Tab2", "소환수"], ["Tab3", "방어"], ["Tab4", "유틸"]].forEach(([n, label], i) => {
     k.btn(`CharWin/${n}`, label, { ...TL, pos: [30 + i * 137, -318], rect_size: [129, 64], font_size: 21 });
   });
   k.inner("CharWin/Paper", "top-left", [30, -390], [540, 236], "win_content");
   b.patch("CharWin/Paper", { pivot: [0, 1], pos: [30, -390], rect_size: [540, 236] });
-  b.text("CharWin/Paper/Info", "", { ...TL, pos: [18, -14], rect_size: [504, 210], size: 20, color: C.white, alignment: 0, bestfit: true, min_size: 15, max_size: 20 });
+  // 분류 머리 띠 (코덱스 stat_group_bar, 9-slice) — 지금 보는 분류 · 능력치 이름
+  b.sprite("CharWin/Paper/Head", { ...TL, pos: [10, -8], rect_size: [520, 36], image_ruid: K.stat_group_bar, color: WHITE, alpha: 1, sprite_type: 1 });
+  b.text("CharWin/Paper/Head/Text", "", { anchor: "middle-left", pivot: [0, 0.5], pos: [44, 0], rect_size: [430, 30], size: 19, bold: true, color: C.qTitle, alignment: 3 });
+  b.text("CharWin/Paper/Info", "", { ...TL, pos: [18, -50], rect_size: [504, 176], size: 20, color: C.white, alignment: 0, bestfit: true, min_size: 15, max_size: 20 });
   ["Str", "Ene", "Vit", "Dex"].forEach((s, i) => {
     const p = `CharWin/${s}`;
     b.panel(p, { ...TL, pos: [590, -84 - i * 112], rect_size: [520, 104], color: "#17151D" });

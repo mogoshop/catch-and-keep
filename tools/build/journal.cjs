@@ -31,15 +31,18 @@ function run() {
   b.panel(win + '/List', { anchor: 'top-left', pos: [30, -186], rect_size: [1260, 604], color: '#111018' });
   for (let i = 1; i <= ROWS; i++) {
     const n = win + '/List/R' + i;
-    b.panel(n, { anchor: 'top-left', pos: [10, -8 - (i - 1) * 74], rect_size: [1240, 70], color: '#1C1A22', enable: false });
-    b.text(n + '/Name', '', { anchor: 'top-left', pos: [18, -2], rect_size: [700, 42], size: 24, color: '#ECE1CB', alignment: 3, bold: true, overflow: 1 });
+    // 10-27 코덱스 그림: 줄 칸(jr_row · 완료 jr_row_done · 받을 보상 jr_row_claim, 9-slice) · 왼쪽 96 아이콘 자리에 업적 문양(jr_icon_*)
+    b.sprite(n, { anchor: 'top-left', pos: [10, -8 - (i - 1) * 74], rect_size: [1240, 70], image_ruid: icons.jr_row, color: '#FFFFFF', sprite_type: 1, enable: false });
+    b.sprite(n + '/Icon', { anchor: 'middle-left', pos: [50, 0], rect_size: [58, 58], image_ruid: icons.jr_icon_kill, color: '#FFFFFF', sprite_type: 0, enable: false });
+    b.text(n + '/Name', '', { anchor: 'top-left', pos: [112, -5], rect_size: [600, 34], size: 22, color: '#ECE1CB', alignment: 3, bold: true, overflow: 1 });
     // 도감 탭은 진행 막대를 숨기고 한 줄 설명(최대 48자)이 들어가게 1010px로 넓힌다 (JournalWindow.RenderRow)
-    b.text(n + '/Desc', '', { anchor: 'bottom-left', pos: [18, 0], rect_size: [700, 30], size: 20, color: '#A99F8E', alignment: 3, overflow: 1, bestfit: true, min_size: 17, max_size: 20 });
-    b.sprite(n + '/BarBg', { anchor: 'middle-right', pos: [-230, 0], rect_size: [260, 14], color: '#2E2A34', sprite_type: 0 });
-    b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [260, 14], color: '#8A7651', sprite_type: 0 });
+    b.text(n + '/Desc', '', { anchor: 'bottom-left', pos: [112, 9], rect_size: [600, 24], size: 17, color: '#A99F8E', alignment: 3, overflow: 1, bestfit: true, min_size: 13, max_size: 17 });
+    b.sprite(n + '/BarBg', { anchor: 'middle-right', pos: [-230, -10], rect_size: [260, 16], image_ruid: icons.jr_bar_bg, color: '#FFFFFF', sprite_type: 1 });
+    b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [260, 16], image_ruid: icons.jr_bar_fill, color: '#FFFFFF', sprite_type: 1 });
     b.text(n + '/Value', '', { anchor: 'middle-right', pos: [-18, 0], rect_size: [200, 40], size: 24, color: '#E6C88A', alignment: 5, overflow: 2 });
     // 업적 (10-27 A+C): 막대 위 난이도 별 3칸(보통 · 악몽 · 지옥 중 깬 곳) · 오른쪽 단추 = 「받기」(받을 보상) 또는 「칭호 달기/떼기」
-    b.text(n + '/Stars', '', { anchor: 'top-right', pos: [-230, -2], rect_size: [260, 26], size: 20, color: '#77707F', alignment: 4, enable: false });
+    b.text(n + '/Stars', '', { anchor: 'top-right', pos: [-340, -4], rect_size: [200, 26], size: 20, color: '#77707F', alignment: 4, enable: false });
+    b.sprite(n + '/Chest', { anchor: 'middle-right', pos: [-276, 0], rect_size: [54, 54], image_ruid: icons.jr_chest_open, color: '#FFFFFF', sprite_type: 0, enable: false });
     b.button(n + '/BtnAct', '받기', { anchor: 'middle-right', pos: [-98, 0], rect_size: [170, 60], font_size: 22, bg_color: '#5A3E8C', color: '#FFF4D8', enable: false });
   }
   b.button(win + '/BtnPrev', '◀ 이전', { anchor: 'bottom-left', pos: [40, 14], rect_size: [200, 88], font_size: 24, bg_color: '#24212B' });
