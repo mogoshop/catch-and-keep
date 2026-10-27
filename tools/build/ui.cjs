@@ -332,7 +332,7 @@ function buildGameHud() {
   const TL = { anchor: "top-left", pivot: [0, 1] };
   b.text("CharWin/Head", "", { ...TL, pos: [30, -80], rect_size: [540, 34], size: 24, bold: true, color: C.qTitle, alignment: 3 });
   // 요약 아이콘: 코덱스 stat_sum_* (내 피해는 수정본 오기 전까지 고유 낫 아이콘)
-  [["Sum1", K.icon_sword, "내 피해"], ["Sum2", K.stat_sum_life, "생존"], ["Sum3", K.stat_sum_minion, "소환수"]].forEach(([n, ruid, label], i) => {
+  [["Sum1", K.stat_sum_dmg, "내 피해"], ["Sum2", K.stat_sum_life, "생존"], ["Sum3", K.stat_sum_minion, "소환수"]].forEach(([n, ruid, label], i) => {
     const p = `CharWin/${n}`;
     b.panel(p, { ...TL, pos: [30 + i * 184, -122], rect_size: [172, 118], color: "#17151D" });
     b.sprite(`${p}/Icon`, { ...TL, pos: [12, -12], rect_size: [44, 44], image_ruid: ruid, color: WHITE, alpha: 1, sprite_type: 0 });

@@ -299,13 +299,8 @@ script JournalWindow extends Logic
                 local extra = ""
                 if item.bonus and d == 1 then extra = " + 소켓권" elseif item.bonus and d == 2 then extra = " + 상급 룬" end
                 desc = (item.s or "") .. "  ·  골드 " .. tostring(item.g or 0) .. extra .. " + 칭호"
-                -- 난이도 별: 깬 난이도만 그 색 (난이도마다 따로 깨는 업적만 셋, 나머지는 하나)
-                local colors = { "#D8D2C4", "#C49BFF", "#FFC56A" }
-                local n = item.pd and 3 or 1
-                for k = 1, n do
-                    local got = string.sub(item.st or "", k, k) == "1"
-                    stars = stars .. _UIKit:Colored(got and colors[k] or "#4A4552", "★") .. (k < n and "  " or "")
-                end
+                -- 난이도 별: 깬 곳 "1" · 못 깬 곳 "0" (난이도마다 따로 깨는 업적만 셋, 나머지는 하나)
+                stars = string.sub((item.st or "") .. "000", 1, item.pd and 3 or 1)
                 if (item.cl or "") ~= "" then
                     act = { kind = "claim", key = item.cl, label = "받기" }
                 elseif item.tt then
@@ -316,8 +311,17 @@ script JournalWindow extends Logic
             ratio = math.min(1, p / c)
         end
         -- 업적 줄: 별 · 단추 (단추가 있으면 막대와 숫자 자리를 쓴다)
+        -- 별 그림(코덱스 r3): 깬 난이도는 그대로, 못 깬 곳은 같은 그림을 어둡게 눌러 빈 자리처럼. 하나뿐이면 가운데에
+        -- 알파 30%만으로는 원래 어두운 보라·붉은 별이 색이 남아 깬 것처럼 보였다 (10-27 실측) → 색을 0.3배로 눌러 회색 실루엣에 가깝게
         _UIKit:SetEnabled(row .. "/Stars", stars ~= "")
-        _UIKit:SetText(row .. "/Stars", stars)
+        for k = 1, 3 do
+            local star = row .. "/Stars/S" .. tostring(k)
+            _UIKit:SetEnabled(star, k <= #stars)
+            if k <= #stars then
+                _UIKit:SetColor(star, string.sub(stars, k, k) == "1" and Color(1, 1, 1, 1) or Color(0.3, 0.29, 0.33, 0.8))
+                _UIKit:SetPos(star, Vector2(#stars == 1 and 0 or (k - 2) * 34, 0))
+            end
+        end
         _UIKit:SetEnabled(row .. "/BtnAct", act ~= nil)
         if act ~= nil then
             self.RowAct[slot] = act

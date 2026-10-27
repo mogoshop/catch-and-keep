@@ -44,7 +44,12 @@ function run() {
     b.sprite(n + '/BarBg/Fill', { anchor: 'middle-left', pivot: [0, 0.5], pos: [0, 0], rect_size: [COL.bar.w, 16], image_ruid: icons.jr_bar_fill, color: '#FFFFFF', sprite_type: 1 });
     b.text(n + '/Value', '', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.act.x, 0], rect_size: [COL.act.w, 40], size: 24, color: '#E6C88A', alignment: 4, overflow: 2 });
     // 업적 (10-27 A+C): 막대 왼쪽 난이도 별 3칸(보통 · 악몽 · 지옥 중 깬 곳) · 오른쪽 단추 = 「받기」(받을 보상) 또는 「칭호 달기/떼기」 — 게임 공통 단추 그림(btn_frame)
-    b.text(n + '/Stars', '', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.stars.x, 0], rect_size: [COL.stars.w, 30], size: 22, color: '#77707F', alignment: 4, enable: false });
+    // 난이도 별 그림 3칸(jr_diff_n · nm · hell, 28px · 사이 6). 못 깬 난이도는 같은 그림을 30%로. 난이도마다 따로 깨지 않는 업적은 가운데 하나만 (JournalWindow.RenderRow)
+    if (b.find(n + '/Stars')) b.remove(n + '/Stars');
+    b.empty(n + '/Stars', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.stars.x, 0], rect_size: [COL.stars.w, 30], enable: false });
+    ['jr_diff_n', 'jr_diff_nm', 'jr_diff_hell'].forEach((key, k) => {
+      b.sprite(n + '/Stars/S' + (k + 1), { anchor: 'middle-center', pos: [(k - 1) * 34, 0], rect_size: [28, 28], image_ruid: icons[key], color: '#FFFFFF', sprite_type: 0 });
+    });
     b.sprite(n + '/Chest', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.chest, 0], rect_size: [54, 54], image_ruid: icons.jr_chest_open, color: '#FFFFFF', sprite_type: 0, enable: false });
     b.button(n + '/BtnAct', '받기', { anchor: 'middle-right', pivot: [1, 0.5], pos: [COL.act.x, 0], rect_size: [COL.act.w, 52], font_size: 22, image_ruid: icons.btn_frame, bg_color: '#FFFFFF', color: T.COLOR.body, sprite_type: 1, enable: false });
     b.patchComponent(n + '/BtnAct', 'MOD.Core.TextGUIRendererComponent', T.buttonText(22));
