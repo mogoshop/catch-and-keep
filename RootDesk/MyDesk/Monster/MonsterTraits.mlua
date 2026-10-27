@@ -413,21 +413,29 @@ script MonsterTraits extends Component
         local color = Color(0.85, 0.48, 0.35, 0.85)
         if material == "bone" then color = Color(0.9, 0.82, 0.65, 0.85)
         elseif material == "spirit" then color = Color(0.65, 0.6, 0.95, 0.85) end
-        if now >= self.NextContactFxAt then
-            self.NextContactFxAt = now + 0.06
-            local size = heavy and 0.32 or (owned and 0.22 or 0.14)
-            local serial = _EffectService:PlayEffect(_GameConst.FxHit, self.Entity, pos, 0, Vector3(size, size, 1), false, { PlayRate = 1.8, Color = color })
+        -- 10-28 피드백 F5 (38 C-1·C-2): 내 타격은 소환수 연타에 묻히지 않게 쿨을 타지 않고 크게 · 번쩍 · 정지,
+        -- 소환수·남의 타격은 작은 불꽃만 (번쩍·정지 없음 — 연타가 고정색으로 굳어 각성·광폭 색까지 가리던 문제)
+        if owned or now >= self.NextContactFxAt then
+            if not owned then self.NextContactFxAt = now + 0.06 end
+            local size = owned and (heavy and 0.4 or 0.32) or (heavy and 0.16 or 0.1)
+            local fx = owned and Color(math.min(1, color.r + 0.25), math.min(1, color.g + 0.3), math.min(1, color.b + 0.3), 0.95) or color
+            local serial = _EffectService:PlayEffect(_GameConst.FxHit, self.Entity, pos, 0, Vector3(size, size, 1), false, { PlayRate = owned and 1.5 or 1.8, Color = fx })
             if serial ~= 0 then self.ContactEffectCount = self.ContactEffectCount + 1 end
         end
+        if not owned then return end
         local sprite = self.Entity.SpriteRendererComponent
         if isvalid(sprite) then
             if self.FlashUntil <= 0 then self.FlashRestore = sprite.Color end
             self.FlashUntil = now + 0.09
-            sprite.Color = Color(color.r, color.g, color.b, self.FlashRestore.a)
-            if now >= self.NextPauseAt and self.PauseUntil <= 0 then
+            -- 대비 번쩍: 물든 몬스터(각성·광폭·우두머리)는 흰색으로 원래 그림을 드러내고, 안 물든 몬스터는 재질 색으로 물든다
+            -- (색은 곱하기라 흰 몬스터에 흰 번쩍은 보이지 않는다 — 10-12 실측)
+            local base = self.FlashRestore
+            local tinted = math.min(base.r, math.min(base.g, base.b)) < 0.9
+            if tinted then sprite.Color = Color(1, 1, 1, base.a) else sprite.Color = Color(color.r, color.g, color.b, base.a) end
+            if self.PauseUntil <= 0 then
                 self.ContactPauseCount = self.ContactPauseCount + 1
                 self.PauseRestoreRate = sprite.PlayRate
-                self.PauseUntil = now + (heavy and 0.055 or 0.025)
+                self.PauseUntil = now + (heavy and 0.075 or 0.055)
                 self.NextPauseAt = now + 0.16
                 sprite.PlayRate = 0
             end

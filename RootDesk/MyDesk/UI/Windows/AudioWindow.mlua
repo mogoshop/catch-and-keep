@@ -33,6 +33,8 @@ script AudioWindow extends Logic
             local value = pct
             _UIKit:Connect(self.Body .. "/uiscale/S" .. tostring(pct), function() self:PickUIScale(value) end)
         end
+        _UIKit:Connect(self.Body .. "/shake/On", function() self:PickShake(1) end)
+        _UIKit:Connect(self.Body .. "/shake/Off", function() self:PickShake(0) end)
         -- 개발자 응원하기 (10-25 후원 패스 — Shop/Supporter)
         self.SupportPrices = {}
         self.SupportOpen = {}
@@ -85,6 +87,10 @@ script AudioWindow extends Logic
             local on = pct == self.AppliedScale
             _UIKit:SetColor(self.Body .. "/uiscale/S" .. tostring(pct), on and Color(1, 0.86, 0.62, 1) or Color(0.62, 0.6, 0.66, 1))
         end
+        -- 화면 흔들림 (10-28 F5 #12-A): 지금 실제로 켜진 쪽을 밝게 (기본값이면 PC 켬 · 모바일 끔)
+        local shakeOn = _Util:ShakeEnabled()
+        _UIKit:SetColor(self.Body .. "/shake/On", shakeOn and Color(1, 0.86, 0.62, 1) or Color(0.62, 0.6, 0.66, 1))
+        _UIKit:SetColor(self.Body .. "/shake/Off", (not shakeOn) and Color(1, 0.86, 0.62, 1) or Color(0.62, 0.6, 0.66, 1))
         ---@type ClickControl
         local control = _UIKit:Comp("script.ClickControl")
         if control ~= nil then _UIKit:SetText(self.Body .. "/Input", control.MouseMode and "조작: 마우스" or "조작: 키보드") end
@@ -148,6 +154,16 @@ script AudioWindow extends Logic
         if not isvalid(me) or (_Supporter.Tier[me.PlayerComponent.UserId] or 0) >= tier or not self.SupportOpen[tier] then return end
         local id = _Supporter:PassList()[tier]
         if id ~= nil then _WorldShopService:PromptPurchase(id) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickShake(integer value)
+        -- 「화면 흔들림」 켬·끔 (서버가 저장, @TargetUserSync로 돌아온다)
+        if not self.Ready or not _UIKit:IsOpen(self.Win) then return end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestScreenShake(value) end
+        log("[VRF] 화면 흔들림 " .. (value == 1 and "켬" or "끔"))
     end
 
     @ExecSpace("ClientOnly")

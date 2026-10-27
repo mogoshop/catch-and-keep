@@ -25,6 +25,7 @@ script PlayerSave extends Component
     @Sync
     property string AudioSavedDigest = ""
     @TargetUserSync property integer PetFilter = 2   -- 고양이 재가 주워 올 물건 (PetSystem.Wants: 0 쉬기 · 1 전부 · 2 쓸 만한 것 · 3 희귀 이상 · 4 유니크·세트·룬), Char.settings에 함께 저장
+    @TargetUserSync property integer ScreenShake = -1   -- 내 스킬 화면 흔들림 (-1 기본: PC 켬·모바일 끔 · 0 끔 · 1 켬 — 10-28 F5 #12-A), Char.settings에 함께 저장
     @TargetUserSync property integer UIScale = 100   -- UI 크기 % (PC 환경 설정 80 · 90 · 100, AudioWindow.ApplyUIScale), Char.settings에 함께 저장 (10-27)
     @Sync property string PetPick = ""        -- 데리고 다닐 펫 (pets.csv key · 빈칸 = 가진 펫 중 첫째). 다른 사람 화면도 그 모습으로 그려 @Sync, Char.settings에 함께 저장 (10-24)
     property integer MaxSlots = 4
@@ -831,6 +832,7 @@ script PlayerSave extends Component
         data.petFilter = self.PetFilter
         data.petPick = self.PetPick
         data.uiScale = self.UIScale
+        data.shake = self.ScreenShake
         return data
     end
 
@@ -843,6 +845,21 @@ script PlayerSave extends Component
         self.PetPick = (type(pick) == "string" and _GameData:GetPet(pick) ~= nil) and pick or ""
         local scale = type(data) == "table" and data.uiScale or nil
         self.UIScale = (scale == 80 or scale == 90) and scale or 100
+        local shake = type(data) == "table" and data.shake or nil
+        self.ScreenShake = (shake == 0 or shake == 1) and shake or -1
+    end
+
+    @ExecSpace("Server")
+    method void RequestScreenShake(integer value)
+        -- 환경 설정 「화면 흔들림」 켬(1)·끔(0) (저장은 소리 설정처럼 2초 뒤 한 번)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not self.IsLoadSuccess then return end
+        if (value ~= 0 and value ~= 1) or value == self.ScreenShake then return end
+        self.ScreenShake = value
+        self:CancelAudioSave()
+        self.AudioSaveTimer = _TimerService:SetTimer(self, function()
+            self.AudioSaveTimer = 0
+            self:Save(false)
+        end, 2, false, 2)
     end
 
     @ExecSpace("Server")

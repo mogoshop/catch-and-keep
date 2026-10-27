@@ -6,6 +6,8 @@ script Monster extends Component
 
     property number TickAccum = 0           -- 틱 피해 숫자 모음 (ShowTickDamage)
     property number TickShownAt = -99
+    property number SummonDmgAcc = 0        -- 소환수 피해 숫자 모음 (0.4초마다 하나 — 10-28 F5 #13-A)
+    property integer SummonDmgTimer = 0
     @Sync
     property number MaxHp = 60              -- 모델 값 = BaseLevel(=모델 Level)에서의 기본 생명
     @Sync
@@ -487,6 +489,32 @@ script Monster extends Component
         if self.Hp <= 0 then self:Die() else self:CheckEnrage() end
     end
 
+    @ExecSpace("ServerOnly")
+    method void QueueSummonDamage(number amount)
+        -- 소환수 타격 숫자는 0.4초 모아 하나로 (집중 대상당 초당 약 2.5회 · 내 타격 숫자가 묻히지 않게)
+        self.SummonDmgAcc = self.SummonDmgAcc + amount
+        if self.SummonDmgTimer ~= 0 then return end
+        self.SummonDmgTimer = _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self:FlushSummonDamage() end end, 0.4)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FlushSummonDamage()
+        -- 모은 소환수 피해를 숫자 하나로 띄운다 (사망 직전에도 불러 남은 몫을 비운다)
+        if self.SummonDmgTimer ~= 0 then _TimerService:ClearTimer(self.SummonDmgTimer) end
+        self.SummonDmgTimer = 0
+        local amount = math.floor(self.SummonDmgAcc + 0.5)
+        self.SummonDmgAcc = 0
+        if amount > 0 and isvalid(self.Entity) then self:ShowSummonDamage(amount) end
+    end
+
+    @ExecSpace("Multicast")
+    method void ShowSummonDamage(integer amount)
+        -- 소환수 피해 합산 숫자: 내 타격(0.95)보다 작고 옅게
+        if not isvalid(self.Entity) then return end
+        -- Play: 선택 인자는 5개를 모두 넘겨야 한다 (일부만 넘기면 LEA-3005) · 오프셋은 엔진 기본 (두 번 더해진다)
+        _DamageSkinService:Play(self.Entity, "6ba67548f43f48f29eb23dafd0766383", 0, { amount }, DamageSkinTweenType.Volcano, false, Vector2(0, 0), Vector2(0.42, 0.42), 1.9, 0.8, LitMode.Default)   -- 메이커 확인: 0.6은 내 숫자(설정 0.95)보다 크게 보였다
+    end
+
     @ExecSpace("Multicast")
     method void ShowTickDamage(integer amount)
         -- 독·흡수 같은 지속 피해 숫자. 평타 숫자보다 작고 옅게, 머리 위에서
@@ -508,6 +536,7 @@ script Monster extends Component
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
         self.Hp = self.Hp - event.TotalDamage
+        if isvalid(event.AttackerEntity) and event.AttackerEntity:GetComponent("script.ShadowUnit") ~= nil then self:QueueSummonDamage(event.TotalDamage) end
         self:LifeTapFor(event.AttackerEntity, event.TotalDamage)
         self:CheckEnrage()
         local pos = self.Entity.TransformComponent.WorldPosition
@@ -563,6 +592,7 @@ script Monster extends Component
         -- 사망 연출 → MonsterKilled 이벤트 → 숨김 → 리스폰 예약 (또는 제거)
         if self.IsDead then return end
         self.IsDead = true
+        if self.SummonDmgAcc > 0 or self.SummonDmgTimer ~= 0 then self:FlushSummonDamage() end
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil then attack:CancelPending() end
         local sc = self.Entity.StateComponent

@@ -10,6 +10,7 @@ script Util extends Logic
     property number SpawnRetryInterval = 0.1
     property any ListMemo = nil               -- 맵Id·종류 → { at, list } 맵 전체 컴포넌트 목록 (0.2초 재사용)
     property number ListMemoSec = 0.2
+    property integer SkillShakeCount = 0       -- 내 스킬 화면 흔들림 횟수 (메이커 확인용)
     property table Telegraphs = {}            -- 클라이언트: 범위 예고 id → { rim, fill, decal, timer }
     property integer TelegraphSeq = 0
     property number BossRimSpin = 40           -- 보스 범위 예고 고리가 도는 빠르기 (도/초, 시계 방향)
@@ -264,6 +265,30 @@ script Util extends Logic
             if npc.Kind == kind and self:Distance(player, c.Entity) <= npc.TalkRange + 0.5 then return true end
         end
         return false
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ShakeEnabled()
+        -- 환경 설정 「화면 흔들림」: 기본은 PC 켬 · 모바일 끔 (모바일 멀미 — 10-28 F5 #12-A)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) then return false end
+        ---@type PlayerSave
+        local save = me:GetComponent("script.PlayerSave")
+        local v = save ~= nil and save.ScreenShake or -1
+        if v == 0 then return false end
+        if v == 1 then return true end
+        return Environment:IsPCPlatform()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SkillShake(Entity caster, number amount, number seconds)
+        -- 내 스킬이 맞았을 때 내 화면만 흔든다 (파티원 스킬로는 흔들리지 않는다)
+        if not isvalid(caster) or caster ~= _UserService.LocalPlayer or not self:ShakeEnabled() then return end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then
+            cam:ShakeCamera(amount, seconds)
+            self.SkillShakeCount = self.SkillShakeCount + 1
+        end
     end
 
     method boolean IsAlive(Entity player)

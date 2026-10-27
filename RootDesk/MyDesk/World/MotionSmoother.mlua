@@ -22,7 +22,7 @@ script MotionSmoother extends Logic
     property number Delay = 0.1              -- 그리는 시점을 이만큼 늦춘다 (기본값, 최근 가장 늦은 기록 간격에 맞춰 0.08~0.3으로 조절)
     property number SnapDistance = 2.5       -- 기록 사이가 이보다 멀면 순간이동(도약·재배치)으로 보고 바로 옮긴다
     property number AttackWindup = 0.18     -- 소환수 공격 타격 시점 (ShadowUnit.AttackWindup과 같게) — 공격 프레임의 타격 장을 이때 보인다
-    property number OtherSummonAlpha = 0.8   -- 다른 플레이어 소환수의 불투명도 (내 것은 1)
+    property number OtherSummonAlpha = 0.55   -- 다른 플레이어 소환수의 불투명도 (내 것은 1 · 10-28 F5 B-4: 0.8 → 0.55)
     property number ScanTimer = 0
     property any Map = nil
     property any Recs = nil                  -- 개체 Id → { e, buf = { {t, x, y} … }, wx, wy, gap, peak, v, rt }
@@ -599,6 +599,8 @@ script MotionSmoother extends Logic
         if r.unit ~= nil and isvalid(r.unit.OwnerPlayer) and r.unit.OwnerPlayer ~= _UserService.LocalPlayer then
             c = Color(c.r, c.g, c.b, c.a * self.OtherSummonAlpha)
         end
+        -- 교전 중인 소환수는 톤을 낮춰 적과 내 캐릭터가 떠오르게 (클라이언트 신호만 — ShadowUnit.TrackCombat · 10-28 F5 B-1)
+        if r.unit ~= nil and isvalid(r.unit) and r.unit.ViewCombat then c = Color(c.r * 0.72, c.g * 0.72, c.b * 0.72, c.a) end
         if c.r ~= d.r or c.g ~= d.g or c.b ~= d.b or c.a ~= d.a then dst.Color = c end
         if dst.PlayRate ~= src.PlayRate then dst.PlayRate = src.PlayRate end
         local flipX = src.FlipX
