@@ -14,6 +14,7 @@ script Telemetry extends Logic
     property number FlushSec = 300            -- 저장 간격
     property string StorageName = "PlayTelemetry"
     property boolean Enabled = true
+    property integer RoomTicks = 0            -- 방 부하 표본 간격 (TickSec × 12 = 1분)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -91,6 +92,35 @@ script Telemetry extends Logic
                 s.maps[m] = (s.maps[m] or 0) + self.TickSec
             end
         end
+        -- 방 부하 (1분마다, 10-28 F7-4 빈 맵 정리 효과): 살아 있는 몬스터 수 · 잠든 맵 수 → 세션마다 최대·합·표본 수
+        self.RoomTicks = self.RoomTicks + 1
+        if self.RoomTicks % 12 ~= 0 then return end
+        local mobs, sleeping, maps = 0, 0, 0
+        local seen = {}
+        for _, player in pairs(_UserService.UserEntities) do
+            local root = isvalid(player) and isvalid(player.CurrentMap) and player.CurrentMap.Parent or nil
+            if isvalid(root) and not seen[root.Id] then
+                seen[root.Id] = true
+                for _, map in ipairs(root.Children:ToTable()) do
+                    maps = maps + 1
+                    for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+                        if isvalid(c.Entity) and not c.IsDead then mobs = mobs + 1 end
+                    end
+                    local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+                    if sp ~= nil and sp.SpawnedAt <= 0 then sleeping = sleeping + 1 end
+                end
+            end
+        end
+        for _, player in pairs(_UserService.UserEntities) do
+            local s = self:Session(player)
+            if s ~= nil then
+                s.roomMobMax = math.max(s.roomMobMax or 0, mobs)
+                s.roomMobSum = (s.roomMobSum or 0) + mobs
+                s.roomSamples = (s.roomSamples or 0) + 1
+                s.roomSleepMax = math.max(s.roomSleepMax or 0, sleeping)
+            end
+        end
+        self:Say(string.format("[TEL] room mobs=%d sleeping=%d maps=%d", mobs, sleeping, maps))
     end
 
     -- ───────── 이벤트 ─────────

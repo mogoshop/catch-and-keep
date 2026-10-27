@@ -8,6 +8,10 @@
 -- 덜 정리된 맵은 5분 넘게 비면 처음 상태로 다시 채운다 (14장 §3.1·§4).
 -- 10-11: 끝방 우두머리가 쓰러지면 bossRespawnSec(5분) 동안은 맵이 비어도 다시 채우지 않는다 (BossRespawn이 남은 시간을 미니맵에 표시).
 -- 시간이 되면 빈 맵은 통째로, 사람이 있는 맵은 우두머리(+호위)만 끝방에 다시 나온다
+-- 10-28 빈 맵 정리 (기획서 38 F7-4): 사람이 없는 맵은 mapSleepFieldSec·mapSleepSideSec 뒤 스포너 몬스터·상자·신전을 치우고 잠든다.
+-- 다시 들어오면 새로 채운다(사냥터는 상자·신전·드문 최상위를 다시 굴리지 않아 포털 리셋 파밍이 안 된다). 진행 중인 정리 맵은
+-- sideRefillSec 전까지 그대로(#21-A 「300초 미만 동결」). 맵 파일에 고정된 몬스터(의뢰 보스 등)는 치우지 않는다.
+-- 채울 때는 입구 쪽 무리부터 spawnBatch마리씩 0.05초 간격으로 나눠 소환한다
 @Component
 script MonsterSpawner extends Component
 
@@ -35,6 +39,13 @@ script MonsterSpawner extends Component
     property table NamedAlive = {}         -- 이 맵의 끝방 이름 있는 적: { e = 엔티티, row = named.csv 행, down = 쓰러짐 }
     property integer PollTimer = 0
     property integer MapLevel = 1
+    property boolean Dormant = false        -- 잠든 맵 (사람이 들어오면 SpawnAll로 깨어난다)
+    property boolean EventsDone = false     -- 사냥터 이벤트(상자·신전·드문 최상위)를 이미 굴렸다 — 깨어날 때 다시 굴리지 않는다
+    property any FixedIds = nil             -- 처음 채우기 전부터 맵에 있던 몬스터 Id (맵 파일 고정 · 잠들 때 치우지 않는다)
+    property any SpawnQueue = nil           -- 나눠 소환할 몬스터 목록
+    property integer SpawnQueueTimer = 0
+    property integer SleepCount = 0
+    property integer WakeCount = 0
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -47,6 +58,7 @@ script MonsterSpawner extends Component
     method void OnEndPlay()
         if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
         self.PollTimer = 0
+        self:StopQueue()
     end
 
     @ExecSpace("ServerOnly")
@@ -103,8 +115,53 @@ script MonsterSpawner extends Component
         elseif self.EmptySince == 0 then
             self.EmptySince = now
         elseif now - self.EmptySince >= 3 and self:NeedsRefill(now - self.EmptySince) then
-            self:Refill()
+            -- 다시 채울 맵은 사람이 없으니 바로 채우지 않고 잠든다 → 다음에 들어오면 새로 채운다 (예전: 빈 맵에 곧바로 다시 소환)
+            self:Sleep(true)
+        elseif now - self.EmptySince >= self:SleepSec() and self:CanSleep() then
+            self:Sleep(false)
         end
+    end
+
+    method number SleepSec()
+        -- 잠들기까지 빈 시간: 사냥터 · 곁가지 던전
+        return self.ClearMode and _GameData.mapSleepSideSec or _GameData.mapSleepFieldSec
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean CanSleep()
+        -- 우두머리 되살아남 대기 중이면 기다린다 (깨어나며 우두머리가 일찍 돌아오지 않게) · 진행 중인 정리는 NeedsRefill(sideRefillSec)이 맡는다
+        if _BossRespawn:MapRemaining(self.Entity.CurrentMap.Name) > 0 then return false end
+        if self.ClearMode and not self.Cleared and self.Remaining < self.Total then return false end
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Sleep(boolean reset)
+        -- 빈 맵 정리: 스포너가 만든 몬스터(죽어 숨은 것 포함)·상자·신전을 치우고 SpawnedAt = 0 → 사람이 들어오면 SpawnAll.
+        -- reset(정리 끝 · 오래 빈 정리 맵 · 우두머리 쓰러짐)이면 처음 상태처럼 이벤트도 다시 굴린다. 아니면(사냥터) 이벤트는 다시 굴리지 않는다
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        self:StopQueue()
+        local fixed = self.FixedIds or {}
+        local removed = 0
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            if isvalid(c.Entity) and not fixed[c.Entity.Id] then
+                c.Entity:Destroy()
+                removed = removed + 1
+            end
+        end
+        for _, kind in ipairs({ "script.CursedChest", "script.MapShrine" }) do
+            for _, c in ipairs(map:GetChildComponentsByTypeName(kind, true)) do
+                if isvalid(c.Entity) then c.Entity:Destroy() end
+            end
+        end
+        if reset or self.ClearMode then self.EventsDone = false end
+        self.NamedAlive = {}
+        self.SpawnedAt = 0
+        self.EmptySince = 0
+        self.Dormant = true
+        self.SleepCount = self.SleepCount + 1
+        log(string.format("[VRF] map sleep %s removed=%d reset=%s events=%s", map.Name, removed, tostring(reset), self.EventsDone and "keep" or "reroll"))
     end
 
     @ExecSpace("ServerOnly")
@@ -150,20 +207,6 @@ script MonsterSpawner extends Component
         end
     end
 
-    @ExecSpace("ServerOnly")
-    method void Refill()
-        -- 맵을 처음 상태로: 남은 몬스터·상자·신전을 치우고 다시 소환 (D2의 새 게임처럼)
-        local map = self.Entity.CurrentMap
-        for _, kind in ipairs({ "script.Monster", "script.CursedChest", "script.MapShrine" }) do
-            for _, c in ipairs(map:GetChildComponentsByTypeName(kind, true)) do
-                if isvalid(c.Entity) then c.Entity:Destroy() end
-            end
-        end
-        log("[VRF] map refill " .. map.Name)
-        self.SpawnedAt = 0
-        self:SpawnAll()
-    end
-
     method boolean OpenPoint(Vector2 p, number margin)
         -- 벽·출구 안전 구역 밖이고 사방 margin까지 막히지 않은 지점 (플레이어 위치는 보지 않는다)
         for _, zone in ipairs(self.SafeZones) do
@@ -207,6 +250,18 @@ script MonsterSpawner extends Component
     method void SpawnAll()
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
+        if self.FixedIds == nil then
+            -- 처음 채우기 전부터 있던 몬스터 = 맵 파일 고정 (의뢰 보스 등) → 잠들 때 치우지 않는다
+            self.FixedIds = {}
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+                if isvalid(c.Entity) then self.FixedIds[c.Entity.Id] = true end
+            end
+        end
+        local waking = self.Dormant
+        if waking then self.WakeCount = self.WakeCount + 1 end
+        self.Dormant = false
+        self:StopQueue()
+        self.SpawnQueue = {}
         self:LoadFromData(map.Name)
         self:BuildSafeZones()
         local total = 0
@@ -255,34 +310,67 @@ script MonsterSpawner extends Component
                         if not self:ValidSpawn(p) then p = center end
                         local kind = entry
                         if escort ~= nil and i > 1 and i % 3 == 0 then kind = escort end
-                        local e = _SpawnService:SpawnByModelId(kind.id, kind.id, Vector3(p.x, p.y, 0), map)
-                        if isvalid(e) then
-                            local elite = (leader and i == 1) or _UtilLogic:RandomDouble() < self.EliteChance
-                            local variant = ""
-                            local eliteVariant = ""
-                            if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant(diff)
-                            elseif elite then eliteVariant = _GameData:RollEliteVariant(diff) end   -- 악몽부터 정예 능력 (10-24 C안)
-                            self:Configure(e, _GameConst:ScaleLevel(kind.level, diff), elite, variant, eliteVariant)
-                            total = total + 1
-                        end
+                        local elite = (leader and i == 1) or _UtilLogic:RandomDouble() < self.EliteChance
+                        local variant = ""
+                        local eliteVariant = ""
+                        if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant(diff)
+                        elseif elite then eliteVariant = _GameData:RollEliteVariant(diff) end   -- 악몽부터 정예 능력 (10-24 C안)
+                        table.insert(self.SpawnQueue, { id = kind.id, p = p, level = _GameConst:ScaleLevel(kind.level, diff), elite = elite, variant = variant, eliteVariant = eliteVariant, d = self:EntryDistance(p) })
+                        total = total + 1
                     end
                 end
             end
         end
-        log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes))
+        log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)%s", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes, waking and " · 깨어남" or ""))
+        -- 입구 쪽 무리부터 나눠 소환 (한 프레임에 백여 마리를 만들지 않는다)
+        table.sort(self.SpawnQueue, function(a, b) return a.d < b.d end)
+        self:RunQueue()
+        if #self.SpawnQueue > 0 then self.SpawnQueueTimer = _TimerService:SetTimerRepeat(function() self:RunQueue() end, 0.05) end
         -- 맵 레벨 = 출현 목록 평균 + 난이도 가산 (MapEvents와 같은 기준) → 끝방 우두머리·봉인 상자
         local sum = 0
         for _, e in ipairs(list) do sum = sum + e.level end
         self.MapLevel = _GameConst:ScaleLevel(#list > 0 and math.floor(sum / #list + 0.5) or 1, diff)
         self:PlaceNamed(map, self.MapLevel)
-        -- 맵 이벤트: 신전 · 저주받은 상자 · 뼈 둥지 · 드문 최상위 (사냥터·곁가지 던전만)
-        _MapEvents:Populate(self, list, diff)
+        -- 맵 이벤트: 신전 · 저주받은 상자 · 뼈 둥지 · 드문 최상위 (사냥터·곁가지 던전만). 잠들었던 사냥터는 다시 굴리지 않는다 (리셋 파밍 차단)
+        if not self.EventsDone then _MapEvents:Populate(self, list, diff) end
+        self.EventsDone = true
         self.ClearMode = self.RespawnSec < 0
         self.Cleared = false
         self.Total = 0
         self.Remaining = 0
         self.EmptySince = 0
         self.SpawnedAt = _UtilLogic.ElapsedSeconds
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RunQueue()
+        -- 나눠 소환: spawnBatch마리씩 (잠들거나 끝나면 타이머를 끈다)
+        local map = self.Entity.CurrentMap
+        if self.SpawnQueue == nil or not isvalid(map) then
+            self:StopQueue()
+            return
+        end
+        local n = 0
+        while #self.SpawnQueue > 0 and n < math.max(1, math.floor(_GameData.spawnBatch)) do
+            local job = table.remove(self.SpawnQueue, 1)
+            local e = _SpawnService:SpawnByModelId(job.id, job.id, Vector3(job.p.x, job.p.y, 0), map)
+            if isvalid(e) then self:Configure(e, job.level, job.elite, job.variant, job.eliteVariant) end
+            n = n + 1
+        end
+        if #self.SpawnQueue == 0 then self:StopQueue() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StopQueue()
+        if self.SpawnQueueTimer ~= 0 then _TimerService:ClearTimer(self.SpawnQueueTimer) end
+        self.SpawnQueueTimer = 0
+    end
+
+    method number EntryDistance(Vector2 p)
+        -- 가장 가까운 입구(포털·웨이포인트·심도 입구)까지 거리 — 입구 쪽 무리부터 소환한다
+        local best = 999
+        for _, zone in ipairs(self.SafeZones) do best = math.min(best, (p - zone.pos):Magnitude()) end
+        return best
     end
 
     method any PickEscort(table list, any entry)
