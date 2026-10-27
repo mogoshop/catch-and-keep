@@ -192,29 +192,7 @@ function compose(id, spec, ctx, mapRow) {
     if (pu[0] !== "prop") continue;
     for (const [cx, cy] of footCells(table, ctx.propScale, pu[1], pu[2], pu[3], pu[4] || 1)) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) putFeet.add(key(cx + dx, cy + dy));
   }
-  // 화로: 장소마다 한 개 (장소 가운데에서 가장 가까운, 길 밖 바닥) — 넓은 맵의 어둠을 장소 단위로 밝힌다
   let torches = [];
-  if (spec.torches === "auto" || !spec.torches) {
-    places.forEach((p, i) => {
-      if (p.torch === false) return;
-      const [cx, cy] = p.e ? [p.e[0], p.e[1]] : [(p.r[0] + p.r[2] + 1) / 2, (p.r[1] + p.r[3] + 1) / 2];
-      const off = p.torchAt || [0, 0];
-      let best = null;
-      g.each((x, y) => {
-        const c = g.get(x, y);
-        if (!c || c.wall || c.road || c.place !== i || putFeet.has(key(x, y))) return;
-        if (func.some((f) => Math.hypot(f.x - x - 0.5, f.y - y - 0.5) < 3.2)) return;
-        if (torches.some(([tx, ty]) => Math.hypot(tx - x - 0.5, ty - y - 0.5) < 6)) return;
-        let around = 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (g.floor(x + dx, y + dy)) around++;
-        if (around < 9) return;
-        const d = Math.hypot(x + 0.5 - cx - off[0], y + 0.5 - cy - off[1]) + (c.keep ? 1.5 : 0);
-        if (!best || d < best.d) best = { x, y, d };
-      });
-      if (best) torches.push([best.x + 0.5, best.y + 0.5]);
-    });
-  } else torches = spec.torches.map((p) => [p[0] + 0.5, p[1] + 0.5]);
-  for (const [tx, ty] of torches) { func.push({ ch: "T", x: tx, y: ty }); clear(tx, ty, 0.9, 2.2); markAt.push(["T", Math.floor(tx), Math.floor(ty)]); }
 
   // 5) 바깥 테두리 한 줄은 벽 (포털 표식 칸만 바닥)
   g.each((x, y) => {
@@ -272,23 +250,33 @@ function compose(id, spec, ctx, mapRow) {
     } else if (kind === "decal") rows.push({ kind: "decal", name, x, y, scale: sc || "", flip: flip ? 1 : "", args: "", note: "" });
     else throw new Error(`${id}: put kind '${kind}'`);
   }
-  places.forEach((p, i) => {
+  const dressOf = (p, i) => {
     const dr = (spec.dress || {})[p.z] || {};
     const own = p.dress || {};
-    const sets = own.sets || (i === places.findIndex((q) => q.z === p.z) ? dr.sets || [] : []);
-    const props = own.props || dr.props || [];
-    const n = own.n ?? (dr.n ?? 0);
-    const decals = own.decals || dr.decals || [];
-    const dn = own.dn ?? (dr.dn ?? 0);
-    const cells = placeCells(i);
-    const [cx, cy] = p.e ? [p.e[0], p.e[1]] : [(p.r[0] + p.r[2] + 1) / 2, (p.r[1] + p.r[3] + 1) / 2];
+    return {
+      sets: own.sets || (i === places.findIndex((q) => q.z === p.z) ? dr.sets || [] : []),
+      props: own.props || dr.props || [], n: own.n ?? (dr.n ?? 0),
+      decals: own.decals || dr.decals || [], dn: own.dn ?? (dr.dn ?? 0),
+      cells: placeCells(i), center: p.e ? [p.e[0], p.e[1]] : [(p.r[0] + p.r[2] + 1) / 2, (p.r[1] + p.r[3] + 1) / 2],
+    };
+  };
+  const D = places.map(dressOf);
+  places.forEach((p, i) => {
+    const { sets, cells } = D[i];
+    const [cx, cy] = D[i].center;
     const centers = [];
     for (const setName of sets) {
       const pieces = ctx.sets[setName];
       if (!pieces) throw new Error(`${id}: 세트 '${setName}'이 map_sets.csv에 없음`);
       const back = pieces[0].back === "1";
       let best = null;
-      for (const [x, y] of cells) {
+      // 1차: 장소 칸 · 2차(자리가 없으면): 장소 가운데에서 장소 반경 + 5칸 안의 바닥 (큰 길이 장소를 가로지르는 사냥터)
+      const reach = (p.e ? Math.max(p.e[2], p.e[3]) : Math.max(p.r[2] - p.r[0], p.r[3] - p.r[1]) / 2) + 5;
+      const wide = [];
+      g.each((x, y) => { if (g.floor(x, y) && Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= reach) wide.push([x, y]); });
+      for (const pool of [cells, wide]) {
+      if (best) break;
+      for (const [x, y] of pool) {
         const sx = x + 0.5, sy = y + 0.3;
         if (nearFunc(sx, sy, 3.5, 3)) continue;
         for (const m of [1, -1]) {
@@ -304,11 +292,38 @@ function compose(id, spec, ctx, mapRow) {
           if (!best || score < best.score) best = { sx, sy, m, score };
         }
       }
+      }
       if (!best) { console.log(`  ! ${id} 장소 '${p.name}': 세트 ${setName} 자리 없음`); continue; }
       for (const pc of pieces) if (!pc.piece.startsWith("d:")) { const px = best.sx + num(pc.dx) * best.m, py = best.sy + num(pc.dy); occupy(footCells(table, ctx.propScale, pc.piece, px, py, num(pc.scale, 1)), px, py); }
       centers.push([best.sx, best.sy]);
       rows.push({ kind: "set", name: setName, x: r2(best.sx), y: r2(best.sy), scale: "", flip: best.m < 0 ? 1 : "", args: "", note: p.name });
     }
+  });
+  // 화로: 장소마다 한 개 (장소 가운데에서 가장 가까운, 길 밖 바닥) — 넓은 맵의 어둠을 장소 단위로 밝힌다
+  if (spec.torches === "auto" || !spec.torches) {
+    places.forEach((p, i) => {
+      if (p.torch === false) return;
+      const [cx, cy] = p.e ? [p.e[0], p.e[1]] : [(p.r[0] + p.r[2] + 1) / 2, (p.r[1] + p.r[3] + 1) / 2];
+      const off = p.torchAt || [0, 0];
+      let best = null;
+      g.each((x, y) => {
+        const c = g.get(x, y);
+        if (!c || c.wall || c.road || c.place !== i || putFeet.has(key(x, y)) || occ.has(key(x, y))) return;
+        if (feet.some(([fx, fy]) => Math.abs(fx - x - 0.5) < 2.4 && Math.abs(fy - y - 0.5) < 1.6)) return;
+        if (func.some((f) => Math.hypot(f.x - x - 0.5, f.y - y - 0.5) < 3.2)) return;
+        if (torches.some(([tx, ty]) => Math.hypot(tx - x - 0.5, ty - y - 0.5) < 6)) return;
+        let around = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (g.floor(x + dx, y + dy)) around++;
+        if (around < 9) return;
+        const d = Math.hypot(x + 0.5 - cx - off[0], y + 0.5 - cy - off[1]) + (c.keep ? 1.5 : 0);
+        if (!best || d < best.d) best = { x, y, d };
+      });
+      if (best) torches.push([best.x + 0.5, best.y + 0.5]);
+    });
+  } else torches = spec.torches.map((p) => [p[0] + 0.5, p[1] + 0.5]);
+  for (const [tx, ty] of torches) { func.push({ ch: "T", x: tx, y: ty }); funcSpots.push([tx, ty]); clear(tx, ty, 0.9, 2.2); markerOf.set(key(Math.floor(tx), Math.floor(ty)), "T"); }
+  places.forEach((p, i) => {
+    const { props, n, decals, dn, cells } = D[i];
     // 소품: 열에 일곱은 벽 가까이(1~2칸), 셋은 장소 안쪽 — 서로 1.8칸 이상
     let placed = 0;
     const cand = cells.map(([x, y]) => ({ x, y, k: rand() })).sort((a, b) => a.k - b.k);
