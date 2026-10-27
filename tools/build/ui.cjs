@@ -583,14 +583,49 @@ function buildGameHud() {
   if (b.find("RuneWin/Paper/List")) b.remove("RuneWin/Paper/List");
   k.scrollText("RuneWin/Paper/Scroll", "top-left", [20, -14], [870, 544], { size: 18, color: C.white });
 
-  // ── 게임 안내 (메뉴 「게임 안내」 · 첫 진입 때 한 번): 쪽마다 제목 + 본문, 이전/다음 (GuideWindow.mlua) ──
-  k.frame("GuideWin", "middle-center", [0, 20], [1040, 760], "게임 안내");
-  k.inner("GuideWin/Paper", "top-center", [0, -90], [960, 548], "win_content");
-  b.text("GuideWin/Paper/Head", "", { size: 30, bold: true, color: C.title, alignment: 0, anchor: "top-left", pos: [28, -20], rect_size: [904, 46], ...outline });
-  b.text("GuideWin/Paper/Body", "", { size: 22, color: C.white, alignment: 0, anchor: "top-left", pos: [28, -82], rect_size: [904, 448], bestfit: true, min_size: 15, max_size: 22 });
-  b.text("GuideWin/Page", "", { size: 20, color: C.dim, anchor: "bottom-center", pos: [0, 40], rect_size: [240, 40] });
-  k.btn("GuideWin/BtnPrev", "이전", { anchor: "bottom-left", pos: [40, 26], rect_size: [220, 68] });
-  k.ok("GuideWin/BtnNext", "다음", { anchor: "bottom-right", pos: [-40, 26], rect_size: [220, 68] });
+  // ── 게임 안내 (메뉴 「게임 안내」 · 첫 진입 때 책갈피 1~4 · 상황 카드): docs/design/35 (10-27 사용자 B안) ──
+  //   왼쪽 책갈피 7 (T1~T7: 그림 + 이름 + 안 본 표시) · 오른쪽 16:9 화면(Media/Shot = 움짤 animationclip 또는 캡처, 없으면 Media/Empty)
+  //   + 제목 · 설명 · 쪽 점(D1~D6) · 이전/다음 · 상황 카드의 「자세히 보기」(BtnMore). 내용은 GuideWindow.mlua BuildTabs
+  {
+    const T = require("./ui-tokens.cjs");
+    const W = 1560, H = 920, tabW = 300, mediaW = 864, mediaH = 486;
+    const rx = T.FRAME.padX + tabW + T.FRAME.gap;              // 오른쪽 칸 왼쪽 (창 왼쪽에서)
+    const rw = W - rx - T.FRAME.padX;                           // 오른쪽 칸 폭
+    const top = T.FRAME.contentTop;
+    k.frame("GuideWin", "middle-center", [0, 0], [W, H], "게임 안내");
+    // 바탕을 꽉 채운 그림으로 (기본 바탕 그림은 가운데가 비쳐 글만 있는 쪽에서 뒤 화면이 보였다 — 10-27 메이커)
+    b.patchComponent("GuideWin", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.gauge_fill }, Type: 0, Color: { r: 0.045, g: 0.04, b: 0.055, a: 1 } });
+    k.inner("GuideWin/Tabs", "top-left", [T.FRAME.padX, -top], [tabW, H - top - T.FRAME.padBottom], "win_content");
+    const tabIcon = ["icon_scroll", "icon_shadow", "icon_skill", "icon_bag", "icon_waypoint", "icon_party", "icon_sword"];
+    tabIcon.forEach((key, i) => {
+      const n = `GuideWin/Tabs/T${i + 1}`;
+      b.button(n, "", { anchor: "top-left", pos: [16, -16 - i * 96], rect_size: [tabW - 32, T.BUTTON.h], ...bg("btn_frame"), sprite_type: 1 });
+      k.pic(`${n}/Icon`, key, { anchor: "middle-left", pos: [22, 0], rect_size: [46, 46], color: WHITE, alpha: 1 });
+      b.patchComponent(`${n}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.text(`${n}/Label`, "", { size: 24, bold: true, color: C.gold, alignment: 3, anchor: "middle-left", pos: [82, 0], rect_size: [tabW - 32 - 82 - 30, 44], bestfit: true, min_size: 16, max_size: 24, ...outline });
+      k.badge(n);
+    });
+    b.text("GuideWin/Tabs/Hint", "메뉴 → 게임 안내에서\n언제든 다시 볼 수 있어요", { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [tabW - 32, 56] });
+    // 화면 칸: 검은 바탕 + 그림(꺼짐, 쪽에 그림이 있을 때 켠다) + 준비 중 글 + 칸 테두리
+    b.panel("GuideWin/Media", { anchor: "top-left", pos: [rx + (rw - mediaW) / 2, -top], rect_size: [mediaW, mediaH], color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, sprite_type: 1 });
+    b.sprite("GuideWin/Media/Shot", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+    k.aspect("GuideWin/Media/Shot");
+    b.text("GuideWin/Media/Empty", "화면 준비 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
+    k.rim("GuideWin/Media", "slot_frame");
+    const headY = top + mediaH + 12;
+    b.text("GuideWin/Head", "", { size: 30, bold: true, color: C.title, alignment: 0, anchor: "top-left", pos: [rx, -headY], rect_size: [rw, 44], ...outline });
+    b.text("GuideWin/Body", "", { size: 22, color: C.white, alignment: 0, anchor: "top-left", pos: [rx, -(headY + 50)], rect_size: [rw, 150], bestfit: true, min_size: 15, max_size: 22 });
+    // 아래 줄: 이전 · 쪽 점 · (자세히 보기) · 다음
+    const by = T.FRAME.buttonBottom;
+    k.btn("GuideWin/BtnPrev", "이전", { anchor: "bottom-left", pos: [rx, by], rect_size: [220, T.BUTTON.h] });
+    k.ok("GuideWin/BtnNext", "다음", { anchor: "bottom-right", pos: [-T.FRAME.padX, by], rect_size: [220, T.BUTTON.h] });
+    k.btn("GuideWin/BtnMore", "자세히 보기", { anchor: "bottom-right", pos: [-(T.FRAME.padX + 220 + T.FRAME.gap), by], rect_size: [220, T.BUTTON.h], enable: false });
+    const dotX = rx + rw / 2 - W / 2;                          // 오른쪽 칸 가운데 (창 가운데 기준)
+    for (let i = 1; i <= 6; i++) {
+      b.sprite(`GuideWin/D${i}`, { anchor: "bottom-center", pivot: [0.5, 0.5], pos: [dotX + (i - 3.5) * 30, by + T.BUTTON.h / 2], rect_size: [16, 16], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1 });
+      b.patchComponent(`GuideWin/D${i}`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+    }
+  }
 
   const file = P.ui("GameHUD");
   const previous = readIfExists(file);

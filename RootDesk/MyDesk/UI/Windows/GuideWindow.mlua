@@ -1,36 +1,63 @@
--- 게임 안내 창 (GameHUD/GuideWin — tools/build/ui.cjs): 처음 하는 사람에게 핵심 재미·조작·성장·진행·위험 신호를 쪽으로 보여 준다.
+-- 게임 안내 창 (GameHUD/GuideWin — tools/build/ui.cjs · docs/design/35): 왼쪽 책갈피 7 + 오른쪽 화면(움짤·캡처) · 제목 · 설명 · 쪽 점.
 --   · 첫 진입: 계정에서 한 번도 안 봤으면(PlayerSave.GuideSeen) 캐릭터를 다 불러오고 시작 이야기 카드가 닫힌 뒤 저절로 연다.
+--     책갈피 1~4(시작하기 · 군단 · 성장 · 장비·파밍)를 이어서 넘기고 4번 끝에서 「시작하기」로 닫는다 (10-27 사용자 B안).
 --     연 순간 서버에 「봤다」를 남겨 다른 캐릭터·다음 접속에는 다시 띄우지 않는다 (RequestGuideSeen).
---   · 메뉴 「게임 안내」로 언제든 다시 본다.
---   · 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
---   · 상황 카드: GuideCoach가 그 순간 필요한 한 장만 같은 창에 띄운다 (ShowCard — 쪽 번호 없이 「확인」).
+--   · 책갈피 5~7(모험 · 함께하기 · 위험 신호)은 그 순간이 오면 상황 카드가 「자세히 보기」로 데려간다 (GuideCoach).
+--   · 안 본 책갈피에는 붉은 점 — 펴 보면 계정에 남긴다 (PlayerSave.GuideCards의 gtab_<key>).
+--   · 메뉴 「게임 안내」로 언제든 다시 본다. 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
+--   · 상황 카드: GuideCoach가 그 순간 필요한 한 장만 같은 창에 띄운다 (ShowCard / ShowCardLink — 쪽 점 없이 「확인」).
+--   · 화면 칸: 쪽의 shot(animationclip 움짤 또는 sprite 캡처 RUID). 아직 없으면 「준비 중」 글, 글만 쓰는 쪽(kind "")은 화면 칸을 접고 글을 크게.
 @Logic
 script GuideWindow extends Logic
 
     property string Win = "GuideWin"
+    property integer Tab = 1
     property integer Page = 1
     property integer TimerId = 0
     property number ReadyFor = 0             -- 첫 진입 조건이 이어서 맞은 시간 (이야기 카드가 대기열에 들어올 틈을 준다)
     property number ReadyDelay = 2.5
     property boolean AutoDone = false        -- 이번 접속에서 저절로 띄우기를 끝냈다
-    property table Pages = {}
+    property table Tabs = {}                 -- { key, name, pages = { { head, body, kind, shot } } }
     property boolean InputDone = false       -- 이번 접속에서 이동 방식을 적용했거나 물었다
     property number InputReadyFor = 0
-    property boolean CardMode = false        -- 상황 카드 한 장을 보이는 중 (닫거나 메뉴로 열면 안내 쪽으로 돌아간다)
+    property boolean CardMode = false        -- 상황 카드 한 장을 보이는 중 (닫거나 책갈피를 누르면 안내 쪽으로 돌아간다)
+    property table Card = {}                 -- 상황 카드 { head, body }
+    property integer MoreTab = 0             -- 상황 카드 「자세히 보기」가 펼 책갈피 (0 = 버튼 없음)
+    property integer MorePage = 1
+    property boolean Tour = false            -- 첫 진입 둘러보기 (TourLast 책갈피 끝에서 닫는다)
+    property integer TourLast = 4
+    property table Seen = {}                 -- 이번 접속에서 편 책갈피 (서버 저장 전에도 점을 바로 끈다)
+    -- 배치 (ui.cjs 게임 안내 블록과 짝): 화면 칸이 있을 때 / 글만일 때 제목·설명 자리, 쪽 점 가운데
+    property number RightX = 367
+    property number RightW = 1142
+    property number DotX = 158
+    property number DotY = 92
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         -- 창 등록·버튼 연결, 첫 진입 확인 타이머
-        self.Pages = self:BuildPages(_ApplicationService:IsMobilePlatform())
+        self.Tabs = self:BuildTabs(_ApplicationService:IsMobilePlatform())
+        self.Seen = {}
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
+        _UIKit:Connect(self.Win .. "/BtnMore", function() self:ShowTab(self.MoreTab, self.MorePage) end)
+        for i = 1, #self.Tabs do
+            local index = i
+            _UIKit:SetText(self.Win .. "/Tabs/T" .. tostring(i) .. "/Label", self.Tabs[i].name)
+            _UIKit:Connect(self.Win .. "/Tabs/T" .. tostring(i), function()
+                self.Tour = self.Tour and index <= self.TourLast
+                self:ShowTab(index, 1)
+            end)
+        end
         self.TimerId = _TimerService:SetTimerRepeat(function()
             self:CheckFirstEntry(0.5)
             self:CheckInputChoice(0.5)
         end, 0.5)
-        log("[VRF] GuideWindow ready pages=" .. tostring(#self.Pages) .. " mobile=" .. tostring(_ApplicationService:IsMobilePlatform()))
+        local pages = 0
+        for _, t in ipairs(self.Tabs) do pages = pages + #t.pages end
+        log("[VRF] GuideWindow ready tabs=" .. tostring(#self.Tabs) .. " pages=" .. tostring(pages) .. " mobile=" .. tostring(_ApplicationService:IsMobilePlatform()))
     end
 
     @ExecSpace("ClientOnly")
@@ -42,49 +69,160 @@ script GuideWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Show(integer page)
-        -- 그 쪽을 펴서 연다
-        if self.CardMode then
-            self.CardMode = false
-            self.Pages = self:BuildPages(_ApplicationService:IsMobilePlatform())
-        end
-        self.Page = math.max(1, math.min(#self.Pages, page))
+        -- 메뉴 「게임 안내」: 첫 책갈피의 그 쪽부터 (둘러보기 아님)
+        self.Tour = false
+        self:ShowTab(1, page)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowTab(integer tab, integer page)
+        -- 그 책갈피의 그 쪽을 펴서 연다 (상황 카드였다면 안내로 돌아온다)
+        if tab < 1 or tab > #self.Tabs then return end
+        self.CardMode = false
+        self.Tab = tab
+        self.Page = math.max(1, math.min(#self.Tabs[tab].pages, page))
         _UIKit:Open(self.Win)
         self:Render()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowTabKey(string key, integer page)
+        -- 책갈피 이름(key)으로 펴기 (GuideCoach 등 바깥에서)
+        local tab = self:TabIndex(key)
+        if tab > 0 then self:ShowTab(tab, page) end
     end
 
     @ExecSpace("ClientOnly")
     method void ShowCard(string head, string body)
-        -- 상황 안내 한 장 (GuideCoach): 같은 창에 쪽 번호 없이, 「확인」으로 닫는다
+        -- 상황 안내 한 장 (GuideCoach · AbyssSystem): 같은 창에 쪽 점 없이, 「확인」으로 닫는다
+        self:ShowCardLink(head, body, "", 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowCardLink(string head, string body, string tabKey, integer page)
+        -- 상황 카드 + 「자세히 보기」(그 책갈피 쪽으로). tabKey ""면 버튼 없음
         self.CardMode = true
-        self.Pages = { { head = head, body = body } }
-        self.Page = 1
+        self.Tour = false
+        self.Card = { head = head, body = body }
+        self.MoreTab = tabKey ~= "" and self:TabIndex(tabKey) or 0
+        self.MorePage = page
         _UIKit:Open(self.Win)
         self:Render()
     end
 
+    method integer TabIndex(string key)
+        for i, t in ipairs(self.Tabs) do
+            if t.key == key then return i end
+        end
+        return 0
+    end
+
     @ExecSpace("ClientOnly")
     method void Turn(integer step)
-        -- 이전/다음. 마지막 쪽의 「시작하기」는 닫기
-        local next = self.Page + step
-        if next > #self.Pages then
-            _UIKit:Close(self.Win)
+        -- 이전/다음: 책갈피 끝에서 다음 책갈피로 이어진다. 둘러보기는 TourLast 끝, 아니면 마지막 책갈피 끝에서 닫는다
+        if self.CardMode then
+            if step > 0 then _UIKit:Close(self.Win) end
             return
         end
-        if next < 1 then return end
-        self.Page = next
+        local tab, page = self.Tab, self.Page + step
+        if page > #self.Tabs[tab].pages then
+            if self:IsLastStop() then
+                _UIKit:Close(self.Win)
+                return
+            end
+            tab, page = tab + 1, 1
+        elseif page < 1 then
+            if tab <= 1 then return end
+            tab = tab - 1
+            page = #self.Tabs[tab].pages
+        end
+        self.Tab, self.Page = tab, page
         self:Render()
+    end
+
+    method boolean IsLastStop()
+        -- 지금 책갈피가 넘김의 끝인가 (둘러보기 = TourLast, 평소 = 마지막 책갈피)
+        if self.Tour then return self.Tab >= self.TourLast end
+        return self.Tab >= #self.Tabs
     end
 
     @ExecSpace("ClientOnly")
     method void Render()
-        -- 지금 쪽의 제목·본문·쪽 번호, 첫 쪽은 「이전」을 끄고 마지막 쪽은 「다음」을 「시작하기」로
-        local p = self.Pages[self.Page]
-        if p == nil then return end
-        _UIKit:SetText(self.Win .. "/Paper/Head", p.head)
-        _UIKit:SetText(self.Win .. "/Paper/Body", p.body)
-        _UIKit:SetText(self.Win .. "/Page", self.CardMode and "" or (tostring(self.Page) .. " / " .. tostring(#self.Pages)))
-        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
-        _UIKit:SetText(self.Win .. "/BtnNext", self.CardMode and "확인" or (self.Page >= #self.Pages and "시작하기" or "다음"))
+        -- 책갈피(고른 것 밝게 · 안 본 것 붉은 점) → 화면 칸 → 제목·설명 → 쪽 점 · 버튼
+        local w = self.Win
+        local tabs = self.Tabs
+        local showing = self.CardMode and 0 or self.Tab
+        if not self.CardMode then self:MarkSeen(self.Tab) end
+        for i, t in ipairs(tabs) do
+            local n = w .. "/Tabs/T" .. tostring(i)
+            local chosen = i == showing
+            _UIKit:SetText(n .. "/Label", _UIKit:Colored(chosen and "#FFE9A8" or "#A99F8E", t.name))
+            _UIKit:SetColor(n, chosen and Color(1, 0.92, 0.7, 1) or Color(0.6, 0.6, 0.6, 0.85))
+            _UIKit:SetEnabled(n .. "/Badge", not self:IsSeen(t.key))
+        end
+        local head, body, kind, shot = "", "", "", ""
+        if self.CardMode then
+            head, body = self.Card.head, self.Card.body
+        else
+            local p = tabs[self.Tab].pages[self.Page]
+            head, body, kind, shot = p.head, p.body, p.kind or "", p.shot or ""
+        end
+        -- 화면 칸: 그림이 있으면 그림, 만들 예정이면 「준비 중」, 글만 쓰는 쪽·상황 카드는 접는다
+        local media = not self.CardMode and kind ~= ""
+        _UIKit:SetEnabled(w .. "/Media", media)
+        if media then
+            _UIKit:SetIcon(w .. "/Media/Shot", shot)
+            _UIKit:SetEnabled(w .. "/Media/Empty", shot == "")
+            _UIKit:SetText(w .. "/Media/Empty", kind == "clip" and "움짤 준비 중" or "화면 준비 중")
+        end
+        local headY = media and 572 or 74
+        _UIKit:SetPos(w .. "/Head", Vector2(self.RightX, -headY))
+        _UIKit:SetPos(w .. "/Body", Vector2(self.RightX, -(headY + 50)))
+        _UIKit:SetSize(w .. "/Body", Vector2(self.RightW, media and 150 or 640))
+        _UIKit:SetText(w .. "/Head", head)
+        _UIKit:SetText(w .. "/Body", body)
+        -- 쪽 점: 이 책갈피의 쪽 수만큼 가운데 정렬 (지금 금색 · 나머지 흐리게), 상황 카드는 없음
+        local count = self.CardMode and 0 or #tabs[self.Tab].pages
+        for i = 1, 6 do
+            local dot = w .. "/D" .. tostring(i)
+            _UIKit:SetEnabled(dot, i <= count and count > 1)
+            if i <= count then
+                _UIKit:SetPos(dot, Vector2(self.DotX + (i - (count + 1) / 2) * 30, self.DotY))
+                _UIKit:SetColor(dot, i == self.Page and Color(1, 0.8, 0.42, 1) or Color(0.5, 0.47, 0.44, 1))
+            end
+        end
+        local first = self.CardMode or (self.Tab == 1 and self.Page == 1)
+        _UIKit:SetEnabled(w .. "/BtnPrev", not first)
+        _UIKit:SetEnabled(w .. "/BtnMore", self.CardMode and self.MoreTab > 0)
+        local label = "다음"
+        if self.CardMode then
+            label = "확인"
+        elseif self.Page >= count and self:IsLastStop() then
+            label = self.Tour and "시작하기" or "닫기"
+        end
+        _UIKit:SetText(w .. "/BtnNext", label)
+        log("[VRF] guide render tab=" .. tostring(self.Tab) .. " page=" .. tostring(self.Page) .. " card=" .. tostring(self.CardMode) .. " media=" .. tostring(media) .. " next=" .. label)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean IsSeen(string key)
+        -- 편 적 있는 책갈피 (이번 접속 또는 계정 기록)
+        if self.Seen[key] then return true end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save == nil then return false end
+        return string.find("," .. save.GuideCards .. ",", ",gtab_" .. key .. ",", 1, true) ~= nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MarkSeen(integer tab)
+        -- 책갈피를 폈다 → 점을 끄고 계정에 남긴다 (한 번만)
+        local t = self.Tabs[tab]
+        if t == nil or self:IsSeen(t.key) then return end
+        self.Seen[t.key] = true
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestGuideCard("gtab_" .. t.key) end
     end
 
     @ExecSpace("ClientOnly")
@@ -110,8 +248,9 @@ script GuideWindow extends Logic
         if self.ReadyFor < self.ReadyDelay then return end
         self.AutoDone = true
         save:RequestGuideSeen()
-        self:Show(1)
-        log("[VRF] guide auto-opened on first entry")
+        self.Tour = true
+        self:ShowTab(1, 1)
+        log("[VRF] guide auto-opened on first entry (tour to tab " .. tostring(self.TourLast) .. ")")
     end
 
     @ExecSpace("ClientOnly")
@@ -165,64 +304,149 @@ script GuideWindow extends Logic
         _ShadowHUD:RefreshInputLabel()
     end
 
-    method table BuildPages(boolean mobile)
-        -- 쪽 내용 (금색 = 핵심 말, 붉은색 = 위험). 조작 쪽만 PC·모바일이 다르다
+    method table BuildTabs(boolean mobile)
+        -- 책갈피 7 · 쪽 26 (docs/design/35 §3). kind: "clip" 움짤 · "shot" 캡처 · "" 글만. shot = 그림 RUID (녹화 후 채운다)
         local g = function(s) return "<color=#E8C66B>" .. s .. "</color>" end
         local r = function(s) return "<color=#E8705C>" .. s .. "</color>" end
         local b = function(s) return "<color=#7FB2FF>" .. s .. "</color>" end
-        local pages = {}
-        table.insert(pages, { head = "마지막 네크로맨서",
-            body = "심장의 조각 「혼각」에 묶여 망자가 일어선 땅. 당신은 그 " .. g("사슬을 끊는 마지막 네크로맨서") .. "입니다.\n\n"
-                .. "· 몬스터를 쓰러뜨리면 사슬에서 풀려난 " .. g("혼") .. "이 그 자리에 남습니다.\n"
-                .. "· 혼으로 " .. g("해골 전사") .. "를 일으키거나, 혼을 " .. g("추출") .. "해 " .. g("그림자") .. "로 모읍니다. 모은 그림자는 스킬 「그림자 소환」으로 곁에 세웁니다.\n"
-                .. "· 강한 적의 혼일수록 강한 그림자가 됩니다. 보스의 혼도 당신 곁에 섭니다.\n\n"
-                .. "스킬은 세 계열 — " .. g("소환") .. "(해골·그림자 군단) · " .. g("영혼") .. "(뼈 마법) · " .. g("저주") .. "(적 약화)\n"
-                .. "어느 쪽으로 키울지는 자유입니다. 레벨이 오르면 능력치·스킬 포인트가 생깁니다 (메뉴의 붉은 점)." })
-        if mobile then
-            table.insert(pages, { head = "조작 (모바일)",
-                body = "· " .. g("왼쪽 스틱") .. " — 이동\n"
-                    .. "· " .. g("큰 공격 버튼") .. " — 누르고 있으면 가까운 적을 계속 공격 (누른 채 끌어 조준)\n"
-                    .. "· " .. g("둘레 스킬 4칸") .. " — 끌어서 방향을 정하고 손을 떼면 발동\n"
-                    .. "· " .. g("벨트 4칸") .. " — 물약 (칸을 길게 누르면 넣을 물건을 바꿉니다)\n"
-                    .. "· " .. g("그림자 명령") .. " — 소환 · 회수 · 집결\n"
-                    .. "· 혼 근처의 " .. g("추출 버튼") .. " — 혼을 그림자로 거둡니다\n"
-                    .. "· " .. g("메뉴") .. " — 소지품 · 능력치 · 스킬 · 그림자 · 퀘스트 · 룬워드 · 설정 · 채널\n\n"
-                    .. "스킬 칸에 넣을 스킬은 스킬 창의 「스킬 편집」에서 바꿉니다." })
-        else
-            table.insert(pages, { head = "조작 (PC)",
-                body = "· " .. g("바닥 클릭") .. " — 그 자리로 이동 (방향키로도 이동)\n"
-                    .. "· " .. g("몬스터 클릭") .. " — 다가가서 공격, 누르고 있으면 계속 공격\n"
-                    .. "· " .. g("A S D F · 우클릭") .. " — 스킬 (칸을 누르면 넣을 스킬을 바꿉니다)\n"
-                    .. "· " .. g("1 ~ 4") .. " — 벨트 물약 (칸 우클릭 = 넣을 물건 바꾸기)\n"
-                    .. "· " .. g("E") .. " — 가까운 혼 추출   · " .. g("Z") .. " 그림자 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결\n"
-                    .. "· " .. g("Space") .. " — 질주 (마을에서는 NPC와 대화)\n"
-                    .. "· " .. g("I") .. " 소지품 · " .. g("U") .. " 능력치 · " .. g("K") .. " 스킬 · " .. g("H") .. " 그림자 · " .. g("Q") .. " 퀘스트 · " .. g("P") .. " 플레이어 · " .. g("L") .. " 랭킹 · " .. g("M") .. " 메뉴\n\n"
-                    .. "창은 Esc로 닫습니다." })
-        end
-        table.insert(pages, { head = "장비와 룬 — 파밍",
-            body = "몬스터는 장비를 떨어뜨립니다. 이름 색이 등급입니다.\n"
-                .. "흰색 일반 · <color=#6E8CFF>파란색 마법</color> · <color=#FFE15A>노란색 레어</color> · <color=#3CDC3C>초록색 세트</color> · <color=#C8A050>금색 유니크</color>\n\n"
-                .. "· " .. g("룬") .. "을 정해진 순서로 소켓에 넣으면 " .. g("룬워드") .. "가 완성됩니다 — 조합법은 메뉴 「룬워드」\n"
-                .. "· 같은 세트를 여러 부위 모으면 세트 효과가 붙습니다\n"
-                .. "· 야영지 " .. g("창고") .. "는 계정의 모든 캐릭터가 함께 씁니다\n"
-                .. "· 처음 얻은 유니크·세트·룬워드는 " .. g("아이템 도감") .. "에 남고 업적 보상이 있습니다\n"
-                .. "· 아이템 위에 손을 올리면(모바일은 누르면) 능력치를 비교해 줍니다" })
-        table.insert(pages, { head = "모험의 흐름",
-            body = "· 야영지 NPC의 " .. g("의뢰") .. "를 따라 액트 1 → 2 → 3을 나아갑니다 (화면 오른쪽 추적 칸)\n"
-                .. "· 각 지역의 " .. g("웨이포인트") .. "를 켜 두면 마을에서 바로 이동할 수 있습니다\n"
-                .. "· 액트 3 보스를 쓰러뜨리면 다음 난이도 " .. g("악몽") .. ", 그다음 " .. g("지옥") .. "이 열립니다 — 몬스터·보상 모두 강해집니다\n"
-                .. "· 악몽부터는 쓰러지면 경험치를 조금 잃습니다\n"
-                .. "· 끝없는 " .. g("심도") .. "에서 최고 층 기록을 겨룹니다 (랭킹)\n\n"
-                .. "· 최대 " .. g("4명") .. "까지 파티를 맺을 수 있습니다 (메뉴 「플레이어」)\n"
-                .. "· 한 채널에는 4명까지 — 친구와 만나려면 메뉴 「채널 변경」으로 같은 채널에 들어갑니다" })
-        table.insert(pages, { head = "이것만은 기억하세요",
-            body = "· " .. r("바닥의 붉은 원") .. " — 곧 터지는 범위 공격입니다. 원 밖으로 걸어 나가면 피할 수 있습니다\n"
-                .. "· " .. b("몸이 푸른 몬스터") .. " — 변종 우두머리. 특수 기술을 쓰고 좋은 것을 떨어뜨립니다\n"
-                .. "· " .. g("발밑에 색 원") .. "이 있는 몬스터 — 주변 적을 강하게 하는 오오라 (빨강 공격 · 노랑 속도 · 하늘 방어 · 초록 회복 · 보라는 내 저항을 깎는 부식). 먼저 잡으세요\n"
-                .. "· 이름 있는 " .. g("고유 몬스터") .. "와 보스는 혼도 특별합니다 — 꼭 추출해 보세요\n"
-                .. "· 마나가 모자라면 스킬이 나가지 않습니다. 벨트에 물약을 채워 두세요\n\n"
-                .. "이 안내는 " .. g("메뉴 → 게임 안내") .. "에서 언제든 다시 볼 수 있습니다." })
-        return pages
+        local key = function(pc, mo) return g(mobile and mo or pc) end
+        local full = tostring(math.floor(_GameData.shadowFullLevel))
+        local tabs = {}
+
+        table.insert(tabs, { key = "start", name = "시작하기", pages = {
+            { kind = "clip", head = "잡으면 내 편",
+              body = "몬스터를 쓰러뜨리면 그 자리에 " .. g("혼") .. "이 남습니다.\n"
+                .. "· 혼으로 " .. g("해골") .. "을 일으키거나, 혼을 " .. g("추출") .. "해 " .. g("그림자") .. "로 거둡니다.\n"
+                .. "· 강한 적의 혼일수록 강한 그림자 — 보스도 내 편이 됩니다.\n"
+                .. "· 스킬은 소환 · 영혼 · 저주 · 이동, 어느 쪽으로 키울지는 자유입니다." },
+            mobile and { kind = "clip", head = "조작 (모바일)",
+              body = "· " .. g("왼쪽 스틱") .. " 이동 · " .. g("큰 공격 버튼") .. " 누르고 있으면 계속 공격 (누른 채 끌어 조준)\n"
+                .. "· " .. g("둘레 스킬 4칸") .. " — 끌어서 방향을 정하고 손을 떼면 발동\n"
+                .. "· " .. g("벨트 4칸") .. " 물약 (길게 눌러 넣을 물건 바꾸기) · 혼 근처 " .. g("추출 버튼") .. "\n"
+                .. "· " .. g("그림자 명령") .. " 소환 · 회수 · 집결 · " .. g("메뉴") .. " 소지품 · 능력치 · 스킬 · 그림자 · 퀘스트 · 설정" }
+            or { kind = "clip", head = "조작 (PC)",
+              body = "· " .. g("바닥 클릭") .. " 이동 (방향키도 됩니다) · " .. g("몬스터 클릭") .. " 공격, 누르고 있으면 계속\n"
+                .. "· " .. g("A S D F · 우클릭") .. " 스킬 · " .. g("1 ~ 4") .. " 벨트 물약 · " .. g("Space") .. " 질주 (마을에서는 대화)\n"
+                .. "· " .. g("E") .. " 혼 추출 · " .. g("Z") .. " 그림자 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결\n"
+                .. "· " .. g("I") .. " 소지품 · " .. g("U") .. " 능력치 · " .. g("K") .. " 스킬 · " .. g("H") .. " 그림자 · " .. g("Q") .. " 퀘스트 · " .. g("M") .. " 메뉴 · Esc 창 닫기" },
+            { kind = "shot", head = "화면 보는 법",
+              body = "· 아래 양쪽 구슬 — 붉은 " .. g("생명") .. " · 푸른 " .. g("마나") .. "\n"
+                .. "· 아래 가운데 — 스킬 칸과 벨트(물약)\n"
+                .. "· 오른쪽 위 미니맵, 그 아래 " .. g("의뢰 추적") .. " — 지금 할 일을 알려 줍니다\n"
+                .. "· 메뉴·버튼의 " .. r("붉은 점") .. " — 새로 쓸 포인트나 볼 것이 있다는 뜻입니다. 따라 누르세요" },
+        } })
+
+        table.insert(tabs, { key = "legion", name = "군단", pages = {
+            { kind = "clip", head = "해골 일으키기",
+              body = "혼을 써서 " .. g("해골 전사") .. "와 " .. g("해골 마법사") .. "를 일으킵니다 (소환 계열).\n"
+                .. "· 함께 세울 수 있는 해골 수는 스킬 랭크만큼 — 랭크를 올리면 군단이 늘어납니다.\n"
+                .. "· 그냥 쓰면 가까운 " .. g("일반 혼") .. "부터 씁니다. 정예·보스의 귀한 혼은 직접 겨냥했을 때만 씁니다." },
+            { kind = "clip", head = "그림자 추출",
+              body = "Lv5에 「그림자 소환」을 배우면 쓰러뜨린 적을 " .. g("그림자") .. "로 거둘 수 있습니다.\n"
+                .. "· 혼 곁에서 " .. key("E", "추출 버튼") .. " — 성공하면 그 몬스터가 내 그림자가 됩니다.\n"
+                .. "· 강한 몬스터일수록 강한 그림자. 정예 · 고유 몬스터 · 보스도 데려올 수 있습니다." },
+            { kind = "shot", head = "그림자 창",
+              body = key("그림자(H)", "메뉴 → 그림자") .. " 창에서 그림자를 고르면\n"
+                .. "· " .. g("소환 지정") .. " — 불러낼 그림자와 순서를 정합니다. 지정한 그림자만 나옵니다\n"
+                .. "· " .. g("강화") .. " — 정수를 써서 공격·생명을 올립니다 (내 레벨이 오를수록 더 높이)\n"
+                .. "· " .. g("분해") .. " — 필요 없는 그림자를 정수로 바꿉니다" },
+            { kind = "clip", head = "소환 · 회수 · 집결",
+              body = (mobile and (g("그림자 명령") .. " 버튼") or (g("Z") .. " 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결")) .. "\n"
+                .. "· " .. g("집결") .. "은 흩어진 군단을 내 곁으로 모읍니다 — 보스 앞에서 한 번에 몰아치세요\n"
+                .. "· Lv" .. full .. "까지는 한 번에 1기, 그 뒤로는 레벨이 오를수록 여러 기를 함께 거느립니다" },
+            { kind = "shot", head = "해골 변이",
+              body = "해골 스킬의 강화 노드를 찍으면 해골의 모습과 싸움법이 바뀝니다.\n"
+                .. "· " .. g("해골 전사") .. " — 방패 · 대검 · 쌍칼\n"
+                .. "· " .. g("해골 마법사") .. " — 쌍발 · 관통 · 폭발\n"
+                .. "· 변이를 섞으면 랭크마다 순서대로 다른 해골이 일어납니다" },
+        } })
+
+        table.insert(tabs, { key = "growth", name = "성장", pages = {
+            { kind = "shot", head = "레벨과 능력치",
+              body = "레벨이 오르면 " .. g("능력치 포인트") .. "와 " .. g("스킬 포인트") .. "가 생깁니다.\n"
+                .. "· " .. key("능력치(U)", "메뉴 → 능력치") .. " — 통솔(소환수) · 정신(마나) · 활력(생명) · 민첩\n"
+                .. "· 1포인트 더 찍었을 때를 미리 보여 주고, 추천 분배도 있습니다" },
+            { kind = "shot", head = "스킬 네 계열",
+              body = "· " .. g("소환") .. " — 해골과 그림자 군단을 키웁니다\n"
+                .. "· " .. g("영혼") .. " — 뼈 마법으로 직접 싸웁니다\n"
+                .. "· " .. g("저주") .. " — 적을 약하게 만들어 군단을 돕습니다\n"
+                .. "· " .. g("이동") .. " — 망령 걸음 같은 움직임 스킬" },
+            { kind = "clip", head = "스킬 강화",
+              body = "스킬 창에서 스킬을 고르면 아래에 " .. g("강화 노드") .. "가 있습니다.\n"
+                .. "· 스킬 포인트로 노드를 찍으면 그 스킬에 효과가 붙습니다 (그림마다 효과가 다릅니다)\n"
+                .. "· 한 스킬을 깊게 파도, 여러 스킬을 고루 찍어도 됩니다" },
+            { kind = "", head = "스킬 편집",
+              body = "스킬 창의 " .. g("「스킬 편집」") .. "에서 " .. key("A S D F · 우클릭 칸", "둘레 스킬 4칸") .. "에 넣을 스킬을 바꿉니다.\n\n"
+                .. (mobile and "· 자주 쓰는 스킬을 엄지가 닿는 칸에 두세요" or "· 스킬 칸을 눌러도 바로 바꿀 수 있습니다") },
+        } })
+
+        table.insert(tabs, { key = "gear", name = "장비·파밍", pages = {
+            { kind = "clip", head = "등급과 빛 기둥",
+              body = "몬스터는 장비를 떨어뜨립니다. 이름 색이 등급입니다.\n"
+                .. "흰색 일반 · <color=#6E8CFF>파란색 마법</color> · <color=#FFE15A>노란색 레어</color> · <color=#3CDC3C>초록색 세트</color> · <color=#C8A050>금색 유니크</color>\n"
+                .. "· 좋은 물건일수록 떨어질 때 " .. g("빛 기둥") .. "이 섭니다. 바닥의 물건은 직접 주워야 합니다\n"
+                .. "· " .. g("펫") .. "을 데리고 있으면 정해 둔 등급까지 대신 주워 옵니다" },
+            { kind = "shot", head = "비교하기",
+              body = "아이템 위에 " .. (mobile and "손가락을 대면" or "마우스를 올리면") .. " 지금 낀 장비와 능력치를 비교해 줍니다.\n"
+                .. "· 바꿔 끼면 무엇이 오르고 내리는지 바로 보입니다" },
+            { kind = "shot", head = "룬과 룬워드",
+              body = "· " .. g("룬") .. "을 정해진 순서로 소켓에 넣으면 " .. g("룬워드") .. "가 완성됩니다\n"
+                .. "· 조합법은 메뉴 「룬워드」에서 봅니다\n"
+                .. "· 소켓 수가 맞는 장비에만 들어갑니다" },
+            { kind = "shot", head = "세트 · 유니크 · 도감",
+              body = "· 같은 " .. g("세트") .. "를 여러 부위 모으면 세트 효과가 붙습니다\n"
+                .. "· " .. g("유니크") .. "는 정해진 능력치를 가진 특별한 장비입니다\n"
+                .. "· 처음 얻은 유니크 · 세트 · 룬워드는 " .. g("아이템 도감") .. "에 남고 업적 보상이 있습니다" },
+            { kind = "", head = "창고와 상인",
+              body = "· 마을 " .. g("창고") .. "는 계정의 모든 캐릭터가 함께 씁니다 — 다른 캐릭터에게 장비를 넘길 때 쓰세요\n"
+                .. "· 필요 없는 물건은 " .. g("상인") .. "에게 팔아 골드로 바꿉니다" },
+        } })
+
+        table.insert(tabs, { key = "adventure", name = "모험", pages = {
+            { kind = "shot", head = "의뢰 따라가기",
+              body = "마을 NPC의 " .. g("의뢰") .. "를 따라 나아갑니다. 화면 오른쪽 추적 칸이 다음 할 일을 알려 줍니다.\n"
+                .. "액트 1 " .. g("무덤 왕국") .. " → 2 " .. g("모래 폐허") .. " → 3 " .. g("폭풍 해안") .. " → 4 " .. g("심연의 땅") .. "\n"
+                .. "· NPC 머리 위 표시 — 새 의뢰 / 완료 보고" },
+            { kind = "clip", head = "웨이포인트",
+              body = "각 지역의 " .. g("웨이포인트") .. "를 밟아 켜 두면 마을에서 바로 그곳으로 이동할 수 있습니다.\n"
+                .. "· 새 사냥터에 들어가면 먼저 웨이포인트부터 찾으세요" },
+            { kind = "clip", head = "보스",
+              body = "액트마다 중간 보스와 마지막 보스가 기다립니다.\n"
+                .. "· 보스의 혼도 거둘 수 있습니다 — 쓰러뜨린 뒤 꼭 추출해 보세요\n"
+                .. "· 보스 방에 들어가기 전에 물약을 채우고 군단을 " .. g("집결") .. "해 두세요" },
+            { kind = "", head = "난이도 — 악몽 · 지옥",
+              body = "액트 4 마지막 보스 " .. g("「재의 왕」") .. "을 쓰러뜨리면 다음 난이도가 열립니다.\n"
+                .. "보통 → " .. g("악몽") .. " → " .. g("지옥") .. "\n\n"
+                .. "· 몬스터도 보상도 강해집니다\n"
+                .. "· 악몽부터는 쓰러지면 경험치를 조금 잃습니다" },
+        } })
+
+        table.insert(tabs, { key = "together", name = "함께하기", pages = {
+            { kind = "shot", head = "함께 출발하기",
+              body = "로비의 게임 고르기에서 " .. g("혼자 하기 · 공개 방 · 비공개 방") .. " 중 하나로 출발합니다.\n"
+                .. "· 방은 최대 " .. g("4명") .. " — 방장이 「출발」을 누르면 다 같이 들어갑니다\n"
+                .. "· 친구와 하려면 비공개 방을 만들고 비밀번호를 알려 주세요" },
+            { kind = "", head = "파티 · 거래 · 결투",
+              body = key("플레이어(P)", "메뉴 → 플레이어") .. " 창에서 같은 서버 플레이어에게 " .. g("파티 · 거래 · 결투") .. "를 요청합니다.\n"
+                .. "· 상대가 수락해야 성립합니다\n"
+                .. "· 거래는 서로 물건과 골드를 올리고 둘 다 확인하면 끝납니다" },
+        } })
+
+        table.insert(tabs, { key = "danger", name = "위험 신호", pages = {
+            { kind = "clip", head = "바닥의 붉은 원",
+              body = r("붉은 원") .. "은 곧 터지는 범위 공격입니다.\n"
+                .. "· 원 밖으로 걸어 나가면 피할 수 있습니다\n"
+                .. "· 군단이 맞아 주는 동안 내 자리부터 챙기세요" },
+            { kind = "shot", head = "푸른 몸 · 발밑의 색 원",
+              body = "· " .. b("몸이 푸른 몬스터") .. " — 변종 우두머리. 특수 기술을 쓰고 좋은 것을 떨어뜨립니다\n"
+                .. "· " .. g("발밑에 색 원") .. " — 주변 적을 강하게 하는 오오라. 먼저 잡으세요\n"
+                .. "  빨강 공격 · 노랑 속도 · 하늘 방어 · 초록 회복 · 보라는 내 저항을 깎는 부식" },
+            { kind = "", head = "마나",
+              body = "마나가 모자라면 스킬이 나가지 않습니다.\n\n"
+                .. "· 벨트에 " .. g("마나 물약") .. "을 채워 두세요\n"
+                .. "· 능력치 " .. g("정신") .. "을 올리면 마나가 늘어납니다" },
+        } })
+        return tabs
     end
 
 end
