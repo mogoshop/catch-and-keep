@@ -149,6 +149,8 @@ async function borderRes(pack) {
 
 // 코덱스 팩의 resource-mapping.csv(따옴표 CSV)를 그대로 읽어 RUID가 빈 줄을 그룹 저장소에 올리고 RUID를 그 표에 적는다.
 // 올린 직후 몬스터 프레임·NPC·장식·바닥 장판은 발밑 가운데 피벗(0.5, 0)으로 둔다 (중간에 끊겨도 다시 실행하면 이어서).
+// ⚠ 피벗은 처음 불러 쓰기 전에 들어가야 한다 — 한 번 불린 그림은 속성을 고치거나 같은 RUID로 다시 올려도
+//   메이커(재시작해도)가 옛 피벗을 쓴다. 늦게 고칠 땐 새 RUID로 다시 올리고 표·맵을 바꾼다 (10-28 랜드마크·빛기둥).
 //   node tools/msw_mcp_call.cjs upload-res <팩 폴더> [--skip=floor,wall] [--skip-key=stormgulls] [--dry]
 async function uploadRes(pack, argv) {
   const root = path.join(__dirname, "..");
