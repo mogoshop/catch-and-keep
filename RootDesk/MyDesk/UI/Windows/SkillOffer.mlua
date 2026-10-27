@@ -1,0 +1,188 @@
+-- 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차 — 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분).
+--   스킬 포인트가 있으면 HUD에 「혼의 제물 — 고르기」 띠(OfferBand) → 누르면 카드 3장: 새 스킬 1 · 쓰던 스킬 랭크 업 1 · 강화 1
+--   (지금 찍을 수 있는 것 중에서 — 없는 종류는 빠진다) + 4번째는 다음 해금 미리보기. 「다시 섞기」는 레벨당 1번,
+--   「보드에서 직접 고르기」는 스킬 창(K). 포인트·해금 규칙은 그대로 — 고르는 창구만 하나 더 (SkillBook.RequestLearn).
+@Logic
+script SkillOffer extends Logic
+
+    property string Win = "OfferWin"
+    property any Offer = nil                -- 카드 번호 → 스킬·강화 id
+    property string OfferKey = ""           -- 카드를 고른 때의 상태 (포인트·배운 것이 바뀌면 다시 고른다)
+    property integer RerollLevel = 0        -- 다시 섞기를 쓴 캐릭터 레벨 (레벨당 1번)
+    property integer Shuffle = 0            -- 다시 섞을 때마다 1씩 — 같은 종류에서 다른 후보를 고른다
+    property string RenderKey = ""
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect("OfferBand", function() self:Open() end)
+        for i = 1, 3 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Card" .. tostring(i), function() self:Choose(index) end)
+        end
+        _UIKit:Connect(self.Win .. "/BtnReroll", function() self:Reroll() end)
+        _UIKit:Connect(self.Win .. "/BtnBoard", function()
+            _UIKit:Close(self.Win)
+            _UIKit:Open("SkillWin")
+        end)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open()
+        self.OfferKey = ""
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        log("[VRF] offer open")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if book == nil or st == nil then return end
+        -- HUD 띠: 포인트가 있고 창이 하나도 안 열려 있을 때
+        local band = st.SkillPoints > 0 and not _UIKit:AnyWindowOpen()
+        _UIKit:SetEnabled("OfferBand", band)
+        if band then _UIKit:SetText("OfferBand", "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")")) end
+        if not _UIKit:IsOpen(self.Win) then return end
+        if st.SkillPoints <= 0 then
+            _UIKit:Close(self.Win)
+            return
+        end
+        local state = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. tostring(self.Shuffle)
+        if state ~= self.OfferKey then
+            self.OfferKey = state
+            self.Offer = self:Pick(book, st)
+        end
+        if state == self.RenderKey then return end
+        self.RenderKey = state
+        self:Render(book, st)
+    end
+
+    @ExecSpace("ClientOnly")
+    method table Slotted(SkillBook book)
+        -- 스킬 칸(A S D F 우클릭)에 넣은 메인 스킬
+        local set = {}
+        for i = 1, 5 do
+            local id = book:GetSlotSkill(i)
+            if id ~= nil and id ~= "" then set[id] = true end
+        end
+        return set
+    end
+
+    @ExecSpace("ClientOnly")
+    method any Pick(SkillBook book, PlayerStats st)
+        -- 카드 3장: ① 새 스킬(안 배운 메인) ② 쓰던 스킬 랭크 업(칸에 넣은 것 우선) ③ 강화(칸에 넣은 스킬의 강화 우선). 다시 섞으면 같은 종류의 다른 후보
+        local news, ranks, nodes = {}, {}, {}
+        local slotted = self:Slotted(book)
+        for _, id in ipairs(_SkillData:Mains()) do
+            if book:CanLearn(id, st.Level, st.SkillPoints) == "" then
+                if book:GetLevel(id) == 0 then table.insert(news, id)
+                elseif slotted[id] then table.insert(ranks, 1, id)
+                else table.insert(ranks, id) end
+            end
+            for _, nid in ipairs(_SkillData:NodesOf(id)) do
+                if book:CanLearn(nid, st.Level, st.SkillPoints) == "" then
+                    if slotted[id] then table.insert(nodes, 1, nid) else table.insert(nodes, nid) end
+                end
+            end
+        end
+        local function at(list)
+            if #list == 0 then return nil end
+            return list[(self.Shuffle % #list) + 1]
+        end
+        local offer = {}
+        for _, id in ipairs({ at(news), at(ranks), at(nodes) }) do
+            if id ~= nil then table.insert(offer, id) end
+        end
+        log("[VRF] offer pick new=" .. #news .. " rank=" .. #ranks .. " node=" .. #nodes .. " → " .. table.concat(offer, ","))
+        return offer
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render(SkillBook book, PlayerStats st)
+        -- 카드 3장 + 다음 해금 미리보기 + 남은 포인트 · 다시 섞기
+        _UIKit:SetText(self.Win .. "/Left", "남은 " .. tostring(st.SkillPoints))
+        local rerollLeft = self.RerollLevel ~= st.Level
+        _UIKit:SetText(self.Win .. "/BtnReroll", rerollLeft and "다시 섞기 (1)" or _UIKit:Colored("#8A8A8A", "다시 섞기 (0)"))
+        for i = 1, 3 do
+            local id = self.Offer ~= nil and self.Offer[i] or nil
+            local c = self.Win .. "/Card" .. tostring(i)
+            _UIKit:SetEnabled(c, id ~= nil)
+            if id ~= nil then
+                local def = _SkillData:Get(id)
+                local lv = book:GetLevel(id)
+                local kind, kindColor
+                if def.kind == "node" then
+                    kind, kindColor = "강화  " .. tostring(lv) .. " → " .. tostring(lv + 1), "#C8A0FF"
+                elseif lv == 0 then
+                    kind, kindColor = "★ 새 스킬", "#F4ED83"
+                else
+                    kind, kindColor = "랭크 " .. tostring(lv) .. " → " .. tostring(lv + 1), "#D8D8E0"
+                end
+                local tree = def.kind == "node" and _SkillData:Get(def.parent).tree or def.tree
+                _UIKit:SetColor(c .. "/Band", _SkillWindow:TreeColor(tree))
+                _UIKit:SetText(c .. "/Kind", _UIKit:Colored(kindColor, kind))
+                _UIKit:SetIcon(c .. "/Icon", def.icon)
+                _UIKit:SetText(c .. "/Name", def.name)
+                _UIKit:SetText(c .. "/Effect", def.desc)
+                local change = ""
+                local now = book:GetRankSummary(id, math.max(1, lv))
+                local nextRank = book:GetRankSummary(id, lv + 1)
+                if lv == 0 then change = nextRank
+                elseif nextRank ~= "" and nextRank ~= now then change = nextRank end
+                if def.kind == "node" then change = "" end
+                _UIKit:SetText(c .. "/Change", change)
+            end
+        end
+        -- 다음 해금 미리보기 (반투명)
+        local preview = nil
+        for _, col in ipairs(_SkillWindow:BuildColumns()) do
+            if col.row > st.Level then preview = col break end
+        end
+        _UIKit:SetEnabled(self.Win .. "/Preview", preview ~= nil)
+        if preview ~= nil then
+            local first = _SkillData:Get(preview.ids[1])
+            _UIKit:SetIcon(self.Win .. "/Preview/Icon", first.icon)
+            local names = {}
+            for _, id in ipairs(preview.ids) do table.insert(names, _SkillData:Get(id).name) end
+            _UIKit:SetText(self.Win .. "/Preview/Body", "Lv" .. tostring(preview.row) .. "\n" .. table.concat(names, "\n") .. "\n\n" .. tostring(preview.row - st.Level) .. "레벨 남음")
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Choose(integer index)
+        -- 카드 고르기 = 그 스킬·강화 +1 (서버가 다시 확인한다)
+        local id = self.Offer ~= nil and self.Offer[index] or nil
+        if id == nil then return end
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        book:RequestLearn(id)
+        _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.6)
+        log("[VRF] offer choose " .. id)
+        self.Shuffle = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Reroll()
+        -- 다시 섞기: 레벨당 1번 (같은 종류의 다른 후보로)
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        if st == nil or self.RerollLevel == st.Level then return end
+        self.RerollLevel = st.Level
+        self.Shuffle = self.Shuffle + 1
+        log("[VRF] offer reroll lv=" .. tostring(st.Level))
+    end
+
+end

@@ -1,38 +1,41 @@
--- 스킬 창 (K) — 10-11 개편 (docs/design/16): 트리 탭(소환·영혼·저주·이동, 10-20) + 메인 스킬 카드 8칸씩 (해금 레벨 순).
---   10-24 사용자: 오른쪽 패널 대신 고른 카드 바로 아래 아코디언(Grid/Acc)에 설명·지금/다음 효과·스킬 강화 3칸 — 아랫줄 카드는 그만큼 밀린다.
---   카드·강화를 고르면 아래 설명에 지금/다음 효과·조건. 고른 것을 한 번 더 누르면 바로 +1 (첫 클릭은 설명 보기라 실수로 찍히지 않는다).
---   메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2 → 남는 포인트는 예전 메인 스킬의 강화로.
--- 칸 지정: 「스킬 편집」 하나 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
+-- 스킬 창 (K) — 10-28 V3 「해금 시간선 + 스킬 공방」 (피드백 F4 · 기획서 38 #24-A, 시안 assets/codex-skill-window-mock-v1/V3-pc.png).
+--   위 = Lv1→50 해금 시간선: 열 = 메인 스킬이 열리는 레벨, 열마다 그 레벨의 메인 스킬(트리색 테두리) · 지금 레벨 표지 · 「다음 해금」 한 줄.
+--     트리를 넘나드는 해금 순서를 지도처럼 보여 준다 (예전 탭 4개 + 카드 격자는 「중구난방」이라는 피드백).
+--   아래 = 고른 메인 스킬의 공방: 큰 초상 · 지금/다음 효과 · 랭크 사다리 20칸 · 배우기/스킬 칸에 넣기 · 오른쪽 강화 노드(필요 랭크 열별 · 허브 갈래 선).
+--   고른 것을 한 번 더 누르면 바로 +1 (첫 클릭은 설명 보기라 실수로 찍히지 않는다). 메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2.
+-- 칸 지정: 「스킬 칸에 넣기」 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
+-- 혼의 제물 3택 카드(V4, 2차)는 SkillOffer가 맡는다.
 @Logic
 script SkillWindow extends Logic
 
     property string Win = "SkillWin"
     property string Selected = ""           -- 고른 메인 스킬 또는 강화 노드
-    property string SelMain = ""            -- 오른쪽 패널에 보이는 메인 스킬
-    property table Cards = {}               -- 카드 번호 → 메인 스킬 id
+    property string SelMain = ""            -- 공방에 보이는 메인 스킬
+    property any Columns = nil              -- 시간선 열: { row = 해금 레벨, ids = { 메인 스킬 id … } }
+    property any SlotIds = nil              -- "c:r" → 메인 스킬 id (지금 쪽의 칸)
     property table NodeIds = {}             -- 강화 칸 번호 → 노드 id
-    property string Tab = "command"         -- 보고 있는 트리 (command · soul · curse · move)
+    property integer Page = 1               -- 모바일 시간선 쪽 (PC는 한 판)
+    property string Tab = "command"         -- (예전 탭 — 상황 안내 호환용, 고른 스킬의 트리)
     property string RenderKey = ""
-    property integer LockedFold = 10        -- 지금 레벨 + 이 값보다 늦게 열리는 카드는 한 장으로 접는다
     property integer TimerId = 0
+    property integer MaxCols = 26           -- 빌더가 만든 열 수 (tools/build/ui.cjs)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
-        for i = 1, 24 do
-            local index = i
-            _UIKit:Connect(self.Win .. "/Grid/M" .. tostring(i), function() self:Pick(self.Cards[index]) end)
+        for c = 1, self.MaxCols do
+            for r = 1, 3 do
+                local key = tostring(c) .. ":" .. tostring(r)
+                _UIKit:Connect(self.Win .. "/TL/C" .. tostring(c) .. "/S" .. tostring(r), function() self:Pick(self.SlotIds ~= nil and self.SlotIds[key] or "") end)
+            end
         end
-        for i, tree in ipairs(self:Trees()) do
-            local t = tree
-            _UIKit:Connect(self.Win .. "/Tab" .. tostring(i), function() self:SetTab(t) end)
-        end
+        _UIKit:Connect(self.Win .. "/TL/Prev", function() self:Flip(-1) end)
+        _UIKit:Connect(self.Win .. "/TL/NextPage", function() self:Flip(1) end)
         for i = 1, 8 do
             local index = i
-            _UIKit:Connect(self.Win .. "/Grid/Acc/N" .. tostring(i), function() self:Pick(self.NodeIds[index]) end)
+            _UIKit:Connect(self.Win .. "/WS/N" .. tostring(i), function() self:Pick(self.NodeIds[index]) end)
         end
-        -- 습득 + 「스킬 편집」(PC: 스킬 지정 창, 모바일: 패드 칸의 +)
         _UIKit:Connect(self.Win .. "/BtnLearn", function() self:Act(0) end)
         _UIKit:Connect(self.Win .. "/BtnEdit", function() self:EditSlots() end)
         _UIKit:Connect(self.Win .. "/BtnReset", function()
@@ -53,6 +56,51 @@ script SkillWindow extends Logic
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
     end
 
+    method Color TreeColor(string tree)
+        -- 트리색 (테두리·선·범례): 소환 청록 · 영혼 보라 · 저주 붉은 · 이동 하늘
+        if tree == "soul" then return Color(0.69, 0.55, 1, 1) end
+        if tree == "curse" then return Color(1, 0.48, 0.42, 1) end
+        if tree == "move" then return Color(0.55, 0.78, 1, 1) end
+        return Color(0.44, 0.85, 0.76, 1)
+    end
+
+    method string TreeHex(string tree)
+        if tree == "soul" then return "#B08CFF" end
+        if tree == "curse" then return "#FF7A6A" end
+        if tree == "move" then return "#8CC8FF" end
+        return "#6FD9C2"
+    end
+
+    method any BuildColumns()
+        -- 메인 스킬을 해금 레벨(row)별 열로 (지금 23열 · 한 열 최대 3개)
+        if self.Columns ~= nil then return self.Columns end
+        local cols, byRow = {}, {}
+        for _, id in ipairs(_SkillData:Mains()) do
+            local row = math.floor(_SkillData:Get(id).row)
+            if byRow[row] == nil then
+                byRow[row] = { row = row, ids = {} }
+                table.insert(cols, byRow[row])
+            end
+            if #byRow[row].ids < 3 then table.insert(byRow[row].ids, id) end
+        end
+        table.sort(cols, function(a, b) return a.row < b.row end)
+        self.Columns = cols
+        return cols
+    end
+
+    method integer PageSize()
+        -- 한 쪽에 보이는 열 수: PC는 전부(23), 모바일은 손가락 크기 칸(88)으로 9열씩
+        if Environment:IsMobilePlatform() then return 9 end
+        return self.MaxCols
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Flip(integer dir)
+        local pages = math.max(1, math.ceil(#self:BuildColumns() / self:PageSize()))
+        self.Page = math.max(1, math.min(pages, self.Page + dir))
+        self.RenderKey = ""
+    end
+
     @ExecSpace("ClientOnly")
     method void Poll()
         if not _UIKit:IsOpen(self.Win) then
@@ -64,180 +112,253 @@ script SkillWindow extends Logic
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
-        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold) .. "#" .. self:GearLevelKey(st)
-        key = key .. "#" .. self.Tab
+        local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. self.SelMain .. "#" .. tostring(self.Page) .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold) .. "#" .. self:GearLevelKey(st)
         if key == self.RenderKey then return end
         self.RenderKey = key
-        -- 탭: 고른 트리는 밝게, 배울 수 있는 스킬이 있는 트리는 이름 옆 「+」
-        for i, tree in ipairs(self:Trees()) do
-            local chosen = tree == self.Tab
-            local learnable = false
-            if st.SkillPoints > 0 then
-                for _, id in ipairs(self:MainsOf(tree)) do
-                    if book:CanLearn(id, st.Level, st.SkillPoints) == "" then learnable = true break end
-                end
-            end
-            _UIKit:SetText(self.Win .. "/Tab" .. tostring(i), _UIKit:Colored(chosen and "#FFE9A8" or "#A99F8E", _SkillData:TreeName(tree)) .. (learnable and _UIKit:Colored("#7CFF7A", " +") or ""))
-            _UIKit:SetColor(self.Win .. "/Tab" .. tostring(i), chosen and Color(1, 0.92, 0.7, 1) or Color(0.6, 0.6, 0.6, 0.85))
+        -- 머리 줄: 남은 포인트 · 숙련(배운 스킬·강화 수) · 트리색 범례 · 초기화
+        local learned, total = 0, 0
+        for id, _ in pairs(_SkillData.Skills) do
+            total = total + 1
+            if book:GetLevel(id) > 0 then learned = learned + 1 end
         end
-        -- 10-25 사용자: 스킬 창 글자가 지저분하다 — 「레벨업마다 +1」 · 카드 「에 열림」 · 「(최대 N)」 · 강화 안내 줄 · 버튼 「+1」을 뺐다
-        _UIKit:SetText(self.Win .. "/Points", "남은 스킬 포인트: " .. tostring(st.SkillPoints))
+        _UIKit:SetText(self.Win .. "/Points", "남은 포인트 " .. _UIKit:Colored("#FFFFFF", tostring(st.SkillPoints)) .. "   " .. _UIKit:Colored("#A8A090", "숙련 " .. tostring(learned) .. "/" .. tostring(total)))
+        local legend = {}
+        for _, tree in ipairs(self:Trees()) do table.insert(legend, _UIKit:Colored(self:TreeHex(tree), "■ " .. _SkillData:TreeName(tree))) end
+        _UIKit:SetText(self.Win .. "/Legend", table.concat(legend, "   "))
         local cost = book:RespecCost(st.Level)
         _UIKit:SetText(self.Win .. "/BtnReset", cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드"))
-        -- 카드: 고른 트리의 메인 스킬 (해금 레벨 순). 지금 레벨 +LockedFold 밖의 잠긴 카드는 마지막 한 장으로 접는다
-        -- (10-20 첫 1시간 점검: Lv1 소환 탭 9장 중 8장이 잠김이라 무엇을 배울지 안 보였다)
-        local all = self:MainsOf(self.Tab)
-        local mains, folded, foldFrom = {}, 0, 0
-        for _, id in ipairs(all) do
-            local row = _SkillData:Get(id).row
-            if row <= st.Level + self.LockedFold then
-                table.insert(mains, id)
-            else
-                folded = folded + 1
-                if foldFrom == 0 then foldFrom = row end
-            end
-        end
-        self.Cards = {}
-        for i = 1, 24 do
-            local id = mains[i]
-            local path = self.Win .. "/Grid/M" .. tostring(i)
-            local summary = id == nil and folded > 0 and i == #mains + 1
-            _UIKit:SetEnabled(path, id ~= nil or summary)
-            if summary then
-                _UIKit:SetText(path .. "/Label", _UIKit:Colored("#8C99B4", "Lv" .. tostring(foldFrom) .. " 이후\n스킬 " .. tostring(folded) .. "개"))
-                _UIKit:SetIcon(path .. "/Icon", "")
-                _UIKit:SetColor(path, Color(0, 0, 0, 0.18))
-            end
-            if id ~= nil then
-                self.Cards[i] = id
-                local def = _SkillData:Get(id)
-                local lv = book:GetLevel(id)
-                local cap = book:RankCap(id, st.Level)
-                local status
-                local color = "#8A8A8A"
-                if st.Level < def.row then
-                    status = _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row))
-                else
-                    if lv > 0 then color = "#FFFFFF" elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then color = "#B8E0B8" end
-                    status = _UIKit:Colored(lv > 0 and "#F4ED83" or "#B8E0B8", tostring(lv) .. "/" .. tostring(cap)) .. (cap < def.maxLv and _UIKit:Colored("#8C99B4", " (" .. tostring(def.maxLv) .. ")") or "")
-                    local gear = st:GetSkillLevelBonus(id, def.tree)
-                    if lv > 0 and gear > 0 then status = status .. _UIKit:Colored("#7CFF7A", " +" .. tostring(gear)) end   -- 장비 스킬 레벨 (docs/design/19)
-                end
-                _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, def.name) .. "\n" .. status)
-                _UIKit:SetIcon(path .. "/Icon", def.icon)
-                _UIKit:SetColor(path .. "/Icon", lv > 0 and Color(1, 1, 1, 1) or (st.Level >= def.row and Color(0.75, 0.75, 0.75, 0.95) or Color(0.35, 0.35, 0.35, 0.7)))
-                local chosen = id == self.SelMain
-                _UIKit:SetColor(path, chosen and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.3))
-            end
-        end
-        if self.SelMain == "" and #mains > 0 then self.SelMain = mains[1] end
-        self:Layout(#mains + (folded > 0 and 1 or 0))
-        self:RenderDetail(book, st)
-        _UIKit:SetText(self.Win .. "/DescBox/Desc", self:Describe(book, st))
+        if self.SelMain == "" then self.SelMain = self:FirstLearnable(book, st) end
+        self:RenderTimeline(book, st)
+        self:RenderWorkshop(book, st)
         self:RenderLearnButton(book, st)
     end
 
     @ExecSpace("ClientOnly")
-    method void Layout(integer shown)
-        -- 카드 8칸씩. 고른 카드의 줄 바로 아래에 아코디언을 펼치고, 그 아랫줄 카드는 아코디언 높이만큼 내린다
-        local cols = 8
-        local cellW = 120
-        local cellH = 98
-        local accH = self:AccHeight()
-        local sel = 0
-        for i, id in pairs(self.Cards) do if id == self.SelMain then sel = i end end
-        local selRow = sel > 0 and (sel - 1) // cols or -1
-        for i = 1, 24 do
-            local col = (i - 1) % cols
-            local row = (i - 1) // cols
-            local y = -row * cellH
-            if selRow >= 0 and row > selRow then y = y - (accH + 8) end
-            _UIKit:SetPos(self.Win .. "/Grid/M" .. tostring(i), Vector2(col * cellW, y))
+    method string FirstLearnable(SkillBook book, PlayerStats st)
+        -- 처음 열 때 공방에 보일 스킬: 지금 배울 수 있는 첫 메인, 없으면 첫 메인
+        for _, id in ipairs(_SkillData:Mains()) do
+            if book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then return id end
         end
-        _UIKit:SetEnabled(self.Win .. "/Grid/Acc", sel > 0 and shown > 0)
-        if sel > 0 then
-            _UIKit:SetPos(self.Win .. "/Grid/Acc", Vector2(0, -(selRow + 1) * cellH))
-            local acc = _UIKit:Get(self.Win .. "/Grid/Acc")
-            if isvalid(acc) then acc.UITransformComponent.RectSize = Vector2(954, accH) end
-        end
+        return _SkillData:Mains()[1] or ""
     end
 
     @ExecSpace("ClientOnly")
-    method void LayoutNodes(string acc, integer n)
-        -- 강화 칸: 6개까지 3칸씩(폭 306), 7개 이상(해골 마법사 변이)은 4칸씩(폭 228) 두 줄
-        local cols = n > 6 and 4 or 3
-        local w = n > 6 and 228 or 306
-        for i = 1, 8 do
-            local path = acc .. "/N" .. tostring(i)
-            local e = _UIKit:Get(path)
-            if isvalid(e) then
-                -- 10-25: 강화 칸 글자를 「이름 / 조건 / 효과」 세 줄로 나눠 칸 높이 72 → 90 (긴 변이 설명이 아래 칸과 겹쳤다)
-                e.UITransformComponent.RectSize = Vector2(w, 90)
-                _UIKit:SetPos(path, Vector2(12 + ((i - 1) % cols) * (w + 6), -154 - ((i - 1) // cols) * 96))
-                local label = _UIKit:Get(path .. "/Label")
-                if isvalid(label) then label.UITransformComponent.RectSize = Vector2(w - 120, 86) end
+    method void RenderTimeline(SkillBook book, PlayerStats st)
+        -- 해금 시간선: 열 위치·크기(플랫폼별) · 칸 그림·테두리·상태 · 지금 레벨 표지 · 다음 해금 줄
+        local cols = self:BuildColumns()
+        local mobile = Environment:IsMobilePlatform()
+        local per = self:PageSize()
+        local pages = math.max(1, math.ceil(#cols / per))
+        self.Page = math.max(1, math.min(pages, self.Page))
+        local first = (self.Page - 1) * per + 1
+        local shown = math.min(per, #cols - first + 1)
+        local width = 1210
+        local colW = mobile and 134 or math.floor(width / math.max(1, shown))
+        local btn = mobile and 88 or 48
+        local stepY = mobile and 96 or 72
+        local x0 = 44
+        _UIKit:SetEnabled(self.Win .. "/TL/Prev", pages > 1)
+        _UIKit:SetEnabled(self.Win .. "/TL/NextPage", pages > 1)
+        self.SlotIds = {}
+        local base = self.Win .. "/TL/C"
+        for c = 1, self.MaxCols do
+            local col = cols[first + c - 1]
+            local path = base .. tostring(c)
+            local on = c <= shown and col ~= nil
+            _UIKit:SetEnabled(path, on)
+            if on then
+                _UIKit:SetPos(path, Vector2(x0 + (c - 1) * colW, -36))
+                local reached = st.Level >= col.row
+                _UIKit:SetText(path .. "/Lv", _UIKit:Colored(reached and "#E6DCC6" or "#7A7468", "Lv" .. tostring(col.row)))
+                for r = 1, 3 do
+                    local id = col.ids[r]
+                    local s = path .. "/S" .. tostring(r)
+                    _UIKit:SetEnabled(s, id ~= nil)
+                    if id ~= nil then
+                        self.SlotIds[tostring(c) .. ":" .. tostring(r)] = id
+                        self:SizeSlot(s, btn, mobile)
+                        _UIKit:SetPos(s, Vector2(0, -22 - (r - 1) * stepY))
+                        local def = _SkillData:Get(id)
+                        local lv = book:GetLevel(id)
+                        local cap = book:RankCap(id, st.Level)
+                        _UIKit:SetIcon(s .. "/Icon", def.icon)
+                        _UIKit:SetColor(s .. "/Icon", lv > 0 and Color(1, 1, 1, 1) or (reached and Color(0.78, 0.78, 0.78, 1) or Color(0.32, 0.32, 0.34, 0.85)))
+                        local tc = self:TreeColor(def.tree)
+                        local ring = reached and tc or Color(tc.r * 0.4, tc.g * 0.4, tc.b * 0.4, 0.8)
+                        if id == self.SelMain then ring = Color(1, 0.92, 0.6, 1) end
+                        _UIKit:SetColor(s .. "/Ring", ring)
+                        local state
+                        if not reached then state = _UIKit:Colored("#8C99B4", "Lv" .. tostring(col.row))
+                        elseif lv > 0 then state = _UIKit:Colored("#F4ED83", tostring(lv) .. "/" .. tostring(cap))
+                        elseif book:CanLearn(id, st.Level, math.max(1, st.SkillPoints)) == "" then state = _UIKit:Colored("#7CFF7A", "배우기")
+                        else state = _UIKit:Colored("#A8A090", "0/" .. tostring(cap)) end
+                        _UIKit:SetText(s .. "/State", state)
+                    end
+                end
             end
         end
-    end
-
-    method number AccHeight()
-        -- 강화 수에 맞춘다: 없음(집결·망령 도약 등) 128 · 3개까지 한 줄 256 · 4~8개(해골 전사·마법사 변이) 두 줄 352
-        local n = #_SkillData:NodesOf(self.SelMain)
-        if n == 0 then return 128 end
-        if n <= 3 then return 256 end
-        return 352
+        -- 지금 레벨 표지: 지금 레벨이 들어갈 열 사이 위치 (열 가운데 기준 보간)
+        local markX = 0
+        local lastX, lastRow = 0, 0
+        for c = 1, shown do
+            local col = cols[first + c - 1]
+            local cx = (c - 1) * colW + colW / 2
+            if st.Level >= col.row then markX = cx lastX = cx lastRow = col.row
+            elseif markX == lastX and c > 1 then
+                local prevCol = cols[first + c - 2]
+                local t = (st.Level - prevCol.row) / math.max(1, col.row - prevCol.row)
+                markX = lastX + (cx - lastX) * math.max(0, math.min(1, t))
+                break
+            else break end
+        end
+        local barW = math.min(width, shown * colW)
+        local bar = _UIKit:Get(self.Win .. "/TL/Bar")
+        if isvalid(bar) then bar.UITransformComponent.RectSize = Vector2(barW, 14) end
+        _UIKit:SetFill(self.Win .. "/TL/Bar/Fill", barW > 0 and markX / barW or 0)
+        local fill = _UIKit:Get(self.Win .. "/TL/Bar/Fill")
+        if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(barW, 14) end
+        _UIKit:SetPos(self.Win .. "/TL/Bar/Mark", Vector2(markX, 120))
+        _UIKit:SetPos(self.Win .. "/TL/Bar/Now", Vector2(markX + 34, 0))   -- 표지선 오른쪽 막대 위 (아래 「다음 해금」 줄과 겹치지 않게)
+        _UIKit:SetText(self.Win .. "/TL/Bar/Now", "Lv" .. tostring(st.Level))
+        -- 다음 해금
+        local nextLine = "모든 스킬이 열렸다"
+        for _, col in ipairs(cols) do
+            if col.row > st.Level then
+                local names = {}
+                for _, id in ipairs(col.ids) do table.insert(names, _UIKit:Colored(self:TreeHex(_SkillData:Get(id).tree), _SkillData:Get(id).name)) end
+                nextLine = "다음 해금: Lv" .. tostring(col.row) .. " " .. table.concat(names, " · ") .. " — " .. tostring(col.row - st.Level) .. "레벨 남음"
+                break
+            end
+        end
+        _UIKit:SetText(self.Win .. "/TL/Next", nextLine)
     end
 
     @ExecSpace("ClientOnly")
-    method void RenderDetail(SkillBook book, PlayerStats st)
-        -- 아코디언: 고른 메인 스킬 이름·랭크·설명 / 지금·다음 효과·마나 / 스킬 강화 (최대 3)
+    method void SizeSlot(string s, integer btn, boolean mobile)
+        -- 칸 크기: PC 48 / 모바일 88 (손가락)
+        local e = _UIKit:Get(s)
+        if not isvalid(e) or math.abs(e.UITransformComponent.RectSize.x - btn) < 0.5 then return end
+        e.UITransformComponent.RectSize = Vector2(btn, btn)
+        local ring = _UIKit:Get(s .. "/Ring")
+        if isvalid(ring) then ring.UITransformComponent.RectSize = Vector2(btn + 4, btn + 4) end
+        local icon = _UIKit:Get(s .. "/Icon")
+        if isvalid(icon) then icon.UITransformComponent.RectSize = Vector2(btn - 8, btn - 8) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderWorkshop(SkillBook book, PlayerStats st)
+        -- 공방: 고른 메인 스킬 초상·이름·트리/랭크·설명·지금/다음 · 랭크 사다리 · 강화 노드
         local def = _SkillData:Get(self.SelMain)
         if def == nil then return end
-        local acc = self.Win .. "/Grid/Acc"
+        self.Tab = def.tree
+        local ws = self.Win .. "/WS"
         local lv = book:GetLevel(self.SelMain)
         local cap = book:RankCap(self.SelMain, st.Level)
-        local rank = st.Level < def.row and _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
-            or _UIKit:Colored("#F4ED83", "랭크 " .. tostring(lv) .. "/" .. tostring(def.maxLv))
-        _UIKit:SetText(acc .. "/Name", def.name .. "  " .. _UIKit:Colored("#8C99B4", _SkillData:TreeName(def.tree)) .. "   " .. rank)
-        _UIKit:SetText(acc .. "/Desc", def.desc)
-        _UIKit:SetText(acc .. "/Stat", self:StatLine(book, st, self.SelMain))
+        _UIKit:SetIcon(ws .. "/Portrait/Icon", def.icon)
+        _UIKit:SetColor(ws .. "/Portrait/Icon", lv > 0 and Color(1, 1, 1, 1) or Color(0.7, 0.7, 0.7, 1))
+        _UIKit:SetColor(ws .. "/Portrait/Rim", self:TreeColor(def.tree))
+        _UIKit:SetText(ws .. "/Name", def.name)
+        local info = _UIKit:Colored(self:TreeHex(def.tree), _SkillData:TreeName(def.tree)) .. " · "
+        if st.Level < def.row then info = info .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
+        else info = info .. "랭크 " .. tostring(lv) .. "/" .. tostring(cap) .. "  (최대 " .. tostring(def.maxLv) .. ")" end
+        _UIKit:SetText(ws .. "/Info", info)
+        _UIKit:SetText(ws .. "/Desc", def.desc)
+        _UIKit:SetText(ws .. "/Stat", self:StatLine(book, st, self.SelMain))
+        -- 랭크 사다리 20칸: 찍음(금) · 지금 상한까지(밝은 빈칸) · 상한 밖(어둠)
+        for i = 1, 20 do
+            local c = Color(0.16, 0.15, 0.19, 1)
+            if i <= def.maxLv then
+                if i <= lv then c = Color(0.85, 0.7, 0.35, 1) elseif i <= cap then c = Color(0.42, 0.4, 0.46, 1) end
+            else c = Color(0.08, 0.08, 0.1, 0.4) end
+            _UIKit:SetColor(ws .. "/Pip" .. tostring(i), c)
+        end
+        local note = ""
+        if st.Level >= def.row and cap < def.maxLv then note = "랭크 " .. tostring(cap + 1) .. "은 Lv" .. tostring(book:NextRankLevel(self.SelMain, cap + 1)) .. "부터" end
+        _UIKit:SetText(ws .. "/RankNote", note)
+        local target = self.Selected ~= "" and self.Selected or self.SelMain
+        local reason = book:CanLearn(target, st.Level, st.SkillPoints)
+        _UIKit:SetText(ws .. "/Reason", reason)
+        self:RenderNodes(book, st, def)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderNodes(SkillBook book, PlayerStats st, any def)
+        -- 강화 노드: 필요 랭크(need) 열별로 세우고 허브에서 갈래 선 (찍은 노드 선은 트리색)
+        local ws = self.Win .. "/WS"
         local nodes = _SkillData:NodesOf(self.SelMain)
-        _UIKit:SetEnabled(acc .. "/NodeHead", #nodes > 0)
-        _UIKit:SetEnabled(acc .. "/NodeHint", false)
+        local needs, colOf = {}, {}
+        for _, nid in ipairs(nodes) do
+            local need = book:NodeNeed(nid, 1)
+            if colOf[need] == nil then
+                table.insert(needs, need)
+                colOf[need] = 0
+            end
+        end
+        table.sort(needs)
+        for i, need in ipairs(needs) do colOf[need] = i end
+        local rowsIn = {}
+        local hubY = -210
+        local hubX = 600
+        local tc = self:TreeColor(def.tree)
+        _UIKit:SetEnabled(ws .. "/TreeHead", #nodes > 0)
+        _UIKit:SetEnabled(ws .. "/Hub", #nodes > 0)
+        _UIKit:SetEnabled(ws .. "/Spine", #nodes > 0)
+        _UIKit:SetColor(ws .. "/Hub", tc)
+        for i = 1, 6 do
+            local need = needs[i]
+            _UIKit:SetEnabled(ws .. "/Need" .. tostring(i), need ~= nil)
+            if need ~= nil then
+                _UIKit:SetText(ws .. "/Need" .. tostring(i), "필요 랭크 " .. tostring(need))
+                _UIKit:SetPos(ws .. "/Need" .. tostring(i), Vector2(700 + (i - 1) * 108, -40))
+            end
+        end
         self.NodeIds = {}
-        self:LayoutNodes(acc, #nodes)
+        local topY, botY = hubY, hubY
         for i = 1, 8 do
             local nid = nodes[i]
-            local path = acc .. "/N" .. tostring(i)
-            _UIKit:SetEnabled(path, nid ~= nil)
+            local n = ws .. "/N" .. tostring(i)
+            _UIKit:SetEnabled(n, nid ~= nil)
+            _UIKit:SetEnabled(ws .. "/L" .. tostring(i), nid ~= nil)
             if nid ~= nil then
                 self.NodeIds[i] = nid
                 local nd = _SkillData:Get(nid)
+                local need = book:NodeNeed(nid, 1)
+                local ci = colOf[need]
+                rowsIn[ci] = (rowsIn[ci] or 0) + 1
+                local x = 700 + (ci - 1) * 108
+                local y = -64 - (rowsIn[ci] - 1) * 118
+                _UIKit:SetPos(n, Vector2(x, y))
+                local cy = y - 34
+                topY = math.max(topY, cy)
+                botY = math.min(botY, cy)
+                local link = _UIKit:Get(ws .. "/L" .. tostring(i))
+                if isvalid(link) then link.UITransformComponent.RectSize = Vector2(math.max(4, x - 50 - hubX), 4) end
+                _UIKit:SetPos(ws .. "/L" .. tostring(i), Vector2(hubX, cy))
                 local nlv = book:GetLevel(nid)
-                local reason = book:CanLearn(nid, st.Level, math.max(1, st.SkillPoints))
-                local color = nlv > 0 and "#FFFFFF" or (reason == "" and "#B8E0B8" or "#8A8A8A")
-                local line2 = nd.desc
-                if not nd.impl then line2 = _UIKit:Colored("#8C99B4", "준비 중 — 다음 업데이트") .. " · " .. nd.desc
-                else
-                    -- 다음 랭크에 필요한 메인 랭크 (다중 투사체는 랭크마다 다르다 — SkillBook.NodeNeed) · 캐릭터 레벨 (그림자 증원 — NodeLevel)
-                    local need = book:NodeNeed(nid, nlv + 1)
+                local can = book:CanLearn(nid, st.Level, st.SkillPoints) == ""
+                local ring = Color(0.29, 0.25, 0.33, 1)
+                if nlv > 0 then ring = tc elseif can then ring = Color(0.55, 0.85, 0.55, 1) end
+                _UIKit:SetColor(n .. "/Ring", ring)
+                _UIKit:SetColor(ws .. "/L" .. tostring(i), nlv > 0 and tc or Color(0.29, 0.25, 0.33, 1))
+                _UIKit:SetIcon(n .. "/Icon", nd.icon)
+                _UIKit:SetColor(n .. "/Icon", nlv > 0 and Color(1, 1, 1, 1) or (can and Color(0.85, 0.85, 0.85, 1) or Color(0.4, 0.4, 0.42, 0.85)))
+                local status = tostring(nlv) .. "/" .. tostring(nd.maxLv)
+                if nlv < nd.maxLv then
+                    local needRank = book:NodeNeed(nid, nlv + 1)
                     local needLv = book:NodeLevel(nid, nlv + 1)
-                    -- 조건은 제목 아래 한 줄, 효과는 그다음 줄 (10-25 사용자: 조건과 효과가 한 줄에 붙어 읽기 어려웠다)
-                    if nlv < nd.maxLv and lv < need then line2 = _UIKit:Colored("#FF9A8A", def.name .. " " .. tostring(need) .. "랭크부터") .. "\n" .. nd.desc
-                    elseif nlv < nd.maxLv and st.Level < needLv then line2 = _UIKit:Colored("#FF9A8A", "캐릭터 Lv" .. tostring(needLv) .. "부터") .. "\n" .. nd.desc end
-                end
-                _UIKit:SetText(path .. "/Label", _UIKit:Colored(color, nd.name .. "  " .. tostring(nlv) .. "/" .. tostring(nd.maxLv)) .. "\n" .. line2)
-                _UIKit:SetColor(path, nid == self.Selected and Color(0.55, 0.65, 0.9, 0.55) or Color(0, 0, 0, 0.35))
-                -- 아이콘 + 오른쪽 상태 칩: 지금 찍을 수 있으면 초록 「+1」, 다 찍었으면 「완료」, 조건이 모자라면 「잠김」 (10-24 사용자: 눌러야 하는지 몰랐다)
-                _UIKit:SetIcon(path .. "/Icon", nd.icon)
-                _UIKit:SetColor(path .. "/Icon", nlv > 0 and Color(1, 1, 1, 1) or (reason == "" and Color(0.85, 0.85, 0.85, 1) or Color(0.4, 0.4, 0.4, 0.8)))
-                local chip = _UIKit:Colored("#8A8A8A", "잠김")
-                if nlv >= nd.maxLv then chip = _UIKit:Colored("#F4ED83", "완료")
-                elseif book:CanLearn(nid, st.Level, st.SkillPoints) == "" then chip = _UIKit:Colored("#7CFF7A", "+1")
-                elseif reason == "" then chip = _UIKit:Colored("#B8B0A0", "포인트\n부족") end
-                _UIKit:SetText(path .. "/Chip", chip)
+                    if book:GetLevel(self.SelMain) < needRank then status = _UIKit:Colored("#FF9A8A", tostring(needRank) .. "랭크부터")
+                    elseif st.Level < needLv then status = _UIKit:Colored("#FF9A8A", "Lv" .. tostring(needLv) .. "부터")
+                    elseif can then status = _UIKit:Colored("#7CFF7A", status .. " +1") end
+                else status = _UIKit:Colored("#F4ED83", status) end
+                _UIKit:SetText(n .. "/Label", nd.name .. "\n" .. status)
+                _UIKit:SetColor(n, nid == self.Selected and Color(0.55, 0.65, 0.9, 0.45) or Color(0, 0, 0, 0.25))
             end
         end
+        -- 등뼈: 허브에서 가장 위·아래 노드 높이까지
+        local spine = _UIKit:Get(ws .. "/Spine")
+        if isvalid(spine) then spine.UITransformComponent.RectSize = Vector2(4, math.max(4, topY - botY)) end
+        _UIKit:SetPos(ws .. "/Spine", Vector2(hubX, topY))
+        _UIKit:SetPos(ws .. "/Hub", Vector2(hubX, (topY + botY) / 2))
     end
 
     method string StatLine(SkillBook book, PlayerStats st, string id)
@@ -268,56 +389,17 @@ script SkillWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderLearnButton(SkillBook book, PlayerStats st)
-        -- 버튼 글자가 지금 고른 것에 맞게: 배우기 +1 / 레벨 업 +1 / 강화 +1. 못 찍으면 흐리게 (이유는 왼쪽 설명)
+        -- 버튼 글자가 지금 고른 것에 맞게: 배우기 / 레벨 업 +1 / 강화 +1. 못 찍으면 흐리게 (이유는 공방의 빨간 줄)
         local id = self.Selected ~= "" and self.Selected or self.SelMain
         local def = _SkillData:Get(id)
-        local label = "습득"
+        local label = "배우기"
         if def ~= nil then
-            if def.kind == "node" then label = "강화"
-            elseif book:GetLevel(id) > 0 then label = "레벨 업"
-            else label = "배우기" end
+            if def.kind == "node" then label = "강화 +1"
+            elseif book:GetLevel(id) > 0 then label = "레벨 업 +1" end
         end
         local ok = def ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == ""
         _UIKit:SetText(self.Win .. "/BtnLearn", ok and label or _UIKit:Colored("#8A8A8A", label))
         _UIKit:SetColor(self.Win .. "/BtnLearn", ok and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
-    end
-
-    method string Describe(SkillBook book, PlayerStats st)
-        -- 고른 메인/강화의 지금·다음 효과, 마나·재사용, 배울 수 있는지(아니면 이유)
-        if self.Selected == "" then return "스킬 카드나 카드 아래 「스킬 강화」 칸을 누르면 여기에 효과가 나온다. 고른 것을 한 번 더 누르거나 오른쪽 아래 버튼으로 찍는다." end
-        local def = _SkillData:Get(self.Selected)
-        if def == nil then return "다시 고르세요." end
-        local reason = book:CanLearn(self.Selected, st.Level, st.SkillPoints)
-        local level = book:GetLevel(self.Selected)
-        local isNode = def.kind == "node"
-        local cap = book:RankCap(self.Selected, st.Level)
-        local head = def.name .. "  " .. tostring(level) .. "/" .. tostring(isNode and def.maxLv or cap)
-        if not isNode and cap < def.maxLv then head = head .. _UIKit:Colored("#8C99B4", "  (지금 상한 " .. tostring(cap) .. " · " .. tostring(cap + 1) .. "랭크는 Lv" .. tostring(book:NextRankLevel(self.Selected, cap + 1)) .. "부터 · 최대 " .. tostring(def.maxLv) .. ")") end
-        -- 장비 스킬 레벨(모든·계열·단일)은 배운 메인 스킬의 효과에만 더한다 (docs/design/19)
-        local gear = 0
-        if not isNode and level > 0 then gear = st:GetSkillLevelBonus(self.Selected, def.tree) end
-        if gear > 0 then head = head .. _UIKit:Colored("#7CFF7A", "  장비 +" .. tostring(gear) .. " → 효과 " .. tostring(level + gear) .. "랭크") end
-        local growth = ""
-        local current = book:GetRankSummary(self.Selected, math.max(1, level) + gear)
-        if current ~= "" then
-            growth = "\n" .. (level == 0 and "배우면: " or "지금: ") .. current
-            if level > 0 and level < def.maxLv then
-                local nextRank = book:GetRankSummary(self.Selected, level + 1 + gear)
-                growth = growth .. "   " .. (nextRank == current and "다음: 효과 동일" or ("다음: " .. _UIKit:Colored("#7CFF7A", nextRank)))
-            end
-        elseif isNode then
-            growth = "\n" .. def.desc
-        end
-        local mana = ""
-        if def.kind == "active" or def.kind == "curse" then
-            local lv = math.max(1, level)
-            mana = "\n마나 " .. tostring(math.floor(book:GetManaCost(self.Selected, lv)))
-            local cd = book:SkillCooldown(self.Selected, lv)
-            if cd > 0 then mana = mana .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
-        end
-        local learn = _UIKit:Colored("#AACCAA", (isNode and "강화할 수 있음" or "배울 수 있음") .. " · 한 번 더 누르거나 오른쪽 아래 버튼")
-        if reason ~= "" then learn = _UIKit:Colored("#FF8888", reason) end
-        return head .. growth .. mana .. "\n" .. learn
     end
 
     method string GearLevelKey(PlayerStats st)
@@ -344,14 +426,21 @@ script SkillWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void SetTab(string tree)
-        -- 탭을 바꾸면 그 트리의 첫 스킬을 오른쪽에 보인다
-        if tree == self.Tab then return end
-        self.Tab = tree
-        local mains = self:MainsOf(tree)
-        self.SelMain = mains[1] or ""
-        self.Selected = ""
-        self.RenderKey = ""
+    method string SlotPathOf(string id)
+        -- 상황 안내(GuideCoach)가 가리킬 시간선 칸 (지금 쪽에 없으면 넘김 단추, 시간선에 없으면 "")
+        local cols = self:BuildColumns()
+        local per = self:PageSize()
+        for ci, col in ipairs(cols) do
+            for r, sid in ipairs(col.ids) do
+                if sid == id then
+                    local page = (ci - 1) // per + 1
+                    if page < self.Page then return self.Win .. "/TL/Prev" end
+                    if page > self.Page then return self.Win .. "/TL/NextPage" end
+                    return self.Win .. "/TL/C" .. tostring(ci - (page - 1) * per) .. "/S" .. tostring(r)
+                end
+            end
+        end
+        return ""
     end
 
     @ExecSpace("ClientOnly")
@@ -378,6 +467,7 @@ script SkillWindow extends Logic
         if def ~= nil and def.kind ~= "node" then self.SelMain = id end
         if def ~= nil then self.Tab = def.tree end
         self.RenderKey = ""
+        log("[VRF] skill pick " .. id)
     end
 
     @ExecSpace("ClientOnly")
