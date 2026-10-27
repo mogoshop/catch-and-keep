@@ -330,7 +330,9 @@ T.npcs.forEach((r, i) => {
   if (!["shop", "quest", "smith", "merchant", "stash", "caravan", "captain", "scholar", "apothecary", "harbormaster", "keeperdaughter", "scout", "outpostcaptain", "deserter"].includes(r.kind)) err("npcs", i, `kind '${r.kind}' 알 수 없음`);
 });
 T.maps.forEach((r, i) => {
-  if (!["town", "field", "instance", "side"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side`);
+  // handmade = 손으로 지은 맵 시안 (data/handmade/<id>.txt·csv, 10-28). 필드 사슬·곁가지에 끼지 않고 포털·웨이포인트로 이어지지 않는다 — 개발자가 이동해 본다
+  if (!["town", "field", "instance", "side", "handmade"].includes(r.kind)) err("maps", i, `kind '${r.kind}' — town / field / instance / side / handmade`);
+  if (r.kind === "handmade" && !fs.existsSync(path.join(__dirname, "../data/handmade", r.id + ".txt"))) err("maps", i, `handmade 맵인데 data/handmade/${r.id}.txt 설계도가 없음`);
   // 크기와 좌표: 모든 위치가 맵 타일 범위 안 (x = -w/2 .. w/2-1, y = -h/2+1 .. h/2)
   const w = num(r.w), h = num(r.h);
   if (!(w >= 8 && h >= 6) || w % 2 || h % 2) err("maps", i, `크기 ${r.w}×${r.h} — 8×6 이상 짝수`);

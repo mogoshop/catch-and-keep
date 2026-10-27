@@ -39,6 +39,9 @@ quiet(() => {
 });
 
 const waypoints = new Set(load("waypoints").map((w) => w.id));
+// 손으로 지은 맵 시안(maps.csv kind=handmade, 10-28)은 메이커 전용이라 웨이포인트 자리를 waypoints.csv에 넣지 않는다 — 시안 맵의 웨이포인트 id는 넘긴다
+const handmadeIds = new Set(load("maps").filter((m) => m.kind === "handmade").map((m) => m.id));
+const isHandmadeMap = (f) => { const id = path.basename(f, EXT.map); return [...handmadeIds].some((h) => id === h || id.startsWith(h + "_")); };
 const sounds = new Set(load("sounds").map((r) => r.key));
 const mapFiles = walk(path.join(ROOT, "map"), EXT.map, []);
 const mapIds = new Set(mapFiles.map((f) => path.basename(f, EXT.map)));
@@ -61,7 +64,7 @@ quiet(() => {
       const gate = map.component(e.path, "script.WarpGate");
       if (gate && gate.TargetMap && !mapIds.has(gate.TargetMap)) bad(f, `${e.path} WarpGate → '${gate.TargetMap}' 맵 없음`);
       const wp = map.component(e.path, "script.Waypoint");
-      if (wp && !waypoints.has(wp.WaypointId || "camp")) bad(f, `${e.path} WaypointId '${wp.WaypointId}' — waypoints.csv에 없음`);
+      if (wp && !waypoints.has(wp.WaypointId || "camp") && !isHandmadeMap(f)) bad(f, `${e.path} WaypointId '${wp.WaypointId}' — waypoints.csv에 없음`);
       const sp = map.component(e.path, "script.MonsterSpawner");
       if (sp) for (const entry of (sp.Entries || "").split(";").filter(Boolean)) {
         const id = entry.split(":")[0];

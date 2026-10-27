@@ -6,6 +6,8 @@
 const fs = require("fs");
 const { MapBuilder, readIfExists, preserveIds, P, pos, at, list, load, num, bool, quiet, exists } = require("./lib.cjs");
 const layoutGen = require("./layout.cjs");
+// 손으로 지은 맵 (maps.csv kind=handmade): 설계도·배치표가 타일·벽·장식·기능 자리를 전부 정한다 (tools/build/handmade/lib.cjs, 10-28)
+const handmade = require("./handmade/lib.cjs");
 
 const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
@@ -39,6 +41,7 @@ function dungeonFloors(maps, m) {
 //   액트마다: 그 액트의 마을 → 필드 사슬(order 순, 왼쪽 GateBack·오른쪽 GateNext) → 보스 방 (액트 사이는 카라반 NPC가 잇는다)
 //   곁가지 던전(kind=side): 부모 필드의 entry 위치에 입구(Gate_<첫 층>), 층끼리는 GateBack/GateNext, 마지막 층은 막다른 곳 (D2)
 function desiredEntities(d, maps, ctx) {
+  if (d.kind === "handmade") return handmade.functionalEntities(d, maps, ctx);   // 포털·화로·웨이포인트는 배치표가 정한다 (미니맵·안전 구역도 이것을 쓴다)
   const out = [];
   const place = (name, model, p, overrides) => out.push({ name, model, pos: p, overrides });
   const act = d.act || "1";
@@ -697,7 +700,6 @@ function minimapFeatures(d, maps) {
 
 function run() {
   const maps = load("maps").sort((a, b) => num(a.order) - num(b.order));
-  const diffs = load("difficulty").filter((x) => num(x.index) > 0);
   const ctx = context();
   // MAPS_ONLY=town,oasis,... 이면 그 맵(과 난이도 복제)만 다시 만든다 — 다른 맵의 메이커 편집을 건드리지 않게
   const only = (process.env.MAPS_ONLY || "").split(",").filter((x) => x !== "");
@@ -705,18 +707,23 @@ function run() {
   if (only.length > 0 && target.length !== only.length) throw new Error(`MAPS_ONLY에 maps.csv에 없는 id: ${only.join(",")}`);
   let copies = 0;
   quiet(() => {
-    for (const d of target) buildNormal(d, maps, ctx);
-    for (const d of target.filter((m) => m.kind !== "instance")) {
-      for (const diff of diffs) {
-        const file = P.map(d.id + diff.mapSuffix);
-        const previous = readIfExists(file);
-        buildCopy(d, diff);
-        preserveIds(file, previous);
-        copies++;
-      }
-    }
+    for (const d of target) (d.kind === "handmade" ? handmade.build : buildNormal)(d, maps, ctx);
+    for (const d of target.filter((m) => m.kind !== "instance")) copies += buildCopies(d);
   });
   console.log(`  맵: 보통 ${target.length} · 난이도 복제 ${copies}`);
 }
 
-module.exports = { run, edges, minimapFeatures };
+// 한 맵의 난이도 복제본(악몽·지옥)을 만든다 → 만든 수
+function buildCopies(d) {
+  let n = 0;
+  for (const diff of load("difficulty").filter((x) => num(x.index) > 0)) {
+    const file = P.map(d.id + diff.mapSuffix);
+    const previous = readIfExists(file);
+    quiet(() => buildCopy(d, diff));
+    preserveIds(file, previous);
+    n++;
+  }
+  return n;
+}
+
+module.exports = { run, edges, minimapFeatures, context, buildCopies };

@@ -1,0 +1,77 @@
+; 피 묻은 황무지 — 손으로 지은 설계도 (70×50). 10-28 사용자: 「맵 하나를 진짜 사람이 한 땀 한 땀 만든 것처럼」
+; 칸 (c, r) → 월드 칸 x = c - 35, y = 25 - r. 칸 (x, y) = 월드 [x, x+1]×[y, y+1] (메이커 RectTile 격자 기준, maps.cjs edges와 같다)
+; 한 줄 = 한 행(위가 북쪽 y=25), 한 글자 = 한 칸. 지시문(;로 시작)은 빌더(tools/build/handmade/lib.cjs)가 읽는다
+;
+; 장소 (서 → 동): [A] 서쪽 초소 — 야영지 울타리 밖, 무너진 파수 자리 · [B] 역병 수레 들판 — 멈춘 수레 행렬 · [C] 교차로 — 머리 잘린 왕의 비석과 푯말
+;   [D] 까마귀 묘지 (북 고원) — 무너진 예배당·떨어진 종·묘비 줄 · [E] 시체 구덩이 (남 분지) — 뼈 경계탑·굶주린 굴 입구 · [F] 불탄 농가 (동) · [G] 늪으로 내려가는 길 (동남) + 마른 강바닥
+; 길: 큰길 = (서문 → 교차로 → 동문) · 샛길 - (묘지 문길 · 구덩이 뒷길 · 파수꾼 골) · 막다른 보상 자리 R 4곳
+;
+;size 70 50
+;base blood-waste-floor 1/1/1
+;zone . - - 기본 황무지 (바탕 바닥 그대로)
+;zone g forest-floor 0.84/0.84/0.92 까마귀 묘지 고원 (차갑고 어둡게)
+;zone d marsh-floor 0.92/0.86/0.62 마른 풀밭 (서쪽 들판 · 늪 풀을 바랜 누런 빛으로)
+;zone p ash-camp-floor 0.66/0.6/0.58 밟힌 흙 (역병 수레 행렬 둘레)
+;zone b bone-floor 0.88/0.8/0.74 시체 구덩이 (뼈 섞인 흙)
+;zone h execution-floor 0.96/0.92/0.88 불탄 농가 (돌 깔린 마당)
+;zone m marsh-floor 0.92/0.98/0.88 늪으로 내려가는 길 (물기 머금은 땅)
+;zone r ash-camp-floor 0.62/0.6/0.62 마른 강바닥 (어둡고 갈라진 흙)
+;road = ash-road 1/1/1 큰길 (자갈)
+;road - ash-road 0.74/0.72/0.7 샛길 (밟힌 흙)
+;wall # waste 1/1/1 절벽·바위 언덕
+;wall % ruin-wall 0.92/0.92/0.92 무너진 담 (묘지 담 · 농가 벽 · 집터)
+;markers W E H T S R
+; W 서문(잿불 야영지) · E 동문(썩은 갈대 늪) · H 굶주린 굴 입구 · T 화로 · S 웨이포인트 자리 · R 막다른 보상 자리 — 실제 엔티티는 wasteland_hm.csv 가 놓고, 빌더는 표식과 1칸 안에 있는지 검사한다
+;
+;      0         1         2         3         4         5         6
+;      0123456789012345678901234567890123456789012345678901234567890123456789
+######################################################################
+######################################################################
+######################################################################
+#########################ggggggggg###gggggggg%gggg%###################
+#########################gggggggggggggggggggg%gRgg%###################
+#########################gggggggggggggggggggg%gggg%###################
+####################ggggggggggggggggggggggTgg%%%%g%#hhhhhhhhhh%hhhh###
+####################gggggggggggggggggggggggggggggg%#hhhhhhhhhh%hRhh###
+####################gggggggggggggggggggggggggggggg%hhhhhhhhhhh%hhhh###
+####################ggggggggggggggggggggggggggggggghhhhhhhhhhhh%%%h###
+###########.....####ggggggggggggggggggggggggggggggghhhhhhhhhhhhhhhh###
+###########..R..####gggggggggggggggggggggggggggggg%hhhhhhhhhhhhhhhh###
+###########.....######gggggggggggggggggggggggggggg%hhhh%%%%%%%hhhhh###
+###########.....######gggggggggggggggggggggggggggg%hhhh%hhhhh%hhhhh###
+##############--###%%%%%%%%%%%%---%%%%%%%%%%%%%%%%%hhhh%hhhhh%hhhhh###
+##############--##############T---#######..........hhhh%hhhhhhhhhhh###
+###############....d###dddd..###--..#####..........hhhhhhhhhhhhhhhh###
+###############..ddddddddddd####--..#####dddd##d...hhhhhhhhhhhhhhhh###
+#############...###ddddddddd##.---..#####dddd##dd..hhhhhhhhThhhhhhh###
+####..##...##...###dddddddddd..---.....ddddddddddd.hhhhhh%%%hhhhhhh###
+####.dddd####......dddTdddd....---......dddddddd%%.hhhhhhhhhhhhhrrr###
+####ddddd##..............................ddddddd...##hhhhhhhhhhhrrr###
+####.dddTd.........................................##hhhhhhhhhhhrrr###
+####...=============..........T...........#########%%hh%%%%%%%%%rr%###
+#==============================================================rrr====
+#W=============================================================rrr===E
+#=======...........============================================rrr====
+####..........##.............==========...##############mmmm###rrrT###
+####..........##..................===S....##########mmmmmmmmmrrrmm####
+####.........##pppppppp...........===.....##########mmmmmmmmmrrrmm####
+######......p##ppppppppp###T....#.===.##############mmmmmmmrrrmmmmmm##
+######......pppppppppppp###.....#.===.##############mmmmmmmrrTmmmmmm##
+#############ppppppppppp###.....#.===.##############mmmmmrrrmmmmmmmm##
+################..################===###############mmmmmrrrmmmmmmmm##
+################..################===###############mmmrrrmmmmmmmmmm##
+################--####bbbbbbbbbbbbbbbbbbbbbb########mmmrrrmmmmmmmmmm##
+################--####bbbbbbbbbbbbbbbbbbbbbbbbb######rrrmmmmmmmm######
+################--##bbbbbbbbbbbbbbbbbbbb##bbbbb######rrrmmmmmmmm######
+################--##bbbbbbbbbbbbbbbbbbbb##bbbbb####rrr################
+################----bbbbbbbbbbbbbbbbbbbbbbbbbbb####rrr################
+################----bTbbbbbbbbbbbbbbbbbbbbbbbbb##rrr##################
+####################bbbbbbbbbbbbbbbbbbbbbbbbTbb##rRr##################
+####################bbbb##bbbbbbbbbbbbbbbbbbbbb#######################
+####################bbbb##bbbbbbbbbbbbbbbbbHbbb#######################
+#######################bbbbbbbbbbbbbbbbbbbbbbbb#######################
+#######################bbbb###bbbbbbbbbb##############################
+######################################################################
+######################################################################
+######################################################################
+######################################################################
