@@ -596,10 +596,11 @@ function buildGameHud() {
     // 바탕을 꽉 채운 그림으로 (기본 바탕 그림은 가운데가 비쳐 글만 있는 쪽에서 뒤 화면이 보였다 — 10-27 메이커)
     b.patchComponent("GuideWin", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.gauge_fill }, Type: 0, Color: { r: 0.045, g: 0.04, b: 0.055, a: 1 } });
     k.inner("GuideWin/Tabs", "top-left", [T.FRAME.padX, -top], [tabW, H - top - T.FRAME.padBottom], "win_content");
-    const tabIcon = ["icon_scroll", "icon_shadow", "icon_skill", "icon_bag", "icon_waypoint", "icon_party", "icon_sword"];
+    // 책갈피 그림: 코덱스 guide_* (10-27 샘플 군단부터, 나머지는 받을 때까지 메뉴 아이콘), 칸은 guide_tab(고르면 GuideWindow가 guide_tab_on으로)
+    const tabIcon = ["icon_scroll", "guide_legion", "icon_skill", "icon_bag", "icon_waypoint", "icon_party", "icon_sword"];
     tabIcon.forEach((key, i) => {
       const n = `GuideWin/Tabs/T${i + 1}`;
-      b.button(n, "", { anchor: "top-left", pos: [16, -16 - i * 96], rect_size: [tabW - 32, T.BUTTON.h], ...bg("btn_frame"), sprite_type: 1 });
+      b.button(n, "", { anchor: "top-left", pos: [16, -16 - i * 96], rect_size: [tabW - 32, T.BUTTON.h], ...bg("guide_tab"), sprite_type: 1 });
       k.pic(`${n}/Icon`, key, { anchor: "middle-left", pos: [22, 0], rect_size: [46, 46], color: WHITE, alpha: 1 });
       b.patchComponent(`${n}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
       b.text(`${n}/Label`, "", { size: 24, bold: true, color: C.gold, alignment: 3, anchor: "middle-left", pos: [82, 0], rect_size: [tabW - 32 - 82 - 30, 44], bestfit: true, min_size: 16, max_size: 24, ...outline });
