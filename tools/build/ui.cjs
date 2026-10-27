@@ -460,6 +460,8 @@ function buildGameHud() {
     b.text(`Gate${i}`, "", { size: 22, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 34], ...outline, enable: false });
   }
 
+  // 연쇄 처치 (10-28 피드백 F2 #14-B): 왼쪽 가운데 위 「12연속 처치」 — 10·25·50·100 단계마다 색이 짙어진다 (HudMain.RenderStreak)
+  b.text("KillStreak", "", { size: 40, bold: true, color: "#F0D9A0", anchor: "middle-left", pos: [48, 230], rect_size: [460, 60], alignment: 3, ...outline, outline_width: 0.25, enable: false });
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)

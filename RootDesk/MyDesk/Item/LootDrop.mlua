@@ -27,6 +27,11 @@ script LootDrop extends Component
     property number LockedUntil = 0       -- 서버 경과 초. 이 시각까지는 아무도 못 줍는다 (버린 물건, 깜빡임)
     property number DiscardLockSeconds = 10
     property number ThumbScale = 0.4      -- 장비 외형 썸네일
+    @Sync
+    property number SpawnServerAt = 0     -- 떨어진 서버 시각 (드롭음은 막 떨어진 것만 — 맵에 다시 들어올 때 울리지 않게)
+    @Sync
+    property string Label = ""             -- 바닥 이름표 글 (10-28 F2 #15-A: PC는 Alt 누르는 동안 · 모바일은 희귀 이상만)
+    property any LabelTag = nil           -- 이름표 (클라이언트 전용 자식의 NameTagComponent)
     property any Beam = nil               -- 유니크·세트 빛기둥 (클라이언트 전용 자식)
     property any Glow = nil               -- 유니크·세트 바닥 빛
     property number BeamHeight = 4.2      -- 빛기둥 높이 (월드 단위 · 화면 위까지 닿게)
@@ -40,8 +45,53 @@ script LootDrop extends Component
         self.Amount = amount
         self.Rarity = rarity
         self.DropTime = _UtilLogic.ElapsedSeconds
+        self.SpawnServerAt = _UtilLogic.ServerElapsedSeconds
         if kind == "item" then self.IconRUID = _ItemData:IconFor(itemString)
         elseif kind == "rune" then self.IconRUID = _ItemData:IconFor(itemString) end   -- 룬마다 코덱스 그림 (없으면 공용 룬)
+        if kind == "item" or kind == "rune" then self.Label = _ItemData:DisplayName(itemString)
+        elseif kind == "gold" then self.Label = "골드 " .. tostring(amount) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderLabel(boolean mine)
+        -- 바닥 이름표 (10-28 F2 #15-A): PC는 Alt를 누르는 동안 전부, 모바일은 희귀 이상 장비·룬만 늘
+        local want = false
+        if mine and self.Label ~= "" then
+            if Environment:IsMobilePlatform() then want = self.Kind == "rune" or (self.Kind == "item" and self.Rarity >= 2)
+            else want = _InputService:IsKeyPressed(KeyboardKey.LeftAlt) or _InputService:IsKeyPressed(KeyboardKey.RightAlt) end
+        end
+        if not want then
+            if self.LabelTag ~= nil and isvalid(self.LabelTag) and self.LabelTag.Enable then self.LabelTag.Enable = false end
+            return
+        end
+        if self.LabelTag == nil or not isvalid(self.LabelTag) then
+            local e = _SpawnService:SpawnByModelId("artsprite", "LootLabel", self.Entity.TransformComponent.WorldPosition, self.Entity)
+            if not isvalid(e) then return end
+            e.SpriteRendererComponent.Enable = false
+            if not isvalid(e.NameTagComponent) then e:AddComponent("NameTagComponent") end
+            local tag = e.NameTagComponent
+            if not isvalid(tag) then return end
+            local me = _UserService.LocalPlayer
+            if isvalid(me) and isvalid(me.NameTagComponent) then tag.NameTagRUID = me.NameTagComponent.NameTagRUID end
+            tag.FontSize = 1
+            tag.OffsetY = 0.35
+            tag.Name = self.Label
+            local c = Color(0.92, 0.92, 0.92, 1)
+            if self.Kind == "rune" then c = Color(1, 0.65, 0.25, 1)
+            elseif self.Kind == "gold" then c = Color(0.95, 0.85, 0.45, 1)
+            elseif self.Rarity == 1 then c = Color(0.55, 0.65, 1, 1)
+            elseif self.Rarity == 2 then c = Color(1, 0.92, 0.4, 1)
+            elseif self.Rarity == 3 then c = Color(0.9, 0.7, 0.35, 1)
+            elseif self.Rarity == 4 then c = Color(0.4, 0.95, 0.4, 1) end
+            tag.FontColor = c
+            self.LabelTag = tag
+        end
+        if not self.LabelTag.Enable then self.LabelTag.Enable = true end
+        -- 바닥 아이콘은 그림 크기에 맞춰 아주 작게 줄인다(0.03배 등) → 자식 이름표가 같이 줄지 않게 되돌린다
+        local ps = self.Entity.TransformComponent.Scale
+        local t = self.LabelTag.Entity.TransformComponent
+        local want = Vector3(1 / math.max(0.01, math.abs(ps.x)), 1 / math.max(0.01, math.abs(ps.y)), 1)
+        if math.abs(t.Scale.x - want.x) > 0.001 or math.abs(t.Scale.y - want.y) > 0.001 then t.Scale = want end
     end
 
     @ExecSpace("ServerOnly")
@@ -118,6 +168,7 @@ script LootDrop extends Component
         local me = _UserService.LocalPlayer
         local mine = self.OwnerUserId == "" or (isvalid(me) and me.PlayerComponent.UserId == self.OwnerUserId)
         if sprite.Enable ~= mine then sprite.Enable = mine end
+        self:RenderLabel(mine)
         if not mine then return end
         if not self.Dressed then
             -- 장비·룬 아이콘은 서버 값이 동기화된 뒤에 입힌다
@@ -141,6 +192,15 @@ script LootDrop extends Component
             elseif string.sub(ruid, 1, 12) == "thumbnail://" then scale = self.ThumbScale end
             self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
             if self.Kind == "item" and self.Rarity >= 3 then self:MakeBeam(scale) end
+            -- 드롭음 3단 (10-28 F2 A-1): 막 떨어진 것만 · 같은 순간 여러 개면 가장 높은 등급 하나 (LootSystem.PlayDropSound)
+            if self.SpawnServerAt > 0 and _UtilLogic.ServerElapsedSeconds - self.SpawnServerAt < 1.5 then
+                local tier = 0
+                if self.Kind == "gold" then tier = 1
+                elseif self.Kind == "rune" or (self.Kind == "item" and self.Rarity >= 3) then tier = 4
+                elseif self.Kind == "item" and self.Rarity == 2 then tier = 3
+                elseif self.Kind == "item" and self.Rarity == 1 then tier = 2 end
+                if tier > 0 then _LootSystem:PlayDropSound(tier) end
+            end
         end
         if self.Kind ~= "item" and self.Kind ~= "rune" then return end
         self.PulseTime = self.PulseTime + delta

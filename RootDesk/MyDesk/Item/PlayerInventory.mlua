@@ -6,6 +6,11 @@ script PlayerInventory extends Component
 
     property integer BagSize = 60            -- 가방 칸 (10열 × 6줄, 창에서는 3줄씩 스크롤)
     property number PickupRadius = 0.8
+    property boolean ManualPickup = false    -- PC: 장비·룬은 클릭(또는 줍기 단추)해야 줍는다 · 골드·물약은 그대로 자동 (10-28 F2 #15 사용자 지시)
+    property Entity PendingPick = nil        -- 클릭한 전리품 (걸어가 닿으면 줍는다)
+    property number PendingPickUntil = 0
+    property number PickNearbyUntil = 0      -- 줍기 단추: 이 시각까지 주변(PickNearbyRadius) 장비·룬을 줍는다
+    property number PickNearbyRadius = 1.6
     property string SlotOrder = "weapon,offhand,helm,armor,gloves,boots,belt,amulet,ring1,ring2"
     property boolean AshenHoodGranted = false -- 등록한 후드: 캐릭터당 한 번 지급, 저장 데이터에 보존
     property string StarterWeapon = "scythe1|0|1|단낫||0|"
@@ -323,11 +328,45 @@ script PlayerInventory extends Component
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return end
         local me = _Util:Pos2(self.Entity)
+        local now = _UtilLogic.ElapsedSeconds
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.LootDrop", true)) do
             ---@type LootDrop
             local drop = c
-            if drop:CanTake(pc.UserId) and (_Util:Pos2(c.Entity) - me):Magnitude() <= self.PickupRadius then self:Pickup(drop) end
+            if drop:CanTake(pc.UserId) then
+                local d = (_Util:Pos2(c.Entity) - me):Magnitude()
+                local manual = self.ManualPickup and (drop.Kind == "item" or drop.Kind == "rune")
+                if not manual then
+                    if d <= self.PickupRadius then self:Pickup(drop) end
+                elseif (now < self.PickNearbyUntil and d <= self.PickNearbyRadius)
+                    or (now < self.PendingPickUntil and self.PendingPick == c.Entity and d <= self.PickupRadius + 0.2) then
+                    self:Pickup(drop)
+                end
+            end
         end
+    end
+
+    @ExecSpace("Server")
+    method void RequestPickupMode(boolean manual)
+        -- 클라이언트가 처음에 알린다: PC면 장비·룬은 클릭해서 줍기
+        if not self:IsOwnerRequest(senderUserId) then return end
+        self.ManualPickup = manual
+    end
+
+    @ExecSpace("Server")
+    method void RequestPick(Entity drop)
+        -- 바닥 전리품 클릭: 걸어가서 닿으면 줍는다 (5초 안)
+        if not self:IsOwnerRequest(senderUserId) or not isvalid(drop) then return end
+        self.PendingPick = drop
+        self.PendingPickUntil = _UtilLogic.ElapsedSeconds + 5
+        self:TryPickup()
+    end
+
+    @ExecSpace("Server")
+    method void RequestPickNearby()
+        -- 줍기 단추(PC): 주변 PickNearbyRadius 안의 장비·룬을 한 번에
+        if not self:IsOwnerRequest(senderUserId) then return end
+        self.PickNearbyUntil = _UtilLogic.ElapsedSeconds + 0.6
+        self:TryPickup()
     end
 
     @ExecSpace("ServerOnly")

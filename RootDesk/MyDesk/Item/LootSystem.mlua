@@ -3,6 +3,21 @@
 @Logic
 script LootSystem extends Logic
 
+    property number DropSoundAt = -9        -- 클라이언트: 마지막 드롭음 시각
+    property integer DropSoundTier = 0
+
+    @ExecSpace("ClientOnly")
+    method void PlayDropSound(integer tier)
+        -- 드롭음 3단 (+골드): 0.08초 안에 여러 개가 떨어지면 가장 높은 등급 하나만 (10-28 F2 A-1 · 소리 겹침 방지)
+        local now = _UtilLogic.ElapsedSeconds
+        if now - self.DropSoundAt < 0.08 and tier <= self.DropSoundTier then return end
+        self.DropSoundAt = now
+        self.DropSoundTier = tier
+        local key = ({ "drop_gold", "drop_magic", "drop_rare", "drop_unique" })[tier]
+        local ruid = _GameData:GetSound(key)
+        if ruid ~= "" then _SoundDirector:PlayEffect(ruid, ({ 0.35, 0.55, 0.7, 0.9 })[tier]) end
+    end
+
     property boolean DebugLog = false
 
     @ExecSpace("ServerOnly")

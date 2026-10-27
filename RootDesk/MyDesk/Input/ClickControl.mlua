@@ -148,6 +148,19 @@ script ClickControl extends Component
             self.HasDestination = false
             return world
         end
+        -- 바닥 전리품 클릭 (PC 장비·룬): 걸어가 닿으면 줍는다 (10-28 F2 #15)
+        local loot = self:FindLootNear(world)
+        if loot ~= nil then
+            ---@type PlayerInventory
+            local inv = self.Entity:GetComponent("script.PlayerInventory")
+            if inv ~= nil then inv:RequestPick(loot) end
+            self:SelectAttackTarget(nil)
+            self.Destination = _Util:Pos2(loot)
+            self.HasDestination = true
+            self.SlideCount = 0
+            self.StuckTime = 0
+            return world
+        end
         -- 웨이포인트 클릭: 걸어가서 닿으면 창을 연다 (이미 닿아 있으면 바로) — 10-10 QA
         ---@type Waypoint
         local wp = _Util:NearestComponent(self.Entity.CurrentMap, "script.Waypoint", world, 1.2)
@@ -171,6 +184,24 @@ script ClickControl extends Component
         self.Destination = world
         self.HasDestination = true
         return world
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindLootNear(Vector2 point)
+        -- 클릭한 자리에 가까운 내 장비·룬 전리품 (0.45칸 안 · 가장 가까운 것)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not isvalid(self.Entity.CurrentMap) then return nil end
+        local uid = me.PlayerComponent.UserId
+        local best, bestD = nil, 0.45
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.LootDrop", true)) do
+            ---@type LootDrop
+            local drop = c
+            if (drop.Kind == "item" or drop.Kind == "rune") and (drop.OwnerUserId == "" or drop.OwnerUserId == uid) then
+                local d = (_Util:Pos2(c.Entity) - point):Magnitude()
+                if d < bestD then best, bestD = c.Entity, d end
+            end
+        end
+        return best
     end
 
     @ExecSpace("ClientOnly")
@@ -202,6 +233,12 @@ script ClickControl extends Component
             self.LastTick = now
             self:Tick(delta)
         end, 1 / 60, true)
+        -- PC: 장비·룬은 클릭해서 줍는다 (10-28 F2 #15 사용자 지시 — 모바일은 그대로 자동)
+        if self.Entity == _UserService.LocalPlayer and Environment:IsPCPlatform() then
+            ---@type PlayerInventory
+            local inv = self.Entity:GetComponent("script.PlayerInventory")
+            if inv ~= nil then inv:RequestPickupMode(true) end
+        end
     end
 
     @ExecSpace("ClientOnly")

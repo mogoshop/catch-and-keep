@@ -362,6 +362,19 @@ script HudMain extends Logic
         _UIKit:SetText("MenuWin/Channel", self:InLobby() and "채널 변경" or "게임 나가기")
         self:RenderTip(player, st)
         self:RenderSoulUi(player)
+        self:RenderStreak(st)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderStreak(PlayerStats st)
+        -- 연쇄 처치 카운터 (10-28 F2 #14-B): streakShowFrom(10)부터 왼쪽에 「N연속 처치」, 단계(10·25·50·100)마다 색이 짙어진다
+        local n = st ~= nil and st.KillStreak or 0
+        local show = n >= _GameData.streakShowFrom
+        _UIKit:SetEnabled("KillStreak", show)
+        if not show then return end
+        local color = "#F0D9A0"
+        if n >= 100 then color = "#FF6A4A" elseif n >= 50 then color = "#FF9A5A" elseif n >= 25 then color = "#FFD15A" end
+        _UIKit:SetText("KillStreak", _UIKit:Colored(color, tostring(n)) .. "연속 처치")
     end
 
     @ExecSpace("ClientOnly")
