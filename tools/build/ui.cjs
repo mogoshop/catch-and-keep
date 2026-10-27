@@ -605,9 +605,14 @@ function buildGameHud() {
     tabIcon.forEach((key, i) => {
       const n = `GuideWin/Tabs/T${i + 1}`;
       b.button(n, "", { anchor: "top-left", pos: [16, -16 - i * 96], rect_size: [tabW - 32, T.BUTTON.h], ...bg("guide_tab"), sprite_type: 1 });
-      k.pic(`${n}/Icon`, key, { anchor: "middle-left", pos: [22, 0], rect_size: [46, 46], color: WHITE, alpha: 1 });
+      // 안쪽 칸(장식 사이)을 아이콘 + 이름 칸으로 나누고 이름은 가운데 정렬 → 4글자 기준 무리가 칸 가운데에 온다 (T.TAB)
+      const inner = tabW - 32 - T.TAB.artLeft - T.TAB.artRight;
+      const iconX = T.TAB.artLeft + T.TAB.gap;
+      const labelX = iconX + T.TAB.icon + T.TAB.gap;
+      const labelW = T.TAB.artLeft + inner - labelX;
+      k.pic(`${n}/Icon`, key, { anchor: "middle-left", pos: [iconX, 0], rect_size: [T.TAB.icon, T.TAB.icon], color: WHITE, alpha: 1 });
       b.patchComponent(`${n}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-      b.text(`${n}/Label`, "", { size: 24, bold: true, color: C.gold, alignment: 3, anchor: "middle-left", pos: [82, 0], rect_size: [tabW - 32 - 82 - 30, 44], bestfit: true, min_size: 16, max_size: 24, ...outline });
+      b.text(`${n}/Label`, "", { size: T.TAB.font, bold: true, color: C.gold, alignment: 4, anchor: "middle-left", pos: [labelX, 0], rect_size: [labelW, 44], bestfit: true, min_size: T.TAB.minFont, max_size: T.TAB.font, ...outline });
       k.badge(n);
     });
     b.text("GuideWin/Tabs/Hint", "메뉴 → 게임 안내에서\n언제든 다시 볼 수 있어요", { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [tabW - 32, 56] });

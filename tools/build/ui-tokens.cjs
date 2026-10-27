@@ -27,6 +27,8 @@ const INNER = { pad: 24 };
 const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
   padX: 30,        // 버튼 그림(btn_frame) 양 끝 장식 안쪽부터 글자 (장식에 글자가 닿지 않게)
   minFont: 14 };   // 글이 길면 이 크기까지 줄인다 (「다음 ▶ [Space]」 같은 PC 단축키 안내)
+// 책갈피 칸 (guide_tab 320×88): 왼쪽 해골 장식 40 · 오른쪽 화살촉 50을 뺀 안쪽에 아이콘 + 이름을 가운데로 (10-27 사용자: 「목차 내부 패딩 엉망 · 수평 중앙」)
+const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16 };
 // 테두리 버튼 글자 칸 (모든 빌더 공통): 장식 안쪽 여백 + 넘치면 줄이기
 function buttonText(fontSize) {
   return { Padding: { left: BUTTON.padX, right: BUTTON.padX, top: 0, bottom: 0 }, BestFit: true, MinSize: BUTTON.minFont, MaxSize: fontSize };
@@ -68,4 +70,4 @@ function dialogLayout(height, withPortrait) {
   return { portraitX, paperX, paperW, paperH };
 }
 
-module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };
+module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, TAB, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };
