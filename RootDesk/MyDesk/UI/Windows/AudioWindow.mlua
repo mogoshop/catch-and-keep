@@ -12,6 +12,8 @@ script AudioWindow extends Logic
     property string SupportPath = "/ui/AudioSettingsHUD/Modal/SafeArea/Support"   -- 개발자 응원하기 판 (설정 판과 번갈아 켠다)
     property boolean SupportShown = false
     property boolean PricesAsked = false
+    property integer AppliedScale = 100        -- 지금 화면에 적용한 UI 크기 % (PlayerSave.UIScale을 따라간다, PC만)
+    property string AppliedScreen = ""         -- 적용할 때의 화면 크기 (창 크기가 바뀌면 다시 맞춘다)
     property any SupportPrices = nil            -- 단계 → 가격 (상점에서 한 번 읽는다)
     property any SupportOpen = nil              -- 단계 → 살 수 있음 (판매 중 · 메이커는 시험 구매)
 
@@ -27,6 +29,10 @@ script AudioWindow extends Logic
         _UIKit:Connect(self.Body .. "/Reset", function() self:ResetVolumes() end)
         _UIKit:Connect(self.Body .. "/Input", function() _ShadowHUD:ToggleInputMode() end)
         _UIKit:Connect(self.Body .. "/Back", function() _UIKit:Open("MenuWin") end)
+        for _, pct in ipairs({ 80, 90, 100 }) do
+            local value = pct
+            _UIKit:Connect(self.Body .. "/uiscale/S" .. tostring(pct), function() self:PickUIScale(value) end)
+        end
         -- 개발자 응원하기 (10-25 후원 패스 — Shop/Supporter)
         self.SupportPrices = {}
         self.SupportOpen = {}
@@ -62,6 +68,8 @@ script AudioWindow extends Logic
                 self:Apply()
             end
         end
+        local want = Environment:IsPCPlatform() and save.UIScale or 100
+        if want ~= self.AppliedScale or (want ~= 100 and self.AppliedScreen ~= self:ScreenKey()) then self:ApplyUIScale(want) end
         if not _UIKit:IsOpen(self.Win) then
             if self.SupportShown then self:ShowSupport(false) end   -- 다시 열면 설정 판부터
             return
@@ -72,6 +80,10 @@ script AudioWindow extends Logic
             _UIKit:SetText(self.Body .. "/" .. key .. "/Value", self.Ready and (tostring(value) .. "%") or "—")
             _UIKit:SetFill(self.Body .. "/" .. key .. "/Bar/Fill", value / 100)
             _UIKit:SetText(self.Body .. "/" .. key .. "/Mute", value == 0 and "켜기" or "음소거")
+        end
+        for _, pct in ipairs({ 80, 90, 100 }) do
+            local on = pct == self.AppliedScale
+            _UIKit:SetColor(self.Body .. "/uiscale/S" .. tostring(pct), on and Color(1, 0.86, 0.62, 1) or Color(0.62, 0.6, 0.66, 1))
         end
         ---@type ClickControl
         local control = _UIKit:Comp("script.ClickControl")
@@ -136,6 +148,40 @@ script AudioWindow extends Logic
         if not isvalid(me) or (_Supporter.Tier[me.PlayerComponent.UserId] or 0) >= tier or not self.SupportOpen[tier] then return end
         local id = _Supporter:PassList()[tier]
         if id ~= nil then _WorldShopService:PromptPurchase(id) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickUIScale(integer pct)
+        if not self.Ready or not _UIKit:IsOpen(self.Win) then return end
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if save ~= nil then save:RequestUIScale(pct) end
+        self:ApplyUIScale(pct)   -- 저장 응답을 기다리지 않고 바로 보여 준다
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ApplyUIScale(integer pct)
+        -- UI 묶음(/ui 아래)마다 크기를 줄이고 바탕 틀을 그만큼 넓힌다 → 모서리에 붙은 HUD는 모서리에 남고 모두 같은 비율로 작아진다 (10-27 메이커 실측: 클릭 위치도 맞음)
+        -- 바탕 틀: 엔진은 가로 1920을 지키고 세로를 화면 비율로 늘린다 (16:9 = 1920×1080 · 4:3 = 1920×1440, 10-09 iPad 실측)
+        local s = pct / 100
+        local root = _EntityService:GetEntityByPath("/ui")
+        if root == nil then return end
+        local w, h = _UILogic.ScreenWidth, _UILogic.ScreenHeight
+        local baseH = (w > 0 and h > 0) and (1920 * h / w) or 1080
+        for _, g in ipairs(root.Children) do
+            local t = g.UITransformComponent
+            if isvalid(t) then
+                t.UIScale = Vector3(s, s, 1)
+                t.RectSize = Vector2(1920 / s, baseH / s)
+            end
+        end
+        self.AppliedScale = pct
+        self.AppliedScreen = self:ScreenKey()
+        log("[VRF] UI scale " .. tostring(pct) .. "%")
+    end
+
+    method string ScreenKey()
+        return tostring(_UILogic.ScreenWidth) .. "x" .. tostring(_UILogic.ScreenHeight)
     end
 
     method string Key()
