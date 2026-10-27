@@ -611,6 +611,10 @@ function buildGameHud() {
     b.panel("GuideWin/Media", { anchor: "top-left", pos: [rx + (rw - mediaW) / 2, -top], rect_size: [mediaW, mediaH], color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, sprite_type: 1 });
     b.sprite("GuideWin/Media/Shot", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     k.aspect("GuideWin/Media/Shot");
+    // 안내 영상 (유튜브 일부 공개 1편 · 10-27): 쪽마다 그 장면 초로 Jump하고 길이만큼 되풀이 (GuideWindow). 실행 중 AddComponent로는 화면이 안 나와 파일에 미리 둔다 (docs/design/35 §8)
+    b.empty("GuideWin/Media/Video", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], enable: false });
+    b.addComponent("GuideWin/Media/Video", "MOD.Core.RawImageGUIRendererComponent", { "@type": "MOD.Core.RawImageGUIRendererComponent", Enable: true, MaterialId: "" });
+    b.addComponent("GuideWin/Media/Video", "MOD.Core.YoutubePlayerGUIComponent", { "@type": "MOD.Core.YoutubePlayerGUIComponent", Enable: true, Urls: ["https://www.youtube.com/watch?v=frX4-7REhRw"], Loop: true, PlayOnAwake: false, Shuffle: false, Volume: 0, PlaySpeed: 1 });
     b.text("GuideWin/Media/Empty", "화면 준비 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
     k.rim("GuideWin/Media", "slot_frame");
     const headY = top + mediaH + 12;

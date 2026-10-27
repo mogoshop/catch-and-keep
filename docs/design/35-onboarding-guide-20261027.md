@@ -158,3 +158,12 @@
   - 넣는 법: `b.empty("GuideWin/Media/Video", …)` + `b.addComponent(…, "MOD.Core.YoutubePlayerGUIComponent", { Urls: ["https://www.youtube.com/watch?v=…"], Loop, PlayOnAwake, Shuffle: false, Volume: 0 })`. 영상 위에 그림(Shot)을 켜 두면 덮이니 끈다.
   - 메이커가 새 칸을 못 읽은 적이 한 번 있었다 → 빌드 후 플레이 멈춘 상태에서 touch → refresh, 실행 중 자식 목록으로 확인.
 - 남은 일: 안내 영상 한 편(쪽마다 4~6초 장면 10개) 녹화 → 채널에 일부 공개로 업로드 → 쪽마다 시작 초 · 길이를 표에 적고, 그 길이가 지나면 시작 초로 다시 Jump (구간 반복).
+
+## 9. 안내 영상 연결 (10-27 메이커 확인)
+
+- 영상: 유튜브 일부 공개 `frX4-7REhRw` (1080p60 · 109초 = 인트로 4 + 본편 95 + 아웃트로 10). 원본 `assets/claude-guide-video-v1/guide-video-v9-1080p60.mp4`.
+- `GuideWin/Media/Video` (RawImage + YoutubePlayer, PlayOnAwake 끔 · 소리 0) — 쪽의 `vid = { 시작 초, 길이 }`로 그 구간만 되풀이.
+- **꺼져 있던 재생기는 Jump만 하면 첫 화면(인트로)에 멈춰 있다** → `Play()` 뒤 2초 기다렸다 Jump. 그 2초 동안 인트로 로고가 보여 불러오는 화면 역할을 한다.
+- 창을 닫으면(Esc · 닫기) 0.5초 안에 Pause + 끔, 영상 없는 쪽 · 상황 카드로 가면 바로 멈춘다.
+- 쪽 ↔ 구간: 잡으면 내 편 4–9 · 해골 일으키기 9–32 · 그림자 추출 32–39 · 그림자 창 39–47 · 소환 47–52 · 스킬 강화 63–68 · 빛 기둥 68–73 · 웨이포인트 73–81 · 보스 81–94 · 붉은 원 94–99. 조작 쪽은 글만(영상에서 뺀 장면).
+- 메이커 마우스 흉내 입력은 UI 버튼을 누르지 못해 쪽 넘김은 버튼이 부르는 `Turn`으로, 닫기는 실제 Esc 키로 확인했다.

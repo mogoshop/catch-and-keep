@@ -7,6 +7,8 @@
 --   · 메뉴 「게임 안내」로 언제든 다시 본다. 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
 --   · 상황 카드: GuideCoach가 그 순간 필요한 한 장만 같은 창에 띄운다 (ShowCard / ShowCardLink — 쪽 점 없이 「확인」).
 --   · 화면 칸: 쪽의 shot(animationclip 움짤 또는 sprite 캡처 RUID). 아직 없으면 「준비 중」 글, 글만 쓰는 쪽(kind "")은 화면 칸을 접고 글을 크게.
+--   · 안내 영상: 쪽에 vid { 시작 초, 길이 }가 있으면 Media/Video(유튜브 일부 공개 1편 frX4-7REhRw)를 그 초로 Jump하고 길이만큼 되풀이.
+--     영상은 인트로 4초 뒤에 본편이 붙는다 (assets/claude-guide-video-v1/README.md 장면 초 + 4). 창을 닫거나 다른 쪽으로 가면 멈춘다.
 @Logic
 script GuideWindow extends Logic
 
@@ -32,6 +34,10 @@ script GuideWindow extends Logic
     property number RightW = 1142
     property number DotX = 158
     property number DotY = 92
+    property integer VidStart = -1           -- 지금 되풀이 중인 영상 구간 (−1 = 멈춤)
+    property number VidDur = 0
+    property integer VidTimer = 0
+    property number VidLoad = 2              -- 재생기를 처음 켤 때 불러오는 시간 (그 뒤 Jump)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -54,6 +60,7 @@ script GuideWindow extends Logic
         self.TimerId = _TimerService:SetTimerRepeat(function()
             self:CheckFirstEntry(0.5)
             self:CheckInputChoice(0.5)
+            if self.VidStart >= 0 and not _UIKit:IsOpen(self.Win) then self:StopVideo() end
         end, 0.5)
         local pages = 0
         for _, t in ipairs(self.Tabs) do pages = pages + #t.pages end
@@ -65,6 +72,7 @@ script GuideWindow extends Logic
         -- 타이머 정리
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
+        self:StopVideo()
     end
 
     @ExecSpace("ClientOnly")
@@ -163,20 +171,27 @@ script GuideWindow extends Logic
             if isvalid(tab) and ruid ~= "" and tab.SpriteGUIRendererComponent.ImageRUID.DataId ~= ruid then tab.SpriteGUIRendererComponent.ImageRUID = DataRef(ruid) end
             _UIKit:SetEnabled(n .. "/Badge", not self:IsSeen(t.key))
         end
-        local head, body, kind, shot = "", "", "", ""
+        local head, body, kind, shot, vid = "", "", "", "", nil
         if self.CardMode then
             head, body = self.Card.head, self.Card.body
         else
             local p = tabs[self.Tab].pages[self.Page]
-            head, body, kind, shot = p.head, p.body, p.kind or "", p.shot or ""
+            head, body, kind, shot, vid = p.head, p.body, p.kind or "", p.shot or "", p.vid
         end
         -- 화면 칸: 그림이 있으면 그림, 만들 예정이면 「준비 중」, 글만 쓰는 쪽·상황 카드는 접는다
         local media = not self.CardMode and kind ~= ""
         _UIKit:SetEnabled(w .. "/Media", media)
-        if media then
-            _UIKit:SetIcon(w .. "/Media/Shot", shot)
-            _UIKit:SetEnabled(w .. "/Media/Empty", shot == "")
-            _UIKit:SetText(w .. "/Media/Empty", kind == "clip" and "움짤 준비 중" or "화면 준비 중")
+        if media and vid ~= nil then
+            _UIKit:SetEnabled(w .. "/Media/Shot", false)
+            _UIKit:SetEnabled(w .. "/Media/Empty", false)
+            self:PlayVideo(vid[1], vid[2])
+        else
+            self:StopVideo()
+            if media then
+                _UIKit:SetIcon(w .. "/Media/Shot", shot)
+                _UIKit:SetEnabled(w .. "/Media/Empty", shot == "")
+                _UIKit:SetText(w .. "/Media/Empty", kind == "clip" and "움짤 준비 중" or "화면 준비 중")
+            end
         end
         local headY = media and 572 or 74
         _UIKit:SetPos(w .. "/Head", Vector2(self.RightX, -headY))
@@ -205,6 +220,61 @@ script GuideWindow extends Logic
         end
         _UIKit:SetText(w .. "/BtnNext", label)
         log("[VRF] guide render tab=" .. tostring(self.Tab) .. " page=" .. tostring(self.Page) .. " card=" .. tostring(self.CardMode) .. " media=" .. tostring(media) .. " next=" .. label)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayVideo(integer start, number dur)
+        -- 영상 칸을 켜고 그 구간을 되풀이 (같은 구간이면 이어서 둔다).
+        -- 꺼져 있던 재생기는 Jump만으로는 첫 화면에 멈춰 있다 → Play로 불러오고 VidLoad초 뒤 Jump (10-27 메이커 실측, 그동안은 인트로가 보인다)
+        local e = _UIKit:Get(self.Win .. "/Media/Video")
+        if not isvalid(e) or e.YoutubePlayerGUIComponent == nil then
+            log("[VRF] guide video missing")
+            return
+        end
+        if self.VidStart == start and e.Enable then return end
+        if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
+        self.VidTimer = 0
+        local fresh = not e.Enable
+        e.Enable = true
+        self.VidStart, self.VidDur = start, dur
+        if fresh then
+            e.YoutubePlayerGUIComponent:Play()
+            self.VidTimer = _TimerService:SetTimerOnce(function() self:LoopVideo() end, self.VidLoad)
+        else
+            self:LoopVideo()
+        end
+        log("[VRF] guide video start=" .. tostring(start) .. " dur=" .. tostring(dur) .. " fresh=" .. tostring(fresh))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LoopVideo()
+        -- 구간 처음으로 옮기고, 길이가 지날 때마다 다시 처음으로
+        if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
+        self.VidTimer = 0
+        if self.VidStart < 0 then return end
+        local e = _UIKit:Get(self.Win .. "/Media/Video")
+        if not isvalid(e) or not e.Enable then return end
+        e.YoutubePlayerGUIComponent:Jump(self.VidStart)
+        self.VidTimer = _TimerService:SetTimerRepeat(function()
+            local v = _UIKit:Get(self.Win .. "/Media/Video")
+            if self.VidStart >= 0 and isvalid(v) and v.Enable then v.YoutubePlayerGUIComponent:Jump(self.VidStart) end
+        end, self.VidDur)
+        log("[VRF] guide video jump " .. tostring(self.VidStart))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopVideo()
+        -- 영상 칸을 멈추고 끈다 (창 닫힘 · 영상 없는 쪽 · 상황 카드)
+        if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
+        self.VidTimer = 0
+        if self.VidStart < 0 then return end
+        self.VidStart = -1
+        local e = _UIKit:Get(self.Win .. "/Media/Video")
+        if isvalid(e) and e.YoutubePlayerGUIComponent ~= nil then
+            e.YoutubePlayerGUIComponent:Pause()
+            e.Enable = false
+        end
+        log("[VRF] guide video stopped")
     end
 
     @ExecSpace("ClientOnly")
@@ -309,6 +379,7 @@ script GuideWindow extends Logic
 
     method table BuildTabs(boolean mobile)
         -- 책갈피 7 · 쪽 26 (docs/design/35 §3). kind: "clip" 움짤 · "shot" 캡처 · "" 글만. shot = 그림 RUID (녹화 후 채운다)
+        -- vid = { 영상 시작 초, 길이 } — 안내 영상 v9 (인트로 4초 + 본편 장면 초, assets/claude-guide-video-v1/README.md)
         local g = function(s) return "<color=#E8C66B>" .. s .. "</color>" end
         local r = function(s) return "<color=#E8705C>" .. s .. "</color>" end
         local b = function(s) return "<color=#7FB2FF>" .. s .. "</color>" end
@@ -317,17 +388,17 @@ script GuideWindow extends Logic
         local tabs = {}
 
         table.insert(tabs, { key = "start", name = "시작하기", pages = {
-            { kind = "clip", head = "잡으면 내 편",
+            { kind = "clip", vid = { 4, 5 }, head = "잡으면 내 편",
               body = "몬스터를 쓰러뜨리면 그 자리에 " .. g("혼") .. "이 남습니다.\n"
                 .. "· 혼으로 " .. g("해골") .. "을 일으키거나, 혼을 " .. g("추출") .. "해 " .. g("그림자") .. "로 거둡니다.\n"
                 .. "· 강한 적의 혼일수록 강한 그림자 — 보스도 내 편이 됩니다.\n"
                 .. "· 스킬은 소환 · 영혼 · 저주 · 이동, 어느 쪽으로 키울지는 자유입니다." },
-            mobile and { kind = "clip", head = "조작 (모바일)",
+            mobile and { kind = "", head = "조작 (모바일)",
               body = "· " .. g("왼쪽 스틱") .. " 이동 · " .. g("큰 공격 버튼") .. " 누르고 있으면 계속 공격 (누른 채 끌어 조준)\n"
                 .. "· " .. g("둘레 스킬 4칸") .. " — 끌어서 방향을 정하고 손을 떼면 발동\n"
                 .. "· " .. g("벨트 4칸") .. " 물약 (길게 눌러 넣을 물건 바꾸기) · 혼 근처 " .. g("추출 버튼") .. "\n"
                 .. "· " .. g("그림자 명령") .. " 소환 · 회수 · 집결 · " .. g("메뉴") .. " 소지품 · 능력치 · 스킬 · 그림자 · 퀘스트 · 설정" }
-            or { kind = "clip", head = "조작 (PC)",
+            or { kind = "", head = "조작 (PC)",
               body = "· " .. g("바닥 클릭") .. " 이동 (방향키도 됩니다) · " .. g("몬스터 클릭") .. " 공격, 누르고 있으면 계속\n"
                 .. "· " .. g("A S D F · 우클릭") .. " 스킬 · " .. g("1 ~ 4") .. " 벨트 물약 · " .. g("Space") .. " 질주 (마을에서는 대화)\n"
                 .. "· " .. g("E") .. " 혼 추출 · " .. g("Z") .. " 그림자 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결\n"
@@ -340,20 +411,20 @@ script GuideWindow extends Logic
         } })
 
         table.insert(tabs, { key = "legion", name = "군단", pages = {
-            { kind = "clip", head = "해골 일으키기",
+            { kind = "clip", vid = { 9, 23 }, head = "해골 일으키기",
               body = "혼을 써서 " .. g("해골 전사") .. "와 " .. g("해골 마법사") .. "를 일으킵니다 (소환 계열).\n"
                 .. "· 함께 세울 수 있는 해골 수는 스킬 랭크만큼 — 랭크를 올리면 군단이 늘어납니다.\n"
                 .. "· 그냥 쓰면 가까운 " .. g("일반 혼") .. "부터 씁니다. 정예·보스의 귀한 혼은 직접 겨냥했을 때만 씁니다." },
-            { kind = "clip", head = "그림자 추출",
+            { kind = "clip", vid = { 32, 7 }, head = "그림자 추출",
               body = "Lv5에 「그림자 소환」을 배우면 쓰러뜨린 적을 " .. g("그림자") .. "로 거둘 수 있습니다.\n"
                 .. "· 혼 곁에서 " .. key("E", "추출 버튼") .. " — 성공하면 그 몬스터가 내 그림자가 됩니다.\n"
                 .. "· 강한 몬스터일수록 강한 그림자. 정예 · 고유 몬스터 · 보스도 데려올 수 있습니다." },
-            { kind = "shot", head = "그림자 창",
+            { kind = "clip", vid = { 39, 8 }, head = "그림자 창",
               body = key("그림자(H)", "메뉴 → 그림자") .. " 창에서 그림자를 고르면\n"
                 .. "· " .. g("소환 지정") .. " — 불러낼 그림자와 순서를 정합니다. 지정한 그림자만 나옵니다\n"
                 .. "· " .. g("강화") .. " — 정수를 써서 공격·생명을 올립니다 (내 레벨이 오를수록 더 높이)\n"
                 .. "· " .. g("분해") .. " — 필요 없는 그림자를 정수로 바꿉니다" },
-            { kind = "clip", head = "소환 · 회수 · 집결",
+            { kind = "clip", vid = { 47, 5 }, head = "소환 · 회수 · 집결",
               body = (mobile and (g("그림자 명령") .. " 버튼") or (g("Z") .. " 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결")) .. "\n"
                 .. "· " .. g("집결") .. "은 흩어진 군단을 내 곁으로 모읍니다 — 보스 앞에서 한 번에 몰아치세요\n"
                 .. "· Lv" .. full .. "까지는 한 번에 1기, 그 뒤로는 레벨이 오를수록 여러 기를 함께 거느립니다" },
@@ -374,7 +445,7 @@ script GuideWindow extends Logic
                 .. "· " .. g("영혼") .. " — 뼈 마법으로 직접 싸웁니다\n"
                 .. "· " .. g("저주") .. " — 적을 약하게 만들어 군단을 돕습니다\n"
                 .. "· " .. g("이동") .. " — 망령 걸음 같은 움직임 스킬" },
-            { kind = "clip", head = "스킬 강화",
+            { kind = "clip", vid = { 63, 5 }, head = "스킬 강화",
               body = "스킬 창에서 스킬을 고르면 아래에 " .. g("강화 노드") .. "가 있습니다.\n"
                 .. "· 스킬 포인트로 노드를 찍으면 그 스킬에 효과가 붙습니다 (그림마다 효과가 다릅니다)\n"
                 .. "· 한 스킬을 깊게 파도, 여러 스킬을 고루 찍어도 됩니다" },
@@ -384,7 +455,7 @@ script GuideWindow extends Logic
         } })
 
         table.insert(tabs, { key = "gear", name = "장비·파밍", pages = {
-            { kind = "clip", head = "등급과 빛 기둥",
+            { kind = "clip", vid = { 68, 5 }, head = "등급과 빛 기둥",
               body = "몬스터는 장비를 떨어뜨립니다. 이름 색이 등급입니다.\n"
                 .. "흰색 일반 · <color=#6E8CFF>파란색 마법</color> · <color=#FFE15A>노란색 레어</color> · <color=#3CDC3C>초록색 세트</color> · <color=#C8A050>금색 유니크</color>\n"
                 .. "· 좋은 물건일수록 떨어질 때 " .. g("빛 기둥") .. "이 섭니다. 바닥의 물건은 직접 주워야 합니다\n"
@@ -410,10 +481,10 @@ script GuideWindow extends Logic
               body = "마을 NPC의 " .. g("의뢰") .. "를 따라 나아갑니다. 화면 오른쪽 추적 칸이 다음 할 일을 알려 줍니다.\n"
                 .. "액트 1 " .. g("무덤 왕국") .. " → 2 " .. g("모래 폐허") .. " → 3 " .. g("폭풍 해안") .. " → 4 " .. g("심연의 땅") .. "\n"
                 .. "· NPC 머리 위 표시 — 새 의뢰 / 완료 보고" },
-            { kind = "clip", head = "웨이포인트",
+            { kind = "clip", vid = { 73, 8 }, head = "웨이포인트",
               body = "각 지역의 " .. g("웨이포인트") .. "를 밟아 켜 두면 마을에서 바로 그곳으로 이동할 수 있습니다.\n"
                 .. "· 새 사냥터에 들어가면 먼저 웨이포인트부터 찾으세요" },
-            { kind = "clip", head = "보스",
+            { kind = "clip", vid = { 81, 13 }, head = "보스",
               body = "액트마다 중간 보스와 마지막 보스가 기다립니다.\n"
                 .. "· 보스의 혼도 거둘 수 있습니다 — 쓰러뜨린 뒤 꼭 추출해 보세요\n"
                 .. "· 보스 방에 들어가기 전에 물약을 채우고 군단을 " .. g("집결") .. "해 두세요" },
@@ -436,7 +507,7 @@ script GuideWindow extends Logic
         } })
 
         table.insert(tabs, { key = "danger", name = "위험 신호", pages = {
-            { kind = "clip", head = "바닥의 붉은 원",
+            { kind = "clip", vid = { 94, 5 }, head = "바닥의 붉은 원",
               body = r("붉은 원") .. "은 곧 터지는 범위 공격입니다.\n"
                 .. "· 원 밖으로 걸어 나가면 피할 수 있습니다\n"
                 .. "· 군단이 맞아 주는 동안 내 자리부터 챙기세요" },
