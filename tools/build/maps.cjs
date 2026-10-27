@@ -20,9 +20,24 @@ function edges(d) {
   const w = num(d.w, 14), h = num(d.h, 8);
   return { left: -(w / 2) + 1, right: w / 2 - 1, bottom: -(h / 2) + 1, top: h / 2, w, h };
 }
+// 설계도가 있는 맵 (10-28 66장 전면 개편: data/handmade/<id>.txt — 장소 설계서 compose.cjs가 만든다): 타일·벽·장식은 설계도, 포털은 설계도 표식 W·E·G
+const hasBP = (d) => d.kind !== "handmade" && handmade.hasBlueprint(d.id);
+function gatePos(d, ch, fallback) {
+  if (!hasBP(d)) return fallback;
+  const list = handmade.markers(d.id).list[ch];
+  if (!list) throw new Error(`${d.id}: 설계도에 표식 '${ch}'가 없음`);
+  return [list[0][0], list[0][1], 0];
+}
+// 곁가지 던전 입구 앞 도착 자리: 입구 아래 1.4칸 — 설계도 맵은 그 칸이 벽이면 위·왼쪽·오른쪽 중 바닥인 곳 (10-28 황무지 굶주린 굴 입구는 구덩이 남쪽 끝)
+function besideEntry(m, p) {
+  const cands = [[0, -1.4], [0, 1.4], [-1.4, 0], [1.4, 0]].map(([dx, dy]) => [p[0] + dx, p[1] + dy]);
+  if (!hasBP(m)) return cands[0];
+  const bp = handmade.parseBlueprint(m.id);
+  return cands.find(([x, y]) => bp.isFloor(Math.floor(x), Math.floor(y))) || cands[0];
+}
 // 포털 앞 도착 위치 (포털에서 안쪽으로 1.4칸)
-const arriveLeft = (d) => [edges(d).left + 1.4, 0];
-const arriveRight = (d) => [edges(d).right - 1.4, 0];
+const arriveLeft = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "W")) : [edges(d).left + 1.4, 0]);
+const arriveRight = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "E")) : [edges(d).right - 1.4, 0]);
 
 // 곁가지 던전 하나 = entry가 있는 첫 층 + 바로 뒤따르는(entry 없는) 층들. 한 필드에 던전이 여러 개 붙을 수 있다
 function dungeonFloors(maps, m) {
@@ -52,18 +67,18 @@ function desiredEntities(d, maps, ctx) {
 
   if (d.kind === "town") {
     const first = fields[0];
-    place("GateToField", "Objects/WarpGate", [townArrival[0], ctx.townExitY ?? townArrival[1] - 1.4, 0], { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
+    place("GateToField", "Objects/WarpGate", gatePos(d, "G", [townArrival[0], ctx.townExitY ?? townArrival[1] - 1.4, 0]), { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
   } else if (d.kind === "field") {
     const i = fields.indexOf(d);
     const prev = i === 0 ? town : fields[i - 1];
     const next = i === fields.length - 1 ? town : fields[i + 1];
-    place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
+    place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), { "script.WarpGate": gate(prev.id, prev === town ? townArrival : arriveRight(prev), prev.name) });
     // 봉인 문 (10-23): 이 맵이 gate 의뢰의 문지기 맵(map1)이면 앞으로 가는 문은 그 문지기를 쓰러뜨려야 지난다 (WarpGate.SealGate).
     // 문지기 맵과 보스 맵 사이에 맵이 더 있어도(심연의 문 3층 → 재의 회랑 · 심장의 다리 · 옥좌의 전실 → 옥좌) 문지기 맵을 나가는 문 하나만 잠근다
     const sealQ = (ctx.quests || []).find((q) => q.kind === "gate" && q.map1 === d.id && q.gate);
     const nextGate = gate(next.id, next === town ? townArrival : arriveLeft(next), next.name);
     if (sealQ) nextGate.SealGate = sealQ.gate;
-    place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": nextGate });
+    place("GateNext", "Objects/WarpGate", gatePos(d, "E", [e.right, 0, 0]), { "script.WarpGate": nextGate });
     // 이 필드에 딸린 곁가지 던전 입구 (던전마다 하나)
     for (const firstFloor of maps.filter((m) => m.kind === "side" && m.parent === d.id && m.entry !== "")) {
       const p = pos(firstFloor.entry);
@@ -75,14 +90,14 @@ function desiredEntities(d, maps, ctx) {
     if (i === 0) {
       const parent = maps.find((m) => m.id === d.parent);
       const back = pos(d.entry);
-      place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(parent.id, [back[0], back[1] - 1.4], parent.name) });
+      place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), { "script.WarpGate": gate(parent.id, besideEntry(parent, back), parent.name) });
     } else {
       const prev = floors[i - 1];
-      place("GateBack", "Objects/WarpGate", [e.left, 0, 0], { "script.WarpGate": gate(prev.id, arriveRight(prev), prev.name) });
+      place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), { "script.WarpGate": gate(prev.id, arriveRight(prev), prev.name) });
     }
     if (i < floors.length - 1) {
       const next = floors[i + 1];
-      place("GateNext", "Objects/WarpGate", [e.right, 0, 0], { "script.WarpGate": gate(next.id, arriveLeft(next), next.name) });
+      place("GateNext", "Objects/WarpGate", gatePos(d, "E", [e.right, 0, 0]), { "script.WarpGate": gate(next.id, arriveLeft(next), next.name) });
     }
   }
   list(d.torches).forEach((t, k) => place(`Torch${k + 1}`, "Objects/Brazier", pos(t)));
@@ -119,8 +134,18 @@ function desiredEntities(d, maps, ctx) {
       });
     } else if (x.name.startsWith("altar:")) {
       place("BloodAltar", "Objects/BloodAltar", x.pos, { "script.QuestMarker": { MarkerId: x.name.slice(6) } });
+    } else if (x.name === "return") {
+      // 곁가지 끝방의 되돌아가는 문 (기획서 38 F7-2 ②): 던전 입구가 있는 부모 필드로 — 걸어 나오지 않아도 된다
+      const parent = maps.find((m) => m.id === d.parent);
+      const first = maps.find((m) => m.kind === "side" && m.parent === d.parent && m.entry !== "" && dungeonFloors(maps, m).includes(d));
+      if (!parent || !first) throw new Error(`maps.csv ${d.id} extra return — 곁가지 던전 층에만`);
+      const back = pos(first.entry);
+      place("GateReturn", "Objects/WarpGate", x.pos, { "script.WarpGate": gate(parent.id, besideEntry(parent, back), parent.name) });
+    } else if (x.name === "end") {
+      // 끝방 자리 (끝방 우두머리·봉인 상자 — gen_data가 맵 정보 ex·ey로 넘긴다). 엔티티 없음
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
+  if (hasBP(d)) return out;   // 설계도 맵의 그림은 handmade/lib.cjs가 설계도·배치표로 짓는다
   const layout = layoutOf(d, out, ctx);
   for (const a of artEntities(d, maps, ctx, layout, out)) place(a.name, "Objects/ArtSprite", a.pos, a.overrides);
   return out;
@@ -542,6 +567,7 @@ function ambience(d) {
 const LOBBY = "map01";   // 월드 시작 맵 = 정적 방의 로비 (빌드하지 않는다)
 
 function buildNormal(d, maps, ctx) {
+  if (hasBP(d)) return handmade.build(d, maps, ctx, desiredEntities(d, maps, ctx));
   const file = P.map(d.id);
   // 10-21 방 구조: map01은 월드 시작 맵이라 정적 방의 로비로 남고, 사냥터 「피 묻은 황무지」는 그 그림을 복제한 wasteland가 맡는다 (docs/design/30)
   const seed = d.id === "wasteland" && !exists(file) && exists(P.map(LOBBY)) ? P.map(LOBBY) : null;
@@ -726,4 +752,4 @@ function buildCopies(d) {
   return n;
 }
 
-module.exports = { run, edges, minimapFeatures, context, buildCopies };
+module.exports = { run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };

@@ -6,7 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const { load, num, bool } = require("./lib/csv.cjs");
-const { minimapFeatures } = require("./build/maps.cjs");
+const { minimapFeatures, hasBP } = require("./build/maps.cjs");
 
 const OUT_DIR = path.resolve(__dirname, "../RootDesk/MyDesk/Data");
 const CHECK = process.argv.includes("--check");
@@ -137,14 +137,20 @@ function genGameData() {
     "        self.MapSpawns = {}",
     ...load("maps").filter((m) => m.spawns !== "").map((m) => {
       const w = num(m.w, 14), h = num(m.h, 8);
-      const area = `minX = ${-(w / 2) + 3}, maxX = ${w / 2 - 3}, minY = ${-(h / 2) + 2.5}, maxY = ${h / 2 - 1.5}`;
+      // 출현 구역: maps.csv area(x0/y0/x1/y1 — 설계서가 정한 보스 맵 회랑 등)가 있으면 그 사각형, 없으면 맵 가장자리 안쪽
+      const ar = (m.area || "").split("/").map(Number);
+      const area = ar.length === 4 ? `minX = ${ar[0]}, maxX = ${ar[2]}, minY = ${ar[1]}, maxY = ${ar[3]}` : `minX = ${-(w / 2) + 3}, maxX = ${w / 2 - 3}, minY = ${-(h / 2) + 2.5}, maxY = ${h / 2 - 1.5}`;
       return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, entriesNm = ${s(m.spawnsNm || "")}, entriesHell = ${s(m.spawnsHell || "")}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area} }`;
     }),
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {
-      const maze = load("map_layouts").some((l) => l.map === m.id);
+      // 길찾기(MonsterNav)는 벽이 안에 있는 맵: 지형 생성 맵 + 설계도 맵 (10-28)
+      const maze = load("map_layouts").some((l) => l.map === m.id) || hasBP(m);
+      // 끝방 자리 (maps.csv extra end@x/y): 끝방 우두머리·봉인 상자가 서는 곳 (NamedSystem.EndPoint)
+      const end = (m.extra || "").split(";").find((t) => t.startsWith("end@"));
+      const endXY = end ? end.split("@")[1].split("/").map(Number) : null;
       const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
-      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, parent = ${s(m.parent || "")}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, ambient = ${n(m.ambient || 0)}, maze = ${maze}, flavor = ${s(m.flavor || "")}, features = { ${feats} } }`;
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, parent = ${s(m.parent || "")}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, ambient = ${n(m.ambient || 0)}, maze = ${maze},${endXY ? ` ex = ${n(endXY[0])}, ey = ${n(endXY[1])},` : ""} flavor = ${s(m.flavor || "")}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",
     ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),

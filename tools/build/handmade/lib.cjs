@@ -84,7 +84,26 @@ function parseBlueprint(id) {
   return bp;
 }
 
-function loadRows(id) { return load("handmade/" + id); }
+function loadRows(id) { return fs.existsSync(path.join(HM_DIR, id + ".csv")) ? load("handmade/" + id) : []; }
+const hasBlueprint = (id) => fs.existsSync(path.join(HM_DIR, id + ".txt"));
+// 설계도 표식 칸 → 엔티티 자리 (칸 가운데). 포털(W·E·G·X)·입구(H)를 maps.cjs가 이것으로 놓는다
+const markerCache = new Map();
+function markers(id) {
+  if (!markerCache.has(id)) {
+    const bp = parseBlueprint(id), out = {};
+    for (const [x, y] of bp.cells()) { const ch = bp.at(x, y); if (bp.markers.has(ch)) (out[ch] = out[ch] || []).push([x + 0.5, y + 0.5]); }
+    markerCache.set(id, { list: out, w: bp.w, h: bp.h });
+  }
+  return markerCache.get(id);
+}
+// 포털 앞 도착 자리: 표식에서 가장 가까운 맵 가장자리의 안쪽으로 1.4칸
+function inward(id, p) {
+  const { w, h } = markers(id);
+  const dl = p[0] + w / 2, dr = w / 2 - p[0], db = p[1] + h / 2, dt = h / 2 - p[1];
+  const m = Math.min(dl, dr, db, dt);
+  if (m > 6) return [p[0], p[1] - 1.4];
+  return m === dl ? [p[0] + 1.4, p[1]] : m === dr ? [p[0] - 1.4, p[1]] : m === db ? [p[0], p[1] + 1.4] : [p[0], p[1] - 1.4];
+}
 function parseArgs(text) { return Object.fromEntries((text || "").split(";").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k.trim(), (v || "").trim()]; })); }
 
 // ───────── 그림 표 ─────────
@@ -226,25 +245,36 @@ function artEntities(d, ctx, bp, rows, func) {
       depth.set(k, d0 + 1); dq.push([x + dx, y + dy]);
     }
   }
+  // 칸마다 조각 열쇠 → 같은 열쇠 칸을 큰 사각형으로 덮는다 (위 왼쪽부터 오른쪽으로 늘리고, 그 폭 그대로 아래로 늘릴 수 있는 만큼)
+  //   (10-28 엔티티 예산: 시안 1장 벽 529개 — 큰 맵 66장 × 난이도 3본이라 벽 엔티티를 줄여야 한다)
+  const pk = new Map();
+  for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+    const ch = bp.at(x, y);
+    if (ch === null || !(ch in bp.walls)) continue;
+    let piece = pieceAt(x, y);
+    if (piece === "center" && !touchesFloor(x, y) && depth.has(key(x, y))) piece = "n";
+    pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);
+  }
+  const rects = [], done = new Set();
+  for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
+    const p = pk.get(key(x, y));
+    if (!p || done.has(key(x, y))) continue;
+    let xe = x;
+    while (pk.get(key(xe + 1, y)) === p && !done.has(key(xe + 1, y))) xe++;
+    let yb = y;
+    const rowOk = (yy) => { for (let xx = x; xx <= xe; xx++) if (pk.get(key(xx, yy)) !== p || done.has(key(xx, yy))) return false; return true; };
+    while (rowOk(yb - 1)) yb--;
+    for (let yy = yb; yy <= y; yy++) for (let xx = x; xx <= xe; xx++) done.add(key(xx, yy));
+    rects.push({ p, x, y: yb, len: xe - x + 1, rows: y - yb + 1 });
+  }
   let wallN = 0;
-  for (let y = b.y1; y >= b.y0; y--) {
-    let cur = null;
-    for (let x = b.x0; x <= b.x1 + 1; x++) {
-      const ch = x <= b.x1 ? bp.at(x, y) : null;
-      let piece = ch !== null && ch in bp.walls ? pieceAt(x, y) : null;
-      if (piece === "center" && !touchesFloor(x, y) && depth.has(key(x, y))) piece = "n";
-      const p = piece ? `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}` : null;
-      if (cur && p === cur.p) { cur.len++; continue; }
-      if (cur) {
-        const [wch, wpiece, lit] = cur.p.split("|");
-        const wl = bp.walls[wch];
-        const o = sprite(ruid(`${wl.atlas}-borders-${wpiece}`, `wall ${wch}`), [cur.len, 1], 1);
-        const t = tintOf(wl.tint), m = wpiece !== "center" ? 1 : lit === "1" ? WALL_EDGE_SHADE : WALL_CENTER_SHADE;
-        o["MOD.Core.SpriteRendererComponent"].Color = { r: t.r * m, g: t.g * m, b: t.b * m, a: 1 };
-        out.push({ name: `ArtWall${++wallN}`, pos: [cur.x + 0.5, y + 0.5, -0.02], overrides: Object.assign(o, cellScale) });
-      }
-      cur = p ? { p, x, len: 1 } : null;
-    }
+  for (const r of rects) {
+    const [wch, wpiece, lit] = r.p.split("|");
+    const wl = bp.walls[wch];
+    const o = sprite(ruid(`${wl.atlas}-borders-${wpiece}`, `wall ${wch}`), [r.len, r.rows], 1);
+    const t = tintOf(wl.tint), m = wpiece !== "center" ? 1 : lit === "1" ? WALL_EDGE_SHADE : WALL_CENTER_SHADE;
+    o["MOD.Core.SpriteRendererComponent"].Color = { r: t.r * m, g: t.g * m, b: t.b * m, a: 1 };
+    out.push({ name: `ArtWall${++wallN}`, pos: [r.x + 0.5, r.y + 0.5, -0.02], overrides: Object.assign(o, cellScale) });
   }
   // 5) 장식·바닥 무늬: 아래(남쪽)에 있는 그림일수록 앞에 그린다 (z -0.034 ~ -0.026, 바닥 무늬는 -0.015)
   const zOf = (y, decal) => decal ? -0.015 : r3(-0.034 + ((y - b.y0) / (b.y1 - b.y0)) * 0.008);
@@ -308,7 +338,7 @@ function check(bp, func, art) {
   for (const m of markerCells) {
     const near = (list, dd) => list.some(([px, py]) => Math.abs(px - (m.x + 0.5)) <= dd && Math.abs(py - (m.y + 0.5)) <= dd);
     if (m.ch === "R") { if (!near(feet, 2.5)) warn.push(`표식 R (${m.x}, ${m.y}) 2.5칸 안에 장식이 없음`); continue; }
-    const kind = { W: /^GateBack$/, E: /^GateNext$/, H: /^Gate_/, T: /^Torch/, S: /^Waypoint$/ }[m.ch];
+    const kind = { W: /^GateBack$/, E: /^GateNext$/, H: /^Gate_/, T: /^Torch/, S: /^Waypoint$/, G: /^GateToField$/, X: /^GateReturn$/ }[m.ch];
     const list = func.filter((e) => kind.test(e.name)).map((e) => e.pos);
     if (!near(list, 1.0)) warn.push(`표식 ${m.ch} (${m.x}, ${m.y}) 1칸 안에 해당 엔티티가 없음`);
   }
@@ -319,7 +349,7 @@ function check(bp, func, art) {
     if (art.blocked.has(k)) throw new Error(`${e.name} 자리 ${k}를 장식이 막음`);
   }
   // 모든 바닥은 서문에서 이어져야 한다 (장식 발밑 칸은 막힌 것으로)
-  const start = func.find((e) => e.name === "GateBack") || func[0];
+  const start = func.find((e) => e.name === "GateBack") || func.find((e) => e.name === "GateToField") || func[0];
   const sx = Math.floor(start.pos[0]), sy = Math.floor(start.pos[1]);
   const seen = new Set([key(sx, sy)]);
   const q = [[sx, sy]];
@@ -349,11 +379,11 @@ function ambience(d) {
 }
 
 // 맵 파일 하나를 설계도대로 다시 짓는다 (늘 템플릿에서 새로, 엔티티 id는 경로가 같으면 예전 것을 유지)
-function build(d, maps, ctx) {
+function build(d, maps, ctx, funcIn) {
   const bp = parseBlueprint(d.id);
   if (bp.w !== num(d.w) || bp.h !== num(d.h)) throw new Error(`${d.id}: 설계도 ${bp.w}×${bp.h} ≠ maps.csv ${d.w}×${d.h}`);
   const rows = loadRows(d.id);
-  const func = functionalEntities(d, maps, ctx, rows);
+  const func = funcIn || functionalEntities(d, maps, ctx, rows);
   const art = artEntities(d, ctx, bp, rows, func);
   const result = check(bp, func, art);
 
@@ -388,4 +418,4 @@ function build(d, maps, ctx) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size }, art.counts, result);
 }
 
-module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build };
+module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR };
