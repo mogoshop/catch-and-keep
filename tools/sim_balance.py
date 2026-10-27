@@ -48,12 +48,27 @@ SKILL = {r["id"]: r for r in rows("skills.csv")}
 NAMED = {r["map"]: r for r in rows("named.csv")}
 QUESTS = rows("quests.csv")
 MAPS_ALL = sorted(rows("maps.csv"), key=lambda r: num(r["order"]))
+# 설계도 맵 실측 (tools/route_lengths.cjs → data/handmade/routes.csv): 들어오는 문 → 나가는 문(막다른 맵은 끝방·보스) 최단 걸음 · 길 4칸 안 바닥 비율
+ROUTES = {r["map"]: r for r in csv.DictReader(open(ROOT / "data" / "handmade" / "routes.csv", encoding="utf-8"))} if (ROOT / "data" / "handmade" / "routes.csv").exists() else {}
+
+
+def route_len(mp):
+    # 한 판 기본 경로 길이(칸): 설계도 맵은 실측 최단 길, 아니면 맵 가로 (예전 맵은 문이 양끝 직선이라 같은 값)
+    r = ROUTES.get(mp["id"])
+    return float(r["route"]) if r else num(mp["w"])
+
+
+def share(mp):
+    # 지나가며 잡는 몬스터 비율: 설계도 맵은 길 근처 바닥 비율 × nearMul, 최대 killShare (예전 작은 맵은 거의 다 길 근처라 killShare)
+    r = ROUTES.get(mp["id"])
+    return min(ASSUME["killShare"], float(r["near"]) * ASSUME["nearMul"]) if r else ASSUME["killShare"]
 
 ASSUME = {
     "speed": 1.5,        # 이동 u/s — 아래에서 config playerSpeedMul로 다시 잡는다 (10-28: 1.44 = 걷기 1.204칸/s 실측)
     "routeMul": 2.2,     # 사냥터 한 판 경로 = 가로 × 이 값
     "killShare": 0.85,   # 지나가며 잡는 비율
-    "killShareBig": 0.5, # 설계도 맵(60×40~70×50, data/handmade/<id>.txt)에서 잡는 비율 — 길 위 무리 + 샛길 일부 (기획서 38 F7-2 ③ 밀도 분리: 출현은 약 1.8배, 필수 처치는 예전 한 맵만큼)
+    "nearMul": 1.6,      # 설계도 맵 잡는 비율 = 실측 「길 4칸 안 바닥 비율」(data/handmade/routes.csv near) × 이 값, 최대 killShare
+                         #   (경로는 최단 길의 routeMul 배 — 늘어난 1.2배 중 절반이 새 땅을 훑는다고 보면 1 + 1.2 × 0.5 = 1.6)
     "eff": 0.6,          # 군단 전투 효율 (조준·이동·과잉 피해·재소환 공백)
     "bossEff": 0.5,      # 보스전 효율 (내려찍기에 소환수 손실·재소환)
     "overhead": 25,      # 맵당 줍기·정비(초)
@@ -430,7 +445,7 @@ def run(prof, eff=None, diff=0, L=1, exp=0.0):
             ehp = mon_stats(mid, ml, sm, elite=True)[0]
             g2 = grade == 2
             avg_hp = hp if g2 else hp * (1 - ec) + ehp * ec
-            kills = n * (ASSUME["killShareBig"] if (ROOT / "data" / "handmade" / (mp["id"] + ".txt")).exists() else ASSUME["killShare"])
+            kills = n * share(mp)
             t_combat += kills * avg_hp / (b["total"] * ASSUME["eff"] * gap_dealt(L, ml))
             gained += kills * kill_exp(L, ml, 2 if g2 else 1) * (1 + (2 * ec if not g2 else 0))
             per = hit_taken(b, dmg * (1.5 if g2 else 1), el, ratio, L, ml)
@@ -462,7 +477,7 @@ def run(prof, eff=None, diff=0, L=1, exp=0.0):
             gained += kill_exp(L, ml, int(num(m["grade"])))
         for _, _, f in bosses:
             t_combat += f["ttk"]
-        travel = num(mp["w"]) * (ASSUME["routeMul"] if spawns else 1) / ASSUME["speed"]
+        travel = route_len(mp) * (ASSUME["routeMul"] if spawns else 1) / ASSUME["speed"]
         t = t_combat + travel + ASSUME["overhead"]
         total += t
         qexp = sum(quest_exp(q, diff) for q in QUESTS if q["map"] == mp["id"])

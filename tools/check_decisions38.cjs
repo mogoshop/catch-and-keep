@@ -54,7 +54,7 @@ check(15, "바닥 이름표(PC Alt·모바일 희귀) + PC 클릭 줍기 + 줍�
 check(16, "레벨업 빛기둥만 같은 맵 공유(소리·카메라·글자는 본인)", /Multicast"\)\s*\n\s*method void LevelUpPillar/.test(src("RootDesk/MyDesk/Player/PlayerStats.mlua")) && has("RootDesk/MyDesk/Player/PlayerStats.mlua", "method void LevelUpRing"), "PlayerStats.LevelUpPillar(Multicast·같은 맵) + 고리 · NotifyLevelUp은 본인");
 check(17, "보스 첫 처치 보장 드롭 없음(유지)", has("RootDesk/MyDesk/Item/LootSystem.mlua", "첫 처치 확정 보상은 없다"), "LootSystem: 첫 처치 확정 없음");
 check(18, "첫 진입 둘러보기 유지", has("RootDesk/MyDesk/UI/Windows/GuideWindow.mlua", "CheckFirstEntry"), "GuideWindow.CheckFirstEntry 그대로");
-check(19, "텔레메트리 선행 없이 시뮬로 바로", fs.existsSync(path.join(ROOT, "tools/sim_balance.py")) && has("tools/sim_balance.py", "killShareBig"), "tools/sim_balance.py --diff all (설계도 맵 잡는 비율 반영)");
+check(19, "텔레메트리 선행 없이 시뮬로 바로", fs.existsSync(path.join(ROOT, "tools/sim_balance.py")) && has("tools/sim_balance.py", "nearMul") && fs.existsSync(path.join(ROOT, "data/handmade/routes.csv")), "tools/sim_balance.py --diff all · 설계도 맵은 실측 길 길이·길 근처 바닥 비율(routes.csv)");
 const field = maps.filter((m) => ["field", "side", "town"].includes(m.kind));
 const sizeBad = field.filter((m) => {
   const w = num(m.w), h = num(m.h);

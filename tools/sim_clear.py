@@ -18,9 +18,18 @@ import argparse, csv, math, pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+ROUTES = {r["map"]: r for r in csv.DictReader(open(ROOT / "data" / "handmade" / "routes.csv", encoding="utf-8"))} if (ROOT / "data" / "handmade" / "routes.csv").exists() else {}
+
+
 def share(mp):
-    # 설계도 맵은 길 위 무리 + 샛길 일부만 잡는다 (출현 약 1.8배 · 필수 처치는 예전 한 맵만큼)
-    return ASSUME["killShareBig"] if (ROOT / "data" / "handmade" / (mp["id"] + ".txt")).exists() else ASSUME["killShare"]
+    # 설계도 맵: 실측 길 근처 바닥 비율 × nearMul (최대 killShare) — tools/route_lengths.cjs
+    r = ROUTES.get(mp["id"])
+    return min(ASSUME["killShare"], float(r["near"]) * ASSUME["nearMul"]) if r else ASSUME["killShare"]
+
+
+def route_len(mp):
+    r = ROUTES.get(mp["id"])
+    return float(r["route"]) if r else float(mp["w"])
 DATA = ROOT / "data"
 
 
@@ -57,7 +66,7 @@ ASSUME = {
     "speed": 1.5,        # 이동 u/s (메이커 실측: InputSpeed 1.6 · 2초 입력에 2.6 이동 → 지연 포함 1.3~1.6)
     "routeMul": 2.2,     # 필드 한 판 경로 = 맵 가로 × 이 값 (두 번 훑기)
     "killShare": 0.85,   # 지나가며 잡는 몬스터 비율
-    "killShareBig": 0.5, # 설계도 맵(60×40~70×50)에서 잡는 비율 — sim_balance.py와 같은 값 (기획서 38 F7-2 ③)
+    "nearMul": 1.6,      # 설계도 맵 잡는 비율 = 실측 길 근처 바닥 비율 × 이 값 (sim_balance.py와 같다)
     "eff": 0.6,          # 군단 전투 효율 (조준·이동·과잉 피해·재소환 공백)
     "overhead": 25,      # 맵당 줍기·창 열기·정비(초)
     "bossEff": 0.5,      # 보스전 효율 (슬램에 소환수 손실·재소환)
@@ -320,7 +329,7 @@ def run(profile, start_level, start_exp, route):
             htd, per = hits_to_die(b, dmg, el, L, ml)
             gained += kill_exp(L, ml, int(m["grade"]))
             boss += "%s %.0f초(생명 %.0f · 한 대 %.0f → %.1f대에 사망) " % (m["name"], bt, hp, per, htd)
-        travel = float(mp["w"]) * ASSUME["routeMul"] / ASSUME["speed"] if mp["spawns"] else float(mp["w"]) / ASSUME["speed"]
+        travel = route_len(mp) * ASSUME["routeMul"] / ASSUME["speed"] if mp["spawns"] else route_len(mp) / ASSUME["speed"]
         t = t_combat + travel + ASSUME["overhead"]
         total += t
         gained += QUEST_EXP.get(mp["id"], 0)
@@ -347,7 +356,7 @@ def farm_rate(prof, L, mapid):
         mul = 1 if g2 else 1 + 2 * float(mp["eliteChance"] or 0)
         t += n * share(mp) * hp * mul / (b["total"] * ASSUME["eff"] * gap_dealt(L, ml))
         g += n * share(mp) * kill_exp(L, ml, 2 if g2 else 1) * mul
-    t += float(mp["w"]) * ASSUME["routeMul"] / ASSUME["speed"] + ASSUME["overhead"]
+    t += route_len(mp) * ASSUME["routeMul"] / ASSUME["speed"] + ASSUME["overhead"]
     return g / t
 
 
