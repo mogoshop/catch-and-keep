@@ -37,7 +37,7 @@ script GuideWindow extends Logic
     property integer VidStart = -1           -- 지금 되풀이 중인 영상 구간 (−1 = 멈춤)
     property number VidDur = 0
     property integer VidTimer = 0
-    property number JumpCover = 0.6           -- Jump 직후 재생기가 0.05~0.4초 하얗게 비친다 (10-27 전체 녹화 실측) → 그동안 인트로 그림으로 덮는다
+    property number JumpCover = 0.9           -- Jump 직후 재생기가 0.05~0.4초 하얗게 비친다 (10-27 전체 녹화 실측, 0.6초로도 버퍼링이 길면 한두 프레임 남았다) → 그동안 인트로 그림으로 덮는다
     property integer CoverTimer = 0
     property number CoverLead = 0.1           -- 가림판을 켠 뒤 재생기를 켜거나 Jump하기까지 (같은 프레임이면 하얀 화면이 한 프레임 비친다)
     property number VidLoad = 2.5            -- 재생기를 처음 켤 때 불러오는 시간 (그동안 검은 가림판 · 그 뒤 Jump)
@@ -191,6 +191,8 @@ script GuideWindow extends Logic
         else
             self:StopVideo()
             if media then
+                -- 캡처 그림(1280×720)은 처음 그릴 때 한 프레임 하얗게 비쳤다 (10-27 전체 녹화) → 인트로 그림으로 잠깐 덮는다
+                if shot ~= "" then self:CoverBriefly(self.JumpCover) end
                 _UIKit:SetIcon(w .. "/Media/Shot", shot)
                 _UIKit:SetEnabled(w .. "/Media/Empty", shot == "")
                 _UIKit:SetText(w .. "/Media/Empty", kind == "clip" and "움짤 준비 중" or "화면 준비 중")
@@ -284,6 +286,17 @@ script GuideWindow extends Logic
                 _UIKit:SetEnabled(self.Win .. "/Media/Cover", false)
             end, self.JumpCover)
         end, self.CoverLead)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CoverBriefly(number sec)
+        -- 인트로 그림으로 sec초 덮었다가 걷는다 (캡처 그림 첫 표시)
+        _UIKit:SetEnabled(self.Win .. "/Media/Cover", true)
+        if self.CoverTimer ~= 0 then _TimerService:ClearTimer(self.CoverTimer) end
+        self.CoverTimer = _TimerService:SetTimerOnce(function()
+            self.CoverTimer = 0
+            _UIKit:SetEnabled(self.Win .. "/Media/Cover", false)
+        end, sec)
     end
 
     @ExecSpace("ClientOnly")
