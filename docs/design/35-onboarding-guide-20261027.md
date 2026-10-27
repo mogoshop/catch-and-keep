@@ -149,3 +149,12 @@
 
 - 전투 중(7-1 · 7-2)에는 창이 싸움을 막으면 안 된다 → 카드를 바로 띄우지 않고 **주변에 적이 없어진 뒤 2초**에 띄운다 (GuideCoach의 CardCalm과 같은 방식).
 - 둘 이상이 겹치면 하나씩, 앞 카드를 닫은 뒤.
+
+## 8. 움짤 방식 시험 결과 (10-27 메이커 실측)
+
+- GIF는 못 쓴다: 그룹 저장소에 GIF를 sprite로 올리면 업로드가 거절된다 (MCP 업로드 종류도 sprite · audioclip · avataritem뿐).
+- **유튜브 UI 재생(A안) 된다**: `YoutubePlayerGUIComponent`가 게임 안내 화면 칸에서 홍보 영상을 재생했고, `Jump(초)`로 다른 장면으로 바로 넘어갔다.
+  - 조건: 재생기는 **UI 파일에 처음부터** 넣어야 한다 (실행 중 AddComponent로 붙이면 주소가 들어가도 화면이 안 나왔다).
+  - 넣는 법: `b.empty("GuideWin/Media/Video", …)` + `b.addComponent(…, "MOD.Core.YoutubePlayerGUIComponent", { Urls: ["https://www.youtube.com/watch?v=…"], Loop, PlayOnAwake, Shuffle: false, Volume: 0 })`. 영상 위에 그림(Shot)을 켜 두면 덮이니 끈다.
+  - 메이커가 새 칸을 못 읽은 적이 한 번 있었다 → 빌드 후 플레이 멈춘 상태에서 touch → refresh, 실행 중 자식 목록으로 확인.
+- 남은 일: 안내 영상 한 편(쪽마다 4~6초 장면 10개) 녹화 → 채널에 일부 공개로 업로드 → 쪽마다 시작 초 · 길이를 표에 적고, 그 길이가 지나면 시작 초로 다시 Jump (구간 반복).
