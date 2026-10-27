@@ -167,7 +167,9 @@ async function uploadRes(pack, argv) {
     const p = parseQuoted(fs.readFileSync(propFile, "utf8"));
     const pc = (n) => p.head.indexOf(n);
     const px = pc("pivot_x") >= 0 ? pc("pivot_x") : pc("pivot_x_normalized"), py = pc("pivot_y") >= 0 ? pc("pivot_y") : pc("pivot_y_normalized_from_bottom");
-    const pn = pc("name") >= 0 ? pc("name") : pc("resource_name");
+    // 10-28 코덱스 표는 이름 칸이 key다 — 못 찾으면 모든 그림이 기본 가운데 피벗으로 올라갔다 (랜드마크·빛기둥이 반 키만큼 가라앉음)
+    const pn = pc("name") >= 0 ? pc("name") : pc("resource_name") >= 0 ? pc("resource_name") : pc("key");
+    if (pn < 0) throw new Error(`${propFile}: 이름 칸(name · resource_name · key)이 없다`);
     for (const r of p.rows) pivots[r[pn]] = { x: r[px], y: r[py], wrap: r[pc("wrap_mode")] || "Clamp" };
   }
   const todo = t.rows.filter((r) => !/^[0-9a-f]{32}$/.test(r[c("RUID")]) && !skipCat.includes(r[c("category")]) && !skipKey.some((k) => (r[c("key")] || "").startsWith(k) || r[c("upload_name")].includes(k)));
