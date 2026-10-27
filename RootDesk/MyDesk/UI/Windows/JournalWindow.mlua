@@ -228,8 +228,12 @@ script JournalWindow extends Logic
         local pages = math.max(1, math.ceil(#list / self.Rows))
         self.Page = math.min(self.Page, pages)
         _UIKit:SetText(self.Win .. "/Page", tostring(self.Page) .. " / " .. tostring(pages))
-        _UIKit:SetEnabled(self.Win .. "/BtnPrev", self.Page > 1)
-        _UIKit:SetEnabled(self.Win .. "/BtnNext", self.Page < pages)
+        -- 넘길 쪽이 없는 단추는 숨기지 않고 흐리게 (자리가 비면 아래 줄이 들쭉날쭉해진다). 누르면 Turn이 쪽 범위로 되돌린다
+        -- 단추 그림이 어두워 알파만으로는 티가 안 난다 → 글자도 흐리게 (UIKit.SetActPager와 같은 방식)
+        _UIKit:SetText(self.Win .. "/BtnPrev", self.Page > 1 and "◀ 이전" or _UIKit:Colored("#6A6460", "◀ 이전"))
+        _UIKit:SetText(self.Win .. "/BtnNext", self.Page < pages and "다음 ▶" or _UIKit:Colored("#6A6460", "다음 ▶"))
+        _UIKit:SetColor(self.Win .. "/BtnPrev", Color(1, 1, 1, self.Page > 1 and 1 or 0.45))
+        _UIKit:SetColor(self.Win .. "/BtnNext", Color(1, 1, 1, self.Page < pages and 1 or 0.45))
         for _, tab in ipairs({ { "TabDaily", "daily" }, { "TabAch", "ach" }, { "TabCol", "col" }, { "TabItem", "item" } }) do
             _UIKit:SetColor(self.Win .. "/" .. tab[1], tab[2] == self.Tab and Color(0.55, 0.45, 0.25, 1) or Color(0.14, 0.13, 0.17, 1))
         end
@@ -317,8 +321,14 @@ script JournalWindow extends Logic
         _UIKit:SetEnabled(row .. "/BtnAct", act ~= nil)
         if act ~= nil then
             self.RowAct[slot] = act
-            _UIKit:SetText(row .. "/BtnAct", act.label)
-            _UIKit:SetColor(row .. "/BtnAct", act.kind == "claim" and Color(0.42, 0.27, 0.66, 1) or (item.tp and Color(0.45, 0.36, 0.18, 1) or Color(0.17, 0.16, 0.21, 1)))
+            -- 단추 위계 (같은 테두리 단추, 밝기로 구분): 받기(그림 그대로 · 밝은 금 글자 굵게) > 칭호 달기(조금 어둡게) > 칭호 떼기(가장 어둡게 · 흐린 글자, 이미 단 칭호)
+            -- 단추 그림을 보라로 물들이면 오히려 어두워져 받기가 가장 덜 띄었다 (10-27 실측) — 받기는 보라 줄 판 + 상자로 이미 구분된다
+            local wearing = act.kind == "title" and item.tp == true
+            local label = act.label
+            if act.kind == "claim" then label = "<b>" .. _UIKit:Colored("#FFE7A3", act.label) .. "</b>"
+            elseif wearing then label = _UIKit:Colored("#8A8278", act.label) end
+            _UIKit:SetText(row .. "/BtnAct", label)
+            _UIKit:SetColor(row .. "/BtnAct", act.kind == "claim" and Color(1, 1, 1, 1) or (wearing and Color(0.5, 0.48, 0.52, 1) or Color(0.8, 0.78, 0.82, 1)))
         end
         -- 10-27 코덱스 줄 칸: 받을 보상(보라) · 완료(금테) · 진행 중. 뱃지로 연 줄은 잠깐 금빛으로 물들인다
         local claim = act ~= nil and act.kind == "claim"
@@ -327,6 +337,7 @@ script JournalWindow extends Logic
         _UIKit:SetColor(row, hi and Color(1, 0.86, 0.55, 1) or Color(1, 1, 1, 1))
         _UIKit:SetIcon(row .. "/Icon", _GameData:GetUiIcon(self:RowIcon(item)))
         _UIKit:SetEnabled(row .. "/Chest", claim)
+        if act ~= nil and act.kind == "title" and item.tp == true then name = name .. "  " .. _UIKit:Colored("#E6C88A", "[착용 중]") end
         _UIKit:SetText(row .. "/Name", finished and _UIKit:Colored("#9FD69B", name) or name)
         _UIKit:SetText(row .. "/Desc", desc)
         _UIKit:SetText(row .. "/Value", finished and _UIKit:Colored("#9FD69B", value) or value)
@@ -334,7 +345,8 @@ script JournalWindow extends Logic
         local codex = self.Tab == "col" or self.Tab == "item"
         _UIKit:SetEnabled(row .. "/BarBg", not codex and act == nil)
         _UIKit:SetEnabled(row .. "/Value", act == nil)
-        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 1010 or 600, 24))
+        _UIKit:SetSize(row .. "/Desc", Vector2(codex and 900 or 490, 24))
+        _UIKit:SetSize(row .. "/Name", Vector2(codex and 900 or 490, 34))
         local fill = _UIKit:Get(row .. "/BarBg/Fill")
         if isvalid(fill) then
             -- 채움 그림은 양 끝 8px씩 고정(9-slice)이라 16px보다 짧게 줄이지 않는다

@@ -164,7 +164,7 @@ function buildGameHud() {
   // 「일지」 뱃지 (10-27 사용자: 일지는 잘 안 읽으니 해당 행동을 하면 띄운다 — 진행 10% 단계 · 완료 · 받을 보상). 자리는 JournalBadge가 정한다
   //   (재 받기가 없으면 그 자리, 있으면 그 왼쪽). Tip = 왼쪽으로 뻗는 진행 말풍선(journalPulseSeconds초). 그림은 코덱스 jr_badge 오면 바꾼다
   b.button("BtnJournal", "", { anchor: "top-right", pos: [-456, -150 - 96 - 28 - 16], rect_size: [96, 96], bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0, enable: false });
-  k.pic("BtnJournal/Icon", "jr_badge", { anchor: "middle-center", pos: [0, 0], rect_size: [56, 56], color: WHITE, alpha: 1 });
+  k.pic("BtnJournal/Icon", "jr_badge", { anchor: "middle-center", pos: [0, 0], rect_size: [96, 96], color: WHITE, alpha: 1 });
   b.patchComponent("BtnJournal/Icon", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("BtnJournal/Label", "일지", { size: 22, color: C.white, anchor: "bottom-center", pos: [0, -28], rect_size: [120, 28], ...outline, outline_width: 0.2 });
   k.badge("BtnJournal");
