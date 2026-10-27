@@ -325,20 +325,48 @@ function buildGameHud() {
   k.btn("SkillPick/BtnClear", "칸 비우기", { anchor: "bottom-right", pos: [-40, 30], rect_size: [190, 70] });
 
   // ── 능력치 창 ──
-  // 10-11 능력치 개편 (docs/design/16): 줄마다 「이름 · 역할」 + 지금 효과 → 1포인트 더 찍으면 (미리보기), 추천 분배 3개 + 초기화
-  k.frame("CharWin", "middle-left", [30, 20], [520, 820], "능력치");
-  k.inner("CharWin/Paper", "top-center", [0, -84], [470, 236], "win_content");
-  b.text("CharWin/Paper/Info", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [18, -14], rect_size: [434, 210] });
+  // 10-27 개편 (docs/design/37 §3 · 디아3/4·이모탈 레퍼런스): 1140×720 두 칸
+  //   왼쪽: 머리줄 · 요약 지표 3칸(내 피해 · 생존 · 소환수) · 저항 칩 4 · 세부 분류 탭 4 + 설명 칸(0인 값은 숨김, 능력치 줄을 누르면 출처)
+  //   오른쪽: 능력치 4줄(값 · 장비 몫 · 1포인트당 효과 · 지금 효과 · [+]) · 추천 분배 3 · 초기화
+  k.frame("CharWin", "middle-center", [0, 0], [1140, 720], "능력치");
+  const TL = { anchor: "top-left", pivot: [0, 1] };
+  b.text("CharWin/Head", "", { ...TL, pos: [30, -80], rect_size: [540, 34], size: 24, bold: true, color: C.qTitle, alignment: 3 });
+  [["Sum1", K.icon_sword, "내 피해"], ["Sum2", K.potion_hp, "생존"], ["Sum3", K.icon_shadow, "소환수"]].forEach(([n, ruid, label], i) => {
+    const p = `CharWin/${n}`;
+    b.panel(p, { ...TL, pos: [30 + i * 184, -122], rect_size: [172, 118], color: "#17151D" });
+    b.sprite(`${p}/Icon`, { ...TL, pos: [12, -12], rect_size: [44, 44], image_ruid: ruid, color: WHITE, alpha: 1, sprite_type: 0 });
+    k.aspect(`${p}/Icon`);
+    b.text(`${p}/Label`, label, { ...TL, pos: [62, -20], rect_size: [104, 28], size: 19, color: "#A99F8E", alignment: 3 });
+    b.text(`${p}/Value`, "", { ...TL, pos: [12, -60], rect_size: [152, 36], size: 28, bold: true, color: "#F4E2B0", alignment: 3, bestfit: true, min_size: 18, max_size: 28 });
+    b.text(`${p}/Sub`, "", { ...TL, pos: [12, -94], rect_size: [152, 20], size: 15, color: "#8A8478", alignment: 3, bestfit: true, min_size: 12, max_size: 15 });
+  });
+  [["Res1", "#FF7A45"], ["Res2", "#7AB8FF"], ["Res3", "#FFE15A"], ["Res4", "#7CFF7A"]].forEach(([n, color], i) => {
+    const p = `CharWin/${n}`;
+    b.panel(p, { ...TL, pos: [30 + i * 137, -256], rect_size: [129, 46], color: "#17151D" });
+    b.sprite(`${p}/Bar`, { ...TL, pos: [0, 0], rect_size: [6, 46], color, sprite_type: 0 });
+    b.text(`${p}/Text`, "", { ...TL, pos: [14, -6], rect_size: [110, 34], size: 20, color, alignment: 3, bestfit: true, min_size: 14, max_size: 20 });
+  });
+  [["Tab1", "공격"], ["Tab2", "소환수"], ["Tab3", "방어"], ["Tab4", "유틸"]].forEach(([n, label], i) => {
+    k.btn(`CharWin/${n}`, label, { ...TL, pos: [30 + i * 137, -318], rect_size: [129, 64], font_size: 21 });
+  });
+  k.inner("CharWin/Paper", "top-left", [30, -390], [540, 236], "win_content");
+  b.patch("CharWin/Paper", { pivot: [0, 1], pos: [30, -390], rect_size: [540, 236] });
+  b.text("CharWin/Paper/Info", "", { ...TL, pos: [18, -14], rect_size: [504, 210], size: 20, color: C.white, alignment: 0, bestfit: true, min_size: 15, max_size: 20 });
   ["Str", "Ene", "Vit", "Dex"].forEach((s, i) => {
-    b.empty(`CharWin/${s}`, { anchor: "top-left", pos: [26, -326 - i * 78], rect_size: [468, 72] });
-    b.text(`CharWin/${s}/Text`, s, { size: 20, color: C.white, alignment: 3, anchor: "middle-left", pos: [4, 0], rect_size: [390, 70] });
-    k.ok(`CharWin/${s}/BtnAdd`, "+", { anchor: "middle-right", pos: [0, 0], rect_size: [64, 60], font_size: 30 });
+    const p = `CharWin/${s}`;
+    b.panel(p, { ...TL, pos: [590, -84 - i * 112], rect_size: [520, 104], color: "#17151D" });
+    // 줄을 누르면 왼쪽 설명 칸에 출처(기본 · 투자 · 장비)를 보여 준다 (Hit는 글자 뒤 투명 단추)
+    b.button(`${p}/Hit`, "", { ...TL, pos: [0, 0], rect_size: [410, 104], bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0 });
+    b.text(`${p}/Name`, "", { ...TL, pos: [16, -8], rect_size: [390, 38], size: 26, bold: true, color: "#F4E2B0", alignment: 3 });
+    b.text(`${p}/Per`, "", { ...TL, pos: [16, -48], rect_size: [390, 26], size: 18, color: "#A99F8E", alignment: 3, bestfit: true, min_size: 13, max_size: 18 });
+    b.text(`${p}/Now`, "", { ...TL, pos: [16, -74], rect_size: [390, 26], size: 18, color: "#D8CFBC", alignment: 3, bestfit: true, min_size: 13, max_size: 18 });
+    k.ok(`${p}/BtnAdd`, "+", { anchor: "middle-right", pos: [-52, 0], rect_size: [96, 96], font_size: 34 });
   });
-  b.text("CharWin/Points", "", { size: 22, color: "#F4ED83", anchor: "bottom-center", pos: [0, 156], rect_size: [460, 30], ...outline });
+  b.text("CharWin/Points", "", { anchor: "bottom-left", pivot: [0, 0], pos: [30, 44], rect_size: [540, 40], size: 22, color: "#F4ED83", ...outline });
   [["Auto1", "소환형 추천"], ["Auto2", "주문형 추천"], ["Auto3", "균형 추천"]].forEach(([n, label], i) => {
-    k.btn(`CharWin/${n}`, label, { anchor: "bottom-left", pos: [24 + i * 160, 92], rect_size: [152, 54], font_size: 20 });
+    k.btn(`CharWin/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [590 + i * 176, 96], rect_size: [168, 60], font_size: 20 });
   });
-  k.btn("CharWin/BtnReset", "초기화", { anchor: "bottom-center", pos: [0, 28], rect_size: [460, 54], font_size: 20 });
+  k.btn("CharWin/BtnReset", "초기화", { anchor: "bottom-left", pivot: [0, 0], pos: [590, 26], rect_size: [520, 56], font_size: 20 });
 
   // ── 소지품 창: 장비(종이 인형) + 설명 + 가방 6×5 ──
   k.frame("InvWin", "middle-right", [-30, -60], [900, 860], "소지품");

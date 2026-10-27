@@ -805,17 +805,23 @@ script ItemData extends Logic
         for k, _ in pairs(a) do if not seen[k] then seen[k] = true table.insert(keys, k) end end
         for k, _ in pairs(b) do if not seen[k] then seen[k] = true table.insert(keys, k) end end
         table.sort(keys)
-        local parts = {}
+        -- 10-27 (docs/design/37 §4): 줄마다 ▲ 얻음(초록) · ▼ 잃음(빨강), 착용품에만 있던 옵션은 「잃음」. 얻는 줄을 먼저
+        local ups, downs = {}, {}
         for _, k in ipairs(keys) do
             local d = (a[k] or 0) - (b[k] or 0)
             if math.abs(d) >= 0.005 then
-                local color = d > 0 and "#5AE65A" or "#FF6464"
-                table.insert(parts, "<color=" .. color .. ">" .. self:StatValueText(k, d) .. "</color>")
+                if d > 0 then
+                    table.insert(ups, "<color=#5AE65A>▲ " .. self:StatValueText(k, d) .. "</color>")
+                else
+                    table.insert(downs, "<color=#FF6464>▼ " .. self:StatValueText(k, d) .. (a[k] == nil and "  (잃음)" or "") .. "</color>")
+                end
             end
         end
         local head = oldS == "" and "빈 칸에 착용하면:" or "착용 중인 것과 비교:"
-        if #parts == 0 then return head .. " 변화 없음" end
-        return head .. "\n" .. table.concat(parts, "\n")
+        if #ups + #downs == 0 then return head .. " 변화 없음" end
+        head = head .. "  " .. (#ups > 0 and ("<color=#5AE65A>▲" .. tostring(#ups) .. "</color> ") or "") .. (#downs > 0 and ("<color=#FF6464>▼" .. tostring(#downs) .. "</color>") or "")
+        for _, line in ipairs(downs) do table.insert(ups, line) end
+        return head .. "\n" .. table.concat(ups, "\n")
     end
 
     method string DescribeDetailed(string s)
@@ -830,9 +836,19 @@ script ItemData extends Logic
                 .. "\n방어구에 삽입: " .. self:ModsText(rune.armor)
                 .. "\n등불에 삽입: " .. self:ModsText(rune.lamp)
         end
+        -- 10-27 카드 순서 (docs/design/37 §4 · 디아4 툴팁): 이름(룬워드면 금빛 룬워드 이름 + 회색 바탕 이름) → 부위 · 등급 · 요구 레벨 → 구분선
+        --   → 옵션 → ★ 고유 효과 → 소켓 줄(◆ 박힌 룬 · ○ 빈 칸) (판매가는 부르는 창이 붙인다)
         local base = self:GetBase(item.base)
-        if base ~= nil and (base.grade or 0) > 0 then name = name .. " · " .. self:GradeName(base.grade) end   -- 베이스 등급 (docs/design/19)
-        if base ~= nil and base.reqLv > 1 then name = name .. " · 요구 레벨 " .. tostring(base.reqLv) end
+        local rw = self:GetRuneword(item)
+        if rw ~= nil then name = "<color=" .. self:RarityColor(5) .. ">" .. rw.name .. "</color>\n<color=#A8A090>" .. item.name .. "</color>"
+        else name = "<color=" .. self:RarityColor(item.rarity) .. ">" .. item.name .. "</color>" end
+        local info = {}
+        local slotNames = { weapon = "무기", offhand = "등불", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring = "반지" }
+        if base ~= nil and slotNames[base.slot] ~= nil then table.insert(info, slotNames[base.slot]) end
+        if base ~= nil and (base.grade or 0) > 0 then table.insert(info, self:GradeName(base.grade)) end   -- 베이스 등급 (docs/design/19)
+        if base ~= nil and base.reqLv > 1 then table.insert(info, "요구 레벨 " .. tostring(base.reqLv)) end
+        if #info > 0 then name = name .. "\n<color=#A8A090>" .. table.concat(info, " · ") .. "</color>" end
+        name = name .. "\n<color=#4A4552>────────────────</color>"
         local total = self:GetTotalMods(s)
         local keys = {}
         for key, _ in pairs(total) do table.insert(keys, key) end
@@ -854,8 +870,30 @@ script ItemData extends Logic
         for _, key in ipairs(keys) do
             if special[key] then table.insert(lines, "<color=#F5C451>★ 고유 효과 · " .. self:StatValueText(key, total[key]) .. "</color>") end
         end
-        if item.sockets > 0 then table.insert(lines, "소켓 " .. tostring(#item.runes) .. "/" .. tostring(item.sockets)) end
+        if item.sockets > 0 then table.insert(lines, self:SocketRow(item)) end
         return table.concat(lines, "\n")
+    end
+
+    method string SocketRow(table item)
+        -- 소켓 줄: 「소켓  ◆케일 ◆루크 ○ ○」 (박힌 룬은 금빛, 빈 칸은 회색 동그라미)
+        local parts = {}
+        for i = 1, item.sockets do
+            local id = item.runes[i]
+            if id ~= nil then
+                local rune = self:GetRune(id)
+                table.insert(parts, "<color=#F4E2B0>◆" .. (rune ~= nil and rune.name or id) .. "</color>")
+            else
+                table.insert(parts, "<color=#8A8478>○</color>")
+            end
+        end
+        return "<color=#A8A090>소켓</color>  " .. table.concat(parts, "  ")
+    end
+
+    method string SocketDots(string s)
+        -- 장비 칸 아래 작은 소켓 점: ● 찬 칸 · ○ 빈 칸 (소켓 없으면 "")
+        local item = self:Parse(s)
+        if item.sockets <= 0 then return "" end
+        return string.rep("●", #item.runes) .. string.rep("○", item.sockets - #item.runes)
     end
 
     method string DescribeSet(string s, table equip)

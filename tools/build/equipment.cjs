@@ -24,6 +24,10 @@ for(const [slot,pos]of Object.entries(slots)){
  b.sprite(n+'/Rim',{rect_size:[88,88],image_ruid:icons.slot_frame,color:'#FFFFFF',sprite_type:1});
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
  b.sprite(n+'/Ghost',{rect_size:[56,56],image_ruid:icons['eq_'+slot.replace(/[0-9]/g,'')],color:{r:1,g:1,b:1,a:.42}});
+ // 10-27 소켓 (docs/design/37 §5-5): 아래 소켓 점(●찬 칸 ○빈 칸) · 룬을 고르면 끼울 수 있는 칸에 금빛 테두리가 깜빡인다 (InventoryWindow.BlinkSockets)
+ b.text(n+'/Sock','',{anchor:'bottom-center',pos:[0,2],rect_size:[84,20],size:16,bold:true,color:'#F4E2B0',alignment:4,outline:true,outline_color:'#000000'});
+ b.sprite(n+'/Glow',{rect_size:[104,104],image_ruid:icons.slot_frame,color:'#FFD36A',sprite_type:1,enable:false});
+ b.patchComponent(n+'/Glow','MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:false});
 }
 b.text(d+'/PreviewState','현재 착용 모습',{anchor:'top-left',pos:[118,-378],rect_size:[264,36],size:24,color:'#D2BF9B',alignment:4,bestfit:true,min_size:24,max_size:24});
 b.button(d+'/BtnPreview','장비 선택 후 외형 비교',{anchor:'top-left',pos:[118,-424],rect_size:[264,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:26,color:'#E6DCC6'});

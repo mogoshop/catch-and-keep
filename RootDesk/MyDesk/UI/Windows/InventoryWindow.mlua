@@ -4,6 +4,9 @@
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 -- 「정렬」: 등급순(유니크 · 세트 · 레어 · 마법 · 일반 · 룬 · 물약). 「여러 개 선택」: 칸을 눌러 여러 개 고른 뒤 한꺼번에 버리기.
 -- 대장장이 모드(OpenSmith): 두 작업 버튼이 「옵션 바꾸기」·「소켓 뚫기」로 바뀐다.
+-- 10-27 소켓 (docs/design/37 §5-5): 가방에서 룬을 고르면 빈 소켓이 있는 착용 칸이 금빛으로 깜빡이고(Eq_*/Glow),
+--   룬워드가 완성되는 칸(없으면 첫 칸)을 바로 대상으로 잡아 「투구에 끼우기」 단추가 뜬다. 다른 금빛 칸을 누르면 대상이 바뀐다.
+--   장비 칸 아래 소켓 점(Eq_*/Sock ●찬 칸 ○빈 칸).
 @Logic
 script InventoryWindow extends Logic
 
@@ -166,6 +169,7 @@ script InventoryWindow extends Logic
         end
         self:ValidateSelection(list, eq)
         self:RenderAppearance(eq, list[self.Selected] or "")
+        self:BlinkSockets(list[self.Selected], eq)
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
         local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self.SmithMode), tostring(self.Multi), tostring(self:PickedCount()), tostring(inv.SocketTokens)}, "#")
         if key == self.RenderKey then return end
@@ -175,6 +179,7 @@ script InventoryWindow extends Logic
             local path = self.Win .. "/Doll/Eq_" .. slot
             self:DrawItem(path, eq[slot])
             _UIKit:SetEnabled(path .. "/Ghost", eq[slot] == nil)
+            _UIKit:SetText(path .. "/Sock", eq[slot] ~= nil and _ItemData:SocketDots(eq[slot]) or "")
             local chosen = slot == self.SelectedEquipSlot or slot == self.SocketSlot
             _UIKit:SetColor(path, chosen and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
@@ -227,8 +232,13 @@ script InventoryWindow extends Logic
                 label = "귀속 재료"
                 allowed = false
             elseif _ItemData:IsRune(selBase) then
-                label = "룬 끼우기"
-                desc = desc .. "\n장비 칸을 골라 삽입 후 효과를 확인하세요."
+                label = "끼울 장비 없음"
+                if self.SocketSlot == "" then
+                    desc = desc .. "\n" .. _UIKit:Colored("#FF8C64", "빈 소켓이 있는 착용 장비가 없습니다 — 마을 대장장이에게 소켓을 뚫으세요.")
+                else
+                    label = (self:SlotLabel(self.SocketSlot)) .. "에 끼우기"
+                    desc = desc .. "\n" .. _UIKit:Colored("#FFD36A", "금빛으로 깜빡이는 장비 칸에 끼울 수 있습니다 (눌러서 바꾸기)")
+                end
                 if self.SocketSlot ~= "" then
                     local target = eq[self.SocketSlot]
                     allowed = self:CanSocket(sel, target)
@@ -404,7 +414,7 @@ script InventoryWindow extends Logic
         delta = string.gsub(delta, "착용 중인 것과 비교:", "삽입 후 변화:")
         return "\n대상: " .. _ItemData:DisplayName(target) .. "\n" .. delta
             .. "\n완성: " .. _ItemData:DisplayName(after)
-            .. "\n<color=#E0B87A>「룬 끼우기」를 누르면 룬 1개가 소모됩니다. 되돌릴 수 없습니다.</color>"
+            .. "\n<color=#E0B87A>「끼우기」를 누르면 룬 1개가 소모됩니다. 되돌릴 수 없습니다.</color>"
     end
 
     @ExecSpace("ClientOnly")
@@ -484,7 +494,51 @@ script InventoryWindow extends Logic
         end
         self:ClearSelection()
         if sel ~= nil then self.Selected = index self.SelectedItem = sel end
+        -- 룬: 끼울 장비 칸을 바로 잡는다 (룬워드가 완성되는 칸 → 없으면 빈 소켓이 있는 첫 칸)
+        if sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
+            local slot = self:BestSocketSlot(sel, inv:GetEquipMap())
+            if slot ~= "" then
+                self.SocketSlot = slot
+                self.SocketItem = inv:GetEquipMap()[slot] or ""
+            end
+        end
         self:Poll()
+    end
+
+    @ExecSpace("ClientOnly")
+    method string BestSocketSlot(string sel, table eq)
+        local first = ""
+        for slot in string.gmatch(self.SlotOrder, "[^,]+") do
+            local target = eq[slot]
+            if target ~= nil and self:CanSocket(sel, target) then
+                if first == "" then first = slot end
+                local item = _ItemData:Parse(target)
+                table.insert(item.runes, _ItemData:Parse(sel).base)
+                if _ItemData:GetRuneword(item) ~= nil then return slot end
+            end
+        end
+        return first
+    end
+
+    method string SlotLabel(string slot)
+        local names = { weapon = "무기", offhand = "등불", helm = "투구", armor = "갑옷", gloves = "장갑", boots = "신발", belt = "허리띠", amulet = "목걸이", ring1 = "반지", ring2 = "반지" }
+        return names[slot] or slot
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BlinkSockets(any sel, table eq)
+        -- 룬을 골랐으면 빈 소켓이 있는 착용 칸을 금빛으로 깜빡인다 (대상 칸은 진하게)
+        local rune = sel ~= nil and not self.Multi and _ItemData:IsRune(_ItemData:Parse(sel).base)
+        local wave = 0.5 + 0.5 * math.sin(_UtilLogic.ElapsedSeconds * 6)
+        for slot in string.gmatch(self.SlotOrder, "[^,]+") do
+            local glow = self.Win .. "/Doll/Eq_" .. slot .. "/Glow"
+            local on = rune and eq[slot] ~= nil and self:CanSocket(sel, eq[slot])
+            _UIKit:SetEnabled(glow, on)
+            if on then
+                local a = slot == self.SocketSlot and (0.75 + 0.25 * wave) or (0.25 + 0.4 * wave)
+                _UIKit:SetColor(glow, Color(1, 0.83, 0.42, a))
+            end
+        end
     end
 
     @ExecSpace("ClientOnly")

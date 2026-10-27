@@ -55,14 +55,7 @@ function run(){quiet(()=>{
  for(let i=1;i<=6;i++)b.patch('QuestWin/Q'+i,{pos:[40,-88-(i-1)*100],rect_size:[720,88]});
  b.patch('QuestWin/DescBox',{pos:[30,26],rect_size:[740,228]});b.patch('QuestWin/DescBox/Desc',{rect_size:[708,196]});b.patchComponent('QuestWin/DescBox/Desc','MOD.Core.TextGUIRendererComponent',{FontSize:24});
  for(let i=1;i<=5;i++)b.patch('SkillPick/Tab'+i,{rect_size:[152,88]});b.patch('SkillPick/BtnClear',{rect_size:[190,88]});
- // 능력치: 넓은 2칸 — 왼쪽 현재 능력치(정보), 오른쪽 통솔·정신·활력·민첩 4줄 + 추천 분배 3 + 초기화 (10-11 개편, docs/design/16)
- b.patch('CharWin',{anchor:'middle-center',pivot:[.5,.5],pos:[0,0],rect_size:[1140,720]});b.patch('CharWin/Rim',{rect_size:[1180,760]});
- b.patch('CharWin/Paper',{anchor:'top-left',pivot:[0,1],pos:[30,-84],rect_size:[540,540]});
- b.patch('CharWin/Paper/Info',{pos:[18,-14],rect_size:[504,512]});b.patchComponent('CharWin/Paper/Info','MOD.Core.TextGUIRendererComponent',{FontSize:22,BestFit:true,MinSize:18,MaxSize:22});
- for(const [i,stat] of ['Str','Ene','Vit','Dex'].entries()){b.patch('CharWin/'+stat,{anchor:'top-left',pivot:[0,1],pos:[590,-84-i*112],rect_size:[520,104]});b.patch('CharWin/'+stat+'/Text',{rect_size:[410,100]});b.patchComponent('CharWin/'+stat+'/Text','MOD.Core.TextGUIRendererComponent',{FontSize:21,BestFit:true,MinSize:16,MaxSize:21});b.patch('CharWin/'+stat+'/BtnAdd',{rect_size:[96,96]});}
- for(let i=1;i<=3;i++)b.patch('CharWin/Auto'+i,{anchor:'bottom-left',pivot:[0,0],pos:[590+(i-1)*176,96],rect_size:[168,60]});
- b.patch('CharWin/BtnReset',{anchor:'bottom-left',pivot:[0,0],pos:[590,26],rect_size:[520,56]});
- b.patch('CharWin/Points',{anchor:'bottom-left',pivot:[0,0],pos:[30,30],rect_size:[540,40]});b.patchComponent('CharWin/Points','MOD.Core.TextGUIRendererComponent',{FontSize:22});
+ // 능력치 창 배치는 ui.cjs (10-27 개편 docs/design/37 §3 — 1140×720 두 칸을 거기서 바로 만든다)
  for(const win of ['MenuWin','SkillWin','InvWin','QuestWin','CharWin'])b.patchComponent(win,'MOD.Core.SpriteGUIRendererComponent',{Color:{r:.05,g:.045,b:.06,a:1}});
  b.patch('GatePrompt',{anchor:'top-center',pivot:[.5,1],pos:[0,-220],rect_size:[760,60]});
  b.write(P.ui('GameHUD'));
