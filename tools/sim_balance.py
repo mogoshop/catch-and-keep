@@ -50,7 +50,7 @@ QUESTS = rows("quests.csv")
 MAPS_ALL = sorted(rows("maps.csv"), key=lambda r: num(r["order"]))
 
 ASSUME = {
-    "speed": 1.5,        # 이동 u/s (메이커 실측 1.3~1.6)
+    "speed": 1.5,        # 이동 u/s — 아래에서 config playerSpeedMul로 다시 잡는다 (10-28: 1.44 = 걷기 1.204칸/s 실측)
     "routeMul": 2.2,     # 사냥터 한 판 경로 = 가로 × 이 값
     "killShare": 0.85,   # 지나가며 잡는 비율
     "eff": 0.6,          # 군단 전투 효율 (조준·이동·과잉 피해·재소환 공백)
@@ -62,6 +62,7 @@ ASSUME = {
     "auraTime": 0.3,     # 보스 오오라(5칸) 안에 있는 시간 비율
     "potions": 8,        # 보스전에 쓸 물약 수
 }
+ASSUME["speed"] = 1.5 * C["playerSpeedMul"] / 1.44   # 10-28: 1.5칸/s(신발 포함)는 playerSpeedMul 1.44 기준 — 기본 이속을 바꾸면 같은 비율로
 
 # 레벨대별 장비 (액트 끝 레벨 1·6·12·22·31·40 사이를 잇는다). 아이템 점검(공식 정리 ③)의 「60% 장비 모델」과 최대 투자 장비.
 # 시작 등불(소환수 +20%)은 둘 다 낀다.
@@ -129,13 +130,29 @@ def lerp_gear(prof, key, L):
     return ys[-1]
 
 
+def node_level(sid, rank):
+    # SkillBook.NodeLevel (10-24): 강화는 열린 뒤 nodeLevelStep 레벨마다 한 랭크 · 그림자 증원은 deployExpandFromLv + step × (랭크 - 1)
+    s = SKILL[sid]
+    if sid == "deploy_expand":
+        return int(C["deployExpandFromLv"] + C["deployExpandStep"] * (max(1, rank) - 1))
+    if sid in ("shard_multi", "command_mastery"):
+        return 0
+    prow = int(num(SKILL[s["parent"]]["row"])) if s["parent"] in SKILL else 1
+    first = prow + 2 * (max(1, int(num(s["need"]))) - 1)
+    return int(first + C["nodeLevelStep"] * (max(1, rank) - 1))
+
+
 def rank_cap(sid, L, rk):
     s = SKILL[sid]
     if s["kind"] == "node":
         parent = s["parent"]
         if rk.get(parent, 0) < int(num(s["need"])):
             return 0
-        return int(num(s["maxLv"]))
+        mx = int(num(s["maxLv"]))
+        n = 0
+        while n < mx and L >= node_level(sid, n + 1):
+            n += 1
+        return n
     row, mx = int(num(s["row"])), int(num(s["maxLv"]))
     if L < row:
         return 0
@@ -234,7 +251,9 @@ def build(prof, L, act=1, diff=0):
     if rk.get("bone_shard"):
         spell += (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.5, pierce_cap(rk["bone_shard"])) / 0.75 * 0.25
     if rk.get("bone_spear"):
-        spell += 1.3 * (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_spear"] + 7 - 1)) * scale   # 공통 곡선 (뼈 창 Lv15 → 가상 +7 · 배율 1.3 · SkillBook.DamageCurve) * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
+        # 공통 곡선 (SkillBook.DamageCurve: 가상 레벨 = 랭크 + (해금 row - 1) // 2 · 배율 1.3) — 10-28: 관통·가동률 항이 주석 안에 있어 계산되지 않던 버그 수정, +7 하드코딩 → row
+        virt = rk["bone_spear"] + max(0, int(num(SKILL["bone_spear"]["row"])) - 1) // 2
+        spell += 1.3 * (C["skillCurveBase"] + C["skillCurvePerLv"] * (virt - 1)) * scale * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
     dps = {
         "그림자": ((n_sh - n_el) * sh_n + n_el * sh_e) / sh_iv,
         "해골": n_sk * sk_atk / C["skeletonCooldown"],
