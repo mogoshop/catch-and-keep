@@ -9,6 +9,7 @@
 //   4-3. 모바일 HUD 배치                   (check_mobile_layout — 화면 비율 4종에서 겹침·화면 밖, docs/ui/mobile-layout.md)
 //   4-4. 공통 UI 규격                      (check_ui_tokens — tools/build/ui-tokens.cjs ↔ UIKit 대화 상자 규격)
 //   4-5. 말투·용어                         (check_voice — docs/design/32-voice-guide.md)
+//   4-6. 기획서 38 결정 26개 대조           (check_decisions38 — 값이 부록 E 결정대로인가)
 //   5. 검사기 자가 테스트                  (tests/fixtures: 일부러 틀린 코드의 "-- EXPECT" 줄을 정확히 잡는가)
 //   6. --build: 빌드를 두 번 돌려 결과가 같은가 (멱등성, 파일을 다시 쓴다)
 // 사용: node tools/test.cjs [--build]
@@ -48,6 +49,7 @@ step("창 가림 검사", () => tool("check_ui_layers.cjs"));
 step("모바일 HUD 배치", () => tool("check_mobile_layout.cjs"));
 step("공통 UI 규격", () => tool("check_ui_tokens.cjs"));
 step("말투·용어", () => tool("check_voice.cjs"));
+step("기획서 38 결정 26개", () => tool("check_decisions38.cjs"));
 
 step("검사기 자가 테스트", () => {
   const fixture = path.join(ROOT, "tests/fixtures/bad_scripts");

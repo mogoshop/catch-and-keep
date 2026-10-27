@@ -520,11 +520,18 @@ script HudMap extends Logic
         self.ViewCenter = self.MapCenter
         -- 안개 칸 단위로 나눠 합친다 (칸마다 따로 켜고 끄려고). 사각형이 슬롯보다 많으면 칸을 키운다
         local ct = math.max(1, math.floor(self.RevealCell / math.max(0.01, grid.x) + 0.5))
-        local rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct)
-        if #rects > self.TerrainCount then
-            ct = ct * 2
-            rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct)
+        -- 10-28 큰 설계도 맵(70×50, 가장자리가 들쭉날쭉)은 슬롯을 넘었다(황무지 345) → 먼저 res×res 타일을 한 점으로 성기게, 그래도 넘으면 칸을 키운다
+        local res = 1
+        local rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct, res)
+        while #rects > self.TerrainCount and res < 4 do
+            res = res * 2
+            rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct, res)
         end
+        while #rects > self.TerrainCount and ct < 32 do
+            ct = ct * 2
+            rects = self:ChunkRects(tiles, low.x, low.y, high.x, high.y, ct, res)
+        end
+        log("[VRF] minimap terrain rects=" .. tostring(#rects) .. " cell=" .. tostring(ct) .. " res=" .. tostring(res))
         self.BlockSize = ct * grid.x
         local blocks = {}
         local seenBlock = {}
@@ -583,8 +590,9 @@ script HudMap extends Logic
         end
     end
 
-    method table ChunkRects(any tiles, integer lowX, integer lowY, integer highX, integer highY, integer ct)
-        -- ct×ct 타일 칸마다 통행 가능한 구간을 가로로 합치고 같은 구간은 세로로 병합한다 (칸을 넘지 않게)
+    method table ChunkRects(any tiles, integer lowX, integer lowY, integer highX, integer highY, integer ct, integer res)
+        -- ct×ct 타일 칸마다 통행 가능한 구간을 가로로 합치고 같은 구간은 세로로 병합한다 (칸을 넘지 않게).
+        -- res > 1이면 res×res 타일을 한 점으로 본다 — 그 안에 바닥이 하나라도 있으면 바닥 (10-28 큰 설계도 맵의 슬롯 상한)
         local rects = {}
         local by = lowY
         while by <= highY do
@@ -594,20 +602,30 @@ script HudMap extends Logic
                 local xEnd = math.min(highX, bx + ct - 1)
                 local block = tostring(bx) .. ":" .. tostring(by)
                 local active = {}
-                for y = by, yEnd do
+                for y = by, yEnd, res do
+                    local yTop = math.min(yEnd, y + res - 1)
                     local nextActive = {}
                     local start = nil
-                    for x = bx, xEnd + 1 do
-                        local tile = x <= xEnd and tiles:GetTile(Vector2Int(x, y)) or nil
-                        local floor = tile ~= nil and not tile.IsCollidable
+                    for x = bx, xEnd + res, res do
+                        local floor = false
+                        if x <= xEnd then
+                            for yy = y, yTop do
+                                for xx = x, math.min(xEnd, x + res - 1) do
+                                    local tile = tiles:GetTile(Vector2Int(xx, yy))
+                                    if tile ~= nil and not tile.IsCollidable then floor = true break end
+                                end
+                                if floor then break end
+                            end
+                        end
                         if floor and start == nil then start = x end
                         if not floor and start ~= nil then
-                            local key = tostring(start) .. ":" .. tostring(x - 1)
+                            local x2 = math.min(xEnd, x - 1)
+                            local key = tostring(start) .. ":" .. tostring(x2)
                             local r = active[key]
                             if r == nil then
-                                r = { x1 = start, x2 = x - 1, y1 = y, y2 = y, block = block, bx = bx, by = by }
+                                r = { x1 = start, x2 = x2, y1 = y, y2 = yTop, block = block, bx = bx, by = by }
                                 table.insert(rects, r)
-                            else r.y2 = y end
+                            else r.y2 = yTop end
                             nextActive[key] = r
                             start = nil
                         end
