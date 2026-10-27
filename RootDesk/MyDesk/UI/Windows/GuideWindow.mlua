@@ -41,6 +41,13 @@ script GuideWindow extends Logic
     property integer CoverTimer = 0
     property number CoverLead = 0.1           -- 가림판을 켠 뒤 재생기를 켜거나 Jump하기까지 (같은 프레임이면 하얀 화면이 한 프레임 비친다)
     property number VidLoad = 2.5            -- 재생기를 처음 켤 때 불러오는 시간 (그동안 검은 가림판 · 그 뒤 Jump)
+    -- 10-27 A안 (사용자: 써 보고 별로면 B안으로 되돌린다 — KeepPlayer = false 한 줄이면 B안):
+    --   A: 창을 열면 재생기를 한 번 켜서 불러 두고, 영상 없는 쪽에서는 끄지 않고 투명하게(Media · Video CanvasGroup) 계속 흘려 둔다.
+    --      다음 영상 쪽은 Jump만 → 처음 한 번 뒤로는 2.5초 다시 불러오기가 없다. 창을 닫으면 끈다
+    --   B: 영상 없는 쪽에서 재생기를 끄고(StopVideo), 다음 영상 쪽에서 Play로 다시 불러온다
+    property boolean KeepPlayer = true
+    property boolean PlayerAlive = false     -- A: 재생기가 켜져 불러진 상태 (창을 닫으면 false)
+    property number PlayerReadyAt = 0        -- A: 처음 불러오기가 끝났다고 보는 시각
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -63,7 +70,7 @@ script GuideWindow extends Logic
         self.TimerId = _TimerService:SetTimerRepeat(function()
             self:CheckFirstEntry(0.5)
             self:CheckInputChoice(0.5)
-            if self.VidStart >= 0 and not _UIKit:IsOpen(self.Win) then self:StopVideo() end
+            if (self.VidStart >= 0 or self.PlayerAlive) and not _UIKit:IsOpen(self.Win) then self:StopVideo() end
         end, 0.5)
         local pages = 0
         for _, t in ipairs(self.Tabs) do pages = pages + #t.pages end
@@ -183,13 +190,20 @@ script GuideWindow extends Logic
         end
         -- 화면 칸: 그림이 있으면 그림, 만들 예정이면 「준비 중」, 글만 쓰는 쪽·상황 카드는 접는다
         local media = not self.CardMode and kind ~= ""
-        _UIKit:SetEnabled(w .. "/Media", media)
+        if self.KeepPlayer then
+            -- A: 화면 칸은 늘 켜 두고(재생기를 살린다) 영상·그림이 없는 쪽에서는 투명하게
+            _UIKit:SetEnabled(w .. "/Media", true)
+            self:SetGroupAlpha(w .. "/Media", media and 1 or 0)
+            if not self.CardMode then self:EnsurePlayer() end   -- 상황 카드 한 장에는 재생기를 불러오지 않는다
+        else
+            _UIKit:SetEnabled(w .. "/Media", media)
+        end
         if media and vid ~= nil then
             _UIKit:SetEnabled(w .. "/Media/Shot", false)
             _UIKit:SetEnabled(w .. "/Media/Empty", false)
-            self:PlayVideo(vid[1], vid[2])
+            if self.KeepPlayer then self:PlayVideoKept(vid[1], vid[2]) else self:PlayVideo(vid[1], vid[2]) end
         else
-            self:StopVideo()
+            if self.KeepPlayer then self:ParkVideo() else self:StopVideo() end
             if media then
                 -- 캡처 그림(1280×720)은 처음 그릴 때 한 프레임 하얗게 비쳤다 (10-27 전체 녹화) → 인트로 그림으로 잠깐 덮는다
                 if shot ~= "" then self:CoverBriefly(self.JumpCover) end
@@ -258,6 +272,57 @@ script GuideWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SetGroupAlpha(string rel, number a)
+        local e = _UIKit:Get(rel)
+        if isvalid(e) and e.CanvasGroupComponent ~= nil then e.CanvasGroupComponent.GroupAlpha = a end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void EnsurePlayer()
+        -- A: 창이 열려 있는 동안 재생기를 한 번만 켜서 불러 둔다 (투명한 채로)
+        if self.PlayerAlive then return end
+        local e = _UIKit:Get(self.Win .. "/Media/Video")
+        if not isvalid(e) or e.YoutubePlayerGUIComponent == nil then return end
+        self:SetGroupAlpha(self.Win .. "/Media/Video", 0)
+        e.Enable = true
+        e.YoutubePlayerGUIComponent:Play()
+        self.PlayerAlive = true
+        self.PlayerReadyAt = _UtilLogic.ElapsedSeconds + self.VidLoad
+        log("[VRF] guide player preload (A)")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayVideoKept(integer start, number dur)
+        -- A: 이미 불러 둔 재생기로 그 구간을 되풀이. 처음 불러오기가 덜 끝났으면 그만큼만 가림판으로 기다린다
+        if self.VidStart == start and self.VidTimer ~= 0 then return end
+        if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
+        self.VidStart, self.VidDur = start, dur
+        _UIKit:SetEnabled(self.Win .. "/Media/Cover", true)
+        local wait = math.max(self.CoverLead, self.PlayerReadyAt - _UtilLogic.ElapsedSeconds)
+        self.VidTimer = _TimerService:SetTimerOnce(function()
+            self.VidTimer = 0
+            self:SetGroupAlpha(self.Win .. "/Media/Video", 1)
+            self:LoopVideo()
+        end, wait)
+        log(string.format("[VRF] guide video start=%d dur=%.0f wait=%.2f (A)", start, dur, wait))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ParkVideo()
+        -- A: 영상 없는 쪽 — 끄지 않고 투명하게만 (다음 영상 쪽은 Jump만).
+        --    일시정지(Pause)하면 다음 Jump가 재생을 다시 시작하지 않아 멈춘 화면이 남았다 (10-27 A안 녹화) → 소리 0으로 계속 흘려 둔다
+        if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
+        self.VidTimer = 0
+        if self.CoverTimer ~= 0 then _TimerService:ClearTimer(self.CoverTimer) end
+        self.CoverTimer = 0
+        _UIKit:SetEnabled(self.Win .. "/Media/Cover", false)
+        self:SetGroupAlpha(self.Win .. "/Media/Video", 0)
+        if self.VidStart < 0 then return end
+        self.VidStart = -1
+        log("[VRF] guide video parked (A)")
+    end
+
+    @ExecSpace("ClientOnly")
     method void LoopVideo()
         -- 구간 처음으로 옮기고, 길이가 지날 때마다 다시 처음으로
         if self.VidTimer ~= 0 then _TimerService:ClearTimer(self.VidTimer) end
@@ -307,13 +372,15 @@ script GuideWindow extends Logic
         if self.CoverTimer ~= 0 then _TimerService:ClearTimer(self.CoverTimer) end
         self.CoverTimer = 0
         _UIKit:SetEnabled(self.Win .. "/Media/Cover", false)
-        if self.VidStart < 0 then return end
+        if self.VidStart < 0 and not self.PlayerAlive then return end
         self.VidStart = -1
+        self.PlayerAlive = false
         local e = _UIKit:Get(self.Win .. "/Media/Video")
         if isvalid(e) and e.YoutubePlayerGUIComponent ~= nil then
             e.YoutubePlayerGUIComponent:Pause()
             e.Enable = false
         end
+        self:SetGroupAlpha(self.Win .. "/Media/Video", 1)
         log("[VRF] guide video stopped")
     end
 

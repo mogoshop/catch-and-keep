@@ -695,6 +695,9 @@ function buildGameHud() {
     b.empty("GuideWin/Media/Video", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], enable: false });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.RawImageGUIRendererComponent", { "@type": "MOD.Core.RawImageGUIRendererComponent", Enable: true, MaterialId: "" });
     b.addComponent("GuideWin/Media/Video", "MOD.Core.YoutubePlayerGUIComponent", { "@type": "MOD.Core.YoutubePlayerGUIComponent", Enable: true, Urls: ["https://www.youtube.com/watch?v=frX4-7REhRw"], Loop: true, PlayOnAwake: false, Shuffle: false, Volume: 0, PlaySpeed: 1 });
+    // 10-27 A안 (GuideWindow.KeepPlayer): 재생기를 창이 열려 있는 동안 살려 두고 영상 없는 쪽에서는 투명하게 숨긴다 (Media · Video 투명도)
+    b.upsertComponent("GuideWin/Media", "MOD.Core.CanvasGroupComponent", { GroupAlpha: 1, BlocksRaycasts: false, Interactable: false });
+    b.upsertComponent("GuideWin/Media/Video", "MOD.Core.CanvasGroupComponent", { GroupAlpha: 1, BlocksRaycasts: false, Interactable: false });
     // 재생기를 새로 불러오는 동안 하얀 화면이 비쳤다 (10-27 첫 유저 녹화) → 영상 위 가림 그림 = 안내 영상 인트로 고정 그림 (글 없음 · 10-27 사용자). GuideWindow가 불러오는 동안만 켠다
     b.sprite("GuideWin/Media/Cover", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], image_ruid: K.guide_video_cover, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     if (b.find("GuideWin/Media/Cover/Text")) b.remove("GuideWin/Media/Cover/Text");
