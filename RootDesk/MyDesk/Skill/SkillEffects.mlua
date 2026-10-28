@@ -92,6 +92,12 @@ script SkillEffects extends Component
         return book:GetPierceCap(book:GetPowerLevel(id))
     end
 
+    method integer ChoiceTier(integer slot, string axis)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        return book ~= nil and book:ChoiceTier(slot, axis) or 0
+    end
+
     method integer Node(string id)
         -- 강화 노드 랭크 (docs/design/16)
         ---@type SkillBook
@@ -387,7 +393,7 @@ script SkillEffects extends Component
             proj.ViewKind = "bone_shard"
             if isvalid(lock) then proj.Lock = lock end
             proj.SpikePct = 15 * self:Node("shard_spike")   -- 강화 「뼈 가시」: 튕길 때마다 +15%/랭크 (10-28 투사체 A안)
-            proj.Bounces = self:Node("shard_bounce")        -- 강화 「튕김」
+            proj.Bounces = self:Node("shard_bounce") + self:ChoiceTier(3, "soul")   -- 강화 「튕김」 + 선택 보상 3차 주문 「튀는 뼛조각」
             proj.MaxHits = 1                                 -- 10-28 투사체 A안: 골편은 관통하지 않고 부채꼴 발 수로 넓힌다
             proj:Launch(owner, dir, 12, 6.5, damage, "skill.bone_shard", true)
             finish(true)
@@ -740,6 +746,9 @@ script SkillEffects extends Component
             return false
         end
         for _, m in ipairs(list) do m:ApplyCurseFrom(kind, pct, duration, self.Entity) end
+        -- 선택 보상 2차 저주 「이중 저주」: 어느 저주든 걸면 약화의 낙인(받는 피해 +10 · 15 · 20%)이 함께 (낙인 자신은 제외)
+        local twin = self:ChoiceTier(2, "curse")
+        if twin > 0 and kind ~= "amp" then for _, m in ipairs(list) do m:ApplyCurseFrom("amp", 5 + 5 * twin, duration, self.Entity) end end
         for _, foe in ipairs(foes) do
             ---@type PlayerStats
             local fs = foe:GetComponent("script.PlayerStats")

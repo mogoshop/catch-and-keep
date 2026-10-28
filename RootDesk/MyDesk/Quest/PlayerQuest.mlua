@@ -31,6 +31,10 @@ script PlayerQuest extends Component
     property table Cheered = {}               -- "0"/"1"/"2" → ";1:smith;2:shop;" 그 난이도에서 들은 액트 보스 격려 (docs/design/31 §7)
     @Sync
     property string CheerNow = ";"            -- 지금 난이도에서 들은 격려 (마을 사람 머리 위 「!」를 끈다)
+    @Sync
+    property string ChoicePicks = ";"         -- 10-28 선택 보상: 고른 축 ";1:command;2:soul;" (다시 고를 수 없다)
+    @Sync
+    property string ChoiceTiers = "0,0,0"     -- 선택 보상 단계: 그 의뢰(choice:N)를 끝낸 난이도 수 (보통 1 · 악몽 2 · 지옥 3) — RefreshPermanent
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -501,7 +505,19 @@ script PlayerQuest extends Component
                 end
             end
         end
-        self.DeployBonus = bonus
+        -- 선택 보상 단계 (10-28 사용자: 악몽·지옥에서 같은 의뢰를 끝내면 같은 선택이 한 단계 더 강해진다)
+        local tiers = { 0, 0, 0 }
+        for i = 1, _QuestData:Count() do
+            local slot = tonumber(string.match("," .. _QuestData:Get(i).reward, ",choice:(%d+)")) or 0
+            if slot >= 1 and slot <= 3 then
+                for k = 0, 2 do
+                    local d = self.ByDiff[tostring(k)]
+                    if d ~= nil and d.i > i then tiers[slot] = tiers[slot] + 1 end
+                end
+            end
+        end
+        self.ChoiceTiers = tostring(tiers[1]) .. "," .. tostring(tiers[2]) .. "," .. tostring(tiers[3])
+        self.DeployBonus = bonus + self:ChoiceTier(3, "command")   -- 선택 보상 3차 군단 「증원」
         if self.PoisonBonus ~= poison or self.LightBonus ~= light or self.FireBonus ~= fire then
             self.PoisonBonus = poison
             self.LightBonus = light
@@ -526,6 +542,78 @@ script PlayerQuest extends Component
         -- 의뢰 보상과 완료 알림은 해당 플레이어의 화면에만 표시한다.
         if self.Entity ~= _UserService.LocalPlayer then return end
         _UXFeedback:Show(title, detail, icon)
+    end
+
+    -- ───────── 선택 보상 (10-28 사용자 확정: 다시 고르기 불가 · 악몽·지옥은 같은 선택이 한 단계 강해짐 · 이미 끝낸 캐릭터도 접속하면 고른다) ─────────
+
+    method integer TierOfSlot(integer slot)
+        -- 그 선택 보상 의뢰를 끝낸 난이도 수 (0이면 아직)
+        local i = 0
+        for t in string.gmatch(self.ChoiceTiers, "%d+") do
+            i = i + 1
+            if i == slot then return tonumber(t) or 0 end
+        end
+        return 0
+    end
+
+    method string PickOf(integer slot)
+        return string.match(self.ChoicePicks, ";" .. tostring(slot) .. ":(%a+);") or ""
+    end
+
+    method integer ChoiceTier(integer slot, string axis)
+        -- 효과 쪽에서 부른다: 그 칸에서 이 축을 골랐으면 단계(1~3), 아니면 0
+        if self:PickOf(slot) ~= axis then return 0 end
+        return self:TierOfSlot(slot)
+    end
+
+    method integer PendingChoice()
+        -- 고를 차례인 칸 (의뢰는 끝냈는데 아직 안 고름) — 없으면 0
+        for slot = 1, 3 do
+            if self:TierOfSlot(slot) > 0 and self:PickOf(slot) == "" then return slot end
+        end
+        return 0
+    end
+
+    method table ChoiceDef(integer slot, string axis)
+        -- { name, desc(단계 1), next(악몽·지옥), skill(아이콘) }
+        local defs = {
+            ["1command"] = { "해골 하나 더", "해골 전사 최대 수 +1", "악몽 +2 · 지옥 +3", "raise_skeleton" },
+            ["1soul"] = { "뼛조각 하나 더", "골편 투척 +1발 (마나 그대로)", "악몽 +2발 · 지옥 +3발", "bone_shard" },
+            ["1curse"] = { "긴 저주", "모든 저주 지속 +2초", "악몽 +3초 · 지옥 +4초", "enfeeble" },
+            ["2command"] = { "정예로 서는 그림자", "그림자 1기가 정예로 선다 (공격·생명 ×1.25)", "악몽 ×1.35 · 지옥 ×1.45", "elite_promote" },
+            ["2soul"] = { "미리 쥔 뼈 창", "뼈 창 1랭크를 지금 쓴다 (Lv15 전·포인트 없이)", "악몽 +1레벨 · 지옥 +2레벨", "bone_spear" },
+            ["2curse"] = { "이중 저주", "어느 저주든 낙인(받는 피해 +10%)이 같이 걸린다", "악몽 +15% · 지옥 +20%", "mark_weakness" },
+            ["3command"] = { "증원", "그림자 배치 +1", "악몽 +2 · 지옥 +3", "shadow_summon" },
+            ["3soul"] = { "튀는 뼛조각", "골편이 맞힌 뒤 가까운 적에게 한 번 더 튄다", "악몽 2번 · 지옥 3번", "bone_shard" },
+            ["3curse"] = { "역병의 맛", "저주 걸린 적이 죽으면 근처 1기에게 옮는다", "악몽 2기 · 지옥 3기", "plague_curse" },
+        }
+        local d = defs[tostring(slot) .. axis]
+        if d == nil then return nil end
+        return { name = d[1], desc = d[2], next = d[3], skill = d[4] }
+    end
+
+    method string ChoiceQuestTitle(integer slot)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if (tonumber(string.match("," .. q.reward, ",choice:(%d+)")) or 0) == slot then return q.title end
+        end
+        return ""
+    end
+
+    @ExecSpace("Server")
+    method void RequestChoose(integer slot, string axis)
+        -- 한 번만: 이미 고른 칸은 바꾸지 않는다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if axis ~= "command" and axis ~= "soul" and axis ~= "curse" then return end
+        if self:TierOfSlot(slot) <= 0 or self:PickOf(slot) ~= "" then return end
+        self.ChoicePicks = self.ChoicePicks .. tostring(slot) .. ":" .. axis .. ";"
+        self:RefreshPermanent()
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book ~= nil then book:RefreshDigest() end
+        local def = self:ChoiceDef(slot, axis)
+        self:NotifyQuest("선택 보상 · " .. def.name, def.desc, _SkillData:Get(def.skill).icon, self.Entity.PlayerComponent.UserId)
+        log(string.format("[VRF] choice pick slot=%d axis=%s tier=%d", slot, axis, self:TierOfSlot(slot)))
     end
 
     @ExecSpace("ServerOnly")
@@ -559,6 +647,7 @@ script PlayerQuest extends Component
             if sc ~= nil and sc ~= ";" then out["sc" .. tostring(k)] = sc end
         end
         if self.StorySeen ~= ";" then out.st = self.StorySeen end
+        if self.ChoicePicks ~= ";" then out.cp = self.ChoicePicks end
         self.Cheered[tostring(self.Diff)] = self.CheerNow
         for k = 0, 2 do
             local ch = self.Cheered[tostring(k)]
@@ -586,6 +675,7 @@ script PlayerQuest extends Component
             end
         end
         self.StorySeen = type(d.st) == "string" and d.st or ";"
+        self.ChoicePicks = type(d.cp) == "string" and d.cp or ";"
         self.Cheered = {}
         for k = 0, 2 do
             local ch = d["ch" .. tostring(k)]

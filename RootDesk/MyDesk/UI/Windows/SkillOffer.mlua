@@ -12,6 +12,10 @@ script SkillOffer extends Logic
     property integer Shuffle = 0            -- 다시 섞을 때마다 1씩 — 같은 종류에서 다른 후보를 고른다
     property string RenderKey = ""
     property integer TimerId = 0
+    property string Mode = "skill"          -- "skill" 혼의 제물 · "reward" 선택 보상 (10-28 — 같은 카드 창을 함께 쓴다)
+    property integer RewardSlot = 0         -- 보상 모드에서 고르는 칸 (1~3)
+    property integer AutoShownSlot = 0      -- 이 접속에서 스스로 열어 준 칸 (같은 칸은 한 번만 — 닫으면 띠로 다시 연다)
+    property number CardX0 = 19             -- 첫 카드 왼쪽 (보상 모드는 「다음 해금」 칸이 없어 카드 셋을 가운데로 — 126)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -37,10 +41,25 @@ script SkillOffer extends Logic
 
     @ExecSpace("ClientOnly")
     method void Open()
+        -- 띠를 누르면: 고를 선택 보상이 있으면 그것부터, 아니면 혼의 제물
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local pending = quest ~= nil and quest:PendingChoice() or 0
+        if pending > 0 then self:OpenReward(pending) return end
+        self.Mode = "skill"
         self.OfferKey = ""
         self.RenderKey = ""
         _UIKit:Open(self.Win)
         log("[VRF] offer open")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OpenReward(integer slot)
+        self.Mode = "reward"
+        self.RewardSlot = slot
+        self.RenderKey = ""
+        _UIKit:Open(self.Win)
+        log("[VRF] choice reward open slot=" .. tostring(slot))
     end
 
     @ExecSpace("ClientOnly")
@@ -50,11 +69,35 @@ script SkillOffer extends Logic
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
-        -- HUD 띠: 포인트가 있고 창이 하나도 안 열려 있을 때
-        local band = st.SkillPoints > 0 and not _UIKit:AnyWindowOpen()
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        local pending = quest ~= nil and quest:PendingChoice() or 0
+        -- 선택 보상: 고를 차례가 오면 (의뢰 보고 직후 · 이미 끝낸 캐릭터는 접속하자마자) 한 번 스스로 연다
+        if pending > 0 and self.AutoShownSlot ~= pending and not _UIKit:AnyWindowOpen() then
+            self.AutoShownSlot = pending
+            self:OpenReward(pending)
+        end
+        -- HUD 띠: 고를 선택 보상이 있거나 포인트가 있고, 창이 하나도 안 열려 있을 때
+        local band = (pending > 0 or st.SkillPoints > 0) and not _UIKit:AnyWindowOpen()
         _UIKit:SetEnabled("OfferBand", band)
-        if band then _UIKit:SetText("OfferBand", "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")")) end
+        if band then
+            if pending > 0 then _UIKit:SetText("OfferBand", "선택 보상 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. quest:ChoiceQuestTitle(pending) .. ")"))
+            else _UIKit:SetText("OfferBand", "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")")) end
+        end
         if not _UIKit:IsOpen(self.Win) then return end
+        if self.Mode == "reward" then
+            if quest == nil or quest:PickOf(self.RewardSlot) ~= "" or quest:TierOfSlot(self.RewardSlot) <= 0 then
+                self.Mode = "skill"
+                _UIKit:Close(self.Win)
+                return
+            end
+            local rkey = "reward#" .. tostring(self.RewardSlot) .. "#" .. tostring(quest:TierOfSlot(self.RewardSlot))
+            if rkey ~= self.RenderKey then
+                self.RenderKey = rkey
+                self:RenderReward(quest)
+            end
+            return
+        end
         if st.SkillPoints <= 0 then
             _UIKit:Close(self.Win)
             return
@@ -110,8 +153,46 @@ script SkillOffer extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void RenderReward(PlayerQuest quest)
+        -- 선택 보상 카드 3장: 군단 · 주문 · 저주 (카드 맨 위 띠 = 그 트리 색). 하나만 — 다시 고를 수 없다
+        local slot = self.RewardSlot
+        local tier = quest:TierOfSlot(slot)
+        _UIKit:SetText(self.Win .. "/Title", "선택 보상 · " .. quest:ChoiceQuestTitle(slot))
+        _UIKit:SetText(self.Win .. "/Sub", "하나만 고른다 — 다시 고를 수 없다")
+        _UIKit:SetText(self.Win .. "/Left", tier > 1 and ("지금 " .. tostring(tier) .. "단계") or "")
+        _UIKit:SetEnabled(self.Win .. "/BtnReroll", false)
+        _UIKit:SetEnabled(self.Win .. "/BtnBoard", false)
+        _UIKit:SetEnabled(self.Win .. "/Preview", false)
+        self:PlaceCards(126)
+        local axes = { { "command", "군단" }, { "soul", "주문" }, { "curse", "저주" } }
+        for i, a in ipairs(axes) do
+            local c = self.Win .. "/Card" .. tostring(i)
+            local def = quest:ChoiceDef(slot, a[1])
+            _UIKit:SetEnabled(c, def ~= nil)
+            if def ~= nil then
+                local color = _SkillWindow:TreeColor(a[1])
+                _UIKit:SetIcon(c, _GameData:GetUiIcon("sk_offer_card_new"))
+                _UIKit:SetColor(c .. "/Band", color)
+                _UIKit:SetText(c .. "/Kind", _UIKit:Colored("#F4ED83", a[2]))
+                _UIKit:SetIcon(c .. "/Icon", _SkillData:Get(def.skill).icon)
+                _UIKit:SetText(c .. "/Name", def.name)
+                _UIKit:SetText(c .. "/Effect", def.desc)
+                _UIKit:SetText(c .. "/Change", def.next)
+                _UIKit:SetText(c .. "/Pick", "이것으로")
+            end
+        end
+        log("[VRF] choice reward render slot=" .. tostring(slot) .. " tier=" .. tostring(tier))
+    end
+
+    @ExecSpace("ClientOnly")
     method void Render(SkillBook book, PlayerStats st)
         -- 카드 3장 + 다음 해금 미리보기 + 남은 포인트 · 다시 섞기
+        _UIKit:SetText(self.Win .. "/Title", "혼의 제물")
+        _UIKit:SetText(self.Win .. "/Sub", "포인트를 바칠 곳을 고르세요")
+        _UIKit:SetEnabled(self.Win .. "/BtnReroll", true)
+        _UIKit:SetEnabled(self.Win .. "/BtnBoard", true)
+        self:PlaceCards(19)
+        for i = 1, 3 do _UIKit:SetText(self.Win .. "/Card" .. tostring(i) .. "/Pick", "이 카드로") end
         _UIKit:SetText(self.Win .. "/Left", "남은 " .. tostring(st.SkillPoints))
         local rerollLeft = self.RerollLevel ~= st.Level
         _UIKit:SetText(self.Win .. "/BtnReroll", rerollLeft and "다시 섞기 (1)" or _UIKit:Colored("#8A8A8A", "다시 섞기 (0)"))
@@ -167,7 +248,18 @@ script SkillOffer extends Logic
 
     @ExecSpace("ClientOnly")
     method void Choose(integer index)
-        -- 카드 고르기 = 그 스킬·강화 +1 (서버가 다시 확인한다)
+        -- 카드 고르기 = 그 스킬·강화 +1 (서버가 다시 확인한다). 보상 모드면 그 축을 고른다 (한 번만)
+        if self.Mode == "reward" then
+            ---@type PlayerQuest
+            local quest = _UIKit:Comp("script.PlayerQuest")
+            local axes = { "command", "soul", "curse" }
+            if quest == nil or axes[index] == nil then return end
+            quest:RequestChoose(self.RewardSlot, axes[index])
+            _SoundDirector:PlayEffect(_GameConst.SfxSummon, 0.6)
+            self:Flash(index)
+            log("[VRF] choice reward choose slot=" .. tostring(self.RewardSlot) .. " " .. axes[index])
+            return
+        end
         local id = self.Offer ~= nil and self.Offer[index] or nil
         if id == nil then return end
         ---@type SkillBook
@@ -181,10 +273,18 @@ script SkillOffer extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void PlaceCards(number x0)
+        -- 카드 셋의 가로 자리 (혼의 제물 19 · 선택 보상 126 — 오른쪽 「다음 해금」 칸 몫만큼 가운데로)
+        if self.CardX0 == x0 then return end
+        self.CardX0 = x0
+        for i = 1, 3 do _UIKit:SetPos(self.Win .. "/Card" .. tostring(i), Vector2(x0 + (i - 1) * 354, -116)) end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Flash(integer index)
         -- 고른 카드 위 반짝임 (코덱스 sk-offer-pick-01~06 · 80ms씩 · 480ms)
         local path = self.Win .. "/Flash"
-        _UIKit:SetPos(path, Vector2(19 + (index - 1) * 354 + 170, -116 - 220))
+        _UIKit:SetPos(path, Vector2(self.CardX0 + (index - 1) * 354 + 170, -116 - 220))
         _UIKit:SetIcon(path, _GameData:GetUiIcon("sk_offer_pick_01"))
         for i = 2, 6 do
             local ruid = _GameData:GetUiIcon("sk_offer_pick_0" .. tostring(i))

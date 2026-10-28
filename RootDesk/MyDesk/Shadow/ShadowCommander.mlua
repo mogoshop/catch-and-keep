@@ -289,6 +289,7 @@ script ShadowCommander extends Component
                 u.Hp = u.MaxHp * math.max(0, math.min(1, state.health))
                 self.TravelStates[id] = nil
             end
+            self:ChoiceElite(u)
         end, function()
             if self.Units[id] ~= unit then return end
             log_error("[ShadowCommander] ShadowUnit 연결 실패, 회수: " .. id)
@@ -407,6 +408,18 @@ script ShadowCommander extends Component
         end
         owner:RefreshDigest()
         -- 사망 안내는 ShadowUnit의 소유자 전용 아이콘 알림으로 한 번만 전달한다.
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ChoiceElite(ShadowUnit u)
+        -- 선택 보상 2차 군단 「정예로 서는 그림자」: 정예가 하나도 없으면 막 선 그림자를 정예로 (×1.25 · 1.35 · 1.45)
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        local tier = quest ~= nil and quest:ChoiceTier(2, "command") or 0
+        if tier <= 0 or u.Promoted then return end
+        for _, other in ipairs(self:GetUnits()) do if other.Promoted and not other.Dead then return end end
+        u:Promote(1.15 + 0.1 * tier)
+        log(string.format("[VRF] choice elite shadow ×%.2f", 1.15 + 0.1 * tier))
     end
 
     @ExecSpace("ServerOnly")

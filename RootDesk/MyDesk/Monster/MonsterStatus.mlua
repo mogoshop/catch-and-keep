@@ -481,8 +481,9 @@ script MonsterStatus extends Component
             ---@type SkillBook
             local book = src:GetComponent("script.SkillBook")
             local lv = book ~= nil and book:GetPowerLevel("plague_curse") or 0
-            if lv > 0 then
-                local count = math.floor(book:GetEffectPower("plague_curse", lv))
+            local taste = book ~= nil and book:ChoiceTier(3, "curse") or 0   -- 선택 보상 3차 저주 「역병의 맛」: 역병 저주 없이도 1 · 2 · 3기
+            if lv > 0 or taste > 0 then
+                local count = lv > 0 and math.floor(book:GetEffectPower("plague_curse", lv)) or taste
                 local near = {}
                 for _, m in ipairs(_Util:MonstersNear(map, p, 2.5)) do
                     if m.Entity ~= self.Entity and not m.IsDead then table.insert(near, { m = m, d = (_Util:Pos2(m.Entity) - p):Magnitude() }) end

@@ -675,6 +675,7 @@ function genQuests() {
             elseif key == "unique" then table.insert(parts, "유니크 장비 " .. val)
             elseif key == "runes" then table.insert(parts, "룬 " .. val .. "개")
             elseif key == "socket" then table.insert(parts, "소켓권 " .. val .. "장")
+            elseif key == "choice" then table.insert(parts, "선택 보상 (군단·주문·저주 중 하나 — 악몽·지옥에서 한 단계 더)")
             elseif key == "gen" then table.insert(parts, val == "3" and "희귀 장비" or "마법 장비") end
         end
         return table.concat(parts, ", ")

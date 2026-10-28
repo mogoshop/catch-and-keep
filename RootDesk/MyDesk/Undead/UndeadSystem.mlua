@@ -145,7 +145,13 @@ script UndeadSystem extends Logic
         -- 실제 최대 수 = 메인 랭크 규칙 + 강화 (뼈 군단 · 마법사 증원 · 군세) — docs/design/16
         if kind == "revive" then return self:ReviveCountFor(slvl) + self:SkillLevel(player, "revive_legion") end
         local node = kind == "mage" and "mage_legion" or "skel_legion"
-        return self:CountFor(slvl) + self:SkillLevel(player, node)
+        local choice = 0
+        if kind ~= "mage" then
+            ---@type PlayerQuest
+            local quest = player:GetComponent("script.PlayerQuest")
+            if quest ~= nil then choice = quest:ChoiceTier(1, "command") end   -- 선택 보상 1차 군단 「해골 하나 더」
+        end
+        return self:CountFor(slvl) + self:SkillLevel(player, node) + choice
     end
 
     @ExecSpace("ServerOnly")
