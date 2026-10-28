@@ -147,6 +147,19 @@ script UIKit extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void SetBar(string fillRel, number ratio)
+        -- 진행 막대 채움 (tools/build/lib.cjs progressBar — 업적 막대 그림): 바탕 폭 × 비율로 줄인다.
+        --   채움 그림은 양 끝 8px씩 고정(9조각)이라 16보다 짧게 줄이지 않고, 0이면 감춘다 (JournalWindow 줄 막대와 같은 규칙)
+        local fill = self:Get(fillRel)
+        if not isvalid(fill) or not isvalid(fill.Parent) then return end
+        local r = math.max(0, math.min(1, ratio))
+        local t = fill.UITransformComponent
+        local w = math.max(16, fill.Parent.UITransformComponent.RectSize.x * r)
+        if math.abs(t.RectSize.x - w) > 0.5 then t.RectSize = Vector2(w, t.RectSize.y) end
+        if fill.Enable ~= (r > 0) then fill.Enable = r > 0 end
+    end
+
+    @ExecSpace("ClientOnly")
     method void ShowCooldown(string rel, SkillBook book, string id)
         -- 쿨다운 덮개(rel = 칸/Cd): 남았으면 켜고 채움·초 표시, 끝났으면 끈다
         local left = book:CooldownLeft(id)

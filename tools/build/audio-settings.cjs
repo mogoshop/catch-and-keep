@@ -24,8 +24,7 @@ function run() {
       b.button(r + "/" + name, label, { pos: [x, 0], rect_size: [name === "Mute" ? 150 : 88, 88], image_ruid: icons.btn_frame, bg_color: "#FFFFFF", color: "#E6DCC6", font_size: 28 });
     }
     b.text(r + "/Value", "", { pos: [0, 24], rect_size: [160, 44], size: 30, color: "#FFFFFF" });
-    b.panel(r + "/Bar", { pos: [0, -20], rect_size: [176, 18], color: "#38323F" });
-    b.sprite(r + "/Bar/Fill", { rect_size: [176, 18], color: "#B69B63", sprite_type: 3, fill_method: 0 });
+    require("./lib.cjs").progressBar(b, r + "/Bar", { pos: [0, -20], rect_size: [176, 18] });
   }
   // UI 크기 (PC 전용, 10-27 사용자 A안): 모든 UI 묶음을 80 / 90 / 100%로 (AudioWindow.ApplyUIScale) — 24인치 모니터에서 크다는 팀원 의견
   // 화면 흔들림 (10-28 피드백 F5 #12-A): 내 스킬이 맞을 때 내 화면만. 기본 PC 켬 · 모바일 끔 (Util.ShakeEnabled)

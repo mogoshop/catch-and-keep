@@ -66,4 +66,16 @@ function preserveIds(file, previousText) {
   fs.writeFileSync(file, JSON.stringify(obj, null, 2) + (previousText.endsWith("\n") ? "\n" : ""), "utf8");
 }
 
-module.exports = { readIfExists, preserveIds, ROOT, ModelBuilder, MapBuilder, UIBuilder, EXT, P, pos, at, list, quiet, exists, load, num, bool };
+// 진행 막대 공용 (10-28 사용자 「민짜 막대 말고 만들어 둔 막대로 전부 교체」):
+//   창 안 진행 막대 = 업적 막대 그림 — 청동 테두리 바탕(jr_bar_bg) + 보라→금 채움(jr_bar_fill), 둘 다 9조각.
+//   채움은 폭을 줄여 나타낸다(양 끝 장식 8px 유지) → 실행 중에는 UIKit.SetBar(<이름>/Fill, 비율)
+function progressBar(b, name, opts) {
+  const icons = Object.fromEntries(load("ui_icons").map((r) => [r.key, r.ruid]));
+  const [w, h] = opts.rect_size;
+  b.panel(name, { ...opts, image_ruid: icons.jr_bar_bg, color: "#FFFFFF", sprite_type: 1 });
+  b.sprite(`${name}/Fill`, { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [w, h], image_ruid: icons.jr_bar_fill, color: "#FFFFFF", sprite_type: 1 });
+  b.patchComponent(name, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b.patchComponent(`${name}/Fill`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false, FillAmount: 1 });
+}
+
+module.exports = { readIfExists, preserveIds, ROOT, ModelBuilder, MapBuilder, UIBuilder, EXT, P, pos, at, list, quiet, exists, load, num, bool, progressBar };

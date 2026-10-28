@@ -171,8 +171,7 @@ function buildGameHud() {
   b.panel("BtnJournal/Tip", { anchor: "middle-left", pivot: [1, 0.5], pos: [-8, 0], rect_size: [330, 72], ...part("hud_box"), sprite_type: 1, enable: false });
   b.patchComponent("BtnJournal/Tip", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("BtnJournal/Tip/Name", "", { size: 20, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -6], rect_size: [300, 28], bestfit: true, min_size: 14, max_size: 20, ...outline });
-  b.sprite("BtnJournal/Tip/Bar", { anchor: "bottom-left", pivot: [0, 0], pos: [16, 14], rect_size: [200, 12], color: "#2E2A34", sprite_type: 0 });
-  b.sprite("BtnJournal/Tip/Bar/Fill", { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [200, 12], color: "#B48CFF", sprite_type: 0 });
+  require("./lib.cjs").progressBar(b, "BtnJournal/Tip/Bar", { anchor: "bottom-left", pivot: [0, 0], pos: [16, 12], rect_size: [200, 16] });
   b.text("BtnJournal/Tip/Value", "", { size: 18, color: C.white, alignment: 5, anchor: "bottom-right", pos: [-14, 6], rect_size: [100, 26], ...outline });
 
   // ── 퀘스트 추적 (미니맵 아래) ──
@@ -434,8 +433,7 @@ function buildGameHud() {
     }
   }
   // 진행 막대: 열 아래 304 · 지금 선은 막대에서 열 위(68)까지 · 불꽃 표지는 막대 위에 (예전엔 판 밖 머리 줄의 범례를 덮었다)
-  b.panel(`${tl}/Bar`, { anchor: "top-left", pivot: [0, 0.5], pos: [44, -304], rect_size: [1210, 12], color: "#38323F" });
-  b.sprite(`${tl}/Bar/Fill`, { anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [1210, 12], color: "#B69B63", sprite_type: 3, fill_method: 0 });
+  require("./lib.cjs").progressBar(b, `${tl}/Bar`, { anchor: "top-left", pivot: [0, 0.5], pos: [44, -304], rect_size: [1210, 16] });
   b.sprite(`${tl}/Bar/Mark`, { anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 116], rect_size: [4, 236], ...part("sk_tl_nowline"), sprite_type: 0 });
   b.sprite(`${tl}/Bar/Mark/Pin`, { anchor: "bottom-center", pivot: [0.5, 0.5], pos: [0, 2], rect_size: [28, 34], ...part("sk_tl_marker"), sprite_type: 0 });
   b.text(`${tl}/Bar/Now`, "", { size: 16, bold: true, color: "#FFE9A8", anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [80, 22], alignment: 4, ...outline });

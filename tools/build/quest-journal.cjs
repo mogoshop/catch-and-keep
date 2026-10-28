@@ -57,7 +57,7 @@ const d=win+'/Detail';
 b.panel(d,{anchor:'top-left',pos:[30,-598],rect_size:[1260,340],color:'#111018'});
 b.text(d+'/Title','',{anchor:'top-left',pos:[24,-14],rect_size:[720,46],size:30,color:'#E6C88A',alignment:3,bold:true,bestfit:true,min_size:24,max_size:30});
 b.text(d+'/Status','',{anchor:'top-right',pivot:[1,1],pos:[-24,-14],rect_size:[460,46],size:24,color:'#D8CFBC',alignment:5});
-b.sprite(d+'/Progress',{anchor:'top-left',pos:[24,-66],rect_size:[1212,8],color:'#8A7651',sprite_type:3,fill_method:0});
+require(path.join(root,'tools/build/lib.cjs')).progressBar(b,d+'/Progress',{anchor:'top-left',pos:[24,-63],rect_size:[1212,16]});
 b.text(d+'/Zone','',{anchor:'top-left',pos:[24,-82],rect_size:[1212,34],size:22,color:'#C7B08A',alignment:3});
 b.text(d+'/Objective','',{anchor:'top-left',pos:[24,-118],rect_size:[1212,36],size:25,color:'#EEE5D4',alignment:3,bestfit:true,min_size:21,max_size:25});
 b.text(d+'/Desc','',{anchor:'top-left',pos:[24,-156],rect_size:[1212,62],size:22,color:'#B9B0A1',alignment:0,bestfit:true,min_size:19,max_size:22,overflow:2});
