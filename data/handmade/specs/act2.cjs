@@ -471,3 +471,40 @@ module.exports.temple3.zones = Object.assign({}, module.exports.temple3.zones, {
 module.exports.temple3.dress = Object.assign({}, module.exports.temple3.dress, { d: Object.assign({}, module.exports.temple3.dress.d, { decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles"], dn: 6 }) });
 module.exports.sanctum.zones = Object.assign({}, module.exports.sanctum.zones, { e: "a2-scorched-sandstone-floor 1/0.94/0.86 대사제의 성소" });
 module.exports.sanctum.dress = Object.assign({}, module.exports.sanctum.dress, { e: Object.assign({}, module.exports.sanctum.dress.e, { dn: 9 }) });
+
+// 10-28 밤 액트 2 곁 조각 10(assets/codex-a2-handmade-v1 a2-adjunct-*)을 랜드마크 세트 밖에서도 쓴다 (액트 3·4와 같은 방식):
+//   큰 소품 곁에 어울리는 곁 조각을 같이 뿌리고, 세트가 없던 장소마다 곁 조각 세트 하나씩 (map_sets.csv a2_caravan_rest · a2_tomb_offering · a2_scribe_corner · a2_serpent_den)
+const A2_ADJUNCT = {
+  "a2-broken-urns": "a2-adjunct-broken-waterjug", "a2-torn-awning": "a2-adjunct-fallen-awning", "broken-column": "a2-adjunct-sandstone-fragments",
+  "temple-column": "a2-adjunct-censer-base", "wind-stele": "a2-adjunct-sun-disc-plaque", "viper-nest": "a2-adjunct-snake-shed",
+  "bookshelf": "a2-adjunct-burnt-scroll", "burnt-paper": "a2-adjunct-burnt-scroll", "a2-waving-skeleton": "a2-adjunct-bandage-bundle",
+  "a2-buried-statue-head": "a2-adjunct-golden-mask-fragments", "market-stall": "a2-adjunct-camel-saddle", "a2-fallen-obelisk": "a2-adjunct-sandstone-fragments",
+  "tent": "a2-adjunct-camel-saddle", "a2-spear-skull-fence": "a2-adjunct-bandage-bundle",
+};
+const MORE = {
+  oasis: { c: ["a2_caravan_rest"] },
+  dunes: { a: ["a2_caravan_rest"], e: ["a2_serpent_den"], g: ["a2_caravan_rest"] },
+  canyon: { a: ["a2_caravan_rest"], d: ["a2_tomb_offering"], g: ["a2_caravan_rest"] },
+  stormwaste: { a: ["a2_caravan_rest"], d: ["a2_tomb_offering"], f: ["a2_caravan_rest"] },
+  sunkenroad: { a: ["a2_caravan_rest"], b: ["a2_tomb_offering"], d: ["a2_serpent_den"], e: ["a2_caravan_rest"], h: ["a2_tomb_offering"] },
+  temple1: { b: ["a2_tomb_offering"], c: ["a2_tomb_offering"], e: ["a2_serpent_den"], f: ["a2_scribe_corner"] },
+  temple2: { b: ["a2_tomb_offering"], c: ["a2_tomb_offering"], f: ["a2_scribe_corner"] },
+  temple3: { b: ["a2_tomb_offering"], c: ["a2_tomb_offering"], e: ["a2_serpent_den"], f: ["a2_scribe_corner"] },
+  sanctum: { b: ["a2_tomb_offering"], c: ["a2_scribe_corner"] },
+  scorpnest1: { b: ["a2_serpent_den"], e: ["a2_serpent_den"] },
+  scorpnest2: { b: ["a2_serpent_den"], c: ["a2_serpent_den"] },
+  drywell: { b: ["a2_serpent_den"], c: ["a2_tomb_offering"], d: ["a2_serpent_den"] },
+  kingtomb1: { c: ["a2_tomb_offering"], e: ["a2_tomb_offering"] },
+  kingtomb2: { b: ["a2_tomb_offering"], c: ["a2_serpent_den"], e: ["a2_tomb_offering"] },
+  archive: { b: ["a2_scribe_corner"], c: ["a2_scribe_corner"], e: ["a2_scribe_corner"] },
+  vipernest: { b: ["a2_serpent_den"], c: ["a2_serpent_den"], e: ["a2_serpent_den"] },
+};
+for (const [id, sp] of Object.entries(module.exports)) {
+  const more = MORE[id] || {};
+  sp.dress = Object.fromEntries(Object.entries(sp.dress || {}).map(([z, d]) => {
+    const props = d.props ? [...new Set([...d.props, ...d.props.map((p) => A2_ADJUNCT[p]).filter(Boolean)])] : d.props;
+    const sets = more[z] ? [...(d.sets || []), ...more[z]] : d.sets;
+    return [z, Object.assign({}, d, props ? { props } : {}, sets ? { sets } : {})];
+  }));
+  for (const z of Object.keys(more)) if (!sp.dress[z]) sp.dress[z] = { sets: more[z] };
+}

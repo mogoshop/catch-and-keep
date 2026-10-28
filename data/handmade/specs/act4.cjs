@@ -370,13 +370,23 @@ module.exports = {
       e: "a4-abyss_rune 1/0.9/0.86 재의 옥좌",
     },
     fixed: { ashking: [-18, 5] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
-    put: [["set", "boss_ashking", -17.5, 5.5, 1, 1], ["set", "a4_lm_heart_altar", -17.5, 10.3]],
+    // 10-28 밤 코덱스 최종 보스 아레나 7장 (요청서 a4 5절): 심장 제단은 북쪽 벽까지 올리고 그 앞에 옥좌 단(계단) — 보스는 단 아래 선다.
+    //   단 양옆 찢긴 군기, 북쪽 벽 양 끝 거대 사슬 고리, 북동·남동 구석 부러진 오벨리스크, 아레나 네 기둥(1×1 바위) 자리에 불기둥 화로, 한가운데 용암 문장 원
+    put: [
+      ["set", "boss_ashking", -17.5, 5.5, 1, 1], ["set", "a4_lm_heart_altar", -17.5, 11.3],
+      ["prop", "a4-throne-dais", -17.5, 8.4], ["prop", "a4-throne-banner-ruin", -22.5, 8.9], ["prop", "a4-throne-banner-ruin", -12.5, 8.9, 1, 1],
+      ["prop", "a4-giant-chain-anchor-left", -26.5, 11.3], ["prop", "a4-giant-chain-anchor-right", -8.5, 11.3],
+      ["prop", "a4-broken-obelisk", -4.2, 10.6], ["prop", "a4-broken-obelisk", -4.6, -8.3, 1, 1],
+      ["prop", "a4-ember-pillar", -24, 9.2, 1, 0, "ok=cliff"], ["prop", "a4-ember-pillar", -6, 7.2, 1, 1, "ok=cliff"],
+      ["prop", "a4-ember-pillar", -24, -5.8, 1, 0, "ok=cliff"], ["prop", "a4-ember-pillar", -6, -4.8, 1, 1, "ok=cliff"],
+      ["decal", "a4-decal-sigil-circle-large", -15, 1.6],
+    ],
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
-      b: { props: ["a4-helm-pile", "a4-demon-banner", "a4-chain-pillar"], n: 7, decals: ["a4-decal-ash-heap"], dn: 3 },
-      c: { props: ["a4-soul-cage", "a4-soul-lantern", "a4-bone-heap"], n: 7, decals: ["a4-decal-scorch"], dn: 3 },
-      d: { props: ["a4-brazier"], n: 2 },
-      e: { props: ["a4-demon-banner", "a4-brazier"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-molten-drip"], dn: 6 },
+      b: { sets: ["a4_ember_shrine"], props: ["a4-helm-pile", "a4-demon-banner", "a4-chain-pillar"], n: 7, decals: ["a4-decal-ash-heap", "a4-decal-broken-chain"], dn: 4 },
+      c: { sets: ["a4_chain_shrine"], props: ["a4-soul-cage", "a4-soul-lantern", "a4-bone-heap"], n: 7, decals: ["a4-decal-scorch", "a4-decal-soul-mist-puddle", "a4-decal-blood-sigil-circle"], dn: 4 },
+      d: { props: ["a4-brazier"], n: 2, decals: ["a4-decal-cracked-obsidian"], dn: 2 },
+      e: { props: ["a4-demon-banner", "a4-brazier"], n: 3, decals: ["a4-decal-blood-sigil-circle", "a4-decal-cracked-obsidian", "a4-decal-lava-crack", "a4-decal-molten-drip"], dn: 8 },
     },
   }, { fx: true, fy: true }),
 
@@ -580,14 +590,44 @@ const WALL_SET = { burningkeep: FORT, ashhall: FORT, throneante: FORT, throne: F
 // 설계 42 높이감 (10-28 저녁 사용자 「액트 4도 높이감 · 2층 3층은 겹으로 쌓아 보이게」): 걷는 칸 = 용암 위 섬·성벽 윗면, 낮은 칸(첫 벽 글자) = 용암 바다.
 //   tiers = 앞면 띠 단 수(층이 높을수록 깊다), below = 보스 층에서 아래층이 작고 어둡게 내려다보인다
 // 낮은 칸은 멀리 아래라 어둡게 (메이커 첫 캡처: 1/1/1이면 걷는 바닥과 밝기가 같아 평지로 읽혔다)
-const LAVA = "low=a4-lava-sea-floor:0.7/0.56/0.52", VOID = "low=a4-lava-sea-floor:0.46/0.34/0.58";
+// 용암 가장자리 띠 (10-28 밤 코덱스 a4-decal-lava-edge-h/v): 용암 바다와 맞닿은 섬·성벽 가장자리에 빛나는 껍질 테두리 — 북·동·서는 윗단 바깥, 남쪽은 앞면 띠 맨 아래 (lib.cjs 2-2)
+const EDGE = " edge=a4-decal-lava-edge-h:a4-decal-lava-edge-v:0.9";
+const LAVA = "low=a4-lava-sea-floor:0.7/0.56/0.52" + EDGE, VOID = "low=a4-lava-sea-floor:0.46/0.34/0.58", DEEP = "low=a4-lava-sea-floor:0.6/0.48/0.46" + EDGE;
 const HEIGHT = {
   embercanyon: [CLIFF, 1, LAVA], demonroad: [CLIFF, 1, LAVA], sulfurmarsh: [CLIFF, 1, LAVA], heartbridge: [CLIFF, 1, LAVA],
-  burningkeep: [FORT, 1, LAVA], ashhall: [FORT, 2, "low=a4-lava-sea-floor:0.6/0.48/0.46"], throneante: [FORT, 2, "low=a4-lava-sea-floor:0.6/0.48/0.46"],
+  burningkeep: [FORT, 1, LAVA], ashhall: [FORT, 2, DEEP], throneante: [FORT, 2, DEEP],
   throne: [FORT, 3, "below=a4-scorched-flagstone-floor:0.55:0.62:1/0.62/0.5"],
   abyssgate1: [VEIN, 1, VOID], abyssgate2: [VEIN, 2, VOID], abyssgate3: [VEIN, 3, "below=a4-scorched-flagstone-floor:0.55:0.66:0.72/0.56/1"],
   forge2: [CLIFF, 2, LAVA],
 };
+// 10-28 밤 코덱스 남은 바닥 무늬 4 (피 문장 원 · 끊어진 사슬 · 금 간 흑요석 · 혼 안개 웅덩이) + 곁 조각 세트 4 (map_sets.csv a4_chain_shrine · a4_siege_wreck · a4_ember_shrine · a4_lava_cairn)
+//   세트가 없던 장소(구역 글자)마다 하나씩 — 장소가 이야기를 갖게 (feedback-map-set-pieces)
+const MORE = {
+  outpost: { c: { sets: ["a4_siege_wreck"] }, d: { sets: ["a4_ember_shrine"] } },
+  embercanyon: { a: { sets: ["a4_lava_cairn"] }, e: { sets: ["a4_lava_cairn"], decals: ["a4-decal-cracked-obsidian"] }, g: { sets: ["a4_ember_shrine"] } },
+  demonroad: { a: { sets: ["a4_siege_wreck"] }, d: { sets: ["a4_chain_shrine"], decals: ["a4-decal-broken-chain", "a4-decal-soul-mist-puddle"] }, g: { sets: ["a4_siege_wreck"] } },
+  sulfurmarsh: { a: { sets: ["a4_lava_cairn"] }, d: { sets: ["a4_lava_cairn"], decals: ["a4-decal-cracked-obsidian"] }, g: { sets: ["a4_ember_shrine"] } },
+  burningkeep: { a: { sets: ["a4_siege_wreck"] }, d: { sets: ["a4_ember_shrine"], decals: ["a4-decal-blood-sigil-circle"] } },
+  heartbridge: { a: { sets: ["a4_lava_cairn"] }, b: { decals: ["a4-decal-cracked-obsidian"] }, c: { decals: ["a4-decal-cracked-obsidian"] }, d: { decals: ["a4-decal-soul-mist-puddle"] }, f: { decals: ["a4-decal-cracked-obsidian"] }, g: { sets: ["a4_ember_shrine"] } },   // 둘째 기둥참(f)은 좁아 세트 자리가 없다
+  abyssgate1: { b: { sets: ["a4_chain_shrine"] }, c: { sets: ["a4_chain_shrine"], decals: ["a4-decal-soul-mist-puddle"] }, e: { sets: ["a4_lava_cairn"] }, f: { decals: ["a4-decal-cracked-obsidian"] } },
+  abyssgate2: { b: { sets: ["a4_ember_shrine"] }, c: { sets: ["a4_chain_shrine"], decals: ["a4-decal-soul-mist-puddle"] }, e: { sets: ["a4_lava_cairn"] }, f: { decals: ["a4-decal-cracked-obsidian"] } },
+  abyssgate3: { b: { sets: ["a4_chain_shrine"] }, c: { sets: ["a4_ember_shrine"], decals: ["a4-decal-soul-mist-puddle"] }, e: { decals: ["a4-decal-blood-sigil-circle", "a4-decal-soul-mist-puddle"] }, f: { sets: ["a4_lava_cairn"], decals: ["a4-decal-cracked-obsidian"] } },
+  ashhall: { c: { sets: ["a4_chain_shrine"], decals: ["a4-decal-broken-chain"] }, e: { sets: ["a4_ember_shrine"], decals: ["a4-decal-soul-mist-puddle"] } },
+  throneante: { b: { sets: ["a4_siege_wreck"], decals: ["a4-decal-broken-chain"] }, c: { sets: ["a4_ember_shrine"] }, d: { decals: ["a4-decal-cracked-obsidian"] }, e: { sets: ["a4_chain_shrine"] }, f: { decals: ["a4-decal-cracked-obsidian", "a4-decal-blood-sigil-circle"] } },
+  soulprison: { b: { decals: ["a4-decal-broken-chain"] }, c: { decals: ["a4-decal-soul-mist-puddle"] }, d: { sets: ["a4_chain_shrine"], decals: ["a4-decal-broken-chain"] }, e: { sets: ["a4_ember_shrine"], decals: ["a4-decal-broken-chain", "a4-decal-soul-mist-puddle"] } },
+  forge1: { b: { decals: ["a4-decal-broken-chain"] }, c: { sets: ["a4_siege_wreck"] }, f: { sets: ["a4_lava_cairn"], decals: ["a4-decal-broken-chain"] } },
+  forge2: { b: { sets: ["a4_siege_wreck"] }, e: { decals: ["a4-decal-broken-chain"] } },
+  apostate: { b: { sets: ["a4_ember_shrine"] }, c: { sets: ["a4_chain_shrine"] }, d: { decals: ["a4-decal-blood-sigil-circle"] }, e: { sets: ["a4_ember_shrine"] }, f: { decals: ["a4-decal-blood-sigil-circle"] } },
+  pit: { b: { sets: ["a4_lava_cairn"] }, c: { sets: ["a4_chain_shrine"] }, f: { decals: ["a4-decal-broken-chain"] } },
+  sulfurcave1: { b: { sets: ["a4_lava_cairn"] }, e: { sets: ["a4_chain_shrine"] } },
+  sulfurcave2: { b: { sets: ["a4_lava_cairn"] }, c: { sets: ["a4_chain_shrine"] } },
+};
+for (const [id, zones] of Object.entries(MORE)) for (const [z, add] of Object.entries(zones)) {
+  const d = Object.assign({}, module.exports[id].dress[z] || {});
+  if (add.sets) d.sets = [...(d.sets || []), ...add.sets];
+  if (add.decals) { d.decals = [...new Set([...(d.decals || []), ...add.decals])]; d.dn = (d.dn || 0) + add.decals.length; }
+  module.exports[id].dress = Object.assign({}, module.exports[id].dress, { [z]: d });
+}
 for (const [id, sp] of Object.entries(module.exports)) {
   sp.base = reArt(sp.base);
   sp.zones = Object.fromEntries(Object.entries(sp.zones || {}).map(([k, v]) => [k, reArt(v)]));
@@ -604,5 +644,5 @@ for (const [id, sp] of Object.entries(module.exports)) {
 }
 // 성채 외곽 바탕 = 바람에 쌓인 재 · 심장의 다리 = 흑요석 기둥참 + 현무암 다리 (요청서 5절)
 module.exports.burningkeep.base = "a4-ash-drift-floor 0.96/0.94/0.92";
-module.exports.heartbridge.roads = { "=": "a4-basalt-bridge-road 1/1/1 돌다리" };
+module.exports.heartbridge.roads = { "=": "a4-basalt-bridge-road 1/1/1 돌다리 wide=2" };   // 다리 길은 2칸 폭 — 난간 그림이 가운데에 또 그려지지 않게 2칸을 한 장으로 (lib.cjs 3-0)
 for (const z of ["b", "c", "f"]) module.exports.heartbridge.zones[z] = module.exports.heartbridge.zones[z].replace("a4-scorched-flagstone-floor", "a4-obsidian-floor");

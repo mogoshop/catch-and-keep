@@ -461,6 +461,30 @@ const A3_SWAP = {
 };
 const A3_EXTRA_DECAL = { stormcliff: ["a3-decal-lightning-scorch-r2", "a3-decal-rain-puddles-r2"], wreckcoast: ["a3-decal-wet-sand-ripple-r2", "a3-decal-crab-tracks-r2"], drownedvillage: ["a3-decal-rain-puddles-r2"], harbor: ["a3-decal-rain-puddles-r2"] };
 const SEA = new Set(["a3-shallow-sea-floor-r2", "a3-tidal-flat-floor-r2"]);
+// 10-28 밤 곁 조각 10을 세트로 묶는다 (map_sets.csv a3_dock_cargo 부두 짐더미 · a3_anchor_chain 닻사슬 더미 · a3_tide_wrack 밀물이 남긴 것) — 세트가 없던 장소마다 하나씩
+const MORE = {
+  harbor: { b: ["a3_dock_cargo"] },   // 남문 길(e)은 좁아 광장 한가운데로 밀려났다 → 넣지 않는다
+  saltflat: { a: ["a3_tide_wrack"], g: ["a3_anchor_chain"] },
+  wreckcoast: { a: ["a3_tide_wrack"], c: ["a3_dock_cargo"], g: ["a3_anchor_chain"] },
+  stormcliff: { a: ["a3_anchor_chain"], f: ["a3_dock_cargo"], g: ["a3_tide_wrack"] },
+  drownedvillage: { a: ["a3_tide_wrack"], d: ["a3_anchor_chain"], g: ["a3_dock_cargo"] },
+  lighthouse1: { b: ["a3_dock_cargo"], c: ["a3_anchor_chain"], e: ["a3_tide_wrack"] },
+  lighthouse2: { b: ["a3_anchor_chain"], c: ["a3_dock_cargo"], f: ["a3_tide_wrack"] },
+  lighthouse3: { b: ["a3_dock_cargo"], c: ["a3_anchor_chain"], f: ["a3_tide_wrack"] },
+  stormeye: { b: ["a3_dock_cargo"], c: ["a3_anchor_chain"] },
+  crabcave1: { b: ["a3_tide_wrack"], e: ["a3_anchor_chain"] },
+  crabcave2: { b: ["a3_tide_wrack"], c: ["a3_anchor_chain"] },
+  wreckhold: { b: ["a3_dock_cargo"], e: ["a3_anchor_chain"] },
+  smuggler1: { c: ["a3_dock_cargo"], e: ["a3_anchor_chain"] },
+  smuggler2: { b: ["a3_dock_cargo"], c: ["a3_tide_wrack"] },
+  seachapel: { d: ["a3_tide_wrack"], b: ["a3_anchor_chain"] },
+  keeperhouse: { c: ["a3_dock_cargo"], d: ["a3_anchor_chain"] },
+};
+for (const [id, zones] of Object.entries(MORE)) for (const [z, sets] of Object.entries(zones)) {
+  const d = Object.assign({}, module.exports[id].dress[z] || {});
+  d.sets = [...(d.sets || []), ...sets];
+  module.exports[id].dress = Object.assign({}, module.exports[id].dress, { [z]: d });
+}
 for (const [id, sp] of Object.entries(module.exports)) {
   if (id === "saltflat") {   // 이미 r2 — 거품만 새 경계 띠(가로·세로)로
     sp.shore = "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-shore-foam-edge-h-r2 0.9 - a3-decal-shore-foam-edge-v-r2";

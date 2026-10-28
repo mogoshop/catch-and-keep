@@ -49,7 +49,11 @@ function parseBlueprint(id) {
       if (m[0] === "size") { bp.w = Number(m[1]); bp.h = Number(m[2]); }
       else if (m[0] === "base") bp.base = { art: m[1], tint: m[2] };
       else if (m[0] === "zone") bp.zones[m[1]] = { art: m[2] === "-" ? null : m[2], tint: m[3] === "-" ? null : m[3], name: m.slice(4).join(" ") };
-      else if (m[0] === "road") bp.roads[m[1]] = { art: m[2], tint: m[3], name: m.slice(4).join(" ") };
+      else if (m[0] === "road") {
+        // 이름 뒤 「wide=N」(선택): 길 그림이 N칸 폭 한 장(양쪽 난간이 든 다리 그림) — 세로로 N칸씩 묶어 N배 크기로 한 번만 그린다 (10-28 밤 심장의 다리 난간 겹침)
+        const rest = m.slice(4), wide = Number((rest.find((t) => t.startsWith("wide=")) || "wide=1").slice(5)) || 1;
+        bp.roads[m[1]] = { art: m[2], tint: m[3], name: rest.filter((t) => !t.startsWith("wide=")).join(" "), wide: Math.max(1, Math.min(3, Math.round(wide))) };
+      }
       else if (m[0] === "wall") {
         // 이름 뒤 「top=<그림>[:r/g/b]」(선택): 바위 덩어리 속(바닥에 안 닿는 칸)을 가장자리(n) 대신 이 윗면 그림으로, 색은 따로 (10-28 코덱스 a2-sandstone-rock-top)
         const rest = m.slice(4), top = (rest.find((t) => t.startsWith("top=")) || "").slice(4).split(":");
@@ -60,13 +64,15 @@ function parseBlueprint(id) {
         //   tiers=1~3 앞면 띠 단 수 · top=zone 걷는 칸은 구역 바닥 그대로(가장자리만 9조각) · face=<묶음-borders> 앞면 조각(<이름>-s/sw/se)
         //   low=<그림>:<색> 낮은 칸 그림 · below=<그림>:<배율>:<밝기>:<안개색> 낮은 칸에 아래층을 작고 어둡게 (보스 층 내려다보기)
         //   back=<그림> 앞면 조각에 비치는 곳이 있으면 띠 뒤에 깔 바탕 (등대 벽 — 띠 사이로 바다가 보여 울타리처럼 읽혔다)
+        //   edge=<가로 그림>:<세로 그림>[:<크기>[:<색>]] 높은 칸 ↔ 낮은 칸 경계를 따라 띠 그림 (10-28 밤 코덱스 용암 가장자리 띠 — 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래)
         const rest = m.slice(3), opt = Object.fromEntries(rest.filter((t) => t.includes("=")).map((t) => t.split("=")));
-        const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":");
+        const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":"), edgeO = (opt.edge || "").split(":");
         bp.raised = {
           atlas: m[1], tint: m[2], name: rest.filter((t) => !t.includes("=")).join(" "),
           tiers: Math.max(1, Math.min(3, Number(opt.tiers || 1))), zoneTop: opt.top === "zone", face: opt.face || "",
           low: opt.low ? { art: lowO[0], tint: lowO[1] || "1/1/1" } : null, back: opt.back || "",
           below: opt.below ? { art: belowO[0], scale: Number(belowO[1] || 0.55), bright: Number(belowO[2] || 0.42), fog: belowO[3] || "1/1/1" } : null,
+          edge: opt.edge ? { h: edgeO[0], v: edgeO[1] || "", scale: Number(edgeO[2] || 1), tint: edgeO[3] || "" } : null,
         };
       }
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
@@ -245,6 +251,40 @@ function artEntities(d, ctx, bp, rows, func) {
     if (ww) return "w";
     return "center";
   };
+  // 띠 그림 깔기 (물가 거품 · 용암 가장자리): 가로 변 runs [[선 y, xa, xb]] · 세로 변 runs [[선 x, ya, yb]]를 step 간격으로 이어 깐다. 짧은 구간은 작게 하나.
+  //   세로 그림(vName)이 있으면 돌리지 않고 세로 그림을 잇고, 없으면 작은 가로 조각을 0.55칸마다 좌우로 엇갈려 쌓는다 (90도 돌리면 번개·금처럼 보였다)
+  let foamN = 0;
+  const layRuns = (tag, hRuns, vRuns, hName, vName, scaleMul, tint, zz) => {
+    const fsp = spriteOf(table, hName, `${d.id} ${tag}`);
+    const fsc = baseScale(fsp, ctx.propScale) * scaleMul;
+    const flen = (num(fsp.w, 256) * fsc) / 100, step = flen * 0.72;
+    const one = (rid, x, y, scale, flipKey) => {
+      const o = sprite(rid, null, 1);
+      o["MOD.Core.SpriteRendererComponent"][flipKey] = foamN % 2 === 1;
+      if (tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(tint);
+      o["MOD.Core.TransformComponent"] = { Scale: vec3(scale) };
+      out.push({ name: `Art${tag}${++foamN}`, pos: [r3(x), r3(y), zz], overrides: o });
+    };
+    for (const [line, a, bEnd] of hRuns) {
+      const n = bEnd - a + 1;
+      if (n < flen * 0.5) { one(fsp.ruid, (a + bEnd + 1) / 2, line, fsc * Math.max(0.45, n / flen), "FlipX"); continue; }
+      const cnt = Math.max(1, Math.round(n / step));
+      for (let k = 0; k < cnt; k++) one(fsp.ruid, a + (n * (k + 0.5)) / cnt, line, fsc, "FlipX");
+    }
+    if (vName) {
+      const vsp = spriteOf(table, vName, `${d.id} 세로 ${tag}`);
+      const vsc = baseScale(vsp, ctx.propScale) * scaleMul, vlen = (num(vsp.h, 256) * vsc) / 100;
+      for (const [line, a, bEnd] of vRuns) {
+        const n = bEnd - a + 1;
+        if (n < vlen * 0.5) { one(vsp.ruid, line, (a + bEnd + 1) / 2, vsc * Math.max(0.45, n / vlen), "FlipY"); continue; }
+        const cnt = Math.max(1, Math.round(n / (vlen * 0.72)));
+        for (let k = 0; k < cnt; k++) one(vsp.ruid, line, a + (n * (k + 0.5)) / cnt, vsc, "FlipY");
+      }
+    } else for (const [line, a, bEnd] of vRuns) {
+      const n = bEnd - a + 1, cnt = Math.max(1, Math.round(n / 0.55));
+      for (let k = 0; k < cnt; k++) one(fsp.ruid, line + (k % 2 ? 0.12 : -0.12), a + (n * (k + 0.5)) / cnt, fsc * 0.42, "FlipX");
+    }
+  };
   // 2-1) 담 윗면 맵: 걷는 칸(+ 담 위 기둥 칸)을 담 9조각으로, 낮은 칸(첫 벽 글자)은 바탕 모래 그대로 + 담 앞면·그림자
   const lowCh = bp.raised ? Object.keys(bp.walls)[0] : null;
   const isLow = (x, y) => { const ch = bp.at(x, y); return ch === null || ch === lowCh; };
@@ -294,6 +334,28 @@ function artEntities(d, ctx, bp, rows, func) {
       const o = sprite(ruid(bp.raised.back, "raised back"), [r.len, r.rows], 1), m = TIER_SHADE[Number(r.p) - 1] * 0.55;
       o["MOD.Core.SpriteRendererComponent"].Color = { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
       out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.006], overrides: Object.assign(o, cellScale) });
+    }
+    // 2-2) 가장자리 띠 (edge=): 높은 칸 ↔ 낮은 칸 경계. 북·동·서는 절벽 윗단 바로 바깥(낮은 칸 쪽 0.3칸), 남쪽은 앞면 띠 맨 아래(그림자 칸 쪽 0.3칸)
+    if (bp.raised.edge) {
+      const EG = bp.raised.edge, OFF = 0.3, hM = new Map(), vM = new Map();
+      const lowIn = (x, y) => isLow(x, y) && bp.at(x, y) !== null;   // 맵 밖은 경계로 치지 않는다
+      const run = (map, line, t) => {   // 같은 선 위에서 이어진 구간으로 묶는다 (t는 선마다 오름차순으로 들어온다)
+        const list = map.get(line) || [], last = list[list.length - 1];
+        if (last && last[1] === t - 1) last[1] = t; else list.push([t, t]);
+        map.set(line, list);
+      };
+      for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {   // 가로 변: 줄마다 x로 잇는다
+        if (isLow(x, y)) continue;
+        if (lowIn(x, y + 1)) run(hM, r3(y + 1 + OFF), x);
+        if (lowIn(x, y - 1)) run(hM, r3(y - bandsAt(x, y - 1, 1) - OFF), x);
+      }
+      for (let x = b.x0; x <= b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {   // 세로 변: 칸 줄마다 y로 잇는다
+        if (isLow(x, y)) continue;
+        if (lowIn(x + 1, y)) run(vM, r3(x + 1 + OFF), y);
+        if (lowIn(x - 1, y)) run(vM, r3(x - OFF), y);
+      }
+      const flat = (map) => [...map.entries()].flatMap(([line, list]) => list.map(([a, bEnd]) => [line, a, bEnd]));
+      layRuns("Edge", flat(hM), flat(vM), EG.h, EG.v, EG.scale, EG.tint, -0.012);
     }
   } else if (bp.raised) {
     const rp = pieceBy(isLow), pk = new Map();
@@ -347,24 +409,44 @@ function artEntities(d, ctx, bp, rows, func) {
   }
   // 3) 길 — 줄마다 이어진 구간 (칸 크기 그림)
   let roadN = 0;
+  const roadRect = (ch, x, y, len, rows, mul) => {   // (x, y) = 왼쪽 아래 칸, mul = 그림 한 장이 덮는 칸 수
+    const rd = bp.roads[ch];
+    const o = sprite(ruid(rd.art, `road ${ch}`), [len / mul, rows / mul], 1);
+    o["MOD.Core.SpriteRendererComponent"].Color = tintOf(rd.tint);
+    o["MOD.Core.TransformComponent"] = { Scale: vec3(mul / S) };
+    out.push({ name: `ArtRoad${++roadN}`, pos: [r3(x + mul / 2), r3(y + mul / 2), -0.01], overrides: o });
+  };
   for (let y = b.y1; y >= b.y0; y--) {
     let cur = null;
     for (let x = b.x0; x <= b.x1 + 1; x++) {
       const ch = x <= b.x1 ? bp.at(x, y) : null;
-      const on = ch !== null && ch in bp.roads ? ch : null;
+      const on = ch !== null && ch in bp.roads && bp.roads[ch].wide <= 1 ? ch : null;
       if (cur && on === cur.ch) { cur.len++; continue; }
-      if (cur) {
-        const rd = bp.roads[cur.ch];
-        const o = sprite(ruid(rd.art, `road ${cur.ch}`), [cur.len, 1], 1);
-        o["MOD.Core.SpriteRendererComponent"].Color = tintOf(rd.tint);
-        out.push({ name: `ArtRoad${++roadN}`, pos: [cur.x + 0.5, y + 0.5, -0.01], overrides: Object.assign(o, cellScale) });
-      }
+      if (cur) roadRect(cur.ch, cur.x, y, cur.len, 1, 1);
       cur = on ? { ch: on, x, len: 1 } : null;
     }
   }
+  // 3-0) wide=N 길(양쪽 난간이 든 다리 그림): 세로로 이어진 길 칸을 위에서부터 N칸씩 묶어 N배 크기 한 장으로 — 한 칸씩 반복하면 난간이 가운데에 또 그려졌다 (10-28 심장의 다리)
+  for (const [ch, rd] of Object.entries(bp.roads)) {
+    if (rd.wide <= 1) continue;
+    const N = rd.wide, pk = new Map();
+    for (let x = b.x0; x <= b.x1; x++) {
+      let y = b.y1;
+      while (y >= b.y0) {
+        if (bp.at(x, y) !== ch) { y--; continue; }
+        let n = 0;
+        while (n < N && bp.at(x, y - n) === ch) n++;
+        if (n === N) { for (let k = 0; k < N; k++) pk.set(key(x, y - k), `g|${y - N + 1}`); y -= N; }
+        else { pk.set(key(x, y), "s"); y--; }
+      }
+    }
+    for (const r of mergeRects(pk)) {
+      if (r.p === "s") roadRect(ch, r.x, r.y, r.len, r.rows, 1);
+      else for (let k = 0; k < r.rows; k += N) roadRect(ch, r.x, r.y + k, r.len, N, N);
+    }
+  }
   // 3-1) 물가 거품 (;shore <물 그림[+물 그림…]> <거품 그림> [크기] [색] [세로 거품 그림]) — 10-28 액트 3 「얕은 바다」: 청록 바다와 모래가 칸 단위로 맞닿아
-  //   네모 계단이 드러났다 → 바다 칸과 다른 바닥 칸이 맞닿은 변을 따라 거품 띠를 이어 깐다 (세로 변은 90도 돌린다)
-  let foamN = 0;
+  //   네모 계단이 드러났다 → 바다 칸과 다른 바닥 칸이 맞닿은 변을 따라 거품 띠를 이어 깐다 (layRuns)
   if (bp.shore) {
     const floorArt = (x, y) => {
       const ch = bp.at(x, y);
@@ -375,29 +457,6 @@ function artEntities(d, ctx, bp, rows, func) {
     // 물끼리(얕은 바다 ↔ 갯벌)는 거품 없이, 물 ↔ 뭍(모래) 변에만
     const isSea = (x, y) => bp.isFloor(x, y) && bp.shore.sea.has(floorArt(x, y));
     const isLand = (x, y) => bp.isFloor(x, y) && !bp.shore.sea.has(floorArt(x, y));
-    const fsp = spriteOf(table, bp.shore.foam, `${d.id} 물가 거품`);
-    const fsc = baseScale(fsp, ctx.propScale) * bp.shore.scale;
-    const flen = (num(fsp.w, 256) * fsc) / 100, step = flen * 0.72;
-    const ROT90 = { Rotation: { x: 0, y: 0, z: 90 }, QuaternionRotation: { x: 0, y: 0, z: 0.7071068, w: 0.7071068 }, ZRotation: 90 };
-    const foam = (x, y, vertical, scaleMul) => {
-      const o = sprite(fsp.ruid, null, 1);
-      o["MOD.Core.SpriteRendererComponent"].FlipX = foamN % 2 === 1;
-      if (bp.shore.tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(bp.shore.tint);
-      o["MOD.Core.TransformComponent"] = Object.assign({ Scale: vec3(fsc * scaleMul) }, vertical ? ROT90 : {});
-      out.push({ name: `ArtFoam${++foamN}`, pos: [r3(x), r3(y), -0.012], overrides: o });
-    };
-    // 맞닿은 변을 줄(가로 변은 x로, 세로 변은 y로)마다 이어진 구간으로 묶어 step 간격으로 깐다. 짧은 구간은 작게 하나
-    const lay = (runs, vertical) => {
-      for (const [line, a, bEnd] of runs) {
-        const n = bEnd - a + 1;
-        if (n * 1 < flen * 0.5) { foam(vertical ? line : (a + bEnd + 1) / 2, vertical ? (a + bEnd + 1) / 2 : line, vertical, Math.max(0.45, n / flen)); continue; }
-        const cnt = Math.max(1, Math.round(n / step));
-        for (let k = 0; k < cnt; k++) {
-          const t = a + (n * (k + 0.5)) / cnt;
-          foam(vertical ? line : t, vertical ? t : line, vertical, 1);
-        }
-      }
-    };
     const hRuns = [], vRuns = [];
     for (let y = b.y0; y < b.y1; y++) {   // (x, y) ↔ (x, y + 1) 사이 가로 변: 선 y + 1
       let st = null;
@@ -415,29 +474,8 @@ function artEntities(d, ctx, bp, rows, func) {
         if (!on && st !== null) { vRuns.push([x + 1, st, y - 1]); st = null; }
       }
     }
-    lay(hRuns, false);
-    // 세로 변: 그림을 90도 돌리면 번개·금처럼 보였다(메이커 비교) → 세로로 그린 거품 그림(;shore 6번째 칸, 10-28 코덱스 a3 r2 64×256)을 세로로 잇는다.
-    //   그 그림이 없는 맵은 작은 가로 거품을 0.55칸마다 좌우로 엇갈려 쌓는다
-    if (bp.shore.foamV) {
-      const vsp = spriteOf(table, bp.shore.foamV, `${d.id} 세로 물가 거품`);
-      const vsc = baseScale(vsp, ctx.propScale) * bp.shore.scale, vlen = (num(vsp.h, 256) * vsc) / 100;
-      const foamV = (x, y, mul) => {
-        const o = sprite(vsp.ruid, null, 1);
-        o["MOD.Core.SpriteRendererComponent"].FlipY = foamN % 2 === 1;
-        if (bp.shore.tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(bp.shore.tint);
-        o["MOD.Core.TransformComponent"] = { Scale: vec3(vsc * mul) };
-        out.push({ name: `ArtFoam${++foamN}`, pos: [r3(x), r3(y), -0.012], overrides: o });
-      };
-      for (const [line, a, bEnd] of vRuns) {
-        const n = bEnd - a + 1;
-        if (n < vlen * 0.5) { foamV(line, (a + bEnd + 1) / 2, Math.max(0.45, n / vlen)); continue; }
-        const cnt = Math.max(1, Math.round(n / (vlen * 0.72)));
-        for (let k = 0; k < cnt; k++) foamV(line, a + (n * (k + 0.5)) / cnt, 1);
-      }
-    } else for (const [line, a, bEnd] of vRuns) {
-      const n = bEnd - a + 1, cnt = Math.max(1, Math.round(n / 0.55));
-      for (let k = 0; k < cnt; k++) foam(line + (k % 2 ? 0.12 : -0.12), a + (n * (k + 0.5)) / cnt, false, 0.42);
-    }
+    // 세로 변: 그림을 90도 돌리면 번개·금처럼 보였다(메이커 비교) → 세로로 그린 거품 그림(;shore 6번째 칸, 10-28 코덱스 a3 r2 64×256)을 세로로 잇는다
+    layRuns("Foam", hRuns, vRuns, bp.shore.foam, bp.shore.foamV, bp.shore.scale, bp.shore.tint, -0.012);
   }
   // 4) 벽 — 바닥에 드러난 면의 조각 (layout.cjs wallRuns와 같은 규칙), 벽 글자마다 다른 9조각 묶음
   const f = (x, y) => bp.isFloor(x, y);
