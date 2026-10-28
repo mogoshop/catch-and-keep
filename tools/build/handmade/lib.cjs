@@ -31,6 +31,8 @@ const WALL_EDGE_SHADE = 0.68;         // 바닥에 닿은 center 조각 (얇은 
 const ROCK_DEPTH = 3;                 // 바닥에서 이 칸 수 안의 바위 속은 가장자리 그림으로 덮는다 (더 깊으면 검은 바깥)
 const RAISED_FACE = 0.55;             // 담 윗면 맵: 담 남쪽 앞면(center 조각) 밝기
 const RAISED_SHADOW = 0.32;           // 담 윗면 맵: 앞면 아래 그림자(검은 바위 속 조각) 불투명도
+const TIER_SHADE = [1, 0.68, 0.46];   // 층 겹쌓기(설계 42): 앞면 띠 1·2·3단 밝기 — 아래 단일수록 어둡게
+const TIER_SHADOW = 0.2;              // 층 겹쌓기: 마지막 띠 아래 그림자 (0.32는 메이커에서 네모 구멍처럼 보였다)
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
@@ -53,7 +55,20 @@ function parseBlueprint(id) {
         const rest = m.slice(4), top = (rest.find((t) => t.startsWith("top=")) || "").slice(4).split(":");
         bp.walls[m[1]] = { atlas: m[2], tint: m[3], name: rest.filter((t) => !t.startsWith("top=")).join(" "), top: top[0] || "", topTint: top[1] || "" };
       }
-      else if (m[0] === "raised") bp.raised = { atlas: m[1], tint: m[2], name: m.slice(3).join(" ") };
+      else if (m[0] === "raised") {
+        // 이름 뒤 선택 칸 (10-28 저녁 설계 42 높이감·층 겹쌓기):
+        //   tiers=1~3 앞면 띠 단 수 · top=zone 걷는 칸은 구역 바닥 그대로(가장자리만 9조각) · face=<묶음-borders> 앞면 조각(<이름>-s/sw/se)
+        //   low=<그림>:<색> 낮은 칸 그림 · below=<그림>:<배율>:<밝기>:<안개색> 낮은 칸에 아래층을 작고 어둡게 (보스 층 내려다보기)
+        //   back=<그림> 앞면 조각에 비치는 곳이 있으면 띠 뒤에 깔 바탕 (등대 벽 — 띠 사이로 바다가 보여 울타리처럼 읽혔다)
+        const rest = m.slice(3), opt = Object.fromEntries(rest.filter((t) => t.includes("=")).map((t) => t.split("=")));
+        const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":");
+        bp.raised = {
+          atlas: m[1], tint: m[2], name: rest.filter((t) => !t.includes("=")).join(" "),
+          tiers: Math.max(1, Math.min(3, Number(opt.tiers || 1))), zoneTop: opt.top === "zone", face: opt.face || "",
+          low: opt.low ? { art: lowO[0], tint: lowO[1] || "1/1/1" } : null, back: opt.back || "",
+          below: opt.below ? { art: belowO[0], scale: Number(belowO[1] || 0.55), bright: Number(belowO[2] || 0.42), fog: belowO[3] || "1/1/1" } : null,
+        };
+      }
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       continue;
@@ -185,8 +200,17 @@ function artEntities(d, ctx, bp, rows, func) {
     if (tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(tint);
     return { name, pos: [r3(cx - rw / 2 + S / 2), r3(cy - rh / 2 + S / 2), z], overrides: o };
   };
-  // 1) 바탕 바닥 — 맵 전체
-  out.push(tiled("ArtFloor", ruid(bp.base.art, "base"), (x0 + x1) / 2, (y0 + y1) / 2, w, h, 0, bp.base.tint));
+  // 1) 바탕 바닥 — 맵 전체. 담 윗면 맵의 low=·below=는 낮은 칸이 보이는 바탕을 그 그림으로 (걷는 칸은 구역 바닥이 덮는다)
+  const RZ = bp.raised || {};
+  if (RZ.below) {
+    // 아래층 내려다보기: 아래층 바닥을 작게(배율) · 어둡게(밝기) · 안개색으로 — 칸 크기가 작아 멀리 아래로 보인다
+    const tile = S * RZ.below.scale, ft = tintOf(RZ.below.fog), k = RZ.below.bright;
+    const o = sprite(ruid(RZ.below.art, "raised below"), [w / tile, h / tile], 1);
+    o["MOD.Core.SpriteRendererComponent"].Color = { r: r3(ft.r * k), g: r3(ft.g * k), b: r3(ft.b * k), a: 1 };
+    o["MOD.Core.TransformComponent"] = { Scale: vec3(RZ.below.scale) };
+    out.push({ name: "ArtFloor", pos: [r3(x0 + tile / 2), r3(y0 + tile / 2), 0], overrides: o });
+  } else if (RZ.low) out.push(tiled("ArtFloor", ruid(RZ.low.art, "raised low"), (x0 + x1) / 2, (y0 + y1) / 2, w, h, 0, RZ.low.tint));
+  else out.push(tiled("ArtFloor", ruid(bp.base.art, "base"), (x0 + x1) / 2, (y0 + y1) / 2, w, h, 0, bp.base.tint));
   // 같은 열쇠 칸을 큰 사각형으로 묶는다 (위 왼쪽부터 오른쪽으로 늘리고, 그 폭 그대로 아래로 늘릴 수 있는 만큼)
   //   (10-28 엔티티 예산: 시안 1장 벽 529개 — 큰 맵 66장 × 난이도 3본이라 벽 엔티티를 줄여야 한다)
   const mergeRects = (pk) => {
@@ -225,7 +249,53 @@ function artEntities(d, ctx, bp, rows, func) {
   const lowCh = bp.raised ? Object.keys(bp.walls)[0] : null;
   const isLow = (x, y) => { const ch = bp.at(x, y); return ch === null || ch === lowCh; };
   let raisedN = 0;
-  if (bp.raised) {
+  if (bp.raised && bp.raised.zoneTop) {
+    // 10-28 저녁 설계 42 — 걷는 칸은 구역 바닥 그대로, 낮은 칸과 맞닿은 북·동·서 가장자리만 9조각(절벽 윗단),
+    //   남쪽은 낮은 칸에 앞면 띠를 tiers단 쌓는다 (아래 단일수록 어둡게) + 마지막 단 아래 그림자. 층이 높을수록 아래가 깊어 보인다
+    const A = bp.raised.atlas, T = bp.raised.tiers, F = bp.raised.face || `${A}-borders`;
+    const rp = pieceBy(isLow), pk = new Map(), backK = new Map();
+    const distUp = (x, y) => {   // 낮은 칸에서 북쪽으로 몇 칸 위에 높은 칸이 있는가 (사이가 모두 낮은 칸일 때만)
+      for (let k = 1; k <= T + 1; k++) { if (bp.at(x, y + k) === null) return 0; if (!isLow(x, y + k)) return k; }
+      return 0;
+    };
+    // 낮은 칸 기둥(높은 칸 바로 아래부터 이어진 낮은 칸 수 n)이 좁으면 띠를 n-1단까지만 — 다 채우면 구덩이가 아니라 솟은 바위로 보였다 (메이커 10-28)
+    const runDown = (x, y) => { let n = 0; while (n <= T + 1 && isLow(x, y - n) && bp.at(x, y - n) !== null) n++; return n; };
+    const bandsAt = (x, y, d) => Math.min(T, runDown(x, y + d - 1) - 1);
+    const isBand = (x, y) => { if (!isLow(x, y) || bp.at(x, y) === null) return false; const d = distUp(x, y); return d >= 1 && d <= bandsAt(x, y, d); };
+    const RIM = { s: null, se: "e", sw: "w", center: null };
+    let cut = 0;
+    for (const [x, y] of bp.cells()) {
+      if (isLow(x, y)) {
+        const d = distUp(x, y);
+        if (d < 1) continue;
+        const nb = bandsAt(x, y, d);
+        if (d === 1 && nb < T) cut++;   // 띠를 다 못 쌓은 기둥
+        if (d <= nb) {
+          pk.set(key(x, y), `band|${!isBand(x - 1, y) ? "sw" : !isBand(x + 1, y) ? "se" : "s"}|${d}`);
+          if (bp.raised.back) backK.set(key(x, y), String(d));
+        }
+        else if (d === nb + 1) pk.set(key(x, y), "shadow||0");
+        continue;
+      }
+      const piece = rp(x, y), rim = piece in RIM ? RIM[piece] : piece;
+      if (rim) pk.set(key(x, y), `rim|${rim}|0`);
+    }
+    if (cut) warn.push(`${d.id}: 높은 칸 아래 낮은 칸이 ${T + 1}칸보다 좁아 앞면 띠를 다 못 쌓은 기둥 ${cut}개 (낮은 칸 한 줄은 남긴다 · 오류 아님)`);
+    const t = tintOf(bp.raised.tint);
+    for (const r of mergeRects(pk)) {
+      const [kind, piece, dd] = r.p.split("|");
+      const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? `${F}-${piece}` : `${A}-borders-${piece}`;
+      const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
+      const m = kind === "band" ? TIER_SHADE[Number(dd) - 1] : 1;
+      o["MOD.Core.SpriteRendererComponent"].Color = kind === "shadow" ? { r: 0, g: 0, b: 0, a: TIER_SHADOW } : { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
+      out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.007], overrides: Object.assign(o, cellScale) });
+    }
+    for (const r of mergeRects(backK)) {
+      const o = sprite(ruid(bp.raised.back, "raised back"), [r.len, r.rows], 1), m = TIER_SHADE[Number(r.p) - 1] * 0.55;
+      o["MOD.Core.SpriteRendererComponent"].Color = { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
+      out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.006], overrides: Object.assign(o, cellScale) });
+    }
+  } else if (bp.raised) {
     const rp = pieceBy(isLow), pk = new Map();
     // 10-28 코덱스 담 위 추가 6장: 앞면 3조각(sw·s·se) · 끊긴 담 끝(e·w)이 있는 묶음이면 그 그림을, 없으면 예전처럼 center를 어둡게
     const has = (n) => !!table[n];
@@ -258,8 +328,10 @@ function artEntities(d, ctx, bp, rows, func) {
   }
   // 2) 구역 바닥 — 같은 구역 칸을 줄 단위 사각형으로 묶어(위에서부터, 아래로 늘릴 수 있는 만큼) 반복 그리기 (담 윗면 맵은 담이 덮으므로 그리지 않는다)
   let zoneN = 0;
-  for (const [ch, z] of Object.entries(bp.zones)) {
-    if (!z.art || bp.raised) continue;
+  for (const [ch, z0] of Object.entries(bp.zones)) {
+    // top=zone 담 윗면 맵은 바탕(low·below)이 낮은 칸 그림이라, 바탕 바닥 구역(.)도 걷는 칸에 따로 깐다
+    const z = !z0.art && bp.raised && bp.raised.zoneTop ? { art: bp.base.art, tint: bp.base.tint } : z0;
+    if (!z.art || (bp.raised && !bp.raised.zoneTop)) continue;
     const covered = new Set();
     const inZone = (x, y) => bp.isFloor(x, y) && bp.zoneOf(x, y) === ch && !covered.has(key(x, y));
     for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {

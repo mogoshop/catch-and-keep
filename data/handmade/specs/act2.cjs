@@ -455,3 +455,12 @@ module.exports = {
     },
   }), { fx: true }),
 };
+
+// 설계 42 높이감 · 층 겹쌓기 (10-28 저녁 사용자 「2층·3층은 겹으로 쌓아 보이게」): 사원 층 = 모래 바다 위에 남은 층 바닥.
+//   걷는 칸은 구역 바닥 그대로, 가장자리만 기둥벽 9조각, 남쪽 아래로 사암 담 앞면 띠를 층수만큼(1·2·3단) — 층이 높을수록 아래 모래가 어둡다.
+//   대사제의 성소(보스 층)는 낮은 칸에 아래층(사원 바닥)이 작고 어둡게 내려다보인다
+const TEMPLE_HEIGHT = {
+  temple1: [1, "low=a2-sand-sea-floor:0.8/0.76/0.7"], temple2: [2, "low=a2-sand-sea-floor:0.66/0.62/0.56"],
+  temple3: [3, "low=a2-sand-sea-floor:0.54/0.5/0.46"], sanctum: [3, "below=temple-floor:0.55:0.6:1/0.86/0.66"],
+};
+for (const [id, [t, low]] of Object.entries(TEMPLE_HEIGHT)) module.exports[id].raised = `a2-temple-pillar-wall 1/1/1 사원 층 바닥 tiers=${t} top=zone face=a2-sandstone-wall-face ${low}`;

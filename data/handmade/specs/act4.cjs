@@ -542,3 +542,67 @@ module.exports = {
     },
   }), { fx: true, fy: true }),
 };
+
+// ───────── 10-28 저녁 코덱스 액트 4 전체 묶음(assets/codex-a4-handmade-v1) + 설계 42 높이감 ─────────
+// 위 설계서는 10-20 1차 그림 이름 그대로 두고, 여기서 새 그림으로 바꾼다 (자리·길·충돌은 그대로).
+//   바닥 10 · 길 2 · 벽 3벌(현무암 절벽 r2 · 악마 성채 · 심연 혼 핏줄) · 바위 윗면 · 바닥 무늬 10 · 곁 조각 10
+const NEW_ART = {
+  "a4-basalt": "a4-ash-basalt-floor", "a4-lava_crack": "a4-cooled-lava-floor", "a4-scorched_pavers": "a4-scorched-flagstone-floor",
+  "a4-abyss_rune": "a4-obsidian-floor", "a4-soul_prison": "a4-soul-stone-floor", "a4-sulfur_mud": "a4-sulfur-crust-floor",
+  "a4-sulfur_cave": "a4-sulfur-crust-floor", "a4-bone_pit": "a4-bone-ash-floor", "a4-molten_forge": "a4-forge-grate-floor",
+  "a4-apostate_chapel": "a4-scorched-flagstone-floor", "a4-demon_march_ew": "a4-march-road",
+};
+// 옛 그림은 어둡게 칠해 쓰던 색이라(밝기 0.23~0.29), 새 그림(0.32~0.42로 맞춰 옴)에는 어둡게 하는 몫을 절반으로
+const soften = (t) => t.split("/").map((v) => String(Math.round((1 - (1 - Number(v)) * 0.5) * 100) / 100)).join("/");
+const reArt = (line) => {
+  const [art, tint, ...name] = line.split(" ");
+  return NEW_ART[art] ? [NEW_ART[art], soften(tint), ...name].join(" ") : line;
+};
+const NEW_DECAL = {
+  "a4-decal-lava-crack": "a4-decal-ember-scatter", "a4-decal-scorch": "a4-decal-scorched-ring", "a4-decal-ash-heap": "a4-decal-ash-pile",
+  "a4-decal-molten-drip": "a4-decal-molten-metal-streak", "a4-decal-sulfur-stain": "a4-decal-sulfur-steam-vent", "a4-decal-hoofprints": "a4-decal-ash-footprints",
+};
+// 곁 조각(1~2칸 소품): 그 구역에 이미 있는 큰 소품과 어울리는 것을 같이 뿌린다
+const ADJUNCT = {
+  "a4-bone-heap": "a4-adjunct-chained-skull", "a4-brazier": "a4-adjunct-ember-brazier", "a4-soul-lantern": "a4-adjunct-soul-candle-cluster",
+  "a4-helm-pile": "a4-adjunct-demon-skull-spear", "a4-melted-armor-pile": "a4-adjunct-ash-urn", "a4-sulfur-stalagmite": "a4-adjunct-lava-rubble",
+  "a4-soul-cage": "a4-adjunct-small-iron-cage", "a4-sigil-stone": "a4-adjunct-obsidian-shards", "a4-wood-fence-h": "a4-adjunct-broken-siege-spike",
+  "a4-forge-anvil": "a4-adjunct-burning-cart", "camp-firewood": "a4-adjunct-burning-cart", "a4-dead-tree": "a4-adjunct-lava-rubble",
+};
+const reDress = (dress) => Object.fromEntries(Object.entries(dress || {}).map(([z, d]) => {
+  const props = d.props ? [...new Set([...d.props, ...d.props.map((p) => ADJUNCT[p]).filter(Boolean)])] : d.props;
+  const decals = d.decals ? [...new Set(d.decals.map((x) => NEW_DECAL[x] || x))] : d.decals;
+  return [z, Object.assign({}, d, props ? { props } : {}, decals ? { decals } : {})];
+}));
+const CLIFF = "a4-basalt-cliff-r2", FORT = "a4-fortress-wall", VEIN = "a4-abyss-vein-wall", TOP = "top=a4-basalt-top";
+// 벽 묶음: 장소마다 다른 벽 (요청서 5절) — 성채 줄기·수도원 = 악마 성채, 심연의 문·혼 감옥 = 혼 핏줄, 나머지 = 현무암 절벽 r2
+const WALL_SET = { burningkeep: FORT, ashhall: FORT, throneante: FORT, throne: FORT, apostate: FORT, abyssgate1: VEIN, abyssgate2: VEIN, abyssgate3: VEIN, soulprison: VEIN };
+// 설계 42 높이감 (10-28 저녁 사용자 「액트 4도 높이감 · 2층 3층은 겹으로 쌓아 보이게」): 걷는 칸 = 용암 위 섬·성벽 윗면, 낮은 칸(첫 벽 글자) = 용암 바다.
+//   tiers = 앞면 띠 단 수(층이 높을수록 깊다), below = 보스 층에서 아래층이 작고 어둡게 내려다보인다
+// 낮은 칸은 멀리 아래라 어둡게 (메이커 첫 캡처: 1/1/1이면 걷는 바닥과 밝기가 같아 평지로 읽혔다)
+const LAVA = "low=a4-lava-sea-floor:0.7/0.56/0.52", VOID = "low=a4-lava-sea-floor:0.46/0.34/0.58";
+const HEIGHT = {
+  embercanyon: [CLIFF, 1, LAVA], demonroad: [CLIFF, 1, LAVA], sulfurmarsh: [CLIFF, 1, LAVA], heartbridge: [CLIFF, 1, LAVA],
+  burningkeep: [FORT, 1, LAVA], ashhall: [FORT, 2, "low=a4-lava-sea-floor:0.6/0.48/0.46"], throneante: [FORT, 2, "low=a4-lava-sea-floor:0.6/0.48/0.46"],
+  throne: [FORT, 3, "below=a4-scorched-flagstone-floor:0.55:0.62:1/0.62/0.5"],
+  abyssgate1: [VEIN, 1, VOID], abyssgate2: [VEIN, 2, VOID], abyssgate3: [VEIN, 3, "below=a4-scorched-flagstone-floor:0.55:0.66:0.72/0.56/1"],
+  forge2: [CLIFF, 2, LAVA],
+};
+for (const [id, sp] of Object.entries(module.exports)) {
+  sp.base = reArt(sp.base);
+  sp.zones = Object.fromEntries(Object.entries(sp.zones || {}).map(([k, v]) => [k, reArt(v)]));
+  if (sp.roads) sp.roads = Object.fromEntries(Object.entries(sp.roads).map(([k, v]) => [k, reArt(v)]));
+  sp.dress = reDress(sp.dress);
+  const set = WALL_SET[id] || CLIFF;
+  sp.walls = Object.fromEntries(Object.entries(sp.walls || {}).map(([k, v]) => {
+    const [art, tint, ...name] = v.split(" ");
+    if (art !== "basalt-cliff" || k === "~") return [k, k === "%" && set === FORT ? `${FORT} 1/1/1 ${name.join(" ")}` : v];   // 용암 도랑(~)·석상 줄 등은 그대로, 성채의 성벽 줄(%)은 성채 벽
+    return [k, `${set} 1/1/1 ${name.join(" ")} ${TOP}`];
+  }));
+  const hgt = HEIGHT[id];
+  if (hgt) sp.raised = `${hgt[0]} 1/1/1 ${hgt[1] === 1 ? "섬 윗면" : `${hgt[1]}층 윗면`} tiers=${hgt[1]} top=zone face=${hgt[0]}-borders ${hgt[2]}`;
+}
+// 성채 외곽 바탕 = 바람에 쌓인 재 · 심장의 다리 = 흑요석 기둥참 + 현무암 다리 (요청서 5절)
+module.exports.burningkeep.base = "a4-ash-drift-floor 0.96/0.94/0.92";
+module.exports.heartbridge.roads = { "=": "a4-basalt-bridge-road 1/1/1 돌다리" };
+for (const z of ["b", "c", "f"]) module.exports.heartbridge.zones[z] = module.exports.heartbridge.zones[z].replace("a4-scorched-flagstone-floor", "a4-obsidian-floor");

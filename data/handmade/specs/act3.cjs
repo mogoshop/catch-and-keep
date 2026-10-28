@@ -413,3 +413,11 @@ module.exports = {
     },
   }), { fx: true, fy: true }),
 };
+
+// 설계 42 높이감 · 층 겹쌓기 (10-28 저녁 사용자): 등대 층 = 바다 위로 솟은 등대 바닥. 층이 높을수록 앞면(등대 벽) 띠가 깊고 아래 바다가 어둡다.
+//   폭풍의 눈(보스 층)은 낮은 칸에 아래층 바닥이 작고 어둡게 내려다보인다
+const LIGHT_HEIGHT = {
+  lighthouse1: [1, "low=a3-shallow-sea-floor-r2:0.66/0.76/0.84"], lighthouse2: [2, "low=a3-shallow-sea-floor-r2:0.52/0.62/0.72"],
+  lighthouse3: [3, "low=a3-shallow-sea-floor-r2:0.4/0.5/0.62"], stormeye: [3, "below=execution-floor:0.55:0.62:0.62/0.8/0.9"],
+};
+for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `lighthouse 1/1/1 등대 층 바닥 tiers=${t} top=zone face=lighthouse-borders back=lighthouse-borders-center ${low}`;
