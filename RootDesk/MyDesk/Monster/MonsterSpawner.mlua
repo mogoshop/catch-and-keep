@@ -12,6 +12,13 @@
 -- 다시 들어오면 새로 채운다(사냥터는 상자·신전·드문 최상위를 다시 굴리지 않아 포털 리셋 파밍이 안 된다). 진행 중인 정리 맵은
 -- sideRefillSec 전까지 그대로(#21-A 「300초 미만 동결」). 맵 파일에 고정된 몬스터(의뢰 보스 등)는 치우지 않는다.
 -- 채울 때는 입구 쪽 무리부터 spawnBatch마리씩 0.05초 간격으로 나눠 소환한다
+-- 10-29 사용자 「생성 D 혼합」 (황무지 동시 82 → 30~45, 맵 전체 처치·경험치·템포는 같다):
+--   ① 근처 구역만 깨우기 — 배치 설계(무리 중심·구성)는 SpawnAll에서 그대로 정하되, 어떤 플레이어든 spawnWakeRadius 안에 든 무리만 소환하고
+--     나머지는 PendingPacks에 데이터로 둔다(spawnWakeEverySec마다 검사). 예외(바로 배치): 입구에서 가장 가까운 무리 1개 · 끝방 우두머리·호위 ·
+--     맵 파일 고정 몬스터 · 둥지·상자·신전 이벤트 · 보스 맵(보스 등급이 있는 맵) · 사냥터·곁가지 밖의 맵. 정리 맵은 대기 무리도 남은 수에 넣는다.
+--   ② 유입 — 사냥터(field)만 출현 항목마다 floor(n × inflowShare)를 배치하지 않고 InflowPool에 둔다. 플레이어마다 inflowEverySec마다
+--     그 사람에게 들어온 산 유입 몬스터가 inflowAlivePerPlayer 미만이고 습격이 없으면 화면 밖 고리(inflowRadiusMin~Max)에서 1마리 (RaidDirector.RingSpots).
+--     유입 몬스터는 일반 등급(m.Inflow) · 죽으면 RespawnSec 뒤 풀 +1 · 모든 플레이어에게서 inflowLeash 밖에 inflowLeashSec 넘게 있으면 치우고 풀 +1
 @Component
 script MonsterSpawner extends Component
 
@@ -46,19 +53,246 @@ script MonsterSpawner extends Component
     property integer SpawnQueueTimer = 0
     property integer SleepCount = 0
     property integer WakeCount = 0
+    property any PendingPacks = nil         -- 깨우기 대기 무리: { center = Vector2, list = { 소환 작업 } } (생성 D ①)
+    property any InflowPool = nil           -- 유입 풀: { { id, level, n } } (생성 D ②, 레벨은 난이도 구간 반영값)
+    property table InflowAlive = {}         -- 유입으로 나온 몬스터: { e, owner(userId), id, level, farSince }
+    property table InflowReturns = {}       -- 죽은 유입 몬스터가 풀로 돌아갈 시각: { at, id, level }
+    property boolean InflowOn = false       -- 이번 채우기에서 유입을 쓰는 맵인가 (사냥터 · 보스 맵·심연 아님)
+    property boolean BossMap = false        -- 보스 등급 몬스터가 있는 맵 (깨우기·유입 없이 처음처럼 다 놓는다)
+    property number InflowAcc = 0
+    property integer WakeTimer = 0
+    property integer MapDiff = 0            -- 이번 채우기의 난이도 (유입 때 변종·정예 능력 굴림)
+    property number VariantRate = 0         -- 이번 채우기의 변종 확률
+    property integer ClearLogged = -1       -- 정리 맵 남은 수 로그 (바뀔 때만)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         -- 10-21 방 구조: 게임 방에는 맵이 수십 장 함께 실린다 → 사람이 처음 들어온 맵만 채운다 (Poll). 로비(정적 방)는 채우지 않는다
         if self.Entity.CurrentMap.Name == _GameConst.MapLobby then return end
         self.PollTimer = _TimerService:SetTimerRepeat(function() self:Poll() end, 1)
+        self.WakeTimer = _TimerService:SetTimerRepeat(function() self:WakeTick() end, math.max(0.1, _GameData.spawnWakeEverySec))
     end
 
     @ExecSpace("ServerOnly")
     method void OnEndPlay()
         if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
         self.PollTimer = 0
+        if self.WakeTimer ~= 0 then _TimerService:ClearTimer(self.WakeTimer) end
+        self.WakeTimer = 0
         self:StopQueue()
+    end
+
+    -- ───────── 생성 D 혼합: 깨우기 · 유입 ─────────
+
+    method integer PendingCount()
+        -- 아직 소환되지 않은 몬스터 수 (깨우기 대기 무리 + 나눠 소환 대기열)
+        local n = 0
+        for _, pack in ipairs(self.PendingPacks or {}) do n = n + #pack.list end
+        return n + #(self.SpawnQueue or {})
+    end
+
+    method integer PoolCount()
+        local n = 0
+        for _, k in ipairs(self.InflowPool or {}) do n = n + k.n end
+        return n
+    end
+
+    method integer InflowAliveCount()
+        local n = 0
+        for _, r in ipairs(self.InflowAlive) do
+            if isvalid(r.e) then n = n + 1 end
+        end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WakeTick()
+        -- spawnWakeEverySec마다: 다가간 무리 깨우기 · 유입(inflowEverySec마다)
+        if self.SpawnedAt <= 0 or self.Dormant then return end
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local players = _Util:PlayersInMap(map)
+        if #players == 0 then return end
+        if self.PendingPacks ~= nil and #self.PendingPacks > 0 then self:WakePacks(map, players, true) end
+        if self.InflowOn then
+            self.InflowAcc = self.InflowAcc + math.max(0.1, _GameData.spawnWakeEverySec)
+            if self.InflowAcc >= _GameData.inflowEverySec then
+                self.InflowAcc = 0
+                self:InflowTick(map, players)
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer WakePacks(Entity map, table players, boolean start)
+        -- 어떤 플레이어든 무리 중심까지 spawnWakeRadius 안이면 그 무리를 나눠 소환 대기열로 넘긴다. 넘긴 몬스터 수
+        local keep = {}
+        local woke = 0
+        for _, pack in ipairs(self.PendingPacks or {}) do
+            local best = 999
+            for _, p in ipairs(players) do best = math.min(best, (_Util:Pos2(p) - pack.center):Magnitude()) end
+            if best <= _GameData.spawnWakeRadius then
+                self:QueuePack(pack)
+                woke = woke + #pack.list
+                log(string.format("[VRF] spawner pack woke map=%s n=%d dist=%.1f", map.Name, #pack.list, best))
+            else
+                table.insert(keep, pack)
+            end
+        end
+        self.PendingPacks = keep
+        if woke > 0 and start then self:StartQueue() end
+        return woke
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WakeAll(string why)
+        -- 대기 무리를 모두 깨운다 (정리 맵에 산 몬스터가 하나도 없는데 대기 무리만 남았을 때 — 남은 수만 있고 찾을 적이 없게 되지 않게)
+        local n = 0
+        for _, pack in ipairs(self.PendingPacks or {}) do
+            self:QueuePack(pack)
+            n = n + #pack.list
+        end
+        self.PendingPacks = {}
+        if n > 0 then
+            self:StartQueue()
+            log(string.format("[VRF] spawner wake all map=%s n=%d why=%s", self.Entity.CurrentMap.Name, n, why))
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void QueuePack(any pack)
+        if self.SpawnQueue == nil then self.SpawnQueue = {} end
+        for _, job in ipairs(pack.list) do table.insert(self.SpawnQueue, job) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartQueue()
+        -- 나눠 소환 타이머가 꺼져 있으면 켠다 (기존 RunQueue 그대로)
+        if self.SpawnQueueTimer ~= 0 or self.SpawnQueue == nil or #self.SpawnQueue == 0 then return end
+        self:RunQueue()
+        if #self.SpawnQueue > 0 then self.SpawnQueueTimer = _TimerService:SetTimerRepeat(function() self:RunQueue() end, 0.05) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReturnToPool(string id, integer level)
+        for _, k in ipairs(self.InflowPool or {}) do
+            if k.id == id and k.level == level then
+                k.n = k.n + 1
+                return
+            end
+        end
+        if self.InflowPool == nil then self.InflowPool = {} end
+        table.insert(self.InflowPool, { id = id, level = level, n = 1 })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void InflowTick(Entity map, table players)
+        -- 유입: 죽은 몬스터의 풀 복귀 · 끈(멀어진 몬스터 회수) · 플레이어마다 1마리
+        local now = _UtilLogic.ElapsedSeconds
+        local respawn = math.max(0, self.RespawnSec)
+        -- 산 유입 몬스터 점검 (죽음 → RespawnSec 뒤 풀 · 모두에게서 멀면 끈)
+        local keep = {}
+        local owned = {}
+        for _, r in ipairs(self.InflowAlive) do
+            ---@type Monster
+            local m = isvalid(r.e) and r.e:GetComponent("script.Monster") or nil
+            if m == nil or m.IsDead then
+                table.insert(self.InflowReturns, { at = now + respawn, id = r.id, level = r.level })
+            else
+                local far = _Util:NearestPlayerDistance(map, _Util:Pos2(r.e)) > _GameData.inflowLeash
+                if far and r.farSince <= 0 then r.farSince = now end
+                if not far then r.farSince = 0 end
+                if far and now - r.farSince >= _GameData.inflowLeashSec then
+                    r.e:Destroy()
+                    self:ReturnToPool(r.id, r.level)
+                    log(string.format("[VRF] inflow leash recycled map=%s species=%s pool=%d", map.Name, r.id, self:PoolCount()))
+                else
+                    table.insert(keep, r)
+                    owned[r.owner] = (owned[r.owner] or 0) + 1
+                end
+            end
+        end
+        self.InflowAlive = keep
+        local waiting = {}
+        for _, ret in ipairs(self.InflowReturns) do
+            if now >= ret.at then self:ReturnToPool(ret.id, ret.level) else table.insert(waiting, ret) end
+        end
+        self.InflowReturns = waiting
+        -- 습격 중에는 들여보내지 않는다 (습격의 떼가 그 자리를 채운다)
+        local raid = _RaidDirector:State(map)
+        if raid ~= nil and raid.active ~= nil then return end
+        for _, p in ipairs(players) do
+            if self:PoolCount() <= 0 then return end
+            local uid = p.PlayerComponent.UserId
+            if (owned[uid] or 0) < _GameData.inflowAlivePerPlayer and _Util:IsAlive(p) then
+                if self:SpawnInflow(map, p) then owned[uid] = (owned[uid] or 0) + 1 end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SpawnInflow(Entity map, Entity player)
+        -- 그 사람 둘레 화면 밖 고리에서 풀의 한 마리 (자리 = RaidDirector.RingSpots: 벽 앞까지 당겨 시야 트인 방향만 · 입구 안전 반경 밖)
+        local center = _Util:Pos2(player)
+        if _RaidDirector:NearEntry(map, center) then return false end   -- 막 들어온 사람(입구 안전 반경)에게는 몰아 보내지 않는다
+        local minReach = _GameData.inflowRadiusMin - 1.5                 -- PC 한 화면 반 폭 6.4 밖
+        local spots = {}
+        for _, q in ipairs(_RaidDirector:RingSpots(map, center, _GameData.inflowRadiusMin, _GameData.inflowRadiusMax, minReach)) do
+            if _Util:NearestPlayerDistance(map, q) >= minReach then table.insert(spots, q) end   -- 다른 사람 화면에도 갑자기 솟지 않게
+        end
+        if #spots == 0 then return false end
+        local q = spots[_UtilLogic:RandomIntegerRange(1, #spots)]
+        -- 종류: 풀에 남은 수만큼 가중 무작위
+        local total = self:PoolCount()
+        local pick = _UtilLogic:RandomIntegerRange(1, total)
+        local kind = nil
+        for _, k in ipairs(self.InflowPool) do
+            if k.n > 0 then
+                pick = pick - k.n
+                if pick <= 0 then kind = k break end
+            end
+        end
+        if kind == nil then return false end
+        local e = _SpawnService:SpawnByModelId(kind.id, kind.id, Vector3(q.x, q.y, 0), map)
+        if not isvalid(e) then return false end
+        kind.n = kind.n - 1
+        local uid = player.PlayerComponent.UserId
+        table.insert(self.InflowAlive, { e = e, owner = uid, id = kind.id, level = kind.level, farSince = 0 })
+        -- 정예·변종은 배치분과 같은 규칙으로 지금 굴린다 (무리 우두머리 몫은 없음)
+        local elite = _UtilLogic:RandomDouble() < self.EliteChance
+        local variant, eliteVariant = "", ""
+        if _UtilLogic:RandomDouble() < self.VariantRate then variant = _GameData:RollVariant(self.MapDiff)
+        elseif elite then eliteVariant = _GameData:RollEliteVariant(self.MapDiff) end
+        local level = kind.level
+        _Util:AfterSpawn(e, "script.Monster", function(comp)
+            ---@type Monster
+            local m = comp
+            m.Inflow = true
+            m.RespawnDelay = -1   -- 자리 리스폰 대신 스포너가 RespawnSec 뒤 풀에 되돌린다
+            m:ApplyLevel(level, elite)
+            if variant ~= "" then m:MakeVariant(variant)
+            elseif eliteVariant ~= "" then m:MakeEliteVariant(eliteVariant) end
+            -- 화면 밖에서 곧장 온다 (습격의 떼와 같은 방법: 탐지 범위를 키워야 온다 — 10-28 메이커 실험)
+            local chase = e.AIChaseComponent
+            if isvalid(chase) then chase.DetectionRange = _GameData.raidHordeDetect end
+        end, nil)
+        log(string.format("[VRF] inflow spawn map=%s species=%s alive=%d pool=%d dist=%.1f", map.Name, kind.id, self:InflowAliveCount(), self:PoolCount(), (q - center):Magnitude()))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean DetectBossMap(Entity map, table list)
+        -- 보스 등급 몬스터가 있는 맵: 맵 파일 고정 몬스터 중 보스 등급 또는 출현 목록에 보스 등급 종
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if isvalid(m.Entity) and self.FixedIds ~= nil and self.FixedIds[m.Entity.Id] and m.Grade >= 3 then return true end
+        end
+        for _, entry in ipairs(list) do
+            local st = _GameData:GetMonsterStats(_GameData:SourceOfModel(entry.id))
+            if st ~= nil and (st.grade or 1) >= 3 then return true end
+        end
+        return false
     end
 
     @ExecSpace("ServerOnly")
@@ -79,6 +313,16 @@ script MonsterSpawner extends Component
                 ---@type Monster
                 local m = c
                 if isvalid(m.Entity) and not m.IsDead and not m.Horde then alive = alive + 1 end   -- 습격의 떼는 정리 집계에 넣지 않는다 (기획서 41 #8-A: 떼가 섞이면 의뢰가 안 끝난다)
+            end
+            -- 생성 D ①: 깨우기 대기 무리·소환 대기열도 남은 수에 넣는다 (「남은 수」가 처음부터 전체로 보이게).
+            -- 산 몬스터가 하나도 없는데 대기 무리만 남았으면 모두 깨운다 (남은 수만 있고 찾을 적이 없게 되지 않게)
+            if alive == 0 and #(self.SpawnQueue or {}) == 0 and self.PendingPacks ~= nil and #self.PendingPacks > 0 then self:WakeAll("clear-empty") end
+            local pending = self:PendingCount()
+            local liveCount = alive
+            alive = alive + pending
+            if self.ClearLogged ~= alive then
+                self.ClearLogged = alive
+                log(string.format("[VRF] clear remaining=%d (pending %d) live=%d total=%d map=%s", alive, pending, liveCount, math.max(self.Total, alive), map.Name))
             end
             self.Total = math.max(self.Total, alive)
             self.Remaining = alive
@@ -156,12 +400,21 @@ script MonsterSpawner extends Component
             end
         end
         if reset or self.ClearMode then self.EventsDone = false end
+        -- 생성 D: 대기 무리·유입 풀도 비운다 (다시 들어오면 SpawnAll이 새로 짠다)
+        local pending = self:PendingCount()
+        self.PendingPacks = nil
+        self.SpawnQueue = nil
+        self.InflowPool = nil
+        self.InflowAlive = {}
+        self.InflowReturns = {}
+        self.InflowOn = false
+        self.ClearLogged = -1
         self.NamedAlive = {}
         self.SpawnedAt = 0
         self.EmptySince = 0
         self.Dormant = true
         self.SleepCount = self.SleepCount + 1
-        log(string.format("[VRF] map sleep %s removed=%d reset=%s events=%s", map.Name, removed, tostring(reset), self.EventsDone and "keep" or "reroll"))
+        log(string.format("[VRF] map sleep %s removed=%d pending=%d reset=%s events=%s", map.Name, removed, pending, tostring(reset), self.EventsDone and "keep" or "reroll"))
     end
 
     @ExecSpace("ServerOnly")
@@ -279,6 +532,30 @@ script MonsterSpawner extends Component
         end
         local stats = { packs = 0, leaders = 0, mixed = 0, hordes = 0 }
         self.PackCenters = {}
+        -- 생성 D 혼합: 이 맵이 깨우기·유입을 쓰는가 (보스 맵·사냥터·곁가지 밖은 예전처럼 다 놓는다)
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local mapKind = info ~= nil and info.kind or ""
+        self.BossMap = self:DetectBossMap(map, list)
+        local depth = map:GetComponent("script.DepthDirector") ~= nil
+        local useWake = (mapKind == "field" or mapKind == "side") and not self.BossMap and not depth
+        self.InflowOn = useWake and mapKind == "field" and self.RespawnSec >= 0
+        self.MapDiff = diff
+        self.VariantRate = variantChance
+        self.InflowPool = {}
+        self.InflowAlive = {}
+        self.InflowReturns = {}
+        self.InflowAcc = 0
+        if self.InflowOn then
+            -- 출현 항목마다 floor(n × inflowShare)를 배치에서 빼 유입 풀로 (종·레벨별)
+            for _, entry in ipairs(list) do
+                local k = math.floor(entry.count * _GameData.inflowShare)
+                if k > 0 then
+                    entry.count = entry.count - k
+                    table.insert(self.InflowPool, { id = entry.id, level = _GameConst:ScaleLevel(entry.level, diff), n = k })
+                end
+            end
+        end
+        local packs = {}
         for _, entry in ipairs(list) do
             local remaining = entry.count
             while remaining > 0 do
@@ -299,6 +576,8 @@ script MonsterSpawner extends Component
                 end
                 if leader then stats.leaders = stats.leaders + 1 end
                 local center = self:PickPackCenter()
+                local pack = { center = center, list = {} }
+                if center ~= nil then table.insert(packs, pack) end
                 for i = 1, size do
                     if center ~= nil then
                         local p = center
@@ -315,13 +594,27 @@ script MonsterSpawner extends Component
                         local eliteVariant = ""
                         if _UtilLogic:RandomDouble() < variantChance then variant = _GameData:RollVariant(diff)
                         elseif elite then eliteVariant = _GameData:RollEliteVariant(diff) end   -- 악몽부터 정예 능력 (10-24 C안)
-                        table.insert(self.SpawnQueue, { id = kind.id, p = p, level = _GameConst:ScaleLevel(kind.level, diff), elite = elite, variant = variant, eliteVariant = eliteVariant, d = self:EntryDistance(p) })
+                        table.insert(pack.list, { id = kind.id, p = p, level = _GameConst:ScaleLevel(kind.level, diff), elite = elite, variant = variant, eliteVariant = eliteVariant, d = self:EntryDistance(p) })
                         total = total + 1
                     end
                 end
             end
         end
         log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)%s", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes, waking and " · 깨어남" or ""))
+        -- 생성 D ①: 입구에서 가장 가까운 무리 1개는 바로 (들어가자마자 적이 보이게), 나머지는 대기 → 사람 근처 무리만 바로 깨운다.
+        -- 깨우기를 쓰지 않는 맵은 예전처럼 전부 바로
+        self.PendingPacks = {}
+        local firstIdx, firstD = 0, 1e9
+        for i, pack in ipairs(packs) do
+            local d = self:EntryDistance(pack.center)
+            if d < firstD then firstIdx, firstD = i, d end
+        end
+        for i, pack in ipairs(packs) do
+            if not useWake or i == firstIdx then self:QueuePack(pack) else table.insert(self.PendingPacks, pack) end
+        end
+        local players = _Util:PlayersInMap(map)
+        if #players > 0 and #self.PendingPacks > 0 then self:WakePacks(map, players, false) end   -- 대기열 타이머는 아래에서 한 번만 켠다
+        log(string.format("[VRF] spawner wake map=%s placed=%d pending=%d pool=%d wake=%s inflow=%s boss=%s", map.Name, #self.SpawnQueue, self:PendingCount() - #self.SpawnQueue, self:PoolCount(), tostring(useWake), tostring(self.InflowOn), tostring(self.BossMap)))
         -- 입구 쪽 무리부터 나눠 소환 (한 프레임에 백여 마리를 만들지 않는다)
         table.sort(self.SpawnQueue, function(a, b) return a.d < b.d end)
         self:RunQueue()

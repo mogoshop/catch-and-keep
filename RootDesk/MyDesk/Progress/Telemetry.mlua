@@ -95,7 +95,7 @@ script Telemetry extends Logic
         -- 방 부하 (1분마다, 10-28 F7-4 빈 맵 정리 효과): 살아 있는 몬스터 수 · 잠든 맵 수 → 세션마다 최대·합·표본 수
         self.RoomTicks = self.RoomTicks + 1
         if self.RoomTicks % 12 ~= 0 then return end
-        local mobs, sleeping, maps, raid = 0, 0, 0, 0
+        local mobs, sleeping, maps, raid, inflow, pending = 0, 0, 0, 0, 0, 0
         local seen = {}
         for _, player in pairs(_UserService.UserEntities) do
             local root = isvalid(player) and isvalid(player.CurrentMap) and player.CurrentMap.Parent or nil
@@ -107,10 +107,12 @@ script Telemetry extends Logic
                         if isvalid(c.Entity) and not c.IsDead then
                             mobs = mobs + 1
                             if c.Horde then raid = raid + 1 end   -- 습격의 떼 (기획서 41 L-E)
+                            if c.Inflow then inflow = inflow + 1 end   -- 생성 D 유입으로 나온 몬스터 (10-29)
                         end
                     end
                     local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
                     if sp ~= nil and sp.SpawnedAt <= 0 then sleeping = sleeping + 1 end
+                    if sp ~= nil and sp.SpawnedAt > 0 then pending = pending + sp:PendingCount() end   -- 생성 D 깨우기 대기 무리의 몬스터 수
                 end
             end
         end
@@ -122,9 +124,11 @@ script Telemetry extends Logic
                 s.roomSamples = (s.roomSamples or 0) + 1
                 s.roomSleepMax = math.max(s.roomSleepMax or 0, sleeping)
                 s.raidMobMax = math.max(s.raidMobMax or 0, raid)
+                s.inflowMax = math.max(s.inflowMax or 0, inflow)
+                s.pendingMax = math.max(s.pendingMax or 0, pending)
             end
         end
-        self:Say(string.format("[TEL] room mobs=%d raid=%d sleeping=%d maps=%d", mobs, raid, sleeping, maps))
+        self:Say(string.format("[TEL] room mobs=%d raid=%d inflow=%d pending=%d sleeping=%d maps=%d", mobs, raid, inflow, pending, sleeping, maps))
     end
 
     @ExecSpace("ServerOnly")
@@ -233,7 +237,7 @@ script Telemetry extends Logic
             if code ~= 0 then log_warning("[TEL] save failed code=" .. tostring(code)) end
         end)
         if final then
-            self:Say(string.format("[TEL] end uid=%s min=%.1f lv %d→%d kills=%d deaths=%d", uid, s.minutes, s.lv0, s.lv, s.kills, #s.deaths))
+            self:Say(string.format("[TEL] end uid=%s min=%.1f lv %d→%d kills=%d deaths=%d roomMobMax=%d inflowMax=%d pendingMax=%d", uid, s.minutes, s.lv0, s.lv, s.kills, #s.deaths, s.roomMobMax or 0, s.inflowMax or 0, s.pendingMax or 0))
             self.Sessions[uid] = nil
         end
     end

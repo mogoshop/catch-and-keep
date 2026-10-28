@@ -187,13 +187,19 @@ script RaidDirector extends Logic
     @ExecSpace("ServerOnly")
     method table Spots(Entity map, Vector2 center)
         -- 8방향 고리 자리 (P-A): 반지름 9.5~11 → 벽 앞까지 당김 → 5칸 미만·입구 안전 반경 안은 버림
+        return self:RingSpots(map, center, _GameData.raidRadiusMin, _GameData.raidRadiusMax, _GameData.raidMinReach)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table RingSpots(Entity map, Vector2 center, number rMin, number rMax, number minReach)
+        -- 공용 고리 자리 (습격의 떼 · 생성 D 유입): 8방향 반지름 rMin~rMax → 벽 앞까지 당김(시야 트인 방향만) → minReach 미만·입구 안전 반경 안은 버림
         local out = {}
         for i = 0, 7 do
             local ang = i * math.pi / 4 + (_UtilLogic:RandomDouble() - 0.5) * 0.35
-            local r = _GameData.raidRadiusMin + _UtilLogic:RandomDouble() * (_GameData.raidRadiusMax - _GameData.raidRadiusMin)
+            local r = rMin + _UtilLogic:RandomDouble() * (rMax - rMin)
             local target = center + Vector2(math.cos(ang) * r, math.sin(ang) * r)
             local q = _Util:ReachablePoint(map, center, target, 0.4)
-            if (q - center):Magnitude() >= _GameData.raidMinReach and not self:NearEntry(map, q) then table.insert(out, q) end
+            if (q - center):Magnitude() >= minReach and not self:NearEntry(map, q) then table.insert(out, q) end
         end
         return out
     end
