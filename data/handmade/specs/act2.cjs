@@ -300,7 +300,7 @@ module.exports = {
   }), { fy: true }),
   temple3: remix(A1.crypt1, Object.assign({}, TEMPLE, {
     title: "잊힌 사원 3층",
-    waypoint: undefined,
+    waypoint: [-26, 3],   // 10-28 사용자: 성소 바로 앞 층 웨이포인트 (입구 쪽)
     story: ["사원 가장 깊은 층. 기둥 넷이 받친 태양 제단실을 지나 고리처럼 돌아야 성소 계단에 닿는다.", "(자리: 납골당 1층을 위아래로 뒤집음)"],
     dress: templeDress,
   }), { fy: true }),

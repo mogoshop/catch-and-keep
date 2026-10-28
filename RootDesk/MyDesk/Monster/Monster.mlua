@@ -618,6 +618,12 @@ script Monster extends Component
         ---@type MonsterBehavior
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")
         if behavior ~= nil and behavior.Mode == "coward" then behavior:AlertPack() end
+        -- 10-28 사용자: 의뢰 보스(맵에 놓인 보스 · 이름 있는 끝방 우두머리)를 쓰러뜨리면 그 자리 옆에 마을로 가는 포털 (보고하러 걸어 돌아가지 않게)
+        if killer ~= nil and isvalid(killer) and (self:IsFieldBoss() or self.NamedId ~= "") then
+            ---@type PlayerTravel
+            local travel = killer:GetComponent("script.PlayerTravel")
+            if travel ~= nil then travel:OpenBossPortal(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self:ShownName()) end
+        end
         _TimerService:SetTimerOnce(function() self:Hide() end, self.HideDelay)
         if self.RespawnDelay < 0 then
             _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity:Destroy() end end, self.HideDelay + 0.2)

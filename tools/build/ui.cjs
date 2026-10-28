@@ -660,10 +660,11 @@ function buildGameHud() {
   k.frame("WpWin", "middle-center", [0, 60], [600, 700], "웨이포인트");
   // 액트 넘김 막대 (WaypointWindow가 고른 액트의 웨이포인트만 보여 준다)
   k.actPager("WpWin/ActBar", "top-center", [0, -110], 520);
-  for (let i = 1; i <= 6; i++) {
+  // 10-28: 액트마다 웨이포인트 6 → 8곳(보스 바로 앞 층 +5) — 줄 간격 56 → 48로 8줄이 난이도 단추 위에 들어간다
+  for (let i = 1; i <= 8; i++) {
     const n = `WpWin/Wp${i}`;
-    k.btn(n, "", { anchor: "top-left", pos: [40, -186 - (i - 1) * 56], rect_size: [520, 52], font_size: 20 });
-    k.pic(`${n}/Icon`, "icon_waypoint", { anchor: "middle-left", pos: [10, 0], rect_size: [38, 38] });
+    k.btn(n, "", { anchor: "top-left", pos: [40, -186 - (i - 1) * 48], rect_size: [520, 46], font_size: 20 });
+    k.pic(`${n}/Icon`, "icon_waypoint", { anchor: "middle-left", pos: [10, 0], rect_size: [34, 34] });
   }
   b.text("WpWin/DiffTitle", "난이도", { size: 19, color: C.gold, anchor: "bottom-center", pos: [0, 100], rect_size: [500, 28], ...outline });
   [["Diff0", "보통", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {

@@ -305,6 +305,21 @@ script PlayerTravel extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method void OpenBossPortal(Entity field, Vector2 at, string bossName)
+        -- 10-28 사용자: 의뢰 보스를 쓰러뜨린 자리 옆에 마을로 가는 한쪽 포털 60초 (돌아오는 짝은 없다 — 다시 오려면 웨이포인트).
+        -- 귀환 두루마리 짝(FieldGate·TownGate)과 따로라 내가 열어 둔 두루마리 포털은 닫히지 않는다. 주인·파티원이 쓴다 (WarpGate.CanUse)
+        if not isvalid(field) or _GameConst:IsTown(field) or field:GetComponent("script.DepthDirector") ~= nil then return end
+        local townName = self:TownMap()
+        if not isvalid(_EntityService:GetEntityByPath("/maps/" .. townName)) then return end
+        local spot = self:FreeSpot(field, at, { Vector2(1, -1), Vector2(-1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(0, -1.4), Vector2(1.4, 0), Vector2(-1.4, 0) }, 1.2)
+        local gate = self:SpawnPortal(field, spot, townName, Vector2(0, 0), self:PlaceName(townName) .. " - 보스 처치", false)
+        if gate == nil then return end
+        _TimerService:SetTimerOnce(function() if isvalid(gate) then gate:Destroy() end end, 60)
+        _Util:NotifyMap(field, bossName .. " 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸다")
+        log(string.format("[VRF] boss portal %s → %s (%.1f,%.1f)", field.Name, townName, spot.x, spot.y))
+    end
+
+    @ExecSpace("ServerOnly")
     method any SpawnPortal(Entity map, Vector2 at, string targetMap, Vector2 targetPos, string label, boolean ownerCloses)
         -- 주인·파티원만 쓰는 귀환 포털 하나 (WarpGate.CanUse). ownerCloses: 주인이 지나가면 짝까지 닫힌다
         local e = _SpawnService:SpawnByModelId(_GameConst.ModelWarpGate, "ReturnGate", Vector3(at.x, at.y, 0), map)

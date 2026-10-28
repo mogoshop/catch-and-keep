@@ -284,6 +284,7 @@ module.exports = {
       P([[0, 4], [0, 11]], 3), P([[2, -4], [2, -10]], 3),
     ],
     gates: { W: [-34, 0], E: [33, 0] },
+    waypoint: [-30, -3],   // 10-28 사용자: 옥좌로 가는 마지막 사냥터 웨이포인트 (다리 어귀)
     dress: {
       a: { props: ["a4-lava-wall-ruin", "a4-sulfur-stalagmite"], n: 4, decals: hellDecals, dn: 2 },
       b: { props: ["a4-chain-pillar", "a4-demon-banner"], n: 3, decals: ["a4-decal-scorch"], dn: 2 },
