@@ -1,0 +1,108 @@
+-- 뼈 공명 (가칭 · 글귀 승인 전) — 기획서 43 §3-3 C안 · §10 결정 6 (10-29): 해골 전사 강화 노드 skel_resonance (data/skills.csv 끝 줄).
+--   플레이어 기본 공격(근접 베기)이 내 해골(전사·마법사)을 겨눠 맞히면 해골은 다치지 않고 울려,
+--   그 해골 둘레 Radius(1.5칸) 안 적에게 해골 공격력 × AtkMult(0.6) 뼈 파편 충격. 해골마다 Cooldown(0.8초).
+--   수동 조준 규칙: 베기 판정 안에서 「조준 대상」이 해골일 때만 — 판정 가운데에 해골보다 가까운 적이 있으면 그 적을 겨눈 것으로 보고 울리지 않는다
+--   (클릭·탭으로 고른 적, 자동 조준 대상도 늘 몬스터라 이 규칙에 걸린다). 해골은 PlayerAttack.IsAttackTarget이 이미 빼므로 피해를 받지 않는다.
+--   효과는 기존 것 재사용: 뼈 파편(skel_burst)과 같은 불꽃 파티클 + 골편 보라 파열(SkillEffects.FxShardHit) + 몬스터 쪽 데미지 스킨.
+--   해금: 메인 해골 전사 9랭크 = 캐릭터 Lv17 (SkillBook.NodeLevel: row 1 + 2 × (need 9 − 1)).
+@Logic
+script SkeletonResonance extends Logic
+
+    property string NodeId = "skel_resonance"
+    property number Radius = 1.5              -- 충격 반경 (칸 = 월드 1)
+    property number AtkMult = 0.6             -- 해골 공격력 배율
+    property number Cooldown = 0.8            -- 해골마다 다시 울리기까지 (초)
+    property number BoxSlack = 0.25           -- 해골 몸 두께만큼 베기 판정을 넉넉히
+    property table NextAt = {}                -- 해골 엔티티 Id → 다시 울릴 수 있는 시각
+    property integer Count = 0                -- 이번 플레이에서 울린 횟수 (검증용)
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 플레이마다 쿨 표를 비운다.
+        self.NextAt = {}
+        self.Count = 0
+        log(string.format("[VRF] resonance ready node=%s radius=%.1f mult=%.1f cd=%.1f", self.NodeId, self.Radius, self.AtkMult, self.Cooldown))
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean TryResonate(Entity player, Vector2 center, Vector2 dir, Vector2 size)
+        -- PlayerAttack.Strike가 베기 판정 직후 부른다 (center·size = 베기 상자, dir = 조준 방향). 울렸으면 true
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return false end
+        if _UndeadSystem:SkillLevel(player, self.NodeId) <= 0 then return false end
+        local units = _UndeadSystem:LiveUnits(player, "skeleton,mage")
+        if #units == 0 then return false end
+        local d = dir
+        if d:Magnitude() < 0.001 then return false end
+        d = d:Normalize()
+        local side = Vector2(-d.y, d.x)
+        -- 베기 상자(조준 방향으로 돌린 사각형) 안에서 판정 가운데에 가장 가까운 내 해골
+        ---@type ShadowUnit
+        local best = nil
+        local bestD = math.huge
+        for _, it in ipairs(units) do
+            ---@type ShadowUnit
+            local u = it.unit
+            if isvalid(u.Entity) and u.Entity.CurrentMap == player.CurrentMap then
+                local rel = _Util:Pos2(u.Entity) - center
+                local along = rel.x * d.x + rel.y * d.y
+                local across = rel.x * side.x + rel.y * side.y
+                if math.abs(along) <= size.x / 2 + self.BoxSlack and math.abs(across) <= size.y / 2 + self.BoxSlack then
+                    local dist = rel:Magnitude()
+                    if dist < bestD then
+                        best = u
+                        bestD = dist
+                    end
+                end
+            end
+        end
+        if best == nil then return false end
+        -- 수동 조준: 해골보다 판정 가운데에 가까운 적이 있으면 그 적을 겨눈 베기다 (적 우선 — 난전에서 실수로 울리지 않게)
+        local foe = _Util:NearestMonster(player.CurrentMap, center, bestD)
+        if foe ~= nil and not foe.IsDead and (_Util:Pos2(foe.Entity) - center):Magnitude() < bestD then return false end
+        local now = _UtilLogic.ElapsedSeconds
+        local key = best.Entity.Id
+        if now < (self.NextAt[key] or 0) then return false end
+        self.NextAt[key] = now + self.Cooldown
+        self:Prune(now)
+        local p = _Util:Pos2(best.Entity)
+        local damage = best.Atk * self.AtkMult
+        ---@type PlayerAttack
+        local atk = player:GetComponent("script.PlayerAttack")
+        local hits = 0
+        if atk ~= nil then
+            for _, m in ipairs(_Util:MonstersNear(player.CurrentMap, p, self.Radius)) do
+                if not m.IsDead then
+                    atk:SkillHitOne(m.Entity, "skill.skel_resonance", damage)
+                    hits = hits + 1
+                end
+            end
+        end
+        self.Count = self.Count + 1
+        log(string.format("[VRF] resonance hit n=%d dmg=%.0f kind=%s total=%d", hits, damage, best.Kind, self.Count))
+        self:PlayFx(player, best.Entity, p)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PlayFx(Entity player, Entity unitEntity, Vector2 p)
+        -- 울림: 뼈 파편(skel_burst)의 불꽃 파티클을 뼛빛으로 작게 + 골편 보라 파열 고리 (새 그림은 코덱스 요청 — 「공명 울림 고리」)
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, unitEntity, Vector3(p.x, p.y + 0.3, 0), 0, Vector3(0.5, 0.5, 1), false, { Color = Color(0.9, 0.86, 0.74, 0.95) })
+        ---@type SkillEffects
+        local fx = player:GetComponent("script.SkillEffects")
+        if fx ~= nil then fx:ClipFx(fx.FxShardHit, Vector3(p.x, p.y + 0.3, 0), 0.55 * self.Radius / 1.5, 0.45, 0) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Prune(number now)
+        -- 사라진 해골의 쿨 기록이 쌓이지 않게 지난 것만 지운다 (표가 64칸을 넘을 때만)
+        local n = 0
+        for _ in pairs(self.NextAt) do n = n + 1 end
+        if n <= 64 then return end
+        local stale = {}
+        for k, t in pairs(self.NextAt) do
+            if t <= now then table.insert(stale, k) end
+        end
+        for _, k in ipairs(stale) do self.NextAt[k] = nil end
+    end
+
+end

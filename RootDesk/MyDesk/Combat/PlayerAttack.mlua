@@ -443,6 +443,8 @@ script PlayerAttack extends AttackComponent
         self:AttackFast(BoxShape(center, self.RangeSize, angle), "player.basic", nil)
         self.PrimaryTarget = nil
         self.ResolvingBasicStrike = false
+        -- 뼈 공명 (기획서 43 ③ C · 강화 노드 skel_resonance): 이 베기가 내 해골을 겨눴으면 해골이 울려 주변에 충격 (SkeletonResonance)
+        _SkeletonResonance:TryResonate(self.Entity, center, dir, self.RangeSize)
         if self.BasicContactHits > 0 then
             self:PresentBasicContact(self.BasicContactHeavy, self.BasicContactHits, mapId, self.Entity.PlayerComponent.UserId)
         end
@@ -480,6 +482,13 @@ script PlayerAttack extends AttackComponent
     @ExecSpace("ServerOnly")
     method void SkillHitExtra(Monster monster, string attackInfo, number damage)
         -- 맞는 순간의 부가 효과: 서리 혼·서리 파편 둔화(3초 + 「시린 혼」) — 「파쇄」를 위해 누가 얼렸는지 기억한다
+        if attackInfo == "skill.bone_rite_push" then
+            -- 뼈 의식 3기 「뼈 화살」 마지막 발: 나에게서 먼 쪽으로 약 0.5칸 밀친다 (보스·최상위는 MonsterStatus가 막는다 · 정예 절반)
+            local status = monster:Status()
+            if status ~= nil then status:Knockback(_Util:Pos2(monster.Entity) - _Util:Pos2(self.Entity), _GameData.riteArrowPush) end
+            log("[VRF] rite arrow push")
+            return
+        end
         if attackInfo ~= "skill.frost_soul" and attackInfo ~= "skill.frost_split" then return end
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")

@@ -16,6 +16,8 @@
   python3 tools/sim_balance.py            # P100 · P60 비교 + P60 액트 1~4 진행 표
   python3 tools/sim_balance.py --eff 0.5  # 군단 전투 효율 가정만 바꿔 보기
   python3 tools/sim_balance.py --diff all  # 보통 → 악몽 → 지옥 이어서 (레벨·경험치 이어받기, 10-23 추가)
+  python3 tools/sim_balance.py --rite-check      # 뼈 의식 반영(기획서 43 §5 가정 +5%, 해금 Lv) 전후 보통→악몽→지옥 시간·끝 레벨 비교 (10-29)
+  python3 tools/sim_balance.py --rite 5 --diff all  # 뼈 의식 +5%를 넣은 채로 진행 표
 
 악몽·지옥 (difficulty.csv · 10-23 추가):
   몬스터 레벨  보통 1~40을 levelFrom~levelTo로 비율 이동 (GameConst.ScaleLevel) — 고정 보스·최상위도 같은 변환
@@ -175,7 +177,9 @@ def rank_cap(sid, L, rk):
     return min(mx, 1 + (L - row) // 2)
 
 
-DONE = {"runs": 0}   # 이미 끝낸 난이도 수 (의뢰 스킬·능력치·배치 보상은 난이도마다 다시 준다)
+DONE = {"runs": 0}
+# 뼈 의식 (기획서 43 §3-1 · §5 · 10-29): 해금 레벨(skills.csv bone_rite row)부터 빌드 총 피해 +pct%. 실제 단계별 수치가 아니라 「이 정도 세지면」 가정
+RITE = {"pct": 0.0, "row": int(num(SKILL["bone_rite"]["row"])) if "bone_rite" in SKILL else 24}   # 이미 끝낸 난이도 수 (의뢰 스킬·능력치·배치 보상은 난이도마다 다시 준다)
 
 
 def skill_points(L):
@@ -291,7 +295,8 @@ def build(prof, L, act=1, diff=0):
     pen = num(DIFF[diff]["resistPenalty"]) if diff in DIFF else 0
     res = {k: min(C["resistCap"], v + pen) for k, v in res.items()}
     bone_armor = math.floor((20 + 10 * (rk.get("bone_armor", 0) - 1)) * (1 + 0.1 * (L - 1))) if rk.get("bone_armor") else 0
-    return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul, hp=hp, defense=defense,
+    rite = 1 + RITE["pct"] / 100 if RITE["pct"] and L >= RITE["row"] else 1
+    return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul * rite, hp=hp, defense=defense,
                 res=res, n_sk=n_sk, n_mg=n_mg, n_sh=n_sh, n_el=n_el, plus=plus, minion=minion, sk_hp=sk_hp, sh_hp=sh_hp, sh_n=sh_n,
                 bone_armor=bone_armor, amp=amp * p["markUp"], Str=Str, Vit=Vit)
 
@@ -506,7 +511,13 @@ def main():
     ap.add_argument("--eff", type=float)
     ap.add_argument("--profile", default="P60")
     ap.add_argument("--diff", default="0", help="0 보통 · 1 악몽 · 2 지옥 · all 이어서")
+    ap.add_argument("--rite", type=float, default=0, help="뼈 의식 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
+    ap.add_argument("--rite-check", action="store_true", help="뼈 의식 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
     a = ap.parse_args()
+    if a.rite_check:
+        rite_check(a.profile if a.profile != "all" else "P60", a.eff)
+        return
+    RITE["pct"] = a.rite
     diffs = [0, 1, 2] if a.diff == "all" else [int(a.diff)]
     print("== 빌드 비교 (군단 초당 피해 · 괄호는 P100 대비) ==")
     for L in (6, 12, 21, 30, 40):
@@ -548,6 +559,37 @@ def main():
         print(" 액트별: " + " · ".join("A%d %s (Lv%d→%d)" % (k, fmt(v[0]), v[1], v[2]) for k, v in sorted(acts.items())))
         L, exp = last["L1"], last["exp"]
         DONE["runs"] += 1
+
+
+def chain(prof, eff):
+    # 보통 → 악몽 → 지옥을 레벨·경험치 이어받아 돌리고 난이도마다 (시간 합, 끝 레벨)
+    DONE["runs"] = 0
+    L, exp, res = 1, 0.0, []
+    for diff in (0, 1, 2):
+        last = None
+        for r in run(prof, eff, diff, L, exp):
+            last = r
+        res.append((last["total"], last["L1"]))
+        L, exp = last["L1"], last["exp"]
+        DONE["runs"] += 1
+    return res
+
+
+def rite_check(prof, eff, pct=5.0):
+    # 기획서 43 §5 「의식 +5% (Lv24~)」: 끝 레벨이 41 · 68 · 90 그대로인지, 시간이 얼마나 주는지
+    RITE["pct"] = 0.0
+    base = chain(prof, eff)
+    RITE["pct"] = pct
+    with_rite = chain(prof, eff)
+    RITE["pct"] = 0.0
+    names = ["보통", "악몽", "지옥"]
+    print("== 뼈 의식 반영 점검 (%s · 해금 Lv%d부터 빌드 총 피해 +%g%%) ==" % (prof, RITE["row"], pct))
+    same = True
+    for i, n in enumerate(names):
+        (t0, l0), (t1, l1) = base[i], with_rite[i]
+        same = same and l0 == l1
+        print(" %s  기준 %s Lv%d  →  의식 %s Lv%d  (시간 %+d초)" % (n, fmt(t0), l0, fmt(t1), l1, round(t1 - t0)))
+    print(" 끝 레벨 %s · %s" % (" · ".join(str(x[1]) for x in with_rite), "그대로" if same else "바뀜"))
 
 
 if __name__ == "__main__":

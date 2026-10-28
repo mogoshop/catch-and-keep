@@ -18,6 +18,8 @@ script WaypointWindow extends Logic
     property number OpenDelay = 0.4
     property integer ViewAct = 1             -- 탭에서 보고 있는 액트 (창을 열 때 지금 액트로)
     property integer ViewDiff = 0            -- 보고 있는 난이도 (창을 열 때 지금 난이도로). 바꿔도 이동하지 않고, 맵을 고를 때 그 난이도로 간다
+    property integer HoverDiff = -1          -- PC: 마우스가 올라간 잠긴 난이도 단추 (-1 = 없음) → 해금 조건 말풍선 (기획서 43 결정 7)
+    property table HoverHandlers = {}        -- 난이도 단추 ButtonStateChangeEvent 연결 { entity, eventHandler }
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -39,7 +41,14 @@ script WaypointWindow extends Logic
         for d = 0, 2 do
             local diff = d
             _UIKit:Connect(self.Win .. "/Diff" .. tostring(d), function() self:SelectDiff(diff) end)
+            -- 잠긴 난이도 단추에 마우스를 올리면 해금 조건 말풍선 (HudMain 버프 칩과 같은 ButtonStateChangeEvent 방식)
+            local btn = _UIKit:Get(self.Win .. "/Diff" .. tostring(d))
+            if isvalid(btn) then
+                local h = btn:ConnectEvent(ButtonStateChangeEvent, function(event) self:OnDiffHover(diff, event.state == ButtonState.Hover) end)
+                table.insert(self.HoverHandlers, { entity = btn, eventHandler = h })
+            end
         end
+        _UIKit:SetEnabled(self.Win .. "/DiffTip", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] WaypointWindow idle-only opening and route recommendation ready")
     end
@@ -51,6 +60,26 @@ script WaypointWindow extends Logic
         self.TimerId = 0
         self.WasOpen = false
         self.LastMapId = ""
+        for _, rec in ipairs(self.HoverHandlers) do
+            if isvalid(rec.entity) then rec.entity:DisconnectEvent(ButtonStateChangeEvent, rec.eventHandler) end
+        end
+        self.HoverHandlers = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnDiffHover(integer diff, boolean hover)
+        -- PC 마우스: 잠긴 난이도 단추 위에서만 해금 조건을 보여 준다 (조건은 NightmarePreview.UnlockConditionText — ProgressionSystem과 같은 규칙)
+        if hover then self.HoverDiff = diff
+        elseif self.HoverDiff == diff then self.HoverDiff = -1 end
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local locked = st ~= nil and self.HoverDiff >= 0 and self.HoverDiff > st.MaxDifficulty
+        if locked then
+            _UIKit:SetText(self.Win .. "/DiffTip/Text", _GameConst:DifficultyName(self.HoverDiff) .. " 잠김\n" .. _NightmarePreview:UnlockConditionText(self.HoverDiff))
+            _UIKit:SetPos(self.Win .. "/DiffTip", Vector2((self.HoverDiff - 1) * 180, 100))
+            log("[VRF] waypoint locked tip diff=" .. tostring(self.HoverDiff))
+        end
+        _UIKit:SetEnabled(self.Win .. "/DiffTip", locked)
     end
 
     method PlayerTravel Travel()
@@ -208,7 +237,8 @@ script WaypointWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if travel == nil or st == nil then return end
         if diff > st.MaxDifficulty then
-            _UXFeedback:Show(_GameConst:DifficultyName(diff) .. " 잠김", "이전 난이도의 마지막 보스를 쓰러뜨리면 열립니다", _GameData:GetUiIcon("icon_waypoint"))
+            -- 모바일(마우스 없음)은 누르면 같은 해금 조건을 알림으로 (기획서 43 결정 7)
+            _UXFeedback:Show(_GameConst:DifficultyName(diff) .. " 잠김", _NightmarePreview:UnlockConditionText(diff), _GameData:GetUiIcon("icon_waypoint"))
             return
         end
         self.ViewDiff = diff

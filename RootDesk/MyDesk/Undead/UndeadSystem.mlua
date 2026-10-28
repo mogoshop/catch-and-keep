@@ -1,10 +1,12 @@
 -- 언데드 (디아블로2 네크로맨서 소환): 해골 전사·해골 마법사. 혼 하나를 소모해 일으킨다.
 -- 혼은 한 번만 쓴다 — 해골·추출 중 하나 (D2의 시체와 같다).
--- 해골 폭탄·뼈 성찬(10-20): 일으킨 해골을 소모하는 스킬. 되살림·망자 폭쇄는 10-20에 빠졌다 (되살림 코드는 kind "revive"로 남아 있지만 부르는 스킬이 없다).
+-- 뼈 의식(10-29 · 해골 폭탄 병합: 1기 폭탄 · 2기 회오리 · 3기 화살 · 5기 거인 합체)·뼈 성찬(10-20): 일으킨 해골을 소모하는 스킬. 되살림·망자 폭쇄는 10-20에 빠졌다 (되살림 코드는 kind "revive"로 남아 있지만 부르는 스킬이 없다).
 -- 수: D2 규칙 — 스킬 1~3레벨은 레벨만큼, 이후 2 + 레벨/3 (20레벨 8기, undeadCountMax). 꽉 차면 가장 오래된 것이 무너진다.
 -- 되살림: 원본 몬스터 그대로 reviveSeconds(180초), 동시 수 = 스킬 레벨 (reviveCountMax 5).
 -- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 영구 저장하지 않는다. 방 이동은 공유 메모리의 일회성 전달을 쓴다.
 -- 유닛 엔티티는 그림자와 같은 shadowunit 모델(ShadowUnit, Kind만 다름)을 쓴다.
+-- 첫 처치 맛보기 그림자 (기획서 39 결정 #3A, 10-29): ShadowSystem.TryFirstTaste → SpawnTaste. 되살림 칸(kind "revive", rec.taste)을 빌려
+--   firstTasteSec초 뒤 사라진다 — 그림자 보관함·소환 상한(ShadowCommander) 밖이라 장비·추출·강화가 없고 저장되지 않는다. 머리 위 「잡으면 내 편 (N초)」
 @Logic
 script UndeadSystem extends Logic
 
@@ -17,6 +19,8 @@ script UndeadSystem extends Logic
     property string TravelMemoryName = "UndeadRoomTravelV1"
     property integer Serial = 0
     property number SoulReach = 1.5      -- 조준점에서 혼을 찾는 거리
+    property table Giants = {}            -- userId → 뼈 거인 상태 { host = 거인이 된 해골 기록, mates = 합쳐진 넷의 기록, epoch } (뼈 의식 5기)
+    property integer GiantEpoch = 0
 
     method table Elements()
         return { "fire", "cold", "light", "poison" }
@@ -41,7 +45,7 @@ script UndeadSystem extends Logic
             if string.find("," .. kinds .. ",", "," .. rec.kind .. ",", 1, true) ~= nil and isvalid(rec.entity) then
                 ---@type ShadowUnit
                 local u = rec.entity:GetComponent("script.ShadowUnit")
-                if u ~= nil and not u.Dead and u.Hp > 0 and not u.Bombing then table.insert(list, { rec = rec, unit = u }) end
+                if u ~= nil and not u.Dead and u.Hp > 0 and not u.Bombing and not u.Giant then table.insert(list, { rec = rec, unit = u }) end   -- 돌진 중·거인은 바칠 수 없다
             end
         end
         table.sort(list, function(a, b) return a.unit.Hp / math.max(1, a.unit.MaxHp) < b.unit.Hp / math.max(1, b.unit.MaxHp) end)
@@ -76,6 +80,137 @@ script UndeadSystem extends Logic
         end
         log(string.format("[VRF] skeleton bomb n=%d mult=%.2f radius=%.2f foe=%s", math.min(count, #picks), mult, radius, tostring(foe ~= nil)))
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BoneRite(Entity player, integer stage, Vector2 target, number rankMul, Entity lock)
+        -- 뼈 의식 2·3·5기 (기획서 43 §3-1). 2·3기는 생명이 가장 낮은 해골 전사부터 stage기를 바친다 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
+        -- 5기는 바치지 않고 합친다 (StartGiant). 피해 = 바친 해골 평균 공격력 × 단계 배율 × rankMul (해골 공격력이 이미 캐릭터 레벨·숙련·장비를 따른다)
+        local userId = player.PlayerComponent.UserId
+        local picks = self:LiveUnits(player, "skeleton")
+        if #picks < stage then
+            _Util:Warn("해골 전사가 모자란다 (" .. tostring(#picks) .. "/" .. tostring(stage) .. ")", userId)
+            log(string.format("[VRF] rite stage=%d skel=%d short", stage, #picks))
+            return false
+        end
+        ---@type SkillEffects
+        local fx = player:GetComponent("script.SkillEffects")
+        if fx == nil then return false end
+        if stage == 5 then return self:StartGiant(player, picks) end
+        local used = {}
+        local sum = 0
+        for i = 1, stage do
+            local pick = picks[i]
+            sum = sum + pick.unit.Atk
+            table.insert(used, { pos = _Util:Pos2(pick.unit.Entity), unit = pick.unit })
+            self:Detach(player, pick.rec)
+            pick.unit.Dead = true   -- 판단·피격을 멈춘다 (쓰러짐 알림·뼈 파편 없음). 엔티티는 아래에서 치운다
+        end
+        local avg = sum / stage
+        if stage == 2 then
+            for _, u in ipairs(used) do
+                fx:ClipFx(fx.FxShardHit, Vector3(u.pos.x, u.pos.y + 0.4, 0), 0.5, 0.6, 0)   -- 무너지는 뼛가루 (임시)
+                if isvalid(u.unit.Entity) then u.unit.Entity:Destroy() end
+            end
+            fx:RiteWhirl(target, avg * _GameData.riteWhirlMul * rankMul)
+        else
+            fx:RiteArrows(used, target, avg * _GameData.riteArrowMul * rankMul, lock)
+        end
+        log(string.format("[VRF] rite stage=%d skel=%d consumed=%d avgAtk=%.0f rankMul=%.2f", stage, #picks, stage, avg, rankMul))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean StartGiant(Entity player, table picks)
+        -- 뼈 의식 5기 「뼈 거인」: 가장 튼튼한 해골 하나가 거인이 되고 나머지 넷은 목록에서 빠져 합쳐진다 (소모 아님).
+        -- 거인 생명 = 다섯 생명 합 × riteGiantHpMul · 휩쓸기 = 다섯 공격 합 × riteGiantAtkMul · 4초마다 도발 (방패 해골 규칙 재사용 · 보스 제외).
+        -- riteGiantSeconds 뒤 남은 생명 비율대로 다섯으로 갈라진다 (EndGiant). 거인이 쓰러지면 다섯 모두 무너진다
+        local uid = player.PlayerComponent.UserId
+        if self.Giants[uid] ~= nil then
+            _Util:Warn("이미 뼈 거인이 서 있다", uid)
+            return false
+        end
+        local n = #picks
+        local host = picks[n]   -- LiveUnits는 생명 비율 낮은 순 → 마지막이 가장 튼튼하다
+        local mates = {}
+        local atk, maxHp, hp = host.unit.Atk, host.unit.MaxHp, host.unit.Hp
+        for i = n - 4, n - 1 do
+            local pick = picks[i]
+            atk = atk + pick.unit.Atk
+            maxHp = maxHp + pick.unit.MaxHp
+            hp = hp + pick.unit.Hp
+            pick.rec.currentHp = pick.unit.Hp
+            local from = _Util:Pos2(pick.unit.Entity)
+            self:Detach(player, pick.rec)
+            pick.unit.Dead = true
+            if isvalid(pick.unit.Entity) then pick.unit.Entity:Destroy() end
+            table.insert(mates, pick.rec)
+            ---@type SkillEffects
+            local fx = player:GetComponent("script.SkillEffects")
+            if fx ~= nil then fx:ClipFx(fx.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.5, 0.6, 0) end
+        end
+        self.GiantEpoch = self.GiantEpoch + 1
+        local epoch = self.GiantEpoch
+        host.rec.giant = true
+        self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch }
+        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul)
+        self:RefreshSummary(player)
+        _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
+        log(string.format("[VRF] rite stage=5 skel=%d giant atk=%d hp=%.0f/%.0f sec=%.0f", n, math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EndGiant(Entity player, integer epoch, boolean respawn)
+        -- 거인이 갈라진다: 거인 몸은 원래 해골로, 합쳐졌던 넷은 각자 최대 생명 × 남은 비율로 목록에 돌아온다 (respawn이면 그 자리에 다시 세운다).
+        -- epoch 0 = 맵 이동·방 이동 직전 강제로 (LiveRecords) — 엔티티 없이 기록만 돌려 두면 따라오기가 다섯을 다시 세운다.
+        -- 해골 최대 수를 넘으면 넘는 몫은 돌아오지 않는다 (거인 중에 새로 일으킨 경우)
+        if not isvalid(player) or not isvalid(player.PlayerComponent) then return end
+        local uid = player.PlayerComponent.UserId
+        local g = self.Giants[uid]
+        if g == nil or (epoch > 0 and g.epoch ~= epoch) then return end
+        self.Giants[uid] = nil
+        g.host.giant = nil
+        local ratio = 0
+        local at = _Util:Pos2(player)
+        if isvalid(g.host.entity) then
+            ---@type ShadowUnit
+            local u = g.host.entity:GetComponent("script.ShadowUnit")
+            if u ~= nil and not u.Dead and u.Hp > 0 then
+                ratio = u:EndGiant()
+                at = _Util:Pos2(u.Entity)
+            end
+        end
+        if ratio <= 0 then
+            log("[VRF] rite giant end ratio=0 (host gone)")
+            self:RefreshSummary(player)
+            return
+        end
+        local list = self:ListOf(player)
+        local have = 0
+        for _, r in ipairs(list) do if r.kind == "skeleton" then have = have + 1 end end
+        local max = self:MaxFor(player, "skeleton", self:SkillLevel(player, "raise_skeleton"))
+        local back = 0
+        for _, rec in ipairs(g.mates) do
+            if have < max then
+                rec.currentHp = math.max(1, math.floor(rec.hp * ratio))
+                rec.entity = nil
+                table.insert(list, rec)
+                have = have + 1
+                back = back + 1
+                if respawn and _Util:IsAlive(player) then self:SpawnUnit(player, rec, at, nil, nil) end
+            end
+        end
+        self:RefreshSummary(player)
+        log(string.format("[VRF] rite giant split back=%d/%d ratio=%.2f respawn=%s", back, #g.mates, ratio, tostring(respawn)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer GiantReserved(Entity player, string kind)
+        -- 거인에 합쳐져 목록 밖에 있는 해골 전사 수 (일으킬 때 최대 수에 함께 센다)
+        if kind ~= "skeleton" or not isvalid(player) then return 0 end
+        local g = self.Giants[player.PlayerComponent.UserId]
+        return g ~= nil and #g.mates or 0
     end
 
     @ExecSpace("ServerOnly")
@@ -260,13 +395,14 @@ script UndeadSystem extends Logic
             orb:Consume()
             local max = self:MaxFor(player, kind, slvl)
             -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다
-            local have = 0
+            local reserved = self:GiantReserved(player, kind)   -- 뼈 거인에 합쳐진 넷도 자리를 차지한다
+            local have = reserved
             for _, r in ipairs(self:ListOf(player)) do if r.kind == kind then have = have + 1 end end
             if have >= max then
                 local names = { skeleton = "해골 전사", mage = "해골 마법사", revive = "되살린 몬스터" }
                 _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(max) .. "기 — 가장 오래된 하나가 무너졌다 (스킬 레벨을 올리면 늘어난다)", userId)
             end
-            self:TrimOldest(player, kind, max - 1)
+            self:TrimOldest(player, kind, math.max(0, max - 1 - reserved))
             table.insert(self:ListOf(player), rec)
             self:RefreshSummary(player)
             self:PlaySummonFx(player, pos)
@@ -367,6 +503,39 @@ script UndeadSystem extends Logic
         rec.speed = rec.speed * (1 + aura.speed / 100)
         rec.auraResist = aura.resist
         return rec
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean SpawnTaste(Entity player, string sourceId, integer level, string variant, string stand, string move, Vector2 pos)
+        -- 첫 처치 몹을 그 자리에서 임시 그림자로 (힘 = 같은 몬스터를 막 추출한 그림자 1랭크 · 주인 레벨까지, 그림 = 원본에 그림자 보라 칠)
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return false end
+        local prof = _ShadowConfig:GetProfile(sourceId, 1, _ShadowConfig:EffectiveLevel(level, _GameConst:LevelOf(player)), 1)
+        self.Serial = self.Serial + 1
+        local source = _GameData:GetMonsterStats(sourceId)
+        local rec = { id = "ud" .. tostring(self.Serial), kind = "revive", taste = true, ownerEntityId = player.Id, entity = nil,
+            atk = prof.atk, hp = prof.hp, cooldown = prof.cooldown, range = prof.range, speed = prof.speed,
+            element = prof.element, ratio = prof.ratio, resists = prof.resists, stand = stand, move = move ~= "" and move or stand,
+            attack = source ~= nil and source.attack or "", scale = source ~= nil and source.summonScale or 1,
+            tint = Color(0.35, 0.2, 0.55, 0.85),   -- 보관함 그림자와 같은 보라 (ShadowUnit.ShadowTint 기본값)
+            variant = variant, auraResist = 0,
+            expireAt = _UtilLogic.ElapsedSeconds + _GameData.firstTasteSec }
+        table.insert(self:ListOf(player), rec)
+        local ok = self:SpawnUnit(player, rec, pos, function()
+            self:RefreshSummary(player)
+            self:PlaySummonFx(player, pos)
+            _Telemetry:First(player, "taste")
+            -- 한 줄 안내 (글귀 승인 전): 사라질 때 Lv5 안내를 한 번 더
+            _Util:Notify("쓰러뜨린 적이 잠시 그림자로 일어섰다 — 잡으면 내 편 (" .. tostring(math.floor(_GameData.firstTasteSec)) .. "초)", player.PlayerComponent.UserId)
+            log(string.format("[VRF] first-kill shadow spawn src=%s atk=%d hp=%d sec=%d", sourceId, rec.atk, rec.hp, math.floor(_GameData.firstTasteSec)))
+        end, function()
+            self:Remove(player, rec.id)
+            log("[VRF] first-kill shadow spawn failed src=" .. sourceId)
+        end)
+        if not ok then
+            self:Remove(player, rec.id)
+            log("[VRF] first-kill shadow spawn failed (no map) src=" .. sourceId)
+        end
+        return ok
     end
 
     method Color ElementTint(string element)
@@ -492,7 +661,7 @@ script UndeadSystem extends Logic
         for _, rec in ipairs(list) do if rec.kind == kind then count = count + 1 end end
         local i = 1
         while count > keep and i <= #list do
-            if list[i].kind == kind then
+            if list[i].kind == kind and not list[i].giant then   -- 뼈 거인 몸은 무너뜨리지 않는다
                 self:DestroyEntity(list[i])
                 table.remove(list, i)
                 count = count - 1
@@ -552,6 +721,11 @@ script UndeadSystem extends Logic
             u.ShadowTint = rec.tint
             unit.SpriteRendererComponent.Color = rec.tint
             u:SetBaseSpeed(rec.speed)
+            if rec.taste then
+                -- 첫 처치 맛보기 그림자: 머리 위 남은 초 (ShadowUnit.RefreshView) · 그림자 보라 발밑 원
+                u.HeadLabel = "잡으면 내 편"   -- 글귀 승인 전
+                u.TasteUntil = _UtilLogic.ServerElapsedSeconds + math.max(0, rec.expireAt - _UtilLogic.ElapsedSeconds)
+            end
             if onReady ~= nil then onReady() end
         end, function()
             if isvalid(unit) then unit:Destroy() end
@@ -597,13 +771,29 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void OnUnitDied(Entity player, string id)
-        -- ShadowUnit(Kind ~= shadow)이 쓰러지면 부른다
+        -- ShadowUnit(Kind ~= shadow)이 쓰러지면 부른다. 뼈 거인이 쓰러지면 합쳐졌던 넷도 함께 무너진다
+        if isvalid(player) then
+            local g = self.Giants[player.PlayerComponent.UserId]
+            if g ~= nil and g.host.id == id then
+                self.Giants[player.PlayerComponent.UserId] = nil
+                log("[VRF] rite giant fell mates=" .. tostring(#g.mates))
+            end
+        end
         self:Remove(player, id)
     end
 
     @ExecSpace("ServerOnly")
     method void Expire(Entity player, string id)
-        -- 되살림 시간이 끝남
+        -- 되살림 시간이 끝남. 맛보기 그림자면 재로 흩어지는 연출 + Lv5 안내 (한 번만 — 맵 이동으로 다시 만든 개체의 옛 타이머는 기록이 없어 그냥 지나간다)
+        if not isvalid(player) then return end
+        for _, rec in ipairs(self:ListOf(player)) do
+            if rec.id == id and rec.taste then
+                if isvalid(rec.entity) then self:PlaySummonFx(player, _Util:Pos2(rec.entity)) end
+                _Util:Notify("그림자가 재로 흩어졌다 — Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 혼을 거둬 직접 부릴 수 있다", player.PlayerComponent.UserId)   -- 글귀 승인 전
+                log("[VRF] first-kill shadow expire id=" .. id)
+                break
+            end
+        end
         self:Remove(player, id)
     end
 
@@ -612,6 +802,7 @@ script UndeadSystem extends Logic
         -- 사망·명시적 해제 시 모두 정리하고, 이전 맵의 따라오기 타이머도 무효화한다.
         local uid = player.PlayerComponent.UserId
         self.TravelEpochs[uid] = (self.TravelEpochs[uid] or 0) + 1
+        self.Giants[uid] = nil   -- 거인과 합쳐진 넷도 함께 사라진다
         for _, rec in ipairs(self:ListOf(player)) do self:DestroyEntity(rec) end
         self.Owned[player.PlayerComponent.UserId] = {}
         self:RefreshSummary(player)
@@ -622,6 +813,8 @@ script UndeadSystem extends Logic
     @ExecSpace("ServerOnly")
     method table LiveRecords(Entity player)
         -- 현재 체력·남은 시간을 보존하고 죽거나 만료된 유닛은 이동 대상에서 제외한다.
+        -- 뼈 거인은 이동 전에 먼저 갈라 둔다 (다섯 기록이 남은 생명 비율로 목록에 돌아와 함께 따라간다)
+        self:EndGiant(player, 0, false)
         local live = {}
         local now = _UtilLogic.ElapsedSeconds
         for _, rec in ipairs(self:ListOf(player)) do
@@ -666,7 +859,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 마법사 변이
+        local fields = { "taste", "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 마법사 변이
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end
@@ -801,6 +994,13 @@ script UndeadSystem extends Logic
         if sk > 0 then table.insert(parts, "해골 " .. tostring(n.skeleton) .. "/" .. tostring(self:MaxFor(player, "skeleton", sk))) end
         if mg > 0 then table.insert(parts, "마법사 " .. tostring(n.mage) .. "/" .. tostring(self:MaxFor(player, "mage", mg))) end
         if n.revive > 0 then table.insert(parts, "되살림 " .. tostring(n.revive)) end
+        if self.Giants[player.PlayerComponent.UserId] ~= nil then table.insert(parts, "뼈 거인") end
+        -- 되살림 스킬은 10-20에 빠져 지금 「되살림」 칸은 첫 처치 맛보기 그림자뿐 — 상태줄은 「그림자(잠시)」로 (글귀 승인 전)
+        if n.revive > 0 then
+            local taste = 0
+            for _, rec in ipairs(self:ListOf(player)) do if rec.kind == "revive" and rec.taste then taste = taste + 1 end end
+            if taste == n.revive then parts[#parts] = "그림자(잠시) " .. tostring(taste) end
+        end
         cmd.UndeadSummary = table.concat(parts, " · ")
         cmd.MinionCounts = tostring(n.skeleton) .. "," .. tostring(n.mage) .. "," .. tostring(n.revive)
     end

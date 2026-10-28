@@ -36,7 +36,15 @@ check(1, "질주 Lv9 해금(포인트로 배움)", skills.wraith_dash.row === "9
 check(2, "기본 이속 1.73 · 짐승·떼·암살자 ×1.2 · 해골 1.7 · 그림자 하한 1.2",
   cfg.playerSpeedMul === 1.73 && cfg.skeletonSpeed === 1.7 && cfg.shadowSpeedMin === 1.2 && (sped === -1 || sped >= 10),
   `playerSpeedMul ${cfg.playerSpeedMul} · skeletonSpeed ${cfg.skeletonSpeed} · shadowSpeedMin ${cfg.shadowSpeedMin} · ×1.2 몬스터 ${sped}/${fastArch.length}`);
-check(3, "가벼운 걸음 Lv4 · 해골 폭탄 Lv10", skills.swift_step.row === "4" && skills.skel_bomb.row === "10", `swift_step ${skills.swift_step.row} · skel_bomb ${skills.skel_bomb.row}`);
+// #3 해골 폭탄 Lv10 → 10-29 기획서 43 결정 2·3: 뼈 의식(bone_rite, Lv24)의 1기 단계로 병합. 폭탄 줄이 사라진 대신
+//    의식 줄 · 폭탄 강화 3개가 의식 아래로 옮겨졌는지 · 저장 이전(SkillBook.MigrateBombToRite)이 있는지를 본다
+const bombNodes = ["bomb_wide", "bomb_marrow", "bomb_pair"];
+const rite = skills.bone_rite;
+check(3, "가벼운 걸음 Lv4 · 해골 폭탄 → 뼈 의식 1기 (43 결정 2·3 · Lv24)",
+  skills.swift_step.row === "4" && !skills.skel_bomb && rite && rite.row === "24" && rite.kind === "active"
+    && bombNodes.every((n) => skills[n] && skills[n].parent === "bone_rite")
+    && has("RootDesk/MyDesk/Skill/SkillBook.mlua", "method integer MigrateBombToRite"),
+  `swift_step ${skills.swift_step.row} · skel_bomb ${skills.skel_bomb ? "남음" : "병합됨"} · bone_rite ${rite ? rite.row : "없음"} · 강화 ${bombNodes.map((n) => skills[n] ? skills[n].parent : "없음").join("/")} · 저장 이전 SkillBook.MigrateBombToRite`);
 const uq = quests.filter((q) => /unique:1/.test(q.reward));
 check(4, "액트 끝 의뢰 유니크 = 보스 전용 풀", uq.length >= 5 && uq.some((q) => q.map === "cellar2") && has("RootDesk/MyDesk/Quest/PlayerQuest.mlua", "PickUnique"), `유니크 보상 의뢰 ${uq.length}개(${uq.map((q) => q.map).join(",")}) · PlayerQuest.PickUnique(그 보스 풀에서)`);
 check(5, "여왕 그림자 확정 없음 · 확률 표시 크게", has("RootDesk/MyDesk/UI/Hud/HudMain.mlua", "보스의 혼") && has("RootDesk/MyDesk/UI/Hud/HudMain.mlua", "<size=150%>"), "HudMain 혼 안내 「보스의 혼」 + 확률 150%");

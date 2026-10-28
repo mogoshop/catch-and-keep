@@ -42,6 +42,8 @@ script HudMain extends Logic
     property number ComboPunchAt = 0          -- 마지막으로 수가 오른 시각 (툭 커지는 연출)
     property number ComboFadeAt = 0           -- 연쇄가 끊겨 흐려지기 시작한 시각 (0 = 아님)
     property boolean ComboTierUp = false      -- 이번 오름이 단계(10·25·50·100)를 넘었다 (더 크게 튄다)
+    property boolean RiteShown = false        -- 뼈 의식 충전 고리가 떠 있다 (RenderRite)
+    property integer RiteLastStage = -1       -- 고리에 마지막으로 그린 단계 (바뀔 때만 글자·로그)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -449,6 +451,65 @@ script HudMain extends Logic
             if _UtilLogic.ElapsedSeconds >= self.WarnUntil then self.WarnUntil = 0 end
         end
         if self.RaidUntil > 0 then self:RenderRaid() end
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book ~= nil and book.RiteHoldAt >= 0 then self:RenderRite(book)
+        elseif self.RiteShown then self:HideRite() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRite(SkillBook book)
+        -- 뼈 의식 충전 고리 (기획서 43 §3-1 · 결정 1A · 임시 그림): 누르는 동안 머리 위에 고리가 위에서 시계 방향으로 차고,
+        -- 가운데 숫자 = 지금 떼면 나갈 단계(해골·재사용·마나가 모자라면 낮춘 값), 아래 = 단계 이름, 눈금 점 = 2·3·5기 문턱 (넘으면 밝아진다).
+        -- 5기 문턱은 악몽이 열린 뒤에만 보이고, 그 전에는 고리 한 바퀴 = 3기(1초)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not _UIKit:CanUseGameplayInput() or book:GetSlotSkill(book.RiteHoldSlot) ~= "bone_rite" then
+            book:CancelRiteHold()
+            self:HideRite()
+            return
+        end
+        local held = _UtilLogic.ElapsedSeconds - book.RiteHoldAt
+        local giant = book:RiteGiantUnlocked()
+        local top = giant and _GameData.riteHold5 or _GameData.riteHold3
+        local want = book:RiteStageForHold(held, giant)
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local stage = book:RiteBestStage(want, st ~= nil and st.Mana or -1)
+        _UIKit:SetEnabled("RiteRing", true)
+        _UIKit:SetPos("RiteRing", self:WorldToHud(_Util:Pos2(player) + Vector2(0, 1.8)))
+        _UIKit:SetFill("RiteRing/Fill", held / math.max(0.1, top))
+        local colors = { [0] = Color(0.45, 0.42, 0.4, 0.9), [1] = Color(0.85, 0.8, 0.7, 0.95), [2] = Color(0.62, 0.86, 0.8, 0.95), [3] = Color(0.96, 0.82, 0.45, 0.95), [5] = Color(0.92, 0.42, 0.3, 0.95) }
+        _UIKit:SetColor("RiteRing/Fill", colors[stage] or colors[0])
+        -- 눈금: 고리 위쪽(12시)에서 시계 방향으로 문턱 비율만큼 (FillOrigin 2 · 시계 방향 — tools/build/ui.cjs RiteRing)
+        local marks = { { "T2", _GameData.riteHold2, true }, { "T3", _GameData.riteHold3, true }, { "T5", _GameData.riteHold5, giant } }
+        for _, m in ipairs(marks) do
+            local path = "RiteRing/" .. m[1]
+            _UIKit:SetEnabled(path, m[3] and m[2] <= top + 0.001)
+            if m[3] then
+                local a = 2 * math.pi * math.min(1, m[2] / top)
+                _UIKit:SetPos(path, Vector2(41 * math.sin(a), 12 + 41 * math.cos(a)))
+                _UIKit:SetColor(path, held >= m[2] and Color(1, 0.95, 0.8, 1) or Color(0.43, 0.4, 0.35, 1))
+            end
+        end
+        if stage ~= self.RiteLastStage or not self.RiteShown then
+            -- (승인 전 임시 글귀) 단계 이름 · 낮춰 나갈 때는 「· 해골 부족」 등 이유 대신 짧게 「· 낮춤」
+            local names = { [1] = "해골 폭탄", [2] = "뼈 회오리", [3] = "뼈 화살", [5] = "뼈 거인" }
+            local label = stage == 0 and "해골 없음" or names[stage]
+            if stage > 0 and stage < want then label = label .. " · 낮춤" end
+            _UIKit:SetText("RiteRing/Count", stage > 0 and tostring(stage) or "-")
+            _UIKit:SetText("RiteRing/Label", label)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite ring stage=%d want=%d held=%.2f", stage, want, held)) end
+            self.RiteLastStage = stage
+        end
+        self.RiteShown = true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideRite()
+        -- 뗐거나 끊겼다: 고리를 거둔다
+        _UIKit:SetEnabled("RiteRing", false)
+        self.RiteShown = false
+        self.RiteLastStage = -1
     end
 
     @ExecSpace("ClientOnly")

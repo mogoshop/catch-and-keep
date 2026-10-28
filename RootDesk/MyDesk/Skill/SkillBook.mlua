@@ -29,6 +29,8 @@ script SkillBook extends Component
     property number MovePredictAt = -10       -- 클라이언트: 질주를 마지막으로 직접 움직인 시각 (연타로 두 번 움직이지 않게)
     property integer DashPending = 0          -- 클라이언트: 서버 확인을 아직 못 받은 질주 수 (남은 횟수에서 미리 뺀다 — 10-24 연타 두 번 질주)
     property integer DashSeen = -1            -- 클라이언트: 마지막으로 본 DashShown (줄어든 만큼 확인된 질주)
+    property number RiteHoldAt = -1           -- 클라이언트: 뼈 의식 칸을 누르기 시작한 시각 (-1 = 안 누름 · 기획서 43 결정 1A)
+    property integer RiteHoldSlot = 0         -- 클라이언트: 누르고 있는 칸 (1~4 = A S D F · 5 = 우클릭/모바일 큰 버튼)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -233,7 +235,7 @@ script SkillBook extends Component
             return math.floor(raw * (1 + 0.1 * (alv - 1)))
         end
         local flat = { terror = true, bone_prison = true, poison_spread = true, elite_promote = true, mark_weakness = true, enfeeble = true,
-            skel_bomb = true, bone_offering = true, swift_step = true, plague_curse = true, wraith_dash = true }
+            bone_rite = true, bone_offering = true, swift_step = true, plague_curse = true, wraith_dash = true }
         if flat[id] then return raw end
         -- 공격 스킬 피해는 캐릭터 레벨을 따라 커진다 (몬스터 생명이 레벨마다 +30% 오르는데 스킬은 스킬 레벨만 따라가 금방 약해졌다)
         local scale = 1
@@ -344,7 +346,7 @@ script SkillBook extends Component
         -- 공격 스킬 한 발(독안개는 초당 · 뼈 폭풍은 0.5초당 · 그림자 희생은 + 희생한 그림자 공격력 ×2 · 혼 흡수는 피해의 절반 회복): 공통 곡선
         local curve = self:DamageCurve(id, level)
         if curve > 0 then return curve end
-        if id == "skel_bomb" then return 2.5 + 0.15 * (level - 1) end  -- 해골 공격력 배율 (해골 공격력이 이미 캐릭터 레벨을 따른다)
+        if id == "bone_rite" then return 2.5 + 0.15 * (level - 1) end  -- 뼈 의식 1기(해골 폭탄) 해골 공격력 배율 (해골 공격력이 이미 캐릭터 레벨을 따른다)
         if id == "bone_offering" then return 25 + 1.5 * (level - 1) end   -- 소환수 최대 생명 대비 회복 %
         if id == "swift_step" then return 8 + (level - 1) end          -- 이동 속도 % (10-24: 4 → 8 시작)
         if id == "plague_curse" then return 3 + level // 5 end         -- 저주가 옮는 적 수
@@ -425,9 +427,9 @@ script SkillBook extends Component
             skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
             shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
             shard_spike = string.format("튕길 때마다 피해 +%d%%", 15 * level),
-            bomb_wide = string.format("해골 폭탄 범위 %.2f", 1.6 * (1 + 0.15 * level)),
-            bomb_marrow = string.format("해골 폭탄 피해 +%d%%", 20 * level),
-            bomb_pair = "해골 2기가 함께 돌진",
+            bomb_wide = string.format("의식 1기(해골 폭탄) 범위 %.2f", 1.6 * (1 + 0.15 * level)),
+            bomb_marrow = string.format("의식 1기(해골 폭탄) 피해 +%d%%", 20 * level),
+            bomb_pair = "의식 1기에 해골 2기가 함께 돌진",
             flame_hex = string.format("저주 걸린 적에게 피해 +%d%%", 50 + 20 * level),
             flame_twin = string.format("불꽃 화살 %d발", 1 + level),
             frost_long = string.format("둔화 %d초", 3 + level),
@@ -480,7 +482,14 @@ script SkillBook extends Component
             return string.format("소환수 공격·생명 +%g%% · 이동 +%g%% · 저항 +%g", aura.atk, aura.speed, aura.resist)
         end
         if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
-        if id == "skel_bomb" then return string.format("해골 공격력 ×%.2f · 반경 %.2f%s", power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and " · 2기" or "") end
+        if id == "bone_rite" then
+            -- (승인 전 임시 글귀) 단계별 한 줄: 1기 폭탄 · 2기 회오리 · 3기 화살 · 5기 거인 (악몽이 열리기 전에는 「악몽부터」)
+            local rank = self:RiteRankMul(level)
+            local giant = self:RiteGiantUnlocked() and string.format("5기 거인 %d초·도발", math.floor(_GameData.riteGiantSeconds)) or "5기 거인 악몽부터"
+            return string.format("1기 폭탄 ×%.2f·반경 %.2f%s · 2기 회오리 ×%.2f×%d · 3기 화살 ×%.1f×3 · %s",
+                power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and "·2기 돌진" or "",
+                _GameData.riteWhirlMul * rank, math.floor(_GameData.riteWhirlSeconds / 0.5), _GameData.riteArrowMul * rank, giant)
+        end
         if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * (1 + 0.2 * self:Node("offering_heal")) * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
         if id == "swift_step" then return string.format("이동 속도 +%g%%", power + 2 * self:Node("step_gale")) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
@@ -611,6 +620,8 @@ script SkillBook extends Component
             _Util:Warn(def.name .. ": 준비 중인 스킬", userId)
             return false
         end
+        -- 뼈 의식: 단계 없이 들어온 시전(예전 저장 칸·직접 호출)은 1기(해골 폭탄)로
+        if id == "bone_rite" then return self:CastRite(1, target) end
         local now = _UtilLogic.ElapsedSeconds
         if now < (self.ReadyAt[id] or 0) then return false end
         if id == "wraith_dash" and self:RefillDash() < 1 then return false end
@@ -646,7 +657,7 @@ script SkillBook extends Component
             -- 질주(도약): 내 클라이언트가 이미 움직였고 target은 도착점이다. 서버 위치는 조금 늦으니 1.5칸 여유
             if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
-        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear" or id == "hex_flame" or id == "frost_soul" or id == "skel_bomb") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
+        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
@@ -706,6 +717,207 @@ script SkillBook extends Component
         local st = self.Entity:GetComponent("script.PlayerStats")
         local lv = st ~= nil and st.Level or 1
         return math.floor((8 + 3 * lv) * rank)
+    end
+
+    -- ───────── 뼈 의식 (기획서 43 §3-1 · 10-29 결정 1A·2·3) ─────────
+    -- 단추 하나: 짧게 = 1기 해골 폭탄, riteHold2(0.5초) = 2기 뼈 회오리, riteHold3(1초) = 3기 뼈 화살, riteHold5(1.6초) = 5기 뼈 거인(악몽이 열린 뒤).
+    -- 해골·쿨다운·마나가 모자라면 할 수 있는 가장 높은 단계로 내려간다 (서버가 최종 결정). PC 키 누름·모바일 단추 길게 모두 같은 길
+
+    method integer RiteStageForHold(number held, boolean giant)
+        -- 누른 시간 → 바라는 단계 (1·2·3·5). 5기는 악몽이 열린 뒤에만, 아니면 3기에서 멈춘다
+        if giant and held >= _GameData.riteHold5 then return 5 end
+        if held >= _GameData.riteHold3 then return 3 end
+        if held >= _GameData.riteHold2 then return 2 end
+        return 1
+    end
+
+    method string RiteCdKey(integer stage)
+        -- 단계별 재사용 덮개 키 (1기는 스킬 칸 덮개 bone_rite 그대로 · 모든 단계가 bone_rite 1초도 함께 건다)
+        if stage == 2 then return "rite_whirl" end
+        if stage == 3 then return "rite_arrow" end
+        if stage == 5 then return "rite_giant" end
+        return "bone_rite"
+    end
+
+    method number RiteCooldown(integer stage)
+        -- 단계별 재사용(초, 시전 속도 적용 전)
+        if stage == 2 then return _GameData.riteWhirlCd end
+        if stage == 3 then return _GameData.riteArrowCd end
+        if stage == 5 then return _GameData.riteGiantCd end
+        local def = _SkillData:Get("bone_rite")
+        return def ~= nil and def.cooldown or 1
+    end
+
+    method number RiteManaCost(integer stage, integer level)
+        -- 단계별 마나 (+ 랭크 ÷ 4 — 다른 스킬과 같은 규칙). 1기는 표의 마나
+        local base = 0
+        if stage == 2 then base = _GameData.riteWhirlMana
+        elseif stage == 3 then base = _GameData.riteArrowMana
+        elseif stage == 5 then base = _GameData.riteGiantMana
+        else
+            local def = _SkillData:Get("bone_rite")
+            base = def ~= nil and def.mana or 10
+        end
+        return base + math.floor(math.max(1, level) / 4)
+    end
+
+    method number RiteRankMul(integer level)
+        -- 2·3·5기 피해의 랭크 배율 (1 + riteRankPct% × (랭크 − 1)). 1기는 해골 폭탄 공식 그대로
+        return 1 + _GameData.riteRankPct / 100 * (math.max(1, level) - 1)
+    end
+
+    method boolean RiteGiantUnlocked()
+        -- 5기 뼈 거인 해금 = 악몽 진입 자격 (노말 재의 왕을 쓰러뜨려 악몽이 열림 · PlayerStats.MaxDifficulty, 저장·동기화되는 값)
+        ---@type PlayerStats
+        local st = self.Entity:GetComponent("script.PlayerStats")
+        return st ~= nil and st.MaxDifficulty >= 1
+    end
+
+    method integer RiteSkeletons()
+        -- 바칠 수 있는 해골 전사 수: 서버 = UndeadSystem 목록(돌진·거인 제외), 클라이언트 = 동기화된 소환수 배지 수 (예측용)
+        if self:IsServer() then return #_UndeadSystem:LiveUnits(self.Entity, "skeleton") end
+        ---@type ShadowCommander
+        local cmd = self.Entity:GetComponent("script.ShadowCommander")
+        if cmd == nil then return 0 end
+        return tonumber(string.match(cmd.MinionCounts, "^(%d+)")) or 0
+    end
+
+    method boolean RiteReady(string key)
+        -- 재사용이 끝났나 (서버 = ReadyAt, 클라이언트 = 동기화된 덮개 요약)
+        if self:IsServer() then return _UtilLogic.ElapsedSeconds >= (self.ReadyAt[key] or 0) end
+        return self:CooldownLeft(key) <= 0.05
+    end
+
+    method integer RiteBestStage(integer want, number mana)
+        -- 바라는 단계 이하에서 해골 수·재사용·마나·해금이 되는 가장 높은 단계 (0 = 어느 단계도 안 됨). mana < 0 이면 마나는 보지 않는다
+        local skel = self:RiteSkeletons()
+        local giant = self:RiteGiantUnlocked()
+        local lv = self:GetPowerLevel("bone_rite")
+        if not self:RiteReady("bone_rite") then return 0 end
+        for _, s in ipairs({ 5, 3, 2, 1 }) do
+            if s <= want and skel >= s and (s ~= 5 or giant) and (s == 1 or self:RiteReady(self:RiteCdKey(s)))
+                and (mana < 0 or mana >= self:RiteManaCost(s, lv)) then
+                return s
+            end
+        end
+        return 0
+    end
+
+    @ExecSpace("Server")
+    method void RequestRite(integer want, Vector2 target)
+        -- 클라이언트가 누른 시간으로 고른 단계(want)를 보낸다. 실제 단계는 서버가 해골 수·재사용·마나로 다시 정한다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or pc.Hp <= 0 then return end
+        if self:CastRite(want, target) then
+            ---@type PlayerAttack
+            local attack = self.Entity:GetComponent("script.PlayerAttack")
+            if attack ~= nil then attack:InterruptSwing(0.35) end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean CastRite(integer want, Vector2 target)
+        -- 습득·마을·좌표 확인 → 가능한 가장 높은 단계 → 효과 성공 → 마나·재사용 확정 (실패면 아무것도 쓰지 않는다)
+        if not _Util:IsAlive(self.Entity) then return false end
+        local def = _SkillData:Get("bone_rite")
+        local lv = self:GetPowerLevel("bone_rite")
+        if def == nil or lv <= 0 then return false end
+        local userId = self.Entity.PlayerComponent.UserId
+        if _GameConst:IsTown(self.Entity.CurrentMap) then
+            _Util:Warn("마을에서는 스킬을 쓸 수 없습니다", userId)
+            return false
+        end
+        if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
+        if want ~= 2 and want ~= 3 and want ~= 5 then want = 1 end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if stats == nil then return false end
+        local skel = self:RiteSkeletons()
+        local stage = self:RiteBestStage(want, stats.Mana - self.PendingMana)
+        if stage == 0 then
+            if not self:RiteReady("bone_rite") then return false end
+            if skel <= 0 then _Util:Warn("바칠 해골 전사가 없다 — 해골 전사를 먼저 일으키세요", userId)
+            else _Util:Warn("마나 부족", userId) end
+            log(string.format("[VRF] rite stage=0 skel=%d want=%d reason=%s", skel, want, skel <= 0 and "no_skeleton" or "mana"))
+            return false
+        end
+        local me = _Util:Pos2(self.Entity)
+        local ray = target - me
+        if ray:Magnitude() > 6 then target = me + ray:Normalize() * 6 end   -- 조준점은 6칸까지 (폭탄 돌진·회오리 자리·화살 방향)
+        local lock = nil
+        if stage == 3 then
+            -- 수동 조준: 플레이어가 고른 적 → 없으면 조준점(커서) 근처 1.2칸 적. 자동으로 다른 적을 고르지 않는다
+            ---@type PlayerAttack
+            local attack = self.Entity:GetComponent("script.PlayerAttack")
+            if attack ~= nil and attack:IsLiveMonster(attack.SelectedTarget) and _Util:Distance(self.Entity, attack.SelectedTarget) <= 7.5 then lock = attack.SelectedTarget end
+            local near = lock == nil and _Util:NearestMonster(self.Entity.CurrentMap, target, 1.2) or nil
+            if near ~= nil and (_Util:Pos2(near.Entity) - me):Magnitude() <= 7.5 then lock = near.Entity end
+            if lock ~= nil then target = _Util:Pos2(lock) end
+        end
+        local ok = false
+        if stage == 1 then
+            local power = self:GetEffectPower("bone_rite", lv)
+            ok = _UndeadSystem:SkeletonBomb(self.Entity, target, power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), 1 + self:Node("bomb_pair"))
+        else
+            ok = _UndeadSystem:BoneRite(self.Entity, stage, target, self:RiteRankMul(lv), lock)
+        end
+        if not ok then
+            log(string.format("[VRF] rite stage=%d skel=%d want=%d failed", stage, skel, want))
+            return false
+        end
+        local cost = self:RiteManaCost(stage, lv)
+        stats:SpendMana(cost)
+        local castMul = stats:GetCastCooldownMult()
+        self:SetCooldown("bone_rite", (def.cooldown or 1) * castMul)
+        if stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
+        self:PresentCast("bone_rite", target - me, userId)
+        log(string.format("[VRF] rite stage=%d skel=%d want=%d lv=%d mana=%d lock=%s", stage, skel, want, lv, math.floor(cost), tostring(lock ~= nil)))
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean BeginRiteHold(integer slot)
+        -- PC 키를 누른 순간 · 모바일 단추에 손가락이 닿은 순간: 충전 시작 (머리 위 고리는 HudMain.RenderRite가 그린다)
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return false end
+        if self:GetSlotSkill(slot) ~= "bone_rite" or self:GetPowerLevel("bone_rite") <= 0 then return false end
+        if self.RiteHoldAt >= 0 then return true end   -- 키 반복 입력은 무시
+        if _GameConst:IsTown(self.Entity.CurrentMap) then
+            _HudMain:ShowWarn("마을에서는 스킬을 쓸 수 없습니다")
+            return false
+        end
+        if self:CooldownLeft("bone_rite") > 0.05 then return false end
+        self.RiteHoldAt = _UtilLogic.ElapsedSeconds
+        self.RiteHoldSlot = slot
+        if not Environment:IsPublishedPlay() then log("[VRF] rite hold start slot=" .. tostring(slot)) end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ReleaseRite()
+        -- 손을 뗀 순간: 누른 시간 → 바라는 단계를 서버에 보낸다 (해골이 모자라면 서버가 한 단계씩 내려 쏜다)
+        if self.RiteHoldAt < 0 then return end
+        local held = _UtilLogic.ElapsedSeconds - self.RiteHoldAt
+        self.RiteHoldAt = -1
+        self.RiteHoldSlot = 0
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
+        local want = self:RiteStageForHold(held, self:RiteGiantUnlocked())
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        local predicted = self:RiteBestStage(want, stats ~= nil and stats.Mana or -1)
+        self:RequestRite(want, self:GetAimPoint("bone_rite"))
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if click ~= nil then click.AttackTimer = math.max(click.AttackTimer, 0.6) end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite release held=%.2f want=%d predicted=%d skel=%d", held, want, predicted, self:RiteSkeletons())) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CancelRiteHold()
+        -- 창이 열리거나 죽거나 맵을 옮기면 모으던 의식을 버린다 (아무것도 쓰지 않는다)
+        if self.RiteHoldAt < 0 then return end
+        self.RiteHoldAt = -1
+        self.RiteHoldSlot = 0
+        if not Environment:IsPublishedPlay() then log("[VRF] rite hold cancel") end
     end
 
     @ExecSpace("ServerOnly")
@@ -835,7 +1047,7 @@ script SkillBook extends Component
     method void PlayCastGesture(string id, Vector2 dir)
         -- 시전 소리·방향·몸짓 (서버 확인 후 PresentCast, 골편은 누르는 순간 PredictBoneShard)
         _SoundDirector:PlaySkillCue(id)
-        local command = id == "raise_skeleton" or id == "raise_mage" or id == "skel_bomb" or id == "bone_offering" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
+        local command = id == "raise_skeleton" or id == "raise_mage" or id == "bone_rite" or id == "bone_offering" or id == "shadow_summon" or id == "rally" or id == "elite_promote"
         if not command and math.abs(dir.x) > 0.05 then self.Entity.PlayerControllerComponent.LookDirectionX = dir.x >= 0 and 1 or -1 end
         if id == "bone_shard" then
             -- 10-11 QA 「발사 때 캐릭터 옆 파란 이펙트」: ATTACK 상태로 바꾸면 무기 휘두르기 동작과 그 잔상(검기)이 함께 나왔다.
@@ -900,18 +1112,37 @@ script SkillBook extends Component
     handler HandleKeyDownEvent(KeyDownEvent event)
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         local key = event.key
-        local slot = 0
-        if key == KeyboardKey.A then slot = 1
-        elseif key == KeyboardKey.S then slot = 2
-        elseif key == KeyboardKey.D then slot = 3
-        elseif key == KeyboardKey.F then slot = 4
-        elseif key == KeyboardKey.Mouse1 then slot = 5
-        elseif key == KeyboardKey.Space then
+        if key == KeyboardKey.Space then
             -- 망령 질주 (10-20): 스킬 칸과 상관없이 스페이스 (마을에서는 NPC 대화가 스페이스를 쓴다 — CastMove가 마을을 건너뛴다)
             self:CastMove("wraith_dash")
             return
         end
-        if slot > 0 then self:CastSlot(slot) end
+        local slot = self:KeySlot(key)
+        if slot <= 0 then return end
+        -- 뼈 의식 칸: 누르는 동안 모으고 뗄 때 나간다 (HandleKeyUpEvent → ReleaseRite)
+        if self:GetSlotSkill(slot) == "bone_rite" then
+            self:BeginRiteHold(slot)
+            return
+        end
+        self:CastSlot(slot)
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyUpEvent(KeyUpEvent event)
+        -- 뼈 의식: 누르던 키를 떼면 그때까지 모은 단계로 나간다
+        if self.Entity ~= _UserService.LocalPlayer or self.RiteHoldAt < 0 then return end
+        if self:KeySlot(event.key) == self.RiteHoldSlot then self:ReleaseRite() end
+    end
+
+    method integer KeySlot(KeyboardKey key)
+        -- 스킬 칸 키: A S D F = 1~4, 마우스 우클릭 = 5 (그 밖 0)
+        if key == KeyboardKey.A then return 1 end
+        if key == KeyboardKey.S then return 2 end
+        if key == KeyboardKey.D then return 3 end
+        if key == KeyboardKey.F then return 4 end
+        if key == KeyboardKey.Mouse1 then return 5 end
+        return 0
     end
 
     method string GetSlotSkill(integer slot)
@@ -930,6 +1161,16 @@ script SkillBook extends Component
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         -- 쿨다운 중이면 서버에 보내지 않는다 (칸의 덮개가 남은 시간을 보여 준다)
         local id = self:GetSlotSkill(slot)
+        if id == "bone_rite" then
+            -- 뼈 의식: 모으던 칸이면 뗀 것(모바일 단추를 놓음)으로 보고 내보낸다. 모으지 않고 들어온 입력은 1기(해골 폭탄) 바로
+            if self.RiteHoldAt >= 0 and self.RiteHoldSlot == slot then self:ReleaseRite()
+            elseif self.RiteHoldAt < 0 and self:CooldownLeft(id) <= 0.05 then
+                self:RequestRite(1, self:GetAimPoint(id))
+                if not Environment:IsPublishedPlay() then log("[VRF] rite tap slot=" .. tostring(slot)) end
+            end
+            return
+        end
+        if self.RiteHoldAt >= 0 then return end   -- 의식을 모으는 동안 다른 스킬은 못 쓴다 (걷기·기본 공격은 된다 · 기획서 43 §3-1-2 A)
         if id == "" or self:CooldownLeft(id) > 0.05 then return end
         if id == "wraith_dash" then self:CastMove(id) return end
         if id == "bone_shard" then
@@ -1025,6 +1266,7 @@ script SkillBook extends Component
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return end
         local refund = 0
+        refund = refund + self:MigrateBombToRite(stats.Level)
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
             if def == nil or not def.impl then
@@ -1048,6 +1290,39 @@ script SkillBook extends Component
             stats.SkillPoints = stats.SkillPoints + refund
             _Util:Notify("스킬 표가 바뀌어 포인트 " .. tostring(refund) .. "을 돌려받았다", self.Entity.PlayerComponent.UserId)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateBombToRite(integer playerLevel)
+        -- 10-29 기획서 43 결정 2 (한 번만): 해골 폭탄(skel_bomb, Lv10) → 뼈 의식(bone_rite, Lv24)의 1기 단계로 랭크·강화를 옮긴다. 돌려준 포인트 수
+        --   메인 랭크: 지금 레벨의 의식 상한(RankCap — Lv24 전이면 0)까지 옮기고 넘는 몫은 포인트로 돌려준다.
+        --   강화(큰 폭발·골수 화약·짝 폭탄): 키는 그대로 의식 1기 강화가 됐다. 해금이 Lv10 → 24로 늦어져 지금 레벨·의식 랭크로 열리지 않은 랭크만 돌려준다.
+        --   skel_bomb 키가 사라진 저장은 다시 돌지 않는다 (저장은 PlayerSave 자동 저장이 바뀐 값을 알아서 쓴다 — 따로 DataStorage를 부르지 않는다)
+        local bomb = self.Levels.skel_bomb
+        if bomb == nil then return 0 end
+        self.Levels.skel_bomb = nil
+        local rite = _SkillData:Get("bone_rite")
+        local have = self.Levels.bone_rite or 0
+        local keep = math.max(0, math.min(bomb, self:RankCap("bone_rite", playerLevel) - have, (rite ~= nil and rite.maxLv or 20) - have))
+        if keep > 0 then self.Levels.bone_rite = have + keep end
+        local back = bomb - keep
+        local riteLv = self.Levels.bone_rite or 0
+        local moved = {}
+        for _, node in ipairs({ "bomb_wide", "bomb_marrow", "bomb_pair" }) do
+            local r = self.Levels[node] or 0
+            if r > 0 then
+                local ok = 0
+                while ok < r and riteLv >= self:NodeNeed(node, ok + 1) and playerLevel >= self:NodeLevel(node, ok + 1) do ok = ok + 1 end
+                back = back + (r - ok)
+                if ok > 0 then self.Levels[node] = ok else self.Levels[node] = nil end
+                table.insert(moved, node .. ":" .. tostring(r) .. ">" .. tostring(ok))
+            end
+        end
+        log(string.format("[VRF] rite migrate bomb=%d rite=%d refund=%d lv=%d nodes=%s", bomb, riteLv, back, playerLevel, table.concat(moved, ",")))
+        local userId = self.Entity.PlayerComponent.UserId
+        if riteLv > 0 then _Util:Notify("(승인 전 임시 글귀) 해골 폭탄이 「뼈 의식」의 1기 단계가 됐다 — 같은 칸을 길게 누르면 뼈 회오리·뼈 화살", userId)
+        else _Util:Notify("(승인 전 임시 글귀) 해골 폭탄이 Lv24 「뼈 의식」으로 합쳐졌다 — 쓴 포인트는 돌려받았다", userId) end
+        return back
     end
 
     -- ───────── 초기화 (docs/design/16: Lv15까지 무료, 그 뒤 사제 오렌에게 200×레벨 골드) ─────────
@@ -1144,6 +1419,9 @@ script SkillBook extends Component
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end
+        -- 10-29 해골 폭탄 → 뼈 의식: 칸에 든 폭탄은 의식으로 바꿔 둔다 (의식을 아직 못 배웠으면 SanitizeSlots가 비운다)
+        self.Slots = (string.gsub(self.Slots, "skel_bomb", "bone_rite"))
+        if self.RightSkill == "skel_bomb" then self.RightSkill = "bone_rite" end
         -- 옛 저장(sv 없음): 예전 기본값이 우클릭에 넣어 둔 스킬을 비운다 (평타 중 골편 투척이 저절로 나가던 문제)
         if (d.sv or 1) < 2 then self.RightSkill = "" end
         -- sv 3 = 메인 스킬 + 강화 (10-11). 그 전 저장은 PlayerSave.FinishLoad에서 MigrateRework로 전부 돌려준다

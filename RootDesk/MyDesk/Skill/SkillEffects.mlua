@@ -50,7 +50,6 @@ script SkillEffects extends Component
         elseif id == "bone_spear" then ok = self:BoneSpear(me, target, power * spell)
         elseif id == "hex_flame" then ok = self:HexFlame(me, target, power * spell, 1 + self:Node("flame_twin"))
         elseif id == "frost_soul" then ok = self:FrostSoul(me, target, power * spell)
-        elseif id == "skel_bomb" then ok = _UndeadSystem:SkeletonBomb(self.Entity, target, power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), 1 + self:Node("bomb_pair"))
         elseif id == "bone_offering" then ok = _UndeadSystem:BoneOffering(self.Entity, power * (1 + 0.2 * self:Node("offering_heal")), 4 * (1 + 0.25 * self:Node("offering_wide")), 10 * self:Node("offering_frenzy"))
         elseif id == "wraith_dash" then ok = self:WraithDash(me, target)
         elseif id == "soul_drain" then ok = self:SoulDrain(target, power * spell)
@@ -80,6 +79,7 @@ script SkillEffects extends Component
         elseif id == "rally" then ok = self:Rally()
         elseif id == "raise_skeleton" then ok = _UndeadSystem:Raise(self.Entity, "skeleton", lv, target, nil, nil)
         elseif id == "raise_mage" then ok = _UndeadSystem:Raise(self.Entity, "mage", lv, target, nil, nil) end
+        -- 뼈 의식(10-29, 해골 폭탄 병합)은 단계가 있어 SkillBook.CastRite → UndeadSystem.SkeletonBomb / BoneRite로 따로 간다
         if not ok then log("[SkillEffects] " .. id .. " 효과 없음 → 마나·쿨다운 보존") end
         return ok
     end
@@ -677,6 +677,98 @@ script SkillEffects extends Component
             local p = _Util:Pos2(self.Entity)
             self:Hit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", self.StormDamage)
         end, interval)
+        return true
+    end
+
+    -- ───────── 뼈 의식 2·3기 (기획서 43 §3-1 · 그림은 코덱스 납품 전 임시) ─────────
+
+    @ExecSpace("ServerOnly")
+    method boolean RiteWhirl(Vector2 center, number damage)
+        -- 2기 「뼈 회오리」: 조준점에 riteWhirlSeconds 머무는 자리 장판. 0.5초마다 반경 riteWhirlRadius 안 적에게 damage + 가운데로 살짝 끈다
+        --   (골격 감옥 「끌어당기는 뼈」의 0.3배 · 보스·최상위는 MonsterStatus.Knockback이 막는다). 자리 장판이라 투사체 5종과 성질이 겹치지 않는다.
+        --   맵 이동·사망·취소(CancelActiveEffects)는 독안개와 같은 MistTimers로 끊긴다
+        local epoch = self.EffectEpoch
+        local map = self.Entity.CurrentMap
+        local radius = _GameData.riteWhirlRadius
+        local seconds = _GameData.riteWhirlSeconds
+        local total = math.max(1, math.floor(seconds / 0.5 + 0.001))
+        local ticks = 0
+        local pulled = 0
+        local tick = function()
+            ticks = ticks + 1
+            self:Hit(Vector2(center.x, center.y + 0.3), Vector2(radius, 0), -1, "skill.bone_rite_whirl", damage)
+            for _, m in ipairs(self:Targets(center, radius + 0.6)) do
+                local to = center - _Util:Pos2(m.Entity)
+                local status = m:Status()
+                if status ~= nil and to:Magnitude() > 0.4 then
+                    status:Knockback(to, _GameData.riteWhirlPull)
+                    pulled = pulled + 1
+                end
+            end
+        end
+        tick()
+        local timerId = 0
+        timerId = _TimerService:SetTimerRepeat(function()
+            if not _Util:IsAlive(self.Entity) or self.Entity.CurrentMap ~= map or epoch ~= self.EffectEpoch or ticks >= total then
+                _TimerService:ClearTimer(timerId)
+                self.MistTimers[timerId] = nil
+                log(string.format("[VRF] rite whirl end ticks=%d/%d pulled=%d", ticks, total, pulled))
+                return
+            end
+            tick()
+        end, 0.5)
+        self.MistTimers[timerId] = true
+        -- 임시 그림: 뼈 폭풍 회오리 고리 + 끌어당김 오라 (코덱스 「뼈 회오리 회전 8프레임 + 바닥 자국」이 오면 바꾼다)
+        self:Fx("lure", Vector3(center.x, center.y, 0), radius)
+        self:ClipFx(self.FxStorm, Vector3(center.x, center.y + 0.15, 0), 0.8 * radius / 1.2, seconds, 0)
+        log(string.format("[VRF] rite whirl start dmg=%.0f r=%.1f ticks=%d", damage, radius, total))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean RiteArrows(table used, Vector2 target, number damage, Entity lock)
+        -- 3기 「뼈 화살」: 바친 해골 셋이 제자리에서 riteArrowGap 간격으로 큰 뼈 화살을 한 발씩 쏘고 무너진다.
+        --   고른 적(lock — 시전 순간 정한 수동 조준)이 있으면 셋 다 그 적에게 몰려 꽂힌다 (관통·튕김 없음 — 뼈 창 관통·골편 부채꼴과 다른 「몰림 순간 화력」).
+        --   마지막 발(skill.bone_rite_push)은 맞은 적을 약 0.5칸 밀친다 (PlayerAttack.SkillHitExtra). 대상이 없으면 조준점 쪽으로 곧게 날아 처음 맞은 적에서 멈춘다
+        local owner = self.Entity
+        local map = owner.CurrentMap
+        local epoch = self.EffectEpoch
+        local count = #used
+        for i, u in ipairs(used) do
+            local index = i
+            local from = u.pos
+            ---@type ShadowUnit
+            local unit = u.unit
+            _TimerService:SetTimerOnce(function()
+                if isvalid(unit.Entity) then
+                    from = _Util:Pos2(unit.Entity)
+                    self:ClipFx(self.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.45, 0.5, 0)   -- 쏜 해골이 무너지는 뼛가루 (임시)
+                    unit.Entity:Destroy()
+                end
+                if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then return end
+                local aim = target
+                if isvalid(lock) then aim = _Util:Pos2(lock) end
+                local dir = aim - from
+                if dir:Magnitude() < 0.01 then dir = Vector2(owner.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0) end
+                dir = dir:Normalize()
+                local start = from + Vector2(0, 0.3) + dir * 0.3
+                self.ShotCount = self.ShotCount + 1
+                local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "BoneRiteArrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), map)
+                if not isvalid(shot) then return end
+                local info = index == count and "skill.bone_rite_push" or "skill.bone_rite_arrow"
+                _Util:AfterSpawn(shot, "script.Projectile", function(comp)
+                    ---@type Projectile
+                    local proj = comp
+                    if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
+                    proj:Skin(self.FxShardShot, 1.1)            -- 임시 그림: 골편 궤적을 크게 · 뼈 색 (코덱스 「뼈 화살」 대기)
+                    proj:Tint(Color(1, 0.95, 0.82, 1))
+                    if isvalid(lock) then proj.Lock = lock end
+                    proj.MaxHits = 1
+                    proj:Launch(owner, dir, 13, 7.5, damage, info, false)
+                end, function() if isvalid(shot) then shot:Destroy() end end)
+                log(string.format("[VRF] rite arrow %d/%d lock=%s dmg=%.0f info=%s", index, count, tostring(isvalid(lock)), damage, info))
+            end, (i - 1) * _GameData.riteArrowGap)
+        end
         return true
     end
 

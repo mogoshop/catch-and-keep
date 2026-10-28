@@ -106,6 +106,8 @@ script MobilePad extends Logic
         local attack = player:GetComponent("script.PlayerAttack")
         if attack ~= nil then attack.LocalAimActive = false end
         if self.GestureBasic then self:AttackDown() end
+        -- 뼈 의식 칸: 손가락이 닿은 순간부터 모은다 → 놓으면(EndGesture → Cast → SkillBook.CastSlot) 모은 단계로 나간다 (PC 키 누름과 같은 길 · 기획서 43 결정 1A)
+        if not self.EditMode and not self.GestureBasic and book ~= nil and book:GetSlotSkill(slot) == "bone_rite" then book:BeginRiteHold(slot) end
     end
 
     @ExecSpace("ClientOnly")
@@ -146,6 +148,10 @@ script MobilePad extends Logic
         if isvalid(player) then
             local attack = player:GetComponent("script.PlayerAttack")
             if attack ~= nil then attack.LocalAimActive = false end
+            -- 놓기 전에 끊긴 뼈 의식(창·사망·맵 이동·앱 전환)은 버린다. 정상으로 놓았으면 이미 나가서 아무 일 없다
+            ---@type SkillBook
+            local book = player:GetComponent("script.SkillBook")
+            if book ~= nil then book:CancelRiteHold() end
         end
     end
 
