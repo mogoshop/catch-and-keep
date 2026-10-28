@@ -527,7 +527,7 @@ module.exports = {
   }, { fx: true, fy: true }),
   pit: remix(A1.hollow, Object.assign({}, {
     title: "타락의 구덩이",
-    put: [["prop", "a4-landmark-fallen-knight-sword-grave", -21.5, 12.3, 1, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["prop", "a4-landmark-fallen-knight-sword-grave", -21.5, 12.3, 1.15, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["심연의 문 아래 타락한 기사들이 떨어진 구덩이. 갈림 굴들이 뼈 둥지로 모이고, 가장 깊은 굴에 타락한 기사 이그나. 구석에 되돌아가는 문. (자리: 굶주린 굴을 좌우·상하로 뒤집음)"],
     base: "a4-bone_pit 0.82/0.76/0.72",
     walls: { "#": "basalt-cliff 0.9/0.84/0.82 구덩이 벽" },

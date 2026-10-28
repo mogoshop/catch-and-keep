@@ -59,9 +59,10 @@ function buildMonster(m, boss) {
       .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "SortingLayer", "MapLayer0", "string")
       .childValue("FootShadow", "MOD.Core.SpriteRendererComponent", "OrderInLayer", 1, "int");
   }
-  // 히트 박스: 스프라이트 크기(px)의 60% × 배율, 최소 0.4. hitW/hitH가 있으면 그 값
-  const bw = m.hitW !== "" ? num(m.hitW) : Math.max(0.4, (num(m.w) / 100) * 0.6 * s);
-  const bh = m.hitH !== "" ? num(m.hitH) : Math.max(0.4, (num(m.h) / 100) * 0.6 * s);
+  // 히트 박스: 스프라이트 크기(px)의 60%, 최소 0.4. hitW/hitH가 있으면 그 값.
+  //   새 충돌 방식(HitComponent IsLegacy false)은 Transform 크기를 따라 커지므로 여기서 배율(s)을 또 곱하지 않는다 (10-28 보스 ×1.2~1.4 — 전에는 모두 1이라 드러나지 않았다)
+  const bw = m.hitW !== "" ? num(m.hitW) : Math.max(0.4, (num(m.w) / 100) * 0.6);
+  const bh = m.hitH !== "" ? num(m.hitH) : Math.max(0.4, (num(m.h) / 100) * 0.6);
   b.value("MOD.Core.HitComponent", "BoxSize", { x: round(bw), y: round(bh) }, "vector2");
   b.value("MOD.Core.HitComponent", "ColliderOffset", { x: 0, y: round(bh / 2) }, "vector2");
   b.value("MOD.Core.MovementComponent", "InputSpeed", num(m.speed), "float");

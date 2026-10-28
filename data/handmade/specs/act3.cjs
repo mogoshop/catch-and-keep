@@ -394,7 +394,7 @@ module.exports = {
   }, { fx: true }),
   keeperhouse: remix(A1.cave, Object.assign({}, {
     title: "등대지기의 집",
-    put: [["prop", "a3-landmark-mad-lens-workbench", -21.5, 11.3, 1, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["prop", "a3-landmark-mad-lens-workbench", -21.5, 11.3, 1.15, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["등대 아래 등대지기의 집과 이어진 지하 굴. 서재·작업장 굴을 지나 가장 깊은 곳에 미친 등대지기 하울. 구석에 되돌아가는 문. (자리: 목매단 동굴을 좌우·상하로 뒤집음)"],
     base: "cellar-floor 0.74/0.7/0.64",
     walls: { "#": "shiphold 0.9/0.9/0.9 판자 벽" },
