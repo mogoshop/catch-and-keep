@@ -13,6 +13,7 @@ script RaidDirector extends Logic
     property table Maps = {}            -- 서버: map.Id → { map, kills, count, nextAt, quietUntil, spawnedAt, active }
     property integer TickTimer = 0
     property integer Serial = 0
+    property string LastRingReach = ""  -- 마지막 고리 재기의 8방향 닿은 거리 (no-dir 진단 로그용)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -134,7 +135,8 @@ script RaidDirector extends Logic
         local pts = self:Spots(map, center)
         if #pts == 0 then
             s.kills = (d.raidTrigger or 20) - 5
-            log(string.format("[VRF] raid skip %s reason=no-dir", map.Name))
+            local o = self:RingOrigin(map, center)
+            log(string.format("[VRF] raid skip %s reason=no-dir at=(%.2f,%.2f) origin=(%.2f,%.2f) reach=%s", map.Name, center.x, center.y, o.x, o.y, self.LastRingReach))
             return
         end
         local players = _Util:PlayersInMap(map)
@@ -165,7 +167,9 @@ script RaidDirector extends Logic
         for _, p in ipairs(players) do self:Warn(flat, _GameData.raidWarnSec, act, p.PlayerComponent.UserId) end
         _Telemetry:NoteRaid(caller, "raidCount")
         _Telemetry:Say(string.format("[TEL] raid start map=%s diff=%d n=%d players=%d dirs=%d species=%s lv=%d", map.Name, diff, allow, #players, #pts, species, level))
-        log(string.format("[VRF] raid warn %s n=%d dirs=%d species=%s lv=%d count=%d/%d", map.Name, allow, #pts, species, level, s.count, d.raidWaves or 0))
+        local o = self:RingOrigin(map, center)
+        log(string.format("[VRF] raid warn %s n=%d dirs=%d species=%s lv=%d count=%d/%d at=(%.2f,%.2f) shift=%.2f dirs0=%d", map.Name, allow, #pts, species, level, s.count, d.raidWaves or 0, center.x, center.y, (o - center):Magnitude(),
+            #self:RingSpotsFrom(map, center, center, _GameData.raidRadiusMin, _GameData.raidRadiusMax, _GameData.raidMinReach)))
         local id = s.active.id
         _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:Launch(s) end end, _GameData.raidWarnSec)
     end
@@ -193,15 +197,61 @@ script RaidDirector extends Logic
     @ExecSpace("ServerOnly")
     method table RingSpots(Entity map, Vector2 center, number rMin, number rMax, number minReach)
         -- 공용 고리 자리 (습격의 떼 · 생성 D 유입): 8방향 반지름 rMin~rMax → 벽 앞까지 당김(시야 트인 방향만) → minReach 미만·입구 안전 반경 안은 버림
+        -- 재는 시작점은 RingOrigin: 벽에 바짝 붙어 선 사람은 제자리에서 몸 여유 0.4가 안 나와 8방향 모두 0칸이 됐다 (10-29 황무지 no-dir)
+        return self:RingSpotsFrom(map, center, self:RingOrigin(map, center), rMin, rMax, minReach)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table RingSpotsFrom(Entity map, Vector2 center, Vector2 origin, number rMin, number rMax, number minReach)
+        -- 고리 자리 본체: origin에서 8방향으로 곧게 재고(벽을 따라 선 사람도 벽과 나란히 잰다) 거리는 center 기준. 방향마다 흔든 각도가 벽에 막히면(벽을 따라 선 사람은
+        -- 아래로 조금만 기울어도 0칸) 흔들지 않은 각도 · ±20°도 재서 가장 멀리 닿는 자리를 쓴다
         local out = {}
+        local reach = {}
         for i = 0, 7 do
-            local ang = i * math.pi / 4 + (_UtilLogic:RandomDouble() - 0.5) * 0.35
             local r = rMin + _UtilLogic:RandomDouble() * (rMax - rMin)
-            local target = center + Vector2(math.cos(ang) * r, math.sin(ang) * r)
-            local q = _Util:ReachablePoint(map, center, target, 0.4)
-            if (q - center):Magnitude() >= minReach and not self:NearEntry(map, q) then table.insert(out, q) end
+            local best, bestD = origin, -1
+            for _, off in ipairs({ (_UtilLogic:RandomDouble() - 0.5) * 0.35, 0, 0.35, -0.35 }) do
+                local ang = i * math.pi / 4 + off
+                local q = _Util:ReachablePoint(map, origin, origin + Vector2(math.cos(ang) * r, math.sin(ang) * r), 0.4)
+                local dq = (q - center):Magnitude()
+                if dq > bestD then best, bestD = q, dq end
+                if dq >= minReach then break end
+            end
+            table.insert(reach, string.format("%.1f", bestD))
+            if bestD >= minReach and not self:NearEntry(map, best) then table.insert(out, best) end
         end
+        self.LastRingReach = table.concat(reach, "/")
         return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 RingOrigin(Entity map, Vector2 center)
+        -- 고리 자리를 재기 시작할 점: 제자리에 몸 여유(상하좌우 0.4)가 있으면 그대로, 없으면(벽에 붙어 섬) 0.8칸 안에서
+        -- 여유가 있고 제자리에서 벽 없이 곧게 닿는 가장 가까운 점. 발밑 점이 벽 칸에 걸쳐 있으면 가장 가까운 빈 칸 한가운데
+        -- (칸 한가운데는 늘 여유 0.4가 있다). 그런 점이 없으면 제자리 (예전과 같다)
+        local m = _Util:TerrainMemo(map)
+        if m == nil or self:BodyClear(m, center) then return center end
+        if _Util:CellBlocked(m, center) then
+            local free = _Util:NearestFreePoint(map, center, 2)
+            if free ~= nil then return free end
+            return center
+        end
+        for _, r in ipairs({ 0.2, 0.4, 0.6, 0.8 }) do
+            for i = 0, 15 do
+                local ang = i * math.pi / 8
+                local p = center + Vector2(math.cos(ang) * r, math.sin(ang) * r)
+                if self:BodyClear(m, p) and (_Util:ReachablePoint(map, center, p, 0) - p):Magnitude() < 0.01 then return p end
+            end
+        end
+        return center
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BodyClear(any m, Vector2 p)
+        -- p와 상하좌우 0.4가 모두 빈 칸 (ReachablePoint의 몸 여유와 같은 기준)
+        if _Util:CellBlocked(m, p) then return false end
+        return not _Util:CellBlocked(m, p + Vector2(0.4, 0)) and not _Util:CellBlocked(m, p - Vector2(0.4, 0))
+            and not _Util:CellBlocked(m, p + Vector2(0, 0.4)) and not _Util:CellBlocked(m, p - Vector2(0, 0.4))
     end
 
     @ExecSpace("ServerOnly")
