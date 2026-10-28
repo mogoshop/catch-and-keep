@@ -155,7 +155,7 @@ script SkillWindow extends Logic
         local width = 1210
         local colW = mobile and 134 or math.floor(width / math.max(1, shown))
         local btn = mobile and 88 or 48
-        local stepY = mobile and 96 or 72
+        local stepY = mobile and 96 or 68
         local x0 = 44
         _UIKit:SetEnabled(self.Win .. "/TL/Prev", pages > 1)
         _UIKit:SetEnabled(self.Win .. "/TL/NextPage", pages > 1)
@@ -167,7 +167,7 @@ script SkillWindow extends Logic
             local on = c <= shown and col ~= nil
             _UIKit:SetEnabled(path, on)
             if on then
-                _UIKit:SetPos(path, Vector2(x0 + (c - 1) * colW, -36))
+                _UIKit:SetPos(path, Vector2(x0 + (c - 1) * colW, -68))   -- 판 머리 줄(36~60) 아래 (빌더 tools/build/ui.cjs와 같은 숫자)
                 local reached = st.Level >= col.row
                 _UIKit:SetText(path .. "/Lv", _UIKit:Colored(reached and "#E6DCC6" or "#7A7468", "Lv" .. tostring(col.row)))
                 for r = 1, 3 do
@@ -177,7 +177,7 @@ script SkillWindow extends Logic
                     if id ~= nil then
                         self.SlotIds[tostring(c) .. ":" .. tostring(r)] = id
                         self:SizeSlot(s, btn, mobile)
-                        _UIKit:SetPos(s, Vector2(0, -22 - (r - 1) * stepY))
+                        _UIKit:SetPos(s, Vector2(0, -20 - (r - 1) * stepY))
                         local def = _SkillData:Get(id)
                         local lv = book:GetLevel(id)
                         local cap = book:RankCap(id, st.Level)
@@ -217,12 +217,13 @@ script SkillWindow extends Logic
         end
         local barW = math.min(width, shown * colW)
         local bar = _UIKit:Get(self.Win .. "/TL/Bar")
-        if isvalid(bar) then bar.UITransformComponent.RectSize = Vector2(barW, 14) end
+        if isvalid(bar) then bar.UITransformComponent.RectSize = Vector2(barW, 12) end
         _UIKit:SetFill(self.Win .. "/TL/Bar/Fill", barW > 0 and markX / barW or 0)
         local fill = _UIKit:Get(self.Win .. "/TL/Bar/Fill")
-        if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(barW, 14) end
-        _UIKit:SetPos(self.Win .. "/TL/Bar/Mark", Vector2(markX, 120))
-        _UIKit:SetPos(self.Win .. "/TL/Bar/Now", Vector2(markX + 34, 0))   -- 표지선 오른쪽 막대 위 (아래 「다음 해금」 줄과 겹치지 않게)
+        if isvalid(fill) then fill.UITransformComponent.RectSize = Vector2(barW, 12) end
+        -- 지금 선: 막대에서 열 위(판 위에서 68)까지 236 · 불꽃 표지는 막대 위 (판 밖 머리 줄의 범례를 덮지 않게, 10-28)
+        _UIKit:SetPos(self.Win .. "/TL/Bar/Mark", Vector2(markX, 116))
+        _UIKit:SetPos(self.Win .. "/TL/Bar/Now", Vector2(markX + 50, 0))   -- 표지 오른쪽 막대 위
         _UIKit:SetText(self.Win .. "/TL/Bar/Now", "Lv" .. tostring(st.Level))
         -- 다음 해금
         local nextLine = "모든 스킬이 열렸다"
@@ -302,7 +303,7 @@ script SkillWindow extends Logic
         table.sort(needs)
         for i, need in ipairs(needs) do colOf[need] = i end
         local rowsIn = {}
-        local hubY = -210
+        local hubY = -230
         local hubX = 600
         local tc = self:TreeColor(def.tree)
         _UIKit:SetEnabled(ws .. "/TreeHead", #nodes > 0)
@@ -314,7 +315,7 @@ script SkillWindow extends Logic
             _UIKit:SetEnabled(ws .. "/Need" .. tostring(i), need ~= nil)
             if need ~= nil then
                 _UIKit:SetText(ws .. "/Need" .. tostring(i), "필요 랭크 " .. tostring(need))
-                _UIKit:SetPos(ws .. "/Need" .. tostring(i), Vector2(700 + (i - 1) * 108, -40))
+                _UIKit:SetPos(ws .. "/Need" .. tostring(i), Vector2(680 + (i - 1) * 104, -66))
             end
         end
         self.NodeIds = {}
@@ -330,10 +331,11 @@ script SkillWindow extends Logic
                 local need = book:NodeNeed(nid, 1)
                 local ci = colOf[need]
                 rowsIn[ci] = (rowsIn[ci] or 0) + 1
-                local x = 700 + (ci - 1) * 108
-                local y = -64 - (rowsIn[ci] - 1) * 118
+                -- 열 680+104씩(6열 끝 1250 < 판 안쪽 1262) · 줄 96+102씩(3줄 끝 400 — 판 452의 안쪽 416 안), 10-28 「아래 노드가 판 밖으로」
+                local x = 680 + (ci - 1) * 104
+                local y = -96 - (rowsIn[ci] - 1) * 102
                 _UIKit:SetPos(n, Vector2(x, y))
-                local cy = y - 34
+                local cy = y - 32   -- 노드 테두리(68) 가운데
                 topY = math.max(topY, cy)
                 botY = math.min(botY, cy)
                 local link = _UIKit:Get(ws .. "/L" .. tostring(i))

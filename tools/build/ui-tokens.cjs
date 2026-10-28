@@ -23,6 +23,10 @@ const FRAME = {
 // 테두리 없는 안쪽 판(win_content) 안 여백
 const INNER = { pad: 24 };
 
+// 스킬 창 V3 안쪽 판(sk_timeline_panel · sk_workshop_panel): 9조각 테두리 24 (코덱스 표 border 24) + space → 내용은 판 가장자리에서 36 안쪽.
+// 10-28 사용자 「제목이 테두리에 걸침 · 다음 해금 글에 선이 지나감」 — 판 안 글·칸은 모두 이 여백 안에. 실행 중 배치(SkillWindow.mlua)도 같은 값.
+const SKPANEL = { border: 24, pad: 24 + SPACE };
+
 // 버튼 (모든 창 공통 · 터치 88 이상)
 const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
   padX: 30,        // 버튼 그림(btn_frame) 양 끝 장식 안쪽부터 글자 (장식에 글자가 닿지 않게)
@@ -70,4 +74,4 @@ function dialogLayout(height, withPortrait) {
   return { portraitX, paperX, paperW, paperH };
 }
 
-module.exports = { INSET, SPACE, FRAME, INNER, BUTTON, TAB, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };
+module.exports = { INSET, SPACE, FRAME, INNER, SKPANEL, BUTTON, TAB, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };

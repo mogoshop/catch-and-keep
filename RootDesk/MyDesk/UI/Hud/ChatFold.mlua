@@ -4,6 +4,7 @@
 --   · 입장 뒤 FoldDelay초에 접는다.
 --   · 누가 말하면(ChatEvent) 잠깐 펼쳤다가 ShowSeconds초 뒤 다시 접는다 (말풍선은 머리 위에 따로 뜬다).
 --   · 플레이어가 직접 펼친 창은 건드리지 않는다 (입력 중에 접히지 않게).
+--   · 창(스킬·가방·혼의 제물 등)이 열려 있으면 채팅을 감춘다 — 엔진 채팅 묶음이 창보다 위에 그려진다 (10-28 「채팅이 창 위에」).
 @Logic
 script ChatFold extends Logic
 
@@ -14,6 +15,7 @@ script ChatFold extends Logic
     property boolean AutoOpened = false       -- 이 스크립트가 펼친 상태인가
     property any Handler = nil
     property integer TimerId = 0
+    property boolean HiddenByWindow = false   -- 창 때문에 이 스크립트가 감춘 상태
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -22,7 +24,7 @@ script ChatFold extends Logic
         self.FoldAt = _UtilLogic.ElapsedSeconds + self.FoldDelay
         self.AutoOpened = chat.ChatComponent.Expand
         self.Handler = chat:ConnectEvent(ChatEvent, function(event) self:OnChat(event) end)
-        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.5)
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.2)
         log("[VRF] ChatFold ready expand=" .. tostring(chat.ChatComponent.Expand))
     end
 
@@ -49,9 +51,26 @@ script ChatFold extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void Tick()
+    method void SyncHidden()
+        -- 창이 열려 있는 동안만 감추고, 닫히면 우리가 감춘 것만 되돌린다
         local chat = _EntityService:GetEntityByPath(self.ChatPath)
         if not isvalid(chat) then return end
+        local hide = _UIKit:AnyWindowOpen()
+        if hide and chat.Enable then
+            chat.Enable = false
+            self.HiddenByWindow = true
+            log("[VRF] ChatFold hidden by window")
+        elseif not hide and self.HiddenByWindow then
+            chat.Enable = true
+            self.HiddenByWindow = false
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Tick()
+        self:SyncHidden()
+        local chat = _EntityService:GetEntityByPath(self.ChatPath)
+        if not isvalid(chat) or not chat.Enable then return end
         local c = chat.ChatComponent
         -- 플레이어가 접었다 펼친 것(접혀 있던 창이 우리 손 없이 펼쳐짐)은 그대로 둔다
         if c.Expand and not self.AutoOpened then
