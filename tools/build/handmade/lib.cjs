@@ -48,7 +48,11 @@ function parseBlueprint(id) {
       else if (m[0] === "base") bp.base = { art: m[1], tint: m[2] };
       else if (m[0] === "zone") bp.zones[m[1]] = { art: m[2] === "-" ? null : m[2], tint: m[3] === "-" ? null : m[3], name: m.slice(4).join(" ") };
       else if (m[0] === "road") bp.roads[m[1]] = { art: m[2], tint: m[3], name: m.slice(4).join(" ") };
-      else if (m[0] === "wall") bp.walls[m[1]] = { atlas: m[2], tint: m[3], name: m.slice(4).join(" ") };
+      else if (m[0] === "wall") {
+        // 이름 뒤 「top=<그림>[:r/g/b]」(선택): 바위 덩어리 속(바닥에 안 닿는 칸)을 가장자리(n) 대신 이 윗면 그림으로, 색은 따로 (10-28 코덱스 a2-sandstone-rock-top)
+        const rest = m.slice(4), top = (rest.find((t) => t.startsWith("top=")) || "").slice(4).split(":");
+        bp.walls[m[1]] = { atlas: m[2], tint: m[3], name: rest.filter((t) => !t.startsWith("top=")).join(" "), top: top[0] || "", topTint: top[1] || "" };
+      }
       else if (m[0] === "raised") bp.raised = { atlas: m[1], tint: m[2], name: m.slice(3).join(" ") };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       continue;
@@ -333,15 +337,15 @@ function artEntities(d, ctx, bp, rows, func) {
     const ch = bp.at(x, y);
     if (ch === null || !(ch in bp.walls) || ch === lowCh) continue;
     let piece = pieceAt(x, y);
-    if (piece === "center" && !touchesFloor(x, y) && (depth.has(key(x, y)) || deepShallow.has(key(x, y)))) piece = "n";
+    if (piece === "center" && !touchesFloor(x, y) && (depth.has(key(x, y)) || deepShallow.has(key(x, y)))) piece = bp.walls[ch].top ? "top" : "n";
     pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);
   }
   let wallN = 0;
   for (const r of mergeRects(pk)) {
     const [wch, wpiece, lit] = r.p.split("|");
     const wl = bp.walls[wch];
-    const o = sprite(ruid(`${wl.atlas}-borders-${wpiece}`, `wall ${wch}`), [r.len, r.rows], 1);
-    const t = tintOf(wl.tint), m = wpiece !== "center" ? 1 : lit === "1" ? WALL_EDGE_SHADE : WALL_CENTER_SHADE;
+    const o = sprite(ruid(wpiece === "top" ? wl.top : `${wl.atlas}-borders-${wpiece}`, `wall ${wch}`), [r.len, r.rows], 1);
+    const t = tintOf(wpiece === "top" && wl.topTint ? wl.topTint : wl.tint), m = wpiece !== "center" ? 1 : lit === "1" ? WALL_EDGE_SHADE : WALL_CENTER_SHADE;
     o["MOD.Core.SpriteRendererComponent"].Color = { r: t.r * m, g: t.g * m, b: t.b * m, a: 1 };
     out.push({ name: `ArtWall${++wallN}`, pos: [r.x + 0.5, r.y + 0.5, -0.02], overrides: Object.assign(o, cellScale) });
   }
