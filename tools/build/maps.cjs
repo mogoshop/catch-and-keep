@@ -39,6 +39,16 @@ function besideEntry(m, p) {
 const arriveLeft = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "W")) : [edges(d).left + 1.4, 0]);
 const arriveRight = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "E")) : [edges(d).right - 1.4, 0]);
 
+// 입구·계단 그림(data/entrance_art.csv)이 있는 포털은 작게 — 그림의 어두운 구멍 안에 빛만 (10-28 코덱스 entrances, 디아2식).
+//   반응 거리는 WarpGate.Radius라 크기와 상관없다. 그림 자리는 compose(entrancePuts)가 같은 ENTRANCE_PORTAL 값으로 맞춘다
+const ENTRANCE_PORTAL = { scale: 0.65 };
+let entranceUses = null;
+function entranceGateLook(use) {
+  if (!entranceUses) entranceUses = new Set(load("entrance_art").map((r) => r.use));
+  if (!entranceUses.has(use)) return {};
+  const k = ENTRANCE_PORTAL.scale;
+  return { "MOD.Core.TransformComponent": { Scale: { x: k, y: k, z: 1 } } };
+}
 // 곁가지 던전 하나 = entry가 있는 첫 층 + 바로 뒤따르는(entry 없는) 층들. 한 필드에 던전이 여러 개 붙을 수 있다
 function dungeonFloors(maps, m) {
   let cur = [];
@@ -82,7 +92,7 @@ function desiredEntities(d, maps, ctx) {
     // 이 필드에 딸린 곁가지 던전 입구 (던전마다 하나)
     for (const firstFloor of maps.filter((m) => m.kind === "side" && m.parent === d.id && m.entry !== "")) {
       const p = pos(firstFloor.entry);
-      place(`Gate_${firstFloor.id}`, "Objects/WarpGate", p, { "script.WarpGate": gate(firstFloor.id, arriveLeft(firstFloor), firstFloor.name) });
+      place(`Gate_${firstFloor.id}`, "Objects/WarpGate", p, Object.assign({ "script.WarpGate": gate(firstFloor.id, arriveLeft(firstFloor), firstFloor.name) }, entranceGateLook(firstFloor.id)));
     }
   } else if (d.kind === "side") {
     const floors = dungeonFloors(maps, d);
@@ -93,11 +103,11 @@ function desiredEntities(d, maps, ctx) {
       place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), { "script.WarpGate": gate(parent.id, besideEntry(parent, back), parent.name) });
     } else {
       const prev = floors[i - 1];
-      place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), { "script.WarpGate": gate(prev.id, arriveRight(prev), prev.name) });
+      place("GateBack", "Objects/WarpGate", gatePos(d, "W", [e.left, 0, 0]), Object.assign({ "script.WarpGate": gate(prev.id, arriveRight(prev), prev.name) }, entranceGateLook(`up:${d.act || 1}`)));
     }
     if (i < floors.length - 1) {
       const next = floors[i + 1];
-      place("GateNext", "Objects/WarpGate", gatePos(d, "E", [e.right, 0, 0]), { "script.WarpGate": gate(next.id, arriveLeft(next), next.name) });
+      place("GateNext", "Objects/WarpGate", gatePos(d, "E", [e.right, 0, 0]), Object.assign({ "script.WarpGate": gate(next.id, arriveLeft(next), next.name) }, entranceGateLook(`down:${d.act || 1}`)));
     }
   }
   list(d.torches).forEach((t, k) => place(`Torch${k + 1}`, "Objects/Brazier", pos(t)));
@@ -752,4 +762,4 @@ function buildCopies(d) {
   return n;
 }
 
-module.exports = { run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };
+module.exports = { ENTRANCE_PORTAL, run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };

@@ -324,14 +324,15 @@ function artEntities(d, ctx, bp, rows, func) {
   }
   // 5) 장식·바닥 무늬: 아래(남쪽)에 있는 그림일수록 앞에 그린다 (z -0.034 ~ -0.026, 바닥 무늬는 -0.015)
   const zOf = (y, decal) => decal ? -0.015 : r3(-0.034 + ((y - b.y0) / (b.y1 - b.y0)) * 0.008);
-  // ok: 배치표 args ok=cliff(일부러 절벽·담 위) · ok=gate(일부러 기능 자리 곁) — 그 경고를 끈다
+  // ok: 배치표 args ok=cliff(일부러 절벽·담 위) · ok=gate(일부러 기능 자리 곁) · ok=gate+cliff(둘 다) — 그 경고를 끈다
   const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok) => {
     const sp = spriteOf(table, spName, where);
     const sc = baseScale(sp, ctx.propScale) * num(scaleMul, 1);
     const cell = [Math.floor(x), Math.floor(y)];
-    if (!bp.isFloor(cell[0], cell[1])) { if (ok !== "cliff") warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`); }
+    const okHas = (w) => String(ok || "").split("+").includes(w);   // ok=gate+cliff: 둘 다 일부러 (10-28 곁가지 올라가는 계단 — 벽에 붙고 포털 위)
+    if (!bp.isFloor(cell[0], cell[1])) { if (!okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`); }
     else if (!decal && bp.isRoad(cell[0], cell[1])) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 길 칸 위 — 막지 않는다 (길을 막는 장식은 길 밖으로)`);
-    else if (!decal && nearFunc(x, y)) { if (ok !== "gate") warn.push(`${where}: '${spName}' (${x}, ${y})이 기능 자리(포털·화로·웨이포인트) 곁 — 막지 않는다 (일부러면 args ok=gate)`); }
+    else if (!decal && nearFunc(x, y)) { if (!okHas("gate")) warn.push(`${where}: '${spName}' (${x}, ${y})이 기능 자리(포털·화로·웨이포인트) 곁 — 막지 않는다 (일부러면 args ok=gate)`); }
     else if (!decal) for (const k of footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !bp.isRoad(cx, cy)) blocked.add(k); }
     if (!decal) feet.push([x, y]);
     const o = sprite(sp.ruid, null, 1);

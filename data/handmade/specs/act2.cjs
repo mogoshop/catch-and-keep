@@ -108,7 +108,7 @@ module.exports = {
     gates: { W: [-31, -1], E: [30, 1] },
     holes: { scorpnest1: [16, 12] },
     waypoint: [1, 1],
-    put: [["prop", "cave-entrance", 16.5, 14.8, 1]],
+    // 전갈 굴 입구 그림은 compose가 구멍(holes) 자리에 놓는다 (10-28 코덱스 a2-entrance-scorpion-burrow — 옛 cave-entrance 대신)
     dress: {
       a: { props: ["desert-rock", "a2-dead-cactus", "desert-bones"], n: 6, decals: ["a2-decal-camel-tracks", "a2-decal-sand-ripples"], dn: 4 },
       b: { sets: ["a2_beast_grave"], props: ["desert-bones", "a2-dead-cactus", "mp-beast-skull"], n: 7, decals: ["a2-decal-bleached-bones", "a2-decal-sand-ripples"], dn: 4 },

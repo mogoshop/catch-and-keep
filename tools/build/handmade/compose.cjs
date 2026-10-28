@@ -187,8 +187,9 @@ function compose(id, spec, ctx, mapRow) {
   }
   // 손으로 고른 장식(put)의 발밑 — 화로가 그 자리를 피한다
   const table = hm.spriteTable(ctx);
+  const puts = [...(spec.put || []), ...entrancePuts(id, mapRow, func, ctx)];
   const putFeet = new Set();
-  for (const pu of spec.put || []) {
+  for (const pu of puts) {
     if (pu[0] !== "prop") continue;
     for (const [cx, cy] of footCells(table, ctx.propScale, pu[1], pu[2], pu[3], pu[4] || 1)) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) putFeet.add(key(cx + dx, cy + dy));
   }
@@ -236,7 +237,7 @@ function compose(id, spec, ctx, mapRow) {
   const rand = layoutGen.rng(seed + 4242);
   const placeCells = (i) => { const out = []; g.each((x, y) => { const c = g.get(x, y); if (c && !c.wall && c.place === i) out.push([x, y]); }); return out; };
   // 손으로 고른 자리 먼저 (랜드마크)
-  for (const pu of spec.put || []) {
+  for (const pu of puts) {
     const [kind, name, x, y, sc, flip] = pu;
     if (kind === "set") {
       const pieces = ctx.sets[name];
@@ -373,6 +374,42 @@ function compose(id, spec, ctx, mapRow) {
     grid.push(line);
   }
   return { grid, rows, func, torches };
+}
+
+// 곁가지 입구 · 층 계단 그림 (10-28 코덱스 entrances — 「단순 포털이 아니라 굴에 포털을 올려 — 디아2처럼」):
+//   필드의 곁가지 구멍(H) = 그 던전 입구 그림, 곁가지 층 문 = 1층 → 2층(E) 내려가기 · 2층 → 1층(W) 올라가기 계단 (data/entrance_art.csv).
+//   그림의 어두운 구멍(openY — 캔버스 아래에서 비율, 피벗은 발밑)이 포털 자리에 오도록 발을 내린다. 포털 곁 경고는 일부러라 ok=gate
+const ENTRANCE_PIVOT_Y = 0.0234375;
+const PORTAL_CENTER_Y = 0.38;   // 포털 그림(WarpGate) 소용돌이 가운데가 엔티티 자리보다 이만큼 위 (크기 1 기준, 10-28 메이커 실측) — 작게 줄인 만큼 함께 줄어든다
+function entrancePuts(id, mapRow, func, ctx) {
+  const art = load("entrance_art");
+  const by = Object.fromEntries(art.map((r) => [r.use, r]));
+  const out = [];
+  const add = (row, x, y) => {
+    if (!row) return;
+    const sc = ctx.propScale[row.art] || 1;
+    const lift = (num(row.openY) - ENTRANCE_PIVOT_Y) * 512 * sc / 100 - PORTAL_CENTER_Y * require("../maps.cjs").ENTRANCE_PORTAL.scale;
+    out.push(["prop", row.art, x, Math.round((y - lift) * 100) / 100, 1, 0, "ok=gate+cliff"]);   // 벽을 등진 그림이라 발이 벽 칸에 닿기도 한다
+  };
+  for (const f of func) if (f.ch === "H") add(by[f.child], f.x, f.y);
+  if (mapRow && mapRow.kind === "side") {
+    const maps = load("maps");
+    const same = maps.filter((m) => m.kind === "side" && m.parent === mapRow.parent);
+    let floors = [];
+    for (const m of same) {
+      if (m.entry !== "") floors = [];
+      floors.push(m);
+      if (m.id === id) break;
+    }
+    for (let k = same.findIndex((m) => m.id === id) + 1; k < same.length && same[k].entry === ""; k++) floors.push(same[k]);
+    const i = floors.findIndex((m) => m.id === id);
+    const act = mapRow.act || 1;
+    for (const f of func) {
+      if (f.ch === "W" && i > 0) add(by[`up:${act}`], f.x, f.y);
+      if (f.ch === "E" && i < floors.length - 1) add(by[`down:${act}`], f.x, f.y);
+    }
+  }
+  return out;
 }
 
 function nearestZone(g, px, py) {
