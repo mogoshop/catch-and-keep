@@ -23,6 +23,7 @@
 | 16 | [16-skill-stat-overhaul](16-skill-stat-overhaul.md) | 스킬·능력치 개편 — 메인 스킬 + 강화, 레벨당 2포인트, Lv15까지 무료 초기화, 네크로맨서용 능력치 |
 | 17 | [17-act3-storm-coast](17-act3-storm-coast.md) | 액트 3 폭풍 해안 v1 — 몬스터 Lv 22~30, 맵 16, 번개 연쇄 적, 의뢰 13~18, 악몽 +30·지옥 +60·상한 99 |
 | 38 | [38-feedback-levelup-plan-20261028](38-feedback-levelup-plan-20261028.md) | 피드백 반영 레벨업 방안 — F1~F7(명분·뽕·이속·스킬트리·피아식별·템포·맵 66장 개편) 진단·복수안·검증·추천 조합, 스킬 창 4안 심사, 다음 로드맵 3안, 결정 목록 26개 |
+| 42 | [42-height-tiers-20261028](42-height-tiers-20261028.md) | 높이감·층 겹쌓기 — 액트 2·3·4 높은 칸(`raised`) + 층수만큼 절벽 띠(1·2·3단) + 보스 층 아래층 내려다보기, 코덱스 납품 뒤 실적용 때 시안 2장 먼저 |
 
 기존 문서: [룬 시스템 v0.2](../rune-system-draft.md), [Phase 0 코어 루프](../phase0-core-loop-design.md), [설치 체크리스트](../setup-checklist.md)
 
