@@ -9,7 +9,7 @@
 --   네르사 「박쥐 떼」 66·33%     : 방을 가로지르는 띠 2줄 (1.5초 예고) — 띠 안은 화염 피해
 --   그림달 「가두기」 50·25%      : 가장 먼 플레이어 2초 감옥(이동 불가) + 가까운 소환수 5기 2초 묶임 — 갇힌 사람이 쇠창살을 치면(공격) 1초로 준다
 --   베르카 「담금질」 50%         : 모루로 돌아가 3초 망치질 — 그동안 생명 6%를 깎으면 3초 기절, 아니면 공격 +40%
---   오렌 「심장 조각 보호막」 50%  : 최대 생명 15%만큼 먼저 막는 보호막 (대사 한 줄은 문구 승인 뒤)
+--   오렌 「심장 조각 보호막」 50%  : 최대 생명 15%만큼 먼저 막는 보호막 + 말풍선 한 줄 (10-28 사용자 B안 「간절한 설득형」)
 --   이그나 「검의 비」 66·33%     : 부러진 검 6자루가 플레이어 발밑으로 차례로 (1.2초 예고)
 -- 모두 「예고 → 피할 틈」(10-24). 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아가고 소환물을 치운다. 바위 집게 왕 껍질 깨짐은 Act3Rite.
 @Component
@@ -126,6 +126,7 @@ script SideBossRite extends Component
             monster.RiteShield = monster.MaxHp * 0.15
             self.Glow = "shield"
             self:ChargeFx(Color(0.85, 0.35, 0.4, 1))
+            self:Say("막지 마…\n이 조각들만 있으면\n모두 구할 수 있어.", 4)
         elseif k == "swords" then self:Swords(monster)
         end
     end
@@ -266,6 +267,32 @@ script SideBossRite extends Component
                 end
             end
         end, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Say(string text, number seconds)
+        -- 보스 머리 위 말풍선 한 번 — 엔진 ChatBalloon을 서버에서 붙여 동기화한다 (클라이언트는 서버 개체에 부품을 못 붙인다), seconds 뒤 지운다
+        local balloon = self.Entity.ChatBalloonComponent
+        if not isvalid(balloon) then balloon = self.Entity:AddComponent("ChatBalloonComponent") end
+        if not isvalid(balloon) then
+            log_warning("[SideBossRite] 말풍선을 붙이지 못했다 " .. self.Kind)
+            return
+        end
+        balloon.ChatModeEnabled = false
+        balloon.ShowDuration = seconds
+        balloon.HideDuration = 0          -- 0 = 숨는 시간 없이 바로 (큰 값이면 그만큼 숨었다가 뜬다)
+        balloon.FontSize = 1.5            -- 메이커 실측 (10-28): 1.5 · 폭 2.1 · 높이 1.9면 ×1.4 보스 머리 위에 세 줄로 또렷하다
+        balloon.BalloonScale = 2.1        -- 엔진이 폭에 맞춰 글자 단위로 줄을 자르므로 글은 \n으로 직접 나눈다
+        balloon.Offset = 1.9
+        balloon.Message = text
+        balloon.AutoShowEnabled = true
+        log("[VRF] side boss say " .. self.Kind)
+        _TimerService:SetTimerOnce(function()
+            if isvalid(balloon) then
+                balloon.AutoShowEnabled = false
+                balloon.Message = ""
+            end
+        end, seconds)
     end
 
     -- ───────── 끊기 창 (모르그 기도 · 베르카 담금질) ─────────
