@@ -111,7 +111,7 @@ module.exports = {
     gates: { W: [-31, 2], E: [30, -2] },
     holes: { crabcave1: [14, 14] },
     waypoint: [-3, -1],
-    put: [["prop", "crab-cave-mouth", 14.5, 16.8, 1]],
+    // 예전 손 배치 「crab-cave-mouth」는 10-28 곁가지 입구 그림(entrance_art crabcave1 — 포털에 입을 맞춘다)과 겹쳐 동굴이 둘로 보였다 → 뺐다
     dress: {
       a: { props: ["scorched-rock", "salt-crystals", "a3-kelp-rock"], n: 6, decals: ["a3-decal-seaweed", "a3-decal-shells", "a3-decal-foam-line"], dn: 3 },
       b: { sets: ["a3_leviathan"], props: ["a3-kelp-rock", "a3-crab-shell-pile", "scorched-rock"], n: 6, decals: ["a3-decal-seaweed", "a3-decal-shells"], dn: 4 },
