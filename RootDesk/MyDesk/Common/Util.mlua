@@ -451,6 +451,76 @@ script Util extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method integer TelegraphBand(Entity instigator, Vector2 a, Vector2 b, number width, string element, number seconds)
+        -- 사각·선 예고 (10-28 보스 공용 패턴): a → b 띠(폭 width). 테두리 띠 + 가운데 줄에서 양옆으로 차오르는 띠 — 폭까지 차면 터진다.
+        -- 64px 그림을 길이·폭으로 늘인다(그림은 가로 방향으로 고르다). StopTelegraph로 지운다. 반환값 = 예고 id
+        if not isvalid(instigator) or width <= 0 then return 0 end
+        local d = b - a
+        local len = d:Magnitude()
+        if len <= 0.01 then return 0 end
+        local mid = Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0)
+        local rot = math.deg(math.atan(d.y, d.x))
+        local sx, sy = len / 0.64, width / 0.64
+        local opt = { SortingLayer = "MapLayer0", OrderInLayer = 1 }
+        self.TelegraphSeq = self.TelegraphSeq + 1
+        local id = self.TelegraphSeq
+        local rec = { rim = 0, fill = 0, decal = 0, timer = 0 }
+        self.Telegraphs[id] = rec
+        rec.rim = _EffectService:PlayEffect(self:TeleSprite(_GameConst.SpriteBandRim, element), instigator, mid, rot, Vector3(sx, sy, 1), true, opt)
+        local fillRuid = self:TeleSprite(_GameConst.SpriteBandFill, element)
+        local t = 0
+        local step = 0.06
+        local function grow()
+            local k = 0.12 + 0.88 * math.min(1, t / math.max(0.1, seconds))
+            local old = rec.fill
+            rec.fill = _EffectService:PlayEffect(fillRuid, instigator, mid, rot, Vector3(sx, sy * k, 1), true, opt)
+            if old ~= 0 then _EffectService:RemoveEffect(old) end
+        end
+        grow()
+        rec.timer = _TimerService:SetTimerRepeat(function()
+            t = t + step
+            if t >= seconds or self.Telegraphs[id] == nil then
+                self:StopTelegraph(id)
+                return
+            end
+            grow()
+        end, step)
+        return id
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BeamFx(Entity instigator, Vector2 a, Vector2 b, number width, string element, number seconds)
+        -- 레이저 (10-28 보스 공용 패턴): a → b 흰 심 + 속성 빛 띠를 seconds 동안 깜빡이며 그리고, 줄을 따라 불꽃을 튀긴다
+        if not isvalid(instigator) then return end
+        local d = b - a
+        local len = d:Magnitude()
+        if len <= 0.01 then return end
+        local mid = Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0)
+        local rot = math.deg(math.atan(d.y, d.x))
+        local ruid = self:TeleSprite(_GameConst.SpriteBeam, element)
+        local opt = { SortingLayer = "MapLayer0", OrderInLayer = 6 }
+        local serial = _EffectService:PlayEffect(ruid, instigator, mid, rot, Vector3(len / 0.64, width * 1.25 / 0.64, 1), true, opt)
+        local n = math.max(2, math.floor(len / 1.4))
+        for i = 0, n do
+            local p = a + d * (i / n)
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, instigator, Vector3(p.x, p.y, 0), 0, Vector3(0.45, 0.45, 1), false, nil)
+        end
+        local flick = 0
+        local timer = 0
+        timer = _TimerService:SetTimerRepeat(function()
+            flick = flick + 1
+            local old = serial
+            local w = width * (flick % 2 == 0 and 1.25 or 1.0) / 0.64
+            serial = _EffectService:PlayEffect(ruid, instigator, mid, rot, Vector3(len / 0.64, w, 1), true, opt)
+            if old ~= 0 then _EffectService:RemoveEffect(old) end
+            if flick * 0.06 >= seconds then
+                _TimerService:ClearTimer(timer)
+                _EffectService:RemoveEffect(serial)
+            end
+        end, 0.06)
+    end
+
+    @ExecSpace("ClientOnly")
     method void ElementBurst(Entity instigator, Vector3 pos, number radius, string element, Color color)
         -- 범위 기술이 터지는 순간 (10-22): BigExplosion은 Color 옵션을 무시하고 늘 주황 불덩이라(메이커 실측) 화염·물리에만 쓴다.
         -- 냉기·독·번개는 색이 먹는 SparkExplosion + 옅은 Aura로 그 속성 색 그대로 터진다

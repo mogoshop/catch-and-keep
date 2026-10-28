@@ -149,6 +149,19 @@ script MonsterAttack extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
+    method void BandWithElement(Vector2 a, Vector2 b, number width, number damage, string element)
+        -- 사각·선 범위 기술 (보스 공용 패턴 10-28 — 레이저·돌진·바둑판): a → b 띠(폭 width) 안의 플레이어·그림자. 판정은 Slam과 같은 길(monster.slam)
+        local d = b - a
+        local len = d:Magnitude()
+        if len <= 0.01 then return end
+        self.SlamElement = element
+        self.SlamDamage = damage
+        self.CurrentTarget = nil
+        self:AttackFast(BoxShape((a + b) * 0.5, Vector2(len, width), math.deg(math.atan(d.y, d.x))), "monster.slam", nil)
+        self.SlamElement = ""
+    end
+
+    @ExecSpace("ServerOnly")
     method void OnUpdate(number delta)
         local body = self:Body()
         if body == nil or body.IsDead or not self.Entity.Enable then self.SpacingControlled = false return end

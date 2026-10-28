@@ -1,0 +1,569 @@
+-- 보스 공용 패턴 묶음 (10-28 사용자 A안 — 「원형 범위 폭발에만 치중 — 선·방향으로 조작을 신나게 유도」) + 보스방 둥지·토템 (A안).
+-- bosses.csv moves(쓰는 순서) · moveCount(보통에서 쓰는 수) · totems(보통 토템 수)로 모델에 붙는다 (tools/build/models.cjs).
+-- 난이도: 악몽 +1 · 지옥 +2 패턴(목록 길이까지) · 토템도 +1·+2. 간격은 악몽 ×0.92 · 지옥 ×0.85 — 예고 시간은 줄이지 않는다(공정성).
+--   curtain 레이저 커튼 : 플레이어 줄을 가운데로 굵은 레이저 7줄(위→아래 / 옆→옆 번갈아) · 바로 옆 한 줄만 비어 있다 (지옥은 두 번)
+--   cross   십자 레이저 : 보스에서 + 모양 4줄 → 이어서 × 모양 4줄 (지옥은 + 한 번 더)
+--   charge  돌진       : 가장 가까운 플레이어 쪽으로 직사각 예고 → 돌진. 벽에 막히면 1.8초 기절
+--   march   전진 폭발  : 보스에서 플레이어 쪽으로 원 7개가 차례로 터져 나아간다
+--   checker 바둑판     : 플레이어 둘레 3×3 큰 칸 — 홀수 칸이 먼저, 짝수 칸이 뒤에
+--   donut   도넛       : 보스 둘레 두 겹 고리가 터진다 — 보스 품(2칸 안)만 안전
+--   wall    밀려오는 벽 : 레이저 벽이 한쪽에서 밀려온다 — 빈 칸 하나로 빠져나간다
+--   chase   추격       : 플레이어 발밑을 0.55초마다 다섯 번 쫓아 터진다
+-- 토템: 처음 맞붙을 때 보스 둘레에 둥지(bonenest 몸 · 액트 색)를 놓는다 — 7초마다 보스 졸개를 낳고, 부수면 멈춘다. 소환수가 할 일이 생긴다.
+-- 죽거나 둘레 16칸에 플레이어가 없으면 처음 상태로(토템·토템 졸개 정리).
+@Component
+script BossMoves extends Component
+
+    property string Moves = ""               -- "curtain;cross;charge" (쓰는 순서)
+    property integer MoveCount = 1           -- 보통에서 쓰는 수
+    property number Interval = 12            -- 패턴 간격(초, 보통)
+    property integer Totems = 0              -- 보통 토템 수 (0이면 없음)
+    property string TotemModel = "bonenest"
+    property string TotemMinion = ""         -- 토템이 낳는 졸개 (보스 minion)
+    property string TotemTint = ""           -- "r,g,b" 액트 색
+    property table List = {}
+    property integer Index = 0
+    property boolean Engaged = false
+    property number NextAt = 0
+    property integer Serial = 0
+    property integer Difficulty = 0
+    property table TotemList = {}
+    property boolean CurtainFlip = false
+    property boolean WallFlip = false
+    property integer CastCount = 0           -- 검증용
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        local map = self.Entity.CurrentMap
+        self.Difficulty = isvalid(map) and _GameConst:DifficultyOfMap(map.Name) or 0
+        local all = {}
+        for k in string.gmatch(self.Moves, "[^;]+") do table.insert(all, k) end
+        self.List = {}
+        for i = 1, math.min(#all, self.MoveCount + self.Difficulty) do table.insert(self.List, all[i]) end
+        self.TotemList = {}
+        log("[VRF] BossMoves ready " .. self.Entity.Name .. " diff=" .. tostring(self.Difficulty) .. " moves=" .. table.concat(self.List, ","))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number delta)
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil or #self.List == 0 and self.Totems <= 0 then return end
+        local here = _Util:Pos2(self.Entity)
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersNear(self.Entity.CurrentMap, here, 16) == 0 then
+            self:ResetMoves()
+            return
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        if not self.Engaged then
+            if monster.Hp >= monster.MaxHp and #_Util:PlayersNear(self.Entity.CurrentMap, here, 9) == 0 then return end
+            self.Engaged = true
+            self.NextAt = now + 4
+            self:PlaceTotems(monster)
+            return
+        end
+        if #self.List == 0 or now < self.NextAt then return end
+        ---@type MonsterStatus
+        local status = self.Entity:GetComponent("script.MonsterStatus")
+        if status ~= nil and status:IsStunned() then return end
+        local mul = self.Difficulty >= 2 and 0.85 or (self.Difficulty == 1 and 0.92 or 1)
+        self.NextAt = now + self.Interval * mul
+        self.Index = self.Index % #self.List + 1
+        self:Cast(self.List[self.Index], monster)
+    end
+
+    -- ───────── 공용 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Cast(string kind, Monster monster)
+        local target = self:Target()
+        if target == nil then return end
+        self.CastCount = self.CastCount + 1
+        log("[VRF] boss move " .. kind .. " #" .. tostring(self.CastCount) .. " " .. monster.SourceId)
+        if kind == "curtain" then self:Curtain(target)
+        elseif kind == "cross" then self:Cross()
+        elseif kind == "charge" then self:Charge(target)
+        elseif kind == "march" then self:March(target)
+        elseif kind == "checker" then self:Checker(target)
+        elseif kind == "donut" then self:Donut()
+        elseif kind == "wall" then self:Wall(target)
+        elseif kind == "chase" then self:Chase(target)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity Target()
+        local here = _Util:Pos2(self.Entity)
+        local best, bestD = nil, 14
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, 14)) do
+            local d = (_Util:Pos2(p) - here):Magnitude()
+            if d <= bestD then
+                best = p
+                bestD = d
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method MonsterAttack Atk()
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        return atk
+    end
+
+    @ExecSpace("ServerOnly")
+    method string Element()
+        ---@type BossPattern
+        local bp = self.Entity:GetComponent("script.BossPattern")
+        if bp ~= nil and bp.PoolElement ~= "" then return bp.PoolElement end
+        local atk = self:Atk()
+        if atk ~= nil and atk.Element ~= "" then return atk.Element end
+        return "phys"
+    end
+
+    @ExecSpace("ServerOnly")
+    method number Dmg(number mul)
+        local atk = self:Atk()
+        return atk ~= nil and atk.Damage * mul or 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean StillOn(integer serial)
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        return isvalid(self.Entity) and self.Serial == serial and monster ~= nil and not monster.IsDead
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Band(Vector2 a, Vector2 b, number width, number mul)
+        local atk = self:Atk()
+        if atk ~= nil then atk:BandWithElement(a, b, width, self:Dmg(mul), self:Element() == "phys" and "" or self:Element()) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Circle(Vector2 c, number radius, number mul)
+        local atk = self:Atk()
+        if atk ~= nil then atk:SlamWithElement(c, radius, self:Dmg(mul), self:Element() == "phys" and "" or self:Element()) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HoldFor(number seconds)
+        -- 패턴 예고 동안 보스를 세운다 (경직 — 이동·평타 멈춤)
+        ---@type MonsterStatus
+        local status = self.Entity:GetComponent("script.MonsterStatus")
+        local atk = self:Atk()
+        if atk ~= nil then atk:CancelPending() end
+        if status == nil then return end
+        status:Hold()
+        status.StaggerUntil = math.max(status.StaggerUntil, _UtilLogic.ElapsedSeconds + seconds)
+    end
+
+    -- ───────── 패턴 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Curtain(Entity target)
+        -- 레이저 커튼: 플레이어 줄을 가운데로 7줄, 바로 옆 한 줄만 빈다. 위→아래 / 옆→옆 번갈아. 지옥은 빈 줄을 바꿔 한 번 더
+        local p = _Util:Pos2(target)
+        local vertical = not self.CurtainFlip
+        self.CurtainFlip = not self.CurtainFlip
+        local waves = self.Difficulty >= 2 and 2 or 1
+        local serial = self.Serial
+        local el = self:Element()
+        self:HoldFor(1.2)
+        for w = 1, waves do
+            local gap = 4 + ((w == 1) == (_UtilLogic:RandomDouble() < 0.5) and -1 or 1)
+            local lines = {}
+            for k = 1, 7 do
+                if k ~= gap then
+                    local o = (k - 4) * 1.7
+                    if vertical then
+                        table.insert(lines, { p.x + o, p.y + 6, p.x + o, p.y - 6 })
+                    else
+                        table.insert(lines, { p.x - 8, p.y + o * 0.85, p.x + 8, p.y + o * 0.85 })
+                    end
+                end
+            end
+            local flat = {}
+            for _, l in ipairs(lines) do for _, v in ipairs(l) do table.insert(flat, v) end end
+            local delay = (w - 1) * 1.2
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                self:BandWarnFx(flat, 1.0, el, 1.5)
+            end, math.max(0.01, delay))
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                for _, l in ipairs(lines) do self:Band(Vector2(l[1], l[2]), Vector2(l[3], l[4]), 1.0, 1.6) end
+                self:BeamsFx(flat, 1.0, el, 0.5)
+                log("[VRF] boss move curtain fired lines=" .. tostring(#lines) .. " gap=" .. tostring(gap))
+            end, delay + 1.5)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Cross()
+        -- 십자 레이저: + 4줄 → × 4줄 (지옥은 + 한 번 더). 길이 8칸
+        local c = _Util:Pos2(self.Entity) + Vector2(0, 0.4)
+        local sets = self.Difficulty >= 2 and 3 or 2
+        local serial = self.Serial
+        local el = self:Element()
+        self:HoldFor(1.3 + 1.1 * (sets - 1) + 0.3)
+        for s = 1, sets do
+            local base = (s % 2 == 0) and 45 or 0
+            local flat = {}
+            for k = 0, 3 do
+                local a = math.rad(base + k * 90)
+                table.insert(flat, c.x)
+                table.insert(flat, c.y)
+                table.insert(flat, c.x + math.cos(a) * 8)
+                table.insert(flat, c.y + math.sin(a) * 8)
+            end
+            local start = (s - 1) * 1.1
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                self:BandWarnFx(flat, 1.1, el, 1.3)
+            end, math.max(0.01, start))
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                for i = 1, #flat, 4 do self:Band(Vector2(flat[i], flat[i + 1]), Vector2(flat[i + 2], flat[i + 3]), 1.1, 1.5) end
+                self:BeamsFx(flat, 1.1, el, 0.5)
+                log("[VRF] boss move cross fired set=" .. tostring(s))
+            end, start + 1.3)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Charge(Entity target)
+        -- 돌진: 플레이어 쪽 9칸 직사각 예고(1.1초) → 0.3초 만에 끝까지. 벽에 막혀 짧아졌으면 1.8초 기절
+        local map = self.Entity.CurrentMap
+        local from = _Util:Pos2(self.Entity)
+        local dir = _Util:Pos2(target) - from
+        if dir:Magnitude() < 0.1 then return end
+        dir = dir:Normalize()
+        local want = from + dir * 9
+        local to = _Util:ReachablePoint(map, from, want, 0.4)
+        local hitWall = (want - to):Magnitude() > 0.6
+        local serial = self.Serial
+        local el = self:Element()
+        self:HoldFor(1.1)
+        self:BandWarnFx({ from.x, from.y, to.x, to.y }, 1.6, el, 1.1)
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            local movement = self.Entity.MovementComponent
+            for i = 1, 6 do
+                _TimerService:SetTimerOnce(function()
+                    if not self:StillOn(serial) or not isvalid(movement) then return end
+                    movement:SetWorldPosition(from + (to - from) * (i / 6))
+                end, i * 0.05)
+            end
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                self:Band(from, to, 1.6, 1.8)
+                self:ChargeFx(from, to, hitWall)
+                if hitWall then self:HoldFor(1.8) end
+                log("[VRF] boss move charge len=" .. string.format("%.1f", (to - from):Magnitude()) .. " wall=" .. tostring(hitWall))
+            end, 0.32)
+        end, 1.1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void March(Entity target)
+        -- 전진 폭발: 보스에서 플레이어 쪽으로 원 7개(반지름 1)가 0.12초 간격으로 차례로 예고 → 0.9초 뒤 차례로 터진다
+        local map = self.Entity.CurrentMap
+        local from = _Util:Pos2(self.Entity)
+        local dir = _Util:Pos2(target) - from
+        if dir:Magnitude() < 0.1 then return end
+        dir = dir:Normalize()
+        local serial = self.Serial
+        local el = self:Element()
+        local spots = {}
+        for i = 1, 7 do
+            local q = from + dir * (1.4 * i)
+            if _Util:ReachablePoint(map, from, q, 0) ~= q then break end
+            table.insert(spots, q)
+        end
+        for i, q in ipairs(spots) do
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                self:CircleWarnFx({ q.x, q.y }, 1.0, el, 0.9)
+            end, 0.12 * i)
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                self:Circle(q, 1.0, 1.4)
+                self:CircleBurstFx({ q.x, q.y }, 1.0, el)
+                if i == #spots then log("[VRF] boss move march done n=" .. tostring(#spots)) end
+            end, 0.12 * i + 0.9)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Checker(Entity target)
+        -- 바둑판: 플레이어 둘레 3×3 칸(한 칸 3칸 폭). 홀수 칸 1.5초 → 터지면 짝수 칸 1.3초 → 터짐
+        local p = _Util:Pos2(target)
+        local serial = self.Serial
+        local el = self:Element()
+        local sets = { {}, {} }
+        for i = -1, 1 do
+            for j = -1, 1 do
+                local cx, cy = p.x + i * 3, p.y + j * 3
+                local s = ((i + j) % 2 == 0) and 1 or 2
+                table.insert(sets[s], cx - 1.5)
+                table.insert(sets[s], cy)
+                table.insert(sets[s], cx + 1.5)
+                table.insert(sets[s], cy)
+            end
+        end
+        self:BandWarnFx(sets[1], 3, el, 1.5)
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            for i = 1, #sets[1], 4 do self:Band(Vector2(sets[1][i], sets[1][i + 1]), Vector2(sets[1][i + 2], sets[1][i + 3]), 3, 1.5) end
+            self:SquareBurstFx(sets[1], el)
+            self:BandWarnFx(sets[2], 3, el, 1.3)
+        end, 1.5)
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            for i = 1, #sets[2], 4 do self:Band(Vector2(sets[2][i], sets[2][i + 1]), Vector2(sets[2][i + 2], sets[2][i + 3]), 3, 1.5) end
+            self:SquareBurstFx(sets[2], el)
+            log("[VRF] boss move checker done")
+        end, 2.8)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Donut()
+        -- 도넛: 보스 둘레 두 겹 고리(반지름 3.3 · 5.3)가 1.6초 뒤 터진다 — 보스 품(2칸 안)만 안전
+        local map = self.Entity.CurrentMap
+        local c = _Util:Pos2(self.Entity)
+        local serial = self.Serial
+        local el = self:Element()
+        local spots = {}
+        for _, ring in ipairs({ { 3.3, 9 }, { 5.3, 13 } }) do
+            for k = 1, ring[2] do
+                local a = math.pi * 2 * k / ring[2]
+                local q = c + Vector2(math.cos(a) * ring[1], math.sin(a) * ring[1] * 0.85)
+                if _Util:ReachablePoint(map, c, q, 0) == q then
+                    table.insert(spots, q.x)
+                    table.insert(spots, q.y)
+                end
+            end
+        end
+        self:HoldFor(1.7)
+        self:CircleWarnFx(spots, 1.15, el, 1.6)
+        self:SafeFx(c, 2.0, 1.6)
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            for i = 1, #spots, 2 do self:Circle(Vector2(spots[i], spots[i + 1]), 1.15, 1.5) end
+            self:CircleBurstFx(spots, 1.15, el)
+            log("[VRF] boss move donut spots=" .. tostring(#spots // 2))
+        end, 1.6)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Wall(Entity target)
+        -- 밀려오는 벽: 9칸 폭 레이저 벽이 플레이어 쪽으로 2초 동안 10칸을 밀려온다 — 빈 칸 하나(1.6칸)로 빠져나간다. 위↓ / 옆→ 번갈아
+        local p = _Util:Pos2(target)
+        local fromTop = not self.WallFlip
+        self.WallFlip = not self.WallFlip
+        local serial = self.Serial
+        local el = self:Element()
+        local gap = math.max(1, math.min(9, 5 + math.floor(_UtilLogic:RandomDouble() * 3) - 1))
+        local function segs(off)
+            local flat = {}
+            for k = 1, 9 do
+                if k ~= gap then
+                    local o = (k - 5) * 1.6
+                    if fromTop then
+                        table.insert(flat, p.x + o - 0.8) table.insert(flat, p.y + off)
+                        table.insert(flat, p.x + o + 0.8) table.insert(flat, p.y + off)
+                    else
+                        table.insert(flat, p.x - off) table.insert(flat, p.y + o * 0.85 - 0.7)
+                        table.insert(flat, p.x - off) table.insert(flat, p.y + o * 0.85 + 0.7)
+                    end
+                end
+            end
+            return flat
+        end
+        self:BandWarnFx(segs(5), 0.7, el, 1.0)
+        local steps = 10
+        for s = 0, steps do
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                local flat = segs(5 - s)
+                for i = 1, #flat, 4 do self:Band(Vector2(flat[i], flat[i + 1]), Vector2(flat[i + 2], flat[i + 3]), 0.7, 1.3) end
+                self:BeamsFx(flat, 0.7, el, 0.22)
+                if s == steps then log("[VRF] boss move wall done gap=" .. tostring(gap)) end
+            end, 1.0 + s * 0.2)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Chase(Entity target)
+        -- 추격: 플레이어 발밑을 0.55초마다 다섯 번 — 각 0.85초 예고. 멈추면 맞는다
+        local serial = self.Serial
+        local el = self:Element()
+        for k = 1, 5 do
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) or not isvalid(target) then return end
+                local q = _Util:Pos2(target)
+                self:CircleWarnFx({ q.x, q.y }, 1.1, el, 0.85)
+                _TimerService:SetTimerOnce(function()
+                    if not self:StillOn(serial) then return end
+                    self:Circle(q, 1.1, 1.2)
+                    self:CircleBurstFx({ q.x, q.y }, 1.1, el)
+                    if k == 5 then log("[VRF] boss move chase done") end
+                end, 0.85)
+            end, (k - 1) * 0.55 + 0.01)
+        end
+    end
+
+    -- ───────── 토템 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void PlaceTotems(Monster monster)
+        -- 처음 맞붙을 때 보스 둘레(반지름 5.5)에 둥지 토템 — 보통 Totems · 악몽 +1 · 지옥 +2
+        if self.Totems <= 0 or self.TotemMinion == "" then return end
+        local n = self.Totems + self.Difficulty
+        local map = self.Entity.CurrentMap
+        local c = monster.SpawnPosition
+        local level = math.max(1, monster.Level - 2)
+        self.TotemList = {}
+        for k = 1, n do
+            local a = math.pi * 2 * k / n + 0.5
+            local at = _Util:ReachablePoint(map, c, c + Vector2(math.cos(a) * 5.5, math.sin(a) * 4.5), 0.5)
+            local e = _SpawnService:SpawnByModelId(self.TotemModel, "BossTotem", Vector3(at.x, at.y, 0), map)
+            if isvalid(e) then
+                table.insert(self.TotemList, e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
+                    m.MaxHp = m.MaxHp * 3
+                    m.Hp = m.MaxHp
+                    ---@type MonsterNest
+                    local nest = e:GetComponent("script.MonsterNest")
+                    if nest ~= nil then
+                        nest.Minions = self.TotemMinion
+                        nest.WakeRange = 14
+                    end
+                    if self.TotemTint ~= "" then
+                        ---@type MonsterTraits
+                        local traits = e:GetComponent("script.MonsterTraits")
+                        if traits ~= nil then
+                            traits.Tint = self.TotemTint
+                            traits.TintSync = self.TotemTint
+                        end
+                    end
+                end, nil)
+            end
+        end
+        self:TotemFx()
+        log("[VRF] boss totems " .. tostring(#self.TotemList) .. " minion=" .. self.TotemMinion)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetMoves()
+        if not self.Engaged and #self.TotemList == 0 then return end
+        self.Engaged = false
+        self.Serial = self.Serial + 1
+        self.Index = 0
+        for _, e in ipairs(self.TotemList) do
+            if isvalid(e) then
+                ---@type MonsterNest
+                local nest = e:GetComponent("script.MonsterNest")
+                if nest ~= nil then
+                    for _, m in ipairs(nest.Alive) do if isvalid(m) then m:Destroy() end end
+                end
+                e:Destroy()
+            end
+        end
+        self.TotemList = {}
+        log("[VRF] BossMoves reset " .. self.Entity.Name)
+    end
+
+    -- ───────── 클라이언트 연출 ─────────
+
+    @ExecSpace("ClientOnly")
+    method boolean Watching()
+        local me = _UserService.LocalPlayer
+        return isvalid(me) and me.CurrentMap == self.Entity.CurrentMap
+    end
+
+    method Color Tint(string el)
+        if el == "fire" then return Color(1, 0.5, 0.15, 1) end
+        if el == "cold" then return Color(0.5, 0.8, 1, 1) end
+        if el == "poison" then return Color(0.5, 0.95, 0.35, 1) end
+        if el == "light" then return Color(1, 0.95, 0.6, 1) end
+        return Color(1, 0.35, 0.2, 1)
+    end
+
+    @ExecSpace("Multicast")
+    method void BandWarnFx(table lines, number width, string el, number seconds)
+        -- 선 예고: lines = { ax, ay, bx, by, … }
+        if not self:Watching() then return end
+        for i = 1, #lines, 4 do _Util:TelegraphBand(self.Entity, Vector2(lines[i], lines[i + 1]), Vector2(lines[i + 2], lines[i + 3]), width, el, seconds) end
+    end
+
+    @ExecSpace("Multicast")
+    method void BeamsFx(table lines, number width, string el, number seconds)
+        if not self:Watching() then return end
+        for i = 1, #lines, 4 do _Util:BeamFx(self.Entity, Vector2(lines[i], lines[i + 1]), Vector2(lines[i + 2], lines[i + 3]), width, el, seconds) end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.18, 0.2) end
+    end
+
+    @ExecSpace("Multicast")
+    method void CircleWarnFx(table spots, number radius, string el, number seconds)
+        if not self:Watching() then return end
+        for i = 1, #spots, 2 do _Util:Telegraph(self.Entity, Vector2(spots[i], spots[i + 1]), radius, el == "phys" and "" or el, seconds) end
+    end
+
+    @ExecSpace("Multicast")
+    method void CircleBurstFx(table spots, number radius, string el)
+        if not self:Watching() then return end
+        local c = self:Tint(el)
+        for i = 1, #spots, 2 do _Util:ElementBurst(self.Entity, Vector3(spots[i], spots[i + 1], 0), radius, el == "phys" and "" or el, c) end
+    end
+
+    @ExecSpace("Multicast")
+    method void SquareBurstFx(table lines, string el)
+        -- 바둑판 칸이 터짐: 칸 가운데 폭발 + 화면 흔들림
+        if not self:Watching() then return end
+        local c = self:Tint(el)
+        for i = 1, #lines, 4 do
+            _Util:ElementBurst(self.Entity, Vector3((lines[i] + lines[i + 2]) * 0.5, lines[i + 1], 0), 1.5, el == "phys" and "" or el, c)
+        end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.22, 0.25) end
+    end
+
+    @ExecSpace("Multicast")
+    method void ChargeFx(Vector2 a, Vector2 b, boolean hitWall)
+        if not self:Watching() then return end
+        local d = b - a
+        local n = math.max(2, math.floor(d:Magnitude() / 1.2))
+        for i = 0, n do
+            local p = a + d * (i / n)
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, Vector3(p.x, p.y, 0), 0, Vector3(0.8, 0.8, 1), false, nil)
+        end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(hitWall and 0.5 or 0.25, hitWall and 0.4 or 0.2) end
+        if hitWall then _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(b.x, b.y + 0.6, 0), 0, Vector3(1.4, 1.4, 1), false, nil) end
+    end
+
+    @ExecSpace("Multicast")
+    method void SafeFx(Vector2 c, number radius, number seconds)
+        -- 도넛 안전 자리: 보스 품에 흰 고리 (공격 예고와 다른 색)
+        if not self:Watching() then return end
+        local full = radius * 2 / 2.56
+        local fx = _EffectService:PlayEffect(_Util:TeleSprite(_GameConst.SpriteTeleRim, "light"), self.Entity, Vector3(c.x, c.y, 0), 0, Vector3(full, full, 1), true,
+            { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(0.7, 1, 0.8, 1) })
+        _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(fx) end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void TotemFx()
+        if not self:Watching() then return end
+        _UXFeedback:Show("둥지가 깨어났다", "부수면 졸개가 멈춘다", "")
+    end
+
+end

@@ -106,6 +106,16 @@ function buildMonster(m, boss) {
     // 기본 공격 배율 (bosses.csv basicMul, 10-23): 보스 모델은 자기 레벨로 만들어 레벨 보정이 없어 기본 공격이 주변 몹보다 약했다 — 기본 공격·화살·연쇄만 (기술·오오라·궁극기는 그대로)
     if (boss.basicMul) b.value("script.MonsterAttack", "BasicMul", num(boss.basicMul), "double");
     if (boss.extra) b.component(boss.extra);
+    // 보스 공용 패턴 묶음 + 보스방 둥지·토템 (10-28 사용자 A안 · RootDesk/MyDesk/Monster/BossMoves.mlua)
+    if (boss.moves) {
+      b.component("script.BossMoves");
+      b.value("script.BossMoves", "Moves", boss.moves, "string");
+      b.value("script.BossMoves", "MoveCount", num(boss.moveCount, 1), "long");
+      b.value("script.BossMoves", "Interval", num(boss.moveInterval, 12), "double");
+      b.value("script.BossMoves", "Totems", num(boss.totems, 0), "long");
+      b.value("script.BossMoves", "TotemMinion", boss.minion || "", "string");
+      b.value("script.BossMoves", "TotemTint", boss.totemTint || "", "string");
+    }
   }
   // 공통 보스 틀 없이 의식만 붙는 보스 (monsters.csv rite — 처형인·근위대장·밀수꾼 두목, docs/design/40)
   if (m.rite) b.component(m.rite);
