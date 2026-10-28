@@ -1,0 +1,416 @@
+-- 습격 (기획서 41 · 10-28 사용자 결정 §8): 맵에서 처치가 쌓이면 화면 밖 사방에서 약한 「떼」가 밀려온다.
+-- 트리거 = 그 맵 처치 누적 difficulty.raidTrigger(보통 20 · 악몽 15 · 지옥 12) + 최소 간격 raidMinGapSec + 맵당 횟수 raidWaves(2 · 2 · 3).
+--   금지 = 마을 · 보스 맵(보스 등급 몬스터가 있는 맵) · 심연 방 · 보통의 곁가지 · 입구 안전 반경 · 보스·끝방 우두머리 둘레 raidBossGuard.
+-- 자리 = 불린 사람(처치를 채운 막타 주인) 둘레 반지름 raidRadiusMin~Max 8방향 — ReachablePoint로 벽 앞까지 당기고 raidMinReach 미만이면 그 방향은 버린다 (벽 너머 금지 · 시야 트인 방향만).
+-- 떼 = 맵 출현 목록 중 무리 유형 우선 · 생명 최저 종에 Monster.Horde (생명 ×raidHordeHpMul · 피해 ×raidHordeDmgMul · 수식어 없음 · 수명 raidHordeLifeSec · 리스폰 없음 · 등급 horde).
+--   악몽은 정예 우두머리 1 · 지옥은 변종 우두머리 1 + 2파(첫 파 raidPhase2At를 잡으면 raidPhase2Size).
+-- 상한 = 플레이어당 raidCap(25/30/40) · 맵 raidMapCap · 방 raidRoomMobCap 넘으면 건너뛴다 ([TEL] raid skip). 예고 raidWarnSec 뒤 raidSpawnBatch마리씩 나눠 소환.
+-- 보상 = 떼 처치 경험치 ×raidExpMul(RewardSystem) · 격퇴(떼 전멸)하면 불린 사람 발밑 골드 주머니(raidGoldPerLevel × 맵 레벨 + raidGoldBase) + 「습격 격퇴 · N마리」.
+-- 소환수 진형은 바꾸지 않는다 (10-28 사용자 #5-C).
+@Logic
+script RaidDirector extends Logic
+
+    property table Maps = {}            -- 서버: map.Id → { map, kills, count, nextAt, quietUntil, spawnedAt, active }
+    property integer TickTimer = 0
+    property integer Serial = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 처치를 세고 1초마다 진행 중인 습격을 돌본다
+        _GameEvents:Subscribe("MonsterKilled", "RaidDirector", function(e) self:OnMonsterKilled(e) end)
+        self.TickTimer = _TimerService:SetTimerRepeat(function() self:Tick() end, 1)
+        log("[VRF] RaidDirector ready")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        -- 타이머·구독 정리
+        if self.TickTimer ~= 0 then _TimerService:ClearTimer(self.TickTimer) end
+        self.TickTimer = 0
+        _GameEvents:Unsubscribe("MonsterKilled", "RaidDirector")
+    end
+
+    -- ───────── 다른 시스템이 묻는 값 ─────────
+
+    method number ExpMul(Entity map)
+        -- 떼 처치 경험치 배율 (RewardSystem · 보통 0.25 · 악몽 0.10 · 지옥 0.05)
+        local d = _GameData:GetDifficulty(isvalid(map) and _GameConst:DifficultyOfMap(map.Name) or 0)
+        return (d ~= nil and d.raidExpMul) or 0.25
+    end
+
+    -- ───────── 맵 상태 ─────────
+
+    @ExecSpace("ServerOnly")
+    method table State(Entity map)
+        -- 맵별 누적. 맵이 잠들었다 깨어나면(스포너 SpawnedAt가 바뀜) 처음부터 — 횟수 상한도 함께 (R-A)
+        local s = self.Maps[map.Id]
+        local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+        local at = sp ~= nil and sp.SpawnedAt or 0
+        if s == nil then
+            s = { map = map, kills = 0, count = 0, nextAt = 0, quietUntil = 0, spawnedAt = at, active = nil }
+            self.Maps[map.Id] = s
+        elseif s.spawnedAt ~= at then
+            if s.active ~= nil then self:Finish(s, "sleep") end
+            s.kills, s.count, s.nextAt, s.quietUntil, s.spawnedAt = 0, 0, 0, 0, at
+        end
+        return s
+    end
+
+    @ExecSpace("ServerOnly")
+    method string Blocked(Entity map, any d)
+        -- 이 맵에서 습격이 서지 않는 이유 ("" = 된다)
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil then return "info" end
+        if info.kind == "town" or info.kind == "instance" then return info.kind end
+        if map:GetComponent("script.DepthDirector") ~= nil then return "depth" end   -- 심연 (#9-A)
+        if info.kind == "side" and (d.raidSide or 0) < 1 then return "side" end       -- 보통은 곁가지 없음 (#2-B · #8-A)
+        local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+        if sp == nil or sp.SpawnedAt <= 0 then return "spawner" end
+        return ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean NearEntry(Entity map, Vector2 p)
+        -- 입구·웨이포인트 안전 반경 안 (스포너와 같은 기준 — 막 들어온 사람이 바로 둘러싸이지 않게)
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        if info == nil then return false end
+        local r = _GameConst:EntrySafeRadius(map.Name)
+        for _, f in ipairs(info.features) do
+            if (f.kind == "portal" or f.kind == "waypoint" or f.kind == "depth") and (Vector2(f.x, f.y) - p):Magnitude() < r then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method string BossGuard(Entity map, Vector2 center)
+        -- 보스 등급 몬스터가 있는 맵은 통째로, 끝방 이름 있는 적 둘레 raidBossGuard 안도 금지 (토템 졸개와 겹치지 않게)
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            ---@type Monster
+            local m = c
+            if isvalid(m.Entity) and not m.IsDead then
+                if m.Grade >= 3 then return "bossmap" end
+                if m.NamedId ~= "" and (_Util:Pos2(m.Entity) - center):Magnitude() < _GameData.raidBossGuard then return "named" end
+            end
+        end
+        return ""
+    end
+
+    -- ───────── 트리거 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(table e)
+        -- 떼 처치는 진행 중인 습격에, 다른 처치는 그 맵의 누적에
+        local map = e.map
+        if not isvalid(map) then return end
+        if e.horde then self:OnHordeKilled(map, e.monster) return end
+        local s = self:State(map)
+        if s.active ~= nil then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < s.quietUntil then return end
+        local diff = _GameConst:DifficultyOfMap(map.Name)
+        local d = _GameData:GetDifficulty(diff)
+        if d == nil or s.count >= (d.raidWaves or 0) then return end
+        s.kills = s.kills + 1
+        if s.kills < (d.raidTrigger or 20) or now < s.nextAt then return end
+        local caller = e.player
+        if not _Util:IsAlive(caller) or caller.CurrentMap ~= map then return end
+        local why = self:Blocked(map, d)
+        if why ~= "" then return end
+        self:Begin(s, caller, d, diff)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Begin(table s, Entity caller, any d, integer diff)
+        -- 자리·규모·상한을 정하고 예고를 띄운 뒤 raidWarnSec 뒤에 소환
+        local map = s.map
+        local now = _UtilLogic.ElapsedSeconds
+        local center = _Util:Pos2(caller)
+        local guard = self:BossGuard(map, center)
+        if guard == "bossmap" then s.count = 99 return end   -- 보스 맵은 이 방에서 다시 보지 않는다
+        if guard ~= "" or self:NearEntry(map, center) then
+            s.kills = (d.raidTrigger or 20) - 5   -- 자리가 나쁘면 5마리 더 잡은 뒤 다시 본다
+            return
+        end
+        local pts = self:Spots(map, center)
+        if #pts == 0 then
+            s.kills = (d.raidTrigger or 20) - 5
+            log(string.format("[VRF] raid skip %s reason=no-dir", map.Name))
+            return
+        end
+        local players = _Util:PlayersInMap(map)
+        local party = _PartySystem:NearbyMembers(caller, caller)
+        local size = math.floor((d.raidSize or 12) + (d.raidPartyAdd or 4) * math.max(0, #party - 1))
+        local hordes = self:HordeCount(map)
+        local room = self:RoomMobs(map)
+        local allow = math.floor(math.min(size, (d.raidCap or 25) * #players - hordes, _GameData.raidMapCap - hordes, _GameData.raidRoomMobCap - room))
+        if allow < math.ceil(size * 0.5) then
+            s.nextAt = now + _GameData.raidMinGapSec
+            s.kills = 0
+            _Telemetry:NoteRaid(caller, "raidSkips")
+            _Telemetry:Say(string.format("[TEL] raid skip map=%s diff=%d want=%d allow=%d room=%d hordes=%d", map.Name, diff, size, allow, room, hordes))
+            log(string.format("[VRF] raid skip %s reason=cap want=%d allow=%d room=%d", map.Name, size, allow, room))
+            return
+        end
+        local species, level = self:PickSpecies(map, diff)
+        if species == "" then s.count = 99 log("[VRF] raid skip " .. map.Name .. " reason=no-species") return end
+        self.Serial = self.Serial + 1
+        s.active = { id = self.Serial, caller = caller, center = center, size = allow, species = species, level = level, leader = d.raidLeader or 0, phases = d.raidPhases or 1,
+            spawned = 0, killed = 0, fled = 0, alive = {}, queue = {}, startAt = now, pts = pts, spawnTimer = 0, phase2 = false, diff = diff, players = #players }
+        s.kills = 0
+        s.count = s.count + 1
+        local flat = {}
+        for _, p in ipairs(pts) do table.insert(flat, { p.x, p.y }) end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local act = info ~= nil and info.act or 1
+        for _, p in ipairs(players) do self:Warn(flat, _GameData.raidWarnSec, act, p.PlayerComponent.UserId) end
+        _Telemetry:NoteRaid(caller, "raidCount")
+        _Telemetry:Say(string.format("[TEL] raid start map=%s diff=%d n=%d players=%d dirs=%d species=%s lv=%d", map.Name, diff, allow, #players, #pts, species, level))
+        log(string.format("[VRF] raid warn %s n=%d dirs=%d species=%s lv=%d count=%d/%d", map.Name, allow, #pts, species, level, s.count, d.raidWaves or 0))
+        local id = s.active.id
+        _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:Launch(s) end end, _GameData.raidWarnSec)
+    end
+
+    @ExecSpace("Client")
+    method void Warn(table pts, number sec, integer act)
+        -- 예고 (본인 화면): HudMain이 글귀·가장자리 표식·바닥 조짐·소리를 띄운다
+        _HudMain:RaidWarn(pts, sec, act)
+    end
+
+    @ExecSpace("Client")
+    method void Defeated(integer n, integer gold)
+        -- 격퇴 (같은 맵 모두): 「습격 격퇴 · N마리」
+        _HudMain:RaidDefeated(n, gold)
+    end
+
+    -- ───────── 자리 ─────────
+
+    @ExecSpace("ServerOnly")
+    method table Spots(Entity map, Vector2 center)
+        -- 8방향 고리 자리 (P-A): 반지름 9.5~11 → 벽 앞까지 당김 → 5칸 미만·입구 안전 반경 안은 버림
+        local out = {}
+        for i = 0, 7 do
+            local ang = i * math.pi / 4 + (_UtilLogic:RandomDouble() - 0.5) * 0.35
+            local r = _GameData.raidRadiusMin + _UtilLogic:RandomDouble() * (_GameData.raidRadiusMax - _GameData.raidRadiusMin)
+            local target = center + Vector2(math.cos(ang) * r, math.sin(ang) * r)
+            local q = _Util:ReachablePoint(map, center, target, 0.4)
+            if (q - center):Magnitude() >= _GameData.raidMinReach and not self:NearEntry(map, q) then table.insert(out, q) end
+        end
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method any PickSpecies(Entity map, integer diff)
+        -- 맵 출현 목록(난이도 판) 중 무리 유형 우선 · 생명 최저인 일반 종. 없으면 ""
+        local base = _GameConst:BaseMapName(map.Name)
+        local sp = _GameData:GetMapSpawns(base)
+        if sp == nil then return "", 1 end
+        local entries = sp.entries
+        if diff == 1 and sp.entriesNm ~= "" then entries = sp.entriesNm elseif diff >= 2 and sp.entriesHell ~= "" then entries = sp.entriesHell end
+        local best, bestScore, bestLevel = "", 1e9, 1
+        for id, _, lv in string.gmatch(entries, "([%w_]+):(%d+):(%d+)") do
+            local src = _GameData:SourceOfModel(id)
+            local st = _GameData:GetMonsterStats(src)
+            if st ~= nil and (st.grade or 1) < 2 then
+                local score = (st.baseHp or 100) - ((_GameData:ArchetypeOf(src) == "swarm") and 1000 or 0)
+                if score < bestScore then best, bestScore, bestLevel = id, score, tonumber(lv) end
+            end
+        end
+        return best, _GameConst:ScaleLevel(bestLevel, diff)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer HordeCount(Entity map)
+        local n = 0
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
+            if isvalid(c.Entity) and not c.IsDead and c.Horde then n = n + 1 end
+        end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer RoomMobs(Entity map)
+        -- 방(맵 묶음) 전체 살아 있는 몬스터 — 사람 있는 맵만 센다 (잠든 맵은 0)
+        local root = map.Parent
+        if not isvalid(root) then return 0 end
+        local n = 0
+        for _, m in ipairs(root.Children:ToTable()) do
+            if #_Util:PlayersInMap(m) > 0 then
+                for _, c in ipairs(m:GetChildComponentsByTypeName("script.Monster", true)) do
+                    if isvalid(c.Entity) and not c.IsDead then n = n + 1 end
+                end
+            end
+        end
+        return n
+    end
+
+    -- ───────── 소환 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void Launch(table s)
+        -- 예고가 끝났다: 불린 사람이 그 맵에 살아 있으면 자리를 다시 재고(3칸 넘게 움직였으면) 나눠 소환
+        local a = s.active
+        local map = s.map
+        if a == nil then return end
+        if not _Util:IsAlive(a.caller) or a.caller.CurrentMap ~= map then self:Finish(s, "cancel") return end
+        local center = _Util:Pos2(a.caller)
+        if (center - a.center):Magnitude() > 3 then
+            local pts = self:Spots(map, center)
+            if #pts > 0 then a.pts = pts a.center = center end
+        end
+        self:Enqueue(s, a.size, a.leader > 0)
+        a.spawnTimer = _TimerService:SetTimerRepeat(function() self:RunQueue(s) end, _GameData.raidSpawnBatchSec)
+        self:RunQueue(s)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Enqueue(table s, integer n, boolean withLeader)
+        -- 자리를 방향마다 돌아가며 나누고 조금씩 흔든다 (벽 칸이면 가장 가까운 빈 칸)
+        local a = s.active
+        for i = 1, n do
+            local base = a.pts[(i - 1) % #a.pts + 1]
+            local dir = base - a.center
+            local len = math.max(0.01, dir:Magnitude())
+            local side = Vector2(-dir.y / len, dir.x / len)
+            local q = base + side * ((_UtilLogic:RandomDouble() - 0.5) * 1.8) + dir * ((_UtilLogic:RandomDouble() - 0.5) * 1.2 / len)
+            local free = _Util:NearestFreePoint(s.map, q, 2)
+            table.insert(a.queue, { p = free or base, leader = withLeader and i == 1 })
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RunQueue(table s)
+        -- raidSpawnBatchSec마다 raidSpawnBatch마리 (한 프레임에 다 만들지 않는다)
+        local a = s.active
+        if a == nil then return end
+        local map = s.map
+        local now = _UtilLogic.ElapsedSeconds
+        local caller = a.caller
+        for k = 1, math.floor(_GameData.raidSpawnBatch) do
+            local item = table.remove(a.queue, 1)
+            if item == nil then break end
+            local e = _SpawnService:SpawnByModelId(a.species, a.species, Vector3(item.p.x, item.p.y, 0), map)
+            if isvalid(e) then
+                a.spawned = a.spawned + 1
+                table.insert(a.alive, { e = e, at = now })
+                local level, leader, diff = a.level, item.leader, a.diff
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.Horde = true
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, leader)
+                    if leader then
+                        -- 떼 우두머리: 악몽 = 정예(+정예 능력) · 지옥 = 변종 우두머리 (D-A)
+                        if diff >= 2 then m:MakeVariant(_GameData:RollVariant(diff))
+                        elseif diff == 1 then m:MakeEliteVariant(_GameData:RollEliteVariant(diff)) end
+                    end
+                    -- 감지 4칸 밖에서도 곧장 온다: SetTarget만으로는 서 있었고(10-28 메이커 실험: 9.4칸 그대로 IDLE), 탐지 범위를 키워야 온다(9.4 → 1.7칸)
+                    local chase = e.AIChaseComponent
+                    if isvalid(chase) then chase.DetectionRange = _GameData.raidHordeDetect end
+                end, nil)
+            end
+        end
+        if #a.queue == 0 and a.spawnTimer ~= 0 then
+            _TimerService:ClearTimer(a.spawnTimer)
+            a.spawnTimer = 0
+            log(string.format("[VRF] raid spawned %s n=%d", map.Name, a.spawned))
+        end
+    end
+
+    -- ───────── 진행 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OnHordeKilled(Entity map, Entity monster)
+        local s = self.Maps[map.Id]
+        if s == nil or s.active == nil then return end
+        local a = s.active
+        for i, h in ipairs(a.alive) do
+            if h.e == monster then table.remove(a.alive, i) break end
+        end
+        a.killed = a.killed + 1
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        -- 1초마다: 수명·거리로 떼 정리, 빈 맵이면 모두 지움, 지옥 2파, 끝 판정
+        for _, s in pairs(self.Maps) do
+            if s.active ~= nil and isvalid(s.map) then self:TickRaid(s) end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TickRaid(table s)
+        local a = s.active
+        local map = s.map
+        local now = _UtilLogic.ElapsedSeconds
+        local players = _Util:PlayersInMap(map)
+        local keep = {}
+        for _, h in ipairs(a.alive) do
+            if isvalid(h.e) then
+                ---@type Monster
+                local m = h.e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead then
+                    local gone = #players == 0 or now - h.at > _GameData.raidHordeLifeSec or _Util:NearestPlayerDistance(map, _Util:Pos2(h.e)) > _GameData.raidHordeLeash
+                    if gone then
+                        h.e:Destroy()
+                        a.fled = a.fled + 1
+                    else
+                        table.insert(keep, h)
+                    end
+                end
+            end
+        end
+        a.alive = keep
+        if #players == 0 then
+            for _, _ in ipairs(a.queue) do end
+            a.queue = {}
+            self:Finish(s, "empty")
+            return
+        end
+        -- 지옥 2파: 첫 파의 raidPhase2At를 잡았을 때 raidPhase2Size 규모를 같은 자리에서 한 번 더
+        if a.phases >= 2 and not a.phase2 and a.killed >= math.ceil(a.size * _GameData.raidPhase2At) then
+            a.phase2 = true
+            local n = math.max(1, math.floor(a.size * _GameData.raidPhase2Size))
+            self:Enqueue(s, n, false)
+            if a.spawnTimer == 0 then a.spawnTimer = _TimerService:SetTimerRepeat(function() self:RunQueue(s) end, _GameData.raidSpawnBatchSec) end
+            log(string.format("[VRF] raid phase2 %s n=%d", map.Name, n))
+        end
+        if #a.queue == 0 and #a.alive == 0 and a.spawned > 0 and a.spawnTimer == 0 then
+            if a.fled == 0 then self:Victory(s) else self:Finish(s, "timeout") end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Victory(table s)
+        -- 떼 전멸: 불린 사람 발밑 골드 주머니 + 같은 맵 모두에게 격퇴 띠
+        local a = s.active
+        local map = s.map
+        local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
+        local level = sp ~= nil and sp.MapLevel or a.level
+        local gold = math.floor(level * _GameData.raidGoldPerLevel + _GameData.raidGoldBase)
+        if _Util:IsAlive(a.caller) and a.caller.CurrentMap == map then
+            _LootSystem:Spawn(_Util:Pos2(a.caller), a.caller.PlayerComponent.UserId, "gold", "", gold, 0)
+            _Telemetry:NoteRaid(a.caller, "raidWins")
+        else
+            gold = 0
+        end
+        for _, p in ipairs(_Util:PlayersInMap(map)) do self:Defeated(a.killed, gold, p.PlayerComponent.UserId) end
+        log(string.format("[VRF] raid victory %s killed=%d gold=%d sec=%.0f", map.Name, a.killed, gold, _UtilLogic.ElapsedSeconds - a.startAt))
+        self:Finish(s, "victory")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Finish(table s, string why)
+        -- 끝: 다음 습격까지 raidMinGapSec, raidCooldownSec 동안은 처치를 쌓지 않는다
+        local a = s.active
+        if a == nil then return end
+        if a.spawnTimer ~= 0 then _TimerService:ClearTimer(a.spawnTimer) end
+        local now = _UtilLogic.ElapsedSeconds
+        s.active = nil
+        s.nextAt = now + _GameData.raidMinGapSec
+        s.quietUntil = now + _GameData.raidCooldownSec
+        _Telemetry:Say(string.format("[TEL] raid end map=%s why=%s killed=%d fled=%d spawned=%d sec=%.0f", isvalid(s.map) and s.map.Name or "?", why, a.killed, a.fled, a.spawned, now - a.startAt))
+        log(string.format("[VRF] raid end %s why=%s killed=%d fled=%d spawned=%d", isvalid(s.map) and s.map.Name or "?", why, a.killed, a.fled, a.spawned))
+    end
+
+end

@@ -63,6 +63,13 @@ script MonsterTraits extends Component
         ---@type Monster
         local mon = self.Entity:GetComponent("script.Monster")
         if mon ~= nil and _GameConst:IsShade(mon.SourceId) then return end
+        if mon ~= nil and mon.Horde and grade < 2 and not self.Champion then
+            -- 습격의 떼 (기획서 41 W-A): 수식어·변종 없이, 같은 그림이라 몸 색조만 raidHordeTint만큼 어둡게 (이름표 「떼 · 」와 함께 구분). 떼 우두머리(정예·변종)는 그대로 굴린다
+            local r, g, b = string.match(self.Tint ~= "" and self.Tint or "1,1,1", "([%d%.]+),([%d%.]+),([%d%.]+)")
+            local k = _GameData.raidHordeTint
+            if r ~= nil then self.TintSync = string.format("%.2f,%.2f,%.2f", tonumber(r) * k, tonumber(g) * k, tonumber(b) * k) end
+            return
+        end
         if self.Variant == "" then self.Variant = self:InnateVariant() end
         local v = _GameData:GetVariant(self.Variant)
         local ability = (v ~= nil and v.weight > 0) and _GameData:VariantLabel(self.Variant) or ""

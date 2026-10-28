@@ -21,6 +21,9 @@ script HudMain extends Logic
     property number WarnUntil = 0               -- 머리 위 경고 글씨 (ShowWarn)
     property number WarnSeconds = 1.3
     property string WarnText = ""
+    property number RaidUntil = 0               -- 습격 예고 (RaidDirector.Warn → RaidWarn): 가장자리 표식·글귀가 보이는 동안
+    property table RaidPts = {}                 -- 떼가 솟을 자리 { {x, y}, ... } (최대 8)
+    property table RaidDecals = {}              -- 바닥 조짐 이펙트 번호 (끝나면 지운다)
     property string TipText = ""                -- 위쪽 가운데 여정 안내: 바뀌거나 맵에 들어올 때만 TipSeconds 동안
     property string TipMap = ""
     property number TipUntil = 0
@@ -445,6 +448,73 @@ script HudMain extends Logic
             self:RenderWarn()
             if _UtilLogic.ElapsedSeconds >= self.WarnUntil then self.WarnUntil = 0 end
         end
+        if self.RaidUntil > 0 then self:RenderRaid() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RaidWarn(table pts, number sec, integer act)
+        -- 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 + 떼가 솟을 자리마다 화면 가장자리 표식(RenderRaid) + 바닥 조짐(액트 장판 그림, 코덱스 조짐 그림 전까지) + 소리
+        local now = _UtilLogic.ElapsedSeconds
+        self.RaidPts = pts
+        self.RaidUntil = now + sec
+        _UIKit:SetText("RaidText", "습격이 온다")
+        _UIKit:SetEnabled("RaidText", true)
+        _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
+        local player = _UserService.LocalPlayer
+        for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
+        self.RaidDecals = {}
+        local ruid, w, h, tint = _GameConst.SpriteGroundPoison, 160, 80, Color(0.75, 0.6, 0.45, 0.7)   -- 액트 1 흙이 솟는 갈색
+        if act == 2 then ruid, w, h, tint = _GameConst.SpriteGroundFire, 140, 70, Color(0.95, 0.8, 0.5, 0.6)   -- 모래 소용돌이 느낌
+        elseif act == 3 then ruid, w, h, tint = _GameConst.SpriteGroundCold, 140, 70, Color(0.7, 0.9, 1, 0.65)  -- 얕은 바다 물거품
+        elseif act >= 4 then ruid, w, h, tint = _GameConst.SpriteGroundLava, 140, 70, Color(1, 0.6, 0.5, 0.7) end   -- 용암 재 웅덩이
+        if isvalid(player) then
+            for _, p in ipairs(pts) do
+                table.insert(self.RaidDecals, _Util:GroundDecal(ruid, w, h, player, Vector3(p[1], p[2], 0), 1.1, tint))
+            end
+        end
+        _TimerService:SetTimerOnce(function() self:RaidClear() end, sec + 0.2)
+        log(string.format("[VRF] raid warn shown pts=%d sec=%.1f act=%d", #pts, sec, act))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RaidClear()
+        -- 예고 끝: 글귀·표식·조짐을 거둔다
+        self.RaidUntil = 0
+        _UIKit:SetEnabled("RaidText", false)
+        for i = 1, 8 do _UIKit:SetEnabled("RaidMark" .. tostring(i), false) end
+        for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
+        self.RaidDecals = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRaid()
+        -- 떼가 솟을 자리를 화면 가장자리 안쪽(48px)에 표식으로 — 화면 밖 자리의 방향이 보인다. 크기가 숨 쉬듯 커졌다 작아진다
+        local now = _UtilLogic.ElapsedSeconds
+        local root = _UIKit:Get("/ui/GameHUD")
+        if now >= self.RaidUntil or not isvalid(root) then self:RaidClear() return end
+        local size = root.UITransformComponent.RectSize
+        local hx, hy = size.x * 0.5 - 48, size.y * 0.5 - 48
+        local pulse = 0.85 + 0.15 * math.sin(now * 9)
+        for i = 1, 8 do
+            local name = "RaidMark" .. tostring(i)
+            local p = self.RaidPts[i]
+            if p ~= nil then
+                local q = self:WorldToHud(Vector2(p[1], p[2]))
+                _UIKit:SetPos(name, Vector2(math.max(-hx, math.min(hx, q.x)), math.max(-hy, math.min(hy, q.y))))
+                local e = _UIKit:Get(name)
+                if isvalid(e) then e.UITransformComponent.RectSize = Vector2(30 * pulse, 30 * pulse) end
+                _UIKit:SetEnabled(name, true)
+            else
+                _UIKit:SetEnabled(name, false)
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RaidDefeated(integer n, integer gold)
+        -- 격퇴 (글귀 후보 1): 「습격 격퇴 · N마리」 띠 + 골드 주머니 안내 (코덱스 격퇴 판 전까지 UX 띠)
+        _UXFeedback:Show("습격 격퇴 · " .. tostring(n) .. "마리", gold > 0 and ("골드 주머니 " .. tostring(gold) .. "이 발밑에 떨어졌다") or "", "")
+        _SoundDirector:PlayEffect(_GameConst.SfxTreasure, 0.8)
     end
 
     @ExecSpace("ClientOnly")
@@ -628,6 +698,8 @@ script HudMain extends Logic
             prefix = "정예 "
             color = "#6E8CFF"
         end
+        -- 습격의 떼 (기획서 41 글귀 후보 1): 「떼 · 」 · 우두머리는 「떼 우두머리 」
+        if m.Horde then prefix = (m.Grade >= 2 or m:GetRank() == "champion") and "떼 우두머리 " or "떼 · " end
         -- 유형 (archetypes.csv): 동작을 쓰는 몬스터만 이름 옆에 옅게
         local arch = (m.Arch ~= "" and m:ArchActive(m.Arch)) and ("  " .. _UIKit:Colored("#A99F8E", _GameData:GetArchetype(m.Arch).name)) or ""
         _UIKit:SetText("Target/Name", _UIKit:Colored(color, prefix .. (m.DisplayName ~= "" and m.DisplayName or _GameData:GetMonsterName(m.SourceId))) .. "  Lv" .. tostring(m.Level) .. arch)

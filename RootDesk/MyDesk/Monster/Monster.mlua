@@ -55,6 +55,8 @@ script Monster extends Component
     property number RiteReflect = 0          -- 보스 의식: 받은 피해의 이 비율을 때린 쪽에 되돌린다 (수호왕 영혼 저울 0.3)
     @Sync
     property number RiteShield = 0           -- 보스 의식: 이만큼 피해를 먼저 막는 보호막 (오렌 심장 조각 — 최대 생명 15%)
+    @Sync
+    property boolean Horde = false           -- 습격의 떼 (RaidDirector · 기획서 41): 생명 ×raidHordeHpMul · 피해 ×raidHordeDmgMul · 수식어 없음 · 리스폰 없음 · 등급 「horde」. 클라이언트는 이름표 「떼 · 」
 
     method MonsterStatus Status()
         ---@type MonsterStatus
@@ -197,6 +199,7 @@ script Monster extends Component
             hp = hp * (self.Level >= _GameData.bossWallFromLevel and _GameData.bossWallHpMul or _GameData.bossHpMul)
         end
         hp = hp * self.StatMul * self.DiffHpMul
+        if self.Horde then hp = hp * _GameData.raidHordeHpMul end   -- 떼는 새 등급 (기존 종 수치는 그대로 — 10-28 공정성 원칙)
         local traits = self:Traits()
         if traits ~= nil then hp = hp * traits.HpMult end
         self.MaxHp = math.max(1, hp)
@@ -227,6 +230,7 @@ script Monster extends Component
         local traits = self:Traits()
         if traits ~= nil and traits.Champion then return "champion" end   -- 변종 우두머리 (악몽 이후 능력 붙은 정예는 정예 그대로)
         if self.Grade == 2 then return "elite" end
+        if self.Horde then return "horde" end   -- 습격의 떼 (monster_ranks horde · 추출 0.08 · 골드만)
         return "normal"
     end
 
@@ -270,6 +274,7 @@ script Monster extends Component
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil then m = m * bp.RageMult end
         if self.Grade >= 3 then m = m * _GameData.bossDmgMul end
+        if self.Horde then m = m * _GameData.raidHordeDmgMul end
         return m * self.RiteDealtMult
     end
 
@@ -647,7 +652,7 @@ script Monster extends Component
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = killer, players = self:RewardPlayers(killer),
             sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, variant = self:GetVariant(), map = self.Entity.CurrentMap,
-            nest = self.Entity:GetComponent("script.MonsterNest") ~= nil, named = self.NamedId, boss = self:IsFieldBoss(),
+            nest = self.Entity:GetComponent("script.MonsterNest") ~= nil, named = self.NamedId, boss = self:IsFieldBoss(), horde = self.Horde,
         })
         ---@type MonsterBehavior
         local behavior = self.Entity:GetComponent("script.MonsterBehavior")

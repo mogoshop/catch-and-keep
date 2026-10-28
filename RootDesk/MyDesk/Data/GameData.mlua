@@ -285,6 +285,28 @@ script GameData extends Logic
     property number streakBonusPct100 = 10    -- 100연속 이상 보너스 %
     property number mobilePickRadius = 1.5    -- 모바일: 이 거리(칸) 안에 손으로 주울 장비(일반·마법)가 있으면 공격 단추가 「줍기」로 바뀐다 (10-28 사용자)
     property number mobilePickSafeRadius = 3    -- 모바일: 이 거리 안에 살아 있는 몬스터가 있으면 공격 단추는 공격 그대로 (싸우는 중 잘못 줍지 않게)
+    property number raidMinGapSec = 60    -- 습격(기획서 41 #1-A): 한 맵에서 습격이 끝난 뒤 다음 습격까지 최소 간격(초)
+    property number raidCooldownSec = 20    -- 습격이 끝난 뒤 이 시간(초) 동안은 처치를 트리거에 쌓지 않는다 (R-A 쉬는 틈)
+    property number raidHordeHpMul = 0.7    -- 떼 몬스터 생명 배율 — 기존 몬스터 하향이 아니라 새 등급 (10-28 사용자 #4-C: ×0.5 추천을 ×0.7로)
+    property number raidHordeDmgMul = 0.8    -- 떼 몬스터 피해 배율 (#4-C ×0.8)
+    property number raidHordeTint = 0.85    -- 떼 몬스터 몸 색조 (같은 그림이라 살짝 어둡게 — 이름표 「떼 · 」와 함께)
+    property number raidHordeLifeSec = 60    -- 떼 수명(초) — 안 잡히면 사라진다 (무시해도 손해 0)
+    property number raidHordeLeash = 20    -- 떼가 가장 가까운 플레이어에게서 이 거리(칸) 넘게 멀어지면 바로 지운다
+    property number raidHordeGoldChance = 0.5    -- 떼 처치 골드 드롭 확률 (장비·룬·물약 없음 · 골드만 일반의 절반 — #3-A)
+    property number raidRadiusMin = 9.5    -- 떼가 솟는 고리 반지름 최소(칸) — PC 한 화면 반 폭 8 밖 (P-A)
+    property number raidRadiusMax = 11    -- 떼가 솟는 고리 반지름 최대(칸)
+    property number raidMinReach = 5    -- 8방향 중 벽 앞까지 당긴 거리가 이 값(칸) 미만이면 그 방향은 버린다 (벽 너머 금지)
+    property number raidWarnSec = 3    -- 예고 시간(초): 화면 가장자리 표식 + 바닥 조짐 + 소리 (#7-A)
+    property number raidSpawnBatch = 4    -- 예고 끝에 한 번(raidSpawnBatchSec)에 소환하는 떼 수 (한 프레임 튐 방지)
+    property number raidSpawnBatchSec = 0.1    -- 떼 나눠 소환 간격(초)
+    property number raidMapCap = 80    -- 맵 하나에 살아 있는 떼 상한 (#6-A)
+    property number raidRoomMobCap = 600    -- 방 전체 살아 있는 몬스터(스포너+떼+졸개)가 이 수를 넘으면 그 습격은 건너뛴다 — [TEL] raid skip (추정값 · 출시 뒤 조정)
+    property number raidGoldPerLevel = 8    -- 격퇴(떼 전멸) 골드 주머니: 맵 레벨당 (층 정리 골드의 1/5)
+    property number raidGoldBase = 20    -- 격퇴 골드 주머니 기본
+    property number raidBossGuard = 16    -- 보스·끝방 우두머리 둘레 이 거리(칸) 안에서는 습격이 서지 않는다 (토템 졸개와 겹치지 않게)
+    property number raidPhase2At = 0.7    -- 지옥 2파: 첫 파의 이 비율을 잡았을 때 두 번째 파
+    property number raidPhase2Size = 0.5    -- 지옥 2파 규모 (첫 파의 비율)
+    property number raidHordeDetect = 40    -- 떼 몬스터 탐지 범위(칸) — 화면 밖 고리(9.5~11)에서 곧장 플레이어에게 오게 (일반 4 · SetTarget만으로는 서 있었다, 10-28 메이커 실험)
     property table PlayerAppearance = {}
     property table PlayerAppearanceName = {}
     property table Pets = {}
@@ -815,6 +837,7 @@ script GameData extends Logic
         self.Ranks["champion"] = { name = "무리 우두머리", hpMul = 4, dmgMul = 1.5, extract = 0.15, extractCap = 0.4, grade = 2 }
         self.Ranks["unique"] = { name = "최상위", hpMul = 6, dmgMul = 1.8, extract = 0.1, extractCap = 0.25, grade = 2 }
         self.Ranks["boss"] = { name = "보스", hpMul = 20, dmgMul = 2, extract = 0.05, extractCap = 0.15, grade = 3 }
+        self.Ranks["horde"] = { name = "떼", hpMul = 1, dmgMul = 1, extract = 0.08, extractCap = 0.3, grade = 1 }
         self.Pets = {}
         table.insert(self.Pets, { key = "jae", name = "재", desc = "숯의 동생, 잿빛 아기 고양이", freePass = "I41RHM870", paidPass = "Q0TQOT864", idle = "7c216ee242a8403f9cf3d244580657bd,2ed72a08025e4e29b304c203e3f8b135,cb094500224b4c5591630c85a682abfd,2e457e02efad4d64a97752cf3132f12f", run = "f0ee0460b026402390c1810c60ddec94,e3db33f11e314938a0e50ae349b37755,78fab61e8be34d488f8201b0049e4228,c1350a35f3064308bea959d1abdca50e,e7772e6e707e42cb961311fe8354429f,1f2de66c79b646bb81814c380c641114", icon = "4c6199ead9184e919e65bc2479a052a0", scale = 1 })
         table.insert(self.Pets, { key = "dachshund", name = "먼지", desc = "귀털이 찰랑이는 장모 닥스훈트", freePass = "", paidPass = "S5ZT44OVS", idle = "145dc54d4c0f4644b5673fe3972c247f,0610837e31db42b0b92aad57c1c1d66f,19228fe21a534cf09caefa0c08425295,749e2b6855d84df4b463730ed3f589e5", run = "b2440976c67f49c691fd817464ef0690,5ee25e223a8f416bb90e8a5b5a68daac,ffe6e56fa9de44678a6d3431e3a6abae,d1dc53ab68af4939999bd868399ea6b7,904010f3a75442b9824d532c02e962be,4ce04b697f6942379e560bae0b5da15f", icon = "5199b7482ac0435c8da8ec47fac25c7a", scale = 1 })
@@ -835,9 +858,9 @@ script GameData extends Logic
         self.Shop["tp"] = { name = "귀환 두루마리", price = 80, perLevel = 0, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "tp", tier = 0, minLevel = 1, icon = "1505f96e5c7543e1ae27af3d318a8435", iconPx = 128 }
         self.Shop["gamble"] = { name = "도박", price = 600, perLevel = 120, hpPct = 0, manaPct = 0, hpFlat = 0, manaFlat = 0, kind = "gamble", tier = 0, minLevel = 1, icon = "194a67927c7049608205ad10ac85189b", iconPx = 0 }
         self.Difficulties = {}
-        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 0.8, monsterHpMul = 1, monsterDmgMul = 1, dropQualityMul = 1, dropMagicMul = 1, dropGoldMul = 1, goldAmountMul = 1, dropRuneMul = 1, dropNoneMul = 1, auraW1 = 60, auraW2 = 30, auraW3 = 10, eliteVariantChance = 0, championDual = 0 }
-        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 3, monsterHpMul = 2.4, monsterDmgMul = 1.2, dropQualityMul = 1.5, dropMagicMul = 1.2, dropGoldMul = 1.5, goldAmountMul = 0.8, dropRuneMul = 1.5, dropNoneMul = 0.85, auraW1 = 45, auraW2 = 38, auraW3 = 17, eliteVariantChance = 0.15, championDual = 1 }
-        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 70, levelFrom = 71, levelTo = 99, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 7, monsterHpMul = 2.6, monsterDmgMul = 1.2, dropQualityMul = 2, dropMagicMul = 1.4, dropGoldMul = 2, goldAmountMul = 0.6, dropRuneMul = 2.25, dropNoneMul = 0.7, auraW1 = 30, auraW2 = 42, auraW3 = 28, eliteVariantChance = 0.15, championDual = 1 }
+        self.Difficulties[0] = { id = "normal", name = "보통", suffix = "", levelBonus = 0, levelFrom = 1, levelTo = 40, resistPenalty = 0, deathExpLossPct = 0, questRewardMul = 0.8, monsterHpMul = 1, monsterDmgMul = 1, dropQualityMul = 1, dropMagicMul = 1, dropGoldMul = 1, goldAmountMul = 1, dropRuneMul = 1, dropNoneMul = 1, auraW1 = 60, auraW2 = 30, auraW3 = 10, eliteVariantChance = 0, championDual = 0, raidTrigger = 20, raidWaves = 2, raidSize = 16, raidPartyAdd = 4, raidLeader = 0, raidCap = 25, raidSide = 0, raidExpMul = 0.25, raidPhases = 1 }
+        self.Difficulties[1] = { id = "nightmare", name = "악몽", suffix = "_nm", levelBonus = 40, levelFrom = 41, levelTo = 70, resistPenalty = 30, deathExpLossPct = 5, questRewardMul = 3, monsterHpMul = 2.4, monsterDmgMul = 1.2, dropQualityMul = 1.5, dropMagicMul = 1.2, dropGoldMul = 1.5, goldAmountMul = 0.8, dropRuneMul = 1.5, dropNoneMul = 0.85, auraW1 = 45, auraW2 = 38, auraW3 = 17, eliteVariantChance = 0.15, championDual = 1, raidTrigger = 15, raidWaves = 2, raidSize = 18, raidPartyAdd = 6, raidLeader = 1, raidCap = 30, raidSide = 1, raidExpMul = 0.1, raidPhases = 1 }
+        self.Difficulties[2] = { id = "hell", name = "지옥", suffix = "_hell", levelBonus = 70, levelFrom = 71, levelTo = 99, resistPenalty = 60, deathExpLossPct = 10, questRewardMul = 7, monsterHpMul = 2.6, monsterDmgMul = 1.2, dropQualityMul = 2, dropMagicMul = 1.4, dropGoldMul = 2, goldAmountMul = 0.6, dropRuneMul = 2.25, dropNoneMul = 0.7, auraW1 = 30, auraW2 = 42, auraW3 = 28, eliteVariantChance = 0.15, championDual = 1, raidTrigger = 12, raidWaves = 3, raidSize = 24, raidPartyAdd = 8, raidLeader = 2, raidCap = 40, raidSide = 1, raidExpMul = 0.05, raidPhases = 2 }
         self.Sounds = {}
         self.Sounds["town"] = "93147bcf77494841b8d4478791ed9282"
         self.Sounds["field"] = "8efc5a3200114606a71e907036fe920f"

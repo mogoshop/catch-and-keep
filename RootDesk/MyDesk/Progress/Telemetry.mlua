@@ -95,7 +95,7 @@ script Telemetry extends Logic
         -- 방 부하 (1분마다, 10-28 F7-4 빈 맵 정리 효과): 살아 있는 몬스터 수 · 잠든 맵 수 → 세션마다 최대·합·표본 수
         self.RoomTicks = self.RoomTicks + 1
         if self.RoomTicks % 12 ~= 0 then return end
-        local mobs, sleeping, maps = 0, 0, 0
+        local mobs, sleeping, maps, raid = 0, 0, 0, 0
         local seen = {}
         for _, player in pairs(_UserService.UserEntities) do
             local root = isvalid(player) and isvalid(player.CurrentMap) and player.CurrentMap.Parent or nil
@@ -104,7 +104,10 @@ script Telemetry extends Logic
                 for _, map in ipairs(root.Children:ToTable()) do
                     maps = maps + 1
                     for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
-                        if isvalid(c.Entity) and not c.IsDead then mobs = mobs + 1 end
+                        if isvalid(c.Entity) and not c.IsDead then
+                            mobs = mobs + 1
+                            if c.Horde then raid = raid + 1 end   -- 습격의 떼 (기획서 41 L-E)
+                        end
                     end
                     local sp = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
                     if sp ~= nil and sp.SpawnedAt <= 0 then sleeping = sleeping + 1 end
@@ -118,9 +121,17 @@ script Telemetry extends Logic
                 s.roomMobSum = (s.roomMobSum or 0) + mobs
                 s.roomSamples = (s.roomSamples or 0) + 1
                 s.roomSleepMax = math.max(s.roomSleepMax or 0, sleeping)
+                s.raidMobMax = math.max(s.raidMobMax or 0, raid)
             end
         end
-        self:Say(string.format("[TEL] room mobs=%d sleeping=%d maps=%d", mobs, sleeping, maps))
+        self:Say(string.format("[TEL] room mobs=%d raid=%d sleeping=%d maps=%d", mobs, raid, sleeping, maps))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NoteRaid(Entity player, string key)
+        -- 습격 지표 (RaidDirector): raidCount · raidWins · raidSkips — 출시 서버에서 상한 25/30/40·600을 맞추는 세 숫자 중 둘 (기획서 41 L-E)
+        local s = self:Session(player)
+        if s ~= nil then s[key] = (s[key] or 0) + 1 end
     end
 
     -- ───────── 이벤트 ─────────
@@ -153,6 +164,7 @@ script Telemetry extends Logic
             if s ~= nil then
                 s.kills = s.kills + 1
                 if (e.grade or 1) == 2 then s.elite = s.elite + 1 elseif (e.grade or 1) >= 3 then s.boss = s.boss + 1 end
+                if e.horde then s.raidKills = (s.raidKills or 0) + 1 end
             end
         end
     end

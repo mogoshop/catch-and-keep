@@ -35,6 +35,15 @@ script LootSystem extends Logic
         -- 악몽·지옥: 없음 줄이고 골드·룬·장비 품질을 올린다 (difficulty.csv drop*Mul — 10-23 사용자: 디아2처럼 난이도가 오를수록 드롭이 좋아야)
         local diffIndex = self:DifficultyAt(monster.CurrentMap)
         local diff = _GameData:GetDifficulty(diffIndex)
+        if rank == "horde" then
+            -- 습격의 떼 (기획서 41 #3-A): 장비·룬·물약 없음 — 파밍 루프가 생기지 않게. 골드만 raidHordeGoldChance 확률로 일반의 절반
+            if _UtilLogic:RandomDouble() < _GameData.raidHordeGoldChance then
+                local q = monster.TransformComponent.WorldPosition
+                local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * 0.5 * (1 + gf / 100) * (diff ~= nil and diff.goldAmountMul or 1))
+                if amount > 0 then self:Spawn(Vector2(q.x, q.y), killer.PlayerComponent.UserId, "gold", "", amount, 0) end
+            end
+            return
+        end
         -- 같은 맵 인원 보정: 추첨 횟수 + 비율 (소수 부분은 확률로, CoopRules · 10-13 X2)
         local pickF = d.picks * (1 + _CoopRules:DropBonus(monster.CurrentMap))
         local picks = math.floor(pickF)

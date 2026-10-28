@@ -537,6 +537,9 @@ function buildGameHud() {
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
   b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });
   b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });
+  // 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 3초 + 떼가 솟을 자리마다 화면 가장자리 표식 최대 8 (HudMain.RaidWarn · RenderRaid — 코덱스 표식 그림 전까지 붉은 점)
+  b.text("RaidText", "", { size: 34, bold: true, color: "#FF7A5A", anchor: "middle-center", pos: [0, 250], rect_size: [600, 50], alignment: 4, ...outline, outline_width: 0.3, enable: false });
+  for (let i = 1; i <= 8; i++) b.sprite(`RaidMark${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [30, 30], image_ruid: K.dot, sprite_type: 0, color: "#FF5A3A", alpha: 0.95, enable: false });
 
   // 출구 가까이 가면 화면 가운데 아래 안내 (어디로 가는지 + 들어서면 이동)
   b.panel("GatePrompt", { anchor: "bottom-center", pos: [0, 330], rect_size: [760, 60], ...part("hud_box"), sprite_type: 1, enable: false });

@@ -13,18 +13,20 @@ script RewardSystem extends Logic
         local player = e.player
         if player == nil then return end
         local players = e.players or { player }
+        -- 습격의 떼(기획서 41 #3-A): 처치 경험치 ×raidExpMul(보통 0.25 · 악몽 0.10 · 지옥 0.05 — 끝 레벨 ±0) · 파티 나누기 없이 각자 그 배율로
+        local expMul = e.horde and _RaidDirector:ExpMul(e.map) or 1
         -- 경험치: 파티는 한 번만 D2식으로 나누고(근처 파티원 전원), 파티 밖 기여자는 각자 받는다
         local paid = {}
         for _, p in ipairs(players) do
             local id = p.PlayerComponent.UserId
             if not paid[id] then
                 local near = _PartySystem:NearbyMembers(p, e.monster)
-                if #near >= 2 and _PartySystem:ShareKill(p, e.monster, e.level, e.grade) then
+                if expMul == 1 and #near >= 2 and _PartySystem:ShareKill(p, e.monster, e.level, e.grade) then
                     for _, m in ipairs(near) do paid[m.PlayerComponent.UserId] = true end
                 else
                     ---@type PlayerStats
                     local stats = p:GetComponent("script.PlayerStats")
-                    if stats ~= nil then stats:GainExp(stats:ExpForKill(e.level, e.grade)) end
+                    if stats ~= nil then stats:GainExp(math.floor(stats:ExpForKill(e.level, e.grade) * expMul + 0.5)) end
                     paid[id] = true
                 end
             end
@@ -32,7 +34,7 @@ script RewardSystem extends Logic
         -- 연쇄 처치 (10-28 F2 #14-B): 막타 주인만 센다 (파티원 처치는 각자의 연쇄가 아니다)
         ---@type PlayerStats
         local killer = player:GetComponent("script.PlayerStats")
-        if killer ~= nil then killer:OnStreakKill(killer:ExpForKill(e.level, e.grade)) end
+        if killer ~= nil then killer:OnStreakKill(math.floor(killer:ExpForKill(e.level, e.grade) * expMul + 0.5)) end
         for _, p in ipairs(players) do
             -- 소환 중인 그림자도 처치 경험치를 받아 레벨이 오른다 (각자의 그림자)
             ---@type ShadowOwner
