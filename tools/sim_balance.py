@@ -151,7 +151,7 @@ def node_level(sid, rank):
     s = SKILL[sid]
     if sid == "deploy_expand":
         return int(C["deployExpandFromLv"] + C["deployExpandStep"] * (max(1, rank) - 1))
-    if sid in ("shard_multi", "command_mastery"):
+    if sid == "command_mastery":
         return 0
     prow = int(num(SKILL[s["parent"]]["row"])) if s["parent"] in SKILL else 1
     first = prow + 2 * (max(1, int(num(s["need"]))) - 1)
@@ -265,7 +265,9 @@ def build(prof, L, act=1, diff=0):
             if lv >= C["pierceTier%dLv" % t]: return C["pierceHits%d" % t]
         return C["pierceHits1"]
     if rk.get("bone_shard"):
-        spell += (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.5, pierce_cap(rk["bone_shard"])) / 0.75 * 0.25
+        # 10-28 투사체 A안: 관통 대신 레벨 구간마다 부채꼴 1·2·3·4발(SkillBook.GetBoneShardCount) — 무리에 맞는 몫은 발마다 +0.3 (상한 1.9)
+        n_shard = 1 + sum(1 for t in (2, 3, 4) if rk["bone_shard"] >= C["pierceTier%dLv" % t])
+        spell += (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.9, 1 + 0.3 * (n_shard - 1)) / 0.75 * 0.25
     if rk.get("bone_spear"):
         # 공통 곡선 (SkillBook.DamageCurve: 가상 레벨 = 랭크 + (해금 row - 1) // 2 · 배율 1.3) — 10-28: 관통·가동률 항이 주석 안에 있어 계산되지 않던 버그 수정, +7 하드코딩 → row
         virt = rk["bone_spear"] + max(0, int(num(SKILL["bone_spear"]["row"])) - 1) // 2

@@ -44,6 +44,8 @@ script Projectile extends Component
     property integer PierceHits = 0          -- 지금까지 맞힌 적 수
     property integer MaxHits = 0             -- 관통해도 이만큼 맞히면 멈춘다 (0 = 제한 없음 · 스킬 레벨 구간 SkillBook.GetPierceCap, 10-24)
     property integer Bounces = 0             -- 골편 강화 「튕김」: 맞힌 뒤 가까운 다른 적에게 튈 남은 횟수
+    property integer Splits = 0              -- 서리 혼 (10-28 투사체 A안 「쪼개짐」): 처음 맞은 적에서 갈라질 서리 파편 수
+    property number BurstRadius = 0          -- 저주 불꽃 (10-28 투사체 A안 「폭발」): 저주 걸린 적에 맞으면 이 반경에 화염 폭발 (0 = 없음)
     property string Team = "player"
     property boolean Launched = false
     property number Traveled = 0
@@ -362,10 +364,21 @@ script Projectile extends Component
                     self.PierceHits = self.PierceHits + 1
                     if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, dmg) end
                     if self.Info == "skill.bone_shard" and self.Bounces > 0 then
-                        -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼)
+                        -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼). 「뼈 가시」는 튈 때마다 세진다 (10-28 A안)
                         local effects = self.Owner:GetComponent("script.SkillEffects")
-                        if effects ~= nil then effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage, self.Bounces - 1, self.SpikePct) end
+                        if effects ~= nil then effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage * (1 + self.SpikePct / 100), self.Bounces - 1, self.SpikePct) end
                         self.Bounces = 0
+                    end
+                    if self.Info == "skill.frost_soul" and self.Splits > 0 then
+                        -- 서리 혼 「쪼개짐」: 처음 맞은 적에서 서리 파편이 가까운 다른 적들에게 갈라져 나간다 (파편은 다시 갈라지지 않는다)
+                        local effects = self.Owner:GetComponent("script.SkillEffects")
+                        if effects ~= nil then effects:FrostSplit(_Util:Pos2(m.Entity), self.HitIds, self.Damage, self.Splits) end
+                        self.Splits = 0
+                    end
+                    if self.Info == "skill.hex_flame" and self.BurstRadius > 0 and m:IsCursed() then
+                        -- 저주 불꽃 「폭발」: 저주 걸린 적에 맞으면 둘레의 다른 적에게 화염 폭발
+                        local effects = self.Owner:GetComponent("script.SkillEffects")
+                        if effects ~= nil then effects:HexBurst(_Util:Pos2(m.Entity), self.Damage, self.BurstRadius, m.Entity.Id) end
                     end
                     if self.Info == "skill.bone_shard" and m.Hp < beforeHp then
                         local effects = self.Owner:GetComponent("script.SkillEffects")
