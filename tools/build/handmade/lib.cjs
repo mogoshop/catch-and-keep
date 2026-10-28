@@ -422,6 +422,8 @@ function ambience(d) {
     DisplayName: d.name, Ambient: num(d.ambient), PlayerLightRadius: num(d.lightRadius),
     Bgm: d.bgm, Wind: bool(d.wind), Crows: bool(d.crows), Difficulty: 0, LevelBonus: 0,
     Storm: num(d.storm, 0), StatMul: num(d.statMul, 1),
+    // 날씨 (10-28 액트 3 「젖은 느낌」, maps.cjs와 같은 규칙): 바람 부는 바깥 맵 = 비, 그 밖의 액트 3 맵 = 옅은 안개
+    Weather: num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
   };
 }
 

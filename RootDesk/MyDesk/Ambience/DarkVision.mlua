@@ -14,6 +14,7 @@ script DarkVision extends Logic
     property number BossStorm = 0           -- 보스 모래폭풍 (HighPriestRite 3단계)
     property number CurseDark = 0           -- 심도 저주 「칠흑」: 시야를 이만큼 줄인다 (DepthDirector.Curse)
     property integer DustSerial = 0         -- 폭풍 모래 입자
+    property table WeatherSerials = {}      -- 날씨 입자 (MapAmbience.Weather — 액트 3 비·안개)
     property number WallShade = 0.5         -- 지나갈 수 없는 벽·테두리 그림 밝기 배율 (10-10 3차 QA: 바닥·기둥·동굴 벽이 구분되지 않았다)
     property any WallBase = nil             -- 벽 그림 엔티티 id → 원래 색 (다시 들어와도 배율이 겹치지 않게)
     property any ArtZ = nil                 -- 맵 그림 엔티티 id → 원래 z (다시 들어와도 뒤로 미는 값이 겹치지 않게)
@@ -60,6 +61,25 @@ script DarkVision extends Logic
         self.GlobalSerial = 0
         if self.DustSerial ~= 0 then _ParticleService:RemoveParticle(self.DustSerial) end
         self.DustSerial = 0
+        for _, id in ipairs(self.WeatherSerials) do _ParticleService:RemoveParticle(id) end
+        self.WeatherSerials = {}
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StartWeather(Entity map, string weather)
+        -- 맵 전체를 덮는 날씨 입자 (10-28 사용자: 액트 3 「물에 젖은 느낌」 — 코덱스 젖은 바닥이 오기 전에 먼저).
+        --   rain: 굵은 비 + 옅은 바다 안개 · mist: 동굴·등대 안 옅은 안개만. 맵 크기는 MapInfo(w·h)
+        if weather == "" then return end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local size = Vector2((info ~= nil and info.w or 60) + 6, (info ~= nil and info.h or 40) + 6)
+        local at = Vector3(0, 1, 0)
+        if weather == "rain" then
+            table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.Rain, size, map, at, 0, Vector3(1, 1, 1), true,
+                { Color = Color(0.82, 0.92, 1, 0.45), ParticleCount = 4, SortingLayer = "MapLayer0", OrderInLayer = 40 }))
+        end
+        table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.FogLively, size, map, at, 0, Vector3(1, 1, 1), true,
+            { Color = Color(0.7, 0.85, 0.9, weather == "rain" and 0.35 or 0.25), SortingLayer = "MapLayer0", OrderInLayer = 39 }))
+        log("[VRF] weather " .. weather .. " on " .. map.Name)
     end
 
     @ExecSpace("ClientOnly")
@@ -146,6 +166,7 @@ script DarkVision extends Logic
         end
         self.Active = true
         _OverlayLightService:SetOverlayLightEnabled(true)
+        self:StartWeather(map, amb.Weather)
         -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
         -- 밝기는 maps.csv가 기준 (맵을 다시 빌드하지 않아도 표 값이 바로 반영된다). 표에 없으면 맵에 저장된 값
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))

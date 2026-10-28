@@ -20,17 +20,37 @@ script WarpGate extends Component
     property integer TimerId = 0
     property table LastWarp = {}
     property number ArrivalGrace = 2.5        -- 맵에 막 들어온 사람은 이 시간 동안 포털이 반응하지 않는다 (10-20 첫 1시간 점검: 이동키를 누른 채 들어오면 바로 옆 귀환 포털로 튕겨 나갔다)
+    @Sync
+    property string Mist = ""                 -- 곁가지 입구·층 계단 포털 (10-28 사용자 A안): "r,g,b" — 구멍에서 피어오르는 안개 색. 비면 안개 없음
+    property integer MistFx = 0               -- 클라이언트: 안개 입자
 
-    @ExecSpace("ServerOnly")
     method void OnBeginPlay()
-        self.LastWarp = {}
-        self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.3)
+        -- 서버: 0.3초마다 반경 검사 / 클라이언트: 입구 안개
+        if self:IsServer() then
+            self.LastWarp = {}
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.3)
+            return
+        end
+        self:StartMist()
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
+        -- 타이머·안개 정리
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
+        if self.MistFx ~= 0 then _ParticleService:RemoveParticle(self.MistFx) end
+        self.MistFx = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StartMist()
+        -- 입구 그림의 어두운 구멍(이 포털 자리)에서 그 액트 색 안개가 피어오른다 — 흐린 소용돌이(포털 그림)와 함께 「들어가는 곳」을 알린다
+        if self.Mist == "" or self.MistFx ~= 0 then return end
+        local r, g, b = string.match(self.Mist, "([%d%.]+),([%d%.]+),([%d%.]+)")
+        if r == nil then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        self.MistFx = _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, Vector3(p.x, p.y - 0.35, 0), 0, Vector3(0.75, 0.75, 1), true,
+            { Color = Color(tonumber(r), tonumber(g), tonumber(b), 0.8), SortingLayer = "MapLayer0", OrderInLayer = 31 })
     end
 
     @ExecSpace("ServerOnly")
