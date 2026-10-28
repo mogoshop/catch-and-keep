@@ -8,6 +8,8 @@
 //   ;zone <글자> <바닥그림|-> <색|-> <이름>   구역 바닥 (-: 바탕 그대로). 길·표식 칸은 가장 가까운 구역 글자를 따른다
 //   ;road <글자> <길그림> <색> <이름>  길 칸 (타일 265 + 길 그림)
 //   ;wall <글자> <9조각 묶음> <색> <이름>  벽 칸 (충돌 타일 269 + 바위 9조각 그림)
+//   ;raised <9조각 묶음> <색> <이름>  담 윗면 맵 (10-28 사용자 「담 위에서 플레이하는 느낌」 시안): 걷는 칸 전체를 이 9조각으로 덮고(가장자리 = 낮은 칸과 맞닿은 면),
+//                                    첫 벽 글자 칸은 그림 없이 바탕을 낮은 모래로 두며, 담 남쪽 아래 한 칸에 앞면·그 아래 그림자를 그린다. 다른 벽 글자(기둥 등)는 담 위의 벽으로 그대로
 //   ;markers W E H T S R             표식 글자 (바닥으로 친다). 배치표의 기능 엔티티가 표식 1칸 안에 있는지 검사한다
 // 배치표(.csv) kind: gate(target=·arrive=town|left|right) · torch · waypoint(name=id) · set(map_sets.csv) · prop · decal ·
 //   cluster(name=그림|그림…, args r=반경;n=개수;seed=씨앗 — 시드 고정 흩뿌림, 바닥이 아니거나 길이면 피한다)
@@ -27,6 +29,8 @@ const PROJECT_TILESET = JSON.parse(fs.readFileSync(path.join(ROOT, "RootDesk/MyD
 const WALL_CENTER_SHADE = 0.3;        // 벽 속 조각은 어둡게 (maps.cjs와 같은 값)
 const WALL_EDGE_SHADE = 0.68;         // 바닥에 닿은 center 조각 (얇은 벽·들판 안 바위) — 구멍이 아니라 바위 윗면으로 읽히게
 const ROCK_DEPTH = 3;                 // 바닥에서 이 칸 수 안의 바위 속은 가장자리 그림으로 덮는다 (더 깊으면 검은 바깥)
+const RAISED_FACE = 0.55;             // 담 윗면 맵: 담 남쪽 앞면(center 조각) 밝기
+const RAISED_SHADOW = 0.32;           // 담 윗면 맵: 앞면 아래 그림자(검은 바위 속 조각) 불투명도
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
@@ -45,6 +49,7 @@ function parseBlueprint(id) {
       else if (m[0] === "zone") bp.zones[m[1]] = { art: m[2] === "-" ? null : m[2], tint: m[3] === "-" ? null : m[3], name: m.slice(4).join(" ") };
       else if (m[0] === "road") bp.roads[m[1]] = { art: m[2], tint: m[3], name: m.slice(4).join(" ") };
       else if (m[0] === "wall") bp.walls[m[1]] = { atlas: m[2], tint: m[3], name: m.slice(4).join(" ") };
+      else if (m[0] === "raised") bp.raised = { atlas: m[1], tint: m[2], name: m.slice(3).join(" ") };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       continue;
     }
@@ -177,10 +182,69 @@ function artEntities(d, ctx, bp, rows, func) {
   };
   // 1) 바탕 바닥 — 맵 전체
   out.push(tiled("ArtFloor", ruid(bp.base.art, "base"), (x0 + x1) / 2, (y0 + y1) / 2, w, h, 0, bp.base.tint));
-  // 2) 구역 바닥 — 같은 구역 칸을 줄 단위 사각형으로 묶어(위에서부터, 아래로 늘릴 수 있는 만큼) 반복 그리기
+  // 같은 열쇠 칸을 큰 사각형으로 묶는다 (위 왼쪽부터 오른쪽으로 늘리고, 그 폭 그대로 아래로 늘릴 수 있는 만큼)
+  //   (10-28 엔티티 예산: 시안 1장 벽 529개 — 큰 맵 66장 × 난이도 3본이라 벽 엔티티를 줄여야 한다)
+  const mergeRects = (pk) => {
+    const rects = [], done = new Set();
+    for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
+      const p = pk.get(key(x, y));
+      if (!p || done.has(key(x, y))) continue;
+      let xe = x;
+      while (pk.get(key(xe + 1, y)) === p && !done.has(key(xe + 1, y))) xe++;
+      let yb = y;
+      const rowOk = (yy) => { for (let xx = x; xx <= xe; xx++) if (pk.get(key(xx, yy)) !== p || done.has(key(xx, yy))) return false; return true; };
+      while (rowOk(yb - 1)) yb--;
+      for (let yy = yb; yy <= y; yy++) for (let xx = x; xx <= xe; xx++) done.add(key(xx, yy));
+      rects.push({ p, x, y: yb, len: xe - x + 1, rows: y - yb + 1 });
+    }
+    return rects;
+  };
+  const cellScale = { "MOD.Core.TransformComponent": { Scale: vec3(1 / S) } };
+  // 9조각 고르기: open(x, y)가 참인 이웃 쪽이 가장자리 (벽 칸이면 바닥 쪽, 담 윗면 칸이면 낮은 모래 쪽)
+  // 10-28 2차 검수: 바위(waste) 묶음의 center 조각은 그림 자체가 검은 공간이라, 얇은 벽(양쪽 바닥)·튀어나온 끝을 center로 그리면
+  //   밝기를 올려도 검은 막대였다 → 얇은 벽은 가장자리 조각(가로는 n · 세로는 w), 세 면이 바닥인 끝은 붙은 쪽 반대 조각으로
+  const pieceBy = (open) => (x, y) => {
+    const n = open(x, y + 1), s = open(x, y - 1), e = open(x + 1, y), ww = open(x - 1, y);
+    const cnt = n + s + e + ww;
+    if (cnt === 4) return "n";
+    if (cnt === 3) return !n ? "s" : !s ? "n" : !e ? "w" : "e";
+    if (n && s) return "n";
+    if (e && ww) return "w";
+    if (n) return e ? "ne" : ww ? "nw" : "n";
+    if (s) return e ? "se" : ww ? "sw" : "s";
+    if (e) return "e";
+    if (ww) return "w";
+    return "center";
+  };
+  // 2-1) 담 윗면 맵: 걷는 칸(+ 담 위 기둥 칸)을 담 9조각으로, 낮은 칸(첫 벽 글자)은 바탕 모래 그대로 + 담 앞면·그림자
+  const lowCh = bp.raised ? Object.keys(bp.walls)[0] : null;
+  const isLow = (x, y) => { const ch = bp.at(x, y); return ch === null || ch === lowCh; };
+  let raisedN = 0;
+  if (bp.raised) {
+    const rp = pieceBy(isLow), pk = new Map();
+    for (const [x, y] of bp.cells()) {
+      if (isLow(x, y)) {
+        // 바로 위(북쪽)가 담이면 앞면, 두 칸 위가 담이고 바로 위가 앞면이면 그림자
+        if (!isLow(x, y + 1)) pk.set(key(x, y), "face");
+        else if (isLow(x, y + 1) && bp.at(x, y + 1) !== null && !isLow(x, y + 2)) pk.set(key(x, y), "shadow");
+        continue;
+      }
+      pk.set(key(x, y), rp(x, y));
+    }
+    const t = tintOf(bp.raised.tint);
+    for (const r of mergeRects(pk)) {
+      const face = r.p === "face", shadow = r.p === "shadow";
+      const name = shadow ? "waste-borders-center" : `${bp.raised.atlas}-borders-${face ? "center" : r.p}`;
+      const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
+      const m = face ? RAISED_FACE : 1;
+      o["MOD.Core.SpriteRendererComponent"].Color = shadow ? { r: 0, g: 0, b: 0, a: RAISED_SHADOW } : { r: t.r * m, g: t.g * m, b: t.b * m, a: 1 };
+      out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.005], overrides: Object.assign(o, cellScale) });
+    }
+  }
+  // 2) 구역 바닥 — 같은 구역 칸을 줄 단위 사각형으로 묶어(위에서부터, 아래로 늘릴 수 있는 만큼) 반복 그리기 (담 윗면 맵은 담이 덮으므로 그리지 않는다)
   let zoneN = 0;
   for (const [ch, z] of Object.entries(bp.zones)) {
-    if (!z.art) continue;
+    if (!z.art || bp.raised) continue;
     const covered = new Set();
     const inZone = (x, y) => bp.isFloor(x, y) && bp.zoneOf(x, y) === ch && !covered.has(key(x, y));
     for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
@@ -195,7 +259,6 @@ function artEntities(d, ctx, bp, rows, func) {
     }
   }
   // 3) 길 — 줄마다 이어진 구간 (칸 크기 그림)
-  const cellScale = { "MOD.Core.TransformComponent": { Scale: vec3(1 / S) } };
   let roadN = 0;
   for (let y = b.y1; y >= b.y0; y--) {
     let cur = null;
@@ -214,21 +277,7 @@ function artEntities(d, ctx, bp, rows, func) {
   }
   // 4) 벽 — 바닥에 드러난 면의 조각 (layout.cjs wallRuns와 같은 규칙), 벽 글자마다 다른 9조각 묶음
   const f = (x, y) => bp.isFloor(x, y);
-  // 10-28 2차 검수: 바위(waste) 묶음의 center 조각은 그림 자체가 검은 공간이라, 얇은 벽(양쪽 바닥)·튀어나온 끝을 center로 그리면
-  //   밝기를 올려도 검은 막대였다 → 얇은 벽은 가장자리 조각(가로는 n · 세로는 w), 세 면이 바닥인 끝은 붙은 쪽 반대 조각으로
-  const pieceAt = (x, y) => {
-    const n = f(x, y + 1), s = f(x, y - 1), e = f(x + 1, y), ww = f(x - 1, y);
-    const open = n + s + e + ww;
-    if (open === 4) return "n";
-    if (open === 3) return !n ? "s" : !s ? "n" : !e ? "w" : "e";
-    if (n && s) return "n";
-    if (e && ww) return "w";
-    if (n) return e ? "ne" : ww ? "nw" : "n";
-    if (s) return e ? "se" : ww ? "sw" : "s";
-    if (e) return "e";
-    if (ww) return "w";
-    return "center";
-  };
+  const pieceAt = pieceBy(f);
   // 10-28 1차 검수: 얇은 벽(양쪽이 바닥)·들판 안 바위 덩어리가 「center」 0.3으로 검은 구멍처럼 보였다 →
   //   바닥에 닿은(8방향) center 조각은 WALL_EDGE_SHADE로 밝게, 바닥에서 떨어진 깊은 속만 어둡게
   const touchesFloor = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && f(x + dx, y + dy)) return true; return false; };
@@ -245,30 +294,17 @@ function artEntities(d, ctx, bp, rows, func) {
       depth.set(k, d0 + 1); dq.push([x + dx, y + dy]);
     }
   }
-  // 칸마다 조각 열쇠 → 같은 열쇠 칸을 큰 사각형으로 덮는다 (위 왼쪽부터 오른쪽으로 늘리고, 그 폭 그대로 아래로 늘릴 수 있는 만큼)
-  //   (10-28 엔티티 예산: 시안 1장 벽 529개 — 큰 맵 66장 × 난이도 3본이라 벽 엔티티를 줄여야 한다)
+  // 칸마다 조각 열쇠 → 같은 열쇠 칸을 큰 사각형으로 덮는다 (담 윗면 맵의 낮은 칸은 그리지 않는다 — 바탕 모래가 보인다)
   const pk = new Map();
   for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const ch = bp.at(x, y);
-    if (ch === null || !(ch in bp.walls)) continue;
+    if (ch === null || !(ch in bp.walls) || ch === lowCh) continue;
     let piece = pieceAt(x, y);
     if (piece === "center" && !touchesFloor(x, y) && depth.has(key(x, y))) piece = "n";
     pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);
   }
-  const rects = [], done = new Set();
-  for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
-    const p = pk.get(key(x, y));
-    if (!p || done.has(key(x, y))) continue;
-    let xe = x;
-    while (pk.get(key(xe + 1, y)) === p && !done.has(key(xe + 1, y))) xe++;
-    let yb = y;
-    const rowOk = (yy) => { for (let xx = x; xx <= xe; xx++) if (pk.get(key(xx, yy)) !== p || done.has(key(xx, yy))) return false; return true; };
-    while (rowOk(yb - 1)) yb--;
-    for (let yy = yb; yy <= y; yy++) for (let xx = x; xx <= xe; xx++) done.add(key(xx, yy));
-    rects.push({ p, x, y: yb, len: xe - x + 1, rows: y - yb + 1 });
-  }
   let wallN = 0;
-  for (const r of rects) {
+  for (const r of mergeRects(pk)) {
     const [wch, wpiece, lit] = r.p.split("|");
     const wl = bp.walls[wch];
     const o = sprite(ruid(`${wl.atlas}-borders-${wpiece}`, `wall ${wch}`), [r.len, r.rows], 1);
@@ -326,7 +362,7 @@ function artEntities(d, ctx, bp, rows, func) {
       if (placed < n) warn.push(`${where}: 흩뿌림 ${n}개 중 ${placed}개만 자리를 찾음`);
     } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
-  return { entities: out, blocked, warn, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN } };
+  return { entities: out, blocked, warn, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN } };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
