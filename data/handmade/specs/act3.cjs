@@ -62,6 +62,7 @@ module.exports = {
       "npc:KeeperDaughter": [8, 7], "npc:Stash": [2, -3], "npc:Elder": [-2, 6],
     },
     put: [
+      ["prop", "a3-landmark-harbor-anchor-monument", 11, 6.3],   // 10-28 마을 랜드마크 — 맵 위 끝(24칸)에 닿지 않게 그림 전체가 보이는 자리
       ["prop", "moored-ship", -3, 10.6, 1, 0, "ok=cliff"], ["prop", "fishing-net", -13.5, 8.6], ["prop", "harbor-barrels", 12.5, 8.4],
       ["prop", "harbor-lantern", -6.5, 7.2, 1, 0, "ok=gate"], ["prop", "harbor-lantern", 4.5, 7.2, 1, 0, "ok=gate"], ["prop", "a3-capsized-boat", -14, -4.4],
     ],
@@ -114,7 +115,7 @@ module.exports = {
       c: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-foam-line"], dn: 4 },
       d: { sets: ["a3_fish_camp"], props: ["fishing-net", "harbor-barrels", "a3-broken-trap"], n: 5, decals: ["a3-decal-rope-scraps"], dn: 2 },
       e: { props: ["salt-crystals", "a3-crab-shell-pile", "a3-crab-in-bucket"], n: 6, decals: ["a3-decal-shells"], dn: 3 },
-      f: { props: ["salt-crystals", "scorched-rock", "tidal-pool"], n: 8, decals: ["a3-decal-salt-crust"], dn: 4 },
+      f: { sets: ["a3_lm_salt_spire"], props: ["salt-crystals", "scorched-rock", "tidal-pool"], n: 8, decals: ["a3-decal-salt-crust"], dn: 4 },
       g: { props: ["a3-kelp-rock", "scorched-rock"], n: 5, decals: coastDecals, dn: 2 },
     },
   },
@@ -159,7 +160,7 @@ module.exports = {
       b: { sets: ["a3_bow_wreck"], props: ["a3-broken-mast", "wreck-anchor", "a3-drift-crates"], n: 7, decals: ["a3-decal-seaweed", "a3-decal-rope-scraps"], dn: 4 },
       c: { props: ["broken-boardwalk", "harbor-lantern", "a3-drift-crates", "fishing-net"], n: 8, decals: ["a3-decal-foam-line", "a3-decal-tide-puddle"], dn: 4 },
       d: { sets: ["a3_smuggler_cache"], props: ["smuggler-crates", "harbor-barrels", "a3-rusted-cannon"], n: 6, decals: ["a3-decal-rope-scraps"], dn: 2 },
-      e: { props: ["wreck-anchor", "a3-drift-crates", "scorched-rock"], n: 6, decals: ["a3-decal-seaweed"], dn: 3 },
+      e: { sets: ["a3_lm_wheel_graveyard"], props: ["wreck-anchor", "a3-drift-crates", "scorched-rock"], n: 6, decals: ["a3-decal-seaweed"], dn: 3 },
       f: { sets: ["a3_fish_camp"], props: ["drowned-hut", "fishing-net", "a3-capsized-boat"], n: 6, decals: ["a3-decal-shells"], dn: 3 },
       g: { props: ["scorched-rock", "a3-kelp-rock"], n: 5, decals: coastDecals, dn: 2 },
     },
@@ -202,7 +203,7 @@ module.exports = {
     dress: {
       a: { props: ["scorched-rock", "a3-kelp-rock"], n: 6, decals: ["a3-decal-salt-crust"], dn: 3 },
       b: { sets: ["a3_lighthouse_fall"], props: ["broken-beacon", "scorched-rock", "a3-drift-crates"], n: 6, decals: ["a3-decal-salt-crust"], dn: 3 },
-      c: { props: ["scorched-rock", "salt-crystals", "harbor-lantern"], n: 8, decals: ["a4-decal-scorch", "a3-decal-salt-crust"], dn: 5 },
+      c: { sets: ["a3_lm_lightning_totem"], props: ["scorched-rock", "salt-crystals", "harbor-lantern"], n: 8, decals: ["a4-decal-scorch", "a3-decal-salt-crust"], dn: 5 },
       d: { sets: ["a3_smuggler_cache"], props: ["smuggler-crates", "harbor-barrels"], n: 6, decals: ["a3-decal-rope-scraps"], dn: 2 },
       e: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-foam-line"], dn: 4 },
       f: { props: ["broken-beacon", "a3-rusted-cannon", "scorched-rock"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
@@ -247,7 +248,7 @@ module.exports = {
     put: [["prop", "drowned-hut", -16, 12.8], ["prop", "drowned-hut", -9, 13.2, 1, 1], ["prop", "drowned-hut", -13.5, 8.6, 0.9], ["prop", "chapel-pillar", 18.5, 15.6]],
     dress: {
       a: { props: ["a3-kelp-rock", "broken-boardwalk", "tidal-pool"], n: 6, decals: coastDecals, dn: 3 },
-      b: { props: ["broken-boardwalk", "fishing-net", "a3-drift-crates", "harbor-barrels"], n: 7, decals: ["a3-decal-seaweed", "a3-decal-tide-puddle"], dn: 4 },
+      b: { sets: ["a3_lm_belfry_roof"], props: ["broken-boardwalk", "fishing-net", "a3-drift-crates", "harbor-barrels"], n: 7, decals: ["a3-decal-seaweed", "a3-decal-tide-puddle"], dn: 4 },
       c: { sets: ["a3_fish_camp"], props: ["harbor-lantern", "harbor-barrels", "a3-crab-in-bucket"], n: 6, decals: ["a3-decal-shells", "a3-decal-rope-scraps"], dn: 4 },
       d: { props: ["chapel-pillar", "tidal-pool"], n: 4, decals: ["a3-decal-seaweed"], dn: 2 },
       e: { sets: ["a3_leviathan"], props: ["a3-kelp-rock", "a3-crab-shell-pile"], n: 5, decals: coastDecals, dn: 4 },
@@ -261,18 +262,18 @@ module.exports = {
     title: "폭풍 등대 1층",
     story: ["등대 아랫단. 기둥 넷이 받친 등대 홀(웨이포인트)을 창고 회랑·등유 저장고·침수된 방이 둘러싼다. 남쪽 저장고 바닥에 등대지기의 집으로 가는 문.", "(자리: 납골당 1층을 좌우·상하로 뒤집음 — 들어온 문이 동쪽)"],
     holes: { keeperhouse: [12, -8] },
-    dress: lightDress,
+    dress: Object.assign({}, lightDress, { d: Object.assign({}, lightDress.d, { sets: ["a3_lm_spiral_stair"] }) }),   // 10-28 랜드마크
   }), { fx: true, fy: true }),
   lighthouse2: remix(A1.crypt2, Object.assign({}, LIGHT, {
     title: "폭풍 등대 2층",
     story: ["기둥이 늘어선 긴 나선 회랑. 곁방마다 등유 통과 부서진 렌즈가 쌓였다. (자리: 납골당 2층을 좌우로 뒤집음)"],
-    dress: lightDress,
+    dress: Object.assign({}, lightDress, { d: Object.assign({}, lightDress.d, { sets: ["a3_lm_lens_stand"] }) }),   // 10-28 랜드마크
   }), { fx: true }),
   lighthouse3: remix(A1.crypt3, Object.assign({}, LIGHT, {
     title: "폭풍 등대 3층",
     story: ["불 꺼진 등롱실로 오르는 마지막 층. 넓은 렌즈 홀을 지나면 꼭대기 계단. (자리: 납골당 3층을 좌우·상하로 뒤집음)"],
     zones: Object.assign({}, LIGHT.zones, { e: "execution-floor 0.84/0.9/0.94 렌즈 홀" }),
-    dress: Object.assign({}, lightDress, { e: { props: ["lighthouse-lens", "broken-beacon", "harbor-lantern"], n: 6, decals: ["a3-decal-salt-crust"], dn: 4 } }),
+    dress: Object.assign({}, lightDress, { e: { sets: ["a3_lm_storm_bell"], props: ["lighthouse-lens", "broken-beacon", "harbor-lantern"], n: 6, decals: ["a3-decal-salt-crust"], dn: 4 } }),
   }), { fx: true, fy: true }),
   stormeye: remix(A1.queentomb, {
     title: "폭풍의 눈",
@@ -286,8 +287,8 @@ module.exports = {
       d: "execution-floor 0.7/0.82/0.82 봉인된 문간",
       e: "execution-floor 0.76/0.92/0.9 폭풍의 눈",
     },
-    fixed: { admiral: [-18, 0] },
-    put: [["set", "boss_admiral", -17.5, 0.5, 1, 1]],
+    fixed: { admiral: [-18, 4] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "boss_admiral", -17.5, 4.5, 1, 1], ["set", "a3_lm_admiral_anchor", -17.5, 9.3]],
     dress: {
       a: { props: ["lighthouse-stairs", "harbor-lantern"], n: 2 },
       b: { props: ["harbor-barrels", "a3-drift-crates", "fishing-net"], n: 7, decals: ["a3-decal-rope-scraps"], dn: 3 },
@@ -306,13 +307,15 @@ module.exports = {
       a: { props: ["salt-crystals"], n: 3 },
       b: { props: ["a3-crab-shell-pile", "salt-crystals"], n: 6, decals: ["a3-decal-shells"], dn: 2 },
       c: { sets: ["a3_tidepool"], props: ["a3-crab-shell-pile", "a3-kelp-rock", "a3-crab-in-bucket"], n: 7, decals: ["a3-decal-shells", "a3-decal-tide-puddle"], dn: 4 },
-      d: { props: ["a3-kelp-rock", "salt-crystals"], n: 5, decals: ["a3-decal-seaweed"], dn: 2 },
+      d: { sets: ["a3_lm_shell_mound"], props: ["a3-kelp-rock", "salt-crystals"], n: 5, decals: ["a3-decal-seaweed"], dn: 2 },
       e: { props: ["tidal-pool", "a3-crab-shell-pile"], n: 5, decals: ["a3-decal-tide-puddle"], dn: 2 },
       f: { props: ["salt-crystals"], n: 2 },
     },
   }), { fx: true, fy: true }),
   crabcave2: remix(A1.pit2, Object.assign({}, WETCAVE("ash-cave-floor", "0.68/0.78/0.8"), {
     title: "집게 동굴 2층",
+    put: [["set", "a3_lm_crab_throne", 18.5, 8.3]],
+    extra: { end: [18, 5], return: [23, 7] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["굴 가장 깊은 곳, 바위 집게 왕 크라그의 웅덩이. 웅덩이 구석에 되돌아가는 문. (자리: 뼈 구덩이 2층을 위아래로 뒤집음)"],
     zones: { a: "ash-cave-floor 0.66/0.76/0.78 계단참", b: "marsh-floor 0.6/0.76/0.78 껍질 무더기 길", c: "ash-cave-floor 0.58/0.66/0.7 북쪽 굴", d: "marsh-floor 0.66/0.84/0.86 집게 왕의 웅덩이" },
     dress: {
@@ -331,7 +334,7 @@ module.exports = {
     dress: {
       a: { props: ["harbor-barrels"], n: 3 },
       b: { props: ["a3-drift-crates", "fishing-net"], n: 5, decals: ["a3-decal-rope-scraps"], dn: 3 },
-      c: { props: ["harbor-barrels", "tidal-pool", "a3-kelp-rock"], n: 7, decals: ["a3-decal-tide-puddle"], dn: 2 },
+      c: { sets: ["a3_lm_cargo_souls"], props: ["harbor-barrels", "tidal-pool", "a3-kelp-rock"], n: 7, decals: ["a3-decal-tide-puddle"], dn: 2 },
       d: { sets: ["a3_smuggler_cache"], props: ["wreck-anchor", "harbor-barrels", "a3-drift-crates"], n: 9, decals: ["a3-decal-rope-scraps", "a3-decal-seaweed"], dn: 5 },
       e: { props: ["fishing-net", "a3-broken-mast"], n: 5 },
       f: { props: ["harbor-barrels", "harbor-lantern"], n: 4, decals: ["a3-decal-seaweed"], dn: 2 },
@@ -344,7 +347,7 @@ module.exports = {
     put: [["prop", "harbor-lantern", -16, -1, 1, 0]],
     dress: {
       a: { props: ["smuggler-crates"], n: 2 },
-      b: { props: ["smuggler-crates", "a3-drift-crates", "harbor-barrels"], n: 11, decals: ["a3-decal-rope-scraps"], dn: 3 },
+      b: { sets: ["a3_lm_crate_tower"], props: ["smuggler-crates", "a3-drift-crates", "harbor-barrels"], n: 11, decals: ["a3-decal-rope-scraps"], dn: 3 },
       c: { props: ["harbor-barrels", "smuggler-crates"], n: 9, decals: ["a3-decal-salt-crust"], dn: 2 },
       d: { decals: ["a3-decal-tide-puddle"], dn: 2 },
       e: { props: ["harbor-lantern", "smuggler-crates"], n: 4, decals: ["a3-decal-rope-scraps"], dn: 2 },
@@ -353,6 +356,8 @@ module.exports = {
   }), { fx: true, fy: true }),
   smuggler2: remix(A1.cellar2, Object.assign({}, WETCAVE("bone-floor", "0.68/0.74/0.74", "밀수꾼 동굴 벽"), {
     title: "밀수꾼 동굴 2층",
+    put: [["set", "a3_lm_map_table", -19.5, 11.3]],
+    extra: { end: [-20, 8], return: [-25, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["밀수꾼 두목 렌의 은신처. 장물 창고와 물 고인 방을 지나면 두목의 금고 방, 구석에 되돌아가는 문. (자리: 지하실 2층을 좌우·상하로 뒤집음)"],
     zones: { a: "bone-floor 0.64/0.7/0.7 계단참", b: "ash-camp-floor 0.66/0.7/0.68 장물 창고", c: "marsh-floor 0.52/0.66/0.66 물 고인 방", d: "bone-floor 0.7/0.74/0.72 갈림 방", e: "ash-camp-floor 0.78/0.76/0.7 두목의 금고 방" },
     dress: {
@@ -365,6 +370,8 @@ module.exports = {
   }), { fx: true, fy: true }),
   seachapel: remix(A2.archive, {
     title: "물에 잠긴 예배당",
+    put: [["set", "a3_lm_blue_pulpit", -20.5, 9.3]],
+    extra: { end: [-21, 6], return: [-26, -8] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["바닷물이 차오른 예배당. 신도석 줄이 늘어선 기도실 셋이 회랑으로 이어지고, 가장 안쪽 제단에 물에 잠긴 사제 세드릭. 제단 구석에 되돌아가는 문.", "(자리: 잊힌 서고를 좌우로 뒤집음 — 서가 줄이 신도석 줄)"],
     base: "cellar-floor 0.7/0.8/0.82",
     walls: { "#": "chapel 1/1/1 예배당 벽", "%": "ruin-wall 0.7/0.76/0.76 신도석 줄" },
@@ -387,6 +394,7 @@ module.exports = {
   }, { fx: true }),
   keeperhouse: remix(A1.cave, Object.assign({}, {
     title: "등대지기의 집",
+    put: [["prop", "a3-landmark-mad-lens-workbench", -21.5, 11.3, 1, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["등대 아래 등대지기의 집과 이어진 지하 굴. 서재·작업장 굴을 지나 가장 깊은 곳에 미친 등대지기 하울. 구석에 되돌아가는 문. (자리: 목매단 동굴을 좌우·상하로 뒤집음)"],
     base: "cellar-floor 0.74/0.7/0.64",
     walls: { "#": "shiphold 0.9/0.9/0.9 판자 벽" },

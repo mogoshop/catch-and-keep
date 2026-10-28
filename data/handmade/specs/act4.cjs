@@ -63,6 +63,7 @@ module.exports = {
       "npc:Deserter": [-9, 3], "npc:Stash": [2, -3], "npc:KeeperDaughter": [-2, 7],
     },
     put: [
+      ["prop", "a4-landmark-outpost-signal-brazier", 11, 6.3],   // 10-28 마을 랜드마크 — 맵 위 끝(24칸)에 닿지 않게 그림 전체가 보이는 자리
       ["prop", "a4-brazier", 0.5, 2.2, 1.3], ["prop", "a4-army-tent", -11, 8.6], ["prop", "a4-army-tent", 9, 8.6, 1, 1],
       ["prop", "a4-watchtower", -13.5, -3.6], ["prop", "a4-watchtower", 13.5, -3.6, 1, 1, "ok=gate"], ["prop", "a4-forge-anvil", 12.6, 2.2, 1, 0, "ok=gate"],
     ],
@@ -111,7 +112,7 @@ module.exports = {
     waypoint: [-1, 3],
     dress: {
       a: { props: ["a4-dead-tree", "a4-bone-heap", "a4-sulfur-stalagmite"], n: 6, decals: hellDecals, dn: 3 },
-      b: { sets: ["a4_lava_mound"], props: ["a4-sulfur-stalagmite", "a4-small-lava-fount"], n: 6, decals: ["a4-decal-lava-crack", "a4-decal-molten-drip"], dn: 4 },
+      b: { sets: ["a4_lm_ember_tree", "a4_lava_mound"], props: ["a4-sulfur-stalagmite", "a4-small-lava-fount"], n: 6, decals: ["a4-decal-lava-crack", "a4-decal-molten-drip"], dn: 4 },
       c: { sets: ["a4_soul_altar"], props: ["a4-soul-lantern", "a4-sigil-stone"], n: 5, decals: ["a4-decal-scorch", "a4-decal-lava-crack"], dn: 4 },
       d: { sets: ["a4_ruined_post"], props: ["a4-wood-fence-h", "a4-helm-pile", "a4-broken-ladder"], n: 6, decals: ["a4-decal-ash-heap"], dn: 3 },
       e: { props: ["a4-sulfur-stalagmite", "a4-sulfur-pool", "a4-bone-heap"], n: 6, decals: ["a4-decal-sulfur-stain"], dn: 3 },
@@ -160,7 +161,7 @@ module.exports = {
       c: { sets: ["a4_war_camp"], props: ["a4-army-tent", "a4-imp-on-barrel", "a4-demon-banner", "a4-helm-pile"], n: 8, decals: ["a4-decal-hoofprints", "a4-decal-ash-heap"], dn: 5 },
       d: { props: ["a4-soul-cage", "a4-prison-bars-h", "a4-soul-lantern"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
       e: { sets: ["a4_ruined_post"], props: ["a4-watchtower", "a4-wood-fence-h", "a4-helm-pile"], n: 6, decals: ["a4-decal-ash-heap"], dn: 3 },
-      f: { props: ["a4-siege-engine", "a4-broken-ladder", "a4-imp-on-barrel"], n: 6, decals: ["a4-decal-hoofprints"], dn: 3 },
+      f: { sets: ["a4_lm_war_banner"], props: ["a4-siege-engine", "a4-broken-ladder", "a4-imp-on-barrel"], n: 6, decals: ["a4-decal-hoofprints"], dn: 3 },
       g: { props: ["a4-demon-banner", "a4-dead-tree"], n: 4, decals: ["a4-decal-hoofprints"], dn: 2 },
     },
   },
@@ -201,7 +202,7 @@ module.exports = {
     waypoint: [1, 5],
     dress: {
       a: { props: ["a4-dead-tree", "a4-sulfur-stalagmite"], n: 6, decals: ["a4-decal-sulfur-stain"], dn: 3 },
-      b: { sets: ["a4_lava_mound"], props: ["a4-sulfur-pool", "a4-sulfur-stalagmite"], n: 8, decals: ["a4-decal-sulfur-stain", "a4-decal-molten-drip"], dn: 5 },
+      b: { sets: ["a4_lm_sulfur_geyser", "a4_lava_mound"], props: ["a4-sulfur-pool", "a4-sulfur-stalagmite"], n: 8, decals: ["a4-decal-sulfur-stain", "a4-decal-molten-drip"], dn: 5 },
       c: { sets: ["a4_soul_altar"], props: ["a4-soul-lantern", "a4-sigil-stone"], n: 5, decals: ["a4-decal-scorch"], dn: 3 },
       d: { props: ["a4-lava-wall-ruin", "a4-molten-channel-h", "a4-forge-anvil"], n: 5, decals: ["a4-decal-molten-drip"], dn: 3 },
       e: { sets: ["a4_fallen_giant"], props: ["a4-helm-pile", "a4-melted-armor-pile", "a4-chain-pillar"], n: 6, decals: ["a4-decal-ash-heap"], dn: 3 },
@@ -246,7 +247,7 @@ module.exports = {
     waypoint: [3, -3],
     dress: {
       a: { props: ["a4-dead-tree", "a4-bone-heap", "a4-lava-wall-ruin"], n: 6, decals: hellDecals, dn: 3 },
-      b: { props: ["a4-lava-wall-ruin", "a4-helm-pile", "a4-broken-ladder"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
+      b: { sets: ["a4_lm_lava_tower"], props: ["a4-lava-wall-ruin", "a4-helm-pile", "a4-broken-ladder"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
       c: { sets: ["a4_war_camp"], props: ["a4-army-tent", "a4-demon-banner", "a4-soul-cage"], n: 8, decals: ["a4-decal-hoofprints", "a4-decal-ash-heap"], dn: 5 },
       d: { props: ["a4-horned-statue", "a4-soul-lantern", "a4-bone-heap"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
       e: { sets: ["a4_fallen_giant"], props: ["a4-melted-armor-pile", "a4-helm-pile"], n: 6, decals: ["a4-decal-molten-drip"], dn: 3 },
@@ -288,7 +289,7 @@ module.exports = {
     dress: {
       a: { props: ["a4-lava-wall-ruin", "a4-sulfur-stalagmite"], n: 4, decals: hellDecals, dn: 2 },
       b: { props: ["a4-chain-pillar", "a4-demon-banner"], n: 3, decals: ["a4-decal-scorch"], dn: 2 },
-      c: { sets: ["a4_fallen_giant"], props: ["a4-lava-wall-ruin", "a4-bone-heap"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 4 },
+      c: { sets: ["a4_lm_heart_statue", "a4_fallen_giant"], props: ["a4-lava-wall-ruin", "a4-bone-heap"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 4 },
       d: { sets: ["a4_soul_altar"], props: ["a4-soul-lantern"], n: 2, decals: ["a4-decal-scorch"], dn: 2 },
       e: { sets: ["a4_lava_mound"], props: ["a4-small-lava-fount"], n: 2, decals: ["a4-decal-lava-crack", "a4-decal-molten-drip"], dn: 3 },
       f: { props: ["a4-chain-pillar", "a4-demon-banner"], n: 3, decals: ["a4-decal-scorch"], dn: 2 },
@@ -302,20 +303,20 @@ module.exports = {
     story: ["심연으로 내려가는 첫 층. 혼등이 늘어선 기둥 회랑(웨이포인트)과 곁방들. 남쪽 곁방 바닥에 타락의 구덩이로 가는 문.", "(자리: 납골당 2층을 좌우·상하로 뒤집음 — 들어온 문이 동쪽)"],
     waypoint: [6, 1],
     holes: { pit: [-2, -12] },
-    dress: abyssDress,
+    dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_rune_pillar"] }) }),   // 10-28 랜드마크
   }), { fx: true, fy: true }),
   abyssgate2: remix(A1.crypt1, Object.assign({}, ABYSS, {
     title: "심연의 문 2층",
     waypoint: undefined,
     story: ["문장의 홀을 제물 방·뼈 쌓인 방·갈라진 방이 둘러싼다. 고리처럼 돌아 아래 계단으로. (자리: 납골당 1층을 좌우로 뒤집음)"],
-    dress: abyssDress,
+    dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_ash_statue"] }) }),   // 10-28 랜드마크
   }), { fx: true }),
   abyssgate3: remix(A1.crypt3, Object.assign({}, ABYSS, {
     title: "심연의 문 3층",
     story: ["심연의 문 앞 마지막 층. 넓은 의식의 홀에서 배교한 대주교가 문을 봉인하고 있다 — 쓰러뜨려야 재의 회랑으로 내려간다.", "(자리: 납골당 3층을 좌우로 뒤집음)"],
     zones: Object.assign({}, ABYSS.zones, { e: "a4-abyss_rune 1/0.9/0.88 대주교의 의식 홀" }),
-    fixed: { archbishop: [-16, 0] },
-    put: [["set", "boss_archbishop", -15.5, 0.5, 1, 1]],
+    fixed: { archbishop: [-15, 3] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "boss_archbishop", -14.5, 3.5, 1, 1], ["set", "a4_lm_blood_pulpit", -14.5, 8.3]],
     dress: Object.assign({}, abyssDress, { e: { props: ["a4-soul-lantern", "a4-sigil-stone"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 5 } }),
   }), { fx: true }),
   ashhall: remix(A1.cellar1, Object.assign({}, ABYSS, {
@@ -325,7 +326,7 @@ module.exports = {
     put: [["prop", "a4-soul-crystal", -17.5, 2.4, 1, 0]],
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
-      b: { props: ["a4-helm-pile", "a4-melted-armor-pile", "a4-soul-lantern"], n: 10, decals: ["a4-decal-ash-heap"], dn: 3 },
+      b: { sets: ["a4_lm_ash_river"], props: ["a4-helm-pile", "a4-melted-armor-pile", "a4-soul-lantern"], n: 10, decals: ["a4-decal-ash-heap"], dn: 3 },
       c: { props: ["a4-melted-armor-pile", "a4-helm-pile", "a4-chain-pillar"], n: 9, decals: ["a4-decal-ash-heap"], dn: 2 },
       d: { decals: ["a4-decal-ash-heap", "a4-decal-scorch"], dn: 3 },
       e: { props: ["a4-soul-lantern", "a4-sigil-stone"], n: 4, decals: ["a4-decal-scorch"], dn: 2 },
@@ -353,7 +354,7 @@ module.exports = {
       c: { props: ["a4-horned-statue", "a4-soul-lantern"], n: 6, decals: ["a4-decal-ash-heap"], dn: 2 },
       d: { props: ["a4-demon-banner"], n: 2, decals: ["a4-decal-lava-crack"], dn: 2 },
       e: { props: ["a4-horned-statue", "a4-soul-lantern"], n: 6, decals: ["a4-decal-ash-heap"], dn: 2 },
-      f: { props: ["a4-horned-statue", "a4-demon-banner", "a4-brazier", "a4-sigil-stone"], n: 9, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 5 },
+      f: { sets: ["a4_lm_kneeling_row"], props: ["a4-horned-statue", "a4-demon-banner", "a4-brazier", "a4-sigil-stone"], n: 9, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 5 },
     },
   }, { fy: true }),
   throne: remix(A1.queentomb, {
@@ -368,8 +369,8 @@ module.exports = {
       d: "a4-abyss_rune 0.84/0.78/0.78 봉인된 문간",
       e: "a4-abyss_rune 1/0.9/0.86 재의 옥좌",
     },
-    fixed: { ashking: [-18, 1] },
-    put: [["set", "boss_ashking", -17.5, 1.5, 1, 1]],
+    fixed: { ashking: [-18, 5] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "boss_ashking", -17.5, 5.5, 1, 1], ["set", "a4_lm_heart_altar", -17.5, 10.3]],
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
       b: { props: ["a4-helm-pile", "a4-demon-banner", "a4-chain-pillar"], n: 7, decals: ["a4-decal-ash-heap"], dn: 3 },
@@ -388,13 +389,15 @@ module.exports = {
       a: { props: ["a4-sulfur-stalagmite"], n: 3 },
       b: { props: ["a4-sulfur-stalagmite", "a4-sulfur-pool"], n: 6, decals: ["a4-decal-sulfur-stain"], dn: 2 },
       c: { sets: ["a4_lava_mound"], props: ["a4-sulfur-stalagmite", "a4-sulfur-pool", "a4-bone-heap"], n: 7, decals: ["a4-decal-sulfur-stain", "a4-decal-molten-drip"], dn: 4 },
-      d: { props: ["a4-sulfur-stalagmite", "a4-bone-heap"], n: 5, decals: ["a4-decal-ash-heap"], dn: 2 },
+      d: { sets: ["a4_lm_sulfur_cluster"], props: ["a4-sulfur-stalagmite", "a4-bone-heap"], n: 5, decals: ["a4-decal-ash-heap"], dn: 2 },
       e: { props: ["a4-sulfur-pool"], n: 5, decals: ["a4-decal-sulfur-stain"], dn: 2 },
       f: { props: ["a4-sulfur-stalagmite"], n: 2 },
     },
   }), { fx: true }),
   sulfurcave2: remix(A1.pit2, Object.assign({}, SULFUR("0.88/0.84/0.72"), {
     title: "유황 동굴 2층",
+    put: [["set", "a4_lm_bone_roost", -17.5, 7.3, 1, 1]],
+    extra: { end: [-18, 4], return: [-24, 7] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["유황 여왕 네르사의 둥지. 끓는 웅덩이 사이로 여왕의 굴, 구석에 되돌아가는 문. (자리: 뼈 구덩이 2층을 좌우·상하로 뒤집음)"],
     zones: { a: "a4-sulfur_cave 0.84/0.8/0.7 계단참", b: "a4-sulfur_mud 0.8/0.78/0.68 유황 무더기 길", c: "a4-basalt 0.72/0.68/0.66 북쪽 굴", d: "a4-sulfur_cave 1/0.94/0.78 유황 여왕의 굴" },
     dress: {
@@ -407,6 +410,7 @@ module.exports = {
   soulprison: {
     size: [60, 40],
     title: "혼 감옥",
+    put: [["set", "a4_lm_soul_cage", 19.5, 10.3]],
     story: ["악마들이 혼을 가둬 둔 감옥. 긴 감방 복도 양쪽으로 감방 여섯, 북쪽 위로 고문실.", "복도 끝 간수장의 방에 간수장 그림달. 방 구석에 되돌아가는 문."],
     base: "a4-soul_prison 0.84/0.8/0.84",
     walls: { "#": "basalt-cliff 1/1/1 감옥 벽" },
@@ -432,7 +436,7 @@ module.exports = {
     ],
     rocks: [rock(13, 6, 1, 1), rock(13, -6, 1, 1), rock(22, 6, 1, 1), rock(22, -6, 1, 1)],
     gates: { W: [-29, 0] },
-    extra: { end: [19, 0], return: [24, -9] },
+    extra: { end: [19, 7], return: [24, -9] },   // 10-28 랜드마크(코덱스 act234) 앞으로 (전에는 0)
     dress: {
       a: { props: ["a4-prison-gate"], n: 1 },
       b: { props: ["a4-soul-lantern"], n: 4, decals: ["a4-decal-scorch"], dn: 3 },
@@ -476,18 +480,19 @@ module.exports = {
       b: { props: ["a4-forge-anvil", "a4-molten-channel-h", "a4-melted-armor-pile"], n: 8, decals: ["a4-decal-molten-drip", "a4-decal-scorch"], dn: 4 },
       c: { props: ["a4-bone-heap", "a4-imp-on-barrel", "a4-helm-pile"], n: 8, decals: ["a4-decal-ash-heap"], dn: 3 },
       d: { props: ["a4-forge-anvil", "a4-brazier", "a4-small-lava-fount"], n: 6, decals: ["a4-decal-molten-drip"], dn: 3 },
-      e: { props: ["a4-small-lava-fount", "a4-melted-armor-pile", "a4-lava-wall-ruin"], n: 7, decals: ["a4-decal-lava-crack"], dn: 3 },
+      e: { sets: ["a4_lm_great_smelter"], props: ["a4-small-lava-fount", "a4-melted-armor-pile", "a4-lava-wall-ruin"], n: 7, decals: ["a4-decal-lava-crack"], dn: 3 },
       f: { props: ["a4-forge-anvil", "a4-helm-pile", "a4-chain-pillar"], n: 7, decals: ["a4-decal-scorch"], dn: 3 },
       g: { props: ["a4-brazier"], n: 1 },
     },
   },
   forge2: remix(A1.cellar2, {
     title: "용암 대장간 2층",
+    extra: { end: [-20, 7], return: [-25, -9] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["대장간 아래층. 무너진 광석 창고와 용암 웅덩이 방을 지나면 대장장이 악마 베르카의 대장간. 구석에 되돌아가는 문. (자리: 지하실 2층을 좌우로 뒤집음 — 들어온 문이 동쪽)"],
     base: "a4-molten_forge 0.84/0.78/0.74",
     walls: { "#": "basalt-cliff 1/1/1 대장간 벽" },
     zones: { a: "a4-basalt 0.78/0.74/0.72 계단참", b: "a4-scorched_pavers 0.74/0.7/0.68 광석 창고", c: "a4-lava_crack 0.86/0.74/0.66 용암 웅덩이 방", d: "a4-basalt 0.8/0.76/0.74 갈림 방", e: "a4-molten_forge 1/0.9/0.8 베르카의 대장간" },
-    put: [["prop", "a4-forge-anvil", -23, 4, 1.3, 0]],
+    put: [["prop", "a4-forge-anvil", -23, 4, 1.3, 0], ["set", "a4_lm_berka_anvil", -19.5, 10.3]],
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
       b: { props: ["a4-bone-heap", "a4-helm-pile", "a4-imp-on-barrel"], n: 8, decals: ["a4-decal-ash-heap"], dn: 2 },
@@ -498,6 +503,8 @@ module.exports = {
   }, { fx: true }),
   apostate: remix(A2.archive, {
     title: "배교자의 수도원",
+    put: [["set", "a4_lm_apostate_altar", -20.5, 10.3, 1, 1]],
+    extra: { end: [-21, 7], return: [-26, 9] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["심장을 섬기는 배교자들의 수도원. 신도석 줄 기도실 셋이 회랑으로 이어지고, 가장 안쪽 제단에 심장의 사도 오렌. 제단 구석에 되돌아가는 문.", "(자리: 잊힌 서고를 좌우·상하로 뒤집음 — 들어온 문이 동쪽)"],
     base: "a4-apostate_chapel 0.86/0.8/0.8",
     walls: { "#": "basalt-cliff 1/1/1 수도원 벽", "%": "ruin-wall 0.46/0.36/0.36 신도석 줄" },
@@ -520,6 +527,7 @@ module.exports = {
   }, { fx: true, fy: true }),
   pit: remix(A1.hollow, Object.assign({}, {
     title: "타락의 구덩이",
+    put: [["prop", "a4-landmark-fallen-knight-sword-grave", -21.5, 12.3, 1, 0]],   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["심연의 문 아래 타락한 기사들이 떨어진 구덩이. 갈림 굴들이 뼈 둥지로 모이고, 가장 깊은 굴에 타락한 기사 이그나. 구석에 되돌아가는 문. (자리: 굶주린 굴을 좌우·상하로 뒤집음)"],
     base: "a4-bone_pit 0.82/0.76/0.72",
     walls: { "#": "basalt-cliff 0.9/0.84/0.82 구덩이 벽" },

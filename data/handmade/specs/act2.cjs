@@ -62,6 +62,7 @@ module.exports = {
       "npc:Scholar": [-9, 3], "npc:Stash": [2, -3], "npc:Elder": [-2, 7],
     },
     put: [
+      ["prop", "a2-landmark-caravan-well", -4, 6.3],   // 10-28 마을 랜드마크 — 맵 위 끝(24칸)에 닿지 않게 그림 전체가 보이는 자리
       ["prop", "oasis-pool", 0.5, 9.4, 1.3], ["prop", "palm", -6.5, 9.8], ["prop", "palm", 7.5, 9.8, 1, 1],
       ["prop", "market-stall", -6.5, -2.8], ["prop", "market-stall", 6.5, -2.8, 1, 1], ["prop", "tent", -14, 4.8], ["prop", "well", 13.5, 4.4],
     ],
@@ -114,7 +115,7 @@ module.exports = {
       c: { sets: ["a2_oasis_ruin"], props: ["palm", "desert-rock", "a2-broken-urns"], n: 6, decals: ["a2-decal-dry-crack", "a2-decal-broken-tiles"], dn: 4 },
       d: { sets: ["a2_abandoned_camp"], props: ["a2-torn-awning", "a2-spear-skull-fence", "a2-broken-urns"], n: 6, decals: ["a2-decal-snake-trail"], dn: 3 },
       e: { props: ["desert-rock", "desert-bones", "a2-dead-cactus"], n: 6, decals: ["a2-decal-snake-trail"], dn: 3 },
-      f: { props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-bleached-bones"], dn: 3 },
+      f: { sets: ["a2_lm_buried_caravan"], props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-bleached-bones"], dn: 3 },
       g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
   },
@@ -159,7 +160,7 @@ module.exports = {
       c: { sets: ["a2_colossus"], props: ["broken-column", "desert-rock", "a2-broken-urns"], n: 8, decals: ["a2-decal-buried-road", "a2-decal-broken-tiles"], dn: 5 },
       d: { props: ["a2-broken-urns", "desert-rock", "desert-bones"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
       e: { sets: ["a2_abandoned_camp"], props: ["a2-torn-awning", "camp-firewood", "a2-spear-skull-fence"], n: 6, decals: ["a1-decal-ash-campfire"], dn: 2 },
-      f: { props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
+      f: { sets: ["a2_lm_dry_waterwheel"], props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
       g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
   },
@@ -206,7 +207,7 @@ module.exports = {
       b: { props: ["desert-bones", "desert-rock"], n: 4, decals: ["a2-decal-bleached-bones"], dn: 3 },
       c: { sets: ["a2_oasis_ruin"], props: ["palm", "desert-rock"], n: 5, decals: ["a2-decal-dry-crack"], dn: 3 },
       d: { props: ["broken-column", "a2-broken-urns"], n: 5, decals: ["a2-decal-buried-road"], dn: 3 },
-      e: { sets: ["a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 5, decals: ["a2-decal-bleached-bones"], dn: 3 },
+      e: { sets: ["a2_lm_wind_tomb", "a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 5, decals: ["a2-decal-bleached-bones"], dn: 3 },
       f: { props: ["a2-torn-awning", "a2-broken-urns", "mp-fence"], n: 6, decals: ["a2-decal-broken-tiles"], dn: 2 },
       g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
@@ -276,7 +277,7 @@ module.exports = {
       c: { sets: ["a2_colossus"], props: ["broken-column", "a2-fallen-obelisk"], n: 5, decals: ["a2-decal-broken-tiles"], dn: 4 },
       d: { props: ["viper-nest", "desert-bones"], n: 4, decals: ["a2-decal-snake-trail"], dn: 3 },
       e: { props: ["market-stall", "a2-torn-awning", "a2-broken-urns"], n: 6, decals: ["a2-decal-sand-ripples"], dn: 3 },
-      f: { sets: ["a2_temple_gate"], props: ["temple-column", "broken-column"], n: 4, decals: ["a2-decal-buried-road"], dn: 3 },
+      f: { sets: ["a2_lm_triumph_arch", "a2_temple_gate"], props: ["temple-column", "broken-column"], n: 4, decals: ["a2-decal-buried-road"], dn: 3 },
       g: { props: ["broken-column", "desert-bones"], n: 2 },
       h: { props: ["wind-stele", "a2-broken-urns"], n: 3, decals: ["a2-decal-broken-tiles"], dn: 2 },
     },
@@ -288,21 +289,22 @@ module.exports = {
     story: ["모래에 묻힌 사원의 첫 층. 기둥 열 개가 선 긴 회랑(웨이포인트) 남북으로 제물 방·제단실이 붙어 있다.", "남쪽 태양 제단실 바닥에 잊힌 서고로 내려가는 입구. (자리: 납골당 2층을 위아래로 뒤집음)"],
     waypoint: [-7, 1],
     holes: { archive: [1, -13] },
-    dress: templeDress,
+    dress: Object.assign({}, templeDress, { d: Object.assign({}, templeDress.d, { sets: ["a2_lm_stair_censer"] }) }),   // 10-28 랜드마크
   }), { fy: true }),
   temple2: remix(A1.crypt3, Object.assign({}, TEMPLE, {
     title: "잊힌 사원 2층",
     story: ["사원 2층. 두 굴을 지나 갈림 방에서 넓은 전당으로 — 쌍둥이 문지기 아슈와 나슈가 아래층 계단을 지킨다.", "(자리: 납골당 3층을 위아래로 뒤집음)"],
     zones: Object.assign({}, TEMPLE.zones, { e: "temple-floor 0.96/0.88/0.74 문지기의 전당" }),
+    waypoint: undefined,   // 납골당 3층(crypt3)에 붙인 보스 앞 웨이포인트를 이어받지 않는다 — 여기는 보스 맵 (10-28)
     fixed: { gatebrother: [14, -2], gatebrother2: [14, 4] },
-    put: [["set", "boss_gatebrothers", 16.5, 1.5]],
+    put: [["set", "boss_gatebrothers", 16.5, 1.5], ["set", "a2_lm_lion_gate", 14.5, 9.3]],
     dress: Object.assign({}, templeDress, { e: { props: ["temple-column", "a2-broken-urns"], n: 4, decals: ["a2-decal-broken-tiles"], dn: 5 } }),
   }), { fy: true }),
   temple3: remix(A1.crypt1, Object.assign({}, TEMPLE, {
     title: "잊힌 사원 3층",
     waypoint: [-26, 3],   // 10-28 사용자: 성소 바로 앞 층 웨이포인트 (입구 쪽)
     story: ["사원 가장 깊은 층. 기둥 넷이 받친 태양 제단실을 지나 고리처럼 돌아야 성소 계단에 닿는다.", "(자리: 납골당 1층을 위아래로 뒤집음)"],
-    dress: templeDress,
+    dress: Object.assign({}, templeDress, { d: Object.assign({}, templeDress.d, { sets: ["a2_lm_singing_altar"] }) }),   // 10-28 랜드마크
   }), { fy: true }),
   sanctum: remix(A1.queentomb, {
     title: "대사제의 성소",
@@ -316,8 +318,8 @@ module.exports = {
       d: "temple-floor 0.86/0.8/0.7 봉인된 문간",
       e: "temple-floor 1/0.92/0.78 대사제의 성소",
     },
-    fixed: { highpriest: [17, 1] },
-    put: [["set", "boss_highpriest", 17.5, 1.5]],
+    fixed: { highpriest: [17, 5] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "boss_highpriest", 17.5, 5.5], ["set", "a2_lm_sun_disc", 17.5, 10.3]],
     dress: {
       a: { props: ["temple-column", "a2-broken-urns"], n: 3 },
       b: { props: ["a2-broken-urns", "wind-stele", "desert-bones"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 3 },
@@ -336,13 +338,15 @@ module.exports = {
       a: { props: ["desert-rock"], n: 3 },
       b: { props: ["desert-rock", "desert-bones"], n: 6, decals: ["a2-decal-snake-trail"], dn: 2 },
       c: { sets: ["a2_rib_pass"], props: ["desert-bones", "a3-crab-shell-pile", "a2-dead-cactus"], n: 7, decals: ["a2-decal-bleached-bones"], dn: 4 },
-      d: { props: ["desert-rock", "desert-bones"], n: 5, decals: ["a2-decal-snake-trail"], dn: 2 },
+      d: { sets: ["a2_lm_venom_pool"], props: ["desert-rock", "desert-bones"], n: 5, decals: ["a2-decal-snake-trail"], dn: 2 },
       e: { props: ["desert-bones", "a2-waving-skeleton"], n: 5 },
       f: { props: ["desert-rock"], n: 2 },
     },
   }), { fy: true }),
   scorpnest2: remix(A1.pit2, Object.assign({}, SANDCAVE("sand-cave-floor", "0.9/0.82/0.68"), {
     title: "전갈 굴 2층",
+    put: [["set", "a2_lm_egg_nest", -18.5, 5.3]],
+    extra: { end: [-19, 2], return: [-24, -6] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["굴 가장 깊은 곳, 독침 여왕 세르카의 알자리. 여왕 굴 구석에 되돌아가는 문. (자리: 뼈 구덩이 2층을 좌우로 뒤집음 — 들어온 문이 동쪽)"],
     zones: { a: "sand-cave-floor 0.84/0.76/0.64 계단참", b: "sand-floor 0.82/0.74/0.6 껍질 무더기 길", c: "sand-cave-floor 0.74/0.66/0.56 북쪽 굴", d: "sand-cave-floor 0.98/0.88/0.7 독침 여왕의 알자리" },
     dress: {
@@ -361,7 +365,7 @@ module.exports = {
       b: { props: ["desert-rock", "a2-broken-urns", "desert-bones"], n: 7, decals: ["a2-decal-dry-crack"], dn: 2 },
       c: { props: ["broken-column", "desert-rock"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 2 },
       d: { props: ["desert-bones", "a2-broken-urns"], n: 6 },
-      e: { props: ["a2-broken-urns", "desert-bones", "a2-waving-skeleton"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
+      e: { sets: ["a2_lm_well_pulley"], props: ["a2-broken-urns", "desert-bones", "a2-waving-skeleton"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
     },
   }), { fy: true }),
   kingtomb1: remix(A1.cellar1, Object.assign({}, {
@@ -373,7 +377,7 @@ module.exports = {
     put: [["prop", "a2-buried-statue-head", 16.5, -1.6, 1, 0]],
     dress: {
       a: { props: ["a2-broken-urns"], n: 2 },
-      b: { props: ["a2-broken-urns", "broken-column", "desert-bones"], n: 10, decals: ["a2-decal-broken-tiles"], dn: 3 },
+      b: { sets: ["a2_lm_mask_wall"], props: ["a2-broken-urns", "broken-column", "desert-bones"], n: 10, decals: ["a2-decal-broken-tiles"], dn: 3 },
       c: { props: ["a2-broken-urns", "wind-stele"], n: 8, decals: ["a2-decal-dry-crack"], dn: 2 },
       d: { decals: ["a2-decal-bleached-bones"], dn: 2 },
       e: { props: ["temple-column", "a2-broken-urns"], n: 4, decals: ["a2-decal-broken-tiles"], dn: 2 },
@@ -382,11 +386,12 @@ module.exports = {
   }), { fy: true }),
   kingtomb2: remix(A1.cellar2, Object.assign({}, {
     title: "왕들의 묘실 2층",
+    extra: { end: [19, 8], return: [24, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["무너진 보물 방과 모래가 쏟아진 방을 지나면 묘실 수호왕 아메네트의 석관실. 석관실 구석에 되돌아가는 문. (자리: 지하실 2층을 위아래로 뒤집음)"],
     base: "tomb-floor 0.84/0.76/0.64",
     walls: { "#": "tomb 0.96/0.92/0.86 묘실 벽" },
     zones: { a: "tomb-floor 0.76/0.68/0.58 계단참", b: "tomb-floor 0.8/0.72/0.6 무너진 보물 방", c: "sand-floor 0.8/0.72/0.58 모래 쏟아진 방", d: "tomb-floor 0.84/0.76/0.62 갈림 방", e: "tomb-floor 1/0.9/0.72 수호왕의 석관실" },
-    put: [["prop", "tomb-door", 23, -2.4, 1, 0]],
+    put: [["prop", "tomb-door", 23, -2.4, 1, 0], ["set", "a2_lm_king_sarcophagus", 19.5, 11.3]],
     dress: {
       a: { props: ["a2-broken-urns"], n: 2 },
       b: { props: ["a2-broken-urns", "broken-column"], n: 9, decals: ["a2-decal-broken-tiles"], dn: 2 },
@@ -398,6 +403,7 @@ module.exports = {
   archive: {
     size: [60, 40],
     title: "잊힌 서고",
+    put: [["set", "a2_lm_burning_shelf", 20.5, 9.3]],
     story: ["사원 제단실 아래 숨은 서고. 서가 줄이 늘어선 열람실 셋이 필사실 복도로 이어진다.", "가장 안쪽 불탄 금서실에서 불꽃 사서 이드리스가 기다린다. 금서실 구석에 되돌아가는 문."],
     base: "archive-floor 0.86/0.8/0.7",
     walls: { "#": "tomb 0.9/0.84/0.76 서고 벽", "%": "ruin-wall 0.8/0.7/0.58 서가 줄" },
@@ -425,7 +431,7 @@ module.exports = {
       rock(16, 6, 1, 1), rock(16, -6, 1, 1), rock(24, 6, 1, 1), rock(24, -6, 1, 1),
     ],
     gates: { W: [-29, 0] },
-    extra: { end: [20, 0], return: [25, -8] },
+    extra: { end: [20, 6], return: [25, -8] },   // 10-28 랜드마크(코덱스 act234) 앞으로 (전에는 0)
     dress: {
       a: { props: ["bookshelf"], n: 2 },
       b: { props: ["bookshelf", "burnt-paper", "a2-broken-urns"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 2 },
@@ -443,7 +449,7 @@ module.exports = {
       a: { props: ["viper-nest"], n: 2 },
       b: { props: ["viper-nest", "desert-bones"], n: 5, decals: ["a2-decal-snake-trail"], dn: 3 },
       c: { props: ["viper-nest", "desert-rock", "desert-bones"], n: 7, decals: ["a2-decal-snake-trail"], dn: 2 },
-      d: { props: ["viper-nest", "a2-dead-cactus", "desert-bones"], n: 9, decals: ["a2-decal-snake-trail", "a2-decal-bleached-bones"], dn: 5 },
+      d: { sets: ["a2_lm_serpent_column"], props: ["viper-nest", "a2-dead-cactus", "desert-bones"], n: 9, decals: ["a2-decal-snake-trail", "a2-decal-bleached-bones"], dn: 5 },
       e: { props: ["viper-nest", "desert-bones"], n: 5 },
       f: { props: ["viper-nest", "a2-waving-skeleton"], n: 4, decals: ["a2-decal-snake-trail"], dn: 2 },
     },
