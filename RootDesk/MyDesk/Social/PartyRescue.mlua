@@ -1,0 +1,196 @@
+-- 파티 구출 (기획서 39 §7 A · 결정 #12A · 10-29): 쓰러진 파티원 곁 rescueRange(1.5칸) 안에 다른 파티원이 rescueSec(3초) 머물면 그 자리에서 일어난다.
+--   생명 rescueHpPct(50%) · 그 자리의 내 시체(장비·되찾을 경험치)를 함께 회수 (PlayerCorpses.RecoverAt) · 사망 벌칙(골드·경험치 손실)은 쓰러질 때 이미 적용된 그대로.
+--   같은 맵에 살아 있는 파티원이 있을 때만 마을 부활 전에 rescueWaitSec 기다린다. 없거나 시간이 지나면 지금처럼 마을에서 부활 (시체 걷기).
+--   쓰러진 쪽은 「마을에서 부활」 단추로 바로 갈 수 있다 (RequestGiveUp).
+--   심연(목숨 하나)·결투 패배는 PlayerVitals.Die가 여기까지 오지 않는다 → 꺼짐.
+--   화면: 구출하는 쪽 머리 위 3초 진행 막대 · 쓰러진 쪽 안내 판 (RescueHUD · ui/CoopHUD). 글귀는 모두 임시 (승인 전).
+@Logic
+script PartyRescue extends Logic
+
+    property any Downed = nil              -- 서버: userId → { player, map, pos, at, untilAt, rescuer(userId), start }
+    property integer TimerId = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 쓰러진 사람이 생길 때만 0.2초 타이머를 돌린다 (BeginDown)
+        self.Downed = {}
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        -- 타이머 정리
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method table Helpers(Entity player)
+        -- 일으켜 줄 수 있는 사람: 같은 파티 · 같은 맵 · 살아 있는 다른 사람
+        local out = {}
+        if not isvalid(player) then return out end
+        for _, p in ipairs(_PartySystem:Members(player)) do
+            if isvalid(p) and p ~= player and p.CurrentMap == player.CurrentMap and _Util:IsAlive(p) then table.insert(out, p) end
+        end
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean BeginDown(Entity player)
+        -- PlayerVitals.Die(보통 사망)에서 부른다. 같은 맵에 살아 있는 파티원이 있으면 구출을 기다리고 true (마을 부활은 여기서 맡는다)
+        if not isvalid(player) or not isvalid(player.CurrentMap) then return false end
+        local helpers = self:Helpers(player)
+        if #helpers == 0 then return false end
+        if self.Downed == nil then self.Downed = {} end
+        local pc = player.PlayerComponent
+        local now = _UtilLogic.ElapsedSeconds
+        local wait = math.max(pc.RespawnDuration, _GameData.rescueWaitSec)
+        self.Downed[pc.UserId] = { player = player, map = player.CurrentMap, pos = _Util:Pos2(player), at = now, untilAt = now + wait, rescuer = "", start = 0 }
+        if self.TimerId == 0 then self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.2) end
+        self:ShowDowned(wait, pc.UserId)
+        log("[VRF] rescue down uid=" .. pc.UserId .. " helpers=" .. tostring(#helpers) .. " wait=" .. tostring(wait))
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        -- 쓰러진 사람마다: 곁의 파티원 확인 → 시작·취소·완료, 아무도 없이 시간이 지나면 마을 부활
+        local now = _UtilLogic.ElapsedSeconds
+        for uid, d in pairs(self.Downed) do self:TickOne(uid, d, now) end
+        if next(self.Downed) == nil and self.TimerId ~= 0 then
+            _TimerService:ClearTimer(self.TimerId)
+            self.TimerId = 0
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TickOne(string uid, table d, number now)
+        local p = d.player
+        ---@type PlayerVitals
+        local vitals = isvalid(p) and p:GetComponent("script.PlayerVitals") or nil
+        if vitals == nil or not vitals.Dying or p.CurrentMap ~= d.map then
+            -- 이미 다른 길로 일어났거나 (마을 부활) 맵을 떠났다
+            self:Clear(uid, d, "gone")
+            return
+        end
+        local range = _GameData.rescueRange
+        local helpers = self:Helpers(p)
+        if d.rescuer ~= "" then
+            local still = false
+            for _, h in ipairs(helpers) do
+                if h.PlayerComponent.UserId == d.rescuer and (_Util:Pos2(h) - d.pos):Magnitude() <= range then still = true end
+            end
+            if not still then
+                self:Cancel(uid, d)
+            elseif now - d.start >= _GameData.rescueSec then
+                self:Done(uid, d, vitals)
+                return
+            end
+        end
+        if d.rescuer == "" then
+            for _, h in ipairs(helpers) do
+                if d.rescuer == "" and (_Util:Pos2(h) - d.pos):Magnitude() <= range then self:Start(uid, d, h, now) end
+            end
+        end
+        -- 구출 중이면 시간이 지나도 끝까지 기다린다. 곁에 올 파티원이 아무도 없으면 기본 부활 시간만 기다린다
+        if d.rescuer == "" and (now >= d.untilAt or (#helpers == 0 and now >= d.at + p.PlayerComponent.RespawnDuration)) then
+            self:Clear(uid, d, "timeout")
+            vitals:Revive(false)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Start(string uid, table d, Entity helper, number now)
+        local hid = helper.PlayerComponent.UserId
+        d.rescuer = hid
+        d.start = now
+        local seconds = _GameData.rescueSec
+        self:ShowRescuer(_PartySystem:NameOf(d.player), seconds, hid)
+        self:ShowDownedHelp(_PartySystem:NameOf(helper), seconds, uid)
+        log("[VRF] rescue start downed=" .. uid .. " by=" .. hid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Cancel(string uid, table d)
+        -- 구출하던 사람이 떨어졌거나 쓰러졌다: 막대를 거두고 다시 기다린다
+        local hid = d.rescuer
+        d.rescuer = ""
+        d.start = 0
+        if _UserService:GetUserEntityByUserId(hid) ~= nil then self:ShowRescuer("", 0, hid) end
+        if isvalid(d.player) then self:ShowDownedHelp("", 0, uid) end
+        log("[VRF] rescue cancel downed=" .. uid .. " by=" .. hid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Done(string uid, table d, PlayerVitals vitals)
+        -- 3초를 채웠다: 그 자리에서 일어나 시체를 함께 회수한다
+        local hid = d.rescuer
+        local helper = _UserService:GetUserEntityByUserId(hid)
+        self:Clear(uid, d, "done")
+        vitals:ReviveInPlace(d.pos, _GameData.rescueHpPct)
+        local name = _PartySystem:NameOf(d.player)
+        if isvalid(helper) then
+            _Util:Notify(name .. "님을 일으켜 세웠다", hid)   -- 승인 전
+            _Telemetry:NoteRaid(helper, "rescues")         -- 세션 텔레메트리 카운터 (NoteRaid는 이름만 습격 — 아무 키나 +1)
+            _Util:Banner("다시 일어났다", _PartySystem:NameOf(helper) .. "님이 일으켜 세웠다 · 시체는 함께 되찾았다", uid)   -- 승인 전
+        end
+        log("[VRF] rescue done downed=" .. uid .. " by=" .. hid)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Clear(string uid, table d, string why)
+        -- 기다림 끝: 양쪽 화면을 거두고 목록에서 뺀다
+        if d.rescuer ~= "" and _UserService:GetUserEntityByUserId(d.rescuer) ~= nil then self:ShowRescuer("", 0, d.rescuer) end
+        if isvalid(d.player) then self:HideDowned(uid) end
+        self.Downed[uid] = nil
+        if why ~= "done" then log("[VRF] rescue end downed=" .. uid .. " why=" .. why) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestGiveUp()
+        -- 쓰러진 쪽 「마을에서 부활」: 기다리지 않고 지금 마을로
+        local d = self.Downed ~= nil and self.Downed[senderUserId] or nil
+        if d == nil then return end
+        ---@type PlayerVitals
+        local vitals = isvalid(d.player) and d.player:GetComponent("script.PlayerVitals") or nil
+        self:Clear(senderUserId, d, "giveup")
+        if vitals ~= nil and vitals.Dying then vitals:Revive(false) end
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        -- 쓰러진 채 나간 사람은 목록에서 뺀다 (구출하던 사람이 나가면 Tick이 취소한다)
+        if self.Downed == nil then return end
+        local d = self.Downed[event.UserId]
+        if d ~= nil then
+            if d.rescuer ~= "" and _UserService:GetUserEntityByUserId(d.rescuer) ~= nil then self:ShowRescuer("", 0, d.rescuer) end
+            self.Downed[event.UserId] = nil
+        end
+    end
+
+    -- ───────── 화면 (클라이언트, RescueHUD) ─────────
+
+    @ExecSpace("Client")
+    method void ShowRescuer(string downedName, number seconds)
+        -- 구출하는 쪽: 머리 위 진행 막대 (seconds 0 = 거둠)
+        _RescueHUD:ShowRescuer(downedName, seconds)
+    end
+
+    @ExecSpace("Client")
+    method void ShowDowned(number waitSec)
+        -- 쓰러진 쪽: 「파티원이 오면 일어날 수 있다」 판 + 마을 부활까지 남은 초
+        _RescueHUD:ShowDowned(waitSec)
+    end
+
+    @ExecSpace("Client")
+    method void ShowDownedHelp(string helperName, number seconds)
+        -- 쓰러진 쪽: 누가 일으키는 중인지 + 같은 진행 막대 (seconds 0 = 거둠)
+        _RescueHUD:SetHelp(helperName, seconds)
+    end
+
+    @ExecSpace("Client")
+    method void HideDowned()
+        _RescueHUD:HideDowned()
+    end
+
+end

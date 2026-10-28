@@ -141,6 +141,9 @@ script ShadowUnit extends AttackComponent
     property number BombRadius = 1.6
     property number BombUntil = 0
     property integer FlashTimer = 0           -- 클라이언트: 붉은 깜빡임
+    -- 뼈 의식 5기 「뼈 거인」 (10-29 기획서 43): 해골 다섯이 합쳐진 몸 (UndeadSystem.StartGiant · EndGiant)
+    property boolean Giant = false
+    property table GiantBase = {}             -- 거인이 되기 전 값 (갈라질 때 되돌린다)
     -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
     property number OfferUntil = 0
     property number FrenzyUntil = 0
@@ -175,6 +178,10 @@ script ShadowUnit extends AttackComponent
     property number ViewLastHp = -1
     @Sync
     property string CommandState = "follow"
+    @Sync
+    property string HeadLabel = ""            -- 머리 위 글귀 (첫 처치 맛보기 그림자 「잡으면 내 편」 — UndeadSystem.SpawnTaste · 기획서 39 #3A). 비면 평소 이름표
+    @Sync
+    property number TasteUntil = 0            -- 맛보기 그림자가 사라지는 서버 시각 (ServerElapsedSeconds) — 이름표에 남은 초
 
     @ExecSpace("ServerOnly")
     method void PaintRing()
@@ -191,7 +198,7 @@ script ShadowUnit extends AttackComponent
     method Color RingColor()
         -- 발밑 원 색: 언데드 청록 · 그림자 보라 · 정예 금빛 (알파 0.6)
         local color = Color(0.3, 1, 0.8, 0.6)
-        if self.Kind == "shadow" then color = Color(0.75, 0.5, 1, 0.6) end
+        if self.Kind == "shadow" or self.HeadLabel ~= "" then color = Color(0.75, 0.5, 1, 0.6) end   -- 맛보기 그림자도 그림자 보라
         if self.Promoted then color = Color(1, 0.8, 0.3, 0.6) end
         return color
     end
@@ -294,6 +301,13 @@ script ShadowUnit extends AttackComponent
             town = info ~= nil and info.kind == "town"
         end
         local state = mine and (town and "mine:town" or "mine") or ("other:" .. owner.PlayerComponent.Nickname)
+        -- 맛보기 그림자: 주인 화면에 「잡으면 내 편 (N초)」 (0.5초마다 남은 초가 바뀌면 다시 쓴다)
+        local label = ""
+        if mine and self.HeadLabel ~= "" then
+            local left = math.max(0, math.ceil(self.TasteUntil - _UtilLogic.ServerElapsedSeconds))
+            label = self.HeadLabel .. " (" .. tostring(left) .. "초)"
+            state = state .. ":" .. label
+        end
         if state == self.ViewState then return end
         self.ViewState = state
         local tag = self.Entity.NameTagComponent
@@ -306,6 +320,11 @@ script ShadowUnit extends AttackComponent
             tag.Name = mine and (town and "내 소환수" or "") or owner.PlayerComponent.Nickname
             tag.FontColor = mine and Color(0.55, 1, 0.85, 1) or Color(0.75, 0.75, 0.78, 1)
             tag.Enable = not mine or town
+            if label ~= "" then
+                tag.Name = label
+                tag.FontColor = Color(0.85, 0.72, 1, 1)
+                tag.Enable = true
+            end
         end
     end
 
@@ -436,11 +455,12 @@ script ShadowUnit extends AttackComponent
         self.Dead = true
         -- 실제 피격 사망만 알린다. 이동·회수·수명 종료의 Destroy에는 이 경로가 없다.
         if _Util:IsAlive(self.OwnerPlayer) and isvalid(self.Entity.CurrentMap) then
-            _CompanionHUD:NotifyLoss(self.OwnerPlayer, self.Kind, self.Entity.CurrentMap.Id, self.OwnerPlayer.PlayerComponent.UserId)
+            -- 맛보기 그림자(HeadLabel)는 「되살림을 다시 사용하세요」 안내가 맞지 않아 알 수 없는 종류로 넘긴다 (안내 없음)
+            _CompanionHUD:NotifyLoss(self.OwnerPlayer, self.HeadLabel ~= "" and "taste" or self.Kind, self.Entity.CurrentMap.Id, self.OwnerPlayer.PlayerComponent.UserId)
         end
         if self.Kind ~= "shadow" then
             -- 언데드는 무너지면 끝 (재소환 대기 없음). 해골 전사는 강화 「뼈 파편」이 있으면 무너지며 주변에 피해
-            if self.Kind == "skeleton" then _UndeadSystem:SkeletonBurst(self) end
+            if self.Kind == "skeleton" and not self.Giant then _UndeadSystem:SkeletonBurst(self) end   -- 뼈 거인은 「뼈 파편」을 터뜨리지 않는다 (다섯 몫 공격력이라 너무 크다)
             _UndeadSystem:OnUnitDied(self.OwnerPlayer, self.ShadowId)
             if isvalid(self.Entity) then self.Entity:Destroy() end
             return
@@ -801,7 +821,7 @@ script ShadowUnit extends AttackComponent
         if _Util:IsAlive(owner) then
             ---@type PlayerAttack
             local atk = owner:GetComponent("script.PlayerAttack")
-            if atk ~= nil then atk:SkillAttack(Vector2(p.x, p.y + 0.2), Vector2(self.BombRadius, 0), -1, "skill.skel_bomb", self.BombDamage) end
+            if atk ~= nil then atk:SkillAttack(Vector2(p.x, p.y + 0.2), Vector2(self.BombRadius, 0), -1, "skill.bone_rite", self.BombDamage) end   -- 뼈 의식 1기 (10-29 해골 폭탄 병합)
             ---@type SkillEffects
             local fx = owner:GetComponent("script.SkillEffects")
             if fx ~= nil then
@@ -811,6 +831,62 @@ script ShadowUnit extends AttackComponent
         end
         log(string.format("[VRF] skeleton bomb exploded dmg=%.0f r=%.2f", self.BombDamage, self.BombRadius))
         self.Entity:Destroy()
+    end
+
+    -- ───────── 뼈 의식 5기 「뼈 거인」 (10-29) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void StartGiant(integer atk, number maxHp, number hp)
+        -- UndeadSystem.StartGiant가 부른다: 다섯 몫 공격·생명, 휩쓸기 반경 riteGiantRadius · 간격 riteGiantInterval, 4초마다 도발(방패 해골 TauntTick 재사용 · 보스 제외),
+        -- 몸 riteGiantScale배 (클라이언트 그림 대역은 MotionSmoother가 본체 크기를 따라 그린다). 임시 그림: 해골 전사 그림을 키우고 뼈 색으로 칠한다 (코덱스 거인 192px 대기)
+        if self.Dead or self.Giant then return end
+        local t = self.Entity.TransformComponent
+        self.GiantBase = { atk = self.Atk, maxHp = self.MaxHp, radius = self.RadiusMult, basic = self.BasicMult, cd = self.AttackCooldown, range = self.AttackRange,
+            taunt = self.Taunt, guard = self.GuardPct, sx = math.abs(t.Scale.x), sy = t.Scale.y, tint = self.ShadowTint }
+        self.Giant = true
+        self.Atk = math.max(1, atk)
+        self.MaxHp = math.max(1, maxHp)
+        self.Hp = math.max(1, math.min(self.MaxHp, hp))
+        self.RadiusMult = _GameData.riteGiantRadius / math.max(0.1, self.AttackRadius)
+        self.BasicMult = 1
+        self.AttackCooldown = _GameData.riteGiantInterval
+        self.AttackRange = 1.2
+        self.Taunt = true
+        self.TauntTimer = 0
+        self.GuardPct = 0
+        local mul = _GameData.riteGiantScale
+        local sign = t.Scale.x < 0 and -1 or 1
+        t.Scale = Vector3(self.GiantBase.sx * mul * sign, self.GiantBase.sy * mul, t.Scale.z)
+        self.ShadowTint = Color(0.96, 0.9, 0.76, 1)
+        self.Entity.SpriteRendererComponent.Color = self.ShadowTint
+        self.RingPainted = false
+        log(string.format("[VRF] rite giant start atk=%d hp=%.0f/%.0f radius=%.2f", self.Atk, self.Hp, self.MaxHp, self.AttackRadius * self.RadiusMult))
+    end
+
+    @ExecSpace("ServerOnly")
+    method number EndGiant()
+        -- 갈라질 때: 원래 값으로 되돌리고 남은 생명 비율(0~1)을 돌려준다 (이 해골도 같은 비율로 남는다)
+        if not self.Giant then return 0 end
+        local ratio = math.max(0, math.min(1, self.Hp / math.max(1, self.MaxHp)))
+        local b = self.GiantBase
+        self.Giant = false
+        self.Atk = b.atk
+        self.MaxHp = b.maxHp
+        self.Hp = math.max(1, b.maxHp * ratio)
+        self.RadiusMult = b.radius
+        self.BasicMult = b.basic
+        self.AttackCooldown = b.cd
+        self.AttackRange = b.range
+        self.Taunt = b.taunt
+        self.GuardPct = b.guard
+        local t = self.Entity.TransformComponent
+        local sign = t.Scale.x < 0 and -1 or 1
+        t.Scale = Vector3(b.sx * sign, b.sy, t.Scale.z)
+        self.ShadowTint = b.tint
+        self.Entity.SpriteRendererComponent.Color = self.ShadowTint
+        self.RingPainted = false
+        self.GiantBase = {}
+        return ratio
     end
 
     @ExecSpace("Multicast")

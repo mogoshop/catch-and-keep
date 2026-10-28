@@ -29,6 +29,8 @@ script GuideWindow extends Logic
     property boolean Tour = false            -- 첫 진입 둘러보기 (TourLast 책갈피 끝에서 닫는다)
     property integer TourLast = 4
     property table Seen = {}                 -- 이번 접속에서 편 책갈피 (서버 저장 전에도 점을 바로 끈다)
+    property boolean TourOpen = false        -- M0: 첫 진입 둘러보기 창이 열려 있다 (닫히면 몇 쪽에서 닫았는지 알린다 · 기획서 39 #1A·#2B)
+    property integer TourFlatPage = 1        -- M0: 지금 보는 쪽 (책갈피 1부터 이어 센 번호)
     -- 배치 (ui.cjs 게임 안내 블록과 짝): 화면 칸이 있을 때 / 글만일 때 제목·설명 자리, 쪽 점 가운데
     property number RightX = 367
     property number RightW = 1142
@@ -59,6 +61,7 @@ script GuideWindow extends Logic
         _UIKit:Connect(self.Win .. "/BtnPrev", function() self:Turn(-1) end)
         _UIKit:Connect(self.Win .. "/BtnNext", function() self:Turn(1) end)
         _UIKit:Connect(self.Win .. "/BtnMore", function() self:ShowTab(self.MoreTab, self.MorePage) end)
+        _UIKit:Connect(self.Win .. "/BtnLater", function() self:Later() end)
         for i = 1, #self.Tabs do
             local index = i
             _UIKit:SetText(self.Win .. "/Tabs/T" .. tostring(i) .. "/Label", self.Tabs[i].name)
@@ -70,6 +73,7 @@ script GuideWindow extends Logic
         self.TimerId = _TimerService:SetTimerRepeat(function()
             self:CheckFirstEntry(0.5)
             self:CheckInputChoice(0.5)
+            self:CheckTourClosed()
             if (self.VidStart >= 0 or self.PlayerAlive) and not _UIKit:IsOpen(self.Win) then self:StopVideo() end
         end, 0.5)
         local pages = 0
@@ -230,6 +234,9 @@ script GuideWindow extends Logic
         end
         local first = self.CardMode or (self.Tab == 1 and self.Page == 1)
         _UIKit:SetEnabled(w .. "/BtnPrev", not first)
+        -- 「나중에 보기」: 첫 진입 둘러보기의 첫 쪽에만 (「이전」 자리)
+        _UIKit:SetEnabled(w .. "/BtnLater", self.Tour and not self.CardMode and self.Tab == 1 and self.Page == 1)
+        if self.TourOpen and not self.CardMode then self.TourFlatPage = self:FlatPage() end
         _UIKit:SetEnabled(w .. "/BtnMore", self.CardMode and self.MoreTab > 0)
         local label = "다음"
         if self.CardMode then
@@ -429,8 +436,40 @@ script GuideWindow extends Logic
         self.AutoDone = true
         save:RequestGuideSeen()
         self.Tour = true
+        self.TourOpen = true
+        self.TourFlatPage = 1
+        _Telemetry:ReportFirst("guideOpen", 0)   -- M0 둘러보기 열림
         self:ShowTab(1, 1)
         log("[VRF] guide auto-opened on first entry (tour to tab " .. tostring(self.TourLast) .. ")")
+    end
+
+    method integer FlatPage()
+        -- 책갈피 1부터 이어 센 쪽 번호 (M0 「몇 쪽에서 닫았나」)
+        local n = 0
+        for i = 1, self.Tab - 1 do n = n + #self.Tabs[i].pages end
+        return n + self.Page
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Later()
+        -- 「나중에 보기」 (기획서 39 #2B): 둘러보기를 닫고, 메뉴 「게임 안내」에서 다시 볼 수 있다고 알린다. 닫은 쪽은 M0 first.guideClosedPage
+        if not self.Tour then return end
+        local page = self:FlatPage()
+        self.TourOpen = false
+        self.Tour = false
+        _Telemetry:ReportFirst("guideLater", page)
+        _UIKit:Close(self.Win)
+        _NoticeFeed:Push("게임 안내는 메뉴 → 「게임 안내」에서 언제든 다시 볼 수 있어요")   -- 글귀 승인 전
+        log("[VRF] guide later page=" .. tostring(page))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckTourClosed()
+        -- 첫 진입 둘러보기가 닫혔다 (X · Esc · 「시작하기」): 마지막으로 본 쪽을 M0에 알린다
+        if not self.TourOpen or _UIKit:IsOpen(self.Win) then return end
+        self.TourOpen = false
+        _Telemetry:ReportFirst("guideClose", self.TourFlatPage)
+        log("[VRF] guide tour closed page=" .. tostring(self.TourFlatPage))
     end
 
     @ExecSpace("ClientOnly")

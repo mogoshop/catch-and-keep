@@ -516,6 +516,22 @@ function buildGameHud() {
   k.btn("OfferWin/BtnReroll", "다시 섞기", { anchor: "bottom-left", pos: [51, 48], rect_size: [320, 88], font_size: 22 });
   k.btn("OfferWin/BtnBoard", "보드에서 직접 고르기 (K)", { anchor: "bottom-right", pos: [-51, 48], rect_size: [420, 88], font_size: 22 });
 
+  // ── 노말 끝 「다음 난이도 미리보기」 카드 1장 (기획서 43 ④-a · 결정 7, 10-29) — 컨트롤러 Progress/NightmarePreview.mlua ──
+  //   혼의 제물·선택 보상 카드(위 OfferWin)와 같은 양식: 창 틀 + 카드 그림(sk_offer_card_new) 한 장 + 오른쪽 목록 + 확인 단추. 글귀는 임시(승인 전)
+  //   카드 안 Art = 그림 자리 (코덱스 「문 아래 붉은 틈」이 오면 ui_icons preview_nightmare로 NightmarePreview가 바꿔 낀다)
+  k.frame("PreviewWin", "middle-center", [0, 20], [1100, 640], "다음 난이도");
+  b.text("PreviewWin/Sub", "", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [1000, 30], alignment: 3 });
+  b.sprite("PreviewWin/Card", { anchor: "top-left", pos: [60, -116], rect_size: [CARD.w, CARD.h], ...part("sk_offer_card_new"), sprite_type: 0 });
+  b.text("PreviewWin/Card/Kind", "", { size: 20, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -50], rect_size: [CARD.text, 26], alignment: 4, ...outline });
+  b.sprite("PreviewWin/Card/Art", { anchor: "top-center", pos: [0, -84], rect_size: [CARD.text, 200], color: { r: 0.32, g: 0.08, b: 0.1, a: 1 }, sprite_type: 0 });
+  b.patchComponent("PreviewWin/Card/Art", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b.text("PreviewWin/Card/Art/Hint", "그림 자리", { size: 16, color: "#B89A8A", anchor: "middle-center", pos: [0, 0], rect_size: [CARD.text, 30], alignment: 4 });
+  b.text("PreviewWin/Card/Name", "", { size: 22, bold: true, color: C.title, anchor: "top-center", pos: [0, -296], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 22, ...outline });
+  k.inner("PreviewWin/List", "top-left", [430, -116], [610, 404]);
+  b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 360], bestfit: true, min_size: 16, max_size: 22 });
+  b.text("PreviewWin/Foot", "", { size: 18, color: C.dim, anchor: "bottom-left", pos: [60, 128], rect_size: [980, 28], alignment: 3, bestfit: true, min_size: 14, max_size: 18 });
+  k.ok("PreviewWin/BtnOk", "확인", { anchor: "bottom-center", pos: [0, 28], rect_size: [300, 88], font_size: 24 });
+
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
   // 제목(NPC 이름)은 다른 창과 같은 공통 제목 규칙(k.frame: 가운데 · 제목 띠 세로 가운데)을 그대로 쓴다
@@ -532,6 +548,17 @@ function buildGameHud() {
   //   처치마다 툭 커졌다 줄어든다. 10·25·50·100에서 색이 짙어지고, 끊기면 흐려지며 사라진다 (HudMain.RenderStreak · RenderCombo)
   //   PC 「줍기」 단추는 뺐다(10-28 사용자 「번잡」) — G 키 · 클릭 줍기 · 줍기 커서로 (ClickControl)
   b.text("ComboHead", "", { size: 46, bold: true, color: "#FFFFFF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 70], alignment: 4, ...outline, outline_width: 0.3, enable: false });
+  // 뼈 의식 충전 고리 (기획서 43 §3-1 · 10-29 결정 1A): 의식 칸을 누르고 있는 동안 머리 위에 — 둥근 바탕 + 위에서 시계 방향으로 차는 고리(쿨다운 덮개와 같은 Radial360 양식)
+  //   + 가운데 단계 숫자(1·2·3·5) + 아래 단계 이름 + 2·3·5기 눈금 점. HudMain.RenderRite가 머리 위로 옮기고 채움·색·눈금을 그린다.
+  //   임시 그림(원형 바탕 · 미니맵 점) — 코덱스 「충전 고리 3단」이 오면 Back/Fill만 바꾼다
+  b.empty("RiteRing", { anchor: "middle-center", pos: [0, 0], rect_size: [120, 150], enable: false });
+  b.sprite("RiteRing/Back", { anchor: "middle-center", pos: [0, 12], rect_size: [96, 96], image_ruid: K.circle, color: "#140F18", alpha: 0.78, sprite_type: 0 });
+  b.sprite("RiteRing/Fill", { anchor: "middle-center", pos: [0, 12], rect_size: [96, 96], image_ruid: K.circle, color: "#D8CDB4", alpha: 0.95, sprite_type: 3, fill_method: 4 });
+  b.patchComponent("RiteRing/Fill", "MOD.Core.SpriteGUIRendererComponent", { FillOrigin: 2, FillAmount: 0, RaycastTarget: false });
+  b.sprite("RiteRing/Hole", { anchor: "middle-center", pos: [0, 12], rect_size: [70, 70], image_ruid: K.circle, color: "#140F18", alpha: 0.92, sprite_type: 0 });
+  for (const t of ["T2", "T3", "T5"]) b.sprite(`RiteRing/${t}`, { anchor: "middle-center", pos: [0, 12], rect_size: [12, 12], image_ruid: K.dot, color: "#6E6658", alpha: 1, sprite_type: 0 });
+  b.text("RiteRing/Count", "", { size: 34, bold: true, color: "#FFFFFF", anchor: "middle-center", pos: [0, 12], rect_size: [70, 50], alignment: 4, ...outline, outline_width: 0.25 });
+  b.text("RiteRing/Label", "", { size: 22, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, -56], rect_size: [260, 34], alignment: 4, ...outline, outline_width: 0.25 });
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
@@ -680,6 +707,10 @@ function buildGameHud() {
   [["Diff0", "보통", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {
     k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 26], rect_size: [170, 64], font_size: 20 });
   });
+  // 잠긴 난이도 단추 말풍선 (PC 마우스 올림 · 기획서 43 결정 7): 해금 조건은 WaypointWindow.OnDiffHover → NightmarePreview.UnlockConditionText
+  b.panel("WpWin/DiffTip", { anchor: "bottom-center", pivot: [0.5, 0], pos: [0, 100], rect_size: [520, 104], color: { r: 0.05, g: 0.045, b: 0.06, a: 0.97 }, sprite_type: 1, enable: false });
+  k.rim("WpWin/DiffTip", "slot_frame");
+  b.text("WpWin/DiffTip/Text", "", { size: 19, color: C.gold, anchor: "middle-center", pos: [0, 0], rect_size: [488, 88], alignment: 4, bestfit: true, min_size: 14, max_size: 19, ...outline });
 
   // ── 랭킹 창 ──
   k.frame("RankWin", "middle-center", [0, 60], [640, 660], "랭킹");
@@ -795,6 +826,8 @@ function buildGameHud() {
     k.btn("GuideWin/BtnPrev", "이전", { anchor: "bottom-left", pos: [rx, by], rect_size: [220, T.BUTTON.h] });
     k.ok("GuideWin/BtnNext", "다음", { anchor: "bottom-right", pos: [-T.FRAME.padX, by], rect_size: [220, T.BUTTON.h] });
     k.btn("GuideWin/BtnMore", "자세히 보기", { anchor: "bottom-right", pos: [-(T.FRAME.padX + 220 + T.FRAME.gap), by], rect_size: [220, T.BUTTON.h], enable: false });
+    // 「나중에 보기」 (기획서 39 결정 #2B, 10-29): 첫 진입 둘러보기 첫 쪽에만 — 첫 쪽엔 「이전」이 꺼져 있어 그 자리에 둔다. 다시 보기는 메뉴 「게임 안내」. 글귀 승인 전
+    k.btn("GuideWin/BtnLater", "나중에 보기", { anchor: "bottom-left", pos: [rx, by], rect_size: [220, T.BUTTON.h], enable: false });
     const dotX = rx + rw / 2 - W / 2;                          // 오른쪽 칸 가운데 (창 가운데 기준)
     for (let i = 1; i <= 6; i++) {
       b.sprite(`GuideWin/D${i}`, { anchor: "bottom-center", pivot: [0.5, 0.5], pos: [dotX + (i - 3.5) * 30, by + T.BUTTON.h / 2], rect_size: [16, 16], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1 });

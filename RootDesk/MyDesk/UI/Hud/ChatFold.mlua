@@ -40,6 +40,7 @@ script ChatFold extends Logic
     @ExecSpace("ClientOnly")
     method void OnChat(ChatEvent event)
         -- 새 채팅: 접혀 있으면 펼치고, 이 스크립트가 펼친 창이면 접는 시각을 미룬다
+        self:CheckGmCommand(event)
         local chat = _EntityService:GetEntityByPath(self.ChatPath)
         if not isvalid(chat) then return end
         local c = chat.ChatComponent
@@ -48,6 +49,19 @@ script ChatFold extends Logic
             self.AutoOpened = true
         end
         if self.AutoOpened then self.FoldAt = _UtilLogic.ElapsedSeconds + self.ShowSeconds end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CheckGmCommand(ChatEvent event)
+        -- GM 명령 (기획서 39 #1A M0): 내가 쓴 「/tel [세션 수]」 → 서버가 GM인지 보고 「처음」 시각 요약을 보낸다 (GM이 아니면 아무 일 없음)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or event.UserId ~= me.PlayerComponent.UserId then return end
+        local msg = event.Message or ""
+        local n = string.match(msg, "^/tel%s*(%d*)%s*$")
+        if n == nil then return end
+        local limit = tonumber(n) or 200
+        _Telemetry:RequestFirstSummary(limit)
+        log("[VRF] tel gm command sent limit=" .. tostring(limit))
     end
 
     @ExecSpace("ClientOnly")

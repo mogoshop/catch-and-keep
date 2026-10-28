@@ -11,8 +11,11 @@ const handmade = require("./handmade/lib.cjs");
 
 const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
+// 마을 게시판 배치 값 (글귀 임시 · 승인 전)
+const TOWN_BOARD_OVERRIDES = { "script.WorldNPC": { NpcName: "모집 판", Kind: "board" }, "MOD.Core.NameTagComponent": { Name: "모집 판" } };
+
 function managedModelIds(monsters, npcs) {
-  return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", "artsprite", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);
+  return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", "artsprite", "townboard", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);
 }
 
 // 맵 크기(타일, 1칸 = 1월드 단위): 가로 x = -w/2 .. w/2-1, 세로 y = -h/2+1 .. h/2 (메이커 기본 RectTile 격자와 같은 기준)
@@ -159,6 +162,9 @@ function desiredEntities(d, maps, ctx) {
       if (!parent || !first) throw new Error(`maps.csv ${d.id} extra return — 곁가지 던전 층에만`);
       const back = pos(first.entry);
       place("GateReturn", "Objects/WarpGate", x.pos, { "script.WarpGate": gate(parent.id, besideEntry(parent, back), parent.name) });
+    } else if (x.name === "townboard") {
+      // 마을 게시판 「모집 판」 (기획서 39 #14A · 10-29): WorldNPC Kind board → TownBoardWindow (그림은 objects.csv TownBoard, 임시)
+      place("TownBoard", "Objects/TownBoard", x.pos, TOWN_BOARD_OVERRIDES);
     } else if (x.name === "end") {
       // 끝방 자리 (끝방 우두머리·봉인 상자 — gen_data가 맵 정보 ex·ey로 넘긴다). 엔티티 없음
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
@@ -772,4 +778,4 @@ function buildCopies(d) {
   return n;
 }
 
-module.exports = { ENTRANCE_PORTAL, run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };
+module.exports = { TOWN_BOARD_OVERRIDES, ENTRANCE_PORTAL, run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };

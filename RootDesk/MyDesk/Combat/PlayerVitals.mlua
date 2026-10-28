@@ -229,7 +229,31 @@ script PlayerVitals extends Component
         if corpses ~= nil then corpses:LeaveCorpse(_Util:Pos2(self.Entity), math.floor(expLost * _GameData.deathExpRecover)) end
         _GameEvents:Emit("PlayerDied", { player = self.Entity, map = self.Entity.CurrentMap, cause = self.LastHitSource })
         self:NotifyDeath(goldLost, expLost, inDuel, pc.UserId)
+        -- 파티 구출 (기획서 39 #12A · 10-29): 같은 맵에 살아 있는 파티원이 있으면 바로 마을로 보내지 않고 구출을 기다린다
+        -- (일으키면 ReviveInPlace, 시간이 지나거나 「마을에서 부활」이면 PartyRescue가 Revive(false)). 결투 패배는 제외
+        if not inDuel and _PartyRescue:BeginDown(self.Entity) then return end
         _TimerService:SetTimerOnce(function() self:Revive(false) end, pc.RespawnDuration)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReviveInPlace(Vector2 pos, number hpPct)
+        -- 파티 구출로 쓰러진 자리에서 일어난다: 부활 위치를 그 자리로 잠깐 바꿔 Respawn → 시체 회수 → 생명 hpPct · 부활 무적. 마을로 보내지 않는다
+        if not isvalid(self.Entity) or not self.Dying then return end
+        local pc = self.Entity.PlayerComponent
+        local keep = pc.RespawnPosition
+        pc.RespawnPosition = Vector3(pos.x, pos.y, 0)
+        pc:Respawn()
+        -- 엔진이 다음 프레임에 부활 위치를 읽어도 되게 1초 뒤 되돌린다 (평소 사망은 Respawn 뒤 마을로 옮기므로 기본값이어야 한다)
+        _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self.Entity.PlayerComponent.RespawnPosition = keep end end, 1)
+        self:PrepareHitState(pc.UserId)
+        self.Dying = false
+        self.InvincibleUntil = _UtilLogic.ElapsedSeconds + self.RespawnInvincible
+        -- 그 자리 시체(장비 · 되찾을 경험치)를 함께 회수 — 장비가 돌아와 최대 생명이 바뀐 뒤에 생명을 정한다
+        ---@type PlayerCorpses
+        local corpses = self.Entity:GetComponent("script.PlayerCorpses")
+        local recovered = corpses ~= nil and corpses:RecoverAt(pos, 2.0)
+        pc.Hp = math.max(1, math.floor(pc.MaxHp * hpPct))
+        log("[VRF] rescue revive uid=" .. pc.UserId .. " hp=" .. tostring(pc.Hp) .. "/" .. tostring(pc.MaxHp) .. " corpse=" .. tostring(recovered))
     end
 
     @ExecSpace("ServerOnly")

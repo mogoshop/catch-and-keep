@@ -123,6 +123,37 @@ script PlayerCorpses extends Component
         ---@type PlayerCorpse
         local corpse = _Util:NearestComponent(self.Entity.CurrentMap, "script.PlayerCorpse", _Util:Pos2(self.Entity), self.PickupRadius)
         if corpse == nil or corpse.Taken or corpse.OwnerUserId ~= pc.UserId then return end
+        self:TakeCorpse(corpse)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean RecoverAt(Vector2 pos, number radius)
+        -- 파티 구출(PartyRescue)로 그 자리에서 일어났을 때: 쓰러진 자리(pos) 둘레의 내 시체를 바로 되찾는다.
+        -- 서버 위치가 부활 순간 잠깐 다른 곳을 가리켜도 되찾도록 내 위치가 아니라 쓰러진 자리로 찾는다 (TryRecover와 같은 되찾기)
+        local pc = self.Entity.PlayerComponent
+        if not _Util:IsAlive(self.Entity) then return false end
+        local found = nil
+        local best = radius
+        for _, c in ipairs(_Util:ListOf(self.Entity.CurrentMap, "script.PlayerCorpse")) do
+            ---@type PlayerCorpse
+            local corpse = c
+            if isvalid(corpse.Entity) and not corpse.Taken and corpse.OwnerUserId == pc.UserId then
+                local d = (_Util:Pos2(corpse.Entity) - pos):Magnitude()
+                if d <= best then
+                    best = d
+                    found = corpse
+                end
+            end
+        end
+        if found == nil then return false end
+        self:TakeCorpse(found)
+        return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TakeCorpse(PlayerCorpse corpse)
+        -- 시체 하나를 되찾는다: 장비를 입히고 되찾을 경험치를 준다 (TryRecover · RecoverAt 공용)
+        local pc = self.Entity.PlayerComponent
         -- Take()가 엔티티를 지우므로 키는 먼저 꺼내 둔다 (지운 뒤에는 속성이 nil)
         local key = corpse.CorpseKey
         local data = self.Corpses[key]

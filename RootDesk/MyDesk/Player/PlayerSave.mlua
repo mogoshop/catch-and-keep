@@ -142,6 +142,7 @@ script PlayerSave extends Component
         self.InSelectRoom = slot < 0 and _RoomService:IsInstanceRoom()
         self.Selecting = true
         self.BootDone = true
+        _Telemetry:First(self.Entity, "load")   -- M0 불러오기 끝 (기획서 39 #1A)
         -- 10-21 방 구조: 캐릭터는 로비(정적 방 map01)에서 고른다 — 마을은 게임 방 안에 있다 (docs/design/30)
         log("[VRF] slots: 캐릭터 선택 대기 " .. self.SlotDigest)
     end
@@ -254,6 +255,8 @@ script PlayerSave extends Component
         self.IsLoadSuccess = true
         self.Selecting = false
         self.BootDone = true
+        _Telemetry:First(self.Entity, "load")         -- M0 (방 이동으로 바로 불러온 경우 · 이미 찍혔으면 무시)
+        _Telemetry:First(self.Entity, "charSelect")   -- M0 캐릭터 선택 (만들기 포함)
         -- 머리 위 이름표 = 지금 캐릭터 이름 (10-23: 엔진 기본값인 계정 닉네임이 남아 예전 이름이 보였다 · 파티 목록은 캐릭터 이름)
         local tag = self.Entity.NameTagComponent
         if isvalid(tag) then tag.Name = _Supporter:TagText(self.Entity.PlayerComponent.UserId, self:CharName()) end   -- 후원자 칭호 줄 (Shop/Supporter)

@@ -1,0 +1,478 @@
+-- 마을 게시판 (기획서 39 §7 C · 결정 #14A · 10-29): 마을 광장의 「모집 판」(TownBoard 모델 · WorldNPC Kind board)을 열면 창 두 탭 (TownBoardWindow).
+--   ① 모집 판 — 「파티 찾는 중」 켜기/끄기. 켠 사람은 이 채널(같은 월드 인스턴스의 모든 방) 게시판 목록에 보인다.
+--      같은 게임 방 사람 = 기존 파티 초대 (PlayerSocial.RequestAction "party") ·
+--      다른 방 사람 = 「내 게임에 초대」 → 받는 쪽은 기존 받은 요청 창(Request, kind "game")으로 수락 → 로비를 거쳐 초대한 방으로
+--      (RoomSystem 돌아올 방 RoomReturnV1 + OnLobbyReady 재사용 · 「게임 나가기」와 같은 순서)
+--   ② 오늘의 기록 — 이 채널의 최근 습격 격퇴 · 보스 처치 · 노말 클리어 (시각 · 이름). 한국 시간 하루가 지나면 비운다 (boardRecordMax줄).
+--   「함께 격퇴」 (결정 #13B): 습격 격퇴 · 보스 처치 때 같은 맵 coopWinRange(20칸) 안에 같은 파티가 2명 이상이면 그 모두에게 기록 +1
+--      (일지 Counters.coop 저장 · 세션 텔레메트리 coopWins · 알림 「함께 격퇴 · N번째」). 격퇴 주머니·경험치 배분은 그대로.
+-- 저장소 = 채널 공유 메모리 _RoomService:GetSharedMemory("TownBoardV1") 변수 하나 "board" (JSON · ETag로 겹쳐 쓰기 방지 — RoomSystem 방 목록과 같은 방식).
+--   공유 메모리 호출은 월드 전체 분당 1000번 한도: 읽기는 3초 모아 쓰고, 쓰기는 기록·켜기/끄기·초대 때만, 초대 확인은 「파티 찾는 중」인 사람이 있는 방만 4초마다.
+--   이벤트 처리 중에는 기다리는 호출(AndWait)을 하지 않고 잠깐 뒤에 쓴다 (RankingSystem.RecordProgressLater와 같은 이유).
+-- 글귀는 모두 임시 (승인 전).
+@Logic
+script TownBoard extends Logic
+
+    property string MemoryName = "TownBoardV1"
+    property any Cache = nil                -- 서버: 마지막으로 읽은 { data, etag, ok }
+    property number CacheAt = -100
+    property any LocalLfg = nil             -- 서버: 이 방에서 「파티 찾는 중」을 켠 userId → 마지막으로 적은 시각(초)
+    property any Invites = nil              -- 서버: 받은 다른 방 초대 userId → { id, d, f }
+    property any LastAsk = nil              -- 서버: 연타 막기 key → 시각
+    property integer PollTimer = 0
+    property number InviteLifeMs = 60000    -- 다른 방 초대가 공유 메모리에 남는 시간
+    property number LfgRefreshSec = 120     -- 방에 있는 동안 「파티 찾는 중」을 새로 적는 간격
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 보스 처치(노말 클리어 포함)는 이벤트로, 습격 격퇴는 RaidDirector.Victory가 직접 알린다
+        self.LocalLfg = {}
+        self.Invites = {}
+        self.LastAsk = {}
+        _GameEvents:Subscribe("MonsterKilled", "TownBoard", function(e) self:OnMonsterKilled(e) end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnEndPlay()
+        if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
+        self.PollTimer = 0
+        _GameEvents:Unsubscribe("MonsterKilled", "TownBoard")
+    end
+
+    -- ───────── 저장소 ─────────
+
+    @ExecSpace("ServerOnly")
+    method any Memory()
+        local ok, code, memory = pcall(function() return _RoomService:GetSharedMemory(self.MemoryName) end)
+        if not ok or code ~= SharedMemoryResultCode.OK or memory == nil then return nil end
+        return memory
+    end
+
+    method integer Today()
+        -- 한국 시간(UTC+9) 날짜 번호 (PlayerJournal.Today와 같다)
+        return math.floor((DateTime.UtcNow.Elapsed + 9 * 3600 * 1000) / 86400000)
+    end
+
+    method string Clock(number ms)
+        -- 한국 시간 「HH:MM」
+        local m = math.floor(((ms + 9 * 3600 * 1000) % 86400000) / 60000)
+        return string.format("%02d:%02d", m // 60, m % 60)
+    end
+
+    method string Clean(any text, integer limit)
+        -- 목록 구분 문자(| ;)를 빼고 길이를 줄인다
+        local s = (string.gsub(tostring(text or ""), "[|;\n\r\t]", " "))
+        return _UIKit:Clip(s, limit)
+    end
+
+    method void Normalize(table data)
+        -- 모양을 맞추고 오래된 것을 지운다: 날짜가 바뀌면 기록 비움 · 소식 없는 「찾는 중」 · 1분 지난 초대
+        local now = DateTime.UtcNow.Elapsed
+        local today = self:Today()
+        if type(data.rec) ~= "table" then data.rec = {} end
+        if type(data.lfg) ~= "table" then data.lfg = {} end
+        if type(data.inv) ~= "table" then data.inv = {} end
+        if math.floor(tonumber(data.day) or 0) ~= today then
+            data.rec = {}
+            data.day = today
+        end
+        while #data.rec > math.max(1, math.floor(_GameData.boardRecordMax)) do table.remove(data.rec, 1) end
+        for uid, e in pairs(data.lfg) do
+            if type(e) ~= "table" or now - (tonumber(e.t) or 0) > _GameData.boardLfgSec * 1000 then data.lfg[uid] = nil end
+        end
+        for uid, e in pairs(data.inv) do
+            if type(e) ~= "table" or now - (tonumber(e.t) or 0) > self.InviteLifeMs then data.inv[uid] = nil end
+        end
+    end
+
+    method string Encode(table data)
+        -- 빈 표는 JSONEncode가 실패한다 (메이커 실측) → 빈 칸은 빼고 쓴다
+        local out = { v = 1, day = data.day }
+        if #data.rec > 0 then out.rec = data.rec end
+        if next(data.lfg) ~= nil then out.lfg = data.lfg end
+        if next(data.inv) ~= nil then out.inv = data.inv end
+        return _HttpService:JSONEncode(out)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ReadBoard(number maxAge)
+        -- 지금 게시판 { data, etag, ok }. maxAge초 안에 읽었으면 그 값을 다시 쓴다 (0 = 새로 읽기)
+        local now = _UtilLogic.ElapsedSeconds
+        if maxAge > 0 and self.Cache ~= nil and now - self.CacheAt <= maxAge then return self.Cache end
+        local memory = self:Memory()
+        local out = { data = {}, etag = "", ok = memory ~= nil }
+        if memory ~= nil then
+            local result = memory:GetVariableAndWait("board")
+            if result.Code == SharedMemoryResultCode.OK and result.Info ~= nil then
+                out.etag = result.Info.ETag
+                local okJson, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+                if okJson and type(data) == "table" then out.data = data end
+            end
+        end
+        self:Normalize(out.data)
+        self.Cache = out
+        self.CacheAt = now
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Mutate(any change)
+        -- 새로 읽어 change(data)로 고치고 다시 쓴다. 그사이 다른 방이 썼으면(ETag 다름) 다시 읽어 3번까지
+        local memory = self:Memory()
+        if memory == nil then return false end
+        for attempt = 1, 3 do
+            local cur = self:ReadBoard(0)
+            local data = cur.data
+            change(data)
+            self:Normalize(data)
+            local value = self:Encode(data)
+            local result = nil
+            if cur.etag == "" then
+                result = memory:CreateVariableAndWait("board", value)
+                if result.Code == SharedMemoryResultCode.AlreadyExists then result = nil end
+            else
+                result = memory:UpdateVariableAndWait(SharedVariableKeyInfo("board", cur.etag), value)
+            end
+            if result ~= nil and result.Code == SharedMemoryResultCode.OK then
+                self.Cache = { data = data, etag = result.Info ~= nil and result.Info.ETag or "", ok = true }
+                self.CacheAt = _UtilLogic.ElapsedSeconds
+                return true
+            end
+            self.Cache = nil
+            log("[VRF] board write retry " .. tostring(attempt))
+        end
+        return false
+    end
+
+    method boolean Throttle(string key, number gap)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.LastAsk == nil then self.LastAsk = {} end
+        if self.LastAsk[key] ~= nil and now - self.LastAsk[key] < gap then return true end
+        self.LastAsk[key] = now
+        return false
+    end
+
+    -- ───────── 오늘의 기록 · 함께 격퇴 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OnMonsterKilled(table e)
+        -- 보스 등급 처치(떼 우두머리 제외): 오늘의 기록 + 함께 격퇴. 마지막 액트 보스를 보통에서 쓰러뜨리면 「노말 클리어」
+        if e.grade == nil or e.grade < 3 or e.horde == true or not isvalid(e.map) then return end
+        local names = {}
+        for _, p in ipairs(e.players or {}) do
+            if isvalid(p) and isvalid(p.PlayerComponent) and #names < 4 then table.insert(names, _PartySystem:NameOf(p)) end
+        end
+        if #names == 0 then return end   -- 아무도 싸우지 않았다 (테스트·시간 초과)
+        ---@type Monster
+        local body = isvalid(e.monster) and e.monster:GetComponent("script.Monster") or nil
+        local what = body ~= nil and body:ShownName() or _GameData:GetMonsterName(e.sourceId or "")
+        local kind = "boss"
+        if e.sourceId == _GameConst.FinalBossSourceId and _GameConst:DifficultyOfMap(e.map.Name) == 0 then kind = "clear" end
+        local center = isvalid(e.monster) and _Util:Pos2(e.monster) or Vector2(0, 0)
+        self:CreditTogether(e.map, center, (kind == "clear" and "노말 클리어 · " or "보스 처치 · ") .. what)   -- 승인 전
+        self:AddRecordLater(kind, what, names)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnRaidVictory(Entity map, Entity caller, Vector2 center)
+        -- RaidDirector.Victory: 떼 전멸 — 같은 맵에서 함께 싸운 사람 이름(습격 둘레 coopWinRange 안)으로 기록
+        if not isvalid(map) then return end
+        local names = {}
+        for _, p in ipairs(_Util:PlayersInMap(map)) do
+            if #names < 4 and (_Util:Pos2(p) - center):Magnitude() <= _GameData.coopWinRange then table.insert(names, _PartySystem:NameOf(p)) end
+        end
+        if #names == 0 and isvalid(caller) then table.insert(names, _PartySystem:NameOf(caller)) end
+        local place = _GameConst:BaseMapName(map.Name)
+        ---@type MapAmbience
+        local amb = map:GetComponent("script.MapAmbience")
+        if amb ~= nil and amb.DisplayName ~= "" then place = amb.DisplayName end
+        self:CreditTogether(map, center, "습격 격퇴 · " .. place)   -- 승인 전
+        self:AddRecordLater("raid", place, names)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CreditTogether(Entity map, Vector2 center, string what)
+        -- 함께 격퇴: 같은 맵 · center에서 coopWinRange 안 · 같은 파티가 2명 이상이면 그 파티 모두에게 +1 (혼자면 세지 않는다)
+        local byParty = {}
+        for _, p in ipairs(_Util:PlayersInMap(map)) do
+            ---@type PlayerSocial
+            local s = p:GetComponent("script.PlayerSocial")
+            if s ~= nil and s.PartyId ~= 0 and (_Util:Pos2(p) - center):Magnitude() <= _GameData.coopWinRange then
+                local list = byParty[s.PartyId]
+                if list == nil then
+                    list = {}
+                    byParty[s.PartyId] = list
+                end
+                table.insert(list, p)
+            end
+        end
+        for _, list in pairs(byParty) do
+            if #list >= 2 then
+                for _, p in ipairs(list) do self:CountTogether(p, what) end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CountTogether(Entity p, string what)
+        -- 일지에 누적 (저장됨) + 세션 텔레메트리 + 알림 「함께 격퇴 · N번째」
+        ---@type PlayerJournal
+        local journal = p:GetComponent("script.PlayerJournal")
+        if journal == nil then return end
+        journal:Record("coop", "", 1)
+        local n = math.floor(tonumber(journal.Counters.coop) or 0)
+        _Telemetry:NoteRaid(p, "coopWins")
+        local uid = p.PlayerComponent.UserId
+        _Util:Banner("함께 격퇴 · " .. tostring(n) .. "번째", what, uid)   -- 승인 전
+        log("[VRF] coop win uid=" .. uid .. " n=" .. tostring(n) .. " what=" .. what)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AddRecordLater(string kind, string what, table names)
+        -- 오늘의 기록에 한 줄 (이벤트 처리 밖에서 쓴다)
+        local entry = { k = kind, w = self:Clean(what, 24), n = self:Clean(table.concat(names, ", "), 60), t = DateTime.UtcNow.Elapsed }
+        _TimerService:SetTimerOnce(function()
+            local ok = self:Mutate(function(data) table.insert(data.rec, entry) end)
+            log("[VRF] board record kind=" .. kind .. " what=" .. entry.w .. " names=" .. entry.n .. " ok=" .. tostring(ok))
+        end, 0.1)
+    end
+
+    -- ───────── 모집 판 ─────────
+
+    @ExecSpace("ServerOnly")
+    method table LfgEntry(Entity player)
+        -- 게시판 한 줄: 이름 · 레벨 · 난이도 · 연 최고 난이도 · 위치 · 방 · 시각
+        ---@type PlayerStats
+        local st = player:GetComponent("script.PlayerStats")
+        return {
+            n = self:Clean(_PartySystem:NameOf(player), 16), l = st ~= nil and st.Level or 1,
+            d = st ~= nil and st.Difficulty or 0, m = st ~= nil and st.MaxDifficulty or 0,
+            p = self:Clean(_PartySystem:PlaceName(player), 20), r = _RoomService.RoomKey or "", t = DateTime.UtcNow.Elapsed,
+        }
+    end
+
+    @ExecSpace("Server")
+    method void RequestBoard()
+        -- 창을 열거나 5초마다 → 그 사람에게만
+        if self:Throttle(senderUserId .. ":board", 0.5) then return end
+        self:SendBoard(senderUserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendBoard(string uid)
+        -- 모집 줄 = "userId|이름|레벨|난이도|위치|같은 방(1/0)|같은 파티(1/0)|초대 가능(1/0)" · 기록 줄 = "HH:MM|종류|무엇|이름들" (최신이 위)
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) then return end
+        local cur = self:ReadBoard(3)
+        local room = _RoomService.RoomKey or ""
+        ---@type PlayerSocial
+        local mine = player:GetComponent("script.PlayerSocial")
+        ---@type PlayerStats
+        local st = player:GetComponent("script.PlayerStats")
+        local myDiff = st ~= nil and st.Difficulty or 0
+        local inGame = _GameConst:InGameRoom()
+        local rows = {}
+        for id, e in pairs(cur.data.lfg) do
+            if id ~= uid then
+                local same = e.r == room
+                local party = false
+                if same then
+                    local other = _UserService:GetUserEntityByUserId(id)
+                    ---@type PlayerSocial
+                    local s = isvalid(other) and other:GetComponent("script.PlayerSocial") or nil
+                    party = s ~= nil and mine ~= nil and s.PartyId ~= 0 and s.PartyId == mine.PartyId
+                end
+                local can = inGame and ((same and not party) or (not same and math.floor(tonumber(e.m) or 0) >= myDiff))
+                local text = table.concat({ id, tostring(e.n or "?"), tostring(math.floor(tonumber(e.l) or 1)), _GameConst:DifficultyName(math.floor(tonumber(e.d) or 0)),
+                    tostring(e.p or ""), same and "1" or "0", party and "1" or "0", can and "1" or "0" }, "|")
+                table.insert(rows, { at = tonumber(e.t) or 0, text = text })
+            end
+        end
+        table.sort(rows, function(a, b) return a.at > b.at end)
+        local lfg = {}
+        for _, r in ipairs(rows) do table.insert(lfg, r.text) end
+        local rec = {}
+        for i = #cur.data.rec, 1, -1 do
+            local r = cur.data.rec[i]
+            if type(r) == "table" then table.insert(rec, table.concat({ self:Clock(tonumber(r.t) or 0), tostring(r.k or ""), tostring(r.w or ""), tostring(r.n or "") }, "|")) end
+        end
+        self:ShowBoard(table.concat(lfg, ";"), table.concat(rec, ";"), cur.data.lfg[uid] ~= nil, cur.ok, uid)
+    end
+
+    @ExecSpace("Client")
+    method void ShowBoard(string lfg, string rec, boolean on, boolean ok)
+        _TownBoardWindow:OnData(lfg, rec, on, ok)
+    end
+
+    @ExecSpace("Server")
+    method void RequestToggleLfg(boolean on)
+        -- 「파티 찾는 중」 켜기는 게임 방 · 판 곁에서만, 끄기는 어디서나
+        local uid = senderUserId
+        if self:Throttle(uid .. ":lfg", 1) then return end
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) then return end
+        if on and (not _GameConst:InGameRoom() or not _Util:NearNpc(player, "board")) then return end
+        local entry = on and self:LfgEntry(player) or nil
+        local ok = self:Mutate(function(data) data.lfg[uid] = entry end)
+        if on and ok then self.LocalLfg[uid] = _UtilLogic.ElapsedSeconds else self.LocalLfg[uid] = nil end
+        self:EnsurePoll()
+        if not ok then _Util:Notify("게시판에 쓰지 못했다. 잠시 뒤 다시 시도하세요", uid) end   -- 승인 전
+        log("[VRF] board toggle uid=" .. uid .. " on=" .. tostring(on) .. " ok=" .. tostring(ok))
+        self:SendBoard(uid)
+    end
+
+    @ExecSpace("Server")
+    method void RequestInvite(string targetUid)
+        -- 다른 방의 「파티 찾는 중」에게 내 게임 초대 (같은 방이면 클라이언트가 기존 파티 초대를 쓴다)
+        local uid = senderUserId
+        if targetUid == uid or self:Throttle(uid .. ":inv", 2) then return end
+        local player = _UserService:GetUserEntityByUserId(uid)
+        local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
+        if not isvalid(player) or id == nil or not _Util:IsAlive(player) then return end
+        if _UserService:GetUserCount() >= _GameConst.RoomMaxMembers then
+            _Util:Notify("이 게임은 이미 가득 찼다", uid)   -- 승인 전
+            return
+        end
+        local target = self:ReadBoard(0).data.lfg[targetUid]
+        if target == nil then
+            _Util:Notify("그 사람은 이제 파티를 찾지 않는다", uid)   -- 승인 전
+            self:SendBoard(uid)
+            return
+        end
+        ---@type PlayerStats
+        local st = player:GetComponent("script.PlayerStats")
+        local diff = st ~= nil and st.Difficulty or 0
+        if math.floor(tonumber(target.m) or 0) < diff then
+            _Util:Notify("그 사람은 아직 " .. _GameConst:DifficultyName(diff) .. " 난이도를 열지 않았다", uid)   -- 승인 전
+            return
+        end
+        local name = self:Clean(_PartySystem:NameOf(player), 16)
+        local ok = self:Mutate(function(data) data.inv[targetUid] = { f = name, fu = uid, id = id, d = diff, t = DateTime.UtcNow.Elapsed } end)
+        _Util:Notify(ok and ("게임 초대를 보냈다: " .. tostring(target.n)) or "초대를 보내지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+        log("[VRF] board invite " .. uid .. " → " .. targetUid .. " room=" .. id .. " ok=" .. tostring(ok))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void EnsurePoll()
+        -- 이 방에 「파티 찾는 중」인 사람이 있을 때만 4초마다 초대 확인
+        if next(self.LocalLfg) ~= nil and self.PollTimer == 0 then
+            self.PollTimer = _TimerService:SetTimerRepeat(function() self:Poll() end, 4)
+        elseif next(self.LocalLfg) == nil and self.PollTimer ~= 0 then
+            _TimerService:ClearTimer(self.PollTimer)
+            self.PollTimer = 0
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Poll()
+        -- 받은 초대를 받은 요청 창으로 넘기고, 「찾는 중」 표시를 2분마다 새로 적는다 (위치·레벨도 함께)
+        local cur = self:ReadBoard(0)
+        local nowSec = _UtilLogic.ElapsedSeconds
+        local consumed = {}
+        local refresh = {}
+        for uid, at in pairs(self.LocalLfg) do
+            local player = _UserService:GetUserEntityByUserId(uid)
+            if not isvalid(player) then
+                self.LocalLfg[uid] = nil
+            else
+                local inv = cur.data.inv[uid]
+                if inv ~= nil then
+                    table.insert(consumed, uid)
+                    self:DeliverInvite(player, inv)
+                end
+                if cur.data.lfg[uid] == nil then
+                    self.LocalLfg[uid] = nil   -- 오래되어 지워졌다
+                elseif nowSec - at >= self.LfgRefreshSec then
+                    table.insert(refresh, uid)
+                end
+            end
+        end
+        if #consumed > 0 or #refresh > 0 then
+            self:Mutate(function(data)
+                for _, uid in ipairs(consumed) do data.inv[uid] = nil end
+                for _, uid in ipairs(refresh) do
+                    local player = _UserService:GetUserEntityByUserId(uid)
+                    if isvalid(player) and data.lfg[uid] ~= nil then data.lfg[uid] = self:LfgEntry(player) end
+                end
+            end)
+            for _, uid in ipairs(refresh) do if self.LocalLfg[uid] ~= nil then self.LocalLfg[uid] = nowSec end end
+        end
+        self:EnsurePoll()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DeliverInvite(Entity player, any inv)
+        -- 다른 방 초대 → 받은 요청 창 (PlayerSocial Pending*, kind "game"). 다른 요청을 처리 중이면 버린다
+        if type(inv) ~= "table" or type(inv.id) ~= "string" then return end
+        if DateTime.UtcNow.Elapsed - (tonumber(inv.t) or 0) > self.InviteLifeMs then return end
+        local uid = player.PlayerComponent.UserId
+        ---@type PlayerSocial
+        local social = player:GetComponent("script.PlayerSocial")
+        if social == nil or (social.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < social.PendingUntil) then return end
+        self.Invites[uid] = { id = inv.id, d = math.floor(tonumber(inv.d) or 0), f = tostring(inv.f or "?") }
+        social.PendingKind = "game"
+        social.PendingFrom = tostring(inv.fu or "")
+        social.PendingFromName = tostring(inv.f or "?")
+        social.PendingUntil = _UtilLogic.ElapsedSeconds + 20
+        log("[VRF] board invite delivered uid=" .. uid .. " room=" .. inv.id)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AnswerInvite(Entity player, boolean accept)
+        -- PlayerSocial.RespondRequest(kind "game"): 수락하면 돌아올 방 자리에 초대한 방을 적고 로비로 → RoomSystem.OnLobbyReady가 그 방에 넣는다
+        local uid = player.PlayerComponent.UserId
+        local inv = self.Invites ~= nil and self.Invites[uid] or nil
+        if self.Invites ~= nil then self.Invites[uid] = nil end
+        if inv == nil or not accept then return end
+        if not _Util:IsAlive(player) or not _GameConst:InGameRoom() then
+            _Util:Notify("지금은 다른 게임으로 옮길 수 없다", uid)   -- 승인 전
+            return
+        end
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        if stats ~= nil and inv.d > stats.MaxDifficulty then
+            _Util:Notify("아직 열지 않은 난이도의 게임이다", uid)   -- 승인 전
+            return
+        end
+        local code, memory = _RoomService:GetSharedMemory(_RoomSystem.ReturnMemory)
+        if code ~= SharedMemoryResultCode.OK or memory == nil then
+            _Util:Notify("게임을 옮기지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+            return
+        end
+        memory:SetVariableAndWait(uid, _HttpService:JSONEncode({ id = inv.id, d = inv.d, t = DateTime.UtcNow.Elapsed }))
+        self.LocalLfg[uid] = nil
+        self:Mutate(function(data) data.lfg[uid] = nil end)
+        self:EnsurePoll()
+        -- 「게임 나가기」(RoomSystem.RequestLeaveGame)와 같은 순서: 저장 준비 → 인원 다시 적기 → 로비로
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil or not save:PrepareRoomMove(_RoomService.StaticRoomKey) then
+            _RoomSystem:ClearReturn(uid)
+            return
+        end
+        _RoomSystem:WriteCount(_UserService:GetUserCount() - 1)
+        local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
+        log("[VRF] board invite accept uid=" .. uid .. " → " .. inv.id .. " moved=" .. tostring(moved))
+        if moved == nil or moved == 0 then
+            save:CancelRoomMove()
+            _RoomSystem:ClearReturn(uid)
+            _Util:Notify("게임을 옮기지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    @EventSender("Service", "UserService")
+    handler HandleUserLeaveEvent(UserLeaveEvent event)
+        -- 방을 떠나면(다른 방 · 접속 끊김) 「파티 찾는 중」을 지운다 (잠깐 뒤에 쓴다)
+        local uid = event.UserId
+        if self.Invites ~= nil then self.Invites[uid] = nil end
+        if self.LocalLfg == nil or self.LocalLfg[uid] == nil then return end
+        self.LocalLfg[uid] = nil
+        self:EnsurePoll()
+        _TimerService:SetTimerOnce(function()
+            local ok = self:Mutate(function(data) data.lfg[uid] = nil end)
+            log("[VRF] board lfg cleared on leave uid=" .. uid .. " ok=" .. tostring(ok))
+        end, 0.1)
+    end
+
+end

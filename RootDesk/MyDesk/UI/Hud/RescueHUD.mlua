@@ -1,0 +1,116 @@
+-- 파티 구출 화면 (기획서 39 #12A · 10-29 · 서버 PartyRescue가 부른다). ui/CoopHUD (tools/build/coop-hud.cjs).
+--   구출하는 쪽: 내 머리 위 「○○ 일으키는 중」 + 3초 진행 막대 (업적 막대 양식 · UIKit.SetBar). 매 프레임 머리 위로 따라간다.
+--   쓰러진 쪽: 위쪽 가운데 판 「파티원이 곁에 오면 일어날 수 있다」 + 마을 부활까지 남은 초 + 누가 일으키는 중이면 같은 막대 + 「마을에서 부활」 단추.
+-- 막대 시간은 내 시계로 그린다 (서버가 시작·취소·완료만 알린다). 글귀는 모두 임시 (승인 전).
+@Logic
+script RescueHUD extends Logic
+
+    property string Root = "/ui/CoopHUD"
+    property string Bar = "/ui/CoopHUD/RescueBar"
+    property string Panel = "/ui/CoopHUD/SafeArea/Downed"
+    property number BarStart = 0          -- 구출하는 쪽 막대 시작 시각 (내 시계 · 0 = 숨김)
+    property number BarSeconds = 0
+    property number DownUntil = 0         -- 쓰러진 쪽: 마을 부활까지 (0 = 판 숨김)
+    property number HelpStart = 0         -- 쓰러진 쪽: 누가 일으키는 중 (0 = 아님)
+    property number HelpSeconds = 0
+    property string HelpName = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:SetEnabled(self.Bar, false)
+        _UIKit:SetEnabled(self.Panel, false)
+        _UIKit:Connect(self.Panel .. "/BtnTown", function() self:GiveUp() end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowRescuer(string downedName, number seconds)
+        -- seconds 0 = 거둠 (떨어졌거나 끝났다)
+        if seconds <= 0 then
+            self.BarStart = 0
+            _UIKit:SetEnabled(self.Bar, false)
+            return
+        end
+        self.BarStart = _UtilLogic.ElapsedSeconds
+        self.BarSeconds = seconds
+        _UIKit:SetText(self.Bar .. "/Label", downedName .. " 일으키는 중")   -- 승인 전
+        _UIKit:SetBar(self.Bar .. "/Track/Fill", 0)
+        _UIKit:SetEnabled(self.Bar, true)
+        self:Follow()
+        log("[VRF] rescue bar show " .. downedName .. " sec=" .. tostring(seconds))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowDowned(number waitSec)
+        self.DownUntil = _UtilLogic.ElapsedSeconds + waitSec
+        self.HelpStart = 0
+        self.HelpName = ""
+        _UIKit:SetText(self.Panel .. "/Title", "쓰러졌다")                                   -- 승인 전
+        _UIKit:SetText(self.Panel .. "/Text", "파티원이 곁에 오면 일어날 수 있다")              -- 승인 전 (결정 #12A 안내)
+        _UIKit:SetEnabled(self.Panel .. "/HelpBar", false)
+        _UIKit:SetEnabled(self.Panel, true)
+        self:RenderDowned()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetHelp(string helperName, number seconds)
+        if seconds <= 0 then
+            self.HelpStart = 0
+            self.HelpName = ""
+            _UIKit:SetEnabled(self.Panel .. "/HelpBar", false)
+            return
+        end
+        self.HelpStart = _UtilLogic.ElapsedSeconds
+        self.HelpSeconds = seconds
+        self.HelpName = helperName
+        _UIKit:SetBar(self.Panel .. "/HelpBar/Fill", 0)
+        _UIKit:SetEnabled(self.Panel .. "/HelpBar", true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideDowned()
+        self.DownUntil = 0
+        self.HelpStart = 0
+        _UIKit:SetEnabled(self.Panel, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void GiveUp()
+        -- 「마을에서 부활」: 기다리지 않는다
+        _PartyRescue:RequestGiveUp()
+        self:HideDowned()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 막대·판이 떠 있을 때만
+        if self.BarStart > 0 then
+            local r = (_UtilLogic.ElapsedSeconds - self.BarStart) / math.max(0.1, self.BarSeconds)
+            _UIKit:SetBar(self.Bar .. "/Track/Fill", r)
+            self:Follow()
+        end
+        if self.DownUntil > 0 then self:RenderDowned() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Follow()
+        -- 내 머리 위 (경고 글씨 WarnPop·콤보보다 조금 위)
+        local player = _UserService.LocalPlayer
+        local root = _UIKit:Get(self.Root)
+        if not isvalid(player) or not isvalid(root) then return end
+        local screen = _UILogic:WorldToScreenPosition(_Util:Pos2(player) + Vector2(0, 1.6))
+        _UIKit:SetPos(self.Bar, _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderDowned()
+        local left = math.max(0, math.ceil(self.DownUntil - _UtilLogic.ElapsedSeconds))
+        if self.HelpStart > 0 then
+            local r = (_UtilLogic.ElapsedSeconds - self.HelpStart) / math.max(0.1, self.HelpSeconds)
+            _UIKit:SetBar(self.Panel .. "/HelpBar/Fill", r)
+            _UIKit:SetText(self.Panel .. "/Help", self.HelpName .. "님이 일으키는 중…")   -- 승인 전
+        else
+            _UIKit:SetText(self.Panel .. "/Help", tostring(left) .. "초 뒤 마을에서 부활 · 파티원이 곁에서 " .. tostring(math.floor(_GameData.rescueSec)) .. "초 머물면 그 자리에서")   -- 승인 전
+        end
+    end
+
+end

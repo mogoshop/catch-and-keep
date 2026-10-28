@@ -1,0 +1,165 @@
+-- 마을 게시판 창 (기획서 39 #14A · 10-29). 마을 광장 「모집 판」 곁에서 Space·B(대화 단추)로 연다 (NpcWindow.Talk → Open).
+--   탭 ① 모집 판: 「파티 찾는 중」 켜기/끄기 + 이 채널에서 파티를 찾는 사람 5줄 — 같은 방이면 「파티 초대」(기존 PlayerSocial 흐름), 다른 방이면 「내 게임에 초대」(TownBoard)
+--   탭 ② 오늘의 기록: 이 채널의 습격 격퇴 · 보스 처치 · 노말 클리어 (시각 · 이름, 최신이 위)
+-- 데이터는 서버 TownBoard가 ShowBoard로 보낸다. 열려 있는 동안 5초마다 다시 묻고, 판에서 멀어지면 닫는다. ui/CoopHUD (tools/build/coop-hud.cjs). 글귀 임시 (승인 전).
+@Logic
+script TownBoardWindow extends Logic
+
+    property string Win = "/ui/CoopHUD/SafeArea/BoardWin"
+    property string Tab = "lfg"
+    property table Ids = {}                 -- 줄 → userId
+    property table Same = {}                -- 줄 → 같은 방인가
+    property boolean LfgOn = false
+    property integer TimerId = 0
+    property number AskedAt = -100
+    property number Reach = 3.0             -- 판에서 이만큼 멀어지면 닫는다
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
+        _UIKit:Connect(self.Win .. "/TabLfg", function() self:SelectTab("lfg") end)
+        _UIKit:Connect(self.Win .. "/TabRec", function() self:SelectTab("rec") end)
+        _UIKit:Connect(self.Win .. "/Lfg/BtnToggle", function() self:Toggle() end)
+        for i = 1, 5 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Lfg/R" .. tostring(i) .. "/BtnInvite", function() self:Invite(index) end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Open()
+        _UIKit:Open(self.Win)
+        self:SelectTab(self.Tab)
+        _UIKit:SetText(self.Win .. "/Lfg/R1/Name", "불러오는 중...")
+        self:Request()
+        log("[VRF] board open tab=" .. self.Tab)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Request()
+        self.AskedAt = _UtilLogic.ElapsedSeconds
+        _TownBoard:RequestBoard()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 열려 있는 동안: 판에서 멀어지거나 쓰러지면 닫고, 5초마다 새로 묻는다
+        if not _UIKit:IsOpen(self.Win) then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or not _Util:IsAlive(player) or not self:NearBoard(player) then
+            _UIKit:Close(self.Win)
+            return
+        end
+        if _UtilLogic.ElapsedSeconds - self.AskedAt >= 5 then self:Request() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean NearBoard(Entity player)
+        if not isvalid(player.CurrentMap) then return false end
+        for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.WorldNPC", true)) do
+            ---@type WorldNPC
+            local npc = c
+            if npc.Kind == "board" and _Util:Distance(player, c.Entity) <= self.Reach then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SelectTab(string tab)
+        -- 고른 탭만 켜고 탭 단추를 밝게
+        self.Tab = tab
+        _UIKit:SetEnabled(self.Win .. "/Lfg", tab == "lfg")
+        _UIKit:SetEnabled(self.Win .. "/Rec", tab == "rec")
+        local on = Color(1, 0.86, 0.62, 1)
+        local off = Color(0.62, 0.6, 0.58, 1)
+        _UIKit:SetColor(self.Win .. "/TabLfg", tab == "lfg" and on or off)
+        _UIKit:SetColor(self.Win .. "/TabRec", tab == "rec" and on or off)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnData(string lfg, string rec, boolean on, boolean ok)
+        -- 서버 TownBoard.SendBoard 결과
+        if not _UIKit:IsOpen(self.Win) then return end
+        self.LfgOn = on
+        _UIKit:SetText(self.Win .. "/Lfg/BtnToggle", on and "파티 찾는 중 · 끄기" or "파티 찾는 중 · 켜기")   -- 승인 전
+        _UIKit:SetColor(self.Win .. "/Lfg/BtnToggle", on and Color(0.62, 1, 0.66, 1) or Color(1, 1, 1, 1))
+        _UIKit:SetText(self.Win .. "/Lfg/Hint", on and "이 채널 게시판에 내 이름이 보인다 · 이 게임을 떠나면 꺼진다" or "켜 두면 이 채널의 다른 사람이 게시판에서 보고 초대할 수 있다")   -- 승인 전
+        self:RenderLfg(lfg)
+        self:RenderRec(rec, ok)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderLfg(string digest)
+        -- 줄 = "userId|이름|레벨|난이도|위치|같은 방|같은 파티|초대 가능"
+        local rows = {}
+        for entry in string.gmatch(digest .. ";", "([^;]*);") do
+            local uid, name, lv, diff, place, same, party, can = string.match(entry, "^([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+            if uid ~= nil and #rows < 5 then table.insert(rows, { uid = uid, name = name, lv = lv, diff = diff, place = place, same = same == "1", party = party == "1", can = can == "1" }) end
+        end
+        self.Ids = {}
+        self.Same = {}
+        for i = 1, 5 do
+            local row = self.Win .. "/Lfg/R" .. tostring(i)
+            local r = rows[i]
+            _UIKit:SetEnabled(row, r ~= nil)
+            if r ~= nil then
+                self.Ids[i] = r.uid
+                self.Same[i] = r.same
+                local where = r.same and _UIKit:Colored("#9EE6A0", "같은 게임") or _UIKit:Colored("#9C9488", r.place)
+                _UIKit:SetText(row .. "/Name", r.name .. "  Lv" .. r.lv .. "  " .. _UIKit:Colored("#C9BBA0", r.diff) .. "  · " .. where)
+                local label = r.party and "같은 파티" or (r.same and "파티 초대" or "내 게임에 초대")   -- 승인 전
+                _UIKit:SetText(row .. "/BtnInvite", r.can and label or _UIKit:Colored("#7A7268", label))
+                _UIKit:SetEnabled(row .. "/BtnInvite", true)
+                local btn = _UIKit:Get(row .. "/BtnInvite")
+                if isvalid(btn) and btn.ButtonComponent ~= nil then btn.ButtonComponent.Enable = r.can end
+            end
+        end
+        _UIKit:SetEnabled(self.Win .. "/Lfg/Empty", #rows == 0)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRec(string digest, boolean ok)
+        -- 줄 = "HH:MM|종류|무엇|이름들" (최신이 위)
+        local kinds = { raid = "습격 격퇴", boss = "보스 처치", clear = "노말 클리어" }   -- 승인 전
+        local colors = { raid = "#E6C88A", boss = "#FF8A6A", clear = "#B48CFF" }
+        local lines = {}
+        for entry in string.gmatch(digest .. ";", "([^;]*);") do
+            local t, k, w, n = string.match(entry, "^([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+            if t ~= nil then
+                table.insert(lines, _UIKit:Colored("#9C9488", t) .. "  " .. _UIKit:Colored(colors[k] or "#E6DCC6", kinds[k] or k) .. " · " .. w .. "\n      " .. n)
+            end
+        end
+        if #lines == 0 then lines = { ok and "오늘은 아직 기록이 없다" or "게시판을 불러오지 못했다 — 잠시 뒤 다시 열어 보세요" } end   -- 승인 전
+        _UIKit:SetScrollText(self.Win .. "/Rec/Paper/List", table.concat(lines, "\n"))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Toggle()
+        _TownBoard:RequestToggleLfg(not self.LfgOn)
+        log("[VRF] board toggle request on=" .. tostring(not self.LfgOn))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Invite(integer index)
+        -- 같은 방 = 기존 파티 초대 (PlayerSocial) · 다른 방 = 내 게임에 초대 (TownBoard)
+        local id = self.Ids[index]
+        if id == nil then return end
+        if self.Same[index] then
+            ---@type PlayerSocial
+            local social = _UIKit:Comp("script.PlayerSocial")
+            if social ~= nil then social:RequestAction("party", id) end
+        else
+            _TownBoard:RequestInvite(id)
+        end
+        log("[VRF] board invite click uid=" .. id .. " same=" .. tostring(self.Same[index]))
+    end
+
+end

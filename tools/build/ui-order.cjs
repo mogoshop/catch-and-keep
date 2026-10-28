@@ -11,7 +11,7 @@ const { UIBuilder } = require("../../.claude/skills/msw-ui-system/scripts/msw_ui
 const ORDER = [
   "AimHUD", "NavigationHUD", "CompanionHUD", "InteractionHUD",
   "GameHUD", "ChatHUD", "ShadowHUD",
-  "ShopHUD", "StashHUD", "MerchantHUD", "JournalHUD", "QuestJournalHUD",
+  "ShopHUD", "StashHUD", "MerchantHUD", "JournalHUD", "QuestJournalHUD", "CoopHUD",
   "CharSelectHUD", "EquipmentHUD", "AudioSettingsHUD", "RewardHUD", "StoryHUD", "ConfirmHUD",
 ];
 
