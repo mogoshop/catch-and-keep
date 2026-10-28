@@ -244,7 +244,7 @@ function compose(id, spec, ctx, mapRow) {
       if (!pieces) throw new Error(`${id}: 세트 '${name}'이 map_sets.csv에 없음`);
       const m = flip ? -1 : 1;
       for (const pc of pieces) if (!pc.piece.startsWith("d:")) { const px = x + num(pc.dx) * m, py = y + num(pc.dy); occupy(footCells(table, ctx.propScale, pc.piece, px, py, num(pc.scale, 1) * (sc || 1)), px, py); }
-      rows.push({ kind: "set", name, x, y, scale: sc || "", flip: flip ? 1 : "", args: "", note: "손으로 고른 자리" });
+      rows.push({ kind: "set", name, x, y, scale: sc || "", flip: flip ? 1 : "", args: pu[6] || "", note: "손으로 고른 자리" });
     } else if (kind === "prop") {
       occupy(footCells(table, ctx.propScale, name, x, y, sc || 1), x, y);
       rows.push({ kind: "prop", name, x, y, scale: sc || "", flip: flip ? 1 : "", args: pu[6] || "", note: "손으로 고른 자리" });

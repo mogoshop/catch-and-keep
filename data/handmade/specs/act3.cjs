@@ -171,12 +171,16 @@ module.exports = {
     },
   },
 
+  // 10-29 「담 위」 액트 3판 (사용자 「액트 3·4도 같은 결로」 → Fable 선정): 바다 위 절벽 능선.
+  //   걷는 칸 = 해안 바위 윗면(좁은 능선·둥근 바위 머리), '#' = 낮은 바다(못 지나감). 높이 2단(앞면 띠) + 바닷가 거품 띠.
+  //   능선은 자연물이라 가장자리를 조금 깨문다(rough 0.6 · 길 wobble 0.5), 길 폭은 2~3
   stormcliff: {
     size: [70, 50],
     title: "번개 절벽",
-    story: ["벼락이 끊이지 않는 해안 절벽. 좁은 절벽길이 번개 맞은 바위(웨이포인트)에서 갈라진다.", "북쪽 무너진 등대 꼭대기와 봉화대, 남서쪽 밀수꾼 동굴 입구, 남동쪽 조수 웅덩이. 동쪽으로 가라앉은 어촌."],
+    story: ["바다 위로 솟은 절벽 능선. 서쪽 어귀에서 좁은 능선이 구불구불 번개 맞은 바위(웨이포인트, 넓은 둥근 바위 머리)까지 이어지고, 거기서 갈라진다.", "북쪽 막다른 바위 머리에 무너진 등대 꼭대기, 남서쪽 네모 바위 턱에 밀수꾼 동굴 입구, 북동쪽 바위 머리에 봉화대, 남동쪽 능선 곁 낮은 턱에 조수 웅덩이. 동쪽 내리막이 가라앉은 어촌으로."],
+    raised: "a3-coast-rock-wall-r2 1/1/1 절벽 능선 tiers=2 top=zone face=a3-coast-rock-wall-r2-borders low=a3-shallow-sea-floor-r2:0.5/0.58/0.66 edge=a3-decal-shore-foam-edge-h-r2:a3-decal-shore-foam-edge-v-r2:0.9",
     base: "execution-floor 0.62/0.72/0.74",
-    walls: { "#": "coast-rock 0.6/0.72/0.78 절벽" },
+    walls: { "#": "coast-rock 0.6/0.72/0.78 낮은 바다" },
     zones: {
       a: "execution-floor 0.58/0.66/0.7 절벽길 어귀",
       b: "ash-camp-floor 0.62/0.7/0.72 무너진 등대 꼭대기",
@@ -188,31 +192,34 @@ module.exports = {
     },
     roads: { "=": "ash-road 0.76/0.84/0.86 절벽길", "-": "ash-road 0.62/0.7/0.72 샛길" },
     places: [
-      E("a", "절벽길 어귀", -28, 6, 6, 5),
-      E("b", "무너진 등대 꼭대기", -12, 13, 9, 6),
-      E("c", "번개 맞은 바위", -2, 0, 9, 6, { note: "웨이포인트" }),
-      E("d", "밀수꾼 동굴 어귀", -14, -12, 8, 6, { note: "밀수꾼 동굴 입구" }),
-      E("e", "조수 웅덩이", 14, -12, 8, 6),
-      E("f", "봉화대", 15, 12, 8, 6),
-      E("g", "동쪽 내리막", 28, -2, 5, 5),
+      E("a", "절벽길 어귀", -29, 6, 5, 4, { rough: 0.6 }),
+      E("b", "무너진 등대 꼭대기", -15, 17, 5.5, 4.5, { rough: 0.6, note: "북쪽 막다른 바위 머리" }),
+      E("c", "번개 맞은 바위", -2, 3, 6, 6, { rough: 0.6, note: "웨이포인트 · 넓은 둥근 바위 머리" }),
+      R("d", "밀수꾼 동굴 어귀", -21, -20, -8, -12, { rough: 0.3, note: "밀수꾼 동굴 입구 · 네모 바위 턱" }),
+      R("e", "조수 웅덩이", 11, -15, 20, -9, { rough: 0.3, note: "능선 곁 낮은 네모 턱" }),
+      E("f", "봉화대", 17, 14, 5.5, 4.5, { rough: 0.6, note: "북동쪽 바위 머리" }),
+      E("g", "동쪽 내리막", 29, -2, 4.5, 3.5, { rough: 0.6 }),
     ],
     paths: [
-      P([[-35, 6], [-28, 6], [-20, 2], [-10, 0], [-2, 0], [6, -2], [14, 0], [22, -2], [28, -2], [34, -2]], 3, "=", 1),
-      P([[-24, 9], [-16, 12]], 3, "-", 1), P([[-8, -4], [-12, -8]], 3, "-", 1), P([[8, 2], [13, 8]], 3, "-", 1), P([[10, -4], [14, -8]], 3, "-", 1),
-      P([[-6, 16], [6, 15], [10, 13]], 3), P([[-6, -14], [8, -14]], 3),
+      P([[-30, 6], [-24, 11], [-18, 4.5], [-12, 8], [-7, 3]], 3, "=", 1, { wobble: 0.5 }),               // 서쪽 능선
+      P([[4, 3], [9, -2.5], [14, 2.5], [20, -4], [25, 0.5], [30, -2]], 3, "=", 1, { wobble: 0.5 }),       // 동쪽 능선
+      P([[-3, 5], [-5, 9.5], [-8, 12], [-12, 14]], 2.5, "-", 1, { wobble: 0.5 }),                                   // 등대 꼭대기로
+      P([[-5, -3], [-9, -6], [-12, -11]], 2.5, "-", 1, { wobble: 0.5 }),                                 // 밀수꾼 턱으로
+      P([[14, 2.5], [15, 6], [16, 10]], 2.5, "-", 1, { wobble: 0.5 }),                                   // 봉화대로
+      P([[16, 0.5], [15, -4], [15, -9]], 2.5, undefined, undefined, { wobble: 0.5 }),                 // 조수 웅덩이 턱으로
     ],
-    rocks: [rock(-28, -8, 4, 4), rock(4, 8, 2, 3), rock(28, 10, 3, 3), rock(27, -13, 3, 3), rock(-24, 18, 3, 2), rock(2, -8, 2, 1.5), rock(-20, -4, 2, 1.5)],
     gates: { W: [-34, 6], E: [33, -2] },
     holes: { smuggler1: [-14, -15] },
     waypoint: [-2, 3],
+    put: [["set", "a3_lm_lightning_totem", 4.0, 2.6]],
     dress: {
-      a: { props: ["scorched-rock", "a3-kelp-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 5 },
-      b: { sets: ["a3_lighthouse_fall"], props: ["broken-beacon", "scorched-rock", "a3-drift-crates"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 5 },
-      c: { sets: ["a3_lm_lightning_totem"], props: ["scorched-rock", "salt-crystals", "harbor-lantern"], n: 8, decals: ["a3-decal-tide-puddle", "a4-decal-scorch", "a3-decal-salt-crust"], dn: 7 },
-      d: { sets: ["a3_smuggler_cache"], props: ["smuggler-crates", "harbor-barrels"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-rope-scraps"], dn: 4 },
-      e: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-foam-line"], dn: 6 },
-      f: { props: ["broken-beacon", "a3-rusted-cannon", "scorched-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a4-decal-scorch"], dn: 5 },
-      g: { props: ["scorched-rock", "a3-kelp-rock"], n: 5, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 4 },
+      a: { props: ["scorched-rock", "a3-kelp-rock"], n: 3, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 3 },
+      b: { sets: ["a3_lighthouse_fall"], props: ["broken-beacon", "scorched-rock", "a3-drift-crates"], n: 4, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 4 },
+      c: { props: ["scorched-rock", "salt-crystals", "harbor-lantern"], n: 7, decals: ["a3-decal-tide-puddle", "a4-decal-scorch", "a3-decal-salt-crust"], dn: 6 },   // 번개 토템은 put (웨이포인트 동쪽 — 그림이 웨이포인트를 가리지 않게)
+      d: { sets: ["a3_smuggler_cache"], props: ["smuggler-crates", "harbor-barrels"], n: 5, decals: ["a3-decal-tide-puddle", "a3-decal-rope-scraps"], dn: 4 },
+      e: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 4, decals: ["a3-decal-tide-puddle", "a3-decal-foam-line"], dn: 4 },
+      f: { props: ["broken-beacon", "a3-rusted-cannon", "scorched-rock"], n: 4, decals: ["a3-decal-tide-puddle", "a4-decal-scorch"], dn: 4 },
+      g: { props: ["scorched-rock", "a3-kelp-rock"], n: 3, decals: ["a3-decal-tide-puddle", "a3-decal-salt-crust"], dn: 3 },
     },
   },
 

@@ -121,48 +121,56 @@ module.exports = {
     },
   },
 
+  // 10-29 「담 위」 액트 4판 (사용자 「액트 3·4도 같은 결로」 → Fable 선정): 용암 위 성채 성벽 행군로.
+  //   걷는 칸 = 성채 성벽 윗면(구역 바닥 · 가장자리 성벽 9조각), '#' = 낮은 용암 바다(못 지나감). 높이 2단 + 용암 가장자리 띠.
+  //   성벽은 사람이 쌓은 것이라 모서리를 곧게(rough 0 · wobble 0). 아래 HEIGHT 자동 규칙에서 빼고 여기서 직접 지정
   demonroad: {
     size: [70, 50],
     title: "악마의 행군로",
-    story: ["악마 군단이 지나간 넓은 행군로. 해골 관문을 지나면 길가에 전쟁 야영지(웨이포인트)가 버티고 있다.", "남서쪽 혼 감옥 입구, 북동쪽 무너진 초소, 남동쪽 공성 장비 마당. 동쪽으로 유황 늪."],
+    story: ["용암 바다 위로 쌓은 성채 성벽이 그대로 행군로가 됐다. 서문 보루에서 폭 4 성벽을 따라 해골 관문 보루를 지나 큰 네모 보루의 전쟁 야영지(웨이포인트)로.", "야영지 서쪽 모서리에서 남쪽으로 뻗은 성벽은 중간이 무너져 좁은 성벽으로 돌아 혼 감옥 망루에 닿는다. 북동쪽 끊긴 성벽 끝에 무너진 초소 망루, 남동쪽 둥근 보루에 공성 장비 마당. 동쪽 행군로가 유황 늪으로."],
+    raised: "a4-fortress-wall 1/1/1 성벽 윗면 tiers=2 top=zone face=a4-fortress-wall-borders low=a4-lava-sea-floor:0.6/0.48/0.46 edge=a4-decal-lava-edge-h:a4-decal-lava-edge-v:0.9",
     base: "a4-lava_crack 0.84/0.78/0.76",
     walls: BASALT,
     zones: {
-      a: "a4-basalt 0.82/0.78/0.76 행군로 어귀",
-      b: "a4-scorched_pavers 0.86/0.8/0.76 해골 관문",
-      c: "a4-basalt 0.9/0.84/0.8 전쟁 야영지",
-      d: "a4-soul_prison 0.82/0.78/0.82 혼 감옥 어귀",
-      e: "a4-basalt 0.78/0.74/0.72 무너진 초소",
-      f: "a4-scorched_pavers 0.8/0.74/0.7 공성 장비 마당",
+      a: "a4-basalt 0.82/0.78/0.76 행군로 어귀 보루",
+      b: "a4-scorched_pavers 0.86/0.8/0.76 해골 관문 보루",
+      c: "a4-basalt 0.9/0.84/0.8 전쟁 야영지 보루",
+      d: "a4-soul_prison 0.82/0.78/0.82 혼 감옥 망루",
+      e: "a4-basalt 0.78/0.74/0.72 무너진 초소 망루",
+      f: "a4-scorched_pavers 0.8/0.74/0.7 공성 장비 마당 보루",
       g: "a4-basalt 0.86/0.82/0.8 동쪽 행군로",
     },
     roads: { "=": "a4-demon_march_ew 1/0.96/0.92 행군로" },
     places: [
-      E("a", "행군로 어귀", -28, 0, 6, 5),
-      E("b", "해골 관문", -14, 1, 7, 6, { note: "길 위의 해골 관문" }),
-      E("c", "전쟁 야영지", 2, -4, 9, 7, { note: "웨이포인트" }),
-      E("d", "혼 감옥 어귀", -10, -15, 8, 5, { note: "혼 감옥 입구" }),
-      E("e", "무너진 초소", 14, 12, 9, 6),
-      E("f", "공성 장비 마당", 16, -12, 8, 6),
-      E("g", "동쪽 행군로", 28, 2, 5, 5),
+      R("a", "행군로 어귀 보루", -34, -4, -28, 4, { rough: 0, note: "네모 보루" }),
+      R("b", "해골 관문 보루", -21, 0, -13, 8, { rough: 0, note: "성벽 위 네모 보루 · 해골 관문" }),
+      R("c", "전쟁 야영지 보루", -3, -8, 8, 0, { rough: 0, note: "웨이포인트 · 큰 네모 보루 12×9" }),
+      R("d", "혼 감옥 망루", -16, -21, -4, -14, { rough: 0, note: "혼 감옥 입구 · 끊긴 성벽 끝 망루" }),
+      R("e", "무너진 초소 망루", 15, 12, 22, 18, { rough: 0, note: "끊긴 성벽 끝 막다른 망루" }),
+      E("f", "공성 장비 마당 보루", 16, -16, 6.5, 5, { rough: 0, note: "둥근 보루" }),
+      R("g", "동쪽 행군로", 27, -1, 33, 5, { rough: 0 }),
     ],
     paths: [
-      P([[-35, 0], [-28, 0], [-14, 0], [-6, -2], [2, -4], [10, 0], [18, 2], [28, 2], [34, 2]], 5, "=", 3),
-      P([[-4, -8], [-9, -13]], 3), P([[6, 2], [12, 8], [14, 10]], 3), P([[8, -6], [14, -10]], 3),
-      P([[-14, 6], [-6, 12], [6, 13], [10, 12]], 3), P([[-2, -16], [10, -14]], 3),
+      P([[-28, 0], [-24, 0], [-24, 4], [-21, 4]], 4, "=", 2, { wobble: 0 }),             // 성벽 행군로 ① 어귀 → 해골 관문
+      P([[-13, 4], [-9, 4], [-9, -4], [-3, -4]], 4, "=", 2, { wobble: 0 }),              // ② 관문 → 야영지
+      P([[8, -4], [22, -4], [22, 2], [27, 2]], 4, "=", 2, { wobble: 0 }),                // ③ 야영지 → 동쪽 행군로
+      P([[-9.5, -7.5], [-9.5, -8.5]], 3, undefined, undefined, { wobble: 0 }),         // 혼 감옥으로 — 망루 앞 3칸에서 무너져 끊긴 성벽
+      P([[-11, -9], [-13, -9], [-13, -13.5]], 2, undefined, undefined, { wobble: 0 }), // 무너진 자리를 돌아 망루로 내려가는 좁은 성벽
+      P([[19.5, 5.5], [19.5, 6.5]], 3, undefined, undefined, { wobble: 0 }),           // 초소로 — 망루 앞 4칸에서 무너져 끊긴 성벽
+      P([[18, 7], [14, 7], [14, 13], [15, 13]], 2, undefined, undefined, { wobble: 0 }),   // 무너진 자리를 돌아가는 좁은 성벽
+      P([[16, -6.5], [16, -10.5]], 3, undefined, undefined, { wobble: 0 }),            // 공성 장비 마당으로
     ],
-    rocks: [rock(-26, 10, 3, 3), rock(-27, -12, 3, 3), rock(-4, 8, 2.5, 2), rock(28, -10, 3, 3), rock(28, 13, 3, 2.5), rock(4, -15, 2, 1.5)],
     gates: { W: [-34, 0], E: [33, 2] },
     holes: { soulprison: [-10, -17] },
     waypoint: [3, -1],
     dress: {
-      a: { props: ["a4-dead-tree", "a4-bone-heap", "a4-demon-banner"], n: 6, decals: ["a4-decal-hoofprints", "a4-decal-scorch"], dn: 3 },
+      a: { props: ["a4-dead-tree", "a4-bone-heap", "a4-demon-banner"], n: 3, decals: ["a4-decal-hoofprints", "a4-decal-scorch"], dn: 2 },
       b: { sets: ["a4_skull_gate"], props: ["a4-demon-banner", "a4-ruined-wall-low"], n: 4, decals: ["a4-decal-hoofprints"], dn: 3 },
       c: { sets: ["a4_war_camp"], props: ["a4-army-tent", "a4-imp-on-barrel", "a4-demon-banner", "a4-helm-pile"], n: 8, decals: ["a4-decal-hoofprints", "a4-decal-ash-heap"], dn: 5 },
-      d: { props: ["a4-soul-cage", "a4-prison-bars-h", "a4-soul-lantern"], n: 6, decals: ["a4-decal-scorch"], dn: 3 },
-      e: { sets: ["a4_ruined_post"], props: ["a4-watchtower", "a4-wood-fence-h", "a4-helm-pile"], n: 6, decals: ["a4-decal-ash-heap"], dn: 3 },
+      d: { props: ["a4-soul-cage", "a4-prison-bars-h", "a4-soul-lantern"], n: 4, decals: ["a4-decal-scorch"], dn: 2 },
+      e: { sets: ["a4_ruined_post"], props: ["a4-watchtower", "a4-wood-fence-h", "a4-helm-pile"], n: 4, decals: ["a4-decal-ash-heap"], dn: 2 },
       f: { sets: ["a4_lm_war_banner"], props: ["a4-siege-engine", "a4-broken-ladder", "a4-imp-on-barrel"], n: 6, decals: ["a4-decal-hoofprints"], dn: 3 },
-      g: { props: ["a4-demon-banner", "a4-dead-tree"], n: 4, decals: ["a4-decal-hoofprints"], dn: 2 },
+      g: { props: ["a4-demon-banner", "a4-dead-tree"], n: 3, decals: ["a4-decal-hoofprints"], dn: 2 },
     },
   },
 
@@ -594,7 +602,7 @@ const WALL_SET = { burningkeep: FORT, ashhall: FORT, throneante: FORT, throne: F
 const EDGE = " edge=a4-decal-lava-edge-h:a4-decal-lava-edge-v:0.9";
 const LAVA = "low=a4-lava-sea-floor:0.7/0.56/0.52" + EDGE, VOID = "low=a4-lava-sea-floor:0.46/0.34/0.58", DEEP = "low=a4-lava-sea-floor:0.6/0.48/0.46" + EDGE;
 const HEIGHT = {
-  embercanyon: [CLIFF, 1, LAVA], demonroad: [CLIFF, 1, LAVA], sulfurmarsh: [CLIFF, 1, LAVA], heartbridge: [CLIFF, 1, LAVA],
+  embercanyon: [CLIFF, 1, LAVA], sulfurmarsh: [CLIFF, 1, LAVA], heartbridge: [CLIFF, 1, LAVA],   // demonroad는 성채 성벽 2단을 설계서에 직접 (10-29 담 위)
   burningkeep: [FORT, 1, LAVA], ashhall: [FORT, 2, DEEP], throneante: [FORT, 2, DEEP],
   throne: [FORT, 3, "below=a4-scorched-flagstone-floor:0.55:0.62:1/0.62/0.5"],
   abyssgate1: [VEIN, 1, VOID], abyssgate2: [VEIN, 2, VOID], abyssgate3: [VEIN, 3, "below=a4-scorched-flagstone-floor:0.55:0.66:0.72/0.56/1"],

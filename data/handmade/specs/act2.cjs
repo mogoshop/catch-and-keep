@@ -165,51 +165,84 @@ module.exports = {
     },
   },
 
+  // 10-29 「담 위」 2호 (사용자 「담 위를 어떤 맵에 더 넣을지」 → Fable 선정): 모래폭풍에 반쯤 드러난 옛 성벽 잔해.
+  //   가라앉은 대로가 온전한 대로라면 여기는 끊기고 묻힌 성벽 — 서문 망루에서 긴 성벽(폭 3)이 동쪽으로 가다 두 번 끊기고(모래 바다),
+  //   끊긴 자리마다 폭 2 성벽이 ㄷ자로 돌아간다. 걷는 칸 = 사암 담 윗면, '#' = 낮은 모래 바다(못 지나감), 보루 안은 구역 바닥(floor=zone)
   stormwaste: {
     size: [70, 50],
     title: "바람 무덤 사막",
-    story: ["모래폭풍이 끊이지 않는 사막. 서쪽 바람 비석 들판에는 죽은 왕들의 이름이 새겨진 비석이 줄지어 섰다.", "가운데 묻힌 오아시스(웨이포인트), 북동쪽 왕들의 묘실 문, 남쪽 짐승 무덤과 모래에 묻힌 마을. 동쪽 모래길이 가라앉은 대로로."],
-    base: "a2-rippled-sand-floor 0.9/0.84/0.72",
-    walls: { "#": "dune 0.92/0.88/0.8 모래 언덕" },
+    story: ["모래폭풍에 반쯤 드러난 옛 성벽 잔해. 서문 망루에서 긴 성벽을 따라 동쪽으로 — 성벽은 모래에 두 번 끊겨, 끊긴 자리마다 좁은 성벽으로 돌아가야 한다.", "북서쪽 둥근 보루에 왕들의 비석이 둘레로 섰고, 가운데 묻힌 오아시스(웨이포인트)는 안뜰이 모래에 꺼진 네모 성벽. 북쪽 막다른 망루에 짐승 무덤, 북동쪽 보루에 왕들의 묘실 문, 남동쪽 둥근 보루에 모래에 묻힌 마을. 끊긴 성벽 끝에서 동쪽 모래길이 가라앉은 대로로."],
+    raised: "a2-sandstone-wall 0.96/0.93/0.88 담 윗면 floor=zone",
+    base: "a2-sand-sea-floor 0.86/0.82/0.78",
+    walls: { "#": "dune 0.92/0.88/0.8 낮은 모래 바다" },
     zones: {
-      a: "a2-rippled-sand-floor 0.86/0.8/0.68 폭풍 어귀",
-      b: "dry-ground 0.8/0.74/0.62 바람 비석 들판",
-      c: "a2-rippled-sand-floor 0.94/0.88/0.74 묻힌 오아시스",
-      d: "tomb-floor 0.8/0.72/0.6 묘실 문 앞",
-      e: "dry-ground 0.84/0.76/0.62 짐승 무덤",
-      f: "a2-rippled-sand-floor 0.88/0.84/0.74 모래에 묻힌 마을",
-      g: "a2-rippled-sand-floor 0.9/0.86/0.74 동쪽 모래길",
+      a: "a2-sandstone-paving-floor 0.9/0.86/0.78 서문 망루",
+      b: "dry-ground 0.8/0.74/0.62 바람 비석 보루",
+      c: "a2-rippled-sand-floor 0.94/0.88/0.74 묻힌 오아시스 성벽",
+      d: "tomb-floor 0.8/0.72/0.6 묘실 문 앞 보루",
+      e: "dry-ground 0.84/0.76/0.62 짐승 무덤 망루",
+      f: "a2-rippled-sand-floor 0.88/0.84/0.74 모래에 묻힌 마을 보루",
+      g: "a2-sandstone-paving-floor 0.86/0.82/0.74 동쪽 모래길",
     },
-    roads: { "=": "a2-broken-sandstone-road 0.92/0.88/0.78 모래에 묻힌 길", "-": "a2-caravan-road 0.82/0.76/0.66 샛길" },
+    roads: { "=": "a2-sandstone-paving-floor 0.94/0.9/0.82 긴 성벽 (담 위 포장)" },
     places: [
-      E("a", "폭풍 어귀", -28, -3, 6, 5),
-      R("b", "바람 비석 들판", -22, 4, -6, 14, { rough: 1.2, note: "왕들의 비석 줄" }),
-      E("c", "묻힌 오아시스", 0, -4, 8, 6, { note: "웨이포인트" }),
-      E("d", "묘실 문 앞", 13, 13, 8, 6, { note: "왕들의 묘실 입구" }),
-      E("e", "짐승 무덤", -12, -15, 8, 5),
-      E("f", "모래에 묻힌 마을", 14, -13, 8, 6),
-      E("g", "동쪽 모래길", 28, 0, 5, 5),
+      R("a", "서문 망루", -34, -4, -31, 0, { rough: 0, note: "막다른 망루" }),
+      E("b", "바람 비석 보루", -14, 13, 6, 6, { rough: 0, note: "둥근 보루 · 왕들의 비석이 둘레로" }),
+      R("c", "묻힌 오아시스 성벽", -6, -2, 8, 10, { rough: 0, note: "웨이포인트 · 안뜰이 꺼진 네모 성벽" }),
+      R("d", "묘실 문 앞 보루", 11, 11, 22, 17, { rough: 0, note: "왕들의 묘실 입구 · 문은 북쪽 담을 등진다" }),
+      R("e", "짐승 무덤 망루", -4, 15, 6, 21, { rough: 0, note: "북쪽 막다른 망루" }),
+      E("f", "모래에 묻힌 마을 보루", 15, -14, 6.5, 6, { rough: 0, note: "둥근 보루" }),
+      R("g", "동쪽 모래길", 27, -3, 33, 2, { rough: 0, note: "끊긴 성벽 끝 → 동문" }),
     ],
     paths: [
-      P([[-35, -3], [-28, -3], [-20, 0], [-10, -2], [0, -4], [8, 0], [16, 2], [22, 0], [28, 0], [34, 0]], 4, "=", 2),
-      P([[-20, 0], [-15, 5]], 3, "-", 1), P([[4, 2], [8, 8], [12, 11]], 3, "-", 1), P([[-4, -8], [-10, -13]], 3, "-", 1), P([[10, -2], [14, -9]], 3, "-", 1), P([[-6, 10], [4, 14], [8, 14]], 3),
+      P([[-30.5, -0.5], [-24.5, -0.5]], 3, "=", 1, { wobble: 0 }),        // 긴 성벽 ① (동쪽 끝이 끊겼다)
+      P([[-18.5, -0.5], [-7.5, -0.5]], 3, "=", 1, { wobble: 0 }),         // 긴 성벽 ② → 오아시스 성벽
+      P([[9.5, -0.5], [11.5, -0.5]], 3, "=", 1, { wobble: 0 }),           // 긴 성벽 ③ (동쪽 끝이 끊겼다)
+      P([[17.5, -0.5], [25.5, -0.5]], 3, "=", 1, { wobble: 0 }),          // 긴 성벽 ④ → 동쪽 모래길
+      P([[-25, -1.5], [-25, -7], [-19, -7], [-19, -1.5]], 2, undefined, undefined, { wobble: 0 }),   // 끊긴 자리 ① 남쪽으로 ㄷ자
+      P([[11, -1.5], [11, -6], [17, -6], [17, -1.5]], 2, undefined, undefined, { wobble: 0 }),   // 끊긴 자리 ② 남쪽으로 ㄷ자
+      P([[-13.5, 0.5], [-13.5, 7.5]], 3, undefined, undefined, { wobble: 0 }),   // 비석 보루로 오르는 성벽
+      P([[1, 10.5], [1, 15.5]], 2, undefined, undefined, { wobble: 0 }),         // 짐승 무덤 망루로
+      P([[19.5, 0.5], [19.5, 10.5]], 3, undefined, undefined, { wobble: 0 }),    // 묘실 문 앞 보루로
+      P([[14, -6.5], [14, -8.5]], 2, undefined, undefined, { wobble: 0 }),       // 묻힌 마을 보루로
     ],
-    rocks: [rock(-28, 10, 3, 4), rock(0, 10, 3, 2), rock(26, 12, 3, 3), rock(26, -11, 3, 3), rock(0, -16, 3, 2), rock(-26, -14, 3, 2)],
+    rocks: [
+      { r: [-3, 1, 5, 7], ch: "#", rough: 0, force: true },        // 오아시스 안뜰은 모래에 꺼졌다
+    ],
     gates: { W: [-34, -3], E: [33, 0] },
     holes: { kingtomb1: [14, 15] },
     waypoint: [1, -1],
     put: [
-      ["prop", "tomb-door", 14.5, 17.8, 1], ["prop", "wind-stele", -18, 12.2], ["prop", "wind-stele", -13, 12.4, 1, 1], ["prop", "wind-stele", -18, 7.2, 1, 1],
-      ["prop", "wind-stele", -13, 7.4], ["prop", "wind-stele", -8.5, 10.2], ["prop", "mp-house-ruin", 16, -11.4],
+      ["prop", "tomb-door", 14.5, 17.8, 1],
+      // 비석 줄: 둥근 보루 둘레 (가운데 (-12, 12) · 반지름 4.6)
+      ["prop", "wind-stele", -18.4, 12.6], ["prop", "wind-stele", -17.2, 16.2, 1, 1], ["prop", "wind-stele", -14, 17.4], ["prop", "wind-stele", -10.8, 16.2],
+      ["prop", "wind-stele", -9.6, 12.6, 1, 1], ["prop", "wind-stele", -10.8, 9.2], ["prop", "wind-stele", -17.2, 9.2, 1, 1],
+      ["prop", "mp-house-ruin", 16, -11.4],
+      // 오아시스 안뜰(낮은 모래)의 야자 세트 — 담 아래 장식
+      ["set", "a2_oasis_ruin", 1.5, 3.6, 1, 0, "ok=cliff"],
+      // 끊긴 담 끝 (코덱스 a2-sandstone-wall-broken-e/w) — 바닥 무늬로 덮어 길을 막지 않는다
+      ["decal", "a2-sandstone-wall-broken-e", -23.5, -1.5, 0.977], ["decal", "a2-sandstone-wall-broken-e", -23.5, -0.5, 0.977], ["decal", "a2-sandstone-wall-broken-e", -23.5, 0.5, 0.977],
+      ["decal", "a2-sandstone-wall-broken-w", -19.5, -0.5, 0.977], ["decal", "a2-sandstone-wall-broken-w", -19.5, 0.5, 0.977],
+      ["decal", "a2-sandstone-wall-broken-e", 12.5, -1.5, 0.977], ["decal", "a2-sandstone-wall-broken-e", 12.5, -0.5, 0.977], ["decal", "a2-sandstone-wall-broken-e", 12.5, 0.5, 0.977],
+      ["decal", "a2-sandstone-wall-broken-w", 16.5, -0.5, 0.977], ["decal", "a2-sandstone-wall-broken-w", 16.5, 0.5, 0.977],
+      ["prop", "a2-buried-statue-head", -22.5, -5.2, 1.2, 0, "ok=cliff"],
+      ["prop", "a2-fallen-obelisk", 14.5, -1.4, 1.0, 1, "ok=cliff"],          // 끊긴 자리 ②에 쓰러진 오벨리스크
+      ["prop", "broken-column", -22, -1.2, 1.0, 0, "ok=cliff"],               // 끊긴 자리 ①의 무너진 기둥
+      ["set", "a2_caravan_rest", -29.5, -6.2, 1, 0, "ok=cliff"],              // 서문 밖 모래에 묻힌 대상 쉼터
+      // 모래 바다에 반쯤 묻힌 것들 (남서쪽 빈 모래)
+      ["prop", "a2-buried-statue-head", -12, -13.5, 1.3, 1, "ok=cliff"], ["prop", "desert-bones", -26, -15, 1.1, 0, "ok=cliff"],
+      ["prop", "a2-fallen-obelisk", 0, -12, 1.2, 0, "ok=cliff"], ["prop", "desert-rock", -4, -19, 1.1, 1, "ok=cliff"],
+      ["prop", "desert-rock", -28, 8, 1.2, 0, "ok=cliff"],
+      ["prop", "a2-fallen-obelisk", 26, 10, 1.1, 0, "ok=cliff"],
     ],
     dress: {
-      a: { props: ["desert-rock", "desert-bones"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 3 },
-      b: { props: ["desert-bones", "desert-rock"], n: 4, decals: ["a2-decal-sand-drift", "a2-decal-bleached-bones"], dn: 4 },
-      c: { sets: ["a2_oasis_ruin"], props: ["palm", "desert-rock"], n: 5, decals: ["a2-decal-dry-crack"], dn: 3 },
+      a: { props: ["desert-rock", "desert-bones"], n: 2, decals: ["a2-decal-sand-ripples"], dn: 1 },
+      b: { props: ["desert-bones", "desert-rock"], n: 3, decals: ["a2-decal-sand-drift", "a2-decal-bleached-bones"], dn: 4 },
+      c: { props: ["palm", "desert-rock"], n: 4, decals: ["a2-decal-dry-crack", "a2-decal-sand-drift"], dn: 4 },
       d: { props: ["broken-column", "a2-broken-urns"], n: 5, decals: ["a2-decal-buried-road"], dn: 3 },
-      e: { sets: ["a2_lm_wind_tomb", "a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 5, decals: ["a2-decal-dry-blood", "a2-decal-bleached-bones"], dn: 4 },
+      e: { sets: ["a2_lm_wind_tomb", "a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 3, decals: ["a2-decal-dry-blood", "a2-decal-bleached-bones"], dn: 3 },
       f: { props: ["a2-torn-awning", "a2-broken-urns", "mp-fence"], n: 6, decals: ["a2-decal-broken-tile", "a2-decal-broken-tiles"], dn: 3 },
-      g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
+      g: { props: ["desert-rock", "wind-stele"], n: 3, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
   },
 
@@ -485,7 +518,7 @@ const MORE = {
   oasis: { c: ["a2_caravan_rest"] },
   dunes: { a: ["a2_caravan_rest"], e: ["a2_serpent_den"], g: ["a2_caravan_rest"] },
   canyon: { a: ["a2_caravan_rest"], d: ["a2_tomb_offering"], g: ["a2_caravan_rest"] },
-  stormwaste: { a: ["a2_caravan_rest"], d: ["a2_tomb_offering"], f: ["a2_caravan_rest"] },
+  stormwaste: { d: ["a2_tomb_offering"], f: ["a2_caravan_rest"] },   // 서문 망루(a)의 대상 쉼터는 망루 밖 모래에 손으로 (설계서 put — 망루가 4×5라 자리가 없다)
   sunkenroad: { a: ["a2_caravan_rest"], b: ["a2_tomb_offering"], d: ["a2_serpent_den"], e: ["a2_caravan_rest"], h: ["a2_tomb_offering"] },
   temple1: { b: ["a2_tomb_offering"], c: ["a2_tomb_offering"], e: ["a2_serpent_den"], f: ["a2_scribe_corner"] },
   temple2: { b: ["a2_tomb_offering"], c: ["a2_tomb_offering"], f: ["a2_scribe_corner"] },

@@ -65,11 +65,12 @@ function parseBlueprint(id) {
         //   low=<그림>:<색> 낮은 칸 그림 · below=<그림>:<배율>:<밝기>:<안개색> 낮은 칸에 아래층을 작고 어둡게 (보스 층 내려다보기)
         //   back=<그림> 앞면 조각에 비치는 곳이 있으면 띠 뒤에 깔 바탕 (등대 벽 — 띠 사이로 바다가 보여 울타리처럼 읽혔다)
         //   edge=<가로 그림>:<세로 그림>[:<크기>[:<색>]] 높은 칸 ↔ 낮은 칸 경계를 따라 띠 그림 (10-28 밤 코덱스 용암 가장자리 띠 — 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래)
+        //   floor=zone (top=zone이 아닌 담 윗면 맵만) 담 속 칸(네 이웃이 모두 높은 칸)에 구역 바닥을 깐다 — 가장자리 9조각은 그대로 (10-29 바람 무덤 사막 「보루 안은 구역 바닥」)
         const rest = m.slice(3), opt = Object.fromEntries(rest.filter((t) => t.includes("=")).map((t) => t.split("=")));
         const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":"), edgeO = (opt.edge || "").split(":");
         bp.raised = {
           atlas: m[1], tint: m[2], name: rest.filter((t) => !t.includes("=")).join(" "),
-          tiers: Math.max(1, Math.min(3, Number(opt.tiers || 1))), zoneTop: opt.top === "zone", face: opt.face || "",
+          tiers: Math.max(1, Math.min(3, Number(opt.tiers || 1))), zoneTop: opt.top === "zone", face: opt.face || "", innerZone: opt.floor === "zone",
           low: opt.low ? { art: lowO[0], tint: lowO[1] || "1/1/1" } : null, back: opt.back || "",
           below: opt.below ? { art: belowO[0], scale: Number(belowO[1] || 0.55), bright: Number(belowO[2] || 0.42), fog: belowO[3] || "1/1/1" } : null,
           edge: opt.edge ? { h: edgeO[0], v: edgeO[1] || "", scale: Number(edgeO[2] || 1), tint: edgeO[3] || "" } : null,
@@ -393,9 +394,11 @@ function artEntities(d, ctx, bp, rows, func) {
   for (const [ch, z0] of Object.entries(bp.zones)) {
     // top=zone 담 윗면 맵은 바탕(low·below)이 낮은 칸 그림이라, 바탕 바닥 구역(.)도 걷는 칸에 따로 깐다
     const z = !z0.art && bp.raised && bp.raised.zoneTop ? { art: bp.base.art, tint: bp.base.tint } : z0;
-    if (!z.art || (bp.raised && !bp.raised.zoneTop)) continue;
+    const inner = !!(bp.raised && !bp.raised.zoneTop && bp.raised.innerZone);
+    if (!z.art || (bp.raised && !bp.raised.zoneTop && !inner)) continue;
     const covered = new Set();
-    const inZone = (x, y) => bp.isFloor(x, y) && bp.zoneOf(x, y) === ch && !covered.has(key(x, y));
+    const deep = (x, y) => !inner || (!isLow(x + 1, y) && !isLow(x - 1, y) && !isLow(x, y + 1) && !isLow(x, y - 1));
+    const inZone = (x, y) => bp.isFloor(x, y) && bp.zoneOf(x, y) === ch && !covered.has(key(x, y)) && deep(x, y);
     for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
       if (!inZone(x, y)) continue;
       let xe = x;
@@ -567,10 +570,11 @@ function artEntities(d, ctx, bp, rows, func) {
       const pieces = ctx.sets[r.name];
       if (!pieces) throw new Error(`${where}: 세트 '${r.name}'이 map_sets.csv에 없음`);
       const mirror = num(r.flip) === 1 ? -1 : 1, tag = `ArtSet${++setN}`;
+      const setOk = parseArgs(r.args).ok;   // ok=cliff: 세트를 일부러 낮은 칸(담 아래 모래 안뜰)에 장식으로 (10-29)
       pieces.forEach((pc, k) => {
         const decal = pc.piece.startsWith("d:"), name = decal ? pc.piece.slice(2) : pc.piece;
         const px = x + num(pc.dx) * mirror, py = y + num(pc.dy);
-        place(`${tag}_${k + 1}`, name, r3(px), r3(py), num(pc.scale, 1) * num(r.scale, 1), (num(pc.flip) === 1) !== (mirror < 0), null, decal, `${where} 조각 ${k + 1} '${name}'`);
+        place(`${tag}_${k + 1}`, name, r3(px), r3(py), num(pc.scale, 1) * num(r.scale, 1), (num(pc.flip) === 1) !== (mirror < 0), null, decal, `${where} 조각 ${k + 1} '${name}'`, setOk);
       });
     } else if (r.kind === "cluster") {
       const a = parseArgs(r.args), names = r.name.split("|"), radius = num(a.r, 3), n = num(a.n, 4);
