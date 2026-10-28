@@ -147,6 +147,7 @@ script ShadowUnit extends AttackComponent
     property number FrenzyPct = 0
     property number RushCheckAt = 0           -- 주인의 질주 강화 「군단 질주」 확인 시각 (1초마다)
     property boolean RushLeash = false        -- 군단 질주: 6칸 넘게 떨어지면 곁으로 순간이동
+    property number BoundUntil = 0            -- 간수장 「가두기」(docs/design/40): 이 시각까지 제자리에 묶인다 (공격·이동 안 함)
     property number LeapUntil = 0             -- 군단 질주: 주인이 막 질주했다 — 이 시각까지는 3칸만 떨어져도 곁으로 도약 (SkillEffects.WraithDash)
 
     property Entity Target = nil
@@ -500,6 +501,10 @@ script ShadowUnit extends AttackComponent
         -- 상태 판단: 설정 대기 → 주인 확인 → 끈 거리 → (적 추적·공격 | 대형 자리로 복귀)
         if self.ShadowId == "" or self.Dead then return end  -- 설정 대기 중이거나 사망 처리 중
         if self.Bombing then self:BombTick() return end
+        if _UtilLogic.ElapsedSeconds < self.BoundUntil then
+            self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+            return
+        end
         if not self.RingPainted then self:PaintRing() end
         self:RegenTick(delta)
         self:TauntTick(delta)

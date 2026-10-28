@@ -51,6 +51,10 @@ script Monster extends Component
     property integer BlockCount = 0
     property number RiteTakenMult = 1        -- 보스 의식이 바꾸는 받는 피해 배율 (근위대장 방패벽 0.4 등, docs/design/40) — 의식이 끝나면 1로
     property number RiteDealtMult = 1        -- 보스 의식이 바꾸는 주는 피해 배율 (대주교 성역 안 졸개 1.3 등)
+    property number RiteSpeedMult = 1        -- 보스 의식이 바꾸는 공격 속도 배율 (집게 왕 껍질 깨짐 1.4)
+    property number RiteReflect = 0          -- 보스 의식: 받은 피해의 이 비율을 때린 쪽에 되돌린다 (수호왕 영혼 저울 0.3)
+    @Sync
+    property number RiteShield = 0           -- 보스 의식: 이만큼 피해를 먼저 막는 보호막 (오렌 심장 조각 — 최대 생명 15%)
 
     method MonsterStatus Status()
         ---@type MonsterStatus
@@ -277,6 +281,7 @@ script Monster extends Component
         ---@type BossPattern
         local bp = self.Entity:GetComponent("script.BossPattern")
         if bp ~= nil and bp.RageMult > 1 then m = m * 1.3 end
+        m = m * self.RiteSpeedMult
         if self.Enraged then m = m * 1.4 end
         return m * self:StateMul("attack")
     end
@@ -480,7 +485,7 @@ script Monster extends Component
         local lv = _GameConst:LevelOf(attacker)
         if lv > 0 then gap = _GameConst:LevelGapDealt(lv, self.Level) end
         local dealt = amount * self:GetDamageTakenMultiplier() * gap
-        self.Hp = self.Hp - dealt
+        self.Hp = self.Hp - self:RiteAbsorb(dealt)
         -- 틱 피해는 히트 판정을 거치지 않아 엔진이 숫자를 띄우지 않는다 → 0.45초마다 모아 작게 띄운다 (10-10 QA: 독안개 피해가 안 보임)
         self.TickAccum = self.TickAccum + dealt
         local now = _UtilLogic.ElapsedSeconds
@@ -545,7 +550,9 @@ script Monster extends Component
             local chase = self.Entity.AIChaseComponent
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
-        self.Hp = self.Hp - event.TotalDamage
+        local taken = self:RiteAbsorb(event.TotalDamage)
+        self.Hp = self.Hp - taken
+        if self.RiteReflect > 0 then self:RiteReflectTo(event.AttackerEntity, event.TotalDamage * self.RiteReflect) end
         if isvalid(event.AttackerEntity) and event.AttackerEntity:GetComponent("script.ShadowUnit") ~= nil then self:QueueSummonDamage(event.TotalDamage) end
         self:LifeTapFor(event.AttackerEntity, event.TotalDamage)
         self:CheckEnrage()
@@ -562,6 +569,28 @@ script Monster extends Component
             return
         end
         self:HitReact(event.AttackerEntity, event.TotalDamage)
+    end
+
+    @ExecSpace("ServerOnly")
+    method number RiteAbsorb(number amount)
+        -- 보스 의식 보호막(RiteShield)이 먼저 받는다 — 남은 피해만 돌려준다 (docs/design/40 오렌)
+        if self.RiteShield <= 0 or amount <= 0 then return amount end
+        local soak = math.min(self.RiteShield, amount)
+        self.RiteShield = self.RiteShield - soak
+        if self.RiteShield <= 0 then log("[VRF] rite shield broken " .. self.SourceId) end
+        return amount - soak
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RiteReflectTo(Entity attacker, number amount)
+        -- 보스 의식 반사 (수호왕 영혼 저울): 때린 플레이어는 생명, 소환수는 그 소환수가 받는다
+        if not isvalid(attacker) or amount <= 0 then return end
+        ---@type ShadowUnit
+        local unit = attacker:GetComponent("script.ShadowUnit")
+        if unit ~= nil then unit:Hurt(math.floor(amount)) return end
+        ---@type PlayerVitals
+        local vitals = attacker:GetComponent("script.PlayerVitals")
+        if vitals ~= nil then vitals:TakeTickDamage(amount) end
     end
 
     @ExecSpace("ServerOnly")

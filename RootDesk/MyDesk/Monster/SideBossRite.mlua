@@ -1,0 +1,914 @@
+-- 곁가지 끝방 우두머리 고유 기믹 (docs/design/40 §3 — 10-28 사용자 「이대로 진행」). 보스 id(Monster.SourceId)로 종류를 정한다.
+--   모르그 「썩은 기도」 50%      : 3초 무릎 꿇고 기도 — 그동안 생명 8%를 깎으면 끊기고 2초 기절, 아니면 둘레 졸개 회복 + 구더기 2
+--   테오 「기중기 낙하」 66·33%   : 가장 가까운 플레이어 자리와 둘레에 뼈 수레 3개 (1.6초 예고)
+--   세르카 「알 깔기」 50%        : 알 3개 — 8초 안에 못 깨면 알마다 새끼 전갈 2
+--   아메네트 「영혼 저울」 50·25% : 4초 동안 받은 피해의 30%를 때린 쪽에 되돌린다 (금빛)
+--   이드리스 「불붙은 종이」 66·33%: 화염 장판 5개(6초) + 책장 앞으로 돌아가 4초 화염구 연사
+--   세드릭 「밀물」 50%부터        : 28초마다 12초 — 설교대 앞 안전한 원이 8칸 → 3칸으로 줄고, 밖은 냉기 피해 + 둔화
+--   하울 「렌즈 광선」 50%부터     : 1.5초 예고 뒤 번개 광선이 보스를 중심으로 6초에 한 바퀴 — 닿으면 번개 피해
+--   네르사 「박쥐 떼」 66·33%     : 방을 가로지르는 띠 2줄 (1.5초 예고) — 띠 안은 화염 피해
+--   그림달 「가두기」 50·25%      : 가장 먼 플레이어 2초 감옥(이동 불가) + 가까운 소환수 5기 2초 묶임 — 갇힌 사람이 쇠창살을 치면(공격) 1초로 준다
+--   베르카 「담금질」 50%         : 모루로 돌아가 3초 망치질 — 그동안 생명 6%를 깎으면 3초 기절, 아니면 공격 +40%
+--   오렌 「심장 조각 보호막」 50%  : 최대 생명 15%만큼 먼저 막는 보호막 (대사 한 줄은 문구 승인 뒤)
+--   이그나 「검의 비」 66·33%     : 부러진 검 6자루가 플레이어 발밑으로 차례로 (1.2초 예고)
+-- 모두 「예고 → 피할 틈」(10-24). 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아가고 소환물을 치운다. 바위 집게 왕 껍질 깨짐은 Act3Rite.
+@Component
+script SideBossRite extends Component
+
+    @Sync
+    property string Kind = ""
+    property table Steps = {}                -- 생명 비율 문턱 (위에서부터)
+    property integer Step = 0
+    property integer Serial = 0              -- 처음 상태로 돌아가면 올려서 걸린 타이머를 무효로
+    property string WindowKind = ""          -- pray | temper: 끊기 창
+    property number WindowUntil = 0
+    property number WindowHp = 0
+    property table Eggs = {}
+    property number EggsAt = 0
+    property number ScalesUntil = 0
+    property number RapidUntil = 0
+    property number BaseCooldown = 0
+    property table Pools = {}
+    property number PoolsUntil = 0
+    property number PoolTick = 0
+    property boolean TideOn = false
+    property number TideTimer = 0
+    property number TideUntil = 0
+    property number TideDmgTick = 0
+    property number TideRingTick = 0
+    property Vector2 TideCenter = Vector2(0, 0)
+    @Sync
+    property boolean BeamOn = false
+    @Sync
+    property number BeamT0 = 0               -- 광선이 돌기 시작한 서버 시각 (_UtilLogic.ServerElapsedSeconds)
+    property table BeamHit = {}
+    property number BeamTick = 0
+    property Entity JailedPlayer = nil       -- 감옥에 갇힌 플레이어 (쇠창살을 치면 1초로)
+    property number JailFrom = 0             -- 갇힌 서버 시각 (_UtilLogic.ServerElapsedSeconds)
+    property number JailSwing = 0            -- 갇힐 때의 PlayerAttack.LastAttackAt
+    @Sync
+    property string Glow = ""                -- scales | shield | temper — 클라이언트가 몸에 빛을 두른다
+    property integer GlowFx = 0              -- 클라이언트
+    property string GlowShown = ""           -- 클라이언트
+    property integer BeamFx = 0              -- 클라이언트: 지금 그린 광선
+    property integer PlayerCageFx = 0        -- 클라이언트: 플레이어를 가둔 우리 그림
+    property number BeamDrawAt = 0           -- 클라이언트
+    property number DealtTotal = 0           -- 검증용: 의식 지속 피해(장판·밀물·광선·박쥐) 합계
+
+    method void OnBeginPlay()
+        -- 서버: 보스 id로 종류와 문턱을 정한다
+        if not self:IsServer() then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        local kinds = { morg = "pray", relic_keeper = "crane", serka = "eggs", tomb_king = "scales", fire_librarian = "papers",
+            drowned_priest = "tide", mad_keeper = "beam", sulfur_queen = "bats", prison_warden = "jail", forge_demon = "temper",
+            apostate_archbishop = "shield", fallen_knight = "swords" }
+        local steps = { pray = { 0.5 }, crane = { 0.66, 0.33 }, eggs = { 0.5 }, scales = { 0.5, 0.25 }, papers = { 0.66, 0.33 },
+            tide = { 0.5 }, beam = { 0.5 }, bats = { 0.66, 0.33 }, jail = { 0.5, 0.25 }, temper = { 0.5 }, shield = { 0.5 }, swords = { 0.66, 0.33 } }
+        self.Kind = kinds[monster.SourceId] or ""
+        self.Steps = steps[self.Kind] or {}
+        self.Eggs = {}
+        self.Pools = {}
+        self.BeamHit = {}
+        log("[VRF] SideBossRite ready " .. monster.SourceId .. " kind=" .. self.Kind)
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버: 문턱 · 기믹 시간 / 클라이언트: 몸 빛 · 광선 그리기
+        if not self:IsServer() then
+            self:ClientTick()
+            return
+        end
+        if self.Kind == "" then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            self:ResetRite(monster)
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        local nextStep = self.Steps[self.Step + 1]
+        if nextStep ~= nil and ratio <= nextStep then
+            self.Step = self.Step + 1
+            self:Trigger(monster)
+        end
+        self:ServerTick(monster, delta)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Trigger(Monster monster)
+        -- 문턱을 넘을 때 한 번
+        log(string.format("[VRF] side boss %s step %d at %.2f", self.Kind, self.Step, monster.Hp / math.max(1, monster.MaxHp)))
+        local k = self.Kind
+        if k == "pray" then self:OpenWindow(monster, "pray", 3)
+        elseif k == "temper" then
+            self:ReturnHome(monster)
+            self:OpenWindow(monster, "temper", 3)
+        elseif k == "crane" then self:CraneDrop(monster)
+        elseif k == "eggs" then self:LayEggs(monster)
+        elseif k == "scales" then
+            monster.RiteReflect = 0.3
+            self.ScalesUntil = _UtilLogic.ElapsedSeconds + 4
+            self.Glow = "scales"
+        elseif k == "papers" then self:Papers(monster)
+        elseif k == "tide" then
+            self.TideOn = true
+            self.TideTimer = 0
+        elseif k == "beam" then
+            self.BeamOn = true
+            self.BeamT0 = _UtilLogic.ServerElapsedSeconds + 1.5
+            self:ChargeFx(Color(1, 0.95, 0.5, 1))
+        elseif k == "bats" then self:Bats(monster)
+        elseif k == "jail" then self:Jail(monster)
+        elseif k == "shield" then
+            monster.RiteShield = monster.MaxHp * 0.15
+            self.Glow = "shield"
+            self:ChargeFx(Color(0.85, 0.35, 0.4, 1))
+        elseif k == "swords" then self:Swords(monster)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ServerTick(Monster monster, number delta)
+        -- 끊기 창 · 알 부화 · 저울 · 연사 · 장판 · 밀물 · 광선 · 보호막
+        local now = _UtilLogic.ElapsedSeconds
+        if self.WindowUntil > 0 then
+            local need = self.WindowKind == "pray" and 0.08 or 0.06
+            if self.WindowHp - monster.Hp >= monster.MaxHp * need then
+                self.WindowUntil = 0
+                self:StunFor(self.WindowKind == "pray" and 2 or 3)
+                self:InterruptFx()
+                log("[VRF] side boss " .. self.WindowKind .. " interrupted")
+            elseif now >= self.WindowUntil then
+                self.WindowUntil = 0
+                self:CompleteWindow(monster)
+            end
+        end
+        if self.EggsAt > 0 and now >= self.EggsAt then
+            self.EggsAt = 0
+            self:HatchEggs(monster)
+        end
+        if self.ScalesUntil > 0 and now >= self.ScalesUntil then
+            self.ScalesUntil = 0
+            monster.RiteReflect = 0
+            self.Glow = ""
+            log("[VRF] side boss scales end")
+        end
+        if self.RapidUntil > 0 and now >= self.RapidUntil then
+            self.RapidUntil = 0
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            if atk ~= nil and self.BaseCooldown > 0 then atk.AttackCooldown = self.BaseCooldown end
+        end
+        if self.PoolsUntil > 0 then
+            if now >= self.PoolsUntil then
+                self.PoolsUntil = 0
+                self.Pools = {}
+            else
+                self.PoolTick = self.PoolTick - delta
+                if self.PoolTick <= 0 then
+                    self.PoolTick = 0.5
+                    self:PoolDamage()
+                end
+            end
+        end
+        if self.TideOn then self:TideTick(monster, delta) end
+        if self.BeamOn then
+            self.BeamTick = self.BeamTick - delta
+            if self.BeamTick <= 0 then
+                self.BeamTick = 0.12
+                self:BeamDamage()
+            end
+        end
+        if self.Glow == "shield" and monster.RiteShield <= 0 then self.Glow = "" end
+        if self.JailedPlayer ~= nil then self:JailTick() end
+    end
+
+    -- ───────── 공용 ─────────
+
+    @ExecSpace("ServerOnly")
+    method MonsterAttack Atk()
+        ---@type MonsterAttack
+        local atk = self.Entity:GetComponent("script.MonsterAttack")
+        return atk
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity NearestPlayer(number range)
+        local here = _Util:Pos2(self.Entity)
+        local best, bestD = nil, range
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, range)) do
+            local d = (_Util:Pos2(p) - here):Magnitude()
+            if d <= bestD then
+                best = p
+                bestD = d
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HurtPlayers(table players, number amount, string element)
+        -- 지속·광역 피해를 저항만큼 줄여 생명에 바로 (무적 시간 없음 — 장판 규칙과 같다)
+        for _, p in ipairs(players) do
+            ---@type PlayerVitals
+            local vitals = p:GetComponent("script.PlayerVitals")
+            ---@type PlayerStats
+            local stats = p:GetComponent("script.PlayerStats")
+            local resist = (element ~= "" and stats ~= nil) and stats:GetResist(element) or 0
+            local dealt = amount * math.max(0, 1 - math.max(-100, math.min(90, resist)) / 100)
+            if vitals ~= nil then
+                vitals:TakeTickDamage(dealt)
+                self.DealtTotal = self.DealtTotal + dealt
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StunFor(number seconds)
+        -- 보스를 seconds초 멈춘다 (MonsterStatus 경직 — 이동·공격 멈춤)
+        ---@type MonsterStatus
+        local status = self.Entity:GetComponent("script.MonsterStatus")
+        ---@type MonsterAttack
+        local atk = self:Atk()
+        if atk ~= nil then atk:CancelPending() end
+        if status == nil then return end
+        status:Hold()
+        status.StaggerUntil = math.max(status.StaggerUntil, _UtilLogic.ElapsedSeconds + seconds)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ReturnHome(Monster monster)
+        -- 배경 랜드마크(처음 선 자리) 앞으로 돌아간다 — 이드리스 책장 · 베르카 모루
+        local movement = self.Entity.MovementComponent
+        if isvalid(movement) then movement:SetWorldPosition(monster.SpawnPosition) end
+        self:BlinkFx()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SpawnAt(string model, Vector2 at, integer level, string tint)
+        -- 리스폰 없는 졸개 하나
+        local e = _SpawnService:SpawnByModelId(model, "RiteSpawn", Vector3(at.x, at.y, 0), self.Entity.CurrentMap)
+        if not isvalid(e) then return end
+        _Util:AfterSpawn(e, "script.Monster", function(comp)
+            ---@type Monster
+            local m = comp
+            m.RespawnDelay = -1
+            m:ApplyLevel(level, false)
+            if tint ~= "" then
+                ---@type MonsterTraits
+                local traits = e:GetComponent("script.MonsterTraits")
+                if traits ~= nil then
+                    traits.Tint = tint
+                    traits.TintSync = tint
+                end
+            end
+        end, nil)
+    end
+
+    -- ───────── 끊기 창 (모르그 기도 · 베르카 담금질) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void OpenWindow(Monster monster, string kind, number seconds)
+        self.WindowKind = kind
+        self.WindowHp = monster.Hp
+        self.WindowUntil = _UtilLogic.ElapsedSeconds + seconds
+        self:StunFor(seconds)
+        self:ChargeFx(kind == "pray" and Color(0.55, 0.9, 0.45, 1) or Color(1, 0.4, 0.2, 1))
+        if kind == "temper" then self:HammerFx(seconds) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CompleteWindow(Monster monster)
+        -- 끊지 못했다: 기도 = 둘레 졸개 회복 + 구더기 2 · 담금질 = 공격 +40%
+        if self.WindowKind == "pray" then
+            local here = _Util:Pos2(self.Entity)
+            local healed = 0
+            for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+                ---@type Monster
+                local m = c
+                if isvalid(m.Entity) and m.Entity ~= self.Entity and not m.IsDead and (_Util:Pos2(m.Entity) - here):Magnitude() <= 7 then
+                    m.Hp = m.MaxHp
+                    healed = healed + 1
+                end
+            end
+            for i = 1, 2 do
+                local at = _Util:ReachablePoint(self.Entity.CurrentMap, here, here + Vector2(i == 1 and -1.6 or 1.6, -0.8), 0.4)
+                self:SpawnAt("graveworm", at, math.max(1, monster.Level - 2), "")
+            end
+            self:HealFx(Color(0.55, 0.9, 0.45, 1))
+            log("[VRF] side boss pray complete healed=" .. tostring(healed))
+        else
+            monster.RiteDealtMult = 1.4
+            self.Glow = "temper"
+            self:HealFx(Color(1, 0.45, 0.2, 1))
+            log("[VRF] side boss temper complete dealt x1.4")
+        end
+    end
+
+    -- ───────── 기중기 · 검의 비 · 박쥐 떼 (예고 원) ─────────
+
+    @ExecSpace("ServerOnly")
+    method void CraneDrop(Monster monster)
+        local target = self:NearestPlayer(12)
+        if target == nil then return end
+        local map = self.Entity.CurrentMap
+        local base = _Util:Pos2(target)
+        local spots = { base.x, base.y }
+        for i = 1, 2 do
+            local ang = _UtilLogic:RandomDouble() * math.pi * 2
+            local at = _Util:ReachablePoint(map, base, base + Vector2(math.cos(ang) * 2.2, math.sin(ang) * 1.6), 0.4)
+            table.insert(spots, at.x)
+            table.insert(spots, at.y)
+        end
+        self:WarnFx(spots, 1.4, "", 1.6)
+        local serial = self.Serial
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            ---@type MonsterAttack
+            local atk = self:Atk()
+            for i = 1, #spots, 2 do
+                if atk ~= nil then atk:SlamWithElement(Vector2(spots[i], spots[i + 1]), 1.4, atk.Damage * 1.5, "") end
+            end
+            self:BurstFx(spots, 1.4, "")
+            log("[VRF] side boss crane drop")
+        end, 1.6)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Swords(Monster monster)
+        -- 검 6자루: 0.45초 간격으로 플레이어 발밑에 차례로 (1.2초 예고)
+        local serial = self.Serial
+        for k = 1, 6 do
+            _TimerService:SetTimerOnce(function()
+                if not self:StillOn(serial) then return end
+                local players = _Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), 14)
+                if #players == 0 then return end
+                local at = _Util:Pos2(players[(k - 1) % #players + 1])
+                self:WarnFx({ at.x, at.y }, 1.1, "fire", 1.2)
+                _TimerService:SetTimerOnce(function()
+                    if not self:StillOn(serial) then return end
+                    ---@type MonsterAttack
+                    local atk = self:Atk()
+                    if atk ~= nil then atk:SlamWithElement(at, 1.1, atk.Damage * 1.3, "fire") end
+                    self:BurstFx({ at.x, at.y }, 1.1, "fire")
+                    if k == 6 then log("[VRF] side boss swords done") end
+                end, 1.2)
+            end, (k - 1) * 0.45)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Bats(Monster monster)
+        -- 가로 띠 2줄: 가장 가까운 플레이어 줄 + 위나 아래 2.2칸 줄, 보스 좌우 9칸
+        local target = self:NearestPlayer(14)
+        if target == nil then return end
+        local here = _Util:Pos2(self.Entity)
+        local y1 = _Util:Pos2(target).y
+        local y2 = y1 + (_UtilLogic:RandomDouble() < 0.5 and -2.2 or 2.2)
+        local x0, x1 = here.x - 9, here.x + 9
+        local lanes = { y1, y2 }
+        self:LaneWarnFx(lanes, x0, x1, 1.5)
+        local serial = self.Serial
+        _TimerService:SetTimerOnce(function()
+            if not self:StillOn(serial) then return end
+            local hit = {}
+            for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, 14)) do
+                local q = _Util:Pos2(p)
+                if q.x >= x0 and q.x <= x1 and (math.abs(q.y - y1) <= 0.9 or math.abs(q.y - y2) <= 0.9) then table.insert(hit, p) end
+            end
+            ---@type MonsterAttack
+            local atk = self:Atk()
+            if atk ~= nil then self:HurtPlayers(hit, atk.Damage * 1.3, "fire") end
+            self:LaneBurstFx(lanes, x0, x1)
+            log("[VRF] side boss bats hit=" .. tostring(#hit))
+        end, 1.5)
+    end
+
+    -- ───────── 알 · 장판 · 감옥 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void LayEggs(Monster monster)
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local level = math.max(1, monster.Level - 2)
+        self.Eggs = {}
+        for i = 1, 3 do
+            local ang = math.pi * 2 * i / 3 + 0.4
+            local at = _Util:ReachablePoint(map, here, here + Vector2(math.cos(ang) * 2.6, math.sin(ang) * 1.9), 0.4)
+            local e = _SpawnService:SpawnByModelId("bonenest", "SerkaEgg", Vector3(at.x, at.y, 0), map)
+            if isvalid(e) then
+                table.insert(self.Eggs, e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
+                    ---@type MonsterNest
+                    local nest = e:GetComponent("script.MonsterNest")
+                    if nest ~= nil then nest.Minions = "" end
+                    ---@type MonsterTraits
+                    local traits = e:GetComponent("script.MonsterTraits")
+                    if traits ~= nil then
+                        traits.Tint = "0.8,1,0.7"
+                        traits.TintSync = traits.Tint
+                    end
+                end, nil)
+            end
+        end
+        self.EggsAt = _UtilLogic.ElapsedSeconds + 8
+        log("[VRF] side boss eggs " .. tostring(#self.Eggs))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HatchEggs(Monster monster)
+        -- 남은 알마다 새끼 전갈 2
+        local hatched = 0
+        for _, e in ipairs(self.Eggs) do
+            if isvalid(e) then
+                ---@type Monster
+                local m = e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead then
+                    local at = _Util:Pos2(e)
+                    e:Destroy()
+                    self:SpawnAt("sandscorp", at + Vector2(-0.5, 0), math.max(1, monster.Level - 2), "")
+                    self:SpawnAt("sandscorp", at + Vector2(0.5, 0), math.max(1, monster.Level - 2), "")
+                    hatched = hatched + 1
+                end
+            end
+        end
+        self.Eggs = {}
+        if hatched > 0 then self:HealFx(Color(0.75, 1, 0.5, 1)) end
+        log("[VRF] side boss eggs hatched=" .. tostring(hatched))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Papers(Monster monster)
+        -- 화염 장판 5개(가장 가까운 플레이어 1 + 둘레 4) 6초 + 책장 앞으로 돌아가 4초 연사
+        local map = self.Entity.CurrentMap
+        local here = monster.SpawnPosition
+        self.Pools = {}
+        local target = self:NearestPlayer(14)
+        if target ~= nil then table.insert(self.Pools, _Util:Pos2(target)) end
+        while #self.Pools < 5 do
+            local ang = _UtilLogic:RandomDouble() * math.pi * 2
+            local d = 2 + _UtilLogic:RandomDouble() * 3.5
+            table.insert(self.Pools, _Util:ReachablePoint(map, here, here + Vector2(math.cos(ang) * d, math.sin(ang) * d * 0.8 - 2), 0.4))
+        end
+        self.PoolsUntil = _UtilLogic.ElapsedSeconds + 6
+        self.PoolTick = 0.5
+        local flat = {}
+        for _, p in ipairs(self.Pools) do
+            table.insert(flat, p.x)
+            table.insert(flat, p.y)
+        end
+        self:PoolFx(flat, 1.3, 6)
+        self:ReturnHome(monster)
+        ---@type MonsterAttack
+        local atk = self:Atk()
+        if atk ~= nil then
+            if self.BaseCooldown <= 0 then self.BaseCooldown = atk.AttackCooldown end
+            atk.AttackCooldown = self.BaseCooldown * 0.45
+            self.RapidUntil = _UtilLogic.ElapsedSeconds + 4
+        end
+        log("[VRF] side boss papers pools=" .. tostring(#self.Pools))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PoolDamage()
+        -- 장판 안 플레이어: 0.5초마다 공격력 ×0.15 화염
+        ---@type MonsterAttack
+        local atk = self:Atk()
+        if atk == nil then return end
+        local hit = {}
+        for _, p in ipairs(_Util:PlayersInMap(self.Entity.CurrentMap)) do
+            local q = _Util:Pos2(p)
+            for _, c in ipairs(self.Pools) do
+                if (q - c):Magnitude() <= 1.3 then
+                    table.insert(hit, p)
+                    break
+                end
+            end
+        end
+        self:HurtPlayers(hit, atk.Damage * 0.15, "fire")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Jail(Monster monster)
+        -- 가장 먼 플레이어 2초 감옥 + 가까운 소환수 5기 2초 묶임
+        local here = _Util:Pos2(self.Entity)
+        local far, farD = nil, -1
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, 14)) do
+            local d = (_Util:Pos2(p) - here):Magnitude()
+            if d > farD then
+                far = p
+                farD = d
+            end
+        end
+        local spots = {}
+        local playerAt = Vector2(0, 0)
+        if far ~= nil then
+            ---@type PlayerStats
+            local stats = far:GetComponent("script.PlayerStats")
+            ---@type PlayerAttack
+            local attack = far:GetComponent("script.PlayerAttack")
+            if stats ~= nil then
+                stats:ApplyRoot(2)
+                self.JailedPlayer = far
+                self.JailFrom = _UtilLogic.ServerElapsedSeconds
+                self.JailSwing = attack ~= nil and attack.LastAttackAt or 0
+            end
+            playerAt = _Util:Pos2(far)
+        end
+        local units = {}
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and not u.Dead then
+                local d = (_Util:Pos2(u.Entity) - here):Magnitude()
+                if d <= 10 then table.insert(units, { unit = u, d = d }) end
+            end
+        end
+        table.sort(units, function(a, b) return a.d < b.d end)
+        local bound = 0
+        for i = 1, math.min(5, #units) do
+            local u = units[i].unit
+            u.BoundUntil = _UtilLogic.ElapsedSeconds + 2
+            local q = _Util:Pos2(u.Entity)
+            table.insert(spots, q.x)
+            table.insert(spots, q.y)
+            bound = bound + 1
+        end
+        self:CageFx(spots, 2)
+        if far ~= nil then self:ShowPlayerCage(playerAt, 2) end
+        log("[VRF] side boss jail player=" .. tostring(far ~= nil) .. " summons=" .. tostring(bound))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void JailTick()
+        -- 갇힌 플레이어가 공격하면(쇠창살을 친다) 감옥이 갇힌 지 1초에 풀린다
+        local p = self.JailedPlayer
+        ---@type PlayerStats
+        local stats = isvalid(p) and p:GetComponent("script.PlayerStats") or nil
+        local nowS = _UtilLogic.ServerElapsedSeconds
+        if stats == nil or nowS >= stats.RootUntil then
+            self.JailedPlayer = nil
+            return
+        end
+        ---@type PlayerAttack
+        local attack = p:GetComponent("script.PlayerAttack")
+        if attack == nil or attack.LastAttackAt <= self.JailSwing then return end
+        self.JailedPlayer = nil
+        local releaseAt = math.min(stats.RootUntil, self.JailFrom + 1)
+        stats.RootUntil = releaseAt
+        _TimerService:SetTimerOnce(function()
+            if isvalid(stats.Entity) then stats:RefreshSpeed() end
+        end, math.max(0.02, releaseAt - nowS + 0.02))
+        self:CageBreakFx(_Util:Pos2(p), math.max(0, releaseAt - nowS))
+        log(string.format("[VRF] side boss jail bars struck — release in %.2fs", math.max(0, releaseAt - nowS)))
+    end
+
+    -- ───────── 밀물 · 광선 ─────────
+
+    @ExecSpace("ServerOnly")
+    method void TideTick(Monster monster, number delta)
+        -- 28초마다 12초 밀물: 안전한 원(처음 선 자리 둘레)이 8칸 → 3칸, 밖은 0.5초마다 공격력 ×0.2 냉기 + 둔화
+        local now = _UtilLogic.ElapsedSeconds
+        if self.TideUntil <= 0 then
+            self.TideTimer = self.TideTimer - delta
+            if self.TideTimer > 0 then return end
+            self.TideTimer = 28
+            self.TideUntil = now + 12
+            self.TideCenter = monster.SpawnPosition
+            self.TideDmgTick = 0.5
+            self.TideRingTick = 0
+            self:TideStartFx()
+            log("[VRF] side boss tide start")
+            return
+        end
+        if now >= self.TideUntil then
+            self.TideUntil = 0
+            log("[VRF] side boss tide end")
+            return
+        end
+        local t = 1 - (self.TideUntil - now) / 12
+        local safe = 8 - 5 * t
+        self.TideRingTick = self.TideRingTick - delta
+        if self.TideRingTick <= 0 then
+            self.TideRingTick = 1
+            self:TideRingFx(self.TideCenter, safe)
+        end
+        self.TideDmgTick = self.TideDmgTick - delta
+        if self.TideDmgTick > 0 then return end
+        self.TideDmgTick = 0.5
+        local wet = {}
+        for _, p in ipairs(_Util:PlayersInMap(self.Entity.CurrentMap)) do
+            if (_Util:Pos2(p) - self.TideCenter):Magnitude() > safe then
+                table.insert(wet, p)
+                ---@type PlayerStats
+                local stats = p:GetComponent("script.PlayerStats")
+                if stats ~= nil then stats:ApplyChill(1) end
+            end
+        end
+        ---@type MonsterAttack
+        local atk = self:Atk()
+        if atk ~= nil then self:HurtPlayers(wet, atk.Damage * 0.2, "cold") end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void BeamDamage()
+        -- 광선 각도 = 6초에 한 바퀴. 보스에서 7칸 안, 광선 9도 안의 플레이어 (사람마다 0.6초에 한 번)
+        local nowS = _UtilLogic.ServerElapsedSeconds
+        if nowS < self.BeamT0 then return end
+        local angle = (nowS - self.BeamT0) * math.pi * 2 / 6
+        local here = _Util:Pos2(self.Entity) + Vector2(0, 0.6)
+        local hit = {}
+        local now = _UtilLogic.ElapsedSeconds
+        for _, p in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, 7)) do
+            local d = _Util:Pos2(p) + Vector2(0, 0.4) - here
+            local diff = math.abs(math.atan(d.y, d.x) - angle) % (math.pi * 2)
+            if diff > math.pi then diff = math.pi * 2 - diff end
+            local id = p.PlayerComponent.UserId
+            if diff <= 0.16 and now - (self.BeamHit[id] or -10) >= 0.6 then
+                self.BeamHit[id] = now
+                table.insert(hit, p)
+            end
+        end
+        if #hit == 0 then return end
+        ---@type MonsterAttack
+        local atk = self:Atk()
+        if atk ~= nil then self:HurtPlayers(hit, atk.Damage * 0.9, "light") end
+        log("[VRF] side boss beam hit=" .. tostring(#hit))
+    end
+
+    -- ───────── 처음 상태로 ─────────
+
+    @ExecSpace("ServerOnly")
+    method boolean StillOn(integer serial)
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        return isvalid(self.Entity) and self.Serial == serial and monster ~= nil and not monster.IsDead
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite(Monster monster)
+        if self.Step == 0 and self.Glow == "" and not self.BeamOn and not self.TideOn then return end
+        self.Step = 0
+        self.Serial = self.Serial + 1
+        self.WindowUntil = 0
+        for _, e in ipairs(self.Eggs) do
+            if isvalid(e) then e:Destroy() end
+        end
+        self.Eggs = {}
+        self.EggsAt = 0
+        self.ScalesUntil = 0
+        self.Pools = {}
+        self.PoolsUntil = 0
+        self.TideOn = false
+        self.TideUntil = 0
+        self.BeamOn = false
+        self.BeamHit = {}
+        self.JailedPlayer = nil
+        self.Glow = ""
+        monster.RiteReflect = 0
+        monster.RiteShield = 0
+        monster.RiteDealtMult = 1
+        if self.RapidUntil > 0 or self.BaseCooldown > 0 then
+            ---@type MonsterAttack
+            local atk = self:Atk()
+            if atk ~= nil and self.BaseCooldown > 0 then atk.AttackCooldown = self.BaseCooldown end
+            self.RapidUntil = 0
+        end
+        log("[VRF] SideBossRite reset " .. self.Kind)
+    end
+
+    -- ───────── 클라이언트 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void ClientTick()
+        -- 몸 빛(저울·보호막·담금질)과 광선을 동기화 값대로 그린다
+        local want = self.Entity.Enable and self.Glow or ""
+        if want ~= self.GlowShown then
+            if self.GlowFx ~= 0 then _ParticleService:RemoveParticle(self.GlowFx) end
+            self.GlowFx = 0
+            self.GlowShown = want
+            if want ~= "" then
+                local c = Color(1, 0.85, 0.35, 0.85)
+                local kind = BasicParticleType.Aura
+                if want == "shield" then
+                    c = Color(0.9, 0.3, 0.4, 0.85)
+                    kind = BasicParticleType.Enchant
+                elseif want == "temper" then
+                    c = Color(1, 0.4, 0.15, 0.85)
+                    kind = BasicParticleType.Buff
+                end
+                self.GlowFx = _ParticleService:PlayBasicParticleAttached(kind, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.3, 1.3, 1), true, { Color = c })
+            end
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        local beam = self.BeamOn and self.Entity.Enable and _UtilLogic.ServerElapsedSeconds >= self.BeamT0
+        if not beam then
+            if self.BeamFx ~= 0 then _EffectService:RemoveEffect(self.BeamFx) end
+            self.BeamFx = 0
+            return
+        end
+        if now < self.BeamDrawAt then return end
+        self.BeamDrawAt = now + 0.08
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local angle = (_UtilLogic.ServerElapsedSeconds - self.BeamT0) * math.pi * 2 / 6
+        local p = self.Entity.TransformComponent.WorldPosition
+        local len = 7
+        local mid = Vector3(p.x + math.cos(angle) * len * 0.5, p.y + 0.6 + math.sin(angle) * len * 0.5, 0)
+        local chains = {}
+        for ruid in string.gmatch(_GameConst.SpriteLightningChains, "[^|]+") do table.insert(chains, ruid) end
+        if #chains == 0 then return end
+        local old = self.BeamFx
+        self.BeamFx = _EffectService:PlayEffect(chains[_UtilLogic:RandomIntegerRange(1, #chains)], self.Entity, mid, math.deg(angle), Vector3(len / 2.56, 1.4, 1), true,
+            { SortingLayer = "MapLayer0", OrderInLayer = 21, Color = Color(1, 0.95, 0.6, 1) })
+        if old ~= 0 then _EffectService:RemoveEffect(old) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        if self.GlowFx ~= 0 then _ParticleService:RemoveParticle(self.GlowFx) end
+        self.GlowFx = 0
+        if self.BeamFx ~= 0 then _EffectService:RemoveEffect(self.BeamFx) end
+        self.BeamFx = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean Watching()
+        local me = _UserService.LocalPlayer
+        return isvalid(me) and me.CurrentMap == self.Entity.CurrentMap
+    end
+
+    @ExecSpace("Multicast")
+    method void ChargeFx(Color c)
+        if not self:Watching() then return end
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.7, 0), 0, Vector3(1.3, 1.3, 1), false, { Color = c })
+    end
+
+    @ExecSpace("Multicast")
+    method void HealFx(Color c)
+        if not self:Watching() then return end
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Buff, self.Entity, Vector3(0, 0.2, 0), 0, Vector3(1.5, 1.5, 1), false, { Color = c })
+    end
+
+    @ExecSpace("Multicast")
+    method void InterruptFx()
+        if not self:Watching() then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(p.x, p.y + 0.8, 0), 0, Vector3(1, 1, 1), false, { Color = Color(1, 1, 0.7, 1) })
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.3, 0.3) end
+    end
+
+    @ExecSpace("Multicast")
+    method void BlinkFx()
+        if not self:Watching() then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, Vector3(p.x, p.y + 0.3, 0), 0, Vector3(1.2, 1.2, 1), false, nil)
+    end
+
+    @ExecSpace("Multicast")
+    method void HammerFx(number seconds)
+        -- 담금질: 0.5초마다 모루 불꽃
+        if not self:Watching() then return end
+        for i = 0, math.floor(seconds / 0.5) - 1 do
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(self.Entity) then return end
+                local p = self.Entity.TransformComponent.WorldPosition
+                _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(p.x + 0.5, p.y + 0.5, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = Color(1, 0.6, 0.2, 1) })
+            end, i * 0.5)
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void WarnFx(table spots, number radius, string element, number seconds)
+        if not self:Watching() then return end
+        for i = 1, #spots, 2 do _Util:Telegraph(self.Entity, Vector2(spots[i], spots[i + 1]), radius, element, seconds) end
+    end
+
+    @ExecSpace("Multicast")
+    method void BurstFx(table spots, number radius, string element)
+        if not self:Watching() then return end
+        local c = element == "fire" and Color(1, 0.5, 0.2, 1) or Color(0.85, 0.8, 0.7, 1)
+        for i = 1, #spots, 2 do _Util:ElementBurst(self.Entity, Vector3(spots[i], spots[i + 1], 0), radius, element, c) end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.25, 0.25) end
+    end
+
+    @ExecSpace("Multicast")
+    method void LaneWarnFx(table lanes, number x0, number x1, number seconds)
+        -- 박쥐 띠 예고: 줄마다 1.5칸 간격 예고 원
+        if not self:Watching() then return end
+        for _, y in ipairs(lanes) do
+            local x = x0
+            while x <= x1 do
+                _Util:Telegraph(self.Entity, Vector2(x, y), 0.9, "fire", seconds)
+                x = x + 1.5
+            end
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void LaneBurstFx(table lanes, number x0, number x1)
+        if not self:Watching() then return end
+        for _, y in ipairs(lanes) do
+            local x = x0
+            while x <= x1 do
+                _ParticleService:PlayBasicParticle(BasicParticleType.FireBall, self.Entity, Vector3(x, y, 0), 0, Vector3(0.6, 0.6, 1), false, { Color = Color(1, 0.55, 0.2, 1) })
+                x = x + 2.25
+            end
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void PoolFx(table spots, number radius, number seconds)
+        if not self:Watching() then return end
+        local marks = {}
+        for i = 1, #spots, 2 do
+            table.insert(marks, _Util:GroundDecal(_GameConst.SpriteGroundFire, 140, 70, self.Entity, Vector3(spots[i], spots[i + 1], 0), radius, Color(1, 1, 1, 0.95)))
+        end
+        _TimerService:SetTimerOnce(function()
+            for _, m in ipairs(marks) do if m ~= nil and m ~= 0 then _EffectService:RemoveEffect(m) end end
+        end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void CageFx(table spots, number seconds)
+        -- 감옥: 갇힌 자리마다 혼 우리 그림 (a4-soul-cage)
+        if not self:Watching() then return end
+        local marks = {}
+        for i = 1, #spots, 2 do
+            table.insert(marks, _EffectService:PlayEffect("d7a63aa6d98d426e9d848b6dee7caede", self.Entity, Vector3(spots[i], spots[i + 1] - 0.1, 0), 0, Vector3(0.75, 0.75, 1), true,
+                { SortingLayer = "MapLayer0", OrderInLayer = 22, Color = Color(1, 1, 1, 0.9) }))
+        end
+        _TimerService:SetTimerOnce(function()
+            for _, m in ipairs(marks) do if m ~= nil and m ~= 0 then _EffectService:RemoveEffect(m) end end
+        end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void ShowPlayerCage(Vector2 at, number seconds)
+        -- 플레이어 감옥 그림은 따로 둔다 — 쇠창살을 치면 일찍 지운다 (CageBreakFx)
+        if not self:Watching() then return end
+        if self.PlayerCageFx ~= 0 then _EffectService:RemoveEffect(self.PlayerCageFx) end
+        local fx = _EffectService:PlayEffect("d7a63aa6d98d426e9d848b6dee7caede", self.Entity, Vector3(at.x, at.y - 0.1, 0), 0, Vector3(0.75, 0.75, 1), true,
+            { SortingLayer = "MapLayer0", OrderInLayer = 22, Color = Color(1, 1, 1, 0.9) })
+        self.PlayerCageFx = fx
+        _TimerService:SetTimerOnce(function()
+            if self.PlayerCageFx == fx then
+                _EffectService:RemoveEffect(fx)
+                self.PlayerCageFx = 0
+            end
+        end, seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void CageBreakFx(Vector2 at, number left)
+        -- 쇠창살을 쳤다: 불꽃 + left초 뒤 우리 그림을 지운다
+        if not self:Watching() then return end
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(at.x, at.y + 0.5, 0), 0, Vector3(0.8, 0.8, 1), false, { Color = Color(0.85, 0.9, 1, 1) })
+        local fx = self.PlayerCageFx
+        if fx == 0 then return end
+        _TimerService:SetTimerOnce(function()
+            if self.PlayerCageFx == fx then
+                _EffectService:RemoveEffect(fx)
+                self.PlayerCageFx = 0
+            end
+        end, math.max(0.02, left))
+    end
+
+    @ExecSpace("Multicast")
+    method void TideStartFx()
+        if not self:Watching() then return end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.2, 0.6) end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.BigSplash, self.Entity, Vector3(p.x, p.y, 0), 0, Vector3(1.6, 1.6, 1), false, { Color = Color(0.6, 0.85, 1, 1) })
+    end
+
+    @ExecSpace("Multicast")
+    method void TideRingFx(Vector2 center, number safe)
+        -- 물가: 안전한 원 바깥에 냉기 물 띠 두 겹 (안쪽 테두리 촘촘히 + 바깥 한 겹 엇갈려) — 1초마다 다시 그린다
+        if not self:Watching() then return end
+        local marks = {}
+        for ring = 0, 1 do
+            local r = safe + 0.6 + ring * 1.4
+            local n = 18 + ring * 6
+            for i = 1, n do
+                local a = math.pi * 2 * (i + ring * 0.5) / n
+                local at = Vector3(center.x + math.cos(a) * r, center.y + math.sin(a) * r * 0.8, 0)
+                table.insert(marks, _Util:GroundDecal(_GameConst.SpriteGroundCold, 140, 70, self.Entity, at, 0.9, Color(0.85, 0.95, 1, ring == 0 and 0.95 or 0.7)))
+            end
+        end
+        _TimerService:SetTimerOnce(function()
+            for _, m in ipairs(marks) do if m ~= nil and m ~= 0 then _EffectService:RemoveEffect(m) end end
+        end, 1.05)
+    end
+
+end

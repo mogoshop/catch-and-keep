@@ -1,5 +1,6 @@
 -- 액트 3 보스 기믹 (docs/design/17 §4). 내려찍기·장판·졸개 소환은 같은 엔티티의 BossPattern을 쓴다.
---   바위 집게 왕 (crab_king): 생명 50% 아래에서 껍질 6초 (받는 피해 -40%, Monster.GetDamageTakenMultiplier) ↔ 6초 쉼을 되풀이
+--   바위 집게 왕 (crab_king): 생명 50% 아래에서 껍질 6초 (받는 피해 -40%, Monster.GetDamageTakenMultiplier) ↔ 6초 쉼을 되풀이,
+--     25%에서 껍질이 깨진다 — 공격 속도 +40% · 받는 피해 +15% (docs/design/40 §3, 10-28)
 --   익사한 제독 바렌 (admiral) 3단계:
 --     1단계 (66% 초과): 번개 연쇄 5번(MonsterAttack.ChainJumps) + 닻 내려찍기
 --     2단계 (66% 이하): 14초마다 익사한 선원 2 (졸개 6 이하) + 플레이어 발밑 냉기 장판(둔화)
@@ -24,6 +25,7 @@ script Act3Rite extends Component
     property number BasePoolSeconds = 0
     property integer ShellFx = 0             -- 클라이언트: 껍질 빛 입자
     property boolean ShellTinted = false     -- 클라이언트: 몸에 푸른 색조를 입혔다
+    property boolean Broken = false          -- 집게 왕 생명 25%: 껍질 깨짐 (10-28)
 
     method void OnBeginPlay()
         -- 서버만 기믹을 돌린다 (클라이언트는 껍질 빛만)
@@ -48,6 +50,17 @@ script Act3Rite extends Component
         local ratio = monster.Hp / math.max(1, monster.MaxHp)
         if self.Kind == "crab" then
             if ratio > 0.5 then return end
+            if self.Broken then return end
+            if ratio <= 0.25 then
+                -- 껍질 깨짐 (docs/design/40 §3): 껍질이 다시 닫히지 않고, 공격 속도 +40% · 받는 피해 +15% — 마지막 몰아치기
+                self.Broken = true
+                self.Shell = false
+                monster.RiteSpeedMult = 1.4
+                monster.RiteTakenMult = 1.15
+                self:BreakFx()
+                log("[VRF] crab shell broken")
+                return
+            end
             self.ShellTimer = self.ShellTimer - delta
             if self.ShellTimer <= 0 then
                 self.Shell = not self.Shell
@@ -93,11 +106,32 @@ script Act3Rite extends Component
         log("[VRF] admiral phase " .. tostring(phase))
     end
 
+    @ExecSpace("Multicast")
+    method void BreakFx()
+        -- 껍질 깨짐: 바위 파편이 튀고 화면 흔들림
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local p = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, Vector3(p.x, p.y + 0.6, 0), 0, Vector3(1.4, 1.4, 1), false, nil)
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(p.x, p.y + 0.6, 0), 0, Vector3(1, 1, 1), false, { Color = Color(0.6, 0.85, 1, 1) })
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.4, 0.4) end
+    end
+
     @ExecSpace("ServerOnly")
     method void ResetRite()
         -- 처음 상태로: 껍질 닫힘 해제, 제독 장판·내려찍기 간격 복원
         if self.Shell then self.Shell = false end
         self.ShellTimer = 0
+        if self.Broken then
+            self.Broken = false
+            ---@type Monster
+            local m = self.Entity:GetComponent("script.Monster")
+            if m ~= nil then
+                m.RiteSpeedMult = 1
+                m.RiteTakenMult = 1
+            end
+        end
         if self.Phase == 1 then return end
         self.Phase = 1
         self.SummonTimer = 0
