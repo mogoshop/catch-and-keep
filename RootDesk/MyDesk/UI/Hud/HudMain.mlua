@@ -24,6 +24,7 @@ script HudMain extends Logic
     property number RaidUntil = 0               -- 습격 예고 (RaidDirector.Warn → RaidWarn): 가장자리 표식·글귀가 보이는 동안
     property table RaidPts = {}                 -- 떼가 솟을 자리 { {x, y}, ... } (최대 8)
     property table RaidDecals = {}              -- 바닥 조짐 이펙트 번호 (끝나면 지운다)
+    property number RaidPlateUntil = 0          -- 습격 격퇴 판 (RaidDefeated): 4초 보이고 끝 0.5초 흐려진다
     property string TipText = ""                -- 위쪽 가운데 여정 안내: 바뀌거나 맵에 들어올 때만 TipSeconds 동안
     property string TipMap = ""
     property number TipUntil = 0
@@ -451,6 +452,7 @@ script HudMain extends Logic
             if _UtilLogic.ElapsedSeconds >= self.WarnUntil then self.WarnUntil = 0 end
         end
         if self.RaidUntil > 0 then self:RenderRaid() end
+        if self.RaidPlateUntil > 0 then self:RenderRaidPlate() end
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         if book ~= nil and book.RiteHoldAt >= 0 then self:RenderRite(book)
@@ -526,7 +528,7 @@ script HudMain extends Logic
         self.RaidDecals = {}
         local ruid, w, h, tint = _GameConst.SpriteGroundPoison, 160, 80, Color(0.75, 0.6, 0.45, 0.7)   -- 액트 1 흙이 솟는 갈색
         if act == 2 then ruid, w, h, tint = _GameConst.SpriteGroundFire, 140, 70, Color(0.95, 0.8, 0.5, 0.6)   -- 모래 소용돌이 느낌
-        elseif act == 3 then ruid, w, h, tint = _GameConst.SpriteGroundCold, 140, 70, Color(0.7, 0.9, 1, 0.65)  -- 얕은 바다 물거품
+        elseif act == 3 then ruid, w, h, tint = _GameConst.SpriteRaidOmenA3, 160, 80, Color(1, 1, 1, 0.9)  -- 10-29 코덱스 조짐: 얕은 물이 얼며 솟는 물거품 고리 (정지 그림)
         elseif act >= 4 then ruid, w, h, tint = _GameConst.SpriteGroundLava, 140, 70, Color(1, 0.6, 0.5, 0.7) end   -- 용암 재 웅덩이
         if isvalid(player) then
             for _, p in ipairs(pts) do
@@ -563,7 +565,12 @@ script HudMain extends Logic
                 local q = self:WorldToHud(Vector2(p[1], p[2]))
                 _UIKit:SetPos(name, Vector2(math.max(-hx, math.min(hx, q.x)), math.max(-hy, math.min(hy, q.y))))
                 local e = _UIKit:Get(name)
-                if isvalid(e) then e.UITransformComponent.RectSize = Vector2(30 * pulse, 30 * pulse) end
+                if isvalid(e) then
+                    -- 코덱스 표식은 오른쪽을 가리킨다 → 화면 가운데에서 자리 쪽으로 8방향(45°)으로 돌린다
+                    local deg = math.deg(math.atan(q.y, q.x))
+                    e.UITransformComponent.UIRotation = Vector3(0, 0, math.floor(deg / 45 + 0.5) * 45)
+                    e.UITransformComponent.RectSize = Vector2(48 * pulse, 48 * pulse)
+                end
                 _UIKit:SetEnabled(name, true)
             else
                 _UIKit:SetEnabled(name, false)
@@ -573,9 +580,28 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RaidDefeated(integer n, integer gold)
-        -- 격퇴 (글귀 후보 1): 「습격 격퇴 · N마리」 띠 + 골드 주머니 안내 (코덱스 격퇴 판 전까지 UX 띠)
-        _UXFeedback:Show("습격 격퇴 · " .. tostring(n) .. "마리", gold > 0 and ("골드 주머니 " .. tostring(gold) .. "이 발밑에 떨어졌다") or "", "")
+        -- 격퇴 (글귀 후보 1): 「습격 격퇴 · N마리」 + 골드 주머니 안내 — 10-29 코덱스 격퇴 판(RaidPlate) 위에 알림 띠와 같은 글자 양식으로
+        _UIKit:SetText("RaidPlate/Title", "습격 격퇴 · " .. tostring(n) .. "마리")
+        _UIKit:SetText("RaidPlate/Body", gold > 0 and ("골드 주머니 " .. tostring(gold) .. "이 발밑에 떨어졌다") or "")
+        _UIKit:SetEnabled("RaidText", false)
+        self.RaidPlateUntil = _UtilLogic.ElapsedSeconds + 4
+        self:RenderRaidPlate()
         _SoundDirector:PlayEffect(_GameConst.SfxTreasure, 0.8)
+        log(string.format("[VRF] raid plate shown n=%d gold=%d", n, gold))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderRaidPlate()
+        -- 격퇴 판: 끝 0.5초 동안 흐려지고 시간이 다 되면 거둔다 (창이 열려 있으면 가린다)
+        local left = self.RaidPlateUntil - _UtilLogic.ElapsedSeconds
+        local e = _UIKit:Get("RaidPlate")
+        if left <= 0 or not isvalid(e) then
+            self.RaidPlateUntil = 0
+            _UIKit:SetEnabled("RaidPlate", false)
+            return
+        end
+        if e.CanvasGroupComponent ~= nil then e.CanvasGroupComponent.GroupAlpha = math.min(1, left / 0.5) end
+        _UIKit:SetEnabled("RaidPlate", not _UIKit:AnyWindowOpen())
     end
 
     @ExecSpace("ClientOnly")

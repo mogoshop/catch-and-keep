@@ -59,7 +59,8 @@ module.exports = {
     waypoint: [-6, 2],
     torches: [[-4, 1], [3, 1], [-12, 3], [12, -4], [-2, -8], [1, -8], [-7, 7], [6, 7]],
     extra: {
-      depthgate: [5, 2], "npc:Captain": [-10, 7], "npc:ShopKeeper": [-4, 4], "npc:Harbormaster": [3, 4], "npc:Smith": [10, 1],
+      // townboard: 10-29 마을 게시판 자리(maps.csv extra townboard@-1.5/3.5) — compose가 지우지 않게 설계서에도
+      depthgate: [5, 2], townboard: [-2, 3], "npc:Captain": [-10, 7], "npc:ShopKeeper": [-4, 4], "npc:Harbormaster": [3, 4], "npc:Smith": [10, 1],
       "npc:KeeperDaughter": [8, 7], "npc:Stash": [2, -3], "npc:Elder": [-2, 6],
     },
     put: [
@@ -430,7 +431,9 @@ const LIGHT_HEIGHT = {
   lighthouse1: [1, "low=a3-shallow-sea-floor-r2:0.66/0.76/0.84"], lighthouse2: [2, "low=a3-shallow-sea-floor-r2:0.52/0.62/0.72"],
   lighthouse3: [3, "low=a3-shallow-sea-floor-r2:0.4/0.5/0.62"], stormeye: [3, "below=execution-floor:0.55:0.62:0.62/0.8/0.9"],
 };
-for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `lighthouse 1/1/1 등대 층 바닥 tiers=${t} top=zone face=lighthouse-borders back=lighthouse-borders-center ${low}`;
+//   10-29 코덱스 폭풍 등대 전용 벽(walltop-v1 샘플 승인): 가장자리 9조각 a3-lighthouse-wall-borders-* · 앞면 a3-lighthouse-wall-face-s
+//   (앞면 끝 sw·se는 전체 납품 대기 — 그동안 lib.cjs가 face-s로 잇는다)
+for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `a3-lighthouse-wall 1/1/1 등대 층 바닥 tiers=${t} top=zone face=a3-lighthouse-wall-face back=a3-lighthouse-wall-borders-center ${low}`;
 
 // ───────── 10-28 밤 코덱스 액트 3 나머지 44장(assets/codex-a3-handmade-v1, r2 「얕은 바다」 결) ─────────
 // 위 설계서의 액트 1 바닥(파란색을 칠해 쓰던 것)을 액트 3 그림으로 바꾼다. 자리·길·충돌은 그대로. 소금 갯벌은 이미 r2라 그대로.

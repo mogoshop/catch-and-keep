@@ -564,9 +564,16 @@ function buildGameHud() {
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
   b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });
   b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });
-  // 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 3초 + 떼가 솟을 자리마다 화면 가장자리 표식 최대 8 (HudMain.RaidWarn · RenderRaid — 코덱스 표식 그림 전까지 붉은 점)
+  // 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 3초 + 떼가 솟을 자리마다 화면 가장자리 표식 최대 8 (HudMain.RaidWarn · RenderRaid)
+  //   10-29 코덱스 표식 ui_raid_edge_mark_2(오른쪽을 가리키는 붉은 발톱 96px) 48칸 — RenderRaid가 자리 방향으로 8방향 돌린다
   b.text("RaidText", "", { size: 34, bold: true, color: "#FF7A5A", anchor: "middle-center", pos: [0, 250], rect_size: [600, 50], alignment: 4, ...outline, outline_width: 0.3, enable: false });
-  for (let i = 1; i <= 8; i++) b.sprite(`RaidMark${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [30, 30], image_ruid: K.dot, sprite_type: 0, color: "#FF5A3A", alpha: 0.95, enable: false });
+  for (let i = 1; i <= 8; i++) b.sprite(`RaidMark${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [48, 48], image_ruid: K.ui_raid_edge_mark_2, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
+  // 습격 격퇴 판 (10-29 코덱스 ui_raid_repelled_plate 9조각 64/64/24/24): 「습격 격퇴 · N마리」 + 골드 주머니 안내 — 알림 띠(UXFeedback)와 같은 글자 양식, 바탕만 판.
+  //   예고 글귀 자리(가운데 위)에 4초 뒤 흐려지며 사라진다 (HudMain.RaidDefeated · RenderRaidPlate)
+  b.sprite("RaidPlate", { anchor: "middle-center", pos: [0, 250], rect_size: [760, 136], ...part("ui_raid_repelled_plate"), sprite_type: 1, enable: false });
+  b.upsertComponent("RaidPlate", "MOD.Core.CanvasGroupComponent", { GroupAlpha: 1, BlocksRaycasts: false, Interactable: false });
+  b.text("RaidPlate/Title", "", { size: 30, bold: true, color: C.qTitle, anchor: "middle-center", pos: [0, 18], rect_size: [600, 40], alignment: 4, ...outline, outline_width: 0.2 });
+  b.text("RaidPlate/Body", "", { size: 22, color: "#DDD4C3", anchor: "middle-center", pos: [0, -22], rect_size: [600, 32], alignment: 4, bestfit: true, min_size: 16, max_size: 22, ...outline, outline_width: 0.15 });
 
   // 출구 가까이 가면 화면 가운데 아래 안내 (어디로 가는지 + 들어서면 이동)
   b.panel("GatePrompt", { anchor: "bottom-center", pos: [0, 330], rect_size: [760, 60], ...part("hud_box"), sprite_type: 1, enable: false });

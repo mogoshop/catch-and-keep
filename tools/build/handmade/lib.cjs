@@ -352,7 +352,9 @@ function artEntities(d, ctx, bp, rows, func) {
     const t = tintOf(bp.raised.tint);
     for (const r of mergeRects(pk)) {
       const [kind, piece, dd] = r.p.split("|");
-      const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? `${F}-${piece}` : piece.startsWith("broken-") ? `${A}-${piece}` : `${A}-borders-${piece}`;
+      // 앞면 끝 조각(sw·se)이 아직 없는 묶음은 가운데(s)로 잇는다 (10-29 코덱스 등대 앞면 샘플은 face-s 한 장 — 끝 조각은 전체 납품 대기)
+      const band = (p) => (table[`${F}-${p}`] ? `${F}-${p}` : `${F}-s`);
+      const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? band(piece) : piece.startsWith("broken-") ? `${A}-${piece}` : `${A}-borders-${piece}`;
       const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
       const m = kind === "band" ? TIER_SHADE[Number(dd) - 1] : 1;
       o["MOD.Core.SpriteRendererComponent"].Color = kind === "shadow" ? { r: 0, g: 0, b: 0, a: TIER_SHADOW } : { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };

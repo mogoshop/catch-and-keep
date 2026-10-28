@@ -64,7 +64,8 @@ module.exports = {
     waypoint: [-6, 2],
     torches: [[-4, 1], [3, 1], [-12, 3], [12, -4], [-2, -8], [1, -8], [-8, 7], [6, 7]],
     extra: {
-      depthgate: [5, 2], "npc:ShopKeeper": [-4, 4], "npc:Elder": [3, 5], "npc:Smith": [10, 1],
+      // townboard: 10-29 마을 게시판 자리(maps.csv extra townboard@-1.5/3.5) — compose가 지우지 않게 설계서에도
+      depthgate: [5, 2], townboard: [-2, 3], "npc:ShopKeeper": [-4, 4], "npc:Elder": [3, 5], "npc:Smith": [10, 1],
       "npc:Merchant": [-9, 2], "npc:Stash": [2, -3], "npc:Caravan": [-14, 0],
     },
     put: [
