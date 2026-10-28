@@ -9,7 +9,7 @@
 --   donut   도넛       : 보스 둘레 두 겹 고리가 터진다 — 보스 품(2칸 안)만 안전
 --   wall    밀려오는 벽 : 레이저 벽이 한쪽에서 밀려온다 — 빈 칸 하나로 빠져나간다
 --   chase   추격       : 플레이어 발밑을 0.55초마다 다섯 번 쫓아 터진다
--- 토템: 처음 맞붙을 때 보스 둘레에 둥지(bonenest 몸 · 액트 색)를 놓는다 — 7초마다 보스 졸개를 낳고, 부수면 멈춘다. 소환수가 할 일이 생긴다.
+-- 토템: 처음 맞붙을 때 보스 둘레에 둥지(bonenest 몸 · 액트별 토템 모습 TotemForm)를 놓는다 — 7초마다 보스 졸개를 낳고, 부수면 멈춘다. 소환수가 할 일이 생긴다.
 -- 죽거나 둘레 16칸에 플레이어가 없으면 처음 상태로(토템·토템 졸개 정리).
 @Component
 script BossMoves extends Component
@@ -20,7 +20,8 @@ script BossMoves extends Component
     property integer Totems = 0              -- 보통 토템 수 (0이면 없음)
     property string TotemModel = "bonenest"
     property string TotemMinion = ""         -- 토템이 낳는 졸개 (보스 minion)
-    property string TotemTint = ""           -- "r,g,b" 액트 색
+    property string TotemTint = ""           -- "r,g,b" 액트 색 (TotemForm이 없을 때만)
+    property string TotemForm = ""           -- 토템 모습 프레임 키 (monster_frames form_totem_aN — 10-28 밤 코덱스 액트별 토템 · 부수면 깨진 모습)
     property table List = {}
     property integer Index = 0
     property boolean Engaged = false
@@ -445,7 +446,11 @@ script BossMoves extends Component
                         nest.Minions = self.TotemMinion
                         nest.WakeRange = 14
                     end
-                    if self.TotemTint ~= "" then
+                    if self.TotemForm ~= "" then
+                        ---@type FrameAnimator
+                        local anim = e:GetComponent("script.FrameAnimator")
+                        if anim ~= nil then anim.FormKey = self.TotemForm end
+                    elseif self.TotemTint ~= "" then
                         ---@type MonsterTraits
                         local traits = e:GetComponent("script.MonsterTraits")
                         if traits ~= nil then
@@ -457,7 +462,7 @@ script BossMoves extends Component
             end
         end
         self:TotemFx()
-        log("[VRF] boss totems " .. tostring(#self.TotemList) .. " minion=" .. self.TotemMinion)
+        log("[VRF] boss totems " .. tostring(#self.TotemList) .. " minion=" .. self.TotemMinion .. " form=" .. self.TotemForm)
     end
 
     @ExecSpace("ServerOnly")
@@ -544,6 +549,13 @@ script BossMoves extends Component
         for i = 0, n do
             local p = a + d * (i / n)
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, Vector3(p.x, p.y, 0), 0, Vector3(0.8, 0.8, 1), false, nil)
+        end
+        -- 땅을 긁은 흙먼지 띠 (10-28 밤 코덱스 fx-charge-trail 256×64 — 길이로 늘이고 1.6초 뒤 지운다)
+        local len = d:Magnitude()
+        if len > 0.3 then
+            local trail = _EffectService:PlayEffect(_GameConst.SpriteChargeTrail, self.Entity, Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0), math.deg(math.atan(d.y, d.x)),
+                Vector3(len / 2.56, 1.4, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1 })
+            _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(trail) end, 1.6)
         end
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(hitWall and 0.5 or 0.25, hitWall and 0.4 or 0.2) end

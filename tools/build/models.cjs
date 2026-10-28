@@ -115,6 +115,8 @@ function buildMonster(m, boss) {
       b.value("script.BossMoves", "Totems", num(boss.totems, 0), "long");
       b.value("script.BossMoves", "TotemMinion", boss.minion || "", "string");
       b.value("script.BossMoves", "TotemTint", boss.totemTint || "", "string");
+      // 10-28 밤 코덱스 액트별 토템 그림 (뼈·구더기 무덤 · 모래 석관 · 따개비 난파 종 · 용암 제단) — 뼈 둥지 몸에 모습만 바꿔 입힌다 (monster_frames form_totem_aN)
+      if (num(boss.totems, 0) > 0) b.value("script.BossMoves", "TotemForm", `totem_a${m.region}`, "string");
     }
   }
   // 공통 보스 틀 없이 의식만 붙는 보스 (monsters.csv rite — 처형인·근위대장·밀수꾼 두목, docs/design/40)

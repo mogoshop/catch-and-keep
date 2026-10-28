@@ -69,7 +69,7 @@ function parseBlueprint(id) {
           below: opt.below ? { art: belowO[0], scale: Number(belowO[1] || 0.55), bright: Number(belowO[2] || 0.42), fog: belowO[3] || "1/1/1" } : null,
         };
       }
-      else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "" };
+      else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       continue;
     }
@@ -362,7 +362,7 @@ function artEntities(d, ctx, bp, rows, func) {
       cur = on ? { ch: on, x, len: 1 } : null;
     }
   }
-  // 3-1) 물가 거품 (;shore <물 그림[+물 그림…]> <거품 그림> [크기] [색]) — 10-28 액트 3 「얕은 바다」: 청록 바다와 모래가 칸 단위로 맞닿아
+  // 3-1) 물가 거품 (;shore <물 그림[+물 그림…]> <거품 그림> [크기] [색] [세로 거품 그림]) — 10-28 액트 3 「얕은 바다」: 청록 바다와 모래가 칸 단위로 맞닿아
   //   네모 계단이 드러났다 → 바다 칸과 다른 바닥 칸이 맞닿은 변을 따라 거품 띠를 이어 깐다 (세로 변은 90도 돌린다)
   let foamN = 0;
   if (bp.shore) {
@@ -416,8 +416,25 @@ function artEntities(d, ctx, bp, rows, func) {
       }
     }
     lay(hRuns, false);
-    // 세로 변: 그림을 90도 돌리면 번개·금처럼 보였다(메이커 비교) → 돌리지 않고 작은 거품을 0.55칸마다 좌우로 엇갈려 쌓는다
-    for (const [line, a, bEnd] of vRuns) {
+    // 세로 변: 그림을 90도 돌리면 번개·금처럼 보였다(메이커 비교) → 세로로 그린 거품 그림(;shore 6번째 칸, 10-28 코덱스 a3 r2 64×256)을 세로로 잇는다.
+    //   그 그림이 없는 맵은 작은 가로 거품을 0.55칸마다 좌우로 엇갈려 쌓는다
+    if (bp.shore.foamV) {
+      const vsp = spriteOf(table, bp.shore.foamV, `${d.id} 세로 물가 거품`);
+      const vsc = baseScale(vsp, ctx.propScale) * bp.shore.scale, vlen = (num(vsp.h, 256) * vsc) / 100;
+      const foamV = (x, y, mul) => {
+        const o = sprite(vsp.ruid, null, 1);
+        o["MOD.Core.SpriteRendererComponent"].FlipY = foamN % 2 === 1;
+        if (bp.shore.tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(bp.shore.tint);
+        o["MOD.Core.TransformComponent"] = { Scale: vec3(vsc * mul) };
+        out.push({ name: `ArtFoam${++foamN}`, pos: [r3(x), r3(y), -0.012], overrides: o });
+      };
+      for (const [line, a, bEnd] of vRuns) {
+        const n = bEnd - a + 1;
+        if (n < vlen * 0.5) { foamV(line, (a + bEnd + 1) / 2, Math.max(0.45, n / vlen)); continue; }
+        const cnt = Math.max(1, Math.round(n / (vlen * 0.72)));
+        for (let k = 0; k < cnt; k++) foamV(line, a + (n * (k + 0.5)) / cnt, 1);
+      }
+    } else for (const [line, a, bEnd] of vRuns) {
       const n = bEnd - a + 1, cnt = Math.max(1, Math.round(n / 0.55));
       for (let k = 0; k < cnt; k++) foam(line + (k % 2 ? 0.12 : -0.12), a + (n * (k + 0.5)) / cnt, false, 0.42);
     }

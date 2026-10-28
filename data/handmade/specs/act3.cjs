@@ -421,3 +421,74 @@ const LIGHT_HEIGHT = {
   lighthouse3: [3, "low=a3-shallow-sea-floor-r2:0.4/0.5/0.62"], stormeye: [3, "below=execution-floor:0.55:0.62:0.62/0.8/0.9"],
 };
 for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `lighthouse 1/1/1 등대 층 바닥 tiers=${t} top=zone face=lighthouse-borders back=lighthouse-borders-center ${low}`;
+
+// ───────── 10-28 밤 코덱스 액트 3 나머지 44장(assets/codex-a3-handmade-v1, r2 「얕은 바다」 결) ─────────
+// 위 설계서의 액트 1 바닥(파란색을 칠해 쓰던 것)을 액트 3 그림으로 바꾼다. 자리·길·충돌은 그대로. 소금 갯벌은 이미 r2라 그대로.
+//   그동안 깔아 둔 임시 젖은 효과(파랗게 칠한 바닥 · 웅덩이 무늬)는 걷어 낸다 — 새 그림이 이미 푸르고 젖어 있다
+const A3_FLOOR = {
+  "execution-floor": "a3-barnacle-stone-floor-r2", "cellar-floor": "a3-wet-plank-floor-r2", "ash-camp-floor": "a3-salt-crust-floor-r2",
+  "ash-road": "a3-wet-cobble-road-r2", "sand-floor": "a3-wet-sand-floor-r2", "marsh-floor": "a3-tidal-flat-floor-r2",
+  "ash-cave-floor": "a3-barnacle-stone-floor-r2", "bone-floor": "a3-salt-crust-floor-r2",
+};
+// 옛 색은 푸른빛을 입히던 값이라 밝기만 남기고(회색) 어둡게 하는 몫은 절반으로
+const neutral = (t) => { const v = t.split("/").map(Number), m = (v[0] + v[1] + v[2]) / 3, k = Math.round((1 - (1 - m) * 0.5) * 100) / 100; return `${k}/${k}/${k}`; };
+const a3Art = (line, swap) => {
+  const [art, tint, ...name] = line.split(" ");
+  const to = (swap && swap[art]) || A3_FLOOR[art];
+  return to ? [to, neutral(tint), ...name].join(" ") : line;
+};
+const A3_WALL = {
+  "coast-rock": "a3-coast-rock-wall-r2 1/1/1", "wet-cave": "a3-coast-rock-wall-r2 0.82/0.82/0.82", "shiphold": "a3-wreck-timber-wall-r2 1/1/1",
+};
+const A3_DECAL = {
+  "a3-decal-tide-puddle": "a3-decal-seawater-puddle-r2", "a3-decal-seaweed": "a3-decal-seaweed-pile-r2", "a3-decal-foam-line": "a3-decal-wave-foam-line-r2",
+  "a3-decal-salt-crust": "a3-decal-salt-band-r2", "a3-decal-shells": "a3-decal-tide-stain-r2", "a3-decal-rope-scraps": "a3-decal-wet-footprints-r2",
+};
+const A3_ADJUNCT = {
+  "harbor-barrels": "a3-adjunct-drift-barrel-r2", "harbor-lantern": "a3-adjunct-broken-lantern-r2", "fishing-net": "a3-adjunct-wet-net-pile-r2",
+  "a3-drift-crates": "a3-adjunct-salt-sack-r2", "a3-crab-shell-pile": "a3-adjunct-shell-pile-r2", "a3-broken-trap": "a3-adjunct-crab-pot-r2",
+  "a3-kelp-rock": "a3-adjunct-seaweed-post-r2", "a3-broken-mast": "a3-adjunct-broken-oar-r2", "a3-capsized-boat": "a3-adjunct-broken-oar-r2",
+  "a3-rusted-cannon": "a3-adjunct-rusty-hook-r2", "wreck-anchor": "a3-adjunct-barnacle-anchor-chain-r2", "smuggler-crates": "a3-adjunct-salt-sack-r2",
+};
+// 맵마다 바꿔 끼울 것: 부두·둑길은 판자, 예배당은 물에 잠긴 타일, 비 오는 바깥 맵은 빗물 고임 · 번개 절벽은 번개 그을음
+const A3_SWAP = {
+  harbor: { zones: { b: "a3-wet-plank-floor-r2" } },
+  drownedvillage: { roads: { "=": "a3-plank-boardwalk-road-r2", "-": "a3-plank-boardwalk-road-r2" }, zones: { b: "a3-drowned-tile-floor-r2" } },
+  seachapel: { all: { "cellar-floor": "a3-drowned-tile-floor-r2", "execution-floor": "a3-drowned-tile-floor-r2" } },
+  wreckcoast: { zones: { a: "a3-tidal-flat-floor-r2", b: "a3-wet-plank-floor-r2", c: "a3-wet-plank-floor-r2" } },
+  wreckhold: { all: { "ash-road": "a3-wet-plank-floor-r2" } },   // 배 안은 판자
+  keeperhouse: { all: { "ash-road": "a3-wet-plank-floor-r2" } },
+};
+const A3_EXTRA_DECAL = { stormcliff: ["a3-decal-lightning-scorch-r2", "a3-decal-rain-puddles-r2"], wreckcoast: ["a3-decal-wet-sand-ripple-r2", "a3-decal-crab-tracks-r2"], drownedvillage: ["a3-decal-rain-puddles-r2"], harbor: ["a3-decal-rain-puddles-r2"] };
+const SEA = new Set(["a3-shallow-sea-floor-r2", "a3-tidal-flat-floor-r2"]);
+for (const [id, sp] of Object.entries(module.exports)) {
+  if (id === "saltflat") {   // 이미 r2 — 거품만 새 경계 띠(가로·세로)로
+    sp.shore = "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-shore-foam-edge-h-r2 0.9 - a3-decal-shore-foam-edge-v-r2";
+    sp.dress = Object.fromEntries(Object.entries(sp.dress || {}).map(([z, d]) => [z, Object.assign({}, d, { props: d.props ? [...new Set([...d.props, ...d.props.map((p) => A3_ADJUNCT[p]).filter(Boolean)])] : d.props, decals: d.decals ? [...new Set(d.decals.map((x) => A3_DECAL[x] || x))] : d.decals })]));
+    continue;
+  }
+  const sw = A3_SWAP[id] || {};
+  sp.base = a3Art(sp.base, sw.all);
+  sp.zones = Object.fromEntries(Object.entries(sp.zones || {}).map(([k, v]) => {
+    const z = sw.zones && sw.zones[k];
+    return [k, z ? [z, neutral(v.split(" ")[1]), ...v.split(" ").slice(2)].join(" ") : a3Art(v, sw.all)];
+  }));
+  if (sp.roads) sp.roads = Object.fromEntries(Object.entries(sp.roads).map(([k, v]) => {
+    const r = sw.roads && sw.roads[k];
+    return [k, r ? [r, "1/1/1", ...v.split(" ").slice(2)].join(" ") : a3Art(v, sw.all)];
+  }));
+  sp.walls = Object.fromEntries(Object.entries(sp.walls || {}).map(([k, v]) => {
+    const [art, , ...name] = v.split(" ");
+    return [k, A3_WALL[art] ? `${A3_WALL[art]} ${name.join(" ")}${art === "shiphold" ? "" : " top=a3-coast-rock-top-r2"}` : v];
+  }));
+  const extra = A3_EXTRA_DECAL[id] || [];
+  sp.dress = Object.fromEntries(Object.entries(sp.dress || {}).map(([z, d], i) => {
+    const props = d.props ? [...new Set([...d.props, ...d.props.map((p) => A3_ADJUNCT[p]).filter(Boolean)])] : d.props;
+    let decals = d.decals ? [...new Set(d.decals.map((x) => A3_DECAL[x] || x))] : d.decals;
+    if (decals && extra.length) decals = [...new Set([...decals, extra[i % extra.length]])];
+    return [z, Object.assign({}, d, props ? { props } : {}, decals ? { decals } : {})];
+  }));
+  // 물(얕은 바다·갯벌) 구역이 있는 맵은 물가 거품 경계 띠를 켠다 (등대는 높은 칸 맵이라 낮은 칸 바다와 거품을 겹치지 않는다)
+  const arts = [sp.base, ...Object.values(sp.zones), ...Object.values(sp.roads || {})].map((v) => v.split(" ")[0]);
+  if (!sp.raised && arts.some((a) => SEA.has(a)) && arts.some((a) => !SEA.has(a))) sp.shore = "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-shore-foam-edge-h-r2 0.9 - a3-decal-shore-foam-edge-v-r2";
+}

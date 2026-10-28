@@ -387,6 +387,19 @@ script Util extends Logic
         return _EffectService:PlayEffect(ruid, instigator, center - Vector3(0, height * 0.5, 0), 0, Vector3(scale, scale, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = tint })   -- 바닥(0)과 몸(2) 사이: 몸을 덮지 않는다
     end
 
+    method table TeleFrames(string list, string element)
+        -- "phys=r0,r1,r2,r3;fire=…" 목록에서 속성 프레임 RUID 배열 (레이저 4프레임 · 모르는 속성·물리·마법은 phys)
+        local key = (element == "fire" or element == "poison" or element == "cold" or element == "light") and element or "phys"
+        for k, v in string.gmatch(list, "(%w+)=([%w,]+)") do
+            if k == key then
+                local out = {}
+                for r in string.gmatch(v, "%w+") do table.insert(out, r) end
+                return out
+            end
+        end
+        return {}
+    end
+
     method string TeleSprite(string list, string element)
         -- "phys=ruid;fire=ruid…" 목록에서 속성 그림 (모르는 속성·물리·마법은 phys)
         local key = (element == "fire" or element == "poison" or element == "cold" or element == "light") and element or "phys"
@@ -490,34 +503,39 @@ script Util extends Logic
 
     @ExecSpace("ClientOnly")
     method void BeamFx(Entity instigator, Vector2 a, Vector2 b, number width, string element, number seconds)
-        -- 레이저 (10-28 보스 공용 패턴): a → b 흰 심 + 속성 빛 띠를 seconds 동안 깜빡이며 그리고, 줄을 따라 불꽃을 튀긴다
+        -- 레이저 (10-28 보스 공용 패턴): a → b 흰 심 + 속성 빛 띠를 seconds 동안 4프레임(80ms)으로 일렁이게 그리고, 끝에 섬광 · 줄을 따라 불꽃을 튀긴다
+        -- 10-28 밤 코덱스 정식 그림은 128×64 — 길이는 len / 1.28, 굵기는 64px 높이 기준 (예전 임시 64×64 그림은 len / 0.64)
         if not isvalid(instigator) then return end
         local d = b - a
         local len = d:Magnitude()
         if len <= 0.01 then return end
+        local frames = self:TeleFrames(_GameConst.SpriteBeam, element)
+        if #frames == 0 then return end
         local mid = Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, 0)
         local rot = math.deg(math.atan(d.y, d.x))
-        local ruid = self:TeleSprite(_GameConst.SpriteBeam, element)
         local opt = { SortingLayer = "MapLayer0", OrderInLayer = 6 }
-        local serial = _EffectService:PlayEffect(ruid, instigator, mid, rot, Vector3(len / 0.64, width * 1.25 / 0.64, 1), true, opt)
+        local scale = Vector3(len / 1.28, width * 1.25 / 0.64, 1)
+        local serial = _EffectService:PlayEffect(frames[1], instigator, mid, rot, scale, true, opt)
+        local fs = width * 1.7 / 0.96
+        local flare = _EffectService:PlayEffect(self:TeleSprite(_GameConst.SpriteBeamFlare, element), instigator, Vector3(b.x, b.y, 0), 0, Vector3(fs, fs, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 7 })
         local n = math.max(2, math.floor(len / 1.4))
         for i = 0, n do
             local p = a + d * (i / n)
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, instigator, Vector3(p.x, p.y, 0), 0, Vector3(0.45, 0.45, 1), false, nil)
         end
-        local flick = 0
+        local tick = 0
         local timer = 0
         timer = _TimerService:SetTimerRepeat(function()
-            flick = flick + 1
+            tick = tick + 1
             local old = serial
-            local w = width * (flick % 2 == 0 and 1.25 or 1.0) / 0.64
-            serial = _EffectService:PlayEffect(ruid, instigator, mid, rot, Vector3(len / 0.64, w, 1), true, opt)
+            serial = _EffectService:PlayEffect(frames[tick % #frames + 1], instigator, mid, rot, scale, true, opt)
             if old ~= 0 then _EffectService:RemoveEffect(old) end
-            if flick * 0.06 >= seconds then
+            if tick * 0.08 >= seconds then
                 _TimerService:ClearTimer(timer)
                 _EffectService:RemoveEffect(serial)
+                if flare ~= 0 then _EffectService:RemoveEffect(flare) end
             end
-        end, 0.06)
+        end, 0.08)
     end
 
     @ExecSpace("ClientOnly")

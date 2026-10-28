@@ -464,3 +464,10 @@ const TEMPLE_HEIGHT = {
   temple3: [3, "low=a2-sand-sea-floor:0.54/0.5/0.46"], sanctum: [3, "below=temple-floor:0.55:0.6:1/0.86/0.66"],
 };
 for (const [id, [t, low]] of Object.entries(TEMPLE_HEIGHT)) module.exports[id].raised = `a2-temple-pillar-wall 1/1/1 사원 층 바닥 tiers=${t} top=zone face=a2-sandstone-wall-face ${low}`;
+
+// 10-28 밤 코덱스 그을린 사암 r2 (assets/codex-a2-handmade-v1): 사원 3층 태양 제단실 · 대사제의 성소 두 방 바닥.
+//   모서리 그을음이 칸마다 반복되는 것은 바닥 무늬(향 재 · 깨진 타일)를 더 뿌려 가린다 (요청서 a4 7-4)
+module.exports.temple3.zones = Object.assign({}, module.exports.temple3.zones, { d: "a2-scorched-sandstone-floor 1/0.96/0.9 태양 제단실" });
+module.exports.temple3.dress = Object.assign({}, module.exports.temple3.dress, { d: Object.assign({}, module.exports.temple3.dress.d, { decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles"], dn: 6 }) });
+module.exports.sanctum.zones = Object.assign({}, module.exports.sanctum.zones, { e: "a2-scorched-sandstone-floor 1/0.94/0.86 대사제의 성소" });
+module.exports.sanctum.dress = Object.assign({}, module.exports.sanctum.dress, { e: Object.assign({}, module.exports.sanctum.dress.e, { dn: 9 }) });
