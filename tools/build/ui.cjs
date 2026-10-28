@@ -528,18 +528,10 @@ function buildGameHud() {
     b.text(`Gate${i}`, "", { size: 22, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 34], ...outline, enable: false });
   }
 
-  // 연쇄 처치 (10-28 피드백 F2 #14-B): 왼쪽 가운데 위 「12연속 처치」 — 10·25·50·100 단계마다 색이 짙어진다 (HudMain.RenderStreak)
-  //   판 그림은 코덱스 feel-fx-v2 ui-killstreak-plate-1~4 (단계마다 HudMain이 바꿔 낀다, 10-28 전체 제작)
-  //   판은 그림(256×96)과 같은 비율로 1.6배 410×154 (예전 460×132는 가로만 늘어 장식이 일그러졌다). 글자는 판 안쪽 어두운 칸 가운데 —
-  //   4단 판은 위 장식이 커서 안쪽 칸이 아래로 내려가 있다 → 단계마다 글자 자리를 HudMain.RenderStreak가 옮긴다 (10-28 「30연속 처치 가운데가 안 맞음」)
-  b.sprite("KillStreak", { anchor: "middle-left", pivot: [0.5, 0.5], pos: [48 + 205, 230], rect_size: [410, 154], image_ruid: K.ui_killstreak_plate_1, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
-  b.text("KillStreak/Text", "", { size: 40, bold: true, color: "#F0D9A0", anchor: "middle-center", pos: [0, 2], rect_size: [290, 60], alignment: 4, bestfit: true, min_size: 28, max_size: 40, ...outline, outline_width: 0.25 });
-  // 줍기 단추 (10-28 #15-A 추가 지시 · PC 전용): 발밑 가까이 내 장비·룬이 떨어져 있을 때만 — 누르면 주변 것을 한 번에 줍는다 (HudMain.RenderPickup)
-  b.button("BtnPickup", "", { anchor: "bottom-center", pos: [-310, 236], rect_size: [96, 96], ...bg("btn_frame"), sprite_type: 1, enable: false });
-  //   단추 그림 안쪽 어두운 칸(위아래 14~82 · 양옆 해골 장식 안 50)에 아이콘과 글자를 함께 (10-28 메이커 캡처: 글자가 아래 테두리 선에 걸쳤다)
-  b.sprite("BtnPickup/Icon", { anchor: "middle-center", pos: [0, 12], rect_size: [46, 46], image_ruid: K.icon_pickup, color: WHITE, alpha: 1, sprite_type: 0 });
-  b.text("BtnPickup/Key", "줍기", { size: 16, bold: true, color: "#F4E2B0", anchor: "bottom-center", pos: [0, 14], rect_size: [50, 20], alignment: 4, ...outline });
-  k.pc("BtnPickup");
+  // 머리 위 콤보 (10-28 사용자: 「30마리 처치 판은 촌스럽다 — 메이플처럼 캐릭터 머리 위에 숫자로」): 「COMBO 12」 — HudMain이 머리 위로 옮기고
+  //   처치마다 툭 커졌다 줄어든다. 10·25·50·100에서 색이 짙어지고, 끊기면 흐려지며 사라진다 (HudMain.RenderStreak · RenderCombo)
+  //   PC 「줍기」 단추는 뺐다(10-28 사용자 「번잡」) — G 키 · 클릭 줍기 · 줍기 커서로 (ClickControl)
+  b.text("ComboHead", "", { size: 46, bold: true, color: "#FFFFFF", anchor: "middle-center", pos: [0, 0], rect_size: [420, 70], alignment: 4, ...outline, outline_width: 0.3, enable: false });
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)

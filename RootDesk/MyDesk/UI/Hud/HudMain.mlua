@@ -35,9 +35,10 @@ script HudMain extends Logic
     property Vector2 CamDamping = Vector2(0.8, 0.8)
     property Vector2 CamDeadZone = Vector2(0.03, 0.03)
     property Vector2 CamSoftZone = Vector2(0.5, 0.5)
-    property number PickupCheckAt = 0         -- 줍기 단추: 다음에 주변 전리품을 찾을 시각
-    property number PickupHintRadius = 2.0    -- 이 거리 안에 내 장비·룬이 있으면 줍기 단추를 보인다 (서버 PickNearbyRadius 2.2보다 조금 안쪽)
-    property boolean PickupShown = false
+    property integer ComboN = 0               -- 머리 위 콤보: 지금 보이는 수 (0 = 숨김)
+    property number ComboPunchAt = 0          -- 마지막으로 수가 오른 시각 (툭 커지는 연출)
+    property number ComboFadeAt = 0           -- 연쇄가 끊겨 흐려지기 시작한 시각 (0 = 아님)
+    property boolean ComboTierUp = false      -- 이번 오름이 단계(10·25·50·100)를 넘었다 (더 크게 튄다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -81,7 +82,6 @@ script HudMain extends Logic
             _UIKit:Connect("Bottom/Slots/Belt" .. tostring(i), function() self:UseBelt(index) end)
             _UIKit:ConnectHold("Bottom/Slots/Belt" .. tostring(i), function(event) self:BeltDown(index, event.TouchId) end, function(event) end)
         end
-        _UIKit:Connect("BtnPickup", function() self:PickupNearby() end)
         local menu = { { "Inv", "InvWin" }, { "Char", "CharWin" }, { "Skill", "SkillWin" }, { "Quest", "QuestWin" }, { "Social", "SocialWin" } }
         for _, m in ipairs(menu) do
             local win = m[2]
@@ -367,59 +367,54 @@ script HudMain extends Logic
         self:RenderTip(player, st)
         self:RenderSoulUi(player)
         self:RenderStreak(st)
-        self:RenderPickup()
     end
 
     @ExecSpace("ClientOnly")
     method void RenderStreak(PlayerStats st)
-        -- 연쇄 처치 카운터 (10-28 F2 #14-B): streakShowFrom(10)부터 왼쪽에 「N연속 처치」, 단계(10·25·50·100)마다 색이 짙어진다
+        -- 머리 위 콤보 (10-28 사용자 A안 · 글귀 「COMBO 12」): comboShowFrom(2)부터. 수가 오르면 글자를 바꾸고 툭 튀게, 끊기면 흐려진다.
+        -- 위치·크기는 매 프레임 RenderCombo가 (0.15초 갱신으로는 걸을 때 뒤처진다)
         local n = st ~= nil and st.KillStreak or 0
-        local show = n >= _GameData.streakShowFrom
-        _UIKit:SetEnabled("KillStreak", show)
-        if not show then return end
-        local color, tier = "#F0D9A0", 1
-        if n >= 100 then color, tier = "#FF6A4A", 4 elseif n >= 50 then color, tier = "#FF9A5A", 3 elseif n >= 25 then color, tier = "#FFD15A", 2 end
-        -- 판 그림 4단 (코덱스 feel-fx-v2 · 10·25·50·100연속)
-        _UIKit:SetIcon("KillStreak", _GameData:GetUiIcon("ui_killstreak_plate_" .. tostring(tier)))
-        -- 글자는 판 안쪽 어두운 칸 가운데: 1~3단은 판 가운데, 4단은 위 장식이 커서 칸이 아래로 내려가 있다 (그림 실측 × 1.6 · 메이커 캡처 30·100연속, 10-28)
-        _UIKit:SetPos("KillStreak/Text", Vector2(0, tier == 4 and -8 or 2))
-        _UIKit:SetText("KillStreak/Text", _UIKit:Colored(color, tostring(n)) .. "연속 처치")
-    end
-
-    @ExecSpace("ClientOnly")
-    method void RenderPickup()
-        -- 줍기 단추 (10-28 #15-A 추가 지시 · PC): 발밑 PickupHintRadius 안에 내 장비·룬이 있으면 보인다 (0.25초마다 찾는다)
         local now = _UtilLogic.ElapsedSeconds
-        if now < self.PickupCheckAt then return end
-        self.PickupCheckAt = now + 0.25
-        local me = _UserService.LocalPlayer
-        local near = false
-        if isvalid(me) and isvalid(me.CurrentMap) and not Environment:IsMobilePlatform() then
-            local p = _Util:Pos2(me)
-            local uid = me.PlayerComponent.UserId
-            for _, d in ipairs(me.CurrentMap:GetChildComponentsByTypeName("script.LootDrop", false)) do
-                ---@type LootDrop
-                local drop = d
-                if (drop.Kind == "item" or drop.Kind == "rune") and not drop.Taken and (drop.OwnerUserId == "" or drop.OwnerUserId == uid)
-                    and (_Util:Pos2(drop.Entity) - p):Magnitude() <= self.PickupHintRadius then near = true break end
+        if n >= _GameData.comboShowFrom then
+            if n ~= self.ComboN then
+                local function tier(k) if k >= 100 then return 4 elseif k >= 50 then return 3 elseif k >= 25 then return 2 elseif k >= _GameData.streakShowFrom then return 1 end return 0 end
+                self.ComboTierUp = tier(n) > tier(self.ComboN)
+                self.ComboN = n
+                self.ComboPunchAt = now
+                self.ComboFadeAt = 0
+                local color = "#FFFFFF"
+                if n >= 100 then color = "#FF4A6A" elseif n >= 50 then color = "#FF7A4A" elseif n >= 25 then color = "#FFB050" elseif n >= _GameData.streakShowFrom then color = "#FFE15A" end
+                _UIKit:SetText("ComboHead", _UIKit:Colored(color, "<size=55%>COMBO</size> " .. tostring(n)))
             end
-        end
-        if near ~= self.PickupShown then
-            self.PickupShown = near
-            _UIKit:SetEnabled("BtnPickup", near)
-            if near then log("[VRF] pickup button shown") end
+        elseif self.ComboN > 0 and self.ComboFadeAt == 0 then
+            self.ComboFadeAt = now
         end
     end
 
     @ExecSpace("ClientOnly")
-    method void PickupNearby()
-        -- 줍기 단추를 눌렀다: 주변 장비·룬을 한 번에 (서버가 거리·주인을 다시 확인한다)
-        local me = _UserService.LocalPlayer
-        ---@type PlayerInventory
-        local inv = isvalid(me) and me:GetComponent("script.PlayerInventory") or nil
-        if inv == nil then return end
-        inv:RequestPickNearby()
-        log("[VRF] pickup button pressed")
+    method void RenderCombo()
+        -- 머리 위 콤보를 캐릭터 머리 위에 붙이고, 툭 튀기(0.18초) · 끊기면 0.5초 동안 떠오르며 흐려진다
+        local player = _UserService.LocalPlayer
+        local now = _UtilLogic.ElapsedSeconds
+        local fade = self.ComboFadeAt > 0 and math.min(1, (now - self.ComboFadeAt) / 0.5) or 0
+        if fade >= 1 or not isvalid(player) then
+            self.ComboN = 0
+            self.ComboFadeAt = 0
+            _UIKit:SetEnabled("ComboHead", false)
+            return
+        end
+        local e = _UIKit:Get("ComboHead")
+        if not isvalid(e) then return end
+        e.Enable = not _UIKit:AnyWindowOpen()
+        local t = now - self.ComboPunchAt
+        local pop = math.max(0, 1 - t / 0.18) * (self.ComboTierUp and 0.7 or 0.4)
+        e.UITransformComponent.UIScale = Vector3(1 + pop, 1 + pop, 1)
+        _UIKit:SetPos("ComboHead", self:WorldToHud(_Util:Pos2(player) + Vector2(0, 1.35 + fade * 0.4)))   -- 머리 바로 위 (1.85는 위쪽 안내 띠에 걸렸다 — 메이커 10-28)
+        local text = e.TextGUIRendererComponent
+        local c = text.FontColor
+        text.FontColor = Color(c.r, c.g, c.b, 1 - fade)
+        local o = text.OutlineColor
+        text.OutlineColor = Color(o.r, o.g, o.b, 1 - fade)
     end
 
     @ExecSpace("ClientOnly")
@@ -444,7 +439,8 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
-        -- 경고 글씨는 캐릭터를 매 프레임 따라간다 (0.15초 갱신으로는 걸을 때 뒤처졌다). 떠 있을 때만
+        -- 경고 글씨·머리 위 콤보는 캐릭터를 매 프레임 따라간다 (0.15초 갱신으로는 걸을 때 뒤처졌다). 떠 있을 때만
+        if self.ComboN > 0 then self:RenderCombo() end
         if self.WarnUntil > 0 then
             self:RenderWarn()
             if _UtilLogic.ElapsedSeconds >= self.WarnUntil then self.WarnUntil = 0 end

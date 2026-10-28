@@ -208,7 +208,6 @@ script PlayerStats extends Component
     end
 
     @ExecSpace("ServerOnly")
-    @ExecSpace("ServerOnly")
     method void OnStreakKill(integer exp)
         -- 내가 막타(소환수 포함)를 친 처치: streakWindowSec 안에 이어지면 연쇄 +1, 아니면 지난 연쇄를 끝내고 새로 시작
         local now = _UtilLogic.ElapsedSeconds
@@ -235,7 +234,8 @@ script PlayerStats extends Component
         local pct = _GameData.streakBonusPct10
         if n >= 100 then pct = _GameData.streakBonusPct100 elseif n >= 50 then pct = _GameData.streakBonusPct50 elseif n >= 25 then pct = _GameData.streakBonusPct25 end
         local bonus = math.floor(base * pct / 100 + 0.5)
-        if bonus > 0 then self:GainExp(bonus) end
+        if bonus <= 0 then return end   -- 낮은 몬스터라 보너스가 0이면 「+0」을 띄우지 않는다 (머리 위 콤보가 흐려지며 끝난다)
+        self:GainExp(bonus)
         self:ShowStreakEnd(n, bonus, self.Entity.PlayerComponent.UserId)
         log(string.format("[VRF] streak end n=%d base=%d pct=%d bonus=%d", n, math.floor(base), math.floor(pct), bonus))
     end
@@ -244,7 +244,7 @@ script PlayerStats extends Component
     method void ShowStreakEnd(integer n, integer bonus)
         -- 연쇄 끝 보상 글자 (본인 화면 · 캐릭터 머리 위)
         if self.Entity ~= _UserService.LocalPlayer then return end
-        _HudMain:ExtractPop(_Util:Pos2(self.Entity), tostring(n) .. "연속 처치 · 경험치 +" .. tostring(bonus), Color(1, 0.78, 0.4, 1))
+        _HudMain:ExtractPop(_Util:Pos2(self.Entity), "COMBO " .. tostring(n) .. " · 경험치 +" .. tostring(bonus), Color(1, 0.78, 0.4, 1))
     end
 
     method integer ExpForKill(integer monsterLevel, integer grade)

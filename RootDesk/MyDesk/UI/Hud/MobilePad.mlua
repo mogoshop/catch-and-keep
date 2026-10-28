@@ -18,6 +18,8 @@ script MobilePad extends Logic
     property boolean GestureBasic = false
     property Entity GestureMap = nil
     property number AimDeadZone = 18
+    property boolean PickMode = false        -- 공격 단추가 「줍기」로 바뀐 상태 (10-28 사용자: 손으로 주울 장비 가까이 · 싸우는 중이 아닐 때)
+    property number PickCheckAt = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -182,9 +184,10 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void AttackDown()
-        -- 누름: 바로 한 번. 기본 공격이면 누르고 있는 동안 반복 (Poll에서)
+        -- 누름: 바로 한 번. 기본 공격이면 누르고 있는 동안 반복 (Poll에서). 「줍기」면 한 번만
         if _UIKit:AnyWindowOpen() then self.Holding = false return end
         self:Attack()
+        if self.PickMode then return end
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         self.Holding = not self.EditMode and (book == nil or book:GetSlotSkill(5) == "")
@@ -213,8 +216,64 @@ script MobilePad extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void UpdatePickMode(Entity player)
+        -- 0.25초마다: 손으로 주울 장비(일반·마법)가 mobilePickRadius 안에 있고, mobilePickSafeRadius 안에 살아 있는 몬스터가 없으면 공격 단추 = 줍기
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.PickCheckAt then return end
+        self.PickCheckAt = now + 0.25
+        local want = false
+        -- 가방이 가득 차면 주울 수 없으니 공격 단추 그대로 (줍기로 남아 싸우지 못하는 일 없게)
+        ---@type PlayerInventory
+        local inv = isvalid(player) and player:GetComponent("script.PlayerInventory") or nil
+        local bagFull = inv ~= nil and inv.BagDigest ~= "" and select(2, string.gsub(inv.BagDigest, ";", "")) + 1 >= inv.BagSize
+        if isvalid(player) and isvalid(player.CurrentMap) and not self.EditMode and not bagFull then
+            local p = _Util:Pos2(player)
+            local uid = player.PlayerComponent.UserId
+            for _, d in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.LootDrop", false)) do
+                ---@type LootDrop
+                local drop = d
+                if drop.Kind == "item" and drop.Rarity < 2 and not drop.Taken and (drop.OwnerUserId == "" or drop.OwnerUserId == uid)
+                    and (_Util:Pos2(drop.Entity) - p):Magnitude() <= _GameData.mobilePickRadius then
+                    want = true
+                    break
+                end
+            end
+            if want then
+                for _, c in ipairs(player.CurrentMap:GetChildComponentsByTypeName("script.Monster", true)) do
+                    ---@type Monster
+                    local m = c
+                    if isvalid(m.Entity) and m.Entity.Enable and not m.IsDead and (_Util:Pos2(m.Entity) - p):Magnitude() <= _GameData.mobilePickSafeRadius then
+                        want = false
+                        break
+                    end
+                end
+            end
+        end
+        if want == self.PickMode then return end
+        self.PickMode = want
+        if want then
+            self.Holding = false
+            _UIKit:SetIcon(self.Root .. "/Attack/Icon", _GameData:GetUiIcon("icon_pickup"))
+            _UIKit:SetText(self.Root .. "/Attack/Label", "줍기")
+        else
+            self.RenderKey = ""   -- 다음 Poll에서 공격·스킬 아이콘으로 되돌린다
+        end
+        log("[VRF] mobile attack button pick=" .. tostring(want))
+    end
+
+    @ExecSpace("ClientOnly")
     method void Attack()
         if _UIKit:AnyWindowOpen() then self.Holding = false return end
+        -- 「줍기」로 바뀐 공격 단추: 주변 장비를 줍는다 (10-28 사용자)
+        if self.PickMode and not self.EditMode then
+            self.Holding = false
+            local player = _UserService.LocalPlayer
+            ---@type PlayerInventory
+            local inv = isvalid(player) and player:GetComponent("script.PlayerInventory") or nil
+            if inv ~= nil then inv:RequestPickNearby() end
+            log("[VRF] mobile pickup pressed")
+            return
+        end
         -- 편집 모드면 큰 버튼(5번 칸)에 넣을 스킬 고르기. 스킬이 들어 있으면 그 스킬, 아니면 기본 공격
         if self.EditMode then
             _SkillPicker:Open(5)
@@ -306,6 +365,7 @@ script MobilePad extends Logic
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if book == nil or belt == nil then return end
+        self:UpdatePickMode(player)
         self:HoldTick()
         -- 혼 추출 버튼: 손 닿는 거리에 내 혼이 있을 때만 (10-24: 그림자 소환을 배우지 않아도)
         ---@type SoulExtractor
@@ -334,9 +394,12 @@ script MobilePad extends Logic
             if id ~= "" then icon = _SkillData:Get(id).icon end
             _UIKit:SetIcon(self.Root .. "/Skills/S" .. tostring(i) .. "/Icon", icon)
         end
-        -- 큰 버튼: 스킬이 들어 있으면 그 아이콘·이름, 아니면 칼·공격
+        -- 큰 버튼: 스킬이 들어 있으면 그 아이콘·이름, 아니면 칼·공격 (줍기로 바뀌어 있으면 그대로)
         local main = book:GetSlotSkill(5)
-        if main ~= "" then
+        if self.PickMode then
+            _UIKit:SetIcon(self.Root .. "/Attack/Icon", _GameData:GetUiIcon("icon_pickup"))
+            _UIKit:SetText(self.Root .. "/Attack/Label", "줍기")
+        elseif main ~= "" then
             local def = _SkillData:Get(main)
             _UIKit:SetIcon(self.Root .. "/Attack/Icon", def.icon)
             _UIKit:SetText(self.Root .. "/Attack/Label", _UIKit:Clip(def.name, 5))
