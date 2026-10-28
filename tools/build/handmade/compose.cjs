@@ -471,6 +471,7 @@ function blueprintText(id, spec, grid, mapRow) {
   for (const [ch, r] of Object.entries(spec.roads || {})) L.push(`;road ${ch} ${r}`);
   for (const [ch, wl] of Object.entries(spec.walls)) L.push(`;wall ${ch} ${wl}`);
   if (spec.raised) L.push(`;raised ${spec.raised}`);
+  if (spec.shore) L.push(`;shore ${spec.shore}`);   // 물가 거품: <바다 그림> <거품 그림> [크기] [색] (lib.cjs 3-1)
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);

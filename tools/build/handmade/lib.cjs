@@ -54,6 +54,7 @@ function parseBlueprint(id) {
         bp.walls[m[1]] = { atlas: m[2], tint: m[3], name: rest.filter((t) => !t.startsWith("top=")).join(" "), top: top[0] || "", topTint: top[1] || "" };
       }
       else if (m[0] === "raised") bp.raised = { atlas: m[1], tint: m[2], name: m.slice(3).join(" ") };
+      else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       continue;
     }
@@ -289,6 +290,66 @@ function artEntities(d, ctx, bp, rows, func) {
       cur = on ? { ch: on, x, len: 1 } : null;
     }
   }
+  // 3-1) 물가 거품 (;shore <물 그림[+물 그림…]> <거품 그림> [크기] [색]) — 10-28 액트 3 「얕은 바다」: 청록 바다와 모래가 칸 단위로 맞닿아
+  //   네모 계단이 드러났다 → 바다 칸과 다른 바닥 칸이 맞닿은 변을 따라 거품 띠를 이어 깐다 (세로 변은 90도 돌린다)
+  let foamN = 0;
+  if (bp.shore) {
+    const floorArt = (x, y) => {
+      const ch = bp.at(x, y);
+      if (ch !== null && ch in bp.roads) return bp.roads[ch].art;
+      const z = bp.zones[bp.zoneOf(x, y)];
+      return (z && z.art) || bp.base.art;
+    };
+    // 물끼리(얕은 바다 ↔ 갯벌)는 거품 없이, 물 ↔ 뭍(모래) 변에만
+    const isSea = (x, y) => bp.isFloor(x, y) && bp.shore.sea.has(floorArt(x, y));
+    const isLand = (x, y) => bp.isFloor(x, y) && !bp.shore.sea.has(floorArt(x, y));
+    const fsp = spriteOf(table, bp.shore.foam, `${d.id} 물가 거품`);
+    const fsc = baseScale(fsp, ctx.propScale) * bp.shore.scale;
+    const flen = (num(fsp.w, 256) * fsc) / 100, step = flen * 0.72;
+    const ROT90 = { Rotation: { x: 0, y: 0, z: 90 }, QuaternionRotation: { x: 0, y: 0, z: 0.7071068, w: 0.7071068 }, ZRotation: 90 };
+    const foam = (x, y, vertical, scaleMul) => {
+      const o = sprite(fsp.ruid, null, 1);
+      o["MOD.Core.SpriteRendererComponent"].FlipX = foamN % 2 === 1;
+      if (bp.shore.tint) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(bp.shore.tint);
+      o["MOD.Core.TransformComponent"] = Object.assign({ Scale: vec3(fsc * scaleMul) }, vertical ? ROT90 : {});
+      out.push({ name: `ArtFoam${++foamN}`, pos: [r3(x), r3(y), -0.012], overrides: o });
+    };
+    // 맞닿은 변을 줄(가로 변은 x로, 세로 변은 y로)마다 이어진 구간으로 묶어 step 간격으로 깐다. 짧은 구간은 작게 하나
+    const lay = (runs, vertical) => {
+      for (const [line, a, bEnd] of runs) {
+        const n = bEnd - a + 1;
+        if (n * 1 < flen * 0.5) { foam(vertical ? line : (a + bEnd + 1) / 2, vertical ? (a + bEnd + 1) / 2 : line, vertical, Math.max(0.45, n / flen)); continue; }
+        const cnt = Math.max(1, Math.round(n / step));
+        for (let k = 0; k < cnt; k++) {
+          const t = a + (n * (k + 0.5)) / cnt;
+          foam(vertical ? line : t, vertical ? t : line, vertical, 1);
+        }
+      }
+    };
+    const hRuns = [], vRuns = [];
+    for (let y = b.y0; y < b.y1; y++) {   // (x, y) ↔ (x, y + 1) 사이 가로 변: 선 y + 1
+      let st = null;
+      for (let x = b.x0; x <= b.x1 + 1; x++) {
+        const on = x <= b.x1 && ((isSea(x, y) && isLand(x, y + 1)) || (isLand(x, y) && isSea(x, y + 1)));
+        if (on && st === null) st = x;
+        if (!on && st !== null) { hRuns.push([y + 1, st, x - 1]); st = null; }
+      }
+    }
+    for (let x = b.x0; x < b.x1; x++) {   // (x, y) ↔ (x + 1, y) 사이 세로 변: 선 x + 1
+      let st = null;
+      for (let y = b.y0; y <= b.y1 + 1; y++) {
+        const on = y <= b.y1 && ((isSea(x, y) && isLand(x + 1, y)) || (isLand(x, y) && isSea(x + 1, y)));
+        if (on && st === null) st = y;
+        if (!on && st !== null) { vRuns.push([x + 1, st, y - 1]); st = null; }
+      }
+    }
+    lay(hRuns, false);
+    // 세로 변: 그림을 90도 돌리면 번개·금처럼 보였다(메이커 비교) → 돌리지 않고 작은 거품을 0.55칸마다 좌우로 엇갈려 쌓는다
+    for (const [line, a, bEnd] of vRuns) {
+      const n = bEnd - a + 1, cnt = Math.max(1, Math.round(n / 0.55));
+      for (let k = 0; k < cnt; k++) foam(line + (k % 2 ? 0.12 : -0.12), a + (n * (k + 0.5)) / cnt, false, 0.42);
+    }
+  }
   // 4) 벽 — 바닥에 드러난 면의 조각 (layout.cjs wallRuns와 같은 규칙), 벽 글자마다 다른 9조각 묶음
   const f = (x, y) => bp.isFloor(x, y);
   const pieceAt = pieceBy(f);
@@ -400,7 +461,7 @@ function artEntities(d, ctx, bp, rows, func) {
       if (placed < n) warn.push(`${where}: 흩뿌림 ${n}개 중 ${placed}개만 자리를 찾음`);
     } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
-  return { entities: out, blocked, warn, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN } };
+  return { entities: out, blocked, warn, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN } };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────

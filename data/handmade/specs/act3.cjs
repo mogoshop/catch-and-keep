@@ -94,6 +94,7 @@ module.exports = {
       g: "a3-tidal-flat-floor-r2 1/1/1 동쪽 둑",
     },
     roads: { "=": "a3-wet-sand-floor-r2 0.8/0.84/0.88 둑길", "-": "a3-tidal-flat-floor-r2 0.92/0.96/0.98 갯골 길" },
+    shore: "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-foam-line 0.9 0.92/0.96/1",   // 물(얕은 바다·갯벌)과 모래가 맞닿은 변을 따라 거품 띠 (코덱스 경계 거품 띠가 오면 바꾼다)
     places: [
       E("a", "갯벌 어귀", -25, 2, 6, 5),
       E("b", "고래 뼈 모래톱", -10, 12, 9, 6),
