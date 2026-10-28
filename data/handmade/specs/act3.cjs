@@ -79,20 +79,21 @@ module.exports = {
     size: [64, 44],
     title: "소금 갯벌",
     story: ["항구를 나서면 썰물에 드러난 갯벌. 둑길은 물웅덩이(웨이포인트)를 지나 동쪽 둑으로 이어진다.", "북서쪽 거대한 고래 뼈, 남서쪽 어부 야영지, 북동쪽 집게 동굴 어귀, 남동쪽 소금 결정 밭."],
-    // 10-28 코덱스 액트 3 샘플(a3-handmade-v1) 첫 적용 맵: 바탕 = 젖은 모래, 갯벌은 어귀·웅덩이·둑 + 길 + 따개비 해안 바위벽.
-    // 납품 모래가 주황빛이라 액트 3 회청색 쪽으로 살짝 차갑게. 길 그림(판자 둑길·젖은 자갈길)이 오기 전까지 길은 어둡게 물들인 갯벌(젖은 갯골)
-    base: "a3-wet-sand-floor 0.9/0.95/1",
-    walls: { "#": "a3-coast-rock-wall 1/1/1 따개비 해안 바위" },
+    // 10-28 사용자 「액트 3은 바다인 게 확 느껴지게 — 얕은 바다」 → 코덱스 r2 샘플(a3-handmade-v1 *-r2): 바탕 = 얕은 바다,
+    // 모래톱(고래 뼈 · 소금 결정 밭)·야영지·동굴 어귀 = 물 빠진 회청 모래, 어귀·둑 = 회청 갯벌, 벽 = 푸른 동굴 색 해안 바위.
+    // 둑길은 얕은 물을 가르는 모래 둑, 갯골 길은 갯벌. 회청 모래는 채도가 낮아 횃불 빛에 하얗게 떠서(눈밭처럼) 한 단계 어둡고 차갑게 (메이커 비교)
+    base: "a3-shallow-sea-floor-r2 1/1/1",
+    walls: { "#": "a3-coast-rock-wall-r2 1/1/1 따개비 해안 바위" },
     zones: {
-      a: "a3-tidal-flat-floor 0.92/0.96/1 갯벌 어귀",
-      b: "a3-wet-sand-floor 0.94/0.98/1 고래 뼈 모래톱",
-      c: "a3-tidal-flat-floor 0.8/0.9/0.98 물웅덩이",
-      d: "a3-wet-sand-floor 0.88/0.9/0.92 어부 야영지",
-      e: "a3-wet-sand-floor 0.78/0.84/0.9 집게 동굴 어귀",
-      f: "a3-wet-sand-floor 1/1.02/1.06 소금 결정 밭",
-      g: "a3-tidal-flat-floor 0.94/0.97/1 동쪽 둑",
+      a: "a3-tidal-flat-floor-r2 1/1/1 갯벌 어귀",
+      b: "a3-wet-sand-floor-r2 0.74/0.8/0.86 고래 뼈 모래톱",
+      c: "a3-shallow-sea-floor-r2 0.86/0.92/0.96 물웅덩이",
+      d: "a3-wet-sand-floor-r2 0.7/0.74/0.78 어부 야영지",
+      e: "a3-wet-sand-floor-r2 0.66/0.72/0.78 집게 동굴 어귀",
+      f: "a3-wet-sand-floor-r2 0.84/0.88/0.92 소금 결정 밭",
+      g: "a3-tidal-flat-floor-r2 1/1/1 동쪽 둑",
     },
-    roads: { "=": "a3-tidal-flat-floor 0.8/0.86/0.92 둑길", "-": "a3-tidal-flat-floor 0.7/0.8/0.9 갯골 길" },
+    roads: { "=": "a3-wet-sand-floor-r2 0.8/0.84/0.88 둑길", "-": "a3-tidal-flat-floor-r2 0.92/0.96/0.98 갯골 길" },
     places: [
       E("a", "갯벌 어귀", -25, 2, 6, 5),
       E("b", "고래 뼈 모래톱", -10, 12, 9, 6),
@@ -115,7 +116,7 @@ module.exports = {
     dress: {
       a: { props: ["scorched-rock", "salt-crystals", "a3-kelp-rock"], n: 6, decals: ["a3-decal-seaweed", "a3-decal-shells", "a3-decal-foam-line"], dn: 3 },
       b: { sets: ["a3_leviathan"], props: ["a3-kelp-rock", "a3-crab-shell-pile", "scorched-rock"], n: 6, decals: ["a3-decal-seaweed", "a3-decal-shells"], dn: 4 },
-      c: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 6, decals: ["a3-decal-tide-puddle", "a3-decal-foam-line"], dn: 6 },
+      c: { sets: ["a3_tidepool"], props: ["tidal-pool", "a3-kelp-rock"], n: 6, decals: ["a3-decal-foam-line", "a3-decal-seaweed"], dn: 5 },
       d: { sets: ["a3_fish_camp"], props: ["fishing-net", "harbor-barrels", "a3-broken-trap"], n: 5, decals: ["a3-decal-rope-scraps", "a3-decal-shells"], dn: 3 },
       e: { props: ["salt-crystals", "a3-crab-shell-pile", "a3-crab-in-bucket"], n: 6, decals: ["a3-decal-shells", "a3-decal-seaweed"], dn: 4 },
       f: { sets: ["a3_lm_salt_spire"], props: ["salt-crystals", "scorched-rock", "tidal-pool"], n: 8, decals: ["a3-decal-salt-crust"], dn: 5 },
