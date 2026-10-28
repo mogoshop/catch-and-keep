@@ -688,7 +688,7 @@ script MonsterAttack extends AttackComponent
             self.ChainTarget = cur
             self:AttackFast(CircleShape(Vector2(p.x, p.y + 0.3), 0.6), "monster.chain", nil)
             ---@type PlayerStats
-            local shocked = cur:GetComponent("script.PlayerStats")
+            local shocked = isvalid(cur) and cur:GetComponent("script.PlayerStats") or nil   -- 이 번개에 쓰러진 소환수는 곧바로 지워진다 (10-28 오류 로그)
             if shocked ~= nil then shocked.ShockUntil = _UtilLogic.ServerElapsedSeconds + 2.5 end   -- 버프 줄 「감전」 칩 (표시만)
             count = count + 1
             mul = mul * 0.85
@@ -778,7 +778,6 @@ script MonsterAttack extends AttackComponent
         return Color(1, 1, 1, 1)
     end
 
-    @ExecSpace("ServerOnly")
     @ExecSpace("ServerOnly")
     method void TauntBy(Entity taunter, number seconds)
         -- 방패 해골의 도발: seconds 동안 사거리 안이면 그 해골부터 노리고, 쫓을 대상도 그 해골로

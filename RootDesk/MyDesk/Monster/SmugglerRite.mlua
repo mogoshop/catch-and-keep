@@ -1,0 +1,171 @@
+-- 액트 3 「밀수꾼 두목 렌」 화약통 (docs/design/40 §2 — 10-28 사용자 B안).
+--   싸우는 동안 BarrelInterval초마다 화약통 3개: 가장 가까운 플레이어 발밑 1 + 소환수가 가장 많이 뭉친 자리 2
+--   (소환수가 없으면 그 플레이어 둘레). BarrelWarn초 예고 뒤 폭발 — 플레이어는 공격력 × BarrelMult 화염 피해,
+--   소환수는 최대 생명의 BarrelSummonPct%. 생명 50% 아래에서는 CannonInterval초마다 대포 탄막(skill_barrage)을 더한다.
+--   반투명(MonsterBehavior phase, 받는 피해 -50%)은 그대로.
+-- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아간다.
+@Component
+script SmugglerRite extends Component
+
+    property number BarrelInterval = 8
+    property number BarrelWarn = 2
+    property number BarrelRadius = 1.5
+    property number BarrelMult = 1.3
+    property number BarrelSummonPct = 30
+    property number BarrelTimer = 3
+    property number CannonInterval = 6
+    property number CannonTimer = 2
+    property number EngageRange = 10
+    property string BarrelRuid = "672988448ad14e4fa0b91e3aed047ec1"   -- harbor-barrels (art_sprites)
+    property integer Volley = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 시작 표시
+        log("[VRF] SmugglerRite ready")
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버만: 가까이 플레이어가 있으면 화약통 · 50% 아래 대포
+        if not self:IsServer() then return end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        local map = self.Entity.CurrentMap
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(map) == 0 then
+            self:ResetRite()
+            return
+        end
+        local here = _Util:Pos2(self.Entity)
+        if #_Util:PlayersNear(map, here, self.EngageRange) == 0 then return end
+        self.BarrelTimer = self.BarrelTimer - delta
+        if self.BarrelTimer <= 0 then
+            self.BarrelTimer = self.BarrelInterval
+            self:ThrowBarrels()
+        end
+        if monster.Hp <= monster.MaxHp * 0.5 then
+            self.CannonTimer = self.CannonTimer - delta
+            if self.CannonTimer <= 0 then
+                self.CannonTimer = self.CannonInterval
+                local near = _Util:PlayersNear(map, here, self.EngageRange)
+                ---@type MonsterTraits
+                local traits = self.Entity:GetComponent("script.MonsterTraits")
+                if traits ~= nil and #near > 0 then
+                    traits:CastSkill("skill_barrage", near[1])
+                    log("[VRF] smuggler cannon")
+                end
+            end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ThrowBarrels()
+        -- 화약통 자리: 가장 가까운 플레이어 1 + 소환수 뭉친 자리 2 (없으면 그 플레이어 둘레)
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local target = nil
+        local best = 99
+        for _, p in ipairs(_Util:PlayersNear(map, here, self.EngageRange)) do
+            local d = (_Util:Pos2(p) - here):Magnitude()
+            if d < best then
+                best = d
+                target = p
+            end
+        end
+        if target == nil then return end
+        local spots = { _Util:Pos2(target) }
+        local units = {}
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and not u.Dead and (_Util:Pos2(u.Entity) - here):Magnitude() <= self.EngageRange then table.insert(units, _Util:Pos2(u.Entity)) end
+        end
+        for k = 1, 2 do
+            local pick = nil
+            local bestN = 0
+            for _, a in ipairs(units) do
+                local far = true
+                for _, s in ipairs(spots) do if (a - s):Magnitude() < self.BarrelRadius * 1.5 then far = false end end
+                if far then
+                    local n = 0
+                    for _, b in ipairs(units) do if (a - b):Magnitude() <= self.BarrelRadius then n = n + 1 end end
+                    if n > bestN then
+                        bestN = n
+                        pick = a
+                    end
+                end
+            end
+            if pick == nil then
+                local ang = _UtilLogic:RandomDouble() * math.pi * 2
+                pick = _Util:ReachablePoint(map, spots[1], spots[1] + Vector2(math.cos(ang) * 2.4, math.sin(ang) * 1.8), 0.4)
+            end
+            table.insert(spots, pick)
+        end
+        self.Volley = self.Volley + 1
+        local flat = {}
+        for _, s in ipairs(spots) do
+            table.insert(flat, s.x)
+            table.insert(flat, s.y)
+        end
+        self:BarrelWarnFx(flat, self.BarrelRadius, self.BarrelWarn)
+        log(string.format("[VRF] smuggler barrels %d spots=%d summons=%d", self.Volley, #spots, #units))
+        local serial = self.Volley
+        _TimerService:SetTimerOnce(function()
+            ---@type Monster
+            local monster = self.Entity:GetComponent("script.Monster")
+            if not isvalid(self.Entity) or monster == nil or monster.IsDead or self.Entity.CurrentMap ~= map or self.Volley ~= serial then return end
+            ---@type MonsterAttack
+            local atk = self.Entity:GetComponent("script.MonsterAttack")
+            local hitUnits = 0
+            for _, s in ipairs(spots) do
+                if atk ~= nil then atk:SlamWithElement(s, self.BarrelRadius, atk.Damage * self.BarrelMult, "fire") end
+                for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+                    ---@type ShadowUnit
+                    local u = c
+                    if isvalid(u.Entity) and u.Entity.Enable and not u.Dead and (_Util:Pos2(u.Entity) - s):Magnitude() <= self.BarrelRadius then
+                        u:Hurt(math.floor(u.MaxHp * self.BarrelSummonPct / 100))
+                        hitUnits = hitUnits + 1
+                    end
+                end
+            end
+            self:BarrelBoomFx(flat, self.BarrelRadius)
+            log(string.format("[VRF] smuggler barrels boom %d summonsHit=%d", serial, hitUnits))
+        end, self.BarrelWarn)
+    end
+
+    @ExecSpace("Multicast")
+    method void BarrelWarnFx(table spots, number radius, number seconds)
+        -- 예고: 자리마다 화약통 그림 + 화염 예고 원 (seconds 뒤 통을 지운다)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        for i = 1, #spots, 2 do
+            local at = Vector2(spots[i], spots[i + 1])
+            _Util:Telegraph(self.Entity, at, radius, "fire", seconds)
+            local fx = _EffectService:PlayEffect(self.BarrelRuid, self.Entity, Vector3(at.x, at.y - 0.25, 0), 0, Vector3(0.6, 0.6, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 20 })
+            _TimerService:SetTimerOnce(function() if fx ~= nil and fx ~= 0 then _EffectService:RemoveEffect(fx) end end, seconds)
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void BarrelBoomFx(table spots, number radius)
+        -- 폭발: 자리마다 불꽃 + 화면 흔들림
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        for i = 1, #spots, 2 do
+            _Util:ElementBurst(self.Entity, Vector3(spots[i], spots[i + 1], 0), radius, "fire", Color(1, 0.45, 0.12, 1))
+        end
+        local cam = _CameraService:GetCurrentCameraComponent()
+        if isvalid(cam) then cam:ShakeCamera(0.3, 0.3) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로 (터지기 전인 화약통은 취소)
+        if self.BarrelTimer == 3 and self.CannonTimer == 2 then return end
+        self.BarrelTimer = 3
+        self.CannonTimer = 2
+        self.Volley = self.Volley + 1
+        log("[VRF] SmugglerRite reset")
+    end
+
+end

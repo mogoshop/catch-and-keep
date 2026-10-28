@@ -107,6 +107,8 @@ function buildMonster(m, boss) {
     if (boss.basicMul) b.value("script.MonsterAttack", "BasicMul", num(boss.basicMul), "double");
     if (boss.extra) b.component(boss.extra);
   }
+  // 공통 보스 틀 없이 의식만 붙는 보스 (monsters.csv rite — 처형인·근위대장·밀수꾼 두목, docs/design/40)
+  if (m.rite) b.component(m.rite);
   b.write(P.model(`Region${m.region}/${m.model}`));
 }
 

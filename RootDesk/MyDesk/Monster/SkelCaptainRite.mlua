@@ -1,0 +1,129 @@
+-- 액트 1 「근위대장 바르그」 방패벽 (docs/design/40 §2 — 10-28 사용자 A안).
+--   생명 66% · 33%에서 한 번씩: 해골 근위병 GuardCount를 부르고, 근위병이 하나라도 살아 있는 동안
+--   바르그가 받는 피해 × GuardTaken (푸른 방패 빛). 근위병을 먼저 쓰러뜨리면 방패가 풀린다.
+--   공통 보스 틀(BossPattern)은 붙이지 않는다 — 액트 1 초반 난도를 올리지 않는다.
+-- 죽거나 맵에 플레이어가 없으면 처음 상태로 돌아가고 남은 근위병을 치운다.
+@Component
+script SkelCaptainRite extends Component
+
+    property integer Step = 0                -- 0 = 아직 · 1 = 66% 지남 · 2 = 33% 지남
+    property integer GuardCount = 3
+    property string GuardModel = "skelwarrior"
+    property number GuardTaken = 0.4
+    property table Guards = {}
+    @Sync
+    property boolean Shielded = false
+    property number CheckTimer = 0
+    property integer ShieldFx = 0            -- 클라이언트: 방패 빛 입자
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 시작 표시
+        log("[VRF] SkelCaptainRite ready")
+    end
+
+    method void OnUpdate(number delta)
+        -- 서버: 문턱마다 근위병 · 0.25초마다 방패 상태 / 클라이언트: 방패 빛
+        if not self:IsServer() then
+            self:SyncShieldFx()
+            return
+        end
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster == nil then return end
+        if monster.IsDead or not self.Entity.Enable or #_Util:PlayersInMap(self.Entity.CurrentMap) == 0 then
+            self:ResetRite()
+            return
+        end
+        local ratio = monster.Hp / math.max(1, monster.MaxHp)
+        if (self.Step == 0 and ratio <= 0.66) or (self.Step == 1 and ratio <= 0.33) then
+            self.Step = ratio <= 0.33 and 2 or self.Step + 1
+            self:CallGuards(monster)
+        end
+        self.CheckTimer = self.CheckTimer - delta
+        if self.CheckTimer > 0 then return end
+        self.CheckTimer = 0.25
+        local alive = 0
+        for _, e in ipairs(self.Guards) do
+            if isvalid(e) then
+                ---@type Monster
+                local g = e:GetComponent("script.Monster")
+                if g ~= nil and not g.IsDead then alive = alive + 1 end
+            end
+        end
+        local on = alive > 0
+        if on ~= self.Shielded then
+            self.Shielded = on
+            monster.RiteTakenMult = on and self.GuardTaken or 1
+            log("[VRF] skel captain shield " .. (on and "on" or "off") .. " guards=" .. tostring(alive))
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void CallGuards(Monster boss)
+        -- 바르그 둘레에 근위병 (보스 레벨 -2, 다시 나타나지 않는다)
+        local map = self.Entity.CurrentMap
+        local here = _Util:Pos2(self.Entity)
+        local level = math.max(1, boss.Level - 2)
+        for i = 1, self.GuardCount do
+            local ang = math.pi * 2 * i / self.GuardCount + 0.3
+            local at = _Util:ReachablePoint(map, here, here + Vector2(math.cos(ang) * 1.8, math.sin(ang) * 1.3), 0.4)
+            local e = _SpawnService:SpawnByModelId(self.GuardModel, "CaptainGuard", Vector3(at.x, at.y, 0), map)
+            if isvalid(e) then
+                table.insert(self.Guards, e)
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, false)
+                end, nil)
+            end
+        end
+        self:CallFx()
+        log("[VRF] skel captain guards called step=" .. tostring(self.Step) .. " n=" .. tostring(#self.Guards))
+    end
+
+    @ExecSpace("Multicast")
+    method void CallFx()
+        -- 부름: 푸른 기운이 바르그에게 모인다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.8, 0), 0, Vector3(1.2, 1.2, 1), false, { Color = Color(0.45, 0.7, 1, 1) })
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SyncShieldFx()
+        -- 방패가 켜진 동안 몸에 푸른 빛 (Shielded 동기화를 따라간다)
+        local want = self.Shielded and self.Entity.Enable
+        if want and self.ShieldFx == 0 then
+            self.ShieldFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Enchant, self.Entity, Vector3(0, 0.7, 0), 0, Vector3(1.3, 1.3, 1), true, { Color = Color(0.45, 0.7, 1, 0.8) })
+        elseif not want and self.ShieldFx ~= 0 then
+            _ParticleService:RemoveParticle(self.ShieldFx)
+            self.ShieldFx = 0
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 방패 빛 정리
+        if self.ShieldFx ~= 0 then _ParticleService:RemoveParticle(self.ShieldFx) end
+        self.ShieldFx = 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetRite()
+        -- 처음 상태로: 남은 근위병을 치우고 방패를 푼다
+        if self.Step == 0 and not self.Shielded then return end
+        self.Step = 0
+        for _, e in ipairs(self.Guards) do
+            if isvalid(e) then e:Destroy() end
+        end
+        self.Guards = {}
+        self.Shielded = false
+        ---@type Monster
+        local monster = self.Entity:GetComponent("script.Monster")
+        if monster ~= nil then monster.RiteTakenMult = 1 end
+        log("[VRF] SkelCaptainRite reset")
+    end
+
+end
