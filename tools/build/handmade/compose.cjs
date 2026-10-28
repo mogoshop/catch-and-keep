@@ -17,6 +17,7 @@
 //   gates { W: [x, y], E: [x, y], G: [x, y] } · holes { 첫층id: [x, y] } · waypoint [x, y] · torches "auto" | [[x, y]…]
 //   fixed { 몬스터id: [x, y] } · extra { "npc:Model" | "altar:id" | depthgate | return | end : [x, y] }
 //   dress { 구역글자: { sets: [...], props: [...], n, decals: [...], dn } } · put [[kind, name, x, y, scale, flip]…]
+//   backdrop "r/g/b" 맵 밖 배경색 (없으면 템플릿 갈색 — 바다·용암 맵에서 양옆이 주황으로 떴다, 10-29)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -472,6 +473,7 @@ function blueprintText(id, spec, grid, mapRow) {
   for (const [ch, wl] of Object.entries(spec.walls)) L.push(`;wall ${ch} ${wl}`);
   if (spec.raised) L.push(`;raised ${spec.raised}`);
   if (spec.shore) L.push(`;shore ${spec.shore}`);   // 물가 거품: <바다 그림> <거품 그림> [크기] [색] (lib.cjs 3-1)
+  if (spec.backdrop) L.push(`;backdrop ${spec.backdrop}`);   // 맵 밖 배경색 r/g/b (lib.cjs build — Background SolidColor)
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);

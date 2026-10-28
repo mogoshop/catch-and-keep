@@ -19,7 +19,7 @@ for (const a of args) {
 }
 if (!ids.length) throw new Error("사용: build.cjs <맵id|act1>… [--check]");
 const ctx = maps.context();
-let totalEntities = 0;
+let totalEntities = 0, sizeWarnN = 0;
 for (const id of ids) {
   const d = rows.find((m) => m.id === id);
   if (!d) throw new Error(`maps.csv에 '${id}' 없음`);
@@ -32,6 +32,7 @@ for (const id of ids) {
     const r = handmade.check(bp, f, art);
     console.log(`  ${id} ${bp.w}×${bp.h}: 기능 ${f.length} · 그림 ${art.entities.length} ${JSON.stringify(art.counts)} · 닿는 바닥 ${r.reachable}칸`);
     for (const w of r.warn) console.log("    ! " + w);
+    for (const w of art.size) { console.log("    ! " + w); sizeWarnN++; }   // 10-29 크기 검사 (lib.cjs SIZE_MIN_PX)
     totalEntities += art.entities.length + f.length;
     continue;
   }
@@ -41,4 +42,4 @@ for (const id of ids) {
   for (const w of s.warn) console.log("    ! " + w);
   totalEntities += s.entities;
 }
-console.log(`  합계 엔티티 ${totalEntities} (맵 ${ids.length}장)`);
+console.log(`  합계 엔티티 ${totalEntities} (맵 ${ids.length}장)${checkOnly ? ` · 크기 경고 ${sizeWarnN}` : ""}`);

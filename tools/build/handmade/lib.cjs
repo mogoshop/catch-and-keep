@@ -11,6 +11,7 @@
 //   ;raised <9조각 묶음> <색> <이름>  담 윗면 맵 (10-28 사용자 「담 위에서 플레이하는 느낌」 시안): 걷는 칸 전체를 이 9조각으로 덮고(가장자리 = 낮은 칸과 맞닿은 면),
 //                                    첫 벽 글자 칸은 그림 없이 바탕을 낮은 모래로 두며, 담 남쪽 아래 한 칸에 앞면·그 아래 그림자를 그린다. 다른 벽 글자(기둥 등)는 담 위의 벽으로 그대로
 //   ;markers W E H T S R             표식 글자 (바닥으로 친다). 배치표의 기능 엔티티가 표식 1칸 안에 있는지 검사한다
+//   ;backdrop r/g/b                  맵 밖 배경(Background 단색) — 없으면 템플릿 색 그대로 (10-29 바다·용암 담 위 맵)
 // 배치표(.csv) kind: gate(target=·arrive=town|left|right) · torch · waypoint(name=id) · set(map_sets.csv) · prop · decal ·
 //   cluster(name=그림|그림…, args r=반경;n=개수;seed=씨앗 — 시드 고정 흩뿌림, 바닥이 아니거나 길이면 피한다)
 // 크기 규칙은 maps.cjs와 같다: 코덱스 prop 0.8배 · prop-1x 1배 · 둘 다 ×art_scale.csv, 메이플(mp-*)은 data/handmade/maple_sprites.csv scale.
@@ -36,8 +37,12 @@ const TIER_SHADOW = 0.2;              // 층 겹쌓기: 마지막 띠 아래 그
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
-const vec3 = (v) => ({ "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(v), y: r3(v), z: 1 });
+const vec3 = (v) => ({ "$type": "MOD.Core.MODVector3, MOD.Core", x: r3(Array.isArray(v) ? v[0] : v), y: r3(Array.isArray(v) ? v[1] : v), z: 1 });   // v = 배율 또는 [가로, 세로]
 const NEAR_FUNC = [2.2, 1.4];         // 기능 자리(포털·화로·웨이포인트) 곁은 비운다 (maps.cjs placePieces와 같은 폭)
+// 크기 검사 (10-29 코덱스 감사 「바로 고칠 것」 3): 192px 이상 그림이 art_scale.csv 줄 없이 배율 1(꾸밈 흔들기 0.85~1.15 포함)로 놓이면
+//   원본 크기(256px → 2~2.6칸)로 그려진다 — 새 납품마다 사람이 표를 맞추던 일을 --check가 잡는다. 띠 그림은 배율을 ;shore·edge=에서 받으므로 예외
+const SIZE_MIN_PX = 192, SIZE_MUL_TOL = 0.15;
+const SIZE_EXEMPT = new Set(["a3-decal-shore-foam-edge-h-r2", "a3-decal-shore-foam-edge-v-r2", "a4-decal-lava-edge-h", "a4-decal-lava-edge-v"]);
 
 // ───────── 설계도 ─────────
 function parseBlueprint(id) {
@@ -78,6 +83,7 @@ function parseBlueprint(id) {
       }
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
+      else if (m[0] === "backdrop") bp.backdrop = m[1];
       continue;
     }
     if (raw.trim() === "") continue;
@@ -192,7 +198,7 @@ function functionalEntities(d, maps, ctx, rows) {
 function artEntities(d, ctx, bp, rows, func) {
   const table = spriteTable(ctx);
   const ruid = (name, where) => spriteOf(table, name, where).ruid;
-  const out = [], warn = [], blocked = new Set(), feet = [];
+  const out = [], warn = [], blocked = new Set(), feet = [], sizeWarn = new Map();
   const b = bp.bounds, w = bp.w, h = bp.h;
   const x0 = -w / 2, x1 = w / 2, y0 = -h / 2 + 1, y1 = h / 2 + 1;
   const funcSpots = func.map((e) => e.pos);
@@ -254,8 +260,10 @@ function artEntities(d, ctx, bp, rows, func) {
   };
   // 띠 그림 깔기 (물가 거품 · 용암 가장자리): 가로 변 runs [[선 y, xa, xb]] · 세로 변 runs [[선 x, ya, yb]]를 step 간격으로 이어 깐다. 짧은 구간은 작게 하나.
   //   세로 그림(vName)이 있으면 돌리지 않고 세로 그림을 잇고, 없으면 작은 가로 조각을 0.55칸마다 좌우로 엇갈려 쌓는다 (90도 돌리면 번개·금처럼 보였다)
+  //   fit(가장자리 띠 edge= 전용, 10-29 메이커 번개 절벽): 조각이 구간 끝을 넘지 않게 — 구간보다 긴 그림 한 장은 길이 방향으로만 줄이고,
+  //   여러 장이면 첫·끝 조각의 끝을 구간 끝에 맞춘다. 계단 모서리마다 가로·세로 조각이 서로 넘어가 바다 한가운데 흰 「+」가 떴다
   let foamN = 0;
-  const layRuns = (tag, hRuns, vRuns, hName, vName, scaleMul, tint, zz) => {
+  const layRuns = (tag, hRuns, vRuns, hName, vName, scaleMul, tint, zz, fit) => {
     const fsp = spriteOf(table, hName, `${d.id} ${tag}`);
     const fsc = baseScale(fsp, ctx.propScale) * scaleMul;
     const flen = (num(fsp.w, 256) * fsc) / 100, step = flen * 0.72;
@@ -266,8 +274,15 @@ function artEntities(d, ctx, bp, rows, func) {
       o["MOD.Core.TransformComponent"] = { Scale: vec3(scale) };
       out.push({ name: `Art${tag}${++foamN}`, pos: [r3(x), r3(y), zz], overrides: o });
     };
+    // 구간 [a, bEnd+1] 안에 len 길이 조각을 끝이 넘지 않게: 짧으면 한 장을 길이만 줄이고, 길면 양 끝에 맞춰 step 간격 이하로
+    const fitRun = (a, n, len, stepLen, put) => {
+      if (n <= len) { put(a + n / 2, n / len); return; }
+      const cnt = Math.ceil((n - len) / stepLen) + 1;
+      for (let k = 0; k < cnt; k++) put(a + len / 2 + ((n - len) * k) / (cnt - 1), 1);
+    };
     for (const [line, a, bEnd] of hRuns) {
       const n = bEnd - a + 1;
+      if (fit) { fitRun(a, n, flen, step, (c, k) => one(fsp.ruid, c, line, [fsc * k, fsc], "FlipX")); continue; }
       if (n < flen * 0.5) { one(fsp.ruid, (a + bEnd + 1) / 2, line, fsc * Math.max(0.45, n / flen), "FlipX"); continue; }
       const cnt = Math.max(1, Math.round(n / step));
       for (let k = 0; k < cnt; k++) one(fsp.ruid, a + (n * (k + 0.5)) / cnt, line, fsc, "FlipX");
@@ -277,6 +292,7 @@ function artEntities(d, ctx, bp, rows, func) {
       const vsc = baseScale(vsp, ctx.propScale) * scaleMul, vlen = (num(vsp.h, 256) * vsc) / 100;
       for (const [line, a, bEnd] of vRuns) {
         const n = bEnd - a + 1;
+        if (fit) { fitRun(a, n, vlen, vlen * 0.72, (c, k) => one(vsp.ruid, line, c, [vsc, vsc * k], "FlipY")); continue; }
         if (n < vlen * 0.5) { one(vsp.ruid, line, (a + bEnd + 1) / 2, vsc * Math.max(0.45, n / vlen), "FlipY"); continue; }
         const cnt = Math.max(1, Math.round(n / (vlen * 0.72)));
         for (let k = 0; k < cnt; k++) one(vsp.ruid, line, a + (n * (k + 0.5)) / cnt, vsc, "FlipY");
@@ -295,6 +311,9 @@ function artEntities(d, ctx, bp, rows, func) {
     //   남쪽은 낮은 칸에 앞면 띠를 tiers단 쌓는다 (아래 단일수록 어둡게) + 마지막 단 아래 그림자. 층이 높을수록 아래가 깊어 보인다
     const A = bp.raised.atlas, T = bp.raised.tiers, F = bp.raised.face || `${A}-borders`;
     const rp = pieceBy(isLow), pk = new Map(), backK = new Map();
+    // 끊긴 담 끝 (10-29 감사 「바로 고칠 것」 5): 담 위(2-1 아래 갈래)와 같은 판정 — 한 칸 너비 가로 담길이 끝나는 칸(위·아래가 낮음)의 e·w 가장자리.
+    //   그 묶음에 <묶음>-broken-e/w 그림이 있을 때만 (해안 바위·성채처럼 없는 묶음은 예전 그대로 가장자리 조각)
+    const brokenTop = !!table[`${A}-broken-e`] && !!table[`${A}-broken-w`];
     const distUp = (x, y) => {   // 낮은 칸에서 북쪽으로 몇 칸 위에 높은 칸이 있는가 (사이가 모두 낮은 칸일 때만)
       for (let k = 1; k <= T + 1; k++) { if (bp.at(x, y + k) === null) return 0; if (!isLow(x, y + k)) return k; }
       return 0;
@@ -318,14 +337,16 @@ function artEntities(d, ctx, bp, rows, func) {
         else if (d === nb + 1) pk.set(key(x, y), "shadow||0");
         continue;
       }
-      const piece = rp(x, y), rim = piece in RIM ? RIM[piece] : piece;
+      const piece = rp(x, y);
+      let rim = piece in RIM ? RIM[piece] : piece;
+      if (brokenTop && (piece === "e" || piece === "w") && isLow(x, y + 1) && isLow(x, y - 1)) rim = `broken-${piece}`;
       if (rim) pk.set(key(x, y), `rim|${rim}|0`);
     }
     if (cut) warn.push(`${d.id}: 높은 칸 아래 낮은 칸이 ${T + 1}칸보다 좁아 앞면 띠를 다 못 쌓은 기둥 ${cut}개 (낮은 칸 한 줄은 남긴다 · 오류 아님)`);
     const t = tintOf(bp.raised.tint);
     for (const r of mergeRects(pk)) {
       const [kind, piece, dd] = r.p.split("|");
-      const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? `${F}-${piece}` : `${A}-borders-${piece}`;
+      const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? `${F}-${piece}` : piece.startsWith("broken-") ? `${A}-${piece}` : `${A}-borders-${piece}`;
       const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
       const m = kind === "band" ? TIER_SHADE[Number(dd) - 1] : 1;
       o["MOD.Core.SpriteRendererComponent"].Color = kind === "shadow" ? { r: 0, g: 0, b: 0, a: TIER_SHADOW } : { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
@@ -336,9 +357,12 @@ function artEntities(d, ctx, bp, rows, func) {
       o["MOD.Core.SpriteRendererComponent"].Color = { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
       out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.006], overrides: Object.assign(o, cellScale) });
     }
-    // 2-2) 가장자리 띠 (edge=): 높은 칸 ↔ 낮은 칸 경계. 북·동·서는 절벽 윗단 바로 바깥(낮은 칸 쪽 0.3칸), 남쪽은 앞면 띠 맨 아래(그림자 칸 쪽 0.3칸)
+    // 2-2) 가장자리 띠 (edge=): 높은 칸 ↔ 낮은 칸 경계. 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래 바로 아래.
+    //   10-29 메이커 번개 절벽: 0.3칸 띄우면 띠가 바다 쪽으로 떨어져 보였다 → 띠 두께의 절반만 띄워 띠 안쪽 끝이 경계에 닿게 (가로 = 그림 높이 · 세로 = 그림 폭)
     if (bp.raised.edge) {
-      const EG = bp.raised.edge, OFF = 0.3, hM = new Map(), vM = new Map();
+      const EG = bp.raised.edge, hM = new Map(), vM = new Map();
+      const thick = (name, px) => { const sp = spriteOf(table, name, `${d.id} edge`); return (num(sp[px], 64) * baseScale(sp, ctx.propScale) * EG.scale) / 100; };
+      const OFF = r3(thick(EG.h, "h") / 2), OFFV = r3(EG.v ? thick(EG.v, "w") / 2 : OFF);
       const lowIn = (x, y) => isLow(x, y) && bp.at(x, y) !== null;   // 맵 밖은 경계로 치지 않는다
       const run = (map, line, t) => {   // 같은 선 위에서 이어진 구간으로 묶는다 (t는 선마다 오름차순으로 들어온다)
         const list = map.get(line) || [], last = list[list.length - 1];
@@ -347,16 +371,17 @@ function artEntities(d, ctx, bp, rows, func) {
       };
       for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {   // 가로 변: 줄마다 x로 잇는다
         if (isLow(x, y)) continue;
-        if (lowIn(x, y + 1)) run(hM, r3(y + 1 + OFF), x);
+        // 낮은 이웃이 다른 높은 칸의 앞면 띠면 물이 아니라 절벽 면 — 띠를 긋지 않는다 (10-29 계단 능선에서 앞면을 가로지르는 세로 줄이 떴다)
+        if (lowIn(x, y + 1) && !isBand(x, y + 1)) run(hM, r3(y + 1 + OFF), x);
         if (lowIn(x, y - 1)) run(hM, r3(y - bandsAt(x, y - 1, 1) - OFF), x);
       }
       for (let x = b.x0; x <= b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {   // 세로 변: 칸 줄마다 y로 잇는다
         if (isLow(x, y)) continue;
-        if (lowIn(x + 1, y)) run(vM, r3(x + 1 + OFF), y);
-        if (lowIn(x - 1, y)) run(vM, r3(x - OFF), y);
+        if (lowIn(x + 1, y) && !isBand(x + 1, y)) run(vM, r3(x + 1 + OFFV), y);
+        if (lowIn(x - 1, y) && !isBand(x - 1, y)) run(vM, r3(x - OFFV), y);
       }
       const flat = (map) => [...map.entries()].flatMap(([line, list]) => list.map(([a, bEnd]) => [line, a, bEnd]));
-      layRuns("Edge", flat(hM), flat(vM), EG.h, EG.v, EG.scale, EG.tint, -0.012);
+      layRuns("Edge", flat(hM), flat(vM), EG.h, EG.v, EG.scale, EG.tint, -0.012, true);
     }
   } else if (bp.raised) {
     const rp = pieceBy(isLow), pk = new Map();
@@ -543,9 +568,16 @@ function artEntities(d, ctx, bp, rows, func) {
   // 5) 장식·바닥 무늬: 아래(남쪽)에 있는 그림일수록 앞에 그린다 (z -0.034 ~ -0.026, 바닥 무늬는 -0.015)
   const zOf = (y, decal) => decal ? -0.015 : r3(-0.034 + ((y - b.y0) / (b.y1 - b.y0)) * 0.008);
   // ok: 배치표 args ok=cliff(일부러 절벽·담 위) · ok=gate(일부러 기능 자리 곁) · ok=gate+cliff(둘 다) — 그 경고를 끈다
-  const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok) => {
+  // over: 배치표 args over=1 — 같은 자리 그림 위에 겹치는 층(코덱스 a4-abyss-wall-pulse 발광 층)을 그 그림 바로 앞에 (z는 0.001 단위라 발 y를 조금 내려서는 앞뒤가 안 갈린다)
+  const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over) => {
     const sp = spriteOf(table, spName, where);
     const sc = baseScale(sp, ctx.propScale) * num(scaleMul, 1);
+    if (sp.kind !== "maple" && Math.max(num(sp.w, 0), num(sp.h, 0)) >= SIZE_MIN_PX && !(sp.name in ctx.propScale) && !SIZE_EXEMPT.has(sp.name)
+      && Math.abs(num(scaleMul, 1) - 1) <= SIZE_MUL_TOL) {
+      const sw = sizeWarn.get(sp.name) || { n: 0, w: sp.w, h: sp.h, cells: r3((num(sp.w, 0) * sc) / 100), at: where };
+      sw.n++;
+      sizeWarn.set(sp.name, sw);
+    }
     const cell = [Math.floor(x), Math.floor(y)];
     const okHas = (w) => String(ok || "").split("+").includes(w);   // ok=gate+cliff: 둘 다 일부러 (10-28 곁가지 올라가는 계단 — 벽에 붙고 포털 위)
     if (!bp.isFloor(cell[0], cell[1])) { if (!okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`); }
@@ -559,12 +591,12 @@ function artEntities(d, ctx, bp, rows, func) {
     if (c) o["MOD.Core.SpriteRendererComponent"].Color = tintOf(c);
     o["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
     const py = y + (num(sp.ny, 0) * num(sp.h, 0) * sc) / 100;   // 발이 y에 오게 (메이플 피벗 보정)
-    out.push({ name, pos: [r3(x), r3(py), zOf(y, decal)], overrides: o });
+    out.push({ name, pos: [r3(x), r3(py), over ? zOf(y, decal) - 0.0005 : zOf(y, decal)], overrides: o });
   };
   let propN = 0, decalN = 0, setN = 0, clN = 0;
   for (const r of rows) {
     const x = num(r.x), y = num(r.y), where = `${d.id}.csv ${r.kind} ${r.name || ""} @${r.x}/${r.y}`;
-    if (r.kind === "prop") place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, parseArgs(r.args).ok);
+    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1); }
     else if (r.kind === "decal") place(`ArtDecal${++decalN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, true, where);
     else if (r.kind === "set") {
       const pieces = ctx.sets[r.name];
@@ -592,7 +624,8 @@ function artEntities(d, ctx, bp, rows, func) {
       if (placed < n) warn.push(`${where}: 흩뿌림 ${n}개 중 ${placed}개만 자리를 찾음`);
     } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
-  return { entities: out, blocked, warn, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN } };
+  const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
+  return { entities: out, blocked, warn, size, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN } };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
@@ -664,6 +697,10 @@ function build(d, maps, ctx, funcIn) {
   }));
   map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { TileSetRUID: PROJECT_TILESET, tileMap });
   map.upsertComponent(d.id, "script.MapAmbience", ambience(d));
+  if (bp.backdrop) {   // 맵 밖 배경 (10-29 메이커: 바다·용암 맵 양옆이 템플릿 갈색에 플레이어 빛이 비쳐 주황 그라데이션으로 떴다)
+    const c = tintOf(bp.backdrop);
+    map.patchComponent("Background", "MOD.Core.BackgroundComponent", { Type: 2, SolidColor: { r: c.r, g: c.g, b: c.b, a: 1 } });
+  }
   const mc = Object.assign({}, map.component(d.id, "MOD.Core.MapComponent"));
   delete mc.InstanceMap;
   mc.IsInstanceMap = true;

@@ -66,13 +66,19 @@ module.exports = {
       ["prop", "a4-landmark-outpost-signal-brazier", 11, 6.3],   // 10-28 마을 랜드마크 — 맵 위 끝(24칸)에 닿지 않게 그림 전체가 보이는 자리
       ["prop", "a4-brazier", 0.5, 2.2, 1.3], ["prop", "a4-army-tent", -11, 8.6], ["prop", "a4-army-tent", 9, 8.6, 1, 1],
       ["prop", "a4-watchtower", -13.5, -3.6], ["prop", "a4-watchtower", 13.5, -3.6, 1, 1, "ok=gate"], ["prop", "a4-forge-anvil", 12.6, 2.2, 1, 0, "ok=gate"],
+      // 10-29 코덱스 감사 c-2 — 안 쓰던 10-20 그림 자리: 남문(마을 출구 포털)을 목책 문틀이 감싸고, 남문 길 양옆은 세로 목책,
+      //   북쪽 끝 목책 너머로 붉은 하늘 띠 (1024px 띠 4장을 엇갈려 뒤집어 맵 폭 36칸을 잇는다 · 발은 북쪽 벽 줄이라 ok=cliff)
+      ["prop", "a4-outpost-gate", 0.5, -10.85, 1, 0, "ok=gate+cliff"],
+      ["prop", "a4-wood-fence-v", -3.8, -6.2], ["prop", "a4-wood-fence-v", -3.8, -8.4], ["prop", "a4-wood-fence-v", 3.8, -6.2, 1, 1], ["prop", "a4-wood-fence-v", 3.8, -8.4, 1, 1],
+      ["prop", "a4-outpost-red-sky", -13.5, 11.05, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", -4.5, 11.05, 1, 1, "ok=cliff"],
+      ["prop", "a4-outpost-red-sky", 4.5, 11.05, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", 13.5, 11.05, 1, 1, "ok=cliff"],
     ],
     dress: {
       a: { decals: ["a4-decal-ash-heap"], dn: 2 },
       b: { props: ["a4-wood-fence-h", "a4-helm-pile", "a4-imp-on-barrel"], n: 4, decals: ["a4-decal-hoofprints"], dn: 2 },
       c: { props: ["a4-wood-fence-h", "a4-helm-pile"], n: 3, decals: ["a4-decal-hoofprints"], dn: 1 },
       d: { props: ["a4-melted-armor-pile", "camp-firewood"], n: 3, decals: ["a4-decal-scorch"], dn: 1 },
-      e: { props: ["a4-wood-fence-v", "mp-signpost", "a4-broken-ladder"], n: 4, decals: ["a4-decal-ash-heap"], dn: 2 },
+      e: { props: ["mp-signpost", "a4-broken-ladder"], n: 2, decals: ["a4-decal-ash-heap"], dn: 2 },   // 세로 목책은 put으로 고정 (10-29)
     },
   },
 
@@ -129,7 +135,8 @@ module.exports = {
     title: "악마의 행군로",
     story: ["용암 바다 위로 쌓은 성채 성벽이 그대로 행군로가 됐다. 서문 보루에서 폭 4 성벽을 따라 해골 관문 보루를 지나 큰 네모 보루의 전쟁 야영지(웨이포인트)로.", "야영지 서쪽 모서리에서 남쪽으로 뻗은 성벽은 중간이 무너져 좁은 성벽으로 돌아 혼 감옥 망루에 닿는다. 북동쪽 끊긴 성벽 끝에 무너진 초소 망루, 남동쪽 둥근 보루에 공성 장비 마당. 동쪽 행군로가 유황 늪으로."],
     raised: "a4-fortress-wall 1/1/1 성벽 윗면 tiers=2 top=zone face=a4-fortress-wall-borders low=a4-lava-sea-floor:0.6/0.48/0.46 edge=a4-decal-lava-edge-h:a4-decal-lava-edge-v:0.9",
-    base: "a4-lava_crack 0.84/0.78/0.76",
+    base: "a4-scorched_pavers 0.84/0.78/0.76",   // 10-29 메이커: 장소 밖 성벽 길(.)이 식은 용암 바닥이라 성가퀴 조각과 섞여 벽처럼 보였다 → 그을린 판석
+    backdrop: "0.2/0.11/0.1",   // 10-29 맵 밖 = 어두운 용암 바다 (메이커 캡처의 낮은 칸 실측색 — 템플릿 갈색이 주황으로 떴다)
     walls: BASALT,
     zones: {
       a: "a4-basalt 0.82/0.78/0.76 행군로 어귀 보루",
@@ -145,7 +152,7 @@ module.exports = {
       R("a", "행군로 어귀 보루", -34, -4, -28, 4, { rough: 0, note: "네모 보루" }),
       R("b", "해골 관문 보루", -21, 0, -13, 8, { rough: 0, note: "성벽 위 네모 보루 · 해골 관문" }),
       R("c", "전쟁 야영지 보루", -3, -8, 8, 0, { rough: 0, note: "웨이포인트 · 큰 네모 보루 12×9" }),
-      R("d", "혼 감옥 망루", -16, -21, -4, -14, { rough: 0, note: "혼 감옥 입구 · 끊긴 성벽 끝 망루" }),
+      R("d", "혼 감옥 망루", -16, -21, -4, -16, { rough: 0, note: "혼 감옥 입구 · 끊긴 성벽 끝 망루 — 입구(-10,-17) 바로 북쪽이 망루 끝(입구가 용암을 등진다), 남쪽 4줄이 앞마당" }),
       R("e", "무너진 초소 망루", 15, 12, 22, 18, { rough: 0, note: "끊긴 성벽 끝 막다른 망루" }),
       E("f", "공성 장비 마당 보루", 16, -16, 6.5, 5, { rough: 0, note: "둥근 보루" }),
       R("g", "동쪽 행군로", 27, -1, 33, 5, { rough: 0 }),
@@ -155,9 +162,10 @@ module.exports = {
       P([[-13, 4], [-9, 4], [-9, -4], [-3, -4]], 4, "=", 2, { wobble: 0 }),              // ② 관문 → 야영지
       P([[8, -4], [22, -4], [22, 2], [27, 2]], 4, "=", 2, { wobble: 0 }),                // ③ 야영지 → 동쪽 행군로
       P([[-9.5, -7.5], [-9.5, -8.5]], 3, undefined, undefined, { wobble: 0 }),         // 혼 감옥으로 — 망루 앞 3칸에서 무너져 끊긴 성벽
-      P([[-11, -9], [-13, -9], [-13, -13.5]], 2, undefined, undefined, { wobble: 0 }), // 무너진 자리를 돌아 망루로 내려가는 좁은 성벽
+      // 무너진 자리를 돌아 망루로 내려가는 좁은 성벽 — 10-29: 북쪽에서 닿으면 입구 그림 지붕 위로 걸어 들어갔다 → 망루 서쪽 용암 위로 내려가 남서쪽에서 앞마당으로 · 폭 2는 양쪽이 다 성가퀴라 3
+      P([[-11, -9.5], [-19.5, -9.5], [-19.5, -19.5], [-16, -19.5]], 3, undefined, undefined, { wobble: 0 }),
       P([[19.5, 5.5], [19.5, 6.5]], 3, undefined, undefined, { wobble: 0 }),           // 초소로 — 망루 앞 4칸에서 무너져 끊긴 성벽
-      P([[18, 7], [14, 7], [14, 13], [15, 13]], 2, undefined, undefined, { wobble: 0 }),   // 무너진 자리를 돌아가는 좁은 성벽
+      P([[18, 7], [14, 7], [14, 13], [15, 13]], 3, undefined, undefined, { wobble: 0 }),   // 무너진 자리를 돌아가는 좁은 성벽 (10-29 폭 2 → 3)
       P([[16, -6.5], [16, -10.5]], 3, undefined, undefined, { wobble: 0 }),            // 공성 장비 마당으로
     ],
     gates: { W: [-34, 0], E: [33, 2] },
@@ -311,11 +319,15 @@ module.exports = {
     story: ["심연으로 내려가는 첫 층. 혼등이 늘어선 기둥 회랑(웨이포인트)과 곁방들. 남쪽 곁방 바닥에 타락의 구덩이로 가는 문.", "(자리: 납골당 2층을 좌우·상하로 뒤집음 — 들어온 문이 동쪽)"],
     waypoint: [6, 1],
     holes: { pit: [-2, -12] },
+    // 10-29 코덱스 감사 c-2: 문양 기둥 곁방 북쪽 끝에 심연 벽 + 발광 층 (코덱스 INTEGRATION: pulse는 a4-abyss-wall과 같은 자리·원점에 겹치는 층 —
+    //   맵 장식 프레임 재생 규칙이 아직 없어 한 프레임 정지 · 발광 층은 args over=1로 벽 바로 앞에 그린다 — lib.cjs place)
+    put: [["prop", "a4-abyss-wall", -5, -7.95, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-00", -5, -7.95, 1, 0, "ok=cliff;over=1"]],
     dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_rune_pillar"] }) }),   // 10-28 랜드마크
   }), { fx: true, fy: true }),
   abyssgate2: remix(A1.crypt1, Object.assign({}, ABYSS, {
     title: "심연의 문 2층",
     waypoint: undefined,
+    put: [["prop", "a4-abyss-wall", -7.8, 7.05, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-01", -7.8, 7.05, 1, 0, "ok=cliff;over=1"]],   // 10-29 코덱스 감사 c-2: 재에 묻힌 석상 곁 북쪽 끝 심연 벽 + 발광 층 (1층 주석)
     story: ["문장의 홀을 제물 방·뼈 쌓인 방·갈라진 방이 둘러싼다. 고리처럼 돌아 아래 계단으로. (자리: 납골당 1층을 좌우로 뒤집음)"],
     dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_ash_statue"] }) }),   // 10-28 랜드마크
   }), { fx: true }),
@@ -324,7 +336,9 @@ module.exports = {
     story: ["심연의 문 앞 마지막 층. 넓은 의식의 홀에서 배교한 대주교가 문을 봉인하고 있다 — 쓰러뜨려야 재의 회랑으로 내려간다.", "(자리: 납골당 3층을 좌우로 뒤집음)"],
     zones: Object.assign({}, ABYSS.zones, { e: "a4-abyss_rune 1/0.9/0.88 대주교의 의식 홀" }),
     fixed: { archbishop: [-15, 3] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
-    put: [["set", "boss_archbishop", -14.5, 3.5, 1, 1], ["set", "a4_lm_blood_pulpit", -14.5, 8.3]],
+    put: [["set", "boss_archbishop", -14.5, 3.5, 1, 1], ["set", "a4_lm_blood_pulpit", -14.5, 8.3],
+      ["prop", "a4-abyss-wall", -20, 10.05, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-02", -20, 10.05, 1, 0, "ok=cliff;over=1"],
+      ["prop", "a4-abyss-wall", -9, 10.05, 1, 1, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-03", -9, 10.05, 1, 1, "ok=cliff;over=1"]],   // 10-29 코덱스 감사 c-2: 핏빛 설교대 양옆 북쪽 끝 심연 벽 + 발광 층 (1층 주석)
     dress: Object.assign({}, abyssDress, { e: { props: ["a4-soul-lantern", "a4-sigil-stone"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 5 } }),
   }), { fx: true }),
   ashhall: remix(A1.cellar1, Object.assign({}, ABYSS, {
@@ -428,7 +442,14 @@ module.exports = {
   soulprison: {
     size: [60, 40],
     title: "혼 감옥",
-    put: [["set", "a4_lm_soul_cage", 19.5, 10.3]],
+    put: [
+      ["set", "a4_lm_soul_cage", 19.5, 10.3],
+      // 10-29 코덱스 감사 c-2: 창살은 꾸밈 무작위 말고 고정 — 복도와 감방 사이 벽 줄(문 사이)에 가로 창살, 감방끼리 나누는 벽에 세로 창살 (발은 벽 칸이라 ok=cliff)
+      ["prop", "a4-prison-bars-h", -13, 3.05, 1, 0, "ok=cliff"], ["prop", "a4-prison-bars-h", -5, 3.05, 1, 1, "ok=cliff"],
+      ["prop", "a4-prison-bars-h", -13, -2.95, 1, 0, "ok=cliff"], ["prop", "a4-prison-bars-h", -5, -2.95, 1, 1, "ok=cliff"],
+      ["prop", "a4-prison-bars-v", -12, 6.1, 1, 0, "ok=cliff"], ["prop", "a4-prison-bars-v", -4, 6.1, 1, 0, "ok=cliff"],
+      ["prop", "a4-prison-bars-v", -12, -8.9, 1, 0, "ok=cliff"], ["prop", "a4-prison-bars-v", -4, -8.9, 1, 0, "ok=cliff"],
+    ],
     story: ["악마들이 혼을 가둬 둔 감옥. 긴 감방 복도 양쪽으로 감방 여섯, 북쪽 위로 고문실.", "복도 끝 간수장의 방에 간수장 그림달. 방 구석에 되돌아가는 문."],
     base: "a4-soul_prison 0.84/0.8/0.84",
     walls: { "#": "basalt-cliff 1/1/1 감옥 벽" },
@@ -458,7 +479,7 @@ module.exports = {
     dress: {
       a: { props: ["a4-prison-gate"], n: 1 },
       b: { props: ["a4-soul-lantern"], n: 4, decals: ["a4-decal-scorch"], dn: 3 },
-      c: { props: ["a4-soul-cage", "a4-bone-heap", "a4-prison-bars-h"], n: 2, decals: ["a4-decal-ash-heap"], dn: 1 },
+      c: { props: ["a4-soul-cage", "a4-bone-heap"], n: 2, decals: ["a4-decal-ash-heap"], dn: 1 },   // 창살은 put으로 고정 (10-29)
       d: { props: ["a4-chain-pillar", "a4-soul-cage", "a4-bone-heap"], n: 7, decals: ["a4-decal-scorch", "a1-decal-blood-pool"], dn: 3 },
       e: { props: ["a4-soul-cage", "a4-soul-lantern", "a4-chain-pillar"], n: 8, decals: ["a4-decal-scorch", "a4-decal-ash-heap"], dn: 5 },
     },
@@ -493,6 +514,8 @@ module.exports = {
     ],
     rocks: [wall([[-18, 9], [-8, 9]], "~", [[-13, 9, 1.3]]), wall([[-1, 3], [7, 3]], "~", [[3, 3, 1.3]]), wall([[-1, -3], [7, -3]], "~", [[3, -3, 1.3]])],
     gates: { W: [-29, 0], E: [28, 0] },
+    // 10-29 코덱스 감사 c-2: 세로 쇳물 홈 — 주조실 북쪽 벽에서 두 용암 도랑(~)으로 쇳물이 흘러내린다 (1칸 조각 4장씩 잇는다)
+    put: [-16, -10].flatMap((x) => [10, 11, 12, 13].map((y) => ["prop", "a4-molten-channel-v", x, y])),
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
       b: { props: ["a4-forge-anvil", "a4-molten-channel-h", "a4-melted-armor-pile"], n: 8, decals: ["a4-decal-molten-drip", "a4-decal-scorch"], dn: 4 },
