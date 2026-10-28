@@ -304,13 +304,36 @@ function artEntities(d, ctx, bp, rows, func) {
       depth.set(k, d0 + 1); dq.push([x + dx, y + dy]);
     }
   }
+  // 10-28 소금 갯벌 검수: 두꺼운 바위 속에 바닥에서 먼 칸이 몇 개만 고립되면 검은 구멍처럼 보였다 →
+  //   깊은 칸끼리(4방향) 이은 덩어리가 4칸 이하이고 맵 테두리에 닿지 않으면 바깥 어둠이 아니라 바위 속 — 바위 윗면으로 덮는다
+  const deepShallow = new Set();
+  {
+    const isDeep = (x, y) => { const ch = bp.at(x, y); return ch !== null && ch in bp.walls && ch !== lowCh && !depth.has(key(x, y)) && !f(x, y); };
+    const seen = new Set();
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+      if (seen.has(key(x, y)) || !isDeep(x, y)) continue;
+      const comp = [[x, y]];
+      seen.add(key(x, y));
+      for (let i = 0; i < comp.length && comp.length <= 4; i++) {
+        const [cx, cy] = comp[i];
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < b.x0 || nx > b.x1 || ny < b.y0 || ny > b.y1 || seen.has(key(nx, ny)) || !isDeep(nx, ny)) continue;
+          seen.add(key(nx, ny));
+          comp.push([nx, ny]);
+        }
+      }
+      const atEdge = comp.some(([cx, cy]) => cx <= b.x0 + 1 || cx >= b.x1 - 1 || cy <= b.y0 + 1 || cy >= b.y1 - 1);   // 맵 테두리 줄은 바깥 어둠 그대로
+      if (comp.length <= 4 && !atEdge) for (const [cx, cy] of comp) deepShallow.add(key(cx, cy));
+    }
+  }
   // 칸마다 조각 열쇠 → 같은 열쇠 칸을 큰 사각형으로 덮는다 (담 윗면 맵의 낮은 칸은 그리지 않는다 — 바탕 모래가 보인다)
   const pk = new Map();
   for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const ch = bp.at(x, y);
     if (ch === null || !(ch in bp.walls) || ch === lowCh) continue;
     let piece = pieceAt(x, y);
-    if (piece === "center" && !touchesFloor(x, y) && depth.has(key(x, y))) piece = "n";
+    if (piece === "center" && !touchesFloor(x, y) && (depth.has(key(x, y)) || deepShallow.has(key(x, y)))) piece = "n";
     pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);
   }
   let wallN = 0;
