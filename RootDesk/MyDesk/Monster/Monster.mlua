@@ -608,8 +608,11 @@ script Monster extends Component
         self:SpreadPoison()
         local status = self:Status()
         if status ~= nil then status:OnDeathSpread() end   -- 역병 저주 · 서리 혼 「파쇄」 (10-20)
-        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition, self.Grade)
         local killer = _Util:OwnerPlayerOf(self.LastAttacker)
+        -- 10-28 사용자: 내가 직접(소환수 말고) 막타를 넣은 몬스터는 막타 주인 화면에만 사망 연출 (PlayDeathSound → LastHitFlourish)
+        local directId = ""
+        if killer ~= nil and isvalid(killer) and self.LastAttacker == killer and isvalid(killer.PlayerComponent) then directId = killer.PlayerComponent.UserId end
+        self:PlayDeathSound(self.Entity.TransformComponent.WorldPosition, self.Grade, directId)
         _GameEvents:Emit("MonsterKilled", {
             monster = self.Entity, player = killer, players = self:RewardPlayers(killer),
             sourceId = self.SourceId, grade = self.Grade, rank = self:GetRank(), level = self.Level, variant = self:GetVariant(), map = self.Entity.CurrentMap,
@@ -739,13 +742,72 @@ script Monster extends Component
     end
 
     @ExecSpace("Multicast")
-    method void PlayDeathSound(Vector3 pos, integer grade)
+    method void PlayDeathSound(Vector3 pos, integer grade, string directKillerId)
         local me = _UserService.LocalPlayer
         if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then
             _SoundDirector:PlayMonsterDeath(self.SourceId, pos)   -- 몬스터별 사망음 (config hitSoundMode)
             _EffectService:PlayEffect(_GameConst.FxDeath, self.Entity, Vector3(pos.x, pos.y + 0.3, 0), 0, Vector3(0.7, 0.7, 1), false, { PlayRate = 1.6 })
             if grade == 2 then self:EliteBurst(me.CurrentMap, pos) end
+            if directKillerId ~= "" and isvalid(me.PlayerComponent) and me.PlayerComponent.UserId == directKillerId then self:LastHitFlourish(me, pos, grade) end
         end
+    end
+
+    method string GoreKind()
+        -- 막타 연출 재질: 뼈(해골·미라·망자) · 혼(망령·그림자) · 바위(골렘·수호상) · 나머지는 살점
+        local id = self.SourceId
+        local bone = { skelwarrior = true, skelcaptain = true, gravequeen = true, bonenest = true, mummy = true, tombking = true, ashendead = true }
+        if bone[id] then return "bone" end
+        if string.find(id, "wraith", 1, true) ~= nil or string.find(id, "shade", 1, true) ~= nil then return "spirit" end
+        if string.find(id, "golem", 1, true) ~= nil or id == "templeguard" then return "stone" end
+        return "flesh"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LastHitFlourish(Entity me, Vector3 pos, integer grade)
+        -- 10-28 사용자 「내 막타 사망 연출」: 흰 번쩍 → 붉게 물들고 → 검게 타들어 사라짐 + 재질 파편 (막타 주인 화면만).
+        -- 한 방에 여럿(뼈 폭풍·파동)이면 0.25초 안 4마리까지 (높은 등급은 늘 보인다). 모바일은 파편 절반
+        ---@type PlayerAttack
+        local atk = me:GetComponent("script.PlayerAttack")
+        local now = _UtilLogic.ElapsedSeconds
+        if atk ~= nil then
+            if now - atk.FlourishWindowAt > 0.25 then atk.FlourishWindowAt = now atk.FlourishCount = 0 end
+            atk.FlourishCount = atk.FlourishCount + 1
+            if atk.FlourishCount > 4 and grade < 2 then return end
+        end
+        local map = me.CurrentMap
+        local kind = self:GoreKind()
+        local mobile = Environment:IsMobilePlatform()
+        local size = (grade >= 2 and 1.6 or 1) * (mobile and 0.6 or 1)
+        local fx = {
+            bone = { BasicParticleType.DustExplosion, Color(0.94, 0.9, 0.8, 1), 0.55 },
+            flesh = { BasicParticleType.GoopSpray, Color(0.5, 0.04, 0.05, 1), 0.45 },
+            spirit = { BasicParticleType.SparkRadialExplosion, Color(0.6, 0.78, 1, 1), 0.5 },
+            stone = { BasicParticleType.DustExplosion, Color(0.55, 0.5, 0.44, 1), 0.7 },
+        }
+        local f = fx[kind]
+        local at = Vector3(pos.x, pos.y + 0.35, pos.z - 0.05)
+        _ParticleService:PlayBasicParticle(f[1], map, at, 0, Vector3(f[3] * size, f[3] * size, 1), false, { Color = f[2] })
+        -- 몸 색: 흰 번쩍(0.06) → 붉게(0.2) → 검게 타들며 흐려짐 (서버가 0.8초에 숨긴다). 큰 적은 한 박자 멈췄다 천천히
+        local sr = self.Entity.SpriteRendererComponent
+        if not isvalid(sr) then return end
+        local slow = grade >= 3 and 1.25 or 1   -- 서버가 0.8초에 숨기므로 그 안에서만 늘인다
+        local steps = {
+            { 0, Color(1, 1, 1, 1) },
+            { 0.06, Color(1, 0.35, 0.3, 1) },
+            { 0.2, Color(0.55, 0.12, 0.1, 1) },
+            { 0.32, Color(0.14, 0.09, 0.08, 0.85) },
+            { 0.5, Color(0.08, 0.05, 0.05, 0.35) },
+            { 0.62, Color(0.05, 0.03, 0.03, 0) },
+        }
+        local entity = self.Entity
+        local base = sr.Color
+        for _, st in ipairs(steps) do
+            local c = st[2]
+            _TimerService:SetTimerOnce(function() if isvalid(entity) and isvalid(entity.SpriteRendererComponent) then entity.SpriteRendererComponent.Color = c end end, st[1] * slow)
+        end
+        -- 같은 개체가 다시 살아난다 (Respawn) — 숨겨진 뒤 원래 색으로 되돌려 둔다 (안 그러면 이 화면에서만 투명하게 다시 나온다)
+        _TimerService:SetTimerOnce(function() if isvalid(entity) and isvalid(entity.SpriteRendererComponent) then entity.SpriteRendererComponent.Color = base end end, math.max(0.95, 0.62 * slow + 0.3))
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] last hit flourish %s %s grade=%d", self.SourceId, kind, grade)) end
     end
 
     @ExecSpace("ClientOnly")
