@@ -525,7 +525,7 @@ function buildGameHud() {
   b.text("PreviewWin/Card/Kind", "", { size: 20, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -50], rect_size: [CARD.text, 26], alignment: 4, ...outline });
   b.sprite("PreviewWin/Card/Art", { anchor: "top-center", pos: [0, -84], rect_size: [CARD.text, 200], color: { r: 0.32, g: 0.08, b: 0.1, a: 1 }, sprite_type: 0 });
   b.patchComponent("PreviewWin/Card/Art", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-  b.text("PreviewWin/Card/Art/Hint", "그림 자리", { size: 16, color: "#B89A8A", anchor: "middle-center", pos: [0, 0], rect_size: [CARD.text, 30], alignment: 4 });
+  // 그림이 오기 전에는 빈 틀만 (10-29 45 §2-7: 「그림 자리」 글자가 화면에 보였다)
   b.text("PreviewWin/Card/Name", "", { size: 22, bold: true, color: C.title, anchor: "top-center", pos: [0, -296], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 22, ...outline });
   k.inner("PreviewWin/List", "top-left", [430, -116], [610, 404]);
   b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 360], bestfit: true, min_size: 16, max_size: 22 });
@@ -633,11 +633,8 @@ function buildGameHud() {
   b.text("SocialWin/Inspect/Gear", "", { size: 15, color: C.white, alignment: 0, anchor: "top-left", pos: [328, -50], rect_size: [410, 500], bestfit: true, min_size: 10, max_size: 15 });
   k.btn("SocialWin/Inspect/BtnBack", "돌아가기", { anchor: "top-right", pos: [-12, -6], rect_size: [150, 44], font_size: 17 });
 
-  // ── 받은 요청 (수락/거절) ──
-  b.panel("Request", { anchor: "top-center", pos: [0, -250], rect_size: [600, 170], ...part("win_panel"), sprite_type: 1, raycast: true });
-  b.text("Request/Text", "", { size: 21, color: C.gold, anchor: "top-center", pos: [0, -20], rect_size: [540, 60], ...outline });
-  k.ok("Request/BtnYes", "수락", { anchor: "bottom-center", pos: [-100, 20], rect_size: [180, 62] });
-  k.btn("Request/BtnNo", "거절", { anchor: "bottom-center", pos: [100, 20], rect_size: [180, 62] });
+  // ── 받은 요청 (수락/거절) → ConfirmHUD/SafeArea/Request (tools/build/confirm.cjs) ──
+  //   10-29 45 §2-6 #6: GameHUD 안에 있으면 창(SetSiblingIndex 맨 위)·다른 그룹 창 뒤에 깔려 요청을 못 봤다 → 확인 창 층으로 옮김
 
   // ── 거래 창 ──
   // 10-23 4차 (사용자: 글자 2열 목록은 가독성이 떨어지고 모바일에 맞지 않는다 · 인벤토리처럼 위아래 · 금액은 오른쪽 아래 고정, 누르면 직접 입력):

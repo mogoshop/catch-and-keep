@@ -369,8 +369,29 @@ script UIKit extends Logic
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
         if event.key ~= KeyboardKey.Escape then return end
+        -- Esc 처리는 여기 한 곳에서 (10-29 45 §2-6 #1: 확인 창과 이 처리가 둘 다 Esc를 받아 확인 창을 닫으며 뒤 소지품 창까지 닫혔다 — 핸들러 순서는 정해져 있지 않다)
+        -- 확인 창·조작 방식 고르기가 떠 있으면 그것만 처리하고 뒤 창은 그대로 둔다
+        if _ConfirmDialog:IsOpen() then
+            _ConfirmDialog:OnEscape()
+            log("[VRF] esc consumed by confirm")
+            return
+        end
+        -- 로비 게임 고르기 창은 Esc로 닫지 않고 한 단계 뒤로 (10-29 45 §2-6 #3: 닫으면 다시 열 길이 없었다)
+        if self:IsOpen("RoomWin") then
+            _RoomWindow:Back()
+            return
+        end
+        -- 거래 창 닫기 = 거래 취소 (창 닫기 단추와 같다)
+        if self:IsOpen("TradeWin") then _TradeWindow:CancelTrade() end
         if self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
         for _, name in ipairs(self.Windows) do self:Close(name) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean AnyWindowShown()
+        -- 안내 창(Passive)까지 포함해 무엇이든 떠 있는가 — 모바일 패드·벨트를 숨길 때 (10-29 45 §2-6 #7: 웨이포인트 창 옆에 패드가 남아 오탭)
+        for _, name in ipairs(self.Windows) do if self:IsOpen(name) then return true end end
+        return self:IsOpen("/ui/ShadowHUD/Window")
     end
 
     @ExecSpace("ClientOnly")

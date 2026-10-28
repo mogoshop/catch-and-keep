@@ -7,11 +7,12 @@ script SocialWindow extends Logic
     property table Ids = {}
     property string RenderKey = ""
     property integer TimerId = 0
+    property string Req = "/ui/ConfirmHUD/SafeArea/Request"   -- 받은 요청 띠: 확인 창 층 (10-29 45 §2-6 #6 — GameHUD에 있을 때는 열린 창 뒤에 깔렸다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
-        _UIKit:SetEnabled("Request", false)
+        _UIKit:SetEnabled(self.Req, false)
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
         for i = 1, 8 do
             local index = i
@@ -26,8 +27,8 @@ script SocialWindow extends Logic
             local s = self:Social()
             if s ~= nil then s:RequestLeaveParty() end
         end)
-        _UIKit:Connect("Request/BtnYes", function() self:Respond(true) end)
-        _UIKit:Connect("Request/BtnNo", function() self:Respond(false) end)
+        _UIKit:Connect(self.Req .. "/BtnYes", function() self:Respond(true) end)
+        _UIKit:Connect(self.Req .. "/BtnNo", function() self:Respond(false) end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.25)
     end
 
@@ -90,6 +91,8 @@ script SocialWindow extends Logic
             local text = names[i] or ""
             if i == 1 and #names == 0 then text = "이 채널에 다른 플레이어가 없습니다" end
             _UIKit:SetText(self.Win .. "/Name" .. tostring(i), text)
+            -- 빈 목록 안내는 단추 자리까지 넓혀 한 줄로 (10-29 45 §2-7: 이름 칸 262px에서 「없습니니 / 다」로 접혔다)
+            if i == 1 then _UIKit:SetSize(self.Win .. "/Name1", Vector2(#names == 0 and 720 or 262, 54)) end
             -- 파티 초대는 채널 어디서나, 결투·거래는 같은 지역에서만 (서버 PlayerSocial.RequestAction과 같은 조건)
             _UIKit:SetEnabled(self.Win .. "/Party" .. tostring(i), ids[i] ~= nil)
             -- 결투는 레벨 차 duelMaxLevelGap 이하만 (10-13)
@@ -134,10 +137,10 @@ script SocialWindow extends Logic
     method void RenderRequest()
         local s = self:Social()
         if s == nil then return end
-        _UIKit:SetEnabled("Request", s.PendingKind ~= "")
+        _UIKit:SetEnabled(self.Req, s.PendingKind ~= "")
         if s.PendingKind == "" then return end
         local names = { party = "파티에 초대했다", duel = "결투를 신청했다", trade = "거래를 요청했다", game = "자기 게임에 초대했다 (수락하면 그 게임으로 옮긴다)" }   -- game: 마을 게시판 다른 방 초대 · 승인 전
-        _UIKit:SetText("Request/Text", s.PendingFromName .. "님이 " .. (names[s.PendingKind] or s.PendingKind))
+        _UIKit:SetText(self.Req .. "/Text", s.PendingFromName .. "님이 " .. (names[s.PendingKind] or s.PendingKind))
     end
 
     @ExecSpace("ClientOnly")

@@ -631,7 +631,9 @@ script InventoryWindow extends Logic
         local text = _UIKit:Colored("#E6C88A", "장비로 오른 능력치") .. "\n"
         if #rows == 0 then text = text .. "착용한 장비 효과가 없습니다." else text = text .. table.concat(rows, "\n") end
         local penalty = _GameConst:ResistPenalty(st.Difficulty)
-        text = text .. "\n" .. _UIKit:Colored("#8C99B4", string.format("저항 (난이도 -%d 적용): 화염 %d · 냉기 %d · 번개 %d · 독 %d", penalty, st.ResFire, st.ResCold, st.ResLight, st.ResPoison))
+        -- 난이도 저항 감소가 없으면(보통) 괄호를 뺀다 (10-29 45 §2-7: 「난이도 -0 적용」이 보였다)
+        local head = penalty > 0 and string.format("저항 (난이도 -%d 적용)", penalty) or "저항"
+        text = text .. "\n" .. _UIKit:Colored("#8C99B4", string.format("%s: 화염 %d · 냉기 %d · 번개 %d · 독 %d", head, st.ResFire, st.ResCold, st.ResLight, st.ResPoison))
         return text .. "\n\n" .. _UIKit:Colored("#8C99B4", "가방·장비를 누르면 그 물건의 설명이 나옵니다.")
     end
 

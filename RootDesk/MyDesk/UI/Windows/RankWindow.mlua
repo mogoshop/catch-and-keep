@@ -44,9 +44,30 @@ script RankWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void Toggle()
+        -- L 키: 열려 있으면 닫고, 아니면 성장 순위로 연다 (10-29 45 §2-6 #4 — 다른 창 단축키와 같은 규칙)
+        if _UIKit:IsOpen(self.Win) then
+            _UIKit:Close(self.Win)
+            return
+        end
+        self:Show("progress")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void MarkTabs()
+        -- 고른 탭 표시: 능력치·룬워드 창 탭과 같은 양식 (btn_frame 색 — 고른 탭은 밝은 금빛, 나머지는 어둡게)
+        local queen = "boss_" .. _GameConst.FinalBossSourceId
+        for _, t in ipairs({ { "TabProgress", "progress" }, { "TabDepth", "depth" }, { "TabWeek", "week" }, { "TabQueen", queen } }) do
+            _UIKit:SetColor(self.Win .. "/" .. t[1], t[2] == self.Kind and Color(1, 0.9, 0.7, 1) or Color(0.55, 0.52, 0.5, 1))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Show(string kind)
         _UIKit:Open(self.Win)
         self.Kind = kind
+        self:MarkTabs()
+        log("[VRF] rank show kind=" .. kind)
         _UIKit:SetText(self.Win .. "/Paper/List", "불러오는 중...")
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")

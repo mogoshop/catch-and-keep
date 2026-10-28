@@ -20,8 +20,25 @@ function run() {
   b.button(w + '/BtnNo', '취소', { anchor: 'bottom-center', pos: [-150, 30], rect_size: [240, 88], font_size: 26, image_ruid: icons.btn_frame, bg_color: '#FFFFFF', color: '#E6DCC6' });
   b.button(w + '/BtnYes', '확인', { anchor: 'bottom-center', pos: [150, 30], rect_size: [240, 88], font_size: 26, image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, color: '#F4E2B0' });
   buildInputPick(b);
+  buildRequest(b);
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
+}
+
+// 받은 요청 (파티·결투·거래 수락/거절 · SocialWindow): 10-29 45 §2-6 #6 — GameHUD 안에 있으면 열린 창 뒤에 깔렸다.
+// 확인 창 층(ui-order 맨 위)에 두되 화면을 덮지 않는 띠 하나 (뒤 창은 그대로 누를 수 있다). 모양은 예전 GameHUD/Request 그대로 (win_panel · 버튼 btn_frame)
+function buildRequest(b) {
+  const rows = load('ui_icons');
+  const row = (key) => rows.find((r) => r.key === key);
+  const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255, a }; };
+  const panel = row('win_panel');
+  const frame = row('btn_frame');
+  const { buttonText } = require('./ui-tokens.cjs');
+  b.panel('SafeArea/Request', { anchor: 'top-center', pos: [0, -250], rect_size: [600, 170], image_ruid: panel.ruid, color: panel.color, alpha: Number(panel.alpha), sprite_type: 1, raycast: true, enable: false });
+  b.text('SafeArea/Request/Text', '', { size: 21, color: '#E6DCC6', anchor: 'top-center', pos: [0, -20], rect_size: [540, 60], outline: true, outline_color: '#2D2D2D' });
+  b.button('SafeArea/Request/BtnYes', '수락', { anchor: 'bottom-center', pos: [-100, 20], rect_size: [180, 62], font_size: 24, color: '#F4E2B0', image_ruid: frame.ruid, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1 });
+  b.button('SafeArea/Request/BtnNo', '거절', { anchor: 'bottom-center', pos: [100, 20], rect_size: [180, 62], font_size: 24, color: '#E6DCC6', image_ruid: frame.ruid, bg_color: hexA(frame.color, Number(frame.alpha)), sprite_type: 1 });
+  b.patchComponent('SafeArea/Request/BtnNo', 'MOD.Core.TextGUIRendererComponent', buttonText(24));
 }
 
 // 조작 방식 고르기 (PC 첫 진입 · GuideWindow): 카드 두 장 — 그림 + 이동·공격·스킬·질주 키 + 고르기 단추.

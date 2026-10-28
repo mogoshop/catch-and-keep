@@ -14,10 +14,12 @@ script TradeWindow extends Logic
     property integer PickIndex = 0
     property integer BagPage = 0               -- 내 가방 쪽 (0 = 1~30, 1 = 31~60)
     property string ShownGold = ""             -- 내 골드 칸에 마지막으로 쓴 글자 (고치는 중에는 덮어쓰지 않는다)
+    property number CancelUntil = 0            -- 취소를 보낸 뒤 서버 답이 올 때까지 창을 다시 열지 않는다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
-        _UIKit:SetEnabled(self.Win, false)
+        -- 창 목록에 등록 (10-29 45 §2-6 #2): Esc = 거래 취소 · 열린 동안 전투 입력·채팅·모바일 패드를 막는다 (AnyWindowOpen)
+        _UIKit:RegisterWindow(self.Win)
         -- 설명이 길면 칸 안에 들어가게 글자를 줄인다
         local info = _UIKit:Get(self.Win .. "/Info/Text")
         if isvalid(info) and info.TextGUIRendererComponent ~= nil then
@@ -41,14 +43,25 @@ script TradeWindow extends Logic
         local gold = _UIKit:Get(self.Win .. "/MyGold")
         if isvalid(gold) then gold:ConnectEvent(TextInputEndEditEvent, function(ev) self:SetGold(ev.text) end) end
         _UIKit:Connect(self.Win .. "/BtnConfirm", function() local t = self:Trade() if t ~= nil then t:RequestConfirm(t.TheirRevision) end end)
-        _UIKit:Connect(self.Win .. "/BtnCancel", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
-        _UIKit:Connect(self.Win .. "/BtnClose", function() local t = self:Trade() if t ~= nil then t:RequestCancel() end end)
+        _UIKit:Connect(self.Win .. "/BtnCancel", function() self:CancelTrade() end)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self:CancelTrade() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CancelTrade()
+        -- 취소·닫기·Esc: 거래를 끝낸다 (서버가 올린 물건을 가방으로 돌려놓는다)
+        local t = self:Trade()
+        if t ~= nil and t.Partner ~= "" then
+            self.CancelUntil = _UtilLogic.ElapsedSeconds + 2
+            t:RequestCancel()
+            log("[VRF] trade cancel requested")
+        end
     end
 
     method PlayerTrade Trade()
@@ -120,13 +133,15 @@ script TradeWindow extends Logic
     method void Poll()
         local t = self:Trade()
         if t == nil then return end
-        local active = t.Partner ~= ""
-        _UIKit:SetEnabled(self.Win, active)
-        if active and not self.WasActive then
-            -- 거래가 열리는 순간 다른 창(거래를 건 플레이어 창 등)을 닫고 맨 위로 (10-24: 플레이어 창이 거래창을 가렸다)
-            for _, win in ipairs(_UIKit.Windows) do _UIKit:Close(win) end
-            local e = _UIKit:Get(self.Win)
-            if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
+        local active = t.Partner ~= "" and _UtilLogic.ElapsedSeconds >= self.CancelUntil
+        if active and (not self.WasActive or not _UIKit:IsOpen(self.Win)) then
+            -- 거래가 열리는 순간 다른 창(거래를 건 플레이어 창 등)을 닫고 맨 위로 (10-24: 플레이어 창이 거래창을 가렸다).
+            -- 거래 중에 다른 창 단축키로 이 창이 닫혀도 거래가 이어지는 동안은 다시 연다 (UIKit.Open이 다른 창·채팅을 정리한다)
+            _UIKit:Open(self.Win)
+            if not self.WasActive then log("[VRF] trade window open (registered)") end
+        elseif not active and _UIKit:IsOpen(self.Win) then
+            _UIKit:Close(self.Win)
+            _ChatFold:SyncHidden()
         end
         self.WasActive = active
         if not active then

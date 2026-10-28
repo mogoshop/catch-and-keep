@@ -360,9 +360,12 @@ script MobilePad extends Logic
 
     @ExecSpace("ClientOnly")
     method void Poll()
-        local windowOpen = _UIKit:AnyWindowOpen()
+        -- 안내 창(웨이포인트 Passive)이 떠 있어도 패드·벨트를 숨긴다 (10-29 45 §2-6 #7: m-07에서 스킬 단추·벨트가 창 옆에 남아 오탭) — 그때는 X·바깥으로 닫는다
+        local windowOpen = _UIKit:AnyWindowShown()
         local player = _UserService.LocalPlayer
         if self.GestureTouchId ~= 0 and (windowOpen or not isvalid(player) or player.PlayerComponent.Hp <= 0 or player.CurrentMap ~= self.GestureMap) then self:ClearGesture() end
+        local root = _UIKit:Get(self.Root)
+        if isvalid(root) and root.Enable == windowOpen then log("[VRF] mobile pad shown=" .. tostring(not windowOpen)) end
         _UIKit:SetEnabled(self.Root, not windowOpen)
         if windowOpen then return end
         -- 스킬 아이콘·물약 개수·그림자 버튼(배운 것만). 바뀌었을 때만 그린다

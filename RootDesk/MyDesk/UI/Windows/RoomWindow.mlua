@@ -15,6 +15,7 @@ script RoomWindow extends Logic
     property string AskId = ""
     property string View = "home"   -- home · list
     property integer TimerId = 0
+    property boolean Armed = false  -- 로비에서 이 창을 띄운 적이 있다 (닫혀 있으면 Guard가 다시 연다 · 로비를 떠나면 꺼진다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -58,16 +59,46 @@ script RoomWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Guard()
         -- 로비가 아닌 곳(게임 방·심연)에 들어갔으면 닫는다 — 불러오는 중 화면이 남지 않게
-        if not _UIKit:IsOpen(self.Win) then return end
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(me.CurrentMap) then return end
-        if me.CurrentMap.Name ~= _GameConst.MapLobby then _UIKit:Close(self.Win) end
+        local lobby = me.CurrentMap.Name == _GameConst.MapLobby
+        if _UIKit:IsOpen(self.Win) then
+            if not lobby then
+                _UIKit:Close(self.Win)
+                self.Armed = false
+            end
+            return
+        end
+        if not lobby then
+            self.Armed = false
+            return
+        end
+        -- 로비에서 닫혀 있다 (Esc·채널 창 Esc 등, 10-29 45 §2-6 #3): 다른 창·확인 창·캐릭터 선택이 없으면 그대로 다시 연다 (보던 화면 유지)
+        ---@type PlayerSave
+        local save = _UIKit:Comp("script.PlayerSave")
+        if not self.Armed or save == nil or save.Selecting or save.Slot <= 0 then return end
+        if _UIKit:AnyWindowShown() or _ConfirmDialog:IsOpen() then return end
+        _UIKit:Open(self.Win)
+        log("[VRF] RoomWindow reopened in lobby view=" .. self.View)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Back()
+        -- Esc (UIKit): 덮는 판(방 만들기·비밀번호)을 닫거나 목록 → 첫 화면. 첫 화면·불러오는 중·모집 판에서는 그대로 (창은 닫지 않는다)
+        if _UIKit:IsOpen(self.Win .. "/Box/Loading") or _UIKit:IsOpen(self.Win .. "/Box/Party") then return end
+        if _UIKit:IsOpen(self.Win .. "/Box/Create") or _UIKit:IsOpen(self.Win .. "/Box/Ask") then
+            self:Overlay("")
+        elseif self.View == "list" then
+            self:SetView("home")
+        end
+        log("[VRF] RoomWindow esc back view=" .. self.View)
     end
 
     @ExecSpace("ClientOnly")
     method void ShowLoading()
         -- 캐릭터 선택 「입장」 직후: 같은 어두운 화면을 바로 덮는다 (캐릭터 선택 창 위 · 다른 창은 건드리지 않는다)
         _UIKit:SetEnabled(self.Win, true)
+        self.Armed = true
         for _, n in ipairs({ "Create", "Ask", "Party" }) do _UIKit:SetEnabled(self.Win .. "/Box/" .. n, false) end
         self:ShowParts(false, false)
         _UIKit:SetEnabled(self.Win .. "/Box/Loading", true)
@@ -78,6 +109,7 @@ script RoomWindow extends Logic
     method void Show()
         -- 로비 도착: 첫 화면(카드 두 장)
         _UIKit:Open(self.Win)
+        self.Armed = true
         _UIKit:SetEnabled(self.Win .. "/Box/Loading", false)
         self.View = "home"
         self:Overlay("")

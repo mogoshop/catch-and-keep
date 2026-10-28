@@ -1,4 +1,4 @@
--- 공용 확인 창 (ConfirmHUD): Show(제목, 본문, 확인 글자, 확인 시 실행할 함수). 취소·Esc·바깥 누르기는 아무것도 하지 않는다.
+-- 공용 확인 창 (ConfirmHUD): Show(제목, 본문, 확인 글자, 확인 시 실행할 함수). 취소·Esc·바깥 누르기는 아무것도 하지 않는다 (Esc는 확인 창만 닫고 뒤 창은 그대로).
 -- 쓰는 곳: 그림자 소환·강화·분해(ShadowHUD), 소지품 버리기·판매(InventoryWindow). ShowInputPick = PC 첫 진입 조작 방식 고르기 (GuideWindow).
 @Logic
 script ConfirmDialog extends Logic
@@ -84,12 +84,17 @@ script ConfirmDialog extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void OnEscape()
+        -- Esc = 취소 (UIKit의 Esc 처리가 부른다 — 뒤 창은 닫지 않는다). 조작 방식 고르기는 Esc로 넘기지 않는다
+        if _UIKit:IsOpen(self.Root) then self:Answer(false) end
+    end
+
+    @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        -- Esc = 취소, Enter = 확인
+        -- Enter = 확인 (Esc는 UIKit.HandleKeyDownEvent → OnEscape 한 곳에서)
         if not _UIKit:IsOpen(self.Root) then return end
-        if event.key == KeyboardKey.Escape then self:Answer(false)
-        elseif event.key == KeyboardKey.Return then self:Answer(true) end
+        if event.key == KeyboardKey.Return then self:Answer(true) end
     end
 
 end
