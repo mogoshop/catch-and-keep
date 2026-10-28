@@ -314,8 +314,8 @@ module.exports = {
   }), { fx: true, fy: true }),
   crabcave2: remix(A1.pit2, Object.assign({}, WETCAVE("ash-cave-floor", "0.68/0.78/0.8"), {
     title: "집게 동굴 2층",
-    put: [["set", "a3_lm_crab_throne", 18.5, 8.3]],
-    extra: { end: [18, 5], return: [23, 7] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "a3_lm_crab_throne", 17.5, 8.3]],
+    extra: { end: [17, 5], return: [23, 7] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["굴 가장 깊은 곳, 바위 집게 왕 크라그의 웅덩이. 웅덩이 구석에 되돌아가는 문. (자리: 뼈 구덩이 2층을 위아래로 뒤집음)"],
     zones: { a: "ash-cave-floor 0.66/0.76/0.78 계단참", b: "marsh-floor 0.6/0.76/0.78 껍질 무더기 길", c: "ash-cave-floor 0.58/0.66/0.7 북쪽 굴", d: "marsh-floor 0.66/0.84/0.86 집게 왕의 웅덩이" },
     dress: {
@@ -356,8 +356,8 @@ module.exports = {
   }), { fx: true, fy: true }),
   smuggler2: remix(A1.cellar2, Object.assign({}, WETCAVE("bone-floor", "0.68/0.74/0.74", "밀수꾼 동굴 벽"), {
     title: "밀수꾼 동굴 2층",
-    put: [["set", "a3_lm_map_table", -19.5, 11.3]],
-    extra: { end: [-20, 8], return: [-25, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    put: [["set", "a3_lm_map_table", -17.5, 11.3]],
+    extra: { end: [-18, 8], return: [-25, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["밀수꾼 두목 렌의 은신처. 장물 창고와 물 고인 방을 지나면 두목의 금고 방, 구석에 되돌아가는 문. (자리: 지하실 2층을 좌우·상하로 뒤집음)"],
     zones: { a: "bone-floor 0.64/0.7/0.7 계단참", b: "ash-camp-floor 0.66/0.7/0.68 장물 창고", c: "marsh-floor 0.52/0.66/0.66 물 고인 방", d: "bone-floor 0.7/0.74/0.72 갈림 방", e: "ash-camp-floor 0.78/0.76/0.7 두목의 금고 방" },
     dress: {

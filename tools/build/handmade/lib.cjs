@@ -222,19 +222,29 @@ function artEntities(d, ctx, bp, rows, func) {
   let raisedN = 0;
   if (bp.raised) {
     const rp = pieceBy(isLow), pk = new Map();
+    // 10-28 코덱스 담 위 추가 6장: 앞면 3조각(sw·s·se) · 끊긴 담 끝(e·w)이 있는 묶음이면 그 그림을, 없으면 예전처럼 center를 어둡게
+    const has = (n) => !!table[n];
+    const A = bp.raised.atlas;
+    const faceArt = has(`${A}-face-s`) && has(`${A}-face-sw`) && has(`${A}-face-se`);
+    const brokenArt = has(`${A}-broken-e`) && has(`${A}-broken-w`);
+    const isFace = (x, y) => isLow(x, y) && bp.at(x, y) !== null && !isLow(x, y + 1);
     for (const [x, y] of bp.cells()) {
       if (isLow(x, y)) {
-        // 바로 위(북쪽)가 담이면 앞면, 두 칸 위가 담이고 바로 위가 앞면이면 그림자
-        if (!isLow(x, y + 1)) pk.set(key(x, y), "face");
+        // 바로 위(북쪽)가 담이면 앞면(왼끝·가운데·오른끝), 두 칸 위가 담이고 바로 위가 앞면이면 그림자
+        if (!isLow(x, y + 1)) pk.set(key(x, y), !faceArt ? "face" : !isFace(x - 1, y) ? "face-sw" : !isFace(x + 1, y) ? "face-se" : "face-s");
         else if (isLow(x, y + 1) && bp.at(x, y + 1) !== null && !isLow(x, y + 2)) pk.set(key(x, y), "shadow");
         continue;
       }
-      pk.set(key(x, y), rp(x, y));
+      let piece = rp(x, y);
+      // 한 칸 너비 담길이 가로로 끝나는 칸(위·아래·한쪽이 낮음) = 무너진 담 끝
+      if (brokenArt && (piece === "e" || piece === "w") && isLow(x, y + 1) && isLow(x, y - 1)) piece = `broken-${piece}`;
+      pk.set(key(x, y), piece);
     }
     const t = tintOf(bp.raised.tint);
     for (const r of mergeRects(pk)) {
       const face = r.p === "face", shadow = r.p === "shadow";
-      const name = shadow ? "waste-borders-center" : `${bp.raised.atlas}-borders-${face ? "center" : r.p}`;
+      const own = r.p.startsWith("face-") || r.p.startsWith("broken-");
+      const name = shadow ? "waste-borders-center" : own ? `${A}-${r.p}` : `${A}-borders-${face ? "center" : r.p}`;
       const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
       const m = face ? RAISED_FACE : 1;
       o["MOD.Core.SpriteRendererComponent"].Color = shadow ? { r: 0, g: 0, b: 0, a: RAISED_SHADOW } : { r: t.r * m, g: t.g * m, b: t.b * m, a: 1 };

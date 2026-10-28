@@ -6,7 +6,7 @@ const A1 = require("./act1.cjs");
 
 const TEMPLE = {
   base: "temple-floor 0.9/0.84/0.74",
-  walls: { "#": "temple 1/1/1 사원 벽" },
+  walls: { "#": "a2-temple-pillar-wall 1/1/1 무너진 사원 기둥벽" },
   zones: {
     a: "temple-floor 0.76/0.7/0.62 계단참",
     b: "sandstone-road 0.86/0.8/0.68 기둥 회랑",
@@ -19,10 +19,10 @@ const TEMPLE = {
 };
 const templeDress = {
   a: { props: ["temple-column", "a2-broken-urns"], n: 3 },
-  b: { props: ["temple-column", "broken-column", "a2-broken-urns"], n: 7, decals: ["a2-decal-broken-tiles", "a2-decal-buried-road"], dn: 5 },
+  b: { props: ["temple-column", "broken-column", "a2-broken-urns"], n: 7, decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles", "a2-decal-buried-road"], dn: 6 },
   c: { props: ["a2-broken-urns", "desert-bones", "a2-buried-statue-head"], n: 7, decals: ["a1-decal-blood-pool"], dn: 2 },
-  d: { props: ["temple-column", "wind-stele", "a2-fallen-obelisk"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 4 },
-  e: { props: ["broken-column", "desert-bones", "a2-waving-skeleton"], n: 7, decals: ["a2-decal-dry-crack"], dn: 3 },
+  d: { props: ["temple-column", "wind-stele", "a2-fallen-obelisk"], n: 7, decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles"], dn: 5 },
+  e: { props: ["broken-column", "desert-bones", "a2-waving-skeleton"], n: 7, decals: ["a2-decal-broken-tile", "a2-decal-dry-crack"], dn: 4 },
   f: { props: ["bookshelf", "burnt-paper", "a2-broken-urns"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 2 },
   g: { props: ["temple-column"], n: 2 },
 };
@@ -45,7 +45,7 @@ module.exports = {
       d: "dry-ground 0.86/0.76/0.62 대장간 마당",
       e: "sand-floor 0.94/0.88/0.74 남문 길",
     },
-    roads: { "=": "sandstone-road 1/0.96/0.86 시장 큰길" },
+    roads: { "=": "a2-caravan-road 1/0.97/0.9 시장 큰길 (대상 수레 자국)" },
     places: [
       E("a", "시장 광장", 0, 0, 8, 4.5, { torch: false }),
       E("b", "오아시스 물가", 0, 8, 10, 3.6, { torch: false }),
@@ -70,7 +70,7 @@ module.exports = {
       a: { decals: ["a2-decal-broken-tiles"], dn: 2 },
       c: { props: ["a2-broken-urns", "a2-torn-awning", "camp-firewood"], n: 4, decals: ["a2-decal-sand-ripples"], dn: 1 },
       d: { props: ["camp-weapon-rack", "a2-broken-urns", "camp-firewood"], n: 3, decals: ["a1-decal-ash-campfire"], dn: 1 },
-      e: { props: ["desert-rock", "a2-dead-cactus", "mp-signpost"], n: 4, decals: ["a2-decal-sand-ripples"], dn: 2 },
+      e: { props: ["desert-rock", "a2-dead-cactus", "mp-signpost"], n: 4, decals: ["a2-decal-camel-tracks", "a2-decal-sand-ripples"], dn: 3 },
     },
   },
 
@@ -89,7 +89,7 @@ module.exports = {
       f: "sand-floor 0.9/0.82/0.68 모래 웅덩이",
       g: "sand-floor 0.96/0.9/0.76 동쪽 바람길",
     },
-    roads: { "=": "sandstone-road 0.92/0.84/0.7 묻힌 옛길", "-": "sandstone-road 0.78/0.7/0.58 샛길" },
+    roads: { "=": "a2-broken-sandstone-road 0.96/0.92/0.84 묻힌 옛길", "-": "a2-caravan-road 0.86/0.8/0.7 샛길" },
     places: [
       E("a", "언덕 어귀", -25, -1, 6, 5),
       E("b", "짐승 무덤", -12, 10, 9, 6),
@@ -110,12 +110,12 @@ module.exports = {
     waypoint: [1, 1],
     put: [["prop", "cave-entrance", 16.5, 14.8, 1]],
     dress: {
-      a: { props: ["desert-rock", "a2-dead-cactus", "desert-bones"], n: 6, decals: ["a2-decal-sand-ripples"], dn: 3 },
+      a: { props: ["desert-rock", "a2-dead-cactus", "desert-bones"], n: 6, decals: ["a2-decal-camel-tracks", "a2-decal-sand-ripples"], dn: 4 },
       b: { sets: ["a2_beast_grave"], props: ["desert-bones", "a2-dead-cactus", "mp-beast-skull"], n: 7, decals: ["a2-decal-bleached-bones", "a2-decal-sand-ripples"], dn: 4 },
       c: { sets: ["a2_oasis_ruin"], props: ["palm", "desert-rock", "a2-broken-urns"], n: 6, decals: ["a2-decal-dry-crack", "a2-decal-broken-tiles"], dn: 4 },
-      d: { sets: ["a2_abandoned_camp"], props: ["a2-torn-awning", "a2-spear-skull-fence", "a2-broken-urns"], n: 6, decals: ["a2-decal-snake-trail"], dn: 3 },
+      d: { sets: ["a2_abandoned_camp"], props: ["a2-torn-awning", "a2-spear-skull-fence", "a2-broken-urns"], n: 6, decals: ["a2-decal-camel-tracks", "a2-decal-snake-trail"], dn: 4 },
       e: { props: ["desert-rock", "desert-bones", "a2-dead-cactus"], n: 6, decals: ["a2-decal-snake-trail"], dn: 3 },
-      f: { sets: ["a2_lm_buried_caravan"], props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-bleached-bones"], dn: 3 },
+      f: { sets: ["a2_lm_buried_caravan"], props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-sand-drift", "a2-decal-bleached-bones"], dn: 4 },
       g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
   },
@@ -135,7 +135,7 @@ module.exports = {
       f: "sand-floor 0.86/0.78/0.64 갈라진 바위턱",
       g: "dry-ground 0.84/0.74/0.6 동쪽 협곡 출구",
     },
-    roads: { "=": "sandstone-road 0.86/0.76/0.62 협곡 길" },
+    roads: { "=": "a2-caravan-road 0.94/0.86/0.74 협곡 길" },
     places: [
       E("a", "협곡 입구", -28, 3, 5, 5),
       E("b", "갈비뼈 고개", -16, -6, 7, 5),
@@ -155,9 +155,9 @@ module.exports = {
     waypoint: [-2, 1],
     put: [["prop", "well", 11.5, -11.6]],
     dress: {
-      a: { props: ["desert-rock", "broken-column", "a2-dead-cactus"], n: 6, decals: ["a2-decal-dry-crack"], dn: 2 },
+      a: { props: ["desert-rock", "broken-column", "a2-dead-cactus"], n: 6, decals: ["a2-decal-sand-drift", "a2-decal-dry-crack"], dn: 3 },
       b: { sets: ["a2_rib_pass"], props: ["desert-rock", "desert-bones"], n: 6, decals: ["a2-decal-bleached-bones"], dn: 3 },
-      c: { sets: ["a2_colossus"], props: ["broken-column", "desert-rock", "a2-broken-urns"], n: 8, decals: ["a2-decal-buried-road", "a2-decal-broken-tiles"], dn: 5 },
+      c: { sets: ["a2_colossus"], props: ["broken-column", "desert-rock", "a2-broken-urns"], n: 8, decals: ["a2-decal-broken-sandstone", "a2-decal-buried-road", "a2-decal-broken-tiles"], dn: 6 },
       d: { props: ["a2-broken-urns", "desert-rock", "desert-bones"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
       e: { sets: ["a2_abandoned_camp"], props: ["a2-torn-awning", "camp-firewood", "a2-spear-skull-fence"], n: 6, decals: ["a1-decal-ash-campfire"], dn: 2 },
       f: { sets: ["a2_lm_dry_waterwheel"], props: ["desert-bones", "a2-waving-skeleton", "desert-rock"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
@@ -180,7 +180,7 @@ module.exports = {
       f: "sand-floor 0.88/0.84/0.74 모래에 묻힌 마을",
       g: "sand-floor 0.9/0.86/0.74 동쪽 모래길",
     },
-    roads: { "=": "sandstone-road 0.86/0.8/0.66 모래에 묻힌 길", "-": "sandstone-road 0.74/0.68/0.58 샛길" },
+    roads: { "=": "a2-broken-sandstone-road 0.92/0.88/0.78 모래에 묻힌 길", "-": "a2-caravan-road 0.82/0.76/0.66 샛길" },
     places: [
       E("a", "폭풍 어귀", -28, -3, 6, 5),
       R("b", "바람 비석 들판", -22, 4, -6, 14, { rough: 1.2, note: "왕들의 비석 줄" }),
@@ -204,11 +204,11 @@ module.exports = {
     ],
     dress: {
       a: { props: ["desert-rock", "desert-bones"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 3 },
-      b: { props: ["desert-bones", "desert-rock"], n: 4, decals: ["a2-decal-bleached-bones"], dn: 3 },
+      b: { props: ["desert-bones", "desert-rock"], n: 4, decals: ["a2-decal-sand-drift", "a2-decal-bleached-bones"], dn: 4 },
       c: { sets: ["a2_oasis_ruin"], props: ["palm", "desert-rock"], n: 5, decals: ["a2-decal-dry-crack"], dn: 3 },
       d: { props: ["broken-column", "a2-broken-urns"], n: 5, decals: ["a2-decal-buried-road"], dn: 3 },
-      e: { sets: ["a2_lm_wind_tomb", "a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 5, decals: ["a2-decal-bleached-bones"], dn: 3 },
-      f: { props: ["a2-torn-awning", "a2-broken-urns", "mp-fence"], n: 6, decals: ["a2-decal-broken-tiles"], dn: 2 },
+      e: { sets: ["a2_lm_wind_tomb", "a2_beast_grave"], props: ["desert-bones", "mp-beast-skull"], n: 5, decals: ["a2-decal-dry-blood", "a2-decal-bleached-bones"], dn: 4 },
+      f: { props: ["a2-torn-awning", "a2-broken-urns", "mp-fence"], n: 6, decals: ["a2-decal-broken-tile", "a2-decal-broken-tiles"], dn: 3 },
       g: { props: ["desert-rock", "wind-stele"], n: 5, decals: ["a2-decal-sand-ripples"], dn: 2 },
     },
   },
@@ -220,7 +220,7 @@ module.exports = {
     title: "가라앉은 대로",
     story: ["모래 바다에 잠긴 옛 왕국. 성벽 윗면만 남아 길이 됐다 — 서문 망루에서 큰 성벽(대로)을 따라 거상 보루(웨이포인트)까지, 대로는 그 동쪽에서 무너져 끊겼다.", "북쪽 성벽 길은 북쪽 보루를 돌아 사원 문 앞 성벽으로, 남쪽은 모래에 잠긴 시장(안뜰이 꺼진 네모 성벽)을 돌아 동쪽 성벽으로 이어진다. 서쪽에 열주 회랑·서북 망루, 서남 보루에 독사의 둥지 입구."],
     raised: "a2-sandstone-wall 1/1/1 담 윗면",
-    base: "sand-floor 0.62/0.55/0.44",
+    base: "a2-sand-sea-floor 0.92/0.9/0.86",
     walls: { "#": "canyon 0.92/0.84/0.74 낮은 모래 바다", "%": "ruin-wall 0.95/0.88/0.76 열주" },
     zones: {
       a: "sandstone-road 0.86/0.78/0.64 서문 망루와 대로",
@@ -310,7 +310,7 @@ module.exports = {
     title: "대사제의 성소",
     story: ["성소 문을 지나 순례자의 방·시종의 방 중 하나를 지나야 봉인된 문간 — 그 너머 대사제 알하자르의 성소(아레나).", "(자리: 여왕의 무덤을 위아래로 뒤집음 · 호위는 회랑에만)"],
     base: "temple-floor 0.9/0.84/0.74",
-    walls: { "#": "temple 0.96/0.92/0.86 성소 벽" },
+    walls: { "#": "a2-temple-pillar-wall 0.96/0.92/0.86 성소 기둥벽" },
     zones: {
       a: "temple-floor 0.76/0.7/0.62 성소 문",
       b: "sandstone-road 0.8/0.74/0.62 순례자의 방",
@@ -323,9 +323,9 @@ module.exports = {
     dress: {
       a: { props: ["temple-column", "a2-broken-urns"], n: 3 },
       b: { props: ["a2-broken-urns", "wind-stele", "desert-bones"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 3 },
-      c: { props: ["a2-broken-urns", "burnt-paper", "a2-buried-statue-head"], n: 7, decals: ["a1-decal-blood-pool"], dn: 3 },
+      c: { props: ["a2-broken-urns", "burnt-paper", "a2-buried-statue-head"], n: 7, decals: ["a2-decal-dry-blood", "a1-decal-blood-pool"], dn: 4 },
       d: { props: ["temple-column"], n: 2 },
-      e: { props: ["temple-column", "wind-stele"], n: 6, decals: ["a2-decal-broken-tiles", "a1-decal-blood-pool"], dn: 6 },
+      e: { props: ["temple-column", "wind-stele"], n: 6, decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles", "a1-decal-blood-pool"], dn: 7 },
     },
   }, { fy: true }),
 
@@ -337,7 +337,7 @@ module.exports = {
     dress: {
       a: { props: ["desert-rock"], n: 3 },
       b: { props: ["desert-rock", "desert-bones"], n: 6, decals: ["a2-decal-snake-trail"], dn: 2 },
-      c: { sets: ["a2_rib_pass"], props: ["desert-bones", "a3-crab-shell-pile", "a2-dead-cactus"], n: 7, decals: ["a2-decal-bleached-bones"], dn: 4 },
+      c: { sets: ["a2_rib_pass"], props: ["desert-bones", "a3-crab-shell-pile", "a2-dead-cactus"], n: 7, decals: ["a2-decal-dry-blood", "a2-decal-bleached-bones"], dn: 5 },
       d: { sets: ["a2_lm_venom_pool"], props: ["desert-rock", "desert-bones"], n: 5, decals: ["a2-decal-snake-trail"], dn: 2 },
       e: { props: ["desert-bones", "a2-waving-skeleton"], n: 5 },
       f: { props: ["desert-rock"], n: 2 },
@@ -353,7 +353,7 @@ module.exports = {
       a: { props: ["desert-rock"], n: 2 },
       b: { props: ["desert-bones", "a3-crab-shell-pile", "desert-rock"], n: 8, decals: ["a2-decal-snake-trail"], dn: 3 },
       c: { props: ["desert-bones", "a2-waving-skeleton"], n: 6, decals: ["a2-decal-bleached-bones"], dn: 2 },
-      d: { props: ["a3-crab-shell-pile", "desert-bones", "a2-spear-skull-fence"], n: 9, decals: ["a2-decal-bleached-bones", "a2-decal-snake-trail"], dn: 5 },
+      d: { props: ["a3-crab-shell-pile", "desert-bones", "a2-spear-skull-fence"], n: 9, decals: ["a2-decal-dry-blood", "a2-decal-bleached-bones", "a2-decal-snake-trail"], dn: 6 },
     },
   }), { fx: true }),
   drywell: remix(A1.cave, Object.assign({}, SANDCAVE("well-floor", "0.86/0.8/0.68"), {
@@ -363,9 +363,9 @@ module.exports = {
     dress: {
       a: { props: ["a2-broken-urns"], n: 3 },
       b: { props: ["desert-rock", "a2-broken-urns", "desert-bones"], n: 7, decals: ["a2-decal-dry-crack"], dn: 2 },
-      c: { props: ["broken-column", "desert-rock"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 2 },
+      c: { props: ["broken-column", "desert-rock"], n: 7, decals: ["a2-decal-broken-sandstone", "a2-decal-broken-tiles"], dn: 3 },
       d: { props: ["desert-bones", "a2-broken-urns"], n: 6 },
-      e: { sets: ["a2_lm_well_pulley"], props: ["a2-broken-urns", "desert-bones", "a2-waving-skeleton"], n: 6, decals: ["a2-decal-dry-crack"], dn: 3 },
+      e: { sets: ["a2_lm_well_pulley"], props: ["a2-broken-urns", "desert-bones", "a2-waving-skeleton"], n: 6, decals: ["a2-decal-mummy-bandage", "a2-decal-dry-crack"], dn: 4 },
     },
   }), { fy: true }),
   kingtomb1: remix(A1.cellar1, Object.assign({}, {
@@ -377,27 +377,27 @@ module.exports = {
     put: [["prop", "a2-buried-statue-head", 16.5, -1.6, 1, 0]],
     dress: {
       a: { props: ["a2-broken-urns"], n: 2 },
-      b: { sets: ["a2_lm_mask_wall"], props: ["a2-broken-urns", "broken-column", "desert-bones"], n: 10, decals: ["a2-decal-broken-tiles"], dn: 3 },
+      b: { sets: ["a2_lm_mask_wall"], props: ["a2-broken-urns", "broken-column", "desert-bones"], n: 10, decals: ["a2-decal-mummy-bandage", "a2-decal-broken-tiles"], dn: 4 },
       c: { props: ["a2-broken-urns", "wind-stele"], n: 8, decals: ["a2-decal-dry-crack"], dn: 2 },
       d: { decals: ["a2-decal-bleached-bones"], dn: 2 },
-      e: { props: ["temple-column", "a2-broken-urns"], n: 4, decals: ["a2-decal-broken-tiles"], dn: 2 },
+      e: { props: ["temple-column", "a2-broken-urns"], n: 4, decals: ["a2-decal-scattered-coins", "a2-decal-broken-tiles"], dn: 3 },
       f: { props: ["a2-broken-urns"], n: 2 },
     },
   }), { fy: true }),
   kingtomb2: remix(A1.cellar2, Object.assign({}, {
     title: "왕들의 묘실 2층",
-    extra: { end: [19, 8], return: [24, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
+    extra: { end: [16, 8], return: [24, 10] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     story: ["무너진 보물 방과 모래가 쏟아진 방을 지나면 묘실 수호왕 아메네트의 석관실. 석관실 구석에 되돌아가는 문. (자리: 지하실 2층을 위아래로 뒤집음)"],
     base: "tomb-floor 0.84/0.76/0.64",
     walls: { "#": "tomb 0.96/0.92/0.86 묘실 벽" },
     zones: { a: "tomb-floor 0.76/0.68/0.58 계단참", b: "tomb-floor 0.8/0.72/0.6 무너진 보물 방", c: "sand-floor 0.8/0.72/0.58 모래 쏟아진 방", d: "tomb-floor 0.84/0.76/0.62 갈림 방", e: "tomb-floor 1/0.9/0.72 수호왕의 석관실" },
-    put: [["prop", "tomb-door", 23, -2.4, 1, 0], ["set", "a2_lm_king_sarcophagus", 19.5, 11.3]],
+    put: [["prop", "tomb-door", 23, -2.4, 1, 0], ["set", "a2_lm_king_sarcophagus", 16.5, 11.3]],
     dress: {
       a: { props: ["a2-broken-urns"], n: 2 },
-      b: { props: ["a2-broken-urns", "broken-column"], n: 9, decals: ["a2-decal-broken-tiles"], dn: 2 },
+      b: { props: ["a2-broken-urns", "broken-column"], n: 9, decals: ["a2-decal-scattered-coins", "a2-decal-broken-tiles"], dn: 3 },
       c: { props: ["desert-rock", "desert-bones", "a2-broken-urns"], n: 7, decals: ["a2-decal-sand-ripples"], dn: 3 },
       d: { props: ["temple-column"], n: 2 },
-      e: { props: ["temple-column", "a2-broken-urns", "wind-stele"], n: 8, decals: ["a2-decal-broken-tiles", "a2-decal-bleached-bones"], dn: 5 },
+      e: { props: ["temple-column", "a2-broken-urns", "wind-stele"], n: 8, decals: ["a2-decal-mummy-bandage", "a2-decal-broken-tiles", "a2-decal-bleached-bones"], dn: 6 },
     },
   }), { fy: true }),
   archive: {
@@ -434,11 +434,11 @@ module.exports = {
     extra: { end: [20, 6], return: [25, -8] },   // 10-28 랜드마크(코덱스 act234) 앞으로 (전에는 0)
     dress: {
       a: { props: ["bookshelf"], n: 2 },
-      b: { props: ["bookshelf", "burnt-paper", "a2-broken-urns"], n: 7, decals: ["a2-decal-broken-tiles"], dn: 2 },
+      b: { props: ["bookshelf", "burnt-paper", "a2-broken-urns"], n: 7, decals: ["a2-decal-scorched-circle", "a2-decal-broken-tiles"], dn: 3 },
       c: { props: ["bookshelf", "burnt-paper"], n: 6, decals: ["a2-decal-broken-tiles"], dn: 2 },
       d: { props: ["burnt-paper"], n: 2, decals: ["a2-decal-buried-road"], dn: 2 },
       e: { props: ["bookshelf", "burnt-paper"], n: 6, decals: ["a2-decal-dry-crack"], dn: 2 },
-      f: { props: ["burnt-paper", "bookshelf", "temple-column"], n: 8, decals: ["a4-decal-scorch", "a2-decal-broken-tiles"], dn: 5 },
+      f: { props: ["burnt-paper", "bookshelf", "temple-column"], n: 8, decals: ["a2-decal-scorched-circle", "a4-decal-scorch", "a2-decal-broken-tiles"], dn: 6 },
     },
   },
   vipernest: remix(A1.hollow, Object.assign({}, SANDCAVE("viper-floor", "0.86/0.88/0.72"), {
@@ -449,7 +449,7 @@ module.exports = {
       a: { props: ["viper-nest"], n: 2 },
       b: { props: ["viper-nest", "desert-bones"], n: 5, decals: ["a2-decal-snake-trail"], dn: 3 },
       c: { props: ["viper-nest", "desert-rock", "desert-bones"], n: 7, decals: ["a2-decal-snake-trail"], dn: 2 },
-      d: { sets: ["a2_lm_serpent_column"], props: ["viper-nest", "a2-dead-cactus", "desert-bones"], n: 9, decals: ["a2-decal-snake-trail", "a2-decal-bleached-bones"], dn: 5 },
+      d: { sets: ["a2_lm_serpent_column"], props: ["viper-nest", "a2-dead-cactus", "desert-bones"], n: 9, decals: ["a2-decal-snake-trail", "a2-decal-snake-trail", "a2-decal-bleached-bones"], dn: 6 },
       e: { props: ["viper-nest", "desert-bones"], n: 5 },
       f: { props: ["viper-nest", "a2-waving-skeleton"], n: 4, decals: ["a2-decal-snake-trail"], dn: 2 },
     },
