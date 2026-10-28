@@ -527,4 +527,4 @@ for (const [id, sp] of Object.entries(module.exports)) {
   if (!sp.raised && arts.some((a) => SEA.has(a)) && arts.some((a) => !SEA.has(a))) sp.shore = "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-shore-foam-edge-h-r2 0.9 - a3-decal-shore-foam-edge-v-r2";
 }
 // 10-29 메이커 번개 절벽: 장소 밖 능선 길(.)이 따개비 돌 바닥이라 절벽 윗단 조각과 결이 같아 벽처럼 보였다 → 바탕만 처형장 돌바닥(푸른빛)으로 남긴다
-module.exports.stormcliff.base = "execution-floor 0.8/0.92/1";   // 원래 푸른 칠(0.62/0.72/0.74)은 길 칸이 구멍처럼 어두웠다 (미리보기) — 따개비 바닥과 밝기를 맞춘다
+module.exports.stormcliff.base = "a3-barnacle-stone-floor-r2 0.95/1/1";   // 10-29 메이커 재캡처: 처형장 바닥(0.8/0.92/1)이 회색 바위 사이에서 진한 흙갈색 네모(구멍·진흙)로 보였다 → 바위 계열 밝은 회청 따개비 돌 (구역 바닥 0.82~0.88보다 밝게 — 능선 길이 벽 윗단과 섞이지 않게)

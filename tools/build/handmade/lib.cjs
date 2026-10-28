@@ -43,6 +43,12 @@ const NEAR_FUNC = [2.2, 1.4];         // 기능 자리(포털·화로·웨이포
 //   원본 크기(256px → 2~2.6칸)로 그려진다 — 새 납품마다 사람이 표를 맞추던 일을 --check가 잡는다. 띠 그림은 배율을 ;shore·edge=에서 받으므로 예외
 const SIZE_MIN_PX = 192, SIZE_MUL_TOL = 0.15;
 const SIZE_EXEMPT = new Set(["a3-decal-shore-foam-edge-h-r2", "a3-decal-shore-foam-edge-v-r2", "a4-decal-lava-edge-h", "a4-decal-lava-edge-v"]);
+// 가장자리 띠 그림의 불투명 몸통 (원본 px, 알파 ≥ 96 — 10-29 메이커 재캡처: 그림 두께의 절반만 띄우면 위·아래 투명 여백만큼 띠가 0.2칸 떠 보였다).
+//   가로 그림 = [위, 아래) 줄 · 세로 그림 = [왼, 오른) 칸, 피벗은 가운데(0.5/0.5, resource-properties). 표에 없는 그림은 두께 전체를 몸통으로 친다
+const EDGE_BODY = {
+  "a3-decal-shore-foam-edge-h-r2": [24, 46], "a3-decal-shore-foam-edge-v-r2": [22, 47],
+  "a4-decal-lava-edge-h": [16, 48], "a4-decal-lava-edge-v": [10, 45],
+};
 
 // ───────── 설계도 ─────────
 function parseBlueprint(id) {
@@ -358,12 +364,34 @@ function artEntities(d, ctx, bp, rows, func) {
       out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.006], overrides: Object.assign(o, cellScale) });
     }
     // 2-2) 가장자리 띠 (edge=): 높은 칸 ↔ 낮은 칸 경계. 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래 바로 아래.
-    //   10-29 메이커 번개 절벽: 0.3칸 띄우면 띠가 바다 쪽으로 떨어져 보였다 → 띠 두께의 절반만 띄워 띠 안쪽 끝이 경계에 닿게 (가로 = 그림 높이 · 세로 = 그림 폭)
+    //   10-29 메이커 재캡처: 띠 안쪽 끝(그림의 불투명 몸통 EDGE_BODY)이 경계에 정확히 닿게 변마다 띄우는 거리를 따로 잰다
+    //   (북 = 몸통 아래 끝 · 남 = 몸통 위 끝 · 동 = 몸통 왼 끝 · 서 = 몸통 오른 끝까지 그림 가운데에서 잰 거리).
+    //   좁은 물 틈: 1칸 폭 틈은 양쪽 띠가 겹쳐 H·U 모양이 떴다 → 건너편 절벽까지 물이 1칸이면 긋지 않고, 2칸이면 한 줄만(남·동 쪽으로 긋는 변),
+    //   변이 2칸 이하 좁은 물길의 막다른 끝이면 긋지 않는다
     if (bp.raised.edge) {
       const EG = bp.raised.edge, hM = new Map(), vM = new Map();
-      const thick = (name, px) => { const sp = spriteOf(table, name, `${d.id} edge`); return (num(sp[px], 64) * baseScale(sp, ctx.propScale) * EG.scale) / 100; };
-      const OFF = r3(thick(EG.h, "h") / 2), OFFV = r3(EG.v ? thick(EG.v, "w") / 2 : OFF);
+      const inset = (name, dim) => {   // [몸통 시작, 몸통 끝, 그림 가운데]을 월드 칸으로
+        const sp = spriteOf(table, name, `${d.id} edge`), s = (baseScale(sp, ctx.propScale) * EG.scale) / 100, size = num(sp[dim], 64);
+        const body = EDGE_BODY[name] || [0, size];
+        return { a: body[0] * s, b: body[1] * s, mid: (size / 2) * s };
+      };
+      const ih = inset(EG.h, "h"), iv = EG.v ? inset(EG.v, "w") : ih;
+      const OFF_N = r3(ih.b - ih.mid), OFF_S = r3(ih.mid - ih.a), OFF_E = r3(iv.mid - iv.a), OFF_W = r3(iv.b - iv.mid);
       const lowIn = (x, y) => isLow(x, y) && bp.at(x, y) !== null;   // 맵 밖은 경계로 치지 않는다
+      const solidAt = (x, y) => bp.at(x, y) !== null && (!isLow(x, y) || isBand(x, y));   // 높은 칸 또는 앞면 띠(절벽 면)
+      const span = (x, y, dx, dy) => {   // (x, y)부터 (dx, dy)로 이어진 물 칸 수 (3에서 멈춘다 · 맵 밖으로 열려 있으면 3)
+        for (let k = 0; k < 3; k++) { const cx = x + dx * k, cy = y + dy * k; if (bp.at(cx, cy) === null) return 3; if (solidAt(cx, cy)) return k; }
+        return 3;
+      };
+      // 물 칸 (wx, wy)로 (nx, ny) 방향 변을 그을지
+      const open = (wx, wy, nx, ny) => {
+        const k = span(wx, wy, nx, ny);
+        if (k <= 1) return false;
+        const l1 = span(wx, wy, ny, nx), l2 = span(wx, wy, -ny, -nx);
+        if (l1 < 3 && l2 < 3 && l1 + l2 - 1 <= 2) return false;
+        return k >= 3 || ny === -1 || nx === 1;
+      };
+      let narrowN = 0;
       const run = (map, line, t) => {   // 같은 선 위에서 이어진 구간으로 묶는다 (t는 선마다 오름차순으로 들어온다)
         const list = map.get(line) || [], last = list[list.length - 1];
         if (last && last[1] === t - 1) last[1] = t; else list.push([t, t]);
@@ -372,14 +400,18 @@ function artEntities(d, ctx, bp, rows, func) {
       for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {   // 가로 변: 줄마다 x로 잇는다
         if (isLow(x, y)) continue;
         // 낮은 이웃이 다른 높은 칸의 앞면 띠면 물이 아니라 절벽 면 — 띠를 긋지 않는다 (10-29 계단 능선에서 앞면을 가로지르는 세로 줄이 떴다)
-        if (lowIn(x, y + 1) && !isBand(x, y + 1)) run(hM, r3(y + 1 + OFF), x);
-        if (lowIn(x, y - 1)) run(hM, r3(y - bandsAt(x, y - 1, 1) - OFF), x);
+        if (lowIn(x, y + 1) && !isBand(x, y + 1)) { if (open(x, y + 1, 0, 1)) run(hM, r3(y + 1 + OFF_N), x); else narrowN++; }
+        if (lowIn(x, y - 1)) {
+          const nb = bandsAt(x, y - 1, 1);
+          if (open(x, y - 1 - nb, 0, -1)) run(hM, r3(y - nb - OFF_S), x); else narrowN++;
+        }
       }
       for (let x = b.x0; x <= b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {   // 세로 변: 칸 줄마다 y로 잇는다
         if (isLow(x, y)) continue;
-        if (lowIn(x + 1, y) && !isBand(x + 1, y)) run(vM, r3(x + 1 + OFFV), y);
-        if (lowIn(x - 1, y) && !isBand(x - 1, y)) run(vM, r3(x - OFFV), y);
+        if (lowIn(x + 1, y) && !isBand(x + 1, y)) { if (open(x + 1, y, 1, 0)) run(vM, r3(x + 1 + OFF_E), y); else narrowN++; }
+        if (lowIn(x - 1, y) && !isBand(x - 1, y)) { if (open(x - 1, y, -1, 0)) run(vM, r3(x - OFF_W), y); else narrowN++; }
       }
+      if (narrowN) warn.push(`${d.id}: 좁은 물 틈이라 가장자리 띠를 뺀 변 ${narrowN}칸 (오류 아님)`);
       const flat = (map) => [...map.entries()].flatMap(([line, list]) => list.map(([a, bEnd]) => [line, a, bEnd]));
       layRuns("Edge", flat(hM), flat(vM), EG.h, EG.v, EG.scale, EG.tint, -0.012, true);
     }
@@ -548,10 +580,17 @@ function artEntities(d, ctx, bp, rows, func) {
     }
   }
   // 칸마다 조각 열쇠 → 같은 열쇠 칸을 큰 사각형으로 덮는다 (담 윗면 맵의 낮은 칸은 그리지 않는다 — 바탕 모래가 보인다)
+  // cut=x/y[+x/y…] (배치표 prop args, 10-29 마지막 초소 남문): 그 벽 칸은 그림만 비운다(충돌 타일은 그대로) — 담을 뚫은 문틀 사이로 목책 조각이 비치지 않게
+  const cutCells = new Set();
+  for (const r of rows) for (const c of String(parseArgs(r.args).cut || "").split("+").filter(Boolean)) {
+    const [cx, cy] = c.split("/").map(Number);
+    if (!bp.isWall(cx, cy)) warn.push(`${d.id}.csv ${r.name}: cut=${c}는 벽 칸이 아님`);
+    cutCells.add(key(cx, cy));
+  }
   const pk = new Map();
   for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const ch = bp.at(x, y);
-    if (ch === null || !(ch in bp.walls) || ch === lowCh) continue;
+    if (ch === null || !(ch in bp.walls) || ch === lowCh || cutCells.has(key(x, y))) continue;
     let piece = pieceAt(x, y);
     if (piece === "center" && !touchesFloor(x, y) && (depth.has(key(x, y)) || deepShallow.has(key(x, y)))) piece = bp.walls[ch].top ? "top" : "n";
     pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);

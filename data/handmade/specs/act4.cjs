@@ -59,7 +59,8 @@ module.exports = {
     waypoint: [-6, 2],
     torches: [[-4, 1], [3, 1], [-12, 3], [12, -4], [-2, -8], [1, -8], [-7, 7], [6, 7]],
     extra: {
-      depthgate: [5, 2], "npc:Scout": [-14, 0], "npc:ShopKeeper": [-4, 4], "npc:OutpostCaptain": [3, 4], "npc:Smith": [10, 1],
+      // townboard: 10-29 다른 작업(마을 게시판)이 maps.csv에 넣은 자리 — compose가 지우지 않게 설계서에도
+      depthgate: [5, 2], townboard: [-2, 3], "npc:Scout": [-14, 0], "npc:ShopKeeper": [-4, 4], "npc:OutpostCaptain": [3, 4], "npc:Smith": [10, 1],
       "npc:Deserter": [-9, 3], "npc:Stash": [2, -3], "npc:KeeperDaughter": [-2, 7],
     },
     put: [
@@ -68,11 +69,15 @@ module.exports = {
       ["prop", "a4-watchtower", -13.5, -3.6], ["prop", "a4-watchtower", 13.5, -3.6, 1, 1, "ok=gate"], ["prop", "a4-forge-anvil", 12.6, 2.2, 1, 0, "ok=gate"],
       // 10-29 코덱스 감사 c-2 — 안 쓰던 10-20 그림 자리: 남문(마을 출구 포털)을 목책 문틀이 감싸고, 남문 길 양옆은 세로 목책,
       //   북쪽 끝 목책 너머로 붉은 하늘 띠 (1024px 띠 4장을 엇갈려 뒤집어 맵 폭 36칸을 잇는다 · 발은 북쪽 벽 줄이라 ok=cliff)
-      ["prop", "a4-outpost-gate", 0.5, -10.85, 1, 0, "ok=gate+cliff"],
-      ["prop", "a4-wood-fence-v", -3.8, -6.2], ["prop", "a4-wood-fence-v", -3.8, -8.4], ["prop", "a4-wood-fence-v", 3.8, -6.2, 1, 1], ["prop", "a4-wood-fence-v", 3.8, -8.4, 1, 1],
-      ["prop", "a4-outpost-red-sky", -13.5, 11.05, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", -4.5, 11.05, 1, 1, "ok=cliff"],
-      ["prop", "a4-outpost-red-sky", 4.5, 11.05, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", 13.5, 11.05, 1, 1, "ok=cliff"],
+      // 10-29 메이커 재캡처: 문틀이 남쪽 목책 줄 「앞」에 서 담을 뚫은 문으로 안 보였다 → 문틀 발을 목책 줄(맨 아래 벽 칸 y −11) 바닥에 맞추고,
+      //   문 틈(칸 (0,−11)) 목책 조각을 비운다(cut= — lib.cjs 4 벽 그림만 빼고 충돌은 그대로). 세로 목책(±3.8)은 뒤 목책 담에 붙어 2조각씩 떠 보여 뺐다
+      ["prop", "a4-outpost-gate", 0.5, -11, 1, 0, "ok=gate+cliff;cut=0/-11"],
+      // 붉은 하늘 띠: 띠 위로 맨 윗줄 목책(y≈12.3)이 어둡게 남았다 — 하늘 그림은 피벗이 가운데(코덱스 resource-properties에 피벗 없음 = 기본 0.5/0.5)라
+      //   11.05면 9.9~12.2만 덮는다 → +0.85(11.9) 올려 맵 위 끝(13)까지 덮는다 (+0.6이면 12.78 — 맨 윗줄 0.2칸이 남는다 · 맵 밖은 ;backdrop 어둠)
+      ["prop", "a4-outpost-red-sky", -13.5, 11.9, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", -4.5, 11.9, 1, 1, "ok=cliff"],
+      ["prop", "a4-outpost-red-sky", 4.5, 11.9, 1, 0, "ok=cliff"], ["prop", "a4-outpost-red-sky", 13.5, 11.9, 1, 1, "ok=cliff"],
     ],
+    backdrop: "0.2/0.11/0.1",   // 10-29 맵 밖(남문 밖·북쪽 하늘 위) = 어두운 밤색 — 템플릿 주황 평면이 문 밖에 보였다 (불탄 협곡·악마의 길과 같은 계열)
     dress: {
       a: { decals: ["a4-decal-ash-heap"], dn: 2 },
       b: { props: ["a4-wood-fence-h", "a4-helm-pile", "a4-imp-on-barrel"], n: 4, decals: ["a4-decal-hoofprints"], dn: 2 },
@@ -321,13 +326,16 @@ module.exports = {
     holes: { pit: [-2, -12] },
     // 10-29 코덱스 감사 c-2: 문양 기둥 곁방 북쪽 끝에 심연 벽 + 발광 층 (코덱스 INTEGRATION: pulse는 a4-abyss-wall과 같은 자리·원점에 겹치는 층 —
     //   맵 장식 프레임 재생 규칙이 아직 없어 한 프레임 정지 · 발광 층은 args over=1로 벽 바로 앞에 그린다 — lib.cjs place)
-    put: [["prop", "a4-abyss-wall", -5, -7.95, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-00", -5, -7.95, 1, 0, "ok=cliff;over=1"]],
+    //   10-29 메이커 재캡처(3층): 발이 북쪽 테두리 바깥(경계 +0.05)이라 허공에 떠 보였다 → 발을 테두리 윗단 위(경계 −0.4)로. 이 곁방 북쪽 테두리는 3칸(x −6~−3)뿐이라 한 장
+    put: [["prop", "a4-abyss-wall", -4.6, -8.4, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-00", -4.6, -8.4, 1, 0, "ok=cliff;over=1"]],
     dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_rune_pillar"] }) }),   // 10-28 랜드마크
   }), { fx: true, fy: true }),
   abyssgate2: remix(A1.crypt1, Object.assign({}, ABYSS, {
     title: "심연의 문 2층",
     waypoint: undefined,
-    put: [["prop", "a4-abyss-wall", -7.8, 7.05, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-01", -7.8, 7.05, 1, 0, "ok=cliff;over=1"]],   // 10-29 코덱스 감사 c-2: 재에 묻힌 석상 곁 북쪽 끝 심연 벽 + 발광 층 (1층 주석)
+    // 10-29 코덱스 감사 c-2: 재에 묻힌 석상 곁 북쪽 끝 심연 벽 + 발광 층 (1층 주석) · 메이커 재캡처: 테두리(경계 y 7) 바깥에 떠 있던 발을 테두리 윗단 위(6.6)로.
+    //   테두리(x −9~−4) 동쪽 절반은 석상 랜드마크(−4.5, 5.3) 자리라 2장째를 놓으면 석상이 밀려났다 → 한 장 (서쪽 끝 −9에 붙인다)
+    put: [["prop", "a4-abyss-wall", -7.85, 6.6, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-01", -7.85, 6.6, 1, 0, "ok=cliff;over=1"]],
     story: ["문장의 홀을 제물 방·뼈 쌓인 방·갈라진 방이 둘러싼다. 고리처럼 돌아 아래 계단으로. (자리: 납골당 1층을 좌우로 뒤집음)"],
     dress: Object.assign({}, abyssDress, { d: Object.assign({}, abyssDress.d, { sets: ["a4_lm_ash_statue"] }) }),   // 10-28 랜드마크
   }), { fx: true }),
@@ -337,8 +345,13 @@ module.exports = {
     zones: Object.assign({}, ABYSS.zones, { e: "a4-abyss_rune 1/0.9/0.88 대주교의 의식 홀" }),
     fixed: { archbishop: [-15, 3] },   // 10-28 랜드마크(코덱스 act234) — 보스가 그 앞에 선다
     put: [["set", "boss_archbishop", -14.5, 3.5, 1, 1], ["set", "a4_lm_blood_pulpit", -14.5, 8.3],
-      ["prop", "a4-abyss-wall", -20, 10.05, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-02", -20, 10.05, 1, 0, "ok=cliff;over=1"],
-      ["prop", "a4-abyss-wall", -9, 10.05, 1, 1, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-03", -9, 10.05, 1, 1, "ok=cliff;over=1"]],   // 10-29 코덱스 감사 c-2: 핏빛 설교대 양옆 북쪽 끝 심연 벽 + 발광 층 (1층 주석)
+      // 10-29 코덱스 감사 c-2: 핏빛 설교대 양옆 북쪽 끝 심연 벽 + 발광 층 (1층 주석)
+      // 메이커 재캡처: 발(y 10.05)이 북쪽 테두리(경계 y 10) 바깥 허공에 떠 보였다 → 발을 테두리 윗단 위(9.6)로, 양옆 2장씩 이어 벽 일부처럼
+      //   (서쪽 테두리 끝 x −23 · 설교대 x −17~−12 · 동쪽 테두리 끝 x −6 사이에 맞춘다 — 한 장 폭 2.3칸)
+      ["prop", "a4-abyss-wall", -21.85, 9.6, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-02", -21.85, 9.6, 1, 0, "ok=cliff;over=1"],
+      ["prop", "a4-abyss-wall", -19.65, 9.6, 1, 1, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-03", -19.65, 9.6, 1, 1, "ok=cliff;over=1"],
+      ["prop", "a4-abyss-wall", -9.35, 9.6, 1, 0, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-02", -9.35, 9.6, 1, 0, "ok=cliff;over=1"],
+      ["prop", "a4-abyss-wall", -7.15, 9.6, 1, 1, "ok=cliff"], ["prop", "a4-abyss-wall-pulse-03", -7.15, 9.6, 1, 1, "ok=cliff;over=1"]],
     dress: Object.assign({}, abyssDress, { e: { props: ["a4-soul-lantern", "a4-sigil-stone"], n: 4, decals: ["a4-decal-lava-crack", "a4-decal-scorch"], dn: 5 } }),
   }), { fx: true }),
   ashhall: remix(A1.cellar1, Object.assign({}, ABYSS, {
@@ -511,14 +524,18 @@ module.exports = {
     paths: [
       P([[-30, 0], [-3, 0]], 3), P([[-13, 0], [-13, 5]], 3), P([[-13, 0], [-13, -5]], 3), P([[9, 0], [28, 0]], 3),
       P([[18, 0], [18, 4]], 3), P([[18, 0], [18, -4]], 3), P([[-6, 10], [2, 10], [2, 5]], 3), P([[-8, -10], [2, -10], [2, -5]], 3),
+      // 세로 쇳물 홈 자리(x −16·−10, y 10~14) 양옆 1칸은 장식을 두지 않는다 — 홈 그림 발이 한 칸이라 그 위로 갑옷 더미가 놓였다 (keep만 · 이미 바닥이라 파는 칸 없음)
+      P([[-15.5, 11.5], [-15.5, 13.5]], 3, undefined, undefined, { wobble: 0 }), P([[-9.5, 11.5], [-9.5, 13.5]], 3, undefined, undefined, { wobble: 0 }),
     ],
     rocks: [wall([[-18, 9], [-8, 9]], "~", [[-13, 9, 1.3]]), wall([[-1, 3], [7, 3]], "~", [[3, 3, 1.3]]), wall([[-1, -3], [7, -3]], "~", [[3, -3, 1.3]])],
     gates: { W: [-29, 0], E: [28, 0] },
-    // 10-29 코덱스 감사 c-2: 세로 쇳물 홈 — 주조실 북쪽 벽에서 두 용암 도랑(~)으로 쇳물이 흘러내린다 (1칸 조각 4장씩 잇는다)
-    put: [-16, -10].flatMap((x) => [10, 11, 12, 13].map((y) => ["prop", "a4-molten-channel-v", x, y])),
+    // 10-29 코덱스 감사 c-2: 세로 쇳물 홈 — 주조실 북쪽 벽에서 두 용암 도랑(~)으로 쇳물이 흘러내린다
+    //   메이커 재캡처: 1칸 조각(배율 1)은 홈이 0.08칸 선이라 안 보였다 → art_scale 4.9(홈 폭 ≈0.37칸 · 길이 5칸) 한 장으로 도랑 윗변(y 10)~북쪽 벽(y 15)을 잇는다
+    put: [-16, -10].map((x) => ["prop", "a4-molten-channel-v", x, 10]),
     dress: {
       a: { props: ["a4-brazier"], n: 2 },
-      b: { props: ["a4-forge-anvil", "a4-molten-channel-h", "a4-melted-armor-pile"], n: 8, decals: ["a4-decal-molten-drip", "a4-decal-scorch"], dn: 4 },
+      // 가로 쇳물 홈(a4-molten-channel-h)은 뺐다 — 흩뿌린 1칸 조각 3개가 세로 홈과 이어지지 않고 잡동사니처럼 보였다 (10-29 메이커 재캡처)
+      b: { props: ["a4-forge-anvil", "a4-melted-armor-pile"], n: 8, decals: ["a4-decal-molten-drip", "a4-decal-scorch"], dn: 4 },
       c: { props: ["a4-bone-heap", "a4-imp-on-barrel", "a4-helm-pile"], n: 8, decals: ["a4-decal-ash-heap"], dn: 3 },
       d: { props: ["a4-forge-anvil", "a4-brazier", "a4-small-lava-fount"], n: 6, decals: ["a4-decal-molten-drip"], dn: 3 },
       e: { sets: ["a4_lm_great_smelter"], props: ["a4-small-lava-fount", "a4-melted-armor-pile", "a4-lava-wall-ruin"], n: 7, decals: ["a4-decal-lava-crack"], dn: 3 },
