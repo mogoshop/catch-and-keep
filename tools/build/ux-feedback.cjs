@@ -25,6 +25,14 @@ function run(){
  b.patch('Toast/Rim',{rect_size:[600,122]});
  b.patch('Toast/Title',{rect_size:[422,34]});
  b.patch('Toast/Body',{rect_size:[422,54]});
+ // 10-29 45-1: 레벨 업·스킬·의뢰·그림자 알림은 누르면 그 창 (UXFeedback.OnToastClick). 눌리는 알림일 때만 CanvasGroup BlocksRaycasts·Interactable을 켠다
+ //   (빌드 값은 끈 채 — 전리품처럼 잦은 알림이 클릭 이동을 막지 않게). 판 자체가 눌리는 칸이라 판 그림에 RaycastTarget
+ b.patchComponent('Toast','MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:true});
+ if(!b.hasComponent('Toast','MOD.Core.ButtonComponent'))b.addComponent('Toast','MOD.Core.ButtonComponent',{
+  '@type':'MOD.Core.ButtonComponent',Enable:true,Transition:1,KeyCode:0,
+  Colors:{NormalColor:{r:1,g:1,b:1,a:1},HighlightedColor:{r:.92,g:.9,b:1,a:1},PressedColor:{r:.78,g:.76,b:.82,a:1},SelectedColor:{r:.92,g:.9,b:1,a:1},DisabledColor:{r:1,g:1,b:1,a:1},ColorMultiplier:1,FadeDuration:.1},
+  ImageRUIDs:{HighlightedSprite:null,PressedSprite:null,SelectedSprite:null,DisabledSprite:null},
+  IgnoreMapLayerCheck:false,OrderInLayer:0,OverrideSorting:false,SortingLayer:'UI'});
  // 안내 줄(획득·경고 문구): 엔진 화면 메시지(상단 큰 띠) 대신 왼쪽 아래에 짧은 줄로 쌓는다. 아래가 최신, 위로 4줄
  if(!b.find('Feed'))b.empty('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});
  else b.patch('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});

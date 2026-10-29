@@ -136,18 +136,7 @@ function buildGameHud() {
   b.patchComponent("Banner/Title", "MOD.Core.TextGUIRendererComponent", { Font: "Maple" });
   b.text("Banner/Sub", "", { size: 21, color: C.gold, anchor: "middle-center", pos: [0, -24], rect_size: [700, 28], alignment: 4, ...outline });
 
-  // ── 미니맵 (오른쪽 위, PC 시스템 버튼 아래) ──
-  b.panel("MiniMap", { anchor: "top-right", pos: [-24, -140], rect_size: [300, 280], color: DARK, sprite_type: 1, raycast: true });
-  b.panel("MiniMap/Area", { anchor: "middle-center", pos: [0, -10], rect_size: [256, 200], ...part("win_content"), sprite_type: 1 });
-  for (let i = 1; i <= 12; i++) {
-    b.sprite(`MiniMap/Area/F${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [20, 20], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
-  }
-  for (let i = 1; i <= 3; i++) {
-    b.sprite(`MiniMap/Area/P${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [16, 16], image_ruid: K.dot, sprite_type: 0, color: "#5AA0FF", alpha: 1, enable: false });
-  }
-  b.sprite("MiniMap/Area/Me", { anchor: "middle-center", pos: [0, 0], rect_size: [20, 20], image_ruid: K.dot, sprite_type: 0, color: "#50FF50", alpha: 1 });
-  k.rim("MiniMap", "minimap_frame", -6);
-  b.text("MiniMap/Name", "", { size: 19, bold: true, color: C.title, anchor: "top-center", pos: [0, -14], rect_size: [220, 28], ...outline });
+  // (옛 미니맵·퀘스트 추적·소지품·퀘스트 창·소환수 배지는 10-29 45 1-26 A에서 지웠다 — NavigationHUD·EquipmentHUD·QuestJournalHUD·CompanionHUD가 대신한다)
 
   // ── 메뉴 버튼 (미니맵 왼쪽) ──
   // 메뉴 버튼은 미니맵 열(오른쪽 24~368px) 왼쪽으로 40px 띄우고, 위쪽을 지역 이름 상자 위쪽(150)에 맞춘다
@@ -173,12 +162,6 @@ function buildGameHud() {
   b.text("BtnJournal/Tip/Name", "", { size: 20, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -6], rect_size: [300, 28], bestfit: true, min_size: 14, max_size: 20, ...outline });
   require("./lib.cjs").progressBar(b, "BtnJournal/Tip/Bar", { anchor: "bottom-left", pivot: [0, 0], pos: [16, 12], rect_size: [200, 16] });
   b.text("BtnJournal/Tip/Value", "", { size: 18, color: C.white, alignment: 5, anchor: "bottom-right", pos: [-14, 6], rect_size: [100, 26], ...outline });
-
-  // ── 퀘스트 추적 (미니맵 아래) ──
-  b.button("QuestTrack", "", { anchor: "top-right", pos: [-24, -432], rect_size: [420, 120], ...bg("btn_frame"), sprite_type: 1 });
-  k.pic("QuestTrack/Icon", "quest_icon", { anchor: "middle-left", pos: [28, 0], rect_size: [52, 52] });
-  b.text("QuestTrack/Title", "", { size: 22, bold: true, color: C.qTitle, alignment: 3, anchor: "top-left", pos: [88, -16], rect_size: [300, 32], ...outline });
-  b.text("QuestTrack/Body", "", { size: 18, color: C.qBody, alignment: 0, anchor: "top-left", pos: [88, -50], rect_size: [300, 56] });
 
   // ── 파티 (왼쪽, 그림자 상태줄 아래) ──
   // 파티원마다 이름·레벨 줄 + 위치 작은 줄 (최대 8명 → 높이 360)
@@ -253,7 +236,8 @@ function buildGameHud() {
       b.button(path, "", { anchor: "middle-left", pos: [i * 88, 0], rect_size: [84, 84], ...bg("hud_box"), sprite_type: 1 });
       b.sprite(`${path}/Icon`, { anchor: "top-center", pos: [0, -6], rect_size: [44, 44], image_ruid: ruid, sprite_type: 0, color: iconColor(ruid), alpha: 1 });
       k.aspect(`${path}/Icon`);
-      b.text(`${path}/Label`, label, { size: 18, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 4], rect_size: [84, 24], bestfit: true, min_size: 12, max_size: 18, ...outline });
+      // 메뉴 이름 20 (10-29 45 1-26 A: 18 × 줄 0.85배 = 실제 약 15라 읽기 어려웠다 — HudMain.CompactMenuRow). 다섯 글자 이름만 칸에 맞춰 줄어든다
+      b.text(`${path}/Label`, label, { size: 20, bold: true, color: C.gold, anchor: "bottom-center", pos: [0, 2], rect_size: [84, 26], bestfit: true, min_size: 15, max_size: 20, ...outline });
       b.text(`${path}/Key`, key, { size: 16, color: C.white, anchor: "top-right", pos: [-3, -2], rect_size: [20, 18], alignment: 2, ...outline });
       // 붉은 점: 능력치·스킬 = 남은 포인트, 그림자·추출 = 상황 안내가 가리킬 때 (GuideCoach)
       if (["BtnChar", "BtnSkill", "BtnShadow", "BtnExtract"].includes(n)) k.badge(path);
@@ -372,27 +356,6 @@ function buildGameHud() {
     k.btn(`CharWin/${n}`, label, { anchor: "bottom-left", pivot: [0, 0], pos: [590 + i * 176, 96], rect_size: [168, 60], font_size: 20 });
   });
   k.btn("CharWin/BtnReset", "초기화", { anchor: "bottom-left", pivot: [0, 0], pos: [590, 26], rect_size: [520, 56], font_size: 20 });
-
-  // ── 소지품 창: 장비(종이 인형) + 설명 + 가방 6×5 ──
-  k.frame("InvWin", "middle-right", [-30, -60], [900, 860], "소지품");
-  k.inner("InvWin/Doll", "top-left", [28, -84], [420, 400], "win_content");
-  // 종이 인형: 투구·목걸이 / 무기·갑옷·보조 / 장갑·허리띠·신발 / 반지 둘 (가운데 210 기준 대칭)
-  const doll = { helm: [168, -16], amulet: [276, -16], weapon: [60, -112], armor: [168, -112], offhand: [276, -112], gloves: [60, -208], belt: [168, -208], boots: [276, -208], ring1: [114, -304], ring2: [222, -304] };
-  for (const [s, p] of Object.entries(doll)) {
-    k.slot(`InvWin/Doll/Eq_${s}`, { anchor: "top-left", pos: p, rect_size: [84, 84] }, 60, "slot_eq");
-    k.pic(`InvWin/Doll/Eq_${s}/Ghost`, "eq_" + s.replace(/[0-9]/g, ""), { anchor: "middle-center", pos: [0, 0], rect_size: [52, 52] });
-  }
-  k.inner("InvWin/DescBox", "top-right", [-28, -84], [404, 400], "win_content");
-  b.text("InvWin/DescBox/Desc", "", { size: 17, color: C.gold, alignment: 0, anchor: "top-left", pos: [16, -14], rect_size: [372, 372] });
-  b.text("InvWin/Gold", "", { size: 22, color: "#F4ED83", alignment: 3, anchor: "top-left", pos: [32, -490], rect_size: [560, 30], ...outline });
-  k.inner("InvWin/Bag", "top-left", [28, -526], [560, 314]);
-  for (let i = 0; i < 30; i++) {
-    const col = i % 6, row = Math.floor(i / 6);
-    k.slot(`InvWin/Bag/Bag${i + 1}`, { anchor: "top-left", pos: [12 + col * 90, -12 - row * 58], rect_size: [86, 56] }, 42);
-  }
-  k.ok("InvWin/BtnEquip", "장착", { anchor: "bottom-right", pos: [-28, 120], rect_size: [260, 76] });
-  k.btn("InvWin/BtnSell", "판매", { anchor: "bottom-right", pos: [-28, 30], rect_size: [260, 76] });
-  b.text("InvWin/Hint", "룬: 고른 뒤 장비 칸 = 소켓\n장비 칸 누르기 = 해제", { size: 16, color: C.dim, alignment: 8, anchor: "bottom-right", pos: [-28, 210], rect_size: [260, 60] });
 
   // ── 스킬 창 V3 「해금 시간선 + 스킬 공방」 (10-28 피드백 F4 · 기획서 38 #24-A, 시안 assets/codex-skill-window-mock-v1/V3-pc.png) ──
   //   위 = Lv1→50 해금 시간선: 열 = 메인 스킬이 열리는 레벨(지금 23종), 열마다 그 레벨의 메인 스킬 최대 3개(트리색 테두리) · 지금 레벨 표지 · 「다음 해금」
@@ -580,19 +543,6 @@ function buildGameHud() {
   b.panel("GatePrompt", { anchor: "bottom-center", pos: [0, 330], rect_size: [760, 60], ...part("hud_box"), sprite_type: 1, enable: false });
   b.text("GatePrompt/Text", "", { size: 24, bold: true, color: "#9ED0FF", anchor: "middle-center", pos: [0, 0], rect_size: [740, 56], ...outline });
 
-  // ── 소환수 배지 (해골·마법사·되살림·그림자 + 수, 있을 때만) — PC는 생명 오브 위, 모바일은 조이스틱 위 ──
-  const minions = [["Skel", SKILL_ICON.raise_skeleton], ["Mage", SKILL_ICON.raise_mage], ["Revive", SKILL_ICON.revive], ["Shadow", SKILL_ICON.shadow_summon]];
-  for (const [root, y, platform] of [["Minions", 236, "pc"], ["MMinions", 430, "mobile"]]) {
-    b.empty(root, { anchor: "bottom-left", pos: [20, y], rect_size: [4 * 76, 72] });
-    minions.forEach(([n, ruid], i) => {
-      const path = `${root}/${n}`;
-      b.sprite(path, { anchor: "middle-left", pos: [i * 76, 0], rect_size: [68, 68], image_ruid: ruid, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
-      k.rim(path, "slot_frame", -2);
-      b.text(`${path}/Count`, "", { size: 22, bold: true, anchor: "bottom-right", pos: [-2, 0], rect_size: [60, 28], alignment: 8, ...outline });
-    });
-    if (platform === "pc") k.pc(root); else k.mobile(root);
-  }
-
   // ── 버프·디버프 줄 (10-11 팀 QA: 신전 축복만 위쪽 글자로 보이고 둔화·저주는 안 보였다) ──
   // 둥근 칩 최대 8개: 그림(코덱스 buff_*) 또는 색 원 + 짧은 이름 + 남은 초 (HudMain.RenderBuffs)
   // 10-24 사용자: PC는 생명 오브(바닥 28 + 180) 바로 위, 마우스를 올리면 설명 상자(Tip). 모바일은 MobileLayout이 왼쪽 위로 옮기고 누르면 설명
@@ -612,16 +562,6 @@ function buildGameHud() {
   b.panel("Buffs/Tip", { anchor: "bottom-left", pos: [0, 64], rect_size: [440, 84], ...part("hud_box"), sprite_type: 1, enable: false });
   b.patchComponent("Buffs/Tip", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("Buffs/Tip/Text", "", { size: 17, color: C.white, alignment: 3, anchor: "middle-center", pos: [0, 0], rect_size: [412, 76], bestfit: true, min_size: 12, max_size: 17 });
-
-  // ── 퀘스트 창 (Q) ──
-  k.frame("QuestWin", "middle-center", [0, 60], [800, 620], "퀘스트 — 무덤 왕국");
-  for (let i = 1; i <= 6; i++) {
-    const n = `QuestWin/Q${i}`;
-    k.btn(n, "", { anchor: "top-left", pos: [40, -88 - (i - 1) * 60], rect_size: [720, 54], font_size: 19 });
-    k.pic(`${n}/Icon`, "quest_icon", { anchor: "middle-left", pos: [10, 0], rect_size: [36, 36] });
-  }
-  k.inner("QuestWin/DescBox", "bottom-center", [0, 24], [720, 120], "win_content");
-  b.text("QuestWin/DescBox/Desc", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -10], rect_size: [692, 100] });
 
   // ── 파티플레이 창 (P): 파티 초대 / 결투 / 거래 / 살펴보기(10-24), 파티 탈퇴 ──
   k.frame("SocialWin", "middle-center", [0, 60], [800, 660], "파티플레이");
@@ -1043,9 +983,14 @@ function b_label(s, path, text, size, where) {
 function run() {
   let n = 0;
   quiet(() => {
+    // ux-layout이 덧붙이는 엔티티(대화 창 초상·쪽 번호·배너 소개 줄)는 buildGameHud가 새로 짠 파일에 없어 빌드마다 id가 바뀌었다 (10-29)
+    //   → 빌드 전 파일을 들고 있다가 ux-layout 뒤에 한 번 더 id를 잇는다 (빌드를 두 번 돌려도 같게)
+    const gameFile = P.ui("GameHUD");
+    const before = readIfExists(gameFile);
     n = buildGameHud();
     patchShadowHud();
     require("./ux-layout.cjs").run();
+    preserveIds(gameFile, before);
     require("./ux-feedback.cjs").run();
   });
   console.log(`  UI: GameHUD ${n}개 엔티티 · ShadowHUD 스킨·모바일 패드`);

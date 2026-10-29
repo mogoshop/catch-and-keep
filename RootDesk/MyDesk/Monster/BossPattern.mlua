@@ -407,6 +407,7 @@ script BossPattern extends Component
         local windup = self.SlamPhase == "windup" and self:HasLocalAudience()
         if windup and self.SlamTele == 0 then
             self.SlamTele = _Util:Telegraph(self.Entity, self.SlamCenter, self.SlamRadius, self.PoolElement, math.max(0.1, self.WindupNow))
+            _SoundDirector:PlayBossCue("slam", self.Entity)   -- 내려찍기 준비음 (39 #9 ① · 표에 소리가 비면 조용히)
         elseif not windup and self.SlamTele ~= 0 then
             _Util:StopTelegraph(self.SlamTele)
             self.SlamTele = 0
@@ -584,6 +585,7 @@ script BossPattern extends Component
     method void UltBanner()
         -- 궁극기 기 모으기: 보스 몸에 속성 빛 + 화면 흔들림 (글 알림은 띄우지 않는다 — 10-21 사용자: 대사·공략 문구 금지)
         if not self:HasLocalAudience() then return end
+        _SoundDirector:PlayBossCue("ult", self.Entity)   -- 궁극기 전용 예고음 (39 #9 ①)
         local c = self:ElementTint(self.AuraKind)
         _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.4, 1.4, 1), false, { Color = c })
         local cam = _CameraService:GetCurrentCameraComponent()
@@ -747,6 +749,7 @@ script BossPattern extends Component
     method void SlamFx(Vector3 pos, number radius)
         -- 같은 맵에서만 충격을 보여 주고 가까운 관전자만 카메라를 흔든다.
         if not self:HasLocalAudience() then return end
+        _SoundDirector:PlayBossCue("slam_hit", self.Entity)
         _Util:ElementBurst(self.Entity, pos, radius * 0.85, self.PoolElement, self:ElementTint(self.PoolElement))   -- 10-22: 독·냉기 보스의 내려찍기도 그 속성 색으로
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) and (_Util:Pos2(_UserService.LocalPlayer) - Vector2(pos.x, pos.y)):Magnitude() <= 10 then cam:ShakeCamera(0.25, 0.2) end

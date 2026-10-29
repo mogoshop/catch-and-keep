@@ -15,6 +15,11 @@ script SoundDirector extends Logic
     property boolean WindPlaying = false
     property integer PlayedCombatCount = 0
     property integer SuppressedCombatCount = 0
+    property integer CueCount = 0             -- 전투 소리 표(시전·보스·의식·앞모션)로 낸 수
+    property table CueSeen = {}
+    -- 시전음 크기 (없으면 0.3): 소환 계열은 조금 크게, 연타하는 골편은 작게
+    property table CastVolumes = { raise_skeleton = 0.38, raise_mage = 0.38, shadow_summon = 0.38, elite_promote = 0.38, mark_weakness = 0.3, enfeeble = 0.3,
+        soul_drain = 0.32, bone_offering = 0.32, bone_rite = 0.32, wraith_blink = 0.32, wraith_dash = 0.3, bone_shard = 0.18 }
 
     property Entity CurrentMap = nil
     property string CurrentBgm = ""
@@ -36,6 +41,8 @@ script SoundDirector extends Logic
         self.WindPlaying = false
         self.PlayedCombatCount = 0
         self.SuppressedCombatCount = 0
+        self.CueCount = 0
+        self.CueSeen = {}
         self.CombatVoices = 0
         self.CombatWindowAt = -99
         self.TimerId = _TimerService:SetTimer(self, function() self:Tick() end, 0.5, true, 0.5)
@@ -184,15 +191,62 @@ script SoundDirector extends Logic
     @ExecSpace("ClientOnly")
     method void PlaySkillCue(string id)
         -- 성공한 시전의 소유자 안내음. 실패·예약 단계에서는 호출하지 않는다.
-        if id == "raise_skeleton" or id == "raise_mage" or id == "shadow_summon" or id == "elite_promote" then
-            self:PlayEffect(_GameConst.SfxSummon, 0.38)
-        elseif id == "mark_weakness" or id == "enfeeble" then
-            self:PlayEffect(_GameConst.SfxCurse, 0.3)
-        elseif id == "soul_drain" or id == "bone_offering" or id == "bone_rite" or id == "wraith_blink" then
-            self:PlayEffect(_GameConst.SfxSoul, 0.32)
-        elseif id == "wraith_dash" then
-            self:PlayEffect(_GameConst.SfxSwing, 0.3)   -- 질주: 짧은 바람 소리
+        -- 39 #9 ④ (10-29): 메인 스킬 29개 + 도약을 data/sounds.csv cast_<스킬 id> 한 표에서 (전투 소리 표 docs/design/39 부록 E). 비어 있으면 소리 없음
+        local ruid = _GameData:GetSound("cast_" .. id)
+        if ruid == "" then return end
+        self:PlayEffect(ruid, self.CastVolumes[id] or 0.3)
+        self:NoteCue("cast_" .. id)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayBossCue(string kind, Entity source)
+        -- 보스 패턴 예고음 (39 #9 ①): 이동 패턴 8종 · 궁극기 · 내려찍기. 같은 맵이면 거리와 상관없이 (보스방 어디서든 「소리로 피한다」) — data/sounds.csv boss_<kind>
+        if not self:SameMap(source) then return end
+        local ruid = _GameData:GetSound("boss_" .. kind)
+        if ruid == "" then return end
+        self:PlayEffect(ruid, 0.6)
+        self:NoteCue("boss_" .. kind)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayRiteCue(string kind, string stage, Entity source)
+        -- 보스 의식 소리 (39 #9 ②): stage = start(시작·예고) / done(보스가 끝냄) / break(플레이어가 끊음).
+        -- 의식마다 따로 있으면 rite_<kind>_<stage>, 없으면 공용 rite_<stage> (data/sounds.csv) · 같은 맵만
+        if not self:SameMap(source) then return end
+        local key = "rite_" .. kind .. "_" .. stage
+        local ruid = _GameData:GetSound(key)
+        if ruid == "" then
+            key = "rite_" .. stage
+            ruid = _GameData:GetSound(key)
         end
+        if ruid == "" then return end
+        self:PlayEffect(ruid, 0.6)
+        self:NoteCue(key .. " (" .. kind .. ")")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayMonsterWindup(string arch, Vector3 pos)
+        -- 몬스터 공격 앞모션음 (39 #9 ③): 유형 8종(archetypes.csv) 단위 — data/sounds.csv windup_<유형>. 근처(12칸)만 · 무리 한도(PlayCombat) 안에서
+        if arch == "" then return end
+        local ruid = _GameData:GetSound("windup_" .. arch)
+        if ruid == "" then return end
+        self:PlayCombat(ruid, pos, 0.32, 0)
+        self:NoteCue("windup_" .. arch)
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean SameMap(Entity source)
+        local me = _UserService.LocalPlayer
+        return isvalid(me) and isvalid(source) and me.CurrentMap == source.CurrentMap
+    end
+
+    @ExecSpace("ClientOnly")
+    method void NoteCue(string key)
+        -- 전투 소리 키마다 처음 한 번만 [VRF] (골편 연타 같은 반복은 숫자만 센다)
+        self.CueCount = self.CueCount + 1
+        if self.CueSeen[key] then return end
+        self.CueSeen[key] = true
+        log("[VRF] combat cue " .. key .. " #" .. tostring(self.CueCount))
     end
 
     @ExecSpace("ClientOnly")

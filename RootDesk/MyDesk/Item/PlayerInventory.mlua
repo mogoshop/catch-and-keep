@@ -434,13 +434,13 @@ script PlayerInventory extends Component
         local base = _ItemData:GetBase(_ItemData:Parse(s).base)
         local userId = self.Entity.PlayerComponent.UserId
         if base == nil then
-            _Util:Notify("장착할 수 없는 물건", userId)
+            _Util:Warn("장착할 수 없는 물건", userId)
             return
         end
         local stats = self:Stats()
         if stats == nil then return end
         if stats.Level < base.reqLv then
-            _Util:Notify("요구 레벨 " .. tostring(base.reqLv), userId)
+            _Util:Warn("요구 레벨 " .. tostring(base.reqLv), userId)
             return
         end
         local slot = base.slot
@@ -465,7 +465,7 @@ script PlayerInventory extends Component
         if (_ItemData:GetTotalMods(after).minion or 0) ~= 0 then
             detail = detail .. "\n소환수 강화는 다음 소환부터 적용됩니다."
         end
-        _UXFeedback:Show("장비 장착", detail, _ItemData:IconFor(after))
+        _UXFeedback:ShowNow("장비 장착", detail, _ItemData:IconFor(after))
         _InventoryWindow:OnEquipped(slot, before, after)
     end
 
@@ -476,7 +476,7 @@ script PlayerInventory extends Component
         local s = self.Equip[slot]
         if s == nil or s ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         if #self.Bag >= self.BagSize then
-            _Util:Notify("가방이 가득 찼다", senderUserId)
+            _Util:Warn("가방이 가득 찼다", senderUserId)
             return
         end
         self.Equip[slot] = nil
@@ -493,12 +493,12 @@ script PlayerInventory extends Component
         local stats = self:Stats()
         if stats == nil then return end
         if _ItemData:IsSoulbound(_ItemData:Parse(expectedItem).base) then
-            _Util:Notify("귀속 물건은 팔 수 없다", senderUserId)
+            _Util:Warn("귀속 물건은 팔 수 없다", senderUserId)
             return
         end
         -- 판매는 상인 곁에서만 (소지품 어디서나 팔리던 것을 막는다)
         if not _Util:NearNpc(self.Entity, "shop") then
-            _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
             return
         end
         local s = self:TakeBagItem(index)
@@ -542,7 +542,7 @@ script PlayerInventory extends Component
         if r == nil or s == nil or not _ItemData:IsRune(r) or _ItemData:GetRune(_ItemData:Parse(r).base) == nil then return false end
         local item = _ItemData:Parse(s)
         if #item.runes >= item.sockets then
-            _Util:Notify("빈 소켓이 없다", userId)
+            _Util:Warn("빈 소켓이 없다", userId)
             return false
         end
         table.insert(item.runes, _ItemData:Parse(r).base)
@@ -688,7 +688,7 @@ script PlayerInventory extends Component
         local stats = self:Stats()
         if stats == nil then return end
         if not _Util:NearNpc(self.Entity, "shop") then
-            _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
             return
         end
         local total, n = 0, 0
@@ -732,7 +732,7 @@ script PlayerInventory extends Component
         local cur = self.Bag[index]
         if cur == nil or cur ~= expectedItem then return end
         if #self.Stash >= self.StashSize then
-            _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭이 가득 찼다 — 다른 탭을 고르세요", senderUserId)
+            _Util:Warn("창고 " .. tostring(self.StashTab) .. "탭이 가득 찼다 — 다른 탭을 고르세요", senderUserId)
             return
         end
         table.remove(self.Bag, index)
@@ -755,7 +755,7 @@ script PlayerInventory extends Component
                 return
             end
             if self:AddStack(item.base, take) > 0 then
-                _Util:Notify("가방이 가득 찼다", senderUserId)
+                _Util:Warn("가방이 가득 찼다", senderUserId)
                 return
             end
             if take >= item.count then table.remove(self.Stash, index) else
@@ -766,7 +766,7 @@ script PlayerInventory extends Component
             return
         end
         if #self.Bag >= self.BagSize then
-            _Util:Notify("가방이 가득 찼다", senderUserId)
+            _Util:Warn("가방이 가득 찼다", senderUserId)
             return
         end
         table.remove(self.Stash, index)
@@ -803,7 +803,7 @@ script PlayerInventory extends Component
         end
         self:RefreshDigest()
         local names = { normal = "일반", magic = "마법", rare = "레어", unique = "유니크·세트", rune = "룬" }
-        if n == 0 then _Util:Notify("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없다", senderUserId)
+        if n == 0 then _Util:Warn("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없다", senderUserId)
         else _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개 넣었다" .. (#self.Stash >= self.StashSize and " (이 탭 가득)" or ""), senderUserId) end
     end
 
@@ -818,7 +818,7 @@ script PlayerInventory extends Component
         if cur == nil or cur ~= expectedItem or stats == nil or not _ItemData:CanReroll(cur) then return end
         local cost = _ItemData:RerollCost(cur)
         if stats.Gold < cost then
-            _Util:Notify("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+            _Util:Warn("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
             return
         end
         stats:AddGold(-cost)
@@ -841,7 +841,7 @@ script PlayerInventory extends Component
         else
             local cost = _ItemData:PunchCost(cur)
             if stats.Gold < cost then
-                _Util:Notify("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+                _Util:Warn("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
                 return
             end
             stats:AddGold(-cost)
@@ -859,7 +859,7 @@ script PlayerInventory extends Component
     @ExecSpace("Client")
     method void NotifySmith(string title, string detail, string icon)
         if self.Entity ~= _UserService.LocalPlayer then return end
-        _UXFeedback:Show(title, detail, icon)
+        _UXFeedback:ShowNow(title, detail, icon)
     end
 
     -- ───────── 저장 ─────────

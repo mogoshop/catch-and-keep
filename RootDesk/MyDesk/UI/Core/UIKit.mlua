@@ -25,6 +25,13 @@ script UIKit extends Logic
     property table Passive = { WpWin = true } -- 떠 있어도 이동·전투를 막지 않는 안내 창 (움직이면 스스로 닫힌다)
     property table ScrollBoxes = {}         -- SetScrollText로 채운 스크롤 글 상자 경로 (마우스 휠 대상)
     property any WheelHandler = nil
+    -- 공통 UI 소리 6종 (10-29 45 결정 3-A): 누름 · 탭 · 확정 · 실패 · 창 열기/닫기 · 획득. RUID는 data/sounds.csv ui_*, 크기는 「효과음」을 따른다
+    property table SoundVolumes = { press = 0.35, tab = 0.4, confirm = 0.45, fail = 0.45, open = 0.35, close = 0.3, gain = 0.5 }
+    property table SoundLast = {}            -- 종류 → 마지막으로 낸 시각 (같은 소리 겹침 막기)
+    property integer SoundSerial = 0         -- Sound를 부를 때마다 +1 (단추 콜백이 다른 UI 소리를 냈는지 Connect가 본다)
+    property integer SoundCount = 0          -- 실제로 낸 UI 소리 수 (메이커 확인용)
+    -- 누름 소리를 내지 않는 전투 HUD (모바일 패드·스킬·물약 칸·버프 칩·알림 판) — 시전음·전투음과 겹치지 않게
+    property table QuietPaths = { "/ui/ShadowHUD/MobilePad", "Bottom/Slots/", "Buffs/", "/ui/RewardHUD/" }
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
@@ -257,13 +264,57 @@ script UIKit extends Logic
 
     @ExecSpace("ClientOnly")
     method void Connect(string rel, any callback)
+        -- 단추를 누르면 콜백 뒤에 단추 이름에 맞는 UI 소리 한 번 (콜백이 창 열기·확정 같은 다른 UI 소리를 냈으면 그것만)
         local e = self:Get(rel)
         if not isvalid(e) then
             log_warning("[UIKit] UI 없음: " .. rel)
             return
         end
-        local h = e:ConnectEvent(ButtonClickEvent, callback)
+        local kind = self:ClickSoundKind(rel)
+        local h = e:ConnectEvent(ButtonClickEvent, function(event)
+            if kind == "" then
+                callback(event)
+                return
+            end
+            local before = self.SoundSerial
+            callback(event)
+            if self.SoundSerial == before then self:Sound(kind) end
+        end)
         table.insert(self.Handlers, { entity = e, eventHandler = h })
+    end
+
+    method string ClickSoundKind(string rel)
+        -- 단추 이름으로 고르는 기본 소리 — 창 컨트롤러를 하나씩 고치지 않고 모든 창에 한 번에 (10-29 45-3).
+        --   탭·쪽 넘김 = tab · 사기·장착·배우기·확인 같은 확정 = confirm · 받기 = gain · 닫기·취소·뒤로 = close · 그 밖 = press · 전투 HUD = 없음
+        for _, p in ipairs(self.QuietPaths) do
+            if string.find(rel, p, 1, true) ~= nil then return "" end
+        end
+        local leaf = string.match(rel, "([^/]+)$") or rel
+        if string.sub(leaf, 1, 3) == "Tab" or string.match(leaf, "^T%d+$") ~= nil or string.match(leaf, "^F%u") ~= nil or string.match(leaf, "^F%d+$") ~= nil
+            or string.match(leaf, "^Diff%d+$") ~= nil or string.match(leaf, "Prev$") ~= nil or string.match(leaf, "Next$") ~= nil or leaf == "NextPage" then
+            return "tab"
+        end
+        local confirm = { BtnYes = true, BtnBuy = true, BtnBuy5 = true, BtnSell = true, BtnEquip = true, BtnLearn = true, BtnConfirm = true, BtnOk = true,
+            BtnCreate = true, BtnMake = true, BtnStart = true, BtnJoin = true, BtnEnter = true, BtnDeploy = true, BtnUpgrade = true, BtnInvite = true, BtnAdd = true }
+        if confirm[leaf] then return "confirm" end
+        if leaf == "BtnGet" then return "gain" end
+        if leaf == "BtnClose" or leaf == "BtnNo" or leaf == "BtnCancel" or leaf == "BtnBack" or leaf == "Back" or leaf == "BtnLater" or leaf == "Skip" then return "close" end
+        return "press"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Sound(string kind)
+        -- 공통 UI 소리 (press · tab · confirm · fail · open · close · gain). 같은 종류는 0.12초(실패는 0.5초) 안에 한 번 — 연타·Esc로 여러 창을 닫을 때 겹치지 않게
+        self.SoundSerial = self.SoundSerial + 1
+        local ruid = _GameData:GetSound("ui_" .. kind)
+        if ruid == "" then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local gap = kind == "fail" and 0.5 or 0.12
+        if now - (self.SoundLast[kind] or -99) < gap then return end
+        self.SoundLast[kind] = now
+        _SoundDirector:PlayEffect(ruid, self.SoundVolumes[kind] or 0.35)
+        self.SoundCount = self.SoundCount + 1
+        log("[VRF] ui sound " .. kind .. " #" .. tostring(self.SoundCount))
     end
 
     @ExecSpace("ClientOnly")
@@ -348,6 +399,7 @@ script UIKit extends Logic
         if name ~= "NpcWin" and self:IsOpen("NpcWin") then _NpcWindow:Dismiss() end
         local click = self:Comp("script.ClickControl")
         if click ~= nil then click:Cancel() end
+        if not self:IsOpen(name) then self:Sound("open") end
         for _, win in ipairs(self.Windows) do if win ~= name then self:SetEnabled(win, false) end end
         self:SetEnabled(name, true)
         local e = self:Get(name)
@@ -357,7 +409,19 @@ script UIKit extends Logic
 
     @ExecSpace("ClientOnly")
     method void Close(string name)
+        -- 열려 있던 창만 닫는 소리 (이미 닫힌 창을 다시 닫는 호출은 조용히)
+        if self:IsOpen(name) then self:Sound("close") end
         self:SetEnabled(name, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity ShownWindowEntity()
+        -- 지금 떠 있는 창 하나 (Open이 다른 창을 닫으므로 보통 하나). 안내 창·그림자 보관함 포함, 없으면 nil — 안내 줄을 창 밖에 세울 때 (NoticeFeed)
+        for _, name in ipairs(self.Windows) do
+            if self:IsOpen(name) then return self:Get(name) end
+        end
+        if self:IsOpen("/ui/ShadowHUD/Window") then return self:Get("/ui/ShadowHUD/Window") end
+        return nil
     end
 
     @ExecSpace("ClientOnly")

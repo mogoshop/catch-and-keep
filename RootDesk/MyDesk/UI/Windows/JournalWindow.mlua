@@ -83,10 +83,13 @@ script JournalWindow extends Logic
         -- 모바일 여는 버튼은 다른 창이 없을 때만. 창이 열려 있으면 요약이 바뀔 때만 다시 그린다.
         -- 모바일 여는 버튼은 의뢰 추적 패널과 함께 보이고 접힌다 (전투 중·창 열림)
         -- PC는 J 키로 연다 (모바일 전용 버튼이 PC 화면에도 보였다)
-        _UIKit:SetEnabled("JournalOpen", Environment:IsMobilePlatform() and _HudMap:ShouldShowQuestTrack())
+        -- 모바일 「일지」는 하나만 (10-29 45 1-26 A: 상자 단추와 책 뱃지가 함께 보였다) — 책 뱃지(진행·받을 보상)가 떠 있으면 상자 단추는 숨긴다
         ---@type PlayerJournal
         local journal = _UIKit:Comp("script.PlayerJournal")
         self:UpdateBadge(journal)
+        local badge = _UIKit:Get("BtnJournal")
+        local badgeShown = isvalid(badge) and badge.Enable
+        _UIKit:SetEnabled("JournalOpen", Environment:IsMobilePlatform() and _HudMap:ShouldShowQuestTrack() and not badgeShown)
         if not _UIKit:IsOpen(self.Win) then return end
         if journal == nil then return end
         local hi = _UtilLogic.ElapsedSeconds < self.HiUntil
@@ -177,6 +180,7 @@ script JournalWindow extends Logic
         local journal = _UIKit:Comp("script.PlayerJournal")
         if journal == nil then return end
         if act.kind == "claim" then journal:RequestClaim(act.key) else journal:RequestTitle(act.key) end
+        _UIKit:Sound(act.kind == "claim" and "gain" or "confirm")   -- 받기 = 획득 소리 · 칭호 달기/떼기 = 확정 (45-3)
         log("[VRF] journal row action " .. act.kind .. " " .. act.key)
     end
 
