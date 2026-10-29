@@ -83,3 +83,10 @@
 - PC는 홀드 반복 없음(계약) · 의식·희생·지면 반복 없음
 - 텔레메트리(갈래 C) 연결은 하지 않았다 — hook 자리만 결과 JSON `hook_points_for_C`
 - 46 거인 R1(SteadyRoster가 거인 몸을 세는 RB-OBS-03)은 거인 작업 몫이라 그대로 — 고칠 때도 `PlanNext` 한 곳만 바꾸면 미리보기·실제·장기 편성이 함께 바뀐다
+
+## 7. 후속 B-IN-02 (코덱스 0110 최종 독립 검토 · 비Maker 최소 보완)
+
+- 결함: 홀드 켬·골편 칸을 누른 뒤 0.35초 전에 칸이 뼈 감옥으로 바뀌면, 반복이 없어 ShardUsed=false라 놓을 때 **새 칸 스킬(감옥)이 한 번 나갔다**(코덱스 재현 요청 0→1 · 마나 100→88).
+- 보완(`MobilePad.mlua`): 손가락이 닿을 때 칸 스킬을 `GestureSkill`로 잡고, 놓을 때 `GestureSkillChanged()`(345)가 참이면 시전하지 않는다(`EndGesture` 174 · 다음 Poll 전에 바로 놓아도 · 설정 켬/끔 모두) — `[VRF] mobile aim release skipped slot= changed`. 편집·기본 공격 제스처는 제외. 정상 짧은 탭 1회 · 반복 뒤 놓기 0회 · 취소 위에 갔다 돌아온 짧은 탭 1회는 그대로.
+- B-IN-OBS-01(견고성만): 닿을 때 캐릭터를 `GesturePlayer`로 잡고 `ShardStopCheck`(326)에서 엔티티가 바뀌면 `owner`로 반복을 끝낸다. 입력 소유권 통과 판정은 바꾸지 않음.
+- 회귀(mobile_input 37장면 177/177): `B-IN-02 반복 전(0.35초 전) 칸 교체` · `반복 뒤 칸 교체` · `다음 Poll 전에 바로 놓기 (켬·끔)` · `보존: 짧은 탭 1회 · 다른 칸 끌기 1회` · `B-IN-OBS-01 엔티티 교체`. 변이 2건 모두 검출(`mutation-b-in-02.log`) · npm test 12/12 · LSP 오류 0(기존 info/deprecated 경고만)
