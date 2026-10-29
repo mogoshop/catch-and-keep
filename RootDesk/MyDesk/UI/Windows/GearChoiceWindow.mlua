@@ -21,6 +21,8 @@ script GearChoiceWindow extends Logic
     property string BagBefore = ""            -- 확인 직전 가방 요약 (받은 물건 찾기)
     property string Received = ""             -- 받은 물건 문자열 (못 찾으면 빈 글 — 인벤토리만 연다)
     property number WaitUntil = 0             -- 이 시각까지 응답이 없으면(가방 부족 등 서버 거절) 창을 닫는다
+    property boolean OfferObserved = false    -- 제안·의뢰 번호·완료 대기 상태의 최초 전체 합치를 확인했는가
+    property number OfferSyncUntil = 0        -- 처음 받은 제안 동기화 대기는 최대 6초
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -65,6 +67,8 @@ script GearChoiceWindow extends Logic
         local o = quest:ParseGearOffer(offer)
         if o == nil then return end
         self.Offer = offer
+        self.OfferObserved = quest.GearOffer == offer and quest.Index == o.index and quest.State == 2
+        self.OfferSyncUntil = _UtilLogic.ElapsedSeconds + 6
         self.Title = title
         self.Phase = ""
         self.ChosenIndex = 0
@@ -98,13 +102,16 @@ script GearChoiceWindow extends Logic
     method void Choose(integer index)
         -- 카드 고르기 → 확인 창 → 서버에 요청 (확인 전 취소는 아무것도 바꾸지 않는다)
         local quest = self:Quest()
-        if quest == nil then return end
-        local o = quest:ParseGearOffer(self.Offer)
-        if o == nil or o.slots[index] == nil then return end
+        if quest == nil or self.Phase ~= "" or not _UIKit:IsOpen(self.Win) or quest.GearOffer ~= self.Offer then return end
+        local offer = self.Offer
+        local o = quest:ParseGearOffer(offer)
+        if o == nil or o.slots[index] == nil or quest.Index ~= o.index or quest.State ~= 2 then return end
         local slot = o.slots[index]
         local label = self:GradeLabel(o.rarity) .. " " .. _ItemData:SlotLabel(slot)
         local body = self.Title .. " 보상: " .. label .. "\n착용 Lv " .. tostring(o.lv) .. " 이하 · 아이템 레벨 " .. tostring(o.lv + 2) .. "\n받은 뒤에는 부위를 다시 고를 수 없습니다."
         _ConfirmDialog:Show("보상 받기", body, "받기", function()
+            -- 확인 창이 열린 사이 제안/의뢰가 바뀌거나 닫혔으면 옛 선택을 보내지 않는다.
+            if self.Phase ~= "" or not _UIKit:IsOpen(self.Win) or self.Offer ~= offer or quest.GearOffer ~= offer or quest.Index ~= o.index or quest.State ~= 2 then return end
             ---@type PlayerInventory
             local inv = _UIKit:Comp("script.PlayerInventory")
             local before = ""
@@ -220,7 +227,16 @@ script GearChoiceWindow extends Logic
             end
             return
         end
-        if quest == nil or quest.GearOffer ~= self.Offer then _UIKit:Close(self.Win) end
+        if quest == nil then _UIKit:Close(self.Win) return end
+        local o = quest:ParseGearOffer(self.Offer)
+        if o == nil then _UIKit:Close(self.Win) return end
+        if quest.GearOffer == self.Offer and quest.Index == o.index and quest.State == 2 then
+            self.OfferObserved = true
+            return
+        end
+        -- 제안·의뢰 번호·상태는 각각 @Sync다. 최초 전체 합치 전의 불일치는 소비로 단정하지 않는다.
+        -- 전체 합치를 관측한 뒤의 변경은 즉시 닫고, 최초 불일치도 고정 마감 뒤 닫는다.
+        if self.OfferObserved or _UtilLogic.ElapsedSeconds >= self.OfferSyncUntil then _UIKit:Close(self.Win) end
     end
 
 end
