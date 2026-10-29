@@ -114,6 +114,9 @@ script SkillWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
         local key = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. self.Selected .. "#" .. self.SelMain .. "#" .. tostring(self.Page) .. "#" .. tostring(st:GetSpellPowerPct()) .. "#" .. tostring(st:GetCastCooldownMult()) .. "#" .. tostring(st:GetMinionPct()) .. "#" .. tostring(st.BonusDeploy) .. "#" .. tostring(st.BonusShadowCap) .. "#" .. tostring(st.Gold) .. "#" .. self:GearLevelKey(st)
+        ---@type ShadowCommander
+        local cmd = _UIKit:Comp("script.ShadowCommander")
+        if cmd ~= nil then key = key .. "#" .. cmd.UndeadRoster end   -- 편성이 바뀌면 편성 줄을 다시 그린다 (I03)
         if key == self.RenderKey then return end
         self.RenderKey = key
         -- 머리 줄: 남은 포인트 · 숙련(배운 스킬·강화 수) · 트리색 범례 · 초기화
@@ -505,6 +508,9 @@ script SkillWindow extends Logic
             line = line .. _UIKit:Colored("#C9BFA8", (line ~= "" and "   · " or "") .. cost)
         end
         if gear > 0 then line = line .. _UIKit:Colored("#7CFF7A", "   · 추가 랭크 +" .. tostring(gear)) end
+        -- 해골 일으키기·변이·증원: 지금 편성과 다음 소환 (I03 · SkillBook.RosterLine)
+        local roster = book:RosterLine(id)
+        if roster ~= "" then line = line .. (line ~= "" and "\n" or "") .. _UIKit:Colored("#C9BFA8", roster) end
         return line
     end
 

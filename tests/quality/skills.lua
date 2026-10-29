@@ -1,7 +1,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
--- @source SkillBook Skill/SkillBook.mlua GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+
+-- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,Pick,RenderWorkshop+
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+
 _GameData:Ensure();_SkillData:Ensure()
