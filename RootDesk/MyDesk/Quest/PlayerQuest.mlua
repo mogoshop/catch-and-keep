@@ -426,22 +426,34 @@ script PlayerQuest extends Component
         log("[VRF] gear watch start")
     end
 
-    @ExecSpace("ServerOnly")
-    method void TraceGearUse()
-        -- 처치할 때 (QuestSystem): 기억한 뒤 새로 낀 장비가 있으면 그 장비로 싸운 첫 처치 = gearUse (한 번)
-        if not self.GearWatch then return end
+    method string GearChangedSlot()
+        -- 기억한 뒤 새로 낀 장비가 있는 부위 (없으면 "" — 낀 것을 되돌렸으면 다시 "")
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv == nil then return end
+        if inv == nil then return "" end
         for slot, item in pairs(inv.Equip) do
-            if item ~= nil and item ~= "" and self.GearMark[slot] ~= item then
-                self.GearWatch = false
-                self.GearMark = {}
-                _Telemetry:First(self.Entity, "gearUse")
-                log("[VRF] gear used in fight slot=" .. tostring(slot))
-                return
-            end
+            if item ~= nil and item ~= "" and self.GearMark[slot] ~= item then return slot end
         end
+        return ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TraceGearUse(Entity map)
+        -- 막타 주인일 때만 (QuestSystem): 그 맵에 살아 있고, 기억한 뒤 새로 낀 장비를 아직 끼고 있으면 = 그 장비로 싸운 첫 처치 gearUse (한 번)
+        if not self.GearWatch or not _Util:IsAlive(self.Entity) or not isvalid(map) or self.Entity.CurrentMap ~= map then return end
+        local slot = self:GearChangedSlot()
+        if slot == "" then return end
+        self.GearWatch = false
+        self.GearMark = {}
+        _Telemetry:First(self.Entity, "gearUse")
+        log("[VRF] gear used in fight slot=" .. slot)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NoteGearAtCredit()
+        -- 공동 크레딧만 받았을 때: 장비가 달라져 있으면 gearChangedAtCredit만 (관측은 계속 · 사용으로 세지 않음)
+        if not self.GearWatch or self:GearChangedSlot() == "" then return end
+        _Telemetry:First(self.Entity, "gearChangedAtCredit")
     end
 
     @ExecSpace("ServerOnly")

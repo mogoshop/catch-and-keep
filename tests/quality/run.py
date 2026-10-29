@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--lua', default=shutil.which('lua') or shutil.which('lua5.4'))
 p.add_argument('--dump', help='optional path for the last exported Lua fixture')
-p.add_argument('groups', nargs='*', default=['items','journal','skills','roster','mobile_input','notice_text','progression','spawn_zones'])
+p.add_argument('groups', nargs='*', default=['items','journal','skills','roster','mobile_input','notice_text','progression','spawn_zones','growth'])
 a = p.parse_args()
 if not a.lua: p.error('Lua 5.4 is required; pass --lua /path/to/lua (no game dependencies are changed)')
 

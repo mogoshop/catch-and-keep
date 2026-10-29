@@ -1,6 +1,6 @@
 -- I08 현장 보고 (10-30): 의식 의뢰 4 보고 · 의뢰 5 수락을 피의 제단 앞에서 — 실제 PlayerQuest 본문(NearGiver·FieldHandoff*·RequestAccept·RequestTurnIn)을 돌린다.
 --   TurnIn(보상 지급)은 아이템 담당 구간이라 대신한다(지급 횟수·가방 거절만 흉내). 엔진 동기화·실제 제단 엔티티 생성·UI는 메이커 몫
--- @source PlayerQuest Quest/PlayerQuest.mlua Current,SameDifficulty,NearGiver,FieldHandoffQuest,FieldHandoffStep,FieldHandoffMarker,FieldHandoffOk,RequestAccept,RequestTurnIn,TraceQuestStep,FirstGearQuest,StartGearWatch,TraceGearUse,GetSaveData
+-- @source PlayerQuest Quest/PlayerQuest.mlua Current,SameDifficulty,NearGiver,FieldHandoffQuest,FieldHandoffStep,FieldHandoffMarker,FieldHandoffOk,RequestAccept,RequestTurnIn,TraceQuestStep,FirstGearQuest,StartGearWatch,GearChangedSlot,TraceGearUse,NoteGearAtCredit,GetSaveData
 function isvalid(x) return x ~= nil end
 local Q = {
   [1] = { title = "빈 굴", kind = "clear", map = "hollow", map1 = "", giver = "quest", act = 1, reward = "skp:2,gen:3" },
@@ -85,10 +85,15 @@ assert(pq.ByDiff == saved.ByDiff and pq.Sealed == saved.Sealed and pq.ChoicePick
 assert(pq:FirstGearQuest() == 1)
 notices = 0
 set(1, 2, 0, "town", { 0, 0 }); nearNpc = true; expectTurnIn(true, "q1 report"); assert(notices == 1 and pq.GearWatch and tel.gearReward == 1, "gear guidance once")
-pq:TraceGearUse(); assert(tel.gearUse == nil, "same gear is not use")
-inv.Equip.weapon = "scythe1"; inv.Equip.helm = nil; pq:TraceGearUse(); assert(tel.gearUse == nil)
-inv.Equip.armor = "rare-armor"; pq:TraceGearUse(); assert(tel.gearUse == 1 and not pq.GearWatch, "first fight with new gear")
-inv.Equip.boots = "x"; pq:TraceGearUse(); assert(tel.gearUse == 1, "gear use once")
+local here = player.CurrentMap
+pq:TraceGearUse(here); assert(tel.gearUse == nil, "same gear is not use")
+inv.Equip.weapon = "scythe1"; inv.Equip.helm = nil; pq:TraceGearUse(here); assert(tel.gearUse == nil)
+inv.Equip.armor = "rare-armor"; pq:NoteGearAtCredit(); assert(tel.gearChangedAtCredit == 1 and tel.gearUse == nil and pq.GearWatch, "credit only is not use")
+pq:TraceGearUse(map("cellar1")); assert(tel.gearUse == nil and pq.GearWatch, "kill on another map")
+alive = false; pq:TraceGearUse(here); alive = true; assert(tel.gearUse == nil, "dead killer")
+inv.Equip.armor = nil; pq:TraceGearUse(here); assert(tel.gearUse == nil and pq.GearWatch, "reverted before fight")
+inv.Equip.armor = "rare-armor"; pq:TraceGearUse(here); assert(tel.gearUse == 1 and not pq.GearWatch, "first own fight with new gear")
+inv.Equip.boots = "x"; pq:TraceGearUse(here); assert(tel.gearUse == 1, "gear use once")
 set(1, 2, 1, "town_nm", { 0, 0 }); nearNpc = true; notices = 0; expectTurnIn(true, "nightmare q1"); assert(notices == 0, "no guidance on replay difficulty")
 set(3, 2, 0, "town", { 0, 0 }); nearNpc = true; notices = 0; expectTurnIn(true, "q3 report"); assert(notices == 0, "guidance only for first gear quest")
 local sv = pq:GetSaveData(); for k in pairs(sv) do assert(({ i = 1, s = 1, p = 1, v = 1, d1 = 1, d2 = 1, sc0 = 1, sc1 = 1, sc2 = 1, st = 1, cp = 1, ch0 = 1, ch1 = 1, ch2 = 1 })[k], "save key " .. k) end
