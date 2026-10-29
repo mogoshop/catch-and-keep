@@ -51,6 +51,7 @@ step("공통 UI 규격", () => tool("check_ui_tokens.cjs"));
 step("말투·용어", () => tool("check_voice.cjs"));
 step("기획서 38 결정 26개", () => tool("check_decisions38.cjs"));
 step("DPS 집계 도구", () => tool("dps/selftest.cjs"));   // I05 개발용 전투 계측 로그 집계 (tools/dps)
+step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));   // 10-30 갈래 E: 몸 90 + HUD 3 · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
 
 step("검사기 자가 테스트", () => {
   const fixture = path.join(ROOT, "tests/fixtures/bad_scripts");

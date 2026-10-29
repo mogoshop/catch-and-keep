@@ -459,7 +459,7 @@ script MotionSmoother extends Logic
         if self.FrameIndex == nil then
             self.FrameIndex = {}
             _GameData:GetMonsterFrames("")   -- 표가 아직 안 만들어졌으면 만든다 (Ensure)
-            for _, set in pairs(_GameData.MonsterFrames or {}) do
+            for key, set in pairs(_GameData.MonsterFrames or {}) do
                 for _, act in ipairs({ "stand", "move", "attack" }) do
                     local f = set[act]
                     if f ~= nil and f.r ~= nil and #f.r > 1 and self.FrameIndex[f.r[1]] == nil then self.FrameIndex[f.r[1]] = { f = f, act = act } end
@@ -471,6 +471,13 @@ script MotionSmoother extends Logic
                     local impact = 0
                     for i = 1, a.s - 1 do impact = impact + (a.d[i] or 0) end
                     self.FrameIndex[a.r[a.s]] = { f = a, act = "attack", scale = impact > 0 and (impact / self.AttackWindup) or 1 }
+                end
+                -- 거인 3종 한 번 동작 (10-30 갈래 E · ShadowUnit.GiantPlay가 첫 칸을 건다): 기술·피격·갈라짐을 그 칸부터 납품 시간 그대로 한 번
+                if string.sub(tostring(key), 1, 6) == "giant_" then
+                    for _, act in ipairs({ "skill", "hit", "split" }) do
+                        local g = set[act]
+                        if g ~= nil and g.r ~= nil and #g.r > 1 and self.FrameIndex[g.r[1]] == nil then self.FrameIndex[g.r[1]] = { f = g, act = act } end
+                    end
                 end
             end
         end

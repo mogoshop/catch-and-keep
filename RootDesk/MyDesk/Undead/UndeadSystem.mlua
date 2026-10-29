@@ -21,6 +21,9 @@ script UndeadSystem extends Logic
     property number SoulReach = 1.5      -- 조준점에서 혼을 찾는 거리
     property table Giants = {}            -- userId → 뼈 거인 상태 { host = 거인이 된 해골 기록, mates = 합쳐진 넷의 기록, epoch } (뼈 의식 5기)
     property integer GiantEpoch = 0
+    -- 거인 3종 그림 배율 (10-30 갈래 E · 시각만): 거인 그림(192 캔버스)이 등록되면 몸 배율 = 해골 배율 × 이 값. 1.2 = 지금 화면 키 유지
+    --   (riteGiantScale 1.8 × 변이 그림 높이 128 ÷ 거인 그림 192). 46 §3-1 안은 1.0(해골 배율 그대로) — 메이커 E-M1 화면으로 코덱스가 정한다
+    property number GiantArtScale = 1.2
 
     method table Elements()
         return { "fire", "cold", "light", "poison" }
@@ -153,7 +156,8 @@ script UndeadSystem extends Logic
         local epoch = self.GiantEpoch
         host.rec.giant = true
         self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch }
-        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul)
+        -- 그림만 (10-30 갈래 E): 몸이 된 해골의 변이(방패·대검·쌍칼)에 맞는 거인 그림 — 미등록·일반·마법사 몸이면 nil = 지금 그림. 고르기·능력치 규칙은 그대로
+        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(host.rec.form or ""))
         self:RefreshSummary(player)
         _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
         log(string.format("[VRF] rite stage=5 skel=%d giant atk=%d hp=%.0f/%.0f sec=%.0f", n, math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
@@ -203,6 +207,34 @@ script UndeadSystem extends Logic
         end
         self:RefreshSummary(player)
         log(string.format("[VRF] rite giant split back=%d/%d ratio=%.2f respawn=%s", back, #g.mates, ratio, tostring(respawn)))
+    end
+
+    method table GiantStateOrder()
+        -- 거인 그림 동작 (코덱스 납품 stand4 · move6 · attack6 · skill6 · hit2 · split6 = 30장 · tools/register_giant_visuals.cjs STATES와 같은 순서)
+        local order = { "stand", "move", "attack", "skill", "hit", "split" }
+        return order
+    end
+
+    method table GiantLook(string form)
+        -- 거인 3종 그림 (data/monster_frames.csv form_giant_(종류) — 업로드 뒤 register_giant_visuals.cjs가 쓴다): 동작마다 서버가 거는 칸 RUID와 길이(초).
+        --   서기·걷기·기술·피격·갈라짐 = 첫 칸 (클라이언트 FrameClip이 이어 넘김) · 공격 = 타격 칸 (기존 소환수 공격 규칙 — 서버 피해 시점에 타격 칸이 오게)
+        --   방패·대검·쌍칼 몸만. 표가 없거나 여섯 동작 중 하나라도 비면 nil = 지금 그림 그대로 (반쯤 바뀐 거인·빈 그림 없음)
+        if form ~= "shield" and form ~= "greatsword" and form ~= "twin" then return nil end
+        local set = _GameData:GetMonsterFrames("giant_" .. form)
+        if set == nil then return nil end
+        local look = { form = form }
+        for _, st in ipairs(self:GiantStateOrder()) do
+            local f = set[st]
+            if f == nil or f.r == nil or #f.r == 0 then return nil end
+            local idx = 1
+            if st == "attack" then idx = math.max(1, math.min(#f.r, f.s or (#f.r // 2 + 1))) end
+            if (f.r[idx] or "") == "" then return nil end
+            look[st] = f.r[idx]
+            local total = 0
+            for _, d in ipairs(f.d or {}) do total = total + d end
+            look[st .. "Sec"] = total
+        end
+        return look
     end
 
     @ExecSpace("ServerOnly")
