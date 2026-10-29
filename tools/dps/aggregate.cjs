@@ -59,11 +59,14 @@ function pct(list, p) {
   return s[Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1))];
 }
 
+// 한 DpsFlush 출력 = window 줄부터 end 줄까지 하나의 「스냅샷」. 같은 run이 여러 번 flush되면(중간 + 마지막) 스냅샷을 섞지 않고
+// 완결된(end 줄이 있는) 가장 늦은 스냅샷 하나만 쓴다. 완결된 것이 없으면 마지막 잘린 스냅샷을 「truncated」로 표시해 요약 전용으로만 (C-AGG-01).
 function parse(text) {
-  const runs = new Map();
-  const get = (id) => {
-    if (!runs.has(id)) runs.set(id, { run: id, window: null, owners: [], src: [], lives: [], sample: null, ev: [], end: null });
-    return runs.get(id);
+  const snaps = [];
+  let cur = null;
+  const close = () => {
+    if (cur) snaps.push(cur);
+    cur = null;
   };
   for (const raw of text.split(/\r?\n/)) {
     const at = raw.indexOf("[DPS] ");
@@ -71,23 +74,45 @@ function parse(text) {
     const line = raw.slice(at + 6).trim();
     if (line.startsWith("ev|")) {
       const f = line.split("|");
-      if (f.length < 17) continue;
-      const r = get(Number(f[1]));
-      r.ev.push({ n: +f[2], t: +f[3], kind: f[4], life: +f[5], seq: +f[6], att: +f[7], owner: f[8], ak: f[9], src: f[10], b: +f[11], a: +f[12], raw: +f[13], ab: +f[14], eff: +f[15], ov: +f[16] });
+      if (f.length < 17 || !cur || Number(f[1]) !== cur.run) continue;
+      cur.ev.push({ n: +f[2], t: +f[3], kind: f[4], life: +f[5], seq: +f[6], att: +f[7], owner: f[8], ak: f[9], src: f[10], b: +f[11], a: +f[12], raw: +f[13], ab: +f[14], eff: +f[15], ov: +f[16] });
       continue;
     }
     const word = line.split(" ")[0];
     const o = kv(line);
-    if (!o.run) continue;
-    const r = get(Number(o.run));
-    if (word === "window") r.window = o;
-    else if (word === "owner") r.owners.push(o);
-    else if (word === "src") r.src.push(o);
-    else if (word === "life") r.lives.push(o);
-    else if (word === "sample") r.sample = o;
-    else if (word === "end") r.end = o;
+    if (word === "window") {
+      close();
+      cur = { run: Number(o.run), window: o, owners: [], src: [], lives: [], sample: null, ev: [], end: null, complete: false };
+      continue;
+    }
+    if (!cur || !o.run || Number(o.run) !== cur.run) continue;
+    if (word === "owner") cur.owners.push(o);
+    else if (word === "src") cur.src.push(o);
+    else if (word === "life") cur.lives.push(o);
+    else if (word === "sample") cur.sample = o;
+    else if (word === "end") {
+      cur.end = o;
+      cur.complete = true;
+      close();
+    }
   }
-  return [...runs.values()].filter((r) => r.window);
+  close();
+  // run마다 스냅샷 하나: 완결된 것 중 마지막, 없으면 마지막 잘린 것
+  const byRun = new Map();
+  for (const snap of snaps) {
+    const list = byRun.get(snap.run) || [];
+    list.push(snap);
+    byRun.set(snap.run, list);
+  }
+  const out = [];
+  for (const [run, list] of byRun) {
+    const complete = list.filter((x) => x.complete);
+    const pick = complete.length ? complete[complete.length - 1] : list[list.length - 1];
+    pick.snapshots = list.length;
+    pick.snapshotsComplete = complete.length;
+    out.push(pick);
+  }
+  return out;
 }
 
 function sceneMeta(scene) {
@@ -118,6 +143,7 @@ function combatFromLedger(ev, gap) {
 function ledgerCheck(r) {
   const w = r.window;
   const events = Number(w.events);
+  if (r.complete === false) return { status: "truncated", detail: "flush 블록이 end 줄 없이 끝남 (잘린 스냅샷 — 요약 전용)" };
   const complete = Number(w.dropped) === 0 && r.ev.length === events;
   if (!complete) return { status: "incomplete", detail: "원장 " + r.ev.length + "/" + events + "줄 · dropped " + w.dropped };
   const seen = new Set();
@@ -151,11 +177,15 @@ function summarize(r, gapArg) {
   const gap = gapArg || serverGap;
   const check = ledgerCheck(r);
   let combat;
-  if (check.status !== "incomplete") {
+  // 실측 비교에는 원장 검사 ok만 (C-AGG-02): fail은 전투 시간도 실측값도 만들지 않고, incomplete·truncated는 서버 요약 전용 라벨
+  const verdict = check.status === "ok" ? "accepted" : check.status === "fail" ? "rejected" : "summary_only";
+  if (check.status === "fail") {
+    combat = { seconds: null, raw_active: null, segs: null, interval: null, method: "원장 검사 실패 — 계산 안 함" };
+  } else if (check.status === "ok") {
     const c = combatFromLedger(r.ev, gap);
     combat = { seconds: c.corrected, raw_active: c.active, segs: c.segs, interval: c.interval, method: gap === serverGap ? "원장+울타리 보정" : "원장+울타리 보정(공백 " + gap + "초 재계산)" };
   } else {
-    combat = { seconds: Number(w.active), raw_active: Number(w.active), segs: Number(w.segs), interval: null, method: "서버 active(울타리 보정 없음 · 공백 " + serverGap + "초)" };
+    combat = { seconds: Number(w.active), raw_active: Number(w.active), segs: Number(w.segs), interval: null, method: "요약 전용: 서버 active(울타리 보정 없음 · 공백 " + serverGap + "초)" };
   }
   const bySrc = {};
   const byCat = {};
@@ -191,8 +221,9 @@ function summarize(r, gapArg) {
   }));
   return Object.assign({ run: r.key || String(r.run), scene_label: w.scene }, meta, {
     duration_s: dur, effective: eff, raw: Number(w.raw), absorbed: Number(w.absorb), overkill: Number(w.over),
-    total_dps: dur > 0 ? r2(eff / dur) : null,
-    combat_dps: combat.seconds > 0 ? r2(eff / combat.seconds) : null, combat,
+    verdict, snapshots: r.snapshots || 1, snapshots_complete: r.snapshotsComplete || 0,
+    total_dps: dur > 0 && verdict !== "rejected" ? r2(eff / dur) : null,
+    combat_dps: verdict !== "rejected" && combat.seconds > 0 ? r2(eff / combat.seconds) : null, combat,
     gap_s: gap, heal: Number(w.heal), drift: Number(w.drift), scale: Number(w.scale), resets: Number(w.resets),
     unknown_ratio: eff > 0 ? r2(unknownEff / eff) : null, by_source: bySrc, by_category: byCat,
     ttk: { samples: ttkAll.length, censored, median: r2(median(ttkAll)), p90: r2(pct(ttkAll, 0.9)), by_grade: gradeOut },
@@ -248,19 +279,19 @@ function markdown(report) {
   L.push("- 입력: " + report.inputs.join(", "));
   L.push("- 실측 = 서버 HP 원장(Monster.ApplyHpDamage → Telemetry.DpsHit). 설명 1타·가정 상한은 오프라인 계산이며 실측이 아니다. 셋을 더하거나 서로 대신하지 않는다.");
   L.push("- 공백 임계값: " + (report.gap_s === null ? "서버 DpsGapSec(기본 3초)" : report.gap_s + "초(재계산)") + ". 전투 구간 = 유효 피해 사이 간격이 임계값 이하인 부분.", "");
-  L.push("| 실행 | 레벨 | 빌드 | 장면 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 걸러낸 기록(대상 밖) | 원장 검사 |");
-  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  L.push("| 실행 | 레벨 | 빌드 | 장면 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 걸러낸 기록(대상 밖) | 원장 검사 | 판정 | 스냅샷(완결/전체) |");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of report.runs) {
     const deaths = s.owners.reduce((a, o) => a + (o.deaths || 0), 0);
     L.push("| " + [s.run, cell(s.level, "-"), cell(s.build, "-"), s.scene, cell(s.rep, "-"), s.duration_s, s.effective, cell(s.total_dps, "-"), cell(s.combat_dps, "-"), s.combat.method,
-      cell(s.unknown_ratio, "-"), cell(s.ttk.median, "-") + " (" + s.ttk.samples + "/" + s.ttk.censored + ")", deaths, s.filtered, s.ledger_check.status].join(" | ") + " |");
+      cell(s.unknown_ratio, "-"), cell(s.ttk.median, "-") + " (" + s.ttk.samples + "/" + s.ttk.censored + ")", deaths, s.filtered, s.ledger_check.status, s.verdict, s.snapshots_complete + "/" + s.snapshots].join(" | ") + " |");
   }
   L.push("", "## 설명 1타 / 가정 상한 / 실측", "");
-  L.push("| 레벨 | 빌드 | 대표 스킬 | 설명 1타 | 자기 표식 1타 | 가정 상한 (1타×발수÷재사용) | 실측 총구간 DPS (중앙) | 실측 전투 구간 DPS (중앙) | 실행 수 |");
+  L.push("| 레벨 | 빌드 | 대표 스킬 | 설명 1타 | 자기 표식 1타 | 가정 상한 (1타×발수÷재사용) | 실측 총구간 DPS (중앙·원장 ok만) | 실측 전투 구간 DPS (중앙·원장 ok만) | 수용/요약 전용/거부 |");
   L.push("|---|---|---|---|---|---|---|---|---|");
   for (const row of report.three_columns) {
     L.push("| " + [row.level, row.build, cell(row.skill, "-"), cell(row.one_hit, "미계산"), cell(row.one_hit_marked, "-"), cell(row.upper, "미계산"),
-      cell(row.measured_total, "미측정"), cell(row.measured_combat, "미측정"), row.runs].join(" | ") + " |");
+      cell(row.measured_total, "미측정"), cell(row.measured_combat, "미측정"), row.runs_accepted + "/" + row.runs_summary_only + "/" + row.runs_rejected].join(" | ") + " |");
   }
   L.push("", "소환 빌드의 1타·상한은 계산기가 소환수 실제 적중 수·가동률을 모르므로 미계산이다 (comparison.csv의 power 0).");
   L.push("", "## 출처 기여 (유효 피해)", "");
@@ -303,12 +334,14 @@ function aggregate(texts, opts) {
     return Number(la) - Number(lb) || ba.localeCompare(bb);
   }).map((key) => {
     const [level, build] = key.split("/");
-    const mine = summaries.filter((s) => s.level + "/" + s.build === key);
+    const all = summaries.filter((s) => s.level + "/" + s.build === key);
+    const mine = all.filter((s) => s.verdict === "accepted");
     const c = calc[key] || {};
     return {
       level: Number(level), build, skill: c.skill || null, one_hit: c.one_hit ?? null, one_hit_marked: c.one_hit_marked ?? null, upper: c.upper ?? null,
       measured_total: r2(median(mine.map((s) => s.total_dps).filter((v) => v !== null))),
       measured_combat: r2(median(mine.map((s) => s.combat_dps).filter((v) => v !== null))), runs: mine.length,
+      runs_accepted: mine.length, runs_summary_only: all.filter((s) => s.verdict === "summary_only").length, runs_rejected: all.filter((s) => s.verdict === "rejected").length,
     };
   });
   return { generated_by: "tools/dps/aggregate.cjs", inputs: opts.inputs || [], gap_s: gap, runs: summaries, three_columns: three,
