@@ -58,6 +58,13 @@ script Monster extends Component
     @Sync
     property boolean Horde = false           -- 습격의 떼 (RaidDirector · 기획서 41): 생명 ×raidHordeHpMul · 피해 ×raidHordeDmgMul · 수식어 없음 · 리스폰 없음 · 등급 「horde」. 클라이언트는 이름표 「떼 · 」
     property boolean Inflow = false          -- 생성 D 혼합 ② 유입으로 들어온 몬스터 (MonsterSpawner): 일반 등급 그대로 · 죽으면 자리 리스폰 대신 스포너 풀로 돌아간다
+    -- 개발용 전투 계측 (I05 · Telemetry DPS, 기본 꺼짐): HP 원장 식별자. 계측이 꺼져 있으면 읽지도 쓰지도 않는다
+    property integer DpsRun = 0              -- 이 생명이 기록된 계측 실행 번호 (0 = 기록 밖)
+    property integer DpsLife = 0             -- 실행 안의 생명 번호 (첫 등장·리스폰마다 새 번호)
+    property integer DpsSeq = 0              -- 이 생명의 HP 원장 순번 (같은 시각의 여러 타격도 각각 다른 번호)
+    property integer DpsAttempt = 1          -- 빈 맵 리셋(ResetForEmptyMap)마다 +1 — TTK 시도 경계
+    property number DpsLastHp = 0            -- 원장이 마지막으로 본 HP (원장 밖에서 HP가 바뀌면 drift로 따로 남긴다)
+    property table DpsTags = {}              -- 공격 쪽이 남긴 출처 꼬리표 { by, info, dmg, at } 최대 4 (DpsTag · 정확히 하나만 맞을 때만 쓴다)
 
     method MonsterStatus Status()
         ---@type MonsterStatus
@@ -88,6 +95,7 @@ script Monster extends Component
         self.SpawnPosition = Vector2(p.x, p.y)
         self.Arch = _GameData:ArchetypeOf(self.SourceId)
         self:Reroll()
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "spawn", -1) end
         -- 맵에 고정 배치된 몬스터(최상위·보스)는 맵의 난이도 레벨 가산을 받는다 (스포너 몬스터는 스포너가 ApplyLevel)
         _TimerService:SetTimerOnce(function()
             if not isvalid(self.Entity) or self.LevelApplied then return end
@@ -176,7 +184,9 @@ script Monster extends Component
         ---@type MonsterAttack
         local atk = self.Entity:GetComponent("script.MonsterAttack")
         if atk ~= nil then atk:ScaleToLevel(self.BaseLevel, level) end
+        local hpBefore = self.Hp
         self:Reroll()
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "rebase", hpBefore) end   -- 레벨 적용 재설정: 새 생명도 전투 회복도 아니다
     end
 
     @ExecSpace("ServerOnly")
@@ -491,7 +501,7 @@ script Monster extends Component
         local lv = _GameConst:LevelOf(attacker)
         if lv > 0 then gap = _GameConst:LevelGapDealt(lv, self.Level) end
         local dealt = amount * self:GetDamageTakenMultiplier() * gap
-        self.Hp = self.Hp - self:RiteAbsorb(dealt)
+        self:ApplyHpDamage(dealt, attacker, "tick")
         -- 틱 피해는 히트 판정을 거치지 않아 엔진이 숫자를 띄우지 않는다 → 0.45초마다 모아 작게 띄운다 (10-10 QA: 독안개 피해가 안 보임)
         self.TickAccum = self.TickAccum + dealt
         local now = _UtilLogic.ElapsedSeconds
@@ -556,8 +566,7 @@ script Monster extends Component
             local chase = self.Entity.AIChaseComponent
             if isvalid(chase) then chase:SetTarget(event.AttackerEntity) end
         end
-        local taken = self:RiteAbsorb(event.TotalDamage)
-        self.Hp = self.Hp - taken
+        self:ApplyHpDamage(event.TotalDamage, event.AttackerEntity, "hit")
         if self.RiteReflect > 0 then self:RiteReflectTo(event.AttackerEntity, event.TotalDamage * self.RiteReflect) end
         if isvalid(event.AttackerEntity) and event.AttackerEntity:GetComponent("script.ShadowUnit") ~= nil then self:QueueSummonDamage(event.TotalDamage) end
         self:LifeTapFor(event.AttackerEntity, event.TotalDamage)
@@ -575,6 +584,40 @@ script Monster extends Component
             return
         end
         self:HitReact(event.AttackerEntity, event.TotalDamage)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyHpDamage(number raw, Entity attacker, string path)
+        -- 몬스터 HP를 피해로 깎는 유일한 곳: HandleHitEvent("hit") · TakeDamage("tick" — 독·가시·반사·혼란). 보호막(RiteAbsorb)은 여기서 한 번만 부른다.
+        -- 개발용 전투 계측(Telemetry DPS)이 켜져 있을 때만 깎기 전후를 원장에 한 번 남긴다 — 표시용 숫자 모음(QueueSummonDamage·TickAccum)·CalcDamage·처치 보상은 원장이 아니다
+        local before = self.Hp
+        local taken = self:RiteAbsorb(raw)
+        self.Hp = self.Hp - taken
+        if _Telemetry.DpsOn then _Telemetry:DpsHit(self, attacker, path, before, self.Hp, raw, raw - taken) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DpsTag(Entity attacker, string info, integer damage)
+        -- 공격 쪽(CalcDamage)이 남기는 출처 꼬리표 — 계측이 꺼져 있으면 아무것도 하지 않는다.
+        -- 엔진 HitEvent에는 AttackInfo가 없다: 같은 공격자·같은 TotalDamage로 정확히 맞을 때만 그 이름을 쓰고, 아니면 「미상」 (추정 금지 · Telemetry.DpsTakeTag)
+        if not _Telemetry.DpsOn or not isvalid(attacker) then return end
+        local now = _UtilLogic.ElapsedSeconds
+        local keep = {}
+        for _, t in ipairs(self.DpsTags) do
+            if now - t.at <= 0.5 then table.insert(keep, t) end
+        end
+        while #keep >= 4 do table.remove(keep, 1) end
+        table.insert(keep, { by = attacker, info = info, dmg = damage, at = now })
+        self.DpsTags = keep
+    end
+
+    @ExecSpace("ServerOnly")
+    method void RestoreHp(number amount, string reason)
+        -- 몬스터 회복 창구 (재생 오라·의식 회복 등). 계측이 켜져 있으면 피해와 따로 heal 사건으로 남긴다
+        if self.IsDead or amount <= 0 then return end
+        local before = self.Hp
+        self.Hp = math.min(self.MaxHp, self.Hp + amount)
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "heal:" .. reason, before) end
     end
 
     @ExecSpace("ServerOnly")
@@ -637,6 +680,7 @@ script Monster extends Component
         -- 사망 연출 → MonsterKilled 이벤트 → 숨김 → 리스폰 예약 (또는 제거)
         if self.IsDead then return end
         self.IsDead = true
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "death", self.Hp) end
         if self.SummonDmgAcc > 0 or self.SummonDmgTimer ~= 0 then self:FlushSummonDamage() end
         local attack = self.Entity:GetComponent("script.MonsterAttack")
         if attack ~= nil then attack:CancelPending() end
@@ -685,9 +729,11 @@ script Monster extends Component
         -- 같은 맵 인원이 바뀌었다: 지금 최대 생명을 비율로 바꾸고 남은 생명 비율은 그대로 (이름 있는 적·이벤트 배율이 이미 곱해져 있어 다시 계산하지 않는다)
         if mul <= 0 or math.abs(mul - self.PlayerHpMul) < 0.001 then return end
         local ratio = self.MaxHp > 0 and self.Hp / self.MaxHp or 1
+        local hpBefore = self.Hp
         self.MaxHp = math.max(1, self.MaxHp / self.PlayerHpMul * mul)
         self.PlayerHpMul = mul
         if not self.IsDead then self.Hp = math.max(1, self.MaxHp * ratio) end
+        if _Telemetry.DpsOn and not self.IsDead then _Telemetry:DpsNote(self, "scale", hpBefore) end   -- 인원 보정: HP가 줄어도 피해가 아니다
     end
 
     @ExecSpace("ServerOnly")
@@ -695,7 +741,9 @@ script Monster extends Component
         -- 맵이 비었다 (CoopRules): 보스·이름 있는 적은 생명과 기여자를 처음으로 — 남이 깎아 둔 보스를 막타만 치고 보상·의뢰를 가져가지 않게
         if self.IsDead then return end
         if self.Hp >= self.MaxHp and next(self.Contributors) == nil then return end
+        local hpBefore = self.Hp
         self.Hp = self.MaxHp
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "reset", hpBefore) end   -- 새 시도: 이전 전투의 TTK와 잇지 않는다
         self.Contributors = {}
         self.LastAttacker = nil
         log("[VRF] boss reset (map empty) " .. self:ShownName())
@@ -891,6 +939,7 @@ script Monster extends Component
         if status ~= nil then status:Reset() end
         self.IsDead = false
         self:Reroll()
+        if _Telemetry.DpsOn then _Telemetry:DpsNote(self, "respawn", -1) end   -- 같은 엔티티의 새 생명 (DpsLife 새 번호)
         local movement = self.Entity.MovementComponent
         if isvalid(movement) then movement:SetWorldPosition(self.SpawnPosition) end
         self.Entity:SetEnable(true)
