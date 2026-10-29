@@ -18,7 +18,13 @@ const FRAME = {
   padBottom: INSET.bottom + SPACE,     // 48
   buttonBottom: INSET.bottom + SPACE,  // 48 (버튼 줄 바닥)
   gap: 16,                             // 나란한 칸 사이 (초상화 ↔ 글 칸, 버튼 ↔ 버튼, 줄 ↔ 줄)
+  close: { size: 88, x: -12, y: -10 }, // 닫기 단추 (모든 창 공통 · 10-29 기획서 45 결정 2-A): 오른쪽 위 모서리에서 안쪽으로
 };
+
+// 모바일 좁은 화면 (10-29 기획서 45 결정 4-A): 4:3 태블릿은 화면에 보이는 폭이 1080 높이 기준 1440뿐이다 (메이커 iPad 미리보기 실측).
+// 창 바깥 폭(테두리 포함) 상한 1440 · 화면 가장자리와 edge만큼 띄운다 → 창 바탕 폭 상한 = 1440 − 2×edge − 2×rimOut = 1368.
+// 실행 중 배치(RootDesk/MyDesk/UI/Hud/WindowFit.mlua)가 같은 값을 쓴다 — tools/check_mobile_layout.cjs가 넓은 창 5개를 이 폭으로 잰다.
+const NARROW = { visibleW: 1440, visibleH: 1080, edge: 16, bodyMaxW: 1440 - 16 * 2 - 20 * 2, bodyMaxH: 1080 - 16 * 2 - 20 * 2 };
 
 // 테두리 없는 안쪽 판(win_content) 안 여백
 const INNER = { pad: 24 };
@@ -43,6 +49,7 @@ const COLOR = {
   body: '#E6DCC6',    // 대화 글
   dim: '#9C9488',     // 쪽 표시 · 안내
   panel: { r: 0.05, g: 0.045, b: 0.06, a: 0.94 },
+  windowBg: { r: 0.05, g: 0.045, b: 0.06, a: 1 },   // 창 바탕 (모든 창 공통 · 꽉 찬 그림 gauge_fill에 입힌다 — 기본 판 그림은 가운데가 비쳐 뒤가 보였다)
 };
 
 // 대화 상자 (NPC 대화창 · 이야기 카드 공통)
@@ -80,4 +87,4 @@ const TOPBAND = { targetTop: 20, targetH: 114, tipH: 74, gap: SPACE };
 TOPBAND.slot2 = TOPBAND.targetTop + TOPBAND.targetH + TOPBAND.gap;   // 146 — 여정 안내 위 끝
 TOPBAND.slot3 = TOPBAND.slot2 + TOPBAND.tipH + TOPBAND.gap;          // 232 — 출구 안내 위 끝
 
-module.exports = { INSET, SPACE, FRAME, INNER, SKPANEL, BUTTON, TAB, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, portraitSprite };
+module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, TAB, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, portraitSprite };

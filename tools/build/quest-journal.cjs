@@ -3,6 +3,7 @@ const path=require('path'),fs=require('fs');
 const root=path.resolve(__dirname,'../..');
 const {UIBuilder}=require(path.join(root,'.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const {load}=require(path.join(root,'tools/lib/csv.cjs'));
+const {windowFrame}=require(path.join(root,'tools/build/lib.cjs'));
 const icons=Object.fromEntries(load('ui_icons').map(x=>[x.key,x.ruid]));
 // 메이커 기본 화면도 실제 의뢰 그림을 사용한다. 실행 중 색상은 진행도가 결정한다.
 function initialArt(i) {
@@ -23,11 +24,9 @@ const file=path.join(root,'ui/QuestJournalHUD.ui');
 const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('QuestJournalHUD', 14,true);
 b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const win='SafeArea/QuestWin';
-b.panel(win,{rect_size:[1320,960],color:{r:.05,g:.045,b:.06,a:1},raycast:true,enable:false});
-b.sprite(win+'/Rim',{rect_size:[1360,1000],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
 // D2 의뢰 일지: 위 2×3 의뢰 그림(받을 수 있거나 끝낸 의뢰만 컬러, 나머지 어둡게) → 누르면 아래에 내용
-b.text(win+'/Title','의뢰 일지',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[540,40],size:28,color:'#E6C88A',alignment:4,bold:true});
-b.button(win+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
+// 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+windowFrame(b,win,{size:[1320,960],pos:[0,0],title:'의뢰 일지',enable:false});
 if(b.find(win+'/List'))b.remove(win+'/List');
 // 액트 넘김 막대 (10-20 사용자 선택: 예전 「액트1|액트2|액트3」 단추 줄은 좁고 액트가 늘면 안 들어갔다) — GameHUD kit.actPager와 같은 모양
 for(const a of [1,2,3,4,5,6])if(b.find(win+'/Act'+a))b.remove(win+'/Act'+a);

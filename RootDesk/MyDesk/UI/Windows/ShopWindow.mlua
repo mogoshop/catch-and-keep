@@ -3,6 +3,7 @@
 --          칸을 누르면 설명, 「구매」(1개) · 「5개 구매」.
 --   오른쪽 = 가방 — 칸을 누르면 설명·판매가, 「판매」. 「여러 개 선택」이면 여러 칸을 골라 한꺼번에 판다.
 -- 검증·거래는 서버(PlayerShop.RequestBuyCount · PlayerInventory.RequestSell/RequestSellMany)가 한다.
+-- 10-29 기획서 45 결정 6-A: 한 번에 confirmGold(1000) 골드 이상 사는 구매(도박 포함)는 확인 창 · 잠긴 물건(★)은 고를 수는 있어도 팔 수 없다.
 @Logic
 script ShopWindow extends Logic
 
@@ -98,7 +99,7 @@ script ShopWindow extends Logic
         local s = inv:GetBagList()[index]
         if s == nil then return end
         if self.Multi then
-            if _ItemData:IsSoulbound(_ItemData:Parse(s).base) then return end
+            if _ItemData:IsSoulbound(_ItemData:Parse(s).base) or _ItemData:IsLocked(s) then return end
             if self.Picked[index] ~= nil then self.Picked[index] = nil else self.Picked[index] = s end
         else
             self.SelBag = index
@@ -111,10 +112,27 @@ script ShopWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Buy(integer count)
+        -- 한 번에 confirmGold 이상이면 확인 창 (되돌릴 수 없는 고가 구매 · 10-29 기획서 45 결정 6-A · 글귀 승인 전)
         local shop = self:Shop()
         if shop == nil or self.SelGoods == "" then return end
-        shop:RequestBuyCount(self.SelGoods, count)
-        self.RenderKey = ""
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local key = self.SelGoods
+        local total = shop:GetPrice(key, st ~= nil and st.Level or 1) * count
+        local doBuy = function()
+            shop:RequestBuyCount(key, count)
+            self.RenderKey = ""
+        end
+        if total >= _GameData.confirmGold then
+            local item = _GameData:GetShopItem(key)
+            local name = item ~= nil and item.name or key
+            _ConfirmDialog:ShowIcon("구매", name .. (count > 1 and (" " .. tostring(count) .. "개") or "") .. "\n" .. _UIKit:Colored("#FFD27A", tostring(total) .. " 골드") .. "에 삽니다.", "구매", item ~= nil and item.icon or "", function()
+                doBuy()
+                log("[VRF] buy confirmed shop " .. key .. " x" .. tostring(count) .. " total=" .. tostring(total))
+            end)
+            return
+        end
+        doBuy()
     end
 
     @ExecSpace("ClientOnly")
@@ -144,7 +162,7 @@ script ShopWindow extends Logic
             return
         end
         local s = list[self.SelBag]
-        if s == nil or s ~= self.SelBagItem or _ItemData:IsSoulbound(_ItemData:Parse(s).base) then return end
+        if s == nil or s ~= self.SelBagItem or _ItemData:IsSoulbound(_ItemData:Parse(s).base) or _ItemData:IsLocked(s) then return end
         local index = self.SelBag
         local doSell = function()
             inv:RequestSell(index, s)
@@ -193,6 +211,8 @@ script ShopWindow extends Logic
         local goods = shop:Goods(diff)
         local list = inv:GetBagList()
         -- 고른 가방 칸이 판매·정렬로 바뀌었으면 고르기를 푼다
+        -- 잠금·해제만 바뀐 같은 물건이면 고른 채로 둔다 (10-29 잠금)
+        if self.SelBag > 0 and list[self.SelBag] ~= self.SelBagItem and _ItemData:SameItem(list[self.SelBag], self.SelBagItem) then self.SelBagItem = list[self.SelBag] end
         if self.SelBag > 0 and list[self.SelBag] ~= self.SelBagItem then
             self.SelBag = 0
             self.SelBagItem = ""
@@ -234,7 +254,7 @@ script ShopWindow extends Logic
                     total = total + _ItemData:SellValue(item)
                 end
             end
-            desc = _UIKit:Colored("#FFD27A", "여러 개 선택 · " .. tostring(n) .. "개 · 판매가 합계 " .. tostring(total) .. " 골드") .. "\n가방 칸을 눌러 팔 물건을 고르세요. (귀속 재료 제외)"
+            desc = _UIKit:Colored("#FFD27A", "여러 개 선택 · " .. tostring(n) .. "개 · 판매가 합계 " .. tostring(total) .. " 골드") .. "\n가방 칸을 눌러 팔 물건을 고르세요. (귀속 재료·잠긴 물건 제외)"
             canSell = n > 0
             _UIKit:SetText(self.Win .. "/BtnSell", "선택 판매 " .. tostring(n))
         else
@@ -242,8 +262,10 @@ script ShopWindow extends Logic
             if self.SelBag > 0 then
                 local s = self.SelBagItem
                 local bound = _ItemData:IsSoulbound(_ItemData:Parse(s).base)
+                local locked = _ItemData:IsLocked(s)
                 desc = _ItemData:DescribeDetailed(s) .. "\n" .. (bound and _UIKit:Colored("#FF8888", "귀속 재료는 팔 수 없다") or _UIKit:Colored("#FFD27A", "판매가 " .. tostring(_ItemData:SellValue(s)) .. " 골드"))
-                canSell = not bound
+                if locked then desc = desc .. "\n" .. _UIKit:Colored("#FFD27A", "★ 잠긴 물건 · 인벤토리에서 잠금 해제 후 판매") end
+                canSell = not bound and not locked
             elseif self.SelGoods ~= "" then
                 desc = self:GoodsDesc(self.SelGoods, shop, st.Level)
                 canBuy = shop:GetPrice(self.SelGoods, st.Level) <= st.Gold

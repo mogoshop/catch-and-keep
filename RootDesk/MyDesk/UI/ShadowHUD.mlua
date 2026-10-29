@@ -8,7 +8,8 @@ script ShadowHUD extends Logic
 
     property string Root = "/ui/ShadowHUD"
     property string Win = "/ui/ShadowHUD/Window"
-    property integer RowCount = 8
+    property integer RowCount = 8   -- 한 쪽 목록 줄 수 (모바일 좁은 화면은 WindowFit이 5로 — 위 목록 / 아래 상세)
+    property number InfoTextW = 490 -- 상세 능력치·고유 능력 글 폭 (모바일 좁은 화면은 WindowFit이 줄인다)
     property number PollInterval = 0.25
 
     property integer Page = 0
@@ -436,7 +437,7 @@ script ShadowHUD extends Logic
         -- 능력치·고유 능력은 스크롤 칸(Detail/Info) 안 묶음(Body)에 글 길이만큼 세운다. 넘치면 손가락·휠로 내린다 (10-13: 고유 기술 두 줄이 정수 줄과 겹쳤다)
         --   스크롤 칸이 글을 직접 세우면 줄바꿈 전 한 줄 너비로 재므로, 칸에는 크기를 정한 묶음 하나만 둔다
         local body = self.Win .. "/Detail/Info/Body"
-        local width = 490
+        local width = self.InfoTextW
         local y = 0
         for _, pair in ipairs({ { "/Stats", stats }, { "/Trait", trait } }) do
             local e = _UIKit:Get(body .. pair[1])
@@ -637,6 +638,8 @@ script ShadowHUD extends Logic
                 else
                     runeMissing = true
                     body = body .. "\n" .. _UIKit:Colored("#FF8888", string.format("%s 이상 룬 1개가 필요합니다 (성공 %d%%)", _ShadowConfig:TierName(runeTier), pct))
+                    -- 잠긴 룬만 있으면 그 이유를 한 줄 더 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+                    if _ShadowConfig:HasLockedUpgradeRune(bag, runeTier) then body = body .. "\n" .. _UIKit:Colored("#FFD27A", "★ 잠긴 룬은 강화에 쓰지 않습니다") end
                 end
             end
             if e.plus >= _ShadowConfig:GetPlusMax() then

@@ -1,0 +1,207 @@
+-- 모바일 좁은 화면 창 맞춤 (10-29 기획서 45 결정 4-A · 모바일에서만, PC와 16:9 휴대폰은 빌드 배치 그대로).
+--   4:3 태블릿은 화면에 보이는 폭이 1080 높이 기준 1440뿐이라(메이커 iPad 미리보기 실측) 넓은 창 5개의 양옆이 잘렸다.
+--   창 바깥 폭(테두리 포함) 상한 = 보이는 폭 − 가장자리 2×16 → 창 바탕 폭 상한 1368 (tools/build/ui-tokens.cjs NARROW와 같은 값).
+--   · 그림자 보관함: 왼쪽 상세 | 오른쪽 목록 → 위 목록(한 쪽 5줄) / 아래 상세 (2단 → 위아래)
+--   · 소지품 · 상점(거래) · 혼의 제물 · 게임 안내: 오른쪽 칸을 좁혀 바탕 폭 1368 (위아래 칸 구성은 그대로)
+--   경로·숫자는 글자 그대로 적는다 — tools/check_mobile_layout.cjs가 이 줄들을 읽어 4:3 화면(1440×1080)에서 창 밖으로 나가는지 잰다.
+@Logic
+script WindowFit extends Logic
+
+    property number VisibleH = 1080       -- 보이는 폭을 잴 때 기준 높이 (UI 기준 해상도)
+    property number Edge = 16             -- 화면 가장자리와 창 테두리 사이 (ui-tokens NARROW.edge)
+    property number RimOut = 20           -- 테두리 그림이 바탕 밖으로 넘치는 폭 (ui-tokens FRAME.rimOut)
+    property number BodyMaxW = 1368       -- 좁은 화면 창 바탕 폭 상한 (ui-tokens NARROW.bodyMaxW)
+    property number BodyMaxH = 1008       -- 좁은 화면 창 바탕 높이 상한 (ui-tokens NARROW.bodyMaxH)
+    property number NarrowBelow = 1632    -- 보이는 폭이 이보다 좁으면 다시 놓는다 (가장 넓은 창 1560 + 테두리 40 + 가장자리 32)
+    property number VisibleW = 1920
+    property boolean Narrow = false
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 모바일이면 화면 비율을 보고 한 번 맞춘다. 다른 창 컨트롤러가 OnBeginPlay에서 자리를 잡은 뒤에 한 번 더 (시작 순서와 무관하게)
+        if not _ApplicationService:IsMobilePlatform() then return end
+        self:Apply()
+        self.TimerId = _TimerService:SetTimerOnce(function() self:Apply() end, 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 두 번째 맞춤 타이머 정리
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Apply()
+        -- 보이는 폭 = 1080 높이 기준 화면 비율. UI 루트 크기와 화면 픽셀 비율 중 더 좁은 쪽 (메이커 iPad 미리보기는 루트 1920×1440)
+        local visible = 1920
+        local root = _EntityService:GetEntityByPath("/ui/GameHUD")
+        if isvalid(root) then
+            local size = root.UITransformComponent.RectSize
+            if size.x > 0 and size.y > 0 then visible = math.min(visible, self.VisibleH * size.x / size.y) end
+        end
+        local sw, sh = _UILogic.ScreenWidth, _UILogic.ScreenHeight
+        if sw > 0 and sh > 0 then visible = math.min(visible, self.VisibleH * sw / sh) end
+        self.VisibleW = math.floor(visible)
+        self.Narrow = self.VisibleW < self.NarrowBelow
+        log("[VRF] windowfit screen=" .. tostring(sw) .. "x" .. tostring(sh) .. " visibleW=" .. tostring(self.VisibleW) .. " narrow=" .. tostring(self.Narrow))
+        if not self.Narrow then return end
+        self:FitInventory()
+        self:FitShop()
+        self:FitOffer()
+        self:FitGuide()
+        self:FitShadow()
+        self:ReportOver()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitInventory()
+        -- 소지품 (EquipmentHUD): 1400 → 1368, 가운데로. 설명 칸과 오른쪽 단추 줄(272 → 240)을 좁힌다 — 인형·가방은 그대로
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin", 0, 0, 1368, 1000)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Rim", 1408, 1040)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/DescBox", 788, 516)
+        self:Pos("/ui/EquipmentHUD/SafeArea/InvWin/BtnLock", 1156, -124)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/Gold", 1100, -630, 240, 48)   -- 설명 칸 아래(−628)에 붙여 둔다 (PC는 6px 걸친다)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Gold/Text", 180, 44)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnEquip", 1100, -690, 240, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSell", 1100, -794, 240, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSort", 1100, -892, 96, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnMulti", 1204, -892, 136, 88)
+        _InventoryWindow.DescTextW = 708   -- 설명 칸 788 − 안쪽 여백 (PC 820 → 740과 같은 비율)
+        _InventoryWindow.RenderKey = ""
+        log("[VRF] windowfit inventory w=1368")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitShop()
+        -- 상점 거래 창 (ShopHUD): 1380 → 1368. 오른쪽 가방 칸을 12 왼쪽으로
+        self:Size("/ui/ShopHUD/SafeArea/ShopWin", 1368, 880)
+        self:Size("/ui/ShopHUD/SafeArea/ShopWin/Rim", 1408, 920)
+        self:Size("/ui/ShopHUD/SafeArea/ShopWin/Info", 1212, 36)   -- 닫기 단추(오른쪽 위 88) 앞에서 끝나게 (PC는 56px 걸친다)
+        self:Pos("/ui/ShopHUD/SafeArea/ShopWin/BagLabel", 692, -128)
+        self:Pos("/ui/ShopHUD/SafeArea/ShopWin/Bag", 684, -168)
+        self:Pos("/ui/ShopHUD/SafeArea/ShopWin/BtnSell", 684, -766)
+        self:Pos("/ui/ShopHUD/SafeArea/ShopWin/BtnMulti", 1016, -766)
+        log("[VRF] windowfit shop w=1368")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitOffer()
+        -- 혼의 제물·선택 보상 (GameHUD/OfferWin): 1400 → 1368. 창 크기·카드 자리는 SkillOffer.Layout이 열 때마다 이 값으로 다시 놓는다
+        _SkillOffer.WinW = 1368
+        _SkillOffer.CardLeft = 58          -- 카드 셋 + 다음 해금 = 1252 → 좌우 여백 58씩
+        _SkillOffer.RewardLeft = 158       -- 선택 보상: 카드 셋(1052)을 가운데로
+        _SkillOffer.RenderKey = ""
+        self:Size("/ui/GameHUD/OfferWin", 1368, 772)
+        self:Size("/ui/GameHUD/OfferWin/Rim", 1408, 812)
+        log("[VRF] windowfit offer w=1368")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitGuide()
+        -- 게임 안내 (GameHUD/GuideWin): 1560 → 1368. 왼쪽 책갈피(300)는 그대로, 오른쪽 칸 1142 → 950 (화면 칸 864는 그 안 가운데)
+        self:Size("/ui/GameHUD/GuideWin", 1368, 920)
+        self:Size("/ui/GameHUD/GuideWin/Rim", 1408, 960)
+        self:Pos("/ui/GameHUD/GuideWin/Media", 402, -74)   -- 오른쪽 칸 가운데(410)에서 8 왼쪽 — 닫기 단추(오른쪽 위 88)와 겹치지 않게
+        self:Size("/ui/GameHUD/GuideWin/Head", 950, 44)
+        self:Size("/ui/GameHUD/GuideWin/Body", 950, 150)   -- 쪽을 그릴 때 GuideWindow가 RightW로 다시 맞춘다 (글만 쪽은 높이 640)
+        _GuideWindow.RightW = 950          -- 설명 글 폭 (GuideWindow.Render가 쪽마다 쓴다) · 쪽 점 가운데(DotX 158)는 그대로 맞는다
+        log("[VRF] windowfit guide w=1368")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitShadow()
+        -- 그림자 보관함 (ShadowHUD/Window): 1560×900 → 1368×1000, 왼쪽 상세 | 오른쪽 목록 → 위 목록 5줄 / 아래 상세 (2단 → 위아래)
+        self:Size("/ui/ShadowHUD/Window", 1368, 1000)
+        self:Size("/ui/ShadowHUD/Window/Rim", 1408, 1040)
+        -- 위: 필터 4 + 정렬 · 목록 5줄 · 쪽 넘김 줄
+        self:Pos("/ui/ShadowHUD/Window/FAll", 30, -88)
+        self:Pos("/ui/ShadowHUD/Window/FNormal", 182, -88)
+        self:Pos("/ui/ShadowHUD/Window/FElite", 334, -88)
+        self:Pos("/ui/ShadowHUD/Window/FBoss", 486, -88)
+        self:Box("/ui/ShadowHUD/Window/Row1", 30, -172, 1308, 74)
+        self:Box("/ui/ShadowHUD/Window/Row2", 30, -252, 1308, 74)
+        self:Box("/ui/ShadowHUD/Window/Row3", 30, -332, 1308, 74)
+        self:Box("/ui/ShadowHUD/Window/Row4", 30, -412, 1308, 74)
+        self:Box("/ui/ShadowHUD/Window/Row5", 30, -492, 1308, 74)
+        _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row6", false)
+        _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row7", false)
+        _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row8", false)
+        self:Pos("/ui/ShadowHUD/Window/BtnPrev", 30, 354)
+        self:Pos("/ui/ShadowHUD/Window/BtnMulti", 226, 354)
+        self:Pos("/ui/ShadowHUD/Window/BtnPickAll", 418, 354)
+        self:Pos("/ui/ShadowHUD/Window/PageText", 870, 366)
+        self:Pos("/ui/ShadowHUD/Window/BtnNext", -30, 354)
+        -- 아래: 상세 판 1308×290 — 왼쪽 모습 · 가운데 이름·등급·능력치 · 오른쪽 정수 + 소환 지정·강화·분해
+        self:Box("/ui/ShadowHUD/Window/Detail", 30, -662, 1308, 290)
+        self:Box("/ui/ShadowHUD/Window/Detail/Stage", -511, -18, 250, 254)
+        self:Box("/ui/ShadowHUD/Window/Detail/Name", -148, -18, 440, 42)
+        self:Box("/ui/ShadowHUD/Window/Detail/Grade", -148, -62, 440, 32)
+        self:Box("/ui/ShadowHUD/Window/Detail/Info", 286, -100, 440, 172)
+        self:Pos("/ui/ShadowHUD/Window/Detail/Essence", -22, 232)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnDeploy", 742, 130)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnUpgrade", 926, 130)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnSalvage", 1110, 130)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnDeployNote", 742, 92)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnUpgradeNote", 926, 92)
+        self:Pos("/ui/ShadowHUD/Window/Detail/BtnSalvageNote", 1110, 92)
+        _UIKit:SetText("/ui/ShadowHUD/Window/Detail/Empty", "위 목록에서 그림자를 고르세요")   -- PC 「왼쪽에 보일 그림자를 / 오른쪽 목록에서 고르세요」 · 글귀 승인 전
+        _ShadowHUD.RowCount = 5
+        _ShadowHUD.InfoTextW = 406          -- 상세 글 칸 440 − 안쪽 여백·스크롤바 (PC 524 → 490과 같은 차)
+        _ShadowHUD.InfoKey = ""
+        _ShadowHUD.RenderKey = ""
+        log("[VRF] windowfit shadow 2-tier rows=5")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ReportOver()
+        -- 그 밖에 보이는 폭을 넘는 창이 있으면 이름만 남긴다 (통합 검증 때 확인 — 스킬 창은 기획서 44 몫이라 여기서 옮기지 않는다)
+        local limit = self.VisibleW - self.Edge * 2
+        local names = {}
+        for _, name in ipairs(_UIKit.Windows) do table.insert(names, name) end
+        table.insert(names, "/ui/ShadowHUD/Window")
+        for _, name in ipairs(names) do
+            local e = _UIKit:Get(name)
+            if isvalid(e) then
+                local outer = e.UITransformComponent.RectSize.x + self.RimOut * 2
+                if outer > limit then log("[VRF] windowfit over " .. name .. " outer=" .. tostring(math.floor(outer)) .. " limit=" .. tostring(math.floor(limit))) end
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Box(string path, number x, number y, number w, number h)
+        -- 빌드 앵커·피벗은 그대로 두고 자리와 크기만
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) then
+            log_warning("[WindowFit] 없음: " .. path)
+            return
+        end
+        e.UITransformComponent.anchoredPosition = Vector2(x, y)
+        e.UITransformComponent.RectSize = Vector2(w, h)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Pos(string path, number x, number y)
+        -- 자리만 (크기는 빌드 값)
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) then
+            log_warning("[WindowFit] 없음: " .. path)
+            return
+        end
+        e.UITransformComponent.anchoredPosition = Vector2(x, y)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Size(string path, number w, number h)
+        -- 크기만 (자리는 빌드 값)
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) then
+            log_warning("[WindowFit] 없음: " .. path)
+            return
+        end
+        e.UITransformComponent.RectSize = Vector2(w, h)
+    end
+
+end

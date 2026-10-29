@@ -121,6 +121,20 @@ script SelfTest extends Logic
             self:Check("item roundtrip", again == s, s .. " → " .. again)
             self:Check("item describe", _ItemData:Describe(s) ~= "", s)
         end
+        -- 잠금 (10-29 기획서 45 결정 6-A): 물건 문자열 9번째 칸 "L" — 잠그고 풀어도 물건은 그대로, 옵션 바꾸기·소켓 뚫기 뒤에도 잠긴 채, 겹치는 물건은 잠그지 않는다
+        local plain = _ItemData:Generate(30, "gamble", 0)
+        local locked = _ItemData:WithLock(plain, true)
+        self:Check("lock flag", _ItemData:IsLocked(locked) and not _ItemData:IsLocked(plain), locked)
+        self:Check("lock roundtrip", _ItemData:Serialize(_ItemData:Parse(locked)) == locked, locked)
+        self:Check("lock undo", _ItemData:WithLock(locked, false) == plain, _ItemData:WithLock(locked, false) .. " / " .. plain)
+        self:Check("lock same item", _ItemData:SameItem(plain, locked) and not _ItemData:SameItem(plain, _ItemData:WithLock(_ItemData:MakeRune(20), true)), locked)
+        if _ItemData:CanReroll(locked) then self:Check("lock keeps reroll", _ItemData:IsLocked(_ItemData:RerollMods(locked)), locked) end
+        if _ItemData:CanPunch(locked) then self:Check("lock keeps punch", _ItemData:IsLocked(_ItemData:PunchSockets(locked)), locked) end
+        self:Check("lock rune", _ItemData:CanLock(_ItemData:MakeRune(20)), _ItemData:MakeRune(20))
+        self:Check("lock stack", not _ItemData:CanLock(_ItemData:MakeStack("hp1", 3)) and not _ItemData:CanLock(_ItemData:MakeStack("essence", 3)), "hp1 · essence")
+        local lockedRune = _ItemData:WithLock(_ItemData:MakeRune(20), true)
+        self:Check("lock shadow rune", _ShadowConfig:FindUpgradeRune({ lockedRune }, 1) == 0 and _ShadowConfig:HasLockedUpgradeRune({ lockedRune }, 1), lockedRune)
+        log("[VRF] selftest lock checks done")
         for lv = 1, 80, 13 do
             local r = _ItemData:MakeRune(lv)
             self:Check("rune drop", _ItemData:IsRune(_ItemData:Parse(r).base), r)

@@ -5,6 +5,7 @@ const path = require('path'), fs = require('fs');
 const root = process.env.MSW_WORLD_ROOT || path.resolve(__dirname, '../..');
 const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
+const { windowFrame, fitButtonText, slotLock } = require(path.join(root, 'tools/build/lib.cjs'));
 const rows = load('ui_icons');
 const icons = Object.fromEntries(rows.map((x) => [x.key, x.ruid]));
 // 칸 그림은 ui_icons.csv의 색·투명도를 그대로 쓴다 (다른 창과 같은 공통 값)
@@ -29,11 +30,8 @@ function run() {
   // 그룹 순서는 tools/build/ui-order.cjs가 모든 UI 그룹을 한 번에 정한다
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/ShopWin';
-  b.panel(w, { rect_size: [1380, 880], pos: [0, 10], color: '#100E16', raycast: true, enable: false });
-  b.sprite(w + '/Rim', { rect_size: [1420, 920], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
-  // 제목·닫기: 다른 창과 같은 공통 규칙 (가운데, 창 위에서 17px)
-  b.text(w + '/Title', '거래', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -17], rect_size: [900, 40], size: 28, color: '#E6C88A', alignment: 4, bold: true });
-  b.button(w + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
+  // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+  windowFrame(b, w, { size: [1380, 880], pos: [0, 10], title: '거래', enable: false });
   b.text(w + '/Info', '', { anchor: 'top-left', pos: [44, -86], rect_size: [1292, 36], size: 22, color: '#C9BBA0', alignment: 3, bestfit: true, min_size: 18, max_size: 22 });
 
   // ── 왼쪽: 살 물건 (5열 × 2줄) ──
@@ -63,9 +61,12 @@ function run() {
     b.button(n, '', { anchor: 'top-left', pos: [12 + ((i - 1) % 6) * 102, -8 - Math.floor(((i - 1) % 30) / 6) * 102], rect_size: [88, 88], bg_color: '#19131E' });
     slot(b, n, 88, 64);
     pick(b, n, 88);
+    slotLock(b, n);   // 잠긴 물건 ★ — 팔 수 없다 (10-29 45 결정 6-A)
   }
   b.button(w + '/BtnSell', '판매', { anchor: 'top-left', pivot: [0, 1], pos: [696, -766], rect_size: [316, 88], image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, font_size: 26, color: '#F4E2B0' });
   b.button(w + '/BtnMulti', '여러 개 선택', { anchor: 'top-left', pivot: [0, 1], pos: [1028, -766], rect_size: [316, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
+  // 테두리 단추 글자: 장식 안쪽 여백 + 넘치면 줄이기 (ui-tokens buttonText — 다른 창과 같은 규격)
+  for (const n of ['BtnBuy', 'BtnBuy5', 'BtnSell', 'BtnMulti']) fitButtonText(b, w + '/' + n);
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
 }
