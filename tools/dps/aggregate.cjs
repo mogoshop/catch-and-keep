@@ -196,6 +196,7 @@ function summarize(r, gapArg) {
     unknown_ratio: eff > 0 ? r2(unknownEff / eff) : null, by_source: bySrc, by_category: byCat,
     ttk: { samples: ttkAll.length, censored, median: r2(median(ttkAll)), p90: r2(pct(ttkAll, 0.9)), by_grade: gradeOut },
     owners, sampler: r.sample ? { n: Number(r.sample.n), late: Number(r.sample.late), max_gap: Number(r.sample.max_gap) } : null,
+    filter: w.filter || "-", filtered: Number(w.filtered || 0),
     halted: w.halted, ledger_check: check, dropped: Number(w.dropped), life_overflow: Number(w.life_overflow), owner_overflow: Number(w.owner_overflow),
     ev_omitted: r.end ? Number(r.end.ev_omitted || 0) : null, flush_truncated: r.end ? Number(r.end.truncated || 0) : null,
   });
@@ -246,12 +247,12 @@ function markdown(report) {
   L.push("- 입력: " + report.inputs.join(", "));
   L.push("- 실측 = 서버 HP 원장(Monster.ApplyHpDamage → Telemetry.DpsHit). 설명 1타·가정 상한은 오프라인 계산이며 실측이 아니다. 셋을 더하거나 서로 대신하지 않는다.");
   L.push("- 공백 임계값: " + (report.gap_s === null ? "서버 DpsGapSec(기본 3초)" : report.gap_s + "초(재계산)") + ". 전투 구간 = 유효 피해 사이 간격이 임계값 이하인 부분.", "");
-  L.push("| 실행 | 레벨 | 빌드 | 장면 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 원장 검사 |");
-  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  L.push("| 실행 | 레벨 | 빌드 | 장면 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 걸러낸 기록(대상 밖) | 원장 검사 |");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of report.runs) {
     const deaths = s.owners.reduce((a, o) => a + (o.deaths || 0), 0);
     L.push("| " + [s.run, cell(s.level, "-"), cell(s.build, "-"), s.scene, cell(s.rep, "-"), s.duration_s, s.effective, cell(s.total_dps, "-"), cell(s.combat_dps, "-"), s.combat.method,
-      cell(s.unknown_ratio, "-"), cell(s.ttk.median, "-") + " (" + s.ttk.samples + "/" + s.ttk.censored + ")", deaths, s.ledger_check.status].join(" | ") + " |");
+      cell(s.unknown_ratio, "-"), cell(s.ttk.median, "-") + " (" + s.ttk.samples + "/" + s.ttk.censored + ")", deaths, s.filtered, s.ledger_check.status].join(" | ") + " |");
   }
   L.push("", "## 설명 1타 / 가정 상한 / 실측", "");
   L.push("| 레벨 | 빌드 | 대표 스킬 | 설명 1타 | 자기 표식 1타 | 가정 상한 (1타×발수÷재사용) | 실측 총구간 DPS (중앙) | 실측 전투 구간 DPS (중앙) | 실행 수 |");

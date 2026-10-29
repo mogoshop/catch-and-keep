@@ -64,7 +64,7 @@ script Monster extends Component
     property integer DpsSeq = 0              -- 이 생명의 HP 원장 순번 (같은 시각의 여러 타격도 각각 다른 번호)
     property integer DpsAttempt = 1          -- 빈 맵 리셋(ResetForEmptyMap)마다 +1 — TTK 시도 경계
     property number DpsLastHp = 0            -- 원장이 마지막으로 본 HP (원장 밖에서 HP가 바뀌면 drift로 따로 남긴다)
-    property table DpsTags = {}              -- 공격 쪽이 남긴 출처 꼬리표 { by, info, dmg, at } 최대 4 (DpsTag · 정확히 하나만 맞을 때만 쓴다)
+    property any DpsTags = nil               -- 공격 쪽이 남긴 출처 꼬리표 목록 (by·info·dmg·at, 최대 4 · DpsTag — 정확히 하나만 맞을 때만 쓴다). 일반 Lua 표라 any
 
     method MonsterStatus Status()
         ---@type MonsterStatus
@@ -603,7 +603,7 @@ script Monster extends Component
         if not _Telemetry.DpsOn or not isvalid(attacker) then return end
         local now = _UtilLogic.ElapsedSeconds
         local keep = {}
-        for _, t in ipairs(self.DpsTags) do
+        for _, t in ipairs(self.DpsTags or keep) do
             if now - t.at <= 0.5 then table.insert(keep, t) end
         end
         while #keep >= 4 do table.remove(keep, 1) end

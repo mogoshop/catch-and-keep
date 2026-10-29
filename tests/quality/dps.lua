@@ -4,7 +4,7 @@
 -- 엔진(HitEvent 배달·타이머·저장소)은 대신하고 MSW 동기화·실제 투사체·AI는 흉내 내지 않는다.
 -- @source Monster Monster/Monster.mlua ApplyHpDamage,TakeDamage,HandleHitEvent,RiteAbsorb,DpsTag,RestoreHp,SetPlayerHpMul,ResetForEmptyMap,Respawn,Die,QueueSummonDamage,FlushSummonDamage,NoteContributor,RewardPlayers
 -- @source Util Common/Util.mlua OwnerPlayerOf
--- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say
+-- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsWants,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say
 
 local fails = 0
 local function check(name, ok, detail)
@@ -118,7 +118,7 @@ end
 local function dmgEvents(list) local out = {} for _, e in ipairs(list) do if e.kind == 'hit' or e.kind == 'tick' then table.insert(out, e) end end return out end
 
 -- ── C01 기본 꺼짐 · 비간섭 ──
-check('default off', Telemetry.DpsOn == false and next(Telemetry.Dps) == nil, Telemetry.DpsOn)
+check('default off', Telemetry.DpsOn == false and Telemetry.Dps == nil, Telemetry.DpsOn)
 local function scenario()
   -- 같은 입력열: 보호막 흡수 · 일반 타격 · 틱 · 과잉 피해
   local m = monster(100, 15)
@@ -128,7 +128,7 @@ end
 absorbCalls = 0
 local offM = scenario()
 local offAbsorb = absorbCalls
-check('off: no buffer/timer/subscription', next(Telemetry.Dps) == nil and timers.rep == 0 and next(_GameEvents.subs) == nil, timers.rep)
+check('off: no buffer/timer/subscription', Telemetry.Dps == nil and timers.rep == 0 and next(_GameEvents.subs) == nil, timers.rep)
 check('off: RiteAbsorb once per HP change (4 hits)', offAbsorb == 4, offAbsorb)
 Telemetry:DpsStart('c01')
 absorbCalls = 0
@@ -137,7 +137,7 @@ check('on: game result identical (Hp, shield, dead)', onM.Hp == offM.Hp and onM.
 check('on: RiteAbsorb call count unchanged', absorbCalls == offAbsorb, absorbCalls)
 check('on: sampler timer and subscriptions exist only while on', timers.rep == 1 and _GameEvents.subs['PlayerDied/TelemetryDps'] ~= nil, timers.rep)
 Telemetry:DpsStop()
-check('stop: buffer freed, timer cleared, unsubscribed', next(Telemetry.Dps) == nil and Telemetry.DpsOn == false and timers.cleared >= 1 and next(_GameEvents.subs) == nil, timers.cleared)
+check('stop: buffer freed, timer cleared, unsubscribed', Telemetry.Dps == nil and Telemetry.DpsOn == false and timers.cleared >= 1 and next(_GameEvents.subs) == nil, timers.cleared)
 
 -- ── C02 오라클 ──
 Telemetry:DpsStart('oracle')
@@ -375,11 +375,26 @@ check('C-IF-01 flush duration fixed at MaxSec after halt', logs[1]:find('dur=10.
 Telemetry:DpsStop()
 Telemetry.DpsMaxSec = 1800
 
+-- 시험 대상 거르기: DpsFilter 접두어가 맞는 몬스터만 원장에 · 나머지는 filtered 수로만
+Telemetry.DpsFilter = 'C05_'
+Telemetry:DpsStart('filter')
+local mIn = monster(100, 0)
+mIn.Entity.Name = 'C05_target'
+local mOut = monster(100, 0)
+Telemetry:DpsNote(mIn, 'spawn', -1)
+Telemetry:DpsNote(mOut, 'spawn', -1)
+hit(mIn, p1, 10)
+hit(mOut, p1, 10)
+check('filter: only prefixed targets recorded, others counted as filtered', Telemetry.Dps.eff == 10 and Telemetry.Dps.filtered == 2 and Telemetry.Dps.lives[mIn.DpsLife].name == 'C05_target' and mOut.DpsLife == 0, Telemetry.Dps.filtered)
+check('filter: HP still applied to filtered monster (game unchanged)', mOut.Hp == 90, mOut.Hp)
+Telemetry:DpsStop()
+check('stop clears filter', Telemetry.DpsFilter == '', Telemetry.DpsFilter)
+
 -- ── DpsFinish · 꺼진 뒤 Flush ──
 Telemetry:DpsStart('finish')
 logs = {}
 Telemetry:DpsFinish(0)
-check('DpsFinish flushes then stops', Telemetry.DpsOn == false and next(Telemetry.Dps) == nil and table.concat(logs, '\n'):find('%[DPS%] end') ~= nil, #logs)
+check('DpsFinish flushes then stops', Telemetry.DpsOn == false and Telemetry.Dps == nil and table.concat(logs, '\n'):find('%[DPS%] end') ~= nil, #logs)
 logs = {}
 Telemetry:DpsFlush(5)
 check('flush while off is a labelled no-op', logs[1] == '[DPS] flush skipped (off)', logs[1])
