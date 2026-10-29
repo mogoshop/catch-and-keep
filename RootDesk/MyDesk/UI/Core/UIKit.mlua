@@ -174,6 +174,28 @@ script UIKit extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void ShowRiteStages(string rel, SkillBook book, string id)
+        -- 뼈 의식 칸 위 작은 줄 (rel = 칸/Stage · 44 §4-1 B: 단계별 재사용이 칸에 안 보였다 — 덮개는 공통 1초뿐): 기다리는 단계만 「회오리 6 · 화살 3」
+        local e = self:Get(rel)
+        if not isvalid(e) then return end
+        local text = ""
+        if id == "bone_rite" then
+            local parts = {}
+            for _, s in ipairs({ { 2, "회오리" }, { 3, "화살" }, { 5, "거인" } }) do
+                local left = book:CooldownLeft(book:RiteCdKey(s[1]))
+                if left > 0.05 then table.insert(parts, s[2] .. " " .. tostring(math.ceil(left))) end
+            end
+            text = table.concat(parts, " · ")
+        end
+        local on = text ~= ""
+        if e.Enable ~= on then
+            e.Enable = on
+            log("[VRF] rite stage " .. rel .. " = " .. text)
+        end
+        if on then self:SetText(rel, text) end
+    end
+
+    @ExecSpace("ClientOnly")
     method void SetIcon(string rel, string ruid)
         -- 아이콘: RUID가 있으면 그림을 넣고 켜고, ""면 끈다 (같은 그림이면 건드리지 않는다)
         local e = self:Get(rel)

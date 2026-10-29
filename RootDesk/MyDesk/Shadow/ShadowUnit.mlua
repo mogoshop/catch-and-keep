@@ -88,6 +88,9 @@ script ShadowUnit extends AttackComponent
     property boolean ArchReady = false
     property integer CritCount = 0           -- 암살자 치명타 · 무리 회피 · 거구 경직 횟수 (검증용)
     property integer DodgeCount = 0
+    property number AuraRingAt = 0          -- 클라이언트: 광기 마법사 오오라 범위 고리를 다시 그릴 시각 (44 §4-1 B)
+    property number TraitPopAt = 0          -- 서버: 유형 특기 발동 글자를 다시 띄울 수 있는 시각 (1초에 한 번)
+    property number TraitShownAt = 0        -- 클라이언트: 지금 띄운 특기 글자의 시각 (늦게 끝난 타이머가 새 글자를 지우지 않게)
     property integer StunCount = 0
     property number AbilityTimer = 2
     property number AuraTimer = 0            -- 오오라 다음 전파까지 (기술 AbilityTimer와 따로)
@@ -204,7 +207,10 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ClientOnly")
     method void StartView()
         -- 클라이언트: 주인이 동기화되면 내 소환수는 그대로(야영지에서만 「내 소환수」), 팀원 소환수는 흐린 회색 고리 + 작은 주인 이름
-        self.ViewTimer = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+        self.ViewTimer = _TimerService:SetTimerRepeat(function()
+            self:RefreshView()
+            self:AuraRangeTick()
+        end, 0.5)
         self.HpBarTimer = _TimerService:SetTimerRepeat(function() self:UpdateHpBar() end, 0.15)
     end
 
@@ -314,6 +320,56 @@ script ShadowUnit extends AttackComponent
         end
     end
 
+    @ExecSpace("ClientOnly")
+    method void AuraRangeTick()
+        -- 광기 마법사 오오라 범위 (44 §4-1 B: 반경 3이 안 보였다): 내 해골 마법사의 오오라 반경을 3초마다 바닥 고리로 한 번 (오오라 색)
+        if self.Kind ~= "mage" or self.Variant == "" or self.Hp <= 0 or not isvalid(self.Entity) then return end
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or self.OwnerPlayer ~= me or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.AuraRingAt then return end
+        local aura = _GameData:GetVariantOf(self.Variant, "aura")
+        if aura == nil then return end
+        if self.AuraRingAt == 0 then log(string.format("[VRF] mage aura ring r=%.1f %s", aura.radius, self.Entity.Name)) end
+        self.AuraRingAt = now + 3
+        local p = self.Entity.TransformComponent.WorldPosition
+        local c = _GameConst:AuraColor(aura.effect)
+        _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, p, 0, Vector3(aura.radius, aura.radius, 1), false, { Color = Color(c.r, c.g, c.b, 0.55) })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TraitPopLimited(string kind)
+        -- 유형 특기 발동 글자는 그림자마다 1초에 한 번만 (연타·떼 싸움에서 머리 위가 깜빡이지 않게)
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.TraitPopAt then return end
+        self.TraitPopAt = now + 1
+        log("[VRF] trait pop " .. kind .. " " .. self.Entity.Name)
+        self:TraitPop(kind)
+    end
+
+    @ExecSpace("Multicast")
+    method void TraitPop(string kind)
+        -- 그림자 유형 특기 발동 (44 §4-1 B: 암살자 치명 · 무리 회피 · 거구 경직이 보이지 않았다): 주인 화면에만 머리 위 작은 글자 0.8초
+        --   (내 소환수는 평소 이름표를 숨기므로 그 자리를 잠깐 빌리고, 끝나면 RefreshView가 원래대로 되돌린다)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or self.OwnerPlayer ~= me or not isvalid(self.Entity) then return end
+        local tag = self.Entity.NameTagComponent
+        if self.TagAlt ~= nil and isvalid(self.TagAlt) then tag = self.TagAlt end
+        if not isvalid(tag) then return end
+        local texts = { crit = "치명", dodge = "회피", stun = "경직" }
+        local colors = { crit = Color(1, 0.55, 0.3, 1), dodge = Color(0.7, 0.9, 1, 1), stun = Color(1, 0.88, 0.45, 1) }
+        tag.Name = texts[kind] or kind
+        tag.FontColor = colors[kind] or Color(1, 1, 1, 1)
+        tag.Enable = true
+        local shownAt = _UtilLogic.ElapsedSeconds
+        self.TraitShownAt = shownAt
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or self.TraitShownAt ~= shownAt then return end
+            self.ViewState = ""
+            self:RefreshView()
+        end, 0.8)
+    end
+
     @ExecSpace("ServerOnly")
     method void PartyAuraTick(number delta)
         -- 버프는 섞인다: 근처 다른 플레이어의 호령(소환수 공격 %·이동 속도)이 내 주인과 상관없이 이 소환수에도 닿는다
@@ -393,7 +449,7 @@ script ShadowUnit extends AttackComponent
                 end
             end
         end
-        if pulled > 0 then self:SwingFx(Vector3(me.x, me.y + 0.3, 0), Vector2(1, 0)) end
+        if pulled > 0 then self:SwingFx(Vector3(me.x, me.y + 0.3, 0), Vector2(1, 0), 1) end
     end
 
     @ExecSpace("ServerOnly")
@@ -424,6 +480,7 @@ script ShadowUnit extends AttackComponent
         -- 무리 그림자: 25% 회피
         if self:GetArch() == "swarm" and _UtilLogic:RandomDouble() < 0.25 then
             self.DodgeCount = self.DodgeCount + 1
+            self:TraitPopLimited("dodge")
             return
         end
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
@@ -1113,7 +1170,7 @@ script ShadowUnit extends AttackComponent
             else
                 local dir = delta:Magnitude() > 0.05 and delta:Normalize() or Vector2(1, 0)
                 local center = at + dir * 0.4 + Vector2(0, 0.2)
-                self:SwingFx(Vector3(center.x, center.y, 0), dir)
+                self:SwingFx(Vector3(center.x, center.y, 0), dir, math.min(2.2, self.RadiusMult))   -- 대검 해골 베기 궤적 ×1.8 (44 §4-1 B: 범위만 넓고 궤적 크기는 그대로였다)
                 -- 거구 그림자: 타격 범위 +40%
                 local radius = (self:GetArch() == "brute" and self.AttackRadius * 1.4 or self.AttackRadius) * self.RadiusMult
                 self:AttackFast(CircleShape(center, radius), "shadow.basic", nil)
@@ -1182,8 +1239,16 @@ script ShadowUnit extends AttackComponent
             self.BlastSkip = target
             self:AttackFast(CircleShape(q, 1.3), "shadow.blast", nil)
             self.BlastSkip = nil
-            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(q.x, q.y, 0), 0, Vector3(0.7, 0.7, 1), false, { Color = self:BoltColor() })
+            self:BlastPopFx(Vector3(q.x, q.y, 0), self:BoltColor())   -- 44 §3-2: 예전엔 서버에서만 불러 보이는지 알 수 없었다
         end
+    end
+
+    @ExecSpace("Multicast")
+    method void BlastPopFx(Vector3 pos, Color color)
+        -- 폭발 마법사: 화살이 맞은 자리 원소 색 파열 (모든 클라이언트)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(0.7, 0.7, 1), false, { Color = color })
     end
 
     @ExecSpace("ServerOnly")
@@ -1194,14 +1259,15 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("Multicast")
-    method void SwingFx(Vector3 pos, Vector2 dir)
-        -- 소환수의 작은 궤적은 실제 접촉 방향으로 회전하며 전투 음량 한도를 공유한다.
+    method void SwingFx(Vector3 pos, Vector2 dir, number scale)
+        -- 소환수의 작은 궤적은 실제 접촉 방향으로 회전하며 전투 음량 한도를 공유한다. scale = 근접 범위 배율 (대검 해골 1.8 · 뼈 거인)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local right = dir.x >= 0
         local angle = math.deg(math.atan(dir.y, dir.x))
         if not right then angle = angle - 180 end
-        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(0.25, 0.25, 1), false, { FlipX = right, PlayRate = 1.8, Color = Color(0.75, 0.7, 0.8, 0.65) })
+        local s = 0.25 * math.max(1, scale)
+        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(s, s, 1), false, { FlipX = right, PlayRate = 1.8, Color = Color(0.75, 0.7, 0.8, 0.65) })
         _SoundDirector:PlayCombat(_GameConst.SfxSwing, pos, 0.12, 0)
     end
 
@@ -1228,7 +1294,10 @@ script ShadowUnit extends AttackComponent
         -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)
         if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
             dmg = dmg * 1.8
-            if self:IsServer() then self.CritCount = self.CritCount + 1 end
+            if self:IsServer() then
+                self.CritCount = self.CritCount + 1
+                self:TraitPopLimited("crit")
+            end
         elseif self:AuraAmount("crit") > 0 and _UtilLogic:RandomDouble() < self:AuraAmount("crit") / 100 then
             dmg = dmg * 1.5   -- 냉혹 오오라
         end
@@ -1434,6 +1503,7 @@ script ShadowUnit extends AttackComponent
                 st.InterruptReadyAt = _UtilLogic.ElapsedSeconds + 1.5
                 st:Stagger()
                 self.StunCount = self.StunCount + 1
+                self:TraitPopLimited("stun")
             end
         end
         if self.HexPct > 0 and self.LastInfo == "shadow.ranged" then

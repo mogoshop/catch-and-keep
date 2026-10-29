@@ -258,7 +258,15 @@ script HudMain extends Logic
             if stepLv > 0 then
                 local def = _SkillData:Get("swift_step")
                 table.insert(list, { key = "buff_swift_step", icon = def ~= nil and def.icon or nil, label = "걸음", color = Color(0.6, 0.85, 0.7, 1), left = -1,
-                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv) + 2 * book:Node("step_gale")) })
+                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv)) })
+            end
+            ---@type PlayerStats
+            local ast = player:GetComponent("script.PlayerStats")
+            if ast ~= nil and ast.AfterStepUntil > _UtilLogic.ServerElapsedSeconds then
+                -- 강화 「잔걸음」(44 결정 4): 질주 뒤 잠깐 빨라진 동안
+                local def = _SkillData:Get("step_gale")
+                table.insert(list, { key = "buff_after_step", icon = def ~= nil and def.icon or nil, label = "잔걸음", color = Color(0.6, 0.82, 1, 1), left = ast.AfterStepUntil - _UtilLogic.ServerElapsedSeconds,
+                    desc = string.format("잔걸음 · 질주 뒤 이동 속도 +%d%%", math.floor(ast.AfterStepPct)) })
             end
             ---@type PlayerStats
             local st = player:GetComponent("script.PlayerStats")
@@ -734,6 +742,7 @@ script HudMain extends Logic
         if book == nil then return end
         for i = 1, 5 do
             _UIKit:ShowCooldown("Bottom/Slots/Slot" .. tostring(i) .. "/Cd", book, book:GetSlotSkill(i))
+            _UIKit:ShowRiteStages("Bottom/Slots/Slot" .. tostring(i) .. "/Stage", book, book:GetSlotSkill(i))
         end
     end
 

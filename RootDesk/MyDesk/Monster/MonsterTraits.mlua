@@ -522,7 +522,11 @@ script MonsterTraits extends Component
         ---@type Monster
         local body = self.Entity:GetComponent("script.Monster")
         local stateId = body ~= nil and body.MonsterState or ""
-        local key = self.TintSync .. "|" .. stateId
+        -- 냉기 둔화 = 푸른 색조 (44 §4-1 B: 둔화가 화면에 안 보였다). 동기화된 CurseMask 둔화 비트 — 색은 곱이라 원래 색 위에 푸르게
+        ---@type MonsterStatus
+        local status = self.Entity:GetComponent("script.MonsterStatus")
+        local chilled = status ~= nil and status:IsChillShown()
+        local key = self.TintSync .. "|" .. stateId .. (chilled and "|chill" or "")
         if self.FlashUntil > 0 or key == self.AppliedTint then return end
         local hadState = string.match(self.AppliedTint, "|(.+)$") ~= nil
         self.AppliedTint = key
@@ -536,8 +540,12 @@ script MonsterTraits extends Component
             local sr, sg, sb = string.match(st.tint, "([%d%.]+),([%d%.]+),([%d%.]+)")
             if sr ~= nil then c = { c[1] * tonumber(sr), c[2] * tonumber(sg), c[3] * tonumber(sb) } end
         end
+        if chilled then
+            c = { c[1] * 0.62, c[2] * 0.8, c[3] }
+            log("[VRF] chill tint " .. self.Entity.Name)
+        end
         -- 색조도 상태도 없으면 건드리지 않는다 (반투명 망령 등 다른 연출의 색) — 상태가 막 떨어졌을 때만 흰색으로 되돌린다
-        if r ~= nil or st ~= nil or hadState then sprite.Color = Color(c[1], c[2], c[3], r ~= nil and 1 or sprite.Color.a) end
+        if r ~= nil or st ~= nil or hadState or chilled then sprite.Color = Color(c[1], c[2], c[3], r ~= nil and 1 or sprite.Color.a) end
     end
 
 end

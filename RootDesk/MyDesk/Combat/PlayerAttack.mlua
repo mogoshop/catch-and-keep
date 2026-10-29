@@ -11,6 +11,7 @@ script PlayerAttack extends AttackComponent
     property number AimRange = 1.7            -- 자동 조준: 이 거리 안 가장 가까운 적 쪽으로 친다
     property number Windup = 0.16              -- 누른 뒤 판정까지 (아바타 휘두르기와 맞춘다)
     property number SkillDamage = 0           -- SkillBook이 판정 직전에 넣는 스킬 피해
+    property number LastSkillFinal = 0        -- 서버: 마지막 스킬 판정이 실제로 넣은 피해 (생기 앗기 회복 — SkillEffects.DrainHit)
     property Entity SelectedTarget = nil       -- PC가 고른 적. 가까운 다른 적으로 바꾸지 않는다
     property Entity AutoTarget = nil           -- 자동 조준도 공격마다 흔들리지 않게 유지
     property integer AttackEpoch = 0
@@ -481,7 +482,7 @@ script PlayerAttack extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void SkillHitExtra(Monster monster, string attackInfo, number damage)
-        -- 맞는 순간의 부가 효과: 서리 혼·서리 파편 둔화(3초 + 「시린 혼」) — 「파쇄」를 위해 누가 얼렸는지 기억한다
+        -- 맞는 순간의 부가 효과: 서리 혼·서리 파편 둔화(frostSlowSec) + 강화 「서리 표식」 세기 — 「파쇄」·「서리 표식」을 위해 누가 얼렸는지 기억한다
         if attackInfo == "skill.bone_rite_push" then
             -- 뼈 의식 3기 「뼈 화살」 마지막 발: 나에게서 먼 쪽으로 약 0.5칸 밀친다 (보스·최상위는 MonsterStatus가 막는다 · 정예 절반)
             local status = monster:Status()
@@ -490,10 +491,11 @@ script PlayerAttack extends AttackComponent
             return
         end
         if attackInfo ~= "skill.frost_soul" and attackInfo ~= "skill.frost_split" then return end
+        -- 10-29 44 결정 4: 둔화 초는 고정(frostSlowSec) — 「시린 혼」 +1초/랭크 자리는 「서리 표식」(그 적에게 뼈 창·골편 피해 +)
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
-        local seconds = 3 + (book ~= nil and book:Node("frost_long") or 0)
-        monster:ApplyFrost(seconds, self.Entity, damage)
+        local markPct = book ~= nil and book:FrostMarkPct(book:Node("frost_long")) or 0
+        monster:ApplyFrost(_GameData.frostSlowSec, self.Entity, damage, markPct)
     end
 
     method number ResistFactor(Entity defender, Monster monster, string element)
@@ -587,6 +589,15 @@ script PlayerAttack extends AttackComponent
                 local book = self.Entity:GetComponent("script.SkillBook")
                 dmg = dmg * (1.5 + 0.2 * (book ~= nil and book:Node("flame_hex") or 0))
             end
+            -- 강화 「서리 표식」(44 결정 4): 내 서리 혼에 느려져 표식이 남은 적에게 뼈 창·골편 피해 + (MonsterStatus.FrostMarkFor)
+            if (attackInfo == "skill.bone_spear" or attackInfo == "skill.bone_shard") and monster ~= nil and self:IsServer() then
+                local status = monster:Status()
+                local mark = status ~= nil and status:FrostMarkFor(self.Entity) or 0
+                if mark > 0 then
+                    dmg = dmg * (1 + mark / 100)
+                    log(string.format("[VRF] frost mark bonus %s +%d%% %s", attackInfo, math.floor(mark), defender.Name))
+                end
+            end
         else
             dmg = self:GetBasicPhysicalDamage()
             dmg = dmg * self:ResistFactor(defender, monster, "phys")
@@ -625,6 +636,7 @@ script PlayerAttack extends AttackComponent
             if ds ~= nil then dmg = dmg * ds:PvpTakenMult() end
         end
         local final = math.max(1, math.floor(dmg + 0.5))
+        if self:IsServer() and string.sub(attackInfo, 1, 6) == "skill." then self.LastSkillFinal = self.LastSkillFinal + final end
         -- 결투: 상대의 뼈 갑옷이 먼저 받는다
         if isvalid(defender.PlayerComponent) and self:IsServer() then
             ---@type PlayerStats

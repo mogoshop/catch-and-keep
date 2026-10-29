@@ -136,6 +136,13 @@ script PlayerStats extends Component
     property number StaggerUntil = 0         -- 거구 몬스터 강타에 휘청임 (이동 ×0.5, 짧다)
     @Sync
     property number HuntUntil = 0            -- 강화 「사냥꾼의 걸음」: 처치 뒤 이동 속도가 오르는 서버 시각 (버프 줄 표시용 동기화)
+    @Sync
+    property number AfterStepUntil = 0       -- 강화 「잔걸음」(44 결정 4): 질주 뒤 이동 속도가 오르는 서버 시각 (버프 줄 표시용 동기화)
+    @Sync
+    property number AfterStepPct = 0
+    property number ArmorSoaked = 0          -- 강화 「터지는 갑옷」: 지금 뼈 갑옷이 막은 피해 합 (다 깨질 때 터뜨리고 0 · 새로 두르면 0)
+    property integer ArmorRingSerial = 0     -- 클라이언트: 뼈 갑옷 몸 고리 입자 (44 §4-1 B — 남은 흡수량만큼 진하게)
+    property integer ArmorRingStep = 0       -- 클라이언트: 지금 그린 고리 단계 (0 = 없음 · 1~4)
     -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
     property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
     property number PvpAmpUntil = 0
@@ -575,14 +582,15 @@ script PlayerStats extends Component
         local movement = self.Entity.MovementComponent
         if not isvalid(movement) or self.BaseSpeed <= 0 then return end
         local mult = 1 + self.BonusMs / 100 + self:AuraAmount("move") / 100   -- 그림자 기동 오오라
-        -- 이동 「가벼운 걸음」 (10-20) + 강화 「질풍 걸음」·「사냥꾼의 걸음」 (10-24): 장비 이동 속도와 더한다
+        -- 이동 「가벼운 걸음」 (10-20) + 강화 「사냥꾼의 걸음」 (10-24) · 「잔걸음」 (10-29 44 결정 4 — 질풍 걸음 +2%/랭크 자리): 장비 이동 속도와 더한다
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book ~= nil then
             local step = book:GetPowerLevel("swift_step")
-            if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 + 0.02 * book:Node("step_gale") end
+            if step > 0 then mult = mult + book:GetEffectPower("swift_step", step) / 100 end
             if _UtilLogic.ServerElapsedSeconds < self.HuntUntil then mult = mult + 0.04 * book:Node("step_hunt") end
         end
+        if _UtilLogic.ServerElapsedSeconds < self.AfterStepUntil then mult = mult + self.AfterStepPct / 100 end
         if _UtilLogic.ServerElapsedSeconds < self.ChillUntil then mult = mult * 0.6 end
         if _UtilLogic.ServerElapsedSeconds < self.StaggerUntil then mult = mult * 0.5 end
         if _UtilLogic.ServerElapsedSeconds < self.PvpDecayUntil then mult = mult * math.max(0.3, 1 - self.PvpDecayPct / 100) end
@@ -606,6 +614,60 @@ script PlayerStats extends Component
         _TimerService:SetTimerOnce(function()
             if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.HuntUntil then self:RefreshSpeed() end
         end, 3.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartAfterStep(number pct, number seconds)
+        -- 강화 「잔걸음」: 질주 뒤 seconds 동안 이동 속도 +pct% (다시 질주하면 시간·수치를 새로)
+        self.AfterStepPct = pct
+        self.AfterStepUntil = _UtilLogic.ServerElapsedSeconds + seconds
+        self:RefreshSpeed()
+        _TimerService:SetTimerOnce(function()
+            if isvalid(self.Entity) and _UtilLogic.ServerElapsedSeconds >= self.AfterStepUntil then self:RefreshSpeed() end
+        end, seconds + 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method number SoakBoneArmor(number final)
+        -- 뼈 갑옷이 먼저 받는다 (몬스터 공격 MonsterAttack.CalcDamage · 결투 AbsorbBoneArmor 공통). 남은 피해를 돌려준다.
+        -- 다 깨지면 강화 「터지는 갑옷」(44 결정 4 · 가시 갑옷 자리)이 그 갑옷이 막은 피해 합 × 배율을 둘레로 터뜨린다 (판정이 끝난 뒤 · 0.05초)
+        if self.BoneArmor <= 0 or final <= 0 then return final end
+        local absorbed = math.min(final, self.BoneArmor)
+        self.BoneArmor = self.BoneArmor - absorbed
+        self.ArmorSoaked = self.ArmorSoaked + absorbed
+        if self.BoneArmor <= 0 then
+            self.BoneArmor = 0
+            local soaked = self.ArmorSoaked
+            self.ArmorSoaked = 0
+            ---@type SkillBook
+            local book = self.Entity:GetComponent("script.SkillBook")
+            local mul = book ~= nil and book:ArmorBurstMul(book:Node("armor_thorns")) or 0
+            if mul > 0 and soaked > 0 then
+                local me = self.Entity
+                _TimerService:SetTimerOnce(function()
+                    ---@type SkillEffects
+                    local fx = isvalid(me) and me:GetComponent("script.SkillEffects") or nil
+                    if fx ~= nil then fx:ArmorBurst(soaked * mul) end
+                end, 0.05)
+            end
+        end
+        return final - math.floor(absorbed)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnSyncProperty(string name, any value)
+        -- 뼈 갑옷 몸 고리 (44 §4-1 B: 예전엔 버프 칩 숫자뿐이었다): 남은 흡수량 비율을 4단계로 나눠 단계가 바뀔 때만 다시 그린다 (모든 클라이언트)
+        if name ~= "BoneArmor" and name ~= "BoneArmorMax" then return end
+        local ratio = self.BoneArmorMax > 0 and math.max(0, math.min(1, self.BoneArmor / self.BoneArmorMax)) or 0
+        local step = self.BoneArmor > 0 and math.max(1, math.ceil(ratio * 4)) or 0
+        if step == self.ArmorRingStep then return end
+        self.ArmorRingStep = step
+        log(string.format("[VRF] bone armor ring step=%d (%d/%d)", step, math.floor(self.BoneArmor), math.floor(self.BoneArmorMax)))
+        if self.ArmorRingSerial ~= 0 then _ParticleService:RemoveParticle(self.ArmorRingSerial) end
+        self.ArmorRingSerial = 0
+        if step <= 0 or not isvalid(self.Entity) then return end
+        -- 상아색 뼈 기운: 가득 0.75 → 거의 깨짐 0.3 (코덱스 H-5 뼈 갑옷 고리가 승인되면 그 그림으로)
+        self.ArmorRingSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Enchant, self.Entity, Vector3(0, 0.45, 0), 0, Vector3(0.95, 0.95, 1), true, { Color = Color(0.93, 0.87, 0.72, 0.15 + 0.15 * step) })
     end
 
     @ExecSpace("ServerOnly")
@@ -647,11 +709,8 @@ script PlayerStats extends Component
 
     @ExecSpace("ServerOnly")
     method number AbsorbBoneArmor(number final)
-        -- 결투 상대의 공격도 뼈 갑옷이 먼저 받는다 (몬스터 공격은 MonsterAttack.CalcDamage가 따로). 남은 피해를 돌려준다
-        if self.BoneArmor <= 0 or final <= 0 then return final end
-        local absorbed = math.min(final, self.BoneArmor)
-        self.BoneArmor = self.BoneArmor - absorbed
-        return final - math.floor(absorbed)
+        -- 결투 상대의 공격도 뼈 갑옷이 먼저 받는다 (몬스터 공격과 같은 SoakBoneArmor — 「터지는 갑옷」 포함). 남은 피해를 돌려준다
+        return self:SoakBoneArmor(final)
     end
 
     method number PvpTakenMult()

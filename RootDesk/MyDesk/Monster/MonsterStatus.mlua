@@ -57,6 +57,7 @@ script MonsterStatus extends Component
     property Entity FrostSource = nil         -- 서리 혼으로 얼린 플레이어 (「파쇄」)
     property number FrostUntil = 0
     property number FrostDamage = 0
+    property number FrostMarkPct = 0          -- 강화 「서리 표식」(44 결정 4): FrostSource의 뼈 창·골편이 이 적에게 +% (FrostUntil까지)
 
     method Monster Body()
         ---@type Monster
@@ -276,24 +277,45 @@ script MonsterStatus extends Component
         if kind == "decay" then return self.DecayUntil end
         if kind == "resist" then return self.ResistBreakUntil end
         if kind == "root" then return self.RootUntil end
+        if kind == "hex" then return self.HexUntil end
+        if kind == "frostmark" then return self.FrostMarkPct > 0 and self.FrostUntil or 0 end
+        if kind == "chill" then return self.ChillUntil end
+        if kind == "poison" then return self.PoisonUntil end
         return 0
     end
 
     method table CurseDefs()
         -- 표시 순서·비트·아이콘 스킬. CurseMask로 클라이언트에 전달된다. 표는 한 번만 만든다 (10-13: 몬스터마다 매 프레임 새 표 9개)
+        -- mark = 머리 위 작은 문양 키 (ui_icons.csv — 코덱스 D-3 mark_* · 없으면 skill 아이콘). curse = false 는 표시만 하는 상태
+        --   (저주 불꽃 추가 피해·역병 옮김·HasCurse에 넣지 않는다) — 44 §3-2·§4-1 B: 저주 마법사 · 서리 표식 · 둔화 · 독이 머리 위에 안 보였다
         if self.CurseDefCache ~= nil then return self.CurseDefCache end
         self.CurseDefCache = {
-            { bit = 1, name = "약화의 낙인", kind = "amp", skill = "mark_weakness" },
-            { bit = 2, name = "쇠약", kind = "weaken", skill = "enfeeble" },
-            { bit = 4, name = "가시 저주", kind = "thorn", skill = "thorn_curse" },
-            { bit = 8, name = "공포", kind = "terror", skill = "terror" },
-            { bit = 16, name = "혼란", kind = "confuse", skill = "terror_frenzy" },
-            { bit = 32, name = "생명 약탈", kind = "lifetap", skill = "life_tap" },
-            { bit = 64, name = "쇠퇴", kind = "decay", skill = "enfeeble_decay" },
-            { bit = 128, name = "저항 붕괴", kind = "resist", skill = "resist_break" },
-            { bit = 256, name = "골격 감옥", kind = "root", skill = "bone_prison" },
+            { bit = 1, name = "약화의 낙인", kind = "amp", skill = "mark_weakness", mark = "mark_amp" },
+            { bit = 2, name = "쇠약", kind = "weaken", skill = "enfeeble", mark = "mark_weaken" },
+            { bit = 4, name = "가시 저주", kind = "thorn", skill = "thorn_curse", mark = "mark_thorn" },
+            { bit = 8, name = "공포", kind = "terror", skill = "terror", mark = "mark_terror" },
+            { bit = 16, name = "혼란", kind = "confuse", skill = "terror_frenzy", mark = "mark_confuse" },
+            { bit = 32, name = "생명 약탈", kind = "lifetap", skill = "life_tap", mark = "mark_lifetap" },
+            { bit = 64, name = "쇠퇴", kind = "decay", skill = "enfeeble_decay", mark = "mark_decay" },
+            { bit = 128, name = "저항 붕괴", kind = "resist", skill = "resist_break", mark = "mark_resist" },
+            { bit = 256, name = "골격 감옥", kind = "root", skill = "bone_prison", mark = "mark_root" },
+            { bit = 512, name = "저주 마법사", kind = "hex", skill = "mage_hex", mark = "mark_hex", curse = false },
+            { bit = 1024, name = "서리 표식", kind = "frostmark", skill = "frost_long", mark = "mark_frost", curse = false },
+            { bit = 2048, name = "둔화", kind = "chill", skill = "frost_soul", mark = "mark_chill", curse = false },
+            { bit = 4096, name = "독", kind = "poison", skill = "poison_mist", mark = "mark_poison", curse = false },
         }
         return self.CurseDefCache
+    end
+
+    method number FrostMarkFor(Entity player)
+        -- 강화 「서리 표식」: 이 플레이어의 서리 혼에 느려져 표식이 남아 있으면 뼈 창·골편 추가 피해 %, 아니면 0
+        if self.FrostMarkPct <= 0 or _UtilLogic.ElapsedSeconds >= self.FrostUntil or self.FrostSource ~= player then return 0 end
+        return self.FrostMarkPct
+    end
+
+    method boolean IsChillShown()
+        -- 클라이언트 색조용: 동기화된 CurseMask의 둔화 비트 (MonsterTraits.TintTick)
+        return (self.CurseMask // 2048) % 2 == 1
     end
 
     method number TakenMult()
@@ -445,7 +467,7 @@ script MonsterStatus extends Component
         -- 플레이어 저주(골격 감옥 제외)가 하나라도 남아 있나
         local now = _UtilLogic.ElapsedSeconds
         for _, def in ipairs(self:CurseDefs()) do
-            if def.kind ~= "root" and now < self:CurseEndsAt(def.kind) then return true end
+            if def.kind ~= "root" and def.curse ~= false and now < self:CurseEndsAt(def.kind) then return true end
         end
         return false
     end
@@ -462,12 +484,15 @@ script MonsterStatus extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void ApplyFrost(number seconds, Entity source, number damage)
-        -- 서리 혼: 둔화 + 누가 얼렸는지 기억 (강화 「파쇄」)
+    method void ApplyFrost(number seconds, Entity source, number damage, number markPct)
+        -- 서리 혼: 둔화 + 누가 얼렸는지 기억 (강화 「파쇄」) + 강화 「서리 표식」 세기 (그 플레이어의 뼈 창·골편 +%, 같은 시간 동안)
         self:ApplyChill(seconds)
+        if self.FrostSource ~= source or _UtilLogic.ElapsedSeconds >= self.FrostUntil then self.FrostMarkPct = 0 end
         self.FrostSource = source
         self.FrostUntil = _UtilLogic.ElapsedSeconds + seconds
         self.FrostDamage = damage
+        self.FrostMarkPct = math.max(self.FrostMarkPct, markPct)
+        if markPct > 0 then log(string.format("[VRF] frost mark %s +%d%% %.1fs", self.Entity.Name, math.floor(markPct), seconds)) end
     end
 
     @ExecSpace("ServerOnly")
@@ -493,7 +518,7 @@ script MonsterStatus extends Component
                 for i = 1, math.min(count, #near) do
                     for _, def in ipairs(self:CurseDefs()) do
                         local left = self:CurseEndsAt(def.kind) - now
-                        if def.kind ~= "root" and left > 0.2 then near[i].m:ApplyCurseFrom(def.kind, self:CursePct(def.kind), left, src) end
+                        if def.kind ~= "root" and def.curse ~= false and left > 0.2 then near[i].m:ApplyCurseFrom(def.kind, self:CursePct(def.kind), left, src) end
                     end
                     spread = spread + 1
                 end
@@ -673,6 +698,7 @@ script MonsterStatus extends Component
         self.ControlHeld = false
         self.ChillUntil = 0
         self.FrostUntil = 0
+        self.FrostMarkPct = 0
         self.FrostSource = nil
         self.CurseSource = nil
         self.AuraUntil = 0
@@ -707,12 +733,20 @@ script MonsterStatus extends Component
         for i, def in ipairs(active) do index[def.kind] = i end
         for _, def in ipairs(defs) do
             local i = index[def.kind]
-            self:UpdateCurseMarker(def.kind, i ~= nil, i ~= nil and (i - (n + 1) / 2) * 0.26 or 0, def.skill)
+            self:UpdateCurseMarker(def.kind, i ~= nil, i ~= nil and (i - (n + 1) / 2) * 0.26 or 0, def.skill, def.mark)
         end
     end
 
+    method string MarkerIcon(string skillId, string markKey)
+        -- 머리 위 문양: 코덱스 D-3 작은 문양(ui_icons.csv mark_* · 32px 굵은 윤곽)이 올라와 있으면 그것, 아니면 스킬 아이콘을 줄여서 (예전 방식)
+        local mark = markKey ~= "" and _GameData:GetUiIcon(markKey) or ""
+        if mark ~= "" then return mark end
+        local def = _SkillData:Get(skillId)
+        return def ~= nil and def.icon or ""
+    end
+
     @ExecSpace("ClientOnly")
-    method void UpdateCurseMarker(string kind, boolean active, number offset, string skillId)
+    method void UpdateCurseMarker(string kind, boolean active, number offset, string skillId, string markKey)
         local rec = self.CurseMarkers[kind]
         if not active then
             if rec ~= nil and isvalid(rec.entity) then rec.entity:Destroy() end
@@ -730,10 +764,13 @@ script MonsterStatus extends Component
         if not rec.ready then
             local ok, sprite = pcall(function() return rec.entity:GetComponent("SpriteRendererComponent") end)
             if not ok or not isvalid(sprite) then return end
-            local def = _SkillData:Get(skillId)
-            if def == nil or def.icon == "" then return end
-            sprite.SpriteRUID = def.icon
+            local icon = self:MarkerIcon(skillId, markKey or "")
+            if icon == "" then return end
+            sprite.SpriteRUID = icon
             rec.ready = true
+            -- 문양(32px)과 스킬 아이콘(128px)이 같은 크기로 보이게 배율을 따로 둔다
+            local skillDef = _SkillData:Get(skillId)
+            rec.mark = skillDef == nil or icon ~= skillDef.icon
         end
         local transform = self.Entity.TransformComponent
         local hit = self.Entity.HitComponent
@@ -742,7 +779,8 @@ script MonsterStatus extends Component
         local height = math.max(1.1, isvalid(hit) and hit.BoxSize.y * sy + 0.55 or 1.1)
         local marker = rec.entity
         marker.TransformComponent.Position = transform:ToLocalPoint(transform.WorldPosition + Vector3(offset, height, 0))
-        marker.TransformComponent.Scale = Vector3(0.14 / sx, 0.14 / sy, 1)
+        local k = rec.mark and 0.56 or 0.14
+        marker.TransformComponent.Scale = Vector3(k / sx, k / sy, 1)
         marker:SetVisible(true)
     end
 

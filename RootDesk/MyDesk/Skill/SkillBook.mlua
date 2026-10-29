@@ -152,6 +152,11 @@ script SkillBook extends Component
             local parent = _SkillData:Get(def.parent)
             local name = parent ~= nil and parent.name or def.parent
             if self:GetLevel(def.parent) <= 0 then return "먼저 「" .. name .. "」을(를) 배우세요" end
+            -- 선행 강화 (44 결정 4 · 「뼈 가시」는 「튕김」 1랭크부터 — 튕김 0이면 효과가 없던 노드)
+            if def.prereq ~= "" and self:GetLevel(def.prereq) <= 0 then
+                local pre = _SkillData:Get(def.prereq)
+                return "먼저 「" .. (pre ~= nil and pre.name or def.prereq) .. "」을(를) 배우세요"
+            end
             local need = self:NodeNeed(id, lv + 1)
             if self:GetLevel(def.parent) < need then return "「" .. name .. "」 " .. tostring(need) .. "랭크부터" end
             local needLv = self:NodeLevel(id, lv + 1)
@@ -308,12 +313,18 @@ script SkillBook extends Component
         -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 20.5초)
         if level <= 0 then return 0 end
         local base = 4 + 0.5 * math.min(level - 1, 4) + 1 * math.max(0, level - 5)
+        return self:CurseDurationWithMods(base)
+    end
+
+    method number CurseDurationWithMods(number base)
+        -- 저주 지속 보정 공통 (낙인·쇠약·가시·약탈·붕괴의 레벨 지속, 공포의 도주 초): 강화 「저주 지속」 +15%/랭크 + 장비 「저주 지속 %」(docs/design/19)
+        -- + 선택 보상 1차 저주 「긴 저주」 +2·+3·+4초. 44 §3-3: 공포는 지속 자리에 도주 초를 따로 넘겨 이 보정을 받지 못했다 (설명은 「모든 저주」)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local gear = 0
-        if stats ~= nil then gear = stats.BonusCurseDur / 100 end   -- 장비 「저주 지속 %」 (docs/design/19)
-        local choice = self:ChoiceTier(1, "curse")   -- 선택 보상 1차 저주 「긴 저주」: +2 · +3 · +4초
-        return math.floor(base * (1 + 0.15 * self:Node("curse_duration") + gear) * 10 + 0.5) / 10 + (choice > 0 and choice + 1 or 0)   -- 강화 「저주 지속」
+        if stats ~= nil then gear = stats.BonusCurseDur / 100 end
+        local choice = self:ChoiceTier(1, "curse")
+        return math.floor(base * (1 + 0.15 * self:Node("curse_duration") + gear) * 10 + 0.5) / 10 + (choice > 0 and choice + 1 or 0)
     end
 
     method number GetCursePowerMult(string id)
@@ -371,6 +382,31 @@ script SkillBook extends Component
         return 3 + math.floor(math.max(0, level) / 5)
     end
 
+    -- 44 결정 4 교체 노드 수치 (data/config.csv · 효과는 SkillEffects · PlayerStats · PlayerAttack)
+    method integer AfterStepPct(integer rank)
+        -- 「잔걸음」(질풍 걸음 자리): 질주 뒤 이동 속도 +15/20/25%
+        if rank <= 0 then return 0 end
+        return math.floor(_GameData.afterStepBasePct + _GameData.afterStepPerRankPct * rank)
+    end
+
+    method integer BoneShellPct(integer rank)
+        -- 「뼈 껍질」(흐릿한 형체 자리): 질주 끝에 뼈 갑옷 최대치의 10/15/20%를 채운다
+        if rank <= 0 then return 0 end
+        return math.floor(_GameData.boneShellBasePct + _GameData.boneShellPerRankPct * rank)
+    end
+
+    method number ArmorBurstMul(integer rank)
+        -- 「터지는 갑옷」(가시 갑옷 자리): 갑옷이 다 깨질 때 그 갑옷이 막은 피해 합 × 0.5/0.75/1.0
+        if rank <= 0 then return 0 end
+        return _GameData.armorBurstBaseMul + _GameData.armorBurstPerRankMul * rank
+    end
+
+    method integer FrostMarkPct(integer rank)
+        -- 「서리 표식」(시린 혼 자리): 서리 혼에 느려진 적에게 뼈 창·골편 피해 +10/15/20%
+        if rank <= 0 then return 0 end
+        return math.floor(_GameData.frostMarkBasePct + _GameData.frostMarkPerRankPct * rank)
+    end
+
     method table GetCommandAura()
         -- 호령(항상 켜짐): 소환수 공격·생명 %, 이동 속도 %, 모든 저항 %p. 다음 소환부터 적용한다.
         -- 질주 강화 「군단 질주」의 이동 %도 여기서 더한다 (소환할 때 확정 — 그림자·해골 공통)
@@ -421,30 +457,30 @@ script SkillBook extends Component
             curse_duration = string.format("모든 저주 지속 +%d%%", 15 * level),
             curse_power = string.format("수치형 저주 효과 +%d%%", 10 * level),
             armor_thick = string.format("뼈 갑옷 흡수량 +%d%%", 20 * level),
-            armor_thorns = string.format("막은 피해의 %d%%를 되돌림", 25 * level),
+            armor_thorns = string.format("갑옷이 깨질 때 반경 1.5에 막은 피해 합 ×%.2f", self:ArmorBurstMul(level)),
             spear_long = string.format("뼈 창 사거리 %.1f", 9 * (1 + 0.2 * level)),
             spear_twin = "뼈 창 두 갈래",
             skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
             shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
-            shard_spike = string.format("튕길 때마다 피해 +%d%%", 15 * level),
+            shard_spike = string.format("튕길 때마다 · 마지막으로 박힐 때 피해 +%d%%", 15 * level),
             bomb_wide = string.format("의식 1기(해골 폭탄) 범위 %.2f", 1.6 * (1 + 0.15 * level)),
             bomb_marrow = string.format("의식 1기(해골 폭탄) 피해 +%d%%", 20 * level),
             bomb_pair = "의식 1기에 해골 2기가 함께 돌진",
             flame_hex = string.format("저주 걸린 적에게 피해 +%d%%", 50 + 20 * level),
             flame_twin = string.format("불꽃 화살 %d발", 1 + level),
-            frost_long = string.format("둔화 %d초", 3 + level),
+            frost_long = string.format("표식 남은 적에게 뼈 창·골편 피해 +%d%%", self:FrostMarkPct(level)),
             frost_shatter = string.format("느려진 적이 죽으면 서리 혼 피해의 %d%% 파편", 30 * level),
             offering_heal = string.format("뼈 성찬 회복량 +%d%%", 20 * level),
             offering_wide = string.format("뼈 성찬 범위 %.1f", 4 * (1 + 0.25 * level)),
             offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
             skel_resonance = string.format("해골 공격력 ×%.1f · 반경 %.1f칸 · 해골마다 %.1f초", _SkeletonResonance.AtkMult, _SkeletonResonance.Radius, _SkeletonResonance.Cooldown),
-            dash_ghost = string.format("질주 무적 %.2f초", 0.3 + 0.05 * level),
+            dash_ghost = string.format("질주 끝에 뼈 갑옷 최대치의 %d%% 채움%s", self:BoneShellPct(level), self:GetLevel("bone_armor") > 0 and "" or " (뼈 갑옷을 배우면)"),
             dash_charge = string.format("질주 %d번 연달아", 1 + level),
             dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
             dash_quick = string.format("질주 재사용 -%.1f초 (최저 1.5초)", 0.2 * level),
             dash_legion = string.format("질주하면 3칸 밖 소환수가 곁으로 도약 · 소환수 이동 +%d%%", 5 * level),
             dash_blink = "질주가 조준점(최대 5칸) 순간이동으로",
-            step_gale = string.format("이동 속도 +%d%%", 2 * level),
+            step_gale = string.format("질주 뒤 %.1f초간 이동 속도 +%d%%%s", _GameData.afterStepSec, self:AfterStepPct(level), self:GetLevel("wraith_dash") > 0 and "" or " (망령 질주를 배우면)"),
             step_hunt = string.format("처치하면 3초간 이동 속도 +%d%%", 4 * level),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
             elite_twin = "정예 2기까지 유지",
@@ -462,7 +498,7 @@ script SkillBook extends Component
             prison_wide = string.format("골격 감옥 범위 +%d%%", 15 * level),
             prison_pull = string.format("반경 %.1f 안 적을 끌어모은 뒤 가둠", 2.4 + 0.3 * level),
             terror_frenzy = string.format("공포가 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
-            drain_share = string.format("소환수 회복 +%d%%", 25 * level),
+            drain_share = string.format("가까운 적 %d마리로 이어짐 · 이어진 적은 피해 %d%%", level, math.floor(_GameData.drainChainPct)),
             aura_deep = string.format("호령 공격·생명 효과 +%d%%", 20 * level),
         }
         if nodeText[id] ~= nil then return nodeText[id] end
@@ -473,7 +509,7 @@ script SkillBook extends Component
         if id == "mark_weakness" then return string.format("받는 피해 +%g%% · %g초", power, self:GetCurseDuration(level)) end
         if id == "enfeeble" then return string.format("적 공격력 -%g%% · %g초", power, self:GetCurseDuration(level)) end
         if id == "thorn_curse" then return string.format("적이 준 피해의 %g%% 반사 · %g초", power, self:GetCurseDuration(level)) end
-        if id == "terror" then return string.format("%.1f초간 도주·공격 안 함 (보스 면역)", power) end
+        if id == "terror" then return string.format("%.1f초간 도주·공격 안 함 (보스 면역)", self:CurseDurationWithMods(power)) end
         if id == "life_tap" then return string.format("때린 피해의 %g%% 회복 · %g초", power, self:GetCurseDuration(level)) end
         if id == "resist_break" then return string.format("모든 저항 -%g · %g초", power, self:GetCurseDuration(level)) end
         if id == "bone_prison" then return string.format("반경 1.3 안 적 %.1f초 묶음 (보스 절반)", power) end
@@ -492,13 +528,13 @@ script SkillBook extends Component
                 _GameData.riteWhirlMul * rank, math.floor(_GameData.riteWhirlSeconds / 0.5), _GameData.riteArrowMul * rank, giant)
         end
         if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * (1 + 0.2 * self:Node("offering_heal")) * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
-        if id == "swift_step" then return string.format("이동 속도 +%g%%", power + 2 * self:Node("step_gale")) end
+        if id == "swift_step" then return string.format("이동 속도 +%g%%", power) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
-        if id == "wraith_dash" then return string.format("%s · 무적 %.2f초 · 재사용 %.1f초%s", self:Node("dash_blink") > 0 and string.format("최대 %g칸 순간이동", power) or string.format("%.2f칸 질주", power), 0.3 + 0.05 * self:Node("dash_ghost"), self:DashCooldown(level), self:Node("dash_charge") > 0 and string.format(" · %d번 연달아", 1 + self:Node("dash_charge")) or "") end
+        if id == "wraith_dash" then return string.format("%s · 무적 %.2f초 · 재사용 %.1f초%s", self:Node("dash_blink") > 0 and string.format("최대 %g칸 순간이동", power) or string.format("%.2f칸 질주", power), _GameData.dashInvulnSec, self:DashCooldown(level), self:Node("dash_charge") > 0 and string.format(" · %d번 연달아", 1 + self:Node("dash_charge")) or "") end
         if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%% · 그 자리 반경 %.1f 폭발", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex"), self:GetHexBurstRadius(level)) end
         if id == "frost_soul" then
             local splits = self:GetFrostSplitCount(level)
-            return string.format("서리 혼 · %s · 기준 피해 %.1f · %d초 둔화", splits > 0 and string.format("맞으면 파편 %d개로 갈라짐", splits) or "1마리 명중", power * (1 + stats:GetSpellPowerPct() / 100), 3 + self:Node("frost_long"))
+            return string.format("서리 혼 · %s · 기준 피해 %.1f · %g초 둔화", splits > 0 and string.format("맞으면 파편 %d개로 갈라짐", splits) or "1마리 명중", power * (1 + stats:GetSpellPowerPct() / 100), _GameData.frostSlowSec)
         end
         if id == "bone_spear" then return string.format("창 %s · %s · 꿰뚫을 때마다 +10%% · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", self:PierceText(level), power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
         if id == "bone_shard" then return string.format("뼛조각 %d발 부채꼴 · 발마다 1마리 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
@@ -962,7 +998,7 @@ script SkillBook extends Component
                 -- 해금 레벨은 표에서 (10-28 사용자 #1: Lv25 → Lv9)
                 local def = _SkillData:Get("wraith_dash")
                 local need = def ~= nil and math.floor(def.row) or 9
-                _HudMain:ShowWarn("망령 질주는 Lv" .. tostring(need) .. "부터 스킬 창(K) 「이동」에서 배운다")
+                _HudMain:ShowWarn("망령 질주는 Lv" .. tostring(need) .. "부터 스킬 창(K) 「걸음」에서 배울 수 있습니다")   -- 트리 이름 「걸음」 (10-29 확정 84)
             end
             return
         end
@@ -1261,13 +1297,14 @@ script SkillBook extends Component
     -- ───────── 저장 ─────────
 
     @ExecSpace("ServerOnly")
-    method void MigrateLevels()
-        -- 삭제·미구현·상한 초과 투자를 환급한다. 레벨 조정 후 다시 호출해도 중복 환급하지 않는다.
+    method void MigrateLevels(integer sv)
+        -- 삭제·미구현·상한 초과 투자를 환급한다. 레벨 조정 후 다시 호출해도 중복 환급하지 않는다. sv = 불러온 저장 판 (GetSaveData)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return end
         local refund = 0
         refund = refund + self:MigrateBombToRite(stats.Level)
+        refund = refund + self:MigrateNodeSwap(sv)
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
             if def == nil or not def.impl then
@@ -1276,6 +1313,15 @@ script SkillBook extends Component
             elseif lv > def.maxLv then
                 refund = refund + lv - def.maxLv
                 self.Levels[id] = def.maxLv
+            end
+        end
+        -- 선행 강화를 안 찍은 채 남은 투자 (44 결정 4: 「뼈 가시」에 「튕김」 조건이 생겼다)는 돌려준다. 다시 불러도 이미 지운 칸이라 두 번 돌려주지 않는다
+        for id, lv in pairs(self.Levels) do
+            local def = _SkillData:Get(id)
+            if def ~= nil and def.kind == "node" and def.prereq ~= "" and (self.Levels[def.prereq] or 0) <= 0 then
+                refund = refund + lv
+                self.Levels[id] = nil
+                log("[VRF] node prereq refund " .. id .. "=" .. tostring(lv))
             end
         end
         local shadow = _SkillData:Get("shadow_summon")
@@ -1289,8 +1335,29 @@ script SkillBook extends Component
         end
         if refund > 0 then
             stats.SkillPoints = stats.SkillPoints + refund
-            _Util:Notify("스킬 표가 바뀌어 포인트 " .. tostring(refund) .. "을 돌려받았다", self.Entity.PlayerComponent.UserId)
+            -- 돌려줬다는 알림은 띄우지 않는다 (10-29 사용자: 변경 해명·이전 안내 알림은 만들지 않는다 — 포인트만 늘어 있다)
+            log("[VRF] skill migrate refund=" .. tostring(refund))
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateNodeSwap(integer sv)
+        -- 44 결정 4 (한 번만 · 저장 sv 3 → 4): 효과가 통째로 바뀐 강화 5개(키는 그대로 · 코덱스 아이콘 node-<키>)의 투자를 돌려준다.
+        --   질풍 걸음 → 잔걸음 · 흐릿한 형체 → 뼈 껍질 · 가시 갑옷 → 터지는 갑옷 · 나눔 → 혼 사슬 · 시린 혼 → 서리 표식. 돌려준 포인트 수
+        --   (뼈 가시는 키·효과 방향이 그대로라 남기고, 「튕김」 조건만 MigrateLevels가 본다). sv 4 저장은 다시 돌지 않는다
+        if sv >= 4 then return 0 end
+        local back = 0
+        local moved = {}
+        for _, id in ipairs({ "step_gale", "dash_ghost", "armor_thorns", "drain_share", "frost_long" }) do
+            local r = self.Levels[id] or 0
+            if r > 0 then
+                back = back + r
+                self.Levels[id] = nil
+                table.insert(moved, id .. ":" .. tostring(r))
+            end
+        end
+        if back > 0 then log(string.format("[VRF] node swap refund=%d sv=%d nodes=%s", back, sv, table.concat(moved, ","))) end
+        return back
     end
 
     @ExecSpace("ServerOnly")
@@ -1403,7 +1470,8 @@ script SkillBook extends Component
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 3 }
+        -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 (MigrateNodeSwap)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 4 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         return saved
@@ -1415,7 +1483,7 @@ script SkillBook extends Component
         if d.levels ~= nil or d.levelCount == 0 then
             self.Levels = {}
             for id, lv in pairs(d.levels or {}) do self.Levels[id] = lv end
-            self:MigrateLevels()
+            self:MigrateLevels(math.floor(d.sv or 1))
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end
