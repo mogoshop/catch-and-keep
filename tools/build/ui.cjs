@@ -877,7 +877,7 @@ function patchShadowHud() {
   s.patchComponent("/", "MOD.Core.UIGroupComponent", { GroupOrder: 6 });
 
   // 모바일 패드: 조이스틱(왼쪽) + 오른쪽 공격 + 둘레 스킬 4칸 + 물약 2 + 그림자 명령(펼침) + 스킬 편집
-  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Dash", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract"]) {
+  for (const old of ["BtnAttack", "BtnRally", "BtnRecall", "BtnSummon", "BtnStorage", "Attack", "Dash", "Skills", "Potions", "Shadow", "BtnSkillEdit", "Extract", "BasicAtk", "AimCancel"]) {
     if (s.find(`MobilePad/${old}`)) s.remove(`MobilePad/${old}`);
   }
   const center = { anchor: "bottom-right", pivot: [0.5, 0.5] };
@@ -910,6 +910,22 @@ function patchShadowHud() {
   k.cooldown("MobilePad/Dash", 90, true);
   b_label(s, "MobilePad/Dash/Count", "", 20, "bottom-right");
   s.patch("MobilePad/Dash", { enable: false });
+  // I04 (10-29) 고급 배치의 기본 공격: 큰 단추(5번 칸)에 스킬을 넣었을 때만 MobilePad.Poll이 켠다 — 공격 단추 오른쪽 위.
+  //   둥근 공격(중심 -170,170 · 지름 220)·S4(-170,430 · 120)와 그림 사이 36~40px, 터치 칸끼리도 겹치지 않는다 (check_mobile_layout). 누르고 있으면 반복 (PC 기본 공격과 같은 길)
+  s.button("MobilePad/BasicAtk", "", { ...center, pos: [-60, 330], rect_size: [96, 96], ...bg("orb_bg"), sprite_type: 0 });
+  k.pic("MobilePad/BasicAtk/Icon", "icon_sword", { anchor: "middle-center", pos: [0, 8], rect_size: [54, 54] });
+  s.patchComponent("MobilePad/BasicAtk/Icon", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  s.sprite("MobilePad/BasicAtk/Ring", { anchor: "middle-center", pos: [0, 0], rect_size: [104, 104], ...part("orb_frame"), sprite_type: 0 });
+  s.patchComponent("MobilePad/BasicAtk/Ring", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  b_label(s, "MobilePad/BasicAtk/Label", "공격", 18, "bottom-center");
+  s.patch("MobilePad/BasicAtk/Label", { pos: [0, 12] });
+  s.patch("MobilePad/BasicAtk", { enable: false });
+  // I04 (10-29) 스킬 끌기 취소: 스킬 칸을 끄는 동안만 보이는 「취소」 표시. 여기에 손가락을 놓으면 쓰지 않는다 (마나·재사용·해골 그대로 · MobilePad.EndGesture)
+  //   스킬 칸·공격 단추 중심에서 300px 넘게 떨어져 있다 (조준 최대 끌기 AimMaxPx 200의 1.5배 넘게 — 보통 조준하다 잘못 놓을 일이 없다).
+  //   그림자 명령 「회수」 위 · 지도 아래 안내 줄(Feed) 왼쪽 · 출구 안내(GatePrompt) 오른쪽 사이 (아이폰 가로에서 양옆 5~6px — check_mobile_layout)
+  s.sprite("MobilePad/AimCancel", { ...center, pos: [-576, 545], rect_size: [92, 92], image_ruid: K.circle, color: { r: 0.45, g: 0.08, b: 0.08, a: 0.62 }, sprite_type: 0, enable: false });
+  s.patchComponent("MobilePad/AimCancel", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+  s.text("MobilePad/AimCancel/Label", "취소", { size: 26, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [92, 36], alignment: 4, ...outline });
   // 스킬 칸은 이모탈처럼 둥근 단추: 공격 중심(-170,170)에서 반지름 260, 180°·150°·120°·90° (네모 칸은 이웃 칸 모서리가 겹쳤다)
   const arc = [[-430, 170], [-395, 300], [-300, 395], [-170, 430]];
   s.empty("MobilePad/Skills", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
@@ -965,7 +981,7 @@ function patchShadowHud() {
     b_label(s, `${path}/Label`, label, 18, "bottom-center");
     if (n === "Summon") k.badge(path);
   });
-  for (const n of ["MobilePad/Attack", "MobilePad/Dash", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
+  for (const n of ["MobilePad/Attack", "MobilePad/Dash", "MobilePad/BasicAtk", "MobilePad/AimCancel", "MobilePad/Skills", "MobilePad/BtnSkillEdit", "MobilePad/Potions", "MobilePad/Shadow"]) k.mobile(n);
   // ui_lint L013이 stretch 묶음(Potions) 아래 물약 수 글자를 화면 밖으로 잘못 계산한다 (실제 위치는 물약 칸 안, 메이커 화면 확인). 오류로 빌드를 멈추지 않게 한다
   s.write(file, { strict: false });
   // 다시 만든 패드도 경로가 같으면 예전 UUID를 유지 (메이커가 새 UUID 묶음을 다시 불러오지 못하는 경우가 있었다)

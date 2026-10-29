@@ -48,7 +48,8 @@ try {
   add("RewardHUD/Feed", "RewardHUD", "Feed");
   add("RewardHUD/Toast", "RewardHUD", "Toast");
   add("ChatHUD/Chat", "ChatHUD", "Chat");
-  for (const n of ["Stick", "Attack", "Extract", "BtnSkillEdit", "Shadow/Toggle", "Shadow/Cmds/Summon", "Shadow/Cmds/Recall", "Shadow/Cmds/Rally"]) add("MobilePad/" + n, "ShadowHUD", "MobilePad/" + n);
+  // I04 (10-29): BasicAtk = 큰 단추에 스킬을 넣은 고급 배치의 기본 공격 · AimCancel = 스킬 끌기 중 「취소」 표시 (둘 다 상황에 따라 켜지지만 늘 떠 있다고 보고 잰다)
+  for (const n of ["Stick", "Attack", "Dash", "BasicAtk", "AimCancel", "Extract", "BtnSkillEdit", "Shadow/Toggle", "Shadow/Cmds/Summon", "Shadow/Cmds/Recall", "Shadow/Cmds/Rally"]) add("MobilePad/" + n, "ShadowHUD", "MobilePad/" + n);
   for (let i = 1; i <= 4; i++) { add(`MobilePad/Skills/S${i}`, "ShadowHUD", `MobilePad/Skills/S${i}`); add(`MobilePad/Potions/Belt${i}`, "ShadowHUD", `MobilePad/Potions/Belt${i}`); }
   add("NavigationHUD/SafeArea/MiniMap", "NavigationHUD", "SafeArea/MiniMap");
   add("NavigationHUD/SafeArea/QuestTrack", "NavigationHUD", "SafeArea/QuestTrack");
