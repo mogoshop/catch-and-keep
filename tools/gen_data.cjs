@@ -62,6 +62,7 @@ end
 // ── GameData: 설정값·난이도·배경음·몬스터 이름 ──
 function genGameData() {
   const cfg = load("config");
+  const spawnZones = require("fs").existsSync(require("path").join(__dirname, "../data/spawn_zones.csv")) ? load("spawn_zones") : [];
   const props = cfg.map((r) => `    property number ${r.key} = ${n(r.value)}    -- ${r.note}`).join("\n");
   const diffs = load("difficulty");
   const sounds = load("sounds");
@@ -140,7 +141,10 @@ function genGameData() {
       // 출현 구역: maps.csv area(x0/y0/x1/y1 — 설계서가 정한 보스 맵 회랑 등)가 있으면 그 사각형, 없으면 맵 가장자리 안쪽
       const ar = (m.area || "").split("/").map(Number);
       const area = ar.length === 4 ? `minX = ${ar[0]}, maxX = ${ar[2]}, minY = ${ar[1]}, maxY = ${ar[3]}` : `minX = ${-(w / 2) + 3}, maxX = ${w / 2 - 3}, minY = ${-(h / 2) + 2.5}, maxY = ${h / 2 - 1.5}`;
-      return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, entriesNm = ${s(m.spawnsNm || "")}, entriesHell = ${s(m.spawnsHell || "")}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area} }`;
+      // 출현 구역 (10-30 I06 · data/spawn_zones.csv — compose가 설계서 spawnZones로 쓴다): 무리 중심을 고를 사각형·대상(모델 id | @원형 | *)·몫. 없는 맵은 예전 그대로
+      const zr = spawnZones.filter((z) => z.map === m.id);
+      const zones = zr.length ? `, zones = { ${zr.map((z) => `{ name = ${s(z.zone)}, minX = ${n(z.x0)}, maxX = ${n(z.x1)}, minY = ${n(z.y0)}, maxY = ${n(z.y1)}, match = ${s(z.match)}, share = ${n(z.share)} }`).join(", ")} }` : "";
+      return `        self.MapSpawns[${s(m.id)}] = { entries = ${s(m.spawns)}, entriesNm = ${s(m.spawnsNm || "")}, entriesHell = ${s(m.spawnsHell || "")}, pack = ${n(m.packSize || 1)}, elite = ${n(m.eliteChance)}, variant = ${m.variantChance === "" ? -1 : n(m.variantChance)}, respawn = ${n(m.respawnSec || 10)}, ${area}${zones} }`;
     }),
     "        self.MapInfo = {}",
     ...mapRows.map((m) => {

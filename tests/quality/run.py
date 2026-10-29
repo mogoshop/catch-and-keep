@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--lua', default=shutil.which('lua') or shutil.which('lua5.4'))
 p.add_argument('--dump', help='optional path for the last exported Lua fixture')
-p.add_argument('groups', nargs='*', default=['items','journal','skills','roster','mobile_input','notice_text'])
+p.add_argument('groups', nargs='*', default=['items','journal','skills','roster','mobile_input','notice_text','progression','spawn_zones'])
 a = p.parse_args()
 if not a.lua: p.error('Lua 5.4 is required; pass --lua /path/to/lua (no game dependencies are changed)')
 
@@ -46,7 +46,9 @@ for group in a.groups:
     text = fixture.read_text()
     # @source Name relative/path.mlua Method1,Method2
     modules = [export(*m) for m in re.findall(r'^-- @source (\w+) (\S+) (\S+)$', text,re.M)]
-    script = 'function log(...) end\nfunction Color(...) return {...} end\n' + '\n'.join(modules) + '\n' + text
+    # --@pre <lua>: 모듈 속성 초기값(Vector2(...) 등)보다 먼저 돌아야 하는 줄 (10-30 spawn_zones)
+    pre = '\n'.join(re.findall(r'^--@pre (.*)$', text, re.M))
+    script = 'function log(...) end\nfunction Color(...) return {...} end\n' + pre + '\n' + '\n'.join(modules) + '\n' + text
     if a.dump: pathlib.Path(a.dump).write_text(script)
     with tempfile.TemporaryDirectory(prefix='maple-quality-') as tmp:
         file = pathlib.Path(tmp)/'fixture.lua'; file.write_text(script)

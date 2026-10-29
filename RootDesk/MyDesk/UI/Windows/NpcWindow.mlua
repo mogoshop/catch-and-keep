@@ -9,6 +9,8 @@
 --   caravan = 카라반 대장: 액트 사이 이동 (잿불 야영지 ↔ 오아시스 시장, 앞 액트 보스를 쓰러뜨려야 열림) + 의뢰
 --   captain = 선장 (소금바람 항구): 카라반과 같은 창. 카라반·선장 모두 열린 다른 액트 마을로 데려다준다 (docs/design/17 §6)
 --   scholar · apothecary = 액트 2 의뢰인, harbormaster · keeperdaughter = 액트 3 의뢰인 (자기 의뢰 차례가 아니면 한마디만)
+--   10-30 현장 보고 (I08 · PlayerQuest.FieldHandoff*): 의식 의뢰를 끝낸 제단 앞에서 같은 버튼(Space·B · 대화 단추)으로 의뢰 대화를 연다 —
+--   그 의뢰 보고와 같은 의뢰인의 다음 의뢰 수락만. 대사·보상·처리는 의뢰인과 같은 화면(RenderQuest)이고 서버가 다시 검증한다
 @Logic
 script NpcWindow extends Logic
 
@@ -35,6 +37,8 @@ script NpcWindow extends Logic
     property Vector2 Btn4Home = Vector2(0, 0)   -- 주 버튼 원래 자리 (혼자일 때 닫기 자리로 옮겼다 되돌린다)
     property boolean Btn4HomeSet = false
     property string CheerText = ""           -- 액트 보스를 쓰러뜨린 뒤의 격려 한마디 (말을 건 첫 쪽, docs/design/31 §7)
+    property boolean FieldAltar = false      -- 지금 대화가 현장 보고 제단인가 (ActiveNpc = 제단 엔티티)
+    property string AltarName = "피의 제단"
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -95,12 +99,57 @@ script NpcWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method Entity FindAltar(Entity player)
+        -- 현장 보고 제단: 지금 그 차례이고 제단 대화 거리·시야 안 (서버 거리보다 0.3칸 안쪽 — 위치 동기화 늦음). 없으면 nil
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil or not isvalid(player) or not _Util:IsAlive(player) then return nil end
+        local altar = quest:FieldHandoffMarker(false)
+        if altar == nil or _Util:Distance(player, altar) > _GameData.questFieldHandoffRange - 0.3 then return nil end
+        if not _Util:HasLineOfSight(player.CurrentMap, _Util:Pos2(player), _Util:Pos2(altar)) then return nil end
+        return altar
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean ActiveValid(Entity player)
+        -- 열린 대화의 상대가 아직 대화할 수 있는가 (NPC 또는 현장 보고 제단)
+        if not isvalid(self.ActiveNpc) then return false end
+        if self.FieldAltar then return self:FindAltar(player) == self.ActiveNpc end
+        ---@type WorldNPC
+        local npc = self.ActiveNpc:GetComponent("script.WorldNPC")
+        return npc ~= nil and self:CanTalkTo(player, npc)
+    end
+
+    @ExecSpace("ClientOnly")
     method void Talk()
         -- 명시적인 버튼/키 입력 한 번에 가장 가까운 대화 대상을 고정한다.
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) or _UIKit:AnyWindowOpen() then return end
         local npc = self:FindNpc(player)
+        self.FieldAltar = false
         if npc == nil then
+            local altar = self:FindAltar(player)
+            if altar ~= nil then
+                -- 현장 보고 제단: 의뢰인(오렌) 초상화로 의뢰 대화를 연다
+                self.ActiveNpc = altar
+                self.FieldAltar = true
+                self.CheerText = ""
+                local key = _QuestData:Portrait("quest")
+                local bust = key ~= "" and _GameData:GetUiIcon(key .. "_act" .. tostring(_GameConst:ActOfMap(player.CurrentMap.Name))) or ""
+                if bust == "" and key ~= "" then bust = _GameData:GetUiIcon(key) end
+                _UIKit:SetIcon(self.Win .. "/PortraitBox/Portrait", bust)
+                self.TypeTotal = 0
+                self:ShowPage(1, 1, 0)
+                self.Dismissed = false
+                self.Page = 1
+                self.PageKey = ""
+                self.RenderKey = ""
+                _UIKit:Open(self.Win)
+                _SoundDirector:PlayEffect("972843e759204d3e9ad84e7d3fa94f83", 0.35)
+                log("[VRF] npc field altar open")
+                self:Poll()
+                return
+            end
             -- 근처에 NPC가 없으면 웨이포인트 창 (B·대화 버튼 하나로)
             _WaypointWindow:OpenNear()
             return
@@ -182,26 +231,29 @@ script NpcWindow extends Logic
             return
         end
         local nearby = self:FindNpc(player)
-        -- NPC가 없어도 웨이포인트 위면 같은 안내 버튼으로 연다 (Space·B · 버튼 터치 → Talk → OpenNear)
-        local nearWp = nearby == nil and _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), _WaypointWindow.Reach) ~= nil
-        local show = (nearby ~= nil or nearWp) and not _UIKit:AnyWindowOpen()
+        -- NPC가 없으면 현장 보고 제단(차례일 때만), 그다음 웨이포인트 — 같은 안내 버튼으로 연다 (Space·B · 버튼 터치 → Talk)
+        local altar = nearby == nil and self:FindAltar(player) or nil
+        local nearWp = nearby == nil and altar == nil and _Util:NearestComponent(player.CurrentMap, "script.Waypoint", _Util:Pos2(player), _WaypointWindow.Reach) ~= nil
+        local show = (nearby ~= nil or altar ~= nil or nearWp) and not _UIKit:AnyWindowOpen()
         _UIKit:SetEnabled(self.Prompt, show)
         if show then
             -- PC는 「Space · 이름」, 모바일은 「이름 · 대화」. 너비는 이름 길이에 맞춘다 (공통 SetFitText)
-            local name = nearby ~= nil and nearby.NpcName or "웨이포인트"
-            local text = Environment:IsPCPlatform() and ("Space · " .. name) or (name .. ((nearby ~= nil and nearby.Kind ~= "board") and " · 대화" or " · 열기"))
+            local name = nearby ~= nil and nearby.NpcName or (altar ~= nil and self.AltarName or "웨이포인트")
+            local talk = (nearby ~= nil and nearby.Kind ~= "board") or altar ~= nil
+            local text = Environment:IsPCPlatform() and ("Space · " .. name) or (name .. (talk and " · 대화" or " · 열기"))
             _UIKit:SetFitText(self.Prompt, text, 28, 56, 300, 640)
         end
         if not _UIKit:IsOpen(self.Win) then self.ActiveNpc = nil end
-        ---@type WorldNPC
-        local npc = isvalid(self.ActiveNpc) and self.ActiveNpc:GetComponent("script.WorldNPC") or nil
-        if npc == nil or not self:CanTalkTo(player, npc) or _UIKit:AnyOtherWindowOpen(self.Win) then
+        if not self:ActiveValid(player) or _UIKit:AnyOtherWindowOpen(self.Win) then
             if isvalid(self.ActiveNpc) or _UIKit:IsOpen(self.Win) then self:Dismiss() end
             return
         end
-        self.Kind = npc.Kind
-        self.NpcKind = npc.Kind
-        if npc.Kind ~= "quest" and self:GiverWaiting(npc.Kind) then self.Kind = "quest" end
+        ---@type WorldNPC
+        local npc = not self.FieldAltar and self.ActiveNpc:GetComponent("script.WorldNPC") or nil
+        local kind = npc ~= nil and npc.Kind or "quest"
+        self.Kind = kind
+        self.NpcKind = kind
+        if kind ~= "quest" and self:GiverWaiting(kind) then self.Kind = "quest" end
         if self.Kind == "quest" and self.PendingIndex > 0 then
             ---@type PlayerQuest
             local quest = _UIKit:Comp("script.PlayerQuest")
@@ -216,7 +268,7 @@ script NpcWindow extends Logic
             self.PendingUntil = 0
             self.RenderKey = ""
         end
-        _UIKit:SetText(self.Win .. "/Title", npc.NpcName)
+        _UIKit:SetText(self.Win .. "/Title", npc ~= nil and npc.NpcName or self.AltarName)
         if self.CheerText ~= "" then
             if self.RenderKey ~= "cheer" then
                 self.RenderKey = "cheer"
@@ -325,6 +377,7 @@ script NpcWindow extends Logic
         -- 닫은 뒤에도 근처에서 버튼으로 다시 대화할 수 있다. 자동 재열기는 없다.
         self.Dismissed = true
         self.ActiveNpc = nil
+        self.FieldAltar = false
         self.CheerText = ""
         self.Kind = ""
         self.RenderKey = ""
@@ -565,9 +618,9 @@ script NpcWindow extends Logic
     method void Action(integer index)
         -- 닫힌 창의 오래된 버튼 입력은 상점/의뢰 RPC로 보내지 않는다.
         if not _UIKit:IsOpen(self.Win) or not isvalid(self.ActiveNpc) then return end
+        if not self:ActiveValid(_UserService.LocalPlayer) or _UIKit:AnyOtherWindowOpen(self.Win) then return end
         ---@type WorldNPC
-        local npc = self.ActiveNpc:GetComponent("script.WorldNPC")
-        if not self:CanTalkTo(_UserService.LocalPlayer, npc) or _UIKit:AnyOtherWindowOpen(self.Win) then return end
+        local npc = not self.FieldAltar and self.ActiveNpc:GetComponent("script.WorldNPC") or nil
         if self.CheerText ~= "" then
             -- 격려 한마디 → 계속(평소 대화) / 닫기
             if index == 5 then self:Dismiss() return end

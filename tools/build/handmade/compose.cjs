@@ -19,6 +19,8 @@
 //   dress { 구역글자: { sets: [...], props: [...], n, decals: [...], dn } } · put [[kind, name, x, y, scale, flip]…]
 //   backdrop "r/g/b" 맵 밖 배경색 (없으면 템플릿 갈색 — 바다·용암 맵에서 양옆이 주황으로 떴다, 10-29)
 //   floorMix "바닥그림[,바닥그림…]" 그 바닥을 그림 열·줄마다 좌우·상하 뒤집어 깐다 (1.28칸 반복 격자 깨기, 10-29 따개비 돌)
+//   spawnZones [{ z | r, match, share, note }] 출현 구역 (10-30 I06) — 장소 구역 글자(z)의 칸을 월드 사각형으로 바꿔 data/spawn_zones.csv에 쓴다
+// 맵 id별 최종 덮어쓰기: specs/overrides.cjs (10-30 I06 대표 4맵) — 액트 설계서를 다 읽은 뒤 그 id 하나에만 적용 (remix 원형은 그대로)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -492,6 +494,35 @@ function readCsv(name) {
 }
 const fmt = (v) => String(r2(v));
 
+// 출현 구역 (10-30 I06): 설계서 spawnZones → 월드 사각형. 장소 칸 (x, y) = 월드 [x, x+1]×[y, y+1] · 타원은 둘레 사각형 · 가장자리 0.5칸 안쪽
+function spawnZoneRows(id, spec) {
+  const out = [];
+  for (const [i, sz] of (spec.spawnZones || []).entries()) {
+    let box = null;
+    const grow = (b) => { box = box ? [Math.min(box[0], b[0]), Math.min(box[1], b[1]), Math.max(box[2], b[2]), Math.max(box[3], b[3])] : b; };
+    if (sz.r) grow([sz.r[0], sz.r[1], sz.r[2] + 1, sz.r[3] + 1]);
+    else for (const p of spec.places || []) {
+      if (p.z !== sz.z) continue;
+      if (p.r) grow([p.r[0], p.r[1], p.r[2] + 1, p.r[3] + 1]);
+      else grow([p.e[0] - p.e[2], p.e[1] - p.e[3], p.e[0] + p.e[2], p.e[1] + p.e[3]]);
+    }
+    if (!box) throw new Error(`${id}: spawnZones ${i + 1}번 — 구역 글자 '${sz.z}'인 장소가 없음`);
+    if (!(sz.share > 0 && sz.share <= 1)) throw new Error(`${id}: spawnZones ${i + 1}번 share는 0 초과 1 이하`);
+    if (!/^[\w@*|]+$/.test(sz.match || "")) throw new Error(`${id}: spawnZones ${i + 1}번 match '${sz.match}'`);
+    out.push({ map: id, zone: sz.z || `r${i + 1}`, x0: fmt(box[0] + 0.5), y0: fmt(box[1] + 0.5), x1: fmt(box[2] - 0.5), y1: fmt(box[3] - 0.5), match: sz.match, share: String(sz.share), note: sz.note || "" });
+  }
+  return out;
+}
+function syncSpawnZones(results) {
+  const file = path.join(ROOT, "data/spawn_zones.csv");
+  const header = ["map", "zone", "x0", "y0", "x1", "y1", "match", "share", "note"];
+  const done = new Set(results.map((r) => r.id));
+  const keep = fs.existsSync(file) ? readCsv("spawn_zones").rows.filter((r) => !done.has(r.map)) : [];
+  const rows = [...keep, ...results.flatMap((r) => spawnZoneRows(r.id, r.spec))];
+  if (!rows.length && !fs.existsSync(file)) return;
+  writeCsv(file, header, rows);
+}
+
 // maps.csv · waypoints.csv 기능 자리 열을 설계서대로
 function syncTables(results) {
   const maps = readCsv("maps"), wps = readCsv("waypoints");
@@ -525,6 +556,7 @@ function syncTables(results) {
   }
   writeCsv(path.join(ROOT, "data/maps.csv"), maps.header, maps.rows);
   writeCsv(path.join(ROOT, "data/waypoints.csv"), wps.header, wps.rows);
+  syncSpawnZones(results);
 }
 
 function main() {
@@ -532,11 +564,13 @@ function main() {
   const view = process.argv.includes("--view");
   if (!actName) throw new Error("사용: compose.cjs act1 [맵id] [--view]");
   const specs = require(path.join(SPEC_DIR, actName + ".cjs"));
+  const overrides = require(path.join(SPEC_DIR, "overrides.cjs"));
   const ctx = require("../maps.cjs").context();
   const mapRows = load("maps");
   const results = [];
-  for (const [id, spec] of Object.entries(specs)) {
+  for (const [id, actSpec] of Object.entries(specs)) {
     if (onlyId && id !== onlyId) continue;
+    const spec = overrides.apply(id, actSpec);   // 그 id 하나에만 (10-30 I06) — 다른 맵이 remix로 가져간 원형은 그대로
     const row = mapRows.find((m) => m.id === id);
     if (!row) throw new Error(`${id}: maps.csv에 없음`);
     const out = compose(id, spec, ctx, row);
@@ -551,4 +585,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { compose };
+module.exports = { compose, spawnZoneRows };
