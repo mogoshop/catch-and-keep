@@ -12,6 +12,10 @@
 //                                    첫 벽 글자 칸은 그림 없이 바탕을 낮은 모래로 두며, 담 남쪽 아래 한 칸에 앞면·그 아래 그림자를 그린다. 다른 벽 글자(기둥 등)는 담 위의 벽으로 그대로
 //   ;markers W E H T S R             표식 글자 (바닥으로 친다). 배치표의 기능 엔티티가 표식 1칸 안에 있는지 검사한다
 //   ;backdrop r/g/b                  맵 밖 배경(Background 단색) — 없으면 템플릿 색 그대로 (10-29 바다·용암 담 위 맵)
+//   ;floormix <바닥그림>[,<바닥그림>…]  그 바닥 그림을 쓰는 구역(바탕 . 포함)을 그림 한 장(1.28칸) 단위로 좌우·상하 뒤집어 반복 격자를 깬다
+//                                    (10-29 폭풍의 눈 따개비 돌 — 큰 조약돌이 1.28칸 격자로 보였다). 좌우는 그림 열마다 · 상하는 그림 줄마다 같은 값이라
+//                                    이음 없는 타일이면 이음이 깨지지 않는다 (칸마다 따로 뒤집으면 옆 칸과 가장자리 줄이 거꾸로 맞닿아 금이 간다 — 원본 PNG로 잼).
+//                                    열·줄은 맵 전체에 하나인 그림 격자라 구역 사각형 경계에서도 무늬가 이어진다 (2) 구역 바닥의 globalMix)
 // 배치표(.csv) kind: gate(target=·arrive=town|left|right) · torch · waypoint(name=id) · set(map_sets.csv) · prop · decal ·
 //   cluster(name=그림|그림…, args r=반경;n=개수;seed=씨앗 — 시드 고정 흩뿌림, 바닥이 아니거나 길이면 피한다)
 // 크기 규칙은 maps.cjs와 같다: 코덱스 prop 0.8배 · prop-1x 1배 · 둘 다 ×art_scale.csv, 메이플(mp-*)은 data/handmade/maple_sprites.csv scale.
@@ -41,6 +45,10 @@ const flipAt = (x, y) => {
   h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b) >>> 0; h ^= h >>> 13;
   return ((h >>> 16) & 1) === 1;
 };
+// ;floormix 그림 열(좌우)·줄(상하) 뒤집기: 그 열의 왼쪽 끝 x(또는 줄의 아래 끝 y)를 0.01칸 단위로 섞는다 — 좌우와 상하가 같은 값을 내지 않게 씨앗을 따로
+const MIX_SEED_X = 7919, MIX_SEED_Y = 104729;
+const floorFlipX = (wx) => flipAt(Math.round(wx * 100), MIX_SEED_X);
+const floorFlipY = (wy) => flipAt(MIX_SEED_Y, Math.round(wy * 100));
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
@@ -60,7 +68,7 @@ const EDGE_BODY = {
 // ───────── 설계도 ─────────
 function parseBlueprint(id) {
   const text = fs.readFileSync(path.join(HM_DIR, id + ".txt"), "utf8");
-  const bp = { id, w: 0, h: 0, base: null, zones: {}, roads: {}, walls: {}, markers: new Set(), rows: [] };
+  const bp = { id, w: 0, h: 0, base: null, zones: {}, roads: {}, walls: {}, markers: new Set(), rows: [], floorMix: new Set() };
   for (const raw of text.split(/\r?\n/)) {
     if (raw.startsWith(";")) {
       const m = raw.slice(1).trim().split(/\s+/);
@@ -103,6 +111,7 @@ function parseBlueprint(id) {
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       else if (m[0] === "backdrop") bp.backdrop = m[1];
+      else if (m[0] === "floormix") for (const a of (m[1] || "").split(",").filter(Boolean)) bp.floorMix.add(a);
       continue;
     }
     if (raw.trim() === "") continue;
@@ -489,14 +498,27 @@ function artEntities(d, ctx, bp, rows, func) {
     }
   }
   // 2) 구역 바닥 — 같은 구역 칸을 줄 단위 사각형으로 묶어(위에서부터, 아래로 늘릴 수 있는 만큼) 반복 그리기 (담 윗면 맵은 담이 덮으므로 그리지 않는다)
-  let zoneN = 0;
-  for (const [ch, z0] of Object.entries(bp.zones)) {
+  const zoneDraw = (ch, z0) => {
     // top=zone 담 윗면 맵은 바탕(low·below)이 낮은 칸 그림이라, 바탕 바닥 구역(.)도 걷는 칸에 따로 깐다
-    const z = !z0.art && bp.raised && bp.raised.zoneTop ? { art: bp.base.art, tint: bp.base.tint } : z0;
+    //   ;floormix가 바탕 그림을 섞는 맵(담 윗면 아님)도 바탕 구역(.) 칸을 따로 깐다 — 맵 전체 ArtFloor(벽 밑까지)는 그대로 두고 걷는 칸만 섞은 그림으로 덮는다
+    const baseMix = !z0.art && !bp.raised && bp.floorMix.has(bp.base.art);
+    const z = !z0.art && ((bp.raised && bp.raised.zoneTop) || baseMix) ? { art: bp.base.art, tint: bp.base.tint } : z0;
     const inner = !!(bp.raised && !bp.raised.zoneTop && bp.raised.innerZone);
-    if (!z.art || (bp.raised && !bp.raised.zoneTop && !inner)) continue;
-    const covered = new Set();
+    const skip = !z.art || (bp.raised && !bp.raised.zoneTop && !inner);
     const deep = (x, y) => !inner || (!isLow(x + 1, y) && !isLow(x - 1, y) && !isLow(x, y + 1) && !isLow(x, y - 1));
+    return { z, skip, deep };
+  };
+  // ;floormix — 그 바닥 그림은 맵 전체에 하나로 정한 그림 격자(맵 왼쪽·아래 끝부터 1.28칸)에 맞춰 깐다 (10-29).
+  //   어느 사각형에서나 같은 열(줄)은 같은 뒤집기·같은 무늬 자리 → 구역 사각형 경계에서도 무늬가 이어진다
+  //   (사각형마다 첫 장부터 깔던 옛 방식은 이웃 사각형과 무늬 자리가 어긋나 곧은 금이 갔다 — 메이커 집게 동굴 x=-16, 시뮬레이션 칸 경계의 6~24%).
+  //   이음 없는 타일은 뒤집기 조합이 어떻든 그림 경계에서 이어진다 (좌우·상하 끝 줄이 같은 그림 — 원본 PNG로 잼).
+  //   엔진은 반복 그리기 사각형을 첫 장(왼쪽·아래)부터 깔고 모자란 장은 오른쪽·위 끝에 잘라 두며, 뒤집으면 첫 장 가운데를 축으로 통째로 거울처럼 뒤집는다
+  //   (10-29 메이커 폭풍의 눈: k장 묶음을 뒤집자 k−1장 밀려 구멍) → 안 뒤집은 열은 그림 경계에서 시작해야 하고, 뒤집은 열은 그림 경계에서 끝나야 한다.
+  //   그래서 사각형이 열 중간에서 시작하면(왼쪽이 잘림) 그 열은 뒤집거나, 안 뒤집으면 그림 경계까지 왼쪽 이웃 칸을 덮어야 한다 — 이웃이 같은 그림 칸이면 같은 무늬가 겹칠 뿐.
+  //   이웃이 벽·다른 그림·낮은 칸이라 덮을 수 없는 자리가 있는 열은 뒤집기를 그쪽에 맞춰 정하고(칸 좌표 섞음보다 우선), 오른쪽 끝도 같은 식.
+  //   한 열에 두 쪽 모두 걸리면(1칸 폭 틈 등) 그 사각형 조각만 반대로 뒤집거나 끝부터 깐다 — 남는 금은 그 조각 폭(1.28칸 미만)뿐.
+  const zoneRects = (ch, deep) => {   // 같은 구역 칸을 줄 단위 사각형으로 묶는다 (위에서부터, 아래로 늘릴 수 있는 만큼) → [[x, xe, yb, y]]
+    const covered = new Set(), rects = [];
     const inZone = (x, y) => bp.isFloor(x, y) && bp.zoneOf(x, y) === ch && !covered.has(key(x, y)) && deep(x, y);
     for (let y = b.y1; y >= b.y0; y--) for (let x = b.x0; x <= b.x1; x++) {
       if (!inZone(x, y)) continue;
@@ -506,9 +528,99 @@ function artEntities(d, ctx, bp, rows, func) {
       const rowOk = (yy) => { for (let xx = x; xx <= xe; xx++) if (!inZone(xx, yy)) return false; return true; };
       while (rowOk(yb - 1)) yb--;
       for (let yy = yb; yy <= y; yy++) for (let xx = x; xx <= xe; xx++) covered.add(key(xx, yy));
-      out.push(tiled(`ArtZone${++zoneN}`, ruid(z.art, `zone ${ch}`), (x + xe + 1) / 2, (yb + y + 1) / 2, xe - x + 1, y - yb + 1, -0.005, z.tint));
+      rects.push([x, xe, yb, y]);
+    }
+    return rects;
+  };
+  const MIX_OX = b.x0, MIX_OY = b.y0, EPS = 1e-6;
+  const mixAt = new Map(), mixRects = new Map();   // 칸 → 그 칸을 덮는 ;floormix 그림 · "구역|x|y" → 사각형
+  for (const [ch, z0] of Object.entries(bp.zones)) {
+    const zd = zoneDraw(ch, z0);
+    if (zd.skip || !bp.floorMix.has(zd.z.art)) continue;
+    for (const [x, xe, yb, y] of zoneRects(ch, zd.deep)) {
+      for (let yy = yb; yy <= y; yy++) for (let xx = x; xx <= xe; xx++) mixAt.set(key(xx, yy), zd.z.art);
+      mixRects.set(`${ch}|${x}|${y}`, { art: zd.z.art, ax: x, bx: xe + 1, ay: yb, by: y + 1 });
     }
   }
+  // 담 윗면 맵이 아니면 섞는 바닥을 다른 구역 바닥(-0.005)보다 한 겹 뒤(-0.004)에 깔아, 늘린 조각이 벽(-0.02)·다른 그림 구역 밑으로 들어가도 가려지게 한다.
+  //   담 윗면 맵의 벽 글자는 낮은 칸(보이는 땅)이라 덮으면 안 된다 → 같은 그림 칸으로만 늘린다
+  const MIX_Z = bp.raised ? -0.005 : -0.004;
+  const hiddenAt = new Set();   // 늘린 조각이 들어가도 앞 그림에 가려지는 칸 (담 윗면 아닌 맵의 벽 · 그림 있는 다른 구역)
+  if (!bp.raised) for (let y = b.y1 + 2; y >= b.y0 - 2; y--) for (let x = b.x0 - 2; x <= b.x1 + 2; x++) {
+    if (bp.at(x, y) === null || mixAt.has(key(x, y))) continue;
+    if (bp.isWall(x, y)) { hiddenAt.add(key(x, y)); continue; }
+    const ch = bp.zoneOf(x, y), z0 = ch && bp.zones[ch];
+    if (z0) { const zd = zoneDraw(ch, z0); if (!zd.skip && zd.z.art && !bp.floorMix.has(zd.z.art)) hiddenAt.add(key(x, y)); }
+  }
+  const same = (art, x0, x1, y0, y1) => {   // 월드 띠 [x0, x1) × [y0, y1)를 덮어도 되는가 — 걸친 칸이 모두 같은 ;floormix 그림(같은 무늬가 겹칠 뿐)이거나 앞 그림에 가려지는 칸
+    for (let y = Math.floor(y0 + EPS); y < y1 - EPS; y++) for (let x = Math.floor(x0 + EPS); x < x1 - EPS; x++) {
+      const k = key(x, y);
+      if (mixAt.get(k) !== art && !hiddenAt.has(k)) return false;
+    }
+    return true;
+  };
+  const tileOf = (v, O) => Math.floor((v - O) / S + EPS);
+  // 한 축: 사각형 [a, e]가 잘린 열에서 이웃을 덮을 수 없는 쪽을 모은다 → 열마다 뒤집기 결정
+  const markCuts = (cuts, art, a, e, O, len, okBefore, okAfter) => {   // len = 그 사각형의 다른 축 길이 (어긋나면 금이 갈 길이)
+    const k0 = tileOf(a, O), k1 = Math.ceil((e - O) / S - EPS) - 1;
+    const at = (k) => { const id = `${art}|${k}`; if (!cuts.has(id)) cuts.set(id, { hardL: 0, hardR: 0 }); return cuts.get(id); };
+    if (a > O + k0 * S + EPS && !okBefore(O + k0 * S)) at(k0).hardL += len;
+    if (e < O + (k1 + 1) * S - EPS && !okAfter(O + (k1 + 1) * S)) at(k1).hardR += len;
+  };
+  const decide = (cuts, art, k, O, flipAt) => {
+    const c = cuts.get(`${art}|${k}`);
+    if (!c || (!c.hardL && !c.hardR)) return flipAt(r3(O + k * S));
+    return c.hardL >= c.hardR;   // 왼쪽(아래)이 잘린 채 못 늘리는 쪽이 길면 뒤집어 오른쪽(위) 그림 경계에 맞춘다 — 양쪽 다 있으면 긴 쪽을 살린다
+  };
+  let mixForced = 0, mixLocal = 0;
+  // 한 축의 조각들: [{ L, R, f, local }] — f면 R이 그림 경계, 아니면 L이 그림 경계 (local = 맞출 수 없어 사각형 끝부터 깐 조각)
+  const segs = (a, e, O, F, okBefore, okAfter) => {
+    const list = [], k0 = tileOf(a, O), k1 = Math.ceil((e - O) / S - EPS) - 1;
+    for (let k = k0; k <= k1; k++) {
+      const g0 = O + k * S, g1 = g0 + S, cutL = a > g0 + EPS, cutR = e < g1 - EPS;
+      const unfOk = !cutL || okBefore(g0), flipOk = !cutR || okAfter(g1);
+      let f = F(k), local = false;
+      if (f ? !flipOk : !unfOk) { if (f ? unfOk : flipOk) { f = !f; mixForced++; } else { f = false; local = true; mixLocal++; } if (process.env.MIXDEBUG === "2") console.log(`    [floormix] ${O === MIX_OX ? "열" : "줄"} ${k} [${r3(a)}, ${r3(e)}] cutL=${cutL} cutR=${cutR} → ${local ? "local" : "forced " + f}`); }
+      const L = local || f ? Math.max(a, g0) : g0, R = local || !f ? Math.min(e, g1) : g1;
+      const last = list[list.length - 1];
+      // 이어 붙이기: 안 뒤집은 묶음은 앞 조각이 그림 경계에서 끝났을 때, 뒤집은 묶음은 이 조각이 그림 경계에서 시작할 때만 (잘린 장이 묶음 끝에 오게)
+      if (last && !local && !last.local && last.f === f && Math.abs(last.R - L) < EPS && Math.abs(L - g0) < EPS) last.R = R;
+      else list.push({ L, R, f, local });
+    }
+    return list;
+  };
+  const cutsX = new Map(), cutsY = new Map();
+  for (const m of mixRects.values()) markCuts(cutsX, m.art, m.ax, m.bx, MIX_OX, m.by - m.ay, (g0) => same(m.art, g0, m.ax, m.ay, m.by), (g1) => same(m.art, m.bx, g1, m.ay, m.by));
+  for (const m of mixRects.values()) {
+    m.cols = segs(m.ax, m.bx, MIX_OX, (k) => decide(cutsX, m.art, k, MIX_OX, floorFlipX), (g0) => same(m.art, g0, m.ax, m.ay, m.by), (g1) => same(m.art, m.bx, g1, m.ay, m.by));
+    m.cx0 = Math.min(...m.cols.map((c) => c.L)); m.cx1 = Math.max(...m.cols.map((c) => c.R));   // 좌우로 늘린 폭까지 위아래 이웃을 본다 (모서리 칸)
+  }
+  for (const m of mixRects.values()) markCuts(cutsY, m.art, m.ay, m.by, MIX_OY, m.cx1 - m.cx0, (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
+  for (const m of mixRects.values()) m.rows = segs(m.ay, m.by, MIX_OY, (k) => decide(cutsY, m.art, k, MIX_OY, floorFlipY), (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
+  const mixPieces = (name, rid, m, z, tint) => {
+    const parts = [];
+    for (const rr of m.rows) for (const cr of m.cols) {
+      const o = sprite(rid, [r3((cr.R - cr.L) / S), r3((rr.R - rr.L) / S)], 1), sr = o["MOD.Core.SpriteRendererComponent"];
+      if (tint) sr.Color = tintOf(tint);
+      if (cr.f) sr.FlipX = true;
+      if (rr.f) sr.FlipY = true;
+      const px = cr.f ? cr.R - S / 2 : cr.L + S / 2, py = rr.f ? rr.R - S / 2 : rr.L + S / 2;   // 뒤집은 쪽은 끝 장 가운데가 축 (위 주석)
+      parts.push({ name: `${name}_${parts.length + 1}`, pos: [r3(px), r3(py), z], overrides: o });
+    }
+    return parts;
+  };
+  let zoneN = 0, mixN = 0;
+  for (const [ch, z0] of Object.entries(bp.zones)) {
+    const { z, skip, deep } = zoneDraw(ch, z0);
+    if (skip) continue;
+    for (const [x, xe, yb, y] of zoneRects(ch, deep)) {
+      const args = [`ArtZone${++zoneN}`, ruid(z.art, `zone ${ch}`), (x + xe + 1) / 2, (yb + y + 1) / 2, xe - x + 1, y - yb + 1, -0.005, z.tint];
+      const m = bp.floorMix.has(z.art) && mixRects.get(`${ch}|${x}|${y}`);
+      if (m) { const parts = mixPieces(args[0], args[1], m, MIX_Z, z.tint); out.push(...parts); mixN += parts.length; }
+      else out.push(tiled(...args));
+    }
+  }
+  if (process.env.MIXDEBUG && mixRects.size) console.log(`  [floormix] ${bp.id} 사각형 ${mixRects.size} · 반대로 뒤집은 조각 ${mixForced} · 끝부터 깐 조각 ${mixLocal}`);
   // 3) 길 — 줄마다 이어진 구간 (칸 크기 그림)
   let roadN = 0;
   const roadRect = (ch, x, y, len, rows, mul) => {   // (x, y) = 왼쪽 아래 칸, mul = 그림 한 장이 덮는 칸 수
@@ -706,7 +818,7 @@ function artEntities(d, ctx, bp, rows, func) {
     } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
   const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
-  return { entities: out, blocked, warn, size, counts: { props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN } };
+  return { entities: out, blocked, warn, size, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────

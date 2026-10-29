@@ -553,13 +553,16 @@ script HudMain extends Logic
         local i = self.RaidOmenTick % #frames + 1
         local old = self.RaidDecals
         local fresh = {}
+        -- 10-29 사용자 승인: 액트 2 조짐(모래색 그림 평균 200/131/64)은 모래 바닥(240/146/45) 위에서 옅었다 → 액트 2만 검붉게 곱해 대비를 올린다 (그림은 그대로 · 다른 액트는 흰색 = 원래 색)
+        local tint = Color(1, 1, 1, 1)
+        if self.RaidOmenAct == 2 then tint = Color(0.78, 0.22, 0.17, 1) end
         for _, p in ipairs(self.RaidPts) do
-            table.insert(fresh, _Util:GroundDecal(frames[i], 160, 80, player, Vector3(p[1], p[2], 0), 1.1, Color(1, 1, 1, 1)))
+            table.insert(fresh, _Util:GroundDecal(frames[i], 160, 80, player, Vector3(p[1], p[2], 0), 1.1, tint))
         end
         self.RaidDecals = fresh
         for _, d in ipairs(old) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
         if self.RaidOmenTick <= #frames then
-            log(string.format("[VRF] raid omen frame act=%d i=%d/%d ruid=%s decals=%d t=%.2f", self.RaidOmenAct, i, #frames, frames[i], #fresh, _UtilLogic.ElapsedSeconds - self.RaidStartAt))
+            log(string.format("[VRF] raid omen frame act=%d i=%d/%d ruid=%s decals=%d tint=%.2f/%.2f/%.2f t=%.2f", self.RaidOmenAct, i, #frames, frames[i], #fresh, tint.r, tint.g, tint.b, _UtilLogic.ElapsedSeconds - self.RaidStartAt))
         end
     end
 

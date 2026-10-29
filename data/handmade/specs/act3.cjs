@@ -531,3 +531,12 @@ for (const [id, sp] of Object.entries(module.exports)) {
 }
 // 10-29 메이커 번개 절벽: 장소 밖 능선 길(.)이 따개비 돌 바닥이라 절벽 윗단 조각과 결이 같아 벽처럼 보였다 → 바탕만 처형장 돌바닥(푸른빛)으로 남긴다
 module.exports.stormcliff.base = "a3-barnacle-stone-floor-r2 0.95/1/1";   // 10-29 메이커 재캡처: 처형장 바닥(0.8/0.92/1)이 회색 바위 사이에서 진한 흙갈색 네모(구멍·진흙)로 보였다 → 바위 계열 밝은 회청 따개비 돌 (구역 바닥 0.82~0.88보다 밝게 — 능선 길이 벽 윗단과 섞이지 않게)
+
+// 10-29 사용자 승인(「전부 추천대로」): 따개비 돌 바닥은 그림 한 장(1.28칸)마다 큰 조약돌이 같은 자리에 와 격자로 보였다 (폭풍의 눈 캡처) →
+//   이 바닥을 쓰는 액트 3 맵 전부에서 그림 열마다 좌우 · 줄마다 상하 뒤집기를 칸 좌표로 섞는다 (lib.cjs ;floormix — 빌드마다 같다).
+//   칸마다 따로 뒤집지 않는 까닭: 원본 PNG의 가장자리 줄이 상하 대칭이 아니라(거꾸로 맞댄 차 29 · 이웃 줄 차 18.5) 옆 칸과 금이 간다 — 열·줄 단위면 이음 차 0
+const FLOOR_MIX = "a3-barnacle-stone-floor-r2";
+for (const sp of Object.values(module.exports)) {
+  const arts = [sp.base, ...Object.values(sp.zones || {})].map((v) => v.split(" ")[0]);
+  if (arts.includes(FLOOR_MIX)) sp.floorMix = FLOOR_MIX;
+}

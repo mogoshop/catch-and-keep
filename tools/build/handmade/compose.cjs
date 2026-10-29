@@ -18,6 +18,7 @@
 //   fixed { 몬스터id: [x, y] } · extra { "npc:Model" | "altar:id" | depthgate | return | end : [x, y] }
 //   dress { 구역글자: { sets: [...], props: [...], n, decals: [...], dn } } · put [[kind, name, x, y, scale, flip]…]
 //   backdrop "r/g/b" 맵 밖 배경색 (없으면 템플릿 갈색 — 바다·용암 맵에서 양옆이 주황으로 떴다, 10-29)
+//   floorMix "바닥그림[,바닥그림…]" 그 바닥을 그림 열·줄마다 좌우·상하 뒤집어 깐다 (1.28칸 반복 격자 깨기, 10-29 따개비 돌)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -474,6 +475,7 @@ function blueprintText(id, spec, grid, mapRow) {
   if (spec.raised) L.push(`;raised ${spec.raised}`);
   if (spec.shore) L.push(`;shore ${spec.shore}`);   // 물가 거품: <바다 그림> <거품 그림> [크기] [색] (lib.cjs 3-1)
   if (spec.backdrop) L.push(`;backdrop ${spec.backdrop}`);   // 맵 밖 배경색 r/g/b (lib.cjs build — Background SolidColor)
+  if (spec.floorMix) L.push(`;floormix ${spec.floorMix}`);   // 그 바닥 그림을 그림 열·줄마다 좌우·상하 뒤집어 반복 격자를 깬다 (lib.cjs 2)
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);
