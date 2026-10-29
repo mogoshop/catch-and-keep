@@ -87,6 +87,8 @@ _SkillData = {}
 function _SkillData:Get(id) return { icon = id, name = id, cooldown = 0.5 } end
 _UXFeedback = {}
 function _UXFeedback:Show() end
+_Util = {}
+function _Util:Pos2(e) return e.pos end
 
 -- 화면 (16:9, 오른쪽 아래 기준 빌드 좌표를 왼쪽 아래 기준 화면 좌표로: x = 1920 + px, y = py)
 local function pad(px, py) return Vector2(1920 + px, py) end
@@ -169,10 +171,21 @@ local function NewBook(player)
   return b
 end
 
-local MAP_A, MAP_B = { name = "a" }, { name = "b" }
+-- 맵: 전리품(LootDrop)·몬스터 목록은 W.loot·W.monsters (UpdatePickMode가 읽는다)
+local function NewMap(name)
+  local m = { name = name }
+  function m:GetChildComponentsByTypeName(t, recursive)
+    if t == "script.LootDrop" then return W.loot end
+    if t == "script.Monster" then return W.monsters end
+    return {}
+  end
+  return m
+end
+local MAP_A, MAP_B = NewMap("a"), NewMap("b")
 local function Reset()
   for k, v in pairs(PadDefaults) do MobilePad[k] = v end
   W.window, W.pickers, W.requests, W.casts, W.basic, W.skeletons = false, 0, 0, 0, 0, 6
+  W.loot, W.monsters = {}, {}
   W.ents = {
     ["/ui/ShadowHUD/MobilePad/AimCancel"] = { Enable = false, UITransformComponent = { RectSize = Vector2(92, 92), center = SCREEN.Cancel } },
     ["/ui/ShadowHUD/MobilePad"] = { Enable = true },
@@ -181,7 +194,8 @@ local function Reset()
   function W.stats:GetAttackInterval(base) return base end
   local attack = { LocalAimActive = false, LocalAimDirection = Vector2(1, 0) }
   function attack:SubmitBasicInput() W.basic = W.basic + 1 end
-  local player = { PlayerComponent = { Hp = 100 }, CurrentMap = MAP_A, PlayerControllerComponent = {} }
+  local player = { PlayerComponent = { Hp = 100, UserId = "u1" }, CurrentMap = MAP_A, PlayerControllerComponent = {}, pos = Vector2(0, 0) }
+  W.inv = { BagDigest = "", BagSize = 40 }
   function player.PlayerControllerComponent:ActionAttack() end
   W.click = { AttackTimer = 0 }
   function player:GetComponent(name)
@@ -189,6 +203,7 @@ local function Reset()
     if name == "script.SkillBook" then return W.book end
     if name == "script.PlayerStats" then return W.stats end
     if name == "script.ClickControl" then return W.click end
+    if name == "script.PlayerInventory" then return W.inv end
     return nil
   end
   W.player, W.attack = player, attack
@@ -371,6 +386,57 @@ scenario("4칸 배치: 큰 단추는 기본 공격, 기본 공격 단추와 같�
   MobilePad:HoldTick()
   MobilePad:EndGesture(13, SCREEN.Attack)
   check(W.basic == 2 and W.requests == 0, "기본 공격 2 · 스킬 요청 0")
+end)
+
+-- 전리품이 플레이어 곁에 떨어지고(일반 장비) 근처 몬스터가 없으면 큰 단추가 「줍기」로 바뀐다 · 몬스터가 다시 오면 되돌아온다
+local function lootAppears()
+  W.loot = { { Kind = "item", Rarity = 0, Taken = false, OwnerUserId = "", Entity = { pos = Vector2(0.5, 0) } } }
+  W.monsters = {}
+end
+local function monsterReturns()
+  W.monsters = { { IsDead = false, Entity = { Enable = true, pos = Vector2(1, 0) } } }
+end
+local function pickTick()
+  MobilePad.PickCheckAt = 0   -- 0.25초 간격 검사를 바로 돌린다
+  MobilePad:UpdatePickMode(W.player)
+end
+
+scenario("I04-R01 기본 공격 단추 홀드 중 전리품 등장 → 반복 계속", function()
+  W.book.RightSkill = "curse_weak"
+  local before = snapshot()
+  MobilePad:BeginGesture(MobilePad.BasicSlot, 11, SCREEN.BasicAtk)
+  check(W.basic == 1 and MobilePad.Holding, "누르는 순간 기본 공격 1")
+  lootAppears()
+  pickTick()   -- Poll 순서: UpdatePickMode → HoldTick
+  check(MobilePad.PickMode, "큰 단추는 「줍기」로 바뀐다")
+  check(MobilePad.Holding and MobilePad.GestureSlot == MobilePad.BasicSlot, "기본 공격 단추 홀드는 그대로")
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.51
+  MobilePad:HoldTick()
+  check(W.basic == 2, "줍기 전환 뒤에도 반복 (" .. W.basic .. ", 기대 2)")
+  monsterReturns()
+  pickTick()
+  check(not MobilePad.PickMode and MobilePad.Holding, "적이 다시 오면 공격 단추로 · 홀드 계속")
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.51
+  MobilePad:HoldTick()
+  check(W.basic == 3, "적 재등장 뒤에도 반복 (" .. W.basic .. ")")
+  MobilePad:EndGesture(11, SCREEN.BasicAtk)
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 1
+  MobilePad:HoldTick()
+  check(W.basic == 3 and not MobilePad.Holding, "떼면 멈춤")
+  unchanged(before, "기본 공격 홀드 중 줍기 전환")   -- 5번 칸 스킬 오발·줍기 요청 없음
+end)
+
+scenario("I04-R01 대조: 큰 단추 기본 공격 홀드는 「줍기」 전환에서 멈춘다 (기존 정책)", function()
+  MobilePad:BeginGesture(5, 13, SCREEN.Attack)
+  check(MobilePad.GestureBasic and MobilePad.Holding and W.basic == 1, "빈 5번 칸 = 기본 공격 홀드")
+  lootAppears()
+  pickTick()
+  check(MobilePad.PickMode and not MobilePad.Holding, "큰 단추가 「줍기」가 되면 그 단추의 반복은 멈춘다")
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.51
+  MobilePad:HoldTick()
+  check(W.basic == 1, "추가 기본 공격 없음")
+  MobilePad:EndGesture(13, SCREEN.Attack)
+  check(W.requests == 0, "스킬 요청 0")
 end)
 
 scenario("편집 중 기본 공격 단추는 무시", function()
