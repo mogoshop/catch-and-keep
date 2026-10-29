@@ -29,6 +29,11 @@ script SkillOffer extends Logic
     property number BandMaxW = 720          -- PC: 가운데 아래 236~308 줄 — 오른쪽 의뢰 추적판(+518~)과 안 겹치는 폭
     property number BandMaxWMobile = 600    -- 모바일: 오른쪽 끝 980에 붙여(MobileLayout) 왼쪽으로만 넓힌다 — 380~980 · 오른쪽 스킬 편집 단추(990~)와 안 겹침
     property string BandLogged = ""
+    -- 카드 초록 줄(Card{i}/Change) 규격 — tools/build/ui.cjs CARD와 같은 값. 한쪽만 바꾸지 않는다 (INT1725-OBS-01)
+    property number ChangeW = 222           -- 칸 폭 (카드 안쪽 어두운 칸)
+    property number ChangeFont = 16         -- 최대 글자 크기 (BestFit 12~16) · 오프라인 폭 어림(UIKit.TextWidth)의 기준
+    property integer ChangeLines = 3        -- 칸 높이 72에 16px(줄 높이 23.7)로 들어가는 줄 수 — 넘으면 변이 요약을 「{변이} N기」로 줄인다
+    property string WarnHex = "#F4D27A"     -- 편성 경고 줄 색 (초록 수치 줄과 구분)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -267,11 +272,13 @@ script SkillOffer extends Logic
                 local nextRank = book:GetRankSummary(id, def.kind == "node" and (lv + 1) or book:PowerLevelAt(id, lv + 1))
                 if lv == 0 then change = nextRank
                 elseif nextRank ~= "" and nextRank ~= now then change = nextRank end
-                if def.kind == "node" then
-                    local hint = book:UseHint(id)
-                    if hint ~= "" then change = change .. (change ~= "" and "\n" or "") .. hint end
-                end
+                -- 초록 줄은 칸 폭 안 읽히는 단위로 접는다 · 강화 카드는 편성 경고를 자기 줄로 (INT1725-OBS-01 — NodeChange · CardWrap)
+                local changeE = _UIKit:Get(c .. "/Change")
+                local changeT = isvalid(changeE) and changeE.TextGUIRendererComponent or nil
+                if def.kind == "node" then change = self:NodeChange(change, book:UseHint(id), cardText, changeT)
+                elseif change ~= "" then change = self:CardWrap(change, self.ChangeW, changeT) end
                 _UIKit:SetText(c .. "/Change", change)
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] offer card change %s lines=%d text=%s", id, _SkillWindow:LineCount(change), _UIKit:PlainText(change))) end
             end
         end
         -- 다음 해금 미리보기 (반투명)
@@ -287,6 +294,89 @@ script SkillOffer extends Logic
             for _, id in ipairs(preview.ids) do table.insert(names, _SkillData:Get(id).name) end
             _UIKit:SetText(self.Win .. "/Preview/Body", "Lv" .. tostring(preview.row) .. "\n" .. table.concat(names, "\n") .. "\n\n" .. tostring(preview.row - st.Level) .. "레벨 남음")
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method string NodeChange(string summary, string hint, string shown, TextGUIRendererComponent comp)
+        -- 강화 카드 초록 줄 (INT1725-OBS-01: 대검 0기 · 방패 세기만 경고가 46 높이 칸을 넘어 카드 아래 장식 밖으로 흘렀다).
+        --   ① 경고(UseHint)는 뜻·숫자 그대로 자기 줄 · 경고 색(WarnHex)
+        --   ② 다음 랭크 요약은 같은 카드 설명(Effect = shown)에 이미 그대로 적힌 토막(고정 수치 — 「공격 간격 ×1.4」·「생명 +20%」 등)을 뺀다 (DropShown)
+        --   ③ 요약 + 경고가 칸(ChangeLines줄)을 넘으면 요약은 첫 토막(변이 노드는 「{변이} N기」)만 — 경고는 줄이지 않는다 · 글자 크기·칸·카드 크기 그대로
+        local warn = hint ~= "" and self:CardWrap(hint, self.ChangeW, comp) or ""
+        local full = self:DropShown(summary, shown)
+        local short = _SkillWindow:SplitPlain(summary, " · ")[1]
+        local body = full ~= "" and self:CardWrap(full, self.ChangeW, comp) or ""
+        if warn ~= "" and short ~= full and _SkillWindow:LineCount(body) + _SkillWindow:LineCount(warn) > self.ChangeLines then
+            body = self:CardWrap(short, self.ChangeW, comp)
+        end
+        if warn == "" then return body end
+        local lines = {}
+        for _, line in ipairs(_SkillWindow:SplitPlain(warn, "\n")) do table.insert(lines, _UIKit:Colored(self.WarnHex, line)) end
+        return body .. (body ~= "" and "\n" or "") .. table.concat(lines, "\n")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string DropShown(string summary, string shown)
+        -- 요약의 「 · 」 토막 중 shown(카드 설명)에 글자 그대로 들어 있는 것을 뺀다 — 첫 토막은 늘 남긴다.
+        --   랭크마다 바뀌는 수치(「피해 ×0.95」)는 설명에 「×0.8/0.95/1.1」처럼 적혀 있어 글자 그대로 같지 않으므로 남는다
+        if summary == "" or shown == "" then return summary end
+        local parts = _SkillWindow:SplitPlain(summary, " · ")
+        local keep = { parts[1] }
+        for i = 2, #parts do
+            if string.find(shown, parts[i], 1, true) == nil then table.insert(keep, parts[i]) end
+        end
+        return table.concat(keep, " · ")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string CardWrap(string text, number maxW, TextGUIRendererComponent comp)
+        -- 카드 초록 줄을 칸 폭 maxW 안에서만 줄바꿈 (엔진 줄바꿈은 한글을 글자 단위로 끊는다 — QR1629-OBS-01과 같은 까닭).
+        --   경계 순서: 「 · 」(줄 끝의 「 · 」는 지운다 — 가운데 정렬 카드라 이어지는 줄 머리표 없이) → 「 (」(괄호는 다음 줄로) → 띄어쓰기.
+        --   단어 가운데는 끊지 않고 글자·수치는 그대로 (줄을 다시 이으면 원문)
+        local out = {}
+        for _, line in ipairs(_SkillWindow:SplitPlain(text, "\n")) do
+            for _, l in ipairs(self:PackCard(line, 1, maxW, comp)) do table.insert(out, l) end
+        end
+        return table.concat(out, "\n")
+    end
+
+    @ExecSpace("ClientOnly")
+    method table PackCard(string text, integer level, number maxW, TextGUIRendererComponent comp)
+        -- text를 level번째 경계로 나눠 앞에서부터 한 줄씩 채운다. 조각 하나가 칸보다 길면 다음 경계로 더 나눈다
+        local seps = { " · ", " (", " " }
+        if level > #seps or self:CardW(text, comp) <= maxW then return { text } end
+        local sep = seps[level]
+        local parts = _SkillWindow:SplitPlain(text, sep)
+        if #parts == 1 then return self:PackCard(text, level + 1, maxW, comp) end
+        local joiner = sep == " (" and " " or sep
+        local lines = {}
+        local cur = ""
+        for i, part in ipairs(parts) do
+            local piece = (sep == " (" and i > 1) and ("(" .. part) or part
+            local joined = cur == "" and piece or (cur .. joiner .. piece)
+            if cur ~= "" and self:CardW(joined, comp) <= maxW then
+                cur = joined
+            else
+                if cur ~= "" then table.insert(lines, cur) end
+                cur = piece
+                if self:CardW(cur, comp) > maxW then
+                    local sub = self:PackCard(cur, level + 1, maxW, comp)
+                    for k = 1, #sub - 1 do table.insert(lines, sub[k]) end
+                    cur = sub[#sub]
+                end
+            end
+        end
+        if cur ~= "" then table.insert(lines, cur) end
+        return lines
+    end
+
+    @ExecSpace("ClientOnly")
+    method number CardW(string text, TextGUIRendererComponent comp)
+        -- 카드 글 한 줄 폭: 실행 중에는 그 칸 글꼴의 실제 폭(GetPreferredWidth — 크기 맞춤 칸은 최대 크기로 잰다),
+        --   칸이 없으면(오프라인 검사) 넉넉한 어림 UIKit.TextWidth (한글·기호 1자 = 글자 크기 — 실제보다 넓게 잰다)
+        local plain = _UIKit:PlainText(text)
+        if comp ~= nil then return comp:GetPreferredWidth(plain) end
+        return _UIKit:TextWidth(plain, self.ChangeFont)
     end
 
     @ExecSpace("ClientOnly")

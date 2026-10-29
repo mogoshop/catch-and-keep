@@ -461,15 +461,18 @@ function buildGameHud() {
     const x = CARD.x0 + (i - 1) * CARD.step;
     // 카드 그림 3종(새 스킬·랭크 업·강화)은 SkillOffer.Render가 종류마다 바꿔 낀다 (코덱스 skill-window-v3, 흰 띠 자른 판)
     b.button(c, "", { anchor: "top-left", pos: [x, CARD.top], rect_size: [CARD.w, CARD.h], ...bg("sk_offer_card_new"), sprite_type: 0 });
-    // 글은 카드 안쪽 어두운 칸(테두리 안 40~350)에만
+    // 글은 카드 안쪽 어두운 칸(테두리 안 40~350)에만 — 글 칸 세로 배치 (INT1725-OBS-01: 강화 카드 편성 경고가 초록 칸 46을 넘어 아래 장식 밖으로 흘렀다)
+    //   종류 −50(26) · 아이콘 −80(76, 88에서 줄임) · 이름 −160(30) · 설명 −194(78 = 13px 4줄 · check_data 카드 글 상한 그대로) · 초록 −274(72 = 16px 3줄)
+    //   초록 칸 아래 −346: 카드 그림 아래 장식은 글 폭(±111) 가운데에서 347~354, 양 끝(±105~110)에서 340~346부터 — 가운데 정렬 줄은 끝까지 닿지 않는다
+    //   초록 줄 나누기·경고 줄은 SkillOffer.NodeChange·CardWrap (칸 폭·글자 크기·줄 수가 SkillOffer.ChangeW·ChangeFont·ChangeLines와 같다)
     b.text(`${c}/Kind`, "", { size: 20, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -50], rect_size: [CARD.text, 26], alignment: 4, bestfit: true, min_size: 14, max_size: 20, ...outline });
-    b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -82], rect_size: [88, 88], color: WHITE, alpha: 1, sprite_type: 0 });
+    b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -80], rect_size: [76, 76], color: WHITE, alpha: 1, sprite_type: 0 });
     k.aspect(`${c}/Icon`);
     b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-    b.text(`${c}/Name`, "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -176], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 24, ...outline });
+    b.text(`${c}/Name`, "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -160], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 24, ...outline });
     //   설명은 첫 문장만(SkillOffer.CardText) · 그래도 넘치면 말줄임(Overflow 1 = Ellipsis)으로 잘라 아래 초록 수치 줄(Change)을 덮지 않는다 (10-29 오후 검수 35번 캡처)
-    b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -212], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17, overflow: 1 });
-    b.text(`${c}/Change`, "", { size: 16, color: "#7CFF7A", anchor: "top-center", pos: [0, -294], rect_size: [CARD.text, 46], alignment: 1, bestfit: true, min_size: 12, max_size: 16 });
+    b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -194], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17, overflow: 1 });
+    b.text(`${c}/Change`, "", { size: 16, color: "#7CFF7A", anchor: "top-center", pos: [0, -274], rect_size: [CARD.text, 72], alignment: 1, bestfit: true, min_size: 12, max_size: 16 });
     // 고르기 단추: 카드 바로 아래 (카드를 눌러도 같다)
     k.ok(`OfferWin/Pick${i}`, "이 카드로", { anchor: "top-left", pos: [x + 20, CARD.top - CARD.h - 12], rect_size: [300, 88], font_size: 24 });
   }
