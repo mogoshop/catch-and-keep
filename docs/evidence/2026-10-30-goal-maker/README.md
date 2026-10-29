@@ -149,14 +149,15 @@
 
 | case | 판정 | 핵심 근거 | 캡처 |
 |---|---|---|---|
-| E-M1 방패 | 통과 | 05:08:32/05:25:54 rite giant start atk=363 look=shield scale=1.20 · HUD 초상 ui_giant_shield · 공격 중 skill/hit 그림 · 20초 뒤 split sec=0.60 → split back=4/4 respawn=true · 갈라진 뒤 방패 3·일반 2 원래 그림(일반 20초 분리 뒤 복원) (코덱스 0520: 원래 2장 + 05:08 run 부분 수용, 공격만 추가) | E-M1-1~3 |
-| E-M1 대검 | 통과 | 05:27:20/05:32:18 look=greatsword hp=4067/4218 · 공격 중 대검 휘두르기 · 05:32:38 split → 뼈 더미로 무너짐 → 숙주 원래 대검 해골(일반 20초 분리 뒤 복원) | E-M1-4·5(겹침 후보)·10~12 |
-| E-M1 쌍칼 | 통과 | 05:30:34 look=twin hp=3275/3426 · 공격 중 분홍 쌍칼 · 몸 유지 → 갈라짐 폭발 → 숙주 원래 쌍칼 해골(일반 20초 분리 뒤 복원) | E-M1-6~9 |
+| E-M1 방패 | 통과 | 05:08:32/05:25:54 rite giant start atk=363 look=shield scale=1.20 · HUD 초상 ui_giant_shield · 05:26:02 공격 화면(05:25:57 hit/58 skill은 별도 시점 호출 로그) · 1차 05:08:52 split sec=0.60 → split back=4/4 respawn=true · 갈라진 뒤 일반 외형·HUD 방패 3/일반 2 부분 관찰(일반 20초 분리 뒤 복원 · 5개체 독립 계수 아님) (코덱스 0520: 원래 2장 + 05:08 run 부분 수용, 공격만 추가) | E-M1-1~3 |
+| E-M1 대검 | 통과 | 05:27:20/05:32:18 look=greatsword hp=4067/4218 · 공격 중 대검 휘두르기 · 2차 05:32:38 split sec=0.60/back=4/4 로그 → 뼈 더미로 무너짐 → 숙주 원래 대검 해골 모습·HUD 대검 3/일반 2(일반 20초 분리 뒤 복원) | E-M1-4·5(겹침 후보)·10~12 |
+| E-M1 쌍칼 | 통과 | 05:30:34 look=twin hp=3275/3426 · 공격 중 분홍 쌍칼 · 몸 유지 → 갈라짐 폭발 → 작은 빨간 쌍칼 숙주 모습·전환 중 HUD 부분 관찰(일반 20초 분리 · 이 발췌에는 쌍칼 back=4/4 로그 없음) | E-M1-6~9 |
 | 기본/마법사 | 자리만 | 05:06:53·05:35:27 GiantLook basic/''/mage 6동작 6/6 · HUD ui_giant_basic c4c41598…/mage 8dacb199… · 마법사 자연 선발 없음(dormant) — 실화면 없음 | — |
 
 - 입력: GM 편성 준비(DismissAll · 변이 랭크 목표 3·나머지 0 · FormHope '' · 혼 6 · MaxDifficulty 0→1) → script 서버 SkillBook.Cast raise_skeleton ×5 · CastRite(5)(마나 30 소비 · 재사용 27.9) · GM 더미 drownedsailor(생명 50000 유지) · 3차부터 유입 끔·둘레 정리 뒤 되돌림. 조각 `RUN-log-INT.txt` 플레이 8 구간.
 - 정책 불변: 공격 363 = ATK 66×5×1.1 · 생명 = 다섯 합×1.2 · 20초 · 마나 30 · 재사용 30 · 반경 1.8 · GiantArtScale 1.2 · 숙주 = 가장 튼튼한 해골.
 - 한계: 방패 갈라짐 0.6초는 스크린샷 지연(≈3초)으로 놓침(대검·쌍칼로 확인) · 쌍칼 2차(유입 켠 채)는 캡처 미사용.
+- 근거 귀속(코덱스 0543 문서 후보 뜻만 병합 · 수치·RUN·PNG 무변경): split back=4/4 발췌는 방패 1차(05:08:52)·대검 2차(05:32:38) 것 · 방패 05:25:57 hit/58 skill 호출 로그와 05:26:02 공격 캡처는 별도 시점 · 쌍칼은 분리 효과·작은 숙주·전환 중 HUD까지의 부분 범위 · 정지 화면은 연속 전체 클립이나 독립 5개체 복원 증명이 아님 · E-M1-1 더미 drownedsailor ×200은 준비 의도였으나 적용되지 않아 05:08:34 두 더미가 각각 363 한 타에 쓰러짐(서기 촬영 전).
 - E-IF-01 원조건(갈라짐 0.6초 안 재진입 뒤 원래 외형·크기 복구)은 위 일반 분리 복원과 다른 근거 — 코덱스 0538/0545: v2 템플릿(ba13cd13) 직접 엔진 메서드 probe 1회를 C run 끝 정리 뒤 쉬는 소유 해골이 있을 때 실행(별도 줄로 기록 예정).
 
 ## I07 (=D-M8) 접합 시범
@@ -176,6 +177,8 @@
 | 3 | L15-curse_mix-boss | curse_mix-boss-fix2-P9 c1e7ea8b… (fix2 ddf42c86 + origin · 보스 (11,1)) | player_dead 17.8초 | 2739 | inflow pause spawners=1 → 준비 10초 생존 → inflow restore restored=1 skipped=0 (수정 전 run7 준비 중 사망) |
 
 집계 `C-raw/aggregate-P9-cobs-rerun.{md,json}`(원장 검사 3/3 ok) · preflight `C-raw/P9-S00-preflight.log`. 비교 판정은 코덱스.
+
+코덱스 검토(0557·0603·0605·0607 · 해석만 · 위 수치·raw·입력·집계 json/md 무변경 · 재실행 없음): C-OBS-01 소스 수정(7ae14a86)과 수정 뒤 magic boss(18시전 54타 = 시전당 3.0 · player_dead)·magic horde(13/14 timeout)는 실제 원장으로 수용·국소 종료 — 처치 성공·빌드 우열/DPS 순위가 아니며, 수정 전 run6/9(P7)는 진단 표본. C-OBS-02 curse-boss fix2는 준비 10.01초 생존 → 대상 교전 11타/2739 → 유입 복원 1까지 연결 수용·종료(반복 실행 없음). 새 집계 3행 산술은 맞음(3행 모두 outcome=not_completed). 집계 md의 horde TTK `0 (13/0)`은 「피해를 받은 개체」 분모(피해 받은 13 개체 표본/미처치 0)이지 장면 전체 생존 0이 아님 — 한 번도 맞지 않은 C05_firecultist_13 1 생존(alive_targets 1). 집계 md 끝 주석의 unsupported는 「관측 없음」이지 hook 없음·수치 0 확정이 아님(0504 해석 그대로).
 
 ## B 편입 (재실행 없음)
 
