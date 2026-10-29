@@ -216,6 +216,8 @@ function buildGameHud() {
     k.slot(n, { anchor: "middle-left", pos: [76 + i * 96, 0], rect_size: [88, 88] }, 60, "slot_skill");
     k.cooldown(n, 80);
     b.text(`${n}/Key`, key === "R" ? "우클릭" : key, { size: 18, color: C.white, anchor: "bottom-right", pos: [-4, 2], rect_size: [70, 22], alignment: 8, ...outline });
+    // 뼈 의식 단계별 재사용 (44 §4-1 B · UIKit.ShowRiteStages): 칸 바로 위 작은 줄 「회오리 6 · 화살 3」 — 그 칸에 의식이 있고 기다리는 단계가 있을 때만
+    b.text(`${n}/Stage`, "", { size: 16, bold: true, color: C.title, anchor: "top-center", pos: [0, 24], rect_size: [190, 24], alignment: 4, ...outline, enable: false });
   });
   ["1", "2", "3", "4"].forEach((key, i) => {
     const n = `Bottom/Slots/Belt${i + 1}`;
@@ -888,6 +890,8 @@ function patchShadowHud() {
   b_label(s, "MobilePad/Attack/Label", "공격", 28, "bottom-center");
   s.patch("MobilePad/Attack/Label", { pos: [0, 22] });
   k.cooldown("MobilePad/Attack", 210, true);
+  // 큰 단추(우클릭 자리)에 뼈 의식을 넣었을 때 단계별 재사용 (44 §4-1 B) — 아이콘 위쪽 빈자리
+  s.text("MobilePad/Attack/Stage", "", { size: 20, bold: true, color: C.title, anchor: "top-center", pos: [0, -16], rect_size: [180, 26], alignment: 4, ...outline, enable: false });
   // 편집 모드 표시 (스킬 편집을 누르면 켜짐: 누르는 칸에 스킬을 넣는다)
   const editMark = (path, size) => {
     s.text(`${path}/Edit`, "+", { size, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, 0], rect_size: [120, 120], ...outline, enable: false });
@@ -915,6 +919,8 @@ function patchShadowHud() {
     s.sprite(`${n}/Ring`, { anchor: "middle-center", pos: [0, 0], rect_size: [128, 128], ...part("orb_frame"), sprite_type: 0 });
     s.patchComponent(`${n}/Ring`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     k.cooldown(n, 112, true);
+    // 뼈 의식 단계별 재사용 (44 §4-1 B): 둥근 단추 안 아래쪽 작은 줄 (호 위 이웃 단추와 겹치지 않게 단추 안에)
+    s.text(`${n}/Stage`, "", { size: 18, bold: true, color: C.title, anchor: "bottom-center", pos: [0, 10], rect_size: [150, 24], alignment: 4, ...outline, enable: false });
     editMark(n, 64);
     if (i === 0) k.badge(n);   // 상황 안내: 해골 전사를 넣을 칸
   });

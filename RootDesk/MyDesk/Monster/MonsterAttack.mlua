@@ -914,24 +914,12 @@ script MonsterAttack extends AttackComponent
             if gst ~= nil then dmg = dmg * (1 - 0.25 * gst:ShrineBonus("ward")) end
         end
         local final = math.max(1, math.floor(dmg + 0.5))
-        -- 뼈 갑옷: 플레이어가 두른 흡수량만큼 대신 막는다. 강화 「가시 갑옷」이면 막은 만큼의 일부를 때린 몬스터에게 (서버만)
+        -- 뼈 갑옷: 플레이어가 두른 흡수량만큼 대신 막는다 (서버만). 다 깨지면 강화 「터지는 갑옷」이 둘레로 터진다 — PlayerStats.SoakBoneArmor
+        --   (10-29 44 결정 4: 막은 피해의 일부를 때린 몬스터에게 작은 틱으로 되돌리던 「가시 갑옷」을 바꿨다)
         if isvalid(defender.PlayerComponent) and self:IsServer() then
             ---@type PlayerStats
             local armorSt = defender:GetComponent("script.PlayerStats")
-            if armorSt ~= nil and armorSt.BoneArmor > 0 then
-                local absorbed = math.min(final, armorSt.BoneArmor)
-                armorSt.BoneArmor = armorSt.BoneArmor - absorbed
-                final = final - math.floor(absorbed)
-                ---@type SkillBook
-                local armorBook = defender:GetComponent("script.SkillBook")
-                local thorns = armorBook ~= nil and armorBook:Node("armor_thorns") or 0
-                if thorns > 0 and body ~= nil and absorbed > 0 then
-                    local back = absorbed * 0.25 * thorns
-                    _TimerService:SetTimerOnce(function()
-                        if isvalid(self.Entity) and not body.IsDead then body:TakeDamage(back, defender) end
-                    end, 0.05)
-                end
-            end
+            if armorSt ~= nil and armorSt.BoneArmor > 0 then final = armorSt:SoakBoneArmor(final) end
         end
         -- 가시 오오라를 받은 그림자를 평타로 때리면 그 일부가 돌아온다 (10-24 B안)
         if shadow ~= nil and attackInfo == "monster.basic" and self:IsServer() and body ~= nil and shadow:AuraAmount("thorns") > 0 then

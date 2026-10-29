@@ -362,13 +362,20 @@ script Projectile extends Component
                     local hitPos = m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0)
                     local dmg = self.Damage * (1 + self.SpikePct / 100 * self.PierceHits)   -- 「뼈 가시」: 꿰뚫을수록 세게
                     self.PierceHits = self.PierceHits + 1
-                    if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, dmg) end
+                    local bounced = false
                     if self.Info == "skill.bone_shard" and self.Bounces > 0 then
                         -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼). 「뼈 가시」는 튈 때마다 세진다 (10-28 A안)
+                        ---@type SkillEffects
                         local effects = self.Owner:GetComponent("script.SkillEffects")
-                        if effects ~= nil then effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage * (1 + self.SpikePct / 100), self.Bounces - 1, self.SpikePct) end
+                        if effects ~= nil then bounced = effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage * (1 + self.SpikePct / 100), self.Bounces - 1, self.SpikePct) end
                         self.Bounces = 0
                     end
+                    -- 「뼈 가시」(44 결정 4): 더 튀지 못하는 마지막 뼛조각(튕김을 다 썼거나 튈 적이 없다)에도 가시가 박힌다 — 예전엔 튕길 때만 붙어 튕김 0이면 효과 0
+                    if self.Info == "skill.bone_shard" and self.SpikePct > 0 and not bounced then
+                        dmg = dmg * (1 + self.SpikePct / 100)
+                        log(string.format("[VRF] shard spike last hit +%d%% dmg=%.0f", math.floor(self.SpikePct), dmg))
+                    end
+                    if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, dmg) end
                     if self.Info == "skill.frost_soul" and self.Splits > 0 then
                         -- 서리 혼 「쪼개짐」: 처음 맞은 적에서 서리 파편이 가까운 다른 적들에게 갈라져 나간다 (파편은 다시 갈라지지 않는다)
                         local effects = self.Owner:GetComponent("script.SkillEffects")
