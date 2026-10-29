@@ -1,7 +1,7 @@
 -- 파티 구출 화면 (기획서 39 #12A · 10-29 · 서버 PartyRescue가 부른다). ui/CoopHUD (tools/build/coop-hud.cjs).
---   구출하는 쪽: 내 머리 위 「○○ 일으키는 중」 + 3초 진행 막대 (업적 막대 양식 · UIKit.SetBar). 매 프레임 머리 위로 따라간다.
---   쓰러진 쪽: 위쪽 가운데 판 「파티원이 곁에 오면 일어날 수 있다」 + 마을 부활까지 남은 초 + 누가 일으키는 중이면 같은 막대 + 「마을에서 부활」 단추.
--- 막대 시간은 내 시계로 그린다 (서버가 시작·취소·완료만 알린다). 글귀는 모두 임시 (승인 전).
+--   구출하는 쪽: 내 머리 위 「○○ 일으키는 중」 + rescueSec(4초) 진행 막대 (업적 막대 양식 · UIKit.SetBar). 매 프레임 머리 위로 따라간다.
+--   쓰러진 쪽: 위쪽 가운데 판 「파티원이 곁에 오면 일어날 수 있습니다」 + 마을 부활까지 남은 초 + 누가 일으키는 중이면 같은 막대 + 「마을에서 부활」 단추.
+-- 막대 시간은 내 시계로 그린다 (서버가 시작·취소·완료만 알린다). 글귀는 10-29 사용자 확정 (docs/requests/copy-approval-20261029.md).
 @Logic
 script RescueHUD extends Logic
 
@@ -32,7 +32,7 @@ script RescueHUD extends Logic
         end
         self.BarStart = _UtilLogic.ElapsedSeconds
         self.BarSeconds = seconds
-        _UIKit:SetText(self.Bar .. "/Label", downedName .. " 일으키는 중")   -- 승인 전
+        _UIKit:SetText(self.Bar .. "/Label", downedName .. " 일으키는 중")
         _UIKit:SetBar(self.Bar .. "/Track/Fill", 0)
         _UIKit:SetEnabled(self.Bar, true)
         self:Follow()
@@ -44,8 +44,8 @@ script RescueHUD extends Logic
         self.DownUntil = _UtilLogic.ElapsedSeconds + waitSec
         self.HelpStart = 0
         self.HelpName = ""
-        _UIKit:SetText(self.Panel .. "/Title", "쓰러졌다")                                   -- 승인 전
-        _UIKit:SetText(self.Panel .. "/Text", "파티원이 곁에 오면 일어날 수 있다")              -- 승인 전 (결정 #12A 안내)
+        _UIKit:SetText(self.Panel .. "/Title", "쓰러졌다")
+        _UIKit:SetText(self.Panel .. "/Text", "파티원이 곁에 오면 일어날 수 있습니다")   -- 결정 #12A 안내
         _UIKit:SetEnabled(self.Panel .. "/HelpBar", false)
         _UIKit:SetEnabled(self.Panel, true)
         self:RenderDowned()
@@ -107,9 +107,9 @@ script RescueHUD extends Logic
         if self.HelpStart > 0 then
             local r = (_UtilLogic.ElapsedSeconds - self.HelpStart) / math.max(0.1, self.HelpSeconds)
             _UIKit:SetBar(self.Panel .. "/HelpBar/Fill", r)
-            _UIKit:SetText(self.Panel .. "/Help", self.HelpName .. "님이 일으키는 중…")   -- 승인 전
+            _UIKit:SetText(self.Panel .. "/Help", self.HelpName .. "님이 일으키는 중…")
         else
-            _UIKit:SetText(self.Panel .. "/Help", tostring(left) .. "초 뒤 마을에서 부활 · 파티원이 곁에서 " .. tostring(math.floor(_GameData.rescueSec)) .. "초 머물면 그 자리에서")   -- 승인 전
+            _UIKit:SetText(self.Panel .. "/Help", tostring(left) .. "초 뒤 마을에서 부활")
         end
     end
 

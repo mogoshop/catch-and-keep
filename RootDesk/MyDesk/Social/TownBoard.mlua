@@ -9,7 +9,7 @@
 -- 저장소 = 채널 공유 메모리 _RoomService:GetSharedMemory("TownBoardV1") 변수 하나 "board" (JSON · ETag로 겹쳐 쓰기 방지 — RoomSystem 방 목록과 같은 방식).
 --   공유 메모리 호출은 월드 전체 분당 1000번 한도: 읽기는 3초 모아 쓰고, 쓰기는 기록·켜기/끄기·초대 때만, 초대 확인은 「파티 찾는 중」인 사람이 있는 방만 4초마다.
 --   이벤트 처리 중에는 기다리는 호출(AndWait)을 하지 않고 잠깐 뒤에 쓴다 (RankingSystem.RecordProgressLater와 같은 이유).
--- 글귀는 모두 임시 (승인 전).
+-- 글귀는 10-29 사용자 확정 (docs/requests/copy-approval-20261029.md).
 @Logic
 script TownBoard extends Logic
 
@@ -169,7 +169,7 @@ script TownBoard extends Logic
         local kind = "boss"
         if e.sourceId == _GameConst.FinalBossSourceId and _GameConst:DifficultyOfMap(e.map.Name) == 0 then kind = "clear" end
         local center = isvalid(e.monster) and _Util:Pos2(e.monster) or Vector2(0, 0)
-        self:CreditTogether(e.map, center, (kind == "clear" and "노말 클리어 · " or "보스 처치 · ") .. what)   -- 승인 전
+        self:CreditTogether(e.map, center, (kind == "clear" and "노말 클리어 · " or "보스 처치 · ") .. what)
         self:AddRecordLater(kind, what, names)
     end
 
@@ -186,7 +186,7 @@ script TownBoard extends Logic
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         if amb ~= nil and amb.DisplayName ~= "" then place = amb.DisplayName end
-        self:CreditTogether(map, center, "습격 격퇴 · " .. place)   -- 승인 전
+        self:CreditTogether(map, center, "습격 격퇴 · " .. place)
         self:AddRecordLater("raid", place, names)
     end
 
@@ -223,7 +223,7 @@ script TownBoard extends Logic
         local n = math.floor(tonumber(journal.Counters.coop) or 0)
         _Telemetry:NoteRaid(p, "coopWins")
         local uid = p.PlayerComponent.UserId
-        _Util:Banner("함께 격퇴 · " .. tostring(n) .. "번째", what, uid)   -- 승인 전
+        _Util:Banner("함께 격퇴 · " .. tostring(n) .. "번째", what, uid)
         log("[VRF] coop win uid=" .. uid .. " n=" .. tostring(n) .. " what=" .. what)
     end
 
@@ -316,7 +316,7 @@ script TownBoard extends Logic
         local ok = self:Mutate(function(data) data.lfg[uid] = entry end)
         if on and ok then self.LocalLfg[uid] = _UtilLogic.ElapsedSeconds else self.LocalLfg[uid] = nil end
         self:EnsurePoll()
-        if not ok then _Util:Notify("게시판에 쓰지 못했다. 잠시 뒤 다시 시도하세요", uid) end   -- 승인 전
+        if not ok then _Util:Notify("게시판에 쓰지 못했습니다. 다시 시도해주세요", uid) end
         log("[VRF] board toggle uid=" .. uid .. " on=" .. tostring(on) .. " ok=" .. tostring(ok))
         self:SendBoard(uid)
     end
@@ -330,12 +330,12 @@ script TownBoard extends Logic
         local id = string.match(_RoomService.RoomKey or "", "^game:(.+)$")
         if not isvalid(player) or id == nil or not _Util:IsAlive(player) then return end
         if _UserService:GetUserCount() >= _GameConst.RoomMaxMembers then
-            _Util:Notify("이 게임은 이미 가득 찼다", uid)   -- 승인 전
+            _Util:Notify("이 게임은 이미 가득 찼습니다", uid)
             return
         end
         local target = self:ReadBoard(0).data.lfg[targetUid]
         if target == nil then
-            _Util:Notify("그 사람은 이제 파티를 찾지 않는다", uid)   -- 승인 전
+            _Util:Notify("그 사람은 이제 파티를 찾지 않습니다", uid)
             self:SendBoard(uid)
             return
         end
@@ -343,12 +343,12 @@ script TownBoard extends Logic
         local st = player:GetComponent("script.PlayerStats")
         local diff = st ~= nil and st.Difficulty or 0
         if math.floor(tonumber(target.m) or 0) < diff then
-            _Util:Notify("그 사람은 아직 " .. _GameConst:DifficultyName(diff) .. " 난이도를 열지 않았다", uid)   -- 승인 전
+            _Util:Notify("그 사람은 아직 " .. _GameConst:DifficultyName(diff) .. " 난이도를 열지 않았습니다", uid)
             return
         end
         local name = self:Clean(_PartySystem:NameOf(player), 16)
         local ok = self:Mutate(function(data) data.inv[targetUid] = { f = name, fu = uid, id = id, d = diff, t = DateTime.UtcNow.Elapsed } end)
-        _Util:Notify(ok and ("게임 초대를 보냈다: " .. tostring(target.n)) or "초대를 보내지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+        _Util:Notify(ok and (tostring(target.n) .. "님에게 초대를 보냈습니다") or "초대를 보내지 못했습니다. 다시 시도해주세요", uid)
         log("[VRF] board invite " .. uid .. " → " .. targetUid .. " room=" .. id .. " ok=" .. tostring(ok))
     end
 
@@ -425,18 +425,18 @@ script TownBoard extends Logic
         if self.Invites ~= nil then self.Invites[uid] = nil end
         if inv == nil or not accept then return end
         if not _Util:IsAlive(player) or not _GameConst:InGameRoom() then
-            _Util:Notify("지금은 다른 게임으로 옮길 수 없다", uid)   -- 승인 전
+            _Util:Notify("지금은 다른 게임으로 옮길 수 없습니다", uid)
             return
         end
         ---@type PlayerStats
         local stats = player:GetComponent("script.PlayerStats")
         if stats ~= nil and inv.d > stats.MaxDifficulty then
-            _Util:Notify("아직 열지 않은 난이도의 게임이다", uid)   -- 승인 전
+            _Util:Notify("아직 열지 않은 난이도의 게임입니다", uid)
             return
         end
         local code, memory = _RoomService:GetSharedMemory(_RoomSystem.ReturnMemory)
         if code ~= SharedMemoryResultCode.OK or memory == nil then
-            _Util:Notify("게임을 옮기지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+            _Util:Notify("게임을 옮기지 못했습니다. 다시 시도해주세요", uid)
             return
         end
         memory:SetVariableAndWait(uid, _HttpService:JSONEncode({ id = inv.id, d = inv.d, t = DateTime.UtcNow.Elapsed }))
@@ -456,7 +456,7 @@ script TownBoard extends Logic
         if moved == nil or moved == 0 then
             save:CancelRoomMove()
             _RoomSystem:ClearReturn(uid)
-            _Util:Notify("게임을 옮기지 못했다. 잠시 뒤 다시 시도하세요", uid)   -- 승인 전
+            _Util:Notify("게임을 옮기지 못했습니다. 다시 시도해주세요", uid)
         end
     end
 

@@ -11,8 +11,8 @@ const handmade = require("./handmade/lib.cjs");
 
 const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
-// 마을 게시판 배치 값 (글귀 임시 · 승인 전)
-const TOWN_BOARD_OVERRIDES = { "script.WorldNPC": { NpcName: "모집 판", Kind: "board" }, "MOD.Core.NameTagComponent": { Name: "모집 판" } };
+// 마을 게시판 배치 값 (10-29 글귀 확정 16: 판 이름표 = 여는 창 제목 「마을 게시판」 · 창 안 탭 이름 「모집 판」은 그대로)
+const TOWN_BOARD_OVERRIDES = { "script.WorldNPC": { NpcName: "마을 게시판", Kind: "board" }, "MOD.Core.NameTagComponent": { Name: "마을 게시판" } };
 
 function managedModelIds(monsters, npcs) {
   return new Set(["warpgate", "brazier", "bloodaltar", "waypoint", "depthgate", "artsprite", "townboard", ...monsters.map((m) => m.id), ...npcs.map((n) => n.id)]);

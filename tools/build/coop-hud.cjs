@@ -1,10 +1,10 @@
 'use strict';
 // 함께 하는 이유 UI (기획서 39 §7 · 결정 #12A · #14A · 10-29) — CoopHUD 그룹.
-//   RescueBar       : 파티 구출 — 구출하는 쪽 머리 위 3초 진행 막대 (화면 좌표로 따라다닌다 · RescueHUD.mlua)
-//   SafeArea/Downed : 쓰러진 쪽 안내 판 「파티원이 오면 일어날 수 있다」 + 구출 진행 막대 + 「마을에서 부활」
-//   SafeArea/BoardWin: 마을 게시판 창 — 탭 「모집 판」(파티 찾는 중 켜기/끄기 · 목록 5줄 · 초대) / 「오늘의 기록」(스크롤 글)
+//   RescueBar       : 파티 구출 — 구출하는 쪽 머리 위 진행 막대 (rescueSec 4초) (화면 좌표로 따라다닌다 · RescueHUD.mlua)
+//   SafeArea/Downed : 쓰러진 쪽 안내 판 「파티원이 곁에 오면 일어날 수 있습니다」 + 구출 진행 막대 + 「마을에서 부활」
+//   SafeArea/BoardWin: 마을 게시판 창 — 탭 「모집 판」(파티 찾기 켜기/끄기 · 목록 5줄 · 초대) / 「오늘의 기록」(스크롤 글)
 // 컨트롤러: RootDesk/MyDesk/UI/Hud/RescueHUD.mlua · UI/Windows/TownBoardWindow.mlua. 진행 막대는 lib.progressBar(업적 막대) 양식, 단추 88px 이상, 여백은 ui-tokens.
-// 그림은 기존 테마(win_frame · btn_frame · win_content) — 코덱스 게시판 그림(기획서 39 부록 C ⑦) 전까지 임시. 글귀도 임시 (승인 전).
+// 그림은 기존 테마(win_frame · btn_frame · win_content) — 코덱스 게시판 그림(기획서 39 부록 C ⑦) 전까지 임시. 글귀는 10-29 사용자 확정.
 const fs = require('fs');
 const { UIBuilder, P, load, progressBar } = require('./lib.cjs');
 const T = require('./ui-tokens.cjs');
@@ -60,7 +60,7 @@ function buildRescue(b) {
   b.text(`${d}/Title`, '쓰러졌다', { size: T.FRAME.titleSize, bold: true, color: C.title, anchor: 'top-center', pos: [0, -T.FRAME.titleTop], rect_size: [W - 120, T.FRAME.titleH], alignment: 4, ...outline });
   const x = T.FRAME.padX;
   let y = T.FRAME.contentTop;
-  b.text(`${d}/Text`, '파티원이 곁에 오면 일어날 수 있다', { size: 22, color: C.gold, anchor: 'top-left', pivot: [0, 1], pos: [x, -y], rect_size: [W - x * 2, 40], alignment: 3, bestfit: true, min_size: 16, max_size: 22, ...outline });
+  b.text(`${d}/Text`, '파티원이 곁에 오면 일어날 수 있습니다', { size: 22, color: C.gold, anchor: 'top-left', pivot: [0, 1], pos: [x, -y], rect_size: [W - x * 2, 40], alignment: 3, bestfit: true, min_size: 16, max_size: 22, ...outline });
   y += 40 + 12;
   b.text(`${d}/Help`, '', { size: 19, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x, -y], rect_size: [W - x * 2, 30], alignment: 3, bestfit: true, min_size: 14, max_size: 19 });
   y += 30 + 12;
@@ -83,8 +83,8 @@ function buildBoard(b) {
   // ① 모집 판
   const L = `${w}/Lfg`;
   b.empty(L, { anchor: 'middle-center', pos: [0, 0], rect_size: [W, H] });
-  btn(b, `${L}/BtnToggle`, '파티 찾는 중 · 켜기', { anchor: 'top-left', pivot: [0, 1], pos: [x, -y0], rect_size: [360, T.BUTTON.h] });
-  b.text(`${L}/Hint`, '켜 두면 이 채널의 다른 사람이 게시판에서 보고 초대할 수 있다', { size: 19, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x + 360 + T.FRAME.gap, -y0], rect_size: [innerW - 360 - T.FRAME.gap, T.BUTTON.h], alignment: 3, bestfit: true, min_size: 14, max_size: 19 });
+  btn(b, `${L}/BtnToggle`, '파티 찾기 켜기', { anchor: 'top-left', pivot: [0, 1], pos: [x, -y0], rect_size: [360, T.BUTTON.h] });
+  b.text(`${L}/Hint`, '켜 두면 이 채널 사람들이 나를 초대할 수 있습니다', { size: 19, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x + 360 + T.FRAME.gap, -y0], rect_size: [innerW - 360 - T.FRAME.gap, T.BUTTON.h], alignment: 3, bestfit: true, min_size: 14, max_size: 19 });
   const rowH = 96, rowGap = 8;
   const y1 = y0 + T.BUTTON.h + T.FRAME.gap;                 // 282
   for (let i = 1; i <= 5; i++) {
@@ -93,12 +93,12 @@ function buildBoard(b) {
     b.text(`${r}/Name`, '', { size: 21, color: C.gold, anchor: 'middle-left', pivot: [0, 0.5], pos: [20, 0], rect_size: [innerW - 20 - 240 - 16, 80], alignment: 3, bestfit: true, min_size: 14, max_size: 21, ...outline });
     btn(b, `${r}/BtnInvite`, '초대', { anchor: 'middle-right', pivot: [1, 0.5], pos: [-4, 0], rect_size: [240, T.BUTTON.h], font_size: 20 });
   }
-  b.text(`${L}/Empty`, '지금 파티를 찾는 사람이 없다', { size: 21, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x, -y1], rect_size: [innerW, rowH], alignment: 4, enable: false });
+  b.text(`${L}/Empty`, '지금 파티를 찾는 사람이 없습니다', { size: 21, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x, -y1], rect_size: [innerW, rowH], alignment: 4, enable: false });
 
   // ② 오늘의 기록
   const R = `${w}/Rec`;
   b.empty(R, { anchor: 'middle-center', pos: [0, 0], rect_size: [W, H] });
-  b.text(`${R}/Head`, '이 채널 · 오늘 (한국 시간)', { size: 20, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x, -y0], rect_size: [innerW, 36], alignment: 3 });
+  b.text(`${R}/Head`, '이 채널 · 오늘 · 한국 시간', { size: 20, color: C.dim, anchor: 'top-left', pivot: [0, 1], pos: [x, -y0], rect_size: [innerW, 36], alignment: 3 });
   b.panel(`${R}/Paper`, { anchor: 'top-left', pivot: [0, 1], pos: [x, -(y0 + 44)], rect_size: [innerW, H - (y0 + 44) - T.FRAME.padBottom], ...part('win_content'), sprite_type: 1 });
   scrollText(b, `${R}/Paper/List`, [T.INNER.pad, -T.INNER.pad / 2], [innerW - T.INNER.pad * 2, H - (y0 + 44) - T.FRAME.padBottom - T.INNER.pad], { size: 20, color: C.gold });
 }

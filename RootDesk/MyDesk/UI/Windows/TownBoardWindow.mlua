@@ -1,7 +1,7 @@
 -- 마을 게시판 창 (기획서 39 #14A · 10-29). 마을 광장 「모집 판」 곁에서 Space·B(대화 단추)로 연다 (NpcWindow.Talk → Open).
 --   탭 ① 모집 판: 「파티 찾는 중」 켜기/끄기 + 이 채널에서 파티를 찾는 사람 5줄 — 같은 방이면 「파티 초대」(기존 PlayerSocial 흐름), 다른 방이면 「내 게임에 초대」(TownBoard)
 --   탭 ② 오늘의 기록: 이 채널의 습격 격퇴 · 보스 처치 · 노말 클리어 (시각 · 이름, 최신이 위)
--- 데이터는 서버 TownBoard가 ShowBoard로 보낸다. 열려 있는 동안 5초마다 다시 묻고, 판에서 멀어지면 닫는다. ui/CoopHUD (tools/build/coop-hud.cjs). 글귀 임시 (승인 전).
+-- 데이터는 서버 TownBoard가 ShowBoard로 보낸다. 열려 있는 동안 5초마다 다시 묻고, 판에서 멀어지면 닫는다. ui/CoopHUD (tools/build/coop-hud.cjs). 글귀는 10-29 사용자 확정.
 @Logic
 script TownBoardWindow extends Logic
 
@@ -38,7 +38,7 @@ script TownBoardWindow extends Logic
     method void Open()
         _UIKit:Open(self.Win)
         self:SelectTab(self.Tab)
-        _UIKit:SetText(self.Win .. "/Lfg/R1/Name", "불러오는 중...")
+        _UIKit:SetText(self.Win .. "/Lfg/R1/Name", "불러오는 중…")
         self:Request()
         log("[VRF] board open tab=" .. self.Tab)
     end
@@ -89,9 +89,9 @@ script TownBoardWindow extends Logic
         -- 서버 TownBoard.SendBoard 결과
         if not _UIKit:IsOpen(self.Win) then return end
         self.LfgOn = on
-        _UIKit:SetText(self.Win .. "/Lfg/BtnToggle", on and "파티 찾는 중 · 끄기" or "파티 찾는 중 · 켜기")   -- 승인 전
+        _UIKit:SetText(self.Win .. "/Lfg/BtnToggle", on and "파티 찾기 끄기" or "파티 찾기 켜기")
         _UIKit:SetColor(self.Win .. "/Lfg/BtnToggle", on and Color(0.62, 1, 0.66, 1) or Color(1, 1, 1, 1))
-        _UIKit:SetText(self.Win .. "/Lfg/Hint", on and "이 채널 게시판에 내 이름이 보인다 · 이 게임을 떠나면 꺼진다" or "켜 두면 이 채널의 다른 사람이 게시판에서 보고 초대할 수 있다")   -- 승인 전
+        _UIKit:SetText(self.Win .. "/Lfg/Hint", on and "이 채널 게시판에 내 이름이 보입니다 · 이 게임을 떠나면 꺼집니다" or "켜 두면 이 채널 사람들이 나를 초대할 수 있습니다")
         self:RenderLfg(lfg)
         self:RenderRec(rec, ok)
     end
@@ -115,7 +115,7 @@ script TownBoardWindow extends Logic
                 self.Same[i] = r.same
                 local where = r.same and _UIKit:Colored("#9EE6A0", "같은 게임") or _UIKit:Colored("#9C9488", r.place)
                 _UIKit:SetText(row .. "/Name", r.name .. "  Lv" .. r.lv .. "  " .. _UIKit:Colored("#C9BBA0", r.diff) .. "  · " .. where)
-                local label = r.party and "같은 파티" or (r.same and "파티 초대" or "내 게임에 초대")   -- 승인 전
+                local label = r.party and "같은 파티" or (r.same and "파티 초대" or "내 게임에 초대")
                 _UIKit:SetText(row .. "/BtnInvite", r.can and label or _UIKit:Colored("#7A7268", label))
                 _UIKit:SetEnabled(row .. "/BtnInvite", true)
                 local btn = _UIKit:Get(row .. "/BtnInvite")
@@ -128,7 +128,7 @@ script TownBoardWindow extends Logic
     @ExecSpace("ClientOnly")
     method void RenderRec(string digest, boolean ok)
         -- 줄 = "HH:MM|종류|무엇|이름들" (최신이 위)
-        local kinds = { raid = "습격 격퇴", boss = "보스 처치", clear = "노말 클리어" }   -- 승인 전
+        local kinds = { raid = "습격 격퇴", boss = "보스 처치", clear = "노말 클리어" }
         local colors = { raid = "#E6C88A", boss = "#FF8A6A", clear = "#B48CFF" }
         local lines = {}
         for entry in string.gmatch(digest .. ";", "([^;]*);") do
@@ -137,7 +137,7 @@ script TownBoardWindow extends Logic
                 table.insert(lines, _UIKit:Colored("#9C9488", t) .. "  " .. _UIKit:Colored(colors[k] or "#E6DCC6", kinds[k] or k) .. " · " .. w .. "\n      " .. n)
             end
         end
-        if #lines == 0 then lines = { ok and "오늘은 아직 기록이 없다" or "게시판을 불러오지 못했다 — 잠시 뒤 다시 열어 보세요" } end   -- 승인 전
+        if #lines == 0 then lines = { ok and "오늘은 아직 기록이 없습니다" or "게시판을 불러오지 못했습니다. 다시 시도해주세요" } end
         _UIKit:SetScrollText(self.Win .. "/Rec/Paper/List", table.concat(lines, "\n"))
     end
 

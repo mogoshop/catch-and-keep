@@ -6,6 +6,7 @@ script ConfirmDialog extends Logic
     property string Root = "/ui/ConfirmHUD/SafeArea/Dim"
     property any OnYes = nil
     property any OnNo = nil
+    property boolean EnterCancels = false   -- 버리기·분해·파괴·삭제처럼 되돌릴 수 없는 확인: Enter = 취소 (10-29 45 §5 · 글귀 확정 80 — 단추 글은 그대로)
     property string PickRoot = "/ui/ConfirmHUD/SafeArea/Pick"   -- 조작 방식 고르기 (카드 두 장)
     property any OnPick = nil
 
@@ -48,6 +49,8 @@ script ConfirmDialog extends Logic
         _UIKit:SetIcon(self.Root .. "/Box/Icon", icon)
         _UIKit:SetPos(self.Root .. "/Box/Body", Vector2(0, icon ~= "" and -150 or -86))
         self.OnYes = onYes
+        local label = yesLabel ~= "" and yesLabel or "확인"
+        self.EnterCancels = label == "버리기" or label == "분해" or label == "파괴" or label == "삭제"
         _UIKit:SetText(self.Root .. "/Box/Title", title)
         _UIKit:SetText(self.Root .. "/Box/Body", body)
         _UIKit:SetText(self.Root .. "/Box/BtnYes", yesLabel ~= "" and yesLabel or "확인")
@@ -56,7 +59,7 @@ script ConfirmDialog extends Logic
         _UIKit:SetEnabled(self.Root, true)
         local e = _UIKit:Get(self.Root)
         if isvalid(e) then _UILogic:SetSiblingIndex(e.UITransformComponent, 1000000) end
-        log("[VRF] confirm show " .. title)
+        log("[VRF] confirm show " .. title .. " enterCancels=" .. tostring(self.EnterCancels))
     end
 
     @ExecSpace("ClientOnly")
@@ -92,9 +95,12 @@ script ConfirmDialog extends Logic
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyDownEvent(KeyDownEvent event)
-        -- Enter = 확인 (Esc는 UIKit.HandleKeyDownEvent → OnEscape 한 곳에서)
+        -- Enter = 확인, 되돌릴 수 없는 확인(EnterCancels)은 Enter = 취소 (Esc는 UIKit.HandleKeyDownEvent → OnEscape 한 곳에서)
         if not _UIKit:IsOpen(self.Root) then return end
-        if event.key == KeyboardKey.Return then self:Answer(true) end
+        if event.key == KeyboardKey.Return or event.key == KeyboardKey.KeypadEnter then
+            log("[VRF] confirm enter cancel=" .. tostring(self.EnterCancels))
+            self:Answer(not self.EnterCancels)
+        end
     end
 
 end

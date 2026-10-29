@@ -571,8 +571,8 @@ function genSkills() {
     method string TreeName(string tree)
         -- 계열 이름: 소환·영혼·저주·이동 (스킬 창·아이템 옵션 공통, docs/design/19 · 기동 10-20)
         if tree == "command" then return "소환" end
-        if tree == "soul" then return "영혼" end
-        if tree == "move" then return "이동" end
+        if tree == "soul" then return "주문" end
+        if tree == "move" then return "걸음" end
         return "저주"
     end
 `;

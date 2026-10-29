@@ -1,9 +1,9 @@
--- 파티 구출 (기획서 39 §7 A · 결정 #12A · 10-29): 쓰러진 파티원 곁 rescueRange(1.5칸) 안에 다른 파티원이 rescueSec(3초) 머물면 그 자리에서 일어난다.
+-- 파티 구출 (기획서 39 §7 A · 결정 #12A · 10-29): 쓰러진 파티원 곁 rescueRange(1.5칸) 안에 다른 파티원이 rescueSec(4초 · 10-29 사용자: 3초는 너무 빠르다) 머물면 그 자리에서 일어난다.
 --   생명 rescueHpPct(50%) · 그 자리의 내 시체(장비·되찾을 경험치)를 함께 회수 (PlayerCorpses.RecoverAt) · 사망 벌칙(골드·경험치 손실)은 쓰러질 때 이미 적용된 그대로.
 --   같은 맵에 살아 있는 파티원이 있을 때만 마을 부활 전에 rescueWaitSec 기다린다. 없거나 시간이 지나면 지금처럼 마을에서 부활 (시체 걷기).
 --   쓰러진 쪽은 「마을에서 부활」 단추로 바로 갈 수 있다 (RequestGiveUp).
 --   심연(목숨 하나)·결투 패배는 PlayerVitals.Die가 여기까지 오지 않는다 → 꺼짐.
---   화면: 구출하는 쪽 머리 위 3초 진행 막대 · 쓰러진 쪽 안내 판 (RescueHUD · ui/CoopHUD). 글귀는 모두 임시 (승인 전).
+--   화면: 구출하는 쪽 머리 위 rescueSec 진행 막대 · 쓰러진 쪽 안내 판 (RescueHUD · ui/CoopHUD). 글귀는 10-29 사용자 확정.
 @Logic
 script PartyRescue extends Logic
 
@@ -122,16 +122,16 @@ script PartyRescue extends Logic
 
     @ExecSpace("ServerOnly")
     method void Done(string uid, table d, PlayerVitals vitals)
-        -- 3초를 채웠다: 그 자리에서 일어나 시체를 함께 회수한다
+        -- rescueSec를 채웠다: 그 자리에서 일어나 시체를 함께 회수한다
         local hid = d.rescuer
         local helper = _UserService:GetUserEntityByUserId(hid)
         self:Clear(uid, d, "done")
         vitals:ReviveInPlace(d.pos, _GameData.rescueHpPct)
         local name = _PartySystem:NameOf(d.player)
         if isvalid(helper) then
-            _Util:Notify(name .. "님을 일으켜 세웠다", hid)   -- 승인 전
+            _Util:Notify(name .. "님을 일으켜 세웠습니다", hid)
             _Telemetry:NoteRaid(helper, "rescues")         -- 세션 텔레메트리 카운터 (NoteRaid는 이름만 습격 — 아무 키나 +1)
-            _Util:Banner("다시 일어났다", _PartySystem:NameOf(helper) .. "님이 일으켜 세웠다 · 시체는 함께 되찾았다", uid)   -- 승인 전
+            _Util:Banner("다시 일어났다", _PartySystem:NameOf(helper) .. "님이 일으켜 세웠습니다 · 시체도 함께 되찾았습니다", uid)
         end
         log("[VRF] rescue done downed=" .. uid .. " by=" .. hid)
     end

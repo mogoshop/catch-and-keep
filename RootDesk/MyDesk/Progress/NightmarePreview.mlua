@@ -1,4 +1,4 @@
--- 노말 끝 「다음 난이도 미리보기」 (기획서 43 §3-4 ④-a · §10 결정 7 · 구현 단계 43-0, 10-29). 글귀는 모두 임시(승인 전 · §8 후보).
+-- 노말 끝 「다음 난이도 미리보기」 (기획서 43 §3-4 ④-a · §10 결정 7 · 구현 단계 43-0, 10-29). 글귀는 10-29 사용자 확정 (docs/requests/copy-approval-20261029.md).
 --   ① 카드 1장: 보통의 재의 왕을 쓰러뜨려 악몽이 열렸거나(PlayerStats.MaxDifficulty ≥ 1 — ProgressionSystem이 올린다) Lv40에 닿으면,
 --      마을에서 다른 창·이야기 카드가 모두 닫힌 뒤 한 번 띄운다. 양식은 혼의 제물·선택 보상 카드(GameHUD OfferWin)를 그대로 — PreviewWin (tools/build/ui.cjs).
 --      한 번 본 것은 PlayerQuest.StorySeen의 "nmpreview"로 캐릭터 저장에 남는다 (이야기 카드와 같은 저장 · 닫을 때 MarkStory).
@@ -98,7 +98,7 @@ script NightmarePreview extends Logic
     end
 
     method string GrailLockText(table g)
-        -- 아이템 도감 못 찾은 줄의 값 칸: 보통에서 나오는 것은 「???」, 아니면 「악몽부터」·「지옥부터」 (글귀 승인 전)
+        -- 아이템 도감 못 찾은 줄의 값 칸: 보통에서 나오는 것은 「???」, 아니면 「악몽부터」·「지옥부터」
         local d = self:FirstDiffOfGrail(g)
         if d <= 0 then return "???" end
         return _UIKit:Colored(d == 1 and "#B48CE0" or "#E07A6A", _GameConst:DifficultyName(d) .. "부터")
@@ -125,9 +125,9 @@ script NightmarePreview extends Logic
         local act = _GameConst:ActOfBossSource(_GameConst.FinalBossSourceId)
         local prev = _GameConst:DifficultyName(diff - 1)
         if act > 1 then
-            return string.format("%s 난이도에서 액트 %d 의뢰까지 끝낸 뒤, 액트 %d의 「%s」를 쓰러뜨리면 열립니다", prev, act - 1, act, boss)
+            return string.format("%s에서 액트 %d 의뢰를 마치고 %s를 쓰러뜨리면 열립니다", prev, act - 1, boss)
         end
-        return string.format("%s 난이도에서 「%s」를 쓰러뜨리면 열립니다", prev, boss)
+        return string.format("%s에서 %s를 쓰러뜨리면 열립니다", prev, boss)
     end
 
     -- ───────── 카드 ─────────
@@ -182,17 +182,17 @@ script NightmarePreview extends Logic
         local elitePct = nm ~= nil and math.floor((nm.eliteVariantChance or 0) * 100 + 0.5) or 0
         local name = _GameConst:DifficultyName(1)
         local gold = "#E6C88A"
+        -- 목록은 숫자 없이 (10-29 글귀 확정 58~62 — 개수는 도감에서 본다)
         local lines = {
-            "· 보통에서는 나오지 않는 " .. _UIKit:Colored(gold, "유니크 " .. tostring(c.u) .. "종") .. " · " .. _UIKit:Colored(gold, "세트 조각 " .. tostring(c.s) .. "개"),
-            "· 상급 룬으로 짜는 " .. _UIKit:Colored(gold, "룬워드 " .. tostring(c.r) .. "종"),
-            "· 정예 " .. tostring(elitePct) .. "%가 능력을 지닌다" .. (dual and " — 우두머리는 " .. _UIKit:Colored(gold, "능력 둘") .. ", 붙잡으면 그대로 그림자로" or ""),
+            "· 보통에서는 나오지 않는 " .. _UIKit:Colored(gold, "유니크") .. "와 " .. _UIKit:Colored(gold, "세트"),
+            "· 상급 룬으로 짜는 " .. _UIKit:Colored(gold, "룬워드"),
+            "· 능력을 지닌 정예" .. (dual and (" — 우두머리는 " .. _UIKit:Colored(gold, "능력 둘") .. ",\n   붙잡으면 그대로 그림자로") or ""),   -- 한 줄이 칸보다 길어 「그림자로」가 글자 중간에서 접혔다 → 쉼표 뒤에서 줄을 나눈다
             "· 보스마다 " .. _UIKit:Colored(gold, "기술 하나 더"),
-            "· 선택 보상이 " .. _UIKit:Colored(gold, "한 단계 더") .. " (2단)",
+            "· 선택 보상이 " .. _UIKit:Colored(gold, "한 단계 더"),
         }
-        local foot = st.MaxDifficulty >= 1 and "웨이포인트에서 난이도를 바꿀 수 있다" or self:UnlockConditionText(1)
-        -- 제목·부제 글귀는 승인 전 (45 §5 후보) — 화면에는 「(승인 전)」 꼬리표를 붙이지 않는다 (10-29 45 §2-7)
-        _UIKit:SetText(self.Win .. "/Title", name .. "에서 새로 깨어나는 것들")
-        _UIKit:SetText(self.Win .. "/Sub", "같은 밤이 다시 온다. 이번엔 더 깊이.")
+        local foot = st.MaxDifficulty >= 1 and "웨이포인트에서 난이도를 바꿀 수 있습니다" or self:UnlockConditionText(1)
+        _UIKit:SetText(self.Win .. "/Title", name .. "에서 깨어나는 것들")
+        _UIKit:SetText(self.Win .. "/Sub", "같은 밤, 더 깊이.")
         _UIKit:SetText(self.Win .. "/Card/Kind", name)
         _UIKit:SetText(self.Win .. "/Card/Name", "문 아래의 붉은 틈")
         _UIKit:SetText(self.Win .. "/List/Body", table.concat(lines, "\n"))

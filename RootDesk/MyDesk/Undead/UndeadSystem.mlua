@@ -6,7 +6,7 @@
 -- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 영구 저장하지 않는다. 방 이동은 공유 메모리의 일회성 전달을 쓴다.
 -- 유닛 엔티티는 그림자와 같은 shadowunit 모델(ShadowUnit, Kind만 다름)을 쓴다.
 -- 첫 처치 맛보기 그림자 (기획서 39 결정 #3A, 10-29): ShadowSystem.TryFirstTaste → SpawnTaste. 되살림 칸(kind "revive", rec.taste)을 빌려
---   firstTasteSec초 뒤 사라진다 — 그림자 보관함·소환 상한(ShadowCommander) 밖이라 장비·추출·강화가 없고 저장되지 않는다. 머리 위 「잡으면 내 편 (N초)」
+--   firstTasteSec초 뒤 사라진다 — 그림자 보관함·소환 상한(ShadowCommander) 밖이라 장비·추출·강화가 없고 저장되지 않는다. 머리 위 이름표 없음 (10-29 사용자)
 @Logic
 script UndeadSystem extends Logic
 
@@ -89,7 +89,7 @@ script UndeadSystem extends Logic
         local userId = player.PlayerComponent.UserId
         local picks = self:LiveUnits(player, "skeleton")
         if #picks < stage then
-            _Util:Warn("해골 전사가 모자란다 (" .. tostring(#picks) .. "/" .. tostring(stage) .. ")", userId)
+            _Util:Warn("해골 전사가 " .. tostring(stage - #picks) .. "기 모자랍니다", userId)
             log(string.format("[VRF] rite stage=%d skel=%d short", stage, #picks))
             return false
         end
@@ -127,7 +127,7 @@ script UndeadSystem extends Logic
         -- riteGiantSeconds 뒤 남은 생명 비율대로 다섯으로 갈라진다 (EndGiant). 거인이 쓰러지면 다섯 모두 무너진다
         local uid = player.PlayerComponent.UserId
         if self.Giants[uid] ~= nil then
-            _Util:Warn("이미 뼈 거인이 서 있다", uid)
+            _Util:Warn("이미 뼈 거인이 서 있습니다", uid)
             return false
         end
         local n = #picks
@@ -524,8 +524,8 @@ script UndeadSystem extends Logic
             self:RefreshSummary(player)
             self:PlaySummonFx(player, pos)
             _Telemetry:First(player, "taste")
-            -- 한 줄 안내 (글귀 승인 전): 사라질 때 Lv5 안내를 한 번 더
-            _Util:Notify("쓰러뜨린 적이 잠시 그림자로 일어섰다 — 잡으면 내 편 (" .. tostring(math.floor(_GameData.firstTasteSec)) .. "초)", player.PlayerComponent.UserId)
+            -- 한 줄 안내 (10-29 사용자 확정): 남은 초는 따로 알리지 않는다 · 사라질 때 Lv5 안내 한 줄만 더
+            _Util:Notify("쓰러뜨린 적이 잠시 그림자로 일어섰다", player.PlayerComponent.UserId)
             log(string.format("[VRF] first-kill shadow spawn src=%s atk=%d hp=%d sec=%d", sourceId, rec.atk, rec.hp, math.floor(_GameData.firstTasteSec)))
         end, function()
             self:Remove(player, rec.id)
@@ -722,9 +722,8 @@ script UndeadSystem extends Logic
             unit.SpriteRendererComponent.Color = rec.tint
             u:SetBaseSpeed(rec.speed)
             if rec.taste then
-                -- 첫 처치 맛보기 그림자: 머리 위 남은 초 (ShadowUnit.RefreshView) · 그림자 보라 발밑 원
-                u.HeadLabel = "잡으면 내 편"   -- 글귀 승인 전
-                u.TasteUntil = _UtilLogic.ServerElapsedSeconds + math.max(0, rec.expireAt - _UtilLogic.ElapsedSeconds)
+                -- 첫 처치 맛보기 그림자: 그림자 보라 발밑 원만 (머리 위 남은 초 이름표는 10-29 사용자 확정으로 없앴다)
+                u.Taste = true
             end
             if onReady ~= nil then onReady() end
         end, function()
@@ -789,7 +788,7 @@ script UndeadSystem extends Logic
         for _, rec in ipairs(self:ListOf(player)) do
             if rec.id == id and rec.taste then
                 if isvalid(rec.entity) then self:PlaySummonFx(player, _Util:Pos2(rec.entity)) end
-                _Util:Notify("그림자가 재로 흩어졌다 — Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 혼을 거둬 직접 부릴 수 있다", player.PlayerComponent.UserId)   -- 글귀 승인 전
+                _Util:Notify("그림자가 흩어졌습니다 · Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 직접 거두세요", player.PlayerComponent.UserId)   -- 안내 줄 한 줄에 들게 (「거둘 수 있습니다」는 메이커에서 끝 글자가 다음 줄로 넘쳤다)
                 log("[VRF] first-kill shadow expire id=" .. id)
                 break
             end
@@ -995,7 +994,7 @@ script UndeadSystem extends Logic
         if mg > 0 then table.insert(parts, "마법사 " .. tostring(n.mage) .. "/" .. tostring(self:MaxFor(player, "mage", mg))) end
         if n.revive > 0 then table.insert(parts, "되살림 " .. tostring(n.revive)) end
         if self.Giants[player.PlayerComponent.UserId] ~= nil then table.insert(parts, "뼈 거인") end
-        -- 되살림 스킬은 10-20에 빠져 지금 「되살림」 칸은 첫 처치 맛보기 그림자뿐 — 상태줄은 「그림자(잠시)」로 (글귀 승인 전)
+        -- 되살림 스킬은 10-20에 빠져 지금 「되살림」 칸은 첫 처치 맛보기 그림자뿐 — 상태줄은 「그림자(잠시)」로
         if n.revive > 0 then
             local taste = 0
             for _, rec in ipairs(self:ListOf(player)) do if rec.kind == "revive" and rec.taste then taste = taste + 1 end end

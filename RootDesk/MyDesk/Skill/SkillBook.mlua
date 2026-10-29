@@ -437,6 +437,7 @@ script SkillBook extends Component
             offering_heal = string.format("뼈 성찬 회복량 +%d%%", 20 * level),
             offering_wide = string.format("뼈 성찬 범위 %.1f", 4 * (1 + 0.25 * level)),
             offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
+            skel_resonance = string.format("해골 공격력 ×%.1f · 반경 %.1f칸 · 해골마다 %.1f초", _SkeletonResonance.AtkMult, _SkeletonResonance.Radius, _SkeletonResonance.Cooldown),
             dash_ghost = string.format("질주 무적 %.2f초", 0.3 + 0.05 * level),
             dash_charge = string.format("질주 %d번 연달아", 1 + level),
             dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
@@ -483,10 +484,10 @@ script SkillBook extends Component
         end
         if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
         if id == "bone_rite" then
-            -- (승인 전 임시 글귀) 단계별 한 줄: 1기 폭탄 · 2기 회오리 · 3기 화살 · 5기 거인 (악몽이 열리기 전에는 「악몽부터」)
+            -- 단계별 한 줄: 단계 이름으로 (10-29 글귀 확정 43 — 「1기·2기」가 해골 수인지 헷갈렸다). 악몽이 열리기 전 거인은 「거인 악몽부터」
             local rank = self:RiteRankMul(level)
-            local giant = self:RiteGiantUnlocked() and string.format("5기 거인 %d초", math.floor(_GameData.riteGiantSeconds)) or "5기 악몽부터"
-            return string.format("1기 ×%.2f·반경 %.2f%s · 2기 ×%.2f×%d · 3기 ×%.1f×3 · %s",
+            local giant = self:RiteGiantUnlocked() and string.format("거인 %d초", math.floor(_GameData.riteGiantSeconds)) or "거인 악몽부터"
+            return string.format("폭탄 ×%.2f·반경 %.2f%s · 회오리 ×%.2f×%d · 화살 ×%.1f×3 · %s",
                 power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and "·2기 돌진" or "",
                 _GameData.riteWhirlMul * rank, math.floor(_GameData.riteWhirlSeconds / 0.5), _GameData.riteArrowMul * rank, giant)
         end
@@ -836,7 +837,7 @@ script SkillBook extends Component
         local stage = self:RiteBestStage(want, stats.Mana - self.PendingMana)
         if stage == 0 then
             if not self:RiteReady("bone_rite") then return false end
-            if skel <= 0 then _Util:Warn("바칠 해골 전사가 없다 — 해골 전사를 먼저 일으키세요", userId)
+            if skel <= 0 then _Util:Warn("바칠 해골 전사가 없습니다", userId)
             else _Util:Warn("마나 부족", userId) end
             log(string.format("[VRF] rite stage=0 skel=%d want=%d reason=%s", skel, want, skel <= 0 and "no_skeleton" or "mana"))
             return false
@@ -1320,9 +1321,7 @@ script SkillBook extends Component
         end
         log(string.format("[VRF] rite migrate bomb=%d rite=%d refund=%d lv=%d nodes=%s", bomb, riteLv, back, playerLevel, table.concat(moved, ",")))
         local userId = self.Entity.PlayerComponent.UserId
-        -- 알림 글귀는 승인 전 (45 §2-7) — 화면에는 「(승인 전 임시 글귀)」 꼬리표를 붙이지 않는다
-        if riteLv > 0 then _Util:Notify("해골 폭탄이 「뼈 의식」의 1기 단계가 됐다 — 같은 칸을 길게 누르면 뼈 회오리·뼈 화살", userId)
-        else _Util:Notify("해골 폭탄이 Lv24 「뼈 의식」으로 합쳐졌다 — 쓴 포인트는 돌려받았다", userId) end
+        -- 옮겼다는 알림은 띄우지 않는다 (10-29 사용자: 변경 해명·이전 안내 알림은 만들지 않는다)
         return back
     end
 

@@ -246,7 +246,7 @@ function buildGameHud() {
   });
   // PC 메뉴 줄: 아이콘 + 아래 메뉴 이름 + 오른쪽 위 단축키 (귀환은 벨트 칸으로 옮겨 메뉴에서 뺐다)
   const MENU = [["BtnInv", K.icon_bag, "I", "소지품"], ["BtnChar", K.icon_stats, "U", "능력치"], ["BtnSkill", K.icon_skill, "K", "스킬"], ["BtnShadow", K.icon_shadow, "H", "그림자"],
-    ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "플레이어"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "그림자 추출"]];
+    ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "파티플레이"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "그림자 추출"]];
   b.empty("Bottom/Menu", { anchor: "top-center", pos: [0, 92], rect_size: [MENU.length * 88, 84] });
   MENU.forEach(([n, ruid, key, label], i) => {
       const path = `Bottom/Menu/${n}`;
@@ -262,7 +262,7 @@ function buildGameHud() {
   // ── 메뉴 창 (모바일·PC 공용): 모든 창을 한곳에서 ──
   k.frame("MenuWin", "middle-center", [0, 20], [800, 740], "메뉴");
   [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
-    ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "플레이어"],
+    ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "파티플레이"],
     ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬워드"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const path = `MenuWin/${n}`;
@@ -305,7 +305,7 @@ function buildGameHud() {
   ["쉬기", "전부", "쓸 만한 것", "희귀 이상", "유니크·세트"].forEach((t, i) =>
     k.btn(`PetWin/F${i}`, t, { anchor: "top-left", pos: [40 + i * 178, -602], rect_size: [168, 72], font_size: 20 }));
   b.text("PetWin/FilterDesc", "", { size: 19, color: C.dim, alignment: 0, anchor: "top-left", pos: [44, -688], rect_size: [880, 110], ...outline });
-  b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 플레이어 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
+  b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 파티플레이 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
 
@@ -517,7 +517,7 @@ function buildGameHud() {
   k.btn("OfferWin/BtnBoard", "보드에서 직접 고르기 (K)", { anchor: "bottom-right", pos: [-51, 48], rect_size: [420, 88], font_size: 22 });
 
   // ── 노말 끝 「다음 난이도 미리보기」 카드 1장 (기획서 43 ④-a · 결정 7, 10-29) — 컨트롤러 Progress/NightmarePreview.mlua ──
-  //   혼의 제물·선택 보상 카드(위 OfferWin)와 같은 양식: 창 틀 + 카드 그림(sk_offer_card_new) 한 장 + 오른쪽 목록 + 확인 단추. 글귀는 임시(승인 전)
+  //   혼의 제물·선택 보상 카드(위 OfferWin)와 같은 양식: 창 틀 + 카드 그림(sk_offer_card_new) 한 장 + 오른쪽 목록 + 확인 단추. 글귀는 10-29 사용자 확정
   //   카드 안 Art = 그림 자리 (코덱스 「문 아래 붉은 틈」이 오면 ui_icons preview_nightmare로 NightmarePreview가 바꿔 낀다)
   k.frame("PreviewWin", "middle-center", [0, 20], [1100, 640], "다음 난이도");
   b.text("PreviewWin/Sub", "", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [1000, 30], alignment: 3 });
@@ -527,9 +527,10 @@ function buildGameHud() {
   b.patchComponent("PreviewWin/Card/Art", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   // 그림이 오기 전에는 빈 틀만 (10-29 45 §2-7: 「그림 자리」 글자가 화면에 보였다)
   b.text("PreviewWin/Card/Name", "", { size: 22, bold: true, color: C.title, anchor: "top-center", pos: [0, -296], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 22, ...outline });
-  k.inner("PreviewWin/List", "top-left", [430, -116], [610, 404]);
-  b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 360], bestfit: true, min_size: 16, max_size: 22 });
-  b.text("PreviewWin/Foot", "", { size: 18, color: C.dim, anchor: "bottom-left", pos: [60, 128], rect_size: [980, 28], alignment: 3, bestfit: true, min_size: 14, max_size: 18 });
+  // 목록 칸을 줄이고 아래 줄(해금 조건 · 「웨이포인트에서 …」)은 목록 밑 오른쪽 칸으로 (10-29: 카드 틀 아래 장식과 글이 겹쳤다)
+  k.inner("PreviewWin/List", "top-left", [430, -116], [610, 340]);
+  b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 296], bestfit: true, min_size: 16, max_size: 22 });
+  b.text("PreviewWin/Foot", "", { size: 18, color: C.dim, anchor: "top-left", pivot: [0, 1], pos: [434, -470], rect_size: [606, 44], alignment: 3, bestfit: true, min_size: 14, max_size: 18 });
   k.ok("PreviewWin/BtnOk", "확인", { anchor: "bottom-center", pos: [0, 28], rect_size: [300, 88], font_size: 24 });
 
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
@@ -622,8 +623,8 @@ function buildGameHud() {
   k.inner("QuestWin/DescBox", "bottom-center", [0, 24], [720, 120], "win_content");
   b.text("QuestWin/DescBox/Desc", "", { size: 18, color: C.gold, alignment: 0, anchor: "top-left", pos: [14, -10], rect_size: [692, 100] });
 
-  // ── 플레이어 창 (P): 파티 초대 / 결투 / 거래 / 살펴보기(10-24), 파티 탈퇴 ──
-  k.frame("SocialWin", "middle-center", [0, 60], [800, 660], "플레이어");
+  // ── 파티플레이 창 (P): 파티 초대 / 결투 / 거래 / 살펴보기(10-24), 파티 탈퇴 ──
+  k.frame("SocialWin", "middle-center", [0, 60], [800, 660], "파티플레이");
   for (let i = 1; i <= 8; i++) {
     const y = -88 - (i - 1) * 62;
     b.text(`SocialWin/Name${i}`, "", { size: 19, color: C.gold, alignment: 3, anchor: "top-left", pos: [40, y], rect_size: [262, 54], bestfit: true, min_size: 13, max_size: 19, ...outline });
@@ -805,7 +806,7 @@ function buildGameHud() {
       b.text(`${n}/Label`, "", { size: T.TAB.font, bold: true, color: C.gold, alignment: 4, anchor: "middle-left", pos: [labelX, 0], rect_size: [labelW, 44], bestfit: true, min_size: T.TAB.minFont, max_size: T.TAB.font, ...outline });
       k.badge(n);
     });
-    b.text("GuideWin/Tabs/Hint", "메뉴 → 게임 안내에서\n언제든 다시 볼 수 있어요", { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [tabW - 32, 56] });
+    b.text("GuideWin/Tabs/Hint", "게임 안내는 메뉴에서\n다시 볼 수 있습니다", { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [tabW - 32, 56] });
     // 화면 칸: 검은 바탕 + 그림(꺼짐, 쪽에 그림이 있을 때 켠다) + 준비 중 글 + 칸 테두리
     b.panel("GuideWin/Media", { anchor: "top-left", pos: [rx + (rw - mediaW) / 2, -top], rect_size: [mediaW, mediaH], color: { r: 0.02, g: 0.02, b: 0.03, a: 1 }, sprite_type: 1 });
     b.sprite("GuideWin/Media/Shot", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
@@ -820,7 +821,7 @@ function buildGameHud() {
     // 재생기를 새로 불러오는 동안 하얀 화면이 비쳤다 (10-27 첫 유저 녹화) → 영상 위 가림 그림 = 안내 영상 인트로 고정 그림 (글 없음 · 10-27 사용자). GuideWindow가 불러오는 동안만 켠다
     b.sprite("GuideWin/Media/Cover", { anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 8, mediaH - 8], image_ruid: K.guide_video_cover, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
     if (b.find("GuideWin/Media/Cover/Text")) b.remove("GuideWin/Media/Cover/Text");
-    b.text("GuideWin/Media/Empty", "화면 준비 중", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
+    b.text("GuideWin/Media/Empty", "", { size: 22, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [mediaW - 40, 60] });
     k.rim("GuideWin/Media", "slot_frame");
     const headY = top + mediaH + 12;
     b.text("GuideWin/Head", "", { size: 30, bold: true, color: C.title, alignment: 0, anchor: "top-left", pos: [rx, -headY], rect_size: [rw, 44], ...outline });
@@ -918,6 +919,10 @@ function patchShadowHud() {
     k.aspect(`${row}/Portrait`);
     s.text(`${row}/Label`, "", { size: 23, color: C.gold, alignment: 3, anchor: "middle-left", pivot: [0, 0.5], pos: [84, 0], rect_size: [600, 66], bestfit: true, min_size: 18, max_size: 23 });
     s.text(`${row}/State`, "", { size: 21, color: C.dim, alignment: 5, anchor: "middle-right", pivot: [1, 0.5], pos: [-18, 0], rect_size: [200, 60] });
+    // 소환 지정 번호 배지 (10-29 글귀 확정 79: 줄 글의 「[지정 N]」을 칸 왼쪽 위 모서리로 — 초상 위에 겹친다). ShadowHUD.RenderRows가 켜고 끈다
+    s.panel(`${row}/Assign`, { anchor: "top-left", pivot: [0, 1], pos: [4, -4], rect_size: [30, 30], color: "#FFD27A", alpha: 1, sprite_type: 1, enable: false });
+    s.patchComponent(`${row}/Assign`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+    s.text(`${row}/Assign/Num`, "", { size: 20, bold: true, color: "#1A1408", alignment: 4, anchor: "middle-center", pos: [0, 0], rect_size: [30, 30] });
     k.badge(row);   // 상황 안내: 아직 지정하지 않은 그림자 줄
   }
   k.btn("Window/BtnPrev", "◀ 이전", { anchor: "bottom-left", pivot: [0, 0], pos: [620, 18], rect_size: [180, 72], font_size: 22 });

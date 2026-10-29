@@ -294,6 +294,8 @@ script ShadowHUD extends Logic
             _UIKit:SetEnabled(base, e ~= nil)
             if e ~= nil then
                 _UIKit:SetText(base .. "/Label", self:RowLabel(e))
+                _UIKit:SetEnabled(base .. "/Assign", e.assign > 0)
+                if e.assign > 0 then _UIKit:SetText(base .. "/Assign/Num", tostring(e.assign)) end
                 local state = ""
                 if e.deployed then state = _UIKit:Colored("#9EE6A0", "소환 중")
                 elseif e.limit > 0 and e.deaths >= e.limit then state = _UIKit:Colored("#FF9A8A", "지침")
@@ -571,23 +573,10 @@ script ShadowHUD extends Logic
     end
 
     method string RowLabel(table e)
-        local gradeName = "일반"
-        if e.grade == 2 then gradeName = "정예" elseif e.grade >= 3 then gradeName = "보스" end
-        local state = ""
-        if e.deployed then state = "  · 소환 중"
-        elseif e.limit > 0 and e.deaths >= e.limit then state = "  · 지침"
-        elseif e.wait > 0 then state = "  · 재소환 " .. tostring(e.wait) .. "초" end
-        -- 원본 몬스터 개성: 속성 표시
-        local trait = ""
-        local m = _GameData:GetMonsterStats(e.src)
-        local archId = _GameData:ArchetypeOf(e.src)
-        if archId ~= "" and archId ~= "boss" and archId ~= "soldier" then trait = " " .. _GameData:GetArchetype(archId).name end
-        if m ~= nil and m.element ~= "" then trait = trait .. " " .. _ShadowConfig:ElementName(m.element) end
-        local label = _GameData:VariantLabel(e.variant)
-        if label ~= "" then trait = trait .. " · " .. label end
+        -- 목록 한 줄: 「이름 · Lv32」 (+강화). 10-29 글귀 확정 79 — 지정 번호는 칸 왼쪽 배지(Row/Assign), 등급·속성·힘 레벨은 상세 칸에서,
+        -- 소환 중·지침·회복 초는 오른쪽 상태 칸(Row/State)에 이미 있다
         local plus = e.plus > 0 and (" " .. _UIKit:Colored("#FFD27A", "(+" .. tostring(e.plus) .. ")")) or ""
-        local assign = e.assign > 0 and (_UIKit:Colored("#FFD27A", "[지정 " .. tostring(e.assign) .. "] ")) or ""
-        return assign .. string.format("%s  [%s%s]  %s", self:ShadowName(e.src), gradeName, trait, self:LevelLabel(e)) .. plus .. state
+        return self:ShadowName(e.src) .. " · Lv" .. tostring(e.level) .. plus
     end
 
     @ExecSpace("ClientOnly")

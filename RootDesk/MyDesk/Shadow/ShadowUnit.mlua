@@ -179,9 +179,7 @@ script ShadowUnit extends AttackComponent
     @Sync
     property string CommandState = "follow"
     @Sync
-    property string HeadLabel = ""            -- 머리 위 글귀 (첫 처치 맛보기 그림자 「잡으면 내 편」 — UndeadSystem.SpawnTaste · 기획서 39 #3A). 비면 평소 이름표
-    @Sync
-    property number TasteUntil = 0            -- 맛보기 그림자가 사라지는 서버 시각 (ServerElapsedSeconds) — 이름표에 남은 초
+    property boolean Taste = false            -- 첫 처치 맛보기 그림자 (UndeadSystem.SpawnTaste · 기획서 39 #3A) — 그림자 보라 발밑 원. 머리 위 이름표는 없다 (10-29 사용자)
 
     @ExecSpace("ServerOnly")
     method void PaintRing()
@@ -198,7 +196,7 @@ script ShadowUnit extends AttackComponent
     method Color RingColor()
         -- 발밑 원 색: 언데드 청록 · 그림자 보라 · 정예 금빛 (알파 0.6)
         local color = Color(0.3, 1, 0.8, 0.6)
-        if self.Kind == "shadow" or self.HeadLabel ~= "" then color = Color(0.75, 0.5, 1, 0.6) end   -- 맛보기 그림자도 그림자 보라
+        if self.Kind == "shadow" or self.Taste then color = Color(0.75, 0.5, 1, 0.6) end   -- 맛보기 그림자도 그림자 보라
         if self.Promoted then color = Color(1, 0.8, 0.3, 0.6) end
         return color
     end
@@ -301,13 +299,6 @@ script ShadowUnit extends AttackComponent
             town = info ~= nil and info.kind == "town"
         end
         local state = mine and (town and "mine:town" or "mine") or ("other:" .. owner.PlayerComponent.Nickname)
-        -- 맛보기 그림자: 주인 화면에 「잡으면 내 편 (N초)」 (0.5초마다 남은 초가 바뀌면 다시 쓴다)
-        local label = ""
-        if mine and self.HeadLabel ~= "" then
-            local left = math.max(0, math.ceil(self.TasteUntil - _UtilLogic.ServerElapsedSeconds))
-            label = self.HeadLabel .. " (" .. tostring(left) .. "초)"
-            state = state .. ":" .. label
-        end
         if state == self.ViewState then return end
         self.ViewState = state
         local tag = self.Entity.NameTagComponent
@@ -320,11 +311,6 @@ script ShadowUnit extends AttackComponent
             tag.Name = mine and (town and "내 소환수" or "") or owner.PlayerComponent.Nickname
             tag.FontColor = mine and Color(0.55, 1, 0.85, 1) or Color(0.75, 0.75, 0.78, 1)
             tag.Enable = not mine or town
-            if label ~= "" then
-                tag.Name = label
-                tag.FontColor = Color(0.85, 0.72, 1, 1)
-                tag.Enable = true
-            end
         end
     end
 
@@ -455,8 +441,8 @@ script ShadowUnit extends AttackComponent
         self.Dead = true
         -- 실제 피격 사망만 알린다. 이동·회수·수명 종료의 Destroy에는 이 경로가 없다.
         if _Util:IsAlive(self.OwnerPlayer) and isvalid(self.Entity.CurrentMap) then
-            -- 맛보기 그림자(HeadLabel)는 「되살림을 다시 사용하세요」 안내가 맞지 않아 알 수 없는 종류로 넘긴다 (안내 없음)
-            _CompanionHUD:NotifyLoss(self.OwnerPlayer, self.HeadLabel ~= "" and "taste" or self.Kind, self.Entity.CurrentMap.Id, self.OwnerPlayer.PlayerComponent.UserId)
+            -- 맛보기 그림자(Taste)는 「되살림을 다시 사용하세요」 안내가 맞지 않아 알 수 없는 종류로 넘긴다 (안내 없음)
+            _CompanionHUD:NotifyLoss(self.OwnerPlayer, self.Taste and "taste" or self.Kind, self.Entity.CurrentMap.Id, self.OwnerPlayer.PlayerComponent.UserId)
         end
         if self.Kind ~= "shadow" then
             -- 언데드는 무너지면 끝 (재소환 대기 없음). 해골 전사는 강화 「뼈 파편」이 있으면 무너지며 주변에 피해
