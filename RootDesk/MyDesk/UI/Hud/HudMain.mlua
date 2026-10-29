@@ -24,6 +24,12 @@ script HudMain extends Logic
     property number RaidUntil = 0               -- 습격 예고 (RaidDirector.Warn → RaidWarn): 가장자리 표식·글귀가 보이는 동안
     property table RaidPts = {}                 -- 떼가 솟을 자리 { {x, y}, ... } (최대 8)
     property table RaidDecals = {}              -- 바닥 조짐 이펙트 번호 (끝나면 지운다)
+    property number RaidStartAt = 0             -- 예고가 뜬 때 (가장자리 표식 1 나타남 → 2 긁음 → 3 흩어짐)
+    property table RaidOmenFrames = {}          -- 바닥 조짐 프레임 RUID — 그 맵 액트의 코덱스 조짐 4프레임 (GameConst.SpriteRaidOmen a1~a4)
+    property integer RaidOmenAct = 0
+    property integer RaidOmenTick = 0           -- 예고 시작부터 지난 150ms 칸 수 (바뀔 때 다음 프레임으로 갈아 끼운다)
+    property table RaidMarkRuids = {}           -- 가장자리 표식 1·2·3 (ui_icons ui_raid_edge_mark_1~3)
+    property integer RaidMarkFrame = 0          -- 지금 그린 표식 번호 (바뀔 때만 [VRF])
     property number RaidPlateUntil = 0          -- 습격 격퇴 판 (RaidDefeated): 4초 보이고 끝 0.5초 흐려진다
     property string TipText = ""                -- 위쪽 가운데 여정 안내: 바뀌거나 맵에 들어올 때만 TipSeconds 동안
     property string TipMap = ""
@@ -516,27 +522,45 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RaidWarn(table pts, number sec, integer act)
-        -- 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 + 떼가 솟을 자리마다 화면 가장자리 표식(RenderRaid) + 바닥 조짐(액트 장판 그림, 코덱스 조짐 그림 전까지) + 소리
+        -- 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 + 떼가 솟을 자리마다 화면 가장자리 표식(RenderRaid) + 바닥 조짐 + 소리
+        -- 10-29 코덱스 전체 납품: 바닥 조짐은 그 맵 액트(RaidDirector가 maps 정보의 act로 보낸다)의 4프레임을 150ms마다 갈아 끼운다 (Util.BeamFx와 같은 방식)
         local now = _UtilLogic.ElapsedSeconds
+        for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
+        self.RaidDecals = {}
         self.RaidPts = pts
+        self.RaidStartAt = now
         self.RaidUntil = now + sec
+        self.RaidMarkFrame = 0
+        self.RaidMarkRuids = { _GameData:GetUiIcon("ui_raid_edge_mark_1"), _GameData:GetUiIcon("ui_raid_edge_mark_2"), _GameData:GetUiIcon("ui_raid_edge_mark_3") }
         _UIKit:SetText("RaidText", "습격이 온다")
         _UIKit:SetEnabled("RaidText", true)
         _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
-        local player = _UserService.LocalPlayer
-        for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
-        self.RaidDecals = {}
-        local ruid, w, h, tint = _GameConst.SpriteGroundPoison, 160, 80, Color(0.75, 0.6, 0.45, 0.7)   -- 액트 1 흙이 솟는 갈색
-        if act == 2 then ruid, w, h, tint = _GameConst.SpriteGroundFire, 140, 70, Color(0.95, 0.8, 0.5, 0.6)   -- 모래 소용돌이 느낌
-        elseif act == 3 then ruid, w, h, tint = _GameConst.SpriteRaidOmenA3, 160, 80, Color(1, 1, 1, 0.9)  -- 10-29 코덱스 조짐: 얕은 물이 얼며 솟는 물거품 고리 (정지 그림)
-        elseif act >= 4 then ruid, w, h, tint = _GameConst.SpriteGroundLava, 140, 70, Color(1, 0.6, 0.5, 0.7) end   -- 용암 재 웅덩이
-        if isvalid(player) then
-            for _, p in ipairs(pts) do
-                table.insert(self.RaidDecals, _Util:GroundDecal(ruid, w, h, player, Vector3(p[1], p[2], 0), 1.1, tint))
-            end
-        end
+        local a = math.max(1, math.min(4, act))
+        self.RaidOmenAct = a
+        self.RaidOmenFrames = _Util:KeyFrames(_GameConst.SpriteRaidOmen, "a" .. tostring(a))
+        self.RaidOmenTick = 0
+        self:RaidOmenDraw()   -- 다음 프레임부터는 RenderRaid(매 화면)가 예고 시작부터 지난 시간으로 150ms마다 갈아 끼운다
         _TimerService:SetTimerOnce(function() self:RaidClear() end, sec + 0.2)
-        log(string.format("[VRF] raid warn shown pts=%d sec=%.1f act=%d", #pts, sec, act))
+        log(string.format("[VRF] raid warn shown pts=%d sec=%.1f act=%d omenFrames=%d", #pts, sec, act, #self.RaidOmenFrames))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RaidOmenDraw()
+        -- 바닥 조짐 한 프레임: 떼가 솟을 자리마다 새 프레임을 먼저 깔고 옛 프레임을 지운다 (00 → 03 → 00 반복 · 지름 2.2칸)
+        local frames = self.RaidOmenFrames
+        local player = _UserService.LocalPlayer
+        if #frames == 0 or not isvalid(player) then return end
+        local i = self.RaidOmenTick % #frames + 1
+        local old = self.RaidDecals
+        local fresh = {}
+        for _, p in ipairs(self.RaidPts) do
+            table.insert(fresh, _Util:GroundDecal(frames[i], 160, 80, player, Vector3(p[1], p[2], 0), 1.1, Color(1, 1, 1, 1)))
+        end
+        self.RaidDecals = fresh
+        for _, d in ipairs(old) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
+        if self.RaidOmenTick <= #frames then
+            log(string.format("[VRF] raid omen frame act=%d i=%d/%d ruid=%s decals=%d t=%.2f", self.RaidOmenAct, i, #frames, frames[i], #fresh, _UtilLogic.ElapsedSeconds - self.RaidStartAt))
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -552,12 +576,25 @@ script HudMain extends Logic
     @ExecSpace("ClientOnly")
     method void RenderRaid()
         -- 떼가 솟을 자리를 화면 가장자리 안쪽(48px)에 표식으로 — 화면 밖 자리의 방향이 보인다. 크기가 숨 쉬듯 커졌다 작아진다
+        -- 10-29 사용자 결정 64px · 코덱스 표식 3프레임(요청서 B-1): 1 나타남(첫 150ms) → 2 긁음(예고 내내) → 3 흩어짐(마지막 150ms)
         local now = _UtilLogic.ElapsedSeconds
         local root = _UIKit:Get("/ui/GameHUD")
         if now >= self.RaidUntil or not isvalid(root) then self:RaidClear() return end
         local size = root.UITransformComponent.RectSize
         local hx, hy = size.x * 0.5 - 48, size.y * 0.5 - 48
         local pulse = 0.85 + 0.15 * math.sin(now * 9)
+        local tick = math.floor((now - self.RaidStartAt) / 0.15)
+        if tick ~= self.RaidOmenTick and #self.RaidOmenFrames > 1 then
+            self.RaidOmenTick = tick
+            self:RaidOmenDraw()
+        end
+        local frame = 2
+        if now - self.RaidStartAt < 0.15 then frame = 1 elseif self.RaidUntil - now <= 0.15 then frame = 3 end
+        local ruid = self.RaidMarkRuids[frame] or ""
+        if frame ~= self.RaidMarkFrame then
+            self.RaidMarkFrame = frame
+            log(string.format("[VRF] raid mark frame=%d size=%.0f pts=%d t=%.2f", frame, 64 * pulse, #self.RaidPts, now - self.RaidStartAt))
+        end
         for i = 1, 8 do
             local name = "RaidMark" .. tostring(i)
             local p = self.RaidPts[i]
@@ -569,7 +606,9 @@ script HudMain extends Logic
                     -- 코덱스 표식은 오른쪽을 가리킨다 → 화면 가운데에서 자리 쪽으로 8방향(45°)으로 돌린다
                     local deg = math.deg(math.atan(q.y, q.x))
                     e.UITransformComponent.UIRotation = Vector3(0, 0, math.floor(deg / 45 + 0.5) * 45)
-                    e.UITransformComponent.RectSize = Vector2(48 * pulse, 48 * pulse)
+                    e.UITransformComponent.RectSize = Vector2(64 * pulse, 64 * pulse)
+                    local sp = e.SpriteGUIRendererComponent
+                    if ruid ~= "" and sp ~= nil and sp.ImageRUID.DataId ~= ruid then sp.ImageRUID = DataRef(ruid) end
                 end
                 _UIKit:SetEnabled(name, true)
             else

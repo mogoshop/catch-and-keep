@@ -431,9 +431,9 @@ const LIGHT_HEIGHT = {
   lighthouse1: [1, "low=a3-shallow-sea-floor-r2:0.66/0.76/0.84"], lighthouse2: [2, "low=a3-shallow-sea-floor-r2:0.52/0.62/0.72"],
   lighthouse3: [3, "low=a3-shallow-sea-floor-r2:0.4/0.5/0.62"], stormeye: [3, "below=execution-floor:0.55:0.62:0.62/0.8/0.9"],
 };
-//   10-29 코덱스 폭풍 등대 전용 벽(walltop-v1 샘플 승인): 가장자리 9조각 a3-lighthouse-wall-borders-* · 앞면 a3-lighthouse-wall-face-s
-//   (앞면 끝 sw·se는 전체 납품 대기 — 그동안 lib.cjs가 face-s로 잇는다)
-for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `a3-lighthouse-wall 1/1/1 등대 층 바닥 tiers=${t} top=zone face=a3-lighthouse-wall-face back=a3-lighthouse-wall-borders-center ${low}`;
+//   10-29 코덱스 폭풍 등대 전용 벽(walltop-v1 승인 · 전체 납품): 가장자리 9조각 a3-lighthouse-wall-borders-* · 앞면 a3-lighthouse-wall-face-s + 끊긴 끝 sw·se(lib.cjs가 띠 양끝에 자동)
+//   10-29 사용자 결정(그림은 그대로 · 빌더로 먼저): seam= 앞면 첫 단 맨 위 0.5칸 그늘(턱 밑) · mix= 바탕(center)·북쪽 테두리(n) 칸 좌표 좌우 섞기 — 이 묶음에만
+for (const [id, [t, low]] of Object.entries(LIGHT_HEIGHT)) module.exports[id].raised = `a3-lighthouse-wall 1/1/1 등대 층 바닥 tiers=${t} top=zone face=a3-lighthouse-wall-face back=a3-lighthouse-wall-borders-center seam=0.45:0.5 mix=center,n ${low}`;
 
 // ───────── 10-28 밤 코덱스 액트 3 나머지 44장(assets/codex-a3-handmade-v1, r2 「얕은 바다」 결) ─────────
 // 위 설계서의 액트 1 바닥(파란색을 칠해 쓰던 것)을 액트 3 그림으로 바꾼다. 자리·길·충돌은 그대로. 소금 갯벌은 이미 r2라 그대로.

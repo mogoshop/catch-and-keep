@@ -565,9 +565,9 @@ function buildGameHud() {
   b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });
   b.text("ExtractPop", "", { size: 30, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [520, 84], ...outline, outline_width: 0.25, enable: false });
   // 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 3초 + 떼가 솟을 자리마다 화면 가장자리 표식 최대 8 (HudMain.RaidWarn · RenderRaid)
-  //   10-29 코덱스 표식 ui_raid_edge_mark_2(오른쪽을 가리키는 붉은 발톱 96px) 48칸 — RenderRaid가 자리 방향으로 8방향 돌린다
+  //   10-29 코덱스 표식 ui_raid_edge_mark_1~3(오른쪽을 가리키는 붉은 발톱 96px) 64칸(사용자 결정 48→64) — RenderRaid가 자리 방향으로 8방향 돌리고 1 나타남 → 2 긁음 → 3 흩어짐으로 바꾼다
   b.text("RaidText", "", { size: 34, bold: true, color: "#FF7A5A", anchor: "middle-center", pos: [0, 250], rect_size: [600, 50], alignment: 4, ...outline, outline_width: 0.3, enable: false });
-  for (let i = 1; i <= 8; i++) b.sprite(`RaidMark${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [48, 48], image_ruid: K.ui_raid_edge_mark_2, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
+  for (let i = 1; i <= 8; i++) b.sprite(`RaidMark${i}`, { anchor: "middle-center", pos: [0, 0], rect_size: [64, 64], image_ruid: K.ui_raid_edge_mark_2, sprite_type: 0, color: WHITE, alpha: 1, enable: false });
   // 습격 격퇴 판 (10-29 코덱스 ui_raid_repelled_plate 9조각 64/64/24/24): 「습격 격퇴 · N마리」 + 골드 주머니 안내 — 알림 띠(UXFeedback)와 같은 글자 양식, 바탕만 판.
   //   예고 글귀 자리(가운데 위)에 4초 뒤 흐려지며 사라진다 (HudMain.RaidDefeated · RenderRaidPlate)
   b.sprite("RaidPlate", { anchor: "middle-center", pos: [0, 250], rect_size: [760, 136], ...part("ui_raid_repelled_plate"), sprite_type: 1, enable: false });

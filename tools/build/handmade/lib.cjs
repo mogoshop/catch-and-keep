@@ -34,6 +34,13 @@ const RAISED_FACE = 0.55;             // 담 윗면 맵: 담 남쪽 앞면(cente
 const RAISED_SHADOW = 0.32;           // 담 윗면 맵: 앞면 아래 그림자(검은 바위 속 조각) 불투명도
 const TIER_SHADE = [1, 0.68, 0.46];   // 층 겹쌓기(설계 42): 앞면 띠 1·2·3단 밝기 — 아래 단일수록 어둡게
 const TIER_SHADOW = 0.2;              // 층 겹쌓기: 마지막 띠 아래 그림자 (0.32는 메이커에서 네모 구멍처럼 보였다)
+const SEAM_STEPS = 4;                 // ;raised seam= 그늘을 몇 줄로 나눠 옅어지게 하나 (줄마다 진하기 1 → 1/4)
+// ;raised mix= 좌우 뒤집기: 칸 좌표로만 정하는 섞음 값(빌드마다 같다) — 홀수면 뒤집는다
+const flipAt = (x, y) => {
+  let h = (Math.imul(x + 4099, 0x27d4eb2d) ^ Math.imul(y + 8191, 0x165667b1)) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b) >>> 0; h ^= h >>> 13;
+  return ((h >>> 16) & 1) === 1;
+};
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
@@ -77,14 +84,20 @@ function parseBlueprint(id) {
         //   back=<그림> 앞면 조각에 비치는 곳이 있으면 띠 뒤에 깔 바탕 (등대 벽 — 띠 사이로 바다가 보여 울타리처럼 읽혔다)
         //   edge=<가로 그림>:<세로 그림>[:<크기>[:<색>]] 높은 칸 ↔ 낮은 칸 경계를 따라 띠 그림 (10-28 밤 코덱스 용암 가장자리 띠 — 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래)
         //   floor=zone (top=zone이 아닌 담 윗면 맵만) 담 속 칸(네 이웃이 모두 높은 칸)에 구역 바닥을 깐다 — 가장자리 9조각은 그대로 (10-29 바람 무덤 사막 「보루 안은 구역 바닥」)
+        //   seam=<진하기>[:<높이>] (top=zone만) 앞면 첫 단 맨 위에 높이(칸, 기본 0.5) 안에서 위→아래로 옅어지는 그늘 — 밝은 테두리·바닥 밑에 어두운 앞면이
+        //     직선으로 붙어 보이던 이음새를 턱 밑 그늘로 (10-29 사용자 결정 · 폭풍 등대만. 그림자 칸과 같은 검게 칠한 조각을 SEAM_STEPS줄로 나눠 깐다)
+        //   mix=<조각,조각> (top=zone만) 그 조각(center = back 바탕 · n = 북쪽 테두리)을 칸 좌표로 정한 의사난수로 반쯤 좌우 뒤집어 반복 격자를 깬다
+        //     — 빌드마다 같다. 뒤집은 칸은 따로 그린다(가로로 묶으면 묶음째 뒤집혀 자리가 어긋난다). n은 양옆이 같은 n인 칸만 (모서리 이음 그대로) (10-29 사용자 결정 · 폭풍 등대만)
         const rest = m.slice(3), opt = Object.fromEntries(rest.filter((t) => t.includes("=")).map((t) => t.split("=")));
-        const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":"), edgeO = (opt.edge || "").split(":");
+        const lowO = (opt.low || "").split(":"), belowO = (opt.below || "").split(":"), edgeO = (opt.edge || "").split(":"), seamO = (opt.seam || "").split(":");
         bp.raised = {
           atlas: m[1], tint: m[2], name: rest.filter((t) => !t.includes("=")).join(" "),
           tiers: Math.max(1, Math.min(3, Number(opt.tiers || 1))), zoneTop: opt.top === "zone", face: opt.face || "", innerZone: opt.floor === "zone",
           low: opt.low ? { art: lowO[0], tint: lowO[1] || "1/1/1" } : null, back: opt.back || "",
           below: opt.below ? { art: belowO[0], scale: Number(belowO[1] || 0.55), bright: Number(belowO[2] || 0.42), fog: belowO[3] || "1/1/1" } : null,
           edge: opt.edge ? { h: edgeO[0], v: edgeO[1] || "", scale: Number(edgeO[2] || 1), tint: edgeO[3] || "" } : null,
+          seam: opt.seam ? { a: Number(seamO[0] || 0.4), h: Number(seamO[1] || 0.5) } : null,
+          mix: new Set((opt.mix || "").split(",").filter(Boolean)),
         };
       }
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
@@ -349,21 +362,48 @@ function artEntities(d, ctx, bp, rows, func) {
       if (rim) pk.set(key(x, y), `rim|${rim}|0`);
     }
     if (cut) warn.push(`${d.id}: 높은 칸 아래 낮은 칸이 ${T + 1}칸보다 좁아 앞면 띠를 다 못 쌓은 기둥 ${cut}개 (낮은 칸 한 줄은 남긴다 · 오류 아님)`);
+    // mix=: 뒤집을 칸은 열쇠 끝에 「|f<x>」를 붙인다 — 같은 열(x)끼리만 세로로 묶이고 가로로는 묶이지 않는다
+    const MIX = bp.raised.mix || new Set();
+    if (MIX.size) {
+      const orig = new Map(pk);
+      for (const [k, v] of orig) {
+        const [kind, piece] = v.split("|");
+        if (kind !== "rim" || !MIX.has(piece)) continue;
+        const [x, y] = k.split(",").map(Number);
+        if (orig.get(key(x - 1, y)) !== v || orig.get(key(x + 1, y)) !== v || !flipAt(x, y)) continue;
+        pk.set(k, `${v}|f${x}`);
+      }
+      if (MIX.has("center")) for (const [k, v] of [...backK]) { const [x, y] = k.split(",").map(Number); if (flipAt(x, y)) backK.set(k, `${v}|f${x}`); }
+    }
     const t = tintOf(bp.raised.tint);
     for (const r of mergeRects(pk)) {
-      const [kind, piece, dd] = r.p.split("|");
+      const [kind, piece, dd, fl] = r.p.split("|");
       // 앞면 끝 조각(sw·se)이 아직 없는 묶음은 가운데(s)로 잇는다 (10-29 코덱스 등대 앞면 샘플은 face-s 한 장 — 끝 조각은 전체 납품 대기)
       const band = (p) => (table[`${F}-${p}`] ? `${F}-${p}` : `${F}-s`);
       const name = kind === "shadow" ? "waste-borders-center" : kind === "band" ? band(piece) : piece.startsWith("broken-") ? `${A}-${piece}` : `${A}-borders-${piece}`;
       const o = sprite(ruid(name, "raised"), [r.len, r.rows], 1);
       const m = kind === "band" ? TIER_SHADE[Number(dd) - 1] : 1;
       o["MOD.Core.SpriteRendererComponent"].Color = kind === "shadow" ? { r: 0, g: 0, b: 0, a: TIER_SHADOW } : { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
+      if (fl) o["MOD.Core.SpriteRendererComponent"].FlipX = true;
       out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.007], overrides: Object.assign(o, cellScale) });
     }
     for (const r of mergeRects(backK)) {
-      const o = sprite(ruid(bp.raised.back, "raised back"), [r.len, r.rows], 1), m = TIER_SHADE[Number(r.p) - 1] * 0.55;
+      const [dd, fl] = r.p.split("|");
+      const o = sprite(ruid(bp.raised.back, "raised back"), [r.len, r.rows], 1), m = TIER_SHADE[Number(dd) - 1] * 0.55;
       o["MOD.Core.SpriteRendererComponent"].Color = { r: r3(t.r * m), g: r3(t.g * m), b: r3(t.b * m), a: 1 };
+      if (fl) o["MOD.Core.SpriteRendererComponent"].FlipX = true;
       out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r.y + 0.5, -0.006], overrides: Object.assign(o, cellScale) });
+    }
+    // seam=: 앞면 첫 단(높은 칸 바로 아래 띠) 맨 위 seam.h칸에 위→아래로 옅어지는 그늘 — 띠보다 앞(z −0.0075), 줄마다 진하기 a × (1 − k/SEAM_STEPS)
+    if (bp.raised.seam) {
+      const SM = bp.raised.seam, hs = SM.h / SEAM_STEPS, sk = new Map();
+      for (const [k, v] of pk) if (v.startsWith("band|") && v.split("|")[2] === "1") sk.set(k, "seam");
+      for (const r of mergeRects(sk)) for (let k = 0; k < SEAM_STEPS; k++) {
+        const o = sprite(ruid("waste-borders-center", "raised seam"), [r.len, 1], 1);
+        o["MOD.Core.SpriteRendererComponent"].Color = { r: 0, g: 0, b: 0, a: r3(SM.a * (1 - k / SEAM_STEPS)) };
+        o["MOD.Core.TransformComponent"] = { Scale: vec3([1 / S, hs / S]) };
+        out.push({ name: `ArtRaised${++raisedN}`, pos: [r.x + 0.5, r3(r.y + r.rows - hs * (k + 0.5)), -0.0075], overrides: o });
+      }
     }
     // 2-2) 가장자리 띠 (edge=): 높은 칸 ↔ 낮은 칸 경계. 북·동·서는 절벽 윗단 바로 바깥, 남쪽은 앞면 띠 맨 아래 바로 아래.
     //   10-29 메이커 재캡처: 띠 안쪽 끝(그림의 불투명 몸통 EDGE_BODY)이 경계에 정확히 닿게 변마다 띄우는 거리를 따로 잰다

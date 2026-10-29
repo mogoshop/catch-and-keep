@@ -156,8 +156,10 @@ script RaidDirector extends Logic
         local species, level = self:PickSpecies(map, diff)
         if species == "" then s.count = 99 log("[VRF] raid skip " .. map.Name .. " reason=no-species") return end
         self.Serial = self.Serial + 1
-        s.active = { id = self.Serial, caller = caller, center = center, size = allow, species = species, level = level, leader = d.raidLeader or 0, phases = d.raidPhases or 1,
+        -- 이 습격 표를 지역 변수로 들고 있는다: 아래 예고·로그 사이에 s.active가 다른 경로(맵 잠듦 Finish 등)로 비면 s.active.id가 nil 오류(LEA-2007)였다 (10-29 새벽 1건)
+        local raid = { id = self.Serial, caller = caller, center = center, size = allow, species = species, level = level, leader = d.raidLeader or 0, phases = d.raidPhases or 1,
             spawned = 0, killed = 0, fled = 0, alive = {}, queue = {}, startAt = now, pts = pts, spawnTimer = 0, phase2 = false, diff = diff, players = #players }
+        s.active = raid
         s.kills = 0
         s.count = s.count + 1
         local flat = {}
@@ -170,7 +172,7 @@ script RaidDirector extends Logic
         local o = self:RingOrigin(map, center)
         log(string.format("[VRF] raid warn %s n=%d dirs=%d species=%s lv=%d count=%d/%d at=(%.2f,%.2f) shift=%.2f dirs0=%d", map.Name, allow, #pts, species, level, s.count, d.raidWaves or 0, center.x, center.y, (o - center):Magnitude(),
             #self:RingSpotsFrom(map, center, center, _GameData.raidRadiusMin, _GameData.raidRadiusMax, _GameData.raidMinReach)))
-        local id = s.active.id
+        local id = raid.id
         _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:Launch(s) end end, _GameData.raidWarnSec)
     end
 
