@@ -1,0 +1,217 @@
+{
+ "run_id": "REM-20261029-2053",
+ "agent": "Claude Opus 5.5 (메이커 담당, 잔여 빈칸)",
+ "timezone": "Asia/Seoul",
+ "scope": "acceptance-remaining-2025.json F03~F06의 remaining_core_maker 빈칸만 (F01/F02/F07~F11·RB 재검사·새 UI 없음). 게임 코드·데이터 변경 없음. 추가 MIG-1(63520f13 배너 삭제 확인)은 조정자 지시로 별도 항목.",
+ "source": {
+  "phase1_head": "a96d26c7 → 작성 중 e285732b(아이콘)",
+  "run1_head": "e285732b05c11c20a9c9563d68b1d846008a4ded (F04-C·F05-C·F06-D) — 63520f13은 20:59:39 커밋이지만 play 중이라 반영 안 됨, SkillBook blob 2ec01480 실행",
+  "run2_head": "63520f13d614f7ca0710cb44d400a9782b35847c (MIG-1·복원) — SkillBook blob 1fdf88f0 실행",
+  "file_blobs_same_in_both": {
+   "PlayerJournal.mlua": "ccffa57e2ef2",
+   "JournalData.mlua": "e2f3ebeee69a",
+   "JournalSystem.mlua": "461a3d00bd6b",
+   "PlayerInventory.mlua": "0077cae0ad26",
+   "InventoryWindow.mlua": "5d4c394c8c5a",
+   "JournalWindow.mlua": "3dc170fff78f",
+   "PlayerSave.mlua": "b46caf774616",
+   "PlayerQuest.mlua": "920cd093c24b"
+  },
+  "worktree": "RootDesk·map·ui·data 깨끗 (git status에 AGENTS.md·Shop.directory·.claude 변경은 다른 작업, 손대지 않음)"
+ },
+ "maker": {
+  "project_path": "/Users/leeinguk/Desktop/hoho/잡으면 내편",
+  "map_check": "map01 5a29ca07-f409-4e78-ad0b-aacea14bd57c = map/map01.map 루트 id · TileMapMode 1",
+  "sync": [
+   "20:53 refresh(변경 없음) — 마지막 build 20:24:34 Error 0 Warning 95",
+   "20:53:2x play PC",
+   "21:09 stop → 21:10:12 touch SkillBook.mlua → 6초 → refresh → build 21:10:23 Error 0 Warning 95 · normal 변환 오류 없음",
+   "21:10:3x play PC (MIG-1·복원)",
+   "21:14:1x stop → 21:14:3x play(로비 최종 대조) → 21:15 stop"
+  ],
+  "contexts": [
+   "server_main(로비)",
+   "server_instance_game:s1b88c08bdd7 (20:54~20:57)",
+   "server_instance_game:s1b88cac237d (20:57~21:09, 재접속 뒤)",
+   "server_instance_game:s1b88fe54bc7 (21:11~21:14, MIG-1)"
+  ],
+  "client": "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+  "test_slot": "UserDataStorage 슬롯 4 「새내기」 Lv40(17:50 저장값) — 시작 전 slot4-backup-before-REM.json 백업, 끝에 같은 값으로 복원(slot4-restore-check.json). 슬롯 1~3 읽기만.",
+  "save": "F04-C·F05-C·F06-D는 저장 켬(IsLoadSuccess=true) — 재접속은 _HudMain:AskCharSelect → ConfirmHUD BtnYes → PickSlot(4) → BtnEnter → RoomWin/Box/Home/Solo (첫 입장만 RoomWindow:Solo 메서드 — 단추 경로 확인 전). 끝에 IsLoadSuccess=false 뒤 복원.",
+  "input": "UI 단추는 ButtonClickEvent 전송(엔진 UI는 maker_mouse_input 미도달). 이번 실행 maker_keyboard_input KeyDown 미도달(리스너 0건). maker_mouse_input은 ScreenTouchEvent 도달.",
+  "end_state": "메이커 편집 모드 · map01 · PC FHD · 슬롯 4 백업 값 복원 확인"
+ },
+ "cases": {
+  "F04-C": {
+   "kind": "신규(메이커 최소 사례)",
+   "gap": "F04 ① 완료·수령 완료 이웃 보존 ② 대체 뒤 재접속·일지 반복 열기",
+   "pre_state": "서버 스크립트 준비: Daily=[d_kill30 30/30 완료(기존 저장의 실제 완료·지급분, daily@0=1), d_capture2 1/2, d_quest1 0/1], DailyDay=739917, q 20/0 → 일지 「before」 → q=25/0(Count 24+1, 모든 열린 난이도 완료, MaxDifficulty 0) + Save(true)",
+   "steps": [
+    "일지(BtnJournal)→일일 탭 before 캡처",
+    "q=25/0 준비 + Save(true) → 1초 Flush 대체",
+    "일지 after 캡처",
+    "메뉴 캐릭터 선택→로비→슬롯 4→솔로(재접속)",
+    "일지 열기 #1 캡처 + 서버 상태",
+    "닫기→열기 #2·#3 → 캡처 + 서버 상태"
+   ],
+   "expected": "d_quest1만 가능한 목표로 대체, d_kill30 완료·d_capture2 1/2 유지, 골드·경험치·daily@0 불변, 재접속·반복 열기에서 재교체·추가 지급 없음",
+   "actual": "대체 [d_kill30 30/30 완료, d_capture2 1/2, d_boss1 0/1] (예상 d_boss1과 같음). 골드 200846·경험치 219975·daily@0 1이 준비→대체→재접속→열기 3회 내내 같음. 실행 전체 「daily complete」 0줄.",
+   "verdict": "통과",
+   "judgement_by": "Claude",
+   "evidence": [
+    "docs/evidence/2026-10-29-remaining/F04-C_before.png",
+    "docs/evidence/2026-10-29-remaining/F04-C_after.png",
+    "docs/evidence/2026-10-29-remaining/F04-C_relogin_open1.png",
+    "docs/evidence/2026-10-29-remaining/F04-C_relogin_reopen3.png",
+    "docs/evidence/2026-10-29-remaining/F04-C-state.json"
+   ],
+   "logs": "docs/evidence/2026-10-29-remaining/F04-C-log.txt",
+   "raw_log": "docs/evidence/2026-10-29-remaining/REM-run1-log.txt",
+   "limits": [
+    "MaxDifficulty 0 — 다른 난이도 왕복 해당 없음",
+    "대체 시점은 Save(true) 대기 중 세션 Flush(1초 EnsureDaily) — 불러오기(LoadSaveData)도 같은 EnsureDaily를 부름. 이미 통과한 B 마지막 보고·일일 1회 보상은 재실행 안 함",
+    "입력은 ButtonClickEvent(포인터·터치 아님)"
+   ]
+  },
+  "F05-C": {
+   "kind": "신규(메이커 최소 사례)",
+   "gap": "F05 ① 이미 달성·수령 완료 legacy 저장 재접속 재청구/재지급 없음 (+② 수령 뒤 재처치)",
+   "pre_state": "서버 스크립트 준비 저장: Kills를 legacy id 13종(ashendead·skelwarrior·rotzombie… 기존 sourceId fallen_imp 9 유지), AchDone a_codex@0, AchClaim에서 a_codex@0 없음(=수령 완료), Save(true). codex 2→13/13",
+   "steps": [
+    "업적 2쪽 캡처(준비 상태)",
+    "F04-C와 같은 재접속",
+    "재접속 뒤 서버 상태 + 업적 2쪽·몬스터 도감 캡처",
+    "무너진 형장 잿빛 망자병 1마리 처치(재처치) → 서버 전후 상태",
+    "업적 2쪽 다시 캡처"
+   ],
+   "expected": "청구권 다시 안 생김(ClaimCount 불변), 골드 불변, 도감 13/13·legacy 기록 빈칸 없음, 재처치는 sourceId 키로만 늘고 업적 달성 줄 없음",
+   "actual": "재접속 뒤 AchClaim=[a_queen@2]·ClaimCount 1·골드 200846·codex 13·kills.ashendead 3. 도감 13/58종(잿빛 망자병 3·납골당 해골 수비병 4·굶주린 구울 9=max). 재처치 21:07:21 C last hit flourish ashen_dead → kills.ashen_dead nil→1·src:ashen_dead@0 1·kill@0 45→46, legacy ashendead 3 그대로, codex 13, ClaimCount 1, 골드 200846, achievement done 0줄. 업적 줄 「완료」·받기 없음 유지.",
+   "verdict": "통과(재처치 입력은 도구 한계로 서버 TakeDamage)",
+   "judgement_by": "Claude",
+   "evidence": [
+    "docs/evidence/2026-10-29-remaining/F05-C_prep_ach.png",
+    "docs/evidence/2026-10-29-remaining/F05-C_relogin_ach.png",
+    "docs/evidence/2026-10-29-remaining/F05-C_relogin_codex.png",
+    "docs/evidence/2026-10-29-remaining/F05-C_rekill_before.png",
+    "docs/evidence/2026-10-29-remaining/F05-C_rekill_after.png",
+    "docs/evidence/2026-10-29-remaining/F05-C_rekill_ach.png",
+    "docs/evidence/2026-10-29-remaining/F05-C-state.json"
+   ],
+   "logs": "docs/evidence/2026-10-29-remaining/F05-C-log.txt",
+   "raw_log": "docs/evidence/2026-10-29-remaining/REM-run1-log.txt",
+   "limits": [
+    "재처치 입력: maker_keyboard_input KeyDown 미도달·maker_mouse_input 클릭 공격이 피해로 이어지지 않음(대상이 0.3초 안에 풀림 — 원인 미조사, 기존 QR 회차는 같은 경로로 처치됨) → Monster:TakeDamage(999999, 플레이어). 처치 이벤트 경로는 실제",
+    "준비 저장은 현재 형식 a_codex@0. 10-27 전 「a_codex」 무접미 저장은 오프라인 journal.lua(LoadSaveData legacy 'a_level10') 범위",
+    "MaxDifficulty 0 — 난이도 이동 해당 없음"
+   ]
+  },
+  "F05-A-link": {
+   "kind": "기존 근거로 충족 — 재실행 아님",
+   "gap": "F05 ② 마지막 대상 실제 처치→sourceId/업적 연결·완료 후 재처치 중복 억제",
+   "source_run": "QR-20261029-1540 (57b9724e + INT-02, play 15:40:22/15:49:34)",
+   "actual": "미연결 원본 2장(16:04:04·16:04:27 「정예 잿빛 망자병」 전투) → 16:04:33 S achievement done a_codex@0 + C last hit flourish ashen_dead(sourceId) 같은 초 → 16:04:38~16:05:08 같은 대상 막타 5번 더(총 6 = kills.ashen_dead 6, legacy ashendead nil) → 회차 전체(재접속 2번 포함)에서 a_codex@0 달성 줄 1번뿐, 청구권 1개. 수령 뒤 재처치는 F05-C에서 보충.",
+   "verdict": "통과(기존 자료 연결)",
+   "judgement_by": "Claude",
+   "evidence": [
+    "docs/evidence/2026-10-29-remaining/F05-A_kill_160404.png",
+    "docs/evidence/2026-10-29-remaining/F05-A_kill_160427.png"
+   ],
+   "logs": "docs/evidence/2026-10-29-remaining/F05-A-kill-log-excerpt.txt",
+   "raw_log": "docs/evidence/2026-10-29-remaining/QR1540-master-normal-log.txt (sha256 6199ceb3…, QR 담당 scratchpad master-log.txt 바이트 복사)",
+   "limits": [
+    "MonsterKilled 전용 로그 줄은 코드에 없음 — 클라 막타 줄(sourceId)·서버 Kills 상태·업적 줄 시각으로 연결",
+    "MaxDifficulty 0 — 난이도 이동 해당 없음 + collection 업적은 PerDiff 아님(키 @0 고정, PlayerJournal.mlua:106-110·194)"
+   ]
+  },
+  "F06-D": {
+   "kind": "신규(메이커 최소 사례, 수령은 준비)",
+   "gap": "F06 ① 받은 룬이 가방 슬롯/상세에서 보이는 원본",
+   "pre_state": "가방 59/60·a_queen@2 청구권(슬롯 4 저장값) → 일지 업적 2쪽 R2 「받기」 ButtonClickEvent(준비, 보상 재검증 아님)",
+   "steps": [
+    "받기 → 서버 achievement claim a_queen@2",
+    "인벤토리(Bottom/Menu/BtnInv) 열기",
+    "InvWin/Bag/Bag60 ButtonClickEvent 선택 → 상세 캡처"
+   ],
+   "expected": "받은 칸 룬이 접근 가능한 가방 칸에 있고 상세가 보인다",
+   "actual": "#60 r_kan(칸 룬), 가방 60/60. 선택 Selected=60 → 상세 「칸 룬 · 무기 피해 +25% · 방어구 방어 +50 · 등불 소환수 공격·생명 +10% · 판매가 170 골드」 표시.",
+   "verdict": "통과(가방 #60 룬을 선택해 연 상세 원본 · 60번 칸 그림 자체는 스크롤 한계로 화면 밖)",
+   "judgement_by": "Claude",
+   "evidence": [
+    "docs/evidence/2026-10-29-remaining/F06-D_rune_detail.png",
+    "docs/evidence/2026-10-29-remaining/F06-D-state.json"
+   ],
+   "logs": "docs/evidence/2026-10-29-remaining/F06-D-log.txt",
+   "raw_log": "docs/evidence/2026-10-29-remaining/REM-run1-log.txt",
+   "limits": [
+    "가방 6번째 줄 스크롤: SetScrollNormalizedPosition 0/1 무반응, 휠·스크롤바는 도구 미지원 — 칸 그림은 못 찍음(실기기·실제 휠 미확인)",
+    "수령 장면·알림은 이미 종료된 항목이라 근거로 쓰지 않음"
+   ]
+  },
+  "F03-B": {
+   "kind": "오프라인 격리 검증만 — 메이커 실제 경계 잔여(대기)",
+   "gap": "KST 자정 경계 1회 교체·후보 중복 없음·전날 보상 재지급 없음·경계 뒤 재접속",
+   "offline": {
+    "existing": "tests/quality/journal.lua (Today()가 UTC 15:00=KST 자정에서 정확히 바뀜 · 14일 순환 3개 중복 없음·같은 날 진행 보존) — 20:41 재통과",
+    "supplement": "F03-B-offline-addendum.lua (이번 작성, 같은 DateTime.UtcNow.Elapsed→실제 Today 주입 경로, 게임 코드·저장소 tests 미변경): 23:59:59.999→00:00:00.000 1회 교체·중복 없음·가능 후보만·전날 완료 골드/경험치/카운터 재지급 없음·같은 날 5회 재호출 재섞기 없음·경계 뒤 저장→불러오기 유지·전날 저장을 경계 뒤 처음 불러와도 같은 새 목록·재지급 없음 — 통과",
+    "run_output": "docs/evidence/2026-10-29-remaining/F03-B-offline-run.txt"
+   },
+   "maker": "미실행 — OS 시계 변경·새 우회·자정 대기 안 함. 실제 KST 자정 관찰 필요",
+   "verdict": "오프라인 격리 통과 / 메이커 대기",
+   "judgement_by": "Claude"
+  },
+  "MIG-1": {
+   "kind": "신규(조정자 추가 지시 — F04~F06과 별개)",
+   "gap": "63520f13 SkillBook.MigrateRework 배너 삭제 확인",
+   "pre_state": "refresh(touch 뒤) build 21:10:23 Error 0 → 로비에서 백업 Char_4의 skills.sv 4→2만 바꿔 BatchSet(준비)",
+   "steps": [
+    "슬롯 4 입장(로비 불러오기에서 이전 실행)",
+    "방 입장 화면·선택 보상 창 닫은 뒤 화면 캡처",
+    "스킬 창(Bottom/Menu/BtnSkill) 남은 포인트 캡처"
+   ],
+   "expected": "배너 없음, [VRF] skill rework migrate … (banner off), 환급·추가 포인트 그대로",
+   "actual": "21:11:15 S [VRF] skill rework migrate skill=26+3 stat=0 → skp=29 statp=0 (banner off). 화면 배너 없음, UX 큐 release held=0 show=0, 로그 「새로 바뀌」 0건. 방 상태 skp 29·invested 0·needRework false, 스킬 창 「남은 포인트 29」.",
+   "verdict": "통과",
+   "judgement_by": "Claude",
+   "evidence": [
+    "docs/evidence/2026-10-29-remaining/MIG-1_PC_room_enter_offer.png",
+    "docs/evidence/2026-10-29-remaining/MIG-1_PC_no_banner.png",
+    "docs/evidence/2026-10-29-remaining/MIG-1_PC_skill_points.png",
+    "docs/evidence/2026-10-29-remaining/MIG-1-state.json"
+   ],
+   "logs": "docs/evidence/2026-10-29-remaining/MIG-1-log.txt",
+   "raw_log": "docs/evidence/2026-10-29-remaining/MIG-1-and-restore-log.txt",
+   "limits": [
+    "이전은 로비(server_main) 슬롯 불러오기에서 일어나 그 결과가 저장됨 — 방에서는 sv 4로 다시 불러와 두 번째 이전 없음",
+    "배너가 로비 창 뒤에 보류될 수 있어 방 입장·창 닫은 뒤 UX 큐까지 확인"
+   ]
+  }
+ },
+ "phase1_existing_evidence": {
+  "F04-1": "없음 — QR F04-A 이웃 둘 다 미완료 · 오프라인 journal.lua만(골드 검사 없음)",
+  "F04-2": "없음 — QR 대체 뒤 상태 로그·두 번째 재접속 없음",
+  "F05-1": "없음 — a_codex@0 수령 사례 없음 · 오프라인 journal.lua 부분",
+  "F05-2": "기존 근거로 충족(F05-A-link)",
+  "F06-1": "없음 — QR 16:18:31 인벤토리 원본은 1~30칸만, 나머지는 일지·알림",
+  "F03-B": "오프라인 격리만"
+ },
+ "backup_restore": {
+  "backup": "docs/evidence/2026-10-29-remaining/slot4-backup-before-REM.json",
+  "check": "docs/evidence/2026-10-29-remaining/slot4-restore-check.json",
+  "result": "복원 후 stop→새 play 로비 BatchGet: Account·Char_4·Inv_4·Shadow_4·Stash 5/5 길이·가중합이 백업과 일치"
+ },
+ "new_observations_not_fixed": [
+  "REM-OBS-01: 이번 실행 무너진 형장(Go 이동 뒤)에서 maker_mouse_input 클릭 공격이 피해로 이어지지 않음 — ClickControl.FindMonsterNear는 잿빛 망자병을 고르지만 AttackTarget이 0.3초 안에 nil, 직접 넣으면 평타 제출은 되나 몬스터 HP 286 그대로, 몬스터도 움직이거나 공격하지 않음(HP 999999 불변). 키보드 KeyDown 미도달과 함께 메이커 포커스/도구 상태로 의심되나 원인 미조사 — 게임 결함으로 확정하지 않음. QR 15:40 회차는 같은 경로로 처치됨."
+ ],
+ "summary": {
+  "F04": "①② 통과(F04-C)",
+  "F05": "① 통과(F05-C) · ② 기존 근거 연결 통과(F05-A-link) + 수령 뒤 재처치 보충",
+  "F06": "① 통과(상세 원본) · 칸 그림은 스크롤 도구 한계",
+  "F03": "B 오프라인 격리 통과 · 메이커 실제 자정 대기",
+  "MIG-1": "통과",
+  "not_rerun": [
+   "F04-B 마지막 보고·일일 1회 보상",
+   "F06 거절 안내·복합 알림·보상 수령 검증",
+   "F01/F02/F07~F11·RB"
+  ]
+ }
+}
