@@ -398,16 +398,13 @@ script UndeadSystem extends Logic
             if canCommit ~= nil and not canCommit() then fail() return end
             finished = true
             orb:Consume()
-            local max = self:MaxFor(player, kind, slvl)
-            -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다
-            local reserved = self:GiantReserved(player, kind)   -- 뼈 거인에 합쳐진 넷도 자리를 차지한다
-            local have = reserved
-            for _, r in ipairs(self:ListOf(player)) do if r.kind == kind then have = have + 1 end end
-            if have >= max then
+            -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다 (정원 계산은 편성 미리보기 RosterPreview와 같은 SlotPlan)
+            local plan = self:SlotPlan(player, kind, slvl, self:ListOf(player), self:GiantReserved(player, kind))   -- 뼈 거인에 합쳐진 넷도 자리를 차지한다
+            if plan.full then
                 local names = { skeleton = "해골 전사", mage = "해골 마법사", revive = "되살린 몬스터" }
-                _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(max) .. "기 — 가장 오래된 하나가 무너졌습니다 (스킬 레벨을 올리면 늘어납니다)", userId)
+                _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(plan.max) .. "기 — 가장 오래된 하나가 무너졌습니다 (스킬 레벨을 올리면 늘어납니다)", userId)
             end
-            self:TrimOldest(player, kind, math.max(0, max - 1 - reserved))
+            self:TrimOldest(player, kind, plan.keep)
             table.insert(self:ListOf(player), rec)
             self:RefreshSummary(player)
             self:PlaySummonFx(player, pos)
@@ -570,15 +567,9 @@ script UndeadSystem extends Logic
         -- 해골 전사 변이 편성 (10-24 사용자 C안): 변이마다 랭크 수만큼 해골이 그 모습으로 선다. 일으킬 때 아직 자리가 남은 변이를
         -- 방패 → 대검 → 쌍칼 순으로 채우고, 다 차면 일반 해골. 쓰러진 해골의 자리는 다음에 일으키는 해골이 잇는다
         -- 대검 = 범위 베기·느림·단단 / 방패 = 받는 피해↓·도발 / 쌍칼 = 빠름·약함
-        local quota = { shield = self:SkillLevel(player, "skel_shield"), greatsword = self:SkillLevel(player, "skel_greatsword"), twin = self:SkillLevel(player, "skel_twin") }
-        local used = { shield = 0, greatsword = 0, twin = 0 }
-        for _, other in ipairs(self:ListOf(player)) do
-            if other ~= rec and other.kind == "skeleton" and used[other.form or ""] ~= nil then used[other.form] = used[other.form] + 1 end
-        end
-        local pick = ""
-        for _, form in ipairs({ "shield", "greatsword", "twin" }) do
-            if pick == "" and used[form] < quota[form] then pick = form end
-        end
+        -- 고르는 규칙은 PickForm 하나 (편성 미리보기 RosterPreview가 같은 함수로 「다음 소환」을 예고한다 · I03)
+        local quota = self:FormQuota(player, "skeleton")
+        local pick = self:PickForm("skeleton", quota, self:ListOf(player), rec)
         local gs = pick == "greatsword" and quota.greatsword or 0
         local sh = pick == "shield" and quota.shield or 0
         local tw = pick == "twin" and quota.twin or 0
@@ -606,20 +597,8 @@ script UndeadSystem extends Logic
     method void ApplyMageForm(Entity player, table rec)
         -- 해골 마법사 변이 편성 (10-24 사용자: 마법사도 변이 — 중반 A안 저주·쌍발·관통, 후반 B·C안 광기 오오라 Lv30 · 폭발 Lv38).
         -- 해골 전사 변이와 같은 규칙: 변이마다 랭크 수만큼 마법사가 그 모습. 광기 → 저주 → 쌍발 → 관통 → 폭발 순으로 채우고 남으면 일반
-        local order = { "aura", "hex", "twin", "pierce", "blast" }
-        local quota = {}
-        local used = {}
-        for _, form in ipairs(order) do
-            quota[form] = self:SkillLevel(player, "mage_" .. form)
-            used[form] = 0
-        end
-        for _, other in ipairs(self:ListOf(player)) do
-            if other ~= rec and other.kind == "mage" and used[other.form or ""] ~= nil then used[other.form] = used[other.form] + 1 end
-        end
-        rec.form = ""
-        for _, form in ipairs(order) do
-            if rec.form == "" and used[form] < quota[form] then rec.form = form end
-        end
+        local quota = self:FormQuota(player, "mage")
+        rec.form = self:PickForm("mage", quota, self:ListOf(player), rec)   -- 전사와 같은 PickForm (편성 미리보기와 공유)
         local r = rec.form ~= "" and quota[rec.form] or 0
         if rec.form == "aura" then
             rec.variant = "aura_might:" .. tostring(8 + 4 * r)          -- 반경 3 나·소환수 피해 +12/16/20%
@@ -660,20 +639,194 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void TrimOldest(Entity player, string kind, integer keep)
-        -- kind가 keep 개를 넘으면 가장 오래된 것부터 무너뜨린다 (D2)
+        -- kind가 keep 개를 넘으면 가장 오래된 것부터 무너뜨린다 (D2). 누구를 무너뜨릴지는 TrimVictims (편성 미리보기와 공유)
         local list = self:ListOf(player)
+        for _, victim in ipairs(self:TrimVictims(list, kind, keep)) do
+            self:DestroyEntity(victim)
+            self:RemoveRec(list, victim)
+        end
+    end
+
+    -- ───────── 편성 규칙 (일으키기·편성 미리보기 공용 · 읽기만 하는 함수) ─────────
+
+    method table FormOrder(string kind)
+        -- 변이를 채우는 순서 (10-24 사용자 C안): 전사 방패 → 대검 → 쌍칼 · 마법사 광기 → 저주 → 쌍발 → 관통 → 폭발
+        if kind == "mage" then return { "aura", "hex", "twin", "pierce", "blast" } end
+        if kind == "skeleton" then return { "shield", "greatsword", "twin" } end
+        return {}
+    end
+
+    method table FormQuota(Entity player, string kind)
+        -- 변이별 자리 수 = 그 변이 강화 노드 랭크 (skel_shield … · mage_aura …)
+        local quota = {}
+        local prefix = kind == "mage" and "mage_" or "skel_"
+        for _, form in ipairs(self:FormOrder(kind)) do quota[form] = self:SkillLevel(player, prefix .. form) end
+        return quota
+    end
+
+    method string PickForm(string kind, table quota, table list, table exclude)
+        -- 일으킬 때 고르는 변이: list(오래된 순 · exclude 제외)에서 자리가 남은 첫 변이, 없으면 "" (일반형).
+        -- 무너뜨리기(TrimVictims) 전에 고르므로 정원이 찬 상태에서도 교체될 개체의 변이를 센다
+        local used = {}
+        for _, form in ipairs(self:FormOrder(kind)) do used[form] = 0 end
+        for _, other in ipairs(list) do
+            if other ~= exclude and other.kind == kind and used[other.form or ""] ~= nil then used[other.form] = used[other.form] + 1 end
+        end
+        for _, form in ipairs(self:FormOrder(kind)) do
+            if used[form] < (quota[form] or 0) then return form end
+        end
+        return ""
+    end
+
+    method table SlotPlan(Entity player, string kind, integer slvl, table list, integer reserved)
+        -- 일으킬 때 정원: max = MaxFor · have = 목록의 같은 종류 + 거인 예약 · keep = 새 개체를 넣기 전 남길 수
+        local max = self:MaxFor(player, kind, slvl)
+        local have = reserved
+        for _, r in ipairs(list) do if r.kind == kind then have = have + 1 end end
+        return { max = max, reserved = reserved, have = have, keep = math.max(0, max - 1 - reserved), full = have >= max }
+    end
+
+    method table TrimVictims(table list, string kind, integer keep)
+        -- kind가 keep을 넘을 때 무너질 기록 (가장 오래된 것부터 · 뼈 거인 몸은 빼고). 목록은 바꾸지 않는다
         local count = 0
         for _, rec in ipairs(list) do if rec.kind == kind then count = count + 1 end end
-        local i = 1
-        while count > keep and i <= #list do
-            if list[i].kind == kind and not list[i].giant then   -- 뼈 거인 몸은 무너뜨리지 않는다
-                self:DestroyEntity(list[i])
-                table.remove(list, i)
+        local victims = {}
+        for _, rec in ipairs(list) do
+            if count <= keep then break end
+            if rec.kind == kind and not rec.giant then
+                table.insert(victims, rec)
                 count = count - 1
-            else
-                i = i + 1
             end
         end
+        return victims
+    end
+
+    method void RemoveRec(table list, table rec)
+        for i, r in ipairs(list) do
+            if r == rec then
+                table.remove(list, i)
+                return
+            end
+        end
+    end
+
+    -- ───────── 편성 미리보기 (I03 · 읽기 전용) ─────────
+
+    method table RosterPreview(Entity player, string kind)
+        -- 스킬 창 안내용: 지금 일반형·변이 수, 정원, 다음 소환 변이와 교체될 기록, 정원·우선순위 때문에 서지 못하는 변이.
+        -- 실제 일으키기와 같은 함수(MaxFor·FormQuota·PickForm·SlotPlan·TrimVictims)만 부르고 기록·Serial·목록은 만들거나 바꾸지 않는다
+        local roster = self:RosterOf(player)
+        return self:PreviewFrom(player, kind, roster.list, roster.reserved)
+    end
+
+    method table PreviewFrom(Entity player, string kind, table list, integer reserved)
+        local slvl = self:SkillLevel(player, kind == "mage" and "raise_mage" or "raise_skeleton")   -- 시전과 같은 유효 랭크 (SkillBook.Cast → Raise)
+        local quota = self:FormQuota(player, kind)
+        local res = kind == "skeleton" and reserved or 0   -- GiantReserved는 해골 전사만
+        local plan = self:SlotPlan(player, kind, slvl, list, res)
+        local counts = {}
+        counts[""] = 0
+        for _, form in ipairs(self:FormOrder(kind)) do counts[form] = 0 end
+        for _, r in ipairs(list) do
+            if r.kind == kind then counts[r.form or ""] = (counts[r.form or ""] or 0) + 1 end
+        end
+        local steady = self:SteadyRoster(kind, plan.max, quota)
+        local idle = {}
+        for _, form in ipairs(self:FormOrder(kind)) do
+            if quota[form] > 0 and (steady[form] or 0) == 0 then table.insert(idle, { form = form, need = self:ExtraSlotsFor(kind, plan.max, quota, form) }) end
+        end
+        local preview = { kind = kind, level = slvl, max = plan.max, have = plan.have, reserved = res, full = plan.full, keep = plan.keep,
+            counts = counts, quota = quota, steady = steady, idle = idle, nextForm = "", replaces = {} }
+        if slvl > 0 and plan.max > 0 then
+            preview.nextForm = self:PickForm(kind, quota, list, nil)
+            preview.replaces = self:TrimVictims(list, kind, plan.keep)
+        end
+        return preview
+    end
+
+    method table SteadyRoster(string kind, integer slots, table quota)
+        -- 빈 목록에서 같은 규칙(PickForm → TrimVictims)으로 계속 일으킬 때 변이별로 서는 최대 수 (거인·죽음 없음 · 정원 slots).
+        -- 0인 변이 = 노드를 찍어도 지금 정원·우선순위로는 한 기도 서지 못한다
+        local seen = {}
+        seen[""] = 0
+        for _, form in ipairs(self:FormOrder(kind)) do seen[form] = 0 end
+        if slots <= 0 then return seen end
+        local total = slots
+        for _, form in ipairs(self:FormOrder(kind)) do total = total + (quota[form] or 0) end
+        local warm = 3 * total + 2
+        local list = {}
+        for i = 1, warm * 2 do
+            local form = self:PickForm(kind, quota, list, nil)
+            for _, victim in ipairs(self:TrimVictims(list, kind, slots - 1)) do self:RemoveRec(list, victim) end
+            table.insert(list, { kind = kind, form = form })
+            if i > warm then
+                local now = {}
+                for _, r in ipairs(list) do now[r.form] = (now[r.form] or 0) + 1 end
+                for f, n in pairs(now) do
+                    if n > (seen[f] or 0) then seen[f] = n end
+                end
+            end
+        end
+        return seen
+    end
+
+    method integer ExtraSlotsFor(string kind, integer slots, table quota, string form)
+        -- form이 서려면 정원이 몇 기 더 있어야 하나 (0 = 이미 선다 · 찾지 못하면 -1)
+        local total = 1
+        for _, f in ipairs(self:FormOrder(kind)) do total = total + (quota[f] or 0) end
+        for extra = 0, total do
+            if (self:SteadyRoster(kind, slots + extra, quota)[form] or 0) > 0 then return extra end
+        end
+        return -1
+    end
+
+    method string EncodeRoster(table list, integer reserved)
+        -- 클라이언트 편성 미리보기 입력 (ShadowCommander.UndeadRoster): 오래된 순 "s:shield,s:,m:aura!" + "|거인 예약 수" (! = 뼈 거인 몸)
+        local parts = {}
+        for _, rec in ipairs(list) do
+            if rec.kind == "skeleton" or rec.kind == "mage" then
+                table.insert(parts, (rec.kind == "mage" and "m:" or "s:") .. (rec.form or "") .. (rec.giant and "!" or ""))
+            end
+        end
+        return table.concat(parts, ",") .. "|" .. tostring(reserved)
+    end
+
+    method table DecodeRoster(string text)
+        local list = {}
+        local body, reserved = string.match(text or "", "^(.*)|(%d+)$")
+        for item in string.gmatch(body or "", "[^,]+") do
+            local k, form, giant = string.match(item, "^([sm]):(%a*)(!?)$")
+            if k ~= nil then table.insert(list, { kind = k == "m" and "mage" or "skeleton", form = form, giant = giant == "!" or nil }) end
+        end
+        return { list = list, reserved = math.floor(tonumber(reserved) or 0) }
+    end
+
+    method table RosterOf(Entity player)
+        -- 서버 = 실제 목록·거인 예약 · 클라이언트 = 동기화된 UndeadRoster (같은 모양의 가벼운 기록)
+        if self:IsServer() then return { list = self:ListOf(player), reserved = self:GiantReserved(player, "skeleton") } end
+        ---@type ShadowCommander
+        local cmd = player:GetComponent("script.ShadowCommander")
+        return self:DecodeRoster(cmd ~= nil and cmd.UndeadRoster or "")
+    end
+
+    method string FormName(string kind, string form)
+        -- 「방패 해골」·「광기 마법사」 = 그 변이 노드 이름 · 일반형은 「해골 전사」·「해골 마법사」
+        if form ~= "" then
+            local def = _SkillData:Get((kind == "mage" and "mage_" or "skel_") .. form)
+            if def ~= nil then return def.name end
+        end
+        return kind == "mage" and "해골 마법사" or "해골 전사"
+    end
+
+    method table NodeForm(string id)
+        -- 변이 노드 id → { kind, form } (변이 노드가 아니면 form = "")
+        for _, kind in ipairs({ "skeleton", "mage" }) do
+            local prefix = kind == "mage" and "mage_" or "skel_"
+            for _, form in ipairs(self:FormOrder(kind)) do
+                if id == prefix .. form then return { kind = kind, form = form } end
+            end
+        end
+        return { kind = "", form = "" }
     end
 
     @ExecSpace("ServerOnly")
@@ -1007,6 +1160,7 @@ script UndeadSystem extends Logic
         end
         cmd.UndeadSummary = table.concat(parts, " · ")
         cmd.MinionCounts = tostring(n.skeleton) .. "," .. tostring(n.mage) .. "," .. tostring(n.revive)
+        cmd.UndeadRoster = self:EncodeRoster(self:ListOf(player), self:GiantReserved(player, "skeleton"))   -- 스킬 창 편성 미리보기 (I03)
     end
 
 end

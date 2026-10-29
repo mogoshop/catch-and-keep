@@ -720,7 +720,68 @@ script SkillBook extends Component
         if id == "step_gale" and self:GetLevel("wraith_dash") <= 0 then return "망령 질주를 배워야 발동합니다" end
         if id == "dash_ghost" and self:GetLevel("bone_armor") <= 0 then return "뼈 갑옷을 배워야 회복합니다" end
         if id == "shard_multi" and self:GetBoneShardCount(math.max(1, self:GetPowerLevel("bone_shard"))) <= 1 then return "골편이 2발 이상일 때 모이는 효과가 납니다" end
+        local nodeForm = _UndeadSystem:NodeForm(id)
+        if nodeForm.form ~= "" then return self:FormHint(id, nodeForm.kind, nodeForm.form) end
         return ""
+    end
+
+    method string FormHint(string id, string kind, string form)
+        -- 해골 변이 노드 (I03 · 글귀 승인 전): 랭크는 세기와 자리 수를 함께 올리지만, 정원이 차 있거나 앞 순서 변이가 자리를 다 쓰면 개체가 늘지 않는다.
+        -- 지금 정원·순서로 계속 일으킬 때(UndeadSystem.SteadyRoster — 실제 일으키기와 같은 PickForm·TrimVictims) 다음 랭크가 실제 개체로 이어지는지 알려 준다
+        local p = _UndeadSystem:RosterPreview(self.Entity, kind)
+        if p.level <= 0 or p.max <= 0 then return "" end
+        local def = _SkillData:Get(id)
+        local level = self:GetLevel(id)
+        local now = p.quota[form] or 0
+        local nextQ = now
+        if def ~= nil and level < def.maxLv then nextQ = self:PowerLevelAt(id, level + 1) end
+        if nextQ <= 0 then return "" end   -- 캐릭터 레벨로 아직 못 쓰는 랭크는 Reason 줄이 설명한다
+        local q = {}
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do q[f] = p.quota[f] or 0 end
+        q[form] = nextQ
+        local after = _UndeadSystem:SteadyRoster(kind, p.max, q)
+        local legion = kind == "mage" and "마법사 증원" or "뼈 군단"
+        if (after[form] or 0) <= 0 then
+            local need = _UndeadSystem:ExtraSlotsFor(kind, p.max, q, form)
+            local text = (level == 0 and "배워도 " or "") .. "정원 " .. tostring(p.max) .. "기로는 0기"
+            if need > 0 then text = text .. " · 정원 +" .. tostring(need) .. "(" .. legion .. ")부터 섭니다" end
+            return text
+        end
+        if nextQ <= now then return "" end
+        local before = _UndeadSystem:SteadyRoster(kind, p.max, p.quota)
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
+            if f ~= form and (before[f] or 0) > 0 and (after[f] or 0) <= 0 then
+                return "찍으면 " .. _UndeadSystem:FormName(kind, f) .. " 자리가 없어집니다 · 정원 " .. tostring(p.max) .. "기"
+            end
+        end
+        if now > 0 and (after[form] or 0) <= (before[form] or 0) then
+            return "다음 랭크는 세기만 오릅니다 (정원이 차 " .. tostring(before[form] or 0) .. "기 그대로)"
+        end
+        return ""
+    end
+
+    method string RosterLine(string id)
+        -- 편성 한 줄 (I03 · 글귀 승인 전): 해골 일으키기·변이·증원 노드 상세에 지금 편성과 다음 소환을 보인다.
+        -- 계산은 UndeadSystem.RosterPreview (실제 일으키기의 MaxFor·PickForm·SlotPlan·TrimVictims와 같은 함수 · 기록을 만들지 않는다)
+        local kind = _UndeadSystem:NodeForm(id).kind
+        if id == "raise_skeleton" or id == "skel_legion" then kind = "skeleton"
+        elseif id == "raise_mage" or id == "mage_legion" then kind = "mage" end
+        if kind == "" then return "" end
+        local p = _UndeadSystem:RosterPreview(self.Entity, kind)
+        if p.level <= 0 or p.max <= 0 then return "" end
+        local parts = {}
+        local forms = { "" }
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do table.insert(forms, f) end
+        for _, f in ipairs(forms) do
+            local n = p.counts[f] or 0
+            if n > 0 then table.insert(parts, (f == "" and "일반" or string.match(_UndeadSystem:FormName(kind, f), "^(%S+)")) .. " " .. tostring(n)) end
+        end
+        if p.reserved > 0 then table.insert(parts, "거인에 " .. tostring(p.reserved)) end
+        local line = "편성 " .. tostring(p.have) .. "/" .. tostring(p.max) .. (#parts > 0 and (": " .. table.concat(parts, "·")) or "")
+        line = line .. " · 다음 소환: " .. _UndeadSystem:FormName(kind, p.nextForm)
+        if #p.replaces == 1 then line = line .. "(가장 오래된 " .. _UndeadSystem:FormName(kind, p.replaces[1].form or "") .. " 교체)"
+        elseif #p.replaces > 1 then line = line .. "(오래된 " .. tostring(#p.replaces) .. "기 교체)" end
+        return line
     end
 
     @ExecSpace("Server")
