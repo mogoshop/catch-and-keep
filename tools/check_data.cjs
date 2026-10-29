@@ -14,7 +14,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons", "map_sets"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -369,6 +369,13 @@ T.maps.forEach((r, i) => {
   for (const x of r.extra.split(";")) {
     const m = x.match(/^npc:(\w+)@/);
     if (m && !npcModels.has(m[1])) err("maps", i, `npc '${m[1]}' — npcs.csv에 없음`);
+    // 길 위 사건 (기획서 39 #7 A): 종류 · 사냥터만 · 둘레 장면 세트(map_sets.csv a<액트>_road_<종류>)가 있어야 한다
+    const road = x.match(/^road:(\w+)@/);
+    if (road) {
+      if (!["chest", "shrine", "nest", "ritual"].includes(road[1])) err("maps", i, `extra '${x}' — 길 위 사건 종류는 chest·shrine·nest·ritual`);
+      if (r.kind !== "field") err("maps", i, `extra '${x}' — 길 위 사건은 사냥터(field)에만`);
+      if (!T.map_sets.some((s) => s.set === `a${r.act || 1}_road_${road[1]}`)) err("maps", i, `extra '${x}' — map_sets.csv에 장면 세트 a${r.act || 1}_road_${road[1]}이 없음`);
+    }
   }
 });
 // 액트마다 마을 하나 (필드 사슬은 같은 액트의 마을에서 시작해 마을로 돌아온다)

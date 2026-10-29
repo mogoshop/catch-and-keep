@@ -87,6 +87,17 @@ script SelfTest extends Logic
         local mastery = _SkillData:Get("skeleton_mastery")
         self:Check("skill nodes", mastery ~= nil and mastery.kind == "node" and mastery.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 3, "단련된 뼈 = 해골 전사 강화, 그림자 소환 강화 3개")
         self:Check("deploy rank", _ShadowConfig:GetDeploySkillBonus(1) == 1 and _ShadowConfig:GetDeploySkillBonus(3) == 3, "그림자 증원 랭크 = 추가 그림자 수")
+        -- 10-29 길 위 사건 (기획서 39 #7 A): 액트 3·4 사냥터 16장에 하나씩 · 종류마다 4 · 액트 그림 줄(a3·a4)이 비지 않음
+        _GameData:Ensure()
+        local roadKinds, roadMaps = {}, 0
+        for id, info in pairs(_GameData.MapInfo) do
+            if info.roads ~= nil and info.roads ~= "" then
+                roadMaps = roadMaps + 1
+                for kind in string.gmatch(info.roads, "(%a+)@") do roadKinds[kind] = (roadKinds[kind] or 0) + 1 end
+            end
+        end
+        self:Check("road events", roadMaps == 16 and roadKinds.chest == 4 and roadKinds.shrine == 4 and roadKinds.nest == 4 and roadKinds.ritual == 4, "길 위 사건 맵 " .. tostring(roadMaps) .. " · 상자 " .. tostring(roadKinds.chest) .. " · 신전 " .. tostring(roadKinds.shrine) .. " · 둥지 " .. tostring(roadKinds.nest) .. " · 의식 " .. tostring(roadKinds.ritual))
+        self:Check("road art", _GameConst:EventArt(_GameConst.SpriteEventShrine, 3) ~= "" and _GameConst:EventArt(_GameConst.SpriteEventChestOpen, 4) ~= "" and _GameConst:EventArt(_GameConst.SpriteEventAltar, 4) ~= "" and _GameConst:EventArt(_GameConst.SpriteEventShrine, 9) == "", "장치 그림 액트 줄 (a3·a4 · 없는 액트는 빈 값)")
         -- 변종 능력: 무작위는 weight > 0 만, 고유는 표에서
         local rolled = _GameData:RollVariant(0)
         self:Check("variant roll", rolled ~= "" and _GameData:GetVariant(rolled).weight > 0, "무작위 변종 " .. rolled)
