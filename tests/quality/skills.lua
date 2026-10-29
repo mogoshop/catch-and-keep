@@ -2,7 +2,7 @@
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
 -- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,RenderWorkshop+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
 _GameData:Ensure();_SkillData:Ensure()
@@ -423,5 +423,53 @@ for mask=0,7 do
  local offer=SkillOffer:Pick(fake,stats);local expected={}
  for _,id in ipairs({'new','rank','node'}) do if bits[id] then table.insert(expected,id) end end
  assert(table.concat(offer,',')==table.concat(expected,','),'candidate category lost at mask '..mask)
+end
+-- I03 단계 2 · I04 편성 조작 칸 (SkillWindow.RenderForm, 10-30 갈래 B): 해골 전사·마법사 트리에서만 · 직접/자동 머리 글 · ± 는 변이 노드만 · 골편 홀드 설정은 모바일만
+do
+ local en={}
+ local keepEn=_UIKit.SetEnabled
+ local keepMobile=Environment.IsMobilePlatform
+ _UIKit.SetEnabled=function(_,path,on) en[path]=on end
+ Environment.IsMobilePlatform=function() return false end
+ book.Levels={raise_skeleton=6,skel_shield=3,skel_twin=2,bone_shard=1,bone_armor=1}
+ stats.Level=99
+ book.FormHope='s:d:shield=1,twin=0'
+ SkillWindow.SelMain='raise_skeleton'
+ SkillWindow.Selected='skel_shield'
+ values={}
+ SkillWindow:RenderWorkshop(book,stats)
+ local head=values['SkillWin/WS/Form/Head']
+ assert(en['SkillWin/WS/Form']==true and head=='방패 희망 1/3' and values['SkillWin/WS/Form/Mode']=='자동으로 되돌리기' and en['SkillWin/WS/Form/Plus']==true and en['SkillWin/WS/Form/Minus']==true,'form node '..tostring(head))
+ assert(SkillWindow.FormKind=='skeleton' and SkillWindow.FormForm=='shield')
+ assert(string.find(values['SkillWin/WS/Stat'],'직접 편성',1,true),values['SkillWin/WS/Stat'])
+ SkillWindow.Selected='raise_skeleton'
+ values={}
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(values['SkillWin/WS/Form/Head']=='편성: 직접' and en['SkillWin/WS/Form/Plus']==false and SkillWindow.FormForm=='','main node')
+ book.FormHope=''
+ SkillWindow.Selected='skel_twin'
+ values={}
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(string.find(values['SkillWin/WS/Form/Head'],'쌍칼 자동 ',1,true) and values['SkillWin/WS/Form/Mode']=='직접 정하기','auto '..tostring(values['SkillWin/WS/Form/Head']))
+ SkillWindow.SelMain='bone_shard'
+ SkillWindow.Selected='bone_shard'
+ values={}
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(en['SkillWin/WS/Form']==false and SkillWindow.FormKind=='','PC: no shard hold control')
+ Environment.IsMobilePlatform=function() return true end
+ book.ShardHold=false
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(en['SkillWin/WS/Form']==true and values['SkillWin/WS/Form/Head']=='누르고 있으면 반복: 끔' and values['SkillWin/WS/Form/Mode']=='켜기' and en['SkillWin/WS/Form/Minus']==false,'mobile shard toggle')
+ book.ShardHold=true
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(values['SkillWin/WS/Form/Mode']=='끄기')
+ SkillWindow.SelMain='bone_armor'
+ SkillWindow.Selected='bone_armor'
+ SkillWindow:RenderWorkshop(book,stats)
+ assert(en['SkillWin/WS/Form']==false,'other trees hide')
+ book.ShardHold=false
+ _UIKit.SetEnabled=keepEn
+ Environment.IsMobilePlatform=keepMobile
+ print('[quality/skills] I03 step2/I04 form control: direct node head 방패 희망 1/3, main 편성: 직접, auto head, shard toggle mobile-only, other trees hidden')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

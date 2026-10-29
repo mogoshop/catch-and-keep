@@ -129,15 +129,22 @@ local PadDefaults = {}
 for k, v in pairs(MobilePad) do if type(v) ~= "function" then PadDefaults[k] = v end end
 local BookMethods = {}
 export(BookMethods, "RootDesk/MyDesk/Skill/SkillBook.mlua", { "GetSlotSkill", "CastSlot", "BeginRiteHold", "ReleaseRite", "CancelRiteHold" }, false)
+-- I04 골편 홀드 반복 (10-30 갈래 B): 기본 공격 입구는 실제 PlayerAttack.SubmitBasicInput 본문 (단일 소유권 MobilePad.BlocksBasic)
+local AttackMethods = {}
+export(AttackMethods, "RootDesk/MyDesk/Combat/PlayerAttack.mlua", { "SubmitBasicInput" }, false)
+function _Util:IsAlive(e) return e.PlayerComponent.Hp > 0 end
+local CDLEN = { bone_shard = 0.5 }
 
 -- 가짜 서버: 요청이 오면 검사하고 비용을 쓴다 (실제 서버 SkillBook.Cast/Rite가 하는 일의 요약)
-local COST = { bone_prison = 12, curse_weak = 8, bone_rite = 20 }
+local COST = { bone_prison = 12, curse_weak = 8, bone_rite = 20, bone_shard = 5 }
 local function NewBook(player)
   local b = setmetatable({}, { __index = BookMethods })
   b.Entity = player
   b.Slots = "bone_shard,bone_prison,bone_rite,curse_weak"
   b.RightSkill = ""
   b.RiteHoldAt = -1
+  b.ShardHold = false
+  function b:GetManaCost(id, lv) return COST[id] or 0 end
   b.RiteHoldSlot = 0
   b.PredictedCastAt = 0
   b.DashShown = 0
@@ -155,9 +162,10 @@ local function NewBook(player)
   function b:RiteSkeletons() return W.skeletons end
   function b:RequestCast(id, aim)
     W.requests = W.requests + 1
+    table.insert(W.reqAt, _UtilLogic.ElapsedSeconds)
     if W.stats.Mana >= COST[id] and self:CooldownLeft(id) <= 0 then
       W.stats.Mana = W.stats.Mana - COST[id]
-      self.cd[id] = _UtilLogic.ElapsedSeconds + 3
+      self.cd[id] = _UtilLogic.ElapsedSeconds + (CDLEN[id] or 3)
       W.casts = W.casts + 1
     end
   end
@@ -186,14 +194,18 @@ local function Reset()
   for k, v in pairs(PadDefaults) do MobilePad[k] = v end
   W.window, W.pickers, W.requests, W.casts, W.basic, W.skeletons = false, 0, 0, 0, 0, 6
   W.loot, W.monsters = {}, {}
+  W.reqAt = {}
   W.ents = {
     ["/ui/ShadowHUD/MobilePad/AimCancel"] = { Enable = false, UITransformComponent = { RectSize = Vector2(92, 92), center = SCREEN.Cancel } },
     ["/ui/ShadowHUD/MobilePad"] = { Enable = true },
   }
   W.stats = { Mana = 100 }
   function W.stats:GetAttackInterval(base) return base end
+  function W.stats:GetCastCooldownMult() return 1 end
   local attack = { LocalAimActive = false, LocalAimDirection = Vector2(1, 0) }
-  function attack:SubmitBasicInput() W.basic = W.basic + 1 end
+  attack.LastLocalInputAt = -99
+  attack.SubmitBasicInput = AttackMethods.SubmitBasicInput   -- 실제 본문 (I04 단일 소유권 입구)
+  function attack:RequestBasicAttack(dir, manual) W.basic = W.basic + 1 end
   local player = { PlayerComponent = { Hp = 100, UserId = "u1" }, CurrentMap = MAP_A, PlayerControllerComponent = {}, pos = Vector2(0, 0) }
   W.inv = { BagDigest = "", BagSize = 40 }
   function player.PlayerControllerComponent:ActionAttack() end
@@ -207,6 +219,7 @@ local function Reset()
     return nil
   end
   W.player, W.attack = player, attack
+  attack.Entity = player
   _UserService.LocalPlayer = player
   W.book = NewBook(player)
   _UtilLogic.ElapsedSeconds = 100
@@ -458,6 +471,147 @@ scenario("빈 칸·「줍기」 큰 단추에는 취소 표시 없음", function
   MobilePad:BeginGesture(5, 16, SCREEN.Attack)
   check(not MobilePad.CancelShown, "「줍기」로 바뀐 큰 단추")
   MobilePad:ClearGesture()
+end)
+
+-- ───────── I04 골편 홀드 반복 (10-30 갈래 B · review-plan B-T04/B-T05) ─────────
+-- 골편 = 칸 1 (b.Slots 첫 칸). 반복은 실제 SkillBook.CastSlot → 가짜 서버 RequestCast(마나·재사용) 길만 쓴다
+local function step(n)
+  -- 0.1초씩 n번: Poll(멈춤 사유 확인) + ShardTick (가짜 UI는 벨트가 없어 Poll이 ShardTick 전에 끝나므로 직접 부른다)
+  for _ = 1, n do
+    _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.1
+    MobilePad:Poll()
+    MobilePad:ShardTick()
+  end
+end
+local function shardOn() W.book.ShardHold = true end
+
+scenario("I04 홀드 반복 기본 끔: 누르고 있어도 놓을 때 한 번", function()
+  MobilePad:BeginGesture(1, 21, SCREEN.S2)
+  check(not MobilePad.ShardActive, "설정 끔이면 반복 소유 없음")
+  step(20)
+  check(W.requests == 0, "누르는 동안 요청 0")
+  MobilePad:EndGesture(21, SCREEN.S2 + Vector2(80, 0))
+  MobilePad:EndGesture(21, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == 1 and W.casts == 1, "놓을 때 한 번 (요청 " .. W.requests .. ")")
+end)
+
+scenario("I04 홀드 반복 켬: 재사용 간격마다 · 뗄 때·중복 up 추가 시전 0", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 22, SCREEN.S2)
+  check(MobilePad.ShardActive and not MobilePad.ShardRepeating, "누른 순간 소유 · 아직 반복 전")
+  step(3)
+  check(W.requests == 0, "ShardHoldDelay(0.35) 전 요청 0")
+  step(17)   -- 누른 지 2.0초
+  check(W.requests >= 3 and W.requests <= 4 and W.casts == W.requests, "2초 동안 재사용 0.5초 간격으로 3~4번 (요청 " .. W.requests .. ")")
+  local gapOk = true
+  for i = 2, #W.reqAt do if W.reqAt[i] - W.reqAt[i - 1] < 0.5 - 1e-6 then gapOk = false end end
+  check(gapOk and W.reqAt[1] - 100 >= MobilePad.ShardHoldDelay - 1e-6, "요청 간격 ≥ 재사용 · 첫 요청은 누른 지 0.35초 뒤")
+  check(W.stats.Mana == 100 - W.casts * COST.bone_shard, "마나는 서버 시전마다 한 번씩")
+  local sentBefore = W.requests
+  MobilePad:EndGesture(22, SCREEN.S2 + Vector2(80, 0))
+  MobilePad:EndGesture(22, SCREEN.S2 + Vector2(80, 0))   -- 같은 손가락 화면 release
+  check(W.requests == sentBefore, "떼도 한 발 더 안 나감")
+  check(MobilePad.ShardStopReason == "release" and not MobilePad.ShardActive, "사유 release")
+  step(20)
+  check(W.requests == sentBefore, "뗀 뒤 요청 0")
+end)
+
+scenario("I04 짧게 누르면 놓을 때 한 번 (켬이어도)", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 23, SCREEN.S2)
+  step(2)
+  MobilePad:EndGesture(23, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == 1, "탭 = 놓기 시전 1")
+  step(10)
+  check(W.requests == 1, "뒤 반복 없음")
+end)
+
+scenario("I04 반복 중 기본 공격 입구 막힘 (네이티브·Ctrl·탭 접근 = SubmitBasicInput)", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 24, SCREEN.S2)
+  W.attack:SubmitBasicInput()
+  check(W.basic == 0, "누른 순간부터 기본 공격 입력 막힘")
+  step(6)
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.05
+  W.attack:SubmitBasicInput()
+  check(W.basic == 0 and W.requests >= 1, "반복 중 기본 공격 0 · 골편 요청 " .. W.requests)
+  MobilePad:BeginGesture(MobilePad.BasicSlot, 25, SCREEN.BasicAtk)   -- 다른 손가락이 작은 기본 공격 단추
+  check(MobilePad.GestureTouchId == 24 and not MobilePad.Holding and W.basic == 0, "두 번째 손가락은 소유를 못 뺏는다")
+  MobilePad:EndGesture(25, SCREEN.BasicAtk)
+  check(MobilePad.ShardActive, "남의 손가락 떼기가 반복을 멈추지 않는다")
+  MobilePad:EndGesture(24, SCREEN.S2)
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.1
+  W.attack:SubmitBasicInput()
+  check(W.basic == 1 and not MobilePad.Holding, "뗀 뒤 기본 공격 입력 정상 · 저절로 반복하지 않음")
+end)
+
+scenario("I04 기본 공격 단추가 먼저면 골편 반복 시작 안 됨", function()
+  shardOn()
+  W.book.RightSkill = "curse_weak"
+  MobilePad:BeginGesture(MobilePad.BasicSlot, 26, SCREEN.BasicAtk)
+  MobilePad:BeginGesture(1, 27, SCREEN.S2)
+  check(not MobilePad.ShardActive and MobilePad.Holding, "기본 공격 소유 · 골편 손가락 무시")
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.51
+  MobilePad:HoldTick()
+  MobilePad:ShardTick()
+  check(W.basic == 2 and W.requests == 0, "기본 공격만 반복 · 골편 0")
+  MobilePad:EndGesture(27, SCREEN.S2)
+  MobilePad:EndGesture(26, SCREEN.BasicAtk)
+  check(W.requests == 0 and not MobilePad.Holding, "정리")
+end)
+
+-- 멈춤 사유 표: 반복이 시작된 뒤 각 사유 → 그 뒤 요청 0 · 떼도 놓기 시전 0
+local stops = {
+  { "menu", function() W.window = true end, function() W.window = false end },
+  { "dead", function() W.player.PlayerComponent.Hp = 0 end, function() W.player.PlayerComponent.Hp = 100 end },
+  { "map", function() W.player.CurrentMap = MAP_B end, function() W.player.CurrentMap = MAP_A end },
+  { "edit", function() MobilePad.EditMode = true end, function() MobilePad.EditMode = false end },
+  { "slot", function() W.book.Slots = "bone_prison,bone_shard,bone_rite,curse_weak" end, function() end },
+  { "toggle", function() W.book.ShardHold = false end, function() end },
+  { "aim", function() MobilePad:UpdateGesture(28, SCREEN.Cancel) end, function() end },
+  { "focus", function() MobilePad:StopShardHold("focus") MobilePad:ClearGesture() end, function() end },
+}
+for _, s in ipairs(stops) do
+  scenario("I04 반복 멈춤 사유 " .. s[1], function()
+    shardOn()
+    MobilePad:BeginGesture(1, 28, SCREEN.S2)
+    step(6)
+    local sent = W.requests
+    check(sent >= 1 and MobilePad.ShardRepeating, s[1] .. ": 반복 중")
+    s[2]()
+    if s[1] ~= "aim" and s[1] ~= "focus" then step(1) end
+    check(not MobilePad.ShardActive and MobilePad.ShardStopReason == s[1], s[1] .. ": 사유 " .. tostring(MobilePad.ShardStopReason))
+    s[3]()
+    step(20)
+    check(W.requests == sent, s[1] .. ": 멈춘 뒤 요청 0 (" .. W.requests .. ")")
+    MobilePad:EndGesture(28, SCREEN.S2 + Vector2(80, 0))
+    check(W.requests == sent, s[1] .. ": 떼도 놓기 시전 0")
+    check(not MobilePad:BlocksBasic(), s[1] .. ": 기본 공격 소유 풀림")
+  end)
+end
+
+scenario("I04 마나 부족이면 요청을 보내지 않는다 (경고 남발 없음)", function()
+  shardOn()
+  W.stats.Mana = COST.bone_shard - 1
+  MobilePad:BeginGesture(1, 29, SCREEN.S2)
+  step(20)
+  check(W.requests == 0 and MobilePad.ShardRepeating, "반복 중이어도 요청 0")
+  W.stats.Mana = 100
+  step(1)
+  check(W.requests == 1, "마나가 차면 다시 보낸다")
+  MobilePad:EndGesture(29, SCREEN.S2)
+end)
+
+scenario("I04 반복 전 취소 위로 갔다 돌아와 놓으면 예전처럼 한 번 (반복 안 함)", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 30, SCREEN.S2)
+  MobilePad:UpdateGesture(30, SCREEN.Cancel)
+  check(not MobilePad.ShardActive and MobilePad.ShardStopReason == "aim", "취소 위 = 반복 소유 끝")
+  MobilePad:UpdateGesture(30, SCREEN.S2 + Vector2(80, 0))
+  step(10)
+  check(W.requests == 0, "다시 밖으로 와도 반복 이어 가지 않음")
+  MobilePad:EndGesture(30, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == 1, "놓기 시전 1 (기존 끌기 규칙)")
 end)
 
 for _, s in ipairs(scenarios) do

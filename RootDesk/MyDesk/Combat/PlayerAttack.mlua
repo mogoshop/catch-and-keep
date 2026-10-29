@@ -98,6 +98,11 @@ script PlayerAttack extends AttackComponent
     method void SubmitBasicInput()
         -- 같은 프레임의 키·아바타 이벤트를 합친다. 피해/예약 여부는 서버가 결정한다.
         if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) or _UIKit:AnyWindowOpen() then return end
+        -- I04 기본 공격 입력 단일 소유권: 모바일 골편 홀드 반복이 손가락을 가진 동안 기본 공격(작은 단추·큰 단추·네이티브 반복·Ctrl·탭 접근)은 이 입구에서 막는다 (MobilePad.BlocksBasic · PC는 늘 false)
+        if _MobilePad:BlocksBasic() then
+            if not Environment:IsPublishedPlay() then log("[VRF] basic input blocked by shard hold") end
+            return
+        end
         local now = _UtilLogic.ElapsedSeconds
         if now - self.LastLocalInputAt < 0.03 then return end
         self.LastLocalInputAt = now

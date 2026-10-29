@@ -396,16 +396,28 @@ script UndeadSystem extends Logic
             if finished then self:DestroyEntity(rec) return end
             if not _Util:IsAlive(player) or not isvalid(orb.Entity) or player.CurrentMap ~= orb.Entity.CurrentMap then fail() return end
             if canCommit ~= nil and not canCommit() then fail() return end
+            -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다 (정원·교체 계산은 편성 미리보기 RosterPreview와 같은 PlanFor → PlanNext)
+            local plan = self:PlanFor(player, kind, slvl, self:ListOf(player), self:GiantReserved(player, kind))   -- 뼈 거인에 합쳐진 넷도 자리를 차지한다
+            -- 변이는 MakeRecord 때 같은 계획으로 정했다. 생성을 기다리는 사이 목록(사망·이동)·희망 편성·정원이 바뀌어 지금 계획(변이 + 무너질 기록)이 다르면
+            --   혼을 쓰기 전에 거절한다 — 혼·마나·재사용·옛 개체 그대로 (B-DRAFT-01 · 변이만 지키고 새 교체를 따로 적용하지 않는다)
+            if (kind == "skeleton" or kind == "mage") and not self:SamePlan(rec, plan) then
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] roster raise rejected stale plan kind=%s planned=%s now=%s victims=%d/%d", kind, rec.planForm or "", plan.form, #(rec.planVictims or {}), #plan.victims)) end
+                _Util:Warn("소환하는 사이 편성이 바뀌어 취소했습니다 · 다시 사용해 주세요", userId)
+                fail()
+                return
+            end
+            rec.planVictims = nil
             finished = true
             orb:Consume()
-            -- 한도를 넘으면 가장 오래된 것이 무너진다: 조용히 사라지지 않게 알린다 (정원 계산은 편성 미리보기 RosterPreview와 같은 SlotPlan)
-            local plan = self:SlotPlan(player, kind, slvl, self:ListOf(player), self:GiantReserved(player, kind))   -- 뼈 거인에 합쳐진 넷도 자리를 차지한다
             if plan.full then
                 local names = { skeleton = "해골 전사", mage = "해골 마법사", revive = "되살린 몬스터" }
                 _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(plan.max) .. "기 — 가장 오래된 하나가 무너졌습니다 (스킬 레벨을 올리면 늘어납니다)", userId)
             end
             self:TrimOldest(player, kind, plan.keep)
             table.insert(self:ListOf(player), rec)
+            if (kind == "skeleton" or kind == "mage") and not Environment:IsPublishedPlay() then
+                log(string.format("[VRF] roster raised kind=%s form=%s planned=%s match=%s trimmed=%d direct=%s", kind, rec.form or "", rec.planForm or "", tostring(plan.form == (rec.planForm or "")), #plan.victims, tostring(plan.direct)))
+            end
             self:RefreshSummary(player)
             self:PlaySummonFx(player, pos)
             _GameEvents:Emit("UndeadRaised", { player = player, kind = kind })
@@ -453,7 +465,12 @@ script UndeadSystem extends Logic
             rec.attack = m ~= nil and m.attack or ""
             rec.scale = 0.55          -- 필드의 해골 전사(1배)보다 확실히 작게
             rec.tint = Color(0.78, 0.9, 0.95, 1)   -- 10-28 F5 B-1: 필드 해골 수비병(흰 뼈)과 같은 그림이라 소환수는 서늘한 아군 색조 (예전 0.92, 0.9, 0.82)
-            self:ApplySkeletonForm(player, rec)
+            -- 변이 = 다음 소환 계획 (I03 단계 2 · 미리보기 RosterPreview와 같은 PlanFor). 이 계획이 스냅샷이다
+            local plan = self:PlanFor(player, kind, slvl, self:ListOf(player), self:GiantReserved(player, kind))
+            rec.planForm = plan.form
+            rec.planVictims = plan.victims   -- 확정 직전 다시 맞춰 볼 무너질 기록 (Raise · SamePlan)
+            self:LogPlan("plan", kind, plan)
+            self:ApplySkeletonForm(player, rec, plan.form)
         elseif kind == "mage" then
             local elements = self:Elements()
             rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
@@ -469,7 +486,11 @@ script UndeadSystem extends Logic
             rec.attack = self.MageAttack
             rec.scale = 0.5
             rec.tint = self:ElementTint(rec.element)
-            self:ApplyMageForm(player, rec)
+            local plan = self:PlanFor(player, kind, slvl, self:ListOf(player), 0)   -- 거인 예약은 해골 전사만
+            rec.planForm = plan.form
+            rec.planVictims = plan.victims
+            self:LogPlan("plan", kind, plan)
+            self:ApplyMageForm(player, rec, plan.form)
         else
             -- 동시 개체 수 상한 이후에도 투자 레벨에 따라 능력치가 성장한다.
             local mul = self:GetReviveMultiplier(slvl) / _GameData.shadowStatMul
@@ -563,13 +584,13 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method void ApplySkeletonForm(Entity player, table rec)
+    method void ApplySkeletonForm(Entity player, table rec, string pick)
         -- 해골 전사 변이 편성 (10-24 사용자 C안): 변이마다 랭크 수만큼 해골이 그 모습으로 선다. 일으킬 때 아직 자리가 남은 변이를
         -- 방패 → 대검 → 쌍칼 순으로 채우고, 다 차면 일반 해골. 쓰러진 해골의 자리는 다음에 일으키는 해골이 잇는다
         -- 대검 = 범위 베기·느림·단단 / 방패 = 받는 피해↓·도발 / 쌍칼 = 빠름·약함
-        -- 고르는 규칙은 PickForm 하나 (편성 미리보기 RosterPreview가 같은 함수로 「다음 소환」을 예고한다 · I03)
+        -- 어느 변이로 설지(pick)는 다음 소환 계획 PlanNext가 정한다 (자동 = 위 규칙 · 직접 = 희망 수 · I03 단계 2 — MakeRecord).
+        -- 세기는 늘 노드 랭크(FormQuota) — 직접 편성 희망 수를 낮춰도 서는 개체의 방어·속도·범위는 그대로다 (B-R01)
         local quota = self:FormQuota(player, "skeleton")
-        local pick = self:PickForm("skeleton", quota, self:ListOf(player), rec)
         local gs = pick == "greatsword" and quota.greatsword or 0
         local sh = pick == "shield" and quota.shield or 0
         local tw = pick == "twin" and quota.twin or 0
@@ -594,11 +615,12 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method void ApplyMageForm(Entity player, table rec)
+    method void ApplyMageForm(Entity player, table rec, string pick)
         -- 해골 마법사 변이 편성 (10-24 사용자: 마법사도 변이 — 중반 A안 저주·쌍발·관통, 후반 B·C안 광기 오오라 Lv30 · 폭발 Lv38).
         -- 해골 전사 변이와 같은 규칙: 변이마다 랭크 수만큼 마법사가 그 모습. 광기 → 저주 → 쌍발 → 관통 → 폭발 순으로 채우고 남으면 일반
+        -- 변이(pick)는 다음 소환 계획 PlanNext(전사와 같은 함수 · 미리보기와 공유), 효과 세기는 노드 랭크(FormQuota) 그대로 (B-R01)
         local quota = self:FormQuota(player, "mage")
-        rec.form = self:PickForm("mage", quota, self:ListOf(player), rec)   -- 전사와 같은 PickForm (편성 미리보기와 공유)
+        rec.form = pick
         local r = rec.form ~= "" and quota[rec.form] or 0
         if rec.form == "aura" then
             rec.variant = "aura_might:" .. tostring(8 + 4 * r)          -- 반경 3 나·소환수 피해 +12/16/20%
@@ -664,6 +686,125 @@ script UndeadSystem extends Logic
         return quota
     end
 
+    method table ParseHope(string text)
+        -- 희망 편성 (I03 단계 2 · 코덱스 A안): "s:d:shield=1,greatsword=0,twin=2/m:a:aura=1" → { skeleton = { direct, want }, mage = { direct, want } }.
+        -- 종류가 없거나 모드가 a면 자동 (현행 규칙 그대로 · 옛 저장 ""). want는 저장된 희망 수 그대로 — 배운 랭크·정원으로 자르지 않는다 (장비를 바꿔도 덮어쓰지 않는다 · B-R02)
+        local out = { skeleton = { direct = false, want = {} }, mage = { direct = false, want = {} } }
+        for part in string.gmatch(text or "", "[^/]+") do
+            local k, mode, body = string.match(part, "^([sm]):([ad]):(.*)")
+            if k ~= nil then
+                local kind = k == "m" and "mage" or "skeleton"
+                local entry = { direct = mode == "d", want = {} }
+                for _, form in ipairs(self:FormOrder(kind)) do
+                    local n = string.match("," .. body .. ",", "," .. form .. "=(%d+),")
+                    if n ~= nil then entry.want[form] = math.min(99, math.floor(tonumber(n) or 0)) end
+                end
+                out[kind] = entry
+            end
+        end
+        return out
+    end
+
+    method string EncodeHope(table hopes)
+        -- ParseHope의 반대 (변이 순서 고정 · 자동이고 희망 수도 없는 종류는 빼서 옛 저장과 같은 "")
+        local parts = {}
+        for _, kind in ipairs({ "skeleton", "mage" }) do
+            local h = hopes[kind]
+            if h ~= nil then
+                local items = {}
+                for _, form in ipairs(self:FormOrder(kind)) do
+                    local n = (h.want or {})[form]
+                    if n ~= nil then table.insert(items, form .. "=" .. tostring(math.max(0, math.floor(n)))) end
+                end
+                if h.direct or #items > 0 then table.insert(parts, (kind == "mage" and "m:" or "s:") .. (h.direct and "d:" or "a:") .. table.concat(items, ",")) end
+            end
+        end
+        return table.concat(parts, "/")
+    end
+
+    method table HopeOf(Entity player, string kind)
+        -- 그 플레이어의 희망 편성 (서버 = SkillBook.FormHope · 클라이언트 = 주인에게 동기화된 같은 문자열)
+        ---@type SkillBook
+        local book = isvalid(player) and player:GetComponent("script.SkillBook") or nil
+        local hopes = self:ParseHope(book ~= nil and book.FormHope or "")
+        return hopes[kind] or { direct = false, want = {} }
+    end
+
+    method table PlaceQuota(string kind, table quota, table hope, integer max)
+        -- 배치 수 = 이번 계획에서 변이마다 세울 최대 수. 자동 = 노드 랭크 그대로 (현행) · 직접 = min(희망 수, 노드 랭크), 변이 순서대로 정원 max 안에서 자른다.
+        -- 잘린 몫(cut)은 표시용으로만 돌려준다 — 저장된 희망 수는 바꾸지 않는다. 세기는 이 값이 아니라 노드 랭크(FormQuota)를 쓴다 (B-R01)
+        local place = {}
+        local cut = {}
+        local clipped = false
+        local direct = hope ~= nil and hope.direct == true
+        local room = math.max(0, max)
+        for _, form in ipairs(self:FormOrder(kind)) do
+            local rank = quota[form] or 0
+            if direct then
+                local want = math.max(0, math.floor((hope.want or {})[form] or 0))   -- 직접 편성에서 빈 칸은 0 = 일반형으로 채운다
+                local n = math.min(want, rank, room)
+                place[form] = n
+                room = room - n
+                if n < want then
+                    clipped = true
+                    cut[form] = want - n
+                end
+            else
+                place[form] = rank
+            end
+        end
+        return { quota = place, direct = direct, clipped = clipped, cut = cut }
+    end
+
+    method table PlanNext(string kind, integer max, table quota, table hope, table list, integer reserved)
+        -- 다음 소환 계획 (I03 단계 2): 편성 미리보기(PreviewFrom)·실제 일으키기(MakeRecord·Raise)·장기 편성(SteadyRoster)이 함께 부르는 하나의 순수 함수. 목록·기록·Serial은 바꾸지 않는다.
+        -- 입력 = 정원 max · 노드 랭크 quota · 희망 편성 hope · 지금 목록 list(오래된 순, 뼈 거인 몸 포함) · 거인 예약 reserved
+        -- 출력 = 다음 변이 form · 새 개체 전에 남길 수 keep · 무너질 기록 victims(가장 오래된 것부터 · 거인 몸 제외) · 배치 수 place
+        -- 자동 = 현행 그대로: 무너질 개체도 센 채로 고른다 (PickForm 먼저 · 10-24 규칙, 옛 결과와 같다).
+        -- 직접 = 무너질 가장 오래된 개체를 뺀 남은 편성에서 희망 수에 모자란 첫 변이 → 정원이 찬 뒤에도 희망 수로 모인다
+        local slots = self:SlotCount(max, kind, list, reserved)
+        local victims = self:TrimVictims(list, kind, slots.keep)
+        local place = self:PlaceQuota(kind, quota, hope, max)
+        local form = ""
+        if place.direct then
+            local remain = {}
+            for _, r in ipairs(list) do
+                local gone = false
+                for _, v in ipairs(victims) do
+                    if v == r then gone = true end
+                end
+                if not gone then table.insert(remain, r) end
+            end
+            form = self:PickForm(kind, place.quota, remain, nil)
+        else
+            form = self:PickForm(kind, quota, list, nil)
+        end
+        return { form = form, max = max, have = slots.have, keep = slots.keep, full = slots.full, reserved = reserved, victims = victims,
+            place = place.quota, direct = place.direct, clipped = place.clipped, cut = place.cut }
+    end
+
+    method table PlanFor(Entity player, string kind, integer slvl, table list, integer reserved)
+        -- 플레이어 기준 PlanNext: 정원 MaxFor(장비·뼈 군단·선택 보상 포함) · 노드 랭크 FormQuota · 희망 편성 HopeOf
+        return self:PlanNext(kind, self:MaxFor(player, kind, slvl), self:FormQuota(player, kind), self:HopeOf(player, kind), list, reserved)
+    end
+
+    method boolean SamePlan(table rec, table plan)
+        -- 일으키기 확정 직전: 기록을 만들 때의 계획(변이 · 무너질 기록 순서·정체)과 지금 계획이 같은가 (B-DRAFT-01)
+        if (rec.planForm or "") ~= plan.form then return false end
+        local before = rec.planVictims or {}
+        if #before ~= #plan.victims then return false end
+        for i, v in ipairs(plan.victims) do
+            if before[i] ~= v then return false end
+        end
+        return true
+    end
+
+    method void LogPlan(string tag, string kind, table plan)
+        -- [VRF] 다음 소환 계획 (메이커 확인용 · 출시 서버에서는 끈다)
+        if Environment:IsPublishedPlay() then return end
+        log(string.format("[VRF] roster %s kind=%s form=%s direct=%s max=%d have=%d keep=%d victims=%d clipped=%s", tag, kind, plan.form, tostring(plan.direct), plan.max, plan.have, plan.keep, #plan.victims, tostring(plan.clipped)))
+    end
+
     method string PickForm(string kind, table quota, table list, table exclude)
         -- 일으킬 때 고르는 변이: list(오래된 순 · exclude 제외)에서 자리가 남은 첫 변이, 없으면 "" (일반형).
         -- 무너뜨리기(TrimVictims) 전에 고르므로 정원이 찬 상태에서도 교체될 개체의 변이를 센다
@@ -726,9 +867,10 @@ script UndeadSystem extends Logic
 
     method table PreviewFrom(Entity player, string kind, table list, integer reserved)
         local slvl = self:SkillLevel(player, kind == "mage" and "raise_mage" or "raise_skeleton")   -- 시전과 같은 유효 랭크 (SkillBook.Cast → Raise)
-        local quota = self:FormQuota(player, kind)
+        local quota = self:FormQuota(player, kind)          -- 노드 랭크 (세기 · 자동 편성의 자리 수)
+        local hope = self:HopeOf(player, kind)              -- 희망 편성 (자동/직접 · 저장된 희망 수 그대로 · I03 단계 2)
         local res = kind == "skeleton" and reserved or 0   -- GiantReserved는 해골 전사만
-        local plan = self:SlotPlan(player, kind, slvl, list, res)
+        local plan = self:PlanNext(kind, self:MaxFor(player, kind, slvl), quota, hope, list, res)   -- 실제 일으키기(MakeRecord·Raise)와 같은 계획
         local counts = {}
         counts[""] = 0
         for _, form in ipairs(self:FormOrder(kind)) do counts[form] = 0 end
@@ -742,28 +884,32 @@ script UndeadSystem extends Logic
             end
         end
         -- 두 가지 장기 편성: steady = 거인이 없을 때(빈 목록부터 · 투자 판단 기준) · steadyNow = 지금 목록·뼈 거인(몸 고정 + 예약)이 유지되는 동안
-        local steady = self:SteadyRoster(kind, plan.max, quota, {}, 0)
+        local steady = self:SteadyRoster(kind, plan.max, quota, hope, {}, 0)
         local giant = res > 0
         for _, r in ipairs(list) do if r.kind == kind and r.giant then giant = true end end
         local steadyNow = steady
-        if giant then steadyNow = self:SteadyRoster(kind, plan.max, quota, list, res) end
+        if giant then steadyNow = self:SteadyRoster(kind, plan.max, quota, hope, list, res) end
         local idle = {}
         local idleNow = {}
         for _, form in ipairs(self:FormOrder(kind)) do
-            if quota[form] > 0 and (steady[form] or 0) == 0 then table.insert(idle, { form = form, need = self:ExtraSlotsFor(kind, plan.max, quota, form) }) end
-            if quota[form] > 0 and (steadyNow[form] or 0) == 0 then table.insert(idleNow, form) end
+            -- 서지 못하는 변이: 자동 = 배운 변이 · 직접 = 희망 수를 1 이상 둔 변이 (희망 0은 플레이어가 고른 일반형이라 「0기」 경고가 아니다)
+            local wanted = quota[form] > 0
+            if hope.direct then wanted = wanted and ((hope.want or {})[form] or 0) > 0 end
+            if wanted and (steady[form] or 0) == 0 then table.insert(idle, { form = form, need = self:ExtraSlotsFor(kind, plan.max, quota, hope, form) }) end
+            if wanted and (steadyNow[form] or 0) == 0 then table.insert(idleNow, form) end
         end
         local preview = { kind = kind, level = slvl, max = plan.max, have = plan.have, reserved = res, full = plan.full, keep = plan.keep, giant = giant,
-            list = list, counts = counts, units = units, bodies = bodies, quota = quota, steady = steady, steadyNow = steadyNow, idle = idle, idleNow = idleNow, nextForm = "", replaces = {} }
+            list = list, counts = counts, units = units, bodies = bodies, quota = quota, steady = steady, steadyNow = steadyNow, idle = idle, idleNow = idleNow, nextForm = "", replaces = {},
+            hope = hope, direct = plan.direct, want = hope.want or {}, place = plan.place, clipped = plan.clipped, cut = plan.cut }
         if slvl > 0 and plan.max > 0 then
-            preview.nextForm = self:PickForm(kind, quota, list, nil)
-            preview.replaces = self:TrimVictims(list, kind, plan.keep)
+            preview.nextForm = plan.form
+            preview.replaces = plan.victims
         end
         return preview
     end
 
-    method table SteadyRoster(string kind, integer slots, table quota, table seed, integer reserved)
-        -- seed 목록(오래된 순 · 뼈 거인 몸 포함)·거인 예약 reserved에서 실제 일으키기와 같은 규칙(PickForm → SlotCount.keep → TrimVictims)으로
+    method table SteadyRoster(string kind, integer slots, table quota, table hope, table seed, integer reserved)
+        -- seed 목록(오래된 순 · 뼈 거인 몸 포함)·거인 예약 reserved·희망 편성 hope에서 실제 일으키기와 같은 계획(PlanNext: PickForm · SlotCount.keep · TrimVictims)으로
         -- 죽음 없이 계속 일으킬 때 변이별로 서는 최대 수 (정원 slots). seed {} · reserved 0 = 거인이 없을 때의 장기 편성.
         -- 0인 변이 = 그 조건에서는 노드를 찍어도 한 기도 서지 못한다. seed는 바꾸지 않는다 (복사본으로 돌린다)
         local seen = {}
@@ -778,9 +924,9 @@ script UndeadSystem extends Logic
             if r.kind == kind then table.insert(list, { kind = kind, form = r.form or "", giant = r.giant }) end
         end
         for i = 1, warm * 2 do
-            local form = self:PickForm(kind, quota, list, nil)
-            for _, victim in ipairs(self:TrimVictims(list, kind, self:SlotCount(slots, kind, list, reserved).keep)) do self:RemoveRec(list, victim) end
-            table.insert(list, { kind = kind, form = form })
+            local plan = self:PlanNext(kind, slots, quota, hope, list, reserved)
+            for _, victim in ipairs(plan.victims) do self:RemoveRec(list, victim) end
+            table.insert(list, { kind = kind, form = plan.form })
             if i > warm then
                 local now = {}
                 for _, r in ipairs(list) do now[r.form] = (now[r.form] or 0) + 1 end
@@ -792,12 +938,12 @@ script UndeadSystem extends Logic
         return seen
     end
 
-    method integer ExtraSlotsFor(string kind, integer slots, table quota, string form)
-        -- form이 서려면 정원이 몇 기 더 있어야 하나 (0 = 이미 선다 · 찾지 못하면 -1)
+    method integer ExtraSlotsFor(string kind, integer slots, table quota, table hope, string form)
+        -- form이 서려면 정원이 몇 기 더 있어야 하나 (0 = 이미 선다 · 찾지 못하면 -1) — 같은 희망 편성 hope로 잰다
         local total = 1
         for _, f in ipairs(self:FormOrder(kind)) do total = total + (quota[f] or 0) end
         for extra = 0, total do
-            if (self:SteadyRoster(kind, slots + extra, quota, {}, 0)[form] or 0) > 0 then return extra end
+            if (self:SteadyRoster(kind, slots + extra, quota, hope, {}, 0)[form] or 0) > 0 then return extra end
         end
         return -1
     end

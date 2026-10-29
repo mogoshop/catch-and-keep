@@ -33,6 +33,8 @@ script SkillWindow extends Logic
     property integer MobileX0 = 100         -- 모바일 첫 열 왼쪽 (판 위에서) · PC는 44
     property any MobileColumns = nil        -- DisplayColumns 모바일 결과 (BuildColumns처럼 한 번만 만든다)
     property integer StatFont = 17          -- 효과 줄 글자 크기 (빌더 WS/Stat max_size와 같다) — 화면 폭을 잴 기준
+    property string FormKind = ""           -- 편성 조작 칸(WS/Form)이 다루는 종류: skeleton · mage · shard(모바일 골편 홀드 반복) · "" (숨김)
+    property string FormForm = ""           -- 편성 조작 칸 ± 대상 변이 (변이 노드를 골랐을 때만)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -51,6 +53,10 @@ script SkillWindow extends Logic
             _UIKit:Connect(self.Win .. "/WS/N" .. tostring(i), function() self:Pick(self.NodeIds[index]) end)
         end
         _UIKit:Connect(self.Win .. "/BtnLearn", function() self:Act(0) end)
+        -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 설정 (공방 강화 트리 오른쪽 아래 WS/Form)
+        _UIKit:Connect(self.Win .. "/WS/Form/Mode", function() self:FormMode() end)
+        _UIKit:Connect(self.Win .. "/WS/Form/Minus", function() self:FormStep(-1) end)
+        _UIKit:Connect(self.Win .. "/WS/Form/Plus", function() self:FormStep(1) end)
         _UIKit:Connect(self.Win .. "/BtnEdit", function() self:EditSlots() end)
         _UIKit:Connect(self.Win .. "/BtnReset", function()
             ---@type SkillBook
@@ -152,6 +158,7 @@ script SkillWindow extends Logic
         ---@type ShadowCommander
         local cmd = _UIKit:Comp("script.ShadowCommander")
         if cmd ~= nil then key = key .. "#" .. cmd.UndeadRoster end   -- 편성이 바뀌면 편성 줄을 다시 그린다 (I03)
+        key = key .. "#" .. book.FormHope .. "#" .. tostring(book.ShardHold)   -- 희망 편성·골편 홀드 설정을 바꾸면 소환 없이도 다시 그린다 (B-R05)
         if key == self.RenderKey then return end
         self.RenderKey = key
         -- 머리 줄: 남은 포인트 · 숙련(배운 스킬·강화 수) · 트리색 범례 · 초기화
@@ -373,6 +380,71 @@ script SkillWindow extends Logic
         local reason = book:CanLearn(target, st.Level, st.SkillPoints)
         _UIKit:SetText(ws .. "/Reason", reason)
         self:RenderNodes(book, st, def)
+        self:RenderForm(book, detailId)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderForm(SkillBook book, string detailId)
+        -- 편성 조작 칸 (I03 단계 2 희망 편성 · I04 모바일 골편 홀드 반복 설정) — 새 창 없이 공방 안. 해골 전사·마법사·골편 트리는 강화 노드가 5열 첫 줄까지라
+        --   5열 둘째 줄~6열이 빈다 → 그 자리 (tools/build/ui.cjs WS/Form). 다른 트리에서는 숨긴다.
+        --   해골 전사·마법사 메인·증원 노드: 「편성: 자동/직접」 + 바꾸기 단추 · 변이 노드: 그 변이 희망 수(직접)·장기 수(자동) + −/+ · 골편(모바일만): 누르고 있으면 반복 켜기/끄기
+        --   바꾸면 다음 소환부터 (서 있는 해골은 그대로) — 지금 편성·다음 소환은 효과 칸 편성 줄(SkillBook.RosterLine)이 같은 계획으로 보인다
+        local root = self.Win .. "/WS/Form"
+        local kind = ""
+        if self.SelMain == "raise_skeleton" then kind = "skeleton"
+        elseif self.SelMain == "raise_mage" then kind = "mage"
+        elseif self.SelMain == "bone_shard" and Environment:IsMobilePlatform() then kind = "shard" end
+        if (kind == "skeleton" or kind == "mage") and book:GetLevel(self.SelMain) <= 0 then kind = "" end   -- 배우기 전에는 편성이 없다
+        self.FormKind = kind
+        self.FormForm = ""
+        _UIKit:SetEnabled(root, kind ~= "")
+        if kind == "" then return end
+        if kind == "shard" then
+            _UIKit:SetText(root .. "/Head", "누르고 있으면 반복: " .. (book.ShardHold and "켬" or "끔"))
+            _UIKit:SetText(root .. "/Mode", book.ShardHold and "끄기" or "켜기")
+            _UIKit:SetEnabled(root .. "/Minus", false)
+            _UIKit:SetEnabled(root .. "/Plus", false)
+            return
+        end
+        local p = _UndeadSystem:RosterPreview(book.Entity, kind)
+        local nf = _UndeadSystem:NodeForm(detailId)
+        local form = nf.kind == kind and nf.form or ""
+        self.FormForm = form
+        local head = "편성: " .. (p.direct and "직접" or "자동")
+        if form ~= "" then
+            local short = string.match(_UndeadSystem:FormName(kind, form), "^(%S+)") or form
+            if p.direct then head = short .. " 희망 " .. tostring(p.want[form] or 0) .. "/" .. tostring(p.quota[form] or 0)
+            else head = short .. " 자동 " .. tostring(p.steady[form] or 0) .. "기" end
+        end
+        _UIKit:SetText(root .. "/Head", head)
+        _UIKit:SetText(root .. "/Mode", p.direct and "자동으로 되돌리기" or "직접 정하기")
+        local adjustable = form ~= "" and (p.quota[form] or 0) > 0
+        _UIKit:SetEnabled(root .. "/Minus", adjustable)
+        _UIKit:SetEnabled(root .. "/Plus", adjustable)
+        if not Environment:IsPublishedPlay() then log("[VRF] roster form ui kind=" .. kind .. " form=" .. form .. " head=" .. head .. " next=" .. p.nextForm) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FormMode()
+        -- 편성 조작 칸 큰 단추: 해골 = 자동 ↔ 직접 · 골편 = 홀드 반복 켜기/끄기 (판정·저장은 서버 SkillBook)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil or self.FormKind == "" then return end
+        if self.FormKind == "shard" then
+            book:RequestShardHold(not book.ShardHold)
+            return
+        end
+        local hope = _UndeadSystem:HopeOf(book.Entity, self.FormKind)
+        book:RequestFormMode(self.FormKind, not hope.direct)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FormStep(integer delta)
+        -- 편성 조작 칸 −/+: 고른 변이의 희망 수 (자동이면 서버가 자동 편성 모습에서 직접으로 바꾼 뒤 조정 · 범위는 서버가 검사)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil or (self.FormKind ~= "skeleton" and self.FormKind ~= "mage") or self.FormForm == "" then return end
+        book:RequestFormHope(self.FormKind, self.FormForm, delta)
     end
 
     @ExecSpace("ClientOnly")
