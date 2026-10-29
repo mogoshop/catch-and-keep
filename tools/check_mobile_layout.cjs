@@ -71,6 +71,12 @@ for (const m of ml.matchAll(/self:Size\("\/ui\/([^"]+)",\s*Vector2\(([-\d.]+),\s
   const it = items.get(m[1]);
   if (it) it.size = [+m[2], +m[3]];
 }
+// SkillOffer.SetBandText: 긴 선택 보상 제목이면 띠가 모바일 상한 폭까지 넓어진다 (10-29 UI-20261029-01) → 가장 넓은 폭으로 잰다
+{
+  const so = read("RootDesk/MyDesk/UI/Windows/SkillOffer.mlua");
+  const band = items.get("GameHUD/OfferBand");
+  band.size = [+need(/property number BandMaxWMobile = (\d+)/, so, "SkillOffer 모바일 띠 최대 폭")[1], band.size[1]];
+}
 // HudMap.RenderLayout 모바일: 지도(펼친 상태 344×488, 0.8배) · 의뢰 추적 · 일지 단추
 const hm = read("RootDesk/MyDesk/UI/Hud/HudMap.mlua");
 const map = items.get("NavigationHUD/SafeArea/MiniMap");

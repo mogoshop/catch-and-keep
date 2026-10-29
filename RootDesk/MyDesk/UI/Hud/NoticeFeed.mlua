@@ -3,6 +3,7 @@
 --   · 같은 문구는 보이는 동안 2번까지는 새 줄로 바로 띄우고, 3번째부터는 마지막 줄에 "×N"만 올린다 (화면을 덮지 않게)
 --   · 골드 획득("골드 +N")은 보이는 줄 하나에 합친다
 --   · 창이 떠 있으면 줄을 창 밖 가장자리로 옮긴다 (10-29 45 결정 1-A): 창 위 빈 곳 → 없으면 창 아래 → 그것도 없으면 화면 맨 위 한 줄.
+--     자리 높이는 최신 줄의 실제 글 높이로 잡는다 — 두 줄짜리 결과도 화면 위로 잘리지 않게 (10-29 UI-20261029-02)
 --     창을 닫으면 평소 자리(PC 왼쪽 아래 · 모바일 지도 아래 — MobileLayout)로 돌아간다
 @Logic
 script NoticeFeed extends Logic
@@ -25,6 +26,7 @@ script NoticeFeed extends Logic
     property number EdgeScreenTopMobile = 96   -- 모바일은 엔진 단추 줄(위 0~90) 아래
     property number EdgeScreenBottom = 40      -- 화면 아래 끝 여백 (경험치 줄 위)
     property string EdgeSide = ""        -- above · below · top (메이커 확인용)
+    property integer EdgeNeed = 0        -- 가장자리 자리를 잡을 때 잰 최신 줄 높이 (메이커 확인용)
     property integer EdgeCount = 0
 
     @ExecSpace("ClientOnly")
@@ -142,7 +144,9 @@ script NoticeFeed extends Logic
         local h = rt.RectSize.y
         local w = rt.RectSize.x
         local top = h - (_ApplicationService:IsMobilePlatform() and self.EdgeScreenTopMobile or self.EdgeScreenTop)
-        local need = self.LineHeight
+        -- 자리는 최신 줄의 실제 높이로 잡는다 (10-29 UI-20261029-02: 한 줄 높이 44만 잡고 두 줄 글은 위로 자라 화면 위로 잘렸다 — 재련 결과·업적 받기 줄)
+        local need = self:NewestLineHeight()
+        local stack = math.max(need, self.LineHeight * self.EdgeMaxLines + self.LineGap * (self.EdgeMaxLines - 1))
         local side = "top"
         local bottomY = top - need
         local avail = need
@@ -161,12 +165,12 @@ script NoticeFeed extends Logic
                     avail = above
                 elseif below >= need then
                     side = "below"
-                    avail = math.min(below, need * self.EdgeMaxLines + self.LineGap * (self.EdgeMaxLines - 1))
+                    avail = math.min(below, stack)
                     bottomY = winBottom - self.EdgeWindowGap - avail
                 end
             end
         end
-        self.EdgeMaxHeight = math.min(avail, need * self.EdgeMaxLines + self.LineGap * (self.EdgeMaxLines - 1))
+        self.EdgeMaxHeight = math.max(need, math.min(avail, stack))
         local t = feed.UITransformComponent
         local size = self.Home ~= nil and self.Home.size or t.RectSize
         local pos = Vector2(math.floor((w - size.x) * 0.5), math.floor(bottomY))
@@ -174,10 +178,25 @@ script NoticeFeed extends Logic
         if t.Pivot.x ~= 0 or t.Pivot.y ~= 0 then t.Pivot = Vector2(0, 0) end
         if math.abs(t.anchoredPosition.x - pos.x) > 0.5 or math.abs(t.anchoredPosition.y - pos.y) > 0.5 then t.anchoredPosition = pos end
         if math.abs(t.RectSize.y - self.EdgeMaxHeight) > 0.5 then t.RectSize = Vector2(size.x, self.EdgeMaxHeight) end
-        if first or side ~= self.EdgeSide then
+        if first or side ~= self.EdgeSide or math.floor(need) ~= self.EdgeNeed then
             self.EdgeSide = side
-            log(string.format("[VRF] feed edge side=%s y=%d h=%d win=%s", side, math.floor(bottomY), math.floor(self.EdgeMaxHeight), isvalid(win) and win.Name or "-"))
+            self.EdgeNeed = math.floor(need)
+            log(string.format("[VRF] feed edge side=%s y=%d h=%d need=%d topY=%d screenTop=%d win=%s", side, math.floor(bottomY), math.floor(self.EdgeMaxHeight), math.floor(need), math.floor(bottomY + need), math.floor(h), isvalid(win) and win.Name or "-"))
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method number NewestLineHeight()
+        -- 가장 최근 줄(Line1)이 차지할 높이 = 글 높이 + 12 (Render와 같은 계산). 줄이 없으면 한 줄 높이
+        local h = self.LineHeight
+        if self.Lines == nil or #self.Lines == 0 then return h end
+        local line = self.Lines[1]
+        local text = line.text
+        if line.count > 1 then text = text .. "  ×" .. tostring(line.count) end
+        local t = _UIKit:Get("/ui/RewardHUD/Feed/Line1/Text")
+        local r = isvalid(t) and t.TextGUIRendererComponent or nil
+        if isvalid(r) then h = math.max(self.LineHeight, math.ceil(r:GetPreferredHeight(text, self.TextWidth)) + 12) end
+        return h
     end
 
     method table Bounds(table corners)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run real mLua method bodies in Lua 5.4; engine services are supplied by each fixture.
-Usage: python3 tests/quality/run.py --lua /path/to/lua [items journal skills]
+Usage: python3 tests/quality/run.py --lua /path/to/lua [items journal skills notice_text]
 This does not emulate MSW replication, UI layout, or save-service atomicity.
 """
 import argparse, pathlib, re, shutil, subprocess, tempfile
@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--lua', default=shutil.which('lua') or shutil.which('lua5.4'))
 p.add_argument('--dump', help='optional path for the last exported Lua fixture')
-p.add_argument('groups', nargs='*', default=['items','journal','skills'])
+p.add_argument('groups', nargs='*', default=['items','journal','skills','notice_text'])
 a = p.parse_args()
 if not a.lua: p.error('Lua 5.4 is required; pass --lua /path/to/lua (no game dependencies are changed)')
 

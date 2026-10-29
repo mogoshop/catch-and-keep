@@ -1,6 +1,6 @@
 -- UI 공통 도구 (클라이언트). 모든 HUD·창 컨트롤러가 같이 쓴다.
 --   경로 캐시 Get / 글자·게이지 SetText·SetFill / 버튼 연결 Connect(OnEndPlay 해제 포함)
---   창 열고 닫기 Open·Close·Toggle·IsOpen, Esc로 열린 창 모두 닫기 / 내 캐릭터 컴포넌트 Comp / 한글 안전 자르기 Clip
+--   창 열고 닫기 Open·Close·Toggle·IsOpen, Esc로 열린 창 모두 닫기 / 내 캐릭터 컴포넌트 Comp / 한글·서식 태그 안전 자르기 Clip
 -- 경로: "Bottom/XP"처럼 쓰면 GameHUD 그룹 기준, "/ui/ShadowHUD/..."처럼 /로 시작하면 절대 경로.
 @Logic
 script UIKit extends Logic
@@ -509,34 +509,97 @@ script UIKit extends Logic
     end
 
     method string Clip(string text, integer maxChars)
-        -- UTF-8 글자 단위로 자른다 (바이트로 자르면 한글이 깨진다)
+        -- UTF-8 글자 단위로 자른다 (바이트로 자르면 한글이 깨진다).
+        -- 서식 태그(<color=…> · </color> · <b> …)는 글자 수에 넣지 않고 태그 한가운데서 자르지 않으며, 잘랐으면 열린 태그를 닫는다
+        --   (10-29 UI-20261029-02: 재련 알림이 태그까지 세어 「요구 레벨 28</color..」로 잘려 태그 조각이 화면에 보였다)
         local out = {}
+        local open = {}
+        local paired = { color = true, b = true, i = true, u = true, s = true, size = true, mark = true, font = true, sup = true, sub = true, alpha = true }
         local n = 0
-        for ch in string.gmatch(text, "[\0-\127\194-\244][\128-\191]*") do
-            n = n + 1
-            if n > maxChars then
-                table.insert(out, "..")
-                break
+        local i = 1
+        local len = string.len(text or "")
+        while i <= len do
+            local tag = string.match(text, "^<[^<>]*>", i)
+            local name = tag ~= nil and string.match(tag, "^</?(%a[%w%-]*)") or nil
+            if name ~= nil then
+                local lower = string.lower(name)
+                if paired[lower] then
+                    if string.sub(tag, 2, 2) ~= "/" then
+                        table.insert(open, lower)
+                    else
+                        for k = #open, 1, -1 do
+                            if open[k] == lower then
+                                table.remove(open, k)
+                                break
+                            end
+                        end
+                    end
+                end
+                table.insert(out, tag)
+                i = i + string.len(tag)
+            else
+                local ch = string.match(text, "^[\0-\127\194-\244][\128-\191]*", i)
+                if ch == nil or ch == "" then ch = string.sub(text, i, i) end
+                n = n + 1
+                if n > maxChars then
+                    table.insert(out, "..")
+                    for k = #open, 1, -1 do table.insert(out, "</" .. open[k] .. ">") end
+                    break
+                end
+                table.insert(out, ch)
+                i = i + string.len(ch)
             end
-            table.insert(out, ch)
         end
         return table.concat(out)
     end
 
+    method string PlainText(string text)
+        -- 서식 태그를 뺀 보이는 글자만 (글자 수·폭 어림에 쓴다)
+        return (string.gsub(text or "", "<(/?)%a[%w%-]*[^<>]*>", ""))
+    end
+
     method integer CharCount(string text)
-        -- UTF-8 글자 수 (한글 1자 = 1). 글자 길이에 맞춰 칸 너비를 정할 때 쓴다
+        -- UTF-8 글자 수 (한글 1자 = 1, 서식 태그는 세지 않는다). 글자 길이에 맞춰 칸 너비를 정할 때 쓴다
         local n = 0
-        for _ in string.gmatch(text or "", "[\0-\127\194-\244][\128-\191]*") do n = n + 1 end
+        for _ in string.gmatch(self:PlainText(text), "[\0-\127\194-\244][\128-\191]*") do n = n + 1 end
         return n
     end
 
     method number TextWidth(string text, number fontPx)
-        -- 글자 폭 어림값: 한글·기호 1자 = 글자 크기, 영문·숫자·공백 = 0.55배
+        -- 글자 폭 어림값: 한글·기호 1자 = 글자 크기, 영문·숫자·공백 = 0.55배 (서식 태그는 화면에 안 보이므로 뺀다)
         local w = 0
-        for ch in string.gmatch(text or "", "[\0-\127\194-\244][\128-\191]*") do
+        for ch in string.gmatch(self:PlainText(text), "[\0-\127\194-\244][\128-\191]*") do
             w = w + (string.len(ch) > 1 and fontPx or fontPx * 0.55)
         end
         return w
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetBandText(string rel, string text, number fontPx, number padX, number padY, number minW, number maxW, number minPx)
+        -- 장식 띠(혼의 제물 · 선택 보상 띠) 글을 한 줄로: 글 길이에 맞춰 띠 폭을 minW~maxW로 늘리고, 그래도 넘치면 글자를 minPx까지 줄이며,
+        -- 그 크기로도 넘치면 말줄임(…). 위아래 padY는 글 칸을 한 줄 높이로 좁혀 두 줄로 갈라지지 않게 한다
+        -- (10-29 UI-20261029-01: 「선택 보상 — 고르기 (가라앉은 지하실의 수장)」이 폭 440 띠에서 두 줄로 갈라져 띠 테두리 위아래로 넘쳤다)
+        local e = self:Get(rel)
+        if not isvalid(e) then return end
+        local t = e.TextGUIRendererComponent
+        if t == nil then return end
+        if t.Text ~= text then t.Text = text end
+        local textW = self:TextWidth(text, fontPx)
+        local inner = math.max(1, maxW - padX * 2)
+        local width = math.max(minW, math.min(maxW, textW + padX * 2))
+        local size = fontPx
+        if textW > inner then size = math.max(minPx, math.floor(fontPx * inner / textW)) end
+        local rect = e.UITransformComponent.RectSize
+        if math.abs(rect.x - width) > 1 then e.UITransformComponent.RectSize = Vector2(width, rect.y) end
+        if t.FontSize ~= size then t.FontSize = size end
+        if not t.BestFit then t.BestFit = true end
+        if t.MaxSize ~= size then t.MaxSize = size end
+        if t.MinSize ~= minPx then t.MinSize = minPx end
+        if t.Overflow ~= TextOverflowMode.Ellipsis then t.Overflow = TextOverflowMode.Ellipsis end
+        local pad = t.Padding
+        if pad.left ~= math.floor(padX) or pad.top ~= math.floor(padY) or pad.right ~= math.floor(padX) or pad.bottom ~= math.floor(padY) then
+            t.Padding = RectOffset(math.floor(padX), math.floor(padX), math.floor(padY), math.floor(padY))
+        end
     end
 
     @ExecSpace("ClientOnly")
