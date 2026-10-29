@@ -439,6 +439,27 @@ function buildGameHud() {
     b.patchComponent(`${n}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     b.text(`${n}/Label`, "", { size: 14, color: C.white, anchor: "bottom-center", pos: [0, 0], rect_size: [100, 34], alignment: 4, bestfit: true, min_size: 11, max_size: 14, ...outline });
   }
+  // 편성 조작 칸 (I03 단계 2 희망 편성 · I04 모바일 골편 홀드 반복 설정 — 10-30 코덱스 계약 「새 창 금지 · 기존 편성 줄에 최소 조작」). 컨트롤러 SkillWindow.RenderForm
+  //   자리: 해골 전사(필요 랭크 1·3·5·6·9)·해골 마법사(1·3·4·10·14)·골편(1·3·5) 트리는 노드가 5열 첫 줄까지라 5열 둘째 줄 위 ~ 6열 오른쪽 끝이 빈다.
+  //   왼쪽 = 5열 노드 왼쪽 끝 · 오른쪽 = 6열 노드 오른쪽 끝 · 위 = 첫 줄 노드 바닥(RenderNodes 줄 96+102씩) · 아래 = 판 안쪽 여백(SKPANEL) — 단추는 터치 88(BUTTON.h) · 가로 사이 SPACE
+  {
+    const T = require("./ui-tokens.cjs");
+    const nodeW = 100, colX = (i) => 680 + (i - 1) * 104;
+    const left = colX(5) - nodeW / 2, right = colX(6) + nodeW / 2;
+    const top = -96 - nodeW - T.SPACE / 6;            // 첫 줄 노드(위 -96 · 높이 100) 바로 아래
+    const bottom = -(452 - SP);                       // 판 안쪽 아래
+    const w = right - left, h = top - bottom;
+    const btnW = (w - T.SPACE) / 2;
+    const gap = T.SPACE / 2;                          // 머리 글 ↔ 단추 ↔ 단추 줄 (세로 칸이 218뿐이라 SPACE의 반)
+    const headH = h - 2 * T.BUTTON.h - 2 * gap;       // 남는 높이를 머리 글 한 줄에
+    const f = `${ws}/Form`;
+    b.empty(f, { anchor: "top-left", pivot: [0, 1], pos: [left, top], rect_size: [w, h] });
+    b.text(`${f}/Head`, "", { size: 16, color: "#E6C88A", anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, headH], alignment: 4, bestfit: true, min_size: 12, max_size: 16, ...outline });
+    k.btn(`${f}/Mode`, "직접 정하기", { anchor: "top-left", pivot: [0, 1], pos: [0, -(headH + gap)], rect_size: [w, T.BUTTON.h], font_size: 20 });
+    k.btn(`${f}/Minus`, "−", { anchor: "top-left", pivot: [0, 1], pos: [0, -(headH + T.BUTTON.h + 2 * gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
+    k.btn(`${f}/Plus`, "+", { anchor: "top-left", pivot: [0, 1], pos: [btnW + T.SPACE, -(headH + T.BUTTON.h + 2 * gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
+    b.patch(f, { enable: false });
+  }
 
   // ── 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차, 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분) ──
   //   포인트가 생기면 HUD 띠 「혼의 제물 — 고르기」 → 카드 3장(새 스킬 · 쓰던 스킬 랭크 업 · 강화) + 다음 해금 미리보기. 컨트롤러 SkillOffer.mlua

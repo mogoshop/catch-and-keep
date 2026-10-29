@@ -35,6 +35,10 @@ script SkillBook extends Component
     property Entity GroundHoldMap = nil
     property number GroundCastRange = 6       -- 땅 찍기 조준점 최대 거리 (넘으면 그 방향 6칸에 놓는다 · 서버 Cast와 같은 값)
     property number MobileAimMinDist = 1      -- 모바일 끌기: 데드존을 막 넘었을 때 조준 거리(칸) — 끈 길이에 비례해 GroundCastRange까지
+    @TargetUserSync
+    property string FormHope = ""             -- I03 단계 2 희망 편성 (UndeadSystem.ParseHope 형식 · "" = 전사·마법사 모두 자동, 옛 저장과 같다) — 저장 skills.hope · 장비를 바꿔도 그대로
+    @TargetUserSync
+    property boolean ShardHold = false        -- I04: 모바일에서 골편 칸을 누르고 있으면 반복 (기본 끔 · MobilePad.ShardTick) — 저장 skills.shardHold
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -742,19 +746,28 @@ script SkillBook extends Component
         local q = {}
         for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do q[f] = p.quota[f] or 0 end
         q[form] = nextQ
-        local after = _UndeadSystem:SteadyRoster(kind, p.max, q, {}, 0)
+        if p.direct then
+            -- 직접 편성 (I03 단계 2): 희망 수가 기준. 희망 0 = 그 변이를 세우지 않기로 한 선택이라 「0기」 경고 대신 그대로 알리고, 희망보다 적게 서면 몇 기만 서는지 알린다
+            local want = p.want[form] or 0
+            if want <= 0 then return level == 0 and "직접 편성 희망 0기 · 배운 뒤 희망 수를 올려 주세요" or "직접 편성 희망 0기 · 랭크는 세기만 올립니다" end
+            local stand = _UndeadSystem:SteadyRoster(kind, p.max, q, p.hope, {}, 0)[form] or 0
+            if stand < want then return "희망 " .. tostring(want) .. "기 중 " .. tostring(stand) .. "기만 섭니다 · 정원 " .. tostring(p.max) .. "기" end
+            if nextQ > now and want <= now then return "다음 랭크는 세기만 오릅니다 (희망 " .. tostring(want) .. "기)" end
+            return ""
+        end
+        local after = _UndeadSystem:SteadyRoster(kind, p.max, q, p.hope, {}, 0)
         local legion = kind == "mage" and "마법사 증원" or "뼈 군단"
         if (after[form] or 0) <= 0 then
-            local need = _UndeadSystem:ExtraSlotsFor(kind, p.max, q, form)
+            local need = _UndeadSystem:ExtraSlotsFor(kind, p.max, q, p.hope, form)
             local text = (level == 0 and "배워도 " or "") .. "정원 " .. tostring(p.max) .. "기로는 0기"
             if need > 0 then text = text .. " · 정원 +" .. tostring(need) .. "(" .. legion .. ")부터 섭니다" end
             return text
         end
-        if p.giant and (_UndeadSystem:SteadyRoster(kind, p.max, q, p.list, p.reserved)[form] or 0) <= 0 then
+        if p.giant and (_UndeadSystem:SteadyRoster(kind, p.max, q, p.hope, p.list, p.reserved)[form] or 0) <= 0 then
             return "뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다"
         end
         if nextQ <= now then return "" end
-        local before = _UndeadSystem:SteadyRoster(kind, p.max, p.quota, {}, 0)
+        local before = _UndeadSystem:SteadyRoster(kind, p.max, p.quota, p.hope, {}, 0)
         for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
             if f ~= form and (before[f] or 0) > 0 and (after[f] or 0) <= 0 then
                 return "찍으면 " .. _UndeadSystem:FormName(kind, f) .. " 자리가 없어집니다 · 정원 " .. tostring(p.max) .. "기"
@@ -787,12 +800,111 @@ script SkillBook extends Component
         if p.bodies > 0 then table.insert(parts, "거인 본체 " .. tostring(p.bodies)) end
         if p.reserved > 0 then table.insert(parts, "거인에 " .. tostring(p.reserved)) end
         local line
-        if p.bodies > 0 or p.reserved > 0 then line = "편성: " .. table.concat(parts, "·") .. " · 정원 " .. tostring(p.max) .. "기"
-        else line = "편성 " .. tostring(p.have) .. "/" .. tostring(p.max) .. (#parts > 0 and (": " .. table.concat(parts, "·")) or "") end
+        local head = p.direct and "직접 편성" or "편성"   -- I03 단계 2: 직접 편성이면 머리말로 알린다 (자동은 예전 글 그대로)
+        if p.bodies > 0 or p.reserved > 0 then line = head .. ": " .. table.concat(parts, "·") .. " · 정원 " .. tostring(p.max) .. "기"
+        else line = head .. " " .. tostring(p.have) .. "/" .. tostring(p.max) .. (#parts > 0 and (": " .. table.concat(parts, "·")) or "") end
         line = line .. " · 다음 소환: " .. _UndeadSystem:FormName(kind, p.nextForm)
         if #p.replaces == 1 then line = line .. "(가장 오래된 " .. _UndeadSystem:FormName(kind, p.replaces[1].form or "") .. " 교체)"
         elseif #p.replaces > 1 then line = line .. "(오래된 " .. tostring(#p.replaces) .. "기 교체)" end
+        if p.clipped then
+            -- 정원(장비·뼈 군단)이나 배운 랭크가 희망 수보다 작다: 저장한 희망 수는 그대로 두고 넘치는 몫만 일반형으로 채운다 (B-R02)
+            local cut = 0
+            for _, n in pairs(p.cut) do cut = cut + n end
+            line = line .. " · 희망 중 " .. tostring(cut) .. "기는 정원·랭크를 넘어 일반형으로 섭니다"
+        end
         return line
+    end
+
+    method table AutoHope(string kind)
+        -- 자동 → 직접으로 처음 바꿀 때 시작 희망 수 = 지금 자동 편성의 장기 모습(SteadyRoster)을 변이 순서대로 정원 안에 담은 수 — 바꾸자마자 편성이 엉뚱하게 달라지지 않게
+        local p = _UndeadSystem:RosterPreview(self.Entity, kind)
+        local want = {}
+        local room = math.max(0, p.max)
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
+            local n = math.min(p.steady[f] or 0, room)
+            want[f] = n
+            room = room - n
+        end
+        return want
+    end
+
+    @ExecSpace("Server")
+    method void RequestFormMode(string kind, boolean direct)
+        -- 희망 편성 자동 ↔ 직접 (I03 단계 2). 다음 소환부터 적용 — 서 있는 해골은 그대로 (처형·무료 재생성·세기 재계산 없음). 직접으로 처음 바꾸면 자동 편성 모습에서 시작
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if kind ~= "skeleton" and kind ~= "mage" then return end
+        local hopes = _UndeadSystem:ParseHope(self.FormHope)
+        local h = hopes[kind]
+        if h.direct == direct then return end
+        if direct and not self:HasHope(kind, h) then h.want = self:AutoHope(kind) end
+        h.direct = direct
+        self:SaveFormHope(hopes, kind, direct and "direct" or "auto")
+    end
+
+    method boolean HasHope(string kind, table h)
+        -- 저장된 희망 수가 하나라도 있나 (자동으로 되돌렸다가 다시 직접으로 오면 예전 희망 수를 그대로 쓴다)
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
+            if h.want[f] ~= nil then return true end
+        end
+        return false
+    end
+
+    @ExecSpace("Server")
+    method void RequestFormHope(string kind, string form, integer delta)
+        -- 직접 편성 희망 수 ±1 (0 ~ 배운 강화 랭크 · 합은 지금 정원 안). 정원·랭크가 줄어 넘쳐 있으면 줄이기만 된다. 자동이었으면 자동 편성 모습에서 직접으로 바꾼 뒤 조정
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if (kind ~= "skeleton" and kind ~= "mage") or (delta ~= 1 and delta ~= -1) then return end
+        local known = false
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
+            if f == form then known = true end
+        end
+        if not known then return end
+        local hopes = _UndeadSystem:ParseHope(self.FormHope)
+        local h = hopes[kind]
+        if not h.direct then
+            if not self:HasHope(kind, h) then h.want = self:AutoHope(kind) end
+            h.direct = true
+        end
+        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
+            if h.want[f] == nil then h.want[f] = 0 end   -- 직접 편성의 빈 칸은 0 = 일반형 (명시)
+        end
+        local quota = _UndeadSystem:FormQuota(self.Entity, kind)
+        local rank = quota[form] or 0
+        local now = h.want[form]
+        local userId = self.Entity.PlayerComponent.UserId
+        if delta > 0 then
+            if now + 1 > rank then
+                _Util:Warn(_UndeadSystem:FormName(kind, form) .. "는 배운 강화 랭크(" .. tostring(rank) .. ")까지 정할 수 있습니다", userId)
+                return
+            end
+            local max = _UndeadSystem:MaxFor(self.Entity, kind, self:GetPowerLevel(kind == "mage" and "raise_mage" or "raise_skeleton"))
+            local sum = 0
+            for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do sum = sum + math.min(h.want[f], quota[f] or 0) end
+            if sum + 1 > max then
+                _Util:Warn("정원 " .. tostring(max) .. "기가 찼습니다 · 다른 변이의 희망 수를 먼저 줄여 주세요", userId)
+                return
+            end
+            h.want[form] = now + 1
+        else
+            if now <= 0 then return end
+            h.want[form] = math.max(0, math.min(now, rank) - 1)   -- 랭크보다 크게 남아 있던 희망(초기화 뒤)은 랭크 아래로 바로 내린다
+        end
+        self:SaveFormHope(hopes, kind, form .. (delta > 0 and "+1" or "-1"))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SaveFormHope(table hopes, string kind, string why)
+        -- 희망 편성 확정 (주인 클라이언트에 동기화 → 스킬 창 편성 줄이 다시 그려진다). 저장은 스킬과 함께 (PlayerSave 자동 저장·퇴장 저장의 skills.hope)
+        self.FormHope = _UndeadSystem:EncodeHope(hopes)
+        if not Environment:IsPublishedPlay() then log("[VRF] roster hope saved kind=" .. kind .. " why=" .. why .. " hope=" .. self.FormHope) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestShardHold(boolean on)
+        -- I04 설정: 모바일 골편 칸 누르고 있으면 반복 (기본 끔). 반복도 같은 시전 길(CastSlot → RequestCast → Cast)이라 서버 마나·재사용 검사는 그대로
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or self.ShardHold == on then return end
+        self.ShardHold = on
+        if not Environment:IsPublishedPlay() then log("[VRF] shard hold setting on=" .. tostring(on)) end
     end
 
     @ExecSpace("Server")
@@ -1745,6 +1857,9 @@ script SkillBook extends Component
         local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 4 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
+        -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 — 선택 칸 (없으면 자동 · 끔, sv 그대로 4: 옛 이전 규칙의 뜻을 바꾸지 않는다)
+        if self.FormHope ~= "" then saved.hope = self.FormHope end
+        if self.ShardHold then saved.shardHold = true end
         return saved
     end
 
@@ -1765,6 +1880,10 @@ script SkillBook extends Component
         if (d.sv or 1) < 2 then self.RightSkill = "" end
         -- sv 3 = 메인 스킬 + 강화 (10-11). 그 전 저장은 PlayerSave.FinishLoad에서 MigrateRework로 전부 돌려준다
         if (d.sv or 1) < 3 then self.NeedRework = true end
+        -- I03 단계 2 희망 편성 · I04 골편 홀드 반복: 옛 저장(칸 없음) = 자동 · 끔. 다시 써서 모르는 종류·변이·형식은 버린다 (희망 수 자체는 정원·랭크로 자르지 않는다)
+        self.FormHope = _UndeadSystem:EncodeHope(_UndeadSystem:ParseHope(type(d.hope) == "string" and d.hope or ""))
+        self.ShardHold = d.shardHold == true
+        if not Environment:IsPublishedPlay() then log("[VRF] roster hope restored hope=" .. self.FormHope .. " shardHold=" .. tostring(self.ShardHold)) end
         self:SanitizeSlots()
         self:RefreshDigest()
     end

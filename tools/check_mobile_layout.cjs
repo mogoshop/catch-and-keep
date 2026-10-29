@@ -321,6 +321,55 @@ for (const win of WIDE) {
   if (verbose) console.log('스킬 창 모바일 시간선: 줄 ' + rows + ' · 간격 ' + step + ' · 마지막 글 아래 ' + lastStateBottom + ' · 막대 ' + barY + ' · 판 안쪽 ' + inner);
 }
 
+  // ── 스킬 창 편성 조작 칸 WS/Form (10-30 갈래 B · I03 단계 2 희망 편성 · I04 골편 홀드 반복 설정) ──
+  //   SkillWindow.RenderForm은 해골 전사·해골 마법사·골편 트리에서만 칸을 켠다. 그 트리의 강화 노드(RenderNodes와 같은 배치: 필요 랭크 열 680+104씩 · 줄 96+102씩 · 100칸)·
+  //   필요 랭크 머리(Need, -66 높이 20)와 겹치지 않고, 공방 판 안쪽(SKPANEL) 안에 있으며, 단추가 손가락 88 이상이고 서로 겹치지 않는지 (PC·모바일 같은 배치)
+{
+  const gb = uiOf('GameHUD');
+  const T = 'MOD.Core.UITransformComponent';
+  const { SKPANEL, BUTTON } = require('./build/ui-tokens.cjs');
+  const ws = gb.getComponent('SkillWin/WS', T);
+  const rectIn = (t, ox, oy) => {
+    // 부모 위-왼쪽(ox, oy) 기준 위-왼쪽 고정 앵커 칸 → 공방 기준 사각형
+    const l = ox + t.anchoredPosition.x - t.Pivot.x * t.RectSize.x;
+    const top = oy + t.anchoredPosition.y + (1 - t.Pivot.y) * t.RectSize.y;
+    return { l, r: l + t.RectSize.x, t: top, b: top - t.RectSize.y };
+  };
+  const form = gb.getComponent('SkillWin/WS/Form', T);
+  const fr = rectIn(form, 0, 0);
+  const kids = {};
+  for (const k of ['Head', 'Mode', 'Minus', 'Plus']) kids[k] = rectIn(gb.getComponent('SkillWin/WS/Form/' + k, T), fr.l, fr.t);
+  const overlap = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.t, b.t) - Math.max(a.b, b.b) > 0.5;
+  const inside = (a, b) => a.l >= b.l - 0.5 && a.r <= b.r + 0.5 && a.t <= b.t + 0.5 && a.b >= b.b - 0.5;
+  const panelIn = { l: SKPANEL.border, r: ws.RectSize.x - SKPANEL.border, t: -SKPANEL.border, b: -(ws.RectSize.y - SKPANEL.border) };
+  if (!inside(fr, panelIn)) problems.push(`스킬 창 편성 칸 WS/Form(x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t})이 공방 판 안쪽 밖`);
+  for (const [k, r] of Object.entries(kids)) if (!inside(r, fr)) problems.push(`스킬 창 편성 칸 ${k}가 WS/Form 밖`);
+  for (const k of ['Mode', 'Minus', 'Plus']) {
+    const r = kids[k];
+    if (r.r - r.l < 88 || r.t - r.b < BUTTON.h || r.t - r.b < 88) problems.push(`스킬 창 편성 칸 ${k} ${r.r - r.l}×${r.t - r.b} < 손가락 88`);
+  }
+  const ks = Object.keys(kids);
+  for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) if (overlap(kids[ks[i]], kids[ks[j]])) problems.push(`스킬 창 편성 칸 ${ks[i]} ↔ ${ks[j]} 겹침`);
+  const skills = require('./lib/csv.cjs').load('skills');
+  for (const parent of ['raise_skeleton', 'raise_mage', 'bone_shard']) {
+    const nodes = skills.filter((s) => s.parent === parent);
+    const needs = [...new Set(nodes.map((s) => +s.need))].sort((a, b) => a - b);
+    const rowsIn = {};
+    for (const n of nodes) {
+      const ci = needs.indexOf(+n.need) + 1;
+      rowsIn[ci] = (rowsIn[ci] || 0) + 1;
+      const x = 680 + (ci - 1) * 104, y = -96 - (rowsIn[ci] - 1) * 102;
+      const nr = { l: x - 50, r: x + 50, t: y, b: y - 100 };
+      if (overlap(nr, fr)) problems.push(`스킬 창 편성 칸이 ${parent} 강화 노드 ${n.id}(x ${nr.l}~${nr.r} · y ${nr.b}~${nr.t})와 겹친다`);
+    }
+    for (let i = 1; i <= needs.length; i++) {
+      const x = 680 + (i - 1) * 104;
+      if (overlap({ l: x - 50, r: x + 50, t: -66, b: -86 }, fr)) problems.push(`스킬 창 편성 칸이 ${parent} 필요 랭크 머리 ${i}열과 겹친다`);
+    }
+  }
+  if (verbose) console.log(`스킬 창 편성 칸 WS/Form x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t} · Mode ${kids.Mode.r - kids.Mode.l}×${kids.Mode.t - kids.Mode.b} · ± ${kids.Minus.r - kids.Minus.l}×${kids.Minus.t - kids.Minus.b}`);
+}
+
 if (problems.length) {
   for (const p of problems) console.log(p);
   console.log(`[check_mobile_layout] 문제 ${problems.length}건`);
