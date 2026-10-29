@@ -167,6 +167,16 @@
 - 걷기(K 방향키): W1·W2 소금 딱지 2 (끝 6.87,2.90) · W3 소금 딱지 1 (끝 -6.91,3.15) · W4 demonroad ArtJoin1 (끝 -28.26,1.00) — 캐릭터·이름표가 접합 그림 위 · 막힘 없음.
 - 관찰(판정은 코덱스): demonroad 두 문은 옅은 가로 포장 띠가 더해지고 세로 직선 경계는 그대로 · wreckcoast 두 곳은 하얀 소금 껍질(물보라 모양)이 경계·직각 안쪽 모서리 위에 얹힘 · 3b 상자 전리품 차이는 장면 차이(접합 무관).
 
+### C 영향 case 재실행 (플레이 9 · origin GOAL-MAKER-INT-P9-20261030T0551 · SkillEffects 7ae14a86 05:38 반영 뒤)
+
+| run | 장면 | 사용 입력(sha256) | 종료 | 유효 피해 | 비고 |
+|---|---|---|---|---|---|
+| 1 | L15-magic-boss | magic-boss-fix1-P9 957e389f… (fix1 + origin) | player_dead 17.8초 | 15822 | bone_shard 18시전 54타 = 시전당 3.0 (수정 전 run6 19시전 155타는 진단) |
+| 2 | L15-magic-horde | magic-horde-fix1-P9-sent fd49b76a… (= horde-fix1-P9 c1c18895와 32행 보스 줄(horde 미사용 · 18→11)만 다름) | timeout 121초 | 7024 | 13/14 10.7초까지 · firecultist_13 한 번도 안 맞음(관찰) · 수정 전 run9 14/14 |
+| 3 | L15-curse_mix-boss | curse_mix-boss-fix2-P9 c1e7ea8b… (fix2 ddf42c86 + origin · 보스 (11,1)) | player_dead 17.8초 | 2739 | inflow pause spawners=1 → 준비 10초 생존 → inflow restore restored=1 skipped=0 (수정 전 run7 준비 중 사망) |
+
+집계 `C-raw/aggregate-P9-cobs-rerun.{md,json}`(원장 검사 3/3 ok) · preflight `C-raw/P9-S00-preflight.log`. 비교 판정은 코덱스.
+
 ## B 편입 (재실행 없음)
 
 dc44af6c의 B-M01~03 증거 10파일을 원장에 그대로 연결 — 코덱스 부분 수용(0140·0141·0210) 그대로, 실행 소스 63aabe43(PC)/91698202(iPad) 구분 · 포인터 미확인 · 슬롯4 01:19 저장 변경 미복원.
