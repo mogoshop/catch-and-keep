@@ -35,6 +35,13 @@
 - 오프라인 `tests/quality/progression.lua`(실제 PlayerQuest 본문): 28장면 — 제단 보고·수락, 재전송·NPC 동시 중복 0, 거절 13종(미완료·q4 수락·q3·다른 맵·다른 난이도·거리 2.6·사망·다른 보낸 사람·오래된 번호·q5 최종 보고·q6·제단 없음·설정 끔), 가방 부족 거절 뒤 재시도, 마을 경로, 저장 키, 첫 장비 안내 1회·gearUse 1회(같은 장비·악몽·다른 의뢰 0).
 - **Lv15 이후 변형 시험 비용**: 구현하지 않음(0035 #2 · respecFreeLevel 15 · 5만 · +2500 보존). 비교표는 results `I08_lv15_proposal`.
 
+### I08 나머지 — 소유 경계로 patch 요청 (final)
+
+- **첫 장비 상세 진입**: 보상 카드·가방 비교 화면은 갈래 A가 「중요 보상 부위 선택」으로 고치는 중 — 같은 UI를 두 번 고치지 않도록 P6(A)로 규격만: 첫 장비 의뢰 보고 카드에 「가방에서 보기」 단추 → InventoryWindow를 그 아이템 선택 상태로 · 비교는 기존 OnEquipped 전후 비교 재사용 · 명시 클릭만.
+- **현재 다음 목표**: 이미 있는 연결 확인 — 퀘스트 추적(현재 의뢰·진행) · HudMain 포인트 붉은 점(쓸 스킬·능력치 포인트) · GuideCoach 6단계(해골 전사→그림자 소환→추출→지정→소환→Lv15 군단). 배우지 않은 기능(쇠약 등)을 빌드 완성처럼 보여 주는 다음 목표 UI는 없음(검색 확인). 새 문구는 넣지 않았다 — 빈 자리(첫 장비 비교)는 P6.
+- **실활동 · Act2 첫 10분**: Telemetry(C) 내부라 P3(Act2 표본)·P7(5초 실활동 표본) 규격으로. 메이커 통제 실행은 D-M7.
+- **A 병합 지점**: 현장 보고는 TurnIn을 새로 부르지 않는다 — 기존 `RequestTurnIn` 안의 한 곳(`PlayerQuest.mlua:398` `self:TurnIn()`)을 보고 성공 뒤 기록용으로 감쌌을 뿐. A의 `TurnIn(string gearSlot)` 병합 때 그 줄을 A의 분기 호출(`TurnIn("")` 또는 A 분기)로 맞추고 앞뒤 `before`/`TraceQuestStep`/`StartGearWatch` 세 줄을 유지하면 된다(P8).
+
 ## 4. I07 재질 접합 — 소스 준비만 (업로드·등록·생성 map 쓰기 없음)
 
 - `data/handmade/specs/material_joins.cjs` + 빌더 `artEntities` 끝에 `ArtJoin<n>`(바닥 무늬 z) — 기존 장식 이름·순서·설계도·배치표 그대로, compose 다시 안 돌림. 그림이 art_sprites.csv에 없으면 건너뛰고 「등록 필요」 경고.
