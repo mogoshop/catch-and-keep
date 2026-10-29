@@ -20,6 +20,9 @@
 --     그 사람에게 들어온 산 유입 몬스터가 inflowAlivePerPlayer 미만이고 습격이 없으면 화면 밖 고리(inflowRadiusMin~Max)에서 1마리 (RaidDirector.RingSpots).
 --     유입 몬스터는 일반 등급(m.Inflow) · 죽으면 RespawnSec 뒤 풀 +1 · 모든 플레이어에게서 inflowLeash 밖에 inflowLeashSec 넘게 있으면 치우고 풀 +1
 --   10-29 길 위 사건(기획서 39 #7 A): 액트 3·4 설계서 자리의 상자 매복·의식 습격·둥지 졸개는 이 풀에서 빌린다(BorrowPool → TrackBorrowed, 죽으면 RespawnSec 뒤 풀)
+-- 10-30 출현 구역 (I06 대표 4맵 · data/spawn_zones.csv → GameData MapSpawns.zones): 무리 수·크기·섞임·유입 몫은 그대로 정하고, 무리 중심만
+--   그 무리 종류에 맞는 구역(모델 id | @원형 | *)에서 고른다 (구역마다 share만큼 · ZoneFor). 무리 안 자리도 그 구역 안 + ValidSpawn(입구 안전·벽).
+--   구역에 안전한 자리가 없으면 예전처럼 맵 전체 출현 범위에서 고르고 fallback으로 센다 (구역 배치 성공으로 세지 않는다). 구역이 없는 맵은 예전과 같다
 @Component
 script MonsterSpawner extends Component
 
@@ -66,6 +69,7 @@ script MonsterSpawner extends Component
     property integer MapDiff = 0            -- 이번 채우기의 난이도 (유입 때 변종·정예 능력 굴림)
     property number VariantRate = 0         -- 이번 채우기의 변종 확률
     property integer ClearLogged = -1       -- 정리 맵 남은 수 로그 (바뀔 때만)
+    property any Zones = nil                -- 출현 구역 (GameData MapSpawns.zones · 없으면 nil = 맵 전체)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -583,6 +587,8 @@ script MonsterSpawner extends Component
             table.insert(list, { id = modelId, count = tonumber(count), level = tonumber(level) })
         end
         local stats = { packs = 0, leaders = 0, mixed = 0, hordes = 0 }
+        local want = 0
+        for _, entry in ipairs(list) do want = want + entry.count end
         self.PackCenters = {}
         -- 생성 D 혼합: 이 맵이 깨우기·유입을 쓰는가 (보스 맵·사냥터·곁가지 밖은 예전처럼 다 놓는다)
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
@@ -609,6 +615,8 @@ script MonsterSpawner extends Component
             end
         end
         local packs = {}
+        local zoneCredit = {}
+        local zoneStats = { zoned = 0, fallback = 0, by = {} }
         for _, entry in ipairs(list) do
             local remaining = entry.count
             while remaining > 0 do
@@ -628,7 +636,20 @@ script MonsterSpawner extends Component
                     if escort ~= nil then stats.mixed = stats.mixed + 1 end
                 end
                 if leader then stats.leaders = stats.leaders + 1 end
-                local center = self:PickPackCenter()
+                -- 출현 구역: 이 무리 종류의 구역 몫이 찼으면 그 구역 안에서 중심을 고른다 (자리가 없으면 맵 전체 · fallback)
+                local zone = self:ZoneFor(entry.id, zoneCredit)
+                local center = nil
+                if zone ~= nil then
+                    center = self:PickPackCenterIn(zone)
+                    if center ~= nil then
+                        zoneStats.zoned = zoneStats.zoned + 1
+                        zoneStats.by[zone.name] = (zoneStats.by[zone.name] or 0) + size
+                    else
+                        zoneStats.fallback = zoneStats.fallback + 1
+                        zone = nil
+                    end
+                end
+                if center == nil then center = self:PickPackCenter() end
                 local pack = { center = center, list = {} }
                 if center ~= nil then table.insert(packs, pack) end
                 for i = 1, size do
@@ -637,7 +658,7 @@ script MonsterSpawner extends Component
                         if size > 1 then
                             local a = _UtilLogic:RandomDouble() * math.pi * 2
                             local r = _UtilLogic:RandomDouble() * _GameData.packRadius * (size > packSize and 1.4 or 1)
-                            p = self:Clamp(center + Vector2(math.cos(a) * r, math.sin(a) * r))
+                            p = self:ClampIn(center + Vector2(math.cos(a) * r, math.sin(a) * r), zone)
                         end
                         if not self:ValidSpawn(p) then p = center end
                         local kind = entry
@@ -654,6 +675,12 @@ script MonsterSpawner extends Component
             end
         end
         log(string.format("[VRF] spawner %s 소환 %d · 무리 %d (우두머리 %d · 섞임 %d · 큰 무리 %d)%s", map.Name, total, stats.packs, stats.leaders, stats.mixed, stats.hordes, waking and " · 깨어남" or ""))
+        if self.Zones ~= nil then
+            -- 출현 구역 진단: 요청 = 배치 + 유입 풀 (구역은 자리만 바꾼다) · fallback = 구역에 자리가 없어 맵 전체로 간 무리
+            local detail = ""
+            for _, z in ipairs(self.Zones) do detail = detail .. string.format(" %s=%d", z.name, zoneStats.by[z.name] or 0) end
+            log(string.format("[VRF] spawner zones map=%s want=%d placed=%d pool=%d same=%s zonedPacks=%d fallback=%d units:%s", map.Name, want, total, self:PoolCount(), tostring(total + self:PoolCount() == want), zoneStats.zoned, zoneStats.fallback, detail))
+        end
         -- 생성 D ①: 입구에서 가장 가까운 무리 1개는 바로 (들어가자마자 적이 보이게), 나머지는 대기 → 사람 근처 무리만 바로 깨운다.
         -- 깨우기를 쓰지 않는 맵은 예전처럼 전부 바로
         self.PendingPacks = {}
@@ -748,6 +775,77 @@ script MonsterSpawner extends Component
         self.RespawnSec = d.respawn
         self.AreaMin = Vector2(d.minX, d.minY)
         self.AreaMax = Vector2(d.maxX, d.maxY)
+        self.Zones = d.zones
+    end
+
+    method boolean ZoneMatches(string match, string modelId)
+        -- 구역 대상: "모델id|@원형|*" ('@' = monsters.csv archetype — guard · ranged · assassin · swarm · brute · berserker · beast …)
+        for token in string.gmatch(match, "[^|]+") do
+            if token == "*" or token == modelId then return true end
+            if string.sub(token, 1, 1) == "@" then
+                local st = _GameData:GetMonsterStats(_GameData:SourceOfModel(modelId))
+                if st ~= nil and st.arch == string.sub(token, 2) then return true end
+            end
+        end
+        return false
+    end
+
+    method any ZoneFor(string modelId, table credit)
+        -- 이 무리를 놓을 구역 (없으면 nil = 맵 전체). 구역마다 맞는 무리가 나올 때 share만큼 몫을 쌓고(처음 0.5 = 반올림), 1이 넘은 첫 구역에 놓는다
+        if self.Zones == nil then return nil end
+        local pick = nil
+        for i, z in ipairs(self.Zones) do
+            if self:ZoneMatches(z.match, modelId) then
+                credit[i] = (credit[i] or 0.5) + z.share
+                if pick == nil and credit[i] >= 1 then pick = i end
+            end
+        end
+        if pick == nil then return nil end
+        credit[pick] = credit[pick] - 1
+        return self.Zones[pick]
+    end
+
+    method any PickPackCenterIn(any zone)
+        -- 구역 안 무리 중심 (구역 ∩ 출현 범위 · ValidSpawn · 다른 무리와 packSpacing). 자리가 없으면 nil
+        local minX = math.max(zone.minX, self.AreaMin.x)
+        local maxX = math.min(zone.maxX, self.AreaMax.x)
+        local minY = math.max(zone.minY, self.AreaMin.y)
+        local maxY = math.min(zone.maxY, self.AreaMax.y)
+        if minX > maxX or minY > maxY then return nil end
+        local best, bestD = nil, -1
+        for i = 1, 14 do
+            local p = self:RandomPointIn(minX, maxX, minY, maxY)
+            if p ~= nil then
+                local d = 999
+                for _, c in ipairs(self.PackCenters or {}) do d = math.min(d, (p - c):Magnitude()) end
+                if d >= _GameData.packSpacing then best = p bestD = d break end
+                if d > bestD then best, bestD = p, d end
+            end
+        end
+        if best ~= nil then table.insert(self.PackCenters, best) end
+        return best
+    end
+
+    method any RandomPointIn(number minX, number maxX, number minY, number maxY)
+        -- 사각형 안 안전한 자리 (무작위 96번 → 칸 훑기). 없으면 nil
+        for i = 1, 96 do
+            local p = Vector2(minX + _UtilLogic:RandomDouble() * (maxX - minX), minY + _UtilLogic:RandomDouble() * (maxY - minY))
+            if self:ValidSpawn(p) then return p end
+        end
+        for x = math.ceil(minX), math.floor(maxX) do
+            for y = math.ceil(minY), math.floor(maxY) do
+                local p = Vector2(x, y)
+                if self:ValidSpawn(p) then return p end
+            end
+        end
+        return nil
+    end
+
+    method Vector2 ClampIn(Vector2 p, any zone)
+        -- 무리 안 자리: 구역이 있으면 구역 ∩ 출현 범위, 없으면 출현 범위
+        if zone == nil then return self:Clamp(p) end
+        local q = self:Clamp(p)
+        return Vector2(math.max(zone.minX, math.min(zone.maxX, q.x)), math.max(zone.minY, math.min(zone.maxY, q.y)))
     end
 
     method void BuildSafeZones()

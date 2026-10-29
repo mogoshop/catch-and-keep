@@ -40,6 +40,8 @@ script PlayerQuest extends Component
     @Sync
     property string GearOffer = ""             -- 지금 난이도의 대기 제안 (클라이언트 카드 창이 읽는다)
     property table GearOffers = {}            -- 난이도 "0"/"1"/"2" → 제안 문자열 (저장 go0~go2)
+    property table GearMark = {}              -- 첫 장비 의뢰 보고 때 낀 장비 (부위 → 아이템) — 서버 · 저장 안 함 · 비면 관측 끝
+    property boolean GearWatch = false
     property integer GearOfferSeq = 0         -- 제안 버전 순번 (늦게 도착한 옛 요청을 거른다)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
@@ -321,7 +323,46 @@ script PlayerQuest extends Component
     -- ───────── 수락·보고 ─────────
 
     method boolean NearGiver(table q)
-        return _Util:NearNpc(self.Entity, q.giver)
+        if _Util:NearNpc(self.Entity, q.giver) then return true end
+        return self:FieldHandoffOk()
+    end
+
+    method integer FieldHandoffQuest()
+        -- 현장 보고를 받는 의식 의뢰 번호 (config questFieldHandoff · 0 = 끔)
+        return math.floor(_GameData.questFieldHandoff or 0)
+    end
+
+    method boolean FieldHandoffStep()
+        -- 지금이 현장 보고 차례인가: k 보고 대기(State 2) 또는 k+1 수락 전(State 0) · k는 의식 의뢰 · 두 의뢰의 의뢰인이 같다
+        local k = self:FieldHandoffQuest()
+        if k <= 0 then return false end
+        if not ((self.Index == k and self.State == 2) or (self.Index == k + 1 and self.State == 0)) then return false end
+        local q = _QuestData:Get(k)
+        local nextQ = _QuestData:Get(k + 1)
+        return q ~= nil and nextQ ~= nil and q.kind == "ritual" and q.map1 ~= "" and nextQ.giver == q.giver
+    end
+
+    method Entity FieldHandoffMarker(boolean checkDiff)
+        -- 현장 보고 제단 (지금 맵이 의식 맵일 때 그 맵의 QuestMarker) — 없으면 nil.
+        -- 난이도 확인은 서버만 (Diff는 동기화하지 않는다 — 클라이언트는 안내 버튼만 띄우고 서버가 다시 검증)
+        if not self:FieldHandoffStep() then return nil end
+        local q = _QuestData:Get(self:FieldHandoffQuest())
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) or _GameConst:BaseMapName(map.Name) ~= q.map then return nil end
+        if checkDiff and not self:SameDifficulty(map) then return nil end
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.QuestMarker", true)) do
+            ---@type QuestMarker
+            local marker = c
+            if marker.MarkerId == q.map1 and isvalid(marker.Entity) then return marker.Entity end
+        end
+        return nil
+    end
+
+    method boolean FieldHandoffOk()
+        -- 서버 검증: 차례 · 살아 있음 · 서버가 찾은 제단까지 questFieldHandoffRange 안 (클라이언트 좌표·주장은 쓰지 않는다)
+        if not _Util:IsAlive(self.Entity) then return false end
+        local altar = self:FieldHandoffMarker(true)
+        return altar ~= nil and _Util:Distance(self.Entity, altar) <= _GameData.questFieldHandoffRange
     end
 
     @ExecSpace("Server")
@@ -331,10 +372,12 @@ script PlayerQuest extends Component
         if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 0 or not _Util:IsAlive(self.Entity) then return end
         local q = _QuestData:Get(self.Index)
         if q == nil or not self:NearGiver(q) then return end
+        local field = not _Util:NearNpc(self.Entity, q.giver)
         self.State = 1
         self.Progress = 0
         self.Goal = 0
         self:NotifyAccepted(q.title, pc.UserId)
+        self:TraceQuestStep(self.Index, "accept", field)
     end
 
     @ExecSpace("Client")
@@ -373,6 +416,8 @@ script PlayerQuest extends Component
         -- gearSlot: 부위 고르기 보상에서 고른 부위 (빈 글 = 예전처럼 무작위 장비). 고른 부위 장비는 저장된 제안의 등급·레벨로 만든다
         local q = _QuestData:Get(self.Index)
         if q == nil or self.State ~= 2 or not _Util:IsAlive(self.Entity) then return end
+        local reportIndex = self.Index
+        local reportField = not _Util:NearNpc(self.Entity, q.giver)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         ---@type PlayerInventory
@@ -460,11 +505,79 @@ script PlayerQuest extends Component
         self.Progress = 0
         self.Goal = 0
         self:RefreshPermanent()
+        -- Common successful reward path: includes RequestGearChoice -> TurnIn(slot).
+        self:TraceQuestStep(reportIndex, "report", reportField)
+        if reportIndex == self:FirstGearQuest() and self.Diff == 0 then self:StartGearWatch() end
         if actEnd then
             self:SendStory("end" .. tostring(q.act))
             -- 장 마무리 뒤 오렌과 고르의 장면 (docs/design/31 §4) — 4장은 결말 「문 아래로」
             local scene = q.act == 4 and "scene5" or ("scene" .. tostring(q.act))
             if _GameData:GetStory(scene) ~= "" then self:SendStory(scene) end
+        end
+    end
+
+    method integer FirstGearQuest()
+        -- 장비(gen · unique)를 주는 첫 의뢰 번호 (없으면 0)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if q ~= nil and (string.find(q.reward, "gen:", 1, true) ~= nil or string.find(q.reward, "unique:", 1, true) ~= nil) then return i end
+        end
+        return 0
+    end
+
+    @ExecSpace("ServerOnly")
+    method void StartGearWatch()
+        -- 첫 장비 의뢰 보고 직후: 안내 줄 한 번 + 지금 낀 장비 기억 (보상 지급·자동 장착 없음)
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        self.GearMark = {}
+        for slot, item in pairs(inv.Equip) do self.GearMark[slot] = item end
+        self.GearWatch = true
+        _Util:Notify("새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부터 적용됩니다", self.Entity.PlayerComponent.UserId)
+        _Telemetry:First(self.Entity, "gearReward")
+        log("[VRF] gear watch start")
+    end
+
+    method string GearChangedSlot()
+        -- 기억한 뒤 새로 낀 장비가 있는 부위 (없으면 "" — 낀 것을 되돌렸으면 다시 "")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return "" end
+        for slot, item in pairs(inv.Equip) do
+            if item ~= nil and item ~= "" and self.GearMark[slot] ~= item then return slot end
+        end
+        return ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TraceGearUse(Entity map)
+        -- 막타 주인일 때만 (QuestSystem): 그 맵에 살아 있고, 기억한 뒤 새로 낀 장비를 아직 끼고 있으면 = 그 장비로 싸운 첫 처치 gearUse (한 번)
+        if not self.GearWatch or not _Util:IsAlive(self.Entity) or not isvalid(map) or self.Entity.CurrentMap ~= map then return end
+        local slot = self:GearChangedSlot()
+        if slot == "" then return end
+        self.GearWatch = false
+        self.GearMark = {}
+        _Telemetry:First(self.Entity, "gearUse")
+        log("[VRF] gear used in fight slot=" .. slot)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NoteGearAtCredit()
+        -- 공동 크레딧만 받았을 때: 장비가 달라져 있으면 gearChangedAtCredit만 (관측은 계속 · 사용으로 세지 않음)
+        if not self.GearWatch or self:GearChangedSlot() == "" then return end
+        _Telemetry:First(self.Entity, "gearChangedAtCredit")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TraceQuestStep(integer index, string step, boolean field)
+        -- 성장 관측 (I08): 액트 1 의뢰의 수락·보고 시각을 기존 Telemetry 「처음」 기록으로 (접속마다 처음 한 번 · 외부 서비스 없음)
+        local q = _QuestData:Get(index)
+        if q == nil or q.act ~= 1 then return end
+        _Telemetry:First(self.Entity, "q" .. tostring(index) .. step)
+        if field then
+            _Telemetry:First(self.Entity, "q" .. tostring(index) .. step .. "Field")
+            log(string.format("[VRF] quest field %s q%d diff=%d", step, index, self.Diff))
         end
     end
 

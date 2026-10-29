@@ -32,6 +32,16 @@ script QuestSystem extends Logic
                     if e.named ~= nil and e.named ~= "" then q:OnNamedKilled(e.named, e.map) end
                 end
             end
+            -- I08 첫 장비 관측 (의뢰 크레딧과 분리 · 코덱스 D-GROWTH-01): 실제 사용은 막타 주인(소환수 막타는 주인)이 그 맵에서 살아 있을 때만.
+            --   공동 크레딧만 받은 사람(마을·죽은 파티원 포함)은 「크레딧 때 장비가 달라져 있었다」만 따로 남기고 사용으로 세지 않는다
+            local killerQuest = (e.player ~= nil and isvalid(e.player)) and self:QuestOf(e.player) or nil
+            if killerQuest ~= nil then killerQuest:TraceGearUse(e.map) end
+            for _, p in ipairs(credited) do
+                if p ~= e.player then
+                    local q = self:QuestOf(p)
+                    if q ~= nil then q:NoteGearAtCredit() end
+                end
+            end
         end)
         _GameEvents:Subscribe("MapCleared", "QuestSystem", function(e)
             for _, p in ipairs(self:CreditSet(e.map, nil)) do

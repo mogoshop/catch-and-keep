@@ -5,7 +5,7 @@
 -- @source QuestData Data/QuestData.mlua Ensure,Get,Count
 -- @source ItemData Item/ItemData.mlua Generate+,GenerateQuestReward+,RerollMods+,Parse,Serialize,WithLock,IsLocked,SameItem+,PunchSockets,CanPunch+,CanReroll+,GetRuneword,GetTotalMods+,PartialState+,HasPendingReroll+,PartialRerollCost+,PartialPoolSize+,RollPartial+,ResolvePartial+,PartialText+,QuestGearRarity+,RewardSlotsFor+,GenerateQuestSlotReward+,SlotLabel,GetSlot,CanLock,IsRune,IsStack,IsSoulbound,Consumable,MakeStack,StackName,StackLimit,MakeRuneString
 -- @source PlayerInventory Item/PlayerInventory.mlua IsOwnerRequest,Stats,RefreshDigest,RejectPending,RequestPartialReroll,RequestResolvePartial,RequestReroll,RequestEquip,RequestDeposit,RequestLockBag,RequestSell,RequestDiscard,GetSaveData,LoadSaveData,ResetStashPages,GetStashData,GetStashCounts,LoadStash,IsRetiredItem,EnsureAshenHoodGrant,ApplyEquipment,CountStack,GetBagList,GetEquipMap
--- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,IsGearChoiceQuest,ParseGearOffer,GearOfferText,OfferHasSlot,MakeGearOffer,OfferGearChoice,RequestGearChoice,RequestTurnIn,NearGiver,GetSaveData,LoadSaveData,SwitchDifficulty
+-- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,IsGearChoiceQuest,ParseGearOffer,GearOfferText,OfferHasSlot,MakeGearOffer,OfferGearChoice,RequestGearChoice,RequestTurnIn,NearGiver,GetSaveData,LoadSaveData,SwitchDifficulty,TraceQuestStep,FirstGearQuest,StartGearWatch
 -- @source RuneWindow UI/Windows/RuneWindow.mlua BaseFits,ReadyText,WordList,OwnedRunes,GearList
 -- @source GearChoiceWindow UI/Windows/GearChoiceWindow.mlua FindReceived,IsFirstGearQuest
 _ItemTables:Ensure()
@@ -323,7 +323,7 @@ do
   ok(_ItemData:GenerateQuestSlotReward(1, "ring", 3) == "" or _ItemData:HasRewardPool(1, 3, "ring"), "no silent downgrade")
   -- 보고 흐름 (PlayerQuest 실제 본문)
   local st = { Level = 20, Difficulty = 0, SkillPoints = 0, StatPoints = 0, Gold = 0, Exp = 0, AddGold = function(self, n) self.Gold = self.Gold + n end, GainExp = function(self, n) self.Exp = self.Exp + n end }
-  local bag = { Bag = {}, BagSize = 60, SocketTokens = 0, PutBagItems = function(self, items) for _, s in ipairs(items) do table.insert(self.Bag, s) end end }
+  local bag = { Bag = {}, Equip = {}, BagSize = 60, SocketTokens = 0, PutBagItems = function(self, items) for _, s in ipairs(items) do table.insert(self.Bag, s) end end }
   local entity = { PlayerComponent = { UserId = "me" }, GetComponent = function(_, key) if key == "script.PlayerStats" then return st elseif key == "script.PlayerInventory" then return bag end end }
   local opened = {}
   PlayerQuest.Entity = entity
@@ -331,6 +331,9 @@ do
   PlayerQuest.RefreshPermanent = function() end
   PlayerQuest.SendStory = function() end
   PlayerQuest.OpenGearChoice = function(_, offer) table.insert(opened, offer) end
+  -- 10-30 통합(P8): 고르기 완료(RequestGearChoice → TurnIn(slot))도 D 후처리(TraceQuestStep·StartGearWatch)를 공통 성공 경로에서 한 번 — 제안 열기·가방 부족·옛 버전·중복에는 없음
+  local stages = {}
+  _Telemetry = { First = function(_, e, stage) stages[stage] = (stages[stage] or 0) + 1 end }
   PlayerQuest.Diff = 0; PlayerQuest.Index = 1; PlayerQuest.State = 2; PlayerQuest.GearOffers = {}; PlayerQuest.GearOffer = ""; PlayerQuest.GearOfferSeq = 0
   senderUserId = "me"
   local q1 = _QuestData:Get(1)
@@ -342,6 +345,7 @@ do
   PlayerQuest:RequestTurnIn(1)
   local offer = PlayerQuest.GearOffers["0"]
   local o = PlayerQuest:ParseGearOffer(offer)
+  ok(stages.q1report == nil and stages.gearReward == nil, "offer opening is not a report")
   ok(#opened == 1 and o ~= nil and o.index == 1 and o.lv == 20 and #o.slots >= 2 and #o.slots <= 3 and PlayerQuest.GearOffer == offer and PlayerQuest.State == 2 and #bag.Bag == 0, "offer made, nothing paid")
   for _, slot in ipairs(o.slots) do ok(_ItemData:HasRewardPool(o.lv, o.rarity, slot), "legal slot") end
   -- 다시 보고(취소 뒤 다시 열기) = 같은 제안 (다시 굴리지 않음) · 레벨이 올라도 고정
@@ -371,9 +375,11 @@ do
   local got = _ItemData:Parse(bag.Bag[1] or "")
   ok(#bag.Bag == 1 and _ItemData:GetBase(got.base).slot == o.slots[2] and got.rarity == o.rarity and got.ilvl == 22 and _ItemData:GetBase(got.base).reqLv <= 20, "chosen slot item")
   ok(st.SkillPoints == 2 and st.Gold == math.floor(q1.gold * (_GameData:GetDifficulty(0).questRewardMul or 1)) and PlayerQuest.Index == 2 and PlayerQuest.State == 0 and PlayerQuest.GearOffers["0"] == nil and PlayerQuest.GearOffer == "", "other rewards unchanged, offer consumed")
+  ok(stages.q1report == 1 and stages.gearReward == 1, "chosen report traces once and starts first-gear watch once")
   -- 같은 요청 반복: 무시 (의뢰가 넘어갔다)
   PlayerQuest:RequestGearChoice(0, 1, o.ver, o.slots[2])
   ok(#bag.Bag == 1 and st.SkillPoints == 2 and PlayerQuest.Index == 2, "duplicate ignored")
+  ok(stages.q1report == 1 and stages.gearReward == 1, "duplicate request adds no trace")
   -- 영구 선택 보상(ChoicePicks)·다른 의뢰는 건드리지 않는다
   ok(PlayerQuest.ChoicePicks == ";" and not PlayerQuest:IsGearChoiceQuest(_QuestData:Get(2)), "choice picks untouched")
   -- 유니크·세트 고정 등급: 그 등급 후보가 있는 부위만 제시 · 고른 부위 그 등급 그대로 (몰래 레어로 낮추지 않음)

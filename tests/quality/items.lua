@@ -1,4 +1,4 @@
--- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,ParseGearOffer
+-- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,ParseGearOffer,TraceQuestStep,FirstGearQuest,StartGearWatch
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source ItemTables Data/ItemTables.mlua Ensure
 -- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods,AffixPool,ProvenanceMeta,DecodeMeta,EncodeMeta,AffixRow,NewItemUid,Base36
@@ -98,13 +98,16 @@ _ItemData.RollRarity=original
 print(string.format('[quality/items] %d affix allocations (%d pool-limited); %d forced-rarity quest rewards; normal drop/fallback preserved',cases,thin,generated))
 
 -- Exercise the quest entry point, including full-bag rollback and duplicate report protection.
-_Util={IsAlive=function() return true end,Notify=function() end,Banner=function() end}
+_Util={IsAlive=function() return true end,Notify=function() end,Banner=function() end,NearNpc=function() return true end}
+-- 10-30 통합(P8): TurnIn 공통 성공 경로 끝에서 D 후처리(TraceQuestStep·StartGearWatch)를 한 번 부른다 — 실패(가방 부족·중복)에는 부르지 않는다
+local watchStarts=0
+_Telemetry={First=function(_,_,stage) if stage=='gearReward' then watchStarts=watchStarts+1 end end}
 _GameEvents={Emit=function() end}
 _GameData.GetUiIcon=function() return "" end
 _ItemData.IconFor=function() return "" end
 local st={Level=40,Difficulty=0,SkillPoints=3,StatPoints=2,Gold=0,Exp=0,
  AddGold=function(self,n) self.Gold=self.Gold+n end,GainExp=function(self,n) self.Exp=self.Exp+n end}
-local inv={Bag={},BagSize=60,SocketTokens=0,PutBagItems=function(self,items) for _,s in ipairs(items) do table.insert(self.Bag,s) end end}
+local inv={Bag={},Equip={},BagSize=60,SocketTokens=0,PutBagItems=function(self,items) for _,s in ipairs(items) do table.insert(self.Bag,s) end end}
 local entity={PlayerComponent={UserId='fixture'},GetComponent=function(_,key)
  if key=='script.PlayerStats' then return st elseif key=='script.PlayerInventory' then return inv end end}
 PlayerQuest.Entity=entity; PlayerQuest.NotifyQuest=function() end;PlayerQuest.RefreshPermanent=function() end
@@ -125,6 +128,7 @@ for i=1,60 do inv.Bag[i]='held' end
 local gold=st.Gold;local exp=st.Exp
 PlayerQuest:TurnIn("")
 assert(PlayerQuest.State==2 and PlayerQuest.Index==1 and st.Gold==gold and st.Exp==exp and #inv.Bag==60)
+assert(watchStarts==2,'first-gear watch starts once per successful report only (not on duplicate/full bag): '..watchStarts)
 print('[quality/items] quest report: wearable reward, no duplicate, full-bag all-or-nothing passed')
 
 -- Actual act4 source pool: lv40 ash_king only yields the req33/35/40 special bases and keeps ground-drop presentation.

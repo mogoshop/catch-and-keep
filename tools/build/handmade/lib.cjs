@@ -28,6 +28,7 @@ const layoutGen = require("../layout.cjs");
 
 const ROOT = path.resolve(__dirname, "../../..");
 const HM_DIR = path.join(ROOT, "data/handmade");
+const MATERIAL_JOINS = require(path.join(HM_DIR, "specs", "material_joins.cjs"));   // 10-30 I07 재질 접합 (artEntities 끝)
 const S = 1.28;                       // 그림 한 장 = 1.28칸 (128px)
 const TILE = { floor: 266, road: 265, wall: 269 };
 const PROJECT_TILESET = JSON.parse(fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/AshCampTiles.tileset"), "utf8")).EntryKey;
@@ -903,8 +904,17 @@ function artEntities(d, ctx, bp, rows, func) {
       if (placed < n) warn.push(`${where}: 흩뿌림 ${n}개 중 ${placed}개만 자리를 찾음`);
     } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
+  // 10-30 I07 재질 접합 (specs/material_joins.cjs · 코덱스 0045): 내부 재질 접점의 짧은 바닥 무늬 몇 장을 맨 끝에 ArtJoin<n>으로 —
+  //   기존 장식 이름·순서는 그대로. 그림이 art_sprites.csv에 아직 없으면(업로드 전 임시 키) 건너뛰고 「등록 필요」 경고 한 줄
+  let joinN = 0;
+  const joinMissing = new Set();
+  for (const [jName, jx, jy, jScale, jFlip] of MATERIAL_JOINS[d.id] || []) {
+    if (!table[jName]) { joinMissing.add(jName); continue; }
+    place(`ArtJoin${++joinN}`, jName, jx, jy, jScale, jFlip === 1, null, true, `${d.id} 재질 접합 ${joinN} '${jName}'`);
+  }
+  for (const n of joinMissing) warn.push(`${d.id}: 재질 접합 '${n}' — art_sprites.csv 등록 필요 (등록 전이라 건너뜀)`);
   const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
-  return { entities: out, blocked, warn, size, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}) };
+  return { entities: out, blocked, warn, size, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
