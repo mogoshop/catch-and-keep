@@ -1,0 +1,15 @@
+# INT-02 — ItemData 기본 인자(maxReqLevel = 0) 메이커 변환 실패와 수정 (run QR-20261029-1540, 메이커 PC FHD)
+2026-10-29T15:36:48 S Error [LEA-2007] AttemptToIndex : Unable to index '_ItemData'. '_ItemData' is nil.   (병합본 57b9724e 그대로 play)
+2026-10-29T15:36:49 S Error [SelfTest] 실패: items — 예외 [string "SelfTest.TestItems"]:5: attempt to index a nil value (global '_ItemData')
+2026-10-29T15:36:49 S Error [SelfTest] 통과 163 / 실패 2
+2026-10-29T15:38:11 C Error [LEA-3015] CannotLoad : Failed to load the file. Exception Message: Sequence contains no elements   (ItemData.mlua만 touch → refresh 때 normal 로그; 같은 때 메이커 「An error occurred during mlua conversion」 창)
+build log 15:34:23 / 15:39:15: Error 0 (변환 실패는 build 로그에 안 나온다 — msw-scripting §17.1). LSP diagnose도 clean이었다.
+# 수정 (작업 트리, 커밋 안 함): PickBase/PickUnique/PickSetPiece의 `integer maxReqLevel = 0` → `integer maxReqLevel` (기본값 제거), 인수를 생략하던 호출 10곳에 0을 명시
+#   Item/LootSystem.mlua:100 PickUnique(monLevel, sourceId, 0) · Test/SelfTest.mlua 9곳 (PickBase/PickUnique/PickSetPiece …, 0)
+#   ItemData 내부 GenerateEquipment는 원래 maxReqLevel을 넘겨 줌 · PlayerQuest는 lv를 넘겨 줌 (코덱스 원래 코드)
+# 수정 뒤 (15:39 refresh: LEA-3015 재발 없음, 15:40 play):
+2026-10-29T15:40:27 S Info [SelfTest] 통과 403 / 실패 0
+2026-10-29T15:40:45 S Info [VRF] QR reg GenerateQuestReward=function GenerateEquipment=function MonsterCount=function DailyAvailable=function PowerLevelAt=function UseHint=function
+# 경계 확인 (server_main, 각 6회 — 분포 주장 아님):
+2026-10-29T15:51:09 S Info [VRF] QR INT02 normal(ilvl42,cap0) reqLv/rarity=33/2,35/2,8/2,40/4,8/2,44/3, | quest(lv40,cap40) reqLv/rarity=35/2,18/4,25/2,33/2,40/2,28/2, | PickUnique(42,'',0)=chained_wraith PickUnique(37,ash_king,40)=ashking_heart PickSetPiece(42,0)=helm3
+#  → 상한 0(일반 드롭 경로)은 상한 없음: 요구 레벨 44 유니크가 나옴(ilvl+3 이내 기존 규칙). 퀘스트 경로(cap 40)는 6개 모두 reqLv ≤ 40. 엔진에서 nil이 되는 경로는 없다(모든 호출이 인수를 명시).

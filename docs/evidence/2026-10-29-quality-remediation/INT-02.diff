@@ -1,0 +1,101 @@
+diff --git a/RootDesk/MyDesk/Item/ItemData.mlua b/RootDesk/MyDesk/Item/ItemData.mlua
+index 1577367e..c890669d 100644
+--- a/RootDesk/MyDesk/Item/ItemData.mlua
++++ b/RootDesk/MyDesk/Item/ItemData.mlua
+@@ -369,7 +369,7 @@ script ItemData extends Logic
+         return list[#list]
+     end
+ 
+-    method string PickBase(integer ilvl, integer maxReqLevel = 0)
++    method string PickBase(integer ilvl, integer maxReqLevel)
+         -- 아이템 레벨에 맞는 베이스 (요구 레벨 ilvl+3 이하, 40 이상 낮은 단계 제외, 15 넘게 낮으면 덜 나옴)
+         local t = self:T()
+         local list = {}
+@@ -552,7 +552,7 @@ script ItemData extends Logic
+         return order[item.rarity] or 5
+     end
+ 
+-    method any PickUnique(integer ilvl, string source, integer maxReqLevel = 0)
++    method any PickUnique(integer ilvl, string source, integer maxReqLevel)
+         -- source = "" 이면 어디서나 나오는 유니크, 몬스터 sourceId면 그 몬스터 전용
+         -- 쏠림 막기 (docs/design/19 §2-4): 먼저 계열(소환·영혼·저주·범용)을 1:1:1:1로 고르고, 그 계열 안에서 가중치로 고른다
+         local t = self:T()
+@@ -679,7 +679,7 @@ script ItemData extends Logic
+         return table.concat(parts, ",")
+     end
+ 
+-    method any PickSetPiece(integer ilvl, integer maxReqLevel = 0)
++    method any PickSetPiece(integer ilvl, integer maxReqLevel)
+         -- 쏠림 막기 (docs/design/19 §2-4): 먼저 세트를 고르고(조각이 하나라도 나올 수 있는 세트끼리 같은 확률), 그다음 그 세트의 조각을 고른다
+         local t = self:T()
+         local bySet = {}
+diff --git a/RootDesk/MyDesk/Item/LootSystem.mlua b/RootDesk/MyDesk/Item/LootSystem.mlua
+index 475253f3..00817fa8 100644
+--- a/RootDesk/MyDesk/Item/LootSystem.mlua
++++ b/RootDesk/MyDesk/Item/LootSystem.mlua
+@@ -97,7 +97,7 @@ script LootSystem extends Logic
+                 local item = _ItemData:Parse(s)
+                 if special and item.rarity == 3 and _UtilLogic:RandomDouble() < _GameData.bossExclusiveShare then
+                     -- 보스·최상위의 유니크는 절반 확률로 그 몬스터 전용 유니크
+-                    local u = _ItemData:PickUnique(monLevel, sourceId)
++                    local u = _ItemData:PickUnique(monLevel, sourceId, 0)
+                     if u ~= nil then
+                         s = _ItemData:MakeUnique(u, monLevel)
+                         item = _ItemData:Parse(s)
+diff --git a/RootDesk/MyDesk/Test/SelfTest.mlua b/RootDesk/MyDesk/Test/SelfTest.mlua
+index 8f9a24c3..1091715a 100644
+--- a/RootDesk/MyDesk/Test/SelfTest.mlua
++++ b/RootDesk/MyDesk/Test/SelfTest.mlua
+@@ -174,7 +174,7 @@ script SelfTest extends Logic
+         self:Check("base grades", gradeOk, "일반·강화·정예형마다 9부위 베이스가 있다")
+         local hellBaseOk, lowAffixOk, highAffixOk = true, true, true
+         for i = 1, 25 do
+-            local hb = t.Bases[_ItemData:PickBase(80)]
++            local hb = t.Bases[_ItemData:PickBase(80, 0)]
+             if hb.reqLv < 40 then hellBaseOk = false end
+             local hi = _ItemData:PickAffix(i % 2 == 0, "amulet", 75, {})
+             if hi ~= nil and hi.tier < 1 then highAffixOk = false end
+@@ -191,12 +191,12 @@ script SelfTest extends Logic
+         local treeCount, treeKinds = {}, 0
+         local setCount, setKinds = {}, 0
+         for i = 1, 120 do
+-            local pu = _ItemData:PickUnique(85, "")
++            local pu = _ItemData:PickUnique(85, "", 0)
+             if pu ~= nil then
+                 if treeCount[pu.tree] == nil then treeKinds = treeKinds + 1 end
+                 treeCount[pu.tree] = (treeCount[pu.tree] or 0) + 1
+             end
+-            local ps = _ItemData:PickSetPiece(30)   -- 세트 조각은 일반·강화형 베이스부터 있다 (정예 세트는 3단계 초안)
++            local ps = _ItemData:PickSetPiece(30, 0)   -- 세트 조각은 일반·강화형 베이스부터 있다 (정예 세트는 3단계 초안)
+             if ps ~= nil then
+                 if setCount[ps.set] == nil then setKinds = setKinds + 1 end
+                 setCount[ps.set] = (setCount[ps.set] or 0) + 1
+@@ -217,10 +217,10 @@ script SelfTest extends Logic
+         local sKey = _ItemData:GrailKeyOf(firstPiece.base .. "|4|10|" .. firstPiece.name .. "||0|")
+         self:Check("grail keys", uKey == "u:" .. firstU.id and sKey == "s:" .. firstPiece.base and _ItemData:GrailKeyOf("scythe1|0|1|단낫||0|") == "", uKey .. " · " .. sKey)
+         self:Check("tree names", _SkillData:TreeName("command") == "소환" and _SkillData:TreeName("soul") == "주문" and _SkillData:TreeName("curse") == "저주", "소환·영혼·저주")
+-        self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen") ~= nil, "여왕 전용 유니크")
+-        self:Check("act2 boss", _ItemData:PickUnique(21, "high_priest") ~= nil, "대사제 전용 유니크")
+-        self:Check("act3 boss", _ItemData:PickUnique(30, "admiral") ~= nil and _GameData.levelCap == 99 and _GameConst:ScaleLevel(1, 1) == 41 and _GameConst:ScaleLevel(40, 1) == 70 and _GameConst:ScaleLevel(1, 2) == 71 and _GameConst:ScaleLevel(40, 2) == 99, "바렌 전용 유니크 · 상한 99 · 레벨 구간 보통 1~40 → 악몽 41~70 · 지옥 71~99 (10-20)")
+-        self:Check("act4", _GameConst.FinalBossSourceId == "ash_king" and _ItemData:PickUnique(42, "ash_king") ~= nil and _GameConst.ActCount == 4 and _GameConst:TownOfAct(4) == "outpost" and _QuestData:ActClosed(4) and string.find(_GameConst.SoulThieves, ",hell_priest,", 1, true) ~= nil, "재의 왕 = 난이도 개방 · 전용 유니크 · 액트 4 마을 = 마지막 초소 · 의뢰 24로 액트 끝 · 혼 빼앗기 사제")
++        self:Check("boss unique", _ItemData:PickUnique(12, "grave_queen", 0) ~= nil, "여왕 전용 유니크")
++        self:Check("act2 boss", _ItemData:PickUnique(21, "high_priest", 0) ~= nil, "대사제 전용 유니크")
++        self:Check("act3 boss", _ItemData:PickUnique(30, "admiral", 0) ~= nil and _GameData.levelCap == 99 and _GameConst:ScaleLevel(1, 1) == 41 and _GameConst:ScaleLevel(40, 1) == 70 and _GameConst:ScaleLevel(1, 2) == 71 and _GameConst:ScaleLevel(40, 2) == 99, "바렌 전용 유니크 · 상한 99 · 레벨 구간 보통 1~40 → 악몽 41~70 · 지옥 71~99 (10-20)")
++        self:Check("act4", _GameConst.FinalBossSourceId == "ash_king" and _ItemData:PickUnique(42, "ash_king", 0) ~= nil and _GameConst.ActCount == 4 and _GameConst:TownOfAct(4) == "outpost" and _QuestData:ActClosed(4) and string.find(_GameConst.SoulThieves, ",hell_priest,", 1, true) ~= nil, "재의 왕 = 난이도 개방 · 전용 유니크 · 액트 4 마을 = 마지막 초소 · 의뢰 24로 액트 끝 · 혼 빼앗기 사제")
+         self:Check("drop table", _ItemData:GetDropTable("normal").unique < _ItemData:GetDropTable("boss").unique, "보스가 유니크를 더 잘 준다")
+         -- 잿빛 장막 유니크 5종: 가중치가 모든 유니크 중 가장 낮다 (가장 희귀)
+         local ashenMax, otherMin, ashenN = 0, 1, 0
+@@ -239,11 +239,11 @@ script SelfTest extends Logic
+         -- 세트: 그림자 상한은 정예형 세트 완성 효과만 (10-12 결정 · docs/design/19 §5)
+         self:Check("set full", (_ItemData:GetSetBonusMods("ashen_legion", 4).shadowCap or 0) == 0 and (_ItemData:GetSetBonusMods("lich_host", 4).shadowCap or 0) == 1, "잿빛 군단 완성 = 상한 없음 · 망자 군주의 군기 완성 = 상한 +1")
+         -- 보스 전용 유니크: 그 난이도에서 나올 수 있는 가장 높은 등급만 (지옥 처형인 Lv69 → 정예형)
+-        local hellBoss = _ItemData:PickUnique(69, "headsman")
++        local hellBoss = _ItemData:PickUnique(69, "headsman", 0)
+         local hellBase = hellBoss ~= nil and t.Bases[hellBoss.base] or nil
+         self:Check("boss unique grade", hellBase ~= nil and (hellBase.grade or 0) == 2, hellBoss ~= nil and hellBoss.name or "없음")
+         self:Check("set partial", (_ItemData:GetSetBonusMods("ashen_legion", 2).shadowCap or 0) == 0, "2개는 상한 효과 없음")
+-        local piece = _ItemData:PickSetPiece(5)
++        local piece = _ItemData:PickSetPiece(5, 0)
+         self:Check("set piece", piece ~= nil and _ItemData:GetSetPiece({ base = piece.base, rarity = 4 }) ~= nil, "Lv5 세트 조각")
+     end
+ 
