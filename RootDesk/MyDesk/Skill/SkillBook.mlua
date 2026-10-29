@@ -434,11 +434,13 @@ script SkillBook extends Component
             if self.GroundHoldMap ~= self.Entity.CurrentMap then self:CancelGroundHold() return nil end
             id = self:GetSlotSkill(self.GroundHoldSlot)
         elseif self.RiteHoldAt >= 0 then
+            if Environment:IsMobilePlatform() and _MobilePad.CancelHover then return nil end   -- I04: 「취소」 위면 의식 범위 원도 끈다
             local held = _UtilLogic.ElapsedSeconds - self.RiteHoldAt
             ---@type PlayerStats
             local st = self.Entity:GetComponent("script.PlayerStats")
             if self:RiteBestStage(self:RiteStageForHold(held, self:RiteGiantUnlocked()), st ~= nil and st.Mana or -1) == 2 then id = "bone_rite" end
         elseif Environment:IsMobilePlatform() and _MobilePad.GestureTouchId ~= 0 and not _MobilePad.GestureBasic and not _MobilePad.EditMode then
+            if _MobilePad.CancelHover then return nil end   -- I04: 「취소」 위에 손가락이 있으면 놓아도 쓰지 않으므로 범위 원을 끈다
             id = self:GetSlotSkill(_MobilePad.GestureSlot)
         end
         if id == "" or (id ~= "bone_rite" and not self:IsGroundSkill(id)) or self:GetPowerLevel(id) <= 0 then return nil end
