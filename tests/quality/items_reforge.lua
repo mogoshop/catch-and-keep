@@ -7,6 +7,7 @@
 -- @source PlayerInventory Item/PlayerInventory.mlua IsOwnerRequest,Stats,RefreshDigest,RejectPending,RequestPartialReroll,RequestResolvePartial,RequestReroll,RequestEquip,RequestDeposit,RequestLockBag,RequestSell,RequestDiscard,GetSaveData,LoadSaveData,ResetStashPages,GetStashData,GetStashCounts,LoadStash,IsRetiredItem,EnsureAshenHoodGrant,ApplyEquipment,CountStack,GetBagList,GetEquipMap
 -- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,IsGearChoiceQuest,ParseGearOffer,GearOfferText,OfferHasSlot,MakeGearOffer,OfferGearChoice,RequestGearChoice,RequestTurnIn,NearGiver,GetSaveData,LoadSaveData,SwitchDifficulty
 -- @source RuneWindow UI/Windows/RuneWindow.mlua BaseFits,ReadyText,WordList,OwnedRunes,GearList
+-- @source GearChoiceWindow UI/Windows/GearChoiceWindow.mlua FindReceived,IsFirstGearQuest
 _ItemTables:Ensure()
 _GameData:Ensure()
 _QuestData:Ensure()
@@ -455,5 +456,37 @@ do
   ok(RuneWindow:ReadyText({ key = key, rw = rw, ids = ids, need = 1, have = 1 }, one, { gear(fit, 0, 2, { ids[1] }) }, 40) == "제작 준비됨", "half-socketed base needs only remaining rune")
   ok(RuneWindow:ReadyText({ key = key, rw = rw, ids = ids, need = 1, have = 0 }, {}, {}, 40) == "<color=#8A8478>룬 0 / 2</color>", "missing runes")
   print(string.format("[quality/items_reforge] I02: 35 recipes × rarity 0~4 = %d accepted unchanged · incomplete/wrong-order rejected · ready text separates runes-only / matching gear / partial socket", cond))
+end
+-- ⑧ D 갈래 요청 P2·P6: 첫 수동 장착 계측(Telemetry.First gearEquip · 성공 때만) · 첫 장비 의뢰 「가방에서 보기」가 받은 물건을 찾는다
+do
+  local firsts = {}
+  _Telemetry = { First = function(_, e, stage) table.insert(firsts, stage) end }
+  local st = { Gold = 0, Level = 99, AddGold = function() end }
+  local inv = PlayerInventory
+  inv.Entity = { PlayerComponent = { UserId = "me" }, GetComponent = function(_, key) if key == "script.PlayerStats" then return st end return nil end }
+  inv.NotifyEquipped = function() end
+  senderUserId = "me"
+  local gear = nil
+  for _, x in ipairs(samples) do if not _ItemData:HasPendingReroll(x) then gear = x break end end
+  inv.Bag = { gear }
+  inv.Equip = {}
+  inv:RequestEquip(1, gear .. "x")
+  ok(#firsts == 0, "stale equip not counted")
+  inv:RequestEquip(1, gear)
+  ok(#firsts == 1 and firsts[1] == "gearEquip" and #inv.Bag == 0, "equip success counted once")
+  -- 첫 장비 의뢰 = 1번만
+  ok(GearChoiceWindow:IsFirstGearQuest(1) and not GearChoiceWindow:IsFirstGearQuest(3), "first gear quest is 1")
+  -- 받은 물건 찾기: 같은 문자열이 원래 있어도 늘어난 것 · 고른 부위만
+  local helm, ring = nil, nil
+  for _, x in ipairs(samples) do
+    local sl = _ItemData:GetSlot(x)
+    if sl == "helm" and helm == nil then helm = x end
+    if sl == "ring" and ring == nil then ring = x end
+  end
+  local before = table.concat({ "hp1|0|1|p||0||3", helm }, ";")
+  ok(GearChoiceWindow:FindReceived(before, { "hp1|0|1|p||0||3", helm, ring, helm }, "helm") == helm, "duplicate helm found as new")
+  ok(GearChoiceWindow:FindReceived(before, { "hp1|0|1|p||0||3", helm, ring }, "helm") == "", "no new helm")
+  ok(GearChoiceWindow:FindReceived("", { ring }, "ring") == ring, "empty bag before")
+  print("[quality/items_reforge] P2 gearEquip once on success only · P6 first gear quest = 1 · received item lookup by bag diff + slot")
 end
 print(string.format("[quality/items_reforge] %d checks passed", checks))

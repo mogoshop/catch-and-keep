@@ -122,6 +122,29 @@ script InventoryWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void OpenWithBagItem(string item)
+        -- 받은 보상을 가방에서 고른 채로 연다 (부위 고르기 보상 「가방에서 보기」 — 플레이어가 누를 때만 · 장착은 직접).
+        --   비교는 고른 가방 물건의 기존 비교 줄(CompareLine), 장착 뒤 변화는 기존 OnEquipped 그대로 (10-30 D 갈래 P6 요청)
+        self.SmithMode = false
+        self.Multi = false
+        self.Picked = {}
+        self:ClearSelection()
+        local inv = self:Inv()
+        if inv ~= nil and item ~= "" then
+            for i, s in ipairs(inv:GetBagList()) do
+                if s == item then
+                    self.Selected = i
+                    self.SelectedItem = s
+                    break
+                end
+            end
+        end
+        _UIKit:Open(self.Win)
+        self:Poll()
+        log("[VRF] inventory open with reward selected=" .. tostring(self.Selected))
+    end
+
+    @ExecSpace("ClientOnly")
     method void ToggleMulti()
         self.Multi = not self.Multi
         self.Picked = {}

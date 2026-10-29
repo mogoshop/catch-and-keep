@@ -71,3 +71,10 @@ gold-flow.md 전문. 요약 (레어 기준, 마법은 1/3):
 - 오프라인 골드 표는 sim_gold 어림 — 실플레이 수입/지출 측정 아님. 밸런스·재미 개선 주장 없음.
 - 예전 물건(출처 없음)은 부분 재련 불가 — 전체 재련을 고르면 그 뒤부터 가능.
 - 부위 보상은 레벨을 제안 때 고정 — 보고 전 레벨업해도 제안의 레벨 기준 (원래 보상은 보고 순간 레벨).
+
+## 추가 (D 갈래 patch 요청 P2·P6 — 두 번째 커밋)
+
+- P2: `PlayerInventory.RequestEquip` 장착 성공 직후 `_Telemetry:First(self.Entity, gearEquip)` 한 줄 (기존 공개 함수만 · Telemetry 내부 무수정). 거부된 요청은 세지 않음 (회귀).
+- P6: 첫 장비 의뢰(QuestData에서 처음 gen/unique 보상 = 1 굶주린 굴)의 부위 카드 창은 받은 뒤 닫지 않고, 고른 카드 아래 단추(300×88, 새 엔티티 없음)가 「받는 중…」 → 「가방에서 보기」가 된다. 누를 때만 `InventoryWindow.OpenWithBagItem`이 받은 물건을 고른 채로 인벤토리를 연다 — 비교는 기존 비교 줄, 장착 뒤 변화는 기존 NotifyEquipped → OnEquipped. 자동 장착·강제 창·추가 지급 없음. 서버 거절(가방 부족 등)이면 6초 안에 창을 닫는다.
+- D의 안내 줄(PlayerQuest.StartGearWatch Notify)과 겹치면 이 카드 쪽을 남기고 D 줄은 통합 담당이 지운다 (A는 PlayerQuest를 더 건드리지 않음).
+- 검사 재실행: npm test 12/12 · check_mobile_layout · check_ui_tokens 0 · Lua 회귀 전 그룹 통과(items_reforge 19,386).
