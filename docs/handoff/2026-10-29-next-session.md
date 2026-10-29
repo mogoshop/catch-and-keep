@@ -61,8 +61,15 @@
 6. **10-29 오후 통합 완료** (main·codex 푸시): 44·45 1차 네 갈래 + 39 #7 길 위 사건 합치기 5커밋(e0c803c·90410ce·7a1ad82·c39c453·dc2d688 — 생성 파일은 본 폴더 빌더로 재생성 · 맵 18본은 build.cjs act3·act4로 바닥 섞기+길 위 사건 함께) → 용어·말투(ed5e424: 노말·퀘스트·인벤토리·파티플레이 59줄 + 「-다」 알림 228줄, 표 `docs/requests/copy-terms-tone-20261029-pm.md`) → 메이커 검증에서 고친 것(9d640d4: 혼의 제물 카드 0장 · 인벤토리 단추 두 줄 · 창고 안내 가림 · 습격 예고와 COMBO 겹침 · 의식 연출 줄 넘침 · 「204이」 조사) → 글귀 목록·증거(이 커밋). 증거 `docs/evidence/2026-10-29-4445-integration/`.
    - **남은 것(사용자 판단 대기)**: 새 글귀 51줄 `docs/requests/copy-review-20261029-pm.md`(「번호: 새 글귀」로 답) · (다) 아이콘 18장 업로드(권한) · (가) 오라 3종 시전음 · 바닥 섞기 거울 무늬 방식 · `SkillBook.MigrateRework`의 옛 저장 이전 안내 배너(「스킬·능력치가 새로 바뀌었습니다」 — 49·50처럼 지울지).
    - **메이커로 못 본 것**: 16:9 휴대폰 미리보기(도구가 기기 프리셋을 못 바꿈 — iPad만 확인, 휴대폰 배치는 check_mobile_layout 통과) · 모바일 실제 손가락 입력(끌기·터치는 MobilePad·ClickControl 처리 함수를 같은 순서로 불러 확인) · 그림자 특기 회피·경직 글자(치명만 실전 확인).
+9. **10-29 저녁 가독성 3건+거인 편성 줄+검사기 통합·재검증** (RB-20261029-1903, main·codex 푸시): 병합 c3979f70(wip/ui-readability-1709 — QR1629-OBS-01 비용 줄 · OBS-02 iPad 시간선 · INT1725-OBS-01 카드 경고 넘침 · INT1725-OBS-02 거인 편성 줄) · 83848dfb(wip/checker-ad2-01 검사기 오탐) → ad3a693e CARD-E1E-R01(경고 때 대검 카드 「반경 ×1.8」 유지) → 6e0b8e8a 숫자 뒤 조사(「랭크 2은」 M18-OBS-03 외 5곳, copy-review 62~67·I03-8 승인 전) → 메이커 PC·iPad 프리셋 「후」 11장면 Claude 판정 통과(I03-3·4·5 실패→통과 · I03-6·UI-5 부분확인→통과). 증거 `docs/evidence/2026-10-29-readability/`(README·`maker-results-readability.json` — 공유 폴더에도). 새 관찰(수정 안 함): RB-OBS-02 카드 설명 칸 단어 중간 접힘 · RB-OBS-03 거인 몸이 변이면 쌍칼 경고 빈칸 · RB-OBS-04 iPad 넘김 단추가 첫 열 고리와 겹침. 코덱스 독립 판정 대기.
 
 ## 5. 알아 둘 함정
+
+- (10-29 저녁 RB) **execute_script에서 `_SkillOffer:Render`를 직접 부르지 말 것** — 안의 `GetPreferredWidth` 줄바꿈 경로가 execute_script 안에서는 수 초씩 걸려(시간 ×1000) 그리기 전 화면이 찍힌다. `_SkillOffer.Offer[3]`만 바꾸고 `RenderKey=""` → 게임 Poll이 즉시 그린다. 같은 이유로 스킬 창도 `RenderKey=""`로 다시 그리게.
+- (10-29 저녁 RB) **서버 execute_script 로그는 수~20초 늦게 찍히고, 읽기 전 `maker_clear_logs`는 그 줄을 지운다**(이번에 진단 줄 3번 잃음). 진단은 같은 스크립트에서 동작 직후 계산해 한 줄에 담고, clear는 `maker_logs`로 읽은 바로 다음에만.
+- (10-29 저녁 RB) **뼈 거인 몸 = 해골 목록의 마지막 기록** — 일반 몸 장면(쌍칼 「거인 동안 0기」 경고가 뜨는 꼴)은 마지막 기록이 일반일 때 의식. 혼은 1분 안쪽에 사라지므로 의식 직전에 `fallenimp`을 생성·`TakeDamage`로 처치해 혼을 만든다. 의식 재사용은 `ReadyAt["bone_rite"]`·`ReadyAt[RiteCdKey(5)]`를 0으로(준비).
+- (10-29 저녁 RB) iPad 프리셋에서 자식 UI(`S1/Ring`·`State`)의 `GetWorldCorners`가 부모와 어긋나게 나온다 — 배치 판정은 `anchoredPosition`·`RectSize`·`Pivot` 산술로.
+- (10-29 저녁 RB) 장면 준비용 시험 장비(allSkills+2 낫 등)가 다음 장면까지 남으면 정원·경고가 달라진다 — 장면마다 `EquipDigest` 확인.
 
 - (10-29 오후 통합) **새 모델이 새 스크립트를 달고 있으면 refresh 한 번으로는 실행 중 컴포넌트가 비어 있다** — 길 위 사건 RoadAltar가 맵에 생기기는 하는데 `script.RoadAltar`가 없어 의식이 안 섰다. stop → 다시 touch → refresh 한 번 더 하면 붙는다 (UI는 다시 touch하지 않으면 옛 내용으로 안 돌아감).
 - (10-29 오후 통합) 여러 갈래를 합친 뒤 첫 refresh에 `LEA-1102 ApplyFrost(…3개)`처럼 **바뀐 함수 모양이 옛것으로 남은 빌드 오류**가 나올 수 있다 (코드는 4개로 맞음) — 부르는 파일(Monster.mlua)만 touch → refresh 한 번 더면 사라진다.
