@@ -57,20 +57,24 @@ script WindowFit extends Logic
 
     @ExecSpace("ClientOnly")
     method void FitInventory()
-        -- 소지품 (EquipmentHUD): 1400 → 1368, 가운데로. 설명 칸과 오른쪽 단추 줄(272 → 240)을 좁힌다 — 인형·가방은 그대로
+        -- 소지품 (EquipmentHUD): 1400 → 1368, 가운데로. 설명 칸을 좁히고, 가방 칸 사이를 14 → 10으로 좁혀(가방 1044 → 1008) 오른쪽 단추 줄을 276으로 — 인형은 그대로
+        --   10-29 오후 검수 43·49: 오른쪽 단추 줄이 240이던 때 「정렬」(96)·「여러 개 선택」(136) 글자가 단추 양끝 해골 장식 안쪽 마름모에 걸렸다 → PC(110·154)보다 넓게 112·156
         self:Box("/ui/EquipmentHUD/SafeArea/InvWin", 0, 0, 1368, 1000)
         self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Rim", 1408, 1040)
         self:Size("/ui/EquipmentHUD/SafeArea/InvWin/DescBox", 788, 516)
         self:Pos("/ui/EquipmentHUD/SafeArea/InvWin/BtnLock", 1156, -124)
-        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/Gold", 1100, -630, 240, 48)   -- 설명 칸 아래(−628)에 붙여 둔다 (PC는 6px 걸친다)
-        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Gold/Text", 180, 44)
-        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnEquip", 1100, -690, 240, 88)
-        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSell", 1100, -794, 240, 88)
-        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSort", 1100, -892, 96, 88)
-        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnMulti", 1204, -892, 136, 88)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Bag", 1008, 280)   -- 칸 88 × 10 + 사이 10 × 9 + 안쪽 여백 16 = 986 + 스크롤바 자리 22 (PC 1044 − 1022와 같은 22)
+        self:GridGap("/ui/EquipmentHUD/SafeArea/InvWin/Bag", 10, 14)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Hint", 1008, 40)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/Gold", 1064, -630, 276, 48)   -- 설명 칸 아래(−628)에 붙여 둔다 (PC는 6px 걸친다)
+        self:Size("/ui/EquipmentHUD/SafeArea/InvWin/Gold/Text", 212, 44)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnEquip", 1064, -690, 276, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSell", 1064, -794, 276, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnSort", 1064, -892, 112, 88)
+        self:Box("/ui/EquipmentHUD/SafeArea/InvWin/BtnMulti", 1184, -892, 156, 88)
         _InventoryWindow.DescTextW = 708   -- 설명 칸 788 − 안쪽 여백 (PC 820 → 740과 같은 비율)
         _InventoryWindow.RenderKey = ""
-        log("[VRF] windowfit inventory w=1368")
+        log("[VRF] windowfit inventory w=1368 bag=1008 gap=10 sort=112 multi=156")
     end
 
     @ExecSpace("ClientOnly")
@@ -115,43 +119,89 @@ script WindowFit extends Logic
         -- 그림자 보관함 (ShadowHUD/Window): 1560×900 → 1368×1000, 왼쪽 상세 | 오른쪽 목록 → 위 목록 5줄 / 아래 상세 (2단 → 위아래)
         self:Size("/ui/ShadowHUD/Window", 1368, 1000)
         self:Size("/ui/ShadowHUD/Window/Rim", 1408, 1040)
-        -- 위: 필터 4 + 정렬 · 목록 5줄 · 쪽 넘김 줄
+        -- 위: 필터 4 + 정렬 · 목록 5줄(높이 68 · 74씩 — PC 74·80보다 조금 촘촘하게 해 아래 상세 판에 30을 더 준다) · 쪽 넘김 줄
         self:Pos("/ui/ShadowHUD/Window/FAll", 30, -88)
         self:Pos("/ui/ShadowHUD/Window/FNormal", 182, -88)
         self:Pos("/ui/ShadowHUD/Window/FElite", 334, -88)
         self:Pos("/ui/ShadowHUD/Window/FBoss", 486, -88)
-        self:Box("/ui/ShadowHUD/Window/Row1", 30, -172, 1308, 74)
-        self:Box("/ui/ShadowHUD/Window/Row2", 30, -252, 1308, 74)
-        self:Box("/ui/ShadowHUD/Window/Row3", 30, -332, 1308, 74)
-        self:Box("/ui/ShadowHUD/Window/Row4", 30, -412, 1308, 74)
-        self:Box("/ui/ShadowHUD/Window/Row5", 30, -492, 1308, 74)
+        self:Box("/ui/ShadowHUD/Window/Row1", 30, -172, 1308, 68)
+        self:Box("/ui/ShadowHUD/Window/Row2", 30, -246, 1308, 68)
+        self:Box("/ui/ShadowHUD/Window/Row3", 30, -320, 1308, 68)
+        self:Box("/ui/ShadowHUD/Window/Row4", 30, -394, 1308, 68)
+        self:Box("/ui/ShadowHUD/Window/Row5", 30, -468, 1308, 68)
         _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row6", false)
         _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row7", false)
         _UIKit:SetEnabled("/ui/ShadowHUD/Window/Row8", false)
-        self:Pos("/ui/ShadowHUD/Window/BtnPrev", 30, 354)
-        self:Pos("/ui/ShadowHUD/Window/BtnMulti", 226, 354)
-        self:Pos("/ui/ShadowHUD/Window/BtnPickAll", 418, 354)
-        self:Pos("/ui/ShadowHUD/Window/PageText", 870, 366)
-        self:Pos("/ui/ShadowHUD/Window/BtnNext", -30, 354)
-        -- 아래: 상세 판 1308×290 — 왼쪽 모습 · 가운데 이름·등급·능력치 · 오른쪽 정수 + 소환 지정·강화·분해
-        self:Box("/ui/ShadowHUD/Window/Detail", 30, -662, 1308, 290)
-        self:Box("/ui/ShadowHUD/Window/Detail/Stage", -511, -18, 250, 254)
-        self:Box("/ui/ShadowHUD/Window/Detail/Name", -148, -18, 440, 42)
-        self:Box("/ui/ShadowHUD/Window/Detail/Grade", -148, -62, 440, 32)
-        self:Box("/ui/ShadowHUD/Window/Detail/Info", 286, -100, 440, 172)
-        self:Pos("/ui/ShadowHUD/Window/Detail/Essence", -22, 232)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnDeploy", 742, 130)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnUpgrade", 926, 130)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnSalvage", 1110, 130)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnDeployNote", 742, 92)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnUpgradeNote", 926, 92)
-        self:Pos("/ui/ShadowHUD/Window/Detail/BtnSalvageNote", 1110, 92)
+        self:Pos("/ui/ShadowHUD/Window/BtnPrev", 30, 384)
+        self:Pos("/ui/ShadowHUD/Window/BtnMulti", 226, 384)
+        self:Pos("/ui/ShadowHUD/Window/BtnPickAll", 418, 384)
+        self:Pos("/ui/ShadowHUD/Window/PageText", 870, 396)
+        self:Pos("/ui/ShadowHUD/Window/BtnNext", -30, 384)
+        -- 아래: 상세 판 1308×324 (10-29 오후 검수 44번: 글 칸 440×172에 능력치가 다 안 들어가 저항·유형·보너스 줄이 칸 밖으로 잘렸다)
+        --   왼쪽 모습 200 · 가운데 능력치·고유 능력 글 칸 560×300(판 높이 거의 전부) · 오른쪽 484 = 이름·등급 / 정수 / 소환 지정·강화·분해 (156씩)
+        --   글 칸 실측(메이커 iPad, 글꼴 21 · 폭 526): 줄 높이 31.1 — 능력치 7줄(「본래 Lv… — …」 2줄 포함) + 고유 능력 2줄 = 302 > 보이는 292
+        --   → 이 화면만 글꼴 20(줄 29.6): 능력치 213 + 사이 10 + 고유 능력 65 = 289 ≤ 292. 고유 능력이 더 길면(오오라·정예 설명) 칸 안에서 내려 본다
+        self:Box("/ui/ShadowHUD/Window/Detail", 30, -628, 1308, 324)
+        self:Box("/ui/ShadowHUD/Window/Detail/Stage", -538, -18, 200, 288)
+        self:Box("/ui/ShadowHUD/Window/Detail/Name", 396, -14, 484, 42)
+        self:Box("/ui/ShadowHUD/Window/Detail/Grade", 396, -58, 484, 32)
+        self:Box("/ui/ShadowHUD/Window/Detail/Info", 232, -12, 560, 300)
+        self:FontSize("/ui/ShadowHUD/Window/Detail/Info/Body/Stats", 20)
+        self:FontSize("/ui/ShadowHUD/Window/Detail/Info/Body/Trait", 20)
+        self:Pos("/ui/ShadowHUD/Window/Detail/Essence", -16, 162)
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnDeploy", 808, 58, 156, 88)
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnUpgrade", 972, 58, 156, 88)
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnSalvage", 1136, 58, 156, 88)
+        -- 단추 폭 168 → 156: 「지정 해제」(글꼴 26)가 BestFit으로 줄지 않고 두 줄로 접혔다(메이커 iPad 10-29) → 한 줄 높이만 남겨 줄이게 (빌드 lib.fitButtonText oneLine과 같은 계산)
+        for _, n in ipairs({ "BtnDeploy", "BtnUpgrade", "BtnSalvage" }) do self:OneLine("/ui/ShadowHUD/Window/Detail/" .. n) end
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnDeployNote", 808, 16, 156, 34)
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnUpgradeNote", 972, 16, 156, 34)
+        self:Box("/ui/ShadowHUD/Window/Detail/BtnSalvageNote", 1136, 16, 156, 34)
+        -- 오른쪽 칸 폭(484)에 긴 이름(「납골당 해골 수비병  Lv30(힘 Lv17)  +3」)·등급 줄(쓰러짐·회복 초가 붙으면 길다)이 한 줄로 들게 줄일 수 있는 폭을 넓힌다
+        self:FitText("/ui/ShadowHUD/Window/Detail/Name", 18, 30)
+        self:FitText("/ui/ShadowHUD/Window/Detail/Grade", 15, 22)
         _UIKit:SetText("/ui/ShadowHUD/Window/Detail/Empty", "위 목록에서 그림자를 고르세요")   -- PC 「왼쪽에 보일 그림자를 / 오른쪽 목록에서 고르세요」 · 글귀 승인 전
         _ShadowHUD.RowCount = 5
-        _ShadowHUD.InfoTextW = 406          -- 상세 글 칸 440 − 안쪽 여백·스크롤바 (PC 524 → 490과 같은 차)
+        _ShadowHUD.InfoTextW = 526          -- 상세 글 칸 560 − 안쪽 여백·스크롤바 (PC 524 → 490과 같은 차 34)
         _ShadowHUD.InfoKey = ""
         _ShadowHUD.RenderKey = ""
-        log("[VRF] windowfit shadow 2-tier rows=5")
+        log("[VRF] windowfit shadow 2-tier rows=5 detail=1308x324 info=560x300 font=20")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void GridGap(string path, number x, number y)
+        -- 격자 스크롤 칸(ScrollLayoutGroup Grid)의 칸 사이
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) or e.ScrollLayoutGroupComponent == nil then
+            log_warning("[WindowFit] 격자 없음: " .. path)
+            return
+        end
+        e.ScrollLayoutGroupComponent.GridSpacing = Vector2(x, y)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FontSize(string path, number size)
+        -- 좁은 화면에서만 글꼴을 조금 줄인다 (글 칸 높이를 잴 때도 이 크기 — ShadowHUD.FitInfo GetPreferredHeight)
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) or e.TextGUIRendererComponent == nil then
+            log_warning("[WindowFit] 글 없음: " .. path)
+            return
+        end
+        e.TextGUIRendererComponent.FontSize = size
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FitText(string path, number minSize, number maxSize)
+        -- 좁은 칸에 옮긴 글: 넘치면 minSize까지 줄인다 (BestFit)
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) or e.TextGUIRendererComponent == nil then
+            log_warning("[WindowFit] 글 없음: " .. path)
+            return
+        end
+        local t = e.TextGUIRendererComponent
+        t.BestFit = true
+        t.MinSize = minSize
+        t.MaxSize = maxSize
     end
 
     @ExecSpace("ClientOnly")
@@ -180,6 +230,7 @@ script WindowFit extends Logic
         end
         e.UITransformComponent.anchoredPosition = Vector2(x, y)
         e.UITransformComponent.RectSize = Vector2(w, h)
+        self:Refit(e)
     end
 
     @ExecSpace("ClientOnly")
@@ -202,6 +253,44 @@ script WindowFit extends Logic
             return
         end
         e.UITransformComponent.RectSize = Vector2(w, h)
+        self:Refit(e)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Refit(Entity e)
+        -- 실행 중에 크기를 바꾸면 엔진이 글 맞춤(BestFit)과 스크롤바 그림을 다시 그리지 않았다 (메이커 iPad 10-29 실측:
+        --   좁힌 단추의 글이 옛 폭 크기 그대로 양끝 장식 위로 넘쳤고, 좁힌 가방 스크롤 칸의 스크롤바가 흰 막대로 그려졌다) → 같은 값을 다시 넣어 새로 그리게 한다
+        local t = e.TextGUIRendererComponent
+        if t ~= nil and t.BestFit then
+            local text = t.Text
+            t.Text = ""
+            t.Text = text
+        end
+        --   스크롤바 값 이름: 실행 중에는 .ui에 저장된 이름(ScrollBarHandleColor 등)으로만 읽힌다 — .d.mlua의 HandleColor·BackgroundColor·Thickness는 nil (10-29 메이커 LEA-2007)
+        local s = e.ScrollLayoutGroupComponent
+        if s ~= nil then
+            local hc, bc, th = s.ScrollBarHandleColor, s.ScrollBarBackgroundColor, s.ScrollBarThickness
+            if hc ~= nil then s.ScrollBarHandleColor = Color(hc.r, hc.g, hc.b, hc.a) end
+            if bc ~= nil then s.ScrollBarBackgroundColor = Color(bc.r, bc.g, bc.b, bc.a) end
+            if th ~= nil then
+                s.ScrollBarThickness = th + 0.01
+                s.ScrollBarThickness = th
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OneLine(string path)
+        -- 단추 글을 한 줄로: 위아래 여백으로 한 줄 높이(글꼴 최대 × 1.5)만 남겨, 넘치면 두 줄로 접지 않고 BestFit이 줄이게 한다
+        local e = _EntityService:GetEntityByPath(path)
+        if not isvalid(e) or e.TextGUIRendererComponent == nil then
+            log_warning("[WindowFit] 글 없음: " .. path)
+            return
+        end
+        local t = e.TextGUIRendererComponent
+        local v = math.max(0, math.floor((e.UITransformComponent.RectSize.y - t.MaxSize * 1.5) / 2))
+        t.Padding = RectOffset(t.Padding.left, t.Padding.right, v, v)
+        self:Refit(e)
     end
 
 end

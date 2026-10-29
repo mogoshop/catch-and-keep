@@ -462,7 +462,8 @@ function buildGameHud() {
     k.aspect(`${c}/Icon`);
     b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     b.text(`${c}/Name`, "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -176], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 24, ...outline });
-    b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -212], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17 });
+    //   설명은 첫 문장만(SkillOffer.CardText) · 그래도 넘치면 말줄임(Overflow 1 = Ellipsis)으로 잘라 아래 초록 수치 줄(Change)을 덮지 않는다 (10-29 오후 검수 35번 캡처)
+    b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -212], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17, overflow: 1 });
     b.text(`${c}/Change`, "", { size: 16, color: "#7CFF7A", anchor: "top-center", pos: [0, -294], rect_size: [CARD.text, 46], alignment: 1, bestfit: true, min_size: 12, max_size: 16 });
     // 고르기 단추: 카드 바로 아래 (카드를 눌러도 같다)
     k.ok(`OfferWin/Pick${i}`, "이 카드로", { anchor: "top-left", pos: [x + 20, CARD.top - CARD.h - 12], rect_size: [300, 88], font_size: 24 });

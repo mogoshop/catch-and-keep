@@ -158,6 +158,52 @@ for (const tree of ["command", "soul", "curse", "move"]) {
   // 10-11: 트리 칸 제한 없음 — 스킬 창은 해금 레벨 순 목록 (docs/design/16)
 }
 
+// ── 혼의 제물·선택 보상 카드 글 (10-29 오후 검수: 「골편 투척」 설명 95자가 카드 글 칸을 넘어 아래 초록 수치 줄을 덮었다) ──
+//   카드 글 칸 OfferWin/Card{i}/Effect = 폭 222 · 높이 78 · 글꼴 17→13(BestFit) — tools/build/ui.cjs. 넣는 글은 SkillOffer.CardText와 같은 규칙:
+//   skills.csv card 열이 있으면 그것, 없으면 desc의 첫 문장(괄호 밖에서 처음 나오는 「.」+빈칸 또는 글 끝까지 · 없으면 전체).
+//   상한 N = 72자 — 메이커 실측(10-29, TextGUIRendererComponent.GetPreferredHeight/Width, 글꼴 13 · 폭 222):
+//     줄 높이 19.24 → 4줄 77.0 ≤ 칸 78 (5줄 96.2는 넘침) · 한글 한 자 11.96px → 한 줄 18자 (빈칸 2.93 · 숫자 7.41은 더 좁다)
+//     → 가장 넓은 한글로만 채워도 18자 × 4줄 = 72자는 4줄 안. (실제 설명 앞부분으로 재면 90자까지 4줄 · 80자 카드 글은 77px로 칸에 1px 남아 여유가 없었다)
+//   넘치면 card 열에 짧은 카드 글을 적는다 (새 글귀 → docs/requests/copy-review-20261029-pm.md 「승인 전」). 칸은 말줄임으로도 막혀 있다(Overflow 1)
+const CARD_TEXT_MAX = 72;
+const CARD_TEXT_LINES = 4;
+function firstSentence(text) {
+  let depth = 0;
+  const a = [...text];
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === "(") depth++;
+    else if (a[i] === ")") depth = Math.max(0, depth - 1);
+    else if (a[i] === "." && depth === 0 && (i === a.length - 1 || a[i + 1] === " " || a[i + 1] === "\n")) return a.slice(0, i + 1).join("");
+  }
+  return text;
+}
+function checkCardText(where, text) {
+  const chars = [...text.replace(/\n/g, "")].length;
+  const lines = text.split("\n").length;
+  if (chars > CARD_TEXT_MAX) return `${where} 카드 글 ${chars}자 > ${CARD_TEXT_MAX}자 (13px·폭 222에서 4줄을 넘을 수 있다 — card 열에 짧은 글) : ${text}`;
+  if (lines > CARD_TEXT_LINES) return `${where} 카드 글 줄바꿈 ${lines}줄 > ${CARD_TEXT_LINES}줄`;
+  return null;
+}
+T.skills.forEach((r, i) => {
+  const text = (r.card || "") !== "" ? r.card : firstSentence(r.desc);
+  const p = checkCardText(r.id, text);
+  if (p) err("skills", i, p);
+});
+//   선택 보상 카드(PlayerQuest.ChoiceDef — 코드 안 표)도 같은 칸에 들어간다: { 이름, 설명, 악몽·지옥, 아이콘 스킬 }
+{
+  const quest = fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/Quest/PlayerQuest.mlua"), "utf8");
+  const defs = [...quest.matchAll(/\["(\d\w+)"\] = \{ "([^"]*)", "((?:[^"\\]|\\.)*)", "([^"]*)", "(\w+)" \}/g)];
+  if (defs.length !== 9) err("skills", null, `PlayerQuest.ChoiceDef 선택 보상 표를 ${defs.length}개 읽었다 (9개여야 함 — 모양이 바뀌었으면 이 검사도 고친다)`);
+  for (const m of defs) {
+    if (!skillIds.has(m[5])) err("skills", null, `선택 보상 ${m[1]} 아이콘 스킬 '${m[5]}' — skills.csv에 없음`);
+    const p = checkCardText(`선택 보상 ${m[1]}`, firstSentence(m[3].replace(/\\n/g, "\n")));
+    if (p) err("skills", null, p);
+  }
+  // 카드 칸에는 CardText만 — 설명 전체(def.desc)를 바로 넣으면 이 검사가 지키는 상한이 무의미해진다
+  const offer = fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/UI/Windows/SkillOffer.mlua"), "utf8");
+  if (/\/Effect", def\.desc/.test(offer) || !/method string CardText/.test(offer)) err("skills", null, "SkillOffer.mlua: 카드 Effect 칸에 설명 전체(def.desc)를 넣는다 — CardText(def)로");
+}
+
 // 착용 가능한 부위의 외형 RUID는 아이콘과 같은 에셋을 사용한다.
 const AVATAR_SLOTS = new Set(["weapon", "helm", "armor", "gloves", "boots"]);
 // 예외: 잿빛 장막 유니크 베이스는 같은 디자인으로 따로 그린 아이콘(iconPx)을 쓴다.

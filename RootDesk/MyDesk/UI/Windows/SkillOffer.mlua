@@ -184,7 +184,7 @@ script SkillOffer extends Logic
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(_SkillWindow:TreeHex(a[1]), a[2]))
                 _UIKit:SetIcon(c .. "/Icon", _SkillData:Get(def.skill).icon)
                 _UIKit:SetText(c .. "/Name", def.name)
-                _UIKit:SetText(c .. "/Effect", def.desc)
+                _UIKit:SetText(c .. "/Effect", self:CardText(def))
                 _UIKit:SetText(c .. "/Change", def.next)
                 _UIKit:SetText(self.Win .. "/Pick" .. tostring(i), "이것으로")
             end
@@ -239,7 +239,9 @@ script SkillOffer extends Logic
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(kindColor, kind))
                 _UIKit:SetIcon(c .. "/Icon", def.icon)
                 _UIKit:SetText(c .. "/Name", def.name)
-                _UIKit:SetText(c .. "/Effect", def.desc)
+                local cardText = self:CardText(def)
+                _UIKit:SetText(c .. "/Effect", cardText)
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] offer card text %s len=%d full=%d", id, utf8.len(cardText) or 0, utf8.len(def.desc) or 0)) end
                 local change = ""
                 local now = book:GetRankSummary(id, math.max(1, lv))
                 local nextRank = book:GetRankSummary(id, lv + 1)
@@ -262,6 +264,33 @@ script SkillOffer extends Logic
             for _, id in ipairs(preview.ids) do table.insert(names, _SkillData:Get(id).name) end
             _UIKit:SetText(self.Win .. "/Preview/Body", "Lv" .. tostring(preview.row) .. "\n" .. table.concat(names, "\n") .. "\n\n" .. tostring(preview.row - st.Level) .. "레벨 남음")
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method string CardText(any def)
+        -- 카드 글 칸(폭 222 · 높이 78 · 글꼴 17→13)에 넣을 짧은 글 (10-29 오후 검수: 「골편 투척」 설명 약 95자가 13px로도 5~6줄이 되어 아래 초록 수치 줄을 덮었다).
+        --   skills.csv card 열이 있으면 그것, 없으면 설명의 첫 문장. 전체 설명은 스킬 창(K)에 있으니 카드에는 요지만.
+        --   글자 수 상한은 tools/check_data.cjs 「카드 글」 검사가 지키고(같은 규칙을 JS로), 넘쳐도 Effect 칸이 말줄임으로 자른다 (tools/build/ui.cjs)
+        if def == nil then return "" end
+        if def.card ~= nil and def.card ~= "" then return def.card end
+        return self:FirstSentence(def.desc or "")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string FirstSentence(string text)
+        -- 첫 문장 = 괄호 밖에서 처음 나오는 「.」 + 빈칸(또는 글 끝)까지. 없으면 전체 (「+0.15초」 같은 소수점·괄호 안 마침표는 건너뛴다)
+        local depth = 0
+        local n = #text
+        for i = 1, n do
+            local ch = string.byte(text, i)
+            if ch == 40 then depth = depth + 1                        -- (
+            elseif ch == 41 then depth = math.max(0, depth - 1)       -- )
+            elseif ch == 46 and depth == 0 then                       -- .
+                local nx = i < n and string.byte(text, i + 1) or 32
+                if nx == 32 or nx == 10 then return string.sub(text, 1, i) end
+            end
+        end
+        return text
     end
 
     @ExecSpace("ClientOnly")
