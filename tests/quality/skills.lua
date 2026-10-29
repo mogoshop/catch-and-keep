@@ -209,14 +209,17 @@ for page=1,pages do
   end
  end
  assert(pos['SkillWin/TL/Bar'].y==SkillWindow.MobileBarY,'mobile bar y')
+ -- RB-OBS-04: 첫 열은 넘김 단추 칸(Prev x 24~68) 오른쪽에서 시작 — 열 왼쪽 MobileX0, 열 간격 130
+ assert(pos['SkillWin/TL/C1'].x==SkillWindow.MobileX0 and pos['SkillWin/TL/Bar'].x==SkillWindow.MobileX0,'mobile first column x '..tostring(pos['SkillWin/TL/C1'].x))
+ if en['SkillWin/TL/C2'] then assert(pos['SkillWin/TL/C2'].x-pos['SkillWin/TL/C1'].x==130,'mobile column step') end
 end
 assert(table.concat(seen,',')==table.concat(a,','),'paging lost skills: '..table.concat(seen,','))
 assert(SkillWindow:SlotPathOf('frost_soul')~='','guide path for split column')
 Environment.IsMobilePlatform=function() return false end
 SkillWindow.MobileColumns=nil;SkillWindow.Page=1;pos={}
 SkillWindow:RenderTimeline(book,stats)
-assert(pos['SkillWin/TL/Bar'].y==-304 and pos['SkillWin/TL/C1/S2'].y==-88,'PC timeline unchanged')
-print('[quality/skills] OBS-02 mobile timeline: '..#split..' columns, '..pages..' pages, rows 2 at step '..SkillWindow.MobileStepY..', bar '..SkillWindow.MobileBarY..', PC unchanged')
+assert(pos['SkillWin/TL/Bar'].y==-304 and pos['SkillWin/TL/C1/S2'].y==-88 and pos['SkillWin/TL/C1'].x==44 and pos['SkillWin/TL/Bar'].x==44,'PC timeline unchanged')
+print('[quality/skills] OBS-02 mobile timeline: '..#split..' columns, '..pages..' pages, rows 2 at step '..SkillWindow.MobileStepY..', bar '..SkillWindow.MobileBarY..', first column x '..SkillWindow.MobileX0..' (RB-OBS-04), PC unchanged')
 -- INT1725-OBS-01 (PC Lv40 혼의 제물 셋째 카드): 강화 카드 초록 줄(Card{i}/Change 222×72 · BestFit 12~16)에 편성 경고를 뜻·숫자 그대로 자기 줄로.
 --   줄은 「 · 」·「 (」·띄어쓰기 경계에서만 나뉘고(띄어쓰기·「·」를 빼고 다시 이으면 원문 글자 그대로) 줄마다 폭 222 안 — 폭은 넉넉한 어림 UIKit.TextWidth 16px(칸 최대 글꼴)
 --   캡처 장면 4개(대검 0기 · 방패 세기만 · 자리 없어짐 · 거인 중 0기)는 3줄 = 16px 그대로 · 모든 변이 노드 × 랭크 × 경고 꼴(두 자리 정원)의 최악도 4줄 = 12px 이상으로 칸 안

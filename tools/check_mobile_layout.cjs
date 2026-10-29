@@ -266,6 +266,39 @@ for (const win of WIDE) {
   if (barY - barH / 2 < inner - 0.5) problems.push('스킬 창 모바일 시간선: 막대 아래 끝 ' + (barY - barH / 2) + '이 판 테두리 안쪽 ' + inner + ' 밖');
   if (btn + ringPad * 2 > colW) problems.push('스킬 창 모바일 시간선: 칸 테두리 ' + (btn + ringPad * 2) + ' > 열 폭 ' + colW);
   if (btn < 88) problems.push('스킬 창 모바일 시간선: 칸 ' + btn + ' < 손가락 88');
+  // RB-OBS-04: 쪽 넘김 단추(TL/Prev·TL/NextPage — 그림·누르는 자리 같은 사각형)가 첫 열·마지막 열(한 쪽 PageSize열)의
+  //   칸(누르는 자리)·테두리·상태 글과 겹치지 않고, 진행 막대가 판 테두리 안에 있는지. 열 왼쪽 = SkillWindow.MobileX0, 열 간격 = 모바일 colW
+  const x0 = swProp('MobileX0');
+  const per = +need(/if Environment:IsMobilePlatform\(\) then return (\d+) end/, sw, 'SkillWindow 모바일 PageSize')[1];
+  const PW = panel.RectSize.x, PH = panel.RectSize.y;
+  const rectOf = (path) => {
+    // 판(위-왼쪽 기준, 아래로 −) 안의 사각형: 판 바로 아래 자식만 (anchor 한 점 · pivot)
+    const t = gb.getComponent(path, T);
+    const ax = t.AnchorsMin.x * PW, ay = -(1 - t.AnchorsMin.y) * PH;
+    const left = ax + t.anchoredPosition.x - t.Pivot.x * t.RectSize.x;
+    const top = ay + t.anchoredPosition.y + (1 - t.Pivot.y) * t.RectSize.y;
+    return { l: left, r: left + t.RectSize.x, t: top, b: top - t.RectSize.y };
+  };
+  const navs = { Prev: rectOf('SkillWin/TL/Prev'), NextPage: rectOf('SkillWin/TL/NextPage') };
+  const colWidth = col.RectSize.x;   // 칸은 열 위-가운데에 붙는다
+  const overlap = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.t, b.t) - Math.max(a.b, b.b) > 0.5;
+  for (const c of [1, per]) {
+    const cx = x0 + (c - 1) * colW + colWidth / 2;
+    for (let r = 1; r <= rows; r++) {
+      const top = colTop + slotTop0 - (r - 1) * step;
+      const parts = {
+        칸: { l: cx - btn / 2, r: cx + btn / 2, t: top, b: top - btn },
+        테두리: { l: cx - btn / 2 - ringPad, r: cx + btn / 2 + ringPad, t: top + ringPad, b: top - btn - ringPad },
+        상태글: { l: cx - state.RectSize.x / 2, r: cx + state.RectSize.x / 2, t: top - btn - stateBelow, b: top - btn - stateBelow - stateH },
+      };
+      for (const [nn, nr] of Object.entries(navs)) for (const [pn, pr] of Object.entries(parts)) {
+        if (overlap(nr, pr)) problems.push(`스킬 창 모바일 시간선: 넘김 단추 ${nn}(x ${nr.l}~${nr.r} · y ${nr.b}~${nr.t})가 ${c}열 ${r}줄 ${pn}(x ${pr.l}~${pr.r} · y ${pr.b}~${pr.t})과 겹친다`);
+      }
+    }
+  }
+  const barRight = x0 + per * colW;
+  if (barRight > PW - SKPANEL.border + 0.5) problems.push('스킬 창 모바일 시간선: 막대 오른쪽 끝 ' + barRight + '이 판 테두리 안쪽 ' + (PW - SKPANEL.border) + ' 밖');
+  if (verbose) console.log('스킬 창 모바일 시간선 넘김 단추: Prev x ' + navs.Prev.l + '~' + navs.Prev.r + ' · 첫 열 테두리 x ' + (x0 + colWidth / 2 - btn / 2 - ringPad) + '~ · ' + per + '열 테두리 ~' + (x0 + (per - 1) * colW + colWidth / 2 + btn / 2 + ringPad) + ' · Next x ' + navs.NextPage.l + '~' + navs.NextPage.r + ' · 막대 ' + x0 + '~' + barRight);
   if (verbose) console.log('스킬 창 모바일 시간선: 줄 ' + rows + ' · 간격 ' + step + ' · 마지막 글 아래 ' + lastStateBottom + ' · 막대 ' + barY + ' · 판 안쪽 ' + inner);
 }
 

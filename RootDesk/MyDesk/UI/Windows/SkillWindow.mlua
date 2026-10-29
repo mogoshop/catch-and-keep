@@ -27,6 +27,10 @@ script SkillWindow extends Logic
     property integer MobileRows = 2         -- 모바일 열 하나의 칸 수 (넘치면 이어진 열)
     property integer MobileStepY = 112      -- 모바일 줄 간격 (칸 위끼리)
     property integer MobileBarY = -318      -- 모바일 진행 막대 가운데 (판 위에서) · PC는 빌더 자리 −304
+    -- 모바일 넘김 단추 자리 (RB-OBS-04): 판 양끝 TL/Prev(x 24~68)·TL/NextPage(x 1230~1274)는 쪽 넘김 전용 칸으로 비우고,
+    --   열은 그 사이에만 — 첫 열 왼쪽 100(첫 칸 테두리 78~174 · Prev와 10 띄움) · 열 간격 130(9열째 테두리 끝 1214 · Next와 16) · 막대 100~1270(판 안쪽 1274 안).
+    --   예전 44·134는 첫 칸 테두리(22~118)가 Prev(24~68)와 겹쳐 그림·누르는 자리가 함께 겹쳤다. PC(44 · 한 판 · 넘김 단추 꺼짐)는 그대로
+    property integer MobileX0 = 100         -- 모바일 첫 열 왼쪽 (판 위에서) · PC는 44
     property any MobileColumns = nil        -- DisplayColumns 모바일 결과 (BuildColumns처럼 한 번만 만든다)
     property integer StatFont = 17          -- 효과 줄 글자 크기 (빌더 WS/Stat max_size와 같다) — 화면 폭을 잴 기준
 
@@ -188,10 +192,10 @@ script SkillWindow extends Logic
         local first = (self.Page - 1) * per + 1
         local shown = math.min(per, #cols - first + 1)
         local width = 1210
-        local colW = mobile and 134 or math.floor(width / math.max(1, shown))
+        local colW = mobile and 130 or math.floor(width / math.max(1, shown))   -- 모바일 130: 넘김 단추 칸을 비운 사이에 9열 (RB-OBS-04)
         local btn = mobile and 88 or 48
         local stepY = mobile and self.MobileStepY or 68
-        local x0 = 44
+        local x0 = mobile and self.MobileX0 or 44
         _UIKit:SetEnabled(self.Win .. "/TL/Prev", pages > 1)
         _UIKit:SetEnabled(self.Win .. "/TL/NextPage", pages > 1)
         self.SlotIds = {}
