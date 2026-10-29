@@ -1,0 +1,72 @@
+PASS dps default off
+PASS dps off: no buffer/timer/subscription
+PASS dps off: RiteAbsorb once per HP change (4 hits)
+PASS dps on: game result identical (Hp, shield, dead)
+PASS dps on: RiteAbsorb call count unchanged
+PASS dps on: sampler timer and subscriptions exist only while on
+PASS dps stop: buffer freed, timer cleared, unsubscribed
+PASS dps oracle1 before100 in30 shield10 → after80 eff20 abs10 over0, one ledger row
+PASS dps oracle2 before10 in50 → after-40 (no clamp, current policy) eff10 over40 death1
+PASS dps oracle3 before100 in10 shield20 → HP100 eff0 abs10, not killed
+PASS dps C02 dead target: later hit is a no-op (no ledger row)
+PASS dps oracle4 same time 100→90→80: two rows, distinct HPseq, eff 20
+PASS dps oracle5 ledger 10 stays 10 after summon number flush + MonsterKilled
+PASS dps C04 owner = summon owner u1 with source summon.skeleton (identity kept)
+PASS dps C04 party reward receiver u2 gets no damage attribution
+PASS dps C04 sources: tick.unknown / exact tag / mismatch unknown / ambiguous unknown / none
+PASS dps C04 tag counters (hit 1, miss 2 for tagged player hits; ambiguous counts as miss)
+PASS dps oracle6 scale/heal/drift are not damage (eff 30 = 20 + 10)
+PASS dps C05 event kinds in order
+PASS dps C05 reset starts new attempt and clears first hit
+PASS dps C08 TTK from first effective hit of the attempt (104 → 106 = 2s)
+PASS dps oracle7 respawn → new life id, old life keeps its death
+PASS dps C05 respawned life gets its own seq from 1
+PASS dps C05 adopt for monsters spawned before start (born unknown)
+PASS dps C05 revived without Respawn → new life (not attached to dead life)
+PASS dps C09 player death / soul raise counted from existing events
+PASS dps C09 sampled mana drop/rise and legion wipe→recover
+PASS dps C09 sampler lateness proxy (1.25s gap > 0.35s)
+PASS dps flush window line
+PASS dps flush unsupported metrics are labelled, not zero
+PASS dps flush prints 10 ledger rows + end
+PASS dps oracle8 ring cap: kept 5, dropped 4 (9 rows incl. spawn), aggregates keep all 8 hits
+PASS dps C06 ring table never grows past cap
+PASS dps C06 owner cap: extra owner counted as overflow, run total still includes it
+PASS dps C06 max run length halts recording (HP still applied)
+PASS dps C07 Telemetry.Flush payload identical with DPS on/off and has no DPS keys
+PASS dps C-IF-02 ambiguous A/B: both hits unknown, no leftover promotion
+PASS dps C-IF-02 expired single candidate is unknown
+PASS dps C-IF-02 fresh exact single candidate is confirmed
+PASS dps C-IF-OBS-01 terminal damage owner from ledger, kill credit from existing LastAttacker
+PASS dps C-IF-03 truncated flush reports actual ev lines and omitted count
+PASS dps C-IF-01 halted at t0+MaxSec without damage: no new samples/rows/events
+PASS dps C-IF-01 halt releases sampler timer and subscriptions
+PASS dps C-IF-01 flush duration fixed at MaxSec after halt
+PASS dps filter: only prefixed targets recorded, others counted as filtered
+PASS dps filter: HP still applied to filtered monster (game unchanged)
+PASS dps stop clears filter
+PASS dps TakeDamageAs keeps kind tick with declared source; plain TakeDamage stays tick.unknown (summon owner kept)
+PASS dps TakeDamage == TakeDamageAs(tick) for HP (no behaviour change)
+PASS dps before hooks: hits_taken / legion_loss_reason / soul_other stay unsupported
+PASS dps after hooks: taken split player/summon, loss reasons, soul other
+PASS dps stop unsubscribes SummonLost/SoulLost too
+PASS dps P5 PlayerDealtDamage is emitted with DPS off (no DPS buffer created)
+PASS dps P5 first effective hit → one event: owner u1, direct, no skill, sourceId, map, path hit
+PASS dps P5 throttled within DealtThrottleSec (still one event)
+PASS dps P5 ArmDealt releases throttle · summon hit → owner u1, direct=false
+PASS dps P5 shield-absorbed (effective 0) hit emits nothing
+PASS dps P5 tick path counts as dealt damage (path = declared tick source)
+PASS dps P5 skill filled only when the ledger confirmed it (DPS on + exact tag)
+PASS dps P7 first tick only sets the baseline
+PASS dps P7 idle tick counts ticks but not active
+PASS dps P7 movement > 0.5 · kills · dealt damage each make the tick active (3 of 4)
+PASS dps P3 no act-2 sample on act-1 map
+PASS dps P3 first act-2 map → First act2Enter + first sample 0|canyon|...|7|1
+PASS dps P3 cap: list stops at A2Cap, overflow keeps sums only
+PASS dps P3 no samples after 600 s window
+PASS dps P4 respec counters and bounded list
+PASS dps growth runtime state not saved (no pos/dealtAt/init in payload) · session sums are
+PASS dps P1 summary labels for growth stages
+PASS dps DpsFinish flushes then stops
+PASS dps flush while off is a labelled no-op
+dps: all checks passed
