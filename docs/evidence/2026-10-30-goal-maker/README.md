@@ -89,6 +89,7 @@
 | 반영 4 | 04:22 NpcWindow(9c6a5aa1)·StashWindow·GearChoiceWindow(50fed567) touch → refresh 04:22:20 → build 458줄 Error 0 · Warning 100 |
 | 플레이 7 | PC FHD · 04:24~04:55 · 방 s1b8f56af280 — D-OBS-06 실화면 · A-OBS-05 실행 확인 · C0 연결 · C1 6장면 |
 | 반영 5 | 04:55 GameData(24e861ab E155 연결)+UI 3 touch → refresh 04:55:50 → build 458줄 Error 0 · Warning 100 |
+| 플레이 8 | PC FHD · 05:01~05:35(05:20 세션 한도 → 05:25 재개, 플레이 유지) · 방 s1b8fe2cf18e · 저장 끔·무적 — I07 전 장면 5 · E-M1 방패·대검·쌍칼 + 기본/마법사 조회 |
 
 ## A 묶음 (Claude 판정)
 
@@ -141,6 +142,23 @@
 집계 `C-raw/aggregate-P7-stage1.{md,json}` (원장 검사 7/7 ok · absorbed>0 run 없음). 관찰: C-OBS-01 magic 보스 시전당 ~8타 묶음(원인 미확인) · C-OBS-02 arenaClear 1회 뒤 유입이 준비 중 시험 캐릭터를 죽임 · C-OBS-03 L15 보스 장면의 대사제는 lv21·생명 47803, 생명 81 시험 캐릭터는 세 빌드 모두 16초 안 사망. C2(9+2)는 E·I07 뒤.
 
 코덱스 검토 오버레이(0504·0509 · `C-raw/aggregate-P7-stage1.{md,json}`에 submission-review.patch 적용 → json f8d9276a · md 2688b8da): 원장 검사 7/7 ok는 산술·연결성 뜻(수집 유효성 아님) · 실제 교전 5건(run5·6·8·9·10) · run4/7 준비 실패는 서술 비교 제외 · run6/9는 C-OBS-01 수정 전 마법 진단(원값 보존 · 최종 성능 비교 미확정) · TTK는 피격 개체 기준(전체 생존 아님) · run8 표본 death0 ≠ 최종 사망 · 전체 창 vs 보정 교전(raw_active+구간 중앙값 보정) 시간 분모 구분 · 원 7run 값·raw·aggregate.cjs 무변경(재실행 없음). 후속(별도 통합·실행 수용과 구분): C-OBS-01 → 7ae14a86(SkillEffects 부모 HitIds 복사를 Launch 뒤로 · 코덱스 0457 · 다음 E refresh 반영 뒤 마법 case만 재실행) · C-OBS-02 → a9ad577b(현재 맵 InflowOn 저장/중지/원복 수집 준비 · fix2 입력 · 코덱스 0500 · E/I07 뒤 curse-boss 1건).
+
+## E 묶음 (Claude 판정 · 155 연결 24e861ab 반영 뒤)
+
+| case | 판정 | 핵심 근거 | 캡처 |
+|---|---|---|---|
+| E-M1 방패 | 통과 | 05:08:32/05:25:54 rite giant start atk=363 look=shield scale=1.20 · HUD 초상 ui_giant_shield · 공격 중 skill/hit 그림 · 20초 뒤 split sec=0.60 → split back=4/4 respawn=true · 갈라진 뒤 방패 3·일반 2 원래 그림 (코덱스 0520: 원래 2장 + 05:08 run 부분 수용, 공격만 추가) | E-M1-1~3 |
+| E-M1 대검 | 통과 | 05:27:20/05:32:18 look=greatsword hp=4067/4218 · 공격 중 대검 휘두르기 · 05:32:38 split → 뼈 더미로 무너짐 → 숙주 원래 대검 해골(E-IF-01) | E-M1-4·5(겹침 후보)·10~12 |
+| E-M1 쌍칼 | 통과 | 05:30:34 look=twin hp=3275/3426 · 공격 중 분홍 쌍칼 · 몸 유지 → 갈라짐 폭발 → 숙주 원래 쌍칼 해골 | E-M1-6~9 |
+| 기본/마법사 | 자리만 | 05:06:53·05:35:27 GiantLook basic/''/mage 6동작 6/6 · HUD ui_giant_basic c4c41598…/mage 8dacb199… · 마법사 자연 선발 없음(dormant) — 실화면 없음 | — |
+
+- 입력: GM 편성 준비(DismissAll · 변이 랭크 목표 3·나머지 0 · FormHope '' · 혼 6 · MaxDifficulty 0→1) → script 서버 SkillBook.Cast raise_skeleton ×5 · CastRite(5)(마나 30 소비 · 재사용 27.9) · GM 더미 drownedsailor(생명 50000 유지) · 3차부터 유입 끔·둘레 정리 뒤 되돌림. 조각 `RUN-log-INT.txt` 플레이 8 구간.
+- 정책 불변: 공격 363 = ATK 66×5×1.1 · 생명 = 다섯 합×1.2 · 20초 · 마나 30 · 재사용 30 · 반경 1.8 · GiantArtScale 1.2 · 숙주 = 가장 튼튼한 해골.
+- 한계: 방패 갈라짐 0.6초는 스크린샷 지연(≈3초)으로 놓침(대검·쌍칼로 확인) · 쌍칼 2차(유입 켠 채)는 캡처 미사용.
+
+## I07 (=D-M8) 접합 시범
+
+- 전 장면(패치 전 · 플레이 8 · 반영 24e861ab): 05:03:16 I07-1 demonroad 서문 (-31.5,0.5) · 05:03:48 I07-2 동문 (31.5,2.5) · 05:05:25 I07-3a wreckcoast (-7.3,3.15)(캐릭터가 자리 가림) · 05:05:58 I07-3b (-5.3,3.15) · 05:06:28 I07-4b (8.5,2.9) — 보통 줌 · 카메라 = 플레이어 · GM 둘레 정리 · wreckcoast 유입 끔(촬영 뒤 되돌림). 커밋 2f59f95f. 등록 패치 319efa00(통합 담당) → 다음 refresh 뒤 같은 5자리 후 장면.
 
 ## B 편입 (재실행 없음)
 
