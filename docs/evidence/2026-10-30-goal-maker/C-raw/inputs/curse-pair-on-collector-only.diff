@@ -1,0 +1,35 @@
+--- run11-used
++++ S10-15-curse-mix-sustain60-pair-on-P9-CANDIDATE.lua
+@@ -1,5 +1,5 @@
+ -- ===================================================================== [S10] 장면 실행
+-local CFG = { level = 15, build = 'curse_mix', scene = 'sustain60', rep = 1, input = 'auto', capture_origin = 'GOAL-MAKER-INT-P9C2-20261030T0604' }   -- maker-blocks.cjs가 채움
++local CFG = { level = 15, build = 'curse_mix', scene = 'sustain60', rep = 1, input = 'auto', curse_mode = 'on', pair_id = 'I05-CURSE-L15-SUSTAIN-P9-1', capture_origin = 'GOAL-MAKER-INT-P9C2-20261030T0604' }   -- maker-blocks.cjs가 채움
+ 
+ -- 같은 레벨 = 같은 장비·같은 투자 총점 (parallel-analysis/combat/fixtures.json 그대로 · 퀘스트 추가 포인트·선택 보상 없음 · 보통 난이도)
+ local LAMP = 'lamp1|1|1|망자를 부르는 등불|minion=20|2|'
+@@ -91,7 +91,7 @@
+ local capture = origin .. '-' .. tostring(_Telemetry.DpsRunId + 1) .. '-' .. tostring(math.floor(_UtilLogic.ElapsedSeconds * 1000))
+ local rawFile = 'raw/' .. label .. '--' .. capture .. '.log'
+ local function metadata()
+-  return ' label=' .. label .. ' run=' .. collection.run .. ' input=' .. CFG.input .. ' capture_origin=' .. origin .. ' capture_id=' .. capture .. ' raw_file=' .. rawFile .. (CFG.device and (' device=' .. CFG.device) or '')
++  return ' label=' .. label .. ' run=' .. collection.run .. ' input=' .. CFG.input .. ' capture_origin=' .. origin .. ' capture_id=' .. capture .. ' raw_file=' .. rawFile .. ' pair_id=' .. CFG.pair_id .. ' curse_mode=' .. CFG.curse_mode .. (CFG.device and (' device=' .. CFG.device) or '')
+ end
+ local function owns()
+   return not finished and _Telemetry.DpsCollection == collection
+@@ -214,6 +214,7 @@
+ st:Recalculate(true)
+ _UndeadSystem:DismissAll(p)
+ log('[DPS-RUN] setup label=' .. label .. ' lv=' .. st.Level .. ' mana=' .. math.floor(st.MaxMana) .. ' hp=' .. math.floor(p.PlayerComponent.MaxHp) .. ' slots=' .. bk.Slots)
++log('[DPS-RUN] pair_setup' .. metadata() .. ' boneArmor=' .. tostring(st.BoneArmor) .. ' boneArmorMax=' .. tostring(st.BoneArmorMax))
+ 
+ -- 2) 이동 → 2.5초 뒤 장면 시작 (맵이 바뀌면 CurrentMap 엔티티가 새로 생긴다)
+ travel:Go(S.map, Vector2(S.me[1], S.me[2]))
+@@ -298,7 +299,7 @@
+   end
+   for _, id in ipairs(B.slots) do
+     if id == 'bone_armor' and (st.BoneArmor or 0) <= 0 then try(id, me) end
+-    if id == 'mark_weakness' and target ~= nil and not target:IsCursed() then try(id, tpos) end
++    if CFG.curse_mode ~= 'off' and id == 'mark_weakness' and target ~= nil and not target:IsCursed() then try(id, tpos) end
+     if id == 'raise_skeleton' or id == 'raise_mage' then
+       local kind = id == 'raise_mage' and 'mage' or 'skeleton'
+       if liveOf(kind) < capOf(kind) then
