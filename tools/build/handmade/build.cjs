@@ -4,6 +4,8 @@
 //   node tools/build/handmade/build.cjs act1 --check               액트 설계서의 맵 전부를 짓지 않고 검사만
 //   node tools/build/handmade/build.cjs stormeye --floormix-y=seam-only --out=docs/evidence/…/maps
 //       ;floormix 줄(상하) 정책 시범 (lib.cjs FLOORMIX_Y_MODES · 기본 mix) · --out: map/ 대신 그 폴더에 노말만 쓴다 (난이도 복제 없음 · map/은 그대로)
+//   node tools/build/handmade/build.cjs crabcave1 stormeye --floormix=variants --out=docs/evidence/2026-10-29-art-I/maps
+//       ;floormix 변형 섞기 정책 시범 (lib.cjs FLOORMIX_MODES · 기본 flip) — 현행 + 변형을 격자 칸마다 좌표 해시로 고르고 임의 뒤집기 없음 (I-2)
 // 설계도는 compose.cjs가 설계서(data/handmade/specs/act<N>.cjs)로 만든다. 전체 빌드(tools/build.cjs maps)도 같은 빌더를 쓴다.
 "use strict";
 const path = require("path");
@@ -15,6 +17,7 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const checkOnly = process.argv.includes("--check");
 const optOf = (name) => { const a = process.argv.find((x) => x.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : null; };
 if (optOf("floormix-y")) handmade.setFloormixY(optOf("floormix-y"));
+if (optOf("floormix")) handmade.setFloormixMode(optOf("floormix"));
 const outDir = optOf("out") ? path.resolve(optOf("out")) : null;
 if (outDir) require("fs").mkdirSync(outDir, { recursive: true });
 const rows = load("maps").sort((a, b) => num(a.order) - num(b.order));

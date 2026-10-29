@@ -62,6 +62,33 @@ function setFloormixY(mode) {
   floormixY = mode;
 }
 setFloormixY(floormixY);   // 환경 변수 값 검사
+// ;floormix 바닥 변형 정책 — 10-29 22:52 코덱스 위임 승인 I-2 (quality-art-I-decision-2252 · 집게 동굴 1층·폭풍의 눈 노말만 격리 시범)
+//   "flip" (기본 · 지금 그대로): 그림 열·줄마다 칸 좌표 의사난수로 좌우·상하 뒤집기 (위 floormixY 정책)
+//   "variants" = 「현행 + 변형을 격자 좌표로 안정적으로 고르는 혼합 · 임의 좌우/상하 반전 없음」: FLOOR_VARIANTS에 변형이 있는 그림만
+//     ① 열·줄의 의사난수 FlipX/FlipY 선택을 끈다 (floorFlipX·rowFlip → 뒤집지 않음)
+//     ② 맵 전체 그림 격자 칸(열 kx · 줄 ky, 원점 MIX_OX/MIX_OY = 맵 왼쪽·아래 끝)마다 코덱스 좌표 해시(VARIANT_SEED)로 현행·변형 중 한 장을 고른다
+//     그대로 두는 것: 잘린 열·줄의 경계 방향(decide의 hard cut)·segs의 필요 뒤집기(f = !f)·끝부터 깐 조각(local)·조각 위치 규칙(뒤집은 쪽은 끝 장 가운데가 축)·
+//     전역 격자 원점·부분 타일 정렬·MIX_Z·색·배율·통행/충돌 — 경계 보정이 요구한 뒤집기는 남는다(「전부 FlipY 0」 같은 일괄 변경이 아님).
+//     조각은 격자 칸 단위로 나눠 칸마다 장을 고르고, 같은 줄에서 같은 장·같은 뒤집기가 이어지면 segs와 같은 이어 붙이기 규칙으로 합친다.
+//   고르기: tools/build/handmade/build.cjs <맵id> --floormix=variants (또는 환경 변수 FLOORMIX=variants). 전체 빌드(tools/build.cjs maps)는 기본 "flip"
+const FLOORMIX_MODES = ["flip", "variants"];
+const FLOOR_VARIANTS = {   // 순서 = 해시 번호 0..3 (코덱스 I-tile-layout-policy keys 순서)
+  "a3-barnacle-stone-floor-r2": ["a3-barnacle-stone-floor-r2", "a3-barnacle-stone-floor-r2-v2", "a3-barnacle-stone-floor-r2-v3", "a3-barnacle-stone-floor-r2-v4"],
+};
+const VARIANT_SEED = 20261029;
+// 코덱스 좌표 해시: u=((col*73856093)^(row*19349663)^seed)&0xffffffff; u^=u>>13; u=(u*0x85ebca6b)&0xffffffff; u^=u>>16; index=u&(n-1)
+const variantAt = (col, row, n) => {
+  let u = (Math.imul(col, 73856093) ^ Math.imul(row, 19349663) ^ VARIANT_SEED) >>> 0;
+  u = (u ^ (u >>> 13)) >>> 0; u = Math.imul(u, 0x85ebca6b) >>> 0; u = (u ^ (u >>> 16)) >>> 0;
+  return u % n;
+};
+let floormixMode = process.env.FLOORMIX || "flip";
+function setFloormixMode(mode) {
+  if (!FLOORMIX_MODES.includes(mode)) throw new Error(`floormix 정책 '${mode}' 모름 (가능: ${FLOORMIX_MODES.join(", ")})`);
+  floormixMode = mode;
+}
+setFloormixMode(floormixMode);
+const variantsOf = (art) => (floormixMode === "variants" && FLOOR_VARIANTS[art]) || null;
 const noFlip = () => false;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
@@ -606,7 +633,7 @@ function artEntities(d, ctx, bp, rows, func) {
   const cutsX = new Map(), cutsY = new Map();
   for (const m of mixRects.values()) markCuts(cutsX, m.art, m.ax, m.bx, MIX_OX, m.by - m.ay, (g0) => same(m.art, g0, m.ax, m.ay, m.by), (g1) => same(m.art, m.bx, g1, m.ay, m.by));
   for (const m of mixRects.values()) {
-    m.cols = segs(m.ax, m.bx, MIX_OX, (k) => decide(cutsX, m.art, k, MIX_OX, floorFlipX), (g0) => same(m.art, g0, m.ax, m.ay, m.by), (g1) => same(m.art, m.bx, g1, m.ay, m.by));
+    m.cols = segs(m.ax, m.bx, MIX_OX, (k) => decide(cutsX, m.art, k, MIX_OX, variantsOf(m.art) ? noFlip : floorFlipX), (g0) => same(m.art, g0, m.ax, m.ay, m.by), (g1) => same(m.art, m.bx, g1, m.ay, m.by));
     m.cx0 = Math.min(...m.cols.map((c) => c.L)); m.cx1 = Math.max(...m.cols.map((c) => c.R));   // 좌우로 늘린 폭까지 위아래 이웃을 본다 (모서리 칸)
   }
   for (const m of mixRects.values()) markCuts(cutsY, m.art, m.ay, m.by, MIX_OY, m.cx1 - m.cx0, (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
@@ -614,9 +641,42 @@ function artEntities(d, ctx, bp, rows, func) {
   const rowFlip = floormixY === "seam-only" ? noFlip : floorFlipY;
   let freeRows = 0;   // 경계 보정 없이 정책(의사난수/끔)으로 정한 줄 수 (MIXDEBUG 줄)
   const rowPick = (wy) => { freeRows++; return rowFlip(wy); };
-  for (const m of mixRects.values()) m.rows = segs(m.ay, m.by, MIX_OY, (k) => decide(cutsY, m.art, k, MIX_OY, rowPick), (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
+  const rowPickNo = (wy) => { freeRows++; return false; };   // variants 정책: 임의 상하 반전 없음 (경계 보정은 decide·segs가 그대로)
+  for (const m of mixRects.values()) m.rows = segs(m.ay, m.by, MIX_OY, (k) => decide(cutsY, m.art, k, MIX_OY, variantsOf(m.art) ? rowPickNo : rowPick), (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
+  // variants 정책: 한 축의 조각을 그림 격자 칸 단위로 나눈다 — 안 뒤집은 조각은 L이, 뒤집은 조각은 R이 칸 경계라(segs) 나눈 칸도 같은 위치 규칙을 지킨다
+  const cellsOf = (list, O) => list.flatMap((sg) => {
+    if (sg.local) return [Object.assign({ k: tileOf((sg.L + sg.R) / 2, O) }, sg)];
+    const out = [], k0 = tileOf(sg.L, O), k1 = Math.ceil((sg.R - O) / S - EPS) - 1;
+    for (let k = k0; k <= k1; k++) out.push({ L: Math.max(sg.L, O + k * S), R: Math.min(sg.R, O + (k + 1) * S), f: sg.f, local: false, k });
+    return out;
+  });
+  let variantCount = null;   // MIXDEBUG: 장별 조각 수
   const mixPieces = (name, rid, m, z, tint) => {
     const parts = [];
+    const vs = variantsOf(m.art);
+    if (vs) {
+      const rows = cellsOf(m.rows, MIX_OY), cols = cellsOf(m.cols, MIX_OX);
+      variantCount = variantCount || {};
+      for (const rr of rows) {
+        const runs = [];
+        for (const cr of cols) {
+          const vi = variantAt(cr.k, rr.k, vs.length), last = runs[runs.length - 1];
+          // 이어 붙이기는 segs와 같은 조건: 같은 장·같은 뒤집기 · 앞 조각이 칸 경계에서 끝나고 이 조각이 칸 경계에서 시작
+          if (last && !cr.local && !last.local && last.vi === vi && last.f === cr.f && Math.abs(last.R - cr.L) < EPS && Math.abs(cr.L - (MIX_OX + cr.k * S)) < EPS) last.R = cr.R;
+          else runs.push({ L: cr.L, R: cr.R, f: cr.f, local: cr.local, vi });
+        }
+        for (const cr of runs) {
+          const o = sprite(ruid(vs[cr.vi], `floormix ${vs[cr.vi]}`), [r3((cr.R - cr.L) / S), r3((rr.R - rr.L) / S)], 1), sr = o["MOD.Core.SpriteRendererComponent"];
+          if (tint) sr.Color = tintOf(tint);
+          if (cr.f) sr.FlipX = true;
+          if (rr.f) sr.FlipY = true;
+          const px = cr.f ? cr.R - S / 2 : cr.L + S / 2, py = rr.f ? rr.R - S / 2 : rr.L + S / 2;   // 뒤집은 쪽은 끝 장 가운데가 축 (위 주석)
+          parts.push({ name: `${name}_${parts.length + 1}`, pos: [r3(px), r3(py), z], overrides: o });
+          variantCount[vs[cr.vi]] = (variantCount[vs[cr.vi]] || 0) + 1;
+        }
+      }
+      return parts;
+    }
     for (const rr of m.rows) for (const cr of m.cols) {
       const o = sprite(rid, [r3((cr.R - cr.L) / S), r3((rr.R - rr.L) / S)], 1), sr = o["MOD.Core.SpriteRendererComponent"];
       if (tint) sr.Color = tintOf(tint);
@@ -640,7 +700,9 @@ function artEntities(d, ctx, bp, rows, func) {
   }
   if (process.env.MIXDEBUG && mixRects.size) {
     const rowsF = [...mixRects.values()].reduce((n, m) => n + m.rows.filter((r) => r.f).length, 0), rowsN = [...mixRects.values()].reduce((n, m) => n + m.rows.length, 0);
-    console.log(`  [floormix] ${bp.id} 상하 ${floormixY} · 사각형 ${mixRects.size} · 반대로 뒤집은 조각 ${mixForced} · 끝부터 깐 조각 ${mixLocal} · 상하 뒤집은 줄 ${rowsF}/${rowsN} (경계 보정 없이 정한 줄 ${freeRows})`);
+    const fxN = [...mixRects.values()].reduce((n, m) => n + m.cols.filter((c) => c.f).length, 0), fxAll = [...mixRects.values()].reduce((n, m) => n + m.cols.length, 0);
+    console.log(`  [floormix] ${bp.id} 정책 ${floormixMode} · 좌우 뒤집은 열 ${fxN}/${fxAll}${variantCount ? " · 장별 조각 " + JSON.stringify(variantCount) : ""}`);
+    console.log(`  [floormix] ${bp.id} 상하 ${floormixMode === "variants" ? "임의 없음(variants)" : floormixY} · 사각형 ${mixRects.size} · 반대로 뒤집은 조각 ${mixForced} · 끝부터 깐 조각 ${mixLocal} · 상하 뒤집은 줄 ${rowsF}/${rowsN} (경계 보정 없이 정한 줄 ${freeRows})`);
   }
   // 3) 길 — 줄마다 이어진 구간 (칸 크기 그림)
   let roadN = 0;
@@ -938,4 +1000,4 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size }, art.counts, result);
 }
 
-module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR, setFloormixY, FLOORMIX_Y_MODES };
+module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
