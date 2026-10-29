@@ -180,14 +180,24 @@
 
 코덱스 검토(0557·0603·0605·0607 · 해석만 · 위 수치·raw·입력·집계 json/md 무변경 · 재실행 없음): C-OBS-01 소스 수정(7ae14a86)과 수정 뒤 magic boss(18시전 54타 = 시전당 3.0 · player_dead)·magic horde(13/14 timeout)는 실제 원장으로 수용·국소 종료 — 처치 성공·빌드 우열/DPS 순위가 아니며, 수정 전 run6/9(P7)는 진단 표본. C-OBS-02 curse-boss fix2는 준비 10.01초 생존 → 대상 교전 11타/2739 → 유입 복원 1까지 연결 수용·종료(반복 실행 없음). 새 집계 3행 산술은 맞음(3행 모두 outcome=not_completed). 집계 md의 horde TTK `0 (13/0)`은 「피해를 받은 개체」 분모(피해 받은 13 개체 표본/미처치 0)이지 장면 전체 생존 0이 아님 — 한 번도 맞지 않은 C05_firecultist_13 1 생존(alive_targets 1). 집계 md 끝 주석의 unsupported는 「관측 없음」이지 hook 없음·수치 0 확정이 아님(0504 해석 그대로).
 
-### C2 (플레이 9 · origin GOAL-MAKER-INT-P9C2-20261030T0604 · Lv15 auto rep1 · 원래 11 case 중 2건)
+### C2 (플레이 9 · origin GOAL-MAKER-INT-P9C2-20261030T0604 · Lv15 auto rep1 · run 4~11)
 
 | run | 장면 | 사용 입력(sha256) | 종료 | 대상 유효 피해 | 해석(코덱스) |
 |---|---|---|---|---|---|
 | 4 | L15-summon-narrow (kingtomb1) | S10-15-summon-narrow-r1-auto-P9 b5b9cd72… (승인 템플릿 fb2493ff + origin 1줄) | player_dead 64.55초 | 0 | 대상 8 생성(spawn/rebase)·미명중 · 시험 밖 무리 조우로 수집 준비 실패 · filtered 66 = 대상 밖이라 제외한 계측 이벤트 수(피격 66회·적 66 아님) · 빌드 DPS 0 아님 · 성능 비교 제외 (0610) |
 | 5 | L15-summon-ranged (canyon) | S10-15-summon-ranged-r1-auto-P9 c6ba5d3e… (승인 템플릿 b27cc070 + origin 1줄) | timeout 130.20초 | 0 | 대상 5 spawn/rebase · 24시전 · 마나 166 · 소환수 5 생존은 실제 관찰이나 C05 접촉 0 → 비교 제외 · 빌드 DPS 0/교전 성능 수용 아님 · 원인 단정 없음 (0615) |
+| 6 | L15-summon-sustain60 (canyon) | S10-15-summon-sustain60-r1-auto-P9 99efef02… (승인 템플릿 07bda664 + origin 1줄) | player_dead 31.09초 | 1911 | 70타/유효 1911 · 준비 10.01초 포함 31.09초 사망 검열 실측 수용 · 60초 지속 성공 아님 · 재실행 없음 (0620·0625) |
+| 7 | L15-summon-ranged coords-fix2 (canyon) | S10-15-summon-ranged-r1-auto-coordsfix2-P9 b0b3bcae… (summon-ranged-P9 c6ba5d3e + ranged [15] 한 줄 (1,4)→(-5,4)) | timeout 130.41초 | 1541.28 | 36타/유효 1541.28 · 4/5 처치 · 130.41초 timeout · 미타격 1 생존 · 실제 교전 표본 수용 · 전부 처치/우열 아님 (0625) |
+| 8 | L15-magic-ranged coords-fix2 (canyon) | S10-15-magic-ranged-r1-auto-coordsfix2-P9 7eee1a5f… (magic-ranged-P9 d53d5c36 + ranged [15] 한 줄) | cleared 3.58초 | 1926.6 | 실제 5/5 처치 · 10타/유효 1926.6 · 3.58초(준비 1.02 포함 · 첫~마지막 2.07) · 시전 5/마나 54 수용 · 빌드 간 우열 아님 (0631·0633) |
+| 9 | L15-magic-sustain60 (canyon) | S10-15-magic-sustain60-r1-auto-P9 2ed2f01a… (승인 템플릿 faaecaf9 + origin 1줄) | player_dead 24.48초 | 27360 | 144타/유효 27360 · 24.48초(준비 1.02) · player_dead 사망 종료 실측 수용 · 60초 성공 아님 · bone_shard 시전 23/마나 253(RUN-log 474행 정정과 일치) (0631·0633) |
+| 10 | L15-curse_mix-ranged coords-fix2 (canyon) | S10-15-curse_mix-ranged-r1-auto-coordsfix2-P9 93625364… (curse_mix-ranged-P9 3707e679 + ranged [15] 한 줄) | player_dead 20.36초 | 828.64 | 8타/유효 828.64 · 2/5 처치 · 준비 9.94 포함 20.36초 player_dead · 생존 3 · 소환 사망 1/해제 1 구분 · 전부 처치·전멸 복구 아님 (0635·0636) |
+| 11 | L15-curse_mix-sustain60 (canyon) | S10-15-curse_mix-sustain60-r1-auto-P9 cdfba5d1… (승인 템플릿 0d00de92 + origin 1줄) | player_dead 28.41초 | 9687 | 38타/유효 9687 · 28.41초(준비 9.97 · 대상 생성 뒤 18.44) player_dead · 60초 성공 아님 · owner deaths 0 카운터와 종료 사유 player_dead는 관측 차이대로 둘 다 보존 · 시전 23/마나 178은 owner 집계일 뿐 스킬별 비용 분해 없음 · 소환 1 사망 뒤 회복 미관찰은 wipe 완료 아님 (0635·0636) |
 
-raw `C-raw/raw/L15-summon-narrow-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-4-1496977.log`(4d6b0a12…) · `C-raw/raw/L15-summon-ranged-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-5-1704463.log`(45fd5a1f…) · 두 run 모두 inflow pause 1 → restore 1/skipped 0 · 각 run은 원래 case 1개를 차지하나 의도한 대상 교전 측정은 미충족. 비교 판정은 코덱스.
+raw `C-raw/raw/L15-summon-narrow-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-4-1496977.log`(4d6b0a12…) · `C-raw/raw/L15-summon-ranged-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-5-1704463.log`(45fd5a1f…) · run 4·5 모두 inflow pause 1 → restore 1/skipped 0 · 각 run은 원래 case 1개를 차지하나 의도한 대상 교전 측정은 미충족. 비교 판정은 코덱스.
+
+raw run 6~11 (`C-raw/raw/L15-<장면>-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-<run>-<id>.log`): 6 79f8675e… · 7 0d65dc04… · 8 0926f621…(run 8·9 한 덤프에서 run 번호로 나눠 추출 · ev 25/25) · 9 79e5c8de…(ev 153/153) · 10 23614dba…(ev 20/20) · 11 03f8cca0…(ev 47/47). coords-fix2 = ranged [15] canyon (1,4)→(-5,4)(`C-raw/raw/coords-fix.txt` · 코덱스 0614).
+
+C2 요약(코덱스 0636): 독립 수용된 원 C2 = 6/11(3빌드 × 원거리/유지 · run 6~11) · run 4/5 준비 실패 표본 · 협로 3(fix3 c007e633 승인, 실행 대기)·전멸 복구 2 남음 · F/I 전체 통과 수 변동 없음 · 성공 강요 재실행·수치 변경·새 사진 요구 0. 수용은 실제 원장 표본이라는 뜻이며 처치 성공·빌드 우열·DPS 순위·60초 성공이 아님.
 
 ## B 편입 (재실행 없음)
 
