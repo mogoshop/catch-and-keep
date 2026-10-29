@@ -411,10 +411,12 @@ function buildGameHud() {
   b.text(`${ws}/Name`, "", { size: 26, bold: true, color: C.title, anchor: "top-left", pos: [SP + 156, -SP], rect_size: [338, 32], alignment: 3, bestfit: true, min_size: 18, max_size: 26, ...outline });
   b.text(`${ws}/Info`, "", { size: 17, color: C.dim, anchor: "top-left", pos: [SP + 156, -SP - 36], rect_size: [338, 22], alignment: 3 });
   b.text(`${ws}/Desc`, "", { size: 17, color: C.gold, anchor: "top-left", pos: [SP + 156, -SP - 62], rect_size: [338, 78], alignment: 0, bestfit: true, min_size: 13, max_size: 17 });
-  b.text(`${ws}/Stat`, "", { size: 17, color: "#F4ED83", anchor: "top-left", pos: [SP, -188], rect_size: [494, 60], alignment: 0, bestfit: true, min_size: 13, max_size: 17 });
-  for (let i = 1; i <= 20; i++) b.sprite(`${ws}/Pip${i}`, { anchor: "top-left", pos: [SP + (i - 1) * 25, -258], rect_size: [20, 20], ...part("sk_rank_pip_empty"), sprite_type: 0 });
-  b.text(`${ws}/RankNote`, "", { size: 15, color: "#8C99B4", anchor: "top-left", pos: [SP, -286], rect_size: [230, 20], alignment: 3 });
-  b.text(`${ws}/Reason`, "", { size: 15, color: "#FF9A8A", anchor: "top-left", pos: [SP + 230, -286], rect_size: [264, 20], alignment: 5, bestfit: true, min_size: 12, max_size: 15 });
+  // 효과 칸 (QR1629-OBS-01): 지금 · 다음 랭크 · 비용(마나·재사용/충전·추가 랭크) · 편성이 각자 줄 — SkillWindow.WrapLines가 「 · 」 경계에서만 접는다.
+  //   60(세 줄) → 94(17px 네 줄): 비용을 따로 한 줄로 뺀 만큼 · 랭크 점·안내 줄을 단추(공방 위에서 −328) 쪽으로 내려 자리를 낸다 (글자 크기 그대로)
+  b.text(`${ws}/Stat`, "", { size: 17, color: "#F4ED83", anchor: "top-left", pos: [SP, -180], rect_size: [494, 94], alignment: 0, bestfit: true, min_size: 13, max_size: 17 });
+  for (let i = 1; i <= 20; i++) b.sprite(`${ws}/Pip${i}`, { anchor: "top-left", pos: [SP + (i - 1) * 25, -280], rect_size: [20, 20], ...part("sk_rank_pip_empty"), sprite_type: 0 });
+  b.text(`${ws}/RankNote`, "", { size: 15, color: "#8C99B4", anchor: "top-left", pos: [SP, -304], rect_size: [230, 20], alignment: 3 });
+  b.text(`${ws}/Reason`, "", { size: 15, color: "#FF9A8A", anchor: "top-left", pos: [SP + 230, -304], rect_size: [264, 20], alignment: 5, bestfit: true, min_size: 12, max_size: 15 });
   // 단추 줄: 공방 판 안쪽 아래 (창 바닥 48 + 판 여백 36)
   k.ok("SkillWin/BtnLearn", "배우기", { anchor: "bottom-left", pos: [51 + SP, 48 + SP], rect_size: [240, 88], font_size: 26 });
   k.btn("SkillWin/BtnEdit", "스킬 칸에 넣기", { anchor: "bottom-left", pos: [51 + SP + 256, 48 + SP], rect_size: [240, 88], font_size: 22 });

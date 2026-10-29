@@ -1,8 +1,9 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
--- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+
+-- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,Pick,RenderWorkshop+
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,Pick,RenderWorkshop+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
@@ -23,6 +24,8 @@ local values={}
 _UIKit={Colored=function(_,_,text) return text end,Comp=function(_,key) return entity:GetComponent(key) end,
  SetText=function(_,path,text) values[path]=text end,SetIcon=function() end,SetColor=function() end,SetEnabled=function() end,
  SetPos=function() end,Get=function() return nil end}
+_UIKit.PlainText=function(_,t) return UIKitReal:PlainText(t) end
+_UIKit.TextWidth=function(_,t,px) return UIKitReal:TextWidth(t,px) end
 function isvalid(x) return x~=nil end
 function Vector2(x,y) return {x=x,y=y} end
 -- Gear crosses projectile/mana tiers; preview and cast use precisely the same effective rank.
@@ -118,6 +121,102 @@ book.Levels={bone_shard=4,armor_thick=2};book.SkillDigest='bone_shard:4;armor_th
 book.IsServer=function() return false end
 assert(book:GetPowerLevel('bone_shard')==5 and book:GetPowerLevel('armor_thick')==2)
 book.IsServer=function() return true end
+-- QR1629-OBS-01 (PC/iPad 골편 「마 / 나 8」): 비용 줄(마나·재사용/충전·추가 랭크)은 효과 줄과 따로 한 줄이고,
+--   SkillWindow.WrapLines는 「 · 」·띄어쓰기 경계에서만 접는다 — 줄을 다시 이으면 원문 그대로 · 줄마다 효과 칸 폭(494−6) 안 (넉넉한 폭 어림 UIKit.TextWidth 17px)
+stats.MaxDifficulty=0
+UndeadSystem.IsServer=function() return false end   -- 편성 줄은 클라이언트 쪽(동기화된 빈 편성)으로 그린다
+local function plain(s) return (string.gsub(s,'<[^<>]*>','')) end
+local statW=494-6
+local function lines(s) local t={} for l in string.gmatch(s..'\n','([^\n]*)\n') do table.insert(t,l) end return t end
+local worst,worstId=0,''
+for _,id in ipairs(_SkillData:Mains()) do
+ local def=_SkillData:Get(id)
+ for _,L in ipairs({1,20,50,99}) do
+  stats.Level=L
+  for _,lv in ipairs({0,1,4,10,19,20}) do
+   if lv<=def.maxLv then
+    book.Levels={[id]=lv}
+    for _,b in ipairs({0,1,2}) do
+     bonus=b
+     local raw=SkillWindow:StatLine(book,stats,id)
+     local wrapped=SkillWindow:WrapLines(raw,statW,nil)
+     local back=string.gsub(string.gsub(wrapped,'\n  · ',' · '),'\n  ',' ')
+     assert(back==raw,'wrap changed text '..id..'\n'..raw..'\n--\n'..wrapped)
+     local ls=lines(wrapped)
+     for _,l in ipairs(ls) do
+      local w=_UIKit:TextWidth(l,17)
+      assert(w<=statW or not string.find(plain(l),'%S %S'),'line wider than stat box '..id..' '..w..': '..l)
+      if string.find(l,'마나 ',1,true) then
+       assert(not string.find(l,'지금:',1,true) and not string.find(l,'다음 랭크',1,true) and not string.find(l,'배우면',1,true),'cost shares an effect line '..id..': '..l)
+      end
+     end
+     for _,l in ipairs(lines(raw)) do
+      if string.find(l,'마나 ',1,true) then assert(_UIKit:TextWidth(l,17)<=statW,'cost line must fit one line '..id..': '..l) end
+     end
+     if #ls>worst then worst,worstId=#ls,id..'@'..L..'/'..lv..'+'..b end
+    end
+   end
+  end
+ end
+end
+-- 캡처 장면: 골편 투척 랭크 4 · 장비 +1 · Lv20 → 비용 줄 하나에 「마나 · 재사용 · 추가 랭크 +1」
+stats.Level=20;bonus=1;book.Levels={bone_shard=4}
+local shard=lines(SkillWindow:WrapLines(SkillWindow:StatLine(book,stats,'bone_shard'),statW,nil))
+local costLine=shard[#shard]
+assert(string.find(costLine,'^마나 %d+ · 재사용 [%d.]+초 · 추가 랭크 %+1$'),'shard cost line: '..costLine)
+book.Levels={wraith_dash=4};bonus=2
+local dashL=lines(SkillWindow:WrapLines(SkillWindow:StatLine(book,stats,'wraith_dash'),statW,nil))
+assert(string.find(dashL[#dashL],'^마나 %d+ · 충전 [%d.]+초 · 추가 랭크 %+2$'),'dash cost line: '..dashL[#dashL])
+-- 조각 하나가 칸보다 길면 띄어쓰기 경계에서만 (단어 가운데 금지)
+local long='다음 랭크: '..string.rep('뼛조각 ',40)..'끝'
+local lw=SkillWindow:WrapLine(long,statW,nil)
+assert(string.gsub(lw,'\n  ',' ')==long and not string.find(lw,'[^ ]\n[^ ]'),lw)
+for _,l in ipairs(lines(lw)) do assert(_UIKit:TextWidth(l,17)<=statW,l) end
+print('[quality/skills] OBS-01 stat wrap: '..'worst '..worst..' lines ('..worstId..'), cost line separate, breaks only at separators')
+-- QR1629-OBS-02 (iPad 시간선): 모바일은 한 열 2칸까지 — 셋인 레벨(Lv18)은 같은 레벨의 이어진 열로. 해금 순서·칸 수 그대로
+local logical=SkillWindow:BuildColumns()
+local split=SkillWindow:SplitColumns(logical,SkillWindow.MobileRows)
+local a,b2={},{}
+for _,c in ipairs(logical) do for _,x in ipairs(c.ids) do table.insert(a,x) end end
+for i,c in ipairs(split) do
+ assert(#c.ids>=1 and #c.ids<=SkillWindow.MobileRows,'mobile column rows '..#c.ids)
+ if i>1 then assert(c.row>=split[i-1].row,'unlock order') end
+ assert((c.cont==true)==(i>1 and split[i-1].row==c.row),'cont flag')
+ for _,x in ipairs(c.ids) do table.insert(b2,x) end
+end
+assert(table.concat(a,',')==table.concat(b2,','),'mobile split lost/reordered skills')
+assert(#split==#logical+1,'only Lv18 (3 mains) should split: '..#split)
+-- 모바일 시간선 실제 그리기: 쪽마다 칸 위치(1줄 −20 · 2줄 −20−112) · 3줄 없음 · 쪽을 다 넘기면 모든 메인이 한 번씩
+Environment.IsMobilePlatform=function() return true end
+SkillWindow.MobileColumns=nil;SkillWindow.Columns=nil
+local pos,en={},{}
+_UIKit.SetPos=function(_,p,v) pos[p]=v end
+_UIKit.SetEnabled=function(_,p,on) en[p]=on end
+_UIKit.SetBar=function() end
+stats.Level=20;bonus=0;book.Levels={}
+local seen,pages={},math.ceil(#SkillWindow:DisplayColumns()/SkillWindow:PageSize())
+for page=1,pages do
+ SkillWindow.Page=page;pos={};en={}
+ SkillWindow:RenderTimeline(book,stats)
+ for c=1,SkillWindow.MaxCols do
+  local base='SkillWin/TL/C'..c
+  if en[base] then
+   assert(en[base..'/S3']==false,'mobile row 3 shown at '..base)
+   for r=1,2 do if en[base..'/S'..r] then
+    assert(pos[base..'/S'..r].y==-20-(r-1)*SkillWindow.MobileStepY,'row y')
+    table.insert(seen,SkillWindow.SlotIds[c..':'..r])
+   end end
+  end
+ end
+ assert(pos['SkillWin/TL/Bar'].y==SkillWindow.MobileBarY,'mobile bar y')
+end
+assert(table.concat(seen,',')==table.concat(a,','),'paging lost skills: '..table.concat(seen,','))
+assert(SkillWindow:SlotPathOf('frost_soul')~='','guide path for split column')
+Environment.IsMobilePlatform=function() return false end
+SkillWindow.MobileColumns=nil;SkillWindow.Page=1;pos={}
+SkillWindow:RenderTimeline(book,stats)
+assert(pos['SkillWin/TL/Bar'].y==-304 and pos['SkillWin/TL/C1/S2'].y==-88,'PC timeline unchanged')
+print('[quality/skills] OBS-02 mobile timeline: '..#split..' columns, '..pages..' pages, rows 2 at step '..SkillWindow.MobileStepY..', bar '..SkillWindow.MobileBarY..', PC unchanged')
 -- All eight category-presence combinations, including missing first/middle category.
 local oldMains,oldNodes,oldGet=_SkillData.Mains,_SkillData.NodesOf,_SkillData.Get
 _SkillData.Mains=function() return {'new','rank'} end
