@@ -92,6 +92,7 @@
 | 플레이 8 | PC FHD · 05:01~05:35(05:20 세션 한도 → 05:25 재개, 플레이 유지) · 방 s1b8fe2cf18e · 저장 끔·무적 — I07 전 장면 5 · E-M1 방패·대검·쌍칼 + 기본/마법사 조회 |
 | 반영 6 | 05:38 SkillEffects(7ae14a86) touch + 맵 2(319efa00) → refresh 05:38:12 → build 421줄 Error 0 · Warning 100 |
 | 플레이 9 | PC FHD · 05:38~ · 방 s1b907216770 · 저장 끔·무적 — I07 probe·후 장면·걷기 → C 영향 case 3 → C2 11 → D 끝조건 |
+| 플레이 10 | PC FHD · 06:54~07:04 · 방 s1b918b3a15f · 새 Refresh 없음(반영 6 유지) · 저장 끔·무적 — D 꼬리 3(D-M3 서쪽 출구 · D-M4 동문 · q19 1처치) · 슬롯 4 5키 복원 readback 5/5 → 멈춤·편집 모드·PC·map01 |
 
 ## A 묶음 (Claude 판정)
 
@@ -116,6 +117,9 @@
 | D-M2 temple2 | 부분확인 | zones want=40 placed=31 pool=9 fallback=0 (b=9 c=6 d=4) · 남쪽 회랑→아슈 32.4초·45.4칸 / 북쪽 곁길 34.2초·47.3칸(역방향 · 길찾기 실패 3) · 아슈 GM 처치 → bond rage(1.5×, 크기 1.15×) · 나슈 처치 → quest goal 2/2 · E → temple3 | D-M2-1~3 |
 | D-M5 gallows | 통과 | Space → npc field altar open → field report q4 · first q4reportField · 3칸 밖 단추 없음 · field accept q5 · 일지 열고 닫기 유지 · Save → 재접속 q5/1 유지 · 새 게임 처형인 재등장 · 마을 오렌 경로 q5 수락(현장 줄 없음) | D-M5-1~5 |
 | D-M7 액트 2 첫 10분 | 통과 · 코덱스 0424 종료 | 1차(03:56~04:04 · 저장 끔): 조작·시간 관찰만 — Telemetry 세션이 IsLoadSuccess=false면 없어 A2 표본 무효(시험 준비 실수) · b 재실행(04:07~04:18 · 저장 켬): act2Enter t=931 → 수락 4.0초 → dunes 14초 → 습격 n=16 → 목표 4분 36초 → 귀환 54초 → 보고 거절(가방 60/60 · 「퀘스트와 보상은 보관됩니다」) → GM 1칸 → 카드 → 투구 수령 · A2 표본 120행 over 0(600초 완결) · 대기·준비 빼면 약 350초 (Lv40 과레벨·GM 생명 바닥 — 실제 Lv13 대표 아님) | D-M7-1~8 · D-M7b-A2-sample-rows.txt |
+| D-M3 서쪽 출구 · D-M4 동문 · q19 (플레이 10 꼬리) | 통과 · 코덱스 0708 종료 | D-M3: Go lighthouse1 (-25.3,1.5) 준비 → walk #1은 자동 열린 OfferWin에 막혀 제자리(원인 기록) → GM 닫기 → walk #2 2.1초 도착 (-28.3,1.5) → 06:57:41 map transition → lighthouse2 · 클라/서버 관측 pos (27.1,0.5) · 캡처 06:58:11 / D-M4 동문: Go (30.7,0.9) 준비·둘레 정리 13 → OfferWin 닫기 → walk 1.9초 (33.1,2.3) → 07:00:53 transition → sulfurmarsh · pos (-32.1,4.5) · q=19/1 prog=1 유지 · 캡처 07:01:21(화면 퀘스트 1/60 — Root·독립 검토가 원본 확인) / q19: GM 준비 q=19/1 prog=0 goal=60(보고·보상·저장 없음) → 대상 demon_axe 생명 1918→1(GM 사망 준비) → 07:00:00 client ClickControl:SelectAttackTarget(handler_direct · 물리 터치 아님) → 게임 death→MonsterKilled→Quest 경로 → 07:00:08 서버 prog 0→1 | D-M3-5 · D-M4-4 |
+
+- D 꼬리(플레이 10 · 방 s1b918b3a15f · 새 Refresh 없음 · 반영 6 05:38 유지 · 저장 끔·무적 · 실행 기록 `D-tail-memo.txt` · 원문 줄 `D-tail/D-tail-P10-raw.log`): 코덱스 0708 수용·종료(검토 goal-D-tail-runtime-review-0708 · 결정 goal-D-tail-decision-0708). 한계: 메모는 제출 실행 기록, 화면은 실제 원본으로 구분 · Go/HP 1918→1/직접 handler는 준비·직접 입력 — 물리 입력·자연 60처치·보고/보상·저장 통과 아님 · 원 raw JSON 별도 미보존은 새 형식·재시험 게이트 아님 · SaveOff는 준비이지 최종 복원 아님 · 추가 D 실행 0 · 새 결함 0.
 
 관찰(고치지 않음 · D·A 추가):
 - D-OBS-02 큐 시작점이 포털 칸(crypt2·lighthouse1) — 도착 유예 뒤 이웃 맵으로 넘어감(시험 시작점 문제)
@@ -255,6 +259,7 @@ C2 요약(코덱스 0651 · 0636의 6/11은 이전 시점): 원 C2 측정 수용
 
 - 대표 6 + C2 원 11 = 고유 17 capture(성공 17 아님 · 각 사망/timeout/복구 실패 그대로) + 별도 OFF 대조 1 + 별도 C0 양수 probe 1 · 현재 승인된 C 측정·최소 비교·해석 종료 · 추가 C 실행 0 · 전체 I05/인간 장기 플레이/실기기 완료 주장 없음 · F 11/최종 2, I03/I04 2/최종 0 불변.
 - 증거 통합 1b905c83 독립 수용(검토 0658 · 0700): 9파일 · 게임 코드 0 · 기존 수용 바이트 15/15 · manifest 참조 14/14 · 미커밋 근거 인계 공백 해소 · 새 build/전 게임 통과 아님.
+- 문서 4차 47d8db8b 독립 수용(goal-doc-merge-pass4-review-0703): 문서 2파일만 변경 · 기존 C1/A/B/D/E/I07 내용·raw/input/RUN/capture 보존 · C2 11/11·17 관찰·OFF 별도·C0 별도·0700 판정·한계 정확 반영 · 재검사/재생성 불필요.
 
 ## B 편입 (재실행 없음)
 
@@ -264,4 +269,4 @@ dc44af6c의 B-M01~03 증거 10파일을 원장에 그대로 연결 — 코덱스
 
 - 02:38:34 캐릭터 선택 화면에서 BatchGet 5키 백업(Account 615 · Char_4 1126 · Inv_4 1838 · Shadow_4 40 · Stash 83 바이트) + 해시 → 로컬 사본 5/5 일치.
 - 저장: 02:51:50 ITEM-R2 Save(true) · 03:47:01 D-M5 Save(true) · 03:51:15 ITEM-Q1 (a) Save(true) · 04:07:31~ 플레이 6 저장 켬(D-M7b · 퇴장 저장 q8/0 남음 — 플레이 7 시작 때 확인). 나머지는 저장 끔(플레이 7은 끔 · C S10도 저장 끔).
-- 복원: 마지막 묶음 뒤 BatchSet + 재조회(대기).
+- 복원(플레이 10 · 완료 07:04:16 · 5/5 일치 · 코덱스 검토 대기 · 출처 `D-tail-memo.txt` 29~34행 · `D-tail/D-tail-P10-raw.log` 35~48행): 07:02:59 복원 전 readback Account 638/525644892 · Char_4 1350/1813320589 · Inv_4 2060/1648618422 · Shadow_4 40/923051497 · Stash 83/324873636 → 07:03:05 1차 BatchSetAndWait code=0 ok 5 → 07:03:13 readback 4키 일치 · **Inv_4 1886/1569605352 불일치(match=false) — 원인: 보낸 본문의 Inv_4 짚신 목록을 손으로 옮기다 2개 더 넣음(생성 파일 `D-tail/slot4-restore-P10-generated.lua`는 53개)** → 07:04:05 Inv_4만 재복원(`D-tail/slot4-restore-P10-inv4-fix.lua` · 짚신 53개를 string.rep으로 만들어 길이·해시가 기대값일 때만 씀) → 1838/694193390 · BatchSetAndWait code=0 ok 1 → 07:04:16 readback 5/5 일치 match=true(Account 615/1340525624 · Char_4 1126/1554558725 · Inv_4 1838/694193390 · Shadow_4 40/923051497 · Stash 83/2144937209). 저장 끔 상태에서 멈춤이라 퇴장 저장 없음 · 멈춤·편집 모드·PC FHD·map01.
