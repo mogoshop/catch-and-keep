@@ -152,9 +152,40 @@ local function nearestTarget()
   return best
 end
 
+local inflowStates = {}
+local function restoreArenaInflow()
+  local saved = inflowStates
+  inflowStates = {} -- idempotent: finish/S90/replaced may all converge here
+  local restored, skipped = 0, 0
+  for _, r in ipairs(saved) do
+    local sp = r.spawner
+    if isvalid(sp.Entity) and (sp.Entity == r.map or sp.Entity.CurrentMap == r.map) and sp.SpawnedAt == r.spawnedAt then
+      -- Do not overwrite a newly established state from another lifecycle.
+      if sp.InflowOn == false then sp.InflowOn = r.inflowOn restored = restored + 1
+      else skipped = skipped + 1 end
+    else skipped = skipped + 1 end
+  end
+  if #saved > 0 then log('[DPS-RUN] inflow restore' .. metadata() .. ' restored=' .. restored .. ' skipped=' .. skipped) end
+end
+
+local function pauseArenaInflow(map)
+  local spawners = {}
+  local root = map:GetComponent('script.MonsterSpawner')
+  if root ~= nil then table.insert(spawners, root) end
+  for _, sp in ipairs(map:GetChildComponentsByTypeName('script.MonsterSpawner', true)) do
+    if sp ~= root then table.insert(spawners, sp) end
+  end
+  for _, sp in ipairs(spawners) do
+    table.insert(inflowStates, { spawner = sp, map = map, spawnedAt = sp.SpawnedAt, inflowOn = sp.InflowOn })
+    sp.InflowOn = false
+  end
+  log('[DPS-RUN] inflow pause' .. metadata() .. ' spawners=' .. #spawners)
+end
+
 local function finish(reason)
   if finished then return end
   finished = true
+  restoreArenaInflow() -- restore before logging/export can fail
   if _Telemetry.DpsCollection == collection then _Telemetry.DpsCollection = nil end
   for _, id in ipairs(timers) do _TimerService:ClearTimer(id) end
   log('[DPS-RUN] finishing' .. metadata() .. ' reason=' .. reason .. ' alive_targets=' .. liveTargets() .. ' legion=' .. liveUnits())
@@ -315,13 +346,14 @@ local function arenaClear()
   return removed
 end
 
-local function begin()
+local function beginUnsafe()
   if not owns() then return end
   if not isvalid(p) or not isvalid(p.CurrentMap) then finish('player_left') return end
   if _GameConst:BaseMapName(p.CurrentMap.Name) ~= S.map then
     log_error('[DPS-RUN] travel failed label=' .. label .. ' at=' .. p.CurrentMap.Name)
     finish('travel_failed') return
   end
+  pauseArenaInflow(p.CurrentMap)
   local removed = arenaClear()
   st.Mana = st.MaxMana
   p.PlayerComponent.Hp = p.PlayerComponent.MaxHp
@@ -359,12 +391,23 @@ local function begin()
     if not isvalid(p) then finish('player_left') return end
     if not _Util:IsAlive(p) then finish('player_dead') return end
     if not isvalid(p.CurrentMap) or _GameConst:BaseMapName(p.CurrentMap.Name) ~= S.map then finish('left_map') return end
-    if spawnedAt < 0 then return end
+    if spawnedAt < 0 then
+      if _UtilLogic.ElapsedSeconds - startAt > prep + 5 then finish('target_setup_timeout') end
+      return
+    end
     local t = _UtilLogic.ElapsedSeconds - spawnedAt
     if S.wipe and t > 1 and liveUnits() >= preWipe and preWipe > 0 then finish('recovered') return end
     if not S.wipe and S.hpMul == nil and t > 2 and #targets > 0 and liveTargets() == 0 then finish('cleared') return end
     if t >= S.seconds then finish(S.hpMul ~= nil and 'duration' or 'timeout') return end
   end, 0.5))
+end
+
+local function begin()
+  local ok, err = pcall(beginUnsafe)
+  if not ok then
+    log_error('[DPS-RUN] begin failed ' .. tostring(err))
+    finish('begin_failed')
+  end
 end
 
 table.insert(timers, _TimerService:SetTimerOnce(begin, 2.5))
