@@ -66,9 +66,11 @@ _SpawnService = { SpawnByModelId = function(_, id, name, pos, parent)
   end
   return e
 end }
-_Telemetry = { DpsOn = false, Dps = nil, DpsRawCap = 4000, DpsGapSec = 3, DpsFlushLineCap = 2000,
-  DpsStart = function(self, l) self.DpsOn = true print('START ', l) end,
-  DpsFinish = function(self, n) self.DpsOn = false print('FINISH ', n, self.DpsFlushLineCap) end }
+_Telemetry = { DpsOn = false, Dps = nil, DpsRunId = 0, DpsCollection = nil, DpsRawCap = 4000, DpsGapSec = 3, DpsFlushLineCap = 2000,
+  DpsStart = function(self, l) self.DpsRunId=self.DpsRunId+1 self.Dps={run=self.DpsRunId,stopped=false} self.DpsOn = true print('START ', l) end,
+  DpsFinish = function(self, n) self.DpsOn = false self.Dps=nil print('FINISH ', n, self.DpsFlushLineCap) end,
+  DpsStop = function(self) self.DpsOn=false self.Dps=nil end,
+  DpsCollectionStop = function(self, reason) local c=self.DpsCollection self.DpsCollection=nil if c and c.stop then c.stop(reason) end end }
 local chunk = assert(loadfile(arg[1]))
 chunk()
 -- 타이머 돌리기: 시간 0.1초씩 200초

@@ -8,7 +8,7 @@
 |---|---|---|
 | 설명 1타 | 오프라인 계산기 `parallel-analysis/combat/results/comparison.csv` | 실제 효과 함수로 계산한 한 투사체 피해 (HP 적용 전). 실측 아님 |
 | 가정 상한 | 같은 계산기 | 1타 × 발수 ÷ 재사용. 적중 수·가동률·이동은 모름. 소환 빌드는 미계산 |
-| 실측 총구간 DPS | 서버 HP 원장 `[DPS] window` | 유효 피해 ÷ 장면 전체 시간 (준비·군단 소환·이동 포함) |
+| 실측 총구간 DPS | 서버 HP 원장 `[DPS] window` | 유효 피해 ÷ DpsStart 이후 구간 (군단 소환 준비 포함; 앞선 빌드 세팅·맵 이동 제외) |
 | 실측 전투 구간 DPS | 원장 `[DPS] ev\|` | 유효 피해 ÷ 전투 시간 (유효 피해 사이 간격 3초 이하만, 구간마다 중앙 타격 간격 하나를 더해 울타리 보정) |
 | TTK | `[DPS] life` | 시도 안 첫 유효 타격 → 사망. 안 죽은 대상은 censored로 따로 센다 |
 | 피격·사망 | `[DPS] owner` deaths · hits_taken(패치 전 unsupported) · hp_drop_sampled | 사망은 기존 PlayerDied, 피격 수는 MonsterAttack 패치 뒤 |
@@ -52,7 +52,7 @@
 
 ## 4. 실행 순서 (maker_queue)
 
-조각은 `node tools/dps/maker-blocks.cjs`가 만든다 (CFG 줄을 채운 붙여 넣기용 Lua). `maker_execute_script`의 context는 **server_main**.
+조각은 `node tools/dps/maker-blocks.cjs`가 만든다 (CFG 줄을 채운 붙여 넣기용 Lua). `maker_execute_script`의 context는 **server_main**. S10 생성에는 `--origin <unique-play-session-id>`가 필수다. Play 세션마다 호스트에서 고유한 날짜/작업 ID를 정하고 stop→play 뒤에는 새 값을 쓴다. `--queue`도 이 인자 자리를 표시한다. 직접 복사하면 CFG.capture_origin을 같은 규칙으로 채운다. 누락은 시험 상태를 바꾸기 전에 거절한다.
 
 | 순서 | 할 일 | 붙여 넣을 것 | 기대 로그 |
 |---|---|---|---|
@@ -60,9 +60,9 @@
 | 1 | play (PC) → 사전 점검 | `maker-blocks.cjs S00` | `[DPS-RUN] preflight dpsOn=false buffer=false … ok=true` |
 | 2 | 연결 확인 (아래 조각) | 직접 | `[DPS] window … events>0` · `[DPS] end … ev_omitted=0` |
 | 3 | 단계 A: 반복 1회 51장면 | `maker-blocks.cjs --queue A` 순서대로 `S10 …` | 장면마다 `[DPS-RUN] queued/setup/begin/targets/finishing/end` + `[DPS] window/owner/src/life/sample/ev|/end` |
-| 4 | 장면마다 로그 저장 | `maker_logs(kind=normal)` → 파일 `raw/L<레벨>-<빌드>-<장면>-r<반복>.log` → 바로 다음 호출로 `maker_clear_logs` | — |
+| 4 | 장면마다 로그 저장 | `maker_logs(kind=normal)` → begin/end 로그의 `raw_file` 경로 (전체 label에 auto/human 및 capture_id 포함; 기존 파일 덮어쓰기 금지) → 바로 다음 호출로 `maker_clear_logs` | — |
 | 5 | 단계 B: 반복 2·3회 102장면 | `--queue B` | 같음 |
-| 6 | 사람 조작 (선택) | `S10 <lv> <build> boss|horde 1 human` 18회 | 같음 (자동 입력 없음, 메이커 담당이 직접 조작) |
+| 6 | 사람 조작 (선택) | `S10 <lv> <build> boss|horde 1 human --origin <unique-play-session-id>` 18회 | 같음 (자동 입력 없음, 메이커 담당이 직접 조작) |
 | 7 | 집계 | `node tools/dps/aggregate.cjs raw/*.log --calc <comparison.csv> --out-md result.md --out-json result.json` | 세 열 표 · 원장 ok만 실측 |
 
 연결 확인 조각 (2번):
@@ -75,10 +75,15 @@ _Telemetry:DpsStart('link')
 local me = _Util:Pos2(p)
 local e = _SpawnService:SpawnByModelId('hellhound', 'C05_link', Vector3(me.x + 2, me.y, 0), p.CurrentMap)
 _Util:AfterSpawn(e, 'script.Monster', function(m) m.RespawnDelay = -1 m:ApplyLevel(5, false) end, nil)
+local linkRun = _Telemetry.DpsRunId
+_Telemetry.DpsCollection = { stop = function(reason)
+  if _Telemetry.DpsOn and _Telemetry.Dps ~= nil and _Telemetry.Dps.run == linkRun then _Telemetry:DpsFinish(4000) end
+  if isvalid(e) then e:Destroy() end
+end }
 log('[DPS-RUN] link spawned — 기본 공격·스킬·소환으로 몇 대 친 뒤 [S90]')
 ```
 
-레벨이 바뀔 때(5 → 15 → 30)는 stop → play로 새로 시작한다. 각 장면은 앞 장면의 `[DPS-RUN] end`를 본 뒤 보낸다 (같은 context에 새 스크립트를 보내면 돌던 것이 멈춘다). 멈췄으면 `S90`.
+레벨이 바뀔 때(5 → 15 → 30)는 stop → play로 새로 시작한다. 각 장면은 앞 장면의 `[DPS-RUN] end`를 본 뒤 보낸다 (같은 context에 새 스크립트를 보내면 돌던 것이 멈춘다). 멈췄으면 `S90`. S90은 저장과 캐릭터 원복이 아니라 현재 시험 소유 타이머·대상 정리다. 마지막에는 기존 담당의 격리 세션 종료/복원 절차를 따르고, SaveOff만으로 저장·재접속 통과를 주장하지 않는다.
 
 ## 5. 소요 시간 (추정)
 
@@ -94,7 +99,7 @@ log('[DPS-RUN] link spawned — 기본 공격·스킬·소환으로 몇 대 친 
 
 - 같은 run의 flush가 여러 번 있으면 완결된 마지막 스냅샷 하나만 (C-AGG-01).
 - 원장 검사 ok만 실측 비교(accepted). 원장이 잘렸거나(dropped·ev_omitted) end 줄이 없으면 요약 전용, 중복 순번·식 불일치는 거부 (C-AGG-02).
-- 반복 3회의 중앙값. 실패(플레이어 사망·이탈·좌표 문제·시간 초과)는 지우지 않고 사유와 함께 표에 남긴다.
+- 장면·input(auto/human)·기기(있으면)가 같은 표본끼리 반복 중앙값. 반복 3회는 전체 연구 계획이며 첫 연결/대표 묶음 납품의 필수 대기 조건이 아니다. 실패(플레이어 사망·이탈·좌표 문제·시간 초과)는 지우지 않고 사유와 함께 표에 남긴다.
 - 미상 비율(player.unknown·tick.unknown·hit.none)이 높으면 스킬별 기여를 말하지 않는다 — PlayerAttack·ShadowUnit 꼬리표 패치 전에는 플레이어 직접 피해의 스킬 구분이 없다.
 - 저주 기여는 같은 빌드에서 저주 사용/미사용 짝 실험(사람 조작, mark_weakness 안 씀)으로 따로 본다. 총 피해에 더해 중복 총DPS로 만들지 않는다.
 - 자동 입력(auto)은 「제자리 사격 기준선」이다 (서버는 플레이어를 움직일 수 없다). 사람 조작(human)과 섞어 비교하지 않는다. PC/모바일은 별도 장면 묶음으로 반복한다.

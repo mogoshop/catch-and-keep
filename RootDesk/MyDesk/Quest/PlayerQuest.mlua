@@ -40,8 +40,9 @@ script PlayerQuest extends Component
     @Sync
     property string GearOffer = ""             -- 지금 난이도의 대기 제안 (클라이언트 카드 창이 읽는다)
     property table GearOffers = {}            -- 난이도 "0"/"1"/"2" → 제안 문자열 (저장 go0~go2)
-    property table GearMark = {}              -- 첫 장비 의뢰 보고 때 낀 장비 (부위 → 아이템) — 서버 · 저장 안 함 · 비면 관측 끝
+    property table GearMark = {}              -- First reward equipment snapshot; server-only, not saved.
     property boolean GearWatch = false
+    property table GearArmed = {}             -- slot -> { item, at }; successful manual equip only, not saved or emitted.
     property integer GearOfferSeq = 0         -- 제안 버전 순번 (늦게 도착한 옛 요청을 거른다)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
@@ -378,6 +379,7 @@ script PlayerQuest extends Component
         self.Goal = 0
         self:NotifyAccepted(q.title, pc.UserId)
         self:TraceQuestStep(self.Index, "accept", field)
+        _Telemetry:NoteActivity(self.Entity)
     end
 
     @ExecSpace("Client")
@@ -507,6 +509,7 @@ script PlayerQuest extends Component
         self:RefreshPermanent()
         -- Common successful reward path: includes RequestGearChoice -> TurnIn(slot).
         self:TraceQuestStep(reportIndex, "report", reportField)
+        _Telemetry:NoteActivity(self.Entity)
         if reportIndex == self:FirstGearQuest() and self.Diff == 0 then self:StartGearWatch() end
         if actEnd then
             self:SendStory("end" .. tostring(q.act))
@@ -534,6 +537,7 @@ script PlayerQuest extends Component
         self.GearMark = {}
         for slot, item in pairs(inv.Equip) do self.GearMark[slot] = item end
         self.GearWatch = true
+        self.GearArmed = {}
         _Util:Notify("새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부터 적용됩니다", self.Entity.PlayerComponent.UserId)
         _Telemetry:First(self.Entity, "gearReward")
         log("[VRF] gear watch start")
@@ -551,15 +555,37 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void TraceGearUse(Entity map)
-        -- 막타 주인일 때만 (QuestSystem): 그 맵에 살아 있고, 기억한 뒤 새로 낀 장비를 아직 끼고 있으면 = 그 장비로 싸운 첫 처치 gearUse (한 번)
-        if not self.GearWatch or not _Util:IsAlive(self.Entity) or not isvalid(map) or self.Entity.CurrentMap ~= map then return end
-        local slot = self:GearChangedSlot()
-        if slot == "" then return end
-        self.GearWatch = false
-        self.GearMark = {}
-        _Telemetry:First(self.Entity, "gearUse")
-        log("[VRF] gear used in fight slot=" .. slot)
+    method void NoteGearEquipped(string slot)
+        -- Event is emitted only after RequestEquip commits. Item identity stays server-local.
+        if not self.GearWatch or not _Util:IsAlive(self.Entity) then return end
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        local item = inv.Equip[slot]
+        if item == nil or item == "" or item == self.GearMark[slot] then
+            self.GearArmed[slot] = nil
+            return
+        end
+        self.GearArmed[slot] = { item = item, at = _UtilLogic.ElapsedSeconds }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TraceGearUse(string mapKey)
+        -- Only C's positive effective HP-loss event reaches this method; quest credit does not.
+        if not self.GearWatch or not _Util:IsAlive(self.Entity) then return end
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) or _GameConst:BaseMapName(map.Name) ~= mapKey then return end
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if inv == nil then return end
+        for slot, rec in pairs(self.GearArmed) do
+            if inv.Equip[slot] == rec.item and self.GearMark[slot] ~= rec.item and _UtilLogic.ElapsedSeconds >= rec.at then
+                self.GearWatch = false
+                self.GearMark = {}
+                self.GearArmed = {}
+                _Telemetry:First(self.Entity, "gearUse")
+                log("[VRF] gear used after equip and effective damage slot=" .. slot)
+                return
+            end
+        end
     end
 
     @ExecSpace("ServerOnly")

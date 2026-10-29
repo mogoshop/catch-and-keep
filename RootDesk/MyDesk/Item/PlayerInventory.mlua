@@ -458,6 +458,12 @@ script PlayerInventory extends Component
         self:NotifyEquipped(slot, old or "", s, userId)
         -- 첫 수동 장착 시각 (10-30 D 갈래 P2 요청 · 기존 공개 함수 First만 — 두 번째부터는 Telemetry가 무시)
         _Telemetry:First(self.Entity, "gearEquip")
+        -- Instrumentation only: no item string in the event; consumer reads current server equipment.
+        local equipped = _ItemData:Parse(s)
+        local prevBase = ""
+        if old ~= nil and old ~= "" then prevBase = _ItemData:Parse(old).base end
+        _GameEvents:Emit("GearEquipped", { player = self.Entity, slot = slot, base = equipped.base, rarity = equipped.rarity, prevBase = prevBase })
+        _Telemetry:ArmDealt(self.Entity)
     end
 
     @ExecSpace("Client")

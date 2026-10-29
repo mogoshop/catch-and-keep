@@ -101,7 +101,7 @@ print(string.format('[quality/items] %d affix allocations (%d pool-limited); %d 
 _Util={IsAlive=function() return true end,Notify=function() end,Banner=function() end,NearNpc=function() return true end}
 -- 10-30 통합(P8): TurnIn 공통 성공 경로 끝에서 D 후처리(TraceQuestStep·StartGearWatch)를 한 번 부른다 — 실패(가방 부족·중복)에는 부르지 않는다
 local watchStarts=0
-_Telemetry={First=function(_,_,stage) if stage=='gearReward' then watchStarts=watchStarts+1 end end}
+_Telemetry={First=function(_,_,stage) if stage=='gearReward' then watchStarts=watchStarts+1 end end,NoteActivity=function() end}
 _GameEvents={Emit=function() end}
 _GameData.GetUiIcon=function() return "" end
 _ItemData.IconFor=function() return "" end

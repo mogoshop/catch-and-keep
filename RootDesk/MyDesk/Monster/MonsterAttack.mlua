@@ -890,7 +890,7 @@ script MonsterAttack extends AttackComponent
                 if attackInfo == "monster.basic" and self:IsServer() and body ~= nil and stats:AuraAmount("thorns") > 0 then
                     local back = dmg * stats:AuraAmount("thorns") / 100
                     local victim = defender
-                    _TimerService:SetTimerOnce(function() if isvalid(self.Entity) and not body.IsDead then body:TakeDamage(back, victim) end end, 0.05)
+                    _TimerService:SetTimerOnce(function() if isvalid(self.Entity) and not body.IsDead then body:TakeDamageAs(back, victim, "tick.thorns_aura") end end, 0.05)
                 end
             end
             local phys = dmg * (1 - ratio)
@@ -926,7 +926,7 @@ script MonsterAttack extends AttackComponent
             local back = final * shadow:AuraAmount("thorns") / 100
             local owner = shadow.OwnerPlayer
             _TimerService:SetTimerOnce(function()
-                if isvalid(self.Entity) and not body.IsDead then body:TakeDamage(back, owner) end
+                if isvalid(self.Entity) and not body.IsDead then body:TakeDamageAs(back, owner, "tick.thorns_aura") end
             end, 0.05)
         end
         -- 가시 저주: 준 피해의 일부를 되돌려 받는다 (판정 흐름이 끝난 뒤 적용)
@@ -935,9 +935,11 @@ script MonsterAttack extends AttackComponent
             local reflect = final * status:Thorns() / 100
             local source = status.ThornSource
             _TimerService:SetTimerOnce(function()
-                if isvalid(self.Entity) and body ~= nil and not body.IsDead then body:TakeDamage(reflect, source) end
+                if isvalid(self.Entity) and body ~= nil and not body.IsDead then body:TakeDamageAs(reflect, source, "tick.curse_thorns") end
             end, 0.05)
         end
+        -- I05: 갑옷 흡수 뒤 계산 최종값 관측 (실효 HP 감소 원장은 아님)
+        if self:IsServer() and _Telemetry.DpsOn then _Telemetry:DpsTaken(defender, final) end
         return final
     end
 

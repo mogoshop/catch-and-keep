@@ -39,6 +39,7 @@ script Telemetry extends Logic
     property boolean DpsOn = false            -- DpsStart로만 켠다. Monster가 매 피해마다 이 값 하나만 본다
     property integer DpsRunId = 0
     property any Dps = nil                    -- 지금 실행의 원장·집계 (일반 Lua 표 — property table은 읽을 때 느리다 · Flush가 저장하는 Sessions와 따로 · 꺼지면 nil)
+    property any DpsCollection = nil          -- 현재 시험 수집 1개만 소유 (원장 Dps와 별개 · 저장 안 함 · 타이머/시험대상 정리 함수)
     property string DpsFilter = ""             -- 비어 있지 않으면 엔티티 이름이 이 글자로 시작하는 몬스터만 기록 (시험 장면이 소환한 대상만 · 나머지는 filtered로 센다)
     property integer DpsRawCap = 4000         -- 원장 링 상한: 무리 장면 초당 ~60건 기준 약 1분치. 넘치면 오래된 것부터 덮고 dropped (집계는 계속)
     property integer DpsLifeCap = 600         -- 생명 표 상한 (넘치면 life_overflow — 원장·합계는 그대로)
@@ -75,6 +76,7 @@ script Telemetry extends Logic
         if self.FlushTimer ~= 0 then _TimerService:ClearTimer(self.FlushTimer) end
         self.TickTimer = 0
         self.FlushTimer = 0
+        self:DpsCollectionStop("end_play")
         if self.DpsOn or self.DpsSampleTimer ~= 0 then self:DpsStop() end   -- 개발용 전투 계측도 함께 정리 (타이머 누수 없음)
     end
 
@@ -330,7 +332,7 @@ script Telemetry extends Logic
             { "move", "첫 이동" }, { "kill", "첫 처치" }, { "taste", "첫 일시 그림자" }, { "shadow", "첫 그림자(추출)" },
             { "town", "첫 마을 방문" }, { "death", "첫 사망" },
             -- 성장 관측 (D P1 · 기록은 PlayerQuest·PlayerInventory가 First로 남긴다)
-            { "gearReward", "첫 장비 의뢰 보고" }, { "gearEquip", "새 장비 첫 장착" }, { "gearUse", "새 장비로 첫 처치" }, { "gearChangedAtCredit", "공동 처치 때 장비 바뀜" },
+            { "gearReward", "첫 장비 의뢰 보고" }, { "gearEquip", "새 장비 첫 장착" }, { "gearUse", "새 장비로 첫 유효 피해" }, { "gearChangedAtCredit", "공동 처치 때 장비 바뀜" },
             { "q1accept", "의뢰 1 수락" }, { "q1report", "의뢰 1 보고" }, { "q2accept", "의뢰 2 수락" }, { "q2report", "의뢰 2 보고" },
             { "q3accept", "의뢰 3 수락" }, { "q3report", "의뢰 3 보고" }, { "q4accept", "의뢰 4 수락" }, { "q4report", "의뢰 4 보고" },
             { "q4reportField", "제단 현장 보고" }, { "q5accept", "의뢰 5 수락" }, { "q5acceptField", "제단 현장 수락" }, { "q5report", "의뢰 5 보고" },
@@ -718,7 +720,7 @@ script Telemetry extends Logic
 
     @ExecSpace("ServerOnly")
     method void NoteRespec(Entity player, string what, integer level, integer cost, integer goldLeft, integer refund)
-        -- P4 초기화 성공 (SkillBook.RequestRespec 끝 — 호출 한 줄은 B 패치 요청): 횟수·쓴 골드 합 + 최근 10건 「what|레벨|비용|잔액|돌려받은 포인트|분」
+        -- P4 초기화 성공 (SkillBook.RequestRespec 끝 — 호출 한 줄은 B 패치 요청): 횟수·쓴 골드 합 + 처음 10건 「what|레벨|비용|잔액|돌려받은 포인트|분」
         local s = self:Session(player)
         if s == nil then return end
         s.respecs = (s.respecs or 0) + 1
@@ -745,12 +747,13 @@ script Telemetry extends Logic
         end
         local moved = (pos - g.pos):Magnitude() > 0.5
         g.pos = pos
-        local kills = s.kills - g.kills
+        local kills = s.kills - g.kills   -- P3 파티 크레딧 포함 처치 수는 보존; P7 본인 활동 근거로 쓰지 않는다
         g.kills = s.kills
         local extracts = s.extracts - g.extracts
         g.extracts = s.extracts
         s.ticks = (s.ticks or 0) + 1
-        if moved or kills > 0 or extracts > 0 or g.act then s.activeTicks = (s.activeTicks or 0) + 1 end
+        -- 실제 본인/소환수 유효 피해는 DealtDamage가 g.act로 표시한다 (막타/파티 크레딧 중복 활동 없음).
+        if moved or extracts > 0 or g.act then s.activeTicks = (s.activeTicks or 0) + 1 end
         g.act = false
         self:A2Tick(player, s, moved, kills)
     end
@@ -825,6 +828,15 @@ script Telemetry extends Logic
         if self.DpsSampleTimer ~= 0 then _TimerService:ClearTimer(self.DpsSampleTimer) end
         self.DpsSampleTimer = _TimerService:SetTimerRepeat(function() self:DpsSample() end, self.DpsSampleSec)
         log(string.format("[DPS] start run=%d scene=%s cap=%d lifeCap=%d gap=%.2f sample=%.2f maxSec=%d", self.DpsRunId, self.Dps.scene, self.DpsRawCap, self.DpsLifeCap, self.DpsGapSec, self.DpsSampleSec, math.floor(self.DpsMaxSec)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DpsCollectionStop(string reason)
+        -- 관측만 끄는 DpsStop과 구분. 먼저 소유권을 내려 같은 종료가 재진입해도 한 번만 정리한다.
+        local collection = self.DpsCollection
+        if collection == nil then return end
+        self.DpsCollection = nil
+        if collection.stop ~= nil then collection.stop(reason) end
     end
 
     @ExecSpace("ServerOnly")

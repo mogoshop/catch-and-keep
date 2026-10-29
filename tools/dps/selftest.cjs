@@ -74,7 +74,8 @@ const two = agg.aggregate([synth, split]);
 check("same run id in two files kept apart", two.runs.length === 2 && two.runs[0].run !== two.runs[1].run, two.runs.map((r) => r.run));
 
 // 5) C-AGG-02: 원장 fail(중복 life/seq · effective 식 불일치)은 실측 비교·유효 run 수에서 제외
-const dup = [windowLine(1, "L15-magic-boss-r3", 5, 2, 20), ev(1, 1, 0, 1, 1, 10), ev(1, 2, 0, 1, 1, 10), endLine(1, 2)].join("\n");
+// C-COLLECT(코덱스 0149): 묶음 = 레벨·빌드·장면·입력·기기 — 같은 묶음 비교가 되게 synth와 같은 입력(auto) 꼬리표
+const dup = [windowLine(1, "L15-magic-boss-r3-auto", 5, 2, 20), ev(1, 1, 0, 1, 1, 10), ev(1, 2, 0, 1, 1, 10), endLine(1, 2)].join("\n");
 const bad = agg.aggregate([dup]);
 check("C-AGG-02 duplicate (life, seq) → fail / rejected", bad.runs[0].ledger_check.status === "fail" && bad.runs[0].verdict === "rejected", bad.runs[0].ledger_check);
 check("C-AGG-02 rejected run has no measured DPS and no combat denominator", bad.runs[0].total_dps === null && bad.runs[0].combat_dps === null && bad.runs[0].combat.seconds === null, bad.runs[0]);

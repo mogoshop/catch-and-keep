@@ -473,7 +473,7 @@ sess.kills = 2
 Telemetry:GrowthTick(p1, sess)
 hit(monster(100, 0), p1, 10)
 Telemetry:GrowthTick(p1, sess)
-check('P7 movement > 0.5 · kills · dealt damage each make the tick active (3 of 4)', sess.ticks == 4 and sess.activeTicks == 3, sess.activeTicks)
+check('P7 movement > 0.5 · dealt damage make the tick active · party kill credit alone does not (C-GROWTH-01, 2 of 4)', sess.ticks == 4 and sess.activeTicks == 2, sess.activeTicks)
 check('P3 no act-2 sample on act-1 map', sess.a2 == nil, sess.a2)
 p1.CurrentMap = entity('canyon')
 Telemetry:GrowthTick(p1, sess)
@@ -501,7 +501,7 @@ Telemetry.Sessions = {}
 -- P1 요약 라벨
 local labels = {}
 for _, st in ipairs(Telemetry:FirstStages()) do labels[st[1]] = st[2] end
-check('P1 summary labels for growth stages', labels.gearReward == '첫 장비 의뢰 보고' and labels.gearUse == '새 장비로 첫 처치' and labels.q4reportField == '제단 현장 보고' and labels.q5acceptField == '제단 현장 수락' and labels.q1accept ~= nil and labels.q6report ~= nil and labels.act2Enter ~= nil and labels.gearEquip ~= nil, labels.gearReward)
+check('P1 summary labels for growth stages', labels.gearReward == '첫 장비 의뢰 보고' and labels.gearUse == '새 장비로 첫 유효 피해' and labels.q4reportField == '제단 현장 보고' and labels.q5acceptField == '제단 현장 수락' and labels.q1accept ~= nil and labels.q6report ~= nil and labels.act2Enter ~= nil and labels.gearEquip ~= nil, labels.gearReward)
 
 -- ── DpsFinish · 꺼진 뒤 Flush ──
 Telemetry:DpsStart('finish')

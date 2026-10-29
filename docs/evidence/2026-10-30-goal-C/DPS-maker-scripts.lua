@@ -3,19 +3,20 @@
 --   [S00] 사전 점검 — 계측이 꺼져 있는지 · 소스 버전 표식 (플레이 시작마다 1번)
 --   [S10] 장면 실행 — 맨 위 CFG 한 줄만 바꿔 붙여 넣는다 (test-plan.md 「실행 순서」 표의 CFG 줄을 그대로 복사)
 --   [S90] 강제 마감 — 장면이 멈췄을 때 요약만 찍고 끈다
+-- raw 파일은 begin/end의 raw_file 값을 사용한다 (full label + capture origin; 기존 파일 덮어쓰기 금지).
 -- 결과는 「[DPS] …」 줄(Telemetry.DpsFlush)과 「[DPS-RUN] …」 줄(이 스크립트)뿐이다. 저장 없음: 시험 캐릭터는 PlayerSave.IsLoadSuccess=false로 저장을 끈다.
 -- 시험이 끝나면 maker_logs(kind="normal")를 읽어 파일로 남기고 node tools/dps/aggregate.cjs <로그> --calc <comparison.csv> 로 집계한다.
 -- 주의: 실제 빌드 비교 결론은 이 스크립트가 아니라 반복·실패·seed를 갖춘 집계 뒤에 사람이 내린다. 자동 입력(auto)은 「정지 사격 기준선」이지 사람 조작이 아니다.
 
 -- ===================================================================== [S00] 사전 점검
-local ok = _Telemetry ~= nil and _Telemetry.DpsOn == false and _Telemetry.Dps == nil
-log("[DPS-RUN] preflight dpsOn=" .. tostring(_Telemetry.DpsOn) .. " buffer=" .. tostring(_Telemetry.Dps ~= nil) .. " cap=" .. tostring(_Telemetry.DpsRawCap) .. " gap=" .. tostring(_Telemetry.DpsGapSec) .. " ok=" .. tostring(ok))
+local ok = _Telemetry ~= nil and _Telemetry.DpsOn == false and _Telemetry.Dps == nil and _Telemetry.DpsCollection == nil
+log("[DPS-RUN] preflight dpsOn=" .. tostring(_Telemetry.DpsOn) .. " buffer=" .. tostring(_Telemetry.Dps ~= nil) .. " collection=" .. tostring(_Telemetry.DpsCollection ~= nil) .. " cap=" .. tostring(_Telemetry.DpsRawCap) .. " gap=" .. tostring(_Telemetry.DpsGapSec) .. " ok=" .. tostring(ok))
 local n = 0
 for _, u in pairs(_UserService.UserEntities) do n = n + 1 end
 log("[DPS-RUN] preflight users=" .. n .. " (시험은 사용자 1명 · 파티 시험은 별도)")
 
 -- ===================================================================== [S10] 장면 실행
-local CFG = { level = 15, build = 'magic', scene = 'boss', rep = 1, input = 'auto' }   -- ← 이 줄만 바꾼다 (node tools/dps/maker-blocks.cjs가 바꿔 준다)
+local CFG = { level = 15, build = 'magic', scene = 'boss', rep = 1, input = 'auto', capture_origin = 'SET_UNIQUE_CAPTURE_ORIGIN' }   -- ← 이 줄만 바꾼다 (node tools/dps/maker-blocks.cjs가 바꿔 준다)
 
 -- 같은 레벨 = 같은 장비·같은 투자 총점 (parallel-analysis/combat/fixtures.json 그대로 · 퀘스트 추가 포인트·선택 보상 없음 · 보통 난이도)
 local LAMP = 'lamp1|1|1|망자를 부르는 등불|minion=20|2|'
@@ -80,6 +81,12 @@ local S = SCENES[CFG.scene] and SCENES[CFG.scene][CFG.level]
 local label = 'L' .. CFG.level .. '-' .. CFG.build .. '-' .. CFG.scene .. '-r' .. CFG.rep .. '-' .. CFG.input
 if B == nil or S == nil then log_error('[DPS-RUN] bad CFG ' .. label) return end
 if S.wipe and B.inv.raise_skeleton == nil then log('[DPS-RUN] skip label=' .. label .. ' reason=no-summon-build (전멸 복구는 소환을 쓰는 빌드만)') return end
+-- 호스트가 정한 고유 세션 원점을 사용한다. 같은 원점을 다른 Play 세션에 재사용하지 않는다.
+local origin = CFG.capture_origin
+if type(origin) ~= 'string' or origin == '' or origin == 'SET_UNIQUE_CAPTURE_ORIGIN' or #origin > 80 or string.find(origin, '[^%w_.-]') ~= nil then
+  log_error('[DPS-RUN] capture_origin required: maker-blocks.cjs S10 ... --origin <unique-session-id>') return
+end
+if _Telemetry.DpsCollection ~= nil then _Telemetry:DpsCollectionStop('replaced') end
 if _Telemetry.DpsOn then log_error('[DPS-RUN] previous run still on — run [S90] first') return end
 local p = nil
 for _, u in pairs(_UserService.UserEntities) do p = u break end
@@ -91,6 +98,80 @@ local inv = p:GetComponent('script.PlayerInventory')
 local sv = p:GetComponent('script.PlayerSave')
 local travel = p:GetComponent('script.PlayerTravel')
 local atk = p:GetComponent('script.PlayerAttack')
+
+local timers = {}
+local targets = {}
+local startAt = 0
+local finished = false
+local preWipe = 0
+local collection = { timers = timers, targets = targets, entities = {}, run = 0, label = label }
+local capture = origin .. '-' .. tostring(_Telemetry.DpsRunId + 1) .. '-' .. tostring(math.floor(_UtilLogic.ElapsedSeconds * 1000))
+local rawFile = 'raw/' .. label .. '--' .. capture .. '.log'
+local function metadata()
+  return ' label=' .. label .. ' run=' .. collection.run .. ' input=' .. CFG.input .. ' capture_origin=' .. origin .. ' capture_id=' .. capture .. ' raw_file=' .. rawFile .. (CFG.device and (' device=' .. CFG.device) or '')
+end
+local function owns()
+  return not finished and _Telemetry.DpsCollection == collection
+end
+local function observing()
+  return owns() and _Telemetry.DpsOn and _Telemetry.Dps ~= nil and _Telemetry.Dps.run == collection.run and not _Telemetry.Dps.stopped
+end
+local function ownedEntity(e)
+  if isvalid(e) then
+    if #collection.entities >= 64 then e:Destroy() return false end
+    table.insert(collection.entities, e)
+    return true
+  end
+  return false
+end
+
+local function liveUnits()
+  local n = 0
+  if not isvalid(p) or not isvalid(p.CurrentMap) then return 0 end
+  for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName('script.ShadowUnit', true)) do
+    if c.OwnerPlayer == p and not c.Dead and c.Hp > 0 then n = n + 1 end
+  end
+  return n
+end
+
+local function liveTargets()
+  local n = 0
+  for _, m in ipairs(targets) do if isvalid(m.Entity) and not m.IsDead then n = n + 1 end end
+  return n
+end
+
+local function nearestTarget()
+  local me = _Util:Pos2(p)
+  local best, bestD = nil, 1e9
+  for _, m in ipairs(targets) do
+    if isvalid(m.Entity) and not m.IsDead then
+      local d = (_Util:Pos2(m.Entity) - me):Magnitude()
+      if d < bestD then best, bestD = m, d end
+    end
+  end
+  return best
+end
+
+local function finish(reason)
+  if finished then return end
+  finished = true
+  if _Telemetry.DpsCollection == collection then _Telemetry.DpsCollection = nil end
+  for _, id in ipairs(timers) do _TimerService:ClearTimer(id) end
+  log('[DPS-RUN] finishing' .. metadata() .. ' reason=' .. reason .. ' alive_targets=' .. liveTargets() .. ' legion=' .. liveUnits())
+  -- 자기 원장만 마감한다. DpsStop 뒤이거나 다른 run이 시작됐어도 소유 자원 정리는 가능하다.
+  if _Telemetry.DpsOn and _Telemetry.Dps ~= nil and _Telemetry.Dps.run == collection.run then
+    local cap = _Telemetry.DpsFlushLineCap
+    _Telemetry.DpsFlushLineCap = 4600
+    local ok, err = pcall(function() _Telemetry:DpsFinish(4000) end)
+    _Telemetry.DpsFlushLineCap = cap
+    if not ok then log_error('[DPS-RUN] finish failed ' .. tostring(err)) _Telemetry:DpsStop() end
+  end
+  for _, e in ipairs(collection.entities) do if isvalid(e) then e:Destroy() end end
+  collection.entities = {}
+  log('[DPS-RUN] end' .. metadata() .. ' reason=' .. reason)
+end
+collection.stop = finish
+_Telemetry.DpsCollection = collection
 
 -- 1) 저장 끔 · 빌드 세팅 (레벨·능력치·투자·장비·슬롯 · 맛보기 그림자 끔 · 기존 소환 정리)
 sv.IsLoadSuccess = false
@@ -122,54 +203,6 @@ log('[DPS-RUN] setup label=' .. label .. ' lv=' .. st.Level .. ' mana=' .. math.
 
 -- 2) 이동 → 2.5초 뒤 장면 시작 (맵이 바뀌면 CurrentMap 엔티티가 새로 생긴다)
 travel:Go(S.map, Vector2(S.me[1], S.me[2]))
-local timers = {}
-local targets = {}
-local startAt = 0
-local finished = false
-local preWipe = 0
-
-local function liveUnits()
-  local n = 0
-  if not isvalid(p.CurrentMap) then return 0 end
-  for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName('script.ShadowUnit', true)) do
-    if c.OwnerPlayer == p and not c.Dead and c.Hp > 0 then n = n + 1 end
-  end
-  return n
-end
-
-local function liveTargets()
-  local n = 0
-  for _, m in ipairs(targets) do if isvalid(m.Entity) and not m.IsDead then n = n + 1 end end
-  return n
-end
-
-local function nearestTarget()
-  local me = _Util:Pos2(p)
-  local best, bestD = nil, 1e9
-  for _, m in ipairs(targets) do
-    if isvalid(m.Entity) and not m.IsDead then
-      local d = (_Util:Pos2(m.Entity) - me):Magnitude()
-      if d < bestD then best, bestD = m, d end
-    end
-  end
-  return best
-end
-
-local function finish(reason)
-  if finished then return end
-  finished = true
-  for _, id in ipairs(timers) do _TimerService:ClearTimer(id) end
-  log('[DPS-RUN] finishing label=' .. label .. ' reason=' .. reason .. ' alive_targets=' .. liveTargets() .. ' legion=' .. liveUnits())
-  -- 원장 전체(최대 4000줄)를 찍어 집계 도구가 원장 검사(ok)로 실측 비교에 넣을 수 있게 한다. 넘치면(dropped) 요약 전용으로만 쓰인다
-  if _Telemetry.DpsOn then
-    _Telemetry.DpsFlushLineCap = 4600
-    _Telemetry:DpsFinish(4000)
-    _Telemetry.DpsFlushLineCap = 2000
-  end
-  -- 남은 시험 대상 정리 (다음 장면 간섭 방지)
-  for _, m in ipairs(targets) do if isvalid(m.Entity) then m.Entity:Destroy() end end
-  log('[DPS-RUN] end label=' .. label .. ' reason=' .. reason)
-end
 
 local function spawnPacks()
   local map = p.CurrentMap
@@ -181,8 +214,9 @@ local function spawnPacks()
       local r = pack[4] * math.sqrt(serial / math.max(1, pack[2]))
       local pos = Vector3(pack[3][1] + math.cos(ang) * r, pack[3][2] + math.sin(ang) * r, 0)
       local e = _SpawnService:SpawnByModelId(pack[1], 'C05_' .. pack[1] .. '_' .. serial, pos, map)
-      if isvalid(e) then
+      if ownedEntity(e) then
         _Util:AfterSpawn(e, 'script.Monster', function(m)
+          if not owns() then if isvalid(e) then e:Destroy() end return end
           m.RespawnDelay = -1
           m:ApplyLevel(CFG.level, false)
           if S.hpMul ~= nil then
@@ -210,7 +244,7 @@ end
 
 local function liveOf(kind)
   local n = 0
-  if not isvalid(p.CurrentMap) then return 0 end
+  if not isvalid(p) or not isvalid(p.CurrentMap) then return 0 end
   for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName('script.ShadowUnit', true)) do
     if c.OwnerPlayer == p and not c.Dead and c.Hp > 0 and c.Kind == kind then n = n + 1 end
   end
@@ -224,8 +258,8 @@ local function spawnSouls(count)
   for i = 1, count do
     local ang = i * 2.399
     local soul = _SpawnService:SpawnByModelId(_GameConst.ModelSoulOrb, 'C05soul_' .. i, Vector3(me.x + math.cos(ang) * 1.5, me.y + math.sin(ang) * 1.5, 0), p.CurrentMap)
-    if isvalid(soul) then
-      _Util:AfterSpawn(soul, 'script.SoulOrb', function(orb) orb:Setup(uid, 'skel_warrior', 1, 'normal', CFG.level, '', info.stand, info.move) end, function() soul:Destroy() end)
+    if ownedEntity(soul) then
+      _Util:AfterSpawn(soul, 'script.SoulOrb', function(orb) if not owns() then if isvalid(soul) then soul:Destroy() end return end orb:Setup(uid, 'skel_warrior', 1, 'normal', CFG.level, '', info.stand, info.move) end, function() soul:Destroy() end)
     end
   end
 end
@@ -234,7 +268,7 @@ end
 -- 플레이어는 서버에서 움직일 수 없다(클라이언트 소유) → 제자리 사격 기준선. 사람 조작(input=human)이면 이 루프를 돌리지 않고 메이커 담당이 직접 조작한다.
 local casts = { ok = 0, fail = 0 }
 local function autoTick()
-  if finished or not _Util:IsAlive(p) then return end
+  if not observing() or not _Util:IsAlive(p) then return end
   local me = _Util:Pos2(p)
   local target = nearestTarget()
   local tpos = target ~= nil and _Util:Pos2(target.Entity) or nil
@@ -282,17 +316,20 @@ local function arenaClear()
 end
 
 local function begin()
+  if not owns() then return end
+  if not isvalid(p) or not isvalid(p.CurrentMap) then finish('player_left') return end
   if _GameConst:BaseMapName(p.CurrentMap.Name) ~= S.map then
     log_error('[DPS-RUN] travel failed label=' .. label .. ' at=' .. p.CurrentMap.Name)
-    return
+    finish('travel_failed') return
   end
   local removed = arenaClear()
   st.Mana = st.MaxMana
   p.PlayerComponent.Hp = p.PlayerComponent.MaxHp
   _Telemetry.DpsFilter = 'C05_'
   _Telemetry:DpsStart(label)
+  collection.run = _Telemetry.DpsRunId
   startAt = _UtilLogic.ElapsedSeconds
-  log('[DPS-RUN] begin label=' .. label .. ' map=' .. S.map .. ' cleared_others=' .. removed .. ' input=' .. CFG.input)
+  log('[DPS-RUN] begin' .. metadata() .. ' map=' .. S.map .. ' cleared_others=' .. removed .. ' input=' .. CFG.input)
   local prep = 1
   local kinds = raiseKinds()
   if #kinds > 0 then
@@ -304,6 +341,7 @@ local function begin()
   if CFG.input == 'auto' then table.insert(timers, _TimerService:SetTimerRepeat(autoTick, 0.35)) end
   local spawnedAt = -1
   table.insert(timers, _TimerService:SetTimerOnce(function()
+    if not observing() then return end
     if S.wipe then
       preWipe = liveUnits()
       for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName('script.ShadowUnit', true)) do
@@ -316,7 +354,9 @@ local function begin()
     log('[DPS-RUN] targets label=' .. label .. ' prep_s=' .. string.format('%.2f', spawnedAt - startAt) .. ' legion=' .. liveUnits())
   end, prep))
   table.insert(timers, _TimerService:SetTimerRepeat(function()
-    if finished then return end
+    if not owns() then return end
+    if not observing() then finish('observation_stopped') return end
+    if not isvalid(p) then finish('player_left') return end
     if not _Util:IsAlive(p) then finish('player_dead') return end
     if not isvalid(p.CurrentMap) or _GameConst:BaseMapName(p.CurrentMap.Name) ~= S.map then finish('left_map') return end
     if spawnedAt < 0 then return end
@@ -331,9 +371,14 @@ table.insert(timers, _TimerService:SetTimerOnce(begin, 2.5))
 log('[DPS-RUN] queued label=' .. label .. ' map=' .. S.map .. ' (2.5초 뒤 시작 · 끝나면 「[DPS-RUN] end」)')
 
 -- ===================================================================== [S90] 강제 마감
-if _Telemetry.DpsOn then
+-- Dps 원장이 이미 꺼지거나 교체되어도 별도 collection 소유권은 남아 정리할 수 있다.
+if _Telemetry.DpsCollection ~= nil then
+  _Telemetry:DpsCollectionStop('manual')
+elseif _Telemetry.DpsOn then
+  -- 옛 연결 확인처럼 소유 수집이 없는 관측만 마감. 이것을 시험 대상/캐릭터 원복으로 보고하지 않는다.
+  local cap = _Telemetry.DpsFlushLineCap
   _Telemetry.DpsFlushLineCap = 4600
   _Telemetry:DpsFinish(4000)
-  _Telemetry.DpsFlushLineCap = 2000
+  _Telemetry.DpsFlushLineCap = cap
+  log('[DPS-RUN] end label=forced reason=manual_unowned')
 end
-log("[DPS-RUN] end label=forced reason=manual")

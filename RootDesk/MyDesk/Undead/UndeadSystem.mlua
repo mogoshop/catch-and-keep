@@ -67,6 +67,22 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void NoteLost(Entity player, table rec, string reason)
+        -- 실기록이 영구로 빠진 뒤에만 호출한다. 이동 재생성·편성 예측·거인 예약은 손실이 아니다.
+        if rec == nil or rec.lossReported or not isvalid(player) then return end
+        rec.lossReported = true
+        _GameEvents:Emit("SummonLost", { player = player, kind = rec.kind, reason = reason })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DetachConsumed(Entity player, table rec)
+        local existed = false
+        for _, r in ipairs(self:ListOf(player)) do if r == rec then existed = true break end end
+        self:Detach(player, rec)
+        if existed then self:NoteLost(player, rec, "consumed") end
+    end
+
+    @ExecSpace("ServerOnly")
     method boolean SkeletonBomb(Entity player, Vector2 target, number mult, number radius, integer count)
         -- 해골 폭탄 (10-20 사용자 제안): 생명이 가장 낮은 해골 전사 count기가 붉게 깜빡이며 조준점 근처 적에게 돌진해 터진다.
         -- 피해 = 그 해골 공격력 × mult (반경 radius). 돌진 중 쓰러져도 그 자리에서 터진다 (ShadowUnit.BombExplode)
@@ -78,7 +94,7 @@ script UndeadSystem extends Logic
         local foe = _Util:NearestMonster(player.CurrentMap, target, 2.5)
         for i = 1, math.min(count, #picks) do
             local pick = picks[i]
-            self:Detach(player, pick.rec)
+            self:DetachConsumed(player, pick.rec)
             pick.unit:StartBomb(foe ~= nil and foe.Entity or nil, target, pick.unit.Atk * mult, radius)
         end
         log(string.format("[VRF] skeleton bomb n=%d mult=%.2f radius=%.2f foe=%s", math.min(count, #picks), mult, radius, tostring(foe ~= nil)))
@@ -106,7 +122,7 @@ script UndeadSystem extends Logic
             local pick = picks[i]
             sum = sum + pick.unit.Atk
             table.insert(used, { pos = _Util:Pos2(pick.unit.Entity), unit = pick.unit })
-            self:Detach(player, pick.rec)
+            self:DetachConsumed(player, pick.rec)
             pick.unit.Dead = true   -- 판단·피격을 멈춘다 (쓰러짐 알림·뼈 파편 없음). 엔티티는 아래에서 치운다
         end
         local avg = sum / stage
@@ -186,6 +202,7 @@ script UndeadSystem extends Logic
             end
         end
         if ratio <= 0 then
+            for _, rec in ipairs(g.mates) do self:NoteLost(player, rec, "host_gone") end
             log("[VRF] rite giant end ratio=0 (host gone)")
             self:RefreshSummary(player)
             return
@@ -203,6 +220,8 @@ script UndeadSystem extends Logic
                 have = have + 1
                 back = back + 1
                 if respawn and _Util:IsAlive(player) then self:SpawnUnit(player, rec, at, nil, nil) end
+            else
+                self:NoteLost(player, rec, "trimmed")
             end
         end
         self:RefreshSummary(player)
@@ -256,7 +275,7 @@ script UndeadSystem extends Logic
         end
         local pick = picks[1]
         local from = _Util:Pos2(pick.unit.Entity)
-        self:Detach(player, pick.rec)
+        self:DetachConsumed(player, pick.rec)
         pick.unit.Dead = true
         pick.unit.Entity:Destroy()
         local center = _Util:Pos2(player)
@@ -698,6 +717,7 @@ script UndeadSystem extends Logic
         for _, victim in ipairs(self:TrimVictims(list, kind, keep)) do
             self:DestroyEntity(victim)
             self:RemoveRec(list, victim)
+            self:NoteLost(player, victim, "trimmed")
         end
     end
 
@@ -1128,16 +1148,26 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method void RemoveLost(Entity player, string id, string reason)
+        if not isvalid(player) then return end
+        local removed = nil
+        for _, rec in ipairs(self:ListOf(player)) do if rec.id == id then removed = rec break end end
+        self:Remove(player, id)
+        if removed ~= nil then self:NoteLost(player, removed, reason) end
+    end
+
+    @ExecSpace("ServerOnly")
     method void OnUnitDied(Entity player, string id)
         -- ShadowUnit(Kind ~= shadow)이 쓰러지면 부른다. 뼈 거인이 쓰러지면 합쳐졌던 넷도 함께 무너진다
         if isvalid(player) then
             local g = self.Giants[player.PlayerComponent.UserId]
             if g ~= nil and g.host.id == id then
                 self.Giants[player.PlayerComponent.UserId] = nil
+                for _, rec in ipairs(g.mates) do self:NoteLost(player, rec, "died") end
                 log("[VRF] rite giant fell mates=" .. tostring(#g.mates))
             end
         end
-        self:Remove(player, id)
+        self:RemoveLost(player, id, "died")
     end
 
     @ExecSpace("ServerOnly")
@@ -1152,21 +1182,44 @@ script UndeadSystem extends Logic
                 break
             end
         end
-        self:Remove(player, id)
+        self:RemoveLost(player, id, "expired")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DismissRecords(Entity player, boolean reportLoss)
+        -- 사망·명시적 해제 시 모두 정리하고, 이전 맵의 따라오기 타이머도 무효화한다.
+        local uid = player.PlayerComponent.UserId
+        self.TravelEpochs[uid] = (self.TravelEpochs[uid] or 0) + 1
+        local giant = self.Giants[uid]
+        self.Giants[uid] = nil   -- 거인과 합쳐진 넷도 함께 사라진다
+        local list = self:ListOf(player)
+        for _, rec in ipairs(list) do self:DestroyEntity(rec) end
+        self.Owned[player.PlayerComponent.UserId] = {}
+        self:RefreshSummary(player)
+        if reportLoss then
+            for _, rec in ipairs(list) do self:NoteLost(player, rec, "dismissed") end
+            if giant ~= nil then for _, rec in ipairs(giant.mates) do self:NoteLost(player, rec, "dismissed") end end
+        end
     end
 
     @ExecSpace("ServerOnly")
     method void DismissAll(Entity player)
-        -- 사망·명시적 해제 시 모두 정리하고, 이전 맵의 따라오기 타이머도 무효화한다.
-        local uid = player.PlayerComponent.UserId
-        self.TravelEpochs[uid] = (self.TravelEpochs[uid] or 0) + 1
-        self.Giants[uid] = nil   -- 거인과 합쳐진 넷도 함께 사라진다
-        for _, rec in ipairs(self:ListOf(player)) do self:DestroyEntity(rec) end
-        self.Owned[player.PlayerComponent.UserId] = {}
-        self:RefreshSummary(player)
+        self:DismissRecords(player, true)
     end
 
     -- ───────── 맵 이동 ─────────
+
+    @ExecSpace("ServerOnly")
+    method string RemovedReason(Entity player, table rec, number now)
+        if rec.expireAt > 0 and rec.expireAt <= now then return "expired" end
+        if rec.ownerEntityId ~= nil and rec.ownerEntityId ~= player.Id then return "owner_changed" end
+        if (rec.currentHp or rec.hp) <= 0 then return "died" end
+        if isvalid(rec.entity) then
+            local u = rec.entity:GetComponent("script.ShadowUnit")
+            if u ~= nil and (u.Dead or u.Hp <= 0) then return "died" end
+        end
+        return "invalid"   -- 죽음이 확인되지 않은 무효 기록을 전투 사망으로 추정하지 않는다.
+    end
 
     @ExecSpace("ServerOnly")
     method table LiveRecords(Entity player)
@@ -1174,6 +1227,7 @@ script UndeadSystem extends Logic
         -- 뼈 거인은 이동 전에 먼저 갈라 둔다 (다섯 기록이 남은 생명 비율로 목록에 돌아와 함께 따라간다)
         self:EndGiant(player, 0, false)
         local live = {}
+        local lost = {}
         local now = _UtilLogic.ElapsedSeconds
         for _, rec in ipairs(self:ListOf(player)) do
             local alive = (rec.ownerEntityId == nil or rec.ownerEntityId == player.Id) and (rec.expireAt == 0 or rec.expireAt > now)
@@ -1183,9 +1237,13 @@ script UndeadSystem extends Logic
                 else rec.currentHp = u.Hp end
             end
             if alive and (rec.currentHp or rec.hp) > 0 then table.insert(live, rec)
-            else self:DestroyEntity(rec) end
+            else
+                table.insert(lost, { rec = rec, reason = self:RemovedReason(player, rec, now) })
+                self:DestroyEntity(rec)
+            end
         end
         self.Owned[player.PlayerComponent.UserId] = live
+        for _, entry in ipairs(lost) do self:NoteLost(player, entry.rec, entry.reason) end
         return live
     end
 
@@ -1286,7 +1344,7 @@ script UndeadSystem extends Logic
         end
         if snapshot.destination ~= _RoomService.RoomKey then return end
         if memory:DeleteVariableAndWait(uid) ~= SharedMemoryResultCode.OK then return end
-        self:DismissAll(player)
+        self:DismissRecords(player, false)   -- 같은 소환 기록을 방으로 옮기는 정리: 손실 아님
         if not _Util:IsAlive(player) then return end
         local list = self:ListOf(player)
         for _, data in ipairs(snapshot.units or {}) do

@@ -333,7 +333,7 @@ do
   PlayerQuest.OpenGearChoice = function(_, offer) table.insert(opened, offer) end
   -- 10-30 통합(P8): 고르기 완료(RequestGearChoice → TurnIn(slot))도 D 후처리(TraceQuestStep·StartGearWatch)를 공통 성공 경로에서 한 번 — 제안 열기·가방 부족·옛 버전·중복에는 없음
   local stages = {}
-  _Telemetry = { First = function(_, e, stage) stages[stage] = (stages[stage] or 0) + 1 end }
+  _Telemetry = { First = function(_, e, stage) stages[stage] = (stages[stage] or 0) + 1 end, NoteActivity = function() end }
   PlayerQuest.Diff = 0; PlayerQuest.Index = 1; PlayerQuest.State = 2; PlayerQuest.GearOffers = {}; PlayerQuest.GearOffer = ""; PlayerQuest.GearOfferSeq = 0
   senderUserId = "me"
   local q1 = _QuestData:Get(1)
@@ -466,7 +466,10 @@ end
 -- ⑧ D 갈래 요청 P2·P6: 첫 수동 장착 계측(Telemetry.First gearEquip · 성공 때만) · 첫 장비 의뢰 「가방에서 보기」가 받은 물건을 찾는다
 do
   local firsts = {}
-  _Telemetry = { First = function(_, e, stage) table.insert(firsts, stage) end }
+  local armed, gearEvents = 0, {}
+  _Telemetry = { First = function(_, e, stage) table.insert(firsts, stage) end, ArmDealt = function() armed = armed + 1 end }
+  local emitBefore = _GameEvents.Emit
+  _GameEvents.Emit = function(_, name, e) if name == "GearEquipped" then table.insert(gearEvents, e) end end
   local st = { Gold = 0, Level = 99, AddGold = function() end }
   local inv = PlayerInventory
   inv.Entity = { PlayerComponent = { UserId = "me" }, GetComponent = function(_, key) if key == "script.PlayerStats" then return st end return nil end }
@@ -477,9 +480,12 @@ do
   inv.Bag = { gear }
   inv.Equip = {}
   inv:RequestEquip(1, gear .. "x")
-  ok(#firsts == 0, "stale equip not counted")
+  ok(#firsts == 0 and #gearEvents == 0 and armed == 0, "stale equip not counted")
   inv:RequestEquip(1, gear)
   ok(#firsts == 1 and firsts[1] == "gearEquip" and #inv.Bag == 0, "equip success counted once")
+  -- 10-30 F AD0137: 장착 성공 때만 GearEquipped 한 번(부위·base·등급·이전 base — 전체 물건 글자 없음) + 다음 유효 피해 간격 해제
+  ok(#gearEvents == 1 and armed == 1 and gearEvents[1].slot ~= nil and gearEvents[1].base == _ItemData:Parse(gear).base and gearEvents[1].item == nil and gearEvents[1].prevBase == "", "GearEquipped once on success, no item string")
+  _GameEvents.Emit = emitBefore
   -- 첫 장비 의뢰 = 1번만
   ok(GearChoiceWindow:IsFirstGearQuest(1) and not GearChoiceWindow:IsFirstGearQuest(3), "first gear quest is 1")
   -- 받은 물건 찾기: 같은 문자열이 원래 있어도 늘어난 것 · 고른 부위만
@@ -493,6 +499,6 @@ do
   ok(GearChoiceWindow:FindReceived(before, { "hp1|0|1|p||0||3", helm, ring, helm }, "helm") == helm, "duplicate helm found as new")
   ok(GearChoiceWindow:FindReceived(before, { "hp1|0|1|p||0||3", helm, ring }, "helm") == "", "no new helm")
   ok(GearChoiceWindow:FindReceived("", { ring }, "ring") == ring, "empty bag before")
-  print("[quality/items_reforge] P2 gearEquip once on success only · P6 first gear quest = 1 · received item lookup by bag diff + slot")
+  print("[quality/items_reforge] P2 gearEquip once on success only · F GearEquipped/ArmDealt once on success · P6 first gear quest = 1 · received item lookup by bag diff + slot")
 end
 print(string.format("[quality/items_reforge] %d checks passed", checks))

@@ -1422,7 +1422,9 @@ script ShadowUnit extends AttackComponent
                     local target = defender:GetComponent("script.Monster")
                     if target == nil then return math.max(1, math.floor(self:DuelDamage(defender, dmg) + 0.5)) end
                     dmg = dmg * math.max(0, 1 - target:GetResist(v.element) / 100)
-                    return math.max(1, math.floor(dmg + 0.5))
+                    local final = math.max(1, math.floor(dmg + 0.5))
+                    if self:IsServer() then target:DpsTag(self.Entity, attackInfo, final) end
+                    return final
                 end
             end
         end
@@ -1451,6 +1453,7 @@ script ShadowUnit extends AttackComponent
                 _TimerService:SetTimerOnce(function() if isvalid(self.Entity) and not self.Dead then self:Hurt(back) end end, 0.05)
             end
         end
+        if self:IsServer() and foe ~= nil then foe:DpsTag(self.Entity, attackInfo, final) end
         return final
     end
 

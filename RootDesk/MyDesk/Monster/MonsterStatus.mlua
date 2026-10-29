@@ -244,7 +244,7 @@ script MonsterStatus extends Component
             elseif now >= self.ConfuseSwingAt then
                 self.ConfuseSwingAt = now + (attack ~= nil and attack.AttackCooldown or 1.5)
                 local damage = (attack ~= nil and attack.Damage or 5) * body:GetDamageDealtMultiplier()
-                target:TakeDamage(damage, self.ConfuseSource)
+                target:TakeDamageAs(damage, self.ConfuseSource, "tick.confuse")
                 if attack ~= nil and to:Magnitude() > 0.01 then attack:SwingFx(target.Entity.TransformComponent.WorldPosition, to:Normalize()) end
             end
         end
@@ -347,7 +347,7 @@ script MonsterStatus extends Component
         if effect == "regen" and now - self.AuraRegenAt >= _GameData.auraTickSec * 0.9 then
             self.AuraRegenAt = now
             local body = self:Body()
-            if body ~= nil and not body.IsDead and body.Hp < body.MaxHp then body.Hp = math.min(body.MaxHp, body.Hp + body.MaxHp * value / 100 * _GameData.auraTickSec) end
+            if body ~= nil and not body.IsDead and body.Hp < body.MaxHp then body:RestoreHp(body.MaxHp * value / 100 * _GameData.auraTickSec, "aura") end
         end
     end
 
@@ -453,7 +453,7 @@ script MonsterStatus extends Component
             self:StopPoison()
             return
         end
-        body:TakeDamage(self.PoisonDps * 0.5 * math.max(0, 1 - body:GetResist("poison") / 100), self.PoisonSource)
+        body:TakeDamageAs(self.PoisonDps * 0.5 * math.max(0, 1 - body:GetResist("poison") / 100), self.PoisonSource, "tick.poison")
     end
 
     @ExecSpace("ServerOnly")

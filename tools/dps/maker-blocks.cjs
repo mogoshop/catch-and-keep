@@ -2,7 +2,7 @@
 // I05 메이커 붙여 넣기 조각 만들기 — docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua에서 블록을 꺼내 CFG 줄을 채운다 (Maker 실행은 하지 않는다).
 // 사용:
 //   node tools/dps/maker-blocks.cjs S00                         사전 점검 블록
-//   node tools/dps/maker-blocks.cjs S10 15 magic boss 1 auto    장면 블록 (레벨 · 빌드 · 장면 · 반복 · auto|human)
+//   node tools/dps/maker-blocks.cjs S10 15 magic boss 1 auto --origin <unique-play-session-id>    장면 블록 (레벨 · 빌드 · 장면 · 반복 · auto|human)
 //   node tools/dps/maker-blocks.cjs S90                         강제 마감 블록
 //   node tools/dps/maker-blocks.cjs --queue [A|B|all]           실행 순서표 (A = 반복 1회 전체, B = 반복 2·3회)
 //   node tools/dps/maker-blocks.cjs --check <luac>              모든 장면 조합을 luac -p로 문법 검사 (런타임 검증 아님)
@@ -35,13 +35,14 @@ function blocks() {
   return out;
 }
 
-function scene(level, build, sceneName, rep, input) {
+function scene(level, build, sceneName, rep, input, origin = "offline-fixture") {
   if (!LEVELS.includes(Number(level)) || !BUILDS.includes(build) || !SCENES.includes(sceneName) || !INPUTS.includes(input)) {
     throw new Error("bad args: " + [level, build, sceneName, rep, input].join(" "));
   }
+  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(origin)) throw new Error("invalid capture origin");
   const q = String.fromCharCode(39);
   const cfg = "local CFG = " + String.fromCharCode(123) + " level = " + Number(level) + ", build = " + q + build + q + ", scene = " + q + sceneName + q +
-    ", rep = " + Number(rep) + ", input = " + q + input + q + " " + String.fromCharCode(125);
+    ", rep = " + Number(rep) + ", input = " + q + input + q + ", capture_origin = " + q + origin + q + " " + String.fromCharCode(125);
   const lines = blocks().S10.split("\n");
   const i = lines.findIndex((l) => l.startsWith("local CFG = "));
   if (i < 0) throw new Error("CFG line not found");
@@ -67,11 +68,16 @@ function queue(tier) {
 
 function main(argv) {
   const cmd = argv[0];
+  const originAt = argv.indexOf("--origin");
+  const origin = originAt >= 0 ? argv[originAt + 1] : null;
   if (cmd === "S00" || cmd === "S90") return process.stdout.write(blocks()[cmd]);
-  if (cmd === "S10") return process.stdout.write(scene(argv[1], argv[2], argv[3], argv[4] || 1, argv[5] || "auto"));
+  if (cmd === "S10") {
+    if (!origin) throw new Error("S10 requires --origin <unique-play-session-id>; use a new origin after every stop/play and preserve raw_file from the log");
+    return process.stdout.write(scene(argv[1], argv[2], argv[3], argv[4] || 1, argv[5] || "auto", origin));
+  }
   if (cmd === "--queue") {
     const rows = queue(argv[1] || "A");
-    rows.forEach((r, i) => console.log(String(i + 1).padStart(3) + "  S10 " + [r.level, r.build, r.scene, r.rep, r.input].join(" ") + "   label=L" + r.level + "-" + r.build + "-" + r.scene + "-r" + r.rep + "-" + r.input));
+    rows.forEach((r, i) => console.log(String(i + 1).padStart(3) + "  S10 " + [r.level, r.build, r.scene, r.rep, r.input].join(" ") + " --origin " + (origin || "<unique-play-session-id>") + "   label=L" + r.level + "-" + r.build + "-" + r.scene + "-r" + r.rep + "-" + r.input));
     console.log("합계 " + rows.length + "회 (레벨이 바뀔 때 플레이를 새로 시작 · 각 장면은 앞 장면의 [DPS-RUN] end 뒤)");
     return;
   }
@@ -115,7 +121,7 @@ function main(argv) {
     console.log("[maker-blocks] 대역 실행 " + ok + "/" + total + " 장면 조합 오류 없음 (엔진 흉내 — Maker 실행 아님)");
     return;
   }
-  console.error("사용: maker-blocks.cjs S00 | S90 | S10 <lv> <build> <scene> <rep> <auto|human> | --queue [A|B|all] | --check <luac>");
+  console.error("사용: maker-blocks.cjs S00 | S90 | S10 <lv> <build> <scene> <rep> <auto|human> --origin <unique-play-session-id> | --queue [A|B|all] | --check <luac>");
   process.exitCode = 2;
 }
 

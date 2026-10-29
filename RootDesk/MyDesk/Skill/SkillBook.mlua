@@ -1068,6 +1068,7 @@ script SkillBook extends Component
                 self.PendingMana = math.max(0, self.PendingMana - cost)
                 if not success or not _Util:IsAlive(self.Entity) then return end
                 if not stats:SpendMana(cost) then return end
+                _GameEvents:Emit("SkillCast", { player = self.Entity, skill = id, rank = lv, mana = cost })
                 self:SetCooldown(id, def.cooldown * stats:GetCastCooldownMult())
                 self:PresentCast(id, target - me, userId)
                 if not Environment:IsPublishedPlay() then log("[VRF] cast committed " .. id .. " mana=" .. tostring(cost)) end   -- 시전·추출·소환마다 찍히므로 출시 서버에서는 끈다
@@ -1088,7 +1089,8 @@ script SkillBook extends Component
         ---@type SkillEffects
         local effects = self.Entity:GetComponent("script.SkillEffects")
         if effects == nil or not effects:Apply(id, lv, me, target, 1 + stats:GetSpellPowerPct() / 100) then return false end
-        stats:SpendMana(cost)
+        local paid = stats:SpendMana(cost)
+        if paid then _GameEvents:Emit("SkillCast", { player = self.Entity, skill = id, rank = lv, mana = cost }) end
         if id == "wraith_dash" then self:UseDashCharge(lv)
         else self:SetCooldown(id, self:SkillCooldown(id, lv) * stats:GetCastCooldownMult()) end
         self:PresentCast(id, target - me, userId)
@@ -1264,7 +1266,8 @@ script SkillBook extends Component
             return false
         end
         local cost = self:RiteManaCost(stage, lv)
-        stats:SpendMana(cost)
+        local paid = stats:SpendMana(cost)
+        if paid then _GameEvents:Emit("SkillCast", { player = self.Entity, skill = "bone_rite", rank = lv, mana = cost }) end
         local castMul = stats:GetCastCooldownMult()
         self:SetCooldown("bone_rite", (def.cooldown or 1) * castMul)
         if stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
@@ -1822,6 +1825,7 @@ script SkillBook extends Component
         local refund = what == "skills" and self:ResetSkills() or stats:ResetStats()
         _Util:Banner((what == "skills" and "스킬" or "능력치") .. " 초기화", "포인트 " .. tostring(refund) .. "개를 돌려받았습니다" .. (cost > 0 and (" · " .. tostring(cost) .. " 골드") or " · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)"), pc.UserId)
         log("[VRF] respec " .. what .. " refund=" .. tostring(refund) .. " cost=" .. tostring(cost))
+        _Telemetry:NoteRespec(self.Entity, what, stats.Level, cost, stats.Gold, refund)
     end
 
     @ExecSpace("ServerOnly")

@@ -63,12 +63,19 @@ function pct(list, p) {
 // 완결된(end 줄이 있는) 가장 늦은 스냅샷 하나만 쓴다. 완결된 것이 없으면 마지막 잘린 스냅샷을 「truncated」로 표시해 요약 전용으로만 (C-AGG-01).
 function parse(text) {
   const snaps = [];
+  const collectionRows = [];
   let cur = null;
   const close = () => {
     if (cur) snaps.push(cur);
     cur = null;
   };
   for (const raw of text.split(/\r?\n/)) {
+    const collectionAt = raw.indexOf("[DPS-RUN] ");
+    if (collectionAt >= 0) {
+      const line = raw.slice(collectionAt + 10).trim();
+      if (/^(begin|finishing|end) /.test(line)) collectionRows.push(kv(line));
+      continue;
+    }
     const at = raw.indexOf("[DPS] ");
     if (at < 0) continue;
     const line = raw.slice(at + 6).trim();
@@ -108,6 +115,15 @@ function parse(text) {
   for (const [run, list] of byRun) {
     const complete = list.filter((x) => x.complete);
     const pick = complete.length ? complete[complete.length - 1] : list[list.length - 1];
+    // Collection outcome is independent of HP-ledger validity. Old logs without
+    // collection rows remain valid and explicitly have an unreported outcome.
+    pick.collection = {};
+    for (const row of collectionRows) {
+      if (row.label !== pick.window.scene || (row.run && Number(row.run) !== run)) continue;
+      for (const key of ["capture_id", "capture_origin", "raw_file", "device", "input", "reason"]) {
+        if (row[key] !== undefined) pick.collection[key] = row[key];
+      }
+    }
     pick.snapshots = list.length;
     pick.snapshotsComplete = complete.length;
     out.push(pick);
@@ -220,6 +236,11 @@ function summarize(r, gapArg) {
     recover_s: o.recover && o.recover !== "-" ? o.recover.split(",").map(Number) : [], wipe_open: o.wipe_open,
   }));
   return Object.assign({ run: r.key || String(r.run), scene_label: w.scene }, meta, {
+    capture_id: r.collection?.capture_id || null, capture_origin: r.collection?.capture_origin || null,
+    raw_file: r.collection?.raw_file || null, device: r.collection?.device || null,
+    input: r.collection?.input || meta.input,
+    outcome_reason: r.collection?.reason || null,
+    outcome: !r.collection?.reason ? "unreported" : (["cleared", "duration", "recovered"].includes(r.collection.reason) ? "completed" : "not_completed"),
     duration_s: dur, effective: eff, raw: Number(w.raw), absorbed: Number(w.absorb), overkill: Number(w.over),
     verdict, snapshots: r.snapshots || 1, snapshots_complete: r.snapshotsComplete || 0,
     total_dps: dur > 0 && verdict !== "rejected" ? r2(eff / dur) : null,
@@ -279,18 +300,18 @@ function markdown(report) {
   L.push("- 입력: " + report.inputs.join(", "));
   L.push("- 실측 = 서버 HP 원장(Monster.ApplyHpDamage → Telemetry.DpsHit). 설명 1타·가정 상한은 오프라인 계산이며 실측이 아니다. 셋을 더하거나 서로 대신하지 않는다.");
   L.push("- 공백 임계값: " + (report.gap_s === null ? "서버 DpsGapSec(기본 3초)" : report.gap_s + "초(재계산)") + ". 전투 구간 = 유효 피해 사이 간격이 임계값 이하인 부분.", "");
-  L.push("| 실행 | 레벨 | 빌드 | 장면 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 걸러낸 기록(대상 밖) | 원장 검사 | 판정 | 스냅샷(완결/전체) |");
-  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  L.push("| 실행 | 레벨 | 빌드 | 장면 | 입력 | 기기 | 종료 사유 | 반복 | 총구간(초) | 유효 피해 | 총구간 DPS | 전투 구간 DPS | 전투 시간 방식 | 미상 비율 | TTK 중앙 (표본/미처치) | 플레이어 사망 | 걸러낸 기록(대상 밖) | 원장 검사 | 판정 | 스냅샷(완결/전체) |");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of report.runs) {
     const deaths = s.owners.reduce((a, o) => a + (o.deaths || 0), 0);
-    L.push("| " + [s.run, cell(s.level, "-"), cell(s.build, "-"), s.scene, cell(s.rep, "-"), s.duration_s, s.effective, cell(s.total_dps, "-"), cell(s.combat_dps, "-"), s.combat.method,
+    L.push("| " + [s.run, cell(s.level, "-"), cell(s.build, "-"), s.scene, cell(s.input, "미기록"), cell(s.device, "미기록"), cell(s.outcome_reason, "미기록"), cell(s.rep, "-"), s.duration_s, s.effective, cell(s.total_dps, "-"), cell(s.combat_dps, "-"), s.combat.method,
       cell(s.unknown_ratio, "-"), cell(s.ttk.median, "-") + " (" + s.ttk.samples + "/" + s.ttk.censored + ")", deaths, s.filtered, s.ledger_check.status, s.verdict, s.snapshots_complete + "/" + s.snapshots].join(" | ") + " |");
   }
   L.push("", "## 설명 1타 / 가정 상한 / 실측", "");
-  L.push("| 레벨 | 빌드 | 대표 스킬 | 설명 1타 | 자기 표식 1타 | 가정 상한 (1타×발수÷재사용) | 실측 총구간 DPS (중앙·원장 ok만) | 실측 전투 구간 DPS (중앙·원장 ok만) | 수용/요약 전용/거부 |");
-  L.push("|---|---|---|---|---|---|---|---|---|");
+  L.push("| 레벨 | 빌드 | 장면 | 입력 | 기기 | 종료 사유별 수 | 대표 스킬 | 설명 1타 | 자기 표식 1타 | 가정 상한 (1타×발수÷재사용) | 실측 총구간 DPS (중앙·원장 ok만) | 실측 전투 구간 DPS (중앙·원장 ok만) | 수용/요약 전용/거부 |");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const row of report.three_columns) {
-    L.push("| " + [row.level, row.build, cell(row.skill, "-"), cell(row.one_hit, "미계산"), cell(row.one_hit_marked, "-"), cell(row.upper, "미계산"),
+    L.push("| " + [row.level, row.build, cell(row.scene, "미측정"), cell(row.input, "미기록"), cell(row.device, "미기록"), Object.entries(row.outcomes).map(([k,v]) => k + ":" + v).join(",") || "-", cell(row.skill, "-"), cell(row.one_hit, "미계산"), cell(row.one_hit_marked, "-"), cell(row.upper, "미계산"),
       cell(row.measured_total, "미측정"), cell(row.measured_combat, "미측정"), row.runs_accepted + "/" + row.runs_summary_only + "/" + row.runs_rejected].join(" | ") + " |");
   }
   L.push("", "소환 빌드의 1타·상한은 계산기가 소환수 실제 적중 수·가동률을 모르므로 미계산이다 (comparison.csv의 power 0).");
@@ -310,6 +331,7 @@ function markdown(report) {
         o.soul_raise + "/" + o.soul_extract + "/" + o.soul_other, o.legion_max, o.legion_loss + "(" + o.legion_loss_reason + ")", o.wipes, rec].join(" | ") + " |");
     }
   }
+  L.push("", "원장 판정과 장면 종료 사유는 별개다. 원장이 정확한 사망·이탈·시간 초과 표본도 이유와 함께 남긴다. 장면·입력·기기가 다른 표본은 중앙값을 섞지 않는다.");
   L.push("", "unsupported = 그 값을 정확히 세는 hook이 아직 없다 (0이 아니다 · patch_requests 참고). 표본 값은 0.25초 표본 사이의 상쇄를 못 본다.");
   return L.join("\n") + "\n";
 }
@@ -326,19 +348,38 @@ function aggregate(texts, opts) {
   const gap = opts.gap ? Number(opts.gap) : null;
   const summaries = runs.map((r) => summarize(r, gap));
   const calc = calcColumns(opts.calc || null);
-  const keys = new Set(Object.keys(calc));
-  for (const s of summaries) if (s.level && s.build) keys.add(s.level + "/" + s.build);
-  const three = [...keys].sort((a, b) => {
-    const [la, ba] = a.split("/");
-    const [lb, bb] = b.split("/");
-    return Number(la) - Number(lb) || ba.localeCompare(bb);
-  }).map((key) => {
+  // Only equal scenario/input/device conditions share a measured median.
+  // Calculation columns still belong to level/build and are repeated as context.
+  const groups = new Map();
+  const coveredCalc = new Set();
+  for (const s of summaries) {
+    if (!s.level || !s.build) continue;
+    const identity = [s.level, s.build, s.scene, s.input || null, s.device || null];
+    const key = JSON.stringify(identity);
+    if (!groups.has(key)) groups.set(key, { identity, all: [] });
+    groups.get(key).all.push(s);
+    coveredCalc.add(s.level + "/" + s.build);
+  }
+  for (const key of Object.keys(calc)) {
+    if (coveredCalc.has(key)) continue;
     const [level, build] = key.split("/");
-    const all = summaries.filter((s) => s.level + "/" + s.build === key);
+    const identity = [Number(level), build, null, null, null];
+    groups.set(JSON.stringify(identity), { identity, all: [] });
+  }
+  const three = [...groups.values()].sort((a, b) => {
+    return a.identity[0] - b.identity[0] || JSON.stringify(a.identity.slice(1)).localeCompare(JSON.stringify(b.identity.slice(1)));
+  }).map(({ identity, all }) => {
+    const [level, build, scene, input, device] = identity;
     const mine = all.filter((s) => s.verdict === "accepted");
-    const c = calc[key] || {};
+    const c = calc[level + "/" + build] || {};
+    const outcomes = {};
+    for (const s of all) {
+      const reason = s.outcome_reason || "unreported";
+      outcomes[reason] = (outcomes[reason] || 0) + 1;
+    }
     return {
-      level: Number(level), build, skill: c.skill || null, one_hit: c.one_hit ?? null, one_hit_marked: c.one_hit_marked ?? null, upper: c.upper ?? null,
+      level, build, scene, input, device, outcomes,
+      skill: c.skill || null, one_hit: c.one_hit ?? null, one_hit_marked: c.one_hit_marked ?? null, upper: c.upper ?? null,
       measured_total: r2(median(mine.map((s) => s.total_dps).filter((v) => v !== null))),
       measured_combat: r2(median(mine.map((s) => s.combat_dps).filter((v) => v !== null))), runs: mine.length,
       runs_accepted: mine.length, runs_summary_only: all.filter((s) => s.verdict === "summary_only").length, runs_rejected: all.filter((s) => s.verdict === "rejected").length,

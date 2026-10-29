@@ -1,6 +1,6 @@
 -- I08 현장 보고 (10-30): 의식 의뢰 4 보고 · 의뢰 5 수락을 피의 제단 앞에서 — 실제 PlayerQuest 본문(NearGiver·FieldHandoff*·RequestAccept·RequestTurnIn)을 돌린다.
 --   TurnIn(보상 지급)은 아이템 담당 구간이라 대신한다(지급 횟수·가방 거절만 흉내). 엔진 동기화·실제 제단 엔티티 생성·UI는 메이커 몫
--- @source PlayerQuest Quest/PlayerQuest.mlua Current,SameDifficulty,NearGiver,FieldHandoffQuest,FieldHandoffStep,FieldHandoffMarker,FieldHandoffOk,RequestAccept,RequestTurnIn,IsGearChoiceQuest,TraceQuestStep,FirstGearQuest,StartGearWatch,GearChangedSlot,TraceGearUse,NoteGearAtCredit,GetSaveData
+-- @source PlayerQuest Quest/PlayerQuest.mlua Current,SameDifficulty,NearGiver,FieldHandoffQuest,FieldHandoffStep,FieldHandoffMarker,FieldHandoffOk,RequestAccept,RequestTurnIn,IsGearChoiceQuest,TraceQuestStep,FirstGearQuest,StartGearWatch,GearChangedSlot,NoteGearEquipped,TraceGearUse,NoteGearAtCredit,GetSaveData
 function isvalid(x) return x ~= nil end
 local Q = {
   [1] = { title = "빈 굴", kind = "clear", map = "hollow", map1 = "", giver = "quest", act = 1, reward = "skp:2,gen:3" },
@@ -17,7 +17,9 @@ _GameConst = {
   DifficultyOfMap = function(_, n) if n:match("_nm$") then return 1 elseif n:match("_hell$") then return 2 end return 0 end,
 }
 local tel = {}
-_Telemetry = { First = function(_, _, stage) tel[stage] = (tel[stage] or 0) + 1 end }
+local activity = 0
+_Telemetry = { First = function(_, _, stage) tel[stage] = (tel[stage] or 0) + 1 end, NoteActivity = function() activity = activity + 1 end }
+_UtilLogic = { ElapsedSeconds = 0 }
 local altar = { pos = { 9.5, 16.5 } }
 local markers = { { MarkerId = "blood_altar", Entity = altar }, { MarkerId = "other", Entity = { pos = { 0, 0 } } } }
 local function map(name) return { Name = name, GetChildComponentsByTypeName = function(_, t) assert(t == "script.QuestMarker") return markers end } end
@@ -46,6 +48,7 @@ pq.TurnIn = function(self, gearSlot)   -- 지급부 대역: 기존 TurnIn처럼 
   self.State = 0
   -- 10-30 통합(P8): 실제 TurnIn 공통 성공 경로 끝과 같은 후처리 (실제 본문은 items·items_reforge가 진짜 TurnIn으로 확인)
   self:TraceQuestStep(reportIndex, "report", reportField)
+  _Telemetry:NoteActivity(self.Entity)
   if reportIndex == self:FirstGearQuest() and self.Diff == 0 then self:StartGearWatch() end
 end
 local saved = { ByDiff = pq.ByDiff, Sealed = pq.Sealed, ChoicePicks = pq.ChoicePicks, ChoiceTiers = pq.ChoiceTiers }
@@ -91,14 +94,17 @@ assert(pq.ByDiff == saved.ByDiff and pq.Sealed == saved.Sealed and pq.ChoicePick
 assert(pq:FirstGearQuest() == 1)
 notices = 0
 set(1, 2, 0, "town", { 0, 0 }); nearNpc = true; expectTurnIn(true, "q1 report"); assert(notices == 1 and pq.GearWatch and tel.gearReward == 1, "gear guidance once")
-local here = player.CurrentMap
+-- 10-30 F AD0137: gearUse = 수동 장착 성공(GearEquipped → NoteGearEquipped) 뒤 그 기본 맵의 유효 피해(PlayerDealtDamage → TraceGearUse(맵 이름)) — 연결은 growth 그룹
+local here = "town"
 pq:TraceGearUse(here); assert(tel.gearUse == nil, "same gear is not use")
 inv.Equip.weapon = "scythe1"; inv.Equip.helm = nil; pq:TraceGearUse(here); assert(tel.gearUse == nil)
 inv.Equip.armor = "rare-armor"; pq:NoteGearAtCredit(); assert(tel.gearChangedAtCredit == 1 and tel.gearUse == nil and pq.GearWatch, "credit only is not use")
-pq:TraceGearUse(map("cellar1")); assert(tel.gearUse == nil and pq.GearWatch, "kill on another map")
-alive = false; pq:TraceGearUse(here); alive = true; assert(tel.gearUse == nil, "dead killer")
+pq:TraceGearUse(here); assert(tel.gearUse == nil and pq.GearWatch, "worn without a successful manual equip is not use")
+pq:NoteGearEquipped("armor")
+pq:TraceGearUse("cellar1"); assert(tel.gearUse == nil and pq.GearWatch, "damage on another map")
+alive = false; pq:TraceGearUse(here); alive = true; assert(tel.gearUse == nil, "dead owner")
 inv.Equip.armor = nil; pq:TraceGearUse(here); assert(tel.gearUse == nil and pq.GearWatch, "reverted before fight")
-inv.Equip.armor = "rare-armor"; pq:TraceGearUse(here); assert(tel.gearUse == 1 and not pq.GearWatch, "first own fight with new gear")
+inv.Equip.armor = "rare-armor"; pq:TraceGearUse(here); assert(tel.gearUse == 1 and not pq.GearWatch, "first effective damage with new gear")
 inv.Equip.boots = "x"; pq:TraceGearUse(here); assert(tel.gearUse == 1, "gear use once")
 set(1, 2, 1, "town_nm", { 0, 0 }); nearNpc = true; notices = 0; expectTurnIn(true, "nightmare q1"); assert(notices == 0, "no guidance on replay difficulty")
 set(3, 2, 0, "town", { 0, 0 }); nearNpc = true; notices = 0; expectTurnIn(true, "q3 report"); assert(notices == 0, "guidance only for first gear quest")
