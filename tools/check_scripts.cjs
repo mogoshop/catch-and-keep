@@ -7,6 +7,7 @@
 //   5. ExecSpace 경계 — ServerOnly 메서드에서 ClientOnly 메서드 호출(또는 반대)은 조용히 무시되므로 오류
 //   6. 같은 이름 스크립트 중복
 //   7. 다중 반환 선언 (method integer, integer F) — 메이커가 스크립트 전체를 조용히 등록하지 않는다
+//   8. 기본 인자 (method void F(integer a = 0)) — mLua가 변환하지 못해 스크립트가 LEA-3015 CannotLoad (10-29 INT-02 회귀)
 // 사용: node tools/check_scripts.cjs [--quiet]
 "use strict";
 const path = require("path");
@@ -84,6 +85,10 @@ for (const s of user) {
   if (s.duplicateOf) report(s, s.line, `스크립트 이름 '${s.name}' 중복 (${path.relative(ROOT, s.duplicateOf)})`);
   for (const [name, sigs] of Object.entries(s.methods)) {
     for (const sig of sigs) if (/,/.test(sig.ret.replace(/<[^>]*>/g, ""))) report(s, sig.line, `${name}: 다중 반환 선언 '${sig.ret}' — 메이커가 스크립트를 등록하지 않는다 (table로 반환)`);
+    for (const sig of sigs) {
+      const opt = sig.params.filter((p) => p.optional).map((p) => p.name);
+      if (opt.length) report(s, sig.line, `${name}: 기본 인자 (${opt.join(", ")}) — mLua는 기본 인자를 변환하지 못한다(LEA-3015) — 호출처에서 값을 명시`);
+    }
   }
   const code = scrub(s.src, true);       // 문자열 내용 가림
   const withStrings = scrub(s.src, false); // 주석만 제거
