@@ -518,7 +518,8 @@ function syncSpawnZones(results) {
   const header = ["map", "zone", "x0", "y0", "x1", "y1", "match", "share", "note"];
   const done = new Set(results.map((r) => r.id));
   const keep = fs.existsSync(file) ? readCsv("spawn_zones").rows.filter((r) => !done.has(r.map)) : [];
-  const rows = [...keep, ...results.flatMap((r) => spawnZoneRows(r.id, r.spec))];
+  const rows = [...keep, ...results.flatMap((r) => spawnZoneRows(r.id, r.spec))]
+    .map((r, i) => [r, i]).sort((a, b) => (a[0].map < b[0].map ? -1 : a[0].map > b[0].map ? 1 : a[1] - b[1])).map(([r]) => r);   // 맵 id 순 (어느 액트를 먼저 짓든 같은 파일)
   if (!rows.length && !fs.existsSync(file)) return;
   writeCsv(file, header, rows);
 }
