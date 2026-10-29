@@ -103,11 +103,21 @@ function windowFrame(b, name, opts) {
 }
 
 // 테두리 단추(btn_frame) 글자 칸: 양 끝 장식 안쪽 여백 + 넘치면 줄이기 (ui-tokens buttonText — 지금 글자 크기를 최대로)
-function fitButtonText(b, name) {
+//   opts.oneLine: 위아래 여백으로 글 칸을 한 줄 높이로 줄여, 길면 두 줄로 접지 않고 글자를 줄인다
+//   (BestFit은 두 줄이 칸에 들어가면 줄이지 않는다 — 10-29 통합 메이커: 「여러 개 선택」·「외형 변화 없는 부위」가 두 줄로 접혔다)
+function fitButtonText(b, name, opts = {}) {
   const T = require("./ui-tokens.cjs");
   const t = b.getComponent(name, "MOD.Core.TextGUIRendererComponent");
   if (!t) throw new Error(`fitButtonText: ${name}에 글자가 없다`);
-  b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", T.buttonText(t.FontSize || T.BUTTON.font));
+  const size = t.FontSize || T.BUTTON.font;
+  const fit = T.buttonText(size);
+  if (opts.oneLine) {
+    const rt = b.getComponent(name, "MOD.Core.UITransformComponent");
+    const h = rt && rt.RectSize ? rt.RectSize.y : T.BUTTON.h;
+    const v = Math.max(0, Math.floor((h - size * 1.5) / 2));
+    fit.Padding = { ...fit.Padding, top: v, bottom: v };
+  }
+  b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", fit);
 }
 
 // 잠금 표지 (10-29 기획서 45 결정 6-A 「잠금」): 칸 왼쪽 위 금빛 ★. 꺼진 채로 두고 InventoryWindow.DrawItem이 잠긴 물건 칸에만 켠다

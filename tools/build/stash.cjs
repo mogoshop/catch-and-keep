@@ -42,7 +42,8 @@ function run() {
   });
   b.text(w + '/BagLabel', '가방', { anchor: 'top-left', pos: [28, -660], rect_size: [1044, 36], size: 24, color: '#C9BBA0', alignment: 3 });
   grid(b, w + '/Bag', 60, [28, -698], 2, 'B');
-  b.text(w + '/Info', '', { anchor: 'bottom-left', pos: [28, 24], rect_size: [1044, 40], size: 22, color: '#D9CDB4', alignment: 3, bestfit: true, min_size: 16, max_size: 22 });
+  b.text(w + '/Info', '', { anchor: 'bottom-left', pos: [60, 24], rect_size: [1012, 40],   // x 60: 창 틀 모서리 장식이 첫 글자를 가렸다 (10-29 통합 메이커)
+  size: 22, color: '#D9CDB4', alignment: 3, bestfit: true, min_size: 16, max_size: 22 });
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;
 }

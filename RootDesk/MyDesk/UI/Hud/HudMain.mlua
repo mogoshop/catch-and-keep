@@ -424,7 +424,9 @@ script HudMain extends Logic
         end
         local e = _UIKit:Get("ComboHead")
         if not isvalid(e) then return end
-        e.Enable = not _UIKit:AnyWindowOpen()
+        -- 습격 예고 글(RaidText · 3초)이 떠 있는 동안은 숨긴다 — 둘 다 머리 위 높이라 글자가 겹쳤다 (10-29 통합 메이커)
+        local raid = _UIKit:Get("RaidText")
+        e.Enable = not _UIKit:AnyWindowOpen() and not (isvalid(raid) and raid.Enable)
         local t = now - self.ComboPunchAt
         local pop = math.max(0, 1 - t / 0.18) * (self.ComboTierUp and 0.7 or 0.4)
         e.UITransformComponent.UIScale = Vector3(1 + pop, 1 + pop, 1)
@@ -631,7 +633,7 @@ script HudMain extends Logic
     method void RaidDefeated(integer n, integer gold)
         -- 격퇴 (글귀 후보 1): 「습격 격퇴 · N마리」 + 골드 주머니 안내 — 10-29 코덱스 격퇴 판(RaidPlate) 위에 알림 띠와 같은 글자 양식으로
         _UIKit:SetText("RaidPlate/Title", "습격 격퇴 · " .. tostring(n) .. "마리")
-        _UIKit:SetText("RaidPlate/Body", gold > 0 and ("골드 주머니 " .. tostring(gold) .. "이 발밑에 떨어졌습니다") or "")
+        _UIKit:SetText("RaidPlate/Body", gold > 0 and ("골드 주머니가 발밑에 떨어졌습니다 · " .. tostring(gold) .. " 골드") or "")
         _UIKit:SetEnabled("RaidText", false)
         self.RaidPlateUntil = _UtilLogic.ElapsedSeconds + 4
         self:RenderRaidPlate()

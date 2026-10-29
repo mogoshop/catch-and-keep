@@ -61,7 +61,7 @@ b.button(w+'/BtnMulti','여러 개 선택',{anchor:'top-left',pos:[1218,-892],re
 //   물건을 고르면 켜진다 (InventoryWindow.Poll). 설명 첫 두 줄(이름·종류)은 짧아 단추와 겹치지 않는다 — 글귀 승인 전
 b.button(w+'/BtnLock','잠금',{anchor:'top-left',pos:[1188,-124],rect_size:[160,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22,color:'#E6DCC6',enable:false});
 // 테두리 단추 글자: 장식 안쪽 여백 + 넘치면 줄이기 (ui-tokens buttonText — 다른 창과 같은 규격)
-for(const n of ['Doll/BtnPreview','BtnEquip','BtnSell','BtnSort','BtnMulti','BtnLock'])fitButtonText(b,w+'/'+n);
+for(const n of ['Doll/BtnPreview','BtnEquip','BtnSell','BtnSort','BtnMulti','BtnLock'])fitButtonText(b,w+'/'+n,{oneLine:n==='Doll/BtnPreview'||n==='BtnMulti'||n==='BtnSort'});   // 긴 글(「외형 변화 없는 부위」「여러 개 선택」)·좁은 칸(iPad 「정렬」 96px)은 두 줄로 접지 않고 줄인다
 b.write(file,{lint_verbose:true});
 return b.listEntities().length;
 }
