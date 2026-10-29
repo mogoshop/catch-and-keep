@@ -62,6 +62,7 @@
    - **남은 것(사용자 판단 대기)**: 새 글귀 51줄 `docs/requests/copy-review-20261029-pm.md`(「번호: 새 글귀」로 답) · (다) 아이콘 18장 업로드(권한) · (가) 오라 3종 시전음 · 바닥 섞기 거울 무늬 방식 · `SkillBook.MigrateRework`의 옛 저장 이전 안내 배너(「스킬·능력치가 새로 바뀌었습니다」 — 49·50처럼 지울지).
    - **메이커로 못 본 것**: 16:9 휴대폰 미리보기(도구가 기기 프리셋을 못 바꿈 — iPad만 확인, 휴대폰 배치는 check_mobile_layout 통과) · 모바일 실제 손가락 입력(끌기·터치는 MobilePad·ClickControl 처리 함수를 같은 순서로 불러 확인) · 그림자 특기 회피·경직 글자(치명만 실전 확인).
 9. **10-29 저녁 가독성 3건+거인 편성 줄+검사기 통합·재검증** (RB-20261029-1903, main·codex 푸시): 병합 c3979f70(wip/ui-readability-1709 — QR1629-OBS-01 비용 줄 · OBS-02 iPad 시간선 · INT1725-OBS-01 카드 경고 넘침 · INT1725-OBS-02 거인 편성 줄) · 83848dfb(wip/checker-ad2-01 검사기 오탐) → ad3a693e CARD-E1E-R01(경고 때 대검 카드 「반경 ×1.8」 유지) → 6e0b8e8a 숫자 뒤 조사(「랭크 2은」 M18-OBS-03 외 5곳, copy-review 62~67·I03-8 승인 전) → 메이커 PC·iPad 프리셋 「후」 11장면 Claude 판정 통과(I03-3·4·5 실패→통과 · I03-6·UI-5 부분확인→통과). 증거 `docs/evidence/2026-10-29-readability/`(README·`maker-results-readability.json` — 공유 폴더에도). 새 관찰(수정 안 함): RB-OBS-02 카드 설명 칸 단어 중간 접힘 · RB-OBS-03 거인 몸이 변이면 쌍칼 경고 빈칸 · RB-OBS-04 iPad 넘김 단추가 첫 열 고리와 겹침. 코덱스 독립 판정 대기.
+   - RB-OBS-04 고침(`45ac5ea0`, RB-12 · 같은 RB 증거 폴더): iPad 시간선 열을 넘김 단추 칸 사이로(모바일 첫 열 44→100 · 열 간격 134→130 · Prev x24~68·Next x1230~1274 그대로 · 간격 10/16 · PC·글자·창·줄 112 그대로) · check_mobile_layout에 넘김 단추 vs 첫/끝 열 칸·테두리·상태 글 검사(음성 대조 5건) · 메이커 PC·iPad 1·2쪽 런타임 겹침 없음 · 실제 포인터(maker_mouse_input)는 엔진 UI 단추를 못 눌러 사각형 적중 판정·직접 ButtonClickEvent로 쪽 넘김/선택 구분 확인.
 
 ## 5. 알아 둘 함정
 

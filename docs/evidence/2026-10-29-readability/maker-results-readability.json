@@ -10,7 +10,8 @@
   ],
   "fixes": [
    "ad3a693e CARD-E1E-R01",
-   "6e0b8e8a 숫자 뒤 조사(M18-OBS-03)"
+   "6e0b8e8a 숫자 뒤 조사(M18-OBS-03)",
+   "45ac5ea0 RB-OBS-04 넘김 단추 겹침(RB-12 — 아래 addendum_rb12)"
   ],
   "files": [
    {
@@ -74,6 +75,22 @@
   ],
   "final": "편집 모드 · map01 · 플랫폼 PC(FHD)",
   "conversion_error_dialog": "18:29부터 떠 있던 「Error — An error occurred during mlua conversion」 — refresh 전 build 로그 547줄 전부 17:25:52(Info 453·Warning 94·Error 0), normal 로그 0줄(직전 담당이 지움) → 원인 줄 못 찾음. 사용자가 닫은 뒤 refresh·play 정상"
+ },
+ "addendum_rb12": {
+  "head": "45ac5ea00b859da37119e5805f9c5aeda000ed4c",
+  "parent": "5d41ecad",
+  "files": {
+   "RootDesk/MyDesk/UI/Windows/SkillWindow.mlua": "cf76d65b366a6e229a517d31cc5de2d8d2f40e4aa1258df806306b87d6480e39",
+   "tests/quality/skills.lua": "471123b384a1a1cb34830b9e7cd913d88d61fed21106bbe6f28ff0ff0173a03f",
+   "tools/check_mobile_layout.cjs": "a57f7f2c064ae26cd2b5bccafc582285e5f321668e588939714d5db5ff2802ae"
+  },
+  "refresh": "20:00:33 (멈춤 확인 20:00:21 → 6초 → SkillWindow touch → 6초 → refresh 한 번)",
+  "plays": [
+   "20:00:50 PC FHD → 방 server_instance_game:s1b87f7c2190",
+   "20:02:53 iPad 프리셋 → 방 server_instance_game:s1b87ff68429"
+  ],
+  "final": "편집 모드 · 플랫폼 PC(FHD)",
+  "save": "두 방 모두 PlayerSave.IsLoadSuccess=false(saveOff=true) · 슬롯 4 Lv40 그대로"
  },
  "character": {
   "slot": 4,
@@ -247,7 +264,7 @@
    "unverified_edges": [
     "iPad 프리셋 미리보기 잘림 — 판정은 런타임 사각형 계산",
     "실기기·물리 터치 아님",
-    "관찰 RB-OBS-04: 넘김 단추 TL/Prev가 첫 열 고리 왼쪽 아래와 겹침(306 이전부터 같은 자리, 이번 수정 범위 밖)",
+    "관찰 RB-OBS-04: 넘김 단추 TL/Prev가 첫 열 고리 왼쪽 아래와 겹침(306 이전부터 같은 자리, 이번 수정 범위 밖 → 뒤에 RB-12·45ac5ea0로 고침)",
     "Lv10 장면 HUD 경험치 막대 분모 132578은 앞 Lv20 준비값이 남은 것(표시만)"
    ]
   },
@@ -444,6 +461,143 @@
    ]
   },
   {
+   "id": "RB-12",
+   "case": "RB-OBS-04 (iPad 프리셋) 시간선 넘김 단추 TL/Prev·TL/NextPage가 첫 열 칸·테두리·상태 글과 겹침 → 열을 넘김 단추 칸 사이로 (45ac5ea0)",
+   "client": "iPad 프리셋 + PC(대표 시간선)",
+   "resolution": "PC 프리셋 FHD 1920×1080 (maker_screenshot 원본 2197×1236) / iPad 프리셋 Apple iPad (5th gen) 2048×1536, safeArea 끔 (maker_screenshot 원본 1648×1236 · 실기기 아님 · 미리보기는 모서리를 잘라 찍음)",
+   "pre_state": "같은 Lv20 슬롯 4 준비(RB-03·RB-05와 같음): Lv20 · Exp 0/132578(표시) · skp0 · bone_shard4·raise_skeleton1·wraith_dash1 · 시험 반지(골편+1·질주+2·시전17.5) RequestEquip · 두 방 모두 입장 직후 PlayerSave.IsLoadSuccess=false(saveOff=true) · 슬롯 4 Lv40 저장본은 그대로",
+   "steps": [
+    "45ac5ea0 — SkillWindow.RenderTimeline 모바일 분기만: 첫 열 왼쪽 44→100(새 속성 MobileX0) · 열 간격 134→130 · 넘김 단추 자리·칸 88·테두리 96·줄 112·상태 글·글자 크기·창 크기 그대로 · PC 분기(x0 44·한 판·넘김 단추 꺼짐) 그대로",
+    "tools/check_mobile_layout.cjs: 넘김 단추 Prev/Next vs 첫·마지막 열 칸·테두리·상태 글 겹침 + 막대가 판 안쪽 안 검사 추가 · 음성 대조(예전 44/134를 메모리에서만 넣음 → 문제 5건, exit 1)",
+    "메이커: 멈춤 확인 20:00:21 → 6초 → SkillWindow touch → 6초 → refresh 한 번(20:00:33)",
+    "PC play(20:00:50) → 슬롯 4 · 혼자 → 준비 → BtnSkill → 골편 칸 → 런타임 값·캡처",
+    "iPad 프리셋 play(20:02:53) → 같은 준비 → BtnMenu → MenuWin/Skill → 골편 칸 → 1쪽 런타임 RectTransform 사각형·캡처 → 직접 TL/NextPage로 2쪽 → 캡처",
+    "실제 포인터 maker_mouse_input(iPad 2048×1536, 아래가 0): 옛 겹침 지점·새 Prev 가운데·첫 스킬 고리 가운데·Prev와 고리 사이 틈·Next 가운데 — 미리 단추 5개(TL/Prev·TL/NextPage·C1/S1·C1/S2·C2/S1)에 ConnectEvent(ButtonClickEvent, log) + _InputService ScreenTouchEvent 로그",
+    "같은 점의 런타임 RectTransform 적중 판정(전 = 첫 열 56·마지막 열 24 왼쪽으로 되돌린 같은 사각형) · 직접 ButtonClickEvent(SendEvent)로 받는 핸들러 구분·쪽 경계 1→2→3→2"
+   ],
+   "expected": "넘김 단추가 고리·상태 글·칸(누르는 자리)과 겹치지 않는 자기 칸 · 랭크/배우기 글 읽힘 · 줄 간격 112 · 막대 판 안 · 쪽 1→2→3→2 · PC 그대로 · 글자 축소·창 확대 없음",
+   "actual": "iPad 1쪽(20:04:01) 런타임: MobileX0=100 · 열 간격 130 · Prev x24~68 y−224~−136 · C1 테두리 x78~174 y−180~−84(Prev와 간격 10) · C9 테두리 x1118~1214(Next와 간격 16) · Next x1230~1274 · 막대 x100~1270 · 겹침 없음. 2쪽(20:08:52)도 Prev x24~68 · C1 칸 x82~170 · C1 테두리 x78~174 · Next x1230~1274. 화면: 「<」「>」가 첫·끝 열 바깥 칸에 따로 서고 「1/3」「배우기」「Lv21」 상태 글·둘째 줄·막대 그대로(step=112·barY=−318 로그). 적중 판정: 옛 겹침 점 local(47,−156) 전=Prev+C1칸1+C1테두리1 → 후=Prev만 · Prev 가운데(46,−180) 전=Prev+C1테두리1+C1상태글1 → 후=Prev만 · 틈(73,−160) 전=C1칸1+테두리1 → 후=없음 · 첫 고리 가운데(126,−132) 후=C1칸1+테두리1만 · Next 가운데 전·후 NextPage만. 직접 ButtonClickEvent: TL/Prev → 쪽만 2→1(선택 bone_shard 그대로) · C2/S1 → 선택만 bone_armor(쪽 1 그대로) · C1/S1 → 선택만 raise_skeleton(쪽 1 그대로) · NextPage 1→2→3→3(끝에서 멈춤) · Prev 3→2→1. PC(20:01:50): MobileX0=100이어도 C1.x=44 · C2.x=99 · 칸 48 · 막대 x44 폭 1210 · Prev/Next 꺼짐 = 전과 같음",
+   "layout": {
+    "frame": "판 SkillWin/TL 지역 좌표(위-왼쪽 기준, 1298×356, 테두리 24) · 모바일 분기",
+    "before": {
+     "x0": 44,
+     "colW": 134,
+     "C1_slot_x": "26~114",
+     "C1_ring_x": "22~118",
+     "C1_ring_y": "-180~-84",
+     "C1_state_x": "40~100",
+     "C9_ring_end": 1190,
+     "bar_x": "44~1250",
+     "Prev": "x24~68 y-136~-224",
+     "Next": "x1230~1274",
+     "overlap": "Prev × 1열 1줄 칸·테두리·상태 글 · 1열 2줄 칸·테두리"
+    },
+    "after": {
+     "x0": 100,
+     "colW": 130,
+     "C1_slot_x": "82~170",
+     "C1_ring_x": "78~174",
+     "C1_ring_y": "-180~-84",
+     "C1_state_x": "96~156",
+     "C9_ring_end": 1214,
+     "bar_x": "100~1270",
+     "Prev": "x24~68 y-136~-224 (그대로)",
+     "Next": "x1230~1274 (그대로)",
+     "gap_prev_to_ring": 10,
+     "gap_ring_to_next": 16,
+     "overlap": "없음"
+    },
+    "unchanged": "칸 88 · 테두리 96 · 줄 간격 112 · 상태 글 60×16 · 막대 y −318 · 쪽당 9열 · 글자 크기 · 창 크기 · PC 배치"
+   },
+   "pointer_input": {
+    "tool": "maker_mouse_input — iPad 프리셋, 좌표 2048×1536(maker_screenshot 보고 해상도) 아래가 0 · 캡처 파일(1648×1236) 실측 ×1.2427로 환산",
+    "clicks": [
+     {
+      "point": "옛 겹침 지점 local(47,−156)",
+      "screen": [
+       167,
+       1045
+      ],
+      "touch": "ScreenTouch (167.0,1045.0) overUI=false",
+      "button_hits": 0
+     },
+     {
+      "point": "새 Prev 가운데 local(46,−180)",
+      "screen": [
+       166,
+       1011
+      ],
+      "touch": "ScreenTouch (166.0,1011.0) overUI=false",
+      "button_hits": 0
+     },
+     {
+      "point": "첫 스킬 고리 가운데 local(126,−132)",
+      "screen": [
+       279,
+       1079
+      ],
+      "touch": "ScreenTouch (279.0,1079.0) overUI=false",
+      "button_hits": 0
+     },
+     {
+      "point": "Prev와 첫 고리 사이 틈 local(73,−160)",
+      "screen": [
+       204,
+       1039
+      ],
+      "touch": "ScreenTouch (204.0,1039.0) overUI=false",
+      "button_hits": 0
+     },
+     {
+      "point": "Next 가운데 local(1252,−180)",
+      "screen": [
+       1874,
+       1011
+      ],
+      "touch": "ScreenTouch (1874.0,1011.0) overUI=false",
+      "button_hits": 0
+     }
+    ],
+    "result": "다섯 번 모두 게임에 ScreenTouchEvent로 같은 좌표가 도착 · ButtonClickEvent 0건 · 쪽 2·선택 bone_shard 그대로",
+    "limit": "maker_mouse_input은 엔진 UI 단추(ButtonComponent)를 누르지 못함(도구 설명 「Does NOT click engine-managed UI elements」와 같음) → 「쪽 넘김 / 스킬 선택」 구분은 실제 포인터로 확인 못 함. 대신 런타임 RectTransform 적중 판정과 직접 ButtonClickEvent(SendEvent)로 따로 확인 — 포인터 결과와 섞지 않음",
+    "note": "ScreenToLocalUIPosition 역산 화면 좌표(예: Prev 가운데 380.8,951.5)는 iPad 프리셋에서 캡처 자리와 맞지 않아 쓰지 않음(GetWorldCorners와 같은 함정)"
+   },
+   "checks": [
+    "node tools/check_mobile_layout.cjs -v → 문제 0건 · 「Prev x 24~68 · 첫 열 테두리 x 78~ · 9열 테두리 ~1214 · Next x 1230~1274 · 막대 100~1270」",
+    "음성 대조(예전 44/134, 메모리에서만) → 문제 5건 exit 1 (Prev × 1열 1줄 칸·테두리·상태글, 1열 2줄 칸·테두리)",
+    "npm test 12/12 통과",
+    "tests/quality/run.py --lua 5.4 전 그룹 exit 0 · skills 「first column x 100 (RB-OBS-04), PC unchanged」",
+    "LSP diagnose SkillWindow.mlua 오류 0",
+    "node tools/build.cjs ui → ui/GameHUD 변화 없음(다른 창 빌드 흔들림은 되돌림)",
+    "메이커 build 로그 Error 0 (19:58:24 530줄 · 20:00:33 refresh 뒤 같은 시각 — 런타임 MobileX0=100 로그로 새 코드 확인)"
+   ],
+   "before": [
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad_zoom.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/QR1629-OBS-02_M_after_timeline_lv20_p1_ipad.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/QR1629-OBS-02_M_after_timeline_lv20_p1_ipad_zoom.png"
+   ],
+   "after": [
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p1_ipad.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p1_ipad_zoom.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p2_ipad.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p2_ipad_zoom.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_PC_after_timeline_lv20.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_PC_after_timeline_lv20_zoom.png"
+   ],
+   "logs": [
+    "RUN-log.txt 「RB-OBS-04 보완 (45ac5ea0)」 블록 20:00:21~20:09:25",
+    "RB-OBS-04_layout-check.txt"
+   ],
+   "status": "통과",
+   "unverified_edges": [
+    "실제 포인터로 엔진 UI 단추 누름은 도구 한계로 확인 못 함(ScreenTouch만 도달) — 쪽 넘김/선택 구분은 사각형 적중 판정 + 직접 ButtonClickEvent",
+    "iPad 프리셋 미리보기 · 실기기·물리 터치 아님",
+    "3쪽(5열)은 캡처 안 함 — 열이 적어 Next 쪽 여유가 더 큼(검사기는 쪽당 9열 기준으로 판정)",
+    "windowfit over SkillWin outer=1440 limit=1408 줄은 수정 전부터 있던 것(창 크기 안 바꿈)"
+   ]
+  },
+  {
    "id": "RB-UI2",
    "case": "UI-2 F06-C 복합 업적 알림 표시 프레임 (코덱스 추가 요청)",
    "client": "-",
@@ -499,8 +653,13 @@
    "evidence": [
     "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad_zoom.png"
    ],
-   "fixed": false,
-   "note": "306a8f66 이전부터 같은 자리 · 이번 범위 밖"
+   "fixed": true,
+   "fixed_in": "45ac5ea0",
+   "after": [
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p1_ipad_zoom.png",
+    "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-readability/RB-OBS-04_M_after_timeline_lv20_p2_ipad_zoom.png"
+   ],
+   "note": "306a8f66 이전부터 같은 자리 · 보고 뒤 코디네이터 요청으로 RB-12에서 고침(모바일 열을 넘김 단추 칸 사이로 · PC 그대로)"
   }
  ],
  "evidence_sha256": [
@@ -673,8 +832,36 @@
    "sha256": "627b7aae6f04008aad720a44cd6cac582308687bdf21184c993544f7bae2940d"
   },
   {
+   "file": "RB-OBS-04_M_after_timeline_lv20_p1_ipad.png",
+   "sha256": "f96fd3bd3b9e7863c5c21c59c3d398e08ec06e3db235c3f9eedc6718c8f6fa2e"
+  },
+  {
+   "file": "RB-OBS-04_M_after_timeline_lv20_p1_ipad_zoom.png",
+   "sha256": "440845b79b78facc91171ad0212cf59cb0dfaec0a391022f103686d8512e9e83"
+  },
+  {
+   "file": "RB-OBS-04_M_after_timeline_lv20_p2_ipad.png",
+   "sha256": "26bf4cb0676780705615a29c2719e1ac78d28a353c1531a8bad825959d5e0275"
+  },
+  {
+   "file": "RB-OBS-04_M_after_timeline_lv20_p2_ipad_zoom.png",
+   "sha256": "1db5faf957761c062d27c083b93032fb50b6a5278f604f5f75fa794b20bfd7ae"
+  },
+  {
+   "file": "RB-OBS-04_PC_after_timeline_lv20.png",
+   "sha256": "36476cb3f89b66a1dd874149d623b5aa8cdc85103f83ca4627992ea15e0cee87"
+  },
+  {
+   "file": "RB-OBS-04_PC_after_timeline_lv20_zoom.png",
+   "sha256": "6a57ee06b807e3fae11032c9104c6c593be9c221e9f073db29a0fbc2de6cf970"
+  },
+  {
+   "file": "RB-OBS-04_layout-check.txt",
+   "sha256": "51da1a39623d1f775de0e10a74c48d54f9413d09a6e3f5be8a114e71d55343b0"
+  },
+  {
    "file": "RUN-log.txt",
-   "sha256": "cf5bfda3afb93487452a1b89698d0f7e3147abb043028582a105db1e14c25975"
+   "sha256": "e8bf89065af9cb1309adc7621baa02fd66f331b727d32cc5c5c6c86b09c35793"
   },
   {
    "file": "UI-3_PC_after_choice_reward_cards.png",
@@ -694,7 +881,7 @@
   },
   {
    "file": "capture-map.txt",
-   "sha256": "2e157248ce7e26383dcddee48756b9bd28e65d99b173e457294bb578f0ec8875"
+   "sha256": "9416c1df00e8f7966fbab8486ed9916e513384a06001d44cc25033d044126b2d"
   },
   {
    "file": "maker-build-log-RB.json",

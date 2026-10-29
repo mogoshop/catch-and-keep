@@ -64,6 +64,7 @@
 | RB-09 | INT1725-OBS-02 거인 편성 줄 | I03-6 **부분확인**(「편성 6/5: 일반 1·방패 1·거인에 4」) | 「편성: 방패 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 방패 해골(가장 오래된 방패 해골 교체)」 · 갈라진 뒤 「편성 5/5: 일반 2·방패 2·쌍칼 1 …」 · 서버 진단 have6/max5/reserved4/bodies1 | **통과** | `INT1725-OBS-02_PC_after_twin_giant_raise1_zoom.png` |
 | RB-10 | CARD-E1E-R01 반경 ×1.8 | (코드 결함 확정) | 「대검 해골 2기 · 반경 ×1.8」 + 경고 2줄(16px 3줄) | **통과** | `INT1725-OBS-01_PC_after_card_greatsword_zoom.png` |
 | RB-11 | M18-OBS-03 「랭크 2은」 | 관찰 | 「랭크 7 · Lv21부터」·「랭크 16 · Lv42부터」·iPad 「랭크 6 · Lv11부터」 | **통과**(글귀 승인 전) | `QR1629-OBS-01_PC_after_dash_ring_zoom.png` |
+| RB-12 | RB-OBS-04 iPad 시간선 넘김 단추 겹침 → `45ac5ea0`(모바일 첫 열 44→100 · 열 간격 134→130 · 넘김 단추·칸 88·줄 112·글자·창 그대로 · PC 그대로) | Prev x24~68가 첫 열 칸·테두리(22~118)·상태 글과 겹침 | 런타임 Prev x24~68 · 첫 열 테두리 78~174(간격 10) · 9열 끝 1214 · Next 1230(간격 16) · 막대 100~1270 · 겹침 없음 · check_mobile_layout 0건(음성 대조 5건) · 실제 포인터(maker_mouse_input)는 ScreenTouch만 닿고 엔진 UI 단추는 못 누름(도구 한계) → 사각형 적중 판정(옛 겹침 점 전 Prev+C1칸·테두리 → 후 Prev만)·직접 ButtonClickEvent(Prev=쪽만 · 칸=선택만 · 1→2→3→2)로 따로 확인 · 로그 `RUN-log.txt` 20:00~20:09 · `RB-OBS-04_layout-check.txt` | **통과** | `RB-OBS-04_M_after_timeline_lv20_p1_ipad_zoom.png` (전 `QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad_zoom.png`) |
 | RB-UI2 | UI-2 F06-C 복합 알림 표시 프레임 | 자료 공백 | INT1725 담당 보완·코덱스 확인 — **다시 찍지 않음** | 통과(연결만) | `../2026-10-29-integration-i03-i04-ui/UI-2_PC_F06-C_reward_visible.png` |
 
 세부(사전 상태·단계·기대·실제·전/후 절대경로·미확인 경계)는 JSON `cases`.
@@ -73,7 +74,7 @@
 - **RB-OBS-01**: 없음 — 같은 Stat 칸 편성 장면 넘침 없음(코덱스 오프라인 보수 추정 6~7줄보다 실제 4~5줄).
 - **RB-OBS-02** (P3 후보, 기존): 혼의 제물 카드 **설명(Effect)** 칸은 엔진 줄바꿈이라 「방패를 든/다」「4초/마다」「쌍칼을/든다」처럼 단어 가운데서 끊김 — QR1629-OBS-01과 같은 종류. Change 칸만 CardWrap으로 고쳐진 상태. (`INT1725-OBS-01_PC_after_card_shield_loses_gs_zoom.png`)
 - **RB-OBS-03** (관찰, I03 규칙 영역): 거인 몸이 변이 기록(쌍칼 `s:twin!` · 방패 `s:shield!`)이면 쌍칼 노드·카드의 「뼈 거인이 서 있는 동안 0기」 경고가 빈칸(몸이 일반 `s:!`일 때만 보임). 거인 몸 = 목록의 마지막 기록. 방패 몸 때 서버 진단 「다음 소환: 해골 전사(오래된 5기 교체)」(로그 시각이 갈라짐 뒤라 섞였을 수 있음). 오프라인 roster 검사(방패 몸 거인)는 preview==raise 통과 — 결함 단정 안 함. (`INT1725-OBS-02_PC_after_twin_giant_on_twinbody_zoom.png` · `INT1725-OBS-01_PC_after_card_twin_shieldbody_nohint_zoom.png`)
-- **RB-OBS-04** (P3 후보, 기존 배치): iPad 시간선 넘김 단추 `TL/Prev`(44×88, 판 x24~68·y−136~−224)가 첫 열 고리 왼쪽 아래(x26~68·y−136~−176)와 겹침 — 글은 읽히나 터치 대상 겹침 가능. (`QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad_zoom.png`)
+- **RB-OBS-04** (P3 후보, 기존 배치): iPad 시간선 넘김 단추 `TL/Prev`(44×88, 판 x24~68·y−136~−224)가 첫 열 고리 왼쪽 아래(x26~68·y−136~−176)와 겹침 — 글은 읽히나 터치 대상 겹침 가능. (`QR1629-OBS-02_M_after_timeline_lv20_p2_pick_ipad_zoom.png`) → 뒤에 고침: RB-12 · `45ac5ea0`.
 - **MAKER-ENV-01**: 위 2절 — 원인 줄 못 찾음(로그에 없음).
 
 ## 7. 못 한 것 / 대기
@@ -85,4 +86,4 @@
 
 ## 8. 이 폴더 파일
 
-`README.md` · `maker-results-readability.json` · `RUN-log.txt`(추린 로그) · `capture-map.txt`(원본 McpScreenshots 파일명 ↔ 증거 이름 · 확대 범위) · `maker-build-log-RB.json`(19:03:52 build 530줄) · `slot4-pre-post-RB.json` · 캡처 `<ID>_<PC|M>_after_*.png` + `_zoom.png` 25쌍. sha256은 JSON `evidence_sha256`.
+`README.md` · `maker-results-readability.json` · `RUN-log.txt`(추린 로그) · `capture-map.txt`(원본 McpScreenshots 파일명 ↔ 증거 이름 · 확대 범위) · `maker-build-log-RB.json`(19:03:52 build 530줄) · `slot4-pre-post-RB.json` · 캡처 `<ID>_<PC|M>_after_*.png` + `_zoom.png` 26쌍(RB-11까지 23쌍 — 앞서 적은 25는 잘못 · RB-OBS-04 3쌍) · `RB-OBS-04_layout-check.txt`(RB-12 오프라인 검사·음성 대조). sha256은 JSON `evidence_sha256`.
