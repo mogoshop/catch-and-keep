@@ -254,9 +254,21 @@ script UXFeedback extends Logic
     end
 
     method string LineText(string title, string detail, boolean full)
-        -- 큰 알림을 안내 줄로: 제목 · 본문 첫 줄 (full = 창 안 결과 — 본문 전체를 「 · 」로 이어 읽을 수 있게, 줄은 길이만큼 두 줄까지 늘어난다)
+        -- 큰 알림을 안내 줄로: 제목 · 본문 첫 줄 (full = 창 안 결과 — 본문 전체를 「 · 」로 이어 읽을 수 있게, 줄은 글 길이만큼 늘어난다 · NoticeFeed)
+        -- 글자 수는 보이는 글자만 센다 — 서식 태그(<color>)는 세지 않고 자를 때 닫는다 (UIKit.Clip · 10-29 UI-20261029-02 재련 알림 「</color..」)
+        -- 장비 카드의 구분선 줄(────)은 한 줄 알림에서 뜻이 없어 뺀다
         local body = detail or ""
-        if full then body = (string.gsub(body, "\n", " · ")) else body = string.match(body, "^([^\n]*)") or "" end
+        if full then
+            local parts = {}
+            for line in string.gmatch(body .. "\n", "([^\n]*)\n") do
+                local plain = (string.gsub(_UIKit:PlainText(line), "─", ""))
+                plain = (string.gsub(plain, "%s", ""))
+                if plain ~= "" then table.insert(parts, line) end
+            end
+            body = table.concat(parts, " · ")
+        else
+            body = string.match(body, "^([^\n]*)") or ""
+        end
         if body == "" then return title end
         return _UIKit:Clip(title .. " · " .. body, full and 90 or 40)
     end

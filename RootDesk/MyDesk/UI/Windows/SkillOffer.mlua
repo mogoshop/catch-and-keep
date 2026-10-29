@@ -20,6 +20,15 @@ script SkillOffer extends Logic
     property number WinW = 1400             -- 창 폭 (모바일 좁은 화면은 WindowFit이 1368로 · 카드 시작도 같이 옮긴다)
     property number CardLeft = 74           -- 혼의 제물 첫 카드 왼쪽 (오른쪽 「다음 해금」까지 좌우 여백이 같게)
     property number RewardLeft = 174        -- 선택 보상 첫 카드 왼쪽 (카드 셋 가운데)
+    -- HUD 띠(OfferBand) 한 줄 규격 — tools/build/ui-tokens.cjs BAND와 같은 값. 한쪽만 바꾸지 않는다 (10-29 UI-20261029-01)
+    property number BandFont = 24
+    property number BandMinFont = 17        -- 줄여도 이 크기까지 (BAND.minFont = font × 0.7)
+    property number BandPadX = 48           -- 띠 그림(sk_offer_banner) 양 끝 장식 안쪽부터 글자
+    property number BandPadY = 17           -- 72 높이 띠의 글 칸을 한 줄 높이(38)로 좁힌다 — 두 줄이면 들어가지 않아 갈라지지 않는다
+    property number BandMinW = 440          -- 빌드 폭
+    property number BandMaxW = 720          -- PC: 가운데 아래 236~308 줄 — 오른쪽 의뢰 추적판(+518~)과 안 겹치는 폭
+    property number BandMaxWMobile = 600    -- 모바일: 오른쪽 끝 980에 붙여(MobileLayout) 왼쪽으로만 넓힌다 — 380~980 · 오른쪽 스킬 편집 단추(990~)와 안 겹침
+    property string BandLogged = ""
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -86,8 +95,19 @@ script SkillOffer extends Logic
         local band = (pending > 0 or st.SkillPoints > 0) and not _UIKit:AnyWindowOpen()
         _UIKit:SetEnabled("OfferBand", band)
         if band then
-            if pending > 0 then _UIKit:SetText("OfferBand", "선택 보상 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. quest:ChoiceQuestTitle(pending) .. ")"))
-            else _UIKit:SetText("OfferBand", "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")")) end
+            local text
+            if pending > 0 then text = "선택 보상 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. quest:ChoiceQuestTitle(pending) .. ")")
+            else text = "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")") end
+            -- 띠 글은 한 줄 (10-29 UI-20261029-01): 제목이 길면 띠를 넓히고 → 그래도 넘치면 글자를 줄이고 → 끝내 말줄임
+            local maxW = _ApplicationService:IsMobilePlatform() and self.BandMaxWMobile or self.BandMaxW
+            _UIKit:SetBandText("OfferBand", text, self.BandFont, self.BandPadX, self.BandPadY, self.BandMinW, maxW, self.BandMinFont)
+            if text ~= self.BandLogged then
+                self.BandLogged = text
+                local e = _UIKit:Get("OfferBand")
+                if isvalid(e) then
+                    log(string.format("[VRF] offer band w=%d font=%d chars=%d pending=%d", math.floor(e.UITransformComponent.RectSize.x), math.floor(e.TextGUIRendererComponent.FontSize), _UIKit:CharCount(text), pending))
+                end
+            end
         end
         if not _UIKit:IsOpen(self.Win) then return end
         if self.Mode == "reward" then

@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
-const { FRAME, DIALOG } = require('./build/ui-tokens.cjs');
+const { FRAME, DIALOG, BAND } = require('./build/ui-tokens.cjs');
 
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 const prop = (text, name) => {
@@ -16,6 +16,7 @@ const prop = (text, name) => {
 const kit = read('RootDesk/MyDesk/UI/Core/UIKit.mlua');
 const npc = read('RootDesk/MyDesk/UI/Windows/NpcWindow.mlua');
 const story = read('RootDesk/MyDesk/UI/Hud/StoryCard.mlua');
+const offer = read('RootDesk/MyDesk/UI/Windows/SkillOffer.mlua');
 const pairs = [
   ['UIKit.DialogWidth', prop(kit, 'DialogWidth'), DIALOG.width],
   ['UIKit.DialogPadX', prop(kit, 'DialogPadX'), FRAME.padX],
@@ -30,6 +31,14 @@ const pairs = [
   ['UIKit.DialogFontMobile', prop(kit, 'DialogFontMobile'), DIALOG.font.mobile],
   ['NpcWindow.PaperHeight', prop(npc, 'PaperHeight'), DIALOG.npcPaperH],
   ['StoryCard.PaperH', prop(story, 'PaperH'), DIALOG.storyPaperH],
+  // HUD 장식 띠 한 줄 규격 (10-29 UI-20261029-01 · SkillOffer → UIKit.SetBandText)
+  ['SkillOffer.BandFont', prop(offer, 'BandFont'), BAND.font],
+  ['SkillOffer.BandMinFont', prop(offer, 'BandMinFont'), BAND.minFont],
+  ['SkillOffer.BandPadX', prop(offer, 'BandPadX'), BAND.padX],
+  ['SkillOffer.BandPadY', prop(offer, 'BandPadY'), BAND.padY],
+  ['SkillOffer.BandMinW', prop(offer, 'BandMinW'), BAND.minW],
+  ['SkillOffer.BandMaxW', prop(offer, 'BandMaxW'), BAND.maxW],
+  ['SkillOffer.BandMaxWMobile', prop(offer, 'BandMaxWMobile'), BAND.maxWMobile],
 ];
 let bad = 0;
 for (const [name, lua, js] of pairs) {

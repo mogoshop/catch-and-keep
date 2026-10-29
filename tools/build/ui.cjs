@@ -443,7 +443,10 @@ function buildGameHud() {
   //   선택 보상(10-28)도 같은 창: 카드 셋을 가운데로, 아래 단추 줄 없이 창 높이를 줄인다 (SkillOffer.Layout — 높이 772 / 668)
   //   10-28 사용자 「색깔 띠 지우고 · 글이 길면 줄이거나 줄바꿈 · 버튼 개선 · 아래 빈 공간」: 카드 그림 맨 위 흰 띠를 잘라 다시 올렸고(claude-offer-card-v2),
   //   글 칸은 카드 테두리 안쪽(폭 222)에서 줄을 바꾸며, 고르기는 카드 아래 진짜 단추다
-  b.button("OfferBand", "혼의 제물 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [440, 72], ...bg("sk_offer_banner"), color: "#F4E2B0", font_size: 24, sprite_type: 1, enable: false });
+  //   띠 글은 한 줄 (10-29 UI-20261029-01: 긴 선택 보상 제목이 두 줄로 갈라져 띠 위아래로 넘쳤다) — 여백·하한·말줄임은 ui-tokens BAND, 폭은 실행 중 SkillOffer가 글 길이에 맞춘다
+  const BAND = require("./ui-tokens.cjs").BAND;
+  b.button("OfferBand", "혼의 제물 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [BAND.minW, BAND.h], ...bg("sk_offer_banner"), color: "#F4E2B0", font_size: BAND.font, sprite_type: 1, enable: false });
+  b.patchComponent("OfferBand", "MOD.Core.TextGUIRendererComponent", require("./ui-tokens.cjs").bandText());
   k.badge("OfferBand");
   k.frame("OfferWin", "middle-center", [0, 20], [1400, 772], "혼의 제물");
   for (let i = 1; i <= 3; i++) for (const old of ["Band", "Pick"]) if (b.find(`OfferWin/Card${i}/${old}`)) b.remove(`OfferWin/Card${i}/${old}`);
