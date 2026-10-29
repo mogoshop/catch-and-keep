@@ -227,6 +227,48 @@ for (const win of WIDE) {
   }
 }
 
+  // ── 스킬 창 모바일 해금 시간선 (QR1629-O\-02 · RootDesk/MyDesk/UI/Windows/SkillWindow.mlua) ──
+  //   iPad에서 첫 줄 칸 아래 랭크·「배우기」 글이 둘째 줄 칸 테두리에 덮였다(줄 간격 96). 칸 88 · 테두리 칸+8 · 상태 글(빌더 State: 칸 아래 2, 높이 16)로
+  //   줄마다 「상태 글 아래 끝 ≥ 다음 줄 테두리 위 끝」, 마지막 줄 글이 진행 막대 위, 막대가 판(356) 테두리 안, 테두리가 열 폭 안인지 잰다. PC 배치는 보지 않는다
+{
+  const sw = read('RootDesk/MyDesk/UI/Windows/SkillWindow.mlua');
+  const swProp = (name) => +need(new RegExp('property integer ' + name + ' = (-?[0-9]+)'), sw, 'SkillWindow.' + name)[1];
+  const rows = swProp('MobileRows'), step = swProp('MobileStepY'), barY = swProp('MobileBarY');
+  const btn = +need(/local btn = mobile and (\d+) or \d+/, sw, 'SkillWindow 모바일 칸')[1];
+  const colW = +need(/local colW = mobile and (\d+) or/, sw, 'SkillWindow 모바일 열 폭')[1];
+  const ringPad = +need(/ring.UITransformComponent.RectSize = Vector2.btn . (\d+), btn . \d+./, sw, 'SkillWindow 칸 테두리')[1] / 2;
+  const gb = uiOf('GameHUD');
+  const T = 'MOD.Core.UITransformComponent';
+  const col = gb.getComponent('SkillWin/TL/C1', T);
+  const slot = gb.getComponent('SkillWin/TL/C1/S1', T);
+  const state = gb.getComponent('SkillWin/TL/C1/S1/State', T);
+  const bar = gb.getComponent('SkillWin/TL/Bar', T);
+  const panel = gb.getComponent('SkillWin/TL', T);
+  const { SKPANEL } = require('./build/ui-tokens.cjs');
+  const colTop = col.anchoredPosition.y;               // 판 위에서 열 위 끝 (열 피벗 위)
+  const slotTop0 = slot.anchoredPosition.y;            // 열 위에서 첫 줄 칸 위 끝 (칸 피벗 위)
+  if (Math.abs(state.Pivot.y - 1) > 1e-6) problems.push('스킬 창 시간선: 상태 글 피벗이 위가 아니다 — 이 검사의 계산을 고친다');
+  const stateBelow = -state.anchoredPosition.y;        // 칸 아래 끝에서 글 위 끝까지
+  const stateH = state.RectSize.y;
+  let lastStateBottom = 0;
+  for (let r = 1; r <= rows; r++) {
+    const top = colTop + slotTop0 - (r - 1) * step;
+    const stateBottom = top - btn - stateBelow - stateH;
+    lastStateBottom = stateBottom;
+    if (r < rows) {
+      const nextRingTop = colTop + slotTop0 - r * step + ringPad;
+      if (nextRingTop > stateBottom + 0.5) problems.push('스킬 창 모바일 시간선: ' + r + '줄 상태 글(아래 ' + stateBottom + ')이 ' + (r + 1) + '줄 칸 테두리(위 ' + nextRingTop + ')에 ' + (nextRingTop - stateBottom) + ' 덮인다');
+    }
+  }
+  const barH = bar.RectSize.y;
+  if (barY + barH / 2 > lastStateBottom + 0.5) problems.push('스킬 창 모바일 시간선: 막대 위 끝 ' + (barY + barH / 2) + '이 마지막 줄 상태 글 아래 끝 ' + lastStateBottom + '보다 위');
+  const inner = -(panel.RectSize.y - SKPANEL.border);
+  if (barY - barH / 2 < inner - 0.5) problems.push('스킬 창 모바일 시간선: 막대 아래 끝 ' + (barY - barH / 2) + '이 판 테두리 안쪽 ' + inner + ' 밖');
+  if (btn + ringPad * 2 > colW) problems.push('스킬 창 모바일 시간선: 칸 테두리 ' + (btn + ringPad * 2) + ' > 열 폭 ' + colW);
+  if (btn < 88) problems.push('스킬 창 모바일 시간선: 칸 ' + btn + ' < 손가락 88');
+  if (verbose) console.log('스킬 창 모바일 시간선: 줄 ' + rows + ' · 간격 ' + step + ' · 마지막 글 아래 ' + lastStateBottom + ' · 막대 ' + barY + ' · 판 안쪽 ' + inner);
+}
+
 if (problems.length) {
   for (const p of problems) console.log(p);
   console.log(`[check_mobile_layout] 문제 ${problems.length}건`);

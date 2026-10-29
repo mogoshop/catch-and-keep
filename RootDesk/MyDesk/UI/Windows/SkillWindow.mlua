@@ -20,6 +20,15 @@ script SkillWindow extends Logic
     property integer TimerId = 0
     property integer MaxCols = 26           -- 빌더가 만든 열 수 (tools/build/ui.cjs)
     property table PipBase = {}             -- 랭크 점 번호 → 20 크기일 때 자리 (단계 칸을 26으로 키울 때 가운데 맞춤 · 44-7)
+    -- 모바일 시간선 (QR1629-OBS-02 · iPad에서 첫 줄 랭크·「배우기」 글이 둘째 줄 칸 테두리에 덮였다 — 줄 간격 96 < 칸 88 + 글 2+16 + 테두리 4)
+    --   칸 88(손가락) 아래 상태 글 16을 두고 다음 줄 테두리(칸 + 4)까지 2를 띄운다 → 줄 간격 112. 판(356) 안에 두 줄까지라
+    --   한 레벨에 메인 스킬이 셋인 열(Lv18)은 모바일에서 같은 레벨의 이어진 열로 나눈다 (해금 순서 그대로). 진행 막대는 둘째 줄 글 아래로.
+    --   PC 배치(칸 48 · 줄 68 · 막대 −304 · 한 열 셋)는 그대로. tools/check_mobile_layout.cjs가 이 숫자를 읽어 겹침을 잰다
+    property integer MobileRows = 2         -- 모바일 열 하나의 칸 수 (넘치면 이어진 열)
+    property integer MobileStepY = 112      -- 모바일 줄 간격 (칸 위끼리)
+    property integer MobileBarY = -318      -- 모바일 진행 막대 가운데 (판 위에서) · PC는 빌더 자리 −304
+    property any MobileColumns = nil        -- DisplayColumns 모바일 결과 (BuildColumns처럼 한 번만 만든다)
+    property integer StatFont = 17          -- 효과 줄 글자 크기 (빌더 WS/Stat max_size와 같다) — 화면 폭을 잴 기준
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -89,6 +98,28 @@ script SkillWindow extends Logic
         return cols
     end
 
+    method any SplitColumns(any cols, integer rows)
+        -- 열마다 칸을 rows개까지만 두고 남는 칸은 같은 레벨의 이어진 열(cont)로 (순서 그대로 · 칸이 빠지거나 겹치지 않는다)
+        local out = {}
+        for _, col in ipairs(cols) do
+            local i = 1
+            while i <= #col.ids do
+                local part = { row = col.row, ids = {}, cont = i > 1 }
+                for k = i, math.min(#col.ids, i + rows - 1) do table.insert(part.ids, col.ids[k]) end
+                table.insert(out, part)
+                i = i + rows
+            end
+        end
+        return out
+    end
+
+    method any DisplayColumns()
+        -- 시간선에 그리는 열: PC는 BuildColumns 그대로(한 열 셋), 모바일은 한 열 MobileRows칸 (QR1629-OBS-02)
+        if not Environment:IsMobilePlatform() then return self:BuildColumns() end
+        if self.MobileColumns == nil then self.MobileColumns = self:SplitColumns(self:BuildColumns(), self.MobileRows) end
+        return self.MobileColumns
+    end
+
     method integer PageSize()
         -- 한 쪽에 보이는 열 수: PC는 전부(23), 모바일은 손가락 크기 칸(88)으로 9열씩
         if Environment:IsMobilePlatform() then return 9 end
@@ -97,7 +128,7 @@ script SkillWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Flip(integer dir)
-        local pages = math.max(1, math.ceil(#self:BuildColumns() / self:PageSize()))
+        local pages = math.max(1, math.ceil(#self:DisplayColumns() / self:PageSize()))
         self.Page = math.max(1, math.min(pages, self.Page + dir))
         self.RenderKey = ""
     end
@@ -149,7 +180,7 @@ script SkillWindow extends Logic
     @ExecSpace("ClientOnly")
     method void RenderTimeline(SkillBook book, PlayerStats st)
         -- 해금 시간선: 열 위치·크기(플랫폼별) · 칸 그림·테두리·상태 · 지금 레벨 표지 · 다음 해금 줄
-        local cols = self:BuildColumns()
+        local cols = self:DisplayColumns()
         local mobile = Environment:IsMobilePlatform()
         local per = self:PageSize()
         local pages = math.max(1, math.ceil(#cols / per))
@@ -159,7 +190,7 @@ script SkillWindow extends Logic
         local width = 1210
         local colW = mobile and 134 or math.floor(width / math.max(1, shown))
         local btn = mobile and 88 or 48
-        local stepY = mobile and 96 or 68
+        local stepY = mobile and self.MobileStepY or 68
         local x0 = 44
         _UIKit:SetEnabled(self.Win .. "/TL/Prev", pages > 1)
         _UIKit:SetEnabled(self.Win .. "/TL/NextPage", pages > 1)
@@ -220,6 +251,7 @@ script SkillWindow extends Logic
             else break end
         end
         local barW = math.min(width, shown * colW)
+        _UIKit:SetPos(self.Win .. "/TL/Bar", Vector2(x0, mobile and self.MobileBarY or -304))   -- 모바일은 둘째 줄 상태 글 아래 (QR1629-OBS-02)
         local bar = _UIKit:Get(self.Win .. "/TL/Bar")
         if isvalid(bar) then bar.UITransformComponent.RectSize = Vector2(barW, 16) end
         _UIKit:SetBar(self.Win .. "/TL/Bar/Fill", barW > 0 and markX / barW or 0)   -- 업적 막대 그림 (10-28 민짜 막대 교체)
@@ -230,7 +262,7 @@ script SkillWindow extends Logic
         self:RenderStageMarks(book, st, cols, first, shown, colW)
         -- 다음 해금
         local nextLine = "모든 스킬이 열렸습니다"
-        for _, col in ipairs(cols) do
+        for _, col in ipairs(self:BuildColumns()) do
             if col.row > st.Level then
                 local names = {}
                 for _, id in ipairs(col.ids) do table.insert(names, _UIKit:Colored(self:TreeHex(_SkillData:Get(id).tree), _SkillData:Get(id).name)) end
@@ -239,6 +271,7 @@ script SkillWindow extends Logic
             end
         end
         _UIKit:SetText(self.Win .. "/TL/Next", nextLine)
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] timeline page=%d/%d cols=%d shown=%d step=%d btn=%d barY=%d", self.Page, pages, #cols, shown, stepY, btn, mobile and self.MobileBarY or -304)) end
     end
 
     @ExecSpace("ClientOnly")
@@ -276,7 +309,13 @@ script SkillWindow extends Logic
         _UIKit:SetText(ws .. "/Info", info)
         local hint = book:UseHint(detailId)
         _UIKit:SetText(ws .. "/Desc", detail.desc .. (hint ~= "" and ("\n" .. hint) or ""))
-        _UIKit:SetText(ws .. "/Stat", self:StatLine(book, st, detailId))
+        -- 효과 줄은 「 · 」 경계에서만 접는다 (QR1629-OBS-01: 엔진 줄바꿈은 한글을 글자 단위로 끊어 「마 / 나 8」이 됐다). 폭은 그 칸 글꼴로 잰다
+        local statE = _UIKit:Get(ws .. "/Stat")
+        local statT = isvalid(statE) and statE.TextGUIRendererComponent or nil
+        local statW = isvalid(statE) and statE.UITransformComponent.RectSize.x or 494
+        local stat = self:WrapLines(self:StatLine(book, st, detailId), statW - 6, statT)
+        _UIKit:SetText(ws .. "/Stat", stat)
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] skill stat %s lines=%d w=%d", detailId, self:LineCount(stat), math.floor(statW))) end
         -- 랭크 사다리 20칸: 찍음(금) · 지금 상한까지(밝은 빈칸) · 상한 밖(어둠)
         -- 랭크 점 3상태 (코덱스 skill-window-v3): 찍음 · 지금 상한까지 빈칸 · 상한 밖(잠긴 점) — 최대 랭크 밖은 감춘다
         -- 44-7 랭크 단계: 단계가 바뀌는 칸(투사체 5·8·12 등 — SkillBook.StageRanks)과 20랭크 「완성」 칸은 큰 점 (코덱스 H-10 sk_rank_pip_stage(_on) 그림이 오면 그 그림, 그 전엔 같은 점을 금빛으로)
@@ -499,19 +538,91 @@ script SkillWindow extends Logic
                 line = line .. "\n" .. (nextRank == current and "다음 랭크: 효과 동일" or ("다음 랭크: " .. _UIKit:Colored("#7CFF7A", nextRank)))
             end
         end
+        -- 비용 줄: 마나 · 재사용(질주는 충전) · 추가 랭크 — 다음 랭크 효과 뒤에 이어 붙이면 칸 끝에서 「마 / 나 8」로 갈렸다 (QR1629-OBS-01) → 따로 한 줄
+        local cost = ""
         if def.kind == "active" or def.kind == "curse" then
-            local cost = "마나 " .. tostring(math.floor(book:GetManaCost(id, power)))
+            cost = "마나 " .. tostring(math.floor(book:GetManaCost(id, power)))
             local cd = book:SkillCooldown(id, power)
             if id == "wraith_dash" then
                 cost = cost .. string.format(" · 충전 %.2f초", book:DashCooldown(power))
             elseif cd > 0 then cost = cost .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
-            line = line .. _UIKit:Colored("#C9BFA8", (line ~= "" and "   · " or "") .. cost)
+            cost = _UIKit:Colored("#C9BFA8", cost .. (gear > 0 and " · " or ""))
         end
-        if gear > 0 then line = line .. _UIKit:Colored("#7CFF7A", "   · 추가 랭크 +" .. tostring(gear)) end
+        if gear > 0 then cost = cost .. _UIKit:Colored("#7CFF7A", "추가 랭크 +" .. tostring(gear)) end
+        if cost ~= "" then line = line .. (line ~= "" and "\n" or "") .. cost end
         -- 해골 일으키기·변이·증원: 지금 편성과 다음 소환 (I03 · SkillBook.RosterLine)
         local roster = book:RosterLine(id)
         if roster ~= "" then line = line .. (line ~= "" and "\n" or "") .. _UIKit:Colored("#C9BFA8", roster) end
         return line
+    end
+
+    method number MeasureW(TextGUIRendererComponent comp, string text)
+        -- 글 한 줄의 화면 폭: 실행 중에는 그 칸 글꼴의 실제 폭(GetPreferredWidth — 크기 맞춤 칸은 최대 크기로 잰다), 칸이 없으면(오프라인 검사) 넉넉한 어림 UIKit.TextWidth
+        if comp ~= nil then return comp:GetPreferredWidth(text) end
+        return _UIKit:TextWidth(text, self.StatFont)
+    end
+
+    method table SplitPlain(string text, string sep)
+        -- sep(글자 그대로)로 나눈 조각들 (패턴 문자 해석 없음)
+        local parts = {}
+        local i = 1
+        while true do
+            local a, b = string.find(text, sep, i, true)
+            if a == nil then
+                table.insert(parts, string.sub(text, i))
+                break
+            end
+            table.insert(parts, string.sub(text, i, a - 1))
+            i = b + 1
+        end
+        return parts
+    end
+
+    method string WrapLine(string text, number maxW, TextGUIRendererComponent comp)
+        -- 한 줄을 칸 폭 maxW 안에 「 · 」 경계에서만 접는다. 이어지는 줄은 「  · 」로 시작 (QR1629-OBS-01)
+        --   조각 하나가 칸보다 길면 그 조각만 띄어쓰기 경계에서 접는다(「  」 들여쓰기). 글자 크기·수치는 바꾸지 않는다 — 폭은 서식 태그를 뺀 글로 잰다
+        if self:MeasureW(comp, _UIKit:PlainText(text)) <= maxW then return text end
+        local out = {}
+        local cur = ""
+        for si, seg in ipairs(self:SplitPlain(text, " · ")) do
+            local joined = si == 1 and seg or (cur .. " · " .. seg)
+            if si > 1 and self:MeasureW(comp, _UIKit:PlainText(joined)) <= maxW then
+                cur = joined
+            else
+                if si > 1 then table.insert(out, cur) end
+                cur = si == 1 and seg or ("  · " .. seg)
+                if self:MeasureW(comp, _UIKit:PlainText(cur)) > maxW then
+                    -- 조각 자체가 길다: 띄어쓰기 경계에서 접는다 (단어 가운데는 끊지 않는다)
+                    local line = ""
+                    for wi, w in ipairs(self:SplitPlain(cur, " ")) do
+                        local joinedWord = wi == 1 and w or (line .. " " .. w)
+                        if w ~= "" and string.match(line, "%S") ~= nil and self:MeasureW(comp, _UIKit:PlainText(joinedWord)) > maxW then
+                            table.insert(out, line)
+                            line = "  " .. w
+                        else
+                            line = joinedWord
+                        end
+                    end
+                    cur = line
+                end
+            end
+        end
+        table.insert(out, cur)
+        return table.concat(out, "\n")
+    end
+
+    method string WrapLines(string text, number maxW, TextGUIRendererComponent comp)
+        -- 여러 줄 글의 줄마다 WrapLine (지금 · 다음 랭크 · 비용 · 편성 줄이 각자 접힌다)
+        local lines = {}
+        for _, line in ipairs(self:SplitPlain(text, "\n")) do table.insert(lines, self:WrapLine(line, maxW, comp)) end
+        return table.concat(lines, "\n")
+    end
+
+    method integer LineCount(string text)
+        -- 줄 수 (빈 글은 0)
+        if text == "" then return 0 end
+        local _, n = string.gsub(text, "\n", "")
+        return n + 1
     end
 
     @ExecSpace("ClientOnly")
@@ -555,7 +666,7 @@ script SkillWindow extends Logic
     @ExecSpace("ClientOnly")
     method string SlotPathOf(string id)
         -- 상황 안내(GuideCoach)가 가리킬 시간선 칸 (지금 쪽에 없으면 넘김 단추, 시간선에 없으면 "")
-        local cols = self:BuildColumns()
+        local cols = self:DisplayColumns()
         local per = self:PageSize()
         for ci, col in ipairs(cols) do
             for r, sid in ipairs(col.ids) do

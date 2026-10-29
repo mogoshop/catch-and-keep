@@ -732,8 +732,14 @@ script UndeadSystem extends Logic
         local counts = {}
         counts[""] = 0
         for _, form in ipairs(self:FormOrder(kind)) do counts[form] = 0 end
+        -- 표시용 (INT1725-OBS-02): units = 뼈 거인 몸을 뺀 일반형·변이 수 · bodies = 거인 몸 수. counts·have(진단·정원 계산)는 그대로 거인 몸을 센다
+        local units = {}
+        local bodies = 0
         for _, r in ipairs(list) do
-            if r.kind == kind then counts[r.form or ""] = (counts[r.form or ""] or 0) + 1 end
+            if r.kind == kind then
+                counts[r.form or ""] = (counts[r.form or ""] or 0) + 1
+                if r.giant then bodies = bodies + 1 else units[r.form or ""] = (units[r.form or ""] or 0) + 1 end
+            end
         end
         -- 두 가지 장기 편성: steady = 거인이 없을 때(빈 목록부터 · 투자 판단 기준) · steadyNow = 지금 목록·뼈 거인(몸 고정 + 예약)이 유지되는 동안
         local steady = self:SteadyRoster(kind, plan.max, quota, {}, 0)
@@ -748,7 +754,7 @@ script UndeadSystem extends Logic
             if quota[form] > 0 and (steadyNow[form] or 0) == 0 then table.insert(idleNow, form) end
         end
         local preview = { kind = kind, level = slvl, max = plan.max, have = plan.have, reserved = res, full = plan.full, keep = plan.keep, giant = giant,
-            list = list, counts = counts, quota = quota, steady = steady, steadyNow = steadyNow, idle = idle, idleNow = idleNow, nextForm = "", replaces = {} }
+            list = list, counts = counts, units = units, bodies = bodies, quota = quota, steady = steady, steadyNow = steadyNow, idle = idle, idleNow = idleNow, nextForm = "", replaces = {} }
         if slvl > 0 and plan.max > 0 then
             preview.nextForm = self:PickForm(kind, quota, list, nil)
             preview.replaces = self:TrimVictims(list, kind, plan.keep)
