@@ -3,16 +3,15 @@ const path=require('path'),fs=require('fs');
 const root=process.env.MSW_WORLD_ROOT||path.resolve(__dirname,'../..');
 const {UIBuilder}=require(path.join(root,'.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const {load}=require(path.join(root,'tools/lib/csv.cjs'));
+const {windowFrame,fitButtonText,slotLock}=require(path.join(root,'tools/build/lib.cjs'));
 const icons=Object.fromEntries(load('ui_icons').map(x=>[x.key,x.ruid]));
 function run(){
 const file=path.join(root,'ui/EquipmentHUD.ui');
 const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('EquipmentHUD', 15,true);
 b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const w='SafeArea/InvWin';
-b.panel(w,{rect_size:[1400,1000],pos:[20,0],color:'#100E16',raycast:true,enable:false});
-b.sprite(w+'/Rim',{rect_size:[1440,1040],image_ruid:icons.win_frame,color:'#FFFFFF',sprite_type:1});
-b.text(w+'/Title','소지품  ·  망자의 장비',{anchor:'top-center',pivot:[.5,1],pos:[0,-17],rect_size:[1100,40],size:28,color:'#E6C88A',alignment:4,bold:true});
-b.button(w+'/BtnClose','',{anchor:'top-right',pos:[-20,-14],rect_size:[88,88],image_ruid:icons.btn_close,bg_color:'#FFFFFF'});
+// 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+windowFrame(b,w,{size:[1400,1000],pos:[20,0],title:'소지품  ·  망자의 장비',enable:false});
 const d=w+'/Doll';
 b.panel(d,{anchor:'top-left',pos:[28,-112],rect_size:[500,516],color:'#17131D'});
 b.avatar(d+'/Avatar',{rect_size:[200,250],pos:[0,38],preserve_avatar:1,raycast:false});
@@ -30,6 +29,7 @@ for(const [slot,pos]of Object.entries(slots)){
  for(let k=1;k<=6;k++){ b.sprite(n+'/S'+k,{anchor:'bottom-center',pos:[0,10],rect_size:[16,16],image_ruid:icons.socket_empty,color:'#FFFFFF',enable:false}); b.sprite(n+'/S'+k+'/Ring',{rect_size:[18,18],image_ruid:icons.socket_ring,color:'#FFFFFF',enable:false}); }
  b.sprite(n+'/Glow',{rect_size:[104,104],image_ruid:icons.socket_glow,color:'#FFFFFF',sprite_type:0,enable:false});
  b.patchComponent(n+'/Glow','MOD.Core.SpriteGUIRendererComponent',{RaycastTarget:false});
+ slotLock(b,n);
 }
 b.text(d+'/PreviewState','현재 착용 모습',{anchor:'top-left',pos:[118,-378],rect_size:[264,36],size:24,color:'#D2BF9B',alignment:4,bestfit:true,min_size:24,max_size:24});
 b.button(d+'/BtnPreview','장비 선택 후 외형 비교',{anchor:'top-left',pos:[118,-424],rect_size:[264,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:26,color:'#E6DCC6'});
@@ -49,6 +49,7 @@ for(let i=1;i<=60;i++){
  b.sprite(n+'/Rim',{rect_size:[88,88],image_ruid:icons.slot_frame,color:'#FFFFFF',sprite_type:1});
  b.sprite(n+'/Icon',{rect_size:[64,64],color:'#FFFFFF',enable:false});
  b.text(n+'/Count','',{anchor:'bottom-right',pivot:[1,0],pos:[-4,2],rect_size:[60,28],size:20,bold:true,color:'#FFFFFF',alignment:8,outline:true,outline_color:'#101010',outline_width:0.3});
+ slotLock(b,n);
 }
 b.button(w+'/BtnEquip','장착',{anchor:'top-left',pos:[1100,-690],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6C88A'});
 b.button(w+'/BtnSell','버리기',{anchor:'top-left',pos:[1100,-794],rect_size:[272,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:30,color:'#E6DCC6'});
@@ -56,6 +57,11 @@ b.text(w+'/Hint','선택 → 설명 확인 · 버튼으로 작업 확정',{ancho
 // 가방 정렬(등급순) · 여러 개 선택(한꺼번에 버리기 — 판매는 잿빛 행상 거래 창) — 버리기 아래 나란히
 b.button(w+'/BtnSort','정렬',{anchor:'top-left',pos:[1100,-892],rect_size:[110,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22,color:'#E6DCC6'});
 b.button(w+'/BtnMulti','여러 개 선택',{anchor:'top-left',pos:[1218,-892],rect_size:[154,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:20,color:'#E6DCC6'});
+// 「잠금」 (10-29 기획서 45 결정 6-A): 고른 물건의 설명 칸 오른쪽 위 — 잠긴 물건은 팔기·버리기에서 빠진다 (가방·착용 칸 왼쪽 위 ★ 표지).
+//   물건을 고르면 켜진다 (InventoryWindow.Poll). 설명 첫 두 줄(이름·종류)은 짧아 단추와 겹치지 않는다 — 글귀 승인 전
+b.button(w+'/BtnLock','잠금',{anchor:'top-left',pos:[1188,-124],rect_size:[160,88],image_ruid:icons.btn_frame,bg_color:'#FFFFFF',font_size:22,color:'#E6DCC6',enable:false});
+// 테두리 단추 글자: 장식 안쪽 여백 + 넘치면 줄이기 (ui-tokens buttonText — 다른 창과 같은 규격)
+for(const n of ['Doll/BtnPreview','BtnEquip','BtnSell','BtnSort','BtnMulti','BtnLock'])fitButtonText(b,w+'/'+n);
 b.write(file,{lint_verbose:true});
 return b.listEntities().length;
 }

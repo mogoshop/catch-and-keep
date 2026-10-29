@@ -6,7 +6,7 @@
 // 컨트롤러: RootDesk/MyDesk/UI/Hud/RescueHUD.mlua · UI/Windows/TownBoardWindow.mlua. 진행 막대는 lib.progressBar(업적 막대) 양식, 단추 88px 이상, 여백은 ui-tokens.
 // 그림은 기존 테마(win_frame · btn_frame · win_content) — 코덱스 게시판 그림(기획서 39 부록 C ⑦) 전까지 임시. 글귀는 10-29 사용자 확정.
 const fs = require('fs');
-const { UIBuilder, P, load, progressBar } = require('./lib.cjs');
+const { UIBuilder, P, load, progressBar, windowFrame } = require('./lib.cjs');
 const T = require('./ui-tokens.cjs');
 
 const ICONS = load('ui_icons');
@@ -18,7 +18,6 @@ const part = (key) => {
 };
 const C = { gold: '#E6DCC6', title: '#F6E3B0', dim: '#9C9488', white: '#FFFFFF' };
 const outline = { outline: true, outline_color: '#2D2D2D' };
-const SOLID = { r: 0.045, g: 0.04, b: 0.055, a: 1 };
 
 function btn(b, name, text, opts) {
   const o = { font_size: T.BUTTON.font, color: C.gold, image_ruid: K.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, ...opts };
@@ -26,15 +25,9 @@ function btn(b, name, text, opts) {
   b.patchComponent(name, 'MOD.Core.TextGUIRendererComponent', T.buttonText(o.font_size));
 }
 
-// 창 틀: 꽉 찬 어두운 바탕(큰 창 뒤가 비치지 않게 gauge_fill) + 테두리 + 제목 + 닫기
+// 창 틀: 공용 창 틀 (lib.cjs windowFrame — 꽉 찬 어두운 바탕 · 테두리 · 제목 · 닫기, 10-29 기획서 45 결정 2-A로 모든 창이 같은 틀). 탭(모집 판 · 오늘의 기록)은 G-5 전용 탭 그림 때
 function frame(b, name, size, title) {
-  b.panel(name, { anchor: 'middle-center', pos: [0, 0], rect_size: size, color: SOLID, sprite_type: 0, raycast: true, enable: false });
-  b.patchComponent(name, 'MOD.Core.SpriteGUIRendererComponent', { ImageRUID: { DataId: K.gauge_fill }, Type: 0, Color: SOLID });
-  const rim = T.FRAME.rimOut;
-  b.sprite(`${name}/Rim`, { anchor: 'middle-center', pos: [0, 0], rect_size: [size[0] + rim * 2, size[1] + rim * 2], image_ruid: K.win_frame, color: C.white, sprite_type: 1 });
-  b.patchComponent(`${name}/Rim`, 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
-  b.text(`${name}/Title`, title, { size: T.FRAME.titleSize, bold: true, color: C.title, anchor: 'top-center', pos: [0, -T.FRAME.titleTop], rect_size: [size[0] - 260, T.FRAME.titleH], alignment: 4, ...outline });
-  b.button(`${name}/BtnClose`, '', { anchor: 'top-right', pos: [-12, -8], rect_size: [88, 88], image_ruid: K.btn_close, bg_color: '#FFFFFF', sprite_type: 1 });
+  windowFrame(b, name, { anchor: 'middle-center', pos: [0, 0], size, title, enable: false });
 }
 
 // 스크롤 글 상자 (ui.cjs kit.scrollText와 같은 모양 — UIKit.SetScrollText가 채운다)

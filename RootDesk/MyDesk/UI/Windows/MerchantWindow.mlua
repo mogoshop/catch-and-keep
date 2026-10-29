@@ -64,11 +64,21 @@ script MerchantWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Buy()
-        -- 고른 칸의 물건이 그대로 있을 때만 서버가 판다
+        -- 고른 칸의 물건이 그대로 있을 때만 서버가 판다. confirmGold(1000) 골드 이상이면 확인 창 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
         local shop = self:Shop()
         local s = self:StockList(shop)[self.Selected] or ""
         if shop == nil or s == "" then return end
-        shop:RequestBuyStock(self.Selected, s)
+        local index = self.Selected
+        local price = shop:StockPrice(s)
+        if price >= _GameData.confirmGold then
+            _ConfirmDialog:ShowIcon("구매", _ItemData:DisplayName(s) .. "\n" .. _UIKit:Colored("#FFD27A", tostring(price) .. " 골드") .. "에 삽니다.", "구매", _ItemData:IconFor(s), function()
+                shop:RequestBuyStock(index, s)
+                self.RenderKey = ""
+                log("[VRF] buy confirmed merchant index=" .. tostring(index) .. " price=" .. tostring(price))
+            end)
+            return
+        end
+        shop:RequestBuyStock(index, s)
         self.RenderKey = ""
     end
 

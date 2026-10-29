@@ -5,7 +5,7 @@
 // 아이템·스킬 아이콘은 item_bases.csv·skills.csv의 icon 열(메이플 아이템·스킬 그림).
 // PC 전용 = ActivePlatform 1, 모바일 전용 = 2 (나머지는 공용).
 "use strict";
-const { UIBuilder, P, quiet, readIfExists, preserveIds, load } = require("./lib.cjs");
+const { UIBuilder, P, quiet, readIfExists, preserveIds, load, windowFrame, slotLock } = require("./lib.cjs");
 
 const ICONS = load("ui_icons");
 const K = Object.fromEntries(ICONS.map((r) => [r.key, r.ruid]));
@@ -38,13 +38,9 @@ function kit(b) {
     mobile(name) { b.patchComponent(name, "MOD.Core.UITransformComponent", { ActivePlatform: 2 }); },
     // 아이콘은 칸 크기에 맞춰 늘린다 (PreserveSprite None). AspectOnly·NativeSize는 메이플 아이템 그림의 피벗 때문에 칸 밖으로 밀린다
     aspect(name) { b.patchComponent(name, "MOD.Core.SpriteGUIRendererComponent", { PreserveSprite: 0 }); },
-    // 창: 남색 바탕(9-slice) + 흰 제목 + 닫기(70)
+    // 창: 공용 창 틀 (lib.cjs windowFrame — 꽉 찬 어두운 바탕 · 테두리 · 제목 26 · 닫기 88, 10-29 기획서 45 결정 2-A로 모든 창이 같은 틀)
     frame(name, anchor, pos, size, title) {
-      b.panel(name, { anchor, pos, rect_size: size, color: DARK, sprite_type: 1, raycast: true });
-      k.rim(name, "win_frame", -20);   // 테두리를 창 바깥으로 10px 더 — 안쪽 내용과 테두리 사이 여백
-      // 제목은 테두리 그림의 제목 띠 한가운데 (창 위에서 37px) — 띠 아래 선에 글자가 걸치지 않게
-      b.text(`${name}/Title`, title, { size: 26, bold: true, color: C.title, anchor: "top-center", pos: [0, -17], rect_size: [size[0] - 260, 40], alignment: 4, ...outline });
-      b.button(`${name}/BtnClose`, "", { anchor: "top-right", pos: [-12, -10], rect_size: [70, 70], ...bg("btn_close"), sprite_type: 1 });
+      windowFrame(b, name, { anchor, pos, size, title });
     },
     // 테두리 그림을 부모 크기에 맞춰 덮는다 (inset 음수 = 바깥으로 조금 넘침)
     // stretch 앵커는 다시 불러올 때 크기 0으로 접히므로, 부모 크기를 읽어 가운데 고정 크기로 둔다
@@ -689,6 +685,7 @@ function buildGameHud() {
     const slot = `TradeWin/Bag/B${i + 1}`;
     k.slot(slot, { anchor: "top-left", pos: [10 + col * 102, -10 - row * 86], rect_size: [96, 80] }, 56);
     b.text(`${slot}/Count`, "", { size: 14, color: C.white, alignment: 8, anchor: "bottom-right", pos: [-4, 2], rect_size: [50, 20], ...outline });
+    slotLock(b, slot);   // 잠긴 물건 ★ — 거래에 올릴 수 없다 (10-29 기획서 45 결정 6-A)
   }
   k.inner("TradeWin/Info", "top-right", [-24, -78], [588, 744]);
   k.slot("TradeWin/Info/Pick", { anchor: "top-left", pos: [18, -18], rect_size: [120, 120] }, 88);
@@ -787,9 +784,8 @@ function buildGameHud() {
     const rx = T.FRAME.padX + tabW + T.FRAME.gap;              // 오른쪽 칸 왼쪽 (창 왼쪽에서)
     const rw = W - rx - T.FRAME.padX;                           // 오른쪽 칸 폭
     const top = T.FRAME.contentTop;
+    // 바탕은 공용 창 틀의 꽉 찬 그림 (기본 바탕 그림은 가운데가 비쳐 글만 있는 쪽에서 뒤 화면이 보였다 — 10-27 메이커 · 10-29 모든 창에 같은 바탕)
     k.frame("GuideWin", "middle-center", [0, 0], [W, H], "게임 안내");
-    // 바탕을 꽉 채운 그림으로 (기본 바탕 그림은 가운데가 비쳐 글만 있는 쪽에서 뒤 화면이 보였다 — 10-27 메이커)
-    b.patchComponent("GuideWin", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: K.gauge_fill }, Type: 0, Color: { r: 0.045, g: 0.04, b: 0.055, a: 1 } });
     k.inner("GuideWin/Tabs", "top-left", [T.FRAME.padX, -top], [tabW, H - top - T.FRAME.padBottom], "win_content");
     // 책갈피 그림: 코덱스 guide_* (10-27 샘플 군단부터, 나머지는 받을 때까지 메뉴 아이콘), 칸은 guide_tab(고르면 GuideWindow가 guide_tab_on으로)
     const tabIcon = ["icon_scroll", "guide_legion", "icon_skill", "icon_bag", "icon_waypoint", "icon_party", "icon_sword"];
@@ -872,12 +868,8 @@ function patchShadowHud() {
   skin("Status/BtnInput", "btn_frame");
   // 보관함 창 (핵심 콘텐츠라 넓게): 왼쪽 고른 그림자 상세(모습·능력치·고유 능력·소환/강화/분해),
   // 오른쪽 목록(필터 전체|일반|정예|보스 · 정렬 · 8줄 · 페이지). 컨트롤러는 UI/ShadowHUD.mlua
-  s.patch("Window", { anchor: "middle-center", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [1560, 900] });
-  s.patchComponent("Window", "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: "2860136c06ab075439721c027de365af" }, Type: 1, Color: DARK, RaycastTarget: true });
-  k.rim("Window", "win_frame", -20);
-  s.text("Window/Title", "그림자 보관함", { size: 26, bold: true, color: C.title, anchor: "top-center", pivot: [0.5, 1], pos: [0, -17], rect_size: [900, 40], alignment: 4, ...outline });
-  s.button("Window/BtnClose", "", { anchor: "top-right", pivot: [1, 1], pos: [-20, -14], rect_size: [88, 88], ...bg("btn_close"), sprite_type: 1 });
-  s.patchComponent("Window/BtnClose", "MOD.Core.TextGUIRendererComponent", { Text: "" });
+  //   틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+  windowFrame(s, "Window", { anchor: "middle-center", pivot: [0.5, 0.5], pos: [0, 0], size: [1560, 900], title: "그림자 보관함" });
   // 왼쪽 상세
   const d = "Window/Detail";
   s.panel(d, { anchor: "top-left", pivot: [0, 1], pos: [30, -88], rect_size: [560, 784], ...part("win_content"), sprite_type: 1 });

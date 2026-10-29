@@ -24,8 +24,13 @@ script SocialWindow extends Logic
         _UIKit:SetEnabled(self.Win .. "/Inspect", false)
         _UIKit:Connect(self.Win .. "/Inspect/BtnBack", function() _UIKit:SetEnabled(self.Win .. "/Inspect", false) end)
         _UIKit:Connect(self.Win .. "/BtnLeave", function()
+            -- 파티 탈퇴는 확인 창을 거친다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
             local s = self:Social()
-            if s ~= nil then s:RequestLeaveParty() end
+            if s == nil then return end
+            _ConfirmDialog:Show("파티 탈퇴", "파티에서 나갑니다.\n다시 함께하려면 초대를 받아야 합니다.", "탈퇴", function()
+                s:RequestLeaveParty()
+                log("[VRF] party leave confirmed")
+            end)
         end)
         _UIKit:Connect(self.Req .. "/BtnYes", function() self:Respond(true) end)
         _UIKit:Connect(self.Req .. "/BtnNo", function() self:Respond(false) end)

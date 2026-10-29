@@ -99,9 +99,10 @@ script ShadowConfig extends Logic
 
     method integer FindUpgradeRune(table bag, integer tier)
         -- 가방(아이템 문자열 목록)에서 강화에 쓸 룬 칸 번호 (없으면 0): 등급 하한 이상 중 가장 낮은 등급 → 그중 가장 흔한 룬 (귀한 룬을 아낀다)
+        --   잠긴 룬(★)은 쓰지 않는다 — 10-29 기획서 45 결정 6-A 잠금: 잠근 물건은 저절로 사라지지 않는다
         local best, bestTier, bestWeight = 0, 99, -1
         for i, s in ipairs(bag) do
-            if _ItemData:IsRune(s) then
+            if _ItemData:IsRune(s) and not _ItemData:IsLocked(s) then
                 local id = _ItemData:Parse(s).base
                 local t = self:GetRuneTier(id)
                 local r = _ItemData:GetRune(id)
@@ -110,6 +111,14 @@ script ShadowConfig extends Logic
             end
         end
         return best
+    end
+
+    method boolean HasLockedUpgradeRune(table bag, integer tier)
+        -- 강화에 쓸 등급의 룬이 잠겨 있어서 빠졌는가 (강화 확인 창 안내 줄)
+        for _, s in ipairs(bag) do
+            if _ItemData:IsRune(s) and _ItemData:IsLocked(s) and self:GetRuneTier(_ItemData:Parse(s).base) >= tier then return true end
+        end
+        return false
     end
 
     method integer GetPlusMax()

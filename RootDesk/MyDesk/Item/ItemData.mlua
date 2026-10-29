@@ -80,10 +80,10 @@ script ItemData extends Logic
     -- ───────── 문자열 ↔ 표 ─────────
 
     method table Parse(string s)
-        -- 룬 아이템은 base가 r_* 이다
+        -- 룬 아이템은 base가 r_* 이다. 9번째 칸 "L" = 잠금 (10-29 기획서 45 결정 6-A — 물건에 붙어 가방·창고·장착·거래를 따라다닌다)
         local f = {}
         for part in string.gmatch(s .. "|", "([^|]*)|") do table.insert(f, part) end
-        local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {}, count = tonumber(f[8]) or 1 }
+        local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {}, count = tonumber(f[8]) or 1, locked = f[9] == "L" }
         for k, v in string.gmatch(f[5] or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = tonumber(v) end
         for r in string.gmatch(f[7] or "", "[^,]+") do table.insert(item.runes, r) end
         return item
@@ -96,8 +96,40 @@ script ItemData extends Logic
         local mods = {}
         for _, k in ipairs(keys) do table.insert(mods, k .. "=" .. tostring(item.mods[k])) end
         local text = item.base .. "|" .. tostring(item.rarity) .. "|" .. tostring(item.ilvl) .. "|" .. item.name .. "|" .. table.concat(mods, ",") .. "|" .. tostring(item.sockets) .. "|" .. table.concat(item.runes, ",")
-        if item.count ~= nil and item.count ~= 1 then text = text .. "|" .. tostring(item.count) end
+        if item.locked == true then
+            -- 잠금 칸은 개수 칸 뒤라 개수를 늘 쓴다 (잠금은 겹치지 않는 물건만 — CanLock)
+            text = text .. "|" .. tostring(item.count or 1) .. "|L"
+        elseif item.count ~= nil and item.count ~= 1 then
+            text = text .. "|" .. tostring(item.count)
+        end
         return text
+    end
+
+    -- ───────── 잠금 (10-29 기획서 45 결정 6-A · 즐겨찾기) ─────────
+    -- 잠긴 물건은 팔기·버리기(한 개·여러 개 선택 모두)에서 빠진다. 장비·룬만 (겹치는 물건·귀속 재료는 잠그지 않는다)
+
+    method boolean IsLocked(any s)
+        if s == nil or s == "" then return false end
+        return self:Parse(s).locked == true
+    end
+
+    method boolean CanLock(any s)
+        if s == nil or s == "" then return false end
+        local base = self:Parse(s).base
+        return not self:IsStack(base) and not self:IsSoulbound(base)
+    end
+
+    method string WithLock(string s, boolean locked)
+        local item = self:Parse(s)
+        item.locked = locked
+        return self:Serialize(item)
+    end
+
+    method boolean SameItem(any a, any b)
+        -- 잠금만 다른 같은 물건인가 (창에서 고른 칸을 잠금·해제한 뒤에도 고른 채로 둔다)
+        if a == nil or b == nil then return a == b end
+        if a == b then return true end
+        return self:WithLock(a, false) == self:WithLock(b, false)
     end
 
     -- ───────── 겹치는 물건 (물약·정수) ─────────

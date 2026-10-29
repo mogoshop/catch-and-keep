@@ -4,6 +4,8 @@
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 -- 「정렬」: 등급순(유니크 · 세트 · 레어 · 마법 · 일반 · 룬 · 물약). 「여러 개 선택」: 칸을 눌러 여러 개 고른 뒤 한꺼번에 버리기.
 -- 대장장이 모드(OpenSmith): 두 작업 버튼이 「옵션 바꾸기」·「소켓 뚫기」로 바뀐다.
+-- 10-29 기획서 45 결정 6-A: 「잠금」(설명 칸 오른쪽 위 BtnLock) — 잠긴 물건은 칸 왼쪽 위 ★, 팔기·버리기·거래에서 빠진다 (서버 PlayerInventory도 막는다).
+--   룬 끼우기는 되돌릴 수 없어 확인 창을 거친다.
 -- 10-27 소켓 (docs/design/37 §5-5): 가방에서 룬을 고르면 빈 소켓이 있는 착용 칸이 금빛으로 깜빡이고(Eq_*/Glow),
 --   룬워드가 완성되는 칸(없으면 첫 칸)을 바로 대상으로 잡아 「투구에 끼우기」 단추가 뜬다. 다른 금빛 칸을 누르면 대상이 바뀐다.
 --   장비 칸 아래 소켓 점(Eq_*/Sock ●찬 칸 ○빈 칸).
@@ -29,6 +31,7 @@ script InventoryWindow extends Logic
     property boolean Multi = false
     property table Picked = {}          -- 여러 개 선택: 칸 번호 → 그 칸의 아이템 문자열
     property any WheelHandler = nil     -- 마우스 휠 → 옵션 설명 스크롤 (10-10 QA: 긴 옵션이 안 내려갔다)
+    property number DescTextW = 740     -- 설명 글 폭 (설명 칸 820 − 안쪽 여백). 모바일 좁은 화면은 WindowFit이 줄인다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -58,6 +61,7 @@ script InventoryWindow extends Logic
             self.Picked = {}
         end)
         _UIKit:Connect(self.Win .. "/BtnMulti", function() self:ToggleMulti() end)
+        _UIKit:Connect(self.Win .. "/BtnLock", function() self:ToggleLock() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] InventoryWindow inspect-first ready")
     end
@@ -200,6 +204,7 @@ script InventoryWindow extends Logic
         if self.SmithMode then hint = _UIKit:Colored("#FFD27A", "대장장이: 손볼 물건을 고르세요 · 소켓권 " .. tostring(inv.SocketTokens) .. "장")
         elseif self.Multi then hint = _UIKit:Colored("#9EE6A0", "여러 개 선택: 칸을 눌러 넣고 빼기 · " .. tostring(self:PickedCount()) .. "개") end
         _UIKit:SetText(self.Win .. "/Hint", hint)
+        self:RenderLock(self:LockTarget(list, eq))   -- 여러 개 선택·대장장이 모드에서는 숨긴다
         if self.Multi then
             self:RenderMulti(list, inv)
             return
@@ -256,6 +261,8 @@ script InventoryWindow extends Logic
                 allowed = self:CanEquip(sel, st)
             end
         end
+        local lockTarget = self:LockTarget(list, eq)
+        if lockTarget ~= "" and _ItemData:IsLocked(lockTarget) then desc = desc .. "\n" .. _UIKit:Colored("#FFD27A", "★ 잠긴 물건 · 팔기·버리기·거래 불가") end
         if not alive then
             allowed = false
             sell = false
@@ -282,7 +289,47 @@ script InventoryWindow extends Logic
         self:SetActionButton("BtnEquip", label, allowed)
         local selItem = list[self.Selected]
         local bound = selItem ~= nil and self.SelectedEquipSlot == "" and _ItemData:IsSoulbound(_ItemData:Parse(selItem).base)
-        self:SetActionButton("BtnSell", bound and "파괴" or "버리기", sell)
+        -- 잠긴 물건은 버리기 단추를 막는다 (이유는 설명 끝 줄)
+        local lockedSel = selItem ~= nil and self.SelectedEquipSlot == "" and _ItemData:IsLocked(selItem)
+        self:SetActionButton("BtnSell", bound and "파괴" or "버리기", sell and not lockedSel)
+    end
+
+    method string LockTarget(table list, table eq)
+        -- 잠금 단추가 가리키는 물건: 고른 착용 칸 → 고른 가방 칸 (장비·룬만, 겹치는 물건·귀속 재료 제외) · 없으면 ""
+        if self.SelectedEquipSlot ~= "" then
+            local worn = eq[self.SelectedEquipSlot]
+            return (worn ~= nil and _ItemData:CanLock(worn)) and worn or ""
+        end
+        local sel = list[self.Selected]
+        return (sel ~= nil and _ItemData:CanLock(sel)) and sel or ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderLock(string target)
+        -- 잠금 단추: 고른 물건이 잠글 수 있을 때만 · 잠겼으면 「잠금 해제」 (여러 개 선택·대장장이 모드에서는 숨김)
+        local show = target ~= "" and not self.Multi and not self.SmithMode
+        _UIKit:SetEnabled(self.Win .. "/BtnLock", show)
+        if not show then return end
+        local locked = _ItemData:IsLocked(target)
+        _UIKit:SetText(self.Win .. "/BtnLock", locked and _UIKit:Colored("#FFD27A", "잠금 해제") or "잠금")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ToggleLock()
+        -- 고른 물건 잠그기 / 풀기 (서버가 같은 물건인지 다시 본다). 고른 칸은 그대로 둔다 (ValidateSelection이 잠금만 다른 물건을 같은 것으로 본다)
+        local inv = self:Inv()
+        if inv == nil or not _UIKit:IsOpen(self.Win) then return end
+        local list, eq = inv:GetBagList(), inv:GetEquipMap()
+        self:ValidateSelection(list, eq)
+        local target = self:LockTarget(list, eq)
+        if target == "" then return end
+        local want = not _ItemData:IsLocked(target)
+        if self.SelectedEquipSlot ~= "" then
+            inv:RequestLockEquip(self.SelectedEquipSlot, target, want)
+        else
+            inv:RequestLockBag(self.Selected, target, want)
+        end
+        log("[VRF] lock toggle want=" .. tostring(want) .. " slot=" .. (self.SelectedEquipSlot ~= "" and self.SelectedEquipSlot or ("bag" .. tostring(self.Selected))))
     end
 
     @ExecSpace("ClientOnly")
@@ -292,8 +339,8 @@ script InventoryWindow extends Logic
         local box = _UIKit:Get(self.Win .. "/DescBox")
         if not isvalid(text) or not isvalid(box) then return end
         text.TextGUIRendererComponent.Text = desc
-        local height = text.TextGUIRendererComponent:GetPreferredHeight(desc, 740)
-        text.UITransformComponent.RectSize = Vector2(740, math.max(48, height + 16))
+        local height = text.TextGUIRendererComponent:GetPreferredHeight(desc, self.DescTextW)
+        text.UITransformComponent.RectSize = Vector2(self.DescTextW, math.max(48, height + 16))
         if box.ScrollLayoutGroupComponent ~= nil then box.ScrollLayoutGroupComponent:ResetScrollPosition(UITransformAxis.Vertical) end
     end
 
@@ -380,6 +427,9 @@ script InventoryWindow extends Logic
     @ExecSpace("ClientOnly")
     method void ValidateSelection(table list, table eq)
         -- 선택 이후 판매·거래·장착 등으로 실제 물건이 바뀌면 작업 대상을 잃는다.
+        -- 잠금·해제만 바뀐 같은 물건이면 고른 채로 둔다 (10-29 잠금)
+        if self.Selected > 0 and list[self.Selected] ~= self.SelectedItem and _ItemData:SameItem(list[self.Selected], self.SelectedItem) then self.SelectedItem = list[self.Selected] end
+        if self.SelectedEquipSlot ~= "" and eq[self.SelectedEquipSlot] ~= self.SelectedEquipItem and _ItemData:SameItem(eq[self.SelectedEquipSlot], self.SelectedEquipItem) then self.SelectedEquipItem = eq[self.SelectedEquipSlot] end
         if self.Selected > 0 and list[self.Selected] ~= self.SelectedItem then self:ClearSelection() return end
         if self.SelectedEquipSlot ~= "" and eq[self.SelectedEquipSlot] ~= self.SelectedEquipItem then self:ClearSelection() return end
         if self.SocketSlot ~= "" and (eq[self.SocketSlot] or "") ~= self.SocketItem then
@@ -458,9 +508,12 @@ script InventoryWindow extends Logic
             _UIKit:SetIcon(path .. "/Icon", "")
             _UIKit:SetText(path .. "/Count", "")
             _UIKit:SetColor(path .. "/Rim", Color(1, 1, 1, 1))
+            _UIKit:SetEnabled(path .. "/Lock", false)
             return
         end
         local item = _ItemData:Parse(s)
+        -- 잠긴 물건 ★ (칸에 Lock이 없는 창 — 떠돌이 상인 줄 등 — 은 SetEnabled가 아무것도 안 한다)
+        _UIKit:SetEnabled(path .. "/Lock", item.locked == true)
         local icon = _ItemData:IconFor(s)
         _UIKit:SetIcon(path .. "/Icon", icon)
         -- 겹치는 물건(물약·정수)은 오른쪽 아래 개수
@@ -486,8 +539,8 @@ script InventoryWindow extends Logic
         if inv == nil then return end
         local sel = inv:GetBagList()[index]
         if self.Multi then
-            -- 여러 개 선택: 넣고 빼기 (귀속 재료는 팔 수 없어 고르지 않는다)
-            if sel == nil or _ItemData:IsSoulbound(_ItemData:Parse(sel).base) then return end
+            -- 여러 개 선택: 넣고 빼기 (귀속 재료는 팔 수 없어, 잠긴 물건은 보호해 고르지 않는다)
+            if sel == nil or _ItemData:IsSoulbound(_ItemData:Parse(sel).base) or _ItemData:IsLocked(sel) then return end
             if self.Picked[index] ~= nil then self.Picked[index] = nil else self.Picked[index] = sel end
             self.RenderKey = ""
             self:Poll()
@@ -654,7 +707,7 @@ script InventoryWindow extends Logic
         end
         if n > 12 then table.insert(lines, "… 외 " .. tostring(n - 12) .. "개") end
         local head = "고른 " .. tostring(n) .. "개 · 팔려면 잿빛 행상에게 「거래」 (판매가 합계 " .. tostring(total) .. " 골드)"
-        if n == 0 then lines = { "가방 칸을 눌러 여러 물건을 고르세요. (귀속 재료 제외)" } end
+        if n == 0 then lines = { "가방 칸을 눌러 여러 물건을 고르세요. (귀속 재료·잠긴 물건 제외)" } end
         self:SetDescription(_UIKit:Colored("#FFD27A", head) .. "\n" .. table.concat(lines, "\n"))
         self:SetActionButton("BtnEquip", "모두 해제", n > 0)
         self:SetActionButton("BtnSell", "선택 버리기 " .. tostring(n), n > 0)
@@ -730,7 +783,7 @@ script InventoryWindow extends Logic
             return
         end
         if action == "sell" then
-            if sel == nil then return end
+            if sel == nil or _ItemData:IsLocked(sel) then return end
             -- 되돌릴 수 없는 조작이라 확인 창을 거친다 (판매는 잿빛 행상 거래 창에서)
             local index = self.Selected
             local name = _ItemData:DisplayName(sel)
@@ -758,7 +811,18 @@ script InventoryWindow extends Logic
                 return
             elseif sel ~= nil and _ItemData:IsRune(_ItemData:Parse(sel).base) then
                 if self.SocketSlot == "" or not self:CanSocket(sel, eq[self.SocketSlot]) then return end
-                inv:RequestSocket(self.Selected, self.SocketSlot, sel, self.SocketItem)
+                -- 룬 끼우기는 되돌릴 수 없어 확인 창을 거친다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+                local runeIndex, slot, gear = self.Selected, self.SocketSlot, self.SocketItem
+                local after = _ItemData:Parse(gear)
+                table.insert(after.runes, _ItemData:Parse(sel).base)
+                local done = _ItemData:Serialize(after)
+                _ConfirmDialog:ShowIcon("룬 끼우기", _ItemData:DisplayName(sel) .. " → " .. _ItemData:DisplayName(gear) .. "\n끼운 룬은 다시 뺄 수 없습니다.\n완성: " .. _ItemData:DisplayName(done), "끼우기", _ItemData:IconFor(sel), function()
+                    inv:RequestSocket(runeIndex, slot, sel, gear)
+                    self:ClearSelection()
+                    self:Poll()
+                    log("[VRF] socket confirmed slot=" .. slot)
+                end)
+                return
             elseif sel ~= nil and self:CanEquip(sel, st) then
                 inv:RequestEquip(self.Selected, sel)
             else return end

@@ -496,6 +496,12 @@ script PlayerInventory extends Component
             _Util:Notify("귀속 물건은 팔 수 없다", senderUserId)
             return
         end
+        -- 잠긴 물건은 팔지 않는다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+        if _ItemData:IsLocked(expectedItem) then
+            _Util:Notify("잠긴 물건은 팔 수 없습니다. 잠금을 풀어주세요", senderUserId)
+            log("[VRF] lock refuse sell " .. _ItemData:Parse(expectedItem).base)
+            return
+        end
         -- 판매는 상인 곁에서만 (소지품 어디서나 팔리던 것을 막는다)
         if not _Util:NearNpc(self.Entity, "shop") then
             _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
@@ -513,6 +519,12 @@ script PlayerInventory extends Component
         -- 버리기: 확인 창을 거친 뒤 가방에서 영구 삭제. 요청 사이에 바뀐 물건은 버리지 않는다
         if not self:IsOwnerRequest(senderUserId) then return end
         if self.Bag[index] == nil or self.Bag[index] ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
+        -- 잠긴 물건은 버리지 않는다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+        if _ItemData:IsLocked(expectedItem) then
+            _Util:Notify("잠긴 물건은 버릴 수 없습니다. 잠금을 풀어주세요", senderUserId)
+            log("[VRF] lock refuse discard " .. _ItemData:Parse(expectedItem).base)
+            return
+        end
         local s = self:TakeBagItem(index)
         if s == "" then return end
         -- 귀속 물건(정수)은 떨어뜨리지 않고 파괴한다 (확인 창에서 미리 알린다)
@@ -691,15 +703,18 @@ script PlayerInventory extends Component
             _Util:Notify("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
             return
         end
-        local total, n = 0, 0
+        local total, n, locked = 0, 0, 0
         for _, p in ipairs(self:ParsePicks(list)) do
             local cur = self.Bag[p.index]
-            if cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
+            if cur ~= nil and cur == p.item and _ItemData:IsLocked(cur) then locked = locked + 1
+            elseif cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
                 total = total + _ItemData:SellValue(cur)
                 table.remove(self.Bag, p.index)
                 n = n + 1
             end
         end
+        -- 잠긴 물건은 건너뛴다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+        if locked > 0 then _Util:Notify("잠긴 물건 " .. tostring(locked) .. "개는 팔지 않았습니다", senderUserId) end
         if n == 0 then return end
         self:RefreshDigest()
         stats:AddGold(total)
@@ -710,18 +725,50 @@ script PlayerInventory extends Component
     method void RequestDiscardMany(string list)
         -- 상인이 없는 곳에서 여러 개 버리기 (땅에 떨어뜨림, 귀속 물건은 건너뛴다)
         if not self:IsOwnerRequest(senderUserId) or not _Util:IsAlive(self.Entity) then return end
-        local n = 0
+        local n, locked = 0, 0
         for _, p in ipairs(self:ParsePicks(list)) do
             local cur = self.Bag[p.index]
-            if cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
+            if cur ~= nil and cur == p.item and _ItemData:IsLocked(cur) then locked = locked + 1
+            elseif cur ~= nil and cur == p.item and not _ItemData:IsSoulbound(_ItemData:Parse(cur).base) then
                 table.remove(self.Bag, p.index)
                 _LootSystem:DropDiscarded(self.Entity, cur)
                 n = n + 1
             end
         end
+        -- 잠긴 물건은 건너뛴다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
+        if locked > 0 then _Util:Notify("잠긴 물건 " .. tostring(locked) .. "개는 버리지 않았습니다", senderUserId) end
         if n == 0 then return end
         self:RefreshDigest()
         _Util:Notify("버렸다 " .. tostring(n) .. "개 (10초 뒤 누구나 주울 수 있다)", senderUserId)
+    end
+
+    -- ───────── 잠금 (10-29 기획서 45 결정 6-A · 즐겨찾기) ─────────
+    -- 잠긴 물건은 팔기·버리기·거래에서 빠진다. 잠금은 물건 문자열에 붙어(ItemData 9번째 칸) 창고·장착·정렬을 따라다닌다
+
+    @ExecSpace("Server")
+    method void RequestLockBag(integer index, string expectedItem, boolean locked)
+        -- 가방 칸의 물건을 잠그거나 푼다 (누를 때 보이던 물건이 그대로 있을 때만)
+        if not self:IsOwnerRequest(senderUserId) then return end
+        local cur = self.Bag[index]
+        if cur == nil or cur ~= expectedItem or not _ItemData:CanLock(cur) then return end
+        if _ItemData:IsLocked(cur) == locked then return end
+        self.Bag[index] = _ItemData:WithLock(cur, locked)
+        self:RefreshDigest()
+        _Util:Notify((locked and "잠금: " or "잠금 해제: ") .. _ItemData:DisplayName(cur), senderUserId)
+        log("[VRF] lock bag index=" .. tostring(index) .. " locked=" .. tostring(locked))
+    end
+
+    @ExecSpace("Server")
+    method void RequestLockEquip(string slot, string expectedItem, boolean locked)
+        -- 착용 중인 물건을 잠그거나 푼다 (벗으면 가방에서도 잠긴 채)
+        if not self:IsOwnerRequest(senderUserId) then return end
+        local cur = self.Equip[slot]
+        if cur == nil or cur ~= expectedItem or not _ItemData:CanLock(cur) then return end
+        if _ItemData:IsLocked(cur) == locked then return end
+        self.Equip[slot] = _ItemData:WithLock(cur, locked)
+        self:RefreshDigest()
+        _Util:Notify((locked and "잠금: " or "잠금 해제: ") .. _ItemData:DisplayName(cur), senderUserId)
+        log("[VRF] lock equip slot=" .. slot .. " locked=" .. tostring(locked))
     end
 
     -- ───────── 창고 (마을 창고 곁) ─────────

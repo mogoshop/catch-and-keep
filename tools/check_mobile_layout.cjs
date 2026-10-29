@@ -138,9 +138,91 @@ if (svgAt > 0) {
   fs.writeFileSync(path.resolve(process.argv[svgAt + 1]), svg);
 }
 
+// ── 좁은 화면 넓은 창 5개 (10-29 기획서 45 결정 4-A · RootDesk/MyDesk/UI/Hud/WindowFit.mlua) ──
+//   4:3 태블릿 보이는 칸 1440×1080 안에 창 바깥(테두리 포함)이 가장자리 16을 띄우고 들어가는지,
+//   창 바로 아래 조각(그림자 보관함은 상세 판 안까지)이 바뀐 창 크기 안에 있는지, WindowFit이 옮긴 조각끼리 겹치지 않는지 잰다.
+const { NARROW, FRAME } = require("./build/ui-tokens.cjs");
+const wf = read("RootDesk/MyDesk/UI/Hud/WindowFit.mlua");
+const wfProp = (name) => Number((wf.match(new RegExp("property\\s+\\w+\\s+" + name + "\\s*=\\s*([0-9.]+)")) || [])[1]);
+for (const [name, js] of [["BodyMaxW", NARROW.bodyMaxW], ["BodyMaxH", NARROW.bodyMaxH], ["Edge", NARROW.edge], ["RimOut", FRAME.rimOut], ["VisibleH", NARROW.visibleH]]) {
+  if (wfProp(name) !== js) problems.push(`WindowFit.${name} = ${wfProp(name)} · ui-tokens = ${js} (한쪽만 바꾸지 않는다)`);
+}
+const fit = new Map();   // 경로 → { pos?, size? }
+const num = "([-\\d.]+)";
+for (const m of wf.matchAll(new RegExp(`self:Box\\("([^"]+)",\\s*${num},\\s*${num},\\s*${num},\\s*${num}\\)`, "g"))) fit.set(m[1], { ...(fit.get(m[1]) || {}), pos: [+m[2], +m[3]], size: [+m[4], +m[5]] });
+for (const m of wf.matchAll(new RegExp(`self:Pos\\("([^"]+)",\\s*${num},\\s*${num}\\)`, "g"))) fit.set(m[1], { ...(fit.get(m[1]) || {}), pos: [+m[2], +m[3]] });
+for (const m of wf.matchAll(new RegExp(`self:Size\\("([^"]+)",\\s*${num},\\s*${num}\\)`, "g"))) fit.set(m[1], { ...(fit.get(m[1]) || {}), size: [+m[2], +m[3]] });
+const hidden = new Set([...wf.matchAll(/_UIKit:SetEnabled\("([^"]+)",\s*false\)/g)].map((m) => m[1]));
+const WIDE = ["/ui/EquipmentHUD/SafeArea/InvWin", "/ui/ShopHUD/SafeArea/ShopWin", "/ui/GameHUD/OfferWin", "/ui/GameHUD/GuideWin", "/ui/ShadowHUD/Window"];
+// 겹쳐도 되는 조각: 잠금 단추는 설명 칸 오른쪽 위 빈 자리에 일부러 얹는다 · 그림자 상세 「Empty」 안내는 고른 그림자가 없을 때 혼자 뜬다 (* = 아무 조각)
+const WIDE_OK = [["InvWin/BtnLock", "InvWin/DescBox"], ["Detail/Empty", "*"]];
+const uiCache = new Map();
+function uiOf(group) {
+  if (!uiCache.has(group)) {
+    const log = console.log;
+    console.log = () => {};
+    try { uiCache.set(group, UIBuilder.read(path.join(ROOT, "ui", group + ".ui"))); } finally { console.log = log; }
+  }
+  return uiCache.get(group);
+}
+function geo(b, p) {
+  // 고정 앵커 조각의 앵커 점·피벗·자리·크기 (WindowFit 값이 있으면 그것). stretch 앵커는 null
+  const t = b.getComponent(p, "MOD.Core.UITransformComponent");
+  if (!t) return null;
+  const amin = t.AnchorsMin || { x: 0.5, y: 0.5 }, amax = t.AnchorsMax || { x: 0.5, y: 0.5 };
+  if (Math.abs(amin.x - amax.x) > 1e-6 || Math.abs(amin.y - amax.y) > 1e-6) return null;
+  const f = fit.get(p) || {};
+  return { anchor: [amin.x, amin.y], pivot: [t.Pivot.x, t.Pivot.y], pos: f.pos || [t.anchoredPosition.x, t.anchoredPosition.y], size: f.size || [t.RectSize.x, t.RectSize.y] };
+}
+const childRect = (g, W, H) => {
+  const px = g.anchor[0] * W + g.pos[0], py = g.anchor[1] * H + g.pos[1];
+  return [px - g.pivot[0] * g.size[0], px + (1 - g.pivot[0]) * g.size[0], py - g.pivot[1] * g.size[1], py + (1 - g.pivot[1]) * g.size[1]];
+};
+let wideChecked = 0;
+for (const win of WIDE) {
+  const group = win.split("/")[2];
+  const b = uiOf(group);
+  const wg = geo(b, win);
+  if (!wg) { problems.push(`좁은 화면: ${win} 없음`); continue; }
+  const [W, H] = wg.size;
+  const outerW = W + FRAME.rimOut * 2, outerH = H + FRAME.rimOut * 2;
+  // 창은 화면 가운데 기준 (SafeArea·그룹 가운데 앵커) — 보이는 칸 1440×1080의 가장자리 16 안
+  const halfW = NARROW.visibleW / 2 - NARROW.edge, halfH = NARROW.visibleH / 2 - NARROW.edge;
+  if (Math.abs(wg.pos[0]) + outerW / 2 > halfW + 0.5 || Math.abs(wg.pos[1]) + outerH / 2 > halfH + 0.5) problems.push(`좁은 화면 4:3: ${win} 바깥 ${outerW}×${outerH} (자리 ${wg.pos.join(",")})가 보이는 칸 ${NARROW.visibleW}×${NARROW.visibleH} − 가장자리 ${NARROW.edge}를 넘는다`);
+  if (W > NARROW.bodyMaxW || H > NARROW.bodyMaxH) problems.push(`좁은 화면 4:3: ${win} 바탕 ${W}×${H} > 상한 ${NARROW.bodyMaxW}×${NARROW.bodyMaxH}`);
+  // 창 바로 아래 조각 + 그림자 상세 판 안 조각
+  const parents = [[win, W, H]];
+  const detail = win + "/Detail";
+  if (b.find(detail)) { const dg = geo(b, detail); if (dg) parents.push([detail, dg.size[0], dg.size[1]]); }
+  for (const [parent, PW, PH] of parents) {
+    const kids = b.listEntities().filter((e) => e.path.startsWith(parent + "/") && e.path.split("/").length === parent.split("/").length + 1);
+    const rects = [];
+    for (const e of kids) {
+      // 테두리 · 실행 중에 자리를 정하는 연출(고른 카드 반짝임 Flash)은 빼고
+      if (e.name === "Rim" || e.name === "Flash" || hidden.has(e.path)) continue;
+      const g = geo(b, e.path);
+      if (!g) continue;
+      const r = childRect(g, PW, PH);
+      wideChecked++;
+      if (r[0] < -0.5 || r[2] < -0.5 || r[1] > PW + 0.5 || r[3] > PH + 0.5) problems.push(`좁은 화면 4:3: ${e.path.replace("/ui/", "")} (${r.map((v) => v.toFixed(0)).join(",")})가 ${parent.split("/").pop()} ${PW}×${PH} 밖`);
+      if (e.name !== "Title") rects.push([e.path, r, fit.has(e.path)]);
+    }
+    // 겹침: WindowFit이 옮긴 조각이 하나라도 낀 쌍만 본다 (빌드 그대로인 조각끼리는 PC 배치 — check_ui_layers 몫)
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+      const [a, ra, fa] = rects[i], [c, rc, fc] = rects[j];
+      if (!fa && !fc) continue;
+      const short = (p) => p.split("/").slice(-2).join("/");
+      const okPair = (x, y) => (short(a) === x && (y === "*" || short(c) === y)) || (short(c) === x && (y === "*" || short(a) === y));
+      if (WIDE_OK.some(([x, y]) => okPair(x, y) || okPair(y, x))) continue;
+      const ox = Math.min(ra[1], rc[1]) - Math.max(ra[0], rc[0]), oy = Math.min(ra[3], rc[3]) - Math.max(ra[2], rc[2]);
+      if (ox > 0.5 && oy > 0.5) problems.push(`좁은 화면 4:3: ${a.replace("/ui/", "")} × ${short(c)} 겹침 ${ox.toFixed(0)}×${oy.toFixed(0)}`);
+    }
+  }
+}
+
 if (problems.length) {
   for (const p of problems) console.log(p);
   console.log(`[check_mobile_layout] 문제 ${problems.length}건`);
   process.exit(1);
 }
-console.log(`[check_mobile_layout] 요소 ${names.length}개 · 화면 ${CANVASES.length}종, 문제 0건`);
+console.log(`[check_mobile_layout] 요소 ${names.length}개 · 화면 ${CANVASES.length}종 · 좁은 화면 넓은 창 ${WIDE.length}개(조각 ${wideChecked}), 문제 0건`);

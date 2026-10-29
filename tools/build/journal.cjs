@@ -7,6 +7,7 @@ const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scri
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
 const icons = Object.fromEntries(load('ui_icons').map((x) => [x.key, x.ruid]));
 const T = require(path.join(root, 'tools/build/ui-tokens.cjs'));
+const { windowFrame } = require(path.join(root, 'tools/build/lib.cjs'));
 const ROWS = 8;
 // 줄 오른쪽 세로 칸 (줄 오른쪽 끝에서): 단추·숫자 칸 200 → 상자 → 진행 막대 220 → 보상 골드 120 → 난이도 별 100. 단추와 숫자가 같은 칸에 가운데 맞춤으로 선다 (10-27 사용자: 「오른쪽 계층 엉망」)
 // 보상 골드는 글 대신 골드 주머니 그림 + 숫자 (10-27 사용자: 「골드 아이콘 사용」)
@@ -23,10 +24,8 @@ function run() {
   b.patchComponent('SafeArea/BtnOpen', 'MOD.Core.UITransformComponent', { ActivePlatform: 2 });
 
   const win = 'SafeArea/JournalWin';
-  b.panel(win, { rect_size: [1320, 940], color: { r: .05, g: .045, b: .06, a: 1 }, raycast: true, enable: false });
-  b.sprite(win + '/Rim', { rect_size: [1320 + T.FRAME.rimOut * 2, 940 + T.FRAME.rimOut * 2], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
-  b.text(win + '/Title', '일지', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -17], rect_size: [700, 40], size: 28, color: '#E6C88A', alignment: 4, bold: true });
-  b.button(win + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
+  // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+  windowFrame(b, win, { size: [1320, 940], pos: [0, 0], title: '일지', enable: false });
   // 4탭: 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 (유니크·세트·룬워드 수집 — docs/design/19 §2-6)
   [['TabDaily', '일일 의뢰'], ['TabAch', '업적'], ['TabCol', '몬스터 도감'], ['TabItem', '아이템 도감']].forEach(([n, label], i) => {
     b.button(win + '/' + n, label, { anchor: 'top-left', pos: [40 + i * 214, -88], rect_size: [204, 88], font_size: 26, bg_color: '#24212B', color: '#E6DCC6' });

@@ -5,6 +5,7 @@ const path = require('path'), fs = require('fs');
 const root = process.env.MSW_WORLD_ROOT || path.resolve(__dirname, '../..');
 const { UIBuilder } = require(path.join(root, '.claude/skills/msw-ui-system/scripts/msw_ui_builder.cjs'));
 const { load } = require(path.join(root, 'tools/lib/csv.cjs'));
+const { windowFrame, fitButtonText, slotLock } = require(path.join(root, 'tools/build/lib.cjs'));
 const icons = Object.fromEntries(load('ui_icons').map((x) => [x.key, x.ruid]));
 
 function grid(b, name, count, pos, rows, prefix) {
@@ -16,6 +17,7 @@ function grid(b, name, count, pos, rows, prefix) {
     b.sprite(n + '/Rim', { rect_size: [88, 88], image_ruid: icons.slot_frame, color: '#FFFFFF', sprite_type: 1 });
     b.sprite(n + '/Icon', { rect_size: [64, 64], color: '#FFFFFF', enable: false });
     b.text(n + '/Count', '', { anchor: 'bottom-right', pivot: [1, 0], pos: [-4, 2], rect_size: [60, 28], size: 20, bold: true, color: '#FFFFFF', alignment: 8, outline: true, outline_color: '#101010', outline_width: 0.3 });
+    slotLock(b, n);   // 잠긴 물건 ★ (10-29 45 결정 6-A — 창고에 넣어도 잠금은 물건에 남는다)
   }
 }
 
@@ -25,10 +27,8 @@ function run() {
   // 그룹 순서는 tools/build/ui-order.cjs가 모든 UI 그룹을 한 번에 정한다
   b.empty('SafeArea', { anchor: 'stretch', rect_size: [1920, 1080] });
   const w = 'SafeArea/StashWin';
-  b.panel(w, { rect_size: [1100, 1000], pos: [0, 0], color: '#100E16', raycast: true, enable: false });
-  b.sprite(w + '/Rim', { rect_size: [1140, 1040], image_ruid: icons.win_frame, color: '#FFFFFF', sprite_type: 1 });
-  b.text(w + '/Title', '창고', { anchor: 'top-center', pivot: [0.5, 1], pos: [0, -17], rect_size: [800, 40], size: 28, color: '#E6C88A', alignment: 4, bold: true });
-  b.button(w + '/BtnClose', '', { anchor: 'top-right', pos: [-20, -14], rect_size: [88, 88], image_ruid: icons.btn_close, bg_color: '#FFFFFF' });
+  // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
+  windowFrame(b, w, { size: [1100, 1000], pos: [0, 0], title: '창고', enable: false });
   b.text(w + '/StashLabel', '창고', { anchor: 'top-left', pos: [28, -94], rect_size: [540, 36], size: 22, color: '#C9BBA0', alignment: 3, bestfit: true, min_size: 16, max_size: 22 });
   // 창고 탭 4개 × 100칸 = 400칸 (docs/design/19 §5). 지금 탭은 StashWindow가 밝게 칠한다
   for (let t = 1; t <= 4; t++) {
@@ -38,6 +38,7 @@ function run() {
   // 등급별 한꺼번에 넣기 (가방 → 창고)
   [['DepNormal', '일반 넣기'], ['DepMagic', '마법 넣기'], ['DepRare', '레어 넣기'], ['DepUnique', '유니크·세트'], ['DepRune', '룬 넣기']].forEach(([n, label], i) => {
     b.button(w + '/' + n, label, { anchor: 'top-left', pos: [28 + i * 210, -560], rect_size: [198, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', font_size: 22, color: '#E6DCC6' });
+    fitButtonText(b, w + '/' + n);   // 테두리 단추 글자 규격 (ui-tokens buttonText) — 탭(Tab1~4)은 45-5 전용 탭 그림 때
   });
   b.text(w + '/BagLabel', '가방', { anchor: 'top-left', pos: [28, -660], rect_size: [1044, 36], size: 24, color: '#C9BBA0', alignment: 3 });
   grid(b, w + '/Bag', 60, [28, -698], 2, 'B');
