@@ -128,6 +128,25 @@ for (const [label, W, H] of CANVASES) {
   }
 }
 
+// I04 ㉠ (10-29 21:03 코덱스 위임 승인 · approval-i04-review-2103): 고급 배치 기본 공격(BasicAtk)과 큰 공격·S4의 실제 입력 사각형 가장자리 간격 ≥ 8 UI 단위 (목표 8~12).
+//   한 축이 겹치면 다른 축의 틈, 두 축 모두 떨어지면 모서리 사이 직선 거리. 둥근 그림(테두리) 사이 여백으로 대신하지 않는다 · 셋 다 오른쪽 아래 앵커라 화면마다 같은 값
+const MIN_TAP_GAP = 8;
+const TAP_GAP_PAIRS = [["MobilePad/BasicAtk", "MobilePad/Attack"], ["MobilePad/BasicAtk", "MobilePad/Skills/S4"]];
+function edgeGap(ra, rb) {
+  const dx = Math.max(ra[0] - rb[1], rb[0] - ra[1]), dy = Math.max(ra[2] - rb[3], rb[2] - ra[3]);
+  if (dx <= 0 && dy <= 0) return -Math.min(-dx, -dy);   // 겹침: 음수
+  if (dx <= 0) return dy;
+  if (dy <= 0) return dx;
+  return Math.hypot(dx, dy);
+}
+for (const [label, W, H] of CANVASES) {
+  for (const [a, b] of TAP_GAP_PAIRS) {
+    const g = edgeGap(rect(items.get(a), W, H), rect(items.get(b), W, H));
+    if (g < MIN_TAP_GAP - 1e-6) problems.push(`${label}: ${a} ↔ ${b} 입력 사각형 간격 ${g.toFixed(1)} < ${MIN_TAP_GAP} (I04 ㉠)`);
+    else if (verbose && label === CANVASES[0][0]) console.log(`  I04 간격 ${a.split("/").pop()} ↔ ${b.split("/").pop()} = ${g.toFixed(1)} (≥ ${MIN_TAP_GAP})`);
+  }
+}
+
 const svgAt = process.argv.indexOf("--svg");
 if (svgAt > 0) {
   // 아이폰 가로 안전영역 배치 그림 (y는 위가 0이 되게 뒤집는다)

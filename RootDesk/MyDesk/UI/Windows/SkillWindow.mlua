@@ -530,7 +530,9 @@ script SkillWindow extends Logic
         local level = book:GetLevel(id)
         local power = book:PowerLevelAt(id, math.max(1, level))
         local gear = def.kind ~= "node" and math.max(0, power - math.max(1, level)) or 0
-        local current = book:GetRankSummary(id, def.kind == "node" and level == 0 and 1 or power)
+        -- 53·54: 이 줄은 공방(RenderWorkshop)에서만 그려지고 같은 화면 설명 칸(Desc)에 UseHint 조건 줄이 함께 보인다 → 요약 끝 중복 괄호만 뺀다 (DropHintDup)
+        local hint = book:UseHint(id)
+        local current = self:DropHintDup(id, book:GetRankSummary(id, def.kind == "node" and level == 0 and 1 or power), hint)
         if level > 0 and power <= 0 then current = "현재 캐릭터 레벨에서는 효과 없음" end
         local line = ""
         if current ~= "" then
@@ -538,7 +540,7 @@ script SkillWindow extends Logic
             if level > 0 and level < def.maxLv then
                 local nextPower = book:PowerLevelAt(id, level + 1)
                 -- 노드의 잠긴 다음 랭크는 계획할 효과를 보여 주고 구매 조건은 아래 Reason에서 설명한다.
-                local nextRank = book:GetRankSummary(id, def.kind == "node" and (level + 1) or nextPower)
+                local nextRank = self:DropHintDup(id, book:GetRankSummary(id, def.kind == "node" and (level + 1) or nextPower), hint)
                 line = line .. "\n" .. (nextRank == current and "다음 랭크: 효과 동일" or ("다음 랭크: " .. _UIKit:Colored("#7CFF7A", nextRank)))
             end
         end
@@ -558,6 +560,16 @@ script SkillWindow extends Logic
         local roster = book:RosterLine(id)
         if roster ~= "" then line = line .. (line ~= "" and "\n" or "") .. _UIKit:Colored("#C9BFA8", roster) end
         return line
+    end
+
+    method string DropHintDup(string id, string summary, string hint)
+        -- 글귀 53·54 (10-29 저녁 코덱스 위임 승인 · approval-copy-review-2103): 잔걸음(step_gale)·뼈 껍질(dash_ghost)은 선행 스킬이 없으면
+        --   요약 끝에 「(망령 질주를 배우면)」·「(뼈 갑옷을 배우면)」이 붙고, 같은 화면에 UseHint 조건 줄(「…를 배워야 발동합니다」)도 보여 정보가 겹친다.
+        --   UseHint 줄이 실제로 함께 보이는 표시 경로(스킬 창 공방 StatLine · 스킬 제물 강화 카드 NodeChange)에서만 요약 쪽 괄호를 뺀다.
+        --   SkillBook.GetRankSummary는 그대로 둔다 — RequestLearn→NotifyLearned 학습 알림은 UseHint 줄이 없어 이 괄호가 유일한 조건 안내다
+        if hint == "" or (id ~= "step_gale" and id ~= "dash_ghost") then return summary end
+        local out = string.gsub(summary, " %([^%(%)]*배우면%)$", "")
+        return out
     end
 
     method number MeasureW(TextGUIRendererComponent comp, string text)

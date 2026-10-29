@@ -2,7 +2,7 @@
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
 -- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,Pick,RenderWorkshop+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,RenderWorkshop+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
 _GameData:Ensure();_SkillData:Ensure()
@@ -356,6 +356,46 @@ wrapOk(longOrig,longCard)
 for _,l in ipairs(lines(longCard)) do assert(_UIKit:TextWidth(l,SkillOffer.ChangeFont)<=SkillOffer.ChangeW,l) end
 entity.GetComponent=oldGet;_UIKit.Colored=oldColored
 print(string.format('[quality/skills] INT1725-OBS-01 offer card Change %dx%d (16px %d줄 · 12px %d줄): %s · all form nodes worst %d lines (%s) · R01 values kept %d/%d (첫 토막만: 두 자리 합성 경고 %d)',SkillOffer.ChangeW,chH,SkillOffer.ChangeLines,SkillOffer.ChangeMaxLines,table.concat(sceneLog,', '),worstN,worstCase,valueKept,valueKept+valueFallback,valueFallback))
+-- 글귀 53·54 (10-29 저녁 코덱스 위임 승인 · approval-copy-review-2103): 잔걸음·뼈 껍질은 선행 스킬이 없을 때
+--   UseHint 조건 줄이 같은 화면에 보이는 표시 경로(스킬 창 공방 StatLine/RenderWorkshop · 제물 강화 카드 NodeChange)에서만 요약 끝 「(…를 배우면)」을 뺀다.
+--   공용 요약 GetRankSummary는 그대로 — RequestLearn→NotifyLearned 학습 알림(UseHint 줄 없음)은 이 괄호로 선행 조건을 알린다
+do
+ stats.Level=99;bonus=0;choices={}
+ local bookSrc=io.open('RootDesk/MyDesk/Skill/SkillBook.mlua'):read('a')
+ assert(string.find(bookSrc,'self:NotifyLearned(id, self:GetLevel(id), self:GetRankSummary(id, self:GetLevel(id)), slot, pc.UserId)',1,true),'53/54: learn notice must keep the raw shared summary (condition tail)')
+ local dupLog={}
+ for _,c in ipairs({{'step_gale','wraith_dash','(망령 질주를 배우면)','망령 질주를 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(뼈 갑옷을 배우면)','뼈 갑옷을 배워야 회복합니다','질주 끝에 뼈 갑옷'}}) do
+  local id,pre,tail,hintText,main=c[1],c[2],c[3],c[4],c[5]
+  local parent=_SkillData:Get(id).parent
+  for _,lv in ipairs({0,1}) do
+   -- UseHint 있음(선행 스킬 없음): 공용 요약·학습 알림 쪽은 괄호 유지, 표시 경로는 괄호 없음 + 조건 줄은 그대로
+   book.Levels={[parent]=1,[id]=lv}
+   assert(book:UseHint(id)==hintText,id..' hint '..book:UseHint(id))
+   local shared=book:GetRankSummary(id,math.max(1,lv))
+   assert(string.sub(shared,-#(' '..tail))==' '..tail,'53/54: shared summary lost its condition tail '..shared)
+   if lv>0 then assert(string.find(book:GetRankSummary(id,book:GetLevel(id)),tail,1,true),'53/54: learn notice summary lost tail') end
+   local sl=SkillWindow:StatLine(book,stats,id)
+   assert(not string.find(sl,'배우면)',1,true) and string.find(sl,main,1,true),'53/54: stat line still duplicates hint\n'..sl)
+   assert(string.find(sl,(lv==0 and '배우면: ' or '지금: ')..string.sub(shared,1,#shared-#(' '..tail)),1,true),'53/54: main effect changed\n'..sl)
+   SkillWindow.SelMain=parent;SkillWindow.Selected=id;values={}
+   SkillWindow:RenderWorkshop(book,stats)
+   assert(string.find(values['SkillWin/WS/Desc'],hintText,1,true),'53/54: workshop lost the UseHint line')
+   assert(not string.find(values['SkillWin/WS/Stat'],tail,1,true) and string.find(values['SkillWin/WS/Stat'],main,1,true),'53/54: workshop stat\n'..values['SkillWin/WS/Stat'])
+   local card=plain(cardChange({[parent]=1,[id]=lv},'|0',id))
+   assert(not string.find(strip(card),strip(tail),1,true) and string.find(strip(card),strip(main),1,true) and string.find(strip(card),strip(hintText),1,true),'53/54: offer card\n'..card)
+   -- UseHint 없음(선행 스킬 배움): 요약에 괄호가 없고 표시 경로도 요약 글자 그대로
+   book.Levels={[parent]=1,[id]=lv,[pre]=1}
+   assert(book:UseHint(id)=='' and not string.find(book:GetRankSummary(id,math.max(1,lv)),'배우면',1,true))
+   assert(string.find(SkillWindow:StatLine(book,stats,id),book:GetRankSummary(id,math.max(1,lv)),1,true),'53/54: no-hint stat line changed')
+   if lv==0 then table.insert(dupLog,id..' 「'..string.sub(shared,1,#shared-#(' '..tail))..'」') end
+  end
+  -- 표시 경로라도 조건 줄이 없으면(hint="") 괄호 유지 · 다른 노드는 손대지 않음
+  local raw=book:GetRankSummary(id,1)..' '..tail
+  assert(SkillWindow:DropHintDup(id,raw,'')==raw)
+  assert(SkillWindow:DropHintDup('shard_multi','골편 모임 '..tail,'x')=='골편 모임 '..tail)
+ end
+ print('[quality/skills] copy 53/54 hint dup: display paths drop tail only beside UseHint ('..table.concat(dupLog,' · ')..'), shared summary/learn notice keep it')
+end
 -- INT1725-OBS-02 (I03-6 거인 유지 중 편성 줄): 거인 몸(s:!)은 「일반」이 아니라 「거인 본체」, 합쳐진 넷은 「거인에 4」, 분모 섞인 「6/5」 대신 「정원 5기」.
 --   정원 계산·진단 수는 그대로 (have 6 = 예약 4 + 기록 2 · counts는 거인 몸을 센다) — 표시만 나눈다
 entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdRoster end return oldGet(self,key) end

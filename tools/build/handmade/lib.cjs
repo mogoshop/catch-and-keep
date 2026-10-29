@@ -49,6 +49,20 @@ const flipAt = (x, y) => {
 const MIX_SEED_X = 7919, MIX_SEED_Y = 104729;
 const floorFlipX = (wx) => flipAt(Math.round(wx * 100), MIX_SEED_X);
 const floorFlipY = (wy) => flipAt(MIX_SEED_Y, Math.round(wy * 100));
+// ;floormix 줄(상하) 정책 — 10-29 21:03 코덱스 위임 승인 바닥 시범 (approval-floor-review-2103 · 집게 동굴 1층·폭풍의 눈 노말만 격리 비교)
+//   "mix" (기본 · 871b60b4 그대로): 줄마다 칸 좌표 의사난수로 상하 뒤집기
+//   "seam-only" = 「상하 의사난수 섞기 중지 + 경계 이음 보정 유지」: 줄의 의사난수 FlipY 선택만 끈다.
+//     잘린 줄의 경계 방향(decide의 hard cut)·segs의 필요 뒤집기(f = !f)·py(뒤집은 줄은 끝 장 가운데가 축)는 그대로라
+//     경계에서는 FlipY가 남을 수 있다 — 「모든 FlipY=0」이 아니다. 열 FlipX·전역 격자 원점·부분 타일 정렬·MIX_Z·에셋/RUID/색/배율·통행/충돌은 모드와 무관
+//   고르기: tools/build/handmade/build.cjs <맵id> --floormix-y=seam-only (또는 환경 변수 FLOORMIX_Y=seam-only). 전체 빌드(tools/build.cjs maps)는 기본 "mix"
+const FLOORMIX_Y_MODES = ["mix", "seam-only"];
+let floormixY = process.env.FLOORMIX_Y || "mix";
+function setFloormixY(mode) {
+  if (!FLOORMIX_Y_MODES.includes(mode)) throw new Error(`floormix 상하 모드 '${mode}' 모름 (가능: ${FLOORMIX_Y_MODES.join(", ")})`);
+  floormixY = mode;
+}
+setFloormixY(floormixY);   // 환경 변수 값 검사
+const noFlip = () => false;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const key = (x, y) => `${x},${y}`;
 const tintOf = (t) => { const [r, g, b] = (t || "1/1/1").split("/").map(Number); return { r, g, b, a: 1 }; };
@@ -596,7 +610,11 @@ function artEntities(d, ctx, bp, rows, func) {
     m.cx0 = Math.min(...m.cols.map((c) => c.L)); m.cx1 = Math.max(...m.cols.map((c) => c.R));   // 좌우로 늘린 폭까지 위아래 이웃을 본다 (모서리 칸)
   }
   for (const m of mixRects.values()) markCuts(cutsY, m.art, m.ay, m.by, MIX_OY, m.cx1 - m.cx0, (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
-  for (const m of mixRects.values()) m.rows = segs(m.ay, m.by, MIX_OY, (k) => decide(cutsY, m.art, k, MIX_OY, floorFlipY), (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
+  // 줄: seam-only면 의사난수만 끄고(noFlip) decide의 경계 방향·segs의 필요 뒤집기는 그대로 (위 FLOORMIX_Y_MODES 주석)
+  const rowFlip = floormixY === "seam-only" ? noFlip : floorFlipY;
+  let freeRows = 0;   // 경계 보정 없이 정책(의사난수/끔)으로 정한 줄 수 (MIXDEBUG 줄)
+  const rowPick = (wy) => { freeRows++; return rowFlip(wy); };
+  for (const m of mixRects.values()) m.rows = segs(m.ay, m.by, MIX_OY, (k) => decide(cutsY, m.art, k, MIX_OY, rowPick), (g0) => same(m.art, m.cx0, m.cx1, g0, m.ay), (g1) => same(m.art, m.cx0, m.cx1, m.by, g1));
   const mixPieces = (name, rid, m, z, tint) => {
     const parts = [];
     for (const rr of m.rows) for (const cr of m.cols) {
@@ -620,7 +638,10 @@ function artEntities(d, ctx, bp, rows, func) {
       else out.push(tiled(...args));
     }
   }
-  if (process.env.MIXDEBUG && mixRects.size) console.log(`  [floormix] ${bp.id} 사각형 ${mixRects.size} · 반대로 뒤집은 조각 ${mixForced} · 끝부터 깐 조각 ${mixLocal}`);
+  if (process.env.MIXDEBUG && mixRects.size) {
+    const rowsF = [...mixRects.values()].reduce((n, m) => n + m.rows.filter((r) => r.f).length, 0), rowsN = [...mixRects.values()].reduce((n, m) => n + m.rows.length, 0);
+    console.log(`  [floormix] ${bp.id} 상하 ${floormixY} · 사각형 ${mixRects.size} · 반대로 뒤집은 조각 ${mixForced} · 끝부터 깐 조각 ${mixLocal} · 상하 뒤집은 줄 ${rowsF}/${rowsN} (경계 보정 없이 정한 줄 ${freeRows})`);
+  }
   // 3) 길 — 줄마다 이어진 구간 (칸 크기 그림)
   let roadN = 0;
   const roadRect = (ch, x, y, len, rows, mul) => {   // (x, y) = 왼쪽 아래 칸, mul = 그림 한 장이 덮는 칸 수
@@ -873,7 +894,8 @@ function ambience(d) {
 }
 
 // 맵 파일 하나를 설계도대로 다시 짓는다 (늘 템플릿에서 새로, 엔티티 id는 경로가 같으면 예전 것을 유지)
-function build(d, maps, ctx, funcIn) {
+//   opts.outFile: map/ 대신 그 파일에 쓴다 (시범 산출물 격리 — id·EntryKey는 map/<id>의 것을 이어 받아 그대로 비교된다)
+function build(d, maps, ctx, funcIn, opts = {}) {
   const bp = parseBlueprint(d.id);
   if (bp.w !== num(d.w) || bp.h !== num(d.h)) throw new Error(`${d.id}: 설계도 ${bp.w}×${bp.h} ≠ maps.csv ${d.w}×${d.h}`);
   const rows = loadRows(d.id);
@@ -881,8 +903,8 @@ function build(d, maps, ctx, funcIn) {
   const art = artEntities(d, ctx, bp, rows, func);
   const result = check(bp, func, art);
 
-  const file = P.map(d.id);
-  const previous = readIfExists(file);
+  const file = opts.outFile || P.map(d.id);
+  const previous = readIfExists(P.map(d.id));
   const map = MapBuilder.fromTemplate(MapBuilder.templatePath("rect"), d.id);
   const tileMap = bp.cells().map(([x, y]) => ({
     type: 0, position: { x, y },
@@ -916,4 +938,4 @@ function build(d, maps, ctx, funcIn) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size }, art.counts, result);
 }
 
-module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR };
+module.exports = { parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR, setFloormixY, FLOORMIX_Y_MODES };

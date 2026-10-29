@@ -93,7 +93,7 @@ function _Util:Pos2(e) return e.pos end
 -- 화면 (16:9, 오른쪽 아래 기준 빌드 좌표를 왼쪽 아래 기준 화면 좌표로: x = 1920 + px, y = py)
 local function pad(px, py) return Vector2(1920 + px, py) end
 local SCREEN = {
-  S2 = pad(-395, 300), S3 = pad(-300, 395), Attack = pad(-170, 170), BasicAtk = pad(-60, 330),
+  S2 = pad(-395, 300), S3 = pad(-304, 395), Attack = pad(-170, 170), BasicAtk = pad(-60, 338),   -- tools/build/ui.cjs (I04 ㉠ 10-29: S3 -300→-304 · BasicAtk 330→338)
   Cancel = pad(-576, 545),   -- tools/build/ui.cjs MobilePad/AimCancel
 }
 

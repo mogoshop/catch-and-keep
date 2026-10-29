@@ -276,7 +276,10 @@ script SkillOffer extends Logic
                 -- 초록 줄은 칸 폭 안 읽히는 단위로 접는다 · 강화 카드는 편성 경고를 자기 줄로 (INT1725-OBS-01 — NodeChange · CardWrap)
                 local changeE = _UIKit:Get(c .. "/Change")
                 local changeT = isvalid(changeE) and changeE.TextGUIRendererComponent or nil
-                if def.kind == "node" then change = self:NodeChange(change, book:UseHint(id), cardText, changeT)
+                if def.kind == "node" then
+                    -- 53·54: 경고 줄(UseHint)이 같은 카드에 보이면 요약 끝 중복 괄호 「(…를 배우면)」만 뺀다 (잔걸음·뼈 껍질 — SkillWindow.DropHintDup)
+                    local hint = book:UseHint(id)
+                    change = self:NodeChange(_SkillWindow:DropHintDup(id, change, hint), hint, cardText, changeT)
                 elseif change ~= "" then change = self:CardWrap(change, self.ChangeW, changeT) end
                 _UIKit:SetText(c .. "/Change", change)
                 if not Environment:IsPublishedPlay() then log(string.format("[VRF] offer card change %s lines=%d text=%s", id, _SkillWindow:LineCount(change), _UIKit:PlainText(change))) end
