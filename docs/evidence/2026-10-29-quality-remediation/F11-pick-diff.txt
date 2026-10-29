@@ -1,0 +1,55 @@
+# F11 SkillOffer.Pick 함수 대조 — 9d640d4e(원본 등가 수정) vs 실행 HEAD 24949395 (blob 4f9b536c)
+# 결과: 함수 본문 29줄 바이트 동일 (diff 출력 없음)
+## diff 9d640d4e HEAD (Pick 함수만)
+(차이 없음)
+
+## HEAD Pick 함수 본문
+    method any Pick(SkillBook book, PlayerStats st)
+        -- 카드 3장: ① 새 스킬(안 배운 메인) ② 쓰던 스킬 랭크 업(칸에 넣은 것 우선) ③ 강화(칸에 넣은 스킬의 강화 우선). 다시 섞으면 같은 종류의 다른 후보
+        local news, ranks, nodes = {}, {}, {}
+        local slotted = self:Slotted(book)
+        for _, id in ipairs(_SkillData:Mains()) do
+            if book:CanLearn(id, st.Level, st.SkillPoints) == "" then
+                if book:GetLevel(id) == 0 then table.insert(news, id)
+                elseif slotted[id] then table.insert(ranks, 1, id)
+                else table.insert(ranks, id) end
+            end
+            for _, nid in ipairs(_SkillData:NodesOf(id)) do
+                if book:CanLearn(nid, st.Level, st.SkillPoints) == "" then
+                    if slotted[id] then table.insert(nodes, 1, nid) else table.insert(nodes, nid) end
+                end
+            end
+        end
+        local function at(list)
+            if #list == 0 then return nil end
+            return list[(self.Shuffle % #list) + 1]
+        end
+        local offer = {}
+        -- 목록마다 따로 고른다 (예전 { at(news), at(ranks), at(nodes) }는 새 스킬이 없으면 첫 칸이 nil이라 ipairs가 바로 멈춰 카드 0장 — 10-29 통합 메이커)
+        for _, list in ipairs({ news, ranks, nodes }) do
+            local id = at(list)
+            if id ~= nil then table.insert(offer, id) end
+        end
+        log("[VRF] offer pick new=" .. #news .. " rank=" .. #ranks .. " node=" .. #nodes .. " → " .. table.concat(offer, ","))
+        return offer
+    end
+
+## 참고: 2b0f8a64(코덱스 clone) → 83556a8a(원본 커밋) SkillOffer 차이 = 9d640d4e 주석 1줄뿐
+diff --git a/RootDesk/MyDesk/UI/Windows/SkillOffer.mlua b/RootDesk/MyDesk/UI/Windows/SkillOffer.mlua
+index 1de841e7..b9b041f9 100644
+--- a/RootDesk/MyDesk/UI/Windows/SkillOffer.mlua
++++ b/RootDesk/MyDesk/UI/Windows/SkillOffer.mlua
+@@ -150,6 +150,7 @@ script SkillOffer extends Logic
+             return list[(self.Shuffle % #list) + 1]
+         end
+         local offer = {}
++        -- 목록마다 따로 고른다 (예전 { at(news), at(ranks), at(nodes) }는 새 스킬이 없으면 첫 칸이 nil이라 ipairs가 바로 멈춰 카드 0장 — 10-29 통합 메이커)
+         for _, list in ipairs({ news, ranks, nodes }) do
+             local id = at(list)
+             if id ~= nil then table.insert(offer, id) end
+
+## 참고: F07~F10 파일 SkillBook/SkillWindow — 2b0f8a64·83556a8a·HEAD 동일
+RootDesk/MyDesk/Skill/SkillBook.mlua 2b0f8a64=abb3e49f18102e9a47202e66c8184450a63ee3e1 83556a8a=abb3e49f18102e9a47202e66c8184450a63ee3e1 HEAD=abb3e49f18102e9a47202e66c8184450a63ee3e1 sha256(worktree)=f6cf9c1c69b7d05f25220c0e7c819d28db3ed6c852b92246f65a5969dd67a84e
+RootDesk/MyDesk/UI/Windows/SkillWindow.mlua 2b0f8a64=eb00d47e122c1845aa0cf622ca7da93bfb96fa2d 83556a8a=eb00d47e122c1845aa0cf622ca7da93bfb96fa2d HEAD=eb00d47e122c1845aa0cf622ca7da93bfb96fa2d sha256(worktree)=f6ba624bdd81ba9c20c3a8674a5ba0676c15ea01e746c26561349a2eb057f388
+RootDesk/MyDesk/UI/Windows/SkillOffer.mlua 2b0f8a64=1de841e7fe03c21caa90524a37c0f97496d141bf 83556a8a=b9b041f9af48eefe0b2708582679256aea1fffe9 HEAD=4f9b536c04d80c41cec4104ae87995764b049b4c sha256(worktree)=b454ce59e2e6ab8b529f3bf1a180efcd1bd8a6befd37b560503b0bf86984100b
+RootDesk/MyDesk/Undead/UndeadSystem.mlua 2b0f8a64=8565c96b4a0493a0898a18c70b4e836d49302141 83556a8a=8565c96b4a0493a0898a18c70b4e836d49302141 HEAD=8565c96b4a0493a0898a18c70b4e836d49302141 sha256(worktree)=3e6ae3271d8abf114c0b819b78f5934f54335dd0168ad3b2de1bd4f1ea16cf82

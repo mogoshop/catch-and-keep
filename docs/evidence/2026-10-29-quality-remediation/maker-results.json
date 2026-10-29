@@ -1,5 +1,5 @@
 {
-  "run_id": "QR-20261029-1540",
+  "run_id": "QR-20261029-1540 (F01~F06) + QR-20261029-1629 (F07~F11·INT-03·판정 2건)",
   "agent": "Claude Fable 5.1 (메이커 담당)",
   "timezone": "Asia/Seoul",
   "integration": {
@@ -80,7 +80,34 @@
       "diff": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/INT-02.diff",
       "follow_up": "tests/quality/run.py가 mLua 기본 인자를 Lua로 내보내며 통과시킨다 — 메이커 변환 제약(기본 인자 금지)을 검사기에 추가할지 결정 필요. 코덱스 원본 커밋 be03ca91에도 같은 문제가 있다."
     },
-    "INT-01_F05_reserved_word": "11083e69 member→inSet은 병합본에 포함, 메이커 빌드 Error 0으로 확인(이번 실행에서 F05 집계 동작)."
+    "INT-01_F05_reserved_word": "11083e69 member→inSet은 병합본에 포함, 메이커 빌드 Error 0으로 확인(이번 실행에서 F05 집계 동작).",
+    "INT-03": {
+      "alias": [
+        "RUN-20261029-01 (코덱스)"
+      ],
+      "what": "QR-20261029-1540 F02-C 15:53:49 클라이언트 [LEA-2005] BadArgument 'for iterator'",
+      "cause": "게임 코드 아님 — 앞 회차 메이커 담당의 클라이언트 진단 스크립트(06:53:45Z=15:53:45 KST, `local f = _NoticeFeed … for k, v in pairs(f)`) 3번째 줄. Logic 객체는 Lua 표가 아니라 pairs가 거부. 스크립트 출력 지연으로 15:53:49에 찍혀 서버 after-refuse 로그와 같은 초로 보였다.",
+      "stack_and_call_site": "원 로그엔 스택 없음 → 같은 줄을 17:04:13에 다시 실행: 같은 메시지 + stackTrace [C]: in function 'next' → MakerScript:3 (maker-log-QR1629-int03-restore.json)",
+      "rerun_of_refusal": "17:03:40 PC Lv40·q 19/2·가방 60/60에서 초소 대장 보상 받기 1회: '처리 중…' 약 5.5초 뒤 '보상 받기'로 복귀, 창 유지, LEA-2005 없음, 서버 q 19/2·exp 0·bag 60·skp·tokens 그대로(17:04:33)",
+      "fix": "없음 — 코드 수정 대상 아님. diff 없음",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/INT-03-state.json",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/INT-03-log.txt",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/INT-03_refuse_click.png"
+      ]
+    },
+    "UI-notice-edge(판정만)": {
+      "what": "F02-C·F06-A 가방 공간 안내 줄이 화면 위쪽에 붙어 잘림",
+      "verdict": "실제 UI 잘림(미리보기 아님), PC FHD에서 큰 창(일지)이 열린 경우만. JournalWin y=70~1010 → 위·아래 여백이 한 줄(44+28)에 못 미쳐 NoticeFeed가 화면 맨 위 한 줄(y=1028~1072, 높이 44) 자리로 떨어지는데, 이 글은 폭 590에서 두 줄(필요 높이 71)로 접혀 첫 줄이 화면 밖으로 넘침. NpcWin(F02-C)은 창 위 빈 곳에 두 줄로 놓여 잘림 없음. iPad 5th 프리셋(1920x1440)은 JournalWin 위 y=1217~1311(높이 94, 2줄)로 화면 안",
+      "scope": "수정은 UI-20261029 격리 작업자 몫 — 이 회차는 판정만",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/UIJ-notice-state.json",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/UIJ-notice-log.txt",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/UIJ-notice_PC_journal.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/UIJ-notice_iPad_journal.png"
+      ]
+    },
+    "QR1629-OBS-01": "F08 비용 줄 단어 중간 줄바꿈(「· 마 / 나 6」·「추가 랭 / 크 +2」, PC·iPad) — 관찰만, 수정 안 함"
   },
   "cases": {
     "F01-A": {
@@ -116,7 +143,7 @@
       "judgement": {
         "기능 정확성": "통과",
         "미감/가독성": "부분확인(PC 상세창 5줄 옵션 잘림 없음, 모바일 미확인)",
-        "조작 편의": "통과(대장장이 확인 창에 비용·유지 항목 표시)",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과(대장장이 확인 창에 비용·유지 항목 표시)'는 이벤트 경로 범위)",
         "새 회귀": "부분확인(INT-02 변환 실패를 발견·수정, 그 뒤 회귀 없음)"
       },
       "stage": {
@@ -124,7 +151,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F02-A": {
       "source_commit": "be03ca91f2e5666c047619308705c0c6afe4da52",
@@ -153,7 +185,7 @@
       "judgement": {
         "기능 정확성": "통과",
         "미감/가독성": "통과(보상 안내·상세 읽힘)",
-        "조작 편의": "통과",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과'는 이벤트 경로 범위)",
         "새 회귀": "근거없음"
       },
       "stage": {
@@ -161,24 +193,66 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
-    "F02-B": {
+    "F02-B1": {
       "source_commit": "be03ca91f2e5666c047619308705c0c6afe4da52",
       "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac + INT-02(미커밋)",
-      "time_kst": "16:12:19 / 16:16:34~16:19:38",
+      "time_kst": "16:12:19 (상태 확인 16:12:50)",
       "client": "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
-      "pre_state": "Lv40, 퀘스트 24 「재의 왕」 보고 대기(서버 준비), 엘리안 옆",
+      "pre_state": "Lv40, exp 220215, 퀘스트 24 「재의 왕」 보고 대기(서버 준비), 엘리안 옆",
       "steps": [
-        "엘리안 대화 → 다음 → 보상 받기 단추를 같은 프레임에 두 번",
-        "(첫 드롭이 같은 맵 이동으로 사라져) q를 24/2로 다시 준비 → 다시 보고",
-        "바닥 빛기둥을 마우스로 클릭해 줍기 → 인벤토리 상세 → 장착",
-        "재접속 후 q·무기 확인"
+        "엘리안 대화 → 다음 → 보상 받기 단추를 같은 프레임에 두 번(ButtonClickEvent)"
       ],
-      "expected": "본인 소유 발밑 유니크 1개, req 33/35/40 중 하나·착용 가능, 같은 입력 반복에 추가 지급 없음",
-      "actual": "두 번 클릭에 act boss unique 로그 1줄(ashking_heart)·q 25/0. 두 번째 보고에서 ashking_reaper 「재의 왕의 낫」 owner=본인으로 발밑(-8.4,2.7)·빛기둥, 클릭으로 주움(grail new·loot rarity 3), reqLv 33, 장착 성공. 재접속 후 q 25/0(다시 보고 불가, 대화는 「완료」), 무기 유지.",
+      "expected": "같은 입력 반복에 지급 1회",
+      "actual": "act boss unique 로그 1줄(ashking_heart)·q 25/0·Lv40→41(보상 경험치). 발밑 드롭은 직후 같은 맵 Go 재배치로 사라져 줍기·장착·저장 근거 아님",
       "evidence": [
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B_reward.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B-log.txt",
+      "unverified": [
+        "이 시도의 드롭 줍기·장착·저장(테스트 조작으로 사라짐)",
+        "남이 줍지 못하는 소유 시간(파티)"
+      ],
+      "judgement": {
+        "기능 정확성": "통과(중복 입력 1회 지급)",
+        "미감/가독성": "통과(빛기둥·배너·상세)",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '부분확인(줍기는 마우스 클릭으로 됐지만 키보드·모바일 미확인)'는 이벤트 경로 범위)",
+        "새 회귀": "근거없음"
+      },
+      "stage": {
+        "code": "done",
+        "integration": "done",
+        "maker": "통과",
+        "independent": "pending"
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540",
+      "note": "EVID-20261029-01 — 첫 Lv40 보고(중복 입력 가드)만의 기록. 라벨 정정, 재실험 없음"
+    },
+    "F02-B2": {
+      "source_commit": "be03ca91f2e5666c047619308705c0c6afe4da52",
+      "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac + INT-02(미커밋)",
+      "time_kst": "16:14:52 재준비 → 16:16:34 보고 → 16:16:57 줍기 → 16:17:19 장착 → 16:19:38 재접속",
+      "client": "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+      "pre_state": "Lv41(첫 보고로 오름), q를 24/2로 서버 수동 재설정 — 중복 지급 시험 아님",
+      "steps": [
+        "엘리안 보고(보상 받기)",
+        "바닥 빛기둥 maker_mouse_input 클릭 줍기 → 인벤토리 상세 → 장착(ButtonClickEvent)",
+        "재접속 후 q·무기"
+      ],
+      "expected": "본인 소유 발밑 유니크 1개, 착용 가능, 재접속 유지",
+      "actual": "ashking_reaper 「재의 왕의 낫」 scythe3|3|43 owner=본인 (-8.4,2.7)·빛기둥, 클릭으로 주움(grail new), reqLv 33, 장착 성공. 재접속 뒤 q 25/0·무기 유지",
+      "evidence": [
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B_ground.png",
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B_detail.png",
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B_after.png",
@@ -186,14 +260,14 @@
       ],
       "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-B-log.txt",
       "unverified": [
-        "첫 보고의 ashking_heart 드롭은 테스트 조작(같은 맵 Go)으로 사라져 줍기를 못 봄 — 두 번째 보고는 수동 재준비라 「중복 지급」 시험이 아님",
-        "req 35/40 종류는 이번에 안 나옴(요구하지 않음)",
-        "남이 줍지 못하는 소유 시간(파티)은 미확인"
+        "req 35/40 종류 미출현",
+        "남이 줍지 못하는 소유 시간(파티)",
+        "보고 시점 레벨이 41 — Lv40 기준 시험 아님"
       ],
       "judgement": {
         "기능 정확성": "통과",
         "미감/가독성": "통과(빛기둥·배너·상세)",
-        "조작 편의": "부분확인(줍기는 마우스 클릭으로 됐지만 키보드·모바일 미확인)",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '부분확인(줍기는 마우스 클릭으로 됐지만 키보드·모바일 미확인)'는 이벤트 경로 범위)",
         "새 회귀": "근거없음"
       },
       "stage": {
@@ -201,7 +275,13 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540",
+      "note": "EVID-20261029-01 — 수동 재준비한 Lv41 재시도(발밑 소유자·줍기·장착·저장)만의 기록"
     },
     "F02-C": {
       "source_commit": "be03ca91f2e5666c047619308705c0c6afe4da52",
@@ -216,7 +296,7 @@
         "재접속(16:07~16:08) 후 장비·진행·소지금"
       ],
       "expected": "만석 첫 시도에서 진행·아이템·골드·경험치·포인트·소켓권 전부 그대로 + 공간 안내, 비운 뒤 1회 지급·다음 퀘스트, 재접속 유지·재보고 불가",
-      "actual": "세 번 거절 뒤 q 19/2·gold 200000·exp 0·bag 60·skp 1·stp 0·tokens 0 그대로, 상단에 「보상 받을 가방 공간 1칸이 필요합니다. 퀘스트와 보상은 보관됩니다」. 비운 뒤 1회 지급(q 20/0). 재접속 뒤 armor3 장착·q 20/0·gold 유지.",
+      "actual": "첫 두 입력(15:53:07·15:53:28) 뒤 15:53:49 서버 스냅샷: q 19/2·gold 200000·exp 0·bag 60·skp 1·stp 0·tokens 0 그대로(세 번째 입력 15:54:20 뒤 별도 스냅샷 없음). 상단(대화창 위)에 「보상 받을 가방 공간 1칸이 필요합니다. 퀘스트와 보상은 보관됩니다」. 비운 뒤 1회 지급(q 20/0). 재접속 뒤 armor3 장착·q 20/0·gold 유지.",
       "evidence": [
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-C_before.png",
         "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-C_dialog.png",
@@ -226,21 +306,27 @@
       ],
       "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F02-A-log.txt",
       "unverified": [
-        "거절 직후 클라이언트 LEA-2005 'for iterator' 오류 1건(15:53:49, 원인 미조사 — 이번 수정과 관계 여부 모름)",
-        "공간 안내가 대화 창 위쪽에 잘려 보이는 위치(첫 줄 상단 가장자리) — 가독성 검수 필요"
+        "LEA-2005 → INT-03(=RUN-20261029-01)으로 원인 확인: 게임 코드가 아니라 앞 회차 진단 스크립트(클라이언트 MakerScript pairs(_NoticeFeed)). QR-1629 17:03:40 같은 거절 1회 재실행에서 오류 없음·상태 보존",
+        "공간 안내 위치: NpcWin일 때는 대화창 위에 두 줄로 읽힘 — 잘림은 큰 창(일지) 상황에서만(UIJ-notice-state.json)"
       ],
       "judgement": {
         "기능 정확성": "통과",
-        "미감/가독성": "부분확인(안내 문구는 읽히나 화면 위 가장자리에 붙음)",
-        "조작 편의": "통과",
-        "새 회귀": "부분확인(LEA-2005 1건 원인 미상)"
+        "미감/가독성": "통과(NpcWin 위 두 줄, 잘림 없음 — UIJ 판정)",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과'는 이벤트 경로 범위)",
+        "새 회귀": "근거없음 (LEA-2005는 INT-03로 테스트 스크립트 원인 확인)"
       },
       "stage": {
         "code": "done",
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540",
+      "note": "EVID-20261029-02 반영: 스냅샷은 '첫 두 입력 뒤' (F02-state.json 키 after_first_2_refusals_15:53:49)"
     },
     "F03-A": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -277,7 +363,12 @@
         "integration": "done",
         "maker": "부분",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F03-B": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -304,7 +395,12 @@
         "integration": "done",
         "maker": "대기",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F04-A": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -338,7 +434,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F04-B": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -372,7 +473,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F05-A": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973 + 11083e69a5c3c42cc73477a79a178ce601ce5070",
@@ -413,7 +519,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F05-B": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -445,7 +556,12 @@
         "integration": "done",
         "maker": "부분",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F06-A": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -466,13 +582,13 @@
       ],
       "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F06-A-log.txt",
       "unverified": [
-        "안내 문구가 화면 위 가장자리에 잘려 일부만 보임(캡처 상단 첫 줄 잘림) — 가독성 확인 필요",
+        "안내 줄 잘림 = 실제 UI(PC FHD, 일지 창이 위·아래 여백을 막아 맨 위 한 줄 자리로 떨어지는데 글이 두 줄) — UIJ-notice-state.json, 수정은 UI-20261029 격리 작업",
         "청구권은 서버 스크립트로 만든 것(실제 지옥 처치 아님)"
       ],
       "judgement": {
         "기능 정확성": "통과",
-        "미감/가독성": "부분확인(안내 줄 상단 잘림)",
-        "조작 편의": "통과",
+        "미감/가독성": "실패(PC 큰 창 위 안내 줄 첫 줄 잘림 — 실제 UI, iPad 프리셋은 잘림 없음)",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과'는 이벤트 경로 범위)",
         "새 회귀": "근거없음"
       },
       "stage": {
@@ -480,7 +596,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F06-B": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -506,7 +627,7 @@
       "judgement": {
         "기능 정확성": "통과",
         "미감/가독성": "통과",
-        "조작 편의": "통과",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과'는 이벤트 경로 범위)",
         "새 회귀": "근거없음"
       },
       "stage": {
@@ -514,7 +635,12 @@
         "integration": "done",
         "maker": "통과",
         "independent": "pending"
-      }
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
     },
     "F06-C": {
       "source_commit": "707a14ac6cbbd669a30c599d256a5675161d3973",
@@ -540,7 +666,121 @@
       "judgement": {
         "기능 정확성": "통과",
         "미감/가독성": "통과",
-        "조작 편의": "통과",
+        "조작 편의": "근거없음 (ButtonClickEvent 핸들러 경로만 통과 — 실제 포인터 hit·터치 미검증; 앞 회차 표기 '통과'는 이벤트 경로 범위)",
+        "새 회귀": "근거없음"
+      },
+      "stage": {
+        "code": "done",
+        "integration": "done",
+        "maker": "통과",
+        "independent": "pending"
+      },
+      "input_path": {
+        "event_path": "UI 단추 엔티티에 ButtonClickEvent 전송(앞 회차) — 핸들러·서버 처리 경로 통과",
+        "pointer_touch": "근거없음(실제 포인터·터치 미검증)"
+      },
+      "run_id": "QR-20261029-1540"
+    },
+    "F07": {
+      "source_commit": "83556a8a14233ec1375548b9d529d3bb1a5c04e9 (= 코덱스 clone 2b0f8a64, 해당 파일 blob 동일)",
+      "integration_commit": "2494939554b0884afb170bf9235410bb18fe27bd (57b9724e 병합 그대로, 이후 해당 파일 변경 없음)",
+      "run_id": "QR-20261029-1629",
+      "time_kst": "PC 16:33~16:37 · iPad 16:56",
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+        "메이커 모바일 프리셋 Apple iPad (5th gen) 2048x1536 시뮬레이트(캡처 1648x1236) — 실기기 아님, safeArea 끔"
+      ],
+      "pre_state": "A: Lv1·skp1·무기 모든 스킬 +2(시험 낫) → 해골 전사 배움(skp0). B: Lv10·해골 전사3·단련된 뼈1·skp2·같은 무기. C: 망령 질주/가벼운 걸음 미습득. M(iPad): B와 같음",
+      "steps": [
+        "A: 스킬 창(메뉴 단추) → 배우기 → 노드 「단련된 뼈」 선택 → 닫기 후 서버 투자값 확인",
+        "B: 해골 전사 → 단련된 뼈 선택 → 같은 노드 두 번 더 선택 → 강화 +1 단추",
+        "C: 망령 질주 → 뼈 껍질 / 가벼운 걸음 → 잔걸음 → 부모(가벼운 걸음) → 잔걸음 다시",
+        "M: iPad에서 B와 같은 선택 → 강화 +1"
+      ],
+      "expected": "잠긴 미습득 노드도 '배우면 +8%'와 불가 사유, 선택/재선택 무소비, 학습 단추 뒤에만 1점·1랭크, 조건 문구, 장비 +스킬이 노드에 안 붙음",
+      "actual": "A: 「배우면: 해골 공격·생명 +8%」 + 빨간 「「해골 전사」 3랭크부터」, 서버 skeleton_mastery 없음·skp 0 그대로, power(해골 전사)=3(장비 +2)·노드 0. B: 「지금 +8% / 다음 +16%」 skp 2 → 두 번 재선택 skp 2·투자 1 그대로 → 강화 +1 뒤 skp 1·투자 2, 「지금 +16% / 다음 +24%」·「캐릭터 Lv13에 다음 랭크」. 모든 스킬 +2를 낀 상태에서 노드 값에 '추가 랭크' 없음. C: 뼈 껍질 「…/ 뼈 갑옷을 배워야 회복합니다」·사유 「먼저 「망령 질주」…」, 잔걸음 「…/ 망령 질주를 배워야 발동합니다」, 부모 선택 시 부모 글로 바뀌고 다시 고르면 처음과 같음. M: iPad에서 같은 값·1점/1랭크, 창 안에 사다리·노드 트리·단추 모두 보임",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-A_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-A_locked.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-B_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-B_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-C_dash_ghost.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-C_step_gale.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-M_before_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-M_after_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F07-log.txt",
+      "input_path": {
+        "event_path": "시간선 칸·노드·배우기 단추에 ButtonClickEvent — SkillWindow.Pick/Act 경로 통과",
+        "pointer_touch": "근거없음"
+      },
+      "unverified": [
+        "실제 마우스·터치로 노드/단추를 눌러 잘못 눌림이 없는지",
+        "재접속 뒤 투자 유지(이번 범위 밖)",
+        "모바일은 프리셋 — 실기기 아님"
+      ],
+      "judgement": {
+        "기능 정확성": "통과",
+        "미감/가독성": "통과(PC·iPad 모두 이름→현재/다음→사유→단추 순으로 읽힘, 잘림 없음)",
+        "조작 편의": "근거없음 (ButtonClickEvent 경로만)",
+        "새 회귀": "근거없음(오류 로그 없음)"
+      },
+      "stage": {
+        "code": "done",
+        "integration": "done",
+        "maker": "통과",
+        "independent": "pending"
+      }
+    },
+    "F08": {
+      "source_commit": "83556a8a14233ec1375548b9d529d3bb1a5c04e9 (= 코덱스 clone 2b0f8a64, 해당 파일 blob 동일)",
+      "integration_commit": "2494939554b0884afb170bf9235410bb18fe27bd (57b9724e 병합 그대로, 이후 해당 파일 변경 없음)",
+      "run_id": "QR-20261029-1629",
+      "time_kst": "PC 16:38~16:44 · iPad 16:57~16:58",
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+        "메이커 모바일 프리셋 Apple iPad (5th gen) 2048x1536 시뮬레이트(캡처 1648x1236) — 실기기 아님, safeArea 끔"
+      ],
+      "pre_state": "Lv20·골편 투척 투자4·망령 질주1·선택보상 1:curse(무료 추가발 0)·2:soul tier3(미리 쥔 뼈 창)·시험 반지(골편+1·질주+2·FCR 17.5)·시험 목걸이(뼈 창+1)·기본 FCR 7.5(민첩)",
+      "steps": [
+        "반지 없이 골편 창 확인 → 실제 시전(A 칸 경로 CastSlot)",
+        "인벤토리 단추로 반지 장착 → 창 확인 → 시전",
+        "질주 창 확인 → Space 경로 CastMove로 시전 → 충전 시각 측정",
+        "뼈 창 창(목걸이 없음/낌)",
+        "스킬 창 연 채로 반지 해제 → 창 갱신 확인",
+        "iPad: 같은 창 → MobilePad 칸 시전·질주 단추"
+      ],
+      "expected": "골편 장비+1 → 표시 마나 8, 빼면 6, 실제 소비 일치 / 질주 마나 4·충전 3.8초(FCR 무관)·일반 골편 0.60초 / 뼈 창 tier3: 추가 랭크 +2·마나 14, 장비1이면 +3·15",
+      "actual": "반지 없음: 「마나 6 · 재사용 0.70초」, 실제 cast committed mana=6·Mana 78→72·CdLen 0.698. 반지: 「마나 8 · 재사용 0.60초 · 추가 랭크 +1」, 실제 mana=8·2발·Mana 78→70·CdLen 0.6. 창 연 채로 반지 해제 → 다시 열지 않아도 6/0.70으로 갱신. 질주(FCR 25%): 「마나 4 · 충전 3.80초 · 추가 랭크 +2」, 실제 Mana -4·DashRechargeAt +3.78·3.83초 뒤 1회 충전. 뼈 창: 「추가 랭크 +2 · 마나 14」 → 목걸이 「추가 랭크 +3 · 마나 15」. iPad: 같은 표시, MobilePad 칸 시전 mana 8·CdLen 0.6, 질주 단추 mana 4·충전 3.76초",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-A_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-A_equip_ring.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-A_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-A_live_unequip.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-B_dash.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-B_dash_cast.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-C_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-C_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-M_shard_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-M_dash_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-M_cast_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F08-log.txt",
+      "input_path": {
+        "event_path": "장착/해제 = 인벤토리 단추 ButtonClickEvent(해제 1회는 RequestUnequip 직접), 시전 = SkillBook:CastSlot·CastMove, iPad = MobilePad:Cast·Dash 단추 ButtonClickEvent",
+        "pointer_touch": "근거없음 — 실제 키보드(A·Space)는 메이커 입력 문제로 미전달"
+      },
+      "unverified": [
+        "뼈 창 실제 시전 소비(표시만 확인)",
+        "실제 키·터치 입력",
+        "QR1629-OBS-01: 비용 줄이 '다음 랭크' 줄 끝에 붙어 단어 중간에서 접힘(PC·iPad 「· 마 / 나 6」, 질주 「추가 랭 / 크 +2」) — 이번 수정 전 구조와 같은 줄 붙이기, 회귀 여부 미확인·수정 안 함"
+      ],
+      "judgement": {
+        "기능 정확성": "통과(표시값 = 서버 실제 소비·재사용·충전)",
+        "미감/가독성": "부분확인(값은 읽히나 비용 줄 단어 중간 줄바꿈 OBS-01)",
+        "조작 편의": "근거없음 (함수 경로·ButtonClickEvent만)",
         "새 회귀": "근거없음"
       },
       "stage": {
@@ -550,116 +790,231 @@
         "independent": "pending"
       }
     },
-    "F07": {
-      "source_commit": "",
-      "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac",
-      "time_kst": "",
-      "client": "",
-      "pre_state": "",
-      "steps": [],
-      "expected": "",
-      "actual": "",
-      "evidence": [],
-      "logs": "",
-      "unverified": [],
-      "stage": {
-        "code": "done",
-        "integration": "done",
-        "maker": "대기",
-        "independent": "pending"
-      },
-      "note": "다음 에이전트가 이어 씀"
-    },
-    "F08": {
-      "source_commit": "",
-      "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac",
-      "time_kst": "",
-      "client": "",
-      "pre_state": "",
-      "steps": [],
-      "expected": "",
-      "actual": "",
-      "evidence": [],
-      "logs": "",
-      "unverified": [],
-      "stage": {
-        "code": "done",
-        "integration": "done",
-        "maker": "대기",
-        "independent": "pending"
-      },
-      "note": "다음 에이전트가 이어 씀"
-    },
     "F09": {
-      "source_commit": "",
-      "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac",
-      "time_kst": "",
-      "client": "",
-      "pre_state": "",
-      "steps": [],
-      "expected": "",
-      "actual": "",
-      "evidence": [],
-      "logs": "",
-      "unverified": [],
+      "source_commit": "83556a8a14233ec1375548b9d529d3bb1a5c04e9 (= 코덱스 clone 2b0f8a64, 해당 파일 blob 동일)",
+      "integration_commit": "2494939554b0884afb170bf9235410bb18fe27bd (57b9724e 병합 그대로, 이후 해당 파일 변경 없음)",
+      "run_id": "QR-20261029-1629",
+      "time_kst": "PC 16:45~16:46",
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시"
+      ],
+      "pre_state": "Lv45·호령 미습득·깊은 울림0·군단 질주0·장비 스킬 보너스 0·skp1",
+      "steps": [
+        "스킬 창 → 호령 선택 → 닫기 → 서버 실제 오라 확인",
+        "다시 열어 배우기 → 창·서버 확인"
+      ],
+      "expected": "미습득 7/5/5 예고, 보기만으로 오라 안 켜짐, 1랭크 현재 7/5/5·다음 8.4/5.5/6, 학습 뒤 실제값 일치",
+      "actual": "미습득 「배우면: +7% · 이동 +5% · 저항 +5」, 닫은 뒤 GetCommandAura 0/0/0·투자 없음(가상 CommandAuraAt(1)=7/5/5, (2)=8.4/5.5/6). 배우기 → skp 1→0, 「지금 +7%·+5%·+5 / 다음 +8.4%·+5.5%·+6」, 서버 GetCommandAura 7/5/5",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F09-A_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F09-B_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F09-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F09-log.txt",
+      "input_path": {
+        "event_path": "스킬 창 단추 ButtonClickEvent",
+        "pointer_touch": "근거없음"
+      },
+      "unverified": [
+        "모바일(계약상 필수 아님)",
+        "깊은 울림·군단 질주가 있는 조합(오프라인 54조합에 의존)",
+        "학습 뒤 새 소환에 7% 반영은 F10 기록(39/380)으로 간접 확인"
+      ],
+      "judgement": {
+        "기능 정확성": "통과",
+        "미감/가독성": "통과",
+        "조작 편의": "근거없음",
+        "새 회귀": "근거없음"
+      },
       "stage": {
         "code": "done",
         "integration": "done",
-        "maker": "대기",
+        "maker": "통과(PC)",
         "independent": "pending"
-      },
-      "note": "다음 에이전트가 이어 씀"
+      }
     },
     "F10": {
-      "source_commit": "",
-      "integration_commit": "57b9724ef3abc5a36f974a72e4e20e017d04e6ac",
-      "time_kst": "",
-      "client": "",
-      "pre_state": "",
-      "steps": [],
-      "expected": "",
-      "actual": "",
-      "evidence": [],
-      "logs": "",
-      "unverified": [],
+      "source_commit": "83556a8a14233ec1375548b9d529d3bb1a5c04e9 (= 코덱스 clone 2b0f8a64, 해당 파일 blob 동일)",
+      "integration_commit": "2494939554b0884afb170bf9235410bb18fe27bd (57b9724e 병합 그대로, 이후 해당 파일 변경 없음)",
+      "run_id": "QR-20261029-1629",
+      "time_kst": "PC 16:46~16:50 · iPad 16:58~16:59",
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+        "메이커 모바일 프리셋 Apple iPad (5th gen) 2048x1536 시뮬레이트(캡처 1648x1236) — 실기기 아님, safeArea 끔"
+      ],
+      "pre_state": "Lv45·해골 전사1·뼈 군단1·선택보상 1:command tier1·해골 마법사3·원소 집중1·호령1·변종/거인/일시소환 없음·소환수 장비 0 → 목걸이(minion +20) 가방",
+      "steps": [
+        "창: 해골 전사 요약",
+        "황무지에서 몬스터 클릭 처치로 혼 만들기 → A 칸 경로 CastSlot(1)로 해골 4회",
+        "목걸이 장착(인벤토리 단추) → 마법사 창 → S 칸 경로로 마법사 1기",
+        "목걸이 해제(단추) → 마법사 창 다시",
+        "iPad: 창 → MobilePad 칸으로 처치·해골 4회"
+      ],
+      "expected": "최대 3, 4기째는 오래된 개체 교체로 3 유지, 마법사에 군단 보상 미적용, 새 일반형 공격/생명 = 창 값, 장비 바꾼 뒤 '다음 소환 기준' 설명",
+      "actual": "창 「최대 3기 · 일반형 공격 39 · 생명 380 (다음 소환 기준)」. 해골 1/3→2/3→3/3, 4기째 ud1 무너지고 3/3, 기록 모두 39/380. 마법사 MaxFor 3(전사 보상 없음), 목걸이 낀 창 「92 · 365」 → 새 마법사 ud5 atk 92·hp 365. 목걸이 해제 뒤 창 「76 · 304 (다음 소환 기준)」, 기존 개체는 39/380·92/365 그대로. iPad 창 같은 값, MobilePad로 3/3 유지·교체 동일",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-A_window.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-A_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-B_window_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-C_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-M_window_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-M_field_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-M_shadowwin_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F10-log.txt",
+      "input_path": {
+        "event_path": "창·인벤토리 단추 ButtonClickEvent, 시전 CastSlot/MobilePad:Cast, 처치는 maker_mouse_input 클릭(PC)",
+        "pointer_touch": "근거없음"
+      },
+      "unverified": [
+        "소환 뒤 호령을 바꾼 경우(장비만 바꿈)",
+        "모바일에서 '실제 소환수 정보를 열어 읽는 화면' — 그림자 보관함엔 언데드가 나오지 않고 HUD 띠 ×3만 보임(F10-M_shadowwin_ipad.png)",
+        "변종·군단 총 DPS(계약상 주장 안 함)"
+      ],
+      "judgement": {
+        "기능 정확성": "통과",
+        "미감/가독성": "통과(PC·iPad 요약 한 줄 잘림 없음) · 모바일 개체 정보 화면은 부분확인",
+        "조작 편의": "근거없음",
+        "새 회귀": "근거없음"
+      },
       "stage": {
         "code": "done",
         "integration": "done",
-        "maker": "대기",
+        "maker": "통과(PC) · 모바일 부분",
         "independent": "pending"
-      },
-      "note": "다음 에이전트가 이어 씀"
+      }
     },
     "F11": {
-      "source_commit": "",
-      "integration_commit": "9d640d4e (main 기존 수정 보존)",
-      "time_kst": "",
-      "client": "",
-      "pre_state": "",
-      "steps": [],
-      "expected": "",
-      "actual": "",
-      "evidence": [],
-      "logs": "",
-      "unverified": [],
-      "stage": {
-        "code": "done",
-        "integration": "done",
-        "maker": "대기",
-        "independent": "pending"
+      "source_commit": "9d640d4eddf15827b46a7f46171acd8736eeba71 (main 기존 수정 — 새 통합 10건과 별개)",
+      "integration_commit": "2494939554b0884afb170bf9235410bb18fe27bd — Pick 함수 9d640d4e와 바이트 동일(F11-pick-diff.txt)",
+      "run_id": "QR-20261029-1629",
+      "time_kst": "PC 16:34~16:36 · iPad 16:55",
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+        "메이커 모바일 프리셋 Apple iPad (5th gen) 2048x1536 시뮬레이트(캡처 1648x1236) — 실기기 아님, safeArea 끔"
+      ],
+      "pre_state": "A: Lv1 해골 전사 배움 → 레벨업으로 Lv2·skp1(새 스킬 有·랭크업 無·강화 有). B: Lv3·row≤3 메인 4개 모두 배움+뼈 군단1·skp1(새 스킬 0)",
+      "steps": [
+        "HUD 「혼의 제물 — 고르기」 띠 → 카드 확인 → 다시 섞기 → Pick2",
+        "B: 띠 → 카드 → Pick1",
+        "iPad: A와 같은 상태 → 띠 → Pick1"
+      ],
+      "expected": "A: 새 스킬+강화 2장, B: 랭크업+강화 2장, 선택 뒤 그 대상만 1랭크·1포인트, 로그 카드명 = 화면",
+      "actual": "A 16:34:21 [VRF] offer pick new=1 rank=0 node=1 → bone_shard,skel_legion = 화면 Card1 골편 투척(새 스킬)·Card2 뼈 군단(강화 0→1)·Card3 꺼짐(16:34:22). 다시 섞기 → 같은 두 장(후보 각 1)·「다시 섞기 (0)」. Pick2 → skel_legion 1·skp 0·골편 0 그대로. B 16:35:17 new=0 rank=2 node=3 → bone_shard,curse_area = 화면 골편 투척 랭크 1→2·저주 범위 강화 0→1, Pick1 → 골편 2·skp 0. iPad 16:55:26 같은 로그·같은 두 장(창 1368폭), Pick1 → 골편 1·skp 0",
+      "evidence": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-A_before.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-A_offer.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-A_reroll.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-A_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-B_offer.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-B_choose.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-B_after.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-M_before_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-M_offer_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-M_after_ipad.png",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-pick-diff.txt",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-state.json"
+      ],
+      "logs": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/F11-log.txt",
+      "input_path": {
+        "event_path": "OfferBand·Pick·BtnReroll ButtonClickEvent",
+        "pointer_touch": "근거없음"
       },
-      "note": "다음 에이전트가 이어 씀"
+      "unverified": [
+        "후보 1개(1장)·0개(빈 상태) 화면",
+        "실제 터치로 카드/단추 연결",
+        "기존 53장 캡처는 수정 후 증거로 쓰지 않음(이번 회차 캡처만)"
+      ],
+      "judgement": {
+        "기능 정확성": "통과",
+        "미감/가독성": "통과(두 장 + 다음 해금, 빈 칸 버튼 잔류 없음)",
+        "조작 편의": "근거없음",
+        "새 회귀": "근거없음"
+      },
+      "stage": {
+        "code": "done (9d640d4e 기존)",
+        "integration": "done (보존 확인)",
+        "maker": "통과",
+        "independent": "pending"
+      }
     }
   },
   "summary_counts": {
-    "code": "11/11 (F11은 9d640d4e 기존 수정)",
-    "integration": "10/10 새 통합(57b9724e) + F11 보존",
-    "maker_F01_F06_cases": "통과 11 · 부분 2(F03-A 자정 대기 포함, F05-B) · 대기 1(F03-B 자정)",
-    "independent": "0/11 (Codex 대기)"
+    "code": "11/11 (새 통합 10 = be03ca91·707a14ac·83556a8a 계열 / F11 1 = 9d640d4e 기존 수정)",
+    "integration": "11/11 (새 10건 57b9724e 병합 그대로 HEAD 2494939, F11은 Pick 함수 9d640d4e와 바이트 동일로 보존)",
+    "maker_observation": "11/11 관찰 — 통과 8 (F01·F02·F04·F06·F07·F08·F09·F11) · 부분 3 (F03 자정 대기, F05-B 기존 수령 계정, F10 모바일 개체 정보 화면). F09는 PC만(계약상 모바일 필수 아님)",
+    "independent": "0/11 (코덱스 검수 대기)",
+    "input_scope": "모든 case의 UI 조작은 ButtonClickEvent 핸들러 경로 — 조작 편의(실제 포인터·터치)는 전부 근거없음/대기",
+    "new_ids": "INT-03(=RUN-20261029-01, 테스트 스크립트 원인·수정 없음) · QR1629-OBS-01(비용 줄 줄바꿈, 관찰) — 기존 11건 분모는 그대로"
   },
   "environment_issues": [
     "maker_keyboard_input이 게임에 전달되지 않음 — 메이커 오류 창 포커스 추정, 사용자에게 닫기 요청 전달. Space 대화·I 키 경로는 이번 실행에서 검증하지 못함",
     "screencapture/osascript 실행으로 macOS 화면 녹화·손쉬운 사용 권한 창이 떴을 수 있음(거부 권장으로 보고)",
-    "테스트 캐릭터 Lv40이 사막 언덕에서 자칼에게 1회 사망(시체 회수로 장비 복구)"
-  ]
+    "테스트 캐릭터 Lv40이 사막 언덕에서 자칼에게 1회 사망(시체 회수로 장비 복구)",
+    "maker_keyboard_input 여전히 게임에 안 닿음(16:38:27·16:42:21 'A' — cast 로그 없음). 오류 창을 사용자가 닫았는지 미확인",
+    "16:38:36 Lv20 시험 캐릭터가 피 묻은 황무지에서 굶주린 구울(정예) 무리에 사망 — 장비가 시체로 떨어져 서버 스크립트로 같은 시험 장비를 다시 준비(Vit 400). F08 표시·시전 근거는 모두 다시 준비한 뒤 것",
+    "16:42:55 C LEA-2011 'GetBag' nil — 내 진단 스크립트(MakerScript:4) 오타, 게임 코드 아님",
+    "maker_screenshot는 호출 순간을 찍어 같은 응답 안의 스크립트 결과보다 앞설 수 있음 — 판정은 로그 시각 기준으로 대조"
+  ],
+  "runs": {
+    "QR-20261029-1540": "위 integration·maker 블록 그대로 (앞 메이커 담당). 아래 cases의 F01~F06은 이 회차 근거. 이번 회차에서 코덱스 피드백(runtime-feedback-20261029-1626) 라벨 정정만 반영 — 재실험 없음.",
+    "QR-20261029-1629": {
+      "agent": "Claude Opus 5.5 (메이커 담당, F07~F11)",
+      "integration_sha": "2494939554b0884afb170bf9235410bb18fe27bd",
+      "branch": "codex/player-experience-polish (HEAD = origin/main 24949395: 57b9724e 병합 + 37f9e89e INT-02 + 증거 커밋)",
+      "worktree_state": "RootDesk/map/ui/data/tools 깨끗 — git status에 RootDesk/MyDesk/Shop.directory(메이커 메타, 손대지 않음)만 M. INT-02 3파일 sha256 = 앞 회차 실행 해시와 같음(e29774cc… e70d217b… d1e71959…)",
+      "file_hashes": {
+        "RootDesk/MyDesk/Skill/SkillBook.mlua": {
+          "blob": "abb3e49f18102e9a47202e66c8184450a63ee3e1",
+          "sha256": "f6cf9c1c69b7d05f25220c0e7c819d28db3ed6c852b92246f65a5969dd67a84e"
+        },
+        "RootDesk/MyDesk/UI/Windows/SkillWindow.mlua": {
+          "blob": "eb00d47e122c1845aa0cf622ca7da93bfb96fa2d",
+          "sha256": "f6ba624bdd81ba9c20c3a8674a5ba0676c15ea01e746c26561349a2eb057f388"
+        },
+        "RootDesk/MyDesk/UI/Windows/SkillOffer.mlua": {
+          "blob": "4f9b536c04d80c41cec4104ae87995764b049b4c",
+          "sha256": "b454ce59e2e6ab8b529f3bf1a180efcd1bd8a6befd37b560503b0bf86984100b"
+        },
+        "RootDesk/MyDesk/Undead/UndeadSystem.mlua": {
+          "blob": "8565c96b4a0493a0898a18c70b4e836d49302141",
+          "sha256": "3e6ae3271d8abf114c0b819b78f5934f54335dd0168ad3b2de1bd4f1ea16cf82"
+        }
+      },
+      "source_correspondence": "F07~F10: 코덱스 clone 2b0f8a64 = 원본 83556a8a = HEAD에서 SkillBook·SkillWindow·UndeadSystem blob 동일. SkillOffer는 83556a8a에 9d640d4e 주석 1줄 + 685098fb CardText(카드 글 첫 문장)만 더해짐 — F08 PowerLevelAt/UseHint 줄 유지. F11: Pick 함수 9d640d4e == HEAD 바이트 동일 (F11-pick-diff.txt)",
+      "maker_sync": [
+        "16:29:11 touch(SkillBook·SkillWindow·SkillOffer·UndeadSystem) 후 maker_refresh_workspace — build 16:29:12 Error 0 · Warning 90(앞 회차와 같은 수) · normal에 mlua 변환 오류 없음",
+        "16:29:42 play PC (server_instance_game:s1b84e3556ef) — SelfTest 402/0",
+        "16:52~16:53 stop → 16:54:14 set_platform mobile(iPad 5th) → 16:54:18 play (server_instance_game:s1b853c2f941)",
+        "17:00:50 stop → 17:01:16 set_platform pc → 17:01:20 play (server_instance_game:s1b85567b8a4) — INT-03 재현·슬롯4 복원",
+        "17:07 stop, 플랫폼 PC(FHD)"
+      ],
+      "foreign_refresh_check": {
+        "ui_worker_wip/ui-visual-1610(agent-ae8fab99)": "Edit 훅 maker_refresh_workspace 11회 16:21:49~16:24:51 KST(모두 ok, 메이커 편집 모드) — 이번 회차 refresh 16:29:11·play 16:29:42보다 앞. 그 작업자는 워크트리(.claude/worktrees/agent-ae8fab99…)만 편집해 메이커가 읽는 원본 파일은 바뀌지 않음(원본 git status 깨끗, 실행 파일 해시 위와 같음). 16:47~16:49 재작업은 셸 편집이라 훅 없음(그 작업자 보고·전사 기록 확인).",
+        "during_this_run": "16:29:11~17:07 사이 다른 세션·작업자의 refresh 기록 없음(.mswai/logs/mcp.log·하위 에이전트 전사의 hook_success 검색). 실행본 섞임 없음 → 다시 돌린 case 없음",
+        "note_for_QR-20261029-1540": "같은 검색에서 I03(agent-ab1292d2)·I04(agent-adabd271) 워크트리 작업자의 훅 refresh가 앞 회차 중에도 있었다: ok = 15:35:42·15:36:00·15:36:02·15:36:37·15:35:53·15:39:39(편집 모드), 나머지 15:36:58~15:52:53은 play 중이라 unavailable(적용 안 됨). 모두 워크트리 편집이라 원본 파일 변화 없음 — 앞 회차 실행본에도 섞임 없음으로 판단(원본 해시는 그 회차 기록과 같음)"
+      },
+      "client": [
+        "메이커 PC 미리보기 FHD (1920x1080 시뮬레이트, 캡처 2197x1236), 기본 줌, HUD 표시",
+        "메이커 모바일 프리셋 Apple iPad (5th gen) 2048x1536 시뮬레이트(캡처 1648x1236) — 실기기 아님, safeArea 끔"
+      ],
+      "test_slot": "UserDataStorage 슬롯 4 「새내기」 — 저장 켬. 상태 준비는 서버 스크립트(레벨·스킬 투자·선택보상 ChoicePicks/ChoiceTiers·시험 장비 문자열·가방). 장비 장착/해제는 인벤토리 UI 단추(ButtonClickEvent) 경로, F08-A 창 연 채 해제 1회만 PlayerInventory:RequestUnequip 직접 호출(같은 RPC). 슬롯 1~3 읽기만",
+      "input_method": "UI 단추는 실제 단추 엔티티에 ButtonClickEvent를 보내 핸들러 경로만 검증(실제 포인터 hit·터치·손가림·취소 거리 미검증). 스킬 시전은 키 처리와 같은 함수 SkillBook:CastSlot / 모바일 MobilePad:Cast·Dash 단추 ButtonClickEvent, 질주는 Space와 같은 SkillBook:CastMove. 몬스터 공격·혼 만들기는 maker_mouse_input 클릭(실제 입력 경로). maker_keyboard_input은 16:38·16:42 두 번 'A' 시험 — 게임에 전달되지 않음(시전 로그 없음).",
+      "slot4_restore": "17:05~17:06 메뉴 「캐릭터 선택으로」(ConfirmDialog 이동) → 로비 선택 화면(Slot 0·Selecting·IsLoadSuccess false)에서 서버 스크립트로 백업(slot4-backup-before-QR.json)의 Account·Char_4·Inv_4·Shadow_4를 PlayerSave와 같은 UserDataStorage BatchSetAndWait로 기록(code 0) → BatchGetAndWait 재조회 4/4 동일 → PlayerSave:Load()로 선택 화면 갱신(슬롯 4 lv1 표시) → 슬롯 4 입장(실제 불러오기 경로) 17:06:47 lv1·exp0·gold0·skp1·스킬 없음·q 1/0·가방 5·단낫. Account는 백업 파일에 표(JSON 객체)로 있어 키 순서만 다시 직렬화(내용 동일). 테스트 중 늘어난 계정 공용 grail(u:ashking_reaper 등)·cards(shadow)도 백업 시점으로 되돌아감",
+      "maker_stop": "17:07 stop 완료, 플랫폼 PC(FHD)",
+      "raw_logs": [
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/maker-log-QR1629-pc.json",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/maker-log-QR1629-ipad.json",
+        "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/maker-log-QR1629-int03-restore.json"
+      ],
+      "capture_map": "/Users/leeinguk/Desktop/hoho/잡으면 내편/docs/evidence/2026-10-29-quality-remediation/QR1629-capture-map.txt",
+      "environment_issues": [
+        "maker_keyboard_input 여전히 게임에 안 닿음(16:38:27·16:42:21 'A' — cast 로그 없음). 오류 창을 사용자가 닫았는지 미확인",
+        "16:38:36 Lv20 시험 캐릭터가 피 묻은 황무지에서 굶주린 구울(정예) 무리에 사망 — 장비가 시체로 떨어져 서버 스크립트로 같은 시험 장비를 다시 준비(Vit 400). F08 표시·시전 근거는 모두 다시 준비한 뒤 것",
+        "16:42:55 C LEA-2011 'GetBag' nil — 내 진단 스크립트(MakerScript:4) 오타, 게임 코드 아님",
+        "maker_screenshot는 호출 순간을 찍어 같은 응답 안의 스크립트 결과보다 앞설 수 있음 — 판정은 로그 시각 기준으로 대조"
+      ]
+    }
+  }
 }
