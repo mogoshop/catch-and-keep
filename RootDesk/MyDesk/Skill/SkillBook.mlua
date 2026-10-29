@@ -769,6 +769,8 @@ script SkillBook extends Component
     method string RosterLine(string id)
         -- 편성 한 줄 (I03 · 글귀 승인 전): 해골 일으키기·변이·증원 노드 상세에 지금 편성과 다음 소환을 보인다.
         -- 계산은 UndeadSystem.RosterPreview (실제 일으키기의 MaxFor·PickForm·SlotPlan·TrimVictims와 같은 함수 · 기록을 만들지 않는다)
+        -- 뼈 거인이 서 있으면 (INT1725-OBS-02: 거인 몸이 「일반 1」로, 합계가 「편성 6/5」로 보였다) 거인 몸은 「거인 본체」, 합쳐진 넷은 「거인에 N」으로 따로 세고
+        --   정원은 분모 없이 「정원 N기」로 — 거인 몸은 정원 정리에서 빠지고(TrimVictims) 합쳐진 넷이 자리를 차지해 합계가 정원을 넘을 수 있다 (규칙·진단 수 p.have는 그대로)
         local kind = _UndeadSystem:NodeForm(id).kind
         if id == "raise_skeleton" or id == "skel_legion" then kind = "skeleton"
         elseif id == "raise_mage" or id == "mage_legion" then kind = "mage" end
@@ -779,11 +781,14 @@ script SkillBook extends Component
         local forms = { "" }
         for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do table.insert(forms, f) end
         for _, f in ipairs(forms) do
-            local n = p.counts[f] or 0
+            local n = p.units[f] or 0
             if n > 0 then table.insert(parts, (f == "" and "일반" or string.match(_UndeadSystem:FormName(kind, f), "^(%S+)")) .. " " .. tostring(n)) end
         end
+        if p.bodies > 0 then table.insert(parts, "거인 본체 " .. tostring(p.bodies)) end
         if p.reserved > 0 then table.insert(parts, "거인에 " .. tostring(p.reserved)) end
-        local line = "편성 " .. tostring(p.have) .. "/" .. tostring(p.max) .. (#parts > 0 and (": " .. table.concat(parts, "·")) or "")
+        local line
+        if p.bodies > 0 or p.reserved > 0 then line = "편성: " .. table.concat(parts, "·") .. " · 정원 " .. tostring(p.max) .. "기"
+        else line = "편성 " .. tostring(p.have) .. "/" .. tostring(p.max) .. (#parts > 0 and (": " .. table.concat(parts, "·")) or "") end
         line = line .. " · 다음 소환: " .. _UndeadSystem:FormName(kind, p.nextForm)
         if #p.replaces == 1 then line = line .. "(가장 오래된 " .. _UndeadSystem:FormName(kind, p.replaces[1].form or "") .. " 교체)"
         elseif #p.replaces > 1 then line = line .. "(오래된 " .. tostring(#p.replaces) .. "기 교체)" end
