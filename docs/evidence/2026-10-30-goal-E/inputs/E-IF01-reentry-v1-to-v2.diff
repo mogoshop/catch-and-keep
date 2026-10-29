@@ -1,0 +1,25 @@
+--- v1/E-IF01-reentry-TEMPLATE.lua
++++ v2/E-IF01-reentry-basic-v2-TEMPLATE.lua
+@@ -5,8 +5,10 @@
+ if CFG.origin == 'SET_ACTUAL_PLAY_ORIGIN' or CFG.owner_uid == 'SET_ACTUAL_OWNER_UID' or CFG.record_id == 'SET_ACTUAL_RECORD_ID' then
+   log_error('[E-IF01-PROBE] actual Play/owner/record context required; no mutation') return
+ end
+-if CFG.form ~= 'shield' and CFG.form ~= 'greatsword' and CFG.form ~= 'twin' then log_error('[E-IF01-PROBE] use one existing approved form; no mutation') return end
++if CFG.form ~= 'basic' and CFG.form ~= 'shield' and CFG.form ~= 'greatsword' and CFG.form ~= 'twin' then log_error('[E-IF01-PROBE] use one existing approved skeleton form; no mutation') return end
+ if Environment:IsPublishedPlay() then log_error('[E-IF01-PROBE] Maker only; no mutation') return end
++-- Use only after the existing C run has finished and its cleanup completed; never contaminate C measurements.
++if _Telemetry.DpsOn or _Telemetry.DpsCollection ~= nil then log_error('[E-IF01-PROBE] C observation/collection still active; no mutation') return end
+ local p = nil
+ for _, user in pairs(_UserService.UserEntities) do
+   if tostring(user.PlayerComponent.UserId) == CFG.owner_uid then p = user break end
+@@ -18,7 +20,9 @@
+ for _, item in ipairs(_UndeadSystem.Owned[uid] or {}) do
+   if item.id == CFG.record_id then rec = item break end
+ end
+-if rec == nil or rec.kind ~= 'skeleton' or rec.form ~= CFG.form or not isvalid(rec.entity) then log_error('[E-IF01-PROBE] exact existing record mismatch; no mutation') return end
++local actualForm = rec ~= nil and (rec.form or '') or ''
++if actualForm == '' then actualForm = 'basic' end
++if rec == nil or rec.kind ~= 'skeleton' or actualForm ~= CFG.form or not isvalid(rec.entity) then log_error('[E-IF01-PROBE] exact existing record mismatch; no mutation') return end
+ local u = rec.entity:GetComponent('script.ShadowUnit')
+ if u == nil or u.Dead or u.Hp <= 0 or u.Giant or u.Bombing or u.OwnerPlayer ~= p or rec.entity.CurrentMap ~= p.CurrentMap then log_error('[E-IF01-PROBE] unit unavailable; no mutation') return end
+ local now = _UtilLogic.ElapsedSeconds
