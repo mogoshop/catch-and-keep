@@ -30,6 +30,11 @@ script Telemetry extends Logic
     property string StorageName = "PlayTelemetry"
     property boolean Enabled = true
     property integer RoomTicks = 0            -- 방 부하 표본 간격 (TickSec × 12 = 1분)
+    -- 성장 관측 (D P3·P5·P7 · 10-30): 실행 중 상태만 (저장 안 함)
+    property any GrowthState = nil            -- uid → init·pos·kills·extracts·act·dealtAt · 퇴장 때 지운다
+    property number DealtThrottleSec = 1      -- PlayerDealtDamage 사용자당 최소 간격 (ArmDealt로 바로 풀 수 있다)
+    property integer A2Cap = 120              -- 액트 2 첫 10분 표본 상한 (5초 × 120 = 600초)
+    property number A2Sec = 600
     -- 개발용 전투 계측 (I05): 기본 꺼짐 · Sessions 밖 · 저장 없음 (아래 「개발용 전투 계측」 절)
     property boolean DpsOn = false            -- DpsStart로만 켠다. Monster가 매 피해마다 이 값 하나만 본다
     property integer DpsRunId = 0
@@ -124,6 +129,7 @@ script Telemetry extends Logic
             if s ~= nil then
                 local m = self:MapName(player)
                 s.maps[m] = (s.maps[m] or 0) + self.TickSec
+                self:GrowthTick(player, s)   -- P7 실활동 · P3 액트 2 첫 10분
             end
             self:CheckTownVisit(player)   -- M0 첫 마을 방문 (5초 단위)
         end
@@ -292,6 +298,7 @@ script Telemetry extends Logic
         self:FlushPre(event.UserId)
         self:Flush(event.UserId, true)
         self:LeaveFirst(event.UserId)
+        if self.GrowthState ~= nil then self.GrowthState[event.UserId] = nil end
     end
 
     @ExecSpace("ServerOnly")
@@ -322,6 +329,12 @@ script Telemetry extends Logic
             { "guideOpen", "둘러보기 열림" }, { "guideClose", "둘러보기 닫힘" }, { "guideLater", "「나중에 보기」" },
             { "move", "첫 이동" }, { "kill", "첫 처치" }, { "taste", "첫 일시 그림자" }, { "shadow", "첫 그림자(추출)" },
             { "town", "첫 마을 방문" }, { "death", "첫 사망" },
+            -- 성장 관측 (D P1 · 기록은 PlayerQuest·PlayerInventory가 First로 남긴다)
+            { "gearReward", "첫 장비 의뢰 보고" }, { "gearEquip", "새 장비 첫 장착" }, { "gearUse", "새 장비로 첫 처치" }, { "gearChangedAtCredit", "공동 처치 때 장비 바뀜" },
+            { "q1accept", "의뢰 1 수락" }, { "q1report", "의뢰 1 보고" }, { "q2accept", "의뢰 2 수락" }, { "q2report", "의뢰 2 보고" },
+            { "q3accept", "의뢰 3 수락" }, { "q3report", "의뢰 3 보고" }, { "q4accept", "의뢰 4 수락" }, { "q4report", "의뢰 4 보고" },
+            { "q4reportField", "제단 현장 보고" }, { "q5accept", "의뢰 5 수락" }, { "q5acceptField", "제단 현장 수락" }, { "q5report", "의뢰 5 보고" },
+            { "q6accept", "의뢰 6 수락" }, { "q6report", "의뢰 6 보고" }, { "act2Enter", "첫 액트 2 입장" },
         }
     end
 
@@ -656,6 +669,129 @@ script Telemetry extends Logic
     end
 
 
+    -- ───────── 성장 관측 (D 요청 P1·P3·P4·P5·P7 · 10-30) ─────────
+    -- 모두 기존 세션 표(Sessions)의 작은 합계·상한 있는 글자 목록만 늘린다. 위치·처치 기준값 같은 실행 중 상태는 GrowthState(저장 안 함)에 둔다.
+    -- PlayerDealtDamage: Monster.ApplyHpDamage(실제 HP 감소 유일 지점)에서 유효 피해 > 0일 때만 · 사용자당 DealtThrottleSec에 한 번 · 전투 계측(Dps) on/off와 무관 · 저장 없음
+
+    method any GrowthOf(string uid)
+        -- 접속자별 실행 중 상태 (저장하지 않는다 · 퇴장 때 지운다)
+        if self.GrowthState == nil then self.GrowthState = {} end
+        local g = self.GrowthState[uid]
+        if g == nil then
+            g = { init = false, pos = Vector2(0, 0), kills = 0, extracts = 0, act = false, dealtAt = -100 }
+            self.GrowthState[uid] = g
+        end
+        return g
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DealtDamage(Monster m, Entity attacker, string path, string src)
+        -- P5 본인 귀속 실제 전투 이벤트 PlayerDealtDamage: player(가해 주인 · 소환수면 주인) · sourceId · map · skill(확인된 skill.* 만, 모르면 빈 글자) · direct(본인 직접 타격) · path(hit·tick)
+        -- 부르는 쪽(Monster)이 이미 「유효 피해 > 0 · 공격자 유효」를 확인했다. 활동 표본(P7) 표시는 매번, 이벤트는 사용자당 DealtThrottleSec에 한 번
+        local owner = _Util:OwnerPlayerOf(attacker)
+        if owner == nil or not isvalid(owner) or not isvalid(owner.PlayerComponent) then return end
+        local g = self:GrowthOf(owner.PlayerComponent.UserId)
+        g.act = true
+        local now = _UtilLogic.ElapsedSeconds
+        if now - g.dealtAt < self.DealtThrottleSec then return end
+        g.dealtAt = now
+        local skill = ""
+        if string.find(src, "skill.", 1, true) == 1 then skill = src end
+        local mapName = ""
+        if isvalid(m.Entity) and isvalid(m.Entity.CurrentMap) then mapName = _GameConst:BaseMapName(m.Entity.CurrentMap.Name) end
+        _GameEvents:Emit("PlayerDealtDamage", { player = owner, sourceId = m.SourceId, map = mapName, skill = skill, direct = owner == attacker, path = path })
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ArmDealt(Entity player)
+        -- 다음 유효 피해를 간격 제한 없이 바로 PlayerDealtDamage로 알리게 (장착 직후 등 — 받는 쪽이 부른다)
+        if not isvalid(player) or not isvalid(player.PlayerComponent) then return end
+        self:GrowthOf(player.PlayerComponent.UserId).dealtAt = -100
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NoteActivity(Entity player)
+        -- P7 성공한 상호작용(대화 단추 등)을 이번 5초 구간의 활동으로 (호출 지점은 패치 요청)
+        if not isvalid(player) or not isvalid(player.PlayerComponent) then return end
+        self:GrowthOf(player.PlayerComponent.UserId).act = true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NoteRespec(Entity player, string what, integer level, integer cost, integer goldLeft, integer refund)
+        -- P4 초기화 성공 (SkillBook.RequestRespec 끝 — 호출 한 줄은 B 패치 요청): 횟수·쓴 골드 합 + 최근 10건 「what|레벨|비용|잔액|돌려받은 포인트|분」
+        local s = self:Session(player)
+        if s == nil then return end
+        s.respecs = (s.respecs or 0) + 1
+        s.respecGold = (s.respecGold or 0) + math.max(0, cost)
+        if s.respecList == nil then s.respecList = {} end
+        if #s.respecList < 10 then table.insert(s.respecList, string.format("%s|%d|%d|%d|%d|%.1f", what, level, cost, goldLeft, refund, self:Minutes(s))) end
+        self:Say(string.format("[TEL] respec uid=%s what=%s lv=%d cost=%d gold=%d", s.uid, what, level, cost, goldLeft))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void GrowthTick(Entity player, any s)
+        -- 5초마다 (Tick): P7 실활동 구간 수 · P3 액트 2 첫 10분 표본
+        local uid = player.PlayerComponent.UserId
+        local g = self:GrowthOf(uid)
+        local pos = _Util:Pos2(player)
+        if not g.init then
+            -- 첫 표본은 기준만 잡는다 (불러오기·방 이동 직후의 순간이동을 움직임으로 세지 않게)
+            g.init = true
+            g.pos = pos
+            g.kills = s.kills
+            g.extracts = s.extracts
+            g.act = false
+            return
+        end
+        local moved = (pos - g.pos):Magnitude() > 0.5
+        g.pos = pos
+        local kills = s.kills - g.kills
+        g.kills = s.kills
+        local extracts = s.extracts - g.extracts
+        g.extracts = s.extracts
+        s.ticks = (s.ticks or 0) + 1
+        if moved or kills > 0 or extracts > 0 or g.act then s.activeTicks = (s.activeTicks or 0) + 1 end
+        g.act = false
+        self:A2Tick(player, s, moved, kills)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void A2Tick(Entity player, any s, boolean moved, integer kills)
+        -- P3: 첫 액트 2 맵 입장(First act2Enter — 접속 기준 초, 방을 옮겨도 이어진다) 뒤 A2Sec(600초) 동안 5초 표본
+        --   「초|맵|움직임|구간 처치|의뢰 번호|의뢰 상태」 최대 A2Cap(120)개를 세션 a2.list에 · 넘치면 합계만 (over·overKills·overMoved)
+        if not isvalid(player.CurrentMap) or not self:Active() then return end
+        local uid = player.PlayerComponent.UserId
+        local r = self:FirstRecord(uid)
+        local base = _GameConst:BaseMapName(player.CurrentMap.Name)
+        if r.f.act2Enter == nil then
+            local info = _GameData:GetMapInfo(base)
+            if info == nil or info.act ~= 2 then return end
+            self:First(player, "act2Enter")
+            if r.f.act2Enter == nil then return end
+        end
+        local t = (self:UnixNow() - r.join) - r.f.act2Enter
+        if t < 0 or t > self.A2Sec then return end
+        if s.a2 == nil then s.a2 = { at = self:Minutes(s), list = {}, over = 0, overKills = 0, overMoved = 0 } end
+        local a2 = s.a2
+        if #a2.list >= self.A2Cap then
+            a2.over = a2.over + 1
+            a2.overKills = a2.overKills + kills
+            if moved then a2.overMoved = a2.overMoved + 1 end
+            return
+        end
+        local qi = 0
+        local qs = 0
+        ---@type PlayerQuest
+        local quest = player:GetComponent("script.PlayerQuest")
+        if quest ~= nil then
+            qi = quest.Index
+            qs = quest.State
+        end
+        local mv = 0
+        if moved then mv = 1 end
+        table.insert(a2.list, string.format("%d|%s|%d|%d|%d|%d", t, base, mv, kills, qi, qs))
+    end
+
     -- ───────── 개발용 전투 계측 (I05 · 기본 꺼짐) ─────────
     -- 몬스터 HP 원장: Monster.ApplyHpDamage(피해 두 경로의 유일한 HP 감소) → DpsHit, 생명·회복·리셋·인원 보정·사망 → DpsNote.
     -- Sessions 밖의 Dps 표에만 쌓는다 → 5분·퇴장 Flush(DataStorage)에 섞이지 않는다. 저장·외부 전송 없음, 결과는 DpsFlush의 「[DPS]」 로그뿐.
@@ -947,9 +1083,9 @@ script Telemetry extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method void DpsHit(Monster m, Entity attacker, string path, number before, number after, number raw, number absorbed)
-        -- Monster.ApplyHpDamage에서 HP 감소 한 번마다 한 번. owner = 실제 공격 엔티티의 주인(파티 보상 수령자가 아니다), 모르면 none
-        if not self:DpsLive() or not self:DpsWants(m) then return end
+    method string DpsHit(Monster m, Entity attacker, string path, number before, number after, number raw, number absorbed)
+        -- Monster.ApplyHpDamage에서 HP 감소 한 번마다 한 번. owner = 실제 공격 엔티티의 주인(파티 보상 수령자가 아니다), 모르면 none. 반환 = 원장 출처 키 (PlayerDealtDamage skill용)
+        if not self:DpsLive() or not self:DpsWants(m) then return "" end
         local d = self.Dps
         local now = _UtilLogic.ElapsedSeconds
         local life = self:DpsLifeOf(m, before)
@@ -1013,7 +1149,7 @@ script Telemetry extends Logic
             end
         end
         local o = self:DpsOwner(owner)
-        if o == nil then return end
+        if o == nil then return src end
         o.hits = o.hits + 1
         o.eff = o.eff + eff
         o.raw = o.raw + raw
@@ -1038,6 +1174,7 @@ script Telemetry extends Logic
         s.eff = s.eff + eff
         s.over = s.over + over
         s.last = now
+        return src
     end
 
     @ExecSpace("ServerOnly")

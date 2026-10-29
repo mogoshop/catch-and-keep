@@ -600,7 +600,10 @@ script Monster extends Component
         local before = self.Hp
         local taken = self:RiteAbsorb(raw)
         self.Hp = self.Hp - taken
-        if _Telemetry.DpsOn then _Telemetry:DpsHit(self, attacker, path, before, self.Hp, raw, raw - taken) end
+        local src = ""
+        if _Telemetry.DpsOn then src = _Telemetry:DpsHit(self, attacker, path, before, self.Hp, raw, raw - taken) end
+        -- 성장 관측 PlayerDealtDamage (D P5): 유효 피해(> 0)가 있을 때만 — 계측 on/off와 무관, 저장 없음, 사용자당 1초에 한 번
+        if taken > 0 and before > 0 and isvalid(attacker) then _Telemetry:DealtDamage(self, attacker, path, src) end
     end
 
     @ExecSpace("ServerOnly")

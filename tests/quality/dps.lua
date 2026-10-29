@@ -4,7 +4,7 @@
 -- 엔진(HitEvent 배달·타이머·저장소)은 대신하고 MSW 동기화·실제 투사체·AI는 흉내 내지 않는다.
 -- @source Monster Monster/Monster.mlua ApplyHpDamage,TakeDamage,TakeDamageAs,HandleHitEvent,RiteAbsorb,DpsTag,RestoreHp,SetPlayerHpMul,ResetForEmptyMap,Respawn,Die,QueueSummonDamage,FlushSummonDamage,NoteContributor,RewardPlayers
 -- @source Util Common/Util.mlua OwnerPlayerOf
--- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsWants,DpsUnsubscribe,DpsTaken,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say
+-- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsWants,DpsUnsubscribe,DpsTaken,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say,First,UnixNow,FirstStages,GrowthOf,DealtDamage,ArmDealt,NoteActivity,NoteRespec,GrowthTick,A2Tick
 
 local fails = 0
 local function check(name, ok, detail)
@@ -33,7 +33,7 @@ _GameEvents = { subs = {},
   Subscribe = function(self, name, key, fn) self.subs[name .. '/' .. key] = fn end,
   Unsubscribe = function(self, name, key) self.subs[name .. '/' .. key] = nil end,
   Emit = function(self, name, payload) table.insert(emitted, name) for k, fn in pairs(self.subs) do if k:sub(1, #name + 1) == name .. '/' then fn(payload) end end end }
-_GameConst = { LevelOf = function(_, e) return 0 end, LevelGapDealt = function() return 1 end }
+_GameConst = { LevelOf = function(_, e) return 0 end, LevelGapDealt = function() return 1 end, BaseMapName = function(_, n) return n end }
 _GameData = { heavyHitPct = 0.25, telemetryEndUnix = 0 }
 local party = {}
 _PartySystem = { NearbyMembers = function() return party end }
@@ -414,6 +414,94 @@ local hookText = table.concat(logs, '\n')
 check('after hooks: taken split player/summon, loss reasons, soul other', hookText:find('hits_taken=1 taken=20.00 summon_hits_taken=1 summon_taken=7.00', 1, true) ~= nil and hookText:find('legion_loss_reason=died:1,trimmed:1', 1, true) ~= nil and hookText:find('soul_other=1', 1, true) ~= nil, hookText)
 Telemetry:DpsStop()
 check('stop unsubscribes SummonLost/SoulLost too', _GameEvents.subs['SummonLost/TelemetryDps'] == nil and _GameEvents.subs['SoulLost/TelemetryDps'] == nil, '')
+
+-- ── 성장 관측 (D P1·P3·P4·P5·P7) ──
+local VM = {}
+VM.__index = VM
+VM.__sub = function(a, b) return setmetatable({ x = a.x - b.x, y = a.y - b.y }, VM) end
+function VM:Magnitude() return math.sqrt(self.x * self.x + self.y * self.y) end
+Vector2 = function(x, y) return setmetatable({ x = x, y = y }, VM) end
+_GameConst.BaseMapName = function(_, n) return n end
+Util.Pos2 = function(_, e) return e.pos or Vector2(0, 0) end
+local mapAct = { map01 = 1, canyon = 2 }
+_GameData.GetMapInfo = function(_, n) if mapAct[n] then return { act = mapAct[n] } end return nil end
+local dealt = {}
+_GameEvents:Subscribe('PlayerDealtDamage', 'test', function(e) table.insert(dealt, e) end)
+Telemetry.SaveFirst = function() end
+Telemetry.Firsts = {}
+Telemetry.FirstRecord = function(self, uid)
+  local r = self.Firsts[uid]
+  if r == nil then r = { join = self:UnixNow(), f = {}, field = false, lv = 0 } self.Firsts[uid] = r end
+  return r
+end
+check('P5 PlayerDealtDamage is emitted with DPS off (no DPS buffer created)', Telemetry.DpsOn == false, Telemetry.DpsOn)
+_UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 5
+local g1 = monster(100, 0)
+hit(g1, p1, 10)
+check('P5 first effective hit → one event: owner u1, direct, no skill, sourceId, map, path hit', #dealt == 1 and dealt[1].player == p1 and dealt[1].direct == true and dealt[1].skill == '' and dealt[1].sourceId == 'hellhound' and dealt[1].map == 'map01' and dealt[1].path == 'hit' and Telemetry.Dps == nil, #dealt)
+hit(g1, p1, 10)
+check('P5 throttled within DealtThrottleSec (still one event)', #dealt == 1, #dealt)
+Telemetry:ArmDealt(p1)
+hit(g1, skel, 10)
+check('P5 ArmDealt releases throttle · summon hit → owner u1, direct=false', #dealt == 2 and dealt[2].player == p1 and dealt[2].direct == false, #dealt)
+_UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 2
+local g2 = monster(100, 50)
+hit(g2, p1, 20)
+check('P5 shield-absorbed (effective 0) hit emits nothing', #dealt == 2 and g2.Hp == 100, #dealt)
+local g2b = monster(100, 0)
+g2b:TakeDamageAs(5, p1, 'tick.poison')
+check('P5 tick path counts as dealt damage (path = declared tick source)', #dealt == 3 and dealt[3].path == 'tick.poison' and dealt[3].direct == true, dealt[3] and dealt[3].path)
+_UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 2
+Telemetry:DpsStart('growth')
+local g3 = monster(100, 0)
+Telemetry:DpsNote(g3, 'spawn', -1)
+g3:DpsTag(p1, 'skill.bone_shard', 30)
+hit(g3, p1, 30)
+check('P5 skill filled only when the ledger confirmed it (DPS on + exact tag)', #dealt == 4 and dealt[4].skill == 'skill.bone_shard', dealt[4] and dealt[4].skill)
+Telemetry:DpsStop()
+-- P7 · P3: 5초 표본
+local sess = { uid = 'u1', start = 1, t0 = 0, lv0 = 1, lv = 1, kills = 0, extracts = 0, levels = {}, deaths = {}, quests = {}, maps = {}, loot = {} }
+p1.pos = Vector2(0, 0)
+p1.comps['script.PlayerQuest'] = { Index = 7, State = 1 }
+Telemetry:GrowthTick(p1, sess)
+check('P7 first tick only sets the baseline', (sess.ticks or 0) == 0 and (sess.activeTicks or 0) == 0, sess.ticks)
+Telemetry:GrowthTick(p1, sess)
+check('P7 idle tick counts ticks but not active', sess.ticks == 1 and (sess.activeTicks or 0) == 0, sess.activeTicks)
+p1.pos = Vector2(1, 0)
+Telemetry:GrowthTick(p1, sess)
+sess.kills = 2
+Telemetry:GrowthTick(p1, sess)
+hit(monster(100, 0), p1, 10)
+Telemetry:GrowthTick(p1, sess)
+check('P7 movement > 0.5 · kills · dealt damage each make the tick active (3 of 4)', sess.ticks == 4 and sess.activeTicks == 3, sess.activeTicks)
+check('P3 no act-2 sample on act-1 map', sess.a2 == nil, sess.a2)
+p1.CurrentMap = entity('canyon')
+Telemetry:GrowthTick(p1, sess)
+check('P3 first act-2 map → First act2Enter + first sample 0|canyon|...|7|1', Telemetry.Firsts.u1.f.act2Enter ~= nil and sess.a2 ~= nil and sess.a2.list[1] == '0|canyon|0|0|7|1', sess.a2 and sess.a2.list[1])
+Telemetry.A2Cap = 2
+Telemetry:GrowthTick(p1, sess)
+sess.kills = 5
+Telemetry:GrowthTick(p1, sess)
+check('P3 cap: list stops at A2Cap, overflow keeps sums only', #sess.a2.list == 2 and sess.a2.over == 1 and sess.a2.overKills == 3, sess.a2.over)
+Telemetry.Firsts.u1.f.act2Enter = Telemetry.Firsts.u1.f.act2Enter - 601
+Telemetry:GrowthTick(p1, sess)
+check('P3 no samples after 600 s window', sess.a2.over == 1, sess.a2.over)
+Telemetry.A2Cap = 120
+p1.CurrentMap = map
+-- P4
+Telemetry.Session = function(self, player) if player == p1 then return sess end return nil end
+Telemetry:NoteRespec(p1, 'skills', 16, 300, 1200, 15)
+check('P4 respec counters and bounded list', sess.respecs == 1 and sess.respecGold == 300 and sess.respecList[1]:find('skills|16|300|1200|15|', 1, true) == 1, sess.respecList and sess.respecList[1])
+-- 저장 경계: 실행 중 상태(GrowthState)는 세션 저장에 없다
+Telemetry.Sessions = { u1 = sess }
+stored = {}
+Telemetry:Flush('u1', false)
+check('growth runtime state not saved (no pos/dealtAt/init in payload) · session sums are', stored[1] ~= nil and not stored[1]:find('dealtAt') and not stored[1]:find('init') and stored[1]:find('activeTicks:' .. sess.activeTicks, 1, true) ~= nil and stored[1]:find('respecs:1') ~= nil, stored[1])
+Telemetry.Sessions = {}
+-- P1 요약 라벨
+local labels = {}
+for _, st in ipairs(Telemetry:FirstStages()) do labels[st[1]] = st[2] end
+check('P1 summary labels for growth stages', labels.gearReward == '첫 장비 의뢰 보고' and labels.gearUse == '새 장비로 첫 처치' and labels.q4reportField == '제단 현장 보고' and labels.q5acceptField == '제단 현장 수락' and labels.q1accept ~= nil and labels.q6report ~= nil and labels.act2Enter ~= nil and labels.gearEquip ~= nil, labels.gearReward)
 
 -- ── DpsFinish · 꺼진 뒤 Flush ──
 Telemetry:DpsStart('finish')
