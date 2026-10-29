@@ -59,8 +59,10 @@ local function digest(p)
  for _,x in ipairs(p.idle) do table.insert(idle,x.form..'+'..x.need) end
  local rep={}
  for _,r in ipairs(p.replaces) do table.insert(rep,(r.form or '')) end
- return string.format('lv=%d max=%d have=%d res=%d full=%s keep=%d counts=%s next=%s replaces=%s idle=%s',p.level,p.max,p.have,p.reserved,tostring(p.full),p.keep,
-  table.concat(c,' '),p.nextForm,table.concat(rep,','),table.concat(idle,' '))
+ local u={}
+ for _,f in ipairs({'','shield','greatsword','twin','aura','hex','pierce','blast'}) do if (p.units[f] or 0)>0 then table.insert(u,f..'='..p.units[f]) end end
+ return string.format('lv=%d max=%d have=%d res=%d full=%s keep=%d counts=%s units=%s bodies=%d next=%s replaces=%s idle=%s',p.level,p.max,p.have,p.reserved,tostring(p.full),p.keep,
+  table.concat(c,' '),table.concat(u,' '),p.bodies,p.nextForm,table.concat(rep,','),table.concat(idle,' '))
 end
 local passed,total=0,0
 -- 한 상태: 서버 미리보기 = 동기화 문자열로 만든 클라이언트 미리보기 = 실제 Raise 결과
@@ -162,6 +164,10 @@ UndeadSystem.Giants={u1={host=host,mates={rec('skeleton',''),rec('skeleton',''),
 local p4=check('4 giant reserve','skeleton',{max=6,have=6,reserved=4,full=true,nextForm='greatsword',replaces=1})
 assert(p4.replaces[1].giant==nil and UndeadSystem:ListOf(player)[1]==host,'giant host trimmed')
 assert(string.find(book:RosterLine('raise_skeleton'),'거인에 4',1,true),book:RosterLine('raise_skeleton'))
+-- INT1725-OBS-02: 방패 모습의 거인 몸은 「방패」로 세지 않고 「거인 본체」 · 분모 섞인 「6/6」 대신 「정원 6기」 (have·counts는 진단 그대로 거인 몸을 센다)
+assert(p4.counts.shield==1 and p4.bodies==1 and (p4.units.shield or 0)==0 and p4.units['']==1,digest(p4))
+--   check가 실제로 한 번 일으킨 뒤(일반 교체 → 대검)의 줄: 방패 몸은 끝까지 「방패」로 세지 않는다
+assert(book:RosterLine('raise_skeleton')=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 6기 · 다음 소환: 해골 전사(가장 오래된 대검 해골 교체)',book:RosterLine('raise_skeleton'))
 UndeadSystem.Giants={}
 -- 5. 일시 소환(첫 처치 그림자 · revive) 섞임: 해골 정원·교체에 끼지 않는다
 book.Levels={raise_skeleton=3,skel_twin=1}
