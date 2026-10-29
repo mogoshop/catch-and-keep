@@ -32,7 +32,8 @@ script SkillOffer extends Logic
     -- 카드 초록 줄(Card{i}/Change) 규격 — tools/build/ui.cjs CARD와 같은 값. 한쪽만 바꾸지 않는다 (INT1725-OBS-01)
     property number ChangeW = 222           -- 칸 폭 (카드 안쪽 어두운 칸)
     property number ChangeFont = 16         -- 최대 글자 크기 (BestFit 12~16) · 오프라인 폭 어림(UIKit.TextWidth)의 기준
-    property integer ChangeLines = 3        -- 칸 높이 72에 16px(줄 높이 23.7)로 들어가는 줄 수 — 넘으면 변이 요약을 「{변이} N기」로 줄인다
+    property integer ChangeLines = 3        -- 칸 높이 72에 16px(줄 높이 23.7)로 들어가는 줄 수 — 넘으면 요약에서 설명에 값이 있는 토막을 뺀다
+    property integer ChangeMaxLines = 4     -- 경고가 있을 때 허용하는 줄 수 — 칸 72에 BestFit 최소 12px(줄 높이 17.8)로 들어간다 (CARD-E1E-R01)
     property string WarnHex = "#F4D27A"     -- 편성 경고 줄 색 (초록 수치 줄과 구분)
 
     @ExecSpace("ClientOnly")
@@ -301,13 +302,23 @@ script SkillOffer extends Logic
         -- 강화 카드 초록 줄 (INT1725-OBS-01: 대검 0기 · 방패 세기만 경고가 46 높이 칸을 넘어 카드 아래 장식 밖으로 흘렀다).
         --   ① 경고(UseHint)는 뜻·숫자 그대로 자기 줄 · 경고 색(WarnHex)
         --   ② 다음 랭크 요약은 같은 카드 설명(Effect = shown)에 이미 그대로 적힌 토막(고정 수치 — 「공격 간격 ×1.4」·「생명 +20%」 등)을 뺀다 (DropShown)
-        --   ③ 요약 + 경고가 칸(ChangeLines줄)을 넘으면 요약은 첫 토막(변이 노드는 「{변이} N기」)만 — 경고는 줄이지 않는다 · 글자 크기·칸·카드 크기 그대로
+        --   ③ 요약 + 경고가 칸(ChangeLines줄)을 넘으면 요약에서 카드 설명에 값(숫자)이 이미 있는 토막만 더 뺀다 (DropValueShown —
+        --      「피해 ×0.95」는 설명 「×0.8/0.95/1.1」에 값이 있어 빠지고, 설명 어디에도 없는 대검 「반경 ×1.8」은 남는다 · CARD-E1E-R01)
+        --   ④ 그래도 넘치면 ChangeMaxLines(4)줄까지 — 칸 72에 BestFit 최소 12px(빌더 기존 값)로 들어간다 · 경고는 줄이지 않는다 · 칸·카드·창 크기 그대로
+        --   ⑤ 4줄도 넘으면 요약은 첫 토막만 (모든 변이 노드 × 랭크 × 경고 꼴 검사에서 0건 — tests/quality/skills.lua)
         local warn = hint ~= "" and self:CardWrap(hint, self.ChangeW, comp) or ""
         local full = self:DropShown(summary, shown)
-        local short = _SkillWindow:SplitPlain(summary, " · ")[1]
         local body = full ~= "" and self:CardWrap(full, self.ChangeW, comp) or ""
-        if warn ~= "" and short ~= full and _SkillWindow:LineCount(body) + _SkillWindow:LineCount(warn) > self.ChangeLines then
-            body = self:CardWrap(short, self.ChangeW, comp)
+        local warnLines = _SkillWindow:LineCount(warn)
+        if warn ~= "" and _SkillWindow:LineCount(body) + warnLines > self.ChangeLines then
+            local compact = self:DropValueShown(full, shown)
+            local cbody = compact ~= "" and self:CardWrap(compact, self.ChangeW, comp) or ""
+            if _SkillWindow:LineCount(cbody) + warnLines <= self.ChangeMaxLines then
+                body = cbody
+            else
+                body = self:CardWrap(_SkillWindow:SplitPlain(summary, " · ")[1], self.ChangeW, comp)
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] offer card change fallback first-only lines=%d", _SkillWindow:LineCount(cbody) + warnLines)) end
+            end
         end
         if warn == "" then return body end
         local lines = {}
@@ -324,6 +335,29 @@ script SkillOffer extends Logic
         local keep = { parts[1] }
         for i = 2, #parts do
             if string.find(shown, parts[i], 1, true) == nil then table.insert(keep, parts[i]) end
+        end
+        return table.concat(keep, " · ")
+    end
+
+    @ExecSpace("ClientOnly")
+    method string DropValueShown(string summary, string shown)
+        -- 요약의 「 · 」 토막 중 숫자가 모두 카드 설명(shown)에 이미 있는 것을 뺀다 — 첫 토막·숫자 없는 토막·설명에 없는 값은 남긴다 (CARD-E1E-R01)
+        if summary == "" then return summary end
+        local have = {}
+        for num in string.gmatch(shown, "%d+%.?%d*") do
+            local v = tonumber(num)
+            if v ~= nil then have[v] = true end              -- 값으로 비교 (요약 「×0.80」 = 설명 「0.8」)
+        end
+        local parts = _SkillWindow:SplitPlain(summary, " · ")
+        local keep = { parts[1] }
+        for i = 2, #parts do
+            local count, inShown = 0, 0
+            for num in string.gmatch(parts[i], "%d+%.?%d*") do
+                count = count + 1
+                local v = tonumber(num)
+                if v ~= nil and have[v] then inShown = inShown + 1 end
+            end
+            if count == 0 or inShown < count then table.insert(keep, parts[i]) end
         end
         return table.concat(keep, " · ")
     end

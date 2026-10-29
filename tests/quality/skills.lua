@@ -227,7 +227,7 @@ local chMin=tonumber(string.match(cardSrc,'/Change`, "", {[^\n]-min_size: (%d+)'
 local cardW=tonumber(string.match(cardSrc,'const CARD = {[^\n]-text: (%d+)'))
 assert(chH==72 and chMax==SkillOffer.ChangeFont and cardW==SkillOffer.ChangeW and chMin==12,'card Change box '..tostring(chH)..' '..tostring(chMax)..' '..tostring(cardW))
 local lineH=function(px) return 1.48*px end   -- 메이커 로그 prefH: 16px 한 줄 23.7 · 17px 25.2
-assert(SkillOffer.ChangeLines*lineH(chMax)<=chH and 4*lineH(chMin)<=chH,'Change box cannot hold its line budget')
+assert(SkillOffer.ChangeLines*lineH(chMax)<=chH and SkillOffer.ChangeMaxLines*lineH(chMin)<=chH,'Change box cannot hold its line budget')
 local function strip(s) return (string.gsub(string.gsub(string.gsub(s,'<[^<>]*>',''),'·',''),'[\n ]','')) end
 local oldColored=_UIKit.Colored
 _UIKit.Colored=function(_,hex,text) return '<color='..hex..'>'..text..'</color>' end
@@ -270,7 +270,7 @@ local function checkCard(name,text,hint,maxLines)
  return ls
 end
 local scenes={
- {'대검 0기 (I03-3)',{raise_skeleton=2,skel_shield=3,skel_greatsword=1},'s:shield,s:shield|0','skel_greatsword','정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다','대검 해골 2기'},
+ {'대검 0기 (I03-3)',{raise_skeleton=2,skel_shield=3,skel_greatsword=1},'s:shield,s:shield|0','skel_greatsword','정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다','대검 해골 2기',SkillOffer.ChangeMaxLines},   -- CARD-E1E-R01: 반경 ×1.8을 남겨 어림 폭으로 4줄(12px 이상)
  {'방패 세기만 (I03-5)',{raise_skeleton=2,skel_shield=2},'s:shield,s:shield|0','skel_shield','다음 랭크는 세기만 오릅니다 (정원이 차 2기 그대로)','방패 해골 3기'},
  {'자리 없어짐 (I03-4)',{raise_skeleton=2,skel_greatsword=1,skel_shield=2},'s:shield,s:shield|0','skel_shield','찍으면 대검 해골 자리가 없어집니다 · 정원 2기','방패 해골 3기'},
  {'거인 중 0기 (I03-6)',{bone_rite=1,raise_skeleton=9,skel_shield=2,skel_twin=1},'s:!,s:shield|4','skel_twin','뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다','쌍칼 해골 2기'},
@@ -279,9 +279,25 @@ local sceneLog={}
 for _,sc in ipairs(scenes) do
  local text=cardChange(sc[2],sc[3],sc[4])
  assert(book:UseHint(sc[4])==sc[5],sc[1]..' hint '..book:UseHint(sc[4]))
- local ls=checkCard(sc[1],text,sc[5],SkillOffer.ChangeLines)
- assert(ls[1]==sc[6],sc[1]..': first line '..ls[1])
+ local ls=checkCard(sc[1],text,sc[5],sc[7] or SkillOffer.ChangeLines)
+ assert(string.find(ls[1],sc[6],1,true)==1,sc[1]..': first line '..ls[1])
  table.insert(sceneLog,sc[1]..' '..#ls..'줄')
+end
+-- CARD-E1E-R01 (대검 0기 장면): 경고 때 요약을 줄여도 카드 설명(Effect)에 값이 없는 「반경 ×1.8」은 초록 줄에 남는다 — Effect+Change를 합쳐 다음 랭크 수치와 경고 원문이 모두 읽힌다.
+--   설명에 값이 있는 「피해 ×0.95」(설명 「×0.8/0.95/1.1」)만 빠질 수 있다
+do
+ local gsText=cardChange({raise_skeleton=2,skel_shield=3,skel_greatsword=1},'s:shield,s:shield|0','skel_greatsword')
+ local eff=values['OfferWin/Card1/Effect'] or ''
+ local both=plain(eff)..'\n'..plain(gsText)
+ assert(not string.find(eff,'반경',1,true),'Effect now carries radius — R01 check is moot: '..eff)
+ assert(string.find(strip(plain(gsText)),strip('반경 ×1.8'),1,true),'R01: radius dropped from card\n'..gsText)
+ assert(string.find(strip(both),strip('정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다'),1,true),'R01: warning not intact\n'..gsText)
+ assert(string.find(eff,'0.95',1,true),'R01: damage value missing from Effect '..eff)
+ for _,frag in ipairs(_SkillWindow:SplitPlain(book:GetRankSummary('skel_greatsword',2),' · ')) do
+  local nums={} for n in string.gmatch(frag,'%d+%.?%d*') do table.insert(nums,n) end
+  for _,n in ipairs(nums) do assert(string.find(both,n,1,true),'R01: value '..n..' of 「'..frag..'」 missing on card\n'..both) end
+ end
+ table.insert(sceneLog,'R01 대검 반경 유지 '..#lines(gsText)..'줄')
 end
 -- 경고가 없을 때: 설명(Effect)에 이미 그대로 적힌 고정 수치만 빠지고 랭크마다 바뀌는 수치·설명에 없는 수치(대검 반경)는 남는다
 local gs=cardChange({raise_skeleton=5,skel_greatsword=1},'|0','skel_greatsword')
@@ -294,6 +310,7 @@ checkCard('raise_skeleton rank-up',rs,'',SkillOffer.ChangeLines)
 wrapOk(book:GetRankSummary('raise_skeleton',book:PowerLevelAt('raise_skeleton',3)),plain(rs))
 -- 모든 변이 노드 × 배울 랭크 × 경고 꼴 (정원·필요 수 두 자리 · 가장 긴 변이 이름) — 4줄 이하 = 칸 72에 12px 이상, 경고 전부
 local worstN,worstCase=0,''
+local valueKept,valueFallback=0,0
 for _,kind in ipairs({'skeleton','mage'}) do
  local legion=kind=='mage' and '마법사 증원' or '뼈 군단'
  local others=kind=='mage' and {'광기 마법사','저주 마법사','쌍발 마법사','관통 마법사','폭발 마법사'} or {'방패 해골','대검 해골','쌍칼 해골'}
@@ -312,8 +329,18 @@ for _,kind in ipairs({'skeleton','mage'}) do
   local def=_SkillData:Get(id)
   for lv=0,def.maxLv-1 do
    for _,hint in ipairs(hints) do
-    local t=SkillOffer:NodeChange(book:GetRankSummary(id,lv+1),hint,SkillOffer:CardText(def),nil)
-    local ls=checkCard(id..' '..lv,t,hint,4)
+    local summ,eff=book:GetRankSummary(id,lv+1),SkillOffer:CardText(def)
+    local t=SkillOffer:NodeChange(summ,hint,eff,nil)
+    local ls=checkCard(id..' '..lv,t,hint,SkillOffer.ChangeMaxLines)
+    -- CARD-E1E-R01: 설명(Effect)에 값이 없는 요약 토막은 줄여도 남는다 (4줄을 넘어 첫 토막만 남기는 경우는 세어서 0건이어야)
+    local compact=SkillOffer:DropValueShown(SkillOffer:DropShown(summ,eff),eff)
+    if string.find(strip(t),strip(compact),1,true) then valueKept=valueKept+1
+    else
+     -- 첫 토막만 남는 경우: 넉넉한 어림 폭(UIKit.TextWidth)으로 줄인 요약+경고가 4줄을 넘을 때뿐 · 경고 수가 두 자리(합성 「정원 +12」)일 때만 허용
+     assert(#lines(SkillOffer:CardWrap(compact,SkillOffer.ChangeW,nil))+#lines(SkillOffer:CardWrap(hint,SkillOffer.ChangeW,nil))>SkillOffer.ChangeMaxLines,id..' '..lv..': value dropped though it fits')
+     assert(string.find(hint,'%d%d'),'CARD-E1E-R01: value not in Effect dropped with a one-digit warning: '..id..' '..lv..' '..hint..'\n'..t)
+     valueFallback=valueFallback+1
+    end
     if #ls>worstN then worstN,worstCase=#ls,id..' '..lv..'→'..(lv+1)..' '..hint end
    end
   end
@@ -325,7 +352,7 @@ local longCard=SkillOffer:CardWrap(longOrig,SkillOffer.ChangeW,nil)
 wrapOk(longOrig,longCard)
 for _,l in ipairs(lines(longCard)) do assert(_UIKit:TextWidth(l,SkillOffer.ChangeFont)<=SkillOffer.ChangeW,l) end
 entity.GetComponent=oldGet;_UIKit.Colored=oldColored
-print(string.format('[quality/skills] INT1725-OBS-01 offer card Change %dx%d (16px %d줄 · 12px 4줄): %s · all form nodes worst %d lines (%s)',SkillOffer.ChangeW,chH,SkillOffer.ChangeLines,table.concat(sceneLog,', '),worstN,worstCase))
+print(string.format('[quality/skills] INT1725-OBS-01 offer card Change %dx%d (16px %d줄 · 12px %d줄): %s · all form nodes worst %d lines (%s) · R01 values kept %d/%d (첫 토막만: 두 자리 합성 경고 %d)',SkillOffer.ChangeW,chH,SkillOffer.ChangeLines,SkillOffer.ChangeMaxLines,table.concat(sceneLog,', '),worstN,worstCase,valueKept,valueKept+valueFallback,valueFallback))
 -- INT1725-OBS-02 (I03-6 거인 유지 중 편성 줄): 거인 몸(s:!)은 「일반」이 아니라 「거인 본체」, 합쳐진 넷은 「거인에 4」, 분모 섞인 「6/5」 대신 「정원 5기」.
 --   정원 계산·진단 수는 그대로 (have 6 = 예약 4 + 기록 2 · counts는 거인 몸을 센다) — 표시만 나눈다
 entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdRoster end return oldGet(self,key) end
