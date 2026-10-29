@@ -2,9 +2,9 @@
 -- 표시용 숫자 모음(QueueSummonDamage·FlushSummonDamage)·처치 보상(MonsterKilled·RewardPlayers)이 원장 합계를 바꾸지 않는지,
 -- 계측이 꺼져 있으면 버퍼·타이머·구독이 없고 게임 결과(HP·보호막)가 켜진 때와 같은지, 기존 Telemetry.Flush 저장에 전투 버퍼가 섞이지 않는지 본다.
 -- 엔진(HitEvent 배달·타이머·저장소)은 대신하고 MSW 동기화·실제 투사체·AI는 흉내 내지 않는다.
--- @source Monster Monster/Monster.mlua ApplyHpDamage,TakeDamage,HandleHitEvent,RiteAbsorb,DpsTag,RestoreHp,SetPlayerHpMul,ResetForEmptyMap,Respawn,Die,QueueSummonDamage,FlushSummonDamage,NoteContributor,RewardPlayers
+-- @source Monster Monster/Monster.mlua ApplyHpDamage,TakeDamage,TakeDamageAs,HandleHitEvent,RiteAbsorb,DpsTag,RestoreHp,SetPlayerHpMul,ResetForEmptyMap,Respawn,Die,QueueSummonDamage,FlushSummonDamage,NoteContributor,RewardPlayers
 -- @source Util Common/Util.mlua OwnerPlayerOf
--- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsWants,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say
+-- @source Telemetry Progress/Telemetry.mlua DpsFresh,DpsStart,DpsStop,DpsFinish,DpsHalt,DpsLive,DpsWants,DpsUnsubscribe,DpsTaken,DpsOwner,DpsSummonKey,DpsTakeTag,DpsLifeOf,DpsNewLife,DpsRecord,DpsHit,DpsNote,DpsOnEvent,DpsSample,DpsSampleOwner,DpsNum,DpsRel,DpsFlush,Flush,Active,Minutes,CopyFirsts,Say
 
 local fails = 0
 local function check(name, ok, detail)
@@ -389,6 +389,31 @@ check('filter: only prefixed targets recorded, others counted as filtered', Tele
 check('filter: HP still applied to filtered monster (game unchanged)', mOut.Hp == 90, mOut.Hp)
 Telemetry:DpsStop()
 check('stop clears filter', Telemetry.DpsFilter == '', Telemetry.DpsFilter)
+
+-- 패치 요청 대비 창구: TakeDamageAs 고정 출처 · 피격(DpsTaken) · 소환수 손실 이유(SummonLost) · 기타 혼 손실(SoulLost)
+Telemetry:DpsStart('hooks')
+local mP = monster(500, 0)
+Telemetry:DpsNote(mP, 'spawn', -1)
+mP:TakeDamageAs(12, p1, 'tick.poison')
+mP:TakeDamage(3, skel)
+local tickSrc = {}
+for _, e in ipairs(dmgEvents(ring())) do table.insert(tickSrc, e.kind .. ':' .. e.src .. ':' .. e.owner) end
+check('TakeDamageAs keeps kind tick with declared source; plain TakeDamage stays tick.unknown (summon owner kept)', table.concat(tickSrc, ',') == 'tick:tick.poison:u1,tick:tick.unknown:u1', table.concat(tickSrc, ','))
+check('TakeDamage == TakeDamageAs(tick) for HP (no behaviour change)', mP.Hp == 500 - 15, mP.Hp)
+logs = {}
+Telemetry:DpsFlush(0)
+check('before hooks: hits_taken / legion_loss_reason / soul_other stay unsupported', table.concat(logs, '\n'):find('hits_taken=unsupported') ~= nil and table.concat(logs, '\n'):find('legion_loss_reason=unsupported') ~= nil, '')
+Telemetry:DpsTaken(p1, 20)
+Telemetry:DpsTaken(skel, 7)
+_GameEvents:Emit('SummonLost', { player = p1, kind = 'skeleton', reason = 'died' })
+_GameEvents:Emit('SummonLost', { player = p1, kind = 'skeleton', reason = 'trimmed' })
+_GameEvents:Emit('SoulLost', { player = p1, reason = 'expired' })
+logs = {}
+Telemetry:DpsFlush(0)
+local hookText = table.concat(logs, '\n')
+check('after hooks: taken split player/summon, loss reasons, soul other', hookText:find('hits_taken=1 taken=20.00 summon_hits_taken=1 summon_taken=7.00', 1, true) ~= nil and hookText:find('legion_loss_reason=died:1,trimmed:1', 1, true) ~= nil and hookText:find('soul_other=1', 1, true) ~= nil, hookText)
+Telemetry:DpsStop()
+check('stop unsubscribes SummonLost/SoulLost too', _GameEvents.subs['SummonLost/TelemetryDps'] == nil and _GameEvents.subs['SoulLost/TelemetryDps'] == nil, '')
 
 -- ── DpsFinish · 꺼진 뒤 Flush ──
 Telemetry:DpsStart('finish')

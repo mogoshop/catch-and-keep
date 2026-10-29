@@ -684,6 +684,8 @@ script Telemetry extends Logic
         _GameEvents:Subscribe("UndeadRaised", "TelemetryDps", function(e) self:DpsOnEvent("raise", e) end)
         _GameEvents:Subscribe("ShadowExtracted", "TelemetryDps", function(e) self:DpsOnEvent("extract", e) end)
         _GameEvents:Subscribe("SkillCast", "TelemetryDps", function(e) self:DpsOnEvent("cast", e) end)
+        _GameEvents:Subscribe("SummonLost", "TelemetryDps", function(e) self:DpsOnEvent("loss", e) end)
+        _GameEvents:Subscribe("SoulLost", "TelemetryDps", function(e) self:DpsOnEvent("soul", e) end)
         if self.DpsSampleTimer ~= 0 then _TimerService:ClearTimer(self.DpsSampleTimer) end
         self.DpsSampleTimer = _TimerService:SetTimerRepeat(function() self:DpsSample() end, self.DpsSampleSec)
         log(string.format("[DPS] start run=%d scene=%s cap=%d lifeCap=%d gap=%.2f sample=%.2f maxSec=%d", self.DpsRunId, self.Dps.scene, self.DpsRawCap, self.DpsLifeCap, self.DpsGapSec, self.DpsSampleSec, math.floor(self.DpsMaxSec)))
@@ -694,12 +696,36 @@ script Telemetry extends Logic
         -- 계측 끄기: 타이머·구독을 풀고 버퍼를 비운다 (요약은 그 전에 DpsFlush)
         if self.DpsSampleTimer ~= 0 then _TimerService:ClearTimer(self.DpsSampleTimer) end
         self.DpsSampleTimer = 0
-        for _, name in ipairs({ "PlayerDied", "UndeadRaised", "ShadowExtracted", "SkillCast" }) do _GameEvents:Unsubscribe(name, "TelemetryDps") end
+        self:DpsUnsubscribe()
         local d = self.Dps
         if self.DpsOn and d ~= nil then log(string.format("[DPS] stop run=%d events=%d dropped=%d", self.DpsRunId, d.n, d.dropped)) end
         self.DpsOn = false
         self.Dps = nil
         self.DpsFilter = ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DpsUnsubscribe()
+        -- 계측이 듣는 게임 이벤트 구독을 모두 푼다
+        for _, name in ipairs({ "PlayerDied", "UndeadRaised", "ShadowExtracted", "SkillCast", "SummonLost", "SoulLost" }) do _GameEvents:Unsubscribe(name, "TelemetryDps") end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DpsTaken(Entity defender, number amount)
+        -- 몬스터 공격이 확정한 피해 (MonsterAttack.CalcDamage 끝 — 패치 요청). 플레이어면 그 owner의 피격, 소환수면 주인의 소환수 피격. 꺼져 있으면 부르는 쪽이 DpsOn으로 막는다
+        if not self.DpsOn or not self:DpsLive() or not isvalid(defender) then return end
+        local owner = _Util:OwnerPlayerOf(defender)
+        if owner == nil or not isvalid(owner) or not isvalid(owner.PlayerComponent) then return end
+        local o = self:DpsOwner(owner.PlayerComponent.UserId)
+        if o == nil then return end
+        o.takenSeen = true
+        if owner == defender then
+            o.takenHits = o.takenHits + 1
+            o.taken = o.taken + amount
+        else
+            o.summonTakenHits = o.summonTakenHits + 1
+            o.summonTaken = o.summonTaken + amount
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -720,7 +746,7 @@ script Telemetry extends Logic
         d.stoppedAt = at
         if self.DpsSampleTimer ~= 0 then _TimerService:ClearTimer(self.DpsSampleTimer) end
         self.DpsSampleTimer = 0
-        for _, name in ipairs({ "PlayerDied", "UndeadRaised", "ShadowExtracted", "SkillCast" }) do _GameEvents:Unsubscribe(name, "TelemetryDps") end
+        self:DpsUnsubscribe()
         log(string.format("[DPS] halt run=%d reason=%s at=%.2f", d.run, reason, at - d.t0))
     end
 
@@ -759,7 +785,9 @@ script Telemetry extends Logic
         o = { uid = uid, eff = 0, raw = 0, absorb = 0, over = 0, hits = 0, active = 0, segs = 0, first = -1, last = -1,
             src = {}, srcCount = 0, deaths = 0, raised = 0, raisedMage = 0, extracts = 0, casts = 0, manaSpent = 0, castSeen = false,
             manaLast = -1, manaDrop = 0, manaRise = 0, hpLast = -1, hpDrop = 0, hpRise = 0,
-            legNow = -1, legMax = 0, legLoss = 0, wipes = 0, wipeAt = -1, wipeFrom = 0, recover = {} }
+            legNow = -1, legMax = 0, legLoss = 0, wipes = 0, wipeAt = -1, wipeFrom = 0, recover = {},
+            takenSeen = false, takenHits = 0, taken = 0, summonTakenHits = 0, summonTaken = 0,
+            lossSeen = false, loss = {}, lossKeys = 0, soulOtherSeen = false, soulOther = 0 }
         d.owners[uid] = o
         d.ownerCount = d.ownerCount + 1
         return o
@@ -927,8 +955,13 @@ script Telemetry extends Logic
         local life = self:DpsLifeOf(m, before)
         local owner = "none"
         local akind = "none"
+        local kind = path
         local src = "tick.unknown"
-        if path == "hit" then src = "hit.none" end
+        if path == "hit" then src = "hit.none"
+        elseif path ~= "tick" then
+            kind = "tick"
+            src = path   -- 호출 쪽이 밝힌 틱 출처 (TakeDamageAs의 고정 글자)
+        end
         if isvalid(attacker) then
             if isvalid(attacker.PlayerComponent) then
                 owner = attacker.PlayerComponent.UserId
@@ -955,7 +988,7 @@ script Telemetry extends Logic
                 end
             end
         end
-        self:DpsRecord(m, path, owner, akind, src, before, after, raw, absorbed)
+        self:DpsRecord(m, kind, owner, akind, src, before, after, raw, absorbed)
         local eff = math.min(math.max(0, before), math.max(0, before - after))
         local over = math.max(0, before - after) - eff
         d.hitEvents = d.hitEvents + 1
@@ -1076,6 +1109,17 @@ script Telemetry extends Logic
             o.casts = o.casts + 1
             o.castSeen = true
             o.manaSpent = o.manaSpent + (tonumber(e.mana) or 0)
+        elseif kind == "loss" then
+            -- 소환수 손실 이유 (died·trimmed·expired·dismissed·bomb·travel …) — 키는 8개까지, 넘치면 other
+            o.lossSeen = true
+            local reason = tostring(e.reason or "?")
+            if o.loss[reason] == nil then
+                if o.lossKeys >= 8 then reason = "other" else o.lossKeys = o.lossKeys + 1 end
+            end
+            o.loss[reason] = (o.loss[reason] or 0) + 1
+        elseif kind == "soul" then
+            o.soulOtherSeen = true
+            o.soulOther = o.soulOther + 1
         end
     end
 
@@ -1177,14 +1221,30 @@ script Telemetry extends Logic
                 manaSpent = self:DpsNum(o.manaSpent)
                 casts = tostring(o.casts)
             end
+            local takenHits, taken, summonTakenHits, summonTaken = "unsupported", "unsupported", "unsupported", "unsupported"
+            if o.takenSeen then
+                takenHits = tostring(o.takenHits)
+                taken = self:DpsNum(o.taken)
+                summonTakenHits = tostring(o.summonTakenHits)
+                summonTaken = self:DpsNum(o.summonTaken)
+            end
+            local soulOther = "unsupported"
+            if o.soulOtherSeen then soulOther = tostring(o.soulOther) end
+            local lossText = "unsupported"
+            if o.lossSeen then
+                local parts = {}
+                for reason, count in pairs(o.loss) do table.insert(parts, reason .. ":" .. tostring(count)) end
+                table.sort(parts)
+                lossText = table.concat(parts, ",")
+            end
             local recText = "-"
             if #rec > 0 then recText = table.concat(rec, ",") end
             local wipeOpen = "no"
             if o.wipeAt >= 0 then wipeOpen = self:DpsRel(o.wipeAt) end
-            table.insert(list, string.format("[DPS] owner run=%d owner=%s hits=%d eff=%s raw=%s absorb=%s over=%s first=%s last=%s active=%s segs=%d deaths=%d hp_drop_sampled=%s hp_rise_sampled=%s hits_taken=unsupported mana_spent=%s casts=%s mana_drop_sampled=%s mana_rise_sampled=%s soul_raise=%d soul_raise_mage=%d soul_extract=%d soul_other=unsupported legion_now=%d legion_max=%d legion_loss=%d legion_loss_reason=unsupported wipes=%d recover=%s wipe_open=%s",
+            table.insert(list, string.format("[DPS] owner run=%d owner=%s hits=%d eff=%s raw=%s absorb=%s over=%s first=%s last=%s active=%s segs=%d deaths=%d hp_drop_sampled=%s hp_rise_sampled=%s hits_taken=%s taken=%s summon_hits_taken=%s summon_taken=%s mana_spent=%s casts=%s mana_drop_sampled=%s mana_rise_sampled=%s soul_raise=%d soul_raise_mage=%d soul_extract=%d soul_other=%s legion_now=%d legion_max=%d legion_loss=%d legion_loss_reason=%s wipes=%d recover=%s wipe_open=%s",
                 d.run, uid, o.hits, self:DpsNum(o.eff), self:DpsNum(o.raw), self:DpsNum(o.absorb), self:DpsNum(o.over), self:DpsRel(o.first), self:DpsRel(o.last), self:DpsNum(o.active), o.segs, o.deaths,
-                self:DpsNum(o.hpDrop), self:DpsNum(o.hpRise), manaSpent, casts, self:DpsNum(o.manaDrop), self:DpsNum(o.manaRise),
-                o.raised, o.raisedMage, o.extracts, math.max(0, o.legNow), o.legMax, o.legLoss, o.wipes, recText, wipeOpen))
+                self:DpsNum(o.hpDrop), self:DpsNum(o.hpRise), takenHits, taken, summonTakenHits, summonTaken, manaSpent, casts, self:DpsNum(o.manaDrop), self:DpsNum(o.manaRise),
+                o.raised, o.raisedMage, o.extracts, soulOther, math.max(0, o.legNow), o.legMax, o.legLoss, lossText, o.wipes, recText, wipeOpen))
             for key, s in pairs(o.src) do
                 table.insert(list, string.format("[DPS] src run=%d owner=%s src=%s hits=%d eff=%s raw=%s absorb=%s over=%s first=%s last=%s",
                     d.run, uid, key, s.hits, self:DpsNum(s.eff), self:DpsNum(s.raw), self:DpsNum(s.absorb), self:DpsNum(s.over), self:DpsRel(s.first), self:DpsRel(s.last)))

@@ -491,7 +491,14 @@ script Monster extends Component
 
     @ExecSpace("ServerOnly")
     method void TakeDamage(number amount, Entity attacker)
-        -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율·레벨 차이만 여기서
+        -- 히트 판정을 거치지 않는 피해(독·흡수). 출처를 모르는 옛 호출 — 계측에는 tick.unknown (TakeDamageAs와 같은 본문)
+        self:TakeDamageAs(amount, attacker, "tick")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TakeDamageAs(number amount, Entity attacker, string path)
+        -- 히트 판정을 거치지 않는 피해(독·흡수). 저항은 호출한 쪽에서 이미 반영, 저주 배율·레벨 차이만 여기서.
+        -- path = 계측 출처 ("tick" 또는 "tick.poison"·"tick.confuse"·"tick.thorns_aura"·"tick.curse_thorns" 같은 고정 글자 — 호출 쪽 패치 요청). 게임 계산에는 쓰지 않는다
         if self.IsDead then return end
         if isvalid(attacker) then
             self.LastAttacker = attacker
@@ -501,7 +508,7 @@ script Monster extends Component
         local lv = _GameConst:LevelOf(attacker)
         if lv > 0 then gap = _GameConst:LevelGapDealt(lv, self.Level) end
         local dealt = amount * self:GetDamageTakenMultiplier() * gap
-        self:ApplyHpDamage(dealt, attacker, "tick")
+        self:ApplyHpDamage(dealt, attacker, path)
         -- 틱 피해는 히트 판정을 거치지 않아 엔진이 숫자를 띄우지 않는다 → 0.45초마다 모아 작게 띄운다 (10-10 QA: 독안개 피해가 안 보임)
         self.TickAccum = self.TickAccum + dealt
         local now = _UtilLogic.ElapsedSeconds
@@ -588,7 +595,7 @@ script Monster extends Component
 
     @ExecSpace("ServerOnly")
     method void ApplyHpDamage(number raw, Entity attacker, string path)
-        -- 몬스터 HP를 피해로 깎는 유일한 곳: HandleHitEvent("hit") · TakeDamage("tick" — 독·가시·반사·혼란). 보호막(RiteAbsorb)은 여기서 한 번만 부른다.
+        -- 몬스터 HP를 피해로 깎는 유일한 곳: HandleHitEvent("hit") · TakeDamage/TakeDamageAs("tick"·"tick.<출처>" — 독·가시·반사·혼란). 보호막(RiteAbsorb)은 여기서 한 번만 부른다.
         -- 개발용 전투 계측(Telemetry DPS)이 켜져 있을 때만 깎기 전후를 원장에 한 번 남긴다 — 표시용 숫자 모음(QueueSummonDamage·TickAccum)·CalcDamage·처치 보상은 원장이 아니다
         local before = self.Hp
         local taken = self:RiteAbsorb(raw)

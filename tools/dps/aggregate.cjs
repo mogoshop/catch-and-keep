@@ -32,6 +32,7 @@ function categoryOf(src) {
   if (src === "player.basic") return "기본 공격(확인)";
   if (src === "player.unknown") return "미상(플레이어 직접)";
   if (src === "tick.unknown") return "미상(틱: 독·가시·반사·혼란)";
+  if (src.startsWith("tick.")) return "틱 " + src.slice(5) + "(확인)";
   if (src === "monster") return "몬스터끼리";
   if (src === "overflow") return "출처 상한 초과";
   return "무주체";
@@ -90,9 +91,9 @@ function parse(text) {
 }
 
 function sceneMeta(scene) {
-  const m = /^L(\d+)-(summon|magic|curse_mix)-([a-z0-9_]+)(?:-r(\d+))?/.exec(scene || "");
-  if (!m) return { level: null, build: null, scene: scene || "?", rep: null };
-  return { level: Number(m[1]), build: m[2], scene: m[3], rep: m[4] ? Number(m[4]) : null };
+  const m = /^L(\d+)-(summon|magic|curse_mix)-([a-z0-9_]+)(?:-r(\d+))?(?:-(auto|human))?/.exec(scene || "");
+  if (!m) return { level: null, build: null, scene: scene || "?", rep: null, input: null };
+  return { level: Number(m[1]), build: m[2], scene: m[3], rep: m[4] ? Number(m[4]) : null, input: m[5] || null };
 }
 
 // 원장 줄로 전투 구간을 다시 계산 (빠짐없을 때만)
