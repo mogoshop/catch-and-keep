@@ -110,6 +110,21 @@
 
 합계: 바꾼 줄 288줄 · 파일 64개 (+ 생성 데이터 2 · 다시 빌드한 UI 6). 검사: `npm test` 12/12 · `check_data` 0건 · 바꾼 mlua LSP 오류 0.
 
+### 10-29 저녁 코덱스 위임 승인 (21:03 · 사용자 「승인 대기로 멈추지 말고 추천안으로 바로 승인」 위임)
+
+Claude 요청서 `claude-decisions-request-20261029-2055.txt`의 권장안을 코덱스가 승인했다(`codex-decisions-response-2103.txt` · 묶음 `approval-decisions-2103.json`). 근거 파일은 모두 공유 폴더 `~/Documents/New project/maple-quality-remediation-20261029/`. 승인과 코드 적용·실화면 검수는 따로 센다 — 상태는 `docs/evidence/2026-10-29-decisions-2103/decisions-status.json`. 글귀 확정·현행 유지 결정은 구현량이나 F11 최종 통과로 세지 않는다.
+
+| 결정 | 내용 | 근거 파일 |
+|---|---|---|
+| 0 옛 저장 배너 | 「스킬·능력치가 새로 바뀌었습니다」 배너 삭제(63520f13) 코드 수용 · 환급·포인트·저장 그대로 · 옛 저장(sv<3) 입장 실행 확인만 남음 | `approval-banner-review-63520f13.json` |
+| 1 글귀 확정 | `copy-review-20261029-pm.md` 1~66·I03-6·I03-8 현행 확정 · 67 삭제 · I03-7은 I03-8로 대체(옛 첫 토막만 규칙 다시 쓰지 않음) · 53·54는 같은 화면에 UseHint 조건 줄이 보이는 표시 경로(스킬 창 공방 · 제물 강화 카드)에서만 요약 끝 「(…를 배우면)」을 뺌 — 공용 요약 `SkillBook.GetRankSummary`·학습 알림(RequestLearn→NotifyLearned)은 괄호 유지 · 수치·조건·반경×1.8·편성 경고 전문 그대로 | `approval-copy-review-2103.json` |
+| 2 바닥 시범 | 집게 동굴 1층(crabcave1)·폭풍의 눈(stormeye) 노말 2장만 「상하 의사난수 섞기 중지 + 경계 이음 보정 유지」 격리 시범 · 같은 줌 80·같은 구역 비교 · 10맵×3난이도 전역 재생성·새 바닥 에셋은 승인 아님(시범 결과를 코덱스가 보고 확대 결정) | `approval-floor-review-2103.json` |
+| 3 오라 소리 | 호령·역병 저주·가벼운 걸음 자동 적용·틱에 소리 없음 · 배울 때는 스킬 창 「배우기」(BtnLearn) 기존 확인음(confirm) 한 번 재사용 — 새 시전음·반복음·NotifyLearned 소리 없음, 새 코드 없음 | `approval-aura-review-2103.json` |
+| 4 I03 효과 칸 | 현행 유지로 결정 종료(공방 Stat 494×94 그대로) · 새 넘침이 관찰되면 그 장면만 보완 | `codex-decisions-response-2103.txt` 4 |
+| 5 I04 기본 공격 ㉠ | 큰 단추 = 5번 칸, 작은 단추 = 보조 기본 공격 그대로 · BasicAtk↔Attack, BasicAtk↔S4 입력 사각형 가장자리 간격 최소 8 UI 단위(목표 8~12) — BasicAtk 최소 이동 포함 · 크기(220·96·120·96·92)·수동 조준·홀드·취소·경로/ID 그대로 · ㉡(5번 스킬을 작은 칸으로)는 채택 안 함 | `approval-i04-review-2103.json` |
+| 6 그림 요청서 | 머리 위 「저항 붕괴」 표식 모양 변형 1장 · 액트 3 따개비 돌 바닥 변형 타일 2~3장 비교 요청서 준비(`codex-next-20261029.md`) — 코덱스가 후보를 보고 결정, 보지 않은 그림 자동 적용 아님 | `codex-decisions-response-2103.txt` 6 |
+| 7 테스트 슬롯 | 슬롯 4 「새내기」 Lv40 저장은 기존 백업/복원 절차 그대로 · 새 초기화 정책 아님 | `codex-decisions-response-2103.txt` 7 |
+
 
 ---
 
