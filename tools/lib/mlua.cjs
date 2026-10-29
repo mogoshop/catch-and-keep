@@ -168,8 +168,11 @@ function parseParams(text) {
 
 // 파일 하나의 스크립트 선언을 읽는다
 function parseScript(file, src, native) {
-  const code = scrub(src, false);
-  const lines = code.split("\n");
+  // 선언(script/property/method/handler) 인식은 문자열 내용까지 가린 판에서 한다 — 문자열·긴 문자열 안의
+  // "method void F(integer a = 0)" 같은 글을 실제 선언으로 읽지 않게 (AD2-CHECKER-01).
+  // 어노테이션 값(@ExecSpace("ServerOnly"))은 같은 자리의 주석만 지운 판에서 읽는다 (scrub은 길이·줄을 그대로 둔다).
+  const rawLines = scrub(src, false).split("\n");
+  const lines = scrub(src, true).split("\n");
   let script = null;
   let pending = [];
   let current = null; // 현재 method/handler
@@ -184,11 +187,11 @@ function parseScript(file, src, native) {
       continue;
     }
     if (/^@\w+/.test(line) && !/^@\w+.*\b(property|method|handler)\b/.test(line)) {
-      pending.push(line);
+      pending.push(rawLines[i].trim());
       continue;
     }
     if (!script) { pending = []; continue; }
-    const annotations = pending.concat((line.match(/@\w+(\([^)]*\))?/g) || []));
+    const annotations = pending.concat([...lines[i].matchAll(/@\w+(\([^)]*\))?/g)].map((a) => rawLines[i].slice(a.index, a.index + a[0].length)));
     pending = [];
     const pm = line.match(/\bproperty\s+([\w<>,\s]+?)\s+(\w+)\s*(=|$)/);
     if (pm) {
