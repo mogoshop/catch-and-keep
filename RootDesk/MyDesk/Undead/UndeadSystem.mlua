@@ -172,8 +172,8 @@ script UndeadSystem extends Logic
         local epoch = self.GiantEpoch
         host.rec.giant = true
         self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch }
-        -- 그림만 (10-30 갈래 E): 몸이 된 해골의 변이(방패·대검·쌍칼)에 맞는 거인 그림 — 미등록·일반·마법사 몸이면 nil = 지금 그림. 고르기·능력치 규칙은 그대로
-        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(host.rec.form or ""))
+        -- Visual only: use the already selected host; normal stage5 still selects skeletons only. Mage art support is dormant.
+        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(host.rec.kind == "mage" and "mage" or (host.rec.form or "")))
         self:RefreshSummary(player)
         _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
         log(string.format("[VRF] rite stage=5 skel=%d giant atk=%d hp=%.0f/%.0f sec=%.0f", n, math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
@@ -235,10 +235,11 @@ script UndeadSystem extends Logic
     end
 
     method table GiantLook(string form)
-        -- 거인 3종 그림 (data/monster_frames.csv form_giant_(종류) — 업로드 뒤 register_giant_visuals.cjs가 쓴다): 동작마다 서버가 거는 칸 RUID와 길이(초).
+        -- Five approved visual sets only; no selection, skill, damage or unlock policy change.
         --   서기·걷기·기술·피격·갈라짐 = 첫 칸 (클라이언트 FrameClip이 이어 넘김) · 공격 = 타격 칸 (기존 소환수 공격 규칙 — 서버 피해 시점에 타격 칸이 오게)
-        --   방패·대검·쌍칼 몸만. 표가 없거나 여섯 동작 중 하나라도 비면 nil = 지금 그림 그대로 (반쯤 바뀐 거인·빈 그림 없음)
-        if form ~= "shield" and form ~= "greatsword" and form ~= "twin" then return nil end
+        -- Missing/incomplete registration retains the existing art. Empty skeleton form means basic.
+        if form == "" then form = "basic" end
+        if form ~= "basic" and form ~= "mage" and form ~= "shield" and form ~= "greatsword" and form ~= "twin" then return nil end
         local set = _GameData:GetMonsterFrames("giant_" .. form)
         if set == nil then return nil end
         local look = { form = form }

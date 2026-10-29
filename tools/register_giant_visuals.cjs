@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 거인 3종(방패·대검·쌍칼) 시각 교체 등록 (10-30 갈래 E · 코덱스 0120 결정: 몸 90장 + HUD 3).
-//   코덱스 팩 assets/codex-bone-giants-v1/packages/(shield|greatsword|twin|J7-HUD3) → 등록 대기표 data/pending/giant-visuals-registration.csv
+// 거인 5종(기본·방패·대검·쌍칼·마법사) 시각 교체 등록 (10-30 갈래 E · 코덱스 0120 기존3종 + 0149 기본·마법사 + 0154 최종수용: 몸 150장 + HUD 5).
+//   코덱스 팩 assets/codex-bone-giants-v1/packages/(shield|greatsword|twin|basic|mage|J7-HUD5) → 등록 대기표 data/pending/giant-visuals-registration.csv
 //   → (메이커 담당) 업로드 팩 docs/evidence/2026-10-30-goal-E/upload-pack을 tools/msw_mcp_call.cjs upload-res로 올림 (피벗·Point·Clamp 업로드 때 함께)
 //   → (부모) apply: 받은 RUID를 대기표에 채우고 data/monster_frames.csv form_giant_(종류) 6동작 · data/ui_icons.csv ui_giant_(종류) 줄을 쓴다 → node tools/gen_data.cjs
 // 등록 전에는 아무 표에도 줄이 없어서 게임은 지금 그림(변이 그림 × riteGiantScale)을 그대로 쓴다 (UndeadSystem.GiantLook = nil).
 // 사용:
 //   node tools/register_giant_visuals.cjs plan --assets 「assets/codex-bone-giants-v1 경로」   (대기표 · 등록 계획 · 업로드 팩 다시 만들기)
-//   node tools/register_giant_visuals.cjs check                                            (대기표 형식·90+3키·타이밍 검사 — RUID 칸은 비어도 됨)
+//   node tools/register_giant_visuals.cjs check                                            (대기표 형식·150+5키·타이밍 검사 — RUID 칸은 비어도 됨)
 //   node tools/register_giant_visuals.cjs apply 「업로드 팩 폴더」 [--dry] [--allow-partial]   (RUID가 모두 차야 쓴다 · --allow-partial이면 다 찬 종류만)
 //   node tools/register_giant_visuals.cjs preview-rows                                     (오프라인 회귀용 가짜 RUID 줄 — 파일을 쓰지 않는다)
 "use strict";
@@ -18,7 +18,7 @@ const ROOT = path.join(__dirname, "..");
 const PENDING = path.join(ROOT, "data/pending/giant-visuals-registration.csv");
 const EVID = path.join(ROOT, "docs/evidence/2026-10-30-goal-E");
 const PACK = path.join(EVID, "upload-pack");
-const FORMS = ["shield", "greatsword", "twin"];
+const FORMS = ["shield", "greatsword", "twin", "basic", "mage"];
 // 거인 동작 순서와 장 수 (코덱스 납품 DELIVERY: stand4/move6/attack6/skill6/hit2/split6) — UndeadSystem.GiantStateOrder와 같은 순서
 const STATES = [["stand", 4], ["move", 6], ["attack", 6], ["skill", 6], ["hit", 2], ["split", 6]];
 const HEAD = ["key", "kind", "form", "state", "frame", "frame_index0", "file", "sha256", "width", "height", "pivot_x", "pivot_y", "filter", "wrap", "duration_ms", "loop", "hit", "animation_key", "ruid"];
@@ -71,7 +71,7 @@ function plan(assets) {
     }
   }
   {
-    const dir = path.join(assets, "packages", "J7-HUD3");
+    const dir = path.join(assets, "packages", "J7-HUD5");
     const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
     const props = Object.fromEntries(parse(fs.readFileSync(path.join(dir, "resource-properties.csv"), "utf8")).map((r) => [r.key, r]));
     for (const m of man) {
@@ -94,7 +94,7 @@ function plan(assets) {
     rows.map((r) => ({ key: r.key, upload_name: r.key, file: rel + "/" + r.file, RUID: r.ruid, category: r.kind === "frame" ? "monster-frame" : "ui", group: "OJYYQ", status: r.ruid ? "uploaded" : "ready" }))));
   fs.writeFileSync(path.join(PACK, "resource-properties.csv"), toCsv(["name", "pivot_x", "pivot_y", "filter_mode", "wrap_mode", "width", "height"],
     rows.map((r) => ({ name: r.key, pivot_x: r.pivot_x, pivot_y: r.pivot_y, filter_mode: r.filter, wrap_mode: r.wrap, width: r.width, height: r.height }))));
-  const planJson = { source: "assets/codex-bone-giants-v1/packages (shield · greatsword · twin · J7-HUD3) · 코덱스 goal-shield-twin-J7-decision-0120",
+  const planJson = { source: "assets/codex-bone-giants-v1/packages (shield · greatsword · twin · basic · mage · J7-HUD5) · 코덱스 goal-basic-mage-art-decision-0149 + goal-J7-extra2-review-0128",
     rule: "피벗·Point·Clamp는 업로드 직후 처음 불리기 전에 넣는다 (나중에 바꾸면 새 RUID) · 등록 전 게임은 지금 그림",
     upload: "메인 폴더에서 node tools/msw_mcp_call.cjs upload-res docs/evidence/2026-10-30-goal-E/upload-pack --dry 뒤 실제 (그룹 OJYYQ · 피벗 속성은 같은 호출에서 asset_update_resource_storage_info)",
     register: "node tools/register_giant_visuals.cjs apply docs/evidence/2026-10-30-goal-E/upload-pack 뒤 node tools/gen_data.cjs · npm test",
@@ -110,12 +110,12 @@ function plan(assets) {
 
 const load = () => parse(fs.readFileSync(PENDING, "utf8"));
 
-// 대기표 검사: 종류마다 6동작·장 수·칸 번호 0..n-1·타이밍(서기·걷기 반복, 공격·기술 타격 칸 하나)·192 발 피벗 · HUD 3 · RUID 칸은 비거나 32자리
+// 대기표 검사: 종류마다 6동작·장 수·칸 번호 0..n-1·타이밍(서기·걷기 반복, 공격·기술 타격 칸 하나)·192 발 피벗 · HUD 5 · RUID 칸은 비거나 32자리
 function check(rows) {
   const bad = [];
   const frames = rows.filter((r) => r.kind === "frame"), icons = rows.filter((r) => r.kind === "ui_icon");
-  if (frames.length !== 90) bad.push("몸 프레임 " + frames.length + " ≠ 90");
-  if (icons.length !== 3) bad.push("HUD 아이콘 " + icons.length + " ≠ 3");
+  if (frames.length !== FORMS.length * 30) bad.push("몸 프레임 " + frames.length + " ≠ 150");
+  if (icons.length !== FORMS.length) bad.push("HUD 아이콘 " + icons.length + " ≠ 5");
   const keys = new Set();
   for (const r of rows) {
     if (keys.has(r.key)) bad.push("키 중복 " + r.key);
@@ -170,7 +170,7 @@ function apply(pack, argv) {
   const uiFile = path.join(ROOT, "data/ui_icons.csv");
   const ui = fs.readFileSync(uiFile, "utf8").split(LF).filter((l) => l !== "");
   const uiKeep = ui.filter((l) => !icons.some((r) => l.startsWith(r.key + ",")));
-  const uiAdd = icons.map((r) => [r.key, r.ruid, "#FFFFFF", "1", quote("거인 HUD 아이콘 48px (코덱스 J7-HUD3 · 0120 채택 · sha256 " + r.sha256.slice(0, 8) + "… · 갈래 E 등록)")].join(","));
+  const uiAdd = icons.map((r) => [r.key, r.ruid, "#FFFFFF", "1", quote("거인 HUD 아이콘 48px (코덱스 J7-HUD5 · 0120 채택 · sha256 " + r.sha256.slice(0, 8) + "… · 갈래 E 등록)")].join(","));
   console.log("쓸 것: monster_frames " + add.length + "줄 (" + (ready.join(",") || "-") + ") · ui_icons " + uiAdd.length + "줄");
   if (argv.includes("--dry")) { for (const l of [...add, ...uiAdd]) console.log("  " + l.slice(0, 160)); return; }
   fs.writeFileSync(mfFile, [...keep, ...add].join(LF) + LF);
@@ -187,7 +187,7 @@ if (require.main === module) {
     const rows = load();
     const bad = check(rows);
     if (bad.length) { console.log(bad.join(LF)); process.exit(1); }
-    console.log("[register_giant_visuals] 대기표 " + rows.length + "줄 · 몸 90 · HUD 3 · RUID 채움 " + rows.filter((r) => isRuid(r.ruid)).length + " · 문제 0");
+    console.log("[register_giant_visuals] 대기표 " + rows.length + "줄 · 몸 150 · HUD 5 · RUID 채움 " + rows.filter((r) => isRuid(r.ruid)).length + " · 문제 0");
   }
   else if (cmd === "apply") apply(rest[0] && !rest[0].startsWith("--") ? rest[0] : null, rest);
   else if (cmd === "preview-rows") {
