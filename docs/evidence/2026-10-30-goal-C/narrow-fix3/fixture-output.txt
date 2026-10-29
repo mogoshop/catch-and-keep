@@ -1,0 +1,246 @@
+# fix3 candidate offline checks — 2026-10-30T06:29:49+0900 — Lua 5.4.8  Copyright (C) 1994-2025 Lua.org, PUC-Rio
+# ALL CHECKS BELOW ARE MOCK / OFFLINE. No Maker, no engine, no MSW runtime. Mock = plain-Lua port of MonsterSpawner members (harness/spawner-port.lua).
+# Boundary → checks map:
+#  NARROW-PRE-QUEUE-RESUME      : lifecycle §4 (draining queue at pause → own timer stops on stand-in → restore → exactly one new timer via StartQueue → drains 12) · §5 (same-tick restore → no duplicate timer) · §10 (StartQueue error caught)
+#  NARROW-PRE-CLEAR-SIDE-EFFECT : lifecycle §3 (hold: alive=0 → no WakeAll/spawn/reward/MapCleared · control A no-hold → WakeAll · control B tables-only → reward) · full-dryrun SCENE lines (rewards/wakeAll/spawn = 0 during collection, both variants) vs original-template control (allclear: rewards=1 wakeAll=1 spawned=3 during collection)
+#  NARROW-PRE-REFERENCE-OWNERSHIP: lifecycle §1 (exact original refs back, originals not mutated, child spawner) · §6 (Sleep / SpawnAll / foreign table / written stand-in / re-set ClearMode → not overwritten) · §7 (nil PendingPacks, SpawnedAt 0 not held) · §8 (root Entity==map, CurrentMap nil) · §9b (Lv5 cellar1 / Lv30 smuggler1 / Lv15 non-kingtomb1 → no hold)
+#  NARROW-PRE-FINISH            : lifecycle §1 (11 finish reasons incl. manual=S90, replaced, travel/setup; second finish = no-op, one restore line) · §10 (begin error after a REAL pause restores — C2-NARROW-FIXTURE-01 fixed, see §3b; export failure after restore)
+
+## 1. syntax (luac -p, Lua 5.4.8)
+PARSE OK before/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua
+PARSE OK after/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua
+PARSE OK inputs/original/S10-15-curse_mix-narrow-r1-auto-TEMPLATE.lua
+PARSE OK inputs/original/S10-15-magic-narrow-r1-auto-TEMPLATE.lua
+PARSE OK inputs/original/S10-15-summon-narrow-r1-auto-TEMPLATE.lua
+PARSE OK inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua
+PARSE OK inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua
+PARSE OK inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua
+PARSE OK harness/full-dryrun.lua
+PARSE OK harness/lifecycle-fixture.lua
+PARSE OK harness/spawner-port.lua
+
+## 2. lifecycle fixture — code under test cut byte-for-byte from the candidate files
+$ lua harness/lifecycle-fixture.lua after/…/DPS-maker-scripts.lua inputs/*-fix3-TEMPLATE.lua
+SAME SEGMENT inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua
+SAME SEGMENT inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua
+SAME SEGMENT inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua
+SEGMENT lines=84 from after/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · cleared
+PASS original pending tables are not mutated by the hold · cleared
+PASS child spawner of the same map also held · cleared
+PASS restore puts back the exact original references · cleared
+PASS child restored · cleared
+PASS collection ownership released · cleared
+PASS second finish is a no-op (one restore line) · cleared
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · player_dead
+PASS original pending tables are not mutated by the hold · player_dead
+PASS child spawner of the same map also held · player_dead
+PASS restore puts back the exact original references · player_dead
+PASS child restored · player_dead
+PASS collection ownership released · player_dead
+PASS second finish is a no-op (one restore line) · player_dead
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · left_map
+PASS original pending tables are not mutated by the hold · left_map
+PASS child spawner of the same map also held · left_map
+PASS restore puts back the exact original references · left_map
+PASS child restored · left_map
+PASS collection ownership released · left_map
+PASS second finish is a no-op (one restore line) · left_map
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · player_left
+PASS original pending tables are not mutated by the hold · player_left
+PASS child spawner of the same map also held · player_left
+PASS restore puts back the exact original references · player_left
+PASS child restored · player_left
+PASS collection ownership released · player_left
+PASS second finish is a no-op (one restore line) · player_left
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · observation_stopped
+PASS original pending tables are not mutated by the hold · observation_stopped
+PASS child spawner of the same map also held · observation_stopped
+PASS restore puts back the exact original references · observation_stopped
+PASS child restored · observation_stopped
+PASS collection ownership released · observation_stopped
+PASS second finish is a no-op (one restore line) · observation_stopped
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · manual
+PASS original pending tables are not mutated by the hold · manual
+PASS child spawner of the same map also held · manual
+PASS restore puts back the exact original references · manual
+PASS child restored · manual
+PASS collection ownership released · manual
+PASS second finish is a no-op (one restore line) · manual
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · replaced
+PASS original pending tables are not mutated by the hold · replaced
+PASS child spawner of the same map also held · replaced
+PASS restore puts back the exact original references · replaced
+PASS child restored · replaced
+PASS collection ownership released · replaced
+PASS second finish is a no-op (one restore line) · replaced
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · timeout
+PASS original pending tables are not mutated by the hold · timeout
+PASS child spawner of the same map also held · timeout
+PASS restore puts back the exact original references · timeout
+PASS child restored · timeout
+PASS collection ownership released · timeout
+PASS second finish is a no-op (one restore line) · timeout
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · duration
+PASS original pending tables are not mutated by the hold · duration
+PASS child spawner of the same map also held · duration
+PASS restore puts back the exact original references · duration
+PASS child restored · duration
+PASS collection ownership released · duration
+PASS second finish is a no-op (one restore line) · duration
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · target_setup_timeout
+PASS original pending tables are not mutated by the hold · target_setup_timeout
+PASS child spawner of the same map also held · target_setup_timeout
+PASS restore puts back the exact original references · target_setup_timeout
+PASS child restored · target_setup_timeout
+PASS collection ownership released · target_setup_timeout
+PASS second finish is a no-op (one restore line) · target_setup_timeout
+PASS hold installs empty stand-ins + ClearMode false + InflowOn false · travel_failed_after_pause
+PASS original pending tables are not mutated by the hold · travel_failed_after_pause
+PASS child spawner of the same map also held · travel_failed_after_pause
+PASS restore puts back the exact original references · travel_failed_after_pause
+PASS child restored · travel_failed_after_pause
+PASS collection ownership released · travel_failed_after_pause
+PASS second finish is a no-op (one restore line) · travel_failed_after_pause
+PASS WakeTick during hold: 0 wake events, 0 spawns even with a pack 1 unit away
+PASS after restore the game wakes that pack again (normal behaviour resumes)
+PASS hold: Poll with alive=0 issues no WakeAll, no spawn, no reward, no MapCleared
+PASS control A (no hold): Poll with alive=0 + 6 pending → clear-empty WakeAll spawns 6
+PASS control B (tables emptied, ClearMode on): Poll grants floor clear → ClearMode hold is required
+PASS after restore normal accounting resumes (Remaining = 1 live + 6 pending)
+OBSERVATION port Poll: wakeAll=1 spawned=3 rewards=1 cleared=true (live spawned this tick, alive was counted before WakeAll)
+PASS observation reproduced in port: WakeAll(3 pending) + floor clear in the same Poll
+PASS setup: queue draining with a live timer (8 spawned, 12 queued)
+PASS hold: running RunQueue sees the empty stand-in and stops its own timer; no spawn; saved 12 jobs intact
+PASS restore: saved queue back + exactly one new timer via StartQueue (old id not revived)
+PASS resumed queue drains all 12 remaining jobs, then stops
+PASS restore log reports queue_resumed=1
+PASS same-tick restore: StartQueue sees the live timer and adds none
+PASS the original timer drains the restored queue
+PASS Sleep during hold: restore skips (generation 0 kept, tables stay nil)
+PASS restore log shows wake_skipped=2
+PASS SpawnAll during hold: new generation tables/ClearMode untouched
+PASS foreign PendingPacks kept; our SpawnQueue stand-in still restored independently
+PASS non-empty stand-in is not overwritten (logged as skipped); pending still restored
+PASS ClearMode re-set by others is left alone (clear_restored=0)
+PASS nil PendingPacks: stand-in installed, WakeTick/Poll run without error
+PASS nil PendingPacks restored as nil
+PASS SpawnedAt 0: no table/ClearMode hold (only the existing InflowOn pause)
+PASS pause log reports wake_held=0 unspawned=1
+PASS root spawner held
+PASS root spawner (Entity == map, CurrentMap nil) restored
+PASS non-narrow: only InflowOn paused (tables/ClearMode untouched)
+PASS non-narrow pause log unchanged (no wake fields)
+PASS non-narrow restore log unchanged: ends with restored=1 skipped=0
+PASS scope: narrow Lv5 cellar1 → InflowOn-only pause (no table/ClearMode hold)
+PASS scope: narrow Lv5 cellar1 restore log unchanged
+PASS scope: narrow Lv30 smuggler1 → InflowOn-only pause (no table/ClearMode hold)
+PASS scope: narrow Lv30 smuggler1 restore log unchanged
+PASS scope: narrow Lv15 canyon → InflowOn-only pause (no table/ClearMode hold)
+PASS scope: narrow Lv15 canyon restore log unchanged
+PASS begin error case: pause really happened (stand-in + ClearMode false seen, pause log wake_held=1) before the injected error
+PASS begin error after pause → finish(begin_failed) restores
+PASS export failure happens after restoration
+PASS StartQueue error is caught (warning), finish continues to its end line
+GEOMETRY centre8 10.016..12.341  centre1 3.019..5.353
+PASS coords-fix3 arithmetic matches Codex 0618/0620 (all 8 within 5.5)
+TOTAL 117/117 passed (mock lifecycle — not an engine run)
+exit=0
+
+## 3. control: same fixture against BEFORE canonical (expected to fail at the first hold check)
+SEGMENT lines=56 from before/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua
+/private/tmp/lua-5.4.8/src/lua: harness/lifecycle-fixture.lua:92: FAIL hold installs empty stand-ins + ClearMode false + InflowOn false · cleared
+exit=1
+
+## 3b. control for C2-NARROW-FIXTURE-01: case 10 with the pause call removed from the injected beginUnsafe (temporary copy, not kept) must fail
+<tmp-copy>/lifecycle-fixture.lua:278: FAIL begin error case: pause really happened (stand-in + ClearMode false seen, pause log wake_held=1) before the injected error
+exit=1
+
+## 4. whole-S10 dry run of each fix3 TEMPLATE (origin placeholder replaced in memory only) — variants: leftover (3 native mobs outside arena) / allclear (arenaClear empties the map)
+$ lua harness/full-dryrun.lua inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=leftover ClearMode=true pending=3 queueTimer=0 rewardsTotal=0 wakeAllTotal=0 nativeSpawnedTotal=0 maxTargetDist=5.351
+DRY OK inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+exit=0
+$ lua harness/full-dryrun.lua inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=allclear ClearMode=true pending=0 queueTimer=0 rewardsTotal=1 wakeAllTotal=1 nativeSpawnedTotal=3 maxTargetDist=5.351
+DRY OK inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+exit=0
+$ lua harness/full-dryrun.lua inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=leftover ClearMode=true pending=3 queueTimer=0 rewardsTotal=0 wakeAllTotal=0 nativeSpawnedTotal=0 maxTargetDist=5.351
+DRY OK inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+exit=0
+$ lua harness/full-dryrun.lua inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=allclear ClearMode=true pending=0 queueTimer=0 rewardsTotal=1 wakeAllTotal=1 nativeSpawnedTotal=3 maxTargetDist=5.351
+DRY OK inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+exit=0
+$ lua harness/full-dryrun.lua inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=leftover ClearMode=true pending=3 queueTimer=0 rewardsTotal=0 wakeAllTotal=0 nativeSpawnedTotal=0 maxTargetDist=5.351
+DRY OK inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua leftover
+exit=0
+$ lua harness/full-dryrun.lua inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+LOG [DPS-RUN] inflow pause <meta> spawners=1 wake_held=1 packs=1 jobs=3 unspawned=0
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1
+LOG [DPS-RUN] finishing <meta> reason=cleared alive_targets=0 legion=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+TARGETS C05_mummy_1(0.63,1.34) C05_mummy_2(1.06,0.30) C05_mummy_3(1.53,1.69) C05_mummy_4(0.01,0.83) C05_sandscorp_5(1.94,0.40) C05_sandscorp_6(0.69,2.18) C05_sandscorp_7(0.38,-0.17) C05_sandscorp_8(2.33,1.47)
+AFTER variant=allclear ClearMode=true pending=0 queueTimer=0 rewardsTotal=1 wakeAllTotal=1 nativeSpawnedTotal=3 maxTargetDist=5.351
+DRY OK inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua allclear
+exit=0
+
+## 5. control: whole-S10 dry run of the ORIGINAL summon TEMPLATE (pre-fix3; asserts for fix3 lines are expected to fail AFTER the SCENE/AFTER lines)
+$ lua harness/full-dryrun.lua inputs/original/S10-15-summon-narrow-r1-auto-TEMPLATE.lua leftover
+LOG [DPS-RUN] inflow pause <meta> spawners=1
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0
+SCENE during collection: rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0
+AFTER variant=leftover ClearMode=true pending=3 queueTimer=0 rewardsTotal=0 wakeAllTotal=0 nativeSpawnedTotal=0 maxTargetDist=12.339
+/private/tmp/lua-5.4.8/src/lua: harness/full-dryrun.lua:124: pause line
+	harness/full-dryrun.lua:124: in main chunk
+$ lua harness/full-dryrun.lua inputs/original/S10-15-summon-narrow-r1-auto-TEMPLATE.lua allclear
+LOG [DPS-RUN] inflow pause <meta> spawners=1
+LOG [DPS-RUN] inflow restore <meta> restored=1 skipped=0
+SCENE during collection: rewards=1 wakeAll=1 wakeEvents=0 nativeSpawned=3
+AFTER variant=allclear ClearMode=true pending=0 queueTimer=0 rewardsTotal=1 wakeAllTotal=1 nativeSpawnedTotal=3 maxTargetDist=12.339
+/private/tmp/lua-5.4.8/src/lua: harness/full-dryrun.lua:124: pause line
+	harness/full-dryrun.lua:124: in main chunk
+
+## 6. template provenance (harness/gen-s10.cjs = offline copy of maker-blocks.cjs blocks()/scene())
+summon: original TEMPLATE vs S10(before): 4 changed lines (= fix1 sanctum+canyon rows)
+summon: fix3 TEMPLATE vs S10(after): 4 changed lines (= the same fix1 rows)
+summon: identical fix1 delta before/after
+magic: original TEMPLATE vs S10(before): 4 changed lines (= fix1 sanctum+canyon rows)
+magic: fix3 TEMPLATE vs S10(after): 4 changed lines (= the same fix1 rows)
+magic: identical fix1 delta before/after
+curse_mix: original TEMPLATE vs S10(before): 4 changed lines (= fix1 sanctum+canyon rows)
+curse_mix: fix3 TEMPLATE vs S10(after): 4 changed lines (= the same fix1 rows)
+curse_mix: identical fix1 delta before/after
+
+## 7. TEMPLATE delta = canonical patch change lines
+canonical patch: 33 added / 5 removed lines; of which SCENES narrow [15] row: 2 (1 removed + 1 added); collection-preparation lines: the rest
+summon: fix3-vs-TEMPLATE change lines byte-identical to canonical patch change lines
+magic: fix3-vs-TEMPLATE change lines byte-identical to canonical patch change lines
+curse_mix: fix3-vs-TEMPLATE change lines byte-identical to canonical patch change lines

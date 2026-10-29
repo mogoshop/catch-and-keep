@@ -1,0 +1,187 @@
+{
+  "schema": "claude-C-narrow-prep-candidate-report-v1",
+  "id": "fix3 (C-OBS-04) — collection preparation candidate",
+  "at": "2026-10-30T06:32:07+09:00",
+  "producer": "Opus non-Maker agent (parent-delegated). Repo writes 0 · Maker MCP calls 0 · commits 0.",
+  "status": "candidate for Codex final review — NOT an execution approval",
+  "approval_split": {
+    "coordinate_correction": "coords-fix3 (Lv15 kingtomb1 narrow both pack centres {8,1}→{1,1}) = Codex 0620 approved (goal-C2-narrow-geometry-decision-0620.json)",
+    "lifecycle_hold": "PendingPacks/SpawnQueue/ClearMode hold + generation/ownership restore = Codex 0625 source pre-accepted except scope predicate (C2-NARROW-SCOPE-01, now fixed); 0629 fixture finding C2-NARROW-FIXTURE-01 fixed; awaits separate final review",
+    "execution": "not approved by this report. Maker uses the fix3 inputs only after Codex acceptance; only the 3 existing Lv15 kingtomb1 narrow cases (summon re-run included); earlier failed run is not to be resubmitted as performance."
+  },
+  "observation_C_OBS_04": {
+    "scene": "C2-1 L15 summon narrow · kingtomb1 · player (-3,1) · mummy 4 + sandscorp 4 around (8,1) spread 1 · 120 s · auto",
+    "raw": {
+      "path": "docs/evidence/2026-10-30-goal-maker/C-raw/raw/L15-summon-narrow-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-4-1496977.log",
+      "sha256": "4d6b0a129b1332ccdbe92baef5294fb1e22b3c7978cacf0027d3211a87d39df1"
+    },
+    "used_input_sha256": "b5b9cd72f195b08b31afe72704322187f95123b5e35af61d79acdcde75ed4241 (= TEMPLATE fb2493ff + origin)",
+    "maker_log_dump": {
+      "path": "evidence-received/goal-C2-first-prep-0610/c2-01-summon-narrow-logs.json",
+      "sha256": "471db2c4f0b70d5fbe76e52fcdb47c66ae990e43c07d80b4ca86db162a48af7a",
+      "rows": 203
+    },
+    "log_evidence": [
+      "06:05:05 [VRF] spawner kingtomb1 소환 29 · 무리 11 (MonsterSpawner.SpawnAll) — dump row 16",
+      "06:05:05 [VRF] spawner pack woke … dist=16.0/15.7/12.6/17.4/5.0/15.1/14.7/8.8/12.4 (9 packs, MonsterSpawner.WakePacks called from SpawnAll) — rows 17-25",
+      "06:05:05 [VRF] spawner wake map=kingtomb1 placed=26 pending=3 pool=0 wake=true inflow=false boss=false — row 26",
+      "06:05:07 [DPS-RUN] inflow pause … spawners=1 — raw line 5 (2 s AFTER the 26 were queued/spawned)",
+      "06:05:07 [DPS-RUN] begin … cleared_others=13 — raw line 7",
+      "06:05:07 [VRF] clear remaining=16 (pending 3) live=13 total=16 — row 50 (alive≠0 → no clear-empty WakeAll)",
+      "06:05:10 / 06:05:11 [VRF] summon sum templeguard shown=48 hits=1 — rows 60, 67 (non-target engaged during prep)",
+      "06:05:16 [DPS-RUN] targets … prep_s=9.96 legion=5 — raw line 8",
+      "06:05:17 [VRF] clear remaining=24 (pending 3) live=21 — row 77 (13 non-target live + 8 targets)",
+      "no \"[VRF] spawner wake all\" line and no \"pack woke\" line after 06:05:05 anywhere in the 203-row dump",
+      "06:06:11 inflow restore restored=1 skipped=0 · finishing reason=player_dead alive_targets=8 · window hit_events=0 filtered=66 — raw lines 9-11"
+    ]
+  },
+  "cause_analysis": {
+    "parent_hypothesis": "Poll line 374 clear-empty WakeAll woke the rest after arenaClear",
+    "parent_hypothesis_result": "NOT what happened in run4: WakeAll logs \"[VRF] spawner wake all\" (MonsterSpawner 164) and no such line exists; Poll saw live=13 after arenaClear so alive≠0.",
+    "actual_mechanism_from_log_and_source": [
+      "The 26 woke inside SpawnAll at arrival (SpawnAll 559-716; WakePacks(map, players, false) at 696; spawnWakeRadius=18 data/config.csv 352; spawnBatch=8 config 274 → queue drained in ~0.2 s), about 2 s BEFORE pauseArenaInflow. A wake hold installed at begin cannot undo that.",
+      "arenaClear (canonical 336-347) only clears within 16 of the target centre. With centre (8,1) and player (-3,1) (11 apart) the guaranteed cleared radius around the player is 16-11 = 5 (triangle inequality); 13 non-target mobs survived and templeguard engaged the summons during prep.",
+      "Codex 0618/0620: all 8 targets were 10.016-12.341 from the stationary player, outside Mummy/SandScorp AIChase detect 4, ShadowUnit owner guard 5.5, bone shard 6.5, hex flame 7 → targets never engaged (hit_events=0)."
+    ],
+    "what_each_part_fixes": {
+      "coords_fix3": "targets at 3.019-5.353 from the player (inside 5.5) AND arenaClear centre moves to (1,1), 4 from the player → every point within 12 of the player is within 16 of the centre → cleared at begin (covers summon reach ~7 + detect 5).",
+      "wake_hold": "hazard closure, not the run4 cause: pending packs can no longer wake (WakeTick 115-130 → WakePacks 133-151) if the player is knocked toward them, and Poll 374 clear-empty WakeAll cannot fire. With the larger effective clear area alive=0 during prep becomes more likely, which is exactly when WakeAll would spawn into the arena.",
+      "clearmode_hold": "Codex NARROW-PRE-CLEAR-SIDE-EFFECT: skips Poll 365-402 during the collection so no floor-clear gold/banner/MapCleared can be issued while targets are not yet spawned (summon/curse_mix prep 10 s) or after all targets died before finish."
+    },
+    "honest_statement": "The wake hold alone would not have changed run4. The run4 failure is explained by geometry (old disk + target range); the hold closes the wake/clear hazards that the new geometry makes more likely."
+  },
+  "design": {
+    "scope_predicate": "local isolate = CFG.level == 15 and CFG.scene == 'narrow' and S.map == 'kingtomb1' (after canonical line 157 · fix3 TEMPLATE line 140). S is set at canonical line 80 and the script returns at line 82 when S == nil, so S is non-nil here. All other scenes/levels: isolate=false → identical behaviour and log lines to the accepted 0500 InflowOn pause (fixture §9, §9b).",
+    "pause": "pauseArenaInflow (after 189-210): existing record now bound to local r and inserted BEFORE any mutation; if isolate and r.spawnedAt > 0: save r.pending=sp.PendingPacks, r.queue=sp.SpawnQueue, r.clearMode=sp.ClearMode, create own r.heldP={}, r.heldQ={}; set sp.PendingPacks=r.heldP, sp.SpawnQueue=r.heldQ, sp.ClearMode=false. Log adds wake_held/packs/jobs/unspawned (narrow Lv15 kingtomb1 only).",
+    "restore": "restoreArenaInflow (after 158-187), inside the existing same-entity/map (Entity==map OR Entity.CurrentMap==map) + same SpawnedAt branch: PendingPacks restored only if it is still r.heldP and empty; SpawnQueue restored only if it is still r.heldQ and empty, then if the saved queue is non-empty the spawner's own StartQueue() is called inside pcall (warning on error); ClearMode set back to true only if it is currently false and the saved value was true. Mismatched generation → nothing restored (wake_skipped += 2). Log adds wake_restored/wake_skipped/queue_resumed/clear_restored.",
+    "unchanged": "finish (213-…) still sets finished, restores first, then releases ownership, clears own timers, exports, destroys own entities; begin pcall wrapper; arenaClear single call, same radius; spawnPacks; autoTick; monitor; S00/S90.",
+    "changed_lines": "33 added / 5 removed in canonical (2 of them = SCENES narrow [15] row); identical change lines in each fix3 TEMPLATE."
+  },
+  "codex_boundaries": {
+    "NARROW-PRE-QUEUE-RESUME": {
+      "how": "Own empty stand-in; the game's RunQueue (733) stops its own timer when it sees it — the collection calls no timer API. Restore puts the saved table back only when our stand-in is still present, then calls the existing StartQueue (175-180) which itself refuses to start a second timer when SpawnQueueTimer ~= 0. Old timer ids are never stored or revived.",
+      "checks": "lifecycle §4 (12 queued jobs held, timer self-stops, restore → exactly one new timer, all 12 drain), §5 (same-tick restore → StartQueue sees the live timer, no new timer), §10 (StartQueue error caught, finish reaches its end line)."
+    },
+    "NARROW-PRE-CLEAR-SIDE-EFFECT": {
+      "how": "ClearMode=false for the held generation skips the whole Poll clear block (365-402) during the collection: no clear-empty WakeAll, no Cleared/gold/banner/MapCleared. Nothing is granted or undone; restored at finish (same generation, still false).",
+      "checks": "lifecycle §3 (held: alive=0 → 0 WakeAll/spawn/reward/MapCleared · control A without hold → WakeAll spawns 6 · control B tables emptied but ClearMode on → reward) · full-dryrun SCENE lines = 0/0/0/0 for all 3 templates × 2 variants · original-template control allclear → rewards=1 wakeAll=1 spawned=3 during collection.",
+      "why_not_count_preservation": "Keeping PendingCount() equal would not stop Poll: with alive=0 the game still runs clear-empty WakeAll (spawns into the arena, control A), and with pending ≤ spawnBatch the same Poll grants the floor clear (observation below). A count-preserving stand-in would also need the running queue timer stopped (timer API)."
+    },
+    "NARROW-PRE-REFERENCE-OWNERSHIP": {
+      "how": "Original references saved, never mutated; own stand-ins identified by identity; each table restored independently and only if our (still empty) stand-in is installed; exact entity/map (incl. root Entity==map) and SpawnedAt generation required; capture only when SpawnedAt > 0.",
+      "checks": "lifecycle §1 (exact references back, originals untouched, child spawner), §6 (Sleep / SpawnAll / foreign table / written stand-in / ClearMode re-set by others → not overwritten), §7 (nil PendingPacks round-trips as nil; SpawnedAt 0 → not held, unspawned=1 logged), §8 (root spawner with CurrentMap nil), §9b (Lv5 cellar1, Lv30 smuggler1, Lv15 non-kingtomb1 → InflowOn-only).",
+      "table_identity_assumption": "Assumes `property any` returns the same Lua table to the maker script. Evidence: canonical owns() already relies on `_Telemetry.DpsCollection == collection` (Telemetry.mlua 42, property any) and run4 passed owns() (begin/targets lines). If identity ever failed, restore would skip and log wake_skipped (pending packs then stay empty until that map's next generation) — visible, not silent."
+    },
+    "NARROW-PRE-FINISH": {
+      "how": "No new exit path: everything restores inside the existing restoreArenaInflow, which finish calls first; finish is idempotent (finished flag + inflowStates swapped to {}); S90 (DpsCollectionStop→collection.stop), replaced, death, leave, timeout, setup error all converge on it.",
+      "checks": "lifecycle §1 (11 reasons incl. manual, replaced, player_dead, left_map, target_setup_timeout; second finish = one restore line) · §10 begin error after a REAL pause (C2-NARROW-FIXTURE-01 fixed: HEADER delegates dynamically; case asserts stand-in + ClearMode=false + pause log wake_held=1 before the injected error; fixture-output §3b shows the case fails when pause is removed) · export failure after restore."
+    }
+  },
+  "alternatives_considered": [
+    {
+      "option": "empty PendingPacks/SpawnQueue only (parent brief minimum)",
+      "decision": "rejected alone — floor clear can fire during prep (lifecycle control B, Codex boundary 2)"
+    },
+    {
+      "option": "count-preserving stand-in for ClearMode accounting",
+      "decision": "rejected — does not stop WakeAll or the same-tick floor clear; would need StopQueue (timer API)"
+    },
+    {
+      "option": "Dormant=true to stop WakeTick",
+      "decision": "rejected — Poll clear block and WakeAll unaffected; Dormant also drives SpawnAll wake accounting"
+    },
+    {
+      "option": "second one-shot arenaClear right before spawnPacks (allowed by parent brief)",
+      "decision": "not added — with centre (1,1) the begin clear already covers 12 around the player; no log evidence of drift-in under the new geometry. Remains available if a fix3 run shows non-target engagement after begin."
+    },
+    {
+      "option": "player-centred union clear",
+      "decision": "not needed after coords-fix3; would change arenaClear geometry beyond approval"
+    },
+    {
+      "option": "StopQueue / ClearTimer / invulnerability / repeated sweep / MonsterSpawner edit",
+      "decision": "forbidden — not used"
+    }
+  ],
+  "prohibition_compliance": {
+    "game_code_policy_stats_invulnerability": "untouched (RootDesk/**, data/** unchanged; MonsterSpawner sha 085e328e… unchanged)",
+    "timer_api": "the collection calls no timer API on spawner timers; only the game's own RunQueue/StartQueue manage SpawnQueueTimer",
+    "deletion": "no new deletion; arenaClear unchanged and still called once",
+    "other_maps": "only spawners of p.CurrentMap at begin (existing pauseArenaInflow scope)",
+    "other_scenes": "isolate=false outside Lv15 kingtomb1 narrow → byte-identical behaviour/logs to 0500",
+    "repo_writes": 0,
+    "maker_mcp_calls": 0,
+    "commits": 0,
+    "repo_apply_check": "git apply --check collection-wake.patch on the repo canonical: OK (check only, nothing written)"
+  },
+  "temporary_side_effects_during_hold": [
+    "ClearMode is @Sync: client HudMap.RemainingFocus (HudMap.mlua 908-913) returns nil while held (minimap last-monster hint hidden)",
+    "PlayerQuest.ShowClearProgress not refreshed; Remaining/Total frozen until restore",
+    "[TEL] room pending count lower by the held jobs (Telemetry.mlua 159 PendingCount) — log only"
+  ],
+  "limits": [
+    "Collection-preparation correction, not a game defect fix. Execution acceptance is separate. Scope: the 3 existing Lv15 kingtomb1 narrow inputs only.",
+    "All checks are mock/offline (Lua 5.4.8 + plain-Lua port of MonsterSpawner members). No engine, Maker, AI, collision or pathfinding executed.",
+    "Post-restore game reaction is not suppressed: if after finish the map has 0 live mobs and pending > 0, the game's own clear-empty WakeAll runs and (pending ≤ 8) the same Poll grants the floor clear — full-dryrun allclear AFTER line shows rewardsTotal=1 after restore. Not reached with run4 numbers (13 live outside + 3 pending); with the new clear centre the leftover count is unknown.",
+    "If the spawner has not spawned yet at begin (SpawnedAt 0), nothing is held; a later SpawnAll during the scene would contaminate it — logged as unspawned=N for classification. run4: SpawnAll 06:05:05, pause 06:05:07.",
+    "Monsters outside the cleared disk that later wander in were not measured (Codex 0618: Mummy/SandScorp have no AIWander; other kingtomb1 species not checked).",
+    "Coordinate row: the canonical also carries the narrow [15] row (line 59), so coords-fix3 is in collection-wake.patch as in the snapshot Codex 0625/0629 reviewed (canonical_delta_only_inflow_block_and_narrow_lv15_row). The 0625 relay said the canonical has no coordinate row; it does. If the canonical should keep {8,1} like fix1 practice, drop hunk 1 of the patch — the three fix3 TEMPLATE bytes stay the same."
+  ],
+  "game_source_observation_outside_scope": {
+    "id": "proposed C-OBS (Codex to number) — not fixed, not runtime-verified, not asserted as confirmed defect",
+    "source": "MonsterSpawner.mlua Poll 366-401 (sha 085e328e…)",
+    "what": "`alive` is counted before the clear-empty WakeAll (374). WakeAll → StartQueue → RunQueue spawns up to spawnBatch=8 synchronously, so with pending ≤ 8 PendingCount() becomes 0 and the same Poll sets Cleared, drops floor-clear gold, shows the banner and emits MapCleared while the just-woken monsters are alive.",
+    "mock_reproduction": "lifecycle-fixture §3b OBSERVATION line: wakeAll=1 spawned=3 rewards=1 cleared=true"
+  },
+  "tests": {
+    "syntax": "luac -p (Lua 5.4.8): before/after canonical, 3 original + 3 fix3 TEMPLATEs, 3 harness Lua files — all PARSE OK",
+    "lifecycle_fixture": "117/117 PASS (code under test cut byte-for-byte from after canonical; the 3 fix3 TEMPLATEs carry the identical segment)",
+    "controls": "before canonical fails at the first hold check; case-10 with pause removed fails (proves C2-NARROW-FIXTURE-01 fix); original TEMPLATE whole-S10 dry run allclear → rewards=1 wakeAll=1 spawned=3 during collection",
+    "whole_S10_dry_run": "3 fix3 TEMPLATEs × {leftover, allclear}: DRY OK; pause wake_held=1 packs=1 jobs=3 unspawned=0; restore restored=1 skipped=0 wake_restored=2 wake_skipped=0 queue_resumed=0 clear_restored=1; during collection rewards=0 wakeAll=0 wakeEvents=0 nativeSpawned=0; max target distance 5.351 (from 2-decimal positions; exact 5.353)",
+    "template_provenance": "original TEMPLATE = maker-blocks S10(before) + fix1 sanctum/canyon rows; fix3 TEMPLATE = S10(after) + the same fix1 rows; fix3-vs-TEMPLATE change lines byte-identical to the canonical patch change lines (33+/5-, SCENES row included)",
+    "geometry": "centre 8 → 10.016..12.341, centre 1 → 3.019..5.353 (matches Codex 0618/0620)",
+    "output": "fixture-output.txt"
+  },
+  "hashes": {
+    "canonical_before_sha256": "82cb18ddaddab7ea62d708179699d717d893a85bf36f1824e401a6cd869fafe9",
+    "canonical_after_sha256": "2c5a0bc672c19ee80649738f839bbde657a5a00ca4447c9913573c283b98fd1e",
+    "collection-wake.patch_sha256": "e58ba3d7b4126f1250a8452cfbeb4c7cce88b4ed42c3dff2972a5a48554912a2",
+    "files": {
+      "collection-wake.patch": "e58ba3d7b4126f1250a8452cfbeb4c7cce88b4ed42c3dff2972a5a48554912a2",
+      "before/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua": "82cb18ddaddab7ea62d708179699d717d893a85bf36f1824e401a6cd869fafe9",
+      "after/docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua": "2c5a0bc672c19ee80649738f839bbde657a5a00ca4447c9913573c283b98fd1e",
+      "inputs/original/S10-15-summon-narrow-r1-auto-TEMPLATE.lua": "fb2493ff5b83a7f4e891681012ff014b1d3e7d13541c2934399b771d9c4dca5f",
+      "inputs/original/S10-15-magic-narrow-r1-auto-TEMPLATE.lua": "64e1017c5dfbf45e6a4fd84240674f7e2aa7d7bff7f7ea7dea651c540d8e86a3",
+      "inputs/original/S10-15-curse_mix-narrow-r1-auto-TEMPLATE.lua": "71e3d6347240752cf4b5f4f12b85870b365d7b5fdb485f6414d54de3482dee0f",
+      "inputs/S10-15-summon-narrow-r1-auto-fix3-TEMPLATE.lua": "70704dd11d71c4b8067946519292f563cf2685c6c29cf2b573b5d0fa35e61c1d",
+      "inputs/S10-15-magic-narrow-r1-auto-fix3-TEMPLATE.lua": "7a682f3408c66ef89e1eef8698da24d7e22fcae4f955b4c546fb4dcbc7cdfd8b",
+      "inputs/S10-15-curse_mix-narrow-r1-auto-fix3-TEMPLATE.lua": "77440a4ad5480bb70bf7e10a5753c8587a8a13cf9d8025883fdea06b6170ff9d",
+      "inputs/S10-15-summon-narrow-fix3-vs-TEMPLATE.diff": "f23e92d5360f0a68e8fe7b42d6d6b5d457fc9e71384986975dd70a6b12cf5025",
+      "inputs/S10-15-magic-narrow-fix3-vs-TEMPLATE.diff": "02d4ce40daadb8c1e8bd19e71c6e4c041fb7f58637c6770b6eab5589d4ea6504",
+      "inputs/S10-15-curse_mix-narrow-fix3-vs-TEMPLATE.diff": "25dc54eef3baeed91e1e957e147553817353fb0cffa3376f8692b9059e3ed913",
+      "harness/spawner-port.lua": "b9433195144ab5cc7e1d610fa5db8af6281b01ee8ea4731e349826317770eed5",
+      "harness/lifecycle-fixture.lua": "f74ea90f088b7d461db363b03124a9db82bb12b19d8dbd4e8aea9c16d209fa39",
+      "harness/full-dryrun.lua": "be70ef201945ad93c622a46c3d17c5d535e59919aa75cf01c7b3755514142dd3",
+      "harness/gen-s10.cjs": "23f3bacd7364caa9bcdf0eb481bfe2094dd719c50b68e2b9159569659cce4a88",
+      "fixture-output.txt": "32d1ba405b9b3ec8cbd37b8690c7b073f61fb7d749032bcc40942d0896673fcf"
+    },
+    "repo_sources_read": {
+      "RootDesk/MyDesk/Monster/MonsterSpawner.mlua": "085e328e4a780e4c210b9b23f51d1c6f65b88ff32f4efb2010a387f2d0ef6a71",
+      "docs/evidence/2026-10-30-goal-C/DPS-maker-scripts.lua (canonical, unchanged)": "82cb18ddaddab7ea62d708179699d717d893a85bf36f1824e401a6cd869fafe9",
+      "data/maps.csv": "1b3002713cce238f2e95278baa3a9106726264ef1806d6e9050597007fbf9e6a",
+      "data/config.csv": "0eec08065ce67977cb80d1756ee92314df232c0fa97f626da57216edb85cfcd7",
+      "docs/evidence/2026-10-30-goal-maker/C-raw/raw/L15-summon-narrow-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-4-1496977.log": "4d6b0a129b1332ccdbe92baef5294fb1e22b3c7978cacf0027d3211a87d39df1"
+    }
+  },
+  "codex_inputs_used": [
+    "goal-C2-narrow-prep-independent-0612.json",
+    "goal-C2-first-prep-review-0610.json",
+    "goal-C2-narrow-geometry-preflight-0618.json",
+    "goal-C2-narrow-geometry-decision-0620.json",
+    "goal-C2-narrow-fix3-source-review-0625.json",
+    "goal-C2-doc-and-prep-decision-0625.json",
+    "goal-C2-narrow-fixture-review-0629.json",
+    "goal-C-inflow-preparation-decision-0500.json",
+    "evidence-received/goal-C-arena-isolation-proposed-0454/"
+  ]
+}
