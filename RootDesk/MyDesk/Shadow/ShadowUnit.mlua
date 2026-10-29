@@ -146,9 +146,9 @@ script ShadowUnit extends AttackComponent
     property integer FlashTimer = 0           -- 클라이언트: 붉은 깜빡임
     -- 뼈 의식 5기 「뼈 거인」 (10-29 기획서 43): 해골 다섯이 합쳐진 몸 (UndeadSystem.StartGiant · EndGiant)
     property boolean Giant = false
-    property table GiantBase = {}             -- 거인이 되기 전 값 (갈라질 때 되돌린다)
+    property table GiantBase = {}             -- 거인이 되기 전 값 (능력치는 갈라질 때, 외형 기준은 그림 복구까지 보존)
     property table GiantLook = {}             -- 거인 3종 그림 (UndeadSystem.GiantLook · 동작 → 첫 칸/타격 칸 RUID와 길이). 비면 지금 그림(변이 그림 × riteGiantScale) — 10-30 갈래 E
-    property number GiantClipUntil = 0        -- 거인 한 번 동작(기술·피격·갈라짐) 그림이 끝나는 시각: 그동안 서기·걷기 그림으로 덮지 않는다 (그림만 · 판정·시간 무관)
+    property number GiantClipUntil = 0        -- 거인 한 번 동작(기술·피격·갈라짐) 그림이 끝나는 시각: 그동안 서기·걷기·공격 그림으로 덮지 않는다 (그림만 · 판정·시간 무관)
     property integer GiantLookToken = 0       -- 갈라짐 그림 뒤 원래 그림으로 돌리는 타이머의 차례 (그 사이 다시 거인이 되면 옛 타이머는 무시)
     -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
     property number OfferUntil = 0
@@ -917,6 +917,8 @@ script ShadowUnit extends AttackComponent
         -- UndeadSystem.StartGiant가 부른다: 다섯 몫 공격·생명, 휩쓸기 반경 riteGiantRadius · 간격 riteGiantInterval, 4초마다 도발(방패 해골 TauntTick 재사용 · 보스 제외),
         -- 몸 riteGiantScale배 (클라이언트 그림 대역은 MotionSmoother가 본체 크기를 따라 그린다). 임시 그림: 해골 전사 그림을 키우고 뼈 색으로 칠한다 (코덱스 거인 192px 대기)
         if self.Dead or self.Giant then return end
+        -- 갈라짐 그림 복구 대기 중 재진입: 원래 외형을 먼저 복구해 다음 기준에 거인 그림·배율이 섞이지 않게 한다 (능력치는 이미 EndGiant에서 복구됨).
+        if self.GiantBase.sx ~= nil then self:RestoreLook(self.GiantBase) end
         local t = self.Entity.TransformComponent
         -- 10-30 갈래 E: 그림 되돌리기용으로 서기·걷기·공격 그림도 담는다 (능력치·시간 규칙은 그대로)
         self.GiantLookToken = self.GiantLookToken + 1
@@ -974,7 +976,7 @@ script ShadowUnit extends AttackComponent
         self.AttackRange = b.range
         self.Taunt = b.taunt
         self.GuardPct = b.guard
-        self.GiantBase = {}
+        -- GiantBase 외형 기준은 RestoreLook까지 보존한다 (갈라짐 도중 재진입에서도 원본을 사용).
         -- 그림 (10-30 갈래 E): 거인 그림이면 갈라짐 동작을 그 길이만큼 보인 뒤 원래 그림으로 (능력치는 지금 바로 · 시간 규칙 그대로). 미등록이면 지금처럼 바로
         local look = self.GiantLook
         if (look.split or "") ~= "" then
@@ -992,6 +994,7 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method void RestoreLook(table b)
         -- 거인이 되기 전 그림·크기·색으로 (EndGiant · 갈라짐 그림 뒤). 비어 있던 값은 지금 값을 둔다 (빈 그림을 넣지 않는다)
+        self.GiantBase = {}
         self.GiantLook = {}
         self.GiantClipUntil = 0
         if (b.stand or "") ~= "" then self.StandRUID = b.stand end
@@ -1009,7 +1012,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void GiantPlay(string state)
-        -- 거인 한 번 동작 그림(skill · hit · split): GiantLook[state] 첫 칸을 걸고(클라이언트 MotionSmoother.FrameClip이 칸을 넘긴다) 그 길이만큼 서기·걷기 그림으로 덮지 않는다.
+        -- 거인 한 번 동작 그림(skill · hit · split): GiantLook[state] 첫 칸을 걸고(클라이언트 MotionSmoother.FrameClip이 칸을 넘긴다) 그 길이만큼 서기·걷기·공격 그림으로 덮지 않는다.
         --   그림만 — 공격 판정·도발·갈라짐 시간은 바꾸지 않는다. 피격은 다른 한 번 동작을 끊지 않는다. 미등록이면 아무 일 없음
         local ruid = self.GiantLook[state]
         if ruid == nil or ruid == "" then return end
@@ -1231,8 +1234,8 @@ script ShadowUnit extends AttackComponent
     method void SetClip(string ruid)
         -- 같은 클립을 반복 대입하지 않는다
         if ruid == "" or ruid == self.CurrentClip then return end
-        -- 거인 한 번 동작(기술·피격·갈라짐) 그림이 도는 동안은 서기·걷기 그림으로 덮지 않는다 (공격 그림은 덮는다 · 10-30 갈래 E)
-        if self.GiantClipUntil > 0 and _UtilLogic.ElapsedSeconds < self.GiantClipUntil and (ruid == self.StandRUID or ruid == self.MoveRUID) then return end
+        -- 거인 한 번 동작(기술·피격·갈라짐) 그림이 도는 동안 일반 그림 대입만 막는다. DoAttack의 타격 예약·판정·피해는 그대로 진행한다.
+        if self.GiantClipUntil > 0 and _UtilLogic.ElapsedSeconds < self.GiantClipUntil and (ruid == self.StandRUID or ruid == self.MoveRUID or ruid == self.AttackRUID) then return end
         self.CurrentClip = ruid
         self.Entity.SpriteRendererComponent.SpriteRUID = ruid
     end
