@@ -158,7 +158,7 @@
 - 정책 불변: 공격 363 = ATK 66×5×1.1 · 생명 = 다섯 합×1.2 · 20초 · 마나 30 · 재사용 30 · 반경 1.8 · GiantArtScale 1.2 · 숙주 = 가장 튼튼한 해골.
 - 한계: 방패 갈라짐 0.6초는 스크린샷 지연(≈3초)으로 놓침(대검·쌍칼로 확인) · 쌍칼 2차(유입 켠 채)는 캡처 미사용.
 - 근거 귀속(코덱스 0543 문서 후보 뜻만 병합 · 수치·RUN·PNG 무변경): split back=4/4 발췌는 방패 1차(05:08:52)·대검 2차(05:32:38) 것 · 방패 05:25:57 hit/58 skill 호출 로그와 05:26:02 공격 캡처는 별도 시점 · 쌍칼은 분리 효과·작은 숙주·전환 중 HUD까지의 부분 범위 · 정지 화면은 연속 전체 클립이나 독립 5개체 복원 증명이 아님 · E-M1-1 더미 drownedsailor ×200은 준비 의도였으나 적용되지 않아 05:08:34 두 더미가 각각 363 한 타에 쓰러짐(서기 촬영 전).
-- E-IF-01 원조건(갈라짐 0.6초 안 재진입 뒤 원래 외형·크기 복구)은 위 일반 분리 복원과 다른 근거 — 코덱스 0538/0545: v2 템플릿(ba13cd13) 직접 엔진 메서드 probe 1회를 C run 끝 정리 뒤 쉬는 소유 해골이 있을 때 실행(별도 줄로 기록 예정).
+- E-IF-01 원조건(갈라짐 0.6초 안 재진입 뒤 원래 외형·크기 복구)은 위 일반 20초 주기 복원과 다른 근거 — **통과 · 코덱스 0616 종료**(0615 Root·독립 검토 수용): 플레이 9 06:11:56 C2-2 끝 정리 뒤 쉬던 같은 P9 유닛(basic ud7)에 v2 템플릿(ba13cd13 · 승인 d25fdcc6)의 CFG 1줄만 채운 사용본 `E-IF01-reentry-basic-v2-P9-ud7.lua`(4baa3c04…)로 1회 — 거인 진입(0.66) → 0.6초 분리 중 재진입(지연 0.038초) → 두 번째 기준 = 원래 stand/move/attack 3 RUID·배율 0.55(겹쳐 커지지 않음) → 지연 뒤 원래 3 RUID·0.55 복원 · giant=false/token=2 · 결과 줄 모두 true(`E-IF01-PROBE-P9-raw.log` e49505e0…). 한계: 직접 StartGiant/EndGiant 메서드 · 정상 CastRite 비용/쿨타임·물리 터치 아님 · 선별 서버 원문 줄(전체 tool response 아님) · absoluteX는 방향 부호 제외 · baseCleared는 sx nil 검사만 · 5키 최종 복원 아님. 재실행·3종 반복·사진 추가 없음.
 
 ## I07 (=D-M8) 접합 시범
 
@@ -179,6 +179,15 @@
 집계 `C-raw/aggregate-P9-cobs-rerun.{md,json}`(원장 검사 3/3 ok) · preflight `C-raw/P9-S00-preflight.log`. 비교 판정은 코덱스.
 
 코덱스 검토(0557·0603·0605·0607 · 해석만 · 위 수치·raw·입력·집계 json/md 무변경 · 재실행 없음): C-OBS-01 소스 수정(7ae14a86)과 수정 뒤 magic boss(18시전 54타 = 시전당 3.0 · player_dead)·magic horde(13/14 timeout)는 실제 원장으로 수용·국소 종료 — 처치 성공·빌드 우열/DPS 순위가 아니며, 수정 전 run6/9(P7)는 진단 표본. C-OBS-02 curse-boss fix2는 준비 10.01초 생존 → 대상 교전 11타/2739 → 유입 복원 1까지 연결 수용·종료(반복 실행 없음). 새 집계 3행 산술은 맞음(3행 모두 outcome=not_completed). 집계 md의 horde TTK `0 (13/0)`은 「피해를 받은 개체」 분모(피해 받은 13 개체 표본/미처치 0)이지 장면 전체 생존 0이 아님 — 한 번도 맞지 않은 C05_firecultist_13 1 생존(alive_targets 1). 집계 md 끝 주석의 unsupported는 「관측 없음」이지 hook 없음·수치 0 확정이 아님(0504 해석 그대로).
+
+### C2 (플레이 9 · origin GOAL-MAKER-INT-P9C2-20261030T0604 · Lv15 auto rep1 · 원래 11 case 중 2건)
+
+| run | 장면 | 사용 입력(sha256) | 종료 | 대상 유효 피해 | 해석(코덱스) |
+|---|---|---|---|---|---|
+| 4 | L15-summon-narrow (kingtomb1) | S10-15-summon-narrow-r1-auto-P9 b5b9cd72… (승인 템플릿 fb2493ff + origin 1줄) | player_dead 64.55초 | 0 | 대상 8 생성(spawn/rebase)·미명중 · 시험 밖 무리 조우로 수집 준비 실패 · filtered 66 = 대상 밖이라 제외한 계측 이벤트 수(피격 66회·적 66 아님) · 빌드 DPS 0 아님 · 성능 비교 제외 (0610) |
+| 5 | L15-summon-ranged (canyon) | S10-15-summon-ranged-r1-auto-P9 c6ba5d3e… (승인 템플릿 b27cc070 + origin 1줄) | timeout 130.20초 | 0 | 대상 5 spawn/rebase · 24시전 · 마나 166 · 소환수 5 생존은 실제 관찰이나 C05 접촉 0 → 비교 제외 · 빌드 DPS 0/교전 성능 수용 아님 · 원인 단정 없음 (0615) |
+
+raw `C-raw/raw/L15-summon-narrow-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-4-1496977.log`(4d6b0a12…) · `C-raw/raw/L15-summon-ranged-r1-auto--GOAL-MAKER-INT-P9C2-20261030T0604-5-1704463.log`(45fd5a1f…) · 두 run 모두 inflow pause 1 → restore 1/skipped 0 · 각 run은 원래 case 1개를 차지하나 의도한 대상 교전 측정은 미충족. 비교 판정은 코덱스.
 
 ## B 편입 (재실행 없음)
 
