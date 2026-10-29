@@ -98,9 +98,9 @@
 | ITEM-Q1 | 통과 | 가방 가득 알림·무변화 → offer new → cancel → offer reuse(같은 카드) → confirm helm ver=1 → done quest=1 rarity=2 → received found=true → 「가방에서 보기」 1회 → open with reward selected=60 → 장착 first gearEquip · 「장착 완료 ▲6」 | A-Q1-1~6 |
 | ITEM-R1 | 통과 | ①~⑤ · 다음 줄 ▶ line 2 · 취소 무료 · 1차 −1632 · 기존 유지 무료(mods 그대로) · 2차 −1632 · 채택 무료 → ② 마나 +12만 방어 +18로(다른 줄·등급·ilvl·소켓·잠금·이름 그대로) · 총 3264 | A-R1-1~4 · A-R2-3 |
 | ITEM-R2 | 통과 | 대기 중 창고(UI)·장착·잠금(RPC 직접) 거부 + Warn · 저장 → 재접속 같은 대기 문자열·추가 비용 0 · 창고 왕복 바이트 같음(고정 줄 유지) · 예전 레어 「출처 기록이 없는 장비입니다」 | A-R2-1~4 |
-| RUNE-A1 | 부분확인 | iPad: 「룬 준비됨 · 맞는 장비 필요」(금) → 2소켓 일반 갑옷 장착 「제작 준비됨」(초록) · 일반/마법 룬워드 판정·효과 같음(마법 +def 5만 더) · PC 화면 미확인 · 둘째 안내 줄이 첫 카드 위 테두리에 걸침(A-OBS-03) | A-RUNE-1~3 |
+| RUNE-A1 | 부분확인 | iPad: 「룬 준비됨 · 맞는 장비 필요」(금) → 2소켓 일반 갑옷 장착 「제작 준비됨」(초록) · 일반/마법 룬워드 판정·효과 같음(마법 +def 5만 더) · iPad에서 준비 전환·일반/마법 효과 대조, PC 03:08에서 준비 안내 추가 확인(GM 준비·입력 경로 한계는 유지) · 둘째 안내 줄이 첫 카드 위 테두리에 걸침(A-OBS-03) | A-RUNE-1~3 |
 
-관찰(고치지 않음): A-OBS-01 카드 「아이템 레벨 42」 줄넘김 · A-OBS-02 창고 「넣음:」(→ cd6f3bbb 수정, 확인 대기) · A-OBS-03 룬워드 안내 둘째 줄 · A-OBS-04 「옵션 바꾸기 1632」 두 줄 · D-OBS-01 첫 장비 안내 Notify가 카드와 함께 뜸.
+관찰(고치지 않음): A-OBS-01 카드 「아이템 레벨 42」 줄넘김 · A-OBS-02 창고 안내는 cd6f3bbb 수정 후 플레이 3 03:07 「넣기 요청: 짚신」으로 확인·종료 · A-OBS-03 룬워드 안내 둘째 줄 · A-OBS-04 「옵션 바꾸기 1632」 두 줄 · D-OBS-01 첫 장비 안내 Notify가 카드와 함께 뜸.
 
 ## D 묶음 (Claude 판정)
 
@@ -139,6 +139,8 @@
 | 10 | L15-curse_mix-horde | player_dead 15.3초 | 2135 | 처치 3/14 · 저주 92% |
 
 집계 `C-raw/aggregate-P7-stage1.{md,json}` (원장 검사 7/7 ok · absorbed>0 run 없음). 관찰: C-OBS-01 magic 보스 시전당 ~8타 묶음(원인 미확인) · C-OBS-02 arenaClear 1회 뒤 유입이 준비 중 시험 캐릭터를 죽임 · C-OBS-03 L15 보스 장면의 대사제는 lv21·생명 47803, 생명 81 시험 캐릭터는 세 빌드 모두 16초 안 사망. C2(9+2)는 E·I07 뒤.
+
+코덱스 검토 오버레이(0504·0509 · `C-raw/aggregate-P7-stage1.{md,json}`에 submission-review.patch 적용 → json f8d9276a · md 2688b8da): 원장 검사 7/7 ok는 산술·연결성 뜻(수집 유효성 아님) · 실제 교전 5건(run5·6·8·9·10) · run4/7 준비 실패는 서술 비교 제외 · run6/9는 C-OBS-01 수정 전 마법 진단(원값 보존 · 최종 성능 비교 미확정) · TTK는 피격 개체 기준(전체 생존 아님) · run8 표본 death0 ≠ 최종 사망 · 전체 창 vs 보정 교전(raw_active+구간 중앙값 보정) 시간 분모 구분 · 원 7run 값·raw·aggregate.cjs 무변경(재실행 없음). 후속(별도 통합·실행 수용과 구분): C-OBS-01 → 7ae14a86(SkillEffects 부모 HitIds 복사를 Launch 뒤로 · 코덱스 0457 · 다음 E refresh 반영 뒤 마법 case만 재실행) · C-OBS-02 → a9ad577b(현재 맵 InflowOn 저장/중지/원복 수집 준비 · fix2 입력 · 코덱스 0500 · E/I07 뒤 curse-boss 1건).
 
 ## B 편입 (재실행 없음)
 
