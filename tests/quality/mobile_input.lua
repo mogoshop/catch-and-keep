@@ -614,6 +614,67 @@ scenario("I04 반복 전 취소 위로 갔다 돌아와 놓으면 예전처럼 �
   check(W.requests == 1, "놓기 시전 1 (기존 끌기 규칙)")
 end)
 
+-- ───────── B-IN-02 (코덱스 0110): 누르는 사이 칸 스킬이 바뀌면 놓아도 새 스킬을 쓰지 않는다 ─────────
+local PRISON = "bone_prison,bone_shard,bone_rite,curse_weak"
+scenario("B-IN-02 반복 전(0.35초 전) 칸 교체 → Poll 감지 뒤 놓기 시전 0", function()
+  shardOn()
+  local before = snapshot()
+  MobilePad:BeginGesture(1, 41, SCREEN.S2)
+  step(2)
+  W.book.Slots = PRISON
+  step(1)
+  check(not MobilePad.ShardActive and MobilePad.ShardStopReason == "slot", "slot 사유로 반복 소유 끝")
+  MobilePad:EndGesture(41, SCREEN.S2 + Vector2(80, 0))
+  MobilePad:EndGesture(41, SCREEN.S2 + Vector2(80, 0))
+  unchanged(before, "반복 전 칸 교체")
+end)
+scenario("B-IN-02 반복 뒤 칸 교체 → 새 스킬 0 · 놓기 추가 0", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 42, SCREEN.S2)
+  step(6)
+  local sent, mana = W.requests, W.stats.Mana
+  check(sent >= 1, "반복 중")
+  W.book.Slots = PRISON
+  step(1)
+  MobilePad:EndGesture(42, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == sent and W.stats.Mana == mana and W.book:CooldownLeft("bone_prison") == 0, "새 스킬 요청·마나·재사용 0")
+end)
+scenario("B-IN-02 다음 Poll 전에 바로 놓기 (설정 켬·끔 둘 다) → 시전 0", function()
+  for _, on in ipairs({ true, false }) do
+    W.book.ShardHold = on
+    W.book.Slots = "bone_shard,bone_prison,bone_rite,curse_weak"
+    local before = snapshot()
+    MobilePad:BeginGesture(1, 43, SCREEN.S2)
+    W.book.Slots = PRISON
+    MobilePad:EndGesture(43, SCREEN.S2 + Vector2(80, 0))
+    unchanged(before, "Poll 전 즉시 놓기 hold=" .. tostring(on))
+    check(MobilePad.GestureTouchId == 0 and MobilePad.GestureSkill == "", "제스처 정리")
+  end
+end)
+scenario("B-IN-02 보존: 칸이 그대로면 짧은 탭 1회 · 다른 칸 끌기 1회", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 44, SCREEN.S2)
+  step(2)
+  MobilePad:EndGesture(44, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == 1, "골편 짧은 탭 1")
+  MobilePad:BeginGesture(2, 45, SCREEN.S2)
+  MobilePad:EndGesture(45, SCREEN.S2 + Vector2(80, 0))
+  check(W.requests == 2 and W.casts == 2, "감옥 끌기 1")
+end)
+scenario("B-IN-OBS-01 같은 맵에서 내 캐릭터 엔티티가 바뀌면 반복 소유 끝", function()
+  shardOn()
+  MobilePad:BeginGesture(1, 46, SCREEN.S2)
+  step(6)
+  local sent = W.requests
+  local clone = {}
+  for k, v in pairs(W.player) do clone[k] = v end
+  _UserService.LocalPlayer = clone
+  step(10)
+  check(not MobilePad.ShardActive and MobilePad.ShardStopReason == "owner" and W.requests == sent, "새 엔티티로 반복 요청 0 (" .. W.requests .. ")")
+  _UserService.LocalPlayer = W.player
+  MobilePad:ClearGesture()
+end)
+
 for _, s in ipairs(scenarios) do
   Reset()
   local ok, err = pcall(s[2])

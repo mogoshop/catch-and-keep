@@ -39,6 +39,8 @@ script MobilePad extends Logic
     property integer ShardSent = 0           -- 이번 손가락이 보낸 반복 요청 수 ([VRF])
     property number ShardHoldDelay = 0.35    -- 이만큼 누르고 있어야 반복 시작 (짧게 떼면 예전처럼 놓을 때 한 번)
     property string ShardStopReason = ""     -- 마지막 중단 사유: release · menu · edit · dead · map · aim · focus · slot · toggle · owner
+    property string GestureSkill = ""        -- B-IN-02: 손가락이 닿을 때 그 칸의 스킬 — 놓을 때 칸 스킬이 바뀌었으면 시전하지 않는다 (편집·기본 공격 제스처 제외)
+    property Entity GesturePlayer = nil      -- B-IN-OBS-01: 손가락이 닿을 때의 내 캐릭터 — 바뀌면 골편 반복 소유를 끝낸다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -126,6 +128,8 @@ script MobilePad extends Logic
         self.GestureMap = player.CurrentMap
         local book = _UIKit:Comp("script.SkillBook")
         self.GestureBasic = slot == self.BasicSlot or (slot == 5 and not self.EditMode and (book == nil or book:GetSlotSkill(5) == ""))
+        self.GestureSkill = (book ~= nil and not self.GestureBasic) and book:GetSlotSkill(slot) or ""
+        self.GesturePlayer = player
         local attack = player:GetComponent("script.PlayerAttack")
         if attack ~= nil then attack.LocalAimActive = false end
         if self.GestureBasic then self:AttackDown() end
@@ -179,6 +183,10 @@ script MobilePad extends Logic
         elseif self.GestureTouchId ~= 0 and (self.ShardUsed or self.ShardRepeating) then
             -- I04 골편 홀드 반복을 한 손가락: 떼면 반복만 멈춘다 — 놓기 시전으로 한 발을 더 쏘지 않는다 (B-R07)
             self:StopShardHold("release")
+        elseif self.GestureTouchId ~= 0 and not self.EditMode and not self.GestureBasic and self:GestureSkillChanged() then
+            -- B-IN-02: 누르는 사이 그 칸의 스킬이 바뀌었다 (다음 Poll 전 즉시 놓아도) → 새 스킬을 쓰지 않는다
+            self:StopShardHold("slot")
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] mobile aim release skipped slot=%d changed %s", self.GestureSlot, self.GestureSkill)) end
         elseif self.GestureTouchId ~= 0 and isvalid(player) and player.PlayerComponent.Hp > 0 and player.CurrentMap == self.GestureMap and not _UIKit:AnyWindowOpen() and not self.GestureBasic then
             if not Environment:IsPublishedPlay() then log(string.format("[VRF] mobile aim release slot=%d reach=%.2f", self.GestureSlot, self.AimReach)) end
             if self.GestureSlot == 5 then self:Attack() else self:Cast(self.GestureSlot) end
@@ -198,6 +206,8 @@ script MobilePad extends Logic
         self.AimReach = 0
         self:StopShardHold("owner")   -- 이미 멈췄으면 아무 일 없다 (사유는 먼저 멈춘 쪽)
         self.ShardUsed = false
+        self.GestureSkill = ""
+        self.GesturePlayer = nil
         self:ShowCancel(false)
         local player = _UserService.LocalPlayer
         if isvalid(player) then
@@ -316,7 +326,7 @@ script MobilePad extends Logic
     method string ShardStopCheck()
         -- I04 골편 홀드 반복을 멈출 사유 ("" = 계속). 메뉴(창·안내 창) · 편집 · 사망 · 맵 이동 · 「취소」 조준 · 손가락 소유권(뗌·칸 바뀜·설정 끔·큰 단추 줍기·기본 공격 반복)
         local player = _UserService.LocalPlayer
-        if not isvalid(player) then return "owner" end
+        if not isvalid(player) or player ~= self.GesturePlayer then return "owner" end
         if player.PlayerComponent.Hp <= 0 then return "dead" end
         if player.CurrentMap ~= self.GestureMap then return "map" end
         if _UIKit:AnyWindowShown() or _UIKit:AnyWindowOpen() then return "menu" end
@@ -329,6 +339,15 @@ script MobilePad extends Logic
         if book:GetSlotSkill(self.GestureSlot) ~= "bone_shard" then return "slot" end
         if (self.GestureSlot == 5 and self.PickMode) or self.Holding then return "owner" end
         return ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean GestureSkillChanged()
+        -- B-IN-02: 이 손가락이 누른 칸의 스킬이 닿은 때와 다른가 (칸 바꿈·초기화로 비거나 다른 스킬이 들어옴)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return self.GestureSkill ~= "" end
+        return book:GetSlotSkill(self.GestureSlot) ~= self.GestureSkill
     end
 
     @ExecSpace("ClientOnly")
