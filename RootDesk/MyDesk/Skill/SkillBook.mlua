@@ -57,11 +57,19 @@ script SkillBook extends Component
 
     method integer GetPowerLevel(string id)
         -- 효과에 쓰는 레벨: 배운 메인 스킬에만 장비의 「모든 스킬」·「계열 스킬」·「단일 스킬 +N」을 더한다 (docs/design/19). 강화 노드는 랭크 그대로. 배울 때·요구 조건은 GetLevel
-        local lv = self:GetLevel(id)
+        return self:PowerLevelAt(id, self:GetLevel(id))
+    end
+
+    method integer PowerLevelAt(string id, integer lv)
+        -- 실제 계산과 현재/다음 미리보기가 같은 추가 랭크·강화 해금 규칙을 쓴다.
         if lv <= 0 then return 0 end
         local def = _SkillData:Get(id)
         if def == nil then return lv end
-        if def.kind == "node" then return self:Node(id) end   -- 강화: 지금 캐릭터 레벨에서 효과가 나는 랭크만
+        if def.kind == "node" then
+            ---@type PlayerStats
+            local owner = self.Entity:GetComponent("script.PlayerStats")
+            return owner ~= nil and self:NodeUsable(id, lv, owner.Level) or lv
+        end
         -- 선택 보상 2차 주문 「미리 쥔 뼈 창」: 악몽 +1 · 지옥 +2 레벨 (1랭크는 GetLevel이 거저 준다)
         if id == "bone_spear" then lv = lv + math.max(0, self:ChoiceTier(2, "soul") - 1) end
         ---@type PlayerStats
@@ -563,8 +571,12 @@ script SkillBook extends Component
     method table GetCommandAura()
         -- 호령(항상 켜짐): 소환수 공격·생명 %, 이동 속도 %, 모든 저항 %p. 다음 소환부터 적용한다.
         -- 질주 강화 「군단 질주」의 이동 %도 여기서 더한다 (소환할 때 확정 — 그림자·해골 공통)
+        return self:CommandAuraAt(self:GetPowerLevel("command_aura"))
+    end
+
+    method table CommandAuraAt(integer lv)
+        -- 가상 랭크를 받는 순수 미리보기. 현재 소환 공식도 이 함수를 쓴다.
         local rush = 5 * self:Node("dash_legion")
-        local lv = self:GetPowerLevel("command_aura")
         if lv <= 0 then return { atk = 0, speed = rush, resist = 0 } end
         local deep = 1 + 0.2 * self:Node("aura_deep")   -- 강화 「깊은 울림」
         return { atk = self:GetEffectPower("command_aura", lv) * deep, speed = 5 + 0.5 * (lv - 1) + rush, resist = 5 + (lv - 1) }
@@ -581,8 +593,9 @@ script SkillBook extends Component
         if id == "raise_skeleton" or id == "raise_mage" then
             local kind = id == "raise_skeleton" and "skeleton" or "mage"
             local values = _UndeadSystem:GetBaseStats(kind, level, self:GetPowerLevel("skeleton_mastery"), stats.Level)
-            local equip = math.max(0.1, 1 + stats:GetMinionPct() / 100)
-            return string.format("최대 %d기 · 공격 %d · 생명 %d", _UndeadSystem:CountFor(level), math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip)))
+            local equip = math.max(0.1, 1 + stats:GetMinionPct() / 100) * (1 + self:GetCommandAura().atk / 100)
+            local focus = kind == "mage" and (1 + _GameData.mageFocusPct / 100 * self:Node("mage_focus")) or 1
+            return string.format("최대 %d기 · 일반형 공격 %d · 생명 %d (다음 소환 기준)", _UndeadSystem:MaxFor(self.Entity, kind, level), math.max(1, math.floor(values.atk * focus * equip)), math.max(1, math.floor(values.hp * equip)))
         end
         if id == "skeleton_mastery" then return string.format("해골 공격·생명 +%g%%", _GameData.skeletonMasteryPct * level) end
         if id == "command_mastery" then return string.format("그림자 공격·생명 +%g%%", _GameData.commandMasteryPct * level) end
@@ -668,7 +681,7 @@ script SkillBook extends Component
         if id == "bone_prison" then return string.format("반경 1.3 안 적 %.1f초 묶음 (보스 절반)", power) end
         if id == "poison_spread" then return string.format("독 걸린 적 사망 시 반경 %.2f에 독 확산", power) end
         if id == "command_aura" then
-            local aura = self:GetCommandAura()
+            local aura = self:CommandAuraAt(level)
             return string.format("소환수 공격·생명 +%g%% · 이동 +%g%% · 저항 +%g", aura.atk, aura.speed, aura.resist)
         end
         if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
@@ -699,6 +712,14 @@ script SkillBook extends Component
             elseif id == "bone_storm" then label = "0.5초당 기준 피해" end
             return label .. " " .. string.format("%.1f", power * (1 + stats:GetSpellPowerPct() / 100))
         end
+        return ""
+    end
+
+    method string UseHint(string id)
+        -- 선투자는 허용하되 지금 발동하지 않는 조건을 선택 화면에서 알려 준다.
+        if id == "step_gale" and self:GetLevel("wraith_dash") <= 0 then return "망령 질주를 배워야 발동합니다" end
+        if id == "dash_ghost" and self:GetLevel("bone_armor") <= 0 then return "뼈 갑옷을 배워야 회복합니다" end
+        if id == "shard_multi" and self:GetBoneShardCount(math.max(1, self:GetPowerLevel("bone_shard"))) <= 1 then return "골편이 2발 이상일 때 모이는 효과가 납니다" end
         return ""
     end
 

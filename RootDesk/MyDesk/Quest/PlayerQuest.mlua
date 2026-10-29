@@ -383,23 +383,23 @@ script PlayerQuest extends Component
             elseif key == "gen" then
                 -- 발견 확률만 높여서는 희귀 보상이 보장되지 않는다. 옵션도 보장 등급에 맞춰 생성한다.
                 local rare = (tonumber(val) or 0) >= 3
-                table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, rare and "boss" or "quest", 300, rare and 2 or 1))
+                table.insert(items, _ItemData:GenerateQuestReward(lv, rare and "boss" or "quest", 300, rare and 2 or 1))
             elseif key == "unique" then
                 -- 유니크 장비 보장 (어디서나 나오는 유니크 중 레벨에 맞는 것, 없으면 희귀 보장).
                 -- 고르는 기준은 lv − 3: PickUnique는 요구 레벨 ≤ 기준 + 3까지 고르므로 지금 바로 낄 수 있는 것만 나온다 (예전 lv + 2는 Lv40 보상에 Lv44 유니크가 나왔다)
                 -- 10-28 피드백 F1 #4-A: 액트 보스 의뢰(대상에 전용 유니크가 있는 의뢰)는 그 보스 전용 풀에서 — 「여왕의 왕관을 쓰고 사막으로」.
                 -- 드롭표의 「첫 처치 확정 없음」(10-13)은 그대로, 의뢰 보상 쪽만. 보고 자리 바닥에 떨궈 유니크 빛기둥을 보여 준다
                 for i = 1, (tonumber(val) or 0) do
-                    local u = q.target ~= "" and _ItemData:PickUnique(math.max(1, lv - 3), q.target) or nil
+                    local u = q.target ~= "" and _ItemData:PickUnique(math.max(1, lv - 3), q.target, lv) or nil
                     if u ~= nil then
                         local made = _ItemData:MakeUnique(u, lv + 2)
                         _LootSystem:Spawn(_Util:Pos2(self.Entity), self.Entity.PlayerComponent.UserId, "item", made, 1, _ItemData:Parse(made).rarity)
                         _Util:Banner(u.name, _GameData:GetMonsterName(q.target) .. "이(가) 남긴 것 — 발밑에 떨어졌습니다", self.Entity.PlayerComponent.UserId)
                         log("[VRF] act boss unique " .. q.target .. " → " .. u.id)
                     else
-                        u = _ItemData:PickUnique(math.max(1, lv - 3), "")
+                        u = _ItemData:PickUnique(math.max(1, lv - 3), "", lv)
                         if u ~= nil then table.insert(items, _ItemData:MakeUnique(u, lv + 2))
-                        else table.insert(items, _ItemData:GenerateWithMinimum(lv + 2, "boss", 300, 2)) end
+                        else table.insert(items, _ItemData:GenerateQuestReward(lv, "boss", 300, 2)) end
                     end
                 end
             elseif key == "skp" then skillPoints = skillPoints + (tonumber(val) or 0)
