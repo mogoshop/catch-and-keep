@@ -1,5 +1,6 @@
 -- @source UIKit UI/Core/UIKit.mlua Clip,PlainText,CharCount,TextWidth
 -- @source UXFeedback UI/Hud/UXFeedback.mlua LineText
+-- @source NoticeFeed UI/Hud/NoticeFeed.mlua Push+,Tick+,SyncEdge+,PlaceEdge+,NewestLineHeight,Render+,Fade,Bounds
 -- @source GameData Data/GameData.mlua Ensure,GetShopItem+
 -- @source ItemTables Data/ItemTables.mlua Ensure
 -- @source ItemData Item/ItemData.mlua Serialize,DescribeDetailed+
@@ -91,3 +92,75 @@ local lw = _UIKit:TextWidth(longer, 24)
 assert(lw > inner(720) and math.max(17, math.floor(24 * inner(720) / lw)) >= 17)
 print(string.format("[quality/notice_text] reroll line %d chars, tags closed: %s", chars(full), visible(full)))
 print(string.format("[quality/notice_text] offer band text width 24px=%d (PC inner %d, mobile font %d) · longer=%d", math.floor(w), inner(720), mobileSize, math.floor(lw)))
+
+-- 5) 안내 줄 가장자리 자리 (UI-20261029-02 윗줄 잘림 · 10-29 코덱스 검토 UI-NOTICE-R01):
+--    창이 떠 있을 때 새 줄·같은 문구 세 번째(×N 합산)·골드 합산·명시적 줄바꿈 본문 모두 최신 줄 위 끝이 화면 위 여백(1080 − 8 = 1072) 안.
+--    글 높이는 가짜 렌더러(줄 수 × 32: 명시적 줄바꿈 + 바이트 길이가 한도를 넘으면 한 줄 더) — 실제 엔진 글꼴 측정이 아니라 호출 순서 검사다.
+function Vector2(x, y) return { x = x, y = y } end
+function isvalid(v) return v ~= nil end
+AlignmentType = { BottomLeft = 7 }
+_UtilLogic = { ElapsedSeconds = 0 }
+_ApplicationService = { IsMobilePlatform = function() return false end }
+local WRAP = 40
+local function fakeHeight(_, text, width)
+    local lines = 1
+    for _ in string.gmatch(text, "\n") do lines = lines + 1 end
+    if string.len(text) > WRAP then lines = lines + 1 end
+    return lines * 32 + (lines - 1) * 4
+end
+local function transform(w, h, x, y)
+    return { RectSize = Vector2(w, h), Pivot = Vector2(0, 0), anchoredPosition = Vector2(x or 0, y or 0), AlignmentOption = 7 }
+end
+local ents = {}
+ents["/ui/RewardHUD/Feed"] = { UITransformComponent = transform(620, 250, 24, -170) }
+ents["/ui/RewardHUD"] = { UITransformComponent = transform(1920, 1080) }
+ents["/ui/RewardHUD"].UITransformComponent.GetWorldCorners = function() return { Vector2(0, 0), Vector2(0, 1080), Vector2(1920, 1080), Vector2(1920, 0) } end
+local winTop = 1060
+local win = { Name = "fixture-window", UITransformComponent = transform(1600, 1060) }
+win.UITransformComponent.GetWorldCorners = function() return { Vector2(160, 20), Vector2(160, winTop), Vector2(1760, winTop), Vector2(1760, 20) } end
+for i = 1, 4 do
+    local path = "/ui/RewardHUD/Feed/Line" .. i
+    ents[path] = { UITransformComponent = transform(620, 44) }
+    ents[path .. "/Text"] = { UITransformComponent = transform(590, 40), TextGUIRendererComponent = { GetPreferredHeight = fakeHeight } }
+end
+_UIKit.Get = function(_, path) return ents[path] end
+_UIKit.AnyWindowShown = function() return true end
+_UIKit.ShownWindowEntity = function() return win end
+_UIKit.SetEnabled = function(_, path, v) if ents[path] then ents[path].Enable = v end end
+_UIKit.SetText = function(_, path, text) if ents[path] then ents[path].Text = text end end
+local feed = ents["/ui/RewardHUD/Feed"].UITransformComponent
+local function topOK(label)
+    local h = ents["/ui/RewardHUD/Feed/Line1"].UITransformComponent.RectSize.y
+    local top = feed.anchoredPosition.y + h
+    assert(ents["/ui/RewardHUD/Feed/Line1"].Enable, label .. ": newest line hidden")
+    assert(top <= 1072, string.format("%s: top %d > 1072 (reserved %d, rendered %d, side %s)", label, top, NoticeFeed.EdgeNeed, h, NoticeFeed.EdgeSide))
+    assert(feed.RectSize.y >= h, label .. ": feed shorter than newest line")
+    return h, top
+end
+local cases = 0
+for _, wt in ipairs({ 1060, 900 }) do   -- 큰 창(화면 맨 위 자리) · 위에 빈 곳이 있는 창(창 위 자리)
+    winTop = wt
+    NoticeFeed.Lines = {}; NoticeFeed.Edge = false; NoticeFeed.Home = nil; NoticeFeed.EdgeSide = ""; NoticeFeed.EdgeNeed = 0
+    _UtilLogic.ElapsedSeconds = 0
+    local near = string.rep("a", WRAP - 1)            -- 줄 한도 바로 아래: 「  ×2」가 붙으면 넘어간다
+    NoticeFeed:Push(near); topOK("dup1@" .. wt)
+    NoticeFeed:Push(near); topOK("dup2@" .. wt)
+    NoticeFeed:Push(near)                              -- 세 번째: 새 줄 대신 최신 줄에 「×2」 합산 (예전엔 Render만 → 1108)
+    local h = topOK("dup3@" .. wt)
+    assert(h == 80 and NoticeFeed.Lines[1].count == 2 and #NoticeFeed.Lines == 2, "dup3 should grow to two lines: " .. h)
+    NoticeFeed.Lines = {}
+    NoticeFeed:Push("골드 +9"); topOK("gold1@" .. wt)
+    WRAP = 12                                          -- 「골드 +100008」(14바이트)부터 두 줄로 보는 경계
+    NoticeFeed:Push("골드 +99999")                     -- 골드 합산 (예전엔 Render만)
+    h = topOK("goldMerge@" .. wt)
+    assert(h == 80 and NoticeFeed.Lines[1].text == "골드 +100008" and #NoticeFeed.Lines == 1, "gold merge: " .. h)
+    WRAP = 40
+    NoticeFeed.Lines = {}
+    NoticeFeed:Push(_UXFeedback:LineText("옵션을 새로 새겼습니다", "<color=#FFE15A>해골의 손톱</color>\n신발 · 요구 레벨 28", false) .. "\n둘째 줄\n셋째 줄")
+    h = topOK("newline@" .. wt)
+    assert(h >= 116, "explicit newline body should be 3+ lines: " .. h)
+    _UtilLogic.ElapsedSeconds = 0.1
+    NoticeFeed:Tick(); topOK("tick@" .. wt)
+    cases = cases + 6
+end
+print(string.format("[quality/notice_text] notice edge: new·dup×3·gold merge·newline·tick, top <= 1072 in %d cases (screen-top and above-window)", cases))
