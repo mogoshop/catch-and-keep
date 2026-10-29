@@ -1,0 +1,117 @@
+-- 보상 부위 고르기 카드 창 (10-30 I01 · goal-items-execution-0030 I01_reward_slot_choice).
+--   기존 gen:3 중요 스토리 보상 5개(굶주린 굴 · 사라진 병사의 유물 · 모래에 묻힌 대상 · 난파선의 망자들 · 행군을 막아라)의 장비 1개만 부위를 고른다.
+--   서버(PlayerQuest.OfferGearChoice)가 처음 보고할 때 고정한 제안(등급 · 레벨 · 부위 최대 3)을 그대로 보여 준다 — 다시 열어도 같은 카드, 능력치 미리보기를 다시 굴리지 않는다.
+--   양식은 혼의 제물·선택 보상 카드(OfferWin)와 같은 GearPickWin (tools/build/ui.cjs). 영구 선택(ChoicePicks)과 섞지 않는다.
+--   카드 → 확인 창 → PlayerQuest.RequestGearChoice (서버가 소유자·생존·의뢰인 곁·완료·제안 버전·가방을 다시 본다). 닫기는 퀘스트·보상·제안 모두 그대로.
+@Logic
+script GearChoiceWindow extends Logic
+
+    property string Win = "GearPickWin"
+    property string Offer = ""                -- 보여 주는 제안 문자열 (PlayerQuest.GearOffer 형식)
+    property string Title = ""                -- 의뢰 이름
+    property number CardStep = 356            -- 카드 340 + 사이 16 (tools/build/ui.cjs CARD와 같은 숫자)
+    property number CardW = 340
+    property number WinW = 1180               -- 창 폭 (tools/build/ui.cjs GearPickWin)
+    property integer TimerId = 0
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 창 등록 · 카드와 단추 연결 · 제안이 사라지면(보고 끝) 창을 닫는 가벼운 확인
+        _UIKit:RegisterWindow(self.Win)
+        _UIKit:Connect(self.Win .. "/BtnClose", function() self:Cancel() end)
+        for i = 1, 3 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/Card" .. tostring(i), function() self:Choose(index) end)
+            _UIKit:Connect(self.Win .. "/Pick" .. tostring(i), function() self:Choose(index) end)
+        end
+        self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.5)
+        log("[VRF] gear choice window ready")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnEndPlay()
+        -- 반복 확인 해제
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method PlayerQuest Quest()
+        -- 내 캐릭터의 의뢰 진행
+        ---@type PlayerQuest
+        local c = _UIKit:Comp("script.PlayerQuest")
+        return c
+    end
+
+    method string GradeLabel(integer rarity)
+        -- 고정된 보상 등급 이름
+        if rarity == 3 then return "유니크" end
+        if rarity == 4 then return "세트" end
+        return "레어"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Show(string offer, string title)
+        -- 서버가 보낸 제안으로 카드를 그리고 창을 연다 (카드 수만큼 가운데 정렬)
+        local quest = self:Quest()
+        if quest == nil then return end
+        local o = quest:ParseGearOffer(offer)
+        if o == nil then return end
+        self.Offer = offer
+        self.Title = title
+        _UIKit:SetText(self.Win .. "/Sub", title .. " 보상 · 받을 장비 부위를 고르세요. 등급과 레벨은 정해져 있습니다")
+        local n = #o.slots
+        local x0 = math.floor((self.WinW - (n * self.CardW + (n - 1) * (self.CardStep - self.CardW))) / 2)
+        for i = 1, 3 do
+            local slot = o.slots[i]
+            local card = self.Win .. "/Card" .. tostring(i)
+            local pick = self.Win .. "/Pick" .. tostring(i)
+            _UIKit:SetEnabled(card, slot ~= nil)
+            _UIKit:SetEnabled(pick, slot ~= nil)
+            if slot ~= nil then
+                local x = x0 + (i - 1) * self.CardStep
+                _UIKit:SetPos(card, Vector2(x, -116))
+                _UIKit:SetPos(pick, Vector2(x + 20, -532))
+                _UIKit:SetText(card .. "/Kind", _UIKit:Colored(_ItemData:RarityColor(o.rarity), self:GradeLabel(o.rarity)))
+                _UIKit:SetIcon(card .. "/Icon", _GameData:GetUiIcon("eq_" .. slot))
+                _UIKit:SetText(card .. "/Name", _ItemData:SlotLabel(slot))
+                _UIKit:SetText(card .. "/Effect", "착용 Lv " .. tostring(o.lv) .. " 이하 · 아이템 레벨 " .. tostring(o.lv + 2))
+                _UIKit:SetText(card .. "/Change", "옵션은 받을 때 정해집니다")
+            end
+        end
+        _UIKit:Open(self.Win)
+        log("[VRF] gear choice show " .. offer)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Choose(integer index)
+        -- 카드 고르기 → 확인 창 → 서버에 요청 (확인 전 취소는 아무것도 바꾸지 않는다)
+        local quest = self:Quest()
+        if quest == nil then return end
+        local o = quest:ParseGearOffer(self.Offer)
+        if o == nil or o.slots[index] == nil then return end
+        local slot = o.slots[index]
+        local label = self:GradeLabel(o.rarity) .. " " .. _ItemData:SlotLabel(slot)
+        local body = self.Title .. " 보상: " .. label .. "\n착용 Lv " .. tostring(o.lv) .. " 이하 · 아이템 레벨 " .. tostring(o.lv + 2) .. "\n받은 뒤에는 부위를 다시 고를 수 없습니다."
+        _ConfirmDialog:Show("보상 받기", body, "받기", function()
+            quest:RequestGearChoice(o.diff, o.index, o.ver, slot)
+            _UIKit:Close(self.Win)
+            log("[VRF] gear choice confirm slot=" .. slot .. " ver=" .. tostring(o.ver))
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Cancel()
+        -- 닫기: 퀘스트·보상·제안은 그대로 (의뢰인에게 다시 보고하면 같은 카드)
+        _UIKit:Close(self.Win)
+        log("[VRF] gear choice cancel")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Poll()
+        -- 열려 있는데 제안이 사라졌거나 바뀌면(보고 끝 · 난이도 전환) 닫는다
+        if not _UIKit:IsOpen(self.Win) then return end
+        local quest = self:Quest()
+        if quest == nil or quest.GearOffer ~= self.Offer then _UIKit:Close(self.Win) end
+    end
+
+end

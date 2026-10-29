@@ -35,6 +35,12 @@ script PlayerQuest extends Component
     property string ChoicePicks = ";"         -- 10-28 선택 보상: 고른 축 ";1:command;2:soul;" (다시 고를 수 없다)
     @Sync
     property string ChoiceTiers = "0,0,0"     -- 선택 보상 단계: 그 의뢰(choice:N)를 끝낸 난이도 수 (보통 1 · 악몽 2 · 지옥 3) — RefreshPermanent
+    -- 10-30 I01 부위 고르기 보상 (goal-items-execution-0030): 기존 gen:3 중요 스토리 보상 5개(1·3·7·13·19번)의 장비 1개만 부위를 고른다.
+    --   영구 선택(ChoicePicks·ChoiceTiers)과 따로 저장한다. 제안 = "난이도:의뢰:버전:레벨:등급:부위,부위,부위" — 처음 보고할 때 한 번 굴려 고정 (취소·다시 열기·재접속에도 그대로)
+    @Sync
+    property string GearOffer = ""             -- 지금 난이도의 대기 제안 (클라이언트 카드 창이 읽는다)
+    property table GearOffers = {}            -- 난이도 "0"/"1"/"2" → 제안 문자열 (저장 go0~go2)
+    property integer GearOfferSeq = 0         -- 제안 버전 순번 (늦게 도착한 옛 요청을 거른다)
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -345,12 +351,26 @@ script PlayerQuest extends Component
         if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 2 then return end
         local q = _QuestData:Get(self.Index)
         if q == nil or not self:NearGiver(q) then return end
-        self:TurnIn()
+        -- 부위 고르기 보상 의뢰: 보상을 바로 주지 않고 고정된 부위 카드를 보낸다 (고르면 RequestGearChoice가 같은 보고를 끝낸다)
+        if self:IsGearChoiceQuest(q) and self:OfferGearChoice(q) then return end
+        self:TurnIn("")
     end
 
     @ExecSpace("ServerOnly")
-    method void TurnIn()
+    method integer RewardBagSlots(table q)
+        -- 보상이 차지할 가방 칸 (F06 가방 선검사 — 보고·부위 고르기 제안이 같은 수를 쓴다)
+        local slots = 0
+        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
+            if key == "item" or key == "gen" or (key == "rune" and _ItemData:GetRune(val) ~= nil) then slots = slots + 1 end
+            if key == "runes" or key == "unique" then slots = slots + (tonumber(val) or 0) end
+        end
+        return slots
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TurnIn(string gearSlot)
         -- 보상: 경험치·골드 + (룬 / 장비 / 희귀 장비 / 스킬·능력치 포인트 / 소켓권 / 그림자 배치)
+        -- gearSlot: 부위 고르기 보상에서 고른 부위 (빈 글 = 예전처럼 무작위 장비). 고른 부위 장비는 저장된 제안의 등급·레벨로 만든다
         local q = _QuestData:Get(self.Index)
         if q == nil or self.State ~= 2 or not _Util:IsAlive(self.Entity) then return end
         ---@type PlayerStats
@@ -359,14 +379,18 @@ script PlayerQuest extends Component
         local inv = self.Entity:GetComponent("script.PlayerInventory")
         if stats == nil or inv == nil then return end
         -- 먼저 공간을 예약할 수 있는지 확인한다. 부족하면 진행·경험치·골드 모두 그대로 둔다.
-        local slots = 0
-        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
-            if key == "item" or key == "gen" or (key == "rune" and _ItemData:GetRune(val) ~= nil) then slots = slots + 1 end
-            if key == "runes" or key == "unique" then slots = slots + (tonumber(val) or 0) end
-        end
+        local slots = self:RewardBagSlots(q)
         if #inv.Bag + slots > inv.BagSize then
             _Util:Notify("보상 받을 가방 공간 " .. tostring(slots) .. "칸이 필요합니다. 퀘스트와 보상은 보관됩니다", self.Entity.PlayerComponent.UserId)
             return
+        end
+        -- 고른 부위 장비는 다른 보상을 하나도 주기 전에 만든다 (못 만들면 아무것도 바꾸지 않고 멈춘다)
+        local chosen = ""
+        if gearSlot ~= "" then
+            local offer = self:ParseGearOffer(self.GearOffers[tostring(self.Diff)] or "")
+            if offer == nil or offer.index ~= self.Index then return end
+            chosen = _ItemData:GenerateQuestSlotReward(offer.lv, gearSlot, offer.rarity)
+            if chosen == "" then return end
         end
         local items = {}
         local lv = stats.Level
@@ -380,6 +404,10 @@ script PlayerQuest extends Component
                 local monLv = _GameConst:DepthBand(math.max(1, q.act), stats.Difficulty).max
                 for i = 1, (tonumber(val) or 0) do table.insert(items, _ItemData:MakeRune(monLv)) end
             elseif key == "item" then table.insert(items, val)
+            elseif key == "gen" and chosen ~= "" then
+                -- 부위 고르기 보상: 이 장비 한 개만 고른 부위로 바뀐다 (추가 지급 없음)
+                table.insert(items, chosen)
+                chosen = ""
             elseif key == "gen" then
                 -- 발견 확률만 높여서는 희귀 보상이 보장되지 않는다. 옵션도 보장 등급에 맞춰 생성한다.
                 local rare = (tonumber(val) or 0) >= 3
@@ -390,14 +418,14 @@ script PlayerQuest extends Component
                 -- 10-28 피드백 F1 #4-A: 액트 보스 의뢰(대상에 전용 유니크가 있는 의뢰)는 그 보스 전용 풀에서 — 「여왕의 왕관을 쓰고 사막으로」.
                 -- 드롭표의 「첫 처치 확정 없음」(10-13)은 그대로, 의뢰 보상 쪽만. 보고 자리 바닥에 떨궈 유니크 빛기둥을 보여 준다
                 for i = 1, (tonumber(val) or 0) do
-                    local u = q.target ~= "" and _ItemData:PickUnique(math.max(1, lv - 3), q.target, lv) or nil
+                    local u = q.target ~= "" and _ItemData:PickUnique(math.max(1, lv - 3), q.target, lv, "") or nil
                     if u ~= nil then
                         local made = _ItemData:MakeUnique(u, lv + 2)
                         _LootSystem:Spawn(_Util:Pos2(self.Entity), self.Entity.PlayerComponent.UserId, "item", made, 1, _ItemData:Parse(made).rarity)
                         _Util:Banner(u.name, _GameData:GetMonsterName(q.target) .. "이(가) 남긴 것 — 발밑에 떨어졌습니다", self.Entity.PlayerComponent.UserId)
                         log("[VRF] act boss unique " .. q.target .. " → " .. u.id)
                     else
-                        u = _ItemData:PickUnique(math.max(1, lv - 3), "", lv)
+                        u = _ItemData:PickUnique(math.max(1, lv - 3), "", lv, "")
                         if u ~= nil then table.insert(items, _ItemData:MakeUnique(u, lv + 2))
                         else table.insert(items, _ItemData:GenerateQuestReward(lv, "boss", 300, 2)) end
                     end
@@ -437,6 +465,120 @@ script PlayerQuest extends Component
             -- 장 마무리 뒤 오렌과 고르의 장면 (docs/design/31 §4) — 4장은 결말 「문 아래로」
             local scene = q.act == 4 and "scene5" or ("scene" .. tostring(q.act))
             if _GameData:GetStory(scene) ~= "" then self:SendStory(scene) end
+        end
+    end
+
+    -- ───────── 부위 고르기 보상 (10-30 I01 · goal-items-execution-0030 I01_reward_slot_choice) ─────────
+    -- 기존 gen:3 중요 스토리 보상 5개의 장비 한 개만: 보고 → 고정된 부위 카드(최대 3) → 고르고 확인 → 같은 보고 트랜잭션(TurnIn)으로 지급.
+    -- 취소(창 닫기)는 퀘스트·보상 모두 그대로 · 제안은 저장되어 다시 열거나 재접속해도 같은 카드 · 이미 끝낸 의뢰는 소급하지 않는다.
+
+    method boolean IsGearChoiceQuest(table q)
+        -- 보상 칸이 gen:3인 기존 의뢰만 (굶주린 굴 · 사라진 병사의 유물 · 모래에 묻힌 대상 · 난파선의 망자들 · 행군을 막아라). quests.csv는 바꾸지 않는다
+        return q ~= nil and string.find("," .. q.reward .. ",", ",gen:3,", 1, true) ~= nil
+    end
+
+    method any ParseGearOffer(string s)
+        -- 제안 문자열 → { diff, index, ver, lv, rarity, slots } (형식이 다르면 nil)
+        local d, i, v, lv, r, list = string.match(s, "^(%d+):(%d+):(%d+):(%d+):(%d+):([%a,]+)$")
+        if d == nil then return nil end
+        local offer = { diff = tonumber(d), index = tonumber(i), ver = tonumber(v), lv = tonumber(lv), rarity = tonumber(r), slots = {} }
+        for slot in string.gmatch(list, "[^,]+") do table.insert(offer.slots, slot) end
+        if #offer.slots == 0 then return nil end
+        return offer
+    end
+
+    method string GearOfferText(table offer)
+        -- ParseGearOffer의 반대
+        return tostring(offer.diff) .. ":" .. tostring(offer.index) .. ":" .. tostring(offer.ver) .. ":" .. tostring(offer.lv) .. ":" .. tostring(offer.rarity) .. ":" .. table.concat(offer.slots, ",")
+    end
+
+    method boolean OfferHasSlot(table offer, string slot)
+        -- 제시한 부위 중 하나인가
+        for _, s in ipairs(offer.slots) do if s == slot then return true end end
+        return false
+    end
+
+    @ExecSpace("ServerOnly")
+    method any MakeGearOffer(integer level)
+        -- 등급을 한 번 굴려 고정 → 그 등급으로 지금 착용 가능한 후보가 있는 부위 중 최대 3개를 무작위로.
+        --   유니크·세트 후보가 어느 부위에도 없으면 원래 생성(GenerateEquipment)처럼 레어. 고를 부위가 둘 미만이면 nil (예전 무작위 보상)
+        local rarity = _ItemData:QuestGearRarity()
+        local slots = _ItemData:RewardSlotsFor(level, rarity)
+        if rarity >= 3 and #slots == 0 then
+            rarity = 2
+            slots = _ItemData:RewardSlotsFor(level, 2)
+        end
+        if #slots < 2 then return nil end
+        local picked = {}
+        while #picked < 3 and #slots > 0 do
+            table.insert(picked, table.remove(slots, _UtilLogic:RandomIntegerRange(1, #slots)))
+        end
+        local order = _ItemData.RewardSlotOrder
+        table.sort(picked, function(a, b) return string.find(order, a, 1, true) < string.find(order, b, 1, true) end)
+        self.GearOfferSeq = self.GearOfferSeq + 1
+        return { diff = self.Diff, index = self.Index, ver = self.GearOfferSeq, lv = level, rarity = rarity, slots = picked }
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean OfferGearChoice(table q)
+        -- 보고 때 부위 카드를 보낸다. 이미 고정된 제안이 있으면 그대로 다시 보낸다 (다시 굴리지 않는다).
+        --   가방이 모자라면 제안도 만들지 않고 멈춘다. 반환 true = 여기서 처리 끝 · false = 예전 무작위 장비로 바로 보고
+        local uid = self.Entity.PlayerComponent.UserId
+        if not _Util:IsAlive(self.Entity) then return true end
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerInventory
+        local inv = self.Entity:GetComponent("script.PlayerInventory")
+        if stats == nil or inv == nil then return true end
+        local need = self:RewardBagSlots(q)
+        if #inv.Bag + need > inv.BagSize then
+            _Util:Notify("보상 받을 가방 공간 " .. tostring(need) .. "칸이 필요합니다. 퀘스트와 보상은 보관됩니다", uid)
+            return true
+        end
+        local key = tostring(self.Diff)
+        local offer = self:ParseGearOffer(self.GearOffers[key] or "")
+        if offer == nil or offer.index ~= self.Index or offer.diff ~= self.Diff then
+            offer = self:MakeGearOffer(stats.Level)
+            if offer == nil then return false end
+            self.GearOffers[key] = self:GearOfferText(offer)
+            log("[VRF] gear offer new " .. self.GearOffers[key])
+        else
+            log("[VRF] gear offer reuse " .. self.GearOffers[key])
+        end
+        self.GearOffer = self.GearOffers[key]
+        self:OpenGearChoice(self.GearOffer, q.title, uid)
+        return true
+    end
+
+    @ExecSpace("Client")
+    method void OpenGearChoice(string offer, string title)
+        -- 소유자 화면에 부위 카드 창을 연다 (UI/Windows/GearChoiceWindow)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _GearChoiceWindow:Show(offer, title)
+    end
+
+    @ExecSpace("Server")
+    method void RequestGearChoice(integer diff, integer index, integer ver, string slot)
+        -- 카드에서 고르고 확인한 부위로 보고를 끝낸다. 소유자·생존·의뢰인 곁·완료 상태·제안 버전·부위·가방(TurnIn)을 서버가 다시 본다.
+        --   같은 요청이 두 번 와도 첫 번째에 의뢰가 넘어가 두 번째는 무시된다
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or diff ~= self.Diff or index ~= self.Index or self.State ~= 2 or not _Util:IsAlive(self.Entity) then return end
+        local q = _QuestData:Get(self.Index)
+        if q == nil or not self:IsGearChoiceQuest(q) or not self:NearGiver(q) then return end
+        local key = tostring(self.Diff)
+        local offer = self:ParseGearOffer(self.GearOffers[key] or "")
+        if offer == nil or offer.ver ~= ver or offer.index ~= index or offer.diff ~= diff or not self:OfferHasSlot(offer, slot) then
+            log("[VRF] gear choice reject stale ver=" .. tostring(ver))
+            return
+        end
+        self:TurnIn(slot)
+        if self.Index ~= index then
+            -- 보고 끝 = 제안 소비 (다시 받을 수 없다)
+            self.GearOffers[key] = nil
+            self.GearOffer = ""
+            log("[VRF] gear choice done quest=" .. tostring(index) .. " slot=" .. slot .. " rarity=" .. tostring(offer.rarity))
+        else
+            log("[VRF] gear choice kept (bag/state) quest=" .. tostring(index))
         end
     end
 
@@ -630,6 +772,7 @@ script PlayerQuest extends Component
         self.Goal = 0
         self.SealedNow = self.Sealed[tostring(diff)] or ";"
         self.CheerNow = self.Cheered[tostring(diff)] or ";"
+        self.GearOffer = self.GearOffers[tostring(diff)] or ""
     end
 
     @ExecSpace("ServerOnly")
@@ -649,6 +792,10 @@ script PlayerQuest extends Component
         end
         if self.StorySeen ~= ";" then out.st = self.StorySeen end
         if self.ChoicePicks ~= ";" then out.cp = self.ChoicePicks end
+        for k = 0, 2 do
+            local go = self.GearOffers[tostring(k)]
+            if go ~= nil and go ~= "" then out["go" .. tostring(k)] = go end
+        end
         self.Cheered[tostring(self.Diff)] = self.CheerNow
         for k = 0, 2 do
             local ch = self.Cheered[tostring(k)]
@@ -677,6 +824,14 @@ script PlayerQuest extends Component
         end
         self.StorySeen = type(d.st) == "string" and d.st or ";"
         self.ChoicePicks = type(d.cp) == "string" and d.cp or ";"
+        self.GearOffers = {}
+        for k = 0, 2 do
+            local go = d["go" .. tostring(k)]
+            if type(go) == "string" and self:ParseGearOffer(go) ~= nil then
+                self.GearOffers[tostring(k)] = go
+                self.GearOfferSeq = math.max(self.GearOfferSeq, self:ParseGearOffer(go).ver)
+            end
+        end
         self.Cheered = {}
         for k = 0, 2 do
             local ch = d["ch" .. tostring(k)]
@@ -698,6 +853,7 @@ script PlayerQuest extends Component
         self.Goal = 0
         self.SealedNow = self.Sealed[tostring(diff)] or ";"
         self.CheerNow = self.Cheered[tostring(diff)] or ";"
+        self.GearOffer = self.GearOffers[tostring(diff)] or ""
         self:RefreshPermanent()
     end
 

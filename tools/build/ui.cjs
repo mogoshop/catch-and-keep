@@ -505,6 +505,25 @@ function buildGameHud() {
   b.text("PreviewWin/Foot", "", { size: 18, color: C.dim, anchor: "top-left", pivot: [0, 1], pos: [434, -470], rect_size: [606, 44], alignment: 3, bestfit: true, min_size: 14, max_size: 18 });
   k.ok("PreviewWin/BtnOk", "확인", { anchor: "bottom-center", pos: [0, 28], rect_size: [300, 88], font_size: 24 });
 
+  // ── 보상 부위 고르기 카드 (10-30 I01 · goal-items-execution-0030) — 컨트롤러 UI/Windows/GearChoiceWindow.mlua ──
+  //   기존 gen:3 중요 스토리 보상 5개의 장비 한 개만: 서버가 고정한 등급·레벨로 부위 카드 최대 3장 + 카드 아래 「이 부위로」. 영구 선택 보상(OfferWin)과 따로 쓰는 창이고 양식만 같다
+  //   창 1180 = 카드 셋(340×3 + 16×2) + 좌우 64 · 높이 668 = 선택 보상 모드 OfferWin과 같은 세로 배치 (카드 위 −116 · 고르기 단추 −532 · 바닥 여백 48)
+  k.frame("GearPickWin", "middle-center", [0, 20], [1180, 668], "보상 고르기");
+  b.text("GearPickWin/Sub", "", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [1078, 30], alignment: 3, bestfit: true, min_size: 15, max_size: 20 });
+  for (let i = 1; i <= 3; i++) {
+    const c = `GearPickWin/Card${i}`;
+    const x = 64 + (i - 1) * CARD.step;
+    b.button(c, "", { anchor: "top-left", pos: [x, CARD.top], rect_size: [CARD.w, CARD.h], ...bg("sk_offer_card_new"), sprite_type: 0 });
+    b.text(`${c}/Kind`, "", { size: 20, bold: true, color: "#F0D9A0", anchor: "top-center", pos: [0, -50], rect_size: [CARD.text, 26], alignment: 4, bestfit: true, min_size: 14, max_size: 20, ...outline });
+    b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -80], rect_size: [76, 76], color: WHITE, alpha: 1, sprite_type: 0 });
+    k.aspect(`${c}/Icon`);
+    b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+    b.text(`${c}/Name`, "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -160], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 24, ...outline });
+    b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -194], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17, overflow: 1 });
+    b.text(`${c}/Change`, "", { size: 16, color: "#7CFF7A", anchor: "top-center", pos: [0, -274], rect_size: [CARD.text, 72], alignment: 1, bestfit: true, min_size: 12, max_size: 16 });
+    k.ok(`GearPickWin/Pick${i}`, "이 부위로", { anchor: "top-left", pos: [x + 20, CARD.top - CARD.h - 12], rect_size: [300, 88], font_size: 24 });
+  }
+
   // ── NPC 대화 (가까이 가면 화면 아래에 열림, D2처럼 말을 건 뒤 의뢰를 받는다) ──
   k.frame("NpcWin", "bottom-center", [0, 170], [1100, 320], "");
   // 제목(NPC 이름)은 다른 창과 같은 공통 제목 규칙(k.frame: 가운데 · 제목 띠 세로 가운데)을 그대로 쓴다
@@ -699,7 +718,8 @@ function buildGameHud() {
   k.inner("RuneWin/Paper", "top-center", [0, -162], [900, 504], "win_content");
   if (b.find("RuneWin/Paper/List")) b.remove("RuneWin/Paper/List");
   if (b.find("RuneWin/Paper/Scroll")) b.remove("RuneWin/Paper/Scroll");
-  b.text("RuneWin/Hint", "", { size: 17, color: "#9C9488", anchor: "top-center", pos: [0, -128], rect_size: [880, 30], alignment: 4, bestfit: true, min_size: 13, max_size: 17 });
+  // 10-30 I02: 안내 두 줄 — 완성 규칙(부위 · 소켓 수 = 룬 수 · 순서, 등급 무관) + 대장장이 소켓 상한. 탭 아래(−114)와 종이 위(−162) 사이 44
+  b.text("RuneWin/Hint", "", { size: 16, color: "#9C9488", anchor: "top-center", pos: [0, -137], rect_size: [880, 44], alignment: 4, bestfit: true, min_size: 12, max_size: 16 });
   // 10-27 사용자: 「옵션이랑 룬이 너무 붙어 있다」 → 한 쪽 4줄 · 줄 높이 96 → 120, 세 띠로 나눔: 이름·부위(10~40) · 룬(46~80) · 효과(88~112)
   if (b.find("RuneWin/Paper/W5")) b.remove("RuneWin/Paper/W5");
   for (let i = 1; i <= 4; i++) {
@@ -707,7 +727,8 @@ function buildGameHud() {
     b.panel(n, { anchor: "top-left", pos: [10, -6 - (i - 1) * 124], rect_size: [880, 120], color: "#17151D", enable: false });
     b.text(`${n}/Name`, "", { size: 22, bold: true, color: "#E6C88A", alignment: 3, anchor: "top-left", pos: [16, -10], rect_size: [330, 30], bestfit: true, min_size: 16, max_size: 22 });
     b.text(`${n}/Info`, "", { size: 17, color: "#A99F8E", alignment: 3, anchor: "top-left", pos: [350, -12], rect_size: [330, 26], bestfit: true, min_size: 13, max_size: 17 });
-    b.text(`${n}/Ready`, "", { size: 18, bold: true, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-16, -11], rect_size: [180, 28] });
+    // 10-30 I02: 「제작 준비됨」(룬 + 맞는 장비) · 「룬 준비됨 · 맞는 장비 필요」 · 「룬 n / m」 — 긴 글은 줄여서 한 줄 (Info 칸 350~680과 겹치지 않는 폭)
+    b.text(`${n}/Ready`, "", { size: 18, bold: true, color: "#7CD67C", alignment: 5, anchor: "top-right", pos: [-16, -11], rect_size: [180, 28], bestfit: true, min_size: 12, max_size: 18 });
     for (let r = 1; r <= 6; r++) {
       b.sprite(`${n}/R${r}`, { anchor: "top-left", pos: [36 + (r - 1) * 140, -46], rect_size: [34, 34], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
       k.aspect(`${n}/R${r}`);

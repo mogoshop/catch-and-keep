@@ -4,6 +4,8 @@
 -- 거래 중에는 가방 칸을 누르면 거래창에 올라간다 (TradeWindow).
 -- 「정렬」: 등급순(유니크 · 세트 · 레어 · 마법 · 일반 · 룬 · 물약). 「여러 개 선택」: 칸을 눌러 여러 개 고른 뒤 한꺼번에 버리기.
 -- 대장장이 모드(OpenSmith): 두 작업 버튼이 「옵션 바꾸기」·「소켓 뚫기」로 바뀐다.
+--   10-30 I01 「한 줄 바꾸기」(부분 재련): 대장장이 모드에서 「여러 개 선택」 자리 = 한 줄 바꾸기 · 「잠금」 자리 = 다음 줄 ▶ (새 단추·새 창 없음).
+--   결과를 고르기 전인 물건은 어느 모드에서든 「장착」 자리 = 새 옵션 채택 · 「버리기」 자리 = 기존 유지 (ItemData.PartialText · PlayerInventory.RequestPartialReroll/RequestResolvePartial).
 -- 10-29 기획서 45 결정 6-A: 「잠금」(설명 칸 오른쪽 위 BtnLock) — 잠긴 물건은 칸 왼쪽 위 ★, 팔기·버리기·거래에서 빠진다 (서버 PlayerInventory도 막는다).
 --   룬 끼우기는 되돌릴 수 없어 확인 창을 거친다.
 -- 10-27 소켓 (docs/design/37 §5-5): 가방에서 룬을 고르면 빈 소켓이 있는 착용 칸이 금빛으로 깜빡이고(Eq_*/Glow),
@@ -32,6 +34,7 @@ script InventoryWindow extends Logic
     property table Picked = {}          -- 여러 개 선택: 칸 번호 → 그 칸의 아이템 문자열
     property any WheelHandler = nil     -- 마우스 휠 → 옵션 설명 스크롤 (10-10 QA: 긴 옵션이 안 내려갔다)
     property number DescTextW = 740     -- 설명 글 폭 (설명 칸 820 − 안쪽 여백). 모바일 좁은 화면은 WindowFit이 줄인다
+    property integer SmithLine = 1      -- 대장간 「한 줄 바꾸기」로 고칠 줄 (출처 칸 순서 · 고정된 줄이 있으면 그 줄) — 10-30 I01
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -59,8 +62,13 @@ script InventoryWindow extends Logic
             self:ClearSelection()
             self.Picked = {}
         end)
-        _UIKit:Connect(self.Win .. "/BtnMulti", function() self:ToggleMulti() end)
-        _UIKit:Connect(self.Win .. "/BtnLock", function() self:ToggleLock() end)
+        -- 대장간 모드에서는 「여러 개 선택」 자리가 「한 줄 바꾸기」, 「잠금」 자리가 「다음 줄 ▶」 (새 단추·새 창 없이 — 10-30 I01)
+        _UIKit:Connect(self.Win .. "/BtnMulti", function()
+            if self.SmithMode then self:Act("part") else self:ToggleMulti() end
+        end)
+        _UIKit:Connect(self.Win .. "/BtnLock", function()
+            if self.SmithMode then self:NextLine() else self:ToggleLock() end
+        end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] InventoryWindow inspect-first ready")
     end
@@ -174,7 +182,7 @@ script InventoryWindow extends Logic
         self:RenderAppearance(eq, list[self.Selected] or "")
         self:BlinkSockets(list[self.Selected], eq)
         local alive = _Util:IsAlive(_UserService.LocalPlayer)
-        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self.SmithMode), tostring(self.Multi), tostring(self:PickedCount()), tostring(inv.SocketTokens)}, "#")
+        local key = table.concat({inv.BagDigest, inv.EquipDigest, tostring(st.Gold), tostring(st.Level), tostring(alive), tostring(self.Selected), self.SelectedEquipSlot, self.SocketSlot, tostring(belt.HpPot), tostring(belt.MpPot), self.EquipResultAfter, self.EquipResultBefore, tostring(self.SmithMode), tostring(self.Multi), tostring(self:PickedCount()), tostring(inv.SocketTokens), tostring(self.SmithLine)}, "#")
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Gold/Text", tostring(st.Gold))
@@ -197,7 +205,12 @@ script InventoryWindow extends Logic
             elseif i == self.Selected then cellColor = Color(0.42, 0.3, 0.12, 0.95) end
             _UIKit:SetColor(path, cellColor)
         end
-        _UIKit:SetText(self.Win .. "/BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택")
+        -- 대장간 모드: 「한 줄 바꾸기」는 아래 대장장이 분기에서 고른 물건에 맞춰 켠다 (그 전에는 꺼 둔다)
+        if self.SmithMode then
+            self:SetActionButton("BtnMulti", "한 줄 바꾸기", false)
+        else
+            self:SetActionButton("BtnMulti", self.Multi and "선택 끝내기" or "여러 개 선택", true)
+        end
         local hint = "선택 → 설명 확인 · 버튼으로 작업 확정"
         _UIKit:SetText(self.Win .. "/Title", self.SmithMode and "대장간  ·  하르크" or "인벤토리  ·  망자의 장비")   -- 10-29 글귀 확정 78: 대장장이 일을 하는 동안은 대장간
         if self.SmithMode then hint = _UIKit:Colored("#FFD27A", "대장장이: 손볼 물건을 고르세요 · 소켓권 " .. tostring(inv.SocketTokens) .. "장")
@@ -267,10 +280,37 @@ script InventoryWindow extends Logic
             sell = false
             desc = desc .. "\n<color=#FF6464>사망 중에는 장비 작업을 할 수 없습니다.</color>"
         end
+        if self.SelectedEquipSlot == "" and sel ~= nil and _ItemData:HasPendingReroll(sel) then
+            -- 한 줄 바꾸기 결과 고르기 (I01): 어느 모드에서든 이 물건은 채택·유지만 할 수 있다 (창을 닫았다 열어도 · 재접속 뒤에도)
+            self:SetDescription(_ItemData:DescribeDetailed(sel) .. "\n\n" .. _ItemData:PartialText(sel, self.SmithLine))
+            self:SetActionButton("BtnEquip", "새 옵션 채택", alive)
+            self:SetActionButton("BtnSell", "기존 유지", alive)
+            if self.SmithMode then self:SetActionButton("BtnMulti", "한 줄 바꾸기", false) end
+            _UIKit:SetEnabled(self.Win .. "/BtnLock", false)
+            return
+        end
         if self.SmithMode and self.SelectedEquipSlot == "" then
-            -- 대장장이: 옵션 바꾸기(마법·레어) · 소켓 뚫기(소켓 없는 무기·등불·투구·갑옷)
+            -- 대장장이: 옵션 바꾸기(마법·레어) · 소켓 뚫기(소켓 없는 무기·등불·투구·갑옷) · 한 줄 바꾸기(출처가 있는 마법·레어, I01)
             local canReroll = sel ~= nil and alive and _ItemData:CanReroll(sel)
             local canPunch = sel ~= nil and alive and _ItemData:CanPunch(sel)
+            local part = nil
+            if sel ~= nil then part = _ItemData:PartialState(sel) end
+            local fixed = 0
+            local canPart = false
+            if part ~= nil and part.ok then
+                fixed = part.meta.line
+                if fixed > 0 then self.SmithLine = fixed end
+                if self.SmithLine < 1 or self.SmithLine > #part.meta.affixes then self.SmithLine = 1 end
+                canPart = alive and _ItemData:PartialPoolSize(sel, self.SmithLine) > 0
+            end
+            if sel ~= nil then
+                desc = desc .. "\n\n" .. _ItemData:PartialText(sel, self.SmithLine)
+                if part ~= nil and part.ok and not canPart and alive then desc = desc .. "\n" .. _UIKit:Colored("#FF8C64", "이 줄은 바꿀 수 있는 옵션이 없습니다.") end
+            end
+            self:SetActionButton("BtnMulti", "한 줄 바꾸기", canPart)
+            local lineBtn = part ~= nil and part.ok and fixed == 0 and #part.meta.affixes > 1
+            _UIKit:SetEnabled(self.Win .. "/BtnLock", lineBtn)
+            if lineBtn then _UIKit:SetText(self.Win .. "/BtnLock", "다음 줄 ▶") end
             if sel ~= nil then
                 local lines = {}
                 table.insert(lines, canReroll and ("옵션 바꾸기: " .. tostring(_ItemData:RerollCost(sel)) .. " 골드 (옵션·이름을 새로)") or "옵션 바꾸기: 마법·레어 장비만")
@@ -311,6 +351,20 @@ script InventoryWindow extends Logic
         if not show then return end
         local locked = _ItemData:IsLocked(target)
         _UIKit:SetText(self.Win .. "/BtnLock", locked and _UIKit:Colored("#FFD27A", "잠금 해제") or "잠금")
+    end
+
+    @ExecSpace("ClientOnly")
+    method void NextLine()
+        -- 대장간 「다음 줄 ▶」: 한 줄 바꾸기로 고칠 줄을 차례로 고른다 (이미 고정된 줄이 있으면 바꾸지 않는다)
+        local inv = self:Inv()
+        if inv == nil or not _UIKit:IsOpen(self.Win) then return end
+        local sel = inv:GetBagList()[self.Selected]
+        if sel == nil then return end
+        local part = _ItemData:PartialState(sel)
+        if not part.ok or part.meta.line > 0 or #part.meta.affixes < 2 then return end
+        self.SmithLine = self.SmithLine % #part.meta.affixes + 1
+        log("[VRF] partial line pick " .. tostring(self.SmithLine))
+        self:Poll()
     end
 
     @ExecSpace("ClientOnly")
@@ -410,6 +464,7 @@ script InventoryWindow extends Logic
         self.EquipResultSlot = ""
         self.EquipResultBefore = ""
         self.EquipResultAfter = ""
+        self.SmithLine = 1
     end
 
     @ExecSpace("ClientOnly")
@@ -741,6 +796,25 @@ script InventoryWindow extends Logic
         -- 대장장이: 확인 창(비용·결과 안내)을 거쳐 서버에 요청
         local index = self.Selected
         local name = _ItemData:DisplayName(sel)
+        if action == "part" then
+            -- 한 줄 바꾸기 (I01): 값·고정 규칙·「결과를 버려도 골드는 돌려받지 못함」을 확인한 뒤에만 서버에 요청 (취소는 무료)
+            local part = _ItemData:PartialState(sel)
+            if not part.ok or part.meta.pending ~= nil then return end
+            local line = self.SmithLine
+            if part.meta.line > 0 then line = part.meta.line end
+            if _ItemData:PartialPoolSize(sel, line) <= 0 then return end
+            local cost = _ItemData:PartialRerollCost(sel)
+            local a = part.meta.affixes[line]
+            local rule = "이 줄이 이 장비의 고정 줄이 됩니다. 다른 줄은 한 줄 바꾸기를 할 수 없습니다."
+            if part.meta.line > 0 then rule = "고정된 줄을 다시 새깁니다." end
+            local body = name .. "\n바꿀 줄: " .. _ItemData:AffixLineText(a.id, a.val) .. "\n" .. rule .. "\n새 후보를 본 뒤 기존 유지나 새 옵션 채택을 고릅니다. 기존을 남겨도 골드는 돌려받지 못합니다.\n"
+                .. _UIKit:Colored("#FFD27A", tostring(cost) .. " 골드") .. " (가진 골드 " .. tostring(st.Gold) .. ")"
+            _ConfirmDialog:ShowIcon("한 줄 바꾸기", body, "바꾸기", _ItemData:IconFor(sel), function()
+                inv:RequestPartialReroll(index, sel, line)
+                log("[VRF] partial confirm line=" .. tostring(line) .. " cost=" .. tostring(cost))
+            end)
+            return
+        end
         if action == "equip" then
             if not _ItemData:CanReroll(sel) then return end
             local cost = _ItemData:RerollCost(sel)
@@ -775,6 +849,14 @@ script InventoryWindow extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if self.Multi then
             self:ActMulti(action, list, inv)
+            return
+        end
+        if self.SelectedEquipSlot == "" and sel ~= nil and _ItemData:HasPendingReroll(sel) then
+            -- 한 줄 바꾸기 결과: 「새 옵션 채택」(장착 자리) · 「기존 유지」(버리기 자리). 골드는 더 들지 않는다
+            if action == "equip" or action == "sell" then
+                inv:RequestResolvePartial(self.Selected, sel, action == "equip")
+                log("[VRF] partial resolve request accept=" .. tostring(action == "equip"))
+            end
             return
         end
         if self.SmithMode and self.SelectedEquipSlot == "" and sel ~= nil then

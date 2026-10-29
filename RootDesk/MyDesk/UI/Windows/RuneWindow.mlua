@@ -1,6 +1,9 @@
 -- 룬워드 조합법 창 (메뉴 「룬워드」): 룬워드마다 넣을 룬 순서·부위·소켓 수·효과, 그리고 룬 하나하나의 부위별 효과.
 -- 가방에 가진 룬은 밝게, 없는 룬은 어둡게 보여 준다 (조합에 무엇이 모자란지 바로 보이게).
--- 10-27 사용자: 글 나열 → 줄마다 룬 그림(runes.csv icon) · 가진 개수 · 룬이 다 있으면 「만들 수 있음」, 룬 탭 이름에 가진 개수.
+-- 10-27 사용자: 글 나열 → 줄마다 룬 그림(runes.csv icon) · 가진 개수 · 룬 탭 이름에 가진 개수.
+-- 10-30 I02 (A안 · 현행 판정 유지): 완성 규칙은 ItemData.GetRuneword 그대로 — 부위 · 소켓 수 = 룬 수 · 정확한 순서, 등급 제한 없음.
+--   줄 오른쪽 표시는 룬만 보지 않는다: 「제작 준비됨」 = 남은 룬을 가졌고 맞는 장비(부위·소켓 수·이미 끼운 룬이 앞 순서와 같음·착용 가능)가 가방/착용에 있음
+--   · 「룬 준비됨 · 맞는 장비 필요」 = 룬은 다 있으나 맞는 장비가 없음 · 「룬 n / m」 = 룬이 모자람. 대장장이 소켓 상한(일반 2~최대 · 마법 1~2 · 그 외 1)을 안내 줄에 적는다.
 @Logic
 script RuneWindow extends Logic
 
@@ -55,8 +58,16 @@ script RuneWindow extends Logic
         ---@type PlayerInventory
         local inv = _UIKit:Comp("script.PlayerInventory")
         local bag = ""
-        if inv ~= nil then bag = inv.BagDigest end
-        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. bag
+        local worn = ""
+        if inv ~= nil then
+            bag = inv.BagDigest
+            worn = inv.EquipDigest
+        end
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local level = 1
+        if st ~= nil then level = st.Level end
+        local key = self.Tab .. "#" .. tostring(self.Page) .. "#" .. bag .. "#" .. worn .. "#" .. tostring(level)
         if key == self.LastKey then return end
         self.LastKey = key
         local owned = self:OwnedRunes(bag)
@@ -75,7 +86,7 @@ script RuneWindow extends Logic
         end
         local pages = 1
         if self.Tab == "words" then
-            pages = self:RenderWords(owned)
+            pages = self:RenderWords(owned, self:GearList(inv), level)
         else
             local ranges = { runes1 = { 1, 8 }, runes2 = { 9, 16 }, runes3 = { 17, 24 } }
             local r = ranges[self.Tab] or ranges.runes1
@@ -93,9 +104,9 @@ script RuneWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method integer RenderWords(table owned)
-        -- 룬워드 한 줄: 이름 · 부위·소켓 · 룬 그림(순서대로, 가진 룬은 밝게 ×개수) · 효과 · 「만들 수 있음」
-        _UIKit:SetText(self.Win .. "/Hint", "소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬워드가 됩니다 · 가진 룬은 밝게")
+    method integer RenderWords(table owned, table gear, integer level)
+        -- 룬워드 한 줄: 이름 · 부위·소켓 · 룬 그림(순서대로, 가진 룬은 밝게 ×개수) · 효과 · 준비 상태(ReadyText)
+        _UIKit:SetText(self.Win .. "/Hint", "부위가 맞고 소켓 수가 룬 개수와 같은 장비에 룬을 순서대로 끼우면 룬워드가 됩니다 (장비 등급과 관계없음) · 가진 룬은 밝게\n대장장이 소켓 뚫기: 일반 2~최대 · 마법 1~2 · 레어·유니크·세트 1 · 룬은 착용 중인 장비에 끼웁니다")
         local list = self:WordList(owned)
         -- 10-27: 한 쪽 4줄 (줄 높이를 키워 룬과 효과 사이를 띄웠다)
         local per = 4
@@ -109,7 +120,7 @@ script RuneWindow extends Logic
             if e ~= nil then
                 _UIKit:SetText(row .. "/Name", e.rw.name)
                 _UIKit:SetText(row .. "/Info", self:SlotName(e.rw.slots) .. " · 소켓 " .. tostring(#e.ids) .. "칸 · Lv" .. tostring(e.need))
-                _UIKit:SetText(row .. "/Ready", e.have >= #e.ids and "만들 수 있음" or _UIKit:Colored("#8A8478", "룬 " .. tostring(e.have) .. " / " .. tostring(#e.ids)))
+                _UIKit:SetText(row .. "/Ready", self:ReadyText(e, owned, gear, level))
                 for r = 1, 6 do
                     local id = e.ids[r]
                     local path = row .. "/R" .. tostring(r)
@@ -186,6 +197,45 @@ script RuneWindow extends Logic
             return a.rw.name < b.rw.name
         end)
         return list
+    end
+
+    method table GearList(PlayerInventory inv)
+        -- 가방과 착용 중인 장비 문자열 (룬워드 바탕 후보)
+        local list = {}
+        if inv == nil then return list end
+        for _, s in ipairs(inv:GetBagList()) do table.insert(list, s) end
+        for _, s in pairs(inv:GetEquipMap()) do table.insert(list, s) end
+        return list
+    end
+
+    method boolean BaseFits(string s, table e, table owned, integer level)
+        -- 이 장비로 지금 그 룬워드를 끝낼 수 있는가: 부위 · 소켓 수 = 룬 수 · 이미 끼운 룬이 조합 앞 순서와 같음 · 남은 룬을 가짐 · 착용 가능 레벨 (판정 규칙은 GetRuneword · SocketRune과 같다, 등급 무관)
+        if s == nil or s == "" or _ItemData:IsRune(s) then return false end
+        local item = _ItemData:Parse(s)
+        local base = _ItemData:GetBase(item.base)
+        if base == nil or base.reqLv > level or item.sockets ~= #e.ids or #item.runes >= item.sockets then return false end
+        if string.find("," .. e.rw.slots .. ",", "," .. base.slot .. ",", 1, true) == nil then return false end
+        if _ItemData:HasPendingReroll(s) then return false end
+        local left = {}
+        for id, n in pairs(owned) do left[id] = n end
+        for i, id in ipairs(e.ids) do
+            if i <= #item.runes then
+                if item.runes[i] ~= id then return false end
+            else
+                if (left[id] or 0) <= 0 then return false end
+                left[id] = left[id] - 1
+            end
+        end
+        return true
+    end
+
+    method string ReadyText(table e, table owned, table gear, integer level)
+        -- 줄 오른쪽 준비 상태: 제작 준비됨 / 룬 준비됨 · 맞는 장비 필요 / 룬 n / m (룬만 보고 「만들 수 있음」이라 하지 않는다 — I02)
+        for _, s in ipairs(gear) do
+            if self:BaseFits(s, e, owned, level) then return "제작 준비됨" end
+        end
+        if e.have >= #e.ids then return _UIKit:Colored("#E6C88A", "룬 준비됨 · 맞는 장비 필요") end
+        return _UIKit:Colored("#8A8478", "룬 " .. tostring(e.have) .. " / " .. tostring(#e.ids))
     end
 
     method table OwnedRunes(string bag)
