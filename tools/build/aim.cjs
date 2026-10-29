@@ -14,6 +14,11 @@ function run() {
   const file = P.ui('AimHUD');
   const b = UIBuilder.load(file);
   if (!b.find('Direction')) b.sprite('Direction', { anchor: 'middle-center', pos: [0, 0], rect_size: [24, 30], enable: false });
+  // 44-2 궁극기 연출: 내 화면만 0.25초 어둡게 (SkillEffects.ShowUltimate가 알파를 0.42 → 0으로 걷는다). AimHUD는 가장 아래 UI 그룹(ui-order 0)이라
+  //   월드만 어두워지고 HUD·창은 그대로 밝다. 누름을 가로채지 않게 RaycastTarget 끔 · 화면 비율이 달라도 덮게 크게(확인 창 Dim과 같은 4000×3000) · 조준 쐐기보다 뒤
+  b.panel('UltDim', { anchor: 'middle-center', pos: [0, 0], rect_size: [4000, 3000], color: { r: 0, g: 0, b: 0, a: 0 }, raycast: false, enable: false });
+  b.patch('UltDim', { display_order: 0 });
+  b.patch('Direction', { display_order: 1 });
   applyResources(b);
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;

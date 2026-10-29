@@ -32,6 +32,10 @@ script CompanionHUD extends Logic
             end
         end
         _UIKit:Connect(self.Strip .. "/Page", function() self:NextPage() end)
+        for i = 1, 4 do
+            local index = i
+            _UIKit:Connect(self.Strip .. "/Unit" .. tostring(i) .. "/Frame", function() self:PickCard(index) end)
+        end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, 0.2)
         log("[VRF] CompanionHUD ready pageSize=4")
     end
@@ -73,6 +77,24 @@ script CompanionHUD extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void PickCard(integer index)
+        -- 44-3 B 대상 고르기 (모바일 · PC 공용): 그림자 칸을 누르면 그 칸의 그림자(×N이면 첫 개체)를 고른다 — 다시 누르면 풀림.
+        --   해골·마법사·되살림 칸은 승격·희생 대상이 아니라 안내만
+        if not _UIKit:CanUseGameplayInput() then return end
+        local g = self.Units[self.Page * 4 + index]
+        if g == nil then return end
+        if g.kind ~= "shadow" or not isvalid(g.entity) then
+            _HudMain:ShowWarn("그림자만 고를 수 있습니다")
+            return
+        end
+        ---@type ShadowCommander
+        local cmd = _UIKit:Comp("script.ShadowCommander")
+        if cmd == nil then return end
+        cmd:RequestPickShadow(g.entity)
+        log("[VRF] companion card pick " .. g.entity.Name)
+    end
+
+    @ExecSpace("ClientOnly")
     method void NextPage()
         -- 소환수 수가 줄면 남은 페이지 범위 안에서만 순환한다.
         local pages = math.max(1, math.ceil(self.UnitCount / 4))
@@ -91,9 +113,12 @@ script CompanionHUD extends Logic
             return
         end
         if p.CurrentMap.Id ~= self.LastMapId then self.LastMapId = p.CurrentMap.Id self.Page = 0 end
-        -- 같은 종류는 한 칸으로 묶는다: 수·생명 합계·가장 약한 개체의 체력 비율·승격 여부
+        -- 같은 종류는 한 칸으로 묶는다: 수·생명 합계·가장 약한 개체의 체력 비율·승격 여부 · 고른 그림자(44-3 B)가 든 칸
         local groups = {}
         local byKind = {}
+        ---@type ShadowCommander
+        local cmd = p:GetComponent("script.ShadowCommander")
+        local picked = (cmd ~= nil and isvalid(cmd.PickedLocal) and _UtilLogic.ElapsedSeconds < cmd.PickedLocalUntil) and cmd.PickedLocal or nil
         for _, c in ipairs(p.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
             ---@type ShadowUnit
             local u = c
@@ -106,16 +131,17 @@ script CompanionHUD extends Logic
                 local key = u.Kind == "shadow" and ("shadow:" .. src) or ((u.Kind == "skeleton" or u.Kind == "mage") and (u.Kind .. ":" .. src) or u.Kind)
                 local g = byKind[key]
                 if g == nil then
-                    g = { kind = u.Kind, src = src, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id }
+                    g = { kind = u.Kind, src = src, count = 0, hp = 0, maxHp = 0, lowest = 1, promoted = false, state = u.CommandState, portrait = u.StandRUID, first = u.Entity.Id, entity = u.Entity, picked = false }
                     byKind[key] = g
                     table.insert(groups, g)
                 end
+                if u.Entity == picked then g.picked = true end
                 g.count = g.count + 1
                 g.hp = g.hp + u.Hp
                 g.maxHp = g.maxHp + u.MaxHp
                 g.lowest = math.min(g.lowest, u.Hp / math.max(1, u.MaxHp))
                 if u.Promoted then g.promoted = true end
-                if u.Entity.Id < g.first then g.first = u.Entity.Id g.state = u.CommandState g.portrait = u.StandRUID end
+                if u.Entity.Id < g.first then g.first = u.Entity.Id g.state = u.CommandState g.portrait = u.StandRUID g.entity = u.Entity end
                 local v = u.Variant ~= "" and _GameData:GetVariantOf(u.Variant, "aura") or nil
                 if v ~= nil and (g.auraValue == nil or v.value > g.auraValue) then g.aura = v.effect g.auraName = v.label g.auraValue = v.value end
             end
@@ -167,6 +193,7 @@ script CompanionHUD extends Logic
                 local frame = Color(1, 1, 1, 1)
                 if g.promoted then frame = Color(1, 0.86, 0.56, 1) end
                 if g.lowest <= 0.25 then frame = Color(1, 0.65, 0.65, 1) end
+                if g.picked then frame = Color(0.55, 0.9, 1, 1) end   -- 고른 그림자 칸 (44-3 B · 승격·희생이 이 그림자를 먼저 쓴다)
                 _UIKit:SetColor(base .. "/Frame", frame)
                 _UIKit:SetText(base .. "/State", "")
                 -- 오오라는 오른쪽 위 작은 아이콘 + 등급 테두리 (설명은 생명 오브 위 버프 칩 · 10-24 사용자). 아이콘이 없으면 오오라 색 원

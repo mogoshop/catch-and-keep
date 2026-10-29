@@ -26,6 +26,17 @@ function run() {
     b.patchComponent(`${unit}/HP`, 'MOD.Core.SpriteGUIRendererComponent', { ImageRUID: { DataId: icons.gauge_frame }, Color: { r: 1, g: 1, b: 1, a: 1 }, Type: 1, RaycastTarget: false });
     b.patch(`${unit}/HP/Fill`, { anchor: 'middle-left', pivot: [0, 0.5], pos: [6, 0], rect_size: [76, 6] });
     b.patchComponent(`${unit}/HP/Fill`, 'MOD.Core.SpriteGUIRendererComponent', { ImageRUID: { DataId: WHITE_FILL }, Type: 3, FillMethod: 0, FillOrigin: 0, FillAmount: 1, RaycastTarget: false });
+    // 44-3 B 대상 고르기: 칸 테두리(Frame)를 누르면 그 그림자를 고른다 (정예 승격·그림자 희생이 먼저 쓴다 — CompanionHUD.PickCard).
+    //   테두리 색은 스크립트가 바꾸므로(정예 금빛·위급 붉은·고름 하늘) 단추 색 전환은 끈다(Transition 0). 초상은 누름을 가로채지 않게
+    b.patchComponent(`${unit}/Frame`, 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: true });
+    b.upsertComponent(`${unit}/Frame`, 'MOD.Core.ButtonComponent', {
+      '@type': 'MOD.Core.ButtonComponent',
+      Colors: { NormalColor: { r: 1, g: 1, b: 1, a: 1 }, HighlightedColor: { r: 1, g: 1, b: 1, a: 1 }, PressedColor: { r: 1, g: 1, b: 1, a: 1 }, SelectedColor: { r: 1, g: 1, b: 1, a: 1 }, DisabledColor: { r: 1, g: 1, b: 1, a: 1 }, ColorMultiplier: 1, FadeDuration: 0.1 },
+      IgnoreMapLayerCheck: false,
+      ImageRUIDs: { HighlightedSprite: null, PressedSprite: null, SelectedSprite: null, DisabledSprite: null },
+      KeyCode: 0, OrderInLayer: 0, OverrideSorting: false, SortingLayer: 'UI', Transition: 0, Enable: true,
+    });
+    b.patchComponent(`${unit}/Portrait`, 'MOD.Core.SpriteGUIRendererComponent', { RaycastTarget: false });
   }
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;

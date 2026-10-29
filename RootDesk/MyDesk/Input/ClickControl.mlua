@@ -81,7 +81,12 @@ script ClickControl extends Component
         if soul ~= nil then
             self:SelectAttackTarget(nil)
             self.ExtractTarget = soul
+            return
         end
+        -- 44-3 B: 혼이 없는 자리에서 내 그림자를 누르면 그 그림자를 고른다 (정예 승격·그림자 희생이 먼저 쓴다 · 다시 누르면 풀림).
+        --   혼 위에 선 그림자는 혼 추출이 먼저 — 그때는 소환수 띠 카드(CompanionHUD.PickCard)로 고른다
+        local unit = self:FindMyShadowNear(Vector2(world.x, world.y), self.PickRadius * 1.2)
+        if unit ~= nil then self:PickShadow(unit) end
     end
 
     @ExecSpace("ClientOnly")
@@ -103,8 +108,44 @@ script ClickControl extends Component
         self.BlockedPick = false
         self.SlideCount = 0
         self.StuckTime = 0
+        -- 44-3 B: 몬스터·전리품이 없는 자리에서 내 그림자 몸을 정확히(0.4칸) 누르면 이동 대신 그 그림자를 고른다 (누르고 끌면 그다음부터 이동)
+        local world = _UILogic:ScreenToWorldPosition(event.TouchPoint)
+        if self:FindMonsterNear(world) == nil and self:FindLootNear(world) == nil then
+            local unit = self:FindMyShadowNear(world, 0.4)
+            if unit ~= nil then
+                self:PickShadow(unit)
+                return
+            end
+        end
         -- 클릭 지점의 빛 터짐 효과는 화면을 어지럽혀 뺐다 (이동은 캐릭터 움직임으로 보인다)
         self:Pick(event.TouchPoint)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindMyShadowNear(Vector2 point, number radius)
+        -- 누른 자리에 가장 가까운 내 그림자 (보관함 그림자만 — 해골·마법사는 승격·희생 대상이 아니다). 화면에 그려진 몸(대역) 기준, 발밑보다 몸통을 누르므로 y를 내린다
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return nil end
+        local best, bestD = nil, radius
+        local p = Vector2(point.x, point.y - 0.25)
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.Entity.Enable and u.OwnerPlayer == self.Entity and u.Kind == "shadow" and not u.Taste and u.Hp > 0 then
+                local d = (_Util:Pos2(_MotionSmoother:VisOf(u.Entity)) - p):Magnitude()
+                if d < bestD then best, bestD = u.Entity, d end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickShadow(Entity unit)
+        -- 그림자 고르기 요청 (서버가 다시 확인 · 표시는 ShadowCommander.ShowPick)
+        ---@type ShadowCommander
+        local cmd = self.Entity:GetComponent("script.ShadowCommander")
+        if cmd ~= nil then cmd:RequestPickShadow(unit) end
+        if not Environment:IsPublishedPlay() then log("[VRF] shadow pick click " .. unit.Name) end
     end
 
     @ExecSpace("ClientOnly")

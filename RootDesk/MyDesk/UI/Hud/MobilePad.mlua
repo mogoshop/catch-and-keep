@@ -18,6 +18,8 @@ script MobilePad extends Logic
     property boolean GestureBasic = false
     property Entity GestureMap = nil
     property number AimDeadZone = 18
+    property number AimMaxPx = 200           -- 44-3 A: 이만큼(1920 기준 px) 끌면 땅 찍기 조준이 최대 거리(SkillBook.GroundCastRange)
+    property number AimReach = 0             -- 지금 끈 길이 비율 0~1 (데드존 = 0 · AimMaxPx = 1) — SkillBook.GetAimPoint가 땅 찍기 거리로 쓴다
     property boolean PickMode = false        -- 공격 단추가 「줍기」로 바뀐 상태 (10-28 사용자: 손으로 주울 장비 가까이 · 싸우는 중이 아닐 때)
     property number PickCheckAt = 0
 
@@ -43,6 +45,7 @@ script MobilePad extends Logic
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Summon", function() self:Command("deploy") end)
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Recall", function() self:Command("recall") end)
         _UIKit:Connect(self.Root .. "/Shadow/Cmds/Rally", function() self:Command("rally") end)
+        _UIKit:Connect(self.Root .. "/Shadow/Cmds/Focus", function() self:Command("focus") end)   -- 44-3 D 「저 적을」: 고른 적에게 모두 집중 (PC는 C 길게)
         _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", false)
         _UIKit:SetEnabled(self.Root .. "/BtnSkillEdit", false)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
@@ -122,6 +125,9 @@ script MobilePad extends Logic
         local deadZone = math.max(12, self.AimDeadZone * _UILogic.ScreenWidth / 1920)
         attack.LocalAimActive = offset:Magnitude() >= deadZone
         if attack.LocalAimActive then attack.LocalAimDirection = offset:Normalize() end
+        -- 끈 길이 비율 (땅 찍기 거리 비례 · 44-3 A): 데드존 끝 0 → AimMaxPx 1
+        local full = math.max(deadZone + 1, self.AimMaxPx * _UILogic.ScreenWidth / 1920)
+        self.AimReach = math.max(0, math.min(1, (offset:Magnitude() - deadZone) / (full - deadZone)))
     end
 
     @ExecSpace("ClientOnly")
@@ -131,6 +137,7 @@ script MobilePad extends Logic
         self:UpdateGesture(touchId, point)
         local player = _UserService.LocalPlayer
         if self.GestureTouchId ~= 0 and isvalid(player) and player.PlayerComponent.Hp > 0 and player.CurrentMap == self.GestureMap and not _UIKit:AnyWindowOpen() and not self.GestureBasic then
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] mobile aim release slot=%d reach=%.2f", self.GestureSlot, self.AimReach)) end
             if self.GestureSlot == 5 then self:Attack() else self:Cast(self.GestureSlot) end
         end
         self:ClearGesture()
@@ -144,6 +151,7 @@ script MobilePad extends Logic
         self.GestureSlot = 0
         self.GestureMap = nil
         self.GestureBasic = false
+        self.AimReach = 0
         local player = _UserService.LocalPlayer
         if isvalid(player) then
             local attack = player:GetComponent("script.PlayerAttack")
@@ -351,6 +359,7 @@ script MobilePad extends Logic
         if cmd == nil then return end
         if action == "deploy" then cmd:RequestDeploy("")
         elseif action == "recall" then cmd:RequestRecall("")
+        elseif action == "focus" then cmd:TryFocus()
         else cmd:RequestRally() end
         self.CmdsOpen = false
         _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds", false)
@@ -430,6 +439,7 @@ script MobilePad extends Logic
         -- 그림자 명령 버튼은 그림자 소환을 배운 뒤에만, 집결은 「집결」을 배운 뒤에만
         _UIKit:SetEnabled(self.Root .. "/Shadow", summon)
         _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds/Rally", rally)
+        _UIKit:SetEnabled(self.Root .. "/Shadow/Cmds/Focus", rally)
     end
 
 end

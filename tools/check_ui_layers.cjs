@@ -87,7 +87,11 @@ const registered = new Set();
     }
   }
 })(path.join(ROOT, "RootDesk/MyDesk"));
+// 창이 아닌 큰 판: 일부러 HUD 아래에 까는 화면 덮개 (가려지는 것이 맞다)
+//   AimHUD/UltDim = 44-2 궁극기 연출 — 월드만 0.25초 어둡게 하고 HUD·창은 그대로 밝게 두려고 가장 아래 그룹(AimHUD)에 둔다
+const NOT_WINDOW = new Set(["/ui/AimHUD/UltDim"]);
 function isWindow(n) {
+  if (NOT_WINDOW.has(n.path)) return false;
   const name = n.path.substring(n.path.lastIndexOf("/") + 1);
   if (registered.has(name) || registered.has(n.path) || /Win$/.test(name)) return true;
   if (n.enable || !(n.parent && n.parent.shownByDefault)) return false;

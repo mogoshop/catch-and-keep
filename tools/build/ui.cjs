@@ -398,6 +398,8 @@ function buildGameHud() {
   b.sprite(`${tl}/Bar/Mark`, { anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 116], rect_size: [4, 236], ...part("sk_tl_nowline"), sprite_type: 0 });
   b.sprite(`${tl}/Bar/Mark/Pin`, { anchor: "bottom-center", pivot: [0.5, 0.5], pos: [0, 2], rect_size: [28, 34], ...part("sk_tl_marker"), sprite_type: 0 });
   b.text(`${tl}/Bar/Now`, "", { size: 16, bold: true, color: "#FFE9A8", anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [80, 22], alignment: 4, ...outline });
+  // 44-7 단계 표지: 고른 스킬의 랭크 단계(투사체 5·8·12 등)가 열리는 캐릭터 레벨 자리 (SkillWindow.RenderStageMarks — 위치·색은 실행 중에)
+  for (let i = 1; i <= 4; i++) b.sprite(`${tl}/Bar/St${i}`, { anchor: "middle-left", pivot: [0.5, 0.5], pos: [0, 0], rect_size: [18, 18], ...part("sk_rank_pip_filled"), sprite_type: 0, enable: false });
   // 스킬 공방 (판 452: 왼쪽 = 초상·이름·설명·효과·랭크 점·배우기 단추 / 오른쪽 = 강화 노드 6열 × 3줄)
   //   두 판 그림은 위·아래에 투명 여백(시간선 아래 16 · 공방 위 21)이 있어 판 사이를 12 띄우면 눈에는 50이 빈다 → 여백끼리 겹쳐 보이는 틈 12 (메이커 캡처 10-28)
   const ws = "SkillWin/WS";
@@ -952,9 +954,10 @@ function patchShadowHud() {
   k.badge("MobilePad/Shadow/Toggle");
   s.empty("MobilePad/Shadow/Cmds", { anchor: "stretch", pos: [0, 0], rect_size: [1920, 1080] });
   fill("MobilePad/Shadow/Cmds");
-  [["Summon", "소환", SKILL_ICON.shadow_summon], ["Recall", "회수", K.icon_scroll], ["Rally", "집결", SKILL_ICON.rally]].forEach(([n, label, ruid], i) => {
+  // 44-3 D 「저 적을」: 집결 위에 「집중」 — 고른 적에게 모든 소환수가 3초 집중 (PC는 C 길게 · MobilePad.Command("focus"))
+  [["Summon", "소환", SKILL_ICON.shadow_summon], ["Recall", "회수", K.icon_scroll], ["Rally", "집결", SKILL_ICON.rally], ["Focus", "집중", K.icon_sword]].forEach(([n, label, ruid], i) => {
     const path = `MobilePad/Shadow/Cmds/${n}`;
-    const p = [[-600, 316], [-600, 432], [-716, 316]][i];   // 소환·회수는 펼침 단추 위, 집결은 그 왼쪽 (추출 단추 위)
+    const p = [[-600, 316], [-600, 432], [-716, 316], [-716, 432]][i];   // 소환·회수는 펼침 단추 위, 집결은 그 왼쪽 (추출 단추 위), 집중은 집결 위
     k.slot(path, { ...center, pos: p, rect_size: [100, 100] }, 56);
     s.patchComponent(`${path}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { ImageRUID: { DataId: ruid } });
     s.patch(`${path}/Icon`, { enable: true });
