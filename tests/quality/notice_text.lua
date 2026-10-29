@@ -163,4 +163,24 @@ for _, wt in ipairs({ 1060, 900 }) do   -- 큰 창(화면 맨 위 자리) · 위
     NoticeFeed:Tick(); topOK("tick@" .. wt)
     cases = cases + 6
 end
-print(string.format("[quality/notice_text] notice edge: new·dup×3·gold merge·newline·tick, top <= 1072 in %d cases (screen-top and above-window)", cases))
+-- Tick 만료 경계 (코덱스 52721516 검토 · 공개 Push 순서만): t0 긴 A → t0.05 A → t0.1 짧은 B → t1 A(기존 A 합산·시각 갱신) → t4.2 Tick.
+--   짧은 B(44)와 오래된 A가 만료되고 긴 A(80)가 첫 줄이 된다 — 예전엔 지우기 전 B 높이로 자리를 잡아 위 끝 1108
+for _, wt in ipairs({ 1060, 900 }) do
+    winTop = wt
+    WRAP = 40
+    NoticeFeed.Lines = {}; NoticeFeed.Edge = false; NoticeFeed.Home = nil; NoticeFeed.EdgeSide = ""; NoticeFeed.EdgeNeed = 0
+    local long = string.rep("x", 60)
+    _UtilLogic.ElapsedSeconds = 0; NoticeFeed:Push(long)
+    _UtilLogic.ElapsedSeconds = 0.05; NoticeFeed:Push(long)
+    _UtilLogic.ElapsedSeconds = 0.1; NoticeFeed:Push("short-result"); topOK("expiry-pre@" .. wt)
+    _UtilLogic.ElapsedSeconds = 1; NoticeFeed:Push(long); topOK("expiry-merge@" .. wt)
+    assert(#NoticeFeed.Lines == 3 and NoticeFeed.Lines[1].text == "short-result" and NoticeFeed.Lines[2].count == 2 and NoticeFeed.Lines[2].at == 1, "expiry fixture setup")
+    _UtilLogic.ElapsedSeconds = 4.2; NoticeFeed:Tick()
+    local h = topOK("expiry-tick@" .. wt)
+    assert(#NoticeFeed.Lines == 1 and h == 80 and NoticeFeed.EdgeNeed == 80, string.format("expiry: rows=%d h=%d need=%d", #NoticeFeed.Lines, h, NoticeFeed.EdgeNeed))
+    _UtilLogic.ElapsedSeconds = 4.3; NoticeFeed:Tick(); topOK("expiry-next@" .. wt)
+    _UtilLogic.ElapsedSeconds = 6; NoticeFeed:Tick()   -- 모두 만료: 빈 목록에서도 그대로 (줄 숨김)
+    assert(#NoticeFeed.Lines == 0 and not ents["/ui/RewardHUD/Feed/Line1"].Enable, "all expired should hide lines")
+    cases = cases + 5
+end
+print(string.format("[quality/notice_text] notice edge: new·dup×3·gold merge·newline·tick·expiry, top <= 1072 in %d cases (screen-top and above-window)", cases))
