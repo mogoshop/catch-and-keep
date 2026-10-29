@@ -1,7 +1,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source JournalData Data/JournalData.mlua Ensure,GetDailies,GetDaily,GetMonsters,GetAchievement
 -- @source ItemTables Data/ItemTables.mlua Ensure
--- @source PlayerJournal Progress/PlayerJournal.mlua DailyAvailable,EnsureDaily,Record,DailyIndex,Diff,CompleteDaily,DailyGold,MonsterCount,Progress,RequestClaim,AchGold,CountClaims,PickBonusRune,LoadSaveData,SetTitle
+-- @source PlayerJournal Progress/PlayerJournal.mlua Today,GetSaveData,DailyAvailable,EnsureDaily,Record,DailyIndex,Diff,CompleteDaily,DailyGold,MonsterCount,Progress,RequestClaim,AchGold,CountClaims,PickBonusRune,LoadSaveData,SetTitle
 -- @source PlayerInventory Item/PlayerInventory.mlua PutBagItems
 _GameData:Ensure();_JournalData:Ensure();_ItemTables:Ensure()
 math.randomseed(20261029)
@@ -17,6 +17,11 @@ local entity={PlayerComponent={UserId='owner'},GetComponent=function(_,key)
 PlayerJournal.Entity=entity
 _QuestData={Count=function() return 25 end}
 local day=20700
+local actualToday=PlayerJournal.Today
+DateTime={UtcNow={Elapsed=20700*86400000-9*3600000-1}}
+assert(actualToday(PlayerJournal)==20699)
+DateTime.UtcNow.Elapsed=DateTime.UtcNow.Elapsed+1
+assert(actualToday(PlayerJournal)==20700,'KST midnight boundary')
 PlayerJournal.Today=function() return day end
 local function reset() PlayerJournal.DailyDay=0;PlayerJournal.Daily={};PlayerJournal.Dirty=false end
 local function key() local keys={} for _,slot in ipairs(PlayerJournal.Daily) do table.insert(keys,slot.id) end return table.concat(keys,',') end
@@ -126,4 +131,14 @@ local pick=PlayerJournal.PickBonusRune;PlayerJournal.PickBonusRune=function() re
 PlayerJournal:RequestClaim('a_kill1000@2');assert(stats.Gold==5 and PlayerJournal.AchClaim['a_kill1000@2'])
 PlayerJournal.PickBonusRune=pick
 senderUserId='stranger';PlayerJournal:RequestClaim('a_kill1000@2');assert(stats.Gold==5 and #inv.Bag==0)
+-- A normal journal serialization retains failed claims, and a consumed claim does not revive on reload.
+senderUserId='owner';PlayerJournal.Titles={};PlayerJournal.TitlePick=''
+PlayerJournal.AchDone={['a_kill1000@2']=true};PlayerJournal.AchClaim={['a_kill1000@2']=true}
+inv.Bag={} for i=1,60 do inv.Bag[i]='held' end
+PlayerJournal:RequestClaim('a_kill1000@2')
+local failedSave=PlayerJournal:GetSaveData();PlayerJournal:LoadSaveData(failedSave)
+assert(PlayerJournal.AchClaim['a_kill1000@2'])
+table.remove(inv.Bag);PlayerJournal:RequestClaim('a_kill1000@2')
+local claimedSave=PlayerJournal:GetSaveData();PlayerJournal:LoadSaveData(claimedSave)
+assert(not PlayerJournal.AchClaim['a_kill1000@2'] and PlayerJournal.AchDone['a_kill1000@2'])
 print('[quality/journal] daily 7/8-pool rotation, 0-pool, completion replacement/progress preservation, canonical/legacy core13, saved awards, bags59/60/61 and duplicate claims passed')

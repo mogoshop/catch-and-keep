@@ -1,7 +1,7 @@
 -- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source ItemTables Data/ItemTables.mlua Ensure
--- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName
+-- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods
 _ItemTables:Ensure()
 _GameData:Ensure()
 math.randomseed(20261029)
@@ -38,6 +38,29 @@ for _,ilvl in ipairs(levels) do
         end
     end
 end
+-- Sparse/corrupt data terminates with existing minimal fallback; no invalid affix is invented to fake 3~5.
+local affixes=_ItemTables.Affixes
+_ItemTables.Affixes={}
+local empty={mods={}};_ItemData:FillAffixes(empty,{slot='boots',name='fixture'},42,2)
+assert(count(empty.mods)==1 and empty.mods.life~=nil)
+_ItemTables.Affixes={{stat='def',prefix=false,ilvl=1,tier=0,slots='boots',name='fixture',min=1,max=2}}
+local single={mods={}};_ItemData:FillAffixes(single,{slot='boots',name='fixture'},1,2)
+assert(count(single.mods)==1 and single.mods.def~=nil)
+_ItemTables.Affixes=affixes
+-- Magic's one/two-affix branches keep their previous policy.
+local randomDouble=_UtilLogic.RandomDouble
+for _,roll in ipairs({0,0.9}) do
+ _UtilLogic.RandomDouble=function() return roll end
+ local magic={mods={}};_ItemData:FillAffixes(magic,{slot='boots',name='fixture'},42,1)
+ assert(count(magic.mods)==(roll==0 and 1 or 2))
+end
+_UtilLogic.RandomDouble=randomDouble
+local baseId=nil
+for _,id in ipairs(_ItemTables.BaseOrder) do if _ItemTables.Bases[id].slot=='helm' then baseId=id break end end
+local originalItem=_ItemData:Serialize({base=baseId,rarity=2,ilvl=42,name='saved',mods={life=10},sockets=1,runes={'el'}})
+local rerolled=_ItemData:Parse(_ItemData:RerollMods(originalItem))
+assert(rerolled.base==baseId and rerolled.rarity==2 and rerolled.ilvl==42 and rerolled.sockets==1 and rerolled.runes[1]=='el')
+assert(count(rerolled.mods)>=3 and originalItem==_ItemData:Serialize(_ItemData:Parse(originalItem)))
 -- Every rarity branch is forced, not left to lucky sampling. Bounds use reqLv; ilvl stays lv+2.
 local original=_ItemData.RollRarity
 local generated=0
@@ -102,3 +125,27 @@ local gold=st.Gold;local exp=st.Exp
 PlayerQuest:TurnIn()
 assert(PlayerQuest.State==2 and PlayerQuest.Index==1 and st.Gold==gold and st.Exp==exp and #inv.Bag==60)
 print('[quality/items] quest report: wearable reward, no duplicate, full-bag all-or-nothing passed')
+
+-- Actual act4 source pool: lv40 ash_king only yields the req33/35/40 special bases and keeps ground-drop presentation.
+local spawned={}
+_LootSystem={Spawn=function(_,pos,uid,kind,made) table.insert(spawned,made) end}
+_Util.Pos2=function() return {x=0,y=0} end
+_GameData.GetMonsterName=function() return 'fixture' end
+q.reward='unique:1';q.target='ash_king'
+local reqs={}
+for i=1,120 do
+ PlayerQuest.Index=24;PlayerQuest.State=2;inv.Bag={}
+ PlayerQuest:TurnIn()
+ assert(#inv.Bag==0,'boss unique should keep ground presentation')
+ local it=_ItemData:Parse(spawned[#spawned]);local req=_ItemData:GetBase(it.base).reqLv
+ assert((req==33 or req==35 or req==40) and it.rarity==3 and it.ilvl==42)
+ reqs[req]=true
+end
+assert(reqs[33] and reqs[35] and reqs[40])
+-- No boss-specific candidate falls back to general pool; no uniques at all falls back to wearable rare.
+q.target='no_source_fixture';PlayerQuest.Index=1;PlayerQuest.State=2;inv.Bag={}
+PlayerQuest:TurnIn();assert(#inv.Bag==1)
+_ItemTables.UniqueList={};PlayerQuest.Index=1;PlayerQuest.State=2;inv.Bag={}
+PlayerQuest:TurnIn()
+local fallback=_ItemData:Parse(inv.Bag[1]);assert(fallback.rarity>=2 and _ItemData:GetBase(fallback.base).reqLv<=40)
+print('[quality/items] sparse pools, magic branches, reroll save fields, ash_king ground reward and missing-source fallback passed')
