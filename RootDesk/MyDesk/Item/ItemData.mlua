@@ -369,14 +369,14 @@ script ItemData extends Logic
         return list[#list]
     end
 
-    method string PickBase(integer ilvl)
+    method string PickBase(integer ilvl, integer maxReqLevel = 0)
         -- 아이템 레벨에 맞는 베이스 (요구 레벨 ilvl+3 이하, 40 이상 낮은 단계 제외, 15 넘게 낮으면 덜 나옴)
         local t = self:T()
         local list = {}
         local weights = {}
         for _, id in ipairs(t.BaseOrder) do
             local b = t.Bases[id]
-            if b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then
+            if b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 and (maxReqLevel <= 0 or b.reqLv <= maxReqLevel) then
                 table.insert(list, id)
                 table.insert(weights, self:OldWeight(b.reqLv, ilvl, 15))
             end
@@ -392,14 +392,23 @@ script ItemData extends Logic
 
     method string GenerateWithMinimum(integer ilvl, string rank, number mf, integer minimumRarity)
         -- 의뢰가 약속한 일반·마법·희귀 하한(0~2)을 생성 전에 적용한다. 상위 등급은 보존하고 재추첨하지 않는다.
+        return self:GenerateEquipment(ilvl, rank, mf, minimumRarity, 0)
+    end
+
+    method string GenerateQuestReward(integer playerLevel, string rank, number mf, integer minimumRarity)
+        -- 의뢰 보상만 지금 착용 가능한 베이스로 제한한다. 생성 레벨(접사 품질)은 playerLevel + 2를 유지한다.
+        return self:GenerateEquipment(playerLevel + 2, rank, mf, minimumRarity, playerLevel)
+    end
+
+    method string GenerateEquipment(integer ilvl, string rank, number mf, integer minimumRarity, integer maxReqLevel)
         local t = self:T()
-        local baseId = self:PickBase(ilvl)
+        local baseId = self:PickBase(ilvl, maxReqLevel)
         local base = t.Bases[baseId]
         local rarity = self:RollRarity(rank, mf)
         rarity = math.max(rarity, math.max(0, math.min(2, minimumRarity)))
         if rarity == 4 then
             -- 세트: 아이템 레벨에 맞는 세트 조각 하나 (없으면 레어)
-            local piece = self:PickSetPiece(ilvl)
+            local piece = self:PickSetPiece(ilvl, maxReqLevel)
             if piece ~= nil then
                 local item = { base = piece.base, rarity = 4, ilvl = ilvl, name = piece.name, mods = {}, sockets = 0, runes = {} }
                 self:AddModsRolled(item.mods, piece.mods, 1)
@@ -410,7 +419,7 @@ script ItemData extends Logic
         local item = { base = baseId, rarity = rarity, ilvl = ilvl, name = base.name, mods = {}, sockets = 0, runes = {} }
         if rarity == 3 then
             -- 유니크: 아이템 레벨에 맞는 일반 유니크 하나 (보스 전용은 LootSystem이 따로). 없으면 레어
-            local u = self:PickUnique(ilvl, "")
+            local u = self:PickUnique(ilvl, "", maxReqLevel)
             if u ~= nil then return self:MakeUnique(u, ilvl) end
             item.rarity = 2
             rarity = 2
@@ -430,7 +439,7 @@ script ItemData extends Logic
     end
 
     method void FillAffixes(table item, any base, integer ilvl, integer rarity)
-        -- 마법(접두·접미 1~2개)·레어(4~6개) 옵션과 이름을 새로 굴린다. 드롭 생성과 대장장이 「옵션 바꾸기」가 같이 쓴다
+        -- 마법(접두·접미 1~2개)·레어(3~5개) 옵션과 이름을 새로 굴린다. 드롭 생성과 대장장이 「옵션 바꾸기」가 같이 쓴다
         local prefixes, suffixes = 1, 1
         if rarity == 1 then
             if _UtilLogic:RandomDouble() < 0.4 then
@@ -449,11 +458,14 @@ script ItemData extends Logic
             if pass == 2 then want = suffixes end
             for i = 1, want do
                 local a = self:PickAffix(pass == 1, base.slot, ilvl, used)
+                -- 레어: 한쪽 후보가 고갈되면 남은 쪽으로 재배분한다. 새 옵션·중복 옵션은 만들지 않는다.
+                -- 고갈 때만 접두/접미 각각 3개 제한을 풀어 최초 추첨한 총 3~5개를 채운다.
+                if a == nil and rarity == 2 then a = self:PickAffix(pass ~= 1, base.slot, ilvl, used) end
                 if a ~= nil then
                     used[a.stat .. tostring(a.prefix)] = true
                     item.mods[a.stat] = (item.mods[a.stat] or 0) + self:RollAffix(a, ilvl)
-                    if pass == 1 and pName == "" then pName = a.name end
-                    if pass == 2 and sName == "" then sName = a.name end
+                    if a.prefix and pName == "" then pName = a.name end
+                    if not a.prefix and sName == "" then sName = a.name end
                 end
             end
         end
@@ -539,7 +551,7 @@ script ItemData extends Logic
         return order[item.rarity] or 5
     end
 
-    method any PickUnique(integer ilvl, string source)
+    method any PickUnique(integer ilvl, string source, integer maxReqLevel = 0)
         -- source = "" 이면 어디서나 나오는 유니크, 몬스터 sourceId면 그 몬스터 전용
         -- 쏠림 막기 (docs/design/19 §2-4): 먼저 계열(소환·영혼·저주·범용)을 1:1:1:1로 고르고, 그 계열 안에서 가중치로 고른다
         local t = self:T()
@@ -547,7 +559,7 @@ script ItemData extends Logic
         local trees = {}
         for _, u in ipairs(t.UniqueList) do
             local b = t.Bases[u.base]
-            if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 then
+            if u.source == source and b ~= nil and b.reqLv <= ilvl + 3 and (maxReqLevel <= 0 or b.reqLv <= maxReqLevel) then
                 local tree = u.tree or "any"
                 if byTree[tree] == nil then
                     byTree[tree] = { list = {}, weights = {} }
@@ -666,7 +678,7 @@ script ItemData extends Logic
         return table.concat(parts, ",")
     end
 
-    method any PickSetPiece(integer ilvl)
+    method any PickSetPiece(integer ilvl, integer maxReqLevel = 0)
         -- 쏠림 막기 (docs/design/19 §2-4): 먼저 세트를 고르고(조각이 하나라도 나올 수 있는 세트끼리 같은 확률), 그다음 그 세트의 조각을 고른다
         local t = self:T()
         local bySet = {}
@@ -674,7 +686,7 @@ script ItemData extends Logic
         for _, baseId in ipairs(t.SetPieceOrder) do
             local b = t.Bases[baseId]
             local piece = t.SetPieces[baseId]
-            if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 then
+            if b ~= nil and b.reqLv <= ilvl + 3 and b.reqLv >= ilvl - 40 and (maxReqLevel <= 0 or b.reqLv <= maxReqLevel) then
                 if bySet[piece.set] == nil then
                     bySet[piece.set] = { list = {}, weights = {} }
                     table.insert(sets, piece.set)
