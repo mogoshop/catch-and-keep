@@ -7,6 +7,7 @@ import argparse, pathlib, re, shutil, subprocess, tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--lua', default=shutil.which('lua') or shutil.which('lua5.4'))
+p.add_argument('--dump', help='optional path for the last exported Lua fixture')
 p.add_argument('groups', nargs='*', default=['items','journal','skills'])
 a = p.parse_args()
 if not a.lua: p.error('Lua 5.4 is required; pass --lua /path/to/lua (no game dependencies are changed)')
@@ -17,7 +18,18 @@ def export(script, filename, methods):
     for typ, name, value in re.findall(r'^    property (\w+) (\w+) = (.*)$',src,re.M):
         value = value.split(' --')[0].rstrip()
         out.append(f'{script}.{name} = {value}')
-    for name in methods.split(','):
+    available = set(re.findall(r'^    method [^\n]+? (\w+)\(', src, re.M))
+    selected = []
+    def include(name, recursive=False):
+        if name in selected: return
+        selected.append(name)
+        if recursive:
+            body = re.search(r'^    method [^\n]+? '+re.escape(name)+r'\([^\n]*\)\n(.*?)^    end$',src,re.M|re.S)
+            if not body: raise ValueError(f'{filename}: method {name} not found')
+            for child in re.findall(r'self:(\w+)\(', body[1]):
+                if child in available: include(child, True)
+    for method in methods.split(','): include(method.rstrip('+'), method.endswith('+'))
+    for name in selected:
         m = re.search(r'^    method [^\n]+? '+re.escape(name)+r'\(([^\n]*)\)\n(.*?)^    end$',src,re.M|re.S)
         if not m: raise ValueError(f'{filename}: method {name} not found')
         args, defaults = [], []
@@ -35,6 +47,7 @@ for group in a.groups:
     # @source Name relative/path.mlua Method1,Method2
     modules = [export(*m) for m in re.findall(r'^-- @source (\w+) (\S+) (\S+)$', text,re.M)]
     script = 'function log(...) end\nfunction Color(...) return {...} end\n' + '\n'.join(modules) + '\n' + text
+    if a.dump: pathlib.Path(a.dump).write_text(script)
     with tempfile.TemporaryDirectory(prefix='maple-quality-') as tmp:
         file = pathlib.Path(tmp)/'fixture.lua'; file.write_text(script)
         result = subprocess.run([a.lua,str(file)],cwd=ROOT)

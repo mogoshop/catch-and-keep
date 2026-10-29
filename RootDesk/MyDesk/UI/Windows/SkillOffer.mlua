@@ -241,11 +241,14 @@ script SkillOffer extends Logic
                 _UIKit:SetText(c .. "/Name", def.name)
                 _UIKit:SetText(c .. "/Effect", def.desc)
                 local change = ""
-                local now = book:GetRankSummary(id, math.max(1, lv))
-                local nextRank = book:GetRankSummary(id, lv + 1)
+                local now = book:GetRankSummary(id, book:PowerLevelAt(id, math.max(1, lv)))
+                local nextRank = book:GetRankSummary(id, def.kind == "node" and (lv + 1) or book:PowerLevelAt(id, lv + 1))
                 if lv == 0 then change = nextRank
                 elseif nextRank ~= "" and nextRank ~= now then change = nextRank end
-                if def.kind == "node" then change = "" end
+                if def.kind == "node" then
+                    local hint = book:UseHint(id)
+                    if hint ~= "" then change = change .. (change ~= "" and "\n" or "") .. hint end
+                end
                 _UIKit:SetText(c .. "/Change", change)
             end
         end

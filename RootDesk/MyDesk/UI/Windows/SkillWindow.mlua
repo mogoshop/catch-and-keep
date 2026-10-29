@@ -259,15 +259,21 @@ script SkillWindow extends Logic
         local ws = self.Win .. "/WS"
         local lv = book:GetLevel(self.SelMain)
         local cap = book:RankCap(self.SelMain, st.Level)
-        _UIKit:SetIcon(ws .. "/Portrait/Icon", def.icon)
-        _UIKit:SetColor(ws .. "/Portrait/Icon", lv > 0 and Color(1, 1, 1, 1) or Color(0.7, 0.7, 0.7, 1))
-        _UIKit:SetText(ws .. "/Name", def.name)
+        local picked = _SkillData:Get(self.Selected)
+        local detail = picked ~= nil and picked.kind == "node" and picked.parent == self.SelMain and picked or def
+        local detailId = detail == def and self.SelMain or self.Selected
+        local detailLv = book:GetLevel(detailId)
+        _UIKit:SetIcon(ws .. "/Portrait/Icon", detail.icon)
+        _UIKit:SetColor(ws .. "/Portrait/Icon", detailLv > 0 and Color(1, 1, 1, 1) or Color(0.7, 0.7, 0.7, 1))
+        _UIKit:SetText(ws .. "/Name", detail.name)
         local info = _UIKit:Colored(self:TreeHex(def.tree), _SkillData:TreeName(def.tree)) .. " · "
-        if st.Level < def.row then info = info .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
+        if detail.kind == "node" then info = info .. def.name .. " 강화 " .. tostring(detailLv) .. "/" .. tostring(detail.maxLv)
+        elseif st.Level < def.row then info = info .. _UIKit:Colored("#8C99B4", "Lv" .. tostring(def.row) .. "에 열림")
         else info = info .. "랭크 " .. tostring(lv) .. "/" .. tostring(cap) .. "  (최대 " .. tostring(def.maxLv) .. ")" end
         _UIKit:SetText(ws .. "/Info", info)
-        _UIKit:SetText(ws .. "/Desc", def.desc)
-        _UIKit:SetText(ws .. "/Stat", self:StatLine(book, st, self.SelMain))
+        local hint = book:UseHint(detailId)
+        _UIKit:SetText(ws .. "/Desc", detail.desc .. (hint ~= "" and ("\n" .. hint) or ""))
+        _UIKit:SetText(ws .. "/Stat", self:StatLine(book, st, detailId))
         -- 랭크 사다리 20칸: 찍음(금) · 지금 상한까지(밝은 빈칸) · 상한 밖(어둠)
         -- 랭크 점 3상태 (코덱스 skill-window-v3): 찍음 · 지금 상한까지 빈칸 · 상한 밖(잠긴 점) — 최대 랭크 밖은 감춘다
         -- 44-7 랭크 단계: 단계가 바뀌는 칸(투사체 5·8·12 등 — SkillBook.StageRanks)과 20랭크 「완성」 칸은 큰 점 (코덱스 H-10 sk_rank_pip_stage(_on) 그림이 오면 그 그림, 그 전엔 같은 점을 금빛으로)
@@ -476,24 +482,29 @@ script SkillWindow extends Logic
         local def = _SkillData:Get(id)
         if def == nil then return "" end
         local level = book:GetLevel(id)
-        local gear = level > 0 and st:GetSkillLevelBonus(id, def.tree) or 0
-        local current = book:GetRankSummary(id, math.max(1, level) + gear)
+        local power = book:PowerLevelAt(id, math.max(1, level))
+        local gear = def.kind ~= "node" and math.max(0, power - math.max(1, level)) or 0
+        local current = book:GetRankSummary(id, def.kind == "node" and level == 0 and 1 or power)
+        if level > 0 and power <= 0 then current = "현재 캐릭터 레벨에서는 효과 없음" end
         local line = ""
         if current ~= "" then
             line = (level == 0 and "배우면: " or "지금: ") .. current
             if level > 0 and level < def.maxLv then
-                local nextRank = book:GetRankSummary(id, level + 1 + gear)
+                local nextPower = book:PowerLevelAt(id, level + 1)
+                -- 노드의 잠긴 다음 랭크는 계획할 효과를 보여 주고 구매 조건은 아래 Reason에서 설명한다.
+                local nextRank = book:GetRankSummary(id, def.kind == "node" and (level + 1) or nextPower)
                 line = line .. "\n" .. (nextRank == current and "다음 랭크: 효과 동일" or ("다음 랭크: " .. _UIKit:Colored("#7CFF7A", nextRank)))
             end
         end
         if def.kind == "active" or def.kind == "curse" then
-            local lv = math.max(1, level)
-            local cost = "마나 " .. tostring(math.floor(book:GetManaCost(id, lv)))
-            local cd = book:SkillCooldown(id, lv)
-            if cd > 0 then cost = cost .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
+            local cost = "마나 " .. tostring(math.floor(book:GetManaCost(id, power)))
+            local cd = book:SkillCooldown(id, power)
+            if id == "wraith_dash" then
+                cost = cost .. string.format(" · 충전 %.2f초", book:DashCooldown(power))
+            elseif cd > 0 then cost = cost .. string.format(" · 재사용 %.2f초", cd * st:GetCastCooldownMult()) end
             line = line .. _UIKit:Colored("#C9BFA8", (line ~= "" and "   · " or "") .. cost)
         end
-        if gear > 0 then line = line .. _UIKit:Colored("#7CFF7A", "   · 장비 +" .. tostring(gear)) end
+        if gear > 0 then line = line .. _UIKit:Colored("#7CFF7A", "   · 추가 랭크 +" .. tostring(gear)) end
         return line
     end
 
@@ -562,16 +573,9 @@ script SkillWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Pick(string id)
-        -- 카드·강화 고르기. 이미 고른 것을 다시 누르면 배울 수 있을 때 +1 (못 배우면 아래 설명의 빨간 사유가 보인다)
+        -- 선택은 설명만 바꾼다. 포인트는 별도 배우기/강화 버튼에서만 사용한다.
         if id == nil or id == "" then return end
-        if id == self.Selected then
-            ---@type SkillBook
-            local book = _UIKit:Comp("script.SkillBook")
-            ---@type PlayerStats
-            local st = _UIKit:Comp("script.PlayerStats")
-            if book ~= nil and st ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == "" then self:Act(0) end
-            return
-        end
+        if id == self.Selected then return end
         self.Selected = id
         local def = _SkillData:Get(id)
         if def ~= nil and def.kind ~= "node" then self.SelMain = id end
