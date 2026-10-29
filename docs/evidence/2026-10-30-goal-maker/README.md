@@ -66,3 +66,50 @@
 - maker_stop → 편집 모드 · map01 · PC FHD
 - 슬롯4 저장은 01:19 한 번만 바뀜(`slot4-save-diff.txt`: skills.hope 추가 · slots `raise_skeleton,,,` · travel.act 4→1 · exp +16 · 일지 카운터) — 되돌리지 않음
 - 다음: 갈래 A(62736662) → D(4abd8884) → C(1e15df63) 통합(조정자 대기열)
+
+---
+
+# 통합 스냅샷 뒤 메이커 단일 담당 — GOAL-MAKER-20261030-INT (2026-10-30 02:33~ · 누적)
+
+- 실행: Claude Opus 5.5(메이커 단일 담당) · 판정 = Claude 자체 판정 · 최종 수용 = 코덱스
+- 결과 원장: `maker-results-goal.json`(묶음마다 갱신 · 공유 폴더 같은 이름) · 시간순 기록: `RUN-log-INT.txt` · 조각: `GOAL-maker-scripts-INT.lua` · 전후 상태: `A-state-INT.json` · 캡처 원본 대응: `capture-map-INT.txt` · 슬롯4 백업: `slot4-backup-pre-INT.json`
+- 입력 경로 표기: K = maker_keyboard_input · 창 단추 = ButtonClickEvent · handler_direct = 처리 함수 직접(물리 터치 아님) · script = 서버 RPC/함수 직접 · GM = 준비 상태 설정. maker_mouse_input은 쓰지 않음
+
+## 반영 매니페스트
+
+| 항목 | 값 |
+|---|---|
+| 기준 HEAD | 700d0c0f (= origin/main = origin/codex, 02:33 확인) · 메이커 map01 5a29ca07… = map/map01.map 루트 |
+| 반영 1 | 02:33:45 6초 → 91698202..700d0c0f 바뀐 mlua 27 + map 12 + GameHUD UI touch → 6초 → refresh 02:33:58 → build Error 12(LEA-1102 옛 함수 모양) |
+| 반영 2 | 부르는 LootSystem·PlayerQuest·SelfTest touch → refresh 02:35:20 → build 467줄 · Error 0 · Warning 100(+2 LWA-1111 DecodeMeta·ParseGearOffer) · LEA-3015 0 · GearChoiceWindow.codeblock 생성 |
+| 플레이 1 | PC FHD · 02:38 · 방 server_instance_game:s1b8dcddb043 — ITEM-Q1 · D-M6 · ITEM-R1 · ITEM-R2 1부 |
+| 플레이 2 | iPad 5th gen 프리셋 · 02:52 · 방 s1b8dffe91d3 — ITEM-R2 2부(재접속) · R1 채택 · RUNE-A1 |
+| 이후 main | cd6f3bbb(StashWindow 「넣기 요청: 」, 통합 담당) — 다음 반영에 포함 |
+
+## A 묶음 (Claude 판정)
+
+| case | 판정 | 핵심 근거 | 캡처 |
+|---|---|---|---|
+| REFRESH | 통과 | build 0 · gear choice window ready · InventoryWindow inspect-first ready | — |
+| ITEM-Q1 | 통과 | 가방 가득 알림·무변화 → offer new → cancel → offer reuse(같은 카드) → confirm helm ver=1 → done quest=1 rarity=2 → received found=true → 「가방에서 보기」 1회 → open with reward selected=60 → 장착 first gearEquip · 「장착 완료 ▲6」 | A-Q1-1~6 |
+| ITEM-R1 | 통과 | ①~⑤ · 다음 줄 ▶ line 2 · 취소 무료 · 1차 −1632 · 기존 유지 무료(mods 그대로) · 2차 −1632 · 채택 무료 → ② 마나 +12만 방어 +18로(다른 줄·등급·ilvl·소켓·잠금·이름 그대로) · 총 3264 | A-R1-1~4 · A-R2-3 |
+| ITEM-R2 | 통과 | 대기 중 창고(UI)·장착·잠금(RPC 직접) 거부 + Warn · 저장 → 재접속 같은 대기 문자열·추가 비용 0 · 창고 왕복 바이트 같음(고정 줄 유지) · 예전 레어 「출처 기록이 없는 장비입니다」 | A-R2-1~4 |
+| RUNE-A1 | 부분확인 | iPad: 「룬 준비됨 · 맞는 장비 필요」(금) → 2소켓 일반 갑옷 장착 「제작 준비됨」(초록) · 일반/마법 룬워드 판정·효과 같음(마법 +def 5만 더) · PC 화면 미확인 · 둘째 안내 줄이 첫 카드 위 테두리에 걸침(A-OBS-03) | A-RUNE-1~3 |
+
+관찰(고치지 않음): A-OBS-01 카드 「아이템 레벨 42」 줄넘김 · A-OBS-02 창고 「넣음:」(→ cd6f3bbb 수정, 확인 대기) · A-OBS-03 룬워드 안내 둘째 줄 · A-OBS-04 「옵션 바꾸기 1632」 두 줄 · D-OBS-01 첫 장비 안내 Notify가 카드와 함께 뜸.
+
+## D 묶음 (진행 중)
+
+| case | 판정 | 핵심 근거 |
+|---|---|---|
+| D-M6 | 부분확인 | 되돌림(해제) 뒤 유효 피해 80 → gear used 0 · 다시 장착 뒤 유효 피해 → first gearUse t=513 · gear used after equip and effective damage slot=helm (1회) · 막타 크레딧만·다른 맵 음성 미시행 |
+
+## B 편입 (재실행 없음)
+
+dc44af6c의 B-M01~03 증거 10파일을 원장에 그대로 연결 — 코덱스 부분 수용(0140·0141·0210) 그대로, 실행 소스 63aabe43(PC)/91698202(iPad) 구분 · 포인터 미확인 · 슬롯4 01:19 저장 변경 미복원.
+
+## 슬롯 4 「새내기」
+
+- 02:38:34 캐릭터 선택 화면에서 BatchGet 5키 백업(Account 615 · Char_4 1126 · Inv_4 1838 · Shadow_4 40 · Stash 83 바이트) + 해시 → 로컬 사본 5/5 일치.
+- 저장: 02:51:50 ITEM-R2 Save(true) 1회(그 세션 상태 전체). 나머지는 저장 끔.
+- 복원: 마지막 묶음 뒤 BatchSet + 재조회(대기).
