@@ -178,7 +178,7 @@ script PlayerInventory extends Component
         if _UtilLogic.ElapsedSeconds < self.BagWarningAt then return end
         self.BagWarningAt = _UtilLogic.ElapsedSeconds + 4
         local belt = (self.Equip ~= nil and self.Equip["belt"] ~= nil) and "" or (" · 벨트를 차면 +" .. tostring(math.floor(_GameData.potionCapBelt)))
-        _Util:Notify(self:PotionKindName(kind) .. "은 " .. tostring(self:PotionCap()) .. "개까지 들 수 있다" .. belt, self.Entity.PlayerComponent.UserId)
+        _Util:Notify(self:PotionKindName(kind) .. "은 " .. tostring(self:PotionCap()) .. "개까지 들 수 있습니다" .. belt, self.Entity.PlayerComponent.UserId)
     end
 
     @ExecSpace("ServerOnly")
@@ -193,7 +193,7 @@ script PlayerInventory extends Component
         if base == "abyss_key" then
             local room = math.max(0, math.floor(_GameData.depthKeyCap) - self:CountStack(base))
             if count > room then
-                _Util:Warn("심연 열쇠는 " .. tostring(math.floor(_GameData.depthKeyCap)) .. "개까지만 가질 수 있다", self.Entity.PlayerComponent.UserId)
+                _Util:Warn("심연 열쇠는 " .. tostring(math.floor(_GameData.depthKeyCap)) .. "개까지만 가질 수 있습니다", self.Entity.PlayerComponent.UserId)
                 if room <= 0 then return count end
                 return (count - room) + self:AddStack(base, room)
             end
@@ -476,7 +476,7 @@ script PlayerInventory extends Component
         local s = self.Equip[slot]
         if s == nil or s ~= expectedItem or not _Util:IsAlive(self.Entity) then return end
         if #self.Bag >= self.BagSize then
-            _Util:Warn("가방이 가득 찼다", senderUserId)
+            _Util:Warn("가방이 가득 찼습니다", senderUserId)
             return
         end
         self.Equip[slot] = nil
@@ -493,7 +493,7 @@ script PlayerInventory extends Component
         local stats = self:Stats()
         if stats == nil then return end
         if _ItemData:IsSoulbound(_ItemData:Parse(expectedItem).base) then
-            _Util:Warn("귀속 물건은 팔 수 없다", senderUserId)
+            _Util:Warn("귀속 물건은 팔 수 없습니다", senderUserId)
             return
         end
         -- 잠긴 물건은 팔지 않는다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
@@ -504,7 +504,7 @@ script PlayerInventory extends Component
         end
         -- 판매는 상인 곁에서만 (소지품 어디서나 팔리던 것을 막는다)
         if not _Util:NearNpc(self.Entity, "shop") then
-            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있습니다", senderUserId)
             return
         end
         local s = self:TakeBagItem(index)
@@ -529,12 +529,12 @@ script PlayerInventory extends Component
         if s == "" then return end
         -- 귀속 물건(정수)은 떨어뜨리지 않고 파괴한다 (확인 창에서 미리 알린다)
         if _ItemData:IsSoulbound(_ItemData:Parse(s).base) then
-            _Util:Notify("파괴했다: " .. _ItemData:DisplayName(s), senderUserId)
+            _Util:Notify("파괴: " .. _ItemData:DisplayName(s), senderUserId)
             return
         end
         -- 땅에 떨어뜨린다 (10초 뒤부터 누구나 주울 수 있다 — 파티원과 나누기)
         _LootSystem:DropDiscarded(self.Entity, s)
-        _Util:Notify("버렸다: " .. _ItemData:Parse(s).name .. " (10초 뒤 누구나 주울 수 있다)", senderUserId)
+        _Util:Notify("버림: " .. _ItemData:Parse(s).name .. " (10초 뒤 누구나 주울 수 있습니다)", senderUserId)
     end
 
     @ExecSpace("Server")
@@ -554,7 +554,7 @@ script PlayerInventory extends Component
         if r == nil or s == nil or not _ItemData:IsRune(r) or _ItemData:GetRune(_ItemData:Parse(r).base) == nil then return false end
         local item = _ItemData:Parse(s)
         if #item.runes >= item.sockets then
-            _Util:Warn("빈 소켓이 없다", userId)
+            _Util:Warn("빈 소켓이 없습니다", userId)
             return false
         end
         table.insert(item.runes, _ItemData:Parse(r).base)
@@ -700,7 +700,7 @@ script PlayerInventory extends Component
         local stats = self:Stats()
         if stats == nil then return end
         if not _Util:NearNpc(self.Entity, "shop") then
-            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있다", senderUserId)
+            _Util:Warn("판매는 마을 상인 곁에서만 할 수 있습니다", senderUserId)
             return
         end
         local total, n, locked = 0, 0, 0
@@ -739,7 +739,7 @@ script PlayerInventory extends Component
         if locked > 0 then _Util:Notify("잠긴 물건 " .. tostring(locked) .. "개는 버리지 않았습니다", senderUserId) end
         if n == 0 then return end
         self:RefreshDigest()
-        _Util:Notify("버렸다 " .. tostring(n) .. "개 (10초 뒤 누구나 주울 수 있다)", senderUserId)
+        _Util:Notify("버림 " .. tostring(n) .. "개 (10초 뒤 누구나 주울 수 있습니다)", senderUserId)
     end
 
     -- ───────── 잠금 (10-29 기획서 45 결정 6-A · 즐겨찾기) ─────────
@@ -779,7 +779,7 @@ script PlayerInventory extends Component
         local cur = self.Bag[index]
         if cur == nil or cur ~= expectedItem then return end
         if #self.Stash >= self.StashSize then
-            _Util:Warn("창고 " .. tostring(self.StashTab) .. "탭이 가득 찼다 — 다른 탭을 고르세요", senderUserId)
+            _Util:Warn("창고 " .. tostring(self.StashTab) .. "탭이 가득 찼습니다 — 다른 탭을 고르세요", senderUserId)
             return
         end
         table.remove(self.Bag, index)
@@ -802,7 +802,7 @@ script PlayerInventory extends Component
                 return
             end
             if self:AddStack(item.base, take) > 0 then
-                _Util:Warn("가방이 가득 찼다", senderUserId)
+                _Util:Warn("가방이 가득 찼습니다", senderUserId)
                 return
             end
             if take >= item.count then table.remove(self.Stash, index) else
@@ -813,7 +813,7 @@ script PlayerInventory extends Component
             return
         end
         if #self.Bag >= self.BagSize then
-            _Util:Warn("가방이 가득 찼다", senderUserId)
+            _Util:Warn("가방이 가득 찼습니다", senderUserId)
             return
         end
         table.remove(self.Stash, index)
@@ -850,8 +850,8 @@ script PlayerInventory extends Component
         end
         self:RefreshDigest()
         local names = { normal = "일반", magic = "마법", rare = "레어", unique = "유니크·세트", rune = "룬" }
-        if n == 0 then _Util:Warn("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없다", senderUserId)
-        else _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개 넣었다" .. (#self.Stash >= self.StashSize and " (이 탭 가득)" or ""), senderUserId) end
+        if n == 0 then _Util:Warn("가방에 넣을 " .. (names[kind] or "") .. " 물건이 없습니다", senderUserId)
+        else _Util:Notify("창고 " .. tostring(self.StashTab) .. "탭에 " .. (names[kind] or "") .. " " .. tostring(n) .. "개를 넣었습니다" .. (#self.Stash >= self.StashSize and " (이 탭 가득)" or ""), senderUserId) end
     end
 
     -- ───────── 대장장이 (마을 대장장이 곁) ─────────
@@ -865,14 +865,14 @@ script PlayerInventory extends Component
         if cur == nil or cur ~= expectedItem or stats == nil or not _ItemData:CanReroll(cur) then return end
         local cost = _ItemData:RerollCost(cur)
         if stats.Gold < cost then
-            _Util:Warn("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+            _Util:Warn("골드가 부족합니다 (" .. tostring(cost) .. " 필요)", senderUserId)
             return
         end
         stats:AddGold(-cost)
         local after = _ItemData:RerollMods(cur)
         self.Bag[index] = after
         self:RefreshDigest()
-        self:NotifySmith("옵션을 새로 새겼다", _ItemData:DescribeDetailed(after), _ItemData:IconFor(after), senderUserId)
+        self:NotifySmith("옵션을 새로 새겼습니다", _ItemData:DescribeDetailed(after), _ItemData:IconFor(after), senderUserId)
     end
 
     @ExecSpace("Server")
@@ -888,19 +888,19 @@ script PlayerInventory extends Component
         else
             local cost = _ItemData:PunchCost(cur)
             if stats.Gold < cost then
-                _Util:Warn("골드가 부족하다 (" .. tostring(cost) .. " 필요)", senderUserId)
+                _Util:Warn("골드가 부족합니다 (" .. tostring(cost) .. " 필요)", senderUserId)
                 return
             end
             stats:AddGold(-cost)
             if _UtilLogic:RandomDouble() >= _GameData.punchChance then
-                self:NotifySmith("소켓 뚫기 실패", "망치질이 빗나갔다… 장비는 그대로다. (골드 " .. tostring(cost) .. " 소모)", _ItemData:IconFor(cur), senderUserId)
+                self:NotifySmith("소켓 뚫기 실패", "망치질이 빗나갔습니다. 장비는 그대로입니다 (골드 " .. tostring(cost) .. " 소모)", _ItemData:IconFor(cur), senderUserId)
                 return
             end
         end
         local after = _ItemData:PunchSockets(cur)
         self.Bag[index] = after
         self:RefreshDigest()
-        self:NotifySmith("소켓 " .. tostring(_ItemData:Parse(after).sockets) .. "개를 뚫었다", _ItemData:DisplayName(after) .. "\n이제 룬을 끼울 수 있다 (룬워드 조합은 메뉴 「룬워드」)", _ItemData:IconFor(after), senderUserId)
+        self:NotifySmith("소켓 " .. tostring(_ItemData:Parse(after).sockets) .. "개를 뚫었습니다", _ItemData:DisplayName(after) .. "\n이제 룬을 끼울 수 있습니다 (룬워드 조합은 메뉴 「룬워드」)", _ItemData:IconFor(after), senderUserId)
     end
 
     @ExecSpace("Client")

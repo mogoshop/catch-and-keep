@@ -73,7 +73,7 @@ script QuestWindow extends Logic
         if quest == nil then
             self.RenderKey = ""
             self.WasOpen = false
-            _UIKit:SetText(self.Win .. "/Detail/Title", "의뢰 기록을 불러오는 중")
+            _UIKit:SetText(self.Win .. "/Detail/Title", "퀘스트 기록을 불러오는 중")
             for i = 1, 6 do
                 _UIKit:SetEnabled(self.Win .. "/Q" .. tostring(i), false)
                 _UIKit:SetEnabled(self.Win .. "/Detail/Reward" .. tostring(i), false)
@@ -163,13 +163,13 @@ script QuestWindow extends Logic
 
     method table View(integer index, PlayerQuest quest)
         -- 화면용 데이터만 만든다. 플레이어 진행도나 보상을 변경하지 않는다.
-        local view = { title = "의뢰 없음", status = "", zone = "", objective = "", desc = "", icon = _GameData:GetUiIcon("icon_quest"), showProgress = false, ratio = 0, rewards = {} }
+        local view = { title = "퀘스트 없음", status = "", zone = "", objective = "", desc = "", icon = _GameData:GetUiIcon("icon_quest"), showProgress = false, ratio = 0, rewards = {} }
         local q = _QuestData:Get(index)
         if q == nil then return view end
         if index > quest.Index then
             -- 그 사냥터에 가 본 의뢰는 내용을 미리 읽을 수 있다 (수락은 앞선 의뢰 뒤 의뢰인에게서)
             view.title = q.title
-            view.status = "앞선 의뢰 뒤에 수락"
+            view.status = "앞선 퀘스트 뒤에 수락"
             view.zone = "목적지 · " .. quest:ZoneText(q)
             view.objective = q.objective
             view.desc = q.desc
@@ -177,13 +177,13 @@ script QuestWindow extends Logic
             return view
         end
         if index == quest.Index and quest.State == 0 then
-            view.title = "새로운 의뢰"
+            view.title = "새로운 퀘스트"
             view.status = "수락 전"
             view.icon = _GameData:GetUiIcon("q_avail")
             local giver = _QuestData:GiverName(q.giver)
-            view.zone = "의뢰인 · " .. _GameConst:ActTownName(q.act) .. "의 " .. giver
+            view.zone = "수락 위치 · " .. _GameConst:ActTownName(q.act) .. "의 " .. giver
             view.objective = giver .. "과(와) 대화하세요."
-            view.desc = "가까이 다가가 대화 버튼을 누르면 의뢰를 확인할 수 있습니다."
+            view.desc = "가까이 다가가 대화 버튼을 누르면 퀘스트를 확인할 수 있습니다."
             return view
         end
         view.title = q.title
@@ -208,11 +208,11 @@ script QuestWindow extends Logic
             view.ratio = 1
         else
             if q.kind == "clear" then
-                view.status = count > 0 and ("진행 중 · 남은 망자 " .. tostring(count - progress) .. "/" .. tostring(count)) or "진행 중 · 굴에 들어가면 남은 수가 보인다"
+                view.status = count > 0 and ("진행 중 · 남은 망자 " .. tostring(count - progress) .. "/" .. tostring(count)) or "진행 중 · 굴에 들어가면 남은 수 표시"
             elseif q.kind == "chest" then
-                view.status = progress >= 1 and "진행 중 · 열쇠 획득 → 봉인 상자" or "진행 중 · 열쇠를 지닌 적을 찾아라"
+                view.status = progress >= 1 and "진행 중 · 열쇠 획득 → 봉인 상자" or "진행 중 · 열쇠를 지닌 적 찾기"
             elseif q.kind == "gate" then
-                view.status = progress >= 1 and "진행 중 · 봉인이 풀렸다 → 옥좌로" or "진행 중 · 옥좌의 문지기를 쓰러뜨려라"
+                view.status = progress >= 1 and "진행 중 · 봉인 해제 → 옥좌로" or "진행 중 · 옥좌의 문지기 처치"
             else
                 view.status = "진행 중 · " .. tostring(progress) .. "/" .. tostring(count)
             end

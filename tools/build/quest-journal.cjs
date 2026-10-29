@@ -26,7 +26,7 @@ b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const win='SafeArea/QuestWin';
 // D2 의뢰 일지: 위 2×3 의뢰 그림(받을 수 있거나 끝낸 의뢰만 컬러, 나머지 어둡게) → 누르면 아래에 내용
 // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
-windowFrame(b,win,{size:[1320,960],pos:[0,0],title:'의뢰 일지',enable:false});
+windowFrame(b,win,{size:[1320,960],pos:[0,0],title:'퀘스트 일지',enable:false});
 if(b.find(win+'/List'))b.remove(win+'/List');
 // 액트 넘김 막대 (10-20 사용자 선택: 예전 「액트1|액트2|액트3」 단추 줄은 좁고 액트가 늘면 안 들어갔다) — GameHUD kit.actPager와 같은 모양
 for(const a of [1,2,3,4,5,6])if(b.find(win+'/Act'+a))b.remove(win+'/Act'+a);

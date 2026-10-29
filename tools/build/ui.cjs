@@ -226,7 +226,7 @@ function buildGameHud() {
     b.text(`${n}/Count`, "", { size: 18, bold: true, anchor: "bottom-right", pos: [-6, 2], rect_size: [60, 24], alignment: 8, ...outline });
   });
   // PC 메뉴 줄: 아이콘 + 아래 메뉴 이름 + 오른쪽 위 단축키 (귀환은 벨트 칸으로 옮겨 메뉴에서 뺐다)
-  const MENU = [["BtnInv", K.icon_bag, "I", "소지품"], ["BtnChar", K.icon_stats, "U", "능력치"], ["BtnSkill", K.icon_skill, "K", "스킬"], ["BtnShadow", K.icon_shadow, "H", "그림자"],
+  const MENU = [["BtnInv", K.icon_bag, "I", "인벤토리"], ["BtnChar", K.icon_stats, "U", "능력치"], ["BtnSkill", K.icon_skill, "K", "스킬"], ["BtnShadow", K.icon_shadow, "H", "그림자"],
     ["BtnQuest", K.icon_quest, "Q", "퀘스트"], ["BtnSocial", K.icon_party, "P", "파티플레이"], ["BtnRank", K.icon_rank, "L", "랭킹"], ["BtnExtract", SKILL_ICON.extract_mastery, "E", "그림자 추출"]];
   b.empty("Bottom/Menu", { anchor: "top-center", pos: [0, 92], rect_size: [MENU.length * 88, 84] });
   MENU.forEach(([n, ruid, key, label], i) => {
@@ -243,7 +243,7 @@ function buildGameHud() {
 
   // ── 메뉴 창 (모바일·PC 공용): 모든 창을 한곳에서 ──
   k.frame("MenuWin", "middle-center", [0, 20], [800, 740], "메뉴");
-  [["Inv", K.icon_bag, "소지품"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
+  [["Inv", K.icon_bag, "인벤토리"], ["Char", K.icon_stats, "능력치"], ["Skill", K.icon_skill, "스킬"],
     ["Shadow", K.icon_shadow, "그림자"], ["Quest", K.icon_quest, "퀘스트"], ["Social", K.icon_party, "파티플레이"],
     ["Rank", K.icon_rank, "랭킹"], ["Rune", K.rune, "룬워드"], ["Input", K.icon_gear, "설정"]].forEach(([n, ruid, label], i) => {
     const col = i % 3, row = Math.floor(i / 3);
@@ -287,7 +287,7 @@ function buildGameHud() {
   ["쉬기", "전부", "쓸 만한 것", "희귀 이상", "유니크·세트"].forEach((t, i) =>
     k.btn(`PetWin/F${i}`, t, { anchor: "top-left", pos: [40 + i * 178, -602], rect_size: [168, 72], font_size: 20 }));
   b.text("PetWin/FilterDesc", "", { size: 19, color: C.dim, alignment: 0, anchor: "top-left", pos: [44, -688], rect_size: [880, 110], ...outline });
-  b.text("MenuWin/Help", "단축키  I 소지품 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 파티플레이 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
+  b.text("MenuWin/Help", "단축키  I 인벤토리 · U 능력치 · K 스킬 · H 그림자 · Q 퀘스트 · P 파티플레이 · L 랭킹 · E 추출\nA S D F·우클릭 스킬 · 1~4 벨트(칸 우클릭 = 넣을 물건 바꾸기) · Z 소환 · X 회수 · C 집결",
     { size: 17, color: C.dim, anchor: "bottom-center", pos: [0, 20], rect_size: [740, 56] });
   k.pc("MenuWin/Help");
 
@@ -650,7 +650,7 @@ function buildGameHud() {
     k.pic(`${n}/Icon`, "icon_waypoint", { anchor: "middle-left", pos: [10, 0], rect_size: [34, 34] });
   }
   b.text("WpWin/DiffTitle", "난이도", { size: 19, color: C.gold, anchor: "bottom-center", pos: [0, 100], rect_size: [500, 28], ...outline });
-  [["Diff0", "보통", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {
+  [["Diff0", "노말", -180], ["Diff1", "악몽", 0], ["Diff2", "지옥", 180]].forEach(([n, t, x]) => {
     k.btn(`WpWin/${n}`, t, { anchor: "bottom-center", pos: [x, 26], rect_size: [170, 64], font_size: 20 });
   });
   // 잠긴 난이도 단추 말풍선 (PC 마우스 올림 · 기획서 43 결정 7): 해금 조건은 WaypointWindow.OnDiffHover → NightmarePreview.UnlockConditionText

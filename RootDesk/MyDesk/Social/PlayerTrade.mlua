@@ -58,7 +58,7 @@ script PlayerTrade extends Component
     @ExecSpace("ServerOnly")
     method void Check()
         local p = _UserService:GetUserEntityByUserId(self.Partner)
-        if not isvalid(p) or p.CurrentMap ~= self.Entity.CurrentMap then self:Cancel("거래가 취소되었다") end
+        if not isvalid(p) or p.CurrentMap ~= self.Entity.CurrentMap then self:Cancel("거래가 취소되었습니다") end
     end
 
     @ExecSpace("ServerOnly")
@@ -89,7 +89,7 @@ script PlayerTrade extends Component
         local s = inv.Bag[bagIndex]
         if s == nil or s ~= expectedItem then return end
         if _ItemData:IsBound(s) then
-            _Util:Warn("귀속 아이템은 거래할 수 없다", pc.UserId)
+            _Util:Warn("귀속 아이템은 거래할 수 없습니다", pc.UserId)
             return
         end
         -- 잠긴 물건은 거래에 올리지 않는다 (10-29 기획서 45 결정 6-A · 글귀 승인 전)
@@ -112,7 +112,7 @@ script PlayerTrade extends Component
         local inv = self.Entity:GetComponent("script.PlayerInventory")
         if inv == nil then return end
         if #inv.Bag >= inv.BagSize then
-            _Util:Warn("가방이 가득 차 되돌릴 수 없다", pc.UserId)
+            _Util:Warn("가방이 가득 차 되돌릴 수 없습니다", pc.UserId)
             return
         end
         table.remove(self.Escrow, index)
@@ -139,11 +139,11 @@ script PlayerTrade extends Component
         local o = self:Other()
         if o == nil or o.Partner ~= pc.UserId then return end
         if seenRevision ~= self.TheirRevision then
-            _Util:Warn("상대가 거래 내용을 바꿨다 — 다시 보고 확인하라", pc.UserId)
+            _Util:Warn("상대가 거래 내용을 바꿨습니다 — 다시 보고 확인해주세요", pc.UserId)
             return
         end
         if _UtilLogic.ElapsedSeconds < self.TheirChangedAt + self.ConfirmLockSeconds then
-            _Util:Warn("상대가 방금 내용을 바꿨다 — 잠시 뒤 확인할 수 있다", pc.UserId)
+            _Util:Warn("상대가 방금 내용을 바꿨습니다 — 잠시 뒤 확인할 수 있습니다", pc.UserId)
             return
         end
         self.MyConfirm = true
@@ -154,7 +154,7 @@ script PlayerTrade extends Component
     @ExecSpace("Server")
     method void RequestCancel()
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
-        self:Cancel("거래를 취소했다")
+        self:Cancel("거래를 취소했습니다")
     end
 
     @ExecSpace("ServerOnly")
@@ -170,22 +170,22 @@ script PlayerTrade extends Component
         local theirStats = o.Entity:GetComponent("script.PlayerStats")
         if myInv == nil or theirInv == nil or myStats == nil or theirStats == nil then return end
         if #myInv.Bag + #o.Escrow > myInv.BagSize or #theirInv.Bag + #self.Escrow > theirInv.BagSize then
-            _Util:Warn("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
-            _Util:Warn("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
+            _Util:Warn("가방 공간이 부족합니다", self.Entity.PlayerComponent.UserId)
+            _Util:Warn("가방 공간이 부족합니다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end
         -- 물약 소지 상한 (10-13): 받는 쪽이 넘치면 거래하지 않는다
         local over1, over2 = myInv:PotionOverflow(o.Escrow), theirInv:PotionOverflow(self.Escrow)
         if over1 ~= "" or over2 ~= "" then
-            if over1 ~= "" then _Util:Warn(over1 .. " 소지 상한을 넘어 거래하지 못했다", self.Entity.PlayerComponent.UserId) end
-            if over2 ~= "" then _Util:Warn(over2 .. " 소지 상한을 넘어 거래하지 못했다", o.Entity.PlayerComponent.UserId) end
+            if over1 ~= "" then _Util:Warn(over1 .. " 소지 상한을 넘어 거래하지 못했습니다", self.Entity.PlayerComponent.UserId) end
+            if over2 ~= "" then _Util:Warn(over2 .. " 소지 상한을 넘어 거래하지 못했습니다", o.Entity.PlayerComponent.UserId) end
             self:Changed()
             return
         end
         if myStats.Gold < self.MyGold or theirStats.Gold < o.MyGold then
-            _Util:Warn("골드가 부족해 거래하지 못했다", self.Entity.PlayerComponent.UserId)
-            _Util:Warn("골드가 부족해 거래하지 못했다", o.Entity.PlayerComponent.UserId)
+            _Util:Warn("골드가 부족해 거래하지 못했습니다", self.Entity.PlayerComponent.UserId)
+            _Util:Warn("골드가 부족해 거래하지 못했습니다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end
@@ -224,7 +224,7 @@ script PlayerTrade extends Component
         local inv = self.Entity:GetComponent("script.PlayerInventory")
         if inv ~= nil and #self.Escrow > 0 then
             local stashed = inv:ReturnItems(self.Escrow)
-            if stashed > 0 then _Util:Notify("가방이 가득 차 돌려받은 물건 " .. tostring(stashed) .. "개를 창고에 넣었다", self.Entity.PlayerComponent.UserId) end
+            if stashed > 0 then _Util:Notify("가방이 가득 차 돌려받은 물건 " .. tostring(stashed) .. "개를 창고에 넣었습니다", self.Entity.PlayerComponent.UserId) end
         end
         self.Escrow = {}
     end
@@ -251,7 +251,7 @@ script PlayerTrade extends Component
     @EventSender("Service", "UserService")
     handler HandleUserLeaveEvent(UserLeaveEvent event)
         -- 나나 상대가 나가면 취소 (나가는 쪽의 물건도 가방으로 돌아간 뒤 저장된다)
-        if event.UserId == self.Entity.PlayerComponent.UserId or event.UserId == self.Partner then self:Cancel("거래가 취소되었다") end
+        if event.UserId == self.Entity.PlayerComponent.UserId or event.UserId == self.Partner then self:Cancel("거래가 취소되었습니다") end
     end
 
 

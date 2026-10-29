@@ -67,8 +67,8 @@ function run() {
     b.text(c + '/Name', title, { anchor: 'bottom-center', pos: [0, 64], rect_size: [cardW - 60, 52], size: 40, bold: true, color: GOLD, alignment: 4 });
     b.text(c + '/Desc', desc, { anchor: 'bottom-center', pos: [0, 22], rect_size: [cardW - 60, 34], size: 21, color: DIM, alignment: 4 });
   };
-  card('Solo', -(cardW / 2 + 40), CARD_SOLO, '솔로 플레이', '나만의 게임 · 다른 사람은 들어오지 않는다');
-  card('Party', cardW / 2 + 40, CARD_PARTY, '파티 플레이', '방에 들어가거나 직접 만든다 · 최대 4명');
+  card('Solo', -(cardW / 2 + 40), CARD_SOLO, '솔로 플레이', '나만의 게임 · 다른 사람은 들어오지 않습니다');
+  card('Party', cardW / 2 + 40, CARD_PARTY, '파티플레이', '방에 들어가거나 직접 만듭니다 · 최대 4명');
   b.text(home + '/Note', '', { anchor: 'middle-center', pos: [0, noteY], rect_size: [1300, noteH], size: 18, color: DIM, alignment: 4, bestfit: true, min_size: 14, max_size: 18 });
   btn(home + '/BtnChar', '캐릭터 선택', { anchor: 'middle-center', pos: [-(BUTTON.w + FRAME.gap) / 2 - 20, bottom + BUTTON.h / 2], rect_size: [BUTTON.w + 40, BUTTON.h], font_size: BUTTON.font });
   btn(home + '/BtnChannel', '채널 변경', { anchor: 'middle-center', pos: [(BUTTON.w + FRAME.gap) / 2 + 20, bottom + BUTTON.h / 2], rect_size: [BUTTON.w + 40, BUTTON.h], font_size: BUTTON.font });

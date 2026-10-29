@@ -26,27 +26,27 @@ script PlayerSocial extends Component
         local other = target:GetComponent("script.PlayerSocial")
         if other == nil then return end
         if (kind == "duel" or kind == "trade") and target.CurrentMap ~= self.Entity.CurrentMap then
-            _Util:Warn("같은 지역에 있어야 한다", pc.UserId)
+            _Util:Warn("같은 지역에 있어야 합니다", pc.UserId)
             return
         end
         if kind == "duel" and _GameConst:IsTown(self.Entity.CurrentMap) then
-            _Util:Warn("마을에서는 결투할 수 없다", pc.UserId)
+            _Util:Warn("마을에서는 결투할 수 없습니다", pc.UserId)
             return
         end
         if kind == "duel" and not self:DuelLevelOk(self:LevelOf(self.Entity), self:LevelOf(target)) then
-            _Util:Warn("레벨 차가 " .. tostring(math.floor(_GameData.duelMaxLevelGap)) .. "보다 크면 결투할 수 없다", pc.UserId)
+            _Util:Warn("레벨 차가 " .. tostring(math.floor(_GameData.duelMaxLevelGap)) .. "보다 크면 결투할 수 없습니다", pc.UserId)
             return
         end
         if other.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < other.PendingUntil then
-            _Util:Notify("상대가 다른 요청을 처리 중이다", pc.UserId)
+            _Util:Notify("상대가 다른 요청을 처리 중입니다", pc.UserId)
             return
         end
         other.PendingKind = kind
         other.PendingFrom = pc.UserId
         other.PendingFromName = _PartySystem:NameOf(self.Entity)
         other.PendingUntil = _UtilLogic.ElapsedSeconds + 20
-        local names = { party = "파티 초대", duel = "결투 신청", trade = "거래 요청" }
-        _Util:Notify((names[kind] or kind) .. "를 보냈다: " .. _PartySystem:NameOf(target), pc.UserId)
+        local names = { party = "파티 초대를", duel = "결투 신청을", trade = "거래 요청을" }
+        _Util:Notify(_PartySystem:NameOf(target) .. "님에게 " .. (names[kind] or kind) .. " 보냈습니다", pc.UserId)
     end
 
     @ExecSpace("Server")
@@ -68,7 +68,7 @@ script PlayerSocial extends Component
         local from = _UserService:GetUserEntityByUserId(fromId)
         if not isvalid(from) then return end
         if not accept then
-            _Util:Notify(_PartySystem:NameOf(self.Entity) .. "님이 거절했다", fromId)
+            _Util:Notify(_PartySystem:NameOf(self.Entity) .. "님이 거절했습니다", fromId)
             return
         end
         if kind == "party" then
@@ -80,12 +80,12 @@ script PlayerSocial extends Component
             local db = self.Entity:GetComponent("script.PlayerDuel")
             -- 이미 결투 중인 사람은 새 결투를 받지 않는다 (10-13: 상대가 덮어써져 한쪽만 때릴 수 있는 결투가 생겼다)
             if da ~= nil and db ~= nil and (da.Opponent ~= "" or db.Opponent ~= "") then
-                _Util:Notify("이미 결투 중이다", fromId)
-                _Util:Notify("이미 결투 중이다", pc.UserId)
+                _Util:Notify("이미 결투 중입니다", fromId)
+                _Util:Notify("이미 결투 중입니다", pc.UserId)
             elseif not self:DuelLevelOk(self:LevelOf(from), self:LevelOf(self.Entity)) then
                 -- 신청 뒤 20초 사이에 레벨이 올라 차이가 벌어진 경우
-                _Util:Warn("레벨 차가 커서 결투할 수 없다", fromId)
-                _Util:Warn("레벨 차가 커서 결투할 수 없다", pc.UserId)
+                _Util:Warn("레벨 차가 커서 결투할 수 없습니다", fromId)
+                _Util:Warn("레벨 차가 커서 결투할 수 없습니다", pc.UserId)
             elseif da ~= nil and db ~= nil and from.CurrentMap == self.Entity.CurrentMap and not _GameConst:IsTown(self.Entity.CurrentMap) then
                 da:Start(pc.UserId)
                 db:Start(fromId)
@@ -120,7 +120,7 @@ script PlayerSocial extends Component
         if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
         local target = _UserService:GetUserEntityByUserId(targetId)
         if not isvalid(target) then
-            self:ShowInspect("이 채널에 없다", "", "", senderUserId)
+            self:ShowInspect("이 채널에 없습니다", "", "", senderUserId)
             return
         end
         ---@type PlayerStats

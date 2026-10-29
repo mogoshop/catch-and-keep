@@ -27,7 +27,7 @@ function run() {
   // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
   windowFrame(b, win, { size: [1320, 940], pos: [0, 0], title: '일지', enable: false });
   // 4탭: 일일 의뢰 · 업적 · 몬스터 도감 · 아이템 도감 (유니크·세트·룬워드 수집 — docs/design/19 §2-6)
-  [['TabDaily', '일일 의뢰'], ['TabAch', '업적'], ['TabCol', '몬스터 도감'], ['TabItem', '아이템 도감']].forEach(([n, label], i) => {
+  [['TabDaily', '일일 퀘스트'], ['TabAch', '업적'], ['TabCol', '몬스터 도감'], ['TabItem', '아이템 도감']].forEach(([n, label], i) => {
     b.button(win + '/' + n, label, { anchor: 'top-left', pos: [40 + i * 214, -88], rect_size: [204, 88], font_size: 26, bg_color: '#24212B', color: '#E6DCC6' });
   });
   b.text(win + '/Info', '', { anchor: 'top-right', pos: [-40, -110], rect_size: [380, 48], size: 22, color: '#B9B0A1', alignment: 5, bestfit: true, min_size: 16, max_size: 22 });
@@ -65,7 +65,7 @@ function run() {
   pager('BtnNext', '다음 ▶', -F.padX);
   b.text(win + '/Page', '', { anchor: 'bottom-right', pivot: [1, 0], pos: [-F.padX - B.w - F.gap, F.buttonBottom], rect_size: [140, B.h], size: 24, color: '#B9B0A1', alignment: 4 });
   pager('BtnPrev', '◀ 이전', -F.padX - B.w - F.gap - 140 - F.gap);
-  b.text(win + '/Hint', 'J 일지 · 일일 의뢰는 한국 시간 자정에 바뀝니다\n업적은 난이도마다 따로 · 달성하면 「받기」', { anchor: 'bottom-left', pivot: [0, 0], pos: [F.padX, F.buttonBottom], rect_size: [540, B.h], size: 18, color: T.COLOR.dim, alignment: 3, bestfit: true, min_size: 15, max_size: 18 });
+  b.text(win + '/Hint', 'J 일지 · 일일 퀘스트는 한국 시간 자정에 바뀝니다\n업적은 난이도마다 따로 · 달성하면 「받기」', { anchor: 'bottom-left', pivot: [0, 0], pos: [F.padX, F.buttonBottom], rect_size: [540, B.h], size: 18, color: T.COLOR.dim, alignment: 3, bestfit: true, min_size: 15, max_size: 18 });
   b.patchComponent(win + '/Hint', 'MOD.Core.UITransformComponent', { ActivePlatform: 1 });
   b.write(file, { lint_verbose: false });
   return b.listEntities().length;

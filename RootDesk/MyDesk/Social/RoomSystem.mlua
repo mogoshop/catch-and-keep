@@ -259,7 +259,7 @@ script RoomSystem extends Logic
         end)
         log("[VRF] room create " .. id .. " name=" .. clean .. " locked=" .. tostring(locked) .. " max=" .. tostring(cap) .. " diff=" .. tostring(diff) .. " written=" .. tostring(ok))
         if not ok then
-            _Util:Notify("방 목록에 쓰지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            _Util:Notify("방 목록에 쓰지 못했습니다. 다시 시도해주세요", uid)
             return
         end
         self.Party[uid] = id
@@ -275,23 +275,23 @@ script RoomSystem extends Logic
         if player == nil then return end
         local r = self:ReadRooms(0).rooms[id]
         if type(r) ~= "table" or r.m == "solo" then
-            _Util:Notify("그 방은 이제 없다 — 목록을 새로 불러오세요", uid)
+            _Util:Notify("그 방은 이제 없습니다 — 목록을 새로 불러오세요", uid)
             self:RequestRoomsFor(uid)
             return
         end
         if r.m == "private" and self:Hash(pw or "", id) ~= r.h then
-            _Util:Notify("비밀번호가 맞지 않다", uid)
+            _Util:Notify("비밀번호가 맞지 않습니다", uid)
             return
         end
         if (r.c or 0) >= (r.x or 4) and not (type(r.w) == "table" and r.w[uid] ~= nil) then
-            _Util:Notify("방이 가득 찼다", uid)
+            _Util:Notify("방이 가득 찼습니다", uid)
             return
         end
         ---@type PlayerStats
         local stats = player:GetComponent("script.PlayerStats")
         local diff = math.floor(r.d or 0)
         if stats ~= nil and diff > stats.MaxDifficulty then
-            _Util:Notify("아직 열지 않은 난이도의 방이다", uid)
+            _Util:Notify("아직 열지 않은 난이도의 방입니다", uid)
             return
         end
         self:Forget(uid)
@@ -310,7 +310,7 @@ script RoomSystem extends Logic
                 joined = true
             end)
             if not ok or not joined then
-                _Util:Notify("모집에 끼지 못했다 (가득 찼거나 출발함) — 목록을 새로 불러오세요", uid)
+                _Util:Notify("모집에 끼지 못했습니다 (가득 찼거나 출발함) — 목록을 새로 불러오세요", uid)
                 self:RequestRoomsFor(uid)
                 return
             end
@@ -376,7 +376,7 @@ script RoomSystem extends Logic
         end)
         log("[VRF] room start " .. id .. " → channel " .. target .. " ok=" .. tostring(ok))
         if not ok then
-            _Util:Notify("출발하지 못했다. 잠시 뒤 다시 누르세요", uid)
+            _Util:Notify("출발하지 못했습니다. 다시 시도해주세요", uid)
             return
         end
         self:Poll()
@@ -437,12 +437,12 @@ script RoomSystem extends Logic
             return
         end
         if w == nil and _ChannelSystem:InstancesCached(1) ~= nil then
-            _Util:Notify("그 방이 있던 채널이 닫혔다 — 다른 방을 고르세요", uid)
+            _Util:Notify("그 방이 있던 채널이 닫혔습니다 — 다른 방을 고르세요", uid)
             return
         end
         if self.Queue[uid] == nil then
             self.Queue[uid] = { id = id, start = _UtilLogic.ElapsedSeconds }
-            _Util:Notify("그 방의 채널이 가득 찼다 — 자리가 나면 자동으로 들어갑니다 (최대 5분)", uid)
+            _Util:Notify("그 방의 채널이 가득 찼습니다 — 자리가 나면 자동으로 들어갑니다 (최대 5분)", uid)
             self:SendQueue(uid, true)
             log("[VRF] room queue " .. id .. " uid=" .. uid)
         end
@@ -464,7 +464,7 @@ script RoomSystem extends Logic
             elseif type(r) ~= "table" or (r.s == "wait" and (type(r.w) ~= "table" or r.w[uid] == nil)) then
                 self.Party[uid] = nil
                 self.Shown[uid] = nil
-                _Util:Notify("모집이 끝났다 (팀장이 나갔거나 오래 소식이 없음)", uid)
+                _Util:Notify("모집이 끝났습니다 (팀장이 나갔거나 오래 소식이 없음)", uid)
                 self:OpenPicker(uid)
             elseif r.s ~= "wait" then
                 self.Party[uid] = nil
@@ -476,7 +476,7 @@ script RoomSystem extends Logic
                 if self.Retry[uid] ~= nil then
                     if _UtilLogic.ElapsedSeconds - self.Retry[uid] > 120 then
                         self.Retry[uid] = nil
-                        _Util:Notify("함께 들어갈 채널을 찾지 못했다 — 잠시 뒤 다시 출발해 보세요", uid)
+                        _Util:Notify("함께 들어갈 채널을 찾지 못했습니다. 다시 시도해주세요", uid)
                     else
                         self:TryStart(uid)
                     end
@@ -491,11 +491,11 @@ script RoomSystem extends Logic
                 self:Forget(uid)
             elseif type(r) ~= "table" or (r.c or 0) >= (r.x or 4) then
                 self.Queue[uid] = nil
-                _Util:Notify("기다리던 방이 닫혔거나 가득 찼다 — 다른 방을 고르세요", uid)
+                _Util:Notify("기다리던 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요", uid)
                 self:SendQueue(uid, false)
             elseif _UtilLogic.ElapsedSeconds - q.start > self.QueueSec then
                 self:Forget(uid)
-                _Util:Notify("5분 동안 자리가 나지 않았다 — 다른 방을 고르거나 다시 시도하세요", uid)
+                _Util:Notify("5분 동안 자리가 나지 않았습니다 — 다른 방을 고르거나 다시 시도해주세요", uid)
                 self:SendQueue(uid, false)
             else
                 local w = _ChannelSystem:Find(_ChannelSystem:InstancesCached(2), r.ch)
@@ -659,7 +659,7 @@ script RoomSystem extends Logic
         log("[VRF] room enter " .. key .. " town=" .. town .. " created=" .. tostring(not exists) .. " ok=" .. tostring(ok) .. " moved=" .. tostring(moved))
         if not ok or not moved then
             save:CancelRoomMove()
-            _Util:Notify("방에 들어가지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            _Util:Notify("방에 들어가지 못했습니다. 다시 시도해주세요", uid)
             return false
         end
         return true
@@ -689,7 +689,7 @@ script RoomSystem extends Logic
                 self:Enter(player, id, math.floor(r.d or 0), false)
                 return
             end
-            _Util:Notify("그 방이 닫혔거나 가득 찼다 — 다른 방을 고르세요", uid)
+            _Util:Notify("그 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요", uid)
         end
         self:OpenPicker(uid)
     end
@@ -741,7 +741,7 @@ script RoomSystem extends Logic
         local player = _UserService:GetUserEntityByUserId(uid)
         if not isvalid(player) or not _GameConst:InGameRoom() then return end
         if not _Util:IsAlive(player) then
-            _Util:Notify("쓰러진 상태에서는 나갈 수 없다", uid)
+            _Util:Notify("쓰러진 상태에서는 나갈 수 없습니다", uid)
             return
         end
         self:ClearReturn(uid)
@@ -754,7 +754,7 @@ script RoomSystem extends Logic
         log("[VRF] room leave → lobby moved=" .. tostring(moved))
         if moved == nil or moved == 0 then
             save:CancelRoomMove()
-            _Util:Notify("로비로 나가지 못했다. 잠시 뒤 다시 시도하세요", uid)
+            _Util:Notify("로비로 나가지 못했습니다. 다시 시도해주세요", uid)
         end
     end
 

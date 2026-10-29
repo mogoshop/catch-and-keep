@@ -11,7 +11,7 @@ const b=fs.existsSync(file)?UIBuilder.read(file):new UIBuilder('EquipmentHUD', 1
 b.empty('SafeArea',{anchor:'stretch',rect_size:[1920,1080]});
 const w='SafeArea/InvWin';
 // 틀(바탕·테두리·제목·닫기)은 공용 창 틀 (lib.cjs windowFrame · 10-29 기획서 45 결정 2-A) — 몸통 배치는 아래 그대로
-windowFrame(b,w,{size:[1400,1000],pos:[20,0],title:'소지품  ·  망자의 장비',enable:false});
+windowFrame(b,w,{size:[1400,1000],pos:[20,0],title:'인벤토리  ·  망자의 장비',enable:false});
 const d=w+'/Doll';
 b.panel(d,{anchor:'top-left',pos:[28,-112],rect_size:[500,516],color:'#17131D'});
 b.avatar(d+'/Avatar',{rect_size:[200,250],pos:[0,38],preserve_avatar:1,raycast:false});

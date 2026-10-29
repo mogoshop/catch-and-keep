@@ -267,7 +267,7 @@ script PlayerQuest extends Component
     method string StepGoal(table q)
         -- 지금 단계의 할 일 한 줄 (열쇠 → 상자 의뢰)
         if q.kind == "gate" then
-            if self.Progress >= 1 then return "봉인이 풀렸다 → " .. _GameData:GetMonsterName(q.target) .. " 처치" end
+            if self.Progress >= 1 then return "봉인 해제 → " .. _GameData:GetMonsterName(q.target) .. " 처치" end
             return _GameData:GetMonsterName(q.gate) .. " 처치 → 옥좌의 봉인 풀기"
         end
         if q.kind ~= "chest" then return q.objective end
@@ -365,7 +365,7 @@ script PlayerQuest extends Component
             if key == "runes" or key == "unique" then slots = slots + (tonumber(val) or 0) end
         end
         if #inv.Bag + slots > inv.BagSize then
-            _Util:Notify("보상 받을 가방 공간 " .. tostring(slots) .. "칸이 필요합니다. 의뢰와 보상은 보관됩니다", self.Entity.PlayerComponent.UserId)
+            _Util:Notify("보상 받을 가방 공간 " .. tostring(slots) .. "칸이 필요합니다. 퀘스트와 보상은 보관됩니다", self.Entity.PlayerComponent.UserId)
             return
         end
         local items = {}
@@ -394,7 +394,7 @@ script PlayerQuest extends Component
                     if u ~= nil then
                         local made = _ItemData:MakeUnique(u, lv + 2)
                         _LootSystem:Spawn(_Util:Pos2(self.Entity), self.Entity.PlayerComponent.UserId, "item", made, 1, _ItemData:Parse(made).rarity)
-                        _Util:Banner(u.name, _GameData:GetMonsterName(q.target) .. "이(가) 남긴 것 — 발밑에 떨어졌다", self.Entity.PlayerComponent.UserId)
+                        _Util:Banner(u.name, _GameData:GetMonsterName(q.target) .. "이(가) 남긴 것 — 발밑에 떨어졌습니다", self.Entity.PlayerComponent.UserId)
                         log("[VRF] act boss unique " .. q.target .. " → " .. u.id)
                     else
                         u = _ItemData:PickUnique(math.max(1, lv - 3), "")
@@ -422,7 +422,7 @@ script PlayerQuest extends Component
         _Util:Notify("보상: " .. head .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
         local icon = _GameData:GetUiIcon("q_done")
         if #items > 0 then icon = _ItemData:IconFor(items[1]) end
-        self:NotifyQuest("의뢰 보상 · " .. q.title, head .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
+        self:NotifyQuest("퀘스트 보상 · " .. q.title, head .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
         log("[PlayerQuest] 완료 " .. q.title .. " diff=" .. tostring(self.Diff))
         _GameEvents:Emit("QuestCompleted", { player = self.Entity, index = self.Index })
         -- 액트 마지막 의뢰면 장 마무리 내레이션 (docs/design/18 §3-4)

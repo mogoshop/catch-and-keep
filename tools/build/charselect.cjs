@@ -73,7 +73,7 @@ function run() {
   pick('FaceStyle', 520, -396);
   pick('Face', 970, -396);
   b.button(c + '/BtnRandom', '무작위', { anchor: 'top-left', pivot: [0, 1], pos: [1160, -194], rect_size: [240, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
-  b.text(c + '/Note', '외형은 나중에 바꿀 수 없다\n장비를 입으면 옷과 무기 모습이 바뀐다', { anchor: 'top-left', pos: [40, -592], rect_size: [420, 70], size: 19, color: '#8C8270', alignment: 4 });
+  b.text(c + '/Note', '외형은 나중에 바꿀 수 없습니다\n장비를 입으면 옷과 무기 모습이 바뀝니다', { anchor: 'top-left', pos: [40, -592], rect_size: [420, 70], size: 19, color: '#8C8270', alignment: 4 });
   b.button(c + '/BtnCancel', '취소', { anchor: 'bottom-right', pivot: [1, 0], pos: [-660, 24], rect_size: [220, 88], image_ruid: icons.btn_frame, bg_color: '#FFFFFF', sprite_type: 1, font_size: 24, color: '#E6DCC6' });
   b.button(c + '/BtnCreate', '만들기', { anchor: 'bottom-right', pivot: [1, 0], pos: [-40, 24], rect_size: [592, 88], image_ruid: icons.btn_frame, bg_color: { r: 1, g: 0.86, b: 0.62, a: 1 }, sprite_type: 1, font_size: 30, color: '#F4E2B0' });
   // 첫 진입 로딩 화면: 처음부터 켜져 있어 스크립트가 돌기 전에도 바로 그려진다 (10-10 QA: 메이플월드 기본 캐릭터가 1.5초 보였다가

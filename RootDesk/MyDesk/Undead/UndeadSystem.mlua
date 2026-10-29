@@ -69,7 +69,7 @@ script UndeadSystem extends Logic
         -- 피해 = 그 해골 공격력 × mult (반경 radius). 돌진 중 쓰러져도 그 자리에서 터진다 (ShadowUnit.BombExplode)
         local picks = self:LiveUnits(player, "skeleton")
         if #picks == 0 then
-            _Util:Warn("터뜨릴 해골 전사가 없다 — 해골 전사를 먼저 일으키세요", player.PlayerComponent.UserId)
+            _Util:Warn("터뜨릴 해골 전사가 없습니다 — 해골 전사를 먼저 일으키세요", player.PlayerComponent.UserId)
             return false
         end
         local foe = _Util:NearestMonster(player.CurrentMap, target, 2.5)
@@ -219,7 +219,7 @@ script UndeadSystem extends Logic
         -- 최대 생명의 healPct% 회복하고 3초간 받는 피해 -20%. 강화 「피의 고양」이면 5초간 공격 속도 +frenzyPct%
         local picks = self:LiveUnits(player, "skeleton,mage")
         if #picks == 0 then
-            _Util:Warn("바칠 해골이 없다 — 해골 전사·마법사를 먼저 일으키세요", player.PlayerComponent.UserId)
+            _Util:Warn("바칠 해골이 없습니다 — 해골 전사·마법사를 먼저 일으키세요", player.PlayerComponent.UserId)
             return false
         end
         local pick = picks[1]
@@ -368,17 +368,17 @@ script UndeadSystem extends Logic
         local userId = player.PlayerComponent.UserId
         local me = _Util:Pos2(player)
         if (target - me):Magnitude() > 5 then
-            _Util:Warn("혼이 너무 멀리 있다", userId)
+            _Util:Warn("혼이 너무 멀리 있습니다", userId)
             return false
         end
         local orb = self:FindUsableSoul(player, target, self.SoulReach)
         if orb == nil then
-            _Util:Warn("근처에 내 혼이 없다 — 몬스터를 처치한 뒤 소환하세요", userId)
+            _Util:Warn("근처에 내 혼이 없습니다 — 몬스터를 처치한 뒤 소환하세요", userId)
             log("[VRF] summon rejected: no owned soul")
             return false
         end
         if kind == "revive" and (orb.Rank == "unique" or orb.Rank == "boss") then
-            _Util:Warn("최상위·보스는 되살릴 수 없다", userId)
+            _Util:Warn("최상위·보스는 되살릴 수 없습니다", userId)
             return false
         end
         local pos = _Util:Pos2(orb.Entity)
@@ -405,7 +405,7 @@ script UndeadSystem extends Logic
             for _, r in ipairs(self:ListOf(player)) do if r.kind == kind then have = have + 1 end end
             if have >= max then
                 local names = { skeleton = "해골 전사", mage = "해골 마법사", revive = "되살린 몬스터" }
-                _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(max) .. "기 — 가장 오래된 하나가 무너졌다 (스킬 레벨을 올리면 늘어난다)", userId)
+                _Util:Notify((names[kind] or kind) .. "는 지금 최대 " .. tostring(max) .. "기 — 가장 오래된 하나가 무너졌습니다 (스킬 레벨을 올리면 늘어납니다)", userId)
             end
             self:TrimOldest(player, kind, math.max(0, max - 1 - reserved))
             table.insert(self:ListOf(player), rec)
@@ -793,7 +793,7 @@ script UndeadSystem extends Logic
         for _, rec in ipairs(self:ListOf(player)) do
             if rec.id == id and rec.taste then
                 if isvalid(rec.entity) then self:PlaySummonFx(player, _Util:Pos2(rec.entity)) end
-                _Util:Notify("그림자가 흩어졌습니다 · Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 직접 거두세요", player.PlayerComponent.UserId)   -- 안내 줄 한 줄에 들게 (「거둘 수 있습니다」는 메이커에서 끝 글자가 다음 줄로 넘쳤다)
+                _Util:Notify("그림자가 흩어졌습니다 · Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 직접 획득 가능", player.PlayerComponent.UserId)   -- 안내 줄 한 줄에 들게 (10-29 오후 사용자 확정 5번 · 「거둘 수 있습니다」는 메이커에서 끝 글자가 다음 줄로 넘쳤다)
                 log("[VRF] first-kill shadow expire id=" .. id)
                 break
             end
@@ -881,13 +881,13 @@ script UndeadSystem extends Logic
         -- 심도 입장·다음 층·귀환 직전에만 전달한다. 실패하면 이동을 중단해 소환수를 잃지 않는다.
         local code, memory = _RoomService:GetSharedMemory(self.TravelMemoryName)
         if code ~= SharedMemoryResultCode.OK or memory == nil then
-            _Util:Notify("소환수 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", player.PlayerComponent.UserId)
+            _Util:Notify("소환수 이동 준비에 실패했습니다. 다시 시도해주세요", player.PlayerComponent.UserId)
             return false
         end
         local snapshot = self:TravelSnapshot(player, destination)
         local result = memory:SetVariableAndWait(player.PlayerComponent.UserId, _HttpService:JSONEncode(snapshot))
         if result.Code ~= SharedMemoryResultCode.OK then
-            _Util:Notify("소환수 이동 준비에 실패했습니다. 잠시 뒤 다시 시도하세요", player.PlayerComponent.UserId)
+            _Util:Notify("소환수 이동 준비에 실패했습니다. 다시 시도해주세요", player.PlayerComponent.UserId)
             return false
         end
         log("[VRF] undead room stash count=" .. tostring(snapshot.unitCount) .. " to=" .. destination)

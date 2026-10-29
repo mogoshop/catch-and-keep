@@ -111,7 +111,7 @@ script PlayerTravel extends Component
         log("[VRF] leave instance → lobby moved=" .. tostring(moved))
         if (moved == nil or moved == 0) and save ~= nil then
             save:RollbackRoomTravel()
-            _Util:Notify("마을로 돌아가지 못했습니다. 잠시 뒤 다시 시도하세요", uid)
+            _Util:Notify("마을로 돌아가지 못했습니다. 다시 시도해주세요", uid)
         end
     end
 
@@ -131,9 +131,9 @@ script PlayerTravel extends Component
         if act < 1 or act > _GameConst.ActCount then return end
         if not _Util:NearNpc(self.Entity, "caravan") and not _Util:NearNpc(self.Entity, "captain") and not _Util:NearNpc(self.Entity, "scout") then return end
         if not self:ActUnlocked(act) then
-            local why = "아직 길이 열리지 않았다 — 묘지기 여왕 오르넬라를 쓰러뜨려야 사막길이 열린다"
-            if act == 3 then why = "아직 바다가 열리지 않았다 — 대사제 알하자르를 쓰러뜨려야 출항한다" end
-            if act == 4 then why = "아직 북쪽 길이 열리지 않았다 — 익사한 제독 바렌을 쓰러뜨려야 떠난다" end
+            local why = "아직 길이 열리지 않았습니다 — 묘지기 여왕 오르넬라를 쓰러뜨리면 사막길이 열립니다"
+            if act == 3 then why = "아직 바다가 열리지 않았습니다 — 대사제 알하자르를 쓰러뜨리면 출항할 수 있습니다" end
+            if act == 4 then why = "아직 북쪽 길이 열리지 않았습니다 — 익사한 제독 바렌을 쓰러뜨리면 떠날 수 있습니다" end
             _Util:Warn(why, pc.UserId)
             return
         end
@@ -166,7 +166,7 @@ script PlayerTravel extends Component
         self.Known = self.Known .. "," .. id
         self:SyncDiffInfo()
         local w = _WaypointData:Get(id)
-        if w ~= nil then _Util:Banner("웨이포인트 활성화 · " .. w.name, "웨이포인트에서 언제든 이곳으로 이동할 수 있다", self.Entity.PlayerComponent.UserId) end
+        if w ~= nil then _Util:Banner("웨이포인트 활성화 · " .. w.name, "웨이포인트에서 언제든 이곳으로 이동할 수 있습니다", self.Entity.PlayerComponent.UserId) end
     end
 
     method boolean IsKnown(string id)
@@ -198,7 +198,7 @@ script PlayerTravel extends Component
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty then return end
         if diff ~= stats.Difficulty and _GameConst:InGameRoom() then
             -- 게임 방은 만들 때 난이도가 정해진다 (방 안의 맵이 그 난이도뿐)
-            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어 간다", pc.UserId)
+            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어주세요", pc.UserId)
             return
         end
         local w = _WaypointData:Get(id)
@@ -225,7 +225,7 @@ script PlayerTravel extends Component
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil or diff < 0 or diff > stats.MaxDifficulty or diff == stats.Difficulty then return end
         if _GameConst:InGameRoom() then
-            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어 간다", pc.UserId)
+            _Util:Warn("다른 난이도는 「게임 나가기」 뒤 그 난이도로 방을 만들어주세요", pc.UserId)
             return
         end
         stats.Difficulty = diff
@@ -262,18 +262,18 @@ script PlayerTravel extends Component
         local map = self.Entity.CurrentMap
         if not isvalid(map) then return false end
         if _GameConst:IsTown(map) then
-            _Util:Warn("이미 마을이다", pc.UserId)
+            _Util:Warn("이미 마을입니다", pc.UserId)
             return false
         end
         if map:GetComponent("script.DepthDirector") ~= nil then
             -- 심연은 하강 도전 — 층을 정복하고 문으로 나간다 (돌아올 포털을 열 수 없다)
-            _Util:Warn("심연에서는 귀환 두루마리를 쓸 수 없다 — 층을 정복하고 왼쪽 문으로 나가라", pc.UserId)
+            _Util:Warn("심연에서는 귀환 두루마리를 쓸 수 없습니다 — 층을 정복하고 왼쪽 문으로 나가주세요", pc.UserId)
             return false
         end
         local townName = self:TownMap()
         local town = _EntityService:GetEntityByPath("/maps/" .. townName)
         if not isvalid(town) then
-            _Util:Warn("지금은 마을 포털을 열 수 없다", pc.UserId)
+            _Util:Warn("지금은 마을 포털을 열 수 없습니다", pc.UserId)
             return false
         end
         ---@type PlayerInventory
@@ -283,7 +283,7 @@ script PlayerTravel extends Component
         elseif self.TownScroll > 0 then
             self.TownScroll = self.TownScroll - 1
         else
-            _Util:Warn("귀환 두루마리가 없다 (상인에게 구입)", pc.UserId)
+            _Util:Warn("귀환 두루마리가 없습니다 (상인에게 구입)", pc.UserId)
             return false
         end
         self:OpenTownPortal(map, town, _Util:Pos2(self.Entity))
@@ -315,7 +315,7 @@ script PlayerTravel extends Component
         local gate = self:SpawnPortal(field, spot, townName, Vector2(0, 0), self:PlaceName(townName) .. " - 보스 처치", false)
         if gate == nil then return end
         _TimerService:SetTimerOnce(function() if isvalid(gate) then gate:Destroy() end end, 60)
-        _Util:NotifyMap(field, bossName .. " 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸다")
+        _Util:NotifyMap(field, bossName .. " 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸습니다")
         log(string.format("[VRF] boss portal %s → %s (%.1f,%.1f)", field.Name, townName, spot.x, spot.y))
     end
 
