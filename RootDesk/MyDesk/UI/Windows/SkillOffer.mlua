@@ -174,6 +174,7 @@ script SkillOffer extends Logic
             _UIKit:SetEnabled(self.Win .. "/Pick" .. tostring(i), def ~= nil)
             if def ~= nil then
                 _UIKit:SetIcon(c, _GameData:GetUiIcon("sk_offer_card_new"))
+                _UIKit:SetColor(c, Color(1, 1, 1, 1))   -- 혼의 제물 단계 카드의 금빛 물들임을 지운다 (44-7)
                 -- 축 이름은 그 트리 색 글자로 (카드 위 색 띠는 10-28 사용자 지시로 없앰)
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(_SkillWindow:TreeHex(a[1]), a[2]))
                 _UIKit:SetIcon(c .. "/Icon", _SkillData:Get(def.skill).icon)
@@ -210,10 +211,17 @@ script SkillOffer extends Logic
                 local def = _SkillData:Get(id)
                 local lv = book:GetLevel(id)
                 local kind, kindColor
+                -- 44-7: 이 랭크로 단계(투사체 5·8·12 등)에 닿거나 20랭크 「완성」이면 「랭크 업」 카드를 금 테두리로 (은빛 카드를 금빛으로 물들임 · 숫자뿐인 랭크 업과 구분)
+                local stage = (def.kind ~= "node" and lv > 0) and book:StageReachedAt(id, lv + 1) or ""
+                local done = def.kind ~= "node" and lv > 0 and book:IsComplete(id, lv + 1)
                 if def.kind == "node" then
                     kind, kindColor = "강화  " .. tostring(lv) .. " → " .. tostring(lv + 1), "#C8A0FF"
                 elseif lv == 0 then
                     kind, kindColor = "★ 새 스킬", "#F4ED83"
+                elseif done then
+                    kind, kindColor = "랭크 " .. tostring(lv) .. " → " .. tostring(lv + 1) .. " · 완성", "#F4D27A"
+                elseif stage ~= "" then
+                    kind, kindColor = "랭크 " .. tostring(lv) .. " → " .. tostring(lv + 1) .. " · 단계", "#F4D27A"
                 else
                     kind, kindColor = "랭크 " .. tostring(lv) .. " → " .. tostring(lv + 1), "#D8D8E0"
                 end
@@ -221,6 +229,8 @@ script SkillOffer extends Logic
                 local card = "sk_offer_card_rank"
                 if def.kind == "node" then card = "sk_offer_card_augment" elseif lv == 0 then card = "sk_offer_card_new" end
                 _UIKit:SetIcon(c, _GameData:GetUiIcon(card))
+                _UIKit:SetColor(c, (stage ~= "" or done) and Color(1, 0.84, 0.48, 1) or Color(1, 1, 1, 1))
+                if (stage ~= "" or done) and not Environment:IsPublishedPlay() then log(string.format("[VRF] offer stage card %s %d→%d stage=%s complete=%s", id, lv, lv + 1, stage, tostring(done))) end
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(kindColor, kind))
                 _UIKit:SetIcon(c .. "/Icon", def.icon)
                 _UIKit:SetText(c .. "/Name", def.name)

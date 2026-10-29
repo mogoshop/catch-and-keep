@@ -61,6 +61,9 @@ script Projectile extends Component
     property string ViewKind = ""            -- "bone_shard": 쏜 사람 화면에서는 직접 그린 예측 뼛조각을 보이고 이 투사체는 숨긴다
     property boolean LocalView = false       -- 클라이언트 전용 예측 투사체 (판정 없음, 사거리 끝에서 스스로 사라진다)
     property boolean ViewHidden = false            -- 스킬 투사체 그림 (서버에서 바꾼 SpriteRUID는 클라이언트에 안 보여서 동기화 값으로 칠한다)
+    @Sync
+    property string Style = ""               -- 44-1 A 있는 그림 재조합: 스킬마다 꼬리·맞은 자리 모양 ("spear" 긴 창·꽂힘 · "torrent" 혼 꼬리 · "rite"/"rite_push" 뼈 화살 · "" 기본)
+    property integer ViewFrame = 0           -- 클라이언트: 「|」로 이은 프레임 그림(코덱스 납품분)의 지금 칸 (SkinFrame)
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -193,6 +196,7 @@ script Projectile extends Component
             self.ViewPos = self.ViewPos + self.ViewDir * step
         end
         self.ViewDist = self.ViewDist + step
+        self:AdvanceFrame()
         self:DropGhost(self.Entity.TransformComponent)
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
@@ -243,7 +247,7 @@ script Projectile extends Component
         self.SkinRuid = skin
         local sprite = self.Entity.SpriteRendererComponent
         if isvalid(sprite) then
-            sprite.SpriteRUID = skin
+            sprite.SpriteRUID = self:SkinFrame()
             sprite.Color = self.TintColor
         end
         self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
@@ -254,11 +258,15 @@ script Projectile extends Component
     @ExecSpace("ClientOnly")
     method void DropGhost(TransformComponent t)
         -- 스킬 그림 투사체만: 0.035초마다 같은 그림을 옅게 그 자리에 남겨 0.14초 뒤 지운다 (날아가는 궤적이 보이게)
+        -- 44-1 A: 영혼 격류(torrent)는 더 촘촘하고 오래 남는 혼 꼬리 · 뼈 창(spear)은 긴 몸 그대로 짧은 잔상 (가로·세로 배율을 따로 쓴다)
         if self.SkinRuid == "" or _UtilLogic.ElapsedSeconds < self.NextGhostAt then return end
-        self.NextGhostAt = _UtilLogic.ElapsedSeconds + 0.035
+        local gap, life, alpha, shrink = 0.035, 0.14, 0.4, 0.85
+        if self.Style == "torrent" then gap, life, alpha, shrink = 0.022, 0.26, 0.5, 0.75
+        elseif self.Style == "spear" then gap, life, alpha, shrink = 0.03, 0.1, 0.32, 0.95 end
+        self.NextGhostAt = _UtilLogic.ElapsedSeconds + gap
         if self.Ghosts == nil then self.Ghosts = {} end
-        local s = t.Scale.x * 0.85
-        local serial = _EffectService:PlayEffect(self.SkinRuid, self.Entity, t.WorldPosition, t.ZRotation, Vector3(s, s, 1), false, { Alpha = 0.4, Color = self.TintColor })
+        local sx, sy = t.Scale.x * shrink, t.Scale.y * shrink
+        local serial = _EffectService:PlayEffect(self:SkinFrame(), self.Entity, t.WorldPosition, t.ZRotation, Vector3(sx, sy, 1), false, { Alpha = alpha, Color = self.TintColor })
         if serial == 0 then return end
         local ghosts = self.Ghosts
         ghosts[serial] = true
@@ -267,7 +275,26 @@ script Projectile extends Component
                 ghosts[serial] = nil
                 _EffectService:RemoveEffect(serial)
             end
-        end, 0.14)
+        end, life)
+    end
+
+    method string SkinFrame()
+        -- 그림 한 장이면 그대로, 「|」로 이은 프레임(코덱스 납품분 · GameConst.FxSkill*)이면 지금 칸 (클라이언트는 AdvanceFrame이 0.08초마다 넘긴다)
+        if string.find(self.SkinRuid, "|", 1, true) == nil then return self.SkinRuid end
+        local list = _Util:Frames(self.SkinRuid)
+        if #list == 0 then return "" end
+        return list[self.ViewFrame % #list + 1]
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AdvanceFrame()
+        -- 프레임 그림 투사체만: 날아가는 동안 0.08초마다 다음 칸 (한 장짜리 그림은 아무것도 안 한다)
+        if string.find(self.SkinRuid, "|", 1, true) == nil then return end
+        local frame = math.floor((_UtilLogic.ElapsedSeconds - self.ViewT0) / 0.08)
+        if frame == self.ViewFrame then return end
+        self.ViewFrame = frame
+        local sprite = self.Entity.SpriteRendererComponent
+        if isvalid(sprite) and not self.ViewHidden then sprite.SpriteRUID = self:SkinFrame() end
     end
 
     @ExecSpace("ServerOnly")
@@ -281,10 +308,16 @@ script Projectile extends Component
     @ExecSpace("ServerOnly")
     method void Skin(string ruid, number scale)
         -- 같은 투사체 모델에 스킬 그림(메이플 스킬 애니메이션)을 입힌다
+        self:SkinXY(ruid, scale, scale)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SkinXY(string ruid, number sx, number sy)
+        -- 44-1 A: 진행 방향(가로)·두께(세로) 배율을 따로 — 뼈 창은 같은 궤적 그림을 가늘고 길게 늘인다. 「|」 프레임 그림이면 첫 칸
         self.SkinRuid = ruid
         local sprite = self.Entity.SpriteRendererComponent
-        if isvalid(sprite) then sprite.SpriteRUID = ruid end
-        self.Entity.TransformComponent.Scale = Vector3(scale, scale, 1)
+        if isvalid(sprite) then sprite.SpriteRUID = self:SkinFrame() end
+        self.Entity.TransformComponent.Scale = Vector3(sx, sy, 1)
     end
 
     @ExecSpace("ClientOnly")
@@ -307,7 +340,8 @@ script Projectile extends Component
             return
         end
         if self:HideForPrediction() then return end
-        if sprite.SpriteRUID ~= self.SkinRuid then sprite.SpriteRUID = self.SkinRuid end
+        local frame = self:SkinFrame()
+        if sprite.SpriteRUID ~= frame then sprite.SpriteRUID = frame end
         sprite.Enable = true
     end
 
@@ -327,12 +361,33 @@ script Projectile extends Component
     end
 
     @ExecSpace("Multicast")
-    method void HitFx(Vector3 pos, Color color, Entity shooter, boolean shake)
+    method void HitFx(Vector3 pos, Color color, Entity shooter, boolean shake, string style)
         -- 맞은 자리에서 투사체 색 불꽃이 튄다 (맞았는지 보이게). 뼈 창·영혼 격류는 쏜 사람 화면만 살짝 흔든다 (10-28 F5 C-3)
+        -- 44-1 A 있는 그림 재조합: 스킬마다 맞은 자리 모양이 다르다 — 뼈 창 = 진행 방향으로 꽂히는 빛 파열 · 영혼 격류 = 빨려드는 혼 ·
+        --   뼈 화살 마지막 발 = 큰 뼛가루 충격 (코덱스 H-1 꽂힘 그림 GameConst.FxSkillSpearHit가 오면 그 프레임으로)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, me.CurrentMap, pos, 0, Vector3(0.45, 0.45, 1), false, { Color = color })
-        if shake then _Util:SkillShake(shooter, 0.06, 0.09) end
+        local map = me.CurrentMap
+        local angle = math.deg(math.atan(self.Dir.y, self.Dir.x))
+        if style == "spear" then
+            if _GameConst.FxSkillSpearHit ~= "" then
+                _Util:PlayFrames(_GameConst.FxSkillSpearHit, map, pos, angle, Vector3(0.9, 0.9, 1), 0.07, Color(1, 1, 1, 1), 6)
+            else
+                _ParticleService:PlayBasicParticle(BasicParticleType.PillarBurst, map, pos, angle - 90, Vector3(0.42, 0.55, 1), false, { Color = Color(0.95, 0.9, 0.78, 0.95) })
+                _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, map, pos, 0, Vector3(0.32, 0.22, 1), false, { Color = Color(0.85, 0.8, 0.7, 0.9) })
+            end
+        elseif style == "torrent" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, map, pos, 0, Vector3(0.38, 0.38, 1), false, { Color = color })
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(0.3, 0.3, 1), false, { Color = color })
+        elseif style == "rite_push" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, map, pos, 0, Vector3(0.75, 0.5, 1), false, { Color = Color(0.95, 0.9, 0.78, 1) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, map, pos - Vector3(0, 0.25, 0), 0, Vector3(0.6, 0.28, 1), false, nil)
+            _Util:SkillShake(shooter, 0.1, 0.14)
+        else
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(0.45, 0.45, 1), false, { Color = color })
+        end
+        if shake and style ~= "rite_push" then _Util:SkillShake(shooter, 0.06, 0.09) end
+        if style ~= "" and not Environment:IsPublishedPlay() and shooter == me then log("[VRF] projectile hit fx style=" .. style) end
     end
 
     @ExecSpace("ClientOnly")
@@ -355,7 +410,7 @@ script Projectile extends Component
                     local unit = self.Owner:GetComponent("script.ShadowUnit")
                     if unit ~= nil then unit:HitOne(m.Entity) end
                     self.PierceHits = self.PierceHits + 1   -- 관통 마법사 MaxHits
-                    self:HitFx(m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0), self.TintColor, self.Owner, self:ShakesOnHit())
+                    self:HitFx(m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
                 else
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
                     local beforeHp = m.Hp
@@ -384,7 +439,7 @@ script Projectile extends Component
                         local effects = self.Owner:GetComponent("script.SkillEffects")
                         if effects ~= nil then effects:BoneShardImpact(hitPos) end
                     elseif m.Hp < beforeHp then
-                        self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit())
+                        self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
                     end
                 end
                 -- 10-11 QA: 고른 적에 닿아도 사라지지 않고 꿰뚫어 그 방향 그대로 사거리 끝까지 간다 (맞은 자리엔 타격 이펙트만 남는다)
@@ -407,7 +462,7 @@ script Projectile extends Component
                     self.PierceHits = self.PierceHits + 1
                     if atk ~= nil then atk:SkillHitOne(foe, self.Info, dmg) end
                 end
-                self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit())
+                self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
                 if foe == self.Lock then self.Lock = nil end
                 if not self.Pierce or self:HitCapReached() then self:Finish() return end
             end
@@ -440,7 +495,7 @@ script Projectile extends Component
         end
         if victim == nil then return end
         self.HitIds[victim.Id] = true
-        self:HitFx(victim.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset + 0.2, 0), self.TintColor, self.Owner, self:ShakesOnHit())
+        self:HitFx(victim.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset + 0.2, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
         atk:HitOne(victim)
         self:Finish()
     end

@@ -33,6 +33,19 @@ script SkillEffects extends Component
     property table ClipVisuals = {}           -- 클라이언트: 재생 중인 메이플 스킬 애니메이션 serial
     property integer StormClip = 0
     property number PredictedAt = -10         -- 클라이언트: 골편을 마지막으로 직접 그린 시각
+    -- 44-1 A 뼈 폭풍 「주위를 도는 뼈」: 회오리 고리(의식 2기와 같은 FxStorm) 대신 시전자 둘레를 도는 골편 6개 (클라이언트 전용 artsprite)
+    property number StormRadius = 1.2         -- 뼈 폭풍 판정 반경 (BoneStorm · 도는 뼈 그림도 이 반경 안을 돈다)
+    property integer StormShardCount = 6
+    property number StormSpinSeconds = 0.9    -- 한 바퀴 시간
+    property table StormShards = {}           -- 클라이언트: 도는 골편 엔티티 (코덱스 H-3 그림이 오면 가운데 한 장)
+    property number StormOrbitUntil = 0       -- 클라이언트: 도는 뼈를 거둘 시각 (0 = 없음)
+    property number StormOrbitAt = 0          -- 클라이언트: 돌기 시작한 시각
+    property number RiteLastArrowDelay = 0.1  -- 44-1 A 의식 3기: 마지막 발은 riteArrowGap보다 이만큼 늦게 — 「탁·탁·쾅」 박자가 들리게
+    -- 44-3 A 땅 찍기 범위 원 (내 클라이언트): 누르는 동안 조준점에 판정 반경 그대로
+    property table RangeRims = {}             -- 클라이언트: 범위 원 artsprite 2개 (1 = 효과 반경 · 2 = 끌어당기는 뼈 반경)
+    property Entity RangeMap = nil
+    property string RangeKey = ""             -- 마지막으로 그린 원 (바뀔 때만 [VRF])
+    property integer UltTimer = 0             -- 클라이언트: 궁극기 화면 어둡게 걷는 타이머
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -173,20 +186,201 @@ script SkillEffects extends Component
 
     @ExecSpace("Multicast")
     method void StormClipFx(number seconds)
-        -- 뼈 폭풍 회오리 고리: 시전자에게 붙여 따라다니게 한다. 다시 쓰면 새 시간으로 다시 건다
+        -- 뼈 폭풍 「주위를 도는 뼈」 (44-1 A): 예전 보라 회오리 고리(FxStorm)는 의식 2기 「뼈 회오리」와 같은 그림이라 뺐다.
+        --   시전자 둘레를 도는 골편 StormShardCount개를 클라이언트 전용으로 만들어 OnUpdate(StormOrbit)가 돌린다. 다시 쓰면 새 시간으로 다시 건다.
+        --   코덱스 H-3 뼈 폭풍 8프레임(GameConst.FxSkillBoneStorm)이 오면 그 한 장을 가운데에 두고 프레임만 넘긴다
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        if self.StormClip ~= 0 then _EffectService:RemoveEffect(self.StormClip) end
-        local oldTimer = self.VisualTimers["stormclip"]
-        if oldTimer ~= nil then _TimerService:ClearTimer(oldTimer) end
-        local serial = _EffectService:PlayEffectAttached(self.FxStorm, self.Entity, Vector3(0, 0.15, 0), 0, Vector3(0.65, 0.65, 1), true, { Alpha = 0.6 })
-        self.StormClip = serial
-        if serial == 0 then return end
-        self.VisualTimers["stormclip"] = _TimerService:SetTimerOnce(function()
-            _EffectService:RemoveEffect(serial)
-            if self.StormClip == serial then self.StormClip = 0 end
-            self.VisualTimers["stormclip"] = nil
-        end, seconds)
+        if self.StormClip ~= 0 then _EffectService:RemoveEffect(self.StormClip) self.StormClip = 0 end
+        self:StopStormOrbit()
+        local codex = _GameConst.FxSkillBoneStorm ~= ""
+        local count = codex and 1 or self.StormShardCount
+        local first = codex and _Util:Frames(_GameConst.FxSkillBoneStorm)[1] or self.FxShardShot
+        local ps = self.Entity.TransformComponent.Scale
+        local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
+        for i = 1, count do
+            local e = _SpawnService:SpawnByModelId("artsprite", "StormBone" .. tostring(i), self.Entity.TransformComponent.WorldPosition, self.Entity)
+            if isvalid(e) then
+                -- artsprite 기본 그림(모래 바닥)이 보이지 않게 만들자마자 그림을 바꾼다 (MotionSmoother와 같은 함정)
+                local sp = e.SpriteRendererComponent
+                sp.SpriteRUID = first
+                sp.SortingLayer = "MapLayer0"
+                sp.OrderInLayer = 5
+                if codex then
+                    local s = 2 * self.StormRadius / 1.28
+                    e.TransformComponent.Scale = Vector3(s / psx, s / psy, 1)
+                else
+                    sp.Color = Color(0.96, 0.92, 0.8, 0.95)
+                    e.TransformComponent.Scale = Vector3(0.5 / psx, 0.32 / psy, 1)
+                end
+                table.insert(self.StormShards, e)
+            end
+        end
+        self.StormOrbitAt = _UtilLogic.ElapsedSeconds
+        self.StormOrbitUntil = _UtilLogic.ElapsedSeconds + seconds
+        self:StormOrbit()
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone storm orbit shards=%d codex=%s r=%.1f", #self.StormShards, tostring(codex), self.StormRadius)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StormOrbit()
+        -- 도는 뼈 한 프레임: 골편마다 둘레 자리·진행 방향(접선)으로 돌리고, 위쪽 반원은 몸 뒤(OrderInLayer 3) · 아래쪽은 몸 앞(5)
+        if self.StormOrbitUntil <= 0 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.StormOrbitUntil or not isvalid(self.Entity) then self:StopStormOrbit() return end
+        local ps = self.Entity.TransformComponent.Scale
+        local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
+        local t = now - self.StormOrbitAt
+        if _GameConst.FxSkillBoneStorm ~= "" then
+            local list = _Util:Frames(_GameConst.FxSkillBoneStorm)
+            local e = self.StormShards[1]
+            if #list > 0 and isvalid(e) then
+                e.TransformComponent.Position = Vector3(0, 0.3 / psy, -0.01)
+                local ruid = list[math.floor(t / 0.08) % #list + 1]
+                if e.SpriteRendererComponent.SpriteRUID ~= ruid then e.SpriteRendererComponent.SpriteRUID = ruid end
+            end
+            return
+        end
+        local spin = 2 * math.pi * t / math.max(0.2, self.StormSpinSeconds)
+        local r = self.StormRadius * 0.85
+        local n = #self.StormShards
+        for i, e in ipairs(self.StormShards) do
+            if isvalid(e) then
+                local a = spin + (i - 1) * 2 * math.pi / math.max(1, n)
+                local x, y = r * math.cos(a), r * math.sin(a) * 0.8
+                e.TransformComponent.Position = Vector3(x / psx, (y + 0.3) / psy, y > 0 and 0.01 or -0.01)
+                e.TransformComponent.ZRotation = math.deg(a) + 90
+                local order = y > 0 and 3 or 5
+                if e.SpriteRendererComponent.OrderInLayer ~= order then e.SpriteRendererComponent.OrderInLayer = order end
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopStormOrbit()
+        -- 도는 뼈를 거둔다 (시간이 다 됨 · 다시 시전 · 맵 이동 · 사망 · 끝)
+        for _, e in ipairs(self.StormShards) do if isvalid(e) then e:Destroy() end end
+        self.StormShards = {}
+        self.StormOrbitUntil = 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        -- 클라이언트 매 프레임: 뼈 폭풍 도는 뼈(모든 시전자) · 내 땅 찍기 범위 원(내 캐릭터만)
+        if self.StormOrbitUntil > 0 then self:StormOrbit() end
+        if self.Entity == _UserService.LocalPlayer then self:UpdateRangeCircle() end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void UpdateRangeCircle()
+        -- 44-3 A: 땅 찍기 스킬(독안개·골격 감옥·저주 6·의식 2기)을 누르고 있는 동안 조준점에 판정 반경 원 (SkillBook.RangePreview가 반경·자리를 정한다).
+        --   PC = 키를 누르는 동안(떼면 시전) · 모바일 = 칸을 끄는 동안 · 의식 = 2기 문턱을 넘긴 동안. 원은 바닥(MapLayer0 · 1)에 깔려 몸을 덮지 않는다
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        local view = book ~= nil and book:RangePreview() or nil
+        local map = self.Entity.CurrentMap
+        if view == nil or not isvalid(map) then
+            self:HideRangeCircle()
+            return
+        end
+        if self.RangeMap ~= map then
+            self:DropRangeCircle()
+            self.RangeMap = map
+        end
+        local radii = { view.r, view.r2 or 0 }
+        for i = 1, 2 do
+            local rim = self.RangeRims[i]
+            local r = radii[i]
+            if r > 0 then
+                if rim == nil or not isvalid(rim) then
+                    rim = _SpawnService:SpawnByModelId("artsprite", "SkillRange" .. tostring(i), Vector3(view.center.x, view.center.y, 0), map)
+                    if isvalid(rim) then
+                        rim.SpriteRendererComponent.SpriteRUID = _GameConst.SpriteSkillRangeRim
+                        rim.SpriteRendererComponent.SortingLayer = "MapLayer0"
+                        rim.SpriteRendererComponent.OrderInLayer = 1
+                        rim.SpriteRendererComponent.Color = i == 1 and Color(0.8, 0.66, 1, 0.9) or Color(0.8, 0.66, 1, 0.4)
+                    end
+                    self.RangeRims[i] = rim
+                end
+                if isvalid(rim) then
+                    rim.Enable = true
+                    rim.TransformComponent.WorldPosition = Vector3(view.center.x, view.center.y, 0.02)
+                    local s = 2 * r / 2.56   -- 256px 그림 = 2.56칸
+                    rim.TransformComponent.Scale = Vector3(s, s, 1)
+                end
+            elseif rim ~= nil and isvalid(rim) then
+                rim.Enable = false
+            end
+        end
+        local key = view.id .. string.format(":%.2f:%.2f", view.r, view.r2 or 0)
+        if key ~= self.RangeKey then
+            self.RangeKey = key
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] range circle %s r=%.2f r2=%.2f dist=%.2f", view.id, view.r, view.r2 or 0, (view.center - _Util:Pos2(self.Entity)):Magnitude())) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideRangeCircle()
+        -- 누르기를 멈췄다: 원을 숨긴다 (엔티티는 다음 누름에 다시 쓴다)
+        for _, rim in pairs(self.RangeRims) do if isvalid(rim) then rim.Enable = false end end
+        if self.RangeKey ~= "" then
+            self.RangeKey = ""
+            if not Environment:IsPublishedPlay() then log("[VRF] range circle hide") end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DropRangeCircle()
+        -- 맵을 옮기거나 끝날 때 범위 원 엔티티를 지운다
+        for _, rim in pairs(self.RangeRims) do if isvalid(rim) then rim:Destroy() end end
+        self.RangeRims = {}
+        self.RangeMap = nil
+        self.RangeKey = ""
+    end
+
+    -- ───────── 궁극기 연출 (44-2 · 결정 2 — 파동 · 폭풍 · 의식 5기 · 정예 승격) ─────────
+
+    @ExecSpace("Client")
+    method void ShowUltimate(string kind)
+        -- 큰 기술을 쓴 순간: 내 화면만 0.25초 어둡게(AimHUD/UltDim) + 전용 소리. 카메라 펀치(살짝 당겼다 놓기 · ZoomTo)는 「화면 흔들림」 설정을 따른다
+        --   (PC 켬 · 모바일 끔 — 모바일 멀미 · 38 #12). 남의 궁극기는 그 사람 화면에서만 (서버가 시전자에게만 보낸다)
+        if self.Entity ~= _UserService.LocalPlayer or not _Util:IsAlive(self.Entity) then return end
+        local dim = _EntityService:GetEntityByPath("/ui/AimHUD/UltDim")
+        local dimmed = false
+        if isvalid(dim) and isvalid(dim.SpriteGUIRendererComponent) then
+            if self.UltTimer ~= 0 then _TimerService:ClearTimer(self.UltTimer) self.UltTimer = 0 end
+            local peak = 0.42
+            local seconds = 0.25
+            local sprite = dim.SpriteGUIRendererComponent
+            sprite.Color = Color(0, 0, 0, peak)
+            dim.Enable = true
+            dimmed = true
+            local t = 0
+            self.UltTimer = _TimerService:SetTimerRepeat(function()
+                t = t + 0.03
+                if not isvalid(dim) or t >= seconds then
+                    if isvalid(dim) then dim.Enable = false end
+                    _TimerService:ClearTimer(self.UltTimer)
+                    self.UltTimer = 0
+                    return
+                end
+                sprite.Color = Color(0, 0, 0, peak * (1 - t / seconds))
+            end, 0.03)
+        end
+        local punch = _Util:ShakeEnabled()
+        if punch then
+            _CameraService:ZoomTo(_GameData.cameraZoom * 1.07, 0.06)
+            local key = "ultzoom"
+            local old = self.VisualTimers[key]
+            if old ~= nil then _TimerService:ClearTimer(old) end
+            self.VisualTimers[key] = _TimerService:SetTimerOnce(function()
+                self.VisualTimers[key] = nil
+                _CameraService:ZoomTo(_GameData.cameraZoom, 0.22)
+            end, 0.1)
+        end
+        -- 정예 승격은 시전음(SoundDirector.PlaySkillCue)이 이미 같은 소환 파동이라, 임시 소리가 같을 때는 겹쳐 틀지 않는다
+        if _GameConst.SfxUltimate ~= "" and not (kind == "elite_promote" and _GameConst.SfxUltimate == _GameConst.SfxSummon) then _SoundDirector:PlayEffect(_GameConst.SfxUltimate, 0.55) end
+        log(string.format("[VRF] ultimate %s dim=%s punch=%s", kind, tostring(dimmed), tostring(punch)))
     end
 
     method table ShardAngles(Vector2 dir, integer count, number spreadDeg)
@@ -306,8 +500,15 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    proj:Skin(self.FxShardShot, 0.95)
-                    proj:Tint(Color(0.95, 0.9, 0.78, 1))
+                    -- 44-1 A: 골편과 같은 궤적 그림을 가늘고 길게(가로:세로 2.2) — 맞으면 진행 방향으로 꽂히는 빛 파열 (Projectile.HitFx "spear").
+                    --   코덱스 H-1 창 몸(GameConst.FxSkillSpear)이 오면 그 그림을 제 비율로
+                    if _GameConst.FxSkillSpear ~= "" then
+                        proj:SkinXY(_GameConst.FxSkillSpear, 0.9, 0.9)
+                    else
+                        proj:SkinXY(self.FxShardShot, 1.32, 0.6)
+                        proj:Tint(Color(0.95, 0.9, 0.78, 1))
+                    end
+                    proj.Style = "spear"
                     proj.MaxHits = self:PierceCap("bone_spear")
                     proj.SpikePct = 10   -- 10-28 투사체 A안: 관통은 뼈 창의 몫 — 꿰뚫을 때마다 +10%
                     proj:Launch(owner, fly, 14, range, damage, "skill.bone_spear", true)
@@ -553,7 +754,9 @@ script SkillEffects extends Component
                 n = n + 1
             end
         end
-        self:ClipFx(self.FxFlameShot, Vector3(at.x, at.y + 0.35, 0), 0.45 * radius, 0.45, 0)
+        -- 코덱스 H-1 저주 불꽃 폭발 6프레임(GameConst.FxSkillHexBurst)이 오면 그 그림을 반경에 맞춰 한 번 (128px = 1.28칸 지름)
+        if _GameConst.FxSkillHexBurst ~= "" then self:FramesFx(_GameConst.FxSkillHexBurst, Vector3(at.x, at.y + 0.3, 0), 2 * radius / 1.28, 0.07)
+        else self:ClipFx(self.FxFlameShot, Vector3(at.x, at.y + 0.35, 0), 0.45 * radius, 0.45, 0) end
         log(string.format("[VRF] hex burst r=%.1f hit %d", radius, n))
     end
 
@@ -561,7 +764,16 @@ script SkillEffects extends Component
     method void FrostShatter(Vector2 at, number damage)
         -- 강화 「파쇄」: 서리 혼에 느려진 적이 죽은 자리에서 냉기 파편 (반경 1.3)
         self:Hit(Vector2(at.x, at.y + 0.2), Vector2(1.3, 0), -1, "skill.frost_shatter", damage)
-        self:ClipFx(self.FxFrostShot, Vector3(at.x, at.y + 0.4, 0), 0.5, 0.5, 0)
+        if _GameConst.FxSkillShatter ~= "" then self:FramesFx(_GameConst.FxSkillShatter, Vector3(at.x, at.y + 0.3, 0), 2 * 1.3 / 1.28, 0.07)
+        else self:ClipFx(self.FxFrostShot, Vector3(at.x, at.y + 0.4, 0), 0.5, 0.5, 0) end
+    end
+
+    @ExecSpace("Multicast")
+    method void FramesFx(string ruids, Vector3 pos, number scale, number frameSec)
+        -- 코덱스 프레임 그림(「|」로 이은 RUID)을 그 자리에 한 번 (44 스킬 그림 바꿔 끼울 자리 — GameConst.FxSkill*)
+        local me = _UserService.LocalPlayer
+        if ruids == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _Util:PlayFrames(ruids, me.CurrentMap, pos, 0, Vector3(scale, scale, 1), frameSec, Color(1, 1, 1, 1), 6)
     end
 
     @ExecSpace("ServerOnly")
@@ -660,11 +872,11 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method boolean BoneStorm(number damage)
-        -- 6초 동안 0.5초마다 주위 반경 1.2 (다시 쓰면 시간만 늘어난다)
+        -- 6초 동안 0.5초마다 주위 반경 StormRadius(1.2) (다시 쓰면 시간만 늘어난다)
         local map = self.Entity.CurrentMap
         self.StormUntil = _UtilLogic.ElapsedSeconds + 6
         self.StormDamage = damage
-        self:Fx("storm", self.Entity.TransformComponent.WorldPosition, 1.2)
+        self:Fx("storm", self.Entity.TransformComponent.WorldPosition, self.StormRadius)
         self:StormClipFx(6)
         if self.StormTimer ~= 0 then return true end
         local interval = 0.5 * (1 - 0.15 * self:Node("storm_fast"))   -- 강화 「회전 가속」
@@ -675,7 +887,7 @@ script SkillEffects extends Component
                 return
             end
             local p = _Util:Pos2(self.Entity)
-            self:Hit(Vector2(p.x, p.y + 0.3), Vector2(1.2, 0), -1, "skill.bone_storm", self.StormDamage)
+            self:Hit(Vector2(p.x, p.y + 0.3), Vector2(self.StormRadius, 0), -1, "skill.bone_storm", self.StormDamage)
         end, interval)
         return true
     end
@@ -755,19 +967,22 @@ script SkillEffects extends Component
                 self.ShotCount = self.ShotCount + 1
                 local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "BoneRiteArrow_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), map)
                 if not isvalid(shot) then return end
-                local info = index == count and "skill.bone_rite_push" or "skill.bone_rite_arrow"
+                local last = index == count
+                local info = last and "skill.bone_rite_push" or "skill.bone_rite_arrow"
                 _Util:AfterSpawn(shot, "script.Projectile", function(comp)
                     ---@type Projectile
                     local proj = comp
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    proj:Skin(self.FxShardShot, 1.1)            -- 임시 그림: 골편 궤적을 크게 · 뼈 색 (코덱스 「뼈 화살」 대기)
+                    -- 임시 그림: 골편 궤적을 크게 · 뼈 색 (코덱스 G-15 「뼈 화살」 대기). 44-1 A: 마지막 발은 한 단 크게 + 맞은 자리 큰 뼛가루 충격(Projectile.HitFx "rite_push")
+                    proj:Skin(self.FxShardShot, last and 1.38 or 1.1)
                     proj:Tint(Color(1, 0.95, 0.82, 1))
+                    proj.Style = last and "rite_push" or "rite"
                     if isvalid(lock) then proj.Lock = lock end
                     proj.MaxHits = 1
                     proj:Launch(owner, dir, 13, 7.5, damage, info, false)
                 end, function() if isvalid(shot) then shot:Destroy() end end)
                 log(string.format("[VRF] rite arrow %d/%d lock=%s dmg=%.0f info=%s", index, count, tostring(isvalid(lock)), damage, info))
-            end, (i - 1) * _GameData.riteArrowGap)
+            end, (i - 1) * _GameData.riteArrowGap + ((i == count and count > 1) and self.RiteLastArrowDelay or 0))
         end
         return true
     end
@@ -815,6 +1030,13 @@ script SkillEffects extends Component
         if self.StormClip ~= 0 then _EffectService:RemoveEffect(self.StormClip) end
         self.ClipVisuals = {}
         self.StormClip = 0
+        self:StopStormOrbit()
+        self:DropRangeCircle()
+        if self.UltTimer ~= 0 then _TimerService:ClearTimer(self.UltTimer) self.UltTimer = 0 end
+        local dim = _EntityService:GetEntityByPath("/ui/AimHUD/UltDim")
+        if self.Entity == _UserService.LocalPlayer and isvalid(dim) then dim.Enable = false end
+        -- 궁극기 카메라 펀치 도중에 끊겼으면 줌을 바로 되돌린다 (타이머를 아래에서 지운다)
+        if self.VisualTimers["ultzoom"] ~= nil and self.Entity == _UserService.LocalPlayer then _CameraService:ZoomTo(_GameData.cameraZoom, 0.1) end
         for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
         self.MistVisuals = {}
         self.DrainVisuals = {}
@@ -960,9 +1182,16 @@ script SkillEffects extends Component
                     local proj = comp
                     if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
                     proj.Homing = 5
-                    proj:Skin(self.FxShardShot, 0.5)
+                    -- 44-1 A: 골편 궤적 대신 혼 구슬 그림(FxAriseSoul)에 청록빛 · 촘촘한 혼 꼬리(Projectile.DropGhost "torrent") — 보라 추출 구슬과 색이 다르다.
+                    --   코덱스 H-1 영혼 격류 6프레임(GameConst.FxSkillTorrent)이 오면 그 그림을 날아가며 넘긴다 (Projectile.AdvanceFrame)
+                    if _GameConst.FxSkillTorrent ~= "" then
+                        proj:Skin(_GameConst.FxSkillTorrent, 0.55)
+                    else
+                        proj:Skin(_GameConst.FxAriseSoul, 0.42)
+                        proj:Tint(Color(0.55, 0.95, 1, 1))
+                    end
+                    proj.Style = "torrent"
                     proj:Launch(owner, d, 7, 7, damage, "skill.soul_torrent", false)
-                    proj:Tint(Color(0.75, 0.6, 1, 1))
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
         end
@@ -987,12 +1216,16 @@ script SkillEffects extends Component
     @ExecSpace("ServerOnly")
     method boolean ShadowSacrifice(Vector2 target, number damage)
         -- 조준점에 가장 가까운 내 그림자 1기를 터뜨린다 (반경 1.8). 그림자는 죽은 것처럼 보관함으로 돌아가 재소환 대기
-        local best = nil
+        -- 44-3 B 대상 고르기: 플레이어가 고른 그림자(PC 클릭 · 소환수 띠 카드 — ShadowCommander.PickedShadow)가 있으면 그것부터
+        local best = self:Commander():PickedShadow()
+        local picked = best ~= nil
         local bestDist = math.huge
-        for _, unit in ipairs(self:Commander():GetUnits()) do
-            if not unit.Dead and unit.Hp > 0 then
-                local d = (_Util:Pos2(unit.Entity) - target):Magnitude()
-                if d < bestDist then best = unit bestDist = d end
+        if best == nil then
+            for _, unit in ipairs(self:Commander():GetUnits()) do
+                if not unit.Dead and unit.Hp > 0 then
+                    local d = (_Util:Pos2(unit.Entity) - target):Magnitude()
+                    if d < bestDist then best = unit bestDist = d end
+                end
             end
         end
         if best == nil then
@@ -1002,7 +1235,10 @@ script SkillEffects extends Component
         local q = _Util:Pos2(best.Entity)
         local total = damage + best.Atk * 2
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.8, 0), -1, "skill.shadow_sacrifice", total)
+        if _GameConst.FxSkillSacrifice ~= "" then self:FramesFx(_GameConst.FxSkillSacrifice, Vector3(q.x, q.y + 0.3, 0), 2 * 1.8 / 1.28, 0.07) end
         self:Fx("sacrifice", Vector3(q.x, q.y, 0), 1.8)
+        log(string.format("[VRF] sacrifice target=%s picked=%s", best.ShadowId, tostring(picked)))
+        self:Commander():ClearPick()
         self:Commander():OnUnitDied(best.ShadowId)
         return true
     end
@@ -1010,12 +1246,15 @@ script SkillEffects extends Component
     @ExecSpace("ServerOnly")
     method boolean ElitePromote(number multiplier)
         -- 소환 중인 그림자 중 공격력이 가장 높은 1기를 정예로 (한 번만). 정예는 동시에 1기 (강화 「정예 둘」이면 2기)
+        -- 44-3 B 대상 고르기: 플레이어가 고른 그림자(아직 정예가 아니면)를 먼저 — 없으면 지금 규칙(공격력 최고)
         local best = nil
         local promoted = 0
         for _, unit in ipairs(self:Commander():GetUnits()) do
             if unit.Promoted and not unit.Dead and unit.Hp > 0 then promoted = promoted + 1 end
             if not unit.Promoted and not unit.Dead and unit.Hp > 0 and (best == nil or unit.Atk > best.Atk) then best = unit end
         end
+        local picked = self:Commander():PickedShadow()
+        if picked ~= nil and not picked.Promoted then best = picked else picked = nil end
         local cap = 1 + self:Node("elite_twin")
         if promoted >= cap then
             self:Fail("정예는 동시에 " .. tostring(cap) .. "기까지" .. (cap == 1 and " — 강화 「정예 둘」로 2기" or ""))
@@ -1026,6 +1265,12 @@ script SkillEffects extends Component
             return false
         end
         best:Promote(multiplier)
+        -- 승격 순간 (코덱스 H-7 정예 승격 6프레임이 오면 그 그림 · 그 전엔 금빛 기둥 입자)
+        local q = _Util:Pos2(best.Entity)
+        if _GameConst.FxSkillElitePromote ~= "" then self:FramesFx(_GameConst.FxSkillElitePromote, Vector3(q.x, q.y + 0.55, 0), 1.25, 0.08) end
+        self:Fx("promote", Vector3(q.x, q.y, 0), 1)
+        log(string.format("[VRF] elite promote target=%s picked=%s", best.ShadowId, tostring(picked ~= nil)))
+        if picked ~= nil then self:Commander():ClearPick() end
         return true
     end
 
@@ -1094,15 +1339,12 @@ script SkillEffects extends Component
                     if self.StormVisual == serial then self.StormVisual = 0 end
                 end, 6)
             end
-        elseif kind == "amp" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.7, 0.2, 1, 1) })
-        elseif kind == "weaken" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.3, 0.6, 0.3, 1) })
-        elseif kind == "thorn" or kind == "terror" or kind == "confuse" or kind == "lifetap" or kind == "decay" or kind == "resist" then
-            -- 저주마다 색을 달리해 무엇을 걸었는지 바로 구분한다 (머리 위 아이콘과 같은 계열)
-            local colors = { thorn = Color(0.95, 0.45, 0.2, 1), terror = Color(0.35, 0.1, 0.45, 1), confuse = Color(1, 0.85, 0.3, 1),
-                lifetap = Color(0.9, 0.15, 0.25, 1), decay = Color(0.55, 0.45, 0.3, 1), resist = Color(0.3, 0.85, 1, 1) }
-            _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = colors[kind] })
+        elseif kind == "amp" or kind == "weaken" or kind == "thorn" or kind == "terror" or kind == "confuse" or kind == "lifetap" or kind == "decay" or kind == "resist" then
+            self:CurseShape(kind, pos, radius)
+        elseif kind == "promote" then
+            -- 정예 승격 순간: 금빛이 그림자 몸을 타고 솟는다 (코덱스 H-7 그림 전 임시 — 아군·위로 솟는 금빛 · 적 정예 파열과 다르게)
+            _ParticleService:PlayBasicParticle(BasicParticleType.UpperCylinder, self.Entity, pos, 0, Vector3(0.45, 0.6, 1), false, { Color = Color(1, 0.82, 0.38, 0.9) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.PillarBurst, self.Entity, pos + Vector3(0, 0.4, 0), 0, Vector3(0.5, 0.5, 1), false, { Color = Color(1, 0.88, 0.5, 1) })
         elseif kind == "plague" then
             -- 역병 저주: 죽은 적 자리에서 초록 고리가 퍼진다
             _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.45, 0.9, 0.35, 0.85) })
@@ -1113,13 +1355,45 @@ script SkillEffects extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(radius * 0.45, radius * 0.3, 1), false, { Color = Color(0.85, 0.8, 0.68, 0.95) })
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.85, 0.8, 0.65, 1) })
         elseif kind == "torrent" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.65, 0.5, 1, 0.9) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, Vector3(0.35, 0.35, 1), false, { Color = Color(0.55, 0.95, 1, 0.9) })   -- 격류 혼 청록 (44-1 A)
         elseif kind == "wave" then
             _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos + Vector3(0, 0.3, 0), 0, Vector3(radius * 0.5, radius * 0.5, 1), false, { Color = Color(0.55, 0.35, 0.8, 0.9) })
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(radius * 0.35, radius * 0.15, 1), false, { Color = Color(0.5, 0.45, 0.55, 0.8) })
         elseif kind == "sacrifice" then
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.3, 0), 0, Vector3(radius * 0.4, radius * 0.4, 1), false, { Color = Color(0.6, 0.3, 1, 1) })
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(radius * 0.35, radius * 0.18, 1), false, { Color = Color(0.35, 0.2, 0.5, 0.8) })
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CurseShape(string kind, Vector3 pos, number radius)
+        -- 44-1 A 「저주 원」 끊기: 같은 Aura 원에 색만 바꾸던 저주 8가지를 저주마다 다른 입자 모양으로 (반경 radius에 맞춘다).
+        --   낙인 = 사방으로 튀는 붉은 보라 불꽃 · 쇠약 = 위에서 아래로 흘러내리는 병든 김 · 공포 = 바깥으로 터지는 검보라 고리 · 가시 = 가시처럼 튀는 주황 불꽃 ·
+        --   약탈 = 가운데로 빨려드는 핏빛 · 붕괴 = 금 가며 퍼졌다 모이는 하늘빛 · 혼란 = 머리 위를 도는 별 · 쇠퇴 = 바닥에서 피어오르는 흙빛.
+        --   코덱스 H-2 바닥 문장(GameConst.FxSkillCurseSigils "kind=r0,…")이 오면 그 저주는 문장 4프레임을 바닥에 한 번 깐다
+        local sig = _Util:KeyFrames(_GameConst.FxSkillCurseSigils, kind)
+        if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s", kind, radius, tostring(#sig > 0))) end
+        if #sig > 0 then
+            _Util:PlayFrames(table.concat(sig, "|"), self.Entity, pos, 0, Vector3(2 * radius / 1.28, 2 * radius / 1.28, 1), 0.08, Color(1, 1, 1, 1), 1)
+            return
+        end
+        local r = math.max(0.4, radius)
+        if kind == "amp" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.15, 0), 0, Vector3(r * 0.55, r * 0.36, 1), false, { Color = Color(0.78, 0.22, 0.6, 1) })
+        elseif kind == "weaken" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos + Vector3(0, r * 0.7, 0), 180, Vector3(r * 0.5, r * 0.45, 1), false, { Color = Color(0.42, 0.62, 0.36, 0.85) })
+        elseif kind == "terror" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos + Vector3(0, 0.15, 0), 0, Vector3(r * 0.6, r * 0.42, 1), false, { Color = Color(0.4, 0.12, 0.55, 1) })
+        elseif kind == "thorn" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(r * 0.6, r * 0.45, 1), false, { Color = Color(0.98, 0.5, 0.18, 1) })
+        elseif kind == "lifetap" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos + Vector3(0, 0.25, 0), 0, Vector3(r * 0.5, r * 0.5, 1), false, { Color = Color(0.9, 0.12, 0.22, 1) })
+        elseif kind == "resist" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.EnergyExplosion, self.Entity, pos + Vector3(0, 0.15, 0), 0, Vector3(r * 0.5, r * 0.36, 1), false, { Color = Color(0.35, 0.85, 1, 1) })
+        elseif kind == "confuse" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.StarVortex, self.Entity, pos + Vector3(0, 0.6, 0), 0, Vector3(r * 0.4, r * 0.3, 1), false, { Color = Color(1, 0.86, 0.32, 1) })
+        elseif kind == "decay" then
+            _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(r * 0.5, r * 0.4, 1), false, { Color = Color(0.56, 0.46, 0.3, 0.85) })
         end
     end
 

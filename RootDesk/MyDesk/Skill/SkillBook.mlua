@@ -31,6 +31,10 @@ script SkillBook extends Component
     property integer DashSeen = -1            -- 클라이언트: 마지막으로 본 DashShown (줄어든 만큼 확인된 질주)
     property number RiteHoldAt = -1           -- 클라이언트: 뼈 의식 칸을 누르기 시작한 시각 (-1 = 안 누름 · 기획서 43 결정 1A)
     property integer RiteHoldSlot = 0         -- 클라이언트: 누르고 있는 칸 (1~4 = A S D F · 5 = 우클릭/모바일 큰 버튼)
+    property integer GroundHoldSlot = 0       -- 클라이언트 PC: 누르고 있는 땅 찍기 스킬 칸 (44-3 A — 누르는 동안 범위 원, 떼면 시전 · 0 = 없음)
+    property Entity GroundHoldMap = nil
+    property number GroundCastRange = 6       -- 땅 찍기 조준점 최대 거리 (넘으면 그 방향 6칸에 놓는다 · 서버 Cast와 같은 값)
+    property number MobileAimMinDist = 1      -- 모바일 끌기: 데드존을 막 넘었을 때 조준 거리(칸) — 끈 길이에 비례해 GroundCastRange까지
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -219,6 +223,11 @@ script SkillBook extends Component
                 hint = string.format("다음 랭크는 캐릭터 Lv%d부터", self:NodeLevel(id, level + 1))
             end
         end
+        -- 44-7 랭크 단계: 이번 랭크로 단계에 닿았거나 20랭크 「완성」이면 그 한 줄이 아래 줄을 차지한다 (알림 판은 두 줄)
+        local stage = def.kind ~= "node" and self:StageReachedAt(id, level) or ""
+        if self:IsComplete(id, level) then hint = "완성"
+        elseif stage ~= "" then hint = "단계 도달 · " .. stage end
+        if (stage ~= "" or self:IsComplete(id, level)) and not Environment:IsPublishedPlay() then log(string.format("[VRF] rank stage notice %s lv=%d stage=%s complete=%s", id, level, stage, tostring(self:IsComplete(id, level)))) end
         if detail ~= "" then detail = detail .. "\n" end
         _UXFeedback:Show((level == 1 and "새 스킬 · " or "스킬 강화 · ") .. def.name .. " Lv" .. tostring(level), detail .. hint, def.icon)
     end
@@ -302,6 +311,150 @@ script SkillBook extends Component
         local cap = self:GetPierceCap(level)
         if cap <= 1 then return "1마리 명중" end
         return string.format("최대 %d마리 관통", cap)
+    end
+
+    -- ───────── 랭크 단계 (44-7 · 기획서 44 §4-6 A) ─────────
+    -- 숨어 있던 「그 스킬에 포인트를 몰았을 때만 오는 사건」을 사다리·시간선·제물 카드·알림에 보이게 한다.
+    -- 단계는 효과 레벨(장비 스킬 레벨 포함 · GetPowerLevel) 기준 — 투사체 4종은 pierceTier 5·8·12, 영혼 격류·역병 저주는 5레벨마다.
+
+    method table RankStages(string id)
+        -- { { lv = 효과 레벨, text = "4발" }, … } 낮은 레벨부터. 단계가 없는 스킬은 빈 표
+        local list = {}
+        local tiers = { math.floor(_GameData.pierceTier2Lv), math.floor(_GameData.pierceTier3Lv), math.floor(_GameData.pierceTier4Lv) }
+        if id == "bone_shard" then
+            for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = tostring(self:GetBoneShardCount(lv)) .. "발" }) end
+        elseif id == "bone_spear" then
+            for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = "관통 " .. tostring(self:GetPierceCap(lv)) }) end
+        elseif id == "frost_soul" then
+            for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = "파편 " .. tostring(self:GetFrostSplitCount(lv)) .. "개" }) end
+        elseif id == "hex_flame" then
+            for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = string.format("폭발 %.1f칸", self:GetHexBurstRadius(lv)) }) end
+        elseif id == "soul_torrent" then
+            for lv = 5, 20, 5 do table.insert(list, { lv = lv, text = tostring(self:GetTorrentCount(lv)) .. "발" }) end
+        elseif id == "plague_curse" then
+            for lv = 5, 20, 5 do table.insert(list, { lv = lv, text = "옮는 적 " .. tostring(math.floor(self:RawEffectPower("plague_curse", lv))) }) end
+        end
+        return list
+    end
+
+    method integer GearRanks(string id)
+        -- 효과 레벨 − 찍은 랭크 (장비 「스킬 +N」·선택 보상) — 사다리의 단계 칸을 그만큼 앞으로 당긴다
+        local lv = self:GetLevel(id)
+        if lv <= 0 then return 0 end
+        return math.max(0, self:GetPowerLevel(id) - lv)
+    end
+
+    method table StageRanks(string id)
+        -- 사다리에 단계 점을 찍을 랭크 → 단계 글 ({ [랭크] = "4발" }). 장비로 당겨진 만큼 앞 칸 (1칸 아래로는 안 간다)
+        local out = {}
+        local gear = self:GearRanks(id)
+        for _, s in ipairs(self:RankStages(id)) do
+            local rank = math.max(1, s.lv - gear)
+            if out[rank] == nil then out[rank] = s.text end
+        end
+        return out
+    end
+
+    method any NextStage(string id)
+        -- 지금 효과 레벨 다음 단계 { lv, text, left = 남은 랭크 } (없으면 nil)
+        local power = self:GetPowerLevel(id)
+        for _, s in ipairs(self:RankStages(id)) do
+            if s.lv > power then return { lv = s.lv, text = s.text, left = s.lv - power } end
+        end
+        return nil
+    end
+
+    method string StageReachedAt(string id, integer rank)
+        -- 찍은 랭크가 rank가 되는 순간 도달하는 단계 글 (없으면 "") — 제물 카드 금 테두리 · 알림 한 줄
+        local power = rank + self:GearRanks(id)
+        for _, s in ipairs(self:RankStages(id)) do
+            if s.lv == power then return s.text end
+        end
+        return ""
+    end
+
+    method boolean IsComplete(string id, integer rank)
+        -- 20랭크 「완성」 (44-7 · 사용자 확정 글귀 99): 최대 랭크 20인 메인 스킬을 끝까지 찍었다
+        local def = _SkillData:Get(id)
+        return def ~= nil and def.kind ~= "node" and def.maxLv >= 20 and rank >= def.maxLv
+    end
+
+    -- ───────── 땅 찍기 범위 원 (44-3 A · 기획서 44 §4-2 A) ─────────
+
+    method boolean IsGroundSkill(string id)
+        -- 조준점에 장판·저주를 까는 스킬 (투사체·자기 중심·혼 스킬 제외). 뼈 의식은 2기 「뼈 회오리」 문턱을 넘긴 동안만 원을 그린다
+        local ids = { poison_mist = true, bone_prison = true, mark_weakness = true, enfeeble = true, terror = true, thorn_curse = true, life_tap = true, resist_break = true }
+        return ids[id] == true
+    end
+
+    method number GroundRadius(string id)
+        -- 그 스킬의 판정 반경 — SkillEffects.PoisonMist · BonePrison · Curse와 같은 식 (바꾸면 둘 다)
+        if id == "poison_mist" then return 1.3 * (1 + 0.2 * self:Node("mist_wide")) end
+        if id == "bone_prison" then return 1.3 * (1 + 0.15 * self:Node("prison_wide")) end
+        if id == "bone_rite" then return _GameData.riteWhirlRadius end
+        if self:IsGroundSkill(id) then
+            ---@type PlayerStats
+            local stats = self.Entity:GetComponent("script.PlayerStats")
+            local bonus = stats ~= nil and stats.BonusCurse / 100 or 0
+            return 1.5 * (1 + bonus + 0.15 * self:Node("curse_area"))
+        end
+        return 0
+    end
+
+    method Vector2 ClampGroundPoint(Vector2 me, Vector2 target)
+        -- 땅 찍기 조준점: GroundCastRange(6칸)를 넘으면 그 방향 6칸 (예전엔 독안개·저주가 「시전할 곳이 너무 멉니다」로 실패)
+        local ray = target - me
+        if ray:Magnitude() > self.GroundCastRange then return me + ray:Normalize() * self.GroundCastRange end
+        return target
+    end
+
+    @ExecSpace("ClientOnly")
+    method any RangePreview()
+        -- 지금 그릴 범위 원 { id, center, r, r2 } (없으면 nil): PC 땅 찍기 키 누름 · 모바일 칸 끌기 · 뼈 의식 2기 문턱
+        if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() or not _Util:IsAlive(self.Entity) then
+            if self.GroundHoldSlot ~= 0 then self:CancelGroundHold() end
+            return nil
+        end
+        if _GameConst:IsTown(self.Entity.CurrentMap) then return nil end
+        local id = ""
+        if self.GroundHoldSlot ~= 0 then
+            if self.GroundHoldMap ~= self.Entity.CurrentMap then self:CancelGroundHold() return nil end
+            id = self:GetSlotSkill(self.GroundHoldSlot)
+        elseif self.RiteHoldAt >= 0 then
+            local held = _UtilLogic.ElapsedSeconds - self.RiteHoldAt
+            ---@type PlayerStats
+            local st = self.Entity:GetComponent("script.PlayerStats")
+            if self:RiteBestStage(self:RiteStageForHold(held, self:RiteGiantUnlocked()), st ~= nil and st.Mana or -1) == 2 then id = "bone_rite" end
+        elseif Environment:IsMobilePlatform() and _MobilePad.GestureTouchId ~= 0 and not _MobilePad.GestureBasic and not _MobilePad.EditMode then
+            id = self:GetSlotSkill(_MobilePad.GestureSlot)
+        end
+        if id == "" or (id ~= "bone_rite" and not self:IsGroundSkill(id)) or self:GetPowerLevel(id) <= 0 then return nil end
+        local me = _Util:Pos2(self.Entity)
+        local center = self:ClampGroundPoint(me, self:GetAimPoint(id))
+        local r2 = 0
+        if id == "bone_prison" and self:Node("prison_pull") > 0 then r2 = 2.4 + 0.3 * self:Node("prison_pull") end   -- 「끌어당기는 뼈」 끌어오는 반경 (SkillEffects.BonePrison)
+        return { id = id, center = center, r = self:GroundRadius(id), r2 = r2 }
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean BeginGroundHold(integer slot)
+        -- PC 땅 찍기 키를 누른 순간: 범위 원을 띄운다 (떼면 HandleKeyUpEvent → CastSlot). 쿨다운 중이면 원 없이 바로 그 칸을 눌러 안내만
+        if self.GroundHoldSlot ~= 0 then return true end   -- 키 반복 입력은 무시
+        local id = self:GetSlotSkill(slot)
+        if not self:IsGroundSkill(id) or self:GetPowerLevel(id) <= 0 or self:CooldownLeft(id) > 0.05 or _GameConst:IsTown(self.Entity.CurrentMap) then return false end
+        self.GroundHoldSlot = slot
+        self.GroundHoldMap = self.Entity.CurrentMap
+        if not Environment:IsPublishedPlay() then log("[VRF] ground hold start " .. id .. " slot=" .. tostring(slot)) end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void CancelGroundHold()
+        -- 창이 열리거나 죽거나 맵을 옮기면 누르던 땅 찍기를 버린다 (아무것도 쓰지 않는다)
+        if self.GroundHoldSlot == 0 then return end
+        self.GroundHoldSlot = 0
+        self.GroundHoldMap = nil
+        if not Environment:IsPublishedPlay() then log("[VRF] ground hold cancel") end
     end
 
     method number GetCurseDuration(integer level)
@@ -659,6 +812,7 @@ script SkillBook extends Component
             if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
         elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
+        elseif self:IsGroundSkill(id) then target = self:ClampGroundPoint(me, target)   -- 44-3 A: 땅 찍기는 6칸 넘으면 그 방향 6칸에 놓는다 (범위 원과 같은 자리)
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
@@ -697,6 +851,8 @@ script SkillBook extends Component
         if id == "wraith_dash" then self:UseDashCharge(lv)
         else self:SetCooldown(id, self:SkillCooldown(id, lv) * stats:GetCastCooldownMult()) end
         self:PresentCast(id, target - me, userId)
+        -- 44-2 궁극기 연출 (결정 2): 죽음의 파동 · 뼈 폭풍 · 정예 승격 (뼈 의식 5기는 CastRite) — 시전자 화면만
+        if id == "death_wave" or id == "bone_storm" or id == "elite_promote" then effects:ShowUltimate(id, userId) end
         return true
     end
 
@@ -872,6 +1028,12 @@ script SkillBook extends Component
         self:SetCooldown("bone_rite", (def.cooldown or 1) * castMul)
         if stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
         self:PresentCast("bone_rite", target - me, userId)
+        if stage == 5 then
+            -- 44-2 궁극기 연출: 뼈 의식 5기 「뼈 거인」 (시전자 화면만)
+            ---@type SkillEffects
+            local fx = self.Entity:GetComponent("script.SkillEffects")
+            if fx ~= nil then fx:ShowUltimate("rite_giant", userId) end
+        end
         log(string.format("[VRF] rite stage=%d skel=%d want=%d lv=%d mana=%d lock=%s", stage, skel, want, lv, math.floor(cost), tostring(lock ~= nil)))
         return true
     end
@@ -1125,15 +1287,24 @@ script SkillBook extends Component
             self:BeginRiteHold(slot)
             return
         end
+        -- 땅 찍기 칸 (44-3 A): 누르는 동안 조준점에 범위 원, 뗄 때 나간다 (짧게 눌러도 똑같이 한 번)
+        if self:BeginGroundHold(slot) then return end
         self:CastSlot(slot)
     end
 
     @ExecSpace("ClientOnly")
     @EventSender("Service", "InputService")
     handler HandleKeyUpEvent(KeyUpEvent event)
-        -- 뼈 의식: 누르던 키를 떼면 그때까지 모은 단계로 나간다
-        if self.Entity ~= _UserService.LocalPlayer or self.RiteHoldAt < 0 then return end
-        if self:KeySlot(event.key) == self.RiteHoldSlot then self:ReleaseRite() end
+        -- 뼈 의식: 누르던 키를 떼면 그때까지 모은 단계로 나간다 · 땅 찍기: 떼는 순간 원이 있던 자리에 시전
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        local slot = self:KeySlot(event.key)
+        if self.RiteHoldAt >= 0 and slot == self.RiteHoldSlot then self:ReleaseRite() return end
+        if self.GroundHoldSlot ~= 0 and slot == self.GroundHoldSlot then
+            self.GroundHoldSlot = 0
+            self.GroundHoldMap = nil
+            if _UIKit:CanUseGameplayInput() then self:CastSlot(slot) end
+            if not Environment:IsPublishedPlay() then log("[VRF] ground hold release slot=" .. tostring(slot)) end
+        end
     end
 
     method integer KeySlot(KeyboardKey key)
@@ -1238,6 +1409,12 @@ script SkillBook extends Component
             if corpse then
                 local orb = _UndeadSystem:FindSoulInDirection(self.Entity, me, attack.LocalAimDirection, 5)
                 if orb ~= nil then return _Util:Pos2(orb.Entity) end
+            end
+            -- 44-3 A 모바일 끌기 거리 비례: 땅 찍기(장판·저주·의식)는 손가락을 끈 길이만큼 — 데드존을 막 넘으면 MobileAimMinDist칸, 끝까지 끌면 GroundCastRange칸
+            --   (예전엔 늘 5칸이라 가까운 무리에 독안개·감옥·저주를 놓을 수 없었다). 투사체는 방향만 쓰므로 그대로
+            if id == "bone_rite" or self:IsGroundSkill(id) then
+                local reach = math.max(0, math.min(1, _MobilePad.AimReach))
+                return me + attack.LocalAimDirection * (self.MobileAimMinDist + (self.GroundCastRange - self.MobileAimMinDist) * reach)
             end
             return me + attack.LocalAimDirection * (corpse and 2.5 or 5)
         end

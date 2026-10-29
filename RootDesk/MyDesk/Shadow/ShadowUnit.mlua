@@ -154,6 +154,9 @@ script ShadowUnit extends AttackComponent
     property number LeapUntil = 0             -- 군단 질주: 주인이 막 질주했다 — 이 시각까지는 3칸만 떨어져도 곁으로 도약 (SkillEffects.WraithDash)
 
     property Entity Target = nil
+    property Entity FocusTarget = nil         -- 「저 적을」 대상 (주인이 C 길게 · 모바일 「집중」 — 44-3 D)
+    property number FocusUntil = 0            -- 이 시각까지 FocusTarget을 먼저 친다
+    property number FocusExtraRange = 2       -- 집중 대상은 주인 교전 범위(7)보다 이만큼 더 멀리까지 쫓는다 (끈 거리 LeashDistance 9 안)
     property boolean RingPainted = false
     property number PartyAuraTimer = 0
     property number PartyAuraRange = 6        -- 다른 플레이어의 호령이 닿는 거리
@@ -491,8 +494,34 @@ script ShadowUnit extends AttackComponent
         self.RallyTimer = seconds
         self.CommandState = "rally"
         self.Target = nil
+        self.FocusUntil = 0
         self:CancelPendingAttack()
         self:ClearProjectiles()
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Focus(Entity target, number seconds)
+        -- 「저 적을」 (44-3 D · ShadowCommander.FocusAll): seconds 동안 target을 먼저 친다 — 집결을 끊고 바로 그 적으로.
+        --   주인 교전 범위보다 FocusExtraRange만큼 멀리까지 쫓는다 (피해·속도 보너스 없음 — 고르는 것만 바뀐다)
+        self.RallyTimer = 0
+        self.FocusTarget = target
+        self.FocusUntil = _UtilLogic.ElapsedSeconds + seconds
+        if self.Target ~= target then
+            self.Target = target
+            self:CancelPendingAttack()
+        end
+        self.RetargetTimer = 0
+    end
+
+    method boolean IsFocused(Entity e)
+        -- 지금 「저 적을」로 고른 적인가 (시간 안 · 살아 있음)
+        return e ~= nil and e == self.FocusTarget and _UtilLogic.ElapsedSeconds < self.FocusUntil and self:IsLiveTarget(e)
+    end
+
+    method number EngageRange(Entity e)
+        -- 주인 곁 교전 범위: 집중 대상이면 FocusExtraRange만큼 더 (그 밖은 OwnerCombatRange 그대로)
+        if self:IsFocused(e) then return self.OwnerCombatRange + self.FocusExtraRange end
+        return self.OwnerCombatRange
     end
 
     @ExecSpace("ServerOnly")
@@ -525,7 +554,7 @@ script ShadowUnit extends AttackComponent
         self.OwnerCheckTimer = self.OwnerCheckTimer - delta
         local checkOwner = self.OwnerCheckTimer <= 0 or not self:IsLiveTarget(self.Target)
         if checkOwner then self.OwnerCheckTimer = self.OwnerCheckInterval end
-        if self.Target ~= nil and checkOwner and not self:IsOwnerCombatTarget(self.Target, self.OwnerCombatRange) then
+        if self.Target ~= nil and checkOwner and not self:IsOwnerCombatTarget(self.Target, self:EngageRange(self.Target)) then
             self.Target = nil
             self.RetargetTimer = 0
             self:CancelPendingAttack()
@@ -987,6 +1016,8 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method Entity FindNearestMonster(Vector2 myPos)
         -- 주인의 선택을 먼저 돕고, 선택이 없으면 현재 교전을 유지한다. 자동 탐색은 주인 주변만.
+        -- 44-3 D 「저 적을」: 집중 시간 안에는 그 적이 맨 먼저 (자기 감지 거리와 상관없이 쫓아간다 · 주인 시야·교전 범위+FocusExtraRange 안)
+        if self:IsFocused(self.FocusTarget) and self:IsOwnerCombatTarget(self.FocusTarget, self:EngageRange(self.FocusTarget)) then return self.FocusTarget end
         local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
         if attack ~= nil then
             local preferred = attack.SelectedTarget
@@ -1102,7 +1133,7 @@ script ShadowUnit extends AttackComponent
             self.StrikeTimer = 0
             if not isvalid(self.Entity) or epoch ~= self.AttackEpoch or self.Dead or self.RallyTimer > 0 or not self:IsLiveTarget(target) then return end
             if self.Entity.CurrentMap ~= map or target.CurrentMap ~= map or not _Util:IsAlive(self.OwnerPlayer) or self.OwnerPlayer.CurrentMap ~= map then return end
-            if not self:IsOwnerCombatTarget(target, self.OwnerCombatRange) then return end
+            if not self:IsOwnerCombatTarget(target, self:EngageRange(target)) then return end
             local at = _Util:Pos2(self.Entity)
             local delta = _Util:Pos2(target) - at
             if delta:Magnitude() > self.AttackRange + 0.3 then return end

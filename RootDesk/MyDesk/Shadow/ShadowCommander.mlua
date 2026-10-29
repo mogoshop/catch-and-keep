@@ -1,9 +1,21 @@
 -- 그림자 지휘: 보관함(ShadowOwner)의 그림자를 엔티티로 소환·회수·집결하고 대형을 관리한다.
--- 단축키: Z 소환, X 전체 회수, C 집결.
+-- 단축키: Z 소환, X 전체 회수, C 집결 (짧게 = 집결 · 길게 = 고른 적에게 모두 집중 — 44-3 D).
+-- 44-3 B: 정예 승격·그림자 희생이 쓸 그림자를 플레이어가 고른다 (PC 클릭 · 소환수 띠 카드 · 모바일 터치) — PickedShadow.
 @Component
 script ShadowCommander extends Component
 
     property number RallySeconds = 2.5
+    property number FocusSeconds = 3          -- 「저 적을」: 모든 소환수가 고른 적을 먼저 치는 시간 (ShadowUnit.Focus)
+    property number FocusHoldSeconds = 0.45   -- C를 이만큼 누르고 있으면 집결 대신 집중
+    property number PickSeconds = 15          -- 고른 그림자를 기억하는 시간 (그 사이 승격·희생을 안 쓰면 잊는다 — 실수로 고른 귀한 그림자 보호)
+    property Entity PickedUnit = nil          -- 서버: 고른 그림자 엔티티
+    property number PickedUntil = 0           -- 서버: 이 시각까지 유효
+    property Entity PickedLocal = nil         -- 클라이언트: 내가 고른 그림자 (소환수 띠 카드 강조 · 표식)
+    property number PickedLocalUntil = 0
+    property integer PickMarker = 0           -- 클라이언트: 고른 그림자 발밑 표식 입자
+    property integer FocusMarker = 0          -- 클라이언트: 집중 대상 머리 위 표식 입자
+    property number RallyKeyAt = -1           -- 클라이언트: C를 누르기 시작한 시각 (-1 = 안 누름)
+    property integer RallyKeyTimer = 0        -- 클라이언트: 길게 누름 문턱 타이머
     property table Units = {}                -- shadow id → 소환된 엔티티
     property table Wanted = {}               -- 맵 이동 뒤 다시 부를 그림자 id (이동 전에 소환 중이던 것)
     property table TravelStates = {}          -- 재소환 대기 중인 개체의 체력 비율·시전 당시 승격 배율
@@ -24,9 +36,15 @@ script ShadowCommander extends Component
         self.TravelStates = {}
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        -- 주인이 나가면 소환된 그림자 정리
+        -- 주인이 나가면 소환된 그림자 정리 (클라이언트: C 길게 누름 타이머·고른 그림자·집중 표식)
+        if not self:IsServer() then
+            if self.RallyKeyTimer ~= 0 then _TimerService:ClearTimer(self.RallyKeyTimer) self.RallyKeyTimer = 0 end
+            if self.PickMarker ~= 0 then _ParticleService:RemoveParticle(self.PickMarker) self.PickMarker = 0 end
+            if self.FocusMarker ~= 0 then _ParticleService:RemoveParticle(self.FocusMarker) self.FocusMarker = 0 end
+            self.PickedLocal = nil
+            return
+        end
         self:CancelRedeployTimer()
         for _, unit in pairs(self.Units) do
             if isvalid(unit) then unit:Destroy() end
@@ -469,6 +487,169 @@ script ShadowCommander extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method integer FocusAll(Entity target, number seconds)
+        -- 「저 적을」 (44-3 D): 내 그림자·언데드가 seconds 동안 target을 먼저 친다 (집결 중이면 집결을 끊는다). 따른 소환수 수
+        --   숨은 규칙(주인이 고른 적을 먼저 · ShadowUnit.FindNearestMonster)을 누를 때만 강하게 — 진형을 저절로 바꾸지 않는다 (41 #5 C)
+        local n = 0
+        for _, c in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
+            ---@type ShadowUnit
+            local u = c
+            if isvalid(u.Entity) and u.OwnerPlayer == self.Entity and not u.Dead and u.Hp > 0 and not u.Bombing then
+                u:Focus(target, seconds)
+                n = n + 1
+            end
+        end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method ShadowUnit PickedShadow()
+        -- 고른 그림자 (44-3 B): 아직 살아 소환 중이고 시간 안이면 그 컴포넌트, 아니면 nil (정예 승격·그림자 희생이 먼저 쓴다)
+        if not isvalid(self.PickedUnit) or _UtilLogic.ElapsedSeconds >= self.PickedUntil then return nil end
+        ---@type ShadowUnit
+        local u = self.PickedUnit:GetComponent("script.ShadowUnit")
+        if u == nil or u.Dead or u.Hp <= 0 or u.OwnerPlayer ~= self.Entity or u.Kind ~= "shadow" then return nil end
+        if self.Units[u.ShadowId] ~= self.PickedUnit then return nil end
+        return u
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ClearPick()
+        -- 고른 그림자를 썼거나(승격·희생) 잊는다 → 내 화면 표식도 거둔다
+        if self.PickedUnit == nil then return end
+        self.PickedUnit = nil
+        self.PickedUntil = 0
+        self:ShowPick(nil, 0, self.Entity.PlayerComponent.UserId)
+    end
+
+    @ExecSpace("Server")
+    method void RequestPickShadow(Entity unit)
+        -- 내 그림자 고르기 (PC 클릭 · 소환수 띠 카드 · 모바일 터치). 같은 그림자를 다시 고르면 풀린다
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if not isvalid(unit) then self:ClearPick() return end
+        ---@type ShadowUnit
+        local u = unit:GetComponent("script.ShadowUnit")
+        if u == nil or u.OwnerPlayer ~= self.Entity or u.Kind ~= "shadow" or u.Dead or u.Hp <= 0 then return end
+        if self.PickedUnit == unit and _UtilLogic.ElapsedSeconds < self.PickedUntil then
+            self:ClearPick()
+            log("[VRF] shadow pick cleared " .. u.ShadowId)
+            return
+        end
+        self.PickedUnit = unit
+        self.PickedUntil = _UtilLogic.ElapsedSeconds + self.PickSeconds
+        self:ShowPick(unit, self.PickSeconds, senderUserId)
+        log(string.format("[VRF] shadow picked %s for %.0fs", u.ShadowId, self.PickSeconds))
+    end
+
+    @ExecSpace("Client")
+    method void ShowPick(Entity unit, number seconds)
+        -- 고른 그림자 표시 (내 화면): 발밑에 금빛 도는 입자 + 이름 위 「선택」 + 소환수 띠 카드 강조(CompanionHUD가 PickedLocal을 본다)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        if self.PickMarker ~= 0 then _ParticleService:RemoveParticle(self.PickMarker) self.PickMarker = 0 end
+        self.PickedLocal = unit
+        self.PickedLocalUntil = isvalid(unit) and (_UtilLogic.ElapsedSeconds + seconds) or 0
+        if not isvalid(unit) then return end
+        local anchor = _MotionSmoother:VisOf(unit)
+        self.PickMarker = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, anchor, Vector3(0, 0.05, 0), 0, Vector3(0.55, 0.2, 1), true, { Color = Color(1, 0.85, 0.4, 0.85), ParticleCount = 10 })
+        local serial = self.PickMarker
+        _TimerService:SetTimerOnce(function()
+            if self.PickMarker == serial and serial ~= 0 then
+                _ParticleService:RemoveParticle(serial)
+                self.PickMarker = 0
+                self.PickedLocal = nil
+            end
+        end, seconds)
+        _HudMain:ExtractPop(_Util:Pos2(unit) + Vector2(0, 0.9), "선택", Color(1, 0.86, 0.45, 1))
+    end
+
+    @ExecSpace("Server")
+    method void RequestFocus(Entity target)
+        -- 「저 적을」 (C 길게 · 모바일 명령판 「집중」): 집결과 같은 스킬 「집결」 — 같은 마나·재사용을 쓴다. 고른 적이 없거나 멀면 이유만 알린다
+        local uid = self.Entity.PlayerComponent.UserId
+        if senderUserId ~= uid then return end
+        if self:GetSkillLevel("rally") <= 0 then
+            -- 새 글귀(승인 전 · 44-3 D): 10-29 말투 규칙(-습니다). 짧게 누른 집결의 옛 안내(RequestRally)는 「-다」 63줄 정리 때 함께
+            _Util:Warn("집중은 스킬 「집결」(Lv" .. tostring(_SkillData:Get("rally").row) .. ")을 배워야 쓸 수 있습니다", uid)
+            return
+        end
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        ---@type PlayerStats
+        local stats = self.Entity:GetComponent("script.PlayerStats")
+        if book == nil or stats == nil or not _Util:IsAlive(self.Entity) or _GameConst:IsTown(self.Entity.CurrentMap) then return end
+        if _UtilLogic.ElapsedSeconds < (book.ReadyAt["rally"] or 0) then return end
+        local lv = book:GetPowerLevel("rally")
+        local cost = book:GetManaCost("rally", lv)
+        if stats.Mana < cost then
+            _Util:Warn("마나 부족", uid)
+            return
+        end
+        local ok = isvalid(target) and target.CurrentMap == self.Entity.CurrentMap and _Util:Distance(self.Entity, target) <= 9
+        ---@type Monster
+        local m = ok and target:GetComponent("script.Monster") or nil
+        if m == nil or m.IsDead or m.Hp <= 0 then
+            _Util:Warn("집중할 적을 먼저 골라주세요", uid)
+            return
+        end
+        local n = self:FocusAll(target, self.FocusSeconds)
+        if n <= 0 then
+            _Util:Warn("따를 소환수가 없습니다", uid)
+            return
+        end
+        stats:SpendMana(cost)
+        book:SetCooldown("rally", book:SkillCooldown("rally", lv) * stats:GetCastCooldownMult())
+        self:ShowFocus(target, self.FocusSeconds, uid)
+        log(string.format("[VRF] focus target=%s units=%d sec=%.1f", target.Name, n, self.FocusSeconds))
+    end
+
+    @ExecSpace("Client")
+    method void ShowFocus(Entity target, number seconds)
+        -- 집중 대상 표시 (내 화면): 머리 위 붉은 도는 입자 seconds 동안 + 「집중」 글자
+        if self.Entity ~= _UserService.LocalPlayer or not isvalid(target) then return end
+        if self.FocusMarker ~= 0 then _ParticleService:RemoveParticle(self.FocusMarker) self.FocusMarker = 0 end
+        local anchor = _MotionSmoother:VisOf(target)
+        self.FocusMarker = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, anchor, Vector3(0, 1.1, 0), 0, Vector3(0.45, 0.16, 1), true, { Color = Color(1, 0.35, 0.3, 0.9), ParticleCount = 8 })
+        local serial = self.FocusMarker
+        _TimerService:SetTimerOnce(function()
+            if self.FocusMarker == serial and serial ~= 0 then
+                _ParticleService:RemoveParticle(serial)
+                self.FocusMarker = 0
+            end
+        end, seconds)
+        _HudMain:ExtractPop(_Util:Pos2(target) + Vector2(0, 1.2), "집중", Color(1, 0.55, 0.45, 1))
+        _SoundDirector:PlaySkillCue("rally")
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FocusCandidate()
+        -- 「저 적을」 대상 (내 클라이언트 · 수동 조준): 고른 적 → PC 마우스 모드는 커서 근처(1.5칸) 적 → 모바일·키보드는 스킬 조준점(SkillBook.GetAimPoint) 근처 적
+        ---@type PlayerAttack
+        local attack = self.Entity:GetComponent("script.PlayerAttack")
+        ---@type ClickControl
+        local click = self.Entity:GetComponent("script.ClickControl")
+        if attack ~= nil and click ~= nil and attack:IsLiveMonster(click.AttackTarget) then return click.AttackTarget end
+        if attack ~= nil and attack:IsLiveMonster(attack.SelectedTarget) then return attack.SelectedTarget end
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        if book == nil then return nil end
+        local m = _Util:NearestMonster(self.Entity.CurrentMap, book:GetAimPoint("rally"), 1.5)
+        return m ~= nil and m.Entity or nil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TryFocus()
+        -- 「저 적을」 요청 (C 길게 누름 문턱 · 모바일 「집중」 단추)
+        if not _UIKit:CanUseGameplayInput() then return end
+        local target = self:FocusCandidate()
+        if target == nil then
+            _HudMain:ShowWarn("집중할 적을 먼저 골라주세요")
+            return
+        end
+        self:RequestFocus(target)
+        if not Environment:IsPublishedPlay() then log("[VRF] focus request " .. target.Name) end
+    end
+
+    @ExecSpace("ServerOnly")
     method string DeployBlockReason()
         -- 그림자 소환이 안 될 때 이유 (DeployNext가 0일 때)
         local owner = self:Owner()
@@ -565,7 +746,33 @@ script ShadowCommander extends Component
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() then return end
         if event.key == KeyboardKey.Z then self:RequestDeploy("")
         elseif event.key == KeyboardKey.X then self:RequestRecall("")
-        elseif event.key == KeyboardKey.C then self:RequestRally() end
+        elseif event.key == KeyboardKey.C then self:BeginRallyKey() end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyUpEvent(KeyUpEvent event)
+        -- C를 문턱(FocusHoldSeconds) 전에 떼면 집결 (예전과 같다). 문턱을 넘겨 이미 「집중」을 보냈으면 아무것도 안 한다
+        if self.Entity ~= _UserService.LocalPlayer or event.key ~= KeyboardKey.C or self.RallyKeyAt < 0 then return end
+        self.RallyKeyAt = -1
+        if self.RallyKeyTimer ~= 0 then
+            _TimerService:ClearTimer(self.RallyKeyTimer)
+            self.RallyKeyTimer = 0
+            if _UIKit:CanUseGameplayInput() then self:RequestRally() end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BeginRallyKey()
+        -- C 누름 (44-3 D): 짧게 = 집결 · FocusHoldSeconds 넘게 = 고른 적에게 모두 집중 (문턱에 닿는 순간 보낸다 — 손을 떼기 전에 반응)
+        if self.RallyKeyAt >= 0 then return end   -- 키 반복 입력은 무시
+        self.RallyKeyAt = _UtilLogic.ElapsedSeconds
+        if self.RallyKeyTimer ~= 0 then _TimerService:ClearTimer(self.RallyKeyTimer) end
+        self.RallyKeyTimer = _TimerService:SetTimerOnce(function()
+            self.RallyKeyTimer = 0
+            if self.RallyKeyAt < 0 then return end
+            self:TryFocus()
+        end, self.FocusHoldSeconds)
     end
 
 end
