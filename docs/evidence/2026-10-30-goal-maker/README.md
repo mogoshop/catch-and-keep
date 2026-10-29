@@ -84,7 +84,11 @@
 | 반영 2 | 부르는 LootSystem·PlayerQuest·SelfTest touch → refresh 02:35:20 → build 467줄 · Error 0 · Warning 100(+2 LWA-1111 DecodeMeta·ParseGearOffer) · LEA-3015 0 · GearChoiceWindow.codeblock 생성 |
 | 플레이 1 | PC FHD · 02:38 · 방 server_instance_game:s1b8dcddb043 — ITEM-Q1 · D-M6 · ITEM-R1 · ITEM-R2 1부 |
 | 플레이 2 | iPad 5th gen 프리셋 · 02:52 · 방 s1b8dffe91d3 — ITEM-R2 2부(재접속) · R1 채택 · RUNE-A1 |
-| 이후 main | cd6f3bbb(StashWindow 「넣기 요청: 」, 통합 담당) — 다음 반영에 포함 |
+| 반영 3 | 03:05 StashWindow(cd6f3bbb) touch → refresh → build Error 0 |
+| 플레이 3~6 | PC FHD · 03:06~04:21 — A-OBS-02 확인·RUNE PC·D-M1~M5·ITEM-Q1 (a)(b)·D-M7/D-M7b (방 s1b8e3243fcd·s1b8eb58aa45·s1b8ecfa3228·s1b8edde4f42) |
+| 반영 4 | 04:22 NpcWindow(9c6a5aa1)·StashWindow·GearChoiceWindow(50fed567) touch → refresh 04:22:20 → build 458줄 Error 0 · Warning 100 |
+| 플레이 7 | PC FHD · 04:24~04:55 · 방 s1b8f56af280 — D-OBS-06 실화면 · A-OBS-05 실행 확인 · C0 연결 · C1 6장면 |
+| 반영 5 | 04:55 GameData(24e861ab E155 연결)+UI 3 touch → refresh 04:55:50 → build 458줄 Error 0 · Warning 100 |
 
 ## A 묶음 (Claude 판정)
 
@@ -98,11 +102,43 @@
 
 관찰(고치지 않음): A-OBS-01 카드 「아이템 레벨 42」 줄넘김 · A-OBS-02 창고 「넣음:」(→ cd6f3bbb 수정, 확인 대기) · A-OBS-03 룬워드 안내 둘째 줄 · A-OBS-04 「옵션 바꾸기 1632」 두 줄 · D-OBS-01 첫 장비 안내 Notify가 카드와 함께 뜸.
 
-## D 묶음 (진행 중)
+## D 묶음 (Claude 판정)
 
-| case | 판정 | 핵심 근거 |
-|---|---|---|
-| D-M6 | 부분확인 | 되돌림(해제) 뒤 유효 피해 80 → gear used 0 · 다시 장착 뒤 유효 피해 → first gearUse t=513 · gear used after equip and effective damage slot=helm (1회) · 막타 크레딧만·다른 맵 음성 미시행 |
+| case | 판정 | 핵심 근거 | 캡처 |
+|---|---|---|---|
+| D-M6 | 부분확인 | 되돌림(해제) 뒤 유효 피해 80 → gear used 0 · 다시 장착 뒤 유효 피해 → first gearUse t=513 · gear used after equip and effective damage slot=helm (1회) · 막타 크레딧만·다른 맵 음성 미시행 | — |
+| D-M1 crypt2 | 통과 | zones want=43 placed=31 pool=12 same=true zonedPacks=4 fallback=0 (c=6 e=6) · 회랑 W→E 36.7초 · 유물 곁방 8.0초(입구 몰림·저주 상자 매복 5) · 구덩이 방 11.1초 · 해골 3기 처음 구간 따라옴 | D-M1-1~3 |
+| D-M3 lighthouse1 | 부분확인 | zones want=44 placed=33 pool=11 fallback=0 (r1=6 r2=3 c=3) · 남쪽 길→홀 29.3초·41.9칸 / 북쪽 길→홀 27.9초·39.8칸 · 홀→서쪽 곧은 길 16.5초(+3칸 ≈ 설계 27) · 집 입구 곁 이동 없음 · 길 위 상자 8.5초 → 매복 5 · 상자 뒤 E 포털은 장판 사망으로 못 걸음 | D-M3-1~4 |
+| D-M4 demonroad | 부분확인 | zones want=44 placed=32 pool=12 fallback=0 (b=4 r2=4) · 길 위 사건 1 · 행군로 W→동문 앞 52.6초·74.7칸(+3 ≈ 79) 상자 미발동 · 보급 성벽 우회로 35.9칸(행군로 같은 구간 22.4칸) → 상자 매복 5 · 신전 2 · q19 60처치 미시험 | D-M4-1~3 |
+| D-M2 temple2 | 부분확인 | zones want=40 placed=31 pool=9 fallback=0 (b=9 c=6 d=4) · 남쪽 회랑→아슈 32.4초·45.4칸 / 북쪽 곁길 34.2초·47.3칸(역방향 · 길찾기 실패 3) · 아슈 GM 처치 → bond rage(1.5×, 크기 1.15×) · 나슈 처치 → quest goal 2/2 · E → temple3 | D-M2-1~3 |
+| D-M5 gallows | 통과 | Space → npc field altar open → field report q4 · first q4reportField · 3칸 밖 단추 없음 · field accept q5 · 일지 열고 닫기 유지 · Save → 재접속 q5/1 유지 · 새 게임 처형인 재등장 · 마을 오렌 경로 q5 수락(현장 줄 없음) | D-M5-1~5 |
+| D-M7 액트 2 첫 10분 | 통과 · 코덱스 0424 종료 | 1차(03:56~04:04 · 저장 끔): 조작·시간 관찰만 — Telemetry 세션이 IsLoadSuccess=false면 없어 A2 표본 무효(시험 준비 실수) · b 재실행(04:07~04:18 · 저장 켬): act2Enter t=931 → 수락 4.0초 → dunes 14초 → 습격 n=16 → 목표 4분 36초 → 귀환 54초 → 보고 거절(가방 60/60 · 「퀘스트와 보상은 보관됩니다」) → GM 1칸 → 카드 → 투구 수령 · A2 표본 120행 over 0(600초 완결) · 대기·준비 빼면 약 350초 (Lv40 과레벨·GM 생명 바닥 — 실제 Lv13 대표 아님) | D-M7-1~8 · D-M7b-A2-sample-rows.txt |
+
+관찰(고치지 않음 · D·A 추가):
+- D-OBS-02 큐 시작점이 포털 칸(crypt2·lighthouse1) — 도착 유예 뒤 이웃 맵으로 넘어감(시험 시작점 문제)
+- D-OBS-03 몬스터가 벽·기둥 칸에 끼어 CoopRules unstuck으로 꺼내짐(lighthouse1 3 · temple2 1 · demonroad 2)
+- D-OBS-04 temple2 문지기 하나만 쓰러져도 귀환 포털(→oasis) 열림
+- D-OBS-05 temple2 북쪽 곁길 클릭 이동 길찾기 실패 잦음(3칸 넘는 경유점)
+- D-OBS-06 제단 대화 초상화 빈 칸 → 코드 통합 9c6a5aa1 (통합 담당 · 코덱스 0354) / 실화면 확인 04:26 플레이 7 「피의 제단」 1/2 왼쪽에 오렌 그림(D-OBS06-gallows-altar-dialog-oren-portrait-after-9c6a5aa1.png) · 코덱스 0431 종료
+- D-OBS-07 GM 무적은 장판 지속 피해를 막지 않음(시험 장치 한계) — lighthouse1 상자 매복 뒤 사망
+- A-OBS-05 부위 카드 창이 첫 제안 때 열리자마자 닫힘(D-M7 의뢰 7 보고): Client RPC OpenGearChoice가 @Sync GearOffer보다 먼저 도착 → GearChoiceWindow.Poll 「quest.GearOffer ~= self.Offer」로 닫음 · 다시 Space로 열면(reuse) 유지 · 타이밍 의존(Q1에서는 안 남) → 코드 통합 50fed567 (통합 담당 · 코덱스 0420 v2) / 실행 확인 04:27 플레이 7 q13 새 제안 첫 보고: 카드 8.5초 표본 모두 유지 · 장갑 1회 지급 · 닫힌 창 추가 선택(Pick1 클릭+Choose(3)) 차단(A-OBS05-1~2) · 6초 지연 가지는 이번 Show가 이미 전체 합치라 오프라인 검증 범위 · 코덱스 0431 종료
+
+## C 묶음 (I05 실전 계측 · Claude 판정 = 실행·원장만, 비교 판정은 코덱스)
+
+- 방 Telemetry = 플레이어가 있는 Solo 방(server_instance_game:s1b8f56af280) · S00 preflight ok users=1 · 조각 원문·해시 `C-raw/inputs/` · 원장 `C-raw/*.log`, `C-raw/raw/*.log`
+- C0 연결(test-plan §4 연결 조각 그대로 · execution · hellhound C05_link): run1 소환 3타(overkill 43.56) · run2 소환 2타(준비 스크립트 연속 전송으로 미실행 — 함정 기록) · run3 직접 player.basic 8타(overkill 5.56 · tag_hit 8) · 세 run 모두 end ev_omitted=0 · absorbed 0 → 코덱스 0440 부분 수용(흡수 경계만 미확인)
+- C1 Lv15 6장면(auto · rep1 · origin GOAL-MAKER-INT-P7-20261030T0425): run4 summon boss 원 좌표 = 준비 실패 표본(보스 12칸 · timeout · 피해 0 · 성능 제외, 시전 33·마나 211·소환 5 계측 연결은 수용) → 좌표 보정 `C-raw/raw/coords-fix.txt`(보스 18→11 · 무리 0→-5, 코덱스 0441 수용)
+
+| run | 장면 | 종료 | 유효 피해 | 비고 |
+|---|---|---|---|---|
+| 5 | L15-summon-boss | player_dead 15.8초 | 48 | 보스 curtain 6줄 · 받은 161/최대 81 · 보스 lv21 생명 47803 |
+| 6 | L15-magic-boss | player_dead 16.4초 | 40159 | 골편 155타/시전 19 (C-OBS-01) |
+| 7 | L15-curse_mix-boss | player_dead 9.1초 | 0 | 준비 10초 중 시험 밖 유입에 사망 · 대상 전 (C-OBS-02) |
+| 8 | L15-summon-horde | player_dead 20.9초 | 2217 | 처치 3/14 · 해골 1772 · 마법사 383 |
+| 9 | L15-magic-horde | cleared 11.2초 | 7409 | 14/14 · 피격 없음 |
+| 10 | L15-curse_mix-horde | player_dead 15.3초 | 2135 | 처치 3/14 · 저주 92% |
+
+집계 `C-raw/aggregate-P7-stage1.{md,json}` (원장 검사 7/7 ok · absorbed>0 run 없음). 관찰: C-OBS-01 magic 보스 시전당 ~8타 묶음(원인 미확인) · C-OBS-02 arenaClear 1회 뒤 유입이 준비 중 시험 캐릭터를 죽임 · C-OBS-03 L15 보스 장면의 대사제는 lv21·생명 47803, 생명 81 시험 캐릭터는 세 빌드 모두 16초 안 사망. C2(9+2)는 E·I07 뒤.
 
 ## B 편입 (재실행 없음)
 
@@ -111,5 +147,5 @@ dc44af6c의 B-M01~03 증거 10파일을 원장에 그대로 연결 — 코덱스
 ## 슬롯 4 「새내기」
 
 - 02:38:34 캐릭터 선택 화면에서 BatchGet 5키 백업(Account 615 · Char_4 1126 · Inv_4 1838 · Shadow_4 40 · Stash 83 바이트) + 해시 → 로컬 사본 5/5 일치.
-- 저장: 02:51:50 ITEM-R2 Save(true) 1회(그 세션 상태 전체). 나머지는 저장 끔.
+- 저장: 02:51:50 ITEM-R2 Save(true) · 03:47:01 D-M5 Save(true) · 03:51:15 ITEM-Q1 (a) Save(true) · 04:07:31~ 플레이 6 저장 켬(D-M7b · 퇴장 저장 q8/0 남음 — 플레이 7 시작 때 확인). 나머지는 저장 끔(플레이 7은 끔 · C S10도 저장 끔).
 - 복원: 마지막 묶음 뒤 BatchSet + 재조회(대기).
