@@ -81,6 +81,7 @@ script BossMoves extends Component
         if target == nil then return end
         self.CastCount = self.CastCount + 1
         log("[VRF] boss move " .. kind .. " #" .. tostring(self.CastCount) .. " " .. monster.SourceId)
+        self:CueFx(kind)   -- 패턴마다 다른 예고음 (39 #9 ① · data/sounds.csv boss_<kind>)
         if kind == "curtain" then self:Curtain(target)
         elseif kind == "cross" then self:Cross()
         elseif kind == "charge" then self:Charge(target)
@@ -499,6 +500,12 @@ script BossMoves extends Component
         if el == "poison" then return Color(0.5, 0.95, 0.35, 1) end
         if el == "light" then return Color(1, 0.95, 0.6, 1) end
         return Color(1, 0.35, 0.2, 1)
+    end
+
+    @ExecSpace("Multicast")
+    method void CueFx(string kind)
+        -- 패턴 예고음: 같은 맵의 모든 사람에게 (거리 상관없이)
+        _SoundDirector:PlayBossCue(kind, self.Entity)
     end
 
     @ExecSpace("Multicast")

@@ -59,6 +59,7 @@ script ArchbishopRite extends Component
                 self.RitualLeft = self.RitualLeft - delta
                 if self:PriestsAlive() == 0 then
                     self.RitualLeft = 0
+                    self:RiteBreakFx()
                     log("[VRF] archbishop ritual broken " .. tostring(self.RitualCount))
                 elseif self.RitualLeft <= 0 then
                     self:CompleteRitual(monster)
@@ -176,6 +177,7 @@ script ArchbishopRite extends Component
         -- 성역이 펼쳐짐: 붉은 파동 + 화면 흔들림
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundDirector:PlayRiteCue("archbishop", "phase", self.Entity)   -- 2단계 성역 (39 #9 ② · rite_phase)
         local c = self.SanctumCenter
         _ParticleService:PlayBasicParticle(BasicParticleType.Nova, self.Entity, Vector3(c.x, c.y, 0), 0, Vector3(self.SanctumRadius, self.SanctumRadius, 1), false, { Color = Color(0.9, 0.15, 0.2, 0.7) })
         local cam = _CameraService:GetCurrentCameraComponent()
@@ -187,6 +189,7 @@ script ArchbishopRite extends Component
         -- 의식 시작: 대주교에게 붉은 기운이 모인다
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundDirector:PlayRiteCue("archbishop", "start", self.Entity)   -- 의식 시작음 (39 #9 ②)
         _ParticleService:PlayBasicParticleAttached(BasicParticleType.Charge, self.Entity, Vector3(0, 0.9, 0), 0, Vector3(1.4, 1.4, 1), false, { Color = Color(0.95, 0.15, 0.2, 1) })
     end
 
@@ -195,7 +198,14 @@ script ArchbishopRite extends Component
         -- 의식 완성: 대주교 몸에 피의 빛
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundDirector:PlayRiteCue("archbishop", "done", self.Entity)
         _ParticleService:PlayBasicParticleAttached(BasicParticleType.Buff, self.Entity, Vector3(0, 0.2, 0), 0, Vector3(1.6, 1.6, 1), false, { Color = Color(1, 0.2, 0.25, 1) })
+    end
+
+    @ExecSpace("Multicast")
+    method void RiteBreakFx()
+        -- 사제를 모두 쓰러뜨려 의식을 끊었다: 깨지는 소리
+        _SoundDirector:PlayRiteCue("archbishop", "break", self.Entity)
     end
 
     @ExecSpace("ClientOnly")

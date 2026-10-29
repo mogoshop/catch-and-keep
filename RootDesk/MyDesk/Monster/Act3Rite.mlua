@@ -103,7 +103,14 @@ script Act3Rite extends Component
             bp.SlamAtTarget = true
             bp.SlamInterval = self.BaseSlamInterval * 0.6
         end
+        if phase >= 2 then self:PhaseFx() end   -- 단계가 바뀌는 소리 (39 #9 ② · rite_phase)
         log("[VRF] admiral phase " .. tostring(phase))
+    end
+
+    @ExecSpace("Multicast")
+    method void PhaseFx()
+        -- 제독 2·3단계(선원·냉기 → 폭풍 낙뢰): 같은 맵 사람에게 단계 전환음
+        _SoundDirector:PlayRiteCue("admiral", "phase", self.Entity)
     end
 
     @ExecSpace("Multicast")
@@ -111,6 +118,7 @@ script Act3Rite extends Component
         -- 껍질 깨짐: 바위 파편이 튀고 화면 흔들림
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundDirector:PlayRiteCue("crab", "break", self.Entity)   -- 껍질을 깼다 (39 #9 ②)
         local p = self.Entity.TransformComponent.WorldPosition
         _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, Vector3(p.x, p.y + 0.6, 0), 0, Vector3(1.4, 1.4, 1), false, nil)
         _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, Vector3(p.x, p.y + 0.6, 0), 0, Vector3(1, 1, 1), false, { Color = Color(0.6, 0.85, 1, 1) })
@@ -175,6 +183,7 @@ script Act3Rite extends Component
         local traits = self.Entity:GetComponent("script.MonsterTraits")
         local flashing = traits ~= nil and traits.FlashUntil > 0
         if self.Shell and self.ShellFx == 0 then
+            _SoundDirector:PlayRiteCue("crab", "start", self.Entity)   -- 껍질이 닫힌다 (39 #9 ② 의식 시작음)
             self.ShellFx = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Aura, self.Entity, Vector3(0, 0.6, 0), 0, Vector3(1.4, 1.4, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 1, Color = Color(0.5, 0.8, 1, 0.8) })   -- 10-22: 몸 뒤 (색조가 이미 껍질을 보여 준다)
             local s = self.Entity.TransformComponent.Scale.x
             local p = self.Entity.TransformComponent.WorldPosition

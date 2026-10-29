@@ -74,4 +74,10 @@ function dialogLayout(height, withPortrait) {
   return { portraitX, paperX, paperW, paperH };
 }
 
-module.exports = { INSET, SPACE, FRAME, INNER, SKPANEL, BUTTON, TAB, COLOR, DIALOG, dialogLayout, buttonText, portraitSprite };
+// 위쪽 가운데 띠 자리 (PC · 10-29 45-1 · docs/ui/message-rules.md): 위에서부터 ① 대상 체력 띠 → ② 알림 칸(여정 안내 · 맵 배너가 차례로 같은 칸) → ③ 출구 안내.
+// 대상 띠 높이는 실행 중 114 (HudMain.OnBeginPlay — 저주 줄 44 포함). 칸 사이는 SPACE. 모바일 자리는 MobileLayout
+const TOPBAND = { targetTop: 20, targetH: 114, tipH: 74, gap: SPACE };
+TOPBAND.slot2 = TOPBAND.targetTop + TOPBAND.targetH + TOPBAND.gap;   // 146 — 여정 안내 위 끝
+TOPBAND.slot3 = TOPBAND.slot2 + TOPBAND.tipH + TOPBAND.gap;          // 232 — 출구 안내 위 끝
+
+module.exports = { INSET, SPACE, FRAME, INNER, SKPANEL, BUTTON, TAB, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, portraitSprite };

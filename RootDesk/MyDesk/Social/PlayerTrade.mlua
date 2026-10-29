@@ -89,7 +89,7 @@ script PlayerTrade extends Component
         local s = inv.Bag[bagIndex]
         if s == nil or s ~= expectedItem then return end
         if _ItemData:IsBound(s) then
-            _Util:Notify("귀속 아이템은 거래할 수 없다", pc.UserId)
+            _Util:Warn("귀속 아이템은 거래할 수 없다", pc.UserId)
             return
         end
         table.insert(self.Escrow, inv:TakeBagItem(bagIndex))
@@ -165,22 +165,22 @@ script PlayerTrade extends Component
         local theirStats = o.Entity:GetComponent("script.PlayerStats")
         if myInv == nil or theirInv == nil or myStats == nil or theirStats == nil then return end
         if #myInv.Bag + #o.Escrow > myInv.BagSize or #theirInv.Bag + #self.Escrow > theirInv.BagSize then
-            _Util:Notify("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
-            _Util:Notify("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
+            _Util:Warn("가방 공간이 부족하다", self.Entity.PlayerComponent.UserId)
+            _Util:Warn("가방 공간이 부족하다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end
         -- 물약 소지 상한 (10-13): 받는 쪽이 넘치면 거래하지 않는다
         local over1, over2 = myInv:PotionOverflow(o.Escrow), theirInv:PotionOverflow(self.Escrow)
         if over1 ~= "" or over2 ~= "" then
-            if over1 ~= "" then _Util:Notify(over1 .. " 소지 상한을 넘어 거래하지 못했다", self.Entity.PlayerComponent.UserId) end
-            if over2 ~= "" then _Util:Notify(over2 .. " 소지 상한을 넘어 거래하지 못했다", o.Entity.PlayerComponent.UserId) end
+            if over1 ~= "" then _Util:Warn(over1 .. " 소지 상한을 넘어 거래하지 못했다", self.Entity.PlayerComponent.UserId) end
+            if over2 ~= "" then _Util:Warn(over2 .. " 소지 상한을 넘어 거래하지 못했다", o.Entity.PlayerComponent.UserId) end
             self:Changed()
             return
         end
         if myStats.Gold < self.MyGold or theirStats.Gold < o.MyGold then
-            _Util:Notify("골드가 부족해 거래하지 못했다", self.Entity.PlayerComponent.UserId)
-            _Util:Notify("골드가 부족해 거래하지 못했다", o.Entity.PlayerComponent.UserId)
+            _Util:Warn("골드가 부족해 거래하지 못했다", self.Entity.PlayerComponent.UserId)
+            _Util:Warn("골드가 부족해 거래하지 못했다", o.Entity.PlayerComponent.UserId)
             self:Changed()
             return
         end

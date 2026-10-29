@@ -444,6 +444,8 @@ script MonsterAttack extends AttackComponent
         ---@type BossPattern
         local boss = self.Entity:GetComponent("script.BossPattern")
         if boss ~= nil and boss.SlamPhase ~= "idle" then return end
+        -- 앞모션음 (39 #9 ③): 바닥 표시가 없는 일반 몬스터도 소리로는 알린다 — 유형별 · 근처만 (보스는 Arch가 비어 패턴 소리만)
+        _SoundDirector:PlayMonsterWindup(self.Arch, self.Entity.TransformComponent.WorldPosition)
         -- 범위 기술 예고(nova)가 떠 있는 동안에는 더 큰 위험을 덮어쓰지 않는다
         if self.WarningOwner == "nova" or self.WarningOwner == "ult" then return end   -- 보스 궁극기 예고도 덮지 않는다
         -- D2·이모탈처럼 일반 몬스터의 평타에는 바닥 표시를 하지 않는다 (몸짓으로 읽는다). 정예·변종·보스만 얇은 테두리로 예고
@@ -742,6 +744,7 @@ script MonsterAttack extends AttackComponent
         -- 첫 대상 발밑 파란 예고 원 + 코덱스 번개 예고 타원 (예고 시간 동안)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _SoundDirector:PlayMonsterWindup(self.Arch, self.Entity.TransformComponent.WorldPosition)
         self:DrawNovaWarning(Vector2(pos.x, pos.y), 0.55, "light", seconds)
         local mark = _EffectService:PlayEffect(_GameConst.SpriteLightningWarning, self.Entity, pos, 0, Vector3(1.15, 1.15, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 3 })
         _TimerService:SetTimerOnce(function()

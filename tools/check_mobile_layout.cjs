@@ -44,7 +44,7 @@ try {
   // 빌드 값 (모바일 전용·공용)
   add("GameHUD/MFrame", "GameHUD", "MFrame");
   add("GameHUD/XP", "GameHUD", "XP");
-  for (const n of ["Buffs", "Party", "Target", "Banner", "Tip", "GatePrompt", "BtnMenu"]) add("GameHUD/" + n, "GameHUD", n);
+  for (const n of ["Buffs", "Party", "Target", "Banner", "Tip", "GatePrompt", "BtnMenu", "OfferBand"]) add("GameHUD/" + n, "GameHUD", n);
   add("RewardHUD/Feed", "RewardHUD", "Feed");
   add("RewardHUD/Toast", "RewardHUD", "Toast");
   add("ChatHUD/Chat", "ChatHUD", "Chat");

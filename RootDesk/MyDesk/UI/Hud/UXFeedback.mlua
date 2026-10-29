@@ -1,22 +1,64 @@
--- 성장·목표 달성·장비 획득을 한 곳에서 읽는다. 겹친 보상은 큐로 순서대로 표시한다.
+-- 성장·목표 달성·장비 획득을 한 곳에서 읽는다 — 큰 알림 판(RewardHUD Toast)의 차례 (45-1 알림 질서 · 10-29 사용자 결정 1-A).
+--   · 차례: 우선순위(레벨 업·액트 해방·난이도 열림 3 > 스킬·의뢰·그림자·업적·경고 2 > 전리품·안내 1 > 창 안 결과 0) → 들어온 순서. 대기 최대 6개 (넘치면 가장 낮고 오래된 것을 안내 줄로)
+--   · 같은 종류 합치기: 레벨 업은 마지막 레벨 하나로(능력치·스킬 포인트·새 스킬은 더한다) · 같은 제목은 「×N」 · 스킬·그림자는 마지막 것 + 「외 N」. 떠 있는 판도 그 자리에서 고친다
+--   · 창이 떠 있으면(안내 창·그림자 보관함·이야기 카드·확인 창 포함) 큰 알림은 붙잡아 둔다 — 창을 닫으면 차례로, 한 번에 최대 2개 + 나머지는 안내 줄 「외 알림 N개」
+--   · 창 안 행동의 결과(ShowNow: 장착·대장간·웨이포인트 잠김 등)는 창이 떠 있으면 큰 판 대신 창 밖 가장자리 안내 줄로 (NoticeFeed)
+--   · 판이 떠 있는 동안 창이 열리면 판을 바로 걷고, 2.5초 안이면 대기열에 되돌린다
+--   · 레벨 업·스킬·의뢰·그림자·업적 알림은 누르면 그 창을 연다 (전리품처럼 전투 중 잦은 알림은 눌리지 않게 — 클릭 이동을 막지 않는다)
 @Logic
 script UXFeedback extends Logic
 
-    property table Queue = {}
-    property number Until = 0
+    property table Queue = {}               -- 기다리는 큰 알림 { kind, title, base, detail, icon, src, tint, prio, at, count }
+    property number Until = 0               -- 지금 판이 걷히는 시각 (HudMain 여정 안내 · HudMap 출구 안내가 같이 본다)
     property integer TimerId = 0
     property integer ShownCount = 0
     property number IconBox = 84            -- 알림 그림 칸 (빌드 ux-feedback.cjs Toast/Icon과 같게)
+    property number ShowSeconds = 4
+    property integer QueueCap = 6
+    property integer ReleaseCap = 2         -- 창을 닫은 뒤 이어 띄우는 큰 알림 수 (나머지는 안내 줄 한 줄로)
+    property number RequeueWithin = 2.5     -- 떠 있던 판이 이 초 안에 창에 가려지면 대기열에 되돌린다
+    property any Current = nil              -- 지금 판에 띄운 알림
+    property number ShownAt = 0
+    property boolean Holding = false        -- 창이 떠 있어 큰 알림을 붙잡고 있다
+    property integer HeldMax = 0            -- 붙잡는 동안 가장 많이 쌓인 수 (메이커 확인용)
+    property integer Seq = 0
+    property integer MergeCount = 0
+    property integer ClickCount = 0
+    property table Kinds = {}
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self.Queue = {}
         self.Until = 0
+        self.Current = nil
+        self.Holding = false
+        self:BuildKinds()
         _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
         -- 제목·본문이 칸(422px)보다 길면 글자를 줄인다 (10-11 QA: 「새 스킬 · …」 본문이 테두리 밖으로 나갔다)
         self:FitText("/ui/RewardHUD/Toast/Title", 18, 28)
         self:FitText("/ui/RewardHUD/Toast/Body", 15, 22)
+        _UIKit:Connect("/ui/RewardHUD/Toast", function() self:OnToastClick() end)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
+        log("[VRF] UXFeedback ready cap=" .. tostring(self.QueueCap) .. " release=" .. tostring(self.ReleaseCap))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BuildKinds()
+        -- prio 클수록 먼저 · merge: level(레벨 합침) / same(같은 제목 ×N) / kind(같은 종류 「외 N」) / "" 합치지 않음
+        -- open: 누르면 여는 창 ("" = 눌리지 않음) · now: 창 안 결과 · sound: 판을 띄울 때 공통 UI 소리
+        self.Kinds = {
+            levelup = { prio = 3, merge = "level", open = "SkillWin", now = false, sound = "" },
+            act = { prio = 3, merge = "", open = "QuestWin", now = false, sound = "gain" },
+            big = { prio = 3, merge = "", open = "", now = false, sound = "gain" },
+            skill = { prio = 2, merge = "kind", open = "SkillWin", now = false, sound = "" },
+            quest = { prio = 2, merge = "same", open = "QuestWin", now = false, sound = "gain" },
+            journal = { prio = 2, merge = "kind", open = "JournalWin", now = false, sound = "gain" },
+            shadow = { prio = 2, merge = "kind", open = "shadow", now = false, sound = "" },
+            alert = { prio = 2, merge = "same", open = "", now = false, sound = "" },
+            loot = { prio = 1, merge = "same", open = "", now = false, sound = "" },
+            notice = { prio = 1, merge = "same", open = "", now = false, sound = "" },
+            now = { prio = 0, merge = "same", open = "", now = true, sound = "" },
+        }
     end
 
     @ExecSpace("ClientOnly")
@@ -32,7 +74,9 @@ script UXFeedback extends Logic
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
         self.Queue = {}
+        self.Current = nil
         self.Until = 0
     end
 
@@ -43,25 +87,188 @@ script UXFeedback extends Logic
         return isvalid(root) and root.Enable and self.Until > _UtilLogic.ElapsedSeconds
     end
 
+    -- ───────── 넣기 ─────────
+
     @ExecSpace("ClientOnly")
     method void Show(string title, string detail, string icon)
-        self:ShowTinted(title, detail, icon, Color(1, 1, 1, 1))
+        self:Push(self:GuessKind(title), title, detail, icon, "", Color(1, 1, 1, 1))
     end
 
     @ExecSpace("ClientOnly")
     method void ShowTinted(string title, string detail, string icon, Color tint)
         -- 흰 그림에 색을 입혀 쓰는 아이콘(red_dot 등)은 색을 함께 넘긴다 (10-21: 「붉은 원」 알림이 흰 원으로 보였다)
-        if #self.Queue >= 5 then table.remove(self.Queue, 1) end
-        table.insert(self.Queue, { title = title, detail = detail, icon = icon, src = "", tint = tint })
-        self:Tick()
+        self:Push(self:GuessKind(title), title, detail, icon, "", tint)
     end
 
     @ExecSpace("ClientOnly")
     method void ShowMonster(string title, string detail, string src)
         -- 몬스터 그림 알림 (그림자 획득): 몸만 자른 초상을 그림 칸 가득 (프레임 썸네일은 여백이 커서 작게 보였다, 10-13)
-        if #self.Queue >= 5 then table.remove(self.Queue, 1) end
-        table.insert(self.Queue, { title = title, detail = detail, icon = "", src = src })
+        self:Push("shadow", title, detail, "", src, Color(1, 1, 1, 1))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowKind(string kind, string title, string detail, string icon)
+        -- 종류를 정해 넣는다 (levelup · act · big · skill · quest · journal · shadow · alert · loot · notice · now)
+        self:Push(kind, title, detail, icon, "", Color(1, 1, 1, 1))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowNow(string title, string detail, string icon)
+        -- 창 안에서 한 행동의 결과 (장착·대장간·웨이포인트 잠김·방 만들기 오류): 창이 떠 있으면 창 밖 가장자리 안내 줄로, 아니면 큰 판
+        self:Push("now", title, detail, icon, "", Color(1, 1, 1, 1))
+    end
+
+    method boolean Starts(string text, string prefix)
+        return string.sub(text, 1, string.len(prefix)) == prefix
+    end
+
+    method string GuessKind(string title)
+        -- 제목으로 종류를 고른다 (부르는 쪽을 고치지 않고 우선순위·합치기를 맞춘다). 모르는 제목은 notice
+        if self:Starts(title, "레벨 업") then return "levelup" end
+        if self:Starts(title, "새 스킬 · ") or self:Starts(title, "스킬 강화 · ") then return "skill" end
+        if self:Starts(title, "전리품 획득") then return "loot" end
+        if self:Starts(title, "그림자 획득") then return "shadow" end
+        local tail = " — 해방"
+        if string.len(title) > string.len(tail) and string.sub(title, -string.len(tail)) == tail then return "act" end
+        if title == "옥좌의 봉인이 풀렸다" then return "act" end
+        local opened = " 난이도가 열렸다!"
+        if string.len(title) > string.len(opened) and string.sub(title, -string.len(opened)) == opened then return "big" end
+        if self:Starts(title, "업적 달성 · ") or self:Starts(title, "일일 의뢰 완료 · ") then return "journal" end
+        -- 창 안에서 한 행동의 결과 (그림자 강화 · 업적 보상 받기 · 스킬/능력치 초기화 · 스킬 편집): 창이 떠 있으면 가장자리 줄로 바로 보인다
+        if self:Starts(title, "그림자 강화 ") or self:Starts(title, "업적 보상 · ") or title == "스킬 초기화" or title == "능력치 초기화" or title == "스킬 편집" then return "now" end
+        return "notice"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Push(string kind, string title, string detail, string icon, string src, Color tint)
+        if self.Kinds.notice == nil then self:BuildKinds() end
+        local info = self.Kinds[kind]
+        if info == nil then
+            kind = "notice"
+            info = self.Kinds.notice
+        end
+        -- 창 안 결과: 창이 떠 있으면 큰 판 대신 창 밖 가장자리 안내 줄로
+        if info.now and self:HoldReason() == "window" then
+            _NoticeFeed:Push(self:LineText(title, detail, true))
+            log("[VRF] ux now->line " .. title)
+            return
+        end
+        self.Seq = self.Seq + 1
+        local msg = { kind = kind, title = title, base = title, detail = detail, icon = icon, src = src, tint = tint, prio = info.prio, at = self.Seq, count = 1 }
+        -- 같은 종류 합치기: 떠 있는 판 → 대기열 순
+        if self.Current ~= nil and self.Until > _UtilLogic.ElapsedSeconds and self:MergeInto(self.Current, msg) then
+            self:Render(self.Current)
+            self.Until = math.max(self.Until, _UtilLogic.ElapsedSeconds + 2.5)
+            log("[VRF] ux merge live kind=" .. kind .. " n=" .. tostring(self.Current.count))
+            return
+        end
+        for _, q in ipairs(self.Queue) do
+            if self:MergeInto(q, msg) then
+                log("[VRF] ux merge queued kind=" .. kind .. " n=" .. tostring(q.count))
+                return
+            end
+        end
+        table.insert(self.Queue, msg)
+        self:SortQueue()
+        while #self.Queue > self.QueueCap do self:DropOne() end
         self:Tick()
+    end
+
+    method void SortQueue()
+        table.sort(self.Queue, function(a, b)
+            if a.prio ~= b.prio then return a.prio > b.prio end
+            return a.at < b.at
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DropOne()
+        -- 대기가 넘치면 가장 낮은 우선순위 중 가장 오래된 것을 안내 줄로 넘긴다 (잃지 않게)
+        local pick = 0
+        for i, q in ipairs(self.Queue) do
+            local p = self.Queue[pick]
+            if pick == 0 or q.prio < p.prio or (q.prio == p.prio and q.at < p.at) then pick = i end
+        end
+        if pick == 0 then return end
+        local m = table.remove(self.Queue, pick)
+        _NoticeFeed:Push(self:LineText(m.title, m.detail, false))
+        log("[VRF] ux drop->line " .. m.title)
+    end
+
+    method boolean MergeInto(any target, any msg)
+        -- target에 msg를 합친다 (합쳤으면 true). 제목·본문·그림은 마지막 것으로
+        if target == nil or target.kind ~= msg.kind then return false end
+        local info = self.Kinds[msg.kind]
+        if info == nil then return false end
+        local mode = info.merge
+        if mode == "level" then
+            target.detail = self:MergeLevelDetail(target.detail, msg.detail)
+        elseif mode == "same" then
+            if target.base ~= msg.base then return false end
+            target.detail = msg.detail
+        elseif mode == "kind" then
+            target.detail = msg.detail
+        else
+            return false
+        end
+        target.base = msg.base
+        target.count = target.count + 1
+        target.icon = msg.icon
+        target.src = msg.src
+        target.tint = msg.tint
+        if mode == "same" then target.title = target.base .. "  ×" .. tostring(target.count)
+        elseif mode == "kind" then target.title = target.base .. " 외 " .. tostring(target.count - 1)
+        else target.title = target.base end
+        self.MergeCount = self.MergeCount + 1
+        return true
+    end
+
+    method string MergeLevelDetail(string a, string b)
+        -- 레벨 업 두 번을 하나로: 「능력치 +N · 스킬 +M」을 더하고 새 스킬 이름을 잇는다 (모양이 다르면 마지막 본문 그대로)
+        local s1 = tonumber(string.match(a, "능력치 %+(%d+)"))
+        local s2 = tonumber(string.match(b, "능력치 %+(%d+)"))
+        local k1 = tonumber(string.match(a, "· 스킬 %+(%d+)"))
+        local k2 = tonumber(string.match(b, "· 스킬 %+(%d+)"))
+        if s1 == nil or s2 == nil or k1 == nil or k2 == nil then return b end
+        local out = "능력치 +" .. tostring(math.floor(s1 + s2)) .. " · 스킬 +" .. tostring(math.floor(k1 + k2))
+        local names = {}
+        local seen = {}
+        local sep = " · "
+        for _, src in ipairs({ a, b }) do
+            local list = string.match(src, "새 스킬: (.-) %(스킬 창 K%)")
+            -- 「 · 」로 나눈다 (가운뎃점은 여러 바이트라 글자 묶음 [^·]로 자르면 한글이 깨진다)
+            local start = 1
+            while list ~= nil and start <= string.len(list) do
+                local i = (string.find(list, sep, start, true))
+                local n = string.sub(list, start, (i or (string.len(list) + 1)) - 1)
+                if n ~= "" and not seen[n] then
+                    seen[n] = true
+                    table.insert(names, n)
+                end
+                if i == nil then break end
+                start = i + string.len(sep)
+            end
+        end
+        if #names > 0 then return out .. "\n새 스킬: " .. table.concat(names, " · ") .. " (스킬 창 K)" end
+        return out .. "\n메뉴의 능력치·스킬에서 포인트를 쓰세요"
+    end
+
+    method string LineText(string title, string detail, boolean full)
+        -- 큰 알림을 안내 줄로: 제목 · 본문 첫 줄 (full = 창 안 결과 — 본문 전체를 「 · 」로 이어 읽을 수 있게, 줄은 길이만큼 두 줄까지 늘어난다)
+        local body = detail or ""
+        if full then body = (string.gsub(body, "\n", " · ")) else body = string.match(body, "^([^\n]*)") or "" end
+        if body == "" then return title end
+        return _UIKit:Clip(title .. " · " .. body, full and 90 or 40)
+    end
+
+    -- ───────── 차례 ─────────
+
+    @ExecSpace("ClientOnly")
+    method string HoldReason()
+        -- window: 창(안내 창·그림자 보관함·이야기 카드 포함)이나 확인 창이 떠 있다 · banner: 맵 배너가 떠 있다 · "": 띄워도 된다
+        if _UIKit:AnyWindowShown() or _ConfirmDialog:IsOpen() then return "window" end
+        if _HudMap:BannerShowing() then return "banner" end
+        return ""
     end
 
     @ExecSpace("ClientOnly")
@@ -69,17 +276,88 @@ script UXFeedback extends Logic
         local root = _UIKit:Get("/ui/RewardHUD/Toast")
         if not isvalid(root) then return end
         local now = _UtilLogic.ElapsedSeconds
+        local hold = self:HoldReason()
+        if hold == "window" then
+            -- 창이 떠 있는 동안 큰 알림은 붙잡는다 (10-29 45 결정 1-A: 레벨업 띠가 창을 덮었다)
+            if root.Enable then self:Yield(root, now) end
+            if not self.Holding then
+                self.Holding = true
+                self.HeldMax = #self.Queue
+                log("[VRF] ux hold start queued=" .. tostring(#self.Queue))
+            end
+            if #self.Queue > self.HeldMax then self.HeldMax = #self.Queue end
+            return
+        end
+        if self.Holding then
+            self.Holding = false
+            self:Release()
+        end
         if self.Until > now then
             root.CanvasGroupComponent.GroupAlpha = math.min(1, (self.Until - now) / 0.5)
             return
         end
+        self.Current = nil
         if #self.Queue == 0 then
-            root.Enable = false
+            if root.Enable then root.Enable = false end
             return
         end
         -- 맵 배너가 떠 있는 동안은 다음 알림을 기다린다 (10-21: 맵 제목과 알림이 한꺼번에 떠 정신없었다)
-        if _HudMap:BannerShowing() then return end
+        if hold == "banner" then return end
+        self:ShowNext(root, now)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Yield(Entity root, number now)
+        -- 떠 있던 판을 걷는다. 방금 뜬 것이면(덜 읽었으면) 대기열에 되돌린다
+        local cur = self.Current
+        self.Current = nil
+        self.Until = 0
+        root.Enable = false
+        if cur ~= nil and now - self.ShownAt < self.RequeueWithin then
+            table.insert(self.Queue, cur)
+            self:SortQueue()
+            log("[VRF] ux yield requeue " .. cur.title)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Release()
+        -- 창을 닫았다: 우선순위가 높은 ReleaseCap개만 큰 판으로 차례로, 나머지는 안내 줄 한 줄로 묶는다 (한꺼번에 쏟아지지 않게)
+        local held = #self.Queue
+        if held > self.ReleaseCap then
+            local rest = {}
+            while #self.Queue > self.ReleaseCap do
+                local m = table.remove(self.Queue)
+                table.insert(rest, 1, m.base)
+            end
+            _NoticeFeed:Push(_UIKit:Clip("외 알림 " .. tostring(#rest) .. "개 · " .. table.concat(rest, " · "), 44))
+        end
+        log("[VRF] ux release held=" .. tostring(held) .. " show=" .. tostring(#self.Queue) .. " peak=" .. tostring(self.HeldMax))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowNext(Entity root, number now)
         local msg = table.remove(self.Queue, 1)
+        self.Current = msg
+        self:Render(msg)
+        local info = self.Kinds[msg.kind] or self.Kinds.notice
+        local clickable = info.open ~= ""
+        local cg = root.CanvasGroupComponent
+        cg.GroupAlpha = 1
+        cg.BlocksRaycasts = clickable
+        cg.Interactable = clickable
+        root.Enable = true
+        _UIKit:SetEnabled("Tip", false)
+        _UIKit:SetEnabled("GatePrompt", false)
+        self.Until = now + self.ShowSeconds
+        self.ShownAt = now
+        self.ShownCount = self.ShownCount + 1
+        if info.sound ~= "" then _UIKit:Sound(info.sound) end
+        log("[VRF] ux show kind=" .. msg.kind .. " prio=" .. tostring(msg.prio) .. " n=" .. tostring(msg.count) .. " left=" .. tostring(#self.Queue) .. " click=" .. tostring(clickable) .. " " .. msg.title)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render(any msg)
         _UIKit:SetText("/ui/RewardHUD/Toast/Title", msg.title)
         _UIKit:SetText("/ui/RewardHUD/Toast/Body", msg.detail)
         local iconPath = "/ui/RewardHUD/Toast/Icon"
@@ -97,12 +375,27 @@ script UXFeedback extends Logic
             _UIKit:SetIcon(iconPath, msg.icon)
             if isvalid(icon) then icon.SpriteGUIRendererComponent.Color = msg.tint or Color(1, 1, 1, 1) end
         end
-        root.CanvasGroupComponent.GroupAlpha = 1
-        root.Enable = true
-        _UIKit:SetEnabled("Tip", false)
-        _UIKit:SetEnabled("GatePrompt", false)
-        self.Until = now + 4
-        self.ShownCount = self.ShownCount + 1
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnToastClick()
+        -- 알림 판을 누르면 그 창 (레벨 업·스킬 → 스킬 창 · 의뢰·액트 → 퀘스트 · 그림자 → 보관함 · 업적·일일 의뢰 → 일지). 판은 바로 걷는다
+        local cur = self.Current
+        if cur == nil then return end
+        local info = self.Kinds[cur.kind]
+        if info == nil or info.open == "" then return end
+        self.ClickCount = self.ClickCount + 1
+        log("[VRF] ux click open=" .. info.open .. " kind=" .. cur.kind .. " #" .. tostring(self.ClickCount))
+        self.Current = nil
+        self.Until = 0
+        _UIKit:SetEnabled("/ui/RewardHUD/Toast", false)
+        if info.open == "shadow" then
+            if not _UIKit:IsOpen("/ui/ShadowHUD/Window") then _ShadowHUD:ToggleWindow() end
+        elseif info.open == "JournalWin" then
+            if not _UIKit:IsOpen("JournalWin") then _JournalWindow:Toggle() end   -- 일지는 열 때 다시 그린다
+        else
+            _UIKit:Open(info.open)
+        end
     end
 
 end

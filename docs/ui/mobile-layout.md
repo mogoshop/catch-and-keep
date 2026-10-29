@@ -30,7 +30,7 @@
 | 오른쪽 위 | 지도 (0.75배, 펼치면 원만 — 범례·「다음 길」 줄은 의뢰 추적·여정 안내와 같은 내용이라 뺌) · 메뉴 · 일지 단추 | HudMap · MobileLayout |
 | 지도 아래 | 안내 줄 두 줄 (금화·획득 등) | MobileLayout · NoticeFeed |
 | 오른쪽 아래 | 큰 공격 + 둥근 스킬 4칸 (반지름 260 호) · 맨 아래 물약 줄 4칸 · 그림자 명령 (펼침) · 혼 추출 | 빌드 `ShadowHUD/MobilePad` (ui.cjs) |
-| 가운데 아래 | 경험치 · 소환수 줄 · 대화 단추 | 빌드 · CompanionHUD · NpcWindow |
+| 가운데 아래 | 경험치 · 소환수 줄 · 대화 단추 / 그 왼쪽 위 「혼의 제물」 띠 (10-29: 빌드 자리가 소환수 줄·대화 단추·추출 단추와 겹쳤다) | 빌드 · CompanionHUD · NpcWindow · MobileLayout |
 | 왼쪽 아래 | 조이스틱 · 채팅 | 빌드 · MobileLayout |
 
 - PC 배치는 그대로다. 모바일 값은 실행 중에만 바꾼다 (`Environment:IsMobilePlatform()`):
@@ -38,6 +38,7 @@
   - HudMap (지도·의뢰 추적·일지)
   - CompanionHUD (소환수 줄)
   - NpcWindow (대화 단추)
+- 「일지」 단추는 하나만 보인다 (10-29): 책 뱃지(진행 말풍선·받을 보상)가 떠 있으면 상자 단추(JournalHUD BtnOpen)는 숨는다 — JournalWindow.Poll.
 - 엔진 단추(위 가운데 채팅 알림·전체 화면, 오른쪽 위 친구·메뉴)는 피한다.
 - 노치·홈 표시줄 여백은 엔진이 UI 전체에 준다. 아이폰 가로 기준 양옆 약 168px, 아래 약 55px이며, 10-13 실기기 화면에서 쟀다.
 

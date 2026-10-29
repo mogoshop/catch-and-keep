@@ -2,6 +2,8 @@
 --   · 아래가 최신, 최대 4줄, 한 줄은 3.5초 뒤 0.5초 동안 흐려진다
 --   · 같은 문구는 보이는 동안 2번까지는 새 줄로 바로 띄우고, 3번째부터는 마지막 줄에 "×N"만 올린다 (화면을 덮지 않게)
 --   · 골드 획득("골드 +N")은 보이는 줄 하나에 합친다
+--   · 창이 떠 있으면 줄을 창 밖 가장자리로 옮긴다 (10-29 45 결정 1-A): 창 위 빈 곳 → 없으면 창 아래 → 그것도 없으면 화면 맨 위 한 줄.
+--     창을 닫으면 평소 자리(PC 왼쪽 아래 · 모바일 지도 아래 — MobileLayout)로 돌아간다
 @Logic
 script NoticeFeed extends Logic
 
@@ -14,10 +16,22 @@ script NoticeFeed extends Logic
     property number FadeSeconds = 0.5
     property any Lines = nil          -- { text, key, count, gold, at } 아래(최신)부터
     property integer TimerId = 0
+    property boolean Edge = false        -- 창이 떠 있어 창 밖 가장자리에 줄을 세웠다
+    property any Home = nil              -- 평소 자리 { align, pivot, pos, size } (가장자리로 옮길 때 지금 자리를 적어 둔다)
+    property integer EdgeMaxLines = 2
+    property number EdgeMaxHeight = 0    -- 가장자리에서 쌓을 수 있는 높이 (자리마다 다시 잰다)
+    property number EdgeWindowGap = 28   -- 창 바탕에서 띄우는 거리 (창 테두리 그림이 바탕 밖으로 20 넘친다 — ui-tokens FRAME.rimOut)
+    property number EdgeScreenTop = 8    -- 화면 위 끝 여백 (PC)
+    property number EdgeScreenTopMobile = 96   -- 모바일은 엔진 단추 줄(위 0~90) 아래
+    property number EdgeScreenBottom = 40      -- 화면 아래 끝 여백 (경험치 줄 위)
+    property string EdgeSide = ""        -- above · below · top (메이커 확인용)
+    property integer EdgeCount = 0
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         self.Lines = {}
+        self.Edge = false
+        self.Home = nil
         for i = 1, self.MaxLines do _UIKit:SetEnabled("/ui/RewardHUD/Feed/Line" .. tostring(i), false) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.1)
     end
@@ -25,6 +39,7 @@ script NoticeFeed extends Logic
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
         self.Lines = {}
     end
 
@@ -62,11 +77,13 @@ script NoticeFeed extends Logic
         end
         table.insert(self.Lines, 1, { text = text, key = text, count = 1, gold = gold, at = now })
         while #self.Lines > self.MaxLines do table.remove(self.Lines) end
+        self:SyncEdge()
         self:Render()
     end
 
     @ExecSpace("ClientOnly")
     method void Tick()
+        self:SyncEdge()
         if self.Lines == nil or #self.Lines == 0 then return end
         local now = _UtilLogic.ElapsedSeconds
         local changed = false
@@ -78,6 +95,104 @@ script NoticeFeed extends Logic
         end
         if changed then self:Render() else self:Fade(now) end
     end
+
+    -- ───────── 창 밖 가장자리 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void SyncEdge()
+        -- 창이 떠 있는지 보고 자리를 바꾼다. 떠 있는 동안은 매번 다시 재서 창 크기·모바일 배치가 바뀌어도 따라간다
+        local want = _UIKit:AnyWindowShown()
+        if want ~= self.Edge then
+            local feed = _UIKit:Get("/ui/RewardHUD/Feed")
+            if not isvalid(feed) then return end
+            local t = feed.UITransformComponent
+            if want then
+                self.Home = { align = t.AlignmentOption, pivot = t.Pivot, pos = t.anchoredPosition, size = t.RectSize }
+                self.Edge = true
+                self.EdgeCount = self.EdgeCount + 1
+            else
+                self.Edge = false
+                if self.Home ~= nil then
+                    t.AlignmentOption = self.Home.align
+                    t.Pivot = self.Home.pivot
+                    t.anchoredPosition = self.Home.pos
+                    t.RectSize = self.Home.size
+                end
+                log("[VRF] feed home lines=" .. tostring(self.Lines ~= nil and #self.Lines or 0))
+            end
+            if want then self:PlaceEdge(true) end
+            self:Render()
+            return
+        end
+        if self.Edge then self:PlaceEdge(false) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlaceEdge(boolean first)
+        -- 화면·창 네 귀퉁이(화면 좌표)를 이 UI 단위로 바꿔, 창 위 빈 곳 → 창 아래 빈 곳 → 화면 맨 위 순으로 줄 묶음을 세운다
+        local feed = _UIKit:Get("/ui/RewardHUD/Feed")
+        local root = _UIKit:Get("/ui/RewardHUD")
+        if not isvalid(feed) or not isvalid(root) then return end
+        local rt = root.UITransformComponent
+        local rc = rt:GetWorldCorners()
+        if rc == nil or #rc < 4 then return end
+        local rb = self:Bounds(rc)
+        local rMinY, rMaxY = rb.minY, rb.maxY
+        local scale = rt.RectSize.y / math.max(1, rMaxY - rMinY)   -- 화면 좌표 → RewardHUD 단위
+        local h = rt.RectSize.y
+        local w = rt.RectSize.x
+        local top = h - (_ApplicationService:IsMobilePlatform() and self.EdgeScreenTopMobile or self.EdgeScreenTop)
+        local need = self.LineHeight
+        local side = "top"
+        local bottomY = top - need
+        local avail = need
+        local win = _UIKit:ShownWindowEntity()
+        if isvalid(win) then
+            local wc = win.UITransformComponent:GetWorldCorners()
+            if wc ~= nil and #wc >= 4 then
+                local wb = self:Bounds(wc)
+                local winTop = (wb.maxY - rMinY) * scale
+                local winBottom = (wb.minY - rMinY) * scale
+                local above = top - (winTop + self.EdgeWindowGap)
+                local below = (winBottom - self.EdgeWindowGap) - self.EdgeScreenBottom
+                if above >= need then
+                    side = "above"
+                    bottomY = winTop + self.EdgeWindowGap
+                    avail = above
+                elseif below >= need then
+                    side = "below"
+                    avail = math.min(below, need * self.EdgeMaxLines + self.LineGap * (self.EdgeMaxLines - 1))
+                    bottomY = winBottom - self.EdgeWindowGap - avail
+                end
+            end
+        end
+        self.EdgeMaxHeight = math.min(avail, need * self.EdgeMaxLines + self.LineGap * (self.EdgeMaxLines - 1))
+        local t = feed.UITransformComponent
+        local size = self.Home ~= nil and self.Home.size or t.RectSize
+        local pos = Vector2(math.floor((w - size.x) * 0.5), math.floor(bottomY))
+        if t.AlignmentOption ~= AlignmentType.BottomLeft then t.AlignmentOption = AlignmentType.BottomLeft end
+        if t.Pivot.x ~= 0 or t.Pivot.y ~= 0 then t.Pivot = Vector2(0, 0) end
+        if math.abs(t.anchoredPosition.x - pos.x) > 0.5 or math.abs(t.anchoredPosition.y - pos.y) > 0.5 then t.anchoredPosition = pos end
+        if math.abs(t.RectSize.y - self.EdgeMaxHeight) > 0.5 then t.RectSize = Vector2(size.x, self.EdgeMaxHeight) end
+        if first or side ~= self.EdgeSide then
+            self.EdgeSide = side
+            log(string.format("[VRF] feed edge side=%s y=%d h=%d win=%s", side, math.floor(bottomY), math.floor(self.EdgeMaxHeight), isvalid(win) and win.Name or "-"))
+        end
+    end
+
+    method table Bounds(table corners)
+        -- 네 귀퉁이 → { minX, maxX, minY, maxY } (귀퉁이 순서에 기대지 않는다)
+        local b = { minX = corners[1].x, maxX = corners[1].x, minY = corners[1].y, maxY = corners[1].y }
+        for _, c in ipairs(corners) do
+            b.minX = math.min(b.minX, c.x)
+            b.maxX = math.max(b.maxX, c.x)
+            b.minY = math.min(b.minY, c.y)
+            b.maxY = math.max(b.maxY, c.y)
+        end
+        return b
+    end
+
+    -- ───────── 그리기 ─────────
 
     @ExecSpace("ClientOnly")
     method void Fade(number now)
@@ -93,9 +208,13 @@ script NoticeFeed extends Logic
     @ExecSpace("ClientOnly")
     method void Render()
         -- 10-10 3차 QA: 두 줄로 넘어가는 문구가 위 줄과 겹쳤다 → 줄마다 글 높이에 맞춰 판을 늘리고 아래부터 차례로 쌓는다.
-        -- 쌓인 높이가 MaxHeight를 넘으면 오래된 줄은 숨긴다 (위쪽 알림 판과 겹치지 않게)
+        -- 쌓인 높이가 MaxHeight를 넘으면 오래된 줄은 숨긴다 (위쪽 알림 판과 겹치지 않게). 가장자리에서는 그 자리 높이 · 최대 2줄
+        if self.Lines == nil then self.Lines = {} end
         local y = 0
         local full = false
+        local maxH = self.Edge and self.EdgeMaxHeight or self.MaxHeight
+        local maxLines = self.Edge and self.EdgeMaxLines or self.MaxLines
+        local shown = 0
         for i = 1, self.MaxLines do
             local path = "/ui/RewardHUD/Feed/Line" .. tostring(i)
             local line = self.Lines[i]
@@ -110,7 +229,7 @@ script NoticeFeed extends Logic
                 local t = _UIKit:Get(path .. "/Text")
                 local r = isvalid(t) and t.TextGUIRendererComponent or nil
                 if isvalid(r) then h = math.max(self.LineHeight, math.ceil(r:GetPreferredHeight(text, self.TextWidth)) + 12) end
-                if full or (y > 0 and y + h > self.MaxHeight) then
+                if full or shown >= maxLines or (y > 0 and y + h > maxH) then
                     full = true
                     _UIKit:SetEnabled(path, false)
                 else
@@ -119,6 +238,7 @@ script NoticeFeed extends Logic
                     if isvalid(t) then t.UITransformComponent.RectSize = Vector2(t.UITransformComponent.RectSize.x, h - 4) end
                     _UIKit:SetEnabled(path, true)
                     y = y + h + self.LineGap
+                    shown = shown + 1
                 end
             end
         end
