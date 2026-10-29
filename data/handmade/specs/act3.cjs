@@ -546,6 +546,8 @@ module.exports.stormcliff.base = "a3-barnacle-stone-floor-r2 0.95/1/1";   // 10-
 // 10-29 사용자 승인(「전부 추천대로」): 따개비 돌 바닥은 그림 한 장(1.28칸)마다 큰 조약돌이 같은 자리에 와 격자로 보였다 (폭풍의 눈 캡처) →
 //   이 바닥을 쓰는 액트 3 맵 전부에서 그림 열마다 좌우 · 줄마다 상하 뒤집기를 칸 좌표로 섞는다 (lib.cjs ;floormix — 빌드마다 같다).
 //   칸마다 따로 뒤집지 않는 까닭: 원본 PNG의 가장자리 줄이 상하 대칭이 아니라(거꾸로 맞댄 차 29 · 이웃 줄 차 18.5) 옆 칸과 금이 간다 — 열·줄 단위면 이음 차 0
+// 10-29 23:22 코덱스 승인(I-2 · 사용자 위임): 뒤집기 대신 변형 3장(v2·v3·v4)을 현행과 섞어 그림 격자 칸마다 좌표 해시로 고른다 — 임의 좌우·상하 뒤집기 없음
+//   (경계 보정 뒤집기만 남음 · lib.cjs floormixMode 기본 "variants" · FLOOR_VARIANTS). 이 루프가 고르는 10장 × 노말·악몽·지옥 30파일에 적용
 const FLOOR_MIX = "a3-barnacle-stone-floor-r2";
 for (const sp of Object.values(module.exports)) {
   const arts = [sp.base, ...Object.values(sp.zones || {})].map((v) => v.split(" ")[0]);

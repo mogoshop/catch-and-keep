@@ -63,14 +63,17 @@ function setFloormixY(mode) {
 }
 setFloormixY(floormixY);   // 환경 변수 값 검사
 // ;floormix 바닥 변형 정책 — 10-29 22:52 코덱스 위임 승인 I-2 (quality-art-I-decision-2252 · 집게 동굴 1층·폭풍의 눈 노말만 격리 시범)
-//   "flip" (기본 · 지금 그대로): 그림 열·줄마다 칸 좌표 의사난수로 좌우·상하 뒤집기 (위 floormixY 정책)
-//   "variants" = 「현행 + 변형을 격자 좌표로 안정적으로 고르는 혼합 · 임의 좌우/상하 반전 없음」: FLOOR_VARIANTS에 변형이 있는 그림만
+//   10-29 23:22 코덱스 승인(사용자 위임)으로 기본 = "variants" — 액트 3 따개비 돌 바닥 맵 10장(×노말·악몽·지옥 30파일)에 확대 적용.
+//     variantsOf(art)는 FLOOR_VARIANTS에 등록된 그림(지금은 따개비 돌 바닥 하나)에만 변형을 돌려주므로 다른 ;floormix 바닥은 영향이 없다(아래 "flip" 그대로).
+//     --floormix=flip / FLOORMIX=flip은 옛 정책 재현용
+//   "flip" (옛 기본): 그림 열·줄마다 칸 좌표 의사난수로 좌우·상하 뒤집기 (위 floormixY 정책)
+//   "variants" (기본) = 「현행 + 변형을 격자 좌표로 안정적으로 고르는 혼합 · 임의 좌우/상하 반전 없음」: FLOOR_VARIANTS에 변형이 있는 그림만
 //     ① 열·줄의 의사난수 FlipX/FlipY 선택을 끈다 (floorFlipX·rowFlip → 뒤집지 않음)
 //     ② 맵 전체 그림 격자 칸(열 kx · 줄 ky, 원점 MIX_OX/MIX_OY = 맵 왼쪽·아래 끝)마다 코덱스 좌표 해시(VARIANT_SEED)로 현행·변형 중 한 장을 고른다
 //     그대로 두는 것: 잘린 열·줄의 경계 방향(decide의 hard cut)·segs의 필요 뒤집기(f = !f)·끝부터 깐 조각(local)·조각 위치 규칙(뒤집은 쪽은 끝 장 가운데가 축)·
 //     전역 격자 원점·부분 타일 정렬·MIX_Z·색·배율·통행/충돌 — 경계 보정이 요구한 뒤집기는 남는다(「전부 FlipY 0」 같은 일괄 변경이 아님).
 //     조각은 격자 칸 단위로 나눠 칸마다 장을 고르고, 같은 줄에서 같은 장·같은 뒤집기가 이어지면 segs와 같은 이어 붙이기 규칙으로 합친다.
-//   고르기: tools/build/handmade/build.cjs <맵id> --floormix=variants (또는 환경 변수 FLOORMIX=variants). 전체 빌드(tools/build.cjs maps)는 기본 "flip"
+//   고르기: tools/build/handmade/build.cjs <맵id> --floormix=flip|variants (또는 환경 변수 FLOORMIX=…). 전체 빌드(tools/build.cjs maps)도 기본 "variants"
 const FLOORMIX_MODES = ["flip", "variants"];
 const FLOOR_VARIANTS = {   // 순서 = 해시 번호 0..3 (코덱스 I-tile-layout-policy keys 순서)
   "a3-barnacle-stone-floor-r2": ["a3-barnacle-stone-floor-r2", "a3-barnacle-stone-floor-r2-v2", "a3-barnacle-stone-floor-r2-v3", "a3-barnacle-stone-floor-r2-v4"],
@@ -82,7 +85,7 @@ const variantAt = (col, row, n) => {
   u = (u ^ (u >>> 13)) >>> 0; u = Math.imul(u, 0x85ebca6b) >>> 0; u = (u ^ (u >>> 16)) >>> 0;
   return u % n;
 };
-let floormixMode = process.env.FLOORMIX || "flip";
+let floormixMode = process.env.FLOORMIX || "variants";   // 10-29 코덱스 승인으로 기본 = variants (flip = 옛 정책 재현용)
 function setFloormixMode(mode) {
   if (!FLOORMIX_MODES.includes(mode)) throw new Error(`floormix 정책 '${mode}' 모름 (가능: ${FLOORMIX_MODES.join(", ")})`);
   floormixMode = mode;
