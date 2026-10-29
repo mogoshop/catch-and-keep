@@ -727,7 +727,8 @@ script SkillBook extends Component
 
     method string FormHint(string id, string kind, string form)
         -- 해골 변이 노드 (I03 · 글귀 승인 전): 랭크는 세기와 자리 수를 함께 올리지만, 정원이 차 있거나 앞 순서 변이가 자리를 다 쓰면 개체가 늘지 않는다.
-        -- 지금 정원·순서로 계속 일으킬 때(UndeadSystem.SteadyRoster — 실제 일으키기와 같은 PickForm·TrimVictims) 다음 랭크가 실제 개체로 이어지는지 알려 준다
+        -- 지금 정원·순서로 계속 일으킬 때(UndeadSystem.SteadyRoster — 실제 일으키기와 같은 PickForm·SlotCount·TrimVictims) 다음 랭크가 실제 개체로 이어지는지 알려 준다.
+        -- 투자 판단은 거인이 없을 때의 장기 편성이 기준이고, 뼈 거인이 서 있으면(몸 고정 + 예약) 그동안만 서지 못하는 경우를 따로 알린다 (일시 상태를 영구 0기로 말하지 않는다)
         local p = _UndeadSystem:RosterPreview(self.Entity, kind)
         if p.level <= 0 or p.max <= 0 then return "" end
         local def = _SkillData:Get(id)
@@ -739,7 +740,7 @@ script SkillBook extends Component
         local q = {}
         for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do q[f] = p.quota[f] or 0 end
         q[form] = nextQ
-        local after = _UndeadSystem:SteadyRoster(kind, p.max, q)
+        local after = _UndeadSystem:SteadyRoster(kind, p.max, q, {}, 0)
         local legion = kind == "mage" and "마법사 증원" or "뼈 군단"
         if (after[form] or 0) <= 0 then
             local need = _UndeadSystem:ExtraSlotsFor(kind, p.max, q, form)
@@ -747,8 +748,11 @@ script SkillBook extends Component
             if need > 0 then text = text .. " · 정원 +" .. tostring(need) .. "(" .. legion .. ")부터 섭니다" end
             return text
         end
+        if p.giant and (_UndeadSystem:SteadyRoster(kind, p.max, q, p.list, p.reserved)[form] or 0) <= 0 then
+            return "뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다"
+        end
         if nextQ <= now then return "" end
-        local before = _UndeadSystem:SteadyRoster(kind, p.max, p.quota)
+        local before = _UndeadSystem:SteadyRoster(kind, p.max, p.quota, {}, 0)
         for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do
             if f ~= form and (before[f] or 0) > 0 and (after[f] or 0) <= 0 then
                 return "찍으면 " .. _UndeadSystem:FormName(kind, f) .. " 자리가 없어집니다 · 정원 " .. tostring(p.max) .. "기"

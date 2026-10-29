@@ -679,8 +679,12 @@ script UndeadSystem extends Logic
     end
 
     method table SlotPlan(Entity player, string kind, integer slvl, table list, integer reserved)
-        -- 일으킬 때 정원: max = MaxFor · have = 목록의 같은 종류 + 거인 예약 · keep = 새 개체를 넣기 전 남길 수
-        local max = self:MaxFor(player, kind, slvl)
+        -- 일으킬 때 정원: max = MaxFor · 나머지는 SlotCount (편성 미리보기의 반복 계산 SteadyRoster도 같은 SlotCount)
+        return self:SlotCount(self:MaxFor(player, kind, slvl), kind, list, reserved)
+    end
+
+    method table SlotCount(integer max, string kind, table list, integer reserved)
+        -- have = 목록의 같은 종류 + 거인 예약(합쳐진 넷 · GiantReserved) · keep = 새 개체를 넣기 전 남길 수 (거인 몸은 목록에 남아 TrimVictims가 건너뛴다)
         local have = reserved
         for _, r in ipairs(list) do if r.kind == kind then have = have + 1 end end
         return { max = max, reserved = reserved, have = have, keep = math.max(0, max - 1 - reserved), full = have >= max }
@@ -715,6 +719,7 @@ script UndeadSystem extends Logic
     method table RosterPreview(Entity player, string kind)
         -- 스킬 창 안내용: 지금 일반형·변이 수, 정원, 다음 소환 변이와 교체될 기록, 정원·우선순위 때문에 서지 못하는 변이.
         -- 실제 일으키기와 같은 함수(MaxFor·FormQuota·PickForm·SlotPlan·TrimVictims)만 부르고 기록·Serial·목록은 만들거나 바꾸지 않는다
+        -- (돌려주는 list는 조회한 목록 그대로라 읽기만 한다 · 목록이 없던 플레이어도 Owned에 등록하지 않는다)
         local roster = self:RosterOf(player)
         return self:PreviewFrom(player, kind, roster.list, roster.reserved)
     end
@@ -730,13 +735,20 @@ script UndeadSystem extends Logic
         for _, r in ipairs(list) do
             if r.kind == kind then counts[r.form or ""] = (counts[r.form or ""] or 0) + 1 end
         end
-        local steady = self:SteadyRoster(kind, plan.max, quota)
+        -- 두 가지 장기 편성: steady = 거인이 없을 때(빈 목록부터 · 투자 판단 기준) · steadyNow = 지금 목록·뼈 거인(몸 고정 + 예약)이 유지되는 동안
+        local steady = self:SteadyRoster(kind, plan.max, quota, {}, 0)
+        local giant = res > 0
+        for _, r in ipairs(list) do if r.kind == kind and r.giant then giant = true end end
+        local steadyNow = steady
+        if giant then steadyNow = self:SteadyRoster(kind, plan.max, quota, list, res) end
         local idle = {}
+        local idleNow = {}
         for _, form in ipairs(self:FormOrder(kind)) do
             if quota[form] > 0 and (steady[form] or 0) == 0 then table.insert(idle, { form = form, need = self:ExtraSlotsFor(kind, plan.max, quota, form) }) end
+            if quota[form] > 0 and (steadyNow[form] or 0) == 0 then table.insert(idleNow, form) end
         end
-        local preview = { kind = kind, level = slvl, max = plan.max, have = plan.have, reserved = res, full = plan.full, keep = plan.keep,
-            counts = counts, quota = quota, steady = steady, idle = idle, nextForm = "", replaces = {} }
+        local preview = { kind = kind, level = slvl, max = plan.max, have = plan.have, reserved = res, full = plan.full, keep = plan.keep, giant = giant,
+            list = list, counts = counts, quota = quota, steady = steady, steadyNow = steadyNow, idle = idle, idleNow = idleNow, nextForm = "", replaces = {} }
         if slvl > 0 and plan.max > 0 then
             preview.nextForm = self:PickForm(kind, quota, list, nil)
             preview.replaces = self:TrimVictims(list, kind, plan.keep)
@@ -744,9 +756,10 @@ script UndeadSystem extends Logic
         return preview
     end
 
-    method table SteadyRoster(string kind, integer slots, table quota)
-        -- 빈 목록에서 같은 규칙(PickForm → TrimVictims)으로 계속 일으킬 때 변이별로 서는 최대 수 (거인·죽음 없음 · 정원 slots).
-        -- 0인 변이 = 노드를 찍어도 지금 정원·우선순위로는 한 기도 서지 못한다
+    method table SteadyRoster(string kind, integer slots, table quota, table seed, integer reserved)
+        -- seed 목록(오래된 순 · 뼈 거인 몸 포함)·거인 예약 reserved에서 실제 일으키기와 같은 규칙(PickForm → SlotCount.keep → TrimVictims)으로
+        -- 죽음 없이 계속 일으킬 때 변이별로 서는 최대 수 (정원 slots). seed {} · reserved 0 = 거인이 없을 때의 장기 편성.
+        -- 0인 변이 = 그 조건에서는 노드를 찍어도 한 기도 서지 못한다. seed는 바꾸지 않는다 (복사본으로 돌린다)
         local seen = {}
         seen[""] = 0
         for _, form in ipairs(self:FormOrder(kind)) do seen[form] = 0 end
@@ -755,9 +768,12 @@ script UndeadSystem extends Logic
         for _, form in ipairs(self:FormOrder(kind)) do total = total + (quota[form] or 0) end
         local warm = 3 * total + 2
         local list = {}
+        for _, r in ipairs(seed) do
+            if r.kind == kind then table.insert(list, { kind = kind, form = r.form or "", giant = r.giant }) end
+        end
         for i = 1, warm * 2 do
             local form = self:PickForm(kind, quota, list, nil)
-            for _, victim in ipairs(self:TrimVictims(list, kind, slots - 1)) do self:RemoveRec(list, victim) end
+            for _, victim in ipairs(self:TrimVictims(list, kind, self:SlotCount(slots, kind, list, reserved).keep)) do self:RemoveRec(list, victim) end
             table.insert(list, { kind = kind, form = form })
             if i > warm then
                 local now = {}
@@ -775,7 +791,7 @@ script UndeadSystem extends Logic
         local total = 1
         for _, f in ipairs(self:FormOrder(kind)) do total = total + (quota[f] or 0) end
         for extra = 0, total do
-            if (self:SteadyRoster(kind, slots + extra, quota)[form] or 0) > 0 then return extra end
+            if (self:SteadyRoster(kind, slots + extra, quota, {}, 0)[form] or 0) > 0 then return extra end
         end
         return -1
     end
@@ -802,8 +818,9 @@ script UndeadSystem extends Logic
     end
 
     method table RosterOf(Entity player)
-        -- 서버 = 실제 목록·거인 예약 · 클라이언트 = 동기화된 UndeadRoster (같은 모양의 가벼운 기록)
-        if self:IsServer() then return { list = self:ListOf(player), reserved = self:GiantReserved(player, "skeleton") } end
+        -- 서버 = 실제 목록·거인 예약 · 클라이언트 = 동기화된 UndeadRoster (같은 모양의 가벼운 기록).
+        -- 조회만 한다: 서버에서 아직 목록이 없는 플레이어는 지역 빈 표 (ListOf처럼 Owned에 등록하지 않는다)
+        if self:IsServer() then return { list = self.Owned[player.PlayerComponent.UserId] or {}, reserved = self:GiantReserved(player, "skeleton") } end
         ---@type ShadowCommander
         local cmd = player:GetComponent("script.ShadowCommander")
         return self:DecodeRoster(cmd ~= nil and cmd.UndeadRoster or "")

@@ -103,9 +103,9 @@ local function check(name,kind,expect)
  passed=passed+1
  return p
 end
-local function steadyByRaise(kind,count)
- -- 실제 Raise를 count번 되풀이한 뒤 마지막 구간에 선 변이 (SteadyRoster 대조)
- setList({})
+local function steadyByRaise(kind,count,keepList)
+ -- 실제 Raise를 count번 되풀이한 뒤 마지막 구간에 선 변이 (SteadyRoster 대조) · keepList면 지금 목록·거인 그대로에서 시작
+ if not keepList then setList({}) end
  local seen={}
  for i=1,count do
   orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() end}
@@ -121,7 +121,7 @@ end
 local function sameSteady(name,kind)
  total=total+1
  local p=UndeadSystem:RosterPreview(player,kind)
- local sim=UndeadSystem:SteadyRoster(kind,p.max,p.quota)
+ local sim=UndeadSystem:SteadyRoster(kind,p.max,p.quota,{},0)
  local real=steadyByRaise(kind,80)
  for _,f in ipairs({'',table.unpack(UndeadSystem:FormOrder(kind))}) do
   assert((sim[f] or 0)==(real[f] or 0),name..': steady '..f..' sim='..tostring(sim[f])..' raise='..tostring(real[f]))
@@ -209,9 +209,62 @@ end
 for _,levels in ipairs({{raise_mage=1,mage_aura=1,mage_blast=3},{raise_mage=6,mage_legion=2,mage_hex=3,mage_twin=2,mage_pierce=3,mage_blast=3}}) do
  book.Levels=levels;sameSteady('12 steady mage combo','mage')
 end
+-- 14. I03-R01 거인 유지 중 0기: 유효 raise_skeleton 12 → 정원 6 · 거인 방패 몸 1 + 예약 4 · 나머지 1 · 방패 3 / 대검 3 · 쌍칼 0→1 검토
+local function giantState()
+ book.Levels={raise_skeleton=12,skel_shield=3,skel_greatsword=3}
+ local h=rec('skeleton','shield',{giant=true})
+ setList({h,rec('skeleton','')})
+ UndeadSystem.Giants={u1={host=h,mates={rec('skeleton','shield'),rec('skeleton','shield'),rec('skeleton','greatsword'),rec('skeleton','greatsword')},epoch=1}}
+ return h
+end
+giantState()
+total=total+1
+local pg=UndeadSystem:RosterPreview(player,'skeleton')
+assert(pg.giant and pg.max==6 and pg.reserved==4 and #pg.idle==0,digest(pg))
+assert(table.concat(pg.idleNow,' ')=='greatsword','idleNow='..table.concat(pg.idleNow,' '))
+local tw=book:UseHint('skel_twin')
+assert(string.find(tw,'뼈 거인이 서 있는 동안 0기',1,true) and not string.find(tw,'정원 6기로는',1,true),tw)
+passed=passed+1
+-- 거인 유지 중 실제 반복 소환 = steadyNow (거인 몸 고정 · 예약 4) · 쌍칼 1을 찍어도 서지 못한다
+for _,twin in ipairs({0,1}) do
+ total=total+1
+ giantState();book.Levels.skel_twin=twin
+ local pn=UndeadSystem:RosterPreview(player,'skeleton')
+ local real=steadyByRaise('skeleton',60,true)
+ for _,f in ipairs({'','shield','greatsword','twin'}) do
+  assert((pn.steadyNow[f] or 0)==(real[f] or 0),'giant steadyNow '..f..' sim='..tostring(pn.steadyNow[f])..' raise='..tostring(real[f]))
+ end
+ assert((real.twin or 0)==0 and (real.greatsword or 0)==0,'twin/greatsword stood while giant held')
+ assert(UndeadSystem:ListOf(player)[1].giant==true,'giant host trimmed during repeated raise')
+ passed=passed+1
+end
+-- 거인이 갈라진 뒤(예약 0 · 몸 풀림) 같은 투자로 실제 쌍칼이 선다 → 장기 판단은 0기 경고 없음
+total=total+1
+local h=giantState();book.Levels.skel_twin=1
+UndeadSystem.Giants={};h.giant=nil
+assert(not string.find(book:UseHint('skel_twin'),'0기',1,true),book:UseHint('skel_twin'))
+local pr=UndeadSystem:RosterPreview(player,'skeleton')
+assert(not pr.giant and #pr.idleNow==0,digest(pr))
+assert((steadyByRaise('skeleton',80,true).twin or 0)>0,'twin never stood after giant split')
+passed=passed+1
+-- 거인 중 미리보기 = 실제 Raise (몸 고정 · 일반 교체) 한 번 더
+giantState();book.Levels.skel_twin=1
+check('14 giant held, twin invested','skeleton',{max=6,reserved=4,full=true,nextForm='shield',replaces=1})
+UndeadSystem.Giants={}
+-- 15. I03-R02 최초 조회는 Owned를 만들지 않는다 (서버 · 목록 없는 플레이어)
+total=total+1
+UndeadSystem.Owned={}
+local serial0=UndeadSystem.Serial
+book.Levels={raise_skeleton=3,skel_shield=1,skel_twin=2}
+local p0=UndeadSystem:RosterPreview(player,'skeleton')
+local _=book:RosterLine('raise_skeleton')..book:UseHint('skel_twin')..book:UseHint('skel_shield')
+UndeadSystem:RosterPreview(player,'mage')
+assert(next(UndeadSystem.Owned)==nil,'preview registered Owned entry')
+assert(UndeadSystem.Serial==serial0 and p0.have==0 and p0.nextForm=='shield' and #p0.replaces==0,digest(p0))
+passed=passed+1
 -- 13. 인코딩 왕복: 변이·거인 표시·예약 수
 local text=UndeadSystem:EncodeRoster({rec('skeleton','shield',{giant=true}),rec('revive',''),rec('mage','')},4)
 assert(text=='s:shield!,m:|4',text)
 local back=UndeadSystem:DecodeRoster(text)
 assert(#back.list==2 and back.list[1].giant==true and back.list[2].kind=='mage' and back.list[2].form=='' and back.reserved==4)
-print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, encode)',passed,total))
+print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))
