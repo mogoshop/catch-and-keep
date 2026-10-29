@@ -1,11 +1,12 @@
--- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn
+-- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,ParseGearOffer
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source ItemTables Data/ItemTables.mlua Ensure
--- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods
+-- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods,AffixPool,ProvenanceMeta,DecodeMeta,EncodeMeta,AffixRow,NewItemUid,Base36
 _ItemTables:Ensure()
 _GameData:Ensure()
 math.randomseed(20261029)
 _UtilLogic = { RandomDouble = function() return math.random() end, RandomIntegerRange = function(_,lo,hi) return math.random(lo,hi) end }
+DateTime={UtcNow={Elapsed=63900000000000}}   -- 10-30 I01: 출처 id(NewItemUid)는 시각만 쓴다 (추첨 없음)
 local function count(t) local n=0 for _ in pairs(t) do n=n+1 end return n end
 local levels={1,12,25,40,41,42,70,71,99}
 local cases,thin=0,0
@@ -114,15 +115,15 @@ for _,reward in ipairs({'gen:3','unique:1'}) do
  q.reward=reward
  PlayerQuest.Index=1;PlayerQuest.State=2;PlayerQuest.Diff=0
  inv.Bag={};st.Gold=0;st.Exp=0
- PlayerQuest:TurnIn()
+ PlayerQuest:TurnIn("")
  assert(#inv.Bag==1 and st.Gold>0 and st.Exp==100 and PlayerQuest.Index==2)
  assert(_ItemData:GetBase(_ItemData:Parse(inv.Bag[1]).base).reqLv<=40)
- local gold=st.Gold;PlayerQuest:TurnIn();assert(st.Gold==gold and #inv.Bag==1)
+ local gold=st.Gold;PlayerQuest:TurnIn("");assert(st.Gold==gold and #inv.Bag==1)
 end
 PlayerQuest.State=2;PlayerQuest.Index=1
 for i=1,60 do inv.Bag[i]='held' end
 local gold=st.Gold;local exp=st.Exp
-PlayerQuest:TurnIn()
+PlayerQuest:TurnIn("")
 assert(PlayerQuest.State==2 and PlayerQuest.Index==1 and st.Gold==gold and st.Exp==exp and #inv.Bag==60)
 print('[quality/items] quest report: wearable reward, no duplicate, full-bag all-or-nothing passed')
 
@@ -135,7 +136,7 @@ q.reward='unique:1';q.target='ash_king'
 local reqs={}
 for i=1,120 do
  PlayerQuest.Index=24;PlayerQuest.State=2;inv.Bag={}
- PlayerQuest:TurnIn()
+ PlayerQuest:TurnIn("")
  assert(#inv.Bag==0,'boss unique should keep ground presentation')
  local it=_ItemData:Parse(spawned[#spawned]);local req=_ItemData:GetBase(it.base).reqLv
  assert((req==33 or req==35 or req==40) and it.rarity==3 and it.ilvl==42)
@@ -144,8 +145,8 @@ end
 assert(reqs[33] and reqs[35] and reqs[40])
 -- No boss-specific candidate falls back to general pool; no uniques at all falls back to wearable rare.
 q.target='no_source_fixture';PlayerQuest.Index=1;PlayerQuest.State=2;inv.Bag={}
-PlayerQuest:TurnIn();assert(#inv.Bag==1)
+PlayerQuest:TurnIn("");assert(#inv.Bag==1)
 _ItemTables.UniqueList={};PlayerQuest.Index=1;PlayerQuest.State=2;inv.Bag={}
-PlayerQuest:TurnIn()
+PlayerQuest:TurnIn("")
 local fallback=_ItemData:Parse(inv.Bag[1]);assert(fallback.rarity>=2 and _ItemData:GetBase(fallback.base).reqLv<=40)
 print('[quality/items] sparse pools, magic branches, reroll save fields, ash_king ground reward and missing-source fallback passed')
