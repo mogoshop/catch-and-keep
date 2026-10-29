@@ -149,8 +149,10 @@ function genGameData() {
       // 끝방 자리 (maps.csv extra end@x/y): 끝방 우두머리·봉인 상자가 서는 곳 (NamedSystem.EndPoint)
       const end = (m.extra || "").split(";").find((t) => t.startsWith("end@"));
       const endXY = end ? end.split("@")[1].split("/").map(Number) : null;
+      // 길 위 사건 자리 (maps.csv extra road:종류@x/y · 기획서 39 #7 A): "chest@x/y;ritual@x/y" → MapEvents.PlaceRoad가 런타임에 놓는다
+      const roads = (m.extra || "").split(";").filter((t) => t.startsWith("road:")).map((t) => t.slice(5)).join(";");
       const feats = minimapFeatures(m, mapRows).map((f) => `{ kind = ${s(f.kind)}, x = ${n(f.x)}, y = ${n(f.y)}, label = ${s(f.label)}, targetMap = ${s(f.targetMap)} }`).join(", ");
-      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, parent = ${s(m.parent || "")}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, ambient = ${n(m.ambient || 0)}, maze = ${maze},${endXY ? ` ex = ${n(endXY[0])}, ey = ${n(endXY[1])},` : ""} flavor = ${s(m.flavor || "")}, features = { ${feats} } }`;
+      return `        self.MapInfo[${s(m.id)}] = { name = ${s(m.name)}, kind = ${s(m.kind)}, parent = ${s(m.parent || "")}, act = ${n(m.act || 1)}, w = ${n(m.w)}, h = ${n(m.h)}, ambient = ${n(m.ambient || 0)}, maze = ${maze},${endXY ? ` ex = ${n(endXY[0])}, ey = ${n(endXY[1])},` : ""}${roads ? ` roads = ${s(roads)},` : ""} flavor = ${s(m.flavor || "")}, features = { ${feats} } }`;
     }),
     "        self.UiIcons = {}",
     ...load("ui_icons").map((r) => `        self.UiIcons[${s(r.key)}] = ${s(r.ruid)}`),

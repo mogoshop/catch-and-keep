@@ -498,6 +498,17 @@ for (const [id, zones] of Object.entries(MORE)) for (const [z, sets] of Object.e
   d.sets = [...(d.sets || []), ...sets];
   module.exports[id].dress = Object.assign({}, module.exports[id].dress, { [z]: d });
 }
+// 10-29 길 위 사건 (기획서 39 #7 A): 사냥터 7장에 장치 하나씩 — 걷는 길(W→E)에서 1~5칸 · 장소 안 · 포털 6.5칸·웨이포인트 4.5칸 밖 (kit.cjs roadEvents)
+//   신전 2 · 상자 2 · 둥지 1 · 의식 2 (액트 4와 합쳐 종류마다 4). 자리는 지금 설계도·배치표에서 경고 없이 서는 칸을 골랐다
+require("./kit.cjs").roadEvents(module.exports, 3, {
+  saltflat: ["shrine", 8, -6, 0],        // 소금 결정 밭 — 둑길에서 4칸, 소금 결정 사이 신전
+  wreckcoast: ["chest", -8, 1, 1],       // 부서진 부두 — 해안길 바로 곁 난파 궤짝 (지나가면 열린다)
+  stormcliff: ["nest", -7, 3, 0],        // 번개 맞은 바위 — 서쪽 능선이 바위 머리에 닿는 자리
+  drownedvillage: ["ritual", 5, -5, 0],  // 마을 광장 남동쪽 — 익사자 의식
+  lighthouse1: ["chest", -23, 11, 0],    // 무너진 선반 방 — 꼭대기 계단 가는 길
+  lighthouse2: ["ritual", -1, 2, 0],     // 창고 회랑 가운데
+  lighthouse3: ["shrine", -18, 3, 0],    // 렌즈 홀 — 등대 렌즈 받침 신전
+});
 for (const [id, sp] of Object.entries(module.exports)) {
   if (id === "saltflat") {   // 이미 r2 — 거품만 새 경계 띠(가로·세로)로
     sp.shore = "a3-shallow-sea-floor-r2+a3-tidal-flat-floor-r2 a3-decal-shore-foam-edge-h-r2 0.9 - a3-decal-shore-foam-edge-v-r2";

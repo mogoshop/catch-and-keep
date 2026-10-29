@@ -1,0 +1,282 @@
+-- 길 위 사건 의식 제단 (기획서 39 #7 A · 10-29 사용자 승인): 액트 3·4 사냥터 설계서 자리(maps.csv extra road:ritual)에 MapEvents가 놓는다.
+--   피의 제단 의식(AltarRitual)의 구조를 길 위로: 산 플레이어가 roadRitualRadius 안에 들어오면 깨어나 습격 roadRitualWaves번
+--   (roadRitualBase + (회차-1)×roadRitualStep마리 · 마지막 회차 첫 마리는 정예 우두머리 + 변종 능력). 회차는 앞 회차를 다 쓰러뜨리면,
+--   늦어도 25초 뒤에 온다. 몬스터는 그 맵 유입 풀에서 빌린다(MonsterSpawner.BorrowPool — 모자란 몫만 맵 종류로 새로).
+--   마지막 회차까지 다 쓰러뜨리면 제단이 끊기고(State 2) 둘레 roadRitualBlessRange 안의 산 사람에게 축복 하나
+--   (분노·수호·지혜·혼·군세 중 하나 · shrineSeconds초 — 신전과 같은 PlayerStats.ShrineKind). 끊긴 제단은 다시 깨어나지 않는다.
+--   의식 중 맵에 아무도 없으면 5초 뒤 처음 상태로 (빌린 몬스터는 바로 풀로). 맵이 잠들면 스포너가 제단을 치운다 (흩어진 장치와 같은 규칙).
+-- 그림: MapEvents.Dress가 맵 액트 제단(GameConst SpriteEventAltar · 끊긴 판 SpriteEventAltarDone)을 건다 — 코덱스 E-4 전에는 피의 제단 그림
+@Component
+script RoadAltar extends Component
+
+    @Sync
+    property integer State = 0               -- 0 잠잠 · 1 의식 중 · 2 끊김
+    @Sync
+    property integer Wave = 0                -- 지금 습격 회차
+    @Sync
+    property integer Waves = 3
+    @Sync
+    property integer Act = 1                 -- 맵 액트 (이름표 · 색)
+    @Sync
+    property string DoneRuid = ""            -- 끊긴 제단 그림 (비면 같은 그림을 어둡게)
+    @Sync
+    property string BlessKind = ""           -- 끊은 뒤 내린 축복 종류 (이름표)
+    property any Spawner = nil               -- 그 맵 MonsterSpawner (유입 풀 · 빈 자리 OpenPoint)
+    property string Species = ""             -- 모자란 몫을 새로 만들 맵 종류 ("stormcrab;stormgulls")
+    property integer Level = 1               -- 모자란 몫의 레벨 (맵 레벨 · 난이도 구간 반영)
+    property integer Difficulty = 0          -- 우두머리 변종 능력 굴림
+    property boolean Ready = false           -- MapEvents가 맵 값(스포너·종류·레벨)을 넣은 뒤 true — 그 전에는 깨어나지 않는다
+    property table Spawned = {}              -- 이 의식이 부른 몬스터 엔티티
+    property table Lent = {}                 -- 엔티티 id → true (유입 풀에서 빌린 것)
+    property number NextAt = 0
+    property number Deadline = 0
+    property number EmptySince = 0
+    property integer TimerId = 0
+    property string ViewKey = ""
+
+    method void OnBeginPlay()
+        -- 서버: 다가옴·습격 감시 / 클라이언트: 이름표·그림
+        if self:IsServer() then
+            self.Waves = math.max(1, math.floor(_GameData.roadRitualWaves))
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, 0.25)
+        else
+            self.TimerId = _TimerService:SetTimerRepeat(function() self:RefreshView() end, 0.5)
+        end
+    end
+
+    method void OnEndPlay()
+        -- 타이머 정리 (맵이 잠들어 치워질 때)
+        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
+        self.TimerId = 0
+    end
+
+    method string AltarName()
+        -- 맵 액트 제단 이름 (액트 3 익사자 의식 · 액트 4 혼 감옥 사슬 · 그 밖은 피의 제단)
+        if self.Act == 3 then return "익사자의 제단" end
+        if self.Act == 4 then return "혼 사슬 제단" end
+        return "피의 제단"
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Tick()
+        -- 0.25초마다: 잠잠하면 다가온 산 사람을 찾고, 의식 중이면 회차 진행 · 빈 맵이면 거둔다
+        local map = self.Entity.CurrentMap
+        if not self.Ready or not isvalid(map) or self.State == 2 then return end
+        local now = _UtilLogic.ElapsedSeconds
+        if self.State == 0 then
+            local p = _Util:PlayersNear(map, _Util:Pos2(self.Entity), _GameData.roadRitualRadius)[1]
+            if p ~= nil then self:Begin(p, now) end
+            return
+        end
+        if #_Util:PlayersInMap(map) == 0 then
+            if self.EmptySince == 0 then self.EmptySince = now
+            elseif now - self.EmptySince >= 5 then self:Reset("empty") end
+            return
+        end
+        self.EmptySince = 0
+        local alive = self:AliveCount()
+        if self.Wave < self.Waves then
+            if (alive == 0 and now >= self.NextAt) or (self.Deadline > 0 and now >= self.Deadline) then
+                self.Wave = self.Wave + 1
+                local n = self:SpawnWave(map)
+                self.NextAt = now + 2
+                self.Deadline = now + 25
+                _Util:NotifyMap(map, "의식 습격 " .. tostring(self.Wave) .. "/" .. tostring(self.Waves))
+                log(string.format("[VRF] road ritual wave %s %d/%d n=%d alive=%d", map.Name, self.Wave, self.Waves, n, self:AliveCount()))
+            end
+        elseif alive == 0 and now >= self.NextAt then
+            self:Finish(map)
+        end
+    end
+
+    method integer AliveCount()
+        -- 이 의식이 부른 몬스터 중 살아 있는 수
+        local n = 0
+        for _, e in ipairs(self.Spawned) do
+            if isvalid(e) then
+                ---@type Monster
+                local m = e:GetComponent("script.Monster")
+                if m ~= nil and not m.IsDead then n = n + 1 end
+            end
+        end
+        return n
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Begin(Entity player, number now)
+        -- 의식 시작: 첫 습격은 1.5초 뒤
+        self.State = 1
+        self.Wave = 0
+        self.Spawned = {}
+        self.Lent = {}
+        self.NextAt = now + 1.5
+        self.Deadline = 0
+        self.EmptySince = 0
+        local map = self.Entity.CurrentMap
+        local rite = self.Act == 3 and "익사자의 의식" or self.Act == 4 and "혼 사슬의 의식" or "피의 의식"
+        _Util:NotifyMap(map, rite .. "이 깨어났다 — 망자들이 제단으로 몰려온다")
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.5, 0), 0, Vector3(1, 1, 1), false, { Color = self:Tint() })
+        log(string.format("[VRF] road ritual start %s by %s lv=%d pool=%d", map.Name, player.Name, self.Level, self:PoolCount()))
+    end
+
+    method integer PoolCount()
+        -- 빌릴 수 있는 유입 풀 수 (로그용 · 스포너가 없으면 -1)
+        ---@type MonsterSpawner
+        local spawner = self.Spawner
+        if spawner == nil or not isvalid(spawner.Entity) then return -1 end
+        return spawner:PoolCount()
+    end
+
+    method Color Tint()
+        -- 액트 색 (액트 3 푸른 불 · 액트 4 혼 보라 · 그 밖 핏빛)
+        if self.Act == 3 then return Color(0.45, 0.8, 1, 1) end
+        if self.Act == 4 then return Color(0.75, 0.45, 1, 1) end
+        return Color(1, 0.3, 0.3, 1)
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer SpawnWave(Entity map)
+        -- 제단 둘레(반경 3.2~4)에 roadRitualBase + (회차-1)×roadRitualStep마리. 유입 풀에서 먼저 빌리고 모자란 몫은 맵 종류로 새로.
+        -- 마지막 회차 첫 마리 = 정예 우두머리 + 변종 능력. 모두 화면 밖에서도 곧장 온다 (탐지 범위 raidHordeDetect — 유입과 같은 방법)
+        local count = math.max(1, math.floor(_GameData.roadRitualBase + (self.Wave - 1) * _GameData.roadRitualStep))
+        ---@type MonsterSpawner
+        local spawner = self.Spawner
+        local hasSpawner = spawner ~= nil and isvalid(spawner.Entity)
+        local lent = hasSpawner and spawner:BorrowPool(count) or {}
+        local kinds = {}
+        for id in string.gmatch(self.Species, "[^;]+") do table.insert(kinds, id) end
+        if #kinds == 0 then table.insert(kinds, "skelwarrior") end
+        local center = _Util:Pos2(self.Entity)
+        local base = _UtilLogic:RandomDouble() * math.pi * 2
+        local made = 0
+        for i = 1, count do
+            local loan = lent[i]
+            local p = nil
+            for attempt = 0, 5 do
+                local a = base + (i / count) * math.pi * 2 + attempt * 0.4
+                local r = 3.2 + _UtilLogic:RandomDouble() * 0.8
+                local q = center + Vector2(math.cos(a) * r, math.sin(a) * r * 0.75)
+                if not hasSpawner or spawner:OpenPoint(q, 0.3) then
+                    p = q
+                    break
+                end
+            end
+            local id = loan ~= nil and loan.id or kinds[_UtilLogic:RandomIntegerRange(1, #kinds)]
+            local level = loan ~= nil and loan.level or self.Level
+            local e = nil
+            if p ~= nil then e = _SpawnService:SpawnByModelId(id, id, Vector3(p.x, p.y, 0), map) end
+            if not isvalid(e) then
+                if loan ~= nil then spawner:ReturnToPool(loan.id, loan.level) end
+            else
+                made = made + 1
+                table.insert(self.Spawned, e)
+                if loan ~= nil then
+                    spawner:TrackBorrowed(e, loan.id, loan.level)
+                    self.Lent[e.Id] = true
+                end
+                local leader = self.Wave >= self.Waves and i == 1
+                local diff = self.Difficulty
+                _Util:AfterSpawn(e, "script.Monster", function(comp)
+                    ---@type Monster
+                    local m = comp
+                    m.RespawnDelay = -1
+                    m:ApplyLevel(level, leader)
+                    if leader then m:MakeVariant(_GameData:RollVariant(diff)) end
+                    local chase = e.AIChaseComponent
+                    if isvalid(chase) then chase.DetectionRange = _GameData.raidHordeDetect end
+                end, nil)
+            end
+        end
+        return made
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Finish(Entity map)
+        -- 의식을 끊었다: 제단을 끊긴 판으로 · 둘레 산 사람에게 같은 축복 하나 (신전 축복 칸 — 다른 신전 축복은 새 것으로 바뀐다)
+        self.State = 2
+        local kinds = { "fury", "ward", "wisdom", "soul", "legion" }
+        local kind = kinds[_UtilLogic:RandomIntegerRange(1, #kinds)]
+        self.BlessKind = kind
+        local info = _GameConst:ShrineInfo(kind)
+        local sec = math.floor(_GameData.shrineSeconds)
+        local now = _UtilLogic.ServerElapsedSeconds
+        local blessed = 0
+        for _, p in ipairs(_Util:PlayersNear(map, _Util:Pos2(self.Entity), _GameData.roadRitualBlessRange)) do
+            ---@type PlayerStats
+            local stats = p:GetComponent("script.PlayerStats")
+            if stats ~= nil and info ~= nil then
+                stats.ShrineKind = kind
+                stats.ShrineUntil = now + _GameData.shrineSeconds
+                blessed = blessed + 1
+                _Util:Notify("제단의 축복 · " .. info.short .. " — " .. info.desc .. " (" .. tostring(sec) .. "초)", p.PlayerComponent.UserId)
+                _ParticleService:PlayBasicParticle(BasicParticleType.Buff, p, p.TransformComponent.WorldPosition, 0, Vector3(1, 1, 1), false, { Color = info.color })
+            end
+        end
+        _Util:NotifyMap(map, "제단의 의식을 끊었습니다")
+        local q = self.Entity.TransformComponent.WorldPosition
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(q.x, q.y + 0.5, 0), 0, Vector3(1.2, 1.2, 1), false, { Color = info ~= nil and info.color or self:Tint() })
+        log(string.format("[VRF] road ritual done %s bless=%s blessed=%d pool=%d", map.Name, kind, blessed, self:PoolCount()))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Reset(string why)
+        -- 의식을 거둔다 (맵이 빔): 빌린 몬스터는 바로 풀로, 새로 만든 몬스터는 치운다 → 다음에 다가오면 처음부터
+        ---@type MonsterSpawner
+        local spawner = self.Spawner
+        local hasSpawner = spawner ~= nil and isvalid(spawner.Entity)
+        local back = 0
+        for _, e in ipairs(self.Spawned) do
+            if isvalid(e) then
+                if hasSpawner and self.Lent[e.Id] then
+                    spawner:GiveBack(e)
+                    back = back + 1
+                else
+                    e:Destroy()
+                end
+            end
+        end
+        self.Spawned = {}
+        self.Lent = {}
+        self.State = 0
+        self.Wave = 0
+        self.Deadline = 0
+        self.EmptySince = 0
+        log(string.format("[VRF] road ritual reset (%s) %s returned=%d pool=%d", why, self.Entity.CurrentMap.Name, back, self:PoolCount()))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RefreshView()
+        -- 이름표: 잠잠 「익사자의 제단 · 다가가면 의식 시작」 · 의식 중 「… · 습격 n/N」 · 끊긴 뒤 「끊긴 제단 · 분노의 축복」. 그림: 끊기면 끊긴 판(없으면 어둡게)
+        local key = tostring(self.State) .. "#" .. tostring(self.Wave) .. "#" .. self.BlessKind .. "#" .. tostring(self.Act) .. "#" .. self.DoneRuid
+        if key == self.ViewKey then return end
+        self.ViewKey = key
+        local name = self:AltarName()
+        local tag = self.Entity.NameTagComponent
+        if isvalid(tag) then
+            if self.State == 0 then
+                tag.Name = name .. " · 다가가면 의식 시작"
+                tag.FontColor = self:Tint()
+            elseif self.State == 1 then
+                tag.Name = name .. " · 습격 " .. tostring(self.Wave) .. "/" .. tostring(self.Waves)
+                tag.FontColor = Color(1, 0.55, 0.45, 1)
+            else
+                local info = _GameConst:ShrineInfo(self.BlessKind)
+                tag.Name = "끊긴 제단" .. (info ~= nil and (" · " .. info.short .. "의 축복") or "")
+                tag.FontColor = Color(0.6, 0.6, 0.6, 1)
+            end
+        end
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        if self.State == 2 then
+            if self.DoneRuid ~= "" and sprite.SpriteRUID ~= self.DoneRuid then sprite.SpriteRUID = self.DoneRuid end
+            sprite.Color = Color(0.5, 0.5, 0.55, 1)
+        elseif self.State == 1 then
+            local t = self:Tint()
+            sprite.Color = Color(0.7 + t.r * 0.3, 0.7 + t.g * 0.3, 0.7 + t.b * 0.3, 1)
+        else
+            sprite.Color = Color(1, 1, 1, 1)
+        end
+    end
+
+end

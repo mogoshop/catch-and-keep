@@ -1,5 +1,6 @@
 -- 뼈 둥지 (monsters.csv bonenest, MapEvents가 사냥터에 놓는다): 움직이지 않고 때리지도 않지만, 플레이어가 가까이 있으면
 -- nestInterval초마다 졸개를 하나씩 낳는다 (동시에 nestMaxAlive까지). 부수면 정예 보상 · 혼은 남지 않는다 (ShadowSystem).
+-- 10-29 길 위 사건(기획서 39 #7 A · 액트 3·4 설계서 자리 · Road): 졸개를 그 맵 유입 풀에서 빌린다 (풀이 비면 맵 종류로 새로 — 동시 nestMaxAlive 그대로)
 @Component
 script MonsterNest extends Component
 
@@ -7,6 +8,8 @@ script MonsterNest extends Component
     property table Alive = {}
     property integer TimerId = 0
     property number WakeRange = 9
+    property boolean Road = false            -- 길 위 사건 둥지: 졸개를 유입 풀에서 빌린다
+    property any Spawner = nil               -- 길 위 사건: 그 맵 MonsterSpawner (BorrowPool · TrackBorrowed)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -45,12 +48,25 @@ script MonsterNest extends Component
         for id in string.gmatch(self.Minions, "[^;]+") do table.insert(kinds, id) end
         if #kinds == 0 then return end
         local id = kinds[_UtilLogic:RandomIntegerRange(1, #kinds)]
+        local level = body.Level
+        -- 길 위 사건 둥지: 유입 풀에서 한 마리 빌린다 (종·레벨은 풀 것)
+        ---@type MonsterSpawner
+        local spawner = self.Spawner
+        local loan = nil
+        if self.Road and spawner ~= nil and isvalid(spawner.Entity) then loan = spawner:BorrowPool(1)[1] end
+        if loan ~= nil then
+            id = loan.id
+            level = loan.level
+        end
         local a = _UtilLogic:RandomDouble() * math.pi * 2
         local p = here + Vector2(math.cos(a) * 1.1, math.sin(a) * 0.8)
         local e = _SpawnService:SpawnByModelId(id, id, Vector3(p.x, p.y, 0), map)
-        if not isvalid(e) then return end
+        if not isvalid(e) then
+            if loan ~= nil then spawner:ReturnToPool(loan.id, loan.level) end
+            return
+        end
         table.insert(self.Alive, e)
-        local level = body.Level
+        if loan ~= nil then spawner:TrackBorrowed(e, loan.id, loan.level) end
         _Util:AfterSpawn(e, "script.Monster", function(comp)
             ---@type Monster
             local m = comp
@@ -58,6 +74,7 @@ script MonsterNest extends Component
             m:ApplyLevel(level, false)
         end, nil)
         _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, self.Entity, Vector3(p.x, p.y + 0.2, 0), 0, Vector3(0.5, 0.5, 1), false, { Color = Color(0.75, 0.7, 0.6, 1) })
+        if self.Road then log(string.format("[VRF] road nest minion %s %s lv=%d borrowed=%s alive=%d pool=%d", map.Name, id, level, tostring(loan ~= nil), #self.Alive, isvalid(spawner and spawner.Entity) and spawner:PoolCount() or -1)) end
     end
 
 end

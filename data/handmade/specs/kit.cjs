@@ -44,3 +44,16 @@ function remix(base, o, opt) {
   return Object.assign(geo, o || {});
 }
 module.exports.remix = remix;
+
+// 길 위 사건 (기획서 39 #7 A · 10-29 사용자 승인 「길 위 사건만 지금」): 사냥터마다 기존 장치(신전·저주 상자·둥지·의식 제단) 하나를 장소 안 길가에.
+//   table { 맵id: [종류, x, y, flip] } — 칸 (x, y)에 extra "road:<종류>" (maps.csv extra → GameData MapInfo.roads → MapEvents.PlaceRoad가 런타임에 장치를 놓는다)
+//   + put 장면 세트 a<액트>_road_<종류> (map_sets.csv — 가운데는 비우고 둘레 소품만 · 흩뿌림 금지 규칙). 세트 자리는 칸 가운데 (x+0.5, y+0.5)
+function roadEvents(specs, act, table) {
+  for (const [id, [kind, x, y, flip]] of Object.entries(table)) {
+    const sp = specs[id];
+    if (!sp) throw new Error(`길 위 사건: 설계서에 '${id}'가 없음`);
+    sp.extra = Object.assign({}, sp.extra || {}, { [`road:${kind}`]: [x, y] });
+    sp.put = [...(sp.put || []), ["set", `a${act}_road_${kind}`, x + 0.5, y + 0.5, 1, flip ? 1 : 0]];
+  }
+}
+module.exports.roadEvents = roadEvents;

@@ -9,6 +9,8 @@ const layoutGen = require("./layout.cjs");
 // 손으로 지은 맵 (maps.csv kind=handmade): 설계도·배치표가 타일·벽·장식·기능 자리를 전부 정한다 (tools/build/handmade/lib.cjs, 10-28)
 const handmade = require("./handmade/lib.cjs");
 
+// 길 위 사건 장치 종류 (maps.csv extra road:<종류>@x/y — MapEvents.PlaceRoad · check_data와 같은 목록)
+const ROAD_KINDS = ["chest", "shrine", "nest", "ritual"];
 const MANAGED_PATH = /^(Gate\w*|Torch\d+|Spawner|Waypoint|DepthEntrance|BloodAltar|Art\w+)$/;
 
 // 마을 게시판 배치 값 (10-29 글귀 확정 16: 판 이름표 = 여는 창 제목 「마을 게시판」 · 창 안 탭 이름 「모집 판」은 그대로)
@@ -167,6 +169,11 @@ function desiredEntities(d, maps, ctx) {
       place("TownBoard", "Objects/TownBoard", x.pos, TOWN_BOARD_OVERRIDES);
     } else if (x.name === "end") {
       // 끝방 자리 (끝방 우두머리·봉인 상자 — gen_data가 맵 정보 ex·ey로 넘긴다). 엔티티 없음
+    } else if (x.name.startsWith("road:")) {
+      // 길 위 사건 자리 (기획서 39 #7 A · 10-29): 장치는 런타임에 MapEvents.PlaceRoad가 놓는다 (gen_data → MapInfo.roads). 엔티티 없음 —
+      //   둘레 장면 세트(map_sets.csv a<액트>_road_<종류>)는 설계서 put → 배치표 set 줄로 그림이 된다
+      if (!ROAD_KINDS.includes(x.name.slice(5))) throw new Error(`maps.csv ${d.id} extra '${ex}' — 길 위 사건 종류는 ${ROAD_KINDS.join("·")}`);
+      if (d.kind !== "field") throw new Error(`maps.csv ${d.id} extra '${ex}' — 길 위 사건은 사냥터(field)에만`);
     } else throw new Error(`maps.csv ${d.id} extra '${ex}' 알 수 없음`);
   }
   if (hasBP(d)) return out;   // 설계도 맵의 그림은 handmade/lib.cjs가 설계도·배치표로 짓는다
@@ -778,4 +785,4 @@ function buildCopies(d) {
   return n;
 }
 
-module.exports = { TOWN_BOARD_OVERRIDES, ENTRANCE_PORTAL, run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };
+module.exports = { ROAD_KINDS, TOWN_BOARD_OVERRIDES, ENTRANCE_PORTAL, run, edges, minimapFeatures, context, buildCopies, hasBP, desiredEntities };

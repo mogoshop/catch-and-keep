@@ -676,6 +676,19 @@ for (const [id, zones] of Object.entries(MORE)) for (const [z, add] of Object.en
   if (add.decals) { d.decals = [...new Set([...(d.decals || []), ...add.decals])]; d.dn = (d.dn || 0) + add.decals.length; }
   module.exports[id].dress = Object.assign({}, module.exports[id].dress, { [z]: d });
 }
+// 10-29 길 위 사건 (기획서 39 #7 A): 사냥터 9장에 장치 하나씩 — 걷는 길(W→E)에서 1~5칸 · 장소 안 · 포털 6.5칸·웨이포인트 4.5칸 밖 (kit.cjs roadEvents)
+//   신전 2 · 상자 2 · 둥지 3 · 의식 2 (액트 3과 합쳐 종류마다 4). 보스 맵(심연의 문 3층 · 군주의 옥좌)은 뺐다
+require("./kit.cjs").roadEvents(module.exports, 4, {
+  embercanyon: ["shrine", -7, -3, 0],    // 혼의 제단 — 협곡 길 곁 흑요석 신전
+  demonroad: ["chest", -21, 4, 0],       // 해골 관문 보루 서쪽 어귀 — 행군로 위 약탈품 궤
+  sulfurmarsh: ["nest", -4, -2, 0],      // 혼의 제단 — 늪 길 곁 알집
+  burningkeep: ["ritual", -2, -4, 0],    // 성채 앞마당 — 혼 사슬 의식
+  abyssgate1: ["nest", -6, -1, 0],       // 혼등 회랑
+  abyssgate2: ["chest", -9, -2, 1],      // 문장의 홀
+  ashhall: ["shrine", -11, 2, 1],        // 재의 통로
+  heartbridge: ["nest", -1, -2, 1],      // 무너진 가운데참 — 다리 한가운데 알집
+  throneante: ["ritual", 17, 4, 0],      // 큰 전실 — 옥좌 앞 마지막 의식
+});
 for (const [id, sp] of Object.entries(module.exports)) {
   sp.base = reArt(sp.base);
   sp.zones = Object.fromEntries(Object.entries(sp.zones || {}).map(([k, v]) => [k, reArt(v)]));
