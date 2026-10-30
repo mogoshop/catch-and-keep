@@ -72,6 +72,7 @@ end
 -- ② 16장 노바 단일 폭발: 건너뜀 0 · 타격 칸 = burst · 타격 칸 진하게
 do
  reset()
+ SkillEffects.FxGiantNovaV2='' SkillEffects.FxGiantNovaV2Front=''   -- 48 V2 통합: 실제 V2 RUID가 차 있어도 ②③은 옛 경로(V2 비었을 때)를 본다
  SkillEffects.FxGiantNova=seq('n',16) SkillEffects.FxGiantNovaOpts='w=420;h=300;ref=7.5;impact=5'
  SkillEffects:GiantMoveFx('nova',Vector3(1,2,0),7.5,7.5,0,0.18)
  run(2)
