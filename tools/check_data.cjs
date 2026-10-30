@@ -484,6 +484,11 @@ for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   // 48 V2: giant_mage_pull(옛 id 유지 · 투자 그대로) = 「폭발 증폭」 — 실제 흡인·둘째 고리는 없으니 글귀에도 남기지 않는다
   const pull = T.skills.find((r) => r.id === "giant_mage_pull");
   if (!pull || pull.name !== "폭발 증폭") err("skills", null, "48 V2: giant_mage_pull 이름은 「폭발 증폭」");
+  // 48 V2 C-ICON-01 (코덱스 확정): 아이콘 키 node-explosion-amplification · 새 그림 RUID가 오기 전엔 옛 그림 RUID로 대체 (빈 RUID 금지) · 노드 칸 icon과 같은 RUID
+  const amp = T.ui_icons.find((r) => r.key === "node-explosion-amplification");
+  if (!amp || !RUID.test(amp.ruid)) err("ui_icons", null, "48 V2: node-explosion-amplification 줄·RUID 필요 (새 그림 전엔 옛 두 겹 고리 RUID로 대체 · 빈 칸 금지)");
+  else if (pull && pull.icon !== amp.ruid) err("skills", null, `48 V2: giant_mage_pull icon ${pull.icon} ≠ ui_icons node-explosion-amplification ${amp.ruid} — 둘을 같이 바꿈`);
+  if (T.ui_icons.some((r) => r.key === "node-giant_mage_pull")) err("ui_icons", null, "48 V2: node-giant_mage_pull 키는 node-explosion-amplification으로 바뀜");
   for (const [i, r] of T.skills.entries()) {
     if (/두 겹 고리/.test(r.name + " " + r.desc)) err("skills", i, `48 V2: 「두 겹 고리」는 「폭발 증폭」으로 바뀜 (${r.id})`);
     if ((r.id === "giant_mage_pull" || r.id === "giant_mage_resist") && /흡인|끌어|두 겹|한 번 더|0\.4초 뒤/.test(r.desc)) err("skills", i, `48 V2: ${r.id} 설명에 흡인·둘째 파동 글귀 (노바는 단발)`);

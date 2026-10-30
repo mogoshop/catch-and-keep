@@ -14,7 +14,7 @@
 //   node tools/register_giant_visuals.cjs fx-audit                                         (지금 GameConst·SkillEffects 효과 연속본 장 수 ↔ 새 목표 · 정보만)
 //   node tools/register_giant_visuals.cjs selftest                                         (검증표 자체 테스트: 구 납품 통과 · 새 범위 통과 · 위반 변이 검출)
 // 48 V2 (10-30 연출 V2 · 갈래 C): 장 수 검증표는 「코덱스 납품 계약」이지 엔진 상한이 아니다 (MotionSmoother.FrameClip·SkillEffects.PlaySeq는 장 수 제한 없음 —
-//   summon48-spectacle-code-audit). 구 납품(기본 150 · skill2 6 · 회전 4~6 · 쌍칼 4~6)은 그대로 통과하고, 새 정의(회전 몸 16 · 땅 가르기 12~16 · 내려찍기 12 ·
+//   summon48-spectacle-code-audit). 구 납품(기본 150 · skill2 6 · 회전 4~6 · 쌍칼 4~6)은 그대로 통과하고, 새 정의(회전 몸 12~16 · 땅 가르기 12~16 · 내려찍기 12 ·
 //   함성 8~12 · 효과 노바 16 · 균열 16 · 내려찍기 12~16 · 함성 12 · 회전 16)를 함께 받는다. 숫자만 늘린 중복 장 · 장마다 0 이하 시간 · 타격 칸 없는 기술은 막는다.
 "use strict";
 const fs = require("fs");
@@ -39,7 +39,7 @@ const BODY_RULES = {
     skill2: { name: "방패 내려찍기", ranges: [[6, 6, "old"], [12, 12, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.5] },
   },
   greatsword: {
-    skill1: { name: "회전 베기", ranges: [[4, 6, "old"], [16, 16, "v2"]], loop: "any", hits: [1, 1], sec: [0.3, 0.8], cycle: ["greatsword", "s1Opts", "gap"] },
+    skill1: { name: "회전 베기", ranges: [[4, 6, "old"], [12, 16, "v2"]], loop: "any", hits: [1, 1], sec: [0.3, 0.8], cycle: ["greatsword", "s1Opts", "gap"] },
     skill2: { name: "땅 가르기", ranges: [[6, 6, "old"], [12, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.6] },
   },
   twin: {
@@ -460,6 +460,11 @@ function selftest() {
   expect("V2 경계(함성 8·12 · 가르기 12·16 · 효과 내려찍기 16)", checkAll([...base(), ...seq("frame", "shield", "skill1", 8, { ms: 80 }), ...seq("frame", "greatsword", "skill2", 16, { hitAt: 6, ms: 60 }),
     ...seq("fx", "shield", "slam", 16, { hitAt: 4, ms: 60 })]), null);
   expect("V2 함성 12", checkAll([...base(), ...seq("frame", "shield", "skill1", 12, { ms: 80 })]), null);
+  // 코덱스 확정 후속: 대검 회전 몸은 12~16 모두 허용 (짧은 기존 회전 시간에 맞춤 · 16을 채우려 복제 금지 = 중복 장 오류 유지)
+  expect("V2 회전 몸 12장(하한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 12, { loop: true, hitAt: 6, ms: 33.34 })]), null);
+  expect("V2 회전 몸 16장(상한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), null);
+  expect("V2 회전 몸 17장", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 17, { loop: true, hitAt: 8, ms: 23.53 })]), "17장 — 허용");
+  expect("V2 회전 몸 16장을 복제로 채움", checkAll(mutate([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })], (r) => r.key === "giant-greatsword-skill1-10", () => ({ sha256: fake("giant-greatsword-skill1-09") }))), "같은 그림 연속");
   const mfNow = parse(fs.readFileSync(path.join(ROOT, "data/monster_frames.csv"), "utf8"));
   expect("지금 monster_frames form_giant_* (기본 150 + full66 기술 몸)", checkFrames(mfNow), null);
   const mfRows = (rows) => parse(["monster,state,frames,delays,loop,clip,impact", ...FORMS.flatMap((f) => framesRows(rows.map((r) => Object.assign({}, r, { ruid: r.sha256.slice(0, 32) })), f))].join(LF) + LF);

@@ -20,7 +20,11 @@
 - `SkillBook.NovaText()`를 새로 두었다. `giant_mage_pull`의 요약 줄은 「노바 폭발 피해 ×1.5 · 반경 3.75칸」이다. 이 값은 `rite_giants.csv`에서 바로 읽으므로 실제 타격 값과 같다.
 - 스킬 창(`SkillWindow.StatLine`)은 구조를 바꾸지 않았다. 배우기 전에는 「배우면: …」, 배운 뒤에는 「지금: …」이 보인다. 1랭크 노드라 다음 랭크 줄은 없다.
 - 변경을 해명하는 알림은 만들지 않았다. 저장 판(sv 5)·이전 처리(48-3)·환급은 손대지 않았다.
-- 아이콘은 지금 그림(두 겹 고리 `359fd9b9…`)을 임시로 그대로 쓴다. 바꿀지는 **코덱스에 결정을 요청**한다.
+- 아이콘(코덱스 C-ICON-01 확정): 새 단일 폭발 그림을 채택했다. `ui_icons.csv`의 키를 `node-giant_mage_pull`에서 `node-explosion-amplification`으로 바꿨다.
+  - **등록이 필요하다.** 이미지 원본은 `node-explosion-amplification-v2`(96px)다.
+  - RUID가 오기 전에는 옛 두 겹 고리 RUID `359fd9b9…`로 대체한다. 빈 칸은 쓰지 않는다.
+  - 업로드 뒤에는 부모가 이 줄과 `skills.csv` giant_mage_pull의 `icon` 칸을 같은 RUID로 바꾼다. `check_data`가 두 칸이 같은지, 빈 칸이 없는지, 옛 키가 남지 않았는지 막는다.
+- 문구(C-COPY-01): 추천안을 그대로 확정했다.
 
 ## 3. 등록 검증표 `tools/register_giant_visuals.cjs` (전 → 후)
 
@@ -29,7 +33,7 @@
 | 기본 6동작 | stand4·move6·attack6·skill6·hit2·split6 = 150 | 같음 (V4 canon) |
 | 방패 skill1 함성 몸 | 0 (금지) | 8~12 (V2) · 타격 칸 0~1 |
 | 방패 skill2 내려찍기 몸 | 정확히 6 | 6(구) · **12**(V2) |
-| 대검 skill1 회전 몸 | 4~6 · 반복 금지 | 4~6(구) · **16**(V2) · 반복 허용, 한 바퀴가 `gap` 0.4초의 1배나 2배가 아니면 경고 |
+| 대검 skill1 회전 몸 | 4~6 · 반복 금지 | 4~6(구) · **12~16**(V2 · 코덱스 확정 후속 — 16을 채우려 복제 금지) · 반복 허용, 한 바퀴가 `gap` 0.4초의 1배나 2배가 아니면 경고 |
 | 대검 skill2 땅 가르기 몸 | 정확히 6 | 6(구) · **12~16**(V2) |
 | 쌍칼 skill2 | 4~6 | 같음 |
 | 마법사 skill1 / skill2 | 0 / 6 | 3(기도 앞 재사용) / 6 · 아트를 바꾸면 이 표의 값만 고친다 |
@@ -60,11 +64,11 @@
 
 ## 5. 검사 (모두 통과)
 - `npm test` 16/16 (「거인 그림 검증표 자체 테스트」 단계를 새로 넣음)
-- `register_giant_visuals selftest` 35/35
+- `register_giant_visuals selftest` 39/39 (회전 몸 12·16 양끝 통과 · 17장 · 16장 복제 채움 검출 포함)
   - 통과해야 하는 경우: 지금 대기표, 구 납품, V2 새 범위와 그 경계, 지금 monster_frames
   - 잡아야 하는 위반 변이 17종: 장 수, 노바 타격 칸 둘, 중복 장, 시간 0, 반복, 타격 칸 없음, 지속 초과, 기본 거인 기술 몸, impact 비움·범위 밖 등
   - 경고 4종, 매니페스트 3종
-- check_data 변이 8/8을 잡았다: 반경 4, ring, 계수 2, 계수 없음, 메테오 2.2, 옛 이름, 흡인 글귀, 거인 impact 범위 밖. 시험 스크립트는 작업 폴더 밖(scratchpad)에 있다.
+- check_data 변이 11/11을 잡았다: 반경 4, ring, 계수 2, 계수 없음, 메테오 2.2, 옛 이름, 흡인 글귀, 새 아이콘 키 빈 RUID, icon·키 RUID 불일치, 옛 키 남김, 거인 impact 범위 밖. 시험 스크립트는 작업 폴더 밖(scratchpad)에 있다.
 - quality `skills`·`giant_skills`·`giant_fire`·`giant_moves`·`mage_school`·`roster` 통과
   - skills 그룹에 새로 넣은 것: 「폭발 증폭」 이름·설명·요약 줄, 노바 데이터 3.75·1.5·ring 없음
   - sv 5 저장의 giant_mage_pull=1은 그대로 남고 환급 0이다. 다시 저장해도 sv 5이고, 다시 읽어도 환급 0이다.
