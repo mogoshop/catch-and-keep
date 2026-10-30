@@ -1,0 +1,272 @@
+diff --git a/RootDesk/MyDesk/World/MotionSmoother.mlua b/RootDesk/MyDesk/World/MotionSmoother.mlua
+index 786d4c0f..1e08afd8 100644
+--- a/RootDesk/MyDesk/World/MotionSmoother.mlua
++++ b/RootDesk/MyDesk/World/MotionSmoother.mlua
+@@ -63,10 +63,29 @@ script MotionSmoother extends Logic
+     property string AuraRingRUID = "ea61dc5ba8ce4ddd8287cba1d9566121"   -- 오오라 몬스터 발밑 원 (소환수 AllyRing과 같은 그림)
+     property number AuraFxAlpha = 0.35       -- 발밑 원 위 오오라 입자 진하기
+     property integer StatFlip = 0            -- 점검용: 소환수 좌우를 바꿔 쓴 횟수
++    property number FaceMinVX = 0.08         -- 걷는 중 좌우를 걸음 방향으로 정하는 가로 걸음 최소 빠르기 (칸/초 · 10-30: 0.2에서 낮춤 — 느린 걸음도 걸음 방향)
+     property integer StatSwitch = 0          -- 점검용: 직접 그리기 ↔ 보간 전환 횟수
+     property integer StatReverse = 0         -- 점검용: 화면에서 움직이던 방향과 반대로 꺾인 프레임 수 (뒤로 갔다 앞으로)
+     property integer StatSnap = 0            -- 점검용: 직접 그리다 서버 위치로 순간이동시킨 횟수
+     property number StatPullSum = 0          -- 점검용: 직접 그리는 동안 서버 위치와의 거리 합 (평균 = 합 / StatLocal)
++    -- 점검용 (10-30 좌우 진단): 「화면 이동 방향 ≠ 보이는 좌우」·「공격 중 대상 반대쪽」 프레임·횟수 (LookAudit · LookReport)
++    property integer StatLookUnit = 0        -- 소환수 프레임
++    property integer StatLookWalk = 0        -- 걷는 그림인데 화면 이동(|vx|>0.4)과 반대쪽을 본 프레임
++    property integer StatLookWalkEp = 0      -- 그런 상태가 0.25초 넘게 이어진 횟수
++    property integer StatLookWalkBase = 0    -- 걷는 그림 + 옆으로 걷는(|vx|>0.4) 프레임 (분모)
++    property integer StatLookAtk = 0         -- 공격 중(CommandState attack)인데 서버 전투 방향(대상 쪽)과 반대를 본 프레임
++    property integer StatLookAtkEp = 0       -- 그런 상태가 0.1초 넘게 이어진 횟수
++    property integer StatLookAtkBase = 0     -- 공격 중 프레임 (분모)
++    property integer StatLookMonWalk = 0     -- 몬스터: 걷는 중 화면 이동과 반대쪽 (넉백 제외)
++    property integer StatLookMonWalkEp = 0
++    property integer StatLookMonWalkBase = 0
++    property integer StatLookMonAtk = 0      -- 몬스터: 공격 중 서버 방향과 반대
++    property integer StatLookMonAtkEp = 0
++    property integer StatLookMonAtkBase = 0
++    property integer StatLookMonKnock = 0    -- 몬스터: 넉백 중 서버 방향(때린 쪽)과 반대 (밀려나며 등 돌림)
++    property integer StatLookMonKnockBase = 0
++    property integer StatLookAim = 0         -- 소환수 공격 중 화면에서 가장 가까운 몬스터(대역 위치)와 반대쪽을 본 프레임 (서버 값과 무관한 화면 기준 확인)
++    property integer StatLookAimBase = 0
+ 
+     @ExecSpace("ClientOnly")
+     method void OnBeginPlay()
+@@ -208,6 +227,7 @@ script MotionSmoother extends Logic
+             end
+             if x == nil then x, y = buf[1].x, buf[1].y end
+         end
++        local ix, iy = x, y
+         if r.unit ~= nil and self.LocalFollow then
+             self:FollowLocal(r, delta, x, y)
+             x, y = r.outx, r.outy
+@@ -248,8 +268,10 @@ script MotionSmoother extends Logic
+         local speed = math.sqrt(r.vx * r.vx + r.vy * r.vy)
+         if r.moving and speed < self.MoveOff then r.moving = false
+         elseif not r.moving and speed > self.MoveOn then r.moving = true end
++        if r.unit ~= nil then self:WalkStep(r, delta, ix, iy) end
+         r.lastDelta = delta
+         if r.unit ~= nil then self:LookUnit(r, t, delta) elseif r.monster then self:LookMonster(r) end
++        self:LookAudit(r, t, delta)
+         if self.UseProxy and (r.unit ~= nil or (r.monster and self.MonsterProxy)) then
+             -- 소환수·몬스터: 루트 위치는 서버 값 그대로 두고, 맵 아래 대역(MSVis)을 원하는 위치에 그린다
+             if self:PlaceVis(r, x, y, p, t) then
+@@ -751,6 +773,27 @@ script MotionSmoother extends Logic
+         end
+     end
+ 
++    @ExecSpace("ClientOnly")
++    method void WalkStep(any r, number delta, number ix, number iy)
++        -- 소환수의 「실제 걸음」 속도 (10-30 좌우 수정): 서버 위치로 당기는 보정(FollowSlack 당기기·사냥 전환 섞기)은 뺀다.
++        -- 직접 따라가기 중이면 FollowMove가 정한 걸음 속도(r.fvx), 아니면 보간 위치(서버 위치를 이어 그린 것)의 속도.
++        -- 좌우·서기/걷기 그림은 이 값으로 정한다 (보정 이동을 따라 돌면 등지고 공격·뒤로 걷기가 된다)
++        local wx, wy = 0, 0
++        if r.lf then
++            wx, wy = r.fvx or 0, r.fvy or 0
++        elseif r.pix ~= nil and delta > 0 then
++            wx, wy = (ix - r.pix) / delta, (iy - r.piy) / delta
++            if wx * wx + wy * wy > 900 then wx, wy = r.wvx or 0, r.wvy or 0 end   -- 순간이동·기록 비움은 걸음이 아니다
++        end
++        r.pix, r.piy = ix, iy
++        local k = 1 - math.exp(-math.max(0, delta) * 12)
++        r.wvx = (r.wvx or 0) + (wx - (r.wvx or 0)) * k
++        r.wvy = (r.wvy or 0) + (wy - (r.wvy or 0)) * k
++        local ws = math.sqrt(r.wvx * r.wvx + r.wvy * r.wvy)
++        if r.walking and ws < self.MoveOff then r.walking = false
++        elseif not r.walking and ws > self.MoveOn then r.walking = true end
++    end
++
+     @ExecSpace("ClientOnly")
+     method void LookUnit(any r, TransformComponent t, number delta)
+         -- 소환수: 좌우 = 크기 x 부호 (그림 기본은 왼쪽), 그림 = 서기/걷기 클립. 화면에서 걷는 동안은 그 방향·걷기, 멈추면 서버 값.
+@@ -763,19 +806,38 @@ script MotionSmoother extends Logic
+         local sc = t.Scale
+         local stand, move = unit.StandRUID, unit.MoveRUID
+         if self.UseProxy then
+-            local cur = r.visSignWant or (sc.x < 0 and -1 or 1)
+-            local want = sc.x < 0 and -1 or 1
+-            if r.moving and math.abs(r.vx) > 0.2 then want = r.vx > 0 and -1 or 1 end
+-            -- 좌우는 0.15초 넘게 그 방향일 때만 바꾼다 (10-10 6차 QA 껌뻑임)
+-            if want ~= cur then
++            -- 10-30 좌우 수정 (사용자 지적: 뒤를 보며 앞으로 걷기 · 등지고 공격):
++            --   · 공격 중(동기화된 CommandState "attack")은 서버 전투 방향 그대로, 바로 — 서버는 공격 직전 StopMove(대상 x)로 대상 쪽을 본다
++            --   · 실제로 걷는 중이면 걸음 방향(WalkStep · 보정 이동 제외), 느린 걸음도(FaceMinVX). 거의 세로로 걸으면 지금 방향 유지
++            --   · 서 있으면 서버 값
++            --   · 걸음·서기로 바꾸는 것은 0.15초 넘게 그 방향일 때만 (껌뻑임 방지). 예전엔 유지 시간을 같은 프레임에 0으로 되돌려
++            --     프레임 하나가 0.15초를 넘을 때(멈칫)만 돌아 좌우가 사실상 고정이었다 (메이커 측정 flip=0 · 걷기 46%·공격 44% 반대)
++            local srvSign = sc.x < 0 and -1 or 1
++            local cur = r.visSignWant or srvSign
++            local goal = srvSign
++            local instant = false
++            if unit.CommandState == "attack" then
++                instant = true
++            elseif r.walking then
++                goal = cur
++                local wx, wy = r.wvx or 0, r.wvy or 0
++                if math.abs(wx) > self.FaceMinVX and math.abs(wx) >= 0.25 * math.abs(wy) then goal = wx > 0 and -1 or 1 end
++            end
++            local want = goal
++            if goal == cur then
++                r.flipT = 0
++            elseif instant then
++                r.flipT = 0
++                self.StatFlip = self.StatFlip + 1
++            else
++                -- 좌우는 0.15초 넘게 그 방향일 때만 바꾼다 (10-10 6차 QA 껌뻑임)
+                 r.flipT = (r.flipT or 0) + delta
+-                if r.flipT < 0.15 then want = cur else self.StatFlip = self.StatFlip + 1 end
++                if r.flipT < 0.15 then want = cur else r.flipT = 0 self.StatFlip = self.StatFlip + 1 end
+             end
+-            if want == cur then r.flipT = 0 end
+             r.visSignWant = want
+             local srv = sprite.SpriteRUID
+             local clip = srv
+-            if stand ~= "" and move ~= "" and (srv == stand or srv == move) then clip = r.moving and move or stand end
++            if stand ~= "" and move ~= "" and (srv == stand or srv == move) then clip = r.walking and move or stand end
+             r.visClip = clip
+             return
+         end
+@@ -811,16 +873,26 @@ script MotionSmoother extends Logic
+         local sprite = r.e.SpriteRendererComponent
+         if not isvalid(sprite) then return end
+         if self.UseProxy and self.MonsterProxy then
+-            -- 대역: 루트는 건드리지 않고 대역 좌우(r.visFlip)만. 걷는 동안은 화면 방향(0.15초 유지돼야 바뀜), 멈추면 서버 값
+-            local want = sprite.FlipX
+-            if r.moving and math.abs(r.vx) > 0.2 then want = r.vx > 0 end
++            -- 대역: 루트는 건드리지 않고 대역 좌우(r.visFlip)만. 공격·넉백 중은 서버 값 바로(대상·때린 쪽을 본다),
++            -- 걷는 동안은 화면 방향(느린 걸음도 · 0.15초 유지돼야 바뀜), 멈추면 서버 값.
++            -- (10-30: 유지 시간을 같은 프레임에 0으로 되돌려 좌우가 거의 바뀌지 않던 것 — LookUnit과 같은 수정)
++            self:MonsterActing(r)
++            local srv = sprite.FlipX
+             local cur = r.visFlip
+-            if cur == nil then cur = want end
+-            if want ~= cur then
++            if cur == nil then cur = srv end
++            local goal = srv
++            local instant = r.mAtk or r.mKnock
++            if not instant and r.moving then
++                goal = cur
++                if math.abs(r.vx) > self.FaceMinVX and math.abs(r.vx) >= 0.25 * math.abs(r.vy) then goal = r.vx > 0 end
++            end
++            local want = goal
++            if goal == cur or instant then
++                r.flipT = 0
++            else
+                 r.flipT = (r.flipT or 0) + (r.lastDelta or 0)
+-                if r.flipT < 0.15 then want = cur end
++                if r.flipT < 0.15 then want = cur else r.flipT = 0 end
+             end
+-            if want == cur then r.flipT = 0 end
+             r.visFlip = want
+             return
+         end
+@@ -832,6 +904,109 @@ script MotionSmoother extends Logic
+         r.myFlip = want
+     end
+ 
++    @ExecSpace("ClientOnly")
++    method void LookAudit(any r, TransformComponent t, number delta)
++        -- 점검용 (10-30 좌우 진단): 보이는 좌우가 화면 이동 방향·서버 전투 방향과 어긋난 프레임을 센다 (대역 그리기 중만 · 그리기에는 영향 없음)
++        if not self.UseProxy then return end
++        local vx, vy = r.vx, r.vy
++        local side = math.abs(vx) > 0.4 and math.abs(vx) > 0.5 * math.abs(vy)
++        local walkBad, atkBad = false, false
++        if r.unit ~= nil then
++            ---@type ShadowUnit
++            local unit = r.unit
++            if not isvalid(unit) or r.visSignWant == nil then return end
++            self.StatLookUnit = self.StatLookUnit + 1
++            local shown = r.visSignWant
++            local attacking = unit.CommandState == "attack"
++            if attacking then
++                self.StatLookAtkBase = self.StatLookAtkBase + 1
++                local srv = t.Scale.x < 0 and -1 or 1
++                if shown ~= srv then atkBad = true self.StatLookAtk = self.StatLookAtk + 1 end
++                -- 화면 기준: 대역 위치에서 가장 가까운 몬스터 대역(2.5칸 안)이 옆으로 0.15칸 넘게 떨어져 있으면 그쪽을 봐야 한다
++                local best, bdx = 6.25, nil
++                for _, o in pairs(self.Recs) do
++                    if o.monster and o.dx ~= nil then
++                        local ddx, ddy = o.dx - r.dx, o.dy - r.dy
++                        local d2 = ddx * ddx + ddy * ddy
++                        if d2 < best then best, bdx = d2, ddx end
++                    end
++                end
++                if bdx ~= nil and math.abs(bdx) > 0.15 then
++                    self.StatLookAimBase = self.StatLookAimBase + 1
++                    if shown ~= (bdx > 0 and -1 or 1) then self.StatLookAim = self.StatLookAim + 1 end
++                end
++            elseif side and unit.MoveRUID ~= "" and r.visClip == unit.MoveRUID then
++                self.StatLookWalkBase = self.StatLookWalkBase + 1
++                if shown ~= (vx > 0 and -1 or 1) then walkBad = true self.StatLookWalk = self.StatLookWalk + 1 end
++            end
++            r.auW = walkBad and (r.auW or 0) + delta or 0
++            if walkBad and r.auW >= 0.25 and not r.auWE then r.auWE = true self.StatLookWalkEp = self.StatLookWalkEp + 1 end
++            if not walkBad then r.auWE = false end
++            r.auA = atkBad and (r.auA or 0) + delta or 0
++            if atkBad and r.auA >= 0.1 and not r.auAE then r.auAE = true self.StatLookAtkEp = self.StatLookAtkEp + 1 end
++            if not atkBad then r.auAE = false end
++            return
++        end
++        if not r.monster or r.visFlip == nil then return end
++        local sprite = r.e.SpriteRendererComponent
++        if not isvalid(sprite) then return end
++        self:MonsterActing(r)
++        local attacking, knocked = r.mAtk, r.mKnock
++        if knocked then
++            self.StatLookMonKnockBase = self.StatLookMonKnockBase + 1
++            if r.visFlip ~= sprite.FlipX then self.StatLookMonKnock = self.StatLookMonKnock + 1 end
++        elseif attacking then
++            self.StatLookMonAtkBase = self.StatLookMonAtkBase + 1
++            if r.visFlip ~= sprite.FlipX then atkBad = true self.StatLookMonAtk = self.StatLookMonAtk + 1 end
++        elseif side and r.moving then
++            self.StatLookMonWalkBase = self.StatLookMonWalkBase + 1
++            if r.visFlip ~= (vx > 0) then walkBad = true self.StatLookMonWalk = self.StatLookMonWalk + 1 end
++        end
++        r.auW = walkBad and (r.auW or 0) + delta or 0
++        if walkBad and r.auW >= 0.25 and not r.auWE then r.auWE = true self.StatLookMonWalkEp = self.StatLookMonWalkEp + 1 end
++        if not walkBad then r.auWE = false end
++        r.auA = atkBad and (r.auA or 0) + delta or 0
++        if atkBad and r.auA >= 0.1 and not r.auAE then r.auAE = true self.StatLookMonAtkEp = self.StatLookMonAtkEp + 1 end
++        if not atkBad then r.auAE = false end
++    end
++
++    @ExecSpace("ClientOnly")
++    method void MonsterActing(any r)
++        -- 몬스터가 지금 공격 중인가(동기화된 AttackEpoch가 바뀐 뒤 AttackAnimationSeconds 동안) · 넉백 중인가(동기화된 KnockUntil) — 둘 다 서버 값 그대로
++        if r.matk == nil then r.matk = r.e:GetComponent("script.MonsterAttack") or false end
++        if r.mst == nil then r.mst = r.e:GetComponent("script.MonsterStatus") or false end
++        local now = _UtilLogic.ElapsedSeconds
++        local attacking = false
++        if r.matk then
++            local ep = r.matk.AttackEpoch
++            if r.matkEp == nil then r.matkEp = ep
++            elseif ep ~= r.matkEp then
++                r.matkEp = ep
++                r.matkUntil = now + math.max(0.3, r.matk.AttackAnimationSeconds) + 0.1
++            end
++            attacking = r.matkUntil ~= nil and now < r.matkUntil
++        end
++        r.mAtk = attacking
++        -- 넉백은 그리는 시점(r.rt, 서버 시각 − 늦춤) 기준: 화면에서 밀려나는 동안 내내 때린 쪽을 본다
++        r.mKnock = (r.mst and r.mst.KnockUntil > (r.rt or _UtilLogic.ServerElapsedSeconds)) and true or false
++    end
++
++    method void LookReport(string tag)
++        -- 점검용: 좌우 진단 수치를 한 줄로 (메이커 execute_script에서 부른다)
++        log(string.format("[VRF] look mismatch %s walk=%d attack=%d | unit walkEp=%d/%d frames atkEp=%d frames=%d/%d unitFrames=%d | mon walk=%d/%d ep=%d atk=%d/%d ep=%d knock=%d/%d | aim=%d/%d | flip=%d",
++            tag, self.StatLookWalk, self.StatLookAtk, self.StatLookWalkEp, self.StatLookWalkBase, self.StatLookAtkEp, self.StatLookAtk, self.StatLookAtkBase, self.StatLookUnit,
++            self.StatLookMonWalk, self.StatLookMonWalkBase, self.StatLookMonWalkEp, self.StatLookMonAtk, self.StatLookMonAtkBase, self.StatLookMonAtkEp, self.StatLookMonKnock, self.StatLookMonKnockBase, self.StatLookAim, self.StatLookAimBase, self.StatFlip))
++    end
++
++    method void LookReset()
++        -- 점검용: 좌우 진단 수치를 0으로
++        self.StatLookUnit = 0 self.StatLookWalk = 0 self.StatLookWalkEp = 0 self.StatLookWalkBase = 0
++        self.StatLookAtk = 0 self.StatLookAtkEp = 0 self.StatLookAtkBase = 0
++        self.StatLookMonWalk = 0 self.StatLookMonWalkEp = 0 self.StatLookMonWalkBase = 0
++        self.StatLookMonAtk = 0 self.StatLookMonAtkEp = 0 self.StatLookMonAtkBase = 0
++        self.StatLookMonKnock = 0 self.StatLookMonKnockBase = 0 self.StatLookAim = 0 self.StatLookAimBase = 0 self.StatFlip = 0
++    end
++
+     method Entity VisOf(Entity e)
+         -- 화면에 실제로 그려지는 몸: 추적 중이면 그림 대역(MSVis), 아니면 루트 그대로 — 표식을 붙일 때 대역에 붙여야 끊기지 않는다 (44-3 고른 그림자·집중 대상)
+         if self.Recs == nil or not isvalid(e) then return e end
