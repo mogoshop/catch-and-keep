@@ -1298,3 +1298,8 @@
 - 폴더: `assets/codex-bone-giants-v1/samples/redesign-20261030/` · 이름 `giant-<종류>-stand-01-V<n>.png`.
 
 **고른 뒤**: 사용자가 V 하나(또는 섞기)를 고르면 그 방향으로 5종 × 30장 = 150장을 다시 만든다(지금 J 본체 150과 같은 key·크기·피벗 · 프레임 구성 같음 → 게임 연결은 RUID만 바꿈). J-7 HUD 초상 5도 같은 방향으로. 효과 34·노드 14는 그대로 쓴다. 고르기 전에는 지금 연결된 J 그림을 그대로 둔다.
+
+### K-2. 사용자 선택 (10-30) — V4 키 큰 망자 · 기본·마법사 다시
+- 고른 그림(파일 대조): 쌍칼 `giant-twin-stand-01-V4` · 대검 `versions/before-targeted-refinements/giant-greatsword-stand-01-V4`(정리 전판) · 방패 `giant-shield-stand-01-V4` — 폴더 `/Users/leeinguk/Documents/New project/art-giant-redesign-20261030/delivery/`.
+- 요청: 기본·마법사 거인 서기 시안 2개씩을 위 3장 결(길쭉한 팔다리 · 숙인 자세 · 보석 박힌 회색 쇠 갑옷 조각 · 찢긴 보라 천 · 가슴 보석 · 보라 눈빛)로. 기본 = 한 손 검(또는 뼈 곤봉) · 방패 없음, 마법사 = 지팡이 + 두건 로브 · 덩치 같은 급. compare 판에 고른 3장과 나란히. 정본 메모 `art-giant-redesign-20261030/user-pick-1030.txt`.
+- 고른 뒤: 5종 × 30 + HUD 5를 이 방향으로(대검은 정리 전판 기준) · J와 같은 key·크기·피벗·프레임 → 게임은 RUID만 바꿈.
