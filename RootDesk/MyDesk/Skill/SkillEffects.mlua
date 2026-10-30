@@ -29,6 +29,10 @@ script SkillEffects extends Component
     property string FxPoisonCloud = "71898bc523f441e39f00f25ac4989166"   -- 초록 독구름
     property string FxDrain = "07e92bf63fa44ba5a74507f96cb4e18c"         -- 보라 소용돌이
     property string FxStorm = "0d7381204f9b47869a705a16cf0344d1"         -- 보라 회오리 고리
+    -- 48 거인 기술 새 그림 자리 (K-4 · 샘플 승인 뒤 「|」로 이은 프레임 RUID) — 비면 GiantMoveFx가 있는 효과로 (빈 RUID를 렌더러에 넣지 않는다)
+    property string FxGiantNova = ""                                     -- 화염 노바: 퍼지는 얇은 불 고리 4~6장 (반경 2.5 · 256px = 2.56칸)
+    property string FxGiantFireMeteor = ""                               -- 기도 메테오 착지 폭발 · 그을린 땅 (약 6장 · 192px)
+    property string FxGiantRoar = ""                                     -- 방패 도발 함성: 머리 위 작은 강철 고리 1장 (64px)
     property string FxWave = "19fd8c7d47ec44aeb467bad744659899"          -- 보라 마법진 폭발
     property table ClipVisuals = {}           -- 클라이언트: 재생 중인 메이플 스킬 애니메이션 serial
     property integer StormClip = 0
@@ -773,47 +777,78 @@ script SkillEffects extends Component
         _Util:PlayFrames(ruids, me.CurrentMap, pos, 0, Vector3(scale, scale, 1), frameSec, Color(1, 1, 1, 1), 6)
     end
 
-    -- ───────── 46-4 뼈 의식 거인 기술 효과 (코덱스 J-6 · GameConst.FxGiant*) ─────────
+    -- ───────── 46-4 · 48 뼈 의식 거인 기술 효과 (코덱스 J-6 · K-4 · GameConst.FxGiant* · 새 그림 자리는 아래 FxGiant* 속성) ─────────
 
     method table GiantFxSpec(string kind)
         -- 효과별 그림·원본 크기(px)·한 장 길이(초)·반복 여부. 코덱스 timing의 engine_duration_ms가 비어 있어(검수용 100ms만) 여기서 정한다:
-        --   한 번 재생 = 기존 FramesFx 결(파쇄 0.07 · 레이저 BeamFx 0.08)과 같은 0.07~0.09초 — 빠른 몸짓(돌진) 0.07 · 내려찍기 0.08 · 땅·유성·균열 0.09(무게감, 4~6장 = 0.32~0.54초로 피해 순간과 겹침)
-        --   반복 = 스킬 지속 동안 도는 그림 — 회전 베기 0.10(6장 = 0.6초 한 바퀴 · 지속 1.6초 동안 2.7바퀴) · 저주 장판 0.12(바닥이 천천히 일렁임 · 5초) · 던진 뼈 0.08(2장 빠른 회전)
-        if kind == "quake" then return { ruids = _GameConst.FxGiantQuake, w = 128, h = 128, sec = 0.09, loop = false } end
+        --   한 번 재생 = 기존 FramesFx 결(파쇄 0.07 · 레이저 BeamFx 0.08)과 같은 0.07~0.09초 — 빠른 몸짓(돌진) 0.07 · 내려찍기 0.08 · 균열 0.09(무게감)
+        --   반복 = 스킬 지속 동안 도는 그림 — 회전 베기 0.10(6장 = 0.6초 한 바퀴 · 지속 1.6초 동안 2.7바퀴)
+        --   48 (K-4): 땅울림·뼈 던지기·뼈 유성·저주 장판 그림은 쓰지 않는다(파일은 둠) · 화염 노바·화염 메테오·도발 고리 새 그림은 속성(FxGiantNova 등)이 차면 그 그림, 비면 있는 효과로
         if kind == "slam" then return { ruids = _GameConst.FxGiantSlam, w = 128, h = 128, sec = 0.08, loop = false } end
         if kind == "spin" then return { ruids = _GameConst.FxGiantSpin, w = 192, h = 192, sec = 0.10, loop = true } end
         if kind == "rift" then return { ruids = _GameConst.FxGiantRift, w = 256, h = 64, sec = 0.09, loop = false } end
         if kind == "dash" then return { ruids = _GameConst.FxGiantDash, w = 192, h = 64, sec = 0.07, loop = false } end
-        if kind == "meteor" then return { ruids = _GameConst.FxGiantMeteor, w = 128, h = 192, sec = 0.09, loop = false } end
-        if kind == "hexfield" then return { ruids = _GameConst.FxGiantHexfield, w = 128, h = 128, sec = 0.12, loop = true } end
-        if kind == "bone" then return { ruids = _GameConst.FxGiantBone, w = 64, h = 64, sec = 0.08, loop = true } end
+        if kind == "nova" then return { ruids = self.FxGiantNova, w = 256, h = 256, sec = 0.09, loop = false } end
+        if kind == "meteor_land" then return { ruids = self.FxGiantFireMeteor, w = 192, h = 192, sec = 0.09, loop = false } end
+        if kind == "roar" then return { ruids = self.FxGiantRoar, w = 64, h = 64, sec = 0.08, loop = false } end
         return { ruids = "", w = 128, h = 128, sec = 0.1, loop = false }
+    end
+
+    method Color GiantFxTint(string kind)
+        -- 거인별 고유 색 (48 §4-1 · §4-3 절제): 방패 강철 은·청백 · 대검 흙·돌 · 쌍칼 진홍 · 마법사 화염 주황·노랑 — 보라는 혼 포인트에만 (지금 그림에 임시로 칠한다 · K-4 새 그림은 자기 색)
+        if kind == "slam" or kind == "roar" then return Color(0.8, 0.9, 1, 0.85) end
+        if kind == "spin" or kind == "rift" then return Color(0.9, 0.72, 0.5, 0.85) end
+        if kind == "dash" or kind == "flurry" then return Color(0.95, 0.25, 0.3, 0.8) end
+        if kind == "nova" or kind == "meteor_land" or kind == "meteor_fall" or kind == "warn_fire" then return Color(1, 0.62, 0.25, 0.85) end
+        return Color(1, 1, 1, 0.85)
     end
 
     @ExecSpace("Multicast")
     method void GiantMoveFx(string kind, Vector3 pos, number width, number height, number angle, number seconds)
         -- 거인 기술 한 장면 (모든 클라이언트 · 다른 맵이면 그리지 않음): 그림을 world 크기 width × height 칸으로 늘여 pos에 angle(도)로 — 반복 그림은 seconds 동안.
-        --   그림이 비면 있는 효과로 (땅울림·내려찍기 = 뼛가루 · 회전·연속 = 베기 궤적 · 유성 예고 = 보라 고리 · 장판 = 보라 소용돌이)
+        --   그림이 비면 있는 효과로 (내려찍기·균열 = 흙먼지 · 회전 = 베기 궤적 · 예고 = 주황 테 고리 · 노바 = 퍼지는 얇은 고리 · 메테오 = 떨어지는 불꽃 + 착지 폭발 · 도발 = 머리 위 작은 고리)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local spec = self:GiantFxSpec(kind)
-        if kind == "warn" then
-            -- 뼈 유성 예고 (보라 고리 · 1초) — 적의 예고 원(Telegraph)과 헷갈리지 않게 아군 혼빛 고리를 쓴다
-            self:ClipFxLocal(self.FxStorm, pos, width / 2.4, seconds, 0, Color(0.75, 0.55, 1, 0.75))
+        local tint = self:GiantFxTint(kind)
+        if kind == "warn_fire" then
+            -- 기도 메테오 예고: 테두리만 있는 주황 고리 (면을 깔지 않는다 · 적의 예고 원과 다른 색)
+            self:ClipFxLocal(self.FxStorm, pos, width / 2.4, seconds, 0, Color(1, 0.55, 0.2, 0.7))
+            return
+        end
+        if kind == "meteor_fall" then
+            -- 불꽃 핵 + 꼬리가 떨어진다 (새 그림 전 임시: 불꽃 화살 그림을 위에서 아래로 · 0.5초)
+            self:ClipFxLocal(self.FxFlameShot, Vector3(pos.x, pos.y + 1.4, 0), 1.1, seconds, -90, tint)
             return
         end
         if spec.ruids ~= "" then
             local scale = Vector3(width / (spec.w / 100), height / (spec.h / 100), 1)
-            if spec.loop then _Util:PlayFramesLoop(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, math.max(spec.sec, seconds), Color(1, 1, 1, 0.85), 6)
-            else _Util:PlayFrames(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, Color(1, 1, 1, 0.85), 6) end
+            if spec.loop then _Util:PlayFramesLoop(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, math.max(spec.sec, seconds), tint, 6)
+            else _Util:PlayFrames(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, tint, 6) end
             return
         end
         if kind == "spin" or kind == "flurry" then
-            _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(width * 0.12, width * 0.12, 1), false, { PlayRate = 1.8, Color = Color(0.8, 0.7, 1, 0.75) })
-        elseif kind == "hexfield" then
-            self:ClipFxLocal(self.FxDrain, pos, width / 2.4, seconds, 0, Color(0.8, 0.5, 1, 0.6))
+            _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(width * 0.12, width * 0.12, 1), false, { PlayRate = 1.8, Color = tint })
+        elseif kind == "nova" then
+            -- 얇은 고리가 반경 0.5 → width/2로 퍼진다 (속이 빈 고리 세 장 · 큰 면 금지 · 48 Q7)
+            local steps = 3
+            for k = 1, steps do
+                local r = 0.5 + (width / 2 - 0.5) * k / steps
+                _TimerService:SetTimerOnce(function()
+                    if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then self:ClipFxLocal(self.FxStorm, pos, r / 1.2, math.max(0.12, seconds / steps), 0, tint) end
+                end, seconds * (k - 1) / steps)
+            end
+        elseif kind == "meteor_land" then
+            if _GameConst.FxSkillHexBurst ~= "" then
+                _Util:PlayFrames(_GameConst.FxSkillHexBurst, me.CurrentMap, pos, 0, Vector3(width / 1.28, width / 1.28, 1), 0.07, tint, 6)
+            else
+                _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(width * 0.3, width * 0.3, 1), false, { Color = tint })
+            end
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(width * 0.2, 0.3, 1), false, { Color = Color(0.55, 0.4, 0.3, 0.8) })
+        elseif kind == "roar" then
+            self:ClipFxLocal(self.FxStorm, pos, 0.3, math.max(0.2, seconds), 0, tint)
         else
-            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(width * 0.2, math.max(0.2, height * 0.1), 1), false, { Color = Color(0.85, 0.8, 0.7, 0.85) })
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(width * 0.2, math.max(0.2, height * 0.1), 1), false, { Color = tint })
         end
     end
 
@@ -824,35 +859,6 @@ script SkillEffects extends Component
         local serial = _EffectService:PlayEffect(ruid, self.Entity, pos, angle, Vector3(scale, scale, 1), true, { Color = tint })
         if serial == 0 then return end
         _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(serial) end, math.max(0.1, seconds))
-    end
-
-    @ExecSpace("Multicast")
-    method void GiantBoneFx(Vector3 from, Vector3 to, number seconds)
-        -- 기본 전사 거인 「뼈 던지기」: 큰 뼈가 from → to로 seconds 동안 돌며 날아간다 (FxGiantBone 2장 · 0.05초마다 자리 옮김). 그림이 비면 보라 궤적 점
-        local me = _UserService.LocalPlayer
-        if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        local frames = _Util:Frames(_GameConst.FxGiantBone)
-        local steps = math.max(1, math.floor(seconds / 0.05 + 0.5))
-        local i = 0
-        local serial = 0
-        local map = me.CurrentMap
-        local timer = 0
-        timer = _TimerService:SetTimerRepeat(function()
-            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
-            i = i + 1
-            if i > steps or not isvalid(map) then
-                _TimerService:ClearTimer(timer)
-                return
-            end
-            local t = i / steps
-            local p = Vector3(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t + math.sin(t * math.pi) * 0.5, 0)
-            if #frames > 0 then
-                local f = frames[(math.floor(i * 0.05 / 0.08) % #frames) + 1]
-                serial = _EffectService:PlayEffect(f, map, p, i * 40, Vector3(0.9, 0.9, 1), true, { SortingLayer = "MapLayer0", OrderInLayer = 6 })
-            else
-                _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, p, 0, Vector3(0.25, 0.25, 1), false, { Color = Color(0.85, 0.75, 1, 1) })
-            end
-        end, 0.05)
     end
 
     @ExecSpace("ServerOnly")

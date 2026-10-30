@@ -21,6 +21,13 @@ const PACK = path.join(EVID, "upload-pack");
 const FORMS = ["shield", "greatsword", "twin", "basic", "mage"];
 // 거인 동작 순서와 장 수 (코덱스 납품 DELIVERY: stand4/move6/attack6/skill6/hit2/split6) — UndeadSystem.GiantStateOrder와 같은 순서
 const STATES = [["stand", 4], ["move", 6], ["attack", 6], ["skill", 6], ["hit", 2], ["split", 6]];
+// 48 §7-2 기술별 동작 (K-4 · 샘플 승인 뒤 납품 · 있을 때만 · 종마다 장 수 다름 — UndeadSystem.GiantExtraStates). 0 = 그 종은 새 몸 그림 없음(재사용 · 리뷰 가드):
+//   방패 skill1 도발 함성 = 몸 동작 없음 · 쌍칼 skill1 연속 베기 = 평타 반복 · 마법사 skill1 노바 = 기도(skill2) 앞 3장 · 기본 거인 기술 없음
+//   없으면 게임은 지금 skill 그림을 기술 길이만큼 반복한다 (ShadowUnit.GiantMotionKey)
+const EXTRA_STATES = {
+  skill1: { shield: [0, 0], greatsword: [4, 6], twin: [0, 0], mage: [0, 0], basic: [0, 0] },
+  skill2: { shield: [6, 6], greatsword: [6, 6], twin: [4, 6], mage: [6, 6], basic: [0, 0] },
+};
 const HEAD = ["key", "kind", "form", "state", "frame", "frame_index0", "file", "sha256", "width", "height", "pivot_x", "pivot_y", "filter", "wrap", "duration_ms", "loop", "hit", "animation_key", "ruid"];
 const HEX = "0123456789abcdef";
 const isHex = (v, n) => typeof v === "string" && v.length === n && [...v].every((ch) => HEX.includes(ch));
@@ -114,7 +121,8 @@ const load = () => parse(fs.readFileSync(PENDING, "utf8"));
 function check(rows) {
   const bad = [];
   const frames = rows.filter((r) => r.kind === "frame"), icons = rows.filter((r) => r.kind === "ui_icon");
-  if (frames.length !== FORMS.length * 30) bad.push("몸 프레임 " + frames.length + " ≠ 150");
+  const base = frames.filter((r) => !EXTRA_STATES[r.state]);
+  if (base.length !== FORMS.length * 30) bad.push("몸 프레임 " + base.length + " ≠ 150");
   if (icons.length !== FORMS.length) bad.push("HUD 아이콘 " + icons.length + " ≠ 5");
   const keys = new Set();
   for (const r of rows) {
@@ -137,6 +145,20 @@ function check(rows) {
       const hits = list.filter((r) => r.hit === "true").length;
       if (hits !== ((state === "attack" || state === "skill") ? 1 : 0)) bad.push(form + " " + state + " 타격 칸 " + hits);
     }
+    for (const [state, per] of Object.entries(EXTRA_STATES)) {
+      // 기술별 동작은 있을 때만 검사: 장 수가 그 종 범위 안 · 칸 번호 0..n-1 · 키 · 192 발 피벗 · 반복 아님(서버가 기술 길이만큼 반복) · 타격 칸 하나
+      const list = frames.filter((r) => r.form === form && r.state === state).sort((a, b) => a.frame_index0 - b.frame_index0);
+      if (list.length === 0) continue;
+      const [lo, hi] = per[form] || [0, 0];
+      if (list.length < lo || list.length > hi) { bad.push(form + " " + state + " " + list.length + "장 — 범위 " + lo + "~" + hi + (hi === 0 ? " (재사용 동작이라 새 그림 없음)" : "")); continue; }
+      list.forEach((r, i) => {
+        if (Number(r.frame_index0) !== i || r.key !== "giant-" + form + "-" + state + "-" + String(i + 1).padStart(2, "0")) bad.push(r.key + " 칸 번호/키");
+        if (Number(r.pivot_x) !== 0.5 || Number(r.pivot_y) !== 0.03125 || Number(r.height) !== 192) bad.push(r.key + " 피벗·높이");
+        if (!(Number(r.duration_ms) > 0)) bad.push(r.key + " 시간");
+        if (r.loop === "true") bad.push(r.key + " 반복 (기술 동작은 서버가 GiantHoldUntil로 반복)");
+      });
+      if (list.filter((r) => r.hit === "true").length !== 1) bad.push(form + " " + state + " 타격 칸 하나가 아님");
+    }
   }
   for (const r of icons) if (!FORMS.includes(r.form) || Number(r.width) !== 48 || Number(r.pivot_x) !== 0.5 || Number(r.pivot_y) !== 0.5) bad.push(r.key + " HUD 규격");
   return bad;
@@ -144,7 +166,8 @@ function check(rows) {
 
 // 대기표 → monster_frames 줄: form_giant_(종류) 6동작 (RUID ; · 시간 초 ; · 반복 · 클립 없음 · 공격·기술은 타격 칸 0부터)
 function framesRows(rows, form) {
-  return STATES.map(([state]) => {
+  const extra = Object.keys(EXTRA_STATES).filter((state) => rows.some((r) => r.kind === "frame" && r.form === form && r.state === state));
+  return [...STATES.map(([state]) => state), ...extra].map((state) => {
     const list = rows.filter((r) => r.kind === "frame" && r.form === form && r.state === state).sort((a, b) => a.frame_index0 - b.frame_index0);
     const hit = list.findIndex((r) => r.hit === "true");
     return ["form_giant_" + form, state, list.map((r) => r.ruid).join(";"), list.map((r) => String(Number(r.duration_ms) / 1000)).join(";"), list[0].loop === "true" ? "true" : "false", "", hit >= 0 ? String(hit) : ""].join(",");
@@ -197,4 +220,4 @@ if (require.main === module) {
   }
   else { console.log("사용: plan --assets 폴더 | check | apply 업로드팩 [--dry] [--allow-partial]"); process.exit(2); }
 }
-module.exports = { check, framesRows, parse, STATES, FORMS, load };
+module.exports = { check, framesRows, parse, STATES, EXTRA_STATES, FORMS, load };

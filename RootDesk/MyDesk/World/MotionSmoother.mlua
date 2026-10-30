@@ -495,9 +495,10 @@ script MotionSmoother extends Logic
                     for i = 1, a.s - 1 do impact = impact + (a.d[i] or 0) end
                     self.FrameIndex[a.r[a.s]] = { f = a, act = "attack", scale = impact > 0 and (impact / self.AttackWindup) or 1 }
                 end
-                -- 거인 3종 한 번 동작 (10-30 갈래 E · ShadowUnit.GiantPlay가 첫 칸을 건다): 기술·피격·갈라짐을 그 칸부터 납품 시간 그대로 한 번
+                -- 거인 한 번 동작 (10-30 갈래 E · ShadowUnit.GiantPlay가 첫 칸을 건다): 기술·피격·갈라짐을 그 칸부터 납품 시간 그대로 한 번
+                --   48-6: 기술별 동작 skill1·skill2(K-4 · 등록돼 있을 때) — 기술 동안 반복은 아래 GiantHoldUntil
                 if string.sub(tostring(key), 1, 6) == "giant_" then
-                    for _, act in ipairs({ "skill", "hit", "split" }) do
+                    for _, act in ipairs({ "skill", "skill1", "skill2", "hit", "split" }) do
                         local g = set[act]
                         if g ~= nil and g.r ~= nil and #g.r > 1 and self.FrameIndex[g.r[1]] == nil then self.FrameIndex[g.r[1]] = { f = g, act = act } end
                     end
@@ -519,7 +520,9 @@ script MotionSmoother extends Logic
         for _, d in ipairs(f.d) do total = total + d end
         if total <= 0 then return clip end
         local t = (now - r.frameAt) * (hit.scale or 1)
-        if f.loop then t = t % total elseif t >= total then return f.r[#f.r] end
+        -- 48-6 ③ 거인 기술 동작은 서버가 정한 시각(GiantHoldUntil)까지 반복 (회전 1.6초 · 영창 1초 · 연속 베기 = 평타 그림 반복)
+        local hold = r.unit ~= nil and isvalid(r.unit) and r.unit.GiantHoldUntil > _UtilLogic.ServerElapsedSeconds
+        if f.loop or hold then t = t % total elseif t >= total then return f.r[#f.r] end
         for i, d in ipairs(f.d) do
             if t < d then return f.r[i] end
             t = t - d

@@ -159,6 +159,11 @@ script ShadowUnit extends AttackComponent
     property number TauntRadius = 2.5         -- 도발 반경(칸) · 방패 해골 2.5 · 거인은 tauntRadius
     property number BlastRadius = 1.3         -- 폭발 마법사 자리 반경 1.3 · 마법사 거인은 rite_giants.csv radius(1.0)
     property number GiantGuardUntil = 0       -- 46-4 쌍칼 거인 「돌진」: 이 시각까지 받는 피해 0 (RiteGiantMoves · opts iframe 0.3초)
+    property number GiantCastUntil = 0        -- 48 거인 영창·꽂기: 이 시각까지 제자리 (기도 메테오 영창 1초 · 노바 0.3초 · 땅 가르기 0.3초+솟음 — RiteGiantMoves.Hold)
+    property number GiantSlowUntil = 0        -- 48 대검 거인 회전 베기: 이 시각까지 따라가는 이동 ×0.6
+    property number GiantHitAt = -99          -- 48-6 ② 거인 맞음 그림을 마지막으로 건 때 (0.5초에 한 번까지)
+    @Sync
+    property number GiantHoldUntil = 0        -- 48-6 ③ 거인 기술 동작을 이 서버 시각(ServerElapsedSeconds)까지 반복 — 클라이언트 MotionSmoother.FrameClip이 되돌려 감 (0 = 한 번)
     -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
     property number OfferUntil = 0
     property number FrenzyUntil = 0
@@ -449,6 +454,7 @@ script ShadowUnit extends AttackComponent
     method void TauntTick(number delta)
         -- 방패 해골: 4초마다 주변 2.5칸 적(보스 제외)이 4초 동안 이 해골을 노린다 · 거인은 종류별 간격·반경 (46-3 · 방패 거인 「도발 함성」 3초·3칸 — 보스 제외 그대로)
         if not self.Taunt or self.Dead then return end
+        if self.Giant and self.GiantKind ~= "shield" then return end   -- 48: 거인 도발은 방패 「도발 함성」만 (기본 거인 도발 제거 · 평타만 — 표에 옛 tauntSec이 남아 있어도)
         self.TauntTimer = self.TauntTimer - delta
         if self.TauntTimer > 0 then return end
         self.TauntTimer = self.TauntEvery
@@ -464,8 +470,12 @@ script ShadowUnit extends AttackComponent
                 end
             end
         end
-        if pulled > 0 then self:SwingFx(Vector3(me.x, me.y + 0.3, 0), Vector2(1, 0), 1) end
-        if pulled > 0 and self.Giant then self:GiantPlay("skill") end   -- 거인 도발 = 기술 그림 (미등록이면 아무 일 없음 · 10-30 갈래 E)
+        if pulled > 0 and self.Giant then
+            -- 방패 거인 「도발 함성」: 몸 동작 없음 — 기술 그림으로 평타를 덮지 않는다 (48 §6 ① · 예전 GiantPlay("skill")이 평타를 끊었다) · 머리 위 강철 고리만
+            _RiteGiantMoves:Roar(self, pulled, self.TauntRadius)
+        elseif pulled > 0 then
+            self:SwingFx(Vector3(me.x, me.y + 0.3, 0), Vector2(1, 0), 1)
+        end
     end
 
     @ExecSpace("ServerOnly")
@@ -503,7 +513,7 @@ script ShadowUnit extends AttackComponent
         self.LastHurtAt = _UtilLogic.ElapsedSeconds
         local offered = _UtilLogic.ElapsedSeconds < self.OfferUntil and 0.8 or 1   -- 뼈 성찬: 3초간 받는 피해 -20%
         self:Hurt(event.TotalDamage * self:AuraMult("guard") * offered * math.max(0.1, 1 - self.GuardPct / 100))   -- 방패 해골
-        if self.Giant and not self.Dead then self:GiantPlay("hit") end   -- 거인 피격 그림 (그림만 · 10-30 갈래 E)
+        if self.Giant and not self.Dead then self:GiantPlay("hit", 0) end   -- 거인 피격 그림 (그림만 · 공격·기술 동작 중 생략 · 0.5초에 한 번 — GiantPlay)
     end
 
     @ExecSpace("ServerOnly")
@@ -622,6 +632,12 @@ script ShadowUnit extends AttackComponent
             return
         end
         if self.Giant then _RiteGiantMoves:Tick(self, delta) end   -- 46-4 거인 기술 (스킬 1 저절로 · 스킬 2 기다리는 명령)
+        if self.Giant and _UtilLogic.ElapsedSeconds < self.GiantCastUntil then
+            -- 48 거인 영창·꽂기 중: 제자리 (기도 메테오 영창 1초 · 노바 0.3초 · 땅 가르기 — 이동 0 · 평타도 쉰다)
+            self:StopMove(0)
+            self:UpdateCommandState()
+            return
+        end
         self.AttackTimer = self.AttackTimer - delta
         self.RallyTimer = self.RallyTimer - delta
         -- 주인이 물러나면 준비 중인 타격도 끊고 따라간다. 공격 모션이 끝날 때까지 기다리지 않는다.
@@ -680,13 +696,14 @@ script ShadowUnit extends AttackComponent
             local t = self.Target.TransformComponent.WorldPosition
             local toTarget = Vector2(t.x, t.y) - myPos
             if toTarget:Magnitude() > self.AttackRange or not _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, Vector2(t.x, t.y)) then
-                self:SetSpeedMult(1)
+                self:SetSpeedMult((self.Giant and _UtilLogic.ElapsedSeconds < self.GiantSlowUntil) and 0.6 or 1)   -- 48 대검 거인 회전 중 ×0.6으로 따라감
                 self:MoveToward(toTarget)
             else
                 -- 마법사는 닿는 적에게서 물러나 전사의 뒤에서 쏜다. 벽 앞에서는 공격을 포기하지 않는다.
                 local safeRange = math.min(2.2, self.AttackRange * 0.55)
                 local retreat = toTarget * -1
-                if self.Kind == "mage" and toTarget:Magnitude() < safeRange and retreat:Magnitude() > 0.05
+                -- 48-6 ④ 거인은 물러서지 않는다 (마법사 거인 사거리 4.5 × 0.55 = 2.2칸 안 적이면 1.2초마다 뒷걸음질 → 평타 사이 계속 걸었다) — 사거리 안·시야면 멈춰 쏜다
+                if self.Kind == "mage" and not self.Giant and toTarget:Magnitude() < safeRange and retreat:Magnitude() > 0.05
                     and (_Util:Pos2(self.OwnerPlayer) - myPos):Magnitude() < 6
                     and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, myPos + retreat:Normalize() * 0.6) then
                     local now = _UtilLogic.ElapsedSeconds
@@ -1021,6 +1038,9 @@ script ShadowUnit extends AttackComponent
         self.Taunt = b.taunt
         self.GuardPct = b.guard
         self.GiantKind = ""
+        self.GiantCastUntil = 0
+        self.GiantSlowUntil = 0
+        self.GiantHoldUntil = 0
         if b.bolts ~= nil then
             self.BoltCount = b.bolts
             self.BoltMult = b.boltMul
@@ -1036,7 +1056,7 @@ script ShadowUnit extends AttackComponent
         -- 그림 (10-30 갈래 E): 거인 그림이면 갈라짐 동작을 그 길이만큼 보인 뒤 원래 그림으로 (능력치는 지금 바로 · 시간 규칙 그대로). 미등록이면 지금처럼 바로
         local look = self.GiantLook
         if (look.split or "") ~= "" then
-            self:GiantPlay("split")
+            self:GiantPlay("split", 0)
             local token = self.GiantLookToken
             _TimerService:SetTimerOnce(function()
                 if isvalid(self.Entity) and not self.Giant and token == self.GiantLookToken then self:RestoreLook(b) end
@@ -1067,17 +1087,38 @@ script ShadowUnit extends AttackComponent
     end
 
     @ExecSpace("ServerOnly")
-    method void GiantPlay(string state)
-        -- 거인 한 번 동작 그림(skill · hit · split): GiantLook[state] 첫 칸을 걸고(클라이언트 MotionSmoother.FrameClip이 칸을 넘긴다) 그 길이만큼 서기·걷기·공격 그림으로 덮지 않는다.
-        --   그림만 — 공격 판정·도발·갈라짐 시간은 바꾸지 않는다. 피격은 다른 한 번 동작을 끊지 않는다. 미등록이면 아무 일 없음
-        local ruid = self.GiantLook[state]
-        if ruid == nil or ruid == "" then return end
+    method void GiantPlay(string state, number holdSec)
+        -- 거인 동작 그림(skill1 · skill2 · hit · split · 48-6): GiantMotionKey로 고른 그림 첫 칸을 걸고(클라이언트 MotionSmoother.FrameClip이 칸을 넘긴다)
+        --   max(그림 길이, holdSec) 동안 서기·걷기·공격 그림으로 덮지 않는다. holdSec가 그림보다 길면 그동안 반복(③ 회전 1.6초 · 영창 1초 · 연속 베기 0.9초 — GiantHoldUntil).
+        --   ② 맞음은 공격·기술 동작 중엔 생략 · 0.5초에 한 번까지. 그림만 — 판정·도발·갈라짐 시간은 바꾸지 않는다. 미등록이면 아무 일 없음 (빈 그림을 넣지 않는다)
+        local key = self:GiantMotionKey(state)
+        if key == "" then return end
+        local ruid = self.GiantLook[key]
         local now = _UtilLogic.ElapsedSeconds
-        if state == "hit" and now < self.GiantClipUntil then return end
-        self.GiantClipUntil = now + math.max(0.05, self.GiantLook[state .. "Sec"] or 0)
-        self.CurrentClip = ""
-        self:SetClip(ruid)
-        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant look play state=%s form=%s sec=%.2f", state, self.GiantLook.form or "", self.GiantClipUntil - now)) end
+        if state == "hit" then
+            if now < self.GiantClipUntil or now < self.AttackAnimationUntil or now < self.GiantHitAt + 0.5 then return end
+            self.GiantHitAt = now
+        end
+        local one = math.max(0.05, self.GiantLook[key .. "Sec"] or 0)
+        local hold = math.max(one, holdSec)
+        self.GiantClipUntil = now + hold
+        self.GiantHoldUntil = hold > one + 0.01 and (_UtilLogic.ServerElapsedSeconds + hold) or 0
+        -- SetClip은 기술 동작 중 일반 그림(서기·걷기·공격)을 막으므로 직접 건다 (연속 베기는 평타 그림을 기술로 반복)
+        self.CurrentClip = ruid
+        self.Entity.SpriteRendererComponent.SpriteRUID = ruid
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant look play state=%s key=%s form=%s sec=%.2f loop=%s", state, key, self.GiantLook.form or "", hold, tostring(self.GiantHoldUntil > 0))) end
+    end
+
+    method string GiantMotionKey(string state)
+        -- 동작 → 그림 키 (48 §7-2 · 리뷰 가드 재사용): 그 키 그림이 있으면 그대로 · skill1/skill2가 없으면 쌍칼 연속 베기 = 평타 그림(attackFirst) ·
+        --   그 밖 = 지금 skill 그림(K-4 그림 오기 전 임시) · 그것도 없으면 "" (아무 일 없음). 방패 도발 함성은 몸 동작 없음이라 부르지 않는다
+        local look = self.GiantLook
+        if (look[state] or "") ~= "" then return state end
+        if state == "skill1" or state == "skill2" then
+            if state == "skill1" and self.GiantKind == "twin" and (look.attackFirst or "") ~= "" then return "attackFirst" end
+            if (look.skill or "") ~= "" then return "skill" end
+        end
+        return ""
     end
 
     @ExecSpace("Multicast")
