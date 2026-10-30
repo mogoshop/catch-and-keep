@@ -14,7 +14,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons", "map_sets"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons", "map_sets", "rite_giants", "monster_frames"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -427,6 +427,27 @@ T.maps.forEach((r, i) => {
 // 액트마다 마을 하나 (필드 사슬은 같은 액트의 마을에서 시작해 마을로 돌아온다)
 for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   if (T.maps.filter((r) => (r.act || "1") === act && r.kind === "town").length !== 1) err("maps", null, `액트 ${act}: town은 정확히 하나여야 함`);
+}
+
+// ── 뼈 의식 거인 5종 (46-2 · rite_giants.csv · 수치는 46 결정 4 초안) ──
+{
+  const KINDS = ["basic", "shield", "greatsword", "twin", "mage"];
+  const NUMS = ["hpMul", "guardPct", "atkMul", "interval", "radius", "range", "speedMul", "blastMul", "tauntSec", "tauntRadius", "s1Mul", "s1Cd", "s1Radius", "s2Mul", "s2Cd", "s2Reach"];
+  const SHAPES = new Set(["single", "arc", "line", "dash", "field"]);
+  const kinds = T.rite_giants.map((r) => r.kind);
+  if (kinds.length !== KINDS.length || KINDS.some((k) => !kinds.includes(k))) err("rite_giants", null, `종류는 정확히 ${KINDS.join("·")} 다섯 줄이어야 함 (지금 ${kinds.join("·")})`);
+  const frameKeys = new Set(T.monster_frames.map((r) => r.monster));
+  T.rite_giants.forEach((r, i) => {
+    for (const k of NUMS) if (r[k] === "" || isNaN(Number(r[k])) || Number(r[k]) < 0) err("rite_giants", i, `${k} '${r[k]}' — 0 이상 숫자가 아님`);
+    for (const k of ["hpMul", "atkMul", "interval", "range", "speedMul", "s1Cd", "s2Cd"]) if (!(Number(r[k]) > 0)) err("rite_giants", i, `${k} 양수여야 함`);
+    if (Number(r.guardPct) >= 90) err("rite_giants", i, "guardPct 90 미만이어야 함");
+    if (!SHAPES.has(r.s2Shape)) err("rite_giants", i, `s2Shape '${r.s2Shape}' — single·arc·line·dash·field 중 하나`);
+    if (r.name === "" || r.s1 === "" || r.s2 === "" || r.s1Name === "" || r.s2Name === "") err("rite_giants", i, "이름·스킬 칸이 비어 있음");
+    for (const c of ["s1Opts", "s2Opts"]) for (const part of (r[c] || "").split(";").filter((x) => x !== "")) if (!/^\w+=[\d.]+$/.test(part)) err("rite_giants", i, `${c} '${part}' — "이름=숫자;…" 꼴이 아님`);
+    if (r.frames !== `giant_${r.kind}`) err("rite_giants", i, `frames '${r.frames}' — giant_${r.kind}이어야 함`);
+    else if (!frameKeys.has("form_" + r.frames)) err("rite_giants", i, `frames — monster_frames.csv에 form_${r.frames}가 없음`);
+    if (!/초안/.test(r.note)) err("rite_giants", i, "note에 「초안」 표시가 있어야 함 (46 결정 4 — 확정 아님)");
+  });
 }
 
 // ── 난이도·사운드 ──
