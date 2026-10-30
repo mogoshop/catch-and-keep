@@ -12,7 +12,8 @@
 //   node tools/register_giant_visuals.cjs check [--manifest 「아트 결과 json」] [--strict]     (경고까지 실패로 보려면 --strict · 매니페스트 sha 교차 검증)
 //   node tools/register_giant_visuals.cjs check-frames                                     (data/monster_frames.csv form_giant_* 줄을 같은 검증표로 — check_data도 이 함수를 쓴다)
 //   node tools/register_giant_visuals.cjs intake-fx 「manifest.json」 [--fx nova] [--layers] [--write]   (아트 매니페스트 → 대기표 효과 줄 · sha 재측정 · B 새 자리·*Opts 출력)
-//   node tools/register_giant_visuals.cjs intake-art --nova 「manifest」 --greatsword 「폴더」 --shield 「폴더」 [--out 폴더] [--write]   (full133 납품 → 대기표·monster_frames·효과 자리 초안)
+//   node tools/register_giant_visuals.cjs intake-canon 「spectacle-v2-20261030 정본 폴더」 [--uploads nova17.json] [--out 폴더] [--write]   (정본 133행 → 대기표·monster_frames·효과 자리 초안)
+//   node tools/register_giant_visuals.cjs check --pending 「표」 --manifest 「정본 resource-mapping.csv」   (정본 mapping 직접 대조 · json이면 매니페스트 대조)
 //   node tools/register_giant_visuals.cjs fx-audit                                         (지금 GameConst·SkillEffects 효과 연속본 장 수 ↔ 새 목표 · 정보만)
 //   node tools/register_giant_visuals.cjs selftest                                         (검증표 자체 테스트: 구 납품 통과 · 새 범위 통과 · 위반 변이 검출)
 // 48 V2 (10-30 연출 V2 · 갈래 C): 장 수 검증표는 「코덱스 납품 계약」이지 엔진 상한이 아니다 (MotionSmoother.FrameClip·SkillEffects.PlaySeq는 장 수 제한 없음 —
@@ -527,76 +528,100 @@ function apply(pack, argv) {
   console.log("다음: node tools/gen_data.cjs · npm test · 메이커 refresh (효과 문자열은 부모가 GameConst/SkillEffects에)");
 }
 
-// ───── 48 V2 full133 납품 인수 (계약 summon48-spectacle-full-art-integration-contract · 원문 소비) ─────
-//   대검 64(몸 skill1 회전 16 × 25ms 반복 · skill2 균열 16 합 550ms 접점 index 9 · 효과 회전 16 × 25ms 반복 + 파생 앞/뒤 32 · 균열 16 = 접점 300ms에 시작 · 길이 0.65초)
-//   방패 52(몸 skill2 내려찍기 12 접점 index 6 = 120ms · skill1 함성 12 × 50ms · 효과 내려찍기 16(index 3 = 120ms 접점 · 몸과 t0 동시) · 함성 12 × 50ms · 파생 앞 별 8)
-//   RUID 칸은 비움 (업로드 뒤 부모) · key = 대기표 규칙 이름(giant-<종>-<동작>-NN · giant-fx-<효과>[-층]-NN) · source_key = 납품 원래 key
-const RIFT_FX_TOTAL_MS = 650;   // 계약: 균열 효과 길이 = 솟음 rise 0.25 + 잔광 0.4 (지금 연결 총 0.65초) → 16장 고르게(fit)
+// ───── 48 V2 full133 정본 인수 (assets/codex-bone-giants-v1/spectacle-v2-20261030 · 계약 summon48-spectacle-full-art-integration-contract) ─────
+//   정본 = resource-mapping.csv(133행) · resource-properties.csv · world-registration-conditions.json · animation-timing-proposal.json · records/derived-layers72.json (작업 폴더 임시본은 쓰지 않는다)
+//   대검: 몸 skill1 회전 16 × 25ms 반복(impact 0) · skill2 균열 16 합 550ms(impact 9 = 300ms) · 효과 회전 16 × 25ms 반복(ref 3.2) + 파생 앞/뒤 32 · 균열 16(접점 300ms에 시작 · 0.65초 고르게 · 내용 폭 488px = 6칸)
+//   방패: 몸 skill2 내려찍기 12(impact 6 = 120ms) · skill1 함성 12 × 50ms(impact 비움 — FX는 몸 t0에 같이 시작) · 효과 내려찍기 16(impact 4 = index 3 = 120ms · t0 동시) + 앞 별 3 · 함성 12 + 앞 별 5
+//   노바: 효과 16(장별 ms · 정점 160ms = index 6 → impact 7) + 파생 앞/뒤 32 · 이미 올린 RUID(summon48-spectacle-upload-nova17.json)는 sha가 같을 때만 채우고 대조 결과를 보인다
+//   RUID 칸은 비움 (노바 제외 — 업로드 기록과 sha 일치분만) · key = 대기표 규칙 이름 · source_key = 정본 key
+const RIFT_FX_TOTAL_MS = 650;   // 계약: 균열 효과 = 솟음 0.25 + 잔광 0.4 (지금 연결 총 0.65초) → 16장 고르게
+function pngSize(file) {
+  // PNG IHDR 가로·세로 (파일 머리 24바이트) — 정본 표의 width·height가 실제 그림과 같은지
+  try { const b = Buffer.alloc(24); const fd = fs.openSync(file, "r"); fs.readSync(fd, b, 0, 24, 0); fs.closeSync(fd); return [b.readUInt32BE(16), b.readUInt32BE(20)]; } catch (e) { return null; }
+}
 function artRow(o) {
   return Object.assign({ frame: "", file: "", sha256: "", filter: "Point", wrap: "Clamp", loop: "false", hit: "false", animation_key: "", ruid: "", layer: "", derived: "", source_index0: "", source_key: "" }, o);
 }
-function intakeGreatsword(dir, opt = {}) {
-  const res = { rows: [], errors: [], warnings: [], summary: [], meta: {} };
+function intakeCanon(D, opt = {}) {
+  const res = { rows: [], errors: [], warnings: [], summary: [], meta: {}, uploads: [] };
   const shaOf = opt.readSha || ((file) => (fs.existsSync(file) ? sha256(file) : null));
-  const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
-  const tim = JSON.parse(fs.readFileSync(path.join(dir, "animation-timing-proposal.json"), "utf8"));
-  const by = (g) => man.assets.filter((a) => a.group === g);   // 납품 순서 = 칸 순서 (key 번호 순)
-  const verify = (a, abs) => { const got = shaOf(abs); if (!got) res.errors.push(a.key + " 파일 없음 " + a.file); else if (got !== a.sha256) res.errors.push(a.key + " sha256 매니페스트 ≠ 파일"); return got || a.sha256; };
-  const body = (group, state, durs, loop, hitIdx) => by(group).forEach((a, i) => res.rows.push(artRow({ key: "giant-greatsword-" + state + "-" + String(i + 1).padStart(2, "0"), kind: "frame", form: "greatsword", state,
-    frame: i + 1, frame_index0: i, file: "spectacle-v2-20261030/greatsword/full/" + a.file, sha256: verify(a, path.join(dir, a.file)), width: a.width, height: a.height, pivot_x: a.pivot[0], pivot_y: a.pivot[1],
-    duration_ms: durs[i], loop: loop ? "true" : "false", hit: i === hitIdx ? "true" : "false", animation_key: "form_giant_greatsword", source_key: a.key })));
-  const b1 = tim.body_proposal.skill1, b2 = tim.body_proposal.skill2;
-  body("skill1", "skill1", b1.durations_ms, b1.loop, 0);              // 회전: 첫 타 = 첫 칸 (B skill1Hit 0)
-  body("skill2", "skill2", b2.durations_ms, false, b2.contact_index);  // 균열: 접점 index 9 = 300ms
-  const fxRows = (group, name, durs, loop, hitIdx) => by(group).forEach((a, i) => res.rows.push(artRow({ key: "giant-fx-" + name + "-" + String(i + 1).padStart(2, "0"), kind: "fx", form: "greatsword", state: name,
-    frame: i + 1, frame_index0: i, file: "spectacle-v2-20261030/greatsword/full/" + a.file, sha256: verify(a, path.join(dir, a.file)), width: a.width, height: a.height, pivot_x: a.pivot[0], pivot_y: a.pivot[1],
-    duration_ms: durs[i], loop: loop ? "true" : "false", hit: i === hitIdx ? "true" : "false", source_key: a.key })));
-  fxRows("spin", "spin", tim.fx_proposal.spin.durations_ms, true, -1);
-  const nRift = by("rift").length;
-  fxRows("rift", "rift", Array.from({ length: nRift }, () => r3(RIFT_FX_TOTAL_MS / nRift)), false, 0);   // 첫 장 = 접점 300ms 순간
-  const spin = by("spin");
-  for (const L of man.layers || []) {
-    const si = spin.findIndex((a) => a.key === L.from_key);
-    if (si < 0) { res.errors.push(L.key + " from_key " + L.from_key + " 원본 없음"); continue; }
-    const layer = LAYER_ALIAS[L.layer] || L.layer;
-    res.rows.push(artRow({ key: "giant-fx-spin-" + layer + "-" + String(si + 1).padStart(2, "0"), kind: "fx", form: "greatsword", state: "spin", frame: si + 1, frame_index0: si,
-      file: "spectacle-v2-20261030/greatsword/full/" + L.file, sha256: verify(L, path.join(dir, L.file)), width: L.width, height: L.height, pivot_x: L.pivot[0], pivot_y: L.pivot[1],
-      duration_ms: tim.fx_proposal.spin.durations_ms[si], loop: "true", layer, derived: "true", source_index0: si, source_key: L.key }));
+  const mapping = parse(fs.readFileSync(path.join(D, "resource-mapping.csv"), "utf8"));
+  const props = fs.existsSync(path.join(D, "resource-properties.csv")) ? parse(fs.readFileSync(path.join(D, "resource-properties.csv"), "utf8")) : [];
+  const tim = JSON.parse(fs.readFileSync(path.join(D, "animation-timing-proposal.json"), "utf8"));
+  const world = JSON.parse(fs.readFileSync(path.join(D, "world-registration-conditions.json"), "utf8"));
+  const layers72 = fs.existsSync(path.join(D, "records/derived-layers72.json")) ? JSON.parse(fs.readFileSync(path.join(D, "records/derived-layers72.json"), "utf8")) : [];
+  const propBy = Object.fromEntries(props.map((p) => [p.key, p]));
+  for (const r of mapping) {
+    const p = propBy[r.key];
+    if (p && ["width", "height", "pivot_x", "pivot_y"].some((k) => String(p[k]) !== String(r[k]))) res.errors.push(r.key + " resource-properties와 resource-mapping의 크기·피벗이 다름");
+    const sz = opt.readSize ? opt.readSize(path.join(D, r.file)) : pngSize(path.join(D, r.file));
+    if (!sz) res.errors.push(r.key + " 파일 없음 " + r.file);
+    else if (sz[0] !== Number(r.width) || sz[1] !== Number(r.height)) res.errors.push(r.key + " 표 크기 " + r.width + "×" + r.height + " ≠ 그림 " + sz.join("×"));
   }
-  const spinWorld = (spin[0] || {}).world_size_tiles || {};
-  res.meta = { spin_ref: spinWorld.diameter, rift_world: (by("rift")[0] || {}).world_size_tiles, body_canvas: man.body_canvas, body_root: man.nominal_body_root, rift_fx_start_ms: tim.fx_proposal.rift.start_relative_to_body_ms };
-  res.summary.push("대검 몸 skill1 " + by("skill1").length + " · skill2 " + by("skill2").length + " · 효과 spin " + spin.length + " · rift " + nRift + " · 파생 층 " + (man.layers || []).length + " (새 프레임 아님)");
-  return res;
-}
-function intakeShield(dir, opt = {}) {
-  const res = { rows: [], errors: [], warnings: [], summary: [], meta: {} };
-  const shaOf = opt.readSha || ((file) => (fs.existsSync(file) ? sha256(file) : null));
-  const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
-  const tim = JSON.parse(fs.readFileSync(path.join(dir, "animation-timing-proposal.json"), "utf8"));
-  const spec = JSON.parse(fs.readFileSync(path.join(dir, "records/contact-and-mirror-spec.json"), "utf8"));
-  const der = fs.existsSync(path.join(dir, "records/derived-layer-manifest.json")) ? JSON.parse(fs.readFileSync(path.join(dir, "records/derived-layer-manifest.json"), "utf8")) : [];
-  const by = (role) => man.files.filter((a) => a.role === role).sort((a, b) => a.frame_index0 - b.frame_index0);
-  const verify = (a, abs) => { const got = shaOf(abs); if (!got) res.errors.push((a.key || a.file) + " 파일 없음"); else if (got !== a.sha256) res.errors.push((a.key || a.file) + " sha256 매니페스트 ≠ 파일"); return got || a.sha256; };
-  const add = (role, kind, name, durs, hitIdx) => by(role).forEach((a, i) => res.rows.push(artRow({
-    key: kind === "frame" ? "giant-shield-" + name + "-" + String(i + 1).padStart(2, "0") : "giant-fx-" + name + "-" + String(i + 1).padStart(2, "0"), kind, form: "shield", state: name,
-    frame: i + 1, frame_index0: i, file: "spectacle-v2-20261030/shield/full/" + a.file, sha256: verify(a, path.join(dir, a.file)), width: a.size[0], height: a.size[1], pivot_x: a.pivot[0], pivot_y: a.pivot[1],
-    duration_ms: durs[i], loop: "false", hit: i === hitIdx ? "true" : "false", animation_key: kind === "frame" ? "form_giant_shield" : "", source_key: a.key })));
-  add("slam_body", "frame", "skill2", tim.slam_body.durations_ms, tim.slam_body.contact_index0);   // 접점 index 6 = 120ms
-  add("shout_body", "frame", "skill1", tim.shout_body.durations_ms, -1);                         // 함성: 타격 칸 비움 (계약 — FX는 몸 t0에 같이 시작 · skill1Hit로 늦추지 않음)
-  add("slam_FX", "fx", "slam", tim.slam_FX.durations_ms, tim.slam_FX.behind_ground_start_index0); // index 3 = 120ms 지면 접점 (몸과 t0 동시 시작)
-  add("shout_FX", "fx", "roar", tim.shout_FX.durations_ms, -1);
-  const slamFx = by("slam_FX");
-  der.forEach((L) => {
-    const si = Number(L.source_frame_index0);
-    const name = /shout/.test(L.source + L.file) ? "roar" : "slam";   // 앞 별: 내려찍기 0~2 · 함성 0~4 (축광 칸)
-    const durs = name === "roar" ? tim.shout_FX.durations_ms : tim.slam_FX.durations_ms;
-    res.rows.push(artRow({ key: "giant-fx-" + name + "-front-" + String(si + 1).padStart(2, "0"), kind: "fx", form: "shield", state: name, frame: si + 1, frame_index0: si,
-      file: "spectacle-v2-20261030/shield/full/" + L.file, sha256: verify(L, path.join(dir, L.file)), width: L.crop[2] - L.crop[0], height: L.crop[3] - L.crop[1], pivot_x: L.pivot[0], pivot_y: L.pivot[1],
-      duration_ms: durs[si], loop: "false", layer: "front", derived: "true", source_index0: si, source_key: path.basename(L.file, ".png") }));
-    void slamFx;
+  const sel = (owner, group) => mapping.filter((r) => r.owner === owner && r.group === group).sort((a, b) => Number(a.frame_index0) - Number(b.frame_index0));
+  const take = (list, o) => list.forEach((r, i) => {
+    if (Number(r.frame_index0) !== i) res.errors.push(r.key + " frame_index0 " + r.frame_index0 + " ≠ " + i);
+    const key = o.kind === "frame" ? "giant-" + o.form + "-" + o.state + "-" + String(i + 1).padStart(2, "0") : "giant-fx-" + o.state + "-" + String(i + 1).padStart(2, "0");
+    res.rows.push(artRow({ key, kind: o.kind, form: o.form, state: o.state, frame: i + 1, frame_index0: i, file: "spectacle-v2-20261030/" + r.file, sha256: shaOf(path.join(D, r.file)) || "",
+      width: r.width, height: r.height, pivot_x: r.pivot_x, pivot_y: r.pivot_y, duration_ms: o.durs[i], loop: o.loop ? "true" : "false", hit: i === o.hit ? "true" : "false",
+      animation_key: o.kind === "frame" ? "form_giant_" + o.form : "", source_key: r.key }));
+    if (Number(r.proposed_duration_ms) && Number(r.proposed_duration_ms) !== Number(o.durs[i]) && !o.fit) res.warnings.push(r.key + " 표 proposed_duration_ms " + r.proposed_duration_ms + " ≠ 타이밍 정본 " + o.durs[i]);
+    if (String(r.loop).toLowerCase() !== String(!!o.loop)) res.warnings.push(r.key + " 표 loop " + r.loop + " ≠ " + !!o.loop);
   });
-  res.meta = { slam: spec.slam, shout: spec.shout, roar_latch_body_index0: (spec.shout || {}).latch_body_frame_index0, roar_climax_index0: tim.shout_body.climax_index0 };
-  res.summary.push("방패 몸 skill2 " + by("slam_body").length + " · skill1 " + by("shout_body").length + " · 효과 slam " + slamFx.length + " · roar " + by("shout_FX").length + " · 파생 앞 별 " + der.length + " (새 프레임 아님)");
+  const gs = tim.greatsword || {}, sh = tim.shield || {}, nv = tim.nova || {};
+  const gsw = world.greatsword || {};
+  take(sel("greatsword", "skill1"), { kind: "frame", form: "greatsword", state: "skill1", durs: gs.body_proposal.skill1.durations_ms, loop: true, hit: 0 });
+  take(sel("greatsword", "skill2"), { kind: "frame", form: "greatsword", state: "skill2", durs: gs.body_proposal.skill2.durations_ms, loop: false, hit: gs.body_proposal.skill2.contact_index });
+  take(sel("greatsword", "spin"), { kind: "fx", form: "greatsword", state: "spin", durs: gs.fx_proposal.spin.durations_ms, loop: true, hit: -1 });
+  const rift = sel("greatsword", "rift");
+  take(rift, { kind: "fx", form: "greatsword", state: "rift", durs: rift.map(() => r3(RIFT_FX_TOTAL_MS / rift.length)), loop: false, hit: 0, fit: true });
+  take(sel("shield", "slam_body"), { kind: "frame", form: "shield", state: "skill2", durs: sh.slam_body.durations_ms, loop: false, hit: sh.slam_body.contact_index0 });
+  take(sel("shield", "shout_body"), { kind: "frame", form: "shield", state: "skill1", durs: sh.shout_body.durations_ms, loop: false, hit: -1 });
+  take(sel("shield", "slam_FX"), { kind: "fx", form: "shield", state: "slam", durs: sh.slam_FX.durations_ms, loop: false, hit: sh.slam_FX.behind_ground_start_index0 });
+  take(sel("shield", "shout_FX"), { kind: "fx", form: "shield", state: "roar", durs: sh.shout_FX.durations_ms, loop: false, hit: -1 });
+  const nova = sel("nova", "effect");
+  const peakIdx = (nv.proposed_start_ms || []).indexOf(nv.maximum_ms);
+  take(nova, { kind: "fx", form: "mage", state: "nova", durs: nv.proposed_duration_ms, loop: false, hit: peakIdx });
+  // 파생 층 72 (새 프레임 아님): 파일 이름으로 원본 칸·층을 읽고 크기는 그림 머리에서 · 피벗은 회전·노바 = 원본 그대로 · 앞 별 = 가운데
+  const mainOf = (state) => res.rows.filter((x) => x.kind === "fx" && x.state === state && !x.layer);
+  for (const L of layers72) {
+    let m, state, layer, si;
+    if ((m = L.file.match(/fx-giant-spin-(\d+)-(front|rear)\.png$/))) [state, si, layer] = ["spin", Number(m[1]), m[2]];
+    else if ((m = L.file.match(/fx-giant-nova-v2-(\d+)-(front|rear)\.png$/))) [state, si, layer] = ["nova", Number(m[1]), m[2]];
+    else if ((m = L.file.match(/layers\/(front|rear)\/fx-giant-nova-v2-(\d+)\.png$/))) [state, si, layer] = ["nova", Number(m[2]), m[1]];   // 노바 층은 layers/(front|rear)/ 폴더
+    else if ((m = L.file.match(/(slam|shout)-front-star-(\d+)\.png$/))) [state, si, layer] = [m[1] === "shout" ? "roar" : "slam", Number(m[2]), "front"];
+    else { res.warnings.push("파생 층 이름을 못 읽음 " + L.file); continue; }
+    const main = mainOf(state)[si];
+    if (!main) { res.errors.push(L.file + " 원본 " + state + " #" + (si + 1) + " 없음"); continue; }
+    const abs = path.join(D, L.file);
+    const got = shaOf(abs);
+    if (!got) res.errors.push(L.file + " 파일 없음");
+    else if (L.sha256 && got !== L.sha256) res.errors.push(L.file + " sha256 기록 ≠ 파일");
+    const sz = (opt.readSize ? opt.readSize(abs) : pngSize(abs)) || [main.width, main.height];
+    const star = layer === "front" && (state === "slam" || state === "roar");
+    res.rows.push(artRow({ key: "giant-fx-" + state + "-" + layer + "-" + String(si + 1).padStart(2, "0"), kind: "fx", form: main.form, state, frame: si + 1, frame_index0: si,
+      file: "spectacle-v2-20261030/" + L.file, sha256: got || L.sha256 || "", width: sz[0], height: sz[1], pivot_x: star ? 0.5 : main.pivot_x, pivot_y: star ? 0.5 : main.pivot_y,
+      duration_ms: main.duration_ms, loop: main.loop, layer, derived: "true", source_index0: si, source_key: path.basename(L.file, ".png") }));
+  }
+  // 이미 올린 노바 RUID (summon48-spectacle-upload-nova17.json): 같은 sha일 때만 채움 · 다르면 오류로 보고 (정본 파일과 업로드 기록이 어긋남)
+  if (opt.uploads) {
+    const up = Object.fromEntries((opt.uploads.assets || []).map((a) => [a.key, a]));
+    for (const r of res.rows.filter((x) => x.state === "nova")) {
+      const k = r.layer ? r.source_key.replace(/-(front|rear)$/, "") + "-" + r.layer : r.source_key;
+      const u = up[k];
+      if (!u) { res.uploads.push({ key: r.key, upload_key: k, status: "업로드 기록 없음" }); continue; }
+      const same = u.sha256 === r.sha256;
+      if (same && isRuid(u.ruid)) r.ruid = u.ruid;
+      res.uploads.push({ key: r.key, upload_key: k, ruid: u.ruid, status: same ? "sha 일치 · RUID 채움" : "sha 불일치 (기록 " + String(u.sha256).slice(0, 8) + "… · 정본 파일 " + r.sha256.slice(0, 8) + "…) — RUID 비움" });
+      if (!same) res.warnings.push(r.key + " 업로드 기록 sha ≠ 정본 파일 — RUID를 채우지 않음 (업로드 기록 확인 필요)");
+    }
+    const icon = up["node-explosion-amplification"] || Object.values(up).find((a) => a.role === "icon" || /node/.test(a.key));
+    if (icon) res.uploads.push({ key: "node-explosion-amplification", upload_key: icon.key, ruid: icon.ruid, status: "아이콘 업로드 기록 (ui_icons·skills icon 교체는 부모)" });
+  }
+  res.meta = { greatsword: gsw, shield: world.shield, nova: (world.nova || {}).nova, key_aliases: world.key_aliases, shield_sequence_sync: world.shield_sequence_sync };
+  const c = (f, st) => res.rows.filter((x) => x.form === f && x.state === st && !x.layer).length;
+  res.summary.push("정본 " + mapping.length + "행 → 몸 대검 skill1 " + c("greatsword", "skill1") + " · skill2 " + c("greatsword", "skill2") + " · 방패 skill2 " + c("shield", "skill2") + " · skill1 " + c("shield", "skill1") +
+    " · 효과 spin " + c("greatsword", "spin") + " · rift " + c("greatsword", "rift") + " · slam " + c("shield", "slam") + " · roar " + c("shield", "roar") + " · nova " + c("mage", "nova") + " · 파생 층 " + layers72.length + " (새 프레임 아님)");
   return res;
 }
 // 대기표 줄 → monster_frames 초안 (RUID 비움 · key·sha·시간·impact·반복) · 기술 몸만
@@ -609,6 +634,25 @@ function framesDraft(rows) {
     out.push({ monster: "form_giant_" + form, state, keys: list.map((r) => r.key).join(";"), sha256: list.map((r) => r.sha256.slice(0, 12)).join(";"), delays: list.map((r) => String(Number(r.duration_ms) / 1000)).join(";"),
       loop: list[0].loop === "true" ? "true" : "false", clip: "", impact: hit >= 0 ? String(hit) : "", ruids: "", canvas: list[0].width + "x" + list[0].height, pivot: list[0].pivot_x + "," + list[0].pivot_y });
   }
+  return out;
+}
+// 정본 resource-mapping.csv를 직접 읽어 대기표와 대조 (check --manifest *.csv): source_key로 · 크기·피벗·칸 번호 · 그림 sha(디스크)
+function crossMapping(rows, csvPath) {
+  const out = { errors: [], warnings: [], summary: [] };
+  const D = path.dirname(csvPath);
+  const mapping = parse(fs.readFileSync(csvPath, "utf8"));
+  const bySource = Object.fromEntries(rows.filter((r) => r.source_key && !r.layer).map((r) => [r.source_key, r]));
+  let matched = 0, absent = 0;
+  for (const m of mapping) {
+    const r = bySource[m.key];
+    if (!r) { absent++; continue; }
+    matched++;
+    if (Number(r.width) !== Number(m.width) || Number(r.height) !== Number(m.height) || Number(r.pivot_x) !== Number(m.pivot_x) || Number(r.pivot_y) !== Number(m.pivot_y)) out.errors.push(r.key + " 크기·피벗이 정본과 다름 (" + m.width + "×" + m.height + " @" + m.pivot_x + "," + m.pivot_y + ")");
+    if (Number(r.frame_index0) !== Number(m.frame_index0)) out.errors.push(r.key + " 칸 번호 " + r.frame_index0 + " ≠ 정본 " + m.frame_index0);
+    const abs = path.join(D, m.file);
+    if (fs.existsSync(abs) && sha256(abs) !== r.sha256) out.errors.push(r.key + " sha256이 정본 그림과 다름 (" + m.file + ") — 정본으로 다시 인수");
+  }
+  out.summary.push("정본 mapping " + path.basename(csvPath) + " " + mapping.length + "행 · 대기표와 맞음 " + matched + " · 대기표에 없음 " + absent);
   return out;
 }
 
@@ -786,28 +830,30 @@ function selftest() {
     expect("파생 층 원본 칸 범위 밖", checkAll([...base(), ...main, ...star({ fn: (i) => (i === 7 ? { source_index0: 16 } : {}) })]), "source_index0");
     const fx = fxStrings([...base(), ...main, ...star()]);
     results.push({ name: "내려찍기 출력 = FxGiantSlamSeq(impact 4 · 장마다 ms · order 1) + FxGiantSlamFront(앞 별 8 · order 6)", ok: fx.some((x) => x.slot === "SkillEffects.FxGiantSlamSeq" && x.opts === "w=384;h=288;impact=4;durations=" + SLAM.join(",") + ";order=1") && fx.some((x) => x.slot === "SkillEffects.FxGiantSlamFront" && x.n === 8 && /order=6$/.test(x.opts)), detail: fx.map((x) => x.slot + " " + x.opts).join(" | ") }); }
-  // 실제 full133 납품(있으면): 대검 64 · 방패 52 → 대기표 줄 → 검사 통과 · 기대 값
-  { const art = [process.env.ART_V2_DIR, "/Users/leeinguk/Documents/New project/art-summon48-spectacle-v2-20261030"].filter(Boolean).find((p) => fs.existsSync(path.join(p, "greatsword/full/manifest.json")) && fs.existsSync(path.join(p, "shield/full/manifest.json")));
-    if (art) {
-      const g = intakeGreatsword(path.join(art, "greatsword/full")), h = intakeShield(path.join(art, "shield/full"));
-      const rows = [...base(), ...g.rows, ...h.rows];
+  // 정본 full133 (있으면 · worktree에는 assets가 없어 메인 폴더): 대검·방패·노바 → 대기표 줄 → 검사 통과 · 기대 값 · 정본 mapping 직접 대조
+  { const D = [process.env.ART_V2_CANON, path.join(ROOT, "assets/codex-bone-giants-v1/spectacle-v2-20261030"), path.join(ROOT, "../../../assets/codex-bone-giants-v1/spectacle-v2-20261030")].filter(Boolean).find((p) => fs.existsSync(path.join(p, "resource-mapping.csv")));
+    if (D) {
+      const g = intakeCanon(D);
+      const rows = [...base(), ...g.rows];
       const o = checkAll(rows);
+      const x = crossMapping(rows, path.join(D, "resource-mapping.csv"));
       const fd = framesDraft(rows);
-      const pick = (f, st) => fd.find((x) => x.monster === "form_giant_" + f && x.state === st) || {};
-      const sum = (x) => (x.delays || "").split(";").reduce((a, b) => a + Number(b), 0);
+      const pick = (f, st) => fd.find((y) => y.monster === "form_giant_" + f && y.state === st) || { keys: "", delays: "" };
+      const sum = (y) => y.delays.split(";").reduce((a, b) => a + Number(b), 0);
+      const fx = fxStrings(rows);
       const want = [
-        ["대검 회전 몸 16 × 25ms 반복 impact 0", pick("greatsword", "skill1").keys.split(";").length === 16 && Math.abs(sum(pick("greatsword", "skill1")) - 0.4) < 1e-6 && pick("greatsword", "skill1").loop === "true" && pick("greatsword", "skill1").impact === "0"],
+        ["대검 회전 몸 16 × 25ms 반복 impact 0 · 384×224", pick("greatsword", "skill1").keys.split(";").length === 16 && Math.abs(sum(pick("greatsword", "skill1")) - 0.4) < 1e-6 && pick("greatsword", "skill1").loop === "true" && pick("greatsword", "skill1").impact === "0" && pick("greatsword", "skill1").canvas === "384x224"],
         ["대검 균열 몸 16 합 550ms impact 9", pick("greatsword", "skill2").keys.split(";").length === 16 && Math.abs(sum(pick("greatsword", "skill2")) - 0.55) < 1e-6 && pick("greatsword", "skill2").impact === "9"],
         ["방패 내려찍기 몸 12 impact 6", pick("shield", "skill2").keys.split(";").length === 12 && pick("shield", "skill2").impact === "6"],
-        ["방패 함성 몸 12 × 50ms impact 없음", pick("shield", "skill1").keys.split(";").length === 12 && Math.abs(sum(pick("shield", "skill1")) - 0.6) < 1e-6 && pick("shield", "skill1").impact === ""],
+        ["방패 함성 몸 12 × 50ms impact 비움", pick("shield", "skill1").keys.split(";").length === 12 && Math.abs(sum(pick("shield", "skill1")) - 0.6) < 1e-6 && pick("shield", "skill1").impact === ""],
+        ["효과 회전 → FxGiantSpinFront/Back · ref 3.2", fx.some((y) => y.slot === "SkillEffects.FxGiantSpinFront" && /ref=3.2/.test(y.opts)) && fx.some((y) => y.slot === "SkillEffects.FxGiantSpinBack" && y.n === 16)],
+        ["효과 균열 16 → FxGiantRiftSeq 512×288 · impact 1", fx.some((y) => y.slot === "SkillEffects.FxGiantRiftSeq" && y.n === 16 && /impact=1;/.test(y.opts) && y.size.join("x") === "512x288")],
+        ["효과 내려찍기 16 impact 4 · 함성 12 · 앞 별 3·5", fx.some((y) => y.slot === "SkillEffects.FxGiantSlamSeq" && y.n === 16 && /impact=4;/.test(y.opts)) && fx.some((y) => y.slot === "SkillEffects.FxGiantRoarSeq" && y.n === 12) && fx.some((y) => y.slot === "SkillEffects.FxGiantSlamFront" && y.n === 3) && fx.some((y) => y.slot === "SkillEffects.FxGiantRoarFront" && y.n === 5)],
+        ["효과 노바 16 impact 7 · ref 7.5 · 640×512", fx.some((y) => y.slot === "SkillEffects.FxGiantNova" && !y.layer && y.opts.startsWith("w=640;h=512;ref=7.5;impact=7;durations="))],
       ];
-      const fx = fxStrings(rows);
-      want.push(["효과 회전 16 반복 + 파생 뒤·앞 → FxGiantSpinBack·Front · ref 3.2", fx.some((x) => x.slot === "SkillEffects.FxGiantSpinFront" && x.layer === "" && /ref=3.2/.test(x.opts)) && fx.some((x) => x.slot === "SkillEffects.FxGiantSpinBack" && x.n === 16)]);
-      want.push(["효과 균열 16 → FxGiantRiftSeq impact 1", fx.some((x) => x.slot === "SkillEffects.FxGiantRiftSeq" && x.n === 16 && /impact=1;/.test(x.opts))]);
-      want.push(["효과 내려찍기 16 impact 4 · 함성 12", fx.some((x) => x.slot === "SkillEffects.FxGiantSlamSeq" && x.n === 16 && /impact=4;/.test(x.opts)) && fx.some((x) => x.slot === "SkillEffects.FxGiantRoarSeq" && x.n === 12)]);
-      results.push({ name: "실제 대검 64·방패 52 납품 → 대기표 줄 검사 통과 (sha 재측정)", ok: g.errors.length + h.errors.length + o.errors.length === 0, detail: [...g.errors, ...h.errors, ...o.errors].slice(0, 6).join(" | ") });
-      for (const [n, ok] of want) results.push({ name: "실제 납품: " + n, ok, detail: JSON.stringify(fd.map((x) => [x.state, x.impact, x.loop])) + " " + fx.map((x) => x.slot + " " + x.opts.slice(0, 40)).join(" | ") });
-    } else results.push({ name: "실제 대검·방패 납품 (없음 — 건너뜀)", ok: true, detail: "" });
+      results.push({ name: "정본 full133 → 대기표 줄 검사 통과 · 정본 mapping 대조 (sha·크기 재측정)", ok: g.errors.length + o.errors.length + x.errors.length === 0, detail: [...g.errors, ...o.errors, ...x.errors].slice(0, 6).join(" | ") });
+      for (const [n, ok] of want) results.push({ name: "정본: " + n, ok, detail: JSON.stringify(fd.map((y) => [y.monster, y.state, y.impact, y.loop, y.canvas])) + " " + fx.map((y) => y.slot + " " + y.opts.slice(0, 40)).join(" | ") });
+    } else results.push({ name: "정본 full133 (없음 — 건너뜀)", ok: true, detail: "" });
   }
   // 매니페스트 교차 검증
   const vrows = v2();
@@ -831,7 +877,7 @@ if (require.main === module) {
     const out = checkAll(rows);
     rest.forEach((a, i) => {
       if (a !== "--manifest") return;
-      const x = crossManifest(rows, JSON.parse(fs.readFileSync(path.resolve(rest[i + 1]), "utf8")));
+      const x = /\.csv$/i.test(rest[i + 1]) ? crossMapping(rows, path.resolve(rest[i + 1])) : crossManifest(rows, JSON.parse(fs.readFileSync(path.resolve(rest[i + 1]), "utf8")));
       out.errors.push(...x.errors); out.warnings.push(...x.warnings); out.summary.push(...x.summary);
     });
     for (const l of out.summary) console.log("  " + l);
@@ -844,16 +890,17 @@ if (require.main === module) {
     report("[register_giant_visuals] monster_frames form_giant_* 문제 0 · 경고 " + out.warnings.length, out, rest.includes("--strict"));
   }
   else if (cmd === "fx-audit") for (const l of fxAudit()) console.log(l);
-  else if (cmd === "intake-art") {
-    // full133 납품 → 대기표 초안·monster_frames 초안·효과 자리 초안 (기본 보기만 · --out 폴더에 쓴다 · 대기표 자체는 --write일 때만)
-    //   intake-art --nova 「nova/full/manifest.json」 --greatsword 「greatsword/full」 --shield 「shield/full」 [--out 폴더] [--write]
-    const parts = [];
-    let rows = load();
-    if (opt("--nova")) { const p = path.resolve(opt("--nova")); const g = intakeFx(JSON.parse(fs.readFileSync(p, "utf8")), path.dirname(p), "nova", { layers: true }); parts.push(g); rows = rows.filter((r) => !(r.kind === "fx" && r.state === "nova")).concat(g.rows); }
-    if (opt("--greatsword")) { const g = intakeGreatsword(path.resolve(opt("--greatsword"))); parts.push(g); rows = rows.filter((r) => !(r.form === "greatsword" && (r.kind === "fx" || (r.kind === "frame" && !STATES.some(([st]) => st === r.state))))).concat(g.rows); }
-    if (opt("--shield")) { const g = intakeShield(path.resolve(opt("--shield"))); parts.push(g); rows = rows.filter((r) => !(r.form === "shield" && (r.kind === "fx" || (r.kind === "frame" && !STATES.some(([st]) => st === r.state))))).concat(g.rows); }
+  else if (cmd === "intake-canon") {
+    // 정본 full133 → 대기표 초안·monster_frames 초안·효과 자리 초안 (기본 보기만 · --out 폴더에 쓴다 · 대기표 자체는 --write일 때만)
+    //   intake-canon 「assets/codex-bone-giants-v1/spectacle-v2-20261030」 [--uploads summon48-spectacle-upload-nova17.json] [--out 폴더] [--write]
+    const D = path.resolve(rest[0] && !rest[0].startsWith("--") ? rest[0] : path.join(ROOT, "assets/codex-bone-giants-v1/spectacle-v2-20261030"));
+    const g = intakeCanon(D, { uploads: opt("--uploads") ? JSON.parse(fs.readFileSync(path.resolve(opt("--uploads")), "utf8")) : null });
+    const fresh = new Set(g.rows.map((r) => r.form + "|" + r.kind + "|" + r.state));
+    const rows = load().filter((r) => !(r.kind === "fx" || r.kind === "frame") || !fresh.has(r.form + "|" + r.kind + "|" + r.state) || STATES.some(([st]) => st === r.state)).concat(g.rows);
     const out = checkAll(rows);
-    for (const g of parts) { out.errors.unshift(...g.errors); out.warnings.unshift(...g.warnings); out.summary.unshift(...g.summary); }
+    out.errors.unshift(...g.errors); out.warnings.unshift(...g.warnings); out.summary.unshift(...g.summary);
+    const x = crossMapping(rows, path.join(D, "resource-mapping.csv"));
+    out.errors.push(...x.errors); out.summary.push(...x.summary);
     // 같은 줄을 RUID 대신 sha 앞 32자리로 채워 monster_frames 검사 (기본 줄 + 새 기술 몸)
     const fake = rows.map((r) => Object.assign({}, r, { ruid: isRuid(r.ruid) ? r.ruid : r.sha256.slice(0, 32) }));
     const mfNow = parse(fs.readFileSync(path.join(ROOT, "data/monster_frames.csv"), "utf8"));
@@ -863,21 +910,21 @@ if (require.main === module) {
     out.errors.push(...fr.errors); out.warnings.push(...fr.warnings); out.summary.push(...fr.summary.filter((l) => /skill[12]/.test(l)));
     const slots = fxStrings(rows);
     for (const l of out.summary) console.log("  " + l);
+    for (const u of g.uploads) console.log("  업로드 대조 " + u.key + " ← " + u.upload_key + " " + (u.ruid || "") + " · " + u.status);
     for (const fx of slots) console.log("  효과 " + fx.name + (fx.layer ? "(" + fx.layer + ")" : "") + " → " + fx.slot + " " + fx.n + "장 · " + fx.optsSlot + " = " + fx.opts + (fx.note ? " · " + fx.note : ""));
     if (opt("--out") && out.errors.length === 0) {
       const dir = path.resolve(opt("--out"));
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, "pending-draft.csv"), toCsv(HEAD, rows));
-      const fd = framesDraft(rows);
-      fs.writeFileSync(path.join(dir, "monster_frames-draft.csv"), toCsv(["monster", "state", "keys", "sha256", "delays", "loop", "clip", "impact", "ruids", "canvas", "pivot"], fd));
-      const meta = Object.assign({}, ...parts.map((g) => g.meta));
-      fs.writeFileSync(path.join(dir, "fx-slots-draft.json"), JSON.stringify({ note: "RUID 비움 — 업로드 뒤 부모가 「|」로 이어 slot에 · optsSlot 문자열은 B 73fc0393 계약(w·h px · ref · impact=hitFrame+1 · durations=장마다 ms(「,」 · 제안 키) · order) · 기존 span·ax·ay·dy·face·flip은 부모가 이미지 메타데이터(meta)로 합침",
-        slots: slots.map((x) => ({ name: x.name, layer: x.layer || "(한 층)", slot: x.slot, optsSlot: x.optsSlot, opts: x.opts, n: x.n, impact: x.impact, durationsMs: x.durationsMs, size: x.size, pivot: x.pivot, canvasTiles: x.canvasTiles, note: x.note, keys: rows.filter((r) => r.kind === "fx" && r.state === x.name && layerOf(r) === x.layer).sort((a, b) => a.frame_index0 - b.frame_index0).map((r) => r.key) })),
-        meta, warnings: out.warnings }, null, 1) + LF);
+      fs.writeFileSync(path.join(dir, "monster_frames-draft.csv"), toCsv(["monster", "state", "keys", "sha256", "delays", "loop", "clip", "impact", "ruids", "canvas", "pivot"], framesDraft(rows)));
+      fs.writeFileSync(path.join(dir, "fx-slots-draft.json"), JSON.stringify({ source: "정본 assets/codex-bone-giants-v1/spectacle-v2-20261030 (resource-mapping.csv 133행 · world-registration-conditions · animation-timing-proposal · derived-layers72)",
+        note: "RUID 비움(노바는 업로드 기록과 sha가 같은 것만 채움) — 업로드 뒤 부모가 「|」로 이어 slot에 · optsSlot 문자열은 B 73fc0393 계약(w·h px · ref · impact=hitFrame+1 · durations=장마다 ms(「,」 · 제안 키) · order) · 기존 span·ax·ay·dy·face·flip은 부모가 meta로 합침 · 균열 w는 캔버스 512 그대로(내용 폭 488px = 6칸 · meta)",
+        slots: slots.map((y) => ({ name: y.name, layer: y.layer || "(한 층)", slot: y.slot, optsSlot: y.optsSlot, opts: y.opts, n: y.n, impact: y.impact, durationsMs: y.durationsMs, size: y.size, pivot: y.pivot, canvasTiles: y.canvasTiles, note: y.note, ruids: y.ruid || (y.ready ? y.ruids : ""), keys: rows.filter((r) => r.kind === "fx" && r.state === y.name && layerOf(r) === y.layer).sort((a, b) => a.frame_index0 - b.frame_index0).map((r) => r.key + "=" + r.source_key) })),
+        uploads: g.uploads, meta: g.meta, warnings: out.warnings }, null, 1) + LF);
       console.log("  초안을 썼다: " + dir + " (pending-draft.csv · monster_frames-draft.csv · fx-slots-draft.json)");
     }
     if (rest.includes("--write") && out.errors.length === 0) fs.writeFileSync(PENDING, toCsv(HEAD, rows));
-    report("[register_giant_visuals] intake-art 줄 " + rows.length + " · 문제 0 · 경고 " + out.warnings.length + (rest.includes("--write") ? " · 대기표에 씀" : ""), out, rest.includes("--strict"));
+    report("[register_giant_visuals] intake-canon 줄 " + rows.length + " · 문제 0 · 경고 " + out.warnings.length + (rest.includes("--write") ? " · 대기표에 씀" : ""), out, rest.includes("--strict"));
   }
   else if (cmd === "intake-fx") {
     // 아트 매니페스트 → 대기표 효과 줄 (기본은 보기만 · --write면 대기표에 씀 · --layers면 front/rear 층 줄도)
@@ -909,4 +956,4 @@ if (require.main === module) {
   }
   else { console.log("사용: plan --assets 폴더 | check [--manifest json] [--strict] | check-frames | fx-audit | intake-fx manifest [--fx nova] [--layers] [--write] | selftest | apply 업로드팩 [--dry] [--allow-partial]"); process.exit(2); }
 }
-module.exports = { check, checkAll, checkFrames, crossManifest, framesRows, framesDraft, fxStrings, intakeFx, intakeGreatsword, intakeShield, FX_SLOTS, FX_REF, parse, STATES, EXTRA_STATES, BODY_RULES, FX_RULES, FORMS, load };
+module.exports = { check, checkAll, checkFrames, crossManifest, framesRows, framesDraft, fxStrings, intakeFx, intakeCanon, crossMapping, FX_SLOTS, FX_REF, parse, STATES, EXTRA_STATES, BODY_RULES, FX_RULES, FORMS, load };
