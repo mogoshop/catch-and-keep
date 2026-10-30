@@ -57,7 +57,7 @@ _GameConst = {
   ScaleLevel = function(_, lv) return lv end,
   EntrySafeRadius = function() return math.min(8, math.max(6, math.min(cur.w, cur.h) * 0.4)) end,
 }
-_GameData = { inflowShare = 0.3, hordeChance = 0.06, packLeaderChance = 0.2, packMixChance = 0.35, packRadius = 1.4, packSpacing = 6, variantChance = 0.02,
+_GameData = { hordeChance = 0.06, packLeaderChance = 0.2, packMixChance = 0.35, packRadius = 1.4, packSpacing = 6, variantChance = 0.02,
   RollVariant = function() return "v" end, RollEliteVariant = function() return "" end,
   SourceOfModel = function(_, id) return mons[id] and mons[id].sourceId or id end,
   GetMonsterStats = function(_, src) for _, m in pairs(mons) do if m.sourceId == src then return { arch = m.archetype, behavior = m.behavior } end end return nil end,

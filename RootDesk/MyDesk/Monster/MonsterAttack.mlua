@@ -1,6 +1,11 @@
 -- 몬스터 공격 판정. 사거리 안의 가장 가까운 플레이어·그림자 하나를 일정 간격으로 친다 (이동은 AIChase/AIWander).
 -- 피해 = 기본 × (쇠약·수식어 배율). 플레이어 대상이면 물리 부분은 방어로, 속성 부분은 저항으로 줄인다.
 -- 보스 광역기는 Slam (단일 대상 제한 없음).
+-- 10-31 사용자 실플레이 「몹이 산만하게 앞뒤로 왔다갔다 — 올 거면 확실히 와라」 (갈래 A-3):
+--   추격 이력(UpdateChaseHold) — 네이티브 AIChase는 대상이 DetectionRange를 넘나들 때마다 추격↔멈춤을 바로 바꾼다(스크립트에 전환 줄이 없다).
+--   그래서 감지 범위를 이력으로 바꿔 쓴다: 감지(기본 DetectionRange) 안에 들면 추격 시작 → ChaseHoldSec 동안은 놓치지 않음(범위 ×LoseMul×1.5) →
+--   그 뒤 놓치는 거리 = 감지 ×LoseMul → 놓치면 WanderPauseSec 동안 멈췄다가 원래 동작으로. 떼·유입·보스 패턴·다른 곳이 범위를 바꾼 몬스터는 손대지 않는다.
+--   근접 간격(UpdateMeleeSpacing) — 공격 사거리(FindTarget과 같은 AttackRange+0.15) 안이면 멈춰서 공격만(물러나기·옆 비키기 없음), 자리 잡기는 사거리 밖에서만.
 @Component
 script MonsterAttack extends AttackComponent
 
@@ -23,7 +28,7 @@ script MonsterAttack extends AttackComponent
     property boolean SpacingControlled = false
     property number SpacingTimer = 0
     property number NeighborSpacing = 0.45
-    property integer SpacingMode = 0             -- 근접 간격: 0 유지 · 1 다가감 · -1 물러남 (폭을 넓게 두고 상태를 유지해 제자리 꿈틀거림을 없앤다, 10-10 QA)
+    property integer SpacingMode = 0             -- 근접 간격: 0 멈춤 · 1 다가감 (상태를 유지해 제자리 꿈틀거림을 없앤다, 10-10 QA · 10-31 A-3부터 물러남 -1 없음)
     property number SlamDamage = 0
     property string SlamElement = ""       -- 변종 기술 속성 (화염·냉기·번개·독). 그 판정 동안만 피해 전부가 이 속성
     property number ArrowSpeed = 7
@@ -60,6 +65,20 @@ script MonsterAttack extends AttackComponent
     property integer ArchSerial = 0
     property integer DashCount = 0            -- 덮치기·돌아 들어가기 횟수 (검증용)
     property integer StaggerCount = 0         -- 거구 강타로 휘청이게 한 횟수 (검증용)
+    property number ChaseHoldSec = 1.5        -- 10-31 A-3: 추격을 시작하면 최소 이 시간(초)은 놓치지 않는다
+    property number LoseMul = 1.4             -- 10-31 A-3: 놓치는 거리 = 감지 거리(기본 DetectionRange) × 이 값
+    property number WanderPauseSec = 0.6      -- 10-31 A-3: 놓친 뒤 원래 동작(배회)으로 돌아가기 전 멈춰 서는 시간(초)
+    property number ChaseCheckSec = 0.2       -- 추격 이력 판단 간격(초)
+    property integer ChaseState = 0           -- 추격 이력: 0 평소 · 1 추격 중 · 2 놓치고 멈춤 (MonsterSpawner.ChaseCounts가 1을 센다)
+    property number ChaseSince = 0
+    property boolean ChaseHeld = false        -- 추격 시작 뒤 ChaseHoldSec가 지났다 (범위를 감지×LoseMul로 내렸다)
+    property number ChasePauseUntil = 0
+    property number ChaseBaseDetect = 0       -- 처음 본 DetectionRange (모델 기본 감지 거리)
+    property number ChaseWrote = 0            -- 마지막으로 이쪽이 쓴 DetectionRange (다르면 다른 곳이 바꾼 것 → 손 뗀다)
+    property boolean ChaseExternal = false    -- 떼·유입·길 위 사건 등 다른 곳이 감지 범위를 정한 몬스터
+    property boolean ChasePaused = false      -- 놓친 뒤 멈춤으로 이쪽이 추적을 껐다
+    property number ChaseTimer = 0
+    property integer ChaseLoseCount = 0       -- 놓친 횟수 (검증용)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -174,6 +193,7 @@ script MonsterAttack extends AttackComponent
         if behavior ~= nil and not behavior:CanBeginAttack() then self.SpacingControlled = false return end
         self.CooldownTimer = self.CooldownTimer - delta
         self.ScanTimer = self.ScanTimer - delta
+        self:UpdateChaseHold(delta)
         if _UtilLogic.ElapsedSeconds < self.AttackAnimationUntil then return end
         if self:TryArchMove() then return end
         self:UpdateMeleeSpacing(delta)
@@ -320,18 +340,20 @@ script MonsterAttack extends AttackComponent
         local to = _Util:Pos2(target) - p
         local distance = to:Magnitude()
         local radial = distance > 0.01 and to:Normalize() or Vector2(1, 0)
-        local wanted = math.max(0.55, math.min(1.1, self.AttackRange * 0.9))
-        -- 다가가기는 사거리 + 0.18 밖에서 시작해 사거리에 닿을 때까지, 물러나기는 사거리 − 0.28 안에서 시작해 거의 사거리까지
-        -- (예전: ±0.04~0.08 폭을 0.1초마다 다시 판단해 다가감·물러남을 반복했다 — 메이커 측정 8초에 방향 반전 9번)
-        if self.SpacingMode == 1 and distance <= wanted then self.SpacingMode = 0
-        elseif self.SpacingMode == -1 and distance >= wanted - 0.05 then self.SpacingMode = 0 end
-        if self.SpacingMode == 0 then
-            if distance > wanted + 0.18 then self.SpacingMode = 1
-            elseif distance < wanted - 0.28 then self.SpacingMode = -1 end
+        -- 10-31 A-3: 사거리(FindTarget과 같은 AttackRange + 0.15) 안이면 멈춰서 공격만 — 물러나기(-1)·옆 비키기 없음.
+        --   다가가기는 사거리 밖에서 시작해 사거리 − 0.1까지 (예전: 사거리 안쪽 wanted ± 폭으로 다가감·물러남 · 겹치면 옆으로 비켜 앞뒤·좌우로 흔들렸다)
+        local mode = self:SpacingDecide(distance)
+        if mode == 0 then
+            local behaviorStop = self.Entity:GetComponent("script.MonsterBehavior")
+            if behaviorStop ~= nil then behaviorStop:DriveMotion(Vector2(0, 0))
+            else
+                self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+                local stopState = self.Entity.StateComponent
+                if isvalid(stopState) and stopState.CurrentStateName == "MOVE" then stopState:ChangeState("IDLE") end
+            end
+            return
         end
-        local direction = Vector2(0, 0)
-        if self.SpacingMode == 1 then direction = radial
-        elseif self.SpacingMode == -1 then direction = radial * -1 end
+        local direction = radial
         local push = Vector2(0, 0)
         for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, p, self.NeighborSpacing)) do
             if m.Entity ~= self.Entity then
@@ -358,6 +380,131 @@ script MonsterAttack extends AttackComponent
             if isvalid(state) and state.CurrentStateName ~= nextState then state:ChangeState(nextState) end
             if math.abs(direction.x) > 0.05 then _Util:SetFlipX(self.Entity, direction.x > 0) end
         end
+    end
+
+    method integer SpacingDecide(number distance)
+        -- 근접 간격 판단 (10-31 A-3): 1 다가감 · 0 멈춤. 물러남(-1)은 쓰지 않는다 (엔진 호출 없음 · tests/quality/chase_pet.lua)
+        --   reach = AttackRange + 0.15 (FindTarget과 같음). 다가가던 중이면 reach − 0.1에 닿을 때 멈추고, 멈춘 뒤로는 reach를 벗어나야 다시 다가간다
+        local reach = self.AttackRange + 0.15
+        if self.SpacingMode == 1 and distance <= reach - 0.1 then self.SpacingMode = 0 end
+        if self.SpacingMode ~= 1 then
+            if distance > reach then self.SpacingMode = 1 else self.SpacingMode = 0 end
+        end
+        return self.SpacingMode
+    end
+
+    @ExecSpace("ServerOnly")
+    method void UpdateChaseHold(number delta)
+        -- 추격 이력 (10-31 A-3). ChaseCheckSec마다 가장 가까운 산 플레이어 거리로 ChaseDecide → 감지 범위·멈춤 적용
+        self.ChaseTimer = self.ChaseTimer - delta
+        if self.ChaseTimer > 0 then return end
+        self.ChaseTimer = self.ChaseCheckSec
+        if self.ChaseExternal then return end
+        local chase = self.Entity.AIChaseComponent
+        if not isvalid(chase) then return end
+        local body = self:Body()
+        if body == nil or body.Horde or body.Inflow or self.Entity:GetComponent("script.BossPattern") ~= nil then
+            self.ChaseExternal = true
+            return
+        end
+        if self.ChaseBaseDetect <= 0 then self.ChaseBaseDetect = chase.DetectionRange end
+        -- 다른 곳(떼·유입·길 위 사건 = raidHordeDetect)이 범위를 바꿨으면 손 뗀다
+        if self.ChaseBaseDetect >= 8 or (self.ChaseWrote > 0 and math.abs(chase.DetectionRange - self.ChaseWrote) > 0.01) then
+            self.ChaseExternal = true
+            self.ChaseState = 0
+            if self.ChasePaused then self:ResumeChase() end
+            return
+        end
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local pos = _Util:Pos2(self.Entity)
+        local d = 999
+        for _, u in ipairs(_Util:PlayersNear(map, pos, self.ChaseBaseDetect * self.LoseMul * 1.5 + 0.5)) do
+            if self:IsLiveDefender(u) then d = math.min(d, (_Util:Pos2(u) - pos):Magnitude()) end
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        local act = self:ChaseDecide(d, now)
+        if act == "engage" then
+            if self.ChasePaused then self:ResumeChase() end
+            self:WriteDetect(chase, self.ChaseBaseDetect * self.LoseMul * 1.5)
+        elseif act == "settle" then
+            self:WriteDetect(chase, self.ChaseBaseDetect * self.LoseMul)
+        elseif act == "lose" then
+            self:WriteDetect(chase, self.ChaseBaseDetect)
+            self.ChaseLoseCount = self.ChaseLoseCount + 1
+            if chase.Enable and not self.SpacingControlled and now >= self.AttackAnimationUntil then
+                chase.Enable = false
+                self.ChasePaused = true
+                self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
+                local state = self.Entity.StateComponent
+                if isvalid(state) and state.CurrentStateName == "MOVE" then state:ChangeState("IDLE") end
+            end
+            log(string.format("[VRF] chase lose id=%s d=%.1f lose=%.1f held=%.1f pause=%.1f n=%d", self.Entity.Name, d, self.ChaseBaseDetect * self.LoseMul, now - self.ChaseSince, self.WanderPauseSec, self.ChaseLoseCount))
+        elseif act == "resume" then
+            if self.ChasePaused then self:ResumeChase() end
+        end
+    end
+
+    method string ChaseDecide(number d, number now)
+        -- 추격 이력 상태 기계 (엔진 호출 없음 · tests/quality/chase_pet.lua). d = 가장 가까운 산 플레이어 거리(없으면 999)
+        --   0 평소 → d ≤ 감지이면 engage(1) · 1 추격 중 → ChaseHoldSec 전에는 놓치지 않음, 지나면 settle(범위 감지×LoseMul)
+        --   → d > 감지×LoseMul이면 lose(2, WanderPauseSec 멈춤) · 2 멈춤 → 다시 감지 안이면 engage, 시간이 지나면 resume(0)
+        local base = self.ChaseBaseDetect
+        if self.ChaseState == 1 then
+            local held = now - self.ChaseSince >= self.ChaseHoldSec
+            if not held then return "" end
+            if d > base * self.LoseMul then
+                self.ChaseState = 2
+                self.ChaseHeld = false
+                self.ChasePauseUntil = now + self.WanderPauseSec
+                return "lose"
+            end
+            if not self.ChaseHeld then
+                self.ChaseHeld = true
+                return "settle"
+            end
+            return ""
+        end
+        if d <= base then
+            self.ChaseState = 1
+            self.ChaseSince = now
+            self.ChaseHeld = false
+            return "engage"
+        end
+        if self.ChaseState == 2 and now >= self.ChasePauseUntil then
+            self.ChaseState = 0
+            return "resume"
+        end
+        return ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WriteDetect(AIChaseComponent chase, number range)
+        chase.DetectionRange = range
+        self.ChaseWrote = chase.DetectionRange
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResumeChase()
+        -- 놓친 뒤 멈춤을 끝낸다: 이쪽이 끈 추적만 다시 켠다 (특수 행동·간격 조절이 맡은 동안은 그쪽 규칙)
+        self.ChasePaused = false
+        local chase = self.Entity.AIChaseComponent
+        if not isvalid(chase) then return end
+        local behavior = self.Entity:GetComponent("script.MonsterBehavior")
+        if behavior ~= nil then behavior:ResumeMovement()
+        elseif not self.SpacingControlled and _UtilLogic.ElapsedSeconds >= self.AttackAnimationUntil then chase.Enable = true end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ResetChaseHold()
+        -- 리스폰: 추격 이력을 처음으로 (이쪽이 바꾼 감지 범위도 되돌린다)
+        local chase = self.Entity.AIChaseComponent
+        if isvalid(chase) and not self.ChaseExternal and self.ChaseBaseDetect > 0 and self.ChaseWrote > 0 then self:WriteDetect(chase, self.ChaseBaseDetect) end
+        self.ChaseState = 0
+        self.ChaseHeld = false
+        self.ChasePaused = false
+        self.ChasePauseUntil = 0
+        self.ChaseTimer = 0
     end
 
     @ExecSpace("ServerOnly")
