@@ -333,6 +333,13 @@ script SkillWindow extends Logic
         local statW = isvalid(statE) and statE.UITransformComponent.RectSize.x or 494
         local stat = self:WrapLines(self:StatLine(book, st, detailId), statW - 6, statT)
         _UIKit:SetText(ws .. "/Stat", stat)
+        -- 편성 줄: 랭크 점 줄과 떨어진 오른쪽 아래 칸 (S48-UI-DETAIL-PIPS-01) — 같은 「 · 」 경계 접기 · 글은 줄이지 않는다
+        local rosterE = _UIKit:Get(ws .. "/Roster")
+        local rosterT = isvalid(rosterE) and rosterE.TextGUIRendererComponent or nil
+        local rosterW = isvalid(rosterE) and rosterE.UITransformComponent.RectSize.x or 474
+        local roster = self:WrapLines(self:RosterText(book, detailId), rosterW - 6, rosterT)
+        _UIKit:SetText(ws .. "/Roster", roster)
+        if roster ~= "" and not Environment:IsPublishedPlay() then log(string.format("[VRF] skill roster %s lines=%d w=%d", detailId, self:LineCount(roster), math.floor(rosterW))) end
         if not Environment:IsPublishedPlay() then log(string.format("[VRF] skill stat %s lines=%d w=%d", detailId, self:LineCount(stat), math.floor(statW))) end
         -- 랭크 사다리 20칸: 찍음(금) · 지금 상한까지(밝은 빈칸) · 상한 밖(어둠)
         -- 랭크 점 3상태 (코덱스 skill-window-v3): 찍음 · 지금 상한까지 빈칸 · 상한 밖(잠긴 점) — 최대 랭크 밖은 감춘다
@@ -706,10 +713,17 @@ script SkillWindow extends Logic
         end
         if gear > 0 then cost = cost .. _UIKit:Colored("#7CFF7A", "추가 랭크 +" .. tostring(gear)) end
         if cost ~= "" then line = line .. (line ~= "" and "\n" or "") .. cost end
-        -- 해골 일으키기·변이·증원: 지금 편성과 다음 소환 (I03 · SkillBook.RosterLine)
-        local roster = book:RosterLine(id)
-        if roster ~= "" then line = line .. (line ~= "" and "\n" or "") .. _UIKit:Colored("#C9BFA8", roster) end
+        -- 편성 줄(해골 일으키기·변이·증원)은 이 칸에서 빼 WS/Roster에 따로 쓴다 (S48-UI-DETAIL-PIPS-01 — RosterText)
         return line
+    end
+
+    method string RosterText(SkillBook book, string id)
+        -- 해골 일으키기·변이·증원: 지금 편성과 다음 소환 (I03 · SkillBook.RosterLine) — 편성 경고(「희망 중 n기는 …」)까지 그대로.
+        --   S48-UI-DETAIL-PIPS-01 (10-30): 효과 칸(WS/Stat)에 붙이면 6~7줄이 되어 크기 맞춤 하한(13)에서도 칸을 넘쳐 랭크 점 줄과 겹쳤다 →
+        --   오른쪽 강화 트리 아래 빈 줄 WS/Roster (해골 전사·마법사 트리는 노드가 둘째 줄까지라 판 아래가 비고, 편성 조작 칸 WS/Form 바로 왼쪽)
+        local roster = book:RosterLine(id)
+        if roster == "" then return "" end
+        return _UIKit:Colored("#C9BFA8", roster)
     end
 
     method string DropHintDup(string id, string summary, string hint)

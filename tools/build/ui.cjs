@@ -460,6 +460,17 @@ function buildGameHud() {
     k.btn(`${f}/Plus`, "+", { anchor: "top-left", pivot: [0, 1], pos: [btnW + T.SPACE, -(headH + T.BUTTON.h + 2 * gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
     b.patch(f, { enable: false });
   }
+  // S48-UI-DETAIL-PIPS-01 (10-30) 편성 줄 WS/Roster (컨트롤러 SkillWindow.RosterText): 효과 칸(WS/Stat)에 붙어 있으면 6~7줄이 크기 맞춤 하한 13에서도 칸을 넘쳐
+  //   랭크 점 줄(-280)을 덮었다 → 강화 트리 아래 빈 줄로 옮긴다. 편성 줄은 해골 전사·해골 마법사 트리에서만 나오고 그 트리 노드는 둘째 줄(바닥 -298)까지라 판 아래가 빈다.
+  //   자리 = 뼈 의식 깃발 줄(WS/Banner)과 같은 x 560 · y -304 (깃발은 뼈 의식 트리에서만 · 둘이 한 화면에 같이 나오지 않는다), 오른쪽 끝 = 편성 조작 칸 WS/Form 왼쪽 − SPACE, 아래 = 판 안쪽
+  {
+    const T = require("./ui-tokens.cjs");
+    const colX = (i) => 680 + (i - 1) * 104;
+    const left = 560, top = -304;
+    const right = colX(5) - 50 - T.SPACE;              // WS/Form 왼쪽(열 5 노드 왼쪽 끝) − SPACE
+    const bottom = -(452 - SP);                         // 판 안쪽 아래
+    b.text(`${ws}/Roster`, "", { size: 16, color: "#C9BFA8", anchor: "top-left", pivot: [0, 1], pos: [left, top], rect_size: [right - left, top - bottom], alignment: 0, bestfit: true, min_size: 13, max_size: 16, ...outline });
+  }
   // 46-6 거인 깃발 줄 (뼈 의식 공방에서만 · 컨트롤러 SkillWindow.RenderBanner): 「동률이면」 + 칸 6 (방패 · 대검 · 쌍칼 · 마법사 · 기본 · 안 고름 — fallback 순서 §10-2)
   //   자리: 뼈 의식 노드 판은 폭탄 1·3·5 + 거인 10·14~20 = 5열 · 둘째 줄까지(바닥 −298)라 그 아래 판 안쪽까지 빈다. 칸 = 터치 88 이상 (BUTTON.h)
   //   누르면 깃발을 바꾸고(SkillBook.RequestRiteBanner) 그 거인의 강화 노드를 펼친다. 고른 칸 금테

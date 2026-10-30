@@ -3,7 +3,7 @@
 -- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
 -- @source HudMain UI/Hud/HudMain.mlua GiantCountsLine,GiantShort
@@ -131,6 +131,7 @@ local function plain(s) return (string.gsub(s,'<[^<>]*>','')) end
 local statW=494-6
 local function lines(s) local t={} for l in string.gmatch(s..'\n','([^\n]*)\n') do table.insert(t,l) end return t end
 local worst,worstId=0,''
+local worstSM,worstSMId=0,''   -- S48-UI-DETAIL-PIPS-01 해골 전사·마법사 (관찰된 겹침 범위)
 for _,id in ipairs(_SkillData:Mains()) do
  local def=_SkillData:Get(id)
  for _,L in ipairs({1,20,50,99}) do
@@ -156,6 +157,7 @@ for _,id in ipairs(_SkillData:Mains()) do
       if string.find(l,'마나 ',1,true) then assert(_UIKit:TextWidth(l,17)<=statW,'cost line must fit one line '..id..': '..l) end
      end
      if #ls>worst then worst,worstId=#ls,id..'@'..L..'/'..lv..'+'..b end
+     if (id=='raise_skeleton' or id=='raise_mage') and #ls>worstSM then worstSM,worstSMId=#ls,id..'@'..L..'/'..lv..'+'..b end
     end
    end
   end
@@ -174,7 +176,9 @@ local long='다음 랭크: '..string.rep('뼛조각 ',40)..'끝'
 local lw=SkillWindow:WrapLine(long,statW,nil)
 assert(string.gsub(lw,'\n  ',' ')==long and not string.find(lw,'[^ ]\n[^ ]'),lw)
 for _,l in ipairs(lines(lw)) do assert(_UIKit:TextWidth(l,17)<=statW,l) end
-print('[quality/skills] OBS-01 stat wrap: '..'worst '..worst..' lines ('..worstId..'), cost line separate, breaks only at separators')
+-- S48-UI-DETAIL-PIPS-01: 편성 줄을 뺀 효과 칸은 크기 맞춤 하한 13px(줄 높이 1.48배)에서도 칸 94 + 큰 랭크 점까지 틈 3 안 — 점 줄을 덮지 않는다
+assert(worstSM*13*1.48<=94+3,'stat box overflows onto rank pips: '..worstSM..' lines ('..worstSMId..')')
+print('[quality/skills] OBS-01 stat wrap: '..'worst '..worst..' lines ('..worstId..') · skeleton/mage worst '..worstSM..' ('..worstSMId..', 13px '..string.format('%.1f',worstSM*13*1.48)..' ≤ 97), cost line separate, breaks only at separators')
 -- QR1629-OBS-02 (iPad 시간선): 모바일은 한 열 2칸까지 — 셋인 레벨(Lv18)은 같은 레벨의 이어진 열로. 해금 순서·칸 수 그대로
 local logical=SkillWindow:BuildColumns()
 local split=SkillWindow:SplitColumns(logical,SkillWindow.MobileRows)
@@ -448,7 +452,8 @@ do
  local head=values['SkillWin/WS/Form/Head']
  assert(en['SkillWin/WS/Form']==true and head=='대검 희망 1/3' and values['SkillWin/WS/Form/Mode']=='자동으로 되돌리기' and en['SkillWin/WS/Form/Plus']==true and en['SkillWin/WS/Form/Minus']==true,'form node '..tostring(head))
  assert(SkillWindow.FormKind=='skeleton' and SkillWindow.FormForm=='greatsword')
- assert(string.find(values['SkillWin/WS/Stat'],'직접 편성',1,true),values['SkillWin/WS/Stat'])
+ -- S48-UI-DETAIL-PIPS-01: 편성 줄은 효과 칸이 아니라 WS/Roster (랭크 점 줄과 떨어진 칸)
+ assert(string.find(values['SkillWin/WS/Roster'],'직접 편성',1,true) and not string.find(values['SkillWin/WS/Stat'],'편성',1,true),values['SkillWin/WS/Roster'])
  SkillWindow.Selected='raise_skeleton'
  values={}
  SkillWindow:RenderWorkshop(book,stats)
@@ -685,6 +690,29 @@ do
  cmdG.GiantKind=''
  assert(book:GiantCount()==0 and not book:GiantStanding(),'client none')
  entity.GetComponent=keepGet2;UndeadSystem.IsServer=keepUS
+ -- S48-UI-DETAIL-PIPS-01: 편성 줄은 WS/Roster에만 · 효과 칸에는 없음 · 경고까지 그대로 · 칸(474×112)에 13px로도 들어감
+ do
+  local keepGet3=entity.GetComponent
+  local cmdR={UndeadRoster='s:greatsword,s:twin,s:|0'}
+  entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdR end return keepGet3(self,key) end
+  local keepHope=book.FormHope
+  for _,c in ipairs({{'raise_skeleton',{raise_skeleton=3,skel_greatsword=1,skel_twin=1},'s:d:greatsword=3,twin=3'},{'raise_mage',{raise_mage=10},''},{'skel_twin',{raise_skeleton=7,skel_legion=2,skel_greatsword=3,skel_twin=3},'s:d:greatsword=3,twin=3'}}) do
+   book.Levels=c[2];book.FormHope=c[3];values={}
+   SkillWindow.SelMain=(c[1]=='raise_mage') and 'raise_mage' or 'raise_skeleton';SkillWindow.Selected=c[1]
+   SkillWindow:RenderWorkshop(book,stats)
+   local full=book:RosterLine(c[1])
+   local shown=values['SkillWin/WS/Roster'] or ''
+   assert(full~='' and string.find(plain(shown),'편성',1,true),'roster missing '..c[1]..': '..shown)
+   assert(not string.find(values['SkillWin/WS/Stat'] or '','편성',1,true),'roster still in stat box '..c[1])
+   local back=string.gsub(string.gsub(plain(shown),'\n  · ',' · '),'\n  ',' ')
+   assert(back==full,'roster text changed '..c[1]..'\n'..full..'\n--\n'..shown)
+   local n=#lines(shown)
+   assert(n*13*1.48<=112,'roster box overflow '..c[1]..' '..n)
+   rosterLog=(rosterLog or '')..c[1]..' '..n..'줄 · '
+  end
+  book.FormHope=keepHope;entity.GetComponent=keepGet3
+  print('[quality/skills] S48-UI-DETAIL-PIPS-01 roster line in WS/Roster only (text intact · fits 474×112 at 13px): '..rosterLog)
+ end
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
  print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
