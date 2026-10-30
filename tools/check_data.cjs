@@ -473,7 +473,36 @@ for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
     const o = Object.fromEntries((mage.s2Opts || "").split(";").filter(Boolean).map((x) => x.split("=")));
     const cap = Number(o.radiusMax), base = Number(o.radius);
     if (mage.s2 === "meteor" && !(cap > 0 && base > 0 && base <= cap && cap <= 2)) err("rite_giants", null, `48-0 (리뷰 정정): 기도 메테오 반경 radius ${o.radius} · radiusMax ${o.radiusMax} — 상한 2.0 이하`);
+    // 48 V2 (10-30 사용자 영상 피드백): 화염 노바 = 한 번에 터지는 단발 폭발 · 반경 2.5 → 3.75(+50% · 상한) · 「폭발 증폭」 단발 ×novaAmpMul(1~1.5 · 예전 ×1+×0.5 합) · 둘째 파동(ring) 금지
+    const n = Object.fromEntries((mage.s1Opts || "").split(";").filter(Boolean).map((x) => x.split("=")));
+    if (mage.s1 === "nova") {
+      if (!(Number(mage.s1Radius) > 0 && Number(mage.s1Radius) <= 3.75)) err("rite_giants", null, `48 V2: 화염 노바 반경 s1Radius ${mage.s1Radius} — 0 초과 3.75 이하 (2.5의 1.5배가 상한)`);
+      if (!(Number(n.novaAmpMul) >= 1 && Number(n.novaAmpMul) <= 1.5)) err("rite_giants", null, `48 V2: s1Opts novaAmpMul '${n.novaAmpMul}' — 「폭발 증폭」 단발 계수 1~1.5 (예전 두 겹 ×1+×0.5 합을 넘지 않음)`);
+      if (n.ring !== undefined) err("rite_giants", null, "48 V2: s1Opts ring — 노바는 단발 폭발 (0.4초 뒤 둘째 파동 금지)");
+    }
   }
+  // 48 V2: giant_mage_pull(옛 id 유지 · 투자 그대로) = 「폭발 증폭」 — 실제 흡인·둘째 고리는 없으니 글귀에도 남기지 않는다
+  const pull = T.skills.find((r) => r.id === "giant_mage_pull");
+  if (!pull || pull.name !== "폭발 증폭") err("skills", null, "48 V2: giant_mage_pull 이름은 「폭발 증폭」");
+  for (const [i, r] of T.skills.entries()) {
+    if (/두 겹 고리/.test(r.name + " " + r.desc)) err("skills", i, `48 V2: 「두 겹 고리」는 「폭발 증폭」으로 바뀜 (${r.id})`);
+    if ((r.id === "giant_mage_pull" || r.id === "giant_mage_resist") && /흡인|끌어|두 겹|한 번 더|0\.4초 뒤/.test(r.desc)) err("skills", i, `48 V2: ${r.id} 설명에 흡인·둘째 파동 글귀 (노바는 단발)`);
+  }
+}
+
+// ── 몬스터 프레임 (monster_frames.csv): 장 수 = 시간 수 · 양수 시간 · loop true/false · impact(타격 칸 = hitFrame, 0부터) 범위 ──
+//   거인 form_giant_* 줄은 tools/register_giant_visuals.cjs 검증표(기본 V4 canon 150 · 기술 몸 구 납품 + 48 V2 새 범위 · V2 묶음은 impact 필수)
+{
+  T.monster_frames.forEach((r, i) => {
+    if (r.clip) return;
+    const f = r.frames ? r.frames.split(";") : [], d = r.delays ? r.delays.split(";") : [];
+    if (f.length === 0 || f.length !== d.length) err("monster_frames", i, `${r.monster} ${r.state}: 장 ${f.length} · 시간 ${d.length} — 같은 수여야 함`);
+    if (d.some((x) => !(Number(x) > 0))) err("monster_frames", i, `${r.monster} ${r.state}: 시간은 양수`);
+    if (r.loop !== "true" && r.loop !== "false") err("monster_frames", i, `${r.monster} ${r.state}: loop '${r.loop}'`);
+    if (r.impact !== "" && r.impact !== undefined && !(Number.isInteger(Number(r.impact)) && Number(r.impact) >= 0 && Number(r.impact) < f.length)) err("monster_frames", i, `${r.monster} ${r.state}: impact ${r.impact} — 0~${f.length - 1}`);
+  });
+  const { checkFrames } = require("./register_giant_visuals.cjs");
+  for (const e of checkFrames(T.monster_frames).errors) err("monster_frames", null, "거인 " + e);
 }
 
 // ── 택일 묶음 (46-5 · skill_choices.csv · 44 결정 5 「둘 중 하나」) ──
