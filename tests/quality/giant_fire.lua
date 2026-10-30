@@ -2,7 +2,7 @@
 --   (giant_skills의 스칼라 저항 대역은 Monster:GetResist(element)를 안 거쳐 증거가 아님 — 이 묶음이 그 자리)
 --   FIRE-01 원소 붕괴 노드: 노바·메테오 명중 → 화염 저항만 -15 · 4초 · 저항 붕괴 10과 겹치면 화염 15(25 아님) · 냉기·마법 10 · 만료 복원
 --   FIRE-02 마법사 거인 평타 구슬·자리 폭발 = 몸 속성과 무관하게 fire · 갈라진 뒤 원래 속성 · 보통 마법사·다른 공격은 원래 속성
---   FIRE-03 skill.giant_nova · giant_nova2 · giant_meteor = fire · 기존 캐릭터·다른 거인 기술 속성 그대로
+--   FIRE-03 skill.giant_nova · giant_meteor = fire (48 연출 V2: 노바 단일 폭발 · 둘째 파동 giant_nova2 경로 삭제) · 기존 캐릭터·다른 거인 기술 속성 그대로
 -- @source Monster Monster/Monster.mlua GetResist
 -- @source MonsterStatus Monster/MonsterStatus.mlua ResistBreak,ResistBreakFor,ApplyFireBreak,AuraAmount
 -- @source PlayerAttack Combat/PlayerAttack.mlua SkillElement
@@ -74,7 +74,9 @@ do
 end
 -- FIRE-03 새 화염 기술 속성
 do
- for _,info in ipairs({'skill.giant_nova','skill.giant_nova2','skill.giant_meteor'}) do ok(PlayerAttack:SkillElement(info)=='fire','giant_fire_skill_element: '..info..' = fire') end
+ for _,info in ipairs({'skill.giant_nova','skill.giant_meteor'}) do ok(PlayerAttack:SkillElement(info)=='fire','giant_fire_skill_element: '..info..' = fire') end
+ local fr=io.open('RootDesk/MyDesk/Undead/RiteGiantMoves.mlua') local rg=fr:read('a') fr:close()
+ ok(rg:find('giant_nova2',1,true)==nil and select(2,rg:gsub('"skill.giant_nova"',''))==1,'노바 단일 폭발: 화염 정보 skill.giant_nova 한 곳 · nova2 경로 없음')
  ok(PlayerAttack:SkillElement('skill.hex_flame')=='fire' and PlayerAttack:SkillElement('skill.frost_soul')=='cold' and PlayerAttack:SkillElement('skill.bone_spear')=='magic','기존 캐릭터 기술 속성 그대로')
  for _,info in ipairs({'skill.giant_spin','skill.giant_slam','skill.giant_rift','skill.giant_dash','skill.giant_flurry'}) do ok(PlayerAttack:SkillElement(info)=='magic','다른 거인 기술 그대로 magic: '..info) end
 end
