@@ -24,6 +24,8 @@ const must = [
   [MS, /local of = unit\.OwnerFacing/, "대형 방향을 서버 값(OwnerFacing)이 아닌 클라이언트 추측으로 쓴다 → 주인 위에 뭉친다"],
   [MS, /r\.visSignWant = want/, "좌우를 대역 값으로 정하지 않는다 (루트 Scale을 쓰면 서버가 바꿀 때마다 뒤집힌다)"],
   [MS, /method any OwnerState\(Entity owner, number delta\)/, "주인별 화면 위치·속도 추적이 빠졌다 → 파티원 소환수가 직접 따라가기를 못 한다"],
+  [MS, /if r\.flipT < 0\.15 then want = cur else r\.flipT = 0/, "좌우는 0.15초 유지된 뒤 돌고, 돈 프레임에만 유지 시간을 0으로 (10-30)"],
+  [MS, /if unit\.CommandState == "attack" then\s+instant = true/, "공격 중 소환수 좌우를 서버 전투 방향으로 바로 쓰지 않는다 → 등지고 공격 (10-30)"],
   [MS, /r\.flipT < 0\.15/, "좌우 뒤집기 유지 시간(0.15초)이 빠졌다 → 좌우가 깜빡인다"],
   [SU, /@Sync\s+property Vector2 OwnerFacing/, "OwnerFacing 동기화가 빠졌다 → 클라이언트 대형 방향이 서버와 어긋난다"],
   [SU, /@Sync\s+property integer FormationIndex/, "FormationIndex 동기화가 빠졌다 → 클라이언트가 대형 자리를 계산 못 한다"],
@@ -47,6 +49,7 @@ const mustNot = [
   [MS, /SpawnByModelId\("artsprite", "MSVis", [^\n]*,\s*e\)/, "대역을 서버 개체(루트)의 자식으로 만든다 → 서버 갱신마다 끌려가 껌뻑인다"],
   [MS, /unit\.OwnerPlayer ~= me then return end/, "직접 따라가기를 내 소환수로만 제한한다 → 파티원 소환수가 다시 띄엄띄엄 그려진다"],
   [MS, /SpriteRUID = ""/, "artsprite 그림을 \"\"로 비운다 → 지워지지 않고 기본 모래 바닥이 보인다"],
+  [MS, /if want == cur then r\.flipT = 0 end/, "좌우 유지 시간을 바꾸지 않기로 한 같은 프레임에 0으로 되돌린다 → 0.15초가 안 쌓여 좌우가 고정 (10-30 뒤 보며 걷기·등지고 공격)"],
   [SU, /moved:Magnitude\(\) > 0\.015/, "평활한 주인 위치 이동량으로 대형 방향을 정한다 → 멈출 때 180° 돈다"],
 ];
 
