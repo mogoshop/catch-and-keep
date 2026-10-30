@@ -114,6 +114,9 @@ do
  local laps=0 for _,p in ipairs(front) do if p.ruid=='f1' then laps=laps+1 end end
  ok(laps==4,'f1이 4번 = 4바퀴 (한 바퀴 = 타격 간격 0.4초)')
  ok(near(front[17].at-front[1].at,0.4,TICK+1e-9),'두 번째 바퀴 시작 = 0.4초 ±1화면')
+ ok(near(front[49].at-front[1].at,1.2,TICK+1e-9),'네 번째 바퀴 시작 = 1.2초 ±1화면 (25ms 장이 60Hz에서 길어지지 않음 · 30fps 상한 없음)')
+ local pl=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx play kind=spin_front',1,true) then pl=x end end
+ ok(pl~=nil and near(tonumber(pl:match('elapsed=([%d%.]+)')),1.6,TICK+1e-9),'회전 앞 층 전체 1.6초 ±1화면 · '..tostring(pl))
  ok(front[#front].pos.x>front[1].pos.x+1,'걷는 몸을 따라감 '..front[1].pos.x..'→'..front[#front].pos.x)
  local flat=true for _,p in ipairs(plays) do if p.angle~=0 or p.scale.y<=0 or p.scale.x<=0 or p.opt.FlipX then flat=false end end
  ok(flat,'통째 회전·상하 뒤집기 없음 (angle 0 · 배율 양수 · FlipX 없음)')

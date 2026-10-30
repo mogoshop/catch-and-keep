@@ -149,7 +149,8 @@ script RiteGiantMoves extends Logic
             local hitsN = math.floor(opt.hits or 4) + self:NodeOf(unit, "giant_gs_spin")
             local gap = opt.gap or 0.4
             local radius = self:S1Radius(unit, spec)
-            local dur = gap * hitsN
+            local first = self:BodyImpactSec(unit, "skill1", 0)   -- 첫 타격 = 회전 몸 타격 칸 (skill1Hit · 지금 0) · 그 뒤 gap마다
+            local dur = first + gap * hitsN
             st.busyUntil = now + dur
             unit.GiantSlowUntil = now + dur
             self:Hold(unit, 0, dur)
@@ -164,7 +165,7 @@ script RiteGiantMoves extends Logic
                     if not isvalid(unit.Entity) or not unit.Giant or unit.Dead then return end
                     total = total + self:HitArea(unit, _Util:Pos2(unit.Entity), radius, "skill.giant_spin", dmg, 0, false)
                     if step == hitsN then self:LogSkill(unit, 1, total, dmg * hitsN, false, radius) end
-                end, gap * (i - 1))
+                end, first + gap * (i - 1))
             end
         elseif spec.s1 == "flurry" then
             -- 연속 베기: 한 대상 0.15초 간격 6번(+1/랭크) × 0.5 · 동작 = 평타 그림 반복(새 그림 없음 · 리뷰 가드)
@@ -197,7 +198,7 @@ script RiteGiantMoves extends Logic
             -- 화염 노바(마법사 · 저절로 · 48 연출 V2 10-30): 짧은 영창 0.3초(멈춤) → 거인 발밑에서 단일 폭발 하나 — 폭발 그림이 터지고 burst(0.18초) 뒤
             --   반경 3.75(s1Radius) 안 살아 있는 적을 한 번씩 · 밀침·흡인 없음. 「폭발 증폭」(id giant_mage_pull 그대로 · 예전 두 겹 고리 첫 ×1 + 둘째 ×0.5 명목 합) = 단발 × novaAmpMul 1.5 (미강화 ×1.0)
             --   둘째 파동·둘째 그림·지연 타격 없음 · 원소 붕괴(화염 -15 · 4초)는 맞은 뒤 · 기술 동안 평타 쉼은 예전 그대로(기본 0.8초 · 노드 1.2초 — 평타 횟수 불변)
-            local cast = opt.chant or 0.3
+            local cast = self:BodyImpactSec(unit, "skill1", opt.chant or 0.3)   -- 영창 = 몸 방출 칸(skill1Hit · 갈래 A) · 몸 그림이 없으면 표 chant 0.3
             local burst = opt.burst or 0.18
             local recover = opt.recover or opt.grow or 0.5   -- 폭발 뒤 몸 회복 (옛 퍼짐 시간 grow 0.5 — 평타 쉼·몸 그림 길이 보존)
             local radius = self:S1Radius(unit, spec)
@@ -357,7 +358,7 @@ script RiteGiantMoves extends Logic
         --   보이는 갈라짐과 맞는 적이 같게 토막마다 판정(한 적 한 번) · ×1.8 · ⓐ 3초 균열(0.5초마다 ×0.15 · 둔화) · ⓑ 끝난 뒤 0.4초 ±30° 두 줄(각 ×0.6)
         local opt = self:Opt(spec, "s2")
         local now = _UtilLogic.ElapsedSeconds
-        local plant = opt.plant or 0.3
+        local plant = self:BodyImpactSec(unit, "skill2", opt.plant or 0.3)   -- 꽂기 = 몸 강타 칸(skill2Hit · 갈래 A · 첫 토막·균열 그림이 이 순간) · 몸 그림이 없으면 표 plant 0.3
         local rise = opt.rise or 0.25
         local len = spec.s2Reach
         local width = opt.width or 1
@@ -368,8 +369,8 @@ script RiteGiantMoves extends Logic
         self:Hold(unit, plant + rise, plant + rise)
         unit:GiantPlay("skill2", plant + rise)
         self:LogCast(unit, 2, "rift", len, plant)
-        -- 48 연출 V2: 몸 그림 강타 칸(impact 열)과 첫 토막 시각(plant)이 같은지 [VRF]로 남긴다 (판정 시각은 표 값 plant 그대로 · 몸 그림 timing을 여기에 맞춘다)
-        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant sync s=rift body=%.3f plant=%.3f", self:BodyImpactSec(unit, "skill2", plant), plant)) end
+        -- 48 연출 V2: 첫 토막(판정·균열 그림) 시각 = 몸 강타 칸 skill2Hit (없으면 표 plant) — [VRF]로 표 값과 함께 남긴다
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant sync s=rift plant=%.3f table=%.3f", plant, opt.plant or 0.3)) end
         local hit = {}
         local hits = 0
         for k = 1, pieces do
@@ -500,32 +501,53 @@ script RiteGiantMoves extends Logic
     @ExecSpace("ServerOnly")
     method void Roar(ShadowUnit unit, integer pulled, number radius)
         -- 방패 거인 「도발 함성」(스킬 1 · ShadowUnit.TauntTick이 끌어당긴 뒤 부른다 · 도발 범위·시간·보스 제외 그대로 · 피해 0)
-        --   48 연출 V2: 함성 몸 그림(form_giant_shield skill1 · 8~12장)이 등록돼 있으면 몸이 방패를 세우고 포효한다 — 다른 기술·평타 동작 중이면 몸은 생략(끊지 않는다) ·
-        --   문양·방사 에너지 그림(FxGiantRoarSeq)은 몸 함성 칸(impact 열 · 없으면 바로)에 거인 몸을 따라 · 새 그림이 없으면 머리 위 작은 강철 고리(지금 그대로)
+        --   48 연출 V2: 몸은 ShadowUnit.GiantRoarBody(갈래 A · form_giant_shield roar 그림이 있을 때만 · 이 다음에 TauntTick이 부름)가 움직인다 — 여기서는 그림만.
+        --   문양·방사 에너지 그림(FxGiantRoarSeq)은 몸 시작 신호에 맞춘다: 몸이 걸릴 시각(RoarBodyStart · A와 같은 규칙)에 실제로 걸렸는지(CurrentClip = roar 첫 칸) 보고
+        --   그 시작 + 함성 칸(GiantLook.roarHit) 뒤에 거인 몸을 따라 · 몸이 생략되면 바로 · 새 그림이 없으면 머리 위 작은 강철 고리(지금 그대로)
         local fx = self:Fx(unit)
         local me = _Util:Pos2(unit.Entity)
-        local now = _UtilLogic.ElapsedSeconds
-        local look = unit.GiantLook
-        local body = look ~= nil and (look.skill1 or "") ~= "" and now >= unit.GiantClipUntil and now >= unit.AttackAnimationUntil
-        local delay = 0
-        if body then
-            unit:GiantPlay("skill1", 0)
-            delay = self:BodyImpactSec(unit, "skill1", 0)
-        end
+        local start = self:RoarBodyStart(unit)
         local v2 = fx ~= nil and (fx.FxGiantRoarSeq or "") ~= ""
         if fx ~= nil then
             if v2 then
                 local play = function()
                     if isvalid(unit.Entity) and unit.Giant and not unit.Dead then fx:GiantMoveFxOn("roar", unit.Entity, Vector3(0, 0, 0), self:Facing(unit, unit.Target), radius * 2, radius * 2, 0, 0.6) end
                 end
-                if delay > 0 then _TimerService:SetTimerOnce(play, delay) else play() end
+                if start < 0 then
+                    play()   -- 몸을 걸 수 없음(그림 없음 · 기술·갈라짐 중 · 평타 0.6초 넘게 남음) → 그림만 바로 (지금 규칙)
+                else
+                    -- 몸 시작 신호에 맞춘다: A GiantRoarBody가 걸 시각(start · 0이면 이 함수 바로 뒤 같은 TauntTick)에 함성 몸 첫 칸(CurrentClip = GiantLook.roar)이 걸렸는지 확인하고
+                    --   걸렸으면 그 시작 + 함성 칸(roarHit) 뒤 · 그 사이 다른 기술이 끼어 몸이 안 걸렸으면 그림만 바로 (몸 없이 그림이 먼저 나오지 않게)
+                    local expect = _UtilLogic.ElapsedSeconds + start
+                    _TimerService:SetTimerOnce(function()
+                        if not isvalid(unit.Entity) or not unit.Giant or unit.Dead then return end
+                        local began = unit.CurrentClip == (unit.GiantLook.roar or "#") and _UtilLogic.ElapsedSeconds <= unit.GiantClipUntil   -- 함성 몸 첫 칸이 걸려 있음 = A GiantPlay("roar")
+                        local wait = 0
+                        if began then wait = math.max(0, expect + self:BodyImpactSec(unit, "roar", 0) - _UtilLogic.ElapsedSeconds) end
+                        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant roar sync body_started=%s fx_in=%.3f", tostring(began), wait)) end
+                        if wait > 0 then _TimerService:SetTimerOnce(play, wait) else play() end
+                    end, start + 0.02)   -- 한 화면 뒤 확인: 같은 시각 타이머는 먼저 건 쪽(이 함수)이 먼저 돌아 A의 몸 걸기보다 앞설 수 있다
+                end
             else
                 fx:GiantMoveFx("roar", Vector3(me.x, me.y + 1.7, 0), 0.8, 0.8, 0, 0.5)
             end
         end
+        local delay = start >= 0 and (start + self:BodyImpactSec(unit, "roar", 0)) or 0
         self:LogCast(unit, 1, "roar", radius, 0)
-        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant roar body=%s fx=%s delay=%.3f pulled=%d", tostring(body), v2 and "v2" or "ring", delay, pulled)) end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant roar body=%s fx=%s delay=%.3f pulled=%d", tostring(start >= 0), v2 and "v2" or "ring", delay, pulled)) end
         self:LogSkill(unit, 1, pulled, 0, false, radius)
+    end
+
+    method number RoarBodyStart(ShadowUnit unit)
+        -- 함성 몸이 몇 초 뒤 시작되나 (ShadowUnit.GiantRoarBody와 같은 규칙 · 갈래 A): roar 그림 없음 → -1 · 기술·갈라짐 동작 중(맞음 그림만 덮음) → -1 ·
+        --   평타 동작이 0.6초 넘게 남음 → -1 · 남은 평타가 있으면 그 끝 · 아니면 0
+        local look = unit.GiantLook
+        if look == nil or (look.roar or "") == "" then return -1 end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < unit.GiantClipUntil and unit.CurrentClip ~= (look.hit or "#") then return -1 end   -- 지금 걸린 거인 그림이 맞음이 아니면(기술·갈라짐) 몸 생략 (A GiantClipState ~= "hit"과 같은 뜻)
+        local wait = unit.AttackAnimationUntil - now
+        if wait > 0.6 then return -1 end
+        return math.max(0, wait)
     end
 
     method number Facing(ShadowUnit unit, Entity target)
@@ -535,10 +557,12 @@ script RiteGiantMoves extends Logic
     end
 
     method number BodyImpactSec(ShadowUnit unit, string state, number fallback)
-        -- 몸 그림 타격 칸 시각 (48 연출 V2): monster_frames impact 열(0부터 · 생성 데이터 s = 칸 번호) 앞 장 길이의 합 — 몸 그림·피해·효과를 같은 순간에.
+        -- 몸 그림 타격 칸 시각 (48 연출 V2): GiantLook.<동작>Hit(갈래 A) 또는 monster_frames impact 열(0부터 · 생성 데이터 s = 칸 번호) 앞 장 길이의 합 — 몸 그림·피해·효과를 같은 순간에.
         --   그 동작 그림이 이 거인에 등록돼 있지 않거나 impact 열이 비면 fallback(지금 규칙) · 0.4초 상한(잘못 적은 칸 번호로 피해가 늦어지지 않게)
         local look = unit.GiantLook
-        if look == nil or (look[state] or "") == "" or (look.form or "") == "" then return fallback end
+        if look == nil or (look[state] or "") == "" then return fallback end
+        if look[state .. "Hit"] ~= nil then return math.min(0.4, look[state .. "Hit"]) end   -- 갈래 A UndeadSystem.GiantLook: <동작>Hit = 타격 칸까지 초 (같은 impact 열)
+        if (look.form or "") == "" then return fallback end
         local set = _GameData:GetMonsterFrames("giant_" .. look.form)
         local f = set ~= nil and set[state] or nil
         if f == nil or f.s == nil or f.d == nil then return fallback end
