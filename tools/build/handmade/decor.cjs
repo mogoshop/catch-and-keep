@@ -36,6 +36,7 @@ function classOf(name) {
   return c;
 }
 const modeOf = (id) => (POLICY.FULL.includes(id) ? "full" : POLICY.COLLIDE_ONLY.includes(id) ? "collide" : null);
+const isV4 = (id) => (POLICY.GUIDE_V4 ? POLICY.GUIDE_V4.includes(id) : POLICY.FULL.includes(id));   // 길 안내 v4 (갈래·고리·폭 1·끊긴 발길·액트 타일)
 
 // ───────── C-1 흩뿌림·세트 ─────────
 //   포털·입구 그림(portal)과 겹친 빛(overlay)은 기능 그림이라 흩뿌림이 아니다
@@ -90,7 +91,7 @@ function planRows(d, rows) {
 }
 // 길 비우기 + 흩뿌림 개수 맞추기 (route = routes() 결과). 장소 바닥 무늬도 길 안에서는 뺀다
 function finalizeRows(d, planned, route) {
-  const near = (x, y) => route && distToCurve(route, x, y) < POLICY.ROUTE_CLEAR;
+  const near = (x, y) => tooClose(route, x, y);
   let quota = planned.stats.scatterTarget;
   const props = planned.rows.filter((r) => r.kind === "prop" && r.scatter).sort((a, b) => a.rank - b.rank);
   const keepProps = new Set();
@@ -152,7 +153,7 @@ function shortest(walk, clr, sources, goal) {
   return cells.reverse();
 }
 // 줄 당기기: 칸 가운데 점들 중 직선으로 이어도 벽에서 떨어진 만큼 남는 가장 먼 점으로
-function pull(pts, clearAt, half, decorAt) {
+function pull(pts, clearAt, half, decorAt, clear = POLICY.ROUTE_CLEAR) {
   const segMin = (f, a, b) => {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.2));
     let m = Infinity;
@@ -168,7 +169,7 @@ function pull(pts, clearAt, half, decorAt) {
       need = Math.min(need, clearAt(pts[j][0], pts[j][1]));
       needD = Math.min(needD, decorAt(pts[j][0], pts[j][1]));
       const want = Math.min(half, Math.min(need, clearAt(pts[i][0], pts[i][1]))) - 0.05;
-      const wantD = Math.min(POLICY.ROUTE_CLEAR + 0.3, Math.min(needD, decorAt(pts[i][0], pts[i][1]))) - 0.05;
+      const wantD = Math.min(clear + 0.3, Math.min(needD, decorAt(pts[i][0], pts[i][1]))) - 0.05;
       if (segMin(clearAt, pts[i], pts[j]) >= want && segMin(decorAt, pts[i], pts[j]) >= wantD) best = j;
     }
     out.push(pts[best]);
@@ -197,7 +198,7 @@ function widen(V, clearAt) {
         const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, p = [a[0] + r[0] * t, a[1] + r[1] * t];
         if (len(p, m) < 3) m = p;
       }
-      if (clearAt(m[0], m[1]) < 0.6) continue;
+      if (clearAt(m[0], m[1]) < 0.45) continue;
       pts.splice(i, 2, m);
       changed = true;
       break;
@@ -229,6 +230,7 @@ function fillet(V, R, clearAt) {
     const ti = tanAt[i] || 1e-9;
     const lim = Math.min(la * (ti / (ti + tanAt[i - 1])), lb * (ti / (ti + tanAt[i + 1])));
     const rmax = Math.min(R, lim / Math.tan(th / 2));
+    if (!(rmax > 1e-6)) { line(cur, V[i]); cur = V[i]; continue; }   // 길이 0 토막 등 — 둥글리지 않고 꺾인 점 그대로
     const s = cross > 0 ? 1 : -1, nrm = [-ua[1] * s, ua[0] * s];
     // 원호: 반경 rr이면 접점 p1·p2와 원호 점들 — 원호가 벽 모서리를 스치면(여유 0.45칸 미만) 반경을 1.25 → 1칸까지 줄여 꺾인 점 쪽으로 붙인다
     const arc = (rr) => {
@@ -257,6 +259,7 @@ function fillet(V, R, clearAt) {
 // 길 경로들: 들어오는 문에서 첫 출구까지, 다음 출구부터는 이미 그린 길에서 갈라진다 (같은 길을 두 번 칠하지 않게)
 //   blocked: 막는 장식 발밑 칸 · 결과 { curves: [{target, pts}], cells(원래 칸 경로) }
 function routes(d, bp, blocked, func) {
+  if (isV4(d.id)) return routesV4(d, bp, blocked, func);
   const walk = (x, y) => bp.isFloor(x, y) && !blocked.has(key(x, y));
   // 막는 장식(세트·랜드마크)에서는 ROUTE_CLEAR만큼 더 떨어지게 — 길이 붙어 지나가면 그 조각을 빼야 한다
   const notDecor = (x, y) => !blocked.has(key(x, y));
@@ -297,6 +300,202 @@ function routes(d, bp, blocked, func) {
   }
   return { curves, walk, clearAt };
 }
+// ───────── C-7 길 안내 v4 경로: 출구마다 갈래 · 구역마다 고리 ─────────
+//   큰길(BIG_ROAD_GLYPHS)은 그 자체가 길 — 경로는 큰길을 싸게(ROAD_COST) 따라가다 갈라지고, 그림은 큰길 밖에만 (guideV4)
+//   ① 들어오는 문 → (큰길이 있고 문이 큰길 밖이면) 큰길까지 ② 출구(다음 맵 문·되돌아가는 문·굴 입구·끝방)마다 「큰길 + 이미 그린 갈래」에서 갈라지는 갈래
+//   ③ 설계도 구역(LOOP_MIN_CELLS칸 이상)마다 큰길·갈래에서 들어가 구역 뒤편 경유점(LOOP_ANGLES)을 돌아 다시 큰길·갈래로 나오는 고리
+// 여러 출발점·여러 도착점 최단 경로 (cost(x, y) = 칸 비용 배율) — 도착 칸에서 출발 칸까지
+function search(walk, clr, sources, isGoal, cost) {
+  const dist = new Map(), prev = new Map(), h = [];
+  for (const [x, y] of sources) { const k = key(x, y); if (!dist.has(k)) { dist.set(k, 0); heapPush(h, [0, x, y]); } }
+  let found = null;
+  while (h.length) {
+    const [dd, x, y] = heapPop(h);
+    const k = key(x, y);
+    if (dd > dist.get(k)) continue;
+    if (isGoal(x, y)) { found = k; break; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!walk(nx, ny)) continue;
+      if (dx && dy && (!walk(x + dx, y) || !walk(x, y + dy))) continue;
+      const c = clr(nx, ny);
+      const step = (dx && dy ? Math.SQRT2 : 1) * (1 + Math.max(0, 1.6 - c) * 4) * cost(nx, ny);
+      const nd = dd + step, nk = key(nx, ny);
+      if (!dist.has(nk) || nd < dist.get(nk) - 1e-9) { dist.set(nk, nd); prev.set(nk, k); heapPush(h, [nd, nx, ny]); }
+    }
+  }
+  if (!found) return null;
+  const cells = [];
+  for (let k = found; k !== undefined; k = prev.get(k)) cells.push(k.split(",").map(Number));
+  return cells.reverse();
+}
+function routesV4(d, bp, blocked, func) {
+  const V = POLICY.V4;
+  const walk = (x, y) => bp.isFloor(x, y) && !blocked.has(key(x, y));
+  const notDecor = (x, y) => !blocked.has(key(x, y));
+  const big = new Set(POLICY.BIG_ROAD_GLYPHS);
+  const isBig = (x, y) => { const ch = bp.at(x, y); return ch !== null && big.has(ch) && ch in bp.roads; };
+  const clrCache = new Map();
+  const clr = (x, y) => {
+    const k = key(x, y);
+    if (!clrCache.has(k)) {
+      const w = clearanceAt(walk, x + 0.5, y + 0.5), dc = clearanceAt(notDecor, x + 0.5, y + 0.5);
+      clrCache.set(k, Math.min(w, dc < POLICY.ROUTE_CLEAR + 0.6 ? dc - 2.5 * (POLICY.ROUTE_CLEAR + 0.6 - dc) : 9));
+    }
+    return clrCache.get(k);
+  };
+  const clearAt = (px, py) => clearanceAt(walk, px, py);
+  const decorAt = (px, py) => clearanceAt(notDecor, px, py);
+  const cellOf = (p) => [Math.floor(p[0]), Math.floor(p[1])];
+  const roadCost = (x, y) => (isBig(x, y) ? V.ROAD_COST : 1);
+  const start = func.find((e) => e.name === "GateBack") || func.find((e) => e.name === "GateToField");
+  if (!start) return null;
+  const bigCells = [];
+  for (const [x, y] of bp.cells()) if (isBig(x, y) && walk(x, y)) bigCells.push([x, y]);
+  const net = new Set(bigCells.map(([x, y]) => key(x, y)));
+  const netList = () => [...net].map((k) => k.split(",").map(Number));
+  const curves = [], exits = [], loops = [];
+  // breaks: 경유점 자리(칸 목록 번호) — 줄 당기기는 경유점 사이 구간마다 따로 (고리를 통째로 당기면 나가는 길과 돌아오는 길이 이어져 고리가 사라졌다)
+  const toCurve = (cells, first, last, kind, target, clear, breaks) => {
+    const pts = cells.map(([x, y]) => [x + 0.5, y + 0.5]);
+    if (first) pts[0] = first;
+    if (last) pts[pts.length - 1] = last;
+    if (pts.length < 2) return null;
+    const cuts = [0, ...(breaks || []).filter((b) => b > 0 && b < pts.length - 1), pts.length - 1];
+    let Vall = [];
+    for (let k = 0; k + 1 < cuts.length; k++) {
+      const leg = pull(pts.slice(cuts[k], cuts[k + 1] + 1), clearAt, V.WIDTH / 2, decorAt, clear);
+      Vall = Vall.length ? Vall.concat(leg.slice(1)) : leg;
+    }
+    const Vd = Vall.filter((p, k) => k === 0 || Math.hypot(p[0] - Vall[k - 1][0], p[1] - Vall[k - 1][1]) > 1e-6);   // 구간 이음매 겹친 점
+    // 되돌아 나오는 뾰족한 끝(150° 넘게 꺾임 — 막다른 경유점에 갔다가 같은 길로 나옴)은 그 점을 빼 앞뒤를 바로 잇는다 (나란한 두 줄이 한 줄로)
+    const dropSpurs = (W0) => {
+      let Vs = W0.filter((p, k) => k === 0 || Math.hypot(p[0] - W0[k - 1][0], p[1] - W0[k - 1][1]) > 1e-3);
+      for (let pass = 0; pass < 20; pass++) {
+        let cut = -1;
+        for (let i = 1; i + 1 < Vs.length && cut < 0; i++) {
+          const u = [Vs[i][0] - Vs[i - 1][0], Vs[i][1] - Vs[i - 1][1]], v = [Vs[i + 1][0] - Vs[i][0], Vs[i + 1][1] - Vs[i][1]];
+          if (Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]) > (150 * Math.PI) / 180) cut = i;
+        }
+        if (cut < 0) break;
+        Vs = Vs.slice(0, cut).concat(Vs.slice(cut + 1)).filter((p, k, all) => k === 0 || Math.hypot(p[0] - all[k - 1][0], p[1] - all[k - 1][1]) > 1e-3);
+      }
+      return Vs;
+    };
+    let Vt = widen(dropSpurs(Vd), clearAt);
+    // 반경 1칸 둥글리기가 안 되는 꺾인 점은, 앞뒤 점을 바로 이어도 벽에서 0.45칸 떨어지면 뺀다 (고리 경유점 사이가 짧을 때)
+    for (let pass = 0; pass < 30; pass++) {
+      const tanH = (i) => { const u = [Vt[i][0] - Vt[i - 1][0], Vt[i][1] - Vt[i - 1][1]], v = [Vt[i + 1][0] - Vt[i][0], Vt[i + 1][1] - Vt[i][1]]; return Math.tan(Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]) / 2); };
+      const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+      let bad = -1;
+      for (let i = 1; i + 1 < Vt.length && bad < 0; i++) {
+        const ti = tanH(i), tp = i > 1 ? tanH(i - 1) : 0, tn = i + 2 < Vt.length ? tanH(i + 1) : 0;
+        if (ti < 1e-6) continue;
+        const lim = Math.min(len(Vt[i - 1], Vt[i]) * (ti / (ti + tp)), len(Vt[i], Vt[i + 1]) * (ti / (ti + tn)));
+        if (lim / ti < 1 - 1e-6) bad = i;
+      }
+      if (bad < 0) break;
+      const a = Vt[bad - 1], b = Vt[bad + 1], L = len(a, b), n = Math.max(1, Math.ceil(L / 0.2));
+      let ok = true;
+      for (let k = 0; k <= n && ok; k++) if (clearAt(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n) < 0.45) ok = false;
+      if (!ok) break;
+      Vt = Vt.slice(0, bad).concat(Vt.slice(bad + 1));
+    }
+    Vt = dropSpurs(Vt);   // 합치기·빼기 뒤 새로 생긴 되돌아 나오는 끝
+    return { target, kind, pts: fillet(Vt, POLICY.GUIDE_RADIUS, clearAt), branch: true };
+  };
+  // ① 들어오는 문 → 큰길 (문이 큰길 밖일 때) — 큰길이 없는 맵(굴)은 문 자체가 출발점
+  const sc = cellOf(start.pos);
+  if (!net.size) net.add(key(sc[0], sc[1]));
+  else if (!net.has(key(sc[0], sc[1]))) {
+    const cells = search(walk, clr, [sc], (x, y) => net.has(key(x, y)), roadCost);
+    if (cells) { const c = toCurve(cells, [start.pos[0], start.pos[1]], null, "exit", "entry", POLICY.ROUTE_CLEAR); if (c) curves.push(c); for (const q of cells) net.add(key(q[0], q[1])); }
+  }
+  // ② 출구마다 갈래
+  const targets = [];
+  for (const e of func) if (e.name === "GateNext") targets.push({ name: e.name, pos: e.pos });
+  for (const e of func) if (e.name === "GateReturn") targets.push({ name: e.name, pos: e.pos });
+  for (const e of func) if (/^Gate_/.test(e.name)) targets.push({ name: e.name, pos: e.pos });
+  const end = String(d.extra || "").split(";").find((t) => t.startsWith("end@"));
+  if (end) targets.push({ name: "end", pos: end.split("@")[1].split("/").map(Number) });
+  for (const t of targets) {
+    const goal = cellOf(t.pos);
+    if (!walk(goal[0], goal[1])) { exits.push({ target: t.name, ok: false, reason: "출구 칸이 막힘" }); continue; }
+    // 도착점에서 거꾸로 그물(큰길·갈래)까지 — 그물에 닿는 첫 칸에서 갈라진다
+    const back = search(walk, clr, [goal], (x, y) => net.has(key(x, y)), roadCost);
+    if (!back) { exits.push({ target: t.name, ok: false, reason: "길 없음" }); continue; }
+    const cells = back.reverse();
+    const offRoad = cells.filter(([x, y]) => !isBig(x, y)).length;
+    exits.push({ target: t.name, ok: true, cells: cells.length, offRoad });
+    const c = toCurve(cells, null, [t.pos[0], t.pos[1]], "exit", t.name, POLICY.ROUTE_CLEAR);
+    if (c) curves.push(c);
+    for (const q of cells) net.add(key(q[0], q[1]));
+  }
+  // ③ 구역마다 고리
+  const zoneChars = Object.keys(bp.zones).filter((ch) => ch !== ".");
+  const netFixed = new Set(net);   // 고리는 큰길·출구 갈래에만 붙는다 (고리끼리 잇지 않음)
+  for (const ch of zoneChars) {
+    // 그 구역 글자의 가장 큰 덩어리
+    const seen = new Set(); let bestComp = [];
+    for (const [x, y] of bp.cells()) {
+      if (bp.at(x, y) !== ch || seen.has(key(x, y))) continue;
+      const comp = [[x, y]]; seen.add(key(x, y));
+      for (let i = 0; i < comp.length; i++) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = comp[i][0] + dx, ny = comp[i][1] + dy;
+        if (bp.at(nx, ny) === ch && !seen.has(key(nx, ny))) { seen.add(key(nx, ny)); comp.push([nx, ny]); }
+      }
+      if (comp.length > bestComp.length) bestComp = comp;
+    }
+    if (bestComp.length < V.LOOP_MIN_CELLS) continue;
+    const zname = `loop:${ch}`;
+    const cx = bestComp.reduce((a, c) => a + c[0] + 0.5, 0) / bestComp.length, cy = bestComp.reduce((a, c) => a + c[1] + 0.5, 0) / bestComp.length;
+    const Rz = Math.sqrt(bestComp.length / Math.PI), ring = Math.max(V.LOOP_RING[1], Math.min(V.LOOP_RING[2], Rz * V.LOOP_RING[0]));
+    const inZone = new Set(bestComp.map(([x, y]) => key(x, y)));
+    // 경유점 자리: 벽 1.2칸 · 장식 1.5칸 (좁은 구역이면 벽 1칸 · 장식 LOOP_CLEAR까지 낮춘다)
+    let wallMin = 1.2, decorMin = 1.5;
+    const goodCell = (x, y) => inZone.has(key(x, y)) && walk(x, y) && clearAt(x + 0.5, y + 0.5) >= wallMin && decorAt(x + 0.5, y + 0.5) >= decorMin;
+    if (!bestComp.some(([x, y]) => goodCell(x, y))) { wallMin = 1.0; decorMin = V.LOOP_CLEAR; }
+    // 들어오는 쪽: 구역 가운데(막혔으면 가운데에서 가장 가까운 경유점 자리)에서 그물까지 가장 가까운 칸
+    let cc = [Math.floor(cx), Math.floor(cy)];
+    if (!walk(cc[0], cc[1])) {
+      let best = null;
+      for (const [x, y] of bestComp) if (goodCell(x, y)) { const dd = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (!best || dd < best.dd) best = { x, y, dd }; }
+      if (best) cc = [best.x, best.y];
+    }
+    const inCells = walk(cc[0], cc[1]) ? search(walk, clr, [cc], (x, y) => netFixed.has(key(x, y)), roadCost) : null;
+    if (!inCells) { loops.push({ zone: ch, ok: false, reason: "구역 가운데에서 큰길·갈래까지 길 없음", cells: bestComp.length }); continue; }
+    const A = inCells[inCells.length - 1];
+    const thA = Math.atan2(A[1] + 0.5 - cy, A[0] + 0.5 - cx);
+    const wps = [];
+    for (const deg of V.LOOP_ANGLES) {
+      const th = thA + (deg * Math.PI) / 180, ix = cx + Math.cos(th) * ring, iy = cy + Math.sin(th) * ring;
+      let best = null;
+      for (const [x, y] of bestComp) { if (!goodCell(x, y)) continue; const dd = Math.hypot(x + 0.5 - ix, y + 0.5 - iy); if (dd < 2.5 && (!best || dd < best.dd)) best = { x, y, dd }; }
+      if (best && !wps.some(([wx, wy]) => Math.hypot(wx - best.x, wy - best.y) < 2)) wps.push([best.x, best.y]);
+    }
+    if (wps.length < 2) { loops.push({ zone: ch, ok: false, reason: "구역 안 경유점 자리 부족(벽·장식에서 1.2칸)", cells: bestComp.length }); continue; }
+    // 그물 → 첫 경유점 → … → 끝 경유점 → 그물 (나오는 길은 들어간 길 1.5칸 안을 비싸게 해 다른 쪽으로)
+    let cells = search(walk, clr, netList().filter(([x, y]) => netFixed.has(key(x, y))), (x, y) => x === wps[0][0] && y === wps[0][1], roadCost);
+    if (!cells) { loops.push({ zone: ch, ok: false, reason: "첫 경유점까지 길 없음", cells: bestComp.length }); continue; }
+    let okAll = true;
+    const breaks = [cells.length - 1];
+    for (let k = 1; k < wps.length && okAll; k++) {
+      const seg = search(walk, clr, [wps[k - 1]], (x, y) => x === wps[k][0] && y === wps[k][1], () => 1);
+      if (!seg) okAll = false; else { cells = cells.concat(seg.slice(1)); breaks.push(cells.length - 1); }
+    }
+    if (!okAll) { loops.push({ zone: ch, ok: false, reason: "경유점 사이 길 없음", cells: bestComp.length }); continue; }
+    const outSet = new Set(cells.map(([x, y]) => key(x, y)));
+    const nearOut = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (outSet.has(key(x + dx, y + dy))) return true; return false; };
+    const startK = key(cells[0][0], cells[0][1]);
+    const ret = search(walk, clr, [wps[wps.length - 1]], (x, y) => netFixed.has(key(x, y)) && key(x, y) !== startK, (x, y) => (nearOut(x, y) && !netFixed.has(key(x, y)) ? 6 : 1) * roadCost(x, y));
+    if (ret) cells = cells.concat(ret.slice(1));
+    const c = toCurve(cells, null, null, "loop", zname, V.LOOP_CLEAR, breaks);
+    if (!c) { loops.push({ zone: ch, ok: false, reason: "곡선이 짧음", cells: bestComp.length }); continue; }
+    curves.push(c);
+    loops.push({ zone: ch, ok: true, cells: bestComp.length, waypoints: wps.length, back: !!ret });
+  }
+  return { curves, walk, clearAt, v4: true, isBig, exits, loops };
+}
 function distToCurve(route, x, y) {
   let m = Infinity;
   for (const c of route.curves) for (let i = 0; i + 1 < c.pts.length; i++) {
@@ -313,13 +512,28 @@ function cellDistToCurve(route, cx, cy) {
   for (const c of route.curves) for (const p of c.pts) m = Math.min(m, Math.sqrt(distSqToCell(p.x, p.y, cx, cy)));
   return m;
 }
+// 비워야 하는 거리: 출구 갈래(v3 포함) ROUTE_CLEAR · v4 고리 LOOP_CLEAR — 점·칸이 어느 곡선의 그 거리 안인가
+const clearOf = (c) => (c.kind === "loop" ? POLICY.V4.LOOP_CLEAR : POLICY.ROUTE_CLEAR);
+function tooClose(route, x, y) {
+  if (!route) return false;
+  for (const c of route.curves) if (distToCurve({ curves: [c] }, x, y) < clearOf(c)) return true;
+  return false;
+}
+function cellTooClose(route, cx, cy) {
+  if (!route) return false;
+  for (const c of route.curves) { const lim = clearOf(c) ** 2; for (const p of c.pts) if (distSqToCell(p.x, p.y, cx, cy) < lim) return true; }
+  return false;
+}
 
 // ───────── 그림 엔티티 공용 ─────────
 const tintArr = (t) => (t || "1/1/1").split("/").map(Number);
-function capTint(t) {   // 바닥 색 상한 (길 안내가 밝아질 여유) — 세 채널 같은 비율
+// 바닥 색 상한: v3 맵은 길 안내가 그 자리 바닥 × 1.25라 FLOOR_TINT_CAP까지 낮춘다. v4 맵은 길 안내가 액트 타일(GUIDE_TILE)이라 바닥을 낮추지 않는다
+let curCap = POLICY.FLOOR_TINT_CAP;
+function setMap(id) { curCap = isV4(id) ? 1 : POLICY.FLOOR_TINT_CAP; }
+function capTint(t) {   // 세 채널 같은 비율 (채도 그대로)
   const c = tintArr(t), m = Math.max(...c);
-  if (m <= POLICY.FLOOR_TINT_CAP) return c;
-  return c.map((v) => r3((v * POLICY.FLOOR_TINT_CAP) / m));
+  if (m <= curCap) return c;
+  return c.map((v) => r3((v * curCap) / m));
 }
 // ───────── 회전한 반복 그림 — 회전 생성은 이 한 곳 (길 안내 토막 · 45° 모서리 조각 · 검사기·미리보기 역산) ─────────
 //   메이커 실화면 확인 전 가정 (10-31): 반복 그리기(DrawMode 2)는 회전이 없을 때처럼 「첫 장(왼쪽 아래 장) 가운데 = 엔티티 자리」에서 깔리고,
@@ -379,7 +593,8 @@ const fkey = (f) => `${f.art}|${f.tint}`;
 const shoreEdge = (bp, p, q) => !!bp.shore && bp.shore.sea.has(p.art) !== bp.shore.sea.has(q.art);
 
 // ───────── C-6 길 안내 그림 ─────────
-function guideEntities(bp, classes, route, ruidOf) {
+function guideEntities(bp, classes, route, ruidOf, mapInfo) {
+  if (route && route.v4) return guideV4(bp, route, ruidOf, mapInfo || {});
   const out = [];
   if (!route) return { entities: out, segments: 0, sharp: 0, minRadius: Infinity, wallHits: 0 };
   let n = 0, sharp = 0, minRadius = Infinity;
@@ -450,6 +665,137 @@ function guideEntities(bp, classes, route, ruidOf) {
     }
   }
   return { entities: out, segments: n / 2, sharp, minRadius };
+}
+
+// ───────── C-7·C-8 길 안내 v4 그림: 폭 1칸 · 큰길 위 없음 · 끊긴 발길 · 액트 타일 ─────────
+//   곡선마다 ① 어두운 바탕 띠(폭 W · 타일 × EDGE_DARK — 양옆 테 선 역할)를 STEP_DEG마다 끊은 토막으로 깔고
+//   ② 그 위에 밝은 발길 토막(폭 W − 2×EDGE · 타일 × BRIGHT)을 길이 DASH 사이 의사 난수로 얹되 빈틈이 GAP_RATIO가 되게 (맵 id 씨앗 — 빌드마다 같다)
+//   조각 종류(straight·curve·fork·end)는 pieces에 기록 — GUIDE_TILE[액트][종류] 그림·색으로 그린다(코덱스 타일이 오면 그림만 바꾼다)
+function seededRand(text) {
+  let h = 2166136261 >>> 0;
+  for (const ch of String(text)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return () => { h = (h + 0x6d2b79f5) >>> 0; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function guideV4(bp, route, ruidOf, mapInfo) {
+  const V = POLICY.V4, out = [], pieces = [];
+  const rand0 = seededRand(`${mapInfo.id}|guide`);
+  const mapVar = 1 + V.MAP_VAR * (2 * rand0() - 1);
+  const tiles = POLICY.GUIDE_TILE[mapInfo.act] || POLICY.GUIDE_TILE[1];
+  const nearBig = (x, y) => {
+    for (let cy = Math.floor(y - 1); cy <= Math.floor(y + 1); cy++) for (let cx = Math.floor(x - 1); cx <= Math.floor(x + 1); cx++) if (route.isBig(cx, cy) && distSqToCell(x, y, cx, cy) < 0.55 * 0.55) return true;
+    return false;
+  };
+  let n = 0, sharp = 0, minRadius = Infinity;
+  const kinds = { straight: 0, curve: 0, fork: 0, end: 0 };
+  const color = (kind, mul) => tintArr(tiles[kind].tint).map((v) => r3(Math.min(1, v * mapVar * mul)));
+  const emit = (kind, layer, a, b, W, exit, target) => {
+    const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (L < 0.05) return;
+    const t = tiles[kind];
+    const rgb = layer === "base" ? color(kind, V.EDGE_DARK) : color(kind, exit ? V.EXIT_BRIGHT : V.BRIGHT);
+    const e = rotRect(`ArtGuide${++n}`, ruidOf(t.art), a.x, a.y, r3(deg), r3(L), r3(W), rgb, 1, layer === "base" ? -0.0115 : -0.0116);
+    out.push(e);
+    pieces.push({ name: e.name, kind, layer, W: r3(W), exit, target });
+    kinds[kind]++;
+    return deg;
+  };
+  for (const c of route.curves) {
+    const P = c.pts;
+    if (P.length < 2) continue;
+    const acc = [0];
+    for (let i = 1; i < P.length; i++) acc.push(acc[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const total = acc[acc.length - 1];
+    const exitCurve = c.kind === "exit" && !["end", "entry"].includes(c.target);
+    const info = P.map((p, i) => {
+      const exit = exitCurve && total - acc[i] <= POLICY.EXIT_LEN;
+      const clear = route.clearAt(p.x, p.y);
+      const W = Math.max(0.4, Math.min(exit ? V.EXIT_WIDTH : V.WIDTH, 2 * (clear - 0.18)));
+      return { draw: !nearBig(p.x, p.y), exit, W };
+    });
+    for (let i = 0; i < P.length; i++) if (info[i].draw && P[i].r < minRadius) minRadius = P[i].r;
+    const firstDraw = info.findIndex((it) => it.draw);
+    if (firstDraw < 0) continue;
+    const kindAt = (i, j) => {
+      if (info[j].exit) return "end";
+      if (acc[i] - acc[firstDraw] < V.FORK_LEN) return "fork";
+      for (let k = i; k <= j; k++) if (Number.isFinite(P[k].r)) return "curve";
+      return "straight";
+    };
+    // 그릴 수 있는 점 구간(큰길 밖)마다
+    let i0 = 0;
+    while (i0 < P.length) {
+      while (i0 < P.length && !info[i0].draw) i0++;
+      if (i0 >= P.length - 1) break;
+      let i1 = i0;
+      while (i1 + 1 < P.length && info[i1 + 1].draw) i1++;
+      if (i1 > i0) {
+        // ① 바탕 띠
+        let i = i0, prevDeg = null;
+        while (i < i1) {
+          const d0 = Math.atan2(P[i + 1].y - P[i].y, P[i + 1].x - P[i].x) * 180 / Math.PI;
+          let j = i + 1;
+          while (j < i1) {
+            const dj = Math.atan2(P[j + 1].y - P[j].y, P[j + 1].x - P[j].x) * 180 / Math.PI;
+            let dd = Math.abs(dj - d0); if (dd > 180) dd = 360 - dd;
+            if (dd > V.STEP_DEG / 2 || info[j + 1].exit !== info[i].exit || Math.abs(info[j + 1].W - info[i].W) > 0.3) break;
+            const ax = P[i].x, ay = P[i].y, bx = P[j + 1].x, by = P[j + 1].y, cl = Math.hypot(bx - ax, by - ay) || 1;
+            let off = 0;
+            for (let k = i + 1; k <= j; k++) off = Math.max(off, Math.abs((bx - ax) * (P[k].y - ay) - (by - ay) * (P[k].x - ax)) / cl);
+            if (off > 0.15) break;   // 폭을 벽에서 0.18칸 띄워 잡으므로 현이 0.15칸 벗어나도 벽에 닿지 않는다
+            j++;
+          }
+          let W = Infinity;
+          for (let k = i; k <= j; k++) W = Math.min(W, info[k].W);
+          const deg = Math.atan2(P[j].y - P[i].y, P[j].x - P[i].x) * 180 / Math.PI;
+          // 이음매 틈만큼 양끝을 늘린다 (그 자리 벽 여유 안에서)
+          const ext0 = (W / 2) * Math.tan((V.STEP_DEG * Math.PI) / 360) + 0.04, ux = Math.cos(deg * Math.PI / 180), uy = Math.sin(deg * Math.PI / 180);
+          const room = (p) => Math.sqrt(Math.max(0, route.clearAt(p.x, p.y) ** 2 - (W / 2) ** 2)) - 0.03;
+          const eA = i === i0 ? 0 : Math.min(ext0, Math.max(0.02, room(P[i]))), eB = j === i1 ? 0 : Math.min(ext0, Math.max(0.02, room(P[j])));
+          const a = { x: P[i].x - ux * eA, y: P[i].y - uy * eA }, b = { x: P[j].x + ux * eB, y: P[j].y + uy * eB };
+          if (prevDeg !== null) { let dd = Math.abs(deg - prevDeg); if (dd > 180) dd = 360 - dd; if (dd > V.STEP_DEG + 5) sharp++; }   // v4: 토막 각도(40°)를 넘는 꺾임만 (직각 90°는 반드시 잡힌다)
+          prevDeg = deg;
+          emit(kindAt(i, j), "base", a, b, W, info[j].exit, c.target);
+          i = j;
+        }
+        // ② 끊긴 발길 토막
+        const rnd = seededRand(`${mapInfo.id}|${c.target}|${i0}`);
+        const pointAt = (s) => {
+          let k = i0;
+          while (k < i1 && acc[k + 1] < s) k++;
+          const t = Math.min(1, Math.max(0, (s - acc[k]) / ((acc[k + 1] ?? acc[k]) - acc[k] || 1)));
+          return { x: P[k].x + (P[Math.min(k + 1, i1)].x - P[k].x) * t, y: P[k].y + (P[Math.min(k + 1, i1)].y - P[k].y) * t, k };
+        };
+        let s = acc[i0] + rnd() * 0.4;
+        while (s < acc[i1] - 0.2) {
+          const len = V.DASH[0] + (V.DASH[1] - V.DASH[0]) * rnd();
+          const e = Math.min(acc[i1], s + len);
+          // 토막 안에서도 STEP_DEG/2마다 끊어 곡선을 따른다
+          const pts = [pointAt(s)];
+          for (let k = i0; k <= i1; k++) if (acc[k] > s + 1e-6 && acc[k] < e - 1e-6) pts.push({ x: P[k].x, y: P[k].y, k });
+          pts.push(pointAt(e));
+          let a = 0;
+          while (a < pts.length - 1) {
+            const d0 = Math.atan2(pts[a + 1].y - pts[a].y, pts[a + 1].x - pts[a].x) * 180 / Math.PI;
+            let b = a + 1;
+            while (b < pts.length - 1) {
+              const db = Math.atan2(pts[b + 1].y - pts[b].y, pts[b + 1].x - pts[b].x) * 180 / Math.PI;
+              let dd = Math.abs(db - d0); if (dd > 180) dd = 360 - dd;
+              if (dd > V.STEP_DEG / 2) break;
+              b++;
+            }
+            const ki = Math.min(pts[a].k, i1), kj = Math.min(pts[b].k + 1, i1);
+            let W = Infinity;
+            for (let k = ki; k <= kj; k++) W = Math.min(W, info[k].W);
+            emit(kindAt(ki, kj), "dash", pts[a], pts[b], Math.max(0.26, W - 2 * V.EDGE), info[kj].exit, c.target);
+            a = b;
+          }
+          s = e + len * (V.GAP_RATIO / (1 - V.GAP_RATIO)) * (0.7 + 0.6 * rnd());
+        }
+      }
+      i0 = i1 + 1;
+    }
+  }
+  return { entities: out, segments: pieces.filter((p) => p.layer === "base").length, dashes: pieces.filter((p) => p.layer === "dash").length, sharp, minRadius, pieces, kinds, mapVar: r3(mapVar) };
 }
 
 // ───────── C-5 이음새 ─────────
@@ -531,4 +877,4 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
 // 고치기 전 기준: 볼록 직각 모서리 수 (같은 판정 · 조각 없음) — 전후 표용
 function countCorners(bp, classes) { return seamEntities(bp, classes, () => "", {}).cornerStats.total; }
 
-module.exports = { rectPoint, rotOf, shoreEdge, POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };
+module.exports = { setMap, isV4, tooClose, cellTooClose, rectPoint, rotOf, shoreEdge, POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };

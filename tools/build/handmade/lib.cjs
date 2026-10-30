@@ -273,6 +273,7 @@ function functionalEntities(d, maps, ctx, rows) {
 function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // 10-31 C: 정책 맵(FULL)은 ① 흩뿌림·세트 줄이기 → ② 막는 장식만 먼저 놓아 길 경로를 재고 → ③ 길 안 흩뿌림을 비운 뒤 다시 짓는다
   const mode = decor.modeOf(d.id);
+  decor.setMap(d.id);   // 바닥 색 상한 (v3 0.80 · v4 1 — 길 안내 v4는 액트 타일이라 바닥을 낮추지 않는다)
   if (mode === "full" && !opts.inner) {
     const planned = decor.planRows(d, rows);
     const pre = artEntities(d, ctx, bp, planned.rows.filter((r) => !r.scatter && r.kind !== "decal"), func, { inner: true, pre: true });
@@ -887,7 +888,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       const cells = [];
       if (blockIt) for (const k of footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !funcCells.has(k)) cells.push([cx, cy]); }
       // 10-31 C-3: 길 안내 폭 3칸 안에 발이 걸리는 막는 조각은 놓지 않는다 (세트면 그 조각만 빠진다)
-      if (blockIt && opts.route && cells.some(([cx, cy]) => decor.cellDistToCurve(opts.route, cx, cy) < decor.POLICY.ROUTE_CLEAR)) { droppedOnRoute.push(`${name} ${spName}`); return; }
+      if (blockIt && opts.route && cells.some(([cx, cy]) => decor.cellTooClose(opts.route, cx, cy))) { droppedOnRoute.push(`${name} ${spName}`); return; }
       for (const [cx, cy] of cells) blocked.add(key(cx, cy));
       pieces.push({ name, sprite: spName, x, y, sc, decal: !!decal, block: blockIt, cells, scatter: !!scatter });
     } else if (!bp.isFloor(cell[0], cell[1])) { if (!okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`); }
@@ -929,7 +930,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
         const cx = Math.floor(px), cy = Math.floor(py);
         if (!bp.isFloor(cx, cy) || bp.isRoad(cx, cy) || blocked.has(key(cx, cy)) || nearFunc(px, py)) continue;
         if (feet.some(([fx, fy]) => Math.hypot(fx - px, fy - py) < 1.3)) continue;
-        if (opts.route && decor.distToCurve(opts.route, px, py) < decor.POLICY.ROUTE_CLEAR) continue;   // 10-31 C-1: 길 안내 폭 3칸 안은 비운다
+        if (decor.tooClose(opts.route, px, py)) continue;   // 10-31 C-1: 길 안내 둘레(출구 갈래 1.5칸 · 고리 1칸)는 비운다
         const name = names[Math.floor(rand() * names.length)], decal = /decal/.test(name);
         place(`ArtCl${clN}_${++placed}`, name, px, py, 0.85 + rand() * 0.3, rand() < 0.5, null, decal, `${where} 흩뿌림`, undefined, false, null, true);
       }
@@ -953,7 +954,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       const spr = PL.MARKER[num(d.act, 1)] || PL.MARKER[1];
       const msp = spriteOf(table, spr, `${d.id} 표식`), msc = baseScale(msp, ctx.propScale);
       for (const c of opts.route.curves) {
-        if (c.target === "end" || c.pts.length < 2) continue;
+        if (c.target === "end" || c.target === "entry" || c.kind === "loop" || c.pts.length < 2) continue;
         // 출구에서 EXIT_LEN칸 앞 (자리가 없으면 길을 따라 앞뒤로 조금씩 옮겨 본다)
         const at = (len) => {
           let acc = 0, i = c.pts.length - 1;
@@ -965,14 +966,14 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
           const L = Math.hypot(q.x - p.x, q.y - p.y) || 1, nx = -(q.y - p.y) / L, ny = (q.x - p.x) / L;
           const mx = r3(p.x + nx * off * side), my = r3(p.y + ny * off * side);
           const cells = footprint(mx, my, msp.w, msc).map((k) => k.split(",").map(Number));
-          const ok = cells.every(([cx, cy]) => bp.isFloor(cx, cy) && !blocked.has(key(cx, cy)) && !funcCells.has(key(cx, cy)) && decor.cellDistToCurve(opts.route, cx, cy) >= PL.ROUTE_CLEAR)
+          const ok = cells.every(([cx, cy]) => bp.isFloor(cx, cy) && !blocked.has(key(cx, cy)) && !funcCells.has(key(cx, cy)) && !decor.cellTooClose(opts.route, cx, cy))
             && !nearFunc(mx, my) && !feet.some(([fx, fy]) => Math.hypot(fx - mx, fy - my) < 1.0);
           if (!ok) continue;
           place(`ArtMark${++markN}`, spr, mx, my, 1, side < 0, null, false, `${d.id} 출구 표식 ${c.target}`, undefined, false, null, false);
           break search;
         }
       }
-      guide = decor.guideEntities(bp, classes, opts.route, (n) => ruid(n, "길 안내"));
+      guide = decor.guideEntities(bp, classes, opts.route, (n) => ruid(n, "길 안내"), { id: d.id, act: num(d.act, 1) });
       out.push(...guide.entities);
     }
     seam = decor.seamEntities(bp, classes, (n) => ruid(n, "이음새"), { noShade: !!bp.raised });
