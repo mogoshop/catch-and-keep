@@ -988,9 +988,7 @@ script ShadowUnit extends AttackComponent
         self.GuardPct = spec ~= nil and spec.guardPct or 0
         if self.GiantKind == "shield" and isvalid(self.OwnerPlayer) then
             -- 46-5 강화 「뼈 성벽」: 도발 반경 +0.3칸 · 받는 피해 -3%p / 랭크 (최대 -39% · 보스 제외 그대로)
-            ---@type SkillBook
-            local book = self.OwnerPlayer:GetComponent("script.SkillBook")
-            local wall = book ~= nil and book:Node("giant_shield_wall") or 0
+            local wall = _RiteGiantMoves:NodeOf(self, "giant_shield_wall")   -- 48 거인 각인 경로 (RiteGiantMoves.GiantImprint · 지금 기본 true라 값은 같다)
             self.TauntRadius = self.TauntRadius + 0.3 * wall
             self.GuardPct = self.GuardPct + 3 * wall
         end
@@ -1234,15 +1232,24 @@ script ShadowUnit extends AttackComponent
     method Entity FindNearestMonster(Vector2 myPos)
         -- 주인의 선택을 먼저 돕고, 선택이 없으면 현재 교전을 유지한다. 자동 탐색은 주인 주변만.
         -- 44-3 D 「저 적을」: 집중 시간 안에는 그 적이 맨 먼저 (자기 감지 거리와 상관없이 쫓아간다 · 주인 시야·교전 범위+FocusExtraRange 안)
-        if self:IsFocused(self.FocusTarget) and self:IsOwnerCombatTarget(self.FocusTarget, self:EngageRange(self.FocusTarget)) then return self.FocusTarget end
+        -- 48 §1-4 순서: ① 저 적을 ② 주인이 고른 적 ③ 쌍칼 후열 사냥(TwinHuntPick) ④ 지금 교전 ⑤ 가까운 적 — 수동 조준이 늘 먼저
+        if self:IsFocused(self.FocusTarget) and self:IsOwnerCombatTarget(self.FocusTarget, self:EngageRange(self.FocusTarget)) then
+            self:TwinHuntYield()
+            return self.FocusTarget
+        end
         local attack = self.OwnerPlayer:GetComponent("script.PlayerAttack")
         if attack ~= nil then
             local preferred = attack.SelectedTarget
             if preferred == nil and _UtilLogic.ElapsedSeconds - attack.LastAttackAt < 1.2 then preferred = attack.AutoTarget end
             if self:IsOwnerCombatTarget(preferred, self.OwnerCombatRange)
                 and (_Util:Pos2(preferred) - myPos):Magnitude() <= self.DetectRange
-                and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, _Util:Pos2(preferred)) then return preferred end
+                and _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, _Util:Pos2(preferred)) then
+                self:TwinHuntYield()
+                return preferred
+            end
         end
+        local hunt = self:TwinHuntPick(myPos)
+        if hunt ~= nil then return hunt end
         local currentTarget = self.Target
         if self:IsOwnerCombatTarget(currentTarget, self.OwnerCombatRange)
             and (_Util:Pos2(currentTarget) - myPos):Magnitude() <= self.DetectRange then return currentTarget end
@@ -1269,6 +1276,62 @@ script ShadowUnit extends AttackComponent
             end
         end
         return best
+    end
+
+    @ExecSpace("ServerOnly")
+    method Entity TwinHuntPick(Vector2 myPos)
+        -- 48 §1-4 쌍칼 = 후열 사냥꾼: 주인 경계 반경(OwnerGuardRange 5.5) 안 원거리 몬스터(Arch ranged · 보스 제외 · 시야)에게 먼저 파고든다 — 같은 대상에 쌍칼 twinHuntCap(2)기까지 · 가장 가까운 것.
+        --   대상이 쓰러짐 · 주인 교전 범위(OwnerCombatRange 7) 밖 · twinHuntStuck(4)초 동안 닿지 못함 → 돌아온다(그 대상은 twinHuntBan초 동안 후보에서 뺀다).
+        --   판단 규칙은 UndeadSystem.TwinHuntDecide(순수 · 오프라인 검사) · 여기는 엔진 값만 모은다. 쌍칼이 아니면 nil (평소 대상 고르기)
+        if self.Kind ~= "skeleton" or self.Giant or self.Bombing or not _Util:IsAlive(self.OwnerPlayer) then return nil end
+        local owner = self.OwnerPlayer
+        if not _UndeadSystem:IsTwinHunter(owner, self.ShadowId) then return nil end
+        local st = _UndeadSystem:TwinHuntState(owner, self.ShadowId)
+        local map = self.Entity.CurrentMap
+        local cur = nil
+        if st.targetId ~= "" then
+            local e = st.target
+            local alive = self:IsLiveTarget(e)
+            local reach = false
+            if alive then
+                local tp = _Util:Pos2(e)
+                reach = (tp - myPos):Magnitude() <= self.AttackRange + 0.2 and _Util:HasLineOfSight(map, myPos, tp)
+            end
+            cur = { alive = alive, inCombat = alive and self:IsOwnerCombatTarget(e, self.OwnerCombatRange), reach = reach }
+        end
+        local cands = {}
+        for _, m in ipairs(_Util:MonstersNear(map, _Util:Pos2(owner), self.OwnerGuardRange)) do
+            if m.Arch == "ranged" and m.Grade < 3 and isvalid(m.Entity) and self:IsOwnerCombatTarget(m.Entity, self.OwnerGuardRange) then
+                local tp = _Util:Pos2(m.Entity)
+                if _Util:HasLineOfSight(map, myPos, tp) then
+                    table.insert(cands, { id = m.Entity.Id, entity = m.Entity, dist = (tp - myPos):Magnitude(), load = _UndeadSystem:TwinHuntLoad(owner, m.Entity.Id, self.ShadowId) })
+                end
+            end
+        end
+        local had = st.targetId
+        local res = _UndeadSystem:TwinHuntDecide(st, cur, cands, _UtilLogic.ElapsedSeconds)
+        if not Environment:IsPublishedPlay() then
+            if res.drop ~= "" then log(string.format("[VRF] twin hunt return reason=%s id=%s unit=%s", res.drop, had, self.ShadowId)) end
+            if res.pick ~= nil then log(string.format("[VRF] twin hunt target=%s arch=ranged n=%d cands=%d unit=%s", res.pick.entity.Name, res.pick.load + 1, #cands, self.ShadowId)) end
+        end
+        if st.targetId ~= "" and self:IsLiveTarget(st.target) then return st.target end
+        return nil
+    end
+
+    @ExecSpace("ServerOnly")
+    method void TwinHuntYield()
+        -- 수동 조준(저 적을 · 주인이 고른 적)이 먼저 — 사냥 중이던 대상을 놓는다 (금지 시간 없음)
+        if self.Kind ~= "skeleton" or not isvalid(self.OwnerPlayer) then return end
+        _UndeadSystem:TwinHuntClear(self.OwnerPlayer, self.ShadowId, "manual")
+    end
+
+    @ExecSpace("ServerOnly")
+    method number TwinHuntSpeedMult()
+        -- 사냥 대상을 쫓는 동안 이동 배율 twinHuntSpeed(1.15 · 무리 사이를 돌아 들어가는 시간을 줄인다) · 그 밖 1.
+        --   OnUpdate 추격 줄(SetSpeedMult(1) → SetSpeedMult(self:TwinHuntSpeedMult()))은 B 소유라 통합 때 바꾼다
+        if self.Kind ~= "skeleton" or self.Target == nil or not isvalid(self.OwnerPlayer) then return 1 end
+        if _UndeadSystem:TwinHuntTargetOf(self.OwnerPlayer, self.ShadowId) == self.Target then return _GameData.twinHuntSpeed end
+        return 1
     end
 
     @ExecSpace("ServerOnly")
