@@ -799,18 +799,26 @@ script SkillEffects extends Component
         return { ruids = "", w = 128, h = 128, sec = 0.1, loop = false }
     end
 
+    @ExecSpace("ClientOnly")
     method void PlaySeq(string ruids, Vector3 pos, number angle, Vector3 scale, number frameSec, number holdSec, Color tint, integer order)
-        -- 연속본 한 번: 앞 장들은 frameSec 간격 · 마지막 장은 holdSec 동안 (holdSec ≤ frameSec면 그냥 한 장 간격) — 클라이언트
+        -- 연속본 한 번 (클라이언트): 첫 장부터 frameSec 간격 · 마지막 장은 holdSec 동안. 장마다 SetTimerOnce로 넘긴다
+        --   (Util.PlayFrames는 SetTimerRepeat 첫 호출이 바로 와 첫 장을 건너뛰고, 한 장짜리는 아예 안 보인다 — 메이커 10-30 실측 · 공용 함수는 그대로 두고 여기서만)
         local me = _UserService.LocalPlayer
         local list = _Util:Frames(ruids)
         if #list == 0 or not isvalid(me) then return end
-        if #list == 1 then _Util:PlayFrames(list[1], me.CurrentMap, pos, angle, scale, math.max(frameSec, holdSec), tint, order) return end
-        local head = table.concat(list, "|", 1, #list - 1)
-        _Util:PlayFrames(head, me.CurrentMap, pos, angle, scale, frameSec, tint, order)
         local map = me.CurrentMap
-        _TimerService:SetTimerOnce(function()
-            if isvalid(me) and me.CurrentMap == map then _Util:PlayFrames(list[#list], map, pos, angle, scale, math.max(frameSec, holdSec), tint, order) end
-        end, frameSec * (#list - 1))
+        local opt = { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint }
+        local i = 1
+        local serial = _EffectService:PlayEffect(list[1], map, pos, angle, scale, true, opt)
+        local step = nil
+        step = function()
+            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
+            i = i + 1
+            if i > #list or not isvalid(me) or me.CurrentMap ~= map then return end
+            serial = _EffectService:PlayEffect(list[i], map, pos, angle, scale, true, opt)
+            _TimerService:SetTimerOnce(step, i == #list and math.max(frameSec, holdSec) or frameSec)
+        end
+        _TimerService:SetTimerOnce(step, #list == 1 and math.max(frameSec, holdSec) or frameSec)
     end
 
     method Color GiantFxTint(string kind)
@@ -862,8 +870,7 @@ script SkillEffects extends Component
             end
             local frameSec = spec.sec or math.max(0.04, seconds / n)
             if spec.loop then _Util:PlayFramesLoop(ruids, me.CurrentMap, pos, angle, scale, frameSec, math.max(frameSec, seconds), tint, order)
-            elseif spec.hold then self:PlaySeq(ruids, pos, angle, scale, frameSec, seconds - frameSec * (n - 1), tint, order)
-            else _Util:PlayFrames(ruids, me.CurrentMap, pos, angle, scale, frameSec, tint, order) end
+            else self:PlaySeq(ruids, pos, angle, scale, frameSec, spec.hold and (seconds - frameSec * (n - 1)) or frameSec, tint, order) end
             if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant fx kind=%s seq n=%d sec=%.3f loop=%s hold=%s order=%d w=%.2f scale=%.2f", kind, n, frameSec, tostring(spec.loop == true), tostring(spec.hold == true), order, width, scale.x)) end
             return
         end
