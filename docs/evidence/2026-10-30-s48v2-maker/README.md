@@ -24,3 +24,16 @@
 - 저장: 백업 5/5 → 복원 after 5/5 (`restore-S48v2-readback-1.log`).
 - 끝 상태: 편집 모드 · map01 · PC FHD.
 - 한계: 거인은 GM `StartGiant`로 바로 세웠습니다(뼈 의식 S 홀드 경로가 아님). 판정은 하지 않았습니다.
+
+## 2차 (c4a6c285: 대검 64 · 방패 52 정본 · C 4a273aa4 · B dcd41bd0)
+- 데이터:
+  - pending 155 → 359줄. 기존 155줄은 그대로 두고 204줄을 더했습니다.
+  - monster_frames 기술 몸 4줄 · SkillEffects 슬롯 RUID(키 순서, Opts는 B 값 그대로) · art_sprites 100줄
+- 검사 로그: `phase2/`
+- 녹화:
+  - `V2-P2-greatsword-spin-rift` — 회전 두 층 16+16 shown 64/64 · 균열 16 plant 0.300
+  - `V2-P2-shield-roar-slam` — 함성 몸+FX 동시 fx_in 0.000 · 슬램 fx_t0 접점 0.120 = 몸 타격 0.120
+- 실제 빈 곳: 방패 함성 앞 별 5장은 B에 슬롯이 없어 연결하지 않았습니다. B는 원본 12장을 orders로 앞/뒤 층에 나눠 씁니다.
+- 관찰(판정 아님): 슬램에서 클라이언트 로그 「impact drift … hit=0.350」이 1번 나왔습니다.
+- 저장: 복원 2 after 5/5 (`restore-S48v2-readback-2.log`).
+- 끝 상태: 편집 모드 · map01 · PC FHD.
