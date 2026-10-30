@@ -1,7 +1,8 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
 -- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
+-- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
@@ -664,16 +665,17 @@ do
   assert(en2['SkillWin/WS/Form']==false and SkillWindow.FormKind=='','mage form box hidden without forms')
   UndeadSystem.FormOrder=keepFO;_UIKit.SetEnabled=keepEn
  end
- -- 거인 수 어댑터 (48-4 A API 전): 옛 꼴(상태 하나) · 목록 꼴 · 클라이언트 쉼표 목록 — 상한 2에서만 5기 건너뜀
+ -- 거인 수 (48 통합: SkillBook 어댑터 → UndeadSystem 공개 API · 인자 = 플레이어 엔티티): 서버 목록 꼴 · 클라이언트 쉼표 목록 — 상한 2에서만 5기 건너뜀
+ local keepUS=UndeadSystem.IsServer
+ UndeadSystem.IsServer=function() return true end
  UndeadSystem.Giants={}
  assert(book:GiantCount()==0 and not book:GiantStanding() and not book:GiantCapReached())
- UndeadSystem.Giants.fixture={host={},mates={},epoch=1}
- assert(book:GiantCount()==1 and book:GiantStanding() and not book:GiantCapReached(),'one giant (old shape)')
+ UndeadSystem.Giants.fixture={{host={}}}
+ assert(book:GiantCount()==1 and book:GiantStanding() and not book:GiantCapReached(),'one giant (list)')
  UndeadSystem.Giants.fixture={{host={}},{host={}}}
  assert(book:GiantCount()==2 and book:GiantCapReached(),'two giants (list)')
  UndeadSystem.Giants={}
- local keepServer=book.IsServer
- book.IsServer=function() return false end
+ UndeadSystem.IsServer=function() return false end
  local cmdG={GiantKind='shield'}
  local keepGet2=entity.GetComponent
  entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdG end return keepGet2(self,key) end
@@ -682,9 +684,9 @@ do
  assert(book:GiantCount()==2 and book:GiantCapReached(),'client two')
  cmdG.GiantKind=''
  assert(book:GiantCount()==0 and not book:GiantStanding(),'client none')
- entity.GetComponent=keepGet2;book.IsServer=keepServer
+ entity.GetComponent=keepGet2;UndeadSystem.IsServer=keepUS
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
- print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count adapter server/client')
+ print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

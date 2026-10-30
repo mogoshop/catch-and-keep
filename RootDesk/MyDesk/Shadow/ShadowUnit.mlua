@@ -696,7 +696,7 @@ script ShadowUnit extends AttackComponent
             local t = self.Target.TransformComponent.WorldPosition
             local toTarget = Vector2(t.x, t.y) - myPos
             if toTarget:Magnitude() > self.AttackRange or not _Util:HasLineOfSight(self.Entity.CurrentMap, myPos, Vector2(t.x, t.y)) then
-                self:SetSpeedMult((self.Giant and _UtilLogic.ElapsedSeconds < self.GiantSlowUntil) and 0.6 or 1)   -- 48 대검 거인 회전 중 ×0.6으로 따라감
+                self:SetSpeedMult((self.Giant and _UtilLogic.ElapsedSeconds < self.GiantSlowUntil) and 0.6 or self:TwinHuntSpeedMult())   -- 48 대검 거인 회전 중 ×0.6으로 따라감 · 쌍칼 후열 사냥 대상 추격 ×twinHuntSpeed (48 통합)
                 self:MoveToward(toTarget)
             else
                 -- 마법사는 닿는 적에게서 물러나 전사의 뒤에서 쏜다. 벽 앞에서는 공격을 포기하지 않는다.
@@ -1328,7 +1328,7 @@ script ShadowUnit extends AttackComponent
     @ExecSpace("ServerOnly")
     method number TwinHuntSpeedMult()
         -- 사냥 대상을 쫓는 동안 이동 배율 twinHuntSpeed(1.15 · 무리 사이를 돌아 들어가는 시간을 줄인다) · 그 밖 1.
-        --   OnUpdate 추격 줄(SetSpeedMult(1) → SetSpeedMult(self:TwinHuntSpeedMult()))은 B 소유라 통합 때 바꾼다
+        --   OnUpdate 추격 줄에서 읽는다 (48 통합 — 대검 거인 회전 감속 0.6이 먼저)
         if self.Kind ~= "skeleton" or self.Target == nil or not isvalid(self.OwnerPlayer) then return 1 end
         if _UndeadSystem:TwinHuntTargetOf(self.OwnerPlayer, self.ShadowId) == self.Target then return _GameData.twinHuntSpeed end
         return 1

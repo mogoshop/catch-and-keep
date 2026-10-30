@@ -262,7 +262,7 @@ do
  local fh=io.open('RootDesk/MyDesk/Shadow/ShadowUnit.mlua') local src=fh:read('a') fh:close()
  ok(src:find('if self.Kind == "mage" and not self.Giant and toTarget:Magnitude() < safeRange',1,true)~=nil,'거인은 물러서지 않는다 (④)')
  ok(src:find('if self.Giant and _UtilLogic.ElapsedSeconds < self.GiantCastUntil then',1,true)~=nil,'영창·꽂기 중 제자리')
- ok(src:find('self.GiantSlowUntil) and 0.6 or 1',1,true)~=nil,'회전 중 이동 ×0.6')
+ ok(src:find('self.GiantSlowUntil) and 0.6 or self:TwinHuntSpeedMult())',1,true)~=nil,'회전 중 이동 ×0.6 (그 밖 = 쌍칼 사냥 배율 · 48 통합)')
  ok(src:find('self:GiantPlay("skill")',1,true)==nil,'옛 도발 기술 그림 호출 없음 (①)')
  ok(RiteGiantMoves:GiantImprint({})==true,'거인 각인 기본 = 모두 각인 (Q1)')
  local fr=io.open('RootDesk/MyDesk/Undead/RiteGiantMoves.mlua') local rg=fr:read('a') fr:close()

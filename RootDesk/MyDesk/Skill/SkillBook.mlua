@@ -906,8 +906,7 @@ script SkillBook extends Component
         local p = _UndeadSystem:RosterPreview(self.Entity, kind)
         if p.level <= 0 or p.max <= 0 then return "" end
         local parts = {}
-        local forms = { "" }
-        for _, f in ipairs(_UndeadSystem:FormOrder(kind)) do table.insert(forms, f) end
+        local forms = _UndeadSystem:ShownForms(kind)   -- 48 통합: 일반 → 진화한 방패 → 변이 (FormOrder만 읽으면 방패 수가 빠졌다)
         for _, f in ipairs(forms) do
             local n = p.units[f] or 0
             if n > 0 then table.insert(parts, (f == "" and "일반" or string.match(_UndeadSystem:FormName(kind, f), "^(%S+)")) .. " " .. tostring(n)) end
@@ -1332,30 +1331,18 @@ script SkillBook extends Component
     end
 
     method integer GiantCount()
-        -- 48 §3 (거인 2마리): 지금 서 있는 내 거인 수. 서버 = UndeadSystem.Giants[uid] — 옛 꼴(상태 하나 · host 칸)과 48-4 꼴(상태 목록)을 둘 다 센다,
-        --   클라이언트 = 동기화된 GiantKind 쉼표 목록(「shield,mage」) 수. 갈래 A의 UndeadSystem 거인 수 API가 들어오면 그 함수로 바꾼다 (임시 어댑터)
-        if self:IsServer() then
-            local g = _UndeadSystem.Giants[self.Entity.PlayerComponent.UserId]
-            if g == nil then return 0 end
-            if g.host ~= nil then return 1 end
-            return #g
-        end
-        ---@type ShadowCommander
-        local cmd = self.Entity:GetComponent("script.ShadowCommander")
-        if cmd == nil or cmd.GiantKind == "" then return 0 end
-        local n = 0
-        for _ in string.gmatch(cmd.GiantKind, "[^,]+") do n = n + 1 end
-        return n
+        -- 48 §3 (거인 2마리): 지금 서 있는 내 거인 수 — 갈래 A 공개 API(UndeadSystem.GiantCount · 서버 Giants 목록 / 클라이언트 GiantKind 쉼표 수)로 연결 (48 통합)
+        return _UndeadSystem:GiantCount(self.Entity)
     end
 
     method boolean GiantCapReached()
         -- 48 §3-1 「5기 건너뜀」: 거인이 상한(config riteGiantMax 2)만큼 서 있으면 5기를 건너뛰고 3기로 내린다 (한 마리만 서 있으면 둘째를 세울 수 있다)
-        return self:GiantCount() >= math.max(1, math.floor(_GameData.riteGiantMax))
+        return _UndeadSystem:GiantCapReached(self.Entity)
     end
 
     method boolean GiantStanding()
         -- 거인이 하나라도 서 있나 (46-1 · §2-5 뜻 그대로 — 「상한 도달」은 GiantCapReached)
-        return self:GiantCount() > 0
+        return _UndeadSystem:GiantStandingAny(self.Entity)
     end
 
     method integer RiteBestStage(integer want, number mana)
@@ -1444,7 +1431,10 @@ script SkillBook extends Component
         if paid then _GameEvents:Emit("SkillCast", { player = self.Entity, skill = "bone_rite", rank = lv, mana = cost }) end
         local castMul = stats:GetCastCooldownMult()
         self:SetCooldown("bone_rite", (def.cooldown or 1) * castMul)
-        if stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
+        if stage == 5 then
+            -- 48 Q2 C2: 5기는 충전 2칸 — StartGiant가 이미 한 칸 썼다. 칸이 남으면 덮개 0, 다 쓰면 다음 칸까지 (UndeadSystem.GiantChargeCover · ServerOnly)
+            self:SetCooldown("rite_giant", _UndeadSystem:GiantChargeCover(self.Entity))
+        elseif stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
         self:PresentCast("bone_rite", target - me, userId)
         if stage == 5 then
             -- 44-2 궁극기 연출: 뼈 의식 5기 「뼈 거인」 (시전자 화면만)
