@@ -370,6 +370,60 @@ for (const win of WIDE) {
   if (verbose) console.log(`스킬 창 편성 칸 WS/Form x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t} · Mode ${kids.Mode.r - kids.Mode.l}×${kids.Mode.t - kids.Mode.b} · ± ${kids.Minus.r - kids.Minus.l}×${kids.Minus.t - kids.Minus.b}`);
 }
 
+  // ── S48-UI-DETAIL-PIPS-01 (10-30): 편성 줄 WS/Roster ↔ 랭크 점 줄 WS/Pip1~20 비겹침 ──
+  //   PC 해골 전사·마법사 상세에서 편성 줄(효과 칸 6~7번째 줄)이 랭크 점 줄을 덮었다 → 편성 줄은 WS/Roster(강화 트리 아래)로. 점은 단계·완성 칸이 26으로 커지며 왼쪽 위로 3 비킨다(SkillWindow.SizePip)
+  //   효과 칸(WS/Stat) 상자도 큰 점과 겹치지 않고, 편성 줄은 판 안쪽 · 편성 조작 칸(WS/Form) · 해골 전사·마법사 노드 · 필요 랭크 머리 · 랭크 안내 줄(RankNote·Reason)과 겹치지 않는다
+{
+  const gb = uiOf('GameHUD');
+  const T = 'MOD.Core.UITransformComponent';
+  const { SKPANEL } = require('./build/ui-tokens.cjs');
+  const ws = gb.getComponent('SkillWin/WS', T);
+  const rectIn = (t, ox, oy) => {
+    const l = ox + t.anchoredPosition.x - t.Pivot.x * t.RectSize.x;
+    const top = oy + t.anchoredPosition.y + (1 - t.Pivot.y) * t.RectSize.y;
+    return { l, r: l + t.RectSize.x, t: top, b: top - t.RectSize.y };
+  };
+  const overlap = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.t, b.t) - Math.max(a.b, b.b) > 0.5;
+  const inside = (a, b) => a.l >= b.l - 0.5 && a.r <= b.r + 0.5 && a.t <= b.t + 0.5 && a.b >= b.b - 0.5;
+  const get = (p) => gb.getComponent('SkillWin/WS/' + p, T);
+  if (!get('Roster')) problems.push('스킬 창 편성 줄 WS/Roster 없음 — node tools/build.cjs ui (S48-UI-DETAIL-PIPS-01)');
+  else {
+    const roster = rectIn(get('Roster'), 0, 0);
+    const stat = rectIn(get('Stat'), 0, 0);
+    const pips = [];
+    for (let i = 1; i <= 20; i++) {
+      const p = rectIn(get('Pip' + i), 0, 0);
+      const grow = (26 - (p.r - p.l)) / 2;
+      pips.push({ i, l: p.l - grow, r: p.r + grow, t: p.t + grow, b: p.b - grow });
+    }
+    for (const p of pips) {
+      if (overlap(roster, p)) problems.push(`스킬 창 편성 줄 WS/Roster(x ${roster.l}~${roster.r} · y ${roster.b}~${roster.t})이 랭크 점 ${p.i}(큰 점 26 기준)과 겹친다`);
+      if (overlap(stat, p)) problems.push(`스킬 창 효과 칸 WS/Stat(y ${stat.b}~${stat.t})이 랭크 점 ${p.i}(큰 점 26 · y ${p.b}~${p.t})과 겹친다`);
+    }
+    for (const k of ['RankNote', 'Reason', 'Stat', 'Form']) if (overlap(roster, rectIn(get(k), 0, 0))) problems.push(`스킬 창 편성 줄 WS/Roster ↔ WS/${k} 겹침`);
+    const panelIn = { l: SKPANEL.border, r: ws.RectSize.x - SKPANEL.border, t: -SKPANEL.border, b: -(ws.RectSize.y - SKPANEL.border) };
+    if (!inside(roster, panelIn)) problems.push(`스킬 창 편성 줄 WS/Roster가 공방 판 안쪽 밖`);
+    const skills = require('./lib/csv.cjs').load('skills');
+    for (const parent of ['raise_skeleton', 'raise_mage']) {
+      const nodes = skills.filter((s) => s.parent === parent);
+      const needs = [...new Set(nodes.map((s) => +s.need))].sort((a, b) => a - b);
+      const rowsIn = {};
+      for (const n of nodes) {
+        const ci = needs.indexOf(+n.need) + 1;
+        rowsIn[ci] = (rowsIn[ci] || 0) + 1;
+        const x = 680 + (ci - 1) * 104, y = -96 - (rowsIn[ci] - 1) * 102;
+        if (overlap({ l: x - 50, r: x + 50, t: y, b: y - 100 }, roster)) problems.push(`스킬 창 편성 줄 WS/Roster가 ${parent} 강화 노드 ${n.id}와 겹친다`);
+      }
+      for (let i = 1; i <= needs.length; i++) {
+        const x = 680 + (i - 1) * 104;
+        if (overlap({ l: x - 50, r: x + 50, t: -66, b: -86 }, roster)) problems.push(`스킬 창 편성 줄 WS/Roster가 ${parent} 필요 랭크 머리 ${i}열과 겹친다`);
+      }
+    }
+    const pipTop = Math.max(...pips.map((p) => p.t)), pipBottom = Math.min(...pips.map((p) => p.b));
+    if (verbose) console.log(`스킬 창 편성 줄 WS/Roster x ${roster.l}~${roster.r} · y ${roster.b}~${roster.t} · 효과 칸 y ${stat.b}~${stat.t} · 랭크 점 x ${pips[0].l}~${pips[19].r} · y ${pipBottom}~${pipTop}`);
+  }
+}
+
 if (problems.length) {
   for (const p of problems) console.log(p);
   console.log(`[check_mobile_layout] 문제 ${problems.length}건`);
