@@ -30,9 +30,10 @@ script SkillEffects extends Component
     property string FxDrain = "07e92bf63fa44ba5a74507f96cb4e18c"         -- 보라 소용돌이
     property string FxStorm = "0d7381204f9b47869a705a16cf0344d1"         -- 보라 회오리 고리
     -- 48 거인 기술 새 그림 자리 (K-4 · 샘플 승인 뒤 「|」로 이은 프레임 RUID) — 비면 GiantMoveFx가 있는 효과로 (빈 RUID를 렌더러에 넣지 않는다)
-    property string FxGiantNova = ""                                     -- 화염 노바: 퍼지는 얇은 불 고리 4~6장 (반경 2.5 · 256px = 2.56칸)
-    property string FxGiantFireMeteor = ""                               -- 기도 메테오 착지 폭발 · 그을린 땅 (약 6장 · 192px)
-    property string FxGiantRoar = ""                                     -- 방패 도발 함성: 머리 위 작은 강철 고리 1장 (64px)
+    property string FxGiantNova = "e8d9438c25234f94b8e75e65b3bcf301"                                     -- 화염 노바: 퍼지는 얇은 불 고리 4~6장 (반경 2.5 · 256px = 2.56칸)
+    property string FxGiantFireMeteor = "c52405801f284af09fc290e27e913219"                               -- 기도 메테오 착지 폭발 · 그을린 땅 (약 6장 · 192px)
+    property string FxGiantRoar = "d495a35eae23453fa920ce723b941f53"
+    property string FxGiantFlurry = "6a03fcac19f848f2981a07e325e51c5b"                 -- 48 K-4 쌍칼 연속 베기 X (192px · 실제 접점 기준 · 호출은 RiteGiantMoves 연결 대기)                                     -- 방패 도발 함성: 머리 위 작은 강철 고리 1장 (64px)
     property string FxWave = "19fd8c7d47ec44aeb467bad744659899"          -- 보라 마법진 폭발
     property table ClipVisuals = {}           -- 클라이언트: 재생 중인 메이플 스킬 애니메이션 serial
     property integer StormClip = 0
@@ -784,13 +785,16 @@ script SkillEffects extends Component
         --   한 번 재생 = 기존 FramesFx 결(파쇄 0.07 · 레이저 BeamFx 0.08)과 같은 0.07~0.09초 — 빠른 몸짓(돌진) 0.07 · 내려찍기 0.08 · 균열 0.09(무게감)
         --   반복 = 스킬 지속 동안 도는 그림 — 회전 베기 0.10(6장 = 0.6초 한 바퀴 · 지속 1.6초 동안 2.7바퀴)
         --   48 (K-4): 땅울림·뼈 던지기·뼈 유성·저주 장판 그림은 쓰지 않는다(파일은 둠) · 화염 노바·화염 메테오·도발 고리 새 그림은 속성(FxGiantNova 등)이 차면 그 그림, 비면 있는 효과로
-        if kind == "slam" then return { ruids = _GameConst.FxGiantSlam, w = 128, h = 128, sec = 0.08, loop = false } end
-        if kind == "spin" then return { ruids = _GameConst.FxGiantSpin, w = 192, h = 192, sec = 0.10, loop = true } end
-        if kind == "rift" then return { ruids = _GameConst.FxGiantRift, w = 256, h = 64, sec = 0.09, loop = false } end
-        if kind == "dash" then return { ruids = _GameConst.FxGiantDash, w = 192, h = 64, sec = 0.07, loop = false } end
-        if kind == "nova" then return { ruids = self.FxGiantNova, w = 256, h = 256, sec = 0.09, loop = false } end
-        if kind == "meteor_land" then return { ruids = self.FxGiantFireMeteor, w = 192, h = 192, sec = 0.09, loop = false } end
-        if kind == "roar" then return { ruids = self.FxGiantRoar, w = 64, h = 64, sec = 0.08, loop = false } end
+        --   48 K-4 미리보기(10-30): 샘플 1장씩 · w/h = 새 그림 원본 px · px = 가로 피벗(업로드 속성 그대로 · 0.5가 아니면 GiantMoveFx가 길이 방향으로 옮긴다)
+        --   order 1 = 몸 뒤 바닥(MapLayer0 · 기존 「몸 아래 층」 규칙) · 6 = 몸 앞 · own = 새 그림 자기 색(색조 대신 흰색 0.85)
+        if kind == "slam" then return { ruids = _GameConst.FxGiantSlam, w = 192, h = 128, sec = 0.35, loop = false, px = 0.5, order = 1, own = true } end
+        if kind == "spin" then return { ruids = _GameConst.FxGiantSpin, w = 192, h = 192, sec = 0.10, loop = true, px = 0.5, order = 6, own = true } end
+        if kind == "rift" then return { ruids = _GameConst.FxGiantRift, w = 256, h = 96, sec = 0.4, loop = false, px = 0, order = 1, own = true } end
+        if kind == "dash" then return { ruids = _GameConst.FxGiantDash, w = 256, h = 96, sec = 0.4, loop = false, px = 1, order = 1, own = true } end
+        if kind == "nova" then return { ruids = self.FxGiantNova, w = 384, h = 256, sec = 0.09, loop = false, px = 0.5, order = 1, own = true } end
+        if kind == "meteor_land" then return { ruids = self.FxGiantFireMeteor, w = 256, h = 256, sec = 0.6, loop = false, px = 0.5, order = 1, own = true } end
+        if kind == "roar" then return { ruids = self.FxGiantRoar, w = 64, h = 32, sec = 0.5, loop = false, px = 0.5, order = 6, own = true } end
+        if kind == "flurry" then return { ruids = self.FxGiantFlurry, w = 192, h = 192, sec = 0.15, loop = false, px = 0.5, order = 6, own = true } end
         return { ruids = "", w = 128, h = 128, sec = 0.1, loop = false }
     end
 
@@ -822,9 +826,33 @@ script SkillEffects extends Component
             return
         end
         if spec.ruids ~= "" then
+            local order = spec.order or 6
+            if spec.own then tint = Color(1, 1, 1, 0.85) end   -- 48 K-4 새 그림은 자기 색 · 겹침 불투명 0.85 유지
+            if spec.px ~= nil and spec.px ~= 0.5 then
+                -- 가로 피벗이 끝(0 = 시작 끝 · 1 = 앞 끝)인 그림: 부르는 쪽은 가운데를 주므로 길이 방향으로 옮긴다 (땅 가르기 시작점 · 돌진 머리)
+                local rad = math.rad(angle)
+                local shift = (spec.px - 0.5) * width
+                pos = Vector3(pos.x + math.cos(rad) * shift, pos.y + math.sin(rad) * shift, pos.z)
+            end
+            if kind == "nova" then
+                -- 속이 빈 고리 한 장을 반경 0.5 → width/2로 키우며 몇 번 그린다 (48 Q7 · 0.5초 · 두께는 그림 그대로 · 실제 피해 반경 불변)
+                local steps = 4
+                for k = 1, steps do
+                    local r = 0.5 + (width / 2 - 0.5) * k / steps
+                    _TimerService:SetTimerOnce(function()
+                        if isvalid(me) and me.CurrentMap == self.Entity.CurrentMap then
+                            _Util:PlayFrames(spec.ruids, me.CurrentMap, pos, 0, Vector3(r * 2 / (spec.w / 100), r * 2 / (spec.w / 100), 1), math.max(0.1, seconds / steps), tint, order)
+                        end
+                    end, seconds * (k - 1) / steps)
+                end
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant fx kind=%s preview order=%d px=%.2f w=%.2f", kind, order, spec.px or 0.5, width)) end
+                return
+            end
+            if spec.own and kind ~= "rift" and kind ~= "dash" then height = width * spec.h / spec.w end   -- 새 그림은 원본 가로세로 비 유지 (부르는 쪽은 정사각 지름을 준다 · 길이로 늘이는 균열·돌진만 예외)
             local scale = Vector3(width / (spec.w / 100), height / (spec.h / 100), 1)
-            if spec.loop then _Util:PlayFramesLoop(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, math.max(spec.sec, seconds), tint, 6)
-            else _Util:PlayFrames(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, tint, 6) end
+            if spec.loop then _Util:PlayFramesLoop(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, math.max(spec.sec, seconds), tint, order)
+            else _Util:PlayFrames(spec.ruids, me.CurrentMap, pos, angle, scale, spec.sec, tint, order) end
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant fx kind=%s preview order=%d px=%.2f w=%.2f h=%.2f", kind, order, spec.px or 0.5, width, height)) end
             return
         end
         if kind == "spin" or kind == "flurry" then
