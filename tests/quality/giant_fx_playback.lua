@@ -6,7 +6,7 @@
 -- 엔진 효과·타이머·화면 몸(MotionSmoother)은 대역 — 실제 화면 주기·그림 품질은 메이커 실녹화(maker_queue)
 -- @source GameData Data/GameData.mlua Ensure,GetGiant
 -- @source Util Common/Util.mlua Frames
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,SeqFx,ClipFxLocal
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,BodySign,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,SeqFx,ClipFxLocal
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
 local function near(a,b,e) return math.abs(a-b)<=(e or 1e-6) end
@@ -47,7 +47,7 @@ local me={CurrentMap=map}
 _UserService={LocalPlayer=me}
 SkillEffects.Entity={CurrentMap=map}
 -- 화면 몸 대역: 거인이 걷는다 (VisOf = 그림 대역)
-local giant={TransformComponent={WorldPosition=Vector3(0,0,0)}}
+local giant={TransformComponent={WorldPosition=Vector3(0,0,0),Scale=Vector3(1,1,1)},SpriteRendererComponent={FlipX=false}}
 _MotionSmoother={VisOf=function(_,e) return e end}
 _GameConst={FxGiantSlam='s1|s2|s3|s4',FxGiantSpin='o1|o2|o3|o4|o5|o6',FxGiantRift='r1|r2|r3|r4',FxGiantDash='d1|d2|d3|d4',FxSlash='slash',FxSkillHexBurst=''}
 _GameData:Ensure()
@@ -239,10 +239,11 @@ do
  ok(#w==13 and w[1].ruid=='sw4' and near(w[1].at-t0,0.12,TICK+1e-9) and w[1].opt.OrderInLayer==1,'뒤 지면 분출 = 4번째 장 · 120ms ±1화면 (그림 전체를 120ms 미루지 않음 → 분출 240ms 아님)')
  ok(near(w[13].at-w[1].at,0.03*12,TICK+1e-9),'분출 30ms씩 장별 시간')
  ok(near(w[1].pos.x,5+79*1.2/100) and near(w[1].pos.y,1*1.2/100) and near(w[1].scale.x,1.2),'접점 = 발 + (79,+1)px × 몸 배율 1.2 (세계 위 + · 슬램 부호 정정) · 그림도 몸 화소 밀도')
- reset()
- SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),-1,3.2,3.2,0,0.35) run(1)
+ reset() giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
+ SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
  w=onlyMs('sw')
- ok(near(w[1].pos.x,5-79*1.2/100) and w[1].opt.FlipX==true and w[1].scale.x>0,'왼쪽: 접점 -79px · FlipX만')
+ ok(near(w[1].pos.x,5-79*1.2/100) and w[1].opt.FlipX==true and w[1].scale.x>0,'거울 몸(Scale.x<0 · 오른쪽 봄): 접점 -79px · FlipX 같은 부호 (facing 인자 무관)')
+ giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
  -- 함성: 12장 × 50ms t0 · 축광 동안 몸을 따라가다 6번째 장(250ms)부터 방사 원점 고정
  reset()
@@ -272,8 +273,9 @@ do
  ok(track,'문양 추적: 1~6번째 장이 좌표표(몸 화소 × 1.2 ÷ 100) 그대로')
  local fixed=true for i=7,12 do if not near(r[i].pos.x,r[6].pos.x) or not near(r[i].pos.y,r[6].pos.y) then fixed=false end end
  ok(fixed,'250ms(6번째 장 · 몸 index 5)에 그 자리로 방사 원점 고정')
- reset() SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),-1,6,6,0,0.6) run(1)
- r=onlyMs('rg') ok(near(r[1].pos.x,-10*0.012) and r[1].opt.FlipX==true,'왼쪽: 문양 좌표 좌우 대칭 · FlipX')
+ reset() giant.TransformComponent.Scale=Vector3(-1.2,1.2,1) SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
+ r=onlyMs('rg') ok(near(r[1].pos.x,-10*0.012) and r[1].opt.FlipX==true,'거울 몸: 문양 좌표 좌우 대칭 · FlipX')
+ giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  -- 층: 축광 0~4 = 앞(order 6) · 방사 5~11 = 뒤(order 1)
  local lay=true for i=1,12 do if r[i].opt.OrderInLayer~=(i<=5 and 6 or 1) then lay=false end end
  ok(lay,'함성 층: 축광 1~5장 앞층 · 방사 6~12장 뒤층 (정본 behind_radial)')
@@ -302,23 +304,59 @@ do
  giant.TransformComponent.WorldPosition=Vector3(2,1,0) giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
  local r=onlyMs('rq') local okr=true
- for i=1,6 do if not near(r[i].pos.x,2+GX[i]*0.012) or not near(r[i].pos.y,1+GY[i]*0.012) then okr=false end end
- ok(okr,'확정 문양 좌표 6장 적용 (몸 |배율| 1.2 · 위 + 그대로 · 이미지 dy 음수 아님)')
- local fixed=true for i=7,12 do if not near(r[i].pos.x,2+59.46*0.012) or not near(r[i].pos.y,1+107.79*0.012) then fixed=false end end
- ok(fixed,'250ms: index 5 좌표 (59.46, 107.79) 적용한 세계 자리로 고정 · 이후 추적 없음')
- reset() SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),-1,6,6,0,0.6) run(1)
+ for i=1,6 do if not near(r[i].pos.x,2-GX[i]*0.012) or not near(r[i].pos.y,1+GY[i]*0.012) then okr=false end end
+ ok(okr,'확정 문양 좌표 6장 적용 · 오른쪽 몸(Scale.x<0)은 x 반전 (몸 |배율| 1.2 · 위 + 그대로)')
+ local fixed=true for i=7,12 do if not near(r[i].pos.x,2-59.46*0.012) or not near(r[i].pos.y,1+107.79*0.012) then fixed=false end end
+ ok(fixed,'250ms: index 5 좌표 적용한 세계 자리로 고정 · 이후 추적 없음')
+ reset() giant.TransformComponent.Scale=Vector3(1.2,1.2,1) SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
  r=onlyMs('rq')
- ok(near(r[1].pos.x,2+43.42*0.012) and near(r[1].pos.y,1+74.56*0.012) and near(r[12].pos.x,2-59.46*0.012),'왼쪽: x만 반전 · y 그대로')
+ ok(near(r[1].pos.x,2-43.42*0.012) and near(r[1].pos.y,1+74.56*0.012) and near(r[12].pos.x,2+59.46*0.012),'왼쪽 몸(Scale.x>0 · 원 그림 방향): 원 PNG x 그대로 · y 그대로')
  -- 지연 타이머 반례: 5번째 장(index 4)이 250ms 뒤(260ms)에 와도 그 좌표로 고정하지 않고 6번째 장에서 index 5 좌표로 고정
  reset() giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
  local base=_UtilLogic.ElapsedSeconds
  timerShift=function(due) if due>base+0.19 and due<base+0.21 then return base+0.26 end return due end
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1) timerShift=nil
  r=onlyMs('rq')
- ok(r[5].at-base>0.25 and near(r[5].pos.x,2+58.52*0.012) and near(r[5].pos.y,1+99.06*0.012),'지연된 5번째 장(260ms)은 자기 좌표(index 4)로 · 고정 아님')
- ok(near(r[6].pos.x,2+59.46*0.012) and near(r[6].pos.y,1+107.79*0.012) and near(r[12].pos.x,r[6].pos.x) and near(r[12].pos.y,r[6].pos.y),'6번째 장 도달에서 index 5 좌표로 고정 (시간·장 중 늦은 쪽)')
+ ok(r[5].at-base>0.25 and near(r[5].pos.x,2-58.52*0.012) and near(r[5].pos.y,1+99.06*0.012),'지연된 5번째 장(260ms)은 자기 좌표(index 4)로 · 고정 아님')
+ ok(near(r[6].pos.x,2-59.46*0.012) and near(r[6].pos.y,1+107.79*0.012) and near(r[12].pos.x,r[6].pos.x) and near(r[12].pos.y,r[6].pos.y),'6번째 장 도달에서 index 5 좌표로 고정 (시간·장 중 늦은 쪽)')
  SkillEffects.FxGiantRoarSeq='' giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  ok(SkillEffects:FxOpts(DEF.slam).aypx==1 and SkillEffects:FxOpts(DEF.slamF).aypx==1 and SkillEffects:FxOpts(DEF.slam).axpx==79,'슬램 접점 세계용 (79, +1) — 뒤·앞 층 같은 부호')
+end
+-- ⑩ 몸 부착 FX 좌우 부호 (코덱스 c4a6c285 · f502/f504): 실제 렌더 몸(대역 Scale.x 부호 × FlipX)이 기준 — 대상 방향(facing) 아님
+do
+ local function onlyMs(prefix) local t={} for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
+ local K=0.66
+ SkillEffects.FxGiantRoarOpts=DEF.roar SkillEffects.FxGiantRoarSeq=seq('ro',12)
+ SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamFrontOpts=DEF.slamF SkillEffects.FxGiantSlamSeq=seq('sw',16) SkillEffects.FxGiantSlamFront=seq('ss',3)
+ giant.TransformComponent.WorldPosition=Vector3(0,0,0)
+ -- ① 오른쪽 몸(Scale.x<0): 함성 gx>0 장 → 세계 x<0 (6장 59.46 → -0.392) · FlipX true
+ reset() giant.TransformComponent.Scale=Vector3(-K,K,1) giant.SpriteRendererComponent.FlipX=false
+ SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
+ local r=onlyMs('ro')
+ ok(near(r[6].pos.x,-59.46*K/100) and near(-59.46*K/100,-0.392,0.001) and r[2].pos.x<0 and r[6].opt.FlipX==true and r[1].opt.FlipX==true,'오른쪽 몸: 함성 6장 x -0.392 · gx>0 장 세계 x<0 · FlipX 같은 부호 '..r[6].pos.x)
+ -- ② 왼쪽 몸(Scale.x>0): 반대 (+0.392 · FlipX false) — facing 인자를 반대로 줘도 몸 기준
+ reset() giant.TransformComponent.Scale=Vector3(K,K,1)
+ SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),-1,6,6,0,0.6) run(1)
+ r=onlyMs('ro')
+ ok(near(r[6].pos.x,59.46*K/100) and r[2].pos.x>0 and r[6].opt.FlipX==false,'왼쪽 몸: 함성 6장 x +0.392 · FlipX false (facing -1 무시)')
+ -- ③ 슬램 ax +79 같은 규칙: 오른쪽 몸 -0.521 · 왼쪽 몸 +0.521 · 앞 별·뒤 분출 같은 접점·같은 FlipX
+ reset() giant.TransformComponent.Scale=Vector3(-K,K,1)
+ SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
+ local w,st=onlyMs('sw'),onlyMs('ss')
+ ok(near(w[1].pos.x,-79*K/100) and near(st[1].pos.x,-79*K/100) and near(-79*K/100,-0.521,0.001) and w[1].opt.FlipX==true and st[1].opt.FlipX==true and near(w[1].pos.y,1*K/100),'오른쪽 몸 슬램: 접점 x -0.521 · 앞 별·뒤 분출 일치 · FlipX true · y +1px 그대로')
+ reset() giant.TransformComponent.Scale=Vector3(K,K,1)
+ SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),-1,3.2,3.2,0,0.35) run(1)
+ w,st=onlyMs('sw'),onlyMs('ss')
+ ok(near(w[1].pos.x,79*K/100) and near(st[1].pos.x,79*K/100) and w[1].opt.FlipX==false and st[1].opt.FlipX==false,'왼쪽 몸 슬램: 접점 x +0.521 · FlipX false')
+ -- ④ FlipX 합성 반전: Scale.x<0 이면서 SpriteRenderer.FlipX=true → 원 그림 방향(+) · 추적 중 몸이 돌면 다음 장부터 반영 · 고정 뒤엔 고정
+ reset() giant.TransformComponent.Scale=Vector3(-K,K,1) giant.SpriteRendererComponent.FlipX=true
+ SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6)
+ run(0.06) giant.SpriteRendererComponent.FlipX=false run(1)
+ r=onlyMs('ro')
+ ok(r[1].pos.x<0 and r[1].opt.FlipX==false and near(r[1].pos.x,-43.42*K/100),'Scale.x<0 × FlipX = 원 방향: 1장 x = 원 PNG -43.42 그대로 · FlipX false')
+ ok(near(r[3].pos.x,-39.87*K/100) and r[3].opt.FlipX==true and near(r[12].pos.x,-59.46*K/100) and r[12].opt.FlipX==true,'추적 중 몸이 돌면 다음 장부터 새 부호 (위치·FlipX 함께) · 고정 뒤 유지')
+ giant.SpriteRendererComponent.FlipX=false giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
+ SkillEffects.FxGiantRoarSeq='' SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
 end
 -- ⑥ 새 그림이 비면 지금 그림 그대로 (옛 66장 경로)
 do
