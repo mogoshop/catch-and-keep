@@ -184,7 +184,8 @@ script RiteGiantMoves extends Logic
                     -- 48 K-4: 새 X 베기 그림(SkillEffects.FxGiantFlurry)을 실제 타격 접점(대상 몸 가운데)에 · 그림이 없으면 예전 베기 궤적 (피해·횟수·간격 불변)
                     local fx = self:Fx(unit)
                     local d = q - _Util:Pos2(unit.Entity)
-                    if fx ~= nil and fx.FxGiantFlurry ~= "" then fx:GiantMoveFx("flurry", Vector3(q.x, q.y + 0.3, 0), 1.4, 1.4, (step % 2 == 0) and 90 or 0, gap)
+                    -- 접점 = 대상 몸통(발 +0.45) · 그림 접점 (96,64)은 캔버스 가운데보다 32px 위 → 가운데를 접점보다 32px × 몸 배율 1.2 아래에 · 지름 2.3 = 192px × 거인 배율 1.2
+                    if fx ~= nil and fx.FxGiantFlurry ~= "" then fx:GiantMoveFx("flurry", Vector3(q.x, q.y + 0.45 - 0.384, 0), 2.3, 2.3, 0, gap)
                     else unit:SwingFx(Vector3(q.x, q.y + 0.3, 0), d, 1.6) end
                     if step == hitsN then self:LogSkill(unit, 1, landed, dmg * landed, false, 0) end
                 end, gap * (i - 1))
@@ -327,7 +328,12 @@ script RiteGiantMoves extends Logic
                 end
             end
             local c = me + dir * (radius * 0.5)
-            if fx ~= nil then fx:GiantMoveFx("slam", Vector3(c.x, c.y + 0.1, 0), radius * 2, radius * 2, 0, 0.35) end
+            -- 48 연속본: 몸 그림 타격 칸(4번째 · 앞 3장 0.04초)에 맞춰 충격파 그림만 0.12초 뒤 (피해·묶기 시각은 그대로 즉시)
+            if fx ~= nil then
+                _TimerService:SetTimerOnce(function()
+                    if isvalid(unit.Entity) then fx:GiantMoveFx("slam", Vector3(c.x, c.y + 0.1, 0), radius * 2, radius * 2, 0, 0.35) end
+                end, 0.12)
+            end
             self:LogSkill(unit, 2, hits, dmg, true, radius)
         elseif spec.s2 == "rift" then
             self:FireRift(unit, st, spec, dir, dmg)
@@ -370,7 +376,8 @@ script RiteGiantMoves extends Logic
                         hits = hits + 1
                     end
                 end
-                self:RiftFx(unit, a, b, width)
+                -- 48 연속본: 균열 그림은 첫 토막 시각에 직선 전체(len)로 한 번 — 4장이 토막 4번 시각(rise/3 간격)에 한 장씩 솟고 마지막 장 0.4초 유지 (판정 토막은 그대로)
+                if piece == 1 then self:RiftFx(unit, me, finish, width, rise + 0.4) end
                 if piece == pieces then self:LogSkill(unit, 2, hits, dmg, true, len) end
             end, plant + rise * (piece - 1) / (pieces - 1))
         end
@@ -382,7 +389,7 @@ script RiteGiantMoves extends Logic
                     local r = math.rad(deg)
                     local d2 = Vector2(dir.x * math.cos(r) - dir.y * math.sin(r), dir.x * math.sin(r) + dir.y * math.cos(r))
                     self:HitLine(unit, me, me + d2 * len, width * 0.5, "skill.giant_rift2", st.base * 0.6, nil)
-                    self:RiftFx(unit, me, me + d2 * len, width)
+                    self:RiftFx(unit, me, me + d2 * len, width, 0.4)
                 end
             end, after + 0.4)
         end
@@ -546,13 +553,13 @@ script RiteGiantMoves extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method void RiftFx(ShadowUnit unit, Vector2 a, Vector2 b, number width)
-        -- 땅 가르기 한 토막 그림 (a → b · 흙·돌 색)
+    method void RiftFx(ShadowUnit unit, Vector2 a, Vector2 b, number width, number seconds)
+        -- 땅 가르기 그림 (a → b 직선 · 48 연속본 4장 · seconds = 솟음 + 마지막 장 유지)
         local fx = self:Fx(unit)
         if fx == nil then return end
         local d = b - a
         local mid = a + d * 0.5
-        fx:GiantMoveFx("rift", Vector3(mid.x, mid.y + 0.05, 0), d:Magnitude(), width, math.deg(math.atan(d.y, d.x)), 0.4)
+        fx:GiantMoveFx("rift", Vector3(mid.x, mid.y + 0.05, 0), d:Magnitude(), width, math.deg(math.atan(d.y, d.x)), seconds)
     end
 
     method SkillEffects Fx(ShadowUnit unit)

@@ -184,8 +184,9 @@ do
  advance(0.3)
  local h=hitNames('skill.giant_rift')
  ok(h.p1==1 and h.p2==1 and h.p3==1 and h.p4==1 and h.p5==nil,'4토막 · 한 적 한 번 · 6칸 밖 없음')
- local n=0 for _,f in ipairs(fxLog) do if f.kind=='rift' then n=n+1 ok(near(f.w,1.5),'토막 길이 1.5') end end
- ok(n==4,'균열 효과 4토막')
+ -- 48 연속본(10-30): 균열 그림은 첫 토막 시각에 직선 전체 6칸으로 한 번 (4장이 토막 시각마다 한 장씩 솟음 · 판정은 여전히 4토막)
+ local n=0 for _,f in ipairs(fxLog) do if f.kind=='rift' then n=n+1 ok(near(f.w,6) and near(f.sec,0.65),'균열 그림 한 번 · 길이 6 · 솟음 0.25+유지 0.4') end end
+ ok(n==1,'균열 효과 한 번 (연속본 4장)')
  RiteGiantMoves:Clear(u)
 end
 -- ⑦ 쌍칼 돌진 잔상 0.4초 · 연속 베기 동작
@@ -268,4 +269,4 @@ do
  local fr=io.open('RootDesk/MyDesk/Undead/RiteGiantMoves.mlua') local rg=fr:read('a') fr:close()
  for _,id in ipairs({'giant_quake','giant_basic_split','giant_basic_return','bonethrow','hexfield','"quake"'}) do ok(rg:find(id,1,true)==nil,'지운 기술·노드 참조 없음: '..id) end
 end
-print(string.format('[quality/giant_skills] 48-5·48-6 %d checks: basic 0 · nova auto ring 2.5 · meteor command chant 1s r1.8 · big meteor cap 2.0 · spin 1.6×4 · rift 4 pieces · dash trail · roar no body · motion hit skip/hold loop/fallback · no retreat · imprint true', checks))
+print(string.format('[quality/giant_skills] 48-5·48-6 %d checks: basic 0 · nova auto ring 2.5 · meteor command chant 1s r1.8 · big meteor cap 2.0 · spin 1.6×4 · rift 4 pieces (art once ×6) · dash trail · roar no body · motion hit skip/hold loop/fallback · no retreat · imprint true', checks))
