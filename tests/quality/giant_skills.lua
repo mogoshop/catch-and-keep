@@ -63,13 +63,14 @@ _Util={IsAlive=function() return true end,Pos2=function(_,e) return e.pos end,
 local hitsLog,fxLog={},{}
 fxRoarSeq=''
 fxImpact=-1
+fxSlamSeq=''
 order={}   -- 맞힘·저항 순서 (노바: 맞은 뒤 원소 붕괴)
 local function resetLogs() hitsLog={} fxLog={} logs={} end
 local owner={Name='owner',pos=Vector2(0,0)}
 local nodes={}
 owner.GetComponent=function(_,k)
  if k=='script.PlayerAttack' then return {SkillHitOne=function(_,t,info,dmg) table.insert(hitsLog,{t=t.Name,info=info,dmg=dmg,at=_UtilLogic.ElapsedSeconds}) table.insert(order,'hit:'..t.Name) end} end
- if k=='script.SkillEffects' then return {FxGiantRoarSeq=fxRoarSeq,GiantFxImpactSec=function(_,kind) return kind=='nova' and fxImpact or -1 end,
+ if k=='script.SkillEffects' then return {FxGiantRoarSeq=fxRoarSeq,FxGiantSlamSeq=fxSlamSeq,GiantFxImpactSec=function(_,kind) if kind=='slam' then return fxSlamSeq~='' and 0.12 or -1 end return kind=='nova' and fxImpact or -1 end,
   GiantMoveFx=function(_,kind,pos,w,h,a,sec) table.insert(fxLog,{kind=kind,w=w,h=h,a=a,sec=sec,pos=pos,at=_UtilLogic.ElapsedSeconds}) end,
   GiantMoveFxOn=function(_,kind,anchor,off,facing,w,h,a,sec) table.insert(fxLog,{kind=kind,w=w,h=h,a=a,sec=sec,anchor=anchor,off=off,facing=facing,at=_UtilLogic.ElapsedSeconds}) end} end
  if k=='script.SkillBook' then return {Node=function(_,id) return nodes[id] or 0 end} end
@@ -318,6 +319,20 @@ do
  local d=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_slam' then d=x.dmg end end
  ok(near(d,70/0.7*1.5),'내려찍기 ×1.5 그대로')
  RiteGiantMoves:Clear(u)
+ -- 방패 full(V2 그림): 그림은 몸과 t0에 함께(축광 포함) · 피해·묶기는 몸 접점 120ms — 그림 전체를 미루지 않음
+ clearMons() resetLogs() plays={} fxSlamSeq='a|b'
+ local q=giant('shield',70) q.GiantLook={form='shield',skill2='K',skill2Hit=0.12}
+ local qt=monster('qt',1.2)
+ q.FocusUntil=_UtilLogic.ElapsedSeconds+6 local q0=_UtilLogic.ElapsedSeconds
+ RiteGiantMoves:OnFocus(q,qt.Entity)
+ local qf=nil for _,f in ipairs(fxLog) do if f.kind=='slam' then qf=f end end
+ ok(qf~=nil and near(qf.at,q0) and qf.anchor==q.Entity and qf.facing==1,'V2 슬램 그림 = t0 (몸과 동시 · 접점은 계약 데이터)')
+ ok(next(hitNames('skill.giant_slam'))==nil,'t0에는 피해 아직')
+ advance(0.121) ok(hitNames('skill.giant_slam').qt==1,'피해·묶기 = 몸 접점 120ms = 그림 4번째 장')
+ local n0=0 for _,f in ipairs(fxLog) do if f.kind=='slam' then n0=n0+1 end end
+ ok(n0==1,'V2 그림은 한 번 (접점 때 다시 그리지 않음)')
+ local _,ls=vrf('[VRF] giant sync s=slam fx_t0') ok(ls~=nil and ls:find('art_contact=0.120 body_impact=0.120',1,true)~=nil,'[VRF] 그림 접점 = 몸 접점 0.120')
+ fxSlamSeq='' RiteGiantMoves:Clear(q)
  -- 몸 그림 impact 열이 있으면 그 칸 시각 (앞 장 길이 합) · 0.4 상한
  _GameData.MonsterFrames['giant_shield']=_GameData.MonsterFrames['giant_shield'] or {}
  _GameData.MonsterFrames['giant_shield'].skill2={r={'1','2','3','4','5','6','7','8','9','10','11','12'},d={0.05,0.05,0.05,0.05,0.04,0.04,0.04,0.05,0.05,0.06,0.06,0.06},loop=false,s=6}
@@ -376,17 +391,16 @@ do
  local t0=_UtilLogic.ElapsedSeconds
  s2.TauntTimer=0 s2:TauntTick(0.1)
  ok(#s2.played==1 and near(bodyTime(),t0),'roar_now: 몸 skill1 한 번 즉시 (TauntTick이 몸을 따로 걸지 않음 · 이중 재생 0)')
- ok(roarFx()==nil,'몸 함성 칸 전에는 그림 아직 (몸 없이 그림이 먼저 나오지 않음)')
- advance(0.2)
  local rf=roarFx()
- ok(rf~=nil and near(rf.at-bodyTime(),0.2) and rf.anchor==s2.Entity and near(rf.w,6) and near(rf.sec,0.6),'몸 시작 + skill1Hit 0.2초에 문양 그림 · 몸을 따라감 · 지름 6 · 0.6초')
+ ok(rf~=nil and near(rf.at,bodyTime()) and rf.anchor==s2.Entity and near(rf.w,6) and near(rf.sec,0.6),'방패 full: 몸·문양 그림 t0 동시 (skill1Hit 0.2가 있어도 다시 미루지 않음) · 몸을 따라감')
+ advance(0.2)
  local n,l=vrf('[VRF] giant roar body=') ok(l~=nil and l:find('body=now fx=v2',1,true)~=nil,'[VRF] giant roar body=now fx=v2')
  -- ② 미룸: 평타 0.3초 남음 → 몸·그림 모두 평타 뒤 (몸 0.3 · 그림 0.5)
  fxLog={} logs={} s2.played={} s2.GiantClipState='' s2.GiantClipUntil=0 t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3
  RiteGiantMoves:Roar(s2,2,3)
  ok(#s2.played==0 and roarFx()==nil,'roar_deferred: 평타 중 몸·그림 둘 다 아직')
  advance(0.31) ok(bodyTime()~=nil and near(bodyTime()-t0,0.3),'평타 끝(0.3)에 몸')
- advance(0.2) ok(roarFx()~=nil and near(roarFx().at-t0,0.5),'몸 시작 + 0.2 = 0.5초에 그림')
+ ok(roarFx()~=nil and near(roarFx().at,bodyTime()),'그림도 몸 시작(0.3)과 같은 순간')
  -- ②-b 미룬 사이 기술이 시작 → onStart(false) → 몸 없음 · 그림만 그때
  fxLog={} s2.played={} t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3 s2.GiantClipUntil=0 s2.GiantClipState=''
  RiteGiantMoves:Roar(s2,2,3) s2.GiantClipUntil=t0+1 s2.GiantClipState='skill2'
@@ -401,8 +415,8 @@ do
  fxLog={} s2.GiantClipUntil=0 s2.GiantLook={form='shield'}
  RiteGiantMoves:Roar(s2,2,3) ok(#s2.played==0 and roarFx()~=nil,'함성 몸 그림 미등록 → 몸 없음(일반 skill 대체 없음) · 그림 바로')
  fxRoarSeq='' fxLog={} s2.GiantLook={form='shield',skill1='R',skill1Hit=0.2}
- RiteGiantMoves:Roar(s2,2,3) advance(0.25) rf=roarFx()
- ok(rf~=nil and rf.anchor==nil and near(rf.w,0.8),'새 그림 없으면 머리 위 작은 고리 (몸 함성 칸에)')
+ RiteGiantMoves:Roar(s2,2,3) rf=roarFx()
+ ok(rf~=nil and rf.anchor==nil and near(rf.w,0.8),'새 그림 없으면 머리 위 작은 고리 (몸 시작과 함께)')
  advance(1)
  fxRoarSeq=''
  m.taunted=nil
