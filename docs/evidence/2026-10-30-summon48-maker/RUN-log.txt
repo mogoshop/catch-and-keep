@@ -1,0 +1,102 @@
+SUMMON48-MAKER-20261030 실행 기록 (KST) — 기획서 48 통합 메이커 단일 담당 (Claude Opus 5.5, 조정자 Fable)
+기준 HEAD: e1ccc027 (통합 ccf9dc8b + MageBolts codeblock) · 메이커 시작 상태: 편집 · map01 5a29ca07
+--- 0. 반영 ---
+12:45 edit 확인 → 6초 → ca607845..HEAD 바뀐 RootDesk mlua 12 + ui 3 + data/*.csv touch → 6초 → maker_refresh_workspace 1회
+12:46:32 build 496줄 · Error 0 · Warning 99(LWA-1110 47 · LWA-1111 52 — 기존 종류) · 새 MageBolts.codeblock 생성 → 커밋 e1ccc027
+--- 플레이 1 (PC FHD) ---
+12:47:31 maker_play → 캐릭터 선택 화면 · SelfTest 통과 409/실패 0
+12:47:44 [백업] server_main BatchGetAndWait 5키 code=0 — Account 615/1340525624 · Char_4 1126/1554558725 · Inv_4 1838/694193390 · Shadow_4 40/923051497 · Stash 83/2144937209 (원문 = slot4-backup.json · 지난 CK 복원 기준값과 5/5 같음)
+   백업 시점 slot4 = 옛 저장 sv 4 · levels skel_shield 2 · mage_hex 1 · mage_twin 1 · raise_skeleton 9 · raise_mage 3 · skp 0 · lv 40
+--- C① 옛 저장 마이그레이션 (저장 켠 채 입장) ---
+12:48:23 client ButtonClickEvent CharSelect/Box/S4 → BtnEnter → [server_main] [VRF] skill migrate refund=4 · [VRF] roster hope restored hope=s:d:greatsword=0,twin=1/m:d: (옛 shield=2·mage 변이 희망 탈락)
+12:48:28 _RoomWindow:Solo() → room enter game:s1b96b8c42d6 town · 방 안 재로드에서 refund 줄 없음(같은 저장을 방에서 다시 불러도 0 — 서버 메모리 상태로 넘어감)
+12:48:56 [server] [VRF] S48 C1 enter lv=40 skp=4(0→+4) load=true levels=bone_rite=1,bone_spear=5,raise_mage=3,raise_skeleton=9,skel_twin=1,wraith_dash=3 (skel_shield 2·mage_hex 1·mage_twin 1 사라짐)
+12:49:19 [server] sv:Save(true) → BatchGet Char_4 len=1038 skills sv=5 levels 6개 skp=4 → 저장 끔(IsLoadSuccess=false) · 무적 (이후 시험 변화는 저장 안 됨)
+   재로드 +0 확인은 플레이 끝(멈춤→플레이→입장)에서 · 그 뒤 백업 복원
+--- C② 스킬 창 (PC FHD · 실제 단추 경로: OfferWin/BtnClose → Bottom/Menu/BtnSkill → 시간선 칸 ButtonClickEvent) ---
+12:50:03 해골 전사: 노드 6(뼈 군단 0/2·단련된 뼈 0/5·무너지는 뼈 0/3·대검 해골 0/3·쌍칼 해골 1/3·뼈 공명 0/1) · 「랭크 8부터 방패를 든 해골로 선다」 · 지금 「방패 해골 공격 66·생명 690·받는 피해 -20%·4초마다 도발」 · ladder stages=8=방패 해골 · 캡처 C2-1
+   관찰: 효과 6줄째 「직접 편성 0/5 · 다음 소환: 쌍칼 해골」이 랭크 점 줄과 겹쳐 그려짐(PC FHD) · 「자동으로 되돌리기」 단추 글이 두 줄로 접힘
+12:50:23 해골 마법사: 노드 3(마법사 증원 0/2·원소 집중 0/5·저주 속성 4랭크부터) · 단계 점 stage marks n=3 = 6·11·16 「마법 강화」 · 「다음 단계 · 마법 강화까지 3랭크」 · 캡처 C2-2 (같은 겹침)
+12:50:37 뼈 의식: 폭탄 노드 3 + 깃발 6칸 · 「거인 악몽부터」(MaxDifficulty 0) · 캡처 C2-3
+12:50:55 깃발 K4(마법사) ButtonClickEvent → [server] rite banner set kind=mage · 펼친 노드 = bomb_wide,bomb_marrow,bomb_pair,giant_mage_meteor(큰 메테오 10랭크),giant_mage_resist(원소 붕괴 20),giant_mage_pull(두 겹 고리 20) · 캡처 C2-4
+--- C③ 저주 속성 전/후 · 메테오 상한 ---
+12:51:18 raise_mage 칸 → BtnLearn(레벨 업 +1) → 랭크 4/15 · 전: 「공격 64·생명 284·관통 2·파편 1·폭발 0.8칸·영혼 2발」(낙인 없음)
+12:51:20 WS/N3(저주 속성) → 「배우면: 저주 속성 · 맞은 적 4초 받는 피해 +9.8% (약화의 낙인과 겹치면 큰 쪽)」 → BtnLearn → 1/1
+12:51:23 후: raise_mage 「… 영혼 2발 · 낙인 +9.8%」 다음 랭크 「낙인 +10.4%」 · 남은 포인트 2 · 캡처 C3-1
+12:51:51 [server GM] MaxDifficulty=1 · bone_rite=10 · skp+3 → 깃발 K4 → N4 큰 메테오 「배우면: 메테오 반경 1.95칸 · 영창 0.9초」 → BtnLearn ×3 = 모두 거절(ui sound fail · Lv40 랭크 상한 9 → 「Lv42부터」) · 캡처 C3-2
+12:52:22 [server GM] giant_mage_meteor=3 직접 → Lv40 「현재 캐릭터 레벨에서는 효과 없음」 · Level=45(효과 랭크 10 → 노드 효과 1) 「지금: 반경 1.95칸 · 영창 0.9초」
+12:53:12 [server GM] Level=50 · bone_rite=12 → 「지금: 메테오 반경 2.00칸(최대) · 영창 0.7초」 · 캡처 C3-3 (노드 효과 = 효과 랭크 − 요구 + 1 규칙으로 3에 닿음)
+--- A① 랭크 7 → 8 진화 (무너진 형장 execution · 키보드) ---
+12:53:40 client SkillWin/BtnClose · ClickControl:SetMouseMode(false)(키보드 조준 · 계정 저장 안 함) · [server GM] raise_skeleton=7 · Go execution (-5.5,-4.8)
+12:54:35~ [server] 혼 준비: hellhound Lv5 3기 세워 플레이어 공격 판정 TakeDamage(…, player)로 처치(시험 대상 아님 · 이후 같은 방식 반복 = S48-server-souls.lua)
+12:54:46 K Right → K A(실제 키 · 칸1 raise_skeleton) → roster plan form=twin(직접 희망 twin=1) max=4 → raised twin(ud1)
+12:55:20 K A → raised form=""(일반 · 랭크 7) ud2
+12:55:30 client 스킬 창 → raise_skeleton → BtnLearn → 「랭크 8/20」 · 지금 「방패 해골 공격 75·생명 794·받는 피해 -20%·4초마다 도발」 · rank stage notice lv=8 stage=방패 해골
+12:55:51 K A → roster plan form=shield → raised form=shield(ud3)
+12:56:01 [server] ud1=twin guard 0 · ud2=일반 guard 0(그대로) · ud3=shield guard 20 · RosterLine 「직접 편성 3/4: 일반 1·방패 1·쌍칼 1 · 다음 소환: 방패 해골」(ShownForms 연결 확인) · 캡처 A1-1 (방패 그림 = 기존 승인 form_skelform_shield 재사용 · 최종 아트 아님)
+--- A② 쌍칼 후열 사냥 (액트 1 무너진 형장 · 교단 광신 석궁병 맵 스폰) ---
+12:54:46 [VRF] twin hunt target=cultarcher arch=ranged n=1 cands=2 unit=ud1 → 12:54:50 return reason=dead
+12:56:32 GM 석궁병 Lv30 2기(+3칸) → target=S48_A2_arch2 n=1 cands=1 → dead → target=S48_A2_arch1 → dead (12:56:36~39) · 이후 맵 석궁병 재사냥 반복(12:57:55·13:01:03·13:02:06)
+12:56:44 「저 적을」: client ShadowCommander:RequestFocus(사냥개) 직접 호출(C 길게와 같은 RPC · GM rally=1) → Warn(대상이 이미 죽어 「집중할 적…」 계열 · ui sound fail) → reason=manual 미관측
+   못 함: reason=range(주인 7칸 밖)·stuck(4초) · twinHuntSpeed ×1.15 실측 · 같은 대상 최대 2(쌍칼 1기라 n=1만)
+--- A③ 한도 10 전사 · 거인 둘 · 추가 소환 막힘 ---
+12:57:19 [server GM] Level=70 · raise_skeleton=20 · skel_legion=2 → max=10 · client RequestSetSlot(2,bone_rite)(「스킬 칸에 넣기」 RPC) slots=raise_skeleton,bone_rite
+12:57:38~46 K A ×8 → shield 7기 추가(ud4~ud10) · 10/10 (일일 d_raise10 완료)
+12:58:10 K S 2초(실제 키 홀드) → rite ring stage=5 → [VRF] giant charge use left=1 next=27.9 cover=0.0 · giant count=1 cap=2 kinds=shield
+12:58:30 첫 거인 20초 만료 분열 직후 12:58:31 둘째 → left=0 next=7.2 cover=7.2 (두 거인이 겹치지 않음 — 내 입력 간격 탓)
+12:59:13 K S → 거인 1(left=1) · 12:59:15 둘째 K S는 bone_rite 1초 덮개 안이라 무시 · 12:59:25 K A → 거인 1기일 때는 막힘 없이 교체(have=10 keep=5 victims=1 · 「가장 오래된 하나가 무너졌습니다」) · 캡처 A3-0
+12:59:28 K S → giant count=2 cap=2 kinds=shield,shield charge=0 cover=12.9
+13:00:14 / 13:00:17 K S ×2 → count=2 kinds=shield,shield · 13:00:17 K A → [VRF] roster raise blocked kind=skeleton giants=2 + Warn(「정원이 모두 거인에 들어가 있습니다」 · ui sound fail) · 캡처 A3-1 · 13:00:24 셋째 K S → rite stage=0 reason=no_skeleton
+13:01:31 / 13:01:34 재현 → 상태줄 ShadowCommander.UndeadSummary 「해골 10/10 · 마법사 0/3 · 방패 거인 · 방패 거인」 · 편성 줄 「직접 편성: 거인 본체 2·거인에 8 · 정원 10기 · 다음 소환: 방패 해골」
+--- A④ 5기 2충전 직렬 (같은 입력에서) ---
+   cast 1: left=1 next=27.9(period 27.9 = 30 × 시전 보정 0.93) cover=0 → cast 2(+3초): left=0 next=24.5~24.8 cover=24.5~24.8 (CastRite 덮개 = GiantChargeCover 연결 확인 · 옛 30초 아님)
+   cast 2(+21초 뒤): next=7.2 · (+15초 뒤): next=12.9 → 한 칸씩 직렬 회복 · 슬롯 표시 「거인 25」「거인 13」「거인 8」
+--- A⑤ 섞인 빌드 (전사 8 + 마법사) ---
+13:02:30 [server GM] raise_mage=20 · mage_legion=2(max 10) · 전사 2기 GM 제거 → 8 · client RequestSetSlot(3,raise_mage) · K D ×9 → 마법사 6기(school fire 3·cold 2·curse 1 · rank 20)
+13:03:14 K S → 거인1 counts=shield3,twin1,basic1 · 13:03:18 K S → 거인2 counts=shield3,mage2(둘째에 마법사 2 합쳐짐) giant count=2 · 캡처 A5-1
+13:03:21 셋째 K S → rite stage=0 reason=no_skeleton (상한이면 RiteBestStage가 5기를 건너뛰어 「거인은 두 기까지…」 경고 경로에 닿지 않음 — 관찰, 아래 한계)
+--- B① REFRESH ---
+12:46:32 build Error 0 · MageBolts.codeblock 새로 생성(커밋 e1ccc027) · ShadowUnit @Sync GiantHoldUntil 포함 등록 오류 없음
+--- B② 좌우 방향 「후」 측정 (같은 무너진 형장 · 전사·마법사·쌍칼 + 앞뒤 몬스터 Lv60 6기) ---
+13:04:32 client _MotionSmoother.LookAuditOn=true · LookReset() → K Right 3초 · 멈춤 3초 · K Left 4초 · 멈춤 3초 · K Right 3초 · 멈춤 8초(약 25초)
+13:04:57 LookReport('after'): 「walk=243 attack=0 | unit walkEp=0/6306 frames atkEp=0 frames=0/812 unitFrames=18480 | mon walk=8/605 ep=0 atk=0/644 | aim=18/771 | flip=105」
+   = 소환수 걷기 반대 구간(에피소드) 0 · 공격 중 반대 0/812 프레임 (전 측정 걷기 46%·공격 44%) · 순간 프레임 243/6306(3.9%)은 에피소드 없음 · 캡처 B2-1 · 녹화 없음(screencapture 금지)
+--- B③ 마법사 5속성 (저주 노드 배운 뒤 · rank 20) ---
+13:06:29 [server] PickSchool(true)×500 bone 96·curse 88·cold 118·fire 105·soul 93 · MakeRecord(mage)×40 bone 7·cold 7·soul 9·curse 9·fire 8 (균등)
+   관찰: 앞선 K D 일으키기 17회의 살아 있는 마법사는 화염·냉기·저주뿐(뼈·영혼 0) → 13:07:35 K D ×6에서 soul 2·bone 1·cold·fire·curse 2 나옴 = 우연 편중으로 판단(MakeRecord 균등 확인)
+13:08:08~09 [VRF] mage bolt: soul n=5(격류 5발) trait 5.00 · bone n=1 trait 5.00(관통) · fire trait 1.40 + burst r=1.4 mul 0.30 · cold split 4(targets 3)+chill · curse trait 19.40(낙인 큰 값) · 캡처 B3-1
+   「전」(저주 노드 전): 저주 노드를 12:51에 먼저 배워 메이커 전 장면 없음 — Schools(false)=4 오프라인(mage_school 99)만
+--- B⑤⑥ 거인 기술 (마법사·대검 · 실제 키 S 홀드 + 「저 적을」 RequestFocus RPC) ---
+13:08:53 마법사만 남김(GM 전사 제거) → K S → giant type=mage counts=mage5 · 13:08:56 [VRF] giant skill cast type=mage s=1 name=nova radius=2.50 hold=0.30(저절로) → hit hits=3 · 캡처 B5-1
+13:09:06 RequestFocus(석궁병 4칸) → giant s2 fired → cast name=meteor radius=2.00 hold=0.70(큰 메테오 3) → hit radius 2.00 · 캡처 B6-1
+13:09:37 GM 큰 메테오 0 → 마법사 거인 다시 → RequestFocus 2회(4칸·2.5칸) 모두 giant s2 reason=invalid — 0랭크 1.80 미측정(ValidTarget/IsOwnerCombatTarget 원인 미확인 · B 몫 관찰)
+13:11:30 대검 3·쌍칼 2 → giant type=greatsword → 13:11:33 cast name=spin radius=1.60 hold=1.60 loop → hits=17 · 캡처 B7-1/2 · 둘째 K S는 전사 2기뿐이라 1기 폭탄
+   모션 관찰: 거인 공격·기술 중에도 「giant look play state=hit」가 1초에 1~2번(13:11:35 두 번 · 13:08:59 두 번) — 0.5초 간격 여부는 초 단위 로그로 판정 못 함
+   못 함: 쌍칼·방패·기본 거인 기술 로그 · 모션 ①~④ 다섯 거인 각 10초 녹화 · B④ 캐릭터 투사체 4종 속도 비교
+
+===== 13:20~14:55 후반 (FIRE 병합 · 연속본 66장 · 실시간 녹화 · 남은 48-8) =====
+--- 통합·수정 커밋 (main = codex/player-experience-polish 푸시) ---
+75aa6614 merge 갈래 B FIRE-01~03(08752c18 · Fable 서명) · 2ac0c91a 쌍칼 X(FxGiantFlurry) 실제 타격 접점 · 17d72ad3 연속본 66장(+노바 영창 재사용 3 = 69 RUID)
+1d676599 PlaySeq(비반복 효과 첫 장·한 장·마지막 장 유지) · 04b11941 merge 갈래 C UI pips(9599cc17 · Fable) · ab83e45f UI 생성물 · 3ad90ae5 S48-SPIN-PLAYBACK-01(반복 효과 교체 공백)
+각 커밋 뒤 npm 15/15 · check_scripts 0 · 품질 전 그룹 통과 · refresh 뒤 build Error 0 (13:33:30 · 13:41:08 · 13:56:18 · 14:01대)
+--- 실시간 녹화 (ffmpeg avfoundation 장치 2 · 30fps · 게임 영역 crop) → docs/evidence/2026-10-30-summon48-recording/ ---
+R1 대검(13:49) · R2 쌍칼(13:58) · R3 방패(14:00 · focus nil) · R3b 방패 내려찍기(14:07) · R4 대검 땅 가르기+회전(14:05) · R5 마법사 메테오(14:08) · R5b 노바+두 겹 고리(14:11) · R6 기본(14:12)
+R7 노드 창(14:16) · R8 FIRE②(14:19) · R8b FIRE③(14:21) · R9 쌍칼 manual/stuck(14:23) · R10 마법사 몸 RUID 추적(14:28) · R11 방향 걷기(14:37) · R12/R12b iPad 캐릭터 투사체(14:42·14:43) · R12e iPad 거인 2기 맵 이동·충전(14:49)
+실패 테이크: R12c·R12d(거인 2기 준비 실패 — 탭을 한 메시지에 몰아 보내 소환 2기만 · 마나 부족으로 의식 2단계) → 지움 · 파일 없음
+--- 효과 결함 2건 (메이커 실측) ---
+13:52 탐침: 균열·메테오 착지·내려찍기 「마지막 장 유지」가 화면에 안 보임 → Util.PlayFrames가 SetTimerRepeat 첫 호출로 첫 장을 건너뛰고 한 장짜리를 안 그림 → 1d676599 PlaySeq · 13:57 탐침에서 보임
+S48-SPIN-PLAYBACK-01: R1 f761~ 회전 아크 한 장 걸러 빔(29장 중 16장만) → 3ad90ae5 반복도 PlaySeq · 「걸고 → 0.03초 뒤 지움」 · R4 1회차 47장 연속 공백 0 · 2회차 시작 직후 1장 공백
+--- 남은 48-8 (로그는 같은 폴더 *.log · recording/*.vrf.log) ---
+FIRE② R8: 몸 magic→GM cold · AttackElement(shadow.ranged)=fire · 저항 fire10/cold65/magic30 대상 구슬 dHp 911(=1012×0.9) · 갈라진 뒤 냉기 볼트 dHp 85~95
+FIRE③ R8b: 메테오 뒤 fire 10→5 · cold 65 · magic 30 그대로 · 4초 뒤 fire 10 · 화염 15와 저주 10은 큰 값만
+FIRE-03 조회(14:31:56): giant_nova/nova2/meteor→fire(20) · giant_slam/rift→magic(40) · 거인 host=cold ranged→fire blast→fire melee→cold
+A② R9: 「저 적을」 다른 적 → 쌍칼 3기 reason=manual · 3초 뒤 다시 원거리 사냥 · GM 이동 멈춤(강제) → 약 3초 뒤 reason=stuck → 다른 후보
+A④: 14:31:53 거인 1기 left=1 → gallows 이동 → 14:32:22 1→2 회복(27.9초) · R12e 14:50:26 left=0 → 14:50:41 0→1 첫 회복(next 27.4 직렬)
+A⑤ R12e: 대검+마법사 거인 2기(count 2 cap 2) → 맵 이동 14:50:31 두 거인 split(respawn=false) giants 1→0 · 충전 0 유지 · 같은 「저 적을」 1회 요청했으나 두 거인 s2 로그 없음(미확인)
+B④ (14:36:24 서버 조회): MageBolts.Configure fire 11 · cold 9 · cold_shard 10 · bone 14 · soul 7(homing 5) · 48 이전 캐릭터 Launch 속도(e3b40d2d^)와 같음 · 실제 F 칸 입력 cast cue 4종(R12·R12b) · 날아가는 투사체 프레임 식별은 미확인
+B 마법사 몸(R10): 서버 SpriteRUID 9c4e3c00 0.65초 · 클라 대역 6 RUID 순서 표시 · 영상 3.0~3.45초 후드 기도 몸
+UI pips PC(14:14~14:15) · iPad(14:39~14:40): 편성 줄 WS/Roster가 강화 트리 아래 · 랭크 점 줄과 분리 · 「희망 중 2기는 정원·랭크를 넘어 일반형으로 섭니다」 두 줄 잘림 없음(GM 대검 랭크 1로 상황 만듦)
+노드 창 R7: 뼈 의식 K4 배너 · 「두 겹 고리」 새 아이콘 1/1
+--- 저장 복원 · 종료 ---
+14:53:31 server_main 캐릭터 선택: before 0/5(이번 세션 이전 이주본) → guard 5/5 → BatchSetAndWait code=0 ok 5 → 14:53:38 after 5/5 (12:47 백업과 len/djb2 같음)
+14:54 stop · 편집 모드 · map01 · PC FHD(already_current)
