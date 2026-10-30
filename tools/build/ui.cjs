@@ -610,7 +610,7 @@ function buildGameHud() {
   b.text("RiteRing/Label", "", { size: 22, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, -56], rect_size: [260, 34], alignment: 4, ...outline, outline_width: 0.25 });
   // 46-6 고리 아래 둘째 줄: 5기 문턱을 넘은 뒤만 참여 다섯의 종류 수 「대검 3 · 방패 2」 + 동률이면 「(동률 · 깃발)」 (HudMain.RenderRite · GiantPlan — 서버 거인과 같은 계획)
   b.text("RiteRing/Sub", "", { size: 18, bold: true, color: "#E8D8F8", anchor: "middle-center", pos: [0, -84], rect_size: [300, 26], alignment: 4, bestfit: true, min_size: 13, max_size: 18, ...outline, outline_width: 0.25 });
-  // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
+  // 혼 추출: 「E 그림자 추출 45%」는 캐릭터 발밑 아래(10-31 B-4 후속 · HudMain.SoulHintBelow — 머리 위 COMBO·발밑 줍기 글씨와 안 겹침), 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)
   b.text("WarnPop", "", { size: 24, bold: true, color: "#FFB45A", anchor: "middle-center", pos: [0, 0], rect_size: [560, 40], ...outline, outline_width: 0.25, enable: false });

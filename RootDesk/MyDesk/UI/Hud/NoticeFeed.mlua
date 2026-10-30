@@ -50,6 +50,7 @@ script NoticeFeed extends Logic
     property number ChatGap = 12
     property number StackGap = 12            -- 파티 목록·큰 알림 판 아래 끝과의 간격
     property string HomeLog = ""
+    property boolean GoldToFeet = true       -- 10-31 B-4 후속: 「골드 +N」은 창이 없으면 어느 경로로 와도 채널 D(발밑 글씨)로 — 안내 줄에는 창이 떠 있을 때만
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -75,6 +76,12 @@ script NoticeFeed extends Logic
         if self.LimitSeen == nil then self.LimitSeen = {} end
         local now = _UtilLogic.ElapsedSeconds
         local gold = tonumber(string.match(text, "^골드 %+(%d+)$"))
+        -- 메이커 B1(10-31): 서버 _Util:Notify("골드 +N")로 온 골드가 이 안내 줄에서 「골드 +225」로 합쳐져 보였다 → 창이 없으면 발밑으로 넘긴다
+        --   (HudMain.PickupPop은 창이 떠 있을 때만 여기로 되돌려 보내므로 서로 돌지 않는다 — 둘 다 UIKit.AnyWindowOpen을 본다)
+        if gold ~= nil and self.GoldToFeet and not _UIKit:AnyWindowOpen() then
+            _HudMain:PickupPop(text)
+            return
+        end
         if gold ~= nil then
             for _, line in ipairs(self.Lines) do
                 if line.gold ~= nil then

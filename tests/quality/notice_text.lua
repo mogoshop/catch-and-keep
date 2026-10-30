@@ -125,6 +125,7 @@ for i = 1, 4 do
 end
 _UIKit.Get = function(_, path) return ents[path] end
 _UIKit.AnyWindowShown = function() return true end
+_UIKit.AnyWindowOpen = function() return true end   -- 창이 떠 있는 장면 (10-31 B-4 후속: 창이 없으면 「골드 +N」은 발밑 글씨로 간다 — notice_channels.lua)
 _UIKit.ShownWindowEntity = function() return win end
 _UIKit.SetEnabled = function(_, path, v) if ents[path] then ents[path].Enable = v end end
 _UIKit.SetText = function(_, path, text) if ents[path] then ents[path].Text = text end end

@@ -74,6 +74,8 @@ script HudMain extends Logic
     property number JournalTrackSec = 30      -- 이 초 동안 바뀌지 않으면 줄을 접는다
     property number QuestTrackH = 176         -- 추적기 높이 (navigation.cjs와 같은 값) · 일지 줄이 있으면 + JournalLineH (PC)
     property number JournalLineH = 34
+    --   혼 추출 안내(「E 그림자 추출 25%」): 혼 위(머리 위 COMBO 옆)가 아니라 캐릭터 발밑 줍기 글씨(D) 아래에 — 전투 숫자·COMBO와 겹치지 않게 (10-31 B-4 후속 · 메이커 B2 영상)
+    property number SoulHintBelow = 1.05      -- 발(캐릭터 위치)에서 아래로 (월드 단위) · 글 칸 84 → 위 끝 −0.63 < 줍기 글씨 아래 끝 −0.57
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -519,6 +521,7 @@ script HudMain extends Logic
             while #self.Picks > self.PickMax do table.remove(self.Picks) end
         end
         for i, p in ipairs(self.Picks) do _UIKit:SetText("PickPop" .. tostring(i), p.text) end
+        log("[VRF] pickup pop " .. self.Picks[1].text .. " n=" .. tostring(#self.Picks))
         self:RenderPicks()
     end
 
@@ -834,7 +837,7 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderSoulUi(Entity player)
-        -- 손 닿는(조금 넘는) 내 혼 위에 추출 확률, 추출 결과 글자 이동
+        -- 손 닿는(조금 넘는) 내 혼의 추출 확률은 캐릭터 발밑 아래(SoulHintBelow — COMBO·줍기 글씨와 안 겹침), 추출 결과 글자는 혼 자리에서 떠오른다
         local now = _UtilLogic.ElapsedSeconds
         local popping = now < self.PopUntil
         _UIKit:SetEnabled("ExtractPop", popping)
@@ -864,8 +867,7 @@ script HudMain extends Logic
                     else
                         _UIKit:SetText("SoulHint", key .. " " .. _UIKit:Colored(color, tostring(pct) .. "%"))
                     end
-                    local q = soul.TransformComponent.WorldPosition
-                    _UIKit:SetPos("SoulHint", self:WorldToHud(Vector2(q.x, q.y + 0.75)))
+                    _UIKit:SetPos("SoulHint", self:WorldToHud(_Util:Pos2(player) + Vector2(0, -self.SoulHintBelow)))
                 end
             end
         end
@@ -1188,8 +1190,13 @@ script HudMain extends Logic
         if tip ~= "" and tip == guide and now > self.TipUntil + self.GuideRepeat then self.TipUntil = now + self.TipSeconds end
         -- 위쪽 가운데는 한 번에 하나: 맵 배너가 끝난 뒤 같은 자리에 TipSeconds 동안 (배너 시간만큼 뒤로 민다)
         if _HudMap:BannerShowing() and self.TipUntil > 0 then self.TipUntil = math.max(self.TipUntil, _HudMap.BannerUntil + self.TipSeconds) end
-        _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and not _HudMap:BannerShowing() and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now)
+        _UIKit:SetEnabled("Tip", tip ~= "" and now < self.TipUntil and self:TipAllowed(now))
         if tip ~= "" then _UIKit:SetText("Tip/Text", tip) end
+    end
+
+    method boolean TipAllowed(number now)
+        -- 위 가운데 ② 칸은 한 번에 하나: 채널 A 상단 띠(맵 배너 포함)·창·큰 알림 판이 없을 때만 Tip (10-31 B-4 후속 — 같은 자리 겹침 0)
+        return not _HudMap:BannerShowing() and not _UIKit:AnyWindowOpen() and _UXFeedback.Until <= now
     end
 
     @ExecSpace("ClientOnly")

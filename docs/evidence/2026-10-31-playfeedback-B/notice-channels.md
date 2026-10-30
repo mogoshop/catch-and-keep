@@ -12,7 +12,7 @@
 
 파티 목록(PC)은 평소 「파티 (n) · 이름 Lv · …」 한 줄로 접고 마우스를 올리거나 누르면 펼친다 — 왼쪽 알림 더미는 그 아래 끝을 피한다(`NoticeFeed.PlaceHome`). 모바일은 알림 더미가 지도 아래(오른쪽)라 예전처럼 펼친 채.
 
-## 부르는 곳 전수 (141곳 · A 10 · B 128 · C 1 · D 2)
+## 부르는 곳 전수 (142곳 · A 10 · B 128 · C 1 · D 3)
 
 | 파일 | 줄 | 함수 | 부르는 법 | 글(앞부분) | 채널 |
 |---|---|---|---|---|---|
@@ -132,10 +132,11 @@
 | Social/TownBoard.mlua | 439 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
 | Social/TownBoard.mlua | 459 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
 | Story/AshAwakening.mlua | 265 | Awaken | HudMap.ShowAlert | 하늘이 핏빛으로 물든다 | A |
-| UI/Hud/HudMain.mlua | 102 | OnBeginPlay | NoticeFeed.Push | d) end | B |
-| UI/Hud/HudMain.mlua | 507 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
-| UI/Hud/HudMain.mlua | 692 | RaidWarn | HudMap.TopPushFor | raid:warn | A |
-| UI/Hud/HudMain.mlua | 789 | RaidDefeated | HudMap.TopPush | raid:done | A |
+| UI/Hud/HudMain.mlua | 104 | OnBeginPlay | NoticeFeed.Push | d) end | B |
+| UI/Hud/HudMain.mlua | 509 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
+| UI/Hud/HudMain.mlua | 695 | RaidWarn | HudMap.TopPushFor | raid:warn | A |
+| UI/Hud/HudMain.mlua | 792 | RaidDefeated | HudMap.TopPush | raid:done | A |
+| UI/Hud/NoticeFeed.mlua | 82 | Push | HudMain.PickupPop | text) | D |
 | UI/Hud/UXFeedback.mlua | 153 | Push | HudMap.TopPush | : | A |
 | UI/Hud/UXFeedback.mlua | 159 | Push | NoticeFeed.Push | self:LineText(title, detail, true)) | B (큰 알림 넘침·창 안 결과) |
 | UI/Hud/UXFeedback.mlua | 208 | DropOne | NoticeFeed.Push | self:LineText(m.title, m.detail, false)) | B (큰 알림 넘침·창 안 결과) |
