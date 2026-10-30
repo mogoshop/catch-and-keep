@@ -24,8 +24,9 @@
 --   그 무리 종류에 맞는 구역(모델 id | @원형 | *)에서 고른다 (구역마다 share만큼 · ZoneFor). 무리 안 자리도 그 구역 안 + ValidSpawn(입구 안전·벽).
 --   구역에 안전한 자리가 없으면 예전처럼 맵 전체 출현 범위에서 고르고 fallback으로 센다 (구역 배치 성공으로 세지 않는다). 구역이 없는 맵은 예전과 같다
 -- 10-31 사용자 실플레이 「끝없이 몰려온다 — 한 무리 잡으면 이동해서 또 만나야」 (갈래 A-2): 유입 몫 30% → InflowShare 15%.
---   숨 고르기: 플레이어(파티면 파티 전체) 둘레 InflowRestRadius 안 깨어 있는 몬스터가 있다가 0이 되면 InflowRestSec 동안 그 사람(파티)에게 유입 금지
---   (구역 깨우기는 그대로 — 걸어가 만나는 무리는 깨어난다). 동시 추격 상한: 그 사람을 쫓는 몬스터가 ChaseCap 이상이면 새 유입 보류(이미 깨어난 무리는 상한 밖).
+--   숨 고르기: 플레이어(파티면 파티 전체) 둘레 InflowRestRadius 안에서 그 사람(파티원)을 노리고 추격·공격 중인 몬스터가 있다가 0이 되면
+--   InflowRestSec 동안 그 사람(파티)에게 유입 금지. 깨어만 있고 배회·대기 중인 무리는 세지 않는다(10-31 메이커 A1: 7.4~8.5칸 길 위 대기 들개 무리 때문에
+--   교전 무리를 다 잡아도 rest가 안 섰다). 구역 깨우기는 그대로 — 걸어가 만나는 무리는 깨어난다. 동시 추격 상한: 그 사람을 쫓는 몬스터가 ChaseCap 이상이면 새 유입 보류(이미 깨어난 무리는 상한 밖).
 --   습격(RaidDirector)은 주기·구성 그대로. 보류 사유는 [VRF] inflow hold 로그 (사유가 바뀔 때만)
 @Component
 script MonsterSpawner extends Component
@@ -79,7 +80,7 @@ script MonsterSpawner extends Component
     property number InflowRestRadius = 8    -- 10-31 A-2: 숨 고르기 판정 반경(칸) — 이 안에 깨어 있는 몬스터 수
     property integer ChaseCap = 10          -- 10-31 A-2: 한 사람을 쫓는 몬스터가 이 수 이상이면 새 유입 보류 (0 이하 = 상한 없음)
     property table RestUntil = {}           -- 숨 고르기 끝 시각: 무리 키(파티 "p<id>" · 혼자면 userId) → 시각
-    property table RestBusy = {}            -- 지난 유입 검사 때 둘레에 깨어 있는 몬스터가 있었나: 무리 키 → true
+    property table RestBusy = {}            -- 지난 유입 검사 때 둘레에서 그 무리와 교전 중이던 몬스터 수: 무리 키 → 수
     property table HoldLogged = {}          -- 유입 보류 로그: userId → 마지막으로 찍은 사유 (바뀔 때만 찍는다)
 
     @ExecSpace("ServerOnly")
@@ -287,9 +288,9 @@ script MonsterSpawner extends Component
         -- 습격 중에는 들여보내지 않는다 (습격의 떼가 그 자리를 채운다)
         local raid = _RaidDirector:State(map)
         if raid ~= nil and raid.active ~= nil then return end
-        -- 10-31 A-2: 숨 고르기(파티 단위) · 동시 추격 상한 — 무리마다 둘레 깨어 있는 수, 사람마다 쫓는 수
-        local groups = self:RestGroups(map, players)
-        for _, g in ipairs(groups.list) do self:UpdateRest(g.key, g.awake, now) end
+        -- 10-31 A-2: 숨 고르기(파티 단위) · 동시 추격 상한 — 무리마다 둘레 교전 수, 사람마다 쫓는 수
+        local groups = self:RestGroups(map, players, now)
+        for _, g in ipairs(groups.list) do self:UpdateRest(g.key, g.engaged, now) end
         local chasers = self:ChaseCounts(map, players)
         for _, p in ipairs(players) do
             if self:PoolCount() <= 0 then return end
@@ -304,14 +305,14 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void UpdateRest(string key, integer awake, number now)
-        -- 숨 고르기 상태: 둘레(InflowRestRadius)에 깨어 있는 몬스터가 있다가(지난 검사) 0이 되면 InflowRestSec 동안 rest.
-        -- 처음부터 비어 있던 곳(아직 아무도 못 만남)은 rest를 걸지 않는다 — 유입이 첫 만남을 만든다
-        local had = self.RestBusy[key] == true
-        self.RestBusy[key] = awake > 0
-        if awake <= 0 and had and self.InflowRestSec > 0 then
+    method void UpdateRest(string key, integer engaged, number now)
+        -- 숨 고르기 상태: 둘레(InflowRestRadius)에서 그 무리와 교전 중인 몬스터(RestGroups)가 있다가(지난 검사) 0이 되면 InflowRestSec 동안 rest.
+        -- 처음부터 교전이 없던 곳(아직 아무도 못 만남)은 rest를 걸지 않는다 — 유입이 첫 만남을 만든다
+        local had = self.RestBusy[key] or 0
+        self.RestBusy[key] = engaged
+        if engaged <= 0 and had > 0 and self.InflowRestSec > 0 then
             self.RestUntil[key] = now + self.InflowRestSec
-            log(string.format("[VRF] inflow rest start key=%s sec=%.1f", key, self.InflowRestSec))
+            log(string.format("[VRF] inflow rest start key=%s engaged=%d→0 sec=%.1f", key, had, self.InflowRestSec))
         end
     end
 
@@ -340,9 +341,11 @@ script MonsterSpawner extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method any RestGroups(Entity map, table players)
-        -- 숨 고르기 무리: 파티(PlayerSocial.PartyId)면 같은 맵의 파티원 전체, 혼자면 그 사람. 무리마다 둘레 InflowRestRadius 안 깨어 있는 몬스터 수(겹치면 한 번)
-        -- 반환 { of = { userId → { key, awake } }, list = { 무리 } }
+    method any RestGroups(Entity map, table players, number now)
+        -- 숨 고르기 무리: 파티(PlayerSocial.PartyId)면 같은 맵의 파티원 전체, 혼자면 그 사람.
+        -- 무리마다 둘레 InflowRestRadius 안에서 그 무리와 교전 중인 몬스터 수(겹치면 한 번) — 교전 = Engaged(추격·공격 중)이고 맵의 플레이어 중
+        -- 가장 가까운 사람이 그 무리 사람(= 그 무리를 표적으로). 깨어만 있고 배회·대기 중인 무리는 세지 않는다
+        -- 반환 { of = { userId → { key, engaged } }, list = { 무리 } }
         local byKey = {}
         local of = {}
         local list = {}
@@ -353,20 +356,44 @@ script MonsterSpawner extends Component
             local key = uid
             if social ~= nil and social.PartyId ~= 0 then key = "p" .. tostring(social.PartyId) end
             if byKey[key] == nil then
-                byKey[key] = { key = key, awake = 0, seen = {} }
+                byKey[key] = { key = key, engaged = 0, seen = {} }
                 table.insert(list, byKey[key])
             end
-            local g = byKey[key]
+            of[uid] = byKey[key]
+        end
+        for _, p in ipairs(players) do
+            local g = of[p.PlayerComponent.UserId]
             for _, m in ipairs(_Util:MonstersNear(map, _Util:Pos2(p), self.InflowRestRadius)) do
                 local id = m.Entity.Id
                 if not g.seen[id] then
                     g.seen[id] = true
-                    g.awake = g.awake + 1
+                    if self:Engaged(m, now) then
+                        local pos = _Util:Pos2(m.Entity)
+                        local best, bestD = nil, 1e9
+                        for _, q in ipairs(players) do
+                            local d = (_Util:Pos2(q) - pos):Magnitude()
+                            if d < bestD then best, bestD = q, d end
+                        end
+                        if best ~= nil and of[best.PlayerComponent.UserId] == g then g.engaged = g.engaged + 1 end
+                    end
                 end
             end
-            of[uid] = g
         end
         return { of = of, list = list }
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean Engaged(Monster m, number now)
+        -- 추격·공격 중인 몬스터 (숨 고르기 판정): 추격 이력 1(MonsterAttack.ChaseState) · 근접 간격 조절 중 · 공격 동작 중 ·
+        -- 유입·떼·감지 범위를 다른 곳이 정한 몬스터(ChaseExternal = 길 위 사건 등 — 늘 쫓는다)이고 추적이 켜져 있음.
+        -- 깨어만 있고 배회·대기(ChaseState 0)·놓치고 멈춤(2)은 아니다
+        if m == nil or m.IsDead or not isvalid(m.Entity) or not m.Entity.Enable then return false end
+        ---@type MonsterAttack
+        local attack = m.Entity:GetComponent("script.MonsterAttack")
+        if attack == nil then return false end
+        if attack.ChaseState == 1 or attack.SpacingControlled or now < attack.AttackAnimationUntil then return true end
+        local chase = m.Entity.AIChaseComponent
+        return (m.Inflow or m.Horde or attack.ChaseExternal) and isvalid(chase) and chase.Enable
     end
 
     @ExecSpace("ServerOnly")
