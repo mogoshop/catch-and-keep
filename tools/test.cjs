@@ -10,6 +10,7 @@
 //   4-4. 공통 UI 규격                      (check_ui_tokens — tools/build/ui-tokens.cjs ↔ UIKit 대화 상자 규격)
 //   4-5. 말투·용어                         (check_voice — docs/design/32-voice-guide.md)
 //   4-6. 기획서 38 결정 26개 대조           (check_decisions38 — 값이 부록 E 결정대로인가)
+//   4-7. 기획서 46 거인 끝 레벨             (sim_balance --giant-check — 악몽·지옥 +20%까지 41·68·90 그대로)
 //   5. 검사기 자가 테스트                  (tests/fixtures: 일부러 틀린 코드의 "-- EXPECT" 줄을 정확히 잡는가)
 //   6. --build: 빌드를 두 번 돌려 결과가 같은가 (멱등성, 파일을 다시 쓴다)
 // 사용: node tools/test.cjs [--build]
@@ -52,6 +53,13 @@ step("말투·용어", () => tool("check_voice.cjs"));
 step("기획서 38 결정 26개", () => tool("check_decisions38.cjs"));
 step("DPS 집계 도구", () => tool("dps/selftest.cjs"));   // I05 개발용 전투 계측 로그 집계 (tools/dps)
 step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));   // 10-30 갈래 E: 5종 몸 150 + HUD 5 (코덱스 0200 · 마법사 그림은 대기 지원만 — 5단계 자연 선택은 해골 전용 그대로) · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
+
+step("거인 끝 레벨 (46-7)", () => {   // 기획서 46 부록 A-3: 악몽·지옥 빌드 +0·+8·+13.5·+20%에서 끝 레벨 41·68·90 그대로 (경험치 경로 모델 · 재미 증명 아님)
+  const r = spawnSync("python3", [path.join(__dirname, "sim_balance.py"), "--giant-check"], { cwd: ROOT, encoding: "utf8" });
+  if (r.error) return [false, "python3 없음 — " + r.error.message];
+  const out = (r.stdout + r.stderr).trim();
+  return [r.status === 0, r.status === 0 ? out.split("\n").pop() : out];
+});
 
 step("검사기 자가 테스트", () => {
   const fixture = path.join(ROOT, "tests/fixtures/bad_scripts");
