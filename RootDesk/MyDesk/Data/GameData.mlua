@@ -1,4 +1,4 @@
--- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, pets.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
+-- 자동 생성 파일: tools/gen_data.cjs 가 data/config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, pets.csv, monster_ranks.csv, variants.csv, archetypes.csv, rite_giants.csv, monster_states.csv, weekly.csv, maps.csv 에서 만든다. 직접 수정 금지 (CSV를 고치고 다시 생성).
 -- 게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름
 @Logic
 script GameData extends Logic
@@ -98,10 +98,10 @@ script GameData extends Logic
     property number riteArrowMana = 20    -- 뼈 화살 마나 (+ 랭크 ÷ 4)
     property number riteArrowCd = 8    -- 뼈 화살 재사용(초)
     property number riteGiantSeconds = 20    -- 뼈 거인 지속(초) — 끝나면 남은 생명 비율대로 다섯으로 갈라진다
-    property number riteGiantHpMul = 1.2    -- 뼈 거인 생명 = 다섯 생명 합 × 이 값
-    property number riteGiantAtkMul = 1.1    -- 뼈 거인 휩쓸기 피해 = 다섯 공격력 합 × 이 값 (1기 ×5.5)
-    property number riteGiantRadius = 1.8    -- 뼈 거인 휩쓸기 반경(칸)
-    property number riteGiantInterval = 1.6    -- 뼈 거인 공격 간격(초)
+    property number riteGiantHpMul = 1.2    -- 뼈 거인 생명 = 다섯 생명 합 × 이 값 → rite_giants.csv basic 줄로 옮김 (46-2 · 46-3부터 거인은 종류별 값을 쓴다 · 이 줄은 남겨 둔 옛 값)
+    property number riteGiantAtkMul = 1.1    -- 뼈 거인 휩쓸기 피해 = 다섯 공격력 합 × 이 값 (1기 ×5.5) → rite_giants.csv basic 줄로 옮김 (46-2 · 46-3부터 거인은 종류별 값을 쓴다 · 이 줄은 남겨 둔 옛 값)
+    property number riteGiantRadius = 1.8    -- 뼈 거인 휩쓸기 반경(칸) → rite_giants.csv basic 줄로 옮김 (46-2 · 46-3부터 거인은 종류별 값을 쓴다 · 이 줄은 남겨 둔 옛 값)
+    property number riteGiantInterval = 1.6    -- 뼈 거인 공격 간격(초) → rite_giants.csv basic 줄로 옮김 (46-2 · 46-3부터 거인은 종류별 값을 쓴다 · 이 줄은 남겨 둔 옛 값)
     property number riteGiantScale = 1.8    -- 뼈 거인 크기 배율 (해골 전사 대비)
     property number riteGiantMana = 30    -- 뼈 거인 마나 (+ 랭크 ÷ 4)
     property number riteGiantCd = 30    -- 뼈 거인 재사용(초)
@@ -388,6 +388,7 @@ script GameData extends Logic
     property table VariantOrder = {}
     property table VariantCache = {}
     property table Archetypes = {}
+    property table RiteGiants = {}
     property table MonsterStates = {}
     property table Weeklies = {}
     property table WeeklyOrder = {}
@@ -876,6 +877,12 @@ script GameData extends Logic
         self.Archetypes["soldier"] = { id = "soldier", name = "병사", trait = "균형", monster = "특별한 버릇 없이 고르게 싸운다", shadow = "—" }
         self.Archetypes["boss"] = { id = "boss", name = "보스", trait = "고유 기술", monster = "고유 기술을 쓴다", shadow = "—" }
         self.Archetypes["nest"] = { id = "nest", name = "둥지", trait = "졸개 생성", monster = "움직이지 않고 졸개를 낳는다", shadow = "—" }
+        self.RiteGiants = {}
+        self.RiteGiants["basic"] = { kind = "basic", name = "해골 거인", hpMul = 1.2, guardPct = 0, atkMul = 1.1, interval = 1.6, radius = 1.8, range = 1.2, speedMul = 1, blastMul = 0, tauntSec = 4, tauntRadius = 2.5, s1 = "quake", s1Name = "땅울림", s1Mul = 0.6, s1Cd = 10, s1Radius = 2.2, s1Opts = { root = 0.8 }, s2 = "bonethrow", s2Name = "뼈 던지기", s2Mul = 1.5, s2Cd = 12, s2Shape = "single", s2Reach = 6, s2Opts = {  }, frames = "giant_basic" }
+        self.RiteGiants["shield"] = { kind = "shield", name = "방패 거인", hpMul = 1.6, guardPct = 30, atkMul = 0.7, interval = 1.6, radius = 1.4, range = 1.2, speedMul = 0.9, blastMul = 0, tauntSec = 3, tauntRadius = 3, s1 = "roar", s1Name = "도발 함성", s1Mul = 0, s1Cd = 3, s1Radius = 3, s1Opts = {  }, s2 = "slam", s2Name = "방패 내려찍기", s2Mul = 1.5, s2Cd = 10, s2Shape = "arc", s2Reach = 1.6, s2Opts = { root = 1, stagger = 1 }, frames = "giant_shield" }
+        self.RiteGiants["greatsword"] = { kind = "greatsword", name = "대검 거인", hpMul = 1.1, guardPct = 0, atkMul = 1.2, interval = 2, radius = 2.2, range = 1.4, speedMul = 0.9, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "spin", s1Name = "회전 베기", s1Mul = 0.4, s1Cd = 10, s1Radius = 2.2, s1Opts = { hits = 4, gap = 0.4 }, s2 = "rift", s2Name = "땅 가르기", s2Mul = 1.8, s2Cd = 12, s2Shape = "line", s2Reach = 6, s2Opts = { width = 1 }, frames = "giant_greatsword" }
+        self.RiteGiants["twin"] = { kind = "twin", name = "쌍칼 거인", hpMul = 0.9, guardPct = 0, atkMul = 0.55, interval = 0.75, radius = 0.9, range = 1, speedMul = 1.3, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "flurry", s1Name = "연속 베기", s1Mul = 0.5, s1Cd = 6, s1Radius = 0, s1Opts = { hits = 6, gap = 0.15 }, s2 = "dash", s2Name = "돌진", s2Mul = 2, s2Cd = 10, s2Shape = "dash", s2Reach = 5, s2Opts = { path = 1, iframe = 0.3 }, frames = "giant_twin" }
+        self.RiteGiants["mage"] = { kind = "mage", name = "마법사 거인", hpMul = 0.85, guardPct = 0, atkMul = 0.8, interval = 1.4, radius = 1, range = 4.5, speedMul = 0.9, blastMul = 0.3, tauntSec = 0, tauntRadius = 0, s1 = "meteor", s1Name = "뼈 유성", s1Mul = 2, s1Cd = 9, s1Radius = 1.6, s1Opts = { warn = 1 }, s2 = "hexfield", s2Name = "저주 장판", s2Mul = 0.12, s2Cd = 12, s2Shape = "field", s2Reach = 2, s2Opts = { sec = 5, tick = 0.5, taken = 15 }, frames = "giant_mage" }
         self.MonsterStates = {}
         self.MonsterStates["awaken"] = { id = "awaken", name = "각성", speedPct = 20, attackPct = 20, tint = "1,0.5,0.45", color = "#FF6A50", desc = "재의 왕이 깨어나 심연의 군세가 날뛴다 — 이동·공격 속도 +20%" }
         self.Weeklies = {}
@@ -2043,6 +2050,12 @@ script GameData extends Logic
         -- 몬스터 유형 (archetypes.csv: 짐승·무리·거구·방패·사수·암살자·광전사·병사). 없으면 병사
         self:Ensure()
         return self.Archetypes[id] or self.Archetypes["soldier"]
+    end
+
+    method any GetGiant(string kind)
+        -- 뼈 의식 거인 한 종류 (rite_giants.csv · 46-2 · 수치는 46 결정 4 초안). 모르는 종류는 basic
+        self:Ensure()
+        return self.RiteGiants[kind] or self.RiteGiants["basic"]
     end
 
     method any GetMonsterState(string id)

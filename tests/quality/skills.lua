@@ -1,10 +1,11 @@
--- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats
--- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
+-- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
+-- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
 -- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
+-- @source HudMain UI/Hud/HudMain.mlua GiantCountsLine,GiantShort
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
 _SkeletonResonance={AtkMult=1,Radius=1,Cooldown=1}
@@ -471,5 +472,87 @@ do
  _UIKit.SetEnabled=keepEn
  Environment.IsMobilePlatform=keepMobile
  print('[quality/skills] I03 step2/I04 form control: direct node head 방패 희망 1/3, main 편성: 직접, auto head, shard toggle mobile-only, other trees hidden')
+end
+-- 46-5 거인 강화: 악몽 잠김 · 택일(둘 중 하나 · 다시 고르기 불가) · 보류(방패 갈림 쌍) · 열림 레벨(10→42 · 14→50 · 17→56 · 20→62) · 공방 두 묶음
+do
+ local keepLv,keepPts=stats.Level,stats.SkillPoints
+ local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet   -- 위 8조합 검사가 바꿔 둔 가짜 표를 실제 표로
+ stats.Level=99;stats.SkillPoints=20
+ book.Levels={bone_rite=20}
+ stats.MaxDifficulty=0
+ assert(book:CanLearn('giant_quake',99,20)=='악몽부터','nightmare lock: '..book:CanLearn('giant_quake',99,20))
+ assert(book:CanLearn('bomb_wide',99,20)=='','bomb nodes stay open in normal')
+ stats.MaxDifficulty=1
+ assert(book:CanLearn('giant_quake',99,20)=='','open after nightmare: '..book:CanLearn('giant_quake',99,20))
+ assert(book:NodeLevel('giant_quake',1)==42 and book:NodeLevel('giant_quake',2)==46 and book:NodeLevel('giant_quake',3)==50,'quake levels')
+ assert(book:NodeLevel('giant_basic_split',1)==50 and book:NodeLevel('giant_gs_scar',1)==56 and book:NodeLevel('giant_twin_echo',1)==56 and book:NodeLevel('giant_mage_pull',1)==62,'choice levels')
+ assert(book:CanLearn('giant_quake',41,20)=='캐릭터 Lv42에 다음 랭크','Lv42 gate')
+ book.Levels={bone_rite=13}
+ assert(string.find(book:CanLearn('giant_basic_split',99,20),'14랭크부터',1,true),'need 14')
+ book.Levels={bone_rite=20,giant_basic_split=1}
+ local r=book:CanLearn('giant_basic_return',99,20)
+ assert(r=='이미 「세 갈래 뼈」을(를) 골랐습니다',r)
+ assert(book:CanLearn('giant_gs_twice',99,20)=='','other group independent')
+ book.Levels={bone_rite=20}
+ assert(book:CanLearn('giant_shield_alt',99,20)~='' and book:CanLearn('giant_shield_phalanx',99,20)~='','shield pair on hold')
+ assert(book:CanLearn('giant_shield_wall',99,20)=='','shield normal node open')
+ -- 공방: 뼈 의식 = 폭탄 3 + 펼친 거인 노드만 · 보류 줄 없음 · 칸(8)·열(6) 안
+ book.RiteBanner=''
+ SkillWindow.ShowGiant='shield';SkillWindow.Selected=''
+ local vis=SkillWindow:VisibleNodes(book,'bone_rite')
+ assert(table.concat(vis,',')=='bomb_wide,bomb_marrow,bomb_pair,giant_shield_wall','shield view '..table.concat(vis,','))
+ SkillWindow.ShowGiant='twin'
+ vis=SkillWindow:VisibleNodes(book,'bone_rite')
+ assert(#vis==6 and vis[4]=='giant_twin_flurry' and vis[6]=='giant_twin_echo','twin view '..table.concat(vis,','))
+ local cols={}
+ for _,nid in ipairs(vis) do cols[book:NodeNeed(nid,1)]=true end
+ local nc=0 for _ in pairs(cols) do nc=nc+1 end
+ assert(nc<=6 and #vis<=8,'fits builder slots')
+ SkillWindow.ShowGiant=''
+ assert(#SkillWindow:VisibleNodes(book,'raise_skeleton')==#_SkillData:NodesOf('raise_skeleton'),'other mains unchanged')
+ -- 요약 줄 (지금 / 다음)
+ assert(book:GetRankSummary('giant_quake',1)=='땅울림 반경 2.35칸 · 묶기 1.0초' and book:GetRankSummary('giant_shield_wall',3)=='도발 3.9칸 · 받는 피해 -39%','summary '..book:GetRankSummary('giant_quake',1))
+ stats.Level,stats.SkillPoints=keepLv,keepPts
+ stats.MaxDifficulty=nil
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
+ print('[quality/skills] 46-5 giant nodes: nightmare lock, Lv42/50/56/62, choice pair exclusive, shield pair on hold, workshop = bombs + one giant row')
+end
+-- 46-6 HUD 글: 고리 둘째 줄 · 공방 「지금 무리라면」 · 깃발 줄 (동기화된 편성 = 클라이언트 GiantPlan)
+do
+ local keepGet=entity.GetComponent
+ local roster={UndeadRoster='s:greatsword,s:greatsword,m:,m:hex,s:,s:twin|0',GiantKind=''}
+ entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return roster end return keepGet(self,key) end
+ local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
+ _HudMain=HudMain
+ book.Levels={bone_rite=5};stats.MaxDifficulty=1
+ book.RiteBanner=''
+ local plan=_UndeadSystem:GiantPlanFor(entity)
+ assert(plan.type=='greatsword' and plan.tie and not plan.bannerUsed,'fallback greatsword over mage')
+ assert(HudMain:GiantCountsLine(plan)=='대검 2 · 마법사 2 · 기본 1 (동률)',HudMain:GiantCountsLine(plan))
+ book.RiteBanner='mage'
+ plan=_UndeadSystem:GiantPlanFor(entity)
+ assert(plan.type=='mage' and HudMain:GiantCountsLine(plan)=='대검 2 · 마법사 2 · 기본 1 (동률 · 깃발)',HudMain:GiantCountsLine(plan))
+ local sum=book:GetRankSummary('bone_rite',5)
+ assert(string.find(sum,'거인 20초 · 지금 무리라면 마법사 거인',1,true),sum)
+ roster.UndeadRoster='s:greatsword,s:greatsword,m:|0'
+ assert(not string.find(book:GetRankSummary('bone_rite',5),'지금 무리라면',1,true),'fewer than 5 → no giant line')
+ stats.MaxDifficulty=0
+ assert(string.find(book:GetRankSummary('bone_rite',5),'거인 악몽부터',1,true),'normal lock text')
+ -- 깃발 줄: 뼈 의식에서만 · 칸 순서 = fallback · 노말 머리 글
+ values={}
+ SkillWindow.SelMain='bone_rite';SkillWindow.Selected='bone_rite';SkillWindow.ShowGiant=''
+ SkillWindow:RenderBanner(book,stats)
+ assert(values['SkillWin/WS/Banner/Head']=='거인 악몽부터 · 동률이면' and values['SkillWin/WS/Banner/K1/Label']=='방패' and values['SkillWin/WS/Banner/K4/Label']=='마법사' and values['SkillWin/WS/Banner/K6/Label']=='안 고름','banner '..tostring(values['SkillWin/WS/Banner/Head']))
+ stats.MaxDifficulty=1
+ values={}
+ SkillWindow:RenderBanner(book,stats)
+ assert(values['SkillWin/WS/Banner/Head']=='동률이면','banner head unlocked')
+ book.RiteBanner=''
+ stats.MaxDifficulty=nil
+ entity.GetComponent=keepGet
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
+ print('[quality/skills] 46-6 HUD text: ring sub line (tie · banner), workshop 「지금 무리라면」 (client plan), banner row order + normal head')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

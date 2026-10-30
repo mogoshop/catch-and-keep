@@ -20,6 +20,8 @@ script GuideCoach extends Logic
     property number CardCalm = 0             -- 카드 조건(전투·창 없음)이 이어진 시간
     property number CardCalmNeed = 1.5
     property boolean LegionVisited = false   -- 군단 확장 카드 뒤 그림자 창을 열었다 (닫으면 그 단계 끝)
+    property string GiantSeen = ""           -- 46-6 마지막으로 본 거인 종류 (""→종류로 바뀌는 순간 = 거인이 섬)
+    property boolean GiantTipOn = false      -- 이번 거인 동안 「저 적을」 안내를 보인다 (첫 3번 · SkillBook.GiantTips)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -90,6 +92,17 @@ script GuideCoach extends Logic
         local mobile = _ApplicationService:IsMobilePlatform()
         local skillKey = mobile and "메뉴 → 스킬" or "스킬(K)"
         local shadowKey = mobile and "메뉴 → 그림자" or "그림자(H)"
+        -- 0) 46-6 거인이 서는 순간 (첫 3번만 · §3-4 K-B 위험 대응): 거인 큰 기술(스킬 2)은 「저 적을」로만 나간다 — 글귀 §8 후보 1 (승인 전)
+        local giantKind = cmd ~= nil and cmd.GiantKind or ""
+        if giantKind ~= "" and self.GiantSeen == "" then
+            self.GiantTipOn = book.GiantTips < 3
+            if self.GiantTipOn then book:RequestGiantTip() end
+        end
+        if giantKind == "" then self.GiantTipOn = false end
+        self.GiantSeen = giantKind
+        if self.GiantTipOn then
+            return self:Say("giant_focus", mobile and "적을 지정하면 거인이 큰 기술을 씁니다 · 집중" or "적을 지정하면 거인이 큰 기술을 씁니다 · C 길게")
+        end
         -- 1) 해골 전사 배우기 · 칸에 넣기
         -- (포인트를 다른 스킬에 써서 지금 못 배우면 건너뛰고 그림자 안내로 간다)
         if book:GetLevel("raise_skeleton") <= 0 and book:CanLearn("raise_skeleton", st.Level, st.SkillPoints) == "" then

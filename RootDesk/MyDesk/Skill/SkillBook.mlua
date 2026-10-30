@@ -38,6 +38,10 @@ script SkillBook extends Component
     @TargetUserSync
     property string FormHope = ""             -- I03 단계 2 희망 편성 (UndeadSystem.ParseHope 형식 · "" = 전사·마법사 모두 자동, 옛 저장과 같다) — 저장 skills.hope · 장비를 바꿔도 그대로
     @TargetUserSync
+    property string RiteBanner = ""           -- 46-1 「바라는 거인」 깃발 (shield·greatsword·twin·mage·basic · "" = 안 고름 → fallback 순서) — 동률 최다 안에서만 이긴다 · 저장 skills.banner
+    @TargetUserSync
+    property integer GiantTips = 0            -- 46-6 거인이 서는 순간 안내 띠를 보인 횟수 (첫 3번만 · GuideCoach) — 저장 skills.giantTips
+    @TargetUserSync
     property boolean ShardHold = false        -- I04: 모바일에서 골편 칸을 누르고 있으면 반복 (기본 끔 · MobilePad.ShardTick) — 저장 skills.shardHold
 
     @ExecSpace("ServerOnly")
@@ -161,9 +165,21 @@ script SkillBook extends Component
         if def == nil then return "없는 스킬" end
         -- 아직 효과가 없는 스킬은 배울 수 없다 (포인트를 헛쓰지 않게)
         if not def.impl then return "준비 중인 강화" end
+        if def.hold then return "별도 검토 중" end   -- 46-5 보류 묶음 (방패 거인 갈림 · 결정 6)
         local lv = self:GetLevel(id)
         if lv >= def.maxLv then return "최대 랭크" end
         if def.kind == "node" then
+            -- 46-5 거인 강화: 악몽 진입 전엔 배울 수 없다 (5기 거인 해금과 같은 조건 · 사유 줄 「악몽부터」 · §8 후보 1 승인 전)
+            if self:GiantOfNode(id) ~= "" and not self:RiteGiantUnlocked() then return "악몽부터" end
+            -- 택일 묶음 (44 결정 5 · 46 §4-3): 같은 묶음에서 이미 하나를 골랐으면 다른 쪽은 못 배운다 (다시 고르기 불가 — 스킬 초기화로만)
+            if (def.group or "") ~= "" then
+                for _, other in ipairs(_SkillData:GroupOf(def.group)) do
+                    if other ~= id and self:GetLevel(other) > 0 then
+                        local od = _SkillData:Get(other)
+                        return "이미 「" .. (od ~= nil and od.name or other) .. "」을(를) 골랐습니다"
+                    end
+                end
+            end
             -- 강화: 메인 스킬을 그 랭크까지 올려야 열린다
             local parent = _SkillData:Get(def.parent)
             local name = parent ~= nil and parent.name or def.parent
@@ -672,6 +688,22 @@ script SkillBook extends Component
             terror_frenzy = string.format("공포가 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
             drain_share = string.format("가까운 적 %d마리로 이어짐 · 이어진 적은 피해 %d%%", level, math.floor(_GameData.drainChainPct)),
             aura_deep = string.format("호령 공격·생명 효과 +%d%%", 20 * level),
+            -- 46-5 거인 강화 (§4-3 「지금 / 다음 랭크」 · 수치 초안 · 글귀 승인 전)
+            giant_quake = string.format("땅울림 반경 %.2f칸 · 묶기 %.1f초", 2.2 + 0.15 * level, 0.8 + 0.2 * level),
+            giant_basic_split = "뼈 던지기 세 갈래 · 갈래마다 ×0.6",
+            giant_basic_return = "던진 뼈가 돌아오며 다시 맞힘 · ×1.0",
+            giant_shield_wall = string.format("도발 %.1f칸 · 받는 피해 -%d%%", 3 + 0.3 * level, 30 + 3 * level),
+            giant_shield_alt = "별도 검토 중",
+            giant_shield_phalanx = "거인 곁 2칸 아군 받는 피해 -15%",
+            giant_gs_spin = string.format("회전 베기 %d번 · %.1f초", 4 + level, 0.4 * (4 + level)),
+            giant_gs_scar = "갈린 땅이 3초 남아 둔화 · 0.5초마다 피해",
+            giant_gs_twice = "땅 가르기 세 줄 · 옆 줄 ×0.6",
+            giant_twin_flurry = string.format("연속 베기 %d번", 6 + level),
+            giant_twin_reset = "돌진으로 쓰러뜨리면 바로 다시 돌진 · 최대 3번",
+            giant_twin_echo = "돌진 뒤 잔상 둘이 같은 길을 벰",
+            giant_mage_meteor = string.format("뼈 유성 %.1f칸 · 예고 %.1f초", 1.6 + 0.2 * level, math.max(0.4, 1 - 0.1 * level)),
+            giant_mage_resist = "장판 안 적의 저항 -15",
+            giant_mage_pull = "장판이 적을 가운데로 끌어당김",
         }
         if nodeText[id] ~= nil then return nodeText[id] end
         local power = self:GetEffectPower(id, level)
@@ -695,6 +727,9 @@ script SkillBook extends Component
             -- 단계별 한 줄: 단계 이름으로 (10-29 글귀 확정 43 — 「1기·2기」가 해골 수인지 헷갈렸다). 악몽이 열리기 전 거인은 「거인 악몽부터」
             local rank = self:RiteRankMul(level)
             local giant = self:RiteGiantUnlocked() and string.format("거인 %d초", math.floor(_GameData.riteGiantSeconds)) or "거인 악몽부터"
+            -- 46-6 (§5-3 · 결정 8 V1 — 노말에서도 보임): 지금 무리로 5기를 하면 서는 거인 (GiantPlan · 고리 예고와 같은 계획 · 글귀 승인 전)
+            local plan = _UndeadSystem:GiantPlanFor(self.Entity)
+            if plan ~= nil then giant = giant .. " · 지금 무리라면 " .. _GameData:GetGiant(plan.type).name end
             return string.format("폭탄 ×%.2f·반경 %.2f%s · 회오리 ×%.2f×%d · 화살 ×%.1f×3 · %s",
                 power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and "·2기 돌진" or "",
                 _GameData.riteWhirlMul * rank, math.floor(_GameData.riteWhirlSeconds / 0.5), _GameData.riteArrowMul * rank, giant)
@@ -728,6 +763,23 @@ script SkillBook extends Component
         if id == "shard_multi" and self:GetBoneShardCount(math.max(1, self:GetPowerLevel("bone_shard"))) <= 1 then return "골편이 2발 이상일 때 모이는 효과가 납니다" end
         local nodeForm = _UndeadSystem:NodeForm(id)
         if nodeForm.form ~= "" then return self:FormHint(id, nodeForm.kind, nodeForm.form) end
+        local giant = self:GiantOfNode(id)
+        if giant ~= "" then
+            -- 46-5 「쓰는 곳」 (I03 UseHint 방식): 지금 무리로 서는 거인이 이 노드의 거인이 아니면 알린다 (§8 후보 1 「지금 무리로는 ○○ 거인」 · 승인 전)
+            local plan = _UndeadSystem:GiantPlanFor(self.Entity)
+            if plan ~= nil and plan.type ~= giant then return "지금 무리로는 " .. _GameData:GetGiant(plan.type).name end
+        end
+        return ""
+    end
+
+    method string GiantOfNode(string id)
+        -- 46-5 거인 강화 노드 → 거인 종류 (아니면 "") · giant_quake·giant_basic_* = basic · giant_shield_* · giant_gs_* = greatsword · giant_twin_* · giant_mage_*
+        if string.sub(id, 1, 6) ~= "giant_" then return "" end
+        if id == "giant_quake" or string.sub(id, 1, 12) == "giant_basic_" then return "basic" end
+        if string.sub(id, 1, 13) == "giant_shield_" then return "shield" end
+        if string.sub(id, 1, 9) == "giant_gs_" then return "greatsword" end
+        if string.sub(id, 1, 11) == "giant_twin_" then return "twin" end
+        if string.sub(id, 1, 11) == "giant_mage_" then return "mage" end
         return ""
     end
 
@@ -763,7 +815,7 @@ script SkillBook extends Component
             if need > 0 then text = text .. " · 정원 +" .. tostring(need) .. "(" .. legion .. ")부터 섭니다" end
             return text
         end
-        if p.giant and (_UndeadSystem:SteadyRoster(kind, p.max, q, p.hope, p.list, p.reserved)[form] or 0) <= 0 then
+        if p.giant and (_UndeadSystem:SteadyRoster(kind, p.max, q, p.hope, p.list, p.extraReserved or 0)[form] or 0) <= 0 then   -- 46-0: p.list가 합쳐진 넷(~)을 담으므로 이름 없는 예약만 더한다
             return "뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다"
         end
         if nextQ <= now then return "" end
@@ -897,6 +949,28 @@ script SkillBook extends Component
         -- 희망 편성 확정 (주인 클라이언트에 동기화 → 스킬 창 편성 줄이 다시 그려진다). 저장은 스킬과 함께 (PlayerSave 자동 저장·퇴장 저장의 skills.hope)
         self.FormHope = _UndeadSystem:EncodeHope(hopes)
         if not Environment:IsPublishedPlay() then log("[VRF] roster hope saved kind=" .. kind .. " why=" .. why .. " hope=" .. self.FormHope) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestGiantTip()
+        -- 46-6 GuideCoach: 거인이 서는 순간 안내 띠를 한 번 보였다 (첫 3번만 — 저장)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or self.GiantTips >= 3 then return end
+        self.GiantTips = self.GiantTips + 1
+        if not Environment:IsPublishedPlay() then log("[VRF] giant tip shown n=" .. tostring(self.GiantTips)) end
+    end
+
+    @ExecSpace("Server")
+    method void RequestRiteBanner(string kind)
+        -- 46-1 「바라는 거인」 깃발 (공방 깃발 줄 · 포인트 없음): 아는 종류 또는 ""(안 고름)만. 같은 값이면 무시
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        if kind ~= "" then
+            local ok = false
+            for _, k in ipairs(_UndeadSystem:GiantFallback()) do if k == kind then ok = true end end
+            if not ok then return end
+        end
+        if self.RiteBanner == kind then return end
+        self.RiteBanner = kind
+        if not Environment:IsPublishedPlay() then log("[VRF] rite banner set kind=" .. (kind == "" and "none" or kind)) end
     end
 
     @ExecSpace("Server")
@@ -1188,14 +1262,32 @@ script SkillBook extends Component
         return self:CooldownLeft(key) <= 0.05
     end
 
+    method integer RiteUnits5()
+        -- 5기 재료 수 (46-1): 바칠 수 있는 해골 전사 + 마법사 (거인 몸·합쳐짐·아직 못 바침 제외) — 서버·클라이언트 같은 GiantPool (서버 RosterView · 클라이언트 UndeadRoster)
+        if self:IsServer() then return _UndeadSystem:GiantPoolCount(_UndeadSystem:RosterView(self.Entity)) end
+        return _UndeadSystem:GiantPoolCount(_UndeadSystem:RosterOf(self.Entity).list)
+    end
+
+    method boolean GiantStanding()
+        -- 거인이 서 있나 (46-1 · §2-5): 서 있으면 5기를 건너뛰고 3기로 내린다 (예전엔 5를 골라 서버가 거절 → 의식이 헛나감)
+        if self:IsServer() then return _UndeadSystem.Giants[self.Entity.PlayerComponent.UserId] ~= nil end
+        ---@type ShadowCommander
+        local cmd = self.Entity:GetComponent("script.ShadowCommander")
+        return cmd ~= nil and cmd.GiantKind ~= ""
+    end
+
     method integer RiteBestStage(integer want, number mana)
         -- 바라는 단계 이하에서 해골 수·재사용·마나·해금이 되는 가장 높은 단계 (0 = 어느 단계도 안 됨). mana < 0 이면 마나는 보지 않는다
+        -- 46-1: 5기 재료 = 전사 + 마법사 (RiteUnits5) · 거인이 이미 서 있으면 5기는 건너뛴다
         local skel = self:RiteSkeletons()
         local giant = self:RiteGiantUnlocked()
         local lv = self:GetPowerLevel("bone_rite")
         if not self:RiteReady("bone_rite") then return 0 end
+        local units5 = -1
+        if want >= 5 and giant and not self:GiantStanding() then units5 = self:RiteUnits5() end
         for _, s in ipairs({ 5, 3, 2, 1 }) do
-            if s <= want and skel >= s and (s ~= 5 or giant) and (s == 1 or self:RiteReady(self:RiteCdKey(s)))
+            local have = s == 5 and units5 or skel
+            if s <= want and have >= s and (s ~= 5 or giant) and (s == 1 or self:RiteReady(self:RiteCdKey(s)))
                 and (mana < 0 or mana >= self:RiteManaCost(s, lv)) then
                 return s
             end
@@ -1864,6 +1956,8 @@ script SkillBook extends Component
         -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 — 선택 칸 (없으면 자동 · 끔, sv 그대로 4: 옛 이전 규칙의 뜻을 바꾸지 않는다)
         if self.FormHope ~= "" then saved.hope = self.FormHope end
         if self.ShardHold then saved.shardHold = true end
+        if self.RiteBanner ~= "" then saved.banner = self.RiteBanner end   -- 46-1 거인 깃발 (선택 칸 · 없으면 안 고름)
+        if self.GiantTips > 0 then saved.giantTips = self.GiantTips end   -- 46-6 거인 안내 띠 횟수
         return saved
     end
 
@@ -1887,6 +1981,11 @@ script SkillBook extends Component
         -- I03 단계 2 희망 편성 · I04 골편 홀드 반복: 옛 저장(칸 없음) = 자동 · 끔. 다시 써서 모르는 종류·변이·형식은 버린다 (희망 수 자체는 정원·랭크로 자르지 않는다)
         self.FormHope = _UndeadSystem:EncodeHope(_UndeadSystem:ParseHope(type(d.hope) == "string" and d.hope or ""))
         self.ShardHold = d.shardHold == true
+        self.GiantTips = math.max(0, math.min(3, math.floor(tonumber(d.giantTips) or 0)))
+        self.RiteBanner = ""
+        if type(d.banner) == "string" then
+            for _, k in ipairs(_UndeadSystem:GiantFallback()) do if k == d.banner then self.RiteBanner = k end end
+        end
         if not Environment:IsPublishedPlay() then log("[VRF] roster hope restored hope=" .. self.FormHope .. " shardHold=" .. tostring(self.ShardHold)) end
         self:SanitizeSlots()
         self:RefreshDigest()

@@ -18,6 +18,8 @@
   python3 tools/sim_balance.py --diff all  # 보통 → 악몽 → 지옥 이어서 (레벨·경험치 이어받기, 10-23 추가)
   python3 tools/sim_balance.py --rite-check      # 뼈 의식 반영(기획서 43 §5 가정 +5%, 해금 Lv) 전후 보통→악몽→지옥 시간·끝 레벨 비교 (10-29)
   python3 tools/sim_balance.py --rite 5 --diff all  # 뼈 의식 +5%를 넣은 채로 진행 표
+  python3 tools/sim_balance.py --giant-check     # 46-7 뼈 의식 거인(악몽·지옥만 빌드 총 피해 +0·+8·+13.5·+20%) 끝 레벨 41·68·90 불변 확인 (기획서 46 부록 A-3 · 바뀌면 종료 코드 1)
+  python3 tools/sim_balance.py --giant 13.5 --diff all  # 거인 +13.5%(대검 수준 추정)를 악몽·지옥에 넣은 채로 진행 표
 
 악몽·지옥 (difficulty.csv · 10-23 추가):
   몬스터 레벨  보통 1~40을 levelFrom~levelTo로 비율 이동 (GameConst.ScaleLevel) — 고정 보스·최상위도 같은 변환
@@ -178,6 +180,9 @@ def rank_cap(sid, L, rk):
 
 
 DONE = {"runs": 0}
+# 46-7 뼈 의식 거인 (기획서 46 §3-5 · 부록 A-3): 5기 거인은 악몽부터라 악몽·지옥(diff ≥ 1)에서만 빌드 총 피해 +pct%.
+#   기획서 표의 빌드 +N%(대상 수 기대값 · 사용률 50% · 스킬을 쿨마다 쓴 상한 · 변이 효과 생략)를 그대로 넣는 가정 — 재미·DPS 증명이 아니라 끝 레벨 안전 범위 확인
+GIANT = {"pct": 0.0}
 # 뼈 의식 (기획서 43 §3-1 · §5 · 10-29): 해금 레벨(skills.csv bone_rite row)부터 빌드 총 피해 +pct%. 실제 단계별 수치가 아니라 「이 정도 세지면」 가정
 RITE = {"pct": 0.0, "row": int(num(SKILL["bone_rite"]["row"])) if "bone_rite" in SKILL else 24}   # 이미 끝낸 난이도 수 (의뢰 스킬·능력치·배치 보상은 난이도마다 다시 준다)
 
@@ -296,7 +301,8 @@ def build(prof, L, act=1, diff=0):
     res = {k: min(C["resistCap"], v + pen) for k, v in res.items()}
     bone_armor = math.floor((20 + 10 * (rk.get("bone_armor", 0) - 1)) * (1 + 0.1 * (L - 1))) if rk.get("bone_armor") else 0
     rite = 1 + RITE["pct"] / 100 if RITE["pct"] and L >= RITE["row"] else 1
-    return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul * rite, hp=hp, defense=defense,
+    giant = 1 + GIANT["pct"] / 100 if GIANT["pct"] and diff >= 1 else 1
+    return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul * rite * giant, hp=hp, defense=defense,
                 res=res, n_sk=n_sk, n_mg=n_mg, n_sh=n_sh, n_el=n_el, plus=plus, minion=minion, sk_hp=sk_hp, sh_hp=sh_hp, sh_n=sh_n,
                 bone_armor=bone_armor, amp=amp * p["markUp"], Str=Str, Vit=Vit)
 
@@ -513,11 +519,17 @@ def main():
     ap.add_argument("--diff", default="0", help="0 보통 · 1 악몽 · 2 지옥 · all 이어서")
     ap.add_argument("--rite", type=float, default=0, help="뼈 의식 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
     ap.add_argument("--rite-check", action="store_true", help="뼈 의식 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
+    ap.add_argument("--giant", type=float, default=0, help="46-7 뼈 의식 거인 가정: 악몽·지옥에서만 빌드 총 피해 +N%% (기획서 46 부록 A-3 · 기본 8.3 · 대검 13.5 · 노드 최대 20)")
+    ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20%% 끝 레벨 41·68·90 불변 확인만 (바뀌면 종료 코드 1)")
     a = ap.parse_args()
     if a.rite_check:
         rite_check(a.profile if a.profile != "all" else "P60", a.eff)
         return
+    if a.giant_check:
+        ok = giant_check(a.profile if a.profile != "all" else "P60", a.eff)
+        raise SystemExit(0 if ok else 1)
     RITE["pct"] = a.rite
+    GIANT["pct"] = a.giant
     diffs = [0, 1, 2] if a.diff == "all" else [int(a.diff)]
     print("== 빌드 비교 (군단 초당 피해 · 괄호는 P100 대비) ==")
     for L in (6, 12, 21, 30, 40):
@@ -590,6 +602,29 @@ def rite_check(prof, eff, pct=5.0):
         same = same and l0 == l1
         print(" %s  기준 %s Lv%d  →  의식 %s Lv%d  (시간 %+d초)" % (n, fmt(t0), l0, fmt(t1), l1, round(t1 - t0)))
     print(" 끝 레벨 %s · %s" % (" · ".join(str(x[1]) for x in with_rite), "그대로" if same else "바뀜"))
+
+
+def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0)):
+    # 기획서 46 부록 A-3: 악몽·지옥에서만 +N% · 노말은 그대로(5기 거인은 악몽부터) · 끝 레벨 41 · 68 · 90 불변인지 (경험치 경로 모델 — 안전 범위 확인이지 재미 증명 아님)
+    names = ["보통", "악몽", "지옥"]
+    GIANT["pct"] = 0.0
+    base = chain(prof, eff)
+    print("== 뼈 의식 거인 점검 (%s · 악몽·지옥에서만 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % prof)
+    print(" 기준  " + " · ".join("%s %s Lv%d" % (names[i], fmt(t), l) for i, (t, l) in enumerate(base)))
+    ok = [l for _, l in base] == [41, 68, 90]
+    if not ok:
+        print(" 기준 끝 레벨이 41 · 68 · 90이 아님 — 다른 변경을 먼저 확인")
+    for pct in pcts:
+        if pct == 0:
+            continue
+        GIANT["pct"] = pct
+        res = chain(prof, eff)
+        same = [l for _, l in res] == [l for _, l in base]
+        ok = ok and same
+        print(" +%-5g " % pct + " · ".join("%s %s Lv%d (%+d초)" % (names[i], fmt(t), l, round(t - base[i][0])) for i, (t, l) in enumerate(res)) + " · " + ("그대로" if same else "바뀜"))
+    GIANT["pct"] = 0.0
+    print(" 끝 레벨 41 · 68 · 90 %s" % ("모두 그대로" if ok else "바뀜 — 확인 필요"))
+    return ok
 
 
 if __name__ == "__main__":

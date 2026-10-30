@@ -160,6 +160,7 @@ local function NewBook(player)
   function b:RiteStageForHold(held, giant) return held >= 1 and 2 or 1 end
   function b:RiteBestStage(want, mana) return want end
   function b:RiteSkeletons() return W.skeletons end
+  function b:RiteUnits5() return W.skeletons end   -- 46-1: 5기 재료(전사 + 마법사) — 이 가짜에는 마법사가 없다
   function b:RequestCast(id, aim)
     W.requests = W.requests + 1
     table.insert(W.reqAt, _UtilLogic.ElapsedSeconds)

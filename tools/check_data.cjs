@@ -14,7 +14,7 @@ const errors = [];
 const err = (table, row, msg) => errors.push(`${table}.csv${row !== null ? " " + (row + 2) + "행" : ""}: ${msg}`);
 
 const T = {};
-for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons", "map_sets"]) {
+for (const name of ["config", "difficulty", "stats", "item_bases", "item_affixes", "item_uniques", "runes", "runewords", "skills", "quests", "named", "waypoints", "monsters", "bosses", "maps", "sounds", "shop", "objects", "npcs", "monster_ranks", "variants", "item_sets", "item_set_pieces", "drop_tables", "ui_icons", "map_sets", "rite_giants", "monster_frames"]) {
   try { T[name] = load(name); } catch (e) { err(name, null, "읽을 수 없음 — " + e.message); T[name] = []; }
 }
 
@@ -427,6 +427,50 @@ T.maps.forEach((r, i) => {
 // 액트마다 마을 하나 (필드 사슬은 같은 액트의 마을에서 시작해 마을로 돌아온다)
 for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   if (T.maps.filter((r) => (r.act || "1") === act && r.kind === "town").length !== 1) err("maps", null, `액트 ${act}: town은 정확히 하나여야 함`);
+}
+
+// ── 뼈 의식 거인 5종 (46-2 · rite_giants.csv · 수치는 46 결정 4 초안) ──
+{
+  const KINDS = ["basic", "shield", "greatsword", "twin", "mage"];
+  const NUMS = ["hpMul", "guardPct", "atkMul", "interval", "radius", "range", "speedMul", "blastMul", "tauntSec", "tauntRadius", "s1Mul", "s1Cd", "s1Radius", "s2Mul", "s2Cd", "s2Reach"];
+  const SHAPES = new Set(["single", "arc", "line", "dash", "field"]);
+  const kinds = T.rite_giants.map((r) => r.kind);
+  if (kinds.length !== KINDS.length || KINDS.some((k) => !kinds.includes(k))) err("rite_giants", null, `종류는 정확히 ${KINDS.join("·")} 다섯 줄이어야 함 (지금 ${kinds.join("·")})`);
+  const frameKeys = new Set(T.monster_frames.map((r) => r.monster));
+  T.rite_giants.forEach((r, i) => {
+    for (const k of NUMS) if (r[k] === "" || isNaN(Number(r[k])) || Number(r[k]) < 0) err("rite_giants", i, `${k} '${r[k]}' — 0 이상 숫자가 아님`);
+    for (const k of ["hpMul", "atkMul", "interval", "range", "speedMul", "s1Cd", "s2Cd"]) if (!(Number(r[k]) > 0)) err("rite_giants", i, `${k} 양수여야 함`);
+    if (Number(r.guardPct) >= 90) err("rite_giants", i, "guardPct 90 미만이어야 함");
+    if (!SHAPES.has(r.s2Shape)) err("rite_giants", i, `s2Shape '${r.s2Shape}' — single·arc·line·dash·field 중 하나`);
+    if (r.name === "" || r.s1 === "" || r.s2 === "" || r.s1Name === "" || r.s2Name === "") err("rite_giants", i, "이름·스킬 칸이 비어 있음");
+    for (const c of ["s1Opts", "s2Opts"]) for (const part of (r[c] || "").split(";").filter((x) => x !== "")) if (!/^\w+=[\d.]+$/.test(part)) err("rite_giants", i, `${c} '${part}' — "이름=숫자;…" 꼴이 아님`);
+    if (r.frames !== `giant_${r.kind}`) err("rite_giants", i, `frames '${r.frames}' — giant_${r.kind}이어야 함`);
+    else if (!frameKeys.has("form_" + r.frames)) err("rite_giants", i, `frames — monster_frames.csv에 form_${r.frames}가 없음`);
+    if (!/초안/.test(r.note)) err("rite_giants", i, "note에 「초안」 표시가 있어야 함 (46 결정 4 — 확정 아님)");
+  });
+}
+
+// ── 택일 묶음 (46-5 · skill_choices.csv · 44 결정 5 「둘 중 하나」) ──
+{
+  const choices = load("skill_choices");
+  const byId = Object.fromEntries(T.skills.map((r) => [r.id, r]));
+  const groups = {};
+  choices.forEach((c, i) => {
+    const sk = byId[c.id];
+    if (!sk) err("skill_choices", i, `id '${c.id}' — skills.csv에 없음`);
+    else if (sk.kind !== "node") err("skill_choices", i, `id '${c.id}' — 강화 노드(kind node)만 묶는다`);
+    if (!/^\w+$/.test(c.group)) err("skill_choices", i, `group '${c.group}' — 비어 있거나 형식 오류`);
+    if (c.hold !== "" && c.hold !== "1") err("skill_choices", i, `hold '${c.hold}' — "" 또는 1`);
+    (groups[c.group] = groups[c.group] || []).push(c);
+  });
+  for (const [g, list] of Object.entries(groups)) {
+    if (list.length !== 2) err("skill_choices", null, `group ${g}: 정확히 둘이어야 함 (지금 ${list.length})`);
+    if (new Set(list.map((c) => c.hold)).size !== 1) err("skill_choices", null, `group ${g}: 한쪽만 보류 — 둘 다 보류이거나 둘 다 열려야 함 (46 §4-3)`);
+    const parents = new Set(list.map((c) => (byId[c.id] || {}).parent));
+    const needs = new Set(list.map((c) => (byId[c.id] || {}).need));
+    if (parents.size !== 1 || needs.size !== 1) err("skill_choices", null, `group ${g}: 같은 메인·같은 필요 랭크여야 함`);
+    for (const c of list) if ((byId[c.id] || {}).maxLv !== "1") err("skill_choices", null, `group ${g}: ${c.id} 갈림은 1랭크`);
+  }
 }
 
 // ── 난이도·사운드 ──

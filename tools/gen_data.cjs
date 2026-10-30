@@ -72,6 +72,9 @@ function genGameData() {
   const ranks = load("monster_ranks");
   const variants = load("variants");
   const archetypes = load("archetypes");
+  // 46-2 뼈 의식 거인 5종 (data/rite_giants.csv · 수치는 46 결정 4 초안) — opts 칸 "root=0.8;stagger=1" → Lua 표
+  const riteGiants = load("rite_giants");
+  const giantOpts = (t) => "{ " + (t || "").split(";").filter((x) => x.trim() !== "").map((x) => { const [k, v] = x.split("="); return `${k.trim()} = ${n(v)}`; }).join(", ") + " }";
   const monsterStates = load("monster_states");
   const weekly = load("weekly");
   const mapRows = load("maps").sort((a, b) => num(a.order) - num(b.order));
@@ -108,6 +111,8 @@ function genGameData() {
     ...variants.map((v) => `        self.Variants[${s(v.id)}] = { id = ${s(v.id)}, name = ${s(v.name)}, kind = ${s(v.kind)}, effect = ${s(v.effect)}, value = ${n(v.value)}, radius = ${n(v.radius)}, interval = ${n(v.interval)}, mult = ${n(v.mult)}, element = ${s(v.element)}, weight = ${n(v.weight)} }\n        table.insert(self.VariantOrder, ${s(v.id)})`),
     "        self.Archetypes = {}",
     ...archetypes.map((a) => `        self.Archetypes[${s(a.id)}] = { id = ${s(a.id)}, name = ${s(a.name)}, trait = ${s(a.trait)}, monster = ${s(a.monster)}, shadow = ${s(a.shadow)} }`),
+    "        self.RiteGiants = {}",
+    ...riteGiants.map((g) => `        self.RiteGiants[${s(g.kind)}] = { kind = ${s(g.kind)}, name = ${s(g.name)}, hpMul = ${n(g.hpMul)}, guardPct = ${n(g.guardPct)}, atkMul = ${n(g.atkMul)}, interval = ${n(g.interval)}, radius = ${n(g.radius)}, range = ${n(g.range)}, speedMul = ${n(g.speedMul)}, blastMul = ${n(g.blastMul)}, tauntSec = ${n(g.tauntSec)}, tauntRadius = ${n(g.tauntRadius)}, s1 = ${s(g.s1)}, s1Name = ${s(g.s1Name)}, s1Mul = ${n(g.s1Mul)}, s1Cd = ${n(g.s1Cd)}, s1Radius = ${n(g.s1Radius)}, s1Opts = ${giantOpts(g.s1Opts)}, s2 = ${s(g.s2)}, s2Name = ${s(g.s2Name)}, s2Mul = ${n(g.s2Mul)}, s2Cd = ${n(g.s2Cd)}, s2Shape = ${s(g.s2Shape)}, s2Reach = ${n(g.s2Reach)}, s2Opts = ${giantOpts(g.s2Opts)}, frames = ${s(g.frames)} }`),
     "        self.MonsterStates = {}",
     ...monsterStates.map((m) => `        self.MonsterStates[${s(m.id)}] = { id = ${s(m.id)}, name = ${s(m.name)}, speedPct = ${n(m.speedPct)}, attackPct = ${n(m.attackPct)}, tint = ${s(m.tint)}, color = ${s(m.color)}, desc = ${s(m.desc)} }`),
     "        self.Weeklies = {}",
@@ -258,6 +263,12 @@ function genGameData() {
         -- 몬스터 유형 (archetypes.csv: 짐승·무리·거구·방패·사수·암살자·광전사·병사). 없으면 병사
         self:Ensure()
         return self.Archetypes[id] or self.Archetypes["soldier"]
+    end
+
+    method any GetGiant(string kind)
+        -- 뼈 의식 거인 한 종류 (rite_giants.csv · 46-2 · 수치는 46 결정 4 초안). 모르는 종류는 basic
+        self:Ensure()
+        return self.RiteGiants[kind] or self.RiteGiants["basic"]
     end
 
     method any GetMonsterState(string id)
@@ -491,9 +502,9 @@ function genGameData() {
         return self.MonsterNames[sourceId] or sourceId
     end
 `;
-  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, pets.csv, monster_ranks.csv, variants.csv, archetypes.csv, monster_states.csv, weekly.csv, maps.csv",
+  write("GameData.mlua", "config.csv, difficulty.csv, sounds.csv, monsters.csv, shop.csv, player_appearance.csv, pets.csv, monster_ranks.csv, variants.csv, archetypes.csv, rite_giants.csv, monster_states.csv, weekly.csv, maps.csv",
     logic("GameData", "게임 설정값(config.csv 각 행 = 속성), 난이도, 배경음, 몬스터 표시 이름", body, extra,
-      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Pets = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table VariantCache = {}\n    property table Archetypes = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
+      props + "\n    property table PlayerAppearance = {}\n    property table PlayerAppearanceName = {}\n    property table Pets = {}\n    property table Difficulties = {}\n    property table Sounds = {}\n    property table MonsterNames = {}\n    property table DepthPool = {}\n    property table MapSpawns = {}\n    property table MapInfo = {}\n    property table UiIcons = {}\n    property table Story = {}\n    property table Shop = {}\n    property table Variants = {}\n    property table VariantOrder = {}\n    property table VariantCache = {}\n    property table Archetypes = {}\n    property table RiteGiants = {}\n    property table MonsterStates = {}\n    property table Weeklies = {}\n    property table WeeklyOrder = {}\n    property table MonsterSourceOf = {}\n    property table MonsterStats = {}\n    property table MonsterSfx = {}\n    property table MonsterFrames = {}\n    property table Ranks = {}\n    property table DepthUniques = {}\n    property table BossSkills = {}\n"));
 }
 
 // ── ItemTables: 베이스·접사·유니크·룬·룬워드 ──
@@ -538,10 +549,12 @@ function genItems() {
 // ── SkillData ──
 function genSkills() {
   const rows = load("skills");
+  // 46-5 택일 묶음 (data/skill_choices.csv · 44 결정 5 「둘 중 하나」 장치 — 44-5 갈림도 이 표에 줄을 더한다): group = 같은 묶음 중 하나만 · hold = 보류(배울 수 없음 · 공방에 안 보임)
+  const choices = Object.fromEntries(load("skill_choices").map((c) => [c.id, c]));
   const body = [
     "        self.Skills = {}",
     "        self.Order = {}",
-    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, card = ${s(r.card || "")}, icon = ${s(r.icon)}, parent = ${s(r.parent || "")}, need = ${n(r.need || 0)} }\n        table.insert(self.Order, ${s(r.id)})`),
+    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, card = ${s(r.card || "")}, icon = ${s(r.icon)}, parent = ${s(r.parent || "")}, need = ${n(r.need || 0)}, group = ${s((choices[r.id] || {}).group || "")}, hold = ${b((choices[r.id] || {}).hold || "")} }\n        table.insert(self.Order, ${s(r.id)})`),
   ].join("\n");
   const extra = `
     method any Get(string id)
@@ -564,6 +577,17 @@ function genSkills() {
         return list
     end
 
+    method table GroupOf(string group)
+        -- 46-5 택일 묶음의 노드 id (표 순서 · 「둘 중 하나」)
+        self:Ensure()
+        local list = {}
+        if group == "" then return list end
+        for _, id in ipairs(self.Order) do
+            if self.Skills[id].group == group then table.insert(list, id) end
+        end
+        return list
+    end
+
     method table Mains()
         -- 메인 스킬 id (해금 레벨 순 — 표가 이미 그 순서)
         self:Ensure()
@@ -582,7 +606,7 @@ function genSkills() {
         return "저주"
     end
 `;
-  write("SkillData.mlua", "skills.csv", logic("SkillData", "네크로맨서 스킬 정의 (docs/design/04 3장). impl=false는 트리에만 보이는 준비 중 스킬", body, extra,
+  write("SkillData.mlua", "skills.csv, skill_choices.csv", logic("SkillData", "네크로맨서 스킬 정의 (docs/design/04 3장). impl=false는 트리에만 보이는 준비 중 스킬", body, extra,
     "    property table Skills = {}\n    property table Order = {}\n"));
 }
 

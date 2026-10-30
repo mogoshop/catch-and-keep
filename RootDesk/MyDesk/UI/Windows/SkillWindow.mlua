@@ -35,6 +35,7 @@ script SkillWindow extends Logic
     property integer StatFont = 17          -- 효과 줄 글자 크기 (빌더 WS/Stat max_size와 같다) — 화면 폭을 잴 기준
     property string FormKind = ""           -- 편성 조작 칸(WS/Form)이 다루는 종류: skeleton · mage · shard(모바일 골편 홀드 반복) · "" (숨김)
     property string FormForm = ""           -- 편성 조작 칸 ± 대상 변이 (변이 노드를 골랐을 때만)
+    property string ShowGiant = ""          -- 46-5 뼈 의식 공방에 펼친 거인 노드 줄 (basic·shield·greatsword·twin·mage · "" = 깃발 → 지금 무리 → 기본)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -57,6 +58,11 @@ script SkillWindow extends Logic
         _UIKit:Connect(self.Win .. "/WS/Form/Mode", function() self:FormMode() end)
         _UIKit:Connect(self.Win .. "/WS/Form/Minus", function() self:FormStep(-1) end)
         _UIKit:Connect(self.Win .. "/WS/Form/Plus", function() self:FormStep(1) end)
+        -- 46-6 거인 깃발 줄 (뼈 의식 공방): 칸 1~5 = fallback 순서 거인 · 6 = 안 고름
+        for i = 1, 6 do
+            local index = i
+            _UIKit:Connect(self.Win .. "/WS/Banner/K" .. tostring(i), function() self:PickBanner(index) end)
+        end
         _UIKit:Connect(self.Win .. "/BtnEdit", function() self:EditSlots() end)
         _UIKit:Connect(self.Win .. "/BtnReset", function()
             ---@type SkillBook
@@ -159,6 +165,7 @@ script SkillWindow extends Logic
         local cmd = _UIKit:Comp("script.ShadowCommander")
         if cmd ~= nil then key = key .. "#" .. cmd.UndeadRoster end   -- 편성이 바뀌면 편성 줄을 다시 그린다 (I03)
         key = key .. "#" .. book.FormHope .. "#" .. tostring(book.ShardHold)   -- 희망 편성·골편 홀드 설정을 바꾸면 소환 없이도 다시 그린다 (B-R05)
+        key = key .. "#" .. book.RiteBanner .. "#" .. self.ShowGiant .. "#" .. tostring(st.MaxDifficulty)   -- 46-5·46-6 거인 깃발·펼친 거인·악몽 해금
         if key == self.RenderKey then return end
         self.RenderKey = key
         -- 머리 줄: 남은 포인트 · 숙련(배운 스킬·강화 수) · 트리색 범례 · 초기화
@@ -381,6 +388,51 @@ script SkillWindow extends Logic
         _UIKit:SetText(ws .. "/Reason", reason)
         self:RenderNodes(book, st, def)
         self:RenderForm(book, detailId)
+        self:RenderBanner(book, st)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderBanner(SkillBook book, PlayerStats st)
+        -- 46-6 거인 깃발 줄 (§5-3 · §10-2 · 결정 8 V1 — 노말에서도 보임): 「동률이면」 + [방패][대검][쌍칼][마법사][기본][안 고름].
+        --   고른 칸 = 금테(깃발) · 펼친 거인 = 트리색 테 · 누르면 깃발을 바꾸고 그 거인의 강화 노드를 펼친다 (깃발은 동률 최다 안에서만 이긴다 — GiantPlan)
+        local root = self.Win .. "/WS/Banner"
+        local on = self.SelMain == "bone_rite"
+        _UIKit:SetEnabled(root, on)
+        if not on then return end
+        local kinds = _UndeadSystem:GiantFallback()
+        local shown = self:ShownGiant(book)
+        local unlocked = book:RiteGiantUnlocked()
+        _UIKit:SetText(root .. "/Head", (unlocked and "" or "거인 악몽부터 · ") .. "동률이면")
+        for i = 1, 6 do
+            local c = root .. "/K" .. tostring(i)
+            local kind = kinds[i] or ""
+            local chosen = book.RiteBanner == kind
+            _UIKit:SetIcon(c .. "/Icon", kind ~= "" and _GameData:GetUiIcon("ui_giant_" .. kind) or "")
+            _UIKit:SetEnabled(c .. "/Icon", kind ~= "")
+            _UIKit:SetColor(c .. "/Icon", unlocked and Color(1, 1, 1, 1) or Color(0.55, 0.5, 0.6, 0.9))
+            _UIKit:SetText(c .. "/Label", kind ~= "" and _HudMain:GiantShort(kind) or "안 고름")
+            local key = "sk_ws_node_frame_empty"
+            local ring = Color(0.7, 0.7, 0.7, 0.8)
+            if chosen then key, ring = "sk_ws_node_frame_max", Color(1, 1, 1, 1)
+            elseif kind ~= "" and kind == shown then key, ring = "sk_ws_node_frame_learned", self:TreeColor("command") end
+            _UIKit:SetIcon(c .. "/Rim", _GameData:GetUiIcon(key))
+            _UIKit:SetColor(c .. "/Rim", ring)
+        end
+        if not Environment:IsPublishedPlay() then log("[VRF] rite banner ui banner=" .. (book.RiteBanner == "" and "none" or book.RiteBanner) .. " shown=" .. shown .. " unlocked=" .. tostring(unlocked)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickBanner(integer index)
+        -- 깃발 칸을 눌렀다: 깃발 저장(서버 RequestRiteBanner · 포인트 없음) + 그 거인 노드 펼치기. 「안 고름」이면 깃발만 끈다
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil then return end
+        local kind = _UndeadSystem:GiantFallback()[index] or ""
+        book:RequestRiteBanner(kind)
+        self.ShowGiant = kind
+        if book:GiantOfNode(self.Selected) ~= "" then self.Selected = self.SelMain end   -- 고른 거인 노드가 펼칠 거인을 정하지 않게
+        self.RenderKey = ""
+        log("[VRF] rite banner pick kind=" .. (kind == "" and "none" or kind))
     end
 
     @ExecSpace("ClientOnly")
@@ -512,7 +564,7 @@ script SkillWindow extends Logic
     method void RenderNodes(SkillBook book, PlayerStats st, any def)
         -- 강화 노드: 필요 랭크(need) 열별로 세우고 허브에서 갈래 선 (찍은 노드 선은 트리색)
         local ws = self.Win .. "/WS"
-        local nodes = _SkillData:NodesOf(self.SelMain)
+        local nodes = self:VisibleNodes(book, self.SelMain)
         local needs, colOf = {}, {}
         for _, nid in ipairs(nodes) do
             local need = book:NodeNeed(nid, 1)
@@ -593,6 +645,30 @@ script SkillWindow extends Logic
         if isvalid(spine) then spine.UITransformComponent.RectSize = Vector2(4, math.max(4, topY - botY)) end
         _UIKit:SetPos(ws .. "/Spine", Vector2(hubX, topY))
         _UIKit:SetPos(ws .. "/Hub", Vector2(hubX, (topY + botY) / 2))
+    end
+
+    method table VisibleNodes(SkillBook book, string main)
+        -- 공방에 세울 강화 노드 (46-5 · §4-4 두 묶음): 보류(hold) 줄은 빼고, 뼈 의식은 폭탄 3 + 펼친 거인 하나의 노드만 (나머지 4종은 깃발 줄에서 골라 펼친다 — 46-6).
+        --   폭탄 필요 랭크 1·3·5 + 거인 10·14|17|20 = 5열 · 6칸 이하라 빌더 칸(6열 · 8칸) 안
+        local out = {}
+        local show = main == "bone_rite" and self:ShownGiant(book) or ""
+        for _, nid in ipairs(_SkillData:NodesOf(main)) do
+            local nd = _SkillData:Get(nid)
+            local giant = book:GiantOfNode(nid)
+            if nd ~= nil and not nd.hold and (giant == "" or giant == show) then table.insert(out, nid) end
+        end
+        return out
+    end
+
+    method string ShownGiant(SkillBook book)
+        -- 펼칠 거인: 고른 노드가 거인 노드면 그 거인 → 공방에서 고른 줄(ShowGiant) → 깃발 → 지금 무리의 거인(GiantPlan) → 기본
+        local picked = book:GiantOfNode(self.Selected)
+        if picked ~= "" then return picked end
+        if self.ShowGiant ~= "" then return self.ShowGiant end
+        if book.RiteBanner ~= "" then return book.RiteBanner end
+        local plan = _UndeadSystem:GiantPlanFor(book.Entity)
+        if plan ~= nil then return plan.type end
+        return "basic"
     end
 
     method string StatLine(SkillBook book, PlayerStats st, string id)

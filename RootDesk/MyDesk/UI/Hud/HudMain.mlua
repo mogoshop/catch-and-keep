@@ -51,6 +51,7 @@ script HudMain extends Logic
     property boolean ComboTierUp = false      -- 이번 오름이 단계(10·25·50·100)를 넘었다 (더 크게 튄다)
     property boolean RiteShown = false        -- 뼈 의식 충전 고리가 떠 있다 (RenderRite)
     property integer RiteLastStage = -1       -- 고리에 마지막으로 그린 단계 (바뀔 때만 글자·로그)
+    property string RiteLastSub = ""          -- 46-6 고리 둘째 줄 (참여 다섯 종류 수) — 바뀔 때만 다시 쓴다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -508,17 +509,50 @@ script HudMain extends Logic
                 _UIKit:SetColor(path, held >= m[2] and Color(1, 0.95, 0.8, 1) or Color(0.43, 0.4, 0.35, 1))
             end
         end
-        if stage ~= self.RiteLastStage or not self.RiteShown then
+        -- 46-6: 5기면 거인 이름(「대검 거인」) + 둘째 줄 참여 다섯 종류 수 — 서버 StartGiant와 같은 GiantPlan(동기화된 편성 · 깃발)
+        local plan = stage == 5 and _UndeadSystem:GiantPlanFor(player) or nil
+        local sub = plan ~= nil and self:GiantCountsLine(plan) or ""
+        if stage ~= self.RiteLastStage or not self.RiteShown or sub ~= self.RiteLastSub then
             -- 단계 이름 · 낮춰 나갈 때는 「{단계}까지만」 (10-29 사용자 확정 — 까닭이 해골·마나·재사용 대기 어느 것이든 같은 글)
             local names = { [1] = "해골 폭탄", [2] = "뼈 회오리", [3] = "뼈 화살", [5] = "뼈 거인" }
+            if plan ~= nil then names[5] = _GameData:GetGiant(plan.type).name end
             local label = stage == 0 and "해골 없음" or names[stage]
             if stage > 0 and stage < want then label = label .. "까지만" end
             _UIKit:SetText("RiteRing/Count", stage > 0 and tostring(stage) or "-")
             _UIKit:SetText("RiteRing/Label", label)
-            if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite ring stage=%d want=%d held=%.2f", stage, want, held)) end
+            _UIKit:SetText("RiteRing/Sub", sub)
+            _UIKit:SetEnabled("RiteRing/Sub", sub ~= "")
+            if not Environment:IsPublishedPlay() then
+                if plan ~= nil then log(string.format("[VRF] rite ring stage=5 giant=%s counts=%s tie=%s banner=%s want=%d held=%.2f", plan.type, _UndeadSystem:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed), want, held))
+                else log(string.format("[VRF] rite ring stage=%d want=%d held=%.2f", stage, want, held)) end
+            end
             self.RiteLastStage = stage
+            self.RiteLastSub = sub
         end
         self.RiteShown = true
+    end
+
+    method string GiantCountsLine(table plan)
+        -- 고리 둘째 줄 (46-6 · §8 후보 1 · 승인 전): 「대검 3 · 방패 2」 (많은 순 · 같으면 fallback 순서) + 동률이면 「(동률 · 깃발)」 또는 「(동률)」
+        local order = {}
+        for i, k in ipairs(_UndeadSystem:GiantFallback()) do
+            if (plan.counts[k] or 0) > 0 then table.insert(order, { k = k, n = plan.counts[k], i = i }) end
+        end
+        table.sort(order, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.i < b.i end)
+        local parts = {}
+        for _, o in ipairs(order) do table.insert(parts, self:GiantShort(o.k) .. " " .. tostring(o.n)) end
+        local line = table.concat(parts, " · ")
+        if plan.tie then line = line .. (plan.bannerUsed and " (동률 · 깃발)" or " (동률)") end
+        return line
+    end
+
+    method string GiantShort(string kind)
+        -- 종류 짧은 이름 (고리 둘째 줄 · 공방 깃발 칸 · 글귀 승인 전): 기본 · 방패 · 대검 · 쌍칼 · 마법사
+        if kind == "shield" then return "방패" end
+        if kind == "greatsword" then return "대검" end
+        if kind == "twin" then return "쌍칼" end
+        if kind == "mage" then return "마법사" end
+        return "기본"
     end
 
     @ExecSpace("ClientOnly")
