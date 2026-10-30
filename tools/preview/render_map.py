@@ -136,6 +136,16 @@ def render(data):
         if p['flipX']: im = im.transpose(Image.FLIP_LEFT_RIGHT)
         if p['flipY']: im = im.transpose(Image.FLIP_TOP_BOTTOM)
         im = tinted(im, p['color'])
+        rot = p.get('rot', 0) or 0
+        if abs(rot) > 0.01:
+            # 돌린 낱장(길 안내 타일 도장): 피벗을 축으로
+            C = int((pw ** 2 + ph ** 2) ** 0.5) + 4
+            big = Image.new('RGBA', (2 * C, 2 * C))
+            big.paste(im, (round(C - pv[0] * pw), round(C - (ph - pv[1] * ph))))
+            big = big.rotate(rot, resample=Image.BILINEAR, center=(C, C))
+            ox, oy = to_px(px, py)
+            canvas.paste(big, (round(ox - C), round(oy - C)), big)
+            continue
         ox, oy = to_px(L, B + th)
         canvas.paste(im, (round(ox), round(oy)), im)
     if a.overlay:

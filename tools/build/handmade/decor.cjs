@@ -210,7 +210,7 @@ function widen(V, clearAt) {
 // 모서리 둥글리기 (반경 R, 토막 길이의 절반을 넘지 않게) → 0.25칸 간격 점 [{x, y, r(그 자리 반경 · 직선이면 Infinity)}]
 function fillet(V, R, clearAt) {
   const P = [];
-  const push = (x, y, r) => { const l = P[P.length - 1]; if (!l || Math.hypot(l.x - x, l.y - y) > 1e-6) P.push({ x, y, r }); };
+  const push = (x, y, r, turn) => { const l = P[P.length - 1]; if (!l || Math.hypot(l.x - x, l.y - y) > 1e-6) P.push({ x, y, r, turn: turn || 0 }); };   // turn = 그 원호가 꺾는 각도(°)
   const line = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.25)); for (let i = 0; i <= n; i++) push(a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n, Infinity); };
   if (V.length < 3) { line(V[0], V[V.length - 1]); return P; }
   let cur = V[0];
@@ -250,7 +250,7 @@ function fillet(V, R, clearAt) {
       if (!clearAt || A.pts.every(([x, y]) => clearAt(x, y) >= 0.45)) break;
     }
     line(cur, pick.p1);
-    for (const [x, y] of pick.pts) push(x, y, pick.rr);
+    for (const [x, y] of pick.pts) push(x, y, pick.rr, (th * 180) / Math.PI);
     cur = pick.p2;
   }
   line(cur, V[V.length - 1]);
@@ -319,7 +319,8 @@ function search(walk, clr, sources, isGoal, cost) {
       if (!walk(nx, ny)) continue;
       if (dx && dy && (!walk(x + dx, y) || !walk(x, y + dy))) continue;
       const c = clr(nx, ny);
-      const step = (dx && dy ? Math.SQRT2 : 1) * (1 + Math.max(0, 1.6 - c) * 4) * cost(nx, ny);
+      // v4: 벽 1.8칸 안을 v3(1.6칸·×4)보다 비싸게(×10) — 폭 1칸 안내선이 벽 칸에 닿지 않게 길 가운데로 (10-31 63장 시험 빌드 벽 접촉)
+      const step = (dx && dy ? Math.SQRT2 : 1) * (1 + Math.max(0, 1.8 - c) * 10) * cost(nx, ny);
       const nd = dd + step, nk = key(nx, ny);
       if (!dist.has(nk) || nd < dist.get(nk) - 1e-9) { dist.set(nk, nd); prev.set(nk, k); heapPush(h, [nd, nx, ny]); }
     }
@@ -328,6 +329,27 @@ function search(walk, clr, sources, isGoal, cost) {
   const cells = [];
   for (let k = found; k !== undefined; k = prev.get(k)) cells.push(k.split(",").map(Number));
   return cells.reverse();
+}
+// 두 곡선(0.25칸 점)이 엇갈리는가 — 각 곡선 양끝 1칸(큰길·갈래에 붙는 자리)은 빼고 본다
+function curvesCross(A, B) {
+  const trim = (P) => {
+    const acc = [0];
+    for (let i = 1; i < P.length; i++) acc.push(acc[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const T = acc[acc.length - 1];
+    return P.filter((p, i) => acc[i] >= 1 && acc[i] <= T - 1);
+  };
+  const a = trim(A), b = trim(B);
+  const cross = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  for (let i = 0; i + 1 < a.length; i++) {
+    const p1 = a[i], p2 = a[i + 1];
+    for (let j = 0; j + 1 < b.length; j++) {
+      const q1 = b[j], q2 = b[j + 1];
+      if (Math.max(p1.x, p2.x) < Math.min(q1.x, q2.x) || Math.max(q1.x, q2.x) < Math.min(p1.x, p2.x) || Math.max(p1.y, p2.y) < Math.min(q1.y, q2.y) || Math.max(q1.y, q2.y) < Math.min(p1.y, p2.y)) continue;
+      const d1 = cross(q1, q2, p1), d2 = cross(q1, q2, p2), d3 = cross(p1, p2, q1), d4 = cross(p1, p2, q2);
+      if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true;
+    }
+  }
+  return false;
 }
 function routesV4(d, bp, blocked, func) {
   const V = POLICY.V4;
@@ -384,22 +406,25 @@ function routesV4(d, bp, blocked, func) {
     };
     let Vt = widen(dropSpurs(Vd), clearAt);
     // 반경 1칸 둥글리기가 안 되는 꺾인 점은, 앞뒤 점을 바로 이어도 벽에서 0.45칸 떨어지면 뺀다 (고리 경유점 사이가 짧을 때)
-    for (let pass = 0; pass < 30; pass++) {
-      const tanH = (i) => { const u = [Vt[i][0] - Vt[i - 1][0], Vt[i][1] - Vt[i - 1][1]], v = [Vt[i + 1][0] - Vt[i][0], Vt[i + 1][1] - Vt[i][1]]; return Math.tan(Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]) / 2); };
-      const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+    //   그 점을 못 빼면(벽에 막힘) 바로 앞·뒤 꺾인 점을 빼 본다 — 그래도 안 되면 그 점은 두고 다음 점으로
+    const tanH = (i) => { const u = [Vt[i][0] - Vt[i - 1][0], Vt[i][1] - Vt[i - 1][1]], v = [Vt[i + 1][0] - Vt[i][0], Vt[i + 1][1] - Vt[i][1]]; return Math.tan(Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]) / 2); };
+    const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const clearSeg = (a, b) => { const n = Math.max(1, Math.ceil(len(a, b) / 0.2)); for (let k = 0; k <= n; k++) if (clearAt(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n) < 0.45) return false; return true; };
+    const stuck = new Set();
+    for (let pass = 0; pass < 40; pass++) {
       let bad = -1;
       for (let i = 1; i + 1 < Vt.length && bad < 0; i++) {
+        if (stuck.has(`${Vt[i][0]},${Vt[i][1]}`)) continue;
         const ti = tanH(i), tp = i > 1 ? tanH(i - 1) : 0, tn = i + 2 < Vt.length ? tanH(i + 1) : 0;
         if (ti < 1e-6) continue;
         const lim = Math.min(len(Vt[i - 1], Vt[i]) * (ti / (ti + tp)), len(Vt[i], Vt[i + 1]) * (ti / (ti + tn)));
         if (lim / ti < 1 - 1e-6) bad = i;
       }
       if (bad < 0) break;
-      const a = Vt[bad - 1], b = Vt[bad + 1], L = len(a, b), n = Math.max(1, Math.ceil(L / 0.2));
-      let ok = true;
-      for (let k = 0; k <= n && ok; k++) if (clearAt(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n) < 0.45) ok = false;
-      if (!ok) break;
-      Vt = Vt.slice(0, bad).concat(Vt.slice(bad + 1));
+      const cand = [bad, bad + 1, bad - 1].filter((k) => k >= 1 && k + 1 < Vt.length);
+      const k = cand.find((q) => clearSeg(Vt[q - 1], Vt[q + 1]));
+      if (k === undefined) { stuck.add(`${Vt[bad][0]},${Vt[bad][1]}`); continue; }
+      Vt = Vt.slice(0, k).concat(Vt.slice(k + 1));
     }
     Vt = dropSpurs(Vt);   // 합치기·빼기 뒤 새로 생긴 되돌아 나오는 끝
     return { target, kind, pts: fillet(Vt, POLICY.GUIDE_RADIUS, clearAt), branch: true };
@@ -434,6 +459,7 @@ function routesV4(d, bp, blocked, func) {
   // ③ 구역마다 고리
   const zoneChars = Object.keys(bp.zones).filter((ch) => ch !== ".");
   const netFixed = new Set(net);   // 고리는 큰길·출구 갈래에만 붙는다 (고리끼리 잇지 않음)
+  const loopCells = new Set();     // 앞서 만든 고리가 지나는 칸 (뒤 고리가 비켜 간다)
   for (const ch of zoneChars) {
     // 그 구역 글자의 가장 큰 덩어리
     const seen = new Set(); let bestComp = [];
@@ -466,33 +492,46 @@ function routesV4(d, bp, blocked, func) {
     if (!inCells) { loops.push({ zone: ch, ok: false, reason: "구역 가운데에서 큰길·갈래까지 길 없음", cells: bestComp.length }); continue; }
     const A = inCells[inCells.length - 1];
     const thA = Math.atan2(A[1] + 0.5 - cy, A[0] + 0.5 - cx);
-    const wps = [];
-    for (const deg of V.LOOP_ANGLES) {
-      const th = thA + (deg * Math.PI) / 180, ix = cx + Math.cos(th) * ring, iy = cy + Math.sin(th) * ring;
-      let best = null;
-      for (const [x, y] of bestComp) { if (!goodCell(x, y)) continue; const dd = Math.hypot(x + 0.5 - ix, y + 0.5 - iy); if (dd < 2.5 && (!best || dd < best.dd)) best = { x, y, dd }; }
-      if (best && !wps.some(([wx, wy]) => Math.hypot(wx - best.x, wy - best.y) < 2)) wps.push([best.x, best.y]);
+    // 앞서 만든 고리와 엇갈리지 않게(10-31 rotmarsh b·c X자): 앞 고리 칸 둘레는 비싸게(×8) 돌고, 그래도 엇갈리면
+    //   경유점 각도를 거울로 · 고리 반경 0.7배 · 1.3배로 다시 — 끝까지 엇갈리면 그 구역 고리는 생략(목록으로 보고)
+    const nearLoop = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (loopCells.has(key(x + dx, y + dy))) return true; return false; };
+    const avoid = (x, y) => (nearLoop(x, y) && !netFixed.has(key(x, y)) ? 8 : 1);
+    let made = null, why = "";
+    for (const [rk, sign] of [[1, 1], [1, -1], [0.7, 1], [0.7, -1], [1.3, 1], [1.3, -1]]) {
+      const wps = [];
+      for (const deg of V.LOOP_ANGLES) {
+        const th = thA + (sign * deg * Math.PI) / 180, ix = cx + Math.cos(th) * ring * rk, iy = cy + Math.sin(th) * ring * rk;
+        let best = null;
+        for (const [x, y] of bestComp) { if (!goodCell(x, y) || nearLoop(x, y)) continue; const dd = Math.hypot(x + 0.5 - ix, y + 0.5 - iy); if (dd < 2.5 && (!best || dd < best.dd)) best = { x, y, dd }; }
+        if (best && !wps.some(([wx, wy]) => Math.hypot(wx - best.x, wy - best.y) < 2)) wps.push([best.x, best.y]);
+      }
+      if (wps.length < 2) { why = why || "구역 안 경유점 자리 부족(벽·장식에서 1.2칸)"; continue; }
+      // 그물 → 첫 경유점 → … → 끝 경유점 → 그물 (나오는 길은 들어간 길 1.5칸 안을 비싸게 해 다른 쪽으로)
+      let cells = search(walk, clr, netList().filter(([x, y]) => netFixed.has(key(x, y))), (x, y) => x === wps[0][0] && y === wps[0][1], (x, y) => roadCost(x, y) * avoid(x, y));
+      if (!cells) { why = "첫 경유점까지 길 없음"; continue; }
+      let okAll = true;
+      const breaks = [cells.length - 1];
+      for (let k = 1; k < wps.length && okAll; k++) {
+        const seg = search(walk, clr, [wps[k - 1]], (x, y) => x === wps[k][0] && y === wps[k][1], avoid);
+        if (!seg) okAll = false; else { cells = cells.concat(seg.slice(1)); breaks.push(cells.length - 1); }
+      }
+      if (!okAll) { why = "경유점 사이 길 없음"; continue; }
+      const outSet = new Set(cells.map(([x, y]) => key(x, y)));
+      const nearOut = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (outSet.has(key(x + dx, y + dy))) return true; return false; };
+      const startK = key(cells[0][0], cells[0][1]);
+      const ret = search(walk, clr, [wps[wps.length - 1]], (x, y) => netFixed.has(key(x, y)) && key(x, y) !== startK, (x, y) => (nearOut(x, y) && !netFixed.has(key(x, y)) ? 6 : 1) * roadCost(x, y) * avoid(x, y));
+      if (ret) cells = cells.concat(ret.slice(1));
+      const c = toCurve(cells, null, null, "loop", zname, V.LOOP_CLEAR, breaks);
+      if (!c) { why = "곡선이 짧음"; continue; }
+      if (curves.some((o) => o.kind === "loop" && curvesCross(c.pts, o.pts))) { why = "다른 고리와 엇갈림(회피 실패)"; continue; }
+      if (c.pts.some((p) => p.turn > 45 && p.r < 1 - 1e-6 && !isBig(Math.floor(p.x), Math.floor(p.y)))) { why = "반경 1칸 둥글리기 불가(짧은 갈래에 급히 꺾임)"; continue; }
+      made = { c, cells, wps, back: !!ret, variant: `${rk}/${sign}` };
+      break;
     }
-    if (wps.length < 2) { loops.push({ zone: ch, ok: false, reason: "구역 안 경유점 자리 부족(벽·장식에서 1.2칸)", cells: bestComp.length }); continue; }
-    // 그물 → 첫 경유점 → … → 끝 경유점 → 그물 (나오는 길은 들어간 길 1.5칸 안을 비싸게 해 다른 쪽으로)
-    let cells = search(walk, clr, netList().filter(([x, y]) => netFixed.has(key(x, y))), (x, y) => x === wps[0][0] && y === wps[0][1], roadCost);
-    if (!cells) { loops.push({ zone: ch, ok: false, reason: "첫 경유점까지 길 없음", cells: bestComp.length }); continue; }
-    let okAll = true;
-    const breaks = [cells.length - 1];
-    for (let k = 1; k < wps.length && okAll; k++) {
-      const seg = search(walk, clr, [wps[k - 1]], (x, y) => x === wps[k][0] && y === wps[k][1], () => 1);
-      if (!seg) okAll = false; else { cells = cells.concat(seg.slice(1)); breaks.push(cells.length - 1); }
-    }
-    if (!okAll) { loops.push({ zone: ch, ok: false, reason: "경유점 사이 길 없음", cells: bestComp.length }); continue; }
-    const outSet = new Set(cells.map(([x, y]) => key(x, y)));
-    const nearOut = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (outSet.has(key(x + dx, y + dy))) return true; return false; };
-    const startK = key(cells[0][0], cells[0][1]);
-    const ret = search(walk, clr, [wps[wps.length - 1]], (x, y) => netFixed.has(key(x, y)) && key(x, y) !== startK, (x, y) => (nearOut(x, y) && !netFixed.has(key(x, y)) ? 6 : 1) * roadCost(x, y));
-    if (ret) cells = cells.concat(ret.slice(1));
-    const c = toCurve(cells, null, null, "loop", zname, V.LOOP_CLEAR, breaks);
-    if (!c) { loops.push({ zone: ch, ok: false, reason: "곡선이 짧음", cells: bestComp.length }); continue; }
-    curves.push(c);
-    loops.push({ zone: ch, ok: true, cells: bestComp.length, waypoints: wps.length, back: !!ret });
+    if (!made) { loops.push({ zone: ch, ok: false, skipped: true, reason: why, cells: bestComp.length }); continue; }
+    curves.push(made.c);
+    for (const [x, y] of made.cells) if (!netFixed.has(key(x, y))) loopCells.add(key(x, y));
+    loops.push({ zone: ch, ok: true, cells: bestComp.length, waypoints: made.wps.length, back: made.back, variant: made.variant });
   }
   return { curves, walk, clearAt, v4: true, isBig, exits, loops };
 }
@@ -676,7 +715,96 @@ function seededRand(text) {
   for (const ch of String(text)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
   return () => { h = (h + 0x6d2b79f5) >>> 0; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+// 코덱스 길 안내 타일 도장 (GUIDE_TILE stamp — 액트 1부터): 1칸 간격 낱장(가운데 피벗 · 회전 · 좌우 반전), 바탕 띠·테 선 없음.
+//   구간 처음 = 갈림 타일(그린 길에서 갈라질 때) 또는 끝 타일(큰길·문 쪽으로 옅어짐) · 마지막 = 끝 타일 · 사이 = 직선 타일(1칸 안에서 CURVE_DEG 넘게 꺾이면 곡선 타일)
+//   사이 도장은 STAMP.GAP 확률로 빈다(맵 id 씨앗). 조각마다 중심·진행 방향(hd)을 기록 — 검사기는 진행 방향 1칸 × CORE_W 폭(흙길 몸통)으로 벽·큰길 겹침을 잰다
+function stampSprite(name, rid, cx, cy, deg, flip, rgb) {
+  return {
+    name, pos: [r3(cx), r3(cy), -0.0116],
+    overrides: {
+      "MOD.Core.SpriteRendererComponent": { SpriteRUID: rid, SortingLayer: "MapLayer0", OrderInLayer: 1, DrawMode: 0, FlipX: !!flip, Color: { r: rgb[0], g: rgb[1], b: rgb[2], a: 1 } },
+      "MOD.Core.TransformComponent": { QuaternionRotation: quat(r3(deg)) },
+    },
+  };
+}
+function guideStamps(bp, route, ruidOf, mapInfo, tiles) {
+  const V = POLICY.V4, ST = V.STAMP, out = [], pieces = [];
+  const rand0 = seededRand(`${mapInfo.id}|stamp`);
+  const mapVar = r3(1 - ST.VAR * 2 * rand0());   // 맵마다 명도 0.84~1 (타일 색은 1보다 밝힐 수 없어 아래로만 ±8%)
+  const nearBig = (x, y) => {
+    for (let cy = Math.floor(y - 1); cy <= Math.floor(y + 1); cy++) for (let cx = Math.floor(x - 1); cx <= Math.floor(x + 1); cx++) if (route.isBig(cx, cy) && distSqToCell(x, y, cx, cy) < 0.55 * 0.55) return true;
+    return false;
+  };
+  const kinds = { straight: 0, curve: 0, fork: 0, end: 0 };
+  let n = 0, sharp = 0, minRadius = Infinity;
+  const drawnPts = [];   // 앞서 그린 길의 점 (갈림 판정)
+  const put = (kind, cx, cy, rot, hd, flip, exit, target, rgbMul) => {
+    // 흙길 몸통(진행 방향 1칸 × CORE_W)이 벽 모서리에 걸리는 길목이면 그 도장은 비운다
+    const th = (hd * Math.PI) / 180;
+    for (let a = -0.45; a <= 0.45; a += 0.15) if (route.clearAt(cx + Math.cos(th) * a, cy + Math.sin(th) * a) < ST.CORE_W / 2 + 0.03) return;
+    const t = tiles[kind], rgb = tintArr(t.tint).map((v) => r3(Math.min(1, v * mapVar * (rgbMul || 1))));
+    const e = stampSprite(`ArtGuide${++n}`, ruidOf(t.art), cx, cy, rot, flip, rgb);
+    out.push(e);
+    pieces.push({ name: e.name, kind, layer: "stamp", W: V.WIDTH, exit, target, cx: r3(cx), cy: r3(cy), hd: r3(hd) });
+    kinds[kind]++;
+  };
+  for (const c of route.curves) {
+    const P = c.pts;
+    if (P.length < 2) continue;
+    const acc = [0];
+    for (let i = 1; i < P.length; i++) acc.push(acc[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const total = acc[acc.length - 1];
+    const exitCurve = c.kind === "exit" && !["end", "entry"].includes(c.target);
+    const draw = P.map((p) => !nearBig(p.x, p.y));
+    for (let i = 0; i < P.length; i++) if (draw[i] && P[i].turn > 45 && P[i].r < minRadius) minRadius = P[i].r;
+    const rnd = seededRand(`${mapInfo.id}|${c.target}|stamp`);
+    const at = (s) => {
+      let k = 0;
+      while (k < P.length - 2 && acc[k + 1] < s) k++;
+      const t = Math.min(1, Math.max(0, (s - acc[k]) / ((acc[k + 1] - acc[k]) || 1)));
+      return { x: P[k].x + (P[k + 1].x - P[k].x) * t, y: P[k].y + (P[k + 1].y - P[k].y) * t };
+    };
+    const heading = (s0, s1) => { const a = at(Math.max(0, s0)), b = at(Math.min(total, s1)); return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI; };
+    let i0 = 0;
+    while (i0 < P.length) {
+      while (i0 < P.length && !draw[i0]) i0++;
+      if (i0 >= P.length - 1) break;
+      let i1 = i0;
+      while (i1 + 1 < P.length && draw[i1 + 1]) i1++;
+      const L = acc[i1] - acc[i0];
+      if (L >= 0.6) {
+        const cnt = Math.max(1, Math.round(L / ST.PITCH)), sp = L / cnt;
+        const onTrail = (p) => drawnPts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.6);
+        let prevHd = null;
+        for (let k = 0; k < cnt; k++) {
+          const s = acc[i0] + sp * (k + 0.5), p = at(s), hd = heading(s - 0.5, s + 0.5);
+          const exit = exitCurve && total - s <= POLICY.EXIT_LEN;
+          if (prevHd !== null) { let dd = Math.abs(hd - prevHd); if (dd > 180) dd = 360 - dd; if (dd > 60) sharp++; }
+          prevHd = hd;
+          if (k === 0 && cnt > 1) {
+            if (c.branch && i0 === 0 && onTrail(P[0])) put("fork", P[0].x, P[0].y, hd + 90, hd, false, exit, c.target);   // 갈림: S(갈래)가 진행 방향 · W–E는 갈라져 나온 길
+            else put("end", p.x, p.y, hd - 90, hd, false, exit, c.target);                                              // 시작: N이 앞쪽(길이 이어지는 쪽) · 뒤로 옅어짐
+            continue;
+          }
+          if (k === cnt - 1) { put("end", p.x, p.y, hd + 90, hd, false, exit, c.target); continue; }   // 마지막: N이 뒤쪽 · 앞으로 옅어짐
+          if (rnd() < ST.GAP) continue;   // 끊긴 발길 (빈틈)
+          const hIn = heading(s - 0.5, s), hOut = heading(s, s + 0.5);
+          let turn = hOut - hIn; while (turn > 180) turn -= 360; while (turn < -180) turn += 360;
+          if (Math.abs(turn) >= ST.CURVE_DEG) put("curve", p.x, p.y, hIn + 90, hd, turn < 0, exit, c.target);   // 곡선: N으로 들어와 E로(왼쪽) · 오른쪽은 좌우 반전
+          else put("straight", p.x, p.y, hd - 90, hd, rnd() < 0.5, exit, c.target);
+        }
+        for (let k = i0; k <= i1; k++) drawnPts.push(P[k]);
+      }
+      i0 = i1 + 1;
+    }
+  }
+  return { entities: out, segments: pieces.length, dashes: 0, sharp, minRadius, pieces, kinds, mapVar };
+}
 function guideV4(bp, route, ruidOf, mapInfo) {
+  {
+    const tl = POLICY.GUIDE_TILE[mapInfo.act] || POLICY.GUIDE_TILE[1];
+    if (tl.straight.stamp) return guideStamps(bp, route, ruidOf, mapInfo, tl);
+  }
   const V = POLICY.V4, out = [], pieces = [];
   const rand0 = seededRand(`${mapInfo.id}|guide`);
   const mapVar = 1 + V.MAP_VAR * (2 * rand0() - 1);
@@ -691,6 +819,8 @@ function guideV4(bp, route, ruidOf, mapInfo) {
   const emit = (kind, layer, a, b, W, exit, target) => {
     const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, L = Math.hypot(b.x - a.x, b.y - a.y);
     if (L < 0.05) return;
+    // 토막 가운데 줄을 따라 벽 여유를 재 폭을 그 안으로 (길목에서 곡선이 벽 모서리를 스치는 자리) — 너무 좁으면 그 토막은 건너뛴다
+    { let m = Infinity; for (let k = 0; k <= 8; k++) m = Math.min(m, route.clearAt(a.x + ((b.x - a.x) * k) / 8, a.y + ((b.y - a.y) * k) / 8)); W = Math.min(W, 2 * (m - 0.04)); if (W < 0.1) return; }
     const t = tiles[kind];
     const rgb = layer === "base" ? color(kind, V.EDGE_DARK) : color(kind, exit ? V.EXIT_BRIGHT : V.BRIGHT);
     const e = rotRect(`ArtGuide${++n}`, ruidOf(t.art), a.x, a.y, r3(deg), r3(L), r3(W), rgb, 1, layer === "base" ? -0.0115 : -0.0116);
@@ -698,6 +828,14 @@ function guideV4(bp, route, ruidOf, mapInfo) {
     pieces.push({ name: e.name, kind, layer, W: r3(W), exit, target });
     kinds[kind]++;
     return deg;
+  };
+  // 끝 조각: 끝점 p에 바탕 띠 방향 deg로 45° 돌린 정사각형(한 변 W×0.707 → 반대각선 W/2) — 띠 끝 모서리 두 점과 맞닿고 반칸 앞으로 뾰족하게 · 불투명도 END_ALPHA
+  const capEnd = (p, deg, W, exit, target) => {
+    const s = W * Math.SQRT1_2, th = ((deg + 45) * Math.PI) / 180, ux = Math.cos(th), uy = Math.sin(th);
+    const e = rotRect(`ArtGuide${++n}`, ruidOf(tiles.end.art), p.x - ux * (s / 2), p.y - uy * (s / 2), r3(deg + 45), r3(s), r3(s), color("end", V.EDGE_DARK), V.END_ALPHA, -0.0115);
+    out.push(e);
+    pieces.push({ name: e.name, kind: "end", layer: "cap", W: r3(s), exit, target });
+    kinds.end++;
   };
   for (const c of route.curves) {
     const P = c.pts;
@@ -709,10 +847,11 @@ function guideV4(bp, route, ruidOf, mapInfo) {
     const info = P.map((p, i) => {
       const exit = exitCurve && total - acc[i] <= POLICY.EXIT_LEN;
       const clear = route.clearAt(p.x, p.y);
-      const W = Math.max(0.4, Math.min(exit ? V.EXIT_WIDTH : V.WIDTH, 2 * (clear - 0.18)));
+      const W = Math.max(0.24, Math.min(exit ? V.EXIT_WIDTH : V.WIDTH, 2 * (clear - 0.18)));   // 한 칸 좁은 길목은 그 폭에 맞춰 가늘게
       return { draw: !nearBig(p.x, p.y), exit, W };
     });
-    for (let i = 0; i < P.length; i++) if (info[i].draw && P[i].r < minRadius) minRadius = P[i].r;
+    // v4: 반경 1칸 규칙은 45° 넘게 꺾는 원호에만 (작게 꺾는 곳은 반경이 작아도 모서리로 보이지 않는다 — 좁은 굴 길목)
+    for (let i = 0; i < P.length; i++) if (info[i].draw && P[i].turn > 45 && P[i].r < minRadius) minRadius = P[i].r;
     const firstDraw = info.findIndex((it) => it.draw);
     if (firstDraw < 0) continue;
     const kindAt = (i, j) => {
@@ -755,6 +894,9 @@ function guideV4(bp, route, ruidOf, mapInfo) {
           if (prevDeg !== null) { let dd = Math.abs(deg - prevDeg); if (dd > 180) dd = 360 - dd; if (dd > V.STEP_DEG + 5) sharp++; }   // v4: 토막 각도(40°)를 넘는 꺾임만 (직각 90°는 반드시 잡힌다)
           prevDeg = deg;
           emit(kindAt(i, j), "base", a, b, W, info[j].exit, c.target);
+          // 구간 시작·끝: 바탕 띠 끝에 반칸 뾰족한 끝 조각(end · 45° 마름모, 반투명 — 끝이 네모 블록으로 끊기지 않게, 코덱스 end 타일 오기 전 임시)
+          if (i === i0) capEnd(P[i0], deg + 180, W, info[i0].exit, c.target);
+          if (j === i1) capEnd(P[i1], deg, W, info[i1].exit, c.target);
           i = j;
         }
         // ② 끊긴 발길 토막
@@ -765,10 +907,10 @@ function guideV4(bp, route, ruidOf, mapInfo) {
           const t = Math.min(1, Math.max(0, (s - acc[k]) / ((acc[k + 1] ?? acc[k]) - acc[k] || 1)));
           return { x: P[k].x + (P[Math.min(k + 1, i1)].x - P[k].x) * t, y: P[k].y + (P[Math.min(k + 1, i1)].y - P[k].y) * t, k };
         };
-        let s = acc[i0] + rnd() * 0.4;
-        while (s < acc[i1] - 0.2) {
+        let s = acc[i0] + 0.45 + rnd() * 0.4;   // 발길 토막은 끝 조각 안쪽에서만
+        while (s < acc[i1] - 0.65) {
           const len = V.DASH[0] + (V.DASH[1] - V.DASH[0]) * rnd();
-          const e = Math.min(acc[i1], s + len);
+          const e = Math.min(acc[i1] - 0.45, s + len);
           // 토막 안에서도 STEP_DEG/2마다 끊어 곡선을 따른다
           const pts = [pointAt(s)];
           for (let k = i0; k <= i1; k++) if (acc[k] > s + 1e-6 && acc[k] < e - 1e-6) pts.push({ x: P[k].x, y: P[k].y, k });
@@ -781,12 +923,14 @@ function guideV4(bp, route, ruidOf, mapInfo) {
               const db = Math.atan2(pts[b + 1].y - pts[b].y, pts[b + 1].x - pts[b].x) * 180 / Math.PI;
               let dd = Math.abs(db - d0); if (dd > 180) dd = 360 - dd;
               if (dd > V.STEP_DEG / 2) break;
+              // 발길 토막도 현이 곡선에서 0.1칸 넘게 벗어나면 끊는다 (긴 토막이 휘는 길목에서 벽 모서리를 가로질렀다)
+              { const ax = pts[a].x, ay = pts[a].y, bx = pts[b + 1].x, by = pts[b + 1].y, cl = Math.hypot(bx - ax, by - ay) || 1; let off = 0; for (let k = a + 1; k <= b; k++) off = Math.max(off, Math.abs((bx - ax) * (pts[k].y - ay) - (by - ay) * (pts[k].x - ax)) / cl); if (off > 0.1) break; }
               b++;
             }
             const ki = Math.min(pts[a].k, i1), kj = Math.min(pts[b].k + 1, i1);
             let W = Infinity;
             for (let k = ki; k <= kj; k++) W = Math.min(W, info[k].W);
-            emit(kindAt(ki, kj), "dash", pts[a], pts[b], Math.max(0.26, W - 2 * V.EDGE), info[kj].exit, c.target);
+            emit(kindAt(ki, kj), "dash", pts[a], pts[b], Math.max(0.14, W - 2 * V.EDGE), info[kj].exit, c.target);
             a = b;
           }
           s = e + len * (V.GAP_RATIO / (1 - V.GAP_RATIO)) * (0.7 + 0.6 * rnd());
@@ -877,4 +1021,4 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
 // 고치기 전 기준: 볼록 직각 모서리 수 (같은 판정 · 조각 없음) — 전후 표용
 function countCorners(bp, classes) { return seamEntities(bp, classes, () => "", {}).cornerStats.total; }
 
-module.exports = { setMap, isV4, tooClose, cellTooClose, rectPoint, rotOf, shoreEdge, POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };
+module.exports = { curvesCross, setMap, isV4, tooClose, cellTooClose, rectPoint, rotOf, shoreEdge, POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };
