@@ -158,7 +158,7 @@ for (const tree of ["command", "soul", "curse", "move"]) {
   // 10-11: 트리 칸 제한 없음 — 스킬 창은 해금 레벨 순 목록 (docs/design/16)
 }
 
-// ── 혼의 제물·선택 보상 카드 글 (10-29 오후 검수: 「골편 투척」 설명 95자가 카드 글 칸을 넘어 아래 초록 수치 줄을 덮었다) ──
+// ── 스킬 추천·선택 보상 카드 글 (10-29 오후 검수: 「골편 투척」 설명 95자가 카드 글 칸을 넘어 아래 초록 수치 줄을 덮었다) ──
 //   카드 글 칸 OfferWin/Card{i}/Effect = 폭 222 · 높이 78 · 글꼴 17→13(BestFit) — tools/build/ui.cjs. 넣는 글은 SkillOffer.CardText와 같은 규칙:
 //   skills.csv card 열이 있으면 그것, 없으면 desc의 첫 문장(괄호 밖에서 처음 나오는 「.」+빈칸 또는 글 끝까지 · 없으면 전체).
 //   상한 N = 72자 — 메이커 실측(10-29, TextGUIRendererComponent.GetPreferredHeight/Width, 글꼴 13 · 폭 222):

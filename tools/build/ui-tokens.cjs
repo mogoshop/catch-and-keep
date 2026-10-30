@@ -39,7 +39,7 @@ const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
   minFont: 14 };   // 글이 길면 이 크기까지 줄인다 (「다음 ▶ [Space]」 같은 PC 단축키 안내)
 // 책갈피 칸 (guide_tab 320×88): 왼쪽 해골 장식 40 · 오른쪽 화살촉 50을 뺀 안쪽에 아이콘 + 이름을 가운데로 (10-27 사용자: 「목차 내부 패딩 엉망 · 수평 중앙」)
 const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16 };
-// HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「혼의 제물 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
+// HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「스킬 추천 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
 //   글은 한 줄. 양 끝 장식(약 40) 안쪽 padX부터, 위아래 padY로 글 칸을 한 줄 높이(72 − 34 = 38)로 좁혀 두 줄로 갈라지지 않게.
 //   긴 제목은 실행 중(UIKit.SetBandText)에 폭을 maxW까지 넓히고 → 글자를 minFont까지 줄이고 → 끝내 말줄임. 같은 값: SkillOffer.mlua Band*
 const BAND = { h: 72, minW: 440, maxW: 720, maxWMobile: 600, padX: 48, padY: 17, font: 24, minFont: 17 };

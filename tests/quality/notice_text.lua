@@ -130,8 +130,9 @@ _UIKit.SetEnabled = function(_, path, v) if ents[path] then ents[path].Enable = 
 _UIKit.SetText = function(_, path, text) if ents[path] then ents[path].Text = text end end
 local feed = ents["/ui/RewardHUD/Feed"].UITransformComponent
 local function topOK(label)
+    -- 10-31 B-4: 위가 최신 — 최신 줄(Line1)은 쌓인 줄 맨 위라 그 줄의 y까지 더한다
     local h = ents["/ui/RewardHUD/Feed/Line1"].UITransformComponent.RectSize.y
-    local top = feed.anchoredPosition.y + h
+    local top = feed.anchoredPosition.y + ents["/ui/RewardHUD/Feed/Line1"].UITransformComponent.anchoredPosition.y + h
     assert(ents["/ui/RewardHUD/Feed/Line1"].Enable, label .. ": newest line hidden")
     assert(top <= 1072, string.format("%s: top %d > 1072 (reserved %d, rendered %d, side %s)", label, top, NoticeFeed.EdgeNeed, h, NoticeFeed.EdgeSide))
     assert(feed.RectSize.y >= h, label .. ": feed shorter than newest line")
@@ -143,11 +144,14 @@ for _, wt in ipairs({ 1060, 900 }) do   -- 큰 창(화면 맨 위 자리) · 위
     NoticeFeed.Lines = {}; NoticeFeed.Edge = false; NoticeFeed.Home = nil; NoticeFeed.EdgeSide = ""; NoticeFeed.EdgeNeed = 0
     _UtilLogic.ElapsedSeconds = 0
     local near = string.rep("a", WRAP - 1)            -- 줄 한도 바로 아래: 「  ×2」가 붙으면 넘어간다
+    NoticeFeed.Recent = {}; NoticeFeed.LimitSeen = {}
     NoticeFeed:Push(near); topOK("dup1@" .. wt)
-    NoticeFeed:Push(near); topOK("dup2@" .. wt)
-    NoticeFeed:Push(near)                              -- 세 번째: 새 줄 대신 최신 줄에 「×2」 합산 (예전엔 Render만 → 1108)
-    local h = topOK("dup3@" .. wt)
-    assert(h == 80 and NoticeFeed.Lines[1].count == 2 and #NoticeFeed.Lines == 2, "dup3 should grow to two lines: " .. h)
+    NoticeFeed:Push(near)                              -- 10-31 B-4: 두 번째부터 새 줄 대신 같은 줄에 「×2」 (MergeSec 10초 안) — 자리를 먼저 다시 잡는다
+    local h = topOK("dup2@" .. wt)
+    assert(h == 80 and NoticeFeed.Lines[1].count == 2 and #NoticeFeed.Lines == 1, "dup2 should merge and grow to two lines: " .. h)
+    NoticeFeed:Push(near)
+    h = topOK("dup3@" .. wt)
+    assert(h == 80 and NoticeFeed.Lines[1].count == 3 and #NoticeFeed.Lines == 1, "dup3 should stay one merged line: " .. h)
     NoticeFeed.Lines = {}
     NoticeFeed:Push("골드 +9"); topOK("gold1@" .. wt)
     WRAP = 12                                          -- 「골드 +100008」(14바이트)부터 두 줄로 보는 경계
@@ -169,12 +173,14 @@ for _, wt in ipairs({ 1060, 900 }) do
     winTop = wt
     WRAP = 40
     NoticeFeed.Lines = {}; NoticeFeed.Edge = false; NoticeFeed.Home = nil; NoticeFeed.EdgeSide = ""; NoticeFeed.EdgeNeed = 0
+    NoticeFeed.Recent = {}; NoticeFeed.LimitSeen = {}
     local long = string.rep("x", 60)
     _UtilLogic.ElapsedSeconds = 0; NoticeFeed:Push(long)
     _UtilLogic.ElapsedSeconds = 0.05; NoticeFeed:Push(long)
     _UtilLogic.ElapsedSeconds = 0.1; NoticeFeed:Push("short-result"); topOK("expiry-pre@" .. wt)
     _UtilLogic.ElapsedSeconds = 1; NoticeFeed:Push(long); topOK("expiry-merge@" .. wt)
-    assert(#NoticeFeed.Lines == 3 and NoticeFeed.Lines[1].text == "short-result" and NoticeFeed.Lines[2].count == 2 and NoticeFeed.Lines[2].at == 1, "expiry fixture setup")
+    -- 10-31 B-4: 같은 글 A는 한 줄(×3)로 합쳐지고 맨 위(최신)로 올라온다
+    assert(#NoticeFeed.Lines == 2 and NoticeFeed.Lines[1].text == long and NoticeFeed.Lines[1].count == 3 and NoticeFeed.Lines[1].at == 1 and NoticeFeed.Lines[2].text == "short-result", "expiry fixture setup")
     _UtilLogic.ElapsedSeconds = 4.2; NoticeFeed:Tick()
     local h = topOK("expiry-tick@" .. wt)
     assert(#NoticeFeed.Lines == 1 and h == 80 and NoticeFeed.EdgeNeed == 80, string.format("expiry: rows=%d h=%d need=%d", #NoticeFeed.Lines, h, NoticeFeed.EdgeNeed))

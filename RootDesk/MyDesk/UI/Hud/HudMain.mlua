@@ -52,6 +52,28 @@ script HudMain extends Logic
     property boolean RiteShown = false        -- 뼈 의식 충전 고리가 떠 있다 (RenderRite)
     property integer RiteLastStage = -1       -- 고리에 마지막으로 그린 단계 (바뀔 때만 글자·로그)
     property string RiteLastSub = ""          -- 46-6 고리 둘째 줄 (참여 다섯 종류 수) — 바뀔 때만 다시 쓴다
+    -- 10-31 실플레이 피드백 B-4 (docs/evidence/2026-10-31-playfeedback-B/notice-channels.md)
+    --   파티 목록 (PC): 평소 「파티 (n) · 이름 Lv · …」 한 줄로 접고, 마우스를 올리거나 누르면 펼친다 — 왼쪽 알림 더미와 겹치지 않게 (모바일은 예전처럼 펼친 채)
+    property boolean PartyHover = false       -- PC: 마우스가 파티 목록 위에 있다
+    property boolean PartyPinned = false      -- 눌러서 펼쳐 둠 (모바일 · PC 클릭)
+    property integer PartyFoldChars = 34      -- 접은 한 줄 글자 수 (넘치면 「..」)
+    property number PartyLineH = 28           -- 접은 한 줄 높이 (글 18 + 위아래 여백)
+    property string PartyKey = ""
+    property any PartyHoverHandler = nil
+    --   채널 D 「줍기 표시」: 골드 +N · 아이템 획득은 캐릭터 발밑 작은 글씨로 PickSeconds초 떠올라 사라진다 (머리 위 COMBO와 겹치지 않게 아래쪽)
+    property table Picks = {}                 -- { text, at, gold } 최신이 1
+    property integer PickMax = 3              -- 동시에 보이는 수 (GameHUD PickPop1~3)
+    property number PickSeconds = 1.5
+    property number PickBaseY = -0.42         -- 발밑 아래에서 시작 (월드 단위 · 캐릭터 위치 = 발)
+    property number PickRise = 0.3            -- 사는 동안 떠오르는 높이
+    property number PickGap = 0.26            -- 먼저 뜬 글은 이만큼 위에
+    property number PickGoldMergeSec = 0.9    -- 막 뜬 골드 글에 이어 들어온 골드는 한 글로 더한다
+    --   채널 C 「오른쪽 추적기」: 일지 진행(업적·일일 퀘스트 n/N)을 퀘스트 추적기 안 한 줄로 제자리 갱신 (JournalWindow → SetJournalTrack)
+    property string JournalTrack = ""         -- 추적기 일지 줄 ("" = 없음)
+    property number JournalTrackAt = -999     -- 마지막으로 바뀐 때
+    property number JournalTrackSec = 30      -- 이 초 동안 바뀌지 않으면 줄을 접는다
+    property number QuestTrackH = 176         -- 추적기 높이 (navigation.cjs와 같은 값) · 일지 줄이 있으면 + JournalLineH (PC)
+    property number JournalLineH = 34
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -120,12 +142,30 @@ script HudMain extends Logic
         _UIKit:Connect("MenuWin/Guide", function() self:FromMenu("") _GuideWindow:Show(1) end)
         _UIKit:Connect("BtnMenu", function() _UIKit:Toggle("MenuWin") end)
         _UIKit:Connect("QuestTrack", function() self:OpenQuestFromTrack() end)
+        -- 파티 목록: 누르면 펼쳐 둠/접음 · PC는 마우스를 올리는 동안 펼친다 (10-31 B-4)
+        _UIKit:Connect("Party", function()
+            self.PartyPinned = not self.PartyPinned
+            self:RenderParty()
+        end)
+        local party = _UIKit:Get("Party")
+        -- 모바일은 왼쪽 알림 더미가 지도 아래(오른쪽)라 파티 목록을 예전처럼 펼친 채로 두고, 칸이 화면 누르기를 막지 않게 한다
+        if isvalid(party) and Environment:IsMobilePlatform() and party.SpriteGUIRendererComponent ~= nil then party.SpriteGUIRendererComponent.RaycastTarget = false end
+        if isvalid(party) and party.ButtonComponent ~= nil then
+            self.PartyHoverHandler = party:ConnectEvent(ButtonStateChangeEvent, function(event)
+                self.PartyHover = event.state ~= ButtonState.Normal
+                self:RenderParty()
+            end)
+        end
+        for i = 1, self.PickMax do _UIKit:SetEnabled("PickPop" .. tostring(i), false) end
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Poll() end, self.PollInterval)
         log("[HudMain] 시작")
     end
 
     @ExecSpace("ClientOnly")
     method void OnEndPlay()
+        local party = _UIKit:Get("Party")
+        if self.PartyHoverHandler ~= nil and isvalid(party) then party:DisconnectEvent(ButtonStateChangeEvent, self.PartyHoverHandler) end
+        self.PartyHoverHandler = nil
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
     end
 
@@ -381,7 +421,7 @@ script HudMain extends Logic
         self:RenderLocks(st)
         self:RenderTarget(player)
         self:RenderQuestTrack(player)
-        _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack() and self.QuestTrackKey ~= self.QuestTrackSeen)
+        _UIKit:SetEnabled("QuestTrack", _HudMap:ShouldShowQuestTrack() and self:QuestTrackWanted())
         self:RenderParty()
         _UIKit:SetText("MenuWin/Channel", self:InLobby() and "채널 변경" or "게임 나가기")
         self:RenderTip(player, st)
@@ -460,8 +500,81 @@ script HudMain extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void PickupPop(string text)
+        -- 채널 D 「줍기 표시」 (10-31 B-4): 발밑 작은 글씨. 창이 떠 있으면 발밑이 가려지니 안내 줄(창 밖 가장자리)로
+        if text == nil or text == "" then return end
+        if _UIKit:AnyWindowOpen() then
+            _NoticeFeed:Push(text)
+            return
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        local gold = tonumber(string.match(text, "^골드 %+(%d+)$"))
+        local first = self.Picks[1]
+        if gold ~= nil and first ~= nil and first.gold ~= nil and now - first.at <= self.PickGoldMergeSec then
+            first.gold = first.gold + gold
+            first.text = "골드 +" .. tostring(first.gold)
+            first.at = now
+        else
+            table.insert(self.Picks, 1, { text = text, at = now, gold = gold })
+            while #self.Picks > self.PickMax do table.remove(self.Picks) end
+        end
+        for i, p in ipairs(self.Picks) do _UIKit:SetText("PickPop" .. tostring(i), p.text) end
+        self:RenderPicks()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderPicks()
+        -- 최신이 가장 아래(발밑 PickBaseY) · 먼저 뜬 것은 PickGap만큼 위 · 사는 동안 PickRise 떠오르고 끝 40%에서 흐려진다
+        local player = _UserService.LocalPlayer
+        local now = _UtilLogic.ElapsedSeconds
+        for i = #self.Picks, 1, -1 do
+            if now - self.Picks[i].at >= self.PickSeconds then table.remove(self.Picks, i) end
+        end
+        local hide = not isvalid(player) or _UIKit:AnyWindowOpen()
+        for i = 1, self.PickMax do
+            local path = "PickPop" .. tostring(i)
+            local p = self.Picks[i]
+            if p == nil or hide then
+                _UIKit:SetEnabled(path, false)
+            else
+                local t = (now - p.at) / self.PickSeconds
+                _UIKit:SetText(path, p.text)
+                _UIKit:SetPos(path, self:WorldToHud(_Util:Pos2(player) + Vector2(0, self.PickBaseY + (i - 1) * self.PickGap + t * self.PickRise)))
+                local e = _UIKit:Get(path)
+                if isvalid(e) then
+                    local a = 1 - math.max(0, (t - 0.6) / 0.4)
+                    local r = e.TextGUIRendererComponent
+                    local c = r.FontColor
+                    r.FontColor = Color(c.r, c.g, c.b, a)
+                    local o = r.OutlineColor
+                    r.OutlineColor = Color(o.r, o.g, o.b, a)
+                end
+                _UIKit:SetEnabled(path, true)
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetJournalTrack(string text)
+        -- 채널 C (10-31 B-4): 일지 진행을 추적기 안 한 줄로 제자리 갱신 (JournalWindow.UpdateBadge가 진행이 바뀔 때 부른다)
+        self.JournalTrack = text
+        self.JournalTrackAt = _UtilLogic.ElapsedSeconds
+        log("[VRF] journal track " .. text)
+    end
+
+    method boolean JournalTrackOn()
+        return self.JournalTrack ~= "" and _UtilLogic.ElapsedSeconds - self.JournalTrackAt <= self.JournalTrackSec
+    end
+
+    method boolean QuestTrackWanted()
+        -- 추적기를 보일 때: 눌러서 닫은 의뢰 카드가 아니거나, 일지 줄이 새로 바뀌었다
+        return self.QuestTrackKey ~= self.QuestTrackSeen or self:JournalTrackOn()
+    end
+
+    @ExecSpace("ClientOnly")
     method void OnUpdate(number delta)
         -- 경고 글씨·머리 위 콤보는 캐릭터를 매 프레임 따라간다 (0.15초 갱신으로는 걸을 때 뒤처졌다). 떠 있을 때만
+        if #self.Picks > 0 then self:RenderPicks() end
         if self.ComboN > 0 then self:RenderCombo() end
         if self.WarnUntil > 0 then
             self:RenderWarn()
@@ -575,8 +688,12 @@ script HudMain extends Logic
         self.RaidUntil = now + sec
         self.RaidMarkFrame = 0
         self.RaidMarkRuids = { _GameData:GetUiIcon("ui_raid_edge_mark_1"), _GameData:GetUiIcon("ui_raid_edge_mark_2"), _GameData:GetUiIcon("ui_raid_edge_mark_3") }
-        _UIKit:SetText("RaidText", "습격이 온다")
-        _UIKit:SetEnabled("RaidText", true)
+        if _HudMap.TopChannelOn then
+            _HudMap:TopPushFor("raid:warn", "습격이 온다", "", 2, math.max(_HudMap.TopSeconds, sec))   -- 채널 A 「상단 띠」 (10-31 B-4)
+        else
+            _UIKit:SetText("RaidText", "습격이 온다")
+            _UIKit:SetEnabled("RaidText", true)
+        end
         _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
         local a = math.max(1, math.min(4, act))
         self.RaidOmenAct = a
@@ -666,6 +783,14 @@ script HudMain extends Logic
     @ExecSpace("ClientOnly")
     method void RaidDefeated(integer n, integer gold)
         -- 격퇴 (글귀 후보 1): 「습격 격퇴 · N마리」 + 골드 주머니 안내 — 10-29 코덱스 격퇴 판(RaidPlate) 위에 알림 띠와 같은 글자 양식으로
+        -- 10-31 B-4: 채널 A 「상단 띠」 한 줄로 (TopChannelOn = false면 예전 격퇴 판)
+        if _HudMap.TopChannelOn then
+            _UIKit:SetEnabled("RaidText", false)
+            _HudMap:TopPush("raid:done", "습격 격퇴 · " .. tostring(n) .. "마리", gold > 0 and ("골드 주머니가 발밑에 떨어졌습니다 · " .. tostring(gold) .. " 골드") or "", 1)
+            _SoundDirector:PlayEffect(_GameConst.SfxTreasure, 0.8)
+            log(string.format("[VRF] raid done -> top band n=%d gold=%d", n, gold))
+            return
+        end
         _UIKit:SetText("RaidPlate/Title", "습격 격퇴 · " .. tostring(n) .. "마리")
         _UIKit:SetText("RaidPlate/Body", gold > 0 and ("골드 주머니가 발밑에 떨어졌습니다 · " .. tostring(gold) .. " 골드") or "")
         _UIKit:SetEnabled("RaidText", false)
@@ -919,6 +1044,7 @@ script HudMain extends Logic
     method void OpenQuestFromTrack()
         -- 의뢰 알림 카드를 누르면 카드는 닫히고 의뢰 창이 열린다. 같은 의뢰·같은 단계의 카드는 다시 띄우지 않는다 (10-21 사용자: 화면 UI 줄이기)
         self.QuestTrackSeen = self.QuestTrackKey
+        self.JournalTrackAt = -999   -- 일지 줄도 함께 접는다 (다음 진행이 오면 다시)
         _UIKit:SetEnabled("QuestTrack", false)
         _UIKit:Open("QuestWin")
     end
@@ -948,6 +1074,30 @@ script HudMain extends Logic
         _UIKit:SetText("QuestTrack/Title", _UIKit:Clip(title, 16))
         _UIKit:SetText("QuestTrack/Body", caption)
         _UIKit:SetText("QuestTrack/Progress", goal)
+        self:RenderJournalTrack()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderJournalTrack()
+        -- 채널 C (10-31 B-4): 추적기 맨 아래 일지 한 줄. PC는 카드를 JournalLineH만큼 늘리고 목표 줄을 올린다 ·
+        --   모바일은 카드 아래가 파티 목록이라 늘리지 않고 지역 줄(Body) 자리에 잠깐 바꿔 보인다
+        local on = self:JournalTrackOn()
+        local mobile = _ApplicationService:IsMobilePlatform()
+        local card = _UIKit:Get("QuestTrack")
+        if isvalid(card) and not mobile then
+            local h = self.QuestTrackH + (on and self.JournalLineH or 0)
+            local t = card.UITransformComponent
+            if math.abs(t.RectSize.y - h) > 0.5 then t.RectSize = Vector2(t.RectSize.x, h) end
+            local prog = _UIKit:Get("QuestTrack/Progress")
+            if isvalid(prog) then
+                local pt = prog.UITransformComponent
+                local y = on and (18 + self.JournalLineH) or 18
+                if math.abs(pt.anchoredPosition.y - y) > 0.5 then pt.anchoredPosition = Vector2(pt.anchoredPosition.x, y) end
+            end
+        end
+        _UIKit:SetEnabled("QuestTrack/Journal", on and not mobile)
+        if on and not mobile then _UIKit:SetText("QuestTrack/Journal", self.JournalTrack) end
+        if on and mobile then _UIKit:SetText("QuestTrack/Body", self.JournalTrack) end
     end
 
     method string QuestGoalText(table q, PlayerQuest quest)
@@ -970,19 +1120,39 @@ script HudMain extends Logic
         local s = _UIKit:Comp("script.PlayerSocial")
         if s == nil then return end
         -- 파티원마다 「이름  Lv」 + 아래 작은 글씨로 지금 있는 곳 (PartySystem.Refresh가 2초마다 갱신)
+        -- 10-31 B-4: 평소엔 「파티 (n) · 이름 Lv · …」 한 줄 (왼쪽 알림 더미와 겹치지 않게) · 마우스를 올리거나(PC) 누르면 펼친다
         local lines = {}
+        local short = {}
         local n = 0
         for entry in string.gmatch(s.PartyDigest .. ";", "([^;]*);") do
             local _, name, lv, place = string.match(entry, "^([^|]*)|([^|]*)|(%d+)|?(.*)$")
             if name ~= nil then
                 n = n + 1
                 table.insert(lines, name .. "  Lv" .. lv)
+                table.insert(short, name .. " Lv" .. lv)
                 if place ~= nil and place ~= "" then table.insert(lines, "<size=14><color=#9DB89F>  " .. place .. "</color></size>") end
             end
         end
+        local open = self.PartyHover or self.PartyPinned or Environment:IsMobilePlatform()
         local text = ""
-        if n > 0 then text = "파티 (" .. tostring(n) .. ")\n" .. table.concat(lines, "\n") end
+        if n > 0 then
+            if open then text = "파티 (" .. tostring(n) .. ")\n" .. table.concat(lines, "\n")
+            else text = _UIKit:Clip("파티 (" .. tostring(n) .. ") · " .. table.concat(short, " · "), self.PartyFoldChars) end
+        end
+        local key = text .. "#" .. tostring(open)
+        if key == self.PartyKey then return end
+        self.PartyKey = key
         _UIKit:SetText("Party/Text", text)
+        _UIKit:SetEnabled("Party", n > 0)
+        -- 눌리는 칸(그리고 왼쪽 알림 더미가 피하는 칸)을 글 크기에 맞춘다
+        local box = _UIKit:Get("Party")
+        local label = _UIKit:Get("Party/Text")
+        if isvalid(box) and isvalid(label) then
+            local h = self.PartyLineH
+            if open and isvalid(label.TextGUIRendererComponent) then h = math.max(h, math.ceil(label.TextGUIRendererComponent:GetPreferredHeight(text, label.UITransformComponent.RectSize.x)) + 8) end
+            box.UITransformComponent.RectSize = Vector2(box.UITransformComponent.RectSize.x, h)
+            label.UITransformComponent.RectSize = Vector2(label.UITransformComponent.RectSize.x, h)
+        end
     end
 
     @ExecSpace("ClientOnly")

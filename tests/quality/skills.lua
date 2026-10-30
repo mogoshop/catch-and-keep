@@ -226,7 +226,7 @@ SkillWindow.MobileColumns=nil;SkillWindow.Page=1;pos={}
 SkillWindow:RenderTimeline(book,stats)
 assert(pos['SkillWin/TL/Bar'].y==-304 and pos['SkillWin/TL/C1/S2'].y==-88 and pos['SkillWin/TL/C1'].x==44 and pos['SkillWin/TL/Bar'].x==44,'PC timeline unchanged')
 print('[quality/skills] OBS-02 mobile timeline: '..#split..' columns, '..pages..' pages, rows 2 at step '..SkillWindow.MobileStepY..', bar '..SkillWindow.MobileBarY..', first column x '..SkillWindow.MobileX0..' (RB-OBS-04), PC unchanged')
--- INT1725-OBS-01 (PC Lv40 혼의 제물 셋째 카드): 강화 카드 초록 줄(Card{i}/Change 222×72 · BestFit 12~16)에 편성 경고를 뜻·숫자 그대로 자기 줄로.
+-- INT1725-OBS-01 (PC Lv40 스킬 추천 셋째 카드): 강화 카드 초록 줄(Card{i}/Change 222×72 · BestFit 12~16)에 편성 경고를 뜻·숫자 그대로 자기 줄로.
 --   줄은 「 · 」·「 (」·띄어쓰기 경계에서만 나뉘고(띄어쓰기·「·」를 빼고 다시 이으면 원문 글자 그대로) 줄마다 폭 222 안 — 폭은 넉넉한 어림 UIKit.TextWidth 16px(칸 최대 글꼴)
 --   캡처 장면 4개(대검 0기 · 방패 세기만 · 자리 없어짐 · 거인 중 0기)는 3줄 = 16px 그대로 · 모든 변이 노드 × 랭크 × 경고 꼴(두 자리 정원)의 최악도 4줄 = 12px 이상으로 칸 안
 local cardSrc=io.open('tools/build/ui.cjs'):read('a')
@@ -367,7 +367,7 @@ for _,l in ipairs(lines(longCard)) do assert(_UIKit:TextWidth(l,SkillOffer.Chang
 entity.GetComponent=oldGet;_UIKit.Colored=oldColored
 print(string.format('[quality/skills] INT1725-OBS-01 offer card Change %dx%d (16px %d줄 · 12px %d줄): %s · all form nodes worst %d lines (%s) · R01 values kept %d/%d (첫 토막만: 두 자리 합성 경고 %d)',SkillOffer.ChangeW,chH,SkillOffer.ChangeLines,SkillOffer.ChangeMaxLines,table.concat(sceneLog,', '),worstN,worstCase,valueKept,valueKept+valueFallback,valueFallback))
 -- 글귀 53·54 (10-29 저녁 코덱스 위임 승인 · approval-copy-review-2103): 잔걸음·뼈 껍질은 선행 스킬이 없을 때
---   UseHint 조건 줄이 같은 화면에 보이는 표시 경로(스킬 창 공방 StatLine/RenderWorkshop · 제물 강화 카드 NodeChange)에서만 요약 끝 「(…를 배우면)」을 뺀다.
+--   UseHint 조건 줄이 같은 화면에 보이는 표시 경로(스킬 창 공방 StatLine/RenderWorkshop · 추천 강화 카드 NodeChange)에서만 요약 끝 「(…를 배우면)」을 뺀다.
 --   공용 요약 GetRankSummary는 그대로 — RequestLearn→NotifyLearned 학습 알림(UseHint 줄 없음)은 이 괄호로 선행 조건을 알린다
 do
  stats.Level=99;bonus=0;choices={}

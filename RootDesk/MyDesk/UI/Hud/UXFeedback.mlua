@@ -5,6 +5,7 @@
 --   · 창 안 행동의 결과(ShowNow: 장착·대장간·웨이포인트 잠김 등)는 창이 떠 있으면 큰 판 대신 창 밖 가장자리 안내 줄로 (NoticeFeed)
 --   · 판이 떠 있는 동안 창이 열리면 판을 바로 걷고, 2.5초 안이면 대기열에 되돌린다
 --   · 레벨 업·스킬·의뢰·그림자·업적 알림은 누르면 그 창을 연다 (전리품처럼 전투 중 잦은 알림은 눌리지 않게 — 클릭 이동을 막지 않는다)
+--   · 10-31 B-4 알림 채널: 퀘스트 「목표 달성」·일지 완료(업적 달성 · 일일 퀘스트 완료)는 큰 판 대신 채널 A 「상단 띠」 한 줄 (TopRoute · HudMap.TopChannelOn)
 @Logic
 script UXFeedback extends Logic
 
@@ -147,6 +148,12 @@ script UXFeedback extends Logic
             kind = "notice"
             info = self.Kinds.notice
         end
+        -- 채널 A 「상단 띠」로 가는 것 (10-31 B-4): 퀘스트 목표 달성 · 일지 완료 — 판 대신 위 가운데 한 줄
+        if _HudMap.TopChannelOn and self:TopRoute(kind, title) then
+            _HudMap:TopPush(kind .. ":" .. title .. ":" .. (detail or ""), title, string.match(detail or "", "^([^\n]*)") or "", 1)
+            log("[VRF] ux -> top band kind=" .. kind .. " " .. title)
+            return
+        end
         -- 창 안 결과: 창이 떠 있으면 큰 판 대신 창 밖 가장자리 안내 줄로
         if info.now and self:HoldReason() == "window" then
             _NoticeFeed:Push(self:LineText(title, detail, true))
@@ -172,6 +179,13 @@ script UXFeedback extends Logic
         self:SortQueue()
         while #self.Queue > self.QueueCap do self:DropOne() end
         self:Tick()
+    end
+
+    method boolean TopRoute(string kind, string title)
+        -- 채널 A로 보낼 큰 알림인가: 퀘스트 「목표 달성」(PlayerQuest.Complete) · 업적 달성 · 일일 퀘스트 완료 (업적 보상 받기는 창 안 결과라 그대로)
+        if kind == "quest" then return title == "목표 달성" end
+        if kind == "journal" then return self:Starts(title, "업적 달성 · ") or self:Starts(title, "일일 퀘스트 완료 · ") end
+        return false
     end
 
     method void SortQueue()

@@ -33,9 +33,10 @@ function run(){
   Colors:{NormalColor:{r:1,g:1,b:1,a:1},HighlightedColor:{r:.92,g:.9,b:1,a:1},PressedColor:{r:.78,g:.76,b:.82,a:1},SelectedColor:{r:.92,g:.9,b:1,a:1},DisabledColor:{r:1,g:1,b:1,a:1},ColorMultiplier:1,FadeDuration:.1},
   ImageRUIDs:{HighlightedSprite:null,PressedSprite:null,SelectedSprite:null,DisabledSprite:null},
   IgnoreMapLayerCheck:false,OrderInLayer:0,OverrideSorting:false,SortingLayer:'UI'});
- // 안내 줄(획득·경고 문구): 엔진 화면 메시지(상단 큰 띠) 대신 왼쪽 아래에 짧은 줄로 쌓는다. 아래가 최신, 위로 4줄
- if(!b.find('Feed'))b.empty('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});
- else b.patch('Feed',{anchor:'middle-left',pivot:[0,0],pos:[24,-170],rect_size:[620,200]});
+ // 안내 줄(획득·경고 문구): 엔진 화면 메시지(상단 큰 띠) 대신 왼쪽 아래에 짧은 줄로 쌓는다.
+ // 10-31 B-4 채널 B 「왼쪽 알림 더미」: 위가 최신 · 최대 3줄 · 채팅 창(chat.cjs 아래 210 + 300) 바로 위 522에서 위로 — 실행 중 NoticeFeed.PlaceHome이 채팅 펼침·파티 목록·큰 알림 판에 맞춰 다시 잡는다
+ if(!b.find('Feed'))b.empty('Feed',{anchor:'bottom-left',pivot:[0,0],pos:[24,522],rect_size:[620,150]});
+ else b.patch('Feed',{anchor:'bottom-left',pivot:[0,0],pos:[24,522],rect_size:[620,150]});
  for(let i=1;i<=4;i++){
   const y=(i-1)*50;
   const line=`Feed/Line${i}`;

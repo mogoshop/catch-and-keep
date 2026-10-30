@@ -102,6 +102,8 @@ function run(){
  b.text(q+'/Title','',{anchor:'top-left',pos:[46,-56],rect_size:[328,40],size:28,bold:true,color:'#F3E7CC',alignment:3,bestfit:true,min_size:22,max_size:28});
  b.text(q+'/Body','',{anchor:'top-left',pos:[46,-96],rect_size:[328,30],size:21,color:'#A99F8E',alignment:3,bestfit:true,min_size:18,max_size:21});
  b.text(q+'/Progress','',{anchor:'bottom-left',pos:[46,18],rect_size:[328,34],size:23,color:'#E6C88A',alignment:3,bestfit:true,min_size:19,max_size:23});
+ // 10-31 B-4 채널 C: 일지 진행 한 줄(업적·일일 퀘스트 n/N) — 진행이 바뀌면 HudMain.RenderJournalTrack이 카드를 34 늘리고 목표 줄을 올려 켠다 (PC · 모바일은 지역 줄 자리)
+ b.text(q+'/Journal','',{anchor:'bottom-left',pos:[46,14],rect_size:[328,30],size:19,color:'#D8CFBC',alignment:3,bestfit:true,min_size:15,max_size:19,enable:false});
  applyResources(b);
  b.write(file,{lint_verbose:true});
  return b.listEntities().length;

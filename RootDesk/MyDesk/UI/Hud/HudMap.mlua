@@ -54,6 +54,22 @@ script HudMap extends Logic
     property number NextBossAt = 0
 
     property integer CheerMarkCount = 8     -- 격려 「!」 칸 수 (ui.cjs CheerMark1~8)
+    -- ── 알림 채널 A 「상단 띠」 (10-31 실플레이 피드백 B-4 · docs/evidence/2026-10-31-playfeedback-B/notice-channels.md) ──
+    --   맵 배너 자리(Banner) 하나를 습격 시작/격퇴 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장 이름이 함께 쓴다.
+    --   한 번에 1개 · 대기열 · TopSeconds초 · 같은 키는 TopDedupSec초 안에 다시 띄우지 않는다 · 급한 것(prio 2)은 덜 급한 것을 밀어낸다.
+    --   되돌리기: TopChannelOn = false면 예전처럼 습격 글·격퇴 판·안내 줄로 (부르는 쪽이 이 값을 본다)
+    property boolean TopChannelOn = true
+    property number TopSeconds = 2.5
+    property number TopFlavorExtra = 1.5    -- 맵 입장 소개 줄을 읽을 시간 (예전 배너와 같다)
+    property number TopDedupSec = 10
+    property number TopStaleSec = 8         -- 대기열에서 이보다 오래 기다린 것은 버린다 (창을 닫고 지난 일을 띄우지 않게)
+    property table TopQueue = {}            -- { key, title, line, prio, at, secs }
+    property any TopCurrent = nil           -- 지금 띠에 떠 있는 것
+    property table TopSeen = {}             -- 키 → 마지막으로 띄운 시각
+    property integer TopShownCount = 0
+    property integer TopSeq = 0             -- 넣은 차례 (같은 급이면 먼저 넣은 것부터 · 밀려난 것은 제 차례 그대로)
+    property integer TopDropCount = 0       -- 중복·오래됨으로 버린 수 (메이커 확인용)
+    property number BossKillAt = -999       -- 마지막 보스 처치 띠 시각 (SkillOffer: 보스 처치 보상 안내)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -216,18 +232,11 @@ script HudMap extends Logic
         local boss = _BossRespawn:LabelFor(mapName)
         if boss ~= "" then chestNote = chestNote .. " · " .. _UIKit:Colored("#FF8A6B", _BossRespawn:OncePerGame() and boss or (boss .. " 뒤 다시 등장")) end
         -- 레벨 표시는 괄호 안 그대로 이름에 붙어 있다 ("피 묻은 황무지 (Lv 1~3)")
-        _UIKit:SetText("Banner/Title", title)
         -- 10-22 사용자: 배너 아래 부제(마을·사냥터·봉인 상자·보스 재등장)는 글이 배너 밖으로 넘쳐 뺀다 — 맵 종류·보스 시간은 미니맵 머리글에 있다
-        _UIKit:SetText("Banner/Sub", "")
-        _UIKit:SetEnabled("Banner/Sub", false)
         -- 맵 한 줄 소개 (maps.csv flavor, docs/design/18 §3-4). 읽을 시간만큼 배너를 더 띄운다
+        -- 10-31 B-4: 채널 A 「상단 띠」의 맵 입장 — 입장 때 한 번만 (같은 이름은 TopDedupSec 안에 다시 안 띄운다 · 심도 층 번호가 늦게 와 이름이 바뀌면 그때 한 번 더)
         local flavor = (info ~= nil and info.kind ~= "instance") and (info.flavor or "") or ""
-        _UIKit:SetText("Banner/FlavorBg/Text", flavor)
-        _UIKit:SetEnabled("Banner/FlavorBg", flavor ~= "")
-        _UIKit:SetEnabled("Banner", true)
-        self.BannerLength = self.BannerSeconds + (flavor ~= "" and 1.5 or 0)
-        self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerLength
-        self:SetBannerAlpha(1)
+        self:TopMapEntry(title, flavor)
         -- 미니맵 머리글은 좁다 (206px): 괄호 속 레벨·부제는 빼고 이름만 ("폭풍의 눈 (등대 꼭대기)"가 두 줄로 넘쳐 「사냥터」와 겹쳤다, 10-11)
         local shortName = string.gsub(title, "%s*%b()", "")
         _UIKit:SetText("MiniMap/Toggle/Name", shortName)
@@ -773,7 +782,7 @@ script HudMap extends Logic
         end
         _UIKit:SetEnabled("MiniMap", not _UIKit:AnyWindowOpen())
         _UIKit:SetEnabled("MiniMap/Body", self.Expanded)
-        _UIKit:SetEnabled("QuestTrack", self:ShouldShowQuestTrack() and _HudMain.QuestTrackKey ~= _HudMain.QuestTrackSeen)   -- 눌러서 닫은 의뢰 카드는 다시 띄우지 않는다
+        _UIKit:SetEnabled("QuestTrack", self:ShouldShowQuestTrack() and _HudMain:QuestTrackWanted())   -- 눌러서 닫은 의뢰 카드는 다시 띄우지 않는다 (일지 줄이 새로 바뀌면 다시 — 10-31 B-4 채널 C)
     end
 
     method string QuestMap(integer index, integer state)
@@ -934,11 +943,131 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void RestartBanner()
-        -- 이동 화면에 가려 있던 동안 흘러간 배너 시간을 되돌린다 (걷히는 순간부터 처음부터)
-        if self.BannerLength <= 0 then return end
+        -- 이동 화면에 가려 있던 동안 흘러간 배너 시간을 되돌린다 (걷히는 순간부터 처음부터). 지금 띠가 맵 입장 이름일 때만
+        if self.BannerLength <= 0 or self.TopCurrent == nil or not self.TopCurrent.map then return end
         self.BannerUntil = _UtilLogic.ElapsedSeconds + self.BannerLength
         _UIKit:SetEnabled("Banner", true)
         self:SetBannerAlpha(1)
+    end
+
+    -- ───────── 알림 채널 A 「상단 띠」 (10-31 B-4) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void TopPush(string key, string title, string line, integer prio)
+        -- 습격·보스·퀘스트 목표 달성·일지 완료 한 줄 (prio 2 = 급함: 습격 시작·보스 등장 · 1 = 결과)
+        self:TopPushFor(key, title, line, prio, self.TopSeconds)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TopPushFor(string key, string title, string line, integer prio, number secs)
+        if title == nil or title == "" then return end
+        if key == nil or key == "" then key = title end
+        local now = _UtilLogic.ElapsedSeconds
+        if string.sub(key, 1, 5) == "boss:" then self.BossKillAt = now end
+        local cur = self.TopCurrent
+        -- 같은 키가 떠 있거나 기다리는 중이면 새 줄 대신 그 자리를 고친다 (보스 처치 「처치!」 + 「5분 뒤 다시 나타납니다」가 한 띠로)
+        if cur ~= nil and cur.key == key and self.BannerUntil > now then
+            if line ~= "" and line ~= cur.line then
+                cur.line = line
+                self:TopRender(cur)
+            end
+            return
+        end
+        for _, q in ipairs(self.TopQueue) do
+            if q.key == key then
+                if line ~= "" then q.line = line end
+                return
+            end
+        end
+        local seen = self.TopSeen[key]
+        if seen ~= nil and now - seen < self.TopDedupSec then
+            self.TopDropCount = self.TopDropCount + 1
+            log("[VRF] top band dedup key=" .. key)
+            return
+        end
+        self.TopSeq = self.TopSeq + 1
+        table.insert(self.TopQueue, { key = key, title = title, line = line or "", prio = prio, at = now, secs = secs, map = false, seq = self.TopSeq })
+        -- 급한 것은 덜 급한 띠(맵 이름·결과)를 밀어낸다 (막 뜬 것이면 급한 것 뒤에 제 차례로 다시 — 덜 읽은 줄을 잃지 않게)
+        if cur ~= nil and self.BannerUntil > now and prio >= 2 and cur.prio < 2 then
+            self.BannerUntil = now
+            if now - cur.shownAt < 1 then
+                cur.at = now
+                table.insert(self.TopQueue, cur)
+            end
+        end
+        self:SortTop()
+        self:TickTop()
+    end
+
+    method void SortTop()
+        table.sort(self.TopQueue, function(a, b)
+            if a.prio ~= b.prio then return a.prio > b.prio end
+            return a.seq < b.seq
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TopMapEntry(string title, string flavor)
+        -- 맵 입장 이름: 바로 띄운다 (기다리던 결과 줄은 그 뒤로). 같은 이름을 TopDedupSec 안에 또 부르면 그대로 둔다
+        local now = _UtilLogic.ElapsedSeconds
+        local key = "map:" .. title
+        local cur = self.TopCurrent
+        if cur ~= nil and cur.key == key and self.BannerUntil > now then return end
+        local seen = self.TopSeen[key]
+        if seen ~= nil and now - seen < self.TopDedupSec then
+            log("[VRF] top band map dedup " .. title)
+            return
+        end
+        if cur ~= nil and self.BannerUntil > now and not cur.map and now - cur.shownAt < 1 then
+            cur.at = now
+            table.insert(self.TopQueue, cur)   -- 막 뜬 줄은 맵 이름 뒤에 제 차례로 다시
+            self:SortTop()
+        end
+        self.TopSeq = self.TopSeq + 1
+        self:TopShow({ key = key, title = title, line = flavor, prio = 1, at = now, secs = self.BannerSeconds + (flavor ~= "" and self.TopFlavorExtra or 0), map = true, seq = self.TopSeq })
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickTop()
+        -- 띠가 비면 다음 것을 띄운다. 창이 떠 있는 동안은 기다린다 (창 뒤에 깔리지 않게) — 오래 기다린 것은 버린다
+        local now = _UtilLogic.ElapsedSeconds
+        if self.BannerUntil > now then return end
+        if #self.TopQueue == 0 then return end
+        if _UIKit:AnyWindowShown() then return end
+        while #self.TopQueue > 0 do
+            local q = table.remove(self.TopQueue, 1)
+            if now - q.at <= self.TopStaleSec then
+                self:TopShow(q)
+                return
+            end
+            self.TopDropCount = self.TopDropCount + 1
+            log("[VRF] top band stale key=" .. q.key)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TopShow(any q)
+        local now = _UtilLogic.ElapsedSeconds
+        q.shownAt = now
+        self.TopCurrent = q
+        self.TopSeen[q.key] = now
+        self.TopShownCount = self.TopShownCount + 1
+        self:TopRender(q)
+        _UIKit:SetEnabled("Banner", true)
+        self.BannerLength = q.secs
+        self.BannerUntil = now + q.secs
+        self:SetBannerAlpha(1)
+        log("[VRF] top band show key=" .. q.key .. " prio=" .. tostring(q.prio) .. " left=" .. tostring(#self.TopQueue) .. " " .. q.title)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TopRender(any q)
+        -- 제목 + 한 줄 (급한 것은 붉은 제목). 맵 입장은 예전 배너 그대로
+        _UIKit:SetText("Banner/Title", q.prio == 2 and _UIKit:Colored("#FF5A46", q.title) or q.title)
+        _UIKit:SetText("Banner/Sub", "")
+        _UIKit:SetEnabled("Banner/Sub", false)
+        _UIKit:SetText("Banner/FlavorBg/Text", q.line)
+        _UIKit:SetEnabled("Banner/FlavorBg", q.line ~= "")
     end
 
     @ExecSpace("ClientOnly")
@@ -949,11 +1078,16 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void TickBanner()
-        if self.BannerUntil <= 0 then return end
+        if self.BannerUntil <= 0 then
+            self:TickTop()
+            return
+        end
         local left = self.BannerUntil - _UtilLogic.ElapsedSeconds
         if left <= 0 then
             self.BannerUntil = 0
+            self.TopCurrent = nil
             _UIKit:SetEnabled("Banner", false)
+            self:TickTop()
             return
         end
         -- 마지막 0.6초 동안 흐려진다
@@ -962,16 +1096,8 @@ script HudMap extends Logic
 
     @ExecSpace("ClientOnly")
     method void ShowAlert(string title, string line, number seconds)
-        -- 맵 배너 자리(위쪽 가운데)에 급한 사건 안내: 붉은 제목 + 한 줄 (재의 왕이 깨어난 4장 — AshAwakening). 맵 배너처럼 끝에 흐려진다
-        _UIKit:SetText("Banner/Title", _UIKit:Colored("#FF5A46", title))
-        _UIKit:SetText("Banner/Sub", "")
-        _UIKit:SetEnabled("Banner/Sub", false)
-        _UIKit:SetText("Banner/FlavorBg/Text", line)
-        _UIKit:SetEnabled("Banner/FlavorBg", line ~= "")
-        _UIKit:SetEnabled("Banner", true)
-        self.BannerLength = seconds
-        self.BannerUntil = _UtilLogic.ElapsedSeconds + seconds
-        self:SetBannerAlpha(1)
+        -- 맵 배너 자리(위쪽 가운데)에 급한 사건 안내: 붉은 제목 + 한 줄 (재의 왕이 깨어난 4장 — AshAwakening). 채널 A 급한 줄로 (10-31 B-4)
+        self:TopPushFor("alert:" .. title, title, line, 2, seconds)
     end
 
     @ExecSpace("ClientOnly")

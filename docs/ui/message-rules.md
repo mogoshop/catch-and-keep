@@ -1,5 +1,12 @@
 # 메시지 규칙 (2026-10-11 팀 QA 정리)
 
+> **10-31 알림 채널 4갈래 (실플레이 피드백 B-4 — 이 문서보다 먼저 본다).** 상세·부르는 곳 전수: [`docs/evidence/2026-10-31-playfeedback-B/notice-channels.md`](../evidence/2026-10-31-playfeedback-B/notice-channels.md) (`node tools/notice_channels.cjs`로 다시 만들고 `npm test`가 누락을 잡는다).
+> - **A 상단 띠** (`HudMap.TopPush` · 서버 `_Util:NotifyTop/NotifyTopMap`): 습격 시작/격퇴 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장 이름. 맵 배너 자리 하나, 한 번에 1개, 대기열, 2.5초, 같은 키 10초 안 중복 억제. 예전 습격 글귀(RaidText)·격퇴 판(RaidPlate)은 `HudMap.TopChannelOn = false`일 때만.
+> - **B 왼쪽 알림 더미** (`NoticeFeed` · `_Util:Notify`): PC는 채팅 창 바로 위 · 파티 목록·큰 알림 판 아래 끝까지만 · 위가 최신 · 최대 3줄(모바일 2) · 같은 글 10초 안 ×N · 상한·경고류 60초에 1회.
+> - **C 오른쪽 추적기**: 일지 진행은 퀘스트 추적기 안 한 줄 제자리 갱신 (일지 진행 말풍선 없앰).
+> - **D 줍기 표시** (`_Util:NotifyPickup` → `HudMain.PickupPop`): 골드·아이템 획득은 캐릭터 발밑 작은 글씨 1.5초.
+> - 파티 목록(PC)은 한 줄로 접고 마우스를 올리면 펼친다.
+
 팀 QA에서 이런 지적이 있었다. "시스템 메시지가 위쪽 가운데와 왼쪽 아래로 나뉘어 보기 불편하다."
 
 실제로 늘 떠 있던 것은 위쪽 가운데의 **여정 안내(Tip)**였다. 오른쪽 의뢰 칸과 내용이 겹친다. 진행 알림 판(UXFeedback)과 안내 줄(NoticeFeed)은 이미 왼쪽에 위아래로 붙어 있었다.

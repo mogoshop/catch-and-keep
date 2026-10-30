@@ -99,7 +99,7 @@ C 소환종 자체를 전사/마법사/그림자 중 둘로 축소: 수집 정�
 통합을 한다면 기존 노드별 투자 포인트 전액 환불, 정원/슬롯/효과 이관표, 레거시 저장 버전, 기존 진행·보상 보존이 선행된다. 불합리한 기존 투자를 고치려고 전체 군단 수/장비를 무근거 너프하지 않는다.
 검증: 낮은 상한/고랭크 앞 변종/폭발 신규 투자/혼 부족/반복 소환/희생·성찬·거인/맵 전환/상한 장비 탈착/파티. '다음 예정'과 실제 기록이 같고, 0기 투자 이유를 설명할 수 있는지 확인. 손 입력 수와 관리 시간을 DPS와 별도로 잰다.
 
-이번 작은 구현(단계1 안내만 · 브랜치 `wip/i03-summon-roster` · 글귀 승인 전): 편성 규칙(순서·정원 MaxFor·거인 예약·가장 오래된 개체 교체)은 그대로다. 일으키기의 고르기·정원·교체를 `UndeadSystem.PickForm`·`SlotPlan`·`TrimVictims`로 떼어 `Raise`·`ApplySkeletonForm`·`ApplyMageForm`·`TrimOldest`와 읽기 전용 `RosterPreview`가 같은 함수를 쓴다(옛 분기와 무작위 2만 상태 동일). 서버 목록은 `ShadowCommander.UndeadRoster`(내 클라이언트만)로 넘겨 스킬 창이 같은 계산을 한다. 스킬 창 해골 일으키기·변이·증원 노드의 효과 줄 끝에 「편성 n/max: 일반·변이 수 · 다음 소환: 변이(가장 오래된 ○ 교체)」, 변이 노드 설명·제물 카드에 「정원 N기로는 0기 · 정원 +k(뼈 군단)부터 섭니다」·「찍으면 ○ 자리가 없어집니다」·「다음 랭크는 세기만 오릅니다」(`SkillBook.FormHint` → `UseHint`). 「실제 최대 수 + 일반형 다음 소환 값」은 F10(`SkillBook.GetRankSummary` 해골 일으키기 줄)이 이미 맞춰 그대로 둔다. 검사: `tests/quality/roster.lua`(미리보기 = 실제 `Raise` 결과). 단계2 직접 편성은 미구현.
+이번 작은 구현(단계1 안내만 · 브랜치 `wip/i03-summon-roster` · 글귀 승인 전): 편성 규칙(순서·정원 MaxFor·거인 예약·가장 오래된 개체 교체)은 그대로다. 일으키기의 고르기·정원·교체를 `UndeadSystem.PickForm`·`SlotPlan`·`TrimVictims`로 떼어 `Raise`·`ApplySkeletonForm`·`ApplyMageForm`·`TrimOldest`와 읽기 전용 `RosterPreview`가 같은 함수를 쓴다(옛 분기와 무작위 2만 상태 동일). 서버 목록은 `ShadowCommander.UndeadRoster`(내 클라이언트만)로 넘겨 스킬 창이 같은 계산을 한다. 스킬 창 해골 일으키기·변이·증원 노드의 효과 줄 끝에 「편성 n/max: 일반·변이 수 · 다음 소환: 변이(가장 오래된 ○ 교체)」, 변이 노드 설명·추천 카드에 「정원 N기로는 0기 · 정원 +k(뼈 군단)부터 섭니다」·「찍으면 ○ 자리가 없어집니다」·「다음 랭크는 세기만 오릅니다」(`SkillBook.FormHint` → `UseHint`). 「실제 최대 수 + 일반형 다음 소환 값」은 F10(`SkillBook.GetRankSummary` 해골 일으키기 줄)이 이미 맞춰 그대로 둔다. 검사: `tests/quality/roster.lua`(미리보기 = 실제 `Raise` 결과). 단계2 직접 편성은 미구현.
 
 5. I04 — 모바일 기본공격, 다섯 칸, 입력 피로, 무효 투자 안내
 

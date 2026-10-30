@@ -1,5 +1,5 @@
--- 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차 — 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분).
---   스킬 포인트가 있으면 HUD에 「혼의 제물 — 고르기」 띠(OfferBand) → 누르면 카드 3장: 새 스킬 1 · 쓰던 스킬 랭크 업 1 · 강화 1
+-- 스킬 추천 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차 — 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분).
+--   스킬 포인트가 있으면 HUD에 「스킬 추천 — 고르기」 띠(OfferBand) → 누르면 카드 3장: 새 스킬 1 · 쓰던 스킬 랭크 업 1 · 강화 1
 --   (지금 찍을 수 있는 것 중에서 — 없는 종류는 빠진다) + 4번째는 다음 해금 미리보기. 「다시 섞기」는 레벨당 1번,
 --   「보드에서 직접 고르기」는 스킬 창(K). 포인트·해금 규칙은 그대로 — 고르는 창구만 하나 더 (SkillBook.RequestLearn).
 @Logic
@@ -12,13 +12,13 @@ script SkillOffer extends Logic
     property integer Shuffle = 0            -- 다시 섞을 때마다 1씩 — 같은 종류에서 다른 후보를 고른다
     property string RenderKey = ""
     property integer TimerId = 0
-    property string Mode = "skill"          -- "skill" 혼의 제물 · "reward" 선택 보상 (10-28 — 같은 카드 창을 함께 쓴다)
+    property string Mode = "skill"          -- "skill" 스킬 추천 · "reward" 선택 보상 (10-28 — 같은 카드 창을 함께 쓴다)
     property integer RewardSlot = 0         -- 보상 모드에서 고르는 칸 (1~3)
     property integer AutoShownSlot = 0      -- 이 접속에서 스스로 열어 준 칸 (같은 칸은 한 번만 — 닫으면 띠로 다시 연다)
     property number CardX0 = 74             -- 첫 카드 왼쪽 (보상 모드는 「다음 해금」 칸이 없어 카드 셋을 가운데로 — 174)
     property number CardStep = 356          -- 카드 340 + 사이 16 (빌더 tools/build/ui.cjs CARD와 같은 숫자)
     property number WinW = 1400             -- 창 폭 (모바일 좁은 화면은 WindowFit이 1368로 · 카드 시작도 같이 옮긴다)
-    property number CardLeft = 74           -- 혼의 제물 첫 카드 왼쪽 (오른쪽 「다음 해금」까지 좌우 여백이 같게)
+    property number CardLeft = 74           -- 스킬 추천 첫 카드 왼쪽 (오른쪽 「다음 해금」까지 좌우 여백이 같게)
     property number RewardLeft = 174        -- 선택 보상 첫 카드 왼쪽 (카드 셋 가운데)
     -- HUD 띠(OfferBand) 한 줄 규격 — tools/build/ui-tokens.cjs BAND와 같은 값. 한쪽만 바꾸지 않는다 (10-29 UI-20261029-01)
     property number BandFont = 24
@@ -35,6 +35,13 @@ script SkillOffer extends Logic
     property integer ChangeLines = 3        -- 칸 높이 72에 16px(줄 높이 23.7)로 들어가는 줄 수 — 넘으면 요약에서 설명에 값이 있는 토막을 뺀다
     property integer ChangeMaxLines = 4     -- 경고가 있을 때 허용하는 줄 수 — 칸 72에 BestFit 최소 12px(줄 높이 17.8)로 들어간다 (CARD-E1E-R01)
     property string WarnHex = "#F4D27A"     -- 편성 경고 줄 색 (초록 수치 줄과 구분)
+    -- 10-31 B-3 글귀 (사용자 「단어가 어렵다. 그냥 스킬 추천이다」 · 「스킬 포인트」라는 말은 쓰지 않는다 — 실제 재화가 아니다)
+    property string SubSkill = "추천 스킬 중 하나를 고르세요"
+    property string SubBoss = "보스 처치 보상입니다. 추천 스킬 중 하나를 고르세요."
+    property string SubOnce = "다시 고를 수 없습니다"
+    property number BossRewardSec = 30      -- 보스 처치(HudMap.BossKillAt) 뒤 이 초 안에 포인트가 늘면 그 추천은 「보스 처치 보상」으로 연다
+    property integer PointsSeen = 0
+    property boolean BossReward = false
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -61,7 +68,7 @@ script SkillOffer extends Logic
 
     @ExecSpace("ClientOnly")
     method void Open()
-        -- 띠를 누르면: 고를 선택 보상이 있으면 그것부터, 아니면 혼의 제물
+        -- 띠를 누르면: 고를 선택 보상이 있으면 그것부터, 아니면 스킬 추천
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
         local pending = quest ~= nil and quest:PendingChoice() or 0
@@ -89,6 +96,10 @@ script SkillOffer extends Logic
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         if book == nil or st == nil then return end
+        -- 보스 처치 직후에 생긴 포인트면 창 안내를 「보스 처치 보상입니다」로 (포인트를 다 쓰면 평소 안내로)
+        if st.SkillPoints > self.PointsSeen and _UtilLogic.ElapsedSeconds - _HudMap.BossKillAt <= self.BossRewardSec then self.BossReward = true end
+        if st.SkillPoints <= 0 then self.BossReward = false end
+        self.PointsSeen = st.SkillPoints
         ---@type PlayerQuest
         local quest = _UIKit:Comp("script.PlayerQuest")
         local pending = quest ~= nil and quest:PendingChoice() or 0
@@ -103,7 +114,7 @@ script SkillOffer extends Logic
         if band then
             local text
             if pending > 0 then text = "선택 보상 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. quest:ChoiceQuestTitle(pending) .. ")")
-            else text = "혼의 제물 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")") end
+            else text = "스킬 추천 — 고르기  " .. _UIKit:Colored("#FFFFFF", "(" .. tostring(st.SkillPoints) .. ")") end
             -- 띠 글은 한 줄 (10-29 UI-20261029-01): 제목이 길면 띠를 넓히고 → 그래도 넘치면 글자를 줄이고 → 끝내 말줄임
             local maxW = _ApplicationService:IsMobilePlatform() and self.BandMaxWMobile or self.BandMaxW
             _UIKit:SetBandText("OfferBand", text, self.BandFont, self.BandPadX, self.BandPadY, self.BandMinW, maxW, self.BandMinFont)
@@ -133,7 +144,7 @@ script SkillOffer extends Logic
             _UIKit:Close(self.Win)
             return
         end
-        local state = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. tostring(self.Shuffle)
+        local state = book.SkillDigest .. "#" .. tostring(st.SkillPoints) .. "#" .. tostring(st.Level) .. "#" .. tostring(self.Shuffle) .. "#" .. tostring(self.BossReward)
         if state ~= self.OfferKey then
             self.OfferKey = state
             self.Offer = self:Pick(book, st)
@@ -185,13 +196,26 @@ script SkillOffer extends Logic
         return offer
     end
 
+    method boolean ChoiceFromBoss(integer slot)
+        -- 이 선택 보상 칸을 주는 퀘스트가 보스를 쓰러뜨리는 퀘스트인가 (quests.csv reward choice:N · kind)
+        for i = 1, _QuestData:Count() do
+            local q = _QuestData:Get(i)
+            if (tonumber(string.match("," .. q.reward, ",choice:(%d+)")) or 0) == slot then
+                return q.kind == "boss" or q.kind == "chest" or q.kind == "gate" or q.kind == "ritual"
+            end
+        end
+        return false
+    end
+
     @ExecSpace("ClientOnly")
     method void RenderReward(PlayerQuest quest)
         -- 선택 보상 카드 3장: 군단 · 주문 · 저주 (축 이름 = 그 트리 색 글자). 하나만 — 다시 고를 수 없다
         local slot = self.RewardSlot
         local tier = quest:TierOfSlot(slot)
         _UIKit:SetText(self.Win .. "/Title", "선택 보상 · " .. quest:ChoiceQuestTitle(slot))
-        _UIKit:SetText(self.Win .. "/Sub", "하나만 고르세요 — 다시 고를 수 없습니다")
+        -- 보스를 쓰러뜨린 퀘스트(boss · chest · gate · ritual)의 선택 보상은 「보스 처치 보상입니다」로 연다 (10-31 B-3)
+        if self:ChoiceFromBoss(slot) then _UIKit:SetText(self.Win .. "/Sub", self.SubBoss .. " " .. self.SubOnce .. ".")
+        else _UIKit:SetText(self.Win .. "/Sub", "하나만 고르세요 — " .. self.SubOnce) end
         _UIKit:SetText(self.Win .. "/Left", tier > 1 and ("지금 " .. tostring(tier) .. "단계") or "")
         _UIKit:SetEnabled(self.Win .. "/BtnReroll", false)
         _UIKit:SetEnabled(self.Win .. "/BtnBoard", false)
@@ -205,7 +229,7 @@ script SkillOffer extends Logic
             _UIKit:SetEnabled(self.Win .. "/Pick" .. tostring(i), def ~= nil)
             if def ~= nil then
                 _UIKit:SetIcon(c, _GameData:GetUiIcon("sk_offer_card_new"))
-                _UIKit:SetColor(c, Color(1, 1, 1, 1))   -- 혼의 제물 단계 카드의 금빛 물들임을 지운다 (44-7)
+                _UIKit:SetColor(c, Color(1, 1, 1, 1))   -- 스킬 추천 단계 카드의 금빛 물들임을 지운다 (44-7)
                 -- 축 이름은 그 트리 색 글자로 (카드 위 색 띠는 10-28 사용자 지시로 없앰)
                 _UIKit:SetText(c .. "/Kind", _UIKit:Colored(_SkillWindow:TreeHex(a[1]), a[2]))
                 _UIKit:SetIcon(c .. "/Icon", _SkillData:Get(def.skill).icon)
@@ -221,8 +245,8 @@ script SkillOffer extends Logic
     @ExecSpace("ClientOnly")
     method void Render(SkillBook book, PlayerStats st)
         -- 카드 3장 + 다음 해금 미리보기 + 남은 포인트 · 다시 섞기
-        _UIKit:SetText(self.Win .. "/Title", "혼의 제물")
-        _UIKit:SetText(self.Win .. "/Sub", "포인트를 바칠 곳을 고르세요")
+        _UIKit:SetText(self.Win .. "/Title", "스킬 추천")
+        _UIKit:SetText(self.Win .. "/Sub", self.BossReward and self.SubBoss or self.SubSkill)
         _UIKit:SetEnabled(self.Win .. "/BtnReroll", true)
         _UIKit:SetEnabled(self.Win .. "/BtnBoard", true)
         -- 고를 수 있는 종류가 1~2개면 (아직 배운 스킬이 없어 랭크 업·강화가 없을 때) 카드를 카드 셋 자리 가운데로
@@ -479,7 +503,7 @@ script SkillOffer extends Logic
     @ExecSpace("ClientOnly")
     method void Layout(boolean reward, integer count)
         -- 모드별 배치 (10-28 「아래 빈 공간 · 창 높이 줄이기」):
-        --   혼의 제물 = 카드 셋 + 다음 해금 + 아래 단추 줄(다시 섞기·보드) → 창 772, 첫 카드 74 (카드가 count장이면 셋 자리 가운데로)
+        --   스킬 추천 = 카드 셋 + 다음 해금 + 아래 단추 줄(다시 섞기·보드) → 창 772, 첫 카드 74 (카드가 count장이면 셋 자리 가운데로)
         --   선택 보상 = 카드 셋만 가운데, 단추 줄 없음 → 창 668 (카드 아래 고르기 단추 + 바닥 여백 48), 첫 카드 174
         local x0 = reward and self.RewardLeft or (self.CardLeft + (3 - math.max(1, math.min(3, count))) * self.CardStep / 2)
         local h = reward and 668 or 772
