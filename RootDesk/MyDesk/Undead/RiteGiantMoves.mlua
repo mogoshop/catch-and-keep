@@ -1,14 +1,21 @@
--- 뼈 의식 거인 기술 (기획서 46 §3-2 · §3-4 · §10-3 — 46-4 · 수치는 rite_giants.csv 초안 · 46 결정 4).
---   스킬 1 = 저절로: 쿨마다 · 대상이 사거리 안일 때 (방패 「도발 함성」은 ShadowUnit.TauntTick이 tauntSec·tauntRadius로 한다 — 보스 제외 그대로)
+-- 뼈 의식 거인 기술 (기획서 46 §3-2 · §3-4 · §10-3 — 46-4 · 48 §4 거인 기술 개편 · 수치는 rite_giants.csv 초안).
+--   48 (10-30 · 리뷰 결정 Q4·Q7 · 반경 2.0 상한 정정): 기본 거인 = 기술 없음(평타만 · 도발도 없음) ·
+--     방패 = 스킬 1 도발 함성(ShadowUnit.TauntTick · 몸 동작 없음) / 스킬 2 방패 내려찍기 ·
+--     대검 = 스킬 1 회전 베기(몸이 돎 · 반경 1.6 · 도는 동안 이동 ×0.6) / 스킬 2 땅 가르기(꽂고 0.3초 → 4토막이 0.25초에 걸쳐 솟음) ·
+--     쌍칼 = 스킬 1 연속 베기(평타 동작 반복) / 스킬 2 돌진(지나간 길 진홍 잔상) ·
+--     마법사 = 스킬 1 화염 노바(저절로 · 둘레 적 2 이상 · 영창 0.3초 → 반경 0.5 → 2.5로 퍼지는 얇은 고리) / 스킬 2 기도 메테오(명령 · 영창 1초 동안 멈춤 · 착지 반경 1.8, 큰 메테오 강화에도 2.0 상한)
+--   스킬 1 = 저절로: 쿨마다 · 대상이 사거리 안일 때 (노바는 둘레 적 수)
 --   스킬 2 = 기존 「저 적을」(집결 길게 → ShadowCommander.FocusAll → ShadowUnit.Focus → OnFocus) 명령 한 번에 한 번 · 명령한 대상이 유효할 때만 ·
 --     거리 밖이면 거인이 걸어가 닿는 순간 · 걷는 동안 무효·집중 시간 끝 → 취소(쿨 안 씀) · 쿨 중 명령은 무리 Focus만 · 무명령 자동 없음(K-B+ 미선택)
 --   피해 = 다섯 공격 합 A × 배율 · 주인 PlayerAttack.SkillHitOne("skill.giant_<기술>") (뼈 파편과 같은 길 · 레벨 차·낙인 배율 적용) · 피해 랭크 배율 없음(§10-4)
---   묶기 MonsterStatus.ApplyRoot(보스 절반) · 경직 Stagger(보스 없음) · 장판 받는 피해 ApplyHex(큰 쪽만) · 보스 도발 없음(결정 6)
---   강화 노드(46-5 · skills.csv giant_*)는 주인 SkillBook.Node로 읽는다 (배우기 전엔 0 = 기본 기술 그대로)
+--   묶기 MonsterStatus.ApplyRoot(보스 절반) · 경직 Stagger(보스 없음) · 보스 도발 없음(결정 6)
+--   강화 노드(46-5 · skills.csv giant_*)는 주인 SkillBook.Node로 읽는다 (배우기 전엔 0 = 기본 기술 그대로) · 거인 각인(48 §5)이 없으면 0 — 정책 전 기본 = 모두 각인(Q1)
+--   동작(48-6): 기술마다 ShadowUnit.GiantPlay("skill1"|"skill2", 기술 길이) — 기술 동안 반복 · 그림이 없으면 지금 skill 그림 · 그것도 없으면 아무 일 없음
 @Logic
 script RiteGiantMoves extends Logic
 
     property table States = {}               -- 거인 엔티티 Id → { kind, base(A), s1At, s2At, pending, resets, busyUntil }
+    property number MeteorRadiusCap = 2.0    -- 기도 메테오 착지 반경 상한 (큰 메테오 3랭크 1.8+0.45=2.25 → 2.0 · 타격·효과 모두 · 리뷰 정정 · 튜닝 초기값)
 
     @ExecSpace("ServerOnly")
     method table StateOf(ShadowUnit unit)
@@ -33,7 +40,15 @@ script RiteGiantMoves extends Logic
         self.States[unit.Entity.Id] = nil
     end
 
+    method boolean GiantImprint(ShadowUnit unit)
+        -- 거인 각인 (48 §5 · Q1 정책 보류): 각인된 거인만 노드 효과가 켜진다. 정책이 정해지기 전 기본 = 모두 각인됨(true) — 지금 기술·노드 접근 그대로.
+        --   SkillBook:GiantImprint(kind)(C · 저장 칸 GiantImprints)가 생기면 여기서 그 값을 읽는다
+        return true
+    end
+
     method integer NodeOf(ShadowUnit unit, string id)
+        -- 거인 강화 노드 랭크 (주인 SkillBook) · 각인이 없으면 0
+        if not self:GiantImprint(unit) then return 0 end
         ---@type SkillBook
         local book = isvalid(unit.OwnerPlayer) and unit.OwnerPlayer:GetComponent("script.SkillBook") or nil
         return book ~= nil and book:Node(id) or 0
@@ -46,41 +61,76 @@ script RiteGiantMoves extends Logic
         return t
     end
 
+    method boolean HasMoves(table spec)
+        -- 기술이 있는 거인인가: 기본 거인은 기술 없음(48 K-4 정정 · 평타만) — 표에 옛 값(땅울림·뼈 던지기)이 남아 있어도 쓰지 않는다
+        return spec.kind ~= "basic"
+    end
+
     -- ───────── 매 판단 (ShadowUnit.OnUpdate · 서버) ─────────
 
     @ExecSpace("ServerOnly")
     method void Tick(ShadowUnit unit, number delta)
         if not unit.Giant or unit.Dead or unit.GiantKind == "" or not _Util:IsAlive(unit.OwnerPlayer) then return end
+        local spec = _GameData:GetGiant(unit.GiantKind)
+        if not self:HasMoves(spec) then return end
         local st = self:StateOf(unit)
         local now = _UtilLogic.ElapsedSeconds
-        local spec = _GameData:GetGiant(unit.GiantKind)
-        -- 스킬 2 기다리는 명령: 무효·집중 끝이면 취소, 닿으면 쓴다
+        -- 스킬 2 기다리는 명령: 무효·집중 끝이면 취소, 닿으면 쓴다 (다른 기술 도중이면 끝난 뒤)
         if st.pending ~= nil then
             local target = st.pending.target
             if not self:ValidTarget(unit, target) or now >= unit.FocusUntil then
                 self:LogS2(unit, target, false, false, "cancel")
                 st.pending = nil
-            elseif self:InReach(unit, spec, target) then
+            elseif self:InReach(unit, spec, target) and now >= st.busyUntil then
                 st.pending = nil
                 self:FireS2(unit, st, spec, target)
             end
         end
         -- 스킬 1 저절로 (방패는 도발 함성 = TauntTick)
-        if spec.s1 == "roar" or now < st.s1At or now < st.busyUntil then return end
+        if spec.s1 == "" or spec.s1 == "roar" or now < st.s1At or now < st.busyUntil then return end
+        if spec.s1 == "nova" then
+            -- 화염 노바: 대상 없이 둘레 반경 안 적이 min(2) 이상이면 (붙은 적 떼기)
+            local n = 0
+            for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, _Util:Pos2(unit.Entity), self:S1Radius(unit, spec))) do
+                if not m.IsDead then n = n + 1 end
+            end
+            if n < (self:Opt(spec, "s1").min or 2) then return end
+            st.s1At = now + spec.s1Cd
+            self:FireS1(unit, st, spec, nil)
+            return
+        end
         local target = unit.Target
         if not unit:IsLiveTarget(target) or target:GetComponent("script.Monster") == nil then return end
         local d = (_Util:Pos2(target) - _Util:Pos2(unit.Entity)):Magnitude()
         local reach = unit.AttackRange + 0.5
-        if spec.s1 == "quake" or spec.s1 == "spin" then reach = math.max(reach, self:S1Radius(unit, spec)) end
+        if spec.s1 == "spin" then reach = math.max(reach, self:S1Radius(unit, spec)) end
         if d > reach then return end
         st.s1At = now + spec.s1Cd
         self:FireS1(unit, st, spec, target)
     end
 
     method number S1Radius(ShadowUnit unit, table spec)
-        if spec.s1 == "quake" then return spec.s1Radius + 0.15 * self:NodeOf(unit, "giant_quake") end
-        if spec.s1 == "meteor" then return spec.s1Radius + 0.2 * self:NodeOf(unit, "giant_mage_meteor") end
+        -- 스킬 1 반경 (대검 회전 1.6 · 노바 2.5 — rite_giants.csv s1Radius)
         return spec.s1Radius
+    end
+
+    method number MeteorRadius(ShadowUnit unit, table spec)
+        -- 기도 메테오 착지 반경 = min(radiusMax 2.0, radius 1.8 + 「큰 메테오」 0.15칸/랭크) — 타격·효과 모두 이 값 (rite_giants.csv s2Opts radius·radiusMax)
+        local opt = self:Opt(spec, "s2")
+        return math.min(opt.radiusMax or self.MeteorRadiusCap, (opt.radius or 1.8) + 0.15 * self:NodeOf(unit, "giant_mage_meteor"))
+    end
+
+    method number MeteorChant(ShadowUnit unit, table spec)
+        -- 기도 메테오 영창: 1.0초 − 「큰 메테오」 0.1초/랭크 (3랭크 0.7초 · 영창 감소는 반경 상한과 무관하게 보존)
+        local opt = self:Opt(spec, "s2")
+        return math.max(0.4, (opt.chant or 1) - 0.1 * self:NodeOf(unit, "giant_mage_meteor"))
+    end
+
+    method void Hold(ShadowUnit unit, number moveSec, number attackSec)
+        -- 기술 동안 몸을 묶는다: moveSec 동안 제자리(영창·꽂기 · ShadowUnit.GiantCastUntil) · attackSec 동안 평타를 쉬어 기술 동작이 끊기지 않게
+        local now = _UtilLogic.ElapsedSeconds
+        if moveSec > 0 then unit.GiantCastUntil = math.max(unit.GiantCastUntil, now + moveSec) end
+        if attackSec > 0 then unit.AttackTimer = math.max(unit.AttackTimer, attackSec) end
     end
 
     -- ───────── 스킬 1 ─────────
@@ -91,37 +141,37 @@ script RiteGiantMoves extends Logic
         local opt = self:Opt(spec, "s1")
         local dmg = st.base * spec.s1Mul
         local fx = self:Fx(unit)
-        if spec.s1 == "quake" then
-            -- 땅울림: 둘레 반경 · ×0.6 · 묶기 0.8초(+0.2/랭크 · 보스 절반)
-            local radius = self:S1Radius(unit, spec)
-            local root = (opt.root or 0.8) + 0.2 * self:NodeOf(unit, "giant_quake")
-            local hits = self:HitArea(unit, me, radius, "skill.giant_quake", dmg, root, false)
-            if fx ~= nil then fx:GiantMoveFx("quake", Vector3(me.x, me.y + 0.1, 0), radius * 2, radius * 2, 0, 0.4) end
-            unit:GiantPlay("skill")
-            self:LogSkill(unit, 1, hits, dmg, false)
-        elseif spec.s1 == "spin" then
-            -- 회전 베기: 0.4초마다 반경 2.2 · ×0.4 · 4번(+1/랭크)
+        local now = _UtilLogic.ElapsedSeconds
+        if spec.s1 == "spin" then
+            -- 회전 베기(휠윈드): 몸이 돈다 · 0.4초마다 반경 1.6(지름 3.2 · 절제) · ×0.5 · 4번(+1/랭크) · 도는 동안 이동 ×0.6으로 따라감
             local hitsN = math.floor(opt.hits or 4) + self:NodeOf(unit, "giant_gs_spin")
             local gap = opt.gap or 0.4
-            local radius = spec.s1Radius
-            st.busyUntil = _UtilLogic.ElapsedSeconds + gap * hitsN
-            if fx ~= nil then fx:GiantMoveFx("spin", Vector3(me.x, me.y + 0.3, 0), radius * 2, radius * 2, 0, gap * hitsN) end
-            unit:GiantPlay("skill")
+            local radius = self:S1Radius(unit, spec)
+            local dur = gap * hitsN
+            st.busyUntil = now + dur
+            unit.GiantSlowUntil = now + dur
+            self:Hold(unit, 0, dur)
+            unit:GiantPlay("skill1", dur)
+            self:LogCast(unit, 1, "spin", radius, dur)
+            if fx ~= nil then fx:GiantMoveFx("spin", Vector3(me.x, me.y + 0.3, 0), radius * 2, radius * 2, 0, dur) end
             local total = 0
             for i = 1, hitsN do
                 local step = i
                 _TimerService:SetTimerOnce(function()
                     if not isvalid(unit.Entity) or not unit.Giant or unit.Dead then return end
                     total = total + self:HitArea(unit, _Util:Pos2(unit.Entity), radius, "skill.giant_spin", dmg, 0, false)
-                    if step == hitsN then self:LogSkill(unit, 1, total, dmg * hitsN, false) end
+                    if step == hitsN then self:LogSkill(unit, 1, total, dmg * hitsN, false, radius) end
                 end, gap * (i - 1))
             end
         elseif spec.s1 == "flurry" then
-            -- 연속 베기: 한 대상 0.15초 간격 6번(+1/랭크) × 0.5
+            -- 연속 베기: 한 대상 0.15초 간격 6번(+1/랭크) × 0.5 · 동작 = 평타 그림 반복(새 그림 없음 · 리뷰 가드)
             local hitsN = math.floor(opt.hits or 6) + self:NodeOf(unit, "giant_twin_flurry")
             local gap = opt.gap or 0.15
-            st.busyUntil = _UtilLogic.ElapsedSeconds + gap * hitsN
-            unit:GiantPlay("skill")
+            local dur = gap * hitsN
+            st.busyUntil = now + dur
+            self:Hold(unit, 0, dur)
+            unit:GiantPlay("skill1", dur)
+            self:LogCast(unit, 1, "flurry", 0, dur)
             local landed = 0
             for i = 1, hitsN do
                 local step = i
@@ -132,34 +182,77 @@ script RiteGiantMoves extends Logic
                     self:HitOne(unit, target, "skill.giant_flurry", dmg)
                     landed = landed + 1
                     unit:SwingFx(Vector3(q.x, q.y + 0.3, 0), q - _Util:Pos2(unit.Entity), 1.6)
-                    if step == hitsN then self:LogSkill(unit, 1, landed, dmg * landed, false) end
+                    if step == hitsN then self:LogSkill(unit, 1, landed, dmg * landed, false, 0) end
                 end, gap * (i - 1))
             end
-        elseif spec.s1 == "meteor" then
-            -- 뼈 유성: 치던 적 자리에 예고 1.0초(-0.1/랭크) 뒤 반경 1.6(+0.2/랭크) · ×2.0
-            local node = self:NodeOf(unit, "giant_mage_meteor")
-            local warn = math.max(0.4, (opt.warn or 1) - 0.1 * node)
+        elseif spec.s1 == "nova" then
+            -- 화염 노바(마법사 · 저절로 · Q4·Q7): 짧은 영창 0.3초(멈춤) → 거인 중심에서 불 고리가 0.5초에 반경 0.5 → 2.5로 퍼진다 ·
+            --   고리가 지나가는 적 한 번씩 ×1.0 · 밀침 없음 · 얇은 고리(속이 빈 면 · 지름 5의 채워진 면 금지) · 「두 겹 고리」 노드 = 0.4초 뒤 한 번 더(×0.5)
+            local cast = opt.chant or 0.3
+            local spread = opt.grow or 0.5
+            local inner = opt.inner or 0.5
             local radius = self:S1Radius(unit, spec)
-            local at = _Util:Pos2(target)
-            if fx ~= nil then fx:GiantMoveFx("warn", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, warn) end
-            unit:GiantPlay("skill")
+            local twice = self:NodeOf(unit, "giant_mage_pull") > 0
+            local dur = cast + spread + (twice and 0.4 or 0)
+            st.busyUntil = now + dur
+            self:Hold(unit, cast, dur)
+            unit:GiantPlay("skill1", cast + spread)
+            self:LogCast(unit, 1, "nova", radius, cast)
+            self:NovaWave(unit, dmg, cast, spread, inner, radius, "skill.giant_nova")
+            if twice then self:NovaWave(unit, dmg * 0.5, cast + 0.4, spread, inner, radius, "skill.giant_nova2") end
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NovaWave(ShadowUnit unit, number dmg, number delay, number spread, number inner, number radius, string info)
+        -- 노바 고리 한 번: delay 뒤 거인 자리에서 반경 inner(0.5) → radius(2.5)로 spread(0.5)초에 퍼지며 고리가 닿은 적을 한 번씩 (5토막 · 고리 두께 ≈ 0.4칸)
+        local hit = {}
+        local total = 0
+        local steps = 5
+        local center = nil
+        for k = 0, steps do
+            local step = k
             _TimerService:SetTimerOnce(function()
                 if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
-                local hits = self:HitArea(unit, at, radius, "skill.giant_meteor", dmg, 0, false)
-                if fx ~= nil then fx:GiantMoveFx("meteor", Vector3(at.x, at.y + 0.6, 0), radius * 1.6, radius * 2.4, 0, 0.6) end
-                self:LogSkill(unit, 1, hits, dmg, false)
-            end, warn)
+                if center == nil then
+                    center = _Util:Pos2(unit.Entity)
+                    local fx = self:Fx(unit)
+                    if fx ~= nil then fx:GiantMoveFx("nova", Vector3(center.x, center.y + 0.1, 0), radius * 2, radius * 2, 0, spread) end
+                end
+                local r = inner + (radius - inner) * step / steps
+                for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, center, r)) do
+                    if not hit[m.Entity.Id] and not m.IsDead then
+                        hit[m.Entity.Id] = true
+                        self:HitOne(unit, m.Entity, info, dmg)
+                        self:MageResist(unit, m)
+                        total = total + 1
+                    end
+                end
+                if step == steps then self:LogSkill(unit, 1, total, dmg * total, false, radius) end
+            end, delay + spread * k / steps)
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MageResist(ShadowUnit unit, Monster m)
+        -- 「원소 붕괴」 노드(48 §4-4 · 효과 바뀜): 노바·메테오에 맞은 적 저항 -15 4초 (저항 붕괴와 같은 계열 · 큰 쪽)
+        if self:NodeOf(unit, "giant_mage_resist") <= 0 then return end
+        local status = m:Status()
+        if status ~= nil then status:ApplyCurseFrom("resist", 15, 4, unit.OwnerPlayer) end
     end
 
     -- ───────── 스킬 2 (「저 적을」) ─────────
 
     @ExecSpace("ServerOnly")
     method void OnFocus(ShadowUnit unit, Entity target)
-        -- ShadowUnit.Focus가 부른다 (거인일 때만). 명령 한 번에 스킬 2 한 번 — 쿨 중이면 무리 Focus만 · 무효면 버림 · 멀면 걸어가 닿을 때
+        -- ShadowUnit.Focus가 부른다 (거인일 때만). 명령 한 번에 스킬 2 한 번 — 쿨 중이면 무리 Focus만 · 무효면 버림 · 멀면 걸어가 닿을 때 · 기본 거인은 기술 없음
         if not unit.Giant or unit.Dead or unit.GiantKind == "" then return end
-        local st = self:StateOf(unit)
         local spec = _GameData:GetGiant(unit.GiantKind)
+        if not self:HasMoves(spec) or spec.s2 == "" then
+            self:LogS2(unit, target, false, false, "none")
+            return
+        end
+        local st = self:StateOf(unit)
         local valid = self:ValidTarget(unit, target)
         if not valid then
             self:LogS2(unit, target, false, false, "invalid")
@@ -175,7 +268,7 @@ script RiteGiantMoves extends Logic
             self:LogS2(unit, target, true, false, "cd")
             return
         end
-        if self:InReach(unit, spec, target) then
+        if self:InReach(unit, spec, target) and _UtilLogic.ElapsedSeconds >= st.busyUntil then
             self:FireS2(unit, st, spec, target)
         else
             st.pending = { target = target }
@@ -191,7 +284,7 @@ script RiteGiantMoves extends Logic
     end
 
     method boolean InReach(ShadowUnit unit, table spec, Entity target)
-        -- 바로 쓸 수 있는 거리: 던지기·돌진 = s2Reach 칸 안이면 바로 · 내려찍기·가르기·장판 = 사거리(+모양 반경) 안
+        -- 바로 쓸 수 있는 거리: 돌진·가르기·메테오(single) = s2Reach 칸 안이면 바로 · field = 사거리 안 · 내려찍기 = 사거리(+모양 반경) 안
         local d = (_Util:Pos2(target) - _Util:Pos2(unit.Entity)):Magnitude()
         if spec.s2Shape == "single" or spec.s2Shape == "dash" or spec.s2Shape == "line" then return d <= spec.s2Reach end
         if spec.s2Shape == "field" then return d <= unit.AttackRange end
@@ -210,42 +303,12 @@ script RiteGiantMoves extends Logic
         if dir:Magnitude() < 0.05 then dir = Vector2(1, 0) end
         dir = dir:Normalize()
         local fx = self:Fx(unit)
-        unit:GiantPlay("skill")
         self:LogS2(unit, target, true, true, "fired")
-        if spec.s2 == "bonethrow" then
-            -- 뼈 던지기: 고른 적에게 큰 뼈 ×1.5 (최대 6칸) · ⓐ 세 갈래(각 ×0.6) · ⓑ 돌아오며 길 위 적 ×1.0
-            local split = self:NodeOf(unit, "giant_basic_split") > 0
-            local back = self:NodeOf(unit, "giant_basic_return") > 0
-            local targets = { target }
-            local mul = 1
-            if split then
-                mul = 0.6
-                for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, at, 3)) do
-                    if #targets >= 3 then break end
-                    if m.Entity ~= target and self:ValidTarget(unit, m.Entity) then table.insert(targets, m.Entity) end
-                end
-            end
-            for _, t in ipairs(targets) do
-                local to = _Util:Pos2(t)
-                local fly = math.max(0.15, (to - me):Magnitude() / 9)
-                if fx ~= nil then fx:GiantBoneFx(Vector3(me.x, me.y + 0.8, 0), Vector3(to.x, to.y + 0.3, 0), fly) end
-                local victim = t
-                _TimerService:SetTimerOnce(function()
-                    if not isvalid(unit.Entity) or not _Util:IsAlive(unit.OwnerPlayer) then return end
-                    if self:ValidTarget(unit, victim) then self:HitOne(unit, victim, "skill.giant_bonethrow", split and st.base * mul or dmg) end
-                    if back and isvalid(unit.Entity) then
-                        local home = _Util:Pos2(unit.Entity)
-                        if fx ~= nil then fx:GiantBoneFx(Vector3(to.x, to.y + 0.3, 0), Vector3(home.x, home.y + 0.8, 0), fly) end
-                        _TimerService:SetTimerOnce(function()
-                            if isvalid(unit.Entity) then self:HitLine(unit, to, home, 0.7, "skill.giant_bonereturn", st.base * 1.0, victim) end
-                        end, fly * 0.5)
-                    end
-                end, fly)
-            end
-            self:LogSkill(unit, 2, #targets, (split and st.base * mul or dmg) * #targets, true)
-        elseif spec.s2 == "slam" then
-            -- 방패 내려찍기: 고른 적 쪽 반원 1.6칸 · ×1.5 · 1초 묶기(보스 절반) + 경직(보스 없음)
+        if spec.s2 == "slam" then
+            -- 방패 내려찍기: 고른 적 쪽 반원 1.6칸 · ×1.5 · 1초 묶기(보스 절반) + 경직(보스 없음) · 강철빛 충격파
             local radius = spec.s2Reach
+            unit:GiantPlay("skill2", 0)
+            self:LogCast(unit, 2, "slam", radius, 0)
             local hits = 0
             for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, me, radius + 0.3)) do
                 local rel = _Util:Pos2(m.Entity) - me
@@ -261,118 +324,173 @@ script RiteGiantMoves extends Logic
             end
             local c = me + dir * (radius * 0.5)
             if fx ~= nil then fx:GiantMoveFx("slam", Vector3(c.x, c.y + 0.1, 0), radius * 2, radius * 2, 0, 0.35) end
-            self:LogSkill(unit, 2, hits, dmg, true)
+            self:LogSkill(unit, 2, hits, dmg, true, radius)
         elseif spec.s2 == "rift" then
-            -- 땅 가르기: 고른 적 방향 직선 6칸 × 폭 1 · ×1.8 · ⓐ 3초 균열(0.5초마다 ×0.15 · 둔화) · ⓑ 0.4초 뒤 ±30° 두 줄(각 ×0.6)
-            local len = spec.s2Reach
-            local width = opt.width or 1
-            local finish = me + dir * len
-            local hits = self:HitLine(unit, me, finish, width * 0.5, "skill.giant_rift", dmg, nil)
-            self:RiftFx(unit, me, finish, width)
-            if self:NodeOf(unit, "giant_gs_twice") > 0 then
-                _TimerService:SetTimerOnce(function()
-                    if not isvalid(unit.Entity) or not unit.Giant then return end
-                    for _, deg in ipairs({ -30, 30 }) do
-                        local a = math.rad(deg)
-                        local d2 = Vector2(dir.x * math.cos(a) - dir.y * math.sin(a), dir.x * math.sin(a) + dir.y * math.cos(a))
-                        self:HitLine(unit, me, me + d2 * len, width * 0.5, "skill.giant_rift2", st.base * 0.6, nil)
-                        self:RiftFx(unit, me, me + d2 * len, width)
-                    end
-                end, 0.4)
-            end
-            if self:NodeOf(unit, "giant_gs_scar") > 0 then
-                for i = 1, 6 do
-                    _TimerService:SetTimerOnce(function()
-                        if not isvalid(unit.Entity) or not _Util:IsAlive(unit.OwnerPlayer) then return end
-                        for _, m in ipairs(self:LineMonsters(unit, me, finish, width * 0.5)) do
-                            self:HitOne(unit, m.Entity, "skill.giant_scar", st.base * 0.15)
-                            local status = m:Status()
-                            if status ~= nil then status:ApplyChill(0.6) end
-                        end
-                    end, 0.5 * i)
-                end
-            end
-            self:LogSkill(unit, 2, hits, dmg, true)
+            self:FireRift(unit, st, spec, dir, dmg)
         elseif spec.s2 == "dash" then
-            -- 돌진: 고른 적까지 최대 5칸 · 길 위 적 ×1.0 · 도착 ×2.0 · 돌진 중 0.3초 받는 피해 0 · ⓐ 처치하면 재사용 초기화(거인당 3번) · ⓑ 1초 뒤 잔상 둘(각 ×0.5)
-            local dist = math.min(spec.s2Reach, (at - me):Magnitude())
-            local stop = me + dir * math.max(0, dist - 0.5)
-            unit.GiantGuardUntil = now + (opt.iframe or 0.3)
-            local hits = self:HitLine(unit, me, stop, 0.7, "skill.giant_dashpath", st.base * (opt.path or 1), target)
-            unit.Entity.MovementComponent:SetWorldPosition(stop)
-            if fx ~= nil then
-                local mid = (me + stop) * 0.5
-                fx:GiantMoveFx("dash", Vector3(mid.x, mid.y + 0.3, 0), math.max(0.6, (stop - me):Magnitude()), 0.8, math.deg(math.atan(dir.y, dir.x)), 0.3)
-            end
-            local killed = false
-            if self:ValidTarget(unit, target) then
-                self:HitOne(unit, target, "skill.giant_dash", dmg)
-                hits = hits + 1
-                ---@type Monster
-                local mon = target:GetComponent("script.Monster")
-                killed = mon == nil or mon.IsDead or mon.Hp <= 0
-            end
-            if killed and self:NodeOf(unit, "giant_twin_reset") > 0 and st.resets < 3 then
-                st.resets = st.resets + 1
-                st.s2At = now
-                log(string.format("[VRF] giant s2 reset type=twin resets=%d", st.resets))
-            end
-            if self:NodeOf(unit, "giant_twin_echo") > 0 then
-                for k = 1, 2 do
-                    _TimerService:SetTimerOnce(function()
-                        if not isvalid(unit.Entity) or not _Util:IsAlive(unit.OwnerPlayer) then return end
-                        self:HitLine(unit, me, stop, 0.7, "skill.giant_echo", st.base * 0.5, nil)
-                        if fx ~= nil then
-                            local mid = (me + stop) * 0.5
-                            fx:GiantMoveFx("dash", Vector3(mid.x, mid.y + 0.3, 0), math.max(0.6, (stop - me):Magnitude()), 0.8, math.deg(math.atan(dir.y, dir.x)), 0.3)
-                        end
-                    end, 1 + 0.15 * (k - 1))
-                end
-            end
-            self:LogSkill(unit, 2, hits, dmg, true)
-        elseif spec.s2 == "hexfield" then
-            -- 저주 장판: 고른 적 자리 반경 2.0 · 5초 · 안의 적 받는 피해 +15%(낙인 계열 ApplyHex — 큰 쪽만) · 0.5초마다 ×0.12
-            --   ⓐ 장판 안 적 저항 -15(저항 붕괴와 같은 resist 저주 · 큰 쪽) · ⓑ 0.5초마다 가운데로 끎(회오리 riteWhirlPull과 같은 힘)
-            local radius = spec.s2Reach
-            local sec = opt.sec or 5
-            local tick = opt.tick or 0.5
-            local taken = opt.taken or 15
-            local resist = self:NodeOf(unit, "giant_mage_resist") > 0
-            local pull = self:NodeOf(unit, "giant_mage_pull") > 0
-            if fx ~= nil then fx:GiantMoveFx("hexfield", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, sec) end
-            local total = math.max(1, math.floor(sec / tick + 0.001))
-            local owner = unit.OwnerPlayer
-            local map = unit.Entity.CurrentMap
-            local hitsAll = 0
-            for i = 1, total do
-                local step = i
-                _TimerService:SetTimerOnce(function()
-                    if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then return end
-                    ---@type PlayerAttack
-                    local atk = owner:GetComponent("script.PlayerAttack")
-                    for _, m in ipairs(_Util:MonstersNear(map, at, radius)) do
-                        local status = m:Status()
-                        if status ~= nil then
-                            status:ApplyHex(taken, tick + 0.15)
-                            if resist then status:ApplyCurseFrom("resist", 15, tick + 0.15, owner) end
-                            if pull then
-                                local to = at - _Util:Pos2(m.Entity)
-                                if to:Magnitude() > 0.4 then status:Knockback(to, _GameData.riteWhirlPull) end
-                            end
-                        end
-                        if atk ~= nil then atk:SkillHitOne(m.Entity, "skill.giant_hexfield", dmg) end
-                        hitsAll = hitsAll + 1
+            self:FireDash(unit, st, spec, target, dir, dmg)
+        elseif spec.s2 == "meteor" then
+            self:FireMeteor(unit, st, spec, at, dmg)
+        end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FireRift(ShadowUnit unit, table st, table spec, Vector2 dir, number dmg)
+        -- 땅 가르기: 칼을 땅에 꽂음(0.3초 · 제자리) → 위로 올려 벰 — 꽂은 자리부터 고른 적 방향 직선 6칸 × 폭 1이 0.25초에 걸쳐 4토막으로 앞으로 솟는다 ·
+        --   보이는 갈라짐과 맞는 적이 같게 토막마다 판정(한 적 한 번) · ×1.8 · ⓐ 3초 균열(0.5초마다 ×0.15 · 둔화) · ⓑ 끝난 뒤 0.4초 ±30° 두 줄(각 ×0.6)
+        local opt = self:Opt(spec, "s2")
+        local now = _UtilLogic.ElapsedSeconds
+        local plant = opt.plant or 0.3
+        local rise = opt.rise or 0.25
+        local len = spec.s2Reach
+        local width = opt.width or 1
+        local me = _Util:Pos2(unit.Entity)
+        local finish = me + dir * len
+        local pieces = 4
+        st.busyUntil = now + plant + rise
+        self:Hold(unit, plant + rise, plant + rise)
+        unit:GiantPlay("skill2", plant + rise)
+        self:LogCast(unit, 2, "rift", len, plant)
+        local hit = {}
+        local hits = 0
+        for k = 1, pieces do
+            local piece = k
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
+                local a = me + dir * (len * (piece - 1) / pieces)
+                local b = me + dir * (len * piece / pieces)
+                for _, m in ipairs(self:LineMonsters(unit, a, b, width * 0.5)) do
+                    if not hit[m.Entity.Id] then
+                        hit[m.Entity.Id] = true
+                        self:HitOne(unit, m.Entity, "skill.giant_rift", dmg)
+                        hits = hits + 1
                     end
-                    if step == total then self:LogSkill(unit, 2, hitsAll, dmg * hitsAll, true) end
-                end, tick * (i - 1))
+                end
+                self:RiftFx(unit, a, b, width)
+                if piece == pieces then self:LogSkill(unit, 2, hits, dmg, true, len) end
+            end, plant + rise * (piece - 1) / (pieces - 1))
+        end
+        local after = plant + rise
+        if self:NodeOf(unit, "giant_gs_twice") > 0 then
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(unit.Entity) or not unit.Giant then return end
+                for _, deg in ipairs({ -30, 30 }) do
+                    local r = math.rad(deg)
+                    local d2 = Vector2(dir.x * math.cos(r) - dir.y * math.sin(r), dir.x * math.sin(r) + dir.y * math.cos(r))
+                    self:HitLine(unit, me, me + d2 * len, width * 0.5, "skill.giant_rift2", st.base * 0.6, nil)
+                    self:RiftFx(unit, me, me + d2 * len, width)
+                end
+            end, after + 0.4)
+        end
+        if self:NodeOf(unit, "giant_gs_scar") > 0 then
+            for i = 1, 6 do
+                _TimerService:SetTimerOnce(function()
+                    if not isvalid(unit.Entity) or not _Util:IsAlive(unit.OwnerPlayer) then return end
+                    for _, m in ipairs(self:LineMonsters(unit, me, finish, width * 0.5)) do
+                        self:HitOne(unit, m.Entity, "skill.giant_scar", st.base * 0.15)
+                        local status = m:Status()
+                        if status ~= nil then status:ApplyChill(0.6) end
+                    end
+                end, after + 0.5 * i)
             end
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FireDash(ShadowUnit unit, table st, table spec, Entity target, Vector2 dir, number dmg)
+        -- 돌진: 고른 적까지 최대 5칸 · 길 위 적 ×1.0 · 도착 ×2.0 · 0.3초 받는 피해 0 · 지나간 길 전체에 진홍 베기 잔상(0.4초 · 그림만) ·
+        --   ⓐ 처치하면 재사용 초기화(거인당 3번) · ⓑ 1초 뒤 피해 잔상 둘(각 ×0.5)
+        local opt = self:Opt(spec, "s2")
+        local now = _UtilLogic.ElapsedSeconds
+        local me = _Util:Pos2(unit.Entity)
+        local at = _Util:Pos2(target)
+        local fx = self:Fx(unit)
+        local dist = math.min(spec.s2Reach, (at - me):Magnitude())
+        local stop = me + dir * math.max(0, dist - 0.5)
+        unit.GiantGuardUntil = now + (opt.iframe or 0.3)
+        unit:GiantPlay("skill2", opt.iframe or 0.3)
+        self:LogCast(unit, 2, "dash", dist, 0)
+        local hits = self:HitLine(unit, me, stop, 0.7, "skill.giant_dashpath", st.base * (opt.path or 1), target)
+        unit.Entity.MovementComponent:SetWorldPosition(stop)
+        if fx ~= nil then
+            local mid = (me + stop) * 0.5
+            fx:GiantMoveFx("dash", Vector3(mid.x, mid.y + 0.3, 0), math.max(0.6, (stop - me):Magnitude()), 0.8, math.deg(math.atan(dir.y, dir.x)), 0.4)
+        end
+        local killed = false
+        if self:ValidTarget(unit, target) then
+            self:HitOne(unit, target, "skill.giant_dash", dmg)
+            hits = hits + 1
+            ---@type Monster
+            local mon = target:GetComponent("script.Monster")
+            killed = mon == nil or mon.IsDead or mon.Hp <= 0
+        end
+        if killed and self:NodeOf(unit, "giant_twin_reset") > 0 and st.resets < 3 then
+            st.resets = st.resets + 1
+            st.s2At = now
+            log(string.format("[VRF] giant s2 reset type=twin resets=%d", st.resets))
+        end
+        if self:NodeOf(unit, "giant_twin_echo") > 0 then
+            for k = 1, 2 do
+                _TimerService:SetTimerOnce(function()
+                    if not isvalid(unit.Entity) or not _Util:IsAlive(unit.OwnerPlayer) then return end
+                    self:HitLine(unit, me, stop, 0.7, "skill.giant_echo", st.base * 0.5, nil)
+                    if fx ~= nil then
+                        local mid = (me + stop) * 0.5
+                        fx:GiantMoveFx("dash", Vector3(mid.x, mid.y + 0.3, 0), math.max(0.6, (stop - me):Magnitude()), 0.8, math.deg(math.atan(dir.y, dir.x)), 0.3)
+                    end
+                end, 1 + 0.15 * (k - 1))
+            end
+        end
+        self:LogSkill(unit, 2, hits, dmg, true, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void FireMeteor(ShadowUnit unit, table st, table spec, Vector2 at, number dmg)
+        -- 기도 메테오(마법사 · 「저 적을」 명령 · Q4): 두 손 모아 기도 · 영창 1.0초(그동안 제자리 · 기도 동작 반복) · 고른 적 자리에 주황 테 예고 고리 →
+        --   불꽃 핵 + 꼬리가 0.5초 떨어짐 → 착지 반경 1.8(지름 3.6 · 4칸 안) ×3.0 · 「큰 메테오」 반경 +0.15 · 영창 −0.1 / 랭크 — 반경은 2.0 상한(타격·효과 모두)
+        local opt = self:Opt(spec, "s2")
+        local now = _UtilLogic.ElapsedSeconds
+        local chant = self:MeteorChant(unit, spec)
+        local fall = opt.fall or 0.5
+        local radius = self:MeteorRadius(unit, spec)
+        local fx = self:Fx(unit)
+        st.busyUntil = now + chant + fall
+        self:Hold(unit, chant, chant + fall)
+        unit:GiantPlay("skill2", chant)
+        self:LogCast(unit, 2, "meteor", radius, chant)
+        if fx ~= nil then fx:GiantMoveFx("warn_fire", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, chant + fall) end
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
+            if fx ~= nil then fx:GiantMoveFx("meteor_fall", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, fall) end
+        end, chant)
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
+            local hits = 0
+            for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, at, radius)) do
+                self:HitOne(unit, m.Entity, "skill.giant_meteor", dmg)
+                self:MageResist(unit, m)
+                hits = hits + 1
+            end
+            if fx ~= nil then fx:GiantMoveFx("meteor_land", Vector3(at.x, at.y + 0.1, 0), radius * 2, radius * 2, 0, opt.scorch or 1.5) end
+            self:LogSkill(unit, 2, hits, dmg, true, radius)
+        end, chant + fall)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Roar(ShadowUnit unit, integer pulled, number radius)
+        -- 방패 거인 「도발 함성」(스킬 1 · ShadowUnit.TauntTick이 끌어당긴 뒤 부른다): 몸 동작 없음(평타를 끊지 않는다 · 48 §6 ①) — 머리 위 작은 강철빛 고리만
+        local fx = self:Fx(unit)
+        local me = _Util:Pos2(unit.Entity)
+        if fx ~= nil then fx:GiantMoveFx("roar", Vector3(me.x, me.y + 1.7, 0), 0.8, 0.8, 0, 0.5) end
+        self:LogCast(unit, 1, "roar", radius, 0)
+        self:LogSkill(unit, 1, pulled, 0, false, radius)
     end
 
     -- ───────── 판정 도우미 ─────────
 
     @ExecSpace("ServerOnly")
     method void HitOne(ShadowUnit unit, Entity target, string info, number dmg)
+        -- 주인 PlayerAttack 길로 한 대상 (레벨 차·낙인 배율 적용)
         ---@type PlayerAttack
         local atk = isvalid(unit.OwnerPlayer) and unit.OwnerPlayer:GetComponent("script.PlayerAttack") or nil
         if atk ~= nil and isvalid(target) then atk:SkillHitOne(target, info, math.max(1, dmg)) end
@@ -412,6 +530,7 @@ script RiteGiantMoves extends Logic
 
     @ExecSpace("ServerOnly")
     method integer HitLine(ShadowUnit unit, Vector2 a, Vector2 b, number half, string info, number dmg, Entity skip)
+        -- 선분 위 적에게 한 번씩 (skip 제외). 맞힌 수
         local hits = 0
         for _, m in ipairs(self:LineMonsters(unit, a, b, half)) do
             if m.Entity ~= skip then
@@ -424,6 +543,7 @@ script RiteGiantMoves extends Logic
 
     @ExecSpace("ServerOnly")
     method void RiftFx(ShadowUnit unit, Vector2 a, Vector2 b, number width)
+        -- 땅 가르기 한 토막 그림 (a → b · 흙·돌 색)
         local fx = self:Fx(unit)
         if fx == nil then return end
         local d = b - a
@@ -432,17 +552,26 @@ script RiteGiantMoves extends Logic
     end
 
     method SkillEffects Fx(ShadowUnit unit)
+        -- 거인 기술 그림은 주인 SkillEffects(Multicast)로 그린다
         ---@type SkillEffects
         local fx = isvalid(unit.OwnerPlayer) and unit.OwnerPlayer:GetComponent("script.SkillEffects") or nil
         return fx
     end
 
-    method void LogSkill(ShadowUnit unit, integer slot, integer hits, number dmg, boolean focus)
+    method void LogCast(ShadowUnit unit, integer slot, string name, number radius, number holdSec)
+        -- [VRF] 기술 시작 (종류 · 슬롯 · 반경 · 묶는 시간)
         if Environment:IsPublishedPlay() then return end
-        log(string.format("[VRF] giant skill type=%s s=%d hits=%d dmg=%.0f focus=%s", unit.GiantKind, slot, hits, dmg, tostring(focus)))
+        log(string.format("[VRF] giant skill cast type=%s s=%d name=%s radius=%.2f hold=%.2f", unit.GiantKind, slot, name, radius, holdSec))
+    end
+
+    method void LogSkill(ShadowUnit unit, integer slot, integer hits, number dmg, boolean focus, number radius)
+        -- [VRF] 기술 판정 끝 (맞힌 수 · 피해 · 반경)
+        if Environment:IsPublishedPlay() then return end
+        log(string.format("[VRF] giant skill hit type=%s s=%d hits=%d dmg=%.0f focus=%s radius=%.2f", unit.GiantKind, slot, hits, dmg, tostring(focus), radius))
     end
 
     method void LogS2(ShadowUnit unit, Entity target, boolean valid, boolean fired, string reason)
+        -- [VRF] 「저 적을」 명령 처리 (쓰기 · 걷기 · 쿨 · 무효 · 취소 · 기술 없음)
         if Environment:IsPublishedPlay() then return end
         log(string.format("[VRF] giant s2 type=%s target=%s valid=%s fired=%s reason=%s", unit.GiantKind, isvalid(target) and target.Name or "nil", tostring(valid), tostring(fired), reason))
     end

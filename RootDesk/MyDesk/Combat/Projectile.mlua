@@ -46,6 +46,7 @@ script Projectile extends Component
     property integer Bounces = 0             -- 골편 강화 「튕김」: 맞힌 뒤 가까운 다른 적에게 튈 남은 횟수
     property integer Splits = 0              -- 서리 혼 (10-28 투사체 A안 「쪼개짐」): 처음 맞은 적에서 갈라질 서리 파편 수
     property number BurstRadius = 0          -- 저주 불꽃 (10-28 투사체 A안 「폭발」): 저주 걸린 적에 맞으면 이 반경에 화염 폭발 (0 = 없음)
+    property number MinionMul = 1            -- 해골 마법사 투사체 한 발 배율 (48 §2-2 · MageBolts.MageTraits) — 소환수 갈래 피해는 쏜 마법사 공격 × 이 값 (ShadowUnit.HitBolt)
     property string Team = "player"
     property boolean Launched = false
     property number Traveled = 0
@@ -407,9 +408,18 @@ script Projectile extends Component
                 self.HitIds[key] = true
                 ---@type PlayerAttack
                 if self.Team == "minion" then
+                    -- 해골 마법사 속성 투사체 (48 §2-6): 피해는 쏜 마법사 공격 기준(ShadowUnit.CalcDamage) — 뼈 창 가시(꿰뚫을수록 +SpikePct%) ·
+                    --   불꽃 폭발(BurstRadius · 늘 · ×0.3) · 서리 파편(Splits · 처음 맞은 적에서 한 번)은 소환수 갈래에서 따로 (캐릭터 HexBurst·FrostSplit은 PlayerAttack 피해라 쓰지 않는다)
+                    ---@type ShadowUnit
                     local unit = self.Owner:GetComponent("script.ShadowUnit")
-                    if unit ~= nil then unit:HitOne(m.Entity) end
-                    self.PierceHits = self.PierceHits + 1   -- 관통 마법사 MaxHits
+                    if unit ~= nil then
+                        unit:HitBolt(m.Entity, self.MinionMul * (1 + self.SpikePct / 100 * self.PierceHits), self.BurstRadius)
+                        if self.Splits > 0 then
+                            unit:MageSplit(_Util:Pos2(m.Entity), self.HitIds, self.Splits)
+                            self.Splits = 0
+                        end
+                    end
+                    self.PierceHits = self.PierceHits + 1   -- 뼈 창 마법사 관통 MaxHits · 가시
                     self:HitFx(m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
                 else
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
@@ -461,8 +471,9 @@ script Projectile extends Component
                 self.HitIds[key] = true
                 local hitPos = foe.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0)
                 if self.Team == "minion" then
+                    ---@type ShadowUnit
                     local unit = self.Owner:GetComponent("script.ShadowUnit")
-                    if unit ~= nil then unit:HitOne(foe) end
+                    if unit ~= nil then unit:HitBolt(foe, self.MinionMul, 0) end
                 else
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
                     local dmg = self.Damage * (1 + self.SpikePct / 100 * self.PierceHits)

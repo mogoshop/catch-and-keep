@@ -1,9 +1,10 @@
 -- 46-4 거인 스킬 2 명령 규칙 (기획서 46 §10-3): 실제 RiteGiantMoves 본문(Tick·OnFocus·ValidTarget·InReach·StateOf·Clear)으로
 --   명령 한 번에 한 번 · 무효 대상 버림 · 쿨 중 명령은 쓰지 않고 쿨이 돈 뒤에도 저절로 쓰지 않음 · 멀면 걸어가 닿을 때 · 걷는 중 다른 대상 = 대상만 바꿈 ·
 --   걷는 중 무효·집중 끝 = 취소(쿨 안 씀) · 무명령이면 20초 동안 스킬 2 0번 · 스킬 1은 쿨마다 저절로(방패는 도발 함성 = TauntTick이라 0번) · 갈라짐 Clear.
+--   48 (10-30): 기본 거인은 기술 없음 — 스킬 1·2 모두 0번 · 명령은 reason=none (예전 1·2·7번 칸의 기본 거인은 대검·쌍칼로 옮김)
 --   피해·효과(FireS1·FireS2 본문)는 대역으로 기록만 — 피해 수치·연출은 메이커 46-8.
 -- @source GameData Data/GameData.mlua Ensure,GetGiant,GetUiIcon
--- @source RiteGiantMoves Undead/RiteGiantMoves.mlua StateOf,Clear,NodeOf,Opt,Tick,OnFocus,ValidTarget,InReach,S1Radius,LogS2,LogSkill
+-- @source RiteGiantMoves Undead/RiteGiantMoves.mlua StateOf,Clear,GiantImprint,NodeOf,Opt,HasMoves,Tick,OnFocus,ValidTarget,InReach,S1Radius,LogS2,LogSkill
 _GameData:Ensure()
 Environment={IsPublishedPlay=function() return false end}
 _UtilLogic={ElapsedSeconds=0}
@@ -38,17 +39,24 @@ local function ok(c,msg) assert(c,msg) checks=checks+1 end
 
 -- 1. 무명령: 20초 동안 스킬 2 0번 · 스킬 1은 대상이 사거리 안이면 쿨(10초)마다
 do
- local u=giant('basic',110)
+ local u=giant('greatsword',110)
  local m=monster('m1',1)
  u.Target=m
  run(u,20)
  ok(count(2)==0,'no command → s2 never fired')
- ok(count(1)==2,'basic s1 every 10s after 3s warmup: '..count(1))
+ ok(count(1)==2,'greatsword s1 every 10s after 3s warmup: '..count(1))
  RiteGiantMoves:Clear(u);fired={}
+ -- 48: 기본 거인 = 기술 없음 (표에 옛 땅울림·뼈 던지기가 남아 있어도)
+ local b=giant('basic',110)
+ b.Target=monster('m2',1)
+ run(b,20)
+ focus(b,monster('m3',2))
+ ok(count(1)==0 and count(2)==0 and lastReason()=='none','basic giant: no s1, no s2 (reason none)')
+ RiteGiantMoves:Clear(b);fired={}
 end
 -- 2. 명령: 사거리 안 유효 대상 → 한 번 · 같은 대상 거듭(쿨 중) → 안 씀 · 쿨이 돈 뒤 저절로 안 씀 · 새 명령 → 한 번
 do
- local u=giant('basic',110)
+ local u=giant('twin',110)
  local m=monster('m1',3)
  focus(u,m)
  ok(count(2)==1 and fired[1].target=='m1','command fires once')
@@ -62,7 +70,7 @@ do
 end
 -- 3. 무효 대상: 결투 상대(몬스터 아님) · 쓰러진 적 · 추격 범위(7+2) 밖 → 버림, 쿨 안 씀
 do
- local u=giant('basic',110)
+ local u=giant('twin',110)
  focus(u,duelFoe('pvp',2))
  ok(count(2)==0 and lastReason()=='invalid','duel foe → invalid')
  local dead=monster('dead',2);dead.dead=true
@@ -110,9 +118,9 @@ end
 do
  local u=giant('mage',80)
  u.AttackRange=4.5
- local m=monster('m',6)
+ local m=monster('m',7)
  focus(u,m,6)
- ok(lastReason()=='walk','mage field reach = attack range 4.5')
+ ok(lastReason()=='walk','mage beyond reach → walk (48 메테오 single 6칸 · 옛 장판 field 4.5)')
  RiteGiantMoves:Clear(u)
  ok(lastReason()=='cancel' and RiteGiantMoves.States['g1']==nil,'clear drops pending')
  m.pos=Vector2(3,0)
@@ -120,9 +128,9 @@ do
  ok(count(2)==0,'cleared command not fired')
  fired={}
 end
--- 7. 쌍칼 돌진 거리 5 · 대검 가르기 6 · 던지기 6: 그 안이면 바로
+-- 7. 쌍칼 돌진 거리 5 · 대검 가르기 6: 그 안이면 바로 (48: 뼈 던지기 삭제)
 do
- for _,c in ipairs({{'twin',4.9},{'greatsword',5.9},{'basic',5.9}}) do
+ for _,c in ipairs({{'twin',4.9},{'greatsword',5.9}}) do
   local u=giant(c[1],100)
   focus(u,monster('x',c[2]))
   ok(count(2)==1,c[1]..' instant within reach')

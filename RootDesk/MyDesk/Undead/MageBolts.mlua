@@ -1,0 +1,166 @@
+-- 해골 마법사 · 캐릭터 공용 투사체 설정 (기획서 48 §2-2 · §2-6 · 10-30).
+-- 속성(school) → 투사체 「외형·속도」는 여기 한 곳에서만 정한다: 캐릭터 저주 불꽃·서리 혼·뼈 창·영혼 격류(SkillEffects)와 해골 마법사(ShadowUnit)가
+--   같은 Configure를 불러 그림·꼬리·유도·속도가 갈라지지 않는다 (「캐릭터 스킬 투사체 재사용」을 코드로 고정).
+-- 피해·랭크 계수는 각자 따로 (리뷰 가드): 캐릭터는 SkillBook 구간(관통 상한·파편 수·폭발 반경)과 PlayerAttack 피해 그대로,
+--   마법사는 아래 MageTraits(마법사 랭크 1~20 · §2-3 표)와 ShadowUnit.CalcDamage(마법사 공격 × ShotMul).
+-- 속성 키: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 창 · soul 영혼 격류 · curse 저주(노드 「저주 속성」 mage_curse로 해금) · cold_shard 서리 파편(외형만)
+-- 수치는 모두 초안(메이커 실측 뒤 줄 단위로 고침). 랭크 구간·특성 수치는 config.csv(C 담당 · mageTier2Lv … mageCursePerRank)를 먼저 읽고,
+--   그 줄이 없는 판(통합 전)에서만 아래 속성 기본값(같은 값)을 쓴다 — 스킬 창 현재/다음 표시(SkillBook)와 같은 숫자를 보게.
+@Logic
+script MageBolts extends Logic
+
+    -- 투사체 그림 (SkillEffects의 같은 이름 속성과 같은 RUID · tests/quality/mage_school.lua가 같은지 확인)
+    property string FxFlameShot = "40f0991c2e204ee888670cb3006382e5"     -- 불꽃 화살 (저주 불꽃)
+    property string FxFrostShot = "d5a9e48c2d654726811db8b127699233"     -- 서리 혼
+    property string FxShardShot = "423983c3b393414c8a8d91578b1fab9c"     -- 어두운 보라 궤적 (뼈 창 그림이 비면 가늘고 길게)
+    -- 마법사 랭크 구간 (§2-3 · 캐릭터 1·5·8·12보다 늦은 1·6·11·16)
+    property integer Tier2Lv = 6
+    property integer Tier3Lv = 11
+    property integer Tier4Lv = 16
+    property integer PierceBase = 2          -- 뼈 창 관통 2·3·4·5 (캐릭터 1·3·5·10)
+    property integer ShardsBase = 1          -- 서리 파편 1·2·3·4 (캐릭터 0·2·3·4)
+    property number BurstBase = 0.8          -- 불꽃 폭발 반경 0.8·1.0·1.2·1.4 (캐릭터 0.9·1.1·1.3·1.6)
+    property number BurstStep = 0.2
+    property integer TorrentBase = 2         -- 영혼 격류 발 수 2·3·4·5 (캐릭터 3 + 5레벨마다 1)
+    property number CurseBasePct = 8         -- 저주 낙인 % = 8 + 0.6 × (랭크 − 1) (캐릭터 낙인 20%부터 · 겹치면 큰 값만 — MonsterStatus.TakenMult)
+    property number CursePerRank = 0.6
+    property number CurseSeconds = 4
+    property number BurstMul = 0.3           -- 불꽃 마법사 폭발: 늘 터짐 · 둘레 다른 적에게 한 발 피해 × 0.3 (Q9 격리 튜닝 초기값)
+    property number ShardMul = 0.45          -- 서리 파편 한 개 피해 (마법사 공격 ×)
+    property number SpikePct = 5             -- 뼈 창 꿰뚫을 때마다 +5% (캐릭터 +10%)
+    property number ChillSec = 1.5           -- 서리 마법사: 맞은 적 둔화 초
+    property number TorrentSpreadDeg = 60    -- 영혼 격류 부채꼴 (캐릭터 SoulTorrent와 같은 퍼짐)
+
+    method table Schools(boolean curse)
+        -- 해골 마법사가 일으킬 때 고르는 속성 (번개·독은 48에서 빠졌다). 「저주 속성」 노드를 배웠으면 저주까지 다섯 (각 20% · 아니면 각 25%)
+        if curse then return { "fire", "cold", "bone", "soul", "curse" } end
+        return { "fire", "cold", "bone", "soul" }
+    end
+
+    method string PickSchool(boolean curse)
+        -- 무작위 속성 하나 (UndeadSystem.MakeRecord가 부른다 · A 연결)
+        local list = self:Schools(curse)
+        return list[_UtilLogic:RandomIntegerRange(1, #list)]
+    end
+
+    method string ElementOf(string school)
+        -- 피해 속성(저항): 화염 · 냉기 · 그 밖은 마법(뼈 창·영혼 격류·저주 — 캐릭터 PlayerAttack.SkillElement와 같다)
+        if school == "fire" then return "fire" end
+        if school == "cold" then return "cold" end
+        return "magic"
+    end
+
+    method string SchoolOfElement(string element)
+        -- 속성 칸이 비어 있는 옛 기록(48 전 번개·독 마법사 · A 연결 전)을 새 속성으로 읽는다
+        if element == "fire" or element == "cold" or element == "bone" or element == "soul" or element == "curse" then return element end
+        if element == "light" then return "soul" end
+        return "bone"
+    end
+
+    method Color BodyTint(string school)
+        -- 마법사 몸 칠 (몸 그림 1종 · Q8): 화염 주황 · 냉기 청백 · 뼈 상아 · 영혼 청록 · 저주 보라
+        if school == "fire" then return Color(1, 0.6, 0.42, 1) end
+        if school == "cold" then return Color(0.62, 0.8, 1, 1) end
+        if school == "bone" then return Color(0.96, 0.92, 0.8, 1) end
+        if school == "soul" then return Color(0.55, 0.95, 0.95, 1) end
+        return Color(0.8, 0.55, 1, 1)
+    end
+
+    method integer TierOf(integer rank)
+        -- 마법사 랭크 → 구간 1~4 (1 · 6 · 11 · 16 — config mageTier2Lv·3·4)
+        if rank >= (_GameData.mageTier4Lv or self.Tier4Lv) then return 4 end
+        if rank >= (_GameData.mageTier3Lv or self.Tier3Lv) then return 3 end
+        if rank >= (_GameData.mageTier2Lv or self.Tier2Lv) then return 2 end
+        return 1
+    end
+
+    method number Trait(string school, integer rank)
+        -- 속성 고유 특성 세기 (§2-3 표): bone 관통 수 · cold 파편 수 · fire 폭발 반경 · soul 발 수 · curse 낙인 % · 그 밖 0
+        local tier = self:TierOf(math.max(1, rank))
+        if school == "bone" then return (_GameData.magePierceBase or self.PierceBase) + tier - 1 end
+        if school == "cold" then return (_GameData.mageShardsBase or self.ShardsBase) + tier - 1 end
+        if school == "fire" then return (_GameData.mageBurstBase or self.BurstBase) + (_GameData.mageBurstStep or self.BurstStep) * (tier - 1) end
+        if school == "soul" then return (_GameData.mageTorrentBase or self.TorrentBase) + tier - 1 end
+        if school == "curse" then return (_GameData.mageCursePct or self.CurseBasePct) + (_GameData.mageCursePerRank or self.CursePerRank) * (math.max(1, math.min(20, rank)) - 1) end
+        return 0
+    end
+
+    method number ShotMul(string school)
+        -- 마법사 한 발 피해 (마법사 공격 ×) — 영혼 격류는 발당 · 저주는 낙인 몫만큼 약하게 (§2-2 초안)
+        if school == "cold" then return 0.9 end
+        if school == "soul" then return 0.4 end
+        if school == "curse" then return 0.6 end
+        return 1
+    end
+
+    method integer Count(string school, integer rank)
+        -- 한 번에 쏘는 발 수: 영혼 격류만 여러 발(부채꼴), 나머지 1
+        if school == "soul" then return math.floor(self:Trait("soul", rank)) end
+        return 1
+    end
+
+    method boolean Pierces(string school)
+        -- Launch의 pierce: 뼈 창(관통 수만큼 · MaxHits) · 서리 혼(첫 적에서 갈라짐 · MaxHits 1)은 꿰뚫는 판정, 나머지는 첫 적에서 멈춘다
+        return school == "bone" or school == "cold"
+    end
+
+    method number Configure(Projectile proj, string school)
+        -- 투사체 외형(그림·색·꼬리·유도)을 속성대로 입히고 날아가는 속도(칸/초)를 돌려준다 — 캐릭터·마법사 공용.
+        -- 피해·관통 상한·파편 수·폭발 반경 같은 「세기」는 여기서 정하지 않는다 (캐릭터 = SkillEffects · 마법사 = MageTraits)
+        if school == "fire" then
+            proj:Skin(self.FxFlameShot, 0.45)
+            proj:Tint(Color(1, 0.75, 0.55, 1))
+            return 11
+        elseif school == "cold" then
+            proj:Skin(self.FxFrostShot, 0.6)
+            proj:Tint(Color(0.85, 0.95, 1, 1))
+            return 9
+        elseif school == "cold_shard" then
+            proj:Skin(self.FxFrostShot, 0.4)
+            proj:Tint(Color(0.85, 0.95, 1, 1))
+            return 10
+        elseif school == "bone" then
+            -- 44-1 A: 골편 궤적 그림을 가늘고 길게(가로:세로 2.2) — 맞으면 진행 방향으로 꽂히는 빛 파열 (Projectile.HitFx "spear").
+            --   코덱스 H-1 창 몸(GameConst.FxSkillSpear)이 오면 그 그림을 제 비율로
+            if _GameConst.FxSkillSpear ~= "" then
+                proj:SkinXY(_GameConst.FxSkillSpear, 0.9, 0.9)
+            else
+                proj:SkinXY(self.FxShardShot, 1.32, 0.6)
+                proj:Tint(Color(0.95, 0.9, 0.78, 1))
+            end
+            proj.Style = "spear"
+            return 14
+        elseif school == "soul" then
+            -- 44-1 A: 혼 구슬 그림(FxAriseSoul)에 청록빛 · 촘촘한 혼 꼬리 — 코덱스 H-1 영혼 격류 6프레임(GameConst.FxSkillTorrent)이 오면 그 그림
+            proj.Homing = 5
+            if _GameConst.FxSkillTorrent ~= "" then
+                proj:Skin(_GameConst.FxSkillTorrent, 0.55)
+            else
+                proj:Skin(_GameConst.FxAriseSoul, 0.42)
+                proj:Tint(Color(0.55, 0.95, 1, 1))
+            end
+            proj.Style = "torrent"
+            return 7
+        end
+        -- curse · 그 밖: 마법사 마력탄에 저주 보라 (투사체는 그림이 정해져야 보인다 — 10-11)
+        proj:Skin(_GameConst.SpriteMageBolt, 1.2)
+        proj:Tint(Color(0.8, 0.55, 1, 1))
+        return 7
+    end
+
+    method void MageTraits(Projectile proj, string school, integer rank)
+        -- 해골 마법사 투사체의 「세기」(마법사 랭크 구간 §2-3): 뼈 창 관통 수·가시 · 서리 파편 수 · 불꽃 폭발 반경 · 한 발 배율.
+        -- 실제 파편·폭발 피해는 Projectile 소환수 갈래 → ShadowUnit.HitBolt/MageSplit (마법사 공격 기준)
+        proj.MinionMul = self:ShotMul(school)
+        if school == "bone" then
+            proj.MaxHits = math.floor(self:Trait("bone", rank))
+            proj.SpikePct = self.SpikePct
+        elseif school == "cold" then
+            proj.MaxHits = 1
+            proj.Splits = math.floor(self:Trait("cold", rank))
+        elseif school == "fire" then
+            proj.BurstRadius = self:Trait("fire", rank)
+        end
+    end
+
+end

@@ -6,7 +6,7 @@ script MonsterStatus extends Component
 
     property any CurseDefCache = nil       -- CurseDefs 표 (한 번만 만든다)
     property number AmpUntil = 0
-    property number HexPct = 0               -- 해골 마법사 변이 「저주」: 받는 피해 +%
+    property number HexPct = 0               -- 해골 마법사 저주 속성: 받는 피해 +% (낙인 AmpPct와 큰 값만 · 48 Q10)
     property number HexUntil = 0
     property number AmpPct = 0
     property number WeakenUntil = 0
@@ -299,7 +299,7 @@ script MonsterStatus extends Component
             { bit = 64, name = "쇠퇴", kind = "decay", skill = "enfeeble_decay", mark = "mark_decay" },
             { bit = 128, name = "저항 붕괴", kind = "resist", skill = "resist_break", mark = "mark_resist" },
             { bit = 256, name = "골격 감옥", kind = "root", skill = "bone_prison", mark = "mark_root" },
-            { bit = 512, name = "저주 마법사", kind = "hex", skill = "mage_hex", mark = "mark_hex", curse = false },
+            { bit = 512, name = "저주 속성", kind = "hex", skill = "mage_curse", mark = "mark_hex", curse = false },
             { bit = 1024, name = "서리 표식", kind = "frostmark", skill = "frost_long", mark = "mark_frost", curse = false },
             { bit = 2048, name = "둔화", kind = "chill", skill = "frost_soul", mark = "mark_chill", curse = false },
             { bit = 4096, name = "독", kind = "poison", skill = "poison_mist", mark = "mark_poison", curse = false },
@@ -320,14 +320,18 @@ script MonsterStatus extends Component
 
     method number TakenMult()
         local m = self:AuraMult("guard")
-        if _UtilLogic.ElapsedSeconds < self.AmpUntil then m = m * (1 + self.AmpPct / 100) end
-        if _UtilLogic.ElapsedSeconds < self.HexUntil then m = m * (1 + self.HexPct / 100) end   -- 저주 마법사 (낙인과 따로 곱한다)
+        -- 약화의 낙인(AmpPct)과 저주 마법사 낙인(HexPct)은 큰 값만 (48 §2-4 · Q10: 곱하지 않는다). 마법사 낙인은 IsCursed 연계(저주 불꽃 +50% 등)에 넣지 않는다
+        local now = _UtilLogic.ElapsedSeconds
+        local amp = now < self.AmpUntil and self.AmpPct or 0
+        local hex = now < self.HexUntil and self.HexPct or 0
+        local pct = math.max(amp, hex)
+        if pct > 0 then m = m * (1 + pct / 100) end
         return m
     end
 
     @ExecSpace("ServerOnly")
     method void ApplyHex(number pct, number seconds)
-        -- 해골 마법사 변이 「저주」: 받는 피해 +pct% (걸려 있는 동안 더 센 값만 · 다시 맞으면 시간 갱신)
+        -- 해골 마법사 저주 속성(48 §2-4 「저주 속성」): 받는 피해 +pct% (걸려 있는 동안 더 센 값만 · 다시 맞으면 시간 갱신 · 낙인과는 TakenMult에서 큰 값만)
         local now = _UtilLogic.ElapsedSeconds
         if now >= self.HexUntil then self.HexPct = 0 end
         self.HexPct = math.max(self.HexPct, pct)
