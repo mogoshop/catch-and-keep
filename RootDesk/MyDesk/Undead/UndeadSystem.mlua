@@ -152,7 +152,7 @@ script UndeadSystem extends Logic
     method boolean StartGiant(Entity player, table plan)
         -- 뼈 의식 5기 거인 (46-1 · 기획서 46 §2-7 · §10-1): 참여 다섯(plan.picks · 소환 순서 앞 다섯) 가운데 이긴 종류(plan.type)의 해골 중
         -- 생명 비율이 가장 높은 하나(같으면 목록 앞)가 거인 몸이 되고 나머지 넷(종류 무관)은 목록에서 빠져 합쳐진다 (소모 아님 · 「~」).
-        -- 거인 생명 = 다섯 생명 합 × riteGiantHpMul · 휩쓸기 = 다섯 공격 합 × riteGiantAtkMul · 4초마다 도발 (방패 해골 규칙 재사용 · 보스 제외).
+        -- 46-3: 거인 생명 = 다섯 생명 합 × 종류 hpMul · 기본 공격 = 다섯 공격 합 × 종류 atkMul (rite_giants.csv · 46 결정 4 초안) · 받는 피해·간격·반경·도발은 ShadowUnit.StartGiant가 종류 줄로.
         -- riteGiantSeconds 뒤 남은 생명 비율대로 다섯으로 갈라진다 (EndGiant). 거인이 쓰러지면 다섯 모두 무너진다
         local uid = player.PlayerComponent.UserId
         if self.Giants[uid] ~= nil then
@@ -196,11 +196,13 @@ script UndeadSystem extends Logic
         local epoch = self.GiantEpoch
         host.rec.giant = true
         self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch, kind = plan.type }
-        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(plan.type))
+        local spec = _GameData:GetGiant(plan.type)
+        local gAtk, gHp, gMax = math.floor(atk * spec.atkMul), hp * spec.hpMul, maxHp * spec.hpMul
+        host.unit:StartGiant(plan.type, gAtk, gMax, gHp, self:GiantLook(plan.type))
         self:RefreshSummary(player)
         _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
         log(string.format("[VRF] rite stage=5 giant type=%s counts=%s tie=%s banner=%s host=%s atk=%d hp=%.0f/%.0f sec=%.0f", plan.type, self:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed),
-            host.rec.kind .. ":" .. (host.rec.form or ""), math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
+            host.rec.kind .. ":" .. (host.rec.form or ""), gAtk, gHp, gMax, _GameData.riteGiantSeconds))
         return true
     end
 

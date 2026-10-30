@@ -150,6 +150,11 @@ script ShadowUnit extends AttackComponent
     property table GiantLook = {}             -- 거인 3종 그림 (UndeadSystem.GiantLook · 동작 → 첫 칸/타격 칸 RUID와 길이). 비면 지금 그림(변이 그림 × riteGiantScale) — 10-30 갈래 E
     property number GiantClipUntil = 0        -- 거인 한 번 동작(기술·피격·갈라짐) 그림이 끝나는 시각: 그동안 서기·걷기·공격 그림으로 덮지 않는다 (그림만 · 판정·시간 무관)
     property integer GiantLookToken = 0       -- 갈라짐 그림 뒤 원래 그림으로 돌리는 타이머의 차례 (그 사이 다시 거인이 되면 옛 타이머는 무시)
+    @Sync
+    property string GiantKind = ""            -- 46-3 거인 종류 (basic·shield·greatsword·twin·mage · "" = 거인 아님) — rite_giants.csv 줄 · RiteGiantMoves 스킬
+    property number TauntEvery = 4            -- 도발 간격(초) · 방패 해골 4 · 거인은 rite_giants.csv tauntSec (46-3)
+    property number TauntRadius = 2.5         -- 도발 반경(칸) · 방패 해골 2.5 · 거인은 tauntRadius
+    property number BlastRadius = 1.3         -- 폭발 마법사 자리 반경 1.3 · 마법사 거인은 rite_giants.csv radius(1.0)
     -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
     property number OfferUntil = 0
     property number FrenzyUntil = 0
@@ -438,14 +443,14 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void TauntTick(number delta)
-        -- 방패 해골: 4초마다 주변 2.5칸 적(보스 제외)이 4초 동안 이 해골을 노린다
+        -- 방패 해골: 4초마다 주변 2.5칸 적(보스 제외)이 4초 동안 이 해골을 노린다 · 거인은 종류별 간격·반경 (46-3 · 방패 거인 「도발 함성」 3초·3칸 — 보스 제외 그대로)
         if not self.Taunt or self.Dead then return end
         self.TauntTimer = self.TauntTimer - delta
         if self.TauntTimer > 0 then return end
-        self.TauntTimer = 4
+        self.TauntTimer = self.TauntEvery
         local me = _Util:Pos2(self.Entity)
         local pulled = 0
-        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, 2.5)) do
+        for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, me, self.TauntRadius)) do
             if m.Grade < 3 then
                 ---@type MonsterAttack
                 local atk = m.Entity:GetComponent("script.MonsterAttack")
@@ -913,10 +918,13 @@ script ShadowUnit extends AttackComponent
     -- ───────── 뼈 의식 5기 「뼈 거인」 (10-29) ─────────
 
     @ExecSpace("ServerOnly")
-    method void StartGiant(integer atk, number maxHp, number hp, table look)
-        -- UndeadSystem.StartGiant가 부른다: 다섯 몫 공격·생명, 휩쓸기 반경 riteGiantRadius · 간격 riteGiantInterval, 4초마다 도발(방패 해골 TauntTick 재사용 · 보스 제외),
-        -- 몸 riteGiantScale배 (클라이언트 그림 대역은 MotionSmoother가 본체 크기를 따라 그린다). 임시 그림: 해골 전사 그림을 키우고 뼈 색으로 칠한다 (코덱스 거인 192px 대기)
+    method void StartGiant(string kind, integer atk, number maxHp, number hp, table look)
+        -- UndeadSystem.StartGiant가 부른다 (46-3 · rite_giants.csv 종류 줄 — 수치는 46 결정 4 초안): 다섯 몫 공격·생명(종류 배율은 UndeadSystem이 곱했다),
+        -- 받는 피해 guardPct · 기본 공격 간격·반경(근접) 또는 사거리·자리 폭발(마법사 = 화살 길 ShootBolt · BlastMult) · 이동 speedMul · 도발 tauntSec·tauntRadius(보스 제외 그대로).
+        -- 크기: 거인 그림(form_giant_<종류>)이 있으면 GiantArtScale, 없으면 그 종류 변이 그림 × riteGiantScale · 칠하지 않는다 (§5-2 · 변이 그림은 이미 색이 있다).
+        -- 피해 랭크 배율은 지금대로 넣지 않는다 (랭크당 +3%는 수치 제안 §10-4)
         if self.Dead or self.Giant then return end
+        local spec = _GameData:GetGiant(kind)
         -- 갈라짐 그림 복구 대기 중 재진입: 원래 외형을 먼저 복구해 다음 기준에 거인 그림·배율이 섞이지 않게 한다 (능력치는 이미 EndGiant에서 복구됨).
         if self.GiantBase.sx ~= nil then self:RestoreLook(self.GiantBase) end
         local t = self.Entity.TransformComponent
@@ -924,18 +932,36 @@ script ShadowUnit extends AttackComponent
         self.GiantLookToken = self.GiantLookToken + 1
         self.GiantBase = { atk = self.Atk, maxHp = self.MaxHp, radius = self.RadiusMult, basic = self.BasicMult, cd = self.AttackCooldown, range = self.AttackRange,
             taunt = self.Taunt, guard = self.GuardPct, sx = math.abs(t.Scale.x), sy = t.Scale.y, tint = self.ShadowTint,
-            stand = self.StandRUID, move = self.MoveRUID, attack = self.AttackRUID }
+            stand = self.StandRUID, move = self.MoveRUID, attack = self.AttackRUID,
+            bolts = self.BoltCount, boltMul = self.BoltMult, pierce = self.BoltPierce, hex = self.HexPct, blast = self.BlastMult, blastR = self.BlastRadius,
+            tauntEvery = self.TauntEvery, tauntR = self.TauntRadius, speed = self.BaseSpeed }
         self.Giant = true
+        self.GiantKind = spec ~= nil and spec.kind or "basic"
         self.Atk = math.max(1, atk)
         self.MaxHp = math.max(1, maxHp)
         self.Hp = math.max(1, math.min(self.MaxHp, hp))
-        self.RadiusMult = _GameData.riteGiantRadius / math.max(0.1, self.AttackRadius)
+        local radius = spec ~= nil and spec.radius or _GameData.riteGiantRadius
+        self.AttackCooldown = spec ~= nil and spec.interval or _GameData.riteGiantInterval
+        self.AttackRange = spec ~= nil and spec.range or 1.2
         self.BasicMult = 1
-        self.AttackCooldown = _GameData.riteGiantInterval
-        self.AttackRange = 1.2
-        self.Taunt = true
+        if self.AttackRange >= 2 then
+            -- 마법사 거인: 원소 구슬 한 발(BoltMult 1 = 공격 × 1 — atk에 atkMul이 이미 들었다) · 맞은 자리 반경 radius에 × blastMul · 원소 = 몸이 된 마법사 원소 그대로
+            self.RadiusMult = 1
+            self.BoltCount = 1
+            self.BoltMult = 1
+            self.BoltPierce = 0
+            self.HexPct = 0
+            self.BlastMult = spec ~= nil and spec.blastMul or 0
+            self.BlastRadius = radius
+        else
+            self.RadiusMult = radius / math.max(0.1, self.AttackRadius)
+        end
+        self.Taunt = spec == nil or spec.tauntSec > 0
+        self.TauntEvery = (spec ~= nil and spec.tauntSec > 0) and spec.tauntSec or 4
+        self.TauntRadius = (spec ~= nil and spec.tauntRadius > 0) and spec.tauntRadius or 2.5
         self.TauntTimer = 0
-        self.GuardPct = 0
+        self.GuardPct = spec ~= nil and spec.guardPct or 0
+        if spec ~= nil and self.BaseSpeed > 0 then self:SetBaseSpeed(self.BaseSpeed * spec.speedMul) end
         -- 그림 (10-30 갈래 E · 시각만): 거인 3종 그림(look)이 등록돼 있으면 서기·걷기·공격 그림을 거인 그림으로 바꾸고, 그림이 이미 크므로 배율은 GiantArtScale ·
         --   칠하지 않는다. 없으면(look = nil · 미등록) 지금처럼 변이 그림 × riteGiantScale · 뼈 색 칠 — 빈 그림(SpriteRUID "")은 절대 넣지 않는다
         local giantArt = look ~= nil and (look.stand or "") ~= "" and (look.move or "") ~= "" and (look.attack or "") ~= ""
@@ -952,12 +978,13 @@ script ShadowUnit extends AttackComponent
             self.CurrentClip = ""
             self:SetClip(self.Moving and self.MoveRUID or self.StandRUID)
         else
+            -- 그림 미등록 임시 (46-3 · §5-2): 그 종류 변이 그림(몸이 이긴 종류라 몸 그림 그대로) × riteGiantScale · 칠하지 않는다 (예전 뼈 색 칠은 변이 그림을 탁하게 했다)
             self.GiantLook = {}
-            self.ShadowTint = Color(0.96, 0.9, 0.76, 1)
         end
         self.Entity.SpriteRendererComponent.Color = self.ShadowTint
         self.RingPainted = false
-        log(string.format("[VRF] rite giant start atk=%d hp=%.0f/%.0f radius=%.2f look=%s scale=%.2f", self.Atk, self.Hp, self.MaxHp, self.AttackRadius * self.RadiusMult, giantArt and look.form or "fallback", mul))
+        log(string.format("[VRF] rite giant start type=%s atk=%d hp=%.0f/%.0f guard=%d radius=%.2f range=%.1f cd=%.2f speed=%.2f taunt=%s look=%s scale=%.2f", self.GiantKind, self.Atk, self.Hp, self.MaxHp, math.floor(self.GuardPct),
+            self.AttackRange >= 2 and self.BlastRadius or self.AttackRadius * self.RadiusMult, self.AttackRange, self.AttackCooldown, self.BaseSpeed, self.Taunt and string.format("%.0fs/%.1f", self.TauntEvery, self.TauntRadius) or "none", giantArt and look.form or "fallback", mul))
     end
 
     @ExecSpace("ServerOnly")
@@ -976,6 +1003,18 @@ script ShadowUnit extends AttackComponent
         self.AttackRange = b.range
         self.Taunt = b.taunt
         self.GuardPct = b.guard
+        self.GiantKind = ""
+        if b.bolts ~= nil then
+            self.BoltCount = b.bolts
+            self.BoltMult = b.boltMul
+            self.BoltPierce = b.pierce
+            self.HexPct = b.hex
+            self.BlastMult = b.blast
+            self.BlastRadius = b.blastR
+            self.TauntEvery = b.tauntEvery
+            self.TauntRadius = b.tauntR
+        end
+        if (b.speed or 0) > 0 then self:SetBaseSpeed(b.speed) end
         -- GiantBase 외형 기준은 RestoreLook까지 보존한다 (갈라짐 도중 재진입에서도 원본을 사용).
         -- 그림 (10-30 갈래 E): 거인 그림이면 갈라짐 동작을 그 길이만큼 보인 뒤 원래 그림으로 (능력치는 지금 바로 · 시간 규칙 그대로). 미등록이면 지금처럼 바로
         local look = self.GiantLook
@@ -1333,7 +1372,7 @@ script ShadowUnit extends AttackComponent
         if self.BlastMult > 0 and self.Kind == "mage" then
             -- 폭발 마법사: 맞은 자리 반경 1.3 안 다른 적에게 화살 피해 × BlastMult
             self.BlastSkip = target
-            self:AttackFast(CircleShape(q, 1.3), "shadow.blast", nil)
+            self:AttackFast(CircleShape(q, self.BlastRadius), "shadow.blast", nil)
             self.BlastSkip = nil
             self:BlastPopFx(Vector3(q.x, q.y, 0), self:BoltColor())   -- 44 §3-2: 예전엔 서버에서만 불러 보이는지 알 수 없었다
         end
