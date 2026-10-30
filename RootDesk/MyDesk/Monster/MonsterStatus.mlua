@@ -51,6 +51,8 @@ script MonsterStatus extends Component
     property number DecayPct = 0
     property number ResistBreakUntil = 0      -- 저항 붕괴: 모든 저항 감소
     property number ResistBreakPct = 0
+    property number FireBreakUntil = 0        -- 화염 한정 저항 감소 (48 거인 「원소 붕괴」 노드 · 검토 FIRE-01): 화염 저항만 · 저항 붕괴와 같은 계열이라 큰 값만
+    property number FireBreakPct = 0
     property number RootUntil = 0             -- 골격 감옥: 제자리에 묶인다 (공격은 가능)
     property boolean ControlHeld = false      -- 공포·혼란이 이동을 쥐고 있었는가 (끝나면 추적 복구)
     property Entity CurseSource = nil         -- 마지막으로 저주를 건 플레이어 (역병 저주가 그 사람의 스킬 레벨로 옮긴다, 10-20)
@@ -208,6 +210,24 @@ script MonsterStatus extends Component
         local r = self:AuraAmount("corrode") - self:AuraAmount("resist")
         if _UtilLogic.ElapsedSeconds < self.ResistBreakUntil then r = r + self.ResistBreakPct end
         return r
+    end
+
+    method number ResistBreakFor(string element)
+        -- 그 속성 저항에서 뺄 값: 모든 속성 = ResistBreak(저주 + 오오라). 화염은 저주 몫을 화염 한정 감소(FireBreak)와 견줘 큰 값만 (더하지 않는다 · 48 FIRE-01)
+        local now = _UtilLogic.ElapsedSeconds
+        if element ~= "fire" or now >= self.FireBreakUntil then return self:ResistBreak() end
+        local curse = now < self.ResistBreakUntil and self.ResistBreakPct or 0
+        return self:AuraAmount("corrode") - self:AuraAmount("resist") + math.max(curse, self.FireBreakPct)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ApplyFireBreak(number pct, number seconds)
+        -- 화염 한정 저항 감소 (48 거인 「원소 붕괴」: 노바·메테오에 맞은 적 화염 저항 -15 · 4초). 걸려 있는 동안 센 값 · 다시 맞으면 시간 갱신.
+        --   플레이어 저주가 아니다 (IsCursed·저주 표식·역병 전염에 안 셈)
+        local now = _UtilLogic.ElapsedSeconds
+        if now >= self.FireBreakUntil then self.FireBreakPct = 0 end
+        self.FireBreakPct = math.max(self.FireBreakPct, pct)
+        self.FireBreakUntil = now + seconds
     end
 
     method number LifeTap()
