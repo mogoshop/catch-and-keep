@@ -77,6 +77,8 @@ script SkillEffects extends Component
     property number CurseSigilHoldSec = 0.3     -- 문장 마지막 장을 이만큼 더 잡는다
     property number CurseSigilFadeSec = 0.3     -- 그 뒤 옅어지며 사라지는 시간
     property integer CurseSigilOrder = 1        -- 문장 층: MapLayer0 1 (바닥 0과 몸 2 사이 — 몸을 덮지 않는다)
+    property string CurseSigilFitPx = "amp=60.9;weaken=62.6;terror=59.7;thorn=72.0;lifetap=60.3;resist=59.5"   -- 문장 그림의 「보이는 반경」(px · 피벗 = 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 4장 중 최대 · 10-31 실측 sigil-fit-measure.txt)
+    --   메이커 a023c3e1: 캔버스 128px = 저주 지름으로 늘였더니 내용(세로 120px · 가로 56~120px 문양)이 가로 2.1 × 세로 2.8칸 — 지름 3칸 원과 달랐다 → 보이는 반경을 저주 반경에 맞춰 같은 배율(가로세로 동일)로
     property integer CurseFxOrder = 5           -- 저주 시전 입자 층: MapLayer0 5 (예전엔 층 지정 없음 = 엔진 기본 · 바닥 뒤로 깔릴 수 있었다)
     property number ConfuseFxMul = 1.333        -- 혼란 시전 별(M20) 크기 배율 (반경 1.5 기준 0.6 → 0.8칸)
     property Color DecayFxColor = Color(0.8, 0.47, 0.22, 0.9)     -- 쇠퇴 시전 김(M21): 녹슨 주황 (예전 흙빛 0.56,0.46,0.3 = 바닥과 같은 색)
@@ -1998,7 +2000,8 @@ script SkillEffects extends Component
         if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s", kind, radius, tostring(#sig > 0))) end
         if #sig > 0 then
             local f = self.CurseSigilFrameSec
-            _Util:PlayFramesHold(table.concat(sig, "|"), self.Entity, pos, 0, Vector3(2 * radius / 1.28, 2 * radius / 1.28, 1), f, f + self.CurseSigilHoldSec, self.CurseSigilFadeSec, Color(1, 1, 1, 1), self.CurseSigilOrder)
+            local k = self:CurseSigilScale(kind, radius)
+            _Util:PlayFramesHold(table.concat(sig, "|"), self.Entity, pos, 0, Vector3(k, k, 1), f, f + self.CurseSigilHoldSec, self.CurseSigilFadeSec, Color(1, 1, 1, 1), self.CurseSigilOrder)
             return
         end
         local r = math.max(0.4, radius)
@@ -2023,6 +2026,16 @@ script SkillEffects extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(r * 0.5, r * 0.4, 1), false, opt(self.DecayFxColor))
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(r * 0.45, r * 0.2, 1), false, opt(self.DecayDustColor))
         end
+    end
+
+    method number CurseSigilScale(string kind, number radius)
+        -- 저주 바닥 문장 배율 (가로세로 같은 값 · 순수 계산 · tests/quality/skillfx_e.lua): 그림의 보이는 반경(CurseSigilFitPx · px)이 저주 반경 radius(칸)와 같게 —
+        --   문장 전체가 판정 원(지름 2×radius) 안에 들고 가장 먼 끝이 원에 닿는다. 반경이 장비·노드로 커지면 같은 비율로 커진다. 표에 없으면 캔버스 반폭 64px
+        local px = 64
+        for k, v in string.gmatch(self.CurseSigilFitPx, "(%w+)=([%d%.]+)") do
+            if k == kind then px = tonumber(v) or 64 end
+        end
+        return radius / (math.max(1, px) / 100)
     end
 
     @ExecSpace("Multicast")
