@@ -3,6 +3,7 @@
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
 -- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
 -- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+,BoneRite+,StartGiant+,EndGiant+,OnUnitDied+,DismissRecords+,GetBaseStats,GiantChargeCover+,GiantChargeSpend+,GiantChargeCoverOf+,GiantStandingAny+,GiantCapReached+,ShownForms,EvolveRank,TwinHuntDecide,TwinHuntState,TwinHuntLoad,TwinHuntClear,IsTwinHunter
+-- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,lo,hi) return lo end}
@@ -179,11 +180,10 @@ assert(p5.replaces[1].kind=='skeleton')
 local revives=0
 for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind=='revive' then revives=revives+1 end end
 assert(revives==2,'revive trimmed by skeleton raise')
--- 6. 마법사 다섯 변이 1랭크 · 정원 2 → 관통·폭발 0기 · 다음 쌍발 (광기 교체)
-book.Levels={raise_mage=2,mage_aura=1,mage_hex=1,mage_twin=1,mage_pierce=1,mage_blast=1}
-setList({rec('mage','aura'),rec('mage','hex')})
-check('6 mage five forms cap 2','mage',{max=2,full=true,nextForm='twin',replaces=1,idle='pierce+1 blast+2'})
-assert(string.find(book:UseHint('mage_blast'),'정원 +2(마법사 증원)',1,true),book:UseHint('mage_blast'))
+-- 6. 48-2 마법사 몸 1종: 변이 없음 · 정원 2 꽉 참 → 다음 일반 · 가장 오래된 것 교체 (옛 변이 기록도 일반처럼 센다)
+book.Levels={raise_mage=2}
+setList({rec('mage','aura'),rec('mage','')})
+check('6 mage single body cap 2','mage',{max=2,full=true,nextForm='',replaces=1,idle=''})
 sameSteady('6 mage steady matches repeated raise','mage')
 -- 7. 장비를 벗어 정원이 줄었다: 해골 4기 · 정원 2 → 오래된 3기 교체
 book.Levels={raise_skeleton=1,skel_twin=1};bonus=1
@@ -196,10 +196,10 @@ book.Levels={raise_skeleton=2,skel_greatsword=2};choices['1:command']=1
 setList({rec('skeleton','greatsword'),rec('skeleton','greatsword')})
 check('8 quest choice slot, no trim','skeleton',{max=3,have=2,full=false,nextForm='',replaces=0})
 choices={}
--- 9. 마법사 경계: 정원 -1 → 교체 없음, 광기 자리가 비어 다음 광기
-book.Levels={raise_mage=3,mage_aura=1,mage_hex=2}
-setList({rec('mage','hex'),rec('mage','hex')})
-check('9 mage boundary below cap','mage',{max=3,have=2,full=false,nextForm='aura',replaces=0})
+-- 9. 마법사 경계: 정원 -1 → 교체 없음, 다음 일반 (48-2 변이 없음)
+book.Levels={raise_mage=3}
+setList({rec('mage',''),rec('mage','')})
+check('9 mage boundary below cap','mage',{max=3,have=2,full=false,nextForm='',replaces=0})
 -- 10. 정원 경계에서 연속 20번: 매번 미리보기 = 실제
 book.Levels={raise_skeleton=2,skel_greatsword=2,skel_twin=1}
 setList({})
@@ -214,7 +214,7 @@ for _,levels in ipairs({{raise_skeleton=1,skel_greatsword=1,skel_twin=1},{raise_
   {raise_skeleton=3,skel_legion=2,skel_twin=3,skel_greatsword=1},{raise_skeleton=20,skel_legion=2,skel_greatsword=3,skel_twin=3}}) do
  book.Levels=levels;sameSteady('12 steady combo','skeleton')
 end
-for _,levels in ipairs({{raise_mage=1,mage_aura=1,mage_blast=3},{raise_mage=6,mage_legion=2,mage_hex=3,mage_twin=2,mage_pierce=3,mage_blast=3}}) do
+for _,levels in ipairs({{raise_mage=1},{raise_mage=6,mage_legion=2}}) do
  book.Levels=levels;sameSteady('12 steady mage combo','mage')
 end
 -- 14. I03-R01 거인 유지 중 0기 (48-1 판): 유효 raise_skeleton 12 → 정원 6 · 기본형 = 방패(진화) · 거인 쌍칼 몸 1 + 합쳐진 넷(대검 3 · 쌍칼 1) · 나머지 1 · 대검 3 / 쌍칼 3
@@ -339,10 +339,10 @@ end
 hopeCase('H0 parse/encode',function()
  -- 48-1: 옛 저장의 shield=N은 읽을 때 버린다 (방패는 변이가 아니라 진화한 기본형)
  local t=UndeadSystem:EncodeHope(UndeadSystem:ParseHope('s:d:shield=2,bogus=3,twin=1/x:y/m:a:aura=1'))
- assert(t=='s:d:twin=1/m:a:aura=1',t)
+ assert(t=='s:d:twin=1',t)   -- 48-2: 마법사 변이 희망도 사라진다
  assert(UndeadSystem:EncodeHope(UndeadSystem:ParseHope(''))=='','old save stays empty')
  local h=UndeadSystem:ParseHope('s:d:/m:d:hex=0')
- assert(h.skeleton.direct and next(h.skeleton.want)==nil and h.mage.direct and h.mage.want.hex==0,'explicit zero kept')
+ assert(h.skeleton.direct and next(h.skeleton.want)==nil and h.mage.direct and next(h.mage.want)==nil,'mage hope has no forms (48-2)')
 end)
 hopeCase('H1 auto = pinned rule (3000 random states)',function()
  local seed=12345
@@ -395,13 +395,11 @@ hopeCase('H3 power stays node rank',function()
  assert(p.nextForm=='' and a.form=='greatsword' and UndeadSystem:ListOf(player)[1]==a,'existing unit changed')
  local c=raiseOnce('skeleton')
  assert(c.form=='' and a.form=='greatsword' and #UndeadSystem:ListOf(player)==3,'next only')
- book.Levels={raise_mage=6,mage_hex=3,mage_twin=2}
- book.FormHope='m:d:hex=1,twin=0'
+ book.Levels={raise_mage=6}
+ book.FormHope=''
  setList({})
  local m=raiseOnce('mage')
- assert(m.form=='hex' and m.hex==4+4*3,'mage hex '..tostring(m.hex))
- local m2=raiseOnce('mage')
- assert(m2.form=='','mage twin hope 0 → normal')
+ assert(m.form=='' and m.school=='fire' and m.element=='fire' and m.mageRank==6 and m.hex==nil and m.bolts==nil,'mage school '..tostring(m.school))
 end)
 -- H4 장비로 정원이 줄어도 희망 수는 그대로 · 표시만 잘림 (B-R02)
 hopeCase('H4 gear cap shrink keeps wishes',function()
@@ -428,14 +426,14 @@ hopeCase('H5 save round trip',function()
  book.RefreshDigest=function() end
  book.MigrateLevels=function() end
  book.Levels={raise_skeleton=3}
- book.FormHope='s:d:twin=1/m:a:hex=2'
+ book.FormHope='s:d:twin=1/m:d:'
  book.ShardHold=true
  local d=book:GetSaveData()
- assert(d.hope=='s:d:twin=1/m:a:hex=2' and d.shardHold==true and d.sv>=4,'save fields')
+ assert(d.hope=='s:d:twin=1/m:d:' and d.shardHold==true and d.sv>=4,'save fields')
  book.FormHope='x'
  book.ShardHold=false
  book:LoadSaveData(d)
- assert(book.FormHope=='s:d:twin=1/m:a:hex=2' and book.ShardHold==true,'restore')
+ assert(book.FormHope=='s:d:twin=1/m:d:' and book.ShardHold==true,'restore')
  -- 48-1: 옛 저장의 방패 희망은 불러올 때 사라지고 나머지는 그대로
  book:LoadSaveData({levelCount=0,sv=4,hope='s:d:shield=2,greatsword=1,twin=0'})
  assert(book.FormHope=='s:d:greatsword=1,twin=0','old shield hope '..book.FormHope)
@@ -444,7 +442,7 @@ hopeCase('H5 save round trip',function()
  local d2=book:GetSaveData()
  assert(d2.hope==nil and d2.shardHold==nil,'default writes no new fields')
  book:LoadSaveData({levelCount=0,sv=4,hope='s:q:junk/m:d:aura=9,zzz=1'})
- assert(book.FormHope=='m:d:aura=9','sanitize '..book.FormHope)
+ assert(book.FormHope=='m:d:','sanitize '..book.FormHope)
  book.SanitizeSlots=keepSan
  book.RefreshDigest=keepDig
  book.MigrateLevels=keepMig
@@ -578,7 +576,7 @@ hopeCase('H10 kinds independent',function()
  setList({rec('mage','aura'),rec('mage','hex')})
  local p=UndeadSystem:RosterPreview(player,'mage')
  local f=legacyPlan('mage',p.max,p.quota,UndeadSystem:ListOf(player),0)
- assert(not p.direct and p.nextForm==f and f=='twin','mage auto '..p.nextForm)
+ assert(not p.direct and p.nextForm==f and f=='','mage auto '..p.nextForm)
  assert(UndeadSystem:RosterPreview(player,'skeleton').direct)
 end)
 book.FormHope=''

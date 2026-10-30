@@ -825,8 +825,10 @@ script UndeadSystem extends Logic
             self:LogPlan("plan", kind, plan)
             self:ApplySkeletonForm(player, rec, plan.form)
         elseif kind == "mage" then
-            local elements = self:Elements()
-            rec.element = elements[_UtilLogic:RandomIntegerRange(1, #elements)]
+            -- 48-2 (갈래 B MageBolts 연결): 속성 = 화염 · 냉기 · 뼈 · 영혼 (+ 「저주 속성」 노드면 저주) 무작위 · 피해 속성 · 몸 칠 · 일으킬 때의 마법사 랭크(특성 구간)
+            rec.school = _MageBolts:PickSchool(self:SkillLevel(player, "mage_curse") > 0)
+            rec.element = _MageBolts:ElementOf(rec.school)
+            rec.mageRank = slvl
             rec.ratio = 1
             rec.atk = base.atk * (1 + _GameData.mageFocusPct / 100 * self:SkillLevel(player, "mage_focus"))   -- 강화 「원소 집중」
             rec.hp = base.hp
@@ -838,7 +840,7 @@ script UndeadSystem extends Logic
             rec.move = self.MageMove
             rec.attack = self.MageAttack
             rec.scale = 0.5
-            rec.tint = self:ElementTint(rec.element)
+            rec.tint = _MageBolts:BodyTint(rec.school)
             local plan = self:PlanFor(player, kind, slvl, self:PlanList(player), 0)   -- 46-1부터 마법사도 거인에 합쳐질 수 있다 (PlanList 「~」)
             rec.planForm = plan.form
             rec.planVictims = plan.victims
@@ -971,26 +973,9 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void ApplyMageForm(Entity player, table rec, string pick)
-        -- 해골 마법사 변이 편성 (10-24 사용자: 마법사도 변이 — 중반 A안 저주·쌍발·관통, 후반 B·C안 광기 오오라 Lv30 · 폭발 Lv38).
-        -- 해골 전사 변이와 같은 규칙: 변이마다 랭크 수만큼 마법사가 그 모습. 광기 → 저주 → 쌍발 → 관통 → 폭발 순으로 채우고 남으면 일반
-        -- 변이(pick)는 다음 소환 계획 PlanNext(전사와 같은 함수 · 미리보기와 공유), 효과 세기는 노드 랭크(FormQuota) 그대로 (B-R01)
-        local quota = self:FormQuota(player, "mage")
-        rec.form = pick
-        local r = rec.form ~= "" and quota[rec.form] or 0
-        if rec.form == "aura" then
-            rec.variant = "aura_might:" .. tostring(8 + 4 * r)          -- 반경 3 나·소환수 피해 +12/16/20%
-        elseif rec.form == "hex" then
-            rec.hex = 4 + 4 * r                                          -- 맞은 적 4초 받는 피해 +8/12/16%
-        elseif rec.form == "twin" then
-            rec.bolts = 2
-            rec.boltMul = 0.55 + 0.1 * r                                 -- 한 발 ×0.65/0.75/0.85
-        elseif rec.form == "pierce" then
-            rec.pierce = 1 + r                                           -- 2/3/4마리
-            rec.boltMul = 0.85
-        elseif rec.form == "blast" then
-            rec.blast = 0.35 + 0.15 * r                                  -- 주변 적 ×0.5/0.65/0.8
-        end
-        self:ApplyFormLook(rec)
+        -- 48-2: 해골 마법사 변이는 없다 (FormOrder("mage") 비어 있음 · 몸 1종). 속성·특성은 MakeRecord의 rec.school · rec.mageRank (MageBolts)
+        --   옛 변이 칸(bolts · boltMul · pierce · hex · blast · aura 변종)은 쓰지 않는다 — pick은 늘 "" (PlanNext)
+        rec.form = ""
     end
 
     @ExecSpace("ServerOnly")
@@ -1029,7 +1014,7 @@ script UndeadSystem extends Logic
 
     method table FormOrder(string kind)
         -- 변이를 채우는 순서 (10-24 사용자 C안 · 48-1): 전사 대검 → 쌍칼 (방패는 변이가 아니라 진화한 기본형 — BaseForm) · 마법사 광기 → 저주 → 쌍발 → 관통 → 폭발
-        if kind == "mage" then return { "aura", "hex", "twin", "pierce", "blast" } end
+        if kind == "mage" then return {} end   -- 48-2: 마법사 변이(광기·저주·쌍발·관통·폭발) 삭제 — 몸 1종 · 속성은 rec.school
         if kind == "skeleton" then return { "greatsword", "twin" } end
         return {}
     end
@@ -1453,7 +1438,9 @@ script UndeadSystem extends Logic
             u.BasicMult = rec.basicMul or 1
             u.GuardPct = rec.guard or 0
             u.Taunt = rec.taunt == true
-            u.BoltCount = rec.bolts or 1       -- 해골 마법사 변이 (ApplyMageForm)
+            u.MageSchool = rec.school or ""    -- 48-2 해골 마법사 속성 · 랭크 (ShadowUnit이 속성 투사체·특성 구간을 고른다 · 옛 기록 ""는 Element로)
+            u.MageRank = rec.mageRank or 0
+            u.BoltCount = rec.bolts or 1       -- 48-2 이후 변이 칸은 비어 기본값 (옛 기록 호환)
             u.BoltMult = rec.boltMul or 1
             u.BoltPierce = rec.pierce or 0
             u.HexPct = rec.hex or 0
@@ -1645,7 +1632,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "taste", "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 마법사 변이
+        local fields = { "taste", "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast", "school", "mageRank" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 옛 마법사 변이 · school·mageRank: 48-2 마법사 속성
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end
