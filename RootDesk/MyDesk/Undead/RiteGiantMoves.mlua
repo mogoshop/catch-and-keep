@@ -181,7 +181,11 @@ script RiteGiantMoves extends Logic
                     if (q - _Util:Pos2(unit.Entity)):Magnitude() > unit.AttackRange + 0.8 then return end
                     self:HitOne(unit, target, "skill.giant_flurry", dmg)
                     landed = landed + 1
-                    unit:SwingFx(Vector3(q.x, q.y + 0.3, 0), q - _Util:Pos2(unit.Entity), 1.6)
+                    -- 48 K-4: 새 X 베기 그림(SkillEffects.FxGiantFlurry)을 실제 타격 접점(대상 몸 가운데)에 · 그림이 없으면 예전 베기 궤적 (피해·횟수·간격 불변)
+                    local fx = self:Fx(unit)
+                    local d = q - _Util:Pos2(unit.Entity)
+                    if fx ~= nil and fx.FxGiantFlurry ~= "" then fx:GiantMoveFx("flurry", Vector3(q.x, q.y + 0.3, 0), 1.4, 1.4, (step % 2 == 0) and 90 or 0, gap)
+                    else unit:SwingFx(Vector3(q.x, q.y + 0.3, 0), d, 1.6) end
                     if step == hitsN then self:LogSkill(unit, 1, landed, dmg * landed, false, 0) end
                 end, gap * (i - 1))
             end
