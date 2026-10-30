@@ -603,4 +603,24 @@ script Util extends Logic
         end, frameSec)
     end
 
+    method void PlayFramesLoop(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, number seconds, Color tint, integer order)
+        -- 프레임 그림을 seconds 동안 되풀이한다 (46-4 거인 회전 베기·저주 장판 · 클라이언트에서 부른다). 끝나거나 instigator가 사라지면 지운다
+        local list = self:Frames(ruids)
+        if #list == 0 or not isvalid(instigator) then return end
+        local i = 1
+        local left = math.max(frameSec, seconds)
+        local serial = _EffectService:PlayEffect(list[1], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+        local timer = 0
+        timer = _TimerService:SetTimerRepeat(function()
+            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
+            left = left - frameSec
+            if left <= 0.001 or not isvalid(instigator) then
+                _TimerService:ClearTimer(timer)
+                return
+            end
+            i = i % #list + 1
+            serial = _EffectService:PlayEffect(list[i], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+        end, frameSec)
+    end
+
 end
