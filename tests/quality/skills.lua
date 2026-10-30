@@ -1,7 +1,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText
+-- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
@@ -274,11 +274,10 @@ local function checkCard(name,text,hint,maxLines)
  return ls
 end
 local scenes={
- {'대검 0기 (I03-3)',{raise_skeleton=2,skel_shield=3,skel_greatsword=1},'s:shield,s:shield|0','skel_greatsword','정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다','대검 해골 2기',SkillOffer.ChangeMaxLines},   -- CARD-E1E-R01: 반경 ×1.8을 남겨 어림 폭으로 4줄(12px 이상)
- {'방패 세기만 (I03-5)',{raise_skeleton=2,skel_shield=2},'s:shield,s:shield|0','skel_shield','다음 랭크는 세기만 오릅니다 (정원이 차 2기 그대로)','방패 해골 3기'},
- {'자리 없어짐 (I03-4)',{raise_skeleton=2,skel_greatsword=1,skel_shield=2},'s:shield,s:shield|0','skel_shield','찍으면 대검 해골 자리가 없어집니다 · 정원 2기','방패 해골 3기'},
- {'거인 중 0기 (I03-6)',{bone_rite=1,raise_skeleton=9,skel_shield=2,skel_twin=1},'s:!,s:shield|4','skel_twin','뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다','쌍칼 해골 2기'},
-}
+ {'쌍칼 0기 (I03-3 · 48)',{raise_skeleton=2,skel_greatsword=3,skel_twin=1},'s:greatsword,s:greatsword|0','skel_twin','정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다','쌍칼 해골 2기',SkillOffer.ChangeMaxLines},
+ {'대검 세기만 (I03-5 · 48)',{raise_skeleton=2,skel_greatsword=2},'s:greatsword,s:greatsword|0','skel_greatsword','다음 랭크는 세기만 오릅니다 (정원이 차 2기 그대로)','대검 해골 3기',SkillOffer.ChangeMaxLines},
+ {'자리 없어짐 (I03-4 · 48)',{raise_skeleton=2,skel_twin=1,skel_greatsword=2},'s:greatsword,s:greatsword|0','skel_greatsword','찍으면 쌍칼 해골 자리가 없어집니다 · 정원 2기','대검 해골 3기',SkillOffer.ChangeMaxLines},
+ {'거인 중 0기 (I03-6 · 48)',{bone_rite=1,raise_skeleton=7,skel_greatsword=2,skel_twin=1},'s:!,s:greatsword|4','skel_twin','뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다','쌍칼 해골 2기'},}
 local sceneLog={}
 for _,sc in ipairs(scenes) do
  local text=cardChange(sc[2],sc[3],sc[4])
@@ -290,7 +289,11 @@ end
 -- CARD-E1E-R01 (대검 0기 장면): 경고 때 요약을 줄여도 카드 설명(Effect)에 값이 없는 「반경 ×1.8」은 초록 줄에 남는다 — Effect+Change를 합쳐 다음 랭크 수치와 경고 원문이 모두 읽힌다.
 --   설명에 값이 있는 「피해 ×0.95」(설명 「×0.8/0.95/1.1」)만 빠질 수 있다
 do
- local gsText=cardChange({raise_skeleton=2,skel_shield=3,skel_greatsword=1},'s:shield,s:shield|0','skel_greatsword')
+ -- 48-0: 방패 변이가 없어져(대검이 첫 순서) 대검 0기 경고는 실제 편성으로 만들 수 없다 → 같은 경고 글을 UseHint로 넣어 카드 그리기(R01)만 본다
+ local keepHint=book.UseHint
+ book.UseHint=function(b,id) if id=='skel_greatsword' then return '정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다' end return keepHint(b,id) end
+ local gsText=cardChange({raise_skeleton=2,skel_greatsword=1},'s:greatsword,s:greatsword|0','skel_greatsword')
+ book.UseHint=keepHint
  local eff=values['OfferWin/Card1/Effect'] or ''
  local both=plain(eff)..'\n'..plain(gsText)
  assert(not string.find(eff,'반경',1,true),'Effect now carries radius — R01 check is moot: '..eff)
@@ -331,7 +334,8 @@ for _,kind in ipairs({'skeleton','mage'}) do
  for _,form in ipairs(_UndeadSystem:FormOrder(kind)) do
   local id=(kind=='mage' and 'mage_' or 'skel_')..form
   local def=_SkillData:Get(id)
-  for lv=0,def.maxLv-1 do
+  -- 48-0: 변이 노드가 없는 변이(지운 skel_shield · mage_*)는 건너뛴다 — 갈래 A가 FormOrder를 줄이기 전에도 같은 검사
+  for lv=0,(def and def.maxLv or 0)-1 do
    for _,hint in ipairs(hints) do
     local summ,eff=book:GetRankSummary(id,lv+1),SkillOffer:CardText(def)
     local t=SkillOffer:NodeChange(summ,hint,eff,nil)
@@ -400,16 +404,17 @@ end
 -- INT1725-OBS-02 (I03-6 거인 유지 중 편성 줄): 거인 몸(s:!)은 「일반」이 아니라 「거인 본체」, 합쳐진 넷은 「거인에 4」, 분모 섞인 「6/5」 대신 「정원 5기」.
 --   정원 계산·진단 수는 그대로 (have 6 = 예약 4 + 기록 2 · counts는 거인 몸을 센다) — 표시만 나눈다
 entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdRoster end return oldGet(self,key) end
-book.Levels={bone_rite=1,raise_skeleton=9,skel_shield=2,skel_twin=1};stats.Level=40;bonus=0
-cmdRoster.UndeadRoster='s:!,s:shield|4'
+-- 48-0: 방패 변이 노드가 없어져 대검 · 쌍칼로 같은 장면 (랭크 7 + 뼈 군단 1 = 정원 5 · 진화 랭크 8 전이라 갈래 A 전후가 같다)
+book.Levels={bone_rite=1,raise_skeleton=7,skel_legion=1,skel_greatsword=2,skel_twin=1};stats.Level=40;bonus=0
+cmdRoster.UndeadRoster='s:!,s:greatsword|4'
 local gline=book:RosterLine('raise_skeleton')
-assert(gline=='편성: 방패 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 방패 해골(가장 오래된 방패 해골 교체)',gline)
+assert(gline=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',gline)
 local gp=_UndeadSystem:RosterPreview(entity,'skeleton')
-assert(gp.have==6 and gp.max==5 and gp.reserved==4 and gp.counts['']==1 and gp.counts.shield==1 and gp.bodies==1 and (gp.units[''] or 0)==0 and gp.units.shield==1,'raw have/counts or display split')
+assert(gp.have==6 and gp.max==5 and gp.reserved==4 and gp.counts['']==1 and gp.counts.greatsword==1 and gp.bodies==1 and (gp.units[''] or 0)==0 and gp.units.greatsword==1,'raw have/counts or display split')
 cmdRoster.UndeadRoster='s:!|4'
-assert(book:RosterLine('skel_twin')=='편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 방패 해골',book:RosterLine('skel_twin'))
-cmdRoster.UndeadRoster='s:shield,s:shield,s:twin,s:,s:|0'   -- 거인이 갈라진 뒤: 예전 꼴 그대로
-assert(book:RosterLine('skel_twin')=='편성 5/5: 일반 2·방패 2·쌍칼 1 · 다음 소환: 해골 전사(가장 오래된 방패 해골 교체)',book:RosterLine('skel_twin'))
+assert(book:RosterLine('skel_twin')=='편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골',book:RosterLine('skel_twin'))
+cmdRoster.UndeadRoster='s:greatsword,s:greatsword,s:twin,s:,s:|0'   -- 거인이 갈라진 뒤: 예전 꼴 그대로
+assert(book:RosterLine('skel_twin')=='편성 5/5: 일반 2·대검 2·쌍칼 1 · 다음 소환: 해골 전사(가장 오래된 대검 해골 교체)',book:RosterLine('skel_twin'))
 entity.GetComponent=oldGet
 print('[quality/skills] INT1725-OBS-02 giant roster line: '..gline)
 -- All eight category-presence combinations, including missing first/middle category.
@@ -432,16 +437,16 @@ do
  local keepMobile=Environment.IsMobilePlatform
  _UIKit.SetEnabled=function(_,path,on) en[path]=on end
  Environment.IsMobilePlatform=function() return false end
- book.Levels={raise_skeleton=6,skel_shield=3,skel_twin=2,bone_shard=1,bone_armor=1}
+ book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=2,bone_shard=1,bone_armor=1}   -- 48-0: 방패 변이 노드 → 대검
  stats.Level=99
- book.FormHope='s:d:shield=1,twin=0'
+ book.FormHope='s:d:greatsword=1,twin=0'
  SkillWindow.SelMain='raise_skeleton'
- SkillWindow.Selected='skel_shield'
+ SkillWindow.Selected='skel_greatsword'
  values={}
  SkillWindow:RenderWorkshop(book,stats)
  local head=values['SkillWin/WS/Form/Head']
- assert(en['SkillWin/WS/Form']==true and head=='방패 희망 1/3' and values['SkillWin/WS/Form/Mode']=='자동으로 되돌리기' and en['SkillWin/WS/Form/Plus']==true and en['SkillWin/WS/Form/Minus']==true,'form node '..tostring(head))
- assert(SkillWindow.FormKind=='skeleton' and SkillWindow.FormForm=='shield')
+ assert(en['SkillWin/WS/Form']==true and head=='대검 희망 1/3' and values['SkillWin/WS/Form/Mode']=='자동으로 되돌리기' and en['SkillWin/WS/Form/Plus']==true and en['SkillWin/WS/Form/Minus']==true,'form node '..tostring(head))
+ assert(SkillWindow.FormKind=='skeleton' and SkillWindow.FormForm=='greatsword')
  assert(string.find(values['SkillWin/WS/Stat'],'직접 편성',1,true),values['SkillWin/WS/Stat'])
  SkillWindow.Selected='raise_skeleton'
  values={}
@@ -471,7 +476,7 @@ do
  book.ShardHold=false
  _UIKit.SetEnabled=keepEn
  Environment.IsMobilePlatform=keepMobile
- print('[quality/skills] I03 step2/I04 form control: direct node head 방패 희망 1/3, main 편성: 직접, auto head, shard toggle mobile-only, other trees hidden')
+ print('[quality/skills] I03 step2/I04 form control: direct node head 대검 희망 1/3, main 편성: 직접, auto head, shard toggle mobile-only, other trees hidden')
 end
 -- 46-5 거인 강화: 악몽 잠김 · 택일(둘 중 하나 · 다시 고르기 불가) · 보류(방패 갈림 쌍) · 열림 레벨(10→42 · 14→50 · 17→56 · 20→62) · 공방 두 묶음
 do
@@ -481,19 +486,20 @@ do
  stats.Level=99;stats.SkillPoints=20
  book.Levels={bone_rite=20}
  stats.MaxDifficulty=0
- assert(book:CanLearn('giant_quake',99,20)=='악몽부터','nightmare lock: '..book:CanLearn('giant_quake',99,20))
+ -- 48-0: 기본 거인 노드 3줄(giant_quake · giant_basic_split · giant_basic_return)이 없어져 같은 필요 랭크의 방패 · 대검 노드로 본다
+ assert(book:CanLearn('giant_shield_wall',99,20)=='악몽부터','nightmare lock: '..book:CanLearn('giant_shield_wall',99,20))
  assert(book:CanLearn('bomb_wide',99,20)=='','bomb nodes stay open in normal')
  stats.MaxDifficulty=1
- assert(book:CanLearn('giant_quake',99,20)=='','open after nightmare: '..book:CanLearn('giant_quake',99,20))
- assert(book:NodeLevel('giant_quake',1)==42 and book:NodeLevel('giant_quake',2)==46 and book:NodeLevel('giant_quake',3)==50,'quake levels')
- assert(book:NodeLevel('giant_basic_split',1)==50 and book:NodeLevel('giant_gs_scar',1)==56 and book:NodeLevel('giant_twin_echo',1)==56 and book:NodeLevel('giant_mage_pull',1)==62,'choice levels')
- assert(book:CanLearn('giant_quake',41,20)=='캐릭터 Lv42에 다음 랭크','Lv42 gate')
- book.Levels={bone_rite=13}
- assert(string.find(book:CanLearn('giant_basic_split',99,20),'14랭크부터',1,true),'need 14')
- book.Levels={bone_rite=20,giant_basic_split=1}
- local r=book:CanLearn('giant_basic_return',99,20)
- assert(r=='이미 「세 갈래 뼈」을(를) 골랐습니다',r)
- assert(book:CanLearn('giant_gs_twice',99,20)=='','other group independent')
+ assert(book:CanLearn('giant_shield_wall',99,20)=='','open after nightmare: '..book:CanLearn('giant_shield_wall',99,20))
+ assert(book:NodeLevel('giant_shield_wall',1)==42 and book:NodeLevel('giant_shield_wall',2)==46 and book:NodeLevel('giant_shield_wall',3)==50,'wall levels')
+ assert(book:NodeLevel('giant_gs_scar',1)==56 and book:NodeLevel('giant_twin_echo',1)==56 and book:NodeLevel('giant_mage_pull',1)==62,'choice levels')
+ assert(book:CanLearn('giant_shield_wall',41,20)=='캐릭터 Lv42에 다음 랭크','Lv42 gate')
+ book.Levels={bone_rite=16}
+ assert(string.find(book:CanLearn('giant_gs_scar',99,20),'17랭크부터',1,true),'need 17')
+ book.Levels={bone_rite=20,giant_gs_scar=1}
+ local r=book:CanLearn('giant_gs_twice',99,20)
+ assert(r=='이미 「갈라진 땅」을(를) 골랐습니다',r)
+ assert(book:CanLearn('giant_twin_echo',99,20)=='','other group independent')
  book.Levels={bone_rite=20}
  assert(book:CanLearn('giant_shield_alt',99,20)~='' and book:CanLearn('giant_shield_phalanx',99,20)~='','shield pair on hold')
  assert(book:CanLearn('giant_shield_wall',99,20)=='','shield normal node open')
@@ -512,7 +518,16 @@ do
  SkillWindow.ShowGiant=''
  assert(#SkillWindow:VisibleNodes(book,'raise_skeleton')==#_SkillData:NodesOf('raise_skeleton'),'other mains unchanged')
  -- 요약 줄 (지금 / 다음)
- assert(book:GetRankSummary('giant_quake',1)=='땅울림 반경 2.35칸 · 묶기 1.0초' and book:GetRankSummary('giant_shield_wall',3)=='도발 3.9칸 · 받는 피해 -39%','summary '..book:GetRankSummary('giant_quake',1))
+ assert(book:GetRankSummary('giant_shield_wall',3)=='도발 3.9칸 · 받는 피해 -39%','summary '..book:GetRankSummary('giant_shield_wall',3))
+ -- 48 (리뷰 정정): 큰 메테오 반경은 실제 타격과 같은 상한 2.0칸 — 현재/다음 줄도 상한 반영 · 영창 감소는 그대로
+ assert(book:GetRankSummary('giant_mage_meteor',1)=='메테오 반경 1.95칸 · 영창 0.9초',book:GetRankSummary('giant_mage_meteor',1))
+ assert(book:GetRankSummary('giant_mage_meteor',2)=='메테오 반경 2.00칸(최대) · 영창 0.8초',book:GetRankSummary('giant_mage_meteor',2))
+ assert(book:GetRankSummary('giant_mage_meteor',3)=='메테오 반경 2.00칸(최대) · 영창 0.7초',book:GetRankSummary('giant_mage_meteor',3))
+ assert(book:GetRankSummary('giant_mage_resist',1)=='노바·메테오에 맞은 적 화염 저항 -15 · 4초' and book:GetRankSummary('giant_mage_pull',1)=='노바가 0.4초 뒤 한 번 더 퍼짐 · ×0.5','mage choice summary')
+ -- 48-0: 기본 거인은 노드가 없다 — 펼치면 폭탄 3칸만
+ SkillWindow.ShowGiant='basic'
+ assert(table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),',')=='bomb_wide,bomb_marrow,bomb_pair','basic view '..table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),','))
+ SkillWindow.ShowGiant=''
  stats.Level,stats.SkillPoints=keepLv,keepPts
  stats.MaxDifficulty=nil
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
@@ -554,5 +569,122 @@ do
  entity.GetComponent=keepGet
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
  print('[quality/skills] 46-6 HUD text: ring sub line (tie · banner), workshop 「지금 무리라면」 (client plan), banner row order + normal head')
+end
+-- 48 소환물 정리 (갈래 C · 48-0 / 48-3 / UI): 노드 21개 · 환급 한 번만 · 조용히 · 희망 편성 칸 호환 · 상세 글귀(현재/다음 · 메테오 상한) · 거인 수 어댑터
+do
+ local fNodes,fMains,fGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
+ local keepLv,keepPts,keepDiff=stats.Level,stats.SkillPoints,stats.MaxDifficulty
+ stats.Level=99;stats.MaxDifficulty=1;bonus=0;choices={}
+ -- 48-0 노드 수: 해골 전사 6 · 해골 마법사 3 · 거인 12 = 21 (지운 9 · 더한 저주 속성 1)
+ local giants=0
+ for _,nid in ipairs(_SkillData:NodesOf('bone_rite')) do if string.sub(nid,1,6)=='giant_' then giants=giants+1 end end
+ local nSk,nMg=#_SkillData:NodesOf('raise_skeleton'),#_SkillData:NodesOf('raise_mage')
+ assert(nSk==6 and nMg==3 and giants==12,'node counts '..nSk..'/'..nMg..'/'..giants)
+ for _,gone in ipairs({'skel_shield','mage_aura','mage_twin','mage_pierce','mage_blast','mage_hex','giant_quake','giant_basic_split','giant_basic_return'}) do assert(_SkillData:Get(gone)==nil,gone) end
+ assert(_SkillData:Get('mage_curse').name=='저주 속성' and _SkillData:Get('mage_curse').parent=='raise_mage','curse node')
+ -- 48-3 환급 (알림 없음 · 로그만)
+ local notices,logs=0,{}
+ local keepNotify=book.NotifyLearned
+ book.NotifyLearned=function() notices=notices+1 end
+ local keepLog=log
+ log=function(m) table.insert(logs,m) end
+ local function load(d) book.Levels={};book.Slots=',,,';book.RightSkill='';book:LoadSaveData(d) end
+ local old={sv=4,levelCount=8,slots=',,,',right='',levels={raise_skeleton=12,skel_shield=3,raise_mage=8,mage_twin=2,mage_hex=3,bone_rite=20,giant_quake=2,giant_mage_pull=1}}
+ stats.SkillPoints=0
+ load(old)
+ assert(stats.SkillPoints==11,'48-3 refund '..stats.SkillPoints)
+ assert(book.Levels.skel_shield==nil and book.Levels.mage_twin==nil and book.Levels.mage_hex==nil and book.Levels.giant_quake==nil and book.Levels.giant_mage_pull==nil,'removed')
+ assert(book.Levels.raise_skeleton==12 and book.Levels.raise_mage==8 and book.Levels.bone_rite==20,'mains kept')
+ local saved=book:GetSaveData()
+ assert(saved.sv==5 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
+ load(saved)
+ assert(stats.SkillPoints==11,'48-3 double refund after save '..stats.SkillPoints)
+ book:MigrateLevels(4)
+ assert(stats.SkillPoints==11,'48-3 double refund on second migrate '..stats.SkillPoints)
+ stats.SkillPoints=0;load(old)
+ assert(stats.SkillPoints==11,'48-3 same old save reloaded '..stats.SkillPoints)
+ -- 현행 sv 5 저장: 새 효과로 찍은 마법사 거인 갈림은 돌려주지 않는다 · sv 4 저장의 갈림은 한 번
+ stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
+ assert(stats.SkillPoints==0 and book.Levels.giant_mage_resist==1,'sv5 kept')
+ stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
+ assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
+ -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번
+ stats.SkillPoints=0;load({sv=3,levelCount=4,levels={step_gale=2,raise_mage=5,mage_blast=3,bone_rite=20,giant_basic_split=1}})
+ assert(stats.SkillPoints==6,'sv3 '..stats.SkillPoints)
+ -- 현행 저장(지운 노드 없음 · sv 4): 0
+ stats.SkillPoints=3;load({sv=4,levelCount=3,levels={raise_skeleton=9,skel_greatsword=2,skel_twin=1}})
+ assert(stats.SkillPoints==3 and book.Levels.skel_greatsword==2,'current save untouched')
+ -- 갈래 B 희망 편성(skills.hope): 옛 shield 희망은 FormOrder에 없으면 버리고(갈래 A 규칙) 대검 · 쌍칼 희망은 그대로
+ load({sv=4,levelCount=1,levels={raise_skeleton=5},hope='s:d:shield=2,greatsword=1,twin=0/m:d:aura=1'})
+ local hasShield=false
+ for _,f in ipairs(_UndeadSystem:FormOrder('skeleton')) do if f=='shield' then hasShield=true end end
+ assert(string.find(book.FormHope,'s:d:',1,true) and string.find(book.FormHope,'greatsword=1',1,true) and string.find(book.FormHope,'twin=0',1,true),'hope '..book.FormHope)
+ assert(hasShield or not string.find(book.FormHope,'shield',1,true),'hope shield '..book.FormHope)
+ assert(book:GetSaveData().hope==book.FormHope and book:GetSaveData().sv==5,'hope saved')
+ assert(notices==0,'48-3 notices '..notices)
+ local refundLogs=0
+ for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
+ log=keepLog;book.NotifyLearned=keepNotify
+ -- UI 글귀 (§9 추천 1): 해골 전사 랭크 8 진화 · 마법사 구간 1·6·11·16 · 저주 속성 · 단계 점
+ book.Levels={raise_skeleton=7}
+ assert(string.find(book:GetRankSummary('raise_skeleton',7),'일반형 공격',1,true),book:GetRankSummary('raise_skeleton',7))
+ for lv,pct in pairs({[8]=20,[13]=20,[14]=25,[20]=30}) do
+  local t=book:GetRankSummary('raise_skeleton',lv)
+  assert(string.find(t,'방패 해골 공격',1,true) and string.find(t,'받는 피해 -'..pct..'%',1,true) and string.find(t,'4초마다 도발',1,true),t)
+ end
+ local st=book:RankStages('raise_skeleton')
+ assert(#st==1 and st[1].lv==8 and st[1].text=='방패 해골','skel stage')
+ local ms=book:RankStages('raise_mage')
+ assert(#ms==3 and ms[1].lv==6 and ms[2].lv==11 and ms[3].lv==16 and ms[1].text=='마법 강화','mage stages')
+ book.Levels={raise_mage=5}
+ local want={[1]='관통 2 · 파편 1 · 폭발 0.8칸 · 영혼 2발',[6]='관통 3 · 파편 2 · 폭발 1.0칸 · 영혼 3발',[11]='관통 4 · 파편 3 · 폭발 1.2칸 · 영혼 4발',[16]='관통 5 · 파편 4 · 폭발 1.4칸 · 영혼 5발',[20]='관통 5 · 파편 4 · 폭발 1.4칸 · 영혼 5발'}
+ for lv,frag in pairs(want) do
+  local t=book:GetRankSummary('raise_mage',lv)
+  assert(string.find(t,frag,1,true) and not string.find(t,'낙인',1,true) and not string.find(t,'일반형',1,true),lv..': '..t)
+ end
+ book.Levels={raise_mage=20,mage_curse=1}
+ assert(string.find(book:GetRankSummary('raise_mage',1),'낙인 +8%',1,true) and string.find(book:GetRankSummary('raise_mage',20),'낙인 +19.4%',1,true),book:GetRankSummary('raise_mage',20))
+ assert(book:GetRankSummary('mage_curse',1)=='저주 속성 · 맞은 적 4초 받는 피해 +19.4% (약화의 낙인과 겹치면 큰 쪽)',book:GetRankSummary('mage_curse',1))
+ book.Levels={raise_mage=10}
+ local mline=SkillWindow:StatLine(book,stats,'raise_mage')
+ assert(string.find(mline,'관통 3',1,true) and string.find(mline,'다음 랭크: ',1,true) and string.find(mline,'관통 4 · 파편 3 · 폭발 1.2칸 · 영혼 4발',1,true),mline)
+ -- 마법사 편성 칸 (48 §2-5): 변이가 없으면(FormOrder 빈 표 · 갈래 A) 숨김 · 갈래 A 전에는 예전처럼 보임
+ do
+  local en2={}
+  local keepEn=_UIKit.SetEnabled
+  _UIKit.SetEnabled=function(_,path,on) en2[path]=on end
+  book.Levels={raise_mage=3};SkillWindow.SelMain='raise_mage';SkillWindow.Selected='raise_mage'
+  local keepFO=UndeadSystem.FormOrder
+  local preA=#keepFO(UndeadSystem,'mage')>0
+  SkillWindow:RenderForm(book,'raise_mage')
+  assert(en2['SkillWin/WS/Form']==preA,'mage form box pre-A '..tostring(en2['SkillWin/WS/Form']))
+  UndeadSystem.FormOrder=function(self,kind) if kind=='mage' then return {} end return keepFO(self,kind) end
+  SkillWindow:RenderForm(book,'raise_mage')
+  assert(en2['SkillWin/WS/Form']==false and SkillWindow.FormKind=='','mage form box hidden without forms')
+  UndeadSystem.FormOrder=keepFO;_UIKit.SetEnabled=keepEn
+ end
+ -- 거인 수 어댑터 (48-4 A API 전): 옛 꼴(상태 하나) · 목록 꼴 · 클라이언트 쉼표 목록 — 상한 2에서만 5기 건너뜀
+ UndeadSystem.Giants={}
+ assert(book:GiantCount()==0 and not book:GiantStanding() and not book:GiantCapReached())
+ UndeadSystem.Giants.fixture={host={},mates={},epoch=1}
+ assert(book:GiantCount()==1 and book:GiantStanding() and not book:GiantCapReached(),'one giant (old shape)')
+ UndeadSystem.Giants.fixture={{host={}},{host={}}}
+ assert(book:GiantCount()==2 and book:GiantCapReached(),'two giants (list)')
+ UndeadSystem.Giants={}
+ local keepServer=book.IsServer
+ book.IsServer=function() return false end
+ local cmdG={GiantKind='shield'}
+ local keepGet2=entity.GetComponent
+ entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdG end return keepGet2(self,key) end
+ assert(book:GiantCount()==1 and not book:GiantCapReached(),'client one')
+ cmdG.GiantKind='shield,mage'
+ assert(book:GiantCount()==2 and book:GiantCapReached(),'client two')
+ cmdG.GiantKind=''
+ assert(book:GiantCount()==0 and not book:GiantStanding(),'client none')
+ entity.GetComponent=keepGet2;book.IsServer=keepServer
+ stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
+ print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count adapter server/client')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')
