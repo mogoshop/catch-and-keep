@@ -15,6 +15,8 @@ script Util extends Logic
     property integer TelegraphSeq = 0
     property number BossRimSpin = 40           -- 보스 범위 예고 고리가 도는 빠르기 (도/초, 시계 방향)
     property any TileMemo = nil               -- 맵Id → { tiles, ox, oy, gx, gy, cells = 칸키 → 막힘 } (일반 Lua 테이블이라 any)
+    property number FrameSwapOverlap = 0.03    -- 프레임 그림: 다음 장을 먼저 걸고 앞 장은 이만큼 뒤에 지운다 (지우고 걸면 한 화면 빈다 · SkillEffects.PlaySeq와 같은 방식 · 10-31 갈래 E)
+    property integer FrameFadeSteps = 3        -- 프레임 그림 끝 옅어짐 단계 수 (PlayFramesHold fadeSec > 0일 때 · 같은 장을 낮은 투명도로 갈아 끼운다)
 
     @ExecSpace("Client")
     method void Notify(string text)
@@ -586,41 +588,100 @@ script Util extends Logic
     end
 
     method void PlayFrames(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, Color tint, integer order)
-        -- 프레임 그림 여러 장을 한 번 재생한다 (클라이언트에서 부른다 · 액트 4 이펙트 등)
+        -- 프레임 그림 여러 장을 한 번 재생한다 (클라이언트에서 부른다 · 액트 4 이펙트 등) — 모든 장이 frameSec씩 (마지막 장도 frameSec)
+        --   10-31 갈래 E(audit A-2): 예전 SetTimerRepeat 판은 첫 호출이 바로 와 첫 장을 건너뛰었다((장 수 − 1) × 간격만 보임 · 메이커 10-30 S48-SPIN-PLAYBACK-01) → PlayFramesHold로
+        self:PlayFramesHold(ruids, instigator, pos, rot, scale, frameSec, frameSec, 0, tint, order)
+    end
+
+    method table FramePlan(integer n, number frameSec, number holdSec, number fadeSec)
+        -- 프레임 그림 한 번 재생 계획 (순수 계산 · tests/quality/skillfx_e.lua): 장 i(1..n)는 시작 + (i−1) × frameSec에 뜬다 —
+        --   첫 장도 frameSec 동안 보이고 · 마지막 장은 max(frameSec, holdSec) 동안 잡고 · fadeSec > 0이면 그 뒤 FrameFadeSteps번 옅어지며(같은 장 · 투명도만) 사라진다.
+        --   반환 { steps = { { at, idx, alpha } … }, holdAt = 마지막 장이 뜬 시각, clearAt = 다 지우는 시각 }
+        local steps = {}
+        local f = math.max(0.001, frameSec)
+        local count = math.max(0, n)
+        for i = 1, count do table.insert(steps, { at = (i - 1) * f, idx = i, alpha = 1 }) end
+        local holdAt = math.max(0, count - 1) * f
+        local clearAt = holdAt + math.max(f, holdSec)
+        local k = self.FrameFadeSteps
+        if count > 0 and fadeSec > 0 and k > 0 then
+            for j = 1, k do table.insert(steps, { at = clearAt + fadeSec * (j - 1) / k, idx = count, alpha = 1 - j / (k + 1) }) end
+            clearAt = clearAt + fadeSec
+        end
+        return { steps = steps, holdAt = holdAt, clearAt = clearAt }
+    end
+
+    method void PlayFramesHold(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, number holdSec, number fadeSec, Color tint, integer order)
+        -- 프레임 그림 한 번 재생 + 마지막 장 잡기 + 옅어짐 (클라이언트에서 부른다 · 10-31 갈래 E). 계획은 FramePlan.
+        --   장마다 SetTimerOnce · 다음 장 시각은 시작 시각 기준(타이머가 늦어도 밀림이 쌓이지 않음 · 장을 건너뛰지 않음) · 다음 장을 먼저 걸고 앞 장은 FrameSwapOverlap 뒤에 지운다.
+        --   instigator가 사라지면 그 자리에서 지운다
         local list = self:Frames(ruids)
         if #list == 0 or not isvalid(instigator) then return end
+        local plan = self:FramePlan(#list, frameSec, holdSec, fadeSec)
+        local steps = plan.steps
+        local t0 = _UtilLogic.ElapsedSeconds
+        local serial = 0
+        local overlap = self.FrameSwapOverlap
+        local function drop(old)
+            if old == 0 then return end
+            if overlap > 0 then _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(old) end, overlap)
+            else _EffectService:RemoveEffect(old) end
+        end
+        local function show(st)
+            local old = serial
+            local c = Color(tint.r, tint.g, tint.b, tint.a * st.alpha)
+            serial = _EffectService:PlayEffect(list[st.idx], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = c })
+            drop(old)
+        end
         local i = 1
-        local serial = _EffectService:PlayEffect(list[1], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
-        local timer = 0
-        timer = _TimerService:SetTimerRepeat(function()
-            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
-            i = i + 1
-            if i > #list or not isvalid(instigator) then
-                _TimerService:ClearTimer(timer)
+        show(steps[1])
+        local step = nil
+        step = function()
+            if not isvalid(instigator) then
+                if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
                 return
             end
-            serial = _EffectService:PlayEffect(list[i], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
-        end, frameSec)
+            i = i + 1
+            if i > #steps then
+                if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
+                return
+            end
+            show(steps[i])
+            local due = i < #steps and steps[i + 1].at or plan.clearAt
+            _TimerService:SetTimerOnce(step, math.max(0.01, t0 + due - _UtilLogic.ElapsedSeconds))
+        end
+        local first = #steps > 1 and steps[2].at or plan.clearAt
+        _TimerService:SetTimerOnce(step, math.max(0.01, first))
     end
 
     method void PlayFramesLoop(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, number seconds, Color tint, integer order)
         -- 프레임 그림을 seconds 동안 되풀이한다 (46-4 거인 회전 베기·저주 장판 · 클라이언트에서 부른다). 끝나거나 instigator가 사라지면 지운다
+        --   10-31 갈래 E: PlayFramesHold와 같은 방식(첫 장 frameSec · 시작 시각 기준 SetTimerOnce · 다음 장 먼저 걸고 앞 장은 FrameSwapOverlap 뒤에)
         local list = self:Frames(ruids)
         if #list == 0 or not isvalid(instigator) then return end
-        local i = 1
-        local left = math.max(frameSec, seconds)
+        local f = math.max(0.001, frameSec)
+        local total = math.max(f, seconds)
+        local t0 = _UtilLogic.ElapsedSeconds
+        local overlap = self.FrameSwapOverlap
+        local k = 0
         local serial = _EffectService:PlayEffect(list[1], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
-        local timer = 0
-        timer = _TimerService:SetTimerRepeat(function()
-            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
-            left = left - frameSec
-            if left <= 0.001 or not isvalid(instigator) then
-                _TimerService:ClearTimer(timer)
+        local step = nil
+        step = function()
+            local old = serial
+            serial = 0
+            k = k + 1
+            if k * f >= total - 0.001 or _UtilLogic.ElapsedSeconds - t0 >= total - 0.001 or not isvalid(instigator) then
+                if old ~= 0 then _EffectService:RemoveEffect(old) end
                 return
             end
-            i = i % #list + 1
-            serial = _EffectService:PlayEffect(list[i], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
-        end, frameSec)
+            serial = _EffectService:PlayEffect(list[k % #list + 1], instigator, pos, rot, scale, true, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+            if old ~= 0 then
+                if overlap > 0 then _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(old) end, overlap)
+                else _EffectService:RemoveEffect(old) end
+            end
+            _TimerService:SetTimerOnce(step, math.max(0.01, t0 + math.min(total, (k + 1) * f) - _UtilLogic.ElapsedSeconds))
+        end
+        _TimerService:SetTimerOnce(step, math.min(f, total))
     end
 
 end

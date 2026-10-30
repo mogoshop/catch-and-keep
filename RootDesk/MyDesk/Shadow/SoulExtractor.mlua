@@ -4,6 +4,8 @@
 script SoulExtractor extends Component
 
     property number NoticeAt = 0             -- 「그림자 소환을 배워야 한다」 안내를 다시 띄울 수 있는 시각 (서버)
+    property number AriseGlowDelay = 0.4     -- 추출 바닥 고리(S01) 잔광: 고리(5장 약 0.45초)가 끝나 갈 때 시작 (10-31 갈래 E)
+    property number AriseGlowSec = 0.3       -- 바닥 잔광 길이 (보라 Aura · MapLayer0 1 · 몸을 덮지 않음)
 
     @ExecSpace("Server")
     method void RequestExtract(Entity soul)
@@ -157,6 +159,14 @@ script SoulExtractor extends Component
         local map = owner.CurrentMap
         local big = grade >= 2 and 1.25 or 1
         _EffectService:PlayEffect(_GameConst.FxAriseRing, owner, pos + Vector3(0, 0.05, 0), 0, Vector3(1.1 * big, 1.1 * big, 1), false, nil)
+        if self.AriseGlowSec > 0 then
+            -- 10-31 갈래 E S01: 고리가 사라진 바닥에 옅은 보라 잔광 AriseGlowSec (예전 0.45초에 끝)
+            _TimerService:SetTimerOnce(function()
+                if not isvalid(owner) or owner.CurrentMap ~= map then return end
+                local glow = _ParticleService:PlayBasicParticle(BasicParticleType.Aura, map, pos + Vector3(0, 0.05, 0), 0, Vector3(0.9 * big, 0.45 * big, 1), true, { Color = Color(0.62, 0.38, 0.95, 0.55), SortingLayer = "MapLayer0", OrderInLayer = 1 })
+                if glow ~= 0 then _TimerService:SetTimerOnce(function() _ParticleService:RemoveParticle(glow) end, self.AriseGlowSec) end
+            end, self.AriseGlowDelay)
+        end
         _EffectService:PlayEffect(_GameConst.FxAriseFlame, owner, pos + Vector3(0, 0.75 * big, 0), 0, Vector3(0.5 * big, 0.5 * big, 1), false, nil)
         -- 혼 구슬: 불꽃이 오른 뒤(0.35초) 주인 가슴까지 0.4초 동안 위로 볼록한 곡선
         _TimerService:SetTimerOnce(function()

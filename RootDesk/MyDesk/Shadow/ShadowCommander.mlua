@@ -14,6 +14,8 @@ script ShadowCommander extends Component
     property number PickedLocalUntil = 0
     property integer PickMarker = 0           -- 클라이언트: 고른 그림자 발밑 표식 입자
     property integer FocusMarker = 0          -- 클라이언트: 집중 대상 머리 위 표식 입자
+    property number FocusMarkW = 0.6           -- 집중 대상 표시(M25) 가로 (10-31 갈래 E · 예전 0.45)
+    property number FocusMarkH = 0.25          -- 집중 대상 표시 세로 (예전 0.16 — 납작해 안 보였다)
     property number RallyKeyAt = -1           -- 클라이언트: C를 누르기 시작한 시각 (-1 = 안 누름)
     property integer RallyKeyTimer = 0        -- 클라이언트: 길게 누름 문턱 타이머
     property table Units = {}                -- shadow id → 소환된 엔티티
@@ -295,7 +297,7 @@ script ShadowCommander extends Component
         if _GameConst.FxSkillShadowRise ~= "" then
             ---@type SkillEffects
             local fx = self.Entity:GetComponent("script.SkillEffects")
-            if fx ~= nil then fx:FramesFx(_GameConst.FxSkillShadowRise, Vector3(p.x + offset.x, p.y + offset.y, 0), 1.25, 0.08) end
+            if fx ~= nil then fx:FramesFx(_GameConst.FxSkillShadowRise, Vector3(p.x + offset.x, p.y + offset.y, 0), 1.25, fx.RiseFrameSec, fx.RiseFrameSec + fx.RiseHoldSec, fx.RiseFadeSec) end   -- 10-31 갈래 E: 6장 0.48초 + 잡기 0.15 + 옅어짐 0.15
         end
         _Util:AfterSpawn(unit, "script.ShadowUnit", function(comp)
             if not isvalid(self.Entity) or self.Units[id] ~= unit then return end
@@ -618,7 +620,7 @@ script ShadowCommander extends Component
         if self.Entity ~= _UserService.LocalPlayer or not isvalid(target) then return end
         if self.FocusMarker ~= 0 then _ParticleService:RemoveParticle(self.FocusMarker) self.FocusMarker = 0 end
         local anchor = _MotionSmoother:VisOf(target)
-        self.FocusMarker = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, anchor, Vector3(0, 1.1, 0), 0, Vector3(0.45, 0.16, 1), true, { Color = Color(1, 0.35, 0.3, 0.9), ParticleCount = 8 })
+        self.FocusMarker = _ParticleService:PlayBasicParticleAttached(BasicParticleType.SpinField, anchor, Vector3(0, 1.1, 0), 0, Vector3(self.FocusMarkW, self.FocusMarkH, 1), true, { Color = Color(1, 0.35, 0.3, 0.9), ParticleCount = 8 })
         local serial = self.FocusMarker
         _TimerService:SetTimerOnce(function()
             if self.FocusMarker == serial and serial ~= 0 then

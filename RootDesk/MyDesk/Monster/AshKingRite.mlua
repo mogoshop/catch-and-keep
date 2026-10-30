@@ -41,6 +41,9 @@ script AshKingRite extends Component
     @Sync
     property integer ShadesAlive = 0
     property table Shades = {}
+    property number FinalBlastFrameSec = 0.2   -- 재의 왕 최후 폭발(B13 · SpriteFinalBlast 4장) 장 간격 (10-31 갈래 E · 0.1 → 0.2)
+    property number FinalBlastHoldSec = 0.5    -- 마지막 장을 이만큼 잡는다 (앞 3장 0.6초 + 0.5 = 1.1초 · 예전 첫 장 건너뜀으로 0.3초)
+    property number FinalBlastFadeSec = 0.3    -- 그 뒤 옅어짐
 
     method void OnBeginPlay()
         if not self:IsServer() then return end
@@ -309,7 +312,7 @@ script AshKingRite extends Component
         _SoundDirector:PlayRiteCue("ashking", "done", self.Entity)
         local p = self.Entity.TransformComponent.WorldPosition
         -- 커지는 속 빈 붉은 파동 (코덱스 256×256 4장 · 방을 덮게 6배)
-        _Util:PlayFrames(_GameConst.SpriteFinalBlast, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(6, 6, 1), 0.1, Color(1, 1, 1, 0.95), 25)
+        _Util:PlayFramesHold(_GameConst.SpriteFinalBlast, self.Entity.CurrentMap, Vector3(p.x, p.y + 1, 0), 0, Vector3(6, 6, 1), self.FinalBlastFrameSec, self.FinalBlastHoldSec, self.FinalBlastFadeSec, Color(1, 1, 1, 0.95), 25)
         local cam = _CameraService:GetCurrentCameraComponent()
         if isvalid(cam) then cam:ShakeCamera(0.35, 0.4) end
     end

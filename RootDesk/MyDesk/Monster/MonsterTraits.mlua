@@ -44,6 +44,7 @@ script MonsterTraits extends Component
     property integer ContactCount = 0
     property integer ContactEffectCount = 0
     property integer ContactPauseCount = 0
+    property string AmpTint = "1,0.7,0.92"    -- 약화의 낙인 걸린 몸 색조 (곱 · 옅은 자홍 · 10-31 갈래 E — 둔화 푸른 색조와 같은 경로 · ""면 끔)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -526,7 +527,8 @@ script MonsterTraits extends Component
         ---@type MonsterStatus
         local status = self.Entity:GetComponent("script.MonsterStatus")
         local chilled = status ~= nil and status:IsChillShown()
-        local key = self.TintSync .. "|" .. stateId .. (chilled and "|chill" or "")
+        local amped = status ~= nil and self.AmpTint ~= "" and status:IsAmpShown()   -- 약화의 낙인 = 옅은 자홍 (10-31 갈래 E · 머리 위 표식과 달리 거리 제한 없음)
+        local key = self.TintSync .. "|" .. stateId .. (chilled and "|chill" or "") .. (amped and "|amp" or "")
         if self.FlashUntil > 0 or key == self.AppliedTint then return end
         local hadState = string.match(self.AppliedTint, "|(.+)$") ~= nil
         self.AppliedTint = key
@@ -544,8 +546,14 @@ script MonsterTraits extends Component
             c = { c[1] * 0.62, c[2] * 0.8, c[3] }
             log("[VRF] chill tint " .. self.Entity.Name)
         end
+        if amped then
+            local m = {}
+            for v in string.gmatch(self.AmpTint, "[%d%.]+") do table.insert(m, tonumber(v) or 1) end
+            if #m >= 3 then c = { c[1] * m[1], c[2] * m[2], c[3] * m[3] } end
+            log("[VRF] amp tint " .. self.Entity.Name)
+        end
         -- 색조도 상태도 없으면 건드리지 않는다 (반투명 망령 등 다른 연출의 색) — 상태가 막 떨어졌을 때만 흰색으로 되돌린다
-        if r ~= nil or st ~= nil or hadState or chilled then sprite.Color = Color(c[1], c[2], c[3], r ~= nil and 1 or sprite.Color.a) end
+        if r ~= nil or st ~= nil or hadState or chilled or amped then sprite.Color = Color(c[1], c[2], c[3], r ~= nil and 1 or sprite.Color.a) end
     end
 
 end
