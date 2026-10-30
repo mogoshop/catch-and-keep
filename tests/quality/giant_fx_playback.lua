@@ -422,6 +422,15 @@ do
  f=onlyMs('nb')
  ok(#f==16 and f[1].opt.OrderInLayer==1 and near(f[7].at-f[1].at,0.16,TICK+1e-9),'노바 한 층 16장 · 몸 뒤 · 7번째 장 160ms')
  SkillEffects.FxGiantNovaV2=''
+ -- 슬램 impact drift 검사(10-31 메이커 G3 오경보): 부르는 쪽 seconds = 실제 피해 시각 0.12면 로그 없음 · 다른 값(옛 0.35)이면 그대로 잡는다(반례)
+ SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamSeq=seq('dr',16) SkillEffects.FxGiantSlamFront=''
+ local function drift() for _,x in ipairs(logs) do if x:find('[VRF] giant fx impact drift kind=slam',1,true) then return x end end return nil end
+ reset() SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.12) run(1)
+ f=onlyMs('dr')
+ ok(drift()==nil and #f==16 and near(f[4].at-f[1].at,0.12,TICK+1e-9),'seconds = 피해 시각 0.12: impact drift 로그 없음 · 재생은 그대로 16장·접점 120ms')
+ reset() SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
+ ok(drift()~=nil and drift():find('at=0.120 hit=0.350',1,true)~=nil,'반례: seconds 0.35(옛 유지 시간)면 그림 접점 0.120과 어긋남을 잡는다 '..tostring(drift()))
+ SkillEffects.FxGiantSlamSeq=''
 end
 -- ⑥ 새 그림이 비면 지금 그림 그대로 (옛 66장 경로)
 do

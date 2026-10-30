@@ -383,7 +383,9 @@ script RiteGiantMoves extends Logic
             if v2 then
                 -- V2 (방패 full): 몸과 그림을 t0에 함께 — 그림 0~2장 축광이 이미 들어 있고 4번째 장(120ms)이 지면 분출 = 몸 index 6 접점 = 피해 (그림 전체를 접점까지 미루지 않는다)
                 --   방패 하단 접점(계약 axpx·aypx · 몸 화소)에 큰 분출(몸 뒤)·접점 광(몸 앞) · 거인 방향 좌우 대칭 · 판정 반원은 그대로
-                fx:GiantMoveFxOn("slam", unit.Entity, Vector3(0, 0, 0), dir.x < 0 and -1 or 1, radius * 2, radius * 2, 0, 0.35)
+                --   seconds = 실제 피해 시각(몸 타격 칸 impact · skill2Hit) — 그림 계약에서 seconds는 「서버 타격 순간」이다(impact 규칙·어긋남 검사 [VRF] impact drift). 예전 0.35(옛 그림 유지 시간)를 넘겨
+                --   그림 접점 0.120과 늘 비교돼 오경보가 슬램마다 찍혔다 (10-31 메이커 G3 · 갈래 F) · V2 장별 ms 재생·유지에는 쓰이지 않는다
+                fx:GiantMoveFxOn("slam", unit.Entity, Vector3(0, 0, 0), dir.x < 0 and -1 or 1, radius * 2, radius * 2, 0, impact)
                 local art = fx:GiantFxImpactSec("slam")
                 if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant sync s=slam fx_t0 art_contact=%.3f body_impact=%.3f", art, impact)) end
             end
