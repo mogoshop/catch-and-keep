@@ -102,7 +102,10 @@ script ShadowUnit extends AttackComponent
     property number BoltMult = 1             -- 마법사 화살 피해 배율 (쌍발 ×0.65~0.85 · 관통 ×0.85)
     property integer BoltPierce = 0          -- 관통: 화살이 꿰뚫는 적 수 (0 = 첫 적에서 멈춤)
     property number HexPct = 0               -- 저주: 맞은 적 4초 받는 피해 +%
-    property number BlastMult = 0            -- 폭발: 맞은 자리 반경 1.3 다른 적에게 화살 피해 × 이 값
+    property number BlastMult = 0            -- 마법사 거인 평타: 맞은 자리 반경 BlastRadius 다른 적에게 × 이 값 (rite_giants.csv blastMul · 48부터 일반 마법사 폭발 변이는 없다)
+    property string MageSchool = ""          -- 해골 마법사 속성 (48 §2-2: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 창 · soul 영혼 격류 · curse 저주 — MageBolts) · "" = 옛 기록이면 Element로 읽는다
+    property integer MageRank = 0            -- 일으킬 때의 해골 마법사 랭크 (속성 특성 구간 §2-3 · 0 = 1로 본다)
+    property number ShotMul = 1              -- 지금 맞히는 마법사 투사체 한 발 배율 (HitBolt가 AttackFast 동안만 둔다 · CalcDamage)
     property Entity BlastSkip = nil          -- 폭발이 처음 맞은 적은 다시 때리지 않는다
     property number TauntTimer = 1
     property string LastInfo = ""
@@ -1329,16 +1332,37 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void ShootBolt(Vector2 aim)
-        -- 화살 BoltCount발 (해골 마법사 변이 쌍발: 2발을 ±7° 부채꼴로)
+        -- 원거리 한 번 (48 §2-6): 해골 마법사 = 속성 투사체(MageBolts · 캐릭터 스킬 투사체 재사용) — 영혼 격류만 n발 부채꼴 60°, 나머지 1발.
+        --   마법사 거인 = 몸 속성과 무관하게 화염 구슬 1발(크게 · 자리 폭발은 BlastMult). 원거리 그림자·되살림 = 화살 1발
         local me = _Util:Pos2(self.Entity)
         local dir = aim - me
         if dir:Magnitude() < 0.05 then return end
-        local n = math.max(1, self.BoltCount)
+        local school = self:BoltSchool()
+        local rank = self:MageRankNow()
+        local n = 1
+        if school ~= "" and not self.Giant then n = math.max(1, _MageBolts:Count(school, rank)) end
         for i = 1, n do
-            local spread = n > 1 and math.rad(-7 + 14 * (i - 1) / (n - 1)) or 0
+            local spread = n > 1 and math.rad(((i - 1) / (n - 1) - 0.5) * _MageBolts.TorrentSpreadDeg) or 0
             local c, s = math.cos(spread), math.sin(spread)
             self:ShootOneBolt(Vector2(dir.x * c - dir.y * s, dir.x * s + dir.y * c))
         end
+        if school ~= "" and (self.ShotCount <= n or self.ShotCount % 25 == 0) and not Environment:IsPublishedPlay() then
+            log(string.format("[VRF] mage bolt school=%s element=%s rank=%d n=%d trait=%.2f giant=%s %s", school, _MageBolts:ElementOf(school), rank, n,
+                self.Giant and 0 or _MageBolts:Trait(school, rank), tostring(self.Giant), self.Entity.Name))
+        end
+    end
+
+    method string BoltSchool()
+        -- 투사체 속성: 마법사 거인 = fire(화염 구슬) · 해골 마법사 = MageSchool(옛 기록은 Element로) · 그 밖 "" (화살)
+        if self.Kind ~= "mage" then return "" end
+        if self.Giant then return "fire" end
+        if self.MageSchool ~= "" then return self.MageSchool end
+        return _MageBolts:SchoolOfElement(self.Element)
+    end
+
+    method integer MageRankNow()
+        -- 속성 특성 구간에 쓰는 마법사 랭크 (일으킬 때 확정 · 없으면 1)
+        return math.max(1, self.MageRank)
     end
 
     @ExecSpace("ServerOnly")
@@ -1351,18 +1375,26 @@ script ShadowUnit extends AttackComponent
         _Util:AfterSpawn(shot, "script.Projectile", function(proj)
             if not isvalid(self.Entity) or self.Dead or self.RallyTimer > 0 or self.Entity.CurrentMap ~= map or not _Util:IsAlive(self.OwnerPlayer) then shot:Destroy() return end
             -- 그림·색은 동기화 값으로 (서버에서 SpriteRUID를 바꾸면 클라이언트에 안 보인다)
-            if self.Kind ~= "mage" then
+            local school = self:BoltSchool()
+            local speed = 7
+            local pierce = false
+            if school == "" then
                 proj:Skin(_GameConst.SpriteArrow, 1.2)
                 proj.AngleOffset = 0
+                proj:Tint(self:BoltColor())
             else
-                -- 투사체는 그림(Skin)이 정해져야 보인다 (모델 기본 그림이 발사 전 손 앞에 보이던 문제, 10-11)
-                proj:Skin(_GameConst.SpriteMageBolt, 1.2)
+                -- 48 §2-2: 그 속성 캐릭터 스킬과 같은 그림·속도 (MageBolts.Configure 공용) · 세기는 마법사 랭크 (MageTraits)
+                speed = _MageBolts:Configure(proj, school)
+                if self.Giant then
+                    proj:Skin(_MageBolts.FxFlameShot, 0.8)   -- 마법사 거인 화염 구슬: 저주 불꽃 그림을 크게 (48 §4-1)
+                else
+                    _MageBolts:MageTraits(proj, school, self:MageRankNow())
+                    pierce = _MageBolts:Pierces(school)
+                end
             end
-            proj:Tint(self:BoltColor())
             proj.Team = "minion"
             proj.Radius = 0.3
-            proj:Launch(self.Entity, dir, 7, self.AttackRange + 0.8, self.Atk, "shadow.ranged", self.BoltPierce > 1)
-            if self.BoltPierce > 1 then proj.MaxHits = self.BoltPierce end   -- 관통 마법사: 2~4마리
+            proj:Launch(self.Entity, dir, speed, self.AttackRange + 0.8, self.Atk, "shadow.ranged", pierce)
         end, function() if isvalid(shot) then shot:Destroy() end end)
     end
 
@@ -1376,19 +1408,93 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void HitOne(Entity target)
+        -- 화살·구슬 한 발 적중 (배율 1 · 폭발 없음) — 옛 호출처 호환
+        self:HitBolt(target, 1, 0)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void HitBolt(Entity target, number mul, number burst)
+        -- 원거리 투사체 한 발 적중 (Projectile 소환수 갈래): 피해 = 공격 × mul (속성 한 발 배율 · 뼈 창 가시 포함).
+        -- burst > 0 = 불꽃 마법사 폭발(48 §2-3 · Q9 늘 터짐): 맞은 자리 반경 burst 안 다른 적에게 한 발 피해 × MageBolts.BurstMul(0.3).
+        -- 마법사 거인 평타 자리 폭발은 지금처럼 BlastMult · BlastRadius (rite_giants.csv)
         if not self:IsLiveTarget(target) then return end
         self.OnlyTarget = target
         local q = _Util:Pos2(target) + Vector2(0, 0.3)
-        self.LastInfo = "shadow.ranged"   -- OnAttack이 화살 적중을 안다 (저주 마법사)
+        self.ShotMul = mul
+        self.LastInfo = "shadow.ranged"   -- OnAttack이 투사체 적중을 안다 (저주 낙인 · 서리 둔화)
         self:AttackFast(CircleShape(q, 0.5), "shadow.ranged", nil)
         self.LastInfo = ""
         self.OnlyTarget = nil
-        if self.BlastMult > 0 and self.Kind == "mage" then
-            -- 폭발 마법사: 맞은 자리 반경 1.3 안 다른 적에게 화살 피해 × BlastMult
+        if burst > 0 and self.Kind == "mage" and not self.Giant then
+            self.ShotMul = mul * _MageBolts.BurstMul
+            self.BlastSkip = target
+            self:AttackFast(CircleShape(q, burst), "shadow.mageburst", nil)
+            self.BlastSkip = nil
+            self:MageBurstFx(Vector3(q.x, q.y, 0), burst)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] mage bolt burst r=%.1f mul=%.2f %s", burst, self.ShotMul, self.Entity.Name)) end
+        elseif self.BlastMult > 0 and self.Kind == "mage" then
+            -- 마법사 거인: 맞은 자리 반경 BlastRadius 안 다른 적에게 × BlastMult
             self.BlastSkip = target
             self:AttackFast(CircleShape(q, self.BlastRadius), "shadow.blast", nil)
             self.BlastSkip = nil
             self:BlastPopFx(Vector3(q.x, q.y, 0), self:BoltColor())   -- 44 §3-2: 예전엔 서버에서만 불러 보이는지 알 수 없었다
+        end
+        self.ShotMul = 1
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MageSplit(Vector2 from, table hitIds, integer count)
+        -- 서리 마법사 「갈라짐」(48 §2-3): 처음 맞은 자리에서 서리 파편 count개 — 4칸 안 아직 안 맞은 가까운 적부터 하나씩(캐릭터 FrostSplit과 같은 규칙 · 같은 그림),
+        --   피해는 마법사 공격 × ShardMul(0.45) · 파편은 다시 갈라지지 않는다 · 맞은 적은 둔화(OnAttack)
+        local map = self.Entity.CurrentMap
+        local foes = {}
+        for _, m in ipairs(_Util:MonstersNear(map, from, 4)) do
+            if not hitIds[m.Entity.Id] and not m.IsDead then table.insert(foes, { m = m, d = (_Util:Pos2(m.Entity) - from):Magnitude() }) end
+        end
+        table.sort(foes, function(a, b) return a.d < b.d end)
+        local seed = (self.ShotCount % 7) * 0.4
+        for i = 1, count do
+            local f = foes[i]
+            local dir = f ~= nil and (_Util:Pos2(f.m.Entity) - from) or Vector2(math.cos(seed + i * 2 * math.pi / count), math.sin(seed + i * 2 * math.pi / count))
+            if dir:Magnitude() < 0.01 then dir = Vector2(1, 0) end
+            dir = dir:Normalize()
+            self:ShootShard(from + dir * 0.3, dir, f ~= nil and f.m.Entity or nil, hitIds)
+        end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] mage bolt split %d (targets %d) %s", count, math.min(count, #foes), self.Entity.Name)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ShootShard(Vector2 start, Vector2 dir, Entity lock, table hitIds)
+        -- 서리 파편 한 개 (MageSplit): 캐릭터 서리 파편과 같은 그림·속도(MageBolts.Configure "cold_shard") · 사거리 4.2 · 한 적에 맞고 끝
+        local map = self.Entity.CurrentMap
+        self.ShotCount = self.ShotCount + 1
+        local shard = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "MinionShard_" .. tostring(self.ShotCount), Vector3(start.x, start.y + 0.3, 0), map)
+        if not isvalid(shard) then return end
+        _Util:AfterSpawn(shard, "script.Projectile", function(comp)
+            ---@type Projectile
+            local proj = comp
+            if not isvalid(self.Entity) or self.Dead or self.Entity.CurrentMap ~= map then shard:Destroy() return end
+            local speed = _MageBolts:Configure(proj, "cold_shard")
+            if isvalid(lock) then proj.Lock = lock end
+            proj.MaxHits = 1
+            proj.MinionMul = _MageBolts.ShardMul
+            proj.Team = "minion"
+            proj.Radius = 0.3
+            proj:Launch(self.Entity, dir, speed, 4.2, self.Atk, "shadow.ranged", true)
+            -- Launch 초기화 뒤 이전 대상 이력을 물려받아 같은 적에 다시 맞지 않게
+            for id, v in pairs(hitIds) do proj.HitIds[id] = v end
+        end, function() if isvalid(shard) then shard:Destroy() end end)
+    end
+
+    @ExecSpace("Multicast")
+    method void MageBurstFx(Vector3 pos, number radius)
+        -- 불꽃 마법사 폭발: 캐릭터 저주 불꽃 폭발과 같은 그림(GameConst.FxSkillHexBurst · 128px = 1.28칸 지름)을 반경에 맞춰 · 없으면 화염 색 파열
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        if _GameConst.FxSkillHexBurst ~= "" then
+            _Util:PlayFrames(_GameConst.FxSkillHexBurst, me.CurrentMap, pos, 0, Vector3(2 * radius / 1.28, 2 * radius / 1.28, 1), 0.07, Color(1, 1, 1, 1), 6)
+        else
+            _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(0.55 * radius, 0.55 * radius, 1), false, { Color = Color(1, 0.5, 0.2, 1) })
         end
     end
 
@@ -1438,8 +1544,9 @@ script ShadowUnit extends AttackComponent
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 잿불 들개 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
         if attackInfo == "shadow.basic" then dmg = dmg * self.BasicMult end   -- 대검 해골 범위 베기
-        if attackInfo == "shadow.ranged" then dmg = dmg * self.BoltMult end   -- 마법사 변이 쌍발·관통
-        if attackInfo == "shadow.blast" then dmg = dmg * self.BoltMult * self.BlastMult end   -- 폭발 마법사
+        if attackInfo == "shadow.ranged" then dmg = dmg * self.BoltMult * self.ShotMul end   -- 마법사 속성 한 발 배율 · 뼈 창 가시 · 서리 파편 (HitBolt)
+        if attackInfo == "shadow.mageburst" then dmg = dmg * self.BoltMult * self.ShotMul end   -- 불꽃 마법사 폭발 (한 발 × 0.3 · HitBolt)
+        if attackInfo == "shadow.blast" then dmg = dmg * self.BoltMult * self.BlastMult end   -- 마법사 거인 자리 폭발
         -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)
         if self:GetArch() == "assassin" and attackInfo == "shadow.basic" and _UtilLogic:RandomDouble() < 0.25 then
             dmg = dmg * 1.8
@@ -1658,12 +1765,18 @@ script ShadowUnit extends AttackComponent
                 self:TraitPopLimited("stun")
             end
         end
-        if self.HexPct > 0 and self.LastInfo == "shadow.ranged" then
-            -- 저주 마법사: 맞은 적 4초 받는 피해 +HexPct%
+        if self.LastInfo == "shadow.ranged" and self.Kind == "mage" and not self.Giant then
+            -- 해골 마법사 속성 부가 효과 (48 §2-2): 저주 = 맞은 한 마리 4초 받는 피해 +p%(낙인과 큰 값만 · IsCursed에 안 셈 · Q10) · 서리 = 1.5초 둔화
+            local school = self:BoltSchool()
             ---@type Monster
-            local cursed = defender:GetComponent("script.Monster")
-            local cst = cursed ~= nil and not cursed.IsDead and cursed:Status() or nil
-            if cst ~= nil then cst:ApplyHex(self.HexPct, 4) end
+            local struckMon = defender:GetComponent("script.Monster")
+            if struckMon ~= nil and not struckMon.IsDead then
+                local hex = self.HexPct
+                if school == "curse" then hex = math.max(hex, _MageBolts:Trait("curse", self:MageRankNow())) end
+                local cst = struckMon:Status()
+                if hex > 0 and cst ~= nil then cst:ApplyHex(hex, _MageBolts.CurseSeconds) end
+                if school == "cold" then struckMon:ApplyChill(_MageBolts.ChillSec) end
+            end
         end
         if self.LastInfo == "shadow.skill" then
             local v = _GameData:GetVariantOf(self.Variant, "skill")

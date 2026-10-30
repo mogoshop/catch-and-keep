@@ -504,18 +504,11 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    -- 44-1 A: 골편과 같은 궤적 그림을 가늘고 길게(가로:세로 2.2) — 맞으면 진행 방향으로 꽂히는 빛 파열 (Projectile.HitFx "spear").
-                    --   코덱스 H-1 창 몸(GameConst.FxSkillSpear)이 오면 그 그림을 제 비율로
-                    if _GameConst.FxSkillSpear ~= "" then
-                        proj:SkinXY(_GameConst.FxSkillSpear, 0.9, 0.9)
-                    else
-                        proj:SkinXY(self.FxShardShot, 1.32, 0.6)
-                        proj:Tint(Color(0.95, 0.9, 0.78, 1))
-                    end
-                    proj.Style = "spear"
+                    -- 외형·속도 = 해골 마법사 뼈 창과 공용 (MageBolts.Configure · 48 §2-6) · 세기(관통 상한 · 가시 +10%)는 캐릭터 것
+                    local speed = _MageBolts:Configure(proj, "bone")
                     proj.MaxHits = self:PierceCap("bone_spear")
                     proj.SpikePct = 10   -- 10-28 투사체 A안: 관통은 뼈 창의 몫 — 꿰뚫을 때마다 +10%
-                    proj:Launch(owner, fly, 14, range, damage, "skill.bone_spear", true)
+                    proj:Launch(owner, fly, speed, range, damage, "skill.bone_spear", true)
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
         end
@@ -665,10 +658,9 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    proj:Skin(self.FxFlameShot, 0.45)
-                    proj:Tint(Color(1, 0.75, 0.55, 1))
+                    local speed = _MageBolts:Configure(proj, "fire")   -- 외형·속도 = 불꽃 마법사와 공용 (48 §2-6)
                     proj.BurstRadius = burst   -- 10-28 투사체 A안 「폭발」: 저주 걸린 적에 맞으면 둘레에 화염
-                    proj:Launch(owner, d, 11, 7, damage, "skill.hex_flame", false)
+                    proj:Launch(owner, d, speed, 7, damage, "skill.hex_flame", false)
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
         end
@@ -699,13 +691,12 @@ script SkillEffects extends Component
             ---@type Projectile
             local proj = comp
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-            proj:Skin(self.FxFrostShot, 0.6)
-            proj:Tint(Color(0.85, 0.95, 1, 1))
+            local speed = _MageBolts:Configure(proj, "cold")   -- 외형·속도 = 서리 마법사와 공용 (48 §2-6)
             ---@type SkillBook
             local book = owner:GetComponent("script.SkillBook")
             proj.MaxHits = 1
             proj.Splits = book ~= nil and book:GetFrostSplitCount(book:GetPowerLevel("frost_soul")) or 0
-            proj:Launch(owner, dir, 9, 8, damage, "skill.frost_soul", true)
+            proj:Launch(owner, dir, speed, 8, damage, "skill.frost_soul", true)
         end, function() if isvalid(shot) then shot:Destroy() end end)
         return true
     end
@@ -735,11 +726,10 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    proj:Skin(self.FxFrostShot, 0.4)
-                    proj:Tint(Color(0.85, 0.95, 1, 1))
+                    local speed = _MageBolts:Configure(proj, "cold_shard")   -- 외형·속도 = 서리 마법사 파편과 공용 (48 §2-6)
                     if isvalid(lock) then proj.Lock = lock end
                     proj.MaxHits = 1
-                    proj:Launch(owner, dir, 10, 4.2, damage * 0.5, "skill.frost_split", true)
+                    proj:Launch(owner, dir, speed, 4.2, damage * 0.5, "skill.frost_split", true)
                     -- Launch 초기화 뒤 이전 대상 이력을 물려받아 같은 적의 재명중을 막는다.
                     for id, v in pairs(hitIds) do proj.HitIds[id] = v end
                 end, function() if isvalid(shot) then shot:Destroy() end end)
@@ -1306,17 +1296,9 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    proj.Homing = 5
-                    -- 44-1 A: 골편 궤적 대신 혼 구슬 그림(FxAriseSoul)에 청록빛 · 촘촘한 혼 꼬리(Projectile.DropGhost "torrent") — 보라 추출 구슬과 색이 다르다.
-                    --   코덱스 H-1 영혼 격류 6프레임(GameConst.FxSkillTorrent)이 오면 그 그림을 날아가며 넘긴다 (Projectile.AdvanceFrame)
-                    if _GameConst.FxSkillTorrent ~= "" then
-                        proj:Skin(_GameConst.FxSkillTorrent, 0.55)
-                    else
-                        proj:Skin(_GameConst.FxAriseSoul, 0.42)
-                        proj:Tint(Color(0.55, 0.95, 1, 1))
-                    end
-                    proj.Style = "torrent"
-                    proj:Launch(owner, d, 7, 7, damage, "skill.soul_torrent", false)
+                    -- 외형(혼 구슬 청록 · 촘촘한 혼 꼬리 · 유도 5)·속도 = 영혼 마법사와 공용 (MageBolts.Configure · 48 §2-6)
+                    local speed = _MageBolts:Configure(proj, "soul")
+                    proj:Launch(owner, d, speed, 7, damage, "skill.soul_torrent", false)
                 end, function() if isvalid(shot) then shot:Destroy() end end)
             end
         end
