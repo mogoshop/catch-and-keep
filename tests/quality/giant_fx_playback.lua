@@ -388,7 +388,35 @@ do
  pl=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx play kind=meteor_land',1,true) then pl=x end end
  ok(#f==6 and f[1].ruid=='mt7' and f[6].ruid=='mt12' and near(f[1].at,t0) and f[1].opt.OrderInLayer==1,'메테오 착지 = 7~12장 · 부른 순간 바로(앞 장 시간만큼 늦추지 않음) · 몸 뒤')
  ok(pl~=nil and near(tonumber(pl:match('elapsed=([%d%.]+)')),1.5,TICK+0.031),'그을림 마지막 장을 scorch 1.5초까지 유지 '..tostring(pl))
- ok(near(f[1].scale.x,(100/56)*3.6/4.0),'크기 = ref 4.0칸 그림을 지름 3.6에 (옛 계약 그대로)')
+ ok(near(f[1].scale.x,(100/56)*3.6/SkillEffects.MeteorLandRef) and near(SkillEffects.MeteorLandRef,3.39) and near(190*f[1].scale.x/100,3.6,0.01),'착지 크기 = 내용 폭 190px(ref 3.39)을 판정 지름 3.6칸에 (예전 ref 4.0 = 3.05칸) '..f[1].scale.x)
+ -- 반례: MeteorLandRef 0이면 계약 ref 4.0 (예전 크기)
+ local LR=SkillEffects.MeteorLandRef SkillEffects.MeteorLandRef=0
+ reset() SkillEffects:GiantMoveFx('meteor_land',Vector3(0,0,0),3.6,3.6,0,1.5) run(3)
+ f=onlyMs('mt') ok(near(f[1].scale.x,(100/56)*3.6/4.0),'반례: MeteorLandRef 0 → 계약 ref 4.0 그대로 '..f[1].scale.x)
+ SkillEffects.MeteorLandRef=LR
+ -- 낙하 크기 = 계약 크기 × MeteorFallMul 1.5 · 반례 1이면 예전
+ reset() SkillEffects:GiantMoveFx('meteor_fall',Vector3(0,0,0),3.6,3.6,0,0.5) run(2)
+ f=onlyMs('mt') ok(near(f[1].scale.x,(100/56)*3.6/4.0*1.5) and near(f[1].scale.y,f[1].scale.x),'낙하 = 예전 크기 × 1.5 (가로세로 같은 배율) '..f[1].scale.x)
+ local FM=SkillEffects.MeteorFallMul SkillEffects.MeteorFallMul=1
+ reset() SkillEffects:GiantMoveFx('meteor_fall',Vector3(0,0,0),3.6,3.6,0,0.5) run(2)
+ f=onlyMs('mt') ok(near(f[1].scale.x,(100/56)*3.6/4.0),'반례: MeteorFallMul 1 → 예전 크기')
+ SkillEffects.MeteorFallMul=FM
+ -- 예고: 원 하나만 (화염 바닥 그림 decal 지움) · 반례 MeteorTelegraphOnly=false면 바닥 그림 남음
+ local removed={ }
+ local RE=_EffectService.RemoveEffect
+ _EffectService.RemoveEffect=function(svc,sn) table.insert(removed,sn) RE(svc,sn) end
+ _Util.Telegraphs={ }
+ local nt=0
+ _Util.Telegraph=function(_,inst,c,r,el,sec) nt=nt+1 _Util.Telegraphs[nt]={ rim=901, fill=902, decal=(el=='fire' and 903 or 0), timer=0 } return nt end
+ reset() SkillEffects:GiantMoveFx('warn_fire',Vector3(1,1,0),3.6,3.6,0,1.5)
+ local rec=_Util.Telegraphs[1]
+ local gone=false for _,sn in ipairs(removed) do if sn==903 then gone=true end end
+ ok(gone and rec.decal==0 and rec.rim==901 and rec.fill==902,'메테오 예고: 용암 바닥 그림 지움 · 테두리·차오름(다른 예고와 같은 그림)은 그대로')
+ SkillEffects.MeteorTelegraphOnly=false removed={ }
+ reset() SkillEffects:GiantMoveFx('warn_fire',Vector3(1,1,0),3.6,3.6,0,1.5)
+ local cnt=0 for _ in ipairs(removed) do cnt=cnt+1 end
+ ok(cnt==0 and _Util.Telegraphs[2].decal==903,'반례: MeteorTelegraphOnly false → 바닥 그림 남음')
+ SkillEffects.MeteorTelegraphOnly=true _EffectService.RemoveEffect=RE
  SkillEffects.FxGiantFireMeteor=M0
  -- 돌진: 피벗(그림 오른끝) = 시작점 · 그림 -x가 돌진 방향 · 세운 채 좌우만
  local D0=SkillEffects.FxGiantDashSeq
