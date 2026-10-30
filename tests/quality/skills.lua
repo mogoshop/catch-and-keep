@@ -1,10 +1,11 @@
--- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats
+-- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
 -- @source SkillBook Skill/SkillBook.mlua RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
+-- @source HudMain UI/Hud/HudMain.mlua GiantCountsLine,GiantShort
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
 _SkeletonResonance={AtkMult=1,Radius=1,Cooldown=1}
@@ -516,5 +517,42 @@ do
  stats.MaxDifficulty=nil
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
  print('[quality/skills] 46-5 giant nodes: nightmare lock, Lv42/50/56/62, choice pair exclusive, shield pair on hold, workshop = bombs + one giant row')
+end
+-- 46-6 HUD 글: 고리 둘째 줄 · 공방 「지금 무리라면」 · 깃발 줄 (동기화된 편성 = 클라이언트 GiantPlan)
+do
+ local keepGet=entity.GetComponent
+ local roster={UndeadRoster='s:greatsword,s:greatsword,m:,m:hex,s:,s:twin|0',GiantKind=''}
+ entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return roster end return keepGet(self,key) end
+ local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
+ _HudMain=HudMain
+ book.Levels={bone_rite=5};stats.MaxDifficulty=1
+ book.RiteBanner=''
+ local plan=_UndeadSystem:GiantPlanFor(entity)
+ assert(plan.type=='greatsword' and plan.tie and not plan.bannerUsed,'fallback greatsword over mage')
+ assert(HudMain:GiantCountsLine(plan)=='대검 2 · 마법사 2 · 기본 1 (동률)',HudMain:GiantCountsLine(plan))
+ book.RiteBanner='mage'
+ plan=_UndeadSystem:GiantPlanFor(entity)
+ assert(plan.type=='mage' and HudMain:GiantCountsLine(plan)=='대검 2 · 마법사 2 · 기본 1 (동률 · 깃발)',HudMain:GiantCountsLine(plan))
+ local sum=book:GetRankSummary('bone_rite',5)
+ assert(string.find(sum,'거인 20초 · 지금 무리라면 마법사 거인',1,true),sum)
+ roster.UndeadRoster='s:greatsword,s:greatsword,m:|0'
+ assert(not string.find(book:GetRankSummary('bone_rite',5),'지금 무리라면',1,true),'fewer than 5 → no giant line')
+ stats.MaxDifficulty=0
+ assert(string.find(book:GetRankSummary('bone_rite',5),'거인 악몽부터',1,true),'normal lock text')
+ -- 깃발 줄: 뼈 의식에서만 · 칸 순서 = fallback · 노말 머리 글
+ values={}
+ SkillWindow.SelMain='bone_rite';SkillWindow.Selected='bone_rite';SkillWindow.ShowGiant=''
+ SkillWindow:RenderBanner(book,stats)
+ assert(values['SkillWin/WS/Banner/Head']=='거인 악몽부터 · 동률이면' and values['SkillWin/WS/Banner/K1/Label']=='방패' and values['SkillWin/WS/Banner/K4/Label']=='마법사' and values['SkillWin/WS/Banner/K6/Label']=='안 고름','banner '..tostring(values['SkillWin/WS/Banner/Head']))
+ stats.MaxDifficulty=1
+ values={}
+ SkillWindow:RenderBanner(book,stats)
+ assert(values['SkillWin/WS/Banner/Head']=='동률이면','banner head unlocked')
+ book.RiteBanner=''
+ stats.MaxDifficulty=nil
+ entity.GetComponent=keepGet
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
+ print('[quality/skills] 46-6 HUD text: ring sub line (tie · banner), workshop 「지금 무리라면」 (client plan), banner row order + normal head')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

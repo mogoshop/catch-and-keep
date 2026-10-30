@@ -1,5 +1,5 @@
 -- I03 편성 미리보기 대조: UndeadSystem.RosterPreview(읽기 전용)가 실제 일으키기(Raise → MakeRecord·ApplyForm → SlotPlan·TrimOldest)와 같은 답을 내는가
--- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames
+-- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
 -- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
 -- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,GiantReserved,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+

@@ -460,6 +460,27 @@ function buildGameHud() {
     k.btn(`${f}/Plus`, "+", { anchor: "top-left", pivot: [0, 1], pos: [btnW + T.SPACE, -(headH + T.BUTTON.h + 2 * gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
     b.patch(f, { enable: false });
   }
+  // 46-6 거인 깃발 줄 (뼈 의식 공방에서만 · 컨트롤러 SkillWindow.RenderBanner): 「동률이면」 + 칸 6 (방패 · 대검 · 쌍칼 · 마법사 · 기본 · 안 고름 — fallback 순서 §10-2)
+  //   자리: 뼈 의식 노드 판은 폭탄 1·3·5 + 거인 10·14~20 = 5열 · 둘째 줄까지(바닥 −298)라 그 아래 판 안쪽까지 빈다. 칸 = 터치 88 이상 (BUTTON.h)
+  //   누르면 깃발을 바꾸고(SkillBook.RequestRiteBanner) 그 거인의 강화 노드를 펼친다. 고른 칸 금테
+  {
+    const T = require("./ui-tokens.cjs");
+    const bn = `${ws}/Banner`;
+    const chipW = 108, chipH = Math.max(88, T.BUTTON.h), gapX = 8;
+    b.empty(bn, { anchor: "top-left", pivot: [0, 1], pos: [560, -304], rect_size: [6 * chipW + 5 * gapX, 24 + chipH] });
+    b.text(`${bn}/Head`, "", { size: 16, color: "#E6C88A", anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [6 * chipW + 5 * gapX, 22], alignment: 3, bestfit: true, min_size: 12, max_size: 16, ...outline });
+    for (let i = 1; i <= 6; i++) {
+      const c = `${bn}/K${i}`;
+      b.button(c, "", { anchor: "top-left", pivot: [0, 1], pos: [(i - 1) * (chipW + gapX), -24], rect_size: [chipW, chipH], bg_color: { r: 0, g: 0, b: 0, a: 0.3 }, sprite_type: 1 });
+      b.sprite(`${c}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [chipW, chipH], ...part("sk_ws_node_frame_empty"), sprite_type: 1 });
+      b.patchComponent(`${c}/Rim`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -8], rect_size: [48, 48], color: WHITE, alpha: 1, sprite_type: 0 });
+      k.aspect(`${c}/Icon`);
+      b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.text(`${c}/Label`, "", { size: 15, color: C.white, anchor: "bottom-center", pos: [0, 4], rect_size: [chipW - 4, 24], alignment: 4, bestfit: true, min_size: 11, max_size: 15, ...outline });
+    }
+    b.patch(bn, { enable: false });
+  }
 
   // ── 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차, 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분) ──
   //   포인트가 생기면 HUD 띠 「혼의 제물 — 고르기」 → 카드 3장(새 스킬 · 쓰던 스킬 랭크 업 · 강화) + 다음 해금 미리보기. 컨트롤러 SkillOffer.mlua
@@ -522,7 +543,10 @@ function buildGameHud() {
   b.text("PreviewWin/Card/Name", "", { size: 22, bold: true, color: C.title, anchor: "top-center", pos: [0, -296], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 22, ...outline });
   // 목록 칸을 줄이고 아래 줄(해금 조건 · 「웨이포인트에서 …」)은 목록 밑 오른쪽 칸으로 (10-29: 카드 틀 아래 장식과 글이 겹쳤다)
   k.inner("PreviewWin/List", "top-left", [430, -116], [610, 340]);
-  b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 296], bestfit: true, min_size: 16, max_size: 22 });
+  b.text("PreviewWin/List/Body", "", { size: 22, color: C.gold, alignment: 0, anchor: "top-left", pos: [24, -22], rect_size: [562, 236], bestfit: true, min_size: 16, max_size: 22 });
+  // 46-6 (결정 8 V1): 목록 아래 거인 5종 실루엣 한 줄 — 카드 그림은 그대로 두고 UI 층으로 (HUD 거인 아이콘 ui_giant_* 를 어둡게 · NightmarePreview.Show)
+  for (let i = 1; i <= 5; i++) b.sprite(`PreviewWin/List/G${i}`, { anchor: "top-left", pos: [24 + (i - 1) * 62, -266], rect_size: [52, 52], color: { r: 0.16, g: 0.1, b: 0.22, a: 1 }, sprite_type: 0 });
+  b.text("PreviewWin/List/GiantNote", "", { size: 17, color: C.dim, anchor: "top-left", pos: [24 + 5 * 62 + 6, -276], rect_size: [562 - (5 * 62 + 6), 34], alignment: 3, bestfit: true, min_size: 13, max_size: 17 });
   b.text("PreviewWin/Foot", "", { size: 18, color: C.dim, anchor: "top-left", pivot: [0, 1], pos: [434, -470], rect_size: [606, 44], alignment: 3, bestfit: true, min_size: 14, max_size: 18 });
   k.ok("PreviewWin/BtnOk", "확인", { anchor: "bottom-center", pos: [0, 28], rect_size: [300, 88], font_size: 24 });
 
@@ -572,6 +596,8 @@ function buildGameHud() {
   for (const t of ["T2", "T3", "T5"]) b.sprite(`RiteRing/${t}`, { anchor: "middle-center", pos: [0, 12], rect_size: [12, 12], image_ruid: K.dot, color: "#6E6658", alpha: 1, sprite_type: 0 });
   b.text("RiteRing/Count", "", { size: 34, bold: true, color: "#FFFFFF", anchor: "middle-center", pos: [0, 12], rect_size: [70, 50], alignment: 4, ...outline, outline_width: 0.25 });
   b.text("RiteRing/Label", "", { size: 22, bold: true, color: "#F6E3B0", anchor: "middle-center", pos: [0, -56], rect_size: [260, 34], alignment: 4, ...outline, outline_width: 0.25 });
+  // 46-6 고리 아래 둘째 줄: 5기 문턱을 넘은 뒤만 참여 다섯의 종류 수 「대검 3 · 방패 2」 + 동률이면 「(동률 · 깃발)」 (HudMain.RenderRite · GiantPlan — 서버 거인과 같은 계획)
+  b.text("RiteRing/Sub", "", { size: 18, bold: true, color: "#E8D8F8", anchor: "middle-center", pos: [0, -84], rect_size: [300, 26], alignment: 4, bestfit: true, min_size: 13, max_size: 18, ...outline, outline_width: 0.25 });
   // 혼 추출: 손 닿는 혼 위에 「E 추출 45%」, 결과는 혼 자리에서 떠오르는 글자 (HudMain이 화면 좌표로 옮긴다)
   b.text("SoulHint", "", { size: 24, bold: true, color: "#D9B8FF", anchor: "middle-center", pos: [0, 0], rect_size: [360, 84], ...outline, enable: false });
   // 머리 위 경고 (지금 한 행동이 안 된 이유: 마나 부족·혼이 멀다·이미 마을 — HudMain.ShowWarn, docs/ui/message-rules.md)

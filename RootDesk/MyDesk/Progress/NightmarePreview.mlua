@@ -200,6 +200,15 @@ script NightmarePreview extends Logic
         -- 그림 자리: 코덱스 그림(ui_icons preview_nightmare)이 들어오면 그것, 없으면 빌더가 깐 임시 그림 그대로
         local art = _GameData:GetUiIcon("preview_nightmare")
         if art ~= "" then _UIKit:SetIcon(self.Win .. "/Card/Art", art) end
+        -- 46-6 (결정 8 V1): 목록 아래 거인 5종 실루엣 한 줄 (HUD 거인 아이콘을 어둡게 · 카드 그림은 그대로) + 한 줄 (글귀 승인 전)
+        for i, kind in ipairs(_UndeadSystem:GiantFallback()) do
+            local path = self.Win .. "/List/G" .. tostring(i)
+            local icon = _GameData:GetUiIcon("ui_giant_" .. kind)
+            _UIKit:SetEnabled(path, icon ~= "")
+            if icon ~= "" then _UIKit:SetIcon(path, icon) end
+            _UIKit:SetColor(path, Color(0.16, 0.1, 0.22, 1))
+        end
+        _UIKit:SetText(self.Win .. "/List/GiantNote", "무리가 정하는 " .. _UIKit:Colored(gold, "뼈 의식 거인") .. " 다섯")
         _UIKit:Open(self.Win)
         log(string.format("[VRF] preview card shown trigger=%s lv=%d maxDiff=%d unique=%d(%d/%d) set=%d(%d/%d) rw=%d(%d/%d) elite=%d%% dual=%s",
             trigger, st.Level, st.MaxDifficulty, c.u, c.u1, c.u2, c.s, c.s1, c.s2, c.r, c.r1, c.r2, elitePct, tostring(dual)))
