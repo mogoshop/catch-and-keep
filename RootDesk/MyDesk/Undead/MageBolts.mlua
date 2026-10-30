@@ -4,7 +4,8 @@
 -- 피해·랭크 계수는 각자 따로 (리뷰 가드): 캐릭터는 SkillBook 구간(관통 상한·파편 수·폭발 반경)과 PlayerAttack 피해 그대로,
 --   마법사는 아래 MageTraits(마법사 랭크 1~20 · §2-3 표)와 ShadowUnit.CalcDamage(마법사 공격 × ShotMul).
 -- 속성 키: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 창 · soul 영혼 격류 · curse 저주(노드 「저주 속성」 mage_curse로 해금) · cold_shard 서리 파편(외형만)
--- 수치는 모두 초안(메이커 실측 뒤 줄 단위로 고침). config.csv 줄(C 담당)이 생기면 아래 속성 기본값을 그 값으로 옮긴다.
+-- 수치는 모두 초안(메이커 실측 뒤 줄 단위로 고침). 랭크 구간·특성 수치는 config.csv(C 담당 · mageTier2Lv … mageCursePerRank)를 먼저 읽고,
+--   그 줄이 없는 판(통합 전)에서만 아래 속성 기본값(같은 값)을 쓴다 — 스킬 창 현재/다음 표시(SkillBook)와 같은 숫자를 보게.
 @Logic
 script MageBolts extends Logic
 
@@ -66,21 +67,21 @@ script MageBolts extends Logic
     end
 
     method integer TierOf(integer rank)
-        -- 마법사 랭크 → 구간 1~4 (1 · 6 · 11 · 16)
-        if rank >= self.Tier4Lv then return 4 end
-        if rank >= self.Tier3Lv then return 3 end
-        if rank >= self.Tier2Lv then return 2 end
+        -- 마법사 랭크 → 구간 1~4 (1 · 6 · 11 · 16 — config mageTier2Lv·3·4)
+        if rank >= (_GameData.mageTier4Lv or self.Tier4Lv) then return 4 end
+        if rank >= (_GameData.mageTier3Lv or self.Tier3Lv) then return 3 end
+        if rank >= (_GameData.mageTier2Lv or self.Tier2Lv) then return 2 end
         return 1
     end
 
     method number Trait(string school, integer rank)
         -- 속성 고유 특성 세기 (§2-3 표): bone 관통 수 · cold 파편 수 · fire 폭발 반경 · soul 발 수 · curse 낙인 % · 그 밖 0
         local tier = self:TierOf(math.max(1, rank))
-        if school == "bone" then return self.PierceBase + tier - 1 end
-        if school == "cold" then return self.ShardsBase + tier - 1 end
-        if school == "fire" then return self.BurstBase + self.BurstStep * (tier - 1) end
-        if school == "soul" then return self.TorrentBase + tier - 1 end
-        if school == "curse" then return self.CurseBasePct + self.CursePerRank * (math.max(1, math.min(20, rank)) - 1) end
+        if school == "bone" then return (_GameData.magePierceBase or self.PierceBase) + tier - 1 end
+        if school == "cold" then return (_GameData.mageShardsBase or self.ShardsBase) + tier - 1 end
+        if school == "fire" then return (_GameData.mageBurstBase or self.BurstBase) + (_GameData.mageBurstStep or self.BurstStep) * (tier - 1) end
+        if school == "soul" then return (_GameData.mageTorrentBase or self.TorrentBase) + tier - 1 end
+        if school == "curse" then return (_GameData.mageCursePct or self.CurseBasePct) + (_GameData.mageCursePerRank or self.CursePerRank) * (math.max(1, math.min(20, rank)) - 1) end
         return 0
     end
 

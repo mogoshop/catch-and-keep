@@ -21,6 +21,8 @@ function Vector3(x,y,z) return {x=x,y=y,z=z} end
 function CircleShape(c,r) return {c=c,r=r} end
 _MageBolts=MageBolts
 math.randomseed(48)
+-- config.csv 마법사 키(갈래 C · mageTier2Lv …)가 있으면 그 값을 읽는다 — 여기서는 C 판 값(= MageBolts 기본값)을 그대로 넣어 같은 표가 나오는지 본다
+_GameData={mageTier2Lv=6,mageTier3Lv=11,mageTier4Lv=16,magePierceBase=2,mageShardsBase=1,mageBurstBase=0.8,mageBurstStep=0.2,mageTorrentBase=2,mageCursePct=8,mageCursePerRank=0.6}
 
 -- ① 분포
 do
