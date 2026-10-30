@@ -200,6 +200,10 @@ script ShadowUnit extends AttackComponent
     property number ViewHitAt = -99             -- 클라이언트 전용: 마지막으로 생명이 줄어든 때
     property number ViewFightAt = -99           -- 클라이언트 전용: 마지막으로 공격·추격 상태를 본 때
     property number ViewLastHp = -1
+    property number MageBurstFrameSec = 0.09    -- 불꽃 마법사 폭발(S07 · fx-hex-burst 6장) 장 간격 (10-31 갈래 E · 캐릭터 저주 불꽃 폭발과 같은 0.54초)
+    property number MageBurstHoldSec = 0.2      -- 폭발 마지막 장 추가 유지
+    property number MageBurstFadeSec = 0.2
+    property number BlastPopScale = 0.9         -- 폭발 마법사 파열(S08) 크기 (예전 0.7)
     @Sync
     property string CommandState = "follow"
 
@@ -1622,7 +1626,7 @@ script ShadowUnit extends AttackComponent
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         if _GameConst.FxSkillHexBurst ~= "" then
-            _Util:PlayFrames(_GameConst.FxSkillHexBurst, me.CurrentMap, pos, 0, Vector3(2 * radius / 1.28, 2 * radius / 1.28, 1), 0.07, Color(1, 1, 1, 1), 6)
+            _Util:PlayFramesHold(_GameConst.FxSkillHexBurst, me.CurrentMap, pos, 0, Vector3(2 * radius / 1.28, 2 * radius / 1.28, 1), self.MageBurstFrameSec, self.MageBurstFrameSec + self.MageBurstHoldSec, self.MageBurstFadeSec, Color(1, 1, 1, 1), 6)
         else
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(0.55 * radius, 0.55 * radius, 1), false, { Color = Color(1, 0.5, 0.2, 1) })
         end
@@ -1633,7 +1637,7 @@ script ShadowUnit extends AttackComponent
         -- 폭발 마법사: 화살이 맞은 자리 원소 색 파열 (모든 클라이언트)
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(0.7, 0.7, 1), false, { Color = color })
+        _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos, 0, Vector3(self.BlastPopScale, self.BlastPopScale, 1), false, { Color = color })
     end
 
     @ExecSpace("ServerOnly")

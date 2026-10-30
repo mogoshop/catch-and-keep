@@ -36,6 +36,14 @@ script MonsterStatus extends Component
     property integer CurseMask = 0           -- 1 낙인, 2 쇠약; 실제 지속 상태만 동기화
     property table CurseMarkers = {}          -- 클라이언트 전용, 몬스터의 자식이라 함께 정리된다
     property number MarkerRetryAt = 0
+    -- 10-31 실플레이 갈래 E (audit M01~M13): 머리 위 표식이 22~27px로 너무 작았다 — 값만 되돌리면 예전 그대로
+    property number MarkerScale = 0.9          -- 32px 문양 배율 (예전 0.56 → 0.9 = 0.29칸 · 줌80 약 35px · 줌100 약 43px)
+    property number MarkerIconScale = 0.225    -- 문양이 없어 스킬 아이콘(128px)을 줄여 쓸 때 배율 (문양과 같은 크기 · 예전 0.14)
+    property number MarkerGap = 0.36           -- 여러 저주 표식 사이 간격(칸) (예전 0.26 — 커진 표식이 겹치지 않게)
+    property number MarkerPopScale = 1.3       -- 저주가 처음 붙은 순간 크게 떴다가
+    property number MarkerPopSec = 0.3         --   이 시간 동안 원래 크기로 줄어든다
+    property boolean MarkerPlate = true        -- 표식 뒤 반투명 검정 원판 (ui_icons mark_backplate 48px · 바닥·몸 색과 상관없이 문양이 보이게)
+    property number MarkerPlateScale = 0.83    -- 원판 배율 (표식 엔티티 기준 · 48px × 0.83 ≈ 문양 32px의 1.25배)
     property number ThornUntil = 0            -- 가시 저주: 이 몬스터가 준 피해의 ThornPct%를 되돌려 받는다
     property number ThornPct = 0
     property Entity ThornSource = nil
@@ -336,6 +344,11 @@ script MonsterStatus extends Component
     method boolean IsChillShown()
         -- 클라이언트 색조용: 동기화된 CurseMask의 둔화 비트 (MonsterTraits.TintTick)
         return (self.CurseMask // 2048) % 2 == 1
+    end
+
+    method boolean IsAmpShown()
+        -- 클라이언트 색조용: 동기화된 CurseMask의 약화의 낙인 비트 (MonsterTraits.TintTick · 10-31 갈래 E — 낙인 걸린 몸이 옅은 자홍빛 · 머리 위 표식과 달리 8칸 밖도)
+        return self.CurseMask % 2 == 1
     end
 
     method number TakenMult()
@@ -757,7 +770,7 @@ script MonsterStatus extends Component
         for i, def in ipairs(active) do index[def.kind] = i end
         for _, def in ipairs(defs) do
             local i = index[def.kind]
-            self:UpdateCurseMarker(def.kind, i ~= nil, i ~= nil and (i - (n + 1) / 2) * 0.26 or 0, def.skill, def.mark)
+            self:UpdateCurseMarker(def.kind, i ~= nil, i ~= nil and (i - (n + 1) / 2) * self.MarkerGap or 0, def.skill, def.mark)
         end
     end
 
@@ -792,9 +805,26 @@ script MonsterStatus extends Component
             if icon == "" then return end
             sprite.SpriteRUID = icon
             rec.ready = true
+            rec.bornAt = _UtilLogic.ElapsedSeconds
             -- 문양(32px)과 스킬 아이콘(128px)이 같은 크기로 보이게 배율을 따로 둔다
             local skillDef = _SkillData:Get(skillId)
             rec.mark = skillDef == nil or icon ~= skillDef.icon
+            -- 10-31 갈래 E: 표식 뒤 반투명 검정 원판 (표식의 자식 · 같이 크고 같이 지워진다 · 표식 바로 뒤 층)
+            local plateRuid = self.MarkerPlate and _GameData:GetUiIcon("mark_backplate") or ""
+            if plateRuid ~= "" then
+                local plate = _SpawnService:SpawnByModelId("artsprite", "CursePlate_" .. kind, rec.entity.TransformComponent.WorldPosition, rec.entity)
+                if isvalid(plate) then
+                    local ps = plate.SpriteRendererComponent
+                    ps.SpriteRUID = plateRuid
+                    ps.SortingLayer = sprite.SortingLayer
+                    ps.OrderInLayer = sprite.OrderInLayer - 1
+                    plate.TransformComponent.Position = Vector3(0, 0, 0)
+                    local pk = self.MarkerPlateScale * (rec.mark and 1 or 4)   -- 스킬 아이콘(128px)은 문양(32px)의 4배 크기라 원판도 그만큼
+                    plate.TransformComponent.Scale = Vector3(pk, pk, 1)
+                    rec.plate = plate
+                end
+            end
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] curse marker %s on %s scale=%.2f plate=%s", kind, self.Entity.Name, self:MarkerScaleAt(rec.mark, 0), tostring(rec.plate ~= nil))) end
         end
         local transform = self.Entity.TransformComponent
         local hit = self.Entity.HitComponent
@@ -803,9 +833,19 @@ script MonsterStatus extends Component
         local height = math.max(1.1, isvalid(hit) and hit.BoxSize.y * sy + 0.55 or 1.1)
         local marker = rec.entity
         marker.TransformComponent.Position = transform:ToLocalPoint(transform.WorldPosition + Vector3(offset, height, 0))
-        local k = rec.mark and 0.56 or 0.14
+        local k = self:MarkerScaleAt(rec.mark, _UtilLogic.ElapsedSeconds - (rec.bornAt or 0))
         marker.TransformComponent.Scale = Vector3(k / sx, k / sy, 1)
         marker:SetVisible(true)
+    end
+
+    method number MarkerScaleAt(boolean mark, number age)
+        -- 머리 위 표식 배율 (순수 계산 · tests/quality/skillfx_e.lua): 문양 MarkerScale / 스킬 아이콘 MarkerIconScale ×
+        --   붙은 지 age초 — MarkerPopSec 동안 MarkerPopScale배에서 1배로 줄어든다 (저주 직후 0.3초 1.3배)
+        local base = mark and self.MarkerScale or self.MarkerIconScale
+        if age >= 0 and age < self.MarkerPopSec and self.MarkerPopSec > 0 then
+            base = base * (1 + (self.MarkerPopScale - 1) * (1 - age / self.MarkerPopSec))
+        end
+        return base
     end
 
     @ExecSpace("ClientOnly")

@@ -143,6 +143,14 @@ script PlayerStats extends Component
     property number ArmorSoaked = 0          -- 강화 「터지는 갑옷」: 지금 뼈 갑옷이 막은 피해 합 (다 깨질 때 터뜨리고 0 · 새로 두르면 0)
     property integer ArmorRingSerial = 0     -- 클라이언트: 뼈 갑옷 몸 고리 입자 (44 §4-1 B — 남은 흡수량만큼 진하게)
     property integer ArmorRingStep = 0       -- 클라이언트: 지금 그린 고리 단계 (0 = 없음 · 1~4)
+    -- 10-31 실플레이 갈래 E (audit P15 「뼈방패가 충격적」): 값만 되돌리면 예전 그대로
+    property number ArmorRingAlphaMin = 0.55  -- 몸 고리 투명도: 거의 깨짐(1단계) (예전 0.30 — 사실상 안 보였다)
+    property number ArmorRingAlphaMax = 0.85  -- 가득(4단계) (예전 0.75)
+    property Color ArmorRingColor = Color(1, 0.98, 0.9, 1)   -- 뼈 흰빛 (예전 상아 0.93,0.87,0.72 — 창백한 피부·회백 망토와 같은 톤)
+    property boolean ArmorRingLive = true     -- 고리를 몸에 붙인 입자 엔티티(BasicParticleComponent)로 — 단계가 바뀌어도 다시 틀지 않고 색(투명도)만 바꾼다 · 안 뿜으면 아래 예전 입자로
+    property Entity ArmorRingEntity = nil     -- 클라이언트: 그 엔티티
+    property number ArmorRingCheckSec = 0.3   -- 만든 뒤 이 시간에 실제로 뿜는지(IsEmitting) 확인
+    property number ArmorRingOverlap = 0.5    -- 예전 입자 경로: 새 고리를 먼저 틀고 앞 고리는 이만큼 뒤에 지운다 (지우고 다시 틀면 반짝이가 끊겼다)
     -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
     property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
     property number PvpAmpUntil = 0
@@ -663,11 +671,90 @@ script PlayerStats extends Component
         if step == self.ArmorRingStep then return end
         self.ArmorRingStep = step
         log(string.format("[VRF] bone armor ring step=%d (%d/%d)", step, math.floor(self.BoneArmor), math.floor(self.BoneArmorMax)))
+        if step <= 0 or not isvalid(self.Entity) then
+            self:StopArmorRing()
+            return
+        end
+        -- 뼈 흰빛 기운: 가득 ArmorRingAlphaMax(0.85) → 거의 깨짐 ArmorRingAlphaMin(0.55) (코덱스 H-5 뼈 갑옷 고리가 승인되면 그 그림 · 몸 앞·뒤 두 층으로)
+        local c = self.ArmorRingColor
+        local color = Color(c.r, c.g, c.b, self:ArmorRingAlpha(step))
+        if self.ArmorRingLive and self:TintArmorRing(color) then return end
+        self:PlayArmorRingParticle(color)
+    end
+
+    method number ArmorRingAlpha(integer step)
+        -- 몸 고리 4단계 → 투명도 (순수 계산 · tests/quality/skillfx_e.lua): 1단계 ArmorRingAlphaMin … 4단계 ArmorRingAlphaMax · 0 = 없음
+        if step <= 0 then return 0 end
+        local t = (math.min(4, step) - 1) / 3
+        return self.ArmorRingAlphaMin + (self.ArmorRingAlphaMax - self.ArmorRingAlphaMin) * t
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean TintArmorRing(Color color)
+        -- 몸에 붙은 고리 입자 엔티티: 있으면 색(투명도)만 바꾼다 · 없으면 만든다 (artsprite 그림은 끄고 BasicParticleComponent Enchant 반복). 못 만들면 false
+        local e = self.ArmorRingEntity
+        if e ~= nil and isvalid(e) then
+            local live = e.BasicParticleComponent
+            if not isvalid(live) then return false end
+            live.Color = color
+            return true
+        end
+        e = _SpawnService:SpawnByModelId("artsprite", "BoneArmorRing", self.Entity.TransformComponent.WorldPosition, self.Entity)
+        if not isvalid(e) then return false end
+        e.SpriteRendererComponent.Enable = false
+        local added = e:AddComponent("BasicParticleComponent")
+        if added == nil or not isvalid(added) then
+            e:Destroy()
+            return false
+        end
+        ---@type BasicParticleComponent
+        local bp = added
+        bp.ParticleType = BasicParticleType.Enchant
+        bp.Loop = true
+        bp.Prewarm = true
+        bp.SortingLayer = "MapLayer0"
+        bp.OrderInLayer = 5
+        bp.Color = color
+        local ps = self.Entity.TransformComponent.Scale
+        local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
+        e.TransformComponent.Position = Vector3(0, 0.45 / psy, 0)
+        e.TransformComponent.Scale = Vector3(0.95 / psx, 0.95 / psy, 1)
+        bp:Play()
+        self.ArmorRingEntity = e
+        -- 안전장치: ArmorRingCheckSec 뒤에도 안 뿜으면 이 경로를 끄고 예전 서비스 입자로 (메이커 확인 전)
+        _TimerService:SetTimerOnce(function()
+            if self.ArmorRingEntity ~= e or not isvalid(e) then return end
+            local p = e.BasicParticleComponent
+            local emitting = isvalid(p) and p.IsEmitting
+            log(string.format("[VRF] bone armor ring live emitting=%s step=%d", tostring(emitting), self.ArmorRingStep))
+            if not emitting then
+                self.ArmorRingLive = false
+                e:Destroy()
+                self.ArmorRingEntity = nil
+                if self.ArmorRingStep > 0 then
+                    local c = self.ArmorRingColor
+                    self:PlayArmorRingParticle(Color(c.r, c.g, c.b, self:ArmorRingAlpha(self.ArmorRingStep)))
+                end
+            end
+        end, self.ArmorRingCheckSec)
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PlayArmorRingParticle(Color color)
+        -- 예전 경로(서비스 입자 · 몸 +0.45): 새 고리를 먼저 틀고 앞 고리는 ArmorRingOverlap 뒤에 지운다 (지우고 다시 틀면 퍼지던 반짝이가 끊겼다)
+        local old = self.ArmorRingSerial
+        self.ArmorRingSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Enchant, self.Entity, Vector3(0, 0.45, 0), 0, Vector3(0.95, 0.95, 1), true, { Color = color, SortingLayer = "MapLayer0", OrderInLayer = 5 })
+        if old ~= 0 then _TimerService:SetTimerOnce(function() _ParticleService:RemoveParticle(old) end, self.ArmorRingOverlap) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopArmorRing()
+        -- 갑옷이 다 깨졌다: 고리 입자·엔티티를 지운다
         if self.ArmorRingSerial ~= 0 then _ParticleService:RemoveParticle(self.ArmorRingSerial) end
         self.ArmorRingSerial = 0
-        if step <= 0 or not isvalid(self.Entity) then return end
-        -- 상아색 뼈 기운: 가득 0.75 → 거의 깨짐 0.3 (코덱스 H-5 뼈 갑옷 고리가 승인되면 그 그림으로)
-        self.ArmorRingSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.Enchant, self.Entity, Vector3(0, 0.45, 0), 0, Vector3(0.95, 0.95, 1), true, { Color = Color(0.93, 0.87, 0.72, 0.15 + 0.15 * step) })
+        if self.ArmorRingEntity ~= nil and isvalid(self.ArmorRingEntity) then self.ArmorRingEntity:Destroy() end
+        self.ArmorRingEntity = nil
     end
 
     @ExecSpace("ServerOnly")
