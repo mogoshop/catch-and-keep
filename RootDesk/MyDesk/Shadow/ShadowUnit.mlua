@@ -162,6 +162,7 @@ script ShadowUnit extends AttackComponent
     property number GiantCastUntil = 0        -- 48 거인 영창·꽂기: 이 시각까지 제자리 (기도 메테오 영창 1초 · 노바 0.3초 · 땅 가르기 0.3초+솟음 — RiteGiantMoves.Hold)
     property number GiantSlowUntil = 0        -- 48 대검 거인 회전 베기: 이 시각까지 따라가는 이동 ×0.6
     property number GiantHitAt = -99          -- 48-6 ② 거인 맞음 그림을 마지막으로 건 때 (0.5초에 한 번까지)
+    property string GiantClipState = ""       -- s48v2-A 지금 도는 거인 한 번 동작 이름 (GiantPlay · 함성 몸이 맞음 그림만 덮고 기술·갈라짐은 덮지 않게)
     @Sync
     property number GiantHoldUntil = 0        -- 48-6 ③ 거인 기술 동작을 이 서버 시각(ServerElapsedSeconds)까지 반복 — 클라이언트 MotionSmoother.FrameClip이 되돌려 감 (0 = 한 번)
     -- 뼈 성찬 (10-20): 받는 피해 -20% · 「피의 고양」 공격 속도
@@ -1100,6 +1101,7 @@ script ShadowUnit extends AttackComponent
         local one = math.max(0.05, self.GiantLook[key .. "Sec"] or 0)
         local hold = math.max(one, holdSec)
         self.GiantClipUntil = now + hold
+        self.GiantClipState = state
         self.GiantHoldUntil = hold > one + 0.01 and (_UtilLogic.ServerElapsedSeconds + hold) or 0
         -- SetClip은 기술 동작 중 일반 그림(서기·걷기·공격)을 막으므로 직접 건다 (연속 베기는 평타 그림을 기술로 반복)
         self.CurrentClip = ruid
@@ -1107,9 +1109,36 @@ script ShadowUnit extends AttackComponent
         if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant look play state=%s key=%s form=%s sec=%.2f loop=%s", state, key, self.GiantLook.form or "", hold, tostring(self.GiantHoldUntil > 0))) end
     end
 
+    @ExecSpace("ServerOnly")
+    method number GiantRoarBody(any onStart)
+        -- s48v2-A 방패 함성 몸 (A-ROAR-01 코덱스 확정 · 그림만 — 도발 대상·적용 시점·반경·보스 제외·피해는 TauntTick 그대로):
+        --   그림 키 = skill1 (C 등록 검증표 shield skill1 = 함성 몸 8~12장 · 없으면 몸 동작 없음 — 일반 skill 그림으로 대신하지 않는다)
+        --   기술·소멸 동작 중이면 생략(맞음 그림은 덮는다) · 평타 동작 중이면 평타를 끊지 않고 끝난 뒤(0.6초 안일 때만) 건다
+        --   돌려주는 값: 0 = 지금 몸 시작 · 0보다 크면 그 초 뒤 몸 시작(예약) · -1 = 몸을 걸 수 없음 → 부른 쪽(RiteGiantMoves.Roar)이 함성 FX를 바로 보인다
+        --   onStart(bodyStarted): 몸이 실제로 시작하는 그 순간 부른다 → 함성 FX를 몸 시작에 맞춰 연다. 예약 뒤 그 사이 기술·소멸이 시작돼 몸을 못 걸면 onStart(false) (FX만 그때 · 몸 없음)
+        if (self.GiantLook.skill1 or "") == "" then return -1 end
+        local now = _UtilLogic.ElapsedSeconds
+        if now < self.GiantClipUntil and self.GiantClipState ~= "hit" then return -1 end
+        local wait = self.AttackAnimationUntil - now
+        if wait > 0.6 then return -1 end
+        if wait <= 0 then
+            self:GiantPlay("skill1", 0)
+            if onStart ~= nil then onStart(true) end
+            return 0
+        end
+        local token = self.GiantLookToken
+        _TimerService:SetTimerOnce(function()
+            if not isvalid(self.Entity) or not self.Giant or self.Dead or token ~= self.GiantLookToken then return end
+            local ok = not (_UtilLogic.ElapsedSeconds < self.GiantClipUntil and self.GiantClipState ~= "hit")
+            if ok then self:GiantPlay("skill1", 0) end
+            if onStart ~= nil then onStart(ok) end
+        end, wait)
+        return wait
+    end
+
     method string GiantMotionKey(string state)
         -- 동작 → 그림 키 (48 §7-2 · 리뷰 가드 재사용): 그 키 그림이 있으면 그대로 · skill1/skill2가 없으면 쌍칼 연속 베기 = 평타 그림(attackFirst) ·
-        --   그 밖 = 지금 skill 그림(K-4 그림 오기 전 임시) · 그것도 없으면 "" (아무 일 없음). 방패 도발 함성은 몸 동작 없음이라 부르지 않는다
+        --   그 밖 = 지금 skill 그림(K-4 그림 오기 전 임시) · 그것도 없으면 "" (아무 일 없음). 방패 도발 함성 몸(shield skill1)은 RiteGiantMoves.Roar → GiantRoarBody만 건다 (s48v2-A · 그림이 없으면 skill로 대체하지 않음)
         local look = self.GiantLook
         if (look[state] or "") ~= "" then return state end
         if state == "skill1" or state == "skill2" then
