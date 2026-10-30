@@ -1,5 +1,6 @@
 -- 10-31 사용자 실플레이 피드백 갈래 A: 실제 본문으로 반례를 본다 (엔진 서비스·엔티티는 대역)
---   A-2 MonsterSpawner — 한 무리 정리 뒤 숨 고르기 12초(파티 단위) · 처음부터 빈 곳은 숨 고르기 없음 · 동시 추격 상한 10 · InflowTick이 보류 동안 실제로 0마리
+--   A-2 MonsterSpawner — 한 무리 정리 뒤 숨 고르기 12초(파티 단위) · 처음부터 빈 곳은 숨 고르기 없음 · 동시 추격 상한 10 · InflowTick이 보류 동안 실제로 0마리 ·
+--       둘레 수는 교전(추격·공격) 몬스터만 — 8칸 안 배회·대기 무리가 남아도 교전 0이면 rest (10-31 메이커 A1 반례)
 --   A-3 MonsterAttack — 추격 시작 뒤 1.5초 유지 · 놓치는 거리 = 감지 × 1.4 · 놓친 뒤 0.6초 정지 · 감지 경계에서 흔들리는 플레이어에게 끊김 0 ·
 --       떼·유입(감지 40)은 손대지 않음 · 사거리 안에서는 물러나기(-1)·다가감 없이 멈춤
 --   A-4 PetSystem — 서 있기(2~4초마다 0.3칸 미세 이동만, 주인 2칸 안) · 2~3칸은 그대로 · 3칸 넘으면 따라가 2칸 안에서 정지 · 8칸 줍기 뒤 돌아옴 · 목표 전환 0.4초
@@ -13,7 +14,7 @@
 --@pre function V:Dot(o) return self.x * o.x + self.y * o.y end
 --@pre function Vector2(x, y) return setmetatable({ x = x, y = y }, V) end
 --@pre function Vector3(x, y, z) return { x = x, y = y, z = z } end
--- @source MonsterSpawner Monster/MonsterSpawner.mlua InflowTick,UpdateRest,InflowHold,NoteHold,RestGroups,ChaseCounts,PoolCount,ReturnToPool
+-- @source MonsterSpawner Monster/MonsterSpawner.mlua InflowTick,UpdateRest,InflowHold,NoteHold,RestGroups,Engaged,ChaseCounts,PoolCount,ReturnToPool
 -- @source MonsterAttack Monster/MonsterAttack.mlua ChaseDecide,SpacingDecide,UpdateChaseHold,WriteDetect,ResumeChase,ResetChaseHold,IsLiveDefender,Body
 -- @source PetSystem Player/PetSystem.mlua PetDecide,StandSpot,DrawPet,ShowFetch,TickOwner,Wants,Frame
 local fails = 0
@@ -39,7 +40,7 @@ local function player(uid, x, y, party)
 end
 local function monster(id, x, y, opt)
   opt = opt or {}
-  local attack = { ChaseState = opt.state or 0 }
+  local attack = { ChaseState = opt.state or 0, SpacingControlled = opt.spacing == true, AttackAnimationUntil = opt.animUntil or 0, ChaseExternal = opt.external == true }
   local e = { Id = id, Name = id, pos = Vector2(x, y), Enable = true, AIChaseComponent = { Enable = opt.chaseOff ~= true, DetectionRange = opt.detect or 4 } }
   local m = { Entity = e, IsDead = opt.dead == true, Inflow = opt.inflow == true, Horde = opt.horde == true }
   e.GetComponent = function(_, k) if k == "script.MonsterAttack" then return attack elseif k == "script.Monster" then return m end return nil end
@@ -74,18 +75,18 @@ end
 do
   local S = spawner()
   local p1, p2, p3 = player("u1", 0, 0, 7), player("u2", 30, 0, 7), player("u3", -30, 0, 0)
-  local mons = { monster("a", 3, 0) }
+  local mons = { monster("a", 3, 0, { state = 1 }) }
   _Util.MonstersNear = function(_, map, c, r)
     local out = {}
     for _, m in ipairs(mons) do if not m.IsDead and (m.Entity.pos - c):Magnitude() <= r then table.insert(out, m) end end
     return out
   end
-  local g = S:RestGroups(MAP, { p1, p2, p3 })
-  check(g.of.u1.key == "p7" and g.of.u2.key == "p7" and g.of.u2.awake == 1 and g.of.u3.key == "u3" and #g.list == 2, "A-2 파티원은 한 무리(파티 키) — 멀리 있는 파티원도 둘레 수를 함께 쓴다")
-  for _, x in ipairs(g.list) do S:UpdateRest(x.key, x.awake, 0) end
+  local g = S:RestGroups(MAP, { p1, p2, p3 }, 0)
+  check(g.of.u1.key == "p7" and g.of.u2.key == "p7" and g.of.u2.engaged == 1 and g.of.u3.key == "u3" and #g.list == 2, "A-2 파티원은 한 무리(파티 키) — 멀리 있는 파티원도 둘레 교전 수를 함께 쓴다")
+  for _, x in ipairs(g.list) do S:UpdateRest(x.key, x.engaged, 0) end
   mons[1].IsDead = true
-  g = S:RestGroups(MAP, { p1, p2, p3 })
-  for _, x in ipairs(g.list) do S:UpdateRest(x.key, x.awake, 1.5) end
+  g = S:RestGroups(MAP, { p1, p2, p3 }, 1.5)
+  for _, x in ipairs(g.list) do S:UpdateRest(x.key, x.engaged, 1.5) end
   check(S:InflowHold("p7", 0, 2) == "rest" and S:InflowHold(g.of.u2.key, 0, 2) == "rest", "A-2 파티 둘레가 비면 무리를 안 만난 파티원(u2)도 함께 숨 고르기")
   check(S:InflowHold("u3", 0, 2) == "", "A-2 다른 파티·혼자인 사람은 영향 없음")
 
@@ -101,6 +102,42 @@ do
   check(cnt.u1 == 13 and cnt.u2 == 1, "A-2 추격 수 = 추격 중(1)·유입·떼 중 가장 가까운 사람·추격 범위 안 (u1 13 · u2 1, 평소·죽음·범위 밖 제외) — 실제 " .. tostring(cnt.u1) .. "/" .. tostring(cnt.u2))
 end
 
+-- 교전만 센다 (10-31 메이커 A1): 교전 무리를 다 잡았는데 8칸 안(7.4~8.0칸)에 깨어 있는 배회·대기 들개 3마리가 남음 → rest 시작
+do
+  local S = spawner()
+  local p1 = player("u1", 0, 0, 0)
+  local fight = { monster("f1", 1, 0, { state = 1 }), monster("f2", -1, 0, { spacing = true }), monster("f3", 0, 1, { animUntil = 5 }) }
+  local idle = { monster("w1", 7.4, 0), monster("w2", 7.7, 0.5), monster("w3", 0, 8.0, { state = 2 }) }
+  local mons = {}
+  for _, m in ipairs(fight) do table.insert(mons, m) end
+  for _, m in ipairs(idle) do table.insert(mons, m) end
+  _Util.MonstersNear = function(_, map, c, r)
+    local out = {}
+    for _, m in ipairs(mons) do if not m.IsDead and (m.Entity.pos - c):Magnitude() <= r then table.insert(out, m) end end
+    return out
+  end
+  local g = S:RestGroups(MAP, { p1 }, 1)
+  check(g.of.u1.engaged == 3, "A-2 교전 수 = 추격(1)·간격 조절·공격 동작 3 · 배회(0)·놓치고 멈춤(2) 3마리는 세지 않음 — 실제 " .. g.of.u1.engaged)
+  S:UpdateRest("u1", g.of.u1.engaged, 1)
+  fight[1].IsDead = true fight[2].IsDead = true
+  g = S:RestGroups(MAP, { p1 }, 2)
+  check(g.of.u1.engaged == 1, "A-2 교전 1마리 남음 (공격 동작 중)")
+  S:UpdateRest("u1", g.of.u1.engaged, 2)
+  check(S:InflowHold("u1", 0, 2) == "", "A-2 교전이 1마리라도 남으면 rest 미시작")
+  fight[3].IsDead = true
+  logs = {}
+  g = S:RestGroups(MAP, { p1 }, 3)
+  S:UpdateRest("u1", g.of.u1.engaged, 3)
+  check(g.of.u1.engaged == 0 and S:InflowHold("u1", 0, 3) == "rest", "A-2 교전 0 · 8칸 안 배회·대기 3마리 남음 → rest 시작 (예전 규칙은 둘레 깨어 있는 3마리 때문에 안 섰다)")
+  check(#logs == 1 and logs[1]:find("engaged=1→0", 1, true) ~= nil, "A-2 [VRF] inflow rest start … engaged=1→0 로그")
+  -- 다른 사람을 쫓는 몬스터는 내 교전 수가 아니다 · 유입·떼는 추적이 켜져 있으면 교전
+  local S2 = spawner()
+  local pa, pb = player("ua", 0, 0, 0), player("ub", 6, 0, 0)
+  mons = { monster("x", 5, 0, { state = 1 }), monster("inf", -3, 0, { inflow = true, detect = 40 }), monster("ext", 0, -3, { external = true }) }
+  local g2 = S2:RestGroups(MAP, { pa, pb }, 0)
+  check(g2.of.ua.engaged == 2 and g2.of.ub.engaged == 1, "A-2 교전은 그 무리를 노리는(가장 가까운) 몬스터만 · 유입·감지 외부 지정 몬스터는 추적이 켜져 있으면 교전")
+end
+
 -- InflowTick 통합: 숨 고르기 12초 동안 실제 유입 0 · 상한에서 보류 · [VRF] 사유 로그
 do
   local S = spawner()
@@ -109,7 +146,7 @@ do
   S.SpawnInflow = function() spawned = spawned + 1 return true end
   _RaidDirector = { State = function() return nil end }
   local p1 = player("u1", 0, 0, 0)
-  local mons = { monster("a", 3, 0), monster("b", 4, 0) }
+  local mons = { monster("a", 3, 0, { state = 1 }), monster("b", 4, 0, { state = 1 }), monster("idle", 7.5, 0) }
   _Util.MonstersNear = function(_, map, c, r)
     local out = {}
     for _, m in ipairs(mons) do if not m.IsDead and (m.Entity.pos - c):Magnitude() <= r then table.insert(out, m) end end
@@ -128,7 +165,7 @@ do
     S:InflowTick(MAP, { p1 })
     if t < 13.5 then during = during + (spawned - before) end
   end
-  check(during == 0, "A-2 InflowTick: 정리 뒤 12초 동안 유입 0마리 (실제 " .. during .. ")")
+  check(during == 0, "A-2 InflowTick: 정리 뒤 12초 동안 유입 0마리 — 7.5칸에 대기 몬스터가 남아 있어도 (실제 " .. during .. ")")
   check(spawned == 2, "A-2 InflowTick: 12초가 지나면 다시 들어온다")
   local sawHold, sawResume = false, false
   for _, l in ipairs(logs) do
