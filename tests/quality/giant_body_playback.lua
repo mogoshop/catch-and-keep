@@ -2,10 +2,11 @@
 --   MotionSmoother(FrameClip·FramePick) · UndeadSystem(GiantStateOrder·GiantExtraStates·GiantLook) · ShadowUnit(GiantPlay·GiantMotionKey·GiantRoarBody)로
 --   ① 12·16장(그리고 64장) 몸이 60·50·30Hz 갱신(흔들림 포함)에서 중간 칸 누락 0 · 길이 늘어남 0 (6장 하드캡 없음)
 --   ② 루프 이음: 끝 칸 → 반복 시작 칸(ls) · 준비 칸은 한 번 ③ 한 번 동작은 hold가 길어도 되감지 않고 마지막 칸 · 연속 베기(평타 그림)는 hold 동안 반복
---   ④ 타격 칸(impact → s)은 긴 프레임(멈칫)에도 건너뛰지 않음 ⑤ 표의 새 몸 키(roar 등)는 코드 수정 없이 재생·외형에 실림
+--   ④ 타격 칸(impact → s)은 긴 프레임(멈칫)에도 건너뛰지 않음 ⑤ 표의 새 몸 키(skill3 등)는 코드 수정 없이 재생·외형에 실림
 --   ⑥ 실제 표: 거인 지속 ≥ 1/30초(30Hz 갱신에서도 칸 누락 0) · 첫 칸 겹침 0 · 상태 전환(대기→이동→평타→피격→소멸→기술→함성)에서 외형군 하나
 --      (외형군 = docs/evidence/2026-10-30-s48v2-A/frames-remap.csv · 구형 J203 / 최종 V4 · 업로드 전엔 알려진 혼용만 허용, GIANT_BODY_STRICT=1이면 실패)
---   ⑦ 방패 함성 몸: 그림이 있을 때만 · 기술 중 생략 · 맞음은 덮음 · 평타 중이면 끝난 뒤 (평타 그림 보존)
+--   ⑦ 방패 함성 몸(키 shield skill1 = C 검증표): 그림이 있을 때만 · 기술 중 생략 · 맞음은 덮음 · 평타 중이면 끝난 뒤 · 함성 FX는 몸 시작 콜백(onStart)에 (A-ROAR-01)
+--   ※ 지속 1/30초는 필수 규칙이 아니다(코덱스 정정): 30Hz는 화면 표본일 뿐 — 실제 표는 경고로만 보고, 16장 0.4초(25ms)는 60Hz에서 누락·늘어남 0을 확인
 -- @source GameData Data/GameData.mlua Ensure,GetMonsterFrames
 -- @source MotionSmoother World/MotionSmoother.mlua FrameClip,FramePick
 -- @source UndeadSystem Undead/UndeadSystem.mlua GiantStateOrder,GiantExtraStates,GiantLook
@@ -30,7 +31,7 @@ local function advance(sec)
 end
 _GameData:Ensure()
 local MS=MotionSmoother
-local MIN_FRAME=1/30   -- 거인 몸 한 칸의 최소 지속: 30Hz 갱신에서도 모든 칸이 한 번 이상 보인다 (register_giant_visuals 검증표 제안 값)
+local MIN_FRAME=1/30   -- 경고 기준만 (필수 규칙·엔진 상한 아님 · 코덱스 정정 10-30): 이보다 짧은 칸은 30Hz 화면에서 표본에 안 잡힐 수 있다
 
 local function seq(prefix,n,d,loop,extra)
  local f={r={},d={},loop=loop}
@@ -60,6 +61,7 @@ end
 -- ① 12·16·64장 한 번 동작: 칸 누락 0 · 길이 그대로 (갱신 주기와 무관)
 local bodies={
  {name='대검 회전 몸 16장',f=seq('S',16,0.05,false)},
+ {name='회전 몸 16장 0.4초(25ms · 60Hz 재생 가능)',f=seq('W',16,0.025,true)},
  {name='땅 가르기 몸 12장(지속 제각각)',f=seq('R',12,{0.08,0.07,0.06,0.05,0.04,0.04,0.05,0.06,0.07,0.08,0.1,0.12},false)},
  {name='방패 함성 몸 10장',f=seq('H',10,0.06,false)},
  {name='상한 없음 확인 64장',f=seq('X',64,0.04,false)},
@@ -80,7 +82,7 @@ for _,b in ipairs(bodies) do
  end
  ok(MS:FramePick(b.f,total+3,false)==#b.f.r,b.name..': 끝나면 마지막 칸 유지')
 end
--- 지속이 갱신 한 번보다 짧으면 칸을 건너뛴다 → 표의 지속 하한(MIN_FRAME)이 필요한 이유 (코드 상한이 아니라 데이터 조건)
+-- 지속이 화면 갱신 한 번보다 짧으면 그 화면에선 칸이 표본에 안 잡힌다 (코드 상한이 아니라 화면 주기 · 경고만)
 do
  local f=seq('Q',16,0.01,false)
  local shown=render(f,60,0.3,false,false)
@@ -107,7 +109,7 @@ do
  local zz={
   stand=seq('zS',4,0.18,true), move=seq('zM',6,0.12,true), attack=seq('zA',6,0.09,false,{s=4}),
   skill=seq('zK',6,0.1,false), hit=seq('zH',2,0.15,false), split=seq('zP',6,0.1,false),
-  skill1=seq('z1_',16,0.05,true), skill2=seq('z2_',12,0.06,false,{s=6}), roar=seq('zR',10,0.06,false),
+  skill1=seq('z1_',16,0.05,true), skill2=seq('z2_',12,0.06,false,{s=6}), skill3=seq('zR',10,0.06,false),
  }
  _GameData.MonsterFrames['giant_zz']=zz
  MS.FrameIndex=nil
@@ -130,7 +132,7 @@ do
  local r16=frames('z1_1',0.8-0.001,50)
  ok(#r16==16 and r16[16]=='z1_16','기술 몸 16장(50Hz): 16칸 모두')
  local rr=frames('zR1',0.6+0.3)
- ok(#rr==10 and rr[10]=='zR10','새 몸 키 roar(10장)도 코드 수정 없이 재생 (표 주도)')
+ ok(#rr==10 and rr[10]=='zR10','새 몸 키 skill3(10장)도 코드 수정 없이 재생 (표 주도)')
  -- hold: 한 번 동작은 되감지 않고 마지막 칸
  r.frameAct=nil
  unit.GiantHoldUntil=_UtilLogic.ServerElapsedSeconds+3
@@ -187,13 +189,13 @@ end
 local forms={'basic','shield','greatsword','twin','mage'}
 MS.FrameIndex=nil
 MS:FrameClip({},'')   -- 색인 만들기
-local giantRows,shortest=0,math.huge
+local giantRows,shortest,warnShort=0,math.huge,0
 for key,set in pairs(_GameData.MonsterFrames) do
  if key:sub(1,6)=='giant_' then
   for act,f in pairs(set) do
    giantRows=giantRows+1
    ok(#f.r==#f.d,key..'.'..act..': 칸 수 = 지속 수')
-   for _,d in ipairs(f.d) do shortest=math.min(shortest,d) ok(d>=MIN_FRAME-1e-9,string.format('%s.%s 지속 %.3f ≥ 1/30초',key,act,d)) end
+   for _,d in ipairs(f.d) do shortest=math.min(shortest,d) if d<MIN_FRAME-1e-9 then warnShort=warnShort+1 print(string.format('[quality/giant_body_playback] 경고: %s.%s 칸 지속 %.3f < 1/30초 — 30Hz 화면에선 표본에 안 잡힐 수 있음(필수 규칙 아님)',key,act,d)) end ok(d>0,key..'.'..act..' 지속 양수') end
    if #f.r>1 then
     local hit=MS.FrameIndex[f.r[1]]
     ok(hit~=nil and hit.f==set[act],key..'.'..act..': 첫 칸이 다른 동작과 겹치지 않음 (자기 동작으로 재생)')
@@ -210,7 +212,7 @@ for _,form in ipairs(forms) do
  local set=_GameData:GetMonsterFrames('giant_'..form)
  local seen={}
  -- 대기 → 이동 → 평타 → 피격 → 소멸 → 기술(skill·skill1·skill2) → 함성 → 대기
- for _,st in ipairs({'stand','move','attack','hit','split','skill','skill1','skill2','roar','stand'}) do
+ for _,st in ipairs({'stand','move','attack','hit','split','skill','skill1','skill2','stand'}) do
   local f=set[st]
   if f~=nil then for _,ru in ipairs(f.r) do local fm=fam[ru] or 'unknown' seen[fm]=(seen[fm] or 0)+1 if fm=='V4' and fam[ru]=='V4' then applied=applied end end end
  end
@@ -230,7 +232,7 @@ else
  for _,form in ipairs(forms) do
   local set=_GameData:GetMonsterFrames('giant_'..form)
   for _,st in ipairs({'stand','move','attack','skill','hit','split'}) do for _,ru in ipairs(set[st].r) do ok(fam[ru]=='J203',form..'.'..st..' = 구형 J203 (교체 대기)') end end
-  for _,st in ipairs({'skill1','skill2','roar'}) do if set[st] then for _,ru in ipairs(set[st].r) do ok(fam[ru]=='V4',form..'.'..st..' = V4 계열') end end end
+  for _,st in ipairs({'skill1','skill2'}) do if set[st] then for _,ru in ipairs(set[st].r) do ok(fam[ru]=='V4',form..'.'..st..' = V4 계열') end end end
  end
  print('[quality/giant_body_playback] 외형군: 연결 전 — 기본 150 J203 · 기술 33 V4 혼용(알려진 결함 · 연결표 frames-remap-sequences.csv를 monster_frames에 넣으면 자동 엄격 검사 · GIANT_BODY_STRICT=1이면 지금 실패) 섞인 종 '..table.concat(mixed,','))
 end
@@ -242,16 +244,18 @@ do
  _GameData.MonsterFrames['giant_shield']=copy
  local look=UndeadSystem:GiantLook('shield')
  ok(look.skill2Hit~=nil and near(look.skill2Hit,real.skill2.d[1]+real.skill2.d[2]+real.skill2.d[3]),'몸 타격 칸 시간 = 앞 칸 지속 합 (GiantLook skill2Hit)')
- copy.roar=seq('rr',9,0.07,false)
+ copy.skill1=seq('rr',9,0.07,false)
  look=UndeadSystem:GiantLook('shield')
- ok(look.roar=='rr1' and near(look.roarSec,0.63),'표에 roar 줄이 오면 외형에 실림 (GiantExtraStates 표 주도)')
+ ok(look.skill1=='rr1' and near(look.skill1Sec,0.63),'방패 함성 몸 줄(shield skill1 · C 검증표 키)이 오면 외형에 실림')
  copy.skill3=seq('k3_',8,0.05,false)
  local ex=UndeadSystem:GiantExtraStates(copy)
- ok(ex[1]=='skill1' and ex[2]=='skill2' and ex[3]=='roar' and ex[4]=='skill3' and #ex==4,'새 키는 이름 순서로 뒤에 (기본 6동작 제외)')
+ ok(ex[1]=='skill1' and ex[2]=='skill2' and ex[3]=='skill3' and #ex==3,'새 키는 이름 순서로 뒤에 (기본 6동작 제외 · roar 별칭 없음)')
+ look=UndeadSystem:GiantLook('shield')
+ ok(look.skill3=='k3_1' and look.roar==nil,'표의 새 키 skill3도 외형에 · roar 키는 쓰지 않음')
  _GameData.MonsterFrames['giant_shield']=real
 end
 
--- ⑦ 방패 함성 몸
+-- ⑦ 방패 함성 몸 (키 skill1 · onStart = 몸이 실제로 시작하는 순간 → 함성 FX 같이 시작 · A-ROAR-01)
 do
  local function su()
   local u=setmetatable({},{__index=ShadowUnit})
@@ -261,35 +265,45 @@ do
   u.Entity={Id='su',SpriteRendererComponent={SpriteRUID='S'}}
   return u
  end
+ local function roarable() local u=su() u.GiantLook.skill1='R' u.GiantLook.skill1Sec=0.6 return u end
+ local calls
+ local function cb(started) table.insert(calls,{at=_UtilLogic.ElapsedSeconds,started=started}) end
  _UtilLogic.ElapsedSeconds=200 _UtilLogic.ServerElapsedSeconds=200
- local u=su()
- u:GiantRoarBody()
- ok(u.CurrentClip=='S','함성 몸 그림 미등록: 몸 동작 없음 (예전 그대로)')
- u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
- u:GiantRoarBody()
- ok(u.CurrentClip=='R' and u.GiantClipState=='roar' and near(u.GiantClipUntil,200.6),'함성 몸 등록: 0.6초 몸 동작')
- u=su() u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
+ local u=su() calls={}
+ local r=u:GiantRoarBody(cb)
+ ok(r==-1 and #calls==0 and u.CurrentClip=='S','함성 몸 그림(skill1) 미등록: -1 → 부른 쪽이 FX 바로 · 몸 동작 없음 · 일반 skill로 대신 안 함')
+ u=roarable() calls={}
+ r=u:GiantRoarBody(cb)
+ ok(r==0 and u.CurrentClip=='R' and u.GiantClipState=='skill1' and near(u.GiantClipUntil,200.6),'함성 몸 등록: 지금 0.6초 몸 동작')
+ ok(#calls==1 and calls[1].started==true and near(calls[1].at,200),'몸 시작 순간 onStart(true) → 함성 FX 같이 시작')
+ u=roarable() calls={}
  u:GiantPlay('skill2',0)
- u:GiantRoarBody()
- ok(u.CurrentClip=='K2','기술 동작 중엔 함성 몸 생략 (기술 몸 보존)')
- u=su() u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
+ r=u:GiantRoarBody(cb)
+ ok(r==-1 and u.CurrentClip=='K2' and #calls==0,'기술 동작 중엔 몸 생략(기술 몸 보존) · -1 → FX 바로')
+ u=roarable() calls={}
  u:GiantPlay('hit',0)
- u:GiantRoarBody()
- ok(u.CurrentClip=='R','맞음 그림은 함성 몸이 덮는다')
- u=su() u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
+ r=u:GiantRoarBody(cb)
+ ok(r==0 and u.CurrentClip=='R' and #calls==1,'맞음 그림은 함성 몸이 덮는다')
+ u=roarable() calls={}
  u.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.3
- u:GiantRoarBody()
- ok(u.CurrentClip=='S','평타 동작 중엔 바로 걸지 않음 (평타 그림 보존)')
+ r=u:GiantRoarBody(cb)
+ ok(near(r,0.3) and u.CurrentClip=='S' and #calls==0,'평타 중: 0.3초 뒤 예약 · 평타 그림 보존 · FX도 아직')
  advance(0.31)
- ok(u.CurrentClip=='R','평타가 끝난 뒤 함성 몸')
- u=su() u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
+ ok(u.CurrentClip=='R' and #calls==1 and calls[1].started==true and near(calls[1].at,200.3),'평타가 끝난 순간 몸과 FX가 같이 시작')
+ u=roarable() calls={}
  u.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.9
- u:GiantRoarBody() advance(1)
- ok(u.CurrentClip=='S','평타가 0.6초 넘게 남으면 이번 함성 몸은 생략')
- u=su() u.GiantLook.roar='R' u.GiantLook.roarSec=0.6
+ r=u:GiantRoarBody(cb) advance(1)
+ ok(r==-1 and u.CurrentClip=='S' and #calls==0,'평타가 0.6초 넘게 남으면 몸 생략 · -1 → FX 바로')
+ u=roarable() calls={}
  u.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.3
- u:GiantRoarBody() u.GiantLookToken=2 advance(0.4)
- ok(u.CurrentClip=='S','기다리는 사이 거인이 바뀌면(차례 다름) 걸지 않음')
+ u:GiantRoarBody(cb) advance(0.1) u.AttackAnimationUntil=0 u:GiantPlay('skill2',0) advance(0.3)
+ ok(u.CurrentClip=='K2' and #calls==1 and calls[1].started==false,'예약 사이 기술이 시작되면 몸은 안 걸고 onStart(false) — FX만 그때')
+ u=roarable() calls={}
+ u.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.3
+ u:GiantRoarBody(cb) u.GiantLookToken=2 advance(0.4)
+ ok(u.CurrentClip=='S' and #calls==0,'기다리는 사이 거인이 바뀌면(차례 다름) 몸·FX 모두 없음')
+ local fh=io.open('RootDesk/MyDesk/Shadow/ShadowUnit.mlua') local src=fh:read('a') fh:close()
+ ok(src:find('self:GiantRoarBody(',1,true)==nil,'ShadowUnit은 함성 몸을 직접 걸지 않는다 (RiteGiantMoves.Roar 한 곳에서 GiantRoarBody(onStart) — 이중 재생 방지)')
 end
 -- 정적: 6장 하드캡·고정 장 수 코드 없음
 do
@@ -299,4 +313,5 @@ do
  local fu=io.open('RootDesk/MyDesk/Undead/UndeadSystem.mlua') local us=fu:read('a') fu:close()
  ok(us:find('method table GiantExtraStates(table set)',1,true)~=nil,'추가 동작 키 표 주도')
 end
-print(string.format('[quality/giant_body_playback] s48v2-A %d checks: 12·16·64 frames no skip/no stretch @60/50/30Hz · loop seam ls · hold no rewind · impact kept · data-driven roar · real table ≥1/30s (min %.3f) · first-frame unique · roar body gate',checks,shortest))
+if warnShort>0 then print('[quality/giant_body_playback] 짧은 칸 경고 '..warnShort..'개 (필수 규칙 아님)') end
+print(string.format('[quality/giant_body_playback] s48v2-A %d checks: 12·16·64 frames no skip/no stretch @60/50/30Hz · loop seam ls · hold no rewind · impact kept · data-driven keys · real table 1/30s warn-only (min %.3f) · first-frame unique · roar body skill1 + onStart FX sync',checks,shortest))
