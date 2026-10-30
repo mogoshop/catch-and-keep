@@ -319,14 +319,16 @@ end
 -- ④ 쌍칼 돌진 자취(S16): 계약 크기 = 지금 쓰는 그림의 등록 크기
 do
  local spec=SkillEffects:GiantFxSpec('dash')
- local list=Util:Frames(_GameConst.FxGiantDash)
- ok(#list==4,'돌진 자취 4장')
+ local b=SkillEffects.FxGiantDashSeq~=''   -- 10-31 갈래 F: B 전체 프레임 12장이 차 있으면 그 그림 (비면 GameConst 48 연속본 4장)
+ local list=Util:Frames(spec.ruids)
+ ok(#list==(b and 12 or 4) and spec.ruids==(b and SkillEffects.FxGiantDashSeq or _GameConst.FxGiantDash),'돌진 자취 '..#list..'장 (B면 12 · 옛 4)')
  for _,r in ipairs(list) do
   local a=art[r]
   ok(a~=nil,'돌진 자취 RUID가 art_sprites에 있다 '..r)
   ok(a.w==spec.w and a.h==spec.h,'계약 w·h = 실제 그림 '..a.w..'×'..a.h..' (계약 '..spec.w..'×'..spec.h..')')
  end
- ok(spec.stretch==true and spec.px==1,'길 전체로 늘임 · 머리 피벗 그대로')
+ if b then ok(spec.stretch==true and spec.px==0 and spec.rev==true and spec.upright==true and spec.durs~=nil and #spec.durs==12,'B: 길 전체로 늘임 · 피벗(그림 오른끝 1.0) = 시작점(px 0) · 그림 앞쪽 -x(rev) · 세운 채 좌우(upright) · 장별 ms 12')
+ else ok(spec.stretch==true and spec.px==1,'길 전체로 늘임 · 머리 피벗 그대로') end
 end
 
 -- ⑤ 뼈 갑옷 고리 투명도
