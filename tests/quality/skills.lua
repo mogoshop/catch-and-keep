@@ -529,7 +529,11 @@ do
  assert(book:GetRankSummary('giant_mage_meteor',1)=='메테오 반경 1.95칸 · 영창 0.9초',book:GetRankSummary('giant_mage_meteor',1))
  assert(book:GetRankSummary('giant_mage_meteor',2)=='메테오 반경 2.00칸(최대) · 영창 0.8초',book:GetRankSummary('giant_mage_meteor',2))
  assert(book:GetRankSummary('giant_mage_meteor',3)=='메테오 반경 2.00칸(최대) · 영창 0.7초',book:GetRankSummary('giant_mage_meteor',3))
- assert(book:GetRankSummary('giant_mage_resist',1)=='노바·메테오에 맞은 적 화염 저항 -15 · 4초' and book:GetRankSummary('giant_mage_pull',1)=='노바가 0.4초 뒤 한 번 더 퍼짐 · ×0.5','mage choice summary')
+ assert(book:GetRankSummary('giant_mage_resist',1)=='노바·메테오에 맞은 적 화염 저항 -15 · 4초' and book:GetRankSummary('giant_mage_pull',1)=='노바 폭발 피해 ×1.5 · 반경 3.75칸','mage choice summary '..book:GetRankSummary('giant_mage_pull',1))
+ -- 48 V2 「폭발 증폭」(giant_mage_pull 옛 id): 이름·설명·현재/다음 = 실제 단발 ×1.5 · 반경 3.75 (두 겹·흡인 글귀 없음)
+ do local d=_SkillData:Get('giant_mage_pull') assert(d.name=='폭발 증폭' and not string.find(d.desc,'두 겹',1,true) and not string.find(d.desc,'흡인',1,true) and string.find(d.desc,'×1.5',1,true),'pull copy '..d.name..' / '..d.desc)
+  assert(not string.find(_SkillData:Get('giant_mage_resist').desc,'두 겹',1,true),'resist cross-ref')
+  assert(_GameData:GetGiant('mage').s1Radius==3.75 and _GameData:GetGiant('mage').s1Opts.novaAmpMul==1.5 and _GameData:GetGiant('mage').s1Opts.ring==nil,'nova data') end
  -- 48-0: 기본 거인은 노드가 없다 — 펼치면 폭탄 3칸만
  SkillWindow.ShowGiant='basic'
  assert(table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),',')=='bomb_wide,bomb_marrow,bomb_pair','basic view '..table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),','))
@@ -613,6 +617,10 @@ do
  -- 현행 sv 5 저장: 새 효과로 찍은 마법사 거인 갈림은 돌려주지 않는다 · sv 4 저장의 갈림은 한 번
  stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==0 and book.Levels.giant_mage_resist==1,'sv5 kept')
+ -- 48 V2: 현행 sv 5 저장의 「폭발 증폭」(옛 「두 겹 고리」 투자)은 그대로 · 환급 0 · 다시 저장해도 sv 5 그대로 (재학습·중복 환급 없음)
+ stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_pull=1}})
+ assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp kept '..stats.SkillPoints)
+ do local again=book:GetSaveData() assert(again.sv==5 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
  stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
  -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번

@@ -427,6 +427,14 @@ script SkillBook extends Component
         return string.format("메테오 반경 %.2f칸%s · 영창 %.1f초", r, tag, math.max(0.4, chant - 0.1 * level))
     end
 
+    method string NovaText()
+        -- 48 V2 「폭발 증폭」(giant_mage_pull · 1랭크) 지금/다음 줄: 화염 노바는 한 번만 터진다 — 노드가 있으면 그 한 번이 ×novaAmpMul(1.5) · 반경은 s1Radius(3.75) 그대로
+        --   (rite_giants.csv mage s1Radius·s1Opts novaAmpMul — 실제 타격과 같은 값 · 둘째 파동·흡인 없음)
+        local spec = _GameData:GetGiant("mage")
+        local opt = spec.s1Opts or {}
+        return string.format("노바 폭발 피해 ×%g · 반경 %g칸", opt.novaAmpMul or 1.5, spec.s1Radius or 3.75)
+    end
+
     method integer GearRanks(string id)
         -- 효과 레벨 − 찍은 랭크 (장비 「스킬 +N」·선택 보상) — 사다리의 단계 칸을 그만큼 앞으로 당긴다
         local lv = self:GetLevel(id)
@@ -766,7 +774,8 @@ script SkillBook extends Component
             -- 48 §4-4 · 리뷰 정정: 큰 메테오 반경은 상한 2.0칸 (rite_giants.csv mage s2Opts radius·radiusMax) · 영창 감소는 그대로
             giant_mage_meteor = self:MeteorText(level),
             giant_mage_resist = "노바·메테오에 맞은 적 화염 저항 -15 · 4초",
-            giant_mage_pull = "노바가 0.4초 뒤 한 번 더 퍼짐 · ×0.5",
+            -- 48 V2: 「폭발 증폭」 = 노바 단발 ×1.5 (예전 「두 겹 고리」 0.4초 뒤 ×0.5를 한 번에 합침 · 같은 id·같은 투자 그대로)
+            giant_mage_pull = self:NovaText(),
         }
         if nodeText[id] ~= nil then return nodeText[id] end
         local power = self:GetEffectPower(id, level)

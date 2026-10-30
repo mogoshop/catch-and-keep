@@ -52,7 +52,8 @@ step("공통 UI 규격", () => tool("check_ui_tokens.cjs"));
 step("말투·용어", () => tool("check_voice.cjs"));
 step("기획서 38 결정 26개", () => tool("check_decisions38.cjs"));
 step("DPS 집계 도구", () => tool("dps/selftest.cjs"));   // I05 개발용 전투 계측 로그 집계 (tools/dps)
-step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));   // 10-30 갈래 E: 5종 몸 150 + HUD 5 (코덱스 0200 · 마법사 그림은 대기 지원만 — 5단계 자연 선택은 해골 전용 그대로) · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
+step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));
+step("거인 그림 검증표 자체 테스트", () => tool("register_giant_visuals.cjs", ["selftest"]));   // 48 V2 (10-30): 구 납품 통과 · 새 범위(몸 12~16 · 효과 12~16) 통과 · 장 수·중복 장·타격 칸·반복·지속 위반 검출 · 지금 monster_frames 통과   // 10-30 갈래 E: 5종 몸 150 + HUD 5 (코덱스 0200 · 마법사 그림은 대기 지원만 — 5단계 자연 선택은 해골 전용 그대로) · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
 
 step("거인 끝 레벨 (46-7)", () => {   // 기획서 46 부록 A-3: 악몽·지옥 빌드 +0·+8·+13.5·+20%에서 끝 레벨 41·68·90 그대로 (경험치 경로 모델 · 재미 증명 아님)
   const r = spawnSync("python3", [path.join(__dirname, "sim_balance.py"), "--giant-check"], { cwd: ROOT, encoding: "utf8" });
