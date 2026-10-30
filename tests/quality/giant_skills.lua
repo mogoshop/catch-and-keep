@@ -231,6 +231,7 @@ do
  ok(h.t==1 and h.edge==1 and h.out==nil,'착지 반경 1.8: 1.75 맞음 · 1.9 안 맞음')
  local w,l=nil,nil for _,f in ipairs(fxLog) do if f.kind=='warn_fire' then w=f end if f.kind=='meteor_land' then l=f end end
  ok(w~=nil and near(w.w,3.6) and l~=nil and near(l.w,3.6),'예고·착지 효과 지름 3.6')
+ ok(near(l.pos.x,w.pos.x) and near(l.pos.y,w.pos.y),'착지 그림 = 표적 바닥 그대로(예고 중심과 같은 자리 · 예전 +0.1칸 올림 없음 · 10-31 갈래 F) '..l.pos.y..' / '..w.pos.y)
  local d=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_meteor' then d=x.dmg end end
  ok(near(d,100/0.8*3),'메테오 ×3.0')
  RiteGiantMoves:Clear(u)

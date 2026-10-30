@@ -110,6 +110,9 @@ script SkillEffects extends Component
     property number OfferRimSec = 0.6           -- 뼈 성찬(P35) 효과 반경 원을 한 번 띄우는 시간
     property integer GiantDashW = 256           -- 쌍칼 돌진 자취(S16) 원본 캔버스 px — 지금 GameConst.FxGiantDash(48 연속본 s48-full-fx-giant-dash)는 256×96 (실측 · 보이는 자취 240×31)
     property integer GiantDashH = 96            --   audit의 192×64는 art_sprites의 옛 RUID(쓰지 않음)라 바꾸면 길의 133%로 넘친다 → 실제 그림 크기로 둔다
+    property number MeteorLandRef = 3.39        -- 10-31 갈래 F 임시(새 B 메테오 세트 전): 착지 7~12장 내용 폭 190px ÷ 56 = 3.39칸을 그림 지름(ref)으로 — 판정 지름(반경 1.8 × 2 = 3.6)에 내용 폭을 맞춘다 (예전 ref 4.0 = 내용 3.05칸) · 0이면 계약 ref
+    property number MeteorFallMul = 1.5         -- 낙하 1~6장 크기 배율 (계약 ref 4.0 크기 × 1.5) · 1이면 예전 크기
+    property boolean MeteorTelegraphOnly = true -- 메테오 예고 = Util.Telegraph 화염 테두리·차오름만 (속성 바닥 그림(납작한 용암 고리 SpriteGroundFire)은 지운다) · false면 예전처럼 바닥 그림도
     property number GiantSlamHoldSec = 0.18     -- 방패 내려찍기 뒤 층(S18) 마지막 장 최소 유지 (예전 장별 30ms 그대로 → 0.39초에 끝)
 
     @ExecSpace("ServerOnly")
@@ -970,6 +973,9 @@ script SkillEffects extends Component
                     if spec.meteor == "fall" then spec.first = 1 spec.last = 2 else spec.first = 3 spec.last = 6 end
                 end
                 spec.impact = nil   -- 서버 타격 시각은 RiteGiantMoves(fall)가 정한다 · 그림 타격 칸 어긋남 로그 없음
+                -- 10-31 갈래 F 임시 크기: 착지 = 내용 폭을 판정 지름에(MeteorLandRef) · 낙하 = 계약 크기 × MeteorFallMul (가로세로 비 유지)
+                if spec.meteor == "land" and self.MeteorLandRef > 0 then spec.ref = self.MeteorLandRef end
+                if spec.meteor == "fall" and self.MeteorFallMul > 0 then spec.mul = self.MeteorFallMul end
             end
         end
         return spec
@@ -1145,7 +1151,13 @@ script SkillEffects extends Component
         if kind == "warn_fire" then
             -- 기도 메테오 예고 (10-31 갈래 E · S22): 다른 범위 예고처럼 Util.Telegraph 화염 원 — 판정 반경 테두리 + 바깥으로 차오름이 테두리에 닿으면 떨어진다
             --   (예전: 보라 회오리 고리 FxStorm을 주황으로 칠해 씀 → 범위 원과 모양이 달랐다). 거인은 BossPattern이 없어 흐린 고리(보스 실금 아님)
-            _Util:Telegraph(self.Entity, Vector2(pos.x, pos.y), width / 2, "fire", seconds)
+            local tid = _Util:Telegraph(self.Entity, Vector2(pos.x, pos.y), width / 2, "fire", seconds)
+            local rec = _Util.Telegraphs[tid]
+            if self.MeteorTelegraphOnly and rec ~= nil and rec.decal ~= nil and rec.decal ~= 0 then
+                -- 10-31 갈래 F: 예고는 원 하나만 — 화염 속성 바닥 그림(납작한 용암 고리)은 지운다 (테두리·차오름 = 다른 범위 예고와 같은 그림·같은 크기 규칙)
+                _EffectService:RemoveEffect(rec.decal)
+                rec.decal = 0
+            end
             if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant meteor telegraph r=%.2f sec=%.2f", width / 2, seconds)) end
             return
         end
@@ -1270,6 +1282,7 @@ script SkillEffects extends Component
             local k = width / (spec.w / 100)
             scale = Vector3(k, k, 1)
         end
+        if spec.mul ~= nil and spec.mul > 0 then scale = Vector3(scale.x * spec.mul, scale.y * spec.mul, 1) end   -- 계약 크기에 곱하는 배율 (메테오 낙하 MeteorFallMul)
         if spec.padpx ~= nil and spec.padpx ~= 0 then
             -- 피벗과 보이는 내용 사이 빈 화소(균열 앞 12px): 그만큼 길이 방향 뒤로 당겨 내용 시작을 부르는 쪽 시작점에 맞춘다 (원래 각 기준)
             local rad0 = math.rad(angle0)
