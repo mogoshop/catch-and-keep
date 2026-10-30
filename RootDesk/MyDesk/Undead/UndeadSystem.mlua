@@ -5,8 +5,7 @@
 -- 되살림: 원본 몬스터 그대로 reviveSeconds(180초), 동시 수 = 스킬 레벨 (reviveCountMax 5).
 -- 주인이 맵을 옮기면 다시 일으켜 따라오고, 주인이 죽으면 모두 무너진다. 그림자(영구 수집)와 달리 영구 저장하지 않는다. 방 이동은 공유 메모리의 일회성 전달을 쓴다.
 -- 유닛 엔티티는 그림자와 같은 shadowunit 모델(ShadowUnit, Kind만 다름)을 쓴다.
--- 첫 처치 맛보기 그림자 (기획서 39 결정 #3A, 10-29): ShadowSystem.TryFirstTaste → SpawnTaste. 되살림 칸(kind "revive", rec.taste)을 빌려
---   firstTasteSec초 뒤 사라진다 — 그림자 보관함·소환 상한(ShadowCommander) 밖이라 장비·추출·강화가 없고 저장되지 않는다. 머리 위 이름표 없음 (10-29 사용자)
+-- 첫 처치 맛보기 그림자 (기획서 39 결정 #3A, 10-29 · SpawnTaste)는 10-31 사용자 결정으로 제거했다 — 되살림 칸을 빌리던 임시 경로도 함께 뺐다.
 @Logic
 script UndeadSystem extends Logic
 
@@ -923,39 +922,6 @@ script UndeadSystem extends Logic
         return rec
     end
 
-    @ExecSpace("ServerOnly")
-    method boolean SpawnTaste(Entity player, string sourceId, integer level, string variant, string stand, string move, Vector2 pos)
-        -- 첫 처치 몹을 그 자리에서 임시 그림자로 (힘 = 같은 몬스터를 막 추출한 그림자 1랭크 · 주인 레벨까지, 그림 = 원본에 그림자 보라 칠)
-        if not isvalid(player) or not isvalid(player.CurrentMap) then return false end
-        local prof = _ShadowConfig:GetProfile(sourceId, 1, _ShadowConfig:EffectiveLevel(level, _GameConst:LevelOf(player)), 1)
-        self.Serial = self.Serial + 1
-        local source = _GameData:GetMonsterStats(sourceId)
-        local rec = { id = "ud" .. tostring(self.Serial), kind = "revive", taste = true, ownerEntityId = player.Id, entity = nil,
-            atk = prof.atk, hp = prof.hp, cooldown = prof.cooldown, range = prof.range, speed = prof.speed,
-            element = prof.element, ratio = prof.ratio, resists = prof.resists, stand = stand, move = move ~= "" and move or stand,
-            attack = source ~= nil and source.attack or "", scale = source ~= nil and source.summonScale or 1,
-            tint = Color(0.35, 0.2, 0.55, 0.85),   -- 보관함 그림자와 같은 보라 (ShadowUnit.ShadowTint 기본값)
-            variant = variant, auraResist = 0,
-            expireAt = _UtilLogic.ElapsedSeconds + _GameData.firstTasteSec }
-        table.insert(self:ListOf(player), rec)
-        local ok = self:SpawnUnit(player, rec, pos, function()
-            self:RefreshSummary(player)
-            self:PlaySummonFx(player, pos)
-            _Telemetry:First(player, "taste")
-            -- 한 줄 안내 (10-29 사용자 확정): 남은 초는 따로 알리지 않는다 · 사라질 때 Lv5 안내 한 줄만 더
-            _Util:Notify("쓰러뜨린 적이 잠시 그림자로 일어섰다", player.PlayerComponent.UserId)
-            log(string.format("[VRF] first-kill shadow spawn src=%s atk=%d hp=%d sec=%d", sourceId, rec.atk, rec.hp, math.floor(_GameData.firstTasteSec)))
-        end, function()
-            self:Remove(player, rec.id)
-            log("[VRF] first-kill shadow spawn failed src=" .. sourceId)
-        end)
-        if not ok then
-            self:Remove(player, rec.id)
-            log("[VRF] first-kill shadow spawn failed (no map) src=" .. sourceId)
-        end
-        return ok
-    end
-
     method Color ElementTint(string element)
         if element == "fire" then return Color(1, 0.55, 0.4, 1) end
         if element == "cold" then return Color(0.55, 0.75, 1, 1) end
@@ -1488,10 +1454,6 @@ script UndeadSystem extends Logic
             u.ShadowTint = rec.tint
             unit.SpriteRendererComponent.Color = rec.tint
             u:SetBaseSpeed(rec.speed)
-            if rec.taste then
-                -- 첫 처치 맛보기 그림자: 그림자 보라 발밑 원만 (머리 위 남은 초 이름표는 10-29 사용자 확정으로 없앴다)
-                u.Taste = true
-            end
             if onReady ~= nil then onReady() end
         end, function()
             if isvalid(unit) then unit:Destroy() end
@@ -1568,16 +1530,8 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method void Expire(Entity player, string id)
-        -- 되살림 시간이 끝남. 맛보기 그림자면 재로 흩어지는 연출 + Lv5 안내 (한 번만 — 맵 이동으로 다시 만든 개체의 옛 타이머는 기록이 없어 그냥 지나간다)
+        -- 되살림 시간이 끝남 (맵 이동으로 다시 만든 개체의 옛 타이머는 기록이 없어 그냥 지나간다)
         if not isvalid(player) then return end
-        for _, rec in ipairs(self:ListOf(player)) do
-            if rec.id == id and rec.taste then
-                if isvalid(rec.entity) then self:PlaySummonFx(player, _Util:Pos2(rec.entity)) end
-                _Util:Notify("그림자가 흩어졌습니다 · Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. "부터 직접 획득 가능", player.PlayerComponent.UserId)   -- 안내 줄 한 줄에 들게 (10-29 오후 사용자 확정 5번 · 「거둘 수 있습니다」는 메이커에서 끝 글자가 다음 줄로 넘쳤다)
-                log("[VRF] first-kill shadow expire id=" .. id)
-                break
-            end
-        end
         self:RemoveLost(player, id, "expired")
     end
 
@@ -1672,7 +1626,7 @@ script UndeadSystem extends Logic
         local now = _UtilLogic.ElapsedSeconds
         local utc = DateTime.UtcNow.Elapsed
         local units = {}
-        local fields = { "taste", "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast", "school", "mageRank" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 옛 마법사 변이 · school·mageRank: 48-2 마법사 속성
+        local fields = { "kind", "atk", "hp", "currentHp", "cooldown", "range", "speed", "stand", "move", "attack", "scale", "element", "ratio", "resists", "variant", "auraResist", "form", "radiusMul", "basicMul", "guard", "taunt", "bolts", "boltMul", "pierce", "hex", "blast", "school", "mageRank" }   -- form~taunt: 해골 변이 편성 · bolts~blast: 옛 마법사 변이 · school·mageRank: 48-2 마법사 속성
         for _, rec in ipairs(self:LiveRecords(player)) do
             local data = {}
             for _, key in ipairs(fields) do data[key] = rec[key] end
@@ -1920,12 +1874,7 @@ script UndeadSystem extends Logic
         local mg = self:SkillLevel(player, "raise_mage")
         if sk > 0 then table.insert(parts, "해골 " .. tostring(n.skeleton + merged.skeleton) .. "/" .. tostring(self:MaxFor(player, "skeleton", sk))) end
         if mg > 0 then table.insert(parts, "마법사 " .. tostring(n.mage + merged.mage) .. "/" .. tostring(self:MaxFor(player, "mage", mg))) end
-        -- 되살림 스킬은 10-20에 빠져 지금 「되살림」 칸은 첫 처치 맛보기 그림자뿐 — 상태줄은 「그림자(잠시)」로
-        if n.revive > 0 then
-            local taste = 0
-            for _, rec in ipairs(self:ListOf(player)) do if rec.kind == "revive" and rec.taste then taste = taste + 1 end end
-            if taste == n.revive then table.insert(parts, "그림자(잠시) " .. tostring(taste)) else table.insert(parts, "되살림 " .. tostring(n.revive)) end
-        end
+        if n.revive > 0 then table.insert(parts, "되살림 " .. tostring(n.revive)) end   -- 되살림 스킬은 10-20에 빠졌다 (옛 기록 호환 · 맛보기 그림자는 10-31 제거)
         if #names > 0 then table.insert(parts, table.concat(names, " · ")) end   -- 46-6 「대검 거인」 · 48 §9 둘이면 「방패 거인 · 마법사 거인」
         cmd.UndeadSummary = table.concat(parts, " · ")
         -- 46-1: 소환수 배지·의식 예측 수 = 바칠 수 있는 수 (거인 몸 제외 · 48-4 몸 둘이면 둘 다)

@@ -172,9 +172,9 @@ assert(p4.counts.shield==1 and p4.bodies==1 and (p4.units.shield or 0)==0 and p4
 --   48-1: 효과 레벨 12 ≥ 8이라 다음 기본형은 방패 해골 (진화)
 assert(book:RosterLine('raise_skeleton')=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 6기 · 다음 소환: 방패 해골(가장 오래된 대검 해골 교체)',book:RosterLine('raise_skeleton'))
 UndeadSystem.Giants={}
--- 5. 일시 소환(첫 처치 그림자 · revive) 섞임: 해골 정원·교체에 끼지 않는다
+-- 5. 일시 소환(revive · 옛 기록 호환 — 첫 처치 그림자는 10-31 제거) 섞임: 해골 정원·교체에 끼지 않는다
 book.Levels={raise_skeleton=3,skel_twin=1}
-setList({rec('revive','',{taste=true,expireAt=30}),rec('skeleton',''),rec('revive','',{taste=true,expireAt=30}),rec('skeleton','twin'),rec('skeleton','')})
+setList({rec('revive','',{expireAt=30}),rec('skeleton',''),rec('revive','',{expireAt=30}),rec('skeleton','twin'),rec('skeleton','')})
 local p5=check('5 temporary summons ignored','skeleton',{max=3,have=3,full=true,nextForm='',replaces=1})
 assert(p5.replaces[1].kind=='skeleton')
 local revives=0
