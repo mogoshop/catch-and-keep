@@ -32,3 +32,19 @@
 - `sim-giant-check.log`: `--giant-check` 끝 레벨 41·68·90 그대로(+8 · +13.5 · +20 · +26). A 변경은 시뮬 입력이 아니다(확인만).
 - `check_scripts.log` 0건 · `check_data.log` 0건(통합 상태) · `mlua-lsp.log` UndeadSystem · ShadowUnit 진단 0.
 - 이 브랜치만 단독으로는 config 줄(riteGiantMax · skelEvolve* · riteGiantCharges · twinHunt*)이 없어 check_scripts가 `_GameData` 멤버 없음을 낸다 — C csv + 아래 csv 요청 5줄과 함께 통합해야 한다.
+
+## 2차 — 갈래 B 연결 5건 (커밋 4cec214c)
+
+| # | 요청 (B patch_requests_A) | 상태 |
+|---|---|---|
+| 1 | MakeRecord(마법사): `rec.school = _MageBolts:PickSchool(mage_curse 배움)` · `rec.element = ElementOf(school)` · `rec.mageRank = slvl` · `rec.tint = BodyTint(school)` | 완료 |
+| 2 | SpawnUnit: `u.MageSchool = rec.school or ""` · `u.MageRank = rec.mageRank or 0` · 방 이동 기록(TravelSnapshot)에 school · mageRank 추가 | 완료 |
+| 3 | `FormOrder("mage")` 비움 · ApplyMageForm은 변이 칸을 쓰지 않음(몸 1종) | 완료 |
+| 4 | ShadowUnit.StartGiant 뼈 성벽 노드 → `_RiteGiantMoves:NodeOf(self, "giant_shield_wall")` (각인 경로 · 값 같음) | 완료 (B가 손대지 않은 줄 · 병합 충돌 없음 확인) |
+| 5 | roster.lua 지운 노드 장면(skel_shield · mage_*) 갱신 | 완료 — 마법사 장면 6 · 9 · 12 · H0 · H3 · H5 · H10을 몸 1종·속성으로, `@source MageBolts` 추가 |
+
+### C → B → A 임시 병합 검사 (임시 브랜치에서 병합 충돌 0 · 검사 뒤 지움 · csv 요청 5줄을 작업 트리에만 더함)
+- `quality-merged-C-B-A.log`: 모든 그룹 통과 (items · items_reforge · journal · skills · roster · mobile_input 177 · notice_text · progression · spawn_zones · growth · dps · giant_moves · giant_skills 60 · mage_school 99 · facing 12).
+  - **단, skills.lua(C 소유)에 한 줄이 필요하다**: `-- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint` (UndeadSystem @source 줄 아래). C 판본의 skills.lua가 MakeRecord(마법사)를 부르는데 MageBolts를 싣지 않아 `_MageBolts` nil — 이 줄을 넣고 돌린 결과다.
+- `npm-test-merged-C-B-A.log` 15/15 · `check_scripts-merged-C-B-A.log` 0건(스크립트 145개) · `check_data-merged-C-B-A.log` 0건 · `mlua-lsp-merged-C-B-A.log` UndeadSystem · ShadowUnit 0 · `sim-giant-check-merged-C-B-A.log` 끝 레벨 41·68·90 그대로.
+- 이 브랜치 단독은 MageBolts · ShadowUnit 새 칸(B) · config 줄(C)이 없어 check_scripts 실패 · roster 실패 — C → B → A 병합 전제.
