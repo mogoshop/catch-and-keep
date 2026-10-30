@@ -20,6 +20,7 @@
   python3 tools/sim_balance.py --rite 5 --diff all  # 뼈 의식 +5%를 넣은 채로 진행 표
   python3 tools/sim_balance.py --giant-check     # 46-7 뼈 의식 거인(악몽·지옥만 빌드 총 피해 +0·+8·+13.5·+20%) 끝 레벨 41·68·90 불변 확인 (기획서 46 부록 A-3 · 바뀌면 종료 코드 1)
   python3 tools/sim_balance.py --giant 13.5 --diff all  # 거인 +13.5%(대검 수준 추정)를 악몽·지옥에 넣은 채로 진행 표
+  (48-7 · 10-30) 해골 마법사 속성 넷의 랭크 구간(1·6·11·16)을 build에 넣었다 (mage_school_mul) · --giant-check는 +26(거인 2마리 상한 가정)까지 본다
 
 악몽·지옥 (difficulty.csv · 10-23 추가):
   몬스터 레벨  보통 1~40을 levelFrom~levelTo로 비율 이동 (GameConst.ScaleLevel) — 고정 보스·최상위도 같은 변환
@@ -81,6 +82,7 @@ ASSUME = {
     "slamHit": 0.3,      # 보스 내려찍기·기술(예고 있음)을 맞는 비율
     "auraTime": 0.3,     # 보스 오오라(5칸) 안에 있는 시간 비율
     "potions": 8,        # 보스전에 쓸 물약 수
+    "mageCrowd": 2,      # 48 §2-2 해골 마법사 한 발이 무리에서 맞히는 대상 기대 (첫 대상 + 둘레 · 「무리 기대 2~3」의 낮은 쪽)
 }
 ASSUME["speed"] = 1.5 * C["playerSpeedMul"] / 1.44   # 10-28: 1.5칸/s(신발 포함)는 playerSpeedMul 1.44 기준 — 기본 이속을 바꾸면 같은 비율로
 
@@ -208,6 +210,23 @@ def allocate(order, L):
     return rk, pts
 
 
+def mage_school_mul(lv, curse=False):
+    # 48 §2-2 · §2-3 (10-30): 해골 마법사 속성 넷(+저주)의 한 발 기대 배율 — 「지금 마법사 한 발 ×1」 대비, 무리 대상 기대 ASSUME mageCrowd
+    #   구간 = 효과 레벨 1·6·11·16 (config mageTier*Lv) · 불꽃 ×1.0 + 둘레 ×0.3(늘 터짐 · 리뷰 Q9) · 서리 ×0.9 + 파편 ×0.45 · 뼈 창 관통(꿰뚫을 때마다 +5%) · 영혼 발당 ×0.4 · 저주 ×0.6(낙인은 따로 셈하지 않음)
+    if lv <= 0:
+        return 1.0
+    t = sum(1 for k in ("mageTier2Lv", "mageTier3Lv", "mageTier4Lv") if lv >= C.get(k, 99))
+    extra = max(0.0, ASSUME["mageCrowd"] - 1)
+    burst_r = C.get("mageBurstBase", 0.8) + C.get("mageBurstStep", 0.2) * t
+    fire = 1.0 + 0.3 * min(extra, extra * (burst_r / 1.0) ** 2)
+    cold = 0.9 + 0.45 * min(C.get("mageShardsBase", 1) + t, extra)
+    pierce = int(min(C.get("magePierceBase", 2) + t, ASSUME["mageCrowd"]))
+    bone = sum(1.0 * (1 + 0.05 * k) for k in range(pierce))
+    soul = 0.4 * (C.get("mageTorrentBase", 2) + t)
+    schools = [fire, cold, bone, soul] + ([0.6] if curse else [])
+    return sum(schools) / len(schools)
+
+
 def build(prof, L, act=1, diff=0):
     p = PROFILES[prof]
     rk, left = allocate(p["order"], L)
@@ -236,6 +255,7 @@ def build(prof, L, act=1, diff=0):
     ml = rk.get("raise_mage", 0) + (tree if rk.get("raise_mage", 0) else 0)
     mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml, rk.get("skeleton_mastery", 0))
     mg_atk *= 1 + C.get("mageFocusPct", 10) / 100 * rk.get("mage_focus", 0)
+    mg_atk *= mage_school_mul(ml, rk.get("mage_curse", 0) > 0)
     n_mg = count(ml, rk.get("mage_legion", 0))
     # 그림자 (ShadowConfig · ShadowCommander)
     ss = rk.get("shadow_summon", 0) + (tree if rk.get("shadow_summon", 0) else 0)
@@ -520,7 +540,7 @@ def main():
     ap.add_argument("--rite", type=float, default=0, help="뼈 의식 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
     ap.add_argument("--rite-check", action="store_true", help="뼈 의식 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
     ap.add_argument("--giant", type=float, default=0, help="46-7 뼈 의식 거인 가정: 악몽·지옥에서만 빌드 총 피해 +N%% (기획서 46 부록 A-3 · 기본 8.3 · 대검 13.5 · 노드 최대 20)")
-    ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20%% 끝 레벨 41·68·90 불변 확인만 (바뀌면 종료 코드 1)")
+    ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20·+26%% 끝 레벨 41·68·90 불변 확인만 (+26 = 48 거인 2마리 상한 가정 · 바뀌면 종료 코드 1)")
     a = ap.parse_args()
     if a.rite_check:
         rite_check(a.profile if a.profile != "all" else "P60", a.eff)
@@ -604,7 +624,8 @@ def rite_check(prof, eff, pct=5.0):
     print(" 끝 레벨 %s · %s" % (" · ".join(str(x[1]) for x in with_rite), "그대로" if same else "바뀜"))
 
 
-def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0)):
+def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
+    # 48-7 (10-30): +26 = 거인 2마리 상한 가정(기획서 48 §8) · 해골 마법사 속성 구간(mage_school_mul)이 build에 들어간 기준선 — 끝 레벨만 본다 (균형·재미 완료 증거 아님)
     # 기획서 46 부록 A-3: 악몽·지옥에서만 +N% · 노말은 그대로(5기 거인은 악몽부터) · 끝 레벨 41 · 68 · 90 불변인지 (경험치 경로 모델 — 안전 범위 확인이지 재미 증명 아님)
     names = ["보통", "악몽", "지옥"]
     GIANT["pct"] = 0.0

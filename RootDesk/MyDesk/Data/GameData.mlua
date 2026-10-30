@@ -105,6 +105,7 @@ script GameData extends Logic
     property number riteGiantScale = 1.8    -- 뼈 거인 크기 배율 (해골 전사 대비)
     property number riteGiantMana = 30    -- 뼈 거인 마나 (+ 랭크 ÷ 4)
     property number riteGiantCd = 30    -- 뼈 거인 재사용(초)
+    property number riteGiantMax = 2    -- 48 §3-1 (10-30 결정 4 · 리뷰 Q3): 한 플레이어가 함께 세울 수 있는 뼈 의식 거인 수 (종류별 정원 5자리씩 · 섞인 빌드 둘째 허용)
     property number mageAtkBase = 8    -- 해골 마법사 공격 (전부 속성 피해 · 10-24 5 → 8: 한 기 초당 피해가 해골 전사의 57%였다 → 92%)
     property number mageFocusPct = 12    -- 해골 마법사 강화 「원소 집중」 랭크당 피해 % (10-24 10 → 12)
     property number mageHpBase = 25    -- 해골 마법사 생명
@@ -112,7 +113,22 @@ script GameData extends Logic
     property number skeletonSkillLvPct = 12    -- 해골 전사 스킬 레벨당 공격·생명 % (10-24 사용자 (c): 14 → 12 — 해골 전사 몰빵 1기가 그림자의 3배 생명이었다. 마법사는 undeadSkillLvPct 14 그대로)
     property number mageCooldown = 1.6    -- 해골 마법사 공격 간격(초)
     property number mageRange = 3.5    -- 해골 마법사 사거리
+    property number mageTier2Lv = 6    -- 48 §2-3 해골 마법사 랭크 구간 2 (효과 레벨 · 1·6·11·16 — 캐릭터 투사체 구간 5·8·12보다 늦게 · 초안)
+    property number mageTier3Lv = 11    -- 48 §2-3 해골 마법사 랭크 구간 3 (초안)
+    property number mageTier4Lv = 16    -- 48 §2-3 해골 마법사 랭크 구간 4 (초안)
+    property number magePierceBase = 2    -- 48 §2-3 뼈 창 마법사 관통 수 구간 0 (구간마다 +1 → 2·3·4·5 · 초안)
+    property number mageShardsBase = 1    -- 48 §2-3 서리 마법사 파편 수 구간 0 (구간마다 +1 → 1·2·3·4 · 초안)
+    property number mageBurstBase = 0.8    -- 48 §2-3 불꽃 마법사 폭발 반경(칸) 구간 0 (구간마다 +mageBurstStep → 0.8·1.0·1.2·1.4 · 리뷰 Q9 늘 터짐 ×0.3 · 초안)
+    property number mageBurstStep = 0.2    -- 48 §2-3 불꽃 마법사 폭발 반경 구간당 + (칸 · 초안)
+    property number mageTorrentBase = 2    -- 48 §2-3 영혼 마법사 유도 발 수 구간 0 (구간마다 +1 → 2·3·4·5 · 초안)
+    property number mageCursePct = 8    -- 48 §2-4 저주 마법사 낙인 받는 피해 % (랭크 1 · 「저주 속성」 노드로 해금 · 캐릭터 낙인과 큰 값만 · 초안)
+    property number mageCursePerRank = 0.6    -- 48 §2-4 저주 마법사 낙인 랭크당 +%p (8 + 0.6 × (랭크 − 1) · 초안)
     property number skeletonMasteryPct = 8    -- 해골 전사 강화 「단련된 뼈」 랭크당 해골 전사·마법사 공격·생명 % (10-11: 5 → 8 · 최대 5랭크)
+    property number skelEvolveRank = 8    -- 48 §1-2 해골 전사 효과 레벨(장비 +스킬 포함 · 리뷰 Q6)이 이만큼이면 기본형이 방패 해골로 선다 (초안)
+    property number skelEvolveGuardPct = 20    -- 48 §1-2 진화 방패 해골 받는 피해 감소 % (랭크 8 · 단계마다 +skelEvolveGuardStep → 20·25·30 · 초안)
+    property number skelEvolveGuardStep = 5    -- 48 §1-2 진화 방패 해골 받는 피해 감소 단계당 +%p (초안)
+    property number skelEvolveGuardRank2 = 14    -- 48 §1-2 진화 방패 해골 감소 단계 2 효과 레벨 (초안)
+    property number skelEvolveGuardRank3 = 20    -- 48 §1-2 진화 방패 해골 감소 단계 3 효과 레벨 (초안)
     property number undeadCountMax = 8    -- 해골 전사·마법사 각각 최대 수 (스킬 18레벨에 8 · 뼈 군단·마법사 증원 노드 +2는 이 상한 밖이라 최대 10)
     property number reviveSeconds = 180    -- 되살림 지속 (D2 180초)
     property number reviveCountMax = 5    -- 되살림 동시 최대 (D2는 스킬 레벨, 서버 부하로 5 제한)
@@ -878,11 +894,11 @@ script GameData extends Logic
         self.Archetypes["boss"] = { id = "boss", name = "보스", trait = "고유 기술", monster = "고유 기술을 쓴다", shadow = "—" }
         self.Archetypes["nest"] = { id = "nest", name = "둥지", trait = "졸개 생성", monster = "움직이지 않고 졸개를 낳는다", shadow = "—" }
         self.RiteGiants = {}
-        self.RiteGiants["basic"] = { kind = "basic", name = "해골 거인", hpMul = 1.2, guardPct = 0, atkMul = 1.1, interval = 1.6, radius = 1.8, range = 1.2, speedMul = 1, blastMul = 0, tauntSec = 4, tauntRadius = 2.5, s1 = "quake", s1Name = "땅울림", s1Mul = 0.6, s1Cd = 10, s1Radius = 2.2, s1Opts = { root = 0.8 }, s2 = "bonethrow", s2Name = "뼈 던지기", s2Mul = 1.5, s2Cd = 12, s2Shape = "single", s2Reach = 6, s2Opts = {  }, frames = "giant_basic" }
+        self.RiteGiants["basic"] = { kind = "basic", name = "해골 거인", hpMul = 1.2, guardPct = 0, atkMul = 1.1, interval = 1.6, radius = 1.8, range = 1.2, speedMul = 1, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "", s1Name = "", s1Mul = 0, s1Cd = 0, s1Radius = 0, s1Opts = {  }, s2 = "", s2Name = "", s2Mul = 0, s2Cd = 0, s2Shape = "", s2Reach = 0, s2Opts = {  }, frames = "giant_basic" }
         self.RiteGiants["shield"] = { kind = "shield", name = "방패 거인", hpMul = 1.6, guardPct = 30, atkMul = 0.7, interval = 1.6, radius = 1.4, range = 1.2, speedMul = 0.9, blastMul = 0, tauntSec = 3, tauntRadius = 3, s1 = "roar", s1Name = "도발 함성", s1Mul = 0, s1Cd = 3, s1Radius = 3, s1Opts = {  }, s2 = "slam", s2Name = "방패 내려찍기", s2Mul = 1.5, s2Cd = 10, s2Shape = "arc", s2Reach = 1.6, s2Opts = { root = 1, stagger = 1 }, frames = "giant_shield" }
-        self.RiteGiants["greatsword"] = { kind = "greatsword", name = "대검 거인", hpMul = 1.1, guardPct = 0, atkMul = 1.2, interval = 2, radius = 2.2, range = 1.4, speedMul = 0.9, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "spin", s1Name = "회전 베기", s1Mul = 0.4, s1Cd = 10, s1Radius = 2.2, s1Opts = { hits = 4, gap = 0.4 }, s2 = "rift", s2Name = "땅 가르기", s2Mul = 1.8, s2Cd = 12, s2Shape = "line", s2Reach = 6, s2Opts = { width = 1 }, frames = "giant_greatsword" }
+        self.RiteGiants["greatsword"] = { kind = "greatsword", name = "대검 거인", hpMul = 1.1, guardPct = 0, atkMul = 1.2, interval = 2, radius = 2.2, range = 1.4, speedMul = 0.9, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "spin", s1Name = "회전 베기", s1Mul = 0.5, s1Cd = 10, s1Radius = 1.6, s1Opts = { hits = 4, gap = 0.4 }, s2 = "rift", s2Name = "땅 가르기", s2Mul = 1.8, s2Cd = 12, s2Shape = "line", s2Reach = 6, s2Opts = { width = 1 }, frames = "giant_greatsword" }
         self.RiteGiants["twin"] = { kind = "twin", name = "쌍칼 거인", hpMul = 0.9, guardPct = 0, atkMul = 0.55, interval = 0.75, radius = 0.9, range = 1, speedMul = 1.3, blastMul = 0, tauntSec = 0, tauntRadius = 0, s1 = "flurry", s1Name = "연속 베기", s1Mul = 0.5, s1Cd = 6, s1Radius = 0, s1Opts = { hits = 6, gap = 0.15 }, s2 = "dash", s2Name = "돌진", s2Mul = 2, s2Cd = 10, s2Shape = "dash", s2Reach = 5, s2Opts = { path = 1, iframe = 0.3 }, frames = "giant_twin" }
-        self.RiteGiants["mage"] = { kind = "mage", name = "마법사 거인", hpMul = 0.85, guardPct = 0, atkMul = 0.8, interval = 1.4, radius = 1, range = 4.5, speedMul = 0.9, blastMul = 0.3, tauntSec = 0, tauntRadius = 0, s1 = "meteor", s1Name = "뼈 유성", s1Mul = 2, s1Cd = 9, s1Radius = 1.6, s1Opts = { warn = 1 }, s2 = "hexfield", s2Name = "저주 장판", s2Mul = 0.12, s2Cd = 12, s2Shape = "field", s2Reach = 2, s2Opts = { sec = 5, tick = 0.5, taken = 15 }, frames = "giant_mage" }
+        self.RiteGiants["mage"] = { kind = "mage", name = "마법사 거인", hpMul = 0.85, guardPct = 0, atkMul = 0.8, interval = 1.4, radius = 1, range = 4.5, speedMul = 0.9, blastMul = 0.3, tauntSec = 0, tauntRadius = 0, s1 = "nova", s1Name = "화염 노바", s1Mul = 1, s1Cd = 8, s1Radius = 2.5, s1Opts = { min = 2, chant = 0.3, grow = 0.5, inner = 0.5, ring = 0.4 }, s2 = "meteor", s2Name = "기도 메테오", s2Mul = 3, s2Cd = 12, s2Shape = "single", s2Reach = 6, s2Opts = { radius = 1.8, radiusMax = 2, chant = 1, fall = 0.5, scorch = 1.5 }, frames = "giant_mage" }
         self.MonsterStates = {}
         self.MonsterStates["awaken"] = { id = "awaken", name = "각성", speedPct = 20, attackPct = 20, tint = "1,0.5,0.45", color = "#FF6A50", desc = "재의 왕이 깨어나 심연의 군세가 날뛴다 — 이동·공격 속도 +20%" }
         self.Weeklies = {}
