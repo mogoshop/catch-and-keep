@@ -1822,10 +1822,16 @@ script SkillBook extends Component
         -- 44 결정 4 (한 번만 · 저장 sv 3 → 4): 효과가 통째로 바뀐 강화 5개(키는 그대로 · 코덱스 아이콘 node-<키>)의 투자를 돌려준다.
         --   질풍 걸음 → 잔걸음 · 흐릿한 형체 → 뼈 껍질 · 가시 갑옷 → 터지는 갑옷 · 나눔 → 혼 사슬 · 시린 혼 → 서리 표식. 돌려준 포인트 수
         --   (뼈 가시는 키·효과 방향이 그대로라 남기고, 「튕김」 조건만 MigrateLevels가 본다). sv 4 저장은 다시 돌지 않는다
-        if sv >= 4 then return 0 end
+        --   48-3 (한 번만 · 저장 sv 4 → 5): 마법사 거인 갈림 둘(원소 붕괴 · 끌어당기는 땅 → 두 겹 고리)은 저주 장판이 화염 노바로 바뀌어 효과가 통째로 바뀌었다 → 같은 방식으로 돌려준다.
+        --   지운 노드 9개(skel_shield · mage_aura·twin·pierce·blast·hex · giant_quake·basic_split·basic_return)는 정의가 없어 MigrateLevels 본문이 돌려준다 (여기서 다시 세지 않는다)
+        if sv >= 5 then return 0 end
+        local swapped = {}
+        if sv < 4 then swapped = { "step_gale", "dash_ghost", "armor_thorns", "drain_share", "frost_long" } end
+        table.insert(swapped, "giant_mage_resist")
+        table.insert(swapped, "giant_mage_pull")
         local back = 0
         local moved = {}
-        for _, id in ipairs({ "step_gale", "dash_ghost", "armor_thorns", "drain_share", "frost_long" }) do
+        for _, id in ipairs(swapped) do
             local r = self.Levels[id] or 0
             if r > 0 then
                 back = back + r
@@ -1949,11 +1955,11 @@ script SkillBook extends Component
     method table GetSaveData()
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
-        -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 (MigrateNodeSwap)
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 4 }
+        -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 · sv 5 (48-3): 마법사 거인 갈림 둘을 한 번 돌려준 뒤 (MigrateNodeSwap)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 5 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
-        -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 — 선택 칸 (없으면 자동 · 끔, sv 그대로 4: 옛 이전 규칙의 뜻을 바꾸지 않는다)
+        -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 — 선택 칸 (없으면 자동 · 끔 · 판 번호와 무관: 옛 이전 규칙의 뜻을 바꾸지 않는다)
         if self.FormHope ~= "" then saved.hope = self.FormHope end
         if self.ShardHold then saved.shardHold = true end
         if self.RiteBanner ~= "" then saved.banner = self.RiteBanner end   -- 46-1 거인 깃발 (선택 칸 · 없으면 안 고름)
