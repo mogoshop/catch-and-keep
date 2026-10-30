@@ -6,7 +6,7 @@
 --   ④ 쌍칼 돌진 자취 크기 = 지금 쓰는 그림(GameConst.FxGiantDash)의 등록 크기(art_sprites) · ⑤ 뼈 갑옷 고리 최저 투명도 0.55 · ⑥ 납품 61장 GameConst·표 연결과 RUID 중복 0
 -- 엔진 효과·입자·타이머는 대역 — 실제 화면(크기·색·층)은 메이커 장면 확인
 -- @source Util Common/Util.mlua Frames,KeyFrames,FramePlan,PlayFramesHold,PlayFrames,PlayFramesLoop
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,CurseShape
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,CurseShape,CurseSigilScale
 -- @source MonsterStatus Monster/MonsterStatus.mlua MarkerScaleAt,IsAmpShown,IsChillShown
 -- @source MonsterTraits Monster/MonsterTraits.mlua TintTick
 -- @source PlayerStats Player/PlayerStats.mlua ArmorRingAlpha
@@ -246,7 +246,7 @@ do
  ok(#plays==4+Util.FrameFadeSteps,'낙인 문장 4장 + 옅어짐')
  for i=1,4 do ok(plays[i].ruid==sig[i],'낙인 문장 장 '..i..' = 연결 RUID') end
  for _,p in ipairs(plays) do ok(p.opt.SortingLayer=='MapLayer0' and p.opt.OrderInLayer==SkillEffects.CurseSigilOrder and SkillEffects.CurseSigilOrder==1,'문장 층 MapLayer0 1') end
- ok(near(plays[1].scale.x,2*1.5/1.28),'문장 지름 = 저주 지름 (128px = 1.28칸)')
+ ok(near(plays[1].scale.x,plays[1].scale.y) and near(plays[1].scale.x,SkillEffects:CurseSigilScale('amp',1.5)),'문장 배율 가로=세로 · 보이는 반경 = 저주 반경 (아래 ② 크기)')
  local w=windows()
  ok(w[1].len>=SkillEffects.CurseSigilFrameSec-1e-6,'문장 첫 장도 보인다')
  local beforeFade=plays[5].at-plays[1].at
@@ -346,6 +346,37 @@ do
   ok(_GameConst[key]~='' and src:find('_GameConst.'..key,1,true)~=nil,key..' 채움 + 부르는 곳 있음')
  end
  ok(src:find('_GameConst.FxSkillCurseBreak',1,true)==nil,'저주 깨짐은 아직 부르는 곳 없음 (쓸 자리 결정 대기)')
+end
+
+-- ② 저주 바닥 문장 크기 (메이커 a023c3e1 후속): 캔버스 128px를 지름으로 늘이면 가로 2.1 × 세로 2.8칸 — 보이는 반경을 저주 반경에 맞춰 같은 배율로
+--   실측(알파>16 · 4장 중 최대 · sigil-fit-measure.txt): 피벗에서 가장 먼 화소 maxR · 가로 반폭 halfW · 세로 반폭 halfH (px)
+local SIGIL={amp={60.9,51.5,59.5},weaken={62.6,40.5,59.5},terror={59.7,51.5,59.5},thorn={72.0,59.5,59.5},lifetap={60.3,30.5,59.5},resist={59.5,49.5,59.5}}
+do
+ for kind,m in pairs(SIGIL) do
+  local fit=nil
+  for k,v in SkillEffects.CurseSigilFitPx:gmatch('(%w+)=([%d%.]+)') do if k==kind then fit=tonumber(v) end end
+  ok(fit~=nil and fit>=m[1] and fit<m[1]+1,kind..' 보이는 반경 표 = 실측 ('..tostring(fit)..' / '..m[1]..')')
+  for _,r in ipairs({1.5,1.5*1.3,2.4}) do
+   local k=SkillEffects:CurseSigilScale(kind,r)
+   local reach=m[1]*k/100
+   ok(reach<=r+1e-6 and reach>=r-0.02,kind..' r='..f3(r)..' 문양 끝이 판정 원에 닿는다 (가장 먼 화소 '..f3(reach)..'칸)')
+   ok(2*m[3]*k/100<=2*r+1e-6,kind..' 세로가 지름 안')
+  end
+  ok(near(SkillEffects:CurseSigilScale(kind,1.95)/SkillEffects:CurseSigilScale(kind,1.5),1.3),kind..' 반경이 1.5 → 1.95(저주 범위 노드 2)면 1.3배로 같이 커진다')
+  -- 반례: 예전 배율(캔버스 128px = 지름)
+  local old=2*1.5/1.28
+  if kind=='thorn' then ok(m[1]*old/100>1.5+0.1,'반례 확인: 예전 배율이면 가시 문양 모서리가 원 밖으로 ('..f3(m[1]*old/100)..'칸)')
+  else ok(2*m[3]*old/100<3.0-0.15,'반례 확인: 예전 배율이면 '..kind..' 세로 '..f3(2*m[3]*old/100)..'칸 < 지름 3') end
+ end
+ ok(near(SkillEffects:CurseSigilScale('confuse',1.5),1.5/0.64),'표에 없는 종류는 캔버스 반폭 64px 기준')
+ -- 실제 시전: 가로세로 같은 배율 · 노드로 커진 반경을 그대로
+ for _,r in ipairs({1.5,1.95}) do
+  reset()
+  SkillEffects:CurseShape('amp',Vector3(0,0,0),r)
+  local s=plays[1].scale
+  ok(near(s.x,s.y) and near(s.x,SkillEffects:CurseSigilScale('amp',r)),'시전 배율 가로=세로 = CurseSigilScale (r='..f3(r)..')')
+  ok(near(SIGIL.amp[1]*s.x/100,r,0.02),'낙인 문장 가장 먼 끝 = 저주 반경 '..f3(r))
+ end
 end
 
 print(string.format('[skillfx_e] %d checks OK', checks))
