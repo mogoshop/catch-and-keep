@@ -800,9 +800,10 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("ClientOnly")
-    method void PlaySeq(string ruids, Vector3 pos, number angle, Vector3 scale, number frameSec, number holdSec, Color tint, integer order)
-        -- 연속본 한 번 (클라이언트): 첫 장부터 frameSec 간격 · 마지막 장은 holdSec 동안. 장마다 SetTimerOnce로 넘긴다
-        --   (Util.PlayFrames는 SetTimerRepeat 첫 호출이 바로 와 첫 장을 건너뛰고, 한 장짜리는 아예 안 보인다 — 메이커 10-30 실측 · 공용 함수는 그대로 두고 여기서만)
+    method void PlaySeq(string ruids, Vector3 pos, number angle, Vector3 scale, number frameSec, number holdSec, number loopSec, Color tint, integer order)
+        -- 연속본 재생 (클라이언트): 첫 장부터 frameSec 간격 · loopSec > 0이면 그 시간 동안 처음으로 되돌아 반복 · 아니면 마지막 장을 holdSec 동안.
+        --   장마다 SetTimerOnce. 다음 장을 먼저 걸고 앞 장은 0.03초 뒤에 지운다 — 지우고 거는 순서면 새 효과가 한 화면 늦게 떠 빈 화면이 낀다
+        --   (Util.PlayFrames/PlayFramesLoop: SetTimerRepeat 첫 호출이 바로 와 첫 장을 건너뛰고 한 장짜리는 안 보임 · 교체마다 빈 화면 — 메이커 10-30 실측 S48-SPIN-PLAYBACK-01 · 공용 함수는 그대로 두고 거인 효과만 여기서)
         local me = _UserService.LocalPlayer
         local list = _Util:Frames(ruids)
         if #list == 0 or not isvalid(me) then return end
@@ -810,15 +811,32 @@ script SkillEffects extends Component
         local opt = { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint }
         local i = 1
         local serial = _EffectService:PlayEffect(list[1], map, pos, angle, scale, true, opt)
+        local endAt = _UtilLogic.ElapsedSeconds + math.max(frameSec, loopSec)
+        local function drop(old)
+            if old ~= 0 then _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(old) end, 0.03) end
+        end
         local step = nil
         step = function()
-            if serial ~= 0 then _EffectService:RemoveEffect(serial) serial = 0 end
-            i = i + 1
-            if i > #list or not isvalid(me) or me.CurrentMap ~= map then return end
+            local old = serial
+            serial = 0
+            local alive = isvalid(me) and me.CurrentMap == map
+            if loopSec > 0 then
+                if not alive or _UtilLogic.ElapsedSeconds >= endAt - 0.001 then drop(old) return end
+                i = i % #list + 1
+            else
+                i = i + 1
+                if i > #list or not alive then drop(old) return end
+            end
             serial = _EffectService:PlayEffect(list[i], map, pos, angle, scale, true, opt)
-            _TimerService:SetTimerOnce(step, i == #list and math.max(frameSec, holdSec) or frameSec)
+            drop(old)
+            local nextSec = frameSec
+            if loopSec > 0 then nextSec = math.min(frameSec, math.max(0.01, endAt - _UtilLogic.ElapsedSeconds))
+            elseif i == #list then nextSec = math.max(frameSec, holdSec) end
+            _TimerService:SetTimerOnce(step, nextSec)
         end
-        _TimerService:SetTimerOnce(step, #list == 1 and math.max(frameSec, holdSec) or frameSec)
+        local first = frameSec
+        if loopSec <= 0 and #list == 1 then first = math.max(frameSec, holdSec) end
+        _TimerService:SetTimerOnce(step, first)
     end
 
     method Color GiantFxTint(string kind)
@@ -869,8 +887,8 @@ script SkillEffects extends Component
                 scale = Vector3(k, k, 1)
             end
             local frameSec = spec.sec or math.max(0.04, seconds / n)
-            if spec.loop then _Util:PlayFramesLoop(ruids, me.CurrentMap, pos, angle, scale, frameSec, math.max(frameSec, seconds), tint, order)
-            else self:PlaySeq(ruids, pos, angle, scale, frameSec, spec.hold and (seconds - frameSec * (n - 1)) or frameSec, tint, order) end
+            if spec.loop then self:PlaySeq(ruids, pos, angle, scale, frameSec, 0, math.max(frameSec, seconds), tint, order)
+            else self:PlaySeq(ruids, pos, angle, scale, frameSec, spec.hold and (seconds - frameSec * (n - 1)) or frameSec, 0, tint, order) end
             if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant fx kind=%s seq n=%d sec=%.3f loop=%s hold=%s order=%d w=%.2f scale=%.2f", kind, n, frameSec, tostring(spec.loop == true), tostring(spec.hold == true), order, width, scale.x)) end
             return
         end
