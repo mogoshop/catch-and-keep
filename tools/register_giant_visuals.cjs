@@ -60,7 +60,7 @@ const FX_RULES = {
   slam: { form: "shield", name: "방패 내려찍기 충격", ranges: [[12, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.5], now: ["GameConst", "FxGiantSlam"] },
   roar: { form: "shield", name: "도발 함성 문양·방사", ranges: [[12, 12, "v2"]], loop: false, hits: [0, 1], sec: [0.4, 1.6], now: ["SkillEffects", "FxGiantRoar"] },
 };
-const FRAME_MIN_SEC = 1 / 30;   // 몸: 한 칸 1/30초 이상 (오류 · 갈래 A 8877d73a — 갱신 주기보다 짧은 칸은 빠질 수 있음 · 지금 최소 0.04 통과) · 효과: 0.04 미만이면 spec.sec 명시 필요 (경고)
+const FRAME_MIN_SEC = 1 / 30;   // 몸: 한 칸이 1/30초보다 짧으면 「경고」만 (렌더·갱신 주기에 따라 그 구간이 건너뛰어지거나 길어질 수 있음 — 엔진 상한·필수 규칙 아님 · 60Hz면 25ms도 재생 · 코덱스 정정) · 효과: 0.04 미만이면 spec.sec 명시 필요 (경고)
 // 하위 호환 내보내기 (예전 EXTRA_STATES 모양: 상태 → 종 → [최소, 최대])
 const EXTRA_STATES = {};
 for (const form of FORMS) for (const [state, rule] of Object.entries(BODY_RULES[form])) {
@@ -68,6 +68,12 @@ for (const form of FORMS) for (const [state, rule] of Object.entries(BODY_RULES[
     [Math.min(...rule.ranges.map((r) => r[0])), Math.max(...rule.ranges.map((r) => r[1]))];
 }
 for (const st of ["skill1", "skill2"]) if (!EXTRA_STATES[st]) EXTRA_STATES[st] = Object.fromEntries(FORMS.map((f) => [f, [0, 0]]));
+// 상태 별칭 (한 곳): 방패 함성 몸은 A와 같은 키 skill1 — 납품이 roar로 오면 여기서만 skill1로 바꿔 읽는다 (키 이름 giant-shield-roar-NN은 그대로 허용)
+const STATE_ALIAS = { shield: { roar: "skill1" } };
+const canonRows = (rows, formOf) => rows.map((r) => {
+  const to = (STATE_ALIAS[formOf(r)] || {})[r.state];
+  return to ? Object.assign({}, r, { state: to, rawState: r.state }) : r;
+});
 const BLEND_RE = /blend|tween|interp|crossfade|mix|ghost-?frame/i;   // 스틸 블렌드 의심 이름 (매니페스트 표시 · 파일 이름)
 const HEAD = ["key", "kind", "form", "state", "frame", "frame_index0", "file", "sha256", "width", "height", "pivot_x", "pivot_y", "filter", "wrap", "duration_ms", "loop", "hit", "animation_key", "ruid"];
 const HEX = "0123456789abcdef";
@@ -181,7 +187,7 @@ function seqCheck(label, rule, items, out, kind) {
   let sum = 0;
   items.forEach((it, i) => {
     if (!(it.sec > 0)) out.errors.push(label + " #" + (i + 1) + " 시간 " + it.sec + " — 양수여야 함");
-    else if (it.sec < minSec - 1e-6) (kind === "fx" ? out.warnings : out.errors).push(label + " #" + (i + 1) + " " + r3(it.sec) + "초 < " + r3(minSec) + (kind === "fx" ? " — SkillEffects spec.sec를 명시해야 이 간격으로 돈다 (기본 바닥 0.04)" : " — 몸 한 칸은 1/30초 이상 (갱신 주기보다 짧으면 칸이 빠짐 · 갈래 A 8877d73a)"));
+    else if (it.sec < minSec - 1e-6) out.warnings.push(label + " #" + (i + 1) + " " + r3(it.sec) + "초 < " + r3(minSec) + (kind === "fx" ? " — SkillEffects spec.sec를 명시해야 이 간격으로 돈다 (기본 바닥 0.04)" : " — 렌더·갱신 주기가 이보다 길면 이 구간이 건너뛰어지거나 길어질 수 있음 (경고 · 통과)"));
     sum += it.sec > 0 ? it.sec : 0;
   });
   const looped = items.some((it) => it.loop);
@@ -208,6 +214,7 @@ function seqCheck(label, rule, items, out, kind) {
 // 대기표 검사: 종류마다 6동작·장 수·칸 번호 0..n-1·타이밍(서기·걷기 반복, 공격·기술 타격 칸 하나)·192 발 피벗 · HUD 5 · RUID 칸은 비거나 32자리
 //   + 기술 몸(BODY_RULES) · 효과(FX_RULES) 연속본은 있을 때만 새 검증표로 · 반환 { errors, warnings, summary }
 function checkAll(rows) {
+  rows = canonRows(rows, (r) => (r.kind === "frame" ? r.form : ""));
   const out = { errors: [], warnings: [], summary: [] };
   const bad = out.errors;
   const frames = rows.filter((r) => r.kind === "frame"), icons = rows.filter((r) => r.kind === "ui_icon"), fx = rows.filter((r) => r.kind === "fx");
@@ -250,7 +257,7 @@ function checkAll(rows) {
       const list = frames.filter((r) => r.form === form && r.state === state).sort((a, b) => a.frame_index0 - b.frame_index0);
       if (list.length === 0) continue;
       list.forEach((r, i) => {
-        if (stepKey("giant-" + form + "-" + state + "-", r, i)) bad.push(r.key + " 칸 번호/키");
+        if (stepKey("giant-" + form + "-" + (r.rawState || state) + "-", r, i)) bad.push(r.key + " 칸 번호/키");
         if (Number(r.pivot_x) !== 0.5 || Number(r.pivot_y) !== 0.03125 || Number(r.height) !== 192) bad.push(r.key + " 피벗·높이");
       });
       const res = seqCheck(form + " " + state, rule, list.map((r) => ({ id: r.key, sec: Number(r.duration_ms) / 1000, hit: r.hit === "true", loop: r.loop === "true", ident: r.sha256, file: r.file })), out, "body");
@@ -281,6 +288,7 @@ const check = (rows) => checkAll(rows).errors;   // 예전 모양 (오류 목록
 // data/monster_frames.csv의 form_giant_* 줄 검사 (check_data · check-frames): 기본 6동작 장 수 그대로 · 칸 수 = 시간 수 · 양수 시간 · 반복 · 타격 칸(impact = hitFrame 0부터) 범위
 //   + 기술 몸 줄은 BODY_RULES(같은 표) — V2 묶음(12~16장 등)은 impact가 반드시 있어야 한다 (FrameClip s · 서버 피해 시각과 맞출 칸)
 function checkFrames(mfRows) {
+  mfRows = canonRows(mfRows, (r) => String(r.monster || "").replace("form_giant_", ""));
   const out = { errors: [], warnings: [], summary: [] };
   const giant = mfRows.filter((r) => /^form_giant_/.test(r.monster));
   for (const r of giant) if (!FORMS.includes(r.monster.replace("form_giant_", ""))) out.errors.push(r.monster + " — 거인 5종이 아님");
@@ -349,6 +357,7 @@ function crossManifest(rows, json) {
 
 // 대기표 → monster_frames 줄: form_giant_(종류) 6동작 + 있는 기술 몸 (RUID ; · 시간 초 ; · 반복 · 클립 없음 · impact = 타격 칸(hitFrame) 0부터)
 function framesRows(rows, form) {
+  rows = canonRows(rows, (r) => (r.kind === "frame" ? r.form : ""));
   const extra = Object.keys(BODY_RULES[form] || {}).filter((state) => rows.some((r) => r.kind === "frame" && r.form === form && r.state === state));
   return [...STATES.map(([state]) => state), ...extra].map((state) => {
     const list = rows.filter((r) => r.kind === "frame" && r.form === form && r.state === state).sort((a, b) => a.frame_index0 - b.frame_index0);
@@ -436,7 +445,7 @@ function selftest() {
     ...seq("frame", "mage", "skill2", 6, { loop: true, ms: 120 }), ...seq("frame", "mage", "skill1", 3, { ms: 250 })];
   const v2 = () => [...base(),
     ...seq("frame", "shield", "skill1", 10, { ms: 80 }), ...seq("frame", "shield", "skill2", 12, { hitAt: 6, ms: 60 }),
-    ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 }), ...seq("frame", "greatsword", "skill2", 14, { hitAt: 6, ms: 60 }),
+    ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 }), ...seq("frame", "greatsword", "skill2", 14, { hitAt: 6, ms: 60 }),
     ...seq("frame", "twin", "skill2", 6, { hitAt: 2, ms: 70 }),
     ...seq("fx", "mage", "nova", 16, { hitAt: 3, ms: 50 }), ...seq("fx", "greatsword", "spin", 16, { loop: true, ms: 50 }), ...seq("fx", "greatsword", "rift", 16, { hitAt: 2, ms: 50 }),
     ...seq("fx", "shield", "slam", 12, { hitAt: 4, ms: 60 }), ...seq("fx", "shield", "roar", 12, { ms: 70 })];
@@ -461,10 +470,10 @@ function selftest() {
     ...seq("fx", "shield", "slam", 16, { hitAt: 4, ms: 60 })]), null);
   expect("V2 함성 12", checkAll([...base(), ...seq("frame", "shield", "skill1", 12, { ms: 80 })]), null);
   // 코덱스 확정 후속: 대검 회전 몸은 12~16 모두 허용 (짧은 기존 회전 시간에 맞춤 · 16을 채우려 복제 금지 = 중복 장 오류 유지)
-  expect("V2 회전 몸 12장(하한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 12, { loop: true, hitAt: 6, ms: 66.66 })]), null);
-  expect("V2 회전 몸 16장(상한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 })]), null);
+  expect("V2 회전 몸 12장(하한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 12, { loop: true, hitAt: 6, ms: 33.34 })]), null);
+  expect("V2 회전 몸 16장(상한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), null);
   expect("V2 회전 몸 17장", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 17, { loop: true, hitAt: 8, ms: 40 })]), "17장 — 허용");
-  expect("V2 회전 몸 16장을 복제로 채움", checkAll(mutate([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 })], (r) => r.key === "giant-greatsword-skill1-10", () => ({ sha256: fake("giant-greatsword-skill1-09") }))), "같은 그림 연속");
+  expect("V2 회전 몸 16장을 복제로 채움", checkAll(mutate([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })], (r) => r.key === "giant-greatsword-skill1-10", () => ({ sha256: fake("giant-greatsword-skill1-09") }))), "같은 그림 연속");
   const mfNow = parse(fs.readFileSync(path.join(ROOT, "data/monster_frames.csv"), "utf8"));
   expect("지금 monster_frames form_giant_* (기본 150 + full66 기술 몸)", checkFrames(mfNow), null);
   const mfRows = (rows) => parse(["monster,state,frames,delays,loop,clip,impact", ...FORMS.flatMap((f) => framesRows(rows.map((r) => Object.assign({}, r, { ruid: r.sha256.slice(0, 32) })), f))].join(LF) + LF);
@@ -491,10 +500,14 @@ function selftest() {
   expect("monster_frames 기본 attack impact 없음", checkFrames(mfNow.map((r) => (r.monster === "form_giant_mage" && r.state === "attack" ? Object.assign({}, r, { impact: "" }) : r))), "타격 칸 없음");
   expect("monster_frames 기본 move 줄 빠짐", checkFrames(mfNow.filter((r) => !(r.monster === "form_giant_twin" && r.state === "move"))), "move 줄 없음");
   // 경고 (실패는 아님)
-  // 갈래 A 요청: 몸 한 칸 1/30초 이상 (0.04는 통과 · 0.025는 오류) · 방패 함성 몸 8~12 밖 검출
+  // 몸 짧은 칸(1/30초 미만)은 경고만 · 통과 (코덱스 정정) · 방패 함성 몸 8~12 밖 검출
   expect("몸 한 칸 0.04초 통과", checkAll([...base(), ...seq("frame", "shield", "skill2", 12, { hitAt: 6, ms: 40 })]), null);
-  expect("몸 한 칸 1/30초 미만 (회전 16 × 0.025)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), "1/30초 이상");
-  expect("monster_frames 몸 칸 0.02초", checkFrames(mfV2.map((r) => (r.monster === "form_giant_greatsword" && r.state === "skill2" ? Object.assign({}, r, { delays: r.delays.split(";").map((x, i) => (i === 3 ? "0.02" : x)).join(";") }) : r))), "1/30초 이상");
+  expectWarn("몸 한 칸 1/30초 미만은 경고·통과 (회전 16 × 0.025)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), "건너뛰어지거나");
+  expectWarn("monster_frames 몸 칸 0.02초는 경고·통과", checkFrames(mfV2.map((r) => (r.monster === "form_giant_greatsword" && r.state === "skill2" ? Object.assign({}, r, { delays: r.delays.split(";").map((x, i) => (i === 3 ? "0.02" : x)).join(";") }) : r))), "건너뛰어지거나");
+  expect("함성 별칭 roar → skill1 (대기표)", checkAll([...base(), ...seq("frame", "shield", "roar", 10, { ms: 80 })]), null);
+  { const out = framesRows([...base(), ...seq("frame", "shield", "roar", 10, { ms: 80 })].map((r) => Object.assign({}, r, { ruid: r.sha256.slice(0, 32) })), "shield");
+    results.push({ name: "함성 별칭은 monster_frames에 skill1로 씀", ok: out.some((l) => l.startsWith("form_giant_shield,skill1,")) && !out.some((l) => l.includes(",roar,")), detail: out.map((l) => l.slice(0, 40)).join(" | ") }); }
+  expect("함성 skill1·roar 두 줄 = 중복", checkFrames([...mfV2, ...mfV2.filter((r) => r.monster === "form_giant_shield" && r.state === "skill1").map((r) => Object.assign({}, r, { state: "roar" }))]), "줄 중복");
   expect("방패 함성 몸 7장", checkAll([...base(), ...seq("frame", "shield", "skill1", 7, { ms: 80 })]), "7장 — 허용");
   expect("방패 함성 몸 13장", checkAll([...base(), ...seq("frame", "shield", "skill1", 13, { ms: 80 })]), "13장 — 허용");
   expect("방패 함성 몸 반복", checkAll([...base(), ...seq("frame", "shield", "skill1", 10, { loop: true, ms: 80 })]), "반복");
