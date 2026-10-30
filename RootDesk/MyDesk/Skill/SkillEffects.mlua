@@ -926,6 +926,17 @@ script SkillEffects extends Component
         return { sec = math.max(0.04, seconds / n), rule = "floor" }
     end
 
+    method number BodySign(Entity anchor)
+        -- 실제 렌더 몸의 좌우 (48 V2 방패 몸 부착 FX · 코덱스 c4a6c285): 원 PNG +x가 세계 +x면 1, 거울이면 -1 —
+        --   화면 몸 = MotionSmoother 그림 대역(없으면 본체)의 Scale.x 부호 × SpriteRenderer.FlipX 반전 (거인 기본 그림은 왼쪽 · 오른쪽을 볼 때 Scale.x 음수)
+        if anchor == nil or not isvalid(anchor) then return 1 end
+        local body = _MotionSmoother:VisOf(anchor)
+        local sgn = body.TransformComponent.Scale.x < 0 and -1 or 1
+        local sr = body.SpriteRendererComponent
+        if isvalid(sr) and sr.FlipX then sgn = -sgn end
+        return sgn
+    end
+
     @ExecSpace("ClientOnly")
     method void PlaySeq(string ruids, table o)
         -- 연속본 재생 (클라이언트): 첫 장부터 o.frameSec 간격 · o.loopSec > 0이면 그 시간 동안 처음으로 되돌아 반복 · 아니면 마지막 장을 o.holdSec 동안.
@@ -957,14 +968,21 @@ script SkillEffects extends Component
         for q = 1, n do planned = planned + dur(q) end
         if loopSec > 0 then planned = math.max(frameSec, loopSec) end
         local latched = nil
+        local curSign = o.sign0 or 1
         local function raw(idx)
             -- 지금 자리: 앵커(화면 몸) + offset + 장별 오프셋(o.frameOff · 방패 문양 좌표표)
+            --   o.mirror(몸 부착 FX · bodypx): x 오프셋(o.mx + 장별 x)은 원 PNG 기준 — 장마다 실제 렌더 몸 부호(BodySign)를 곱한다 (추적 중 몸이 돌면 바로 반영)
             local d = (o.frameOff ~= nil and o.frameOff[idx] ~= nil) and o.frameOff[idx] or Vector3(0, 0, 0)
+            local dx = d.x
+            if o.mirror then
+                if o.anchor ~= nil and isvalid(o.anchor) then curSign = self:BodySign(o.anchor) end
+                dx = curSign * ((o.mx or 0) + d.x)
+            end
             if o.anchor ~= nil and isvalid(o.anchor) then
                 local p = _MotionSmoother:VisOf(o.anchor).TransformComponent.WorldPosition
-                return Vector3(p.x + o.offset.x + d.x, p.y + o.offset.y + d.y, 0)
+                return Vector3(p.x + o.offset.x + dx, p.y + o.offset.y + d.y, 0)
             end
-            return Vector3(o.pos.x + d.x, o.pos.y + d.y, 0)
+            return Vector3(o.pos.x + dx, o.pos.y + d.y, 0)
         end
         local function where(idx)
             -- 고정 장(o.latchIdx)에 도달하고 고정 시각(o.latchAt)도 지난 뒤(둘 중 늦은 쪽) 그 장 좌표 raw(latchIdx)로 고정 —
@@ -984,7 +1002,9 @@ script SkillEffects extends Component
                 else c = Color(base.r, base.g, base.b, base.a * (1 - 0.55 * (idx - peak) / math.max(1, n - peak))) end
             end
             local ord = (o.frameOrder ~= nil and o.frameOrder[idx] ~= nil) and o.frameOrder[idx] or o.order   -- 장별 앞/뒤 층 (함성 축광 앞 · 방사 뒤)
-            return { SortingLayer = "MapLayer0", OrderInLayer = ord, Color = c, FlipX = o.flipX == true }
+            local flip = o.flipX == true
+            if o.mirror then flip = o.flipSpec == true and curSign * (o.native or 1) < 0 end   -- 몸 부착 FX: 위치와 같은 부호로 좌우 (고정 뒤엔 고정 순간 부호)
+            return { SortingLayer = "MapLayer0", OrderInLayer = ord, Color = c, FlipX = flip }
         end
         local i = 1
         local shown = 1
@@ -1130,10 +1150,13 @@ script SkillEffects extends Component
         local ay = spec.ay or spec.dy or 0
         if bodyScale > 0 and spec.axpx ~= nil then ax = spec.axpx * bodyScale / 100 end
         if bodyScale > 0 and spec.aypx ~= nil then ay = spec.aypx * bodyScale / 100 end
-        local sx = ax * face   -- 그림 계약 앵커(접점) — 오른쪽 볼 때 값을 거인 방향으로 좌우 대칭 (방패 접점 +79px → 왼쪽 -79px)
+        -- 몸 부착 FX(bodypx · 방패 함성·내려찍기): 원 PNG 화소 → 세계 x 부호는 대상 방향(facing)이 아니라 실제 렌더 몸(BodySign)에서 — PlaySeq가 장마다 곱한다
+        local mirror = bodyScale > 0
+        local sign0 = mirror and self:BodySign(anchor) or face
+        local sx = mirror and 0 or ax * face   -- 그림 계약 앵커(접점) — bodypx가 아니면 지금처럼 대상 방향으로 좌우 대칭
         local sy = ay
         local native = spec.face == "left" and -1 or 1
-        local flipX = spec.flip == true and face * native < 0   -- 좌우만 (FlipX) · 상하 뒤집기·통째 회전 없음
+        local flipX = spec.flip == true and sign0 * native < 0   -- 좌우만 (FlipX) · 상하 뒤집기·통째 회전 없음 · 몸 부착이면 몸 부호와 같이
         if spec.px ~= nil and spec.px ~= 0.5 then
             -- 가로 피벗이 끝(0 = 시작 끝 · 1 = 앞 끝)인 그림: 부르는 쪽은 가운데를 주므로 길이 방향으로 옮긴다 (땅 가르기 시작점 · 돌진 머리)
             local rad = math.rad(angle)
@@ -1208,7 +1231,7 @@ script SkillEffects extends Component
                 local j = first + i - 1
                 local fx = gx ~= nil and (gx[math.min(j, #gx)] or 0) or 0
                 local fy = gy ~= nil and (gy[math.min(j, #gy)] or 0) or 0
-                frameOff[i] = Vector3(fx * unit * face, fy * unit, 0)
+                frameOff[i] = Vector3(fx * unit * (mirror and 1 or face), fy * unit, 0)   -- 몸 부착이면 부호 없이 (PlaySeq가 몸 부호를 곱함)
             end
         end
         if spec.ordersList ~= nil then
@@ -1216,7 +1239,8 @@ script SkillEffects extends Component
             for i = 1, n do frameOrder[i] = spec.ordersList[math.min(first + i - 1, #spec.ordersList)] or order end
         end
         local o = { kind = kind, pos = Vector3(pos.x + sx, pos.y + sy, 0), anchor = anchor, offset = Vector3(offset.x + sx, offset.y + sy, 0), frameOff = frameOff, frameOrder = frameOrder,
-            angle = angle, scale = scale, frameSec = frameSec, holdSec = frameSec, loopSec = 0, tint = tint, order = order, peak = spec.peak or 0, flipX = flipX, durs = durs, latchAt = latchAt, latchIdx = latchIdx }
+            angle = angle, scale = scale, frameSec = frameSec, holdSec = frameSec, loopSec = 0, tint = tint, order = order, peak = spec.peak or 0, flipX = flipX, durs = durs, latchAt = latchAt, latchIdx = latchIdx,
+            mirror = mirror, mx = mirror and ax or 0, sign0 = sign0, flipSpec = spec.flip == true, native = native }
         if spec.loop then o.loopSec = math.max(frameSec, seconds)
         elseif durs ~= nil then o.holdSec = durs[n]
         elseif spec.hold then o.holdSec = seconds - frameSec * (n - 1) end
