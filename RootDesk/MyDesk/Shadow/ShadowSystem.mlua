@@ -32,32 +32,7 @@ script ShadowSystem extends Logic
         for _, p in ipairs(e.players or { e.player }) do
             self:SpawnSoul(Vector3(pos.x, pos.y, pos.z), e, p.PlayerComponent.UserId, standRuid, moveRuid)
         end
-        self:TryFirstTaste(e, standRuid, moveRuid, Vector2(pos.x, pos.y))
-    end
-
-    @ExecSpace("ServerOnly")
-    method void TryFirstTaste(table e, string standRuid, string moveRuid, Vector2 pos)
-        -- 첫 처치 맛보기 그림자 (기획서 39 결정 #3A, 10-29): 그림자 소환(Lv5)을 배우기 전 캐릭터가 일반 몬스터를 처음 쓰러뜨리면
-        -- 그 자리에서 firstTasteSec(60)초짜리 임시 그림자로 일어나 따라다니며 싸운다. 캐릭터마다 1회 (PlayerStats.FirstKills 「taste_shadow」 — 저장됨).
-        -- 막타 친 사람 본인만 (파티원 X) · 정식 그림자 규칙(해금·상한 10·추출)은 그대로 — 임시 그림자는 UndeadSystem 「되살림」 칸으로 보관함·상한 밖
-        local player = e.player
-        if player == nil or not isvalid(player) or not isvalid(player.PlayerComponent) or not _Util:IsAlive(player) then return end
-        if (e.grade or 1) ~= 1 or e.boss or (e.named or "") ~= "" or standRuid == "" then return end
-        if player.CurrentMap ~= e.map then return end
-        ---@type PlayerStats
-        local stats = player:GetComponent("script.PlayerStats")
-        if stats == nil or stats:HasFirstKill("taste_shadow") then return end
-        if stats.Level >= _SkillData:Get("shadow_summon").row then return end   -- 이미 정식 그림자를 쓸 수 있는 캐릭터(기존 캐릭터 포함)는 건너뛴다
-        stats:MarkFirstKill("taste_shadow")
-        local sourceId, level, variant = e.sourceId or "", e.level or 1, e.variant or ""
-        -- 쓰러지는 연출(HideDelay 0.8초)이 끝날 즈음 일어선다
-        _TimerService:SetTimerOnce(function()
-            if not isvalid(player) or not _Util:IsAlive(player) or player.CurrentMap ~= e.map then
-                log("[VRF] first-kill shadow skipped (owner left or died)")
-                return
-            end
-            _UndeadSystem:SpawnTaste(player, sourceId, level, variant, standRuid, moveRuid, pos)
-        end, 0.7)
+        -- 첫 처치 맛보기 그림자(기획서 39 결정 #3A · TryFirstTaste)는 10-31 사용자 결정으로 제거했다 — 옛 저장의 FirstKills 「taste_shadow」는 남아 있어도 읽지 않는다
     end
 
     @ExecSpace("ServerOnly")

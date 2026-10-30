@@ -160,9 +160,10 @@ function buildGameHud() {
   b.text("BtnJournal/Tip/Value", "", { size: 18, color: C.white, alignment: 5, anchor: "bottom-right", pos: [-14, 6], rect_size: [100, 26], ...outline });
 
   // ── 파티 (왼쪽, 그림자 상태줄 아래) ──
-  // 파티원마다 이름·레벨 줄 + 위치 작은 줄 (최대 8명 → 높이 360)
-  b.empty("Party", { anchor: "top-left", pos: [24, -272], rect_size: [400, 360] });
-  b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 360], ...outline });
+  // 10-31 실플레이 피드백 B-4: 평소 「파티 (n) · 이름 Lv · …」 한 줄(28)로 접고, 마우스를 올리거나(PC) 누르면 이름·레벨 줄 + 위치 작은 줄로 펼친다
+  //   (HudMain.RenderParty가 글 높이에 맞춰 칸을 늘린다 · 왼쪽 알림 더미 NoticeFeed.PlaceHome이 이 칸 아래 끝을 피한다). 투명 단추 = 마우스 올림·누름을 받는 칸
+  b.button("Party", "", { anchor: "top-left", pos: [24, -272], rect_size: [400, 28], bg_color: { r: 0, g: 0, b: 0, a: 0 }, sprite_type: 0, enable: false });
+  b.text("Party/Text", "", { size: 18, color: "#CCEECC", alignment: 0, anchor: "top-left", pos: [0, 0], rect_size: [400, 28], ...outline });
 
   // ── NPC 머리 위 의뢰 표시 「!」 (새 의뢰 노랑 · 완료 보고 초록, 화면 좌표로 따라다닌다) ──
   b.text("NpcMark", "!", { size: 96, bold: true, color: "#FFD23F", anchor: "middle-center", pos: [0, 0], rect_size: [90, 120], outline: true, outline_color: "#2A1A05", outline_width: 0.3, enable: false });
@@ -493,19 +494,19 @@ function buildGameHud() {
     b.patch(bn, { enable: false });
   }
 
-  // ── 혼의 제물 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차, 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분) ──
-  //   포인트가 생기면 HUD 띠 「혼의 제물 — 고르기」 → 카드 3장(새 스킬 · 쓰던 스킬 랭크 업 · 강화) + 다음 해금 미리보기. 컨트롤러 SkillOffer.mlua
+  // ── 스킬 추천 3택 카드 (10-28 피드백 F4 · 기획서 38 #24-A 2차, 시안 assets/codex-skill-window-mock-v1/V4-pc.png 카드 부분) ──
+  //   포인트가 생기면 HUD 띠 「스킬 추천 — 고르기」 → 카드 3장(새 스킬 · 쓰던 스킬 랭크 업 · 강화) + 다음 해금 미리보기. 컨트롤러 SkillOffer.mlua
   //   선택 보상(10-28)도 같은 창: 카드 셋을 가운데로, 아래 단추 줄 없이 창 높이를 줄인다 (SkillOffer.Layout — 높이 772 / 668)
   //   10-28 사용자 「색깔 띠 지우고 · 글이 길면 줄이거나 줄바꿈 · 버튼 개선 · 아래 빈 공간」: 카드 그림 맨 위 흰 띠를 잘라 다시 올렸고(claude-offer-card-v2),
   //   글 칸은 카드 테두리 안쪽(폭 222)에서 줄을 바꾸며, 고르기는 카드 아래 진짜 단추다
   //   띠 글은 한 줄 (10-29 UI-20261029-01: 긴 선택 보상 제목이 두 줄로 갈라져 띠 위아래로 넘쳤다) — 여백·하한·말줄임은 ui-tokens BAND, 폭은 실행 중 SkillOffer가 글 길이에 맞춘다
   const BAND = require("./ui-tokens.cjs").BAND;
-  b.button("OfferBand", "혼의 제물 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [BAND.minW, BAND.h], ...bg("sk_offer_banner"), color: "#F4E2B0", font_size: BAND.font, sprite_type: 1, enable: false });
+  b.button("OfferBand", "스킬 추천 — 고르기", { anchor: "bottom-center", pos: [0, 236], rect_size: [BAND.minW, BAND.h], ...bg("sk_offer_banner"), color: "#F4E2B0", font_size: BAND.font, sprite_type: 1, enable: false });
   b.patchComponent("OfferBand", "MOD.Core.TextGUIRendererComponent", require("./ui-tokens.cjs").bandText());
   k.badge("OfferBand");
-  k.frame("OfferWin", "middle-center", [0, 20], [1400, 772], "혼의 제물");
+  k.frame("OfferWin", "middle-center", [0, 20], [1400, 772], "스킬 추천");
   for (let i = 1; i <= 3; i++) for (const old of ["Band", "Pick"]) if (b.find(`OfferWin/Card${i}/${old}`)) b.remove(`OfferWin/Card${i}/${old}`);
-  b.text("OfferWin/Sub", "포인트를 바칠 곳을 고르세요", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [800, 30], alignment: 3 });
+  b.text("OfferWin/Sub", "추천 스킬 중 하나를 고르세요", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [900, 30], alignment: 3, bestfit: true, min_size: 16, max_size: 20 });   // 10-31 B-3: 보스 처치 보상 안내는 길어 900 · 줄여 넣기
   b.text("OfferWin/Left", "", { size: 22, bold: true, color: "#F4ED83", anchor: "top-right", pos: [-51, -76], rect_size: [300, 30], alignment: 5, ...outline });
   // 카드 340×404 (그림 360×428을 같은 비율로) · 사이 16 · 첫 카드 74 (오른쪽 미리보기까지 좌우 여백이 같게)
   const CARD = { w: 340, h: 404, step: 356, x0: 74, top: -116, text: 222 };
@@ -542,7 +543,7 @@ function buildGameHud() {
   k.btn("OfferWin/BtnBoard", "보드에서 직접 고르기 (K)", { anchor: "bottom-right", pos: [-51, 48], rect_size: [420, 88], font_size: 22 });
 
   // ── 노말 끝 「다음 난이도 미리보기」 카드 1장 (기획서 43 ④-a · 결정 7, 10-29) — 컨트롤러 Progress/NightmarePreview.mlua ──
-  //   혼의 제물·선택 보상 카드(위 OfferWin)와 같은 양식: 창 틀 + 카드 그림(sk_offer_card_new) 한 장 + 오른쪽 목록 + 확인 단추. 글귀는 10-29 사용자 확정
+  //   스킬 추천·선택 보상 카드(위 OfferWin)와 같은 양식: 창 틀 + 카드 그림(sk_offer_card_new) 한 장 + 오른쪽 목록 + 확인 단추. 글귀는 10-29 사용자 확정
   //   카드 안 Art = 그림 자리 (코덱스 「문 아래 붉은 틈」이 오면 ui_icons preview_nightmare로 NightmarePreview가 바꿔 낀다)
   k.frame("PreviewWin", "middle-center", [0, 20], [1100, 640], "다음 난이도");
   b.text("PreviewWin/Sub", "", { size: 20, color: C.gold, anchor: "top-left", pos: [51, -76], rect_size: [1000, 30], alignment: 3 });
@@ -867,6 +868,9 @@ function buildGameHud() {
       b.patchComponent(`GuideWin/D${i}`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     }
   }
+
+  // 줍기 표시 (10-31 B-4 채널 D): 골드 +N · 아이템 획득을 캐릭터 발밑 작은 글씨로 1.5초 떠올라 사라지게 — 최대 3개 · 맨 끝에 만들어 다른 엔티티의 순서(displayOrder)를 밀지 않는다 — 창이 떠 있으면 HudMain이 숨긴다 (HudMain.PickupPop · RenderPicks). 머리 위 COMBO와 겹치지 않게 발밑
+  for (let i = 1; i <= 3; i++) b.text(`PickPop${i}`, "", { size: 20, bold: true, color: "#F4E2B0", anchor: "middle-center", pos: [0, 0], rect_size: [420, 30], alignment: 4, ...outline, outline_width: 0.25, enable: false });
 
   const file = P.ui("GameHUD");
   const previous = readIfExists(file);

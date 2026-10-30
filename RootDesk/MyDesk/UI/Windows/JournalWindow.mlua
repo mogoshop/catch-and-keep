@@ -18,6 +18,7 @@ script JournalWindow extends Logic
     property integer PulseIndex = 0
     property integer HiIndex = 0              -- 뱃지로 열었을 때 밝힐 줄 (목록 전체 번호)
     property number HiUntil = 0
+    property boolean PulseToTracker = true    -- 10-31 B-4 채널 C: 진행 말풍선(BtnJournal/Tip) 대신 퀘스트 추적기 안 한 줄로 제자리 갱신 (false = 예전 말풍선)
     property boolean SeekClaim = false
     property integer ViewDiff = 0        -- 뱃지로 열었는데 말풍선이 없다 → 첫 「받기」 줄로
 
@@ -112,10 +113,17 @@ script JournalWindow extends Logic
                 local ok, p = pcall(function() return _HttpService:JSONDecode(journal.Pulse) end)
                 if ok and type(p) == "table" and (p.q or 0) ~= self.LastPulse then
                     self.LastPulse = p.q or 0
-                    self.PulseUntil = now + _GameData.journalPulseSeconds
                     self.PulseTab = p.t or "ach"
                     self.PulseIndex = p.i or 0
                     local c = math.max(1, p.c or 1)
+                    if self.PulseToTracker then
+                        -- 추적기 줄: 「업적 · 이름  n/N」 (완료는 채널 A 상단 띠가 따로 알린다 — 여기는 「완료」 표시만)
+                        local head = _UIKit:Colored("#A8A090", self.PulseTab == "daily" and "일일 퀘스트" or "업적")
+                        local value = p.done and _UIKit:Colored("#9FD69B", "완료") or (tostring(p.p or 0) .. "/" .. tostring(c))
+                        _HudMain:SetJournalTrack(head .. " " .. _UIKit:Clip(p.n or "", 14) .. "  " .. value)
+                    else
+                        self.PulseUntil = now + _GameData.journalPulseSeconds
+                    end
                     _UIKit:SetText("BtnJournal/Tip/Name", (self.PulseTab == "daily" and "일일 퀘스트 · " or "업적 · ") .. (p.n or ""))
                     _UIKit:SetText("BtnJournal/Tip/Value", p.done and _UIKit:Colored("#9FD69B", "완료!") or (tostring(p.p or 0) .. " / " .. tostring(c)))
                     _UIKit:SetBar("BtnJournal/Tip/Bar/Fill", (p.p or 0) / c)

@@ -47,6 +47,33 @@ script Util extends Logic
         for _, p in ipairs(self:PlayersInMap(map)) do self:Notify(text, p.PlayerComponent.UserId) end
     end
 
+    -- 알림 채널 (10-31 실플레이 피드백 B-4 · docs/evidence/2026-10-31-playfeedback-B/notice-channels.md)
+    --   A 「상단 띠」(HudMap.TopPush): 습격 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장 — 한 번에 하나
+    --   B 「왼쪽 알림 더미」(NoticeFeed): Notify · Warn(창이 떠 있을 때) — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N
+    --   C 「오른쪽 추적기」: 퀘스트 추적기 안 일지 진행 (JournalWindow → HudMain.SetJournalTrack)
+    --   D 「줍기 표시」(HudMain.PickupPop): 골드·아이템 획득을 캐릭터 발밑 작은 글씨로
+    @ExecSpace("Client")
+    method void NotifyTop(string key, string title, string line, integer prio)
+        -- 서버에서 _Util:NotifyTop(key, title, line, prio, userId). 채널 A를 끄면(HudMap.TopChannelOn) 예전처럼 안내 줄 한 줄
+        if _HudMap.TopChannelOn then
+            _HudMap:TopPush(key, title, line, prio)
+            return
+        end
+        _NoticeFeed:Push(line ~= "" and (title .. " — " .. line) or title)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void NotifyTopMap(Entity map, string key, string title, string line, integer prio)
+        -- 그 맵 안의 모든 사람에게 채널 A 한 줄
+        for _, p in ipairs(self:PlayersInMap(map)) do self:NotifyTop(key, title, line, prio, p.PlayerComponent.UserId) end
+    end
+
+    @ExecSpace("Client")
+    method void NotifyPickup(string text)
+        -- 서버에서 _Util:NotifyPickup(text, userId): 줍기 결과(골드 +N · 아이템 이름)는 발밑 작은 글씨 (채널 D)
+        _HudMain:PickupPop(text)
+    end
+
     @ExecSpace("ServerOnly")
     method void AfterSpawn(Entity e, string componentName, any onReady, any onFail)
         -- e의 componentName 컴포넌트가 잡히면 onReady(comp), 끝내 실패하면 onFail() (nil 가능)

@@ -126,7 +126,7 @@ script BossPattern extends Component
             self:EndPool()
             self:Calm()
             self.TwinSeenAlive = false
-            if not self.WasDead and monster.IsDead then self:Announce(self.BossName .. " 처치!") end
+            if not self.WasDead and monster.IsDead then self:Announce(monster:ShownName()) end   -- 채널 A 「○○ 처치!」 — Monster의 다시 나오는 때 줄과 같은 키라 한 띠로 합쳐진다
             self.WasDead = monster.IsDead
             self.Enraged = false
             self.SlamTimer = 3
@@ -802,10 +802,14 @@ script BossPattern extends Component
     end
 
     @ExecSpace("Multicast")
-    method void Announce(string text)
-        -- 현재 전투에 참여하는 맵의 사용자에게만 알린다.
+    method void Announce(string name)
+        -- 현재 전투에 참여하는 맵의 사용자에게만 알린다. 보스 처치 = 채널 A 「상단 띠」 (10-31 B-4 · 끄면 예전 안내 줄)
         if not self:HasLocalAudience() then return end
-        _NoticeFeed:Push(text)
+        if _HudMap.TopChannelOn then
+            _HudMap:TopPush("boss:" .. name, name .. " 처치!", "", 1)
+            return
+        end
+        _NoticeFeed:Push(name .. " 처치!")
     end
 
 end

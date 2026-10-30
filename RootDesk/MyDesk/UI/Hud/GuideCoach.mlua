@@ -4,6 +4,8 @@
 --     화면 좌표 계산이 없어 PC·모바일 모두 같은 방식으로 맞는다. 쓸 포인트 표시(HudMain.RenderBadges)와 같은 점을 같이 쓴다.
 --   · 위쪽 안내 줄 한 줄(HudMain.RenderTip이 Tip()을 먼저 본다).
 --   · 핵심 순간 세 번만 카드 한 장(GuideWindow.ShowCard): Lv5 그림자 해금 · 첫 그림자 · Lv15 군단 확장. 계정에 한 번 (PlayerSave.GuideCards).
+--   · 10-31 실플레이 피드백 B-2: 「그림자 소환」을 배우면(레벨 무관 · 언제든) 게임 안내 창(GuideWindow 「군단」 책갈피 「그림자 추출」 쪽)을
+--     캐릭터마다 한 번 저절로 연다 (SkillBook.ShadowGuide 저장). 이미 배운 기존 캐릭터는 다음 접속 때 한 번. 첫 진입 둘러보기는 그대로.
 -- 단계는 상태에서 다시 계산하므로 따로 저장하지 않는다 — 이미 한 사람에게는 처음부터 아무것도 뜨지 않는다.
 @Logic
 script GuideCoach extends Logic
@@ -22,6 +24,10 @@ script GuideCoach extends Logic
     property boolean LegionVisited = false   -- 군단 확장 카드 뒤 그림자 창을 열었다 (닫으면 그 단계 끝)
     property string GiantSeen = ""           -- 46-6 마지막으로 본 거인 종류 (""→종류로 바뀌는 순간 = 거인이 섬)
     property boolean GiantTipOn = false      -- 이번 거인 동안 「저 적을」 안내를 보인다 (첫 3번 · SkillBook.GiantTips)
+    property number ShadowGuideCalm = 0      -- 10-31 그림자 소환 뒤 안내 창 조건(창·이야기 카드·큰 알림·가까운 적 없음)이 이어진 시간
+    property boolean ShadowGuideAsked = false -- 이번 접속에서 안내 창을 열고 서버에 남겼다 (동기화가 오기 전 두 번 열지 않게)
+    property string ShadowGuideTab = "legion" -- 열 책갈피 (GuideWindow.BuildTabs key)
+    property integer ShadowGuidePage = 2     -- 「그림자 추출」 쪽
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -80,6 +86,7 @@ script GuideCoach extends Logic
         if isvalid(player) and st ~= nil and book ~= nil and save ~= nil and save.BootDone and not save.Selecting and save.Slot > 0 and _Util:IsAlive(player) then
             step = self:Decide(player, st, book, owner, cmd, points)
             self:MaybeCard(player, st, save, owner, cmd, step, delta)
+            self:MaybeShadowGuide(player, book, delta)
         end
         if step == "" then self.TipText = "" end
         self.Step = step
@@ -248,6 +255,32 @@ script GuideCoach extends Logic
         self.Points = points
         self.PointKey = key
         log("[VRF] guide step=" .. self.Step .. " points=" .. key)
+    end
+
+    -- ───────── 그림자 소환을 배운 뒤 게임 안내 창 (캐릭터마다 한 번 · 10-31 B-2) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void MaybeShadowGuide(Entity player, SkillBook book, number delta)
+        -- 「그림자 소환」을 배운 캐릭터가 아직 안내 창을 안 봤으면, 스킬 창을 닫고 조용해진 뒤 「군단」 책갈피를 연다.
+        -- 첫 진입 둘러보기(GuideWindow.CheckFirstEntry)가 먼저 끝나야 한다 (AutoDone) — 둘러보기 자체는 건드리지 않는다
+        if self.ShadowGuideAsked or book.ShadowGuide or book:GetLevel("shadow_summon") <= 0 then
+            self.ShadowGuideCalm = 0
+            return
+        end
+        local calm = _GuideWindow.AutoDone and not _UIKit:AnyWindowOpen() and not _StoryCard.Active and #_StoryCard.Queue <= 0
+            and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds
+            and _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 6) == nil
+        if not calm then
+            self.ShadowGuideCalm = 0
+            return
+        end
+        self.ShadowGuideCalm = self.ShadowGuideCalm + delta
+        if self.ShadowGuideCalm < self.CardCalmNeed then return end
+        self.ShadowGuideCalm = 0
+        self.ShadowGuideAsked = true
+        book:RequestShadowGuide()
+        _GuideWindow:ShowTabKey(self.ShadowGuideTab, self.ShadowGuidePage)
+        log("[VRF] shadow guide window opened tab=" .. self.ShadowGuideTab .. " page=" .. tostring(self.ShadowGuidePage))
     end
 
     -- ───────── 카드 (계정에 한 번) ─────────
