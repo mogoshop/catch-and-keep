@@ -549,10 +549,12 @@ function genItems() {
 // ── SkillData ──
 function genSkills() {
   const rows = load("skills");
+  // 46-5 택일 묶음 (data/skill_choices.csv · 44 결정 5 「둘 중 하나」 장치 — 44-5 갈림도 이 표에 줄을 더한다): group = 같은 묶음 중 하나만 · hold = 보류(배울 수 없음 · 공방에 안 보임)
+  const choices = Object.fromEntries(load("skill_choices").map((c) => [c.id, c]));
   const body = [
     "        self.Skills = {}",
     "        self.Order = {}",
-    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, card = ${s(r.card || "")}, icon = ${s(r.icon)}, parent = ${s(r.parent || "")}, need = ${n(r.need || 0)} }\n        table.insert(self.Order, ${s(r.id)})`),
+    ...rows.map((r) => `        self.Skills[${s(r.id)}] = { id = ${s(r.id)}, name = ${s(r.name)}, tree = ${s(r.tree)}, row = ${n(r.row)}, kind = ${s(r.kind)}, prereq = ${s(r.prereq)}, maxLv = ${n(r.maxLv)}, mana = ${n(r.mana)}, cooldown = ${n(r.cooldown)}, impl = ${b(r.impl)}, nextLv = ${n(r.nextLv || 0)}, desc = ${s(r.desc)}, card = ${s(r.card || "")}, icon = ${s(r.icon)}, parent = ${s(r.parent || "")}, need = ${n(r.need || 0)}, group = ${s((choices[r.id] || {}).group || "")}, hold = ${b((choices[r.id] || {}).hold || "")} }\n        table.insert(self.Order, ${s(r.id)})`),
   ].join("\n");
   const extra = `
     method any Get(string id)
@@ -575,6 +577,17 @@ function genSkills() {
         return list
     end
 
+    method table GroupOf(string group)
+        -- 46-5 택일 묶음의 노드 id (표 순서 · 「둘 중 하나」)
+        self:Ensure()
+        local list = {}
+        if group == "" then return list end
+        for _, id in ipairs(self.Order) do
+            if self.Skills[id].group == group then table.insert(list, id) end
+        end
+        return list
+    end
+
     method table Mains()
         -- 메인 스킬 id (해금 레벨 순 — 표가 이미 그 순서)
         self:Ensure()
@@ -593,7 +606,7 @@ function genSkills() {
         return "저주"
     end
 `;
-  write("SkillData.mlua", "skills.csv", logic("SkillData", "네크로맨서 스킬 정의 (docs/design/04 3장). impl=false는 트리에만 보이는 준비 중 스킬", body, extra,
+  write("SkillData.mlua", "skills.csv, skill_choices.csv", logic("SkillData", "네크로맨서 스킬 정의 (docs/design/04 3장). impl=false는 트리에만 보이는 준비 중 스킬", body, extra,
     "    property table Skills = {}\n    property table Order = {}\n"));
 }
 

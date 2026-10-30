@@ -163,9 +163,21 @@ script SkillBook extends Component
         if def == nil then return "없는 스킬" end
         -- 아직 효과가 없는 스킬은 배울 수 없다 (포인트를 헛쓰지 않게)
         if not def.impl then return "준비 중인 강화" end
+        if def.hold then return "별도 검토 중" end   -- 46-5 보류 묶음 (방패 거인 갈림 · 결정 6)
         local lv = self:GetLevel(id)
         if lv >= def.maxLv then return "최대 랭크" end
         if def.kind == "node" then
+            -- 46-5 거인 강화: 악몽 진입 전엔 배울 수 없다 (5기 거인 해금과 같은 조건 · 사유 줄 「악몽부터」 · §8 후보 1 승인 전)
+            if self:GiantOfNode(id) ~= "" and not self:RiteGiantUnlocked() then return "악몽부터" end
+            -- 택일 묶음 (44 결정 5 · 46 §4-3): 같은 묶음에서 이미 하나를 골랐으면 다른 쪽은 못 배운다 (다시 고르기 불가 — 스킬 초기화로만)
+            if (def.group or "") ~= "" then
+                for _, other in ipairs(_SkillData:GroupOf(def.group)) do
+                    if other ~= id and self:GetLevel(other) > 0 then
+                        local od = _SkillData:Get(other)
+                        return "이미 「" .. (od ~= nil and od.name or other) .. "」을(를) 골랐습니다"
+                    end
+                end
+            end
             -- 강화: 메인 스킬을 그 랭크까지 올려야 열린다
             local parent = _SkillData:Get(def.parent)
             local name = parent ~= nil and parent.name or def.parent
@@ -674,6 +686,22 @@ script SkillBook extends Component
             terror_frenzy = string.format("공포가 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
             drain_share = string.format("가까운 적 %d마리로 이어짐 · 이어진 적은 피해 %d%%", level, math.floor(_GameData.drainChainPct)),
             aura_deep = string.format("호령 공격·생명 효과 +%d%%", 20 * level),
+            -- 46-5 거인 강화 (§4-3 「지금 / 다음 랭크」 · 수치 초안 · 글귀 승인 전)
+            giant_quake = string.format("땅울림 반경 %.2f칸 · 묶기 %.1f초", 2.2 + 0.15 * level, 0.8 + 0.2 * level),
+            giant_basic_split = "뼈 던지기 세 갈래 · 갈래마다 ×0.6",
+            giant_basic_return = "던진 뼈가 돌아오며 다시 맞힘 · ×1.0",
+            giant_shield_wall = string.format("도발 %.1f칸 · 받는 피해 -%d%%", 3 + 0.3 * level, 30 + 3 * level),
+            giant_shield_alt = "별도 검토 중",
+            giant_shield_phalanx = "거인 곁 2칸 아군 받는 피해 -15%",
+            giant_gs_spin = string.format("회전 베기 %d번 · %.1f초", 4 + level, 0.4 * (4 + level)),
+            giant_gs_scar = "갈린 땅이 3초 남아 둔화 · 0.5초마다 피해",
+            giant_gs_twice = "땅 가르기 세 줄 · 옆 줄 ×0.6",
+            giant_twin_flurry = string.format("연속 베기 %d번", 6 + level),
+            giant_twin_reset = "돌진으로 쓰러뜨리면 바로 다시 돌진 · 최대 3번",
+            giant_twin_echo = "돌진 뒤 잔상 둘이 같은 길을 벰",
+            giant_mage_meteor = string.format("뼈 유성 %.1f칸 · 예고 %.1f초", 1.6 + 0.2 * level, math.max(0.4, 1 - 0.1 * level)),
+            giant_mage_resist = "장판 안 적의 저항 -15",
+            giant_mage_pull = "장판이 적을 가운데로 끌어당김",
         }
         if nodeText[id] ~= nil then return nodeText[id] end
         local power = self:GetEffectPower(id, level)
@@ -730,6 +758,23 @@ script SkillBook extends Component
         if id == "shard_multi" and self:GetBoneShardCount(math.max(1, self:GetPowerLevel("bone_shard"))) <= 1 then return "골편이 2발 이상일 때 모이는 효과가 납니다" end
         local nodeForm = _UndeadSystem:NodeForm(id)
         if nodeForm.form ~= "" then return self:FormHint(id, nodeForm.kind, nodeForm.form) end
+        local giant = self:GiantOfNode(id)
+        if giant ~= "" then
+            -- 46-5 「쓰는 곳」 (I03 UseHint 방식): 지금 무리로 서는 거인이 이 노드의 거인이 아니면 알린다 (§8 후보 1 「지금 무리로는 ○○ 거인」 · 승인 전)
+            local plan = _UndeadSystem:GiantPlanFor(self.Entity)
+            if plan ~= nil and plan.type ~= giant then return "지금 무리로는 " .. _GameData:GetGiant(plan.type).name end
+        end
+        return ""
+    end
+
+    method string GiantOfNode(string id)
+        -- 46-5 거인 강화 노드 → 거인 종류 (아니면 "") · giant_quake·giant_basic_* = basic · giant_shield_* · giant_gs_* = greatsword · giant_twin_* · giant_mage_*
+        if string.sub(id, 1, 6) ~= "giant_" then return "" end
+        if id == "giant_quake" or string.sub(id, 1, 12) == "giant_basic_" then return "basic" end
+        if string.sub(id, 1, 13) == "giant_shield_" then return "shield" end
+        if string.sub(id, 1, 9) == "giant_gs_" then return "greatsword" end
+        if string.sub(id, 1, 11) == "giant_twin_" then return "twin" end
+        if string.sub(id, 1, 11) == "giant_mage_" then return "mage" end
         return ""
     end
 

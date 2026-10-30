@@ -450,6 +450,29 @@ for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   });
 }
 
+// ── 택일 묶음 (46-5 · skill_choices.csv · 44 결정 5 「둘 중 하나」) ──
+{
+  const choices = load("skill_choices");
+  const byId = Object.fromEntries(T.skills.map((r) => [r.id, r]));
+  const groups = {};
+  choices.forEach((c, i) => {
+    const sk = byId[c.id];
+    if (!sk) err("skill_choices", i, `id '${c.id}' — skills.csv에 없음`);
+    else if (sk.kind !== "node") err("skill_choices", i, `id '${c.id}' — 강화 노드(kind node)만 묶는다`);
+    if (!/^\w+$/.test(c.group)) err("skill_choices", i, `group '${c.group}' — 비어 있거나 형식 오류`);
+    if (c.hold !== "" && c.hold !== "1") err("skill_choices", i, `hold '${c.hold}' — "" 또는 1`);
+    (groups[c.group] = groups[c.group] || []).push(c);
+  });
+  for (const [g, list] of Object.entries(groups)) {
+    if (list.length !== 2) err("skill_choices", null, `group ${g}: 정확히 둘이어야 함 (지금 ${list.length})`);
+    if (new Set(list.map((c) => c.hold)).size !== 1) err("skill_choices", null, `group ${g}: 한쪽만 보류 — 둘 다 보류이거나 둘 다 열려야 함 (46 §4-3)`);
+    const parents = new Set(list.map((c) => (byId[c.id] || {}).parent));
+    const needs = new Set(list.map((c) => (byId[c.id] || {}).need));
+    if (parents.size !== 1 || needs.size !== 1) err("skill_choices", null, `group ${g}: 같은 메인·같은 필요 랭크여야 함`);
+    for (const c of list) if ((byId[c.id] || {}).maxLv !== "1") err("skill_choices", null, `group ${g}: ${c.id} 갈림은 1랭크`);
+  }
+}
+
 // ── 난이도·사운드 ──
 T.difficulty.forEach((r, i) => {
   if (num(r.index, -1) !== i) err("difficulty", i, `index ${r.index} — 0부터 순서대로여야 함`);

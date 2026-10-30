@@ -966,6 +966,14 @@ script ShadowUnit extends AttackComponent
         self.TauntRadius = (spec ~= nil and spec.tauntRadius > 0) and spec.tauntRadius or 2.5
         self.TauntTimer = 0
         self.GuardPct = spec ~= nil and spec.guardPct or 0
+        if self.GiantKind == "shield" and isvalid(self.OwnerPlayer) then
+            -- 46-5 강화 「뼈 성벽」: 도발 반경 +0.3칸 · 받는 피해 -3%p / 랭크 (최대 -39% · 보스 제외 그대로)
+            ---@type SkillBook
+            local book = self.OwnerPlayer:GetComponent("script.SkillBook")
+            local wall = book ~= nil and book:Node("giant_shield_wall") or 0
+            self.TauntRadius = self.TauntRadius + 0.3 * wall
+            self.GuardPct = self.GuardPct + 3 * wall
+        end
         if spec ~= nil and self.BaseSpeed > 0 then self:SetBaseSpeed(self.BaseSpeed * spec.speedMul) end
         -- 그림 (10-30 갈래 E · 시각만): 거인 3종 그림(look)이 등록돼 있으면 서기·걷기·공격 그림을 거인 그림으로 바꾸고, 그림이 이미 크므로 배율은 GiantArtScale ·
         --   칠하지 않는다. 없으면(look = nil · 미등록) 지금처럼 변이 그림 × riteGiantScale · 뼈 색 칠 — 빈 그림(SpriteRUID "")은 절대 넣지 않는다
