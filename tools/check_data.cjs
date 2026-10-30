@@ -439,15 +439,41 @@ for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   const frameKeys = new Set(T.monster_frames.map((r) => r.monster));
   T.rite_giants.forEach((r, i) => {
     for (const k of NUMS) if (r[k] === "" || isNaN(Number(r[k])) || Number(r[k]) < 0) err("rite_giants", i, `${k} '${r[k]}' — 0 이상 숫자가 아님`);
-    for (const k of ["hpMul", "atkMul", "interval", "range", "speedMul", "s1Cd", "s2Cd"]) if (!(Number(r[k]) > 0)) err("rite_giants", i, `${k} 양수여야 함`);
+    // 48 §4-1 (K-4 정정): 기본 거인은 기술 없음 — s1·s2 칸을 통째로 비울 수 있다 (비우면 이름·재사용·모양도 비움 · 반쯤 빈 줄은 오류)
+    const has1 = r.s1 !== "", has2 = r.s2 !== "";
+    for (const k of ["hpMul", "atkMul", "interval", "range", "speedMul"].concat(has1 ? ["s1Cd"] : [], has2 ? ["s2Cd"] : [])) if (!(Number(r[k]) > 0)) err("rite_giants", i, `${k} 양수여야 함`);
     if (Number(r.guardPct) >= 90) err("rite_giants", i, "guardPct 90 미만이어야 함");
-    if (!SHAPES.has(r.s2Shape)) err("rite_giants", i, `s2Shape '${r.s2Shape}' — single·arc·line·dash·field 중 하나`);
-    if (r.name === "" || r.s1 === "" || r.s2 === "" || r.s1Name === "" || r.s2Name === "") err("rite_giants", i, "이름·스킬 칸이 비어 있음");
+    if (has2 ? !SHAPES.has(r.s2Shape) : r.s2Shape !== "") err("rite_giants", i, `s2Shape '${r.s2Shape}' — single·arc·line·dash·field 중 하나 (s2가 비면 비움)`);
+    if (r.name === "" || (has1 !== (r.s1Name !== "")) || (has2 !== (r.s2Name !== ""))) err("rite_giants", i, "이름·스킬 칸이 비어 있음 (스킬을 비우면 이름도 비운다)");
+    if (!has1 && (Number(r.s1Mul) !== 0 || Number(r.s1Cd) !== 0 || Number(r.s1Radius) !== 0 || r.s1Opts !== "")) err("rite_giants", i, "s1이 비었는데 s1 수치가 남아 있음");
+    if (!has2 && (Number(r.s2Mul) !== 0 || Number(r.s2Cd) !== 0 || Number(r.s2Reach) !== 0 || r.s2Opts !== "")) err("rite_giants", i, "s2가 비었는데 s2 수치가 남아 있음");
+    if (r.kind !== "basic" && (!has1 || !has2)) err("rite_giants", i, "기술 없는 거인은 basic뿐 (48 §4-1)");
     for (const c of ["s1Opts", "s2Opts"]) for (const part of (r[c] || "").split(";").filter((x) => x !== "")) if (!/^\w+=[\d.]+$/.test(part)) err("rite_giants", i, `${c} '${part}' — "이름=숫자;…" 꼴이 아님`);
     if (r.frames !== `giant_${r.kind}`) err("rite_giants", i, `frames '${r.frames}' — giant_${r.kind}이어야 함`);
     else if (!frameKeys.has("form_" + r.frames)) err("rite_giants", i, `frames — monster_frames.csv에 form_${r.frames}가 없음`);
     if (!/초안/.test(r.note)) err("rite_giants", i, "note에 「초안」 표시가 있어야 함 (46 결정 4 — 확정 아님)");
   });
+}
+
+// ── 48 소환물 정리 (48-0 · 기획서 48 §0-3 · §4-4): 지운 노드 9개는 어느 표에도 남지 않고, 해골 전사 6 · 해골 마법사 3 · 거인 노드 12 = 21 ──
+{
+  const GONE = ["skel_shield", "mage_aura", "mage_twin", "mage_pierce", "mage_blast", "mage_hex", "giant_quake", "giant_basic_split", "giant_basic_return"];
+  for (const id of GONE) if (skillIds.has(id)) err("skills", null, `48-0: '${id}'는 지운 노드 (투자는 SkillBook.MigrateLevels가 돌려줌)`);
+  const choicesTxt = fs.readFileSync(path.join(ROOT, "data/skill_choices.csv"), "utf8");
+  for (const id of GONE) if (new RegExp(`^${id},`, "m").test(choicesTxt)) err("skill_choices", null, `48-0: 지운 노드 '${id}'가 남아 있음`);
+  const curse = T.skills.find((r) => r.id === "mage_curse");
+  if (!curse || curse.parent !== "raise_mage" || curse.kind !== "node" || curse.maxLv !== "1") err("skills", null, "48-0: mage_curse(저주 속성) — raise_mage 노드 · 1랭크여야 함");
+  const nodesOf = (p, pre) => T.skills.filter((r) => r.kind === "node" && r.parent === p && (!pre || r.id.startsWith(pre))).length;
+  const counts = { skeleton: nodesOf("raise_skeleton"), mage: nodesOf("raise_mage"), giant: nodesOf("bone_rite", "giant_") };
+  if (counts.skeleton !== 6 || counts.mage !== 3 || counts.giant !== 12) err("skills", null, `48-0 노드 수 해골 전사 ${counts.skeleton}/6 · 마법사 ${counts.mage}/3 · 거인 ${counts.giant}/12 (합 21)`);
+  const basic = T.rite_giants.find((r) => r.kind === "basic");
+  if (basic && (basic.s1 !== "" || basic.s2 !== "" || Number(basic.tauntSec) !== 0)) err("rite_giants", null, "48-0: 기본 거인은 s1·s2·도발 비움");
+  const mage = T.rite_giants.find((r) => r.kind === "mage");
+  if (mage) {
+    const o = Object.fromEntries((mage.s2Opts || "").split(";").filter(Boolean).map((x) => x.split("=")));
+    const cap = Number(o.radiusMax), base = Number(o.radius);
+    if (mage.s2 === "meteor" && !(cap > 0 && base > 0 && base <= cap && cap <= 2)) err("rite_giants", null, `48-0 (리뷰 정정): 기도 메테오 반경 radius ${o.radius} · radiusMax ${o.radiusMax} — 상한 2.0 이하`);
+  }
 }
 
 // ── 택일 묶음 (46-5 · skill_choices.csv · 44 결정 5 「둘 중 하나」) ──
