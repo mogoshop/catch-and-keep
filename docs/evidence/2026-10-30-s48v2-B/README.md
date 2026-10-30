@@ -28,7 +28,7 @@
 ## 검사
 | 검사 | 결과 | 로그 |
 |---|---|---|
-| quality 전체 17그룹 | 통과 (giant_skills 109 · giant_fire 28 · **giant_fx_playback 73 새** · giant_moves 24) | `quality-all.log` |
+| quality 전체 17그룹 | 통과 (giant_skills 109 · giant_fire 28 · **giant_fx_playback 79 새** · giant_moves 24) | `quality-all.log` |
 | npm test (이 브랜치 단독) | 14/15 통과 · 「스크립트 참조」 1건 = A의 `ShadowUnit.GiantRoarBody` 없음(함성 계약 의존 · A 병합 상태에서 통과) | `npm-test.log` |
 | check_scripts (단독) | 145개 중 1건 = 위와 같음 | `check_scripts.log` |
 | mLua LSP | 3파일 오류 0 (RiteGiantMoves info 1 = 기존 쌍칼 `fx` 겹침 · PlayerAttack 경고 2 = 기존 IsPCPlatform) | `mlua-lsp.log` |
@@ -53,3 +53,9 @@
 | `FxGiantRoarSeq` ← fx-giant-shield-spectacle-v2-shout-00..11 | `w=384;h=384;bodypx=true;axpx=0;aypx=0;latch=6;ms=50×12` | GiantRoarBody onStart 순간 0번 장부터(추가 지연 없음) · 축광 0~4 몸 따라감 → 6번째 장(몸 index 5)부터 방사 원점 고정 · **문양 위치 axpx/aypx는 실측값 필요(부모)** |
 - 파생 층(노바 앞/뒤 32 · 대검 앞/뒤 32 · 방패 앞 8)은 새 프레임 수가 아니다 — 같은 원점·시간의 층 분리.
 - 확인 필요(메이커): 몸 화소 밀도 가정(그림 배율 = 몸 엔티티 |Scale.x| · 화소 → 칸 ÷100) · 회전 지름 3.2 = 캔버스 352 해석 · 회전 링 높이(서버 offset 0.3 + ay) · FlipX가 피벗 기준으로 뒤집히는지.
+
+## 코덱스 리뷰 ddf96c05 후속 (3곳)
+- 함성 문양: `FxGiantRoarOpts`에 장별 좌표표 키 `gxpx`·`gypx`(몸 화소 · 쉼표 · 방향 대칭)를 받아 1~6번째 장 동안 추적하고 250ms(몸 index 5)에 그 자리로 고정한다. **지금 axpx=0·aypx=0·좌표표 없음은 완료값이 아니다**(코덱스 좌표표 확정 뒤 부모가 채움).
+- 함성 층: `orders=6,6,6,6,6,1,…` 장별 정렬 — 축광 0~4는 앞층, 방사 5~11은 뒤층(정본 behind_radial) · 원본 12장 하나로.
+- 슬램 뒤 층 120ms 예약: 예약할 때의 맵을 잡아 두고, 같은 맵이고 앵커가 유효할 때만 재생(맵 이동·거인 소멸이면 생략 · 정적 경계).
+- 회귀 giant_fx_playback ⑧: 문양 추적→고정 · 층 분리 · 맵 이동/앵커 소멸 시 미재생.

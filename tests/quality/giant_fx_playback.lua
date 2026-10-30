@@ -255,6 +255,42 @@ do
  ok(r[3].pos.x>r[1].pos.x and near(r[6].pos.x,r[12].pos.x) and near(r[7].pos.x,r[6].pos.x),'축광(1~5장) 동안 몸을 따라가고 6번째 장부터 방사 원점 고정')
  SkillEffects.FxGiantRoarSeq=''
 end
+-- ⑧ 코덱스 리뷰 ddf96c05 후속: 함성 문양 좌표표 추적→고정 · 함성 축광 앞/방사 뒤 층 · 슬램 예약 재생 맵 이동 시 생략
+do
+ local function onlyMs(prefix) local t={} for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
+ -- 문양 좌표표(장별 몸 화소 · 예시값): 0~5 장마다 바뀌는 문양 위치를 따라가고 250ms(6번째 장)에 그 장 자리로 고정
+ reset()
+ SkillEffects.FxGiantRoarOpts=DEF.roar..';gxpx=10,12,14,16,18,20;gypx=100,102,104,106,108,110'
+ SkillEffects.FxGiantRoarSeq=seq('rg',12)
+ giant.TransformComponent.WorldPosition=Vector3(0,0,0) giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
+ SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6)
+ run(1)
+ local r=onlyMs('rg')
+ local track=true for i=1,6 do if not near(r[i].pos.x,(8+2*i)*0.012) or not near(r[i].pos.y,(98+2*i)*0.012) then track=false end end
+ ok(track,'문양 추적: 1~6번째 장이 좌표표(몸 화소 × 1.2 ÷ 100) 그대로')
+ local fixed=true for i=7,12 do if not near(r[i].pos.x,r[6].pos.x) or not near(r[i].pos.y,r[6].pos.y) then fixed=false end end
+ ok(fixed,'250ms(6번째 장 · 몸 index 5)에 그 자리로 방사 원점 고정')
+ reset() SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),-1,6,6,0,0.6) run(1)
+ r=onlyMs('rg') ok(near(r[1].pos.x,-10*0.012) and r[1].opt.FlipX==true,'왼쪽: 문양 좌표 좌우 대칭 · FlipX')
+ -- 층: 축광 0~4 = 앞(order 6) · 방사 5~11 = 뒤(order 1)
+ local lay=true for i=1,12 do if r[i].opt.OrderInLayer~=(i<=5 and 6 or 1) then lay=false end end
+ ok(lay,'함성 층: 축광 1~5장 앞층 · 방사 6~12장 뒤층 (정본 behind_radial)')
+ SkillEffects.FxGiantRoarOpts=DEF.roar SkillEffects.FxGiantRoarSeq=''
+ -- 슬램 뒤 층 120ms 예약: 그 사이 맵을 옮기면 재생 안 함 (앞 축광은 t0에 이미)
+ reset()
+ SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamFrontOpts=DEF.slamF
+ SkillEffects.FxGiantSlamSeq=seq('mw',16) SkillEffects.FxGiantSlamFront=seq('ms',3)
+ SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35)
+ run(0.05)
+ local other={} me.CurrentMap=other SkillEffects.Entity.CurrentMap=other
+ run(1)
+ ok(#onlyMs('ms')>=1 and #onlyMs('mw')==0,'맵 이동 뒤 예약된 뒤 층(지면 분출) 생성 0 — 새 맵에 옛 좌표로 생기지 않음')
+ me.CurrentMap=map SkillEffects.Entity.CurrentMap=map
+ reset() SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(0.05) giant.dead=true run(1)
+ ok(#onlyMs('mw')==0,'앵커(거인)가 사라지면 예약 재생 안 함')
+ giant.dead=nil
+ SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
+end
 -- ⑥ 새 그림이 비면 지금 그림 그대로 (옛 66장 경로)
 do
  reset()
