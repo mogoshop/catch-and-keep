@@ -2,7 +2,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
 -- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+
--- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,GiantReserved,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder
+-- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,GiantReserved,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,lo,hi) return lo end}
@@ -114,7 +114,7 @@ local function steadyByRaise(kind,count,keepList)
   UndeadSystem:Raise(player,kind,book:GetPowerLevel(kind=='mage' and 'raise_mage' or 'raise_skeleton'),Vector2(0,0),nil)
   if i>count/2 then
    local now={}
-   for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind==kind then now[r.form or '']=(now[r.form or '']or 0)+1 end end
+   for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind==kind and not r.giant then now[r.form or '']=(now[r.form or '']or 0)+1 end end   -- 46-0: 거인 몸은 서 있는 수가 아니다
    for f,n in pairs(now) do if n>(seen[f] or 0) then seen[f]=n end end
   end
  end
@@ -227,11 +227,15 @@ giantState()
 total=total+1
 local pg=UndeadSystem:RosterPreview(player,'skeleton')
 assert(pg.giant and pg.max==6 and pg.reserved==4 and #pg.idle==0,digest(pg))
-assert(table.concat(pg.idleNow,' ')=='greatsword','idleNow='..table.concat(pg.idleNow,' '))
+-- 46-0 R1: 거인 몸(방패)·합쳐진 넷(방패 2 · 대검 2)이 변이 자리를 쓴다 → 방패 3자리가 모두 거인 몫이라 거인 동안 서는 방패 0 (대검은 남은 1자리로 선다)
+assert(table.concat(pg.idleNow,' ')=='shield','idleNow='..table.concat(pg.idleNow,' '))
+-- 46-0 R1: 쌍칼은 남은 1자리를 대검과 번갈아 쓴다(무너질 개체를 센 채 고르는 규칙) → 0기 경고 없음 · 방패는 거인 몫으로 다 차 「거인 동안 0기」
 local tw=book:UseHint('skel_twin')
-assert(string.find(tw,'뼈 거인이 서 있는 동안 0기',1,true) and not string.find(tw,'정원 6기로는',1,true),tw)
+assert(not string.find(tw,'0기',1,true),'tw='..tw)
+local sh=book:UseHint('skel_shield')
+assert(string.find(sh,'뼈 거인이 서 있는 동안 0기',1,true) and not string.find(sh,'정원 6기로는',1,true),'sh='..sh)
 passed=passed+1
--- 거인 유지 중 실제 반복 소환 = steadyNow (거인 몸 고정 · 예약 4) · 쌍칼 1을 찍어도 서지 못한다
+-- 거인 유지 중 실제 반복 소환 = steadyNow (거인 몸 고정 · 합쳐진 넷 「~」) · 방패는 거인 몫으로 다 찼다
 for _,twin in ipairs({0,1}) do
  total=total+1
  giantState();book.Levels.skel_twin=twin
@@ -240,7 +244,7 @@ for _,twin in ipairs({0,1}) do
  for _,f in ipairs({'','shield','greatsword','twin'}) do
   assert((pn.steadyNow[f] or 0)==(real[f] or 0),'giant steadyNow '..f..' sim='..tostring(pn.steadyNow[f])..' raise='..tostring(real[f]))
  end
- assert((real.twin or 0)==0 and (real.greatsword or 0)==0,'twin/greatsword stood while giant held')
+ assert((real.shield or 0)==0,'shield stood while giant held (slots held by giant body + merged)')
  assert(UndeadSystem:ListOf(player)[1].giant==true,'giant host trimmed during repeated raise')
  passed=passed+1
 end
@@ -255,8 +259,41 @@ assert((steadyByRaise('skeleton',80,true).twin or 0)>0,'twin never stood after g
 passed=passed+1
 -- 거인 중 미리보기 = 실제 Raise (몸 고정 · 일반 교체) 한 번 더
 giantState();book.Levels.skel_twin=1
-check('14 giant held, twin invested','skeleton',{max=6,reserved=4,full=true,nextForm='shield',replaces=1})
+check('14 giant held, twin invested','skeleton',{max=6,reserved=4,full=true,nextForm='greatsword',replaces=1})
 UndeadSystem.Giants={}
+-- 46-0 R1 (RB-OBS-03): 거인 몸이 쌍칼·대검·일반 어느 것이든 「서 있는 수」에서 빠져 같은 규칙으로 「거인 동안 0기」가 뜬다.
+--   정원 5 · 방패·대검·쌍칼 1랭크 · 목록 = 거인 몸 하나 · 합쳐진 넷 일반 → 남는 1자리는 늘 방패 (예전: 몸이 쌍칼·대검이면 그 변이를 「1기 서 있다」로 세어 경고가 빈칸)
+--   (쌍칼 몸 = RB-OBS-03 관찰 장면: 쌍칼 카드 경고 · 대검·일반 몸: 그 모습이 「서 있다」로 잡히지 않음 — 예전엔 셋 다 1기로 셌다)
+for _,body in ipairs({{'twin','skel_twin'},{'greatsword',nil},{'',nil}}) do
+ total=total+1
+ book.Levels={raise_skeleton=9,skel_shield=1,skel_greatsword=1,skel_twin=1};book.FormHope=''
+ local hb=rec('skeleton',body[1],{giant=true})
+ setList({hb})
+ UndeadSystem.Giants={u1={host=hb,mates={rec('skeleton',''),rec('skeleton',''),rec('skeleton',''),rec('skeleton','')},epoch=1}}
+ if body[2] then
+  local hint=book:UseHint(body[2])
+  assert(string.find(hint,'뼈 거인이 서 있는 동안 0기',1,true),'body='..body[1]..' hint='..hint)
+ end
+ local pb=UndeadSystem:RosterPreview(player,'skeleton')
+ assert(pb.giant and pb.reserved==4 and (pb.steadyNow[body[1]] or 0)==0,'body '..body[1]..' counted as standing')
+ passed=passed+1
+end
+-- 46-0 R1: 거인 동안 일으켜도 합쳐진 넷의 변이 자리를 다시 쓰지 않는다 → 갈라진 뒤 변이 수 ≤ 랭크 (예전: 넷이 비운 방패 자리에 새 방패가 서 갈라진 뒤 방패 4)
+total=total+1
+book.Levels={raise_skeleton=12,skel_shield=2,skel_greatsword=1};book.FormHope=''
+do
+ local hs=rec('skeleton','',{giant=true})
+ setList({hs})
+ local mates={rec('skeleton','shield'),rec('skeleton','shield'),rec('skeleton',''),rec('skeleton','')}
+ UndeadSystem.Giants={u1={host=hs,mates=mates,epoch=1}}
+ steadyByRaise('skeleton',12,true)
+ UndeadSystem.Giants={};hs.giant=nil
+ for _,m in ipairs(mates) do m.merged=nil table.insert(UndeadSystem:ListOf(player),m) end
+  local n={}
+ for _,r in ipairs(UndeadSystem:ListOf(player)) do n[r.form or '']=(n[r.form or ''] or 0)+1 end
+ assert((n.shield or 0)<=2 and (n.greatsword or 0)<=1,'variant over quota after split shield='..tostring(n.shield)..' greatsword='..tostring(n.greatsword))
+end
+passed=passed+1
 -- 15. I03-R02 최초 조회는 Owned를 만들지 않는다 (서버 · 목록 없는 플레이어)
 total=total+1
 UndeadSystem.Owned={}
@@ -273,6 +310,11 @@ local text=UndeadSystem:EncodeRoster({rec('skeleton','shield',{giant=true}),rec(
 assert(text=='s:shield!,m:|4',text)
 local back=UndeadSystem:DecodeRoster(text)
 assert(#back.list==2 and back.list[1].giant==true and back.list[2].kind=='mage' and back.list[2].form=='' and back.reserved==4)
+-- 46-0: 합쳐짐 「~」 · 아직 못 바침 「?」 왕복
+local text2=UndeadSystem:EncodeRoster({rec('skeleton','twin',{giant=true}),rec('mage','hex',{notReady=true}),rec('skeleton','shield',{merged=true}),rec('mage','aura',{merged=true})},0)
+assert(text2=='s:twin!,m:hex?,s:shield~,m:aura~|0',text2)
+local back2=UndeadSystem:DecodeRoster(text2)
+assert(back2.list[2].notReady and back2.list[3].merged and back2.list[3].form=='shield' and back2.list[4].kind=='mage' and back2.reserved==0,'decode marks')
 -- ───────── I03 단계 2 희망 편성 (10-30 갈래 B · goal-roster-input-review-plan-0035 B-T01~B-T03) ─────────
 senderUserId='u1'
 UndeadSystem.Giants={}
