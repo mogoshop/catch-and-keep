@@ -1,7 +1,7 @@
 -- 뼈 의식 거인 기술 (기획서 46 §3-2 · §3-4 · §10-3 — 46-4 · 48 §4 거인 기술 개편 · 수치는 rite_giants.csv 초안).
 --   48 (10-30 · 리뷰 결정 Q4·Q7 · 반경 2.0 상한 정정): 기본 거인 = 기술 없음(평타만 · 도발도 없음) ·
 --     방패 = 스킬 1 도발 함성(ShadowUnit.TauntTick · 몸 동작 없음) / 스킬 2 방패 내려찍기 ·
---     대검 = 스킬 1 회전 베기(몸이 돎 · 반경 1.6 · 도는 동안 이동 ×0.6) / 스킬 2 땅 가르기(꽂고 0.3초 → 4토막이 0.25초에 걸쳐 솟음) ·
+--     대검 = 스킬 1 회전 베기(이동형 휠윈드 10-30 사용자: 표적 방향 5칸 전진 · 0.3초마다 반경 1.5 · 5번) / 스킬 2 땅 가르기(꽂고 0.3초 → 4토막이 0.25초에 걸쳐 솟음) ·
 --     쌍칼 = 스킬 1 연속 베기(평타 동작 반복) / 스킬 2 돌진(지나간 길 진홍 잔상) ·
 --     마법사 = 스킬 1 화염 노바(저절로 · 둘레 적 2 이상 · 영창 0.3초 → 단일 폭발 반경 3.75 · 48 연출 V2) / 스킬 2 기도 메테오(명령 · 영창 1초 동안 멈춤 · 착지 반경 1.8, 큰 메테오 강화에도 2.0 상한)
 --   48 연출 V2 (10-30 사용자 영상 피드백 · 갈래 B): 노바 = 한 번 시전·한 번 폭발(둘째 파동 없음 · 「폭발 증폭」 노드 = 단발 ×1.5) · 대검 회전 = 칼날 호가 몸을 따라 수평으로 ·
@@ -17,6 +17,8 @@
 script RiteGiantMoves extends Logic
 
     property table States = {}               -- 거인 엔티티 Id → { kind, base(A), s1At, s2At, pending, resets, busyUntil }
+    property number WhirlStepSec = 0.05      -- 이동형 휠윈드 위치 갱신 간격 (서버 · 20Hz · 서버→클라 동기화 50Hz 안 · MotionSmoother가 이어 그림)
+    property boolean WhirlStopOnTargetLoss = false   -- 휠윈드 중 표적이 무효(처치·결투·추격 범위 밖)가 되면 멈출지 — 기본 아님(휠윈드는 표적을 지나쳐 끝까지 · 첫 틱에 표적이 죽으면 총피해가 깎이므로 · 코덱스 결정 요청)
     property number MeteorRadiusCap = 2.0    -- 기도 메테오 착지 반경 상한 (큰 메테오 3랭크 1.8+0.45=2.25 → 2.0 · 타격·효과 모두 · 리뷰 정정 · 튜닝 초기값)
 
     @ExecSpace("ServerOnly")
@@ -105,7 +107,12 @@ script RiteGiantMoves extends Logic
         if not unit:IsLiveTarget(target) or target:GetComponent("script.Monster") == nil then return end
         local d = (_Util:Pos2(target) - _Util:Pos2(unit.Entity)):Magnitude()
         local reach = unit.AttackRange + 0.5
-        if spec.s1 == "spin" then reach = math.max(reach, self:S1Radius(unit, spec)) end
+        if spec.s1 == "spin" then
+            -- 이동형 휠윈드: 전진하며 베므로 사거리를 넓히되 절제 — min(전진 거리, max(평타 사거리+0.5, 반경) + 2) (대검 1.9+2 = 3.9칸 · 전진 5칸이라 표적을 1.1칸 넘게 지나치며 반경 1.5로 감싼다)
+            local travel = self:Opt(spec, "s1").travel or 0
+            reach = math.max(reach, self:S1Radius(unit, spec))
+            if travel > 0 then reach = math.min(travel, reach + 2) end
+        end
         if d > reach then return end
         st.s1At = now + spec.s1Cd
         self:FireS1(unit, st, spec, target)
@@ -145,26 +152,76 @@ script RiteGiantMoves extends Logic
         local fx = self:Fx(unit)
         local now = _UtilLogic.ElapsedSeconds
         if spec.s1 == "spin" then
-            -- 회전 베기(휠윈드): 몸이 돈다 · 0.4초마다 반경 1.6(지름 3.2 · 절제) · ×0.5 · 4번(+1/랭크) · 도는 동안 이동 ×0.6으로 따라감
-            local hitsN = math.floor(opt.hits or 4) + self:NodeOf(unit, "giant_gs_spin")
-            local gap = opt.gap or 0.4
+            -- 회전 베기 = 이동형 휠윈드 (10-30 사용자 「디아블로 2 바바리안 휠윈드 — 제자리에서 돌 필요 없음, 움직이면서 주변 범위 피해」):
+            --   표적 방향으로 travel(5칸)을 dur(= 첫 타 + gap × 횟수 = 0.3 × 5 = 1.5초) 동안 등속 전진 · 표적이 가까워도 지나쳐 끝까지 ·
+            --   벽·맵 밖은 Util.ReachablePoint(도약·순간이동과 같은 규칙 · 몸 여유 0.4) 앞에서 멈추고 남은 시간은 그 자리에서 계속 돈다 ·
+            --   gap(0.3초)마다 몸 현재 위치 반경 1.5 · ×0.4 · 5번(+1/랭크) — 총 2.0 = 예전 4 × 0.5 보존 · 전진 중엔 AI 추적·평타를 쉰다(Hold)
+            local hitsN = math.floor(opt.hits or 5) + self:NodeOf(unit, "giant_gs_spin")
+            local gap = opt.gap or 0.3
             local radius = self:S1Radius(unit, spec)
+            local travel = opt.travel or 0
             local first = self:BodyImpactSec(unit, "skill1", 0)   -- 첫 타격 = 회전 몸 타격 칸 (skill1Hit · 지금 0) · 그 뒤 gap마다
             local dur = first + gap * hitsN
+            local map0 = unit.Entity.CurrentMap
+            local dir = Vector2(1, 0)
+            if target ~= nil and isvalid(target) then
+                local d0 = _Util:Pos2(target) - me
+                if d0:Magnitude() > 0.05 then dir = d0:Normalize() end
+            end
+            local stop = me
+            if travel > 0 then stop = _Util:ReachablePoint(map0, me, me + dir * travel, 0.4) end
+            local path = (stop - me):Magnitude()
+            local speed = travel > 0 and travel / math.max(0.05, dur) or 0
+            st.spinToken = (st.spinToken or 0) + 1
+            local token = st.spinToken
             st.busyUntil = now + dur
-            unit.GiantSlowUntil = now + dur
-            self:Hold(unit, 0, dur)
+            self:Hold(unit, dur, dur)   -- 전진(또는 제자리 회전) 동안 AI 이동·평타 멈춤 — 위치는 이 기술이 직접 쓴다
+            if math.abs(dir.x) > 0.05 then unit:Face(dir.x >= 0 and 1 or -1) end
             unit:GiantPlay("skill1", dur)
             self:LogCast(unit, 1, "spin", radius, dur)
-            -- 48 연출 V2: 칼날 호 그림은 거인 몸을 따라간다(도는 동안 ×0.6로 걸어도 붙어 있게) · 한 바퀴 = 타격 간격 gap (SkillEffects.SpinCycle) · angle 0(통째 회전·상하 뒤집기 없음)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant whirlwind start dir=%.2f,%.2f travel=%.2f stop=%.2f,%.2f path=%.2f dur=%.2f hits=%d", dir.x, dir.y, travel, stop.x, stop.y, path, dur, hitsN)) end
+            -- 48 연출 V2: 칼날 호 그림은 거인 몸을 따라간다 · 한 바퀴 = 타격 간격 gap (SkillEffects.SpinCycle) · angle 0(통째 회전·상하 뒤집기 없음)
             if fx ~= nil then fx:GiantMoveFxOn("spin", unit.Entity, Vector3(0, 0.3, 0), self:Facing(unit, target), radius * 2, radius * 2, 0, dur) end
+            local live = function()
+                -- 사망·갈라짐(Clear로 상태가 바뀜)·주인 사망·맵 이동이면 멈춤 (남은 이동·타격 타이머는 이 검사에서 끝난다)
+                return isvalid(unit.Entity) and unit.Giant and not unit.Dead and _Util:IsAlive(unit.OwnerPlayer) and unit.Entity.CurrentMap == map0
+                    and self.States[unit.Entity.Id] == st and st.spinToken == token
+            end
+            local halt = function(reason)
+                -- 즉시 정지: 남은 이동·타격을 끊고 묶음을 푼다
+                st.spinToken = st.spinToken + 1
+                local t = _UtilLogic.ElapsedSeconds
+                st.busyUntil = math.min(st.busyUntil, t)
+                unit.GiantCastUntil = math.min(unit.GiantCastUntil, t)
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant whirlwind halt reason=%s", reason)) end
+            end
+            if path > 0.01 then
+                local t0 = now
+                local stepSec = math.max(0.02, self.WhirlStepSec)
+                local move = nil
+                move = function()
+                    if not live() then return end
+                    if self.WhirlStopOnTargetLoss and not self:ValidTarget(unit, target) then halt("target") return end
+                    local el = _UtilLogic.ElapsedSeconds - t0
+                    local d = math.min(path, speed * el)
+                    unit.Entity.MovementComponent:SetWorldPosition(me + dir * d)   -- 돌진(FireDash)과 같은 서버 위치 쓰기 · 작은 걸음이라 MotionSmoother가 이어 그림(순간이동 문턱 2.5칸보다 훨씬 작음)
+                    if d < path - 1e-6 and el < dur then _TimerService:SetTimerOnce(move, stepSec) end
+                end
+                _TimerService:SetTimerOnce(move, stepSec)
+            end
             local total = 0
             for i = 1, hitsN do
                 local step = i
                 _TimerService:SetTimerOnce(function()
-                    if not isvalid(unit.Entity) or not unit.Giant or unit.Dead then return end
-                    total = total + self:HitArea(unit, _Util:Pos2(unit.Entity), radius, "skill.giant_spin", dmg, 0, false)
-                    if step == hitsN then self:LogSkill(unit, 1, total, dmg * hitsN, false, radius) end
+                    if not live() then return end
+                    local here = _Util:Pos2(unit.Entity)
+                    local n = self:HitArea(unit, here, radius, "skill.giant_spin", dmg, 0, false)
+                    total = total + n
+                    if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant whirlwind tick k=%d hits=%d pos=%.2f,%.2f", step, n, here.x, here.y)) end
+                    if step == hitsN then
+                        self:LogSkill(unit, 1, total, dmg * hitsN, false, radius)
+                        if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant whirlwind end pos=%.2f,%.2f moved=%.2f", here.x, here.y, (here - me):Magnitude())) end
+                    end
                 end, first + gap * (i - 1))
             end
         elseif spec.s1 == "flurry" then
