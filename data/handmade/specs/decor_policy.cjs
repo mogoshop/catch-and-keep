@@ -16,9 +16,13 @@
 //        길 안내 그림은 그 자리 바닥 그림(구역 · 길 글자 칸은 그 길 그림) × GUIDE_BRIGHT — 다른 그림을 쓰면 바닥과 따로 논다.
 "use strict";
 module.exports = {
-  // 이 정책을 적용하는 맵 (나머지는 예전 빌더 그대로 — 단계별로 넓힌다). FULL = C-1~C-6 · COLLIDE_ONLY = C-2·C-4·C-5만 (마을·보스방)
-  FULL: ["wasteland", "hollow", "rotmarsh"],
-  COLLIDE_ONLY: [],
+  // 이 정책을 적용하는 맵. FULL = C-1~C-6 (사냥터·곁길 58장) · COLLIDE_ONLY = C-2·C-4·C-5만 (마을 4 · 액트 끝 보스방 4)
+  //   (10-31 1차 = 액트 1 세 맵 7281f92c → 2차 = 설계도 맵 전부. 목록에 없는 맵은 예전 빌더 그대로)
+  FULL: ["wasteland", "rotmarsh", "execution", "gallows", "crypt1", "crypt2", "crypt3", "hollow", "cellar1", "cellar2", "pit1", "pit2", "cave",
+    "dunes", "canyon", "stormwaste", "sunkenroad", "scorpnest1", "scorpnest2", "drywell", "kingtomb1", "kingtomb2", "archive", "vipernest", "temple1", "temple2", "temple3",
+    "saltflat", "wreckcoast", "stormcliff", "drownedvillage", "crabcave1", "crabcave2", "wreckhold", "smuggler1", "smuggler2", "seachapel", "keeperhouse", "lighthouse1", "lighthouse2", "lighthouse3",
+    "embercanyon", "demonroad", "sulfurmarsh", "burningkeep", "sulfurcave1", "sulfurcave2", "soulprison", "forge1", "forge2", "apostate", "pit", "abyssgate1", "abyssgate2", "abyssgate3", "ashhall", "heartbridge", "throneante"],
+  COLLIDE_ONLY: ["town", "oasis", "harbor", "outpost", "queentomb", "sanctum", "stormeye", "throne"],
 
   SCATTER_KEEP: 0.25,          // 흩뿌림 밀도 (지금의 1/4)
   ROUTE_CLEAR: 1.5,            // 길 안내 중심선 좌우 이 거리 안은 흩뿌림 0 · 막는 조각 0 (폭 3칸)
@@ -44,8 +48,12 @@ module.exports = {
   MARKER_OFFSET: [2.3, 2.6, 3.0, 3.4],   // 길 가운데에서 옆으로 (길 폭 3칸 밖 · 양쪽 한 쌍)
   MARKER_ALONG: [0, -0.8, 0.8, -1.6, 1.6], // 자리가 막혔으면 길을 따라 앞뒤로 옮겨 본다 (출구 3칸 앞 기준)
 
-  BAND: [[0.5, 0.5], [0.5, 0.22]],    // 이음새 띠: [폭(칸), 불투명도] 경계에서 바깥으로
+  // 이음새 띠: [폭(칸), 불투명도] 경계에서 바깥으로. 기본 두 겹(그라데이션) · DECOR_BAND=single 환경 변수로 한 겹(엔티티 절약 후보 — 10-31 메이커 로딩 결과로 고른다)
+  BAND: process.env.DECOR_BAND === "single" ? [[0.7, 0.36]] : [[0.5, 0.5], [0.5, 0.22]],
   CORNER: { size: 0.75, alpha: 0.42 }, // 볼록 모서리 45° 조각
   SHADE: [[0.45, 0.2]],                // 막힌 칸 옆 그늘 띠 (한 겹 — 두 겹은 바위 둘레가 검은 테처럼 보였다)
+  // 회전한 반복 그림 축 (decor.cjs rotRect·rectPoint 한 곳) — 메이커 실화면이 가정과 다르면 이 두 값만 바꿔 다시 짓는다
+  ROT_ANCHOR: "first-tile",            // "first-tile" = 첫 장(왼쪽 아래 장) 가운데가 엔티티 자리·회전축 (회전 없는 반복 그리기와 같은 가정) | "center"
+  ROT_SIGN: 1,                         // 1 = QuaternionRotation z 양수가 반시계 · -1 = 시계
   SHADE_ART: "waste-borders-center",   // 그늘 그림 (검게 칠해 쓰는 기존 조각 — 담 윗면 맵 그림자와 같은 것)
 };

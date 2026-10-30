@@ -152,27 +152,59 @@ function shortest(walk, clr, sources, goal) {
   return cells.reverse();
 }
 // 줄 당기기: 칸 가운데 점들 중 직선으로 이어도 벽에서 떨어진 만큼 남는 가장 먼 점으로
-function pull(pts, clearAt, half) {
-  const segMin = (a, b) => {
+function pull(pts, clearAt, half, decorAt) {
+  const segMin = (f, a, b) => {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.2));
     let m = Infinity;
-    for (let i = 0; i <= n; i++) m = Math.min(m, clearAt(a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n));
+    for (let i = 0; i <= n; i++) m = Math.min(m, f(a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n));
     return m;
   };
   const out = [pts[0]];
   let i = 0;
   while (i < pts.length - 1) {
     let best = i + 1;
-    let need = Infinity;
+    let need = Infinity, needD = Infinity;
     for (let j = i + 1; j < pts.length && j <= i + 60; j++) {
       need = Math.min(need, clearAt(pts[j][0], pts[j][1]));
+      needD = Math.min(needD, decorAt(pts[j][0], pts[j][1]));
       const want = Math.min(half, Math.min(need, clearAt(pts[i][0], pts[i][1]))) - 0.05;
-      if (segMin(pts[i], pts[j]) >= want) best = j;
+      const wantD = Math.min(POLICY.ROUTE_CLEAR + 0.3, Math.min(needD, decorAt(pts[i][0], pts[i][1]))) - 0.05;
+      if (segMin(clearAt, pts[i], pts[j]) >= want && segMin(decorAt, pts[i], pts[j]) >= wantD) best = j;
     }
     out.push(pts[best]);
     i = best;
   }
   return out;
+}
+// 꺾인 점 둘이 너무 가까워 반경 1칸 둥글리기가 안 되면(짧은 토막 양끝이 다 꺾임) 두 점을 앞뒤 토막 연장선이 만나는 한 점으로 합친다
+//   (합친 점이 벽에 붙으면 그대로 둔다)
+function widen(V, clearAt) {
+  const turn = (a, b, c) => {
+    const u = [b[0] - a[0], b[1] - a[1]], v = [c[0] - b[0], c[1] - b[1]];
+    return Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]);
+  };
+  const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let pts = V.slice();
+  for (let pass = 0; pass < 40; pass++) {
+    let changed = false;
+    for (let i = 1; i + 2 < pts.length; i++) {
+      const t1 = Math.tan(turn(pts[i - 1], pts[i], pts[i + 1]) / 2), t2 = Math.tan(turn(pts[i], pts[i + 1], pts[i + 2]) / 2);
+      if (t1 + t2 <= len(pts[i], pts[i + 1]) + 1e-9) continue;   // 반경 1칸 둥글리기 두 개가 들어간다
+      const a = pts[i - 1], b = pts[i], c = pts[i + 2], d = pts[i + 1];
+      const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0];
+      let m = [(b[0] + d[0]) / 2, (b[1] + d[1]) / 2];
+      if (Math.abs(den) > 1e-6) {
+        const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, p = [a[0] + r[0] * t, a[1] + r[1] * t];
+        if (len(p, m) < 3) m = p;
+      }
+      if (clearAt(m[0], m[1]) < 0.6) continue;
+      pts.splice(i, 2, m);
+      changed = true;
+      break;
+    }
+    if (!changed) break;
+  }
+  return pts;
 }
 // 모서리 둥글리기 (반경 R, 토막 길이의 절반을 넘지 않게) → 0.25칸 간격 점 [{x, y, r(그 자리 반경 · 직선이면 Infinity)}]
 function fillet(V, R) {
@@ -181,6 +213,12 @@ function fillet(V, R) {
   const line = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.25)); for (let i = 0; i <= n; i++) push(a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n, Infinity); };
   if (V.length < 3) { line(V[0], V[V.length - 1]); return P; }
   let cur = V[0];
+  // 꺾인 점마다 tan(꺾임/2) — 한 토막을 양끝 둥글리기가 이 비율로 나눠 쓴다 (끝 토막은 혼자 다 쓴다)
+  const tanAt = V.map((p, i) => {
+    if (i === 0 || i === V.length - 1) return 0;
+    const u = [V[i][0] - V[i - 1][0], V[i][1] - V[i - 1][1]], v = [V[i + 1][0] - V[i][0], V[i + 1][1] - V[i][1]];
+    return Math.tan(Math.atan2(Math.abs(u[0] * v[1] - u[1] * v[0]), u[0] * v[0] + u[1] * v[1]) / 2);
+  });
   for (let i = 1; i < V.length - 1; i++) {
     const a = [V[i][0] - V[i - 1][0], V[i][1] - V[i - 1][1]], b = [V[i + 1][0] - V[i][0], V[i + 1][1] - V[i][1]];
     const la = Math.hypot(...a), lb = Math.hypot(...b);
@@ -189,7 +227,8 @@ function fillet(V, R) {
     const th = Math.atan2(Math.abs(cross), dot);
     if (th < 1e-3) continue;
     let t = R * Math.tan(th / 2);
-    const lim = Math.min(la, lb) * 0.5;
+    const ti = tanAt[i] || 1e-9;
+    const lim = Math.min(la * (ti / (ti + tanAt[i - 1])), lb * (ti / (ti + tanAt[i + 1])));
     let r = R;
     if (t > lim) { t = lim; r = t / Math.tan(th / 2); }
     const p1 = [V[i][0] - ua[0] * t, V[i][1] - ua[1] * t], p2 = [V[i][0] + ub[0] * t, V[i][1] + ub[1] * t];
@@ -207,9 +246,19 @@ function fillet(V, R) {
 //   blocked: 막는 장식 발밑 칸 · 결과 { curves: [{target, pts}], cells(원래 칸 경로) }
 function routes(d, bp, blocked, func) {
   const walk = (x, y) => bp.isFloor(x, y) && !blocked.has(key(x, y));
+  // 막는 장식(세트·랜드마크)에서는 ROUTE_CLEAR만큼 더 떨어지게 — 길이 붙어 지나가면 그 조각을 빼야 한다
+  const notDecor = (x, y) => !blocked.has(key(x, y));
   const clrCache = new Map();
-  const clr = (x, y) => { const k = key(x, y); if (!clrCache.has(k)) clrCache.set(k, clearanceAt(walk, x + 0.5, y + 0.5)); return clrCache.get(k); };
+  const clr = (x, y) => {
+    const k = key(x, y);
+    if (!clrCache.has(k)) {
+      const w = clearanceAt(walk, x + 0.5, y + 0.5), dc = clearanceAt(notDecor, x + 0.5, y + 0.5);
+      clrCache.set(k, Math.min(w, dc < POLICY.ROUTE_CLEAR + 0.6 ? dc - 2.5 * (POLICY.ROUTE_CLEAR + 0.6 - dc) : 9));
+    }
+    return clrCache.get(k);
+  };
   const clearAt = (px, py) => clearanceAt(walk, px, py);
+  const decorAt = (px, py) => clearanceAt(notDecor, px, py);
   const cellOf = (p) => [Math.floor(p[0]), Math.floor(p[1])];
   const start = func.find((e) => e.name === "GateBack") || func.find((e) => e.name === "GateToField");
   if (!start) return null;
@@ -230,7 +279,7 @@ function routes(d, bp, blocked, func) {
     const pts = cells.map(([x, y]) => [x + 0.5, y + 0.5]);
     if (first) pts[0] = first;
     pts[pts.length - 1] = [t.pos[0], t.pos[1]];
-    const V = pull(pts, clearAt, POLICY.GUIDE_WIDTH / 2);
+    const V = widen(pull(pts, clearAt, POLICY.GUIDE_WIDTH / 2, decorAt), clearAt);
     curves.push({ target: t.name, pts: fillet(V, POLICY.GUIDE_RADIUS), branch: !!used.length });
     for (const c of cells) used.push(c);
   }
@@ -260,12 +309,23 @@ function capTint(t) {   // 바닥 색 상한 (길 안내가 밝아질 여유) �
   if (m <= POLICY.FLOOR_TINT_CAP) return c;
   return c.map((v) => r3((v * POLICY.FLOOR_TINT_CAP) / m));
 }
-const quat = (deg) => { const h = (deg * Math.PI) / 360; return { x: 0, y: 0, z: r3(Math.sin(h) * 1000) / 1000, w: r3(Math.cos(h) * 1000) / 1000 }; };
-// 회전한 반복 그림 사각형: 시작점 a에서 방향 deg로 길이 L · 폭 W (가운데 줄이 a를 지난다). 반복 그림은 첫 장(왼쪽 아래 장 가운데)을 축으로 돈다
+// ───────── 회전한 반복 그림 — 회전 생성은 이 한 곳 (길 안내 토막 · 45° 모서리 조각 · 검사기·미리보기 역산) ─────────
+//   메이커 실화면 확인 전 가정 (10-31): 반복 그리기(DrawMode 2)는 회전이 없을 때처럼 「첫 장(왼쪽 아래 장) 가운데 = 엔티티 자리」에서 깔리고,
+//   TransformComponent.QuaternionRotation(z축)이 그 자리를 축으로 반시계(+)로 돌린다. 실화면이 다르면 decor_policy.cjs 두 값만 바꾸고 다시 짓는다:
+//     ROT_ANCHOR "first-tile"(가정) | "center"(사각형 가운데가 엔티티 자리) · ROT_SIGN 1(반시계 +) | -1
+const quat = (deg) => { const h = ((POLICY.ROT_SIGN || 1) * deg * Math.PI) / 360; return { x: 0, y: 0, z: Math.round(Math.sin(h) * 1e6) / 1e6, w: Math.round(Math.cos(h) * 1e6) / 1e6 }; };
+// 사각형 안 점 (사각형 왼쪽 아래 모서리에서 길이 방향 a · 폭 방향 b)의 월드 좌표 — 엔티티 자리·회전·크기로 (검사기·미리보기가 같은 식을 쓴다)
+function rectPoint(pos, deg, L, W, a, b) {
+  const th = (deg * Math.PI) / 180, ux = Math.cos(th), uy = Math.sin(th), nx = -uy, ny = ux;
+  const lx = POLICY.ROT_ANCHOR === "center" ? a - L / 2 : a - S / 2, ly = POLICY.ROT_ANCHOR === "center" ? b - W / 2 : b - S / 2;
+  return [pos[0] + ux * lx + nx * ly, pos[1] + uy * lx + ny * ly];
+}
+// 회전한 반복 그림 사각형: 시작점 a에서 방향 deg로 길이 L · 폭 W (가운데 줄이 a를 지난다)
 function rotRect(name, rid, ax, ay, deg, L, W, rgb, alpha, z) {
   const th = (deg * Math.PI) / 180, ux = Math.cos(th), uy = Math.sin(th), nx = -uy, ny = ux;
-  const off = S / 2 - W / 2;
-  const px = ax + ux * (S / 2) + nx * off, py = ay + uy * (S / 2) + ny * off;
+  // rectPoint(pos, …, 0, W/2) = a 가 되는 엔티티 자리
+  const lx = POLICY.ROT_ANCHOR === "center" ? -L / 2 : -S / 2, ly = POLICY.ROT_ANCHOR === "center" ? 0 : W / 2 - S / 2;
+  const px = ax - (ux * lx + nx * ly), py = ay - (uy * lx + ny * ly);
   return {
     name, pos: [r3(px), r3(py), z],
     overrides: {
@@ -273,6 +333,11 @@ function rotRect(name, rid, ax, ay, deg, L, W, rgb, alpha, z) {
       "MOD.Core.TransformComponent": { QuaternionRotation: quat(deg) },
     },
   };
+}
+// 엔티티 → [자리, 각도, 길이, 폭] (검사기용 역산)
+function rotOf(e) {
+  const sr = e.overrides["MOD.Core.SpriteRendererComponent"], q = e.overrides["MOD.Core.TransformComponent"].QuaternionRotation;
+  return { pos: e.pos, deg: ((2 * Math.atan2(q.z, q.w) * 180) / Math.PI) * (POLICY.ROT_SIGN || 1), L: sr.TiledSize.x * S, W: sr.TiledSize.y * S };
 }
 // 축에 맞춘 반복 그림 사각형 [x0, x1] × [y0, y1]
 function rect(name, rid, x0, y0, x1, y1, rgb, alpha, z) {
@@ -286,6 +351,8 @@ function rect(name, rid, x0, y0, x1, y1, rgb, alpha, z) {
 function floorAt(bp, classes, x, y, noRoad) {
   const ch = bp.at(x, y);
   if (ch === null || bp.isWall(x, y)) return null;
+  // 담 윗면 맵(구역 바닥을 그리지 않는 꼴): 걷는 칸은 모두 담 윗면 그림 하나 — 바닥 경계가 없다
+  if (bp.raised && !bp.raised.zoneTop) return { art: `${bp.raised.atlas}-borders-n`, tint: bp.raised.tint, rank: 1, ch: "." };
   if (ch in bp.roads) {
     // 길 글자 위 길 안내는 그 길 그림 (가까운 구역 그림을 따르면 길 한가운데서 그림이 바뀌었고, 바탕 그림은 흙길 위에 다른 색 띠로 떴다)
     const r = bp.roads[ch]; return { art: r.art, tint: r.tint, rank: 3, ch };
@@ -296,6 +363,8 @@ function floorAt(bp, classes, x, y, noRoad) {
   return { art, tint, rank: cls === "terrain" ? 2 : 1, ch: zc };
 }
 const fkey = (f) => `${f.art}|${f.tint}`;
+// 물 ↔ 뭍 경계는 액트 3 물가 거품 띠(;shore)가 이미 이음새 — 띠·모서리 조각을 겹쳐 깔지 않고 처리된 경계로 센다
+const shoreEdge = (bp, p, q) => !!bp.shore && bp.shore.sea.has(p.art) !== bp.shore.sea.has(q.art);
 
 // ───────── C-6 길 안내 그림 ─────────
 function guideEntities(bp, classes, route, ruidOf) {
@@ -384,12 +453,14 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
   // 가로 경계 (x, y) | (x, y+1): 선 y+1
   for (let y = b.y0; y < b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const p = fl(x, y), q = fl(x, y + 1);
-    if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`H|${y + 1}|${dir}|${fkey(up)}`, x); }
+    if (p && q && fkey(p) !== fkey(q) && shoreEdge(bp, p, q)) { edges.total++; edges.covered++; edges.foam = (edges.foam || 0) + 1; }
+    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`H|${y + 1}|${dir}|${fkey(up)}`, x); }
     else if ((p && !q && isBlock(x, y + 1)) || (!p && q && isBlock(x, y))) { edges.total++; addRun(`SH|${y + 1}|${p ? -1 : 1}`, x); }
   }
   for (let x = b.x0; x < b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {
     const p = fl(x, y), q = fl(x + 1, y);
-    if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`V|${x + 1}|${dir}|${fkey(up)}`, y); }
+    if (p && q && fkey(p) !== fkey(q) && shoreEdge(bp, p, q)) { edges.total++; edges.covered++; edges.foam = (edges.foam || 0) + 1; }
+    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`V|${x + 1}|${dir}|${fkey(up)}`, y); }
     else if ((p && !q && isBlock(x + 1, y)) || (!p && q && isBlock(x, y))) { edges.total++; addRun(`SV|${x + 1}|${p ? -1 : 1}`, y); }
   }
   const shadeRid = ruidOf(POLICY.SHADE_ART);
@@ -415,7 +486,7 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
       const c = fl(cx, cy);
       if (c) {
         const h = fl(hx, hy), v = fl(vx, vy), g = fl(gx, gy);
-        if (h && v && g && fkey(h) !== fkey(c) && fkey(v) !== fkey(c) && fkey(g) !== fkey(c) && upper(c, h) && upper(c, v)) {
+        if (h && v && g && fkey(h) !== fkey(c) && fkey(v) !== fkey(c) && fkey(g) !== fkey(c) && upper(c, h) && upper(c, v) && !shoreEdge(bp, c, h) && !shoreEdge(bp, c, v)) {
           corners.total++; corners.treated++;
           out.push(diamond(`ArtCorner${++cornerN}`, ruidOf(c.art), X, Y, POLICY.CORNER.size, capTint(c.tint), POLICY.CORNER.alpha, -0.0072));
         }
@@ -427,4 +498,4 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
 // 고치기 전 기준: 볼록 직각 모서리 수 (같은 판정 · 조각 없음) — 전후 표용
 function countCorners(bp, classes) { return seamEntities(bp, classes, () => "", {}).cornerStats.total; }
 
-module.exports = { POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };
+module.exports = { rectPoint, rotOf, shoreEdge, POLICY, classOf, classTable, modeOf, isScatterRow, planRows, finalizeRows, routes, distToCurve, cellDistToCurve, guideEntities, seamEntities, countCorners, floorAt, capTint, rotRect, parseArgs };
