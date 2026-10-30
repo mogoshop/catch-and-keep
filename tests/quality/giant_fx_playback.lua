@@ -6,7 +6,7 @@
 -- 엔진 효과·타이머·화면 몸(MotionSmoother)은 대역 — 실제 화면 주기·그림 품질은 메이커 실녹화(maker_queue)
 -- @source GameData Data/GameData.mlua Ensure,GetGiant
 -- @source Util Common/Util.mlua Frames
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxFrameSec,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,SeqFx,ClipFxLocal
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,SeqFx,ClipFxLocal
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
 local function near(a,b,e) return math.abs(a-b)<=(e or 1e-6) end
@@ -83,7 +83,7 @@ do
  local el,pl=tonumber(l:match('elapsed=([%d%.]+)')),tonumber(l:match('planned=([%d%.]+)'))
  ok(l:find('shown=16 n=16',1,true)~=nil and near(el,pl,TICK+1e-9) and near(pl,0.72),'[VRF] 16/16 · 계획 0.72초 ±1화면 · '..l)
  ok(plays[5].opt.Color.a==1 and plays[4].opt.Color.a==0.85 and plays[16].opt.Color.a<0.45 and plays[10].opt.Color.a>plays[16].opt.Color.a,'타격 칸 불투명 1 → 잔광 옅어짐 (긴 불투명 원판 아님)')
- ok(plays[1].opt.OrderInLayer==1 and plays[1].opt.SortingLayer=='MapLayer0' and near(plays[1].pos.y,2),'몸 뒤 바닥(order 1) · 땅에 고정')
+ ok(plays[1].opt.OrderInLayer==1 and plays[1].opt.SortingLayer=='MapLayer0' and near(plays[1].pos.y,2.1),'몸 뒤 바닥(order 1) · 땅에 고정 (지금 그림 계약 dy 0.1)')
  ok(near(plays[1].scale.x,(100/56)*7.5/7.5) and plays[1].scale.y>0,'새 그림 ref 7.5 = 지름 7.5 원본 크기 · 상하 뒤집기 없음')
  local sf=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx kind=nova',1,true) then sf=x end end
  ok(sf:find('rule=impact',1,true)~=nil,'[VRF] rule=impact')
@@ -97,6 +97,42 @@ do
  ok(near(plays[1].scale.x,(100/56)*7.5/5.0),'지금 그림 ref 5.0 → 1.5배 (지름 5 → 7.5)')
 end
 
+-- ②-b 노바 V2 새 아트 (코덱스 nova/full): 16장 장별 시간 [20,20,25,25,35,35,25,25,40,50,80,80,90,90,90,90] 합 820ms · 정점 index 6(7번째) = 160ms ·
+--   두 층(뒤 rear order 1 · 앞 front order 6) 같은 원점·시각 · 내용 지름 420px = 7.5칸 → 캔버스 640×512 = 11.43×9.14칸 · 균등화 없음
+do
+ reset()
+ SkillEffects.FxGiantNovaV2=seq('nr',16) SkillEffects.FxGiantNovaV2Front=seq('nf',16)
+ ok(near(SkillEffects:GiantFxImpactSec('nova'),0.16),'서버 타격 시각 = 정점 160ms (GiantFxImpactSec)')
+ SkillEffects:GiantMoveFx('nova',Vector3(1,2,0),7.5,7.5,0,0.16)
+ run(2)
+ local rear,front={},{}
+ for _,p in ipairs(plays) do if p.ruid:sub(1,2)=='nr' then table.insert(rear,p) else table.insert(front,p) end end
+ ok(#rear==16 and #front==16,'두 층 16장씩 모두 (누락 0)')
+ local inorder=true for i=1,16 do if rear[i].ruid~='nr'..i or front[i].ruid~='nf'..i then inorder=false end end
+ ok(inorder,'순서대로')
+ local MS={20,20,25,25,35,35,25,25,40,50,80,80,90,90,90,90}
+ local okDur,acc=true,0
+ for i=1,16 do if not near(rear[i].at-rear[1].at,acc/1000,TICK+1e-9) then okDur=false end acc=acc+MS[i] end
+ ok(okDur and acc==820,'장별 시작 = 앞 장 지속 합 ±1화면 (균등 간격 아님) · 합 820ms')
+ ok(near(rear[7].at-rear[1].at,0.16,TICK+1e-9),'정점(index 6) = 160ms ±1화면 = 서버 타격')
+ ok(rear[1].at==front[1].at and rear[1].opt.OrderInLayer==1 and front[1].opt.OrderInLayer==6,'뒤 층 배우 뒤(order 1) · 앞 층 배우 앞(order 6) · 같은 순간')
+ ok(near(rear[1].pos.x,1) and near(rear[1].pos.y,2) and near(front[1].pos.y,2),'지면 원점 = 부르는 자리(거인 발) · 피벗 0.5/0.375는 업로드 그림 설정')
+ local k=rear[1].scale.x
+ ok(near(k,100/56) and near(640*k/100,11.428571,1e-5) and near(512*k/100,9.142857,1e-5),'내용 420px = 7.5칸 → 캔버스 11.43×9.14칸 (640을 7.5로 줄이지 않음)')
+ ok(rear[7].opt.Color.a==0.85 and rear[16].opt.Color.a==0.85,'강약은 그림 자체 (peak 0 · 코드 덧옅힘 없음)')
+ local pl=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx play kind=nova ',1,true) then pl=x end end
+ ok(pl:find('shown=16 n=16',1,true)~=nil and near(tonumber(pl:match('planned=([%d%.]+)')),0.82) and near(tonumber(pl:match('elapsed=([%d%.]+)')),0.82,TICK+1e-9),'[VRF] 16/16 · 계획 0.82초 · 실제 ±1화면 '..pl)
+ local sf=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx kind=nova ',1,true) then sf=x end end
+ ok(sf:find('rule=durs',1,true)~=nil and sf:find('impact_at=0.160',1,true)~=nil,'[VRF] rule=durs · impact_at=0.160')
+ local drift=false for _,x in ipairs(logs) do if x:find('impact drift',1,true) then drift=true end end
+ ok(not drift,'서버 타격(0.16)과 그림 정점 어긋남 없음')
+ -- 앞 층이 비면 원본 16장 한 층(배우 뒤)
+ reset() SkillEffects.FxGiantNovaV2Front=''
+ SkillEffects:GiantMoveFx('nova',Vector3(0,0,0),7.5,7.5,0,0.16) run(2)
+ ok(#plays==16 and plays[1].opt.OrderInLayer==1,'앞 층 없으면 원본 16장 한 층 (배우 뒤)')
+ SkillEffects.FxGiantNovaV2=''
+ ok(SkillEffects:GiantFxImpactSec('nova')==-1,'새 아트 없으면 -1 (서버는 표 burst 0.18)')
+end
 -- ③ 수평 회전 두 층 · 4바퀴 · 몸을 따라감
 do
  reset()

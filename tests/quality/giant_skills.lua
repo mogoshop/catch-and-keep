@@ -62,13 +62,14 @@ _Util={IsAlive=function() return true end,Pos2=function(_,e) return e.pos end,
  MonstersNear=function(_,map,c,r) local out={} for _,m in ipairs(mons) do if not m.IsDead and (m.Entity.pos-c):Magnitude()<=r+1e-9 then table.insert(out,m) end end return out end}
 local hitsLog,fxLog={},{}
 fxRoarSeq=''
+fxImpact=-1
 order={}   -- 맞힘·저항 순서 (노바: 맞은 뒤 원소 붕괴)
 local function resetLogs() hitsLog={} fxLog={} logs={} end
 local owner={Name='owner',pos=Vector2(0,0)}
 local nodes={}
 owner.GetComponent=function(_,k)
  if k=='script.PlayerAttack' then return {SkillHitOne=function(_,t,info,dmg) table.insert(hitsLog,{t=t.Name,info=info,dmg=dmg,at=_UtilLogic.ElapsedSeconds}) table.insert(order,'hit:'..t.Name) end} end
- if k=='script.SkillEffects' then return {FxGiantRoarSeq=fxRoarSeq,
+ if k=='script.SkillEffects' then return {FxGiantRoarSeq=fxRoarSeq,GiantFxImpactSec=function(_,kind) return kind=='nova' and fxImpact or -1 end,
   GiantMoveFx=function(_,kind,pos,w,h,a,sec) table.insert(fxLog,{kind=kind,w=w,h=h,a=a,sec=sec,pos=pos,at=_UtilLogic.ElapsedSeconds}) end,
   GiantMoveFxOn=function(_,kind,anchor,off,facing,w,h,a,sec) table.insert(fxLog,{kind=kind,w=w,h=h,a=a,sec=sec,anchor=anchor,off=off,facing=facing,at=_UtilLogic.ElapsedSeconds}) end} end
  if k=='script.SkillBook' then return {Node=function(_,id) return nodes[id] or 0 end} end
@@ -130,6 +131,18 @@ do
  local n,l=vrf('[VRF] nova single')
  ok(n==1 and l:find('hits=4 mul=1.00 radius=3.75',1,true)~=nil,'[VRF] nova single hits=4 mul=1.00 radius=3.75 · '..tostring(l))
  RiteGiantMoves:Clear(u)
+end
+-- ②-a 노바 V2 그림 정점(GiantFxImpactSec 0.16)이 있으면 타격 = 폭발 시작 + 0.16 (표 burst 0.18 대신 그림 정점에 맞춤)
+do
+ clearMons() resetLogs() plays={} nodes={} fxImpact=0.16
+ local u=giant('mage',100)
+ monster('a',1) monster('b',-2)
+ for _=1,120 do advance(0.0667) RiteGiantMoves:Tick(u,0.0667) if cast('nova')==1 then break end end
+ advance(1.5)
+ local nf=novaFx() local hitAt=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_nova' then hitAt=hitAt or x.at end end
+ ok(#nf==1 and near(hitAt-nf[1].at,0.16) and near(nf[1].sec,0.16),'타격 = 그림 시작 + 정점 0.16 · 한 번')
+ local h=hitNames('skill.giant_nova') ok(h.a==1 and h.b==1,'여전히 한 적 1회')
+ fxImpact=-1 RiteGiantMoves:Clear(u)
 end
 -- ②-b 「폭발 증폭」(옛 id giant_mage_pull) = 단발 ×1.5 · 여전히 한 적 1회 · 둘째 그림 0 · 평타 쉼 1.2초 보존 · 저항은 맞은 뒤
 do
