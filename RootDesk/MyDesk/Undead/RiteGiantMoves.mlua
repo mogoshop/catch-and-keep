@@ -320,6 +320,14 @@ script RiteGiantMoves extends Logic
             self:Hold(unit, impact, impact)
             unit:GiantPlay("skill2", 0)
             self:LogCast(unit, 2, "slam", radius, impact)
+            local v2 = fx ~= nil and ((fx.FxGiantSlamSeq or "") ~= "" or (fx.FxGiantSlamFront or "") ~= "")
+            if v2 then
+                -- V2 (방패 full): 몸과 그림을 t0에 함께 — 그림 0~2장 축광이 이미 들어 있고 4번째 장(120ms)이 지면 분출 = 몸 index 6 접점 = 피해 (그림 전체를 접점까지 미루지 않는다)
+                --   방패 하단 접점(계약 axpx·aypx · 몸 화소)에 큰 분출(몸 뒤)·접점 광(몸 앞) · 거인 방향 좌우 대칭 · 판정 반원은 그대로
+                fx:GiantMoveFxOn("slam", unit.Entity, Vector3(0, 0, 0), dir.x < 0 and -1 or 1, radius * 2, radius * 2, 0, 0.35)
+                local art = fx:GiantFxImpactSec("slam")
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant sync s=slam fx_t0 art_contact=%.3f body_impact=%.3f", art, impact)) end
+            end
             local strike = function()
                 if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
                 local hits = 0
@@ -336,10 +344,7 @@ script RiteGiantMoves extends Logic
                     end
                 end
                 local c = me + dir * (radius * 0.5)
-                if fx ~= nil and ((fx.FxGiantSlamSeq or "") ~= "" or (fx.FxGiantSlamFront or "") ~= "") then
-                    -- V2: 방패 하단 접점(그림 계약 ax·ay · 거인 방향 좌우 대칭)에 큰 분출(몸 뒤)·접점 광(몸 앞) — 판정 반원은 그대로
-                    fx:GiantMoveFxOn("slam", unit.Entity, Vector3(0, 0, 0), dir.x < 0 and -1 or 1, radius * 2, radius * 2, 0, 0.35)
-                elseif fx ~= nil then fx:GiantMoveFx("slam", Vector3(c.x, c.y + 0.1, 0), radius * 2, radius * 2, 0, 0.35) end
+                if fx ~= nil and not v2 then fx:GiantMoveFx("slam", Vector3(c.x, c.y + 0.1, 0), radius * 2, radius * 2, 0, 0.35) end   -- 지금 그림: 접점 순간에 충격파
                 if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant sync s=slam impact=%.3f hits=%d", impact, hits)) end
                 self:LogSkill(unit, 2, hits, dmg, true, radius)
             end
@@ -504,7 +509,7 @@ script RiteGiantMoves extends Logic
         -- 방패 거인 「도발 함성」(스킬 1 · ShadowUnit.TauntTick이 끌어당긴 뒤 부른다 · 도발 대상·적용 시점·반경·보스 제외 그대로 · 피해 0)
         --   48 연출 V2 (A-ROAR-01 함성 계약 · 갈래 A 79b1d425): 몸은 ShadowUnit:GiantRoarBody(onStart)만 건다(그림 키 skill1 · 없으면 몸 없음 · TauntTick은 몸을 걸지 않음) —
         --   돌려준 값 0 = 지금 시작(onStart(true) 바로) · > 0 = 평타 뒤(0.6초 안) 시작 때 onStart(true) · 그 사이 기술·소멸이면 onStart(false) · -1 = 걸 수 없음 → 그림 바로.
-        --   문양·방사 에너지 그림(FxGiantRoarSeq)은 몸 시작 + 함성 칸(GiantLook.skill1Hit) 뒤 거인 몸을 따라 · 몸이 없으면 바로 · 새 그림이 없으면 머리 위 작은 강철 고리(지금 그대로)
+        --   문양·방사 에너지 그림(FxGiantRoarSeq)은 몸이 실제로 시작한 그 순간 0번 장부터(몸·그림 t0 동시 · 축광 중 문양을 따라가다 6번째 장부터 방사 원점 고정) · 몸이 없으면 바로 · 새 그림이 없으면 머리 위 작은 강철 고리(지금 그대로)
         local fx = self:Fx(unit)
         local me = _Util:Pos2(unit.Entity)
         local v2 = fx ~= nil and (fx.FxGiantRoarSeq or "") ~= ""
@@ -518,9 +523,9 @@ script RiteGiantMoves extends Logic
             end
         end
         local r = unit:GiantRoarBody(function(started)
-            local d = started and self:BodyImpactSec(unit, "skill1", 0) or 0
-            if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant roar sync body_started=%s fx_in=%.3f", tostring(started), d)) end
-            if d > 0 then _TimerService:SetTimerOnce(fxNow, d) else fxNow() end
+            -- 몸이 실제로 시작한 순간 그림 0번 장부터 바로 (방패 full: 몸·그림 12장 × 50ms t0 동시 · 0~4 축광 → 5부터 방사 — 몸 함성 칸만큼 다시 미루지 않는다)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant roar sync body_started=%s fx_in=0.000", tostring(started))) end
+            fxNow()
         end)
         if r < 0 then fxNow() end
         self:LogCast(unit, 1, "roar", radius, 0)
