@@ -6,7 +6,7 @@
 --   ⑨ 거인 물러서기 없음 · GiantImprint 기본 true
 -- 표 값: data/rite_giants.csv의 48 요청 줄(C 담당 · results csv_requests)을 아래에서 덮어 쓴다 — C가 반영하면 같은 값
 -- @source GameData Data/GameData.mlua Ensure,GetGiant,GetMonsterFrames
--- @source RiteGiantMoves Undead/RiteGiantMoves.mlua StateOf,Clear,GiantImprint,NodeOf,Opt,HasMoves,Tick,S1Radius,MeteorRadius,MeteorChant,Hold,FireS1,NovaBurst,MageResist,OnFocus,ValidTarget,InReach,FireS2,FireRift,FireDash,FireMeteor,Roar,RoarBodyStart,Facing,BodyImpactSec,HitOne,HitArea,LineMonsters,HitLine,RiftFx,Fx,LogCast,LogSkill,LogS2
+-- @source RiteGiantMoves Undead/RiteGiantMoves.mlua StateOf,Clear,GiantImprint,NodeOf,Opt,HasMoves,Tick,S1Radius,MeteorRadius,MeteorChant,Hold,FireS1,NovaBurst,MageResist,OnFocus,ValidTarget,InReach,FireS2,FireRift,FireDash,FireMeteor,Roar,Facing,BodyImpactSec,HitOne,HitArea,LineMonsters,HitLine,RiftFx,Fx,LogCast,LogSkill,LogS2
 -- @source ShadowUnit Shadow/ShadowUnit.mlua TauntTick,GiantPlay,GiantMotionKey
 _GameData:Ensure()
 local G=_GameData.RiteGiants
@@ -322,7 +322,22 @@ local function su(kind)
  u.Giant=true u.GiantKind=kind u.Dead=false u.Taunt=true u.TauntTimer=0 u.TauntEvery=3 u.TauntRadius=3
  u.OwnerPlayer=owner u.GiantLook={} u.GiantClipUntil=0 u.AttackAnimationUntil=0 u.GiantHitAt=-99 u.GiantHoldUntil=0 u.CurrentClip=''
  u.Entity={Id='su_'..kind,Name='su',pos=Vector2(0,0),CurrentMap='map',SpriteRendererComponent={SpriteRUID='stand'}}
- u.swing=0 u.played={}
+ u.swing=0 u.played={} u.GiantClipState=''
+ -- 갈래 A 79b1d425 ShadowUnit:GiantRoarBody(onStart) 계약 대역 (같은 규칙 · 이 브랜치에는 A 본문이 없다 — A 회귀 giant_body_playback이 실제 본문)
+ function u:GiantRoarBody(onStart)
+  if (self.GiantLook.skill1 or '')=='' then return -1 end
+  local now=_UtilLogic.ElapsedSeconds
+  if now<self.GiantClipUntil and self.GiantClipState~='hit' then return -1 end
+  local wait=self.AttackAnimationUntil-now
+  if wait>0.6 then return -1 end
+  if wait<=0 then self:GiantPlay('skill1',0) self.GiantClipState='skill1' onStart(true) return 0 end
+  _TimerService:SetTimerOnce(function()
+   local okb=not (_UtilLogic.ElapsedSeconds<self.GiantClipUntil and self.GiantClipState~='hit')
+   if okb then self:GiantPlay('skill1',0) self.GiantClipState='skill1' end
+   onStart(okb)
+  end,wait)
+  return wait
+ end
  function u:SwingFx() self.swing=self.swing+1 end
  return u
 end
@@ -337,40 +352,45 @@ do
  ok(#s.played==0 and s.swing==0,'도발 함성 = 몸 동작 없음 (기술 그림으로 평타를 덮지 않음)')
  local roar=false for _,f in ipairs(fxLog) do if f.kind=='roar' then roar=true end end
  ok(roar and cast('roar')==1,'머리 위 강철 고리 · [VRF] cast roar')
- -- 48 연출 V2: 몸은 갈래 A ShadowUnit.GiantRoarBody(roar 그림 있을 때) — Roar는 그림만 · 문양 그림 시각 = 몸 시작(RoarBodyStart · A와 같은 규칙) + roarHit
- local s2=su('shield') s2.GiantLook={form='shield',roar='R',roarHit=0.2,hit='H'} s2.CurrentClip='' s2.Target=nil
- s2.GiantPlay=function(self,st,h) table.insert(self.played,st) end
+ -- 48 연출 V2 함성 계약(A 79b1d425): Roar → unit:GiantRoarBody(onStart) — 몸·그림이 같은 순간 시작 / 평타 뒤 미룸 / 걸 수 없음 3분기
  local function roarFx() local r=nil for _,f in ipairs(fxLog) do if f.kind=='roar' then r=f end end return r end
- fxLog={} logs={} timers={}
- RiteGiantMoves:Roar(s2,2,3)
- ok(#s2.played==0,'Roar는 몸을 직접 걸지 않음 (몸 = A GiantRoarBody · 두 번 재생 없음)')
- ok(roarFx()~=nil and roarFx().anchor==nil and near(roarFx().w,0.8),'새 그림 없으면 머리 위 작은 고리 그대로 (바로)')
- fxRoarSeq='x|y' fxLog={} logs={}
- -- A GiantRoarBody 대역: Roar 바로 뒤(또는 평타 끝) 몸을 걸면 CurrentClip = roar 첫 칸
- local function bodyAt(sec) _TimerService:SetTimerOnce(function() s2.CurrentClip='R' s2.GiantClipUntil=_UtilLogic.ElapsedSeconds+0.6 end, sec) end
+ local function bodyAt() for i,st in ipairs(s.played) do if st=='skill1' then return i end end end
+ local s2=su('shield') s2.GiantLook={form='shield',skill1='R',skill1Hit=0.2} s2.Target=nil
+ s2.GiantPlay=function(self,st,h) table.insert(self.played,{st=st,at=_UtilLogic.ElapsedSeconds}) end
+ local function bodyTime() for _,x in ipairs(s2.played) do if x.st=='skill1' then return x.at end end end
+ -- ① 지금 시작: 몸 skill1 즉시 · 그림 = 몸 시작 + skill1Hit 0.2 · 이중 재생 없음
+ fxRoarSeq='x|y' fxLog={} logs={} s2.played={}
  local t0=_UtilLogic.ElapsedSeconds
- RiteGiantMoves:Roar(s2,2,3) s2.CurrentClip='R' s2.GiantClipUntil=t0+0.6
- ok(roarFx()==nil,'새 함성 그림: 몸 함성 칸 전에는 아직 (몸 없이 먼저 나오지 않음)')
- advance(0.21)
+ s2.TauntTimer=0 s2:TauntTick(0.1)
+ ok(#s2.played==1 and near(bodyTime(),t0),'roar_now: 몸 skill1 한 번 즉시 (TauntTick이 몸을 따로 걸지 않음 · 이중 재생 0)')
+ ok(roarFx()==nil,'몸 함성 칸 전에는 그림 아직 (몸 없이 그림이 먼저 나오지 않음)')
+ advance(0.2)
  local rf=roarFx()
- ok(rf~=nil and near(rf.at-t0,0.2,0.02) and rf.anchor==s2.Entity and near(rf.w,6) and near(rf.sec,0.6),'몸 시작 + roarHit 0.2초에 · 몸을 따라감 · 지름 = 도발 반경 3 × 2 · 0.6초 '..tostring(rf and rf.at-t0))
- local n,l=vrf('[VRF] giant roar sync') ok(l~=nil and l:find('body_started=true',1,true)~=nil,'[VRF] giant roar sync body_started=true')
- n,l=vrf('[VRF] giant roar body') ok(l~=nil and l:find('body=true fx=v2 delay=0.200',1,true)~=nil,'[VRF] giant roar body=true fx=v2 delay=0.200')
- fxLog={} s2.CurrentClip='' s2.GiantClipUntil=0 t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3
- RiteGiantMoves:Roar(s2,2,3) bodyAt(0.3) advance(0.49) ok(roarFx()==nil,'평타 0.3초 남음: 몸이 평타 뒤 시작 → 그림도 0.3+0.2') advance(0.03) ok(roarFx()~=nil and near(roarFx().at-t0,0.5,0.02),'0.5초에 그림')
- fxLog={} s2.CurrentClip='' s2.GiantClipUntil=0 t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3
- RiteGiantMoves:Roar(s2,2,3) advance(0.33) ok(roarFx()~=nil,'그 사이 몸이 안 걸리면(신호 없음) 그림만 바로')
- fxLog={} s2.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.7
- RiteGiantMoves:Roar(s2,2,3) ok(roarFx()~=nil,'평타 0.6초 넘게 남음 → 몸 생략 · 그림은 바로')
- s2.AttackAnimationUntil=0 s2.GiantClipUntil=_UtilLogic.ElapsedSeconds+1 s2.CurrentClip='K2' fxLog={}
- RiteGiantMoves:Roar(s2,2,3) ok(roarFx()~=nil,'다른 기술 동작 중 → 몸 생략 · 그림 바로')
- s2.CurrentClip='H' fxLog={} t0=_UtilLogic.ElapsedSeconds
- RiteGiantMoves:Roar(s2,2,3) s2.CurrentClip='R' s2.GiantClipUntil=t0+0.6 ok(roarFx()==nil,'맞음 그림 중이면 몸이 덮음 → 그림은 roarHit 뒤') advance(0.25) ok(roarFx()~=nil,'맞음 위 함성: 0.2초 뒤 그림')
- s2.GiantLook={form='shield',roar='R'} s2.GiantClipUntil=0 fxLog={}
- _GameData.MonsterFrames['giant_shield'].roar={r={'a','b','c','d','e','f','g','h'},d={0.05,0.05,0.05,0.08,0.08,0.08,0.08,0.08},loop=false,s=4}
- ok(near(RiteGiantMoves:BodyImpactSec(s2,'roar',0),0.15),'roarHit 없으면 monster_frames impact 열로 (앞 3장 0.15)')
- s2.GiantLook.roarHit=0.33 ok(near(RiteGiantMoves:BodyImpactSec(s2,'roar',0),0.33),'GiantLook.<동작>Hit(A)이 있으면 그 값 우선')
- _GameData.MonsterFrames['giant_shield'].roar=nil
+ ok(rf~=nil and near(rf.at-bodyTime(),0.2) and rf.anchor==s2.Entity and near(rf.w,6) and near(rf.sec,0.6),'몸 시작 + skill1Hit 0.2초에 문양 그림 · 몸을 따라감 · 지름 6 · 0.6초')
+ local n,l=vrf('[VRF] giant roar body=') ok(l~=nil and l:find('body=now fx=v2',1,true)~=nil,'[VRF] giant roar body=now fx=v2')
+ -- ② 미룸: 평타 0.3초 남음 → 몸·그림 모두 평타 뒤 (몸 0.3 · 그림 0.5)
+ fxLog={} logs={} s2.played={} s2.GiantClipState='' s2.GiantClipUntil=0 t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3
+ RiteGiantMoves:Roar(s2,2,3)
+ ok(#s2.played==0 and roarFx()==nil,'roar_deferred: 평타 중 몸·그림 둘 다 아직')
+ advance(0.31) ok(bodyTime()~=nil and near(bodyTime()-t0,0.3),'평타 끝(0.3)에 몸')
+ advance(0.2) ok(roarFx()~=nil and near(roarFx().at-t0,0.5),'몸 시작 + 0.2 = 0.5초에 그림')
+ -- ②-b 미룬 사이 기술이 시작 → onStart(false) → 몸 없음 · 그림만 그때
+ fxLog={} s2.played={} t0=_UtilLogic.ElapsedSeconds s2.AttackAnimationUntil=t0+0.3 s2.GiantClipUntil=0 s2.GiantClipState=''
+ RiteGiantMoves:Roar(s2,2,3) s2.GiantClipUntil=t0+1 s2.GiantClipState='skill2'
+ advance(0.31) ok(#s2.played==0 and roarFx()~=nil and near(roarFx().at-t0,0.3),'미룬 사이 기술 시작: 몸 없음 · 그림만 그때(0.3)')
+ n,l=vrf('[VRF] giant roar sync') ok(l~=nil and l:find('body_started=false',1,true)~=nil,'[VRF] giant roar sync body_started=false')
+ -- ③ 걸 수 없음: 평타 0.6초 넘게 남음 / 기술 동작 중 / 몸 그림 없음 → 그림 바로
+ advance(1)
+ fxLog={} s2.played={} s2.GiantClipUntil=0 s2.GiantClipState='' s2.AttackAnimationUntil=_UtilLogic.ElapsedSeconds+0.7
+ RiteGiantMoves:Roar(s2,2,3) ok(#s2.played==0 and roarFx()~=nil,'roar_none: 평타 0.6초 넘게 남음 → 몸 없음 · 그림 바로')
+ fxLog={} s2.AttackAnimationUntil=0 s2.GiantClipUntil=_UtilLogic.ElapsedSeconds+1 s2.GiantClipState='skill2'
+ RiteGiantMoves:Roar(s2,2,3) ok(#s2.played==0 and roarFx()~=nil,'기술 동작 중 → 몸 없음 · 그림 바로')
+ fxLog={} s2.GiantClipUntil=0 s2.GiantLook={form='shield'}
+ RiteGiantMoves:Roar(s2,2,3) ok(#s2.played==0 and roarFx()~=nil,'함성 몸 그림 미등록 → 몸 없음(일반 skill 대체 없음) · 그림 바로')
+ fxRoarSeq='' fxLog={} s2.GiantLook={form='shield',skill1='R',skill1Hit=0.2}
+ RiteGiantMoves:Roar(s2,2,3) advance(0.25) rf=roarFx()
+ ok(rf~=nil and rf.anchor==nil and near(rf.w,0.8),'새 그림 없으면 머리 위 작은 고리 (몸 함성 칸에)')
+ advance(1)
  fxRoarSeq=''
  m.taunted=nil
  local b=su('basic')
