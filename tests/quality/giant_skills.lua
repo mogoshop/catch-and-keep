@@ -12,7 +12,7 @@ _GameData:Ensure()
 local G=_GameData.RiteGiants
 -- 갈래 C(e9639aae) rite_giants.csv 줄과 같은 값 (C 반영 전 판에서도 같은 조건으로 돌게)
 G.basic.s1='' G.basic.s1Name='' G.basic.s1Mul=0 G.basic.s1Cd=0 G.basic.s1Radius=0 G.basic.s1Opts={} G.basic.s2='' G.basic.s2Name='' G.basic.s2Mul=0 G.basic.s2Cd=0 G.basic.s2Shape='' G.basic.s2Reach=0 G.basic.s2Opts={} G.basic.tauntSec=0 G.basic.tauntRadius=0
-G.greatsword.s1Radius=1.6 G.greatsword.s1Mul=0.5
+G.greatsword.s1Radius=1.5 G.greatsword.s1Mul=0.4 G.greatsword.s1Opts={hits=5,gap=0.3,travel=5}   -- 10-30 이동형 휠윈드 (rite_giants.csv 그대로)
 -- 48 연출 V2 (갈래 C 0f72d37f rite_giants.csv): 노바 반경 3.75 · s1Opts novaAmpMul=1.5 · ring 삭제
 G.mage.s1='nova' G.mage.s1Name='화염 노바' G.mage.s1Mul=1 G.mage.s1Cd=8 G.mage.s1Radius=3.75 G.mage.s1Opts={min=2,chant=0.3,grow=0.5,inner=0.5,novaAmpMul=1.5}   -- 갈래 C 0f72d37f 줄 (ring 삭제 · novaAmpMul 추가 · grow = 폭발 뒤 회복으로 읽음 · burst 없으면 0.18)
 G.mage.s2='meteor' G.mage.s2Name='기도 메테오' G.mage.s2Mul=3 G.mage.s2Cd=12 G.mage.s2Shape='single' G.mage.s2Reach=6 G.mage.s2Opts={radius=1.8,radiusMax=2,chant=1,fall=0.5,scorch=1.5}
@@ -59,6 +59,7 @@ local function monster(name,x,y)
  return m
 end
 _Util={IsAlive=function() return true end,Pos2=function(_,e) return e.pos end,
+ ReachablePoint=function(_,map,from,to,margin) if wallX==nil or to.x<=wallX-margin then return to end local f=(wallX-margin-from.x)/(to.x-from.x) return from+(to-from)*math.max(0,f) end,
  MonstersNear=function(_,map,c,r) local out={} for _,m in ipairs(mons) do if not m.IsDead and (m.Entity.pos-c):Magnitude()<=r+1e-9 then table.insert(out,m) end end return out end}
 local hitsLog,fxLog={},{}
 fxRoarSeq=''
@@ -79,10 +80,12 @@ local plays={}
 local function giant(kind,atk)
  local u={Giant=true,Dead=false,GiantKind=kind,Atk=atk,OwnerPlayer=owner,AttackRange=kind=='mage' and 4.5 or 1.2,OwnerCombatRange=7,FocusExtraRange=2,FocusUntil=0,Target=nil,
   AttackTimer=0,GiantCastUntil=0,GiantSlowUntil=0,GiantGuardUntil=0,
-  Entity={Id='g_'..kind,pos=Vector2(0,0),Name='giant',CurrentMap='map',MovementComponent={SetWorldPosition=function(_,p) end}}}
+  Entity={Id='g_'..kind,pos=Vector2(0,0),Name='giant',CurrentMap='map',MovementComponent={}}}
+ u.Entity.MovementComponent.SetWorldPosition=function(_,p) u.Entity.pos=p u.moves=(u.moves or 0)+1 end
  function u:IsLiveTarget(e) return e~=nil and e.dead~=true end
  function u:IsOwnerCombatTarget(e,range) return (e.pos-owner.pos):Magnitude()<=range end
  function u:GiantPlay(state,hold) table.insert(plays,{state=state,hold=hold}) end
+ function u:Face(d) self.faced=d end
  function u:SwingFx() end
  return u
 end
@@ -168,7 +171,7 @@ end
 do
  local fr=io.open('RootDesk/MyDesk/Undead/RiteGiantMoves.mlua') local rg=fr:read('a') fr:close()
  ok(rg:find('NovaWave',1,true)==nil and rg:find('skill.giant_nova2',1,true)==nil,'둘째 파동 함수·정보 없음')
- ok(rg:find('SetWorldPosition',1,true)~=nil and select(2,rg:gsub('SetWorldPosition',''))==1,'노바에 흡인(위치 이동) 없음 — 위치 이동은 돌진 하나뿐')
+ local nb=rg:match('method void NovaBurst.-\n    end\n') ok(nb~=nil and nb:find('SetWorldPosition',1,true)==nil and rg:find('giant_nova',1,true)~=nil,'노바에 흡인(위치 이동) 없음 — 위치 이동은 돌진·휠윈드뿐')
  ok(G.mage.s2Opts.radius==1.8 and G.mage.s2Opts.radiusMax==2,'메테오 반경 1.8 · 상한 2.0 그대로')
 end
 -- ②-d 몸 타격 칸 데이터(갈래 A GiantLook.<동작>Hit) — 노바 방출 · 땅 가르기 강타 · 회전 첫 타 · 내려찍기가 그 값을 읽는다 (하드코딩 아님)
@@ -199,7 +202,8 @@ do
  for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(w,0.0667) if cast('spin')==1 and t0==nil then t0=_UtilLogic.ElapsedSeconds end end
  advance(2)
  local first=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_spin' then first=first or x.at end end
- ok(near(first-t0,0.1) and hitNames('skill.giant_spin').a==4,'회전 첫 타 = skill1Hit 0.1 · 그 뒤 gap · 4번 그대로')
+ local nt=0 for _,l in ipairs(logs) do if l:find('[VRF] giant whirlwind tick',1,true) then nt=nt+1 end end
+ ok(near(first-t0,0.1) and nt==5,'회전 첫 타 = skill1Hit 0.1 · 그 뒤 gap · 5틱')
  RiteGiantMoves:Clear(w)
  clearMons() resetLogs() plays={}
  local sh=giant('shield',70) sh.GiantLook={form='shield',skill2='K',skill2Hit=0.2}
@@ -247,25 +251,68 @@ do
  ok(logs[#logs]:find('radius=2.00',1,true)~=nil,'[VRF] giant skill hit radius=2.00')
  nodes={} RiteGiantMoves:Clear(u)
 end
--- ⑤ 대검 회전: 반경 1.6 · 4번 · ×0.5 · 이동 ×0.6 표시
+-- ⑤ 대검 회전 = 이동형 휠윈드 (10-30 사용자): 표적 방향 5칸 전진 1.5초 · 0.3초마다 몸 위치 반경 1.5 ×0.4 · 5번 · 총 2.0 보존 · 표적 통과 · 벽 정지 뒤 제자리 틱
+local function wwTicks() local t={} for _,l in ipairs(logs) do if l:find('[VRF] giant whirlwind tick',1,true) then table.insert(t,{x=tonumber(l:match('pos=([%-%d%.]+),')),n=tonumber(l:match('hits=(%d+)'))}) end end return t end
 do
- clearMons() resetLogs() plays={}
+ clearMons() resetLogs() plays={} wallX=nil
  local u=giant('greatsword',120)
- local a=monster('a',1.5) local b=monster('b',1.7)
+ local a=monster('a',1.5) local far=monster('far',4.4) local side=monster('side',2,1.6)
  u.Target=a.Entity
- tick(u,3.2)
+ local t0=nil
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(u,0.0667) if cast('spin')==1 and t0==nil then t0=_UtilLogic.ElapsedSeconds break end end
  ok(cast('spin')==1,'회전 베기 저절로')
- ok(u.GiantSlowUntil>_UtilLogic.ElapsedSeconds,'도는 동안 이동 ×0.6 (GiantSlowUntil)')
+ ok(near(u.GiantCastUntil-t0,1.5) and u.faced==1,'전진 1.5초 동안 AI 이동·평타 멈춤(Hold) · 표적 쪽으로 몸을 돌림')
  advance(2)
+ ok(near(u.Entity.pos.x,5,1e-6) and near(u.Entity.pos.y,0),'travel 5칸 끝까지 전진 — 표적(1.5)을 지나침 '..u.Entity.pos.x)
+ local tk=wwTicks()
+ ok(#tk==5 and near(tk[1].x,0,0.01) and tk[5].x>3.7,'0.3초마다 5틱 · 틱 위치 = 몸 현재 위치(전진 중)')
  local h=hitNames('skill.giant_spin')
- ok(h.a==4 and h.b==nil,'반경 1.6: 1.5 = 4번 · 1.7 = 0')
- local s1=nil for _,p in ipairs(plays) do if p.state=='skill1' then s1=p end end
- ok(s1~=nil and near(s1.hold,1.6),'회전 동작 1.6초 반복')
+ ok(h.a~=nil and h.a>=1 and h.far~=nil and h.side==nil,'지나가며 주변 범위 피해: 표적 · 멀리 있던 적(4.4)도 · 옆 1.6칸 밖은 반경 1.5 밖')
  local d=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_spin' then d=x.dmg end end
- ok(near(d,120/1.2*0.5),'회전 한 번 ×0.5')
+ ok(near(d,120/1.2*0.4) and near(0.4*5,4*0.5),'한 번 ×0.4 · 5번 = 총 2.0 (예전 4 × 0.5 보존)')
+ local s1=nil for _,p in ipairs(plays) do if p.state=='skill1' then s1=p end end
+ ok(s1~=nil and near(s1.hold,1.5),'회전 동작 1.5초 반복 (새 4키 등록 전 지금 skill1 몸)')
  local sf=nil for _,f in ipairs(fxLog) do if f.kind=='spin' then sf=f end end
- ok(sf~=nil and sf.anchor==u.Entity and sf.a==0 and sf.facing==1 and near(sf.w,3.2) and near(sf.sec,1.6),'회전 그림 = 몸을 따라감(GiantMoveFxOn) · angle 0(통째 회전·상하 뒤집기 없음) · 지름 3.2 · 1.6초')
+ ok(sf~=nil and sf.anchor==u.Entity and sf.a==0 and near(sf.w,3.0) and near(sf.sec,1.5),'회전 그림 = 몸을 따라감 · angle 0 · 지름 3.0 · 1.5초')
+ ok(logs[1]~=nil and (function() for _,l in ipairs(logs) do if l:find('[VRF] giant whirlwind start dir=1.00,0.00 travel=5.00 stop=5.00,0.00',1,true) then return true end end end)(),'[VRF] 시작 방향·travel·정지점')
  RiteGiantMoves:Clear(u)
+end
+-- ⑤-b 벽: ReachablePoint 앞에서 멈추고 남은 시간은 제자리 틱 · 사거리 min(5, 1.9+2=3.9) · 사망 즉시 정지
+do
+ clearMons() resetLogs() plays={} wallX=2.4
+ local u=giant('greatsword',120)
+ local a=monster('a',1)
+ u.Target=a.Entity
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(u,0.0667) if cast('spin')==1 then break end end
+ advance(2)
+ ok(near(u.Entity.pos.x,2.0,1e-6),'벽 2.4 앞 몸 여유 0.4 = 2.0에서 정지 '..u.Entity.pos.x)
+ local tk=wwTicks()
+ ok(#tk==5 and near(tk[4].x,2.0) and near(tk[5].x,2.0),'멈춘 뒤 남은 틱은 그 자리에서 (5틱 유지)')
+ wallX=nil RiteGiantMoves:Clear(u)
+ -- 사거리
+ clearMons() resetLogs()
+ local r1=giant('greatsword',120) r1.AttackRange=1.4 local t1=monster('t1',3.8) r1.Target=t1.Entity
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(r1,0.0667) end
+ ok(cast('spin')==1,'표적 3.8칸 → 발동 (전진형 사거리 3.9)')
+ RiteGiantMoves:Clear(r1)
+ clearMons() resetLogs()
+ local r2=giant('greatsword',120) r2.AttackRange=1.4 local t2=monster('t2',4.1) r2.Target=t2.Entity
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(r2,0.0667) end
+ ok(cast('spin')==0,'표적 4.1칸 → 안 함 (min(travel 5, 3.9))')
+ RiteGiantMoves:Clear(r2)
+ -- 사망 즉시 정지
+ clearMons() resetLogs()
+ local k=giant('greatsword',120) local t3=monster('t3',1) k.Target=t3.Entity
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(k,0.0667) if cast('spin')==1 then break end end
+ advance(0.35) local x1=k.Entity.pos.x local n1=#wwTicks() k.Dead=true advance(2)
+ ok(near(k.Entity.pos.x,x1) and #wwTicks()==n1,'쓰러지면 이동·틱 즉시 멈춤')
+ k.Dead=false
+ -- 갈라짐(Clear) → 정지
+ clearMons() resetLogs()
+ local c=giant('greatsword',120) local t4=monster('t4',1) c.Target=t4.Entity
+ for _=1,60 do advance(0.0667) RiteGiantMoves:Tick(c,0.0667) if cast('spin')==1 then break end end
+ advance(0.35) local x2=c.Entity.pos.x RiteGiantMoves:Clear(c) advance(2)
+ ok(near(c.Entity.pos.x,x2),'갈라짐·맵 이동(Clear) → 남은 이동 멈춤')
 end
 -- ⑥ 땅 가르기: 꽂기 0.3초 → 4토막 · 한 적 한 번 · 6칸 끝 밖 없음
 do
