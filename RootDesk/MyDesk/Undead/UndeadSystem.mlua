@@ -106,6 +106,16 @@ script UndeadSystem extends Logic
         -- 뼈 의식 2·3·5기 (기획서 43 §3-1). 2·3기는 생명이 가장 낮은 해골 전사부터 stage기를 바친다 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
         -- 5기는 바치지 않고 합친다 (StartGiant). 피해 = 바친 해골 평균 공격력 × 단계 배율 × rankMul (해골 공격력이 이미 캐릭터 레벨·숙련·장비를 따른다)
         local userId = player.PlayerComponent.UserId
+        if stage == 5 then
+            -- 46-1: 5기는 해골 전사 + 마법사 참여 다섯 (GiantPlan · 고리 예고와 같은 계획 — 서버 목록을 RosterView로 같은 모양으로 넘긴다)
+            local plan = self:GiantPlanFor(player)
+            if plan == nil then
+                _Util:Warn("해골이 " .. tostring(5 - self:GiantPoolCount(self:RosterView(player))) .. "기 모자랍니다", userId)
+                log("[VRF] rite stage=5 short pool=" .. tostring(self:GiantPoolCount(self:RosterView(player))))
+                return false
+            end
+            return self:StartGiant(player, plan)
+        end
         local picks = self:LiveUnits(player, "skeleton")
         if #picks < stage then
             _Util:Warn("해골 전사가 " .. tostring(stage - #picks) .. "기 모자랍니다", userId)
@@ -115,7 +125,6 @@ script UndeadSystem extends Logic
         ---@type SkillEffects
         local fx = player:GetComponent("script.SkillEffects")
         if fx == nil then return false end
-        if stage == 5 then return self:StartGiant(player, picks) end
         local used = {}
         local sum = 0
         for i = 1, stage do
@@ -140,45 +149,134 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method boolean StartGiant(Entity player, table picks)
-        -- 뼈 의식 5기 「뼈 거인」: 가장 튼튼한 해골 하나가 거인이 되고 나머지 넷은 목록에서 빠져 합쳐진다 (소모 아님).
+    method boolean StartGiant(Entity player, table plan)
+        -- 뼈 의식 5기 거인 (46-1 · 기획서 46 §2-7 · §10-1): 참여 다섯(plan.picks · 소환 순서 앞 다섯) 가운데 이긴 종류(plan.type)의 해골 중
+        -- 생명 비율이 가장 높은 하나(같으면 목록 앞)가 거인 몸이 되고 나머지 넷(종류 무관)은 목록에서 빠져 합쳐진다 (소모 아님 · 「~」).
         -- 거인 생명 = 다섯 생명 합 × riteGiantHpMul · 휩쓸기 = 다섯 공격 합 × riteGiantAtkMul · 4초마다 도발 (방패 해골 규칙 재사용 · 보스 제외).
         -- riteGiantSeconds 뒤 남은 생명 비율대로 다섯으로 갈라진다 (EndGiant). 거인이 쓰러지면 다섯 모두 무너진다
         local uid = player.PlayerComponent.UserId
         if self.Giants[uid] ~= nil then
-            _Util:Warn("이미 뼈 거인이 서 있습니다", uid)
+            _Util:Warn("이미 거인이 서 있습니다", uid)   -- 46 §8 후보 1 (승인 전)
             return false
         end
-        local n = #picks
-        local host = picks[n]   -- LiveUnits는 생명 비율 낮은 순 → 마지막이 가장 튼튼하다
+        local picks = {}
+        for _, v in ipairs(plan.picks) do
+            local u = isvalid(v.rec.entity) and v.rec.entity:GetComponent("script.ShadowUnit") or nil
+            if u == nil or u.Dead or u.Hp <= 0 or u.Bombing or u.Giant then
+                log("[VRF] rite stage=5 plan stale (unit gone)")
+                return false
+            end
+            table.insert(picks, { rec = v.rec, unit = u, key = self:GiantKey(v) })
+        end
+        local host = nil
+        for _, pick in ipairs(picks) do
+            if pick.key == plan.type and (host == nil or pick.unit.Hp / math.max(1, pick.unit.MaxHp) > host.unit.Hp / math.max(1, host.unit.MaxHp)) then host = pick end
+        end
+        if host == nil then return false end
         local mates = {}
         local atk, maxHp, hp = host.unit.Atk, host.unit.MaxHp, host.unit.Hp
-        for i = n - 4, n - 1 do
-            local pick = picks[i]
-            atk = atk + pick.unit.Atk
-            maxHp = maxHp + pick.unit.MaxHp
-            hp = hp + pick.unit.Hp
-            pick.rec.currentHp = pick.unit.Hp
-            pick.rec.merged = true   -- 46-0 R1: 거인에 합쳐진 기록 = 자리는 쓰되 서 있지 않음 (편성 계획 PlanList에 「~」로 들어간다)
-            local from = _Util:Pos2(pick.unit.Entity)
-            self:Detach(player, pick.rec)
-            pick.unit.Dead = true
-            if isvalid(pick.unit.Entity) then pick.unit.Entity:Destroy() end
-            table.insert(mates, pick.rec)
-            ---@type SkillEffects
-            local fx = player:GetComponent("script.SkillEffects")
-            if fx ~= nil then fx:ClipFx(fx.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.5, 0.6, 0) end
+        for _, pick in ipairs(picks) do
+            if pick ~= host then
+                atk = atk + pick.unit.Atk
+                maxHp = maxHp + pick.unit.MaxHp
+                hp = hp + pick.unit.Hp
+                pick.rec.currentHp = pick.unit.Hp
+                pick.rec.merged = true   -- 46-0 R1: 거인에 합쳐진 기록 = 자리는 쓰되 서 있지 않음 (편성 계획 PlanList에 「~」로 들어간다)
+                local from = _Util:Pos2(pick.unit.Entity)
+                self:Detach(player, pick.rec)
+                pick.unit.Dead = true
+                if isvalid(pick.unit.Entity) then pick.unit.Entity:Destroy() end
+                table.insert(mates, pick.rec)
+                ---@type SkillEffects
+                local fx = player:GetComponent("script.SkillEffects")
+                if fx ~= nil then fx:ClipFx(fx.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.5, 0.6, 0) end
+            end
         end
         self.GiantEpoch = self.GiantEpoch + 1
         local epoch = self.GiantEpoch
         host.rec.giant = true
-        self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch }
-        -- Visual only: use the already selected host; normal stage5 still selects skeletons only. Mage art support is dormant.
-        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(host.rec.kind == "mage" and "mage" or (host.rec.form or "")))
+        self.Giants[uid] = { host = host.rec, mates = mates, epoch = epoch, kind = plan.type }
+        host.unit:StartGiant(math.floor(atk * _GameData.riteGiantAtkMul), maxHp * _GameData.riteGiantHpMul, hp * _GameData.riteGiantHpMul, self:GiantLook(plan.type))
         self:RefreshSummary(player)
         _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
-        log(string.format("[VRF] rite stage=5 skel=%d giant atk=%d hp=%.0f/%.0f sec=%.0f", n, math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
+        log(string.format("[VRF] rite stage=5 giant type=%s counts=%s tie=%s banner=%s host=%s atk=%d hp=%.0f/%.0f sec=%.0f", plan.type, self:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed),
+            host.rec.kind .. ":" .. (host.rec.form or ""), math.floor(atk * _GameData.riteGiantAtkMul), hp * _GameData.riteGiantHpMul, maxHp * _GameData.riteGiantHpMul, _GameData.riteGiantSeconds))
         return true
+    end
+
+    -- ───────── 거인 고르기 (46-1 · 기획서 46 §2-7 · §10-1 · 서버·클라이언트 같은 순수 함수) ─────────
+
+    method table GiantFallback()
+        -- 동률 fallback 순서 (§10-2 F1): 방패 → 대검 → 쌍칼 → 마법사 → 기본 · 공방 깃발 줄 칸 순서도 같다
+        return { "shield", "greatsword", "twin", "mage", "basic" }
+    end
+
+    method string GiantKey(table r)
+        -- 거인 종류 키: 마법사는 변이와 무관하게 mage · 전사 일반형 basic · 전사 변이 그대로
+        if r.kind == "mage" then return "mage" end
+        if (r.form or "") == "" then return "basic" end
+        return r.form
+    end
+
+    method table GiantPool(table roster)
+        -- 참여 후보: EncodeRoster 모양 기록 가운데 해골 전사·마법사이고 거인 몸(!)·합쳐짐(~)·아직 못 바침(?)이 아닌 것 (목록 순서 = 소환 순서 그대로)
+        local pool = {}
+        for _, r in ipairs(roster or {}) do
+            if (r.kind == "skeleton" or r.kind == "mage") and not r.giant and not r.merged and not r.notReady then table.insert(pool, r) end
+        end
+        return pool
+    end
+
+    method integer GiantPoolCount(table roster)
+        return #self:GiantPool(roster)
+    end
+
+    method table GiantPlan(table roster, string banner)
+        -- ① 참여 다섯 = 후보 앞 다섯 (결과 종류·깃발·생명과 무관 · E1) ② 5종 한 줄 투표 ③ 동률 최다 안에서만 깃발 ④ 아니면 fallback 순서 첫 동률.
+        --   돌려줌 { type, picks(다섯 기록), counts(종류 → 수), tie, bannerUsed } · 후보 5 미만이면 nil. 목록·기록은 바꾸지 않는다
+        local pool = self:GiantPool(roster)
+        if #pool < 5 then return nil end
+        local picks = {}
+        local counts = {}
+        for _, k in ipairs(self:GiantFallback()) do counts[k] = 0 end
+        for i = 1, 5 do
+            picks[i] = pool[i]
+            local k = self:GiantKey(pool[i])
+            counts[k] = (counts[k] or 0) + 1
+        end
+        local top = 0
+        for _, k in ipairs(self:GiantFallback()) do top = math.max(top, counts[k]) end
+        local tied = {}
+        for _, k in ipairs(self:GiantFallback()) do if counts[k] == top then table.insert(tied, k) end end
+        local kind = tied[1]
+        local bannerUsed = false
+        if #tied > 1 and (banner or "") ~= "" then
+            for _, k in ipairs(tied) do
+                if k == banner then
+                    kind = banner
+                    bannerUsed = true
+                end
+            end
+        end
+        return { type = kind, picks = picks, counts = counts, tie = #tied > 1, bannerUsed = bannerUsed }
+    end
+
+    method string GiantCountsText(table plan)
+        -- 로그·검사용 「greatsword3,shield2」 (fallback 순서 · 0 생략)
+        local parts = {}
+        for _, k in ipairs(self:GiantFallback()) do
+            if (plan.counts[k] or 0) > 0 then table.insert(parts, k .. tostring(plan.counts[k])) end
+        end
+        return table.concat(parts, ",")
+    end
+
+    method table GiantPlanFor(Entity player)
+        -- 그 플레이어의 거인 계획: 서버 = RosterView(실제 목록 · 「?」 거르기) · 클라이언트 = 동기화된 UndeadRoster — 같은 GiantPlan · 같은 깃발(SkillBook.RiteBanner)
+        local roster = {}
+        if self:IsServer() then roster = self:RosterView(player) else roster = self:RosterOf(player).list end
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        return self:GiantPlan(roster, book ~= nil and book.RiteBanner or "")
     end
 
     @ExecSpace("ServerOnly")
@@ -209,17 +307,18 @@ script UndeadSystem extends Logic
             return
         end
         local list = self:ListOf(player)
-        local have = 0
-        for _, r in ipairs(list) do if r.kind == "skeleton" then have = have + 1 end end
-        local max = self:MaxFor(player, "skeleton", self:SkillLevel(player, "raise_skeleton"))
+        -- 종류별 정원 (46-1: 넷에 마법사가 섞일 수 있다) — 거인 중에 새로 일으켜 정원을 넘는 몫은 돌아오지 않는다
+        local have = { skeleton = 0, mage = 0 }
+        for _, r in ipairs(list) do if have[r.kind] ~= nil then have[r.kind] = have[r.kind] + 1 end end
+        local max = { skeleton = self:MaxFor(player, "skeleton", self:SkillLevel(player, "raise_skeleton")), mage = self:MaxFor(player, "mage", self:SkillLevel(player, "raise_mage")) }
         local back = 0
         for _, rec in ipairs(g.mates) do
             rec.merged = nil
-            if have < max then
+            if have[rec.kind] ~= nil and have[rec.kind] < max[rec.kind] then
                 rec.currentHp = math.max(1, math.floor(rec.hp * ratio))
                 rec.entity = nil
                 table.insert(list, rec)
-                have = have + 1
+                have[rec.kind] = have[rec.kind] + 1
                 back = back + 1
                 if respawn and _Util:IsAlive(player) then self:SpawnUnit(player, rec, at, nil, nil) end
             else
@@ -1476,7 +1575,15 @@ script UndeadSystem extends Logic
             if taste == n.revive then parts[#parts] = "그림자(잠시) " .. tostring(taste) end
         end
         cmd.UndeadSummary = table.concat(parts, " · ")
-        cmd.MinionCounts = tostring(n.skeleton) .. "," .. tostring(n.mage) .. "," .. tostring(n.revive)
+        -- 46-1: 소환수 배지·의식 예측 수 = 바칠 수 있는 수 (거인 몸 제외 · 상태줄 「해골 3/8」은 위에서 몸 포함 정원 표시 그대로)
+        local hostSk, hostMg = 0, 0
+        local g = self.Giants[player.PlayerComponent.UserId]
+        if g ~= nil and g.host ~= nil then
+            if g.host.kind == "mage" then hostMg = 1 elseif g.host.kind == "skeleton" then hostSk = 1 end
+        end
+        cmd.MinionCounts = tostring(math.max(0, n.skeleton - hostSk)) .. "," .. tostring(math.max(0, n.mage - hostMg)) .. "," .. tostring(n.revive)
+        local giantKind = g ~= nil and (g.kind or "basic") or ""
+        if cmd.GiantKind ~= giantKind then cmd.GiantKind = giantKind end
         cmd.UndeadRoster = self:EncodeRoster(self:RosterView(player), 0)   -- 스킬 창 편성 미리보기 (I03) · 46-0: 합쳐진 넷 「~」 · 아직 못 바침 「?」
     end
 

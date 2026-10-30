@@ -1,8 +1,8 @@
 -- I03 편성 미리보기 대조: UndeadSystem.RosterPreview(읽기 전용)가 실제 일으키기(Raise → MakeRecord·ApplyForm → SlotPlan·TrimOldest)와 같은 답을 내는가
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
--- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+
--- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,GiantReserved,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder
+-- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
+-- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,GiantReserved,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,lo,hi) return lo end}
@@ -576,5 +576,120 @@ hopeCase('H10 kinds independent',function()
  assert(UndeadSystem:RosterPreview(player,'skeleton').direct)
 end)
 book.FormHope=''
+-- ───────── 46-1 거인 고르기 (기획서 46 §2-7 · §10-1) ─────────
+do
+ local G=0
+ local function key(s) local k,f=string.match(s,'^(%a+):?(%a*)$') return k,f end
+ local function roster(spec)   -- 'basic,greatsword,shield,mage:hex,mage' → EncodeRoster 모양 기록 (오래된 순)
+  local out={}
+  for item in string.gmatch(spec,'[^,]+') do
+   if item=='basic' then table.insert(out,{kind='skeleton',form=''})
+   elseif string.sub(item,1,4)=='mage' then table.insert(out,{kind='mage',form=string.match(item,'^mage:?(%a*)$') or ''})
+   else table.insert(out,{kind='skeleton',form=item}) end
+  end
+  return out
+ end
+ local function plan(spec,banner) return UndeadSystem:GiantPlan(roster(spec),banner or '') end
+ local cases={
+  {'basic,greatsword,shield,mage,mage:aura','shield','mage','2가 유일 최다 (사용자 예시 · 마법사 변이도 mage)'},
+  {'greatsword,greatsword,greatsword,mage,mage','mage','greatsword','분명한 최다는 깃발 무시'},
+  {'shield,shield,greatsword,greatsword,twin','','shield','동률 → fallback 첫째'},
+  {'shield,shield,greatsword,greatsword,twin','greatsword','greatsword','깃발이 동률 안'},
+  {'shield,shield,greatsword,greatsword,twin','twin','shield','깃발이 동률 밖 → fallback'},
+  {'basic,basic,mage,mage:hex,twin','','mage','fallback에서 마법사가 기본보다 앞'},
+  {'basic,shield,greatsword,twin,mage','basic','basic','다섯 모두 동률 · 깃발 안'},
+  {'greatsword,greatsword,greatsword,shield,mage,mage,mage,mage,mage,basic','mage','greatsword','투표는 참여 다섯만 · 무리 전체는 보지 않음'},
+ }
+ for i,c in ipairs(cases) do
+  G=G+1
+  local p=plan(c[1],c[2])
+  assert(p~=nil and p.type==c[3],'giant case '..i..' ('..c[4]..'): got '..tostring(p and p.type))
+  assert(#p.picks==5,'picks')
+ end
+ -- 동률·깃발 표시
+ assert(plan('shield,shield,greatsword,greatsword,twin','greatsword').tie and plan('shield,shield,greatsword,greatsword,twin','greatsword').bannerUsed,'tie/banner flags')
+ assert(not plan('greatsword,greatsword,greatsword,mage,mage','mage').tie,'clear winner is not tie')
+ -- 4기 · 거인 몸·합쳐짐·아직 못 바침은 후보가 아니다 · 일시 소환(되살림)은 기록 모양에 없다
+ G=G+1
+ assert(plan('shield,shield,twin,basic')==nil,'4 units must not plan')
+ local r=roster('twin,shield,shield,basic,basic,greatsword')
+ r[1].giant=true
+ local p=UndeadSystem:GiantPlan(r,'')
+ assert(p.type=='shield' and p.picks[1]==r[2],'giant host skipped, order kept')
+ r[2].notReady=true
+ r[3].merged=true
+ assert(UndeadSystem:GiantPlan(r,'')==nil and UndeadSystem:GiantPoolCount(r)==3,'not ready/merged skipped')
+ -- 마법사만 다섯 → 마법사 거인
+ G=G+1
+ assert(plan('mage:aura,mage:hex,mage:twin,mage:pierce,mage:blast').type=='mage','mage only')
+ -- 생명만 바뀌면 계획 불변 · 서버(실제 기록 → RosterView) = 클라이언트(동기화 문자열) type·picks·counts
+ G=G+1
+ local hpOf={}
+ local function unitRec(kind,form)
+  local rr=rec(kind,form)
+  local u={Dead=false,Hp=50,MaxHp=100,Bombing=false,Giant=false}
+  hpOf[rr.id]=u
+  rr.entity={GetComponent=function() return u end}
+  return rr
+ end
+ local live={unitRec('skeleton','greatsword'),unitRec('mage','hex'),unitRec('skeleton',''),unitRec('skeleton','greatsword'),unitRec('mage',''),unitRec('skeleton','shield'),unitRec('skeleton','twin')}
+ setList(live)
+ UndeadSystem.Giants={}
+ book.RiteBanner='mage'
+ local sp=UndeadSystem:GiantPlanFor(player)
+ for id,u in pairs(hpOf) do u.Hp=(tonumber(string.match(id,'%d+'))*37)%100+1 end
+ local sp2=UndeadSystem:GiantPlanFor(player)
+ assert(sp.type==sp2.type and UndeadSystem:GiantCountsText(sp)==UndeadSystem:GiantCountsText(sp2),'hp changed plan')
+ for i=1,5 do assert(sp.picks[i].rec==sp2.picks[i].rec,'hp changed picks') end
+ UndeadSystem:RefreshSummary(player)
+ server=false
+ local cp=UndeadSystem:GiantPlanFor(player)
+ server=true
+ assert(cp.type==sp.type and UndeadSystem:GiantCountsText(cp)==UndeadSystem:GiantCountsText(sp) and cp.tie==sp.tie,'client plan '..cp.type..' '..UndeadSystem:GiantCountsText(cp)..' vs server '..sp.type..' '..UndeadSystem:GiantCountsText(sp))
+ for i=1,5 do assert(UndeadSystem:GiantKey(cp.picks[i])==UndeadSystem:GiantKey(sp.picks[i]),'pick '..i..' key differs') end
+ -- 참여 다섯 = 대검 2 · 마법사 2 · 기본 1 (뒤의 방패·쌍칼은 참여 밖) · 깃발 마법사가 동률 안 → 마법사
+ assert(sp.type=='mage' and sp.tie and sp.bannerUsed and sp.counts.greatsword==2 and sp.counts.mage==2 and sp.counts.basic==1,'tie greatsword2 mage2 + banner mage got '..sp.type)
+ book.RiteBanner=''
+ -- 아직 못 바침(엔티티 없음)은 「?」로 클라이언트도 같이 거른다
+ G=G+1
+ live[1].entity=nil
+ UndeadSystem:RefreshSummary(player)
+ assert(string.find(cmd.UndeadRoster,'s:greatsword?',1,true)==1,'notReady sync '..cmd.UndeadRoster)
+ local s3=UndeadSystem:GiantPlanFor(player)
+ server=false
+ local c3=UndeadSystem:GiantPlanFor(player)
+ server=true
+ assert(s3.picks[1].rec==live[2] and c3.type==s3.type and UndeadSystem:GiantCountsText(c3)==UndeadSystem:GiantCountsText(s3),'notReady parity')
+ -- 5기 단계: 거인이 서 있으면 3으로 내린다 · 재료 = 전사 + 마법사
+ G=G+1
+ live[1].entity={GetComponent=function() return hpOf[live[1].id] end}
+ stats.MaxDifficulty=1;stats.Mana=999
+ book.Levels={bone_rite=5,raise_skeleton=12,raise_mage=6}
+ book.ReadyAt={}
+ assert(book:RiteUnits5()==7,'units5 '..book:RiteUnits5())
+ assert(book:RiteBestStage(5,-1)==5,'stage 5 available')
+ UndeadSystem.Giants={u1={host=live[7],mates={},epoch=9,kind='twin'}}
+ assert(book:GiantStanding() and book:RiteBestStage(5,-1)==3,'giant standing must drop to 3, got '..book:RiteBestStage(5,-1))
+ UndeadSystem:RefreshSummary(player)
+ server=false;book.IsServer=function() return false end
+ local oldCd=book.CooldownLeft
+ book.CooldownLeft=function() return 0 end
+ assert(cmd.GiantKind=='twin' and book:GiantStanding(),'client giant kind '..tostring(cmd.GiantKind))
+ book.CooldownLeft=oldCd
+ server=true;book.IsServer=function() return true end
+ UndeadSystem.Giants={}
+ UndeadSystem:RefreshSummary(player)
+ assert(cmd.GiantKind=='','giant kind cleared')
+ -- 깃발 요청 검사 · 저장 왕복
+ G=G+1
+ senderUserId='u1'
+ book:RequestRiteBanner('greatsword');assert(book.RiteBanner=='greatsword')
+ book:RequestRiteBanner('bogus');assert(book.RiteBanner=='greatsword','unknown kind ignored')
+ senderUserId='intruder';book:RequestRiteBanner('mage');senderUserId='u1'
+ assert(book.RiteBanner=='greatsword','foreign sender')
+ book:RequestRiteBanner('');assert(book.RiteBanner=='','clear')
+ total=total+G;passed=passed+G
+ print('[quality/roster] 46-1 giant plan: §10-1 8 cases, tie/banner, 4 units, skip !/~/?, mage only, hp-invariant, server == client (type/picks/counts), stage 5 units=skel+mage, giant standing → 3, banner request')
+end
 print(string.format('[quality/roster] I03 step2 hope: parse/encode, auto=pinned rule x3000, direct 30-raise sequence + convergence + steady, power=node rank, gear cap clip keeps wishes, save round trip/old save, request validation, giant+direct, async plan revalidation (B-DRAFT-01), explicit zero, kinds independent'))
 print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))
