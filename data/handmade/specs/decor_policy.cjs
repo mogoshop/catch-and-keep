@@ -12,13 +12,17 @@
 //        밝기는 그 자리 바닥 색 × GUIDE_BRIGHT (채도 그대로). 출구 EXIT_LEN칸 앞 양옆에 표식(MARKER) 한 쌍.
 //   C-4 타일 4계층: data/handmade/tile_classes.csv (map · glyph · tile_class guide/base/terrain/block) — block만 충돌.
 //   C-5 이음새: 걷는 칸끼리 바닥(그림·색)이 다른 경계마다 위 계층 그림을 1칸 폭 그라데이션 띠로 아래 칸에 번지게(BAND) +
-//        볼록 모서리는 45° 반칸 조각(CORNER). 막힌 칸 옆은 그늘 띠(SHADE) — 벽 모서리는 벽 9조각(ne·nw·se·sw)이 둥근 바위 모서리라 조각을 더하지 않는다.
+//        볼록 모서리는 45° 반칸 조각(CORNER). 막힌 칸 옆은 벽 9조각 가장자리(바위 테두리)가 이음새(그늘 띠 SHADE는 10-31 로딩 실측으로 끔) — 벽 모서리는 벽 9조각(ne·nw·se·sw)이 둥근 바위 모서리라 조각을 더하지 않는다.
 //        길 안내 그림은 그 자리 바닥 그림(구역 · 길 글자 칸은 그 길 그림) × GUIDE_BRIGHT — 다른 그림을 쓰면 바닥과 따로 논다.
 "use strict";
 module.exports = {
-  // 이 정책을 적용하는 맵 (나머지는 예전 빌더 그대로 — 단계별로 넓힌다). FULL = C-1~C-6 · COLLIDE_ONLY = C-2·C-4·C-5만 (마을·보스방)
-  FULL: ["wasteland", "hollow", "rotmarsh"],
-  COLLIDE_ONLY: [],
+  // 이 정책을 적용하는 맵. FULL = C-1~C-6 (사냥터·곁길 58장) · COLLIDE_ONLY = C-2·C-4·C-5만 (마을 4 · 액트 끝 보스방 4)
+  //   (10-31 1차 = 액트 1 세 맵 7281f92c → 2차 = 설계도 맵 전부. 목록에 없는 맵은 예전 빌더 그대로)
+  FULL: ["wasteland", "rotmarsh", "execution", "gallows", "crypt1", "crypt2", "crypt3", "hollow", "cellar1", "cellar2", "pit1", "pit2", "cave",
+    "dunes", "canyon", "stormwaste", "sunkenroad", "scorpnest1", "scorpnest2", "drywell", "kingtomb1", "kingtomb2", "archive", "vipernest", "temple1", "temple2", "temple3",
+    "saltflat", "wreckcoast", "stormcliff", "drownedvillage", "crabcave1", "crabcave2", "wreckhold", "smuggler1", "smuggler2", "seachapel", "keeperhouse", "lighthouse1", "lighthouse2", "lighthouse3",
+    "embercanyon", "demonroad", "sulfurmarsh", "burningkeep", "sulfurcave1", "sulfurcave2", "soulprison", "forge1", "forge2", "apostate", "pit", "abyssgate1", "abyssgate2", "abyssgate3", "ashhall", "heartbridge", "throneante"],
+  COLLIDE_ONLY: ["town", "oasis", "harbor", "outpost", "queentomb", "sanctum", "stormeye", "throne"],
 
   SCATTER_KEEP: 0.25,          // 흩뿌림 밀도 (지금의 1/4)
   ROUTE_CLEAR: 1.5,            // 길 안내 중심선 좌우 이 거리 안은 흩뿌림 0 · 막는 조각 0 (폭 3칸)
@@ -32,20 +36,31 @@ module.exports = {
     "mp-ruin-wall", "a1-chained-stake", "crypt-bone-urn", "mp-iron-coffin", "a1-headless-king-statue", "a1-fallen-bell-tower"],
   // 세트를 줄일 때 먼저 남기는 순서: 랜드마크(a1_lm_*) → 손으로 고른 자리 → 처음 나온 세트 이름 → 배치표 순서
 
-  GUIDE_WIDTH: 2,              // 길 안내 폭 (칸) — 가운데 GUIDE_CORE는 불투명, 바깥 테는 GUIDE_EDGE_ALPHA
-  GUIDE_CORE: 1.4,
-  GUIDE_EDGE_ALPHA: 0.5,
-  EXIT_WIDTH: 3, EXIT_CORE: 2.4, EXIT_LEN: 3,
+  GUIDE_WIDTH: 2,              // 길 안내 폭 (칸) — 바깥 GUIDE_EDGE칸은 어두운 테 선, 안쪽은 밝은 길
+  EXIT_WIDTH: 3, EXIT_LEN: 3,  // 출구 EXIT_LEN칸 앞부터 폭 3칸
   GUIDE_RADIUS: 1.5,           // 꺾이는 곳 둥글리기 반경 (짧은 토막이면 줄지만 1칸 아래로는 검사기가 센다)
-  GUIDE_BRIGHT: 1.10,          // 길 안내 = 그 자리 바닥 색 × 1.10 (8~12%, 채도 그대로)
-  FLOOR_TINT_CAP: 0.92,        // 바닥 색이 이보다 밝으면 길 안내가 밝아질 여유가 없다 → 바닥 색을 이 값까지 낮춘다 (세 채널 같은 비율 · 채도 그대로)
-  GUIDE_STEP_DEG: 12,          // 곡선을 이 각도마다 다른 토막으로 (돌린 반복 그림 한 장 = 한 토막)
+  // 10-31 메이커 실측(012e07e2): ×1.10은 줌 130 근접에서도 안 보였다 → ×1.25 · 출구 앞 ×1.30 + 양 가장자리 0.07칸(1px) 어두운 테(×0.80). 채도 그대로
+  GUIDE_BRIGHT: 1.25,
+  EXIT_BRIGHT: 1.30,
+  GUIDE_EDGE: 0.07,
+  GUIDE_EDGE_DARK: 0.80,
+  // 바닥 색이 이보다 밝으면 길 안내가 ×1.25만큼 밝아질 여유가 없다 → 바닥 색을 이 값까지 낮춘다 (세 채널 같은 비율 · 채도 그대로).
+  //   0.80 × 1.25 = 1.0 — 이보다 밝던 바닥(색 값 0.8 초과)만 어두워진다. 출구 앞 ×1.30은 그런 바닥에서 1.0에 막혀 ×1.25
+  FLOOR_TINT_CAP: 0.80,
+  GUIDE_STEP_DEG: 22,          // 곡선을 이 각도마다 다른 토막으로 (돌린 반복 그림 한 장 = 한 토막 · 10-31 엔티티 절감으로 12→22, 이음매는 토막 끝을 폭에 맞춰 늘려 덮는다)
   MARKER: { 1: "camp-brazier", 2: "a2-adjunct-censer-base", 3: "harbor-lantern", 4: "a4-brazier" },
   MARKER_OFFSET: [2.3, 2.6, 3.0, 3.4],   // 길 가운데에서 옆으로 (길 폭 3칸 밖 · 양쪽 한 쌍)
   MARKER_ALONG: [0, -0.8, 0.8, -1.6, 1.6], // 자리가 막혔으면 길을 따라 앞뒤로 옮겨 본다 (출구 3칸 앞 기준)
 
-  BAND: [[0.5, 0.5], [0.5, 0.22]],    // 이음새 띠: [폭(칸), 불투명도] 경계에서 바깥으로
+  // 이음새 띠: [폭(칸), 불투명도] 경계에서 바깥으로. 두 겹(그라데이션)은 계층이 다른 경계만 · 같은 계층끼리(구역 ↔ 구역)는 첫 겹만 (decor.cjs seamEntities)
+  //   DECOR_BAND=single 환경 변수로 모든 경계 한 겹 (엔티티 절약 후보)
+  BAND: process.env.DECOR_BAND === "single" ? [[0.7, 0.36]] : [[0.5, 0.5], [0.5, 0.22]],
   CORNER: { size: 0.75, alpha: 0.42 }, // 볼록 모서리 45° 조각
-  SHADE: [[0.45, 0.2]],                // 막힌 칸 옆 그늘 띠 (한 겹 — 두 겹은 바위 둘레가 검은 테처럼 보였다)
+  // 막힌 칸 옆 그늘 띠 — 10-31 메이커 로딩 실측(wasteland 첫 입장 1.49→3.05초)으로 뺐다(66장 7003개). 벽 9조각 가장자리(바위 테두리)가 이음새.
+  //   되살리려면 [[0.45, 0.2]]
+  SHADE: [],
+  // 회전한 반복 그림 축 (decor.cjs rotRect·rectPoint 한 곳) — 메이커 실화면이 가정과 다르면 이 두 값만 바꿔 다시 짓는다
+  ROT_ANCHOR: "first-tile",            // "first-tile" = 첫 장(왼쪽 아래 장) 가운데가 엔티티 자리·회전축 (회전 없는 반복 그리기와 같은 가정) | "center"
+  ROT_SIGN: 1,                         // 1 = QuaternionRotation z 양수가 반시계 · -1 = 시계
   SHADE_ART: "waste-borders-center",   // 그늘 그림 (검게 칠해 쓰는 기존 조각 — 담 윗면 맵 그림자와 같은 것)
 };

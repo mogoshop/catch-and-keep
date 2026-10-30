@@ -33,6 +33,10 @@ const classes = decor.classTable();
 for (const c of Object.values(classes)) {
   if (!["tall", "floor", "portal", "overlay"].includes(c.class)) bad("decor_collision.csv", `${c.name} class '${c.class}'`);
   if (c.collide !== (c.class === "tall" ? "block" : "pass")) bad("decor_collision.csv", `${c.name} ${c.class}인데 collide ${c.collide}`);
+  // 표 전수: 배율 1 화면 높이 1칸 이상인데 통과 (평평 flat=1 · 포털 그림 · 겹친 빛만 예외) — 놓인 자리와 별개로 (10-31 메이커 「십자 묘비 통과」 재확인)
+  if (Number(c.heightCells) >= 1 && c.collide === "pass" && c.flat !== "1" && !["portal", "overlay"].includes(c.class)) bad("decor_collision.csv", `${c.name} 높이 ${c.heightCells}칸인데 pass`);
+  // 묘비·십자가·무덤 이름은 키 큰 것 (포털 그림 제외)
+  if (/grave|cross|tomb/.test(c.name) && c.class !== "portal" && c.collide !== "block") bad("decor_collision.csv", `${c.name} 묘비·무덤류인데 ${c.collide}`);
 }
 {
   const rows = parse(fs.readFileSync(path.join(ROOT, "data/map_sets.csv"), "utf8"));
@@ -88,17 +92,14 @@ for (const id of ids) {
     }
     // 길 안내 토막(돌린 사각형) 안을 0.2칸 간격으로 찍어 벽·막힌 칸과 겹치는지
     for (const e of art.entities.filter((e) => /^ArtGuide/.test(e.name))) {
-      const sr = e.overrides["MOD.Core.SpriteRendererComponent"], q = e.overrides["MOD.Core.TransformComponent"].QuaternionRotation;
-      const th = 2 * Math.atan2(q.z, q.w), ux = Math.cos(th), uy = Math.sin(th), nx = -uy, ny = ux, t = 1.28;
-      const L = sr.TiledSize.x * t, W = sr.TiledSize.y * t;
+      const r = decor.rotOf(e);   // 회전 역산은 빌더와 같은 한 곳 (decor.cjs rectPoint)
       let hit = false;
-      for (let a = 0.05; a < L - 0.05 && !hit; a += 0.2) for (let b = 0.05; b < W - 0.05 && !hit; b += 0.2) {
-        const lx = -t / 2 + a, ly = -t / 2 + b;
-        const wx = e.pos[0] + ux * lx + nx * ly, wy = e.pos[1] + uy * lx + ny * ly;
+      for (let a = 0.05; a < r.L - 0.05 && !hit; a += 0.2) for (let b = 0.05; b < r.W - 0.05 && !hit; b += 0.2) {
+        const [wx, wy] = decor.rectPoint(r.pos, r.deg, r.L, r.W, a, b);
         const cx = Math.floor(wx), cy = Math.floor(wy);
-        if (isBlock(cx, cy) || art.blocked.has(key(cx, cy))) hit = true;
+        if (isBlock(cx, cy) || art.blocked.has(key(cx, cy))) hit = `칸 (${cx}, ${cy}) ${isBlock(cx, cy) ? "벽" : "막힌 장식 " + ((art.pieces.find((p) => p.cells.some(([px, py]) => px === cx && py === cy)) || {}).name || "(갇힌 바닥)")}`;
       }
-      if (hit) { c.v4++; bad(where(e.name), "길 안내가 벽·막힌 칸과 겹침"); }
+      if (hit) { c.v4++; bad(where(e.name), `길 안내가 벽·막힌 칸과 겹침 — ${hit}`); }
     }
     if (art.guide) {
       c.sharp = art.guide.sharp;
@@ -116,27 +117,27 @@ for (const id of ids) {
   let edges = 0;
   for (let y = b.y0; y < b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const p = fl(x, y), q = fl(x, y + 1);
-    if (p && q && fk(p) !== fk(q)) { edges++; const lowBelow = up(q, p); if (!inBand(x + 0.5, lowBelow ? y + 1 - 0.25 : y + 1 + 0.25)) { c.seam++; } }
-    else if (!bp.raised && ((p && !q && isBlock(x, y + 1)) || (!p && q && isBlock(x, y)))) { edges++; if (!inBand(x + 0.5, p ? y + 1 - 0.2 : y + 1 + 0.2)) c.seam++; }
+    if (p && q && fk(p) !== fk(q) && decor.shoreEdge(bp, p, q)) edges++;   // 물가 거품 띠가 이음새
+    else if (p && q && fk(p) !== fk(q)) { edges++; const lowBelow = up(q, p); if (!inBand(x + 0.5, lowBelow ? y + 1 - 0.25 : y + 1 + 0.25)) { c.seam++; } }
+    else if (!bp.raised && ((p && !q && isBlock(x, y + 1)) || (!p && q && isBlock(x, y)))) { edges++; if (P.SHADE.length && !inBand(x + 0.5, p ? y + 1 - 0.2 : y + 1 + 0.2)) c.seam++; }   // 그늘 띠를 끈 동안(SHADE 빔)은 벽 9조각 가장자리가 이음새
   }
   for (let x = b.x0; x < b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {
     const p = fl(x, y), q = fl(x + 1, y);
-    if (p && q && fk(p) !== fk(q)) { edges++; const lowLeft = up(q, p); if (!inBand(lowLeft ? x + 1 - 0.25 : x + 1 + 0.25, y + 0.5)) c.seam++; }
-    else if (!bp.raised && ((p && !q && isBlock(x + 1, y)) || (!p && q && isBlock(x, y)))) { edges++; if (!inBand(p ? x + 1 - 0.2 : x + 1 + 0.2, y + 0.5)) c.seam++; }
+    if (p && q && fk(p) !== fk(q) && decor.shoreEdge(bp, p, q)) edges++;
+    else if (p && q && fk(p) !== fk(q)) { edges++; const lowLeft = up(q, p); if (!inBand(lowLeft ? x + 1 - 0.25 : x + 1 + 0.25, y + 0.5)) c.seam++; }
+    else if (!bp.raised && ((p && !q && isBlock(x + 1, y)) || (!p && q && isBlock(x, y)))) { edges++; if (P.SHADE.length && !inBand(p ? x + 1 - 0.2 : x + 1 + 0.2, y + 0.5)) c.seam++; }
   }
   if (c.seam) bad(id, `계층 경계 ${edges}변 중 전환 띠 없음 ${c.seam}변`);
   const cornerAt = new Set(art.entities.filter((e) => /^ArtCorner/.test(e.name)).map((e) => {
-    const q = e.overrides["MOD.Core.TransformComponent"].QuaternionRotation, th = 2 * Math.atan2(q.z, q.w);
-    const sr = e.overrides["MOD.Core.SpriteRendererComponent"], s = sr.TiledSize.x * 1.28, t = 1.28;
-    const lx = -t / 2 + s / 2, ly = -t / 2 + s / 2;   // 사각형 가운데
-    return key(Math.round(e.pos[0] + Math.cos(th) * lx - Math.sin(th) * ly), Math.round(e.pos[1] + Math.sin(th) * lx + Math.cos(th) * ly));
+    const r = decor.rotOf(e), [wx, wy] = decor.rectPoint(r.pos, r.deg, r.L, r.W, r.L / 2, r.W / 2);   // 사각형 가운데
+    return key(Math.round(wx), Math.round(wy));
   }));
   let cornersTotal = 0;
   for (let Y = b.y0 + 1; Y <= b.y1; Y++) for (let X = b.x0 + 1; X <= b.x1; X++) {
     const quad = [[X - 1, Y - 1, X, Y - 1, X - 1, Y, X, Y], [X, Y - 1, X - 1, Y - 1, X, Y, X - 1, Y], [X - 1, Y, X, Y, X - 1, Y - 1, X, Y - 1], [X, Y, X - 1, Y, X, Y - 1, X - 1, Y - 1]];
     for (const [cx, cy, hx, hy, vx, vy, gx, gy] of quad) {
       const cc = fl(cx, cy), h = fl(hx, hy), v = fl(vx, vy), g = fl(gx, gy);
-      if (cc && h && v && g && fk(h) !== fk(cc) && fk(v) !== fk(cc) && fk(g) !== fk(cc) && up(cc, h) && up(cc, v)) {
+      if (cc && h && v && g && fk(h) !== fk(cc) && fk(v) !== fk(cc) && fk(g) !== fk(cc) && up(cc, h) && up(cc, v) && !decor.shoreEdge(bp, cc, h) && !decor.shoreEdge(bp, cc, v)) {
         cornersTotal++;
         if (!cornerAt.has(key(X, Y))) c.corner++;
       }

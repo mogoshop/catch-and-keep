@@ -16,6 +16,7 @@ ap.add_argument('--ppu', type=float, default=20)
 ap.add_argument('--crop', nargs=4, type=float)
 ap.add_argument('--overlay', action='store_true')
 ap.add_argument('--labels', nargs='*')
+ap.add_argument('--rot-anchor', default='first-tile', choices=['first-tile', 'center'])   # decor_policy.cjs ROT_ANCHOR와 같게
 ap.add_argument('jsons', nargs='+')
 a = ap.parse_args()
 
@@ -112,7 +113,7 @@ def render(data):
                 # 돌린 반복 그림: 첫 장 가운데(엔티티 자리)를 축으로 돈다 (길 안내 곡선 토막 · 45° 모서리 조각)
                 C = int((pw ** 2 + ph ** 2) ** 0.5) + 4
                 big = Image.new('RGBA', (2 * C, 2 * C))
-                ax, ay = tw / 2 * P, ph - th / 2 * P
+                ax, ay = (tw / 2 * P, ph - th / 2 * P) if a.rot_anchor == 'first-tile' else (pw / 2, ph / 2)
                 big.paste(im, (round(C - ax), round(C - ay)))
                 big = big.rotate(rot, resample=Image.BILINEAR, center=(C, C))
                 ox, oy = to_px(px, py)
