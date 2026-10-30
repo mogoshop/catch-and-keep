@@ -1,7 +1,7 @@
 -- @source NoticeFeed UI/Hud/NoticeFeed.mlua Push+,Tick+,SyncEdge+,Render+,Fade,Bounds,NewestLineHeight
 -- @source HudMap UI/Hud/HudMap.mlua TopPush+,TopPushFor+,TopMapEntry+,TickTop+,TopShow+,TopRender,TickBanner+,SetBannerAlpha,BannerShowing,RestartBanner,ShowAlert+
 -- @source UXFeedback UI/Hud/UXFeedback.mlua TopRoute,Starts,GuessKind
--- @source HudMain UI/Hud/HudMain.mlua PickupPop+,RenderPicks,SetJournalTrack,JournalTrackOn,QuestTrackWanted
+-- @source HudMain UI/Hud/HudMain.mlua PickupPop+,RenderPicks,SetJournalTrack,JournalTrackOn,QuestTrackWanted,TipAllowed
 -- 10-31 실플레이 피드백 B-4 알림 채널 (docs/evidence/2026-10-31-playfeedback-B/notice-channels.md).
 --   실제 NoticeFeed(채널 B) · HudMap 상단 띠(채널 A) · UXFeedback 경로 고르기 · HudMain 줍기 표시(채널 D)·추적기 일지 줄(채널 C) 본문을 돌려
 --   ① B: 같은 글 10초 안 「×N」 한 줄 · 숫자만 다른 글도 한 줄 · 위가 최신 · 동시 최대 3줄(모바일 2) · 상한·경고류 60초에 1회 · 직접 누른 결과(가득 찼습니다)는 막지 않음
@@ -45,6 +45,8 @@ local toast = { Enable = false, UITransformComponent = transform(600, 122, 24, 1
 ents["/ui/RewardHUD/Toast"] = toast
 for _, p in ipairs({ "Banner", "Banner/Title", "Banner/Sub", "Banner/FlavorBg", "Banner/FlavorBg/Text" }) do ents[p] = { Enable = false, TextGUIRendererComponent = textComp(), SpriteGUIRendererComponent = { Color = Color(0, 0, 0, 1) } } end
 for i = 1, 3 do ents["PickPop" .. i] = { Enable = false, TextGUIRendererComponent = textComp() } end
+ents["Tip"] = { Enable = false }
+ents["GatePrompt"] = { Enable = false }
 local windowShown = false
 _UIKit = {
     Get = function(_, p) return ents[p] end,
@@ -221,4 +223,27 @@ HudMain:SetJournalTrack("업적 해골 군단  7/24")
 ok(HudMain:QuestTrackWanted() and HudMain:JournalTrackOn(), "journal progress brings the tracker back")
 at(331); ok(not HudMain:QuestTrackWanted(), "journal line folds after 30s")
 
-print(string.format("[quality/notice_channels] B merge×N·digit-shape·limit 60s·user-action not throttled·3/2 lines newest top · B place chat+12/expand/party/toast · A one-at-a-time·preempt·merge·dedup 10s·window hold·stale drop · route quest/journal → A · D gold merge/3 pops/feet/window→B · C tracker (%d checks)", checks))
+-- ⑤ 10-31 메이커 후속 반례 ------------------------------------------------------------------
+-- (1) 서버 _Util:Notify("골드 +N")로 와도(메이커 B1 대역 경로) 창이 없으면 안내 줄이 아니라 발밑(D)으로 — 예전엔 안내 줄에서 「골드 +225」로 합쳐졌다
+reset(); HudMain.Picks = {}; windowShown = false
+at(400); NoticeFeed:Push("골드 +35"); at(400.3); NoticeFeed:Push("골드 +35"); at(400.6); NoticeFeed:Push("골드 +120")
+ok(#NoticeFeed.Lines == 0, "gold text never lands in the left feed while no window is open")
+ok(#HudMain.Picks == 1 and HudMain.Picks[1].text == "골드 +190" and ents["PickPop1"].Enable, "gold via Notify becomes one merged feet pop: " .. tostring(HudMain.Picks[1] and HudMain.Picks[1].text))
+at(402.5); HudMain:RenderPicks(); ok(#HudMain.Picks == 0, "feet pop gone after 1.5s")
+windowShown = true; NoticeFeed:Push("골드 +9"); windowShown = false
+ok(#NoticeFeed.Lines == 1 and NoticeFeed.Lines[1].text == "골드 +9" and #HudMain.Picks == 0, "with a window open gold stays in the feed (no ping-pong)")
+-- (2) 위 가운데 ② 칸 같은 자리 겹침 0: 상단 띠가 뜨는 그 프레임에 Tip(「스킬(K)에서 「그림자 소환」을 배우면…」)·출구 안내를 끄고, 띠가 떠 있는 동안 Tip은 켜지지 않는다
+HudMap.TopQueue = {}; HudMap.BannerUntil = 0; HudMap.TopCurrent = nil
+ents["Tip"].Enable = true; ents["GatePrompt"].Enable = true
+at(500); HudMap:TopPush("quest:목표 달성:z", "목표 달성", "z", 1)
+ok(ents["Banner"].Enable and not ents["Tip"].Enable and not ents["GatePrompt"].Enable, "top band hides Tip and gate prompt in the same frame")
+ok(not HudMain:TipAllowed(501), "Tip not allowed while the band shows")
+at(503); HudMap:TickBanner()
+ok(not ents["Banner"].Enable and HudMain:TipAllowed(503), "Tip allowed again after the band ends (same slot, one at a time)")
+-- (3) 추출 안내 자리: 발밑 줍기 글씨(D)보다 아래 · 머리 위 COMBO(1.35)와 떨어짐 (월드 단위 · 글 칸 높이 84px = 0.84)
+local hintTop = -HudMain.SoulHintBelow + 0.42
+local popBottom = HudMain.PickBaseY - 0.15
+ok(hintTop < popBottom, string.format("soul hint top %.2f below feet-pop bottom %.2f", hintTop, popBottom))
+ok(-HudMain.SoulHintBelow - 0.42 > -2.5, "soul hint stays near the feet (not off-screen)")
+
+print(string.format("[quality/notice_channels] B merge×N·digit-shape·limit 60s·user-action not throttled·3/2 lines newest top · B place chat+12/expand/party/toast · A one-at-a-time·preempt·merge·dedup 10s·window hold·stale drop · route quest/journal → A · D gold merge/3 pops/feet/window→B · C tracker · 후속: Notify 골드→D·창이면 B · 띠가 Tip·출구 안내 즉시 숨김 · 추출 안내 발밑 아래 (%d checks)", checks))
