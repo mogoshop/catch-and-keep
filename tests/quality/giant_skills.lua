@@ -374,6 +374,7 @@ do
  RiteGiantMoves:OnFocus(q,qt.Entity)
  local qf=nil for _,f in ipairs(fxLog) do if f.kind=='slam' then qf=f end end
  ok(qf~=nil and near(qf.at,q0) and qf.anchor==q.Entity and qf.facing==1,'V2 슬램 그림 = t0 (몸과 동시 · 접점은 계약 데이터)')
+ ok(near(qf.sec,0.12),'V2 슬램 그림 seconds = 실제 피해 시각(skill2Hit 0.12) — 옛 유지 시간 0.35 아님 (impact drift 오경보 원인 · 10-31 G3) '..tostring(qf.sec))
  ok(next(hitNames('skill.giant_slam'))==nil,'t0에는 피해 아직')
  advance(0.121) ok(hitNames('skill.giant_slam').qt==1,'피해·묶기 = 몸 접점 120ms = 그림 4번째 장')
  local n0=0 for _,f in ipairs(fxLog) do if f.kind=='slam' then n0=n0+1 end end
