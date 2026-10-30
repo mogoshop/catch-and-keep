@@ -52,7 +52,7 @@ _MotionSmoother={VisOf=function(_,e) return e end}
 _GameConst={FxGiantSlam='s1|s2|s3|s4',FxGiantSpin='o1|o2|o3|o4|o5|o6',FxGiantRift='r1|r2|r3|r4',FxGiantDash='d1|d2|d3|d4',FxSlash='slash',FxSkillHexBurst=''}
 _GameData:Ensure()
 _GameData.RiteGiants.greatsword.s1Opts={hits=4,gap=0.4}
-local DEF={spin=SkillEffects.FxGiantSpinOpts,rift=SkillEffects.FxGiantRiftOpts,slam=SkillEffects.FxGiantSlamOpts,slamF=SkillEffects.FxGiantSlamFrontOpts,roar=SkillEffects.FxGiantRoarOpts}   -- 속성 기본값 = 코덱스 full 아트 계약
+local DEF={spin=SkillEffects.FxGiantSpinOpts,rift=SkillEffects.FxGiantRiftOpts,slam=SkillEffects.FxGiantSlamOpts,slamF=SkillEffects.FxGiantSlamFrontOpts,roar=SkillEffects.FxGiantRoarOpts,novaV2=SkillEffects.FxGiantNovaV2,novaV2F=SkillEffects.FxGiantNovaV2Front}   -- 속성 기본값 = 코덱스 full 아트 계약
 local function seq(prefix,n) local t={} for i=1,n do t[i]=prefix..i end return table.concat(t,'|') end
 local function reset() plays={} live={} maxLive=0 logs={} timers={} end
 local function idx(r) return tonumber(r:match('(%d+)$')) end
@@ -209,16 +209,26 @@ do
  reset()
  SkillEffects.FxGiantSpinOpts=DEF.spin SkillEffects.FxGiantSpinBack=seq('gb',16) SkillEffects.FxGiantSpinFront=seq('gf',16)
  giant.TransformComponent.WorldPosition=Vector3(0,0,0)
- SkillEffects:GiantMoveFxOn('spin',giant,Vector3(0,0.3,0),1,3.2,3.2,0,1.6) run(2)
+ giant.TransformComponent.Scale=Vector3(1,1,1)
+ SkillEffects:GiantMoveFxOn('spin',giant,Vector3(0,0,0),1,3.2,3.2,0,1.6) run(2)
  local f=onlyMs('gf')
- ok(#f>=63 and near(f[17].at-f[1].at,0.4,TICK+1e-9) and near(f[2].at-f[1].at,0.025,TICK+1e-9),'회전 full: 25ms · 한 바퀴 0.4초 = 서버 타격 간격 · 4바퀴')
- ok(near(f[1].scale.x,3.2/3.52) and f[1].scale.y>0 and f[1].angle==0,'지름 3.2 = 캔버스 352px · 상하 그대로')
+ local b=onlyMs('gb')
+ ok(#f>=63 and near(f[17].at-f[1].at,0.4,TICK+1e-9) and near(f[2].at-f[1].at,0.025,TICK+1e-9),'회전 full: 한 바퀴 = 서버 타격 간격(시험 gap 0.4 → 25ms) · 4바퀴')
+ ok(near(f[1].scale.x,3.2/3.52) and f[1].scale.y>0 and f[1].angle==0 and near(b[1].scale.x,3.2/3.52),'지름 3.2 = 캔버스 352px · 상하 그대로 · 두 층 같은 배율')
+ -- 10-31 갈래 F B 휠윈드 두 층: 칼날(blade) = 몸 root + 80px 위 × 몸 배율 · 몸 앞 / 먼지(dust) = 몸 root · 몸 뒤 · 같은 시각
+ ok(near(f[1].pos.x,0) and near(f[1].pos.y,0.8) and f[1].opt.OrderInLayer==6,'칼날 층: root + (0, 80px × 1/100) = 0.8칸 위 · 몸 앞 '..f[1].pos.y)
+ ok(near(b[1].pos.x,0) and near(b[1].pos.y,0) and b[1].opt.OrderInLayer==1 and b[1].at==f[1].at,'먼지 층: root 그대로 · 몸 뒤 · 칼날과 같은 순간')
+ reset() giant.TransformComponent.Scale=Vector3(-0.66,0.66,1)
+ SkillEffects:GiantMoveFxOn('spin',giant,Vector3(0,0,0),-1,3.0,3.0,0,0.3) run(1)
+ f=onlyMs('gf')
+ ok(near(f[1].pos.y,80*0.66/100) and near(f[1].pos.x,0) and f[1].opt.FlipX==false,'거울 몸(Scale.x<0): 칼날 높이 = 80px × |0.66| · x 0 · 좌우 뒤집기 없음')
+ giant.TransformComponent.Scale=Vector3(1,1,1)
  SkillEffects.FxGiantSpinBack='' SkillEffects.FxGiantSpinFront=''
  -- 균열: 강타(첫 토막) 순간 시작 · 0.65초에 16장 · 발자국 488px = 6칸 · 왼쪽은 FlipX(뒤집힘 없음) · 시작점 = 꽂은 자리
  reset()
  SkillEffects.FxGiantRiftOpts=DEF.rift SkillEffects.FxGiantRiftSeq=seq('rf',16)
  SkillEffects:GiantMoveFx('rift',Vector3(-3,0,0),6,1,180,0.65) run(1)
- ok(#plays==16 and near(plays[16].at-plays[1].at,0.65*15/16,TICK+1e-9),'균열 full: 16장 · rise+잔광 0.65초 고르게')
+ ok(#plays==16 and near(plays[16].at-plays[1].at,0.025*15,TICK+1e-9),'균열 B: 16장 · 장별 25ms (코덱스 FX_ms · 0.4초)')
  ok(near(plays[1].scale.x,6/4.88) and near(plays[1].scale.y,6/4.88),'발자국 488px = 6칸 (가로세로 같은 배율)')
  local pad=12*(6/4.88)/100
  ok(plays[1].angle==0 and plays[1].opt.FlipX==true and near(plays[1].pos.x,pad),'왼쪽: 각 0 + FlipX(분출이 아래로 뒤집히지 않음) · 피벗 = 꽂은 자리 + 앞 빈 12px(보이는 균열 시작 = 꽂은 자리)')
@@ -226,23 +236,24 @@ do
  SkillEffects:GiantMoveFx('rift',Vector3(3,0,0),6,1,0,0.65) run(1)
  ok(plays[1].angle==0 and plays[1].opt.FlipX==false and near(plays[1].pos.x,-pad),'오른쪽: 그대로 · 피벗 = 꽂은 자리 - 12px')
  SkillEffects.FxGiantRiftSeq=''
- -- 슬램: 앞 축광 3장(40ms) t0 · 뒤 지면 분출은 4번째 장부터 120ms에 · 몸 index 6 접점 = 120ms = 서버 피해 · 접점 = root + 79px × 몸 배율
+ -- 슬램 B(10-31 갈래 F): 한 층 16장 t0 · 0~2 축광 = 몸 앞(orders 6) · 3~15 분출 = 몸 뒤 · 4번째 장 = 120ms = 몸 index 6 접점 = 서버 피해 · 접점 = root + (-30,+2)px × 몸 배율 (코덱스 contact (-30,-2))
  reset()
  SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamFrontOpts=DEF.slamF
- SkillEffects.FxGiantSlamSeq=seq('sw',16) SkillEffects.FxGiantSlamFront=seq('ss',3)
+ SkillEffects.FxGiantSlamSeq=seq('sw',16) SkillEffects.FxGiantSlamFront=''
  ok(near(SkillEffects:GiantFxImpactSec('slam'),0.12),'슬램 그림 접점 = 4번째 장 시작 120ms (= 몸 index 6)')
  giant.TransformComponent.WorldPosition=Vector3(5,0,0) giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  local t0=_UtilLogic.ElapsedSeconds
  SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
- local w,st=onlyMs('sw'),onlyMs('ss')
- ok(#st==3 and near(st[1].at,t0) and st[1].opt.OrderInLayer==6,'앞 축광 3장 t0 · 몸 앞')
- ok(#w==13 and w[1].ruid=='sw4' and near(w[1].at-t0,0.12,TICK+1e-9) and w[1].opt.OrderInLayer==1,'뒤 지면 분출 = 4번째 장 · 120ms ±1화면 (그림 전체를 120ms 미루지 않음 → 분출 240ms 아님)')
- ok(near(w[13].at-w[1].at,0.03*12,TICK+1e-9),'분출 30ms씩 장별 시간')
- ok(near(w[1].pos.x,5+79*1.2/100) and near(w[1].pos.y,1*1.2/100) and near(w[1].scale.x,1.2),'접점 = 발 + (79,+1)px × 몸 배율 1.2 (세계 위 + · 슬램 부호 정정) · 그림도 몸 화소 밀도')
+ local w=onlyMs('sw')
+ ok(#w==16 and w[1].ruid=='sw1' and near(w[1].at,t0) and near(w[4].at-t0,0.12,TICK+1e-9),'한 층 16장 t0 시작 · 4번째 장 120ms ±1화면 (뒤 층 지연 없음)')
+ local lay=true for i=1,16 do if w[i].opt.OrderInLayer~=(i<=3 and 6 or 1) then lay=false end end
+ ok(lay,'축광 1~3장 몸 앞(order 6) · 분출 4~16장 몸 뒤(order 1)')
+ ok(near(w[16].at-w[4].at,0.03*12,TICK+1e-9),'분출 30ms씩 장별 시간')
+ ok(near(w[1].pos.x,5-30*1.2/100) and near(w[1].pos.y,2*1.2/100) and near(w[1].scale.x,1.2) and w[1].opt.FlipX==false,'접점 = 발 + (-30,+2)px × 몸 배율 1.2 (왼쪽 방패 아래 · 위 +) · 그림도 몸 화소 밀도 · 원 방향')
  reset() giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
  SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
  w=onlyMs('sw')
- ok(near(w[1].pos.x,5-79*1.2/100) and w[1].opt.FlipX==true and w[1].scale.x>0,'거울 몸(Scale.x<0 · 오른쪽 봄): 접점 -79px · FlipX 같은 부호 (facing 인자 무관)')
+ ok(near(w[1].pos.x,5+30*1.2/100) and w[1].opt.FlipX==true and w[1].scale.x>0,'거울 몸(Scale.x<0 · 오른쪽 봄): 접점 +30px · FlipX 같은 부호 (facing 인자 무관)')
  giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
  -- 함성: 12장 × 50ms t0 · 축광 동안 몸을 따라가다 6번째 장(250ms)부터 방사 원점 고정
@@ -280,9 +291,9 @@ do
  local lay=true for i=1,12 do if r[i].opt.OrderInLayer~=(i<=5 and 6 or 1) then lay=false end end
  ok(lay,'함성 층: 축광 1~5장 앞층 · 방사 6~12장 뒤층 (정본 behind_radial)')
  SkillEffects.FxGiantRoarOpts=DEF.roar SkillEffects.FxGiantRoarSeq=''
- -- 슬램 뒤 층 120ms 예약: 그 사이 맵을 옮기면 재생 안 함 (앞 축광은 t0에 이미)
+ -- 슬램 뒤 층 120ms 예약(first=4 계약 · B 기본 계약은 한 층 t0라 예약 없음 — 예약 경로는 계약으로 남아 있음): 그 사이 맵을 옮기면 재생 안 함 (앞 축광은 t0에 이미)
  reset()
- SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamFrontOpts=DEF.slamF
+ SkillEffects.FxGiantSlamOpts=DEF.slam..';first=4' SkillEffects.FxGiantSlamFrontOpts=DEF.slamF
  SkillEffects.FxGiantSlamSeq=seq('mw',16) SkillEffects.FxGiantSlamFront=seq('ms',3)
  SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35)
  run(0.05)
@@ -293,70 +304,124 @@ do
  reset() SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(0.05) giant.dead=true run(1)
  ok(#onlyMs('mw')==0,'앵커(거인)가 사라지면 예약 재생 안 함')
  giant.dead=nil
- SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
+ SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront='' SkillEffects.FxGiantSlamOpts=DEF.slam
 end
--- ⑨ 코덱스 확정 문양 좌표(기본값 그대로): 0~250ms 장별 (x, 위+) × 몸 배율/100 · 왼쪽 x만 반전 · 250ms 좌표 적용 뒤 고정 · 슬램 +1
+-- ⑨ B 문양 좌표(기본값 그대로 · 10-31 갈래 F): index 5 = 코덱스 glyph_latch (-91,-97)→(-91,+97) · 0~4 = B 몸 그림 실측 · ×몸 배율/100 · 거울 몸 x만 반전 · 250ms 고정 · 슬램 (-30,+2)
 do
- local function onlyMs(prefix) local t={} for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
- local GX={-43.42,31.59,39.87,40.50,58.52,59.46} local GY={74.56,83.10,65.11,84.31,99.06,107.79}
+ local function onlyMs(prefix) local t={ } for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
+ local GX={ -57.6,-43.0,-61.9,-89.0,-93.2,-91 } local GY={ 80.2,77.5,89.9,116.9,93.1,97 }
  reset()
  SkillEffects.FxGiantRoarOpts=DEF.roar SkillEffects.FxGiantRoarSeq=seq('rq',12)
  giant.TransformComponent.WorldPosition=Vector3(2,1,0) giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
  local r=onlyMs('rq') local okr=true
  for i=1,6 do if not near(r[i].pos.x,2-GX[i]*0.012) or not near(r[i].pos.y,1+GY[i]*0.012) then okr=false end end
- ok(okr,'확정 문양 좌표 6장 적용 · 오른쪽 몸(Scale.x<0)은 x 반전 (몸 |배율| 1.2 · 위 + 그대로)')
- local fixed=true for i=7,12 do if not near(r[i].pos.x,2-59.46*0.012) or not near(r[i].pos.y,1+107.79*0.012) then fixed=false end end
- ok(fixed,'250ms: index 5 좌표 적용한 세계 자리로 고정 · 이후 추적 없음')
+ ok(okr,'B 문양 좌표 6장 적용 · 오른쪽 몸(Scale.x<0)은 x 반전 (몸 |배율| 1.2 · 위 + 그대로)')
+ local fixed=true for i=7,12 do if not near(r[i].pos.x,2-GX[6]*0.012) or not near(r[i].pos.y,1+GY[6]*0.012) then fixed=false end end
+ ok(fixed,'250ms: index 5 좌표(코덱스 latch -91,+97) 적용한 세계 자리로 고정 · 이후 추적 없음')
  reset() giant.TransformComponent.Scale=Vector3(1.2,1.2,1) SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
  r=onlyMs('rq')
- ok(near(r[1].pos.x,2-43.42*0.012) and near(r[1].pos.y,1+74.56*0.012) and near(r[12].pos.x,2+59.46*0.012),'왼쪽 몸(Scale.x>0 · 원 그림 방향): 원 PNG x 그대로 · y 그대로')
+ ok(near(r[1].pos.x,2+GX[1]*0.012) and near(r[1].pos.y,1+GY[1]*0.012) and near(r[12].pos.x,2+GX[6]*0.012),'왼쪽 몸(Scale.x>0 · 원 그림 방향): 원 PNG x 그대로(방패 = 왼쪽 -x) · y 그대로')
  -- 지연 타이머 반례: 5번째 장(index 4)이 250ms 뒤(260ms)에 와도 그 좌표로 고정하지 않고 6번째 장에서 index 5 좌표로 고정
  reset() giant.TransformComponent.Scale=Vector3(-1.2,1.2,1)
  local base=_UtilLogic.ElapsedSeconds
  timerShift=function(due) if due>base+0.19 and due<base+0.21 then return base+0.26 end return due end
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1) timerShift=nil
  r=onlyMs('rq')
- ok(r[5].at-base>0.25 and near(r[5].pos.x,2-58.52*0.012) and near(r[5].pos.y,1+99.06*0.012),'지연된 5번째 장(260ms)은 자기 좌표(index 4)로 · 고정 아님')
- ok(near(r[6].pos.x,2-59.46*0.012) and near(r[6].pos.y,1+107.79*0.012) and near(r[12].pos.x,r[6].pos.x) and near(r[12].pos.y,r[6].pos.y),'6번째 장 도달에서 index 5 좌표로 고정 (시간·장 중 늦은 쪽)')
+ ok(r[5].at-base>0.25 and near(r[5].pos.x,2-GX[5]*0.012) and near(r[5].pos.y,1+GY[5]*0.012),'지연된 5번째 장(260ms)은 자기 좌표(index 4)로 · 고정 아님')
+ ok(near(r[6].pos.x,2-GX[6]*0.012) and near(r[6].pos.y,1+GY[6]*0.012) and near(r[12].pos.x,r[6].pos.x) and near(r[12].pos.y,r[6].pos.y),'6번째 장 도달에서 index 5 좌표로 고정 (시간·장 중 늦은 쪽)')
  SkillEffects.FxGiantRoarSeq='' giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
- ok(SkillEffects:FxOpts(DEF.slam).aypx==1 and SkillEffects:FxOpts(DEF.slamF).aypx==1 and SkillEffects:FxOpts(DEF.slam).axpx==79,'슬램 접점 세계용 (79, +1) — 뒤·앞 층 같은 부호')
+ ok(SkillEffects:FxOpts(DEF.slam).aypx==2 and SkillEffects:FxOpts(DEF.slamF).aypx==2 and SkillEffects:FxOpts(DEF.slam).axpx==-30 and SkillEffects:FxOpts(DEF.slamF).axpx==-30,'슬램 접점 B (-30, +2) — 뒤·앞 계약 같은 부호')
 end
--- ⑩ 몸 부착 FX 좌우 부호 (코덱스 c4a6c285 · f502/f504): 실제 렌더 몸(대역 Scale.x 부호 × FlipX)이 기준 — 대상 방향(facing) 아님
+-- ⑩ 몸 부착 FX 좌우 부호 (코덱스 c4a6c285 · f502/f504): 실제 렌더 몸(대역 Scale.x 부호 × FlipX)이 기준 — 대상 방향(facing) 아님 (B 좌표로 10-31 갱신)
 do
- local function onlyMs(prefix) local t={} for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
+ local function onlyMs(prefix) local t={ } for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
  local K=0.66
+ local GX={ -57.6,-43.0,-61.9,-89.0,-93.2,-91 }
  SkillEffects.FxGiantRoarOpts=DEF.roar SkillEffects.FxGiantRoarSeq=seq('ro',12)
  SkillEffects.FxGiantSlamOpts=DEF.slam SkillEffects.FxGiantSlamFrontOpts=DEF.slamF SkillEffects.FxGiantSlamSeq=seq('sw',16) SkillEffects.FxGiantSlamFront=seq('ss',3)
  giant.TransformComponent.WorldPosition=Vector3(0,0,0)
- -- ① 오른쪽 몸(Scale.x<0): 함성 gx>0 장 → 세계 x<0 (6장 59.46 → -0.392) · FlipX true
+ -- ① 오른쪽 몸(Scale.x<0): 문양(원 그림 -x) → 세계 +x (6장 -91 → +0.601) · FlipX true
  reset() giant.TransformComponent.Scale=Vector3(-K,K,1) giant.SpriteRendererComponent.FlipX=false
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6) run(1)
  local r=onlyMs('ro')
- ok(near(r[6].pos.x,-59.46*K/100) and near(-59.46*K/100,-0.392,0.001) and r[2].pos.x<0 and r[6].opt.FlipX==true and r[1].opt.FlipX==true,'오른쪽 몸: 함성 6장 x -0.392 · gx>0 장 세계 x<0 · FlipX 같은 부호 '..r[6].pos.x)
- -- ② 왼쪽 몸(Scale.x>0): 반대 (+0.392 · FlipX false) — facing 인자를 반대로 줘도 몸 기준
+ ok(near(r[6].pos.x,-GX[6]*K/100) and near(-GX[6]*K/100,0.601,0.001) and r[2].pos.x>0 and r[6].opt.FlipX==true and r[1].opt.FlipX==true,'오른쪽 몸: 함성 6장 x +0.601 · 원 -x 문양이 세계 +x · FlipX 같은 부호 '..r[6].pos.x)
+ -- ② 왼쪽 몸(Scale.x>0): 반대 (-0.601 · FlipX false) — facing 인자를 반대로 줘도 몸 기준
  reset() giant.TransformComponent.Scale=Vector3(K,K,1)
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),-1,6,6,0,0.6) run(1)
  r=onlyMs('ro')
- ok(near(r[6].pos.x,59.46*K/100) and r[2].pos.x>0 and r[6].opt.FlipX==false,'왼쪽 몸: 함성 6장 x +0.392 · FlipX false (facing -1 무시)')
- -- ③ 슬램 ax +79 같은 규칙: 오른쪽 몸 -0.521 · 왼쪽 몸 +0.521 · 앞 별·뒤 분출 같은 접점·같은 FlipX
+ ok(near(r[6].pos.x,GX[6]*K/100) and r[2].pos.x<0 and r[6].opt.FlipX==false,'왼쪽 몸: 함성 6장 x -0.601 · FlipX false (facing -1 무시)')
+ -- ③ 슬램 axpx -30 같은 규칙: 오른쪽 몸 +0.198 · 왼쪽 몸 -0.198 · 앞 별(계약이 있으면)·뒤 분출 같은 접점·같은 FlipX
  reset() giant.TransformComponent.Scale=Vector3(-K,K,1)
  SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),1,3.2,3.2,0,0.35) run(1)
  local w,st=onlyMs('sw'),onlyMs('ss')
- ok(near(w[1].pos.x,-79*K/100) and near(st[1].pos.x,-79*K/100) and near(-79*K/100,-0.521,0.001) and w[1].opt.FlipX==true and st[1].opt.FlipX==true and near(w[1].pos.y,1*K/100),'오른쪽 몸 슬램: 접점 x -0.521 · 앞 별·뒤 분출 일치 · FlipX true · y +1px 그대로')
+ ok(near(w[1].pos.x,30*K/100) and near(st[1].pos.x,30*K/100) and near(30*K/100,0.198,0.001) and w[1].opt.FlipX==true and st[1].opt.FlipX==true and near(w[1].pos.y,2*K/100),'오른쪽 몸 슬램: 접점 x +0.198 · 앞 별·뒤 분출 일치 · FlipX true · y +2px')
  reset() giant.TransformComponent.Scale=Vector3(K,K,1)
  SkillEffects:GiantMoveFxOn('slam',giant,Vector3(0,0,0),-1,3.2,3.2,0,0.35) run(1)
  w,st=onlyMs('sw'),onlyMs('ss')
- ok(near(w[1].pos.x,79*K/100) and near(st[1].pos.x,79*K/100) and w[1].opt.FlipX==false and st[1].opt.FlipX==false,'왼쪽 몸 슬램: 접점 x +0.521 · FlipX false')
+ ok(near(w[1].pos.x,-30*K/100) and near(st[1].pos.x,-30*K/100) and w[1].opt.FlipX==false and st[1].opt.FlipX==false,'왼쪽 몸 슬램: 접점 x -0.198 · FlipX false')
  -- ④ FlipX 합성 반전: Scale.x<0 이면서 SpriteRenderer.FlipX=true → 원 그림 방향(+) · 추적 중 몸이 돌면 다음 장부터 반영 · 고정 뒤엔 고정
  reset() giant.TransformComponent.Scale=Vector3(-K,K,1) giant.SpriteRendererComponent.FlipX=true
  SkillEffects:GiantMoveFxOn('roar',giant,Vector3(0,0,0),1,6,6,0,0.6)
  run(0.06) giant.SpriteRendererComponent.FlipX=false run(1)
  r=onlyMs('ro')
- ok(r[1].pos.x<0 and r[1].opt.FlipX==false and near(r[1].pos.x,-43.42*K/100),'Scale.x<0 × FlipX = 원 방향: 1장 x = 원 PNG -43.42 그대로 · FlipX false')
- ok(near(r[3].pos.x,-39.87*K/100) and r[3].opt.FlipX==true and near(r[12].pos.x,-59.46*K/100) and r[12].opt.FlipX==true,'추적 중 몸이 돌면 다음 장부터 새 부호 (위치·FlipX 함께) · 고정 뒤 유지')
+ ok(r[1].pos.x<0 and r[1].opt.FlipX==false and near(r[1].pos.x,GX[1]*K/100),'Scale.x<0 × FlipX = 원 방향: 1장 x = 원 PNG -57.6 그대로 · FlipX false')
+ ok(near(r[3].pos.x,-GX[3]*K/100) and r[3].opt.FlipX==true and near(r[12].pos.x,-GX[6]*K/100) and r[12].opt.FlipX==true,'추적 중 몸이 돌면 다음 장부터 새 부호 (위치·FlipX 함께) · 고정 뒤 유지')
  giant.SpriteRendererComponent.FlipX=false giant.TransformComponent.Scale=Vector3(1.2,1.2,1)
  SkillEffects.FxGiantRoarSeq='' SkillEffects.FxGiantSlamSeq='' SkillEffects.FxGiantSlamFront=''
+end
+-- ⑪ 10-31 갈래 F B 전체 프레임 새 계약: 메테오 낙하/착지 나눔·유지 · 돌진 시작점 피벗·좌우 · X 베기 장별 30ms · 노바 한 층
+do
+ local function onlyMs(prefix) local t={ } for _,p in ipairs(plays) do if p.ruid:match('^'..prefix..'%d+$') then table.insert(t,p) end end return t end
+ local M0,MO=SkillEffects.FxGiantFireMeteor,SkillEffects.FxGiantFireMeteorOpts
+ ok(MO~='' and #Util:Frames(M0)==12,'메테오 B 기본값: 12장 + 계약')
+ SkillEffects.FxGiantFireMeteor=seq('mt',12)
+ reset() local t0=_UtilLogic.ElapsedSeconds
+ SkillEffects:GiantMoveFx('meteor_fall',Vector3(0,0,0),3.6,3.6,0,0.5) run(2)
+ local f=onlyMs('mt')
+ local pl=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx play kind=meteor_fall',1,true) then pl=x end end
+ ok(#f==6 and f[1].ruid=='mt1' and f[6].ruid=='mt6' and near(f[1].at,t0) and near(f[6].at-t0,0.25,TICK+1e-9) and f[1].opt.OrderInLayer==6,'메테오 낙하 = 1~6장(impact 7 앞) · 50ms씩 · t0 · 몸 앞')
+ ok(pl~=nil and near(tonumber(pl:match('elapsed=([%d%.]+)')),0.5,TICK+0.031),'마지막 낙하 장을 착지 순간(fall 0.5초)까지 유지 '..tostring(pl))
+ reset() t0=_UtilLogic.ElapsedSeconds
+ SkillEffects:GiantMoveFx('meteor_land',Vector3(0,0,0),3.6,3.6,0,1.5) run(3)
+ f=onlyMs('mt')
+ pl=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx play kind=meteor_land',1,true) then pl=x end end
+ ok(#f==6 and f[1].ruid=='mt7' and f[6].ruid=='mt12' and near(f[1].at,t0) and f[1].opt.OrderInLayer==1,'메테오 착지 = 7~12장 · 부른 순간 바로(앞 장 시간만큼 늦추지 않음) · 몸 뒤')
+ ok(pl~=nil and near(tonumber(pl:match('elapsed=([%d%.]+)')),1.5,TICK+0.031),'그을림 마지막 장을 scorch 1.5초까지 유지 '..tostring(pl))
+ ok(near(f[1].scale.x,(100/56)*3.6/4.0),'크기 = ref 4.0칸 그림을 지름 3.6에 (옛 계약 그대로)')
+ SkillEffects.FxGiantFireMeteor=M0
+ -- 돌진: 피벗(그림 오른끝) = 시작점 · 그림 -x가 돌진 방향 · 세운 채 좌우만
+ local D0=SkillEffects.FxGiantDashSeq
+ ok(#Util:Frames(D0)==12,'돌진 B 기본값 12장')
+ SkillEffects.FxGiantDashSeq=seq('ds',12)
+ reset() SkillEffects:GiantMoveFx('dash',Vector3(-2,0,0),4,0.8,180,0.4) run(1)
+ f=onlyMs('ds')
+ ok(#f==12 and near(f[1].pos.x,0) and f[1].angle==0 and f[1].opt.FlipX==false and near(f[2].at-f[1].at,0.025,TICK+1e-9),'왼쪽 돌진(0 → -4): 피벗 = 시작점 x 0 · 각 0 · 뒤집기 없음(그림 원 방향 = 왼쪽) · 25ms')
+ ok(near(f[1].scale.x,4/2.56) and near(f[1].scale.y,0.8/0.96),'길이 4칸·폭 0.8칸으로 늘임 (256×96)')
+ reset() SkillEffects:GiantMoveFx('dash',Vector3(2,0,0),4,0.8,0,0.4) run(1)
+ f=onlyMs('ds')
+ ok(near(f[1].pos.x,0) and f[1].angle==0 and f[1].opt.FlipX==true and f[1].scale.x>0,'오른쪽 돌진(0 → 4): 피벗 = 시작점 · 각 0 + FlipX (상하 뒤집힘 없음)')
+ reset() SkillEffects:GiantMoveFx('dash',Vector3(0,2,0),4,0.8,90,0.4) run(1)
+ f=onlyMs('ds')
+ ok(near(f[1].pos.x,0,1e-6) and near(f[1].pos.y,0,1e-6),'위로 돌진: 피벗 = 시작점 (0,0)')
+ SkillEffects.FxGiantDashSeq=D0
+ -- X 베기: 장별 30ms · 교차점 그대로
+ local X0=SkillEffects.FxGiantFlurry
+ ok(#Util:Frames(X0)==12,'X 베기 B 기본값 12장')
+ SkillEffects.FxGiantFlurry=seq('xf',12)
+ reset() SkillEffects:GiantMoveFx('flurry',Vector3(1,1,0),2.3,2.3,0,0.15) run(1)
+ f=onlyMs('xf')
+ ok(#f==12 and near(f[12].at-f[1].at,0.03*11,TICK+1e-9) and near(f[1].pos.x,1) and near(f[1].pos.y,1) and f[1].opt.OrderInLayer==6,'X 베기 12장 × 30ms · 접점 자리 그대로 · 몸 앞')
+ SkillEffects.FxGiantFlurry=X0
+ -- 노바 B: 앞 층 비움 → 한 층(몸 뒤) · 장별 ms · 정점 160ms
+ local N0,NF=DEF.novaV2,DEF.novaV2F
+ ok(NF=='' and #Util:Frames(N0)==16,'노바 B 기본값: 16장 한 층 · 앞 층 비움')
+ SkillEffects.FxGiantNovaV2=seq('nb',16)
+ ok(near(SkillEffects:GiantFxImpactSec('nova'),0.16),'노바 정점 = 160ms (index 6)')
+ reset() SkillEffects:GiantMoveFx('nova',Vector3(0,0,0),7.5,7.5,0,0.16) run(2)
+ f=onlyMs('nb')
+ ok(#f==16 and f[1].opt.OrderInLayer==1 and near(f[7].at-f[1].at,0.16,TICK+1e-9),'노바 한 층 16장 · 몸 뒤 · 7번째 장 160ms')
+ SkillEffects.FxGiantNovaV2=''
 end
 -- ⑥ 새 그림이 비면 지금 그림 그대로 (옛 66장 경로)
 do
@@ -376,8 +441,11 @@ do
  sf=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx kind=rift ',1,true) then sf=x end end
  ok(#plays==4 and sf:find('sec=0.083 rule=sec',1,true)~=nil,'균열: 지금 4장 rise/3')
  reset()
+ local M0,MO=SkillEffects.FxGiantFireMeteor,SkillEffects.FxGiantFireMeteorOpts
+ SkillEffects.FxGiantFireMeteor=seq('m',6) SkillEffects.FxGiantFireMeteorOpts=''   -- 옛 6장 경로 (B 계약 없음)
  SkillEffects:GiantMoveFx('meteor_land',Vector3(0,0,0),3.6,3.6,0,1.5)
  run(2)
+ SkillEffects.FxGiantFireMeteor=M0 SkillEffects.FxGiantFireMeteorOpts=MO
  sf=nil for _,x in ipairs(logs) do if x:find('[VRF] giant fx kind=meteor_land ',1,true) then sf=x end end
  ok(sf:find('n=4 sec=0.100 rule=sec',1,true)~=nil,'메테오 착지 3~6장 0.1초 그대로')
  reset()
@@ -385,4 +453,4 @@ do
  run(1)
  ok(#plays==1 and plays[1].ruid==SkillEffects.FxGiantRoar,'함성: 새 그림 없으면 지금 고리 한 장')
 end
-print(string.format('[quality/giant_fx_playback] 48 V2 %d checks: frame rule spec-first (sec/impact/cycle/span/fit > floor 0.04) · nova 16/16 no skip impact@burst peak fade · spin 2 layers 4 laps continuous follow no vertical flip · 0.03 overlap no blank · slam contact anchor facing FlipX · legacy unchanged', checks))
+print(string.format('[quality/giant_fx_playback] 48 V2 %d checks: frame rule spec-first (sec/impact/cycle/span/fit > floor 0.04) · nova 16/16 no skip impact@burst peak fade · spin 2 layers 4 laps continuous follow no vertical flip · 0.03 overlap no blank · slam contact anchor facing FlipX · legacy unchanged · B full216 (spin blade/dust anchors · slam one layer orders · glyph track · meteor split+hold · dash start pivot · flurry 30ms · nova one layer)', checks))

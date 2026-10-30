@@ -46,11 +46,12 @@ const BODY_RULES = {
     skill2: { name: "땅 가르기", ranges: [[6, 6, "old"], [12, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.6] },
   },
   twin: {
-    skill2: { name: "돌진", ranges: [[4, 6, "old"]], loop: false, hits: [1, 1], sec: [0.2, 1.0] },
+    skill1: { name: "연속 베기", ranges: [[12, 12, "v2"]], loop: "any", hits: [1, 1], sec: [0.2, 1.0] },   // 10-31 갈래 F: B 전체 프레임 12 × 30ms · 접점 index 6 (없으면 평타 그림 반복)
+    skill2: { name: "돌진", ranges: [[4, 6, "old"], [12, 12, "v2"]], loop: false, hits: [1, 1], sec: [0.2, 1.0] },
   },
   mage: {
-    skill1: { name: "화염 노바(기도 앞 장 재사용)", ranges: [[3, 3, "old"]], loop: false, hits: [0, 1], sec: [0.3, 1.2] },
-    skill2: { name: "기도 메테오", ranges: [[6, 6, "old"]], loop: "any", hits: [0, 1], sec: [0.3, 1.5] },
+    skill1: { name: "화염 노바(구 납품 = 기도 앞 장 재사용 · B = 노바 몸 12)", ranges: [[3, 3, "old"], [12, 12, "v2"]], loop: false, hits: [0, 1], sec: [0.3, 1.2] },
+    skill2: { name: "기도 메테오", ranges: [[6, 6, "old"], [12, 12, "v2"]], loop: "any", hits: [0, 1], sec: [0.3, 1.5] },
   },
   basic: {},
 };
@@ -62,13 +63,21 @@ const FX_RULES = {
   rift: { form: "greatsword", name: "땅 가르기 균열", ranges: [[16, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.4, 1.6], legacy: ["GameConst", "FxGiantRift"] },
   slam: { form: "shield", name: "방패 내려찍기 충격", ranges: [[12, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.5], legacy: ["GameConst", "FxGiantSlam"] },
   roar: { form: "shield", name: "도발 함성 문양·방사", ranges: [[12, 12, "v2"]], loop: false, hits: [0, 1], sec: [0.4, 1.6], legacy: ["SkillEffects", "FxGiantRoar"] },
+  // 10-31 갈래 F (코덱스 B 전체 프레임): 쌍칼 돌진 자취 · 쌍칼 연속 베기 X · 기도 메테오 낙하(0~5)·착지(6~11) — 장 12 · 타격(정점) 칸 index 6
+  dash: { form: "twin", name: "쌍칼 돌진 자취", ranges: [[12, 12, "v2"]], loop: false, hits: [1, 1], sec: [0.2, 1.0], legacy: ["GameConst", "FxGiantDash"] },
+  flurry: { form: "twin", name: "쌍칼 연속 베기 X", ranges: [[12, 12, "v2"]], loop: false, hits: [1, 1], sec: [0.2, 1.0], legacy: ["SkillEffects", "FxGiantFlurry"] },
+  meteor: { form: "mage", name: "기도 메테오 낙하·착지", ranges: [[12, 12, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.5], legacy: ["SkillEffects", "FxGiantFireMeteor"] },
 };
 // 48 V2 B 새 자리 (B 73fc0393 · SkillEffects): 층 → [연속본 속성, 계약(*Opts) 속성, order, 메모]. "" = 한 층 납품 · rear = 몸 뒤 · front = 몸 앞 (back = rear 별칭)
 //   *Opts 계약 키 (B fx_slots): w·h(원본 px) · ref(그림이 그려진 세계 지름 칸 · 56px=1칸) · impact(타격 칸 1부터 = hitFrame+1) · sec · span · order · ax·ay · face · flip
 //   노바 앞 층(작은 중앙 섬광)은 B에 자리가 없다 → 제안 이름 FxGiantNovaFront(+Opts) · 한 층으로 쓰면 원본 합본을 FxGiantNova에
 const FX_SLOTS = {
   nova: { "": ["FxGiantNova", "FxGiantNovaOpts", 1, ""], rear: ["FxGiantNova", "FxGiantNovaOpts", 1, "층 나눔 시 뒤 층(바닥 광선·파편)"], front: ["FxGiantNovaFront", "FxGiantNovaFrontOpts", 6, "제안 — B 자리 없음 (작은 중앙 섬광)"] },
-  spin: { "": ["FxGiantSpinFront", "FxGiantSpinOpts", 6, "한 층이면 앞 자리"], rear: ["FxGiantSpinBack", "FxGiantSpinOpts", 1, ""], front: ["FxGiantSpinFront", "FxGiantSpinOpts", 6, ""] },
+  spin: { "": ["FxGiantSpinFront", "FxGiantSpinOpts", 6, "한 층이면 앞 자리 (B 합본 = 재료 지도 · 런타임은 blade/dust 2층)"], rear: ["FxGiantSpinBack", "FxGiantSpinOpts", 1, ""], front: ["FxGiantSpinFront", "FxGiantSpinOpts", 6, ""],
+    blade: ["FxGiantSpinFront", "FxGiantSpinFrontOpts", 6, "B 칼날 호 (몸 root +80px 위 · 몸 앞)"], dust: ["FxGiantSpinBack", "FxGiantSpinBackOpts", 1, "B 먼지 (몸 root · 몸 뒤)"] },
+  dash: { "": ["FxGiantDashSeq", "FxGiantDashOpts", 1, "B 돌진 자취 (피벗 1.0 = 시전 시작점 · 그림 앞쪽 = -x)"] },
+  flurry: { "": ["FxGiantFlurry", "FxGiantFlurryOpts", 6, "B X 베기 (교차점 96,64 = 타격 접점)"] },
+  meteor: { "": ["FxGiantFireMeteor", "FxGiantFireMeteorOpts", 1, "B 낙하 0~5 · 착지 6~11 (impact 7)"] },
   rift: { "": ["FxGiantRiftSeq", "FxGiantRiftOpts", 1, ""] },
   slam: { "": ["FxGiantSlamSeq", "FxGiantSlamOpts", 1, ""], rear: ["FxGiantSlamSeq", "FxGiantSlamOpts", 1, "분출·바닥 충격"], front: ["FxGiantSlamFront", "FxGiantSlamFrontOpts", 6, "접점 광"] },
   roar: { "": ["FxGiantRoarSeq", "FxGiantRoarOpts", 1, "방사는 몸 뒤(납품 behind_radial) — 지금 B 기본 order 6과 다르면 부모가 Opts order로"], front: ["FxGiantRoarFront", "FxGiantRoarFrontOpts", 6, "제안 — B 자리 없음 (축광 0~4 앞 별)"] },
@@ -91,6 +100,18 @@ const canonRows = (rows, formOf) => rows.map((r) => {
   const to = (STATE_ALIAS[formOf(r)] || {})[r.state];
   return to ? Object.assign({}, r, { state: to, rawState: r.state }) : r;
 });
+// 10-31 갈래 F: 코덱스 B 전체 프레임(키 giant-B-…)은 같은 몸 동작(종·동작)·같은 효과 이름의 예전 줄(V2 full133·48 연속본)을 대신한다 —
+//   예전 줄은 대기표에 기록으로 남기되(키·sha·RUID 형식·RUID 중복은 그대로 검사) 장 수·시간·타격 칸 검사와 등록(monster_frames·효과 자리)에서는 뺀다
+const B_PREFIX = "giant-B-";
+const isB = (r) => String(r.key || "").startsWith(B_PREFIX);
+const groupOf = (r) => (r.kind === "frame" ? "f|" + r.form + "|" + r.state : r.kind === "fx" ? "x|" + r.state : "");
+function supersede(rows) {
+  const hasB = new Set(rows.filter(isB).map(groupOf));
+  const active = [], superseded = [];
+  for (const r of rows) (groupOf(r) !== "" && hasB.has(groupOf(r)) && !isB(r) ? superseded : active).push(r);
+  return { active, superseded };
+}
+const keyPre = (r) => (isB(r) ? B_PREFIX : "giant-");
 const BLEND_RE = /blend|tween|interp|crossfade|mix|ghost-?frame/i;   // 스틸 블렌드 의심 이름 (매니페스트 표시 · 파일 이름)
 const HEAD = ["key", "kind", "form", "state", "frame", "frame_index0", "file", "sha256", "width", "height", "pivot_x", "pivot_y", "filter", "wrap", "duration_ms", "loop", "hit", "animation_key", "ruid", "layer", "derived", "source_index0", "source_key"];
 const HEX = "0123456789abcdef";
@@ -236,13 +257,17 @@ function checkAll(rows) {
   rows = canonRows(rows, (r) => (r.kind === "frame" ? r.form : ""));
   const out = { errors: [], warnings: [], summary: [] };
   const bad = out.errors;
+  const all = rows;
+  const sup = supersede(rows);
+  rows = sup.active;
+  if (sup.superseded.length) out.summary.push("B 전체 프레임이 대신한 예전 줄 " + sup.superseded.length + " (" + [...new Set(sup.superseded.map(groupOf))].join(" · ") + ") — 기록만 · 검사·등록 제외");
   const frames = rows.filter((r) => r.kind === "frame"), icons = rows.filter((r) => r.kind === "ui_icon"), fx = rows.filter((r) => r.kind === "fx");
   const base = frames.filter((r) => STATES.some(([st]) => st === r.state));
   if (base.length !== FORMS.length * 30) bad.push("몸 프레임 " + base.length + " ≠ 150");
   if (icons.length !== FORMS.length) bad.push("HUD 아이콘 " + icons.length + " ≠ 5");
-  for (const r of rows) if (!["frame", "ui_icon", "fx"].includes(r.kind)) bad.push(r.key + " kind '" + r.kind + "' — frame·ui_icon·fx 중 하나");
+  for (const r of all) if (!["frame", "ui_icon", "fx"].includes(r.kind)) bad.push(r.key + " kind '" + r.kind + "' — frame·ui_icon·fx 중 하나");
   const keys = new Set();
-  for (const r of rows) {
+  for (const r of all) {
     if (keys.has(r.key)) bad.push("키 중복 " + r.key);
     keys.add(r.key);
     if (r.ruid !== "" && !isRuid(r.ruid)) bad.push(r.key + " RUID 형식 " + r.ruid);
@@ -250,7 +275,7 @@ function checkAll(rows) {
     if (r.filter !== "Point" || r.wrap !== "Clamp") bad.push(r.key + " filter/wrap " + r.filter + "/" + r.wrap);
   }
   const ruidSha = new Map();
-  for (const r of rows) if (isRuid(r.ruid)) {
+  for (const r of all) if (isRuid(r.ruid)) {
     if (ruidSha.has(r.ruid) && ruidSha.get(r.ruid) !== r.sha256) bad.push(r.key + " RUID가 다른 그림과 같음 " + r.ruid);
     ruidSha.set(r.ruid, r.sha256);
   }
@@ -277,7 +302,7 @@ function checkAll(rows) {
       if (list.length === 0) continue;
       const v2 = rule.ranges.some(([lo, hi, tier]) => tier === "v2" && list.length >= lo && list.length <= hi);
       list.forEach((r, i) => {
-        if (stepKey("giant-" + form + "-" + (r.rawState || state) + "-", r, i)) bad.push(r.key + " 칸 번호/키");
+        if (stepKey(keyPre(r) + form + "-" + (r.rawState || state) + "-", r, i)) bad.push(r.key + " 칸 번호/키");
         if (!v2 && (Number(r.pivot_x) !== 0.5 || Number(r.pivot_y) !== 0.03125 || Number(r.height) !== 192)) bad.push(r.key + " 피벗·높이 (구 납품 = 192 · 발 0.03125)");
         const px = Number(r.pivot_x), py = Number(r.pivot_y);
         if (v2 && (!(px >= 0 && px <= 1 && py >= 0 && py <= 1) || !(Number(r.width) > 0 && Number(r.height) > 0))) bad.push(r.key + " 피벗·크기");
@@ -306,7 +331,7 @@ function checkAll(rows) {
     const list = rowsG.sort((a, b) => a.frame_index0 - b.frame_index0);
     const label = "효과 " + name + (layer ? "(" + layer + ")" : "");
     list.forEach((r, i) => {
-      if (stepKey("giant-fx-" + name + "-" + (r.layer ? r.layer + "-" : ""), r, i)) bad.push(r.key + " 칸 번호/키 (giant-fx-" + name + (r.layer ? "-" + r.layer : "") + "-NN)");
+      if (stepKey(keyPre(r) + "fx-" + name + "-" + (r.layer ? r.layer + "-" : ""), r, i)) bad.push(r.key + " 칸 번호/키 (giant-fx-" + name + (r.layer ? "-" + r.layer : "") + "-NN)");
       if (r.form !== rule.form) bad.push(r.key + " form '" + r.form + "' — " + rule.form);
       const px = Number(r.pivot_x), py = Number(r.pivot_y);
       if (!(px >= 0 && px <= 1 && py >= 0 && py <= 1) || !(Number(r.width) > 0 && Number(r.height) > 0)) bad.push(r.key + " 피벗·크기");
@@ -419,7 +444,7 @@ function crossManifest(rows, json) {
 
 // 대기표 → monster_frames 줄: form_giant_(종류) 6동작 + 있는 기술 몸 (RUID ; · 시간 초 ; · 반복 · 클립 없음 · impact = 타격 칸(hitFrame) 0부터)
 function framesRows(rows, form) {
-  rows = canonRows(rows, (r) => (r.kind === "frame" ? r.form : ""));
+  rows = supersede(canonRows(rows, (r) => (r.kind === "frame" ? r.form : ""))).active;
   const extra = Object.keys(BODY_RULES[form] || {}).filter((state) => rows.some((r) => r.kind === "frame" && r.form === form && r.state === state));
   return [...STATES.map(([state]) => state), ...extra].map((state) => {
     const list = rows.filter((r) => r.kind === "frame" && r.form === form && r.state === state).sort((a, b) => a.frame_index0 - b.frame_index0);
@@ -442,6 +467,7 @@ function fxOptsText(name, list, order) {
   return parts.join(";");
 }
 function fxStrings(rows) {
+  rows = supersede(rows).active;
   const out = [];
   for (const name of Object.keys(FX_RULES)) for (const layer of Object.keys(FX_SLOTS[name])) {
     const list = rows.filter((r) => r.kind === "fx" && r.state === name && layerOf(r) === layer).sort((a, b) => a.frame_index0 - b.frame_index0);
@@ -648,7 +674,8 @@ function crossMapping(rows, csvPath) {
     if (!r) { absent++; continue; }
     matched++;
     if (Number(r.width) !== Number(m.width) || Number(r.height) !== Number(m.height) || Number(r.pivot_x) !== Number(m.pivot_x) || Number(r.pivot_y) !== Number(m.pivot_y)) out.errors.push(r.key + " 크기·피벗이 정본과 다름 (" + m.width + "×" + m.height + " @" + m.pivot_x + "," + m.pivot_y + ")");
-    if (Number(r.frame_index0) !== Number(m.frame_index0)) out.errors.push(r.key + " 칸 번호 " + r.frame_index0 + " ≠ 정본 " + m.frame_index0);
+    const mi = m.frame_index0 !== undefined ? m.frame_index0 : m.index0;   // B 전체 프레임 정본은 index0 칸 이름
+    if (Number(r.frame_index0) !== Number(mi)) out.errors.push(r.key + " 칸 번호 " + r.frame_index0 + " ≠ 정본 " + mi);
     const abs = path.join(D, m.file);
     if (fs.existsSync(abs) && sha256(abs) !== r.sha256) out.errors.push(r.key + " sha256이 정본 그림과 다름 (" + m.file + ") — 정본으로 다시 인수");
   }
@@ -855,6 +882,27 @@ function selftest() {
       for (const [n, ok] of want) results.push({ name: "정본: " + n, ok, detail: JSON.stringify(fd.map((y) => [y.monster, y.state, y.impact, y.loop, y.canvas])) + " " + fx.map((y) => y.slot + " " + y.opts.slice(0, 40)).join(" | ") });
     } else results.push({ name: "정본 full133 (없음 — 건너뜀)", ok: true, detail: "" });
   }
+  // 10-31 갈래 F: 코덱스 B 전체 프레임(키 giant-B-…)이 같은 몸 동작·효과의 예전 줄을 대신한다 (예전 줄은 기록만 · 검사·등록 제외)
+  { const toB = (rows) => rows.map((r) => Object.assign(r, { key: "giant-B-" + r.key.slice(6), sha256: fake("B" + r.key) }));
+    const B = () => [
+      ...toB(seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 0, ms: 25, w: 384, h: 224, py: 38 / 224 })),
+      ...toB(seq("frame", "twin", "skill1", 12, { hitAt: 6, ms: 30 })), ...toB(seq("frame", "twin", "skill2", 12, { hitAt: 6, ms: 25 })),
+      ...toB(seq("frame", "mage", "skill1", 12, { hitAt: 6, msList: [20, 20, 25, 25, 35, 35, 25, 40, 80, 120, 160, 235] })), ...toB(seq("frame", "mage", "skill2", 12, { hitAt: 6, ms: 50 })),
+      ...toB(seq("fx", "twin", "dash", 12, { hitAt: 6, ms: 25, w: 256, h: 96 })), ...toB(seq("fx", "twin", "flurry", 12, { hitAt: 6, ms: 30, w: 192, h: 192 })),
+      ...toB(seq("fx", "mage", "meteor", 12, { hitAt: 6, ms: 50 })), ...toB(seq("fx", "greatsword", "spin", 16, { loop: true, ms: 25, w: 352, h: 176 }))];
+    const layers = ["blade", "dust"].flatMap((m) => toB(seq("fx", "greatsword", "spin", 16, { loop: true, ms: 25, w: 352, h: 176, layer: m })).map((r, i) => Object.assign(r, { derived: "true", source_index0: i })));
+    const rows = [...v2(), ...B(), ...layers];
+    const o = checkAll(rows);
+    expect("B 전체 프레임 + 예전 V2 줄 함께 (B가 대신 · 예전 줄은 기록만)", o, null);
+    results.push({ name: "B가 대신한 예전 줄 요약 (회전 몸 16 · 쌍칼 돌진 몸 6 · 회전 효과 16 = 38)", ok: o.summary.some((l) => l.includes("대신한 예전 줄 38")), detail: o.summary.filter((l) => l.includes("대신")).join(" | ") });
+    const mf = framesRows(rows, "greatsword").concat(framesRows(rows, "twin"));
+    const line = (m, st) => (mf.find((l) => l.startsWith("form_giant_" + m + "," + st + ",")) || "").split(",");
+    results.push({ name: "B 등록 줄: 대검 skill1 = B 16장 · 쌍칼 skill1 새 줄 12장 impact 6 · skill2 12장", ok: line("greatsword", "skill1")[2].split(";").length === 16 && line("twin", "skill1")[2].split(";").length === 12 && line("twin", "skill1")[6] === "6" && line("twin", "skill2")[2].split(";").length === 12, detail: mf.map((l) => l.split(",").slice(0, 2).join(" ")).join(" | ") });
+    const fx = fxStrings(rows);
+    results.push({ name: "B 효과 자리: 칼날 → FxGiantSpinFront · 먼지 → FxGiantSpinBack · 돌진 → FxGiantDashSeq · X → FxGiantFlurry · 메테오 → FxGiantFireMeteor", ok: ["FxGiantSpinFront", "FxGiantSpinBack", "FxGiantDashSeq", "FxGiantFlurry", "FxGiantFireMeteor"].every((sl) => fx.some((y) => y.slot === "SkillEffects." + sl && y.n >= 12)), detail: fx.map((y) => y.slot + " " + y.n).join(" | ") });
+    expect("B 키 번호 틀림", checkAll(rows.map((r) => (r.key === "giant-B-twin-skill1-03" ? Object.assign({ }, r, { key: "giant-B-twin-skill1-09" }) : r))), "칸 번호/키");
+    expect("B 쌍칼 연속 베기 11장", checkAll([...base(), ...toB(seq("frame", "twin", "skill1", 11, { hitAt: 6, ms: 30 }))]), "11장 — 허용");
+    expect("B 메테오 효과 타격 칸 없음", checkAll([...base(), ...toB(seq("fx", "mage", "meteor", 12, { ms: 50 }))]), "타격 칸 0개"); }
   // 매니페스트 교차 검증
   const vrows = v2();
   expect("매니페스트 sha 일치", crossManifest(vrows, { deliveries: [{ frames: vrows.slice(0, 5).map((r) => ({ key: r.key, sha256: r.sha256 })) }] }), null);

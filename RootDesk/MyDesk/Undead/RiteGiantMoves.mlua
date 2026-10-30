@@ -181,7 +181,9 @@ script RiteGiantMoves extends Logic
             self:LogCast(unit, 1, "spin", radius, dur)
             if not Environment:IsPublishedPlay() then log(string.format("[VRF] giant whirlwind start dir=%.2f,%.2f travel=%.2f stop=%.2f,%.2f path=%.2f dur=%.2f hits=%d", dir.x, dir.y, travel, stop.x, stop.y, path, dur, hitsN)) end
             -- 48 연출 V2: 칼날 호 그림은 거인 몸을 따라간다 · 한 바퀴 = 타격 간격 gap (SkillEffects.SpinCycle) · angle 0(통째 회전·상하 뒤집기 없음)
-            if fx ~= nil then fx:GiantMoveFxOn("spin", unit.Entity, Vector3(0, 0.3, 0), self:Facing(unit, target), radius * 2, radius * 2, 0, dur) end
+            --   10-31 갈래 F (B 전체 프레임): 칼날·먼지 두 층이 차 있으면 층마다 몸 root 기준 앵커(칼날 +80px 위 · 먼지 root)를 그림 계약이 정한다 → 부르는 쪽 높이 0 (옛 그림은 0.3칸 위 그대로)
+            local spinUp = (fx ~= nil and (fx.FxGiantSpinFront or "") ~= "" and (fx.FxGiantSpinBack or "") ~= "") and 0 or 0.3
+            if fx ~= nil then fx:GiantMoveFxOn("spin", unit.Entity, Vector3(0, spinUp, 0), self:Facing(unit, target), radius * 2, radius * 2, 0, dur) end
             local live = function()
                 -- 사망·갈라짐(Clear로 상태가 바뀜)·주인 사망·맵 이동이면 멈춤 (남은 이동·타격 타이머는 이 검사에서 끝난다)
                 return isvalid(unit.Entity) and unit.Giant and not unit.Dead and _Util:IsAlive(unit.OwnerPlayer) and unit.Entity.CurrentMap == map0

@@ -171,8 +171,17 @@ local fam,applied,pending,replaceRows={},0,0,0
 do
  local fh=io.open('docs/evidence/2026-10-30-s48v2-A/frames-remap.csv')
  ok(fh~=nil,'외형 연결표 frames-remap.csv 있음')
+ -- 10-31 갈래 F: B 전체 프레임 기술 몸 104장(V4 캔버스·같은 외형군 · keep)은 별도 연결표 — 두 표를 이어 읽는다
+ local lines={}
+ for line in fh:lines() do table.insert(lines,line) end
+ fh:close()
+ local fb=io.open('docs/evidence/2026-10-31-giant-full216/frames-remap-B.csv')
+ ok(fb~=nil,'B 기술 몸 연결표 frames-remap-B.csv 있음')
+ local first=true
+ for line in fb:lines() do if not first then table.insert(lines,line) end first=false end
+ fb:close()
  local head=nil
- for line in fh:lines() do
+ for _,line in ipairs(lines) do
   line=line:gsub('\r$','') local cols={} for c in (line..','):gmatch('([^,]*),') do table.insert(cols,c) end
   if head==nil then head={} for i,c in ipairs(cols) do head[c]=i end
   else
@@ -184,7 +193,6 @@ do
    end
   end
  end
- fh:close()
 end
 local forms={'basic','shield','greatsword','twin','mage'}
 MS.FrameIndex=nil
