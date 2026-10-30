@@ -114,6 +114,17 @@ script SkillEffects extends Component
     property number MeteorFallMul = 1.5         -- 낙하 1~6장 크기 배율 (계약 ref 4.0 크기 × 1.5) · 1이면 예전 크기
     property boolean MeteorTelegraphOnly = true -- 메테오 예고 = Util.Telegraph 화염 테두리·차오름만 (속성 바닥 그림(납작한 용암 고리 SpriteGroundFire)은 지운다) · false면 예전처럼 바닥 그림도
     property number GiantSlamHoldSec = 0.18     -- 방패 내려찍기 뒤 층(S18) 마지막 장 최소 유지 (예전 장별 30ms 그대로 → 0.39초에 끝)
+    -- 10-31 갈래 E2 (코덱스 2차 샘플 승인 4계열 전체 33장): 값만 되돌리면 예전 그대로 · 그림 칸(GameConst)을 비우면 예전 입자로
+    property integer FramesFxOrder = 6          -- FramesFx 기본 층 (몸 앞 · 폭발·파쇄·솟음·승격)
+    property number SacrificeFrameSec = 0.075   -- 그림자 희생(P31 · 8장) 장 간격 (코덱스 timing 75ms → 0.6초)
+    property number SacrificeHoldSec = 0.1      -- 마지막 장 추가 유지
+    property number SacrificeFadeSec = 0.15
+    property number SacrificeContentPx = 116    -- 희생 그림 보이는 지름(px · 가장 큰 장 03 116×113) = 판정 지름 2×1.8칸 (코덱스 renderer_scale_proposal 3.10)
+    property integer SacrificeOrder = 1         -- 배우 뒤 바닥 (MapLayer0 1 · 코덱스 「foreground not accepted」)
+    property number PrisonFrameSec = 0.1        -- 골격 감옥 묶임 장벽(P25 · 8장 반복) 장 간격 (코덱스 100ms)
+    property number PrisonReleaseSec = 0.1      -- 풀림 2장 장 간격
+    property number PrisonScale = 1.0           -- 128px = 1.28칸 (코덱스 renderer_scale_proposal 1 · 피벗 0.5/0.2 = 발)
+    property integer PrisonOrder = 6            -- 몸 앞 (옆·앞 뼈가 팔다리를 가릴 수 있다 — 얼굴·가운데 창은 그림이 비워 둠 · 코덱스 62px 실서기 합성)
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -827,7 +838,7 @@ script SkillEffects extends Component
             end
         end
         -- 코덱스 H-1 저주 불꽃 폭발 6프레임(GameConst.FxSkillHexBurst)이 오면 그 그림을 반경에 맞춰 한 번 (128px = 1.28칸 지름)
-        if _GameConst.FxSkillHexBurst ~= "" then self:FramesFx(_GameConst.FxSkillHexBurst, Vector3(at.x, at.y + 0.3, 0), 2 * radius / 1.28, self.HexBurstFrameSec, self.HexBurstFrameSec + self.HexBurstHoldSec, self.HexBurstFadeSec)
+        if _GameConst.FxSkillHexBurst ~= "" then self:FramesFx(_GameConst.FxSkillHexBurst, Vector3(at.x, at.y + 0.3, 0), 2 * radius / 1.28, self.HexBurstFrameSec, self.HexBurstFrameSec + self.HexBurstHoldSec, self.HexBurstFadeSec, self.FramesFxOrder)
         else self:ClipFx(self.FxFlameShot, Vector3(at.x, at.y + 0.35, 0), 0.45 * radius, 0.45, 0) end
         log(string.format("[VRF] hex burst r=%.1f hit %d", radius, n))
     end
@@ -836,17 +847,17 @@ script SkillEffects extends Component
     method void FrostShatter(Vector2 at, number damage)
         -- 강화 「파쇄」: 서리 혼에 느려진 적이 죽은 자리에서 냉기 파편 (반경 1.3)
         self:Hit(Vector2(at.x, at.y + 0.2), Vector2(1.3, 0), -1, "skill.frost_shatter", damage)
-        if _GameConst.FxSkillShatter ~= "" then self:FramesFx(_GameConst.FxSkillShatter, Vector3(at.x, at.y + 0.3, 0), 2 * 1.3 / 1.28, self.ShatterFrameSec, self.ShatterFrameSec + self.ShatterHoldSec, self.ShatterFadeSec)
+        if _GameConst.FxSkillShatter ~= "" then self:FramesFx(_GameConst.FxSkillShatter, Vector3(at.x, at.y + 0.3, 0), 2 * 1.3 / 1.28, self.ShatterFrameSec, self.ShatterFrameSec + self.ShatterHoldSec, self.ShatterFadeSec, self.FramesFxOrder)
         else self:ClipFx(self.FxFrostShot, Vector3(at.x, at.y + 0.4, 0), 0.5, 0.5, 0) end
     end
 
     @ExecSpace("Multicast")
-    method void FramesFx(string ruids, Vector3 pos, number scale, number frameSec, number holdSec, number fadeSec)
+    method void FramesFx(string ruids, Vector3 pos, number scale, number frameSec, number holdSec, number fadeSec, integer order)
         -- 코덱스 프레임 그림(「|」로 이은 RUID)을 그 자리에 한 번 (44 스킬 그림 바꿔 끼울 자리 — GameConst.FxSkill*)
         --   10-31 갈래 E: 첫 장부터 frameSec씩 · 마지막 장 max(frameSec, holdSec) 잡기 · fadeSec 옅어짐 (Util.PlayFramesHold)
         local me = _UserService.LocalPlayer
         if ruids == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
-        _Util:PlayFramesHold(ruids, me.CurrentMap, pos, 0, Vector3(scale, scale, 1), frameSec, holdSec, fadeSec, Color(1, 1, 1, 1), 6)
+        _Util:PlayFramesHold(ruids, me.CurrentMap, pos, 0, Vector3(scale, scale, 1), frameSec, holdSec, fadeSec, Color(1, 1, 1, 1), order)
         if self.Entity == me and not Environment:IsPublishedPlay() then
             local n = #_Util:Frames(ruids)
             log(string.format("[VRF] frames fx n=%d sec=%.3f hold=%.2f fade=%.2f total=%.2f", n, frameSec, holdSec, fadeSec, _Util:FramePlan(n, frameSec, holdSec, fadeSec).clearAt))
@@ -1797,6 +1808,7 @@ script SkillEffects extends Component
             return false
         end
         for _, m in ipairs(list) do m:ApplyRoot(seconds, self.Entity) end
+        self:PrisonHeld(list, seconds)
         for _, foe in ipairs(foes) do
             ---@type PlayerStats
             local fs = foe:GetComponent("script.PlayerStats")
@@ -1804,6 +1816,41 @@ script SkillEffects extends Component
         end
         self:Fx("prison", Vector3(target.x, target.y, 0), radius)
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void PrisonHeld(table list, number seconds)
+        -- 묶인 적마다 발밑 장벽 그림 (10-31 갈래 E2 P25): 실제 묶인 시간(보스는 절반 · MonsterStatus.RootUntil)만큼 — 묶이지 않은 적(이미 죽음)은 건너뜀
+        if _GameConst.FxSkillPrisonHold == "" then return end
+        local now = _UtilLogic.ElapsedSeconds
+        for _, m in ipairs(list) do
+            local status = m:Status()
+            local held = status ~= nil and status.RootUntil - now or 0
+            if held > 0.05 and isvalid(m.Entity) then self:PrisonFx(m.Entity, held) end
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void PrisonFx(Entity target, number seconds)
+        -- 골격 감옥 묶임 (모든 클라이언트): 표적 발밑에 장벽 8장을 seconds 동안 반복(PrisonFrameSec) → 풀림 2장 한 번. 층 PrisonOrder(몸 앞 · 얼굴·가운데 창은 그림이 비움)
+        --   instigator = 표적 — 표적이 사라지면 Util이 지운다
+        local me = _UserService.LocalPlayer
+        if _GameConst.FxSkillPrisonHold == "" or not isvalid(me) or not isvalid(target) or me.CurrentMap ~= target.CurrentMap then return end
+        local p = target.TransformComponent.WorldPosition
+        local pos = Vector3(p.x, p.y, 0)
+        local s = Vector3(self.PrisonScale, self.PrisonScale, 1)
+        _Util:PlayFramesLoop(_GameConst.FxSkillPrisonHold, target, pos, 0, s, self.PrisonFrameSec, seconds, Color(1, 1, 1, 1), self.PrisonOrder)
+        local key = "prison" .. tostring(target.Id)
+        if self.VisualTimers[key] ~= nil then _TimerService:ClearTimer(self.VisualTimers[key]) end
+        self.VisualTimers[key] = _TimerService:SetTimerOnce(function()
+            self.VisualTimers[key] = nil
+            if _GameConst.FxSkillPrisonRelease == "" or not isvalid(target) then return end
+            local me1 = _UserService.LocalPlayer
+            if not isvalid(me1) or me1.CurrentMap ~= target.CurrentMap then return end
+            local q = target.TransformComponent.WorldPosition
+            _Util:PlayFramesHold(_GameConst.FxSkillPrisonRelease, target, Vector3(q.x, q.y, 0), 0, s, self.PrisonReleaseSec, self.PrisonReleaseSec, 0, Color(1, 1, 1, 1), self.PrisonOrder)
+        end, math.max(0.05, seconds))
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] prison fx %s sec=%.2f", target.Name, seconds)) end
     end
 
     @ExecSpace("ServerOnly")
@@ -1832,6 +1879,7 @@ script SkillEffects extends Component
             if epoch ~= self.EffectEpoch or self.Entity.CurrentMap ~= map then return end
             local held = self:Targets(target, radius + 0.3)
             for _, m in ipairs(held) do m:ApplyRoot(seconds, self.Entity) end
+            self:PrisonHeld(held, seconds)
             for _, foe in ipairs(self:FoePlayers(target, radius)) do
                 ---@type PlayerStats
                 local fs = foe:GetComponent("script.PlayerStats")
@@ -1912,7 +1960,8 @@ script SkillEffects extends Component
         local q = _Util:Pos2(best.Entity)
         local total = damage + best.Atk * 2
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.8, 0), -1, "skill.shadow_sacrifice", total)
-        if _GameConst.FxSkillSacrifice ~= "" then self:FramesFx(_GameConst.FxSkillSacrifice, Vector3(q.x, q.y + 0.3, 0), 2 * 1.8 / 1.28, 0.07, 0.07, 0) end
+        -- 10-31 갈래 E2 P31: 희생 8장 — 판정 반경 1.8에 맞춘 바닥 중심(발 자리) · 배우 뒤 층 SacrificeOrder(1) · 75ms
+        if _GameConst.FxSkillSacrifice ~= "" then self:FramesFx(_GameConst.FxSkillSacrifice, Vector3(q.x, q.y, 0), 2 * 1.8 / (self.SacrificeContentPx / 100), self.SacrificeFrameSec, self.SacrificeFrameSec + self.SacrificeHoldSec, self.SacrificeFadeSec, self.SacrificeOrder) end
         self:Fx("sacrifice", Vector3(q.x, q.y, 0), 1.8)
         log(string.format("[VRF] sacrifice target=%s picked=%s", best.ShadowId, tostring(picked)))
         self:Commander():ClearPick()
@@ -1944,7 +1993,7 @@ script SkillEffects extends Component
         best:Promote(multiplier)
         -- 승격 순간 (코덱스 H-7 정예 승격 6프레임이 오면 그 그림 · 그 전엔 금빛 기둥 입자)
         local q = _Util:Pos2(best.Entity)
-        if _GameConst.FxSkillElitePromote ~= "" then self:FramesFx(_GameConst.FxSkillElitePromote, Vector3(q.x, q.y, 0), 1.25, self.RiseFrameSec, self.RiseFrameSec + self.RiseHoldSec, self.RiseFadeSec) end   -- 피벗 0.5/0.1 = 발밑 (그림자 뿌리 자리)
+        if _GameConst.FxSkillElitePromote ~= "" then self:FramesFx(_GameConst.FxSkillElitePromote, Vector3(q.x, q.y, 0), 1.25, self.RiseFrameSec, self.RiseFrameSec + self.RiseHoldSec, self.RiseFadeSec, self.FramesFxOrder) end   -- 피벗 0.5/0.1 = 발밑 (그림자 뿌리 자리)
         self:Fx("promote", Vector3(q.x, q.y, 0), 1)
         log(string.format("[VRF] elite promote target=%s picked=%s", best.ShadowId, tostring(picked ~= nil)))
         if picked ~= nil then self:Commander():ClearPick() end

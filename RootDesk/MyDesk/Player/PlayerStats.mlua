@@ -151,6 +151,15 @@ script PlayerStats extends Component
     property Entity ArmorRingEntity = nil     -- 클라이언트: 그 엔티티
     property number ArmorRingCheckSec = 0.3   -- 만든 뒤 이 시간에 실제로 뿜는지(IsEmitting) 확인
     property number ArmorRingOverlap = 0.5    -- 예전 입자 경로: 새 고리를 먼저 틀고 앞 고리는 이만큼 뒤에 지운다 (지우고 다시 틀면 반짝이가 끊겼다)
+    -- 10-31 갈래 E2 (코덱스 뼈 갑옷 유지 고리 8장 · 앞/뒤 파생 층): GameConst.FxSkillArmorRingFront/Back이 차면 엔진 Enchant 입자 대신 그림 두 층
+    property number ArmorRingFrameSec = 0.1   -- 고리 장 간격 (코덱스 100ms · 8장 반복 0.8초)
+    property number ArmorRingArtScale = 1.0   -- 96px = 0.96칸 (코덱스 renderer_scale_proposal 1 · 고리 지름 88px)
+    property number ArmorRingDy = 0.45        -- 몸 가운데 (발 위 칸 · 예전 입자와 같은 자리)
+    property integer ArmorRingBackOrder = 3   -- 뒤 층(위쪽 호): 몸 뒤 (MapLayer0 3 · 뼈 폭풍 뒤 반원과 같은 층)
+    property integer ArmorRingFrontOrder = 5  -- 앞 층(아래쪽 조각): 몸 앞 (MapLayer0 5)
+    property table ArmorRingArt = {}          -- 클라이언트: { back, front } artsprite 엔티티 (흡수 단계가 바뀌어도 다시 만들지 않고 투명도만)
+    property number ArmorRingArtAt = 0        -- 클라이언트: 고리 그림 시작 시각 (장 번호 = 경과 ÷ 간격)
+    property integer ArmorRingArtTimer = 0    -- 클라이언트: 장 넘김 타이머
     -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
     property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
     property number PvpAmpUntil = 0
@@ -176,9 +185,13 @@ script PlayerStats extends Component
         self.RegenTimer = _TimerService:SetTimerRepeat(function() self:Regen() end, 1)
     end
 
-    @ExecSpace("ServerOnly")
     method void OnEndPlay()
-        if self.RegenTimer ~= 0 then _TimerService:ClearTimer(self.RegenTimer) end
+        -- 서버: 재생 타이머 · 클라이언트: 뼈 갑옷 고리(그림 두 층 장 넘김 타이머 · 10-31 갈래 E2)
+        if self:IsServer() then
+            if self.RegenTimer ~= 0 then _TimerService:ClearTimer(self.RegenTimer) end
+        else
+            self:StopArmorRing()
+        end
     end
 
     -- ───────── 경험치·레벨 ─────────
@@ -678,6 +691,7 @@ script PlayerStats extends Component
         -- 뼈 흰빛 기운: 가득 ArmorRingAlphaMax(0.85) → 거의 깨짐 ArmorRingAlphaMin(0.55) (코덱스 H-5 뼈 갑옷 고리가 승인되면 그 그림 · 몸 앞·뒤 두 층으로)
         local c = self.ArmorRingColor
         local color = Color(c.r, c.g, c.b, self:ArmorRingAlpha(step))
+        if self:TintArmorRingArt(Color(1, 1, 1, color.a)) then return end   -- 10-31 갈래 E2: 그림이 있으면 그림 두 층(자기 색 · 투명도만)
         if self.ArmorRingLive and self:TintArmorRing(color) then return end
         self:PlayArmorRingParticle(color)
     end
@@ -750,11 +764,87 @@ script PlayerStats extends Component
 
     @ExecSpace("ClientOnly")
     method void StopArmorRing()
-        -- 갑옷이 다 깨졌다: 고리 입자·엔티티를 지운다
+        -- 갑옷이 다 깨졌다: 고리 입자·엔티티·그림 두 층과 장 넘김 타이머를 지운다
         if self.ArmorRingSerial ~= 0 then _ParticleService:RemoveParticle(self.ArmorRingSerial) end
         self.ArmorRingSerial = 0
         if self.ArmorRingEntity ~= nil and isvalid(self.ArmorRingEntity) then self.ArmorRingEntity:Destroy() end
         self.ArmorRingEntity = nil
+        self:StopArmorRingArt()
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StopArmorRingArt()
+        -- 고리 그림 두 층과 타이머 정리
+        if self.ArmorRingArtTimer ~= 0 then _TimerService:ClearTimer(self.ArmorRingArtTimer) end
+        self.ArmorRingArtTimer = 0
+        for _, e in pairs(self.ArmorRingArt) do if isvalid(e) then e:Destroy() end end
+        self.ArmorRingArt = {}
+    end
+
+    method integer ArmorRingFrameAt(number elapsed, integer n)
+        -- 고리 반복의 지금 장 번호 (순수 계산 · tests/quality/skillfx_e.lua): 경과 ÷ ArmorRingFrameSec를 n장으로 되풀이
+        if n <= 0 then return 0 end
+        return math.floor(math.max(0, elapsed) / math.max(0.001, self.ArmorRingFrameSec) + 1e-6) % n + 1
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean TintArmorRingArt(Color color)
+        -- 코덱스 고리 그림 두 층 (10-31 갈래 E2 P15): 있으면 투명도(색)만 바꾼다 · 없으면 몸에 붙은 artsprite 두 개(뒤 층 = 몸 뒤 · 앞 층 = 몸 앞)를 만들고 장 넘김을 건다.
+        --   그림 칸이 비었거나 두 층 장 수가 다르면 false (예전 입자 경로로)
+        local back = _Util:Frames(_GameConst.FxSkillArmorRingBack)
+        local front = _Util:Frames(_GameConst.FxSkillArmorRingFront)
+        if #back == 0 or #back ~= #front or not isvalid(self.Entity) then return false end
+        local art = self.ArmorRingArt
+        if art.back ~= nil and isvalid(art.back) and art.front ~= nil and isvalid(art.front) then
+            art.back.SpriteRendererComponent.Color = color
+            art.front.SpriteRendererComponent.Color = color
+            return true
+        end
+        self:StopArmorRingArt()
+        -- 예전 입자 경로가 떠 있으면 거둔다 (두 고리가 겹치지 않게)
+        if self.ArmorRingSerial ~= 0 then _ParticleService:RemoveParticle(self.ArmorRingSerial) end
+        self.ArmorRingSerial = 0
+        if self.ArmorRingEntity ~= nil and isvalid(self.ArmorRingEntity) then self.ArmorRingEntity:Destroy() end
+        self.ArmorRingEntity = nil
+        local ps = self.Entity.TransformComponent.Scale
+        local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
+        local made = {}
+        for _, layer in ipairs({ "back", "front" }) do
+            local e = _SpawnService:SpawnByModelId("artsprite", "BoneArmorRing_" .. layer, self.Entity.TransformComponent.WorldPosition, self.Entity)
+            if not isvalid(e) then
+                for _, x in pairs(made) do if isvalid(x) then x:Destroy() end end
+                return false
+            end
+            local sp = e.SpriteRendererComponent
+            sp.SpriteRUID = layer == "back" and back[1] or front[1]   -- artsprite 기본 그림(모래 바닥)이 보이지 않게 만들자마자 바꾼다
+            sp.SortingLayer = "MapLayer0"
+            sp.OrderInLayer = layer == "back" and self.ArmorRingBackOrder or self.ArmorRingFrontOrder
+            sp.Color = color
+            e.TransformComponent.Position = Vector3(0, self.ArmorRingDy / psy, layer == "back" and 0.01 or -0.01)
+            e.TransformComponent.Scale = Vector3(self.ArmorRingArtScale / psx, self.ArmorRingArtScale / psy, 1)
+            made[layer] = e
+        end
+        self.ArmorRingArt = made
+        self.ArmorRingArtAt = _UtilLogic.ElapsedSeconds
+        self.ArmorRingArtTimer = _TimerService:SetTimerRepeat(function() self:StepArmorRingArt() end, math.max(0.02, self.ArmorRingFrameSec))
+        log(string.format("[VRF] bone armor ring art layers=2 frames=%d alpha=%.2f", #back, color.a))
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StepArmorRingArt()
+        -- 고리 장 넘김: 두 층을 같은 장으로 (투명도는 그대로)
+        local art = self.ArmorRingArt
+        if art.back == nil or not isvalid(art.back) or art.front == nil or not isvalid(art.front) then
+            self:StopArmorRingArt()
+            return
+        end
+        local back = _Util:Frames(_GameConst.FxSkillArmorRingBack)
+        local front = _Util:Frames(_GameConst.FxSkillArmorRingFront)
+        local i = self:ArmorRingFrameAt(_UtilLogic.ElapsedSeconds - self.ArmorRingArtAt, #back)
+        if i <= 0 or i > #front then return end
+        if art.back.SpriteRendererComponent.SpriteRUID ~= back[i] then art.back.SpriteRendererComponent.SpriteRUID = back[i] end
+        if art.front.SpriteRendererComponent.SpriteRUID ~= front[i] then art.front.SpriteRendererComponent.SpriteRUID = front[i] end
     end
 
     @ExecSpace("ServerOnly")

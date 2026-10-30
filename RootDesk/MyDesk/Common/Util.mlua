@@ -644,8 +644,47 @@ script Util extends Logic
         --   instigator가 사라지면 그 자리에서 지운다
         local list = self:Frames(ruids)
         if #list == 0 or not isvalid(instigator) then return end
-        local plan = self:FramePlan(#list, frameSec, holdSec, fadeSec)
+        self:PlayFramesPlan(list, instigator, pos, rot, scale, self:FramePlan(#list, frameSec, holdSec, fadeSec), tint, order)
+    end
+
+    method table FramePlanMs(string ms, integer n, number holdSec, number fadeSec)
+        -- 장별 지속(ms · 쉼표 · 코덱스 timing 제안)으로 한 번 재생 계획 (순수 계산 · 10-31 갈래 E2 뼈 창 꽂힘 60,60,70,70,70,70 = 400ms) — 모양은 FramePlan과 같다.
+        --   장 수와 ms 개수가 다르면 첫 값(없으면 0.1초)을 고른 간격으로. 마지막 장은 max(그 장 지속, holdSec) · fadeSec 옅어짐
+        local durs = {}
+        for v in string.gmatch(ms or "", "[^,]+") do table.insert(durs, math.max(0.001, (tonumber(v) or 0) / 1000)) end
+        local count = math.max(0, n)
+        if #durs ~= count then
+            local f = #durs > 0 and durs[1] or 0.1
+            durs = {}
+            for i = 1, count do durs[i] = f end
+        end
+        local steps = {}
+        local at = 0
+        for i = 1, count do
+            table.insert(steps, { at = at, idx = i, alpha = 1 })
+            if i < count then at = at + durs[i] end
+        end
+        local holdAt = at
+        local clearAt = holdAt + math.max(count > 0 and durs[count] or 0, holdSec)
+        local k = self.FrameFadeSteps
+        if count > 0 and fadeSec > 0 and k > 0 then
+            for j = 1, k do table.insert(steps, { at = clearAt + fadeSec * (j - 1) / k, idx = count, alpha = 1 - j / (k + 1) }) end
+            clearAt = clearAt + fadeSec
+        end
+        return { steps = steps, holdAt = holdAt, clearAt = clearAt }
+    end
+
+    method void PlayFramesMs(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, string ms, number holdSec, number fadeSec, Color tint, integer order)
+        -- 장별 지속(ms)으로 한 번 재생 (클라이언트에서 부른다 · 10-31 갈래 E2) — 재생 방식은 PlayFramesHold와 같다(PlayFramesPlan)
+        local list = self:Frames(ruids)
+        if #list == 0 or not isvalid(instigator) then return end
+        self:PlayFramesPlan(list, instigator, pos, rot, scale, self:FramePlanMs(ms, #list, holdSec, fadeSec), tint, order)
+    end
+
+    method void PlayFramesPlan(table list, Entity instigator, Vector3 pos, number rot, Vector3 scale, table plan, Color tint, integer order)
+        -- 계획(FramePlan · FramePlanMs)대로 그린다: 장마다 SetTimerOnce · 시작 시각 기준 · 다음 장 먼저 걸고 앞 장은 FrameSwapOverlap 뒤에 지움 · instigator가 사라지면 지움
         local steps = plan.steps
+        if #steps == 0 or not isvalid(instigator) then return end
         local t0 = _UtilLogic.ElapsedSeconds
         local serial = 0
         local overlap = self.FrameSwapOverlap

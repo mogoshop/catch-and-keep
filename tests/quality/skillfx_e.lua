@@ -5,11 +5,11 @@
 --   ③ 머리 위 표식 배율 0.9(약 44px) · 저주 직후 0.3초 1.3배 → 1배 · 스킬 아이콘 대체도 같은 크기 · 낙인 몸 색(옅은 자홍)·둔화와 겹침·풀림
 --   ④ 쌍칼 돌진 자취 크기 = 지금 쓰는 그림(GameConst.FxGiantDash)의 등록 크기(art_sprites) · ⑤ 뼈 갑옷 고리 최저 투명도 0.55 · ⑥ 납품 61장 GameConst·표 연결과 RUID 중복 0
 -- 엔진 효과·입자·타이머는 대역 — 실제 화면(크기·색·층)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames,KeyFrames,FramePlan,PlayFramesHold,PlayFrames,PlayFramesLoop
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,CurseShape,CurseSigilScale
+-- @source Util Common/Util.mlua Frames,KeyFrames,FramePlan,FramePlanMs,PlayFramesPlan,PlayFramesHold,PlayFramesMs,PlayFrames,PlayFramesLoop
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,CurseShape,CurseSigilScale,PrisonFx
 -- @source MonsterStatus Monster/MonsterStatus.mlua MarkerScaleAt,IsAmpShown,IsChillShown
 -- @source MonsterTraits Monster/MonsterTraits.mlua TintTick
--- @source PlayerStats Player/PlayerStats.mlua ArmorRingAlpha
+-- @source PlayerStats Player/PlayerStats.mlua ArmorRingAlpha,ArmorRingFrameAt,TintArmorRingArt,StepArmorRingArt,StopArmorRingArt
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
@@ -273,7 +273,7 @@ end
 do
  reset()
  local f=SkillEffects.HexBurstFrameSec
- SkillEffects:FramesFx(_GameConst.FxSkillHexBurst,Vector3(0,0,0),2,f,f+SkillEffects.HexBurstHoldSec,SkillEffects.HexBurstFadeSec)
+ SkillEffects:FramesFx(_GameConst.FxSkillHexBurst,Vector3(0,0,0),2,f,f+SkillEffects.HexBurstHoldSec,SkillEffects.HexBurstFadeSec,SkillEffects.FramesFxOrder)
  run(3)
  local list=Util:Frames(_GameConst.FxSkillHexBurst)
  ok(plays[1].ruid==list[1] and plays[6].ruid==list[6],'폭발 6장 첫 장부터')
@@ -379,6 +379,119 @@ do
   ok(near(s.x,s.y) and near(s.x,SkillEffects:CurseSigilScale('amp',r)),'시전 배율 가로=세로 = CurseSigilScale (r='..f3(r)..')')
   ok(near(SIGIL.amp[1]*s.x/100,r,0.02),'낙인 문장 가장 먼 끝 = 저주 반경 '..f3(r))
  end
+end
+
+-- ===== 10-31 갈래 E2: 코덱스 2차 샘플 승인 4계열 전체 33장 (+ 고리 앞/뒤 파생 16) =====
+-- ⑦ 연결: 장 수 · RUID 중복 0 · art_sprites 등록
+do
+ local all={}
+ local function take(list,n,name)
+  ok(#list==n,name..' '..n..'장 ('..#list..')')
+  for _,r in ipairs(list) do ok(#r==32 and art[r]~=nil and art[r].kind=='effect' and artRuidCount[r]==1,name..' art_sprites 효과 행 1개') table.insert(all,r) end
+ end
+ take(Util:Frames(_GameConst.FxSkillSpear),1,'뼈 창 몸')
+ take(Util:Frames(_GameConst.FxSkillSpearHit),6,'뼈 창 꽂힘')
+ take(Util:Frames(_GameConst.FxSkillSacrifice),8,'그림자 희생')
+ take(Util:Frames(_GameConst.FxSkillPrisonHold),8,'골격 감옥 묶임')
+ take(Util:Frames(_GameConst.FxSkillPrisonRelease),2,'골격 감옥 풀림')
+ take(Util:Frames(_GameConst.FxSkillArmorRing),8,'뼈 갑옷 고리 정본')
+ take(Util:Frames(_GameConst.FxSkillArmorRingBack),8,'뼈 갑옷 고리 뒤 층')
+ take(Util:Frames(_GameConst.FxSkillArmorRingFront),8,'뼈 갑옷 고리 앞 층')
+ local seen={}
+ for _,r in ipairs(all) do ok(not seen[r],'E2 RUID 중복 0') seen[r]=true end
+ ok(#all==49,'정본 33 + 파생 16 = 49장 ('..#all..')')
+ local sum=0
+ for v in _GameConst.FxSkillSpearHitMs:gmatch('[^,]+') do sum=sum+tonumber(v) end
+ ok(sum==400,'꽂힘 장별 ms 합 400 (코덱스 제안)')
+end
+
+-- ⑦ FramePlanMs (뼈 창 꽂힘 60·60·70·70·70·70)
+do
+ local p=Util:FramePlanMs('60,60,70,70,70,70',6,0,0)
+ ok(#p.steps==6 and near(p.steps[2].at,0.06) and near(p.steps[3].at,0.12) and near(p.steps[6].at,0.33),'장별 시각 0·0.06·0.12·…·0.33')
+ ok(near(p.clearAt,0.4),'합 400ms에 지움 (마지막 장 70ms)')
+ local q=Util:FramePlanMs('60,60',6,0,0)
+ ok(near(q.clearAt,0.36),'ms 개수가 장 수와 다르면 첫 값 고른 간격')
+ reset()
+ Util:PlayFramesMs(seq('k',6),map,Vector3(0,0,0),30,Vector3(1,1,1),'60,60,70,70,70,70',0,0,Color(1,1,1,1),6)
+ run(2)
+ local w=windows()
+ ok(#plays==6,'꽂힘 6장 모두')
+ ok(w[1].len>=0.06-1e-6,'꽂힘 첫 장 60ms 이상')
+ ok(plays[6].ruid=='k6' and w[6].len>=0.07-TICK-1e-6,'마지막 장(창대 남은 장)이 효과 끝까지')
+ ok(plays[6].off~=nil and near(plays[6].off,0.4,TICK+1e-6),'0.4초에 끝 ('..f3(plays[6].off)..')')
+end
+
+-- ⑦ 그림자 희생: 반경 1.8 바닥 중심 · 배우 뒤 층 · 75ms × 8
+do
+ reset()
+ local s=2*1.8/(SkillEffects.SacrificeContentPx/100)
+ SkillEffects:FramesFx(_GameConst.FxSkillSacrifice,Vector3(2,1,0),s,SkillEffects.SacrificeFrameSec,SkillEffects.SacrificeFrameSec+SkillEffects.SacrificeHoldSec,SkillEffects.SacrificeFadeSec,SkillEffects.SacrificeOrder)
+ run(3)
+ ok(#plays==8+Util.FrameFadeSteps,'희생 8장 + 옅어짐')
+ for _,p in ipairs(plays) do ok(p.opt.OrderInLayer==1 and p.opt.SortingLayer=='MapLayer0','희생 배우 뒤 바닥 층 (MapLayer0 1)') end
+ ok(near(plays[1].scale.x,plays[1].scale.y) and near(116*plays[1].scale.x/100,3.6),'희생 보이는 지름 116px = 판정 지름 3.6칸')
+ ok(near(plays[1].pos.x,2) and near(plays[1].pos.y,1),'희생은 발 자리 그대로 (예전 +0.3 위 아님)')
+ ok(near(plays[8].at-plays[1].at,0.525,TICK+1e-6),'75ms × 8')
+end
+
+-- ⑦ 골격 감옥: 묶인 시간 동안 장벽 8장 반복 → 풀림 2장 · 몸 앞 층 · 표적이 사라지면 멈춤
+do
+ reset()
+ local tgt={Id='m1',Name='mob1',CurrentMap=map,TransformComponent={WorldPosition=Vector3(5,2,0)}}
+ SkillEffects.VisualTimers={}
+ SkillEffects:PrisonFx(tgt,1.6)
+ run(3)
+ local hold=Util:Frames(_GameConst.FxSkillPrisonHold)
+ local rel=Util:Frames(_GameConst.FxSkillPrisonRelease)
+ local nh,nr=0,0
+ for _,p in ipairs(plays) do
+  if p.ruid==rel[1] or p.ruid==rel[2] then nr=nr+1 else nh=nh+1 end
+  ok(p.opt.OrderInLayer==SkillEffects.PrisonOrder and SkillEffects.PrisonOrder==6,'감옥 몸 앞 층')
+  ok(near(p.pos.x,5) and near(p.pos.y,2),'감옥 표적 발밑 (피벗 0.5/0.2)')
+ end
+ ok(nh==16,'1.6초 = 장벽 16장 (8장 두 바퀴 · '..nh..')')
+ ok(plays[9].ruid==hold[1],'8장 뒤 처음으로 반복')
+ ok(nr==2 and plays[nh+1].ruid==rel[1] and plays[nh+2].ruid==rel[2],'묶임이 끝나면 풀림 2장')
+ ok(plays[nh+1].at>=1.6-TICK-1e-6,'풀림은 묶인 시간 뒤')
+ local lastHold=plays[nh]
+ ok(lastHold.off~=nil and lastHold.off<=1.6+SkillEffects.PrisonFrameSec+TICK,'장벽은 묶인 시간에 지움')
+ reset()
+ SkillEffects.VisualTimers={}
+ local t2={Id='m2',Name='mob2',CurrentMap=map,TransformComponent={WorldPosition=Vector3(0,0,0)}}
+ SkillEffects:PrisonFx(t2,2)
+ run(0.35)
+ t2.dead=true
+ local n=#plays
+ run(3)
+ ok(#plays==n,'표적이 사라지면 장벽·풀림을 더 걸지 않는다')
+end
+
+-- ⑦ 뼈 갑옷 고리 그림 두 층: 뒤(몸 뒤)·앞(몸 앞) · 흡수 단계 = 투명도만(다시 만들지 않음) · 8장 반복 100ms
+do
+ reset()
+ local spawned={}
+ _SpawnService={SpawnByModelId=function(_,model,name,pos,parent) local e={Name=name,SpriteRendererComponent={SpriteRUID='sand',Color=Color(1,1,1,1)},TransformComponent={Position=Vector3(0,0,0),Scale=Vector3(1,1,1)},Destroy=function(self) self.dead=true end} table.insert(spawned,e) return e end}
+ PlayerStats.Entity={TransformComponent={WorldPosition=Vector3(0,0,0),Scale=Vector3(1,1,1)}}
+ PlayerStats.ArmorRingArt={} PlayerStats.ArmorRingArtTimer=0 PlayerStats.ArmorRingSerial=0 PlayerStats.ArmorRingEntity=nil
+ local back=Util:Frames(_GameConst.FxSkillArmorRingBack)
+ local front=Util:Frames(_GameConst.FxSkillArmorRingFront)
+ ok(PlayerStats:TintArmorRingArt(Color(1,1,1,PlayerStats:ArmorRingAlpha(4))),'그림 경로')
+ ok(#spawned==2,'두 층')
+ local b,f=PlayerStats.ArmorRingArt.back,PlayerStats.ArmorRingArt.front
+ ok(b.SpriteRendererComponent.SpriteRUID==back[1] and f.SpriteRendererComponent.SpriteRUID==front[1],'첫 장 (모래 바닥 기본 그림 아님)')
+ ok(b.SpriteRendererComponent.OrderInLayer<f.SpriteRendererComponent.OrderInLayer and b.SpriteRendererComponent.SortingLayer=='MapLayer0','뒤 층이 앞 층보다 아래 (몸 뒤·앞)')
+ ok(near(b.TransformComponent.Position.y,0.45),'몸 가운데 (발 위 0.45)')
+ run(0.35)
+ ok(b.SpriteRendererComponent.SpriteRUID==back[4] and f.SpriteRendererComponent.SpriteRUID==front[4],'0.35초 = 4번째 장 (두 층 같은 장)')
+ run(0.6)
+ ok(b.SpriteRendererComponent.SpriteRUID==back[2],'0.95초 = 8장 돌고 2번째 (반복)')
+ ok(PlayerStats:TintArmorRingArt(Color(1,1,1,PlayerStats:ArmorRingAlpha(1))),'단계 바뀜')
+ ok(#spawned==2 and not b.dead,'단계가 바뀌어도 다시 만들지 않는다')
+ ok(near(b.SpriteRendererComponent.Color.a,0.55) and near(f.SpriteRendererComponent.Color.a,0.55),'투명도만 0.55로')
+ ok(near(PlayerStats:ArmorRingFrameAt(0.25,8),3) and near(PlayerStats:ArmorRingFrameAt(0.8,8),1),'장 번호 계산')
+ PlayerStats:StopArmorRingArt()
+ ok(b.dead and f.dead and PlayerStats.ArmorRingArtTimer==0,'다 깨지면 두 층·타이머 정리')
 end
 
 print(string.format('[skillfx_e] %d checks OK', checks))

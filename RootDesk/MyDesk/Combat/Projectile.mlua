@@ -67,6 +67,7 @@ script Projectile extends Component
     property integer ViewFrame = 0           -- 클라이언트: 「|」로 이은 프레임 그림(코덱스 납품분)의 지금 칸 (SkinFrame)
     property number HitSparkScale = 0.6      -- 투사체 명중 불꽃(P11 · 저주 불꽃·서리 혼·골편 공통) 크기 (10-31 갈래 E · 예전 0.45)
     property number TorrentHitScale = 0.6    -- 영혼 격류 명중 혼 구슬(P28) 크기 (예전 0.38)
+    property number SpearHitScale = 1.0      -- 뼈 창 꽂힘(P05 · 128px = 1.28칸) 배율 (10-31 갈래 E2 · 코덱스 renderer_scale_proposal 1 · 예전 대기 자리 0.9)
 
     @ExecSpace("ServerOnly")
     method void Launch(Entity owner, Vector2 dir, number speed, number range, number damage, string info, boolean pierce)
@@ -374,7 +375,8 @@ script Projectile extends Component
         local angle = math.deg(math.atan(self.Dir.y, self.Dir.x))
         if style == "spear" then
             if _GameConst.FxSkillSpearHit ~= "" then
-                _Util:PlayFrames(_GameConst.FxSkillSpearHit, map, pos, angle, Vector3(0.9, 0.9, 1), 0.07, Color(1, 1, 1, 1), 6)
+                -- 10-31 갈래 E2 P05: 꽂힘 6장 장별 60·60·70·70·70·70ms(합 400ms) · 표적 중심 · 진행 방향 · 마지막 장(창대가 남은 장)은 효과가 끝날 때까지
+                _Util:PlayFramesMs(_GameConst.FxSkillSpearHit, map, pos, angle, Vector3(self.SpearHitScale, self.SpearHitScale, 1), _GameConst.FxSkillSpearHitMs, 0, 0, Color(1, 1, 1, 1), 6)
             else
                 _ParticleService:PlayBasicParticle(BasicParticleType.PillarBurst, map, pos, angle - 90, Vector3(0.42, 0.55, 1), false, { Color = Color(0.95, 0.9, 0.78, 0.95) })
                 _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, map, pos, 0, Vector3(0.32, 0.22, 1), false, { Color = Color(0.85, 0.8, 0.7, 0.9) })
