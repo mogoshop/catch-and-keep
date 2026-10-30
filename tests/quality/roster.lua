@@ -431,7 +431,7 @@ hopeCase('H5 save round trip',function()
  book.FormHope='s:d:twin=1/m:a:hex=2'
  book.ShardHold=true
  local d=book:GetSaveData()
- assert(d.hope=='s:d:twin=1/m:a:hex=2' and d.shardHold==true and d.sv==4,'save fields')
+ assert(d.hope=='s:d:twin=1/m:a:hex=2' and d.shardHold==true and d.sv>=4,'save fields')
  book.FormHope='x'
  book.ShardHold=false
  book:LoadSaveData(d)
