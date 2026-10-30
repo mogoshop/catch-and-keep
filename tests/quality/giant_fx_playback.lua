@@ -218,10 +218,11 @@ do
  SkillEffects:GiantMoveFx('rift',Vector3(-3,0,0),6,1,180,0.65) run(1)
  ok(#plays==16 and near(plays[16].at-plays[1].at,0.65*15/16,TICK+1e-9),'균열 full: 16장 · rise+잔광 0.65초 고르게')
  ok(near(plays[1].scale.x,6/4.88) and near(plays[1].scale.y,6/4.88),'발자국 488px = 6칸 (가로세로 같은 배율)')
- ok(plays[1].angle==0 and plays[1].opt.FlipX==true and near(plays[1].pos.x,0),'왼쪽: 각 0 + FlipX(분출이 아래로 뒤집히지 않음) · 시작 = 꽂은 자리 x 0')
+ local pad=12*(6/4.88)/100
+ ok(plays[1].angle==0 and plays[1].opt.FlipX==true and near(plays[1].pos.x,pad),'왼쪽: 각 0 + FlipX(분출이 아래로 뒤집히지 않음) · 피벗 = 꽂은 자리 + 앞 빈 12px(보이는 균열 시작 = 꽂은 자리)')
  reset()
  SkillEffects:GiantMoveFx('rift',Vector3(3,0,0),6,1,0,0.65) run(1)
- ok(plays[1].angle==0 and plays[1].opt.FlipX==false and near(plays[1].pos.x,0),'오른쪽: 그대로')
+ ok(plays[1].angle==0 and plays[1].opt.FlipX==false and near(plays[1].pos.x,-pad),'오른쪽: 그대로 · 피벗 = 꽂은 자리 - 12px')
  SkillEffects.FxGiantRiftSeq=''
  -- 슬램: 앞 축광 3장(40ms) t0 · 뒤 지면 분출은 4번째 장부터 120ms에 · 몸 index 6 접점 = 120ms = 서버 피해 · 접점 = root + 79px × 몸 배율
  reset()

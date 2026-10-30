@@ -43,12 +43,12 @@
 - D1 노바 평타 쉼 0.8/1.2초 유지 · D2 내려찍기 피해·묶기·경직·그림 = A `skill2Hit`(지금 미등록 → 0.12) · D3 함성 6초 제한 없음 · 몸은 A 한 곳 · D4 회전 12~16장·16×25ms 허용(12장 강제·30fps 상한·감속 없음 · 0.03초 겹침은 실영상에서 덩어리로 보일 때만 조정)
 - **새 아트 RUID 대기**: 코드·계약은 노바 17·대검 64·방패 52 full을 소비하도록 연결됐으나 V2 RUID 자리는 비어 있어(부모 통합 때 키 순서로) 지금 그림(구형 66장+노바 6장)이 대신 돈다 — 이 fallback 장면을 V2 완료 영상으로 제출하지 않는다.
 
-## full 아트 연결 (10-30 노바 17 · 대검 64 · 방패 52 · 계약 summon48-spectacle-full-art-integration-contract.txt)
+## full 아트 연결 (10-30 노바 17 · 대검 64 · 방패 52 · 정본 `assets/codex-bone-giants-v1/spectacle-v2-20261030/` resource-mapping.csv 133행 · world-registration-conditions.json · animation-timing-proposal.json — 이전 작업 폴더 임시본 아님)
 | 슬롯 (RUID 키 순서) | 계약 기본값 `*Opts` | 재생·동기 |
 |---|---|---|
 | `FxGiantNovaV2` ← nova/full layers/rear 00..15 (앞 층 없으면 png/fx 00..15) · `FxGiantNovaV2Front` ← layers/front 00..15 | `w=640;h=512;ref=7.5;impact=7;peak=0;ms=20,20,25,25,35,35,25,25,40,50,80,80,90,90,90,90` | 장별 시간 그대로(합 820) · 정점 index 6 = 160ms = 서버 타격(`GiantFxImpactSec`) · 내용 420px = 7.5칸 → 캔버스 11.43×9.14 · 뒤 order 1 / 앞 order 6 · 지면 원점 = 발 |
 | `FxGiantSpinBack`·`FxGiantSpinFront` ← fx-giant-spin-00..15-rear/front | `w=352;h=176;cw=352` | 25ms × 16 = 0.4초 루프 = gap · 4바퀴 1.6초 · 몸 따라감 · 지름 3.2 = 캔버스 352 |
-| `FxGiantRiftSeq` ← fx-giant-rift-00..15 | `w=512;h=288;cw=488;upright=true` | 몸 contact index 9 = 300ms(skill2Hit = plant)에 시작 · rise+잔광 0.65초 fit · 488px = 6칸 · 왼쪽 FlipX(뒤집힘 없음) · 지면 원점 (0,264) = 꽂은 자리 |
+| `FxGiantRiftSeq` ← fx-giant-rift-00..15 | `w=512;h=288;cw=488;padpx=12;upright=true` | 몸 contact index 9 = 300ms(skill2Hit = plant)에 시작 · rise+잔광 0.65초 fit · 보이는 균열 488px = 6칸 · 앞 빈 12px만큼 당겨 균열 시작 = 꽂은 자리 · 왼쪽 FlipX(뒤집힘 없음) |
 | `FxGiantSlamSeq` ← fx-giant-shield-spectacle-v2-slam-00..15 · `FxGiantSlamFront` ← derived slam-front-star-00..02 | `w=384;h=288;bodypx=true;axpx=79;aypx=-1;first=4;impact=4;ms=40,40,40,30×13` / 앞 `…;ms=40,40,40` | 몸·그림 t0 동시 · 앞 축광 3장(몸 앞) · 뒤 지면 분출 4번째 장 = 120ms = 몸 index 6 = 피해·묶기(skill2Hit) · 접점 = root + (79,-1)px × 몸 배율 · 왼쪽 -79px + FlipX |
 | `FxGiantRoarSeq` ← fx-giant-shield-spectacle-v2-shout-00..11 | `w=384;h=384;bodypx=true;axpx=0;aypx=0;latch=6;ms=50×12` | GiantRoarBody onStart 순간 0번 장부터(추가 지연 없음) · 축광 0~4 몸 따라감 → 6번째 장(몸 index 5)부터 방사 원점 고정 · **문양 위치 axpx/aypx는 실측값 필요(부모)** |
 - 파생 층(노바 앞/뒤 32 · 대검 앞/뒤 32 · 방패 앞 8)은 새 프레임 수가 아니다 — 같은 원점·시간의 층 분리.
