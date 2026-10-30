@@ -479,6 +479,7 @@ script MotionSmoother extends Logic
     method string FrameClip(any r, string clip)
         -- 소환수의 서기·걷기·공격 그림이 프레임 몬스터(코덱스 그림, data/monster_frames.csv)의 첫 프레임이면 그 동작 프레임을 시간에 맞춰 넘긴다.
         -- (10-13 사용자 지적: 해골 전사 소환수가 걸을 때 걷는 프레임 없이 미끄러져 날아다니는 것처럼 보였다 — 서버는 첫 프레임 한 장만 준다)
+        -- s48v2-A (10-30 사용자 「프레임 아끼지 말 것」): 장 수·지속 상한 없음 — 몇 장이든 표의 지속(delays)대로 누적 시간으로 고른다(FramePick).
         if self.FrameIndex == nil then
             self.FrameIndex = {}
             _GameData:GetMonsterFrames("")   -- 표가 아직 안 만들어졌으면 만든다 (Ensure)
@@ -496,9 +497,15 @@ script MotionSmoother extends Logic
                     self.FrameIndex[a.r[a.s]] = { f = a, act = "attack", scale = impact > 0 and (impact / self.AttackWindup) or 1 }
                 end
                 -- 거인 한 번 동작 (10-30 갈래 E · ShadowUnit.GiantPlay가 첫 칸을 건다): 기술·피격·갈라짐을 그 칸부터 납품 시간 그대로 한 번
-                --   48-6: 기술별 동작 skill1·skill2(K-4 · 등록돼 있을 때) — 기술 동안 반복은 아래 GiantHoldUntil
+                --   48-6: 기술별 동작 skill1·skill2 — 기술 동안 반복은 아래 GiantHoldUntil
+                --   s48v2-A: 표에 있는 거인 동작은 이름을 정해 두지 않고 모두 (roar 등 새 몸 키가 표에 오면 코드 수정 없이) · 이름 순서로 고정
                 if string.sub(tostring(key), 1, 6) == "giant_" then
-                    for _, act in ipairs({ "skill", "skill1", "skill2", "hit", "split" }) do
+                    local acts = {}
+                    for act, _ in pairs(set) do
+                        if act ~= "stand" and act ~= "move" and act ~= "attack" then table.insert(acts, act) end
+                    end
+                    table.sort(acts)
+                    for _, act in ipairs(acts) do
                         local g = set[act]
                         if g ~= nil and g.r ~= nil and #g.r > 1 and self.FrameIndex[g.r[1]] == nil then self.FrameIndex[g.r[1]] = { f = g, act = act } end
                     end
@@ -514,20 +521,51 @@ script MotionSmoother extends Logic
         if r.frameAct ~= clip then
             r.frameAct = clip
             r.frameAt = now
+            r.frameIdx = 0
         end
         local f = hit.f
-        local total = 0
-        for _, d in ipairs(f.d) do total = total + d end
-        if total <= 0 then return clip end
         local t = (now - r.frameAt) * (hit.scale or 1)
         -- 48-6 ③ 거인 기술 동작은 서버가 정한 시각(GiantHoldUntil)까지 반복 (회전 1.6초 · 영창 1초 · 연속 베기 = 평타 그림 반복)
+        --   s48v2-A: 반복은 표의 loop 동작(회전·기도)과 평타 그림 반복(연속 베기)만. 한 번 동작(내려찍기·땅 가르기·노바)은 hold가 길어도
+        --   처음으로 되감지 않고 마지막 칸에서 기다린다 (준비 자세가 두 번 나오는 「두 번 찍기」 방지)
         local hold = r.unit ~= nil and isvalid(r.unit) and r.unit.GiantHoldUntil > _UtilLogic.ServerElapsedSeconds
-        if f.loop or hold then t = t % total elseif t >= total then return f.r[#f.r] end
-        for i, d in ipairs(f.d) do
-            if t < d then return f.r[i] end
+        local looping = f.loop or (hold and hit.act == "attack")
+        local i = self:FramePick(f, t, looping)
+        -- 타격 칸(f.s · monster_frames impact)은 건너뛰지 않는다: 한 번의 갱신이 길어 타격 칸을 넘었으면 이번에 타격 칸을 보인다 (다음 갱신은 다시 시간대로)
+        local prev = r.frameIdx or 0
+        if i < prev then prev = 0 end
+        if f.s ~= nil and prev < f.s and i > f.s then i = f.s end
+        r.frameIdx = i
+        return f.r[i]
+    end
+
+    method integer FramePick(table f, number t, boolean looping)
+        -- 경과 t초에 보일 칸 번호 (1부터 · s48v2-A). 누적 지속(f.d)으로 고르므로 갱신 주기가 달라도 동작 길이는 늘거나 줄지 않는다.
+        --   looping: f.ls(반복 시작 칸 · 없으면 1)부터 끝까지를 이어 돈다 — 앞 칸(준비 자세)은 한 번만, 끝 칸 → 반복 시작 칸으로 이음
+        --   한 번 동작: 끝나면 마지막 칸. 장 수 상한 없음 (6장 하드캡 없음 · 검사 tests/quality/giant_body_playback.lua)
+        local n = #f.r
+        if n <= 1 then return 1 end
+        local ls = math.max(1, math.min(n, f.ls or 1))
+        local total, pre = 0, 0
+        for k = 1, n do
+            local d = f.d[k] or 0
+            if k < ls then pre = pre + d end
+            total = total + d
+        end
+        if total <= 0 then return 1 end
+        if t < 0 then t = 0 end
+        if t >= total then
+            if not looping then return n end
+            local span = total - pre
+            if span <= 0 then return n end
+            t = pre + (t - pre) % span
+        end
+        for k = 1, n do
+            local d = f.d[k] or 0
+            if t < d then return k end
             t = t - d
         end
-        return f.r[#f.r]
+        return n
     end
 
     @ExecSpace("ClientOnly")

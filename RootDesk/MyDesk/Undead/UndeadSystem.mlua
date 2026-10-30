@@ -492,14 +492,27 @@ script UndeadSystem extends Logic
     end
 
     method table GiantStateOrder()
-        -- 거인 그림 동작 (코덱스 납품 stand4 · move6 · attack6 · skill6 · hit2 · split6 = 30장 · tools/register_giant_visuals.cjs STATES와 같은 순서) — 모두 있어야 거인 그림을 쓴다
+        -- 거인 그림 기본 동작 (tools/register_giant_visuals.cjs STATES와 같은 순서) — 모두 있어야 거인 그림을 쓴다.
+        --   장 수는 정하지 않는다 (s48v2-A · 예전 납품 stand4·move6·attack6·skill6·hit2·split6은 그때 그림의 장 수일 뿐 · 재생은 MotionSmoother.FramePick)
         local order = { "stand", "move", "attack", "skill", "hit", "split" }
         return order
     end
 
-    method table GiantExtraStates()
+    method table GiantExtraStates(table set)
         -- 48 §7-2 기술별 동작 (K-4 · 있을 때만 · 장 수는 종마다 다름 — register_giant_visuals.cjs EXTRA_STATES): 없으면 GiantMotionKey가 지금 skill 그림 · 쌍칼 연속 베기는 평타 그림을 쓴다
-        local extra = { "skill1", "skill2" }
+        --   s48v2-A: skill1 · skill2 · roar(방패 함성 몸) 다음에 표(set)에 있는 그 밖의 새 동작 키도 이름 순서로 (기본 동작은 빼고) — 새 몸 줄이 오면 코드 수정 없이 외형에 실린다
+        local extra = { "skill1", "skill2", "roar" }
+        if set ~= nil then
+            local more = {}
+            for st, _ in pairs(set) do
+                local known = false
+                for _, b in ipairs(self:GiantStateOrder()) do if b == st then known = true end end
+                for _, b in ipairs(extra) do if b == st then known = true end end
+                if not known then table.insert(more, st) end
+            end
+            table.sort(more)
+            for _, st in ipairs(more) do table.insert(extra, st) end
+        end
         return extra
     end
 
@@ -528,13 +541,19 @@ script UndeadSystem extends Logic
                 look.attackFirstSec = total
             end
         end
-        for _, st in ipairs(self:GiantExtraStates()) do
+        for _, st in ipairs(self:GiantExtraStates(set)) do
             local f = set[st]
             if f ~= nil and f.r ~= nil and #f.r > 0 and (f.r[1] or "") ~= "" then
                 look[st] = f.r[1]
                 local total = 0
                 for _, d in ipairs(f.d or {}) do total = total + d end
                 look[st .. "Sec"] = total
+                -- s48v2-A: 몸 타격 칸(monster_frames impact → s)이 있으면 동작 시작부터 그 칸까지 시간 (서버 타격 시각 맞춤 확인용 · 그림만)
+                if f.s ~= nil and f.s > 1 then
+                    local hitAt = 0
+                    for k = 1, f.s - 1 do hitAt = hitAt + (f.d[k] or 0) end
+                    look[st .. "Hit"] = hitAt
+                end
             end
         end
         return look
