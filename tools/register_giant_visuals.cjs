@@ -60,7 +60,7 @@ const FX_RULES = {
   slam: { form: "shield", name: "방패 내려찍기 충격", ranges: [[12, 16, "v2"]], loop: false, hits: [1, 1], sec: [0.3, 1.5], now: ["GameConst", "FxGiantSlam"] },
   roar: { form: "shield", name: "도발 함성 문양·방사", ranges: [[12, 12, "v2"]], loop: false, hits: [0, 1], sec: [0.4, 1.6], now: ["SkillEffects", "FxGiantRoar"] },
 };
-const FRAME_MIN_SEC = 1 / 60;   // 몸: 60Hz 화면 한 번보다 짧은 칸은 건너뛸 수 있다 (경고) · 효과: 0.04 미만이면 spec.sec 명시 필요 (경고)
+const FRAME_MIN_SEC = 1 / 30;   // 몸: 한 칸 1/30초 이상 (오류 · 갈래 A 8877d73a — 갱신 주기보다 짧은 칸은 빠질 수 있음 · 지금 최소 0.04 통과) · 효과: 0.04 미만이면 spec.sec 명시 필요 (경고)
 // 하위 호환 내보내기 (예전 EXTRA_STATES 모양: 상태 → 종 → [최소, 최대])
 const EXTRA_STATES = {};
 for (const form of FORMS) for (const [state, rule] of Object.entries(BODY_RULES[form])) {
@@ -181,7 +181,7 @@ function seqCheck(label, rule, items, out, kind) {
   let sum = 0;
   items.forEach((it, i) => {
     if (!(it.sec > 0)) out.errors.push(label + " #" + (i + 1) + " 시간 " + it.sec + " — 양수여야 함");
-    else if (it.sec < minSec - 1e-9) out.warnings.push(label + " #" + (i + 1) + " " + r3(it.sec) + "초 < " + r3(minSec) + (kind === "fx" ? " — SkillEffects spec.sec를 명시해야 이 간격으로 돈다 (기본 바닥 0.04)" : " — 60Hz 화면에서 건너뛸 수 있음"));
+    else if (it.sec < minSec - 1e-6) (kind === "fx" ? out.warnings : out.errors).push(label + " #" + (i + 1) + " " + r3(it.sec) + "초 < " + r3(minSec) + (kind === "fx" ? " — SkillEffects spec.sec를 명시해야 이 간격으로 돈다 (기본 바닥 0.04)" : " — 몸 한 칸은 1/30초 이상 (갱신 주기보다 짧으면 칸이 빠짐 · 갈래 A 8877d73a)"));
     sum += it.sec > 0 ? it.sec : 0;
   });
   const looped = items.some((it) => it.loop);
@@ -436,7 +436,7 @@ function selftest() {
     ...seq("frame", "mage", "skill2", 6, { loop: true, ms: 120 }), ...seq("frame", "mage", "skill1", 3, { ms: 250 })];
   const v2 = () => [...base(),
     ...seq("frame", "shield", "skill1", 10, { ms: 80 }), ...seq("frame", "shield", "skill2", 12, { hitAt: 6, ms: 60 }),
-    ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 }), ...seq("frame", "greatsword", "skill2", 14, { hitAt: 6, ms: 60 }),
+    ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 }), ...seq("frame", "greatsword", "skill2", 14, { hitAt: 6, ms: 60 }),
     ...seq("frame", "twin", "skill2", 6, { hitAt: 2, ms: 70 }),
     ...seq("fx", "mage", "nova", 16, { hitAt: 3, ms: 50 }), ...seq("fx", "greatsword", "spin", 16, { loop: true, ms: 50 }), ...seq("fx", "greatsword", "rift", 16, { hitAt: 2, ms: 50 }),
     ...seq("fx", "shield", "slam", 12, { hitAt: 4, ms: 60 }), ...seq("fx", "shield", "roar", 12, { ms: 70 })];
@@ -461,10 +461,10 @@ function selftest() {
     ...seq("fx", "shield", "slam", 16, { hitAt: 4, ms: 60 })]), null);
   expect("V2 함성 12", checkAll([...base(), ...seq("frame", "shield", "skill1", 12, { ms: 80 })]), null);
   // 코덱스 확정 후속: 대검 회전 몸은 12~16 모두 허용 (짧은 기존 회전 시간에 맞춤 · 16을 채우려 복제 금지 = 중복 장 오류 유지)
-  expect("V2 회전 몸 12장(하한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 12, { loop: true, hitAt: 6, ms: 33.34 })]), null);
-  expect("V2 회전 몸 16장(상한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), null);
-  expect("V2 회전 몸 17장", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 17, { loop: true, hitAt: 8, ms: 23.53 })]), "17장 — 허용");
-  expect("V2 회전 몸 16장을 복제로 채움", checkAll(mutate([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })], (r) => r.key === "giant-greatsword-skill1-10", () => ({ sha256: fake("giant-greatsword-skill1-09") }))), "같은 그림 연속");
+  expect("V2 회전 몸 12장(하한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 12, { loop: true, hitAt: 6, ms: 66.66 })]), null);
+  expect("V2 회전 몸 16장(상한)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 })]), null);
+  expect("V2 회전 몸 17장", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 17, { loop: true, hitAt: 8, ms: 40 })]), "17장 — 허용");
+  expect("V2 회전 몸 16장을 복제로 채움", checkAll(mutate([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 50 })], (r) => r.key === "giant-greatsword-skill1-10", () => ({ sha256: fake("giant-greatsword-skill1-09") }))), "같은 그림 연속");
   const mfNow = parse(fs.readFileSync(path.join(ROOT, "data/monster_frames.csv"), "utf8"));
   expect("지금 monster_frames form_giant_* (기본 150 + full66 기술 몸)", checkFrames(mfNow), null);
   const mfRows = (rows) => parse(["monster,state,frames,delays,loop,clip,impact", ...FORMS.flatMap((f) => framesRows(rows.map((r) => Object.assign({}, r, { ruid: r.sha256.slice(0, 32) })), f))].join(LF) + LF);
@@ -491,6 +491,13 @@ function selftest() {
   expect("monster_frames 기본 attack impact 없음", checkFrames(mfNow.map((r) => (r.monster === "form_giant_mage" && r.state === "attack" ? Object.assign({}, r, { impact: "" }) : r))), "타격 칸 없음");
   expect("monster_frames 기본 move 줄 빠짐", checkFrames(mfNow.filter((r) => !(r.monster === "form_giant_twin" && r.state === "move"))), "move 줄 없음");
   // 경고 (실패는 아님)
+  // 갈래 A 요청: 몸 한 칸 1/30초 이상 (0.04는 통과 · 0.025는 오류) · 방패 함성 몸 8~12 밖 검출
+  expect("몸 한 칸 0.04초 통과", checkAll([...base(), ...seq("frame", "shield", "skill2", 12, { hitAt: 6, ms: 40 })]), null);
+  expect("몸 한 칸 1/30초 미만 (회전 16 × 0.025)", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 25 })]), "1/30초 이상");
+  expect("monster_frames 몸 칸 0.02초", checkFrames(mfV2.map((r) => (r.monster === "form_giant_greatsword" && r.state === "skill2" ? Object.assign({}, r, { delays: r.delays.split(";").map((x, i) => (i === 3 ? "0.02" : x)).join(";") }) : r))), "1/30초 이상");
+  expect("방패 함성 몸 7장", checkAll([...base(), ...seq("frame", "shield", "skill1", 7, { ms: 80 })]), "7장 — 허용");
+  expect("방패 함성 몸 13장", checkAll([...base(), ...seq("frame", "shield", "skill1", 13, { ms: 80 })]), "13장 — 허용");
+  expect("방패 함성 몸 반복", checkAll([...base(), ...seq("frame", "shield", "skill1", 10, { loop: true, ms: 80 })]), "반복");
   expectWarn("회전 반복 한 바퀴 ≠ 타격 주기", checkAll([...base(), ...seq("frame", "greatsword", "skill1", 16, { loop: true, hitAt: 8, ms: 34 })]), "타격 주기");
   expectWarn("구 납품 인접 중복은 경고만", checkAll(mutate(legacy(), (r) => r.key === "giant-shield-skill2-02", () => ({ sha256: fake("giant-shield-skill2-01") }))), "같은 그림 연속");
   expectWarn("효과 0.04초 미만 간격", checkAll([...base(), ...seq("fx", "greatsword", "spin", 16, { loop: true, ms: 25 })]), "spec.sec");
