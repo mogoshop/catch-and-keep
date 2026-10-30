@@ -1303,3 +1303,7 @@
 - 고른 그림(파일 대조): 쌍칼 `giant-twin-stand-01-V4` · 대검 `versions/before-targeted-refinements/giant-greatsword-stand-01-V4`(정리 전판) · 방패 `giant-shield-stand-01-V4` — 폴더 `/Users/leeinguk/Documents/New project/art-giant-redesign-20261030/delivery/`.
 - 요청: 기본·마법사 거인 서기 시안 2개씩을 위 3장 결(길쭉한 팔다리 · 숙인 자세 · 보석 박힌 회색 쇠 갑옷 조각 · 찢긴 보라 천 · 가슴 보석 · 보라 눈빛)로. 기본 = 한 손 검(또는 뼈 곤봉) · 방패 없음, 마법사 = 지팡이 + 두건 로브 · 덩치 같은 급. compare 판에 고른 3장과 나란히. 정본 메모 `art-giant-redesign-20261030/user-pick-1030.txt`.
 - 고른 뒤: 5종 × 30 + HUD 5를 이 방향으로(대검은 정리 전판 기준) · J와 같은 key·크기·피벗·프레임 → 게임은 RUID만 바꿈.
+
+### K-3. 사용자 최종 선택 (10-30) — 거인 5종 = V4 결 · 전체 제작
+- 쌍칼 `giant-twin-stand-01-V4` · 대검 `versions/before-targeted-refinements/giant-greatsword-stand-01-V4`(정리 전판) · 방패 `giant-shield-stand-01-V4` · **기본 = 뼈 곤봉 시안 · 마법사 = 두건 로브·보석 지팡이 시안**(사용자 「이 두 놈이 그나마 마음에 든다」 — 사본 `art-giant-redesign-20261030/user-picks-1030/`). K-2 시안 단계 끝.
+- 전체 제작: 5종 × 30 + HUD 5, J와 같은 key·크기·피벗·프레임. 첫 작업으로(재승인 없이) ① 대검 몸 키 139 → 166 안팎 ② 다섯 몸 키 166 안팎 통일 ③ 기본·마법사를 192×192 픽셀 아트 규격·색 결로 맞춤. 정본 메모 `art-giant-redesign-20261030/user-pick-1030-final.txt`.
