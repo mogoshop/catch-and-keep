@@ -48,6 +48,43 @@ module.exports = {
   //   0.80 × 1.25 = 1.0 — 이보다 밝던 바닥(색 값 0.8 초과)만 어두워진다. 출구 앞 ×1.30은 그런 바닥에서 1.0에 막혀 ×1.25
   FLOOR_TINT_CAP: 0.80,
   GUIDE_STEP_DEG: 22,          // 곡선을 이 각도마다 다른 토막으로 (돌린 반복 그림 한 장 = 한 토막 · 10-31 엔티티 절감으로 12→22, 이음매는 토막 끝을 폭에 맞춰 늘려 덮는다)
+  // ───── 길 안내 v4 (10-31 사용자 전체 맵 캡처 피드백 C-7·C-8: 「아스팔트 도로처럼 한 줄로 다 깔려 단조롭다 · 너무 두껍다 ·
+  //   출구가 여러 개면 여러 갈래로 · 액트/맵별 타일로」) — GUIDE_V4 맵만. 나머지 맵은 위 v3 값(폭 2 · 한 줄) 그대로 (승인 뒤 넓힌다)
+  GUIDE_V4: null,   // null = FULL 맵 전부 (10-31 사용자 승인 「모양 승인, 63장 진행」 — 1차는 액트 1 세 맵만이었다). 목록을 주면 그 맵만
+  BIG_ROAD_GLYPHS: ["="],      // 큰길 글자 — 큰길은 그 자체가 길이라 안내선을 겹치지 않는다(큰길 칸 0.55칸 안 점은 그리지 않음). 경로는 큰길을 따라가다(비용 ×ROAD_COST) 갈라진다
+  V4: {
+    WIDTH: 1.0, EXIT_WIDTH: 1.5,          // 폭 1칸 · 출구 EXIT_LEN칸 앞만 1.5칸
+    BRIGHT: 1.18, EXIT_BRIGHT: 1.25,      // 밝은 발길(폭이 줄어 ×1.25보다 낮춤) · 출구 앞
+    EDGE: 0.07, EDGE_DARK: 0.86,          // 어두운 바탕 띠(폭 전체, 테 선 역할)를 깔고 그 위에 밝은 발길 토막을 끊어 얹는다
+    DASH: [3.0, 5.0], GAP_RATIO: 0.2,     // 끊긴 발길: 발길 토막 길이 3~5칸(의사 난수) · 빈틈은 전체의 20%
+    ROAD_COST: 0.5,                       // 큰길 칸 경로 비용 배율 (큰길을 따라가다 갈라지게)
+    LOOP_MIN_CELLS: 80,                   // 이 칸 수 이상인 설계도 구역마다 고리 갈래 하나 (작은 마당·길목은 고리 없이 갈래만)
+    LOOP_CLEAR: 1.0,                      // 고리는 벽·막는 장식에서 1칸 이상 (출구 갈래는 ROUTE_CLEAR 1.5)
+    LOOP_RING: [0.55, 2, 6],              // 고리 반경 = 구역 반경 × 0.55 (2~6칸) · 큰길 쪽에서 들어가 구역 뒤편을 돌아 나온다
+    LOOP_ANGLES: [-80, 180, 80],          // 구역 가운데에서 본 들어온 쪽 방향 기준 고리 경유점 각도 (옆 → 뒤편 → 옆)
+    MAP_VAR: 0.08,                        // 맵마다 명도 ±8% (맵 id 씨앗)
+    FORK_LEN: 1.5,                        // 갈래 시작 1.5칸 = 갈림 조각
+    END_ALPHA: 0.6,                       // 구간 시작·끝 뾰족한 끝 조각 불투명도 (띠 끝이 옅어지며 끝나게 · 코덱스 end 타일 오기 전 임시)
+    STEP_DEG: 40,                         // 곡선 토막 각도 (엔티티 예산 43545 ± 10% 안으로)
+    // 코덱스 타일 도장 (GUIDE_TILE stamp): 1칸(100px) 간격 · 빈틈 10%(타일 자체 빈틈이 있어 20%에서 낮춤) · 곡선 타일은 1칸 안에서 50° 넘게 꺾일 때만
+    STAMP: { PITCH: 1.0, GAP: 0.1, CURVE_DEG: 50, CORE_W: 0.45, VAR: 0.08 },
+  },
+  // C-8 액트별 길 안내 타일 슬롯 {straight, curve, fork, end}. 빌더는 조각마다 종류를 기록한다(guide.pieces.kind)
+  //   stamp: true = 코덱스 길 안내 타일(128px 정사각 · 100px 피치 · 가운데 피벗 · 자체 가장자리·빈틈) — 1칸 간격 낱장 도장으로 찍는다
+  //     (바탕 띠·테 선 없음 · 빈틈 STAMP.GAP). 타일 방향: 직선 N–S · 곡선 N–E(왼쪽으로 꺾임, 오른쪽은 좌우 반전) · 갈림 W–E + S(갈래) · 끝 N(그 반대쪽으로 옅어짐)
+  //   stamp 없음 = 임시: 기존 바닥 그림 + 색 변형을 돌린 반복 그림 띠로 (바탕 띠 + 끊긴 발길)
+  //   코덱스 타일이 오면: assets/codex-guide-tiles-v1/act<N>/를 그룹 OJYYQ에 올리고(RUID) data/art_sprites.csv에 4행 → 아래 그 액트 줄을 stamp 줄로 바꿔 다시 짓는다
+  GUIDE_TILE: (() => {
+    const t = (art, tint) => ({ straight: { art, tint }, curve: { art, tint }, fork: { art, tint }, end: { art, tint } });
+    const s = (pre) => ({ straight: { art: `${pre}-straight`, tint: "1/1/1", stamp: true }, curve: { art: `${pre}-curve`, tint: "1/1/1", stamp: true },
+      fork: { art: `${pre}-fork`, tint: "1/1/1", stamp: true }, end: { art: `${pre}-end`, tint: "1/1/1", stamp: true } });
+    return {
+      1: s("guide-act1"),                                   // 10-31 코덱스 액트 1 타일 (밟힌 흙길 + 자갈 가장자리 · 폭 약 0.3~0.5칸) — 임시였던 a1-mud-floor 0.74/0.64/0.52 대체
+      2: t("a2-sandstone-paving-floor", "0.76/0.68/0.54"), // 돌판
+      3: t("a3-wet-cobble-road-r2", "0.62/0.68/0.7"),      // 젖은 조개 자갈
+      4: t("a4-cooled-lava-floor", "0.62/0.55/0.52"),      // 재·식은 용암
+    };
+  })(),
   MARKER: { 1: "camp-brazier", 2: "a2-adjunct-censer-base", 3: "harbor-lantern", 4: "a4-brazier" },
   MARKER_OFFSET: [2.3, 2.6, 3.0, 3.4],   // 길 가운데에서 옆으로 (길 폭 3칸 밖 · 양쪽 한 쌍)
   MARKER_ALONG: [0, -0.8, 0.8, -1.6, 1.6], // 자리가 막혔으면 길을 따라 앞뒤로 옮겨 본다 (출구 3칸 앞 기준)

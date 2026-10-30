@@ -85,17 +85,48 @@ for (const id of ids) {
   }
   // C-1·C-3
   const route = art.route;
+  // 길 안내 조각 안 표본 점: 돌린 반복 그림은 사각형 전체(가장자리 margin 안쪽) · 코덱스 타일 도장은 진행 방향 1칸 × STAMP.CORE_W(흙길 몸통)
+  const stampOf = new Map(((art.guide && art.guide.pieces) || []).filter((q) => q.layer === "stamp").map((q) => [q.name, q]));
+  const guideSamples = (e, margin) => {
+    const out = [], q = stampOf.get(e.name);
+    if (q) {
+      const th = (q.hd * Math.PI) / 180, ux = Math.cos(th), uy = Math.sin(th), hw = P.V4.STAMP.CORE_W / 2;
+      for (let a = -0.5 + margin; a <= 0.5 - margin + 1e-9; a += 0.15) for (let b = -hw; b <= hw + 1e-9; b += 0.15) out.push([q.cx + ux * a - uy * b, q.cy + uy * a + ux * b]);
+      return out;
+    }
+    const r = decor.rotOf(e);
+    for (let a = margin; a < r.L - margin; a += 0.2) for (let b = margin; b < r.W - margin; b += 0.2) out.push(decor.rectPoint(r.pos, r.deg, r.L, r.W, a, b));
+    return out;
+  };
   if (route) {
     for (const p of art.pieces) {
-      if (p.block) for (const [cx, cy] of p.cells) if (decor.cellDistToCurve(route, cx, cy) < P.ROUTE_CLEAR - 1e-6) { c.v3++; bad(where(p.name), `막는 조각 '${p.sprite}' 칸 (${cx}, ${cy})이 길 폭 3칸 안`); break; }
-      if (p.scatter && decor.distToCurve(route, p.x, p.y) < P.ROUTE_CLEAR - 1e-6) { c.v3s++; bad(where(p.name), `흩뿌림 '${p.sprite}'이 길 폭 3칸 안`); }
+      // 출구 갈래는 ROUTE_CLEAR(1.5) · v4 고리는 LOOP_CLEAR(1) 안 (decor.cellTooClose·tooClose — 빌더와 같은 판정)
+      if (p.block) for (const [cx, cy] of p.cells) if (decor.cellTooClose(route, cx, cy)) { c.v3++; bad(where(p.name), `막는 조각 '${p.sprite}' 칸 (${cx}, ${cy})이 길 안내 둘레 안`); break; }
+      if (p.scatter && decor.tooClose(route, p.x, p.y)) { c.v3s++; bad(where(p.name), `흩뿌림 '${p.sprite}'이 길 안내 둘레 안`); }
+    }
+    // C-7 v4: 출구마다 안내선(큰길로만 닿는 출구는 큰길이 안내) · 구역마다 고리 · 폭 1칸(출구 앞 1.5) · 큰길 위 0
+    if (route.v4) {
+      c.exitNo = 0; c.loopNo = 0; c.width = 0; c.bigRoad = 0; c.cross = 0;
+      for (const ex of route.exits) {
+        const drawn = art.guide.pieces.filter((q) => q.target === ex.target).length;
+        if (!ex.ok || (!drawn && ex.offRoad > 1)) { c.exitNo++; bad(id, `출구 ${ex.target} 안내선 없음 ${ex.reason || ""}`); }
+      }
+      // 고리 생략(경유점 자리 부족·엇갈림 회피 실패 등 — skipped)은 위반이 아니라 목록(전후 표 loopsSkipped)으로 보고
+      for (const lp of route.loops) if (!lp.ok && !lp.skipped) { c.loopNo++; bad(id, `구역 ${lp.zone}(${lp.cells}칸) 고리 없음 — ${lp.reason}`); }
+      const lc = route.curves.filter((q) => q.kind === "loop");
+      for (let a = 0; a < lc.length; a++) for (let b2 = a + 1; b2 < lc.length; b2++) if (decor.curvesCross(lc[a].pts, lc[b2].pts)) { c.cross++; bad(id, `고리 ${lc[a].target} · ${lc[b2].target} 엇갈림`); }
+      for (const q of art.guide.pieces) if (q.W > (q.exit ? P.V4.EXIT_WIDTH : P.V4.WIDTH) + 1e-6) { c.width++; bad(where(q.name), `길 안내 폭 ${q.W}칸`); }
+      for (const e of art.entities.filter((e) => /^ArtGuide/.test(e.name))) {
+        let hit = null;
+        for (const [wx, wy] of guideSamples(e, 0.1)) if (!hit && route.isBig(Math.floor(wx), Math.floor(wy))) hit = `(${Math.floor(wx)}, ${Math.floor(wy)})`;
+        if (hit) { c.bigRoad++; bad(where(e.name), `길 안내가 큰길 칸 ${hit}에 겹침`); }
+      }
     }
     // 길 안내 토막(돌린 사각형) 안을 0.2칸 간격으로 찍어 벽·막힌 칸과 겹치는지
     for (const e of art.entities.filter((e) => /^ArtGuide/.test(e.name))) {
-      const r = decor.rotOf(e);   // 회전 역산은 빌더와 같은 한 곳 (decor.cjs rectPoint)
-      let hit = false;
-      for (let a = 0.05; a < r.L - 0.05 && !hit; a += 0.2) for (let b = 0.05; b < r.W - 0.05 && !hit; b += 0.2) {
-        const [wx, wy] = decor.rectPoint(r.pos, r.deg, r.L, r.W, a, b);
+      let hit = false;   // 회전 역산은 빌더와 같은 한 곳 (decor.cjs rectPoint)
+      for (const [wx, wy] of guideSamples(e, 0.05)) {
+        if (hit) break;
         const cx = Math.floor(wx), cy = Math.floor(wy);
         if (isBlock(cx, cy) || art.blocked.has(key(cx, cy))) hit = `칸 (${cx}, ${cy}) ${isBlock(cx, cy) ? "벽" : "막힌 장식 " + ((art.pieces.find((p) => p.cells.some(([px, py]) => px === cx && py === cy)) || {}).name || "(갇힌 바닥)")}`;
       }
@@ -160,12 +191,16 @@ for (const id of ids) {
   const bpWalls = []; for (const [x, y] of bp.cells()) if (bp.isWall(x, y)) bpWalls.push(key(x, y));
   report[id] = Object.assign({ bpWallHash: H(bpWalls.join(";")), collHash, collCells: want.length, edges, cornersTotal,
     blockPieces: art.pieces.filter((p) => p.block && !/^ArtMark/.test(p.name)).length, marks: art.counts.marks || 0,
-    scatter: art.pieces.filter((p) => p.scatter).length, counts: art.counts, policy: art.policy ? Object.assign({}, art.policy, { rows: undefined }) : null }, c);
+    scatter: art.pieces.filter((p) => p.scatter).length, counts: art.counts,
+    guideV4: route && route.v4 ? { pieces: art.guide.pieces.length, base: art.guide.segments, dash: art.guide.dashes, kinds: art.guide.kinds, mapVar: art.guide.mapVar,
+      exits: route.exits.map((e) => ({ target: e.target, ok: e.ok, drawn: art.guide.pieces.filter((q) => q.target === e.target).length, offRoad: e.offRoad })),
+      loops: route.loops.map((l) => ({ zone: l.zone, ok: l.ok, reason: l.reason || "", cells: l.cells, drawn: art.guide.pieces.filter((q) => q.target === `loop:${l.zone}`).length })),
+      widthMax: Math.max(0, ...art.guide.pieces.filter((q) => !q.exit).map((q) => q.W)), exitWidthMax: Math.max(0, ...art.guide.pieces.filter((q) => q.exit).map((q) => q.W)) } : null, policy: art.policy ? Object.assign({}, art.policy, { rows: undefined }) : null }, c);
   const tot = Object.values(c).reduce((a, v) => a + v, 0);
   console.log(`  ${id}: 위반 ${tot} · 막는 조각 ${report[id].blockPieces} · 흩뿌림 ${report[id].scatter} · 길 안내 토막 ${art.guide ? art.guide.segments : 0} · 표식 ${report[id].marks} · 경계 ${edges}변 · 볼록 모서리 ${cornersTotal}`);
 }
 if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify(report, null, 1));
-for (const p of problems.slice(0, 40)) console.log("  ! " + p);
+for (const p of problems.slice(0, args.includes("--all") ? Infinity : 40)) console.log("  ! " + p);   // --all: 전부
 if (problems.length > 40) console.log(`  ! … 외 ${problems.length - 40}건`);
 console.log(`[check_decor_collision] 맵 ${ids.length}장 · 문제 ${problems.length}건`);
 process.exit(problems.length ? 1 : 0);
