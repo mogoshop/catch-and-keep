@@ -89,8 +89,87 @@
   - skills 그룹에 새로 넣은 것: 「폭발 증폭」 이름·설명·요약 줄, 노바 데이터 3.75·1.5·ring 없음
   - sv 5 저장의 giant_mage_pull=1은 그대로 남고 환급 0이다. 다시 저장해도 sv 5이고, 다시 읽어도 환급 0이다.
 
-## 6. 한계
+## 7. 효과 출력을 B 새 자리로 (B 73fc0393 요청)
+`fxStrings`·`apply`는 효과마다 「연속본 자리 + *Opts 계약 문자열」을 출력한다. 파일에 쓰지 않고 보이기만 하며, 넣는 일은 부모가 한다.
+
+| 효과 · 층 | 연속본 자리 | 계약 자리 · order |
+|---|---|---|
+| 노바(한 층) · 뒤 층 | FxGiantNova | FxGiantNovaOpts · 1 |
+| 노바 앞 층 | FxGiantNovaFront (**제안** — B 자리 없음) | FxGiantNovaFrontOpts · 6 |
+| 회전 뒤 / 앞 (back은 rear 별칭) | FxGiantSpinBack / FxGiantSpinFront | FxGiantSpinOpts · 1 / 6 |
+| 균열 | FxGiantRiftSeq | FxGiantRiftOpts · 1 |
+| 내려찍기 뒤 / 앞 | FxGiantSlamSeq / FxGiantSlamFront | FxGiantSlamOpts · 1 / FxGiantSlamFrontOpts · 6 |
+| 함성 / 앞 별 | FxGiantRoarSeq / FxGiantRoarFront (**제안**) | FxGiantRoarOpts · 1 (납품 behind_radial) / 6 |
+
+- 계약 문자열에 넣는 값:
+  - `w·h`: 원본 px
+  - `ref`: 노바 7.5, 회전 3.2
+  - `impact`: hitFrame+1
+  - `durations`: 장마다 ms가 다를 때와 부분 파생 층일 때만 넣는다. **제안 키**이고 B GiantFxFrameSec는 아직 이 키를 읽지 않는다. 계약 칸 구분자 「;」와 겹치지 않도록 「,」로 잇는다.
+  - `order`
+- 기존 계약 키 span·ax·ay·dy·face·flip은 부모가 이미지 메타데이터로 합친다.
+- 노바 w·h: 조정자 메시지의 11.43·9.14는 칸 단위다. B 계약은 w·h를 **원본 px**로 읽으므로 `w=640;h=512;ref=7.5`로 출력한다. 이 값이면 B의 배율이 100/56이 되어 캔버스가 11.43×9.14칸으로 그려진다.
+- 노바 타격 칸: 정점 index 6(160ms)을 `impact=7`로 넣는다.
+- 반복 효과(회전)는 B의 cycle 규칙이 간격을 정한다. 그래서 0.04초 바닥 경고를 내지 않는다.
+- `intake-fx 「manifest」 [--layers] [--write]`: 노바 매니페스트를 대기표 효과 줄로 바꾼다. 파일 sha를 다시 재고, peak 칸을 타격 칸으로 잡고, 장별 ms를 그대로 쓴다. 앞/뒤 층은 파생 층으로 넣는다.
+
+## 8. full133 정본 인수 — 대검 64 · 방패 52 · 노바 17
+정본만 읽는다. 작업 폴더 임시본은 쓰지 않는다. 정본 파일은 `assets/codex-bone-giants-v1/spectacle-v2-20261030/`에 있는 다음 다섯 개다.
+- `resource-mapping.csv` (133행) · `resource-properties.csv`
+- `world-registration-conditions.json`
+- `animation-timing-proposal.json`
+- `records/derived-layers72.json`
+
+정본에는 대검 몸 6장 투영 정정과 균열 캔버스 512×288·피벗 (0, 0.0833)이 반영되어 있다.
+
+생성 명령:
+`intake-canon 「정본 폴더」 --uploads summon48-spectacle-upload-nova17.json --out docs/evidence/2026-10-30-s48v2-C/full-art-rows`
+
+이 명령이 만드는 초안 세 개:
+- `pending-draft.csv`: 지금 대기표 155줄 + 새 줄 204줄 = 359줄
+- `monster_frames-draft.csv`: key·sha·delays·loop·impact·캔버스
+- `fx-slots-draft.json`: 효과 자리 + 업로드 대조 + world·접점·미러 메타데이터
+
+RUID 칸은 비워 둔다. 노바만 예외로, 업로드 기록과 sha가 같은 48개(효과 16 + 층 32)는 RUID를 채웠다.
+
+| 정본 | 대기표 줄 | 장 · 시간 · 타격 칸 |
+|---|---|---|
+| 대검 몸 skill1 회전 | giant-greatsword-skill1-01~16 | 16 × 25ms 반복(0.4초 = gap) · impact 0 · 384×224, 발 피벗 38/224 |
+| 대검 몸 skill2 균열 | giant-greatsword-skill2-01~16 | 합 550ms · impact 9(300ms) |
+| 대검 효과 회전 | giant-fx-spin-01~16 + 뒤/앞 층 32 | 16 × 25ms 반복 · ref 3.2 · 층은 새 프레임 아님 |
+| 대검 효과 균열 | giant-fx-rift-01~16 | 512×288 · 피벗 (0, 0.0833) · 접점 300ms에 시작 · 0.65초를 16장에 고르게 · impact 1 |
+| 방패 몸 skill2 내려찍기 | giant-shield-skill2-01~12 | 20~60ms 합 440 · impact 6(120ms) · 256×256 |
+| 방패 몸 skill1 함성 | giant-shield-skill1-01~12 | 12 × 50ms · impact 비움 |
+| 방패 효과 내려찍기 | giant-fx-slam-01~16 + 앞 별 3 | 몸과 t0에 같이 시작 · impact 4(index 3 = 120ms) · 장별 ms |
+| 방패 효과 함성 | giant-fx-roar-01~12 + 앞 별 5 | 12 × 50ms · 0~4 축광 → 5부터 방사 |
+| 노바 효과 | giant-fx-nova-01~16 + 앞/뒤 층 32 | 장별 20~90ms · 정점 index 6 → impact 7 · ref 7.5 · 640×512 |
+
+- **노바 업로드 대조**:
+  - `summon48-spectacle-upload-nova17.json`과 대조한 결과 48/48이 sha 일치했다.
+  - 아이콘은 업로드 기록에 RUID `529a147f…`가 있다. `ui_icons`의 node-explosion-amplification 줄과 skills icon 칸을 이 값으로 바꾸는 일은 부모가 한다.
+- **함성 impact를 비운 이유**: 계약은 「FX는 몸 t0에 같이 시작, skill1Hit만큼 다시 늦추지 않음」이다. 그런데 B 코드는 skill1Hit 뒤에 FX를 시작한다. 방사 원점 칸(몸 index 5, 250ms)은 메타데이터로 넘긴다.
+- **내려찍기 시작 시각**: 몸 index 6과 FX index 3이 모두 120ms에 오도록 t0에 동시 시작한다. 지금 B는 FX를 몸 타격 칸에 시작한다 → patch 요청.
+- **균열 w**: 캔버스 512를 그대로 넣었다. 6칸에 해당하는 내용 폭은 488px이고 앞 12px은 비어 있다. 이 차이는 meta로 넘기고, 스트레치 배율을 내용 폭에 맞출지는 B·부모가 판단한다.
+
+규칙 보완:
+- V2 기술 몸은 납품 캔버스를 그대로 받는다. 한 동작 안에서는 캔버스·피벗이 같아야 한다. 구 납품 묶음은 여전히 192 규격이다.
+- 파생 층(derived · source_index0)은 새 프레임 수에 넣지 않는다.
+  - 장 수는 원본 이하여야 한다.
+  - 원본 칸 번호는 순서대로 늘어나야 한다.
+  - 시간·반복은 원본 그 칸과 같아야 한다.
+- 정본 표의 width·height가 PNG 머리 크기와 맞는지 확인한다. resource-properties와 mapping이 같은지도 확인한다.
+- `check --manifest 「…/resource-mapping.csv」`는 정본 mapping을 직접 읽는다. source_key로 맞춰 크기·피벗·칸 번호·디스크 sha를 대조한다.
+
+검사:
+- `check --pending full-art-rows/pending-draft.csv --manifest 정본 resource-mapping.csv`: 문제 0. 133행 중 132행이 맞았고, 남은 1행(node 아이콘)은 대기표 대상이 아니다.
+- 경고는 짧은 칸뿐이다(몸 <1/30초, 효과 <0.04초 → durations 필요). 경고는 통과로 친다.
+- monster_frames 검사: 새 기술 몸 4줄을 sha로 가짜 RUID를 채운 상태에서 문제 0
+- selftest 80/80 (정본 인수 9항목 포함 — 정본 폴더가 없으면 건너뜀)
+- `npm test` 16/16, `check_data` 0
+
+## 9. 한계
 - 생성물(`GameData.mlua`·`SkillData.mlua`)은 로컬 검증에만 썼고 커밋하지 않았다. 부모가 통합할 때 `node tools/gen_data.cjs`로 다시 만든다. 이 브랜치만으로는 `gen_data --check`가 실패한다.
 - `giant_skills.lua`(갈래 B 소유)는 G.mage를 직접 2.5·ring으로 설정한다. B가 단발로 바꿀 때 같이 고친다.
-- 효과 연속본과 기술 몸의 RUID는 아직 없다(아트 제작 중). 실제 재생 시각, 레이어, 메이커 표시는 확인하지 않았다.
+- 효과 연속본과 기술 몸은 업로드 전이라 RUID가 없다. 실제 재생 시각, 레이어, 접점(ax·ay), 미러, 메이커 표시는 확인하지 않았다.
+- 정본 selftest는 메인 폴더 assets(또는 ART_V2_CANON)가 있을 때만 돈다. 없으면 건너뛴다.
 - 스틸 블렌드는 sha와 이름 단서로만 의심한다. 픽셀은 비교하지 않는다.
