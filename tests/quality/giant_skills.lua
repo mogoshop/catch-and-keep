@@ -52,7 +52,7 @@ local mons={}
 local function monster(name,x,y)
  local m={Name=name,IsDead=false,Hp=100,Grade=1,dead=false}
  m.Entity={Id=name,Name=name,pos=Vector2(x,y or 0),GetComponent=function(_,k) if k=='script.Monster' then return m end if k=='script.MonsterAttack' then return {TauntBy=function() m.taunted=true end} end end}
- m.st={ApplyRoot=function() end,Stagger=function() end,ApplyChill=function() end,ApplyCurseFrom=function(_,k,v,s) m.resist=v end}
+ m.st={ApplyRoot=function() end,Stagger=function() end,ApplyChill=function() end,ApplyCurseFrom=function(_,k,v,s) m.resist=v end,ApplyFireBreak=function(_,v,s) m.resist=v end}   -- 저항 경로 증거는 giant_fire (실제 GetResist)
  function m:Status() return self.st end
  table.insert(mons,m)
  return m

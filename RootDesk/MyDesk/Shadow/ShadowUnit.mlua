@@ -1687,7 +1687,7 @@ script ShadowUnit extends AttackComponent
                 if v.element ~= "" then
                     ---@type Monster
                     local target = defender:GetComponent("script.Monster")
-                    if target == nil then return math.max(1, math.floor(self:DuelDamage(defender, dmg) + 0.5)) end
+                    if target == nil then return math.max(1, math.floor(self:DuelDamage(defender, dmg, self:AttackElement(attackInfo), self:AttackElementRatio(attackInfo)) + 0.5)) end
                     dmg = dmg * math.max(0, 1 - target:GetResist(v.element) / 100)
                     local final = math.max(1, math.floor(dmg + 0.5))
                     if self:IsServer() then target:DpsTag(self.Entity, attackInfo, final) end
@@ -1695,15 +1695,17 @@ script ShadowUnit extends AttackComponent
                 end
             end
         end
-        if self.Element ~= "" and self.ElementRatio > 0 then
+        local element = self:AttackElement(attackInfo)
+        local ratio = self:AttackElementRatio(attackInfo)
+        if element ~= "" and ratio > 0 then
             ---@type Monster
             local monster = defender:GetComponent("script.Monster")
             if monster ~= nil then
-                local elem = dmg * self.ElementRatio
-                dmg = dmg - elem + elem * math.max(0, 1 - monster:GetResist(self.Element) / 100)
+                local elem = dmg * ratio
+                dmg = dmg - elem + elem * math.max(0, 1 - monster:GetResist(element) / 100)
             end
         end
-        if foe == nil then dmg = self:DuelDamage(defender, dmg) end
+        if foe == nil then dmg = self:DuelDamage(defender, dmg, element, ratio) end
         local final = math.max(1, math.floor(dmg + 0.5))
         if foe == nil and isvalid(defender.PlayerComponent) and self:IsServer() then
             -- 결투: 상대의 뼈 갑옷이 먼저 받는다
@@ -1724,9 +1726,23 @@ script ShadowUnit extends AttackComponent
         return final
     end
 
-    method number DuelDamage(Entity defender, number dmg)
-        -- 결투 상대에게: 플레이어는 물리 몫을 방어로·속성 몫을 저항으로 줄이고 PvP 배율·낙인을 곱한다. 소환수는 방패 유형·저항만
-        local ratio = self.Element ~= "" and self.ElementRatio or 0
+    method string AttackElement(string attackInfo)
+        -- 이 공격의 피해 속성 (48 §4-1 · 검토 FIRE-02): 마법사 거인의 화염 구슬(shadow.ranged)·자리 폭발(shadow.blast)은 몸이 된 마법사 속성과 무관하게 fire.
+        --   스냅샷(Element)은 바꾸지 않아 갈라진 뒤 원래 속성 그대로 · 그 밖의 공격은 원래 속성
+        if self.Giant and self.GiantKind == "mage" and (attackInfo == "shadow.ranged" or attackInfo == "shadow.blast") then return "fire" end
+        return self.Element
+    end
+
+    method number AttackElementRatio(string attackInfo)
+        -- AttackElement의 속성 몫 (마법사 거인 구슬·폭발 = 전부 화염 · 그 밖 = ElementRatio)
+        if self.Giant and self.GiantKind == "mage" and (attackInfo == "shadow.ranged" or attackInfo == "shadow.blast") then return 1 end
+        if self.Element == "" then return 0 end
+        return self.ElementRatio
+    end
+
+    method number DuelDamage(Entity defender, number dmg, string element, number ratio)
+        -- 결투 상대에게: 플레이어는 물리 몫을 방어로·속성 몫을 저항으로 줄이고 PvP 배율·낙인을 곱한다. 소환수는 방패 유형·저항만 (속성·몫 = AttackElement)
+        if element == "" then ratio = 0 end
         local phys = dmg * (1 - ratio)
         local elem = dmg * ratio
         if isvalid(defender.PlayerComponent) then
@@ -1734,7 +1750,7 @@ script ShadowUnit extends AttackComponent
             local ds = defender:GetComponent("script.PlayerStats")
             if ds ~= nil then
                 phys = phys * 100 / (100 + ds:GetDefense())
-                if ratio > 0 then elem = elem * math.max(0, 1 - ds:GetResist(self.Element) / 100) end
+                if ratio > 0 then elem = elem * math.max(0, 1 - ds:GetResist(element) / 100) end
                 return (phys + elem) * _GameData.pvpDamageMult * ds:PvpTakenMult()
             end
             return (phys + elem) * _GameData.pvpDamageMult
@@ -1742,7 +1758,7 @@ script ShadowUnit extends AttackComponent
         ---@type ShadowUnit
         local unit = defender:GetComponent("script.ShadowUnit")
         if unit == nil then return dmg end
-        if ratio > 0 then elem = elem * math.max(0, 1 - unit:GetResist(self.Element) / 100) end
+        if ratio > 0 then elem = elem * math.max(0, 1 - unit:GetResist(element) / 100) end
         return (phys + elem) * unit:ArchTakenMult()
     end
 
