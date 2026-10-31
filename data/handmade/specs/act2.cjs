@@ -557,13 +557,13 @@ Object.assign(module.exports.sanctum, {
     dress: {
       a: { props: ["a2-broken-urns", "a2-adjunct-bandage-bundle"], decals: ["a2-decal-broken-tiles"], dn: 2 },
       b: { feature: "prop:a2-landmark-temple-stair-censer", row: { name: "broken-column", step: 2.6 }, sets: ["a2_tomb_offering"], decals: ["a2-decal-broken-tiles"], dn: 2 },
-      c: { feature: "prop:a2-landmark-burning-bookshelf-tower", featureAt: [-15.5, 10.8],   // 3차: 반 칸 내림 — 아래에 선 플레이어 체력 막대에 가리지 않게
-           row: { name: "bookshelf", step: 2 }, sets: ["a2_scribe_corner"], decals: ["a2-decal-dry-blood"], dn: 1 },
+      c: { feature: "prop:a2-landmark-burning-bookshelf-tower", featureAt: [-19.5, 12.3],   // 4차: 북벽 책장 줄 앞을 가리지 않게 서쪽 · 정면 그림이라 북벽 3칸 안   // 3차: 반 칸 내림 — 아래에 선 플레이어 체력 막대에 가리지 않게
+           row: { name: "bookshelf", contiguous: true, step: 1.6, min: 2, minLine: 4 }   /* 4차: 정면 그림이라 북벽에만 빈틈 없이 (역할표 facing north) */, sets: ["a2_scribe_corner"], decals: ["a2-decal-dry-blood"], dn: 1 },
       d: { props: ["a2-buried-statue-head"], decals: ["a2-decal-incense-ash"], dn: 1 },
       e: {
         feature: "prop:a2-landmark-sun-disc-altar", featureAt: [24.5, -0.6], featureScale: 4 / 3,   // 3차: 제단 4칸(역할 3칸 × 4/3) · 축(y 1.5) 끝 동쪽 벽 앞 — 그림 가운데가 축에 오게 발을 내림
         colonnade: { name: "temple-column", step: 3, minPairs: 6, off: 2.5, tight: true, axis: [[1.5, 1.5], [22.5, 1.5]] },   // 3차: 두 열 간격 5칸 안팎 (띠 바로 곁)
-        pair: { name: "crypt-candlestand", around: "feature", d: 2.9 },   // 3차: 제단 양옆 촛대(횃불) 한 쌍
+        pair: { name: "crypt-candlestand", around: "feature", d: 1.9 },   // 4차: 제단 쪽으로 1칸 당겨 대사제 자리(20.5, 1.5)에서 띄움   // 3차: 제단 양옆 촛대(횃불) 한 쌍
         sides: { left: "e", right: "f" },
         row: [{ name: "wind-stele", side: "n" }, { name: "a2-adjunct-censer-base", side: "s" }],   // 북벽 바람 비석(벽감) 열 · 남벽 향로(화로) 열
         decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles", "a1-decal-blood-pool"], dn: 3,

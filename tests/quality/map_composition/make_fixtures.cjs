@@ -22,7 +22,7 @@ function base() {
 }
 const wx = (c) => c - W / 2 + 0.5, wy = (r) => H / 2 - r + 0.5;
 const cleanPieces = () => [
-  { s: "a2-landmark-sun-disc-altar", x: wx(6), y: wy(12) },
+  { s: "a2-landmark-sun-disc-altar", x: wx(6), y: wy(11) },   // 정면 그림 — 벽에서 4칸 (서 있는 것)
   { s: "a4-landmark-sulfur-geyser", x: wx(34), y: wy(12) },
   { s: "a2-broken-urns", x: wx(8), y: wy(12) }, { s: "a2-adjunct-censer-base", x: wx(9), y: wy(13) },
   ...[22, 25.5, 29].flatMap((c) => [{ s: "temple-column", x: c - W / 2, y: 3.3 }, { s: "temple-column", x: c - W / 2, y: -3.3 }]),
@@ -47,6 +47,12 @@ save("10-pillar", base(), cleanPieces().concat([{ s: "wind-stele", x: wx(15), y:
   const g = Array.from({ length: 16 }, (_, r) => Array.from({ length: 24 }, (_, c) => (r === 0 || c === 0 || r === 15 || c === 23 ? "#" : c - r > 6 ? "d" : "a")));
   fs.writeFileSync(path.join(OUT, "14-diagonal.json"), JSON.stringify({ note: "한 칸씩 고른 45° 계단 경계 (화면에서 비스듬한 직선)", grid: g.map((r) => r.join("")), zones, base: { art: "fake-base", tint: "1/1/1" }, walls: ["#"], markers: "WEGXHTS", guide: 0, pieces: [], expect: { straightEdge: 1 } }, null, 1));
 }
+save("17-featurepass", base(), cleanPieces().concat([{ s: "a2-landmark-golden-mask-wall", x: wx(30), y: wy(5), block: false }]).filter((p) => p.s !== "a4-landmark-sulfur-geyser"), { featurePass: 1 }, { note: "서 있는 특징인데 막지 않음" });
+save("18-passwidth", base(), cleanPieces(), { passWidth: 1 }, { note: "장식 발밑이 띠 위아래를 막아 너비 1칸", json: { blocked: ["20,7", "20,9", "20,6", "20,10"] } });
+save("19-reach", base(), cleanPieces(), { spaceReach: 1 }, { note: "곁방 문 칸을 장식이 막음", json: { blocked: ["6,4"] } });
+save("20-facing", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(1), y: wy(12) }]), { facing: 1 }, { note: "정면 그림(책장)을 서쪽 벽에" });
+save("21-rowgap", base(), cleanPieces().concat([22, 25, 30].map((c) => ({ s: "broken-column", x: wx(c), y: wy(14) }))), { rowGap: 1 }, { note: "벽 따라 한 줄 간격 3·5칸" });
+save("22-rowflip", base(), cleanPieces().concat([22, 25, 28].map((c, i) => ({ s: "wind-stele", x: wx(c), y: wy(14), flip: i === 1 }))), { rowFlip: 1 }, { note: "한 줄 가운데 하나만 뒤집힘" });
 save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이음새 조각 3개 (ArtBand·ArtCorner)", json: { seams: 3 } });
 { // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
   const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";

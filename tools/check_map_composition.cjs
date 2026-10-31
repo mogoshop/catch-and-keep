@@ -6,6 +6,11 @@
 //   [--json 파일]  맵별 수치
 // 항목 (0건이어야 한다):
 //   guide        길 안내 도장(ArtGuide) 0 — 길은 바닥 구역 경계의 빈 띠(P1)
+//   featurePass  역할표 feature·structure(서 있는 것)인데 통과 (바닥 분류·포털 그림·겹친 빛 제외) — v5는 막음이 기본
+//   passWidth    장식이 막아 골격(띠) 칸의 가로·세로 빈칸 수 최솟값이 2 밑으로 내려간 곳 (벽만으로는 2 이상이었는데)
+//   spaceReach   입구에서 막힌 칸을 피해 닿지 못하는 공간 수
+//   facing       역할표 facing: north(정면 그림)가 벽 2칸 안에 붙었는데 북쪽 벽(3칸 안)이 아님 · side는 동·서쪽 벽이 아님 (포털·입구 그림 제외)
+//   rowGap/rowFlip 한 줄(열주는 줄마다) 안 이웃 간격 최대−최소 >0.35칸 · 뒤집기 섞임
 //   seamAlpha    반투명 이음새 조각(ArtBand·ArtCorner·ArtShade, 색 알파 <1) 0 — v5 성소형 맵만 (10-31 사용자 판정: 띠 가장자리는 불투명 타일 가장자리만 · v5 keep은 원래 이음새 그대로라 세지 않음)
 //   (v5 keep 맵 = 띠를 그리지 않는 바닥 보존형: 골격은 입구→출구 최단 경로로 계산해 끊김·고리·웨이포인트·가지만 재고, 띠 폭·막다른 띠·띠 옆 빈 바닥·구역 경계는 재지 않는다)
 //   bandWidth    띠 폭 ≤2: 띠 칸(설계도 바탕 . · 길 글자)마다 가로·세로·두 대각 연속 칸 수의 최솟값 ≥3인 칸 덩어리 수
@@ -33,8 +38,8 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "seamAlpha", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
-const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
+const ITEMS = ["guide", "seamAlpha", "featurePass", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
+const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
   branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
@@ -44,6 +49,7 @@ const K = (c, r) => `${c},${r}`;
 const unK = (k) => k.split(",").map(Number);
 const PILLAR = (s) => roles.isPillar(s);
 const roleOf = (s) => roles.roleOf(s);
+const classOfSafe = (s) => { try { return require("./build/handmade/decor.cjs").classOf(s).class; } catch (e) { return ""; } };
 
 // ───────── 격자 ─────────
 function makeGrid(L) {
@@ -261,6 +267,32 @@ function placementMetrics(L, G, band) {
     if (n >= 4) { const rad = grp.map((p) => Math.hypot(p.x - mx, p.y - my)), m = rad.reduce((s, v) => s + v, 0) / n; if (m >= 1.5 && sd(rad) <= 0.5) return "ring"; }
     return null;
   };
+  // 한 줄(또는 열주 두 줄의 각 줄) 안 간격·뒤집기 (10-31 표본 4차): 긴 축 순서로 이웃 간격의 최대−최소 >0.35칸이면 간격 불균일 · 뒤집기가 섞이면 회전 불일치
+  let rowGap = 0, rowFlip = 0;
+  const rowGaps = [], rowFlips = [];
+  const rowCheck = (grp) => {
+    const n = grp.length, mx = grp.reduce((a, p) => a + p.x, 0) / n, my = grp.reduce((a, p) => a + p.y, 0) / n;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const p of grp) { sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; sxy += (p.x - mx) * (p.y - my); }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ax = (p) => (p.x - mx) * Math.cos(th) + (p.y - my) * Math.sin(th), pe = (p) => -(p.x - mx) * Math.sin(th) + (p.y - my) * Math.cos(th);
+    const sd = (a) => { const m = a.reduce((q, v) => q + v, 0) / a.length; return Math.sqrt(a.reduce((q, v) => q + (v - m) ** 2, 0) / a.length); };
+    let rows = null;
+    if (sd(grp.map(pe)) <= 0.5) rows = [grp];
+    else for (const t of [th, th + Math.PI / 2]) {   // 열주 두 줄
+      const o = grp.map((p) => [-(p.x - mx) * Math.sin(t) + (p.y - my) * Math.cos(t), p]).sort((a, b) => a[0] - b[0]);
+      for (let k = 2; k <= n - 2 && !rows; k++) if (o[k][0] - o[k - 1][0] >= 1.5 && sd(o.slice(0, k).map((q) => q[0])) <= 0.5 && sd(o.slice(k).map((q) => q[0])) <= 0.5) rows = [o.slice(0, k).map((q) => q[1]), o.slice(k).map((q) => q[1])];
+      if (rows) break;
+    }
+    for (const row of rows || []) {
+      if (row.length < 3) continue;
+      const rmx = row.reduce((a, p) => a + p.x, 0) / row.length, rmy = row.reduce((a, p) => a + p.y, 0) / row.length;
+      const along = (p) => (Math.abs(row[0].x - row[row.length - 1].x) >= Math.abs(row[0].y - row[row.length - 1].y) ? p.x : p.y);
+      const ss = row.slice().sort((a, b) => along(a) - along(b)), gaps = [];
+      for (let k = 1; k < ss.length; k++) gaps.push(Math.hypot(ss[k].x - ss[k - 1].x, ss[k].y - ss[k - 1].y));
+      if (Math.max(...gaps) - Math.min(...gaps) > 0.35) { rowGap++; rowGaps.push(`${row[0].s}@${Math.round(rmx)},${Math.round(rmy)}`); }
+      if (new Set(row.map((p) => !!p.flip)).size > 1) { rowFlip++; rowFlips.push(`${row[0].s}@${Math.round(rmx)},${Math.round(rmy)}`); }
+    }
+  };
   for (const [s, ps] of by) {
     if (ps.length < 3) continue;
     const lim = PILLAR(s) ? 7 : 4.5, used = new Set(), groups = [];
@@ -273,6 +305,7 @@ function placementMetrics(L, G, band) {
     let bad = 0;
     for (const grp of groups) {
       const ok = grp.length >= 3 ? !!axisOk(grp) : grp.length === 2 && PILLAR(s);
+      if (grp.length >= 3) rowCheck(grp);
       if (!ok) bad += grp.length;
     }
     if (bad >= 3 || (bad && bad === ps.length)) { scattered += bad; scatteredKinds.push([s, bad]); }
@@ -296,7 +329,18 @@ function placementMetrics(L, G, band) {
   const blocks = new Map();
   for (const p of feats) { const [c, r] = G.cellOf(p.x, p.y); const k = `${Math.floor(c / 16)},${Math.floor(r / 16)}`; blocks.set(k, (blocks.get(k) || 0) + 1); }
   const dense = [...blocks.entries()].filter(([, n]) => n >= 2);
-  return { scattered, scatteredKinds, zones, zcells, owner, featureSpaces, singles, dense, feats: feats.length, axisOk };
+  // 정면 방향 (역할표 facing): 가장 가까운 벽(3칸 안)이 north 그림은 북쪽, side 그림은 동·서쪽이어야 (벽에서 3칸 넘으면 서 있는 것 — 괜찮다)
+  const facingBad = [];
+  for (const p of solid) {
+    const fa = roles.facingOf(p.s);
+    if (fa === "any" || ["portal", "overlay"].includes(classOfSafe(p.s))) continue;   // 포털·입구 그림은 기능 자리 규칙(벽 등지기)으로 놓인다
+    const [c, r] = G.cellOf(p.x, p.y), dist = {};
+    for (const [d, dc, dr] of [["n", 0, -1], ["s", 0, 1], ["e", 1, 0], ["w", -1, 0]]) { dist[d] = 9; for (let k = 1; k <= 3; k++) if (!G.floor(c + dc * k, r + dr * k)) { dist[d] = k; break; } }
+    const m = Math.min(...Object.values(dist)), want = fa === "north" ? ["n"] : ["e", "w"], near = Object.keys(dist).filter((d) => dist[d] === m);
+    if (want.some((d) => dist[d] <= 3) || m > 2) continue;   // 맞는 벽이 3칸 안이면 그 벽에 붙은 것 · 아무 벽도 2칸 안에 없으면 서 있는 것
+    facingBad.push(`${p.s}@${p.x},${p.y}(벽 ${near.join("")})`);
+  }
+  return { scattered, scatteredKinds, zones, zcells, owner, featureSpaces, singles, dense, feats: feats.length, axisOk, rowGap, rowFlip, rowGaps, rowFlips, facingBad };
 }
 
 // ───────── 가지 간 추가 연결 (P5) ─────────
@@ -346,6 +390,19 @@ function analyze(L) {
     pillarSingle: pm.singles.length, landmarkBlock: pm.dense.length, branchExtra: br.extra, waypoint: wpOff,
   };
   if (keep) Object.assign(counts, { bandWidth: 0, bandDeadEnd: 0, bandEdgeEmpty: 0, straightEdge: 0 });
+  // 충돌 (10-31 표본 4차): 서 있는 feature·structure인데 통과 · 장식이 막아 골격(띠) 칸 너비가 2칸 밑으로 · 입구에서 못 닿는 공간
+  const blocked = new Set(L.blocked || []);
+  const featPass = L.pieces.filter((p) => !p.decal && ["feature", "structure"].includes(roleOf(p.s)) && !p.block && !["floor", "portal", "overlay"].includes(classOfSafe(p.s)));
+  const runFree = (c, r, dc, dr, wallsOnly) => { const ok = (x, y) => G.floor(x, y) && (wallsOnly || !blocked.has(K(x, y))); let n = ok(c, r) ? 1 : 0; if (!n) return 0; for (let k = 1; ok(c + dc * k, r + dr * k) && k < 9; k++) n++; for (let k = 1; ok(c - dc * k, r - dr * k) && k < 9; k++) n++; return n; };
+  const narrow = [];
+  for (const k of bm.band) { const [c, r] = unK(k); const w0 = Math.min(runFree(c, r, 1, 0, true), runFree(c, r, 0, 1, true)), w1 = Math.min(runFree(c, r, 1, 0, false), runFree(c, r, 0, 1, false)); if (w0 >= 2 && w1 < 2) narrow.push(k); }
+  const narrowParts = comps(new Set(narrow), D8);
+  let unreachSpaces = [];
+  if (bm.start) {
+    const seen = bfs([bm.start], (n) => { const [c, r] = unK(n); return G.floor(c, r) && !blocked.has(n); }).dist;
+    unreachSpaces = pm.zones.filter((z) => !pm.zcells.get(z).some((k) => seen.has(k)));
+  }
+  Object.assign(counts, { featurePass: featPass.length, passWidth: narrowParts.length, spaceReach: unreachSpaces.length, facing: pm.facingBad.length, rowGap: pm.rowGap, rowFlip: pm.rowFlip });
   const w2 = (k) => { const [c, r] = unK(k); return `(${c - G.W / 2}, ${G.H / 2 - r})`; };   // 월드 칸 좌표로 적는다
   const detail = {
     bandCells: bm.band.size, maxWidth: bm.maxWidth, wide: bm.widthBlobs.map((b) => w2(b[0])), unreached: bm.unreached.map(w2), holes: bm.holes.map((h) => `${w2(h[0])}~${h.length}칸`),
@@ -353,6 +410,7 @@ function analyze(L) {
     runs: runs.map((r) => (r.tag === "d" ? `45° (${r.from - G.W / 2}, ${G.H / 2 - r.line})부터 ${r.len}칸` : `${r.tag} ${r.tag === "h" ? `y=${G.H / 2 - r.line}` : `x=${r.line - G.W / 2 + 1}`} ${r.len}칸`)),
     scatteredKinds: pm.scatteredKinds.map(([s, n]) => `${s}×${n}`), featureSpaces: pm.featureSpaces, pillarSingles: pm.singles.map((p) => `${p.s}@${p.x},${p.y}`),
     dense: pm.dense.map(([k, n]) => `${k}×${n}`), spaces: pm.zones.length, features: pm.feats,
+    featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
     skeleton: br.skeleton, branches: br.branches, branchEdges: br.edges, branchCycles: br.cycles, branchAllowed: br.allowed,
   };
   return { counts, detail };
@@ -370,7 +428,8 @@ function layoutOf(id, env) {
   const art = quiet(() => hm.artEntities(d, ctx, bp, rows, func));
   return {
     id, v5: !!bp.v5, w: bp.w, h: bp.h, grid: bp.rows, walls: new Set(Object.keys(bp.walls)), zones: bp.zones, roads: bp.roads, base: bp.base, markers: bp.markers,
-    pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block })),
+    pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block, flip: p.flip })),
+    blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
   };

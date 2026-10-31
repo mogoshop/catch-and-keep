@@ -53,15 +53,16 @@ function run(o) {
   const isMk = (x, y) => markerOf.has(K(x, y));
   const nw = (x, y) => { let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!floor(x + dx, y + dy)) n++; return n; };
   const cellOfF = (f) => [Math.floor(f.x), Math.floor(f.y)];
-  const fc = (name, x, y, mul) => footCells(table, ctx.propScale, name, x, y, num(mul, 1) * roles.multOf(name));
+  // 발밑 칸 = 빌더와 같은 v5 규칙 (lib.cjs footprintRole — 특징은 그림 아래 1/2 · 반복 구조는 1/3까지 막음)
+  const fc = (name, x, y, mul) => { const hmLib = require("./lib.cjs"), sp = table[name]; if (!sp) throw new Error(`${id}: 그림 ${name}이 art_sprites·maple_sprites에 없음`); const sc = hmLib.baseScale(sp, ctx.propScale) * num(mul, 1) * roles.multOf(name); return hmLib.footprintRole(name, x, y, sp.w, sp.h, sc).map((k) => k.split(",").map(Number)); };
   const setPieces = (name) => { const ps = ctx.sets[name]; if (!ps) throw new Error(`${id}: 세트 ${name}이 map_sets.csv에 없음`); return ps; };
   const setCells = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:")).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
-  const blockOf = (name) => !/decal/.test(name) && decor.classOf(name).collide === "block";
+  const blockOf = (name) => { if (/decal/.test(name)) return false; const c = decor.classOf(name); return c.collide === "block" || (["feature", "structure"].includes(roles.roleOf(name)) && !["floor", "portal", "overlay"].includes(c.class)); };   // 빌더 v5 막음 규칙과 같다
   // 손으로 고른 자리(put)의 막는 조각 발밑 + 1칸 — 띠가 그 위로 지나가지 않게 비싸게
   const pen = new Set();
   for (const pu of puts) {
     const [kind, name, x, y, sc, flip] = pu;
-    const cells = kind === "set" ? setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && pc.collide === "block").flatMap((pc) => fc(pc.piece, x + num(pc.dx) * (flip ? -1 : 1), y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)))
+    const cells = kind === "set" ? setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && (pc.collide === "block" || blockOf(pc.piece))).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * (flip ? -1 : 1), y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)))
       : kind === "prop" && blockOf(name) ? fc(name, x, y, sc || 1) : [];
     for (const [cx, cy] of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) pen.add(K(cx + dx, cy + dy));
   }
@@ -393,7 +394,7 @@ function run(o) {
     return seen.size === total;
   };
   const doBlock = (cells) => { for (const [a, b] of cells) if (floor(a, b)) blocked.add(K(a, b)); };
-  const blockCellsSet = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && pc.collide === "block").flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
+  const blockCellsSet = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && (pc.collide === "block" || blockOf(pc.piece))).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
   const blockCellsProp = (name, x, y) => (blockOf(name) ? fc(name, x, y, 1) : []);
   const funcSpots = () => func.map((f) => [f.x, f.y]);
   const nearFunc = (x, y, rx = 2.2, ry = 1.4) => funcSpots().some(([fx, fy]) => Math.abs(fx - x) < rx && Math.abs(fy - y) < ry);
@@ -414,6 +415,15 @@ function run(o) {
   const addVbox = (name, x, y, mul) => { if (/decal/.test(name)) return; const sp = table[name], sc = lib.baseScale(sp, ctx.propScale) * num(mul, 1) * roles.multOf(name), wc = (num(sp.w, 128) * sc) / 100, hc = (num(sp.h, 128) * sc) / 100; if (hc >= 1.2) vboxes.push([x - wc * 0.5 - 0.6, y - 0.6, x + wc * 0.5 + 0.6, y + hc + 0.4]); };   // 그림 폭·높이 + 화로 그림 반 폭
   const inVbox = (px, py) => vboxes.some(([a, b, c2, d]) => px >= a && px <= c2 && py >= b && py <= d);
   const setVisual = (sn, x, y, m) => setPieces(sn).every((pc) => visualClear(pc.piece.replace(/^d:/, ""), x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1)));
+  // 정면 방향 (역할표 facing · 검사기 facing과 같은 규칙): north 그림은 북쪽 벽이 3칸 안이거나 아무 벽도 2칸 안에 없을 때만 · side는 동·서 벽
+  const facingOk = (name, x, y) => {
+    const fa = roles.facingOf(name);
+    if (fa === "any") return true;
+    const cx = Math.floor(x), cy = Math.floor(y), dist = {};
+    for (const [d, dx, dy] of [["n", 0, 1], ["s", 0, -1], ["e", 1, 0], ["w", -1, 0]]) { dist[d] = 9; for (let k = 1; k <= 3; k++) if (!floor(cx + dx * k, cy + dy * k)) { dist[d] = k; break; } }
+    const want = fa === "north" ? ["n"] : ["e", "w"];
+    return want.some((d) => dist[d] <= 3) || Math.min(...Object.values(dist)) > 2;
+  };
   const featBlocks = new Set();
   const blockKey = (x, y) => `${Math.floor((Math.floor(x) - g.x0) / 16)},${Math.floor((g.y1 - Math.floor(y)) / 16)}`;   // 검사기 16×16 구역 (격자 c//16, r//16)
   const featPieces = (kind, name, x, y, m) => (kind === "set" ? setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && roles.roleOf(pc.piece) === "feature").map((pc) => [x + num(pc.dx) * m, y + num(pc.dy)]) : roles.roleOf(name) === "feature" ? [[x, y]] : []);
@@ -533,7 +543,7 @@ function run(o) {
   const tentAdd = (cells, tent) => { for (const [a, b] of cells) { tent.add(K(a, b)); tent.add(K(a - 1, b)); tent.add(K(a + 1, b)); } };
   // 세트 = 조각 무리. 같은 소품 그림 상한을 넘는 조각과 세트 안 낱개 기둥(같은 기둥이 세트에 하나뿐)만 빼고 나머지(특징 조각 포함)는 남긴다 —
   //   뺀 조각이 있으면 세트 줄 대신 조각마다 줄로 적는다 (빌더 세트 조각 규칙과 같은 자리·배율·뒤집기)
-  const groupOf = (kind, name) => (kind === "set" ? setPieces(name).map((pc) => ({ name: pc.piece.replace(/^d:/, ""), decal: pc.piece.startsWith("d:"), dx: num(pc.dx), dy: num(pc.dy), sc: num(pc.scale, 1), flip: num(pc.flip) === 1, collide: pc.collide }))
+  const groupOf = (kind, name) => (kind === "set" ? setPieces(name).map((pc) => ({ name: pc.piece.replace(/^d:/, ""), decal: pc.piece.startsWith("d:"), dx: num(pc.dx), dy: num(pc.dy), sc: num(pc.scale, 1), flip: num(pc.flip) === 1, collide: pc.collide === "block" || (!pc.piece.startsWith("d:") && blockOf(pc.piece)) ? "block" : "pass" }))
     : [{ name, decal: /decal/.test(name), dx: 0, dy: 0, sc: 1, flip: false, collide: blockOf(name) ? "block" : "pass" }]);
   const trimGroup = (grp) => {
     const tally = new Map(), used = new Map(), out = [], dropped = [];
@@ -575,7 +585,7 @@ function run(o) {
       for (const m of f.flip ? [-1, 1] : [1, -1]) {
         // featureAt(설계서가 자리를 정함)은 기능 자리 둘레 비움과 겹쳐도 된다 (보스 바로 뒤 제단) — 띠·띠 곁·놓인 것·표식만 피한다
         const fcells = gCells(grp, sx, sy, m), atOk = f.at && fcells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !margin.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy); });
-        if (!(atOk || free(fcells)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m)) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
+        if (!(atOk || free(fcells)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m) || !grp.every((p) => p.decal || facingOk(p.name, sx + p.dx * m, sy + p.dy))) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
         const fp = gFeat(grp, sx, sy, m);
         if (fp.some(([a, b]) => featBlocks.has(blockKey(a, b)))) continue;
         if (!canBlock(gBlock(grp, sx, sy, m))) continue;
@@ -642,8 +652,12 @@ function run(o) {
   };
   const wallRow = (s, cfg) => {
     const C = Object.assign({}, V.ROW, cfg), sides = { n: [0, 1], s: [0, -1], e: [1, 0], w: [-1, 0] }, cand = [];
+    // facing(역할표): 정면 그림(north)은 위(북)벽에만 · 옆 그림(side)은 동·서 벽에만 · any는 어디든
+    const facing = roles.facingOf(C.name), allowed = facing === "north" ? ["n"] : facing === "side" ? ["e", "w"] : ["n", "s", "e", "w"];
+    // contiguous: 그림 폭만큼 붙여 빈틈 없이 (책장 등) — 아니면 C.step 일정 간격. 어느 쪽이든 한 줄 안 간격은 하나 (중간이 막히면 거기서 끊고 가장 긴 연속 구간만)
+    const spw = table[C.name], wcell = (num(spw.w, 128) * require("./lib.cjs").baseScale(spw, ctx.propScale) * roles.multOf(C.name)) / 100, step = C.contiguous ? (cfg.step || Math.round(wcell * 0.98 * 100) / 100) : C.step;   // contiguous + step: 그림의 불투명 폭(투명 여백 뺀 폭)을 설계서가 준다
     for (const [sd, [dx, dy]] of Object.entries(sides)) {
-      if (C.side && C.side !== sd) continue;
+      if ((C.side && C.side !== sd) || !allowed.includes(sd)) continue;
       const lines = new Map();
       for (const [x, y] of s.cells) { if (floor(x + dx, y + dy) || margin.has(K(x, y))) continue; const ln = dy ? y : x; if (!lines.has(ln)) lines.set(ln, []); lines.get(ln).push(dy ? x : y); }
       for (const [ln, ts] of lines) {
@@ -661,14 +675,17 @@ function run(o) {
     cand.sort((a, b) => b.len - a.len);
     let why = "";
     for (const best of cand) {
-      const spots = [], tent = new Set();
-      for (let t = best.st + 0.5; t <= best.en + (best.dy ? 0.5 : -0.5); t += C.step) {   // 동·서 벽 열은 맨 위 칸을 비운다 (그림이 방 위로 넘어가지 않게)
+      let spots = [], runCur = [];
+      const tent = new Set(), tadd = (cells) => { for (const [a, b] of cells) { tent.add(K(a, b)); if (!C.contiguous) { tent.add(K(a - 1, b)); tent.add(K(a + 1, b)); } } };
+      const flush = () => { if (runCur.length > spots.length) spots = runCur; runCur = []; };
+      for (let t = best.st + 0.5; t <= best.en + (best.dy ? 0.5 : -0.5); t += step) {   // 동·서 벽 열은 맨 위 칸을 비운다 (그림이 방 위로 넘어가지 않게)
         // 담 윗면 맵(;raised)은 북·동·서 가장자리 칸이 절벽 윗단 테두리로 그려져 한 칸 더 안쪽 (남쪽은 낮은 칸에 앞면 띠라 그대로)
         const ins = spec.raised ? 1 : 0;
         const q = best.dy ? [r2(t + 0.5), r2(best.dy > 0 ? best.ln - 0.4 - ins : best.ln + 0.3)] : [r2(best.ln + (best.dx > 0 ? 0.4 - ins : 0.6 + ins)), r2(t + 0.4)];
         const cells = fc(C.name, q[0], q[1], 1);
-        if (free(cells) && tentOk(cells, tent) && !nearFunc(q[0], q[1])) { tentAdd(cells, tent); spots.push({ q, cells, flip: false }); }
+        if (free(cells) && (C.contiguous || tentOk(cells, tent)) && !nearFunc(q[0], q[1])) { tadd(cells); runCur.push({ q, cells, flip: false }); } else flush();
       }
+      flush();
       if (spots.length < C.min) { why = `${spots.length}개뿐`; continue; }
       if (!canBlock(spots.flatMap((sp) => blockCellsProp(C.name, sp.q[0], sp.q[1])))) { why = "바닥을 가둠"; continue; }
       commit(s, C.name, spots, "벽 따라 열");

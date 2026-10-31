@@ -247,6 +247,15 @@ function footprint(x, y, wPx, scale) {
   return out;
 }
 
+// v5 발밑 칸: 그림 가로 60% × (발밑 한 줄 + 역할별 그림 높이의 아래 비율 — 특징 1/2 · 반복 구조 1/3) — 제단·간헐천 위로 올라서지 못하게 (10-31 표본 4차)
+function footprintRole(name, x, y, wPx, hPx, scale) {
+  const base = footprint(x, y, wPx, scale), frac = roles.footFrac(name);
+  if (!(frac > 0)) return base;
+  const rows = Math.max(1, Math.round(((num(hPx, 128) * scale) / 100) * frac)), out = [];
+  for (const k of base) { const [cx, cy] = k.split(",").map(Number); for (let r = 0; r < rows; r++) out.push(key(cx, cy + r)); }
+  return out;
+}
+
 // ───────── 기능 엔티티 (포털·화로·웨이포인트) — maps.cjs desiredEntities와 같은 꼴 {name, model, pos, overrides} ─────────
 const edgesOf = (d) => { const w = num(d.w), h = num(d.h); return { left: -(w / 2) + 1, right: w / 2 - 1, bottom: -(h / 2) + 1, top: h / 2 }; };
 function functionalEntities(d, maps, ctx, rows) {
@@ -887,14 +896,16 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     const okHas = (w) => String(ok || "").split("+").includes(w);   // ok=gate+cliff: 둘 다 일부러 (10-28 곁가지 올라가는 계단 — 벽에 붙고 포털 위)
     if (mode) {
       // 10-31 C-2: 키 큰 것(block)만 막는다 — 길 칸·기능 자리 곁이라고 봐주지 않는다(일관성). 기능 엔티티가 선 칸만은 비운다
-      const blockIt = !decal && (collide || decor.classOf(spName).collide) === "block";
+      // v5: 역할표 feature·structure(서 있는 것)는 막음이 기본 — 바닥 분류(floor)·포털 그림·겹친 빛만 통과
+      const cls = decal ? null : decor.classOf(spName), standing = v5 && !decal && ["feature", "structure"].includes(roles.roleOf(spName)) && !["floor", "portal", "overlay"].includes(cls.class);
+      const blockIt = !decal && (standing || (collide || cls.collide) === "block");
       if (!bp.isFloor(cell[0], cell[1]) && !okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`);
       const cells = [];
-      if (blockIt) for (const k of footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !funcCells.has(k)) cells.push([cx, cy]); }
+      if (blockIt) for (const k of v5 ? footprintRole(spName, x, y, sp.w, sp.h, sc) : footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !funcCells.has(k)) cells.push([cx, cy]); }
       // 10-31 C-3: 길 안내 폭 3칸 안에 발이 걸리는 막는 조각은 놓지 않는다 (세트면 그 조각만 빠진다)
       if (blockIt && opts.route && cells.some(([cx, cy]) => decor.cellTooClose(opts.route, cx, cy))) { droppedOnRoute.push(`${name} ${spName}`); return; }
       for (const [cx, cy] of cells) blocked.add(key(cx, cy));
-      pieces.push({ name, sprite: spName, x, y, sc, decal: !!decal, block: blockIt, cells, scatter: !!scatter });
+      pieces.push({ name, sprite: spName, x, y, sc, decal: !!decal, block: blockIt, cells, scatter: !!scatter, flip: !!flip });
     } else if (!bp.isFloor(cell[0], cell[1])) { if (!okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`); }
     else if (!decal && bp.isRoad(cell[0], cell[1])) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 길 칸 위 — 막지 않는다 (길을 막는 장식은 길 밖으로)`);
     else if (!decal && nearFunc(x, y)) { if (!okHas("gate")) warn.push(`${where}: '${spName}' (${x}, ${y})이 기능 자리(포털·화로·웨이포인트) 곁 — 막지 않는다 (일부러면 args ok=gate)`); }
@@ -1099,4 +1110,4 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size, art }, art.counts, result);
 }
 
-module.exports = { parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
+module.exports = { parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, footprintRole, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
