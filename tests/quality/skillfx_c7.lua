@@ -60,16 +60,25 @@ do
   ok(#list==4,s[1]..' 4장 ('..#list..')')
   for i,r in ipairs(list) do
    local name='fx-C-'..s[2]..'-core-0'..(i-1)
+   local w,h=s[3],s[4]
+   -- 10-31 통일 공정 보정 재출력: 서리탄은 fx-unify-frost-shot-00~03 256×128(고해상도 원본 다운샘플)로 교체 · 옛 fx-C-FxFrostShot 행은 남김
+   if s[1]=='FxSkillFrostShot' then name='fx-unify-frost-shot-0'..(i-1) w,h=256,128 end
    ok(#r==32 and r:match('^%x+$')~=nil,s[1]..' '..i..' 32자리 hex')
    local a=art[name]
    ok(a~=nil and a.ruid==r,name..' art_sprites RUID 일치 (순서 포함)')
-   ok(a.kind=='effect' and a.w==s[3] and a.h==s[4],name..' effect '..s[3]..'×'..s[4])
+   ok(a.kind=='effect' and a.w==w and a.h==h,name..' effect '..w..'×'..h)
    ok(artRuidCount[r]==1,name..' art_sprites 행 1개 (다른 그림과 RUID 중복 없음)')
    ok(seen[r]==nil,name..' 자리끼리 중복 없음') seen[r]=true
   end
  end
  local rows=0 for name in pairs(art) do if name:match('^fx%-C%-') then rows=rows+1 end end
  ok(rows==28,'art_sprites C 7종 행 28개 ('..rows..')')
+ local gcSrc=io.open('RootDesk/MyDesk/Common/GameConst.mlua'):read('a')
+ for i=0,3 do
+  local a=art['fx-C-FxFrostShot-core-0'..i]
+  ok(a~=nil and a.w==128 and a.h==64 and not seen[a.ruid],'옛 서리탄 core-0'..i..' 행 남김 · 자리에서 빠짐')
+  ok(gcSrc:find('옛: ',1,true)~=nil and gcSrc:find(a.ruid,1,true)~=nil,'옛 서리탄 core-0'..i..' RUID는 GameConst 주석 「옛: …」에')
+ end
  ok(type(_GameConst.FxSkillC7FrameMs)=='number' and _GameConst.FxSkillC7FrameMs==100,'FxSkillC7FrameMs 100 (코덱스 제안 · 양수)')
 end
 
@@ -189,7 +198,8 @@ do
   function p:Tint(c) self.tint=c end
   return p
  end
- local AUD={fire={'FxSkillFlameShot',115,1.38,'P06 저주 불꽃',{1,0.75,0.55}},cold={'FxSkillFrostShot',117,1.88,'P08 서리 혼',{0.85,0.95,1}},cold_shard={'FxSkillFrostShot',117,1.26,'P09 서리 파편',{0.85,0.95,1}}}
+ -- 서리탄 내용 폭 = 10-31 통일 공정 보정 재출력 256×128 실측 235px (예전 128×64 판 117px)
+ local AUD={fire={'FxSkillFlameShot',115,1.38,'P06 저주 불꽃',{1,0.75,0.55}},cold={'FxSkillFrostShot',235,1.88,'P08 서리 혼',{0.85,0.95,1}},cold_shard={'FxSkillFrostShot',235,1.26,'P09 서리 파편',{0.85,0.95,1}}}
  local OLDS={fire={'40f0991c2e204ee888670cb3006382e5',0.45},cold={'d5a9e48c2d654726811db8b127699233',0.6},cold_shard={'d5a9e48c2d654726811db8b127699233',0.4}}
  reset()
  for school,a in pairs(AUD) do
@@ -203,6 +213,8 @@ do
  local p=fake() MageBolts:Configure(p,'fire')
  ok(#logs==3,'같은 속성 두 번째는 [VRF] 없음')
  ok(near(115*MageBolts.GiantFlameArtScale/100,2.45,0.03),'마법사 거인 화염 구슬: 예전 0.8배 = 2.45칸 그대로')
+ ok(near(MageBolts.FrostShotArtScale,0.796) and near(MageBolts.FrostShardArtScale,0.533),'서리탄 배율 0.796 · 파편 0.533 (128×64 판 1.6 · 1.07)')
+ ok(near(235*MageBolts.FrostShotArtScale/100,117*1.6/100,0.005) and near(235*MageBolts.FrostShardArtScale/100,117*1.07/100,0.005),'보정 재출력 보이는 길이 = 128×64 판 때 그대로 (1.87 · 1.25칸)')
  _GameConst.FxSkillFlameShot='' _GameConst.FxSkillFrostShot=''
  for school,o in pairs(OLDS) do
   local q=fake() MageBolts:Configure(q,school)

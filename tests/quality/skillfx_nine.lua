@@ -61,6 +61,14 @@ for line in io.lines('data/art_sprites.csv') do
  end
 end
 local function seq(prefix,n) local t={} for i=0,n-1 do t[#t+1]=prefix..string.format('%02d',i) end return t end
+-- 10-31 통일 공정 보정 재출력 25장 (docs/evidence/2026-10-31-skillfx-unify-corrections): 9계열 4자리 17장을 새 RUID로 교체 — 옛 행(fx-B-*)은 art_sprites에 남기고 GameConst 주석 「옛: …」에 RUID를 적어 둔다
+local RETIRED={}
+for _,n in ipairs(seq('fx-B-bone-armor-cast-sample-',4)) do RETIRED[n]=true end
+for _,n in ipairs(seq('fx-B-soul-drain-vortex-sample-',4)) do RETIRED[n]=true end
+for _,n in ipairs(seq('fx-B-rite-bone-whirl-sample-',4)) do RETIRED[n]=true end
+for _,n in ipairs(seq('fx-B-rite-bone-whirl-intermediate-',4)) do RETIRED[n]=true end
+RETIRED['fx-B-rite-bone-whirl-trace-sample-00']=true
+local gcSrc=io.open('RootDesk/MyDesk/Common/GameConst.mlua'):read('a')
 
 -- ① 슬롯 · art_sprites · 재사용
 local NEW={}   -- RUID → 이름 (새로 올린 82장)
@@ -77,17 +85,15 @@ local function slot(key,names,w,h)
  end
 end
 do
- slot('FxSkillArmorCast',seq('fx-B-bone-armor-cast-sample-',4),128,128)
+ slot('FxSkillArmorCast',seq('fx-unify-bone-armor-cast-',4),128,128)   -- 10-31 보정 재출력 (알파 그대로 RGB만)
  slot('FxSkillArmorAbsorb',seq('fx-B-bone-armor-absorb-sample-',3),128,128)
  slot('FxSkillArmorBreak',seq('fx-B-bone-armor-break-sample-',4),128,128)
  slot('FxSkillDashGhost',seq('fx-B-spectral-dash-ghost-sample-',4),128,128)
- -- 회전 8장 = 승인 0/2/4/6 + 중간 1/3/5/7 끼움 (logical-mapping88 full_index0)
- local whirl={}
- for i=0,3 do whirl[#whirl+1]='fx-B-rite-bone-whirl-sample-'..string.format('%02d',i) whirl[#whirl+1]='fx-B-rite-bone-whirl-intermediate-'..string.format('%02d',i) end
- slot('FxSkillRiteWhirl',whirl,256,256)
- slot('FxSkillRiteWhirlTrace',{'fx-B-rite-bone-whirl-trace-sample-00'},256,256)
+ -- 회전 8장 = 10-31 보정 재출력 00~07 (예전 승인 0/2/4/6 + 중간 1/3/5/7 끼움 순서 그대로 · 고해상도 원본 → 384px native 다운샘플)
+ slot('FxSkillRiteWhirl',seq('fx-unify-rite-bone-whirl-',8),384,384)
+ slot('FxSkillRiteWhirlTrace',{'fx-unify-rite-bone-whirl-trace-00'},384,384)
  slot('FxSkillRiteArrow',seq('fx-B-rite-bone-arrow-sample-',4),128,64)
- slot('FxSkillDrainVortex',seq('fx-B-soul-drain-vortex-sample-',4),128,128)
+ slot('FxSkillDrainVortex',seq('fx-unify-soul-drain-vortex-',4),128,128)   -- 10-31 보정 재출력 (알파 그대로 RGB만)
  slot('FxSkillHitCurse',seq('fx-B-projectile-hit-curse-sample-',2),96,96)
  slot('FxSkillHitFire',seq('fx-B-projectile-hit-fire-sample-',2),96,96)
  slot('FxSkillHitFrost',seq('fx-B-projectile-hit-frost-sample-',2),96,96)
@@ -113,14 +119,32 @@ do
  end
  local n=0 for _ in pairs(NEW) do n=n+1 end
  ok(n==82,'새로 올린 82장 = 자리에 연결된 서로 다른 RUID ('..n..')')
- local rows=0
+ local rows,retired,unify=0,0,0
  for name,a in pairs(art) do
   if name:match('^fx%-B%-bone%-armor%-[acb]') or name:match('^fx%-B%-mark%-') or name:match('^fx%-B%-curse%-circle%-') or name:match('^fx%-B%-spectral%-dash') or name:match('^fx%-B%-rite%-bone%-') or name:match('^fx%-B%-soul%-') or name:match('^fx%-B%-projectile%-hit%-') then
    rows=rows+1
-   ok(NEW[a.ruid]==name,name..' art_sprites 행이 자리에 연결됨')
+   if RETIRED[name] then
+    retired=retired+1
+    ok(NEW[a.ruid]==nil,name..' 옛 행은 자리에서 빠짐 (보정 재출력으로 교체)')
+    ok(gcSrc:find(a.ruid,1,true)~=nil,name..' 옛 RUID는 GameConst 주석 「옛: …」에 남김')
+   else
+    ok(NEW[a.ruid]==name,name..' art_sprites 행이 자리에 연결됨')
+   end
+  elseif name:match('^fx%-unify%-bone%-armor%-cast%-') or name:match('^fx%-unify%-soul%-drain%-vortex%-') or name:match('^fx%-unify%-rite%-bone%-whirl') then
+   unify=unify+1
+   ok(NEW[a.ruid]==name,name..' 보정 재출력 행이 자리에 연결됨')
   end
  end
- ok(rows==82,'art_sprites 9계열 행 82개 ('..rows..')')
+ ok(rows==82,'art_sprites 9계열 fx-B 행 82개 그대로 ('..rows..')')
+ ok(retired==17 and unify==17,'교체: 옛 17행(두름 4·소용돌이 4·회오리 8·자국 1) → 보정 재출력 17행 ('..retired..'/'..unify..')')
+ for name in pairs(RETIRED) do ok(art[name]~=nil,name..' 옛 행 남아 있음') end
+ -- arise-flame 보정 4장: 업로드·art_sprites 등록만 (연결 보류 · C 보강 5종 사용자 결정 대기) → GameConst 값 칸 어디에도 없고 주석에만
+ for i=0,3 do
+  local a=art['fx-unify-arise-flame-0'..i]
+  ok(a~=nil and a.kind=='effect' and a.w==256 and a.h==320 and #a.ruid==32 and artRuidCount[a.ruid]==1,'arise-flame 0'..i..' art_sprites 256×320')
+  local used=false for _,v in pairs(_GameConst) do if type(v)=='string' and v:find(a.ruid,1,true) then used=true end end
+  ok(not used and gcSrc:find(a.ruid,1,true)~=nil,'arise-flame 0'..i..' 연결 없음 · GameConst 주석에 RUID만')
+ end
  -- 재사용: 뼛가루 4 = 골편 명중 4 · 뼈 명중 2 = 골편 명중 2·4번째 (sha256 동일 · 피벗 동일 → 새로 올리지 않음)
  local shard=Util:Frames(_GameConst.FxSkillShardHit)
  ok(#shard==4 and _GameConst.FxSkillConsumedDust==_GameConst.FxSkillShardHit,'뼛가루 = 골편 명중 4장 RUID 그대로')
@@ -291,11 +315,13 @@ do
  ok(near(trace.holdSec+trace.fadeSec,4) and near(trace.fadeSec,SkillEffects.RiteWhirlTraceFadeSec),'자국은 회오리 시간 동안 · 끝에 옅어짐')
  ok(whirl.fn=='loop' and whirl.ruids==_GameConst.FxSkillRiteWhirl and near(whirl.frameSec,0.1) and near(whirl.seconds,4) and whirl.order==SkillEffects.RiteWhirlOrder and SkillEffects.RiteWhirlOrder==1,'회전 8장 0.1초 반복 4초 · 몸 뒤 층 1 (10-31 메이커 R2: 5면 표적을 덮었다)')
  ok(SkillEffects.RiteWhirlTraceOrder<SkillEffects.RiteWhirlOrder and SkillEffects.RiteWhirlOrder<2,'자국 < 회오리 < 몬스터 기본 2')
- ok(near(SkillEffects.RiteWhirlContentPx*whirl.scale.x/100,3,0.001) and near(whirl.scale.x,whirl.scale.y),'회오리 내용 폭 235px = 판정 지름 3칸 (가로=세로 · 위에서 본 원)')
- ok(near(SkillEffects.RiteWhirlTraceContentPx*trace.scale.x/100,3,0.001),'자국 내용 폭 240px = 지름 3칸')
+ ok(near(SkillEffects.RiteWhirlContentPx*whirl.scale.x/100,3,0.001) and near(whirl.scale.x,whirl.scale.y),'회오리 내용 폭 353px = 판정 지름 3칸 (가로=세로 · 위에서 본 원)')
+ ok(near(SkillEffects.RiteWhirlTraceContentPx*trace.scale.x/100,3,0.001),'자국 내용 폭 360px = 지름 3칸')
+ ok(SkillEffects.RiteWhirlContentPx==353 and SkillEffects.RiteWhirlTraceContentPx==360,'10-31 보정 재출력 384px 판 실측(알파>16 · 회오리 8장 최대 353 · 자국 360) — 예전 256px 판 235·240')
+ ok(near(whirl.scale.x,3/3.53,1e-6) and near(trace.scale.x,3/3.6,1e-6),'반경 1.5 배율 0.850 · 자국 0.833 (예전 1.277 · 1.25)')
  ok(whirl.pos.x==4 and whirl.pos.y==5 and trace.pos.y==5,'조준점 그대로 (발 자리 원)')
  ok(#logs==1 and logs[1]:find('[VRF] rite whirl frames n=8 ms=100',1,true)~=nil,'[VRF] 한 줄')
- ok(near(fx:RiteWhirlScale(1.95,235)/fx:RiteWhirlScale(1.5,235),1.3),'반경이 커지면 같은 비율')
+ ok(near(fx:RiteWhirlScale(1.95,353)/fx:RiteWhirlScale(1.5,353),1.3),'반경이 커지면 같은 비율')
  _GameConst.FxSkillRiteWhirl=''
  reset() fx:RiteWhirlFx(Vector3(4,5,0),1.5,4)
  ok(#plays==0,'비면 그리지 않는다 (RiteWhirl이 예전 FxStorm·범위 원으로)')
