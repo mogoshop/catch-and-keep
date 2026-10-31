@@ -114,7 +114,7 @@ module.exports = {
     ISLAND_MIN: 36, ISLAND_FAR: 3, // 구역에서 3칸 넘게 떨어진 빈 바닥이 36칸 이상 뭉치면 섬 1개(90칸 이상 2개)
     // 띠 곁 패치 바닥 (액트별 · 앞에서부터 바탕·이웃 구역과 다른 그림을 고른다)
     PATCH: {
-      1: ["a1-dead-grass-floor 0.82/0.76/0.66", "a1-wet-gravel-floor 0.8/0.76/0.7", "a1-scorched-floor 0.8/0.74/0.68"],
+      1: ["a1-wet-gravel-floor 0.8/0.76/0.7", "a1-bonedust-floor 0.82/0.78/0.72", "a1-dead-grass-floor 0.82/0.76/0.66", "a1-scorched-floor 0.8/0.74/0.68"],   // 10-31 액트 1 적용: v5 맵이 모두 석재 실내(납골당·지하실·여왕의 무덤)라 마른 풀보다 젖은 자갈·뼈 흙을 먼저
       2: ["a2-sandstone-paving-floor 0.84/0.76/0.64", "tomb-floor 0.8/0.72/0.62", "a2-rippled-sand-floor 0.86/0.78/0.66"],
       3: ["a3-salt-crust-floor-r2 0.8/0.84/0.86", "a3-wet-sand-floor-r2 0.8/0.8/0.78", "a3-drowned-tile-floor-r2 0.78/0.82/0.84"],
       4: ["a4-cooled-lava-floor 0.84/0.8/0.76", "a4-bone-ash-floor 0.86/0.84/0.8", "a4-ash-drift-floor 0.86/0.84/0.82"],

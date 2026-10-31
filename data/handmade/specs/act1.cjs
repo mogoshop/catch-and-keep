@@ -583,3 +583,357 @@ module.exports = {
     },
   }),
 };
+
+// ───────── 10-31 맵 구성 v5 3단계 · 액트 1 적용 (사용자 「출시했으니 액트 1부터 순서대로」 · 액트 4와 같은 생성기·규칙 · docs/review/v5-modes-20261031.md 배정표) ─────────
+//   v5 = 골격 띠 + 구역 재적합 + 역할 배치 (성소형) · keep = 바닥·길 글자·이음새 그대로 + 역할 배치만 (유황 늪형). 맵별 공간 구획 = docs/review/map-audit-20261031.md 그 맵 절.
+//   ⚠ 이 파일의 맵은 액트 2~4가 remix로 자리(장소·길·바위·포털·웨이포인트·화로·extra)를 가져간다 — 여기서는 v5·구역 바닥·손으로 고른 자리(put)·꾸밈처럼
+//     remix가 가져가지 않는 열만 바꾼다. 길(고리 끊기)·바위·장소 이름·웨이포인트 같은 자리 변경은 specs/overrides.cjs의 같은 id 줄 (compose가 그 맵에만 적용).
+//   보스·포털·NPC·퀘스트 오브젝트·스포너 자리는 옮기지 않는다 (maps.csv 기능 열은 compose가 설계서 자리 그대로 다시 쓴다).
+
+// 6/15 지하 납골당 1층 (v5): 계단참(W −29, 0) → 곧은 회랑(y 0) → 중앙 납골당(웨이포인트 2, −1) → 관 보관실 → 아래 계단(E 28, 0). 띠 = 그 골격 한 줄
+//   (심연의 문 2층과 같은 자리 — 그 맵을 좌우로 뒤집기 전 원형). 고리 끊기(검수표 「고리 5+3」)·방 안 바위는 overrides.cjs crypt1.
+//   중앙 납골당 = 웨이포인트 뒤 북벽 해골 벽감 기둥(랜드마크 · 납골 회랑에서 옮김 · 검수표 「중앙 납골당 중심에」) + 축 양옆 촛대 열주 · 띠 북쪽 밝은 무덤 판석 / 남쪽 어두운 판석
+//   (바탕과 같은 납골당 바닥이라 띠가 안 보였다).
+//   납골 회랑 = 북벽 열린 관 줄 + 뼈 단지 묶음 · 촛불 예배실 = 북벽 촛대 열 + 부서진 관 묶음 · 관 보관실(골격) = 북벽 석관 줄 + 뼈 묶음 · 무너진 관실 = 북벽 부서진 관 줄 + 뼈 무더기 ·
+//   계단참·아래 계단 = 바닥 무늬와 소품 묶음 하나 (좁은 방이라 골격을 좁히지 않게).
+Object.assign(module.exports.crypt1, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["crypt-bone-urn", "a1-adjunct-collapsed-urn"], decals: ["a1-decal-pooled-wax"], dn: 1 },
+      b: { row: { name: "a1-open-coffin", contiguous: true, min: 3, minLine: 4 }, props: ["crypt-bone-urn", "cave-burial-shroud", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-ossuary-urn-shards", "a1-decal-scattered-bones"], dn: 2 },
+      c: { row: { name: "crypt-candlestand", side: "s", step: 2.4, min: 2, minLine: 4 }, props: ["crypt-broken-coffin", "a1-adjunct-collapsed-urn", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-pooled-wax", "a1-decal-blood-pool"], dn: 2 },
+      d: {
+        feature: "set:a1_lm_ossuary", featureAt: [2.5, 4.4], featureDrop: ["crypt-candlestand"],
+        colonnade: { name: "crypt-candlestand", step: 3, minPairs: 2, off: 2.5, tight: true, axis: [[-1.5, 0.5], [8.5, 0.5]] },
+        sides: { left: "d", right: "h" },   // 동쪽으로 가는 축의 왼쪽 = 북쪽
+        decals: ["a1-decal-pooled-wax", "a1-decal-cracked-earth", "a1-decal-scattered-bones"], dn: 3,
+      },
+      e: { row: { name: "crypt-sarcophagus", min: 3, minLine: 4 }, props: ["pit-bone-heap", "mp-bone-pile", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      f: { row: { name: "crypt-broken-coffin", contiguous: true, min: 3, minLine: 4 }, props: ["pit-bone-heap", "hollow-bone-pile", "a1-abandoned-shields"], clusters: 1, decals: ["a1-decal-cracked-earth", "a1-decal-scattered-bones"], dn: 2 },
+      g: { decals: ["a1-decal-pooled-wax"], dn: 1 },
+    },
+  },
+  zones: Object.assign({}, module.exports.crypt1.zones, {
+    d: "queen-floor 0.9/0.88/0.86 중앙 납골당",            // 바탕(납골당 바닥)과 같은 그림이라 띠가 안 보였다 — 띠 북쪽 밝은 무덤 판석
+    h: "queen-floor 0.72/0.7/0.68 중앙 납골당 남쪽",       // 띠 남쪽 (북쪽 d와 다른 톤)
+    g: "crypt-floor 0.66/0.64/0.62 아래 계단",              // 바탕과 색 차이 0.08이라 「같은 바닥」으로 보여 띠 곁 패치(마른 풀)가 깔렸다 — 한 톤 어둡게
+  }),
+});
+
+// 7/15 지하 납골당 2층 (v5): 위층 계단(W −29, 0) → 기둥 회랑(y 0 한 줄) → 아래층 계단(E 28, 0). 띠 = 그 골격 한 줄 (자리·출현 구역은 overrides.cjs crypt2 — 10-30 I06 그대로).
+//   다섯 곁방(유물 곁방·석관 곁방·뼈 쌓인 구덩이·무너진 동쪽 방·촛불 방)은 이미 회랑에서 한 번 들어갔다 나오는 막다른 방이라 고리 0 · 길 그대로.
+//   기둥 회랑 = 설계도 1×1 바위 기둥 열 개(낱개 바위)를 남벽 부러진 돌기둥 열 + 북벽 뼈 선반 줄로 (「기둥 열 개가 늘어선 긴 회랑」 · 가운데 열주는 벽 2칸 안이라 뒤 칸이 남았다).
+//   뼈 쌓인 구덩이 = 뼈 탑(특징 1 · 넓은 시험방 남벽 쪽) + 뼈 무더기 묶음 · 석관 곁방 = 북벽 석관 줄 · 촛불 방 = 북벽 촛대 열 · 무너진 동쪽 방 = 북벽 부서진 관 줄 ·
+//   유물 곁방(좁은 시험방) = 방패·창 묶음 하나 · 계단참 = 소품 묶음.
+Object.assign(module.exports.crypt2, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["crypt-bone-urn", "a1-adjunct-collapsed-urn"], decals: ["a1-decal-pooled-wax"], dn: 1 },
+      b: {
+        row: [{ name: "cellar-broken-shelf", side: "n", contiguous: true, min: 3, minLine: 4 }, { name: "execution-broken-column", side: "s" }],   // 북벽 뼈 선반 줄(벽 밀착) · 남벽 돌기둥 열 (가운데 열주는 벽 2칸 안이라 뒤 칸이 남았다 · 북벽 3칸 기둥은 띠 곁에 닿았다)
+        decals: ["a1-decal-scattered-bones", "a1-decal-cracked-earth", "a1-decal-ossuary-urn-shards"], dn: 3,
+      },
+      c: { props: ["a1-abandoned-shields", "waste-broken-spears", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 1 },
+      d: { row: { name: "crypt-sarcophagus", min: 3, minLine: 4 }, props: ["crypt-bone-urn", "cave-burial-shroud"], clusters: 1, decals: ["a1-decal-pooled-wax", "a1-decal-cracked-earth"], dn: 2 },
+      e: { feature: "set:a1_bone_shrine", props: ["pit-bone-heap", "mp-bone-pile", "hollow-gnawed-remains"], clusters: 1, decals: ["a1-decal-scattered-bones", "a1-decal-blood-pool"], dn: 3 },
+      f: { row: { name: "crypt-broken-coffin", contiguous: true, min: 3, minLine: 4 }, props: ["pit-bone-heap", "a1-open-coffin"], clusters: 1, decals: ["a1-decal-cracked-earth"], dn: 2 },
+      g: { row: { name: "crypt-candlestand", side: "n", min: 2, minLine: 4 }, props: ["crypt-bone-urn", "a1-adjunct-collapsed-urn"], clusters: 1, decals: ["a1-decal-pooled-wax", "a1-decal-blood-pool"], dn: 2 },
+    },
+  },
+  zones: Object.assign({}, module.exports.crypt2.zones, {
+    g: "crypt-floor 0.66/0.64/0.62 촛불 방",          // 바탕과 색 차이 0.08이라 「같은 바닥」으로 보여 띠 곁 패치가 깔렸다 — 한 톤 어둡게
+  }),
+});
+
+// 8/15 지하 납골당 3층 (v5 · 해골 대장 보스 층): 계단참(W −29, 0 · 웨이포인트 −25, −2) → 회랑(y 0) → 갈림 방 → 해골 대장의 전당 → 여왕의 무덤 계단(E 28, 0). 띠 = 그 골격 한 줄.
+//   고리 끊기(검수표 「고리 3+2」 · 심연의 문 3층과 같은 자리)·전당 바위 기둥 넷은 overrides.cjs crypt3 — 무너진 납골 동굴·해골 병사 막사는 회랑 x −20 갈림길에서만 닿는 막다른 방.
+//   둥근 두 굴(무너진 납골 동굴·막사, 검수표 「캡처로 확인」): 골격 밖이라 띠가 지나지 않고 두 굴 바닥(뼈 흙·벽돌)은 그대로 — 재적합은 띠 곁 칸만 바꾼다.
+//   해골 대장의 전당 = 대장 등 뒤 북벽 해골 벽감 기둥(10-28 사용자 「보스 그림에 맞춰」 — 손으로 고른 자리를 v5 특징으로 · 같은 자리) + 축 양옆 촛대 열주 ·
+//   띠 북쪽 밝은 돌길 / 남쪽 어두운 돌길. 대장은 그 앞(maps.csv fixed skelcaptain 15/0 그대로 · 옮기지 않음). 대장 세트(창·깃대·촛대 낱개)는 뺐다 — 낱개 기둥·특징 과밀.
+//   무너진 납골 동굴 = 뼈 단지·수의 묶음 · 막사 = 마지막 파수꾼 세트(방패·창·통) · 갈림 방·계단참·무덤 계단 = 바닥 무늬.
+Object.assign(module.exports.crypt3, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { decals: ["a1-decal-pooled-wax"], dn: 1 },
+      b: { props: ["crypt-bone-urn", "cave-burial-shroud", "a1-adjunct-collapsed-urn"], clusters: 1, decals: ["a1-decal-ossuary-urn-shards", "a1-decal-scattered-bones"], dn: 2 },
+      c: { sets: ["hm_last_guard"], props: ["waste-broken-spears", "a1-abandoned-shields", "a1-pot-helmet-skull"], clusters: 2, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      d: { decals: ["a1-decal-cracked-earth", "a1-decal-scattered-bones"], dn: 2 },
+      e: {
+        feature: "set:a1_lm_ossuary", featureAt: [15.5, 6.6], featureDrop: ["crypt-candlestand"],
+        colonnade: { name: "crypt-candlestand", step: 3, minPairs: 3, off: 2.5, tight: true, axis: [[6.5, 0.5], [22.5, 0.5]] },
+        sides: { left: "e", right: "h" },   // 동쪽으로 가는 축의 왼쪽 = 북쪽
+        decals: ["a1-decal-scattered-bones", "a1-decal-cracked-earth", "a1-decal-blood-pool"], dn: 3,
+      },
+      g: { decals: ["a1-decal-pooled-wax"], dn: 1 },
+    },
+  },
+  zones: Object.assign({}, module.exports.crypt3.zones, {
+    e: "execution-floor 0.84/0.8/0.76 해골 대장의 전당",        // 띠 북쪽 밝은 돌길 (바탕 납골당 바닥과 다른 그림)
+    h: "execution-floor 0.66/0.62/0.6 해골 대장의 전당 남쪽",   // 띠 남쪽
+    g: "crypt-floor 0.66/0.64/0.62 여왕의 무덤 계단",            // 바탕과 색 차이 0.08 → 띠 곁 패치가 깔렸다 — 한 톤 어둡게
+  }),
+  put: [],   // 대장 세트(창 둘·깃대·촛대 둘·방패)와 벽감 기둥 세트 줄 → 벽감 기둥은 v5 특징(같은 자리)으로
+});
+
+// 9/15 여왕의 무덤 (v5 · 보스방): 대사제의 성소(표본)·군주의 옥좌가 이 자리를 뒤집어 쓴다 — 같은 규칙으로. 무덤 문(W −29, 0) → 순장자들의 방 → 봉인된 문간 →
+//   여왕의 안식처: 홀 입구(서쪽 문, y 0)에서 동쪽 여왕 석관 제단까지 곧은 축(신랑) = 띠 · 양옆 피 깃발 열주(역할표 「입구→목적지 통로 양옆 열」) ·
+//   축 끝 동쪽 여왕 석관 제단(특징 1 · 4칸 · 손으로 고른 자리 그대로 23.5, 0.5) + 양옆 큰 촛대 한 쌍 · 여왕은 그 앞(maps.csv fixed gravequeen 17/0 그대로 · 옮기지 않음).
+//   돌아가는 문(동북 26, 8)으로 가는 띠는 축 끝(12, 0)에서 북쪽으로 곧게 꺾여 문 줄(y 8)을 따른다. 띠(여왕 판석) 북쪽 = 밝은 무덤 바닥 · 남쪽 = 어두운 무덤 바닥 · 북벽 석관 줄 · 남벽 촛대 열.
+//   여왕 세트(석관 옥좌·깃발 둘·큰 촛대 둘·뼈 단지 둘 — 같은 공간 특징 둘·낱개 기둥)는 뺐다. 자리 변경(시녀들의 방 → 봉인된 문간 통로 막기 · 아레나 바위 넷 · 홀 입구 줄)은 overrides.cjs queentomb.
+//   순장자들의 방 = 북벽 열린 관 줄(순장) + 뼈 묶음 · 시녀들의 방(막다른 곁방) = 남벽 촛대 + 수의·단지 묶음 · 봉인된 문간·무덤 문 = 바닥 무늬와 소품 하나.
+Object.assign(module.exports.queentomb, {
+  v5: {
+    outdoor: false,
+    via: [[2, 0], [12, 0], [12, 8]],   // 축 끝에서 북쪽으로 곧게 꺾어 돌아가는 문 줄(y 8)로 — 대각 계단 띠가 홀 북쪽 반을 비스듬히 가르지 않게
+    dress: {
+      a: { props: ["a1-adjunct-collapsed-urn", "crypt-bone-urn"], decals: ["a1-decal-pooled-wax"], dn: 1 },
+      b: { row: { name: "a1-open-coffin", contiguous: true, min: 3, minLine: 4 }, props: ["pit-bone-heap", "mp-bone-pile", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-scattered-bones", "a1-decal-pooled-wax"], dn: 2 },
+      c: { row: { name: "crypt-candlestand", side: "s", min: 2, minLine: 4 }, props: ["cave-burial-shroud", "crypt-broken-coffin", "a1-adjunct-collapsed-urn"], clusters: 1, decals: ["a1-decal-blood-pool"], dn: 1 },
+      d: { decals: ["a1-decal-pooled-wax", "a1-decal-cracked-earth"], dn: 2 },
+      e: {
+        feature: "set:a1_lm_queen_altar", featureAt: [23.5, 0.5], featureScale: 4 / 3, featureDrop: ["queen-great-candelabra"],   // 성소 제단처럼 4칸 (역할 3칸 × 4/3)
+        colonnade: { name: "queen-blood-banner", step: 3, minPairs: 3, off: 2.5, tight: true, axis: [[1.5, 0.5], [11.5, 0.5]] },
+        pair: { name: "queen-great-candelabra", around: "feature", d: 2.8 },
+        sides: { left: "e", right: "f" },   // 동쪽으로 가는 축의 왼쪽 = 북쪽
+        row: [{ name: "crypt-sarcophagus", side: "n" }, { name: "crypt-candlestand", side: "s" }],
+        decals: ["a1-decal-blood-pool", "a1-decal-pooled-wax", "a1-decal-scattered-bones"], dn: 3,
+      },
+    },
+  },
+  zones: Object.assign({}, module.exports.queentomb.zones, {
+    e: "crypt-floor 0.92/0.86/0.86 여왕의 안식처",        // 띠(여왕 판석) 북쪽 — 밝은 무덤 바닥
+    f: "crypt-floor 0.7/0.64/0.64 여왕의 안식처 남쪽",    // 띠 남쪽 (북쪽 e와 다른 톤)
+  }),
+  put: [],
+});
+
+// 11/15 가라앉은 지하실 1층 (v5): 무너진 계단(W −29, 0) → 회랑 → 물이 스민 통로(매복 길목) → 썩은 우물방 → 아래 계단참(E 28, 0)이 y 0 한 줄 — 그 축이 띠
+//   (재의 회랑과 같은 자리 — 그 맵을 좌우로 뒤집기 전 원형). 고리 줄이기(검수표 「고리 3+2」)는 overrides.cjs cellar1 — 곡물 창고 → 우물방 남쪽 긴 통로만 막고
+//   물 찬 술 창고 → 우물방 북쪽 「고리길」(이야기)은 남김 (가지 2 · 추가 연결 1 = 50% 이하 · 둘 다 막으면 사냥터가 너무 준다 — 재의 회랑과 같은 판단).
+//   썩은 우물방 = 썩은 우물(특징 · 손으로 고른 자리를 v5 특징으로 · 띠 북쪽 · 촛대 쌍은 둥근 방 벽과 벽감을 만들어 뺐다) · 바닥 썩은 물이끼(바탕 지하실 바닥과 색 차이 0.06이라 띠가 안 보였다).
+//   물 찬 술 창고 = 무너진 술통 선반(랜드마크 · 북벽) · 곡물 창고 = 북벽 부서진 선반 줄 + 장작 묶음 · 물이 스민 통로·계단참 = 바닥 무늬.
+Object.assign(module.exports.cellar1, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["cellar-rotten-barrel", "camp-firewood"], decals: ["a1-decal-rotting-reed-puddle"], dn: 1 },
+      b: { feature: "set:a1_lm_barrel_shelf", props: ["mp-tripod", "camp-firewood"], clusters: 1, decals: ["a1-decal-rotting-reed-puddle", "a1-decal-cracked-earth"], dn: 2 },
+      c: { row: { name: "cellar-broken-shelf", contiguous: true, min: 2, minLine: 3 }, props: ["a1-adjunct-rope-pile", "mp-wagon-wreck", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      d: { decals: ["a1-decal-blood-pool", "a1-decal-rotting-reed-puddle"], dn: 2 },
+      e: {
+        feature: "prop:a1-rotten-well", featureAt: [16.5, 3.4], featureScale: 1.4,   // 역할 2칸 × 1.4 — 둥근 방 가운데 중심물로 (2칸은 방에 비해 작았다)
+        props: ["marsh-rotten-log", "a1-adjunct-collapsed-urn"], clusters: 1,
+        decals: ["a1-decal-rotting-reed-puddle", "a1-decal-blood-pool", "a1-decal-cracked-earth"], dn: 3,
+      },
+      f: { decals: ["a1-decal-rotting-reed-puddle"], dn: 1 },
+    },
+  },
+  zones: Object.assign({}, module.exports.cellar1.zones, {
+    e: "marsh-floor 0.54/0.58/0.48 썩은 우물방",   // 바탕(지하실 바닥)과 색 차이 0.06이라 「같은 바닥」 → 띠가 안 보였다 — 썩은 물이끼 바닥
+  }),
+  put: [],   // 썩은 우물 → v5 특징(같은 우물방 · 띠 북쪽)
+});
+
+// 12/15 가라앉은 지하실 2층 (v5): 계단참(W −29, 0) → 회랑(y 0) → 갈림 방 → 썩은 사제의 제단실(끝방 19, 0 · 되돌아가는 문 24, −9). 띠 = 회랑 축 + 제단실 안에서 남동 문으로.
+//   띠는 축을 끝방 앞(16, 0)까지 곧게 간 뒤 남쪽으로 꺾어 문 줄(y −8)로. 고리 끊기(검수표 「고리 3+2」)·제단실 바위 기둥 넷은 overrides.cjs cellar2 — 무너진 저장고·썩은 물웅덩이 방은 회랑 x −19 갈림길에서만 닿는 막다른 방.
+//   썩은 물웅덩이 방(검수표 「캡처로 확인」): 골격 밖이라 띠가 지나지 않고 물이끼 바닥(marsh) 그대로 — 둥근 두 방 모두 재적합 없이 원래 구역 바닥.
+//   썩은 사제의 제단실 = 썩은 우물(특징 · 손으로 고른 자리 그대로 23, 4) + 끝방으로 가는 축 양옆 촛대 열주 + 북벽 해골 깃발 열 · 띠 북쪽 뼈 흙 / 남쪽 어두운 뼈 흙.
+//   무너진 저장고 = 무너진 술통 선반(랜드마크 그대로) · 물웅덩이 방 = 썩은 통나무·갈대 묶음 + 웅덩이 · 갈림 방·계단참 = 바닥 무늬와 소품 하나.
+Object.assign(module.exports.cellar2, {
+  v5: {
+    outdoor: false,
+    via: [[16, 0], [16, -8]],   // 축(y 0)을 끝방 앞 x 16까지 곧게 → 남쪽으로 꺾어 되돌아가는 문 줄(y −8) — 대각 계단 띠가 제단실을 비스듬히 가르지 않게
+    dress: {
+      a: { props: ["cellar-rotten-barrel", "camp-firewood"], decals: ["a1-decal-cracked-earth"], dn: 1 },
+      b: { feature: "prop:a1-landmark-collapsed-barrel-shelf", props: ["cellar-rotten-barrel", "a1-adjunct-burst-barrel", "mp-tripod"],   /* 한 장 특징 = 북벽 밀착 (세트로 두면 벽에서 떠 뒤 칸이 남았다) */ clusters: 1, decals: ["a1-decal-cracked-earth"], dn: 2 },
+      c: { props: ["marsh-rotten-log", "marsh-reeds", "a1-pot-helmet-skull"], clusters: 1, floorProps: ["marsh-pool"], decals: ["a1-decal-rotting-reed-puddle", "a1-decal-blood-pool"], dn: 2 },
+      d: { decals: ["a1-decal-pooled-wax", "a1-decal-scattered-bones"], dn: 2 },
+      e: {
+        feature: "prop:a1-rotten-well", featureAt: [23, 4], featureScale: 1.4,
+        colonnade: { name: "crypt-candlestand", step: 3, minPairs: 2, off: 2.5, tight: true, axis: [[9.5, 0.5], [16.5, 0.5]] },
+        row: [{ name: "a1-skull-banner", side: "n" }],
+        sides: { left: "e", right: "h" },   // 동쪽으로 가는 축의 왼쪽 = 북쪽
+        props: ["crypt-bone-urn", "a1-adjunct-collapsed-urn"], clusters: 1,
+        decals: ["a1-decal-blood-pool", "a1-decal-scattered-bones", "a1-decal-pooled-wax"], dn: 3,
+      },
+    },
+  },
+  zones: Object.assign({}, module.exports.cellar2.zones, {
+    a: "cellar-floor 0.6/0.58/0.54 계단참",                  // 바탕과 색 차이 0.08 → 띠 곁 패치가 깔렸다 — 한 톤 어둡게
+    h: "bone-floor 0.56/0.5/0.48 썩은 사제의 제단실 남쪽",    // 띠 남쪽 (북쪽 e와 다른 톤)
+  }),
+  put: [],   // 썩은 우물 → v5 특징(같은 자리)
+});
+
+// 1/15 잿불 야영지 (keep · 마을): 목책·바닥·야영지 큰길·원래 이음새·NPC·상점·포털·화로·게시판 자리 모두 그대로 · 역할 배치(산발 정리)만 (마지막 초소와 같은 처리).
+//   손으로 고른 자리(잿불 화로·무너진 성문 랜드마크·수레·무기 걸이·꺼진 화로 받침)는 그대로. 꾸밈만 묶음 ≤3·같은 그림 맵당 ≤2로
+//   (장작 5·썩은 통 4·무기 걸이 3 산발 → 묶음) · 잿불 광장 = 장작·삼발이 묶음 · 천막 줄 = 북쪽 목책 천막 열 + 통·장작 묶음 · 카라반 마당 = 수레 곁 통 묶음 ·
+//   대장간 = 솥·장작 묶음 · 남문 길 = 이정표·방책 묶음.
+// 손으로 고른 자리 손질: 낱개 천막 셋(간격 7.5·13칸 — 산발 복제 3)은 빼고 천막 줄 북쪽 목책에 붙인 천막 열로 (검수표 「천막 줄 camp-tent 줄로 골목」) ·
+//   천막 열 = 천막 줄 서쪽 북쪽 목책에 붙인 천막 셋(빈틈 없이 · 손으로 고른 자리) · 남문 무너진 성문·잿불 화로(이 마을 이름)·카라반 수레는 v5 역할 배율(×0.694·×0.725·×0.5)을 되돌려
+//   원래 크기 그대로 (성문은 목책 틈에 맞춘 크기 — 발밑 막힘 2줄(foot=0.3)이라야 남문 길이 좁아지지 않는다) · 성문 역할표 facing north → any (마을 안쪽에서 보는 남쪽 목책 문 — 초소 문틀과 같은 처리) ·
+//   무기 걸이(역할 배율로 작아져 동쪽 벽과 1칸 벽감)는 padr=1
+Object.assign(module.exports.town, {
+  put: module.exports.town.put.filter((p) => p[1] !== "camp-tent").map((p) => (p[1] === "a1-landmark-ruined-gate" ? [p[0], p[1], p[2], p[3], Math.round(1000 / 0.694) / 1000, p[5], "ok=cliff;foot=0.3"]
+    : p[1] === "camp-brazier" ? [p[0], p[1], p[2], p[3], Math.round(1150 / 0.725) / 1000, p[5] || 0]
+    : p[1] === "camp-cart" ? [p[0], p[1], p[2], p[3], 2, p[5] || 0]
+    : p[1] === "camp-weapon-rack" ? [p[0], p[1], p[2], p[3], p[4] || 1, p[5] || 0, "padr=1"] : p))
+    .concat([-13, -10.4, -7.8].map((x) => ["prop", "camp-tent", x, 8.3, 1, 0, "wall=1"])),   // 천막 열 셋 — 북쪽 목책에 붙여 빈틈 없이 (2.6칸 간격 · 3.5칸이면 천막 사이 1칸 벽감) (생성기 열은 거친 목책 윤곽에 갇힌 바닥을 만들어 못 놓았다)
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { props: ["camp-firewood", "mp-tripod"], clusters: 1, decals: ["a1-decal-broad-cold-ash"], dn: 1 },
+      b: { props: ["cellar-rotten-barrel", "camp-firewood"], clusters: 1, decals: ["a1-decal-cart-tracks"], dn: 2 },
+      c: { props: ["cellar-rotten-barrel", "mp-tripod"], clusters: 1, decals: ["a1-decal-cart-tracks"], dn: 1 },
+      d: { props: ["mp-cauldron-fire", "camp-firewood"], clusters: 1, decals: ["a1-decal-ash-campfire"], dn: 1 },
+      e: { props: ["mp-signpost", "mp-barricade"], clusters: 1, decals: ["a1-decal-cart-tracks"], dn: 2 },
+    },
+  },
+});
+
+// 10/15 굶주린 굴 (keep): 재 굴 바닥·둥근 굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만 (타락의 구덩이와 같은 자리 — 그 맵을 뒤집기 전 원형)
+//   (검수표 구획: 굴 어귀 → 갉아먹힌 길목 → 굶주린 자들의 둥지 → 막힌 굴 끝(봉인 상자 · 되돌아가는 문), 곁 = 뼈 무더기 굴·해골 굴).
+//   굶주린 자들의 둥지 = 해골 탑(특징 1 · 검수표 「둥지 중심에 액트 1 랜드마크 하나」 — 갈비뼈 제단 세트는 10-31 액트 1 세 맵 「어울리지 않는 세트」라 쓰지 않음) + 뼈·갉힌 잔해 묶음 ·
+//   뼈 무더기 굴 = 뼈 무더기 묶음 둘 · 해골 굴 = 해골 더미 묶음 · 막힌 굴 끝 = 종유석·뼈 묶음 · 갉아먹힌 길목·굴 어귀 = 갉힌 잔해 하나.
+//   갉힌 잔해 산발(5)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.hollow, {
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["hollow-bone-pile"], decals: ["a1-decal-scattered-bones"], dn: 1 },
+      b: { props: ["hollow-gnawed-remains", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 1 },
+      c: { props: ["pit-bone-heap", "hollow-bone-pile", "mp-beast-skull"], decals: ["a1-decal-scattered-bones"], dn: 2 },
+      d: { feature: "prop:pit-skull-tower", featureAt: [4.5, 4.4], props: ["hollow-gnawed-remains", "a1-pot-helmet-skull", "pit-bone-heap"], clusters: 1, decals: ["a1-decal-blood-pool", "a1-decal-scattered-bones"], dn: 3 },
+      e: { props: ["waste-skull-pile", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 1 },
+      f: { props: ["cave-stalactite", "hollow-bone-pile"], clusters: 1, decals: ["a1-decal-blood-pool"], dn: 2 },
+    },
+  },
+});
+
+// 13/15 뼈 구덩이 1층 (keep): 뼈 바닥·굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만 (유황 동굴 1층과 같은 자리 — 그 맵을 뒤집기 전 원형)
+//   (검수표 구획: 구덩이 어귀 → 뼈 비탈 → 해골 탑 광장 → 매복 골짜기 → 아래 계단, 곁 = 남쪽 고리길 — keep이라 고리길 통로는 그대로).
+//   특징 공간당 1: 해골 탑 광장 = 뼈 사당(뼈 탑 + 해골 깃발 쌍 · 세트 속 낱개 사슬 말뚝은 뺌) · 매복 골짜기 = 뼈 도르래 기중기(랜드마크 그대로) ·
+//   뼈 비탈 = 뼈 더미·해골 더미 묶음 · 남쪽 고리길 = 뼈 무더기 묶음 · 어귀·아래 계단 = 뼈 무더기 하나. 뼈 무더기 산발(7)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.pit1, {
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["pit-bone-heap"], decals: ["a1-decal-scattered-bones"], dn: 1 },
+      b: { props: ["mp-bone-pile", "waste-skull-pile", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      c: { feature: "set:a1_bone_shrine", props: ["pit-bone-heap", "hollow-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones", "a1-decal-blood-pool"], dn: 3 },
+      d: { feature: "set:a1_lm_pulley_crane", props: ["mp-beast-skull", "waste-broken-spears"], clusters: 1, decals: ["a1-decal-chain-drag-marks"], dn: 2 },
+      e: { props: ["mp-bone-pile", "hollow-gnawed-remains"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 1 },
+      f: { decals: ["a1-decal-scattered-bones"], dn: 1 },
+    },
+  },
+});
+
+// 14/15 뼈 구덩이 2층 (keep): 뼈 바닥·굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만 (유황 동굴 2층과 같은 자리 — 그 맵을 뒤집기 전 원형)
+//   (검수표 구획: 계단참 → 북쪽 굴 → 유물 지기의 굴(봉인 상자 · 되돌아가는 문 · 끝방), 곁 = 뼈 무더기 길).
+//   유물 지기의 굴 = 뼈 도르래 기중기(특징 1 · 검수표 「유물 지기의 굴 중심에」 · 뼈 무더기 길에서 옮김 — 끝방 자리 둘레는 비운다) + 해골 탑 더미 묶음 ·
+//   북쪽 굴(골격) = 뼈·투구·깨진 단지 묶음 (도굴당한 무덤 세트는 골격 너비를 1칸으로 좁혔다) · 뼈 무더기 길 = 뼈·해골 더미 묶음 + 끌린 사슬 자국 · 계단참 = 뼈 무더기 하나. 뼈 무더기 산발(6)은 묶음으로.
+Object.assign(module.exports.pit2, {
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["pit-bone-heap"], decals: ["a1-decal-scattered-bones"], dn: 1 },
+      b: { props: ["mp-bone-pile", "waste-skull-pile", "pit-bone-heap"], clusters: 2, decals: ["a1-decal-chain-drag-marks", "a1-decal-scattered-bones"], dn: 2 },
+      c: { props: ["mp-bone-pile", "a1-pot-helmet-skull", "a1-adjunct-collapsed-urn"], clusters: 1,   /* 도굴당한 무덤 세트는 골격(북쪽 굴을 지난다) 너비를 1칸으로 좁혀 뺐다 */ decals: ["a1-decal-scattered-bones"], dn: 1 },
+      d: { feature: "set:a1_lm_pulley_crane", props: ["crypt-bone-urn", "a1-skull-banner", "hollow-bone-pile"], clusters: 1, decals: ["a1-decal-blood-pool", "a1-decal-scattered-bones"], dn: 3 },
+    },
+  },
+});
+
+// 15/15 목매단 동굴 (keep): 재 굴 바닥·둥근 굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 동굴 어귀 → 종유석 굴 → 막다른 굴(봉인 상자 · 되돌아가는 문 · 끝방), 곁 = 수의 걸린 굴·박쥐 굴 — keep이라 두 굴로 갈라졌다 만나는 통로는 그대로).
+//   종유석 굴 = 시체 매단 기둥(랜드마크 그대로 · 검수표 「종유석 굴 중심에」) · 수의 걸린 굴 = 수의·밧줄 묶음 · 박쥐 굴 = 종유석·짐승 두개골 묶음 ·
+//   막다른 굴 = 수의·뼈 단지 묶음 · 어귀 = 종유석 하나. 뼈 무더기·짐승 두개골 산발(3·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.cave, {
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["cave-stalactite"], decals: ["a1-decal-cracked-earth"], dn: 1 },
+      b: { props: ["cave-burial-shroud", "forest-hanging-rope", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      c: { feature: "set:a1_lm_corpse_pillar", props: ["pit-bone-heap", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-dragged-blood-smear", "a1-decal-cracked-earth"], dn: 2 },
+      d: { props: ["cave-stalactite", "mp-beast-skull", "hollow-gnawed-remains"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      e: { props: ["cave-burial-shroud", "crypt-bone-urn", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-blood-pool"], dn: 2 },
+    },
+  },
+});
+
+// 3/15 썩은 갈대 늪 (keep): 늪 바닥·둑길(=)·샛길(-)·갈대 숲 벽·무너진 담·원래 이음새 그대로 · 길 안내 0 · 역할 배치만 (유황 늪 표본과 같은 처리 — 같은 「어두운 물기 바닥」 부류)
+//   (검수표 구획: 늪 어귀 → 썩은 나무다리 교차로(웨이포인트) → 동쪽 둑길(출구), 곁 = 가라앉은 사당·습격당한 수레 행렬·무너진 종탑 묘지·가라앉은 농가(지하실 입구)).
+//   특징 공간당 1: 가라앉은 사당 = 썩은 우물 사당 세트 · 동쪽 둑길 = 반쯤 잠긴 망루(랜드마크 그대로) · 가라앉은 농가 = 무너진 집터(손으로 고른 자리 · 북쪽 담까지 막음) + 솥·삼발이·장작 묶음 ·
+//   무너진 종탑 묘지 = 마른 고목 + 까마귀 그루터기·해골 더미 묶음 (종탑·회색 묘지 세트는 10-31 액트 1 세 맵 「어울리지 않는 세트」라 쓰지 않음) ·
+//   교차로 = 개울에 빠진 수레 세트 · 수레 행렬 = 습격당한 짐수레 세트 + 숨은 야영 세트 · 어귀 = 마지막 파수꾼 세트.
+//   썩은 통나무·갈대·화로 산발(6·4·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.rotmarsh, {
+  put: module.exports.rotmarsh.put.map((p) => (p[1] === "mp-house-ruin" ? p.slice(0, 6).concat(["wall=1"]) : p)),   // 가라앉은 농가 집터(정면 그림) — 북쪽 무너진 담까지 뒤 칸 4칸이 남았다 → 담까지 막음
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { sets: ["hm_last_guard"], decals: ["a1-decal-dead-grass", "a1-decal-cart-tracks"], dn: 2 },
+      b: { feature: "set:a1_marsh_shrine", props: ["marsh-rotten-log", "mp-dead-tree"], clusters: 1, floorProps: ["marsh-pool"], decals: ["a1-decal-dead-grass", "a1-decal-scattered-bones"], dn: 2 },
+      c: { sets: ["hm_creek_wreck"], floorProps: ["marsh-pool"], decals: ["a1-decal-cart-tracks", "a1-decal-rotting-reed-puddle", "a1-decal-blood-pool"], dn: 3 },
+      d: { sets: ["a1_ambush_camp", "hm_hidden_camp"], decals: ["a1-decal-broad-cold-ash", "a1-decal-shield-fragments", "a1-decal-blood-pool"], dn: 3 },
+      e: { feature: "prop:mp-dead-tree", props: ["forest-raven-stump", "waste-skull-pile", "a1-pot-helmet-skull"], clusters: 1, decals: ["a1-decal-collapsed-grave-earth", "a1-decal-scattered-bones"], dn: 3 },
+      f: { props: ["mp-cauldron-fire", "mp-tripod", "camp-firewood"], clusters: 1, decals: ["a1-decal-dead-grass", "a1-decal-ash-campfire"], dn: 2 },   // 불탄 농가 세트는 집터(손으로 고른 자리)·지하실 입구 곁에 자리가 없었다 → 솥·삼발이·장작 묶음
+      g: { feature: "set:a1_lm_watchtower", featureDrop: ["a1-decal-rotting-reed-puddle"], props: ["marsh-rotten-log", "waste-dead-tree"],   /* 세트 바닥 무늬 조각 발이 남쪽 벽 칸이었다 */ clusters: 1, decals: ["a1-decal-rotting-reed-puddle", "a1-decal-dead-grass"], dn: 2 },
+    },
+  },
+});
+
+// 4/15 무너진 형장 (keep): 형장 바닥·옛 돌길(=)·샛길(-)·바위 언덕·형장 담·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 형장 바깥 길 → 처형 광장(웨이포인트) → 동문 길, 곁 = 머리 없는 왕의 쉼터·죄수 우리·까마귀 묘지·뼈 구덩이 어귀(구덩이 입구)).
+//   특징 공간당 1: 처형 광장 = 처형대 세트(돌길 남쪽 광장 가운데 · 세트 속 낱개 사슬 기둥은 뺌) · 왕의 쉼터 = 머리 없는 왕의 석상 · 죄수 우리 = 처형 발판(랜드마크 그대로) ·
+//   까마귀 묘지 = 묘지 세트(울타리·묘비 열) · 뼈 구덩이 어귀 = 뼈 무더기 묶음 · 동문 길 = 무너진 파수 자리 세트 · 바깥 길 = 창·방책 묶음.
+//   묘비·해골 더미·투구 해골·말뚝 산발(5·4·4·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.execution, {
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { props: ["waste-broken-spears", "mp-barricade", "waste-dry-shrub"], clusters: 1, decals: ["a1-decal-cart-tracks", "a1-decal-blood-pool"], dn: 2 },
+      b: { feature: "set:a1_execution_square", featureAt: [-9.5, -5.3], props: ["execution-pillory", "waste-skull-pile"], clusters: 1, decals: ["a1-decal-dragged-blood-smear", "a1-decal-blood-pool", "a1-decal-scattered-bones"], dn: 3 },
+      c: { feature: "set:a1_kings_rest", props: ["a1-pot-helmet-skull", "mp-dead-tree"], clusters: 1, decals: ["a1-decal-cracked-earth"], dn: 2 },
+      d: { feature: "set:a1_lm_scaffold", props: ["mp-cage-hanging", "mp-stake-spikes"], clusters: 1, decals: ["a1-decal-chain-drag-marks", "a1-decal-blood-pool"], dn: 2 },
+      e: { sets: ["a1_graveyard"], props: ["forest-raven-stump"], decals: ["a1-decal-collapsed-grave-earth", "a1-decal-dead-grass"], dn: 2 },
+      f: { props: ["pit-bone-heap", "pit-skull-tower", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      g: { sets: ["hm_watch_post"], props: ["mp-signpost"], decals: ["a1-decal-cart-tracks"], dn: 1 },
+    },
+  },
+});
+
+// 5/15 교수대 숲 (keep · 상위 5 최소 수정 · 등급 C): 숲 바닥·숲길(=)·샛길(-)·죽은 나무 숲 벽·무너진 담·원래 이음새·장소 세트 그대로 · 길 안내 0 · 산발 정리만
+//   (검수표 구획: 숲 어귀 → 까마귀 숲길(웨이포인트) → 망나니의 처형장(보스) → 동쪽 숲길, 곁 = 교수대 언덕·피의 제단·목매단 동굴 어귀).
+//   교수대 언덕 세트는 언덕 남쪽 가운데(−11.5, 9.4 · 세트 속 고목은 같은 공간 특징 둘이라 뺌) · 나머지 장소 세트는 원래 설계서 그대로(교수 나무 랜드마크 · 숨은 야영 · 뼈 사당 · 묘지 · 망나니 세트 손으로 고른 자리) — 같은 공간 특징 둘·세트 속 낱개 기둥만 생성기 규칙으로 빠진다.
+//   해골 더미·마른 덤불·뼈 무더기 산발(6·5·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+// 손으로 고른 자리 손질: 망나니 세트(보스 뒤 처형대)를 조각으로 풀고 해골 깃대 둘만 뺐다 — v5 역할 크기(3칸)로 커진 깃대가 동쪽 숲길(골격)을 1칸으로 좁히고 북쪽 깃대 뒤 칸이 남았다 ·
+//   처형대는 1.8칸 남쪽(숲길 남쪽 · 발밑이 숲길 칸을 막아 골격 너비 1칸이었다) · 사슬 기둥 쌍·해골 더미·핏자국은 같은 자리 (망나니 자리 headsman 15/−2 그대로)
+Object.assign(module.exports.gallows, {
+  put: [["prop", "execution-platform", 18.5, -2.7, 1, 0], ["prop", "execution-chain-pillar", 17.1, 1.3, 1, 0], ["prop", "execution-chain-pillar", 17.1, -3.9, 1, 1],
+    ["prop", "waste-skull-pile", 13.7, 0.7, 1, 0], ["prop", "waste-skull-pile", 13.9, -3.7, 1, 1],
+    ["decal", "a1-decal-blood-pool", 15.5, -1.5, 1.5, 0], ["decal", "a1-decal-blood-pool", 13.7, -0.7, 0.8, 0], ["decal", "a1-decal-scattered-bones", 12.9, -2.4, 1, 0], ["decal", "a1-decal-scattered-bones", 16.7, -3.1, 1, 1]],
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { props: ["forest-raven-stump", "waste-dry-shrub"], clusters: 1, decals: ["a1-decal-dead-grass"], dn: 2 },
+      b: { feature: "set:a1_gallows_hill", featureAt: [-11.5, 9.4], featureDrop: ["forest-dead-tree"], props: ["forest-hanging-rope", "mp-cage-hanging"], clusters: 1, decals: ["a1-decal-dead-grass", "a1-decal-scattered-bones"], dn: 2 },
+      c: { feature: "set:a1_lm_gallows_tree", sets: ["hm_hidden_camp"], decals: ["a1-decal-rusted-arrow-bundle", "a1-decal-dead-grass"], dn: 2 },
+      d: { feature: "set:a1_bone_shrine", props: ["a1-chained-stake", "waste-skull-pile"], clusters: 1, decals: ["a1-decal-dragged-blood-smear", "a1-decal-blood-pool"], dn: 3 },
+      e: { props: ["mp-stake-spikes", "execution-pillory"], clusters: 1, decals: ["a1-decal-blood-pool"], dn: 2 },
+      f: { props: ["forest-hanging-rope", "mp-bone-pile"], clusters: 1, decals: ["a1-decal-scattered-bones"], dn: 2 },
+      g: { sets: ["a1_graveyard"], decals: ["a1-decal-dead-grass"], dn: 1 },
+    },
+  },
+});
