@@ -1,0 +1,15 @@
+SKILLFX-MAKER-20261031 실행 기록 (KST) — 메이커 단일 담당 (Claude Opus 5.5, 조정자 Fable) · 브랜치 codex/player-experience-polish · HEAD d015924a = origin/main
+목표: 오늘 연결한 스킬 그림 4묶음(골편 20 · 9계열 88 · 거인 메테오 L2 32 · C 7종 28) 메이커 실화면 확인
+--- 0. 상태 ---
+13:30:54 편집 모드 · map01 · 작업 트리 HEAD d015924a (미커밋은 .claude/·AGENTS.md·Shop.directory·assets/ 그대로)
+--- 1. 반영 ---
+13:30:5x maker_refresh_workspace 1회 → build 13:30:59 · 361줄 · Error 2 · Warning 102 · Info 257
+   Error 2 = LEA-1102 「table KeyFrames(string list, string key)」 · MonsterStatus.MarkerIcon +4줄(= 781행) · MonsterStatus.UpdateCurseMarker +41줄(= 832행)
+13:31:39 부르는 파일 RootDesk/MyDesk/Monster/MonsterStatus.mlua touch(내용 변경 없음 · git diff 0) → 5초 → refresh 1회 더 → build 13:31:47 · 361줄 · Error 2 (같은 두 줄 그대로)
+   → 지시대로 중단 (play 안 함 · 저장 데이터·슬롯 4 건드리지 않음 · 메이커 편집 모드 map01 그대로)
+--- 원인 판독 (코드는 고치지 않음) ---
+   두 오류 줄 모두 KeyFrames 두 번째 인자에 (string.gsub(markKey, "^mark_", "")) 를 넘기는 자리 — 0f6e877e(9계열 88키)에서 들어옴
+   Util.KeyFrames 모양(Util.mlua:430)은 그대로이고, 같은 함수를 부르는 HudMain:703 · SkillEffects:295/315/319/2495/2496 은 오류 없음
+   → 「옛 모양이 남은」 stale 1102가 아니라 mlua 컴파일러가 괄호로 감싼 string.gsub(값 2개 반환)를 인자 3개로 세는 것으로 보임 (리포 안에 같은 꼴 다른 사용처 0)
+   tests/quality(로컬 Lua)는 괄호 규칙대로 값 1개로 잘라 통과했으므로 검사로는 못 잡힘
+원문: build-errors.log
