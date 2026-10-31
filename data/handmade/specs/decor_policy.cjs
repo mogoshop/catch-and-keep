@@ -66,8 +66,8 @@ module.exports = {
     FORK_LEN: 1.5,                        // 갈래 시작 1.5칸 = 갈림 조각
     END_ALPHA: 0.6,                       // 구간 시작·끝 뾰족한 끝 조각 불투명도 (띠 끝이 옅어지며 끝나게 · 코덱스 end 타일 오기 전 임시)
     STEP_DEG: 40,                         // 곡선 토막 각도 (엔티티 예산 43545 ± 10% 안으로)
-    // 코덱스 타일 도장 (GUIDE_TILE stamp): 1칸(100px) 간격 · 빈틈 10%(타일 자체 빈틈이 있어 20%에서 낮춤) · 곡선 타일은 1칸 안에서 50° 넘게 꺾일 때만
-    STAMP: { PITCH: 1.0, GAP: 0.1, CURVE_DEG: 50, CORE_W: 0.45, VAR: 0.08 },
+    // 코덱스 타일 도장 (GUIDE_TILE stamp): 1칸(100px) 간격 · 빈틈 10%(타일 자체 빈틈이 있어 20%에서 낮춤) · 1칸 안 꺾임 25° 이상 = 곡선 타일 · 50° 이상 = 곡선 + 반 칸 뒤 직선 보정 (10-31 메이커 3차: 50°면 곡선 0장)
+    STAMP: { PITCH: 1.0, GAP: 0.1, CURVE_DEG: 25, CURVE_FIX_DEG: 50, CORE_W: 0.45, VAR: 0.08 },
   },
   // C-8 액트별 길 안내 타일 슬롯 {straight, curve, fork, end}. 빌더는 조각마다 종류를 기록한다(guide.pieces.kind)
   //   stamp: true = 코덱스 길 안내 타일(128px 정사각 · 100px 피치 · 가운데 피벗 · 자체 가장자리·빈틈) — 1칸 간격 낱장 도장으로 찍는다
@@ -80,9 +80,9 @@ module.exports = {
       fork: { art: `${pre}-fork`, tint: "1/1/1", stamp: true }, end: { art: `${pre}-end`, tint: "1/1/1", stamp: true } });
     return {
       1: s("guide-act1"),                                   // 10-31 코덱스 액트 1 타일 (밟힌 흙길 + 자갈 가장자리 · 폭 약 0.3~0.5칸) — 임시였던 a1-mud-floor 0.74/0.64/0.52 대체
-      2: t("a2-sandstone-paving-floor", "0.76/0.68/0.54"), // 돌판
-      3: t("a3-wet-cobble-road-r2", "0.62/0.68/0.7"),      // 젖은 조개 자갈
-      4: t("a4-cooled-lava-floor", "0.62/0.55/0.52"),      // 재·식은 용암
+      2: s("guide-act2"),                                   // 10-31 코덱스 액트 2 타일 — 임시였던 a2-sandstone-paving-floor 0.76/0.68/0.54(돌판) 대체
+      3: s("guide-act3"),                                   // 10-31 코덱스 액트 3 타일 — 임시였던 a3-wet-cobble-road-r2 0.62/0.68/0.7(젖은 조개 자갈) 대체
+      4: s("guide-act4"),                                   // 10-31 코덱스 액트 4 타일 — 임시였던 a4-cooled-lava-floor 0.62/0.55/0.52(재·식은 용암) 대체 · t()는 fallback으로 남김
     };
   })(),
   MARKER: { 1: "camp-brazier", 2: "a2-adjunct-censer-base", 3: "harbor-lantern", 4: "a4-brazier" },
