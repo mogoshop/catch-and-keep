@@ -54,6 +54,8 @@ save("20-facing", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(1), y: w
 save("21-rowgap", base(), cleanPieces().concat([22, 25, 30].map((c) => ({ s: "broken-column", x: wx(c), y: wy(14) }))), { rowGap: 1 }, { note: "벽 따라 한 줄 간격 3·5칸" });
 save("22-rowflip", base(), cleanPieces().concat([22, 25, 28].map((c, i) => ({ s: "wind-stele", x: wx(c), y: wy(14), flip: i === 1 }))), { rowFlip: 1 }, { note: "한 줄 가운데 하나만 뒤집힘" });
 save("23-behindwall", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(8), y: wy(7) }]).map((p) => p), { behindWall: 1 }, { note: "북벽 정면 책장 뒤(벽까지) 걷는 칸 1", json: {} });
+save("24-rowbehind", base(), cleanPieces().concat([2, 5, 8].map((c) => ({ s: "wind-stele", x: wx(c), y: wy(6) }))), { behindWall: 3 }, { note: "북벽 2칸 앞 바람 비석 줄 — 줄 뒤 걷는 칸 (조각마다 1)" });
+save("25-niche", base(), cleanPieces(), { wallNiche: 1 }, { note: "벽에 붙인 막힘 사이 1칸 막다른 벽감", json: { blocked: ["8,5", "9,5", "11,5", "12,5"] } });
 save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이음새 조각 3개 (ArtBand·ArtCorner)", json: { seams: 3 } });
 { // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
   const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";

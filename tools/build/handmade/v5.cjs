@@ -382,16 +382,27 @@ function run(o) {
   for (const k of band) { margin.add(k); const [x, y] = unK(k); for (const [dx, dy] of D4) margin.add(K(x + dx, y + dy)); }
   for (const k of core) margin.add(k);
   if (keep) for (const [x, y] of floorCells) if (g.get(x, y).road) margin.add(K(x, y));   // v5-keep: 설계도 길 글자 칸도 비운다
-  const occ = new Set(), feet = [], rows = [];
+  const occ = new Set(), feet = [], rows = [], hugs = [];   // hugs: 벽에 붙인 그림 (6차 벽감 메우기)
   const free = (cells, place) => cells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !c.keep && !margin.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy) && (place === undefined || c.place === place); });
   const occupy = (cells, x, y) => { for (const [cx, cy] of cells) { occ.add(K(cx, cy)); occ.add(K(cx - 1, cy)); occ.add(K(cx + 1, cy)); } feet.push([x, y]); };
   // 막는 조각 발밑(빌더와 같은 footprint) — 놓기 전에 들어오는 문에서 모든 바닥이 그대로 이어지는지 본다 (갇힌 바닥·막힌 화로 0)
   const blocked = new Set();
   const floorN = floorCells.length;
   const startCell = cellOfF(startF);
-  const canBlock = (cells) => {
+  //   (6차) noNiche: 막은 칸 곁에 폭 ≤2칸 막다른 벽감(가로 빈칸 ≤2 · 위가 벽·막힘 또는 벽감)이 생기면 거절 — 벽 밀착 줄은 끝을 넓혀 메우므로 끈다
+  const makesNiche = (add) => {
+    const A = new Set(add), fr = (x, y) => floor(x, y) && !blocked.has(K(x, y)) && !A.has(K(x, y)) && !isMk(x, y);
+    const hr = (x, y) => { let n = 1; for (let k = 1; k <= 3 && fr(x - k, y); k++) n++; for (let k = 1; k <= 3 && fr(x + k, y); k++) n++; return n; };
+    const xs = add.map((k) => unK(k)[0]), ys = add.map((k) => unK(k)[1]), x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + 3, y0 = Math.min(...ys) - 4, y1 = Math.max(...ys) + 4;
+    const ni = new Set();
+    for (let y = y1 + 3; y >= y0; y--) for (let x = x0; x <= x1; x++) if (fr(x, y) && hr(x, y) <= 2 && (!fr(x, y + 1) || ni.has(K(x, y + 1)))) ni.add(K(x, y));
+    for (const k of ni) { const [x, y] = unK(k); if (A.has(K(x - 1, y)) || A.has(K(x + 1, y))) return true; }
+    return false;
+  };
+  const canBlock = (cells, noNiche = true) => {
     const add = cells.map(([a, b]) => K(a, b)).filter((k) => !blocked.has(k) && floor(...unK(k)));
     if (!add.length) return true;
+    if (noNiche && makesNiche(add)) return false;
     const nb = new Set([...blocked, ...add]), seen = new Set([K(...startCell)]), q = [K(...startCell)];
     for (let i = 0; i < q.length; i++) { const [x, y] = unK(q[i]); for (const [dx, dy] of D4) { const nk = K(x + dx, y + dy); if (!seen.has(nk) && !nb.has(nk) && floor(x + dx, y + dy)) { seen.add(nk); q.push(nk); } } }
     let total = 0; for (const [x, y] of floorCells) if (!nb.has(K(x, y))) total++;
@@ -579,8 +590,8 @@ function run(o) {
   const gCommit = (kind, name, grp, whole, x, y, m, note) => {
     occupy(gCells(grp, x, y, m), x, y); doBlock(gBlock(grp, x, y, m));
     for (const p of grp) if (!p.decal) { bump(p.name); addVbox(p.name, x + p.dx * m, y + p.dy, p.sc); }
-    if (whole) { const fp = grp.find((p) => !p.decal && (p.frac || p.toWall)); pushRow(kind, name, x, y, { flip: m < 0, note, args: fp ? pArgs(fp) : "" }); return; }
-    for (const p of grp) pushRow(p.decal ? "decal" : "prop", p.name, x + p.dx * m, y + p.dy, { scale: p.sc !== 1 ? p.sc : "", flip: p.flip !== (m < 0), note: `${note} · ${name} 조각`, args: p.decal ? "" : pArgs(p) });
+    if (whole) { const fp = grp.find((p) => !p.decal && (p.frac || p.toWall)); pushRow(kind, name, x, y, { flip: m < 0, note, args: fp ? pArgs(fp) : "" }); if (kind === "prop" && blockOf(name)) { const p0 = grp.find((p) => !p.decal); hugs.push({ row: rows[rows.length - 1], name, x, y, sc: p0.sc, toWall: !!p0.toWall, frac: p0.frac, cells: fc(name, x, y, p0.sc, pOpt(p0)).map(([a, b]) => K(a, b)) }); } return; }
+    for (const p of grp) { pushRow(p.decal ? "decal" : "prop", p.name, x + p.dx * m, y + p.dy, { scale: p.sc !== 1 ? p.sc : "", flip: p.flip !== (m < 0), note: `${note} · ${name} 조각`, args: p.decal ? "" : pArgs(p) }); if (!p.decal && (p.collide === "block")) hugs.push({ row: rows[rows.length - 1], name: p.name, x: x + p.dx * m, y: y + p.dy, sc: p.sc, toWall: !!p.toWall, frac: p.frac, cells: fc(p.name, x + p.dx * m, y + p.dy, p.sc, pOpt(p)).map(([a, b]) => K(a, b)) }); }
   };
   // 특징은 벽 따라 열 다음에 놓는다 (작은 방에서 특징이 벽면을 먼저 차지해 열이 들어가지 못했다)
   function placeFeatures() { for (const s of S) {
@@ -628,10 +639,10 @@ function run(o) {
   // 반복 구조
   const commit = (s, name, spots, tag) => {
     const bc = blockOf(name) ? spots.flatMap((sp) => sp.cells) : [];   // 자리마다 계산한 발밑 칸 그대로 (벽 정면 열은 벽까지)
-    if (!canBlock(bc)) { s.notes.push(`${tag} ${name}: 바닥을 가둬 뺌`); return; }
+    if (!canBlock(bc, !spots.some((sp) => sp.args && sp.args.includes("wall=1")))) { s.notes.push(`${tag} ${name}: 바닥을 가둬(또는 벽감) 뺌`); return; }
     doBlock(bc);
     for (const sp of spots) addVbox(name, sp.q[0], sp.q[1], 1);
-    for (const sp of spots) { occupy(sp.cells, sp.q[0], sp.q[1]); bump(name); pushRow("prop", name, sp.q[0], sp.q[1], { flip: sp.flip, note: `${s.p.name} · v5 ${tag}`, args: sp.args || "" }); } s.notes.push(`${tag} ${name}×${spots.length}`); };
+    for (const sp of spots) { occupy(sp.cells, sp.q[0], sp.q[1]); bump(name); pushRow("prop", name, sp.q[0], sp.q[1], { flip: sp.flip, note: `${s.p.name} · v5 ${tag}`, args: sp.args || "" }); if (blockOf(name)) hugs.push({ row: rows[rows.length - 1], name, x: sp.q[0], y: sp.q[1], toWall: !!(sp.args && sp.args.includes("wall=1")), cells: sp.cells.map(([a, b]) => K(a, b)) }); } s.notes.push(`${tag} ${name}×${spots.length}`); };
   // 공간 안 곧은 띠 구간 (열주 축) — P = 띠가 들어오는 쪽, Q = 먼 쪽
   function stretchOf(s, C) {
     const runs = [];
@@ -708,16 +719,16 @@ function run(o) {
       for (let t = best.st + 0.5; t <= best.en + (best.dy ? 0.5 : -0.5); t += step) {   // 동·서 벽 열은 맨 위 칸을 비운다 (그림이 방 위로 넘어가지 않게)
         // 담 윗면 맵(;raised)은 북·동·서 가장자리 칸이 절벽 윗단 테두리로 그려져 한 칸 더 안쪽 (남쪽은 낮은 칸에 앞면 띠라 그대로)
         const ins = spec.raised ? 1 : 0;
-        const q = best.dy ? [r2(t + 0.5), r2(best.dy > 0 ? best.ln - 0.4 - ins : best.ln + 0.3)] : [r2(best.ln + (best.dx > 0 ? 0.4 - ins : 0.6 + ins)), r2(t + 0.4)];
+        const q = best.dy ? [r2(t + 0.5), r2(best.dy > 0 ? best.ln - 0.4 - ins : best.ln + 0.3)] : [r2(best.ln + (best.dx > 0 ? 0.4 : 0.6)), r2(t + 0.4)]   /* 6차: 동·서 벽 열도 벽에 닿는 칸에 (담 윗면 한 칸 안쪽 들이기 없앰 — 뒤 칸이 생겼다) */;
         // 5차: 벽 정면(facing north) 열은 북벽에 붙인다 — 그림 윗면 = 벽 밑선 · 발밑부터 벽까지 막음 (뒤 칸 0)
-        const hug = best.dy > 0 && facing === "north";
+        const hug = best.dy > 0;   // 6차: 북벽 열은 방향(facing)과 관계없이 모두 벽에 붙이고 벽까지 막는다 (5차는 facing north만이라 바람 비석이 2.4칸 떨어져 뒤로 걸어 들어갔다)
         if (hug) q[1] = hugY(C.name, best.ln + 1, 1);
         const cells = fc(C.name, q[0], q[1], 1, hug ? { toWall: true } : null);
         if (free(cells) && (C.contiguous || tentOk(cells, tent)) && !nearFunc(q[0], q[1])) { tadd(cells); runCur.push({ q, cells, flip: false, args: hug ? "wall=1" : "" }); } else flush();
       }
       flush();
       if (spots.length < C.min) { why = `${spots.length}개뿐`; continue; }
-      if (!canBlock(spots.flatMap((sp) => blockCellsProp(C.name, sp.q[0], sp.q[1])))) { why = "바닥을 가둠"; continue; }
+      if (!canBlock(blockOf(C.name) ? spots.flatMap((sp) => sp.cells) : [], !spots.some((sp) => sp.args))) { why = "바닥을 가둠"; continue; }   // 벽 밀착 줄은 벽감을 끝 넓히기로 메운다
       commit(s, C.name, spots, "벽 따라 열");
       return;
     }
@@ -849,6 +860,7 @@ function run(o) {
             doBlock(blockCellsProp(n, q[0], q[1]));
             occupy(cells, q[0], q[1]); bump(n); placed++;
             pushRow("prop", n, q[0], q[1], { flip: rand() < 0.5, note: `${s.p.name} · v5 소품 묶음` });
+            if (blockOf(n)) hugs.push({ row: rows[rows.length - 1], name: n, x: q[0], y: q[1], cells: cells.map(([a, b]) => K(a, b)) });
             break;
           }
         }
@@ -874,6 +886,41 @@ function run(o) {
       pushRow("decal", pl.decals[dspots.length % pl.decals.length], q[0], q[1], { flip: rand() < 0.5, note: `${s.p.name} · v5 바닥 무늬` });
     }
     s.clusters = clusters;
+  }
+  // 6차: 막는 그림 양끝·사이와 벽 사이 폭 ≤2칸 막다른 벽감(벽 밀착 줄 곁 포함) — 곁 그림의 발밑 칸을 그쪽으로 넓혀 막는다 (args padl·padr · 4회까지 되풀이)
+  //   벽감 칸 = 빈 바닥 · 가로 빈칸 ≤2 · 바로 위가 벽·막힘이거나 벽감 · 벽에 붙인 그림 칸과 가로로 맞닿음
+  {
+    const freeC = (x, y) => floor(x, y) && !blocked.has(K(x, y));
+    const hRun = (x, y) => { let n = 1; for (let k = 1; k <= 3 && freeC(x - k, y); k++) n++; for (let k = 1; k <= 3 && freeC(x + k, y); k++) n++; return n; };
+    const hugCell = new Map();
+    hugs.forEach((h, i) => h.cells.forEach((k) => hugCell.set(k, i)));
+    let filled = 0;
+    for (let pass = 0; pass < 4; pass++) {
+    const niche = new Set();
+    for (let y = g.y1; y >= g.y0; y--) for (let x = g.x0; x <= g.x1; x++) if (freeC(x, y) && !isMk(x, y) && hRun(x, y) <= 2 && (!freeC(x, y + 1) || niche.has(K(x, y + 1)))) niche.add(K(x, y));
+    const seen = new Set();
+    for (const k0 of niche) {
+      if (seen.has(k0)) continue;
+      const comp = [k0]; seen.add(k0);
+      for (let i = 0; i < comp.length; i++) { const [x, y] = unK(comp[i]); for (const [dx, dy] of D4) { const nk = K(x + dx, y + dy); if (niche.has(nk) && !seen.has(nk)) { seen.add(nk); comp.push(nk); } } }
+      // 왼쪽에 벽 붙은 그림이 있으면 그 그림의 오른쪽을, 아니면 오른쪽 그림의 왼쪽을 넓힌다
+      let pick = null;
+      for (const k of comp) { const [x, y] = unK(k); if (hugCell.has(K(x - 1, y))) { pick = { i: hugCell.get(K(x - 1, y)), side: "padr" }; break; } }
+      if (!pick) for (const k of comp) { const [x, y] = unK(k); if (hugCell.has(K(x + 1, y))) { pick = { i: hugCell.get(K(x + 1, y)), side: "padl" }; break; } }
+      if (!pick) continue;
+      const h = hugs[pick.i], cols = h.cells.map((k) => unK(k)[0]), xs = comp.map((k) => unK(k)[0]);
+      const need = pick.side === "padr" ? Math.max(...xs) - Math.max(...cols) : Math.min(...cols) - Math.min(...xs);
+      if (need <= 0 || need > 4) continue;   // 벽감 폭은 ≤2(가로 빈칸) — 그 사이 이미 막힌 칸까지 넓혀도 4칸까지
+      const cur = Number(((h.row.args || "").match(new RegExp(pick.side + "=(\\d+)")) || [0, 0])[1]);
+      const args = (h.row.args || "").split(";").filter((t) => t && !t.startsWith(pick.side + "="));
+      args.push(`${pick.side}=${cur + need}`);   // need는 지금 칸(이미 넓힌 것 포함) 끝에서 잰 거리
+      h.row.args = args.join(";");
+      const nc = fc(h.name, h.x, h.y, h.sc || 1, { toWall: !!h.toWall, frac: h.frac, padl: Number((h.row.args.match(/padl=(\d+)/) || [0, 0])[1]), padr: Number((h.row.args.match(/padr=(\d+)/) || [0, 0])[1]) });
+      doBlock(nc); occupy(nc, h.x, h.y); h.cells = nc.map(([a, b]) => K(a, b)); nc.forEach(([a, b]) => hugCell.set(K(a, b), pick.i));
+      filled += comp.length;
+    }
+    }
+    report.nicheFilled = filled;
   }
   report.band = band.size; report.legs = legs.map((l) => `${l.target}:${l.cells.length}`);
   report.spaces = S.map((s) => `${s.p.z}:${s.p.name}=${s.fn}${s.feature ? " ·특징" : ""}${s.clusters ? " ·묶음" + s.clusters : ""}${s.notes.length ? " (" + s.notes.join("; ") + ")" : ""}`);
