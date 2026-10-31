@@ -936,7 +936,7 @@ script ShadowUnit extends AttackComponent
             local fx = owner:GetComponent("script.SkillEffects")
             if fx ~= nil then
                 fx:BlastFx(Vector3(p.x, p.y + 0.2, 0), self.BombRadius, self.Entity.CurrentMap.Id)
-                fx:ClipFx(fx.FxBlast, Vector3(p.x, p.y + 0.5, 0), 0.75 * self.BombRadius / 1.6, 1.2, 0)
+                fx:C7Clip("blast", Vector3(p.x, p.y, 0), 0.5, 0.75 * self.BombRadius / 1.6, 1.2)   -- 10-31 C 7종 뼈 폭발 4장 (비면 예전 메이플 피 폭발)
             end
         end
         log(string.format("[VRF] skeleton bomb exploded dmg=%.0f r=%.2f", self.BombDamage, self.BombRadius))
@@ -1528,7 +1528,9 @@ script ShadowUnit extends AttackComponent
                 -- 48 §2-2: 그 속성 캐릭터 스킬과 같은 그림·속도 (MageBolts.Configure 공용) · 세기는 마법사 랭크 (MageTraits)
                 speed = _MageBolts:Configure(proj, school)
                 if self.Giant then
-                    proj:Skin(_MageBolts.FxFlameShot, 0.8)   -- 마법사 거인 화염 구슬: 저주 불꽃 그림을 크게 (48 §4-1)
+                    -- 마법사 거인 화염 구슬: 저주 불꽃 그림을 크게 (48 §4-1) · 10-31 C 7종 불꽃탄 4장이 있으면 그 그림(예전 0.8배와 같은 보이는 폭)
+                    if _GameConst.FxSkillFlameShot ~= "" then proj:Skin(_GameConst.FxSkillFlameShot, _MageBolts.GiantFlameArtScale)
+                    else proj:Skin(_MageBolts.FxFlameShot, 0.8) end
                 else
                     _MageBolts:MageTraits(proj, school, self:MageRankNow())
                     pierce = _MageBolts:Pierces(school)
@@ -1664,7 +1666,10 @@ script ShadowUnit extends AttackComponent
         local angle = math.deg(math.atan(dir.y, dir.x))
         if not right then angle = angle - 180 end
         local s = 0.25 * math.max(1, scale)
-        _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(s, s, 1), false, { FlipX = right, PlayRate = 1.8, Color = Color(0.75, 0.7, 0.8, 0.65) })
+        -- 10-31 C 7종 중립 베기 4장 (Util.SkillSlashFx · 비면 예전 메이플 FxSlash)
+        if not _Util:SkillSlashFx(self.Entity.CurrentMap, pos, angle, s, right, Color(0.75, 0.7, 0.8, 0.65), "summon") then
+            _EffectService:PlayEffect(_GameConst.FxSlash, self.Entity, pos, angle, Vector3(s, s, 1), false, { FlipX = right, PlayRate = 1.8, Color = Color(0.75, 0.7, 0.8, 0.65) })
+        end
         _SoundDirector:PlayCombat(_GameConst.SfxSwing, pos, 0.12, 0)
     end
 

@@ -13,6 +13,13 @@ script MageBolts extends Logic
     property string FxFlameShot = "40f0991c2e204ee888670cb3006382e5"     -- 불꽃 화살 (저주 불꽃)
     property string FxFrostShot = "d5a9e48c2d654726811db8b127699233"     -- 서리 혼
     property string FxShardShot = "423983c3b393414c8a8d91578b1fab9c"     -- 어두운 보라 궤적 (뼈 창 그림이 비면 가늘고 길게)
+    -- 10-31 C 7종 투사체 (GameConst.FxSkillFlameShot·FxSkillFrostShot · 128×64 오른쪽 기준 · 비행 중 순환 · 왼쪽 FlipY = Projectile.MirrorSkin): 칸이 비면 위 메이플 원본 그대로
+    --   배율 = 예전 배율 × 예전 클립 배율 1의 폭(audit P06 1.38/0.45 = 3.067 · P08 1.88/0.6 = 3.133칸) ÷ 새 그림 내용 폭(알파>16 최대 · 불꽃 115px · 서리 117px) → 보이는 폭이 예전과 같다
+    property number FlameShotArtScale = 1.2     -- 저주 불꽃·불꽃 마법사 (예전 0.45) → 내용 115×43px = 1.38×0.52칸
+    property number FrostShotArtScale = 1.6     -- 서리 혼·서리 마법사 (예전 0.6) → 내용 117×43px = 1.87×0.69칸
+    property number FrostShardArtScale = 1.07   -- 서리 파편 (예전 0.4) → 1.25×0.46칸
+    property number GiantFlameArtScale = 2.13   -- 마법사 거인 화염 구슬 (ShadowUnit · 예전 0.8) → 2.45×0.92칸
+    property table C7Logged = {}                -- [VRF] 속성마다 한 번만 (서버)
     -- 마법사 랭크 구간 (§2-3 · 캐릭터 1·5·8·12보다 늦은 1·6·11·16)
     property integer Tier2Lv = 6
     property integer Tier3Lv = 11
@@ -109,17 +116,20 @@ script MageBolts extends Logic
         -- 피해·관통 상한·파편 수·폭발 반경 같은 「세기」는 여기서 정하지 않는다 (캐릭터 = SkillEffects · 마법사 = MageTraits)
         -- 10-31 9계열: 명중 그림 속성(Projectile.HitKind) — 불 · 서리(서리 혼·파편) · 저주 마력탄 = GameConst.FxSkillHit* (뼈 창·영혼 격류는 Style 자기 명중이라 "")
         if school == "fire" then
-            proj:Skin(self.FxFlameShot, 0.45)
+            if _GameConst.FxSkillFlameShot ~= "" then proj:Skin(_GameConst.FxSkillFlameShot, self.FlameShotArtScale) else proj:Skin(self.FxFlameShot, 0.45) end
+            self:C7Log(school, _GameConst.FxSkillFlameShot, self.FlameShotArtScale)
             proj:Tint(Color(1, 0.75, 0.55, 1))
             proj.HitKind = "fire"
             return 11
         elseif school == "cold" then
-            proj:Skin(self.FxFrostShot, 0.6)
+            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShotArtScale) else proj:Skin(self.FxFrostShot, 0.6) end
+            self:C7Log(school, _GameConst.FxSkillFrostShot, self.FrostShotArtScale)
             proj:Tint(Color(0.85, 0.95, 1, 1))
             proj.HitKind = "frost"
             return 9
         elseif school == "cold_shard" then
-            proj:Skin(self.FxFrostShot, 0.4)
+            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShardArtScale) else proj:Skin(self.FxFrostShot, 0.4) end
+            self:C7Log(school, _GameConst.FxSkillFrostShot, self.FrostShardArtScale)
             proj:Tint(Color(0.85, 0.95, 1, 1))
             proj.HitKind = "frost"
             return 10
@@ -151,6 +161,15 @@ script MageBolts extends Logic
         proj:Skin(_GameConst.SpriteMageBolt, 1.2)
         proj:Tint(Color(0.8, 0.55, 1, 1))
         return 7
+    end
+
+    method void C7Log(string school, string ruids, number scale)
+        -- 10-31 C 7종 투사체 [VRF] (속성마다 처음 한 번 · 출시 서버 끔)
+        if Environment:IsPublishedPlay() or self.C7Logged[school] then return end
+        self.C7Logged[school] = true
+        local n = 0
+        for _ in string.gmatch(ruids, "[^|]+") do n = n + 1 end
+        log(string.format("[VRF] c7 projectile school=%s art=%s n=%d scale=%.2f", school, tostring(ruids ~= ""), n, scale))
     end
 
     method void MageTraits(Projectile proj, string school, integer rank)

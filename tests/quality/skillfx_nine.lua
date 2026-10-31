@@ -9,7 +9,7 @@
 -- @source Projectile Combat/Projectile.mlua MirrorSkin,FrameSec,HitFx,HitArt
 -- @source MonsterStatus Monster/MonsterStatus.mlua MarkerIcon
 -- @source PlayerStats Player/PlayerStats.mlua ArmorHitKind,ArmorHitFx
--- @source MageBolts Undead/MageBolts.mlua Configure
+-- @source MageBolts Undead/MageBolts.mlua Configure,C7Log
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end

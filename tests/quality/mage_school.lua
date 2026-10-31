@@ -2,7 +2,7 @@
 --   ① 속성 분포(저주 노드 없으면 4종 각 25% · 저주 0 / 있으면 5종 각 20%) · 번개·독 없음 ② 랭크 1·6·11·16·20 특성 = §2-3 표
 --   ③ 캐릭터 투사체 외형·속도 불변(예전 SkillEffects 값 그대로 · 그림 RUID 같음 · 캐릭터 4함수+파편이 Configure를 부름) ④ 마법사 세기는 마법사 것(관통·가시 5·파편·폭발·한 발 배율)
 --   ⑤ 불꽃 폭발 늘 ×0.3 ⑥ 낙인 큰 값만(20 + 12 → 1.20, 곱 1.344 아님) ⑦ 저주 마법사 낙인 % · 서리 둔화 · 거인은 화염 구슬(속성 특성 없음) ⑧ 격류 n발 부채꼴 60°
--- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool,ElementOf,SchoolOfElement,BodyTint,TierOf,Trait,ShotMul,Count,Pierces,Configure,MageTraits
+-- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool,ElementOf,SchoolOfElement,BodyTint,TierOf,Trait,ShotMul,Count,Pierces,Configure,MageTraits,C7Log
 -- @source ShadowUnit Shadow/ShadowUnit.mlua HitOne,HitBolt,ShootBolt,BoltSchool,MageRankNow,OnAttack
 -- @source MonsterStatus Monster/MonsterStatus.mlua TakenMult,ApplyHex
 local checks=0
@@ -11,7 +11,7 @@ local function near(a,b) return math.abs(a-b)<1e-6 end
 function isvalid(x) return x~=nil and x~=false end
 Environment={IsPublishedPlay=function() return false end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,a,b) return math.random(a,b) end,RandomDouble=function() return 0.99 end}
-_GameConst={FxSkillSpear="",FxSkillTorrent="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
+_GameConst={FxSkillSpear="",FxSkillTorrent="",FxSkillFlameShot="",FxSkillFrostShot="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
 local V={} V.__index=V
 V.__add=function(a,b) return setmetatable({x=a.x+b.x,y=a.y+b.y},V) end
 V.__sub=function(a,b) return setmetatable({x=a.x-b.x,y=a.y-b.y},V) end

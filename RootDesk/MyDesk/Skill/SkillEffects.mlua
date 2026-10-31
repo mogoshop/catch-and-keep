@@ -163,6 +163,14 @@ script SkillEffects extends Component
     property number DrainVortexScale = 0.8      -- 생기 앗기 소용돌이 배율: 128px = 1.02칸 · 내용 78~112px = 0.62~0.9칸 (예전 FxDrain 0.6)
     property number DrainVortexSec = 0.7        -- 소용돌이 반복 시간 (예전 ClipFx 0.7초)
     property number TorrentCastArtScale = 0.8   -- 영혼 격류 시전 4장 배율: 내용 79~112px = 0.63~0.9칸 (예전 혼 구슬 입자 0.6)
+    -- 10-31 메이플 원본 교체 C 7종 (GameConst.FxSkillBlast·OfferingHeal·DeathWave·PoisonCloud — 투사체 2종은 MageBolts · 베기는 Util.SkillSlashFx): 그림 칸을 비우면 예전 메이플 원본 ClipFx 그대로
+    --   크기 = 예전 클립의 보이는 폭에 맞춤: 새 배율 = 예전 배율 × C7OldW(예전 클립 배율 1일 때 폭 · audit skillfx-inventory 「크기w칸」 ÷ 코드 배율) ÷ C7FitPx(새 그림 내용 폭 · 알파>16 · 4장 중 최대)
+    --   자리 = 발(지면 원점 · 피벗 0.5/0.25 = 그림 root) — 예전 클립은 가운데 피벗이라 발 + 0.2~0.5칸에 놓았다 (C7Clip이 예전 길에만 그 높이를 더한다)
+    property string C7OldW = "blast=4.333;offering=1.327;wave=2.45;poison=2.144"   -- 예전 클립 배율 1의 폭(칸): FxBlast 3.25/0.75 (P38 · P36 1.95/0.45도 같음) · FxOffering 1.46/1.1 (P35) · FxWave 6.37/2.6 (P29) · FxPoisonCloud 2.68/1.25 (P12)
+    property string C7FitPx = "blast=183;offering=183;wave=243;poison=244"   -- 새 그림 내용 폭 최대(px · 알파>16 · 10-31 실측): 폭발 01 183×123 · 성찬 02 183×127 · 파동 02 243×153 · 독 구름 02 244×134
+    property string C7Orders = "blast=1;offering=1;wave=1;poison=1"   -- 층 MapLayer0 (1 = 바닥과 몸 사이 · 코덱스 합성판 기본 「behind」 · 몸 앞은 foreground-stress 판) — 메이커에서 다시 볼 값
+    property number C7HoldSec = 0.2             -- 한 번 계열(폭발·성찬·파동) 마지막 장 유지 (100ms 대신 0.2초)
+    property number C7FadeSec = 0.25            -- 그 뒤 옅어짐 → 0.3 + 0.2 + 0.25 = 0.75초 (4장 0.4초만이면 예전 클립 0.6~1.2초보다 짧다 — 「짧아서 안 보임」 반복 지적)
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -293,6 +301,11 @@ script SkillEffects extends Component
             local first = _Util:Frames(ruids)[1]
             if first ~= nil then table.insert(list, first) end
         end
+        -- 10-31 C 7종: 자리마다 첫 장 (폭발·성찬·파동·불꽃탄·서리탄·독 구름·베기)
+        for _, ruids in ipairs({ _GameConst.FxSkillBlast, _GameConst.FxSkillOfferingHeal, _GameConst.FxSkillDeathWave, _GameConst.FxSkillFlameShot, _GameConst.FxSkillFrostShot, _GameConst.FxSkillPoisonCloud, _GameConst.FxSkillSlash }) do
+            local first = _Util:Frames(ruids)[1]
+            if first ~= nil then table.insert(list, first) end
+        end
         -- 10-31 메테오 L2: 4자리 첫 장 (예고·낙하·착지·잔불)
         for _, ruids in ipairs({ _GameConst.FxGiantMeteorTelegraph, _GameConst.FxGiantMeteorFall, _GameConst.FxGiantMeteorImpact, _GameConst.FxGiantMeteorAfterglow }) do
             local first = _Util:Frames(ruids)[1]
@@ -331,6 +344,68 @@ script SkillEffects extends Component
             self.ClipVisuals[serial] = nil
             self.VisualTimers[key] = nil
         end, seconds)
+    end
+
+    method number C7Opt(string text, string kind, number fallback)
+        -- 「키=값;…」 숫자 표에서 kind 값 (C7OldW·C7FitPx·C7Orders) · 없으면 fallback
+        for k, v in string.gmatch(text or "", "(%w+)=([%d%.]+)") do
+            if k == kind then return tonumber(v) end
+        end
+        return fallback
+    end
+
+    method string C7Ruids(string kind)
+        -- C 7종 바닥 4계열 그림 칸 (「|」 4장 · 비면 "")
+        if kind == "blast" then return _GameConst.FxSkillBlast end
+        if kind == "offering" then return _GameConst.FxSkillOfferingHeal end
+        if kind == "wave" then return _GameConst.FxSkillDeathWave end
+        if kind == "poison" then return _GameConst.FxSkillPoisonCloud end
+        return ""
+    end
+
+    method string C7OldRuid(string kind)
+        -- 같은 자리의 예전 메이플 원본 한 장짜리 클립 (칸이 빌 때)
+        if kind == "blast" then return self.FxBlast end
+        if kind == "offering" then return self.FxOffering end
+        if kind == "wave" then return self.FxWave end
+        if kind == "poison" then return self.FxPoisonCloud end
+        return ""
+    end
+
+    method number C7Scale(string kind, number oldScale)
+        -- 새 그림 배율 = 예전 배율 × 예전 폭(배율 1) ÷ 새 내용 폭 → 새 그림의 보이는 폭 = 예전 클립의 보이는 폭 (예전 배율에 반경이 들어 있으면 그대로 비례)
+        local fit = self:C7Opt(self.C7FitPx, kind, 0)
+        if fit <= 0 then return oldScale end
+        return oldScale * self:C7Opt(self.C7OldW, kind, fit / 100) * 100 / fit
+    end
+
+    @ExecSpace("ServerOnly")
+    method void C7Clip(string kind, Vector3 feet, number oldDy, number oldScale, number seconds)
+        -- 메이플 원본 클립 자리(해골 폭탄·제물 폭발 blast · 뼈 성찬 offering · 죽음의 파동 wave · 독안개 poison) — 10-31 C 7종:
+        --   칸이 차면 새 4장을 발(지면 원점)에 모든 클라이언트로(C7Fx) · 비면 예전 ClipFx(발 + oldDy · 예전 배율 · seconds) 그대로
+        if self:C7Ruids(kind) == "" then
+            self:ClipFx(self:C7OldRuid(kind), Vector3(feet.x, feet.y + oldDy, 0), oldScale, seconds, 0)
+            return
+        end
+        self:C7Fx(kind, feet, self:C7Scale(kind, oldScale), seconds)
+    end
+
+    @ExecSpace("Multicast")
+    method void C7Fx(string kind, Vector3 feet, number scale, number seconds)
+        -- C 7종 바닥 그림 재생 (클라이언트 · 맵 엔티티에 붙임): 독 구름은 seconds 동안 반복(Util.PlayFramesLoop) · 나머지는 한 번(Util.PlayFramesMs · 마지막 장 C7HoldSec · C7FadeSec 옅어짐)
+        local me = _UserService.LocalPlayer
+        local ruids = self:C7Ruids(kind)
+        if ruids == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local order = math.floor(self:C7Opt(self.C7Orders, kind, 1) + 0.5)
+        local ms = math.max(20, _GameConst.FxSkillC7FrameMs)
+        local s = Vector3(scale, scale, 1)
+        local loop = kind == "poison"
+        if loop then
+            _Util:PlayFramesLoop(ruids, me.CurrentMap, feet, 0, s, ms / 1000, seconds, Color(1, 1, 1, 1), order)
+        else
+            _Util:PlayFramesMs(ruids, me.CurrentMap, feet, 0, s, tostring(ms), self.C7HoldSec, self.C7FadeSec, Color(1, 1, 1, 1), order)
+        end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] c7 fx kind=%s n=%d ms=%d scale=%.2f order=%d loop=%s sec=%.2f", kind, #_Util:Frames(ruids), ms, scale, order, tostring(loop), seconds)) end
     end
 
     @ExecSpace("Multicast")
@@ -846,7 +921,7 @@ script SkillEffects extends Component
         end, 0.5)
         self.MistTimers[timerId] = true
         self:MistFx(Vector3(target.x, target.y, 0), radius, seconds)
-        self:ClipFx(self.FxPoisonCloud, Vector3(target.x, target.y + 0.3, 0), 1.25 * radius / 1.3, seconds, 0)
+        self:C7Clip("poison", Vector3(target.x, target.y, 0), 0.3, 1.25 * radius / 1.3, seconds)   -- 10-31 C 7종 독 구름 4장 반복 (비면 예전 메이플 독구름)
         return true
     end
 
@@ -2244,7 +2319,7 @@ script SkillEffects extends Component
         local p = _Util:Pos2(self.Entity)
         self:Hit(Vector2(p.x, p.y + 0.3), Vector2(3.5, 0), -1, "skill.death_wave", damage)
         self:Fx("wave", Vector3(p.x, p.y, 0), 3.5)
-        self:ClipFx(self.FxWave, Vector3(p.x, p.y + 0.3, 0), 2.6, 0.6, 0)
+        self:C7Clip("wave", Vector3(p.x, p.y, 0), 0.3, 2.6, 0.6)   -- 10-31 C 7종 죽음의 파동 4장 (비면 예전 메이플 마법진 폭발)
         return true
     end
 

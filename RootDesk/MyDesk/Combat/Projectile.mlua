@@ -87,7 +87,7 @@ script Projectile extends Component
         self.Pierce = pierce
         self.Traveled = 0
         self.HitIds = {}
-        self.Entity.TransformComponent.ZRotation = math.deg(math.atan(self.Dir.y, self.Dir.x)) + self.AngleOffset
+        self.Entity.TransformComponent.ZRotation = math.deg(math.atan(self.Dir.y, self.Dir.x)) + self:ViewAngleOffset()
         self.SimPos = _Util:Pos2(self.Entity)
         self.StartPos = self.SimPos
         self.StartAt = _UtilLogic.ServerElapsedSeconds
@@ -211,7 +211,7 @@ script Projectile extends Component
         self:DropGhost(self.Entity.TransformComponent)
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
-        t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
+        t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self:ViewAngleOffset()
         self:FaceMirror()
         -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝·관통 상한에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
         if self.LocalView and self.MaxHits > 0 then
@@ -297,12 +297,20 @@ script Projectile extends Component
         local s = self.SkinRuid
         if s == "" or string.find(s, "|", 1, true) == nil then return false end
         return s == _GameConst.FxSkillShardThrow or s == _GameConst.FxSkillSpearShard or s == _GameConst.FxSkillStormShard or s == _GameConst.FxSkillBoneArrow or s == _GameConst.FxSkillRiteArrow   -- 10-31 9계열 의식 뼈 화살도 오른쪽 기준
+            or s == _GameConst.FxSkillFlameShot or s == _GameConst.FxSkillFrostShot   -- 10-31 C 7종 불꽃탄·서리탄도 오른쪽 기준
+    end
+
+    method number ViewAngleOffset()
+        -- 진행 각에 더할 보정: 오른쪽 기준 그림(MirrorSkin)은 0 — 모델 값 AngleOffset 180(왼쪽을 보는 메이플 그림용)을 그대로 더하면 오른쪽 그림이 거꾸로 날고 FaceMirror(왼쪽 = FlipY)도 반대로 된다 (10-31 C 7종)
+        if self:MirrorSkin() then return 0 end
+        return self.AngleOffset
     end
 
     method number FrameSec()
         -- 프레임 그림 장 간격: 골편 계열은 GameConst.FxSkillShardFrameMs(코덱스 100ms) · 나머지는 예전 0.08초
         if self:MirrorSkin() then
             if self.SkinRuid == _GameConst.FxSkillRiteArrow then return math.max(0.02, _GameConst.FxSkillRiteArrowMs / 1000) end   -- 10-31 9계열 의식 뼈 화살
+            if self.SkinRuid == _GameConst.FxSkillFlameShot or self.SkinRuid == _GameConst.FxSkillFrostShot then return math.max(0.02, _GameConst.FxSkillC7FrameMs / 1000) end   -- 10-31 C 7종 투사체
             return math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
         end
         return 0.08

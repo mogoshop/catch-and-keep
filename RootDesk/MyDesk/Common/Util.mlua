@@ -17,6 +17,9 @@ script Util extends Logic
     property any TileMemo = nil               -- 맵Id → { tiles, ox, oy, gx, gy, cells = 칸키 → 막힘 } (일반 Lua 테이블이라 any)
     property number FrameSwapOverlap = 0.03    -- 프레임 그림: 다음 장을 먼저 걸고 앞 장은 이만큼 뒤에 지운다 (지우고 걸면 한 화면 빈다 · SkillEffects.PlaySeq와 같은 방식 · 10-31 갈래 E)
     property integer FrameFadeSteps = 3        -- 프레임 그림 끝 옅어짐 단계 수 (PlayFramesHold fadeSec > 0일 때 · 같은 장을 낮은 투명도로 갈아 끼운다)
+    property number SlashArtPerOld = 1.9       -- 10-31 C 7종 중립 베기 배율 = 예전 FxSlash 배율 × 이 값: 예전 클립 배율 1의 폭 2.145칸(audit P01 1.18/0.55) ÷ 새 그림 내용 폭 113px(알파>16 최대 · 02) → 플레이어 평타 0.55 → 1.04배 = 내용 1.18×0.70칸
+    property integer SlashArtOrder = 6         -- 베기 층 MapLayer0 6 (몸 앞 · FramesFxOrder와 같음)
+    property table SlashLogged = {}            -- [VRF] 부르는 쪽(player·summon·monster)마다 처음 한 번
 
     @ExecSpace("Client")
     method void Notify(string text)
@@ -718,6 +721,22 @@ script Util extends Logic
         end
         local first = #steps > 1 and steps[2].at or plan.clearAt
         _TimerService:SetTimerOnce(step, math.max(0.01, first))
+    end
+
+    method boolean SkillSlashFx(Entity instigator, Vector3 pos, number rot, number oldScale, boolean right, Color tint, string tag)
+        -- 10-31 C 7종 중립 베기 (GameConst.FxSkillSlash · 무채색 4장 · 오른쪽 기준): 칸이 차면 한 번 그리고 true · 비면 false (부르는 쪽이 예전 메이플 FxSlash 그대로)
+        --   크기 = 예전 클립 배율 × SlashArtPerOld (보이는 폭 같게) · 왼쪽(right false)은 가로 배율 음수(가로 거울 — 예전 그림은 왼쪽을 봐서 오른쪽일 때 FlipX) · rot은 예전과 같은 값 · 색은 부르는 쪽 Tint
+        --   클라이언트에서 부른다 (Multicast 안) · 장 넘김은 PlayFramesMs (클라이언트 SetTimerOnce)
+        local ruids = _GameConst.FxSkillSlash
+        if ruids == "" or not isvalid(instigator) then return false end
+        local s = oldScale * self.SlashArtPerOld
+        local ms = math.max(20, _GameConst.FxSkillC7FrameMs)
+        self:PlayFramesMs(ruids, instigator, pos, rot, Vector3(right and s or -s, s, 1), tostring(ms), 0, 0, tint, self.SlashArtOrder)
+        if not self.SlashLogged[tag] and not Environment:IsPublishedPlay() then
+            self.SlashLogged[tag] = true
+            log(string.format("[VRF] c7 slash %s n=%d ms=%d scale=%.2f mirror=%s", tag, #self:Frames(ruids), ms, s, tostring(not right)))
+        end
+        return true
     end
 
     method void PlayFramesLoop(string ruids, Entity instigator, Vector3 pos, number rot, Vector3 scale, number frameSec, number seconds, Color tint, integer order)
