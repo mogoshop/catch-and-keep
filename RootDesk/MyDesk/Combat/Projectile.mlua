@@ -69,6 +69,7 @@ script Projectile extends Component
     property number TorrentHitScale = 0.6    -- 영혼 격류 명중 혼 구슬(P28) 크기 (예전 0.38)
     property string HitKind = ""             -- 10-31 9계열: 명중 그림 속성 (서버만 · "bone"/"curse"/"fire"/"frost" · MageBolts.Configure·의식 화살·중립 뼈 화살이 정한다 · "" = 공용 불꽃) → HitFx 인자
     property number HitArtScale = 1.0        -- 속성 명중 2장 배율: 96px = 0.96칸 · 내용 67~80px = 0.67~0.8칸 (예전 불꽃 0.6)
+    property number HitBoneArtScale = 0.92   -- 11-01 통일 공정 골편 3종: 뼈 명중 = 골편 명중 6장(가장 큰 내용 84px · 02번 장) 배율 — 예전 2장(sample-01·03 가장 큰 내용 77px × HitArtScale 1.0 = 0.77칸)과 보이는 크기 같게 1.0 × 77/84 (6장 장별 ms 길에서만 · 예전 2장이면 HitArtScale)
     property number TorrentHitArtScale = 0.75   -- 영혼 격류 명중 4장 배율: 내용 88~112px = 0.66~0.84칸 (예전 혼 구슬 0.6)
     property number SpearHitScale = 1.0      -- 뼈 창 꽂힘(P05 · 128px = 1.28칸) 배율 (10-31 갈래 E2 · 코덱스 renderer_scale_proposal 1 · 예전 대기 자리 0.9)
 
@@ -185,7 +186,7 @@ script Projectile extends Component
             end
             -- 10-31 골편 20장: 골편 계열 그림 순환 시작 (내가 쏜 것만 · 출시 서버 끔)
             if self:MirrorSkin() and not Environment:IsPublishedPlay() and isvalid(self.Shooter) and self.Shooter == _UserService.LocalPlayer then
-                log(string.format("[VRF] shard frames start n=%d ms=%d left=%s local=%s", #_Util:Frames(self.SkinRuid), _GameConst.FxSkillShardFrameMs, tostring(self.Dir.x < 0), tostring(self.LocalView)))
+                log(string.format("[VRF] shard frames start n=%d ms=%d left=%s local=%s", #_Util:Frames(self.SkinRuid), math.floor(self:FrameSec() * 1000 + 0.5), tostring(self.Dir.x < 0), tostring(self.LocalView)))
             end
         end
         local expected = self.Speed * (now - self.ViewT0)
@@ -310,6 +311,8 @@ script Projectile extends Component
         -- 프레임 그림 장 간격: 골편 계열은 GameConst.FxSkillShardFrameMs(코덱스 100ms) · 나머지는 예전 0.08초
         if self:MirrorSkin() then
             if self.SkinRuid == _GameConst.FxSkillRiteArrow then return math.max(0.02, _GameConst.FxSkillRiteArrowMs / 1000) end   -- 10-31 9계열 의식 뼈 화살
+            if self.SkinRuid == _GameConst.FxSkillBoneArrow then return math.max(0.02, _GameConst.FxSkillBoneArrowMs / 1000) end   -- 11-01 통일 공정 골편 3종: 중립 뼈 화살 4장 × 70ms
+            if self.SkinRuid == _GameConst.FxSkillShardThrow then return math.max(0.02, _GameConst.FxSkillShardThrowMs / 1000) end   -- 11-01 통일 공정 골편 3종: 골편 투척 4장 × 70ms
             if self.SkinRuid == _GameConst.FxSkillFlameShot or self.SkinRuid == _GameConst.FxSkillFrostShot then return math.max(0.02, _GameConst.FxSkillC7FrameMs / 1000) end   -- 10-31 C 7종 투사체
             return math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
         end
@@ -440,7 +443,12 @@ script Projectile extends Component
             local art = self:HitArt(kind)
             if art ~= "" then
                 -- 10-31 9계열 P11: 속성 명중 2장 한 번 (장마다 FxSkillHitMs) — 뼈 = 골편 명중 2장 재사용(무채색이라 투사체 색) · 저주·불·서리 = 그림 자기 색
-                _Util:PlayFrames(art, map, pos, 0, Vector3(self.HitArtScale, self.HitArtScale, 1), math.max(0.02, _GameConst.FxSkillHitMs / 1000), kind == "bone" and color or Color(1, 1, 1, 1), 6)
+                if kind == "bone" and _Util:MsCount(_GameConst.FxSkillShardHitMs) == #_Util:Frames(art) then
+                    -- 11-01 통일 공정 골편 3종: 뼈 명중 = 골편 명중 6장 RUID 공유 · 장별 FxSkillShardHitMs(잦아듦이 그림 알파에 들어 있어 hold·fade 0) · 보이는 크기는 예전 2장과 같게 HitBoneArtScale · 투사체 색
+                    _Util:PlayFramesMs(art, map, pos, 0, Vector3(self.HitBoneArtScale, self.HitBoneArtScale, 1), _GameConst.FxSkillShardHitMs, 0, 0, color, 6)
+                else
+                    _Util:PlayFrames(art, map, pos, 0, Vector3(self.HitArtScale, self.HitArtScale, 1), math.max(0.02, _GameConst.FxSkillHitMs / 1000), kind == "bone" and color or Color(1, 1, 1, 1), 6)
+                end
             else
                 _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(self.HitSparkScale, self.HitSparkScale, 1), false, { Color = color })
             end

@@ -238,7 +238,7 @@ do
  local old=setmetatable({SkinRuid='40f0991c2e204ee888670cb3006382e5',AngleOffset=180},{__index=Projectile})
  ok(not old:MirrorSkin() and old:ViewAngleOffset()==180 and near(old:FrameSec(),0.08),'예전 메이플 불꽃(한 장 클립)은 보정 180 · 순환 없음 그대로')
  local shard=setmetatable({SkinRuid=_GameConst.FxSkillShardThrow,AngleOffset=180},{__index=Projectile})
- ok(shard:MirrorSkin() and shard:ViewAngleOffset()==0 and near(shard:FrameSec(),0.1),'골편 투척(오른쪽 기준)도 보정 0 · 간격 그대로')
+ ok(shard:MirrorSkin() and shard:ViewAngleOffset()==0 and near(shard:FrameSec(),_GameConst.FxSkillShardThrowMs/1000),'골편 투척(오른쪽 기준)도 보정 0 · 간격은 자기 상수(11-01 FxSkillShardThrowMs 70)')
  _GameConst.FxSkillFlameShot='' _GameConst.FxSkillFrostShot=''
  local empty=setmetatable({SkinRuid='',AngleOffset=180},{__index=Projectile})
  ok(not empty:MirrorSkin(),'칸이 비어도 빈 그림을 오른쪽 기준으로 잘못 보지 않는다')

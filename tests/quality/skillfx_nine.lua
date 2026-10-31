@@ -41,6 +41,7 @@ function Util:PlayFrames(ruids,inst,pos,rot,scale,frameSec,tint,order) table.ins
 function Util:PlayFramesHold(ruids,inst,pos,rot,scale,frameSec,holdSec,fadeSec,tint,order) table.insert(plays,{fn='hold',ruids=ruids,inst=inst,pos=pos,scale=scale,frameSec=frameSec,holdSec=holdSec,fadeSec=fadeSec,tint=tint,order=order}) end
 function Util:PlayFramesLoop(ruids,inst,pos,rot,scale,frameSec,seconds,tint,order) table.insert(plays,{fn='loop',ruids=ruids,inst=inst,pos=pos,scale=scale,frameSec=frameSec,seconds=seconds,tint=tint,order=order}) end
 function Util:PlayFramesLoopMs(ruids,inst,pos,rot,scale,ms,releaseN,loopSec,fadeSec,tint,order) table.insert(plays,{fn='loopms',ruids=ruids,inst=inst,pos=pos,scale=scale,ms=ms,releaseN=releaseN,loopSec=loopSec,fadeSec=fadeSec,tint=tint,order=order}) end
+function Util:PlayFramesMs(ruids,inst,pos,rot,scale,ms,holdSec,fadeSec,tint,order) table.insert(plays,{fn='ms',ruids=ruids,inst=inst,pos=pos,scale=scale,ms=ms,holdSec=holdSec,fadeSec=fadeSec,tint=tint,order=order}) end
 function Util:SkillShake() end
 local function reset() plays={} particles={} effects={} logs={} timers={} end
 
@@ -73,6 +74,8 @@ for _,n in ipairs(seq('fx-B-rite-bone-whirl-intermediate-',4)) do RETIRED[n]=tru
 RETIRED['fx-B-rite-bone-whirl-trace-sample-00']=true
 -- 10-31 통일 공정 5종 전체: 저주 원형 판 6종 × 4장(fx-B-curse-circle-*-sample) → fx-unify-curse-circle-* 10장
 for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do for _,n in ipairs(seq('fx-B-curse-circle-'..k..'-sample-',4)) do RETIRED[n]=true end end
+-- 11-01 통일 공정 골편 3종 전체(docs/evidence/2026-11-01-skillfx-unify-shard3): 의식 3기 뼈 화살 4장(fx-B-rite-bone-arrow-sample) → 중립 뼈 화살 fx-unify-bone-arrow-neutral 4장과 같은 RUID
+for _,n in ipairs(seq('fx-B-rite-bone-arrow-sample-',4)) do RETIRED[n]=true end
 local gcSrc=io.open('RootDesk/MyDesk/Common/GameConst.mlua'):read('a')
 
 -- ① 슬롯 · art_sprites · 재사용
@@ -97,7 +100,8 @@ do
  -- 회전 8장 = 10-31 보정 재출력 00~07 (예전 승인 0/2/4/6 + 중간 1/3/5/7 끼움 순서 그대로 · 고해상도 원본 → 384px native 다운샘플)
  slot('FxSkillRiteWhirl',seq('fx-unify-rite-bone-whirl-',8),384,384)
  slot('FxSkillRiteWhirlTrace',{'fx-unify-rite-bone-whirl-trace-00'},384,384)
- slot('FxSkillRiteArrow',seq('fx-B-rite-bone-arrow-sample-',4),128,64)
+ slot('FxSkillRiteArrow',seq('fx-unify-bone-arrow-neutral-',4),256,128)   -- 11-01 = 중립 뼈 화살 4장 (코덱스 「neutral_and_rite_arrow_same4PNG」)
+ ok(_GameConst.FxSkillRiteArrow==_GameConst.FxSkillBoneArrow,'의식 화살 = 중립 뼈 화살 같은 RUID')
  slot('FxSkillDrainVortex',seq('fx-unify-soul-drain-vortex-',4),128,128)   -- 10-31 보정 재출력 (알파 그대로 RGB만)
  slot('FxSkillHitCurse',seq('fx-B-projectile-hit-curse-sample-',2),96,96)
  slot('FxSkillHitFire',seq('fx-B-projectile-hit-fire-sample-',2),96,96)
@@ -143,7 +147,7 @@ do
   end
  end
  ok(rows==82,'art_sprites 9계열 fx-B 행 82개 그대로 ('..rows..')')
- ok(retired==41 and unify==77,'교체: 옛 41행(두름 4·소용돌이 4·회오리 8·자국 1 · 원형 판 24) → 통일 공정 77행(보정 17 · 원형 판 60) ('..retired..'/'..unify..')')
+ ok(retired==45 and unify==77,'교체: 옛 45행(두름 4·소용돌이 4·회오리 8·자국 1 · 원형 판 24 · 의식 화살 4) → 통일 공정 77행(보정 17 · 원형 판 60) + 의식 화살은 중립 화살 4행 공유 ('..retired..'/'..unify..')')
  for name in pairs(RETIRED) do ok(art[name]~=nil,name..' 옛 행 남아 있음') end
  -- arise-flame 보정 4장: 업로드·art_sprites 등록만 (연결 보류 · C 보강 5종 사용자 결정 대기) → GameConst 값 칸 어디에도 없고 주석에만
  for i=0,3 do
@@ -153,15 +157,17 @@ do
   ok(not used and gcSrc:find(a.ruid,1,true)~=nil,'arise-flame 0'..i..' 연결 없음 · GameConst 주석에 RUID만')
  end
  -- 재사용: 뼛가루 4 = 골편 명중 4 · 뼈 명중 2 = 골편 명중 2·4번째 (sha256 동일 · 피벗 동일 → 새로 올리지 않음)
+ -- 11-01 통일 공정 골편 3종: 뼛가루·뼈 명중 = 골편 명중 fx-unify-shard-hit 6장 RUID 그대로 (예전: 뼛가루 = sample 4장 · 뼈 명중 = sample-01·03)
  local shard=Util:Frames(_GameConst.FxSkillShardHit)
- ok(#shard==4 and _GameConst.FxSkillConsumedDust==_GameConst.FxSkillShardHit,'뼛가루 = 골편 명중 4장 RUID 그대로')
- local bone=Util:Frames(_GameConst.FxSkillHitBone)
- ok(#bone==2 and bone[1]==shard[2] and bone[2]==shard[4],'뼈 명중 = 골편 명중 sample-01·03 RUID')
- for i,r in ipairs(shard) do ok(artByRuid[r]=='fx-B-shard-hit-sample-0'..(i-1) and artRuidCount[r]==1,'재사용 RUID는 골편 명중 행 하나뿐 '..i) end
+ ok(#shard==6 and _GameConst.FxSkillConsumedDust==_GameConst.FxSkillShardHit,'뼛가루 = 골편 명중 6장 RUID 그대로')
+ ok(_GameConst.FxSkillHitBone==_GameConst.FxSkillShardHit,'뼈 명중 = 골편 명중 6장 RUID 그대로')
+ for i,r in ipairs(shard) do ok(artByRuid[r]=='fx-unify-shard-hit-0'..(i-1) and artRuidCount[r]==1,'재사용 RUID는 골편 명중 행 하나뿐 '..i) end
+ ok(gcSrc:find('옛%(골편 명중 sample%-01·03 2장 × FxSkillHitMs%): 96e5b3e02fa7473087a3d70db10a8597|0076e17e8500400f969a2511a634b04e')~=nil,'뼈 명중 옛 2장 RUID는 주석에')
  ok(art['fx-B-consumed-skeleton-dust-sample-00']==nil and art['fx-B-projectile-hit-bone-sample-00']==nil,'재사용 키는 art_sprites에 새 행을 만들지 않는다')
- for _,k in ipairs({'FxSkillArmorFxMs','FxSkillCurseCircleMs','FxSkillDashGhostMs','FxSkillRiteWhirlMs','FxSkillRiteArrowMs','FxSkillConsumedDustMs','FxSkillDrainVortexMs','FxSkillHitMs','FxSkillTorrentMs'}) do
+ for _,k in ipairs({'FxSkillArmorFxMs','FxSkillCurseCircleMs','FxSkillDashGhostMs','FxSkillRiteWhirlMs','FxSkillConsumedDustMs','FxSkillDrainVortexMs','FxSkillHitMs','FxSkillTorrentMs'}) do
   ok(type(_GameConst[k])=='number' and _GameConst[k]>0 and _GameConst[k]==100,k..' 100ms (코덱스 제안 · 양수)')
  end
+ ok(_GameConst.FxSkillRiteArrowMs==70 and _GameConst.FxSkillRiteArrowMs==_GameConst.FxSkillBoneArrowMs,'의식 화살 70ms = 중립 화살 (11-01 같은 그림 · 코덱스 4 × 70)')
  ok(_GameConst.FxSkillTorrent=='','영혼 격류 비행 몸 자리(FxSkillTorrent)는 비워 둔다 — 시전·명중 그림을 넣으면 투사체가 시전 그림으로 난다')
 end
 
@@ -349,11 +355,11 @@ end
 -- ② 의식 3기 뼈 화살 (Projectile 순환·뒤집기)
 do
  local p=setmetatable({SkinRuid=_GameConst.FxSkillRiteArrow},{__index=Projectile})
- ok(p:MirrorSkin() and near(p:FrameSec(),0.1),'의식 뼈 화살 = 오른쪽 기준 그림 · 0.1초 (FxSkillRiteArrowMs)')
+ ok(p:MirrorSkin() and near(p:FrameSec(),0.07),'의식 뼈 화살 = 오른쪽 기준 그림 · 0.07초 (FxSkillRiteArrowMs)')
  _GameConst.FxSkillRiteArrowMs=50
  ok(near(p:FrameSec(),0.05),'의식 화살 간격은 FxSkillRiteArrowMs 하나만 바꾸면')
  local q=setmetatable({SkinRuid=_GameConst.FxSkillShardThrow},{__index=Projectile})
- ok(near(q:FrameSec(),0.1),'골편 투척은 FxSkillShardFrameMs 그대로')
+ ok(near(q:FrameSec(),0.07),'골편 투척은 FxSkillShardThrowMs (11-01 70ms)')
  restore()
 end
 
@@ -376,8 +382,13 @@ do
  local real=setmetatable({Entity=me},{__index=SkillEffects})
  reset() real:DustFrames(Vector3(2,3.3,0),0.45)
  local p=plays[1]
- ok(p.fn=='once' and p.ruids==_GameConst.FxSkillShardHit and near(p.frameSec,0.1) and near(p.scale.x,SkillEffects.DustScale*0.9),'골편 명중 RUID 4장 한 번 · 옛 0.45 = 0.9배')
- ok(#logs==1 and logs[1]:find('shared=true',1,true)~=nil,'[VRF] 뼛가루 한 줄 · RUID 공유')
+ ok(p.fn=='ms' and p.ruids==_GameConst.FxSkillShardHit and p.ms==_GameConst.FxSkillShardHitMs and p.holdSec==0 and p.fadeSec==0 and near(p.scale.x,SkillEffects.DustScale*0.9),'골편 명중 RUID 6장 장별 ms 한 번 · 옛 0.45 = 0.9배')
+ ok(#logs==1 and logs[1]:find('shared=true',1,true)~=nil and logs[1]:find('n=6 ms=40,50,50,80,100,130',1,true)~=nil,'[VRF] 뼛가루 한 줄 · RUID 공유')
+ -- 옛 4장으로 되돌리면 예전 길 (장마다 FxSkillConsumedDustMs)
+ _GameConst.FxSkillConsumedDust='ce229a7c4c404dd8a16e46850e8d0b49|96e5b3e02fa7473087a3d70db10a8597|ff9b933599ef4b7985249eab24a60dc8|0076e17e8500400f969a2511a634b04e'
+ reset() real:DustFrames(Vector3(2,3.3,0),0.5)
+ ok(plays[1].fn=='once' and near(plays[1].frameSec,0.1),'옛 4장 뼛가루면 예전 길 0.1초')
+ restore()
 end
 
 -- ② 투사체 속성 명중 · 영혼 격류 명중
@@ -392,12 +403,23 @@ do
  for _,c in ipairs({{'bone','FxSkillHitBone'},{'curse','FxSkillHitCurse'},{'fire','FxSkillHitFire'},{'frost','FxSkillHitFrost'}}) do
   local col=Color(0.9,0.8,0.7,1)
   hit('',c[1],col)
-  ok(#plays==1 and plays[1].ruids==_GameConst[c[2]] and near(plays[1].frameSec,0.1) and #particles==0,c[1]..' 명중 2장 한 번 0.1초 (공용 불꽃 없음)')
-  ok(near(plays[1].scale.x,Projectile.HitArtScale) and plays[1].order==6,c[1]..' 배율·몸 앞')
+  if c[1]=='bone' then
+   -- 11-01 통일 공정 골편 3종: 뼈 명중 = 골편 명중 6장 장별 ms · 보이는 크기는 예전 2장(77px × 1.0)과 같게 HitBoneArtScale(84px 기준)
+   ok(#plays==1 and plays[1].fn=='ms' and plays[1].ruids==_GameConst.FxSkillHitBone and plays[1].ms==_GameConst.FxSkillShardHitMs and plays[1].holdSec==0 and plays[1].fadeSec==0 and #particles==0,'bone 명중 6장 장별 ms 한 번 (공용 불꽃 없음)')
+   ok(near(plays[1].scale.x,Projectile.HitBoneArtScale) and near(84*Projectile.HitBoneArtScale,77*Projectile.HitArtScale,0.6) and plays[1].order==6,'bone 배율 '..Projectile.HitBoneArtScale..' (보이는 크기 그대로) · 몸 앞')
+  else
+   ok(#plays==1 and plays[1].ruids==_GameConst[c[2]] and near(plays[1].frameSec,0.1) and #particles==0,c[1]..' 명중 2장 한 번 0.1초 (공용 불꽃 없음)')
+   ok(near(plays[1].scale.x,Projectile.HitArtScale) and plays[1].order==6,c[1]..' 배율·몸 앞')
+  end
   if c[1]=='bone' then ok(plays[1].tint==col,'뼈 명중(무채색)은 투사체 색') else ok(plays[1].tint.r==1 and plays[1].tint.g==1,c[1]..' 명중은 그림 자기 색') end
  end
  hit('rite','bone')
  ok(#plays==1 and plays[1].ruids==_GameConst.FxSkillHitBone,'의식 화살 앞 두 발(rite) = 뼈 명중')
+ -- 뼈 명중 칸을 옛 2장으로 되돌리면(ms 개수 6 ≠ 2) 예전 길: 2장 × FxSkillHitMs · HitArtScale
+ _GameConst.FxSkillHitBone='96e5b3e02fa7473087a3d70db10a8597|0076e17e8500400f969a2511a634b04e'
+ hit('','bone')
+ ok(#plays==1 and plays[1].fn=='once' and near(plays[1].frameSec,0.1) and near(plays[1].scale.x,Projectile.HitArtScale),'옛 2장 뼈 명중이면 예전 길')
+ restore()
  hit('','')
  ok(#plays==0 and #particles==1 and particles[1].kind=='SparkExplosion','속성 없음(골편 투척·몬스터 화살) = 예전 공용 불꽃')
  hit('','poison')
