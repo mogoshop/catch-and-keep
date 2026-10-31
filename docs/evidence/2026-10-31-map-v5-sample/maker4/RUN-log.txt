@@ -1,0 +1,66 @@
+MAP-V5-SAMPLE-4TH-MAKER 실행 기록 (KST 2026-10-31) — 메이커 단일 담당 (Claude Opus 5.5 레인) · 브랜치 codex/player-experience-polish · HEAD 57cd669c (= origin/main)
+대상: 맵 구성 v5 표본 4차 sanctum(대사제의 성소) · sulfurmarsh(유황 늪 · v5 keep) · 절차 = ../CAPTURE-PLAN.txt 3-1 「걸어서 부딪혀 볼 자리」 · 캡처 방식 = ../maker3/RUN-log.txt 와 같음
+게임 코드·맵·데이터 수정 없음. 아래 스크립트는 모두 실행 중 메이커에만 넣은 런타임 스크립트(파일 아님). 녹화(ffmpeg) 쓰지 않음 — maker_screenshot 스틸만.
+PC FHD 1920×1080 · 스크린샷 2197×1236 · 기본 줌 화면 = 12.8×7.2칸 · 충돌 칸 = RectTileMap 타일 269(맵 파일) = 클라 RectTileInfo.Index 270·IsCollidable=true
+--- 0. 반영 ---
+16:56 편집 모드 · map01 (maker_get_current_map)
+16:56:5x maker_refresh_workspace 1회 → build 로그 359줄 · Error 0 · Warning 102 · Info 257 · LEA-1102 없음
+  (빌드 시각 15:48:44 그대로 = 스크립트 변경 없음 → 스크립트 재빌드 없음 · 맵 반영은 아래 런타임 지문으로 확인 → 재refresh 불필요)
+16:57:15 play · S [SelfTest] 통과 409 / 실패 0 · Error = SelfTest 의도한 boom 1줄
+16:57:49 S [VRF] V5C4 backup readback code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209 load=false map=map01 (캐릭터 선택 · 입장 전)
+16:57:57 C click CharSelect/Box/S4 → BtnEnter · 16:58:13 RoomWin/Box/Home/Solo → room game:s1baf795e8eb (town)
+16:59:29 S (방 서버) 저장 끔(IsLoadSuccess=false)·무적 루프(0.05초마다 InvincibleUntil=1e9 + Hp=MaxHp · 서버 스크립트마다 같이 넣음) → [VRF] V5C4 go sanctum 24.5,-3.5 load=false inv=1000000000.0
+16:59:47 C [VRF] V5C4 count sanctum n=362 ArtDecal=9 ArtFloor=1 ArtProp=43 ArtRaised=166 ArtSet1=4 ArtZone=92 HighPriest=1 Torch=5
+   | ArtProp5(-15.00,12.60) ArtProp6(-13.40,12.60) ArtProp7(-11.80,12.60) ArtProp26(-19.50,13.30) ArtProp27(24.50,-0.60) ArtProp40(26.40,-1.20) ArtProp41(22.60,-1.20)
+   | tiles 23,0=270C 24,-1=270C 22,-2=270C 26,-2=270C 21,-2=267o -15,12=270C -11,12=267o -15,13=267o -12,12=270C -12,13=267o
+   = 맵 파일(57cd669c) 지문과 같음: ArtProp 43 · ArtDecal 9 · 책장 3개 (-15·-13.4·-11.8, 12.6) · 촛대 (22.6,-1.2)/(26.4,-1.2) · 충돌 칸 10곳 일치
+   3차 판(a7c74582) = ArtProp 47 · ArtDecal 10 · 책장 4개 서쪽 벽 (-19.4, 7.9~13.9) · 촛대 (21.6,0)/(27.4,0) → 4차 반영 확실
+17:09:22 C [VRF] V5C4 count sulfurmarsh n=1293 ArtBand=370 ArtCorner=62 ArtDecal=20 ArtEdge=232 ArtFloor=1 ArtProp=32 ArtRaised=337 ArtRoad=44 ArtSet1=5 ArtSet2=5 ArtSet3=5 ArtZone=112 Torch=7 Waypoint=1
+   | ArtProp6(-12.50,-9.90) ArtProp8(-2.50,4.90) ArtProp9(-5.10,4.10) ArtProp10(18.50,-15.70) ArtProp11(-10.50,12.90) ArtProp14(15.50,12.30) ArtProp15(29.50,1.30) ArtProp16(0.30,3.70) ArtProp17(-5.30,3.70) Waypoint(1.50,3.50)
+   | tiles -4,4=270C -3,5=270C -2,4=270C -1,4=267o 0,3=270C -6,3=270C -5,4=267o 2,4=267o 5,5=267o -13,-9=270C -11,12=270C -11,13=267o 18,-15=270C 18,-14=267o 15,13=270C 29,2=270C
+   = 맵 파일(57cd669c) 같음 · 수는 3차와 같고(파일도 같음) 자리로 판정: 간헐천 (5.5,5.9)→(-2.5,4.9) · 사슬 기둥 (8.3·2.7,4.7)→(0.3·-5.3,3.7) · 혼 수정 (8.1,5.1)→(-5.1,4.1) · 3차 충돌 칸 (5,5) 풀림 확인 → 4차 반영 확실
+   CAPTURE-PLAN 수치 성소 책장 북벽 3개 · 촛대 (22.6,-1.2)/(26.4,-1.2) 일치 → 재반영(stop·touch·refresh) 불필요
+--- 1. 충돌 검증 (서버 Go로 시작점 → 실제 방향키 tap(지속 ms) → 클라 위치 기록 → maker_screenshot) ---
+클라 기록 원문 (_G.V5 누적 · dump 로그 그대로):
+17:02:20 C [VRF] V5C4 dump candleL-W-right=21.99,-1.50 | candleR-S-up=26.50,-2.01
+17:00:21 C [VRF] V5C4 pos altar-S-up 24.50,-1.01   (go 24.5,-3.5 → 위 2.5초)
+17:00:55 C [VRF] V5C4 pos altar-W-right 22.99,0.50 (go 21.0,0.5 → 오른쪽 2초)
+17:01:15 C [VRF] V5C4 pos altar-E-left 26.01,0.50  (go 27.5,0.5 → 왼쪽 2초)
+17:01:21 C [VRF] V5C4 pos altar-N-down 24.50,1.01  (go 24.5,3.0 → 아래 2초)
+17:09:22 C [VRF] V5C4 dump2 ... shelf1-S-up(from -15.5,10)=-15.50,11.99 | shelf3-rightgap-up(from -11.5,10)=-11.50,11.99 | behind-start(go -17.5,13.5)=-17.50,13.50 | behind-shelves-right(from -17.5,13.5)=-11.01,13.50 (4.5초 입력이 짧아 중간에 끝남)
+   | tower-E-left(back along row from previous)=-17.99,13.50 | tower-S-up(from -19.5,10.5)=-19.50,12.99 | shelf3-rightgap-up(from -10.5,10)=-10.50,14.99 | library-westwall-left(from -18.5,9)=-20.99,9.00
+   | brokencol2-N-down(from -16.5,-10.5)=-16.50,-10.99 | brokencol-row right1.7s+down=-13.99,-10.99 | censer-stair-S-up(from -18.5,-11.2)=-18.50,-10.01 | censer-stair-E-left(from -16.0,-9.5)=-16.99,-9.50
+   | navecolN-x9-up(from 9.5,1.0)=9.50,2.99 | navecolS-x9-down=9.50,-2.99 | navecol gap right0.6+down=10.40,-6.60 | behind-shelves-right#2 6.5s(from -17.5,13.5)=-10.01,13.50
+17:11:42 C [VRF] V5C4 dump3 SM geyser-S-up(from -2.5,2.5)=-2.50,3.99 | SM geyser-N(behind)-down(from -2.5,7.2)=-2.50,6.01 | SM geyser-E-left(from 0.5,4.5)=-0.99,4.50 | SM geyser-W-right(from -5.5,5.5)=-4.01,5.50
+   | SM chainpillarE-S-up(from 0.5,1.5)=0.50,2.99 | SM chainpillarW-S-up(from -5.5,1.5)=-5.50,2.99 | SM mound-S-up(from -12.5,-11.5)=-12.50,-10.01 | SM mound-N-down(from -11.5,-7.5)=-11.50,-7.99
+   | SM giant-S-up(from -10.5,10.3)=-10.50,11.99 | SM giant-N-down(from -10.5,14.5)=-10.50,13.01 | SM smelter-S-up(from 18.5,-17.5)=18.50,-16.01 | SM smelter-N-down(from 18.5,-13.0)=18.50,-13.99
+17:14:30 C [VRF] V5C4 dump4 SM battree-S-up(from 15.5,10.3)=15.50,11.99 | SM battree-N-down(from 15.5,15.0)=15.50,14.01 | SM swordgrave-S-up(from 29.5,-0.8)=29.50,0.99 | SM swordgrave-N-down(from 29.5,3.6)=29.50,3.01
+   | SM gap(-5,4) up1.2s(from -4.5,2.0)=-4.50,3.77 | SM gap then up1.5+right2.5 (behind geyser east)=-4.01,5.97 | SM geyser ring: down2.5+left1.5=-6.17,2.33
+   | ring1 right2.8(from 21.5,2.5)=25.61,2.50 | ring2 down2.8=25.61,1.01 (제단 북쪽 칸에 막힘 · 오른쪽 입력 부족) | ring3 left2.8=21.54,1.01 | ring4 up2.5=21.54,4.64
+17:15:18 C [VRF] V5C4 dump5 ringB1 right5.0(from 21.5,2.5)=27.99,2.50 | ringB2 down5.0=27.99,-4.77 | ringB3 left5.0=20.77,-4.77 | ringB4 up4.0=20.77,1.24
+  판정 기준: 멈춘 좌표가 충돌 칸 경계(….99 / ….01)면 막힘. 플레이어 충돌은 발 한 점(반지름 없음) — 그래서 몸 그림 절반은 막힌 칸 쪽으로 겹쳐 그려진다.
+  이동 속도: 몬스터 둔화·교전으로 1.5~2.6칸/초 사이 오감 → 「입력 부족」 줄은 막힘이 아니라 입력 시간이 짧았던 것(같은 자리 재시도로 확인).
+--- 2. 전체 캡처 (cap_client_v3 그대로 + ready 로그에 prop·set·band 수 · 스크립트 원문은 scratchpad v5cap4/cap_v5c4.lua) ---
+17:16:14 C [CAP] installed v5 sample 4th (유황 늪에서 설치)
+17:16:15 C [CAP] ready sulfurmarsh s=0.445 n=1307 ticks=6 prop=32 setEnt=15 band=370 → 17:16:20 shot raw/50-sulfurmarsh.png
+17:16:20 S [CAP] go sanctum load=false → 17:16:25 C [CAP] ready sanctum s=0.554 n=343 ticks=6 prop=43 setEnt=4 band=0 → 17:16:29 shot raw/30-sanctum.png
+  (축척 s = 2차·3차·전수 캡처와 같음: sanctum 0.554 · sulfurmarsh 0.445)
+--- 3. 끝: 저장 데이터 ---
+17:17:4x maker_stop → 17:17:56 play2 (캐릭터 선택 · server_main)
+17:18:16 S [VRF] V5C4 play2 readback code=0 match=1/5 Account=615/2086798838 Char_4=1036/2069201119 Inv_4=1838/185878522 Shadow_4=40/923051497 Stash=83/90734088 (첫 play 입장 저장이 저장 끔보다 먼저 일어나 바뀜 · 2·3차와 같은 현상)
+17:19:01 S [VRF] V5C4 restore before match=1/5 · guard body match=5/5 · BatchSetAndWait code=0 ok_keys=5 (본문 = 2026-10-30-summon48-maker/slot4-restore-S48.lua 그대로 · 태그만 V5C4)
+17:19:09 S [VRF] V5C4 restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+17:19:2x maker_stop → 편집 모드 · map01 (maker_get_current_map mode=edit)
+--- 오프라인 대조 (메이커 없이 · 읽기만) ---
+tools/preview/export_map.cjs 로 3차(57cd669c~1)·4차 두 판 충돌 칸을 뽑아 비교:
+  sanctum     충돌 칸 1547→1555 · 새로 막힘 18 · 풀림 10 · 시작점(0,1)에서 닿는 칸 853→845 (줄어든 8칸 = 새로 막힌 칸 그 자체 · 새로 고립된 칸 0)
+              새 1칸 폭 칸 7: (-21..-19,15) 책장 탑 뒤 · (-18,14) · (-13,13) · (-11,12) 셋째 책장 오른쪽 틈 · (27,-2) 오른쪽 촛대–동벽 틈
+  sulfurmarsh 충돌 칸 2382→2397 · 새로 막힘 21 · 풀림 6 · 닿는 칸 1118→1103 (줄어든 15칸 = 새로 막힌 칸 · 새로 고립된 칸 0)
+              새 1칸 폭 칸 6: (-5,4) 서쪽 기둥·혼 수정–간헐천 틈 · (14,14)(16,14) 고목 뒤 · (17,-14)(19,-14) 용광로 뒤 양옆 · (29,3) 검 무덤 뒤
+  주 통로(띠·둑길·문 사이)에는 새 1칸 폭 없음 — 전부 특징 바로 뒤·옆의 막다른 틈. 바뀐 칸이 특징 둘레뿐이라 그 밖의 골격은 3차에서 걸어 본 그대로.
+--- 파일 ---
+raw/30-sanctum.png · raw/50-sulfurmarsh.png = 전체 캡처 원본
+compare/compare-sanctum.png = 왼쪽 3차 ../maker3/raw/30-sanctum.png (크롭 276,10,1986,1150) · 오른쪽 이번 (크롭 210,47,1920,1187) · 1칸 15px
+compare/compare-sulfurmarsh.png = 왼쪽 길 안내판 ../../2026-10-31-map-capture-guide/raw/50-sulfurmarsh.png (크롭 296,28,1900,1174) · 오른쪽 이번 (크롭 296,47,1900,1193) · 1칸 13px
+sheets/sheet-sanctum-collision-view.jpg (16장) · sheets/sheet-sulfurmarsh-collision-view.jpg (14장) = 부딪힌 자리 플레이어 시점
+shots/ = 원본 42장(PNG→JPG q90 변환만 · 파일 이름 = 자리·방향·멈춘 좌표)
