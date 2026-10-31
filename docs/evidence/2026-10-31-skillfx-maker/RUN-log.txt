@@ -13,3 +13,65 @@ SKILLFX-MAKER-20261031 실행 기록 (KST) — 메이커 단일 담당 (Claude O
    → 「옛 모양이 남은」 stale 1102가 아니라 mlua 컴파일러가 괄호로 감싼 string.gsub(값 2개 반환)를 인자 3개로 세는 것으로 보임 (리포 안에 같은 꼴 다른 사용처 0)
    tests/quality(로컬 Lua)는 괄호 규칙대로 값 1개로 잘라 통과했으므로 검사로는 못 잡힘
 원문: build-errors.log
+--- 1b. 코디네이터 지시로 LEA-1102 수정 후 재개 ---
+13:33 MonsterStatus 781·832 → 지역 변수 markKind(string.match) · tests/quality/skillfx_nine.lua ④ 인자 자리 (string.gsub( 0건 (옛 판 781·832 2건 검출 확인) · 597개 통과 · quality 전체 통과 · npm test 18/18
+13:35:3x refresh → build 13:35:31 · 359줄 · Error 0 · Warning 102 · Info 257
+   커밋 805dd2c7 fix(표식 KeyFrames)
+--- 2. 플레이 (PC FHD) ---
+13:38:1x maker_play → 13:38:20 S [SelfTest] 통과 410 / 실패 0 (의도한 boom 1줄)
+13:38:45 S [VRF] SFM backup readback code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209 map=map01 (캐릭터 선택 · 입장 전)
+13:41:49 슬롯 4 입장(CharSelect/Box/S4 → BtnEnter · [VRF] skill migrate refund=4) → 13:41:55 Solo game:s1bac993f5f0 (town)
+13:43:27 방 서버(server_instance_game:s1bac993f5f0)에서 저장 끔(IsLoadSuccess=false)·무적(InvincibleUntil=1e9)·MaxDifficulty=1·스킬 임시 레벨(골편 8·튕김 2·저주 불꽃 8·서리 혼 8·영혼 격류 8·저주 6종 5·독안개·죽음의 파동·생기 앗기·뼈 성찬·뼈 갑옷 5·질주 3+도약·뼈 의식 12·해골/마법사 20·그림자 소환 5) · 마나 9999 유지 · 클라이언트 키보드 조준
+   [VRF] SFM prep save=off load=false inv=1000000000.0 maxDiff=1 slots raise_skeleton,,, -> bone_shard,hex_flame,frost_soul,soul_torrent
+   시전은 모두 실제 키(방향키 → A S D F · Space · Ctrl · 의식은 A 누르는 시간). 스크립트는 표적 소환·고정·주변 정리·마나 채우기·혼 만들기·거인 「저 적을」(RequestFocus)·그림자 2기 배치만
+--- 3. 장면 (KST · 클립 시작 시각은 clips 파일 생성 직전 기록) ---
+13:45~13:55 cellar1 시도들: 표적 hellhound가 덮치기로 플레이어 몸에 붙어 방향 판정 불가 → 클립 덮어씀 · 클라이언트 탐침(map.Children 훑기)은 투사체 엔티티를 못 찾음(GetEntitiesSpawnedByModelId 0 · 이름 훑기도 0) → 탐침 포기, 영상 판독으로 대체 (13:45:59 내 탐침 스크립트 오류 「Object reference not set」 1줄 = GetComponent, 게임 코드 아님)
+14:00:46 wasteland (-14,0.5) 표적 6 고정(R·L·UL·DL·UR·DR) · 습격·유입 몬스터는 루프에서 계속 처치
+14:01:0x~14:02:2x P1 오른쪽·왼쪽·왼쪽 위·왼쪽 아래·오른쪽 위 (각 A 골편 · S 저주 불꽃 · D 서리 혼 / 왼쪽 아래는 F 영혼 격류)
+   C [VRF] bone shard predicted n=3 · S bone shard volley n=3 spread=15.0 · shard frames start n=4 ms=100 left=true/false · S c7 projectile school=fire scale 1.20 / cold 1.60 / cold_shard 1.07 · projectile hit fx kind=fire/frost art=true · shard hit frames n=4 scale=1.20 · torrent cast frames n=4 scale 0.80
+14:03:4x B1 저주 4종(약화의 낙인·쇠약·공포·가시) C [VRF] curse shape amp/weaken/terror/thorn r=1.50 codex=true circle=true · curse marker … plate=true outline=true
+14:04:4x B2 생명 약탈·저항 붕괴·독안개 C curse shape lifetap/resist circle=true · c7 fx kind=poison scale=1.10 order=1 loop=true sec=4.00 · 14:04:53 죽음의 파동 c7 fx kind=wave scale=2.62 order=1 sec=0.60 · ultimate death_wave
+14:06:09 B3 뼈 갑옷 C bone armor cast frames n=4 · ring art layers=2 frames=8 · 생기 앗기 S soul drain hit · C drain vortex frames n=4 sec=0.70 scale=0.80
+14:06:46~14:07:18 C bone armor absorb frames n=3 (294→292→290→288→286 · 습격 몬스터 피격 · 무적 잠시 끔) — 이 시각 클립 없음
+14:12:07 N4 망령 질주 왼쪽(←·Space) C dash ghost frames n=4 copies=4 mirror=true · 오른쪽 Space는 충전 1이라 안 나감
+14:12:59 C7 뼈 성찬(해골 1 · 제물) S bone offering healed=0 · C c7 fx kind=offering scale=0.80 order=1 · kind=blast scale=1.07 order=1
+14:15:42 R1 의식 1기 해골 폭탄 S skeleton bomb exploded r=1.60 · C c7 fx kind=blast scale=1.78 order=1 sec=1.20
+14:15:54 / 14:17:53 R2 의식 2기 회오리 S rite whirl start r=1.5 ticks=8 · C rite whirl frames n=8 sec=4.0 scale=1.277 trace=true · consumed dust frames n=4 scale=1.10 shared=true ×2
+14:16:06 / 14:21:1x R3 의식 3기 뼈 화살 S rite arrow 1/3·2/3·3/3(push) lock=true · C shard frames start left=true · projectile hit fx style=rite kind=bone art=true · consumed dust ×3 scale=0.99
+14:19:5x M1 교단 광신 석궁병 2기(좌우 5칸 · 이동 끔) 화살 vs 해골 마법사(불·뼈 속성) 불꽃탄
+14:21:58 / 14:22:53 / 14:24:11 / 14:25:05 / 14:27:3x G 뼈 의식 5기 마법사 거인(mage5 · 깃발 mage) → 「저 적을」 RequestFocus
+   14:24:12 S giant s2 fired · giant skill cast name=meteor radius=1.80 hold=1.00 · C meteor L2 kind=warn_fire n=8 ms=75 scale=0.643 order=1 loop=1.50 w=3.60 · meteor_fall n=8 ms=40 scale=1.922 order=6 face=-1 flip=true travel=4.00 · meteor_land n=8 ms=40 scale=0.643 after=1.20 · giant fx play afterglow shown=9 elapsed=1.213 (첫 사용 · 왼쪽 표적)
+   14:25:06 오른쪽 표적 face=1 flip=false (표적이 미니맵 판 뒤라 화면 판독 불가 · 클립 지움)
+   14:27:3x 왼쪽 표적 다시(3번째 메테오) — 클립 G4
+14:28:20 S1 그림자 석궁병 2기 배치(AddShadow cult_archer Lv40 → Deploy) S [VRF] bone arrow skin n=4 scale=0.70 Shadow_cult_archer
+14:30:00 C7 베기 플레이어 평타(← Ctrl) C [VRF] c7 slash player n=4 scale=1.04 mirror=true · (14:08:45 C c7 slash summon scale=0.47 mirror=true) · c7 slash monster 줄은 이번 세션에 안 나옴
+--- 오류 로그 (세션 전체 · logs-vrf-excerpt.txt) ---
+   게임 코드 LEA-/LWA- 0건 · Error = SelfTest 의도한 boom(play마다 1줄) + 내 탐침 13:45:59 1줄
+--- 4. 끝 ---
+14:30:3x maker_stop → 14:30:5x play → 14:31:25 SelfTest 410/0 → 캐릭터 선택(server_main)에서 슬롯 4 복원 (본문 = 2026-10-30-summon48-maker/slot4-restore-S48.lua · 태그만 SFM)
+14:31:53 S I [VRF] SFM restore before code=0 match=0/5 Account=615/1136170917 Char_4=1036/547291843 Inv_4=1838/831595270 Shadow_4=40/1591196355 Stash=83/729691672
+14:31:53 S I [VRF] SFM restore guard body match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+14:31:53 S I [VRF] SFM restore BatchSetAndWait code=0 ok_keys=5
+14:32:01 S I [VRF] SFM restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+14:32:1x maker_stop → 편집 모드 · map01
+--- 영상 sha256 ---
+ad94a6f5ff4fce458423536a146dfd17fce75ec9d574f1b8891ebc4c3e094f65  B1-curses-amp-weaken-terror-thorn.mp4
+b62c7e2d614ae19c37da518902d8b353d2d0b6aa917d69e7bd9766e9fa9fabdc  B2-lifetap-resist-poison.mp4
+bef2cfb5a16cd08959fb55f040da3535be4af4ecdf8c784526f1e2acdc5d07de  B2b-poison-loop-deathwave.mp4
+955c7b9fb73857571840f3b85e633ca77ad1fe1c80bf0ed65ab530c4f23867c1  B3-armor-drain.mp4
+2d3c257749719c8f5efdf46117504ef7f325ca454cb30388e5b3c4a0fe06629a  C7-offering-blast-heal.mp4
+cf6fbaf0797159e91b56f5c3cf59fe2833cac6445dfa206c3e4f1900eb2d731e  C7-slash-player-monster-summon.mp4
+e7b9fc2eb0528ef7f0aca8ac8d9fbb60ad498313777ecf4300b17c3f5459f5d0  G1-giant-mage-rise.mp4
+ff0dcf46bcbb0828b01a237d0c95e12010ed8f97f176b3e48f9310af0b465139  G2-giant-meteor-L2-left-target.mp4
+639b8506474eced2c517f0d3acd5a3d6deba2815a3cd5419d5b0fcddcaf09314  G4-giant-meteor-L2-left-target-2nd.mp4
+4c73eab92f0980d4eb5e23a543e48697a105906ee584e796241c95ef9f3bba3e  M1-monster-arrows-cultarcher.mp4
+f53c634c6c22205628c7bd9b46cb21e2a9fe21dd64c1c4845aa686e25691c585  N4-wraith-dash-left-right.mp4
+f62e5077d71640ee01aa04f849aead55bf7fb4b4d78a999a5f571fdefd6e4efa  P1-downleft-shard-hex-torrent.mp4
+34edd54323198c1cdde9a08ce364995e634b8ce703afe4f12e6c0a596d95c4df  P1-left-shard-hex-frost.mp4
+2ae5277c41df0201dfb8dc3ef92a0ef7df0380c2f5778b03a09f0a82ddfadbe6  P1-right-shard-hex-frost.mp4
+ecca7d7f23182505b4148838d29bac868569649cc6ba8d15bf917b06d09331fe  P1-upleft-shard-hex-frost.mp4
+655f36852d4bc138b0915183fa7c2c3cd08d03a5208fb5e1c3e4a0c42b02994c  P1-upright-shard-hex-frost.mp4
+9e8c48d126105b3d8cf98e4fc189d3d3f2318b431700d5bad861b0e67233627a  R1-rite1-skeleton-bomb-blast.mp4
+e443e967b15070898899251fdb650ab9ba3ebff66ea3b61cd4b2682d52aa5e6b  R2-rite2-whirl-at-archer-left.mp4
+4d9af26b80f7e4cee95985246a427b0a695029a17abcd01ebf257997607938a8  R3-rite3-arrows-left.mp4
+6ff94b8ef340cf4b7a6fcdc1980f4624c8af7b25fa8cea03bfbb446c68bb8306  S1-shadow-ranged-bone-arrow.mp4
