@@ -1,0 +1,52 @@
+MAP-V5-SAMPLE-MAKER 실행 기록 (KST 2026-10-31) — 메이커 단일 담당 (Claude Opus 5.5 레인) · 브랜치 codex/player-experience-polish · HEAD b967115a (= origin/main)
+대상: 맵 구성 v5 표본 2장 sanctum(대사제의 성소) · sulfurmarsh(유황 늪) · 절차 = ../CAPTURE-PLAN.txt · 캡처 방식 = ../../2026-10-31-map-capture-guide/RUN-log.txt (cap_client_v3)
+게임 코드·맵·데이터 수정 없음. 아래 스크립트는 모두 실행 중 메이커에만 넣은 런타임 스크립트(파일 아님).
+PC FHD 1920×1080 · 스크린샷 2197×1236 · 기본 줌에서 화면 = 12.8×7.2칸 (북쪽 열주 발치 간격 3칸 = 257px@1098 폭으로 실측)
+--- 0. 반영 ---
+14:3x 편집 모드 · map01 확인
+14:39:27 maker_refresh_workspace 1회 → build 로그 359줄 · 빌드 시각 14:39:29 (재빌드됨) · Error 0 · Warning 102 · Info 257
+14:39:4x play (logs clear 1434줄 뒤) · SelfTest 통과 409 / 실패 0 · Error = SelfTest 의도한 boom 1줄
+14:40:16 S [VRF] V5 backup readback code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209 sel=true load=false (캐릭터 선택 · 입장 전 · 12:43 복원값과 같음)
+14:42:16 shot sanctum-01-nave (10,1.5) · 14:44:38 shot sanctum-02 (위 1초 걸음 뒤)
+14:45:06 S [VRF] V5 state load=false inv=1000000000.0 (저장 끔·무적 확인) -> go sanctum (0,1.5) · 같은 맵 이동 덮개 1.16s
+14:45:1x shot sanctum-03 (0,1.5) 서쪽 문 · clip1 오른쪽 4.7초 걸음 → 14:45:52 pos 6.81,1.50 (축 띠 위 막힘 없음)
+14:45:5x clip2 오른쪽 6초 → 14:46:06 pos 15.46,1.50 · 14:46:03 보스 토템 2개(런타임 소환 · 맵 그림 아님) · 대사제 패턴 시작
+14:46:3x 오른쪽 5.5초 → 14:46:39 pos 23.43,1.50 (대사제와 교전 · 축 띠 위 끼임 없음) · shot sanctum-08
+14:47:00 오른쪽 1.4초 → shot sanctum-09 제단 앞 · HP 44/155 — InvincibleUntil=1e9인데 보스 장판 피해가 들어옴(CanBeHit 우회 경로로 보임 · 게임 코드 미수정 · 기록만) → 서버 회복 루프(0.2초마다 Hp=MaxHp) 설치
+14:47:34 go sanctum (-14.5,9.5) 서고 · 덮개 1.76s · DarkVision sanctum 밝기 0.82 · shot sanctum-10 (14:47:52)
+14:48:0x clip3 위 1.2초 + 왼쪽 2.5초 → 14:48:14 pos -17.17,9.99 · shot sanctum-11·12
+14:48:40 첫 회복 루프는 다음 서버 스크립트 실행 때 멈춘 것으로 보임(hp 55/118) → 회복 루프 재설치: 3초에 3회 회복 hp=118 · 이후 서버 스크립트마다 회복 루프를 같이 넣음
+14:49:05 go sanctum (-16.5,-8.0) 순례자의 방 · 덮개 1.16s · shot sanctum-13 (14:49:12)
+14:49:2x clip4 아래 2.2초 + 왼쪽 2.2초 → 14:49:34 pos -18.43,-10.49 (부러진 기둥 줄 사이 통과 · 막힘 없음 · 몬스터 냉기 둔화로 속도 1.04↔1.73 오감) · shot sanctum-14·15
+14:50:1x go sulfurmarsh (-3,1) · 14:50:24 C [VRF] V5 count sulfurmarsh n=1091 sets=2 ArtBand=168 ArtCorner=56 ArtDecal=20 ArtEdge=232 ArtFloor=1 ArtProp=32 ArtRaised=337 ArtSet1=5 ArtSet2=5 ArtZone=183 (ArtGuide·ArtRoad·ArtMark 0) pos=-3.00,1.00 = v5 맵 파일과 같음 (옛 판 ArtBand 370·ArtGuide 105·ArtProp 10)
+14:50:34 shot sulfurmarsh 도착 화면 — 「사망했습니다. 골드 32135 손실」 안내: 유황 늪 도착 직후 사망(레벨 33~34 몹 · 회복 루프 0.1초로도 연타를 못 막음) → 이어진 shot 2장(14:51:05·09)은 액트 4 마을 「마지막 초소」(부활 위치)라 폐기
+  원인 추정: PlayerVitals 피격 처리(123행)가 InvincibleUntil을 「지금+무적초」로 덮어써 1e9 무적이 첫 피격 뒤 풀림 · 저장 끔 상태라 사망·골드 손실은 저장되지 않음(끝 readback으로 확인)
+  대책: 서버 루프 0.1초마다 InvincibleUntil=1e9 + Hp=MaxHp 재설정 (런타임 스크립트만 · 게임 코드 미수정)
+14:51:36 S [VRF] V5 guard loop v3 (inv+heal 0.05s) load=false map=outpost → go sulfurmarsh (1.5,2.0) · 덮개 1.88s · DarkVision sulfurmarsh 밝기 0.24 · shot sulfurmarsh-02 (14:51:46)
+14:51:5x clip1 아래 3초 → 14:52:07 pos 1.50,1.01 (간헐천 발밑 칸에서 멈춤 = 간헐천은 막힌 칸) · shot sulfurmarsh-03 · 이후 사망 없음
+14:52:3x clip2 왼쪽 6초 (1.5,1.0) → 14:52:43 pos -7.47,1.01 (띠 위 9칸 직진 막힘 없음) · shot sulfurmarsh-04·05
+14:53:08 go sulfurmarsh (13,-6) 갈림 · shot sulfurmarsh-06 (1칸 폭 대각 계단 통로) · clip3 아래+오른쪽 3초 + 아래 3초 → 14:53:37 pos 16.05,-13.68 (대각 통로 통과 · 끼임 없음) · shot sulfurmarsh-07·08 대장간 어귀
+14:53:5x go sulfurmarsh (-10.5,10.8) 무덤 · shot sulfurmarsh-09 · clip4 위 1.3초 + 왼쪽 2초 · shot sulfurmarsh-10·11 (쓰러진 거인 · 횃불이 거인 몸 앞에 겹침)
+14:54:4x go sulfurmarsh (26,-3) 동쪽 둑 · shot sulfurmarsh-12 (기사의 검 무덤 · 매단 등불)
+--- 전체 캡처 (cap_client_v3 그대로 + ready 로그에 prop·set·guide 수) ---
+14:55:32 C [CAP] installed v5 sample (유황 늪에서 설치)
+14:55:33 C [CAP] ready sulfurmarsh s=0.445 n=1113 ticks=6 prop=32 setEnt=10 guide=0 → 14:55:39 shot raw/50-sulfurmarsh.png
+14:55:50 S [CAP] go sanctum → 14:55:55 C [CAP] ready sanctum s=0.554 n=479 ticks=6 prop=47 setEnt=4 guide=0 → 14:55:59 shot raw/30-sanctum.png
+  (축척 s = 지난 전수 캡처와 같음: sanctum 0.554 · sulfurmarsh 0.445)
+  성소 전체 캡처의 작은 검은 이름표(제단 왼쪽 위) = 앞서 사망한 내 시체 표시로 보임(런타임 · 맵 그림 아님)
+--- 끝: 슬롯 4 readback·복원 ---
+14:56:0x maker_stop → 새 play (캐릭터 선택 · server_main)
+14:57:12 S [VRF] V5 final readback code=0 match=0/5 Account=615/1160162062 Char_4=1036/286876375 Inv_4=1838/127117341 Shadow_4=40/1591196355 Stash=83/1540438451 (입장 시 저장이 저장 끔보다 먼저 일어나 바뀜 · 지난 전수 캡처와 같은 현상)
+14:57:55 S [VRF] V5 restore before match=0/5 · guard body match=5/5 · BatchSetAndWait code=0 ok_keys=5 (본문 = slot4-restore-S48.lua / scratchpad cap2/restore-MCB.lua · 태그만 V5)
+14:58:03 S [VRF] V5 restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+14:58:1x maker_stop → 편집 모드
+--- 반영 확인 (검증 1 · CAPTURE-PLAN 수치) ---
+sanctum    : 맵 파일(b967115a) ArtProp 47 · ArtSet 1묶음(4) · ArtGuide 0 · CoreVersion 26.10.0.0 → client 실측 ArtProp=47 ArtSet1=4 ArtGuide 0 · ArtBand 99 · ArtRaised 166 · ArtZone 90 · ArtCorner 37 · ArtDecal 10 (전부 같음)
+             옛 판(b967115a~1) = ArtProp 25 · ArtSet 22 · ArtBand 24 · ArtRaised 202 → 새 판이 반영된 것이 확실
+sulfurmarsh: 맵 파일 ArtProp 32 · ArtSet 2묶음(5+5) · ArtGuide 0 → client 실측 ArtProp=32 ArtSet1=5 ArtSet2=5 ArtGuide·ArtRoad·ArtMark 0 · ArtBand 168 · ArtEdge 232 · ArtRaised 337 · ArtZone 183
+             옛 판 = ArtGuide 105 · ArtRoad 44 · ArtBand 370 · ArtProp 10 → 새 판 반영 확실
+CoreVersion은 런타임에서 읽는 API를 쓰지 않았다(미확인 · 대신 엔티티 수 지문으로 판정). 재반영(touch → refresh 두 번째)은 필요 없었다.
+--- 파일 ---
+raw/30-sanctum.png · raw/50-sulfurmarsh.png = 전체 캡처 원본(같은 축척 s=0.554 / 0.445 · 기대 크기 1710×1140 / 1604×1146 그대로)
+compare/compare-sanctum.png · compare/compare-sulfurmarsh.png = 왼쪽 2026-10-31-map-capture-guide/raw 30·50(크롭 243,29,1953,1169 / 296,28,1900,1174) · 오른쪽 이번(크롭 210,11,1920,1151 / 306,47,1910,1193) · 1칸 15px / 13px
+sheets/sheet-*-player-view.jpg = 플레이어 시점 8장씩 · shots/*.jpg = 플레이어 시점 원본 27장(PNG→JPG q90 변환만) · clips/*.mp4 = 실시간 녹화 8개(avfoundation "Capture screen 1" · 게임 화면 크롭 · 1600×900 30fps · 5~8초)
