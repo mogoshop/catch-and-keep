@@ -779,7 +779,14 @@ function guideStamps(bp, route, ruidOf, mapInfo, tiles) {
         for (let k = 0; k < cnt; k++) {
           const s = acc[i0] + sp * (k + 0.5), p = at(s), hd = heading(s - 0.5, s + 0.5);
           const exit = exitCurve && total - s <= POLICY.EXIT_LEN;
-          if (prevHd !== null) { let dd = Math.abs(hd - prevHd); if (dd > 180) dd = 360 - dd; if (dd > 60) sharp++; }
+          // 이웃 도장 진행 방향이 65° 넘게 바뀌면 꺾임 — 단 곡선 타일 자리(그 꺾임을 타일 한 장이 그린다)와 빈 도장은 빼고 센다
+          let jump = false;
+          if (prevHd !== null) { let dd = Math.abs(hd - prevHd); if (dd > 180) dd = 360 - dd; jump = dd > 65; }   // 반경 1칸 원호는 1칸에 57°쯤 꺾인다 — 그보다 큰 꺾임만
+          if (jump) {
+            const hI = heading(s - 0.5, s), hO = heading(s, s + 0.5);
+            let tn = hO - hI; while (tn > 180) tn -= 360; while (tn < -180) tn += 360;
+            if (Math.abs(tn) < ST.CURVE_DEG) sharp++;
+          }
           prevHd = hd;
           if (k === 0 && cnt > 1) {
             if (c.branch && i0 === 0 && onTrail(P[0])) put("fork", P[0].x, P[0].y, hd + 90, hd, false, exit, c.target);   // 갈림: S(갈래)가 진행 방향 · W–E는 갈라져 나온 길
@@ -787,11 +794,16 @@ function guideStamps(bp, route, ruidOf, mapInfo, tiles) {
             continue;
           }
           if (k === cnt - 1) { put("end", p.x, p.y, hd + 90, hd, false, exit, c.target); continue; }   // 마지막: N이 뒤쪽 · 앞으로 옅어짐
-          if (rnd() < ST.GAP) continue;   // 끊긴 발길 (빈틈)
-          const hIn = heading(s - 0.5, s), hOut = heading(s, s + 0.5);
+          // 1칸 안 꺾임 = 도장 앞끝(s−0.5)과 뒤끝(s+0.5) 접선 방향 차 (10-31 메이커 3차: 50° 기준이면 66장 곡선 타일 0장 → 25°)
+          const hIn = heading(s - 0.65, s - 0.35), hOut = heading(s + 0.35, s + 0.65);
           let turn = hOut - hIn; while (turn > 180) turn -= 360; while (turn < -180) turn += 360;
-          if (Math.abs(turn) >= ST.CURVE_DEG) put("curve", p.x, p.y, hIn + 90, hd, turn < 0, exit, c.target);   // 곡선: N으로 들어와 E로(왼쪽) · 오른쪽은 좌우 반전
-          else put("straight", p.x, p.y, hd - 90, hd, rnd() < 0.5, exit, c.target);
+          if (rnd() < ST.GAP && Math.abs(turn) < ST.CURVE_DEG) continue;   // 끊긴 발길 (빈틈) — 꺾이는 자리는 비우지 않는다(꺾임이 끊겨 보이지 않게)
+          if (Math.abs(turn) >= ST.CURVE_DEG) {
+            // 곡선 타일(90° 한 장)을 이 칸의 평균 진행 방향에 맞춰 돌린다: 왼쪽 = 원본(N→E, 평균 −45°) · 오른쪽 = 좌우 반전(N→W, 평균 −135°)
+            put("curve", p.x, p.y, turn > 0 ? hd + 45 : hd + 135, hd, turn < 0, exit, c.target);
+            // 50° 넘게 꺾이면 반 칸 뒤에 나가는 방향 직선 한 장으로 이음을 보정
+            if (Math.abs(turn) >= ST.CURVE_FIX_DEG && k + 1 < cnt - 1) { const q = at(s + sp / 2); put("straight", q.x, q.y, hOut - 90, hOut, rnd() < 0.5, exit, c.target); }
+          } else put("straight", p.x, p.y, hd - 90, hd, rnd() < 0.5, exit, c.target);
         }
         for (let k = i0; k <= i1; k++) drawnPts.push(P[k]);
       }
