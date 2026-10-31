@@ -1,0 +1,68 @@
+MAP-V5-ACT4-MAKER 실행 기록 (KST 2026-10-31) — 메이커 단일 담당 (Claude Opus 5.5 레인) · 브랜치 codex/player-experience-polish · HEAD 8b8540b7 (= origin/main)
+대상: (A) 맵 v5 액트 4 18장 + 초소(마을) 캡처·걸어 보기 (B) 윗부분 반투명(TopFade b26d9046) (C) 통일 공정 보정 효과(ca2bb0dd)
+게임 코드·맵·데이터 수정 없음. 스크립트는 모두 실행 중 메이커에 넣은 런타임 스크립트(파일 아님). maker_screenshot 스틸만(PNG → JPG q85, raw는 JPG q90). 녹화 없음.
+PC FHD 1920×1080 · 스크린샷 2197×1236 · 화면 1칸 ≈ 172px(기본 줌) · 좌표 규칙: 위로 막히면 T-0.01 · 아래로 막히면 T+1.01 · 옆 = 경계±0.01
+--- 0. 반영 ---
+22:10 편집 모드 · map01 (maker_get_current_map mode=edit) · 파일 mtime: GameData·WaypointData.mlua·액트 4 맵 54파일 = 22:07:29 · DarkVision 21:03 · GameConst/SkillEffects/MageBolts 21:18
+22:10:3x maker_refresh_workspace 1회 → 곧바로 읽은 build 로그는 21:19:23(옛 판 · build-log-refresh1.json은 이 시점에 다시 받은 22:10:36 판)
+22:10:4x 5초 → touch(내용 변경 없음 · git diff 0): GameData.mlua · WaypointData.mlua · DarkVision.mlua · GameConst.mlua · SkillEffects.mlua · MageBolts.mlua · 8b8540b7이 바꾼 map/*.map 54개 → 5초 → refresh 1회 더
+22:11:05 build 361줄 · Error 0 · Warning 102 · Info 259 · LEA-1102 0 (build-log.json) · GameData.codeblock 22:10:58 갱신
+22:11:35 play · S [SelfTest] 통과 410 / 실패 0 · Error = SelfTest 의도한 boom 1줄(방마다 1줄)
+--- 런타임 원문 ([VRF] A4M · logs-vrf-excerpt.txt) ---
+22:12:13 S [VRF] A4M backup readback code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209 load=false map=map01
+22:12:13 C click /ui/CharSelectHUD/SafeArea/Win/Box/S4 → 22:12:14 BtnEnter → S [PlayerSave] 불러오기 완료 (슬롯 4) → 22:12:35 Room/Box/Home/Solo → room game:s1bb41437deb (town)
+22:12:57 S [VRF] A4M guard (방 서버) 저장 끔 IsLoadSuccess=false · 무적 루프 0.05초(InvincibleUntil=1e9 + Hp=MaxHp) · _G.GO=PlayerTravel:Go
+23:02:53 S [VRF] A4M guard recheck load=false inv=1000000000.0 hp=155/155 map=apostate (코디네이터 재개 지시 시점 확인 — play 유지·저장 끔·무적 살아 있음 → stop/복원 없이 계속)
+--- 1. 반영 지문 (클라 맵 자식 셈 · 맵 파일 값과 대조) ---
+  맵 자식 Art·ArtTop·ArtGuide·ArtProp·웨이포인트 = map/<id>.map 값과 18/18 같음 (Guide 0 · 아래 [CAP] ready 줄도 19/19 같음)
+  22:14~22:23 C [VRF] A4M fp … (원문 logs-vrf-excerpt.txt) · Top 있는 맵 진입마다 「DarkVision 윗부분 반투명 대상 N개 (빠짐 0 · 알파 0.35 · 0.15초)」 (embercanyon 1 · burningkeep 2 · soulprison 6 · forge1 3 · apostate 4 · pit 2 · abyssgate2 1 · heartbridge 3 · throneante 2 · 성소 17 · 유황 늪 7)
+  서버 타일 칸(RectTileMap.GetTile IsCollidable) 18장 덤프 → grids/<id>.server-grid.txt · 입구(GateBack)에서 BFS → grids/bfs-routes.txt
+    열린 칸 전부 입구에서 닿음(reach = open, 18/18) · 입구→출구 최단 걸음 = routes.csv: embercanyon 67 · demonroad 79 · burningkeep 80 · sulfurcave1 63 · forge1 57 · abyssgate1 57 · abyssgate2 75 · abyssgate3 57 · ashhall 57 · throneante 57 · throne 77 (같음) · heartbridge 71 (routes 69 · 문 칸 끝 처리 차이)
+    되돌아가는 문 맵은 문까지: soulprison 62 · forge2 62(요약 X 62) · apostate 62 · pit 67(요약 X 65) · sulfurcave2 64(요약 X 64)
+    (클라 GetTile은 멀리 있는 칸을 비워 돌려줘(빈 칸) 쓰지 않음 · 서버 판을 정본으로)
+--- 2. (A) 걸어 보기·부딪혀 보기 (서버 GO → 4~5초 → 실제 방향키 tap → 클라 멈춤 로그 [VRF] A4M stop / pos → maker_screenshot) ---
+  shots/·sheets/sheet-act4-player-view.jpg(.list.txt) 칸 설명이 멈춘 좌표 원문 · 요약은 NOTES.md (A) 표
+  22:29 첫 화면 「선택 보상 · 가라앉은 지하실의 수장」 창 → Esc (띠는 계속 남음, 8차와 같음)
+  1.2초 tap은 1.7칸밖에 못 감(이동 1.44칸/초) → 이후 2초 tap (embercanyon 고목 10.24 → 10.99로 재시도)
+  soulprison 골격 축: 처음 y1.5로 걸어 x-22 벽(축 아님 · shots/soulprison-V2x-…) → 축 y0.5로 다시 8초 → -15.95 막힘 없음
+  abyssgate2 사건 상자: x-9.5는 (-10,-1) 벽 → x-8.5로 다시 → (-8.50,-2.83) 통과 (상자 옆 통로 폭 1칸)
+  멈춤 로그가 몬스터 밀림으로 빠진 3곳(abyssgate3·ashhall 축, abyssgate2 상자)은 POS로 다시 걸어 기록
+--- 3. (B) 윗부분 반투명 (22:46~22:50 · 클라 Top 알파 탐침 PROBE 0.05초 · probe/*.txt) ---
+22:47:06 C 성소 진입 「윗부분 반투명 대상 17개 (빠짐 0 …)」 · LWA-3010(전역 조명 둘) 경고 1줄
+22:47:09 C top fade n=1 · ta (24.50,4.50) ArtProp27Top a=0.35 (제단 윗부분이 커서 북쪽 4.5에서도 이미 뒤) → 아래로 걸어 (24.50,2.01) a=0.35
+22:47:27 C top fade n=0 · 동쪽으로 나와 (26.67,2.01) a=1.00 rgb 1.00/1.00/1.00(전과 같음)
+22:47:35 C 앞 (24.50,-1.01) a=1.00 (안 옅어짐)
+22:48:33~43 성소 북열 기둥 열 걷기 probe: x5.11 a1.00 → x5.19 0.57 → x5.35 0.35 … x7.08 0.35 → x7.16 0.78 → x7.33 1.00 → x9 기둥 다시 0.35 (top fade n=1/0/1)
+22:49:04 유황 늪 간헐천 뒤로 걷기 probe: x-3.84 0.57 → x-3.68 0.35 유지 · 22:49:05 성소로 GO(옅은 채로 떠남) → 22:49:13 유황 늪 재진입 → 22:49:22 7개 Top 모두 a=1.00 rgb 1.00
+  (22:49:17 「ta B2-geyser-behind faded=0」 줄은 클라 스크립트 지연으로 떠나는 순간 찍힌 값 — probe 원문이 0.35 유지를 보여 줌)
+22:49:40~44 혼 감옥 사슬 기둥 열(11·14·17, y2.05) 뒤 걷기 probe: x10.36 0.57 → x10.53 0.35 → x11.84 0.78 → x12.01 1.00
+22:49:53~57 수도원 사슬 기둥(-17·-14, y4.05) 뒤 걷기 probe: x-17.55 0.57 → x-17.39 0.35 → x-16.20 0.78 → x-16.04 1.00
+  forge1 큰 용광로(ArtSet1_1Top) 뒤 (18.50,-7.99)에서도 22:36:52 top fade n=1 → 22:36:58 n=0
+--- 4. (C) 보정 효과 (23:04~23:18 · 엠버캐니언 (-24.5,-3.5)) ---
+23:04:20 S skills 원래 slots=raise_skeleton,,, · levels skel_twin1 raise_skeleton9 bone_rite1 raise_mage3 wraith_dash3 bone_spear5 (저장 끔 상태에서 임시로 frost_soul8·soul_drain5·bone_armor5 + slots raise_skeleton,bone_rite,frost_soul,soul_drain)
+23:05:32~38 해골 전사 3기 (사냥개 처치 → 혼 → _UndeadSystem:Raise 스크립트)
+23:06:23 실제 S 0.69초 누름 → S rite stage=2 consumed=2 · C rite whirl frames n=8 ms=100 sec=4.0 scale=0.850 trace=true (키보드 조준은 6칸 앞 → 화면 밖 · 어둠 속)
+23:07:07 같은 입력 2회째 scale=0.850 · pulled=2 · 23:08:01 해골 1기라 1기(해골 폭탄)로 떨어짐(정상 규칙)
+23:10:48 C RequestRite(2, +2.5칸) (의식 = 스크립트 시전) → S rite whirl start r=1.5 ticks=8 · C scale=0.850 trace=true → 23:10:52 end pulled=2 · 스틸 C1 3장
+23:11:17 S c7 projectile school=cold art=true n=4 scale=0.80 · 23:11:41 school=cold_shard n=4 scale=0.53 · frost split 3 · projectile hit fx kind=frost art=true · shard frames left=true/false 둘 다
+23:16:17 실제 → D: 서리 혼 비행 스틸(C2-frostsoul-main-flight-right) · 파편 스틸 2장 · 둔화 표식 1장
+23:17:27 C RequestCast soul_drain → S soul drain hit dealt=1331 · C drain vortex frames n=4 ms=100 sec=0.70 scale=0.80
+23:17:44 C RequestCast bone_armor → C bone armor cast frames n=4 ms=100 scale=1.00 · ring art layers=2 frames=8 alpha=0.55 · 23:17:47 drain 2회째 scale=0.80
+  첫 사용 빈 장: 부팅 22:11:35 C [VRF] preload n=229 started=229 (새 RUID 21장 포함 슬롯 전 장) · 첫 시전 스틸에서 빈 칸·하얀 네모 없음
+  서버 표적 고정(위치 쓰기)은 몬스터 AI가 덮어써 실패 → 표적 없이 쏘거나 붙은 표적으로 대신 (메모리 「서버 위치 쓰기 안 먹힘」과 같음)
+  서버 maker_execute_script는 앞 스크립트(wait 루프)가 끝날 때까지 줄 서서 10~25초 늦게 돌기도 함 → 시전은 클라 RequestRite/RequestCast·실제 키로
+--- 5. 전체 캡처 (cap_client_v3 본문 + ready 로그에 art·prop·top·guide 칸 · 설치 태그 a4m act4) ---
+23:19:01 C [CAP] installed a4m act4 · 23:19:05 ready outpost s=0.908 → 첫 스틸 평균 밝기 24.5(guide 56.3) = LWA-3010 전역 조명 둘 → 23:20:09 「DarkVision global light removed (runtime only)」 타이머(0.3초) 넣고 다시 찍음(63.0)
+  [CAP] ready 줄 = 맵 파일: outpost art214 prop15 top0 · embercanyon 1074/16/1 · demonroad 642/15/0 · burningkeep 948/12/2 · sulfurcave1 498/14/0 · sulfurcave2 468/8/0 · soulprison 305/28/6 · forge1 337/19/3 · forge2 491/11/0 · apostate 339/15/4 · pit 454/19/2 · abyssgate1 304/40/0 · abyssgate2 352/24/1 · abyssgate3 333/26/0 · ashhall 433/18/0 · heartbridge 651/13/3 · throneante 496/18/2 · throne 309/39/0 · guide 0 전부 · 축척 = 길 안내판 캡처와 같음
+  shot ↔ ready: raw.tsv(maps-index.tsv shot 칸) · 각 스틸은 ready 뒤 3~6초 · 유황 늪(표본·변경 없음)도 같은 조건으로 1장(50)
+--- 6. 끝: 저장 데이터 ---
+23:24:2x maker_stop · LEA-3051 5줄 = 내 런타임 스크립트 타이머(MakerScript 줄 0·1·3·11·24) · DarkVision·게임 코드 타이머 경고 0
+23:24:4x play2 (캐릭터 선택 · server_main) · 23:25:04 SelfTest 410/0
+23:25:25 S [VRF] A4M play2 readback code=0 match=0/5 Account=615/173547888 Char_4=1036/548615887 Inv_4=1838/848054137 Shadow_4=40/1591196355 Stash=83/1499553364
+23:26:26 S [VRF] A4M restore before match=0/5 (같은 값) · guard body match=5/5 · BatchSetAndWait code=0 ok_keys=5
+23:26:33 S [VRF] A4M restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+  restore 본문 = ../../2026-10-30-summon48-maker/slot4-restore-S48.lua 그대로 (로그 태그만 A4M)
+23:27 maker_stop → 편집 모드 · map01
+--- 파일 ---
+raw/NN-<id>.jpg 20장(47~65 + 50 유황 늪) · maps-index.tsv = 크롭 사각형 · sheets/sheet-act4-maker.png(1칸=11px) · compare/compare-act4-guide-vs-v5.png(왼쪽 길 안내판 raw 47~65 · 오른쪽 이번 · 1칸=6px)
+sheets/sheet-act4-player-view.jpg · sheet-topfade.jpg · sheet-skillfx-corrections.jpg (+ .list.txt) · shots/ 73장 · grids/ · probe/ · build-log*.json · logs-vrf-excerpt.txt
