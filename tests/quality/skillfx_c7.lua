@@ -314,6 +314,8 @@ do
  ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
  local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
  for _,s in ipairs(SLOTS) do local l=Util:Frames(_GameConst[s[1]]) ok(#l==(UNIFY[s[1]] and 10 or 4),s[1]..' 장 수') all(l,s[1]) end
+ -- 11-01 실속도 조사(docs/evidence/2026-11-01-fx-realspeed): 통일 공정 5종 중 빠져 있던 그림자 희생 10장도 미리 불러 둔다
+ local sac=Util:Frames(_GameConst.FxSkillSacrifice) ok(#sac==10,'그림자 희생 10장') all(sac,'FxSkillSacrifice')
 
  local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
  ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')
