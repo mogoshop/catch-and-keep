@@ -774,10 +774,10 @@ Object.assign(module.exports.cellar2, {
 //   대장간 = 솥·장작 묶음 · 남문 길 = 이정표·방책 묶음.
 // 손으로 고른 자리 손질: 낱개 천막 셋(간격 7.5·13칸 — 산발 복제 3)은 빼고 천막 줄 북쪽 목책에 붙인 천막 열로 (검수표 「천막 줄 camp-tent 줄로 골목」) ·
 //   천막 열 = 천막 줄 서쪽 북쪽 목책에 붙인 천막 셋(빈틈 없이 · 손으로 고른 자리) · 남문 무너진 성문·잿불 화로(이 마을 이름)·카라반 수레는 v5 역할 배율(×0.694·×0.725·×0.5)을 되돌려
-//   원래 크기 그대로 (성문은 목책 틈에 맞춘 크기 — 발밑 막힘 2줄(foot=0.3)이라야 남문 길이 좁아지지 않는다) · 성문 역할표 facing north → any (마을 안쪽에서 보는 남쪽 목책 문 — 초소 문틀과 같은 처리) ·
+//   원래 크기 그대로 (성문은 목책 틈에 맞춘 크기 — 발밑 막힘 2줄(foot=0.3)이라야 남문 길이 좁아지지 않는다 · 11-01: 발 칸은 양쪽 기둥 x −2·2(padl=1·padr=1로 한 칸씩 바깥 + hole=3로 가운데 x −1·0·1 비움) — 689cbc0e는 (−1,−10)·(1,−10)을 막아 문 칸이 1칸 폭이었다(메이커 f2e3e269) · 오른쪽은 padr=2: (2,−10)을 막으면 꺼진 화로 받침(3,−9)·남쪽 벽 사이 (3,−10)이 막다른 벽감(검사기 niches 1·deadLines 3칸)이라 v5 생성기 6차 규칙대로 그쪽 발밑을 한 칸 더 넓힌다) · 성문 역할표 facing north → any (마을 안쪽에서 보는 남쪽 목책 문 — 초소 문틀과 같은 처리) ·
 //   무기 걸이(역할 배율로 작아져 동쪽 벽과 1칸 벽감)는 padr=1
 Object.assign(module.exports.town, {
-  put: module.exports.town.put.filter((p) => p[1] !== "camp-tent").map((p) => (p[1] === "a1-landmark-ruined-gate" ? [p[0], p[1], p[2], p[3], Math.round(1000 / 0.694) / 1000, p[5], "ok=cliff;foot=0.3"]
+  put: module.exports.town.put.filter((p) => p[1] !== "camp-tent").map((p) => (p[1] === "a1-landmark-ruined-gate" ? [p[0], p[1], p[2], p[3], Math.round(1000 / 0.694) / 1000, p[5], "ok=cliff;foot=0.3;padl=1;padr=2;hole=3"]
     : p[1] === "camp-brazier" ? [p[0], p[1], p[2], p[3], Math.round(1150 / 0.725) / 1000, p[5] || 0]
     : p[1] === "camp-cart" ? [p[0], p[1], p[2], p[3], 2, p[5] || 0]
     : p[1] === "camp-weapon-rack" ? [p[0], p[1], p[2], p[3], p[4] || 1, p[5] || 0, "padr=1"] : p))

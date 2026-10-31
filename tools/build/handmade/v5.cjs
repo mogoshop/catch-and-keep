@@ -905,10 +905,10 @@ function run(o) {
     const hRun = (x, y) => { let n = 1; for (let k = 1; k <= 3 && freeC(x - k, y); k++) n++; for (let k = 1; k <= 3 && freeC(x + k, y); k++) n++; return n; };
     const hugCell = new Map();
     hugs.forEach((h, i) => h.cells.forEach((k) => hugCell.set(k, i)));
-    // 배치표 args → 발밑 옵션 (빌더 lib.cjs place와 같은 해석: wall=1 · foot= · padl= · padr= · fill=x/y,…)
+    // 배치표 args → 발밑 옵션 (빌더 lib.cjs place와 같은 해석: wall=1 · foot= · padl= · padr= · hole= · fill=x/y,…)
     const rowOpt = (h) => {
       const a = h.row.args || "", n = (nm) => Number((a.match(new RegExp("(?:^|;)" + nm + "=(\\d+)")) || [0, 0])[1]), f = (a.match(/(?:^|;)fill=([^;]+)/) || [])[1];
-      return { toWall: !!h.toWall, frac: h.frac, padl: n("padl"), padr: n("padr"), fill: f ? f.split(",").map((t) => t.split("/").map(Number)) : null };
+      return { toWall: !!h.toWall, frac: h.frac, padl: n("padl"), padr: n("padr"), hole: n("hole"), fill: f ? f.split(",").map((t) => t.split("/").map(Number)) : null };
     };
     let filled = 0;
     for (let pass = 0; pass < 4; pass++) {
