@@ -4,9 +4,9 @@
 --   ③ SkillEffects.ShardSkinRuid/Scale·ShardHit·ShardHitFrames·StormOrbit: 채우면 새 그림 · 비우면 예전 FxShardShot/FxShardHit 그대로 (빈 자리 되돌림)
 --   ④ 부르는 곳: 채운 자리마다 부르는 곳 · 창 골편은 쓸 자리 미정 · 골편 경로에 예전 보라 궤적/파열 직접 호출이 남지 않음 · 의식 화살은 rite-bone-arrow 대기
 -- 엔진 효과·스프라이트는 대역 — 실제 화면(크기·색·뒤집힘)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames
+-- @source Util Common/Util.mlua Frames,KeyFrames
 -- @source Projectile Combat/Projectile.mlua MirrorSkin,FrameSec,FaceMirror,SkinFrame,AdvanceFrame
--- @source SkillEffects Skill/SkillEffects.mlua ShardSkinRuid,ShardSkinScale,ShardHit,ShardHitFrames,StormOrbit
+-- @source SkillEffects Skill/SkillEffects.mlua OnBeginPlay,ShardSkinRuid,ShardSkinScale,ShardHit,ShardHitFrames,StormOrbit
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
@@ -213,6 +213,37 @@ do
  ok(se:find('_GameConst.FxSkillShardThrow, _GameConst.FxSkillStormShard, _GameConst.FxSkillBoneArrow, _GameConst.FxSkillShardHit',1,true)~=nil,'처음 쓸 때 늦지 않게 미리 불러 둠')
  ok(pj:find('/ self:FrameSec())',1,true)~=nil and pj:find('self:FaceMirror()',1,true)~=nil,'투사체 순환 간격·뒤집기 연결')
  ok(count(pj,'[VRF] shard frames start')==1,'[VRF] 순환 시작 한 줄')
+end
+
+-- ⑤ 10-31 스킬 그림 후속: 골편 4자리 × 4장 모두 미리 불러 둠 (창 골편은 부르는 곳이 없어 뺀다) · 층 값
+do
+ local saveV3=Vector3
+ Vector3=setmetatable({zero={x=0,y=0,z=0}},{__call=function(_,x,y,z) return {x=x,y=y,z=z} end})   -- OnBeginPlay가 Vector3.zero를 쓴다
+ local pre={}
+ local saveE,saveT,saveU=_EffectService,_TimerService,_UserService
+ _EffectService={PlayEffectAttached=function(_,ruid) table.insert(pre,ruid) return #pre end,RemoveEffect=function() end}
+ _TimerService={SetTimerOnce=function() return 1 end}
+ local me2={CurrentMap='m1'}
+ _UserService={LocalPlayer=me2}
+ logs={}
+ local fx=setmetatable({Entity=me2,VisualTimers={}},{__index=SkillEffects})
+ fx:OnBeginPlay()
+
+ local got,dup={},0
+ for _,r in ipairs(pre) do if got[r] then dup=dup+1 end got[r]=true end
+ ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
+ local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
+ for _,k in ipairs({'FxSkillShardThrow','FxSkillStormShard','FxSkillBoneArrow','FxSkillShardHit'}) do local l=Util:Frames(_GameConst[k]) ok(#l==4,k..' 4장') all(l,k) end
+ local spear=0 for _,r in ipairs(Util:Frames(_GameConst.FxSkillSpearShard)) do if got[r] then spear=spear+1 end end
+ ok(spear==0,'창 골편은 미리 불러 두지 않음 (부르는 곳 없음)')
+
+ local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
+ ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')
+ local src=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a'):match('method void OnBeginPlay%(%)(.-)\n    end\n')
+ ok(src~=nil and src:find(')[1]',1,true)==nil,'OnBeginPlay에 첫 장만 넣는 길(…)[1]) 없음')
+ ok(SkillEffects.ShardHitOrder==6,'명중 파편 층 6 (몸 앞) 그대로')
+ _EffectService,_TimerService,_UserService=saveE,saveT,saveU
+ Vector3=saveV3
 end
 
 print(string.format('skillfx_shard: %d checks passed', checks))

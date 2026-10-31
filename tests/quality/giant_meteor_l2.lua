@@ -5,8 +5,8 @@
 --   ③ 빈 자리 되돌림: 자리마다 ""이면 그 단계만 예전 연출(Util.Telegraph · B 메테오 12장) · 잔불만 비면 착지 마지막 장을 불바닥 끝까지
 --   ④ 바꾸지 않은 것: 피해 반경·영창·낙하·불바닥 시간 상수 · 서버 타이머 수 · 반복 타이머 없음 · 부르는 곳·미리 불러 두기 grep
 -- 엔진 효과·타이머는 대역 — 실제 화면(크기·층·좌우·밝기)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,BodySign,PlaySeq,GiantFxTint,GiantMoveFx,GiantFxLocal,MeteorL2Fx,SeqFx,ClipFxLocal
+-- @source Util Common/Util.mlua Frames,KeyFrames
+-- @source SkillEffects Skill/SkillEffects.mlua OnBeginPlay,FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,BodySign,PlaySeq,GiantFxTint,GiantMoveFx,GiantFxLocal,MeteorL2Fx,SeqFx,ClipFxLocal
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
 local function near(a,b,e) return math.abs(a-b)<=(e or 1e-6) end
@@ -211,8 +211,38 @@ do
  ok(m~=nil and m:find('SetTimerRepeat',1,true)==nil,'MeteorL2Fx 클라이언트 전용 · 반복 타이머 없음')
  ok(se:find('if self:MeteorL2Fx(kind, pos, width, angle, seconds) then return end',1,true)~=nil,'GiantFxLocal → MeteorL2Fx (예고·낙하·착지)')
  local pre=se:match('method void OnBeginPlay%(%)(.-)\n    end\n')
- ok(pre~=nil and pre:find('_GameConst.FxGiantMeteorTelegraph, _GameConst.FxGiantMeteorFall, _GameConst.FxGiantMeteorImpact, _GameConst.FxGiantMeteorAfterglow',1,true)~=nil,'미리 불러 두기: 4자리 첫 장')
+ ok(pre~=nil and pre:find('_GameConst.FxGiantMeteorTelegraph, _GameConst.FxGiantMeteorFall, _GameConst.FxGiantMeteorImpact, _GameConst.FxGiantMeteorAfterglow',1,true)~=nil,'미리 불러 두기: 4자리 (모든 장은 ⑤)')
  ok(near(SkillEffects.MeteorLandRef,3.39) and near(SkillEffects.MeteorFallMul,1.5) and SkillEffects.MeteorTelegraphOnly==true,'임시 보정(ec625a91) 값 그대로 (B 되돌림 길)')
  ok(repeats==0,'재생 중 SetTimerRepeat 0')
+end
+-- ⑤ 10-31 스킬 그림 후속: 미리 불러 두기 = 4자리 × 8장 모두 (메이커 회차 G2 — 첫 장만 넣었더니 첫 사용 때 착지·잔불 2~7장이 1.6~1.8초 비어 보였다)
+do
+ for line in io.lines('RootDesk/MyDesk/Common/GameConst.mlua') do
+  local k,v=line:match('^%s*property string (%w+) = "([^"]*)"') if k then _GameConst[k]=v end
+  local ki,vi=line:match('^%s*property integer (%w+) = (%-?%d+)') if ki then _GameConst[ki]=tonumber(vi) end
+ end
+ local saveV3=Vector3
+ Vector3=setmetatable({zero={x=0,y=0,z=0}},{__call=function(_,x,y,z) return {x=x,y=y,z=z} end})   -- OnBeginPlay가 Vector3.zero를 쓴다
+ local pre={}
+ local savedAttach,savedRemove=_EffectService.PlayEffectAttached,_EffectService.RemoveEffect
+ _EffectService.PlayEffectAttached=function(_,ruid) table.insert(pre,ruid) return #pre end
+ local fx=setmetatable({Entity=me,VisualTimers={}},{__index=SkillEffects})
+ reset() fx:OnBeginPlay()
+ _EffectService.PlayEffectAttached=savedAttach
+ Vector3=saveV3
+
+ local got,dup={},0
+ for _,r in ipairs(pre) do if got[r] then dup=dup+1 end got[r]=true end
+ ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
+ local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
+ local total=0
+ for _,sl in ipairs(SLOTS) do local l=_Util:Frames(_GameConst[sl.key]) total=total+#l ok(#l==8,sl.key..' 8장') all(l,sl.key) end
+ ok(total==32,'메테오 L2 32장 모두')
+
+ local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
+ ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')
+ local src=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a'):match('method void OnBeginPlay%(%)(.-)\n    end\n')
+ ok(src~=nil and src:find(')[1]',1,true)==nil,'OnBeginPlay에 첫 장만 넣는 길(…)[1]) 없음')
+ timers={}
 end
 print(string.format('[quality/giant_meteor_l2] %d checks: 4 slots x8 (32 hex · art_sprites 32 · order 0..7 · 75/40/40/150ms) · telegraph loop no rim · fall 60deg travel 4 · left FlipX · impact once → afterglow loop → last fade · shared ground scale 560px=diameter · boulder 1.2 · empty-slot fallback x4 · damage/time/timers unchanged · preload', checks))

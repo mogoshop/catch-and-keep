@@ -219,7 +219,7 @@ do
  SkillEffects:CurseShape('amp',Vector3(3,1,0),1.5)
  local p=plays[1]
  ok(#plays==1 and p.fn=='hold' and p.ruids==table.concat(Util:KeyFrames(_GameConst.FxSkillCurseCircles,'amp'),'|'),'낙인 = 원형 판 4장 한 번 (문장보다 먼저)')
- ok(near(p.frameSec,0.1) and near(p.holdSec,0.1+SkillEffects.CurseCircleHoldSec) and near(p.fadeSec,SkillEffects.CurseCircleFadeSec) and p.order==SkillEffects.CurseSigilOrder,'0.1초씩 · 마지막 장 0.3초 더 · 옅어짐 · 바닥 층')
+ ok(near(p.frameSec,0.1) and near(p.holdSec,0.1+SkillEffects.CurseCircleHoldSec) and near(p.fadeSec,SkillEffects.CurseCircleFadeSec) and p.order==SkillEffects.CurseCircleOrder and SkillEffects.CurseCircleOrder==1,'0.1초씩 · 마지막 장 0.3초 더 · 옅어짐 · 바닥 층(원형 판 전용 CurseCircleOrder 1 · 몸 뒤)')
  ok(near(p.scale.x,p.scale.y) and near(p.scale.x,SkillEffects:CurseCircleScale('amp',1.5)) and p.pos.x==3 and p.pos.y==1,'가로=세로 · 원 크기 · 자리')
  ok(#particles==0 and logs[1]:find('circle=true',1,true)~=nil,'입자 없음 · [VRF] curse shape circle=true')
  _GameConst.FxSkillCurseCircles=''
@@ -287,9 +287,10 @@ do
  local fx=setmetatable({Entity=me},{__index=SkillEffects})
  reset() fx:RiteWhirlFx(Vector3(4,5,0),1.5,4)
  local trace,whirl=plays[1],plays[2]
- ok(trace.fn=='hold' and trace.ruids==_GameConst.FxSkillRiteWhirlTrace and trace.order==SkillEffects.RiteWhirlTraceOrder,'바닥 자국 1장 · 바닥 층')
+ ok(trace.fn=='hold' and trace.ruids==_GameConst.FxSkillRiteWhirlTrace and trace.order==SkillEffects.RiteWhirlTraceOrder and SkillEffects.RiteWhirlTraceOrder==0,'바닥 자국 1장 · 바닥 층 0 (회오리보다 아래)')
  ok(near(trace.holdSec+trace.fadeSec,4) and near(trace.fadeSec,SkillEffects.RiteWhirlTraceFadeSec),'자국은 회오리 시간 동안 · 끝에 옅어짐')
- ok(whirl.fn=='loop' and whirl.ruids==_GameConst.FxSkillRiteWhirl and near(whirl.frameSec,0.1) and near(whirl.seconds,4) and whirl.order==SkillEffects.RiteWhirlOrder,'회전 8장 0.1초 반복 4초 · 몸 앞')
+ ok(whirl.fn=='loop' and whirl.ruids==_GameConst.FxSkillRiteWhirl and near(whirl.frameSec,0.1) and near(whirl.seconds,4) and whirl.order==SkillEffects.RiteWhirlOrder and SkillEffects.RiteWhirlOrder==1,'회전 8장 0.1초 반복 4초 · 몸 뒤 층 1 (10-31 메이커 R2: 5면 표적을 덮었다)')
+ ok(SkillEffects.RiteWhirlTraceOrder<SkillEffects.RiteWhirlOrder and SkillEffects.RiteWhirlOrder<2,'자국 < 회오리 < 몬스터 기본 2')
  ok(near(SkillEffects.RiteWhirlContentPx*whirl.scale.x/100,3,0.001) and near(whirl.scale.x,whirl.scale.y),'회오리 내용 폭 235px = 판정 지름 3칸 (가로=세로 · 위에서 본 원)')
  ok(near(SkillEffects.RiteWhirlTraceContentPx*trace.scale.x/100,3,0.001),'자국 내용 폭 240px = 지름 3칸')
  ok(whirl.pos.x==4 and whirl.pos.y==5 and trace.pos.y==5,'조준점 그대로 (발 자리 원)')
@@ -388,16 +389,31 @@ do
  restore()
 end
 
--- ② 미리 불러 두기: 자리마다 첫 장
+-- ② 미리 불러 두기: 자리마다 모든 장 (10-31 스킬 그림 후속 — 첫 장만이면 회오리 2~8장·원형 판 2~4장이 첫 사용 때 늦게 뜰 수 있다 · 메이커 회차 README 3-1)
 do
  local fx=setmetatable({Entity=me,VisualTimers={}},{__index=SkillEffects})
  reset() fx:OnBeginPlay()
- local got={} for _,e in ipairs(effects) do got[e.ruid]=true end
+ local pre={} for _,e in ipairs(effects) do if e.attached then table.insert(pre,e.ruid) end end
+
+ local got,dup={},0
+ for _,r in ipairs(pre) do if got[r] then dup=dup+1 end got[r]=true end
+ ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
+ local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
  for _,k in ipairs({'FxSkillArmorCast','FxSkillArmorAbsorb','FxSkillArmorBreak','FxSkillDashGhost','FxSkillRiteWhirl','FxSkillRiteWhirlTrace','FxSkillRiteArrow','FxSkillDrainVortex','FxSkillHitCurse','FxSkillHitFire','FxSkillHitFrost','FxSkillTorrentCast','FxSkillTorrentHit','FxSkillConsumedDust','FxSkillHitBone'}) do
-  ok(got[Util:Frames(_GameConst[k])[1]],k..' 첫 장 미리 불러 둠')
+  all(Util:Frames(_GameConst[k]),k)
  end
- for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do ok(got[Util:KeyFrames(_GameConst.FxSkillCurseCircles,k)[1]],'원형 판 '..k..' 첫 장') end
- for _,k in ipairs({'amp','hex','chill'}) do ok(got[Util:KeyFrames(_GameConst.FxSkillMarks,k)[1]],'표식 '..k) end
+ ok(#Util:Frames(_GameConst.FxSkillRiteWhirl)==8,'회오리 8장 전부')
+ local circles=0
+ for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do local l=Util:KeyFrames(_GameConst.FxSkillCurseCircles,k) circles=circles+#l all(l,'원형 판 '..k) end
+ ok(circles==24,'원형 판 6종 × 4장 = 24')
+ local marks=0
+ for _,k in ipairs({'amp','weaken','thorn','terror','confuse','lifetap','decay','resist','root','chill','poison','hex'}) do local l=Util:KeyFrames(_GameConst.FxSkillMarks,k) marks=marks+#l all(l,'표식 '..k) end
+ ok(marks==12,'표식 12')
+
+ local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
+ ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')
+ local src=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a'):match('method void OnBeginPlay%(%)(.-)\n    end\n')
+ ok(src~=nil and src:find(')[1]',1,true)==nil,'OnBeginPlay에 첫 장만 넣는 길(…)[1]) 없음')
 end
 
 -- ③ 부르는 곳 (grep)

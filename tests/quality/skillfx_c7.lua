@@ -90,7 +90,9 @@ do
  ok(near(SkillEffects:C7Scale('blast',0.75*2.0/1.6)/SkillEffects:C7Scale('blast',0.75),1.25),'폭탄 반경이 커지면 같은 비율 (BombRadius 2.0)')
  ok(near(SkillEffects:C7Scale('poison',1.25*1.95/1.3)/SkillEffects:C7Scale('poison',1.25),1.5),'독안개 반경이 커지면 같은 비율')
  ok(SkillEffects:C7Scale('nothing',0.7)==0.7,'표에 없는 종류는 예전 배율 그대로')
- for _,k in ipairs({'blast','offering','wave','poison'}) do ok(SkillEffects:C7Opt(SkillEffects.C7Orders,k,0)==1,k..' 층 MapLayer0 1 (behind)') end
+ local ORD={blast=6,offering=6,wave=1,poison=1}   -- 10-31 메이커 회차: 제물 폭발·성찬 치유는 몸에 가려 판독 불가 → 6(몸 앞) · 파동·독 구름은 1
+ for k,v in pairs(ORD) do ok(SkillEffects:C7Opt(SkillEffects.C7Orders,k,0)==v,k..' 층 MapLayer0 '..v) end
+ ok(near(SkillEffects:C7Opt(SkillEffects.C7OldW,'blast',0),4.333) and near(SkillEffects:C7Opt(SkillEffects.C7OldW,'offering',0),1.327),'제물 폭발 1.95칸·성찬 1.46칸 크기 표 그대로 (층만 바꿈)')
  ok(near(SkillEffects.C7HoldSec,0.2) and near(SkillEffects.C7FadeSec,0.25),'한 번 계열 마지막 장 0.2초 + 옅어짐 0.25초')
 end
 
@@ -124,7 +126,8 @@ do
   reset() fx:C7Fx(kind,Vector3(1,2,0),1.5,0.9)
   local p=plays[1]
   ok(#plays==1 and p.fn=='ms' and p.ruids==SkillEffects:C7Ruids(kind) and p.ms=='100' and p.inst=='m1',kind..' 4장 한 번 100ms · 맵에 붙임')
-  ok(near(p.holdSec,SkillEffects.C7HoldSec) and near(p.fadeSec,SkillEffects.C7FadeSec) and p.order==1 and p.scale.x==1.5 and p.scale.y==1.5 and p.pos.y==2 and p.rot==0,kind..' 마지막 장 유지·옅어짐 · 층 1 · 가로=세로 · 발 자리')
+  ok(near(p.holdSec,SkillEffects.C7HoldSec) and near(p.fadeSec,SkillEffects.C7FadeSec) and p.order==(kind=='wave' and 1 or 6) and p.scale.x==1.5 and p.scale.y==1.5 and p.pos.y==2 and p.rot==0,kind..' 마지막 장 유지·옅어짐 · 층(폭발·성찬 6 몸 앞 · 파동 1) · 가로=세로 · 발 자리')
+  ok(logs[1]:find('order='..(kind=='wave' and 1 or 6),1,true)~=nil,kind..' [VRF] order 값')
   ok(p.tint.r==1 and p.tint.g==1 and p.tint.b==1 and p.tint.a==1,kind..' 그림 자기 색')
   ok(#logs==1 and logs[1]:find('[VRF] c7 fx kind='..kind..' n=4 ms=100',1,true)~=nil and logs[1]:find('loop=false',1,true)~=nil,kind..' [VRF] 한 줄')
  end
@@ -232,12 +235,22 @@ do
  restore()
 end
 
--- ③ 미리 불러 두기: 자리마다 첫 장
+-- ③ 미리 불러 두기: 자리마다 모든 장 (10-31 스킬 그림 후속 · 메이커 회차 README 3-1)
 do
  local fx=setmetatable({Entity=me,VisualTimers={}},{__index=SkillEffects})
  reset() fx:OnBeginPlay()
- local got={} for _,e in ipairs(effects) do got[e.ruid]=true end
- for _,s in ipairs(SLOTS) do ok(got[Util:Frames(_GameConst[s[1]])[1]],s[1]..' 첫 장 미리 불러 둠') end
+ local pre={} for _,e in ipairs(effects) do if e.attached then table.insert(pre,e.ruid) end end
+
+ local got,dup={},0
+ for _,r in ipairs(pre) do if got[r] then dup=dup+1 end got[r]=true end
+ ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
+ local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
+ for _,s in ipairs(SLOTS) do local l=Util:Frames(_GameConst[s[1]]) ok(#l==4,s[1]..' 4장') all(l,s[1]) end
+
+ local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
+ ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')
+ local src=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a'):match('method void OnBeginPlay%(%)(.-)\n    end\n')
+ ok(src~=nil and src:find(')[1]',1,true)==nil,'OnBeginPlay에 첫 장만 넣는 길(…)[1]) 없음')
 end
 
 -- ③ 부르는 곳 (grep)
