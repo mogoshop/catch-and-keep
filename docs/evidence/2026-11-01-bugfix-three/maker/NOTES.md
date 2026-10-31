@@ -77,3 +77,18 @@
 - 이번 회차 시작(02:34, 입장 전) readback이 S48 기준과 0/5 — 원문을 `slot4-found-at-start.json`(바이트·djb2·값 5키, 시작 해시와 5/5 일치)으로 보존. 내용은 S48 본문과 키 순서만 다르고(Account·Inv_4·Shadow_4·Stash 길이 같음) Char_4 1126→1035.
 - 입장(02:35:08 불러오기 → 02:35:32 저장 끔) 사이에 게임이 한 번 더 저장 — `slot4-after-entry.json`(시작 상태와 의미상 같음 · Char_4는 업적 배열 순서만 다름).
 - 끝에 S48 본문으로 복원 + 재조회 5/5 (결과는 이 파일 아래에 덧붙임).
+
+### 슬롯 4 복원 결과 (03:28 · 새 플레이 · 캐릭터 선택 화면 · server_main)
+
+본문 = `docs/evidence/2026-10-30-summon48-maker/slot4-restore-S48.lua` 그대로(가드: 본문 5키 len/djb2가 기준과 모두 같을 때만 씀).
+
+```
+03:28:55 [VRF] S48 restore before code=0 match=1/5 Account=615/761529415 Char_4=1035/590156493 Inv_4=1838/1947279559 Shadow_4=40/923051497 Stash=83/563958023
+03:28:55 [VRF] S48 restore guard body match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+03:28:55 [VRF] S48 restore BatchSetAndWait code=0 ok_keys=5
+03:29:03 [VRF] S48 restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+```
+
+- before = `slot4-after-entry.json` 해시와 같음(입장 때 재저장분) → after 5/5 = S48 기준.
+- 같은 플레이 부팅 로그: SelfTest 410/0 · `[VRF] preload n=291 started=291` · `LEA-3051` 1줄 = 앞 플레이에서 내가 넣은 MakerScript guard 타이머 2개(게임 코드 타이머 경고 0).
+- 03:29 maker_stop → 편집 모드 · map01.
