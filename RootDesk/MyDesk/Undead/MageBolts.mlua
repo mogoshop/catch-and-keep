@@ -107,17 +107,21 @@ script MageBolts extends Logic
     method number Configure(Projectile proj, string school)
         -- 투사체 외형(그림·색·꼬리·유도)을 속성대로 입히고 날아가는 속도(칸/초)를 돌려준다 — 캐릭터·마법사 공용.
         -- 피해·관통 상한·파편 수·폭발 반경 같은 「세기」는 여기서 정하지 않는다 (캐릭터 = SkillEffects · 마법사 = MageTraits)
+        -- 10-31 9계열: 명중 그림 속성(Projectile.HitKind) — 불 · 서리(서리 혼·파편) · 저주 마력탄 = GameConst.FxSkillHit* (뼈 창·영혼 격류는 Style 자기 명중이라 "")
         if school == "fire" then
             proj:Skin(self.FxFlameShot, 0.45)
             proj:Tint(Color(1, 0.75, 0.55, 1))
+            proj.HitKind = "fire"
             return 11
         elseif school == "cold" then
             proj:Skin(self.FxFrostShot, 0.6)
             proj:Tint(Color(0.85, 0.95, 1, 1))
+            proj.HitKind = "frost"
             return 9
         elseif school == "cold_shard" then
             proj:Skin(self.FxFrostShot, 0.4)
             proj:Tint(Color(0.85, 0.95, 1, 1))
+            proj.HitKind = "frost"
             return 10
         elseif school == "bone" then
             -- 44-1 A: 골편 궤적 그림을 가늘고 길게(가로:세로 2.2) — 맞으면 진행 방향으로 꽂히는 빛 파열 (Projectile.HitFx "spear").
@@ -143,6 +147,7 @@ script MageBolts extends Logic
             return 7
         end
         -- curse · 그 밖: 마법사 마력탄에 저주 보라 (투사체는 그림이 정해져야 보인다 — 10-11)
+        if school == "curse" then proj.HitKind = "curse" end
         proj:Skin(_GameConst.SpriteMageBolt, 1.2)
         proj:Tint(Color(0.8, 0.55, 1, 1))
         return 7

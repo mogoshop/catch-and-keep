@@ -190,6 +190,7 @@ for line in io.lines('RootDesk/MyDesk/Common/GameConst.mlua') do
  local k,v=line:match('^    property string (%w+) = "([^"]*)"')
  if k then _GameConst[k]=v end
 end
+_GameConst.FxSkillCurseCircles=''   -- 10-31 9계열 원형 판(문장보다 먼저)은 skillfx_nine.lua에서 본다 — 여기서는 원형 판이 빈 때의 바닥 문장 길
 local function csvRows(path)
  local rows={}
  for line in io.lines(path) do table.insert(rows,line) end
