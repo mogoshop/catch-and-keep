@@ -48,7 +48,9 @@ script MonsterSpawner extends Component
     @Sync
     property integer Total = 0             -- 정리 맵: 이번에 채운 몬스터 수 (매복 등으로 늘면 같이 는다)
     @Sync
-    property integer Remaining = 0         -- 정리 맵: 살아 있는 몬스터 수
+    property integer Remaining = 0         -- 정리 맵: 살아 있는 몬스터 수 + 깨우기 대기 묶음·소환 대기열 (「남은 수」 표시)
+    @Sync
+    property integer Alive = 0             -- 정리 맵: 지금 서 있는 몬스터 수만 (대기 묶음 제외 · 미니맵 남은 망자 안내 HudMap.RemainingFocus — 10-31)
     property boolean Cleared = false
     property number SpawnedAt = 0
     property number EmptySince = 0
@@ -107,6 +109,11 @@ script MonsterSpawner extends Component
         local n = 0
         for _, pack in ipairs(self.PendingPacks or {}) do n = n + #pack.list end
         return n + #(self.SpawnQueue or {})
+    end
+
+    method integer InitialTotal()
+        -- 정리 맵: 처음 채운 몬스터 총수 (대기 묶음 포함 · 매복 등으로 늘면 같이 는다 — Total과 같다). 미니맵 남은 망자 비율의 분모
+        return self.Total
     end
 
     method integer PoolCount()
@@ -522,6 +529,7 @@ script MonsterSpawner extends Component
             end
             self.Total = math.max(self.Total, alive)
             self.Remaining = alive
+            self.Alive = liveCount
             local base = _GameConst:BaseMapName(map.Name)
             for _, p in ipairs(players) do
                 ---@type PlayerQuest
@@ -855,6 +863,7 @@ script MonsterSpawner extends Component
         self.Cleared = false
         self.Total = 0
         self.Remaining = 0
+        self.Alive = 0
         self.EmptySince = 0
         self.SpawnedAt = _UtilLogic.ElapsedSeconds
     end

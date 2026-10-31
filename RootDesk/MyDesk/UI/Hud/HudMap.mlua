@@ -52,6 +52,7 @@ script HudMap extends Logic
     property string MapSub = ""                -- 미니맵 머리글 기본 문구 (사냥터 · 악몽 …)
     property string BossShown = ""             -- 머리글에 지금 보이는 보스 남은 시간 (바뀔 때만 다시 쓴다)
     property number NextBossAt = 0
+    property string RemainLogKey = ""          -- 남은 망자 안내 판정 로그 (값이 바뀔 때만 — RemainingFocus)
 
     property integer CheerMarkCount = 8     -- 격려 「!」 칸 수 (ui.cjs CheerMark1~8)
     -- ── 알림 채널 A 「상단 띠」 (10-31 실플레이 피드백 B-4 · docs/evidence/2026-10-31-playfeedback-B/notice-channels.md) ──
@@ -894,8 +895,11 @@ script HudMap extends Logic
                     break
                 end
             end
-            -- 정리 맵에서 5마리 이하로 남으면 가장 가까운 남은 몬스터를 가리킨다 (구석에 낀 몬스터 때문에 못 끝내지 않게)
-            local remain = self:RemainingFocus(player)
+            -- 남은 망자 안내 (10-31 A안): 처치 전용 맵에서 거의 다 잡았을 때만 가장 가까운 남은 몬스터를 가리킨다 (구석에 낀 몬스터 때문에 못 끝내지 않게).
+            --   퀘스트 목적지가 다른 맵이면 위에서 고른 출구·포털·웨이포인트 안내를 덮어쓰지 않는다. 이 맵 안의 목적지 점(NPC·제단)이 있을 때도 그대로
+            local goalBase = _GameConst:BaseMapName(goal)
+            local goalElsewhere = goalBase ~= "" and goalBase ~= current
+            local remain = self:RemainingFocus(player, goalElsewhere, focused ~= nil)
             if remain ~= nil then
                 focused = remain
                 text = "남은 망자 " .. tostring(remain.count) .. " — 가까운 곳 표시"
@@ -913,13 +917,30 @@ script HudMap extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method any RemainingFocus(Entity player)
-        -- 정리 맵(MonsterSpawner.ClearMode)이고 남은 수가 1~5면 가장 가까운 살아 있는 몬스터 위치
+    method any RemainingFocus(Entity player, boolean goalElsewhere, boolean hasPoint)
+        -- 정리 맵(MonsterSpawner.ClearMode)에서 살아 있는 몬스터(대기 묶음 제외 · Alive)가 MinimapRemainMax 이하이고
+        --   남은 수(대기 묶음 포함 · Remaining)가 처음 채운 총수(InitialTotal)의 MinimapRemainRatio 이하일 때만 가장 가까운 살아 있는 몬스터 위치.
+        --   퀘스트 목적지가 다른 맵(goalElsewhere)이거나 이미 목적지 점(hasPoint)이 있으면 nil (10-31 A안 · 예전: 남은 수 5 이하면 늘 덮어썼다)
         local map = player.CurrentMap
         if not isvalid(map) then return nil end
         ---@type MonsterSpawner
         local spawner = map:GetFirstChildComponentByTypeName("script.MonsterSpawner", true)
-        if spawner == nil or not spawner.ClearMode or spawner.Remaining <= 0 or spawner.Remaining > 5 then return nil end
+        if spawner == nil or not spawner.ClearMode then return nil end
+        local alive = spawner.Alive
+        local total = spawner:InitialTotal()
+        local ratio = total > 0 and spawner.Remaining / total or 1
+        local verdict = "show"
+        if alive <= 0 then verdict = "hide:none"
+        elseif alive > _GameConst.MinimapRemainMax then verdict = "hide:many"
+        elseif ratio > _GameConst.MinimapRemainRatio then verdict = "hide:ratio"
+        elseif goalElsewhere then verdict = "hide:goal-elsewhere"
+        elseif hasPoint then verdict = "hide:goal-point" end
+        local key = string.format("%s|%d|%d|%.2f|%s|%s", map.Id, alive, total, ratio, tostring(goalElsewhere), verdict)
+        if key ~= self.RemainLogKey then
+            self.RemainLogKey = key
+            log(string.format("[VRF] minimap remain focus alive=%d total=%d ratio=%.2f goalElsewhere=%s -> %s", alive, total, ratio, tostring(goalElsewhere), verdict))
+        end
+        if verdict ~= "show" then return nil end
         local me = _Util:Pos2(player)
         local best = nil
         local bestD = 9999
@@ -936,7 +957,7 @@ script HudMap extends Logic
             end
         end
         if best == nil then return nil end
-        return { x = best.x, y = best.y, count = spawner.Remaining, always = true }
+        return { x = best.x, y = best.y, count = alive, always = true }
     end
 
     -- ───────── 맵 이름 ─────────
