@@ -16,7 +16,8 @@
 //   facing       역할표 facing: north(정면 그림)가 벽 2칸 안에 붙었는데 북쪽 벽(3칸 안)이 아님 · side는 동·서쪽 벽이 아님 (포털·입구 그림 제외)
 //   rowGap/rowFlip 한 줄(열주는 줄마다) 안 이웃 간격 최대−최소 >0.35칸 · 뒤집기 섞임
 //   seamAlpha    반투명 이음새 조각(ArtBand·ArtCorner·ArtShade, 색 알파 <1) 0 — v5 성소형 맵만 (10-31 사용자 판정: 띠 가장자리는 불투명 타일 가장자리만 · v5 keep은 원래 이음새 그대로라 세지 않음)
-//   (v5 keep 맵 = 띠를 그리지 않는 바닥 보존형: 골격은 입구→출구 최단 경로로 계산해 끊김·고리·웨이포인트·가지만 재고, 띠 폭·막다른 띠·띠 옆 빈 바닥·구역 경계는 재지 않는다)
+//   (v5 keep 맵 = 띠를 그리지 않는 바닥 보존형: 골격은 입구→출구 최단 경로로 계산해 끊김·고리·웨이포인트만 재고, 띠 폭·막다른 띠·띠 옆 빈 바닥·구역 경계와
+//    가지 간 추가 연결(통로를 막아야만 고칠 수 있다 — keep은 통로를 그대로 둔다 · 10-31 액트 4 코덱스 검토)은 재지 않는다)
 //   bandWidth    띠 폭 ≤2: 띠 칸(설계도 바탕 . · 길 글자)마다 가로·세로·두 대각 연속 칸 수의 최솟값 ≥3인 칸 덩어리 수
 //   bandBreak    띠 끊김: 띠+출입구 표식(W E H X G)의 4방향 덩어리 수 − 1 + 띠로 닿지 않는 출구 수
 //   bandLoop     띠 고리: 띠에 둘러싸인 구멍(띠 밖 칸의 8방향 덩어리 중 맵 테두리에 닿지 않는 것) 수
@@ -34,6 +35,8 @@
 //   waypoint     웨이포인트(표식 S)가 띠에서 1칸(8방향) 넘게 떨어짐
 //   topLayer     (10-31 윗부분 층) 윗부분 그림 엔티티(Art…Top)의 SortingLayer ≠ Default 이거나 OrderInLayer < 5 — 아바타(Default · 순서 4)보다 위여야 뒤에 선 플레이어를 가린다
 //                (맵 층은 Layer1 하나뿐이라 MapLayer1은 없는 층 → 아바타 아래에 그려졌다 · 메이커 7차 probe1~3 · 생성기 lib.cjs TOP_LAYER·TOP_ORDER)
+//   keepFloor    (10-31 액트 4 · --keep-ref <git 기준>을 줄 때만) v5 keep 맵이 기준 설계도보다 걷는 칸을 잃은 덩어리 수 + 입구→출구(E·X·H) 문 최단 길이 바뀐 수
+//                — keep은 바닥·구역·통로를 건드리지 않는다(역할 배치·길 안내 제거만). 장식 발밑은 설계도 걷는 칸이 아니라 따로 셈하지 않는다
 //   decorCollision 기존 검사기 tools/check_decor_collision.cjs 문제 수 (그 맵만)
 //   budget       엔티티 예산: 설계도 맵 노말 66장 합 ≤ 47900 (검사한 맵은 메모리 계산, 나머지는 map/<id>.map)
 // 경고 (위반 아님 · 종료 코드에 넣지 않음):
@@ -47,10 +50,10 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "topLayer", "decorCollision", "budget"];
+const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "topLayer", "keepFloor", "decorCollision", "budget"];
 const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 따라 줄·벽 정면 그림 뒤에 걷는 칸", wallNiche: "벽 밀착 줄 곁 막다른 벽감", deadLine: "폭 1칸 막다른 줄", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
-  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", topLayer: "윗부분 그림 층 ≠ Default·순서 ≥5", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
+  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", topLayer: "윗부분 그림 층 ≠ Default·순서 ≥5", keepFloor: "keep 맵 걷는 칸·문 길 변화", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -118,6 +121,7 @@ function skeletonCells(L, G) {
   const out = new Set();
   if (!start) return out;
   exits.sort((a, b) => (G.marker(...a) === "E" ? -1 : 0) - (G.marker(...b) === "E" ? -1 : 0));
+  if (!exits.length) for (const [c, r] of G.cells()) if (G.marker(c, r) === "S") { exits.push([c, r]); break; }   // 마을(전진 출구 없음): 들어오는 문 → 웨이포인트 (생성기 mainEnd와 같다 · 10-31 액트 4 초소)
   const nw = (c, r) => { let n = 0; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (!G.floor(c + dc, r + dr)) n++; return n; };
   const search = (srcs, goal) => {
     const dist = new Map(), prev = new Map(), h = [];
@@ -145,7 +149,7 @@ function skeletonCells(L, G) {
     for (let i = 0; i < cells.length; i++) {
       out.add(K(...cells[i]));
       const n = cells[i + 1];
-      if (n && n[0] !== cells[i][0] && n[1] !== cells[i][1]) out.add(G.floor(n[0], cells[i][1]) ? K(n[0], cells[i][1]) : K(cells[i][0], n[1]));
+      if (n && n[0] !== cells[i][0] && n[1] !== cells[i][1]) out.add(G.floor(n[0], cells[i][1]) && !G.marker(n[0], cells[i][1]) ? K(n[0], cells[i][1]) : K(cells[i][0], n[1]));   // 모서리 칸은 표식(화로 등)이 아닌 쪽 — 표식 칸은 아래서 빠져 골격이 끊겼다 (10-31 초소 고정 화로)
     }
   }
   for (const k of [...out]) if (G.marker(...unK(k))) out.delete(k);
@@ -306,6 +310,7 @@ function placementMetrics(L, G, band) {
     }
   };
   for (const [s, ps] of by) {
+    if (["portal", "overlay"].includes(classOfSafe(s))) continue;   // 하늘 띠·겹친 빛·포털 그림은 산발 복제에서 뺀다 (10-31 액트 4 초소 붉은 하늘 띠)
     if (ps.length < 3) continue;
     const lim = PILLAR(s) ? 7 : 4.5, used = new Set(), groups = [];
     ps.forEach((p, i0) => {
@@ -316,7 +321,7 @@ function placementMetrics(L, G, band) {
     });
     let bad = 0;
     for (const grp of groups) {
-      const ok = grp.length >= 3 ? !!axisOk(grp) : grp.length === 2 && PILLAR(s);
+      const ok = grp.length >= 3 ? !!axisOk(grp) : grp.length === 2 && (PILLAR(s) || (grp.every((p) => nearWall(p.x, p.y)) && (Math.abs(grp[0].y - grp[1].y) <= 0.5 || Math.abs(grp[0].x - grp[1].x) <= 0.5)));   // 둘: 기둥 쌍 · 또는 벽에 이어 붙인 벽 조각 두 장 (10-31 액트 4 심연 벽)
       if (grp.length >= 3) rowCheck(grp);
       if (!ok) bad += grp.length;
     }
@@ -417,7 +422,7 @@ function analyze(L) {
     pillarSingle: pm.singles.length, landmarkBlock: pm.dense.length, branchExtra: br.extra, waypoint: wpOff,
     topLayer: (L.tops || []).filter(topBad).length,
   };
-  if (keep) Object.assign(counts, { bandWidth: 0, bandDeadEnd: 0, bandEdgeEmpty: 0, straightEdge: 0 });
+  if (keep) Object.assign(counts, { bandWidth: 0, bandDeadEnd: 0, bandEdgeEmpty: 0, straightEdge: 0, branchExtra: 0 });   // keep: 가지 연결도 설계도 그대로 (통로를 막지 않는다)
   // 충돌 (10-31 표본 4차): 서 있는 feature·structure인데 통과 · 장식이 막아 골격(띠) 칸 너비가 2칸 밑으로 · 입구에서 못 닿는 공간
   const blocked = new Set(L.blocked || []);
   const featPass = L.pieces.filter((p) => !p.decal && ["feature", "structure"].includes(roleOf(p.s)) && !p.block && !["floor", "portal", "overlay"].includes(classOfSafe(p.s)));
@@ -547,6 +552,19 @@ function layoutOf(id, env) {
     tops: art.entities.filter((e) => /^Art/.test(e.name) && /Top$/.test(e.name)).map((e) => { const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"] || {}; return { name: e.name, layer: sr.SortingLayer, order: sr.OrderInLayer }; }),
   };
 }
+// keep 맵 비교용: 설계도 글자에서 걷는 칸(월드 칸 "x,y")과 입구(W·G) → 출구(E·X·H)마다 4방향 최단 길
+function keepFloorOf(text) {
+  const rows = text.split(/\r?\n/).filter((l) => l && !l.startsWith(";")), walls = new Set([...text.matchAll(/^;wall (\S)/gm)].map((m) => m[1]));
+  const H = rows.length, Wd = rows[0].length, floor = new Set(), mk = [];
+  rows.forEach((row, r) => [...row].forEach((ch, c) => { if (walls.has(ch)) return; const k = `${c - Wd / 2},${H / 2 - r}`; floor.add(k); if ("WGEXH".includes(ch)) mk.push([ch, k]); }));
+  const start = (mk.find(([ch]) => ch === "W") || mk.find(([ch]) => ch === "G") || [])[1], routes = {};
+  if (start) {
+    const dist = new Map([[start, 0]]), q = [start];
+    for (let i = 0; i < q.length; i++) { const [x, y] = q[i].split(",").map(Number); for (const [dx, dy] of D4) { const n = `${x + dx},${y + dy}`; if (floor.has(n) && !dist.has(n)) { dist.set(n, dist.get(q[i]) + 1); q.push(n); } } }
+    for (const [ch, k] of mk) if ("EXH".includes(ch)) routes[`${ch}@${k}`] = dist.has(k) ? dist.get(k) : -1;
+  }
+  return { floor, routes };
+}
 function fileEntities(id) {
   const { MapBuilder } = require("./build/lib.cjs");
   const f = path.join(ROOT, "map", id + ".map");
@@ -599,6 +617,17 @@ function main() {
     const r = analyze(L);
     entities[id] = L.entities;
     report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail, tallNoTop: L.tallNoTop };
+    if (opt("--keep-ref") && L.v5keep) {   // keep 맵 걷는 칸·문 길 = 기준 설계도 (git)
+      const cur = keepFloorOf(fs.readFileSync(path.join(hm.HM_DIR, id + ".txt"), "utf8"));
+      let refText = null;
+      try { refText = require("child_process").execSync(`git show ${opt("--keep-ref")}:data/handmade/${id}.txt`, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { refText = null; }
+      if (refText) {
+        const ref = keepFloorOf(refText), lost = new Set([...ref.floor].filter((k) => !cur.floor.has(k)));
+        const blobs = comps(lost, D4), routeDiff = Object.keys(ref.routes).filter((k) => ref.routes[k] !== cur.routes[k]);
+        r.counts.keepFloor = blobs.length + routeDiff.length;
+        r.detail.keepFloor = [`걷는 칸 ${ref.floor.size}→${cur.floor.size}`, ...blobs.map((b) => `잃은 칸 (${b[0]})~${b.length}칸`), ...Object.keys(ref.routes).map((k) => `문 길 ${k} ${ref.routes[k]}→${cur.routes[k]}`)];
+      } else r.detail.keepFloor = [`기준 ${opt("--keep-ref")}에 ${id} 설계도 없음`];
+    }
   }
   // 기존 검사기 (그 맵들만 · 한 번에)
   const policyIds = ids.filter((id) => require("./build/handmade/decor.cjs").modeOf(id));

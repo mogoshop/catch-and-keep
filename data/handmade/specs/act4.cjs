@@ -732,3 +732,508 @@ Object.assign(module.exports.sulfurmarsh, {
     },
   },
 });
+
+// ───────── 10-31 맵 구성 v5 3단계 · 액트 4 적용 (사용자 「승인, 액트 4 시작」 · 표본 2장과 같은 생성기·규칙 · docs/review/v5-modes-20261031.md 액트 4 순서표) ─────────
+//   v5 = 골격 띠 + 구역 재적합 + 역할 배치 (성소형) · keep = 바닥·길 글자·이음새 그대로 + 역할 배치만 (유황 늪형). 맵별 공간 구획 = docs/review/map-audit-20261031.md 그 맵 절.
+//   보스·포털·웨이포인트·화로 같은 기능 자리는 옮기지 않는다 (maps.csv 기능 열은 compose가 설계서 자리 그대로 다시 쓴다).
+
+// 1/18 군주의 옥좌 (v5 · 보스방): 성소 표본을 좌우로 뒤집은 자리. 홀 입구(동쪽 문, y 1)에서 서쪽으로 곧은 축(신랑) — 양옆 불기둥 열주 2열,
+//   축 끝 북벽 가운데에 돌아온 심장 제단(특징 1 · 4칸) + 북벽에 붙인 옥좌 깃발 한 쌍, 고르바스는 그 앞(maps.csv fixed ashking -17.5/5.5 그대로 · 옮기지 않음).
+//   전진 출구(남서 -27, -7)로 가는 띠는 축 끝(-18, 1)에서 꺾인다. 띠 북쪽 = 밝은 그을린 판석(e) · 남쪽 = 어두운 판석(f) · 남벽 혼 등불 열.
+//   손으로 고른 자리(재의 왕좌 세트·옥좌 단·사슬 닻·오벨리스크 둘·낱개 불기둥 넷·큰 문장 원)와 아레나 안 바위 구멍 넷은 뺐다 — 특징 과밀·기둥 낱개.
+//   근위대의 방 = 남벽 뿔 석상 열(근위대) + 부러진 오벨리스크 · 제물의 방 = 북벽 혼 우리 열 + 배교 제단 · 봉인된 문간 = 소품 묶음 하나.
+//   자리: 성소와 같이 제물의 방 → 봉인된 문간 통로를 막아 제물의 방을 막다른 곁방으로 · 문간 → 홀 통로를 축 줄(y 1)로
+Object.assign(module.exports.throne, {
+  v5: {
+    outdoor: false,
+    via: [[-3, 1], [-18, 1]],
+    dress: {
+      a: { props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      b: { feature: "prop:a4-broken-obelisk", row: { name: "a4-horned-statue", side: "s" }, props: ["a4-helm-pile", "a4-adjunct-demon-skull-spear", "a4-melted-armor-pile"], clusters: 1, decals: ["a4-decal-broken-chain", "a4-decal-ash-pile"], dn: 2 },
+      c: { feature: "prop:a4-apostate-altar", row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster", "a4-bone-heap"], clusters: 1, decals: ["a4-decal-blood-sigil-circle"], dn: 1 },
+      d: { props: ["a4-adjunct-obsidian-shards", "a4-adjunct-soul-candle-cluster"], decals: ["a4-decal-cracked-obsidian"], dn: 1 },
+      e: {
+        feature: "set:a4_lm_heart_altar", featureDrop: ["a4-soul-crystal"], featureAt: [-17.5, 8.4], featureScale: 4 / 3,   // 성소 제단처럼 4칸 (역할 3칸 × 4/3)
+        colonnade: { name: "a4-ember-pillar", step: 3, minPairs: 4, off: 2.5, tight: true, axis: [[-1.5, 1.5], [-15.5, 1.5]] },
+        sides: { left: "f", right: "e" },   // 서쪽으로 가는 축의 왼쪽 = 남쪽
+        row: [{ name: "a4-soul-lantern", side: "s" }],
+        decals: ["a4-decal-ember-scatter", "a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 3,
+      },
+    },
+  },
+  paths: [P([[30, 2], [17, 2]], 3), P([[17, 2], [17, -4]], 3), P([[15, 2], [15, 8]], 3), P([[11, -8], [5, -8], [5, -1]], 3), P([[2, 1], [-1, 1]], 4)],
+  rocks: [],
+  places: module.exports.throne.places.map((p) => Object.assign({}, p, { name: { a: "옥좌 계단", b: "근위대의 방", c: "제물의 방", d: "봉인된 문간", e: "재의 옥좌" }[p.z] || p.name, note: p.z === "e" ? "아레나 · 고르바스 · 불기둥 열주와 돌아온 심장 제단" : p.note })),   // 여왕의 무덤 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.throne.zones, {
+    d: "a4-cooled-lava-floor 0.84/0.8/0.78 봉인된 문간",              // 바탕(흑요석)과 같은 그림이라 띠가 안 보였다
+    e: "a4-scorched-flagstone-floor 1/0.94/0.9 재의 옥좌",             // 띠(흑요석) 북쪽 — 따뜻한 판석
+    f: "a4-scorched-flagstone-floor 0.78/0.7/0.66 재의 옥좌 남쪽",     // 띠 남쪽 (북쪽 e와 다른 톤)
+  }),
+  put: [["prop", "a4-throne-banner-ruin", -14, 8.5, 1, 0, "wall=1;padl=1"], ["prop", "a4-throne-banner-ruin", -21, 8.5, 1, 1, "wall=1;padr=1"]],   // 옥좌 깃발 한 쌍 — 정면 그림이라 북벽에 붙여 뒤 칸을 벽까지 막는다 (특징 양옆 쌍은 벽에서 떠 뒤 칸이 남았다) · 제단과의 1칸 틈은 padl·padr로 막음
+});
+
+// 2/18 심연의 문 1층 (v5): 동쪽 계단참(W 28, 1) → 혼등 회랑 → 웨이포인트(6, 1) → 서쪽 출구(E −29, 1)가 y 1 한 줄 — 그 축이 띠(신랑).
+//   혼등 회랑 = 북·남벽 혼 등불 열 + 웨이포인트 뒤 북벽 숨 쉬는 문양 기둥(랜드마크 · 문장의 홀에서 옮김 · 검수표 「혼등 회랑 중심에」).
+//   회랑 안 1×1 바위 기둥 열 개(설계도 바위 · 낱개 기둥 취급)는 뺐다 (성소와 같음). 띠 북쪽 = 밝은 판석 · 남쪽 = 어두운 판석.
+//   계단참 = 소품 묶음(좁아 장식 계단 자리 없음) · 뼈 쌓인 방 = 북벽 창살 열 + 뼈 묶음 · 문장의 홀(구덩이 문) = 북벽 문장 비석 열 · 아래 계단 = 북벽(입구 동쪽)에 붙인 내려가는 계단 · 제물 방 = 혼 우리 열.
+//   손으로 고른 자리(심연 벽·발광 층 · 길 위 사건 둥지 세트)는 그대로.
+Object.assign(module.exports.abyssgate1, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-brazier", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: {
+        feature: "set:a4_lm_rune_pillar", featureAt: [6.5, 4.4],
+        row: [{ name: "a4-soul-lantern", side: "n" }, { name: "a4-soul-lantern", side: "s" }],   // 「혼등 회랑」 — 북·남벽에 붙인 혼 등불 열 (회랑 폭 9칸이라 축 양옆 열주는 벽 2칸 안 → 뒤 칸이 남았다)
+        sides: { left: "h", right: "b" },   // 서쪽으로 가는 축의 왼쪽 = 남쪽
+        decals: ["a4-decal-scorched-ring", "a4-decal-soul-mist-puddle"], dn: 2,
+      },
+      c: { row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-soul-candle-cluster", "a4-adjunct-chained-skull"], decals: ["a4-decal-soul-mist-puddle"], dn: 1 },
+      d: { row: { name: "a4-sigil-stone", side: "n" }, props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], clusters: 1, decals: ["a4-decal-blood-sigil-circle", "a4-decal-broken-chain"], dn: 2 },
+      e: { row: { name: "a4-prison-bars-h", contiguous: true, min: 2, minLine: 4 }, props: ["a4-bone-heap", "a4-helm-pile", "a4-adjunct-chained-skull"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      f: { props: ["a4-small-lava-fount", "a4-adjunct-lava-rubble", "a4-melted-armor-pile"], decals: ["a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 2 },
+      g: { feature: "prop:a4-stair-down", featureAt: [-16, -5.4], props: ["a4-adjunct-soul-candle-cluster", "a4-broken-ladder"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+  rocks: [],
+  // 곁방 고리 끊기 (검수표 「고리 4+2」 · 가지 간 추가 연결): 뼈 쌓인 방 → 갈라진 방 통로와 제물 방 → 문장의 홀 통로를 막아 두 곁방을 막다른 방으로
+  paths: module.exports.abyssgate1.paths.filter((p) => !(p.pts[0][0] === 9 && p.pts[0][1] === -10) && !(p.pts[0][0] === 0 && p.pts[0][1] === 14)),
+  put: module.exports.abyssgate1.put.map((p) => (p[1] === "a4-abyss-wall" ? p.slice(0, 6).concat(["ok=cliff;padl=1"]) : p)),   // 심연 벽과 서쪽 벽 사이 1칸 벽감을 막는다
+  places: module.exports.abyssgate1.places.map((p) => Object.assign({}, p, { name: { a: "계단참", b: "혼등 회랑", c: "제물 방", d: "문장의 홀", e: "뼈 쌓인 방", f: "갈라진 방", g: "아래 계단" }[p.z] || p.name, note: p.z === "b" ? "웨이포인트 · 벽 따라 혼 등불 열과 숨 쉬는 문양 기둥" : p.note })),   // 납골당 2층 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.abyssgate1.zones, {
+    b: "a4-scorched-flagstone-floor 0.98/0.92/0.88 혼등 회랑",          // 띠(흑요석) 북쪽 — 밝은 판석
+    h: "a4-scorched-flagstone-floor 0.78/0.72/0.7 혼등 회랑 남쪽",      // 띠 남쪽
+    d: "a4-ash-drift-floor 0.86/0.84/0.9 문장의 홀",                    // 바탕(흑요석)과 같은 그림이라 구역이 안 보였다
+  }),
+});
+
+// 3/18 악마의 행군로 (keep · `?` 맵): 성벽 윗면 바닥·행군로(=) 글자·이음새는 그대로 · 길 안내 0 · 역할 배치만 (검수표 구획: 어귀 보루 → 해골 관문 보루 → 전쟁 야영지 보루(웨이포인트) → 공성 장비 마당 보루 → 동쪽 행군로).
+//   특징 공간당 1: 해골 관문 보루 = 뿔 해골 문(북벽에 붙임 · 세트의 깃발·화로는 뺌) · 전쟁 야영지 = 군막(손으로 고른 자리) + 공성 병기(행군로 남쪽) + 화로·창·임프 묶음 —
+//   12×9 보루를 행군로가 가로질러 군기 랜드마크는 골격이 좁아지거나 정면 방향이 어긋났다 — 검수표 「군기를 야영지에」는 따르지 않음) · 공성 장비 마당 = 타락마족 군기(랜드마크 그대로) ·
+//   (군막 줄은 두 보루 모두 벽면 6칸이 남지 않아 못 놓음) · 혼 감옥 망루 = 북벽 혼 우리 열 · 무너진 초소 = 폐벽 초소 세트 · 동쪽 행군로 = 출구 양옆 뿔 석상 쌍.
+//   화로·투구·임프 산발 복제(8·6·3)는 묶음 ≤3·같은 그림 맵당 ≤2로. 빈 바닥(성벽 위 . 칸) 31%는 keep이라 그대로 — v5 비교본은 아래 DEMONROAD_V5 (V5_ALT=demonroad로 짓는다)
+const DEMONROAD_KEEP = {
+  mode: "keep",
+  outdoor: true,
+  dress: {
+    a: { sets: ["a4_siege_wreck"], decals: ["a4-decal-ash-footprints", "a4-decal-scorched-ring"], dn: 2 },
+    b: { feature: "set:a4_skull_gate", featureAt: [-16.5, 6.4], featureDrop: ["a4-brazier", "a4-demon-banner"], props: ["a4-adjunct-ember-brazier", "a4-helm-pile"], clusters: 1, decals: ["a4-decal-ash-footprints"], dn: 1 },
+    c: { feature: "prop:a4-siege-engine", featureAt: [6.5, -7.4], props: ["a4-brazier", "a4-adjunct-demon-skull-spear", "a4-imp-on-barrel"], clusters: 1, decals: ["a4-decal-ash-footprints", "a4-decal-ash-pile"], dn: 2 },
+    d: { row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-soul-candle-cluster", "a4-adjunct-chained-skull"], decals: ["a4-decal-broken-chain", "a4-decal-soul-mist-puddle"], dn: 2 },
+    e: { sets: ["a4_ruined_post"], props: ["a4-adjunct-broken-siege-spike"], decals: ["a4-decal-ash-pile"], dn: 1 },
+    f: { feature: "set:a4_lm_war_banner", props: ["a4-broken-ladder", "a4-adjunct-burning-cart", "a4-adjunct-broken-siege-spike"], clusters: 1, decals: ["a4-decal-ash-footprints"], dn: 2 },
+    g: { pair: { name: "a4-horned-statue" }, decals: ["a4-decal-ash-footprints"], dn: 1 },
+  },
+};
+// 웨이포인트 (3, -1) → (3, -3): keep 골격(행군로를 따라 야영지 보루 한가운데 y −4를 지난다)에서 3칸 떨어져 P5 「웨이포인트는 골격 위」 위반 —
+//   2칸 남쪽, 골격 바로 곁으로 (유황 늪 표본과 같은 처리 · waypoints.csv·WaypointData.mlua 함께 갱신)
+// v5 비교본 (성소형 — 골격 띠·구역 재적합·띠 곁 패치·섬): 같은 꾸밈. 기본은 keep — `V5_ALT=demonroad node tools/build/handmade/compose.cjs act4 demonroad`로만 짓는다
+//   (비교 미리보기·설계도: docs/evidence/2026-10-31-map-v5-act4/variants/demonroad-v5.*)
+const DEMONROAD_V5 = Object.assign({}, DEMONROAD_KEEP, { mode: undefined });
+module.exports.demonroad.put = [...module.exports.demonroad.put, ["prop", "a4-army-tent", 1.5, -5.8, 1, 0]];   // 야영지 군막 하나 — 행군로 남쪽 · 남벽에서 3칸 (정면 그림이 벽 2칸 안에 붙지 않게) · 생성기 특징 자리 찾기는 정면 방향 때문에 남쪽 반을 못 썼다
+Object.assign(module.exports.demonroad, { v5: (process.env.V5_ALT || "").split(",").includes("demonroad") ? DEMONROAD_V5 : DEMONROAD_KEEP, waypoint: [3, -3] });
+
+// 4/18 불타는 성채 외곽 (keep): 재 더미 바탕·성채 길(=)·그을린 성벽 두 줄·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 성채 바깥길 → 무너진 성벽 틈 → 성채 앞마당(웨이포인트) → 해골 관문, 곁 = 수도원 어귀(구덩이 문)·거인 갑옷 터).
+//   특징 공간당 1: 무너진 성벽 틈 = 용암 성벽 탑(랜드마크 그대로 — 이름이 「무너진 성벽」이라 그 자리가 맞다 · 검수표 「앞마당 중심에」는 따르지 않음) ·
+//   성채 앞마당 = 공성 병기 + 임프·화로·사다리 묶음(야영지 세트는 군막 정면 방향·골격 비움으로 자리가 없었다 · v4 자리에 손으로 두면 군막 뒤 칸·벽감이 남았다) · 거인 갑옷 터 = 쓰러진 거인 + 폐벽 줄 · 해골 관문 = 북벽 뿔 해골 문 + 출구 양옆 뿔 석상 쌍 ·
+//   수도원 어귀 = 폐벽 줄 + 불씨 제단 세트. 화로·투구·뼈 산발(6·5·3)은 묶음 ≤3·같은 그림 맵당 ≤2로. 길 위 사건 의식 세트는 그대로.
+Object.assign(module.exports.burningkeep, {
+  // 웨이포인트 (3, -3) → (3, -1): keep 골격(성채 길을 따라 앞마당 y 0을 지난다)에서 3칸 → 골격 곁 (waypoints.csv·WaypointData 갱신)
+  waypoint: [3, -1],
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { sets: ["a4_siege_wreck"], decals: ["a4-decal-ember-scatter", "a4-decal-ash-pile"], dn: 2 },
+      b: { feature: "set:a4_lm_lava_tower", props: ["a4-broken-ladder", "a4-lava-wall-ruin"], clusters: 1, decals: ["a4-decal-scorched-ring"], dn: 2 },
+      c: { feature: "prop:a4-siege-engine", props: ["a4-imp-on-barrel", "a4-brazier", "a4-broken-ladder"], clusters: 1, decals: ["a4-decal-ash-footprints", "a4-decal-ash-pile"], dn: 2 },
+      d: { row: { name: "a4-ruined-wall-low" }, sets: ["a4_ember_shrine"], decals: ["a4-decal-blood-sigil-circle", "a4-decal-scorched-ring"], dn: 2 },
+      e: { feature: "set:a4_fallen_giant", row: { name: "a4-ruined-wall-low" }, props: ["a4-melted-armor-pile", "a4-adjunct-demon-skull-spear"], clusters: 1, decals: ["a4-decal-molten-metal-streak"], dn: 2 },
+      f: { feature: "set:a4_skull_gate", featureAt: [21.5, 12.5], featureDrop: ["a4-demon-banner", "a4-brazier"], pair: { name: "a4-horned-statue" }, decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+});
+
+// 5/18 심연의 문 2층 (v5): 동쪽 계단참(W 28, 0) → 동쪽 통로 → 문장의 홀 → 뼈 쌓인 방 → 아래 계단(E −29, 0). 띠 = 그 골격 한 줄.
+//   고리 끊기(검수표 「고리 5+3」): 혼등 회랑 ↔ 홀 북쪽 통로 · 제물 방 ↔ 홀 남쪽 통로 · 갈라진 방 ↔ 아래 계단 통로를 막아 세 곁방을 막다른 방으로 (가지 간 추가 연결 0).
+//   (갈라진 방 쪽을 막은 까닭: 홀 → 갈라진 방 통로 입구에 길 위 사건 상자(기능 자리 · 옮기지 않음)가 있어 골격으로 쓰면 통로가 1칸으로 좁아졌다)
+//   홀 안 1×1 바위 기둥 넷·혼등 회랑 바위는 뺐다. 문장의 홀 = 북벽 문장 비석 열 + 띠 남쪽 재에 묻힌 석상(랜드마크 그대로) · 띠 북쪽 밝은 판석 / 남쪽 어두운 판석.
+//   계단참 = 북벽 장식 계단 · 혼등 회랑 = 북벽 혼 등불 열 · 제물 방 = 북벽 혼 우리 열 · 뼈 쌓인 방(골격) = 뼈·투구 묶음 둘 · 갈라진 방(막다른 곁방) = 용암 흘러내린 바위 + 용암 샘 묶음 ·
+//   아래 계단 = 바닥 무늬만(5칸 폭 방을 띠가 지나 계단 자리가 없다). 손으로 고른 자리(심연 벽·발광 층 · 길 위 사건 상자 세트)는 그대로.
+Object.assign(module.exports.abyssgate2, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { feature: "prop:a4-abyss-stairs", featureAt: [24.5, 1.4], props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { row: { name: "a4-soul-lantern", side: "n" }, props: ["a4-adjunct-soul-candle-cluster", "a4-soul-crystal"], decals: ["a4-decal-soul-mist-puddle"], dn: 2 },
+      c: { row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster", "a4-bone-heap"], clusters: 1, decals: ["a4-decal-broken-chain"], dn: 1 },
+      d: {
+        feature: "set:a4_lm_ash_statue", featureAt: [-3.5, -4.6],   // 띠 남쪽 반 가운데 — 띠를 사이에 두고 북벽 비석 열과 마주 본다
+        sides: { left: "h", right: "d" },   // 서쪽으로 가는 띠의 왼쪽 = 남쪽
+        row: [{ name: "a4-sigil-stone", side: "n" }],
+        decals: ["a4-decal-blood-sigil-circle", "a4-decal-cracked-obsidian"], dn: 2,
+      },
+      e: { props: ["a4-bone-heap", "a4-helm-pile", "a4-melted-armor-pile"], decals: ["a4-decal-ash-pile", "a4-decal-ember-scatter"], dn: 2 },
+      f: { feature: "prop:a4-lava-fall-rock", props: ["a4-small-lava-fount", "a4-adjunct-lava-rubble", "a4-adjunct-obsidian-shards"], clusters: 1, decals: ["a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 2 },
+      g: { decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+  rocks: [],
+  paths: module.exports.abyssgate2.paths.filter((p) => !["7,9", "8,-10", "-23,-11"].includes(p.pts[0].join(","))),
+  places: module.exports.abyssgate2.places.map((p) => Object.assign({}, p, { name: { a: "계단참", b: "혼등 회랑", c: "제물 방", d: "문장의 홀", e: "뼈 쌓인 방", f: "갈라진 방", g: "아래 계단" }[p.z] || p.name, note: p.z === "d" ? "북벽 문장 비석 열과 재에 묻힌 석상" : p.note })),   // 납골당 1층 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.abyssgate2.zones, {
+    d: "a4-scorched-flagstone-floor 0.96/0.9/0.86 문장의 홀",        // 바탕(흑요석)과 같은 그림이라 띠가 안 보였다 — 띠 북쪽
+    h: "a4-scorched-flagstone-floor 0.76/0.7/0.68 문장의 홀 남쪽",   // 띠 남쪽
+  }),
+});
+
+// 6/18 용암 대장간 1층 (v5): 서쪽 입구(W −29, 0) → 풀무실 → 동쪽 아래 계단(E 28, 0)이 y 0 한 줄 — 그 축이 띠 (벽돌 격자 바탕 = 띠).
+//   고리 끊기(검수표 「고리 5+2」): 주조실 ↔ 풀무실 북쪽 통로 · 석탄 창고 ↔ 풀무실 남쪽 통로를 막아 네 곁방(주조실·석탄 창고·담금질 방·연마실)이 모두 막다른 방.
+//   주조실 = 용암 도랑·세로 쇳물 홈(손으로 고른 자리 그대로) + 모루·녹은 갑옷 묶음 · 풀무실 = 두 용암 도랑 사이 띠 + 문 양옆 사슬 기둥 + 모루·용암 샘 묶음 ·
+//   담금질 방 = 거대 용광로(랜드마크 그대로 — 주조실 북쪽 반은 쇳물 홈 둘 사이가 좁아 벽감이 생겼다) + 북벽 용암 폐벽 줄 · 연마실 = 북벽 악마 깃발 열 + 모루·투구·창 묶음 ·
+//   석탄 창고 = 부서진 공성 수레 세트 + 임프·사다리. 바닥: 주조실 식은 용암 · 풀무실 뼈 재(바탕 벽돌 격자와 같은 그림이라 띠가 안 보였다).
+Object.assign(module.exports.forge1, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-brazier", "a4-adjunct-lava-rubble"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { props: ["a4-forge-anvil", "a4-melted-armor-pile", "a4-adjunct-burning-cart"], decals: ["a4-decal-molten-metal-streak", "a4-decal-scorched-ring"], dn: 2 },
+      c: { sets: ["a4_siege_wreck"], props: ["a4-imp-on-barrel", "a4-broken-ladder"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      d: { pair: { name: "a4-chain-pillar" }, props: ["a4-forge-anvil", "a4-small-lava-fount", "a4-adjunct-ember-brazier"], clusters: 1, decals: ["a4-decal-molten-metal-streak"], dn: 1 },
+      e: { feature: "set:a4_lm_great_smelter", row: { name: "a4-lava-wall-ruin" }, props: ["a4-small-lava-fount", "a4-melted-armor-pile", "a4-adjunct-lava-rubble"], clusters: 1, decals: ["a4-decal-cracked-obsidian", "a4-decal-ember-scatter"], dn: 2 },
+      f: { row: { name: "a4-demon-banner" }, props: ["a4-forge-anvil", "a4-helm-pile", "a4-adjunct-demon-skull-spear"], decals: ["a4-decal-broken-chain"], dn: 1 },
+      g: { decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+  paths: module.exports.forge1.paths.filter((p) => !["-6,10", "-8,-10"].includes(p.pts[0].join(","))),
+  // 세로 쇳물 홈(손으로 고른 자리): v5 역할 배율(기준 1칸 → ×0.5 하한)이 홈을 반 길이로 줄여 북쪽 벽에 닿지 않았다 → 배율 2로 원래 길이(도랑 윗변 y 10 ~ 북쪽 벽 y 15) 유지
+  //   (역할표 facing을 side → any로 고침: 바닥에 깔린 세로 수로라 옆벽 그림이 아니다 — 검사기 「정면 방향」이 아래 도랑 벽을 보고 어긋남으로 셌다)
+  put: module.exports.forge1.put.map((p) => (p[1] === "a4-molten-channel-v" ? [p[0], p[1], p[2], p[3], 2] : p)),
+  zones: Object.assign({}, module.exports.forge1.zones, {
+    b: "a4-cooled-lava-floor 0.82/0.74/0.7 주조실",   // 바탕(벽돌 격자)과 같은 그림이라 구역이 안 보였다 — 식은 쇳물 바닥
+    d: "a4-bone-ash-floor 0.88/0.84/0.8 풀무실",
+  }),
+});
+
+// 7/18 재의 회랑 (v5): 동쪽 내려온 계단(W 28, 0) → 재의 통로 → 혼등 우물방 → 서쪽 아래 계단참(E −29, 0)이 y 0 한 줄 — 그 축이 띠.
+//   고리 줄이기(검수표 「고리 3+2」): 갑옷 창고 → 우물방 남쪽 긴 통로를 막아 갑옷 창고를 막다른 방으로. 투구 창고 → 우물방 북쪽 긴 통로는 이야기의 「고리길」이라 남김
+//   (가지 2 · 추가 연결 1 = 50% 이하 · 둘 다 막으면 걷는 칸이 779 → 566으로 사냥터가 너무 줄었다).
+//   투구 창고 = 재의 강줄기(랜드마크 그대로) + 북벽 창살 열 + 투구·녹은 갑옷 묶음 · 갑옷 창고 = 북벽 창살 열 + 갑옷·창 묶음 ·
+//   재의 통로(매복 길목) = 재 무늬만 · 혼등 우물방 = 문 양옆 혼 등불 쌍 + 혼 촛불 묶음(혼 수정·길 위 사건 신전 세트는 손으로 고른 자리 그대로).
+Object.assign(module.exports.ashhall, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-brazier", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { feature: "set:a4_lm_ash_river", row: { name: "a4-prison-bars-h", contiguous: true, min: 2, minLine: 4 }, props: ["a4-helm-pile", "a4-melted-armor-pile"], clusters: 1, decals: ["a4-decal-ash-pile"], dn: 2 },
+      c: { row: { name: "a4-prison-bars-h", contiguous: true, min: 2, minLine: 4 }, props: ["a4-melted-armor-pile", "a4-adjunct-demon-skull-spear", "a4-adjunct-ash-urn"], decals: ["a4-decal-ash-pile", "a4-decal-broken-chain"], dn: 2 },
+      d: { decals: ["a4-decal-ash-pile", "a4-decal-ash-footprints", "a4-decal-scorched-ring"], dn: 3 },
+      e: { pair: { name: "a4-soul-lantern" }, props: ["a4-adjunct-soul-candle-cluster", "a4-adjunct-chained-skull"], clusters: 1, decals: ["a4-decal-soul-mist-puddle"], dn: 2 },
+      f: { decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+  paths: module.exports.ashhall.paths.filter((p) => !["8,-10"].includes(p.pts[0].join(","))),
+  places: module.exports.ashhall.places.map((p) => Object.assign({}, p, { name: { a: "내려온 계단", b: "투구 창고", c: "갑옷 창고", d: "재의 통로", e: "혼등 우물방", f: "아래 계단참" }[p.z] || p.name, note: p.z === "b" ? "재의 강줄기" : p.z === "e" ? "혼 수정 우물" : p.note })),   // 지하실 1층 자리 이름을 그대로 물려받았었다
+  // 길 위 사건 신전 세트(문장 비석 하나 + 혼 등불 둘)는 바닥 무늬만 남김 — 통로 북서 모서리라 비석·등불이 낱개 기둥·2칸 벽감·등불 산발(우물방 문 등불 쌍과 4개)로 걸렸다 (신전 자리 −10.5, 2.5와 extra는 그대로 · 신전은 런타임에 놓인다)
+  put: [["prop", "a4-soul-crystal", -17.5, 2.4, 1, 0], ["decal", "a4-decal-cracked-obsidian", -10.5, 1.5, 0.9, 0]],
+  zones: Object.assign({}, module.exports.ashhall.zones, {
+    e: "a4-soul-stone-floor 0.86/0.82/0.88 혼등 우물방",   // 바탕(흑요석)과 같은 그림이라 띠가 안 보였다
+  }),
+});
+
+// 8/18 불탄 협곡 (keep): 현무암 바탕·용암 섬·그을린 길(=)·샛길(-)·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 협곡 어귀 → 혼의 제단(웨이포인트) → 재 무더기 골 → 동쪽 오르막, 곁 = 용암 둔덕·무너진 초소·유황 동굴 어귀(구덩이 문)).
+//   특징 공간당 1: 용암 둔덕 = 불박쥐 고목(랜드마크 그대로 · 용암 둔덕 세트는 같은 공간 특징 둘이라 뺌) · 혼의 제단 = 혼의 제단 세트(비석 쌍 사이 수정 · 등불 둘은 남쪽 벽감을 만들어 뺌 · 그을린 길 남쪽) ·
+//   재 무더기 골 = 북벽 군막 열 + 뼈·투구 묶음 · 무너진 초소 = 폐벽 초소 세트 · 유황 동굴 어귀 = 유황 웅덩이 + 석순 묶음 · 동쪽 오르막 = 불씨 제단 세트.
+//   투구·화로·뼈·흑요석 조각 산발(5·5·4·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.embercanyon, {
+  // 웨이포인트 (-1, 3) → (1, 1): keep 골격(그을린 길 y 0)에서 4칸 → 골격 곁 (waypoints.csv·WaypointData 갱신)
+  waypoint: [1, 1],
+  // 길 위 사건 신전 세트(비석 하나 + 등불 둘)는 바닥 무늬만 — 비석이 낱개 기둥으로 걸렸다 (신전 자리·extra 그대로 · 재의 회랑과 같은 처리)
+  put: module.exports.embercanyon.put.map((p) => (p[1] === "a4_road_shrine" ? ["decal", "a4-decal-cracked-obsidian", p[2], p[3] - 1, 0.9, 0] : p))
+    .concat([["prop", "a4-soul-crystal", -0.5, -2.8, 2, 0]]),   // 혼의 제단 가운데 수정 — 역할 기준 1칸(소품)이 비석(3칸) 사이에서 너무 작아 배율 2로 따로 (세트 수정은 뺌)
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { sets: ["a4_lava_cairn"], decals: ["a4-decal-ember-scatter", "a4-decal-scorched-ring"], dn: 2 },
+      b: { feature: "set:a4_lm_ember_tree", props: ["a4-sulfur-stalagmite", "a4-small-lava-fount"], clusters: 1, decals: ["a4-decal-molten-metal-streak", "a4-decal-ember-scatter"], dn: 2 },
+      c: { feature: "set:a4_soul_altar", featureAt: [-0.5, -3.2], featureDrop: ["a4-soul-lantern", "a4-soul-crystal"], decals: ["a4-decal-scorched-ring", "a4-decal-cracked-obsidian"], dn: 2 },
+      d: { sets: ["a4_ruined_post"], props: ["a4-adjunct-broken-siege-spike", "a4-broken-ladder"], decals: ["a4-decal-ash-pile"], dn: 1 },
+      e: { props: ["a4-sulfur-stalagmite", "a4-adjunct-lava-rubble", "a4-adjunct-chained-skull"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      f: { row: { name: "a4-army-tent", side: "n" }, props: ["a4-bone-heap", "a4-helm-pile", "a4-adjunct-demon-skull-spear"], decals: ["a4-decal-ash-pile", "a4-decal-ash-footprints"], dn: 2 },
+      g: { sets: ["a4_ember_shrine"], decals: ["a4-decal-ember-scatter"], dn: 1 },
+    },
+  },
+});
+
+// 9/18 혼 감옥 (v5): 서쪽 감옥 문(W −29, 0) → 감방 복도(y 0 한 줄) → 간수장의 방 → 되돌아가는 문(24, −9). 띠 = 복도 축 + 간수장의 방 안에서 동쪽 x 18까지 곧게 간 뒤 남쪽 문으로.
+//   검수표 「구획 고리 6」: 감방 여섯이 한 구역 글자(c)라 복도와 여섯 군데로 닿아 고리로 셌다 → 감방마다 글자를 따로(c·h·i 북 / j·k·l 남 · 같은 바닥) — 각자 문 하나인 막다른 방.
+//   고문실은 북쪽 감방 3을 거쳐 들어가던 통로를 막고 간수장의 방 북서 통로로만 (고문실 ↔ 간수장의 방 고리 끊기).
+//   간수장의 방 = 혼 우리 탑(랜드마크 · 같은 자리를 v5 특징으로 · 북벽에 붙임) + 안쪽 축 양옆 사슬 기둥 열주(검수표 「출구로 모이는 사슬 기둥 열」) · 방 안 1×1 바위 넷은 뺐다.
+//   감방 = 소품 묶음 하나씩 + 북쪽 감방 3 북벽 창살 열 · 고문실 = 북벽 혼 우리 열 + 사슬 제단 조각.
+const PRISON_CELLS = { "북쪽 감방 1": "c", "북쪽 감방 2": "h", "북쪽 감방 3": "i", "남쪽 감방 1": "j", "남쪽 감방 2": "k", "남쪽 감방 3": "l" };
+const CELL_BARS = { name: "a4-prison-bars-h", contiguous: true, min: 2, minLine: 4 };   // 북쪽 감방 3(간수장의 방 쪽) 안쪽 북벽 창살 열 하나 — 감방마다 두 개씩이면 같은 그림이 8칸 간격으로 흩어져 산발 복제로 셌다
+const cellDress = (props) => ({ props, clusters: 1, decals: ["a4-decal-ash-pile"], dn: 1 });
+Object.assign(module.exports.soulprison, {
+  v5: {
+    outdoor: false,
+    via: [[18, 0]],
+    dress: {
+      a: { props: ["a4-brazier", "a4-adjunct-chained-skull"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { decals: ["a4-decal-broken-chain", "a4-decal-soul-mist-puddle", "a4-decal-scorched-ring"], dn: 3 },
+      c: cellDress(["a4-adjunct-chained-skull", "a4-bone-heap"]),
+      h: cellDress(["a4-adjunct-soul-candle-cluster", "a4-helm-pile"]),
+      i: Object.assign(cellDress(["a4-adjunct-chained-skull", "a4-melted-armor-pile"]), { row: CELL_BARS }),
+      j: cellDress(["a4-bone-heap", "a4-adjunct-ash-urn"]),
+      k: cellDress(["a4-adjunct-soul-candle-cluster", "a4-adjunct-chained-skull"]),
+      l: cellDress(["a4-helm-pile", "a4-adjunct-ash-urn"]),
+      d: { row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster", "a4-melted-armor-pile"], clusters: 1, decals: ["a4-decal-blood-sigil-circle", "a4-decal-broken-chain"], dn: 2 },
+      e: {
+        feature: "set:a4_lm_soul_cage", featureAt: [19.5, 10.3], featureDrop: ["a4-chain-pillar", "a4-soul-lantern"],   // 손으로 고른 자리였던 랜드마크를 v5 특징으로 (같은 자리 · 세트 속 낱개 사슬 기둥·등불은 뺌 → 북벽에 붙인다)
+        colonnade: { name: "a4-chain-pillar", step: 3, minPairs: 2, off: 2.5, tight: true, axis: [[9.5, 0.5], [17.5, 0.5]] },
+        props: ["a4-adjunct-ember-brazier", "a4-adjunct-obsidian-shards"], clusters: 1,
+        decals: ["a4-decal-soul-mist-puddle", "a4-decal-cracked-obsidian", "a4-decal-broken-chain"], dn: 3,
+      },
+    },
+  },
+  rocks: [],
+  paths: module.exports.soulprison.paths.filter((p) => p.pts[0].join(",") !== "-0.5,9"),
+  places: module.exports.soulprison.places.map((p) => Object.assign({}, p, PRISON_CELLS[p.name] ? { z: PRISON_CELLS[p.name] } : {})),
+  // 손으로 고른 창살 8개(코덱스 감사 c-2 · 복도↔감방 벽 줄 가로 4 · 감방 사이 세로 4)는 뺐다 — 8칸 간격 낱개라 산발 복제 8 · 남쪽 줄 정면 방향 어긋남 2
+  //   → 가로 창살은 북쪽 감방 3 북벽 열로 다시 쓴다 (세로 창살 a4-prison-bars-v는 이 맵에서 안 쓰게 됨)
+  put: [],
+  zones: Object.assign({}, module.exports.soulprison.zones, {
+    b: "a4-bone-ash-floor 0.82/0.78/0.8 감방 복도",          // 바탕(혼석)과 같은 그림이라 띠가 안 보였다
+    c: "a4-soul-stone-floor 0.7/0.66/0.72 감방", h: "a4-soul-stone-floor 0.7/0.66/0.72 감방", i: "a4-soul-stone-floor 0.7/0.66/0.72 감방",
+    j: "a4-soul-stone-floor 0.7/0.66/0.72 감방", k: "a4-soul-stone-floor 0.7/0.66/0.72 감방", l: "a4-soul-stone-floor 0.7/0.66/0.72 감방",
+    e: "a4-obsidian-floor 0.95/0.9/0.92 간수장의 방",
+  }),
+});
+
+// 10/18 마지막 초소 (keep · 마을): 목책·바닥·초소 큰길·원래 이음새·NPC·포털·화로·게시판 자리 모두 그대로 · 역할 배치(산발 정리)만.
+//   손으로 고른 자리(신호 화로 망루 랜드마크·군막 둘·망루 쌍·모루·문틀·붉은 하늘 띠)는 그대로. 꾸밈만 묶음 ≤3·같은 그림 맵당 ≤2로
+//   (악마 해골 창 5·불타는 수레 3·공성 가시 3 산발 → 묶음) · 막사 줄 = 투구·임프 묶음 · 정찰대 마당 = 공성 수레 세트 · 대장간 = 불씨 제단 세트 · 남문 길 = 이정표.
+// 손으로 고른 자리 손질: 군막 둘은 북쪽 목책에 붙여(정면 그림 · 뒤 칸 2줄이 남았다) 뒤 칸을 벽까지 막음 · 남문 문틀은 v5 역할 배율(기준 3칸 → ×1.29)을
+//   되돌려(배율 1/1.293) 목책 틈에 맞춘 크기 그대로 · 문틀 역할표 facing north → any (마을 안쪽에서 보는 남쪽 목책 문 · 포털 그림과 같은 벽 등지기)
+const OUTPOST_PUT = module.exports.outpost.put.map((p) => (p[1] === "a4-army-tent" ? [p[0], p[1], p[2], 8, p[4] || 1, p[5] || 0, "wall=1"]
+  : p[1] === "a4-outpost-gate" ? [p[0], p[1], p[2], p[3], Math.round(1000 / 1.293) / 1000, p[5], p[6]] : p));
+Object.assign(module.exports.outpost, {
+  put: OUTPOST_PUT,
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { decals: ["a4-decal-ash-pile"], dn: 2 },
+      b: { props: ["a4-helm-pile", "a4-imp-on-barrel", "a4-adjunct-demon-skull-spear"], clusters: 1, decals: ["a4-decal-ash-footprints"], dn: 2 },
+      c: { sets: ["a4_siege_wreck"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      d: { sets: ["a4_ember_shrine"], props: ["a4-melted-armor-pile"], decals: ["a4-decal-scorched-ring"], dn: 1 },
+      e: { props: ["mp-signpost", "a4-broken-ladder"], decals: ["a4-decal-ash-pile"], dn: 2 },
+    },
+  },
+});
+
+// 11/18 타락의 구덩이 (keep): 뼈 재 굴 바닥·둥근 굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 구덩이 어귀 → 갉힌 길목 → 뼈 둥지 → 기사의 굴(되돌아가는 문 · 끝방), 곁 = 투구 무더기 굴·갈라진 굴).
+//   기사의 굴 = 부러진 검 무덤(랜드마크 · 손으로 고른 자리 그대로 — 끝방 자리 앞) + 문 양옆 사슬 기둥 쌍 · 뼈 둥지 = 마른 나무 하나(골격이 지나는 북서쪽을 피해 남쪽) + 뼈·사슬 해골 묶음
+//   (쓰러진 거인 세트는 유황 늪·불타는 성채 외곽과 겹쳐 뺐다 — 맵마다 장소성) · 투구 무더기 굴 = 투구·녹은 갑옷·창 묶음 둘 · 갈라진 굴 = 용암 샘·돌무더기 · 갉힌 길목 = 용암 돌무더기 세트.
+//   투구·녹은 갑옷·뼈 산발(4·3·3)은 묶음 ≤3·같은 그림 맵당 ≤2로.
+Object.assign(module.exports.pit, {
+  places: module.exports.pit.places.map((p) => Object.assign({}, p, { name: { a: "구덩이 어귀", b: "갉힌 길목", c: "투구 무더기 굴", d: "뼈 둥지", e: "갈라진 굴", f: "기사의 굴" }[p.z] || p.name })),   // 짝 맵 자리 이름을 그대로 물려받았었다 (바닥·모양은 그대로)
+  put: module.exports.pit.put.map((p) => (p[1] === "a4-landmark-fallen-knight-sword-grave" ? p.slice(0, 6).concat(["padl=2"]) : p)),   // 검 무덤과 서쪽 벽 사이 벽감(1~2칸)을 막는다
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-bone-heap", "a4-adjunct-chained-skull"], decals: ["a4-decal-ash-pile"], dn: 1 },
+      b: { sets: ["a4_lava_cairn"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      c: { props: ["a4-helm-pile", "a4-melted-armor-pile", "a4-adjunct-demon-skull-spear"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      d: { feature: "prop:a4-dead-tree", featureAt: [-6.5, -2.6], props: ["a4-bone-heap", "a4-adjunct-chained-skull", "a4-helm-pile"], decals: ["a4-decal-scorched-ring", "a4-decal-ash-pile"], dn: 3 },
+      e: { props: ["a4-small-lava-fount", "a4-adjunct-lava-rubble", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-molten-metal-streak"], dn: 2 },
+      f: { pair: { name: "a4-chain-pillar" }, decals: ["a4-decal-broken-chain"], dn: 1 },
+    },
+  },
+});
+
+// 12/18 심연의 문 3층 (v5 · 대주교 보스 맵): 동쪽 계단참(W 28, 0) → 문장의 홀 → 대주교의 의식 홀 → 서쪽 아래 계단(E −29, 0)이 y 0 한 줄 — 그 축이 띠.
+//   의식 홀 = 북벽 가운데 핏빛 설교대(랜드마크 · 같은 자리를 v5 특징으로 · 양옆 혼 등불 쌍) — 대주교는 그 앞(maps.csv fixed archbishop −14.5/3.5 그대로 · 옮기지 않음) ·
+//   남벽 문장 비석 열 · 띠 북쪽 밝은 판석 / 남쪽 어두운 판석. 대주교의 성소 세트(배교 제단·비석·우리·등불 — 같은 공간 특징 둘)와 홀 안 바위 기둥 넷은 뺐다.
+//   심연 벽·발광 층(손으로 고른 자리 · 코덱스 감사 c-2)은 그대로.
+//   고리 끊기(검수표 「고리 3+2」): 혼등 회랑 ↔ 문장의 홀 · 제물 방 ↔ 문장의 홀 대각 통로를 막아 두 곁방은 계단참 쪽 갈림길에서만 (보스·웨이포인트 동선과 무관).
+//   혼등 회랑 = 북벽 혼 등불 열 · 제물 방 = 북벽 혼 우리 열 · 문장의 홀 = 사슬 제단 조각 · 계단참 = 웨이포인트 곁 화로.
+Object.assign(module.exports.abyssgate3, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { row: { name: "a4-soul-lantern", side: "n" }, props: ["a4-adjunct-soul-candle-cluster", "a4-soul-crystal"], decals: ["a4-decal-soul-mist-puddle"], dn: 2 },
+      c: { row: { name: "a4-soul-cage", contiguous: true, min: 2, minLine: 4 }, props: ["a4-adjunct-chained-skull", "a4-bone-heap"], decals: ["a4-decal-broken-chain"], dn: 1 },
+      d: { props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster"], decals: ["a4-decal-blood-sigil-circle"], dn: 1 },
+      e: {
+        feature: "set:a4_lm_blood_pulpit", featureAt: [-14.5, 8.3], featureScale: 4 / 3,   // 보스 배경 — 옥좌·성소 제단처럼 4칸
+        sides: { left: "h", right: "e" },   // 서쪽으로 가는 축의 왼쪽 = 남쪽
+        row: [{ name: "a4-sigil-stone", side: "s" }],
+        decals: ["a4-decal-blood-sigil-circle", "a4-decal-cracked-obsidian", "a4-decal-ember-scatter"], dn: 3,
+      },
+      g: { decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+  rocks: [],
+  paths: module.exports.abyssgate3.paths.filter((p) => !["8,9", "8,-9"].includes(p.pts[0].join(","))),
+  put: module.exports.abyssgate3.put.filter((p) => p[1] !== "boss_archbishop" && p[1] !== "a4_lm_blood_pulpit"),
+  places: module.exports.abyssgate3.places.map((p) => Object.assign({}, p, { name: { a: "계단참", b: "혼등 회랑", c: "제물 방", d: "문장의 홀", e: "대주교의 의식 홀", g: "아래 계단" }[p.z] || p.name, note: p.z === "e" ? "보스 아레나 · 대주교 · 핏빛 설교대" : p.note })),   // 납골당 3층 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.abyssgate3.zones, {
+    d: "a4-bone-ash-floor 0.84/0.8/0.78 문장의 홀",                       // 바탕(흑요석)과 같은 그림이라 띠가 안 보였다
+    e: "a4-scorched-flagstone-floor 0.96/0.9/0.86 대주교의 의식 홀",      // 띠 북쪽
+    h: "a4-scorched-flagstone-floor 0.76/0.7/0.68 대주교의 의식 홀 남쪽",  // 띠 남쪽
+  }),
+});
+
+// 13/18 배교자의 수도원 (v5): 동쪽 수도원 문(W 28, 1) → 서쪽 기도실 → 회랑 → 심장의 제단(되돌아가는 문 −26, 9 · 끝방 −20.5, 7.5). 띠 = y 2 축 + 제단 홀 안에서 서쪽 x −19까지 곧게 간 뒤 북서 문으로.
+//   고리 끊기(검수표 「고리 3+2」): 북쪽·남쪽 기도실 ↔ 심장의 제단 통로를 막아 두 기도실을 회랑에서만 들어가는 막다른 방으로 (끝방·되돌아가는 문은 제단 홀 안이라 동선 그대로).
+//   심장의 제단 = 오렌이 무릎 꿇던 제단(랜드마크 · 같은 자리를 v5 특징으로 · 낱개 비석·등불은 뺌 · 북벽에 붙임) + 안쪽 축 양옆 사슬 기둥 열주 · 홀 안 1×1 바위 넷은 뺐다.
+//   기도실 셋 = 신도석 줄(설계도 담 글자 — 그대로 · 반복 구조) + 혼 촛불·뼈 묶음 (남벽 뿔 석상 열은 벽에 붙지 않아 뒤 칸이 남았다) · 회랑 = 혼 등불 열 · 띠 북쪽 밝은 판석 / 남쪽 어두운 판석(회랑).
+Object.assign(module.exports.apostate, {
+  v5: {
+    outdoor: false,
+    via: [[-19, 2]],
+    dress: {
+      a: { props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { props: ["a4-adjunct-soul-candle-cluster", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-blood-sigil-circle"], dn: 1 },
+      c: { props: ["a4-adjunct-soul-candle-cluster", "a4-bone-heap"], decals: ["a4-decal-blood-sigil-circle"], dn: 1 },
+      d: { row: [{ name: "a4-soul-lantern", side: "n" }], decals: ["a1-decal-blood-pool", "a4-decal-scorched-ring"], dn: 2 },
+      e: { props: ["a4-adjunct-chained-skull", "a4-adjunct-ash-urn"], decals: ["a4-decal-scorched-ring"], dn: 1 },
+      f: {
+        feature: "set:a4_lm_apostate_altar", featureAt: [-20.5, 10.3], featureFlip: true, featureDrop: ["a4-sigil-stone", "a4-soul-lantern"],
+        colonnade: { name: "a4-chain-pillar", step: 3, minPairs: 2, off: 2.5, tight: true, axis: [[-12.5, 2.5], [-19.5, 2.5]] },
+        decals: ["a1-decal-blood-pool", "a4-decal-blood-sigil-circle", "a4-decal-cracked-obsidian"], dn: 3,
+      },
+    },
+  },
+  rocks: module.exports.apostate.rocks.filter((r) => !r.e),
+  paths: module.exports.apostate.paths.filter((p) => !["-8,-10", "-8,14"].includes(p.pts[0].join(","))),
+  put: module.exports.apostate.put.filter((p) => p[1] !== "a4_lm_apostate_altar"),
+  places: module.exports.apostate.places.map((p) => Object.assign({}, p, { name: { a: "수도원 문", b: "서쪽 기도실", c: "남쪽 기도실", d: "회랑", e: "북쪽 기도실", f: "심장의 제단" }[p.z] || p.name, note: p.z === "f" ? "오렌 · 무릎 꿇던 제단 · 되돌아가는 문" : p.note })),   // 잊힌 서고 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.apostate.zones, {
+    d: "a4-obsidian-floor 0.84/0.8/0.82 회랑",                     // 바탕(그을린 판석)과 같은 그림이라 띠가 안 보였다
+    f: "a4-soul-stone-floor 0.94/0.88/0.9 심장의 제단",
+    b: "a4-bone-ash-floor 0.86/0.82/0.8 서쪽 기도실",
+    c: "a4-ash-drift-floor 0.84/0.82/0.86 남쪽 기도실", e: "a4-ash-drift-floor 0.84/0.82/0.86 북쪽 기도실",
+  }),
+});
+
+// 14/18 심장의 다리 (keep): 식은 용암 바탕·돌다리(=, 2칸 한 장)·흑요석 기둥참·곁다리·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 다리 어귀(웨이포인트) → 첫 기둥참 → 무너진 가운데참 → 둘째 기둥참 → 심장 쪽 다리 끝, 곁 = 혼의 제단 섬(북)·용암 섬(남)).
+//   특징 공간당 1: 무너진 가운데참 = 심장을 든 석상(랜드마크 · 다리 북쪽 가운데 · 쓰러진 거인 세트는 같은 공간 특징 둘·16×16 과밀이라 뺌) · 혼의 제단 섬 = 혼의 제단(비석 쌍 + 수정) ·
+//   용암 섬 = 용암 둔덕 세트 · 두 기둥참 = 다리 들어오는 문 양옆 사슬 기둥 쌍(낱개 기둥·깃발 정리) · 다리 끝 = 불씨 제단 세트 · 어귀 = 용암 돌무더기.
+//   석순·뼈 산발(4·4)은 묶음 ≤3·같은 그림 맵당 ≤2로. 길 위 사건 둥지 세트는 그대로.
+Object.assign(module.exports.heartbridge, {
+  // 웨이포인트 (-30, -3) → (-31, 1): keep 골격(돌다리 y 0)에서 3칸 → 다리 곁 어귀 칸 (다리 길 글자 칸 위는 길 그림이 끊겨 피함 · waypoints.csv·WaypointData 갱신)
+  waypoint: [-31, 1],
+  // 혼의 제단 섬 수정 — 역할 기준 1칸(소품)이 비석 사이에서 작아 배율 2로 따로 (불탄 협곡과 같은 처리 · 세트 수정·등불은 뺌)
+  put: [...module.exports.heartbridge.put, ["prop", "a4-soul-crystal", 0.5, 13.4, 2, 0]],
+  v5: {
+    mode: "keep",
+    outdoor: true,
+    dress: {
+      a: { sets: ["a4_lava_cairn"], decals: ["a4-decal-ember-scatter"], dn: 1 },
+      b: { pair: { name: "a4-chain-pillar" }, decals: ["a4-decal-scorched-ring"], dn: 1 },
+      c: { feature: "set:a4_lm_heart_statue", featureAt: [0.5, 1.4], featureDrop: ["a4-soul-crystal"], props: ["a4-bone-heap", "a4-adjunct-chained-skull"], clusters: 1, decals: ["a4-decal-cracked-obsidian", "a4-decal-ember-scatter"], dn: 2 },
+      d: { feature: "set:a4_soul_altar", featureAt: [0.5, 13.0], featureDrop: ["a4-soul-lantern", "a4-soul-crystal"], decals: ["a4-decal-soul-mist-puddle", "a4-decal-scorched-ring"], dn: 2 },
+      e: { feature: "set:a4_lava_mound", props: ["a4-small-lava-fount"], decals: ["a4-decal-molten-metal-streak"], dn: 2 },
+      f: { pair: { name: "a4-chain-pillar" }, decals: ["a4-decal-scorched-ring"], dn: 1 },
+      g: { sets: ["a4_ember_shrine"], props: ["a4-brazier"], decals: ["a4-decal-ember-scatter"], dn: 1 },
+    },
+  },
+});
+
+// 15/18 유황 동굴 1층 (keep): 유황 껍질 굴 바닥·굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 굴 어귀 → 유황 비탈 → 유황 기둥 광장 → 매복 굴 → 아래 굴, 곁 = 끓는 고리길).
+//   특징 공간당 1: 유황 기둥 광장 = 유황 결정 무리(랜드마크 · 검수표 「광장 중심에」, 매복 굴에서 옮김 — 용암 둔덕 세트는 유황 늪·심장의 다리와 겹쳐 뺌) ·
+//   매복 굴 = 뼈·사슬 해골 묶음 · 유황 비탈 = 유황 웅덩이 + 석순 · 끓는 고리길 = 사슬 제단 조각 + 웅덩이 · 굴 어귀 = 용암 돌무더기.
+Object.assign(module.exports.sulfurcave1, {
+  places: module.exports.sulfurcave1.places.map((p) => Object.assign({}, p, { name: { a: "굴 어귀", b: "유황 비탈", c: "유황 기둥 광장", d: "매복 굴", e: "끓는 고리길", f: "아래 굴" }[p.z] || p.name })),   // 짝 맵 자리 이름을 그대로 물려받았었다 (바닥·모양은 그대로)
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-sulfur-stalagmite", "a4-adjunct-lava-rubble"], decals: ["a4-decal-sulfur-steam-vent"], dn: 1 },
+      b: { props: ["a4-sulfur-stalagmite", "a4-adjunct-obsidian-shards"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      c: { feature: "set:a4_lm_sulfur_cluster", props: ["a4-bone-heap", "a4-small-lava-fount"], clusters: 1, decals: ["a4-decal-sulfur-steam-vent", "a4-decal-molten-metal-streak"], dn: 3 },
+      d: { props: ["a4-bone-heap", "a4-adjunct-chained-skull", "a4-helm-pile"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      e: { props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      f: { decals: ["a4-decal-ash-footprints"], dn: 1 },
+    },
+  },
+});
+
+// 16/18 옥좌의 전실 (v5): 서쪽 전실 문(W −29, 1) → 서쪽 대기실 → 알현 복도 → 큰 전실 → 옥좌로 오르는 문(E 28, 1)이 y 2 축 한 줄 — 그 축이 띠.
+//   고리 끊기(검수표 「고리 3+2」): 북쪽·남쪽 대기실 ↔ 큰 전실 통로를 막아 두 대기실을 알현 복도에서만 들어가는 막다른 방으로 (길 위 사건 의식 제단은 큰 전실 안이라 그대로).
+//   큰 전실 = 무릎 꿇은 석상 셋(랜드마크) + 남벽 뿔 석상 열 · 홀 안 1×1 바위 넷은 뺐다. 대기실 셋 = 석상 줄(설계도 담 글자 — 그대로 · 반복 구조) + 소품 묶음.
+//   알현 복도 = 북벽 악마 깃발 열 · 띠 북쪽/남쪽 판석 두 톤(큰 전실).
+Object.assign(module.exports.throneante, {
+  v5: {
+    outdoor: false,
+    dress: {
+      a: { props: ["a4-brazier", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+      b: { props: ["a4-adjunct-ember-brazier", "a4-adjunct-ash-urn"], decals: ["a4-decal-scorched-ring"], dn: 1 },
+      c: { props: ["a4-adjunct-soul-candle-cluster", "a4-adjunct-chained-skull"], decals: ["a4-decal-cracked-obsidian"], dn: 1 },
+      d: { row: [{ name: "a4-demon-banner", side: "n" }], decals: ["a4-decal-broken-chain", "a4-decal-scorched-ring"], dn: 2 },
+      e: { props: ["a4-adjunct-demon-skull-spear", "a4-helm-pile"], decals: ["a4-decal-ash-pile"], dn: 1 },
+      f: {
+        feature: "set:a4_lm_kneeling_row",
+        row: [{ name: "a4-horned-statue", side: "s" }],   // 남벽 뿔 석상 열 (「뿔 달린 석상 줄」 · 옥좌 문 앞 열주는 길 위 사건 의식 제단과 겹쳐 1쌍뿐이라 뺐다)
+        sides: { left: "h", right: "f" },   // 동쪽으로 가는 축의 왼쪽 = 북쪽 → 남쪽(오른쪽)이 f
+        decals: ["a4-decal-blood-sigil-circle", "a4-decal-cracked-obsidian", "a4-decal-ember-scatter"], dn: 3,
+      },
+    },
+  },
+  rocks: module.exports.throneante.rocks.filter((r) => !r.e),
+  paths: module.exports.throneante.paths.filter((p) => !["8,-10", "8,14"].includes(p.pts[0].join(","))),
+  places: module.exports.throneante.places.map((p) => Object.assign({}, p, { name: { a: "전실 문", b: "서쪽 대기실", c: "남쪽 대기실", d: "알현 복도", e: "북쪽 대기실", f: "큰 전실" }[p.z] || p.name, note: p.z === "f" ? "무릎 꿇은 석상 셋 · 옥좌로 오르는 문" : p.z === "d" ? "" : "석상 줄 둘" })),   // 잊힌 서고 자리 이름을 그대로 물려받았었다
+  zones: Object.assign({}, module.exports.throneante.zones, {
+    c: "a4-scorched-flagstone-floor 0.9/0.87/0.86 남쪽 대기실", e: "a4-scorched-flagstone-floor 0.89/0.86/0.85 북쪽 대기실",
+    d: "a4-bone-ash-floor 0.84/0.8/0.78 알현 복도",                   // 바탕(흑요석)과 같은 그림이라 띠가 안 보였다
+    f: "a4-scorched-flagstone-floor 0.8/0.74/0.72 큰 전실",           // 띠 남쪽 (어두운 판석)
+    h: "a4-scorched-flagstone-floor 0.98/0.92/0.88 큰 전실 북쪽",     // 띠 북쪽 (밝은 판석)
+  }),
+});
+
+// 17/18 용암 대장간 2층 (keep · `?` 맵): 벽돌 격자·현무암 섬 바닥·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 계단참 → 광석 창고 → 갈림 방 → 베르카의 대장간(되돌아가는 문 · 끝방), 곁 = 용암 웅덩이 방).
+//   베르카의 대장간 = 베르카의 모루(랜드마크 · 손으로 고른 자리 그대로 — 끝방 자리 뒤) + 큰 모루(손으로 고른 자리) + 녹은 갑옷·수레 묶음 (문 양옆 사슬 기둥 쌍은 keep 골격 너비를 2칸 밑으로 줄여 뺐다) ·
+//   광석 창고 = 부서진 공성 수레 세트 + 임프 · 용암 웅덩이 방 = 용암 샘·돌무더기·흑요석 조각 · 계단참 = 화로. keep 빈 바닥 12.2%(20% 밑)라 v5 비교본은 짓지 않음.
+const FORGE2_KEEP = {
+  mode: "keep",
+  outdoor: false,
+  dress: {
+    a: { props: ["a4-adjunct-ember-brazier", "a4-brazier"], decals: ["a4-decal-ash-footprints"], dn: 1 },
+    b: { sets: ["a4_siege_wreck"], props: ["a4-imp-on-barrel"], decals: ["a4-decal-ash-pile"], dn: 2 },
+    c: { props: ["a4-small-lava-fount", "a4-adjunct-lava-rubble", "a4-adjunct-obsidian-shards"], decals: ["a4-decal-molten-metal-streak", "a4-decal-ember-scatter"], dn: 3 },
+    d: { decals: ["a4-decal-scorched-ring"], dn: 1 },
+    e: { props: ["a4-melted-armor-pile", "a4-adjunct-burning-cart"], clusters: 1, decals: ["a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 3 },
+  },
+};
+Object.assign(module.exports.forge2, {
+  places: module.exports.forge2.places.map((p) => Object.assign({}, p, { name: { a: "계단참", b: "광석 창고", c: "용암 웅덩이 방", d: "갈림 방", e: "베르카의 대장간" }[p.z] || p.name })),   // 지하실 2층 자리 이름을 그대로 물려받았었다 (바닥·모양은 그대로)
+  v5: FORGE2_KEEP,
+});
+
+// 18/18 유황 동굴 2층 (keep): 유황 껍질 굴 바닥·굴 벽·통로·원래 이음새 그대로 · 길 안내 0 · 역할 배치만
+//   (검수표 구획: 계단참 → 북쪽 굴 → 유황 여왕의 굴(되돌아가는 문 · 끝방), 곁 = 유황 무더기 길).
+//   유황 여왕의 굴 = 네르사의 뼈 둥지(랜드마크 · 손으로 고른 자리 그대로 — 끝방 자리 뒤) + 유황 웅덩이·용암 샘 묶음 · 북쪽 굴 = 사슬 제단 조각 ·
+//   유황 무더기 길 = 용암 돌무더기 세트 + 웅덩이 · 계단참 = 바닥 무늬만(좁은 계단참이라 소품이 골격을 좁혔다).
+Object.assign(module.exports.sulfurcave2, {
+  places: module.exports.sulfurcave2.places.map((p) => Object.assign({}, p, { name: { a: "계단참", b: "유황 무더기 길", c: "북쪽 굴", d: "유황 여왕의 굴" }[p.z] || p.name })),   // 뼈 구덩이 2층 자리 이름을 그대로 물려받았었다 (바닥·모양은 그대로)
+  v5: {
+    mode: "keep",
+    outdoor: false,
+    dress: {
+      a: { decals: ["a4-decal-sulfur-steam-vent"], dn: 1 },
+      b: { sets: ["a4_lava_cairn"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      c: { props: ["a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster", "a4-bone-heap"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      d: { props: ["a4-small-lava-fount", "a4-sulfur-stalagmite", "a4-adjunct-obsidian-shards"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent", "a4-decal-molten-metal-streak"], dn: 3 },
+    },
+  },
+});
