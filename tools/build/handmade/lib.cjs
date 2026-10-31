@@ -267,6 +267,17 @@ function footprintRole(name, x, y, wPx, hPx, scale, opts = {}) {
     for (; r < rows; r++) out.push(key(cx, cy + r));
     if (opts.toWall && opts.isWall) for (let k2 = 0; k2 < 6 && !opts.isWall(cx, cy + r); k2++, r++) out.push(key(cx, cy + r));
   }
+  // (7차) 벽 밀착(wall=1) 그림은 옆벽까지 막는다 — 막힌 칸 줄마다 맨 왼쪽·오른쪽 칸과 옆벽 사이가 2칸 이하면 그 칸들(그 열은 북쪽 벽까지 · 맨 윗줄+2까지)
+  //   모서리 그림(서고 책장 탑) 둘레 ㄷ자 고리처럼 벽 뒤·옆 걷는 칸은 막다른 곳이든 고리든 0
+  if (opts.toWall && opts.isWall) {
+    const seen = new Set(out), span = new Map();
+    for (const k of out) { const [cx, cy] = k.split(",").map(Number); const s = span.get(cy); span.set(cy, s ? [Math.min(s[0], cx), Math.max(s[1], cx)] : [cx, cx]); }
+    const top = Math.max(...span.keys()) + 2;
+    const addCol = (cx, cy) => { for (let r = cy; r <= top && !opts.isWall(cx, r); r++) { const kk = key(cx, r); if (!seen.has(kk)) { seen.add(kk); out.push(kk); } } };
+    for (const [cy, [lo, hi]] of span) for (const [edge, dir] of [[lo, -1], [hi, 1]]) for (let k = 1; k <= 3; k++) if (opts.isWall(edge + dir * k, cy)) { for (let j = 1; j < k; j++) addCol(edge + dir * j, cy); break; }
+  }
+  // (7차) args fill=x/y,x/y — 이 그림 곁 폭 1칸 막다른 줄(길이 3칸 이상) 칸을 이 그림 막힘에 더한다 (생성기 v5.cjs가 적는다)
+  if (opts.fill) for (const [cx, cy] of opts.fill) { const kk = key(cx, cy); if (!out.includes(kk)) out.push(kk); }
   return out;
 }
 
@@ -945,7 +956,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   let propN = 0, decalN = 0, setN = 0, clN = 0;
   for (const r of rows) {
     const x = num(r.x), y = num(r.y), where = `${d.id}.csv ${r.kind} ${r.name || ""} @${r.x}/${r.y}`;
-    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1", padl: num(a.padl, 0), padr: num(a.padr, 0) }); }
+    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1", padl: num(a.padl, 0), padr: num(a.padr, 0), fill: a.fill ? a.fill.split(",").map((t) => t.split("/").map(Number)) : null }); }
     else if (r.kind === "decal") place(`ArtDecal${++decalN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, true, where);
     else if (r.kind === "set") {
       const pieces = ctx.sets[r.name];

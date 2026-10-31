@@ -419,6 +419,8 @@ function run(o) {
     return false;
   };
   const doBlock = (cells) => { for (const [a, b] of cells) if (floor(a, b)) blocked.add(K(a, b)); };
+  // 7차: 그 칸들을 더 막으면 폭 1칸 막다른 줄(검사기 deadLines와 같은 정의) 수 — 세트 묶음 자리 고르기에 쓴다 (세트 줄에는 fill= 막음을 붙이지 않는다)
+  const deadCount = (extra) => { const E = new Set(extra.map(([a, b]) => K(a, b))); return checker.deadLines(floorCells.map(([x, y]) => K(x, y)), (k) => floor(...unK(k)) && !blocked.has(k) && !E.has(k), (k) => floor(...unK(k)), (k) => floor(...unK(k)) && (blocked.has(k) || E.has(k)), (k) => isMk(...unK(k)) || band.has(k) || core.has(k)).length; };
   const blockCellsSet = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && (pc.collide === "block" || blockOf(pc.piece))).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
   const blockCellsProp = (name, x, y) => (blockOf(name) ? fc(name, x, y, 1) : []);
   const funcSpots = () => func.map((f) => [f.x, f.y]);
@@ -613,10 +615,17 @@ function run(o) {
     let best = null;
     for (const [sx0, sy0] of pool) {
       let sy = sy0;
-      const sx = sx0;
+      let sx = sx0;
       const nwl = hugOne ? northWall(sx, sy0) : null;
       for (const p of grp) { p.toWall = false; p.frac = undefined; }
       if (nwl !== null) { const p = grp.find((q) => !q.decal); sy = hugY(p.name, nwl, p.sc) - p.dy; p.toWall = true; }
+      // 7차: 모서리 — 발밑 줄 끝과 옆벽 사이가 1~2칸이면 x도 그 벽에 붙인다 (서고 책장 탑: 북·서 두 벽에 밀착 · 옆벽까지 막음은 lib.cjs footprintRole)
+      if (nwl !== null) {
+        const p = grp.find((q) => !q.decal), fy = Math.floor(sy + p.dy), bc = fc(p.name, sx + p.dx, sy + p.dy, p.sc).filter(([, b]) => b === fy).map(([a]) => a);
+        const gap = (e, d) => { for (let k = 1; k <= 3; k++) if (!floor(e + d * k, fy)) return k - 1; return 9; };
+        const gl = gap(Math.min(...bc), -1), gr = gap(Math.max(...bc), 1);
+        if (gl >= 1 && gl <= 2 && gl <= gr) sx -= gl; else if (gr >= 1 && gr <= 2) sx += gr;
+      }
       else for (const p of grp) if (!p.decal && roles.roleOf(p.name) === "feature") p.frac = 0.67;
       for (const m of f.flip ? [-1, 1] : [1, -1]) {
         if (grp.some((p) => p.frac) && narrows(gBlock(grp, sx, sy, m))) for (const p of grp) if (p.frac) p.frac = 0.5;
@@ -625,7 +634,7 @@ function run(o) {
         if (!(atOk || free(fcells)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m) || !grp.every((p) => p.decal || facingOk(p.name, sx + p.dx * m, sy + p.dy))) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
         const fp = gFeat(grp, sx, sy, m);
         if (fp.some(([a, b]) => featBlocks.has(blockKey(a, b)))) continue;
-        if (!canBlock(gBlock(grp, sx, sy, m))) continue;
+        if (!canBlock(gBlock(grp, sx, sy, m), !grp.some((p) => p.toWall))) continue;   // 7차: 벽 밀착 특징은 벽감을 아래 메우기(padl·padr)로 막는다
         best = { sx, sy, m, fp, opts: grp.map((p) => [p.frac, p.toWall]) }; break;
       }
       if (best) break;
@@ -845,6 +854,8 @@ function run(o) {
         for (const [sx, sy] of pool) for (const m of [1, -1]) {
           if (placed) break;
           if (!free(gCells(grp, sx, sy, m)) || nearFunc(sx, sy, 3, 2.4) || !gVisual(grp, sx, sy, m) || !canBlock(gBlock(grp, sx, sy, m))) continue;
+          if (grp.some((p) => p.decal && !floor(Math.floor(sx + p.dx * m), Math.floor(sy + p.dy)))) continue;   // 7차: 세트 바닥 무늬 조각 발이 벽 칸이면 다른 자리 (빌더 경고 「발이 벽 칸 위」)
+          if (deadCount(gBlock(grp, sx, sy, m)) > deadCount([])) continue;   // 7차: 세트가 폭 1칸 막다른 줄을 새로 만들면 다른 자리
           gCommit("set", sn, grp, !dropped.length, sx, sy, m, `${s.p.name} · v5 소품 묶음(세트)`);
           placed = 1;
         }
@@ -894,6 +905,11 @@ function run(o) {
     const hRun = (x, y) => { let n = 1; for (let k = 1; k <= 3 && freeC(x - k, y); k++) n++; for (let k = 1; k <= 3 && freeC(x + k, y); k++) n++; return n; };
     const hugCell = new Map();
     hugs.forEach((h, i) => h.cells.forEach((k) => hugCell.set(k, i)));
+    // 배치표 args → 발밑 옵션 (빌더 lib.cjs place와 같은 해석: wall=1 · foot= · padl= · padr= · fill=x/y,…)
+    const rowOpt = (h) => {
+      const a = h.row.args || "", n = (nm) => Number((a.match(new RegExp("(?:^|;)" + nm + "=(\\d+)")) || [0, 0])[1]), f = (a.match(/(?:^|;)fill=([^;]+)/) || [])[1];
+      return { toWall: !!h.toWall, frac: h.frac, padl: n("padl"), padr: n("padr"), fill: f ? f.split(",").map((t) => t.split("/").map(Number)) : null };
+    };
     let filled = 0;
     for (let pass = 0; pass < 4; pass++) {
     const niche = new Set();
@@ -908,19 +924,40 @@ function run(o) {
       for (const k of comp) { const [x, y] = unK(k); if (hugCell.has(K(x - 1, y))) { pick = { i: hugCell.get(K(x - 1, y)), side: "padr" }; break; } }
       if (!pick) for (const k of comp) { const [x, y] = unK(k); if (hugCell.has(K(x + 1, y))) { pick = { i: hugCell.get(K(x + 1, y)), side: "padl" }; break; } }
       if (!pick) continue;
-      const h = hugs[pick.i], cols = h.cells.map((k) => unK(k)[0]), xs = comp.map((k) => unK(k)[0]);
+      const h = hugs[pick.i], cols = h.cells.filter((k) => unK(k)[1] === Math.floor(h.y)).map((k) => unK(k)[0]), xs = comp.map((k) => unK(k)[0]);   // 7차: 발밑 줄 끝에서 잰다 (옆벽 막음 칸은 윗줄에만 있을 수 있다)
       const need = pick.side === "padr" ? Math.max(...xs) - Math.max(...cols) : Math.min(...cols) - Math.min(...xs);
       if (need <= 0 || need > 4) continue;   // 벽감 폭은 ≤2(가로 빈칸) — 그 사이 이미 막힌 칸까지 넓혀도 4칸까지
       const cur = Number(((h.row.args || "").match(new RegExp(pick.side + "=(\\d+)")) || [0, 0])[1]);
       const args = (h.row.args || "").split(";").filter((t) => t && !t.startsWith(pick.side + "="));
       args.push(`${pick.side}=${cur + need}`);   // need는 지금 칸(이미 넓힌 것 포함) 끝에서 잰 거리
       h.row.args = args.join(";");
-      const nc = fc(h.name, h.x, h.y, h.sc || 1, { toWall: !!h.toWall, frac: h.frac, padl: Number((h.row.args.match(/padl=(\d+)/) || [0, 0])[1]), padr: Number((h.row.args.match(/padr=(\d+)/) || [0, 0])[1]) });
+      const nc = fc(h.name, h.x, h.y, h.sc || 1, rowOpt(h));
       doBlock(nc); occupy(nc, h.x, h.y); h.cells = nc.map(([a, b]) => K(a, b)); nc.forEach(([a, b]) => hugCell.set(K(a, b), pick.i));
       filled += comp.length;
     }
     }
     report.nicheFilled = filled;
+    // 7차: 폭 1칸 막다른 줄(길이 ≥3 · 장식 곁 · 골격 띠·표식이 없는 것 — 검사기 deadLines와 같은 정의)은 맞닿은 그림의 막힘에 더한다 (배치표 args fill=)
+    let lined = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      const chains = checker.deadLines(floorCells.map(([x, y]) => K(x, y)), (k) => freeC(...unK(k)), (k) => floor(...unK(k)), (k) => floor(...unK(k)) && blocked.has(k), (k) => isMk(...unK(k)) || band.has(k) || core.has(k));
+      let did = 0;
+      for (const ch of chains) {
+        let owner;
+        { const cnt = new Map(); for (const k of ch) { const [x, y] = unK(k); for (const [dx, dy] of D4) { const nk = K(x + dx, y + dy); if (hugCell.has(nk) && !ch.includes(nk)) cnt.set(hugCell.get(nk), (cnt.get(hugCell.get(nk)) || 0) + 1); } } for (const [i, n] of cnt) if (owner === undefined || n > cnt.get(owner) || (n === cnt.get(owner) && roles.roleOf(hugs[i].name) === "feature")) owner = i; }   // 가장 많이 맞닿은 그림 (같으면 특징)
+        if (owner === undefined) { warn.push("폭 1칸 막다른 줄 (" + ch[0] + ")~" + ch.length + "칸: 맞닿은 그림 없음"); continue; }
+        const cells = ch.map(unK);
+        if (!canBlock(cells, false)) { warn.push("폭 1칸 막다른 줄 (" + ch[0] + ")~" + ch.length + "칸: 막으면 바닥을 가둠"); continue; }
+        const h = hugs[owner], all = (rowOpt(h).fill || []).concat(cells), args = (h.row.args || "").split(";").filter((t) => t && !t.startsWith("fill="));
+        args.push("fill=" + all.map(([a, b]) => a + "/" + b).join(","));
+        h.row.args = args.join(";");
+        const nc = fc(h.name, h.x, h.y, h.sc || 1, rowOpt(h));
+        doBlock(nc); h.cells = nc.map(([a, b]) => K(a, b)); nc.forEach(([a, b]) => hugCell.set(K(a, b), owner));
+        lined += ch.length; did++;
+      }
+      if (!did) break;
+    }
+    report.deadLineFilled = lined;
   }
   report.band = band.size; report.legs = legs.map((l) => `${l.target}:${l.cells.length}`);
   report.spaces = S.map((s) => `${s.p.z}:${s.p.name}=${s.fn}${s.feature ? " ·특징" : ""}${s.clusters ? " ·묶음" + s.clusters : ""}${s.notes.length ? " (" + s.notes.join("; ") + ")" : ""}`);

@@ -56,6 +56,11 @@ save("22-rowflip", base(), cleanPieces().concat([22, 25, 28].map((c, i) => ({ s:
 save("23-behindwall", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(8), y: wy(7) }]).map((p) => p), { behindWall: 1 }, { note: "북벽 정면 책장 뒤(벽까지) 걷는 칸 1", json: {} });
 save("24-rowbehind", base(), cleanPieces().concat([2, 5, 8].map((c) => ({ s: "wind-stele", x: wx(c), y: wy(6) }))), { behindWall: 3 }, { note: "북벽 2칸 앞 바람 비석 줄 — 줄 뒤 걷는 칸 (조각마다 1)" });
 save("25-niche", base(), cleanPieces(), { wallNiche: 1 }, { note: "벽에 붙인 막힘 사이 1칸 막다른 벽감", json: { blocked: ["8,5", "9,5", "11,5", "12,5"] } });
+{ // 7차: 모서리 그림 ㄷ자 고리 — 북벽(줄 0) 1칸 앞 정면 그림(막힌 칸 14~16×2~3) 뒤 줄 1 + 서쪽 벽(열 12)과의 1칸 줄(열 13) + 옆 그림(18~19)과의 1칸(열 17)이 고리로 이어짐 (막다른 곳 아님)
+  const A = [14, 15, 16].flatMap((c) => [`${c},2`, `${c},3`]), B = [18, 19].flatMap((c) => [`${c},1`, `${c},2`, `${c},3`]);
+  save("26-uloop", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(15), y: wy(3), cells: A }, { s: "bookshelf", x: -1.5, y: wy(3), cells: B }]), { behindWall: 1 }, { note: "모서리 그림 둘레 ㄷ자 고리 — 뒤 3칸 · 옆벽 사이 3칸 (막다른지와 무관)", json: { blocked: A.concat(B) } });
+}
+save("27-deadline", base(), cleanPieces(), { deadLine: 1 }, { note: "장식이 동쪽 벽 곁에 만든 폭 1칸 막다른 줄 5칸", json: { blocked: [10, 11, 12, 13, 14].map((r) => `37,${r}`) } });
 save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이음새 조각 3개 (ArtBand·ArtCorner)", json: { seams: 3 } });
 { // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
   const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";

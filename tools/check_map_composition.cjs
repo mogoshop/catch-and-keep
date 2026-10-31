@@ -8,7 +8,9 @@
 //   guide        길 안내 도장(ArtGuide) 0 — 길은 바닥 구역 경계의 빈 띠(P1)
 //   featurePass  역할표 feature·structure(서 있는 것)인데 통과 (바닥 분류·포털 그림·겹친 빛 제외) — v5는 막음이 기본
 //   behindWall   벽 따라 놓은 줄(3개 이상 · 방향 무관 — 가로줄은 북·남벽, 세로줄은 동·서벽 2칸 안)과 벽 정면(facing north) 그림 뒤, 벽 사이에 걷는 칸이 남음
+//                (7차) 막힌 칸을 아는 그림은 막다른지와 무관하게: 막힌 칸 사각형과 북벽(3칸 안) 사이 · 사각형 줄마다 옆벽(2칸 이하) 사이 걷는 칸 (모서리 ㄷ자 고리)
 //   wallNiche    벽 밀착 줄 곁 막다른 벽감: 가로 빈칸 ≤2 · 위가 벽·막힘(또는 벽감)인 빈 칸 덩어리가 장식 막힘과 맞닿음
+//   deadLine     (7차) 폭 1칸 막다른 줄: 장식 곁 길이 ≥3 (걷는 칸을 이웃 ≤1부터 거듭 깎은 덩어리 · 설계도 자체 막다른 길·골격 띠·표식 제외 — deadLines)
 //   passWidth    장식이 막아 골격(띠) 칸의 가로·세로 빈칸 수 최솟값이 2 밑으로 내려간 곳 (벽만으로는 2 이상이었는데)
 //   spaceReach   입구에서 막힌 칸을 피해 닿지 못하는 공간 수
 //   facing       역할표 facing: north(정면 그림)가 벽 2칸 안에 붙었는데 북쪽 벽(3칸 안)이 아님 · side는 동·서쪽 벽이 아님 (포털·입구 그림 제외)
@@ -43,8 +45,8 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
-const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 따라 줄·벽 정면 그림 뒤에 걷는 칸", wallNiche: "벽 밀착 줄 곁 막다른 벽감", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
+const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
+const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 따라 줄·벽 정면 그림 뒤에 걷는 칸", wallNiche: "벽 밀착 줄 곁 막다른 벽감", deadLine: "폭 1칸 막다른 줄", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
   branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
@@ -381,6 +383,21 @@ function branchMetrics(L, G, bm, pm) {
 }
 
 // ───────── 한 맵 ─────────
+// 폭 1칸 막다른 줄 (10-31 표본 7차): 걷는 칸에서 4방향 이웃이 1개 이하인 칸을 거듭 깎아 낸 칸 덩어리 중
+//   벽만 보고 깎아도 깎이는 칸(설계도 자체의 막다른 길)을 빼고, skip 칸(골격 띠·표식)이 든 덩어리는 통째로 빼고, 장식 막힘에 맞닿고 길이 ≥3인 것.
+//   생성기(v5.cjs)도 같은 함수로 찾아 막는다. cells: 바닥 칸 키 목록 · open(k) 걷는 칸 · wallOpen(k) 벽만 보면 걷는 칸 · decor(k) 장식이 막은 바닥 칸 · skip(k)
+function deadLines(cells, open, wallOpen, decor, skip, minLen = 3) {
+  const nb = (k) => { const [a, b] = unK(k); return [K(a + 1, b), K(a - 1, b), K(a, b + 1), K(a, b - 1)]; };
+  const prune = (ok) => {
+    const deg = new Map(), gone = new Set(), q = [];
+    for (const k of cells) if (ok(k)) { const n = nb(k).filter(ok).length; deg.set(k, n); if (n <= 1) q.push(k); }
+    while (q.length) { const k = q.pop(); if (gone.has(k)) continue; gone.add(k); for (const m of nb(k)) if (deg.has(m) && !gone.has(m)) { const d = deg.get(m) - 1; deg.set(m, d); if (d <= 1) q.push(m); } }
+    return gone;
+  };
+  const g0 = prune(wallOpen), g1 = prune(open);
+  return comps(new Set([...g1].filter((k) => !g0.has(k))), D4).filter((c) => c.length >= minLen && !c.some(skip) && c.some((k) => nb(k).some(decor)));
+}
+
 function analyze(L) {
   const G = makeGrid(L);
   const bm = bandMetrics(L, G);
@@ -436,7 +453,7 @@ function analyze(L) {
   const decorAdj = (k) => { const [c, r] = unK(k); return [[1, 0], [-1, 0]].some(([dc]) => blocked.has(K(c + dc, r)) && G.floor(c + dc, r)); };
   const niches = comps(niche, D4).filter((p) => p.some(decorAdj));
   for (const p of L.pieces) {
-    if (p.decal || roles.facingOf(p.s) !== "north" || ["portal", "overlay"].includes(classOfSafe(p.s))) continue;
+    if (p.decal || p.cells || roles.facingOf(p.s) !== "north" || ["portal", "overlay"].includes(classOfSafe(p.s))) continue;   // 막힌 칸을 아는 그림은 아래 7차 검사
     const [c, r] = G.cellOf(p.x, p.y);
     let wr = null; for (let k = 1; k <= 3; k++) if (!G.floor(c, r - k)) { wr = r - k; break; }
     if (wr === null) continue;
@@ -444,7 +461,29 @@ function analyze(L) {
     for (let cc = Math.floor(p.x - 0.3 + G.W / 2); cc <= Math.floor(p.x + 0.3 + G.W / 2); cc++) for (let rr = r - 1; rr > wr; rr--) if (G.floor(cc, rr) && !blocked.has(K(cc, rr))) open++;
     if (open) behind.push(`${p.s}@${p.x},${p.y} 뒤 ${open}칸`);
   }
-  Object.assign(counts, { featurePass: featPass.length, behindWall: behind.length, wallNiche: niches.length, passWidth: narrowParts.length, spaceReach: unreachSpaces.length, facing: pm.facingBad.length, rowGap: pm.rowGap, rowFlip: pm.rowFlip });
+  // (7차) 막힌 칸을 아는 그림(실제 맵 · 자가 테스트 cells): 벽 정면 그림·벽 따라 줄 조각의 막힌 칸 사각형 위(북쪽) 3칸 안에 벽이 있으면 —
+  //   ① 사각형 꼭대기와 북벽 사이 ② 사각형 줄(발밑~벽)마다 맨 왼쪽·오른쪽 칸과 옆벽 사이(2칸 이하)에 걷는 칸이 남으면 위반 (막다른 곳이든 고리든 · 모서리 그림 ㄷ자 고리)
+  const inRow = new Set(pm.lineRows.flat());
+  for (const p of L.pieces) {
+    if (p.decal || !p.cells || !p.cells.length || ["portal", "overlay"].includes(classOfSafe(p.s)) || !(roles.facingOf(p.s) === "north" || inRow.has(p))) continue;
+    const cs = p.cells.map(unK), cols = new Map();
+    for (const [c, r] of cs) cols.set(c, Math.min(cols.has(c) ? cols.get(c) : 1e9, r));
+    let wr = null;
+    let back = 0, side = 0;
+    for (const [c, top] of cols) for (let k = 1; k <= 3; k++) if (!G.floor(c, top - k)) { wr = wr === null ? top - k : Math.min(wr, top - k); for (let j = 1; j < k; j++) if (isOpen(c, top - j)) back++; break; }   // 열마다 북벽까지 (3칸 안에 벽이 있는 열만)
+    if (wr === null) continue;
+    const wLine = G.H / 2 - Math.max(...[...cols].map(([c, top]) => { for (let k = 1; k <= 3; k++) if (!G.floor(c, top - k)) return top - k; return -1e9; })), hugs = inRow.has(p) || p.vh === undefined || p.y + p.vh >= wLine - 1;
+    if (!hugs) continue;   // 벽 정면 그림은 그림 윗면이 북벽 밑선 1칸 안일 때만 벽 밀착 (향로 계단처럼 1칸 넘게 떨어져 서 있는 그림 뒤는 걷는 바닥)
+    const foot = Math.max(...cs.map(([, r]) => r)), lo0 = Math.min(...cols.keys()), hi0 = Math.max(...cols.keys());
+    for (let rr = foot; rr > wr; rr--) {
+      const inr = cs.filter(([, r]) => r === rr).map(([c]) => c), lo = inr.length ? Math.min(...inr) : lo0, hi = inr.length ? Math.max(...inr) : hi0;
+      for (const [e, d] of [[lo, -1], [hi, 1]]) for (let k = 1; k <= 3; k++) if (!G.floor(e + d * k, rr)) { for (let j = 1; j < k; j++) if (isOpen(e + d * j, rr)) side++; break; }
+    }
+    if (back || side) behind.push(`${p.s}@${p.x},${p.y} 막힘 뒤 ${back}칸 · 옆벽 사이 ${side}칸`);
+  }
+  // (7차) 폭 1칸 막다른 줄 (길이 ≥3 · 장식 곁 · 골격 띠·표식 칸이 든 덩어리 제외 · 설계도 자체 막다른 길 제외)
+  const deadLn = deadLines(G.cells().map(([c, r]) => K(c, r)), (k) => isOpen(...unK(k)), (k) => G.floor(...unK(k)), (k) => G.floor(...unK(k)) && blocked.has(k), (k) => !!G.marker(...unK(k)) || bm.band.has(k));
+  Object.assign(counts, { featurePass: featPass.length, behindWall: behind.length, wallNiche: niches.length, deadLine: deadLn.length, passWidth: narrowParts.length, spaceReach: unreachSpaces.length, facing: pm.facingBad.length, rowGap: pm.rowGap, rowFlip: pm.rowFlip });
   const w2 = (k) => { const [c, r] = unK(k); return `(${c - G.W / 2}, ${G.H / 2 - r})`; };   // 월드 칸 좌표로 적는다
   const detail = {
     bandCells: bm.band.size, maxWidth: bm.maxWidth, wide: bm.widthBlobs.map((b) => w2(b[0])), unreached: bm.unreached.map(w2), holes: bm.holes.map((h) => `${w2(h[0])}~${h.length}칸`),
@@ -452,12 +491,12 @@ function analyze(L) {
     runs: runs.map((r) => (r.tag === "d" ? `45° (${r.from - G.W / 2}, ${G.H / 2 - r.line})부터 ${r.len}칸` : `${r.tag} ${r.tag === "h" ? `y=${G.H / 2 - r.line}` : `x=${r.line - G.W / 2 + 1}`} ${r.len}칸`)),
     scatteredKinds: pm.scatteredKinds.map(([s, n]) => `${s}×${n}`), featureSpaces: pm.featureSpaces, pillarSingles: pm.singles.map((p) => `${p.s}@${p.x},${p.y}`),
     dense: pm.dense.map(([k, n]) => `${k}×${n}`), spaces: pm.zones.length, features: pm.feats,
-    featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), behind, niches: niches.map((p) => `${w2(p[0])}~${p.length}칸`), narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
+    featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), behind, niches: niches.map((p) => `${w2(p[0])}~${p.length}칸`), deadLines: deadLn.map((p) => `${w2(p[0])}~${p.length}칸`), narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
     skeleton: br.skeleton, branches: br.branches, branchEdges: br.edges, branchCycles: br.cycles, branchAllowed: br.allowed,
   };
   return { counts, detail };
 }
-module.exports = { analyze, makeGrid, bandMetrics, straightEdges, placementMetrics, ITEMS, LABEL, BUDGET, MAX_RUN, MAX_WIDTH };
+module.exports = { analyze, deadLines, makeGrid, bandMetrics, straightEdges, placementMetrics, ITEMS, LABEL, BUDGET, MAX_RUN, MAX_WIDTH };
 
 // ───────── 실제 맵 → 입력 ─────────
 // 키 큰 특징·구조인데 -top 그림 없음 (경고) — 지어진 그림 엔티티(장식·세트·흩뿌림)의 그림·배율로 잰다 (v4 맵도 pieces 없이 잴 수 있게)
@@ -484,6 +523,8 @@ function tallNoTop(art, ctx) {
 
 function layoutOf(id, env) {
   const { hm, maps, mapRows, ctx, quiet, num } = env;
+  const table = hm.spriteTable(ctx);   // 보이는 높이(칸) = 역할 기준 높이 × 그 자리 배율 (생성기 hugY와 같은 정의)
+  const visH = (p) => { const sp = table[p.sprite]; if (p.decal || !sp) return 0; const m = roles.multOf(p.sprite), b = hm.baseScale(sp, ctx.propScale) * m; return b > 0 ? roles.heightOf(p.sprite) * m * (p.sc / b) : 0; };
   const d = mapRows.find((m) => m.id === id);
   if (!d) throw new Error(`${id}: maps.csv에 없음`);
   const bp = hm.parseBlueprint(id);
@@ -492,7 +533,7 @@ function layoutOf(id, env) {
   const art = quiet(() => hm.artEntities(d, ctx, bp, rows, func));
   return {
     id, v5: !!bp.v5, w: bp.w, h: bp.h, grid: bp.rows, walls: new Set(Object.keys(bp.walls)), zones: bp.zones, roads: bp.roads, base: bp.base, markers: bp.markers,
-    pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block, flip: p.flip })),
+    pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block, flip: p.flip, cells: p.block ? (p.cells || []).map(([x, y]) => `${x + bp.w / 2},${bp.h / 2 - y}`) : null, vh: visH(p) })),
     blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
