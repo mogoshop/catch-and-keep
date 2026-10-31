@@ -6,7 +6,7 @@
 -- 엔진 효과·타이머·화면 몸(MotionSmoother)은 대역 — 실제 화면 주기·그림 품질은 메이커 실녹화(maker_queue)
 -- @source GameData Data/GameData.mlua Ensure,GetGiant
 -- @source Util Common/Util.mlua Frames
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,BodySign,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,SeqFx,ClipFxLocal
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,SpinCycle,GiantFxSpec,GiantFxImpactSec,GiantFxFrameSec,BodySign,PlaySeq,GiantFxTint,GiantMoveFx,GiantMoveFxOn,GiantFxLocal,MeteorL2Fx,SeqFx,ClipFxLocal
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
 local function near(a,b,e) return math.abs(a-b)<=(e or 1e-6) end
@@ -49,7 +49,7 @@ SkillEffects.Entity={CurrentMap=map}
 -- 화면 몸 대역: 거인이 걷는다 (VisOf = 그림 대역)
 local giant={TransformComponent={WorldPosition=Vector3(0,0,0),Scale=Vector3(1,1,1)},SpriteRendererComponent={FlipX=false}}
 _MotionSmoother={VisOf=function(_,e) return e end}
-_GameConst={FxGiantSlam='s1|s2|s3|s4',FxGiantSpin='o1|o2|o3|o4|o5|o6',FxGiantRift='r1|r2|r3|r4',FxGiantDash='d1|d2|d3|d4',FxSlash='slash',FxSkillHexBurst=''}
+_GameConst={FxGiantSlam='s1|s2|s3|s4',FxGiantSpin='o1|o2|o3|o4|o5|o6',FxGiantRift='r1|r2|r3|r4',FxGiantDash='d1|d2|d3|d4',FxSlash='slash',FxSkillHexBurst='',FxGiantMeteorTelegraph='',FxGiantMeteorFall='',FxGiantMeteorImpact='',FxGiantMeteorAfterglow='',FxGiantMeteorTelegraphMs=75,FxGiantMeteorFallMs=40,FxGiantMeteorImpactMs=40,FxGiantMeteorAfterglowMs=150}   -- 10-31 메테오 L2 자리는 비움 = 아래 B 메테오 검사는 빈 자리 되돌림 길 (L2 길은 giant_meteor_l2)
 _GameData:Ensure()
 _GameData.RiteGiants.greatsword.s1Opts={hits=4,gap=0.4}
 local DEF={spin=SkillEffects.FxGiantSpinOpts,rift=SkillEffects.FxGiantRiftOpts,slam=SkillEffects.FxGiantSlamOpts,slamF=SkillEffects.FxGiantSlamFrontOpts,roar=SkillEffects.FxGiantRoarOpts,novaV2=SkillEffects.FxGiantNovaV2,novaV2F=SkillEffects.FxGiantNovaV2Front}   -- 속성 기본값 = 코덱스 full 아트 계약

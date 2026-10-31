@@ -543,6 +543,8 @@ script RiteGiantMoves extends Logic
         local fall = opt.fall or 0.5
         local radius = self:MeteorRadius(unit, spec)
         local fx = self:Fx(unit)
+        local side = 0   -- 10-31 메테오 L2: 표적이 시전자 왼쪽이면 180 → 낙하 그림을 왼쪽 위에서·좌우 반전 (GiantMoveFx angle 칸 · 예전 연출은 각 0 그대로 · 통신·타이머 늘지 않음)
+        if at.x < _Util:Pos2(unit.Entity).x then side = 180 end
         st.busyUntil = now + chant + fall
         self:Hold(unit, chant, chant + fall)
         unit:GiantPlay("skill2", chant)
@@ -550,7 +552,7 @@ script RiteGiantMoves extends Logic
         if fx ~= nil then fx:GiantMoveFx("warn_fire", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, chant + fall) end
         _TimerService:SetTimerOnce(function()
             if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
-            if fx ~= nil then fx:GiantMoveFx("meteor_fall", Vector3(at.x, at.y, 0), radius * 2, radius * 2, 0, fall) end
+            if fx ~= nil then fx:GiantMoveFx("meteor_fall", Vector3(at.x, at.y, 0), radius * 2, radius * 2, side, fall) end
         end, chant)
         _TimerService:SetTimerOnce(function()
             if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end

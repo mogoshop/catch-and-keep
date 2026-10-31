@@ -234,6 +234,26 @@ do
  ok(near(l.pos.x,w.pos.x) and near(l.pos.y,w.pos.y),'착지 그림 = 표적 바닥 그대로(예고 중심과 같은 자리 · 예전 +0.1칸 올림 없음 · 10-31 갈래 F) '..l.pos.y..' / '..w.pos.y)
  local d=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_meteor' then d=x.dmg end end
  ok(near(d,100/0.8*3),'메테오 ×3.0')
+ local fl=nil for _,f in ipairs(fxLog) do if f.kind=='meteor_fall' then fl=f end end
+ ok(fl~=nil and fl.a==0 and near(fl.sec,0.5) and near(fl.w,3.6) and near(fl.pos.x,3),'낙하 부름: 표적이 오른쪽 → angle 0 · 낙하 0.5초 · 지름 3.6 (10-31 메테오 L2)')
+ RiteGiantMoves:Clear(u)
+end
+-- ③-2 10-31 메테오 L2: 표적이 시전자 왼쪽이면 낙하 부름 angle 180 (그림 좌우 반전) · 판정·시각은 그대로
+do
+ clearMons() resetLogs() plays={} nodes={}
+ local u=giant('mage',100)
+ local t=monster('t',-3) local edge=monster('edge',-3-1.75) local out=monster('out',-3-1.9)
+ u.FocusUntil=_UtilLogic.ElapsedSeconds+6
+ RiteGiantMoves:OnFocus(u,t.Entity)
+ ok(cast('meteor')==1,'왼쪽 표적 → 메테오')
+ advance(1.4)
+ ok(next(hitNames('skill.giant_meteor'))==nil,'왼쪽 표적도 착지 전(1.4초) 피해 없음')
+ advance(0.2)
+ local h=hitNames('skill.giant_meteor')
+ ok(h.t==1 and h.edge==1 and h.out==nil,'왼쪽 표적 착지 반경 1.8 그대로')
+ local fl,w,l=nil,nil,nil for _,f in ipairs(fxLog) do if f.kind=='meteor_fall' then fl=f end if f.kind=='warn_fire' then w=f end if f.kind=='meteor_land' then l=f end end
+ ok(fl~=nil and fl.a==180 and near(fl.sec,0.5) and near(fl.pos.x,-3),'낙하 부름: 표적이 왼쪽 → angle 180 · 낙하 0.5초')
+ ok(w.a==0 and l.a==0 and near(l.sec,1.5),'예고·착지 angle 0 · 불바닥 1.5초 그대로')
  RiteGiantMoves:Clear(u)
 end
 -- ④ 큰 메테오 3랭크: 반경 2.0 상한(타격·효과) · 영창 0.7
