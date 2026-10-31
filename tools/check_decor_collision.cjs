@@ -5,7 +5,7 @@
 //   표    decor_collision.csv 분류·충돌 불일치 · map_sets.csv collide 빈칸·분류와 다름 · tile_classes.csv 빠짐/남음
 //   C-2   「높이 1칸 이상 조각인데 통과」(평평한 웅덩이·깔린 것은 flat=1로 따로 적은 것만 예외) · 「바닥 조각인데 막힘」
 //   C-1·3 「길 폭 3칸 안의 막는 조각」 · 「길 폭 3칸 안의 흩뿌림」 · 「길 안내가 벽·막힌 칸과 겹침」
-//   C-5   「계층 경계에 전환 띠 없음」(바닥이 다른 걷는 칸 경계 · 막힌 칸 옆) · 「볼록 직각 모서리에 모서리 조각 없음」
+//   C-5   「계층 경계에 전환 띠 없음」(바닥이 다른 걷는 칸 경계 · 막힌 칸 옆) · 「볼록 직각 모서리에 모서리 조각 없음」 — 맵 구성 v5 맵(;v5)은 이음새 조각을 쓰지 않아 재지 않는다
 //   C-6   「길 안내가 직각으로 꺾임」(이웃 토막 방향 차 30° 초과) · 「둥글린 반경 1칸 미만」
 //   빌드  지어 둔 맵의 충돌 칸·길 안내 수가 계산과 다르면 (맵을 다시 짓지 않은 것)
 "use strict";
@@ -158,6 +158,8 @@ for (const id of ids) {
     else if (p && q && fk(p) !== fk(q)) { edges++; const lowLeft = up(q, p); if (!inBand(lowLeft ? x + 1 - 0.25 : x + 1 + 0.25, y + 0.5)) c.seam++; }
     else if (!bp.raised && ((p && !q && isBlock(x + 1, y)) || (!p && q && isBlock(x, y)))) { edges++; if (P.SHADE.length && !inBand(p ? x + 1 - 0.2 : x + 1 + 0.2, y + 0.5)) c.seam++; }
   }
+  const noSeam = bp.v5 && !bp.v5keep && !P.V5.SEAMS;   // v5 keep은 원래 이음새 그대로라 잰다   // 맵 구성 v5: 반투명 이음새 조각을 쓰지 않는다 (불투명 타일 가장자리가 경계 · check_map_composition seamAlpha 0)
+  if (noSeam) c.seam = 0;
   if (c.seam) bad(id, `계층 경계 ${edges}변 중 전환 띠 없음 ${c.seam}변`);
   const cornerAt = new Set(art.entities.filter((e) => /^ArtCorner/.test(e.name)).map((e) => {
     const r = decor.rotOf(e), [wx, wy] = decor.rectPoint(r.pos, r.deg, r.L, r.W, r.L / 2, r.W / 2);   // 사각형 가운데
@@ -174,6 +176,7 @@ for (const id of ids) {
       }
     }
   }
+  if (noSeam) c.corner = 0;
   if (c.corner) bad(id, `볼록 직각 모서리 ${cornersTotal}곳 중 모서리 조각 없음 ${c.corner}곳`);
   // 빌드와 맞는가 (충돌 칸 · 길 안내 수)
   const want = [];

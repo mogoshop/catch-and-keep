@@ -6,6 +6,8 @@
 //   [--json 파일]  맵별 수치
 // 항목 (0건이어야 한다):
 //   guide        길 안내 도장(ArtGuide) 0 — 길은 바닥 구역 경계의 빈 띠(P1)
+//   seamAlpha    반투명 이음새 조각(ArtBand·ArtCorner·ArtShade, 색 알파 <1) 0 — v5 성소형 맵만 (10-31 사용자 판정: 띠 가장자리는 불투명 타일 가장자리만 · v5 keep은 원래 이음새 그대로라 세지 않음)
+//   (v5 keep 맵 = 띠를 그리지 않는 바닥 보존형: 골격은 입구→출구 최단 경로로 계산해 끊김·고리·웨이포인트·가지만 재고, 띠 폭·막다른 띠·띠 옆 빈 바닥·구역 경계는 재지 않는다)
 //   bandWidth    띠 폭 ≤2: 띠 칸(설계도 바탕 . · 길 글자)마다 가로·세로·두 대각 연속 칸 수의 최솟값 ≥3인 칸 덩어리 수
 //   bandBreak    띠 끊김: 띠+출입구 표식(W E H X G)의 4방향 덩어리 수 − 1 + 띠로 닿지 않는 출구 수
 //   bandLoop     띠 고리: 띠에 둘러싸인 구멍(띠 밖 칸의 8방향 덩어리 중 맵 테두리에 닿지 않는 것) 수
@@ -31,8 +33,8 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
-const LABEL = { guide: "길 안내 도장", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
+const ITEMS = ["guide", "seamAlpha", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
+const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
   branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
@@ -92,15 +94,55 @@ const bfs = (sources, pass, dirs = D4) => {
 };
 
 // ───────── 띠 (P1·P2) ─────────
+// v5-keep 맵(;v5 keep — 띠를 그리지 않음)의 골격: 입구 → 전진 출구 최단 경로(8방향 · 벽 곁 비용 1+0.6×벽 이웃 · 1단계 정의 · 길 글자 칸은 비용 반 — 그대로 남은 둑길을 따른다) + 나머지 출구는 이미 그은 골격에서 갈래, 4방향으로 이음
+function skeletonCells(L, G) {
+  let start = null; const exits = [];
+  for (const [c, r] of G.cells()) { const m = G.marker(c, r); if (m === "W" || (m === "G" && !start)) start = start && m === "G" ? start : [c, r]; if (m && "EHX".includes(m)) exits.push([c, r]); }
+  const out = new Set();
+  if (!start) return out;
+  exits.sort((a, b) => (G.marker(...a) === "E" ? -1 : 0) - (G.marker(...b) === "E" ? -1 : 0));
+  const nw = (c, r) => { let n = 0; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (!G.floor(c + dc, r + dr)) n++; return n; };
+  const search = (srcs, goal) => {
+    const dist = new Map(), prev = new Map(), h = [];
+    const push = (d, k) => { h.push([d, k]); h.sort((a, b) => a[0] - b[0]); };
+    for (const k of srcs) { dist.set(k, 0); push(0, k); }
+    while (h.length) {
+      const [d, k] = h.shift();
+      if (d > dist.get(k)) continue;
+      if (k === goal) break;
+      const [c, r] = unK(k);
+      for (const [dc, dr] of D8) {
+        const nc = c + dc, nr = r + dr;
+        if (!G.floor(nc, nr) || (dc && dr && (!G.floor(c + dc, r) || !G.floor(c, r + dr)))) continue;
+        const nd = d + (dc && dr ? 1.414 : 1) * (1 + 0.6 * nw(nc, nr)) * (L.roads && G.ch(nc, nr) in L.roads ? 0.5 : 1), nk = K(nc, nr);   // 설계도 길 글자는 반값 (keep 맵의 보이는 길을 따라)
+        if (!dist.has(nk) || nd < dist.get(nk) - 1e-9) { dist.set(nk, nd); prev.set(nk, k); push(nd, nk); }
+      }
+    }
+    if (!dist.has(goal)) return null;
+    const cells = []; for (let k = goal; k !== undefined; k = prev.get(k)) cells.push(unK(k));
+    return cells;
+  };
+  for (const e of exits) {
+    const cells = search(out.size ? [...out] : [K(...start)], K(...e));
+    if (!cells) continue;
+    for (let i = 0; i < cells.length; i++) {
+      out.add(K(...cells[i]));
+      const n = cells[i + 1];
+      if (n && n[0] !== cells[i][0] && n[1] !== cells[i][1]) out.add(G.floor(n[0], cells[i][1]) ? K(n[0], cells[i][1]) : K(cells[i][0], n[1]));
+    }
+  }
+  for (const k of [...out]) if (G.marker(...unK(k))) out.delete(k);
+  return out;
+}
 function bandMetrics(L, G) {
-  const band = new Set(), conn = new Set();
+  const band = new Set(), conn = new Set(), keepSkel = L.v5keep ? skeletonCells(L, G) : null;
   let start = null;
   const exits = [];
   for (const [c, r] of G.cells()) {
     if (!G.floor(c, r)) continue;
-    if (G.isBand(c, r)) band.add(K(c, r));
+    if (keepSkel ? keepSkel.has(K(c, r)) : G.isBand(c, r)) band.add(K(c, r));
     const m = G.marker(c, r);
-    if (m === "S" && D4.some(([dc, dr]) => G.isBand(c + dc, r + dr))) conn.add(K(c, r));   // 띠 위 웨이포인트는 띠를 잇는다 (자리 검사는 waypoint 항목)
+    if (m === "S" && D4.some(([dc, dr]) => (keepSkel ? keepSkel.has(K(c + dc, r + dr)) : G.isBand(c + dc, r + dr)))) conn.add(K(c, r));   // 띠 위 웨이포인트는 띠를 잇는다 (자리 검사는 waypoint 항목)
     if (m && CONNECT.has(m)) { conn.add(K(c, r)); if (m === "W" || (m === "G" && !start)) start = start && m === "G" ? start : K(c, r); if ("EHX".includes(m)) exits.push(K(c, r)); }
   }
   const B = new Set([...band, ...conn]);
@@ -297,11 +339,13 @@ function analyze(L) {
   const runs = straightEdges(L, G);
   const wps = G.cells().filter(([c, r]) => G.marker(c, r) === "S");
   const wpOff = wps.filter(([c, r]) => { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (bm.band.has(K(c + dc, r + dr))) return false; return true; }).length;
+  const keep = !!L.v5keep;   // v5-keep: 띠를 그리지 않아 띠 폭·막다른 띠·띠 옆 빈 바닥·구역 경계(구역 그대로)는 재지 않는다 — 골격은 끊김·고리·웨이포인트·가지에만
   const counts = {
-    guide: L.guide || 0, bandWidth: bm.widthBlobs.length, bandBreak: bm.breaks, bandLoop: bm.holes.length, bandDeadEnd: bm.deadParts.length,
+    guide: L.guide || 0, seamAlpha: L.seams || 0, bandWidth: bm.widthBlobs.length, bandBreak: bm.breaks, bandLoop: bm.holes.length, bandDeadEnd: bm.deadParts.length,
     bandEdgeEmpty: bm.emptySpots.length, straightEdge: runs.length, scattered: pm.scattered, featureSpace: pm.featureSpaces.length,
     pillarSingle: pm.singles.length, landmarkBlock: pm.dense.length, branchExtra: br.extra, waypoint: wpOff,
   };
+  if (keep) Object.assign(counts, { bandWidth: 0, bandDeadEnd: 0, bandEdgeEmpty: 0, straightEdge: 0 });
   const w2 = (k) => { const [c, r] = unK(k); return `(${c - G.W / 2}, ${G.H / 2 - r})`; };   // 월드 칸 좌표로 적는다
   const detail = {
     bandCells: bm.band.size, maxWidth: bm.maxWidth, wide: bm.widthBlobs.map((b) => w2(b[0])), unreached: bm.unreached.map(w2), holes: bm.holes.map((h) => `${w2(h[0])}~${h.length}칸`),
@@ -327,7 +371,8 @@ function layoutOf(id, env) {
   return {
     id, v5: !!bp.v5, w: bp.w, h: bp.h, grid: bp.rows, walls: new Set(Object.keys(bp.walls)), zones: bp.zones, roads: bp.roads, base: bp.base, markers: bp.markers,
     pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block })),
-    guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
+    guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
+    seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
   };
 }
 function fileEntities(id) {

@@ -160,7 +160,7 @@ function parseBlueprint(id) {
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       else if (m[0] === "backdrop") bp.backdrop = m[1];
       else if (m[0] === "floormix") for (const a of (m[1] || "").split(",").filter(Boolean)) bp.floorMix.add(a);
-      else if (m[0] === "v5") bp.v5 = true;   // 맵 구성 v5 (compose.cjs 설계서 v5) — 아래 artEntities: 길 안내·흩뿌림 정책 없음 · 역할표 기준 크기
+      else if (m[0] === "v5") { bp.v5 = true; bp.v5keep = m[1] === "keep"; }   // ;v5 keep = 바닥 보존형 (구역·길 글자 그대로)   // 맵 구성 v5 (compose.cjs 설계서 v5) — 아래 artEntities: 길 안내·흩뿌림 정책 없음 · 역할표 기준 크기
       continue;
     }
     if (raw.trim() === "") continue;
@@ -907,6 +907,14 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     o["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
     const py = y + (num(sp.ny, 0) * num(sp.h, 0) * sc) / 100;   // 발이 y에 오게 (메이플 피벗 보정)
     out.push({ name, pos: [r3(x), r3(py), over ? zOf(y, decal) - 0.0005 : zOf(y, decal)], overrides: o });
+    // v5: 키 큰 그림의 윗부분 그림(<그림>-top, art_sprites.csv에 있을 때만)을 같은 자리 앞층(MapLayer1)에 — 플레이어가 뒤에 서면 윗부분이 가린다.
+    //   10-31 현재 -top 그림은 없다(코덱스 잘라 낸 윗부분 납품 대기) — 납품되면 이 줄이 바로 쓴다
+    if (v5 && !decal && table[`${spName}-top`]) {
+      const t = sprite(table[`${spName}-top`].ruid, null, 1), tr = t["MOD.Core.SpriteRendererComponent"];
+      tr.SortingLayer = "MapLayer1"; tr.FlipX = !!flip; if (c) tr.Color = tintOf(c);
+      t["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
+      out.push({ name: `${name}Top`, pos: [r3(x), r3(py), zOf(y, decal)], overrides: t });
+    }
   };
   let propN = 0, decalN = 0, setN = 0, clN = 0;
   for (const r of rows) {
@@ -980,8 +988,9 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       guide = decor.guideEntities(bp, classes, opts.route, (n) => ruid(n, "길 안내"), { id: d.id, act: num(d.act, 1) });
       out.push(...guide.entities);
     }
-    seam = decor.seamEntities(bp, classes, (n) => ruid(n, "이음새"), { noShade: !!bp.raised });
-    out.push(...seam.entities);
+    // v5 성소형(;v5): 반투명 이음새 조각(ArtBand 띠 · ArtCorner 45° 조각 · ArtShade 그늘) 없음 — 경계는 불투명 바닥 타일 자체의 가장자리 (V5.SEAMS로만 되살린다).
+    //   v5 keep(;v5 keep)은 원래 이음새를 그대로 — 사용자 「개선 전에서 길 안내만 없는 상태」(10-31)
+    if (!v5 || bp.v5keep || decor.POLICY.V5.SEAMS) { seam = decor.seamEntities(bp, classes, (n) => ruid(n, "이음새"), { noShade: !!bp.raised }); out.push(...seam.entities); }
   }
   const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
   if (droppedOnRoute.length) warn.push(`${d.id}: 길 안내 폭 3칸 안이라 뺀 막는 조각 ${droppedOnRoute.length}개 — ${droppedOnRoute.join(", ")}`);

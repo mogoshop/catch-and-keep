@@ -492,7 +492,7 @@ function blueprintText(id, spec, grid, mapRow) {
   if (spec.shore) L.push(`;shore ${spec.shore}`);   // 물가 거품: <바다 그림> <거품 그림> [크기] [색] (lib.cjs 3-1)
   if (spec.backdrop) L.push(`;backdrop ${spec.backdrop}`);   // 맵 밖 배경색 r/g/b (lib.cjs build — Background SolidColor)
   if (spec.floorMix) L.push(`;floormix ${spec.floorMix}`);   // 그 바닥 그림을 그림 열·줄마다 좌우·상하 뒤집어 반복 격자를 깬다 (lib.cjs 2)
-  if (spec.v5) L.push(";v5");   // 맵 구성 v5 (lib.cjs: 길 안내 도장·흩뿌림 정책 없음 · 역할표 기준 크기 · tile_classes 바탕 = guide)
+  if (spec.v5) L.push(spec.v5.mode === "keep" ? ";v5 keep" : ";v5");   // 맵 구성 v5 (lib.cjs: 길 안내 도장·흩뿌림 정책 없음 · 역할표 기준 크기 · tile_classes 바탕 = guide)
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);
@@ -592,7 +592,7 @@ function main() {
     const out = compose(id, spec, ctx, row);
     const specOut = out.zonesExtra ? Object.assign({}, spec, { zones: Object.assign({}, spec.zones, out.zonesExtra) }) : spec;
     results.push({ id, spec: specOut, ...out });
-    if (out.v5) { console.log(`  [v5] ${id} 띠 ${out.v5.band}칸 (${out.v5.legs.join(" · ")}) · 패치 ${out.v5.patches} · 섬 ${out.v5.islands} · 경계 고침 ${out.v5.edgeFix}`); for (const t of out.v5.spaces) console.log("    " + t); for (const w of out.v5.warn) console.log("    ! " + w); }
+    if (out.v5) { console.log(`  [v5${spec.v5.mode === "keep" ? " keep" : ""}] ${id} ${spec.v5.mode === "keep" ? "골격(그리지 않음 · 배치 비움용)" : "띠"} ${out.v5.band}칸 (${out.v5.legs.join(" · ")}) · 패치 ${out.v5.patches} · 섬 ${out.v5.islands} · 경계 고침 ${out.v5.edgeFix}`); for (const t of out.v5.spaces) console.log("    " + t); for (const w of out.v5.warn) console.log("    ! " + w); }
     const floors = out.grid.join("").replace(/[^.a-z=\-~WEGXHTS]/g, "").length;
     console.log(`  ${id} ${spec.size.join("×")}: 바닥 ${floors}칸 · 화로 ${out.torches.length} · 세트 ${out.rows.filter((r) => r.kind === "set").length} · 소품 ${out.rows.filter((r) => r.kind === "prop").length} · 무늬 ${out.rows.filter((r) => r.kind === "decal").length}`);
     if (view) { console.log(out.grid.join("\n")); continue; }

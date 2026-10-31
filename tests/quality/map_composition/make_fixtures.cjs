@@ -47,4 +47,9 @@ save("10-pillar", base(), cleanPieces().concat([{ s: "wind-stele", x: wx(15), y:
   const g = Array.from({ length: 16 }, (_, r) => Array.from({ length: 24 }, (_, c) => (r === 0 || c === 0 || r === 15 || c === 23 ? "#" : c - r > 6 ? "d" : "a")));
   fs.writeFileSync(path.join(OUT, "14-diagonal.json"), JSON.stringify({ note: "한 칸씩 고른 45° 계단 경계 (화면에서 비스듬한 직선)", grid: g.map((r) => r.join("")), zones, base: { art: "fake-base", tint: "1/1/1" }, walls: ["#"], markers: "WEGXHTS", guide: 0, pieces: [], expect: { straightEdge: 1 } }, null, 1));
 }
+save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이음새 조각 3개 (ArtBand·ArtCorner)", json: { seams: 3 } });
+{ // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
+  const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";
+  save("16-keep", g, cleanPieces(), {}, { note: "v5 keep: 3칸 큰길이 그대로 있어도 위반 아님 (깨끗한 입력)", json: { v5keep: true, roads: { "=": { art: "fake-road", tint: "1/1/1" } } } });
+}
 console.log("ok");

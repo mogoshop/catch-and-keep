@@ -44,8 +44,11 @@ function run(o) {
   const opt = Object.assign({}, spec.v5 === true ? {} : spec.v5);
   const act = num(mapRow.act, 1);
   const outdoor = opt.outdoor !== undefined ? !!opt.outdoor : mapRow.kind === "field";
+  // v5-keep (설계서 v5.mode = "keep"): 바닥 보존형 — 구역 바닥·색·길 글자를 그대로 두고 띠를 그리지 않는다(골격은 배치 비움·검사용으로만 계산).
+  //   덧대기·구역 재적합·패치·양옆 나누기·경계 고침·섬 없음. 역할 배치·특징 공간당 1·길 안내 0만
+  const keep = opt.mode === "keep";
   const rand = rng(seed + 50505);
-  const warn = [], report = { id, outdoor };
+  const warn = [], report = { id, outdoor, patches: 0 };
   const floor = (x, y) => g.floor(x, y);
   const isMk = (x, y) => markerOf.has(K(x, y));
   const nw = (x, y) => { let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!floor(x + dx, y + dy)) n++; return n; };
@@ -77,7 +80,7 @@ function run(o) {
       for (const [dx, dy] of D8) {
         const nx = x + dx, ny = y + dy;
         if (!floor(nx, ny) || (dx && dy && (!floor(x + dx, y) || !floor(x, y + dy)))) continue;
-        const nd = dd + (dx && dy ? 1.414 : 1) * (1 + 0.6 * nw(nx, ny)) * (pen.has(K(nx, ny)) ? 12 : 1) + (seg ? 0.25 * segD(nx, ny, seg[0], seg[1]) : 0), nk = K(nx, ny);
+        const nd = dd + (dx && dy ? 1.414 : 1) * (1 + 0.6 * nw(nx, ny)) * (pen.has(K(nx, ny)) ? 12 : 1) * (keep && g.get(nx, ny).road ? 0.5 : 1) + (seg ? 0.25 * segD(nx, ny, seg[0], seg[1]) : 0), nk = K(nx, ny);   // keep: 남은 길 글자를 따른다 (검사기 골격과 같은 비용)
         if (!dist.has(nk) || nd < dist.get(nk) - 1e-9) { dist.set(nk, nd); prev.set(nk, K(x, y)); heapPush(h, [nd, nx, ny]); }
       }
     }
@@ -162,7 +165,7 @@ function run(o) {
     return true;
   };
   // C 가장자리 유기적: 한쪽(위) 3~4칸 · 빔 1 · 다른 쪽(아래) 3~4칸 · 빔 1 — 양쪽 가장자리 모두 6칸 안에서 꺾인다
-  legs.forEach((leg, li) => {
+  if (!keep) legs.forEach((leg, li) => {
     const lr = rng(seed + 777 + li * 131), seq = [];
     while (seq.length < leg.cells.length + 8) {
       // 위 a · 빔 b · 아래 c · 빔 d — 한쪽 가장자리가 같은 줄에 머무는 길이(b+c+d · d+a+b)는 6칸 이하, 평균 폭 약 1.5
@@ -190,7 +193,7 @@ function run(o) {
   });
   // 띠 구멍(덧댄 칸이 바닥 한 칸을 둘러쌈) — 구멍 곁 덧댄 칸을 뺀다
   const B0 = () => new Set([...band, ...[...core].filter((k) => isMk(...unK(k)))]);
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < (keep ? 0 : 8); pass++) {
     const Bs = B0(), xs = [...Bs].map(unK);
     if (!xs.length) break;
     const x0 = Math.min(...xs.map((p) => p[0])) - 1, x1 = Math.max(...xs.map((p) => p[0])) + 1, y0 = Math.min(...xs.map((p) => p[1])) - 1, y1 = Math.max(...xs.map((p) => p[1])) + 1;
@@ -224,6 +227,8 @@ function run(o) {
   for (const k of band) { distBand.set(k, 0); dq.push(k); }
   for (let i = 0; i < dq.length; i++) { const [x, y] = unK(dq[i]); for (const [dx, dy] of D4) { const nk = K(x + dx, y + dy); if (!distBand.has(nk) && floor(x + dx, y + dy)) { distBand.set(nk, distBand.get(dq[i]) + 1); dq.push(nk); } } }
   const dB = (x, y) => distBand.get(K(x, y)) ?? 99;
+  let emptyZone = null, edgeFix = 0;
+  if (!keep) {
   for (const [x, y] of floorCells) {
     const c = g.get(x, y);
     c.band = band.has(K(x, y));
@@ -281,7 +286,6 @@ function run(o) {
       }
     }
   }
-  let emptyZone = null;
   for (const [x, y] of floorCells) {
     const c = g.get(x, y);
     if (c.band || isMk(x, y) || c.zone) continue;
@@ -328,7 +332,6 @@ function run(o) {
   });
   const at = (c, r) => [c + g.x0, g.y1 - r];   // 격자 (c, r) → 월드 칸
   const stuck = new Set();
-  let edgeFix = 0;
   for (let it = 0; it < 400; it++) {
     const L = layoutNow(), G = checker.makeGrid(L);
     // 막다른 띠(골격에서 2칸 떨어진 덧댄 칸) 먼저 — 덧댄 칸이면 빼고 옆 구역으로
@@ -362,8 +365,9 @@ function run(o) {
     else stuck.add(`${rn.tag}|${rn.line}|${rn.from}`);
   }
   if (stuck.size) warn.push(`경계 직선 >6 못 고친 곳 ${stuck.size}`);
+  }   // !keep
   report.edgeFix = edgeFix;
-  for (const [x, y] of floorCells) g.get(x, y).band = band.has(K(x, y));
+  for (const [x, y] of floorCells) g.get(x, y).band = !keep && band.has(K(x, y));
 
   // ───────── 배치 준비: 비워 둘 칸 (기능 자리 둘레 · 띠와 띠 곁 1칸) ─────────
   g.each((x, y) => { const c = g.get(x, y); if (c && !c.wall) c.keep = false; });
@@ -372,6 +376,7 @@ function run(o) {
   const margin = new Set();
   for (const k of band) { margin.add(k); const [x, y] = unK(k); for (const [dx, dy] of D4) margin.add(K(x + dx, y + dy)); }
   for (const k of core) margin.add(k);
+  if (keep) for (const [x, y] of floorCells) if (g.get(x, y).road) margin.add(K(x, y));   // v5-keep: 설계도 길 글자 칸도 비운다
   const occ = new Set(), feet = [], rows = [];
   const free = (cells, place) => cells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !c.keep && !margin.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy) && (place === undefined || c.place === place); });
   const occupy = (cells, x, y) => { for (const [cx, cy] of cells) { occ.add(K(cx, cy)); occ.add(K(cx - 1, cy)); occ.add(K(cx + 1, cy)); } feet.push([x, y]); };
@@ -404,6 +409,10 @@ function run(o) {
     for (let cy = Math.floor(y); cy <= Math.floor(y + hc * 0.8); cy++) for (let cx = Math.floor(x - wc * 0.35); cx <= Math.floor(x + wc * 0.35); cx++) { if (band.has(K(cx, cy))) return false; const mk = markerOf.get(K(cx, cy)); if (mk && "WEGXHS".includes(mk)) return false; }
     return true;
   };
+  // 놓은 키 큰 그림이 화면에서 차지하는 자리 (화로를 그 몸통 위에 두지 않게 — 10-31 거인 몸통에 겹친 Torch5)
+  const vboxes = [];
+  const addVbox = (name, x, y, mul) => { if (/decal/.test(name)) return; const sp = table[name], sc = lib.baseScale(sp, ctx.propScale) * num(mul, 1) * roles.multOf(name), wc = (num(sp.w, 128) * sc) / 100, hc = (num(sp.h, 128) * sc) / 100; if (hc >= 1.2) vboxes.push([x - wc * 0.5 - 0.6, y - 0.6, x + wc * 0.5 + 0.6, y + hc + 0.4]); };   // 그림 폭·높이 + 화로 그림 반 폭
+  const inVbox = (px, py) => vboxes.some(([a, b, c2, d]) => px >= a && px <= c2 && py >= b && py <= d);
   const setVisual = (sn, x, y, m) => setPieces(sn).every((pc) => visualClear(pc.piece.replace(/^d:/, ""), x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1)));
   const featBlocks = new Set();
   const blockKey = (x, y) => `${Math.floor((Math.floor(x) - g.x0) / 16)},${Math.floor((g.y1 - Math.floor(y)) / 16)}`;   // 검사기 16×16 구역 (격자 c//16, r//16)
@@ -488,7 +497,7 @@ function run(o) {
     const plan = { feature: null, colonnade: null, row: null, ring: null, pair: null, sets: [], props: [], floorProps: [], decals: d.decals || [], dn: d.dn || 0 };
     if (o) {
       Object.assign(plan, { sets: o.sets || [], props: o.props || [], decals: o.decals || plan.decals, dn: o.dn ?? plan.dn });
-      if (first && o.feature) { const [kind, name] = o.feature.split(":"); plan.feature = { kind, name, at: o.featureAt, flip: o.featureFlip }; }
+      if (first && o.feature) { const [kind, name] = o.feature.split(":"); plan.feature = { kind, name, at: o.featureAt, flip: o.featureFlip, scale: o.featureScale }; }
       for (const k of ["colonnade", "row", "ring", "pair"]) if (o[k]) plan[k] = typeof o[k] === "string" ? { name: o[k] } : o[k];
       plan.floorProps = o.floorProps || [];
       return plan;
@@ -543,7 +552,7 @@ function run(o) {
   const gFeat = (grp, x, y, m) => grp.filter((p) => !p.decal && roles.roleOf(p.name) === "feature").map((p) => [x + p.dx * m, y + p.dy]);
   const gCommit = (kind, name, grp, whole, x, y, m, note) => {
     occupy(gCells(grp, x, y, m), x, y); doBlock(gBlock(grp, x, y, m));
-    for (const p of grp) if (!p.decal) bump(p.name);
+    for (const p of grp) if (!p.decal) { bump(p.name); addVbox(p.name, x + p.dx * m, y + p.dy, p.sc); }
     if (whole) { pushRow(kind, name, x, y, { flip: m < 0, note }); return; }
     for (const p of grp) pushRow(p.decal ? "decal" : "prop", p.name, x + p.dx * m, y + p.dy, { scale: p.sc !== 1 ? p.sc : "", flip: p.flip !== (m < 0), note: `${note} · ${name} 조각` });
   };
@@ -552,6 +561,7 @@ function run(o) {
     const f = s.plan.feature;
     if (!f || s.hasFeature) continue;
     const { out: grp, dropped } = trimGroup(groupOf(f.kind, f.name));
+    if (f.scale) for (const p of grp) p.sc *= f.scale;   // 설계서 featureScale: 역할 기준 크기에 곱 (성소 제단 3칸 → 4칸)
     if (dropped.length) s.notes.push(`특징 ${f.name}에서 뺀 조각: ${dropped.join(", ")}`);
     let T = s.c;
     if (s.entry) { const e = [s.entry[0] + 0.5, s.entry[1] + 0.5], dx = s.c[0] - e[0], dy = s.c[1] - e[1], L = Math.hypot(dx, dy) || 1; T = [s.c[0] + (dx / L) * 0.35 * s.R, s.c[1] + (dy / L) * 0.35 * s.R]; }
@@ -563,7 +573,9 @@ function run(o) {
     let best = null;
     for (const [sx, sy] of pool) {
       for (const m of f.flip ? [-1, 1] : [1, -1]) {
-        if (!free(gCells(grp, sx, sy, m)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m)) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
+        // featureAt(설계서가 자리를 정함)은 기능 자리 둘레 비움과 겹쳐도 된다 (보스 바로 뒤 제단) — 띠·띠 곁·놓인 것·표식만 피한다
+        const fcells = gCells(grp, sx, sy, m), atOk = f.at && fcells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !margin.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy); });
+        if (!(atOk || free(fcells)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m)) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
         const fp = gFeat(grp, sx, sy, m);
         if (fp.some(([a, b]) => featBlocks.has(blockKey(a, b)))) continue;
         if (!canBlock(gBlock(grp, sx, sy, m))) continue;
@@ -572,7 +584,7 @@ function run(o) {
       if (best) break;
     }
     if (!best) { warn.push(`특징 ${f.name}: ${s.p.name}에 자리 없음`); continue; }
-    gCommit(f.kind, f.name, grp, !dropped.length, best.sx, best.sy, best.m, `${s.p.name} · v5 특징`);
+    gCommit(f.kind, f.name, grp, !dropped.length && !f.scale, best.sx, best.sy, best.m, `${s.p.name} · v5 특징`);
     for (const [a, b] of best.fp) featBlocks.add(blockKey(a, b));
     s.feature = [best.sx, best.sy];
   } }
@@ -581,6 +593,7 @@ function run(o) {
     const bc = spots.flatMap((sp) => blockCellsProp(name, sp.q[0], sp.q[1]));
     if (!canBlock(bc)) { s.notes.push(`${tag} ${name}: 바닥을 가둬 뺌`); return; }
     doBlock(bc);
+    for (const sp of spots) addVbox(name, sp.q[0], sp.q[1], 1);
     for (const sp of spots) { occupy(sp.cells, sp.q[0], sp.q[1]); bump(name); pushRow("prop", name, sp.q[0], sp.q[1], { flip: sp.flip, note: `${s.p.name} · v5 ${tag}` }); } s.notes.push(`${tag} ${name}×${spots.length}`); };
   // 공간 안 곧은 띠 구간 (열주 축) — P = 띠가 들어오는 쪽, Q = 먼 쪽
   function stretchOf(s, C) {
@@ -603,7 +616,8 @@ function run(o) {
     return { P, Q };
   }
   const colonnade = (s, cfg) => {
-    const C = Object.assign({}, V.COLONNADE, cfg), st = stretchOf(s, C);
+    // axis(설계서): 띠가 아니라 정한 축 [[x, y], [x, y]]을 따라 (성소: 띠는 제단 앞에서 출구로 꺾여도 열주는 문→제단 축 끝까지)
+    const C = Object.assign({}, V.COLONNADE, cfg), st = C.axis ? { P: C.axis[0], Q: C.axis[1] } : stretchOf(s, C);
     if (!st) { s.notes.push(`열주 ${C.name}: 곧은 띠 구간 없음`); return; }
     const { P, Q } = st;
     const L = Math.hypot(Q[0] - P[0], Q[1] - P[1]), u = [(Q[0] - P[0]) / L, (Q[1] - P[1]) / L], nrm = [-u[1], u[0]];
@@ -611,13 +625,15 @@ function run(o) {
     //   간격(off)은 C.off부터 0.6칸씩 넓혀 보고 쌍이 가장 많이 들어가는 값
     const sp = table[C.name], hv = ((num(sp.h, 128) * lib.baseScale(sp, ctx.propScale) * roles.multOf(C.name)) / 100) * 0.8;
     let pairs = [];
-    for (const off of [C.off, C.off + 0.6, C.off + 1.2, C.off + 1.8]) {
+    // tight(설계서): 두 열을 띠 바로 곁에 — 띠 곁 1칸 비움(margin) 대신 띠 칸만 피한다 (성소 3차: 기본 줌 세로 7.2칸에 두 열이 함께 보이게 간격 5칸 안팎)
+    const okCells = (cells) => (C.tight ? cells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !band.has(K(cx, cy)) && !core.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy); }) : free(cells));
+    for (const off of C.tight ? [C.off, C.off + 0.3, C.off + 0.6] : [C.off, C.off + 0.6, C.off + 1.2, C.off + 1.8]) {
       const got = [], tent = new Set();
       for (let t = 1.5; t <= L - 0.5 + 1e-6; t += C.step) {
         const p = [P[0] + u[0] * t, P[1] + u[1] * t];
         if (s.feature && Math.hypot(p[0] - s.feature[0], p[1] - s.feature[1]) < 3.2) continue;
         const both = [1, -1].map((sd) => { const q = [r2(p[0] + nrm[0] * off * sd), r2(p[1] + nrm[1] * off * sd - hv / 2)]; return { q, cells: fc(C.name, q[0], q[1], 1), flip: sd < 0 }; });
-        if (both.every((bq) => free(bq.cells) && tentOk(bq.cells, tent) && !nearFunc(bq.q[0], bq.q[1]))) { both.forEach((bq) => tentAdd(bq.cells, tent)); got.push(...both); }
+        if (both.every((bq) => okCells(bq.cells) && tentOk(bq.cells, tent) && !(C.tight ? nearFunc(bq.q[0], bq.q[1], 1.8, 1.8) : nearFunc(bq.q[0], bq.q[1])))) { both.forEach((bq) => tentAdd(bq.cells, tent)); got.push(...both); }
       }
       if (got.length > pairs.length) pairs = got;   // 쌍이 가장 많은 간격 (같으면 좁은 쪽)
     }
@@ -675,10 +691,12 @@ function run(o) {
   const pair = (s, cfg) => {
     if (cfg.around === "feature") {   // 특징(제단·처형대) 양옆 쌍 — 역할표 pair 「처형대·제단 양옆 쌍」
       if (!s.feature) { s.notes.push(`쌍 ${cfg.name}: 특징 없음`); return; }
-      for (const d of [cfg.d || 2.8, (cfg.d || 2.8) + 0.6, (cfg.d || 2.8) + 1.2]) for (const dy of [0, -0.6, 0.6]) {
+      for (const d of [cfg.d || 2.8, (cfg.d || 2.8) - 0.4, (cfg.d || 2.8) + 0.6, (cfg.d || 2.8) + 1.2]) for (const dy of [0, -0.6, 0.6]) {
         const both = [1, -1].map((sd) => { const q = [r2(s.feature[0] + d * sd), r2(s.feature[1] + dy)]; return { q, cells: fc(cfg.name, q[0], q[1], 1), flip: sd < 0 }; });
         const tent = new Set();
-        if (both.every((bq) => free(bq.cells) && tentOk(bq.cells, tent) && !nearFunc(bq.q[0], bq.q[1]) && (tentAdd(bq.cells, tent), true))) { commit(s, cfg.name, both, "특징 양옆 쌍"); return; }
+        // 특징 양옆은 보스 자리 둘레(기능 자리 비움)와 겹쳐도 된다 — 띠·표식·놓인 것과 기능 자리 1.2칸 안만 피한다
+        const okLoose = (cells) => cells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !band.has(K(cx, cy)) && !core.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy); });
+        if (both.every((bq) => okLoose(bq.cells) && tentOk(bq.cells, tent) && !nearFunc(bq.q[0], bq.q[1], 1.2, 1.2) && (tentAdd(bq.cells, tent), true))) { commit(s, cfg.name, both, "특징 양옆 쌍"); return; }
       }
       s.notes.push(`쌍 ${cfg.name}: 특징 양옆 자리 없음`); return;
     }
@@ -718,6 +736,7 @@ function run(o) {
         if (feet.some(([fx, fy]) => Math.abs(fx - x - 0.5) < 2.4 && Math.abs(fy - y - 0.5) < 1.6)) continue;
         if (func.some((f) => Math.hypot(f.x - x - 0.5, f.y - y - 0.5) < 3.2)) continue;
         if (torches.some(([tx, ty]) => Math.hypot(tx - x - 0.5, ty - y - 0.5) < 6)) continue;
+        if (inVbox(x + 0.5, y + 0.5)) continue;
         let around = 0;
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (floor(x + dx, y + dy)) around++;
         if (around < 9) continue;

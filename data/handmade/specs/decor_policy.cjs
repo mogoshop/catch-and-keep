@@ -104,7 +104,8 @@ module.exports = {
   // ───── 맵 구성 v5 (10-31 · docs/design/map-composition-v5-plan.md) — 설계도에 ;v5가 있는 맵만 (설계서 v5: true → compose.cjs가 적는다). 나머지 맵은 위 값 그대로
   //   길 = 바닥 구역 경계의 빈 띠(설계도 바탕 . 칸) · 길 안내 도장 없음 · 흩뿌림 정책 끔 · 역할표(asset_roles.csv) 기준 크기·배열
   V5: {
-    BAND_EDGE: [[0.3, 0.45]],     // 띠(tile_class guide) ↔ 구역 경계 이음새: 띠 바닥이 구역 쪽으로 0.3칸만 번진다 (두 겹이면 띠가 묻혔다)
+    SEAMS: false,                 // 10-31 사용자 판정(유황 늪 2차 반려 「반투명 네모 타일이 난잡」): v5 성소형 맵은 반투명 이음새 조각(ArtBand·ArtCorner·ArtShade) 없음 — 불투명 타일 가장자리만. v5 keep은 원래 이음새 그대로
+    BAND_EDGE: [[0.3, 0.45]],     // SEAMS를 켤 때만: 띠(tile_class guide) ↔ 구역 경계 이음새 한 겹
     DILATE: { on: [2, 3], gap: [1, 2] },   // 띠 폭 1칸 골격에 한쪽씩 덧대기 — 위 2~3 · 빔 1~2 · 아래 2~3 · 빔 1~2 반복 (평균 폭 약 1.5 · 가장자리 직선 ≤6 · 폭 ≤2)
     CORE_VERSION: "26.10.0.0",   // v5 맵 파일 CoreVersion — 빌더 템플릿(.claude/skills, 26.7)이 아니라 메이커가 저장한 커밋본들과 같은 값 (v5 맵만 · 64장 빌드 결과 불변)
     DISTINCT_TINT: 0.1,           // 바탕과 같은 그림이면 색 차이가 이보다 커야 「다른 구역」 (아니면 띠 곁 빈 바닥으로 보고 패치)

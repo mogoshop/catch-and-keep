@@ -32,7 +32,7 @@ function derive(id) {
   for (const [ch, z] of Object.entries(bp.zones)) {
     const same = !z.art || z.art === baseArt;
     // 맵 구성 v5 (;v5): 바탕 칸(.) = 골격 띠 = 길 안내 계층 (이음새는 띠가 위 · decor.cjs floorAt)
-    if (bp.v5 && ch === ".") { out.push({ glyph: ch, tile_class: "guide", note: "v5 골격 띠 (바탕 바닥 · 구역 경계의 빈 띠)" }); continue; }
+    if (bp.v5 && !bp.v5keep && ch === ".") { out.push({ glyph: ch, tile_class: "guide", note: "v5 골격 띠 (바탕 바닥 · 구역 경계의 빈 띠)" }); continue; }
     out.push({ glyph: ch, tile_class: same ? "base" : "terrain", note: `구역 ${z.art || "(바탕)"} ${z.name}`.trim() });
   }
   for (const [ch, r] of Object.entries(bp.roads)) out.push({ glyph: ch, tile_class: "terrain", note: `길 ${r.art} ${r.name}`.trim() });
@@ -59,7 +59,7 @@ function main() {
   const rows = [], missing = [], bad = [];
   for (const id of ids) for (const r of derive(id)) {
     const k = `${id}|${r.glyph}`;
-    if (known.has(k) && !(r.tile_class === "guide" && known.get(k).tile_class !== "guide")) { rows.push(known.get(k)); known.delete(k); }   // v5 띠(.)는 손댄 값보다 규칙이 먼저
+    if (known.has(k) && !(r.glyph === "." && lib().parseBlueprint(id).v5 && r.tile_class !== known.get(k).tile_class)) { rows.push(known.get(k)); known.delete(k); }   // v5 맵의 바탕(.)은 손댄 값보다 규칙이 먼저 (v5 = guide · v5 keep = base)
     else if (known.has(k)) { known.delete(k); rows.push(Object.assign({ map: id }, r)); }
     else { missing.push(k); rows.push(Object.assign({ map: id }, r)); }
   }
