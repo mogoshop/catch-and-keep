@@ -778,7 +778,8 @@ script MonsterStatus extends Component
         -- 머리 위 문양: 코덱스 D-3 작은 문양(ui_icons.csv mark_* · 32px 굵은 윤곽)이 올라와 있으면 그것, 아니면 스킬 아이콘을 줄여서 (예전 방식)
         --   10-31 9계열: 외곽선 보강판(GameConst.FxSkillMarks 「kind=ruid;…」 · 48px 캔버스 · 문양 높이 30px ≈ 예전 32px 판의 28px → 배율 MarkerScale 그대로)이 있으면 먼저 · 키 = mark_ 뒤 이름
         if markKey ~= "" then
-            local outline = _Util:KeyFrames(_GameConst.FxSkillMarks, (string.gsub(markKey, "^mark_", "")))[1]
+            local markKind = string.match(markKey or "", "^mark_(.+)$") or (markKey or "")   -- 10-31 LEA-1102: string.gsub(반환 2개)를 인자 자리에 두지 않는다 (mlua 컴파일러가 괄호로 감싸도 인자 3개로 셈)
+            local outline = _Util:KeyFrames(_GameConst.FxSkillMarks, markKind)[1]
             if outline ~= nil then return outline end
         end
         local mark = markKey ~= "" and _GameData:GetUiIcon(markKey) or ""
@@ -829,7 +830,10 @@ script MonsterStatus extends Component
                     rec.plate = plate
                 end
             end
-            if not Environment:IsPublishedPlay() then log(string.format("[VRF] curse marker %s on %s scale=%.2f plate=%s outline=%s", kind, self.Entity.Name, self:MarkerScaleAt(rec.mark, 0), tostring(rec.plate ~= nil), tostring(#_Util:KeyFrames(_GameConst.FxSkillMarks, (string.gsub(markKey or "", "^mark_", "")))> 0))) end
+            if not Environment:IsPublishedPlay() then
+                local markKind = string.match(markKey or "", "^mark_(.+)$") or (markKey or "")
+                log(string.format("[VRF] curse marker %s on %s scale=%.2f plate=%s outline=%s", kind, self.Entity.Name, self:MarkerScaleAt(rec.mark, 0), tostring(rec.plate ~= nil), tostring(#_Util:KeyFrames(_GameConst.FxSkillMarks, markKind) > 0)))
+            end
         end
         local transform = self.Entity.TransformComponent
         local hit = self.Entity.HitComponent

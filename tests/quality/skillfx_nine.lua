@@ -429,4 +429,23 @@ do
  ok(count(pj,'_GameConst.FxSkillRiteArrow')==3 and count(pj,'_GameConst.FxSkillRiteArrowMs')==1,'의식 화살 = MirrorSkin 목록 + FrameSec(그림 비교 · ms)')
 end
 
+-- ④ 10-31 메이커 LEA-1102 재발 방지: mlua 컴파일러는 괄호로 감싼 string.gsub(반환 2개)도 인자 2개로 센다
+--    (MonsterStatus 781·832 「KeyFrames(…, (string.gsub(markKey, "^mark_", "")))」 → build Error · 로컬 Lua는 괄호 규칙으로 1개라 통과했다)
+--    → RootDesk 전체 .mlua에서 「(string.gsub(」가 함수 인자 자리(「(」·「,」 바로 뒤)에 오는 꼴 0건. 먼저 지역 변수로 받을 것
+do
+ local pipe=assert(io.popen('find RootDesk -name "*.mlua" -type f'))
+ local files,hits=0,{}
+ for f in pipe:lines() do
+  files=files+1
+  local n=0
+  for line in io.lines(f) do
+   n=n+1
+   if line:find('[,(]%s*%(string%.gsub%(') then table.insert(hits,f..':'..n) end
+  end
+ end
+ pipe:close()
+ ok(files>100,'RootDesk .mlua 전수 ('..files..'개)')
+ ok(#hits==0,'인자 자리 (string.gsub( 0건 — LEA-1102 함정: '..table.concat(hits,' '))
+end
+
 print(string.format('skillfx_nine: %d checks passed', checks))
