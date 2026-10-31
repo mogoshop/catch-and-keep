@@ -1,0 +1,262 @@
+MAP-CAPTURE-GUIDE-20261031 실행 기록 (KST) — 메이커 단일 담당 (Claude Opus 5.5, 조정자 Fable) · 브랜치 codex/player-experience-polish · HEAD 5a3d5ee1
+목표: 길 안내 타일(액트 1 aa98f94f · 액트 2·3·4 64eebc46) 적용 설계도 맵 66장(노말 id · maps.csv order 순 · depth 인스턴스 제외)을 메이커 클라이언트에서 맵당 1장 다시 캡처 → 액트별 시트 + 1차(2026-10-31-map-capture-all)와 전·후 비교
+절차·후처리 규칙은 1차 RUN-log와 같다 (capture 스크립트 v3 · 서버 PlayerTravel:Go → sleep 6~9 → maker_screenshot 를 한 응답에 7회씩)
+--- 0. 상태 ---
+12:08 편집 모드 · map01 · normal 로그 = 이전 세션 Telemetry 1줄뿐
+12:08:47 maker_refresh_workspace 1회 → build 로그 356줄 · Error 0 · Warning 102 · Info 254 (단, 빌드 시각 08:43:43 그대로 = 스크립트 재빌드 없음)
+--- 1차 play (12:09~12:22 · 폐기: 맵 14장이 옛 판) ---
+12:09:57 play · 12:10:12 S [VRF] MCB backup readback code=0 match=5/5 (캐릭터 선택 · 입장 전 · 슬롯 4 기준값 = 1차 캡처와 같음)
+12:10:06 슬롯 4 입장(S4→BtnEnter) → 12:10:17 Solo game:s1bab4192825 → 저장 끔(IsLoadSuccess=false)·무적(PlayerVitals.InvincibleUntil=1e9) → client 캡처 스크립트 v3 1회 설치
+  (v3 = 1차 cap_client.lua 그대로 + ready 로그에 guide=<보이는 ArtGuide 수> 한 칸만 추가)
+첫 사냥터 wasteland 스크린샷에 길 안내가 보임 → 66장 촬영(12:11~12:22 · 재시도 0)
+그러나 ready 로그의 guide 수를 map/<id>.map 의 ArtGuide 수와 맞춰 보니 14장이 다름: wasteland pit2 stormwaste scorpnest1 scorpnest2 kingtomb1 vipernest temple3 crabcave2 smuggler1 sulfurmarsh forge2 abyssgate2 throneante
+  → 14장 모두 aa98f94f 판의 ArtGuide 수와 정확히 같음 = 메이커가 64eebc46(09:42) 맵 변경을 일부만 반영하고 있었다 (12:08 refresh는 스크립트 변경이 없어 맵을 다시 읽지 않은 것으로 보임)
+  → 1차 play 66장 폐기 (scratchpad shots-play1-stale.tsv 에만 기록)
+--- 재반영 ---
+12:22 stop → 5초 → mtime만 touch: RootDesk/MyDesk/Player/PlayerTravel.mlua + 위 14장 map/<id>.map (내용 변경 없음 · git diff 0) → 5초 → 12:23:3x refresh 1회
+build 12:23:37 · 356줄 · Error 0 · Warning 102 · Info 254
+12:24 play → 서버 시작 뒤 약 2분 멈춤 → 12:25:55 play가 스스로 끝남(편집 모드 · 원인 미상, 오류 로그 없음) → 12:26 다시 play
+--- 2차 play (본 캡처 · PC FHD 1920×1080 · 스크린샷 2197×1236) ---
+12:27:06 S [VRF] MCB backup readback#2 code=0 match=1/5 (1차 play 입장으로 Account·Char_4·Inv_4·Stash 바뀜 → 끝에 복원)
+12:27:15 슬롯 4 입장 → 12:27:23 Solo → 12:28:18 game:s1bab81bb624 저장 끔·무적 · client 캡처 스크립트 v3 1회 설치
+12:28:19 town ~ 12:38:59 throne · 66/66 · 재시도 0 (lighthouse2는 처음부터 9초 대기, crypt3·stormcliff·lighthouse1·3·stormeye·abyssgate2·3·temple3은 7초)
+검증 1 (수): ready 로그 guide 수 66/66 = map/<id>.map ArtGuide 수 (5a3d5ee1) · 1차 play에서 어긋났던 14장 포함
+검증 2 (그림): 두 판에서 수가 같은 rotmarsh·cellar2·sulfurcave1 은 client에서 ArtGuide SpriteRUID 앞 8자를 세어 맵 파일과 대조
+  rotmarsh 79baeeaa=7 973019b9=92 b41dd202=14 eb8b5ec4=1 · cellar2 79baeeaa=8 973019b9=81 b41dd202=14 eb8b5ec4=2 · sulfurcave1 53179359=72 562f5100=15 b42e9c9c=1 f3224d4a=7 — 셋 다 맵 파일과 같음 (aa98f94f 판은 곡선 b41dd202·액트 4 RUID 0개)
+  (첫 RUID 탐침은 맵 이동 직후라 rotmarsh·cellar2가 빈 값 → 9초 대기 뒤 재탐침으로 확인)
+검증 3 (크기): 66장 모두 검은 바탕이 아닌 화소 bbox = 기대 크기 w·s·PPU × h·s·PPU ±1px (oasis·harbor만 위로 10~29px 튀어나온 야자수·배 그림)
+2차 play normal 로그 1831줄 · Error 2 = SelfTest 의도한 실패(boom) 2줄뿐(로비·방 각 1)
+길 안내 구조: 길 안내 타일은 RectTileMap 위 별도 타일층이 아니라 맵 자식 Art 엔티티 ArtGuide<N> (modelId artsprite · SpriteRendererComponent · MapLayer0 · OrderInLayer 1)
+  → 캡처 스크립트의 Art* 규칙(위치·크기 × s)으로 그대로 줄어 남는다. RectTileMap 끄기와 무관하므로 예외 규칙은 넣지 않았다
+--- 끝: 슬롯 4 복원 (새 play 캐릭터 선택 화면 server_main · 본문 = docs/evidence/2026-10-30-summon48-maker/slot4-restore-S48.lua, 태그만 MCB) ---
+12:43:19 S [VRF] MCB restore before code=0 match=0/5 Account=615/1666659254 Char_4=1036/87509691 Inv_4=1838/679553154 Shadow_4=40/1591196355 Stash=83/89927990
+12:43:19 S [VRF] MCB restore guard body match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+12:43:19 S [VRF] MCB restore BatchSetAndWait code=0 ok_keys=5
+12:43:27 S [VRF] MCB restore after code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+12:43:4x maker_stop → 편집 모드 · map01 (LEA-3051 캡처 타이머 미해제 경고 1줄 = stop 때 정상)
+--- 후처리 ---
+raw/<NN>-<id>.png = 원본 스크린샷 그대로(NN = maps.csv order 순 0~65) · maps-index.tsv = 맵마다 s·원본 파일·크롭 사각형 (1차와 같은 규칙)
+sheet-act1..4.png = 액트별(마을·보스방 포함) 같은 축척 1칸 = 11px · 가로 1800 · sheet-all.png = 66장 1칸 = 4px
+compare-act1..4.png = 1차 raw를 1차 maps-index 크롭 사각형으로 자른 것(왼쪽 「전」) vs 이번(오른쪽 「후」) · 같은 축척 1칸 = 6px · 라벨 번호·이름·id·w×h
+NOTES.md = 시트 판독 + tools/check_decor_collision.cjs(읽기 전용 · 66장 문제 0건) 수치 + 화면 대비 측정
+소요: 12:08 시작 → 12:22 1차 play 폐기 → 12:28~12:39 본 촬영 11분 → 12:44 메이커 정리
+--- 로그 ↔ 스크린샷 짝 (2차 play · shot = 파일 시각 · go = 서버 이동 로그 · ready = 클라 줄이기 끝 · 초 단위 내림) ---
+town	shot=122827	go=-	ready=122819 s=0.908 n=258 ticks=6 guide=0
+wasteland	shot=122833	go=122827	ready=122832 s=0.445 n=1007 ticks=9 guide=105
+rotmarsh	shot=122840	go=122833	ready=122839 s=0.445 n=1482 ticks=8 guide=114
+execution	shot=122920	go=122914	ready=122920 s=0.445 n=1067 ticks=8 guide=74
+gallows	shot=122927	go=122921	ready=122927 s=0.445 n=1165 ticks=10 guide=90
+crypt1	shot=122933	go=122927	ready=122932 s=0.554 n=558 ticks=8 guide=150
+crypt2	shot=122940	go=122933	ready=122939 s=0.554 n=514 ticks=12 guide=174
+crypt3	shot=122947	go=122940	ready=122945 s=0.554 n=512 ticks=11 guide=115
+queentomb	shot=122953	go=122947	ready=122952 s=0.554 n=343 ticks=9 guide=0
+hollow	shot=123000	go=122954	ready=122959 s=0.554 n=639 ticks=9 guide=148
+cellar1	shot=123028	go=123022	ready=123027 s=0.554 n=484 ticks=9 guide=131
+cellar2	shot=123035	go=123028	ready=123033 s=0.554 n=494 ticks=9 guide=105
+pit1	shot=123041	go=123035	ready=123040 s=0.554 n=638 ticks=9 guide=93
+pit2	shot=123047	go=123041	ready=123046 s=0.554 n=620 ticks=8 guide=120
+cave	shot=123054	go=123048	ready=123053 s=0.554 n=594 ticks=9 guide=116
+oasis	shot=123100	go=123054	ready=123058 s=0.908 n=289 ticks=6 guide=0
+dunes	shot=123107	go=123100	ready=123105 s=0.504 n=1062 ticks=6 guide=81
+canyon	shot=123134	go=123128	ready=123133 s=0.445 n=1068 ticks=6 guide=73
+stormwaste	shot=123140	go=123134	ready=123139 s=0.445 n=534 ticks=9 guide=110
+sunkenroad	shot=123147	go=123141	ready=123145 s=0.445 n=546 ticks=9 guide=163
+scorpnest1	shot=123153	go=123147	ready=123152 s=0.554 n=686 ticks=8 guide=97
+scorpnest2	shot=123200	go=123153	ready=123158 s=0.554 n=612 ticks=6 guide=126
+drywell	shot=123206	go=123200	ready=123205 s=0.554 n=636 ticks=9 guide=127
+kingtomb1	shot=123212	go=123206	ready=123211 s=0.554 n=480 ticks=6 guide=127
+kingtomb2	shot=123240	go=123233	ready=123238 s=0.554 n=523 ticks=9 guide=94
+archive	shot=123246	go=123240	ready=123245 s=0.554 n=571 ticks=8 guide=157
+vipernest	shot=123252	go=123246	ready=123251 s=0.554 n=650 ticks=8 guide=116
+temple1	shot=123259	go=123253	ready=123257 s=0.554 n=570 ticks=9 guide=163
+temple2	shot=123305	go=123259	ready=123304 s=0.554 n=532 ticks=10 guide=124
+temple3	shot=123313	go=123305	ready=123310 s=0.554 n=710 ticks=8 guide=171
+sanctum	shot=123319	go=123313	ready=123317 s=0.554 n=361 ticks=6 guide=0
+harbor	shot=123346	go=123340	ready=123345 s=0.908 n=477 ticks=6 guide=0
+saltflat	shot=123353	go=123347	ready=123351 s=0.504 n=1057 ticks=6 guide=120
+wreckcoast	shot=123359	go=123353	ready=123358 s=0.445 n=1267 ticks=6 guide=61
+stormcliff	shot=123407	go=123359	ready=123404 s=0.445 n=2066 ticks=6 guide=44
+drownedvillage	shot=123413	go=123407	ready=123411 s=0.445 n=1174 ticks=6 guide=58
+crabcave1	shot=123419	go=123413	ready=123418 s=0.554 n=1086 ticks=8 guide=102
+crabcave2	shot=123426	go=123420	ready=123424 s=0.554 n=976 ticks=6 guide=135
+wreckhold	shot=123453	go=123446	ready=123451 s=0.554 n=632 ticks=9 guide=124
+smuggler1	shot=123459	go=123453	ready=123457 s=0.554 n=464 ticks=6 guide=103
+smuggler2	shot=123505	go=123459	ready=123503 s=0.554 n=514 ticks=6 guide=94
+seachapel	shot=123512	go=123506	ready=123510 s=0.554 n=569 ticks=9 guide=168
+keeperhouse	shot=123518	go=123512	ready=123517 s=0.554 n=621 ticks=9 guide=121
+lighthouse1	shot=123526	go=123518	ready=123523 s=0.554 n=1166 ticks=7 guide=171
+lighthouse2	shot=123535	go=123526	ready=123531 s=0.554 n=1376 ticks=8 guide=159
+lighthouse3	shot=123604	go=123557	ready=123601 s=0.554 n=1355 ticks=8 guide=138
+stormeye	shot=123611	go=123604	ready=123608 s=0.554 n=1223 ticks=6 guide=0
+outpost	shot=123618	go=123611	ready=123615 s=0.908 n=256 ticks=6 guide=0
+embercanyon	shot=123624	go=123618	ready=123622 s=0.504 n=1225 ticks=6 guide=81
+demonroad	shot=123630	go=123624	ready=123628 s=0.445 n=747 ticks=6 guide=35
+sulfurmarsh	shot=123637	go=123631	ready=123635 s=0.445 n=1377 ticks=8 guide=105
+burningkeep	shot=123643	go=123637	ready=123641 s=0.445 n=1066 ticks=6 guide=53
+sulfurcave1	shot=123712	go=123705	ready=123710 s=0.554 n=648 ticks=8 guide=95
+sulfurcave2	shot=123718	go=123712	ready=123716 s=0.554 n=623 ticks=9 guide=113
+soulprison	shot=123725	go=123718	ready=123722 s=0.554 n=439 ticks=8 guide=113
+forge1	shot=123731	go=123725	ready=123729 s=0.554 n=566 ticks=9 guide=173
+forge2	shot=123737	go=123731	ready=123735 s=0.554 n=641 ticks=9 guide=113
+apostate	shot=123744	go=123738	ready=123741 s=0.554 n=568 ticks=7 guide=132
+pit	shot=123750	go=123744	ready=123748 s=0.554 n=581 ticks=9 guide=82
+abyssgate1	shot=123818	go=123812	ready=123816 s=0.554 n=555 ticks=9 guide=169
+abyssgate2	shot=123826	go=123819	ready=123823 s=0.554 n=638 ticks=12 guide=181
+abyssgate3	shot=123833	go=123826	ready=123830 s=0.554 n=561 ticks=12 guide=98
+ashhall	shot=123840	go=123833	ready=123838 s=0.554 n=639 ticks=12 guide=112
+heartbridge	shot=123846	go=123840	ready=123844 s=0.445 n=734 ticks=9 guide=0
+throneante	shot=123852	go=123846	ready=123851 s=0.554 n=671 ticks=11 guide=90
+throne	shot=123859	go=123853	ready=123856 s=0.554 n=355 ticks=6 guide=0
+--- [CAP]·MCB 로그 원문 (2차 play) ---
+12:27:06 S [VRF] MCB backup readback#2 code=0 match=1/5 Account=615/1022418740 Char_4=1036/632814406 Inv_4=1838/1714138031 Shadow_4=40/923051497 Stash=83/90734088
+12:27:15 C [VRF] MCB click CharSelect/Box/S4
+12:27:16 C [VRF] MCB click CharSelect/Box/BtnEnter
+12:27:23 C [VRF] MCB click RoomWin/Box/Home/Solo
+12:28:18 S [VRF] MCB prep#2 save=off invincible map=town load=false inv=1000000000.0
+12:28:18 C [CAP] installed v3 guide #2
+12:28:19 C [CAP] ready town s=0.908 n=258 ticks=6 guide=0
+12:28:27 S [CAP] go wasteland
+12:28:32 C [CAP] ready wasteland s=0.445 n=1007 ticks=9 guide=105
+12:28:33 S [CAP] go rotmarsh
+12:28:39 C [CAP] ready rotmarsh s=0.445 n=1482 ticks=8 guide=114
+12:29:14 S [CAP] go execution
+12:29:20 C [CAP] ready execution s=0.445 n=1067 ticks=8 guide=74
+12:29:21 S [CAP] go gallows
+12:29:27 C [CAP] ready gallows s=0.445 n=1165 ticks=10 guide=90
+12:29:27 S [CAP] go crypt1
+12:29:32 C [CAP] ready crypt1 s=0.554 n=558 ticks=8 guide=150
+12:29:33 S [CAP] go crypt2
+12:29:39 C [CAP] ready crypt2 s=0.554 n=514 ticks=12 guide=174
+12:29:40 S [CAP] go crypt3
+12:29:45 C [CAP] ready crypt3 s=0.554 n=512 ticks=11 guide=115
+12:29:47 S [CAP] go queentomb
+12:29:52 C [CAP] ready queentomb s=0.554 n=343 ticks=9 guide=0
+12:29:54 S [CAP] go hollow
+12:29:59 C [CAP] ready hollow s=0.554 n=639 ticks=9 guide=148
+12:30:22 S [CAP] go cellar1
+12:30:27 C [CAP] ready cellar1 s=0.554 n=484 ticks=9 guide=131
+12:30:28 S [CAP] go cellar2
+12:30:33 C [CAP] ready cellar2 s=0.554 n=494 ticks=9 guide=105
+12:30:35 S [CAP] go pit1
+12:30:40 C [CAP] ready pit1 s=0.554 n=638 ticks=9 guide=93
+12:30:41 S [CAP] go pit2
+12:30:46 C [CAP] ready pit2 s=0.554 n=620 ticks=8 guide=120
+12:30:48 S [CAP] go cave
+12:30:53 C [CAP] ready cave s=0.554 n=594 ticks=9 guide=116
+12:30:54 S [CAP] go oasis
+12:30:58 C [CAP] ready oasis s=0.908 n=289 ticks=6 guide=0
+12:31:00 S [CAP] go dunes
+12:31:05 C [CAP] ready dunes s=0.504 n=1062 ticks=6 guide=81
+12:31:28 S [CAP] go canyon
+12:31:33 C [CAP] ready canyon s=0.445 n=1068 ticks=6 guide=73
+12:31:34 S [CAP] go stormwaste
+12:31:39 C [CAP] ready stormwaste s=0.445 n=534 ticks=9 guide=110
+12:31:41 S [CAP] go sunkenroad
+12:31:45 C [CAP] ready sunkenroad s=0.445 n=546 ticks=9 guide=163
+12:31:47 S [CAP] go scorpnest1
+12:31:52 C [CAP] ready scorpnest1 s=0.554 n=686 ticks=8 guide=97
+12:31:53 S [CAP] go scorpnest2
+12:31:58 C [CAP] ready scorpnest2 s=0.554 n=612 ticks=6 guide=126
+12:32:00 S [CAP] go drywell
+12:32:05 C [CAP] ready drywell s=0.554 n=636 ticks=9 guide=127
+12:32:06 S [CAP] go kingtomb1
+12:32:11 C [CAP] ready kingtomb1 s=0.554 n=480 ticks=6 guide=127
+12:32:33 S [CAP] go kingtomb2
+12:32:38 C [CAP] ready kingtomb2 s=0.554 n=523 ticks=9 guide=94
+12:32:40 S [CAP] go archive
+12:32:45 C [CAP] ready archive s=0.554 n=571 ticks=8 guide=157
+12:32:46 S [CAP] go vipernest
+12:32:51 C [CAP] ready vipernest s=0.554 n=650 ticks=8 guide=116
+12:32:53 S [CAP] go temple1
+12:32:57 C [CAP] ready temple1 s=0.554 n=570 ticks=9 guide=163
+12:32:59 S [CAP] go temple2
+12:33:04 C [CAP] ready temple2 s=0.554 n=532 ticks=10 guide=124
+12:33:05 S [CAP] go temple3
+12:33:10 C [CAP] ready temple3 s=0.554 n=710 ticks=8 guide=171
+12:33:13 S [CAP] go sanctum
+12:33:17 C [CAP] ready sanctum s=0.554 n=361 ticks=6 guide=0
+12:33:40 S [CAP] go harbor
+12:33:45 C [CAP] ready harbor s=0.908 n=477 ticks=6 guide=0
+12:33:47 S [CAP] go saltflat
+12:33:51 C [CAP] ready saltflat s=0.504 n=1057 ticks=6 guide=120
+12:33:53 S [CAP] go wreckcoast
+12:33:58 C [CAP] ready wreckcoast s=0.445 n=1267 ticks=6 guide=61
+12:33:59 S [CAP] go stormcliff
+12:34:04 C [CAP] ready stormcliff s=0.445 n=2066 ticks=6 guide=44
+12:34:07 S [CAP] go drownedvillage
+12:34:11 C [CAP] ready drownedvillage s=0.445 n=1174 ticks=6 guide=58
+12:34:13 S [CAP] go crabcave1
+12:34:18 C [CAP] ready crabcave1 s=0.554 n=1086 ticks=8 guide=102
+12:34:20 S [CAP] go crabcave2
+12:34:24 C [CAP] ready crabcave2 s=0.554 n=976 ticks=6 guide=135
+12:34:46 S [CAP] go wreckhold
+12:34:51 C [CAP] ready wreckhold s=0.554 n=632 ticks=9 guide=124
+12:34:53 S [CAP] go smuggler1
+12:34:57 C [CAP] ready smuggler1 s=0.554 n=464 ticks=6 guide=103
+12:34:59 S [CAP] go smuggler2
+12:35:03 C [CAP] ready smuggler2 s=0.554 n=514 ticks=6 guide=94
+12:35:06 S [CAP] go seachapel
+12:35:10 C [CAP] ready seachapel s=0.554 n=569 ticks=9 guide=168
+12:35:12 S [CAP] go keeperhouse
+12:35:17 C [CAP] ready keeperhouse s=0.554 n=621 ticks=9 guide=121
+12:35:18 S [CAP] go lighthouse1
+12:35:23 C [CAP] ready lighthouse1 s=0.554 n=1166 ticks=7 guide=171
+12:35:26 S [CAP] go lighthouse2
+12:35:31 C [CAP] ready lighthouse2 s=0.554 n=1376 ticks=8 guide=159
+12:35:57 S [CAP] go lighthouse3
+12:36:01 C [CAP] ready lighthouse3 s=0.554 n=1355 ticks=8 guide=138
+12:36:04 S [CAP] go stormeye
+12:36:08 C [CAP] ready stormeye s=0.554 n=1223 ticks=6 guide=0
+12:36:11 S [CAP] go outpost
+12:36:15 C [CAP] ready outpost s=0.908 n=256 ticks=6 guide=0
+12:36:18 S [CAP] go embercanyon
+12:36:22 C [CAP] ready embercanyon s=0.504 n=1225 ticks=6 guide=81
+12:36:24 S [CAP] go demonroad
+12:36:28 C [CAP] ready demonroad s=0.445 n=747 ticks=6 guide=35
+12:36:31 S [CAP] go sulfurmarsh
+12:36:35 C [CAP] ready sulfurmarsh s=0.445 n=1377 ticks=8 guide=105
+12:36:37 S [CAP] go burningkeep
+12:36:41 C [CAP] ready burningkeep s=0.445 n=1066 ticks=6 guide=53
+12:37:05 S [CAP] go sulfurcave1
+12:37:10 C [CAP] ready sulfurcave1 s=0.554 n=648 ticks=8 guide=95
+12:37:12 S [CAP] go sulfurcave2
+12:37:16 C [CAP] ready sulfurcave2 s=0.554 n=623 ticks=9 guide=113
+12:37:18 S [CAP] go soulprison
+12:37:22 C [CAP] ready soulprison s=0.554 n=439 ticks=8 guide=113
+12:37:25 S [CAP] go forge1
+12:37:29 C [CAP] ready forge1 s=0.554 n=566 ticks=9 guide=173
+12:37:31 S [CAP] go forge2
+12:37:35 C [CAP] ready forge2 s=0.554 n=641 ticks=9 guide=113
+12:37:38 S [CAP] go apostate
+12:37:41 C [CAP] ready apostate s=0.554 n=568 ticks=7 guide=132
+12:37:44 S [CAP] go pit
+12:37:48 C [CAP] ready pit s=0.554 n=581 ticks=9 guide=82
+12:38:12 S [CAP] go abyssgate1
+12:38:16 C [CAP] ready abyssgate1 s=0.554 n=555 ticks=9 guide=169
+12:38:19 S [CAP] go abyssgate2
+12:38:23 C [CAP] ready abyssgate2 s=0.554 n=638 ticks=12 guide=181
+12:38:26 S [CAP] go abyssgate3
+12:38:30 C [CAP] ready abyssgate3 s=0.554 n=561 ticks=12 guide=98
+12:38:33 S [CAP] go ashhall
+12:38:38 C [CAP] ready ashhall s=0.554 n=639 ticks=12 guide=112
+12:38:40 S [CAP] go heartbridge
+12:38:44 C [CAP] ready heartbridge s=0.445 n=734 ticks=9 guide=0
+12:38:46 S [CAP] go throneante
+12:38:51 C [CAP] ready throneante s=0.554 n=671 ticks=11 guide=90
+12:38:53 S [CAP] go throne
+12:38:56 C [CAP] ready throne s=0.554 n=355 ticks=6 guide=0
+12:39:51 S [CAP] go rotmarsh (ruid probe)
+12:39:56 C [CAP] ready rotmarsh s=0.445 n=1463 ticks=6 guide=114
+12:39:57 S [CAP] go cellar2 (ruid probe)
+12:40:01 C [CAP] ready cellar2 s=0.554 n=509 ticks=8 guide=105
+12:40:02 C [CAP] ruid probe rotmarsh guide=114 
+12:40:04 S [CAP] go sulfurcave1 (ruid probe)
+12:40:07 C [CAP] ruid probe cellar2 guide=105 
+12:40:07 C [CAP] ready sulfurcave1 s=0.554 n=649 ticks=6 guide=95
+12:40:11 C [CAP] ruid probe sulfurcave1 guide=95 53179359=72 562f5100=15 b42e9c9c=1 f3224d4a=7
+12:40:52 S [CAP] go rotmarsh (ruid probe 2)
+12:40:57 C [CAP] ready rotmarsh s=0.445 n=1463 ticks=6 guide=114
+12:41:04 C [CAP] ruid probe2 rotmarsh guide=114 nosr=0 79baeeaa=7 973019b9=92 b41dd202=14 eb8b5ec4=1
+12:41:21 S [CAP] go cellar2 (ruid probe 2)
+12:41:25 C [CAP] ready cellar2 s=0.554 n=509 ticks=6 guide=105
+12:41:32 C [CAP] ruid probe2 cellar2 guide=105 nosr=0 79baeeaa=8 973019b9=81 b41dd202=14 eb8b5ec4=2
