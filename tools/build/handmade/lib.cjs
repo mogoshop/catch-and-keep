@@ -251,6 +251,20 @@ function footprint(x, y, wPx, scale) {
 //   Default 층 · 순서 5 = 내 아바타(4)·남 아바타(3)·몬스터(2)보다 위. 이름표(NameTagComponent)는 층·순서 API가 없는 엔진 그림이라 값을 못 정한다 — 가장 낮은 5로 둔다.
 //   DarkVision은 이름이 Top으로 끝나는 그림의 순서·z를 내리지 않는다. 검사기 topLayer = Default · 순서 ≥5.
 const TOP_LAYER = "Default", TOP_ORDER = 5;
+// 10-31 윗부분 2차: 자르는 선은 코덱스 표의 실제 값(PNG 알파 실측 = 첫 완전 투명 줄 · data/handmade/top_cutlines.csv)으로 잰다.
+//   2차는 열린 바닥 특징(배치표 foot=0.67)을 위 1/3만 남겨 자른다(자르는 선 = 그림 높이 2/3) — 역할 비율(특징 1/2)로 재면 자르는 선을 낮게 잡아 발 조각을 못 거른다.
+//   피벗도 표 값(pivot_y · 업로드 직후 asset_get_group_resource_metadata_bulk로 읽은 실제 값 = 원본 피벗)으로 뺀다 — 그림 바닥은 발 y보다 피벗 × 화면 높이만큼 아래다.
+//   (1차는 생성기에 피벗 값이 없어 빼지 않았다(보수적). 2차 열린 바닥 특징은 자르는 선과 막힘 꼭대기 차이가 0.04~0.2칸이라 피벗(0.07~0.12칸)을 빼야 실제 발 조각 여부가 맞다)
+//   표에 없는 -top은 예전처럼 역할 비율(roles.footFrac) · 피벗 0.
+// 앞 머리 규칙 (10-31 윗부분 2차): 앞층은 y와 상관없이 아바타(순서 4) 위에 그려진다 — 앞(남쪽)에 붙어 선 플레이어 머리(발 칸 아래 경계 + 사람 키 0.75칸)가
+//   자르는 선보다 위면 윗부분이 앞에 선 사람 머리를 덮는다(원본만 있을 땐 y 정렬로 사람이 앞). 그런 자리는 놓지 않는다 (2차 우리 16·창살 13 = 모두 벽 밀착이라 뒤에 설 칸도 없음)
+const TOP_FRONT_HEAD = 0.75;
+let TOP_CUT = null;
+function topCuts() { if (!TOP_CUT) { TOP_CUT = {}; if (fs.existsSync(path.join(HM_DIR, "top_cutlines.csv"))) for (const r of load("handmade/top_cutlines")) TOP_CUT[r.name] = r; } return TOP_CUT; }
+// 자르는 선 높이 = 발 y + 그림 화면 높이 × topCutFrac (= 캔버스 아래에서 첫 완전 투명 줄까지 비율 − 피벗)
+function topCutFrac(topName, srcName) { const r = topCuts()[topName]; return r ? (num(r.h) - num(r.first_clear_row)) / num(r.h) - num(r.pivot_y, 0) : roles.footFrac(srcName); }
+// 그 원본의 윗부분 후보: <그림>-top + 같은 원본의 배치 변형 <그림>-top-<이름>(표에 있을 때 · 예: 향로 계단 -top-feature-half = 위 1/2)
+function topCandidates(table, srcName) { return [`${srcName}-top`, ...Object.keys(topCuts()).filter((n) => n.startsWith(`${srcName}-top-`))].filter((n) => table[n]); }
 // v5 발밑 칸: 그림 가로 60% × (발밑 한 줄 + 역할별 그림 높이의 아래 비율 — 특징 1/2 · 반복 구조 1/3) — 제단·간헐천 위로 올라서지 못하게 (10-31 표본 4차)
 //   opts.frac: 그 자리만 비율을 바꾼다 (열린 바닥 랜드마크 2/3 — 배치표 args foot=) · 서 있는 특징·구조는 최소 2줄 (10-31 표본 5차)
 //   opts.isWall + toWall: 벽 정면(facing north) 그림을 벽에 붙였을 때 발밑부터 북쪽 벽까지 칸을 모두 막는다 (뒤 칸 0 — 배치표 args wall=1)
@@ -911,7 +925,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // ok: 배치표 args ok=cliff(일부러 절벽·담 위) · ok=gate(일부러 기능 자리 곁) · ok=gate+cliff(둘 다) — 그 경고를 끈다
   // over: 배치표 args over=1 — 같은 자리 그림 위에 겹치는 층(코덱스 a4-abyss-wall-pulse 발광 층)을 그 그림 바로 앞에 (z는 0.001 단위라 발 y를 조금 내려서는 앞뒤가 안 갈린다)
   const droppedOnRoute = [];   // 10-31 C-3: 길 안에 걸려 뺀 막는 조각
-  const topSkipped = [];   // 10-31 윗부분 층: 자르는 선이 막힘 꼭대기보다 위라 놓지 않은 -top
+  const topSkipped = [], topSkippedList = [];   // 10-31 윗부분 층: 자르는 선이 막힘 꼭대기보다 위라 놓지 않은 -top (List = 검사기용 {이름, 그림, 자르는 선, 막힘 꼭대기})
   const pieces = [];   // 10-31 C: 놓은 장식마다 {이름, 그림, 발, 막음, 막은 칸, 흩뿌림} — 검사기·전후 표
   const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over, collide, scatter, fopt) => {
     const sp = spriteOf(table, spName, where);
@@ -956,13 +970,20 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     //   (10-31 윗부분 층) 자르는 선(역할 비율 — 특징 1/2 · 구조 1/3, 코덱스 자르는 선과 같은 규칙)이 발 칸 열의 막힘 꼭대기보다 위면 놓지 않는다:
     //   뒤에 붙어 선 플레이어 발이 자르는 선 아래로 나와 원본 아랫부분 앞에 그려지고 몸만 가려진다(메이커 7차 열주 남열 「발 조각」 · 쓰러진 거인도 같은 꼴).
     //   막지 않는 그림이면(막힌 칸 없음) 어디든 설 수 있어 같은 꼴이라 놓지 않는다. 자르는 선 자체는 고치지 않는다(코덱스 그림 그대로).
-    if (v5 && !decal && table[`${spName}-top`]) {
+    //   (10-31 윗부분 2차) 자르는 선은 실제 값(topCutFrac). 후보가 여럿(배치 변형)이면 규칙을 지키는 것 중 자르는 선이 가장 높은 것(막힘 꼭대기에 가장 가까운 것)을 쓴다.
+    const tops = v5 && !decal ? topCandidates(table, spName) : [];
+    if (tops.length) {
       const col = (topCells || []).filter(([cx]) => cx === cell[0]);
       const blockTop = col.length ? Math.max(...col.map(([, cy]) => cy)) + 1 : null;
-      const cutY = y + ((num(sp.h, 0) * sc) / 100) * roles.footFrac(spName);
-      if (blockTop === null || cutY > blockTop + 1e-6) topSkipped.push(`${name} ${spName}(자르는 선 y ${r3(cutY)} > 막힘 꼭대기 ${blockTop === null ? "없음" : blockTop})`);
+      const H = (num(sp.h, 0) * sc) / 100, cuts = tops.map((n) => ({ n, cutY: y + H * topCutFrac(n, spName) }));
+      const fits = blockTop === null ? [] : cuts.filter((t) => t.cutY <= blockTop + 1e-6).sort((a, b) => b.cutY - a.cutY);
+      const head = cell[1] + TOP_FRONT_HEAD, front = fits.filter((t) => t.cutY >= head - 1e-6);
+      if (!fits.length) topSkippedList.push({ name, sprite: spName, reason: "foot", cutY: r3(cuts[0].cutY), blockTop });
+      else if (!front.length) topSkippedList.push({ name, sprite: spName, reason: "front", cutY: r3(fits[0].cutY), blockTop, head });
+      if (!fits.length) topSkipped.push(`${name} ${spName}(자르는 선 y ${r3(cuts[0].cutY)} > 막힘 꼭대기 ${blockTop === null ? "없음" : blockTop})`);
+      else if (!front.length) topSkipped.push(`${name} ${spName}(앞에 선 머리 y ${r3(head)} > 자르는 선 y ${r3(fits[0].cutY)})`);
       else {
-      const t = sprite(table[`${spName}-top`].ruid, null, TOP_ORDER), tr = t["MOD.Core.SpriteRendererComponent"];
+      const t = sprite(table[front[0].n].ruid, null, TOP_ORDER), tr = t["MOD.Core.SpriteRendererComponent"];
       tr.SortingLayer = TOP_LAYER; tr.FlipX = !!flip; if (c) tr.Color = tintOf(c);
       t["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
       out.push({ name: `${name}Top`, pos: [r3(x), r3(py), zOf(y, decal)], overrides: t });
@@ -1047,10 +1068,10 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     if (!v5 || bp.v5keep || decor.POLICY.V5.SEAMS) { seam = decor.seamEntities(bp, classes, (n) => ruid(n, "이음새"), { noShade: !!bp.raised }); out.push(...seam.entities); }
   }
   const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
-  if (topSkipped.length) warn.push(`${d.id}: 윗부분 그림을 놓지 않은 장식 ${topSkipped.length}개 (뒤에 서면 발이 자르는 선 아래로 나옴) — ${topSkipped.join(", ")}`);
+  if (topSkipped.length) warn.push(`${d.id}: 윗부분 그림을 놓지 않은 장식 ${topSkipped.length}개 (뒤에 서면 발이 자르는 선 아래로 나옴 · 또는 앞에 선 머리를 덮음) — ${topSkipped.join(", ")}`);
   if (droppedOnRoute.length) warn.push(`${d.id}: 길 안내 폭 3칸 안이라 뺀 막는 조각 ${droppedOnRoute.length}개 — ${droppedOnRoute.join(", ")}`);
   const extra = mode ? { droppedOnRoute: droppedOnRoute.length, topSkipped: topSkipped.length, marks: markN, guide: guide ? guide.entities.length : 0, bands: seam ? seam.bands : 0, shades: seam ? seam.shades : 0, corners: seam ? seam.corners : 0 } : {};
-  return { entities: out, blocked, warn, size, pieces, route: opts.route || null, guide, seam, mode, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, extra) };
+  return { entities: out, blocked, warn, size, pieces, topSkipped: topSkippedList, route: opts.route || null, guide, seam, mode, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, extra) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
@@ -1154,4 +1175,4 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size, art }, art.counts, result);
 }
 
-module.exports = { TOP_LAYER, TOP_ORDER, parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, footprintRole, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
+module.exports = { TOP_LAYER, TOP_ORDER, TOP_FRONT_HEAD, topCutFrac, topCandidates, parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, footprintRole, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
