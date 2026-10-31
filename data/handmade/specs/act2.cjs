@@ -542,3 +542,43 @@ for (const [id, sp] of Object.entries(module.exports)) {
   }));
   for (const z of Object.keys(more)) if (!sp.dress[z]) sp.dress[z] = { sets: more[z] };
 }
+
+// ───────── 10-31 맵 구성 v5 표본 (2.5단계 · docs/design/map-composition-v5-plan.md) — 대사제의 성소 ─────────
+//   사용자 예시: 성소 문 → 순례자의 방 → 봉인된 문간 → 성소(아레나). 홀 입구(서쪽 문, y 1)에서 동쪽 벽 앞 제단까지 곧은 축 하나 = 띠(신랑 身廊),
+//   그 양옆 temple-column 열주 2열(간격 3칸 · 역할 기준 3.5칸) · 축 끝 동쪽 벽 앞 정중앙에 태양 원판 제단(역할 기준 3칸) · 대사제는 그 앞.
+//   전진 출구(남동 26, -7)로 가는 띠는 제단 앞(21, 1)에서 갈라진다. 띠 북쪽 = 그을린 사암(e) · 남쪽 = 어두운 사암(f) · 홀 북벽 바람 비석 열 · 남벽 향로 열.
+//   왼쪽 세 방: 위 = 서고(불타는 책장 탑 + 벽 따라 책장 열 + 필사 구석) · 아래 = 순례자의 방(향로 계단 + 부러진 기둥 줄 + 제물 자리) · 가운데 문간 = 묻힌 석상 하나.
+//   항아리·물동이·향로 복제와 홀 안 낱개 기둥(temple-column 넷 · 바람 비석 넷 · 대사제 제단 세트)은 뺐다.
+//   자리: 시종의 방 → 봉인된 문간 통로를 막아 시종의 방을 막다른 곁방으로 (가지 간 추가 연결 0 · 띠 고리 없음) · 아레나 안 바위 구멍 넷을 뺐다 (열주와 겹친다) · 문간 → 홀 통로를 축 줄(y 1)로
+Object.assign(module.exports.sanctum, {
+  v5: {
+    outdoor: false,
+    via: [[2, 1], [21, 1]],   // 홀 입구 → 제단 앞까지 곧은 축 (경유점 사이는 직선에 붙는다) → 남동 출구로 꺾는다
+    dress: {
+      a: { props: ["a2-broken-urns", "a2-adjunct-bandage-bundle"], decals: ["a2-decal-broken-tiles"], dn: 2 },
+      b: { feature: "prop:a2-landmark-temple-stair-censer", row: { name: "broken-column", step: 2.6 }, sets: ["a2_tomb_offering"], decals: ["a2-decal-broken-tiles"], dn: 2 },
+      c: { feature: "prop:a2-landmark-burning-bookshelf-tower", row: { name: "bookshelf", step: 2 }, sets: ["a2_scribe_corner"], decals: ["a2-decal-dry-blood"], dn: 1 },
+      d: { props: ["a2-buried-statue-head"], decals: ["a2-decal-incense-ash"], dn: 1 },
+      e: {
+        feature: "prop:a2-landmark-sun-disc-altar", featureAt: [25.5, -0.1],   // 축(y 1.5) 끝 동쪽 벽 앞 — 그림 높이 3.2칸의 가운데가 축에 오게 발을 내림
+        colonnade: { name: "temple-column", step: 3, minPairs: 5 },
+        sides: { left: "e", right: "f" },
+        row: [{ name: "wind-stele", side: "n" }, { name: "a2-adjunct-censer-base", side: "s" }],   // 북벽 바람 비석(벽감) 열 · 남벽 향로(화로) 열
+        decals: ["a2-decal-incense-ash", "a2-decal-broken-tiles", "a1-decal-blood-pool"], dn: 3,
+      },
+    },
+  },
+  paths: [
+    P([[-30, 2], [-17, 2]], 3), P([[-17, 2], [-17, -4]], 3), P([[-15, 2], [-15, 8]], 3),
+    P([[-11, -8], [-5, -8], [-5, -1]], 3), P([[-2, 1], [1, 1]], 4),
+  ],
+  places: module.exports.sanctum.places.map((p) => Object.assign({}, p, { name: { a: "성소 문", b: "순례자의 방", c: "서고", d: "봉인된 문간", e: "대사제의 성소" }[p.z] || p.name, note: p.z === "e" ? "아레나 · 대사제 · 신랑 열주와 태양 원판 제단" : p.note })),   // 여왕의 무덤 자리 이름을 그대로 물려받았었다
+  rocks: [],
+  fixed: { highpriest: [20, 1] },
+  zones: Object.assign({}, module.exports.sanctum.zones, {
+    c: "tomb-floor 0.78/0.7/0.6 서고",
+    d: "a2-sandstone-paving-floor 0.8/0.72/0.6 봉인된 문간",          // 바탕(사원 바닥)과 같은 그림이라 띠가 안 보였다
+    f: "a2-scorched-sandstone-floor 0.84/0.76/0.66 대사제의 성소 남쪽",  // 띠 남쪽 (북쪽 e와 다른 톤)
+  }),
+  put: [],
+});

@@ -31,6 +31,7 @@ const HM_DIR = path.join(ROOT, "data/handmade");
 const MATERIAL_JOINS = require(path.join(HM_DIR, "specs", "material_joins.cjs"));   // 10-30 I07 재질 접합 (artEntities 끝)
 const decor = require("./decor.cjs");   // 10-31 실플레이 피드백 C: 흩뿌림·충돌 분류·길 안내·이음새 (정책 맵만 — data/handmade/specs/decor_policy.cjs)
 const tileClasses = require("./tile_classes.cjs");
+const roles = require("./roles.cjs");   // 맵 구성 v5: 역할표 기준 크기 (;v5 맵만)
 const S = 1.28;                       // 그림 한 장 = 1.28칸 (128px)
 const TILE = { floor: 266, road: 265, wall: 269 };
 const PROJECT_TILESET = JSON.parse(fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/AshCampTiles.tileset"), "utf8")).EntryKey;
@@ -159,6 +160,7 @@ function parseBlueprint(id) {
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       else if (m[0] === "backdrop") bp.backdrop = m[1];
       else if (m[0] === "floormix") for (const a of (m[1] || "").split(",").filter(Boolean)) bp.floorMix.add(a);
+      else if (m[0] === "v5") bp.v5 = true;   // 맵 구성 v5 (compose.cjs 설계서 v5) — 아래 artEntities: 길 안내·흩뿌림 정책 없음 · 역할표 기준 크기
       continue;
     }
     if (raw.trim() === "") continue;
@@ -272,8 +274,10 @@ function functionalEntities(d, maps, ctx, rows) {
 // ───────── 그림 엔티티 ─────────
 function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // 10-31 C: 정책 맵(FULL)은 ① 흩뿌림·세트 줄이기 → ② 막는 장식만 먼저 놓아 길 경로를 재고 → ③ 길 안 흩뿌림을 비운 뒤 다시 짓는다
-  const mode = decor.modeOf(d.id);
-  decor.setMap(d.id);   // 바닥 색 상한 (v3 0.80 · v4 1 — 길 안내 v4는 액트 타일이라 바닥을 낮추지 않는다)
+  // 맵 구성 v5 (;v5): 정책 맵이어도 「collide」 갈래만 — 충돌 분류·타일 계층·이음새는 그대로, 흩뿌림 줄이기·길 경로·길 안내 도장·출구 표식은 없다 (길 = 구역 경계의 빈 띠)
+  const v5 = !!bp.v5;
+  const mode = v5 ? "collide" : decor.modeOf(d.id);
+  decor.setMap(d.id, v5);   // 바닥 색 상한 (v3 0.80 · v4 1 — 길 안내 v4는 액트 타일이라 바닥을 낮추지 않는다)
   if (mode === "full" && !opts.inner) {
     const planned = decor.planRows(d, rows);
     const pre = artEntities(d, ctx, bp, planned.rows.filter((r) => !r.scatter && r.kind !== "decal"), func, { inner: true, pre: true });
@@ -872,7 +876,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   const pieces = [];   // 10-31 C: 놓은 장식마다 {이름, 그림, 발, 막음, 막은 칸, 흩뿌림} — 검사기·전후 표
   const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over, collide, scatter) => {
     const sp = spriteOf(table, spName, where);
-    const sc = baseScale(sp, ctx.propScale) * num(scaleMul, 1);
+    const sc = baseScale(sp, ctx.propScale) * num(scaleMul, 1) * (v5 && !decal ? roles.multOf(spName) : 1);   // v5: 크기는 역할이 정한다 (asset_roles.csv base_cells)
     if (sp.kind !== "maple" && Math.max(num(sp.w, 0), num(sp.h, 0)) >= SIZE_MIN_PX && !(sp.name in ctx.propScale) && !SIZE_EXEMPT.has(sp.name)
       && Math.abs(num(scaleMul, 1) - 1) <= SIZE_MUL_TOL) {
       const sw = sizeWarn.get(sp.name) || { n: 0, w: sp.w, h: sp.h, cells: r3((num(sp.w, 0) * sc) / 100), at: where };
@@ -1050,7 +1054,7 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   const previous = readIfExists(P.map(d.id));
   const map = MapBuilder.fromTemplate(MapBuilder.templatePath("rect"), d.id);
   // 10-31 C-4: 정책 맵은 tile_classes.csv의 block 계층만 벽 칸 — 설계도 벽 글자와 같아야 한다(벽 불변)
-  const classes = decor.modeOf(d.id) ? tileClasses.classesOf(d.id) : null;
+  const classes = decor.modeOf(d.id) || bp.v5 ? tileClasses.classesOf(d.id) : null;
   const isBlockCell = (x, y) => { const ch = bp.at(x, y); return ch === null || (classes ? classes[ch] === "block" : bp.isWall(x, y)); };
   if (classes) for (const [x, y] of bp.cells()) if (isBlockCell(x, y) !== bp.isWall(x, y)) throw new Error(`${d.id}: tile_classes block 계층이 설계도 벽 글자와 다름 (${x}, ${y})`);
   const tileMap = bp.cells().map(([x, y]) => ({
@@ -1068,6 +1072,7 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   mc.IsInstanceMap = true;
   map.upsertComponent(d.id, "MOD.Core.MapComponent", mc);
   map.data.Usage = 1;   // 인스턴스 맵 (게임 방에 실린다) — maps.cjs buildNormal과 같다
+  if (bp.v5) map.data.CoreVersion = decor.POLICY.V5.CORE_VERSION;   // v5 맵: 템플릿 26.7 대신 커밋본과 같은 값 (악몽·지옥 복제는 노말을 복사해 따라온다)
   for (const e of art.entities) map.placeModel(e.name, P.model("Objects/ArtSprite"), { pos: e.pos, componentOverrides: e.overrides });
   for (const e of func) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
   if (d.spawns !== "") {

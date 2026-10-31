@@ -20,6 +20,9 @@
 //   backdrop "r/g/b" 맵 밖 배경색 (없으면 템플릿 갈색 — 바다·용암 맵에서 양옆이 주황으로 떴다, 10-29)
 //   floorMix "바닥그림[,바닥그림…]" 그 바닥을 그림 열·줄마다 좌우·상하 뒤집어 깐다 (1.28칸 반복 격자 깨기, 10-29 따개비 돌)
 //   spawnZones [{ z | r, match, share, note }] 출현 구역 (10-30 I06) — 장소 구역 글자(z)의 칸을 월드 사각형으로 바꿔 data/spawn_zones.csv에 쓴다
+//   v5 true | { outdoor, via: [[x, y] | "S"…], dress: { 구역글자: { feature: "set:이름"|"prop:이름", featureAt: [x, y], colonnade|row|ring|pair: 이름 | {name, …},
+//        sets, props, floorProps, decals, dn } } }   맵 구성 v5 (10-31) — 골격 띠·구역 바닥 재적합·섬·역할표 배치를 v5.cjs가 하고 설계도에 ;v5를 적는다.
+//        dress가 없는 구역은 설계서 dress를 역할표(asset_roles.csv)로 나눠 쓴다. 값은 specs/decor_policy.cjs V5 · 검사는 tools/check_map_composition.cjs
 // 맵 id별 최종 덮어쓰기: specs/overrides.cjs (10-30 I06 대표 4맵) — 액트 설계서를 다 읽은 뒤 그 id 하나에만 적용 (remix 원형은 그대로)
 "use strict";
 const fs = require("fs");
@@ -227,6 +230,17 @@ function compose(id, spec, ctx, mapRow) {
   const markerOf = new Map();
   for (const [ch, x, y] of markAt) markerOf.set(key(x, y), ch);
 
+  // 맵 구성 v5 (설계서 v5): 골격 띠 · 구역 바닥 재적합 · 섬 · 역할표 배치를 v5.cjs가 한다 (아래 8) 꾸밈 대신 · 64장은 이 줄을 지나지 않는다)
+  if (spec.v5) {
+    const v = require("./v5.cjs").run({ id, spec, g, func, markerOf, puts, table, ctx, seed, mapRow, footCells, clear });
+    const grid = [];
+    for (let y = g.y1; y >= g.y0; y--) {
+      let line = "";
+      for (let x = g.x0; x <= g.x1; x++) { const c = g.get(x, y), mk = markerOf.get(key(x, y)); line += mk || (!c ? wallChars[0] : c.wall ? c.ch : c.road || c.zone); }
+      grid.push(line);
+    }
+    return { grid, rows: v.rows, func, torches: v.torches, zonesExtra: v.zonesExtra, v5: v.report };
+  }
   // 8) 꾸밈 — 장소마다 세트(벽 등지기 우선) → 소품(벽 가까이) → 바닥 무늬. 마지막에 put(손으로 고른 자리)
   const rows = [];
   const occ = new Set(), feet = [];
@@ -478,6 +492,7 @@ function blueprintText(id, spec, grid, mapRow) {
   if (spec.shore) L.push(`;shore ${spec.shore}`);   // 물가 거품: <바다 그림> <거품 그림> [크기] [색] (lib.cjs 3-1)
   if (spec.backdrop) L.push(`;backdrop ${spec.backdrop}`);   // 맵 밖 배경색 r/g/b (lib.cjs build — Background SolidColor)
   if (spec.floorMix) L.push(`;floormix ${spec.floorMix}`);   // 그 바닥 그림을 그림 열·줄마다 좌우·상하 뒤집어 반복 격자를 깬다 (lib.cjs 2)
+  if (spec.v5) L.push(";v5");   // 맵 구성 v5 (lib.cjs: 길 안내 도장·흩뿌림 정책 없음 · 역할표 기준 크기 · tile_classes 바탕 = guide)
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);
@@ -575,11 +590,13 @@ function main() {
     const row = mapRows.find((m) => m.id === id);
     if (!row) throw new Error(`${id}: maps.csv에 없음`);
     const out = compose(id, spec, ctx, row);
-    results.push({ id, spec, ...out });
+    const specOut = out.zonesExtra ? Object.assign({}, spec, { zones: Object.assign({}, spec.zones, out.zonesExtra) }) : spec;
+    results.push({ id, spec: specOut, ...out });
+    if (out.v5) { console.log(`  [v5] ${id} 띠 ${out.v5.band}칸 (${out.v5.legs.join(" · ")}) · 패치 ${out.v5.patches} · 섬 ${out.v5.islands} · 경계 고침 ${out.v5.edgeFix}`); for (const t of out.v5.spaces) console.log("    " + t); for (const w of out.v5.warn) console.log("    ! " + w); }
     const floors = out.grid.join("").replace(/[^.a-z=\-~WEGXHTS]/g, "").length;
     console.log(`  ${id} ${spec.size.join("×")}: 바닥 ${floors}칸 · 화로 ${out.torches.length} · 세트 ${out.rows.filter((r) => r.kind === "set").length} · 소품 ${out.rows.filter((r) => r.kind === "prop").length} · 무늬 ${out.rows.filter((r) => r.kind === "decal").length}`);
     if (view) { console.log(out.grid.join("\n")); continue; }
-    fs.writeFileSync(path.join(hm.HM_DIR, id + ".txt"), blueprintText(id, spec, out.grid, row));
+    fs.writeFileSync(path.join(hm.HM_DIR, id + ".txt"), blueprintText(id, specOut, out.grid, row));
     writeCsv(path.join(hm.HM_DIR, id + ".csv"), ["kind", "name", "x", "y", "scale", "flip", "tint", "args", "note"], out.rows);
   }
   if (!view) syncTables(results);

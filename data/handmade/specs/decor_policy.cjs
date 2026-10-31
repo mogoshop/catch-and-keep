@@ -100,4 +100,31 @@ module.exports = {
   ROT_ANCHOR: "first-tile",            // "first-tile" = 첫 장(왼쪽 아래 장) 가운데가 엔티티 자리·회전축 (회전 없는 반복 그리기와 같은 가정) | "center"
   ROT_SIGN: 1,                         // 1 = QuaternionRotation z 양수가 반시계 · -1 = 시계
   SHADE_ART: "waste-borders-center",   // 그늘 그림 (검게 칠해 쓰는 기존 조각 — 담 윗면 맵 그림자와 같은 것)
+
+  // ───── 맵 구성 v5 (10-31 · docs/design/map-composition-v5-plan.md) — 설계도에 ;v5가 있는 맵만 (설계서 v5: true → compose.cjs가 적는다). 나머지 맵은 위 값 그대로
+  //   길 = 바닥 구역 경계의 빈 띠(설계도 바탕 . 칸) · 길 안내 도장 없음 · 흩뿌림 정책 끔 · 역할표(asset_roles.csv) 기준 크기·배열
+  V5: {
+    BAND_EDGE: [[0.3, 0.45]],     // 띠(tile_class guide) ↔ 구역 경계 이음새: 띠 바닥이 구역 쪽으로 0.3칸만 번진다 (두 겹이면 띠가 묻혔다)
+    DILATE: { on: [2, 3], gap: [1, 2] },   // 띠 폭 1칸 골격에 한쪽씩 덧대기 — 위 2~3 · 빔 1~2 · 아래 2~3 · 빔 1~2 반복 (평균 폭 약 1.5 · 가장자리 직선 ≤6 · 폭 ≤2)
+    CORE_VERSION: "26.10.0.0",   // v5 맵 파일 CoreVersion — 빌더 템플릿(.claude/skills, 26.7)이 아니라 메이커가 저장한 커밋본들과 같은 값 (v5 맵만 · 64장 빌드 결과 불변)
+    DISTINCT_TINT: 0.1,           // 바탕과 같은 그림이면 색 차이가 이보다 커야 「다른 구역」 (아니면 띠 곁 빈 바닥으로 보고 패치)
+    PATCH_DEPTH: [2, 3],          // 띠 곁 패치 깊이 (칸, 가장자리 잡음으로 2~3)
+    FILL_RADIUS_OUTDOOR: 3,       // 야외 맵: 바탕 칸 중 띠에서 이 거리 안만 가까운 구역으로 채운다 (먼 빈 마당은 내부 경계 섬 자리)
+    ISLAND_MIN: 36, ISLAND_FAR: 3, // 구역에서 3칸 넘게 떨어진 빈 바닥이 36칸 이상 뭉치면 섬 1개(90칸 이상 2개)
+    // 띠 곁 패치 바닥 (액트별 · 앞에서부터 바탕·이웃 구역과 다른 그림을 고른다)
+    PATCH: {
+      1: ["a1-dead-grass-floor 0.82/0.76/0.66", "a1-wet-gravel-floor 0.8/0.76/0.7", "a1-scorched-floor 0.8/0.74/0.68"],
+      2: ["a2-sandstone-paving-floor 0.84/0.76/0.64", "tomb-floor 0.8/0.72/0.62", "a2-rippled-sand-floor 0.86/0.78/0.66"],
+      3: ["a3-salt-crust-floor-r2 0.8/0.84/0.86", "a3-wet-sand-floor-r2 0.8/0.8/0.78", "a3-drowned-tile-floor-r2 0.78/0.82/0.84"],
+      4: ["a4-cooled-lava-floor 0.84/0.8/0.76", "a4-bone-ash-floor 0.86/0.84/0.8", "a4-ash-drift-floor 0.86/0.84/0.82"],
+    },
+    // 내부 경계 섬: 그 액트 벽 토막(역할 structure · row) 한 줄 — 막는 세트 중 특징 조각이 없는 「벽·절벽」 세트가 없어 담 토막 줄로 (map_sets 막는 세트는 랜드마크·소품 세트뿐)
+    ISLAND_WALL: { 1: "a1-crow-fence", 2: "broken-column", 3: "a3-adjunct-seaweed-post-r2", 4: "a4-ruined-wall-low" },
+    ISLAND_LEN: [3, 4],           // 섬 하나 = 벽 토막 3~4개 한 줄
+    PILLAR_FUNCS: ["의식터", "보스 아레나", "출구 관문", "랜드마크 마당"],   // 기둥류 열은 이 공간 기능에서만 (띠 양옆 2열 또는 특징 앞 열주)
+    COLONNADE: { step: 3.5, off: 3.3, minPairs: 3, straight: 0.6, minLen: 7 },   // 열주: 간격 3.5 · 띠 가운데에서 3.3칸 · 3쌍 이상 · 곧은 띠 구간(현에서 0.6칸 안 · 7칸 이상)
+    ROW: { step: 3, min: 3, minLine: 6 },     // 벽 따라 열: 간격 3칸 · 3개 이상 · 벽면 줄 6칸 이상
+    RING: { r: 3.2, n: 6, min: 4 },           // 테두리: 특징 둘레 반경 3.2 · 6자리 중 4개 이상
+    CLUSTER_MAX: 3, CLUSTERS_PER_SPACE: 2, SPRITE_MAX: 2, DECALS_PER_SPACE: 3,   // 소품 묶음 ≤3 · 공간당 ≤2묶음 · 같은 소품 그림 맵당 ≤2(축 없는 반복 3개 = 산발) · 바닥 무늬 공간당 ≤3
+  },
 };

@@ -568,7 +568,7 @@ function cellTooClose(route, cx, cy) {
 const tintArr = (t) => (t || "1/1/1").split("/").map(Number);
 // 바닥 색 상한: v3 맵은 길 안내가 그 자리 바닥 × 1.25라 FLOOR_TINT_CAP까지 낮춘다. v4 맵은 길 안내가 액트 타일(GUIDE_TILE)이라 바닥을 낮추지 않는다
 let curCap = POLICY.FLOOR_TINT_CAP;
-function setMap(id) { curCap = isV4(id) ? 1 : POLICY.FLOOR_TINT_CAP; }
+function setMap(id, v5) { curCap = v5 || isV4(id) ? 1 : POLICY.FLOOR_TINT_CAP; }   // v5: 길 안내 도장이 없어 바닥을 낮추지 않는다
 function capTint(t) {   // 세 채널 같은 비율 (채도 그대로)
   const c = tintArr(t), m = Math.max(...c);
   if (m <= curCap) return c;
@@ -625,7 +625,8 @@ function floorAt(bp, classes, x, y, noRoad) {
   const zc = bp.zoneOf(x, y), z = bp.zones[zc] || {};
   const art = z.art || bp.base.art, tint = z.art ? z.tint || "1/1/1" : bp.base.tint;
   const cls = (classes && classes[zc]) || (z.art && z.art !== bp.base.art ? "terrain" : "base");
-  return { art, tint, rank: cls === "terrain" ? 2 : 1, ch: zc };
+  // guide = 맵 구성 v5의 띠(바탕 칸 · tile_classes guide) — 가장 위 계층이라 이음새는 띠 바닥이 구역 쪽으로 번진다 (V5.BAND_EDGE)
+  return { art, tint, rank: cls === "guide" ? 3 : cls === "terrain" ? 2 : 1, ch: zc, guide: cls === "guide" };
 }
 const fkey = (f) => `${f.art}|${f.tint}`;
 // 물 ↔ 뭍 경계는 액트 3 물가 거품 띠(;shore)가 이미 이음새 — 띠·모서리 조각을 겹쳐 깔지 않고 처리된 경계로 센다
@@ -987,13 +988,13 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
   for (let y = b.y0; y < b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const p = fl(x, y), q = fl(x, y + 1);
     if (p && q && fkey(p) !== fkey(q) && shoreEdge(bp, p, q)) { edges.total++; edges.covered++; edges.foam = (edges.foam || 0) + 1; }
-    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`H|${y + 1}|${dir}|${p.rank === q.rank ? 1 : 0}|${fkey(up)}`, x); }
+    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`H|${y + 1}|${dir}|${up.guide ? 2 : p.rank === q.rank ? 1 : 0}|${fkey(up)}`, x); }
     else if ((p && !q && isBlock(x, y + 1)) || (!p && q && isBlock(x, y))) { edges.total++; addRun(`SH|${y + 1}|${p ? -1 : 1}|0`, x); }
   }
   for (let x = b.x0; x < b.x1; x++) for (let y = b.y0; y <= b.y1; y++) {
     const p = fl(x, y), q = fl(x + 1, y);
     if (p && q && fkey(p) !== fkey(q) && shoreEdge(bp, p, q)) { edges.total++; edges.covered++; edges.foam = (edges.foam || 0) + 1; }
-    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`V|${x + 1}|${dir}|${p.rank === q.rank ? 1 : 0}|${fkey(up)}`, y); }
+    else if (p && q && fkey(p) !== fkey(q)) { edges.total++; const up = upper(p, q) ? p : q, dir = up === p ? 1 : -1; addRun(`V|${x + 1}|${dir}|${up.guide ? 2 : p.rank === q.rank ? 1 : 0}|${fkey(up)}`, y); }
     else if ((p && !q && isBlock(x + 1, y)) || (!p && q && isBlock(x, y))) { edges.total++; addRun(`SV|${x + 1}|${p ? -1 : 1}|0`, y); }
   }
   const shadeRid = ruidOf(POLICY.SHADE_ART);
@@ -1004,7 +1005,7 @@ function seamEntities(bp, classes, ruidOf, opts = {}) {
       edges.covered += e - s + 1;
       // 같은 계층끼리(구역 ↔ 구역) 맞닿는 경계는 첫 겹만 — 계층이 다른 경계(길 ↔ 구역 · 새 지형 ↔ 일반)만 두 겹 그라데이션 (10-31 엔티티 절감)
       // 막힌 칸 옆: SHADE가 비면(10-31 메이커 로딩 실측으로 그늘 띠 제거) 벽 9조각의 가장자리 조각(바위 테두리)이 이음새
-      if (kind === "H" || kind === "V") bands(sameS === "1" ? POLICY.BAND.slice(0, 1) : POLICY.BAND, kind === "H", line, s, e + 1, dir, ruidOf(art), capTint(tint), 1, -0.007, "ArtBand");
+      if (kind === "H" || kind === "V") bands(sameS === "2" ? POLICY.V5.BAND_EDGE : sameS === "1" ? POLICY.BAND.slice(0, 1) : POLICY.BAND, kind === "H", line, s, e + 1, dir, ruidOf(art), capTint(tint), 1, -0.007, "ArtBand");
       else if (!opts.noShade && POLICY.SHADE.length) bands(POLICY.SHADE, kind === "SH", line, s, e + 1, dir, shadeRid, [0, 0, 0], 1, -0.0118, "ArtShade");
     }
   }

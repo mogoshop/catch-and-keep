@@ -707,3 +707,31 @@ for (const [id, sp] of Object.entries(module.exports)) {
 module.exports.burningkeep.base = "a4-ash-drift-floor 0.96/0.94/0.92";
 module.exports.heartbridge.roads = { "=": "a4-basalt-bridge-road 1/1/1 돌다리 wide=2" };   // 다리 길은 2칸 폭 — 난간 그림이 가운데에 또 그려지지 않게 2칸을 한 장으로 (lib.cjs 3-0)
 for (const z of ["b", "c", "f"]) module.exports.heartbridge.zones[z] = module.exports.heartbridge.zones[z].replace("a4-scorched-flagstone-floor", "a4-obsidian-floor");
+
+// ───────── 10-31 맵 구성 v5 표본 (2.5단계 · docs/design/map-composition-v5-plan.md) — 유황 늪 (액트 4 A 1순위) ─────────
+//   1단계 구획안: 늪 어귀(입구) → 유황 웅덩이(캠프) → 혼의 제단(랜드마크 마당 · 웨이포인트) → 동쪽 둑(출구), 대장간 어귀(굴 입구 갈래) · 거인 갑옷 무덤 · 죽은 숲(곁방).
+//   길 = 밝은 현무암 바탕 띠(옛 둑길 그림, 폭 1~1.5칸) — 유황 구역들 사이 경계. 큰길(=)·샛길(-) 글자는 띠로 바뀐다(v5.cjs). 제단 마당은 어두운 유황 바닥.
+//   특징(공간당 1 · 16×16당 1): 어귀 죽은 나무 · 웅덩이 용암 둔덕 · 제단 유황 간헐천 · 대장간 어귀 큰 용광로 · 무덤 쓰러진 거인 · 숲 불박쥐 고목 · 동쪽 둑 쓰러진 기사의 검 무덤.
+//     세트는 같은 소품 상한을 넘는 조각·세트 안 낱개 기둥만 빼고 특징 조각과 나머지는 남긴다(v5.cjs trimGroup).
+//   반복 구조: 간헐천 양옆 사슬 기둥 쌍(역할표 pair 「제단 양옆 쌍」) · 대장간 어귀 담 토막 줄 · 죽은 숲 용암 담 토막 줄 · 동쪽 둑 문 양옆 혼 등불 쌍.
+Object.assign(module.exports.sulfurmarsh, {
+  base: "a4-ash-basalt-floor 1/0.97/0.92",   // 옛 둑길(=)처럼 밝은 현무암 — 유황 껍질 구역보다 밝아야 띠가 읽힌다 (미리보기: 0.9면 구역과 같은 회색)
+  zones: Object.assign({}, module.exports.sulfurmarsh.zones, {
+    c: "a4-sulfur-crust-floor 0.64/0.6/0.5 혼의 제단",      // 띠 양옆 어두운 유황 (밝은 판석이면 띠와 한 덩어리로 보였다)
+    a: "a4-sulfur-crust-floor 0.8/0.75/0.58 늪 어귀", b: "a4-sulfur-crust-floor 0.84/0.78/0.56 유황 웅덩이",   // 유황 구역은 띠(밝은 현무암)보다 어둡고 누렇게 — 0.92~0.96이면 띠와 같은 밝은 회색으로 읽혔다
+    f: "a4-sulfur-crust-floor 0.72/0.7/0.58 죽은 숲", g: "a4-sulfur-crust-floor 0.78/0.74/0.6 동쪽 둑",
+    e: "a4-bone-ash-floor 0.86/0.84/0.8 거인 갑옷 무덤",    // 바탕(띠)과 같은 현무암이라 바꿨다
+  }),
+  v5: {
+    outdoor: true,
+    dress: {
+      a: { feature: "prop:a4-dead-tree", sets: ["a4_lava_cairn"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      b: { feature: "set:a4_lava_mound", props: ["a4-adjunct-lava-rubble", "a4-small-lava-fount"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent", "a4-decal-molten-metal-streak"], dn: 3 },
+      c: { feature: "set:a4_lm_sulfur_geyser", pair: { name: "a4-chain-pillar", around: "feature" }, decals: ["a4-decal-scorched-ring"], dn: 2 },
+      d: { feature: "prop:a4-landmark-great-smelter", row: { name: "a4-ruined-wall-low", step: 2.7 }, props: ["a4-forge-anvil", "a4-adjunct-burning-cart"], decals: ["a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 2 },
+      e: { feature: "set:a4_fallen_giant", props: ["a4-adjunct-demon-skull-spear", "a4-helm-pile"], decals: ["a4-decal-ash-pile"], dn: 2 },
+      f: { feature: "prop:a4-landmark-ember-bat-dead-tree", row: { name: "a4-lava-wall-ruin" }, props: ["a4-bone-heap", "a4-adjunct-chained-skull"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
+      g: { feature: "prop:a4-landmark-fallen-knight-sword-grave", pair: { name: "a4-soul-lantern" }, sets: ["a4_ember_shrine"], decals: ["a4-decal-sulfur-steam-vent"], dn: 1 },
+    },
+  },
+});
