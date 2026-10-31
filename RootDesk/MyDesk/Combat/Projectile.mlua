@@ -180,6 +180,10 @@ script Projectile extends Component
                 local hand = _Util:Pos2(self.Shooter) + Vector2(0, self.HeightOffset) + self.Dir * 0.35
                 if (hand - self.StartPos):Magnitude() < 2 then self.ViewPos = hand end
             end
+            -- 10-31 골편 20장: 골편 계열 그림 순환 시작 (내가 쏜 것만 · 출시 서버 끔)
+            if self:MirrorSkin() and not Environment:IsPublishedPlay() and isvalid(self.Shooter) and self.Shooter == _UserService.LocalPlayer then
+                log(string.format("[VRF] shard frames start n=%d ms=%d left=%s local=%s", #_Util:Frames(self.SkinRuid), _GameConst.FxSkillShardFrameMs, tostring(self.Dir.x < 0), tostring(self.LocalView)))
+            end
         end
         local expected = self.Speed * (now - self.ViewT0)
         local boost = self.ViewDist < expected - 0.05 and 1.4 or 1
@@ -205,6 +209,7 @@ script Projectile extends Component
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
         t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
+        self:FaceMirror()
         -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝·관통 상한에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
         if self.LocalView and self.MaxHits > 0 then
             for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, self.ViewPos - Vector2(0, self.HeightOffset), self.Radius)) do
@@ -270,6 +275,8 @@ script Projectile extends Component
         self.NextGhostAt = _UtilLogic.ElapsedSeconds + gap
         if self.Ghosts == nil then self.Ghosts = {} end
         local sx, sy = t.Scale.x * shrink, t.Scale.y * shrink
+        local body = self.Entity.SpriteRendererComponent
+        if isvalid(body) and body.FlipY then sy = -sy end   -- 10-31 골편 20장: 왼쪽으로 나는 골편 계열은 잔상도 같은 가로 거울 (FaceMirror)
         local serial = _EffectService:PlayEffect(self:SkinFrame(), self.Entity, t.WorldPosition, t.ZRotation, Vector3(sx, sy, 1), false, { Alpha = alpha, Color = self.TintColor })
         if serial == 0 then return end
         local ghosts = self.Ghosts
@@ -282,8 +289,30 @@ script Projectile extends Component
         end, life)
     end
 
+    method boolean MirrorSkin()
+        -- 10-31 골편 20장: 골편 계열 투사체 그림(GameConst.FxSkillShardThrow·SpearShard·StormShard·BoneArrow · 오른쪽 기준 · 코덱스 「horizontal mirror permitted」)인가
+        local s = self.SkinRuid
+        if s == "" or string.find(s, "|", 1, true) == nil then return false end
+        return s == _GameConst.FxSkillShardThrow or s == _GameConst.FxSkillSpearShard or s == _GameConst.FxSkillStormShard or s == _GameConst.FxSkillBoneArrow
+    end
+
+    method number FrameSec()
+        -- 프레임 그림 장 간격: 골편 계열은 GameConst.FxSkillShardFrameMs(코덱스 100ms) · 나머지는 예전 0.08초
+        if self:MirrorSkin() then return math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000) end
+        return 0.08
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FaceMirror()
+        -- 골편 계열 그림은 오른쪽 기준: 왼쪽 반쪽으로 날면(진행 각 90°~270°) 회전만으로는 위아래가 뒤집혀 보인다 → FlipY (회전 180° + FlipY = 가로 거울). 다른 그림은 늘 끔
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local flip = self:MirrorSkin() and self.ViewDir.x < 0
+        if sprite.FlipY ~= flip then sprite.FlipY = flip end
+    end
+
     method string SkinFrame()
-        -- 그림 한 장이면 그대로, 「|」로 이은 프레임(코덱스 납품분 · GameConst.FxSkill*)이면 지금 칸 (클라이언트는 AdvanceFrame이 0.08초마다 넘긴다)
+        -- 그림 한 장이면 그대로, 「|」로 이은 프레임(코덱스 납품분 · GameConst.FxSkill*)이면 지금 칸 (클라이언트는 AdvanceFrame이 FrameSec마다 넘긴다)
         if string.find(self.SkinRuid, "|", 1, true) == nil then return self.SkinRuid end
         local list = _Util:Frames(self.SkinRuid)
         if #list == 0 then return "" end
@@ -292,9 +321,9 @@ script Projectile extends Component
 
     @ExecSpace("ClientOnly")
     method void AdvanceFrame()
-        -- 프레임 그림 투사체만: 날아가는 동안 0.08초마다 다음 칸 (한 장짜리 그림은 아무것도 안 한다)
+        -- 프레임 그림 투사체만: 날아가는 동안 FrameSec(예전 0.08초 · 골편 계열 FxSkillShardFrameMs)마다 다음 칸 (한 장짜리 그림은 아무것도 안 한다)
         if string.find(self.SkinRuid, "|", 1, true) == nil then return end
-        local frame = math.floor((_UtilLogic.ElapsedSeconds - self.ViewT0) / 0.08)
+        local frame = math.floor((_UtilLogic.ElapsedSeconds - self.ViewT0) / self:FrameSec())
         if frame == self.ViewFrame then return end
         self.ViewFrame = frame
         local sprite = self.Entity.SpriteRendererComponent

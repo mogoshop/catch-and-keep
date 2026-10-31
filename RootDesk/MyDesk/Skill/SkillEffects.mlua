@@ -125,6 +125,12 @@ script SkillEffects extends Component
     property number PrisonReleaseSec = 0.1      -- 풀림 2장 장 간격
     property number PrisonScale = 1.0           -- 128px = 1.28칸 (코덱스 renderer_scale_proposal 1 · 피벗 0.5/0.2 = 발)
     property integer PrisonOrder = 6            -- 몸 앞 (옆·앞 뼈가 팔다리를 가릴 수 있다 — 얼굴·가운데 창은 그림이 비워 둠 · 코덱스 62px 실서기 합성)
+    -- 10-31 골편 계열 20장 (GameConst.FxSkillShard* · 코덱스 shard-full-20261031): 값만 되돌리면 예전 그대로 · 그림 칸을 비우면 예전 보라 궤적·파열로
+    property number ShardThrowScale = 0.65      -- 골편 투척 비행 그림 배율: 128×64 캔버스 = 0.83×0.42칸 · 보이는 몸 110~116px ≈ 0.73칸 (예전 보라 궤적 0.55배 = 0.78×0.24칸 · audit P02) · 튕김은 예전 비(0.5/0.55)대로 0.59
+    property number StormShardScale = 0.55      -- 뼈 폭풍 도는 골편(FxSkillBoneStorm이 빈 때) 배율: 보이는 몸 90~116px → 0.5~0.64칸 (예전 보라 궤적 0.5×0.32 = 0.71×0.14칸 · audit P23)
+    property number ShardHitScale = 1.2         -- 골편 명중 파편 배율(옛 ClipFx 0.5 기준): 96px 캔버스 × 1.2 = 1.15칸 ≈ 옛 보라 파열 캔버스 1.14칸(audit P03) · 가장 큰 장 내용 76px = 0.91칸 · 다른 호출(0.45)은 비례
+    property integer ShardHitOrder = 6          -- 명중 파편 층: MapLayer0 6 (몸 앞 · FramesFxOrder와 같음)
+    property Color ShardHitTint = Color(1, 0.97, 0.9, 1)   -- 무채색 골편 그림(명중·도는 골편)에 뼈 흰빛을 살짝 (속성색은 Tint로 · 코덱스 조건)
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -240,7 +246,9 @@ script SkillEffects extends Component
         if self.Entity ~= _UserService.LocalPlayer then return end
         local list = { self.FxShardShot, self.FxShardLaunch, self.FxShardHit, self.FxBlast, self.FxFlameShot, self.FxFrostShot, self.FxOffering, self.FxBlink, self.FxPoisonCloud, self.FxDrain, self.FxStorm, self.FxWave, _GameConst.FxAriseRing, _GameConst.FxAriseFlame, _GameConst.FxAriseBurst }
         -- 10-31 갈래 E: 새로 연결한 코덱스 스킬 그림(저주 불꽃 폭발·파쇄·솟음·승격·뼈 폭풍 각 장 + 저주 바닥 문장 6종 × 4장)도 처음 쓸 때 늦게 뜨지 않게
-        for _, ruids in ipairs({ _GameConst.FxSkillHexBurst, _GameConst.FxSkillShatter, _GameConst.FxSkillShadowRise, _GameConst.FxSkillElitePromote, _GameConst.FxSkillBoneStorm }) do
+        --   10-31 골편 20장: 골편 투척·폭풍 골편·중립 뼈 화살·명중 파편 각 4장도 (창 골편은 부르는 곳이 없어 뺀다)
+        for _, ruids in ipairs({ _GameConst.FxSkillHexBurst, _GameConst.FxSkillShatter, _GameConst.FxSkillShadowRise, _GameConst.FxSkillElitePromote, _GameConst.FxSkillBoneStorm,
+                _GameConst.FxSkillShardThrow, _GameConst.FxSkillStormShard, _GameConst.FxSkillBoneArrow, _GameConst.FxSkillShardHit }) do
             for _, r in ipairs(_Util:Frames(ruids)) do table.insert(list, r) end
         end
         for _, kind in ipairs({ "amp", "weaken", "terror", "thorn", "lifetap", "resist" }) do
@@ -284,7 +292,9 @@ script SkillEffects extends Component
         self:StopStormOrbit()
         local codex = _GameConst.FxSkillBoneStorm ~= ""
         local count = codex and 1 or self.StormShardCount
-        local first = codex and _Util:Frames(_GameConst.FxSkillBoneStorm)[1] or self.FxShardShot
+        -- 10-31 골편 20장: 회전본이 비면 도는 골편 6개 = 폭풍 골편 4장(GameConst.FxSkillStormShard · StormOrbit이 장을 넘김) · 그것도 비면 예전 보라 궤적
+        local shardArt = not codex and _GameConst.FxSkillStormShard ~= ""
+        local first = codex and _Util:Frames(_GameConst.FxSkillBoneStorm)[1] or (shardArt and _Util:Frames(_GameConst.FxSkillStormShard)[1] or self.FxShardShot)
         local ps = self.Entity.TransformComponent.Scale
         local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
         for i = 1, count do
@@ -298,6 +308,9 @@ script SkillEffects extends Component
                 if codex then
                     local s = 2 * self.StormRadius / 1.28
                     e.TransformComponent.Scale = Vector3(s / psx, s / psy, 1)
+                elseif shardArt then
+                    sp.Color = self.ShardHitTint
+                    e.TransformComponent.Scale = Vector3(self.StormShardScale / psx, self.StormShardScale / psy, 1)
                 else
                     sp.Color = Color(0.96, 0.92, 0.8, 0.95)
                     e.TransformComponent.Scale = Vector3(0.5 / psx, 0.32 / psy, 1)
@@ -308,7 +321,7 @@ script SkillEffects extends Component
         self.StormOrbitAt = _UtilLogic.ElapsedSeconds
         self.StormOrbitUntil = _UtilLogic.ElapsedSeconds + seconds
         self:StormOrbit()
-        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone storm orbit shards=%d codex=%s r=%.1f", #self.StormShards, tostring(codex), self.StormRadius)) end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone storm orbit shards=%d codex=%s shardArt=%s r=%.1f", #self.StormShards, tostring(codex), tostring(shardArt), self.StormRadius)) end
     end
 
     @ExecSpace("ClientOnly")
@@ -333,14 +346,24 @@ script SkillEffects extends Component
         local spin = 2 * math.pi * t / math.max(0.2, self.StormSpinSeconds)
         local r = self.StormRadius * 0.85
         local n = #self.StormShards
+        -- 10-31 골편 20장: 폭풍 골편 4장이면 FxSkillShardFrameMs마다 장을 넘기고(골편마다 한 칸씩 어긋나게) · 진행 방향(접선)이 왼쪽이면 FlipY(가로 거울)
+        local shardList = _GameConst.FxSkillStormShard ~= "" and _Util:Frames(_GameConst.FxSkillStormShard) or {}
+        local frameSec = math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
         for i, e in ipairs(self.StormShards) do
             if isvalid(e) then
                 local a = spin + (i - 1) * 2 * math.pi / math.max(1, n)
                 local x, y = r * math.cos(a), r * math.sin(a) * 0.8
                 e.TransformComponent.Position = Vector3(x / psx, (y + 0.3) / psy, y > 0 and 0.01 or -0.01)
                 e.TransformComponent.ZRotation = math.deg(a) + 90
+                local sp = e.SpriteRendererComponent
                 local order = y > 0 and 3 or 5
-                if e.SpriteRendererComponent.OrderInLayer ~= order then e.SpriteRendererComponent.OrderInLayer = order end
+                if sp.OrderInLayer ~= order then sp.OrderInLayer = order end
+                if #shardList > 0 then
+                    local ruid = shardList[(math.floor(t / frameSec) + i - 1) % #shardList + 1]
+                    if sp.SpriteRUID ~= ruid then sp.SpriteRUID = ruid end
+                    local flip = math.cos(a + math.pi / 2) < 0
+                    if sp.FlipY ~= flip then sp.FlipY = flip end
+                end
             end
         end
     end
@@ -539,7 +562,7 @@ script SkillEffects extends Component
                 ---@type Projectile
                 local p = proj
                 p.MaxHits = maxHits   -- 서버와 같은 마릿수에서 멈춘다 (관통 상한)
-                p:PlayLocal(self.Entity, d, 12, 6.5, self.FxShardShot, 0.55, i == center and lock or nil)
+                p:PlayLocal(self.Entity, d, 12, 6.5, self:ShardSkinRuid(), self:ShardSkinScale(0.55), i == center and lock or nil)
             elseif isvalid(e) then
                 e:Destroy()
             end
@@ -624,7 +647,7 @@ script SkillEffects extends Component
             ---@type Projectile
             local proj = comp
             if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-            proj:Skin(self.FxShardShot, 0.5)
+            proj:Skin(self:ShardSkinRuid(), self:ShardSkinScale(0.5))
             if isvalid(target) then proj.Lock = target end
             proj.SpikePct = spikePct
             proj.Bounces = bouncesLeft
@@ -638,8 +661,42 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method void BoneShardImpact(Vector3 pos)
-        -- 뼛조각 명중: 보라 파열
-        self:ClipFx(self.FxShardHit, pos, 0.5, 0.6, 0)
+        -- 뼛조각 명중: 코덱스 골편 명중 4장 (10-31 · 비면 예전 보라 파열 0.5 · 0.6초)
+        self:ShardHit(pos, 0.5, 0.6)
+    end
+
+    method string ShardSkinRuid()
+        -- 골편 투사체 그림: 코덱스 골편 투척 4장(GameConst.FxSkillShardThrow · 비행 중 반복 · Projectile.FrameSec/MirrorSkin)이 차면 그것, 비면 예전 보라 궤적
+        if _GameConst.FxSkillShardThrow ~= "" then return _GameConst.FxSkillShardThrow end
+        return self.FxShardShot
+    end
+
+    method number ShardSkinScale(number oldScale)
+        -- 예전 보라 궤적 배율(예측·서버 0.55 · 튕김 0.5) → 골편 투척 그림이면 ShardThrowScale × (oldScale / 0.55) · 비면 oldScale 그대로
+        if _GameConst.FxSkillShardThrow ~= "" then return self.ShardThrowScale * oldScale / 0.55 end
+        return oldScale
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ShardHit(Vector3 pos, number clipScale, number seconds)
+        -- 골편 명중·뼛가루 자리 (10-31 골편 20장): 코덱스 골편 명중 4장(GameConst.FxSkillShardHit)이 차면 모든 클라이언트에 한 번(ShardHitFrames),
+        --   비면 예전 보라 파열 ClipFx(FxShardHit, clipScale, seconds) 그대로
+        if _GameConst.FxSkillShardHit == "" then
+            self:ClipFx(self.FxShardHit, pos, clipScale, seconds, 0)
+            return
+        end
+        self:ShardHitFrames(pos, clipScale)
+    end
+
+    @ExecSpace("Multicast")
+    method void ShardHitFrames(Vector3 pos, number clipScale)
+        -- 골편 명중 4장 한 번 (장마다 FxSkillShardFrameMs · 마지막 장도 같은 시간 · Util.PlayFrames) · 크기 = ShardHitScale × (옛 ClipFx 배율 / 0.5) · MapLayer0 ShardHitOrder · 클라이언트에서만 그린다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap or _GameConst.FxSkillShardHit == "" then return end
+        local s = self.ShardHitScale * clipScale / 0.5
+        local frameSec = math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
+        _Util:PlayFrames(_GameConst.FxSkillShardHit, self.Entity, pos, 0, Vector3(s, s, 1), frameSec, self.ShardHitTint, self.ShardHitOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] shard hit frames n=%d ms=%d scale=%.2f", #_Util:Frames(_GameConst.FxSkillShardHit), _GameConst.FxSkillShardFrameMs, s)) end
     end
 
     @ExecSpace("ServerOnly")
@@ -673,8 +730,8 @@ script SkillEffects extends Component
             if finished then if isvalid(shot) then shot:Destroy() end return end
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then finish(false) return end
             if canCommit ~= nil and not canCommit() then finish(false) return end
-            -- 투사체 그림: 어두운 보라 궤적 (기본 화살 그림은 평범했다)
-            proj:Skin(self.FxShardShot, 0.55)
+            -- 투사체 그림: 코덱스 골편 투척 4장(10-31 · 비면 어두운 보라 궤적 · 기본 화살 그림은 평범했다)
+            proj:Skin(self:ShardSkinRuid(), self:ShardSkinScale(0.55))
             -- 쏜 사람 화면은 누르는 순간 PredictBoneShard가 그린 뼛조각을 보여 주고 이 서버 투사체는 숨긴다
             proj.ViewKind = "bone_shard"
             if isvalid(lock) then proj.Lock = lock end
@@ -1650,7 +1707,7 @@ script SkillEffects extends Component
             _TimerService:SetTimerOnce(function()
                 if isvalid(unit.Entity) then
                     from = _Util:Pos2(unit.Entity)
-                    self:ClipFx(self.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.45, 0.5, 0)   -- 쏜 해골이 무너지는 뼛가루 (임시)
+                    self:ShardHit(Vector3(from.x, from.y + 0.4, 0), 0.45, 0.5)   -- 쏜 해골이 무너지는 뼛가루 (10-31 골편 명중 4장 · 비면 예전 보라 파열)
                     unit.Entity:Destroy()
                 end
                 if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then return end
