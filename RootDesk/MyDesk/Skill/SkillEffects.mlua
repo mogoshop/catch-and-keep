@@ -113,6 +113,15 @@ script SkillEffects extends Component
     property number MeteorLandRef = 3.39        -- 10-31 갈래 F 임시(새 B 메테오 세트 전): 착지 7~12장 내용 폭 190px ÷ 56 = 3.39칸을 그림 지름(ref)으로 — 판정 지름(반경 1.8 × 2 = 3.6)에 내용 폭을 맞춘다 (예전 ref 4.0 = 내용 3.05칸) · 0이면 계약 ref
     property number MeteorFallMul = 1.5         -- 낙하 1~6장 크기 배율 (계약 ref 4.0 크기 × 1.5) · 1이면 예전 크기
     property boolean MeteorTelegraphOnly = true -- 메테오 예고 = Util.Telegraph 화염 테두리·차오름만 (속성 바닥 그림(납작한 용암 고리 SpriteGroundFire)은 지운다) · false면 예전처럼 바닥 그림도
+    -- 10-31 메테오 L2 (GameConst.FxGiantMeteorTelegraph·Fall·Impact·Afterglow · 비면 그 단계만 위 B 연출·Util.Telegraph 그대로): 크기 = L2 그림 실측(알파>16) · 피해 반경·시각은 RiteGiantMoves 그대로
+    property number MeteorL2LandRef = 10.0      -- 바닥 3계열(예고·착지·잔불) 공통 ref = 내용 폭 560px ÷ 56 (실측 최대: 예고 07 560 · 착지 03 556 · 잔불 02 560px) → 내용 560px = 판정 지름(반경×2 · 기본 3.6칸) · 캔버스 640×512 = 4.11×3.29칸(코덱스 ground_world_sprite) · 세 계열 같은 배율(같은 캔버스·원점이 겹친다)
+    property number MeteorL2FallCoreW = 0.8     -- 낙하 암석 폭(칸 · 판정 지름 3.6일 때) × MeteorFallMul 1.5 = 1.2칸 (코덱스 fall_boulder_world_width) · 지름이 커지면 같은 비율로
+    property number MeteorL2FallCorePx = 62.449 -- 낙하 암석 원본 폭 px (코덱스 native_boulder_width_proxy · 짝수 장 62.4 · 홀수 장 53.6) · 낙하 그림 내용 최대 148×210px (256×384 캔버스)
+    property number MeteorL2FallDeg = 60        -- 낙하 축 (수평에서 아래로 · 그림 기준 오른쪽 위 → 왼쪽 아래)
+    property number MeteorL2FallDist = 4.0      -- 낙하 시작 = 표적 바닥에서 축을 따라 이만큼(칸) 오른쪽 위(표적이 시전자 왼쪽이면 왼쪽 위) → 낙하(fall 0.5초) 동안 표적으로 (메이커에서 다시 볼 값)
+    property number MeteorL2FadeSec = 0.3       -- 잔불 마지막 장 옅어짐 (불바닥 반복 뒤)
+    property number MeteorL2Alpha = 1           -- L2 그림 불투명도 (새 그림 관례 0.85 대신 1 — 코덱스가 어두운 바닥 대비로 불씨 밝기를 올린 판)
+    property boolean MeteorL2Rim = false        -- L2 예고 그림이 있을 때 Util.Telegraph 화염 테두리·차오름도 함께 그린다 (false = 그림만 · 메이커에서 다시 볼 값)
     property number GiantSlamHoldSec = 0.18     -- 방패 내려찍기 뒤 층(S18) 마지막 장 최소 유지 (예전 장별 30ms 그대로 → 0.39초에 끝)
     -- 10-31 갈래 E2 (코덱스 2차 샘플 승인 4계열 전체 33장): 값만 되돌리면 예전 그대로 · 그림 칸(GameConst)을 비우면 예전 입자로
     property integer FramesFxOrder = 6          -- FramesFx 기본 층 (몸 앞 · 폭발·파쇄·솟음·승격)
@@ -281,6 +290,11 @@ script SkillEffects extends Component
         --   뼛가루·뼈 명중은 골편 명중(FxSkillShardHit)과 같은 RUID라 위에서 이미 들어 있다
         for _, ruids in ipairs({ _GameConst.FxSkillArmorCast, _GameConst.FxSkillArmorAbsorb, _GameConst.FxSkillArmorBreak, _GameConst.FxSkillDashGhost, _GameConst.FxSkillRiteWhirl, _GameConst.FxSkillRiteWhirlTrace,
                 _GameConst.FxSkillRiteArrow, _GameConst.FxSkillDrainVortex, _GameConst.FxSkillHitCurse, _GameConst.FxSkillHitFire, _GameConst.FxSkillHitFrost, _GameConst.FxSkillTorrentCast, _GameConst.FxSkillTorrentHit }) do
+            local first = _Util:Frames(ruids)[1]
+            if first ~= nil then table.insert(list, first) end
+        end
+        -- 10-31 메테오 L2: 4자리 첫 장 (예고·낙하·착지·잔불)
+        for _, ruids in ipairs({ _GameConst.FxGiantMeteorTelegraph, _GameConst.FxGiantMeteorFall, _GameConst.FxGiantMeteorImpact, _GameConst.FxGiantMeteorAfterglow }) do
             local first = _Util:Frames(ruids)[1]
             if first ~= nil then table.insert(list, first) end
         end
@@ -1187,7 +1201,15 @@ script SkillEffects extends Component
                 local p = _MotionSmoother:VisOf(o.anchor).TransformComponent.WorldPosition
                 return Vector3(p.x + o.offset.x + dx, p.y + o.offset.y + d.y, 0)
             end
-            return Vector3(o.pos.x + dx, o.pos.y + d.y, 0)
+            local tx = 0
+            local ty = 0
+            if o.travel ~= nil then
+                -- 10-31 메테오 L2 낙하: 시작 = pos + travel → travelSec 동안 pos로 (장을 바꿀 때마다 그 시각의 자리 · 클라이언트)
+                local f = math.min(1, math.max(0, (_UtilLogic.ElapsedSeconds - t0) / math.max(0.01, o.travelSec or 0.01)))
+                tx = o.travel.x * (1 - f)
+                ty = o.travel.y * (1 - f)
+            end
+            return Vector3(o.pos.x + dx + tx, o.pos.y + d.y + ty, 0)
         end
         local function where(idx)
             -- 고정 장(o.latchIdx)에 도달하고 고정 시각(o.latchAt)도 지난 뒤(둘 중 늦은 쪽) 그 장 좌표 raw(latchIdx)로 고정 —
@@ -1275,6 +1297,11 @@ script SkillEffects extends Component
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local tint = self:GiantFxTint(kind)
+        if kind == "warn_fire" or kind == "meteor_fall" or kind == "meteor_land" then
+            -- 10-31 메테오 L2: 그 단계 자리(GameConst.FxGiantMeteor*)가 차 있으면 L2로 · 비면 아래 예전 연출 그대로 (낙하 angle = 시전자 기준 표적 쪽 0/180 · RiteGiantMoves.FireMeteor)
+            if self:MeteorL2Fx(kind, pos, width, angle, seconds) then return end
+            angle = 0   -- 예전 연출은 각 0 그대로 (표적 쪽 표시는 L2 낙하에서만)
+        end
         if kind == "warn_fire" then
             -- 기도 메테오 예고 (10-31 갈래 E · S22): 다른 범위 예고처럼 Util.Telegraph 화염 원 — 판정 반경 테두리 + 바깥으로 차오름이 테두리에 닿으면 떨어진다
             --   (예전: 보라 회오리 고리 FxStorm을 주황으로 칠해 씀 → 범위 원과 모양이 달랐다). 거인은 BossPattern이 없어 흐린 고리(보스 실금 아님)
@@ -1339,6 +1366,83 @@ script SkillEffects extends Component
         else
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(width * 0.2, math.max(0.2, height * 0.1), 1), false, { Color = tint })
         end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean MeteorL2Fx(string kind, Vector3 pos, number width, number angle, number seconds)
+        -- 10-31 마법사 거인 메테오 L2 (코덱스 meteor-L2-full · 4계열 × 8장): 그 단계 자리가 차 있으면 이 클라이언트에서 장을 돌리고 true · 비면 false(예전 연출)
+        --   서버 타이머·피해 판정·반경·시각은 그대로 (부르는 쪽 RiteGiantMoves.FireMeteor의 seconds를 그대로 쓴다) · 장 순환·잔불 이음은 모두 클라이언트 SetTimerOnce
+        --   warn_fire = 예고 바닥 타원 (영창+낙하 seconds 동안 반복 · 몸 뒤) — MeteorL2Rim이면 false를 돌려 Util.Telegraph 테두리도 함께
+        --   meteor_fall = 낙하 (seconds 동안 순환 · 축 MeteorL2FallDeg를 따라 MeteorL2FallDist 칸 위에서 표적으로 · angle 90~270 = 표적이 시전자 왼쪽 → 시작을 왼쪽 위로·FlipX · 몸 앞)
+        --   meteor_land = 착지 한 번 → 잔불 반복(불바닥 seconds 끝까지 · 적어도 한 바퀴) → 잔불 마지막 장 MeteorL2FadeSec 옅어짐 (잔불이 비면 착지 마지막 장을 seconds 끝까지)
+        --   크기: 바닥 3계열 = 내용 560px(MeteorL2LandRef 10.0 × 56)이 판정 지름 width · 낙하 = 암석 폭 MeteorL2FallCoreW × MeteorFallMul × width/3.6
+        local slot = ""
+        local ms = 0
+        if kind == "warn_fire" then
+            slot = _GameConst.FxGiantMeteorTelegraph
+            ms = _GameConst.FxGiantMeteorTelegraphMs
+        elseif kind == "meteor_fall" then
+            slot = _GameConst.FxGiantMeteorFall
+            ms = _GameConst.FxGiantMeteorFallMs
+        elseif kind == "meteor_land" then
+            slot = _GameConst.FxGiantMeteorImpact
+            ms = _GameConst.FxGiantMeteorImpactMs
+        end
+        if slot == nil or slot == "" or ms == nil or ms <= 0 then return false end
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) then return false end
+        local map0 = me.CurrentMap
+        local n = #_Util:Frames(slot)
+        local tint = Color(1, 1, 1, self.MeteorL2Alpha)
+        local k = (100 / 56) * width / self.MeteorL2LandRef
+        local frameSec = ms / 1000
+        local o = { kind = "meteor_l2_" .. kind, pos = pos, offset = Vector3(0, 0, 0), angle = 0, scale = Vector3(k, k, 1), frameSec = frameSec, holdSec = frameSec, loopSec = 0, tint = tint, order = 1, peak = 0, flipX = false }
+        local face = 1
+        local afterLoop = 0
+        if kind == "warn_fire" then
+            o.loopSec = math.max(frameSec, seconds)
+            self:PlaySeq(slot, o)
+        elseif kind == "meteor_fall" then
+            local a = angle % 360
+            if a > 90 and a < 270 then face = -1 end
+            local kf = self.MeteorFallMul * self.MeteorL2FallCoreW * (100 / self.MeteorL2FallCorePx) * width / 3.6
+            local rad = math.rad(self.MeteorL2FallDeg)
+            o.scale = Vector3(kf, kf, 1)
+            o.order = 6
+            o.flipX = face < 0
+            o.loopSec = math.max(frameSec, seconds)
+            o.travel = Vector3(face * math.cos(rad) * self.MeteorL2FallDist, math.sin(rad) * self.MeteorL2FallDist, 0)
+            o.travelSec = math.max(0.01, seconds)
+            self:PlaySeq(slot, o)
+        else
+            local after = _GameConst.FxGiantMeteorAfterglow
+            local afterMs = _GameConst.FxGiantMeteorAfterglowMs
+            local hasAfter = after ~= nil and after ~= "" and afterMs ~= nil and afterMs > 0
+            local impactSec = frameSec * n
+            if not hasAfter then o.holdSec = math.max(frameSec, seconds - frameSec * (n - 1)) end
+            self:PlaySeq(slot, o)
+            if hasAfter then
+                local aList = _Util:Frames(after)
+                local aSec = afterMs / 1000
+                afterLoop = math.max(aSec * #aList, seconds - impactSec)
+                local fade = self.MeteorL2FadeSec
+                _TimerService:SetTimerOnce(function()
+                    local me1 = _UserService.LocalPlayer
+                    if not isvalid(me1) or me1.CurrentMap ~= map0 then return end
+                    local o2 = { kind = "meteor_l2_afterglow", pos = pos, offset = Vector3(0, 0, 0), angle = 0, scale = Vector3(k, k, 1), frameSec = aSec, holdSec = aSec, loopSec = afterLoop, tint = tint, order = 1, peak = 0, flipX = false }
+                    self:PlaySeq(after, o2)
+                    if fade > 0 then
+                        _TimerService:SetTimerOnce(function()
+                            local me2 = _UserService.LocalPlayer
+                            if not isvalid(me2) or me2.CurrentMap ~= map0 then return end
+                            _Util:PlayFramesHold(aList[#aList], map0, pos, 0, Vector3(k, k, 1), 0.01, 0, fade, tint, 1)
+                        end, afterLoop)
+                    end
+                end, impactSec)
+            end
+        end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] meteor L2 kind=%s n=%d ms=%d scale=%.3f order=%d face=%d flip=%s loop=%.2f travel=%.2f after=%.2f sec=%.2f w=%.2f", kind, n, ms, o.scale.x, o.order, face, tostring(o.flipX), o.loopSec, kind == "meteor_fall" and self.MeteorL2FallDist or 0, afterLoop, seconds, width)) end
+        return kind ~= "warn_fire" or not self.MeteorL2Rim
     end
 
     @ExecSpace("ClientOnly")
