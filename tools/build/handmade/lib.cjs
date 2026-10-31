@@ -933,7 +933,8 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     const py = y + (num(sp.ny, 0) * num(sp.h, 0) * sc) / 100;   // 발이 y에 오게 (메이플 피벗 보정)
     out.push({ name, pos: [r3(x), r3(py), over ? zOf(y, decal) - 0.0005 : zOf(y, decal)], overrides: o });
     // v5: 키 큰 그림의 윗부분 그림(<그림>-top, art_sprites.csv에 있을 때만)을 같은 자리 앞층(MapLayer1)에 — 플레이어가 뒤에 서면 윗부분이 가린다.
-    //   10-31 현재 -top 그림은 없다(코덱스 잘라 낸 윗부분 납품 대기) — 납품되면 이 줄이 바로 쓴다
+    //   10-31 코덱스 납품 13종 업로드(docs/evidence/2026-10-31-map-v5-toppart) — 원본과 같은 캔버스·피벗이라 위치·배율·뒤집기·색을 그대로 복사한다.
+    //   그림 엔티티(artsprite = Transform+SpriteRenderer)라 충돌·클릭 없음 · 막힌 칸(place의 blocked)에도 넣지 않는다. 플레이어(MapLayer0 · 순서 3·4)보다 위 층.
     if (v5 && !decal && table[`${spName}-top`]) {
       const t = sprite(table[`${spName}-top`].ruid, null, 1), tr = t["MOD.Core.SpriteRendererComponent"];
       tr.SortingLayer = "MapLayer1"; tr.FlipX = !!flip; if (c) tr.Color = tintOf(c);
