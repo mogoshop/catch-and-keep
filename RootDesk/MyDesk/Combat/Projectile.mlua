@@ -67,6 +67,9 @@ script Projectile extends Component
     property integer ViewFrame = 0           -- 클라이언트: 「|」로 이은 프레임 그림(코덱스 납품분)의 지금 칸 (SkinFrame)
     property number HitSparkScale = 0.6      -- 투사체 명중 불꽃(P11 · 저주 불꽃·서리 혼·골편 공통) 크기 (10-31 갈래 E · 예전 0.45)
     property number TorrentHitScale = 0.6    -- 영혼 격류 명중 혼 구슬(P28) 크기 (예전 0.38)
+    property string HitKind = ""             -- 10-31 9계열: 명중 그림 속성 (서버만 · "bone"/"curse"/"fire"/"frost" · MageBolts.Configure·의식 화살·중립 뼈 화살이 정한다 · "" = 공용 불꽃) → HitFx 인자
+    property number HitArtScale = 1.0        -- 속성 명중 2장 배율: 96px = 0.96칸 · 내용 67~80px = 0.67~0.8칸 (예전 불꽃 0.6)
+    property number TorrentHitArtScale = 0.75   -- 영혼 격류 명중 4장 배율: 내용 88~112px = 0.66~0.84칸 (예전 혼 구슬 0.6)
     property number SpearHitScale = 1.0      -- 뼈 창 꽂힘(P05 · 128px = 1.28칸) 배율 (10-31 갈래 E2 · 코덱스 renderer_scale_proposal 1 · 예전 대기 자리 0.9)
 
     @ExecSpace("ServerOnly")
@@ -180,6 +183,10 @@ script Projectile extends Component
                 local hand = _Util:Pos2(self.Shooter) + Vector2(0, self.HeightOffset) + self.Dir * 0.35
                 if (hand - self.StartPos):Magnitude() < 2 then self.ViewPos = hand end
             end
+            -- 10-31 골편 20장: 골편 계열 그림 순환 시작 (내가 쏜 것만 · 출시 서버 끔)
+            if self:MirrorSkin() and not Environment:IsPublishedPlay() and isvalid(self.Shooter) and self.Shooter == _UserService.LocalPlayer then
+                log(string.format("[VRF] shard frames start n=%d ms=%d left=%s local=%s", #_Util:Frames(self.SkinRuid), _GameConst.FxSkillShardFrameMs, tostring(self.Dir.x < 0), tostring(self.LocalView)))
+            end
         end
         local expected = self.Speed * (now - self.ViewT0)
         local boost = self.ViewDist < expected - 0.05 and 1.4 or 1
@@ -205,6 +212,7 @@ script Projectile extends Component
         local t = self.Entity.TransformComponent
         t.WorldPosition = Vector3(self.ViewPos.x, self.ViewPos.y, t.WorldPosition.z)
         t.ZRotation = math.deg(math.atan(self.ViewDir.y, self.ViewDir.x)) + self.AngleOffset
+        self:FaceMirror()
         -- 예측 뼛조각은 서버처럼 벽에 닿거나 사거리 끝·관통 상한에서 사라진다 (서버 투사체는 서버 Finish가 없앤다)
         if self.LocalView and self.MaxHits > 0 then
             for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, self.ViewPos - Vector2(0, self.HeightOffset), self.Radius)) do
@@ -270,6 +278,8 @@ script Projectile extends Component
         self.NextGhostAt = _UtilLogic.ElapsedSeconds + gap
         if self.Ghosts == nil then self.Ghosts = {} end
         local sx, sy = t.Scale.x * shrink, t.Scale.y * shrink
+        local body = self.Entity.SpriteRendererComponent
+        if isvalid(body) and body.FlipY then sy = -sy end   -- 10-31 골편 20장: 왼쪽으로 나는 골편 계열은 잔상도 같은 가로 거울 (FaceMirror)
         local serial = _EffectService:PlayEffect(self:SkinFrame(), self.Entity, t.WorldPosition, t.ZRotation, Vector3(sx, sy, 1), false, { Alpha = alpha, Color = self.TintColor })
         if serial == 0 then return end
         local ghosts = self.Ghosts
@@ -282,8 +292,33 @@ script Projectile extends Component
         end, life)
     end
 
+    method boolean MirrorSkin()
+        -- 10-31 골편 20장: 골편 계열 투사체 그림(GameConst.FxSkillShardThrow·SpearShard·StormShard·BoneArrow · 오른쪽 기준 · 코덱스 「horizontal mirror permitted」)인가
+        local s = self.SkinRuid
+        if s == "" or string.find(s, "|", 1, true) == nil then return false end
+        return s == _GameConst.FxSkillShardThrow or s == _GameConst.FxSkillSpearShard or s == _GameConst.FxSkillStormShard or s == _GameConst.FxSkillBoneArrow or s == _GameConst.FxSkillRiteArrow   -- 10-31 9계열 의식 뼈 화살도 오른쪽 기준
+    end
+
+    method number FrameSec()
+        -- 프레임 그림 장 간격: 골편 계열은 GameConst.FxSkillShardFrameMs(코덱스 100ms) · 나머지는 예전 0.08초
+        if self:MirrorSkin() then
+            if self.SkinRuid == _GameConst.FxSkillRiteArrow then return math.max(0.02, _GameConst.FxSkillRiteArrowMs / 1000) end   -- 10-31 9계열 의식 뼈 화살
+            return math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
+        end
+        return 0.08
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FaceMirror()
+        -- 골편 계열 그림은 오른쪽 기준: 왼쪽 반쪽으로 날면(진행 각 90°~270°) 회전만으로는 위아래가 뒤집혀 보인다 → FlipY (회전 180° + FlipY = 가로 거울). 다른 그림은 늘 끔
+        local sprite = self.Entity.SpriteRendererComponent
+        if not isvalid(sprite) then return end
+        local flip = self:MirrorSkin() and self.ViewDir.x < 0
+        if sprite.FlipY ~= flip then sprite.FlipY = flip end
+    end
+
     method string SkinFrame()
-        -- 그림 한 장이면 그대로, 「|」로 이은 프레임(코덱스 납품분 · GameConst.FxSkill*)이면 지금 칸 (클라이언트는 AdvanceFrame이 0.08초마다 넘긴다)
+        -- 그림 한 장이면 그대로, 「|」로 이은 프레임(코덱스 납품분 · GameConst.FxSkill*)이면 지금 칸 (클라이언트는 AdvanceFrame이 FrameSec마다 넘긴다)
         if string.find(self.SkinRuid, "|", 1, true) == nil then return self.SkinRuid end
         local list = _Util:Frames(self.SkinRuid)
         if #list == 0 then return "" end
@@ -292,9 +327,9 @@ script Projectile extends Component
 
     @ExecSpace("ClientOnly")
     method void AdvanceFrame()
-        -- 프레임 그림 투사체만: 날아가는 동안 0.08초마다 다음 칸 (한 장짜리 그림은 아무것도 안 한다)
+        -- 프레임 그림 투사체만: 날아가는 동안 FrameSec(예전 0.08초 · 골편 계열 FxSkillShardFrameMs)마다 다음 칸 (한 장짜리 그림은 아무것도 안 한다)
         if string.find(self.SkinRuid, "|", 1, true) == nil then return end
-        local frame = math.floor((_UtilLogic.ElapsedSeconds - self.ViewT0) / 0.08)
+        local frame = math.floor((_UtilLogic.ElapsedSeconds - self.ViewT0) / self:FrameSec())
         if frame == self.ViewFrame then return end
         self.ViewFrame = frame
         local sprite = self.Entity.SpriteRendererComponent
@@ -365,7 +400,7 @@ script Projectile extends Component
     end
 
     @ExecSpace("Multicast")
-    method void HitFx(Vector3 pos, Color color, Entity shooter, boolean shake, string style)
+    method void HitFx(Vector3 pos, Color color, Entity shooter, boolean shake, string style, string kind)
         -- 맞은 자리에서 투사체 색 불꽃이 튄다 (맞았는지 보이게). 뼈 창·영혼 격류는 쏜 사람 화면만 살짝 흔든다 (10-28 F5 C-3)
         -- 44-1 A 있는 그림 재조합: 스킬마다 맞은 자리 모양이 다르다 — 뼈 창 = 진행 방향으로 꽂히는 빛 파열 · 영혼 격류 = 빨려드는 혼 ·
         --   뼈 화살 마지막 발 = 큰 뼛가루 충격 (코덱스 H-1 꽂힘 그림 GameConst.FxSkillSpearHit가 오면 그 프레임으로)
@@ -382,17 +417,37 @@ script Projectile extends Component
                 _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, map, pos, 0, Vector3(0.32, 0.22, 1), false, { Color = Color(0.85, 0.8, 0.7, 0.9) })
             end
         elseif style == "torrent" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, map, pos, 0, Vector3(self.TorrentHitScale, self.TorrentHitScale, 1), false, { Color = color })
-            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(0.3, 0.3, 1), false, { Color = color })
+            if _GameConst.FxSkillTorrentHit ~= "" then
+                -- 10-31 9계열 P28: 코덱스 영혼 격류 명중 4장 한 번 (표적 · 자기 색) · 몸 앞
+                _Util:PlayFrames(_GameConst.FxSkillTorrentHit, map, pos, 0, Vector3(self.TorrentHitArtScale, self.TorrentHitArtScale, 1), math.max(0.02, _GameConst.FxSkillTorrentMs / 1000), Color(1, 1, 1, 1), 6)
+            else
+                _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, map, pos, 0, Vector3(self.TorrentHitScale, self.TorrentHitScale, 1), false, { Color = color })
+                _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(0.3, 0.3, 1), false, { Color = color })
+            end
         elseif style == "rite_push" then
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, map, pos, 0, Vector3(0.75, 0.5, 1), false, { Color = Color(0.95, 0.9, 0.78, 1) })
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, map, pos - Vector3(0, 0.25, 0), 0, Vector3(0.6, 0.28, 1), false, nil)
             _Util:SkillShake(shooter, 0.1, 0.14)
         else
-            _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(self.HitSparkScale, self.HitSparkScale, 1), false, { Color = color })
+            local art = self:HitArt(kind)
+            if art ~= "" then
+                -- 10-31 9계열 P11: 속성 명중 2장 한 번 (장마다 FxSkillHitMs) — 뼈 = 골편 명중 2장 재사용(무채색이라 투사체 색) · 저주·불·서리 = 그림 자기 색
+                _Util:PlayFrames(art, map, pos, 0, Vector3(self.HitArtScale, self.HitArtScale, 1), math.max(0.02, _GameConst.FxSkillHitMs / 1000), kind == "bone" and color or Color(1, 1, 1, 1), 6)
+            else
+                _ParticleService:PlayBasicParticle(BasicParticleType.SparkExplosion, map, pos, 0, Vector3(self.HitSparkScale, self.HitSparkScale, 1), false, { Color = color })
+            end
         end
         if shake and style ~= "rite_push" then _Util:SkillShake(shooter, 0.06, 0.09) end
-        if style ~= "" and not Environment:IsPublishedPlay() and shooter == me then log("[VRF] projectile hit fx style=" .. style) end
+        if (style ~= "" or (kind or "") ~= "") and not Environment:IsPublishedPlay() and shooter == me then log("[VRF] projectile hit fx style=" .. style .. " kind=" .. (kind or "") .. " art=" .. tostring(self:HitArt(kind) ~= "")) end
+    end
+
+    method string HitArt(string kind)
+        -- 속성 명중 그림 (10-31 9계열 · GameConst.FxSkillHit*): bone · curse · fire · frost → 그 칸 · 그 밖이거나 칸이 비면 "" (예전 공용 불꽃)
+        if kind == "bone" then return _GameConst.FxSkillHitBone end
+        if kind == "curse" then return _GameConst.FxSkillHitCurse end
+        if kind == "fire" then return _GameConst.FxSkillHitFire end
+        if kind == "frost" then return _GameConst.FxSkillHitFrost end
+        return ""
     end
 
     @ExecSpace("ClientOnly")
@@ -424,7 +479,7 @@ script Projectile extends Component
                         end
                     end
                     self.PierceHits = self.PierceHits + 1   -- 뼈 창 마법사 관통 MaxHits · 가시
-                    self:HitFx(m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
+                    self:HitFx(m.Entity.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style, self.HitKind)
                 else
                     local atk = self.Owner:GetComponent("script.PlayerAttack")
                     local beforeHp = m.Hp
@@ -460,7 +515,7 @@ script Projectile extends Component
                         local effects = self.Owner:GetComponent("script.SkillEffects")
                         if effects ~= nil then effects:BoneShardImpact(hitPos) end
                     elseif m.Hp < beforeHp then
-                        self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
+                        self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style, self.HitKind)
                     end
                 end
                 -- 10-11 QA: 고른 적에 닿아도 사라지지 않고 꿰뚫어 그 방향 그대로 사거리 끝까지 간다 (맞은 자리엔 타격 이펙트만 남는다)
@@ -484,7 +539,7 @@ script Projectile extends Component
                     self.PierceHits = self.PierceHits + 1
                     if atk ~= nil then atk:SkillHitOne(foe, self.Info, dmg) end
                 end
-                self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
+                self:HitFx(hitPos, self.TintColor, self.Owner, self:ShakesOnHit(), self.Style, self.HitKind)
                 if foe == self.Lock then self.Lock = nil end
                 if not self.Pierce or self:HitCapReached() then self:Finish() return end
             end
@@ -517,7 +572,7 @@ script Projectile extends Component
         end
         if victim == nil then return end
         self.HitIds[victim.Id] = true
-        self:HitFx(victim.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset + 0.2, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style)
+        self:HitFx(victim.TransformComponent.WorldPosition + Vector3(0, self.HeightOffset + 0.2, 0), self.TintColor, self.Owner, self:ShakesOnHit(), self.Style, self.HitKind)
         atk:HitOne(victim)
         self:Finish()
     end

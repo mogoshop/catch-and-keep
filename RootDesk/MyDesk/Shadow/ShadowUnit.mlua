@@ -100,6 +100,7 @@ script ShadowUnit extends AttackComponent
     property boolean Taunt = false           -- 해골 변이 방패: 4초마다 주변 적 도발
     property integer BoltCount = 1           -- 해골 마법사 변이 쌍발: 화살 수
     property number BoltMult = 1             -- 마법사 화살 피해 배율 (쌍발 ×0.65~0.85 · 관통 ×0.85)
+    property number BoneArrowScale = 0.7     -- 10-31 골편 20장: 원거리 그림자·되살림의 중립 뼈 화살(GameConst.FxSkillBoneArrow 128×64) 배율 — 보이는 몸 93~94px ≈ 0.66칸 (비면 몬스터 화살 SpriteArrow 1.2)
     property integer BoltPierce = 0          -- 관통: 화살이 꿰뚫는 적 수 (0 = 첫 적에서 멈춤)
     property number HexPct = 0               -- 저주: 맞은 적 4초 받는 피해 +%
     property number BlastMult = 0            -- 마법사 거인 평타: 맞은 자리 반경 BlastRadius 다른 적에게 × 이 값 (rite_giants.csv blastMul · 48부터 일반 마법사 폭발 변이는 없다)
@@ -1513,7 +1514,14 @@ script ShadowUnit extends AttackComponent
             local speed = 7
             local pierce = false
             if school == "" then
-                proj:Skin(_GameConst.SpriteArrow, 1.2)
+                if _GameConst.FxSkillBoneArrow ~= "" then
+                    -- 10-31 골편 20장: 중립 뼈 화살 4장(무채색 · 오른쪽 기준) — 속성 색은 그대로 Tint · 비행 중 FxSkillShardFrameMs로 장을 넘기고 왼쪽은 FlipY (Projectile.MirrorSkin)
+                    proj:Skin(_GameConst.FxSkillBoneArrow, self.BoneArrowScale)
+                    proj.HitKind = "bone"   -- 10-31 9계열: 명중 = 뼈 명중 2장(GameConst.FxSkillHitBone · 화살 색 Tint)
+                    if not Environment:IsPublishedPlay() and (self.ShotCount <= 1 or self.ShotCount % 25 == 0) then log(string.format("[VRF] bone arrow skin n=%d scale=%.2f %s", #_Util:Frames(_GameConst.FxSkillBoneArrow), self.BoneArrowScale, self.Entity.Name)) end
+                else
+                    proj:Skin(_GameConst.SpriteArrow, 1.2)
+                end
                 proj.AngleOffset = 0
                 proj:Tint(self:BoltColor())
             else

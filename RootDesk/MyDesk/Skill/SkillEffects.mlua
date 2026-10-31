@@ -125,6 +125,35 @@ script SkillEffects extends Component
     property number PrisonReleaseSec = 0.1      -- 풀림 2장 장 간격
     property number PrisonScale = 1.0           -- 128px = 1.28칸 (코덱스 renderer_scale_proposal 1 · 피벗 0.5/0.2 = 발)
     property integer PrisonOrder = 6            -- 몸 앞 (옆·앞 뼈가 팔다리를 가릴 수 있다 — 얼굴·가운데 창은 그림이 비워 둠 · 코덱스 62px 실서기 합성)
+    -- 10-31 골편 계열 20장 (GameConst.FxSkillShard* · 코덱스 shard-full-20261031): 값만 되돌리면 예전 그대로 · 그림 칸을 비우면 예전 보라 궤적·파열로
+    property number ShardThrowScale = 0.65      -- 골편 투척 비행 그림 배율: 128×64 캔버스 = 0.83×0.42칸 · 보이는 몸 110~116px ≈ 0.73칸 (예전 보라 궤적 0.55배 = 0.78×0.24칸 · audit P02) · 튕김은 예전 비(0.5/0.55)대로 0.59
+    property number StormShardScale = 0.55      -- 뼈 폭풍 도는 골편(FxSkillBoneStorm이 빈 때) 배율: 보이는 몸 90~116px → 0.5~0.64칸 (예전 보라 궤적 0.5×0.32 = 0.71×0.14칸 · audit P23)
+    property number ShardHitScale = 1.2         -- 골편 명중 파편 배율(옛 ClipFx 0.5 기준): 96px 캔버스 × 1.2 = 1.15칸 ≈ 옛 보라 파열 캔버스 1.14칸(audit P03) · 가장 큰 장 내용 76px = 0.91칸 · 다른 호출(0.45)은 비례
+    property integer ShardHitOrder = 6          -- 명중 파편 층: MapLayer0 6 (몸 앞 · FramesFxOrder와 같음)
+    property Color ShardHitTint = Color(1, 0.97, 0.9, 1)   -- 무채색 골편 그림(명중·도는 골편)에 뼈 흰빛을 살짝 (속성색은 Tint로 · 코덱스 조건)
+    -- 10-31 스킬 효과 9계열 B 88키 (GameConst.FxSkillArmor*·CurseCircles·DashGhost·RiteWhirl*·RiteArrow·ConsumedDust·DrainVortex·Torrent* · 코덱스 B-nine-full-20261031): 값만 되돌리면 예전 그대로 · 그림 칸을 비우면 예전 연출
+    property number ArmorCastArtScale = 1.0     -- 뼈 갑옷 두름 4장 배율: 128px = 1.28칸 · 가장 큰 장 내용 109×104px ≈ 1.07칸 (유지 고리 캔버스 0.96칸보다 한 단 크게)
+    property number ArmorArtDy = 0.45           -- 몸 가운데 = 발 + 0.45칸 (PlayerStats.ArmorRingDy와 같은 자리)
+    property integer ArmorCastOrder = 5         -- 몸 앞 (예전 시전 입자와 같은 층)
+    property string CurseCircleFitPx = "amp=58.5;weaken=56.7;terror=62.2;thorn=57.7;lifetap=55.5;resist=58.7"   -- 원형 판의 보이는 반경(px · 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 4장 중 최대 · 10-31 실측) → 이 반경 = 저주 반경 (CurseSigilFitPx와 같은 계산)
+    property number CurseCircleHoldSec = 0.3    -- 원형 판 마지막 장 추가 유지 (문장 CurseSigilHoldSec와 같은 값)
+    property number CurseCircleFadeSec = 0.3    -- 그 뒤 옅어짐
+    property integer DashGhostCopies = 3        -- 망령 질주 잔상 복사본 수: 떠난 자리 → 도착 쪽 길 위 0 · 1/3 · 2/3 (도약 강화면 도착 자리 하나 더)
+    property number DashGhostStepSec = 0.05     -- 복사본 사이 시차 (질주 0.16초 동안 몸이 지나간 순서대로 뜬다)
+    property number DashGhostScale = 1.0        -- 128px = 1.28칸 · 보이는 형체 89~112×55~71px · 피벗 0.5/0.1 = 발
+    property integer DashGhostOrder = 3         -- MapLayer0 3 (바닥 위 · 예전 섬광은 엔진 기본 층)
+    property number RiteWhirlContentPx = 235    -- 뼈 회오리 8장 내용 폭 최대(px · 알파>16 · 256px 캔버스) → 이 폭 = 판정 지름 2×riteWhirlRadius
+    property number RiteWhirlTraceContentPx = 240   -- 바닥 자국 내용 폭(px) → 이 폭 = 판정 지름
+    property integer RiteWhirlOrder = 5         -- 회오리: 몸 앞 (뼈 폭풍 도는 골편 아래 반원과 같은 층)
+    property integer RiteWhirlTraceOrder = 1    -- 바닥 자국: 바닥(0)과 몸(2) 사이
+    property number RiteWhirlTraceFadeSec = 0.4 -- 자국이 옅어지는 시간 (회오리 시간 끝에 맞춘다)
+    property number RiteArrowScale = 1.2        -- 의식 뼈 화살 4장 배율: 보이는 몸 93~94px → 1.13칸 (예전 보라 궤적 1.1배 = 꼬리 포함 1.96×0.61칸)
+    property number RiteArrowLastMul = 1.25     -- 마지막 발(밀침) 한 단 크게 (예전 1.38/1.1)
+    property number DustScale = 1.1             -- 소모 해골 뼛가루 배율(옛 ClipFx 0.5 기준): 96px 캔버스 1.06칸 (옛 보라 파열 1.14칸)
+    property number DustDy = 0.3                -- 해골 발에서 그림 가운데까지 (코덱스 「ground_below_actor_at_feet」 · 가운데 피벗이라 위로) · 예전 +0.4
+    property number DrainVortexScale = 0.8      -- 생기 앗기 소용돌이 배율: 128px = 1.02칸 · 내용 78~112px = 0.62~0.9칸 (예전 FxDrain 0.6)
+    property number DrainVortexSec = 0.7        -- 소용돌이 반복 시간 (예전 ClipFx 0.7초)
+    property number TorrentCastArtScale = 0.8   -- 영혼 격류 시전 4장 배율: 내용 79~112px = 0.63~0.9칸 (예전 혼 구슬 입자 0.6)
 
     @ExecSpace("ServerOnly")
     method boolean Apply(string id, integer lv, Vector2 me, Vector2 target, number spell)
@@ -240,11 +269,28 @@ script SkillEffects extends Component
         if self.Entity ~= _UserService.LocalPlayer then return end
         local list = { self.FxShardShot, self.FxShardLaunch, self.FxShardHit, self.FxBlast, self.FxFlameShot, self.FxFrostShot, self.FxOffering, self.FxBlink, self.FxPoisonCloud, self.FxDrain, self.FxStorm, self.FxWave, _GameConst.FxAriseRing, _GameConst.FxAriseFlame, _GameConst.FxAriseBurst }
         -- 10-31 갈래 E: 새로 연결한 코덱스 스킬 그림(저주 불꽃 폭발·파쇄·솟음·승격·뼈 폭풍 각 장 + 저주 바닥 문장 6종 × 4장)도 처음 쓸 때 늦게 뜨지 않게
-        for _, ruids in ipairs({ _GameConst.FxSkillHexBurst, _GameConst.FxSkillShatter, _GameConst.FxSkillShadowRise, _GameConst.FxSkillElitePromote, _GameConst.FxSkillBoneStorm }) do
+        --   10-31 골편 20장: 골편 투척·폭풍 골편·중립 뼈 화살·명중 파편 각 4장도 (창 골편은 부르는 곳이 없어 뺀다)
+        for _, ruids in ipairs({ _GameConst.FxSkillHexBurst, _GameConst.FxSkillShatter, _GameConst.FxSkillShadowRise, _GameConst.FxSkillElitePromote, _GameConst.FxSkillBoneStorm,
+                _GameConst.FxSkillShardThrow, _GameConst.FxSkillStormShard, _GameConst.FxSkillBoneArrow, _GameConst.FxSkillShardHit }) do
             for _, r in ipairs(_Util:Frames(ruids)) do table.insert(list, r) end
         end
         for _, kind in ipairs({ "amp", "weaken", "terror", "thorn", "lifetap", "resist" }) do
             for _, r in ipairs(_Util:KeyFrames(_GameConst.FxSkillCurseSigils, kind)) do table.insert(list, r) end
+        end
+        -- 10-31 9계열: 자리마다 첫 장 (뼈 갑옷 3 · 잔상 · 회오리·자국 · 의식 화살 · 소용돌이 · 명중 저주·불·서리 · 격류 시전·명중 · 원형 판 6 · 표식 12)
+        --   뼛가루·뼈 명중은 골편 명중(FxSkillShardHit)과 같은 RUID라 위에서 이미 들어 있다
+        for _, ruids in ipairs({ _GameConst.FxSkillArmorCast, _GameConst.FxSkillArmorAbsorb, _GameConst.FxSkillArmorBreak, _GameConst.FxSkillDashGhost, _GameConst.FxSkillRiteWhirl, _GameConst.FxSkillRiteWhirlTrace,
+                _GameConst.FxSkillRiteArrow, _GameConst.FxSkillDrainVortex, _GameConst.FxSkillHitCurse, _GameConst.FxSkillHitFire, _GameConst.FxSkillHitFrost, _GameConst.FxSkillTorrentCast, _GameConst.FxSkillTorrentHit }) do
+            local first = _Util:Frames(ruids)[1]
+            if first ~= nil then table.insert(list, first) end
+        end
+        for _, kind in ipairs({ "amp", "weaken", "terror", "thorn", "lifetap", "resist" }) do
+            local first = _Util:KeyFrames(_GameConst.FxSkillCurseCircles, kind)[1]
+            if first ~= nil then table.insert(list, first) end
+        end
+        for _, kind in ipairs({ "amp", "weaken", "thorn", "terror", "confuse", "lifetap", "decay", "resist", "root", "chill", "poison", "hex" }) do
+            local first = _Util:KeyFrames(_GameConst.FxSkillMarks, kind)[1]
+            if first ~= nil then table.insert(list, first) end
         end
         local serials = {}
         for _, ruid in ipairs(list) do
@@ -284,7 +330,9 @@ script SkillEffects extends Component
         self:StopStormOrbit()
         local codex = _GameConst.FxSkillBoneStorm ~= ""
         local count = codex and 1 or self.StormShardCount
-        local first = codex and _Util:Frames(_GameConst.FxSkillBoneStorm)[1] or self.FxShardShot
+        -- 10-31 골편 20장: 회전본이 비면 도는 골편 6개 = 폭풍 골편 4장(GameConst.FxSkillStormShard · StormOrbit이 장을 넘김) · 그것도 비면 예전 보라 궤적
+        local shardArt = not codex and _GameConst.FxSkillStormShard ~= ""
+        local first = codex and _Util:Frames(_GameConst.FxSkillBoneStorm)[1] or (shardArt and _Util:Frames(_GameConst.FxSkillStormShard)[1] or self.FxShardShot)
         local ps = self.Entity.TransformComponent.Scale
         local psx, psy = math.max(0.1, math.abs(ps.x)), math.max(0.1, math.abs(ps.y))
         for i = 1, count do
@@ -298,6 +346,9 @@ script SkillEffects extends Component
                 if codex then
                     local s = 2 * self.StormRadius / 1.28
                     e.TransformComponent.Scale = Vector3(s / psx, s / psy, 1)
+                elseif shardArt then
+                    sp.Color = self.ShardHitTint
+                    e.TransformComponent.Scale = Vector3(self.StormShardScale / psx, self.StormShardScale / psy, 1)
                 else
                     sp.Color = Color(0.96, 0.92, 0.8, 0.95)
                     e.TransformComponent.Scale = Vector3(0.5 / psx, 0.32 / psy, 1)
@@ -308,7 +359,7 @@ script SkillEffects extends Component
         self.StormOrbitAt = _UtilLogic.ElapsedSeconds
         self.StormOrbitUntil = _UtilLogic.ElapsedSeconds + seconds
         self:StormOrbit()
-        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone storm orbit shards=%d codex=%s r=%.1f", #self.StormShards, tostring(codex), self.StormRadius)) end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone storm orbit shards=%d codex=%s shardArt=%s r=%.1f", #self.StormShards, tostring(codex), tostring(shardArt), self.StormRadius)) end
     end
 
     @ExecSpace("ClientOnly")
@@ -333,14 +384,24 @@ script SkillEffects extends Component
         local spin = 2 * math.pi * t / math.max(0.2, self.StormSpinSeconds)
         local r = self.StormRadius * 0.85
         local n = #self.StormShards
+        -- 10-31 골편 20장: 폭풍 골편 4장이면 FxSkillShardFrameMs마다 장을 넘기고(골편마다 한 칸씩 어긋나게) · 진행 방향(접선)이 왼쪽이면 FlipY(가로 거울)
+        local shardList = _GameConst.FxSkillStormShard ~= "" and _Util:Frames(_GameConst.FxSkillStormShard) or {}
+        local frameSec = math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
         for i, e in ipairs(self.StormShards) do
             if isvalid(e) then
                 local a = spin + (i - 1) * 2 * math.pi / math.max(1, n)
                 local x, y = r * math.cos(a), r * math.sin(a) * 0.8
                 e.TransformComponent.Position = Vector3(x / psx, (y + 0.3) / psy, y > 0 and 0.01 or -0.01)
                 e.TransformComponent.ZRotation = math.deg(a) + 90
+                local sp = e.SpriteRendererComponent
                 local order = y > 0 and 3 or 5
-                if e.SpriteRendererComponent.OrderInLayer ~= order then e.SpriteRendererComponent.OrderInLayer = order end
+                if sp.OrderInLayer ~= order then sp.OrderInLayer = order end
+                if #shardList > 0 then
+                    local ruid = shardList[(math.floor(t / frameSec) + i - 1) % #shardList + 1]
+                    if sp.SpriteRUID ~= ruid then sp.SpriteRUID = ruid end
+                    local flip = math.cos(a + math.pi / 2) < 0
+                    if sp.FlipY ~= flip then sp.FlipY = flip end
+                end
             end
         end
     end
@@ -539,7 +600,7 @@ script SkillEffects extends Component
                 ---@type Projectile
                 local p = proj
                 p.MaxHits = maxHits   -- 서버와 같은 마릿수에서 멈춘다 (관통 상한)
-                p:PlayLocal(self.Entity, d, 12, 6.5, self.FxShardShot, 0.55, i == center and lock or nil)
+                p:PlayLocal(self.Entity, d, 12, 6.5, self:ShardSkinRuid(), self:ShardSkinScale(0.55), i == center and lock or nil)
             elseif isvalid(e) then
                 e:Destroy()
             end
@@ -624,7 +685,7 @@ script SkillEffects extends Component
             ---@type Projectile
             local proj = comp
             if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-            proj:Skin(self.FxShardShot, 0.5)
+            proj:Skin(self:ShardSkinRuid(), self:ShardSkinScale(0.5))
             if isvalid(target) then proj.Lock = target end
             proj.SpikePct = spikePct
             proj.Bounces = bouncesLeft
@@ -638,8 +699,63 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method void BoneShardImpact(Vector3 pos)
-        -- 뼛조각 명중: 보라 파열
-        self:ClipFx(self.FxShardHit, pos, 0.5, 0.6, 0)
+        -- 뼛조각 명중: 코덱스 골편 명중 4장 (10-31 · 비면 예전 보라 파열 0.5 · 0.6초)
+        self:ShardHit(pos, 0.5, 0.6)
+    end
+
+    method string ShardSkinRuid()
+        -- 골편 투사체 그림: 코덱스 골편 투척 4장(GameConst.FxSkillShardThrow · 비행 중 반복 · Projectile.FrameSec/MirrorSkin)이 차면 그것, 비면 예전 보라 궤적
+        if _GameConst.FxSkillShardThrow ~= "" then return _GameConst.FxSkillShardThrow end
+        return self.FxShardShot
+    end
+
+    method number ShardSkinScale(number oldScale)
+        -- 예전 보라 궤적 배율(예측·서버 0.55 · 튕김 0.5) → 골편 투척 그림이면 ShardThrowScale × (oldScale / 0.55) · 비면 oldScale 그대로
+        if _GameConst.FxSkillShardThrow ~= "" then return self.ShardThrowScale * oldScale / 0.55 end
+        return oldScale
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ShardHit(Vector3 pos, number clipScale, number seconds)
+        -- 골편 명중·뼛가루 자리 (10-31 골편 20장): 코덱스 골편 명중 4장(GameConst.FxSkillShardHit)이 차면 모든 클라이언트에 한 번(ShardHitFrames),
+        --   비면 예전 보라 파열 ClipFx(FxShardHit, clipScale, seconds) 그대로
+        if _GameConst.FxSkillShardHit == "" then
+            self:ClipFx(self.FxShardHit, pos, clipScale, seconds, 0)
+            return
+        end
+        self:ShardHitFrames(pos, clipScale)
+    end
+
+    @ExecSpace("Multicast")
+    method void ShardHitFrames(Vector3 pos, number clipScale)
+        -- 골편 명중 4장 한 번 (장마다 FxSkillShardFrameMs · 마지막 장도 같은 시간 · Util.PlayFrames) · 크기 = ShardHitScale × (옛 ClipFx 배율 / 0.5) · MapLayer0 ShardHitOrder · 클라이언트에서만 그린다
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap or _GameConst.FxSkillShardHit == "" then return end
+        local s = self.ShardHitScale * clipScale / 0.5
+        local frameSec = math.max(0.02, _GameConst.FxSkillShardFrameMs / 1000)
+        _Util:PlayFrames(_GameConst.FxSkillShardHit, self.Entity, pos, 0, Vector3(s, s, 1), frameSec, self.ShardHitTint, self.ShardHitOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] shard hit frames n=%d ms=%d scale=%.2f", #_Util:Frames(_GameConst.FxSkillShardHit), _GameConst.FxSkillShardFrameMs, s)) end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ConsumedDust(Vector2 feet, number clipScale, number seconds)
+        -- 소모된 해골이 사라지는 뼛가루 (S10·P40 · 10-31 9계열 GameConst.FxSkillConsumedDust = 골편 명중 4장과 같은 RUID): 차면 발 앵커(해골 발 + DustDy)로 모든 클라이언트에 한 번,
+        --   비면 예전 길 = 골편 명중 ShardHit(해골 자리 +0.4 · 옛 배율) → 그것도 비면 보라 파열. 부르는 곳: 의식 2기·거인 합체(UndeadSystem) · 의식 3기 쏜 해골(RiteArrows)
+        if _GameConst.FxSkillConsumedDust == "" then
+            self:ShardHit(Vector3(feet.x, feet.y + 0.4, 0), clipScale, seconds)
+            return
+        end
+        self:DustFrames(Vector3(feet.x, feet.y + self.DustDy, 0), clipScale)
+    end
+
+    @ExecSpace("Multicast")
+    method void DustFrames(Vector3 pos, number clipScale)
+        -- 뼛가루 4장 한 번 (장마다 FxSkillConsumedDustMs · 클라이언트 Util.PlayFrames) · 크기 = DustScale × (옛 ClipFx 배율 / 0.5) · 뼈 흰빛 · MapLayer0 ShardHitOrder
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap or _GameConst.FxSkillConsumedDust == "" then return end
+        local s = self.DustScale * clipScale / 0.5
+        _Util:PlayFrames(_GameConst.FxSkillConsumedDust, self.Entity, pos, 0, Vector3(s, s, 1), math.max(0.02, _GameConst.FxSkillConsumedDustMs / 1000), self.ShardHitTint, self.ShardHitOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] consumed dust frames n=%d ms=%d scale=%.2f shared=%s", #_Util:Frames(_GameConst.FxSkillConsumedDust), _GameConst.FxSkillConsumedDustMs, s, tostring(_GameConst.FxSkillConsumedDust == _GameConst.FxSkillShardHit))) end
     end
 
     @ExecSpace("ServerOnly")
@@ -673,8 +789,8 @@ script SkillEffects extends Component
             if finished then if isvalid(shot) then shot:Destroy() end return end
             if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then finish(false) return end
             if canCommit ~= nil and not canCommit() then finish(false) return end
-            -- 투사체 그림: 어두운 보라 궤적 (기본 화살 그림은 평범했다)
-            proj:Skin(self.FxShardShot, 0.55)
+            -- 투사체 그림: 코덱스 골편 투척 4장(10-31 · 비면 어두운 보라 궤적 · 기본 화살 그림은 평범했다)
+            proj:Skin(self:ShardSkinRuid(), self:ShardSkinScale(0.55))
             -- 쏜 사람 화면은 누르는 순간 PredictBoneShard가 그린 뼛조각을 보여 주고 이 서버 투사체는 숨긴다
             proj.ViewKind = "bone_shard"
             if isvalid(lock) then proj.Lock = lock end
@@ -1433,6 +1549,38 @@ script SkillEffects extends Component
         if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] range rim fx r=%.2f sec=%.2f", radius, seconds)) end
     end
 
+    @ExecSpace("Multicast")
+    method void DashGhostFx(Vector3 from, Vector3 to, boolean arrive)
+        -- 망령 질주 잔상 (P18 · 10-31 9계열 GameConst.FxSkillDashGhost): 떠난 자리 → 도착 쪽 길 위 DashGhostCopies개 자리(0 · 1/3 · 2/3)에 같은 4장을 한 번씩,
+        --   몸이 지나간 순서대로 DashGhostStepSec씩 늦게 (코덱스: 경로는 Claude 몫 · 자리 복사본은 그림을 더 그리지 않는다) · arrive(강화 「망령 도약」)면 도착 자리에도 하나.
+        --   왼쪽으로 가면 가로 배율 음수(거울) · 피벗 0.5/0.1 = 발이라 발 자리에 그대로 · 클라이언트 타이머만 (서버 일 없음) · 맵 엔티티에 붙여 맵을 나가면 함께 지워진다
+        local me = _UserService.LocalPlayer
+        if _GameConst.FxSkillDashGhost == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local map = me.CurrentMap
+        local spots = self:DashGhostSpots(arrive)
+        local sx = (to.x < from.x and -1 or 1) * self.DashGhostScale
+        local scale = Vector3(sx, self.DashGhostScale, 1)
+        local frameSec = math.max(0.02, _GameConst.FxSkillDashGhostMs / 1000)
+        for i, t in ipairs(spots) do
+            local pos = from * (1 - t) + to * t
+            local delay = (i - 1) * self.DashGhostStepSec
+            local play = function()
+                if isvalid(map) then _Util:PlayFrames(_GameConst.FxSkillDashGhost, map, pos, 0, scale, frameSec, Color(1, 1, 1, 1), self.DashGhostOrder) end
+            end
+            if delay <= 0 then play() else _TimerService:SetTimerOnce(play, delay) end
+        end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] dash ghost frames n=%d copies=%d ms=%d mirror=%s", #_Util:Frames(_GameConst.FxSkillDashGhost), #spots, _GameConst.FxSkillDashGhostMs, tostring(sx < 0))) end
+    end
+
+    method table DashGhostSpots(boolean arrive)
+        -- 잔상 자리 (길 위 비율 · 순수 계산): 0, 1/n, …, (n−1)/n · 도약 강화면 1(도착 자리)을 더한다
+        local n = math.max(1, self.DashGhostCopies)
+        local spots = {}
+        for i = 0, n - 1 do table.insert(spots, i / n) end
+        if arrive then table.insert(spots, 1) end
+        return spots
+    end
+
     @ExecSpace("ServerOnly")
     method boolean WraithDash(Vector2 me, Vector2 dest)
         -- 망령 질주: 내 클라이언트가 이미 움직였다 (SkillBook.CastMove). 여기서는 무적·연출, 강화 「망령 자취」 피해·둔화, 「군단 질주」 소환수 도약
@@ -1478,7 +1626,10 @@ script SkillEffects extends Component
             end
         end
         -- 10-31 갈래 E P18: 떠난 자리 섬광을 느리게 틀어 DashAfterSec(0.6초) 잔상으로 (예전 0.4초 · 기존 그림 그대로)
-        if book ~= nil and book:Node("dash_blink") > 0 then
+        if _GameConst.FxSkillDashGhost ~= "" then
+            -- 10-31 9계열 P18: 푸른 고리 섬광 대신 코덱스 망령 잔상 4장을 떠난 자리 → 도착 쪽 길 위에 (강화 「망령 도약」이면 도착 자리에도)
+            self:DashGhostFx(Vector3(me.x, me.y, 0), Vector3(dest.x, dest.y, 0), book ~= nil and book:Node("dash_blink") > 0)
+        elseif book ~= nil and book:Node("dash_blink") > 0 then
             -- 강화 「망령 도약」: 떠난 자리·도착 자리에 섬광
             self:ClipFxRate(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.6, self.DashAfterSec, 0, self.DashAfterRate, Color(1, 1, 1, 0.9))
             self:ClipFx(self.FxBlink, Vector3(dest.x, dest.y + 0.3, 0), 0.6, 0.45, 0)
@@ -1486,6 +1637,26 @@ script SkillEffects extends Component
             self:ClipFxRate(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.45, self.DashAfterSec, 0, self.DashAfterRate, Color(1, 1, 1, 0.9))
         end
         return true
+    end
+
+    @ExecSpace("ServerOnly")
+    method void DrainVortex(Vector3 body)
+        -- 생기 앗기 몸 소용돌이 (10-31 9계열 GameConst.FxSkillDrainVortex): 차면 4장을 DrainVortexSec 동안 반복(모든 클라이언트) · 비면 예전 보라 소용돌이 ClipFx(FxDrain 0.6 · 0.7초)
+        if _GameConst.FxSkillDrainVortex == "" then
+            self:ClipFx(self.FxDrain, body, 0.6, 0.7, 0)
+            return
+        end
+        self:DrainVortexFrames(body)
+    end
+
+    @ExecSpace("Multicast")
+    method void DrainVortexFrames(Vector3 body)
+        -- 소용돌이 4장 반복 (장마다 FxSkillDrainVortexMs · 클라이언트 Util.PlayFramesLoop · 맵 엔티티에 붙인다) · 몸 앞 MapLayer0 6
+        local me = _UserService.LocalPlayer
+        if _GameConst.FxSkillDrainVortex == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local k = self.DrainVortexScale
+        _Util:PlayFramesLoop(_GameConst.FxSkillDrainVortex, me.CurrentMap, body, 0, Vector3(k, k, 1), math.max(0.02, _GameConst.FxSkillDrainVortexMs / 1000), self.DrainVortexSec, Color(1, 1, 1, 1), 6)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] drain vortex frames n=%d ms=%d sec=%.2f scale=%.2f", #_Util:Frames(_GameConst.FxSkillDrainVortex), _GameConst.FxSkillDrainVortexMs, self.DrainVortexSec, k)) end
     end
 
     @ExecSpace("ServerOnly")
@@ -1509,14 +1680,14 @@ script SkillEffects extends Component
             local mine = self.Entity:GetComponent("script.PlayerStats")
             if mine ~= nil then mine:Heal(dealt * 0.5, 0) end
             self:Fx("drain", foe.TransformComponent.WorldPosition, 0.8)
-            self:ClipFx(self.FxDrain, foe.TransformComponent.WorldPosition + Vector3(0, 0.4, 0), 0.6, 0.7, 0)
+            self:DrainVortex(foe.TransformComponent.WorldPosition + Vector3(0, 0.4, 0))
             return true
         end
         -- 44 §3-3: 예전엔 TakeDamage(히트 판정 밖)라 번쩍·정지 · 분노 신전 · 오라 피해 · 생명 약탈 · 피해 숫자가 빠졌다 → 다른 스킬처럼 HitEvent 경로로
         --   (마법 저항·낙인·레벨 차이는 PlayerAttack.CalcDamage가 본다). 회복은 실제로 들어간 피해 기준
         local dealt = self:DrainHit(m, damage)
         self:Fx("drain", m.Entity.TransformComponent.WorldPosition, 0.8)
-        self:ClipFx(self.FxDrain, m.Entity.TransformComponent.WorldPosition + Vector3(0, 0.4, 0), 0.6, 0.7, 0)
+        self:DrainVortex(m.Entity.TransformComponent.WorldPosition + Vector3(0, 0.4, 0))
         -- 강화 「혼 사슬」(나눔 자리 · 44 결정 4): 앞 대상에서 drainChainRange 안 가장 가까운 적으로 랭크만큼 이어진다 (이어진 적 피해 drainChainPct%)
         local chain = self:Node("drain_share")
         local links = 0
@@ -1626,11 +1797,39 @@ script SkillEffects extends Component
         self.MistTimers[timerId] = true
         -- 임시 그림: 뼈 폭풍 회오리 고리 + 끌어당김 오라 (코덱스 「뼈 회오리 회전 8프레임 + 바닥 자국」이 오면 바꾼다)
         self:Fx("lure", Vector3(center.x, center.y, 0), radius)
-        self:ClipFx(self.FxStorm, Vector3(center.x, center.y + 0.15, 0), 0.8 * radius / 1.2, seconds, 0)
-        -- 10-31 갈래 E P39: 회오리 그림(3.7×1.18칸)이 판정 원(지름 3)보다 납작하다 → 판정 반경 원을 같은 시간 동안 함께 (전용 그림 전 임시)
-        self:RangeRimFx(Vector3(center.x, center.y, 0), radius, seconds, Color(0.8, 0.66, 1, self.WhirlRimAlpha))
+        if _GameConst.FxSkillRiteWhirl ~= "" then
+            -- 10-31 9계열 P39: 코덱스 뼈 회오리 회전 8장 반복 + 바닥 자국 1장 (위에서 본 원 · 내용 폭 = 판정 지름) — 그림이 판정 원과 같은 크기라 임시 범위 원(P42)은 깔지 않는다
+            self:RiteWhirlFx(Vector3(center.x, center.y, 0), radius, seconds)
+        else
+            self:ClipFx(self.FxStorm, Vector3(center.x, center.y + 0.15, 0), 0.8 * radius / 1.2, seconds, 0)
+            -- 10-31 갈래 E P39: 회오리 그림(3.7×1.18칸)이 판정 원(지름 3)보다 납작하다 → 판정 반경 원을 같은 시간 동안 함께 (전용 그림 전 임시)
+            self:RangeRimFx(Vector3(center.x, center.y, 0), radius, seconds, Color(0.8, 0.66, 1, self.WhirlRimAlpha))
+        end
         log(string.format("[VRF] rite whirl start dmg=%.0f r=%.1f ticks=%d", damage, radius, total))
         return true
+    end
+
+    @ExecSpace("Multicast")
+    method void RiteWhirlFx(Vector3 pos, number radius, number seconds)
+        -- 의식 2기 뼈 회오리 그림 (10-31 9계열 GameConst.FxSkillRiteWhirl 8장 · FxSkillRiteWhirlTrace 1장): 회전 8장을 seconds 동안 반복(몸 앞) + 바닥 자국을 같은 시간 깔고 끝에 옅어짐.
+        --   둘 다 내용 폭(RiteWhirlContentPx · RiteWhirlTraceContentPx)이 판정 지름(2×radius)이 되게 · 맵 엔티티에 붙인다 (클라이언트만 · 맵을 나가면 함께 지워진다)
+        local me = _UserService.LocalPlayer
+        if _GameConst.FxSkillRiteWhirl == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local map = me.CurrentMap
+        local f = math.max(0.02, _GameConst.FxSkillRiteWhirlMs / 1000)
+        if _GameConst.FxSkillRiteWhirlTrace ~= "" then
+            local t = self:RiteWhirlScale(radius, self.RiteWhirlTraceContentPx)
+            local fade = math.min(self.RiteWhirlTraceFadeSec, seconds * 0.5)
+            _Util:PlayFramesHold(_GameConst.FxSkillRiteWhirlTrace, map, pos, 0, Vector3(t, t, 1), f, seconds - fade, fade, Color(1, 1, 1, 1), self.RiteWhirlTraceOrder)
+        end
+        local s = self:RiteWhirlScale(radius, self.RiteWhirlContentPx)
+        _Util:PlayFramesLoop(_GameConst.FxSkillRiteWhirl, map, pos, 0, Vector3(s, s, 1), f, seconds, Color(1, 1, 1, 1), self.RiteWhirlOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] rite whirl frames n=%d ms=%d sec=%.1f scale=%.3f trace=%s", #_Util:Frames(_GameConst.FxSkillRiteWhirl), _GameConst.FxSkillRiteWhirlMs, seconds, s, tostring(_GameConst.FxSkillRiteWhirlTrace ~= ""))) end
+    end
+
+    method number RiteWhirlScale(number radius, number contentPx)
+        -- 회오리·자국 배율 (가로세로 같은 값 · 순수 계산): 그림 내용 폭(px)이 판정 지름 2×radius(칸)와 같게
+        return 2 * radius / (math.max(1, contentPx) / 100)
     end
 
     @ExecSpace("ServerOnly")
@@ -1650,7 +1849,7 @@ script SkillEffects extends Component
             _TimerService:SetTimerOnce(function()
                 if isvalid(unit.Entity) then
                     from = _Util:Pos2(unit.Entity)
-                    self:ClipFx(self.FxShardHit, Vector3(from.x, from.y + 0.4, 0), 0.45, 0.5, 0)   -- 쏜 해골이 무너지는 뼛가루 (임시)
+                    self:ConsumedDust(from, 0.45, 0.5)   -- 쏜 해골이 무너지는 뼛가루 (10-31 9계열 FxSkillConsumedDust · 발 앵커 · 비면 골편 명중 → 보라 파열)
                     unit.Entity:Destroy()
                 end
                 if epoch ~= self.EffectEpoch or not _Util:IsAlive(owner) or owner.CurrentMap ~= map then return end
@@ -1669,10 +1868,17 @@ script SkillEffects extends Component
                     ---@type Projectile
                     local proj = comp
                     if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    -- 임시 그림: 골편 궤적을 크게 · 뼈 색 (코덱스 G-15 「뼈 화살」 대기). 44-1 A: 마지막 발은 한 단 크게 + 맞은 자리 큰 뼛가루 충격(Projectile.HitFx "rite_push")
-                    proj:Skin(self.FxShardShot, last and 1.38 or 1.1)
+                    -- 44-1 A: 마지막 발은 한 단 크게 + 맞은 자리 큰 뼛가루 충격(Projectile.HitFx "rite_push")
+                    if _GameConst.FxSkillRiteArrow ~= "" then
+                        -- 10-31 9계열: 코덱스 의식 뼈 화살 4장 (오른쪽 기준 · 비행 중 FxSkillRiteArrowMs 순환 · 왼쪽 FlipY = Projectile.MirrorSkin) · 마지막 발 RiteArrowLastMul배
+                        proj:Skin(_GameConst.FxSkillRiteArrow, self.RiteArrowScale * (last and self.RiteArrowLastMul or 1))
+                    else
+                        -- 예전 임시 그림: 골편 궤적을 크게 · 뼈 색
+                        proj:Skin(self.FxShardShot, last and 1.38 or 1.1)
+                    end
                     proj:Tint(Color(1, 0.95, 0.82, 1))
                     proj.Style = last and "rite_push" or "rite"
+                    if not last then proj.HitKind = "bone" end   -- 10-31 9계열: 앞 두 발 명중 = 뼈 명중 2장 (마지막 발은 rite_push 충격 그대로)
                     if isvalid(lock) then proj.Lock = lock end
                     proj.MaxHits = 1
                     proj:Launch(owner, dir, 13, 7.5, damage, info, false)
@@ -2081,7 +2287,14 @@ script SkillEffects extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.SparkRadialExplosion, self.Entity, pos + Vector3(0, 0.2, 0), 0, Vector3(radius * 0.45, radius * 0.3, 1), false, { Color = Color(0.85, 0.8, 0.68, 0.95) })
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity, pos, 0, s, false, { Color = Color(0.85, 0.8, 0.65, 1) })
         elseif kind == "torrent" then
-            _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, Vector3(self.TorrentCastScale, self.TorrentCastScale, 1), false, { Color = Color(0.55, 0.95, 1, 0.9) })   -- 격류 혼 청록 (44-1 A · 10-31 갈래 E P28 0.35 → 0.6)
+            if _GameConst.FxSkillTorrentCast ~= "" then
+                -- 10-31 9계열 P28: 코덱스 영혼 격류 시전 4장 한 번 (시전자 몸 가운데 = 발 +0.45 · pos는 발 +0.3) · 몸 앞
+                local k = self.TorrentCastArtScale
+                _Util:PlayFrames(_GameConst.FxSkillTorrentCast, self.Entity, pos + Vector3(0, 0.15, 0), 0, Vector3(k, k, 1), math.max(0.02, _GameConst.FxSkillTorrentMs / 1000), Color(1, 1, 1, 1), 5)
+                if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] torrent cast frames n=%d ms=%d scale=%.2f", #_Util:Frames(_GameConst.FxSkillTorrentCast), _GameConst.FxSkillTorrentMs, k)) end
+            else
+                _ParticleService:PlayBasicParticle(BasicParticleType.ChargeOrb, self.Entity, pos, 0, Vector3(self.TorrentCastScale, self.TorrentCastScale, 1), false, { Color = Color(0.55, 0.95, 1, 0.9) })   -- 격류 혼 청록 (44-1 A · 10-31 갈래 E P28 0.35 → 0.6)
+            end
         elseif kind == "wave" then
             _ParticleService:PlayBasicParticle(BasicParticleType.CircleBurst, self.Entity, pos + Vector3(0, 0.3, 0), 0, Vector3(radius * 0.5, radius * 0.5, 1), false, { Color = Color(0.55, 0.35, 0.8, 0.9) })
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(radius * 0.35, radius * 0.15, 1), false, { Color = Color(0.5, 0.45, 0.55, 0.8) })
@@ -2099,8 +2312,16 @@ script SkillEffects extends Component
         --   코덱스 H-2 바닥 문장(GameConst.FxSkillCurseSigils "kind=r0,…")이 오면 그 저주는 문장 4프레임을 바닥에 한 번 깐다
         --   10-31 갈래 E (audit M14~M19): 문장 4장을 CurseSigilFrameSec씩(0.7초) + 마지막 장 CurseSigilHoldSec(0.3초) 잡고 CurseSigilFadeSec 옅어짐 · 층 MapLayer0 CurseSigilOrder(1) ·
         --   입자 모양(문장이 없는 혼란·쇠퇴와 대체 경로)도 SortingLayer MapLayer0 CurseFxOrder를 준다 (예전 층 지정 없음)
+        --   10-31 9계열: 코덱스 원형 판(GameConst.FxSkillCurseCircles 6종 × 4장 · 위에서 본 원)이 있으면 문장보다 먼저 — 보이는 반경(CurseCircleFitPx) = 저주 반경 · 장마다 FxSkillCurseCircleMs
+        local circle = _Util:KeyFrames(_GameConst.FxSkillCurseCircles, kind)
         local sig = _Util:KeyFrames(_GameConst.FxSkillCurseSigils, kind)
-        if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s", kind, radius, tostring(#sig > 0))) end
+        if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s circle=%s", kind, radius, tostring(#sig > 0), tostring(#circle > 0))) end
+        if #circle > 0 then
+            local cf = math.max(0.02, _GameConst.FxSkillCurseCircleMs / 1000)
+            local ck = self:CurseCircleScale(kind, radius)
+            _Util:PlayFramesHold(table.concat(circle, "|"), self.Entity, pos, 0, Vector3(ck, ck, 1), cf, cf + self.CurseCircleHoldSec, self.CurseCircleFadeSec, Color(1, 1, 1, 1), self.CurseSigilOrder)
+            return
+        end
         if #sig > 0 then
             local f = self.CurseSigilFrameSec
             local k = self:CurseSigilScale(kind, radius)
@@ -2129,6 +2350,15 @@ script SkillEffects extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, self.Entity, pos, 0, Vector3(r * 0.5, r * 0.4, 1), false, opt(self.DecayFxColor))
             _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, self.Entity, pos, 0, Vector3(r * 0.45, r * 0.2, 1), false, opt(self.DecayDustColor))
         end
+    end
+
+    method number CurseCircleScale(string kind, number radius)
+        -- 저주 원형 판 배율 (가로세로 같은 값 · 순수 계산 · 10-31 9계열): 보이는 반경(CurseCircleFitPx · px)이 저주 반경 radius(칸)와 같게 — CurseSigilScale과 같은 계산 · 표에 없으면 캔버스 반폭 64px
+        local px = 64
+        for k, v in string.gmatch(self.CurseCircleFitPx, "(%w+)=([%d%.]+)") do
+            if k == kind then px = tonumber(v) or 64 end
+        end
+        return radius / (math.max(1, px) / 100)
     end
 
     method number CurseSigilScale(string kind, number radius)
@@ -2252,7 +2482,12 @@ script SkillEffects extends Component
         local me = _UserService.LocalPlayer
         if not isvalid(me) or not isvalid(self.Entity) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local bone = Color(0.9, 0.85, 0.7, 1)
-        if kind == "armor" then
+        if kind == "armor" and _GameConst.FxSkillArmorCast ~= "" then
+            -- 10-31 9계열 P14: 코덱스 뼈 갑옷 두름 4장 한 번 (몸 가운데 · 몸 앞) — 그 뒤 몸 고리(PlayerStats 뼈 갑옷 고리 · 그림 두 층)가 이어받는다
+            local k = self.ArmorCastArtScale
+            _Util:PlayFrames(_GameConst.FxSkillArmorCast, self.Entity, pos + Vector3(0, self.ArmorArtDy, 0), 0, Vector3(k, k, 1), math.max(0.02, _GameConst.FxSkillArmorFxMs / 1000), Color(1, 1, 1, 1), self.ArmorCastOrder)
+            if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone armor cast frames n=%d ms=%d scale=%.2f", #_Util:Frames(_GameConst.FxSkillArmorCast), _GameConst.FxSkillArmorFxMs, k)) end
+        elseif kind == "armor" then
             -- 10-31 갈래 E P14: 시전 입자 1.0 → ArmorCastScale(1.4) · 반복으로 ArmorCastSec(0.5초) 틀고 끈다 — 그동안 몸 고리(PlayerStats 뼈 갑옷 고리 · P15)가 이어받는다
             local cast = _ParticleService:PlayBasicParticle(BasicParticleType.Buff, self.Entity, pos, 0, Vector3(self.ArmorCastScale, self.ArmorCastScale, 1), true, { Color = Color(1, 0.97, 0.88, 1), SortingLayer = "MapLayer0", OrderInLayer = 5 })
             if cast ~= 0 then

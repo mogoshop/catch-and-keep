@@ -160,6 +160,12 @@ script PlayerStats extends Component
     property table ArmorRingArt = {}          -- 클라이언트: { back, front } artsprite 엔티티 (흡수 단계가 바뀌어도 다시 만들지 않고 투명도만)
     property number ArmorRingArtAt = 0        -- 클라이언트: 고리 그림 시작 시각 (장 번호 = 경과 ÷ 간격)
     property integer ArmorRingArtTimer = 0    -- 클라이언트: 장 넘김 타이머
+    -- 10-31 스킬 효과 9계열 (GameConst.FxSkillArmorAbsorb/Break): 동기화된 흡수량이 줄면 흡수 3장 · 0이 되면 깨짐 4장 (모든 클라이언트 · 값 비교라 서버 일·통신 늘지 않음)
+    property number ArmorFxLast = 0           -- 클라이언트: 마지막으로 본 흡수량
+    property number ArmorAbsorbAt = -10       -- 클라이언트: 마지막 흡수 그림 시각
+    property number ArmorAbsorbGapSec = 0.25  -- 흡수 그림 최소 간격 (여럿에게 몰려 맞아도 겹쳐 쌓이지 않게 · 깨짐은 늘 그린다)
+    property number ArmorFxScale = 1.0        -- 128px = 1.28칸 · 흡수 내용 87~90px ≈ 0.9칸 · 깨짐 파편 77~112px
+    property integer ArmorFxOrder = 5         -- 몸 앞 (고리 앞 층과 같은 층)
     -- 결투 상대의 저주·속박·독 (10-23 결투 군단전). 지속은 몬스터에게 거는 것의 절반 (SkillEffects가 줄여서 넘긴다)
     property number PvpAmpPct = 0            -- 약화의 낙인: 결투 상대에게 받는 피해 +%
     property number PvpAmpUntil = 0
@@ -679,6 +685,7 @@ script PlayerStats extends Component
     method void OnSyncProperty(string name, any value)
         -- 뼈 갑옷 몸 고리 (44 §4-1 B: 예전엔 버프 칩 숫자뿐이었다): 남은 흡수량 비율을 4단계로 나눠 단계가 바뀔 때만 다시 그린다 (모든 클라이언트)
         if name ~= "BoneArmor" and name ~= "BoneArmorMax" then return end
+        if name == "BoneArmor" then self:ArmorHitFx(self.BoneArmor) end
         local ratio = self.BoneArmorMax > 0 and math.max(0, math.min(1, self.BoneArmor / self.BoneArmorMax)) or 0
         local step = self.BoneArmor > 0 and math.max(1, math.ceil(ratio * 4)) or 0
         if step == self.ArmorRingStep then return end
@@ -694,6 +701,33 @@ script PlayerStats extends Component
         if self:TintArmorRingArt(Color(1, 1, 1, color.a)) then return end   -- 10-31 갈래 E2: 그림이 있으면 그림 두 층(자기 색 · 투명도만)
         if self.ArmorRingLive and self:TintArmorRing(color) then return end
         self:PlayArmorRingParticle(color)
+    end
+
+    method string ArmorHitKind(number last, number now)
+        -- 흡수량 변화 → 그림 (순수 계산 · tests/quality/skillfx_nine.lua): 줄었는데 남았으면 "absorb" · 0이 되면 "break" · 늘었거나(두름·뼈 껍질) 그대로면 ""
+        if last <= 0 or now >= last then return "" end
+        if now <= 0 then return "break" end
+        return "absorb"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ArmorHitFx(number now)
+        -- 뼈 갑옷 흡수·깨짐 그림 (10-31 9계열): 몸 가운데(ArmorRingDy) · 장마다 FxSkillArmorFxMs 한 번 · 흡수는 ArmorAbsorbGapSec 안에 다시 그리지 않는다 · 칸이 비면 예전처럼 없음
+        local last = self.ArmorFxLast
+        self.ArmorFxLast = now
+        local kind = self:ArmorHitKind(last, now)
+        if kind == "" or not isvalid(self.Entity) then return end
+        local ruids = kind == "break" and _GameConst.FxSkillArmorBreak or _GameConst.FxSkillArmorAbsorb
+        if ruids == "" then return end
+        if kind == "absorb" then
+            if _UtilLogic.ElapsedSeconds - self.ArmorAbsorbAt < self.ArmorAbsorbGapSec then return end
+            self.ArmorAbsorbAt = _UtilLogic.ElapsedSeconds
+        end
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local k = self.ArmorFxScale
+        _Util:PlayFrames(ruids, self.Entity, self.Entity.TransformComponent.WorldPosition + Vector3(0, self.ArmorRingDy, 0), 0, Vector3(k, k, 1), math.max(0.02, _GameConst.FxSkillArmorFxMs / 1000), Color(1, 1, 1, 1), self.ArmorFxOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] bone armor %s frames n=%d ms=%d (%d -> %d)", kind, #_Util:Frames(ruids), _GameConst.FxSkillArmorFxMs, math.floor(last), math.floor(now))) end
     end
 
     method number ArmorRingAlpha(integer step)
