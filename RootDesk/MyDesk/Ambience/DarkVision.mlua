@@ -31,6 +31,13 @@ script DarkVision extends Logic
     property Color AwakeColor = Color(1, 0.14, 0.08, 1)
     property number AwakeAmbientAdd = 0.06  -- 깨어난 하늘 밝기 가산 (붉은빛이 보이게)
     property Color AwakePlayerLight = Color(1, 0.58, 0.46, 1)
+    -- 10-31 맵 v5 윗부분 반투명 (방안 B · docs/evidence/2026-10-31-map-v5-toppart/TOP-FADE.md): 내 아바타가 윗부분 그림(Art…Top · Default/5) 뒤에 서면
+    --   그 그림만 내 화면에서 TopFadeAlpha로 옅게 해 몸·발밑 이름표가 비쳐 보이게 한다. 상수는 GameConst TopFade* · 클라이언트 전용(색 쓰기는 동기화되지 않아 다른 플레이어 화면은 그대로)
+    property integer TopFadeTimerId = 0     -- 반투명 판정 반복 타이머 (OnBeginPlay에서 한 번 · OnEndPlay에서 정리 — 맵마다 새로 만들지 않는다)
+    property table TopFades = {}            -- 지금 맵의 윗부분 그림 { r 렌더러, base 원래 색, left·right·foot·top·cx·cy·reach 사각형, alpha 지금 배율 }
+    property integer TopFadeCount = 0       -- 지금 가리는(옅게 하는) 그림 수 — 바뀔 때만 [VRF] 로그
+    property table TopSprites = {}          -- RUID → { w, h, px, py, ppu } 스프라이트 크기·피벗 (못 읽으면 false) · 맵이 바뀌어도 그대로 쓴다
+    property any TopBase = nil              -- 윗부분 그림 엔티티 id → 원래 색 (다시 들어와도 옅어진 색을 원래 색으로 잡지 않게)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -39,6 +46,12 @@ script DarkVision extends Logic
         self.CurrentMap = nil
         self.Active = false
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, self.ScanInterval)
+        -- 윗부분 반투명 판정: 클라이언트 반복 타이머 하나 (맵 진입·이탈은 Tick → EnterMap이 목록을 다시 만든다 · Logic이라 OnMapEnter/OnMapLeave가 오지 않는다)
+        self.TopFades = {}
+        self.TopFadeCount = 0
+        if _GameConst.TopFadeOn then
+            self.TopFadeTimerId = _TimerService:SetTimerRepeat(function() self:TopFadeTick() end, _GameConst.TopFadeTick)
+        end
     end
 
     @ExecSpace("ClientOnly")
@@ -46,6 +59,9 @@ script DarkVision extends Logic
         -- 세션 종료 시 타이머와 모든 보조 조명을 함께 해제한다.
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
         self.TimerId = 0
+        if self.TopFadeTimerId ~= 0 then _TimerService:ClearTimer(self.TopFadeTimerId) end
+        self.TopFadeTimerId = 0
+        self:RestoreTopFade()
         self:ClearAll()
         self.CurrentMap = nil
         self.Active = false
@@ -155,8 +171,9 @@ script DarkVision extends Logic
     method void EnterMap(Entity player, Entity map)
         -- 맵의 어둠 설정을 읽어 전체 조명 + 내 주변 빛을 만든다
         self:ClearAll()
+        self:RestoreTopFade()   -- 떠나는 맵의 옅어진 윗부분 그림을 원래 색으로 (맵 이탈 짝)
         self.CurrentMap = map
-        self:ShadeWalls(map)
+        self:ShadeWalls(map)    -- 윗부분 그림 목록도 여기서 다시 만든다 (BuildTopFade · 맵 진입 짝)
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         if amb == nil then
@@ -212,6 +229,7 @@ script DarkVision extends Logic
         if self.ArtZ == nil then self.ArtZ = {} end
         local n, art, top = 0, 0, 0
         local topLayer = ""
+        local tops = {}
         for _, r in ipairs(map:GetChildComponentsByTypeName("SpriteRendererComponent", true)) do
             local name = r.Entity.Name
             if string.sub(name, 1, 3) == "Art" and string.sub(name, -3) == "Top" then
@@ -219,6 +237,7 @@ script DarkVision extends Logic
                 -- 아래처럼 순서 0으로 내리면 다시 플레이어 뒤로 가므로 순서·z를 건드리지 않는다. 색(어둠)은 원본 장식과 같이 그대로(ShadeWalls 대상 아님) · 전체 조명은 화면 전체에 같이 걸린다
                 top = top + 1
                 if topLayer == "" then topLayer = r.SortingLayer .. "/" .. tostring(r.OrderInLayer) end
+                table.insert(tops, r)
             elseif string.sub(name, 1, 3) == "Art" then
                 -- 10-10 QA: 액트 2 보스를 잡은 혼 구슬이 가운데 길 그림에 가려졌다. 맵 그림(바닥·길·벽·장식)은 순서 1에 길은 z −0.01로
                 -- 앞쪽이라, 실행 중 생기는 혼 구슬·떨어진 물건·시체·상자(순서 0~1, z 0)가 그 밑에 깔렸다.
@@ -248,6 +267,123 @@ script DarkVision extends Logic
         end
         log(string.format("[VRF] DarkVision 벽 그림 %d개 어둡게 (%.2f) · 맵 그림 %d개 뒤로", n, self.WallShade, art))
         if top > 0 and not Environment:IsPublishedPlay() then log(string.format("[VRF] DarkVision 윗부분 그림 %d개는 순서 유지 (%s)", top, topLayer)) end
+        self:BuildTopFade(tops)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BuildTopFade(table tops)
+        -- 맵 진입: 윗부분 그림마다 화면 사각형을 한 번 계산해 둔다 (크기 = 스프라이트 픽셀 ÷ PixelPerUnit × Scale · 발 = 캔버스 아래 = 생성기가 맞춘 원본 발 y)
+        --   생성기(lib.cjs -top 훅)는 원본과 같은 캔버스·피벗·배율·뒤집기로 놓으므로 캔버스 사각형이 곧 원본 그림 자리다. 맵당 TopFadeMax개까지만
+        self.TopFades = {}
+        self.TopFadeCount = 0
+        if not _GameConst.TopFadeOn or #tops == 0 then return end
+        if self.TopBase == nil then self.TopBase = {} end
+        local skipped = 0
+        for i, r in ipairs(tops) do
+            if i > _GameConst.TopFadeMax then
+                skipped = skipped + 1
+            else
+                local info = self:TopSpriteInfo(r.SpriteRUID)
+                local e = r.Entity
+                if info == false or not isvalid(e) then
+                    skipped = skipped + 1
+                else
+                    local p = e.TransformComponent.WorldPosition
+                    local sc = e.TransformComponent.Scale
+                    local rect = self:TopRect(p.x, p.y, sc.x, sc.y, info, r.FlipX, _GameConst.TopFadeWidthFrac, _GameConst.TopFadeRange)
+                    local base = self.TopBase[e.Id]
+                    if base == nil then
+                        base = r.Color
+                        self.TopBase[e.Id] = base
+                    end
+                    rect.r = r
+                    rect.base = base
+                    rect.alpha = 1
+                    table.insert(self.TopFades, rect)
+                end
+            end
+        end
+        if not Environment:IsPublishedPlay() then
+            log(string.format("[VRF] DarkVision 윗부분 반투명 대상 %d개 (빠짐 %d · 알파 %.2f · %.2f초)", #self.TopFades, skipped, _GameConst.TopFadeAlpha, _GameConst.TopFadeSec))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method any TopSpriteInfo(string ruid)
+        -- 스프라이트 크기·피벗 (RUID마다 한 번 · 렌더러가 이미 그리고 있는 그림이라 바로 돌아온다). 못 읽으면 false = 그 그림은 반투명 대상에서 뺀다
+        local info = self.TopSprites[ruid]
+        if info ~= nil then return info end
+        info = false
+        if ruid ~= nil and ruid ~= "" then
+            local ok, sp = pcall(function() return _ResourceService:LoadSpriteAndWait(ruid) end)
+            if ok and sp ~= nil and sp.Width > 0 and sp.Height > 0 then
+                local ppu = sp.PixelPerUnit
+                if ppu == nil or ppu <= 0 then ppu = 100 end
+                info = { w = sp.Width, h = sp.Height, px = sp.Pivot.x, py = sp.Pivot.y, ppu = ppu }
+            end
+        end
+        self.TopSprites[ruid] = info
+        return info
+    end
+
+    method table TopRect(number x, number y, number sx, number sy, table info, boolean flip, number widthFrac, number range)
+        -- 윗부분 그림의 월드 사각형: 가로 = 캔버스 가운데 ± 보이는 폭(캔버스 폭 × widthFrac) / 2 · 세로 = 발(캔버스 아래) ~ 윗면(캔버스 위)
+        --   FlipX면 피벗을 기준으로 좌우가 바뀐다. reach = 검사 생략 거리 (최소 range칸 · 그림이 그보다 크면 그림 반 크기)
+        local w = info.w / info.ppu * math.abs(sx)
+        local h = info.h / info.ppu * math.abs(sy)
+        local left = x - info.px * w
+        if flip then left = x - (1 - info.px) * w end
+        local cx = left + w * 0.5
+        local half = w * widthFrac * 0.5
+        local foot = y - info.py * h
+        return { left = cx - half, right = cx + half, foot = foot, top = foot + h, cx = cx, cy = foot + h * 0.5,
+            reach = math.max(range, w * 0.5, h * 0.5) }
+    end
+
+    method boolean TopCovers(table t, number x, number y)
+        -- 내 발 (x, y)이 이 그림 뒤에 있나: 그림 발보다 위(북쪽) · 그림 윗면보다 아래 · 보이는 폭 안. 앞(발 y가 그림 발 y 이하)은 아니다
+        if math.abs(x - t.cx) > t.reach or math.abs(y - t.cy) > t.reach then return false end   -- 거리 밖은 검사 생략
+        return x >= t.left and x <= t.right and y > t.foot and y < t.top
+    end
+
+    method number TopFadeStep(number cur, number target, number fadeAlpha, number tick, number sec)
+        -- 한 틱만큼 target 쪽으로: 1 ↔ fadeAlpha 전체를 sec초에 걸쳐 (tick 0.1 · sec 0.15면 두 틱)
+        local step = (1 - fadeAlpha) * tick / math.max(sec, 0.001)
+        if cur < target then return math.min(target, cur + step) end
+        return math.max(target, cur - step)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TopFadeTick()
+        -- 0.1초마다: 내 아바타 발이 뒤에 있는 윗부분 그림은 옅게, 벗어나면 원래대로 (동시에 여럿이면 모두). 다른 플레이어·몬스터는 보지 않는다
+        if #self.TopFades == 0 then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or player.CurrentMap ~= self.CurrentMap then return end   -- 맵을 막 옮겼으면 EnterMap이 목록을 다시 만들 때까지 기다린다
+        local p = player.TransformComponent.WorldPosition
+        local n = 0
+        for _, t in ipairs(self.TopFades) do
+            local cover = self:TopCovers(t, p.x, p.y)
+            if cover then n = n + 1 end
+            local target = cover and _GameConst.TopFadeAlpha or 1
+            if t.alpha ~= target then
+                t.alpha = self:TopFadeStep(t.alpha, target, _GameConst.TopFadeAlpha, _GameConst.TopFadeTick, _GameConst.TopFadeSec)
+                if isvalid(t.r) then t.r.Color = Color(t.base.r, t.base.g, t.base.b, t.base.a * t.alpha) end
+            end
+        end
+        if n ~= self.TopFadeCount then
+            self.TopFadeCount = n
+            if not Environment:IsPublishedPlay() then log("[VRF] top fade n=" .. tostring(n)) end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RestoreTopFade()
+        -- 맵 이탈·플레이 끝: 옅어진 윗부분 그림을 원래 색으로 되돌리고 목록을 비운다
+        for _, t in ipairs(self.TopFades) do
+            if t.alpha ~= 1 and isvalid(t.r) then t.r.Color = t.base end
+        end
+        self.TopFades = {}
+        self.TopFadeCount = 0
     end
 
     @ExecSpace("ClientOnly")
