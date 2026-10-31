@@ -1,0 +1,14 @@
+import {execFileSync,spawnSync} from 'node:child_process';
+import {readJSON} from './lib.mjs';
+const linked=await readJSON('.vercel/project.json');
+if(!linked.projectId||!linked.orgId)throw new Error('Run vercel link first.');
+const cli=['--yes','vercel@65.9.0'];
+const project=JSON.parse(execFileSync('npx',[...cli,'api',`/v9/projects/${linked.projectId}`,'--scope',linked.orgId],{encoding:'utf8',maxBuffer:2e6}));
+if(project.ssoProtection?.deploymentType!=='all')throw new Error('Refusing to upload private content: Vercel Authentication must protect ALL deployments and domains.');
+const tracked=execFileSync('git',['ls-files','--','content','dist','.vercel','.env.local'],{encoding:'utf8'}).trim();
+if(tracked)throw new Error('Private content or local settings are tracked in public Git. Remove them from the index before publishing.');
+execFileSync(process.execPath,['scripts/build.mjs'],{stdio:'inherit'});
+const result=spawnSync('npx',[...cli,'deploy','--prebuilt','--prod','--yes','--scope',linked.orgId],{stdio:'inherit'});
+if(result.error)console.error(`Deployment could not start: ${result.error.message}`);
+if(result.signal)console.error(`Deployment terminated by signal: ${result.signal}`);
+process.exitCode=result.status??1;
