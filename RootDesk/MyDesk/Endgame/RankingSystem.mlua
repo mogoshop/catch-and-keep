@@ -8,6 +8,12 @@ script RankingSystem extends Logic
     property table Cache = {}            -- board → { at, digest }
     property table Known = {}            -- board|userId → 이번 세션에 확인한 기록 (중복 조회 방지)
     property table NameWritten = {}      -- 이번 세션에 이름을 이미 적은 사람 (기록판 3개마다 같은 닉네임을 다시 쓰지 않게)
+    -- 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안 · 「내 순위」 줄): 상위 10과 따로 요청자 본인의 순위·값을 보낸다 (60초 캐시를 쓰지 않는다)
+    property integer MinePageMax = 100   -- 내 순위는 정렬 첫 쪽에서 이 줄까지만 센다 (그 밖은 「100위 밖」 · 다음 쪽은 읽지 않는다)
+    property number MineGuardSec = 5     -- 같은 사람·같은 판을 이 초 안에 다시 물으면 방금 답을 그대로 (탭 연타로 정렬 조회가 쌓이지 않게)
+    property table Fresh = {}            -- board → 방금 GetTop이 읽은 정렬 첫 쪽 (같은 요청의 내 순위가 다시 읽지 않게 · MineDigest가 바로 비운다)
+    property table MineAt = {}           -- board|key → { at, mine } 연타 방지
+    property table MineRecorded = {}     -- 내 순위를 물었는데 성장 기록이 없어 RecordProgress를 부른 사람 (세션당 한 번)
 
     @ExecSpace("ServerOnly")
     method string BoardName(string kind, integer diff)
@@ -121,10 +127,8 @@ script RankingSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method string GetTop(string board, boolean ascending)
-        -- 상위 10명 "이름|값;..." (60초 캐시)
-        local c = self.Cache[board]
-        if c ~= nil and _UtilLogic.ElapsedSeconds - c.at < 60 then return c.digest end
+    method table ReadSorted(string board, boolean ascending)
+        -- 정렬 첫 쪽만 { key, value } 최대 MinePageMax줄 (다음 쪽은 읽지 않는다)
         local ds = _DataStorageService:GetSortableDataStorage(board)
         local dir = SortDirection.Descending
         if ascending then dir = SortDirection.Ascending end
@@ -133,9 +137,21 @@ script RankingSystem extends Logic
         if code == 0 then
             local datas = pages:GetCurrentPageDatas()
             if datas ~= nil then
-                for i = 1, math.min(10, #datas) do table.insert(rows, { key = datas[i].KeyInfo.Key, value = datas[i].Value }) end
+                for i = 1, math.min(self.MinePageMax, #datas) do table.insert(rows, { key = datas[i].KeyInfo.Key, value = datas[i].Value }) end
             end
         end
+        return rows
+    end
+
+    @ExecSpace("ServerOnly")
+    method string GetTop(string board, boolean ascending)
+        -- 상위 10명 "이름|값;..." (60초 캐시). 새로 읽었으면 정렬 첫 쪽을 Fresh에 잠깐 둔다 (같은 요청의 내 순위가 다시 읽지 않게)
+        local c = self.Cache[board]
+        if c ~= nil and _UtilLogic.ElapsedSeconds - c.at < 60 then return c.digest end
+        local sorted = self:ReadSorted(board, ascending)
+        self.Fresh[board] = sorted
+        local rows = {}
+        for i = 1, math.min(10, #sorted) do table.insert(rows, sorted[i]) end
         local keys = {}
         for _, r in ipairs(rows) do table.insert(keys, r.key) end
         local names = {}
@@ -153,17 +169,64 @@ script RankingSystem extends Logic
         return digest
     end
 
+    @ExecSpace("ServerOnly")
+    method string MineDigest(Entity player, string board, boolean ascending, boolean progress)
+        -- 요청자 본인 "순위|값" (정렬 첫 쪽 MinePageMax줄 안 자리 · 밖이면 순위 -1) · 기록이 없으면 "none".
+        --   60초 캐시를 쓰지 않는다: GetTop이 방금 읽은 첫 쪽(Fresh)이 있으면 그것, 없으면 새로 읽는다. 값은 첫 쪽 → Known → GetAndWait 순
+        local fresh = self.Fresh[board]
+        self.Fresh[board] = nil
+        if not isvalid(player) then return "none" end
+        local key = player.PlayerComponent.ProfileCode
+        local guardKey = board .. "|" .. key
+        local now = _UtilLogic.ElapsedSeconds
+        local last = self.MineAt[guardKey]
+        if fresh == nil and last ~= nil and now - last.at < self.MineGuardSec then return last.mine end
+        local rows = fresh
+        if rows == nil then rows = self:ReadSorted(board, ascending) end
+        local rank = -1
+        local value = nil
+        for i, r in ipairs(rows) do
+            if r.key == key then
+                rank = i
+                value = r.value
+                break
+            end
+        end
+        local missing = false
+        if value == nil then value = self.Known[guardKey] end
+        if value == nil then
+            local code, v = _DataStorageService:GetSortableDataStorage(board):GetAndWait(key)
+            if code == 0 then
+                value = v
+                self.Known[guardKey] = v
+            elseif code == 1000002 then missing = true end
+        end
+        local mine = "none"
+        if value ~= nil then mine = tostring(rank) .. "|" .. tostring(value) end
+        if value == nil and missing and progress and not self.MineRecorded[key] then
+            -- 성장 기록이 아직 없다 (입장 0.5초 기록 전 · 저장 실패 등): 지금 한 번 적는다 — 이번 답은 「기록 없음」, 다음에 열면 보인다
+            self.MineRecorded[key] = true
+            self:RecordProgress(player)
+        end
+        self.MineAt[guardKey] = { at = now, mine = mine }
+        log(string.format("[VRF] rank mine board=%s rank=%d value=%d", board, value ~= nil and rank or 0, value ~= nil and math.floor(value) or 0))
+        return mine
+    end
+
     @ExecSpace("Server")
     method void RequestBoard(string kind, integer diff)
-        -- 클라이언트 랭킹 창 → 결과는 그 사람에게만
+        -- 클라이언트 랭킹 창 → 결과(상위 10 + 내 순위)는 그 사람에게만
         if kind == "progress" then diff = 0 end   -- 성장 순위는 난이도 하나의 판
-        local digest = self:GetTop(self:BoardName(kind, diff), kind == "queen" or string.sub(kind, 1, 5) == "boss_")
-        self:ShowBoard(kind, diff, digest, senderUserId)
+        local board = self:BoardName(kind, diff)
+        local ascending = kind == "queen" or string.sub(kind, 1, 5) == "boss_"
+        local digest = self:GetTop(board, ascending)
+        local mine = self:MineDigest(_UserService:GetUserEntityByUserId(senderUserId), board, ascending, kind == "progress")
+        self:ShowBoard(kind, diff, digest, mine, senderUserId)
     end
 
     @ExecSpace("Client")
-    method void ShowBoard(string kind, integer diff, string digest)
-        _RankWindow:OnData(kind, diff, digest)
+    method void ShowBoard(string kind, integer diff, string digest, string mine)
+        _RankWindow:OnData(kind, diff, digest, mine)
     end
 
 end

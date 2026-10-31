@@ -69,6 +69,7 @@ script RankWindow extends Logic
         self:MarkTabs()
         log("[VRF] rank show kind=" .. kind)
         _UIKit:SetText(self.Win .. "/Paper/List", "불러오는 중…")
+        _UIKit:SetText(self.Win .. "/Paper/Mine", "")
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         local diff = 0
@@ -87,7 +88,8 @@ script RankWindow extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void OnData(string kind, integer diff, string digest)
+    method void OnData(string kind, integer diff, string digest, string mine)
+        -- 상위 10줄 (목록) + 아래 「내 순위」 한 줄 (10-31 A안 · RankingSystem.MineDigest "순위|값" / "none")
         if kind == "progress" then
             -- 성장 순위: 레벨 → 난이도 → 액트 순
             if self.Kind ~= "progress" then return end
@@ -95,10 +97,11 @@ script RankWindow extends Logic
             local n = 0
             for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
                 n = n + 1
-                table.insert(rows, string.format("%2d.  %s   %s", n, name, _RankingSystem:ProgressText(tonumber(value) or 0)))
+                table.insert(rows, string.format("%2d.  %s   %s", n, name, self:ValueText(kind, tonumber(value) or 0)))
             end
             if n == 0 then table.insert(rows, "아직 기록이 없습니다") end
             _UIKit:SetText(self.Win .. "/Paper/List", table.concat(rows, "\n"))
+            _UIKit:SetText(self.Win .. "/Paper/Mine", self:MineText(kind, mine))
             return
         end
         local week = string.sub(kind, 1, 9) == "weekrun_a"
@@ -118,17 +121,31 @@ script RankWindow extends Logic
         local i = 0
         for name, value in string.gmatch(digest, "([^|;]+)|(%d+)") do
             i = i + 1
-            local text = value .. "초"
-            if depth then
-                local v = tonumber(value) or 0
-                local floor = math.floor(v / 100000)
-                local secs = 99999 - v % 100000
-                text = string.format("%d층 · %d분 %02d초", floor, math.floor(secs / 60), secs % 60)
-            end
-            table.insert(lines, string.format("%2d.  %s   %s", i, name, text))
+            table.insert(lines, string.format("%2d.  %s   %s", i, name, self:ValueText(kind, tonumber(value) or 0)))
         end
         if i == 0 then table.insert(lines, "아직 기록이 없습니다") end
         _UIKit:SetText(self.Win .. "/Paper/List", table.concat(lines, "\n"))
+        _UIKit:SetText(self.Win .. "/Paper/Mine", self:MineText(kind, mine))
+    end
+
+    method string ValueText(string kind, integer value)
+        -- 판마다 값 글: 성장 「Lv44 · 노말 액트 4」 · 심연(도전·이번 주) 「7층 · 3분 05초」 · 보스 「95초」
+        if kind == "progress" then return _RankingSystem:ProgressText(value) end
+        if string.sub(kind, 1, 9) == "weekrun_a" or string.sub(kind, 1, 10) == "depthrun_a" then
+            local floor = math.floor(value / 100000)
+            local secs = 99999 - value % 100000
+            return string.format("%d층 · %d분 %02d초", floor, math.floor(secs / 60), secs % 60)
+        end
+        return tostring(value) .. "초"
+    end
+
+    method string MineText(string kind, string mine)
+        -- 「내 순위  N위 · 값」 / 「내 순위  100위 밖 · 값」 / 「내 순위  기록 없음」
+        local rank, value = string.match(mine or "", "^(%-?%d+)|(%d+)$")
+        if rank == nil then return "내 순위  기록 없음" end
+        local r = tonumber(rank) or -1
+        local where = r > 0 and (tostring(r) .. "위") or (tostring(_RankingSystem.MinePageMax) .. "위 밖")
+        return "내 순위  " .. where .. " · " .. self:ValueText(kind, tonumber(value) or 0)
     end
 
 end

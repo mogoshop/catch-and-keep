@@ -790,7 +790,18 @@ function buildGameHud() {
   // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김)
   k.actPager("RankWin/ActBar", "top-center", [0, -166], 580);
   k.inner("RankWin/Paper", "top-center", [0, -218], [580, 414], "win_content");
-  b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [20, -16], rect_size: [540, 384] });
+  // 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안): 목록 아래 구분선 + 「내 순위」 한 줄 (RankWindow.MineText · 서버 RankingSystem.MineDigest).
+  //   목록 칸을 그만큼 줄이고 넘치면 글자를 줄인다 (이번 주 판은 규칙 줄까지 15줄 남짓)
+  {
+    const T = require("./ui-tokens.cjs");
+    const padX = 20, mineH = 30, listTop = 16;
+    const mineY = T.SPACE;                                // 판 아래에서 내 순위 줄 바닥
+    const divY = mineY + mineH + T.SPACE / 2;             // 구분선
+    const listH = 414 - listTop - divY - T.SPACE / 2;     // 목록 바닥 = 구분선 위 6
+    b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [padX, -listTop], rect_size: [540, listH], bestfit: true, min_size: 14, max_size: 19 });
+    b.panel("RankWin/Paper/MineDiv", { anchor: "bottom-left", pivot: [0, 0], pos: [padX, divY], rect_size: [540, 2], color: { r: 0.45, g: 0.38, b: 0.28, a: 0.6 } });
+    b.text("RankWin/Paper/Mine", "", { size: 19, bold: true, color: "#F4ED83", alignment: 3, anchor: "bottom-left", pivot: [0, 0], pos: [padX, mineY], rect_size: [540, mineH], bestfit: true, min_size: 14, max_size: 19, ...outline });
+  }
 
   // ── 채널 창 (메뉴 「채널 변경」): 채널별 인원, 고르면 확인 후 이동 (ChannelWindow.mlua) ──
   k.frame("ChanWin", "middle-center", [0, 40], [620, 700], "채널");
