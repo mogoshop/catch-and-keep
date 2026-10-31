@@ -227,6 +227,8 @@ script SkillOffer extends Logic
             local def = quest:ChoiceDef(slot, a[1])
             _UIKit:SetEnabled(c, def ~= nil)
             _UIKit:SetEnabled(self.Win .. "/Pick" .. tostring(i), def ~= nil)
+            -- 아이콘 모서리 「선택 보상」 꼬리표: 같은 아이콘을 쓰는 스킬(정예 승격·골편 투척 등)과 구분 (10-31 A안 · 카드 이름은 그대로)
+            _UIKit:SetEnabled(c .. "/Tag", def ~= nil)
             if def ~= nil then
                 _UIKit:SetIcon(c, _GameData:GetUiIcon("sk_offer_card_new"))
                 _UIKit:SetColor(c, Color(1, 1, 1, 1))   -- 스킬 추천 단계 카드의 금빛 물들임을 지운다 (44-7)
@@ -253,7 +255,10 @@ script SkillOffer extends Logic
         local count = 0
         for i = 1, 3 do if self.Offer ~= nil and self.Offer[i] ~= nil then count = count + 1 end end
         self:Layout(false, count)
-        for i = 1, 3 do _UIKit:SetText(self.Win .. "/Pick" .. tostring(i), "이 카드로") end
+        for i = 1, 3 do
+            _UIKit:SetText(self.Win .. "/Pick" .. tostring(i), "이 카드로")
+            _UIKit:SetEnabled(self.Win .. "/Card" .. tostring(i) .. "/Tag", false)   -- 스킬 추천 카드는 선택 보상이 아니다 (보상 모드에서 켠 꼬리표를 끈다)
+        end
         _UIKit:SetText(self.Win .. "/Left", "남은 " .. tostring(st.SkillPoints))
         local rerollLeft = self.RerollLevel ~= st.Level
         _UIKit:SetText(self.Win .. "/BtnReroll", rerollLeft and "다시 섞기 (1)" or _UIKit:Colored("#8A8A8A", "다시 섞기 (0)"))

@@ -102,6 +102,13 @@ function kit(b) {
         b.patchComponent(`${name}/D${i}`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
       }
     },
+    // 「선택 보상」 꼬리표 (10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」): 선택 보상 아이콘 모서리 — 같은 그림을 쓰는 스킬 아이콘과 구분.
+    //   새 그림 없이 어두운 금빛 판 + 글 (SkillWin 선택 보상 줄 · OfferWin 보상 카드 공용). 누르는 자리를 막지 않는다
+    choiceTag(name, opts) {
+      const { anchor, pivot, pos, w, h, size } = opts;
+      b.panel(name, { anchor, pivot, pos, rect_size: [w, h], color: { r: 0.36, g: 0.26, b: 0.09, a: 0.95 }, enable: opts.enable ?? true });
+      b.text(`${name}/Text`, "선택 보상", { size, bold: true, color: "#FFE9A8", anchor: "middle-center", pos: [0, 0], rect_size: [w, h], alignment: 4, bestfit: true, min_size: Math.max(8, size - 2), max_size: size });
+    },
     // 오른쪽 위 빨간 점 (쓸 포인트가 있을 때)
     badge(name) {
       b.sprite(`${name}/Badge`, { anchor: "top-right", pos: [4, 4], rect_size: [26, 26], ...part("red_dot"), sprite_type: 0, enable: false });
@@ -365,7 +372,30 @@ function buildGameHud() {
   // 판 안 여백: 9조각 테두리 24 + 12 = 36 (ui-tokens SKPANEL, 10-28 「제목이 테두리에 걸침」). 실행 중 배치 SkillWindow.mlua와 같은 숫자
   const SP = require("./ui-tokens.cjs").SKPANEL.pad;
   b.text("SkillWin/Points", "", { size: 24, color: "#F4ED83", anchor: "top-left", pos: [51, -76], rect_size: [340, 40], alignment: 3, ...outline });
-  b.text("SkillWin/Legend", "", { size: 18, color: C.gold, anchor: "top-left", pos: [400, -76], rect_size: [640, 40], alignment: 4, ...outline });
+  // 10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」 (A안): 머리 줄 가운데(예전 트리색 범례 자리)에 「선택 보상」 3칸 — 의뢰 1·2·3에서 고른 선택 보상.
+  //   칸 = 고른 축의 아이콘(+ 「선택 보상」 꼬리표) · 이름 · 단계(노말/악몽/지옥) · 고를 차례면 「고르기」 · 의뢰 전이면 잠금 + 의뢰 제목. 누르면 아래 공방 자리에 설명 (SkillWindow.RenderChoices·RenderChoiceDetail)
+  //   범례는 시간선 판 머리 줄(TL/Legend)로 옮긴다. 칸 테두리·바탕은 공방 강화 노드·깃발 칸과 같은 그림(sk_ws_node_frame_*)
+  {
+    const T = require("./ui-tokens.cjs");
+    const row = "SkillWin/Choice";
+    const x0 = 400, w = 640, h = 52, headW = 84, gap = T.SPACE / 2;
+    const chipW = Math.floor((w - headW - 3 * gap) / 3);
+    b.empty(row, { anchor: "top-left", pivot: [0, 1], pos: [x0, -70], rect_size: [w, h] });
+    b.text(`${row}/Head`, "선택 보상", { size: 16, bold: true, color: "#E6C88A", anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [headW, h], alignment: 3, ...outline });
+    for (let i = 1; i <= 3; i++) {
+      const c = `${row}/C${i}`;
+      const iconX = gap, icon = 40, textX = iconX + icon + 8, textW = chipW - textX - gap;
+      b.button(c, "", { anchor: "top-left", pivot: [0, 1], pos: [headW + gap + (i - 1) * (chipW + gap), 0], rect_size: [chipW, h], bg_color: { r: 0, g: 0, b: 0, a: 0.3 }, sprite_type: 1 });
+      b.sprite(`${c}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [chipW, h], ...part("sk_ws_node_frame_empty"), sprite_type: 1 });
+      b.patchComponent(`${c}/Rim`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.sprite(`${c}/Icon`, { anchor: "middle-left", pivot: [0, 0.5], pos: [iconX, 3], rect_size: [icon, icon], color: WHITE, alpha: 1, sprite_type: 0 });
+      k.aspect(`${c}/Icon`);
+      b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      k.choiceTag(`${c}/Tag`, { anchor: "bottom-left", pivot: [0, 0], pos: [2, 2], w: 52, h: 16, size: 11 });
+      b.text(`${c}/Name`, "", { size: 15, bold: true, color: C.title, anchor: "top-left", pivot: [0, 1], pos: [textX, -5], rect_size: [textW, 22], alignment: 3, bestfit: true, min_size: 11, max_size: 15, ...outline });
+      b.text(`${c}/Tier`, "", { size: 13, color: C.dim, anchor: "bottom-left", pivot: [0, 0], pos: [textX, 5], rect_size: [textW, 20], alignment: 3, bestfit: true, min_size: 10, max_size: 13 });
+    }
+  }
   k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-51, -72], rect_size: [300, 48], font_size: 18 });
   // 해금 시간선 (판 356: 머리 줄 36~60 · 열 68~290 · 막대 304)
   const tl = "SkillWin/TL";
@@ -373,7 +403,10 @@ function buildGameHud() {
   k.inner(tl, "top-left", [51, -128], [1298, 356], "sk_timeline_panel");
   // 판 안 머리 줄: 제목(왼쪽) · 다음 해금(오른쪽) — 예전엔 제목이 테두리 위, 다음 해금은 아래 테두리 선 위에 걸쳤다
   b.text(`${tl}/Head`, "해금 시간선", { size: 18, bold: true, color: "#E6C88A", anchor: "top-left", pos: [SP, -SP], rect_size: [160, 24], alignment: 3 });
-  b.text(`${tl}/Next`, "", { size: 17, color: C.gold, anchor: "top-right", pos: [-SP, -SP], rect_size: [1298 - 2 * SP - 176, 24], alignment: 5, bestfit: true, min_size: 13, max_size: 17, ...outline });
+  // 트리색 범례: 머리 줄 가운데가 선택 보상 줄이 되면서 판 제목 오른쪽으로 (10-31) — 다음 해금 글은 그만큼 좁히고 넘치면 줄인다
+  const LEG = { x: SP + 170, w: 360 };
+  b.text(`${tl}/Legend`, "", { size: 16, color: C.gold, anchor: "top-left", pos: [LEG.x, -SP], rect_size: [LEG.w, 24], alignment: 3, bestfit: true, min_size: 12, max_size: 16, ...outline });
+  b.text(`${tl}/Next`, "", { size: 17, color: C.gold, anchor: "top-right", pos: [-SP, -SP], rect_size: [1298 - SP - LEG.x - LEG.w - 16, 24], alignment: 5, bestfit: true, min_size: 13, max_size: 17, ...outline });
   b.button(`${tl}/Prev`, "", { anchor: "middle-left", pos: [24, -2], rect_size: [44, 88], ...bg("sk_arrow_left_44"), sprite_type: 0 });
   b.button(`${tl}/NextPage`, "", { anchor: "middle-right", pos: [-24, -2], rect_size: [44, 88], ...bg("sk_arrow_right_44"), sprite_type: 0 });
   k.badge(`${tl}/Prev`);
@@ -523,6 +556,8 @@ function buildGameHud() {
     b.sprite(`${c}/Icon`, { anchor: "top-center", pos: [0, -80], rect_size: [76, 76], color: WHITE, alpha: 1, sprite_type: 0 });
     k.aspect(`${c}/Icon`);
     b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+    // 선택 보상 모드에서만 아이콘 오른쪽 아래 모서리에 「선택 보상」 꼬리표 (SkillOffer.RenderReward가 켜고 스킬 추천 Render가 끈다 · 10-31)
+    k.choiceTag(`${c}/Tag`, { anchor: "top-center", pivot: [1, 0], pos: [50, -158], w: 72, h: 20, size: 13, enable: false });
     b.text(`${c}/Name`, "", { size: 24, bold: true, color: C.title, anchor: "top-center", pos: [0, -160], rect_size: [CARD.text, 30], alignment: 4, bestfit: true, min_size: 16, max_size: 24, ...outline });
     //   설명은 첫 문장만(SkillOffer.CardText) · 그래도 넘치면 말줄임(Overflow 1 = Ellipsis)으로 잘라 아래 초록 수치 줄(Change)을 덮지 않는다 (10-29 오후 검수 35번 캡처)
     b.text(`${c}/Effect`, "", { size: 17, color: C.gold, anchor: "top-center", pos: [0, -194], rect_size: [CARD.text, 78], alignment: 1, bestfit: true, min_size: 13, max_size: 17, overflow: 1 });

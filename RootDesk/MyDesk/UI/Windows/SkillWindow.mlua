@@ -5,6 +5,8 @@
 --   고른 것을 한 번 더 누르면 바로 +1 (첫 클릭은 설명 보기라 실수로 찍히지 않는다). 메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2.
 -- 칸 지정: 「스킬 칸에 넣기」 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
 -- 스킬 추천 3택 카드(V4, 2차)는 SkillOffer가 맡는다.
+-- 10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」 (A안): 머리 줄 「선택 보상」 3칸 — 의뢰 1·2·3에서 고른 선택 보상(스킬과 별개 · 늘 적용)을
+--   다시 볼 자리. 칸을 누르면 공방 자리에 그 선택 보상 설명 (스킬을 다시 고르면 스킬 공방으로). 고를 차례인 칸은 선택 보상 카드 창(SkillOffer)을 연다.
 @Logic
 script SkillWindow extends Logic
 
@@ -36,6 +38,8 @@ script SkillWindow extends Logic
     property string FormKind = ""           -- 편성 조작 칸(WS/Form)이 다루는 종류: skeleton · mage · shard(모바일 골편 홀드 반복) · "" (숨김)
     property string FormForm = ""           -- 편성 조작 칸 ± 대상 변이 (변이 노드를 골랐을 때만)
     property string ShowGiant = ""          -- 46-5 뼈 의식 공방에 펼친 거인 노드 줄 (basic·shield·greatsword·twin·mage · "" = 깃발 → 지금 무리 → 기본)
+    property integer ChoiceSlot = 0         -- 공방 자리에 설명을 띄운 선택 보상 칸 (1~3 · 0 = 스킬 공방) — 10-31 A안
+    property string ElitePromoteNote = "선택 보상 「정예로 서는 그림자」와는 다른 스킬입니다"   -- 정예 승격 상세에만 (이름이 비슷해 혼동 · 10-31)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -64,6 +68,11 @@ script SkillWindow extends Logic
             _UIKit:Connect(self.Win .. "/WS/Banner/K" .. tostring(i), function() self:PickBanner(index) end)
         end
         _UIKit:Connect(self.Win .. "/BtnEdit", function() self:EditSlots() end)
+        -- 10-31 머리 줄 선택 보상 3칸
+        for i = 1, 3 do
+            local slot = i
+            _UIKit:Connect(self.Win .. "/Choice/C" .. tostring(i), function() self:PickChoice(slot) end)
+        end
         _UIKit:Connect(self.Win .. "/BtnReset", function()
             ---@type SkillBook
             local book = _UIKit:Comp("script.SkillBook")
@@ -166,6 +175,10 @@ script SkillWindow extends Logic
         if cmd ~= nil then key = key .. "#" .. cmd.UndeadRoster end   -- 편성이 바뀌면 편성 줄을 다시 그린다 (I03)
         key = key .. "#" .. book.FormHope .. "#" .. tostring(book.ShardHold)   -- 희망 편성·골편 홀드 설정을 바꾸면 소환 없이도 다시 그린다 (B-R05)
         key = key .. "#" .. book.RiteBanner .. "#" .. self.ShowGiant .. "#" .. tostring(st.MaxDifficulty)   -- 46-5·46-6 거인 깃발·펼친 거인·악몽 해금
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest ~= nil then key = key .. "#" .. quest.ChoicePicks .. "#" .. quest.ChoiceTiers end   -- 선택 보상을 고르거나 단계가 오르면 (10-31)
+        key = key .. "#" .. tostring(self.ChoiceSlot)
         if key == self.RenderKey then return end
         self.RenderKey = key
         -- 머리 줄: 남은 포인트 · 숙련(배운 스킬·강화 수) · 트리색 범례 · 초기화
@@ -177,13 +190,137 @@ script SkillWindow extends Logic
         _UIKit:SetText(self.Win .. "/Points", "남은 포인트 " .. _UIKit:Colored("#FFFFFF", tostring(st.SkillPoints)) .. "   " .. _UIKit:Colored("#A8A090", "숙련 " .. tostring(learned) .. "/" .. tostring(total)))
         local legend = {}
         for _, tree in ipairs(self:Trees()) do table.insert(legend, _UIKit:Colored(self:TreeHex(tree), "■ " .. _SkillData:TreeName(tree))) end
-        _UIKit:SetText(self.Win .. "/Legend", table.concat(legend, "   "))
+        _UIKit:SetText(self.Win .. "/TL/Legend", table.concat(legend, "   "))   -- 범례는 시간선 판 머리 줄 (머리 줄 가운데는 선택 보상 줄 · 10-31)
         local cost = book:RespecCost(st.Level)
         _UIKit:SetText(self.Win .. "/BtnReset", cost == 0 and ("초기화 · 무료 (Lv" .. tostring(math.floor(_GameData.respecFreeLevel)) .. "까지)") or ("초기화 · " .. tostring(cost) .. " 골드"))
         if self.SelMain == "" then self.SelMain = self:FirstLearnable(book, st) end
         self:RenderTimeline(book, st)
         self:RenderWorkshop(book, st)
         self:RenderLearnButton(book, st)
+        self:RenderChoices(quest)
+        if self.ChoiceSlot > 0 and quest ~= nil then self:RenderChoiceDetail(quest) end
+    end
+
+    method string ChoiceTierName(integer tier)
+        -- 선택 보상 단계 = 그 의뢰를 끝낸 난이도 수 → 「노말」 · 「악몽」 · 「지옥」
+        if tier <= 0 then return "" end
+        return _GameConst:DifficultyName(math.min(3, tier) - 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderChoices(PlayerQuest quest)
+        -- 머리 줄 「선택 보상」 3칸: 고름 = 축 아이콘(+꼬리표)·이름·단계 · 고를 차례 = 「고르기」 · 의뢰 전 = 잠금 + 의뢰 제목. 지금 설명 중인 칸은 금테
+        local root = self.Win .. "/Choice"
+        _UIKit:SetEnabled(root, quest ~= nil)
+        if quest == nil then return end
+        for slot = 1, 3 do
+            local c = root .. "/C" .. tostring(slot)
+            local axis = quest:PickOf(slot)
+            local tier = quest:TierOfSlot(slot)
+            local def = axis ~= "" and quest:ChoiceDef(slot, axis) or nil
+            local skill = def ~= nil and _SkillData:Get(def.skill) or nil
+            local icon = ""
+            local name = ""
+            local sub = ""
+            local tint = Color(1, 1, 1, 1)
+            local key = "sk_ws_node_frame_locked"
+            local ring = Color(1, 1, 1, 1)
+            if def ~= nil then
+                icon = skill ~= nil and skill.icon or ""
+                name = def.name
+                sub = self:ChoiceTierName(tier)
+                key = "sk_ws_node_frame_learned"
+                ring = self:TreeColor(axis)   -- 축 이름 = 트리 이름 (command · soul · curse)
+            elseif tier > 0 then
+                icon = _GameData:GetUiIcon("q_avail")
+                name = _UIKit:Colored("#7CFF7A", "고르기")
+                sub = quest:ChoiceQuestTitle(slot)
+                key = "sk_ws_node_frame_empty"
+                ring = Color(0.62, 0.92, 0.62, 1)
+            else
+                icon = _GameData:GetUiIcon("skill_locked")
+                name = _UIKit:Colored("#8C99B4", quest:ChoiceQuestTitle(slot))
+                sub = "의뢰 전"
+                tint = Color(0.7, 0.7, 0.75, 0.9)
+            end
+            if slot == self.ChoiceSlot then
+                key = "sk_ws_node_frame_max"
+                ring = Color(1, 1, 1, 1)
+            end
+            _UIKit:SetIcon(c .. "/Icon", icon)
+            _UIKit:SetEnabled(c .. "/Icon", icon ~= "")
+            _UIKit:SetColor(c .. "/Icon", tint)
+            _UIKit:SetEnabled(c .. "/Tag", def ~= nil)
+            _UIKit:SetText(c .. "/Name", name)
+            _UIKit:SetText(c .. "/Tier", sub)
+            _UIKit:SetIcon(c .. "/Rim", _GameData:GetUiIcon(key))
+            _UIKit:SetColor(c .. "/Rim", ring)
+            local shown = axis
+            if shown == "" then shown = tier > 0 and "pending" or "locked" end
+            log(string.format("[VRF] skill choice row slot=%d axis=%s tier=%d", slot, shown, tier))
+        end
+    end
+
+
+    @ExecSpace("ClientOnly")
+    method void RenderChoiceDetail(PlayerQuest quest)
+        -- 공방 자리에 선택 보상 설명: 이름 · 「선택 보상 · 의뢰 · 단계」 · 설명(desc) · 지금/다음 단계(next) · 「스킬과 별개로 늘 적용」.
+        --   랭크 점·강화 노드·편성·깃발·배우기 단추는 감춘다 (스킬을 다시 누르면 RenderWorkshop·RenderLearnButton이 되살린다)
+        local slot = self.ChoiceSlot
+        local ws = self.Win .. "/WS"
+        local axis = quest:PickOf(slot)
+        local tier = quest:TierOfSlot(slot)
+        local title = quest:ChoiceQuestTitle(slot)
+        local def = axis ~= "" and quest:ChoiceDef(slot, axis) or nil
+        local skill = def ~= nil and _SkillData:Get(def.skill) or nil
+        _UIKit:SetIcon(ws .. "/Portrait/Icon", skill ~= nil and skill.icon or _GameData:GetUiIcon("skill_locked"))
+        _UIKit:SetColor(ws .. "/Portrait/Icon", def ~= nil and Color(1, 1, 1, 1) or Color(0.7, 0.7, 0.75, 0.9))
+        _UIKit:SetIcon(ws .. "/Portrait/Rim", _GameData:GetUiIcon("sk_portrait_frame"))
+        _UIKit:SetColor(ws .. "/Portrait/Rim", def ~= nil and self:TreeColor(axis) or Color(0.6, 0.6, 0.65, 1))
+        local sentence = _UIKit:Colored("#F4D27A", "선택 보상 — 스킬과 별개로 늘 적용됩니다")
+        local tag = _UIKit:Colored("#F4D27A", "선택 보상")
+        if def ~= nil then
+            _UIKit:SetText(ws .. "/Name", def.name)
+            _UIKit:SetText(ws .. "/Info", tag .. " · " .. title .. " · " .. self:ChoiceTierName(tier))
+            _UIKit:SetText(ws .. "/Desc", def.desc)
+            _UIKit:SetText(ws .. "/Stat", "지금 단계: " .. self:ChoiceTierName(tier) .. "\n다음 단계: " .. _UIKit:Colored("#7CFF7A", def.next) .. "\n" .. sentence)
+        else
+            _UIKit:SetText(ws .. "/Name", title)
+            _UIKit:SetText(ws .. "/Info", tag .. " · 의뢰 " .. tostring(slot))
+            _UIKit:SetText(ws .. "/Desc", "「" .. title .. "」 의뢰를 끝내면 군단·주문·저주 중 하나를 고릅니다")
+            _UIKit:SetText(ws .. "/Stat", sentence)
+        end
+        for i = 1, 20 do _UIKit:SetIcon(ws .. "/Pip" .. tostring(i), "") end
+        _UIKit:SetText(ws .. "/RankNote", "")
+        _UIKit:SetText(ws .. "/Reason", "")
+        _UIKit:SetText(ws .. "/Roster", "")
+        for _, p in ipairs({ "TreeHead", "Hub", "Spine", "Form", "Banner" }) do _UIKit:SetEnabled(ws .. "/" .. p, false) end
+        for i = 1, 6 do _UIKit:SetEnabled(ws .. "/Need" .. tostring(i), false) end
+        for i = 1, 8 do
+            _UIKit:SetEnabled(ws .. "/N" .. tostring(i), false)
+            _UIKit:SetEnabled(ws .. "/L" .. tostring(i), false)
+        end
+        self.NodeIds = {}
+        _UIKit:SetEnabled(self.Win .. "/BtnLearn", false)
+        _UIKit:SetEnabled(self.Win .. "/BtnEdit", false)
+        log(string.format("[VRF] skill choice detail slot=%d axis=%s tier=%d", slot, axis ~= "" and axis or "none", tier))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PickChoice(integer slot)
+        -- 선택 보상 칸을 눌렀다: 고를 차례면 선택 보상 카드 창(SkillOffer)을 열고, 아니면 공방 자리에 설명 (한 번 더 누르면 스킬 공방으로)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil then return end
+        if quest:TierOfSlot(slot) > 0 and quest:PickOf(slot) == "" then
+            _UIKit:Close(self.Win)
+            _SkillOffer:OpenReward(slot)
+            log("[VRF] skill choice open reward slot=" .. tostring(slot))
+            return
+        end
+        if self.ChoiceSlot == slot then self.ChoiceSlot = 0 else self.ChoiceSlot = slot end
+        self.RenderKey = ""
+        log("[VRF] skill choice pick slot=" .. tostring(slot) .. " shown=" .. tostring(self.ChoiceSlot))
     end
 
     @ExecSpace("ClientOnly")
@@ -326,7 +463,9 @@ script SkillWindow extends Logic
         else info = info .. "랭크 " .. tostring(lv) .. "/" .. tostring(cap) .. "  (최대 " .. tostring(def.maxLv) .. ")" end
         _UIKit:SetText(ws .. "/Info", info)
         local hint = book:UseHint(detailId)
-        _UIKit:SetText(ws .. "/Desc", detail.desc .. (hint ~= "" and ("\n" .. hint) or ""))
+        -- 정예 승격만: 이름이 비슷한 선택 보상(「정예로 서는 그림자」 · 같은 아이콘)과 다른 스킬이라고 한 줄 (10-31 A안 — 다른 스킬에는 넣지 않는다)
+        local note = detailId == "elite_promote" and ("\n" .. _UIKit:Colored("#8C99B4", self.ElitePromoteNote)) or ""
+        _UIKit:SetText(ws .. "/Desc", detail.desc .. (hint ~= "" and ("\n" .. hint) or "") .. note)
         -- 효과 줄은 「 · 」 경계에서만 접는다 (QR1629-OBS-01: 엔진 줄바꿈은 한글을 글자 단위로 끊어 「마 / 나 8」이 됐다). 폭은 그 칸 글꼴로 잰다
         local statE = _UIKit:Get(ws .. "/Stat")
         local statT = isvalid(statE) and statE.TextGUIRendererComponent or nil
@@ -816,6 +955,8 @@ script SkillWindow extends Logic
             elseif book:GetLevel(id) > 0 then label = "레벨 업 +1" end
         end
         local ok = def ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == ""
+        _UIKit:SetEnabled(self.Win .. "/BtnLearn", true)   -- 선택 보상 설명(RenderChoiceDetail)에서 감춘 단추를 되살린다
+        _UIKit:SetEnabled(self.Win .. "/BtnEdit", true)
         _UIKit:SetText(self.Win .. "/BtnLearn", ok and label or _UIKit:Colored("#8A8A8A", label))
         _UIKit:SetColor(self.Win .. "/BtnLearn", ok and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
     end
@@ -872,6 +1013,11 @@ script SkillWindow extends Logic
     method void Pick(string id)
         -- 선택은 설명만 바꾼다. 포인트는 별도 배우기/강화 버튼에서만 사용한다.
         if id == nil or id == "" then return end
+        if self.ChoiceSlot > 0 then
+            -- 선택 보상 설명을 보다가 스킬을 누르면 스킬 공방으로 (같은 스킬이어도 다시 그린다)
+            self.ChoiceSlot = 0
+            self.RenderKey = ""
+        end
         if id == self.Selected then return end
         self.Selected = id
         local def = _SkillData:Get(id)
@@ -886,7 +1032,7 @@ script SkillWindow extends Logic
         -- 0 = 습득, 1~4 = A S D F, 5 = 우클릭
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
-        if book == nil then return end
+        if book == nil or self.ChoiceSlot > 0 then return end   -- 선택 보상 설명 중에는 배우기·칸 넣기가 없다 (단추도 감춘다)
         -- 카드를 따로 누르지 않았어도 오른쪽에 보이는 스킬을 배운다 (10-20 첫 1시간 점검: 설명이 떠 있는데 「습득」이 아무 반응이 없었다)
         if self.Selected == "" then self.Selected = self.SelMain end
         if self.Selected == "" then return end
