@@ -1,0 +1,69 @@
+MAP-V5-ACT1-MAKER 실행 기록 (KST 2026-10-31 23:35 ~ 11-01 01:36) — 메이커 단일 담당 (Claude Opus 5.5 레인) · 브랜치 codex/player-experience-polish · HEAD 7c9b2570 (= origin/main · 689cbc0e 액트 1 15장 · ec1b65be 통일 공정 5종 포함)
+대상: (A) 맵 v5 액트 1 15장 실화면 캡처·걸어 보기 (B) 통일 공정 5종 전체 효과
+게임 코드·맵·데이터 수정 없음. 스크립트는 모두 실행 중 메이커에 넣은 런타임 스크립트(파일 아님). maker_screenshot 스틸만. 녹화 없음.
+PC FHD 1920×1080 · 스크린샷 2197×1236 · 이번 회차 카메라 ZoomRatio 80 → 화면 1칸 ≈ 137px (화면 표식 ±4칸으로 잼: 137.2px · 액트 4 회차 172px는 줌 100)
+좌표 규칙: 칸 (x,y)는 [x,x+1]×[y,y+1] · 위로 막히면 T-0.01 · 아래로 막히면 T+1.01 · 옆 = 경계±0.01
+--- 0. 반영 ---
+23:35 편집 모드 · map01 · 첫 refresh → build 로그 23:28:17 (옛 판 · build-log-refresh1.json)
+23:36:0x 5초 → touch(내용 변경 없음 · git diff 0): Common/GameConst · Common/Util · Data/GameData · Data/WaypointData · Skill/SkillEffects (.mlua) + 689cbc0e의 map 45파일 → 5초 → refresh 1회 더
+23:36:23 build 361줄 · Error 0 · Warning 102 · Info 259 · LEA-1102 0 (build-log.json) · codeblock 23:36:16~17 갱신
+23:37:03 play · S [SelfTest] 통과 409 / 실패 0 (이후 부팅 2번은 410/0) · C [VRF] preload n=283 started=283
+--- 1. 저장 데이터·방 ---
+23:37:16 S [VRF] A1M backup readback code=0 match=5/5 Account=615/1340525624 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/2144937209
+23:37:37 슬롯 4 → 입장 · 23:37:58 솔로 클릭 → 이 뒤 클라 execute_script 한 번이 30분 응답 없음(MCP 타임아웃) · 00:08 방 game:s1bb55462eba(town) 확인
+00:08:36 S [VRF] A1M guard (방 서버) load=false · 무적 루프 0.05초(InvincibleUntil=1e9 + Hp=MaxHp) · _G.GO=PlayerTravel:Go
+!! 키보드 입력 불통: maker_keyboard_input 탭이 게임에 닿지 않음 — 클라 KeyDownEvent 훅에 0건(00:14·00:16 두 번) · 마우스는 닿음(ScreenTouchEvent (100,540) 로그) · play 다시 시작해도 같음
+   → 걷기는 실제 마우스 클릭 이동(ClickControl · 마을 남문 통과, 황무지 큰길 13.6칸) + 클라 WALK/PUSH(컨트롤러 끄고 MovementComponent.MoveToDirection · ClickControl.MoveToward와 같은 길 · 물리 충돌 그대로)
+   → 스킬은 클라 SkillBook:RequestCast / RequestRite (키 입력이 보내는 것과 같은 RPC)
+00:15 stop → play 다시 · 00:17:35 입장 · 00:18:09 S [VRF] A1M guard2 (방 game:s1bb5e91da76) load=false · 무적
+--- 2. 반영 지문 (클라 맵 자식 셈 = map 파일) — fingerprint.tsv ---
+  15/15 일치: Art·ArtTop·ArtGuide(0)·ArtProp·Torch·웨이포인트 자리 · [CAP] ready 줄도 15/15 같음
+  town 222/0/0/10 wp -5.5/2.5 · wasteland 835/0/0/48 wp 1.5/-2.8 · rotmarsh 1304/0/0/17 wp -4.5/3.5 · execution 897/0/0/21 wp -5.5/-0.5 · gallows 1018/0/0/18 wp -7.5/-3.5
+  crypt1 316/6/0/30 wp 2.5/-0.5 · crypt2 305/2/0/35 · crypt3 333/10/0/23 wp -24.5/-1.5 · queentomb 295/13/0/34 · hollow 461/0/0/14 · cellar1 297/0/0/11 · cellar2 333/4/0/24 · pit1 514/0/0/13 · pit2 458/0/0/8 · cave 445/0/0/10
+  윗부분 반투명 진입 로그: crypt1 6 · crypt2 2 · crypt3 10 · queentomb 13 · cellar2 4 (모두 빠짐 0) · LWA-3010 0건
+  마을 NPC: 게시판·잿빛 행상·대장장이·떠돌이 상인·창고·카라반 자리 = 파일 · 장로(3.5,5.5)는 Enable=false(슬롯 4 이야기 단계)
+--- 3. 서버 타일 칸 BFS (RectTileMap.GetTile · IsCollidable) — grids/ ---
+  15/15 열린 칸 = 입구에서 닿는 칸 · 입구→출구 최단 걸음 = routes.csv: wasteland 68 · rotmarsh 73 · execution 72 · gallows 79 · crypt1 75 · crypt2 57 · crypt3 57 · queentomb 79 · cellar1 57 · pit1 63
+  끝방 맵(입구→끝방 = routes): hollow 66 · cellar2 48 · pit2 57 · cave 58 · 되돌아가는 문: hollow 65 · cellar2 62 · pit2 62 · cave 65 · queentomb 돌아가는 문 79
+  마을 448칸 전부 남문에서 닿음 · 남문→웨이포인트 18
+  서버 grid 첫 덤프는 GO 스크립트가 끊어 rotmarsh까지 · 00:12~00:14 나머지 12장 다시 덤프(sgrid done)
+--- 4. (A) 걸어 보기·부딪혀 보기 (walks-pushes.txt 원문) ---
+00:19:36 마을 마우스 클릭 이동 확인(3칸 서쪽) · 00:20~00:22 NPC 마당 4곳 GO 스틸 · 00:22:53 천막 열 위로 (-10.50, 7.99) · 00:23:28 남문 서쪽 기둥 아래로 (-0.50, -8.99)
+00:23:4x 남문 문 칸을 마우스 클릭 → 황무지 서문 도착 (실제 입력으로 마을→첫 맵)
+00:24:2x 황무지 마우스 클릭 3번 → -32.1 → -18.53 (첫 캠프) · 00:25:20 WALK 큰길→웨이포인트 칸 16.5초 · 00:26 웨이포인트 칸 가까이 스틸(켬/끔) · 00:27:28 WALK 웨이포인트→동문 앞 23.8초 (막힘 0)
+00:28:22 해골 탑 (-1.50, -15.01) · 00:28:41 우물 (17.50, 7.99) · 굶주린 굴 입구·예배당 스틸
+00:30~00:33 rotmarsh 집터 (13.50, -13.01) · 망루 (28.50, 1.01) · execution 처형대 첫 시도 (-9.50,-1.47) 통과(도착 1초 안 · 맵 칸 준비 전) → 재시도 (-9.50, -5.01) · 뒤에서 (-9.50, -1.99) · 왕의 안식처 (7.50, 15.99) · gallows 처형대 (18.50, -3.01) · 교수대 언덕 (-11.50, 9.99)
+00:34:33 crypt1 골격 축 11구간 73걸음 50.0초 막힘 0 · 벽감 기둥 (2.50, 3.99) · 촛대 열주 (1.99, 1.50)
+00:36:43 crypt2 축 37.8초 · 뼈 탑 (-8.50, -12.01) · 북벽 선반 (0.50, 15.99)
+00:38:59 crypt3 축→해골 대장 앞 28.1초(기믹 자리 · 전투 안 함) · 벽감 기둥 (15.50, 6.99) · 촛대 열주 (12.99, 2.50)
+00:40:24 queentomb 축 15구간 42.0초 → 여왕 앞(둥지 깨어남 · 전투 안 함) · 석관 제단 (23.50, 0.99) · 무릎 석상 (21.01, -0.44)
+00:42:26 cellar1 축 2구간 (밀기와 겹쳐 재시도) · 우물 (15.50, 1.99) · 술통 선반 (-12.50, 9.99) · 00:44:15 cellar2 축→끝방 32.2초 · 선반 (-13.50, 9.99) · 우물 (24.01, 4.50)
+00:45~00:48 hollow 해골 탑 (4.50, 3.99)/(5.01, 4.50) · pit1 뼈 사당 (2.50, -4.01) · 기중기 (11.50, 9.99) · pit2 기중기 (24.50, -1.01)/(24.50, 2.01) · cave 기둥 (-8.50, -7.01) · 옆 (-10.01, -6.50)(첫 시도는 열린 줄 y-7.5라 무효 · shots/cave-T2x)
+--- 5. (B) 통일 공정 5종 (00:49~01:14 · 황무지) ---
+00:49:19 S skills 원래 slots=raise_skeleton,,, levels bone_rite1 bone_spear5 raise_mage3 raise_skeleton9 skel_twin1 wraith_dash3 → 저장 끔 상태에서 임시 death_wave·poison_mist·shadow_sacrifice·shadow_summon·저주 6종·bone_offering·bone_rite 5
+00:49:24 그림자 2기(AddShadow hellhound·Deploy) · 사냥개 4 처치 → 혼 → _UndeadSystem:Raise 해골 4기 · 마나·재사용 매 0.2초 채움
+실속도 시전(클라 RequestCast/RequestRite · 스틸 0.3초 간격):
+00:50:16 C c7 fx kind=wave n=10 ms=70,70,70,70,100,110,120,130,140,150 scale=0.86 order=1 sec=0.60 unify=true total=1.03
+00:55:27 S skeleton bomb n=1 radius=1.60 · C c7 fx kind=blast n=10 scale=0.97 order=6 unify=true total=1.03 (첫 사용)
+00:55:49 S bone offering healed=4 · C c7 fx kind=offering n=4 ms=100 scale=0.80 (예전 길) · c7 fx kind=blast scale=0.58 total=1.03
+00:56:12 C c7 fx kind=poison n=10 ms=100×8,130,150 scale=0.78 order=1 loop=true sec=4.00 unify=true total=4.03
+00:56:23 S sacrifice target=…_2 · C frames fx ms n=10 total=1.03 scale=0.849 order=1
+00:56:31 curse shape resist r=1.50 circleN=10 · 00:56:49 weaken · 00:56:50 thorn · 00:57:11 terror · 00:57:12 lifetap (amp은 표적 없어 「효과 없음」 · 원형 판 실속도 6종 중 5종 시전)
+느린 재생(장마다 2.0~2.5초 · 같은 RUID·배율·층 · _EffectService.PlayEffect · 화면 표식 ±4칸·위 3칸) — fx/<tag>/frames.txt:
+01:05 wave4 · 01:07 blast4 · 01:09 poison4 · 01:10 sacrifice4 · 01:11 resist4 · 01:12 amp4 · 01:12 terror4
+  (00:51 town·00:58 town 시도는 마을 카메라가 맵 끝에 걸리고 횃불 깜빡임으로 크기 잼이 흔들려 버림 · 표식 방식으로 다시 함)
+--- 6. 전체 캡처 (cap_client_v3 본문 그대로 · 설치 태그 a1m act1) ---
+01:14:52 [CAP] installed a1m act1 · ready 15장(01:14:53~01:17:53) · 평균 밝기 wasteland 32.7 (길 안내판 33.0 · 전역 조명 처리 불필요)
+raw/NN-<id>.jpg 15장 · maps-index.tsv · sheets/sheet-act1-maker.png(1칸 11px) · compare/compare-act1-guide-vs-v5.png(왼쪽 길 안내판 raw 00~14 · 오른쪽 이번 · 1칸 6px)
+--- 7. 끝·저장 데이터 ---
+01:18:3x maker_stop · LEA-3051 = MakerScript 타이머만(줄 1·7·26·3·11) · 게임 코드 타이머 경고 0
+01:19:09 play2 SelfTest 410/0 · 01:19:27 S [VRF] A1M play2 readback match=0/5 (입장 때 skill migrate·로드가 쓴 값)
+01:20:22 restore guard body 5/5 · BatchSetAndWait code=0 ok_keys=5 · 01:20:29 restore after match=5/5 (본문 = 2026-10-30-summon48-maker/slot4-restore-S48.lua 그대로 · 태그만 A1M)
+--- 8. 원형 판 실속도 진단 (01:24~01:33 · 세 번째 play · 방 game:s1bb6e68d944 · 저장 끔·무적 guard3) ---
+01:26:36 클라 SkillEffects:CurseShape("resist") 직접 → 스틸 5장에 판 없음 · 01:28:47 다시 resist → 14장 중 옅은 1장 · 01:28:50 amp → 0장
+01:28:07 Util.PlayFramesLoopMs(같은 원형 판 · map instigator · loopSec 3.0) → 선명(08.4·09.5 · 10.6 옅어짐) · 01:28:11 player instigator · loopSec 3.0 → 선명(12.9·14.0·15.1)
+01:30:09 loopSec 0.8(CurseShape와 같은 값) player → 선명 1장(10.0) 뒤 바로 빔 · 01:30:12 map → 13.8 선명 1장
+01:31:00 Util.PlayFramesMs(FxSkillBlast · FxSkillBlastMs) → 3장 중 옅은 1장 · 01:31:02 같은 호출 → 0장 · 01:32:04 장마다 300ms → 9장 중 4장만 보이고 5장 빔
+01:32:53 정지 장 2개 PlayEffect 3초 → 내내 선명 · 일련번호 15763·15769·15877(재사용 없음) · FrameSwapOverlap=0.03
+  (LEA-2011 1줄 = 내 진단 스크립트 IsPressed 호출 · 01:26:01 「PlayFramesPlan 값 넣기 오류」 = 내가 Util 메서드를 감싸려다 막힌 것)
+01:34:3x stop → play → 01:35:16 restore2 before 1/5 → BatchSetAndWait ok_keys=5 → 01:35:23 after 5/5 · 01:36 maker_stop → 편집 모드 · map01
