@@ -32,6 +32,9 @@
 //   waypoint     웨이포인트(표식 S)가 띠에서 1칸(8방향) 넘게 떨어짐
 //   decorCollision 기존 검사기 tools/check_decor_collision.cjs 문제 수 (그 맵만)
 //   budget       엔티티 예산: 설계도 맵 노말 66장 합 ≤ 47900 (검사한 맵은 메모리 계산, 나머지는 map/<id>.map)
+// 경고 (위반 아님 · 종료 코드에 넣지 않음):
+//   tallNoTop    키 큰 특징·구조(역할 feature·structure · 화면 높이 ≥2칸 · 바닥 분류·포털·겹친 빛 제외)인데 윗부분 그림 <그림>-top이 art_sprites.csv에 없음
+//                — 앞층(MapLayer1)이 없어 플레이어가 뒤에 서도 그림 앞에 그려진다. 그림 종류별 목록 = 코덱스 윗부분 2차 요청 목록 (--all --legacy면 v4 맵까지)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -457,6 +460,28 @@ function analyze(L) {
 module.exports = { analyze, makeGrid, bandMetrics, straightEdges, placementMetrics, ITEMS, LABEL, BUDGET, MAX_RUN, MAX_WIDTH };
 
 // ───────── 실제 맵 → 입력 ─────────
+// 키 큰 특징·구조인데 -top 그림 없음 (경고) — 지어진 그림 엔티티(장식·세트·흩뿌림)의 그림·배율로 잰다 (v4 맵도 pieces 없이 잴 수 있게)
+const TALL_MIN_CELLS = 2;
+function tallNoTop(art, ctx) {
+  const table = ctx.sprites || {}, byRuid = {};
+  for (const [n, sp] of Object.entries(table)) if (sp.ruid) byRuid[sp.ruid] = n;
+  const out = {};
+  for (const e of art.entities) {
+    if (!/^Art(Prop|Set|Cl)\d/.test(e.name) || /Top$/.test(e.name)) continue;
+    const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"], tr = (e.overrides || {})["MOD.Core.TransformComponent"];
+    const name = sr && byRuid[sr.SpriteRUID];
+    if (!name || /-top$/.test(name) || table[name + "-top"]) continue;
+    const role = roleOf(name);
+    if (!["feature", "structure"].includes(role) || ["floor", "portal", "overlay"].includes(classOfSafe(name))) continue;
+    const sc = tr && tr.Scale ? Number(tr.Scale.y) : 1, cells = (Number(table[name].h) * sc) / 100;
+    if (!(cells >= TALL_MIN_CELLS)) continue;
+    const o = out[name] || (out[name] = { role, n: 0, maxCells: 0, w: Number(table[name].w), h: Number(table[name].h) });
+    o.n++;
+    o.maxCells = Math.max(o.maxCells, Math.round(cells * 100) / 100);
+  }
+  return out;
+}
+
 function layoutOf(id, env) {
   const { hm, maps, mapRows, ctx, quiet, num } = env;
   const d = mapRows.find((m) => m.id === id);
@@ -471,6 +496,7 @@ function layoutOf(id, env) {
     blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
+    tallNoTop: tallNoTop(art, ctx),
   };
 }
 function fileEntities(id) {
@@ -524,7 +550,7 @@ function main() {
     const L = layoutOf(id, env);
     const r = analyze(L);
     entities[id] = L.entities;
-    report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail };
+    report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail, tallNoTop: L.tallNoTop };
   }
   // 기존 검사기 (그 맵들만 · 한 번에)
   const policyIds = ids.filter((id) => require("./build/handmade/decor.cjs").modeOf(id));
@@ -551,7 +577,16 @@ function main() {
     console.log(`  ${id}${rp.v5 ? " [v5]" : " [v4 참고]"}: 위반 ${sum}${bad.length ? " — " + bad.join(" · ") : ""} · 엔티티 ${rp.entities} · 띠 ${rp.detail.bandCells}칸(최대 폭 ${rp.detail.maxWidth}) · 공간 ${rp.detail.spaces} · 특징 ${rp.detail.features}`);
     if (args.includes("--verbose") || (rp.v5 && sum)) for (const [k, v] of Object.entries(rp.detail)) if (Array.isArray(v) ? v.length : false) console.log(`      ${k}: ${v.slice(0, 12).join(" · ")}${v.length > 12 ? " …" : ""}`);
   }
-  if (opt("--json")) fs.writeFileSync(opt("--json"), JSON.stringify({ budget: { total, limit: BUDGET }, maps: report }, null, 1));
+  // 경고: 키 큰 특징·구조인데 -top 그림 없음 (그림 종류별 · 맵마다 개수)
+  const tall = {};
+  for (const id of ids) for (const [n, o] of Object.entries(report[id].tallNoTop || {})) {
+    const t = tall[n] || (tall[n] = { role: o.role, w: o.w, h: o.h, maxCells: 0, n: 0, maps: [] });
+    t.n += o.n; t.maxCells = Math.max(t.maxCells, o.maxCells); t.maps.push(`${id}×${o.n}`);
+  }
+  const tallNames = Object.keys(tall).sort((a, b) => tall[b].maxCells - tall[a].maxCells || a.localeCompare(b));
+  console.log(`  (경고 · 위반 아님) 키 큰 특징·구조(높이 ≥${TALL_MIN_CELLS}칸)인데 -top 그림 없음: ${tallNames.length}종 ${tallNames.reduce((a, n) => a + tall[n].n, 0)}개`);
+  for (const n of tallNames) { const t = tall[n]; console.log(`      ${n} (${t.role} · ${t.w}×${t.h}px · 최대 ${t.maxCells}칸 · ${t.n}개) — ${t.maps.join(" · ")}`); }
+  if (opt("--json")) fs.writeFileSync(opt("--json"), JSON.stringify({ budget: { total, limit: BUDGET }, tallNoTop: tall, maps: report }, null, 1));
   const v5n = ids.filter((id) => report[id].v5).length;
   console.log(`[check_map_composition] 맵 ${ids.length}장 (v5 ${v5n}) · 엔티티 합 ${total}/${BUDGET} · v5 위반 ${fail}건`);
   process.exit(fail ? 1 : 0);
