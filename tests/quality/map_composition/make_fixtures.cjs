@@ -61,6 +61,7 @@ save("25-niche", base(), cleanPieces(), { wallNiche: 1 }, { note: "벽에 붙인
   save("26-uloop", base(), cleanPieces().concat([{ s: "bookshelf", x: wx(15), y: wy(3), cells: A }, { s: "bookshelf", x: -1.5, y: wy(3), cells: B }]), { behindWall: 1 }, { note: "모서리 그림 둘레 ㄷ자 고리 — 뒤 3칸 · 옆벽 사이 3칸 (막다른지와 무관)", json: { blocked: A.concat(B) } });
 }
 save("27-deadline", base(), cleanPieces(), { deadLine: 1 }, { note: "장식이 동쪽 벽 곁에 만든 폭 1칸 막다른 줄 5칸", json: { blocked: [10, 11, 12, 13, 14].map((r) => `37,${r}`) } });
+save("28-toplayer", base(), cleanPieces(), { topLayer: 1 }, { note: "윗부분 그림 둘 중 하나가 없는 맵 층 MapLayer1 · 순서 1 (아바타 Default 4 아래) — 다른 하나 Default 5는 정상", json: { tops: [{ name: "ArtProp1Top", layer: "MapLayer1", order: 1 }, { name: "ArtProp2Top", layer: "Default", order: 5 }] } });
 save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이음새 조각 3개 (ArtBand·ArtCorner)", json: { seams: 3 } });
 { // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
   const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";

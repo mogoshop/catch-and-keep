@@ -32,11 +32,13 @@
 //   branchExtra  가지 간 추가 연결: 띠에 닿지 않는 공간(가지)들과 「골격」 묶음 사이 연결 입구(접한 칸 덩어리)로 만든 그래프의 순환 수가
 //                가지 수의 50%를 넘는 만큼
 //   waypoint     웨이포인트(표식 S)가 띠에서 1칸(8방향) 넘게 떨어짐
+//   topLayer     (10-31 윗부분 층) 윗부분 그림 엔티티(Art…Top)의 SortingLayer ≠ Default 이거나 OrderInLayer < 5 — 아바타(Default · 순서 4)보다 위여야 뒤에 선 플레이어를 가린다
+//                (맵 층은 Layer1 하나뿐이라 MapLayer1은 없는 층 → 아바타 아래에 그려졌다 · 메이커 7차 probe1~3 · 생성기 lib.cjs TOP_LAYER·TOP_ORDER)
 //   decorCollision 기존 검사기 tools/check_decor_collision.cjs 문제 수 (그 맵만)
 //   budget       엔티티 예산: 설계도 맵 노말 66장 합 ≤ 47900 (검사한 맵은 메모리 계산, 나머지는 map/<id>.map)
 // 경고 (위반 아님 · 종료 코드에 넣지 않음):
 //   tallNoTop    키 큰 특징·구조(역할 feature·structure · 화면 높이 ≥2칸 · 바닥 분류·포털·겹친 빛 제외)인데 윗부분 그림 <그림>-top이 art_sprites.csv에 없음
-//                — 앞층(MapLayer1)이 없어 플레이어가 뒤에 서도 그림 앞에 그려진다. 그림 종류별 목록 = 코덱스 윗부분 2차 요청 목록 (--all --legacy면 v4 맵까지)
+//                — 윗부분 앞층(Default · 순서 5)이 없어 플레이어가 뒤에 서도 그림 앞에 그려진다. 그림 종류별 목록 = 코덱스 윗부분 2차 요청 목록 (--all --legacy면 v4 맵까지)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -45,16 +47,18 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
+const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "topLayer", "decorCollision", "budget"];
 const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 따라 줄·벽 정면 그림 뒤에 걷는 칸", wallNiche: "벽 밀착 줄 곁 막다른 벽감", deadLine: "폭 1칸 막다른 줄", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
-  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
+  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", topLayer: "윗부분 그림 층 ≠ Default·순서 ≥5", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const K = (c, r) => `${c},${r}`;
 const unK = (k) => k.split(",").map(Number);
 const PILLAR = (s) => roles.isPillar(s);
+const TOP_LAYER_OK = "Default", TOP_ORDER_MIN = 5;   // 윗부분 그림 층 (아바타 Default · 순서 4보다 위)
+const topBad = (t) => t.layer !== TOP_LAYER_OK || !(Number(t.order) >= TOP_ORDER_MIN);
 const roleOf = (s) => roles.roleOf(s);
 const classOfSafe = (s) => { try { return require("./build/handmade/decor.cjs").classOf(s).class; } catch (e) { return ""; } };
 
@@ -411,6 +415,7 @@ function analyze(L) {
     guide: L.guide || 0, seamAlpha: L.seams || 0, bandWidth: bm.widthBlobs.length, bandBreak: bm.breaks, bandLoop: bm.holes.length, bandDeadEnd: bm.deadParts.length,
     bandEdgeEmpty: bm.emptySpots.length, straightEdge: runs.length, scattered: pm.scattered, featureSpace: pm.featureSpaces.length,
     pillarSingle: pm.singles.length, landmarkBlock: pm.dense.length, branchExtra: br.extra, waypoint: wpOff,
+    topLayer: (L.tops || []).filter(topBad).length,
   };
   if (keep) Object.assign(counts, { bandWidth: 0, bandDeadEnd: 0, bandEdgeEmpty: 0, straightEdge: 0 });
   // 충돌 (10-31 표본 4차): 서 있는 feature·structure인데 통과 · 장식이 막아 골격(띠) 칸 너비가 2칸 밑으로 · 입구에서 못 닿는 공간
@@ -492,6 +497,7 @@ function analyze(L) {
     scatteredKinds: pm.scatteredKinds.map(([s, n]) => `${s}×${n}`), featureSpaces: pm.featureSpaces, pillarSingles: pm.singles.map((p) => `${p.s}@${p.x},${p.y}`),
     dense: pm.dense.map(([k, n]) => `${k}×${n}`), spaces: pm.zones.length, features: pm.feats,
     featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), behind, niches: niches.map((p) => `${w2(p[0])}~${p.length}칸`), deadLines: deadLn.map((p) => `${w2(p[0])}~${p.length}칸`), narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
+    topLayer: (L.tops || []).filter(topBad).map((t) => `${t.name} ${t.layer}/${t.order}`), tops: (L.tops || []).length,
     skeleton: br.skeleton, branches: br.branches, branchEdges: br.edges, branchCycles: br.cycles, branchAllowed: br.allowed,
   };
   return { counts, detail };
@@ -538,6 +544,7 @@ function layoutOf(id, env) {
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
     tallNoTop: tallNoTop(art, ctx),
+    tops: art.entities.filter((e) => /^Art/.test(e.name) && /Top$/.test(e.name)).map((e) => { const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"] || {}; return { name: e.name, layer: sr.SortingLayer, order: sr.OrderInLayer }; }),
   };
 }
 function fileEntities(id) {
