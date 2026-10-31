@@ -42,6 +42,9 @@
 // 경고 (위반 아님 · 종료 코드에 넣지 않음):
 //   tallNoTop    키 큰 특징·구조(역할 feature·structure · 화면 높이 ≥2칸 · 바닥 분류·포털·겹친 빛 제외)인데 윗부분 그림 <그림>-top이 art_sprites.csv에 없음
 //                — 윗부분 앞층(Default · 순서 5)이 없어 플레이어가 뒤에 서도 그림 앞에 그려진다. 그림 종류별 목록 = 코덱스 윗부분 2차 요청 목록 (--all --legacy면 v4 맵까지)
+//   topSkipped   (경고 · 위반 아님 · 10-31 윗부분 2차) -top 그림은 있는데 자르는 선(실제 값 − 피벗)이 발 칸 열 막힘 꼭대기보다 위라(또는 막힌 칸이 없어) 생성기가 놓지 않은 장식
+//                — 뒤에 붙어 서면 발이 자르는 선 아래로 나와 발 조각이 생기므로 놓지 않는다. 고치려면 막힘 한 줄 더(args foot) 또는 자르는 선을 내린 그림 (코덱스 3차 후보)
+//                + 앞 머리: 앞(남쪽)에 붙어 선 플레이어 머리(발 칸 아래 경계 + 0.75칸)가 자르는 선보다 위라 앞층이 머리를 덮는 자리 (고치려면 자르는 선을 올린 그림)
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -548,7 +551,7 @@ function layoutOf(id, env) {
     blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
-    tallNoTop: tallNoTop(art, ctx),
+    tallNoTop: tallNoTop(art, ctx), topSkipped: art.topSkipped || [],
     tops: art.entities.filter((e) => /^Art/.test(e.name) && /Top$/.test(e.name)).map((e) => { const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"] || {}; return { name: e.name, layer: sr.SortingLayer, order: sr.OrderInLayer }; }),
   };
 }
@@ -616,7 +619,7 @@ function main() {
     const L = layoutOf(id, env);
     const r = analyze(L);
     entities[id] = L.entities;
-    report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail, tallNoTop: L.tallNoTop };
+    report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail, tallNoTop: L.tallNoTop, topSkipped: L.topSkipped };
     if (opt("--keep-ref") && L.v5keep) {   // keep 맵 걷는 칸·문 길 = 기준 설계도 (git)
       const cur = keepFloorOf(fs.readFileSync(path.join(hm.HM_DIR, id + ".txt"), "utf8"));
       let refText = null;
@@ -663,7 +666,13 @@ function main() {
   const tallNames = Object.keys(tall).sort((a, b) => tall[b].maxCells - tall[a].maxCells || a.localeCompare(b));
   console.log(`  (경고 · 위반 아님) 키 큰 특징·구조(높이 ≥${TALL_MIN_CELLS}칸)인데 -top 그림 없음: ${tallNames.length}종 ${tallNames.reduce((a, n) => a + tall[n].n, 0)}개`);
   for (const n of tallNames) { const t = tall[n]; console.log(`      ${n} (${t.role} · ${t.w}×${t.h}px · 최대 ${t.maxCells}칸 · ${t.n}개) — ${t.maps.join(" · ")}`); }
-  if (opt("--json")) fs.writeFileSync(opt("--json"), JSON.stringify({ budget: { total, limit: BUDGET }, tallNoTop: tall, maps: report }, null, 1));
+  // 경고: -top은 있는데 자르는 선 규칙으로 안 놓은 장식 (그림 종류별)
+  const skip = {};
+  for (const id of ids) for (const t of report[id].topSkipped || []) { const o = skip[t.sprite] || (skip[t.sprite] = { n: 0, foot: 0, front: 0, at: {}, worst: 0, frontWorst: 0 }); o.n++; o[t.reason]++; o.at[id] = (o.at[id] || 0) + 1; if (t.reason === "front") o.frontWorst = Math.max(o.frontWorst, Math.round((t.head - t.cutY) * 1000) / 1000); else o.worst = Math.max(o.worst, t.blockTop === null ? Infinity : Math.round((t.cutY - t.blockTop) * 1000) / 1000); }
+  const skipNames = Object.keys(skip).sort();
+  console.log(`  (경고 · 위반 아님) -top 그림은 있으나 안 놓은 장식(발 조각 = 자르는 선이 막힘 꼭대기보다 위 · 앞 머리 = 앞에 선 머리가 자르는 선보다 위): ${skipNames.length}종 ${skipNames.reduce((a, n) => a + skip[n].n, 0)}개`);
+  for (const n of skipNames) { const o = skip[n], why = []; if (o.foot) why.push(`발 조각 ${o.foot} · 자르는 선 − 막힘 꼭대기 최대 ${o.worst === Infinity ? "막힘 없음" : "+" + o.worst + "칸"}`); if (o.front) why.push(`앞 머리 ${o.front} · 머리 − 자르는 선 최대 +${o.frontWorst}칸`); console.log(`      ${n} (${why.join(" / ")}) — ${Object.entries(o.at).map(([m, c]) => `${m}×${c}`).join(" · ")}`); }
+  if (opt("--json")) fs.writeFileSync(opt("--json"), JSON.stringify({ budget: { total, limit: BUDGET }, tallNoTop: tall, topSkipped: skip, maps: report }, null, 1));
   const v5n = ids.filter((id) => report[id].v5).length;
   console.log(`[check_map_composition] 맵 ${ids.length}장 (v5 ${v5n}) · 엔티티 합 ${total}/${BUDGET} · v5 위반 ${fail}건`);
   process.exit(fail ? 1 : 0);
