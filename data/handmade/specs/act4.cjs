@@ -723,7 +723,8 @@ Object.assign(module.exports.sulfurmarsh, {
     dress: {
       a: { feature: "prop:a4-dead-tree", sets: ["a4_lava_cairn"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },
       b: { feature: "set:a4_lava_mound", props: ["a4-adjunct-lava-rubble", "a4-small-lava-fount"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent", "a4-decal-molten-metal-streak"], dn: 3 },
-      c: { feature: "set:a4_lm_sulfur_geyser", pair: { name: "a4-chain-pillar", around: "feature" }, decals: ["a4-decal-scorched-ring"], dn: 2 },
+      c: { feature: "set:a4_lm_sulfur_geyser", featureDrop: ["a4-soul-crystal"], pair: { name: "a4-chain-pillar", around: "feature" },   // 5차: 사슬 기둥 쌍 자리를 위해 세트의 혼 수정은 뺀다
+          decals: ["a4-decal-scorched-ring"], dn: 2 },
       d: { feature: "prop:a4-landmark-great-smelter", row: { name: "a4-ruined-wall-low", step: 2.7 }, props: ["a4-forge-anvil", "a4-adjunct-burning-cart"], decals: ["a4-decal-molten-metal-streak", "a4-decal-cracked-obsidian"], dn: 2 },
       e: { feature: "set:a4_fallen_giant", props: ["a4-adjunct-demon-skull-spear", "a4-helm-pile"], decals: ["a4-decal-ash-pile"], dn: 2 },
       f: { feature: "prop:a4-landmark-ember-bat-dead-tree", row: { name: "a4-lava-wall-ruin" }, props: ["a4-bone-heap", "a4-adjunct-chained-skull"], floorProps: ["a4-sulfur-pool"], decals: ["a4-decal-sulfur-steam-vent"], dn: 2 },

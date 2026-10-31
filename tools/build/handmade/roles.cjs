@@ -40,6 +40,8 @@ const rowOf = (name) => table()[name] || null;
 function roleOf(name) { const r = rowOf(name); return r ? r.role : isDecal(name) ? "floor" : "prop"; }
 function isPillar(name) { const r = rowOf(name); return !!r && r.role === "structure" && PILLAR_WORDS.some((w) => r.notes.includes(w)); }
 // facing (10-31 표본 4차): north = 정면 그림(책장·제단·문·우리·관·탁자 …) → 위(북)벽 전용 · side = 옆 벽용(-v 그림) · any = 방향 없음(기둥·석상·화로)
+// 그림의 보이는 높이 칸(불투명 · 배율 1 기준 — decor_collision.csv heightCells)
+function heightOf(name) { const h = heights()[name]; return h ? Number(h.heightCells) || 0 : 0; }
 function facingOf(name) { const r = rowOf(name); return (r && r.facing) || "any"; }
 // 충돌 발 부분 비율: 서 있는 특징은 그림 높이의 아래 1/2, 반복 구조는 1/3 (윗부분은 걸어서 지나간다) · 소품·바닥은 발밑 한 줄
 function footFrac(name) { const r = rowOf(name), role = roleOf(name); if (isDecal(name) || !r) return 0; return role === "feature" ? 0.5 : role === "structure" ? 1 / 3 : 0; }
@@ -52,4 +54,4 @@ function multOf(name) {
   if (!(r.base > 0) || !(cur > 0)) return 1;
   return Math.round(Math.min(MULT_RANGE[1], Math.max(MULT_RANGE[0], r.base / cur)) * 1000) / 1000;
 }
-module.exports = { table, rowOf, roleOf, isPillar, repeatOf, multOf, facingOf, footFrac, PILLAR_WORDS, FILE };
+module.exports = { table, rowOf, roleOf, isPillar, repeatOf, multOf, facingOf, footFrac, heightOf, PILLAR_WORDS, FILE };

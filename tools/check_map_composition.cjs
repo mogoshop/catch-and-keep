@@ -7,6 +7,7 @@
 // 항목 (0건이어야 한다):
 //   guide        길 안내 도장(ArtGuide) 0 — 길은 바닥 구역 경계의 빈 띠(P1)
 //   featurePass  역할표 feature·structure(서 있는 것)인데 통과 (바닥 분류·포털 그림·겹친 빛 제외) — v5는 막음이 기본
+//   behindWall   벽 정면(facing north) 그림이 북벽 3칸 안인데 발밑과 벽 사이에 걷는 칸이 남음 (그림 가운데 ±0.3칸 열)
 //   passWidth    장식이 막아 골격(띠) 칸의 가로·세로 빈칸 수 최솟값이 2 밑으로 내려간 곳 (벽만으로는 2 이상이었는데)
 //   spaceReach   입구에서 막힌 칸을 피해 닿지 못하는 공간 수
 //   facing       역할표 facing: north(정면 그림)가 벽 2칸 안에 붙었는데 북쪽 벽(3칸 안)이 아님 · side는 동·서쪽 벽이 아님 (포털·입구 그림 제외)
@@ -38,8 +39,8 @@ const roles = require("./build/handmade/roles.cjs");
 
 const BUDGET = 47900;
 const MAX_RUN = 6, MAX_WIDTH = 2;
-const ITEMS = ["guide", "seamAlpha", "featurePass", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
-const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
+const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "decorCollision", "budget"];
+const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 정면 구조 뒤에 걷는 칸", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
   branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
@@ -402,7 +403,18 @@ function analyze(L) {
     const seen = bfs([bm.start], (n) => { const [c, r] = unK(n); return G.floor(c, r) && !blocked.has(n); }).dist;
     unreachSpaces = pm.zones.filter((z) => !pm.zcells.get(z).some((k) => seen.has(k)));
   }
-  Object.assign(counts, { featurePass: featPass.length, passWidth: narrowParts.length, spaceReach: unreachSpaces.length, facing: pm.facingBad.length, rowGap: pm.rowGap, rowFlip: pm.rowFlip });
+  // 벽 정면(facing north) 그림이 북벽 3칸 안에 붙었으면 발밑과 벽 사이 칸이 모두 막혀야 (뒤로 걸어 들어가 그림 위를 걷지 않게 — 10-31 표본 5차)
+  const behind = [];
+  for (const p of L.pieces) {
+    if (p.decal || roles.facingOf(p.s) !== "north" || ["portal", "overlay"].includes(classOfSafe(p.s))) continue;
+    const [c, r] = G.cellOf(p.x, p.y);
+    let wr = null; for (let k = 1; k <= 3; k++) if (!G.floor(c, r - k)) { wr = r - k; break; }
+    if (wr === null) continue;
+    let open = 0;
+    for (let cc = Math.floor(p.x - 0.3 + G.W / 2); cc <= Math.floor(p.x + 0.3 + G.W / 2); cc++) for (let rr = r - 1; rr > wr; rr--) if (G.floor(cc, rr) && !blocked.has(K(cc, rr))) open++;
+    if (open) behind.push(`${p.s}@${p.x},${p.y} 뒤 ${open}칸`);
+  }
+  Object.assign(counts, { featurePass: featPass.length, behindWall: behind.length, passWidth: narrowParts.length, spaceReach: unreachSpaces.length, facing: pm.facingBad.length, rowGap: pm.rowGap, rowFlip: pm.rowFlip });
   const w2 = (k) => { const [c, r] = unK(k); return `(${c - G.W / 2}, ${G.H / 2 - r})`; };   // 월드 칸 좌표로 적는다
   const detail = {
     bandCells: bm.band.size, maxWidth: bm.maxWidth, wide: bm.widthBlobs.map((b) => w2(b[0])), unreached: bm.unreached.map(w2), holes: bm.holes.map((h) => `${w2(h[0])}~${h.length}칸`),
@@ -410,7 +422,7 @@ function analyze(L) {
     runs: runs.map((r) => (r.tag === "d" ? `45° (${r.from - G.W / 2}, ${G.H / 2 - r.line})부터 ${r.len}칸` : `${r.tag} ${r.tag === "h" ? `y=${G.H / 2 - r.line}` : `x=${r.line - G.W / 2 + 1}`} ${r.len}칸`)),
     scatteredKinds: pm.scatteredKinds.map(([s, n]) => `${s}×${n}`), featureSpaces: pm.featureSpaces, pillarSingles: pm.singles.map((p) => `${p.s}@${p.x},${p.y}`),
     dense: pm.dense.map(([k, n]) => `${k}×${n}`), spaces: pm.zones.length, features: pm.feats,
-    featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
+    featurePass: featPass.map((p) => `${p.s}@${p.x},${p.y}`), behind, narrow: narrowParts.map((p) => w2(p[0])), unreachSpaces, facingBad: pm.facingBad, rowGaps: pm.rowGaps, rowFlips: pm.rowFlips,
     skeleton: br.skeleton, branches: br.branches, branchEdges: br.edges, branchCycles: br.cycles, branchAllowed: br.allowed,
   };
   return { counts, detail };

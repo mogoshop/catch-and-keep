@@ -54,7 +54,11 @@ function run(o) {
   const nw = (x, y) => { let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!floor(x + dx, y + dy)) n++; return n; };
   const cellOfF = (f) => [Math.floor(f.x), Math.floor(f.y)];
   // 발밑 칸 = 빌더와 같은 v5 규칙 (lib.cjs footprintRole — 특징은 그림 아래 1/2 · 반복 구조는 1/3까지 막음)
-  const fc = (name, x, y, mul) => { const hmLib = require("./lib.cjs"), sp = table[name]; if (!sp) throw new Error(`${id}: 그림 ${name}이 art_sprites·maple_sprites에 없음`); const sc = hmLib.baseScale(sp, ctx.propScale) * num(mul, 1) * roles.multOf(name); return hmLib.footprintRole(name, x, y, sp.w, sp.h, sc).map((k) => k.split(",").map(Number)); };
+  //   fopt: { frac (그 자리 막힘 비율), toWall (북벽까지 뒤 칸 막음) } — 빌더 배치표 args foot= · wall=1과 같다
+  const fc = (name, x, y, mul, fopt) => { const hmLib = require("./lib.cjs"), sp = table[name]; if (!sp) throw new Error(`${id}: 그림 ${name}이 art_sprites·maple_sprites에 없음`); const sc = hmLib.baseScale(sp, ctx.propScale) * num(mul, 1) * roles.multOf(name); return hmLib.footprintRole(name, x, y, sp.w, sp.h, sc, Object.assign({ isWall: (cx, cy) => !floor(cx, cy) }, fopt || {})).map((k) => k.split(",").map(Number)); };
+  // 벽 정면 그림을 북벽에 붙일 발 y: 그림 보이는 높이(불투명)의 윗면이 벽 밑선에 닿게
+  const hugY = (name, wallLineY, mul) => Math.round((wallLineY - roles.heightOf(name) * roles.multOf(name) * num(mul, 1)) * 100) / 100;
+  const northWall = (x, y) => { const cx = Math.floor(x), cy = Math.floor(y); for (let k = 1; k <= 3; k++) if (!floor(cx, cy + k)) return cy + k; return null; };
   const setPieces = (name) => { const ps = ctx.sets[name]; if (!ps) throw new Error(`${id}: 세트 ${name}이 map_sets.csv에 없음`); return ps; };
   const setCells = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:")).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
   const blockOf = (name) => { if (/decal/.test(name)) return false; const c = decor.classOf(name); return c.collide === "block" || (["feature", "structure"].includes(roles.roleOf(name)) && !["floor", "portal", "overlay"].includes(c.class)); };   // 빌더 v5 막음 규칙과 같다
@@ -393,6 +397,16 @@ function run(o) {
     let total = 0; for (const [x, y] of floorCells) if (!nb.has(K(x, y))) total++;
     return seen.size === total;
   };
+  // 막으면 골격 칸의 가로·세로 빈칸 수 최솟값이 2 밑으로 내려가는가 (벽만으로는 2 이상이었는데) — 검사기 passWidth와 같은 정의
+  const narrows = (cells) => {
+    const add = new Set(cells.map(([a2, b2]) => K(a2, b2)));
+    if (!add.size) return false;
+    const xs = cells.map((c2) => c2[0]), ys = cells.map((c2) => c2[1]), bx0 = Math.min(...xs) - 4, bx1 = Math.max(...xs) + 4, by0 = Math.min(...ys) - 4, by1 = Math.max(...ys) + 4;
+    const fr = (x, y, w) => floor(x, y) && (w || (!blocked.has(K(x, y)) && !add.has(K(x, y))));
+    const run = (x, y, dx, dy, w) => { if (!fr(x, y, w)) return 0; let n = 1; for (let k = 1; k < 9 && fr(x + dx * k, y + dy * k, w); k++) n++; for (let k = 1; k < 9 && fr(x - dx * k, y - dy * k, w); k++) n++; return n; };
+    for (const k of core) { const [x, y] = unK(k); if (x < bx0 || x > bx1 || y < by0 || y > by1) continue; if (Math.min(run(x, y, 1, 0, true), run(x, y, 0, 1, true)) >= 2 && Math.min(run(x, y, 1, 0, false), run(x, y, 0, 1, false)) < 2) return true; }
+    return false;
+  };
   const doBlock = (cells) => { for (const [a, b] of cells) if (floor(a, b)) blocked.add(K(a, b)); };
   const blockCellsSet = (name, x, y, m, sc) => setPieces(name).filter((pc) => !pc.piece.startsWith("d:") && (pc.collide === "block" || blockOf(pc.piece))).flatMap((pc) => fc(pc.piece, x + num(pc.dx) * m, y + num(pc.dy), num(pc.scale, 1) * num(sc, 1)));
   const blockCellsProp = (name, x, y) => (blockOf(name) ? fc(name, x, y, 1) : []);
@@ -506,8 +520,8 @@ function run(o) {
     const first = !firstOfZone.has(z); firstOfZone.add(z);
     const plan = { feature: null, colonnade: null, row: null, ring: null, pair: null, sets: [], props: [], floorProps: [], decals: d.decals || [], dn: d.dn || 0 };
     if (o) {
-      Object.assign(plan, { sets: o.sets || [], props: o.props || [], decals: o.decals || plan.decals, dn: o.dn ?? plan.dn });
-      if (first && o.feature) { const [kind, name] = o.feature.split(":"); plan.feature = { kind, name, at: o.featureAt, flip: o.featureFlip, scale: o.featureScale }; }
+      Object.assign(plan, { sets: o.sets || [], props: o.props || [], decals: o.decals || plan.decals, dn: o.dn ?? plan.dn, clusters: o.clusters });
+      if (first && o.feature) { const [kind, name] = o.feature.split(":"); plan.feature = { kind, name, at: o.featureAt, flip: o.featureFlip, scale: o.featureScale, drop: o.featureDrop || [] }; }
       for (const k of ["colonnade", "row", "ring", "pair"]) if (o[k]) plan[k] = typeof o[k] === "string" ? { name: o[k] } : o[k];
       plan.floorProps = o.floorProps || [];
       return plan;
@@ -556,21 +570,23 @@ function run(o) {
     }
     return { out, dropped };
   };
-  const gCells = (grp, x, y, m) => grp.filter((p) => !p.decal).flatMap((p) => fc(p.name, x + p.dx * m, y + p.dy, p.sc));
-  const gBlock = (grp, x, y, m) => grp.filter((p) => !p.decal && p.collide === "block").flatMap((p) => fc(p.name, x + p.dx * m, y + p.dy, p.sc));
+  const pOpt = (p) => ({ frac: p.frac, toWall: p.toWall });
+  const gCells = (grp, x, y, m) => grp.filter((p) => !p.decal).flatMap((p) => fc(p.name, x + p.dx * m, y + p.dy, p.sc, pOpt(p)));
+  const gBlock = (grp, x, y, m) => grp.filter((p) => !p.decal && p.collide === "block").flatMap((p) => fc(p.name, x + p.dx * m, y + p.dy, p.sc, pOpt(p)));
+  const pArgs = (p) => [p.frac ? `foot=${p.frac}` : "", p.toWall ? "wall=1" : ""].filter(Boolean).join(";");
   const gVisual = (grp, x, y, m) => grp.every((p) => visualClear(p.name, x + p.dx * m, y + p.dy, p.sc));
   const gFeat = (grp, x, y, m) => grp.filter((p) => !p.decal && roles.roleOf(p.name) === "feature").map((p) => [x + p.dx * m, y + p.dy]);
   const gCommit = (kind, name, grp, whole, x, y, m, note) => {
     occupy(gCells(grp, x, y, m), x, y); doBlock(gBlock(grp, x, y, m));
     for (const p of grp) if (!p.decal) { bump(p.name); addVbox(p.name, x + p.dx * m, y + p.dy, p.sc); }
-    if (whole) { pushRow(kind, name, x, y, { flip: m < 0, note }); return; }
-    for (const p of grp) pushRow(p.decal ? "decal" : "prop", p.name, x + p.dx * m, y + p.dy, { scale: p.sc !== 1 ? p.sc : "", flip: p.flip !== (m < 0), note: `${note} · ${name} 조각` });
+    if (whole) { const fp = grp.find((p) => !p.decal && (p.frac || p.toWall)); pushRow(kind, name, x, y, { flip: m < 0, note, args: fp ? pArgs(fp) : "" }); return; }
+    for (const p of grp) pushRow(p.decal ? "decal" : "prop", p.name, x + p.dx * m, y + p.dy, { scale: p.sc !== 1 ? p.sc : "", flip: p.flip !== (m < 0), note: `${note} · ${name} 조각`, args: p.decal ? "" : pArgs(p) });
   };
   // 특징은 벽 따라 열 다음에 놓는다 (작은 방에서 특징이 벽면을 먼저 차지해 열이 들어가지 못했다)
   function placeFeatures() { for (const s of S) {
     const f = s.plan.feature;
     if (!f || s.hasFeature) continue;
-    const { out: grp, dropped } = trimGroup(groupOf(f.kind, f.name));
+    const trimmed = trimGroup(groupOf(f.kind, f.name)), grp = trimmed.out.filter((p) => !(f.drop || []).includes(p.name)), dropped = trimmed.dropped.concat((f.drop || []).filter((n) => trimmed.out.some((p) => p.name === n)).map((n) => `${n}(설계서)`));   // featureDrop: 설계서가 뺀 세트 조각
     if (f.scale) for (const p of grp) p.sc *= f.scale;   // 설계서 featureScale: 역할 기준 크기에 곱 (성소 제단 3칸 → 4칸)
     if (dropped.length) s.notes.push(`특징 ${f.name}에서 뺀 조각: ${dropped.join(", ")}`);
     let T = s.c;
@@ -580,19 +596,30 @@ function run(o) {
     const pool = s.cells.map(([x, y]) => [x + 0.5, y + 0.3]);
     if (f.at) { T = f.at; pool.unshift([f.at[0], f.at[1]]); }
     pool.sort((a, b) => (f.at && a[0] === f.at[0] && a[1] === f.at[1] ? -1 : 0) || Math.hypot(a[0] - T[0], a[1] - T[1]) - Math.hypot(b[0] - T[0], b[1] - T[1]));
+    // 5차: 벽 정면(facing north) 한 장 특징은 북벽이 3칸 안이면 벽에 붙이고(윗면 = 벽 밑선) 뒤 칸을 벽까지 막는다 ·
+    //   열린 바닥 특징은 막힘 높이 2/3 (골격 너비가 2칸 밑으로 좁아지면 1/2)
+    const hugOne = grp.filter((p) => !p.decal).length === 1 && roles.facingOf(grp.find((p) => !p.decal).name) === "north";
     let best = null;
-    for (const [sx, sy] of pool) {
+    for (const [sx0, sy0] of pool) {
+      let sy = sy0;
+      const sx = sx0;
+      const nwl = hugOne ? northWall(sx, sy0) : null;
+      for (const p of grp) { p.toWall = false; p.frac = undefined; }
+      if (nwl !== null) { const p = grp.find((q) => !q.decal); sy = hugY(p.name, nwl, p.sc) - p.dy; p.toWall = true; }
+      else for (const p of grp) if (!p.decal && roles.roleOf(p.name) === "feature") p.frac = 0.67;
       for (const m of f.flip ? [-1, 1] : [1, -1]) {
+        if (grp.some((p) => p.frac) && narrows(gBlock(grp, sx, sy, m))) for (const p of grp) if (p.frac) p.frac = 0.5;
         // featureAt(설계서가 자리를 정함)은 기능 자리 둘레 비움과 겹쳐도 된다 (보스 바로 뒤 제단) — 띠·띠 곁·놓인 것·표식만 피한다
         const fcells = gCells(grp, sx, sy, m), atOk = f.at && fcells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !margin.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy); });
         if (!(atOk || free(fcells)) || (!f.at && nearFunc(sx, sy, 3.5, 4.2)) || !gVisual(grp, sx, sy, m) || !grp.every((p) => p.decal || facingOk(p.name, sx + p.dx * m, sy + p.dy))) continue;   // 특징은 포털·입구 그림 앞을 가리지 않게 위아래로 더 비운다
         const fp = gFeat(grp, sx, sy, m);
         if (fp.some(([a, b]) => featBlocks.has(blockKey(a, b)))) continue;
         if (!canBlock(gBlock(grp, sx, sy, m))) continue;
-        best = { sx, sy, m, fp }; break;
+        best = { sx, sy, m, fp, opts: grp.map((p) => [p.frac, p.toWall]) }; break;
       }
       if (best) break;
     }
+    if (best) grp.forEach((p, i) => { [p.frac, p.toWall] = best.opts[i]; });
     if (!best) { warn.push(`특징 ${f.name}: ${s.p.name}에 자리 없음`); continue; }
     gCommit(f.kind, f.name, grp, !dropped.length && !f.scale, best.sx, best.sy, best.m, `${s.p.name} · v5 특징`);
     for (const [a, b] of best.fp) featBlocks.add(blockKey(a, b));
@@ -600,11 +627,11 @@ function run(o) {
   } }
   // 반복 구조
   const commit = (s, name, spots, tag) => {
-    const bc = spots.flatMap((sp) => blockCellsProp(name, sp.q[0], sp.q[1]));
+    const bc = blockOf(name) ? spots.flatMap((sp) => sp.cells) : [];   // 자리마다 계산한 발밑 칸 그대로 (벽 정면 열은 벽까지)
     if (!canBlock(bc)) { s.notes.push(`${tag} ${name}: 바닥을 가둬 뺌`); return; }
     doBlock(bc);
     for (const sp of spots) addVbox(name, sp.q[0], sp.q[1], 1);
-    for (const sp of spots) { occupy(sp.cells, sp.q[0], sp.q[1]); bump(name); pushRow("prop", name, sp.q[0], sp.q[1], { flip: sp.flip, note: `${s.p.name} · v5 ${tag}` }); } s.notes.push(`${tag} ${name}×${spots.length}`); };
+    for (const sp of spots) { occupy(sp.cells, sp.q[0], sp.q[1]); bump(name); pushRow("prop", name, sp.q[0], sp.q[1], { flip: sp.flip, note: `${s.p.name} · v5 ${tag}`, args: sp.args || "" }); } s.notes.push(`${tag} ${name}×${spots.length}`); };
   // 공간 안 곧은 띠 구간 (열주 축) — P = 띠가 들어오는 쪽, Q = 먼 쪽
   function stretchOf(s, C) {
     const runs = [];
@@ -682,8 +709,11 @@ function run(o) {
         // 담 윗면 맵(;raised)은 북·동·서 가장자리 칸이 절벽 윗단 테두리로 그려져 한 칸 더 안쪽 (남쪽은 낮은 칸에 앞면 띠라 그대로)
         const ins = spec.raised ? 1 : 0;
         const q = best.dy ? [r2(t + 0.5), r2(best.dy > 0 ? best.ln - 0.4 - ins : best.ln + 0.3)] : [r2(best.ln + (best.dx > 0 ? 0.4 - ins : 0.6 + ins)), r2(t + 0.4)];
-        const cells = fc(C.name, q[0], q[1], 1);
-        if (free(cells) && (C.contiguous || tentOk(cells, tent)) && !nearFunc(q[0], q[1])) { tadd(cells); runCur.push({ q, cells, flip: false }); } else flush();
+        // 5차: 벽 정면(facing north) 열은 북벽에 붙인다 — 그림 윗면 = 벽 밑선 · 발밑부터 벽까지 막음 (뒤 칸 0)
+        const hug = best.dy > 0 && facing === "north";
+        if (hug) q[1] = hugY(C.name, best.ln + 1, 1);
+        const cells = fc(C.name, q[0], q[1], 1, hug ? { toWall: true } : null);
+        if (free(cells) && (C.contiguous || tentOk(cells, tent)) && !nearFunc(q[0], q[1])) { tadd(cells); runCur.push({ q, cells, flip: false, args: hug ? "wall=1" : "" }); } else flush();
       }
       flush();
       if (spots.length < C.min) { why = `${spots.length}개뿐`; continue; }
@@ -723,11 +753,13 @@ function run(o) {
       if (!end) continue;
       const k = coreOrder.findIndex((c) => c[0] === end[0] && c[1] === end[1]), n2 = coreOrder[Math.max(0, Math.min(coreOrder.length - 1, k + 2 * dir))];
       const u0 = [n2[0] - end[0], n2[1] - end[1]], L = Math.hypot(...u0) || 1, u = [u0[0] / L, u0[1] / L], nrm = [-u[1], u[0]];
-      for (const along of [1.5, 0.5, 2.5, 3.5]) for (const off of [2.4, 2.9, 3.4]) {
+      for (const along of [1.5, 0.5, 2.5, 3.5, 4.5, 5.5]) for (const off of [2.4, 2.9, 3.4, 1.9]) {
         const p = [end[0] + 0.5 + u[0] * along, end[1] + 0.5 + u[1] * along];
         const both = [1, -1].map((sd) => { const q = [r2(p[0] + nrm[0] * off * sd), r2(p[1] + nrm[1] * off * sd)]; return { q, cells: fc(cfg.name, q[0], q[1], 1), flip: sd < 0 }; });
         const tent = new Set();
-        if (both.every((bq) => free(bq.cells) && tentOk(bq.cells, tent) && !nearFunc(bq.q[0], bq.q[1]) && (tentAdd(bq.cells, tent), true))) { commit(s, cfg.name, both, "문 양옆 쌍"); return; }
+        // 문 양옆은 띠 곁(비움 1칸)이어도 된다 — 띠 칸·표식·놓인 것·기능 자리 1.2칸만 피한다 (5차: 2줄 막힘으로 자리가 없어졌다)
+        const okDoor = (cells) => cells.every(([cx, cy]) => { const c = g.get(cx, cy); return c && !c.wall && !band.has(K(cx, cy)) && !core.has(K(cx, cy)) && !occ.has(K(cx, cy)) && !isMk(cx, cy) && !(keep && c.road); });
+        if (both.every((bq) => okDoor(bq.cells) && tentOk(bq.cells, tent) && !nearFunc(bq.q[0], bq.q[1], 1.2, 1.2) && (tentAdd(bq.cells, tent), true)) && !narrows(both.flatMap((bq) => bq.cells))) { commit(s, cfg.name, both, "문 양옆 쌍"); return; }
       }
     }
     s.notes.push(`쌍 ${cfg.name}: 자리 없음`);
@@ -788,7 +820,7 @@ function run(o) {
     }
     const sets = pl.sets.slice();
     let clusters = 0;
-    for (const A of anchors.slice(0, V.CLUSTERS_PER_SPACE)) {
+    for (const A of anchors.slice(0, pl.clusters ?? V.CLUSTERS_PER_SPACE)) {   // 설계서 clusters: 공간당 묶음 수 (기본 2)
       if (!sets.length && !pl.props.some((n) => counted(n) && (count.get(n) || 0) < V.SPRITE_MAX)) { if (!clusters && (pl.props.length || pl.sets.length)) s.notes.push("묶음 소품 모두 같은 그림 상한"); break; }
       let placed = 0;
       while (sets.length && !placed) {

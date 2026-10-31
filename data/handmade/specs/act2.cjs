@@ -556,7 +556,7 @@ Object.assign(module.exports.sanctum, {
     via: [[2, 1], [17, 1]],   // 홀 입구 → 제단 앞까지 곧은 축 (경유점 사이는 직선에 붙는다) → 남동 출구로 꺾는다
     dress: {
       a: { props: ["a2-broken-urns", "a2-adjunct-bandage-bundle"], decals: ["a2-decal-broken-tiles"], dn: 2 },
-      b: { feature: "prop:a2-landmark-temple-stair-censer", row: { name: "broken-column", step: 2.6 }, sets: ["a2_tomb_offering"], decals: ["a2-decal-broken-tiles"], dn: 2 },
+      b: { feature: "prop:a2-landmark-temple-stair-censer", row: { name: "broken-column", step: 2.6 }, props: ["a2-adjunct-sun-disc-plaque", "a2-adjunct-golden-mask-fragments", "a2-adjunct-bandage-bundle"], clusters: 1, decals: ["a2-decal-broken-tiles"], dn: 2 },   // 5차: 제물 세트 대신 그 작은 세 조각을 소품 묶음 하나로 (세트 향로 받침은 홀 남벽 향로 열과 같은 그림 상한·세트 자리 없음으로 빠졌었다)
       c: { feature: "prop:a2-landmark-burning-bookshelf-tower", featureAt: [-19.5, 12.3],   // 4차: 북벽 책장 줄 앞을 가리지 않게 서쪽 · 정면 그림이라 북벽 3칸 안   // 3차: 반 칸 내림 — 아래에 선 플레이어 체력 막대에 가리지 않게
            row: { name: "bookshelf", contiguous: true, step: 1.6, min: 2, minLine: 4 }   /* 4차: 정면 그림이라 북벽에만 빈틈 없이 (역할표 facing north) */, sets: ["a2_scribe_corner"], decals: ["a2-decal-dry-blood"], dn: 1 },
       d: { props: ["a2-buried-statue-head"], decals: ["a2-decal-incense-ash"], dn: 1 },

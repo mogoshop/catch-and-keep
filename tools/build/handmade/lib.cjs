@@ -248,11 +248,17 @@ function footprint(x, y, wPx, scale) {
 }
 
 // v5 발밑 칸: 그림 가로 60% × (발밑 한 줄 + 역할별 그림 높이의 아래 비율 — 특징 1/2 · 반복 구조 1/3) — 제단·간헐천 위로 올라서지 못하게 (10-31 표본 4차)
-function footprintRole(name, x, y, wPx, hPx, scale) {
-  const base = footprint(x, y, wPx, scale), frac = roles.footFrac(name);
-  if (!(frac > 0)) return base;
-  const rows = Math.max(1, Math.round(((num(hPx, 128) * scale) / 100) * frac)), out = [];
-  for (const k of base) { const [cx, cy] = k.split(",").map(Number); for (let r = 0; r < rows; r++) out.push(key(cx, cy + r)); }
+//   opts.frac: 그 자리만 비율을 바꾼다 (열린 바닥 랜드마크 2/3 — 배치표 args foot=) · 서 있는 특징·구조는 최소 2줄 (10-31 표본 5차)
+//   opts.isWall + toWall: 벽 정면(facing north) 그림을 벽에 붙였을 때 발밑부터 북쪽 벽까지 칸을 모두 막는다 (뒤 칸 0 — 배치표 args wall=1)
+function footprintRole(name, x, y, wPx, hPx, scale, opts = {}) {
+  const base = footprint(x, y, wPx, scale), frac = opts.frac > 0 ? opts.frac : roles.footFrac(name);
+  const rows = frac > 0 ? Math.max(2, Math.round(((num(hPx, 128) * scale) / 100) * frac)) : 1, out = [];
+  for (const k of base) {
+    const [cx, cy] = k.split(",").map(Number);
+    let r = 0;
+    for (; r < rows; r++) out.push(key(cx, cy + r));
+    if (opts.toWall && opts.isWall) for (let k2 = 0; k2 < 6 && !opts.isWall(cx, cy + r); k2++, r++) out.push(key(cx, cy + r));
+  }
   return out;
 }
 
@@ -883,7 +889,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // over: 배치표 args over=1 — 같은 자리 그림 위에 겹치는 층(코덱스 a4-abyss-wall-pulse 발광 층)을 그 그림 바로 앞에 (z는 0.001 단위라 발 y를 조금 내려서는 앞뒤가 안 갈린다)
   const droppedOnRoute = [];   // 10-31 C-3: 길 안에 걸려 뺀 막는 조각
   const pieces = [];   // 10-31 C: 놓은 장식마다 {이름, 그림, 발, 막음, 막은 칸, 흩뿌림} — 검사기·전후 표
-  const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over, collide, scatter) => {
+  const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over, collide, scatter, fopt) => {
     const sp = spriteOf(table, spName, where);
     const sc = baseScale(sp, ctx.propScale) * num(scaleMul, 1) * (v5 && !decal ? roles.multOf(spName) : 1);   // v5: 크기는 역할이 정한다 (asset_roles.csv base_cells)
     if (sp.kind !== "maple" && Math.max(num(sp.w, 0), num(sp.h, 0)) >= SIZE_MIN_PX && !(sp.name in ctx.propScale) && !SIZE_EXEMPT.has(sp.name)
@@ -901,7 +907,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       const blockIt = !decal && (standing || (collide || cls.collide) === "block");
       if (!bp.isFloor(cell[0], cell[1]) && !okHas("cliff")) warn.push(`${where}: '${spName}' (${x}, ${y})의 발이 벽 칸 ${cell} 위 — 절벽 위 장식이면 args ok=cliff, 아니면 좌표를 고친다`);
       const cells = [];
-      if (blockIt) for (const k of v5 ? footprintRole(spName, x, y, sp.w, sp.h, sc) : footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !funcCells.has(k)) cells.push([cx, cy]); }
+      if (blockIt) for (const k of v5 ? footprintRole(spName, x, y, sp.w, sp.h, sc, Object.assign({ isWall: bp.isWall }, fopt || {})) : footprint(x, y, sp.w, sc)) { const [cx, cy] = k.split(",").map(Number); if (bp.isFloor(cx, cy) && !funcCells.has(k)) cells.push([cx, cy]); }
       // 10-31 C-3: 길 안내 폭 3칸 안에 발이 걸리는 막는 조각은 놓지 않는다 (세트면 그 조각만 빠진다)
       if (blockIt && opts.route && cells.some(([cx, cy]) => decor.cellTooClose(opts.route, cx, cy))) { droppedOnRoute.push(`${name} ${spName}`); return; }
       for (const [cx, cy] of cells) blocked.add(key(cx, cy));
@@ -930,7 +936,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   let propN = 0, decalN = 0, setN = 0, clN = 0;
   for (const r of rows) {
     const x = num(r.x), y = num(r.y), where = `${d.id}.csv ${r.kind} ${r.name || ""} @${r.x}/${r.y}`;
-    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter); }
+    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1" }); }
     else if (r.kind === "decal") place(`ArtDecal${++decalN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, true, where);
     else if (r.kind === "set") {
       const pieces = ctx.sets[r.name];
@@ -941,7 +947,8 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
         const decal = pc.piece.startsWith("d:"), name = decal ? pc.piece.slice(2) : pc.piece;
         const px = x + num(pc.dx) * mirror, py = y + num(pc.dy);
         if (mode && !["block", "pass"].includes(pc.collide)) throw new Error(`map_sets.csv ${r.name} 조각 '${pc.piece}': collide 열(block/pass)이 비었음`);
-        place(`${tag}_${k + 1}`, name, r3(px), r3(py), num(pc.scale, 1) * num(r.scale, 1), (num(pc.flip) === 1) !== (mirror < 0), null, decal, `${where} 조각 ${k + 1} '${name}'`, setOk, false, mode ? pc.collide : null);
+        const sa = parseArgs(r.args), sf = num(sa.foot, 0) && roles.roleOf(name) === "feature" ? { frac: num(sa.foot, 0) } : null;   // args foot=: 세트의 특징 조각만 (v5 열린 바닥 랜드마크)
+        place(`${tag}_${k + 1}`, name, r3(px), r3(py), num(pc.scale, 1) * num(r.scale, 1), (num(pc.flip) === 1) !== (mirror < 0), null, decal, `${where} 조각 ${k + 1} '${name}'`, setOk, false, mode ? pc.collide : null, false, sf);
       });
     } else if (r.kind === "cluster") {
       const a = parseArgs(r.args), names = r.name.split("|"), radius = num(a.r, 3), n = num(a.n, 4);
