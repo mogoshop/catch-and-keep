@@ -128,7 +128,7 @@ script SkillEffects extends Component
     property number SacrificeFrameSec = 0.075   -- 그림자 희생(P31 · 8장) 장 간격 (코덱스 timing 75ms → 0.6초)
     property number SacrificeHoldSec = 0.1      -- 마지막 장 추가 유지
     property number SacrificeFadeSec = 0.15
-    property number SacrificeContentPx = 116    -- 희생 그림 보이는 지름(px · 가장 큰 장 03 116×113) = 판정 지름 2×1.8칸 (코덱스 renderer_scale_proposal 3.10)
+    property number SacrificeContentPx = 424    -- 희생 그림 보이는 지름(px · 알파>16 · 10장 중 가장 큰 장 03 424×418 · 448px 캔버스 · 10-31 통일 공정 5종 전체) = 판정 지름 2×1.8칸 → 배율 0.849 (옛 128px 판 116 · 배율 3.10)
     property integer SacrificeOrder = 1         -- 배우 뒤 바닥 (MapLayer0 1 · 코덱스 「foreground not accepted」)
     property number PrisonFrameSec = 0.1        -- 골격 감옥 묶임 장벽(P25 · 8장 반복) 장 간격 (코덱스 100ms)
     property number PrisonReleaseSec = 0.1      -- 풀림 2장 장 간격
@@ -144,10 +144,11 @@ script SkillEffects extends Component
     property number ArmorCastArtScale = 1.0     -- 뼈 갑옷 두름 4장 배율: 128px = 1.28칸 · 가장 큰 장 내용 109×104px ≈ 1.07칸 (유지 고리 캔버스 0.96칸보다 한 단 크게)
     property number ArmorArtDy = 0.45           -- 몸 가운데 = 발 + 0.45칸 (PlayerStats.ArmorRingDy와 같은 자리)
     property integer ArmorCastOrder = 5         -- 몸 앞 (예전 시전 입자와 같은 층)
-    property string CurseCircleFitPx = "amp=58.5;weaken=56.7;terror=62.2;thorn=57.7;lifetap=55.5;resist=58.7"   -- 원형 판의 보이는 반경(px · 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 4장 중 최대 · 10-31 실측) → 이 반경 = 저주 반경 (CurseSigilFitPx와 같은 계산)
+    property string CurseCircleFitPx = "amp=179.5;weaken=183.8;terror=186.1;thorn=180.5;lifetap=186.6;resist=201.7"   -- 원형 판의 보이는 반경(px · 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 10장 중 최대 · 10-31 통일 공정 5종 전체 384px 판 실측) → 이 반경 = 저주 반경 (CurseSigilFitPx와 같은 계산) · 옛 128px 판: amp=58.5;weaken=56.7;terror=62.2;thorn=57.7;lifetap=55.5;resist=58.7
     property integer CurseCircleOrder = 1       -- 원형 판 층: MapLayer0 1 = 바닥 층(몸 뒤 · MSW 기본 몬스터 2 · 아바타 3·4보다 아래) — 10-31 메이커 회차 B1 「판 조각이 몸 위로 보이는 장」 → 문장 층(CurseSigilOrder)에 묶지 않고 원형 판 전용 상수로 고정 · 피벗·크기는 그대로
     property number CurseCircleHoldSec = 0.3    -- 원형 판 마지막 장 추가 유지 (문장 CurseSigilHoldSec와 같은 값)
-    property number CurseCircleFadeSec = 0.3    -- 그 뒤 옅어짐
+    property number CurseCircleFadeSec = 0.3    -- 그 뒤 옅어짐 (10-31 통일 공정: 잦아듦 2장 뒤 마지막 장에)
+    property number CurseCircleLoopSec = 0.8    -- 10-31 통일 공정 원형 판 반복 시간 (반복 8장 × 100ms = 한 바퀴) → 잦아듦 2장 0.28초 → 옅어짐 0.3초 = 1.38초 (예전 4장 판 0.4 + 0.3 + 0.3 = 1.0초)
     property integer DashGhostCopies = 3        -- 망령 질주 잔상 복사본 수: 떠난 자리 → 도착 쪽 길 위 0 · 1/3 · 2/3 (도약 강화면 도착 자리 하나 더)
     property number DashGhostStepSec = 0.05     -- 복사본 사이 시차 (질주 0.16초 동안 몸이 지나간 순서대로 뜬다)
     property number DashGhostScale = 1.0        -- 128px = 1.28칸 · 보이는 형체 89~112×55~71px · 피벗 0.5/0.1 = 발
@@ -168,7 +169,7 @@ script SkillEffects extends Component
     --   크기 = 예전 클립의 보이는 폭에 맞춤: 새 배율 = 예전 배율 × C7OldW(예전 클립 배율 1일 때 폭 · audit skillfx-inventory 「크기w칸」 ÷ 코드 배율) ÷ C7FitPx(새 그림 내용 폭 · 알파>16 · 4장 중 최대)
     --   자리 = 발(지면 원점 · 피벗 0.5/0.25 = 그림 root) — 예전 클립은 가운데 피벗이라 발 + 0.2~0.5칸에 놓았다 (C7Clip이 예전 길에만 그 높이를 더한다)
     property string C7OldW = "blast=4.333;offering=1.327;wave=2.45;poison=2.144"   -- 예전 클립 배율 1의 폭(칸): FxBlast 3.25/0.75 (P38 · P36 1.95/0.45도 같음) · FxOffering 1.46/1.1 (P35) · FxWave 6.37/2.6 (P29) · FxPoisonCloud 2.68/1.25 (P12)
-    property string C7FitPx = "blast=183;offering=183;wave=243;poison=244"   -- 새 그림 내용 폭 최대(px · 알파>16 · 10-31 실측): 폭발 01 183×123 · 성찬 02 183×127 · 파동 02 243×153 · 독 구름 02 244×134
+    property string C7FitPx = "blast=335;offering=183;wave=743;poison=342"   -- 새 그림 내용 폭 최대(px · 알파>16): 10-31 통일 공정 5종 전체(10장 중 최대) 폭발 03 335×241(384×288) · 파동 03 743×455(768×512) · 독 구름 03 342×242(384×320) · 성찬은 C7 그대로 02 183×127 · 옛 C7 4장 판: blast=183;wave=243;poison=244
     property string C7Orders = "blast=6;offering=6;wave=1;poison=1"   -- 층 MapLayer0 (1 = 바닥과 몸 사이 · 코덱스 합성판 기본 「behind」 · 6 = 몸 앞 foreground-stress 판) — 10-31 메이커 회차: 제물 폭발(blast 1.95칸)·성찬 치유(offering 1.46칸)는 작아서 층 1이면 몸에 거의 다 가려 판독 불가 → 6 (해골 폭탄도 같은 blast 칸이라 함께 몸 앞) · 파동·독 구름은 1 그대로
     property number C7HoldSec = 0.2             -- 한 번 계열(폭발·성찬·파동) 마지막 장 유지 (100ms 대신 0.2초)
     property number C7FadeSec = 0.25            -- 그 뒤 옅어짐 → 0.3 + 0.2 + 0.25 = 0.75초 (4장 0.4초만이면 예전 클립 0.6~1.2초보다 짧다 — 「짧아서 안 보임」 반복 지적)
@@ -379,6 +380,14 @@ script SkillEffects extends Component
         return ""
     end
 
+    method string C7Ms(string kind)
+        -- 10-31 통일 공정 5종 전체: 그 자리의 장별 ms (개수 = 장 수일 때만 C7Fx가 새 길) · 성찬 치유(offering)는 "" (예전 FxSkillC7FrameMs 길)
+        if kind == "blast" then return _GameConst.FxSkillBlastMs end
+        if kind == "wave" then return _GameConst.FxSkillDeathWaveMs end
+        if kind == "poison" then return _GameConst.FxSkillPoisonCloudMs end
+        return ""
+    end
+
     method number C7Scale(string kind, number oldScale)
         -- 새 그림 배율 = 예전 배율 × 예전 폭(배율 1) ÷ 새 내용 폭 → 새 그림의 보이는 폭 = 예전 클립의 보이는 폭 (예전 배율에 반경이 들어 있으면 그대로 비례)
         local fit = self:C7Opt(self.C7FitPx, kind, 0)
@@ -399,7 +408,11 @@ script SkillEffects extends Component
 
     @ExecSpace("Multicast")
     method void C7Fx(string kind, Vector3 feet, number scale, number seconds)
-        -- C 7종 바닥 그림 재생 (클라이언트 · 맵 엔티티에 붙임): 독 구름은 seconds 동안 반복(Util.PlayFramesLoop) · 나머지는 한 번(Util.PlayFramesMs · 마지막 장 C7HoldSec · C7FadeSec 옅어짐)
+        -- C 7종 바닥 그림 재생 (클라이언트 · 맵 엔티티에 붙임): 독 구름은 seconds 동안 · 나머지는 한 번
+        --   10-31 통일 공정 5종 전체: 그 자리 장별 ms(C7Ms · GameConst.FxSkillBlastMs·DeathWaveMs·PoisonCloudMs) 개수 = 장 수면 새 길 —
+        --     한 번 계열(폭발·파동) = 장별 ms로 한 번 (잦아듦 6장이 그림 알파에 들어 있어 마지막 장 뒤 바로 지움 · hold·fade 0)
+        --     독 구름 = 반복 장(Util.PlayFramesLoopMs) → seconds 끝에 맞춰 잦아듦 FxSkillUnifyReleaseN장 → 마지막 장 C7FadeSec 옅어짐 (전체 ≈ seconds)
+        --   개수가 다르면(예전 4장 판·성찬 치유) 예전 길: FxSkillC7FrameMs 고른 간격 · 마지막 장 C7HoldSec · C7FadeSec / 독 구름 PlayFramesLoop
         local me = _UserService.LocalPlayer
         local ruids = self:C7Ruids(kind)
         if ruids == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
@@ -407,12 +420,26 @@ script SkillEffects extends Component
         local ms = math.max(20, _GameConst.FxSkillC7FrameMs)
         local s = Vector3(scale, scale, 1)
         local loop = kind == "poison"
-        if loop then
+        local n = #_Util:Frames(ruids)
+        local msList = self:C7Ms(kind)
+        local unify = msList ~= "" and _Util:MsCount(msList) == n
+        local total = seconds
+        if loop and unify then
+            local rel = _GameConst.FxSkillUnifyReleaseN
+            local loopSec = math.max(0, seconds - _Util:MsTailSec(msList, rel) - self.C7FadeSec)
+            _Util:PlayFramesLoopMs(ruids, me.CurrentMap, feet, 0, s, msList, rel, loopSec, self.C7FadeSec, Color(1, 1, 1, 1), order)
+            local plan = _Util:FramePlanLoopMs(msList, n, rel, loopSec, self.C7FadeSec)
+            if plan ~= nil then total = plan.clearAt end
+        elseif loop then
             _Util:PlayFramesLoop(ruids, me.CurrentMap, feet, 0, s, ms / 1000, seconds, Color(1, 1, 1, 1), order)
+        elseif unify then
+            _Util:PlayFramesMs(ruids, me.CurrentMap, feet, 0, s, msList, 0, 0, Color(1, 1, 1, 1), order)
+            total = _Util:FramePlanMs(msList, n, 0, 0).clearAt
         else
             _Util:PlayFramesMs(ruids, me.CurrentMap, feet, 0, s, tostring(ms), self.C7HoldSec, self.C7FadeSec, Color(1, 1, 1, 1), order)
+            total = _Util:FramePlanMs(tostring(ms), n, self.C7HoldSec, self.C7FadeSec).clearAt
         end
-        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] c7 fx kind=%s n=%d ms=%d scale=%.2f order=%d loop=%s sec=%.2f", kind, #_Util:Frames(ruids), ms, scale, order, tostring(loop), seconds)) end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] c7 fx kind=%s n=%d ms=%s scale=%.2f order=%d loop=%s sec=%.2f unify=%s total=%.2f", kind, n, unify and msList or tostring(ms), scale, order, tostring(loop), seconds, tostring(unify), total)) end
     end
 
     @ExecSpace("Multicast")
@@ -1073,6 +1100,18 @@ script SkillEffects extends Component
         if self.Entity == me and not Environment:IsPublishedPlay() then
             local n = #_Util:Frames(ruids)
             log(string.format("[VRF] frames fx n=%d sec=%.3f hold=%.2f fade=%.2f total=%.2f", n, frameSec, holdSec, fadeSec, _Util:FramePlan(n, frameSec, holdSec, fadeSec).clearAt))
+        end
+    end
+
+    @ExecSpace("Multicast")
+    method void FramesFxMs(string ruids, Vector3 pos, number scale, string ms, number holdSec, number fadeSec, integer order)
+        -- FramesFx의 장별 ms판 (10-31 통일 공정 5종 전체 · 그림자 희생): 장 i는 ms의 i번째 값만큼 · 마지막 장 max(그 장, holdSec) · fadeSec 옅어짐 (Util.PlayFramesMs · 클라이언트)
+        local me = _UserService.LocalPlayer
+        if ruids == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        _Util:PlayFramesMs(ruids, me.CurrentMap, pos, 0, Vector3(scale, scale, 1), ms, holdSec, fadeSec, Color(1, 1, 1, 1), order)
+        if self.Entity == me and not Environment:IsPublishedPlay() then
+            local n = #_Util:Frames(ruids)
+            log(string.format("[VRF] frames fx ms n=%d ms=%s hold=%.2f fade=%.2f total=%.2f scale=%.3f order=%d", n, ms, holdSec, fadeSec, _Util:FramePlanMs(ms, n, holdSec, fadeSec).clearAt, scale, order))
         end
     end
 
@@ -2352,8 +2391,14 @@ script SkillEffects extends Component
         local q = _Util:Pos2(best.Entity)
         local total = damage + best.Atk * 2
         self:Hit(Vector2(q.x, q.y + 0.2), Vector2(1.8, 0), -1, "skill.shadow_sacrifice", total)
-        -- 10-31 갈래 E2 P31: 희생 8장 — 판정 반경 1.8에 맞춘 바닥 중심(발 자리) · 배우 뒤 층 SacrificeOrder(1) · 75ms
-        if _GameConst.FxSkillSacrifice ~= "" then self:FramesFx(_GameConst.FxSkillSacrifice, Vector3(q.x, q.y, 0), 2 * 1.8 / (self.SacrificeContentPx / 100), self.SacrificeFrameSec, self.SacrificeFrameSec + self.SacrificeHoldSec, self.SacrificeFadeSec, self.SacrificeOrder) end
+        -- 10-31 갈래 E2 P31: 희생 — 판정 반경 1.8에 맞춘 바닥 중심(발 자리) · 배우 뒤 층 SacrificeOrder(1)
+        --   10-31 통일 공정 5종 전체: 10장 448px · 장별 FxSkillSacrificeMs(개수 = 장 수일 때 · 잦아듦이 그림 알파에 들어 있어 hold·fade 0) · 보이는 지름 SacrificeContentPx 424 = 3.6칸 · 개수가 다르면 예전 길(75ms + 유지 + 옅어짐)
+        local sac = _GameConst.FxSkillSacrifice
+        if sac ~= "" then
+            local sk = 2 * 1.8 / (self.SacrificeContentPx / 100)
+            if _Util:MsCount(_GameConst.FxSkillSacrificeMs) == #_Util:Frames(sac) then self:FramesFxMs(sac, Vector3(q.x, q.y, 0), sk, _GameConst.FxSkillSacrificeMs, 0, 0, self.SacrificeOrder)
+            else self:FramesFx(sac, Vector3(q.x, q.y, 0), sk, self.SacrificeFrameSec, self.SacrificeFrameSec + self.SacrificeHoldSec, self.SacrificeFadeSec, self.SacrificeOrder) end
+        end
         self:Fx("sacrifice", Vector3(q.x, q.y, 0), 1.8)
         log(string.format("[VRF] sacrifice target=%s picked=%s", best.ShadowId, tostring(picked)))
         self:Commander():ClearPick()
@@ -2501,11 +2546,17 @@ script SkillEffects extends Component
         --   10-31 9계열: 코덱스 원형 판(GameConst.FxSkillCurseCircles 6종 × 4장 · 위에서 본 원)이 있으면 문장보다 먼저 — 보이는 반경(CurseCircleFitPx) = 저주 반경 · 장마다 FxSkillCurseCircleMs
         local circle = _Util:KeyFrames(_GameConst.FxSkillCurseCircles, kind)
         local sig = _Util:KeyFrames(_GameConst.FxSkillCurseSigils, kind)
-        if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s circle=%s", kind, radius, tostring(#sig > 0), tostring(#circle > 0))) end
+        if self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] curse shape %s r=%.2f codex=%s circle=%s circleN=%d", kind, radius, tostring(#sig > 0), tostring(#circle > 0), #circle)) end
         if #circle > 0 then
-            local cf = math.max(0.02, _GameConst.FxSkillCurseCircleMs / 1000)
             local ck = self:CurseCircleScale(kind, radius)
-            _Util:PlayFramesHold(table.concat(circle, "|"), self.Entity, pos, 0, Vector3(ck, ck, 1), cf, cf + self.CurseCircleHoldSec, self.CurseCircleFadeSec, Color(1, 1, 1, 1), self.CurseCircleOrder)
+            local cms = _GameConst.FxSkillCurseCircleFrameMs
+            if _Util:MsCount(cms) == #circle then
+                -- 10-31 통일 공정 5종 전체: 10장 = 반복 8장(CurseCircleLoopSec · 적어도 한 바퀴) → 잦아듦 FxSkillUnifyReleaseN장 → 마지막 장 CurseCircleFadeSec 옅어짐 (Util.PlayFramesLoopMs · 클라이언트)
+                _Util:PlayFramesLoopMs(table.concat(circle, "|"), self.Entity, pos, 0, Vector3(ck, ck, 1), cms, _GameConst.FxSkillUnifyReleaseN, self.CurseCircleLoopSec, self.CurseCircleFadeSec, Color(1, 1, 1, 1), self.CurseCircleOrder)
+            else
+                local cf = math.max(0.02, _GameConst.FxSkillCurseCircleMs / 1000)
+                _Util:PlayFramesHold(table.concat(circle, "|"), self.Entity, pos, 0, Vector3(ck, ck, 1), cf, cf + self.CurseCircleHoldSec, self.CurseCircleFadeSec, Color(1, 1, 1, 1), self.CurseCircleOrder)
+            end
             return
         end
         if #sig > 0 then

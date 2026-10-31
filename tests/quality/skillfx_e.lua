@@ -4,9 +4,11 @@
 --   ② 저주 바닥 문장(M14~M19): 6종 × 4장 연결 · 0.7초 + 마지막 장 0.3초 + 옅어짐 · 층 MapLayer0 1 · 문장 없는 혼란·쇠퇴 입자에도 SortingLayer · 혼란 0.8칸 · 쇠퇴 녹 주황
 --   ③ 머리 위 표식 배율 0.9(약 44px) · 저주 직후 0.3초 1.3배 → 1배 · 스킬 아이콘 대체도 같은 크기 · 낙인 몸 색(옅은 자홍)·둔화와 겹침·풀림
 --   ④ 쌍칼 돌진 자취 크기 = 지금 쓰는 그림(GameConst.FxGiantDash)의 등록 크기(art_sprites) · ⑤ 뼈 갑옷 고리 최저 투명도 0.55 · ⑥ 납품 61장 GameConst·표 연결과 RUID 중복 0
+--   ⑧ 10-31 통일 공정 5종 전체(docs/evidence/2026-10-31-skillfx-unify-full5): Util.FramePlanLoopMs·PlayFramesLoopMs(반복 → 잦아듦 → 옅어짐 · 장 건너뜀 0) ·
+--      그림자 희생 10장 장별 ms(FramesFxMs · hold·fade 0) · 보이는 지름 424px = 3.6칸 · 옛 8장으로 되돌리면 예전 길
 -- 엔진 효과·입자·타이머는 대역 — 실제 화면(크기·색·층)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames,KeyFrames,FramePlan,FramePlanMs,PlayFramesPlan,PlayFramesHold,PlayFramesMs,PlayFrames,PlayFramesLoop
--- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,CurseShape,CurseSigilScale,PrisonFx
+-- @source Util Common/Util.mlua Frames,KeyFrames,FramePlan,FramePlanMs,PlayFramesPlan,PlayFramesHold,PlayFramesMs,PlayFrames,PlayFramesLoop,MsCount,MsTailSec,FramePlanLoopMs,PlayFramesLoopMs
+-- @source SkillEffects Skill/SkillEffects.mlua FxOpts,GiantFxSpec,FramesFx,FramesFxMs,CurseShape,CurseSigilScale,PrisonFx
 -- @source MonsterStatus Monster/MonsterStatus.mlua MarkerScaleAt,IsAmpShown,IsChillShown
 -- @source MonsterTraits Monster/MonsterTraits.mlua TintTick
 -- @source PlayerStats Player/PlayerStats.mlua ArmorRingAlpha,ArmorRingFrameAt,TintArmorRingArt,StepArmorRingArt,StopArmorRingArt
@@ -392,7 +394,7 @@ do
  end
  take(Util:Frames(_GameConst.FxSkillSpear),1,'뼈 창 몸')
  take(Util:Frames(_GameConst.FxSkillSpearHit),6,'뼈 창 꽂힘')
- take(Util:Frames(_GameConst.FxSkillSacrifice),8,'그림자 희생')
+ take(Util:Frames(_GameConst.FxSkillSacrifice),10,'그림자 희생')   -- 10-31 통일 공정 5종 전체 (옛 fx-B 8장)
  take(Util:Frames(_GameConst.FxSkillPrisonHold),8,'골격 감옥 묶임')
  take(Util:Frames(_GameConst.FxSkillPrisonRelease),2,'골격 감옥 풀림')
  take(Util:Frames(_GameConst.FxSkillArmorRing),8,'뼈 갑옷 고리 정본')
@@ -400,7 +402,7 @@ do
  take(Util:Frames(_GameConst.FxSkillArmorRingFront),8,'뼈 갑옷 고리 앞 층')
  local seen={}
  for _,r in ipairs(all) do ok(not seen[r],'E2 RUID 중복 0') seen[r]=true end
- ok(#all==49,'정본 33 + 파생 16 = 49장 ('..#all..')')
+ ok(#all==51,'정본 33 + 파생 16 + 희생 통일 공정 2장 더(8 → 10) = 51장 ('..#all..')')
  local sum=0
  for v in _GameConst.FxSkillSpearHitMs:gmatch('[^,]+') do sum=sum+tonumber(v) end
  ok(sum==400,'꽂힘 장별 ms 합 400 (코덱스 제안)')
@@ -423,17 +425,69 @@ do
  ok(plays[6].off~=nil and near(plays[6].off,0.4,TICK+1e-6),'0.4초에 끝 ('..f3(plays[6].off)..')')
 end
 
--- ⑦ 그림자 희생: 반경 1.8 바닥 중심 · 배우 뒤 층 · 75ms × 8
+-- ⑦ 그림자 희생: 반경 1.8 바닥 중심 · 배우 뒤 층 — 10-31 통일 공정 5종 전체: 10장 448px · 장별 ms(시작 2·정점 2·잦아듦 6 · 합 1030ms) · hold·fade 0
 do
  reset()
  local s=2*1.8/(SkillEffects.SacrificeContentPx/100)
- SkillEffects:FramesFx(_GameConst.FxSkillSacrifice,Vector3(2,1,0),s,SkillEffects.SacrificeFrameSec,SkillEffects.SacrificeFrameSec+SkillEffects.SacrificeHoldSec,SkillEffects.SacrificeFadeSec,SkillEffects.SacrificeOrder)
+ local ms=_GameConst.FxSkillSacrificeMs
+ ok(ms=='70,70,70,70,100,110,120,130,140,150' and Util:MsCount(ms)==#Util:Frames(_GameConst.FxSkillSacrifice) and Util:MsCount(ms)==10,'희생 장별 ms 개수 = 장 수 10 (코덱스 제안)')
+ ok(near(SkillEffects.SacrificeContentPx,424) and near(s,0.849,0.001),'희생 내용 폭 424px (가장 큰 장 03) → 배율 0.849 (옛 128px 판 116px · 3.10)')
+ SkillEffects:FramesFxMs(_GameConst.FxSkillSacrifice,Vector3(2,1,0),s,ms,0,0,SkillEffects.SacrificeOrder)
  run(3)
- ok(#plays==8+Util.FrameFadeSteps,'희생 8장 + 옅어짐')
+ ok(#plays==10,'희생 10장 (옅어짐 단계 없음 — 잦아듦 6장이 그림 알파)')
  for _,p in ipairs(plays) do ok(p.opt.OrderInLayer==1 and p.opt.SortingLayer=='MapLayer0','희생 배우 뒤 바닥 층 (MapLayer0 1)') end
- ok(near(plays[1].scale.x,plays[1].scale.y) and near(116*plays[1].scale.x/100,3.6),'희생 보이는 지름 116px = 판정 지름 3.6칸')
+ ok(near(plays[1].scale.x,plays[1].scale.y) and near(424*plays[1].scale.x/100,3.6),'희생 보이는 지름 424px = 판정 지름 3.6칸')
  ok(near(plays[1].pos.x,2) and near(plays[1].pos.y,1),'희생은 발 자리 그대로 (예전 +0.3 위 아님)')
- ok(near(plays[8].at-plays[1].at,0.525,TICK+1e-6),'75ms × 8')
+ ok(near(plays[3].at-plays[1].at,0.14,TICK+1e-6) and near(plays[5].at-plays[1].at,0.28,TICK+1e-6) and near(plays[10].at-plays[1].at,0.88,TICK+1e-6),'시작 2·정점 2 = 70ms씩 · 마지막 장 0.88초에')
+ ok(plays[10].off~=nil and near(plays[10].off,1.03,TICK+1e-6),'1.03초에 지움 (마지막 장 150ms)')
+ local w=windows()
+ for i=1,10 do ok(w[i].len>0,'희생 '..i..'번째 장 건너뜀 없음') end
+ local line=nil for _,l in ipairs(logs) do if l:find('[VRF] frames fx ms n=10',1,true) then line=l end end
+ ok(line~=nil and line:find('total=1.03',1,true)~=nil and line:find('order=1',1,true)~=nil,'[VRF] frames fx ms 한 줄 (n=10 · 1.03초 · 층 1)')
+ -- 되돌림: 옛 8장(fx-B-shadow-sacrifice)이면 ms 개수 10 ≠ 8 → ShadowSacrifice는 예전 FramesFx 길 (75ms × 8 + 유지 + 옅어짐 · 116px)
+ local old={} for r,a in pairs(art) do local i=a.name:match('^fx%-B%-shadow%-sacrifice%-0(%d)$') if i then old[tonumber(i)+1]=r end end
+ ok(#old==8 and Util:MsCount(ms)~=#old,'옛 희생 8장 행 남김 · 장별 ms 개수와 다름 → 예전 길')
+ local gcSrc=io.open('RootDesk/MyDesk/Common/GameConst.mlua'):read('a')
+ for i=1,8 do ok(gcSrc:find(old[i],1,true)~=nil and not _GameConst.FxSkillSacrifice:find(old[i],1,true),'옛 희생 '..i..' RUID는 GameConst 주석 「옛: …」에만') end
+ reset()
+ SkillEffects:FramesFx(table.concat(old,'|'),Vector3(2,1,0),2*1.8/1.16,SkillEffects.SacrificeFrameSec,SkillEffects.SacrificeFrameSec+SkillEffects.SacrificeHoldSec,SkillEffects.SacrificeFadeSec,SkillEffects.SacrificeOrder)
+ run(3)
+ ok(#plays==8+Util.FrameFadeSteps and near(plays[8].at-plays[1].at,0.525,TICK+1e-6),'예전 길: 75ms × 8 + 옅어짐')
+ local se=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a')
+ ok(se:find('if _Util:MsCount(_GameConst.FxSkillSacrificeMs) == #_Util:Frames(sac) then self:FramesFxMs(sac, Vector3(q.x, q.y, 0), sk, _GameConst.FxSkillSacrificeMs, 0, 0, self.SacrificeOrder)',1,true)~=nil
+  and se:find('else self:FramesFx(sac, Vector3(q.x, q.y, 0), sk, self.SacrificeFrameSec, self.SacrificeFrameSec + self.SacrificeHoldSec, self.SacrificeFadeSec, self.SacrificeOrder) end',1,true)~=nil,'ShadowSacrifice: ms 개수 = 장 수면 FramesFxMs · 아니면 예전 FramesFx')
+end
+
+-- ⑧ 지속 효과 계획·재생 (Util.FramePlanLoopMs · PlayFramesLoopMs · 원형 판·독안개)
+do
+ local LOOP='100,100,100,100,100,100,100,100,130,150'
+ local p=Util:FramePlanLoopMs(LOOP,10,2,0.8,0.3)
+ ok(p~=nil and p.loopFrames==8 and #p.steps==8+2+Util.FrameFadeSteps,'0.8초 = 반복 8장 한 바퀴 + 잦아듦 2장 + 옅어짐')
+ ok(p.steps[8].idx==8 and p.steps[9].idx==9 and p.steps[10].idx==10 and near(p.steps[9].at,0.8) and near(p.steps[10].at,0.93),'잦아듦 9·10번째 장 = 0.8 · 0.93초')
+ ok(near(p.holdAt,0.93) and near(p.clearAt,0.93+0.15+0.3) and p.steps[#p.steps].idx==10 and p.steps[#p.steps].alpha<1,'마지막 장 150ms 뒤 0.3초 옅어짐 (예전 「마지막 장 페이드」와 합침)')
+ local q=Util:FramePlanLoopMs(LOOP,10,2,4.47,0.25)
+ ok(q.loopFrames==45 and q.steps[45].idx==5 and q.steps[46].idx==9 and near(q.clearAt,5.03),'독안개 5초: 반복 45장(0~7 순환) → 잦아듦 → 5.03초에 끝')
+ local r=Util:FramePlanLoopMs(LOOP,10,2,0.1,0)
+ ok(r.loopFrames==8 and near(r.clearAt,1.08),'loopSec이 짧아도 적어도 한 바퀴')
+ ok(Util:FramePlanLoopMs('100,100',10,2,1,0)==nil and Util:FramePlanLoopMs(LOOP,10,0,1,0)==nil and Util:FramePlanLoopMs(LOOP,2,2,1,0)==nil,'ms 개수 ≠ 장 수 · 잦아듦 0 · 반복 0이면 nil (부르는 쪽 예전 길)')
+ ok(Util:MsCount(LOOP)==10 and Util:MsCount('')==0 and near(Util:MsTailSec(LOOP,2),0.28) and near(Util:MsTailSec('70,70,70,70,100,110,120,130,140,150',6),0.75),'MsCount · MsTailSec (상승 140 : 잦아듦 750)')
+ reset()
+ Util:PlayFramesLoopMs(seq('c',10),map,Vector3(0,0,0),0,Vector3(1,1,1),LOOP,2,0.8,0.3,Color(1,1,1,1),1)
+ run(3)
+ ok(#plays==8+2+Util.FrameFadeSteps,'재생: 반복 8 + 잦아듦 2 + 옅어짐 '..Util.FrameFadeSteps)
+ local w=windows()
+ for i=1,10 do ok(plays[i].ruid=='c'..i and w[i].len>=0.1-TICK-1e-6,'장 '..i..' 건너뜀 없음 · 적어도 한 화면') end
+ ok(near(plays[9].at,0.8,TICK+1e-6) and near(plays[10].at,0.93,TICK+1e-6),'잦아듦 0.8 · 0.93초에')
+ ok(plays[#plays].off~=nil and near(plays[#plays].off,1.38,TICK+1e-6),'1.38초에 지움')
+ reset()
+ Util:PlayFramesLoopMs(seq('c',10),map,Vector3(0,0,0),0,Vector3(1,1,1),'100,100',2,0.6,0,Color(1,1,1,1),1)
+ run(2)
+ ok(#plays==6 and plays[1].ruid=='c1' and plays[6].ruid=='c6' and plays[#plays].off<=0.6+TICK+1e-6,'계획이 안 서면 예전 PlayFramesLoop (첫 값 100ms · 0.6초)')
+ reset()
+ local tgt={}
+ Util:PlayFramesLoopMs(seq('c',10),tgt,Vector3(0,0,0),0,Vector3(1,1,1),LOOP,2,0.8,0.3,Color(1,1,1,1),1)
+ run(0.25) tgt.dead=true run(2)
+ ok(#plays<=4 and plays[#plays].off~=nil,'instigator가 사라지면 그 자리에서 지움')
 end
 
 -- ⑦ 골격 감옥: 묶인 시간 동안 장벽 8장 반복 → 풀림 2장 · 몸 앞 층 · 표적이 사라지면 멈춤

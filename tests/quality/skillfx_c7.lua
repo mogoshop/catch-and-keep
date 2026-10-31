@@ -2,9 +2,11 @@
 --   ① GameConst 7자리(FxSkillBlast·OfferingHeal·DeathWave·FlameShot·FrostShot·PoisonCloud·Slash) × 4장 · 32자리 hex · data/art_sprites.csv 28행(이름·effect·크기·RUID·순서) 일치 · RUID 중복 0 · FxSkillC7FrameMs 100(양수)
 --   ② 채우면 새 그림 / 비우면 예전 메이플 원본: 바닥 4계열 C7Clip(발 = 지면 원점 · 크기 = 예전 보이는 폭) · 독 구름 반복 · 투사체 2종 MirrorSkin(순환·FlipY·진행 각 보정 0) · MageBolts 배율 · 중립 베기 Util.SkillSlashFx(가로 거울·Tint)
 --   ③ 부르는 곳 grep · 미리 불러 두기 · 새 길에 반복 타이머 없음 · [VRF] 계열당 한 줄
+--   ④ 10-31 통일 공정 5종 전체(docs/evidence/2026-10-31-skillfx-unify-full5): 폭발·파동·독 구름 = fx-unify-* 10장(384×288 · 768×512 · 384×320) · 장별 ms 개수 = 장 수 ·
+--      한 번 계열 hold·fade 0 · 독 구름 반복 → 잦아듦 2장 → 옅어짐(전체 ≈ 지속 시간) · 내용 폭 335/743/342px로 보이는 폭 그대로 · 옛 C 4장 판으로 되돌리면 예전 길(되돌림 검사)
 -- 엔진 효과·타이머는 대역 — 실제 화면(크기·층·거울·색)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames,KeyFrames,SkillSlashFx
--- @source SkillEffects Skill/SkillEffects.mlua OnBeginPlay,C7Opt,C7Ruids,C7OldRuid,C7Scale,C7Clip,C7Fx
+-- @source Util Common/Util.mlua Frames,KeyFrames,SkillSlashFx,MsCount,MsTailSec,FramePlanMs,FramePlanLoopMs
+-- @source SkillEffects Skill/SkillEffects.mlua OnBeginPlay,C7Opt,C7Ruids,C7OldRuid,C7Ms,C7Scale,C7Clip,C7Fx
 -- @source Projectile Combat/Projectile.mlua MirrorSkin,FrameSec,ViewAngleOffset,FaceMirror
 -- @source MageBolts Undead/MageBolts.mlua Configure,C7Log
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
@@ -27,6 +29,7 @@ _EffectService={PlayEffect=function(_,ruid,inst,pos,rot,scale,loop,opt) table.in
 local plays={}
 function Util:PlayFramesMs(ruids,inst,pos,rot,scale,ms,holdSec,fadeSec,tint,order) table.insert(plays,{fn='ms',ruids=ruids,inst=inst,pos=pos,rot=rot,scale=scale,ms=ms,holdSec=holdSec,fadeSec=fadeSec,tint=tint,order=order}) end
 function Util:PlayFramesLoop(ruids,inst,pos,rot,scale,frameSec,seconds,tint,order) table.insert(plays,{fn='loop',ruids=ruids,inst=inst,pos=pos,rot=rot,scale=scale,frameSec=frameSec,seconds=seconds,tint=tint,order=order}) end
+function Util:PlayFramesLoopMs(ruids,inst,pos,rot,scale,ms,releaseN,loopSec,fadeSec,tint,order) table.insert(plays,{fn='loopms',ruids=ruids,inst=inst,pos=pos,rot=rot,scale=scale,ms=ms,releaseN=releaseN,loopSec=loopSec,fadeSec=fadeSec,tint=tint,order=order}) end
 local function reset() plays={} effects={} logs={} end
 
 -- 실제 GameConst 값
@@ -50,6 +53,8 @@ for line in io.lines('data/art_sprites.csv') do
 end
 
 -- ① 자리 · art_sprites
+-- 10-31 통일 공정 5종 전체: 자리 → 코덱스 묶음 · 캔버스 · 장별 ms 자리 · 옛 fx-C 이름
+local UNIFY={FxSkillBlast={'bone-blast',384,288,'FxSkillBlastMs','FxBlast'},FxSkillDeathWave={'death-wave',768,512,'FxSkillDeathWaveMs','FxWave'},FxSkillPoisonCloud={'poison-cloud',384,320,'FxSkillPoisonCloudMs','FxPoisonCloud'}}
 local SLOTS={ -- 자리 · 코덱스 logical_id · 캔버스
  {'FxSkillBlast','FxBlast',192,192},{'FxSkillOfferingHeal','FxOffering',192,192},{'FxSkillDeathWave','FxWave',256,256},
  {'FxSkillFlameShot','FxFlameShot',128,64},{'FxSkillFrostShot','FxFrostShot',128,64},{'FxSkillPoisonCloud','FxPoisonCloud',256,256},{'FxSkillSlash','FxSlash',128,96}}
@@ -57,12 +62,15 @@ do
  local seen={}
  for _,s in ipairs(SLOTS) do
   local list=Util:Frames(_GameConst[s[1]] or '')
-  ok(#list==4,s[1]..' 4장 ('..#list..')')
+  local u=UNIFY[s[1]]
+  ok(#list==(u and 10 or 4),s[1]..' '..(u and 10 or 4)..'장 ('..#list..')')
   for i,r in ipairs(list) do
    local name='fx-C-'..s[2]..'-core-0'..(i-1)
    local w,h=s[3],s[4]
    -- 10-31 통일 공정 보정 재출력: 서리탄은 fx-unify-frost-shot-00~03 256×128(고해상도 원본 다운샘플)로 교체 · 옛 fx-C-FxFrostShot 행은 남김
    if s[1]=='FxSkillFrostShot' then name='fx-unify-frost-shot-0'..(i-1) w,h=256,128 end
+   -- 10-31 통일 공정 5종 전체: 폭발·파동·독 구름은 fx-unify-* 10장 (옛 fx-C 4장 행은 남김)
+   if u then name=string.format('fx-unify-%s-%02d',u[1],i-1) w,h=u[2],u[3] end
    ok(#r==32 and r:match('^%x+$')~=nil,s[1]..' '..i..' 32자리 hex')
    local a=art[name]
    ok(a~=nil and a.ruid==r,name..' art_sprites RUID 일치 (순서 포함)')
@@ -79,6 +87,22 @@ do
   ok(a~=nil and a.w==128 and a.h==64 and not seen[a.ruid],'옛 서리탄 core-0'..i..' 행 남김 · 자리에서 빠짐')
   ok(gcSrc:find('옛: ',1,true)~=nil and gcSrc:find(a.ruid,1,true)~=nil,'옛 서리탄 core-0'..i..' RUID는 GameConst 주석 「옛: …」에')
  end
+ -- 10-31 통일 공정 5종 전체: 옛 fx-C 4장 행 남김 · 자리에서 빠짐 · 주석 「옛: …」 · 장별 ms 개수 = 장 수
+ local ONCE,LOOP='70,70,70,70,100,110,120,130,140,150','100,100,100,100,100,100,100,100,130,150'
+ for slotName,u in pairs(UNIFY) do
+  for i=0,3 do
+   local a=art['fx-C-'..u[5]..'-core-0'..i]
+   ok(a~=nil and a.w==(u[5]=='FxBlast' and 192 or 256) and not seen[a.ruid],'옛 '..u[5]..' core-0'..i..' 행 남김 · 자리에서 빠짐')
+   ok(gcSrc:find(a.ruid,1,true)~=nil,'옛 '..u[5]..' core-0'..i..' RUID는 GameConst 주석 「옛: …」에')
+  end
+  local ms=_GameConst[u[4]]
+  ok(type(ms)=='string' and Util:MsCount(ms)==#Util:Frames(_GameConst[slotName]) and Util:MsCount(ms)==10,u[4]..' 개수 = 장 수 10')
+  ok(ms==(slotName=='FxSkillPoisonCloud' and LOOP or ONCE),u[4]..' = 코덱스 animation-timing 제안')
+ end
+ ok(near(Util:FramePlanMs(ONCE,10,0,0).clearAt,1.03),'한 번 계열 = 시작 2·정점 2·잦아듦 6 · 합 1030ms (상승 140 : 잦아듦 750 ≥ 1:2)')
+ ok(near(Util:MsTailSec(LOOP,2),0.28) and _GameConst.FxSkillUnifyReleaseN==2,'지속 계열 잦아듦 2장 = 130+150ms')
+ local unifyRows=0 for name in pairs(art) do if name:match('^fx%-unify%-bone%-blast%-') or name:match('^fx%-unify%-death%-wave%-') or name:match('^fx%-unify%-poison%-cloud%-') then unifyRows=unifyRows+1 end end
+ ok(unifyRows==30,'art_sprites 통일 공정 폭발·파동·독 구름 행 30개 ('..unifyRows..')')
  ok(type(_GameConst.FxSkillC7FrameMs)=='number' and _GameConst.FxSkillC7FrameMs==100,'FxSkillC7FrameMs 100 (코덱스 제안 · 양수)')
 end
 
@@ -86,7 +110,8 @@ local me={CurrentMap='m1',TransformComponent={WorldPosition=Vector3(0,0,0)}}
 _UserService={LocalPlayer=me}
 
 -- ② 크기: 새 그림 보이는 폭 = 예전 클립 보이는 폭 (audit 크기w칸) · 새 내용 폭 = 10-31 실측(알파>16 · 4장 중 최대)
-local FIT={blast=183,offering=183,wave=243,poison=244}
+local FIT={blast=335,offering=183,wave=743,poison=342}   -- 10-31 통일 공정 5종 전체 10장 중 최대 (폭발 03 · 파동 03 · 독 구름 03) · 성찬은 C 그대로
+local OLDFIT={blast=183,wave=243,poison=244}   -- 옛 C 4장 판 (되돌릴 때 C7FitPx 값 · 주석에 남김)
 local AUDIT={ -- 예전 배율 → 예전 보이는 폭 (skillfx-inventory 크기w칸)
  {'blast',0.75,3.25,'P38 해골 폭탄 (BombRadius 1.6)'},{'blast',0.45,1.95,'P36 제물 폭발'},{'offering',1.1,1.46,'P35 뼈 성찬 (반경 4)'},
  {'wave',2.6,6.37,'P29 죽음의 파동'},{'poison',1.25,2.68,'P12 독안개 (반경 1.3)'}}
@@ -99,6 +124,16 @@ do
  ok(near(SkillEffects:C7Scale('blast',0.75*2.0/1.6)/SkillEffects:C7Scale('blast',0.75),1.25),'폭탄 반경이 커지면 같은 비율 (BombRadius 2.0)')
  ok(near(SkillEffects:C7Scale('poison',1.25*1.95/1.3)/SkillEffects:C7Scale('poison',1.25),1.5),'독안개 반경이 커지면 같은 비율')
  ok(SkillEffects:C7Scale('nothing',0.7)==0.7,'표에 없는 종류는 예전 배율 그대로')
+ -- 통일 공정 배율 (보이는 폭 그대로 · 큰 캔버스라 배율은 작아짐) · 옛 4장 판 배율 대비
+ local NEWS={{'wave',2.6,0.857},{'blast',0.75,0.970},{'blast',0.45,0.582},{'poison',1.25,0.784}}
+ for _,v in ipairs(NEWS) do
+  local sc=SkillEffects:C7Scale(v[1],v[2])
+  ok(near(sc,v[3],0.001),v[1]..' 예전 배율 '..v[2]..' → 새 배율 '..string.format('%.3f',sc))
+  local old=v[2]*SkillEffects:C7Opt(SkillEffects.C7OldW,v[1],0)*100/OLDFIT[v[1]]
+  ok(near(OLDFIT[v[1]]*old/100,FIT[v[1]]*sc/100,0.001),v[1]..' 옛 4장 판('..string.format('%.3f',old)..')과 보이는 폭 같음')
+ end
+ local seSrc=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua'):read('a')
+ ok(seSrc:find('옛 C7 4장 판: blast=183;wave=243;poison=244',1,true)~=nil,'옛 내용 폭은 C7FitPx 주석에 (되돌림용)')
  local ORD={blast=6,offering=6,wave=1,poison=1}   -- 10-31 메이커 회차: 제물 폭발·성찬 치유는 몸에 가려 판독 불가 → 6(몸 앞) · 파동·독 구름은 1
  for k,v in pairs(ORD) do ok(SkillEffects:C7Opt(SkillEffects.C7Orders,k,0)==v,k..' 층 MapLayer0 '..v) end
  ok(near(SkillEffects:C7Opt(SkillEffects.C7OldW,'blast',0),4.333) and near(SkillEffects:C7Opt(SkillEffects.C7OldW,'offering',0),1.327),'제물 폭발 1.95칸·성찬 1.46칸 크기 표 그대로 (층만 바꿈)')
@@ -131,22 +166,43 @@ end
 -- ② C7Fx (클라이언트 재생)
 do
  local fx=setmetatable({Entity=me},{__index=SkillEffects})
- for _,kind in ipairs({'blast','offering','wave'}) do
+ -- 10-31 통일 공정 5종 전체: 폭발·파동 = 10장 장별 ms 한 번 (잦아듦이 그림에 들어 있어 hold·fade 0)
+ for _,kind in ipairs({'blast','wave'}) do
   reset() fx:C7Fx(kind,Vector3(1,2,0),1.5,0.9)
   local p=plays[1]
-  ok(#plays==1 and p.fn=='ms' and p.ruids==SkillEffects:C7Ruids(kind) and p.ms=='100' and p.inst=='m1',kind..' 4장 한 번 100ms · 맵에 붙임')
-  ok(near(p.holdSec,SkillEffects.C7HoldSec) and near(p.fadeSec,SkillEffects.C7FadeSec) and p.order==(kind=='wave' and 1 or 6) and p.scale.x==1.5 and p.scale.y==1.5 and p.pos.y==2 and p.rot==0,kind..' 마지막 장 유지·옅어짐 · 층(폭발·성찬 6 몸 앞 · 파동 1) · 가로=세로 · 발 자리')
-  ok(logs[1]:find('order='..(kind=='wave' and 1 or 6),1,true)~=nil,kind..' [VRF] order 값')
+  local ms=SkillEffects:C7Ms(kind)
+  ok(#plays==1 and p.fn=='ms' and p.ruids==SkillEffects:C7Ruids(kind) and p.ms==ms and ms=='70,70,70,70,100,110,120,130,140,150' and p.inst=='m1',kind..' 10장 한 번 · 장별 ms · 맵에 붙임')
+  ok(p.holdSec==0 and p.fadeSec==0 and p.order==(kind=='wave' and 1 or 6) and p.scale.x==1.5 and p.scale.y==1.5 and p.pos.y==2 and p.rot==0,kind..' hold·fade 0 (잦아듦 6장이 그림 알파) · 층(폭발 6 몸 앞 · 파동 1) · 가로=세로 · 발 자리')
   ok(p.tint.r==1 and p.tint.g==1 and p.tint.b==1 and p.tint.a==1,kind..' 그림 자기 색')
-  ok(#logs==1 and logs[1]:find('[VRF] c7 fx kind='..kind..' n=4 ms=100',1,true)~=nil and logs[1]:find('loop=false',1,true)~=nil,kind..' [VRF] 한 줄')
+  ok(#logs==1 and logs[1]:find('[VRF] c7 fx kind='..kind..' n=10 ms='..ms,1,true)~=nil and logs[1]:find('loop=false',1,true)~=nil and logs[1]:find('unify=true total=1.03',1,true)~=nil,kind..' [VRF] 한 줄 (n=10 · 1.03초)')
+  ok(logs[1]:find('order='..(kind=='wave' and 1 or 6),1,true)~=nil,kind..' [VRF] order 값')
+ end
+ -- 성찬 치유는 C 4장 그대로 (예전 길)
+ reset() fx:C7Fx('offering',Vector3(1,2,0),1.5,0.9)
+ local p=plays[1]
+ ok(#plays==1 and p.fn=='ms' and p.ms=='100' and near(p.holdSec,SkillEffects.C7HoldSec) and near(p.fadeSec,SkillEffects.C7FadeSec) and p.order==6,'성찬 치유 4장 100ms · 마지막 장 유지·옅어짐 · 몸 앞 (예전 길)')
+ ok(#logs==1 and logs[1]:find('[VRF] c7 fx kind=offering n=4 ms=100 ',1,true)~=nil and logs[1]:find('unify=false',1,true)~=nil,'성찬 [VRF] unify=false')
+ -- 독 구름 = 반복 8장 → 잦아듦 2장 → 옅어짐 · 전체 ≈ 지속 시간
+ reset() fx:C7Fx('poison',Vector3(1,2,0),1.1,5)
+ p=plays[1]
+ ok(#plays==1 and p.fn=='loopms' and p.ruids==_GameConst.FxSkillPoisonCloud and p.ms==_GameConst.FxSkillPoisonCloudMs and p.releaseN==2 and p.order==1 and p.pos.y==2,'독 구름 = 장별 ms 반복 + 잦아듦 2장 (Util.PlayFramesLoopMs) · 층 1')
+ ok(near(p.loopSec,5-0.28-SkillEffects.C7FadeSec) and near(p.fadeSec,SkillEffects.C7FadeSec),'반복 시간 = 지속 5초 − 잦아듦 0.28 − 옅어짐 '..SkillEffects.C7FadeSec)
+ local plan=Util:FramePlanLoopMs(p.ms,10,2,p.loopSec,p.fadeSec)
+ ok(plan~=nil and math.abs(plan.clearAt-5)<=0.1,'독 구름 전체 '..string.format('%.2f',plan.clearAt)..'초 ≈ 지속 5초')
+ ok(#logs==1 and logs[1]:find('loop=true',1,true)~=nil and logs[1]:find('unify=true',1,true)~=nil,'독 구름 [VRF] 한 줄')
+ _GameConst.FxSkillC7FrameMs=50
+ reset() fx:C7Fx('offering',Vector3(0,0,0),1,0.6)
+ ok(plays[1].ms=='50','예전 길 장 간격은 FxSkillC7FrameMs 하나만 바꾸면')
+ restore()
+ -- 되돌림: 자리에 옛 C 4장을 넣으면 (ms 개수 10 ≠ 4) 예전 길 그대로
+ local function oldC(id) local t={} for i=0,3 do t[#t+1]=art['fx-C-'..id..'-core-0'..i].ruid end return table.concat(t,'|') end
+ _GameConst.FxSkillDeathWave=oldC('FxWave') _GameConst.FxSkillBlast=oldC('FxBlast') _GameConst.FxSkillPoisonCloud=oldC('FxPoisonCloud')
+ for _,kind in ipairs({'blast','wave'}) do
+  reset() fx:C7Fx(kind,Vector3(1,2,0),1.5,0.9)
+  ok(plays[1].fn=='ms' and plays[1].ms=='100' and near(plays[1].holdSec,SkillEffects.C7HoldSec) and near(plays[1].fadeSec,SkillEffects.C7FadeSec) and logs[1]:find('n=4 ms=100 ',1,true)~=nil,kind..' 옛 4장으로 되돌리면 100ms + 유지 + 옅어짐')
  end
  reset() fx:C7Fx('poison',Vector3(1,2,0),1.1,5)
- local p=plays[1]
- ok(#plays==1 and p.fn=='loop' and p.ruids==_GameConst.FxSkillPoisonCloud and near(p.frameSec,0.1) and p.seconds==5 and p.order==1,'독 구름 = 지속 시간(5초) 동안 4장 0.1초 반복')
- ok(#logs==1 and logs[1]:find('loop=true',1,true)~=nil,'독 구름 [VRF] 한 줄')
- _GameConst.FxSkillC7FrameMs=50
- reset() fx:C7Fx('wave',Vector3(0,0,0),1,0.6)
- ok(plays[1].ms=='50','장 간격은 FxSkillC7FrameMs 하나만 바꾸면')
+ ok(plays[1].fn=='loop' and near(plays[1].frameSec,0.1) and plays[1].seconds==5,'독 구름 옛 4장으로 되돌리면 4장 0.1초 반복')
  restore()
  local other=setmetatable({Entity={CurrentMap='m2'}},{__index=SkillEffects})
  reset() other:C7Fx('wave',Vector3(0,0,0),1,0.6)
@@ -257,7 +313,7 @@ do
  for _,r in ipairs(pre) do if got[r] then dup=dup+1 end got[r]=true end
  ok(#pre>0 and dup==0,'미리 불러 두기 RUID 중복 없음 ('..#pre..'장)')
  local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
- for _,s in ipairs(SLOTS) do local l=Util:Frames(_GameConst[s[1]]) ok(#l==4,s[1]..' 4장') all(l,s[1]) end
+ for _,s in ipairs(SLOTS) do local l=Util:Frames(_GameConst[s[1]]) ok(#l==(UNIFY[s[1]] and 10 or 4),s[1]..' 장 수') all(l,s[1]) end
 
  local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end
  ok(line~=nil and tonumber(line:match('n=(%d+)'))==#pre and tonumber(line:match('started=(%d+)'))==#pre,'[VRF] preload n = 실제 미리 부른 장 수 '..#pre..' (한 줄)')

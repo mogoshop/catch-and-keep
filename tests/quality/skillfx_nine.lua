@@ -3,8 +3,10 @@
 --      재사용 일관성: 뼛가루 = 골편 명중 4장 그대로 · 뼈 명중 = 골편 명중 2·4번째 장 (art_sprites에 같은 RUID 새 행 없음)
 --   ② 채우면 새 그림 / 비우면 예전 연출: 뼈 갑옷 두름·흡수·깨짐 · 머리 위 표식 12 · 저주 원형 판(원 지름 = 판정 지름) · 망령 잔상 · 회오리·자국 · 의식 화살 · 뼛가루 · 소용돌이 · 투사체 속성 명중 · 영혼 격류 시전·명중
 --   ③ 부르는 곳 grep · 영혼 격류 비행 자리(FxSkillTorrent)는 비행 몸이라 비워 둠 · [VRF] 계열당 한 줄
+--   ④ 10-31 통일 공정 5종 전체(docs/evidence/2026-10-31-skillfx-unify-full5): 저주 원형 판 6종 = fx-unify-curse-circle-* 10장 384×384 · 반복 8장 → 잦아듦 2장 → 옅어짐 ·
+--      장별 ms 개수 = 장 수 · 보이는 반경 표 = 10장 실측 · 옛 fx-B 원형 판 24행 남김·주석 「옛: …」 · 옛 4장으로 되돌리면 예전 길
 -- 엔진 효과·입자·타이머는 대역 — 실제 화면(크기·색·층·거울)은 메이커 장면 확인
--- @source Util Common/Util.mlua Frames,KeyFrames
+-- @source Util Common/Util.mlua Frames,KeyFrames,MsCount,MsTailSec,FramePlanLoopMs
 -- @source SkillEffects Skill/SkillEffects.mlua OnBeginPlay,StatusFx,CurseShape,CurseCircleScale,CurseSigilScale,DashGhostFx,DashGhostSpots,DrainVortex,DrainVortexFrames,RiteWhirlFx,RiteWhirlScale,ConsumedDust,DustFrames,ShardHit,Fx
 -- @source Projectile Combat/Projectile.mlua MirrorSkin,FrameSec,HitFx,HitArt
 -- @source MonsterStatus Monster/MonsterStatus.mlua MarkerIcon
@@ -38,6 +40,7 @@ local plays={}
 function Util:PlayFrames(ruids,inst,pos,rot,scale,frameSec,tint,order) table.insert(plays,{fn='once',ruids=ruids,inst=inst,pos=pos,rot=rot,scale=scale,frameSec=frameSec,tint=tint,order=order}) end
 function Util:PlayFramesHold(ruids,inst,pos,rot,scale,frameSec,holdSec,fadeSec,tint,order) table.insert(plays,{fn='hold',ruids=ruids,inst=inst,pos=pos,scale=scale,frameSec=frameSec,holdSec=holdSec,fadeSec=fadeSec,tint=tint,order=order}) end
 function Util:PlayFramesLoop(ruids,inst,pos,rot,scale,frameSec,seconds,tint,order) table.insert(plays,{fn='loop',ruids=ruids,inst=inst,pos=pos,scale=scale,frameSec=frameSec,seconds=seconds,tint=tint,order=order}) end
+function Util:PlayFramesLoopMs(ruids,inst,pos,rot,scale,ms,releaseN,loopSec,fadeSec,tint,order) table.insert(plays,{fn='loopms',ruids=ruids,inst=inst,pos=pos,scale=scale,ms=ms,releaseN=releaseN,loopSec=loopSec,fadeSec=fadeSec,tint=tint,order=order}) end
 function Util:SkillShake() end
 local function reset() plays={} particles={} effects={} logs={} timers={} end
 
@@ -68,6 +71,8 @@ for _,n in ipairs(seq('fx-B-soul-drain-vortex-sample-',4)) do RETIRED[n]=true en
 for _,n in ipairs(seq('fx-B-rite-bone-whirl-sample-',4)) do RETIRED[n]=true end
 for _,n in ipairs(seq('fx-B-rite-bone-whirl-intermediate-',4)) do RETIRED[n]=true end
 RETIRED['fx-B-rite-bone-whirl-trace-sample-00']=true
+-- 10-31 통일 공정 5종 전체: 저주 원형 판 6종 × 4장(fx-B-curse-circle-*-sample) → fx-unify-curse-circle-* 10장
+for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do for _,n in ipairs(seq('fx-B-curse-circle-'..k..'-sample-',4)) do RETIRED[n]=true end end
 local gcSrc=io.open('RootDesk/MyDesk/Common/GameConst.mlua'):read('a')
 
 -- ① 슬롯 · art_sprites · 재사용
@@ -101,11 +106,11 @@ do
  slot('FxSkillTorrentHit',seq('fx-B-soul-torrent-hit-sample-',4),128,128)
  for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do
   local list=Util:KeyFrames(_GameConst.FxSkillCurseCircles,k)
-  local names=seq('fx-B-curse-circle-'..k..'-sample-',4)
-  ok(#list==4,'원형 판 '..k..' 4장')
+  local names=seq('fx-unify-curse-circle-'..k..'-',10)   -- 10-31 통일 공정 5종 전체 (옛 fx-B-curse-circle-*-sample 4장)
+  ok(#list==10,'원형 판 '..k..' 10장')
   for i,r in ipairs(list) do
    local a=art[names[i]]
-   ok(#r==32 and a~=nil and a.ruid==r and a.kind=='effect' and a.w==128 and a.h==128 and artRuidCount[r]==1,names[i]..' art_sprites 일치')
+   ok(#r==32 and a~=nil and a.ruid==r and a.kind=='effect' and a.w==384 and a.h==384 and artRuidCount[r]==1,names[i]..' art_sprites 일치 384×384')
    ok(NEW[r]==nil,names[i]..' 중복 없음') NEW[r]=names[i]
   end
  end
@@ -118,7 +123,9 @@ do
   ok(NEW[list[1]]==nil,'표식 '..k..' 중복 없음') NEW[list[1]]=name
  end
  local n=0 for _ in pairs(NEW) do n=n+1 end
- ok(n==82,'새로 올린 82장 = 자리에 연결된 서로 다른 RUID ('..n..')')
+ ok(n==118,'자리에 연결된 서로 다른 RUID 118 = 9계열 82 − 원형 판 옛 24 + 통일 공정 원형 판 60 ('..n..')')
+ ok(Util:MsCount(_GameConst.FxSkillCurseCircleFrameMs)==10 and _GameConst.FxSkillCurseCircleFrameMs=='100,100,100,100,100,100,100,100,130,150','원형 판 장별 ms 개수 = 장 수 10 (반복 8 × 100 + 잦아듦 130·150)')
+ ok(near(Util:MsTailSec(_GameConst.FxSkillCurseCircleFrameMs,_GameConst.FxSkillUnifyReleaseN),0.28) and _GameConst.FxSkillUnifyReleaseN==2,'잦아듦 2장 0.28초')
  local rows,retired,unify=0,0,0
  for name,a in pairs(art) do
   if name:match('^fx%-B%-bone%-armor%-[acb]') or name:match('^fx%-B%-mark%-') or name:match('^fx%-B%-curse%-circle%-') or name:match('^fx%-B%-spectral%-dash') or name:match('^fx%-B%-rite%-bone%-') or name:match('^fx%-B%-soul%-') or name:match('^fx%-B%-projectile%-hit%-') then
@@ -130,13 +137,13 @@ do
    else
     ok(NEW[a.ruid]==name,name..' art_sprites 행이 자리에 연결됨')
    end
-  elseif name:match('^fx%-unify%-bone%-armor%-cast%-') or name:match('^fx%-unify%-soul%-drain%-vortex%-') or name:match('^fx%-unify%-rite%-bone%-whirl') then
+  elseif name:match('^fx%-unify%-bone%-armor%-cast%-') or name:match('^fx%-unify%-soul%-drain%-vortex%-') or name:match('^fx%-unify%-rite%-bone%-whirl') or name:match('^fx%-unify%-curse%-circle%-') then
    unify=unify+1
    ok(NEW[a.ruid]==name,name..' 보정 재출력 행이 자리에 연결됨')
   end
  end
  ok(rows==82,'art_sprites 9계열 fx-B 행 82개 그대로 ('..rows..')')
- ok(retired==17 and unify==17,'교체: 옛 17행(두름 4·소용돌이 4·회오리 8·자국 1) → 보정 재출력 17행 ('..retired..'/'..unify..')')
+ ok(retired==41 and unify==77,'교체: 옛 41행(두름 4·소용돌이 4·회오리 8·자국 1 · 원형 판 24) → 통일 공정 77행(보정 17 · 원형 판 60) ('..retired..'/'..unify..')')
  for name in pairs(RETIRED) do ok(art[name]~=nil,name..' 옛 행 남아 있음') end
  -- arise-flame 보정 4장: 업로드·art_sprites 등록만 (연결 보류 · C 보강 5종 사용자 결정 대기) → GameConst 값 칸 어디에도 없고 주석에만
  for i=0,3 do
@@ -225,7 +232,8 @@ do
 end
 
 -- ② 저주 원형 판: 보이는 반경 = 저주 반경
-local CIRCLE={amp=58.5,weaken=56.7,terror=62.2,thorn=57.7,lifetap=55.5,resist=58.7}   -- 10-31 실측 (가운데에서 알파>16 가장 먼 화소 · 4장 중 최대)
+local CIRCLE={amp=179.5,weaken=183.8,terror=186.1,thorn=180.5,lifetap=186.6,resist=201.7}   -- 10-31 통일 공정 5종 전체 384px 판 실측 (가운데에서 알파>16 가장 먼 화소 · 10장 중 최대)
+local OLDCIRCLE={amp=58.5,weaken=56.7,terror=62.2,thorn=57.7,lifetap=55.5,resist=58.7}   -- 옛 128px 판 4장 (되돌림 · CurseCircleFitPx 주석)
 do
  SkillEffects.Entity=me
  for kind,far in pairs(CIRCLE) do
@@ -242,10 +250,20 @@ do
  reset()
  SkillEffects:CurseShape('amp',Vector3(3,1,0),1.5)
  local p=plays[1]
- ok(#plays==1 and p.fn=='hold' and p.ruids==table.concat(Util:KeyFrames(_GameConst.FxSkillCurseCircles,'amp'),'|'),'낙인 = 원형 판 4장 한 번 (문장보다 먼저)')
- ok(near(p.frameSec,0.1) and near(p.holdSec,0.1+SkillEffects.CurseCircleHoldSec) and near(p.fadeSec,SkillEffects.CurseCircleFadeSec) and p.order==SkillEffects.CurseCircleOrder and SkillEffects.CurseCircleOrder==1,'0.1초씩 · 마지막 장 0.3초 더 · 옅어짐 · 바닥 층(원형 판 전용 CurseCircleOrder 1 · 몸 뒤)')
+ ok(#plays==1 and p.fn=='loopms' and p.ruids==table.concat(Util:KeyFrames(_GameConst.FxSkillCurseCircles,'amp'),'|'),'낙인 = 원형 판 10장 반복 → 잦아듦 (문장보다 먼저 · Util.PlayFramesLoopMs)')
+ ok(p.ms==_GameConst.FxSkillCurseCircleFrameMs and p.releaseN==2 and near(p.loopSec,SkillEffects.CurseCircleLoopSec) and near(SkillEffects.CurseCircleLoopSec,0.8) and near(p.fadeSec,SkillEffects.CurseCircleFadeSec) and p.order==SkillEffects.CurseCircleOrder and SkillEffects.CurseCircleOrder==1,'반복 0.8초(한 바퀴) · 잦아듦 2장 · 옅어짐 0.3 · 바닥 층(원형 판 전용 CurseCircleOrder 1 · 몸 뒤)')
+ local plan=Util:FramePlanLoopMs(p.ms,10,2,p.loopSec,p.fadeSec)
+ ok(plan~=nil and plan.loopFrames==8 and near(plan.holdAt,0.93) and near(plan.clearAt,1.38),'원형 판 전체 1.38초 = 반복 8장 0.8 + 잦아듦 0.28 + 옅어짐 0.3 (옛 4장 판 1.0초)')
  ok(near(p.scale.x,p.scale.y) and near(p.scale.x,SkillEffects:CurseCircleScale('amp',1.5)) and p.pos.x==3 and p.pos.y==1,'가로=세로 · 원 크기 · 자리')
- ok(#particles==0 and logs[1]:find('circle=true',1,true)~=nil,'입자 없음 · [VRF] curse shape circle=true')
+ ok(near(384*p.scale.x/100,384*1.5/179.5,0.001) and near(128*(1.5/0.585)/100*OLDCIRCLE.amp/64,384*p.scale.x/100*CIRCLE.amp/192,0.01),'384px 판 배율 '..string.format('%.3f',p.scale.x)..' (옛 128px 판 '..string.format('%.3f',1.5/0.585)..') · 보이는 반경 같음')
+ ok(#particles==0 and logs[1]:find('circle=true circleN=10',1,true)~=nil,'입자 없음 · [VRF] curse shape circle=true circleN=10')
+ -- 되돌림: 옛 원형 판 4장을 넣으면 (ms 개수 10 ≠ 4) 예전 한 번 길
+ local oldList={} for i=0,3 do oldList[#oldList+1]=art['fx-B-curse-circle-amp-sample-0'..i].ruid end
+ _GameConst.FxSkillCurseCircles='amp='..table.concat(oldList,',')
+ reset()
+ SkillEffects:CurseShape('amp',Vector3(3,1,0),1.5)
+ ok(#plays==1 and plays[1].fn=='hold' and near(plays[1].frameSec,0.1) and near(plays[1].holdSec,0.1+SkillEffects.CurseCircleHoldSec) and near(plays[1].fadeSec,SkillEffects.CurseCircleFadeSec),'옛 4장으로 되돌리면 0.1초씩 · 마지막 장 0.3초 더 · 옅어짐 (예전 길)')
+ restore()
  _GameConst.FxSkillCurseCircles=''
  reset()
  SkillEffects:CurseShape('amp',Vector3(3,1,0),1.5)
@@ -431,7 +449,7 @@ do
  ok(#Util:Frames(_GameConst.FxSkillRiteWhirl)==8,'회오리 8장 전부')
  local circles=0
  for _,k in ipairs({'amp','weaken','terror','thorn','lifetap','resist'}) do local l=Util:KeyFrames(_GameConst.FxSkillCurseCircles,k) circles=circles+#l all(l,'원형 판 '..k) end
- ok(circles==24,'원형 판 6종 × 4장 = 24')
+ ok(circles==60,'원형 판 6종 × 10장 = 60 (통일 공정 5종 전체)')
  local marks=0
  for _,k in ipairs({'amp','weaken','thorn','terror','confuse','lifetap','decay','resist','root','chill','poison','hex'}) do local l=Util:KeyFrames(_GameConst.FxSkillMarks,k) marks=marks+#l all(l,'표식 '..k) end
  ok(marks==12,'표식 12')
