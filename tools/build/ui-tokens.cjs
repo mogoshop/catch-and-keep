@@ -131,6 +131,12 @@ function rankWinLayout(kind, tabRows = 1) {
 const PLATE = { key: 'ui_loot_label', border: 12, rim: 5, pad: SPACE / 2, gap: SPACE / 2 };
 // 책갈피 칸 (guide_tab 320×88): 왼쪽 해골 장식 40 · 오른쪽 화살촉 50을 뺀 안쪽에 아이콘 + 이름을 가운데로 (10-27 사용자: 「목차 내부 패딩 엉망 · 수평 중앙」)
 const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16 };
+// 스킬 지정 창 탭 (SkillPick/Tab1~5 · 152×88): 위 줄 = 칸 이름(단추 자신의 글) · 아래 줄 = 든 스킬 이름(자식 글 Tab/Name).
+//   11-02 메이커: 한 글 칸에 「칸 이름\n스킬 이름」을 넣으면 7자 「포이즌 미스트」가 92px에 안 들어 글자 단위로 꺾여 세 줄이 됐다 —
+//   TextGUIRenderer에는 줄바꿈 끄기 속성이 없고(늘 접힌다) BestFit은 접힌 줄이 칸 높이에 들어가면 줄이지 않는다(fitButtonText 메모와 같은 성질).
+//   → 두 글 칸을 각각 한 줄 높이(글자 × 약 1.58, BAND 38/24와 같은 비)로 좁혀, 길면 접지 않고 글자를 줄인다. 아래 줄은 하한에서도 넘치면 말줄임.
+//   위에서부터: top 12 · 칸 이름 34 · 스킬 이름 28 · bottom 14 (= 88). 폭은 BUTTON.padX 안쪽 92 — 「드레드 셰이드」 5.75em(실측 0.92·0.23) → 약 16px
+const PICKTAB = { w: 152, h: 88, top: 12, labelH: 34, nameH: 28, font: 22, nameFont: 18, minFont: 12 };
 // HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「스킬 추천 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
 //   글은 한 줄. 양 끝 장식(약 40) 안쪽 padX부터, 위아래 padY로 글 칸을 한 줄 높이(72 − 34 = 38)로 좁혀 두 줄로 갈라지지 않게.
 //   긴 제목은 실행 중(UIKit.SetBandText)에 폭을 maxW까지 넓히고 → 글자를 minFont까지 줄이고 → 끝내 말줄임. 같은 값: SkillOffer.mlua Band*
@@ -212,6 +218,7 @@ SOCIAL.winH = SOCIAL.rowTop + (SOCIAL.perPage - 1) * SOCIAL.rowStep + SOCIAL.row
 
 module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, RANK, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout, rankWinLayout };
 module.exports.PARTY = PARTY;
+module.exports.PICKTAB = PICKTAB;
 module.exports.SOCIAL = SOCIAL;
 module.exports.ARROW = ARROW;
 module.exports.socialChipW = socialChipW;

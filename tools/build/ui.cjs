@@ -5,7 +5,7 @@
 // 아이템·스킬 아이콘은 item_bases.csv·skills.csv의 icon 열(메이플 아이템·스킬 그림).
 // PC 전용 = ActivePlatform 1, 모바일 전용 = 2 (나머지는 공용).
 "use strict";
-const { UIBuilder, P, quiet, readIfExists, preserveIds, load, windowFrame, slotLock } = require("./lib.cjs");
+const { UIBuilder, P, quiet, readIfExists, preserveIds, load, windowFrame, slotLock, pickTabText } = require("./lib.cjs");
 
 const ICONS = load("ui_icons");
 const K = Object.fromEntries(ICONS.map((r) => [r.key, r.ruid]));
@@ -326,11 +326,11 @@ function buildGameHud() {
 
   // ── 스킬 지정 (퀵슬롯 칸을 누르거나 메뉴·모바일 편집 버튼으로) ──
   k.frame("SkillPick", "middle-center", [0, 20], [900, 720], "스킬 지정");
-  // 탭 글 = 「칸 이름\n든 스킬」 두 줄 (SkillPicker.Poll · 11-02 메이커 「D 해골 전..」「우클릭 앰플리파..」 Clip(4) → 이름 전부(최장 7자 「드레드 셰이드」 6.28em)).
-  //   글 칸 = 152 − 양쪽 padX 30 = 92 → 6.28em이 14.6px로 한 줄 · 「▶공격 버튼」(모바일) 5.28em도 든다. 어림이 빠듯해 크기 맞춤 하한만 12로 (두 줄 높이 2×1.2×14.6 ≈ 35 < 탭 높이 88 — ux-layout이 64→88)
+  // 탭 = 위 줄 칸 이름(단추 글) + 아래 줄 든 스킬(자식 Name · SkillPicker.Poll). 11-02 메이커: 한 글 칸 「칸 이름\n스킬 이름」은 7자에서 글자 단위로 꺾여 세 줄로 넘쳤다
+  //   (줄바꿈 끄기 속성 없음 · BestFit은 접힌 줄이 높이에 들면 안 줄임) → lib.pickTabText가 두 글 칸을 한 줄 높이로 나눈다 (ui-tokens PICKTAB)
   ["A", "S", "D", "F", "우클릭"].forEach((t, i) => {
-    k.btn(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 64], font_size: 22 });
-    b.patchComponent(`SkillPick/Tab${i + 1}`, "MOD.Core.TextGUIRendererComponent", { MinSize: 12 });
+    k.btn(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 88], font_size: 22 });
+    pickTabText(b, `SkillPick/Tab${i + 1}`);
   });
   k.inner("SkillPick/Grid", "top-center", [0, -166], [820, 424]);
   for (let i = 0; i < 18; i++) {

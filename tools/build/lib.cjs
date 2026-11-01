@@ -120,10 +120,21 @@ function fitButtonText(b, name, opts = {}) {
   b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", fit);
 }
 
+// 스킬 지정 창 탭 두 줄 (ui-tokens PICKTAB · SkillPicker.Poll): 단추 자신의 글 = 위 줄 칸 이름, 자식 Name = 아래 줄 스킬 이름.
+//   두 글 칸 모두 한 줄 높이라 길면 접지 않고 BestFit으로 줄인다 (Name은 하한에서도 넘치면 말줄임 · 누름은 단추가 받는다)
+function pickTabText(b, name) {
+  const T = require("./ui-tokens.cjs");
+  const PT = T.PICKTAB;
+  const bottom = PT.h - PT.top - PT.labelH;
+  b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", { Padding: { left: T.BUTTON.padX, right: T.BUTTON.padX, top: PT.top, bottom }, BestFit: true, MinSize: PT.minFont, MaxSize: PT.font, FontSize: PT.font });
+  b.text(`${name}/Name`, "", { size: PT.nameFont, color: "#E6DCC6", anchor: "bottom-center", pivot: [0.5, 0], pos: [0, bottom - PT.nameH], rect_size: [PT.w - T.BUTTON.padX * 2, PT.nameH], alignment: 4, bestfit: true, min_size: PT.minFont, max_size: PT.nameFont });
+  b.patchComponent(`${name}/Name`, "MOD.Core.TextGUIRendererComponent", { Overflow: 1 });
+}
+
 // 잠금 표지 (10-29 기획서 45 결정 6-A 「잠금」): 칸 왼쪽 위 금빛 ★. 꺼진 채로 두고 InventoryWindow.DrawItem이 잠긴 물건 칸에만 켠다
 //   (코덱스 잠금 그림 — 45 부록 B ⑦ — 이 오기 전까지 글자 표지)
 function slotLock(b, n) {
   b.text(`${n}/Lock`, "★", { size: 22, bold: true, color: "#FFD27A", anchor: "top-left", pivot: [0, 1], pos: [4, -2], rect_size: [28, 28], alignment: 4, outline: true, outline_color: "#101010", outline_width: 0.3, enable: false });
 }
 
-module.exports = { readIfExists, preserveIds, ROOT, ModelBuilder, MapBuilder, UIBuilder, EXT, P, pos, at, list, quiet, exists, load, num, bool, progressBar, windowFrame, fitButtonText, slotLock };
+module.exports = { readIfExists, preserveIds, ROOT, ModelBuilder, MapBuilder, UIBuilder, EXT, P, pos, at, list, quiet, exists, load, num, bool, progressBar, windowFrame, fitButtonText, slotLock, pickTabText };
