@@ -212,8 +212,20 @@ test('build embeds scene-preview data and verifies its separate still manifest',
 
 test('scene rules cover every effect slot and resolve only through the provenance accessor',async()=>{
   const {SLOTS}=await import('./slot-defs.mjs');const {SCENE_RULES}=await import('./scene-defs.mjs');
-  assert.equal(SLOTS.length,81);assert.equal(SCENE_RULES.length,81);
+  assert.equal(SLOTS.length,83);assert.equal(SCENE_RULES.length,83);
   assert.ok(!SLOTS.some(s=>/^spear/.test(s.id)||/FxSkillSpear/.test(s.runtime||"")),"뼈 창 자리는 11-01 스킬 삭제로 뺐다");
+  // 해골 마법사 뼈 투척(옛 뼈 창 그림) 두 자리: 해골·망자 묶음 · 옛 이름 후보(FxSkillSpear*·bone-spear·spear-stick·spear-shard)를 모은다
+  const bolt=SLOTS.find(s=>s.id==='bone-bolt'),hit=SLOTS.find(s=>s.id==='bone-bolt-hit');
+  assert.equal(bolt.runtime,'GameConst.FxBoneBolt');assert.equal(hit.runtime,'GameConst.FxBoneBoltHit');assert.equal(bolt.group,'undead');assert.equal(hit.group,'undead');
+  const first=name=>(SLOTS.find(s=>s.match&&new RegExp(s.match,'i').test(name))||{}).id;
+  for(const n of ['runtime--GameConst-FxSkillSpear GameConst.FxSkillSpear','codex-skill-fx-v1--fx-bone-spear','runtime--GameConst-FxSkillSpearShard GameConst.FxSkillSpearShard','fx-B-bone-spear-projectile-00'])assert.equal(first(n),'bone-bolt',n);
+  for(const n of ['runtime--GameConst-FxSkillSpearHit GameConst.FxSkillSpearHit','fx-B-bone-spear-stick-03'])assert.equal(first(n),'bone-bolt-hit',n);
+  const sceneOf=id=>SCENE_RULES.find(r=>r.id===id);
+  assert.equal(sceneOf('bone-bolt').scene,'summon');assert.equal(sceneOf('bone-bolt').proj.to,'targetBody');assert.equal(sceneOf('bone-bolt-hit').anchor,'targetBody');
+  // 저주 원형판 6자리만 판정 지름(judgeD)을 가진다 = 2 × 코드 반경 1.5
+  const kd={c:(a,fb)=>fb,kv:(a,b,fb)=>fb,code:v=>v,est:v=>v};
+  assert.deepEqual(SCENE_RULES.filter(r=>r.judgeD).map(r=>r.id).sort(),['curse-amp','curse-lifetap','curse-resist','curse-terror','curse-thorn','curse-weaken']);
+  for(const r of SCENE_RULES.filter(r=>r.judgeD))assert.equal(r.judgeD(kd),3,r.id);
   assert.deepEqual(SCENE_RULES.map(r=>r.id).sort(),SLOTS.map(s=>s.id).sort());
   const uses=[];const rec=t=>(v,x)=>(uses.push(t),typeof v==='number'?v:typeof x==='number'?x:1);
   const k={c:(key,fb)=>(uses.push('read'),fb),kv:(key,n,fb)=>(uses.push('read'),fb),kvList:()=>(uses.push('read'),[6,1]),list:()=>[],cfg:(n,fb)=>(uses.push('read'),fb),code:rec('code'),est:rec('est')};
@@ -265,4 +277,14 @@ test('scene view renders rule and actor text as text and exports the shortlist J
   assert.deepEqual(json.slots[0].sceneRule.estimated,['scale']);
   vm.runInContext(`toggleKeep('s','maple:x',false)`,context);
   assert.equal(JSON.parse(vm.runInContext('buildShortlist()',context)).slots.length,0);
+  // 후보 크기: 판정 지름이 있는 원형판 자리는 기본(auto)이 판정 원 맞춤 — 그림이 아직 안 왔으면 보이는 폭의 절반을 반경으로 어림
+  vm.runInContext(`SCENE.rules.c={id:'c',scene:'player',anchor:'aim',scale:0.5,judgeD:3,order:1};SLOTS.slots.push({id:'c',title:'C',group:'g',runtime:null,current:null,fx:[],maple:[{id:'maple:y',source:'maple',frames:['media/b.png'],durations:[100],ruids:[],box:[200,120]}]})`,context);
+  assert.equal(vm.runInContext(`SV.size`,context),'auto');
+  assert.equal(vm.runInContext(`sizeMode(SLOTS.slots[0])+','+sizeMode(SLOTS.slots[1])`,context),'code,circle');
+  assert.equal(vm.runInContext(`fitFactor(SLOTS.slots[1],SLOTS.slots[1].maple[0],SCENE.rules.c)`,context),3);
+  assert.equal(vm.runInContext(`fitFactor(SLOTS.slots[0],SLOTS.slots[0].maple[0],SCENE.rules.s)`,context),1);
+  vm.runInContext(`SV.size='code'`,context);assert.equal(vm.runInContext(`fitFactor(SLOTS.slots[1],SLOTS.slots[1].maple[0],SCENE.rules.c)`,context),1);
+  vm.runInContext(`SV.size='circle'`,context);assert.equal(vm.runInContext(`sizeMode(SLOTS.slots[0])`,context),'code');
+  vm.runInContext(`SV.on=true;PICK.view='compare';PICK.slot='c';render();`,context);
+  assert.ok(getNode('#grid').innerHTML.includes('판정 원에 맞춤'));assert.ok(getNode('#grid').innerHTML.includes('판정 지름 3칸'));
 });

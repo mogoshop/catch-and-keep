@@ -1,11 +1,13 @@
 // Proposes MSW/MapleStory resource clips for each effect slot (draft for scripts/maple-picks.mjs).
 //
-//   node scripts/maple-search.mjs --game <game checkout> [--write]
+//   node scripts/maple-search.mjs --game <game checkout> [--write] [--only <slot id,slot id>]
 //
 // Uses the game checkout's msw-search wrapper (searchResources / findSimilarResources / getResourceTags).
 // Without --write it only prints the proposal; with --write it rewrites scripts/maple-picks.mjs.
 // The committed maple-picks.mjs is the fixed list `npm run slots` reads, so regenerating slot data
 // never changes the picks unless this script is rerun deliberately (search results can drift).
+// --only searches just the listed slots and keeps every other slot's committed picks as they are
+// (their clips count as already used, so a new slot does not reuse another slot's pick).
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -40,6 +42,9 @@ const Q = {
   'hex-burst': ['보라 저주 불꽃 폭발', 'dark purple flame burst'],
   'shatter': ['얼음 파쇄 폭발 파편', 'ice shatter explosion frost'],
   'mage-bolt': ['마법 구슬 투사체', 'magic orb bolt projectile'],
+  // 해골 마법사 뼈 투사체(뼈 투척 몸·꽂힘) — 「해골」「마법사」를 넣으면 해골·마법진 그림이 섞여서 투사체 모양으로 찾는다
+  'bone-bolt': ['하얀 뼈 창 투사체', 'white bone spear projectile'],
+  'bone-bolt-hit': ['창이 꽂히는 하얀 파편 타격', 'white bone spear impale hit'],
   'monster-arrow': ['화살 날아감', 'arrow projectile flying'],
   'hit-spark': ['타격 불꽃 스파크', 'hit spark impact'],
   'offering': ['초록 회복 고리 치유', 'green healing ring heal'],
@@ -231,9 +236,12 @@ try {
   for (const s of slots.slots) existing.set(s.id, new Set([...(s.current?.kind === 'maple' ? s.current.ruids : []), ...s.maple.filter(m => m.origin !== 'search').flatMap(m => m.ruids)]));
 } catch {}
 const used = new Set([...existing.values()].flatMap(s => [...s]));
+const only = typeof opts.only === 'string' ? new Set(opts.only.split(',').map(x => x.trim()).filter(Boolean)) : null;
+const kept = only ? (await import('./maple-picks.mjs')).MAPLE_PICKS : null;
+if (kept) for (const [id, list] of Object.entries(kept)) if (!only.has(id)) list.forEach(p => used.add(p.ruid));
 const picks = {}; const report = [];
 for (const slot of SLOTS) {
-  if (EXCLUDED[slot.id] || !Q[slot.id]) continue;
+  if (EXCLUDED[slot.id] || !Q[slot.id] || (only && !only.has(slot.id))) continue;
   const pool = new Map();
   const add = (list, weight, via) => list.forEach((x, i) => { if (x.type !== 'animationclip') return; const e = pool.get(x.id) || {x, score: 0, via: []}; e.score += weight / (i + 3); e.via.push(via); pool.set(x.id, e); });
   for (const q of Q[slot.id]) add(resultsOf(await api.searchResources(q, {resourceTypeFilter: ['animationclip'], categoryFilter: ['skill'], topK: 20})), 1, q);
@@ -269,6 +277,10 @@ for (const slot of SLOTS) {
 }
 console.log('\n' + report.join('\n'));
 Object.assign(picks, OVERRIDES);
+if (kept) { // --only: committed picks stay; only the listed slots take the new search (in slot order)
+  const fresh = {...picks}; for (const k of Object.keys(picks)) delete picks[k];
+  for (const slot of SLOTS) { const list = only.has(slot.id) && !OVERRIDES[slot.id] ? fresh[slot.id] : kept[slot.id]; if (list) picks[slot.id] = list; }
+}
 if (opts.write) { await writePicks(EXCLUDED, picks); console.log('Wrote scripts/maple-picks.mjs'); }
 await mkdir(path.join(root, 'content/assets/slots-cache'), {recursive: true});
 await writeFile(path.join(root, 'content/assets/slots-cache/maple-search-report.txt'), report.join('\n'));

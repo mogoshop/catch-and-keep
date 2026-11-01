@@ -29,8 +29,11 @@ const c7 = (kind, old, oldSrc) => k => k.code(old, oldSrc) * k.kv('SkillEffects.
 // 거인 계약 Opts: ref(56px = 1칸) → k = (100/56) × 지름 / ref (SkillEffects.mlua:1635-1652 SeqFx)
 const refScale = (width, ref) => (100 / 56) * width / ref;
 
+// 저주 판정 반경: 상수 선언이 아니라 SkillEffects 시전 분기의 지역 값 1.5 (× 장비·강화 범위) → 판정 지름 3칸 · 「판정 원에 맞춤」이 judgeD를 쓴다
+const curseR = k => k.code(1.5, 'SkillEffects.mlua:196-214 저주 6종 Curse(…, 1.5, …) 기본 반경 × (1 + 범위 강화)');
 const curse = kind => ({id: `curse-${kind}`, scene: 'player', anchor: 'aim', pivot: [0.5, 0.5],
-  scale: k => k.code(1.5, 'SkillEffects.mlua:2193 기본 저주 반경 1.5 × (1 + 범위 강화)') / (k.kv('SkillEffects.CurseCircleFitPx', kind, 180) / 100),
+  scale: k => curseR(k) / (k.kv('SkillEffects.CurseCircleFitPx', kind, 180) / 100),
+  judgeD: k => 2 * curseR(k),
   order: k => k.c('SkillEffects.CurseCircleOrder', 1), loop: true, dur: k => k.c('SkillEffects.CurseCircleLoopSec', 0.8),
   release: k => k.c('GameConst.FxSkillUnifyReleaseN', 2), fade: k => k.c('SkillEffects.CurseCircleFadeSec', 0.3), flash: true,
   note: '조준점 바닥 · 보이는 지름 3칸(판정 원과 같게)', src: ['SkillEffects.mlua:2193-2214', 'SkillEffects.mlua:147-151', 'GameConst.mlua:126-128']});
@@ -81,6 +84,14 @@ export const SCENE_RULES = [
     playRate: k => k.code(1.5, 'MonsterTraits.mlua:428-430 PlayRate'), order: MAPLE_ORDER, flash: true, src: ['MonsterTraits.mlua:428-430', 'Monster.mlua:588']},
 
   // ---------- 해골·망자 스킬 ----------
+  {id: 'bone-bolt', scene: 'summon', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(14, 'MageBolts.mlua:146 뼈 투척(bone) 속도')},
+    scale: k => k.code(0.9, 'MageBolts.mlua:140 SkinXY(FxBoneBolt, 0.9, 0.9)'), order: PROJ_ORDER, pivot: [0.5, 0.5], flash: true,
+    note: '해골 마법사(뼈 속성)가 몸(발 + 0.3)에서 몬스터로 쏨 · 그림이 오른쪽을 봄(진행 방향으로 회전) · 관통 2·3·4·5(마법사 랭크) · 사거리 = 공격 사거리 + 0.8 · FxBoneBolt가 비면 골편 궤적(FxShardShot)을 1.32×0.6으로 늘림 · 메이플 후보도 같은 배율 0.9로 놓음(근사)',
+    src: ['MageBolts.mlua:136-146', 'ShadowUnit.mlua:1504-1541 마법사 발사(발 + 0.3에서 생성 · MageBolts.Configure)']},
+  {id: 'bone-bolt-hit', scene: 'summon', anchor: 'targetBody', dy: bodyHeight, scale: k => k.c('Projectile.SpearHitScale', 1.0),
+    order: k => k.code(6, 'Projectile.mlua:425 PlayFramesMs 층 6'), pivot: [0.5, 0.5], flash: true,
+    note: '뼈 투척이 맞은 몬스터 몸 중심(발 + HeightOffset) · 진행 방향으로 회전(장면은 오른쪽 비행이라 0°) · 장별 간격 FxBoneBoltHitMs · 마지막 장(창대가 남은 장)까지 한 번',
+    src: ['Projectile.mlua:414-427', 'Projectile.mlua:498 관통 명중 자리 = 몬스터 발 + HeightOffset', 'GameConst.mlua:91,107']},
   {id: 'blast', scene: 'summon', dist: 1.6, anchor: 'casterFeet', pivot: [0.5, 0.1667], scale: c7('blast', 0.75, 'ShadowUnit.mlua:926-944 해골 폭탄 옛 배율 0.75 × r/1.6 (r 1.6)'),
     order: k => k.kv('SkillEffects.C7Orders', 'blast', 6), flash: true, note: '해골 폭탄 = 해골 발 자리 · 성찬 제물 폭발은 옛 0.45 → 0.58', src: ['ShadowUnit.mlua:926-944', 'SkillEffects.mlua:161-175', 'SkillEffects.mlua:392-444']},
   {id: 'offering', scene: 'player', anchor: 'casterFeet', pivot: [0.5, 0.25], scale: c7('offering', 1.1, 'UndeadSystem.mlua:638-641 옛 1.1 × r/4 (r 4)'),

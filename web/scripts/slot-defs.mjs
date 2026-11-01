@@ -41,6 +41,10 @@ export const SLOTS = [
   {id: 'monster-arrow', title: '몬스터 화살', group: 'attack', runtime: 'GameConst.SpriteArrow', match: 'SpriteArrow'},
   {id: 'hit-spark', title: '맞은 자리 불꽃', group: 'attack', maple: ['GameConst.FxHit'], match: 'FxHit(?![A-Za-z])'},
 
+  // 해골 마법사(뼈 속성) 뼈 투척 — 11-01 캐릭터 뼈 창 스킬 삭제 뒤 남은 같은 그림(옛 FxSkillSpear*) · 옛 이름 패턴도 여기로 모은다
+  {id: 'bone-bolt', title: '해골 마법사 · 뼈 투척', group: 'undead', runtime: 'GameConst.FxBoneBolt', maple: ['MageBolts.FxShardShot'],
+    match: 'FxBoneBolt(?![A-Za-z])|BoneBoltShard|FxSkillSpear(?![A-Za-z])|bone-spear(?!-stick)|SpearShard|spear-shard'},
+  {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 꽂힘', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
   {id: 'blast', title: '해골 폭탄·제물 폭발', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
   {id: 'offering', title: '뼈 성찬 치유', group: 'undead', runtime: 'GameConst.FxSkillOfferingHeal', maple: ['SkillEffects.FxOffering'], match: 'Offering'},
   {id: 'death-wave', title: '죽음의 파동', group: 'undead', runtime: 'GameConst.FxSkillDeathWave', maple: ['SkillEffects.FxWave'], match: 'DeathWave|death-wave'},

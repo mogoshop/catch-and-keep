@@ -99,7 +99,7 @@ function bindPick(grid){
  const cl=grid.querySelector('#pickClear');if(cl)cl.onclick=()=>{if(!pickedCount()&&!Object.keys(PICK.picks).length)return;if(typeof confirm==='function'&&!confirm('고른 것과 메모를 모두 지울까요?'))return;PICK.picks={};savePicks();render()};
  const tg=grid.querySelector('#sceneToggle');if(tg)tg.onclick=()=>{if(!sceneReady())return;SV.on=!SV.on;saveSV();STATE.time=0;render()};
  const sm=grid.querySelector('#sceneMap');if(sm)sm.onchange=e=>{SV.map=e.target.value;saveSV()};
- const ss=grid.querySelector('#sceneSize');if(ss)ss.onchange=e=>{SV.size=e.target.value==='fit'?'fit':'code';saveSV()};
+ const ss=grid.querySelector('#sceneSize');if(ss)ss.onchange=e=>{SV.size=SIZES.includes(e.target.value)?e.target.value:'auto';saveSV()};
  const sf=grid.querySelector('#sceneFlip');if(sf)sf.onchange=e=>{SV.flipMaple=!!e.target.checked;saveSV()};
  grid.querySelectorAll('[data-keep]').forEach(b=>b.onchange=()=>toggleKeep(b.dataset.keepSlot,b.dataset.keep,b.checked));
  const ke=grid.querySelector('#keepExport');if(ke)ke.onclick=exportShortlist;
@@ -137,9 +137,11 @@ function setHash(){try{if(typeof history!=='undefined'&&history.replaceState)his
 function readHash(){try{if(typeof location==='undefined')return;const m=String(location.hash||'').match(/^#pick(?:\/(current|fx|maple|compare))?(?:\/([\w-]+))?/);if(!m)return;STATE.tab='pick';PICK.view=m[1]||'current';if(m[2])PICK.slot=m[2];document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.tab==='pick')))}catch(e){}}
 // ---- 장면 보기: 맵 바탕 위에 배우(캐릭터·몬스터·거인·소환수)와 효과를 코드 배치 규칙대로 겹쳐 재생 (웹 합성 근사) ----
 let SCENE=null;try{SCENE=JSON.parse(document.getElementById('scene-data').textContent||'null')}catch(e){SCENE=null}
-const SCENE_KEY='ckl.sceneView.v1';const SV={on:false,map:'',size:'code',flipMaple:false};
-function loadSV(){try{const raw=typeof localStorage!=='undefined'?localStorage.getItem(SCENE_KEY):null;const v=raw?JSON.parse(raw):null;if(v&&typeof v==='object'){SV.on=!!v.on;if(typeof v.map==='string')SV.map=v.map;if(v.size==='fit')SV.size='fit';SV.flipMaple=!!v.flipMaple}}catch(e){}}
-function saveSV(){try{if(typeof localStorage!=='undefined')localStorage.setItem(SCENE_KEY,JSON.stringify(SV))}catch(e){}}
+const SCENE_KEY='ckl.sceneView.v1';const SV={on:false,map:'',size:'auto',flipMaple:false};
+// 후보 크기: auto = 원형판 자리(규칙에 판정 지름 judgeD)는 판정 원에 맞춤 · 그 밖은 코드 배율 / code / fit = 지금 그림 폭 / circle = 판정 원(원형판 자리만 · 그 밖은 코드 배율)
+const SIZES=['auto','code','fit','circle'];
+function loadSV(){try{const raw=typeof localStorage!=='undefined'?localStorage.getItem(SCENE_KEY):null;const v=raw?JSON.parse(raw):null;if(v&&typeof v==='object'){SV.on=!!v.on;if(typeof v.map==='string')SV.map=v.map;if(v.sv===2&&SIZES.includes(v.size))SV.size=v.size;else if(v.size==='fit')SV.size='fit';SV.flipMaple=!!v.flipMaple}}catch(e){}}
+function saveSV(){try{if(typeof localStorage!=='undefined')localStorage.setItem(SCENE_KEY,JSON.stringify({...SV,sv:2}))}catch(e){}}
 function sceneReady(){return!!(SCENE&&SCENE.rules&&typeof SCENE.rules==='object'&&Array.isArray(SCENE.actors)&&SCENE.actors.length)}
 function ruleOf(id){return sceneReady()&&SCENE.rules[id]&&typeof SCENE.rules[id]==='object'?SCENE.rules[id]:null}
 function sceneOn(){return SV.on&&sceneReady()}
@@ -171,7 +173,21 @@ function sceneCycle(s){const r=ruleOf(s.id);if(!r)return 2;const L=sceneLayout(r
  const len=r.proj?projFlight(r,L).T+0.6:Math.max(0.6,...cands.map(c=>fxLength(c,r)));const extra=r.copies&&r.copies.length?num(r.copies[r.copies.length-1].delay,0):0;
  return Math.max(1.6,sceneStart(r)+len+extra+0.6)}
 function visibleW(c){return c.crop&&c.crop.length===4?c.crop[2]-c.crop[0]:(c.box&&c.box[0])||((c.sizes&&c.sizes[0]&&c.sizes[0][0])||100)}
-function fitFactor(s,c){if(SV.size!=='fit'||!s.current||c===s.current)return 1;const k=visibleW(s.current)/visibleW(c);return isFinite(k)&&k>0?k:1}
+const isCircleRule=r=>!!r&&num(r.judgeD,0)>0;
+function sizeMode(s){const circ=isCircleRule(ruleOf(s.id));return SV.size==='auto'||SV.size==='circle'?(circ?'circle':'code'):SV.size}
+const REACH=new Map();let REACH_CV=null;
+// 원형판의 보이는 반경(px) — 게임 CurseCircleFitPx와 같은 정의: 피벗에서 알파>16 화소까지 가장 먼 거리(모든 장 중 최대). 그림이 다 오기 전이면 null(다음 장면에서 다시 잼)
+function reachPx(s,c,r){const key=s.id+'|'+c.id;if(REACH.has(key))return REACH.get(key);if(typeof document==='undefined'||typeof document.createElement!=='function')return null;
+ const ims=c.frames.map(img);if(!ims.length||ims.some(im=>!im.complete||!im.naturalWidth))return null;
+ if(!REACH_CV)REACH_CV=document.createElement('canvas');const cv=REACH_CV;const x=cv.getContext?cv.getContext('2d',{willReadFrequently:true}):null;if(!x)return null;let best=0;
+ for(let n=0;n<ims.length;n++){const im=ims[n];const iw=im.naturalWidth,ih=im.naturalHeight;cv.width=iw;cv.height=ih;x.drawImage(im,0,0);
+  let d;try{d=x.getImageData(0,0,iw,ih).data}catch(e){REACH.set(key,null);return null}const pv=pivotOf(c,r,n,iw,ih);
+  for(let y=0;y<ih;y++){const dy=y+0.5-pv[1];for(let px=0;px<iw;px++)if(d[(y*iw+px)*4+3]>16){const dx=px+0.5-pv[0];const q=dx*dx+dy*dy;if(q>best)best=q}}}
+ const v=best>0?Math.sqrt(best):null;REACH.set(key,v);return v}
+// 후보 배율에 곱할 값: 판정 원 = 보이는 지름을 판정 지름(judgeD칸)에 맞춤(현재 그림은 코드 배율이 이미 판정 원과 같게 계산됨) · 그림 폭 = 지금 그림의 보이는 폭에 맞춤
+function fitFactor(s,c,r){const m=sizeMode(s);
+ if(m==='circle'){if(c===s.current)return 1;const rad=reachPx(s,c,r)||visibleW(c)/2;const k=num(r.judgeD,3)/2*100/rad/num(r.scale,1);return isFinite(k)&&k>0?k:1}
+ if(m!=='fit'||!s.current||c===s.current)return 1;const k=visibleW(s.current)/visibleW(c);return isFinite(k)&&k>0?k:1}
 function pivotOf(c,r,n,iw,ih){if(isMapleCand(c)){const pv=SCENE.pivots&&c.ruids&&SCENE.pivots[c.ruids[0]];if(pv&&pv[n])return pv[n];const o=c.offsets&&c.offsets[n];if(o&&c.box)return[c.box[0]/2-o[0],c.box[1]/2-o[1]];return[iw/2,ih/2]}
  const p=Array.isArray(r.pivot)?r.pivot:[0.5,0.5];return[num(p[0],0.5)*iw,(1-num(p[1],0.5))*ih]}
 const FLASH=new Map();
@@ -181,7 +197,7 @@ function drawActor(ctx,a,x,flash){if(!a)return;const im=img('scene/'+a.file);if(
 function sceneMap(){const maps=sceneReady()&&Array.isArray(SCENE.maps)?SCENE.maps:[];return maps.find(x=>x.id===SV.map)||maps[0]||null}
 function drawMapBg(ctx){ctx.fillStyle='#1b2630';ctx.fillRect(0,0,SC.W,SC.H);const m=sceneMap();if(!m)return;const im=img('scene/'+m.file);if(!im.complete||!im.naturalWidth)return;const k=scPX()/num(m.pxPerCell,100),w=im.naturalWidth*k,h=im.naturalHeight*k;
  for(let iy=0,y=0;y<SC.H;iy++,y+=h)for(let ix=0,x=0;x<SC.W;ix++,x+=w){ctx.save();ctx.translate(x+(ix%2?w:0),y+(iy%2?h:0));ctx.scale(ix%2?-1:1,iy%2?-1:1);ctx.drawImage(im,0,0,w,h);ctx.restore()}}
-function drawFx(ctx,s,c,r,n,wx,wy,alpha,angle){const im=img(c.frames[n]);if(!im.complete||!im.naturalWidth)return;const iw=im.naturalWidth,ih=im.naturalHeight;const f=fitFactor(s,c);const sc=num(r.scale,1)*f,scy=(r.scaleY!=null?num(r.scaleY,1):num(r.scale,1))*f;const kx=sc/100*scPX(),ky=scy/100*scPX();const pv=pivotOf(c,r,n,iw,ih);
+function drawFx(ctx,s,c,r,n,wx,wy,alpha,angle){const im=img(c.frames[n]);if(!im.complete||!im.naturalWidth)return;const iw=im.naturalWidth,ih=im.naturalHeight;const f=fitFactor(s,c,r);const sc=num(r.scale,1)*f,scy=(r.scaleY!=null?num(r.scaleY,1):num(r.scale,1))*f;const kx=sc/100*scPX(),ky=scy/100*scPX();const pv=pivotOf(c,r,n,iw,ih);
  const flip=(!!r.flipX)!==(SV.flipMaple&&isMapleCand(c));const [sx,sy]=toScreen(wx,wy);ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,alpha*num(r.alpha,1)));ctx.translate(sx,sy);if(angle){ctx.rotate(-angle);if(Math.cos(angle)<0)ctx.scale(1,-1)}ctx.scale(flip?-1:1,1);ctx.drawImage(im,-pv[0]*kx,-pv[1]*ky,iw*kx,ih*ky);ctx.restore()}
 const orderAt=(r,n,N)=>Array.isArray(r.orders)&&r.orders.length?num(r.orders[Math.min(n,r.orders.length-1)],0):num(r.order,0);
 function sceneItems(s,c,r,t,L){const items=[];const st=sceneStart(r);let flashAt=st;
@@ -204,23 +220,25 @@ function drawScene(p){const cv=p.canvas;if(!cv.width)return;const ctx=cv.getCont
  if(r.scene==='summon'||r.scene==='giant'){drawActor(ctx,actorOf('player','stand'),L.behind,false);drawActor(ctx,(r.scene==='giant'&&r.giant&&actorOf('giant-'+r.giant,'stand'))||actorOf(r.scene,'stand'),L.c,false)}
  else drawActor(ctx,actorOf('player',castOn?'cast':'stand'),L.c,fl&&r.scene==='monster');
  band(5,1e9);
- const lbl=p.el.querySelector('.frame-label');if(lbl)lbl.textContent=`장면 ${t.toFixed(1)} / ${cyc.toFixed(1)}초`}
+ const circ=sizeMode(s)==='circle';if(circ){const b=scenePoint(r.anchor,r,L);const [cx,cy]=toScreen(b[0]+num(r.dx,0),b[1]+num(r.dy,0));ctx.save();ctx.setLineDash([5,4]);ctx.lineWidth=1.5;ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.beginPath();ctx.arc(cx,cy,num(r.judgeD,3)/2*scPX(),0,Math.PI*2);ctx.stroke();ctx.restore()}
+ const lbl=p.el.querySelector('.frame-label');if(lbl)lbl.textContent=`장면 ${t.toFixed(1)} / ${cyc.toFixed(1)}초${circ?` · 판정 원 ${num(r.judgeD,3)}칸 맞춤`:''}`}
 const ANCHOR_KO={casterFeet:'시전자 발',targetFeet:'표적 발',targetBody:'표적 몸',targetHead:'표적 머리 위',aim:'조준점 바닥'};
 const CASTER_KO={player:'캐릭터',summon:'소환수',giant:'거인',monster:'캐릭터(맞는 쪽)'};
-const FIELD_KO={scale:'배율',scaleY:'세로 배율',order:'층',orders:'층',dx:'가로 위치',dy:'높이',dur:'지속',copies:'복사본 위치',start:'시작 시각','proj.speed':'투사체 속도','proj.time':'비행 시간','proj.sky':'낙하 시작점','proj.arc':'곡선',offsets:'장별 위치',hold:'유지',fade:'옅어짐',alpha:'투명도',playRate:'재생 빠르기',frameSec:'장 간격',release:'잦아듦'};
+const FIELD_KO={scale:'배율',judgeD:'판정 지름',scaleY:'세로 배율',order:'층',orders:'층',dx:'가로 위치',dy:'높이',dur:'지속',copies:'복사본 위치',start:'시작 시각','proj.speed':'투사체 속도','proj.time':'비행 시간','proj.sky':'낙하 시작점','proj.arc':'곡선',offsets:'장별 위치',hold:'유지',fade:'옅어짐',alpha:'투명도',playRate:'재생 빠르기',frameSec:'장 간격',release:'잦아듦'};
 const layerKo=o=>o<=1?'뒤층(바닥)':o<=4?'몸 사이':'앞층';
 function ruleSummary(r){const parts=[];
  if(r.proj){const p=r.proj;parts.push(`${CASTER_KO[r.scene]||'시전자'} 쪽 투사체 ${p.time?p.time+'초':p.speed+'칸/초'}${p.count>1?` · ${p.count}발 ${p.spread||0}°`:''}`)}
  else{const who=String(r.anchor||'').startsWith('caster')?(CASTER_KO[r.scene]||'시전자')+' ':'';parts.push(`${who}${ANCHOR_KO[r.anchor]||r.anchor||''}${num(r.dy,0)?` +${r.dy}칸`:''}${num(r.dx,0)?` · 앞 ${r.dx}칸`:''}`)}
  parts.push(`배율 ${r.scale}${r.scaleY!=null?'×'+r.scaleY:''}`);
  parts.push(Array.isArray(r.orders)&&r.orders.length?`${layerKo(r.orders[0])}→${layerKo(r.orders[r.orders.length-1])}(${r.orders[0]}→${r.orders[r.orders.length-1]})`:`${layerKo(num(r.order,0))}(${num(r.order,0)})`);
+ if(isCircleRule(r))parts.push(`판정 지름 ${r.judgeD}칸`);
  parts.push(r.loop?`반복 ${r.dur}초`:'1회');if(r.follow)parts.push('몸을 따라감');return parts.join(' · ')}
 function ruleUses(r){return(r.uses||[]).map(u=>`${u.t==='read'?'읽음':u.t==='code'?'코드 옮김':'추정'} · ${FIELD_KO[u.f]||u.f} = ${Array.isArray(u.v)?u.v.join(','):u.v}${u.key?' · '+u.key:''}${u.at?' · '+u.at:''}${u.why?' · '+u.why:''}`).join('\n')}
 function sceneRuleBox(s){const r=ruleOf(s.id);if(!r)return'<p class="slot-empty">이 자리의 장면 규칙이 자료에 없습니다.</p>';const est=[...new Set((r.estimated||[]).map(f=>FIELD_KO[f]||f))];
  return`<div class="scene-rule"><span>장면 규칙 · ${esc(ruleSummary(r))}</span> ${est.length?`<span class="tag pending">추정: ${esc(est.join('·'))}</span>`:'<span class="tag current">모두 코드 값</span>'}${r.note?`<div class="caption">${esc(r.note)}</div>`:''}<details class="sources"><summary>근거 ${esc((r.src||[]).length)}곳 · 값 ${esc((r.uses||[]).length)}개</summary><pre>${esc((r.src||[]).join('\n')+'\n\n'+ruleUses(r))}</pre></details></div>`}
 function sceneControls(){if(!sceneReady())return'<button class="small" id="sceneToggle" disabled title="장면 자료 없음 — npm run scene">장면 자료 없음</button>';
  const maps=Array.isArray(SCENE.maps)?SCENE.maps:[];const m=sceneMap();
- return`<button class="small" id="sceneToggle" aria-pressed="${SV.on}">${SV.on?'✓ 장면 보기':'장면 보기'}</button>${SV.on?`<label class="select-label">바탕<select id="sceneMap">${maps.map(x=>`<option value="${esc(x.id)}"${m===x?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label><label class="select-label">후보 크기<select id="sceneSize"><option value="code"${SV.size==='code'?' selected':''}>코드 배율 그대로</option><option value="fit"${SV.size==='fit'?' selected':''}>지금 그림 폭에 맞춤</option></select></label><label class="select-label"><input type="checkbox" id="sceneFlip"${SV.flipMaple?' checked':''}> 메이플 클립 좌우 반전</label>`:''}`}
+ return`<button class="small" id="sceneToggle" aria-pressed="${SV.on}">${SV.on?'✓ 장면 보기':'장면 보기'}</button>${SV.on?`<label class="select-label">바탕<select id="sceneMap">${maps.map(x=>`<option value="${esc(x.id)}"${m===x?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label><label class="select-label">후보 크기<select id="sceneSize">${[['auto','기본 (원형판 = 판정 원 · 그 밖 = 코드 배율)'],['code','코드 배율 그대로'],['fit','지금 그림 폭에 맞춤'],['circle','판정 원에 맞춤 (원형판 자리만)']].map(([v,t])=>`<option value="${v}"${SV.size===v?' selected':''}>${t}</option>`).join('')}</select></label><label class="select-label"><input type="checkbox" id="sceneFlip"${SV.flipMaple?' checked':''}> 메이플 클립 좌우 반전</label>`:''}`}
 function actorLine(a){const s=a.source||{};const where=a.kind==='capture'?`증거에서 잘라냄(배경 지우기 근사) ${s.file}${s.t!=null?' @'+s.t+'s':''} crop ${(s.crop||[]).join(',')} · 줌 ${s.zoom}`:a.kind==='atlas'?`에셋 도감 몸 프레임 ${s.group}`:`정식 PNG ${s.file||''}`;return`${a.label} — ${where} · ${a.pxPerCell}px/칸${a.note?' · '+a.note:''}`}
 function sceneNote(){if(!sceneOn())return'';const A=SCENE.actors,M=Array.isArray(SCENE.maps)?SCENE.maps:[];
  return`<div class="scene-note"><b>장면 보기 · 웹 합성(근사)</b> — 메이커 실녹화가 아닙니다. 배치 규칙은 게임 ${esc(String(SCENE.sourceCommit).slice(0,8))}(${esc(fmtDate(SCENE.sourceDate))})의 상수 선언을 읽고, 코드에서 못 읽은 값은 「추정」으로 표시했습니다. 피격 번쩍임은 배우 그림에 흰빛을 덮은 흉내입니다. 한 자리의 후보는 모두 같은 장면에서 같은 시각부터 재생됩니다.<details class="sources"><summary>배우·바탕 출처 ${esc(A.length+M.length)}개</summary><pre>${esc([...A.map(actorLine),...M.map(m=>`바탕 ${m.label} — ${(m.source||{}).file}${(m.source||{}).t!=null?' @'+m.source.t+'s':''} crop ${((m.source||{}).crop||[]).join(',')} · ${m.pxPerCell}px/칸`)].join('\n'))}</pre></details></div>`}
