@@ -302,7 +302,7 @@ script SkillWindow extends Logic
         _UIKit:SetText(ws .. "/RankNote", "")
         _UIKit:SetText(ws .. "/Reason", "")
         _UIKit:SetText(ws .. "/Roster", "")
-        for _, p in ipairs({ "TreeHead", "Hub", "Spine", "Form", "Banner" }) do _UIKit:SetEnabled(ws .. "/" .. p, false) end
+        for _, p in ipairs({ "TreeHead", "Hub", "Spine", "Form", "Banner", "GiantHint" }) do _UIKit:SetEnabled(ws .. "/" .. p, false) end
         for i = 1, 6 do _UIKit:SetEnabled(ws .. "/Need" .. tostring(i), false) end
         for i = 1, 8 do
             _UIKit:SetEnabled(ws .. "/N" .. tostring(i), false)
@@ -553,11 +553,20 @@ script SkillWindow extends Logic
         local root = self.Win .. "/WS/Banner"
         local on = self.SelMain == "bone_giant"   -- 11-02 거인 분리: 깃발 줄은 본 골렘 공방으로
         _UIKit:SetEnabled(root, on)
+        -- 11-02 메이커 지적 「깃발 안 고름 → 기본 거인 → 노드 0 → 오른쪽 판이 빔」: 펼친 거인의 노드가 0개면 노드 판 자리에 안내 한 줄 + 노드 있는 거인 깃발 칸을 초록 테로 강조.
+        --   대검을 대신 펼치지 않는 까닭: 깃발 「안 고름」은 실제로 무리 다수결(GiantPlan)로 서는 상태라, 고르지 않은 대검 노드를 보이면 「대검 거인이 선다」로 읽힌다 → 깃발 칸을 눌러 고르게 이끈다
+        local hint = on and #self:VisibleNodes(book, self.SelMain) == 0
+        _UIKit:SetEnabled(self.Win .. "/WS/GiantHint", hint)
         if not on then return end
         local kinds = _UndeadSystem:GiantFallback()
         local shown = self:ShownGiant(book)
         local unlocked = book:RiteGiantUnlocked()
         _UIKit:SetText(root .. "/Head", (unlocked and "" or "거인 악몽부터 · ") .. "동률이면")
+        if hint then
+            local basic = book.RiteBanner == "basic" or self.ShowGiant == "basic"
+            _UIKit:SetText(self.Win .. "/WS/GiantHint", basic and "기본 거인은 강화가 없습니다 · 다른 깃발을 골라주세요" or "깃발을 골라 거인 종류를 정해주세요")
+            if not Environment:IsPublishedPlay() then log("[VRF] skill giant panel banner=" .. (book.RiteBanner == "" and "none" or book.RiteBanner) .. " → hint") end
+        end
         for i = 1, 6 do
             local c = root .. "/K" .. tostring(i)
             local kind = kinds[i] or ""
@@ -569,7 +578,8 @@ script SkillWindow extends Logic
             local key = "sk_ws_node_frame_empty"
             local ring = Color(0.7, 0.7, 0.7, 0.8)
             if chosen then key, ring = "sk_ws_node_frame_max", Color(1, 1, 1, 1)
-            elseif kind ~= "" and kind == shown then key, ring = "sk_ws_node_frame_learned", self:TreeColor("command") end
+            elseif kind ~= "" and kind == shown then key, ring = "sk_ws_node_frame_learned", self:TreeColor("command")
+            elseif hint and kind ~= "" and kind ~= "basic" then ring = Color(0.62, 0.92, 0.62, 1) end   -- 안내 중: 강화 노드가 있는 거인 칸 = 「배울 수 있음」과 같은 초록 테
             _UIKit:SetIcon(c .. "/Rim", _GameData:GetUiIcon(key))
             _UIKit:SetColor(c .. "/Rim", ring)
         end

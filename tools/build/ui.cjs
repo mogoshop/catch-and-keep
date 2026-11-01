@@ -326,7 +326,12 @@ function buildGameHud() {
 
   // ── 스킬 지정 (퀵슬롯 칸을 누르거나 메뉴·모바일 편집 버튼으로) ──
   k.frame("SkillPick", "middle-center", [0, 20], [900, 720], "스킬 지정");
-  ["A", "S", "D", "F", "우클릭"].forEach((t, i) => k.btn(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 64], font_size: 22 }));
+  // 탭 글 = 「칸 이름\n든 스킬」 두 줄 (SkillPicker.Poll · 11-02 메이커 「D 해골 전..」「우클릭 앰플리파..」 Clip(4) → 이름 전부(최장 7자 「드레드 셰이드」 6.28em)).
+  //   글 칸 = 152 − 양쪽 padX 30 = 92 → 6.28em이 14.6px로 한 줄 · 「▶공격 버튼」(모바일) 5.28em도 든다. 어림이 빠듯해 크기 맞춤 하한만 12로 (두 줄 높이 2×1.2×14.6 ≈ 35 < 탭 높이 88 — ux-layout이 64→88)
+  ["A", "S", "D", "F", "우클릭"].forEach((t, i) => {
+    k.btn(`SkillPick/Tab${i + 1}`, t, { anchor: "top-left", pos: [40 + i * 166, -86], rect_size: [152, 64], font_size: 22 });
+    b.patchComponent(`SkillPick/Tab${i + 1}`, "MOD.Core.TextGUIRendererComponent", { MinSize: 12 });
+  });
   k.inner("SkillPick/Grid", "top-center", [0, -166], [820, 424]);
   for (let i = 0; i < 18; i++) {
     const col = i % 6, row = Math.floor(i / 6);
@@ -571,6 +576,12 @@ function buildGameHud() {
       b.text(`${c}/Label`, "", { size: 15, color: C.white, anchor: "bottom-center", pos: [0, 4], rect_size: [chipW - 4, 24], alignment: 4, bestfit: true, min_size: 11, max_size: 15, ...outline });
     }
     b.patch(bn, { enable: false });
+  }
+  // 본 골렘 공방 빈 판 안내 (11-02 메이커 지적 「깃발 안 고름 → 기본 거인 → 노드 0 → 오른쪽 판이 빔」 · 컨트롤러 SkillWindow.RenderBanner):
+  //   펼친 거인의 강화 노드가 0개일 때만 노드 판 자리(필요 랭크 머리 줄 −66 ~ 둘째 줄 노드 바닥 −298 · 판 왼쪽 강화 머리 x 560 ~ 판 안쪽)에 한 줄. 깃발 줄(−304)은 그 아래
+  {
+    const top = -66, bottom = -298, left = 560, right = ACT.right;
+    b.text(`${ws}/GiantHint`, "", { size: 20, bold: true, color: "#E6C88A", anchor: "top-left", pivot: [0, 1], pos: [left, top], rect_size: [right - left, top - bottom], alignment: 4, bestfit: true, min_size: 14, max_size: 20, ...outline, enable: false });
   }
   // 강화 +1 (11-01): 고른 강화 노드 한 단계 — 노드를 안 골랐으면 꺼짐(누름 막음 + 흐림). 컨트롤러 SkillWindow.RenderLearnButton·ActNode
   k.ok(`${ws}/BtnUpgrade`, "강화 +1", { anchor: "top-left", pivot: [0, 1], pos: [ACT.upX, ACT.top], rect_size: [ACT.upW, ACT.h], font_size: 20 });
