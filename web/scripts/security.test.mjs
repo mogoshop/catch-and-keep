@@ -104,6 +104,60 @@ test('atlas renders catalog image attributes and summary text without creating H
   assert.equal(getNode('#stats').innerHTML.includes('<img'),false);
 });
 
+test('build embeds effect-slot data and verifies its separate media manifest',async t=>{
+  for(const kind of ['ok','bad-hash'])await t.test(kind,async t=>{
+    const {folder}=await fixture(t);
+    const slotFrame=Buffer.from('slot frame bytes');
+    await mkdir(path.join(folder,'content/assets/media/slots'),{recursive:true});
+    await writeFile(path.join(folder,'content/assets/media/slots/a.png'),slotFrame);
+    const cand={id:'maple:x',source:'maple',title:'</script><img src=x onerror=alert(1)>',frames:['media/slots/a.png'],durations:[100],ruids:['0'.repeat(32)],box:[1,1]};
+    const slots={createdAt:'2026-11-01',sourceRef:'origin/main',sourceCommit:'abc',sourceDate:'2026-11-01',catalog:{createdAt:'2026-10-31',sourceCommit:'def'},
+      groups:[{id:'g',title:'G'}],slots:[{id:'s',title:'S',group:'g',runtime:null,currentNote:'',current:null,fx:[],maple:[cand]}],unassigned:[],counts:{slots:1}};
+    await writeJSON(path.join(folder,'content/assets/slots.json'),slots);
+    await writeJSON(path.join(folder,'content/assets/slots-manifest.json'),[{file:'media/slots/a.png',sha256:kind==='ok'?createHash('sha256').update(slotFrame).digest('hex'):'wrong'}]);
+    const result=run(folder,'build');
+    if(kind==='bad-hash'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch/);return;}
+    assert.equal(result.status,0,result.stderr);
+    await access(path.join(folder,'dist/assets/media/slots/a.png'));
+    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const embedded=html.match(/<script id="slots-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+    assert.deepEqual(JSON.parse(embedded),slots);
+    assert.equal(embedded.includes('</script>'),false);
+  });
+});
+
+test('effect picker renders slot text as text and exports RUIDs with the memo',async()=>{
+  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
+  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const evil='<img src=x onerror=alert(1)>';
+  const cand={id:'maple:x',source:'maple',title:evil,statusLabel:evil,frames:['media/a.png'],durations:[100],ruids:['1'.repeat(32)],box:[1,1],runtimeKey:'SkillEffects.FxPoisonCloud'};
+  const slots={createdAt:'2026-11-01T00:00:00Z',sourceRef:'origin/main',sourceCommit:'abcdef12',sourceDate:'2026-11-01T00:00:00+09:00',catalog:{createdAt:'2026-10-31',sourceCommit:'12345678'},
+    groups:[{id:'g',title:evil}],slots:[{id:'s',title:evil,group:'g',runtime:'GameConst.FxSkillPoisonCloud',currentNote:evil,current:null,fx:[],maple:[cand]}],unassigned:[],counts:{slots:1}};
+  const data={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:1,frameReferences:1},skills:[],groups:[],engineEffects:[],proceduralEffects:[]};
+  const nodes=new Map();
+  const getNode=selector=>{
+    if(!nodes.has(selector))nodes.set(selector,{textContent:'',innerHTML:'',value:'',querySelectorAll:()=>[],querySelector:()=>null,setAttribute(){},classList:{toggle(){}},showModal(){},getContext:()=>({clearRect(){},fillText(){}}),width:100,height:100});
+    return nodes.get(selector);
+  };
+  getNode('#catalog-data').textContent=JSON.stringify(data);
+  getNode('#slots-data').textContent=JSON.stringify(slots);
+  const context=vm.createContext({document:{querySelector:getNode,querySelectorAll:()=>[],getElementById:id=>getNode('#'+id)},
+    performance:{now:()=>0},requestAnimationFrame(){},IntersectionObserver:class{disconnect(){}observe(){}},Image:class{complete=false;naturalWidth=0;}});
+  vm.runInContext(script,context);
+  for(const view of ['current','fx','maple','compare']) {
+    vm.runInContext(`STATE.tab='pick';PICK.view=${JSON.stringify(view)};render();`,context);
+    const html=getNode('#grid').innerHTML;
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'),view);
+    assert.equal(html.includes('<img src=x'),false,view);
+  }
+  const text=vm.runInContext(`PICK.picks={s:{choice:'maple:x',memo:'잘 보임'}};buildExport()`,context);
+  const json=JSON.parse(text.match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.equal(json.picks[0].slotId,'s');
+  assert.equal(json.picks[0].choice,'maple');
+  assert.deepEqual(json.picks[0].ruids,['1'.repeat(32)]);
+  assert.equal(json.picks[0].memo,'잘 보임');
+});
+
 test('publish reports deployment launch and signal failures as failures',async t=>{
   for(const mode of ['missing-command','signal','exit-code'])await t.test(mode,async t=>{
     const folder=await mkdtemp(path.join(os.tmpdir(),'library-publish-'));
