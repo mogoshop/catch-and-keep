@@ -13,6 +13,9 @@
 //   ;markers W E H T S R             표식 글자 (바닥으로 친다). 배치표의 기능 엔티티가 표식 1칸 안에 있는지 검사한다
 //   ;gatebox <글자> <반폭> <반높이>   그 표식 포털의 사각 반응 구역 (maps.cjs → WarpGate.TriggerBox · 원 Radius와 함께 · 설계서 gateBox · 11-01 마을 남문 3칸)
 //   ;backdrop r/g/b                  맵 밖 배경(Background 단색) — 없으면 템플릿 색 그대로 (10-29 바다·용암 담 위 맵)
+//   ;plate <장면판 id> x0 y0 x1 y1     장면판 (11-02 기획 53 · data/handmade/scene_plates.csv): 월드 사각형 [x0, x1)×[y0, y1) 안에 발이 있는 배치표 행(prop·decal·set 조각·
+//                                    cluster 흩뿌림)·재질 접합·출구 표식은 놓지 않고(이름 번호는 그대로 소비 → 구역 밖 엔티티 이름 불변), 그 표의 바닥판 한 장(z −0.012 · 바닥·길·띠 위, 벽·장식 아래)과
+//                                    특징물(+ -top 앞층)·소품을 표의 자리·피벗·z 그대로 놓는다. 표 blocks 칸은 장식 발밑처럼 충돌 칸(art.blocked). 바닥 조각(ArtZone·ArtRoad·띠)은 덮기만 한다
 //   ;floormix <바닥그림>[,<바닥그림>…]  그 바닥 그림을 쓰는 구역(바탕 . 포함)을 그림 한 장(1.28칸) 단위로 좌우·상하 뒤집어 반복 격자를 깬다
 //                                    (10-29 폭풍의 눈 따개비 돌 — 큰 조약돌이 1.28칸 격자로 보였다). 좌우는 그림 열마다 · 상하는 그림 줄마다 같은 값이라
 //                                    이음 없는 타일이면 이음이 깨지지 않는다 (칸마다 따로 뒤집으면 옆 칸과 가장자리 줄이 거꾸로 맞닿아 금이 간다 — 원본 PNG로 잼).
@@ -117,7 +120,7 @@ const EDGE_BODY = {
 // ───────── 설계도 ─────────
 function parseBlueprint(id) {
   const text = fs.readFileSync(path.join(HM_DIR, id + ".txt"), "utf8");
-  const bp = { id, w: 0, h: 0, base: null, zones: {}, roads: {}, walls: {}, markers: new Set(), rows: [], floorMix: new Set() };
+  const bp = { id, w: 0, h: 0, base: null, zones: {}, roads: {}, walls: {}, markers: new Set(), rows: [], floorMix: new Set(), plates: [] };
   for (const raw of text.split(/\r?\n/)) {
     if (raw.startsWith(";")) {
       const m = raw.slice(1).trim().split(/\s+/);
@@ -161,6 +164,11 @@ function parseBlueprint(id) {
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
       else if (m[0] === "gatebox") (bp.gateBox = bp.gateBox || {})[m[1]] = [Number(m[2]), Number(m[3])];   // ;gatebox G 반폭 반높이 — 그 포털의 사각 반응 구역 (maps.cjs → WarpGate.TriggerBox · 11-01 마을 남문)
       else if (m[0] === "backdrop") bp.backdrop = m[1];
+      else if (m[0] === "plate") {   // ;plate <장면판 id> x0 y0 x1 y1 (11-02 기획 53 장면판)
+        const [x0p, y0p, x1p, y1p] = m.slice(2, 6).map(Number);
+        if (!m[1] || ![x0p, y0p, x1p, y1p].every(Number.isFinite) || x1p <= x0p || y1p <= y0p) throw new Error(`${id}.txt: ;plate <장면판 id> x0 y0 x1 y1 꼴이 아님 — '${raw}'`);
+        bp.plates.push({ id: m[1], x0: x0p, y0: y0p, x1: x1p, y1: y1p });
+      }
       else if (m[0] === "floormix") for (const a of (m[1] || "").split(",").filter(Boolean)) bp.floorMix.add(a);
       else if (m[0] === "v5") { bp.v5 = true; bp.v5keep = m[1] === "keep"; }   // ;v5 keep = 바닥 보존형 (구역·길 글자 그대로)   // 맵 구성 v5 (compose.cjs 설계서 v5) — 아래 artEntities: 길 안내·흩뿌림 정책 없음 · 역할표 기준 크기
       continue;
@@ -262,6 +270,12 @@ const TOP_LAYER = "Default", TOP_ORDER = 5;
 //   자르는 선보다 위면 윗부분이 앞에 선 사람 머리를 덮는다(원본만 있을 땐 y 정렬로 사람이 앞). 그런 자리는 놓지 않는다 (2차 우리 16·창살 13 = 모두 벽 밀착이라 뒤에 설 칸도 없음)
 const TOP_FRONT_HEAD = 0.75;
 let TOP_CUT = null;
+// 장면판 표 (11-02 기획 53 · data/handmade/scene_plates.csv — 코덱스 manifest를 옮긴 것: 장면판 id · 그림 key · 역할 plate/feature/feature-top/prop · 자리 · 피벗 · 층/순서/z · 막을 칸 · 크기 · -top 첫 투명 줄)
+let SCENE_PLATES = null;
+function scenePlates() {
+  if (!SCENE_PLATES) { SCENE_PLATES = {}; if (fs.existsSync(path.join(HM_DIR, "scene_plates.csv"))) for (const r of load("handmade/scene_plates")) (SCENE_PLATES[r.plate] = SCENE_PLATES[r.plate] || []).push(r); }
+  return SCENE_PLATES;
+}
 function topCuts() { if (!TOP_CUT) { TOP_CUT = {}; if (fs.existsSync(path.join(HM_DIR, "top_cutlines.csv"))) for (const r of load("handmade/top_cutlines")) TOP_CUT[r.name] = r; } return TOP_CUT; }
 // 자르는 선 높이 = 발 y + 그림 화면 높이 × topCutFrac (= 캔버스 아래에서 첫 완전 투명 줄까지 비율 − 피벗)
 function topCutFrac(topName, srcName) { const r = topCuts()[topName]; return r ? (num(r.h) - num(r.first_clear_row)) / num(r.h) - num(r.pivot_y, 0) : roles.footFrac(srcName); }
@@ -360,6 +374,10 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   const x0 = -w / 2, x1 = w / 2, y0 = -h / 2 + 1, y1 = h / 2 + 1;
   const funcSpots = func.map((e) => e.pos);
   const nearFunc = (x, y) => funcSpots.some(([fx, fy]) => Math.abs(fx - x) < NEAR_FUNC[0] && Math.abs(fy - y) < NEAR_FUNC[1]);
+  // ;plate 장면판 구역 (11-02): 발이 이 사각형 안이면 자동·배치표 장식을 놓지 않는다 — 그림이 장면판에 들어 있다
+  const plates = bp.plates || [];
+  const inPlate = (x, y) => plates.some((p) => x >= p.x0 && x < p.x1 && y >= p.y0 && y < p.y1);
+  const plateSkipped = [];
   const sprite = (rid, size, order) => ({
     "MOD.Core.SpriteRendererComponent": Object.assign({ SpriteRUID: rid, SortingLayer: "MapLayer0", OrderInLayer: order },
       size ? { DrawMode: 2, TiledSize: { x: r3(size[0]), y: r3(size[1]) } } : { DrawMode: 0 }),
@@ -1002,6 +1020,12 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   let propN = 0, decalN = 0, setN = 0, clN = 0;
   for (const r of rows) {
     const x = num(r.x), y = num(r.y), where = `${d.id}.csv ${r.kind} ${r.name || ""} @${r.x}/${r.y}`;
+    if (plates.length && ["prop", "decal", "set", "cluster"].includes(r.kind) && inPlate(x, y)) {
+      // 장면판 구역 안: 놓지 않되 이름 번호(ArtProp·ArtDecal·ArtSet·ArtCl)는 소비해 구역 밖 엔티티 이름·경로를 그대로 둔다
+      if (r.kind === "prop") ++propN; else if (r.kind === "decal") ++decalN; else if (r.kind === "set") ++setN; else ++clN;
+      plateSkipped.push(`${r.kind} ${r.name} (${r.x}, ${r.y})`);
+      continue;
+    }
     if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1", padl: num(a.padl, 0), padr: num(a.padr, 0), hole: num(a.hole, 0), fill: a.fill ? a.fill.split(",").map((t) => t.split("/").map(Number)) : null }); }
     else if (r.kind === "decal") place(`ArtDecal${++decalN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, true, where);
     else if (r.kind === "set") {
@@ -1012,6 +1036,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       pieces.forEach((pc, k) => {
         const decal = pc.piece.startsWith("d:"), name = decal ? pc.piece.slice(2) : pc.piece;
         const px = x + num(pc.dx) * mirror, py = y + num(pc.dy);
+        if (inPlate(px, py)) { plateSkipped.push(`${tag}_${k + 1} ${pc.piece} (${r3(px)}, ${r3(py)})`); return; }   // 장면판 구역 안 조각만 뺀다 (번호 k 그대로)
         if (mode && !["block", "pass"].includes(pc.collide)) throw new Error(`map_sets.csv ${r.name} 조각 '${pc.piece}': collide 열(block/pass)이 비었음`);
         const sa = parseArgs(r.args), sf = num(sa.foot, 0) && roles.roleOf(name) === "feature" ? { frac: num(sa.foot, 0) } : null;   // args foot=: 세트의 특징 조각만 (v5 열린 바닥 랜드마크)
         place(`${tag}_${k + 1}`, name, r3(px), r3(py), num(pc.scale, 1) * num(r.scale, 1), (num(pc.flip) === 1) !== (mirror < 0), null, decal, `${where} 조각 ${k + 1} '${name}'`, setOk, false, mode ? pc.collide : null, false, sf);
@@ -1024,7 +1049,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
         const ang = rand() * Math.PI * 2, dist = Math.sqrt(rand()) * radius;
         const px = r3(x + Math.cos(ang) * dist), py = r3(y + Math.sin(ang) * dist * 0.75);
         const cx = Math.floor(px), cy = Math.floor(py);
-        if (!bp.isFloor(cx, cy) || bp.isRoad(cx, cy) || blocked.has(key(cx, cy)) || nearFunc(px, py)) continue;
+        if (!bp.isFloor(cx, cy) || bp.isRoad(cx, cy) || blocked.has(key(cx, cy)) || nearFunc(px, py) || inPlate(px, py)) continue;
         if (feet.some(([fx, fy]) => Math.hypot(fx - px, fy - py) < 1.3)) continue;
         if (decor.tooClose(opts.route, px, py)) continue;   // 10-31 C-1: 길 안내 둘레(출구 갈래 1.5칸 · 고리 1칸)는 비운다
         const name = names[Math.floor(rand() * names.length)], decal = /decal/.test(name);
@@ -1039,6 +1064,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   const joinMissing = new Set();
   for (const [jName, jx, jy, jScale, jFlip] of MATERIAL_JOINS[d.id] || []) {
     if (!table[jName]) { joinMissing.add(jName); continue; }
+    if (inPlate(jx, jy)) { ++joinN; plateSkipped.push(`join ${jName} (${jx}, ${jy})`); continue; }   // 장면판 구역 안 (번호 소비)
     place(`ArtJoin${++joinN}`, jName, jx, jy, jScale, jFlip === 1, null, true, `${d.id} 재질 접합 ${joinN} '${jName}'`);
   }
   for (const n of joinMissing) warn.push(`${d.id}: 재질 접합 '${n}' — art_sprites.csv 등록 필요 (등록 전이라 건너뜀)`);
@@ -1063,7 +1089,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
           const mx = r3(p.x + nx * off * side), my = r3(p.y + ny * off * side);
           const cells = footprint(mx, my, msp.w, msc).map((k) => k.split(",").map(Number));
           const ok = cells.every(([cx, cy]) => bp.isFloor(cx, cy) && !blocked.has(key(cx, cy)) && !funcCells.has(key(cx, cy)) && !decor.cellTooClose(opts.route, cx, cy))
-            && !nearFunc(mx, my) && !feet.some(([fx, fy]) => Math.hypot(fx - mx, fy - my) < 1.0);
+            && !nearFunc(mx, my) && !inPlate(mx, my) && !feet.some(([fx, fy]) => Math.hypot(fx - mx, fy - my) < 1.0);
           if (!ok) continue;
           place(`ArtMark${++markN}`, spr, mx, my, 1, side < 0, null, false, `${d.id} 출구 표식 ${c.target}`, undefined, false, null, false);
           break search;
@@ -1076,11 +1102,83 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     //   v5 keep(;v5 keep)은 원래 이음새를 그대로 — 사용자 「개선 전에서 길 안내만 없는 상태」(10-31)
     if (!v5 || bp.v5keep || decor.POLICY.V5.SEAMS) { seam = decor.seamEntities(bp, classes, (n) => ruid(n, "이음새"), { noShade: !!bp.raised }); out.push(...seam.entities); }
   }
+  // 11-02 기획 53 장면판: 표의 바닥판 · 특징물(+ -top 앞층) · 소품을 그 자리·피벗(업로드 때 넣은 원본 피벗)·배율 1·z 그대로. 막을 칸은 art.blocked로 (장식 발밑과 같은 벽 타일 269)
+  let plateN = 0, plateEnts = 0;
+  const plateInfo = [];
+  for (const p of plates) {
+    const list = scenePlates()[p.id];
+    if (!list || !list.length) throw new Error(`${d.id}.txt ;plate ${p.id}: data/handmade/scene_plates.csv에 그 장면판 줄이 없음`);
+    const tag = `ArtPlate${++plateN}`, wherep = `${d.id} 장면판 ${p.id}`;
+    const cellsOf = (r) => String(r.blocks || "").split(/\s+/).filter(Boolean).map((t) => t.split("/").map(Number));
+    // 1차: 특징물 막을 칸 + -top 자르는 선 규칙(뒤에 선 발이 자르는 선 아래로 나오면 안 됨 — 위 place()의 -top 규칙과 같은 계산) → 모자라면 그 특징물 막을 칸을 북쪽으로 한 줄씩 더 막는다
+    const featCells = new Map(), topPlan = new Map();
+    for (const r of list) if (r.role === "feature") featCells.set(r.key, cellsOf(r));
+    for (const r of list) {
+      if (r.role !== "feature-top") continue;
+      const base = r.key.replace(/-top$/, ""), cells = featCells.get(base);
+      if (!cells) throw new Error(`${wherep}: '${r.key}'의 원본 특징물 '${base}' 줄이 없음`);
+      const x = num(r.x), y = num(r.y), cellX = Math.floor(x), cellY = Math.floor(y);
+      const cutY = y + (num(r.h) - num(r.cut)) / 100 - num(r.pivot_y) * num(r.h) / 100;   // 배율 1 · 100px = 1칸
+      let blockTop = Math.max(...cells.filter(([cx]) => cx === cellX).map(([, cy]) => cy)) + 1, added = 0;
+      const cols = [...new Set(cells.map(([cx]) => cx))];
+      while (cutY > blockTop + 1e-6 && added < 3) {
+        for (const cx of cols) if (bp.isFloor(cx, blockTop) && !funcCells.has(key(cx, blockTop))) cells.push([cx, blockTop]);
+        blockTop++; added++;
+      }
+      if (added) warn.push(`${wherep}: '${base}' 막을 칸을 북쪽으로 ${added}줄 더 막음 — -top 자르는 선 y ${r3(cutY)} > 표 막힘 꼭대기 ${blockTop - added} (뒤에 선 발이 자르는 선 아래로 나오지 않게 · 서 있는 특징물 최소 2줄 규칙과 같음)`);
+      const head = cellY + TOP_FRONT_HEAD;
+      topPlan.set(r.key, { ok: cutY <= blockTop + 1e-6 && cutY >= head - 1e-6, cutY: r3(cutY), blockTop, head: r3(head), added });
+      if (!topPlan.get(r.key).ok) warn.push(`${wherep}: '${r.key}' 윗부분을 놓지 않음 (자르는 선 y ${r3(cutY)} · 막힘 꼭대기 ${blockTop} · 앞에 선 머리 y ${r3(head)})`);
+    }
+    // 2차: 엔티티
+    let fN = 0, pN = 0;
+    const fIdx = new Map();
+    for (const r of list) {
+      const sp = spriteOf(table, r.key, wherep);
+      if (num(sp.w) !== num(r.w) || num(sp.h) !== num(r.h)) throw new Error(`${wherep}: '${r.key}' 크기 ${r.w}×${r.h} ≠ art_sprites.csv ${sp.w}×${sp.h}`);
+      const x = num(r.x), y = num(r.y);
+      let name, z = r.z === "" ? null : Math.round(num(r.z) * 1e6) / 1e6, layer = r.layer || "MapLayer0", order = num(r.order, 1);
+      if (r.role === "plate") {
+        name = tag;
+        const hw = num(r.w) / 200, hh = num(r.h) / 200, cx = x + (0.5 - num(r.pivot_x)) * num(r.w) / 100, cy = y + (0.5 - num(r.pivot_y)) * num(r.h) / 100;
+        if (Math.abs(cx - hw - p.x0) > 1e-6 || Math.abs(cx + hw - p.x1) > 1e-6 || Math.abs(cy - hh - p.y0) > 1e-6 || Math.abs(cy + hh - p.y1) > 1e-6)
+          warn.push(`${wherep}: 바닥판이 덮는 사각형 [${r3(cx - hw)}, ${r3(cx + hw)}]×[${r3(cy - hh)}, ${r3(cy + hh)}] ≠ ;plate [${p.x0}, ${p.x1}]×[${p.y0}, ${p.y1}]`);
+      } else if (r.role === "feature") { fIdx.set(r.key, ++fN); name = `${tag}_F${fN}`; }
+      else if (r.role === "feature-top") {
+        const base = r.key.replace(/-top$/, ""), plan = topPlan.get(r.key);
+        if (!plan.ok) continue;
+        name = `${tag}_F${fIdx.get(base)}Top`;   // 이름이 Top으로 끝나야 DarkVision이 순서·z를 내리지 않는다
+        const bz = list.find((q) => q.key === base).z;
+        z = Math.round(num(bz) * 1e6) / 1e6; layer = TOP_LAYER; order = TOP_ORDER;
+      } else if (r.role === "prop") name = `${tag}_P${++pN}`;
+      else throw new Error(`${wherep}: '${r.key}' 역할 '${r.role}' 모름 (plate/feature/feature-top/prop)`);
+      if (z === null) throw new Error(`${wherep}: '${r.key}' z가 비었음`);
+      if (r.role !== "plate" && !inPlate(x, y)) warn.push(`${wherep}: '${r.key}' (${x}, ${y})이 ;plate 구역 밖`);
+      const o = sprite(sp.ruid, null, order);
+      o["MOD.Core.SpriteRendererComponent"].SortingLayer = layer;
+      o["MOD.Core.TransformComponent"] = { Scale: vec3(1) };
+      out.push({ name, pos: [r3(x), r3(y), z], overrides: o });
+      plateEnts++;
+      if (r.role === "feature" || r.role === "prop") {
+        const cells = r.role === "feature" ? featCells.get(r.key) : cellsOf(r), kept = [];
+        for (const [cx, cy] of cells) {
+          if (!bp.isFloor(cx, cy)) { warn.push(`${wherep}: '${r.key}' 막을 칸 (${cx}, ${cy})이 이미 벽`); continue; }
+          if (funcCells.has(key(cx, cy))) throw new Error(`${wherep}: '${r.key}' 막을 칸 (${cx}, ${cy})이 기능 자리`);
+          blocked.add(key(cx, cy)); kept.push([cx, cy]);
+        }
+        if (mode) pieces.push({ name, sprite: r.key, x, y, sc: 1, decal: false, block: kept.length > 0, cells: kept, scatter: false, flip: false, plate: p.id });
+        feet.push([x, y]);
+        if (r.role === "feature") plateInfo.push({ plate: p.id, name, key: r.key, cells: kept.map(([cx, cy]) => key(cx, cy)), top: [...topPlan.entries()].filter(([k]) => k === r.key + "-top").map(([, v]) => v)[0] || null });
+        else if (kept.length) plateInfo.push({ plate: p.id, name, key: r.key, cells: kept.map(([cx, cy]) => key(cx, cy)) });
+      }
+    }
+  }
   const size = [...sizeWarn.entries()].map(([n, s]) => `크기: '${n}' ${s.w}×${s.h}px — art_scale.csv 줄 없이 배율 1로 ${s.n}곳 (원본 크기 약 ${s.cells}칸 폭 · 첫 자리 ${s.at}) → art_scale.csv에 줄부터 넣는다`);
   if (topSkipped.length) warn.push(`${d.id}: 윗부분 그림을 놓지 않은 장식 ${topSkipped.length}개 (뒤에 서면 발이 자르는 선 아래로 나옴 · 또는 앞에 선 머리를 덮음) — ${topSkipped.join(", ")}`);
   if (droppedOnRoute.length) warn.push(`${d.id}: 길 안내 폭 3칸 안이라 뺀 막는 조각 ${droppedOnRoute.length}개 — ${droppedOnRoute.join(", ")}`);
   const extra = mode ? { droppedOnRoute: droppedOnRoute.length, topSkipped: topSkipped.length, marks: markN, guide: guide ? guide.entities.length : 0, bands: seam ? seam.bands : 0, shades: seam ? seam.shades : 0, corners: seam ? seam.corners : 0 } : {};
-  return { entities: out, blocked, warn, size, pieces, topSkipped: topSkippedList, route: opts.route || null, guide, seam, mode, counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, extra) };
+  return { entities: out, blocked, warn, size, pieces, topSkipped: topSkippedList, route: opts.route || null, guide, seam, mode, plates: plates.length ? { skipped: plateSkipped, info: plateInfo } : null,
+    counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, plateN ? { plates: plateN, plateEntities: plateEnts, plateSkipped: plateSkipped.length } : {}, extra) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
@@ -1184,4 +1282,4 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   return Object.assign({ entities: art.entities.length + func.length + 1, blockedCells: art.blocked.size, art }, art.counts, result);
 }
 
-module.exports = { TOP_LAYER, TOP_ORDER, TOP_FRONT_HEAD, topCutFrac, topCandidates, parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, footprintRole, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };
+module.exports = { scenePlates, TOP_LAYER, TOP_ORDER, TOP_FRONT_HEAD, topCutFrac, topCandidates, parseArgs, parseBlueprint, loadRows, functionalEntities, artEntities, check, build, hasBlueprint, markers, inward, spriteTable, baseScale, footprint, footprintRole, HM_DIR, setFloormixY, FLOORMIX_Y_MODES, setFloormixMode, FLOORMIX_MODES, FLOOR_VARIANTS, variantAt };

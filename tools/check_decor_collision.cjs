@@ -35,8 +35,8 @@ for (const c of Object.values(classes)) {
   if (c.collide !== (c.class === "tall" ? "block" : "pass")) bad("decor_collision.csv", `${c.name} ${c.class}인데 collide ${c.collide}`);
   // 표 전수: 배율 1 화면 높이 1칸 이상인데 통과 (평평 flat=1 · 포털 그림 · 겹친 빛만 예외) — 놓인 자리와 별개로 (10-31 메이커 「십자 묘비 통과」 재확인)
   if (Number(c.heightCells) >= 1 && c.collide === "pass" && c.flat !== "1" && !["portal", "overlay"].includes(c.class)) bad("decor_collision.csv", `${c.name} 높이 ${c.heightCells}칸인데 pass`);
-  // 묘비·십자가·무덤 이름은 키 큰 것 (포털 그림 제외)
-  if (/grave|cross|tomb/.test(c.name) && c.class !== "portal" && c.collide !== "block") bad("decor_collision.csv", `${c.name} 묘비·무덤류인데 ${c.collide}`);
+  // 묘비·십자가·무덤 이름은 키 큰 것 (포털 그림 제외) — 「cross」는 낱말일 때만 (11-02 장면판 소품 crossed-bones = 바닥에 깔린 엇갈린 뼈 0.28칸이 걸렸다)
+  if (/grave|(^|-)cross(-|$)|tomb/.test(c.name) && c.class !== "portal" && c.collide !== "block") bad("decor_collision.csv", `${c.name} 묘비·무덤류인데 ${c.collide}`);
 }
 {
   const rows = parse(fs.readFileSync(path.join(ROOT, "data/map_sets.csv"), "utf8"));
