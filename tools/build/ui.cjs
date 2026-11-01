@@ -692,23 +692,42 @@ function buildGameHud() {
   b.patchComponent("Buffs/Tip", "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
   b.text("Buffs/Tip/Text", "", { size: 17, color: C.white, alignment: 3, anchor: "middle-center", pos: [0, 0], rect_size: [412, 76], bestfit: true, min_size: 12, max_size: 17 });
 
-  // ── 파티플레이 창 (P): 파티 초대 / 결투 / 거래 / 살펴보기(10-24), 파티 탈퇴 ──
-  k.frame("SocialWin", "middle-center", [0, 60], [800, 660], "파티플레이");
-  for (let i = 1; i <= 8; i++) {
-    const y = -88 - (i - 1) * 62;
-    b.text(`SocialWin/Name${i}`, "", { size: 19, color: C.gold, alignment: 3, anchor: "top-left", pos: [40, y], rect_size: [262, 54], bestfit: true, min_size: 13, max_size: 19, ...outline });
-    k.btn(`SocialWin/Party${i}`, "파티", { anchor: "top-left", pos: [310, y], rect_size: [104, 54], font_size: 17 });
-    k.btn(`SocialWin/Duel${i}`, "결투", { anchor: "top-left", pos: [418, y], rect_size: [104, 54], font_size: 17 });
-    k.btn(`SocialWin/Trade${i}`, "거래", { anchor: "top-left", pos: [526, y], rect_size: [104, 54], font_size: 17 });
-    k.btn(`SocialWin/Inspect${i}`, "살펴보기", { anchor: "top-left", pos: [634, y], rect_size: [128, 54], font_size: 17 });
+  // ── 파티플레이 창 (P) — 11-01 같은 채널 전원 (모든 방 · 최대 20명 · 8줄 × 쪽 넘김) · 파티 색 묶음 · 초대 (docs/evidence/2026-11-01-channel-players) ──
+  //   줄 R{i} = 바탕(Bg · 파티 색 옅게) + 왼쪽 색 띠(Mark) + 「파티 · N명」(Tag) + 이름·레벨 / 위치 두 줄(Name) + 파티·결투·거래·살펴보기.
+  //   색·글은 SocialWindow.Render가 넣는다. 크기·자리는 ui-tokens SOCIAL (PC 휠에 기대지 않게 ◀ ▶ 쪽 넘김)
+  {
+    const T = require("./ui-tokens.cjs");
+    const S = T.SOCIAL;
+    const padX = T.FRAME.padX;
+    k.frame("SocialWin", "middle-center", [0, S.posY], [S.winW, S.winH], "파티플레이");
+    // 요약 줄은 닫기 단추(오른쪽 위 88) 왼쪽에서 끝난다
+    const summaryW = S.winW + T.FRAME.close.x - T.FRAME.close.size - T.SPACE / 2 - padX;
+    b.text("SocialWin/Summary", "", { size: 19, color: C.gold, alignment: 3, anchor: "top-left", pos: [padX, -T.FRAME.contentTop], rect_size: [summaryW, S.summaryH], bestfit: true, min_size: 14, max_size: 19, ...outline });
+    for (let i = 1; i <= S.perPage; i++) {
+      const r = `SocialWin/R${i}`;
+      b.empty(r, { anchor: "top-left", pos: [padX, -(S.rowTop + (i - 1) * S.rowStep)], rect_size: [S.rowW, S.rowH] });
+      b.sprite(`${r}/Bg`, { anchor: "top-left", pos: [0, 0], rect_size: [S.rowW, S.rowH], image_ruid: K.gauge_fill, color: { r: 1, g: 1, b: 1, a: 0.035 }, sprite_type: 0 });
+      b.patchComponent(`${r}/Bg`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.sprite(`${r}/Mark`, { anchor: "top-left", pos: [0, 0], rect_size: [S.markW, S.rowH], image_ruid: K.gauge_fill, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+      b.patchComponent(`${r}/Mark`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.text(`${r}/Tag`, "", { size: 16, bold: true, color: C.dim, alignment: 3, anchor: "top-left", pos: [S.tagX, 0], rect_size: [S.tagW, S.rowH], bestfit: true, min_size: 12, max_size: 16, ...outline });
+      b.text(`${r}/Name`, "", { size: 18, color: C.gold, alignment: 3, anchor: "top-left", pos: [S.nameX, 0], rect_size: [S.nameW, S.rowH], bestfit: true, min_size: 12, max_size: 18, ...outline });
+      for (const bt of S.btn) k.btn(`${r}/${bt.name}`, bt.label, { anchor: "top-left", pos: [bt.x, 0], rect_size: [bt.w, S.rowH], font_size: S.font });
+    }
+    k.btn("SocialWin/BtnLeave", "파티 탈퇴", { anchor: "bottom-left", pos: [padX, T.FRAME.buttonBottom], rect_size: [S.leaveW, S.barH], font_size: 19 });
+    // 쪽 넘김 (2쪽 이상일 때만 · SocialWindow.Render): ◀ 「1 / 3」 ▶ — 액트 넘김 막대와 같은 단추
+    b.empty("SocialWin/Pager", { anchor: "bottom-right", pos: [-padX, T.FRAME.buttonBottom], rect_size: [S.pagerW, S.barH], enable: false });
+    b.button("SocialWin/Pager/Prev", "◀", { anchor: "middle-left", pos: [0, 0], rect_size: [S.pagerBtnW, S.barH], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+    b.text("SocialWin/Pager/Label", "", { size: 20, color: C.gold, alignment: 4, anchor: "middle-center", pos: [0, 0], rect_size: [S.pagerW - S.pagerBtnW * 2 - 16, 40], ...outline });
+    b.button("SocialWin/Pager/Next", "▶", { anchor: "middle-right", pos: [0, 0], rect_size: [S.pagerBtnW, S.barH], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+    // 살펴보기 판: 같은 창 위에 덮는다 — 왼쪽 능력치·스킬, 오른쪽 착용 장비 (SocialWindow.OnInspect)
+    const iw = S.winW - 48, ih = S.winH - 76 - 24;
+    b.panel("SocialWin/Inspect", { anchor: "top-left", pos: [24, -76], rect_size: [iw, ih], color: { r: 0.05, g: 0.045, b: 0.06, a: 1 }, raycast: true, enable: false });
+    b.text("SocialWin/Inspect/Title", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -10], rect_size: [iw - 200, 32], ...outline });
+    b.text("SocialWin/Inspect/Stats", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [16, -50], rect_size: [420, ih - 64], bestfit: true, min_size: 11, max_size: 15 });
+    b.text("SocialWin/Inspect/Gear", "", { size: 15, color: C.white, alignment: 0, anchor: "top-left", pos: [452, -50], rect_size: [iw - 468, ih - 64], bestfit: true, min_size: 10, max_size: 15 });
+    k.btn("SocialWin/Inspect/BtnBack", "돌아가기", { anchor: "top-right", pos: [-12, -6], rect_size: [150, 44], font_size: 17 });
   }
-  k.btn("SocialWin/BtnLeave", "파티 탈퇴", { anchor: "bottom-left", pos: [40, 22], rect_size: [200, 62], font_size: 19 });
-  // 살펴보기 판: 같은 창 위에 덮는다 — 왼쪽 능력치·스킬, 오른쪽 착용 장비 (SocialWindow.OnInspect)
-  b.panel("SocialWin/Inspect", { anchor: "top-left", pos: [24, -76], rect_size: [752, 560], color: { r: 0.05, g: 0.045, b: 0.06, a: 1 }, raycast: true, enable: false });
-  b.text("SocialWin/Inspect/Title", "", { size: 22, bold: true, color: C.title, alignment: 3, anchor: "top-left", pos: [16, -10], rect_size: [560, 32], ...outline });
-  b.text("SocialWin/Inspect/Stats", "", { size: 15, color: C.gold, alignment: 0, anchor: "top-left", pos: [16, -50], rect_size: [300, 500], bestfit: true, min_size: 11, max_size: 15 });
-  b.text("SocialWin/Inspect/Gear", "", { size: 15, color: C.white, alignment: 0, anchor: "top-left", pos: [328, -50], rect_size: [410, 500], bestfit: true, min_size: 10, max_size: 15 });
-  k.btn("SocialWin/Inspect/BtnBack", "돌아가기", { anchor: "top-right", pos: [-12, -6], rect_size: [150, 44], font_size: 17 });
 
   // ── 받은 요청 (수락/거절) → ConfirmHUD/SafeArea/Request (tools/build/confirm.cjs) ──
   //   10-29 45 §2-6 #6: GameHUD 안에 있으면 창(SetSiblingIndex 맨 위)·다른 그룹 창 뒤에 깔려 요청을 못 봤다 → 확인 창 층으로 옮김

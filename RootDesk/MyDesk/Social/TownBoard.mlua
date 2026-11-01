@@ -10,6 +10,10 @@
 --   공유 메모리 호출은 월드 전체 분당 1000번 한도: 읽기는 3초 모아 쓰고, 쓰기는 기록·켜기/끄기·초대 때만, 초대 확인은 「파티 찾는 중」인 사람이 있는 방만 4초마다.
 --   이벤트 처리 중에는 기다리는 호출(AndWait)을 하지 않고 잠깐 뒤에 쓴다 (RankingSystem.RecordProgressLater와 같은 이유).
 -- 글귀는 10-29 사용자 확정 (docs/requests/copy-approval-20261029.md).
+-- 11-01 플레이어 창(P)에서 같은 채널 누구에게나 초대 (「파티 찾는 중」이 아니어도 · 혼자 하기 포함): RequestChannelInvite.
+--   받는 쪽 방은 게시판을 읽지 않는다 → 초대는 방 사이 이벤트(ChannelInviteEvent · RoomService)로 그 방에 바로 보내고,
+--   받는 쪽은 게시판 초대와 같은 받은 요청 창(DeliverInvite · kind "game") → 수락하면 AnswerInvite (게임 방 = 로비를 거쳐 · 로비 = 바로 입장).
+--   수락·거절·못 받음은 초대한 사람에게 돌려준다 (Kind "reply"). 게시판(공개 구인)은 그대로.
 @Logic
 script TownBoard extends Logic
 
@@ -17,11 +21,12 @@ script TownBoard extends Logic
     property any Cache = nil                -- 서버: 마지막으로 읽은 { data, etag, ok }
     property number CacheAt = -100
     property any LocalLfg = nil             -- 서버: 이 방에서 「파티 찾는 중」을 켠 userId → 마지막으로 적은 시각(초)
-    property any Invites = nil              -- 서버: 받은 다른 방 초대 userId → { id, d, f }
+    property any Invites = nil              -- 서버: 받은 다른 방 초대 userId → { id, d, f, fu(초대한 사람), fr(초대한 사람의 방) }
     property any LastAsk = nil              -- 서버: 연타 막기 key → 시각
     property integer PollTimer = 0
     property number InviteLifeMs = 60000    -- 다른 방 초대가 공유 메모리에 남는 시간
     property number LfgRefreshSec = 120     -- 방에 있는 동안 「파티 찾는 중」을 새로 적는 간격
+    property any InviteHandler = nil        -- 서버: 방 사이 초대 이벤트 (ChannelInviteEvent)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -30,6 +35,7 @@ script TownBoard extends Logic
         self.Invites = {}
         self.LastAsk = {}
         _GameEvents:Subscribe("MonsterKilled", "TownBoard", function(e) self:OnMonsterKilled(e) end)
+        self.InviteHandler = _RoomService:ConnectEvent(ChannelInviteEvent, function(e) self:OnChannelEvent(e) end)
     end
 
     @ExecSpace("ServerOnly")
@@ -37,6 +43,8 @@ script TownBoard extends Logic
         if self.PollTimer ~= 0 then _TimerService:ClearTimer(self.PollTimer) end
         self.PollTimer = 0
         _GameEvents:Unsubscribe("MonsterKilled", "TownBoard")
+        if self.InviteHandler ~= nil then _RoomService:DisconnectEvent(ChannelInviteEvent, self.InviteHandler) end
+        self.InviteHandler = nil
     end
 
     -- ───────── 저장소 ─────────
@@ -347,7 +355,8 @@ script TownBoard extends Logic
             return
         end
         local name = self:Clean(_PartySystem:NameOf(player), 16)
-        local ok = self:Mutate(function(data) data.inv[targetUid] = { f = name, fu = uid, id = id, d = diff, t = DateTime.UtcNow.Elapsed } end)
+        local room = _RoomService.RoomKey or ""
+        local ok = self:Mutate(function(data) data.inv[targetUid] = { f = name, fu = uid, fr = room, id = id, d = diff, t = DateTime.UtcNow.Elapsed } end)
         _Util:Notify(ok and (tostring(target.n) .. "님에게 초대를 보냈습니다") or "초대를 보내지 못했습니다. 다시 시도해주세요", uid)
         log("[VRF] board invite " .. uid .. " → " .. targetUid .. " room=" .. id .. " ok=" .. tostring(ok))
     end
@@ -409,7 +418,7 @@ script TownBoard extends Logic
         ---@type PlayerSocial
         local social = player:GetComponent("script.PlayerSocial")
         if social == nil or (social.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < social.PendingUntil) then return end
-        self.Invites[uid] = { id = inv.id, d = math.floor(tonumber(inv.d) or 0), f = tostring(inv.f or "?") }
+        self.Invites[uid] = { id = inv.id, d = math.floor(tonumber(inv.d) or 0), f = tostring(inv.f or "?"), fu = tostring(inv.fu or ""), fr = tostring(inv.fr or "") }
         social.PendingKind = "game"
         social.PendingFrom = tostring(inv.fu or "")
         social.PendingFromName = tostring(inv.f or "?")
@@ -419,19 +428,53 @@ script TownBoard extends Logic
 
     @ExecSpace("ServerOnly")
     method void AnswerInvite(Entity player, boolean accept)
-        -- PlayerSocial.RespondRequest(kind "game"): 수락하면 돌아올 방 자리에 초대한 방을 적고 로비로 → RoomSystem.OnLobbyReady가 그 방에 넣는다
+        -- PlayerSocial.RespondRequest(kind "game"): 수락하면 돌아올 방 자리에 초대한 방을 적고 로비로 → RoomSystem.OnLobbyReady가 그 방에 넣는다.
+        --   11-01: 로비에 있는 사람은 바로 그 방으로 (RoomSystem.Enter · 방 목록 「들어가기」와 같은 길) · 결과는 초대한 사람에게 돌려준다 (Reply)
         local uid = player.PlayerComponent.UserId
         local inv = self.Invites ~= nil and self.Invites[uid] or nil
         if self.Invites ~= nil then self.Invites[uid] = nil end
-        if inv == nil or not accept then return end
-        if not _Util:IsAlive(player) or not _GameConst:InGameRoom() then
+        if inv == nil then return end
+        local me = self:Clean(_PartySystem:NameOf(player), 16)
+        if not accept then
+            self:Reply(inv.fr or "", inv.fu or "", "no", me)
+            log("[VRF] channel invite answer uid=" .. uid .. " accept=false")
+            return
+        end
+        local kind = _GameConst:RoomKind()
+        if not _Util:IsAlive(player) or (kind ~= "game" and kind ~= "lobby") then
             _Util:Notify("지금은 다른 게임으로 옮길 수 없습니다", uid)
+            self:Reply(inv.fr or "", inv.fu or "", "cant", me)
             return
         end
         ---@type PlayerStats
         local stats = player:GetComponent("script.PlayerStats")
         if stats ~= nil and inv.d > stats.MaxDifficulty then
             _Util:Notify("아직 열지 않은 난이도의 게임입니다", uid)
+            self:Reply(inv.fr or "", inv.fu or "", "locked", me)
+            return
+        end
+        -- 초대한 게임 방이 그사이 가득 찼으면 (같은 채널 방 목록을 믿을 수 있을 때만 · 못 믿으면 예전처럼 들어간다)
+        local state = _PartySystem:RoomState("game:" .. inv.id)
+        if state.exists and state.count >= _GameConst.RoomMaxMembers then
+            _Util:Notify("이 게임은 이미 가득 찼습니다", uid)
+            self:Reply(inv.fr or "", inv.fu or "", "full", me)
+            return
+        end
+        if state.known and not state.exists then
+            _Util:Notify("초대한 게임이 이제 없습니다", uid)
+            return
+        end
+        if kind == "lobby" then
+            -- 로비(캐릭터·게임 고르는 중): 고른 캐릭터가 있어야 한다. 모집·대기 중이었으면 그것을 지우고 바로 들어간다
+            if _RoomSystem:LobbyPlayer(uid) == nil then
+                _Util:Notify("지금은 다른 게임으로 옮길 수 없습니다", uid)
+                self:Reply(inv.fr or "", inv.fu or "", "cant", me)
+                return
+            end
+            _RoomSystem:Forget(uid)
+            local entered = _RoomSystem:Enter(player, inv.id, inv.d, false)
+            self:Reply(inv.fr or "", inv.fu or "", entered and "ok" or "cant", me)
+            log("[VRF] channel invite accept from lobby uid=" .. uid .. " → " .. inv.id .. " entered=" .. tostring(entered))
             return
         end
         local code, memory = _RoomService:GetSharedMemory(_RoomSystem.ReturnMemory)
@@ -440,9 +483,12 @@ script TownBoard extends Logic
             return
         end
         memory:SetVariableAndWait(uid, _HttpService:JSONEncode({ id = inv.id, d = inv.d, t = DateTime.UtcNow.Elapsed }))
-        self.LocalLfg[uid] = nil
-        self:Mutate(function(data) data.lfg[uid] = nil end)
-        self:EnsurePoll()
+        -- 게시판에 「파티 찾는 중」을 켜 둔 사람만 게시판에서 지운다 (11-01: 채널 초대로 온 사람마다 게시판을 고쳐 쓰지 않게)
+        if self.LocalLfg[uid] ~= nil then
+            self.LocalLfg[uid] = nil
+            self:Mutate(function(data) data.lfg[uid] = nil end)
+            self:EnsurePoll()
+        end
         -- 「게임 나가기」(RoomSystem.RequestLeaveGame)와 같은 순서: 저장 준비 → 인원 다시 적기 → 로비로
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
@@ -457,7 +503,114 @@ script TownBoard extends Logic
             save:CancelRoomMove()
             _RoomSystem:ClearReturn(uid)
             _Util:Notify("게임을 옮기지 못했습니다. 다시 시도해주세요", uid)
+            self:Reply(inv.fr or "", inv.fu or "", "cant", me)
+            return
         end
+        self:Reply(inv.fr or "", inv.fu or "", "ok", me)
+    end
+
+    -- ───────── 플레이어 창(P) 초대 · 같은 채널 누구에게나 (11-01) ─────────
+
+    @ExecSpace("Server")
+    method void RequestChannelInvite(string targetUid)
+        -- 같은 방 = 기존 파티 초대 (PlayerSocial.SendRequest) · 다른 방 = 그 방으로 초대 이벤트. 못 하는 경우는 PartySystem.InviteCode와 같은 규칙
+        local uid = senderUserId
+        if targetUid == uid or self:Throttle(uid .. ":cinv", 1) then return end
+        local player = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(player) then return end
+        if isvalid(_UserService:GetUserEntityByUserId(targetUid)) then
+            ---@type PlayerSocial
+            local social = player:GetComponent("script.PlayerSocial")
+            if social ~= nil then social:SendRequest("party", targetUid) end
+            return
+        end
+        local entry = _PartySystem:FindChannelEntry(targetUid)
+        if entry == nil then
+            _Util:Notify("그 플레이어를 찾지 못했습니다. 목록을 다시 확인해주세요", uid)
+            return
+        end
+        local ctx = _PartySystem:InviteContext(player)
+        local code = _PartySystem:InviteCode(ctx, entry)
+        if code ~= "g" then
+            local text = _PartySystem:InviteRefusal(code)
+            if text ~= "" then _Util:Notify(text, uid) end
+            log("[VRF] channel invite refused " .. uid .. " → " .. targetUid .. " code=" .. code)
+            return
+        end
+        local now = _UtilLogic.ElapsedSeconds
+        local wait = _PartySystem:InviteCooling("party", uid, targetUid, now)
+        if wait > 0 then
+            _Util:Notify("같은 플레이어에게는 " .. tostring(wait) .. "초 뒤에 다시 보낼 수 있습니다", uid)
+            log("[VRF] invite cooldown kind=party " .. uid .. " → " .. targetUid .. " left=" .. tostring(wait))
+            return
+        end
+        local ev = ChannelInviteEvent()
+        ev.Kind = "invite"
+        ev.ToUid = targetUid
+        ev.FromUid = uid
+        ev.FromName = self:Clean(_PartySystem:NameOf(player), 16)
+        ev.FromRoom = _RoomService.RoomKey or ""
+        ev.GameId = string.match(_RoomService.RoomKey or "", "^game:(.+)$") or ""
+        ev.Diff = ctx.diff
+        _PartySystem:MarkInvite("party", uid, targetUid, now)
+        local name = entry.n
+        local room = entry.room
+        _RoomService:RequestSendEventToRoomAsync(ev, room, function(result, sent)
+            local ok = result == SendEventRequestResultCode.OK
+            _Util:Notify(ok and (name .. "님에게 초대를 보냈습니다") or "초대를 보내지 못했습니다. 다시 시도해주세요", uid)
+            log("[VRF] channel invite " .. uid .. " → " .. targetUid .. " room=" .. room .. " sent=" .. tostring(ok))
+        end)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnChannelEvent(ChannelInviteEvent e)
+        -- 방 사이 초대 이벤트 (RoomService): invite = 이 방 사람에게 받은 요청 창 · reply = 이 방에서 보낸 초대의 결과 알림
+        if e.Kind == "reply" then
+            if isvalid(_UserService:GetUserEntityByUserId(e.ToUid)) then _Util:Notify(self:ReplyText(e.Code, e.FromName), e.ToUid) end
+            log("[VRF] channel invite reply to=" .. e.ToUid .. " code=" .. e.Code)
+            return
+        end
+        if e.Kind ~= "invite" then return end
+        local player = _UserService:GetUserEntityByUserId(e.ToUid)
+        local result = "gone"
+        if isvalid(player) then
+            ---@type PlayerSocial
+            local social = player:GetComponent("script.PlayerSocial")
+            if social ~= nil and social.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < social.PendingUntil then
+                result = "busy"
+            elseif social ~= nil then
+                self:DeliverInvite(player, { id = e.GameId, d = e.Diff, f = e.FromName, fu = e.FromUid, fr = e.FromRoom, t = DateTime.UtcNow.Elapsed })
+                result = "delivered"
+            end
+        end
+        if result ~= "delivered" then self:Reply(e.FromRoom, e.FromUid, result, "") end
+        log("[VRF] channel invite recv to=" .. e.ToUid .. " from=" .. e.FromUid .. " game=" .. e.GameId .. " result=" .. result)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Reply(string room, string toUid, string code, string fromName)
+        -- 초대한 사람의 방으로 결과를 돌려준다 (게시판 초대처럼 보낸 방을 모르면 조용히)
+        if room == "" or toUid == "" then return end
+        local ev = ChannelInviteEvent()
+        ev.Kind = "reply"
+        ev.ToUid = toUid
+        ev.Code = code
+        ev.FromName = fromName
+        ev.FromRoom = _RoomService.RoomKey or ""
+        _RoomService:RequestSendEventToRoomAsync(ev, room, function(result, sent)
+            if result ~= SendEventRequestResultCode.OK then log("[VRF] channel invite reply failed code=" .. code .. " result=" .. tostring(result)) end
+        end)
+    end
+
+    method string ReplyText(string code, string name)
+        -- 초대 결과 알림 (순수 · 품질 검사)
+        if code == "ok" then return name .. "님이 초대를 수락했습니다" end
+        if code == "no" then return name .. "님이 거절했습니다" end
+        if code == "busy" then return "상대가 다른 요청을 처리 중입니다" end
+        if code == "gone" then return "그 플레이어를 찾지 못했습니다. 목록을 다시 확인해주세요" end
+        if code == "full" then return "게임 인원이 가득 차 " .. name .. "님이 들어오지 못했습니다" end
+        if code == "locked" then return name .. "님은 아직 이 난이도를 열지 않았습니다" end
+        return name .. "님은 지금 이동할 수 없습니다"
     end
 
     @ExecSpace("ServerOnly")

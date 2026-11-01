@@ -1,26 +1,50 @@
--- 사교 창 (P): 같은 서버 플레이어 최대 8명에게 파티·결투·거래 요청, 파티 탈퇴.
--- 받은 요청 팝업(Request)도 여기서 띄운다 (D2처럼 요청 → 수락해야 성립).
+-- 플레이어 창 (P · 제목 「파티플레이」): 같은 채널(같은 월드 인스턴스의 모든 방 — 로비·게임 방·혼자 하기·심연)의 모든 플레이어 (11-01 사용자 요청).
+--   목록은 서버 PartySystem.RequestChannel → ShowChannel (채널 공유 메모리 · 창이 열려 있을 때만 묻는다: 연 뒤·누른 뒤 1분은 PollSec · 그 뒤 PollSlowSec).
+--   파티는 같은 글자색·왼쪽 색 띠·「파티 · N명」으로 묶어 붙여 보이고, 내 파티(또는 나)가 맨 위 · 혼자는 기본색 「혼자」.
+--   한 쪽 PerPage줄 · ◀ ▶ 쪽 넘김 (PC 휠에 기대지 않는다) · 파티 묶음은 쪽 사이에서 갈라지지 않는다.
+--   「파티」 = 같은 방 파티 초대 (PlayerSocial) · 「초대」 = 다른 방 → 내 게임에 초대 (TownBoard.RequestChannelInvite) · 결투·거래·살펴보기는 같은 방만 (예전 조건 그대로).
+-- 받은 요청 띠(Request)도 여기서 띄운다 (D2처럼 요청 → 수락해야 성립).
+-- 색·배치 값은 tools/build/ui-tokens.cjs PARTY · SOCIAL과 같다 (tests/quality/channel_roster.lua가 대조한다).
 @Logic
 script SocialWindow extends Logic
 
     property string Win = "SocialWin"
-    property table Ids = {}
+    property any Slots = nil               -- 줄 칸 i → { uid, act, rel }
     property string RenderKey = ""
     property integer TimerId = 0
     property string Req = "/ui/ConfirmHUD/SafeArea/Request"   -- 받은 요청 띠: 확인 창 층 (10-29 45 §2-6 #6 — GameHUD에 있을 때는 열린 창 뒤에 깔렸다)
+    property string Digest = ""            -- 서버가 보낸 채널 목록 (PartySystem.ChannelRowsFor)
+    property boolean ListOk = true         -- 다른 방 목록(공유 메모리)을 읽었나
+    property boolean Got = false           -- 창을 연 뒤 목록을 한 번이라도 받았나
+    property boolean WasOpen = false
+    property number AskedAt = -100
+    property number ActiveAt = -100        -- 창을 열거나 단추를 누른 때 (그 뒤 PollSlowAfter초는 자주 묻는다)
+    property integer Page = 1
+    property integer PerPage = 8           -- ui-tokens SOCIAL.perPage
+    property number PollSec = 8            -- 창을 열거나 누른 뒤 PollSlowAfter초 동안 다시 묻는 간격 (서버 읽기는 PartySystem.ChReadCache초 모아서)
+    property number PollSlowSec = 20       -- 그 뒤 (창만 띄워 두면 공유 메모리 읽기를 줄인다 — 월드 분당 1000번 한도)
+    property number PollSlowAfter = 60
+    property string PartyColors = "#6CC4FF,#FFB45A,#FF8CC6,#B9A2FF,#5EDBC4,#B6E35A"   -- ui-tokens PARTY.colors (첫 색 = 내 파티)
+    property string SoloColor = "#E6DCC6"  -- 혼자인 사람 이름 (창 기본 글자색)
+    property string DimColor = "#9C9488"   -- 위치·「혼자」·쪽 표시
+    property number RowAlpha = 0.16        -- 파티 줄 바탕 = 파티 색 × 이 투명도 (ui-tokens PARTY.rowAlpha)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
         _UIKit:RegisterWindow(self.Win)
         _UIKit:SetEnabled(self.Req, false)
+        self.Slots = {}
         _UIKit:Connect(self.Win .. "/BtnClose", function() _UIKit:Close(self.Win) end)
-        for i = 1, 8 do
+        for i = 1, self.PerPage do
             local index = i
-            _UIKit:Connect(self.Win .. "/Party" .. tostring(i), function() self:Act(index, "party") end)
-            _UIKit:Connect(self.Win .. "/Duel" .. tostring(i), function() self:Act(index, "duel") end)
-            _UIKit:Connect(self.Win .. "/Trade" .. tostring(i), function() self:Act(index, "trade") end)
-            _UIKit:Connect(self.Win .. "/Inspect" .. tostring(i), function() self:Inspect(index) end)
+            local row = self.Win .. "/R" .. tostring(i)
+            _UIKit:Connect(row .. "/Party", function() self:Act(index, "party") end)
+            _UIKit:Connect(row .. "/Duel", function() self:Act(index, "duel") end)
+            _UIKit:Connect(row .. "/Trade", function() self:Act(index, "trade") end)
+            _UIKit:Connect(row .. "/Inspect", function() self:Inspect(index) end)
         end
+        _UIKit:Connect(self.Win .. "/Pager/Prev", function() self:Turn(-1) end)
+        _UIKit:Connect(self.Win .. "/Pager/Next", function() self:Turn(1) end)
         _UIKit:SetEnabled(self.Win .. "/Inspect", false)
         _UIKit:Connect(self.Win .. "/Inspect/BtnBack", function() _UIKit:SetEnabled(self.Win .. "/Inspect", false) end)
         _UIKit:Connect(self.Win .. "/BtnLeave", function()
@@ -50,76 +74,279 @@ script SocialWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Poll()
+        -- 열려 있는 동안만 서버에 묻는다: 열 때 바로(force) · 답이 없으면 2초 뒤 다시 · 그 뒤 PollSec마다
         self:RenderRequest()
         if not _UIKit:IsOpen(self.Win) then
-            self.RenderKey = ""
+            if self.WasOpen then
+                self.WasOpen = false
+                self.RenderKey = ""
+            end
             return
         end
-        local player = _UserService.LocalPlayer
-        if not isvalid(player) then return end
-        -- 같은 채널의 모든 플레이어 (서버 PartySystem.Roster — 클라이언트는 같은 맵 사람만 알 수 있다 · 10-13)
-        local ids = {}
-        local names = {}
-        local sameMap = {}
-        local myLv = 1
-        local me = player.PlayerComponent.UserId
-        local here = isvalid(player.CurrentMap) and player.CurrentMap.Name or ""
+        local now = _UtilLogic.ElapsedSeconds
+        if not self.WasOpen then
+            self.WasOpen = true
+            self.Got = false
+            self.Page = 1
+            self.ActiveAt = now
+            self:Ask(true)
+        elseif not self.Got and now - self.AskedAt >= 2 then
+            self:Ask(true)
+        elseif self.Got and now - self.AskedAt >= self:PollInterval(now - self.ActiveAt) then
+            self:Ask(false)
+        end
+        self:Render()
+    end
+
+    method number PollInterval(number idle)
+        -- 다시 묻는 간격 (순수 · 품질 검사): 열거나 누른 뒤 PollSlowAfter초 = PollSec · 그 뒤 PollSlowSec
+        if idle < self.PollSlowAfter then return self.PollSec end
+        return self.PollSlowSec
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Ask(boolean force)
+        self.AskedAt = _UtilLogic.ElapsedSeconds
+        _PartySystem:RequestChannel(force)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnChannel(string digest, boolean ok)
+        -- 서버 PartySystem.SendChannel 결과
+        self.Digest = digest
+        self.ListOk = ok
+        self.Got = true
+        if _UIKit:IsOpen(self.Win) then self:Render() end
+    end
+
+    method table ParseRows(string digest)
+        -- 줄 = "userId|이름|레벨|파티 키|관계(me·room·other)|위치|맵 이름|파티 단추" (순수)
         local rows = {}
-        for entry in string.gmatch(_PartySystem.Roster .. ";", "([^;]*);") do
-            local uid, name, lv, place, mapName = string.match(entry, "^([^|]*)|([^|]*)|([^|]*)|([^|]*)|?(.*)$")
-            if uid == me then myLv = math.tointeger(tonumber(lv)) or 1 end
-            if uid ~= nil and uid ~= me and #rows < 8 then
-                table.insert(rows, { uid = uid, name = name, lv = math.tointeger(tonumber(lv)) or 1, place = place, near = mapName ~= "" and mapName == here })
+        for entry in string.gmatch(digest .. ";", "([^;]*);") do
+            local f = {}
+            for v in string.gmatch(entry .. "|", "([^|]*)|") do table.insert(f, v) end
+            if #f == 8 and f[1] ~= "" then
+                table.insert(rows, { uid = f[1], name = f[2], lv = math.tointeger(tonumber(f[3])) or 1, party = f[4], rel = f[5], where = f[6], map = f[7], act = f[8] })
             end
         end
-        local s = self:Social()
-        local duelOk = {}
-        for i, r in ipairs(rows) do
-            ids[i] = r.uid
-            sameMap[i] = r.near
-            duelOk[i] = s ~= nil and s:DuelLevelOk(myLv, r.lv)
-            local where = _UIKit:Colored(r.near and "#9EE6A0" or "#888888", r.near and (r.place .. " · 같은 곳") or r.place)
-            -- 같은 곳인데 레벨 차로 결투 단추가 없을 때 이유를 붙인다 (10-13)
-            if r.near and not duelOk[i] then where = where .. "  " .. _UIKit:Colored("#888888", "· 레벨 차로 결투 불가") end
-            names[i] = r.name .. "  Lv" .. tostring(r.lv) .. "  " .. where
+        return rows
+    end
+
+    method table Colors()
+        local out = {}
+        for c in string.gmatch(self.PartyColors, "[^,]+") do table.insert(out, c) end
+        return out
+    end
+
+    method table BuildView(table rows, string me)
+        -- 묶어 정렬 (순수 · 품질 검사): 내 파티(없으면 나) → 다른 파티(같은 방 먼저 · 큰 파티 먼저 · 이름) → 혼자(같은 방 먼저 · 이름).
+        --   파티마다 색: 내 파티 = 첫 색, 다른 파티는 나머지 색을 차례로 돈다(이웃한 묶음끼리 다른 색). 혼자 = SoloColor
+        --   돌려줌 { list = { { row, color, tag, gkey, gsize, mine } … }, parties, solo, total }
+        local colors = self:Colors()
+        local mineKey = ""
+        for _, r in ipairs(rows) do if r.uid == me then mineKey = r.party end end
+        local groups = {}
+        local order = {}
+        local solo = {}
+        local meRow = nil
+        for _, r in ipairs(rows) do
+            if r.party ~= "" then
+                local g = groups[r.party]
+                if g == nil then
+                    g = { key = r.party, rows = {}, here = false, mine = r.party == mineKey }
+                    groups[r.party] = g
+                    table.insert(order, g)
+                end
+                table.insert(g.rows, r)
+                if r.rel ~= "other" then g.here = true end
+            elseif r.uid == me then
+                meRow = r
+            else
+                table.insert(solo, r)
+            end
         end
-        -- 아무도 없을 때도 한 번은 그린다 (예전에는 빈 목록 키가 처음 값 ""과 같아 버튼 24개가 그대로 떠 있었다)
-        -- 결투 중인 상대의 줄은 「포기」 단추 (10-23: 결투를 끝낼 방법이 맵을 떠나는 것뿐이었다)
+        local byName = function(a, b)
+            if a.uid == me then return true end
+            if b.uid == me then return false end
+            if a.name ~= b.name then return a.name < b.name end
+            return a.uid < b.uid
+        end
+        for _, g in ipairs(order) do table.sort(g.rows, byName) end
+        table.sort(order, function(a, b)
+            if a.mine ~= b.mine then return a.mine end
+            if a.here ~= b.here then return a.here end
+            if #a.rows ~= #b.rows then return #a.rows > #b.rows end
+            return byName(a.rows[1], b.rows[1])
+        end)
+        table.sort(solo, function(a, b)
+            local ah = a.rel == "room"
+            local bh = b.rel == "room"
+            if ah ~= bh then return ah end
+            return byName(a, b)
+        end)
+        local list = {}
+        local other = 0
+        if meRow ~= nil then table.insert(list, { row = meRow, color = self.SoloColor, tag = "혼자", gkey = "me", gsize = 1, mine = true }) end
+        for _, g in ipairs(order) do
+            local color = colors[1]
+            if not g.mine then
+                color = colors[2 + other % math.max(1, #colors - 1)] or colors[1]
+                other = other + 1
+            end
+            local tag = (g.mine and "내 파티" or "파티") .. " · " .. tostring(#g.rows) .. "명"
+            for _, r in ipairs(g.rows) do table.insert(list, { row = r, color = color, tag = tag, gkey = g.key, gsize = #g.rows, mine = g.mine }) end
+        end
+        for _, r in ipairs(solo) do table.insert(list, { row = r, color = self.SoloColor, tag = "혼자", gkey = "solo:" .. r.uid, gsize = 1, mine = false }) end
+        return { list = list, parties = #order, solo = #solo + (meRow ~= nil and 1 or 0), total = #rows }
+    end
+
+    method table Paginate(table list, integer per)
+        -- 쪽 나누기 (순수 · 품질 검사): 파티 묶음은 쪽 사이에서 갈라지지 않게 — 남은 칸보다 큰 묶음은 다음 쪽 첫 줄부터 (파티는 최대 4명 ≤ 한 쪽)
+        local pages = { {} }
+        local i = 1
+        while i <= #list do
+            local n = math.max(1, list[i].gsize)
+            local page = pages[#pages]
+            if #page > 0 and #page + n > per then
+                page = {}
+                table.insert(pages, page)
+            end
+            for j = i, math.min(#list, i + n - 1) do table.insert(page, list[j]) end
+            i = i + n
+        end
+        return pages
+    end
+
+    method string SummaryText(table view, boolean got, boolean ok)
+        -- 맨 위 한 줄: 「이 채널 5명 · 파티 2 · 혼자 1」 (순수)
+        if not got then return "불러오는 중…" end
+        local text = "이 채널 " .. tostring(view.total) .. "명 · 파티 " .. tostring(view.parties) .. " · 혼자 " .. tostring(view.solo)
+        if view.total <= 1 then text = "이 채널에 다른 플레이어가 없습니다" end
+        if not ok then text = text .. "  " .. _UIKit:Colored(self.DimColor, "· 다른 게임 목록을 불러오지 못했습니다") end
+        return text
+    end
+
+    method table RowState(table item, string myMap, integer myLv, string foe, boolean duelOk)
+        -- 한 줄의 글·단추 (순수 · 품질 검사). duelOk = 내 레벨과 결투 레벨 차 규칙(PlayerSocial.DuelLevelOk)을 지키는가
+        local r = item.row
+        local isMe = r.rel == "me"
+        local room = r.rel == "room"
+        local near = room and r.map ~= "" and r.map == myMap
+        local head = _UIKit:Colored(item.color, r.name .. "  Lv" .. tostring(r.lv) .. (isMe and "  (나)" or ""))
+        local where = r.where
+        if near then where = where .. " · " .. _UIKit:Colored(self.SoloColor, "같은 곳") end
+        if near and not duelOk then where = where .. " · 레벨 차로 결투 불가" end
+        local reason = ""
+        local act = r.act
+        if act == "xl" then reason = "게임 안에서만 초대 가능"
+        elseif act == "xk" then reason = "쓰러진 상태"
+        elseif act == "xd" then reason = "이동 불가"
+        elseif act == "xf" then reason = "내 게임 인원 가득"
+        elseif string.sub(act, 1, 3) == "xu:" then reason = string.sub(act, 4) .. " 미개방" end
+        if reason ~= "" then where = where .. " · " .. reason end
+        local nameText = head .. "\n<size=15>" .. _UIKit:Colored(self.DimColor, where) .. "</size>"
+        local party = ""
+        local partyOn = false
+        if act == "p" then party = "파티" partyOn = true
+        elseif act == "g" then party = "초대" partyOn = true
+        elseif act == "m" then party = _UIKit:Colored("#7A7268", "파티원")
+        elseif string.sub(act, 1, 1) == "x" then party = _UIKit:Colored("#7A7268", "초대") end
+        local dueling = foe ~= "" and r.uid == foe
+        return {
+            tag = item.tag, tagColor = item.tag == "혼자" and self.DimColor or item.color,
+            name = nameText, party = party, partyShown = party ~= "", partyOn = partyOn,
+            duel = dueling and _UIKit:Colored("#FF6A50", "포기") or "결투",
+            duelShown = not isMe and (dueling or (near and duelOk)), tradeShown = not isMe and near, inspectShown = room,
+            mark = item.tag ~= "혼자", bg = item.tag ~= "혼자" and item.color or "",
+        }
+    end
+
+    method Color HexColor(string hex, number a)
+        local n = tonumber(string.sub(hex, 2), 16) or 0xFFFFFF
+        return Color(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, a)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetClickable(string rel, boolean on)
+        local e = _UIKit:Get(rel)
+        if isvalid(e) and e.ButtonComponent ~= nil and e.ButtonComponent.Enable ~= on then e.ButtonComponent.Enable = on end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Render()
+        -- 서버 목록 → 묶기 → 지금 쪽 그리기 (바뀌었을 때만)
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) then return end
+        local me = player.PlayerComponent.UserId
+        local myMap = isvalid(player.CurrentMap) and player.CurrentMap.Name or ""
+        ---@type PlayerStats
+        local stats = player:GetComponent("script.PlayerStats")
+        local myLv = stats ~= nil and stats.Level or 1
         ---@type PlayerDuel
         local duel = _UIKit:Comp("script.PlayerDuel")
         local foe = duel ~= nil and duel.Opponent or ""
-        local key = "n" .. tostring(#names) .. ":" .. tostring(myLv) .. ":" .. foe .. ":" .. table.concat(names, ";")
+        local rows = self.Got and self:ParseRows(self.Digest) or {}
+        local view = self:BuildView(rows, me)
+        local pages = self:Paginate(view.list, self.PerPage)
+        self.Page = math.max(1, math.min(self.Page, #pages))
+        local key = tostring(self.Got) .. tostring(self.ListOk) .. ":" .. tostring(self.Page) .. ":" .. myMap .. ":" .. tostring(myLv) .. ":" .. foe .. ":" .. self.Digest
         if key == self.RenderKey then return end
         self.RenderKey = key
-        self.Ids = ids
-        for i = 1, 8 do
-            local text = names[i] or ""
-            if i == 1 and #names == 0 then text = "이 채널에 다른 플레이어가 없습니다" end
-            _UIKit:SetText(self.Win .. "/Name" .. tostring(i), text)
-            -- 빈 목록 안내는 단추 자리까지 넓혀 한 줄로 (10-29 45 §2-7: 이름 칸 262px에서 「없습니니 / 다」로 접혔다)
-            if i == 1 then _UIKit:SetSize(self.Win .. "/Name1", Vector2(#names == 0 and 720 or 262, 54)) end
-            -- 파티 초대는 채널 어디서나, 결투·거래는 같은 지역에서만 (서버 PlayerSocial.RequestAction과 같은 조건)
-            _UIKit:SetEnabled(self.Win .. "/Party" .. tostring(i), ids[i] ~= nil)
-            -- 결투는 레벨 차 duelMaxLevelGap 이하만 (10-13)
-            local dueling = ids[i] ~= nil and ids[i] == foe
-            _UIKit:SetText(self.Win .. "/Duel" .. tostring(i), dueling and _UIKit:Colored("#FF6A50", "포기") or "결투")
-            _UIKit:SetEnabled(self.Win .. "/Duel" .. tostring(i), dueling or (ids[i] ~= nil and sameMap[i] == true and duelOk[i] == true))
-            _UIKit:SetEnabled(self.Win .. "/Trade" .. tostring(i), ids[i] ~= nil and sameMap[i] == true)
-            _UIKit:SetEnabled(self.Win .. "/Inspect" .. tostring(i), ids[i] ~= nil)   -- 살펴보기는 채널 어디서나
+        local s = self:Social()
+        _UIKit:SetText(self.Win .. "/Summary", self:SummaryText(view, self.Got, self.ListOk))
+        local page = pages[self.Page]
+        self.Slots = {}
+        for i = 1, self.PerPage do
+            local row = self.Win .. "/R" .. tostring(i)
+            local item = page[i]
+            _UIKit:SetEnabled(row, item ~= nil)
+            if item ~= nil then
+                local st = self:RowState(item, myMap, myLv, foe, s ~= nil and s:DuelLevelOk(myLv, item.row.lv))
+                self.Slots[i] = { uid = item.row.uid, act = item.row.act, rel = item.row.rel }
+                _UIKit:SetText(row .. "/Tag", _UIKit:Colored(st.tagColor, st.tag))
+                _UIKit:SetText(row .. "/Name", st.name)
+                _UIKit:SetEnabled(row .. "/Mark", st.mark)
+                if st.mark then _UIKit:SetColor(row .. "/Mark", self:HexColor(item.color, 1)) end
+                _UIKit:SetColor(row .. "/Bg", st.bg ~= "" and self:HexColor(st.bg, self.RowAlpha) or Color(1, 1, 1, item.row.rel == "me" and 0.07 or 0.035))
+                _UIKit:SetEnabled(row .. "/Party", st.partyShown)
+                _UIKit:SetText(row .. "/Party", st.party)
+                self:SetClickable(row .. "/Party", st.partyOn)
+                _UIKit:SetEnabled(row .. "/Duel", st.duelShown)
+                _UIKit:SetText(row .. "/Duel", st.duel)
+                _UIKit:SetEnabled(row .. "/Trade", st.tradeShown)
+                _UIKit:SetEnabled(row .. "/Inspect", st.inspectShown)
+            end
         end
+        local many = #pages > 1
+        _UIKit:SetEnabled(self.Win .. "/Pager", many)
+        if many then
+            _UIKit:SetText(self.Win .. "/Pager/Label", tostring(self.Page) .. " / " .. tostring(#pages))
+            _UIKit:SetText(self.Win .. "/Pager/Prev", self.Page > 1 and "◀" or _UIKit:Colored("#7A7268", "◀"))
+            _UIKit:SetText(self.Win .. "/Pager/Next", self.Page < #pages and "▶" or _UIKit:Colored("#7A7268", "▶"))
+            _UIKit:SetColor(self.Win .. "/Pager/Prev", Color(1, 1, 1, self.Page > 1 and 1 or 0.55))
+            _UIKit:SetColor(self.Win .. "/Pager/Next", Color(1, 1, 1, self.Page < #pages and 1 or 0.55))
+        end
+        log("[VRF] social render n=" .. tostring(view.total) .. " parties=" .. tostring(view.parties) .. " solo=" .. tostring(view.solo) .. " page=" .. tostring(self.Page) .. "/" .. tostring(#pages) .. " got=" .. tostring(self.Got))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Turn(integer step)
+        self.Page = self.Page + step
+        self.ActiveAt = _UtilLogic.ElapsedSeconds
+        self:Render()
     end
 
     @ExecSpace("ClientOnly")
     method void Inspect(integer index)
-        -- 그 사람의 능력치·스킬·장비를 서버에 묻는다 (다른 맵에 있어도 같은 채널이면 된다)
-        local id = self.Ids[index]
+        -- 그 사람의 능력치·스킬·장비를 서버에 묻는다 (같은 방 사람만 — 다른 방 줄에는 단추가 없다)
+        local slot = self.Slots ~= nil and self.Slots[index] or nil
         local s = self:Social()
-        if id == nil or s == nil then return end
+        if slot == nil or s == nil or slot.rel ~= "room" then return end
         _UIKit:SetText(self.Win .. "/Inspect/Title", "불러오는 중…")
         _UIKit:SetText(self.Win .. "/Inspect/Stats", "")
         _UIKit:SetText(self.Win .. "/Inspect/Gear", "")
         _UIKit:SetEnabled(self.Win .. "/Inspect", true)
-        s:RequestInspect(id)
+        s:RequestInspect(slot.uid)
     end
 
     @ExecSpace("ClientOnly")
@@ -144,22 +371,33 @@ script SocialWindow extends Logic
         if s == nil then return end
         _UIKit:SetEnabled(self.Req, s.PendingKind ~= "")
         if s.PendingKind == "" then return end
-        -- 10-29 사용자 확정 꼴: 「{이름}님으로부터 초대 - 수락 시 이동합니다」 (game: 마을 게시판 다른 방 초대)
+        -- 10-29 사용자 확정 꼴: 「{이름}님으로부터 초대 - 수락 시 이동합니다」 (game: 다른 방 초대 — 마을 게시판 · 플레이어 창 같은 글)
         local names = { party = "파티 초대", duel = "결투 신청", trade = "거래 요청", game = "초대 - 수락 시 이동합니다" }
         _UIKit:SetText(self.Req .. "/Text", s.PendingFromName .. "님으로부터 " .. (names[s.PendingKind] or s.PendingKind))
     end
 
     @ExecSpace("ClientOnly")
     method void Act(integer index, string kind)
-        local id = self.Ids[index]
+        -- 파티 단추: 같은 방 = 파티 초대 · 다른 방 = 내 게임에 초대. 결투 상대의 줄 「결투」 = 포기
+        local slot = self.Slots ~= nil and self.Slots[index] or nil
+        if slot == nil then return end
+        self.ActiveAt = _UtilLogic.ElapsedSeconds
+        local id = slot.uid
         ---@type PlayerDuel
         local duel = _UIKit:Comp("script.PlayerDuel")
-        if kind == "duel" and id ~= nil and duel ~= nil and duel.Opponent == id then
+        if kind == "duel" and duel ~= nil and duel.Opponent == id then
             duel:RequestForfeit()
             return
         end
+        if kind == "party" and slot.act == "g" then
+            _TownBoard:RequestChannelInvite(id)
+            log("[VRF] social invite click uid=" .. id .. " other room")
+            return
+        end
+        if kind == "party" and slot.act ~= "p" then return end
+        if slot.rel ~= "room" then return end
         local s = self:Social()
-        if id ~= nil and s ~= nil then s:RequestAction(kind, id) end
+        if s ~= nil then s:RequestAction(kind, id) end
     end
 
     @ExecSpace("ClientOnly")

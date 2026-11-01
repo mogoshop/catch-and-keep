@@ -17,14 +17,25 @@ script PlayerSocial extends Component
 
     @ExecSpace("Server")
     method void RequestAction(string kind, string toUserId)
-        -- 내가 상대에게 요청을 보낸다
+        -- 내가 같은 방 상대에게 요청을 보낸다 (다른 방 파티 초대는 TownBoard.RequestChannelInvite → 같은 방이면 여기 SendRequest)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId then return end
+        self:SendRequest(kind, toUserId)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendRequest(string kind, string toUserId)
         local pc = self.Entity.PlayerComponent
-        if senderUserId ~= pc.UserId or toUserId == pc.UserId then return end
+        if toUserId == pc.UserId then return end
         local target = _UserService:GetUserEntityByUserId(toUserId)
         if not isvalid(target) then return end
         ---@type PlayerSocial
         local other = target:GetComponent("script.PlayerSocial")
         if other == nil then return end
+        -- 11-01: 이미 같은 파티면 보내지 않는다 (예전에는 받으면 파티를 풀고 다시 만들었다)
+        if kind == "party" and self.PartyId ~= 0 and other.PartyId == self.PartyId then
+            _Util:Notify(_PartySystem:InviteRefusal("m"), pc.UserId)
+            return
+        end
         if (kind == "duel" or kind == "trade") and target.CurrentMap ~= self.Entity.CurrentMap then
             _Util:Warn("같은 지역에 있어야 합니다", pc.UserId)
             return
@@ -37,16 +48,26 @@ script PlayerSocial extends Component
             _Util:Warn("레벨 차가 " .. tostring(math.floor(_GameData.duelMaxLevelGap)) .. "보다 크면 결투할 수 없습니다", pc.UserId)
             return
         end
-        if other.PendingKind ~= "" and _UtilLogic.ElapsedSeconds < other.PendingUntil then
+        -- 11-01 같은 상대 쿨다운: 거절당하고 바로 다시 보내는 연타·도배를 막는다 (InviteCooldownSec)
+        local now = _UtilLogic.ElapsedSeconds
+        local wait = _PartySystem:InviteCooling(kind, pc.UserId, toUserId, now)
+        if wait > 0 then
+            _Util:Notify("같은 플레이어에게는 " .. tostring(wait) .. "초 뒤에 다시 보낼 수 있습니다", pc.UserId)
+            log("[VRF] invite cooldown kind=" .. kind .. " " .. pc.UserId .. " → " .. toUserId .. " left=" .. tostring(wait))
+            return
+        end
+        if other.PendingKind ~= "" and now < other.PendingUntil then
             _Util:Notify("상대가 다른 요청을 처리 중입니다", pc.UserId)
             return
         end
         other.PendingKind = kind
         other.PendingFrom = pc.UserId
         other.PendingFromName = _PartySystem:NameOf(self.Entity)
-        other.PendingUntil = _UtilLogic.ElapsedSeconds + 20
+        other.PendingUntil = now + 20
+        _PartySystem:MarkInvite(kind, pc.UserId, toUserId, now)
         local names = { party = "파티 초대를", duel = "결투 신청을", trade = "거래 요청을" }
         _Util:Notify(_PartySystem:NameOf(target) .. "님에게 " .. (names[kind] or kind) .. " 보냈습니다", pc.UserId)
+        log("[VRF] social request kind=" .. kind .. " " .. pc.UserId .. " → " .. toUserId)
     end
 
     @ExecSpace("Server")

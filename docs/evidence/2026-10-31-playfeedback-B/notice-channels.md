@@ -12,18 +12,18 @@
 
 파티 목록(PC)은 평소 「파티 (n) · 이름 Lv · …」 한 줄로 접고 마우스를 올리거나 누르면 펼친다 — 왼쪽 알림 더미는 그 아래 끝을 피한다(`NoticeFeed.PlaceHome`). 모바일은 알림 더미가 지도 아래(오른쪽)라 예전처럼 펼친 채.
 
-## 부르는 곳 전수 (142곳 · A 10 · B 128 · C 1 · D 3)
+## 부르는 곳 전수 (152곳 · A 10 · B 138 · C 1 · D 3)
 
 | 파일 | 줄 | 함수 | 부르는 법 | 글(앞부분) | 채널 |
 |---|---|---|---|---|---|
 | Combat/PlayerVitals.mlua | 304 | NotifyDepthEnd | NoticeFeed.Push | 심연 | B |
 | Combat/PlayerVitals.mlua | 311 | NotifyDeath | NoticeFeed.Push | 결투에서 패배했습니다. 골드 | B |
 | Combat/PlayerVitals.mlua | 316 | NotifyDeath | NoticeFeed.Push | text) | B |
-| Common/Util.mlua | 22 | Notify | NoticeFeed.Push | text) | B (Notify 본체) |
-| Common/Util.mlua | 34 | Warn | NoticeFeed.Push | text) return end | B (창이 떠 있을 때 Warn) |
-| Common/Util.mlua | 59 | NotifyTop | HudMap.TopPush | key, title, line, prio) | A |
-| Common/Util.mlua | 62 | NotifyTop | NoticeFeed.Push |  | B (채널 A를 끈 때만) |
-| Common/Util.mlua | 74 | NotifyPickup | HudMain.PickupPop | text) | D |
+| Common/Util.mlua | 27 | Notify | NoticeFeed.Push | text) | B (Notify 본체) |
+| Common/Util.mlua | 39 | Warn | NoticeFeed.Push | text) return end | B (창이 떠 있을 때 Warn) |
+| Common/Util.mlua | 64 | NotifyTop | HudMap.TopPush | key, title, line, prio) | A |
+| Common/Util.mlua | 67 | NotifyTop | NoticeFeed.Push |  | B (채널 A를 끈 때만) |
+| Common/Util.mlua | 79 | NotifyPickup | HudMain.PickupPop | text) | D |
 | Endgame/AbyssSystem.mlua | 68 | GiveKey | Util.Notify | message, uid) | B |
 | Endgame/DepthDirector.mlua | 485 | OnDoorUsed | Util.Notify | 이동에 실패했습니다. 문을 다시 밟아 주세요 | B |
 | Endgame/DepthDirector.mlua | 527 | SaveAll | Util.Notify | 다음 층 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
@@ -53,25 +53,25 @@
 | Monster/BossPattern.mlua | 812 | Announce | NoticeFeed.Push | 처치! | B (채널 A를 끈 때만) |
 | Monster/Monster.mlua | 730 | Die | Util.NotifyTopMap | boss: | A |
 | Monster/Monster.mlua | 820 | TryRespawn | Util.NotifyTopMap | bossup: | A |
-| Monster/MonsterSpawner.mlua | 503 | TrackNamed | Util.NotifyTopMap | boss: | A |
-| Monster/MonsterSpawner.mlua | 512 | TrackNamed | Util.NotifyTopMap | bossup: | A |
-| Player/PetSystem.mlua | 107 | ProcessPurchase | Util.Notify | 펫 「 | B |
+| Monster/MonsterSpawner.mlua | 655 | TrackNamed | Util.NotifyTopMap | boss: | A |
+| Monster/MonsterSpawner.mlua | 664 | TrackNamed | Util.NotifyTopMap | bossup: | A |
+| Player/PetSystem.mlua | 119 | ProcessPurchase | Util.Notify | 펫 「 | B |
 | Player/PlayerCorpses.mlua | 58 | EnsureSpawned | Util.Notify | 지난번에 쓰러진 시체가 마을에 있습니다 — 다가가면 장비를 되찾습니다 (미니… | B |
 | Player/PlayerCorpses.mlua | 170 | TakeCorpse | Util.Notify | 시체를 되찾았습니다 | B |
-| Player/PlayerSave.mlua | 154 | Protect | Util.Notify | 저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다 | B |
-| Player/PlayerSave.mlua | 339 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
-| Player/PlayerSave.mlua | 345 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
-| Player/PlayerSave.mlua | 355 | RequestCharSelect | Util.Notify | 쓰러진 상태에서는 캐릭터를 바꿀 수 없습니다 | B |
-| Player/PlayerSave.mlua | 361 | RequestCharSelect | Util.Notify | 저장에 실패해 캐릭터 선택으로 가지 않았습니다. 다시 시도해주세요 | B |
-| Player/PlayerSave.mlua | 376 | RequestCharSelect | Util.Notify | 캐릭터 선택으로 이동하지 못했습니다. 다시 시도해주세요 | B |
-| Player/PlayerSave.mlua | 391 | RequestCharSelect | Util.Notify | 캐릭터 선택으로 이동하지 못했습니다. 다시 시도해주세요 | B |
-| Player/PlayerSave.mlua | 409 | LeaveSelectRoom | Util.Notify | 이동하지 못했습니다. 다시 골라 주세요 | B |
-| Player/PlayerSave.mlua | 426 | RequestDeleteSlot | Util.Notify | 캐릭터 「 | B |
-| Player/PlayerSave.mlua | 487 | WarpToChannel | Util.Notify | 쓰러진 상태에서는 채널을 옮길 수 없습니다 | B |
-| Player/PlayerSave.mlua | 493 | WarpToChannel | Util.Notify | 저장에 실패해 채널을 옮기지 않았습니다. 다시 시도해주세요 | B |
-| Player/PlayerSave.mlua | 506 | WarpToChannel | Util.Notify | 채널을 옮기지 못했습니다 (가득 찼거나 닫히는 채널). 다른 채널을 고르세요 | B |
-| Player/PlayerSave.mlua | 579 | ContinueDepthTravel | Util.Notify | 다음 층 이동에 실패했습니다. 마을에서 다시 입장하세요 | B |
-| Player/PlayerSave.mlua | 594 | PrepareRoomMove | Util.Notify | 저장에 실패해 이동하지 않았습니다. 다시 시도해주세요 | B |
+| Player/PlayerSave.mlua | 155 | Protect | Util.Notify | 저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다 | B |
+| Player/PlayerSave.mlua | 340 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
+| Player/PlayerSave.mlua | 346 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
+| Player/PlayerSave.mlua | 356 | RequestCharSelect | Util.Notify | 쓰러진 상태에서는 캐릭터를 바꿀 수 없습니다 | B |
+| Player/PlayerSave.mlua | 362 | RequestCharSelect | Util.Notify | 저장에 실패해 캐릭터 선택으로 가지 않았습니다. 다시 시도해주세요 | B |
+| Player/PlayerSave.mlua | 377 | RequestCharSelect | Util.Notify | 캐릭터 선택으로 이동하지 못했습니다. 다시 시도해주세요 | B |
+| Player/PlayerSave.mlua | 392 | RequestCharSelect | Util.Notify | 캐릭터 선택으로 이동하지 못했습니다. 다시 시도해주세요 | B |
+| Player/PlayerSave.mlua | 410 | LeaveSelectRoom | Util.Notify | 이동하지 못했습니다. 다시 골라 주세요 | B |
+| Player/PlayerSave.mlua | 431 | RequestDeleteSlot | Util.Notify | 캐릭터 「 | B |
+| Player/PlayerSave.mlua | 492 | WarpToChannel | Util.Notify | 쓰러진 상태에서는 채널을 옮길 수 없습니다 | B |
+| Player/PlayerSave.mlua | 498 | WarpToChannel | Util.Notify | 저장에 실패해 채널을 옮기지 않았습니다. 다시 시도해주세요 | B |
+| Player/PlayerSave.mlua | 511 | WarpToChannel | Util.Notify | 채널을 옮기지 못했습니다 (가득 찼거나 닫히는 채널). 다른 채널을 고르세요 | B |
+| Player/PlayerSave.mlua | 584 | ContinueDepthTravel | Util.Notify | 다음 층 이동에 실패했습니다. 마을에서 다시 입장하세요 | B |
+| Player/PlayerSave.mlua | 599 | PrepareRoomMove | Util.Notify | 저장에 실패해 이동하지 않았습니다. 다시 시도해주세요 | B |
 | Player/PlayerTravel.mlua | 114 | LeaveInstanceToTown | Util.Notify | 마을로 돌아가지 못했습니다. 다시 시도해주세요 | B |
 | Player/PlayerTravel.mlua | 318 | OpenBossPortal | Util.NotifyMap | 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸습니다 | B |
 | Progress/PlayerJournal.mlua | 265 | RequestClaim | Util.Notify | 업적 보상을 받을 가방 공간 1칸이 필요합니다. 보상은 보관됩니다 | B |
@@ -80,13 +80,13 @@
 | Quest/PlayerQuest.mlua | 497 | TurnIn | Util.Notify | 보상: | B |
 | Quest/PlayerQuest.mlua | 541 | StartGearWatch | Util.Notify | 새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부… | B |
 | Quest/PlayerQuest.mlua | 674 | OfferGearChoice | Util.Notify | 보상 받을 가방 공간 | B |
-| Shadow/ShadowCommander.mlua | 432 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
-| Shadow/ShadowCommander.mlua | 434 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
+| Shadow/ShadowCommander.mlua | 434 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
+| Shadow/ShadowCommander.mlua | 436 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
 | Shadow/ShadowOwner.mlua | 94 | DisassembleMany | Util.Notify | 그림자 | B |
 | Shadow/ShadowOwner.mlua | 207 | RestAll | Util.Notify | 마을에서 쉬어 지친 그림자가 다시 싸울 수 있습니다 | B |
 | Shadow/ShadowOwner.mlua | 246 | GainKillExp | Util.Notify | 그림자 레벨 업 · | B |
-| Shadow/SoulExtractor.mlua | 108 | TryExtractNearby | NoticeFeed.Push | 혼 추출은 스킬 「그림자 소환」(Lv | B |
-| Shadow/SoulExtractor.mlua | 114 | TryExtractNearby | NoticeFeed.Push | 가까운 혼이 없습니다 | B |
+| Shadow/SoulExtractor.mlua | 110 | TryExtractNearby | NoticeFeed.Push | 혼 추출은 스킬 「그림자 소환」(Lv | B |
+| Shadow/SoulExtractor.mlua | 116 | TryExtractNearby | NoticeFeed.Push | 가까운 혼이 없습니다 | B |
 | Shop/Supporter.mlua | 104 | ProcessPurchase | Util.Notify | 후원 고맙습니다! 개발자가 오늘 밤도 커피 마시고 패치하러 갑니다 | B |
 | Social/ChannelSystem.mlua | 91 | RequestMove | Util.Notify | 이미 이 채널에 있습니다 | B |
 | Social/ChannelSystem.mlua | 95 | RequestMove | Util.Notify | 심도·캐릭터 선택 중에는 채널을 옮길 수 없습니다 — 야영지나 사냥터에서 옮… | B |
@@ -95,11 +95,13 @@
 | Social/ChannelSystem.mlua | 137 | CheckOverflow | Util.Notify | 이 채널은 곧 들어올 파티의 자리라 자리가 있는 채널로 옮깁니다 | B |
 | Social/PartyRescue.mlua | 132 | Done | Util.Notify | 님을 일으켜 세웠습니다 | B |
 | Social/PlayerDuel.mlua | 95 | End | Util.Notify | message, self.Entity.PlayerComponent.UserI… | B |
-| Social/PlayerSocial.mlua | 41 | RequestAction | Util.Notify | 상대가 다른 요청을 처리 중입니다 | B |
-| Social/PlayerSocial.mlua | 49 | RequestAction | Util.Notify | 님에게 | B |
-| Social/PlayerSocial.mlua | 71 | RespondRequest | Util.Notify | 님이 거절했습니다 | B |
-| Social/PlayerSocial.mlua | 83 | RespondRequest | Util.Notify | 이미 결투 중입니다 | B |
-| Social/PlayerSocial.mlua | 84 | RespondRequest | Util.Notify | 이미 결투 중입니다 | B |
+| Social/PlayerSocial.mlua | 36 | SendRequest | Util.Notify | m | B |
+| Social/PlayerSocial.mlua | 55 | SendRequest | Util.Notify | 같은 플레이어에게는 | B |
+| Social/PlayerSocial.mlua | 60 | SendRequest | Util.Notify | 상대가 다른 요청을 처리 중입니다 | B |
+| Social/PlayerSocial.mlua | 69 | SendRequest | Util.Notify | 님에게 | B |
+| Social/PlayerSocial.mlua | 92 | RespondRequest | Util.Notify | 님이 거절했습니다 | B |
+| Social/PlayerSocial.mlua | 104 | RespondRequest | Util.Notify | 이미 결투 중입니다 | B |
+| Social/PlayerSocial.mlua | 105 | RespondRequest | Util.Notify | 이미 결투 중입니다 | B |
 | Social/PlayerTrade.mlua | 97 | RequestOffer | Util.Notify | 잠긴 물건은 거래할 수 없습니다. 잠금을 풀어주세요 | B |
 | Social/PlayerTrade.mlua | 229 | ReturnEscrow | Util.Notify | 가방이 가득 차 돌려받은 물건 | B · 상한 60초 |
 | Social/PlayerTrade.mlua | 249 | Finish | Util.Notify | message, self.Entity.PlayerComponent.UserI… | B |
@@ -122,15 +124,23 @@
 | Social/RoomSystem.mlua | 692 | OnLobbyReady | Util.Notify | 그 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요 | B |
 | Social/RoomSystem.mlua | 744 | RequestLeaveGame | Util.Notify | 쓰러진 상태에서는 나갈 수 없습니다 | B |
 | Social/RoomSystem.mlua | 757 | RequestLeaveGame | Util.Notify | 로비로 나가지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 319 | RequestToggleLfg | Util.Notify | 게시판에 쓰지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 333 | RequestInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
-| Social/TownBoard.mlua | 338 | RequestInvite | Util.Notify | 그 사람은 이제 파티를 찾지 않습니다 | B |
-| Social/TownBoard.mlua | 346 | RequestInvite | Util.Notify | 그 사람은 아직 | B |
-| Social/TownBoard.mlua | 351 | RequestInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
-| Social/TownBoard.mlua | 428 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
-| Social/TownBoard.mlua | 434 | AnswerInvite | Util.Notify | 아직 열지 않은 난이도의 게임입니다 | B |
-| Social/TownBoard.mlua | 439 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 459 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 327 | RequestToggleLfg | Util.Notify | 게시판에 쓰지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 341 | RequestInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
+| Social/TownBoard.mlua | 346 | RequestInvite | Util.Notify | 그 사람은 이제 파티를 찾지 않습니다 | B |
+| Social/TownBoard.mlua | 354 | RequestInvite | Util.Notify | 그 사람은 아직 | B |
+| Social/TownBoard.mlua | 360 | RequestInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
+| Social/TownBoard.mlua | 445 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
+| Social/TownBoard.mlua | 452 | AnswerInvite | Util.Notify | 아직 열지 않은 난이도의 게임입니다 | B |
+| Social/TownBoard.mlua | 459 | AnswerInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
+| Social/TownBoard.mlua | 464 | AnswerInvite | Util.Notify | 초대한 게임이 이제 없습니다 | B |
+| Social/TownBoard.mlua | 470 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
+| Social/TownBoard.mlua | 482 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 505 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 529 | RequestChannelInvite | Util.Notify | 그 플레이어를 찾지 못했습니다. 목록을 다시 확인해주세요 | B |
+| Social/TownBoard.mlua | 536 | RequestChannelInvite | Util.Notify | text, uid) end | B |
+| Social/TownBoard.mlua | 543 | RequestChannelInvite | Util.Notify | 같은 플레이어에게는 | B |
+| Social/TownBoard.mlua | 560 | RequestChannelInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
+| Social/TownBoard.mlua | 569 | OnChannelEvent | Util.Notify | self:ReplyText(e.Code, e.FromName), e.ToUi… | B |
 | Story/AshAwakening.mlua | 265 | Awaken | HudMap.ShowAlert | 하늘이 핏빛으로 물든다 | A |
 | UI/Hud/HudMain.mlua | 104 | OnBeginPlay | NoticeFeed.Push | d) end | B |
 | UI/Hud/HudMain.mlua | 509 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
@@ -143,9 +153,9 @@
 | UI/Hud/UXFeedback.mlua | 359 | Release | NoticeFeed.Push | 외 알림 | B (큰 알림 넘침·창 안 결과) |
 | UI/Windows/GuideWindow.mlua | 461 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
 | UI/Windows/JournalWindow.mlua | 123 | UpdateBadge | HudMain.SetJournalTrack |  | C |
-| Undead/UndeadSystem.mlua | 806 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
-| Undead/UndeadSystem.mlua | 1647 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
-| Undead/UndeadSystem.mlua | 1653 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 809 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
+| Undead/UndeadSystem.mlua | 1650 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 1656 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
 | World/AltarRitual.mlua | 68 | OnReached | Util.Notify | 피의 제단이 잠잠합니다 — %d:%02d 뒤 다시 의식을 시작할 수 있습니다 | B |
 | World/AltarRitual.mlua | 223 | Bless | Util.Notify | 피의 신전 · 주는 피해 +25% (60초) | B |
 | World/AltarRitual.mlua | 229 | Tell | Util.Notify | text, p.PlayerComponent.UserId) end | B |

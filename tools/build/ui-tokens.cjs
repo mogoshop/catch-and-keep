@@ -139,4 +139,21 @@ const TOPBAND = { targetTop: 20, targetH: 114, tipH: 74, gap: SPACE };
 TOPBAND.slot2 = TOPBAND.targetTop + TOPBAND.targetH + TOPBAND.gap;   // 146 — 여정 안내 위 끝
 TOPBAND.slot3 = TOPBAND.slot2 + TOPBAND.tipH + TOPBAND.gap;          // 232 — 출구 안내 위 끝
 
+// 플레이어 창 (P · 제목 「파티플레이」 · 11-01 같은 채널 전원 · docs/evidence/2026-11-01-channel-players).
+//   파티마다 같은 글자색 + 왼쪽 색 띠 + 줄 바탕(그 색 × rowAlpha) + 「파티 · N명」. 첫 색 = 내 파티, 다른 파티는 나머지를 차례로 (이웃한 묶음끼리 다른 색).
+//   어두운 창 바탕(COLOR.windowBg)·그 색이 깔린 줄 바탕 위 대비 4.5 이상 · 색끼리 ΔE(CIE76) 30 이상 · 혼자 글자색(solo)·흐린 글자색(dim)과도 30 이상
+//   (tests/quality/channel_roster.lua). 초록은 쓰지 않는다 (예전 「같은 곳」 초록과 헷갈린다). 실행 중 값 = SocialWindow PartyColors · SoloColor · DimColor · RowAlpha
+const PARTY = { colors: ['#6CC4FF', '#FFB45A', '#FF8CC6', '#B9A2FF', '#5EDBC4', '#B6E35A'], solo: '#E6DCC6', dim: '#9C9488', rowAlpha: 0.16 };
+// 배치 (창 바탕 왼쪽 위 기준 · x는 줄 안에서): 맨 위 요약 한 줄 → 줄 perPage개(색 띠 · 「파티 · N명」 · 이름/위치 두 줄 · 단추 넷) → 아래 「파티 탈퇴」 · ◀ 쪽 ▶.
+//   최대 20명(채널 상한)이라 8줄 × 3쪽. 단추 x+w 끝 = 줄 폭(winW − 2×padX). 실행 중 SocialWindow.PerPage = perPage
+const SOCIAL = { winW: 1040, posY: 40, summaryH: 32, rowH: 54, rowGap: 6, perPage: 8, markW: 6, tagX: 12, tagW: 132, nameX: 152, nameW: 330,
+  btn: [{ name: 'Party', label: '파티', x: 490, w: 104 }, { name: 'Duel', label: '결투', x: 598, w: 104 }, { name: 'Trade', label: '거래', x: 706, w: 104 }, { name: 'Inspect', label: '살펴보기', x: 810, w: 128 }],
+  barH: 62, leaveW: 200, pagerBtnW: 88, pagerW: 300, font: 17 };
+SOCIAL.rowStep = SOCIAL.rowH + SOCIAL.rowGap;                                       // 60
+SOCIAL.rowW = SOCIAL.winW - FRAME.padX * 2;                                          // 938
+SOCIAL.rowTop = FRAME.contentTop + SOCIAL.summaryH + SPACE;                          // 118 — 첫 줄 위 끝 (바탕 위에서)
+SOCIAL.winH = SOCIAL.rowTop + (SOCIAL.perPage - 1) * SOCIAL.rowStep + SOCIAL.rowH + SPACE + SOCIAL.barH + FRAME.buttonBottom;   // 714
+
 module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout };
+module.exports.PARTY = PARTY;
+module.exports.SOCIAL = SOCIAL;

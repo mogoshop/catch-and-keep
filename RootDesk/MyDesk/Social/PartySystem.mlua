@@ -1,5 +1,10 @@
 -- 파티 (D2 방식): 초대·수락으로 결성, 최대 4명 (채널 상한과 같다 · 10-12). 같은 맵·가까운(12칸) 파티원끼리 경험치를 나눈다.
 -- D2 분배: 전체 경험치 × (1 + 0.35 × (인원-1)), 레벨 비율로 나눈다. 드롭은 개인 전리품 그대로.
+-- 채널 플레이어 목록 (11-01 사용자 요청 「같은 채널이면 전부 보이게 · 파티 중인 사람 표시」 · docs/evidence/2026-11-01-channel-players):
+--   이 Logic은 방(로비·게임 방·심연)마다 따로 돈다 → _UserService는 같은 방 사람만 안다. 그래서 방마다 자기 방 사람(이름·레벨·난이도·파티 번호)을
+--   채널 공유 메모리 ChannelRosterV1/roster의 자기 칸(rooms[방 키])에 적고, 플레이어 창이 열려 있을 때만 그 변수를 읽어 채널 전원을 보여 준다.
+--   쓰기: 사람·파티가 바뀌면 ChUrgentGap 뒤 · 레벨·이름만 바뀌면 ChFullGap 모아서 · 그대로면 ChBeatSec마다 한 번 (Get+Update 2번).
+--   읽기: 창이 열린 방에서만 ChReadCache초 모아 (Get 1번 · 창은 처음 1분 8초 · 그 뒤 20초마다 묻는다). 월드 분당 1000번 한도 계산은 tests/quality/channel_roster.lua.
 @Logic
 script PartySystem extends Logic
 
@@ -11,14 +16,42 @@ script PartySystem extends Logic
     property integer TimerId = 0
     property table OptOut = {}            -- 게임 방 자동 파티에서 스스로 「파티 탈퇴」한 사람 (그 방에 있는 동안 다시 묶지 않는다)
     @Sync
-    property string Roster = ""           -- 이 채널의 모든 플레이어 "userId|캐릭터 이름|레벨|위치|맵 이름;..." (D2처럼 같은 채널이면 보인다 · 10-13). 2초마다
+    property string Roster = ""           -- 이 방의 모든 플레이어 "userId|캐릭터 이름|레벨|위치|맵 이름;..." (2초마다). 채널 전원은 RequestChannel → ShowChannel
+    property string ChannelMemory = "ChannelRosterV1"   -- 채널(같은 월드 인스턴스의 모든 방) 공유 메모리 · 변수 하나 "roster" = { v, rooms = { 방 키 → 칸 } }
+    property any ChCache = nil            -- 서버: 마지막으로 읽은 { data, etag, ok }
+    property number ChCacheAt = -100
+    property string ChUrgentSent = ""     -- 마지막으로 쓴 이 방 칸의 지문: 누가 · 어느 파티
+    property string ChFullSent = ""       --   + 이름 · 레벨 · 난이도
+    property number ChWroteAt = -1000
+    property number ChHoldUntil = -1000   -- 쓰기에 실패하면 ChFailHold초 쉰다 (한도 보호)
+    property boolean ChWriting = false
+    property number ChWritingAt = -1000   -- 쓰기가 오류로 끝나 ChWriting이 남아도 15초 뒤 풀린다
+    property any ChAsk = nil              -- 서버: userId → 마지막 목록 요청 시각 (연타 방지)
+    property any ChShown = nil            -- 서버: userId → 마지막으로 보낸 목록 (바뀌었을 때만 다시 보낸다)
+    property any ChGone = nil             -- 서버: 막 나간 userId → 시각 (나가는 순간에는 UserEntities에 아직 남아 있다)
+    property any InviteAt = nil           -- 서버: "종류:보낸 사람>받는 사람" → 마지막으로 보낸 시각 (같은 상대 쿨다운)
+    property number ChUrgentGap = 3       -- 사람·파티가 바뀌면 마지막 쓰기에서 이만큼 지난 뒤 쓴다
+    property number ChFullGap = 180       -- 레벨·이름·난이도만 바뀌면 이만큼 모아 쓴다 (다른 방 사람의 레벨은 3분 늦어도 된다 · 같은 방은 늘 지금 값)
+    property number ChBeatSec = 300       -- 바뀐 게 없어도 이만큼마다 다시 쓴다 (오래된 칸 버리기 ChStaleSec의 절반)
+    property number ChStaleSec = 600      -- 이보다 오래 소식이 없는 방 칸은 읽을 때·쓸 때 버린다 (방이 갑자기 닫혀도 남지 않게)
+    property number ChRoomGrace = 30      -- 막 쓴 칸은 InstanceRooms 목록에 아직 없어도 이만큼은 둔다
+    property number ChFailHold = 30
+    property number ChReadCache = 7       -- 창이 열린 동안 읽기를 이만큼 모아 쓴다 (SocialWindow가 처음 1분 8초 · 그 뒤 20초마다 묻는다)
+    property number ChOpenFresh = 2       -- 창을 막 열었을 때는 이보다 오래된 읽기면 새로 읽는다
+    property integer ChCalls = 0          -- 서버: 이 방이 쓴 공유 메모리 호출 수 (품질 검사 · [VRF])
+    property number InviteCooldownSec = 20   -- 같은 상대에게 같은 요청(파티·결투·거래)을 다시 보내기까지 (받은 요청이 사라지는 20초와 같다)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
         self.Parties = {}
         self.Known = {}
+        self.ChAsk = {}
+        self.ChShown = {}
+        self.ChGone = {}
+        self.InviteAt = {}
         -- 10-11: 레벨·위치가 들어오고 나갈 때만 갱신돼 레벨업이 파티 목록에 안 보였다 → 2초마다 다시 만든다 (바뀐 것만 동기화된다)
         self.TimerId = _TimerService:SetTimerRepeat(function() self:RefreshAll() end, 2)
+        log("[VRF] channel roster on room=" .. tostring(_RoomService.RoomKey) .. " memory=" .. self.ChannelMemory)
     end
 
     @ExecSpace("ServerOnly")
@@ -82,6 +115,378 @@ script PartySystem extends Logic
         table.sort(parts)
         local roster = table.concat(parts, ";")
         if roster ~= self.Roster then self.Roster = roster end
+        self:MaybeWriteChannel()
+    end
+
+    -- ───────── 채널 플레이어 목록 (11-01) ─────────
+
+    @ExecSpace("ServerOnly")
+    method table ChannelLive()
+        -- 이 방의 지금 플레이어 { u, n, l, m(연 최고 난이도), d(지금 난이도), y(파티 번호 · 없으면 0), place, map } — userId 순
+        local out = {}
+        local now = _UtilLogic.ElapsedSeconds
+        if self.ChGone == nil then self.ChGone = {} end
+        for uid, at in pairs(self.ChGone) do if now - at > 10 then self.ChGone[uid] = nil end end
+        for _, p in pairs(_UserService.UserEntities) do
+            if isvalid(p) and isvalid(p.PlayerComponent) then
+                local uid = p.PlayerComponent.UserId
+                local gone = self.ChGone[uid]
+                if gone == nil or now - gone > 3 then
+                    ---@type PlayerStats
+                    local st = p:GetComponent("script.PlayerStats")
+                    ---@type PlayerSocial
+                    local s = p:GetComponent("script.PlayerSocial")
+                    local pid = 0
+                    if s ~= nil and s.PartyId ~= 0 and self.Parties[s.PartyId] ~= nil then pid = s.PartyId end
+                    table.insert(out, { u = uid, n = self:NameOf(p), l = st ~= nil and st.Level or 1, m = st ~= nil and st.MaxDifficulty or 0, d = st ~= nil and st.Difficulty or 0,
+                        y = pid, place = self:PlaceName(p), map = isvalid(p.CurrentMap) and p.CurrentMap.Name or "" })
+                end
+            end
+        end
+        table.sort(out, function(a, b) return a.u < b.u end)
+        return out
+    end
+
+    method table ChannelDigests(table live)
+        -- 쓸지 정하는 지문 둘 (순수): urgent = 누가 · 어느 파티 (곧 쓴다) · full = + 이름 · 레벨 · 난이도 (모아 쓴다)
+        local a = {}
+        local b = {}
+        for _, e in ipairs(live) do
+            table.insert(a, e.u .. ":" .. tostring(e.y))
+            table.insert(b, e.u .. ":" .. tostring(e.y) .. ":" .. e.n .. ":" .. tostring(e.l) .. ":" .. tostring(e.m) .. ":" .. tostring(e.d))
+        end
+        return { urgent = table.concat(a, ","), full = table.concat(b, ",") }
+    end
+
+    method string ChannelWriteDue(string urgent, string full, number now)
+        -- 이 방 칸을 지금 쓸까 (순수 · 품질 검사): "urgent" 사람·파티 바뀜 · "full" 레벨 등만 바뀜(모아서) · "beat" 오래됨 · "" 안 씀
+        if now < self.ChHoldUntil then return "" end
+        local since = now - self.ChWroteAt
+        if urgent ~= self.ChUrgentSent then
+            if since >= self.ChUrgentGap then return "urgent" end
+            return ""
+        end
+        if full ~= self.ChFullSent and since >= self.ChFullGap then return "full" end
+        if urgent ~= "" and since >= self.ChBeatSec then return "beat" end
+        return ""
+    end
+
+    @ExecSpace("ServerOnly")
+    method void MaybeWriteChannel()
+        -- RefreshRoster(2초마다) 끝 · 누가 나간 직후: 쓸 때가 됐으면 잠깐 뒤에 쓴다 (기다리는 호출을 타이머 밖에서)
+        local now = _UtilLogic.ElapsedSeconds
+        if self.ChWriting and now - self.ChWritingAt < 15 then return end
+        local dg = self:ChannelDigests(self:ChannelLive())
+        local why = self:ChannelWriteDue(dg.urgent, dg.full, now)
+        if why == "" then return end
+        self.ChWriting = true
+        self.ChWritingAt = now
+        _TimerService:SetTimerOnce(function() self:WriteChannel(why) end, 0.05)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WriteChannel(string why)
+        -- 이 방 칸만 고쳐 쓴다 (사람이 없으면 칸을 지운다). 다른 방이 그사이 썼으면(ETag) 다시 읽어 3번까지
+        local live = self:ChannelLive()
+        local dg = self:ChannelDigests(live)
+        local key = _RoomService.RoomKey or ""
+        local section = self:ChannelSection(live)
+        local nowMs = DateTime.UtcNow.Elapsed
+        local alive = self:RoomAliveFn()
+        local result = self:MutateChannel(function(data)
+            data.rooms[key] = section
+            self:PruneChannel(data, nowMs, alive)
+        end)
+        local now = _UtilLogic.ElapsedSeconds
+        self.ChWriting = false
+        self.ChWroteAt = now
+        if result.ok then
+            self.ChUrgentSent = dg.urgent
+            self.ChFullSent = dg.full
+        else
+            self.ChHoldUntil = now + self.ChFailHold
+        end
+        log("[VRF] channel write room=" .. key .. " n=" .. tostring(#live) .. " why=" .. why .. " ok=" .. tostring(result.ok) .. " calls=" .. tostring(result.calls))
+    end
+
+    method any ChannelSection(table live)
+        -- 공유 메모리에 쓰는 이 방 칸 (사람이 없으면 nil = 칸 지우기). 짧은 키 — 20명이어도 2KB 안 (한 변수 상한 80,000바이트)
+        if #live == 0 then return nil end
+        local p = {}
+        for _, e in ipairs(live) do table.insert(p, { u = e.u, n = e.n, l = e.l, m = e.m, d = e.d, y = e.y }) end
+        return { t = DateTime.UtcNow.Elapsed, k = _GameConst:RoomKind(), p = p }
+    end
+
+    @ExecSpace("ServerOnly")
+    method any ChannelMemoryObj()
+        local ok, code, memory = pcall(function() return _RoomService:GetSharedMemory(self.ChannelMemory) end)
+        if not ok or code ~= SharedMemoryResultCode.OK or memory == nil then return nil end
+        return memory
+    end
+
+    method string EncodeChannel(table data)
+        -- 빈 표는 JSONEncode가 실패한다 (메이커 실측) → 방 칸이 하나도 없으면 고정 글
+        if next(data.rooms) == nil then return "{\"v\":1}" end
+        return _HttpService:JSONEncode({ v = 1, rooms = data.rooms })
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ReadChannel(number maxAge)
+        -- 채널 목록 { data = { rooms }, etag, ok }. maxAge초 안에 읽었으면 그 값을 다시 쓴다 (0 = 새로 읽기)
+        local now = _UtilLogic.ElapsedSeconds
+        if maxAge > 0 and self.ChCache ~= nil and now - self.ChCacheAt <= maxAge then return self.ChCache end
+        local memory = self:ChannelMemoryObj()
+        local out = { data = { rooms = {} }, etag = "", ok = memory ~= nil }
+        if memory ~= nil then
+            local result = memory:GetVariableAndWait("roster")
+            self.ChCalls = self.ChCalls + 1
+            if result.Code == SharedMemoryResultCode.OK and result.Info ~= nil then
+                out.etag = result.Info.ETag
+                local okJson, data = pcall(function() return _HttpService:JSONDecode(result.Info.Value) end)
+                if okJson and type(data) == "table" then out.data = data end
+            elseif result.Code ~= SharedMemoryResultCode.NotFound then
+                out.ok = false
+            end
+        end
+        if type(out.data.rooms) ~= "table" then out.data.rooms = {} end
+        self.ChCache = out
+        self.ChCacheAt = now
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method table MutateChannel(any change)
+        -- 새로 읽어 change(data)로 고치고 다시 쓴다 → { ok, calls } (TownBoard.Mutate · RoomSystem.Mutate와 같은 방식)
+        local memory = self:ChannelMemoryObj()
+        if memory == nil then return { ok = false, calls = 0 } end
+        local before = self.ChCalls
+        for attempt = 1, 3 do
+            local cur = self:ReadChannel(0)
+            if not cur.ok then return { ok = false, calls = self.ChCalls - before } end
+            local data = cur.data
+            change(data)
+            local value = self:EncodeChannel(data)
+            local result = nil
+            if cur.etag == "" then
+                result = memory:CreateVariableAndWait("roster", value)
+                if result.Code == SharedMemoryResultCode.AlreadyExists then result = nil end
+            else
+                result = memory:UpdateVariableAndWait(SharedVariableKeyInfo("roster", cur.etag), value)
+            end
+            self.ChCalls = self.ChCalls + 1
+            if result ~= nil and result.Code == SharedMemoryResultCode.OK then
+                self.ChCache = { data = data, etag = result.Info ~= nil and result.Info.ETag or "", ok = true }
+                self.ChCacheAt = _UtilLogic.ElapsedSeconds
+                return { ok = true, calls = self.ChCalls - before }
+            end
+            self.ChCache = nil
+            log("[VRF] channel write retry " .. tostring(attempt))
+        end
+        return { ok = false, calls = self.ChCalls - before }
+    end
+
+    @ExecSpace("ServerOnly")
+    method any RoomAliveFn()
+        -- 방 키 → 아직 있는가 (_RoomService.InstanceRooms). 이 방 목록에 내 방이 없으면(목록을 못 믿는 환경) nil = 시간(ChStaleSec)으로만 판단
+        local rooms = _RoomService.InstanceRooms
+        local mainKey = _RoomService.StaticRoomKey
+        if _RoomService:IsInstanceRoom() and rooms[_RoomService.RoomKey] == nil then return nil end
+        return function(key) return key == mainKey or rooms[key] ~= nil end
+    end
+
+    @ExecSpace("ServerOnly")
+    method table RoomState(string key)
+        -- 같은 채널 방 하나의 상태 { known(믿을 수 있는 목록인가) · exists · count } — 초대 수락 때 인원 확인
+        local rooms = _RoomService.InstanceRooms
+        local known = not _RoomService:IsInstanceRoom() or rooms[_RoomService.RoomKey] ~= nil
+        local room = rooms[key]
+        if room == nil then return { known = known, exists = false, count = 0 } end
+        local ok, n = pcall(function() return room:GetUserCount() end)
+        return { known = known, exists = true, count = (ok and n ~= nil) and n or 0 }
+    end
+
+    method void PruneChannel(table data, number nowMs, any alive)
+        -- 오래 소식 없는 칸(ChStaleSec)과 이제 없는 방(ChRoomGrace가 지났는데 InstanceRooms에 없음) 칸을 지운다 (순수)
+        for key, sec in pairs(data.rooms) do
+            local t = type(sec) == "table" and (tonumber(sec.t) or 0) or 0
+            if type(sec) ~= "table" or type(sec.p) ~= "table" or nowMs - t > self.ChStaleSec * 1000 then
+                data.rooms[key] = nil
+            elseif alive ~= nil and nowMs - t > self.ChRoomGrace * 1000 and not alive(key) then
+                data.rooms[key] = nil
+            end
+        end
+    end
+
+    method string CleanName(any text)
+        local s, _n = string.gsub(tostring(text or ""), "[|;\n\r\t]", " ")
+        return _UIKit:Clip(s, 16)
+    end
+
+    method table ChannelEntries(table data, string hereKey, table live, number nowMs, any alive)
+        -- 채널 전원 (순수 · 품질 검사) = 이 방(live, 지금 값) + 다른 방 칸들. 오래된 칸·없는 방은 빼고, 한 사람이 두 칸에 있으면(방을 옮기는 중) 새 칸.
+        --   항목 { u, n, l, m, d, party(파티 키 "방 키#번호" · 없으면 ""), room, kind, cnt(그 방 인원), here, place, map }
+        local out = {}
+        local seen = {}
+        for _, e in ipairs(live) do
+            seen[e.u] = true
+            table.insert(out, { u = e.u, n = e.n, l = e.l, m = e.m, d = e.d, party = e.y ~= 0 and (hereKey .. "#" .. tostring(e.y)) or "",
+                room = hereKey, kind = _GameConst:RoomKind(), cnt = #live, here = true, place = e.place, map = e.map })
+        end
+        local best = {}
+        for key, sec in pairs(data.rooms or {}) do
+            local t = type(sec) == "table" and (tonumber(sec.t) or 0) or 0
+            local fresh = type(sec) == "table" and type(sec.p) == "table" and nowMs - t <= self.ChStaleSec * 1000
+            if fresh and alive ~= nil and nowMs - t > self.ChRoomGrace * 1000 and not alive(key) then fresh = false end
+            if key ~= hereKey and fresh then
+                for _, p in ipairs(sec.p) do
+                    local uid = type(p) == "table" and tostring(p.u or "") or ""
+                    local b = best[uid]
+                    if uid ~= "" and not seen[uid] and (b == nil or b.t < t or (b.t == t and b.key < key)) then
+                        best[uid] = { t = t, key = key, p = p, k = tostring(sec.k or ""), cnt = #sec.p }
+                    end
+                end
+            end
+        end
+        local uids = {}
+        for uid, _ in pairs(best) do table.insert(uids, uid) end
+        table.sort(uids)
+        for _, uid in ipairs(uids) do
+            local b = best[uid]
+            local y = math.floor(tonumber(b.p.y) or 0)
+            table.insert(out, { u = uid, n = self:CleanName(b.p.n), l = math.floor(tonumber(b.p.l) or 1), m = math.floor(tonumber(b.p.m) or 0), d = math.floor(tonumber(b.p.d) or 0),
+                party = y ~= 0 and (b.key .. "#" .. tostring(y)) or "", room = b.key, kind = b.k, cnt = b.cnt, here = false, place = "", map = "" })
+        end
+        return out
+    end
+
+    method string WhereText(table e)
+        -- 위치 글: 같은 방 = 맵 이름 · 다른 방 = 로비 / 혼자 하기 · 난이도 / 다른 게임 · 난이도 / 심연 N층 / 캐릭터 선택
+        if e.here then return e.place end
+        if e.kind == "lobby" then return "로비" end
+        if e.kind == "depth" then
+            local d = _GameConst:ParseDepthKey(e.room)
+            return d.floor > 0 and ("심연 " .. tostring(d.floor) .. "층") or "심연"
+        end
+        if e.kind == "game" then
+            local solo = string.sub(e.room, 1, 6) == "game:s" and e.cnt <= 1
+            return (solo and "혼자 하기" or "다른 게임") .. " · " .. _GameConst:DifficultyName(e.d)
+        end
+        return "캐릭터 선택"
+    end
+
+    @ExecSpace("ServerOnly")
+    method table InviteContext(Entity viewer)
+        -- 초대 판단에 쓰는 보는 사람 쪽 값 (InviteCode)
+        ---@type PlayerStats
+        local st = viewer:GetComponent("script.PlayerStats")
+        ---@type PlayerSocial
+        local s = viewer:GetComponent("script.PlayerSocial")
+        local key = _RoomService.RoomKey or ""
+        local pid = 0
+        if s ~= nil and s.PartyId ~= 0 and self.Parties[s.PartyId] ~= nil then pid = s.PartyId end
+        return { uid = viewer.PlayerComponent.UserId, diff = st ~= nil and st.Difficulty or 0, inGame = _GameConst:InGameRoom(), alive = _Util:IsAlive(viewer),
+            count = _UserService:GetUserCount(), max = _GameConst.RoomMaxMembers, party = pid ~= 0 and (key .. "#" .. tostring(pid)) or "" }
+    end
+
+    method string InviteCode(table ctx, table e)
+        -- 「파티」 단추 상태 (순수 · 품질 검사 · TownBoard.RequestChannelInvite가 같은 규칙으로 다시 확인한다):
+        --   me 나 · m 같은 파티 · p 같은 방 → 파티 초대 · g 다른 방 → 내 게임에 초대
+        --   x… 못 함: xl 내가 게임 밖(로비·심연) · xk 내가 쓰러짐 · xd 상대가 심연·캐릭터 선택 · xf 내 게임 인원 가득 · xu:<난이도> 상대가 내 난이도를 안 열었음
+        if e.u == ctx.uid then return "me" end
+        if e.here then
+            if ctx.party ~= "" and e.party == ctx.party then return "m" end
+            return "p"
+        end
+        if not ctx.inGame then return "xl" end
+        if not ctx.alive then return "xk" end
+        if e.kind ~= "game" and e.kind ~= "lobby" then return "xd" end
+        if ctx.count >= ctx.max then return "xf" end
+        if e.m < ctx.diff then return "xu:" .. _GameConst:DifficultyName(ctx.diff) end
+        return "g"
+    end
+
+    method string InviteRefusal(string code)
+        -- 못 하는 초대를 서버가 받았을 때 안내 (순수 · 품질 검사 — 게시판 초대와 같은 글귀)
+        if code == "xl" then return "게임 안에서만 초대할 수 있습니다" end
+        if code == "xk" then return "쓰러진 상태에서는 초대할 수 없습니다" end
+        if code == "xd" then return "심연이나 캐릭터 선택 중인 플레이어는 초대할 수 없습니다" end
+        if code == "xf" then return "이 게임은 이미 가득 찼습니다" end
+        if string.sub(code, 1, 3) == "xu:" then return "그 사람은 아직 " .. string.sub(code, 4) .. " 난이도를 열지 않았습니다" end
+        if code == "m" then return "이미 같은 파티입니다" end
+        return ""
+    end
+
+    method string ChannelRowsFor(table ctx, table entries)
+        -- 보는 사람에게 보낼 목록 (순수): 줄 = "userId|이름|레벨|파티 키|관계(me·room·other)|위치|맵 이름|파티 단추" (SocialWindow.OnChannel)
+        local rows = {}
+        for _, e in ipairs(entries) do
+            local rel = e.u == ctx.uid and "me" or (e.here and "room" or "other")
+            table.insert(rows, table.concat({ e.u, e.n, tostring(e.l), e.party, rel, self:WhereText(e), e.map, self:InviteCode(ctx, e) }, "|"))
+        end
+        return table.concat(rows, ";")
+    end
+
+    @ExecSpace("ServerOnly")
+    method table ChannelNow(number maxAge)
+        -- 지금 채널 전원 { entries, ok } (읽기는 maxAge초 모아서)
+        local cur = self:ReadChannel(maxAge)
+        local entries = self:ChannelEntries(cur.data, _RoomService.RoomKey or "", self:ChannelLive(), DateTime.UtcNow.Elapsed, self:RoomAliveFn())
+        return { entries = entries, ok = cur.ok }
+    end
+
+    @ExecSpace("ServerOnly")
+    method any FindChannelEntry(string uid)
+        -- 초대 대상 찾기: 창이 연 읽기(10초 안)에서 먼저, 없으면 한 번 새로 읽는다
+        for pass = 1, 2 do
+            local now = self:ChannelNow(pass == 1 and 10 or 0)
+            for _, e in ipairs(now.entries) do if e.u == uid then return e end end
+        end
+        return nil
+    end
+
+    @ExecSpace("Server")
+    method void RequestChannel(boolean force)
+        -- 플레이어 창(P)이 열려 있는 동안 SocialWindow가 묻는다 (열 때 force · 그 뒤 PollSec마다) → 그 사람에게만
+        local uid = senderUserId
+        local now = _UtilLogic.ElapsedSeconds
+        if self.ChAsk == nil then self.ChAsk = {} end
+        if self.ChAsk[uid] ~= nil and now - self.ChAsk[uid] < 1.5 then return end
+        self.ChAsk[uid] = now
+        self:SendChannel(uid, force)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void SendChannel(string uid, boolean force)
+        local viewer = _UserService:GetUserEntityByUserId(uid)
+        if not isvalid(viewer) then return end
+        local now = self:ChannelNow(force and self.ChOpenFresh or self.ChReadCache)
+        local digest = self:ChannelRowsFor(self:InviteContext(viewer), now.entries)
+        if self.ChShown == nil then self.ChShown = {} end
+        local shown = digest .. (now.ok and "" or "!")
+        if not force and self.ChShown[uid] == shown then return end
+        self.ChShown[uid] = shown
+        self:ShowChannel(digest, now.ok, uid)
+        log("[VRF] channel rows viewer=" .. uid .. " n=" .. tostring(#now.entries) .. " ok=" .. tostring(now.ok) .. " calls=" .. tostring(self.ChCalls))
+    end
+
+    @ExecSpace("Client")
+    method void ShowChannel(string digest, boolean ok)
+        _SocialWindow:OnChannel(digest, ok)
+    end
+
+    method integer InviteCooling(string kind, string fromUid, string toUid, number now)
+        -- 같은 상대에게 같은 요청을 InviteCooldownSec 안에 다시 보내면 남은 초 (0 = 보내도 된다). 순수 (품질 검사)
+        if self.InviteAt == nil then self.InviteAt = {} end
+        local at = self.InviteAt[kind .. ":" .. fromUid .. ">" .. toUid]
+        if at ~= nil and now - at < self.InviteCooldownSec then return math.max(1, math.ceil(self.InviteCooldownSec - (now - at))) end
+        return 0
+    end
+
+    method void MarkInvite(string kind, string fromUid, string toUid, number now)
+        -- 실제로 보낸 요청만 적는다 (오래된 것은 지운다)
+        if self.InviteAt == nil then self.InviteAt = {} end
+        for k, at in pairs(self.InviteAt) do if now - at >= self.InviteCooldownSec then self.InviteAt[k] = nil end end
+        self.InviteAt[kind .. ":" .. fromUid .. ">" .. toUid] = now
     end
 
     method string NameOf(Entity p)
@@ -94,7 +499,7 @@ script PartySystem extends Logic
 
     @ExecSpace("ServerOnly")
     method string PlaceName(Entity p)
-        -- 파티 목록 이름 아래 위치: 심도는 「심도 N층」, 그 밖은 맵 표시 이름
+        -- 파티 목록 이름 아래 위치: 심연은 「심연 N층」(11-01: 다른 방 줄 WhereText와 같은 이름), 그 밖은 맵 표시 이름
         local map = p.CurrentMap
         if not isvalid(map) then return "" end
         local place = map.Name
@@ -102,7 +507,7 @@ script PartySystem extends Logic
         local depth = map:GetComponent("script.DepthDirector")
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
-        if depth ~= nil and depth.Floor > 0 then place = "심도 " .. tostring(depth.Floor) .. "층"
+        if depth ~= nil and depth.Floor > 0 then place = "심연 " .. tostring(depth.Floor) .. "층"
         elseif amb ~= nil and amb.DisplayName ~= "" then place = amb.DisplayName end
         return (string.gsub(place, "[|;]", " "))
     end
@@ -272,6 +677,12 @@ script PartySystem extends Logic
     handler HandleUserLeaveEvent(UserLeaveEvent event)
         self:Leave(event.UserId)
         self.OptOut[event.UserId] = nil
+        -- 채널 목록: 나간 사람을 빼고 곧 다시 쓴다 (이벤트 안에서는 기다리는 호출을 하지 않는다)
+        if self.ChGone == nil then self.ChGone = {} end
+        self.ChGone[event.UserId] = _UtilLogic.ElapsedSeconds
+        if self.ChShown ~= nil then self.ChShown[event.UserId] = nil end
+        if self.ChAsk ~= nil then self.ChAsk[event.UserId] = nil end
+        _TimerService:SetTimerOnce(function() self:MaybeWriteChannel() end, 0.2)
     end
 
 end

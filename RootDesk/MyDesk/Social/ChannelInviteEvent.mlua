@@ -1,0 +1,17 @@
+-- 같은 채널(월드 인스턴스)의 다른 방으로 보내는 파티 초대 (11-01 사용자 요청 「같은 채널이면 누구에게나 파티를 걸 수 있게」).
+--   TownBoard.RequestChannelInvite → _RoomService:RequestSendEventToRoomAsync(이 이벤트, 받는 사람의 방 키) → 그 방 TownBoard.OnChannelEvent가
+--   받은 요청 창(PlayerSocial Pending*, kind "game")에 넣는다. 수락·거절·못 받음은 Kind "reply"로 초대한 사람의 방에 돌려준다.
+--   공유 메모리를 쓰지 않는다 (모든 방이 초대를 확인하려고 몇 초마다 읽으면 월드 분당 1000번 한도를 넘는다 — docs/evidence/2026-11-01-channel-players).
+@Event
+script ChannelInviteEvent extends EventType
+
+    property string Kind = ""          -- invite · reply
+    property string ToUid = ""         -- 받을 사람 (invite = 초대받는 사람 · reply = 초대한 사람)
+    property string FromUid = ""       -- 보낸 사람
+    property string FromName = ""      -- 보낸 사람 캐릭터 이름 (reply = 초대받은 사람 이름)
+    property string FromRoom = ""      -- 보낸 사람의 방 키 (답을 돌려줄 곳)
+    property string GameId = ""        -- 초대한 게임 방 id ("game:" 뒤)
+    property integer Diff = 0          -- 초대한 게임의 난이도
+    property string Code = ""          -- reply: ok · no · busy · gone · cant · full · locked
+
+end
