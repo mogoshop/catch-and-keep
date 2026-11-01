@@ -25,6 +25,20 @@ for(const m of manifest) {
   hashes.set(file,m.sha256);
 }
 for(const g of atlas.groups)for(const f of g.frames)assetFiles.add(mediaPath(f));
+// Optional effect-slot comparison data (npm run slots). Its extra media has its own SHA manifest.
+let slots=null;
+try { slots=await readJSON(path.join(content,'assets/slots.json')); }
+catch(e){ if(e.code!=='ENOENT')throw e; console.warn('No content/assets/slots.json: the slot comparison tab will show its empty state. Run npm run slots -- --game <checkout>.'); }
+if(slots) {
+  assertSanitized(slots,'slots');
+  for(const m of await readJSON(path.join(content,'assets/slots-manifest.json'))) {
+    const file=mediaPath(m.file);
+    if(hashes.has(file)&&hashes.get(file)!==m.sha256)throw new Error(`Conflicting manifest path: ${file}`);
+    hashes.set(file,m.sha256);
+  }
+  const candidates=slots.slots.flatMap(s=>[s.current,...s.fx,...s.maple]).concat(slots.unassigned).filter(Boolean);
+  for(const c of candidates)for(const f of c.frames)assetFiles.add(mediaPath(f));
+}
 for(const s of atlas.skills)if(s.icon)assetFiles.add(mediaPath(s.icon));
 const referencePath=value=>typeof value==='object'&&value?value.src||value.path||value.url:value;
 for(const m of maps.maps) {
@@ -61,13 +75,14 @@ await writeFile(path.join(dist,'data/policies.json'),JSON.stringify(policies));
 await writeFile(path.join(dist,'assets/catalog.json'),JSON.stringify(atlas));
 await writeFile(path.join(dist,'assets/audit-summary.json'),JSON.stringify(atlas.summary));
 const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
-await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>JSON.stringify(atlas).replaceAll('</','<\\/')));
+const embed=value=>JSON.stringify(value).replaceAll('</','<\\/');
+await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>embed(atlas)).replace('__SLOTS__',()=>embed(slots)));
 let commit='local';try {commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();}catch{}
 const visible=g=>!g.hiddenDuplicate&&(!['legacy','superseded'].includes(g.status)||g.connection==='connected');
 const site={title:'잡으면 내편 · 개발 자료실',builtAt:new Date().toISOString(),sourceCommit:commit,
- asset:{...atlas.summary,fxGroups:atlas.groups.filter(g=>g.category==='fx'&&visible(g)).length,summonGroups:atlas.groups.filter(g=>g.category==='summon'&&visible(g)).length},
+ asset:{...atlas.summary,fxGroups:atlas.groups.filter(g=>g.category==='fx'&&visible(g)).length,summonGroups:atlas.groups.filter(g=>g.category==='summon'&&visible(g)).length,slots:slots?.counts||null},
  map:{total:maps.maps.length,withPreview:maps.maps.filter(m=>m.preview).length},policy:{count:policies.policies.length},
- snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
+ snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
 await writeFile(path.join(dist,'data/site.json'),JSON.stringify(site));
 await writeFile(path.join(dist,'robots.txt'),'User-agent: *\nDisallow: /\n');
 const output=path.join(root,'.vercel/output');await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});

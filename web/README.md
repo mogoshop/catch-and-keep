@@ -34,6 +34,23 @@ maps 폴더는 `maps.json`, `media/`를, policies 폴더는 `policies.json`을 �
 절대 로컬 경로를 제거하고 에셋 SHA, 파일 경로, 필수 카탈로그를 빌드에서 검사합니다.
 자료가 없거나 깨진 빌드는 실패하며 빈 화면으로 기존 배포를 덮지 않습니다.
 
+## 효과 고르기(자리별 비교) 자료
+
+에셋 라이브러리의 「효과 고르기」 탭은 스킬 효과 자리(슬롯)마다 현재 사용 중 / 코덱스 FX 후보 / 메이플(MSW 리소스) 클립을
+같은 이름·순서로 나란히 보여 주고, 브라우저 localStorage에 고른 것과 메모를 저장해 「선택 내보내기」로 복사합니다.
+
+```sh
+npm run slots -- --game /path/to/game-checkout --ref origin/main --atlas /path/to/atlas
+npm test && npm run build
+```
+
+- 자리 목록과 이름은 `scripts/slot-defs.mjs`(공개 소스)에 있습니다.
+- 생성기는 게임 체크아웃을 읽기만 합니다(`git show`/`git log`, `assets/` PNG). 현재 연결은 지정한 커밋의 상수 선언으로 정합니다.
+- 카탈로그 뒤에 납품된 `assets/codex-skill-fx-v3`(통일 공정) 그림을 함께 넣습니다.
+- 메이플 클립은 게임 체크아웃의 msw-search 래퍼(`getResource`/`getResourcesBatch`)로 프레임 스프라이트 썸네일 PNG와 미리보기 GIF 간격을 받습니다.
+- 결과는 `content/assets/slots.json`, `slots-manifest.json`(SHA-256), `media/slots/`에만 씁니다(Git 제외). 빌드는 이 해시도 검사합니다.
+- `slots.json`이 없으면 빌드는 경고만 하고 탭에 빈 상태를 보여 줍니다.
+
 ## Vercel
 
 전용 프로젝트: `catch-and-keep-library`, Root Directory: `web`, Build: `npm run build`, Output: `dist`.
