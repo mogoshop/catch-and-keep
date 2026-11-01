@@ -94,6 +94,28 @@ npm test && npm run build
 「실녹화 목록 내보내기」는 `kind: catch-and-keep/effect-shortlist` JSON(자리 id·runtime 상수·남긴 후보 id·RUID·메모·장면 규칙 요약)을 복사합니다.
 이 JSON이 다음 단계(메이커 실녹화)의 입력입니다. 기존 「선택 내보내기」(자리마다 하나)는 그대로입니다.
 
+## 효과 고르기 · 추천 (메이플 1순위)
+
+「메이플 에셋 · 추천」 탭은 자리마다 메이플 후보 중 1순위를 **「추천 n순위 · 점수」 배지 + 이유 3개 + 「확인」/「다른 것」**으로 보여 줍니다.
+「추천 장면」 탭은 83자리를 한 화면에 모아 자리마다 추천 1순위(해골 4자리는 코덱스 그림)를 장면(배우·맵 위)으로 재생합니다.
+
+```sh
+npm run recommend -- --game /path/to/game-checkout   # 재검색 없이: --no-search
+npm test && npm run build
+```
+
+- 점수 규칙은 `scripts/recommend-defs.mjs`(공개 소스)에 있습니다. 자리마다 [역할, 속성] 한 줄 · 가중치 · 확신 기준 · 덧점.
+  점수 = 역할(메이플 태그의 부분 hit·ball·tile·affected·effect·special) · 색(지금 그림과 색 칸 겹침 + 속성 색) · 모양(장별 면적 변화·가로세로) ·
+  크기(같은 배율일 때 지금 그림 대비) · 장 수·길이 · 태그 낱말 · 어두운 계열(태그 + 원작 직업) · 톤(밝기·채도)의 가중합(0~100) + 덧점.
+- 그림은 `scripts/png.mjs`(의존성 없는 PNG 해독)로 직접 잽니다. 태그는 게임 체크아웃의 msw-search 래퍼(`getResourceTags`)로 받고 `content/assets/slots-cache/tags-*.json`에 캐시합니다.
+- 재검색: 자리마다 `scripts/maple-queries.mjs`의 검색어 2개를 `animationclip`·`sprite` / `category: skill`로 topK 20개씩 + 지금 메이플 클립과 비슷한 것 →
+  메타·태그로 거른 상위 3개만 프레임을 받아 같은 규칙으로 잽니다. 그 자리 3위 안에 들면 「메이플 후보 · 재검색」 카드로 붙습니다(`extras`).
+- 해골 관련 4자리(`EXCLUDED`)는 「코덱스 커스텀 유지」로 표시합니다.
+- 「확인」은 「이걸로 고르기」와 같은 저장이라 「선택 내보내기」 JSON에 그대로 들어갑니다(재검색 후보는 `candidateOrigin: "recommend"`). 「다른 것」은 이 화면에서만 다음 순위를 보여 줍니다.
+- 결과는 `content/assets/recommend.json`, `recommend-manifest.json`(재검색 프레임 SHA-256), `media/slots/`에만 씁니다(Git 제외). 빌드가 해시를 검사하고 `__RECO__`로 넣습니다.
+- 장면 보기의 배우·바탕은 11-01 메이커 정지 캡처(`content/scene/incoming/`, 게임 체크아웃 `docs/evidence/2026-11-01-fx-picker-scene/actors/`에서 복사 · 171.6px/칸 · 바닥 지우기 근사)입니다.
+  `npm run scene`은 이제 `content/scene/incoming/`을 지우지 않습니다. 「가까이 보기」는 화면 폭을 9.6칸 → 6칸으로 줄여 크게 봅니다.
+
 ## Vercel
 
 전용 프로젝트: `catch-and-keep-library`, Root Directory: `web`, Build: `npm run build`, Output: `dist`.

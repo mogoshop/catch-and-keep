@@ -12,6 +12,7 @@ This directory does not implement MSW gameplay and does not require Maker sessio
 - On approved content delivery, refresh the relevant private package, run import/build, inspect the changed views, then publish.
 - Effect-slot comparison data comes from `npm run slots -- --game <checkout>` (read-only on the game checkout; output stays in `content/`). Keep slot names/order in `scripts/slot-defs.mjs`. Do not rerun gameplay merely to update this library.
 - Scene-preview data comes from `npm run scene -- --game <checkout>` (same read-only rule; placement rules in `scripts/scene-defs.mjs`, actor/map sources in `scripts/scene-actors.mjs`; output stays in `content/scene/`). Mark values not read from game code as estimates (`k.est`); the scene is a web approximation, not a Maker recording.
+- Recommendation data comes from `npm run recommend -- --game <checkout>` (read-only; uses the game's msw-search wrapper for tags/re-search; scoring table in `scripts/recommend-defs.mjs`; output `content/assets/recommend.json` + `recommend-manifest.json`). A recommendation is a scored suggestion, not an approval — the user's pick is what 「확인」/「선택 내보내기」 records.
 - A source-only Git push is not a content publication. Automatic Git deployment is disabled because the private bundle is intentionally absent from public Git.
 - Preserve snapshot date/source version, distinguish produced/connected/actually observed/accepted, and retain explicit missing data.
 - Never infer a map is applied or an animation was tested from a catalog entry alone.

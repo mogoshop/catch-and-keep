@@ -162,7 +162,8 @@ async function encode(img, name) {
   const buf = await readFile(abs); manifest.push({file, sha256: sha256(buf)}); return file;
 }
 
-await rm(out, {recursive: true, force: true});
+// 다시 만들 결과만 지운다 — content/scene/incoming/(정식 배우 PNG 받는 곳)은 남긴다.
+for (const f of ['media', 'scene.json', 'scene-manifest.json']) await rm(path.join(out, f), {recursive: true, force: true});
 await mkdir(path.join(out, 'media'), {recursive: true});
 const catalog = await readJSON(path.join(root, 'content/assets/catalog.json'));
 async function sourceImage(src) {
@@ -177,7 +178,7 @@ async function sourceImage(src) {
   }
   if (src.kind === 'png') {
     const abs = path.join(root, src.file);
-    return {img: decode(abs, null, src.crop || null), meta: {file: src.file, sha256: sha256(await readFile(abs))}};
+    return {img: decode(abs, null, src.crop || null), meta: {file: src.file, crop: src.crop || null, matte: src.matte || null, tol: src.tol ?? null, sha256: sha256(await readFile(abs))}};
   }
   throw new Error(`알 수 없는 source.kind ${src.kind}`);
 }
@@ -191,7 +192,7 @@ for (const a of SCENE_ACTORS) {
     if (a.source.feet && a.flip) feet[0] = pic.w - feet[0];
     const file = await encode(pic, `actor-${a.id}`);
     actors.push({id: a.id, role: a.role, pose: a.pose, label: a.label, file, size: [pic.w, pic.h], feet, pxPerCell: round(a.source.pxPerCell), kind: a.source.kind,
-      approx: a.source.kind === 'capture', flip: !!a.flip, source: meta, note: a.note || ''});
+      approx: a.source.kind === 'capture' || !!a.source.matte, flip: !!a.flip, source: meta, note: a.note || ''});
   } catch (e) { warnings.push(`배우 ${a.id}: ${e.message}`); }
 }
 const maps = [];

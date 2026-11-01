@@ -39,6 +39,19 @@ if(slots) {
   const candidates=slots.slots.flatMap(s=>[s.current,...s.fx,...s.maple]).concat(slots.unassigned).filter(Boolean);
   for(const c of candidates)for(const f of c.frames)assetFiles.add(mediaPath(f));
 }
+// Optional recommendation data (npm run recommend): 자리별 1순위와 재검색 후보. 재검색 후보 프레임은 자기 SHA 매니페스트로 검사한다.
+let reco=null;
+try { reco=await readJSON(path.join(content,'assets/recommend.json')); }
+catch(e){ if(e.code!=='ENOENT')throw e; console.warn('No content/assets/recommend.json: the picker shows no recommendation badges. Run npm run recommend -- --game <checkout>.'); }
+if(reco) {
+  assertSanitized(reco,'recommend');
+  for(const m of await readJSON(path.join(content,'assets/recommend-manifest.json'))) {
+    const file=mediaPath(m.file);
+    if(hashes.has(file)&&hashes.get(file)!==m.sha256)throw new Error(`Conflicting manifest path: ${file}`);
+    hashes.set(file,m.sha256);
+  }
+  for(const list of Object.values(reco.extras||{}))for(const c of list)for(const f of c.frames)assetFiles.add(mediaPath(f));
+}
 // Optional scene-preview data (npm run scene): actor/map stills under content/scene with their own SHA manifest.
 let scene=null;const sceneFiles=new Set(),sceneHashes=new Map();
 try { scene=await readJSON(path.join(content,'scene/scene.json')); }
@@ -92,18 +105,18 @@ await writeFile(path.join(dist,'assets/catalog.json'),JSON.stringify(atlas));
 await writeFile(path.join(dist,'assets/audit-summary.json'),JSON.stringify(atlas.summary));
 const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
 const embed=value=>JSON.stringify(value).replaceAll('</','<\\/');
-await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>embed(atlas)).replace('__SLOTS__',()=>embed(slots)).replace('__SCENE__',()=>embed(scene)));
+await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>embed(atlas)).replace('__SLOTS__',()=>embed(slots)).replace('__SCENE__',()=>embed(scene)).replace('__RECO__',()=>embed(reco)));
 let commit='local';try {commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();}catch{}
 const visible=g=>!g.hiddenDuplicate&&(!['legacy','superseded'].includes(g.status)||g.connection==='connected');
 const site={title:'잡으면 내편 · 개발 자료실',builtAt:new Date().toISOString(),sourceCommit:commit,
  asset:{...atlas.summary,fxGroups:atlas.groups.filter(g=>g.category==='fx'&&visible(g)).length,summonGroups:atlas.groups.filter(g=>g.category==='summon'&&visible(g)).length,slots:slots?.counts||null},
  map:{total:maps.maps.length,withPreview:maps.maps.filter(m=>m.preview).length},policy:{count:policies.policies.length},
- snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),...(scene?[{type:'장면 보기 배치 규칙',date:scene.createdAt,sourceCommit:scene.sourceCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
+ snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),...(scene?[{type:'장면 보기 배치 규칙',date:scene.createdAt,sourceCommit:scene.sourceCommit}]:[]),...(reco?[{type:'효과 추천 점수',date:reco.createdAt,sourceCommit:reco.slotsCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
 await writeFile(path.join(dist,'data/site.json'),JSON.stringify(site));
 await writeFile(path.join(dist,'robots.txt'),'User-agent: *\nDisallow: /\n');
 const output=path.join(root,'.vercel/output');await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
 await cp(dist,path.join(output,'static'),{recursive:true});
 await writeFile(path.join(output,'config.json'),JSON.stringify({version:3,routes:[{src:'/(.*)',headers:{'X-Robots-Tag':'noindex, nofollow, noarchive','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'},continue:true},{handle:'filesystem'}]}));
 const files=await filesUnder(dist);
-await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt:site.builtAt,fileCount:files.length,mediaHashes:assetFiles.size,sceneHashes:sceneFiles.size,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length},null,2));
+await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt:site.builtAt,fileCount:files.length,mediaHashes:assetFiles.size,sceneHashes:sceneFiles.size,recommendSlots:reco?Object.keys(reco.slots||{}).length:0,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length},null,2));
 console.log(`Built ${files.length} files: ${atlas.skills.length} skills, ${maps.maps.length} maps, ${policies.policies.length} policies. Verified ${assetFiles.size} referenced asset hashes${scene?` and ${sceneFiles.size} scene stills`:''}.`);
