@@ -236,6 +236,9 @@ async function mapleCandidate(key, ruid, role) {
 
 // ---------- catalog candidates ----------
 const catalogGroups = catalog.groups.filter(g => g.category === 'fx' && !g.hiddenDuplicate);
+// Constants renamed after the catalog snapshot (same RUIDs, same consumers): new name → catalog name.
+// 11-01 f9049165: the player bone-spear skill was removed and the skeleton mage kept its art under FxBoneBolt*.
+const RENAMED = {'GameConst.FxBoneBolt': 'GameConst.FxSkillSpear', 'GameConst.FxBoneBoltHit': 'GameConst.FxSkillSpearHit'};
 const groupByKey = new Map(); for (const g of catalog.groups) if (g.shortId && g.id.startsWith('runtime--')) groupByKey.set(g.shortId, g);
 function catalogCandidate(g) {
   const size = g.bounds ? [g.bounds[2] - g.bounds[0], g.bounds[3] - g.bounds[1]] : g.sizes?.[0];
@@ -334,14 +337,14 @@ for (const [order, def] of SLOTS.entries()) {
     else if (!r.ruids.length) currentNote = `비어 있음 — ${r.prop.comment.split('→')[1]?.split('·')[0]?.trim() || '대체 연출'}`;
     else {
       currentRuids = r.ruids;
-      const twin = groupByKey.get(def.runtime);
+      const twin = groupByKey.get(def.runtime) || groupByKey.get(RENAMED[def.runtime]);
       const use = twin ? (twin.connection === 'connected' ? 'connected' : 'registered') : engineById.get(r.key) ? (USAGE[engineById.get(r.key).usage_status]?.[1] === 'connected' ? 'connected' : 'registered') : 'unknown';
       const useLabel = {connected: '코드 연결 확인', registered: '선언만 · 부르는 곳 없음', unknown: '선언됨 · 연결 확인 안 됨'}[use];
       const since = period(def.runtime, r.ruids).from;
       const common = {id: 'current', source: 'current', runtimeKey: def.runtime, ruids: r.ruids, use, status: use, statusLabel: useLabel, source_ref: `${r.prop.path}:${r.prop.line}`, comment: r.prop.comment,
         since: since ? {commit: since.commit, date: since.date, subject: since.subject} : null};
       if (twin && twin.resourceKeys.join() === r.ruids.join()) {
-        current = {...catalogCandidate(twin), ...common, kind: 'codex', package: twin.package, title: twin.title};
+        current = {...catalogCandidate(twin), ...common, kind: 'codex', package: twin.package, title: RENAMED[def.runtime] ? def.title : twin.title};
       } else if (r.ruids.every(x => lookup.get(x)?.file || v3BySha.has(lookup.get(x)?.sha))) {
         try {
           const fileOf = x => lookup.get(x).file || v3BySha.get(lookup.get(x).sha);

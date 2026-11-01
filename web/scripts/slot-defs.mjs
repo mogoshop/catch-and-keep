@@ -30,8 +30,6 @@ export const SLOTS = [
   {id: 'shard-hit', title: '골편 명중', group: 'attack', runtime: 'GameConst.FxSkillShardHit', maple: ['SkillEffects.FxShardHit'], match: 'ShardHit|shard-hit'},
   {id: 'bone-arrow', title: '뼈 화살 (중립·의식 3기)', group: 'attack', runtime: 'GameConst.FxSkillBoneArrow', match: 'BoneArrow|bone-arrow(?!-hit)|RiteArrow|rite-arrow'},
   {id: 'hit-bone', title: '투사체 명중 · 뼈', group: 'attack', runtime: 'GameConst.FxSkillHitBone', match: 'HitBone|hit-bone|bone-arrow-hit'},
-  {id: 'spear', title: '뼈 창', group: 'attack', runtime: 'GameConst.FxSkillSpear', match: 'FxSkillSpear(?![A-Z])|bone-spear(?!-stick)|SpearShard|spear-shard'},
-  {id: 'spear-hit', title: '뼈 창 꽂힘', group: 'attack', runtime: 'GameConst.FxSkillSpearHit', match: 'SpearHit|spear-stick'},
   {id: 'flame-shot', title: '불꽃 발사체', group: 'attack', runtime: 'GameConst.FxSkillFlameShot', maple: ['SkillEffects.FxFlameShot'], match: 'FlameShot|flame-shot'},
   {id: 'hit-fire', title: '투사체 명중 · 불', group: 'attack', runtime: 'GameConst.FxSkillHitFire', match: 'HitFire|hit-fire'},
   {id: 'frost-shot', title: '서리 발사체', group: 'attack', runtime: 'GameConst.FxSkillFrostShot', maple: ['SkillEffects.FxFrostShot'], match: 'FrostShot|frost-shot'},
@@ -43,6 +41,10 @@ export const SLOTS = [
   {id: 'monster-arrow', title: '몬스터 화살', group: 'attack', runtime: 'GameConst.SpriteArrow', match: 'SpriteArrow'},
   {id: 'hit-spark', title: '맞은 자리 불꽃', group: 'attack', maple: ['GameConst.FxHit'], match: 'FxHit(?![A-Za-z])'},
 
+  // 해골 마법사(뼈 속성) 뼈 투척 — 11-01 캐릭터 뼈 창 스킬 삭제 뒤 남은 같은 그림(옛 FxSkillSpear*) · 옛 이름 패턴도 여기로 모은다
+  {id: 'bone-bolt', title: '해골 마법사 · 뼈 투척', group: 'undead', runtime: 'GameConst.FxBoneBolt', maple: ['MageBolts.FxShardShot'],
+    match: 'FxBoneBolt(?![A-Za-z])|BoneBoltShard|FxSkillSpear(?![A-Za-z])|bone-spear(?!-stick)|SpearShard|spear-shard'},
+  {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 꽂힘', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
   {id: 'blast', title: '해골 폭탄·제물 폭발', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
   {id: 'offering', title: '뼈 성찬 치유', group: 'undead', runtime: 'GameConst.FxSkillOfferingHeal', maple: ['SkillEffects.FxOffering'], match: 'Offering'},
   {id: 'death-wave', title: '죽음의 파동', group: 'undead', runtime: 'GameConst.FxSkillDeathWave', maple: ['SkillEffects.FxWave'], match: 'DeathWave|death-wave'},

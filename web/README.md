@@ -52,6 +52,47 @@ npm test && npm run build
 - `slots.json`이 없으면 빌드는 경고만 하고 탭에 빈 상태를 보여 줍니다.
 - 「메이플 후보 · 검색」은 자리마다 MSW 리소스 검색으로 고른 클립 3개입니다. 목록은 `scripts/maple-picks.mjs`에 고정되어 있어 `npm run slots`를 다시 돌려도 바뀌지 않습니다.
   검색을 새로 하려면 `node scripts/maple-search.mjs --game <checkout> --write`(검색어·해골 제외 자리는 그 파일 안) 뒤 결과를 검토하고 커밋합니다.
+  새 자리만 찾으려면 `--only <자리 id,자리 id>`를 붙입니다. 다른 자리의 고정 후보는 그대로 두고 그 자리들만 새 검색 결과로 바꿉니다.
+
+## 효과 고르기 · 장면 보기 자료
+
+「효과 고르기」의 **장면 보기** 단추를 켜면 후보마다 캔버스 하나에
+(바탕) 맵 조각 → (뒤층) 발밑 효과 → 몬스터 → 캐릭터·소환수·거인 → (앞층) 효과 순으로 겹쳐 재생합니다.
+한 자리의 후보는 같은 장면에서 같은 시각부터 재생됩니다. 웹 합성(근사)이며 메이커 실녹화가 아닙니다.
+
+```sh
+npm run scene -- --game /path/to/game-checkout --ref origin/main
+npm test && npm run build
+```
+
+- 자리별 배치 규칙은 `scripts/scene-defs.mjs`(공개 소스)에 자리마다 한 줄씩 있습니다. 기준점(시전자 발·표적 몸·머리 위·조준점 바닥)·배율·층·반복·투사체 속도를 적습니다.
+  값은 `k.c('SkillEffects.ShardHitScale', 1.1)`처럼 상수 이름으로 적고, 생성기가 지정한 커밋의 property 선언을 읽어 채웁니다.
+  코드 안 지역 값은 `k.code(값, '파일:줄')`, 코드에서 못 읽는 값은 `k.est(값, '이유')`로 적습니다. 화면에는 「추정」으로 표시되고, 근거를 펼치면 값마다 읽음/코드 옮김/추정과 줄 번호가 보입니다.
+- 배우·맵 바탕은 `scripts/scene-actors.mjs`의 목록대로 게임 체크아웃의 증거 영상·스크린숏을 ffmpeg로 잘라 씁니다(배경 지우기는 근사).
+  거인·소환수는 에셋 도감 몸 프레임을 씁니다. 1칸 px는 증거의 줌으로 맞춥니다(줌 100: 1600px 화면 125 · 줌 130: 1920px 화면 195.1).
+- 메이플 클립은 `npm run slots`가 받아 둔 프레임 피벗(`content/assets/slots-cache`)으로 놓습니다. 코덱스 그림은 규칙의 피벗을 씁니다.
+- 결과는 `content/scene/scene.json`, `scene-manifest.json`(SHA-256), `media/*.png`에만 씁니다(Git 제외). 빌드는 이 해시도 검사하고 `assets/scene/media/`로 복사합니다.
+  `scene.json`이 없으면 빌드는 경고만 하고 단추가 「장면 자료 없음」으로 바뀝니다.
+- 몬스터 피격 장이 없으면 배우 그림에 흰빛을 덮어 번쩍임을 흉내 냅니다(근사).
+- 「후보 크기」 기본값은 저주 원형판 자리(규칙에 판정 지름 `judgeD`가 있는 자리)만 **판정 원에 맞춤**이고, 나머지 자리는 코드 배율입니다.
+  판정 원 맞춤은 후보마다 피벗에서 알파>16 화소까지 가장 먼 거리(모든 장 중 최대 · 게임 `CurseCircleFitPx`와 같은 잼)를 브라우저에서 재서 보이는 지름을 판정 지름(3칸)에 맞추고, 점선 원으로 판정 원을 그립니다. 현재 그림은 코드 배율이 이미 판정 원과 같아 그대로 둡니다.
+
+### 다음 메이커 회차에서 정식 배우 PNG로 교체하는 법
+
+1. 메이커에서 배경 없는(또는 단색) 화면으로 배우를 찍어 투명 PNG로 만들고 `content/scene/incoming/<id>.png`에 둡니다(Git 제외).
+   찍을 때의 줌과 화면 폭으로 1칸 px를 적어 둡니다(예: 줌 100 · 1920px 화면 = 150px/칸).
+2. `scripts/scene-actors.mjs`에서 같은 `id` 항목의 `source`를 `{kind: 'png', file: 'content/scene/incoming/<id>.png', pxPerCell: 150, feet: [x, y]}`로 바꿉니다.
+   `feet`(발 기준점 px)를 빼면 불투명 화소 맨 아래 가운데로 잡습니다. 캐릭터·거인·소환수는 오른쪽, 몬스터는 왼쪽을 보게 `flip`을 맞춥니다.
+3. 피격 장을 찍었으면 `{id: 'monster-hit', role: 'monster', pose: 'hit', ...}`을 더합니다. 있으면 흰빛 흉내 대신 그 장을 씁니다.
+4. `npm run scene -- --game <checkout>` → `npm test && npm run build` → 화면 확인 → `npm run publish`.
+
+`id`·`role`·`pose`는 화면이 찾는 이름입니다: `player-stand`, `player-cast`, `monster-stand`, `monster-hit`, `giant-stand`(마법사), `giant-shield-stand`·`giant-greatsword-stand`·`giant-twin-stand`·`giant-basic-stand`, `summon-stand`.
+
+### 후보 남기기 → 실녹화 목록
+
+카드마다 「후보 남기기 (실녹화)」를 여러 개 체크하면 고른 것·메모와 함께 이 브라우저에 저장됩니다.
+「실녹화 목록 내보내기」는 `kind: catch-and-keep/effect-shortlist` JSON(자리 id·runtime 상수·남긴 후보 id·RUID·메모·장면 규칙 요약)을 복사합니다.
+이 JSON이 다음 단계(메이커 실녹화)의 입력입니다. 기존 「선택 내보내기」(자리마다 하나)는 그대로입니다.
 
 ## Vercel
 
