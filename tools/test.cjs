@@ -13,6 +13,7 @@
 //   4-6. 기획서 38 결정 26개 대조           (check_decisions38 — 값이 부록 E 결정대로인가)
 //   4-6-1. 맵 장식 충돌·길 안내·이음새     (check_decor_collision — 10-31 실플레이 피드백 C: 키 큰 것만 막음 · 길 폭 3칸 비움 · 경계 띠 · 둥근 길)
 //   4-6-2. 맵 구성 v5 · 검사기 자가 테스트  (check_map_composition --all · --selftest — 길 = 구역 경계 띠 · 고리·곁길 0 · 역할 배치)
+//   4-6-3. 맵 길 표 최신                    (route_lengths --check — data/handmade/routes.csv = 지금 설계도·빌드된 맵 칸 · 11-01 사용자 결정 7-A)
 //   4-7. 기획서 46 거인 끝 레벨             (sim_balance --giant-check — 악몽·지옥 +20%까지 41·68·90 그대로)
 //   5. 검사기 자가 테스트                  (tests/fixtures: 일부러 틀린 코드의 "-- EXPECT" 줄을 정확히 잡는가)
 //   6. --build: 빌드를 두 번 돌려 결과가 같은가 (멱등성, 파일을 다시 쓴다)
@@ -58,6 +59,7 @@ step("기획서 38 결정 26개", () => tool("check_decisions38.cjs"));
 step("맵 장식 충돌·길 안내·이음새", () => tool("check_decor_collision.cjs"));
 step("맵 구성 v5 검사", () => tool("check_map_composition.cjs", ["--all"]));   // 10-31 맵 구성 v5 (설계도 ;v5 맵 · 띠·공간·역할 P1~P6 · docs/review/map-audit-20261031.md 수치 정의)
 step("맵 구성 검사기 자가 테스트", () => tool("check_map_composition.cjs", ["--selftest"]));   // tests/quality/map_composition: 입력 33개(깨끗한 입력 포함 · 29~32 = keep 맵 끝방·빌드 칸 길 keepFloor, 32는 실제 keeperhouse 3c759419^ 스냅숏 · 11-01)   // 10-31 실플레이 피드백 C (data/handmade/specs/decor_policy.cjs 정책 맵)
+step("맵 길 표 최신", () => tool("route_lengths.cjs", ["--check"]));   // 11-01 7-A: 설계도·배치표·장식을 고치고 route_lengths를 안 돌리면 실패 (sim_balance·sim_clear 템포 입력이 낡지 않게 · 고치기 = node tools/route_lengths.cjs)
 step("DPS 집계 도구", () => tool("dps/selftest.cjs"));   // I05 개발용 전투 계측 로그 집계 (tools/dps)
 step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));
 step("거인 그림 검증표 자체 테스트", () => tool("register_giant_visuals.cjs", ["selftest"]));   // 48 V2 (10-30): 구 납품 통과 · 새 범위(몸 12~16 · 효과 12~16) 통과 · 장 수·중복 장·타격 칸·반복·지속 위반 검출 · 지금 monster_frames 통과   // 10-30 갈래 E: 5종 몸 150 + HUD 5 (코덱스 0200 · 마법사 그림은 대기 지원만 — 5단계 자연 선택은 해골 전용 그대로) · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
