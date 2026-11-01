@@ -66,5 +66,12 @@ save("15-seam", base(), cleanPieces(), { seamAlpha: 3 }, { note: "반투명 이�
 { // v5 keep (바닥 보존형): 길 글자 띠가 3칸 폭이어도 띠 폭·구역 경계는 재지 않는다 — 골격(입구→출구 최단)·웨이포인트만
   const g = base(); for (let c = 1; c <= W - 2; c++) for (let r = 7; r <= 9; r++) if (g[r][c] !== "S") g[r][c] = "=";
   save("16-keep", g, cleanPieces(), {}, { note: "v5 keep: 3칸 큰길이 그대로 있어도 위반 아님 (깨끗한 입력)", json: { v5keep: true, roads: { "=": { art: "fake-road", tint: "1/1/1" } } } });
+  // keepFloor (11-01 사용자 결정 8-A): 입력 안의 기준(keepRef: 격자·막힌 칸)과 비교 — 목표 = 문 표식 + 끝방 자리(end · 월드 칸 "x,y") · 빌드된 맵 칸(막힌 칸 뺌) 길도
+  //   곁방 c 문(6,4) 바로 위 끝방 자리 (6,1) = 월드 (-14, 7). 문 위 (6,2)를 장식이 막으면 끝방 길 +2 (설계도 글자는 그대로 — 3c759419 keeperhouse 끝방 소금 자루와 같은 꼴)
+  const keep = { v5keep: true, roads: { "=": { art: "fake-road", tint: "1/1/1" } } };
+  save("29-keepend", g, cleanPieces(), { keepFloor: 1 }, { note: "keep: 설계도 글자는 그대로인데 끝방(end@) 길 위 칸을 장식이 막아 빌드된 칸 길 +2 (keeperhouse 3c759419 꼴)", json: Object.assign({ end: ["-14,7"], blocked: ["6,2"], keepRef: { grid: g.map((r) => r.join("")), blocked: [] } }, keep) });
+  save("30-keepshort", g, cleanPieces(), {}, { note: "keep: 기준에서 막혔던 끝방 길이 열려 빌드된 칸 길 −2 — 줄어든 길은 위반 아님 (깨끗한 입력)", json: Object.assign({ end: ["-14,7"], keepRef: { grid: g.map((r) => r.join("")), blocked: ["6,2"] } }, keep) });
+  const g2 = g.map((r) => r.slice()); g2[4][4] = "c";   // 곁방 c에 문 하나 더 (4,4) — 바닥은 늘기만 · 문(E) 길은 그대로 · 끝방 (4,1) = 월드 (-16, 7) 설계도 길이 짧아진다
+  save("31-keepend-bp", g2, cleanPieces(), { keepFloor: 1 }, { note: "keep: 설계도 글자가 바뀌어 끝방(end@) 길만 바뀜 (문 E 길·잃은 칸 없음) — 옛 검사는 end@를 목표로 안 봐서 놓쳤다", json: Object.assign({ end: ["-16,7"], keepRef: { grid: g.map((r) => r.join("")), blocked: [] } }, keep) });
 }
 console.log("ok");

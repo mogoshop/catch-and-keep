@@ -35,8 +35,13 @@
 //   waypoint     웨이포인트(표식 S)가 띠에서 1칸(8방향) 넘게 떨어짐
 //   topLayer     (10-31 윗부분 층) 윗부분 그림 엔티티(Art…Top)의 SortingLayer ≠ Default 이거나 OrderInLayer < 5 — 아바타(Default · 순서 4)보다 위여야 뒤에 선 플레이어를 가린다
 //                (맵 층은 Layer1 하나뿐이라 MapLayer1은 없는 층 → 아바타 아래에 그려졌다 · 메이커 7차 probe1~3 · 생성기 lib.cjs TOP_LAYER·TOP_ORDER)
-//   keepFloor    (10-31 액트 4 · --keep-ref <git 기준>을 줄 때만) v5 keep 맵이 기준 설계도보다 걷는 칸을 잃은 덩어리 수 + 입구→출구(E·X·H) 문 최단 길이 바뀐 수
-//                — keep은 바닥·구역·통로를 건드리지 않는다(역할 배치·길 안내 제거만). 장식 발밑은 설계도 걷는 칸이 아니라 따로 셈하지 않는다
+//   keepFloor    (10-31 액트 4 · --keep-ref <git 기준>을 줄 때만) v5 keep 맵이 기준 설계도보다 걷는 칸을 잃은 덩어리 수 + 입구(W·G)→목표 최단 길이 바뀐 수
+//                + (11-01 사용자 결정 8-A) 빌드된 맵 칸(그림 충돌 포함) 위 입구→목표 최단 길이 늘거나 끊긴 수.
+//                목표 = 문 표식 E·X·H + maps.csv extra end@(끝방 자리 · 막다른 맵 템포 기준 = tools/route_lengths.cjs 목표).
+//                빌드된 맵 칸: 기준 = git <기준>:map/<id>.map 충돌 타일(그때 지은 맵) · 지금 = route_lengths.cjs builtCells(lib.cjs build와 같은 계산 · 메모리).
+//                — keep은 바닥·구역·통로를 건드리지 않는다(역할 배치·길 안내 제거만). 장식 발밑이 잃은 칸은 따로 세지 않고(새 배치가 막는 칸은 당연히 다르다)
+//                길만 본다: 빌드 칸 길이 줄어든 것(옛 흩뿌림이 막던 길이 열림)은 위반 아님 · 자세히에만 적는다
+//                (3c759419 액트 3 keep 때 keeperhouse 끝방 (-18,7) 소금 자루가 끝방 길을 58→60으로 늘린 것을 설계도 글자 비교는 못 잡았다 — 자가 테스트 29~32)
 //   decorCollision 기존 검사기 tools/check_decor_collision.cjs 문제 수 (그 맵만)
 //   budget       엔티티 예산: 설계도 맵 노말 66장 합 ≤ 47900 (검사한 맵은 메모리 계산, 나머지는 map/<id>.map)
 // 경고 (위반 아님 · 종료 코드에 넣지 않음):
@@ -56,7 +61,7 @@ const MAX_RUN = 6, MAX_WIDTH = 2;
 const ITEMS = ["guide", "seamAlpha", "featurePass", "behindWall", "wallNiche", "deadLine", "passWidth", "spaceReach", "facing", "rowGap", "rowFlip", "bandWidth", "bandBreak", "bandLoop", "bandDeadEnd", "bandEdgeEmpty", "straightEdge", "scattered", "featureSpace", "pillarSingle", "landmarkBlock", "branchExtra", "waypoint", "topLayer", "keepFloor", "decorCollision", "budget"];
 const LABEL = { guide: "길 안내 도장", seamAlpha: "반투명 이음새 조각", featurePass: "서 있는 특징·구조인데 통과", behindWall: "벽 따라 줄·벽 정면 그림 뒤에 걷는 칸", wallNiche: "벽 밀착 줄 곁 막다른 벽감", deadLine: "폭 1칸 막다른 줄", passWidth: "막힘으로 골격 너비 <2칸", spaceReach: "입구에서 못 닿는 공간", facing: "정면 방향 불일치", rowGap: "한 줄 간격 불균일", rowFlip: "한 줄 뒤집기 불일치", bandWidth: "띠 폭 >2", bandBreak: "띠 끊김", bandLoop: "띠 고리", bandDeadEnd: "막다른 띠", bandEdgeEmpty: "띠 옆 빈 바닥",
   straightEdge: "구역 경계 직선 >6", scattered: "산발 복제", featureSpace: "특징 과밀 공간", pillarSingle: "기둥 낱개", landmarkBlock: "랜드마크 과밀 16×16",
-  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", topLayer: "윗부분 그림 층 ≠ Default·순서 ≥5", keepFloor: "keep 맵 걷는 칸·문 길 변화", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
+  branchExtra: "가지 간 추가 연결 >50%", waypoint: "웨이포인트 골격 밖", topLayer: "윗부분 그림 층 ≠ Default·순서 ≥5", keepFloor: "keep 맵 걷는 칸·문·끝방 길 변화(빌드 칸 포함)", decorCollision: "check_decor_collision", budget: "엔티티 예산" };
 const CONNECT = new Set(["W", "E", "H", "X", "G"]);
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -510,7 +515,7 @@ function analyze(L) {
   };
   return { counts, detail };
 }
-module.exports = { analyze, deadLines, makeGrid, bandMetrics, straightEdges, placementMetrics, ITEMS, LABEL, BUDGET, MAX_RUN, MAX_WIDTH };
+module.exports = { analyze, deadLines, makeGrid, bandMetrics, straightEdges, placementMetrics, keepSideOf, keepFloorOf, keepCompare, builtOpenAt, ITEMS, LABEL, BUDGET, MAX_RUN, MAX_WIDTH };
 
 // ───────── 실제 맵 → 입력 ─────────
 // 키 큰 특징·구조인데 -top 그림 없음 (경고) — 지어진 그림 엔티티(장식·세트·흩뿌림)의 그림·배율로 잰다 (v4 맵도 pieces 없이 잴 수 있게)
@@ -536,17 +541,17 @@ function tallNoTop(art, ctx) {
 }
 
 function layoutOf(id, env) {
-  const { hm, maps, mapRows, ctx, quiet, num } = env;
+  const { hm, mapRows, ctx } = env;
   const table = hm.spriteTable(ctx);   // 보이는 높이(칸) = 역할 기준 높이 × 그 자리 배율 (생성기 hugY와 같은 정의)
   const visH = (p) => { const sp = table[p.sprite]; if (p.decal || !sp) return 0; const m = roles.multOf(p.sprite), b = hm.baseScale(sp, ctx.propScale) * m; return b > 0 ? roles.heightOf(p.sprite) * m * (p.sc / b) : 0; };
   const d = mapRows.find((m) => m.id === id);
   if (!d) throw new Error(`${id}: maps.csv에 없음`);
-  const bp = hm.parseBlueprint(id);
-  const rows = hm.loadRows(id);
-  const func = d.kind === "handmade" ? hm.functionalEntities(d, mapRows, ctx, rows) : quiet(() => maps.desiredEntities(d, mapRows, ctx));
-  const art = quiet(() => hm.artEntities(d, ctx, bp, rows, func));
+  // 빌더와 같은 계산 (기능 엔티티 → 그림 → 이어짐 검사) — 빌드된 맵 칸(충돌 타일)도 여기서 (tools/route_lengths.cjs builtCells · keepFloor가 쓴다)
+  const rl = require("./route_lengths.cjs"), built = rl.builtCells(d, mapRows, ctx);
+  const { bp, func, art } = built;
   return {
     id, v5: !!bp.v5, w: bp.w, h: bp.h, grid: bp.rows, walls: new Set(Object.keys(bp.walls)), zones: bp.zones, roads: bp.roads, base: bp.base, markers: bp.markers,
+    builtOpen: new Set(bp.cells().filter(([x, y]) => built.open(x, y)).map(([x, y]) => `${x},${y}`)), end: rl.endOf(d),
     pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block, flip: p.flip, cells: p.block ? (p.cells || []).map(([x, y]) => `${x + bp.w / 2},${bp.h / 2 - y}`) : null, vh: visH(p) })),
     blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
@@ -555,18 +560,70 @@ function layoutOf(id, env) {
     tops: art.entities.filter((e) => /^Art/.test(e.name) && /Top$/.test(e.name)).map((e) => { const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"] || {}; return { name: e.name, layer: sr.SortingLayer, order: sr.OrderInLayer }; }),
   };
 }
-// keep 맵 비교용: 설계도 글자에서 걷는 칸(월드 칸 "x,y")과 입구(W·G) → 출구(E·X·H)마다 4방향 최단 길
-function keepFloorOf(text) {
-  const rows = text.split(/\r?\n/).filter((l) => l && !l.startsWith(";")), walls = new Set([...text.matchAll(/^;wall (\S)/gm)].map((m) => m[1]));
+// ───────── keep 맵 비교 (keepFloor) ─────────
+// 한 쪽(기준 또는 지금): 설계도 글자 격자(rows · 벽 글자 walls)에서 걷는 칸(월드 칸 "x,y")과 입구(W, 없으면 G) → 목표마다 4방향 최단 길.
+//   목표 = 문 표식 E·X·H + goals([[이름, "x,y"]] — maps.csv extra end@). open(빌드된 맵 칸 "x,y" 집합)이 있으면 그 위 최단 길도 (built).
+function keepSideOf(rows, walls, opts = {}) {
   const H = rows.length, Wd = rows[0].length, floor = new Set(), mk = [];
   rows.forEach((row, r) => [...row].forEach((ch, c) => { if (walls.has(ch)) return; const k = `${c - Wd / 2},${H / 2 - r}`; floor.add(k); if ("WGEXH".includes(ch)) mk.push([ch, k]); }));
-  const start = (mk.find(([ch]) => ch === "W") || mk.find(([ch]) => ch === "G") || [])[1], routes = {};
-  if (start) {
-    const dist = new Map([[start, 0]]), q = [start];
-    for (let i = 0; i < q.length; i++) { const [x, y] = q[i].split(",").map(Number); for (const [dx, dy] of D4) { const n = `${x + dx},${y + dy}`; if (floor.has(n) && !dist.has(n)) { dist.set(n, dist.get(q[i]) + 1); q.push(n); } } }
-    for (const [ch, k] of mk) if ("EXH".includes(ch)) routes[`${ch}@${k}`] = dist.has(k) ? dist.get(k) : -1;
-  }
-  return { floor, routes };
+  const start = (mk.find(([ch]) => ch === "W") || mk.find(([ch]) => ch === "G") || [])[1];
+  const goals = [...mk.filter(([ch]) => "EXH".includes(ch)).map(([ch, k]) => [`${ch}@${k}`, k]), ...(opts.goals || []).map(([n, k]) => [`${n}${k}`, k])];
+  const walk = (pass) => {
+    const out = {};
+    if (!start) return out;
+    const dist = new Map(pass(start) ? [[start, 0]] : []), q = pass(start) ? [start] : [];
+    for (let i = 0; i < q.length; i++) { const [x, y] = q[i].split(",").map(Number); for (const [dx, dy] of D4) { const n = `${x + dx},${y + dy}`; if (pass(n) && !dist.has(n)) { dist.set(n, dist.get(q[i]) + 1); q.push(n); } } }
+    for (const [name, k] of goals) out[name] = dist.has(k) ? dist.get(k) : -1;
+    return out;
+  };
+  return { floor, routes: walk((k) => floor.has(k)), built: opts.open ? walk((k) => opts.open.has(k)) : null };
+}
+// 설계도 글자 파일(text) → 한 쪽
+function keepFloorOf(text, opts = {}) {
+  const rows = text.split(/\r?\n/).filter((l) => l && !l.startsWith(";")), walls = new Set([...text.matchAll(/^;wall (\S)/gm)].map((m) => m[1]));
+  return keepSideOf(rows, walls, opts);
+}
+// 기준(ref) ↔ 지금(cur) → { count, detail }
+//   count = 잃은 설계도 걷는 칸 덩어리 + 설계도 글자 길이 바뀐 목표 + 빌드된 맵 칸 길이 늘거나 끊긴 목표 (줄어든 것은 위반 아님 · 자세히에만)
+function keepCompare(ref, cur, refNote = "") {
+  const lost = new Set([...ref.floor].filter((k) => !cur.floor.has(k)));
+  const blobs = comps(lost, D4), routeDiff = Object.keys(ref.routes).filter((k) => ref.routes[k] !== cur.routes[k]);
+  const builtWorse = [], detail = [`걷는 칸 ${ref.floor.size}→${cur.floor.size}`, ...blobs.map((b) => `잃은 칸 (${b[0]})~${b.length}칸`), ...Object.keys(ref.routes).map((k) => `문 길 ${k} ${ref.routes[k]}→${cur.routes[k]}`)];
+  if (ref.built && cur.built) {
+    for (const k of Object.keys(ref.built)) {
+      const a = ref.built[k], b = cur.built[k] === undefined ? -1 : cur.built[k];
+      const worse = a >= 0 && (b < 0 || b > a);
+      if (worse) builtWorse.push(k);
+      detail.push(`실제 칸 길 ${k} ${a}→${b}${worse ? " (늘어남 · 위반)" : a !== b ? " (줄어듦 · 위반 아님)" : ""}`);
+    }
+  } else detail.push(`실제 칸 길 비교 생략${refNote ? " — " + refNote : ""}`);
+  return { count: blobs.length + routeDiff.length + builtWorse.length, detail, lost: blobs.length, routeDiff, builtWorse };
+}
+// 기준 git 커밋의 맵 파일 충돌 타일 → 빌드된 맵 칸 집합("x,y") · 없으면 null
+//   충돌 = 그 커밋의 AshCampTiles.tileset datas[tileIndex].IsCollidable (메이커 서버 · Util.CellBlocked와 같은 기준)
+function builtOpenAt(ref, id) {
+  const { execFileSync } = require("child_process"), os = require("os");
+  const show = (p) => { try { return execFileSync("git", ["show", `${ref}:${p}`], { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
+  const mapText = show(`map/${id}.map`);
+  if (!mapText) return null;
+  const tsText = show("RootDesk/MyDesk/AshCampTiles.tileset") || fs.readFileSync(path.join(ROOT, "RootDesk/MyDesk/AshCampTiles.tileset"), "utf8");
+  const datas = JSON.parse(tsText).ContentProto.Json.datas;
+  const { MapBuilder } = require("./build/lib.cjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "keepref-")), f = path.join(dir, id + ".map");
+  try {
+    fs.writeFileSync(f, mapText);
+    const open = new Set();
+    for (const t of MapBuilder.read(f).getTiles()) if (datas[t.tileIndex] && !datas[t.tileIndex].IsCollidable) open.add(`${t.position.x},${t.position.y}`);
+    return open;
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+// 자가 테스트 입력의 한 쪽 (j = 지금 입력 · side = j 또는 j.keepRef): 격자·벽 글자·막힌 칸(격자 "c,r") → keepSideOf
+function keepSideOfJson(side, j) {
+  const rows = side.grid, H = rows.length, Wd = rows[0].length, walls = new Set(side.walls || j.walls || ["#"]);
+  const toWorld = (k) => { const [c, r] = unK(k); return `${c - Wd / 2},${H / 2 - r}`; };
+  const shut = new Set((side.blocked || []).map(toWorld)), open = new Set();
+  rows.forEach((row, r) => [...row].forEach((ch, c) => { const k = `${c - Wd / 2},${H / 2 - r}`; if (!walls.has(ch) && !shut.has(k)) open.add(k); }));
+  return keepSideOf(rows, walls, { goals: (j.end || []).map((k) => ["end@", k]), open });
 }
 function fileEntities(id) {
   const { MapBuilder } = require("./build/lib.cjs");
@@ -588,6 +645,7 @@ function selftest() {
   for (const f of files) {
     const j = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
     const r = analyze(layoutFromJson(j));
+    if (j.keepRef) { const kc = keepCompare(keepSideOfJson(j.keepRef, j), keepSideOfJson(j, j)); r.counts.keepFloor = kc.count; r.detail.keepFloor = kc.detail; }   // --keep-ref 대신 입력 안의 기준 (격자·막힌 칸)
     const want = j.expect || {};
     const bad = ITEMS.filter((it) => !["decorCollision", "budget"].includes(it) && (r.counts[it] || 0) !== (want[it] || 0));
     planted += Object.values(want).reduce((a, v) => a + v, 0);
@@ -620,16 +678,17 @@ function main() {
     const r = analyze(L);
     entities[id] = L.entities;
     report[id] = { v5: L.v5, entities: L.entities, counts: r.counts, detail: r.detail, tallNoTop: L.tallNoTop, topSkipped: L.topSkipped };
-    if (opt("--keep-ref") && L.v5keep) {   // keep 맵 걷는 칸·문 길 = 기준 설계도 (git)
-      const cur = keepFloorOf(fs.readFileSync(path.join(hm.HM_DIR, id + ".txt"), "utf8"));
+    if (opt("--keep-ref") && L.v5keep) {   // keep 맵 걷는 칸·길 = 기준 (git 설계도 · 맵 파일)
+      const ref = opt("--keep-ref"), goals = L.end ? [["end@", `${L.end[0]},${L.end[1]}`]] : [];   // 끝방 자리는 지금 maps.csv 값으로 양쪽 같게 (자리 아닌 길만 본다)
+      const cur = keepFloorOf(fs.readFileSync(path.join(hm.HM_DIR, id + ".txt"), "utf8"), { goals, open: L.builtOpen });
       let refText = null;
-      try { refText = require("child_process").execSync(`git show ${opt("--keep-ref")}:data/handmade/${id}.txt`, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { refText = null; }
+      try { refText = require("child_process").execFileSync("git", ["show", `${ref}:data/handmade/${id}.txt`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { refText = null; }
       if (refText) {
-        const ref = keepFloorOf(refText), lost = new Set([...ref.floor].filter((k) => !cur.floor.has(k)));
-        const blobs = comps(lost, D4), routeDiff = Object.keys(ref.routes).filter((k) => ref.routes[k] !== cur.routes[k]);
-        r.counts.keepFloor = blobs.length + routeDiff.length;
-        r.detail.keepFloor = [`걷는 칸 ${ref.floor.size}→${cur.floor.size}`, ...blobs.map((b) => `잃은 칸 (${b[0]})~${b.length}칸`), ...Object.keys(ref.routes).map((k) => `문 길 ${k} ${ref.routes[k]}→${cur.routes[k]}`)];
-      } else r.detail.keepFloor = [`기준 ${opt("--keep-ref")}에 ${id} 설계도 없음`];
+        const refOpen = builtOpenAt(ref, id);
+        const kc = keepCompare(keepFloorOf(refText, { goals, open: refOpen }), cur, refOpen ? "" : `기준 ${ref}에 ${id} 맵 파일 없음`);
+        r.counts.keepFloor = kc.count;
+        r.detail.keepFloor = kc.detail;
+      } else r.detail.keepFloor = [`기준 ${ref}에 ${id} 설계도 없음`];
     }
   }
   // 기존 검사기 (그 맵들만 · 한 번에)
