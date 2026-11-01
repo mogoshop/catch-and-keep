@@ -40,6 +40,13 @@ function besideEntry(m, p) {
   const bp = handmade.parseBlueprint(m.id);
   return cands.find(([x, y]) => bp.isFloor(Math.floor(x), Math.floor(y))) || cands[0];
 }
+// 설계도 ;gatebox (설계서 gateBox — 문 칸이 여러 칸인 출구): 그 표식 포털을 원(Radius)에 더해 사각형(반폭·반높이) 안에서도 넘어가게 (WarpGate.TriggerBox).
+//   줄이 없는 맵·표식은 그대로(원만) — 11-01 마을 남문(문 줄 y −10의 x −1·0·1 세 칸) 하나만 쓴다
+function withGateBox(d, ch, cfg) {
+  const b = hasBP(d) ? handmade.markers(d.id).gateBox[ch] : null;
+  if (b) cfg.TriggerBox = { x: b[0], y: b[1] };
+  return cfg;
+}
 // 포털 앞 도착 위치 (포털에서 안쪽으로 1.4칸)
 const arriveLeft = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "W")) : [edges(d).left + 1.4, 0]);
 const arriveRight = (d) => (hasBP(d) ? handmade.inward(d.id, gatePos(d, "E")) : [edges(d).right - 1.4, 0]);
@@ -90,7 +97,7 @@ function desiredEntities(d, maps, ctx) {
 
   if (d.kind === "town") {
     const first = fields[0];
-    place("GateToField", "Objects/WarpGate", gatePos(d, "G", [townArrival[0], ctx.townExitY ?? townArrival[1] - 1.4, 0]), { "script.WarpGate": gate(first.id, arriveLeft(first), first.name) });
+    place("GateToField", "Objects/WarpGate", gatePos(d, "G", [townArrival[0], ctx.townExitY ?? townArrival[1] - 1.4, 0]), { "script.WarpGate": withGateBox(d, "G", gate(first.id, arriveLeft(first), first.name)) });
   } else if (d.kind === "field") {
     const i = fields.indexOf(d);
     const prev = i === 0 ? town : fields[i - 1];

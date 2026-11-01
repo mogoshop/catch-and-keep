@@ -11,6 +11,7 @@
 //   ;raised <9조각 묶음> <색> <이름>  담 윗면 맵 (10-28 사용자 「담 위에서 플레이하는 느낌」 시안): 걷는 칸 전체를 이 9조각으로 덮고(가장자리 = 낮은 칸과 맞닿은 면),
 //                                    첫 벽 글자 칸은 그림 없이 바탕을 낮은 모래로 두며, 담 남쪽 아래 한 칸에 앞면·그 아래 그림자를 그린다. 다른 벽 글자(기둥 등)는 담 위의 벽으로 그대로
 //   ;markers W E H T S R             표식 글자 (바닥으로 친다). 배치표의 기능 엔티티가 표식 1칸 안에 있는지 검사한다
+//   ;gatebox <글자> <반폭> <반높이>   그 표식 포털의 사각 반응 구역 (maps.cjs → WarpGate.TriggerBox · 원 Radius와 함께 · 설계서 gateBox · 11-01 마을 남문 3칸)
 //   ;backdrop r/g/b                  맵 밖 배경(Background 단색) — 없으면 템플릿 색 그대로 (10-29 바다·용암 담 위 맵)
 //   ;floormix <바닥그림>[,<바닥그림>…]  그 바닥 그림을 쓰는 구역(바탕 . 포함)을 그림 한 장(1.28칸) 단위로 좌우·상하 뒤집어 반복 격자를 깬다
 //                                    (10-29 폭풍의 눈 따개비 돌 — 큰 조약돌이 1.28칸 격자로 보였다). 좌우는 그림 열마다 · 상하는 그림 줄마다 같은 값이라
@@ -158,6 +159,7 @@ function parseBlueprint(id) {
       }
       else if (m[0] === "shore") bp.shore = { sea: new Set(m[1].split("+")), foam: m[2], scale: Number(m[3] || 1), tint: m[4] && m[4] !== "-" ? m[4] : "", foamV: m[5] || "" };
       else if (m[0] === "markers") for (const ch of m.slice(1)) bp.markers.add(ch);
+      else if (m[0] === "gatebox") (bp.gateBox = bp.gateBox || {})[m[1]] = [Number(m[2]), Number(m[3])];   // ;gatebox G 반폭 반높이 — 그 포털의 사각 반응 구역 (maps.cjs → WarpGate.TriggerBox · 11-01 마을 남문)
       else if (m[0] === "backdrop") bp.backdrop = m[1];
       else if (m[0] === "floormix") for (const a of (m[1] || "").split(",").filter(Boolean)) bp.floorMix.add(a);
       else if (m[0] === "v5") { bp.v5 = true; bp.v5keep = m[1] === "keep"; }   // ;v5 keep = 바닥 보존형 (구역·길 글자 그대로)   // 맵 구성 v5 (compose.cjs 설계서 v5) — 아래 artEntities: 길 안내·흩뿌림 정책 없음 · 역할표 기준 크기
@@ -207,7 +209,7 @@ function markers(id) {
   if (!markerCache.has(id)) {
     const bp = parseBlueprint(id), out = {};
     for (const [x, y] of bp.cells()) { const ch = bp.at(x, y); if (bp.markers.has(ch)) (out[ch] = out[ch] || []).push([x + 0.5, y + 0.5]); }
-    markerCache.set(id, { list: out, w: bp.w, h: bp.h });
+    markerCache.set(id, { list: out, w: bp.w, h: bp.h, gateBox: bp.gateBox || {} });
   }
   return markerCache.get(id);
 }

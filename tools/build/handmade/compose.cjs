@@ -493,6 +493,11 @@ function blueprintText(id, spec, grid, mapRow) {
   if (spec.backdrop) L.push(`;backdrop ${spec.backdrop}`);   // 맵 밖 배경색 r/g/b (lib.cjs build — Background SolidColor)
   if (spec.floorMix) L.push(`;floormix ${spec.floorMix}`);   // 그 바닥 그림을 그림 열·줄마다 좌우·상하 뒤집어 반복 격자를 깬다 (lib.cjs 2)
   if (spec.v5) L.push(spec.v5.mode === "keep" ? ";v5 keep" : ";v5");   // 맵 구성 v5 (lib.cjs: 길 안내 도장·흩뿌림 정책 없음 · 역할표 기준 크기 · tile_classes 바탕 = guide)
+  // 포털 사각 반응 구역 (11-01 마을 남문 3칸): gateBox { 글자: [반폭, 반높이] } → maps.cjs가 그 포털 WarpGate.TriggerBox로 (없는 맵은 줄 없음 · 원 Radius만)
+  for (const [ch, b] of Object.entries(spec.gateBox || {})) {
+    if (!(spec.gates || {})[ch]) throw new Error(`${id}: gateBox 글자 '${ch}'가 gates에 없음`);
+    L.push(`;gatebox ${ch} ${b[0]} ${b[1]}`);
+  }
   L.push(";markers W E G X H T S");
   L.push("; W 들어오는 문 · E 나가는 문 · G 마을 출구 · X 되돌아가는 문 · H 곁가지 입구 · T 화로 · S 웨이포인트 — 엔티티는 maps.csv(기능 자리)로 maps.cjs가 놓는다");
   L.push(...grid);

@@ -10,6 +10,9 @@ script WarpGate extends Component
     property string Label = ""
     @Sync
     property number Radius = 0.6
+    -- 사각 반응 구역 반폭·반높이(월드 칸). 0이면 예전처럼 원(Radius)만. 문 칸이 여러 칸인 출구만 맵 빌드가 넣는다 (11-01 마을 남문 3칸 — 설계서 gateBox)
+    --   원(Radius) 안이거나 이 사각형 안이면 넘어간다 — 원 판정은 그대로라 가운데 칸은 예전과 같고, 옆 칸만 더해진다
+    property Vector2 TriggerBox = Vector2(0, 0)
     property number Cooldown = 2
     @Sync
     property string OwnerUserId = ""
@@ -29,6 +32,10 @@ script WarpGate extends Component
         if self:IsServer() then
             self.LastWarp = {}
             self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.3)
+            if self:HasBox() then
+                local p = _Util:Pos2(self.Entity)
+                log(string.format("[VRF] WarpGate box ready gate=%s map=%s at=(%.2f,%.2f) half=(%.2f,%.2f) radius=%.2f -> %s", self.Entity.Name, self.Entity.CurrentMap ~= nil and self.Entity.CurrentMap.Name or "?", p.x, p.y, self.TriggerBox.x, self.TriggerBox.y, self.Radius, self.TargetMap))
+            end
             return
         end
         self:StartMist()
@@ -55,17 +62,32 @@ script WarpGate extends Component
 
     @ExecSpace("ServerOnly")
     method void Check()
+        -- 반응 구역 안 플레이어를 보낸다. 사각 구역(TriggerBox)이 없으면 예전과 같은 원 판정 그대로
         local now = _UtilLogic.ElapsedSeconds
-        for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, _Util:Pos2(self.Entity), self.Radius)) do
-            local id = u.PlayerComponent.UserId
-            ---@type PlayerTravel
-            local travel = u:GetComponent("script.PlayerTravel")
-            local fresh = travel ~= nil and now - travel.ArrivedAt < self.ArrivalGrace
-            if not fresh and self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
-                self.LastWarp[id] = now
-                self:Warp(u)
+        local here = _Util:Pos2(self.Entity)
+        local box = self:HasBox()
+        local reach = self.Radius
+        if box then reach = math.max(self.Radius, self.TriggerBox:Magnitude()) end
+        for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, reach)) do
+            local d = _Util:Pos2(u) - here
+            local inCircle = d:Magnitude() <= self.Radius
+            if inCircle or (box and math.abs(d.x) <= self.TriggerBox.x and math.abs(d.y) <= self.TriggerBox.y) then
+                local id = u.PlayerComponent.UserId
+                ---@type PlayerTravel
+                local travel = u:GetComponent("script.PlayerTravel")
+                local fresh = travel ~= nil and now - travel.ArrivedAt < self.ArrivalGrace
+                if not fresh and self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
+                    self.LastWarp[id] = now
+                    if box then log(string.format("[VRF] WarpGate box warp gate=%s map=%s d=(%.2f,%.2f) circle=%s -> %s", self.Entity.Name, self.Entity.CurrentMap.Name, d.x, d.y, tostring(inCircle), self.TargetMap)) end
+                    self:Warp(u)
+                end
             end
         end
+    end
+
+    method boolean HasBox()
+        -- 사각 반응 구역을 쓰는 출구인가 (반폭·반높이가 둘 다 양수)
+        return self.TriggerBox.x > 0 and self.TriggerBox.y > 0
     end
 
     method boolean CanUse(Entity player)
