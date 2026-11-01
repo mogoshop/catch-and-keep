@@ -79,7 +79,9 @@ local roomCalls={}
 _RoomSystem={ReturnMemory='RoomReturnV1',lobbyOk={},
  LobbyPlayer=function(_,uid) return _RoomSystem.lobbyOk[uid] and _UserService:GetUserEntityByUserId(uid) or nil end,
  Forget=function(_,uid) table.insert(roomCalls,'forget:'..uid) end,
- Enter=function(_,p,id,d,fresh) table.insert(roomCalls,'enter:'..p.PlayerComponent.UserId..':'..id..':'..d) return true end,
+ Enter=function(_,p,id,d,fresh) return _RoomSystem:EnterWith(p,id,d,fresh,nil) end,
+ -- 11-01 TownBoard.AnswerInvite(로비)는 EnterWith(…, 옮기기 직전 할 일) — 저장 준비 뒤 · 이동 전에 부른다 (실제 RoomSystem.EnterWith 순서)
+ EnterWith=function(_,p,id,d,fresh,before) if before then before() end table.insert(roomCalls,'enter:'..p.PlayerComponent.UserId..':'..id..':'..d) if _RoomSystem.onMove then _RoomSystem.onMove(p.PlayerComponent.UserId) end return true end,
  WriteCount=function(_,n) table.insert(roomCalls,'count:'..n) end, ClearReturn=function(_,uid) table.insert(roomCalls,'clear:'..uid) end}
 
 local rooms={}
@@ -126,7 +128,15 @@ local function newRoom(key)
     cb(SendEventRequestResultCode.OK,ev)
    end,0.01)
   end,
-  MoveUsersToStaticRoom=function(_,uids,map) table.insert(moved,uids[1]..'>'..map) return 1 end}
+  -- 기다리는 전달 (TownBoard.ReplyNow — 방을 옮기기 직전의 답): 받는 방이 바로 처리하고 결과를 돌려준다
+  RequestSendEventToRoomAndWait=function(_,ev,target)
+   local sent=deep(ev) table.insert(sentEvents,{ev=sent,to=target,from=key,wait=true})
+   local dest=rooms[target]
+   if dest==nil then return SendEventRequestResultCode.BadRequest end
+   asServer(dest,nil,function() dest.tb:OnChannelEvent(sent) end)
+   return SendEventRequestResultCode.OK
+  end,
+  MoveUsersToStaticRoom=function(_,uids,map) table.insert(moved,uids[1]..'>'..map) if _RoomSystem.onMove then _RoomSystem.onMove(uids[1]) end return 1 end}
  r.us={UserEntities=r.users,GetUserEntityByUserId=function(_,uid) return r.users[uid] end,
   GetUserCount=function() local n=0 for _ in pairs(r.users) do n=n+1 end return n end}
  rooms[key]=r
@@ -443,6 +453,55 @@ cLob.call(function() cLob.win:Respond(true) end)
 run(clock+1)
 ok(roomCalls[#roomCalls-1]=='forget:u7' and roomCalls[#roomCalls]=='enter:u7:aaa:0','로비 수락: 모집·대기 지우고 바로 입장 (RoomSystem.Forget → Enter)')
 ok(has(lastLog('[VRF] channel invite accept from lobby'),'entered=true'),'[VRF] 로비 수락')
+-- ───────── ⑤-2 실제 클라이언트 수락 (11-01 메이커 2회차 관찰 4) ─────────
+-- 실제 클라가 받은 요청 띠에서 「수락」하면 서버 실행은 그 사람의 RespondRequest(PlayerSocial · 클라 RPC) 안이라, 방 이동으로 그 사람이 이 방에서
+-- 사라지는 순간 끊긴다 (메이커: 이동은 됐는데 초대한 방에 reply code=ok가 없었다 · 가상 플레이어 = 서버 스크립트 호출은 끝까지 돌았다).
+-- 흉내: 방 이동(MoveUsersToStaticRoom · EnterWith 이동)에서 코루틴을 멈추고 다시 이어 주지 않는다 → 이동 뒤 줄은 돌지 않는다.
+--   예전 순서(이동 → Reply)면 여기서 「수락」 알림이 안 와서 실패한다.
+local function killedAtMove(room,uid,fn)
+ local saved={_RoomService,_UserService,_PartySystem,_TownBoard,_UIKit,senderUserId,ctx}
+ _RoomSystem.onMove=function() coroutine.yield('moved') end
+ local co=coroutine.create(function() asServer(room,uid,fn) end)
+ local okc,what=coroutine.resume(co)
+ _RoomSystem.onMove=nil
+ _RoomService,_UserService,_PartySystem,_TownBoard,_UIKit,senderUserId,ctx=table.unpack(saved,1,7)
+ return okc,what,coroutine.status(co)
+end
+local function rowNamed(c,name) for i=1,8 do if has(plain(row(c,i,'Name')),name) then return i end end end
+-- (가) 게임 방(혼자 하기) 사람: 로비를 거쳐 → 이동 전에 기다려서 「수락」 답
+clock=clock+25 cMe.poll()
+cMe.click(rowNamed(cMe,'낯선이'),'party') run(clock+1)
+eq(solo.social.PendingKind,'game','(실제 클라) 다시 초대 받음')
+local nBefore=#(notices.u1 or {})
+local okc,what,st=killedAtMove(S,'u5',function() solo.social:RespondRequest(true) end)
+ok(okc and what=='moved' and st=='suspended','(실제 클라) 수락 실행이 방 이동에서 끊김 (흉내)')
+run(clock+1)
+eq(lastNotice('u1'),'낯선이님이 초대를 수락했습니다','(실제 클라) 실행이 이동에서 끊겨도 초대한 사람에게 「수락」 — 답을 이동 전에 보냄')
+ok(#notices.u1==nBefore+1,'(실제 클라) 수락 알림 한 번')
+ok(has(lastLog('[VRF] channel invite reply send to=u1'),'code=ok') and has(lastLog('[VRF] channel invite reply send to=u1'),'beforeMove=true'),'[VRF] 답 보냄 (이동 전 · 기다림)')
+ok(has(lastLog('[VRF] channel invite reply to=u1'),'code=ok'),'[VRF] 초대한 방이 답 받음')
+ok(has(lastLog('[VRF] board invite accept moving uid=u5'),'→ aaa'),'[VRF] 이동 직전 줄')
+local w=sentEvents[#sentEvents]
+ok(w.wait==true and w.ev.Kind=='reply' and w.ev.Code=='ok' and w.to=='game:aaa','답 = 기다리는 전달로 초대한 방에')
+-- (나) 로비 사람: 바로 입장 → 입장 직전에 「수락」 답
+clock=clock+25 tickAll() run(clock+1) clock=clock+7 cMe.poll()
+cMe.click(rowNamed(cMe,'로비인'),'party') run(clock+1)
+eq(lob.social.PendingKind,'game','(실제 클라 · 로비) 다시 초대 받음')
+local okl,whatl=killedAtMove(L,'u7',function() lob.social:RespondRequest(true) end)
+ok(okl and whatl=='moved','(실제 클라 · 로비) 수락 실행이 입장 이동에서 끊김 (흉내)')
+run(clock+1)
+eq(lastNotice('u1'),'로비인님이 초대를 수락했습니다','(실제 클라 · 로비) 끊겨도 「수락」 — EnterWith가 이동 직전에 답')
+-- (다) 이동 실패: 「수락」 뒤 「옮기지 못함」을 한 번 더 (이 사람이 남아 실행이 이어진다)
+clock=clock+25 cMe.poll()
+cMe.click(rowNamed(cMe,'낯선이'),'party') run(clock+1)
+local mv=S.rs.MoveUsersToStaticRoom
+S.rs.MoveUsersToStaticRoom=function() return 0 end
+asServer(S,'u5',function() solo.social:RespondRequest(true) end)
+S.rs.MoveUsersToStaticRoom=mv
+run(clock+1)
+eq(lastNotice('u1'),'낯선이님은 지금 이동할 수 없습니다','이동 실패면 「수락」 뒤 「이동할 수 없음」')
+eq(lastNotice('u5'),'게임을 옮기지 못했습니다. 다시 시도해주세요','받는 사람에게 다시 시도 안내')
+
 -- 바쁨 · 없음
 local function rowOf(c,name) for i=1,8 do if has(plain(row(c,i,'Name')),name) then return i end end end
 eq(rowOf(cMe,'별빛'),3,'같은 파티 안은 이름 순 (별빛 · 해골왕)')
@@ -555,7 +614,10 @@ end
 c20.call(function() c20.win.WasOpen=true c20.win:OnChannel(table.concat(dig,';'),true) end)
 eq(c20.ui.text[W..'Pager/Label'],'1 / 3','쪽 표시 1 / 3') ok(c20.ui.en[W..'Pager']==true,'쪽 넘김 보임')
 ok(has(c20.ui.text[W..'Pager/Prev'],'#7A7268') and c20.ui.text[W..'Pager/Next']=='▶','첫 쪽: ◀ 흐리게')
+-- 11-01 메이커 2회차 관찰 3: ◀ ▶ = 투명 누르는 칸 + 보이는 틀 PrevArt·NextArt — 흐리게는 틀에만 (누르는 칸에 색을 넣으면 흰 판이 보인다)
+ok(c20.ui.color[W..'Pager/PrevArt'].a==0.55 and c20.ui.color[W..'Pager/NextArt'].a==1 and c20.ui.color[W..'Pager/Prev']==nil and c20.ui.color[W..'Pager/Next']==nil,'쪽 넘김 흐리게 = 틀(PrevArt·NextArt)만')
 c20.call(function() c20.win:Turn(1) end) eq(c20.ui.text[W..'Pager/Label'],'2 / 3','▶ → 2쪽')
+ok(has(lastLog('[VRF] social turn'),'step=1 page=2'),'[VRF] social turn step=1 page=2')
 c20.call(function() c20.win:Turn(5) end) eq(c20.ui.text[W..'Pager/Label'],'3 / 3','끝을 넘지 않음')
 ok(c20.ui.text[W..'Pager/Next']~='▶','마지막 쪽: ▶ 흐리게')
 eq(SW:Paginate({},8)[1] and #SW:Paginate({},8)[1],0,'빈 목록 = 빈 한 쪽')

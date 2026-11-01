@@ -43,8 +43,15 @@ script SocialWindow extends Logic
             _UIKit:Connect(row .. "/Trade", function() self:Act(index, "trade") end)
             _UIKit:Connect(row .. "/Inspect", function() self:Inspect(index) end)
         end
-        _UIKit:Connect(self.Win .. "/Pager/Prev", function() self:Turn(-1) end)
-        _UIKit:Connect(self.Win .. "/Pager/Next", function() self:Turn(1) end)
+        -- 쪽 넘김 ◀ ▶ = 투명 단추 88×88 + 보이는 틀 PrevArt·NextArt (11-01 메이커 2회차 관찰 3 · tools/build/ui.cjs kit.arrow)
+        _UIKit:Connect(self.Win .. "/Pager/Prev", function()
+            log("[VRF] arrow click social prev page=" .. tostring(self.Page))
+            self:Turn(-1)
+        end)
+        _UIKit:Connect(self.Win .. "/Pager/Next", function()
+            log("[VRF] arrow click social next page=" .. tostring(self.Page))
+            self:Turn(1)
+        end)
         _UIKit:SetEnabled(self.Win .. "/Inspect", false)
         _UIKit:Connect(self.Win .. "/Inspect/BtnBack", function() _UIKit:SetEnabled(self.Win .. "/Inspect", false) end)
         _UIKit:Connect(self.Win .. "/BtnLeave", function()
@@ -325,8 +332,9 @@ script SocialWindow extends Logic
             _UIKit:SetText(self.Win .. "/Pager/Label", tostring(self.Page) .. " / " .. tostring(#pages))
             _UIKit:SetText(self.Win .. "/Pager/Prev", self.Page > 1 and "◀" or _UIKit:Colored("#7A7268", "◀"))
             _UIKit:SetText(self.Win .. "/Pager/Next", self.Page < #pages and "▶" or _UIKit:Colored("#7A7268", "▶"))
-            _UIKit:SetColor(self.Win .. "/Pager/Prev", Color(1, 1, 1, self.Page > 1 and 1 or 0.55))
-            _UIKit:SetColor(self.Win .. "/Pager/Next", Color(1, 1, 1, self.Page < #pages and 1 or 0.55))
+            -- 흐리게는 보이는 틀에만 (누르는 칸은 투명 단추 — 색을 넣으면 흰 판이 보인다)
+            _UIKit:SetColor(self.Win .. "/Pager/PrevArt", Color(1, 1, 1, self.Page > 1 and 1 or 0.55))
+            _UIKit:SetColor(self.Win .. "/Pager/NextArt", Color(1, 1, 1, self.Page < #pages and 1 or 0.55))
         end
         log("[VRF] social render n=" .. tostring(view.total) .. " parties=" .. tostring(view.parties) .. " solo=" .. tostring(view.solo) .. " page=" .. tostring(self.Page) .. "/" .. tostring(#pages) .. " got=" .. tostring(self.Got))
     end
@@ -336,6 +344,7 @@ script SocialWindow extends Logic
         self.Page = self.Page + step
         self.ActiveAt = _UtilLogic.ElapsedSeconds
         self:Render()
+        log("[VRF] social turn step=" .. tostring(step) .. " page=" .. tostring(self.Page))
     end
 
     @ExecSpace("ClientOnly")

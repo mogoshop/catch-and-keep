@@ -14,6 +14,7 @@
 --   받는 쪽 방은 게시판을 읽지 않는다 → 초대는 방 사이 이벤트(ChannelInviteEvent · RoomService)로 그 방에 바로 보내고,
 --   받는 쪽은 게시판 초대와 같은 받은 요청 창(DeliverInvite · kind "game") → 수락하면 AnswerInvite (게임 방 = 로비를 거쳐 · 로비 = 바로 입장).
 --   수락·거절·못 받음은 초대한 사람에게 돌려준다 (Kind "reply"). 게시판(공개 구인)은 그대로.
+--   11-01 메이커 2회차 관찰 4: 「수락」 답은 방을 옮기기 전에 기다려서 보낸다 (ReplyNow — 실제 클라 수락은 이동 순간 실행이 끊겨 답이 안 갔다).
 @Logic
 script TownBoard extends Logic
 
@@ -472,9 +473,15 @@ script TownBoard extends Logic
                 return
             end
             _RoomSystem:Forget(uid)
-            local entered = _RoomSystem:Enter(player, inv.id, inv.d, false)
-            self:Reply(inv.fr or "", inv.fu or "", entered and "ok" or "cant", me)
-            log("[VRF] channel invite accept from lobby uid=" .. uid .. " → " .. inv.id .. " entered=" .. tostring(entered))
+            -- 11-01 메이커 2회차 관찰 4: 답은 방을 옮기기 직전에 보낸다 (아래 게임 방 길과 같은 이유 · RoomSystem.EnterWith가 저장 준비 뒤 · 이동 전에 부른다)
+            local replied = false
+            local entered = _RoomSystem:EnterWith(player, inv.id, inv.d, false, function()
+                replied = true
+                self:ReplyNow(inv.fr or "", inv.fu or "", "ok", me)
+            end)
+            -- 여기까지 오면 이 사람이 아직 이 방에 있다: 못 들어갔으면 (답을 이미 보냈어도) 「옮기지 못함」을 보낸다
+            if not entered then self:Reply(inv.fr or "", inv.fu or "", "cant", me) end
+            log("[VRF] channel invite accept from lobby uid=" .. uid .. " → " .. inv.id .. " entered=" .. tostring(entered) .. " repliedBeforeMove=" .. tostring(replied))
             return
         end
         local code, memory = _RoomService:GetSharedMemory(_RoomSystem.ReturnMemory)
@@ -497,6 +504,11 @@ script TownBoard extends Logic
             return
         end
         _RoomSystem:WriteCount(_UserService:GetUserCount() - 1)
+        -- 11-01 메이커 2회차 관찰 4: 실제 클라이언트가 「수락」하면 이 실행은 그 사람의 RespondRequest(PlayerSocial · 클라 RPC) 안이라,
+        --   방 이동으로 그 사람이 이 방에서 사라지는 순간 끊겨 이동 뒤 줄(로그 · Reply)이 돌지 않았다 (가상 플레이어 = 서버 스크립트로 부른 시험은 끝까지 돌았다).
+        --   → 「수락」 답은 이동 전에 보내고 전달될 때까지 기다린 뒤 옮긴다. 이동이 실패하면(이 사람이 남아 실행이 이어진다) 「옮기지 못함」을 한 번 더 보낸다.
+        self:ReplyNow(inv.fr or "", inv.fu or "", "ok", me)
+        log("[VRF] board invite accept moving uid=" .. uid .. " → " .. inv.id)
         local moved = _RoomService:MoveUsersToStaticRoom({ uid }, _GameConst.MapLobby)
         log("[VRF] board invite accept uid=" .. uid .. " → " .. inv.id .. " moved=" .. tostring(moved))
         if moved == nil or moved == 0 then
@@ -506,7 +518,6 @@ script TownBoard extends Logic
             self:Reply(inv.fr or "", inv.fu or "", "cant", me)
             return
         end
-        self:Reply(inv.fr or "", inv.fu or "", "ok", me)
     end
 
     -- ───────── 플레이어 창(P) 초대 · 같은 채널 누구에게나 (11-01) ─────────
@@ -587,16 +598,35 @@ script TownBoard extends Logic
         log("[VRF] channel invite recv to=" .. e.ToUid .. " from=" .. e.FromUid .. " game=" .. e.GameId .. " result=" .. result)
     end
 
-    @ExecSpace("ServerOnly")
-    method void Reply(string room, string toUid, string code, string fromName)
-        -- 초대한 사람의 방으로 결과를 돌려준다 (게시판 초대처럼 보낸 방을 모르면 조용히)
-        if room == "" or toUid == "" then return end
+    method ChannelInviteEvent ReplyEvent(string toUid, string code, string fromName)
+        -- 초대 결과 이벤트 (Reply · ReplyNow 공용)
         local ev = ChannelInviteEvent()
         ev.Kind = "reply"
         ev.ToUid = toUid
         ev.Code = code
         ev.FromName = fromName
         ev.FromRoom = _RoomService.RoomKey or ""
+        return ev
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean ReplyNow(string room, string toUid, string code, string fromName)
+        -- 방을 옮기기 직전의 답 (11-01 메이커 2회차 관찰 4): 전달이 끝날 때까지 기다린다 — 이 실행이 이동으로 끊겨도 답은 이미 그 방에 가 있다.
+        --   RespondRequest(클라 RPC)에서 이어진 AnswerInvite에서만 부른다 (이벤트 처리 중에는 기다리는 호출을 하지 않는다 — 파일 머리 주석)
+        if room == "" or toUid == "" then return false end
+        local ev = self:ReplyEvent(toUid, code, fromName)
+        local result = _RoomService:RequestSendEventToRoomAndWait(ev, room)
+        local ok = result == SendEventRequestResultCode.OK
+        log("[VRF] channel invite reply send to=" .. toUid .. " code=" .. code .. " room=" .. room .. " wait=true ok=" .. tostring(ok) .. " beforeMove=true")
+        return ok
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Reply(string room, string toUid, string code, string fromName)
+        -- 초대한 사람의 방으로 결과를 돌려준다 (게시판 초대처럼 보낸 방을 모르면 조용히)
+        if room == "" or toUid == "" then return end
+        local ev = self:ReplyEvent(toUid, code, fromName)
+        log("[VRF] channel invite reply send to=" .. toUid .. " code=" .. code .. " room=" .. room .. " wait=false")
         _RoomService:RequestSendEventToRoomAsync(ev, room, function(result, sent)
             if result ~= SendEventRequestResultCode.OK then log("[VRF] channel invite reply failed code=" .. code .. " result=" .. tostring(result)) end
         end)

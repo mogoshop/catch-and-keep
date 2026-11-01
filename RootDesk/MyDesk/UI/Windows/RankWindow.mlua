@@ -37,6 +37,8 @@ script RankWindow extends Logic
     property integer ListH = 334             -- 칸 62 × 5줄 + 사이 6 × 4
     property integer MineH = 56
     property integer TopCount = 20           -- 칸 수 (RankingSystem.TopCount와 같다)
+    -- 외형 없는 옛 줄의 「그림자 모습」 색 (11-01 메이커 2회차 관찰 2: 예전 0.13·0.12·0.16·0.9는 어두운 칸 바탕과 대비가 낮아 1배에서 거의 안 보였다 → 어두운 잿빛 보라 — 몸 모양은 보이고 「모르는 모습」 느낌은 남김)
+    property Color ShadowTint = Color(0.5, 0.48, 0.62, 0.95)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -48,8 +50,15 @@ script RankWindow extends Logic
         _UIKit:SetEnabled(self.Win .. "/TabDepth", _GameData.depthEnabled >= 1)
         _UIKit:SetEnabled(self.Win .. "/TabWeek", _GameData.depthEnabled >= 1)
         _UIKit:Connect(self.Win .. "/TabQueen", function() self:Show("boss_" .. _GameConst.FinalBossSourceId) end)
-        _UIKit:Connect(self.Win .. "/Paper/ActBar/Prev", function() self:SetAct(self:CurrentAct() - 1) end)
-        _UIKit:Connect(self.Win .. "/Paper/ActBar/Next", function() self:SetAct(self:CurrentAct() + 1) end)
+        -- 액트 넘김 ◀ ▶ = 투명 단추 88×88 + 보이는 틀 PrevArt·NextArt (11-01 메이커 2회차 관찰 3 · kit.actPager → kit.arrow)
+        _UIKit:Connect(self.Win .. "/Paper/ActBar/Prev", function()
+            log("[VRF] arrow click rank prev act=" .. tostring(self:CurrentAct()))
+            self:SetAct(self:CurrentAct() - 1)
+        end)
+        _UIKit:Connect(self.Win .. "/Paper/ActBar/Next", function()
+            log("[VRF] arrow click rank next act=" .. tostring(self:CurrentAct()))
+            self:SetAct(self:CurrentAct() + 1)
+        end)
         -- 탭 글자: 보스 이름은 아래 판 제목에 있다 (10-24: 탭이 좁아져 「재의 왕 고르바스 처치」가 두 줄로 접혔다)
         _UIKit:SetText(self.Win .. "/TabQueen", "보스 처치 시간")
         self:LayoutTabs(_GameData.depthEnabled >= 1)
@@ -252,7 +261,7 @@ script RankWindow extends Logic
         _CharSelectWindow:Dress(path, known and look or "m-1-1")
         local e = _UIKit:Get(path)
         if isvalid(e) and e.AvatarGUIRendererComponent ~= nil then
-            e.AvatarGUIRendererComponent.Color = known and Color(1, 1, 1, 1) or Color(0.13, 0.12, 0.16, 0.9)
+            e.AvatarGUIRendererComponent.Color = known and Color(1, 1, 1, 1) or self.ShadowTint
         end
         return known
     end

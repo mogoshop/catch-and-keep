@@ -40,6 +40,11 @@ const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
   //   padX(30)부터 글을 두면 긴 글이 마름모 끝(30~38)에 닿는다 (10-29 「정렬」·「여러 개 선택」). 글 길이로 폭을 정하는 단추는 artEdge + SPACE/2를 비운다
   artEdge: 38,
   minFont: 14 };   // 글이 길면 이 크기까지 줄인다 (「다음 ▶ [Space]」 같은 PC 단축키 안내)
+// 넘김 단추 ◀ ▶ (액트 넘김 막대 kit.actPager · 플레이어 창 쪽 넘김 · 11-01 메이커 2회차 관찰 3 「◀▶ 실제 클릭이 단추 사건을 못 냄」):
+//   예전 단추는 보이는 틀 그대로 64×64(막대) · 88×62(쪽 넘김) — 터치 하한 88에 못 미치고 막대 제목 글 칸이 ▶ 왼쪽을 덮었다.
+//   → 누르는 칸 = 투명 단추 hit × hit (ButtonComponent · 그림 RaycastTarget 켬) · 보이는 틀(btn_frame)은 그 칸 안의 형제 그림 …Art(RaycastTarget 끔 · 먼저 그려 아래에 깔림)
+//   · ◀ ▶ 글자는 단추 자신의 글 · 제목·쪽 글은 누르는 칸과 겹치지 않는다 (tests/quality/release_fix5.lua)
+const ARROW = { hit: BUTTON.h, art: 64, font: 24 };
 // 글 폭 어림 — 실행 중 UIKit.TextWidth와 같은 규칙: 한글·기호 1자 = 글자 크기 · 영문·숫자·빈칸 = 0.55배 (서식 태그는 뺀다).
 //   메이커 실측(11-01 랭킹 탭 사진 · 기본 글꼴): 한글 0.92배 · 빈칸 0.23배 — 어림이 넉넉해서 「어림으로 한 줄에 든다」면 화면에서도 든다
 const GLYPH = { wide: 1, narrow: 0.55 };
@@ -78,7 +83,11 @@ function rankLayout(n, tabW) {
 const RANK = {
   top: 20, cols: 4, rows: 5,
   cellW: 264, cellH: 62, gapX: 10, gapY: 6,      // 칸 · 칸 사이 (4 × 264 + 3 × 10 = 1086)
-  cellPad: SPACE / 2, rankW: 34, avatarGap: 2, avatar: [44, 56], textGap: SPACE - 4,   // 칸 안: 순위 34 | 그림 44×56 | 글
+  // 칸 안: 순위 34 | 그림(UI 아바타 avatar) | 글. 11-01 메이커 2회차 관찰 1: 44×56 칸에 PreserveAvatar 1로 그리면 몸은 그 칸의 가로 0.56 · 세로 0.68만 차지하고
+  //   (머리 위 0.30이 빈 캔버스 · 발은 칸 아래 끝에서 0.02) 실제 화면 약 25×38 — 「44×56 그림」 의도보다 작았다(avatarFill = 그 실측 비율).
+  //   → 아바타 칸을 64×80으로 키우고 칸 아래에 붙여(avatarBottom) 보이는 몸(약 36×54)이 칸 높이 안에 들게 한다. 칸 위로 넘치는 부분은 빈 캔버스뿐(누름 받지 않음).
+  //   글은 보이는 몸 오른쪽 끝(아바타 칸 오른쪽 − 빈 옆 avatarSide)에서 textGap. 내 순위 줄(56)은 mineAvatar 56×70
+  cellPad: SPACE / 2, rankW: 34, avatarGap: 2, avatar: [64, 80], avatarBottom: 2, mineAvatar: [56, 70], avatarFill: { w: 0.56, h: 0.68, foot: 0.02 }, textGap: SPACE / 2,
   nameH: 24, valueH: 24, textInset: 7,           // 이름(칸 위에서 7) · 기록(칸 아래에서 7) 두 줄
   pad: SPACE, gap: SPACE, headH: 40, actBarW: 420, actBarH: 76,   // 기록 판 안 여백 · 덩어리 사이 · 머리 줄(심연 탭이면 막대 높이 76)
   mineH: 56, mineLabelW: 96, mineRankW: 120, mineNameW: 320, mineValueW: 360,   // 내 순위 줄 (판 아래 · 칸과 같은 그림 크기)
@@ -89,8 +98,15 @@ const RANK = {
   rimTop: 496,                                   // 창 테두리 위 끝 (화면 가운데 기준 · PC 위 여백 44 · 아이폰 가로 안전영역 1025의 위 끝 512에서 16)
   font: { rank: 22, name: 18, value: 16, head: 20, mine: 20, min: 13 },
 };
-RANK.textX = RANK.cellPad + RANK.rankW + RANK.avatarGap + RANK.avatar[0] + RANK.textGap;   // 94
-RANK.textW = RANK.cellW - RANK.textX - RANK.cellPad;                                        // 164
+// 아바타 칸 [w, h] 안에서 보이는 몸 상자 (칸 왼쪽 아래 기준 · avatarFill 실측) — check_ui_tokens · release_fix5가 칸 안·글과 안 겹침을 이 상자로 잰다
+function rankAvatarBody(size) {
+  const F = RANK.avatarFill, side = Math.round((size[0] - size[0] * F.w) / 2);
+  return { l: side, r: size[0] - side, b: Math.round(size[1] * F.foot * 10) / 10, t: Math.round(size[1] * (F.foot + F.h) * 10) / 10, side };
+}
+RANK.avatarSide = rankAvatarBody(RANK.avatar).side;                                          // 14
+RANK.mineAvatarSide = rankAvatarBody(RANK.mineAvatar).side;                                  // 12
+RANK.textX = RANK.cellPad + RANK.rankW + RANK.avatarGap + RANK.avatar[0] - RANK.avatarSide + RANK.textGap;   // 98
+RANK.textW = RANK.cellW - RANK.textX - RANK.cellPad;                                        // 160
 RANK.listW = RANK.cols * RANK.cellW + (RANK.cols - 1) * RANK.gapX;                          // 1086
 RANK.listH = RANK.rows * RANK.cellH + (RANK.rows - 1) * RANK.gapY;                          // 334
 RANK.paperW = RANK.listW + RANK.pad * 2;                                                     // 1110
@@ -177,9 +193,18 @@ TOPBAND.slot3 = TOPBAND.slot2 + TOPBAND.tipH + TOPBAND.gap;          // 232 — 
 const PARTY = { colors: ['#6CC4FF', '#FFB45A', '#FF8CC6', '#B9A2FF', '#5EDBC4', '#B6E35A'], solo: '#E6DCC6', dim: '#9C9488', rowAlpha: 0.16 };
 // 배치 (창 바탕 왼쪽 위 기준 · x는 줄 안에서): 맨 위 요약 한 줄 → 줄 perPage개(색 띠 · 「파티 · N명」 · 이름/위치 두 줄 · 단추 넷) → 아래 「파티 탈퇴」 · ◀ 쪽 ▶.
 //   최대 20명(채널 상한)이라 8줄 × 3쪽. 단추 x+w 끝 = 줄 폭(winW − 2×padX). 실행 중 SocialWindow.PerPage = perPage
-const SOCIAL = { winW: 1040, posY: 40, summaryH: 32, rowH: 54, rowGap: 6, perPage: 8, markW: 6, tagX: 12, tagW: 132, nameX: 152, nameW: 330,
-  btn: [{ name: 'Party', label: '파티', x: 490, w: 104 }, { name: 'Duel', label: '결투', x: 598, w: 104 }, { name: 'Trade', label: '거래', x: 706, w: 104 }, { name: 'Inspect', label: '살펴보기', x: 810, w: 128 }],
+//   줄 단추(파티·결투·거래·살펴보기 · 11-01 메이커 2회차 관찰 6): 장식 단추(btn_frame)는 폭 104에서 양 끝 장식 사이 글 칸이 44뿐이라 「파티원」(17px 어림 51)이 두 줄로 꺾이고
+//   좁게 늘어난 가운데에 어두운 띠가 보였다 → 사용자 결정 3-A와 같은 민무늬 칩 테(PLATE · ui_loot_label 9조각) · 글 칸 = 폭 − 2 × chipInset(테 선 + pad) · 한 줄.
+//   폭 = 그 단추에 올 수 있는 가장 긴 글(chipLabels) + 양쪽 chipInset, 터치 하한 chipMinW(88) — socialChipW. 단추는 줄 오른쪽 끝에서 chipGap씩 (btn = 그 계산 값)
+//   색 띠(Mark)·줄 바탕(Bg)은 흰 사각 판(ui_icons ui_white_square)에 파티 색을 입힌다 (관찰 5: 예전 gauge_fill은 붉은 그림이라 하늘색이 보라 · 호박색이 빨강으로 곱해졌다)
+const SOCIAL = { winW: 1040, posY: 40, summaryH: 32, rowH: 54, rowGap: 6, perPage: 8, markW: 6, tagX: 12, tagW: 132, nameX: 152, nameW: 402,
+  btn: [{ name: 'Party', label: '파티', x: 566, w: 88 }, { name: 'Duel', label: '결투', x: 660, w: 88 }, { name: 'Trade', label: '거래', x: 754, w: 88 }, { name: 'Inspect', label: '살펴보기', x: 848, w: 90 }],
+  chipLabels: { Party: ['파티', '초대', '파티원'], Duel: ['결투', '포기'], Trade: ['거래'], Inspect: ['살펴보기'] },
+  chipInset: PLATE.rim + PLATE.pad, chipMinW: BUTTON.h, chipGap: SPACE / 2, chipRim: '#B8AE9A', fillKey: 'ui_white_square',
   barH: 62, leaveW: 200, pagerBtnW: 88, pagerW: 300, font: 17 };
+function socialChipW(name) {
+  return Math.max(SOCIAL.chipMinW, Math.ceil(Math.max(...SOCIAL.chipLabels[name].map((t) => textWidth(t, SOCIAL.font))) + SOCIAL.chipInset * 2));
+}
 SOCIAL.rowStep = SOCIAL.rowH + SOCIAL.rowGap;                                       // 60
 SOCIAL.rowW = SOCIAL.winW - FRAME.padX * 2;                                          // 938
 SOCIAL.rowTop = FRAME.contentTop + SOCIAL.summaryH + SPACE;                          // 118 — 첫 줄 위 끝 (바탕 위에서)
@@ -188,3 +213,6 @@ SOCIAL.winH = SOCIAL.rowTop + (SOCIAL.perPage - 1) * SOCIAL.rowStep + SOCIAL.row
 module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, RANK, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout, rankWinLayout };
 module.exports.PARTY = PARTY;
 module.exports.SOCIAL = SOCIAL;
+module.exports.ARROW = ARROW;
+module.exports.socialChipW = socialChipW;
+module.exports.rankAvatarBody = rankAvatarBody;

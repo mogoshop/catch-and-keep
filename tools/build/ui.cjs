@@ -92,15 +92,40 @@ function kit(b) {
     },
     // 액트 넘김 막대 (10-20 사용자 선택): ◀ 「액트 2 · 모래 폐허」 ▶ + 아래 점(몇 번째 액트). 액트가 6개까지 늘어도 모양이 그대로
     //   예전 「액트1|액트2|액트3」 단추 줄은 좁아 보였고 액트가 늘면 들어가지 않았다. 내용은 UIKit.SetActPager가 채운다
+    //   11-01 메이커 2회차 관찰 3: ◀ ▶ (64×64 btn_frame)가 실제 클릭을 못 받았다 — 터치 하한 88 미만 · 제목 글 칸(w − 170)이 ▶ 왼쪽 17px를 덮음 ·
+    //   단추 폭 64가 btn_frame 9조각 좌우 테두리 합(48 + 48 = 96)보다 좁음(눌린 단추 — 탭 202 · 초대 104 · 수락 180 — 은 모두 96보다 넓다).
+    //   → 넘김 단추 = 보이는 틀 …Art(그대로 64×64 · 누름 안 받음) + 그 위 투명 단추 88×88(kit.arrow · ui-tokens ARROW) · 제목은 두 단추 칸 안쪽에서만
     actPager(name, anchor, pos, w) {
+      const A = require("./ui-tokens.cjs").ARROW, gap = require("./ui-tokens.cjs").SPACE / 2;
       b.panel(name, { anchor, pos, rect_size: [w, 76], ...part("win_content"), sprite_type: 1 });
-      b.button(`${name}/Prev`, "◀", { anchor: "middle-left", pos: [38, 0], rect_size: [64, 64], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
-      b.button(`${name}/Next`, "▶", { anchor: "middle-right", pos: [-38, 0], rect_size: [64, 64], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
-      b.text(`${name}/Title`, "", { size: 23, bold: true, color: C.title, anchor: "middle-center", pos: [0, 9], rect_size: [w - 170, 34], alignment: 4, bestfit: true, min_size: 16, max_size: 23, ...outline });
+      k.arrow(`${name}/Prev`, "◀", { edge: "left", art: [A.art, A.art] });
+      k.arrow(`${name}/Next`, "▶", { edge: "right", art: [A.art, A.art] });
+      b.text(`${name}/Title`, "", { size: 23, bold: true, color: C.title, anchor: "middle-center", pos: [0, 9], rect_size: [w - 2 * (A.hit + gap), 34], alignment: 4, bestfit: true, min_size: 16, max_size: 23, ...outline });
       for (let i = 1; i <= 6; i++) {
         b.sprite(`${name}/D${i}`, { anchor: "middle-center", pos: [(i - 3.5) * 22, -20], rect_size: [12, 12], image_ruid: K.dot, sprite_type: 0, color: WHITE, alpha: 1 });
         b.patchComponent(`${name}/D${i}`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
       }
+    },
+    // 넘김 단추 하나 (ui-tokens ARROW · 11-01 메이커 2회차 관찰 3): 보이는 틀 `${path}Art`(형제 · 먼저 만들어 아래에 깔림 · RaycastTarget 끔) +
+    //   누르는 투명 단추 path(ARROW.hit 정사각 · 그림 = 기본 판 알파 0 · Simple — 9조각 테두리와 상관없이 칸 전체가 누름 자리 · 글 = ◀/▶).
+    //   edge = "left" | "right" (부모 가장자리에 붙음). bottom: 부모(쪽 넘김 막대) 높이 = 틀 높이이고 누르는 칸은 아래로만 넘친다 — 글은 틀 가운데(아래 여백)
+    //   실행 중 흐리게는 틀(…Art)에만 (UIKit.SetActPager · SocialWindow.Render) — 투명 단추에 색을 넣으면 흰 판이 보인다
+    arrow(path, glyph, opts) {
+      const A = require("./ui-tokens.cjs").ARROW, hit = A.hit, art = opts.art, bottom = !!opts.bottom;
+      const anchor = (bottom ? "bottom-" : "middle-") + opts.edge, sx = opts.edge === "left" ? 1 : -1;
+      b.sprite(`${path}Art`, { anchor, pos: [sx * (hit - art[0]) / 2, 0], rect_size: art, ...part("btn_frame"), sprite_type: 1 });
+      b.patchComponent(`${path}Art`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
+      b.button(path, glyph, { anchor, pos: [0, bottom ? art[1] - hit : 0], rect_size: [hit, hit], font_size: A.font, color: C.title, bg_color: { r: 1, g: 1, b: 1, a: 0 }, sprite_type: 0 });
+      b.patchComponent(path, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: true });
+      if (bottom) b.patchComponent(path, "MOD.Core.TextGUIRendererComponent", { Padding: { left: 0, right: 0, top: 0, bottom: hit - art[1] } });
+    },
+    // 민무늬 칩 단추 (사용자 결정 3-A와 같은 판 — ui-tokens PLATE · ui_loot_label 9조각 테두리 12): 테 색 = rim · 글은 테 안쪽 inset부터 한 줄(넘치면 줄인다)
+    //   11-01 메이커 2회차 관찰 6: 플레이어 창 줄 단추가 장식 단추(btn_frame · 좌우 장식 96)를 폭 104로 써서 「파티원」이 두 줄로 꺾이고 가운데에 어두운 띠가 보였다
+    chip(name, text, opts) {
+      const T = require("./ui-tokens.cjs"), q = part(T.PLATE.key), font = opts.font_size;
+      b.button(name, text, { anchor: opts.anchor, pos: opts.pos, rect_size: opts.rect_size, font_size: font, color: C.gold, image_ruid: q.image_ruid, bg_color: hexA(opts.rim, 1), sprite_type: 1 });
+      const v = Math.max(0, Math.floor((opts.rect_size[1] - font * 1.5) / 2));
+      b.patchComponent(name, "MOD.Core.TextGUIRendererComponent", { Padding: { left: opts.inset, right: opts.inset, top: v, bottom: v }, BestFit: true, MinSize: T.BUTTON.minFont, MaxSize: font });
     },
     // 「선택 보상」 꼬리표 (10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」): 선택 보상 아이콘 모서리 — 같은 그림을 쓰는 스킬 아이콘과 구분.
     //   새 그림 없이 어두운 금빛 판 + 글 (SkillWin 선택 보상 줄 · OfferWin 보상 카드 공용). 누르는 자리를 막지 않는다
@@ -707,20 +732,22 @@ function buildGameHud() {
     for (let i = 1; i <= S.perPage; i++) {
       const r = `SocialWin/R${i}`;
       b.empty(r, { anchor: "top-left", pos: [padX, -(S.rowTop + (i - 1) * S.rowStep)], rect_size: [S.rowW, S.rowH] });
-      b.sprite(`${r}/Bg`, { anchor: "top-left", pos: [0, 0], rect_size: [S.rowW, S.rowH], image_ruid: K.gauge_fill, color: { r: 1, g: 1, b: 1, a: 0.035 }, sprite_type: 0 });
+      // 색 띠·줄 바탕 = 흰 사각 판(ui-tokens SOCIAL.fillKey) × 파티 색 (11-01 메이커 2회차 관찰 5: gauge_fill은 붉은 그림이라 색이 틀어졌다)
+      b.sprite(`${r}/Bg`, { anchor: "top-left", pos: [0, 0], rect_size: [S.rowW, S.rowH], image_ruid: K[S.fillKey], color: { r: 1, g: 1, b: 1, a: 0.035 }, sprite_type: 0 });
       b.patchComponent(`${r}/Bg`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-      b.sprite(`${r}/Mark`, { anchor: "top-left", pos: [0, 0], rect_size: [S.markW, S.rowH], image_ruid: K.gauge_fill, color: WHITE, alpha: 1, sprite_type: 0, enable: false });
+      b.sprite(`${r}/Mark`, { anchor: "top-left", pos: [0, 0], rect_size: [S.markW, S.rowH], image_ruid: K[S.fillKey], color: WHITE, alpha: 1, sprite_type: 0, enable: false });
       b.patchComponent(`${r}/Mark`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
       b.text(`${r}/Tag`, "", { size: 16, bold: true, color: C.dim, alignment: 3, anchor: "top-left", pos: [S.tagX, 0], rect_size: [S.tagW, S.rowH], bestfit: true, min_size: 12, max_size: 16, ...outline });
       b.text(`${r}/Name`, "", { size: 18, color: C.gold, alignment: 3, anchor: "top-left", pos: [S.nameX, 0], rect_size: [S.nameW, S.rowH], bestfit: true, min_size: 12, max_size: 18, ...outline });
-      for (const bt of S.btn) k.btn(`${r}/${bt.name}`, bt.label, { anchor: "top-left", pos: [bt.x, 0], rect_size: [bt.w, S.rowH], font_size: S.font });
+      for (const bt of S.btn) k.chip(`${r}/${bt.name}`, bt.label, { anchor: "top-left", pos: [bt.x, 0], rect_size: [bt.w, S.rowH], font_size: S.font, rim: S.chipRim, inset: S.chipInset });
     }
     k.btn("SocialWin/BtnLeave", "파티 탈퇴", { anchor: "bottom-left", pos: [padX, T.FRAME.buttonBottom], rect_size: [S.leaveW, S.barH], font_size: 19 });
-    // 쪽 넘김 (2쪽 이상일 때만 · SocialWindow.Render): ◀ 「1 / 3」 ▶ — 액트 넘김 막대와 같은 단추
+    // 쪽 넘김 (2쪽 이상일 때만 · SocialWindow.Render): ◀ 「1 / 3」 ▶ — 액트 넘김 막대와 같은 넘김 단추(kit.arrow): 틀 88×62 그대로 · 누르는 칸 88×88은 아래로 넘친다
+    //   (위로 넘치면 마지막 줄 R8 단추와 1px 겹친다 — 아래는 창 테두리 안쪽 빈 자리)
     b.empty("SocialWin/Pager", { anchor: "bottom-right", pos: [-padX, T.FRAME.buttonBottom], rect_size: [S.pagerW, S.barH], enable: false });
-    b.button("SocialWin/Pager/Prev", "◀", { anchor: "middle-left", pos: [0, 0], rect_size: [S.pagerBtnW, S.barH], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+    k.arrow("SocialWin/Pager/Prev", "◀", { edge: "left", art: [S.pagerBtnW, S.barH], bottom: true });
     b.text("SocialWin/Pager/Label", "", { size: 20, color: C.gold, alignment: 4, anchor: "middle-center", pos: [0, 0], rect_size: [S.pagerW - S.pagerBtnW * 2 - 16, 40], ...outline });
-    b.button("SocialWin/Pager/Next", "▶", { anchor: "middle-right", pos: [0, 0], rect_size: [S.pagerBtnW, S.barH], font_size: 24, color: C.title, ...bg("btn_frame"), sprite_type: 1 });
+    k.arrow("SocialWin/Pager/Next", "▶", { edge: "right", art: [S.pagerBtnW, S.barH], bottom: true });
     // 살펴보기 판: 같은 창 위에 덮는다 — 왼쪽 능력치·스킬, 오른쪽 착용 장비 (SocialWindow.OnInspect)
     const iw = S.winW - 48, ih = S.winH - 76 - 24;
     b.panel("SocialWin/Inspect", { anchor: "top-left", pos: [24, -76], rect_size: [iw, ih], color: { r: 0.05, g: 0.045, b: 0.06, a: 1 }, raycast: true, enable: false });
@@ -842,7 +869,8 @@ function buildGameHud() {
       const c = `${P}/List/R${i + 1}`, col = i % R.cols, row = Math.floor(i / R.cols);
       b.panel(c, { anchor: "top-left", pivot: [0, 1], pos: [col * (R.cellW + R.gapX), -row * (R.cellH + R.gapY)], rect_size: [R.cellW, R.cellH], color: { r: 1, g: 1, b: 1, a: 0.05 }, enable: false });
       b.text(`${c}/Rank`, "", { size: R.font.rank, bold: true, color: "#B8AE9A", anchor: "middle-left", pivot: [0, 0.5], pos: [R.cellPad, 0], rect_size: [R.rankW, R.cellH - 2 * R.textInset], alignment: 4, ...outline });
-      avatar(`${c}/Avatar`, { anchor: "middle-left", pivot: [0, 0.5], pos: [R.cellPad + R.rankW + R.avatarGap, 0], rect_size: R.avatar });
+      // 그림 칸은 칸 아래에 붙여 키운다 (ui-tokens RANK.avatar · 11-01 메이커 2회차 관찰 1 — 보이는 몸이 칸 높이 안 · 칸 위로 넘치는 건 빈 캔버스)
+      avatar(`${c}/Avatar`, { anchor: "bottom-left", pivot: [0, 0], pos: [R.cellPad + R.rankW + R.avatarGap, R.avatarBottom], rect_size: R.avatar });
       b.text(`${c}/Name`, "", { size: R.font.name, bold: true, color: C.gold, anchor: "top-left", pivot: [0, 1], pos: [R.textX, -R.textInset], rect_size: [R.textW, R.nameH], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.name, ...outline });
       b.text(`${c}/Value`, "", { size: R.font.value, color: C.value, anchor: "bottom-left", pivot: [0, 0], pos: [R.textX, R.textInset], rect_size: [R.textW, R.valueH], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.value });
     }
@@ -854,8 +882,8 @@ function buildGameHud() {
     b.text(`${M}/Label`, "내 순위", { size: R.font.value, bold: true, color: "#CDBF8F", anchor: "middle-left", pivot: [0, 0.5], pos: [R.mineInset, 0], rect_size: [R.mineLabelW, R.nameH], alignment: 3, ...outline });
     b.text(`${M}/Rank`, "", { size: R.font.rank, bold: true, color: "#F4ED83", anchor: "middle-left", pivot: [0, 0.5], pos: [R.mineInset + R.mineLabelW, 0], rect_size: [R.mineRankW, R.nameH + 6], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.rank, ...outline });
     const mineAvatarX = R.mineInset + R.mineLabelW + R.mineRankW;
-    avatar(`${M}/Avatar`, { anchor: "middle-left", pivot: [0, 0.5], pos: [mineAvatarX, 0], rect_size: [R.avatar[0], R.mineH - R.avatarGap * 2] });
-    b.text(`${M}/Name`, "", { size: R.font.mine, bold: true, color: "#F4ED83", anchor: "middle-left", pivot: [0, 0.5], pos: [mineAvatarX + R.avatar[0] + R.textGap, 0], rect_size: [R.mineNameW, R.nameH + 6], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.mine, ...outline });
+    avatar(`${M}/Avatar`, { anchor: "bottom-left", pivot: [0, 0], pos: [mineAvatarX, R.avatarBottom], rect_size: R.mineAvatar });
+    b.text(`${M}/Name`, "", { size: R.font.mine, bold: true, color: "#F4ED83", anchor: "middle-left", pivot: [0, 0.5], pos: [mineAvatarX + R.mineAvatar[0] - R.mineAvatarSide + R.textGap, 0], rect_size: [R.mineNameW, R.nameH + 6], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.mine, ...outline });
     b.text(`${M}/Value`, "", { size: R.font.mine, bold: true, color: "#F4ED83", anchor: "middle-right", pivot: [1, 0.5], pos: [-R.mineInset, 0], rect_size: [R.mineValueW, R.nameH + 6], alignment: 5, bestfit: true, min_size: R.font.min, max_size: R.font.mine, ...outline });
   }
 

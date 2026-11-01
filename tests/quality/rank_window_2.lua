@@ -238,10 +238,11 @@ ok(ui.text[L..'1/Rank']=='<color=#FFD45A>1</color>' and ui.text[L..'2/Rank']=='<
 ok(dressed[L..'1/Avatar']=='m-2-2-2-1' and avatars[L..'1/Avatar'].AvatarGUIRendererComponent.Color.r==1,'1위 칸 그림 = 그 캐릭터 외형 (흰 색 그대로)')
 -- 3번째 줄 = 「옛3」 → 방금 FillLook으로 외형이 생겼지만 목록은 60초 캐시를 비웠으니 새로 읽어 외형 있음
 ok(dressed[L..'3/Avatar']=='f-2-3-4-2','FillLook 뒤 새로 읽은 목록: 옛3 칸도 외형')
-for i=1,20 do local a=avatars[L..i..'/Avatar'] if a and a.AvatarGUIRendererComponent.Color.r<0.5 then shadowN=shadowN+1 end end
+-- 그림자 색 = RankWindow.ShadowTint (11-01 메이커 2회차 관찰 2로 밝혔다 — release_fix5가 대비를 잰다)
+for i=1,20 do local a=avatars[L..i..'/Avatar'] if a and a.AvatarGUIRendererComponent.Color==RankWindow.ShadowTint then shadowN=shadowN+1 end end
 local sixth=nil
 for i=1,20 do if has(ui.text[L..i..'/Name'] or '','옛6') then sixth=i end end
-ok(sixth~=nil and dressed[L..sixth..'/Avatar']=='m-1-1' and avatars[L..sixth..'/Avatar'].AvatarGUIRendererComponent.Color.r<0.2,'옛 줄(외형 없음) 칸 = 기본 모습 + 그림자 색 (남의 모습을 기본 남자로 잘못 보이지 않게)')
+ok(sixth~=nil and dressed[L..sixth..'/Avatar']=='m-1-1' and avatars[L..sixth..'/Avatar'].AvatarGUIRendererComponent.Color==RankWindow.ShadowTint and RankWindow.ShadowTint.r<1,'옛 줄(외형 없음) 칸 = 기본 모습 + 그림자 색 (남의 모습을 기본 남자로 잘못 보이지 않게)')
 ok(shadowN==5,'그림자 칸 5 (옛 줄 6 − 고쳐 쓴 옛3)')
 local myCell=nil
 for i=1,20 do if has(ui.text[L..i..'/Name'] or '','새내기') then myCell=i end end

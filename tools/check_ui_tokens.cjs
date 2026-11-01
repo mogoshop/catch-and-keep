@@ -193,8 +193,11 @@ let rankChecks = 0;
     const parts = {};
     for (const k of ['Rank', 'Avatar', 'Name', 'Value']) {
       parts[k] = place(tr(`${c}/${k}`), CP);
+      // 11-01 메이커 2회차 관찰 1: 아바타 칸은 키워서 칸 위로 넘치게 둔다(빈 캔버스) — 칸 안·글과 안 겹침은 보이는 몸 상자(ui-tokens rankAvatarBody · avatarFill 실측)로 잰다
+      if (k === 'Avatar') { const av = parts[k], body = TK.rankAvatarBody([av.r - av.l, av.t - av.b]); parts[k] = { l: av.l + body.l, r: av.l + body.r, b: av.b + body.b, t: av.b + body.t }; }
       check(inside(parts[k], CP), `칸 R${i}/${k} ${JSON.stringify(parts[k])}가 칸 ${K.cellW}×${K.cellH} 밖`);
     }
+    check(parts.Avatar.t - parts.Avatar.b >= K.cellH * 0.8, `칸 R${i} 보이는 몸 높이 ${(parts.Avatar.t - parts.Avatar.b).toFixed(1)} < 칸 높이 × 0.8 (관찰 1: 너무 작다)`);
     for (const [a, b] of [['Rank', 'Avatar'], ['Rank', 'Name'], ['Rank', 'Value'], ['Avatar', 'Name'], ['Avatar', 'Value'], ['Name', 'Value']]) check(!ov(parts[a], parts[b]), `칸 R${i}: ${a} ↔ ${b} 겹침`);
     const av = gb.find(`RankWin/${c}/Avatar`).componentNames;
     check(av.includes('MOD.Core.AvatarGUIRendererComponent') && av.includes('MOD.Core.CostumeManagerComponent'), `칸 R${i}/Avatar = UI 아바타 + 옷장 (CharSelectWindow.Dress가 외형을 입힌다)`);
@@ -204,7 +207,11 @@ let rankChecks = 0;
   {
     const MP = { l: 0, r: K.listW, b: 0, t: K.mineH };
     const parts = {};
-    for (const k of ['Label', 'Rank', 'Avatar', 'Name', 'Value']) { parts[k] = place(tr('Paper/Mine/' + k), MP); check(inside(parts[k], MP), `내 순위 줄 ${k}이 줄 밖`); }
+    for (const k of ['Label', 'Rank', 'Avatar', 'Name', 'Value']) {
+      parts[k] = place(tr('Paper/Mine/' + k), MP);
+      if (k === 'Avatar') { const av = parts[k], body = TK.rankAvatarBody([av.r - av.l, av.t - av.b]); parts[k] = { l: av.l + body.l, r: av.l + body.r, b: av.b + body.b, t: av.b + body.t }; }
+      check(inside(parts[k], MP), `내 순위 줄 ${k}이 줄 밖`);
+    }
     const ks = Object.keys(parts);
     for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) check(!ov(parts[ks[i]], parts[ks[j]]), `내 순위 줄 ${ks[i]} ↔ ${ks[j]} 겹침`);
     // 창 아래 모서리 장식(메이커 B7 실측 약 44~50)과 떨어지게: 줄 안 가장 왼쪽 글·가장 오른쪽 글이 바탕 가장자리에서 cornerClear 이상

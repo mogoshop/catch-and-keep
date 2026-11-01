@@ -630,7 +630,14 @@ script RoomSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method boolean Enter(Entity player, string id, integer diff, boolean fresh)
-        -- 방에 들어간다: (난이도를 맞추고) 저장 → 그림자·언데드 맡기기 → 게임 방을 열거나 찾아 그 액트 마을로
+        -- 방에 들어간다 (EnterWith · 옮기기 직전에 할 일 없음)
+        return self:EnterWith(player, id, diff, fresh, nil)
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean EnterWith(Entity player, string id, integer diff, boolean fresh, any beforeMove)
+        -- 방에 들어간다: (난이도를 맞추고) 저장 → 그림자·언데드 맡기기 → 게임 방을 열거나 찾아 그 액트 마을로.
+        --   beforeMove(함수 또는 nil) = 저장 준비가 끝나고 옮기기 바로 전에 한 번 (11-01 TownBoard.AnswerInvite: 클라 RPC로 불리면 이동 순간 실행이 끊기므로 초대 답을 먼저 보낸다)
         local uid = player.PlayerComponent.UserId
         local key = "game:" .. id
         ---@type PlayerStats
@@ -651,6 +658,7 @@ script RoomSystem extends Logic
         ---@type PlayerSave
         local save = player:GetComponent("script.PlayerSave")
         if save == nil or not save:PrepareRoomMove(key) then return false end
+        if beforeMove ~= nil then beforeMove() end
         local exists = _RoomService.InstanceRooms[key] ~= nil
         local ok, moved = pcall(function()
             if not exists then _RoomService:CreateInstanceRoom(key, _GameConst:GameRoomMaps(diff), 60) end
