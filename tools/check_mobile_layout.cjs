@@ -325,6 +325,8 @@ for (const win of WIDE) {
   // ── 스킬 창 편성 조작 칸 WS/Form (10-30 갈래 B · I03 단계 2 희망 편성 · I04 골편 홀드 반복 설정) ──
   //   SkillWindow.RenderForm은 해골 전사·해골 마법사·골편 트리에서만 칸을 켠다. 그 트리의 강화 노드(RenderNodes와 같은 배치: 필요 랭크 열 680+104씩 · 줄 96+102씩 · 100칸)·
   //   필요 랭크 머리(Need, -66 높이 20)와 겹치지 않고, 공방 판 안쪽(SKPANEL) 안에 있으며, 단추가 손가락 88 이상이고 서로 겹치지 않는지 (PC·모바일 같은 배치)
+  //   11-01 강화 단추 줄: 직접 정하기(Form/Mode)는 칸 밖 아래 줄 · 그 오른쪽 「강화 +1」(WS/BtnUpgrade · 모든 트리) — 둘이 한 줄(같은 높이)이고,
+  //   강화 +1은 모든 트리의 보이는 노드(보류 빼고 · 뼈 의식은 거인마다)·필요 랭크 머리·깃발 줄(WS/Banner)·편성 줄(WS/Roster)과 겹치지 않는다
 {
   const gb = uiOf('GameHUD');
   const T = 'MOD.Core.UITransformComponent';
@@ -340,12 +342,17 @@ for (const win of WIDE) {
   const fr = rectIn(form, 0, 0);
   const kids = {};
   for (const k of ['Head', 'Mode', 'Minus', 'Plus']) kids[k] = rectIn(gb.getComponent('SkillWin/WS/Form/' + k, T), fr.l, fr.t);
+  const upT = gb.getComponent('SkillWin/WS/BtnUpgrade', T);
+  if (!upT) problems.push('스킬 창 강화 +1 단추 WS/BtnUpgrade 없음 — node tools/build.cjs ui (11-01)');
+  kids.Up = upT ? rectIn(upT, 0, 0) : { l: 0, r: 0, t: 0, b: 0 };
   const overlap = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.t, b.t) - Math.max(a.b, b.b) > 0.5;
   const inside = (a, b) => a.l >= b.l - 0.5 && a.r <= b.r + 0.5 && a.t <= b.t + 0.5 && a.b >= b.b - 0.5;
   const panelIn = { l: SKPANEL.border, r: ws.RectSize.x - SKPANEL.border, t: -SKPANEL.border, b: -(ws.RectSize.y - SKPANEL.border) };
   if (!inside(fr, panelIn)) problems.push(`스킬 창 편성 칸 WS/Form(x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t})이 공방 판 안쪽 밖`);
-  for (const [k, r] of Object.entries(kids)) if (!inside(r, fr)) problems.push(`스킬 창 편성 칸 ${k}가 WS/Form 밖`);
-  for (const k of ['Mode', 'Minus', 'Plus']) {
+  for (const k of ['Head', 'Minus', 'Plus']) if (!inside(kids[k], fr)) problems.push(`스킬 창 편성 칸 ${k}가 WS/Form 밖`);
+  for (const k of ['Mode', 'Up']) if (!inside(kids[k], panelIn)) problems.push(`스킬 창 강화 단추 줄 ${k}(x ${kids[k].l}~${kids[k].r} · y ${kids[k].b}~${kids[k].t})이 공방 판 안쪽 밖`);
+  if (Math.abs(kids.Mode.t - kids.Up.t) > 0.5 || Math.abs(kids.Mode.b - kids.Up.b) > 0.5 || kids.Mode.r > kids.Up.l + 0.5) problems.push('스킬 창 직접 정하기·강화 +1이 한 줄(같은 높이 · 직접 정하기가 왼쪽)이 아니다');
+  for (const k of ['Mode', 'Minus', 'Plus', 'Up']) {
     const r = kids[k];
     if (r.r - r.l < 88 || r.t - r.b < BUTTON.h || r.t - r.b < 88) problems.push(`스킬 창 편성 칸 ${k} ${r.r - r.l}×${r.t - r.b} < 손가락 88`);
   }
@@ -362,11 +369,52 @@ for (const win of WIDE) {
       const x = 680 + (ci - 1) * 104, y = -96 - (rowsIn[ci] - 1) * 102;
       const nr = { l: x - 50, r: x + 50, t: y, b: y - 100 };
       if (overlap(nr, fr)) problems.push(`스킬 창 편성 칸이 ${parent} 강화 노드 ${n.id}(x ${nr.l}~${nr.r} · y ${nr.b}~${nr.t})와 겹친다`);
+      if (overlap(nr, kids.Mode)) problems.push(`스킬 창 직접 정하기가 ${parent} 강화 노드 ${n.id}와 겹친다`);
     }
     for (let i = 1; i <= needs.length; i++) {
       const x = 680 + (i - 1) * 104;
       if (overlap({ l: x - 50, r: x + 50, t: -66, b: -86 }, fr)) problems.push(`스킬 창 편성 칸이 ${parent} 필요 랭크 머리 ${i}열과 겹친다`);
     }
+  }
+  // 강화 +1 ↔ 모든 트리의 보이는 노드 (SkillWindow.VisibleNodes: 보류 줄 빼고 · 뼈 의식은 폭탄 + 펼친 거인 하나 — 거인 5종 각각) · 필요 랭크 머리 · 깃발 줄
+  {
+    const src = fs.readFileSync(path.join(ROOT, 'RootDesk/MyDesk/Data/SkillData.mlua'), 'utf8');
+    const all = [];
+    for (const m of src.matchAll(/self\.Skills\["(\w+)"\] = \{([^\n]*)\}/g)) {
+      const g = (k) => { const r = m[2].match(new RegExp('\\b' + k + ' = ("[^"]*"|[^,]+)')); return r ? r[1].replace(/"/g, '').trim() : ''; };
+      all.push({ id: m[1], kind: g('kind'), parent: g('parent'), need: +g('need'), hold: g('hold') === 'true' });
+    }
+    const giantOf = (id) => /^giant_basic_/.test(id) ? 'basic' : /^giant_shield_/.test(id) ? 'shield' : /^giant_gs_/.test(id) ? 'greatsword' : /^giant_twin_/.test(id) ? 'twin' : /^giant_mage_/.test(id) ? 'mage' : '';
+    let trees = 0;
+    for (const main of all.filter((s) => s.kind !== 'node')) {
+      const own = all.filter((s) => s.kind === 'node' && s.parent === main.id && !s.hold);
+      for (const show of main.id === 'bone_rite' ? ['basic', 'shield', 'greatsword', 'twin', 'mage'] : ['']) {
+        const nodes = own.filter((n) => giantOf(n.id) === '' || giantOf(n.id) === show);
+        if (!nodes.length) continue;
+        trees++;
+        const needs = [...new Set(nodes.map((n) => n.need))].sort((a, b) => a - b);
+        const rowsIn = {};
+        for (const n of nodes) {
+          const ci = needs.indexOf(n.need) + 1;
+          rowsIn[ci] = (rowsIn[ci] || 0) + 1;
+          const x = 680 + (ci - 1) * 104, y = -96 - (rowsIn[ci] - 1) * 102;
+          if (ci > 6 || rowsIn[ci] > 3) problems.push(`스킬 창 ${main.id}${show ? '/' + show : ''} 강화 노드 ${n.id}가 빌더 칸(6열 · 3줄) 밖`);
+          if (overlap({ l: x - 50, r: x + 50, t: y, b: y - 100 }, kids.Up)) problems.push(`스킬 창 강화 +1이 ${main.id}${show ? '/' + show : ''} 강화 노드 ${n.id}와 겹친다`);
+        }
+        for (let i = 1; i <= needs.length; i++) if (overlap({ l: 680 + (i - 1) * 104 - 50, r: 680 + (i - 1) * 104 + 50, t: -66, b: -86 }, kids.Up)) problems.push(`스킬 창 강화 +1이 ${main.id} 필요 랭크 머리 ${i}열과 겹친다`);
+      }
+    }
+    const bn = gb.getComponent('SkillWin/WS/Banner', T);
+    if (bn) {
+      const br = rectIn(bn, 0, 0);
+      if (overlap(br, kids.Up)) problems.push(`스킬 창 강화 +1 ↔ 깃발 줄 WS/Banner(x ${br.l}~${br.r}) 겹침`);
+      for (let i = 1; i <= 6; i++) {
+        const c = rectIn(gb.getComponent('SkillWin/WS/Banner/K' + i, T), br.l, br.t);
+        if (c.r - c.l < 88 || c.t - c.b < 88) problems.push(`스킬 창 깃발 칸 K${i} ${c.r - c.l}×${c.t - c.b} < 손가락 88`);
+        if (overlap(c, kids.Up)) problems.push(`스킬 창 깃발 칸 K${i} ↔ 강화 +1 겹침`);
+      }
+    }
+    if (verbose) console.log(`스킬 창 강화 +1 WS/BtnUpgrade x ${kids.Up.l}~${kids.Up.r} · y ${kids.Up.b}~${kids.Up.t} · 직접 정하기 x ${kids.Mode.l}~${kids.Mode.r} · 트리 ${trees}개(뼈 의식 거인 5종 따로) 노드와 안 겹침`);
   }
   if (verbose) console.log(`스킬 창 편성 칸 WS/Form x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t} · Mode ${kids.Mode.r - kids.Mode.l}×${kids.Mode.t - kids.Mode.b} · ± ${kids.Minus.r - kids.Minus.l}×${kids.Minus.t - kids.Minus.b}`);
 }
@@ -401,7 +449,8 @@ for (const win of WIDE) {
       if (overlap(roster, p)) problems.push(`스킬 창 편성 줄 WS/Roster(x ${roster.l}~${roster.r} · y ${roster.b}~${roster.t})이 랭크 점 ${p.i}(큰 점 26 기준)과 겹친다`);
       if (overlap(stat, p)) problems.push(`스킬 창 효과 칸 WS/Stat(y ${stat.b}~${stat.t})이 랭크 점 ${p.i}(큰 점 26 · y ${p.b}~${p.t})과 겹친다`);
     }
-    for (const k of ['RankNote', 'Reason', 'Stat', 'Form']) if (overlap(roster, rectIn(get(k), 0, 0))) problems.push(`스킬 창 편성 줄 WS/Roster ↔ WS/${k} 겹침`);
+    for (const k of ['RankNote', 'Reason', 'Stat', 'Form', 'BtnUpgrade']) if (overlap(roster, rectIn(get(k), 0, 0))) problems.push(`스킬 창 편성 줄 WS/Roster ↔ WS/${k} 겹침`);
+    { const f = rectIn(get('Form'), 0, 0); if (overlap(roster, rectIn(get('Form/Mode'), f.l, f.t))) problems.push('스킬 창 편성 줄 WS/Roster ↔ 직접 정하기(WS/Form/Mode) 겹침'); }
     const panelIn = { l: SKPANEL.border, r: ws.RectSize.x - SKPANEL.border, t: -SKPANEL.border, b: -(ws.RectSize.y - SKPANEL.border) };
     if (!inside(roster, panelIn)) problems.push(`스킬 창 편성 줄 WS/Roster가 공방 판 안쪽 밖`);
     const skills = require('./lib/csv.cjs').load('skills');

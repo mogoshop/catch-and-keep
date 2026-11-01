@@ -461,7 +461,7 @@ function run(o) {
     if (kind === "set") { occupy(setCells(name, x, y, flip ? -1 : 1, sc || 1), x, y); doBlock(blockCellsSet(name, x, y, flip ? -1 : 1, sc || 1)); for (const n of setNames(name)) bump(n); }
     else if (kind === "prop") { occupy(fc(name, x, y, sc || 1), x, y); if (blockOf(name)) doBlock(fc(name, x, y, sc || 1)); bump(name); }
     for (const [fx, fy] of featPieces(kind, name, x, y, flip ? -1 : 1)) featBlocks.add(blockKey(fx, fy));
-    rows.push({ kind, name, x, y, scale: sc || "", flip: flip ? 1 : "", args: pu[6] || "", note: "손으로 고른 자리" });
+    rows.push({ kind, name, x, y, scale: sc || "", flip: flip ? 1 : "", args: pu[6] || "", tint: pu[7] || "", note: "손으로 고른 자리" });
   }
 
   // ───────── D 내부 경계 섬 (야외) ─────────

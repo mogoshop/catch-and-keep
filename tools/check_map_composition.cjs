@@ -260,6 +260,16 @@ function straightEdges(L, G) {
   return found;
 }
 
+// 평행 여러 줄 나누기 (11-01 방 다시 구성 · 서가 줄 셋 이상): 각 th에 수직인 거리로 정렬해 1.5칸 이상 틈마다 끊는다 — 무리 셋 이상 · 무리마다 2개 이상 · 흩어짐 ≤0.5면 줄 목록, 아니면 null
+function splitRows(grp, th, sd) {
+  const mx = grp.reduce((a, p) => a + p.x, 0) / grp.length, my = grp.reduce((a, p) => a + p.y, 0) / grp.length;
+  const o = grp.map((p) => [-(p.x - mx) * Math.sin(th) + (p.y - my) * Math.cos(th), p]).sort((a, b) => a[0] - b[0]);
+  const rows = [[o[0]]];
+  for (let k = 1; k < o.length; k++) { if (o[k][0] - o[k - 1][0] >= 1.5) rows.push([]); rows[rows.length - 1].push(o[k]); }
+  if (rows.length < 3 || rows.some((r) => r.length < 2 || sd(r.map((q) => q[0])) > 0.5)) return null;
+  return rows.map((r) => r.map((q) => q[1]));
+}
+
 // ───────── 배치 (P3·P5) — 1단계 zone_sheet.py 정의 ─────────
 function placementMetrics(L, G, band) {
   const floorCells = G.cells().filter(([c, r]) => G.floor(c, r));
@@ -286,6 +296,8 @@ function placementMetrics(L, G, band) {
       const off = grp.map((p) => -(p.x - mx) * Math.sin(th) + (p.y - my) * Math.cos(th)).sort((a, b) => a - b);
       for (let k = 2; k <= n - 2; k++) if (off[k] - off[k - 1] >= 1.5 && sd(off.slice(0, k)) <= 0.5 && sd(off.slice(k)) <= 0.5) return "rows2";
     }
+    // 평행 여러 줄 (11-01 서고 서가 줄 · 가구 줄 토큰): 수직 거리 1.5칸 이상 틈으로 나눈 무리가 셋 이상 · 무리마다 2개 이상 · 흩어짐 ≤0.5
+    if ([th0, th0 + Math.PI / 2, 0, Math.PI / 2].some((t) => splitRows(grp, t, sd))) return "rowsN";   // 길이가 다른 줄이 섞이면 주축이 기울어 — 가로·세로 축도 본다
     // 고리 (테두리): 4개 이상 · 가운데에서 거리 1.5칸 이상 · 거리 흩어짐 ≤0.5
     if (n >= 4) { const rad = grp.map((p) => Math.hypot(p.x - mx, p.y - my)), m = rad.reduce((s, v) => s + v, 0) / n; if (m >= 1.5 && sd(rad) <= 0.5) return "ring"; }
     return null;
@@ -306,6 +318,7 @@ function placementMetrics(L, G, band) {
       for (let k = 2; k <= n - 2 && !rows; k++) if (o[k][0] - o[k - 1][0] >= 1.5 && sd(o.slice(0, k).map((q) => q[0])) <= 0.5 && sd(o.slice(k).map((q) => q[0])) <= 0.5) rows = [o.slice(0, k).map((q) => q[1]), o.slice(k).map((q) => q[1])];
       if (rows) break;
     }
+    if (!rows) for (const t of [th, th + Math.PI / 2, 0, Math.PI / 2]) { rows = splitRows(grp, t, sd); if (rows) break; }   // 평행 여러 줄 (11-01 서고)
     for (const row of rows || []) {
       if (row.length < 3) continue;
       lineRows.push(row);

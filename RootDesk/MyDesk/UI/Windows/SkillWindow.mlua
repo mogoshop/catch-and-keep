@@ -2,7 +2,9 @@
 --   위 = Lv1→50 해금 시간선: 열 = 메인 스킬이 열리는 레벨, 열마다 그 레벨의 메인 스킬(트리색 테두리) · 지금 레벨 표지 · 「다음 해금」 한 줄.
 --     트리를 넘나드는 해금 순서를 지도처럼 보여 준다 (예전 탭 4개 + 카드 격자는 「중구난방」이라는 피드백).
 --   아래 = 고른 메인 스킬의 공방: 큰 초상 · 지금/다음 효과 · 랭크 사다리 20칸 · 배우기/스킬 칸에 넣기 · 오른쪽 강화 노드(필요 랭크 열별 · 허브 갈래 선).
---   고른 것을 한 번 더 누르면 바로 +1 (첫 클릭은 설명 보기라 실수로 찍히지 않는다). 메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2.
+--   칸·노드를 누르면 설명만 바뀐다 (포인트는 단추로만). 메인 스킬 랭크 상한 = 1 + (캐릭터 Lv − 해금 Lv) ÷ 2.
+-- 단추 (11-01 사용자 결정): 왼쪽 아래 「배우기 / 레벨 업 +1」 = 공방 메인 스킬 랭크 전용(노드를 골라도 그 상위 스킬) · 「스킬 칸에 넣기」 = 메인 스킬을 배웠을 때만 ·
+--   오른쪽 강화 판 맨 아래 「강화 +1」(WS/BtnUpgrade) = 고른 노드 — 노드를 안 골랐으면 꺼짐. 편성 트리는 그 왼쪽에 「직접 정하기」(WS/Form/Mode)가 한 줄로
 -- 칸 지정: 「스킬 칸에 넣기」 — PC는 스킬 지정 창(A S D F 우클릭 탭), 모바일은 창을 닫고 패드 칸의 +를 눌러 고른다.
 -- 스킬 추천 3택 카드(V4, 2차)는 SkillOffer가 맡는다.
 -- 10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」 (A안): 머리 줄 「선택 보상」 3칸 — 의뢰 1·2·3에서 고른 선택 보상(스킬과 별개 · 늘 적용)을
@@ -43,6 +45,7 @@ script SkillWindow extends Logic
     -- 선택 보상 칸 테 (11-01 사용자 결정 3-A 「장식 없는 칸 테로 교체」 · 빌더 tools/build/ui.cjs SkillWin/Choice · ui-tokens PLATE):
     --   장식 없는 어두운 9조각 판 하나를 네 상태가 같이 쓰고, 상태는 테 색으로 — 예전엔 공방 노드 테 4장(가시·자물쇠 장식)을 칸 폭으로 늘려 이름이 장식 위로 지나갔다
     property string ChoiceRimKey = "ui_loot_label"
+    property string BtnLogKey = ""          -- [VRF] skill btn 줄을 바뀔 때만 (RenderLearnButton)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -61,6 +64,7 @@ script SkillWindow extends Logic
             _UIKit:Connect(self.Win .. "/WS/N" .. tostring(i), function() self:Pick(self.NodeIds[index]) end)
         end
         _UIKit:Connect(self.Win .. "/BtnLearn", function() self:Act(0) end)
+        _UIKit:Connect(self.Win .. "/WS/BtnUpgrade", function() self:ActNode() end)   -- 11-01 노드 강화 +1 (오른쪽 강화 판 아래)
         -- I03 단계 2 희망 편성 · I04 골편 홀드 반복 설정 (공방 강화 트리 오른쪽 아래 WS/Form)
         _UIKit:Connect(self.Win .. "/WS/Form/Mode", function() self:FormMode() end)
         _UIKit:Connect(self.Win .. "/WS/Form/Minus", function() self:FormStep(-1) end)
@@ -307,6 +311,7 @@ script SkillWindow extends Logic
         self.NodeIds = {}
         _UIKit:SetEnabled(self.Win .. "/BtnLearn", false)
         _UIKit:SetEnabled(self.Win .. "/BtnEdit", false)
+        _UIKit:SetEnabled(self.Win .. "/WS/BtnUpgrade", false)
         log(string.format("[VRF] skill choice detail slot=%d axis=%s tier=%d", slot, axis ~= "" and axis or "none", tier))
     end
 
@@ -479,7 +484,7 @@ script SkillWindow extends Logic
         -- 편성 줄: 랭크 점 줄과 떨어진 오른쪽 아래 칸 (S48-UI-DETAIL-PIPS-01) — 같은 「 · 」 경계 접기 · 글은 줄이지 않는다
         local rosterE = _UIKit:Get(ws .. "/Roster")
         local rosterT = isvalid(rosterE) and rosterE.TextGUIRendererComponent or nil
-        local rosterW = isvalid(rosterE) and rosterE.UITransformComponent.RectSize.x or 474
+        local rosterW = isvalid(rosterE) and rosterE.UITransformComponent.RectSize.x or 332   -- 빌더 WS/Roster 폭 (11-01 강화 단추 줄 왼쪽까지 · 오프라인 검사용)
         local roster = self:WrapLines(self:RosterText(book, detailId), rosterW - 6, rosterT)
         _UIKit:SetText(ws .. "/Roster", roster)
         if roster ~= "" and not Environment:IsPublishedPlay() then log(string.format("[VRF] skill roster %s lines=%d w=%d", detailId, self:LineCount(roster), math.floor(rosterW))) end
@@ -533,8 +538,8 @@ script SkillWindow extends Logic
             table.sort(marks)
             log(string.format("[VRF] skill ladder %s lv=%d stages=%s next=%s complete=%s", self.SelMain, lv, table.concat(marks, ","), nextStage ~= nil and (nextStage.text .. "/" .. tostring(nextStage.left)) or "-", tostring(complete)))
         end
-        local target = self.Selected ~= "" and self.Selected or self.SelMain
-        local reason = book:CanLearn(target, st.Level, st.SkillPoints)
+        -- 빨간 줄 = 왼쪽 아래 단추(메인 스킬 랭크)의 이유 (11-01: 그 단추는 노드를 골라도 메인 스킬 랭크 · 노드 상태는 노드 칸 글 「n랭크부터」·「Lv부터」)
+        local reason = book:CanLearn(self.SelMain, st.Level, st.SkillPoints)
         _UIKit:SetText(ws .. "/Reason", reason)
         self:RenderNodes(book, st, def)
         self:RenderForm(book, detailId)
@@ -950,19 +955,57 @@ script SkillWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void RenderLearnButton(SkillBook book, PlayerStats st)
-        -- 버튼 글자가 지금 고른 것에 맞게: 배우기 / 레벨 업 +1 / 강화 +1. 못 찍으면 흐리게 (이유는 공방의 빨간 줄)
-        local id = self.Selected ~= "" and self.Selected or self.SelMain
-        local def = _SkillData:Get(id)
-        local label = "배우기"
-        if def ~= nil then
-            if def.kind == "node" then label = "강화 +1"
-            elseif book:GetLevel(id) > 0 then label = "레벨 업 +1" end
-        end
-        local ok = def ~= nil and book:CanLearn(id, st.Level, st.SkillPoints) == ""
+        -- 단추 셋 (11-01 사용자 결정 · 「단련된 뼈」 노드를 고르니 왼쪽 단추가 「강화 +1」로 바뀌었다 → 나눔):
+        --   왼쪽 아래 BtnLearn = 공방 메인 스킬 랭크 전용 — 배우기(랭크 0) / 레벨 업 +1. 노드를 골라도 그 노드의 상위 스킬(SelMain)
+        --   오른쪽 강화 판 아래 WS/BtnUpgrade = 고른 노드 강화 +1 — 노드를 안 골랐으면 꺼짐(누름 막음 + 흐림) · 트리에 노드가 없으면 감춤
+        --   BtnEdit 「스킬 칸에 넣기」 = 메인 스킬을 배웠을 때만 (랭크 0이면 누름 막음 + 흐림)
+        --   못 찍으면 흐리게 (왼쪽 단추 이유는 공방의 빨간 줄 · 노드 이유는 노드 칸 글) — 흐린 배우기·강화는 눌리면 서버가 이유를 알린다
+        local main = self:MainOf()
+        local mainLv = main ~= "" and book:GetLevel(main) or 0
+        local rankLabel = mainLv > 0 and "레벨 업 +1" or "배우기"
+        local rankOk = _SkillData:Get(main) ~= nil and book:CanLearn(main, st.Level, st.SkillPoints) == ""
         _UIKit:SetEnabled(self.Win .. "/BtnLearn", true)   -- 선택 보상 설명(RenderChoiceDetail)에서 감춘 단추를 되살린다
         _UIKit:SetEnabled(self.Win .. "/BtnEdit", true)
-        _UIKit:SetText(self.Win .. "/BtnLearn", ok and label or _UIKit:Colored("#8A8A8A", label))
-        _UIKit:SetColor(self.Win .. "/BtnLearn", ok and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
+        self:SetButtonLook(self.Win .. "/BtnLearn", rankLabel, rankOk, true)
+        local slotOn = mainLv > 0
+        self:SetButtonLook(self.Win .. "/BtnEdit", "스킬 칸에 넣기", slotOn, slotOn)
+        local node = self:SelectedNode()
+        local up = self.Win .. "/WS/BtnUpgrade"
+        local hasNodes = self.NodeIds[1] ~= nil
+        local nodeOk = node ~= "" and book:CanLearn(node, st.Level, st.SkillPoints) == ""
+        _UIKit:SetEnabled(up, hasNodes)
+        self:SetButtonLook(up, "강화 +1", nodeOk, node ~= "")
+        local nodeState = not hasNodes and "hidden" or (node == "" and "off" or (nodeOk and "ok" or "dim"))
+        local line = string.format("mode=%s id=%s main=%s rankBtn=%s/%s nodeBtn=%s slotBtn=%s", node ~= "" and "node" or "skill", self.Selected ~= "" and self.Selected or main, main, mainLv > 0 and "levelup" or "learn", rankOk and "ok" or "dim", nodeState, slotOn and "on" or "off")
+        if line ~= self.BtnLogKey then
+            self.BtnLogKey = line
+            log("[VRF] skill btn " .. line)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetButtonLook(string path, string label, boolean bright, boolean clickable)
+        -- 단추 모양: 밝음(찍을 수 있음) / 흐림(글 회색 · 그림 0.55) · clickable = ButtonComponent.Enable (꺼지면 눌러도 사건이 없다 — 다른 창 SetActionButton 관례)
+        _UIKit:SetText(path, bright and label or _UIKit:Colored("#8A8A8A", label))
+        _UIKit:SetColor(path, bright and Color(1, 1, 1, 1) or Color(0.55, 0.55, 0.55, 1))
+        local e = _UIKit:Get(path)
+        if isvalid(e) and e.ButtonComponent ~= nil and e.ButtonComponent.Enable ~= clickable then e.ButtonComponent.Enable = clickable end
+    end
+
+    method string MainOf()
+        -- 왼쪽 아래 단추가 다루는 메인 스킬: 공방 메인(SelMain) → 없으면 고른 것(노드면 상위 스킬)
+        if self.SelMain ~= "" then return self.SelMain end
+        local def = _SkillData:Get(self.Selected)
+        if def == nil then return "" end
+        if def.kind == "node" then return def.parent or "" end
+        return self.Selected
+    end
+
+    method string SelectedNode()
+        -- 「강화 +1」이 다루는 노드: 고른 것이 공방 메인 스킬의 강화 노드일 때만 (아니면 "")
+        local def = _SkillData:Get(self.Selected)
+        if def ~= nil and def.kind == "node" and def.parent == self.SelMain then return self.Selected end
+        return ""
     end
 
     method string GearLevelKey(PlayerStats st)
@@ -1033,15 +1076,30 @@ script SkillWindow extends Logic
 
     @ExecSpace("ClientOnly")
     method void Act(integer slot)
-        -- 0 = 습득, 1~4 = A S D F, 5 = 우클릭
+        -- 0 = 습득·랭크 +1, 1~4 = A S D F, 5 = 우클릭 — 대상은 늘 공방 메인 스킬 (11-01: 노드를 골라도 그 상위 스킬 · 노드 강화는 ActNode)
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         if book == nil or self.ChoiceSlot > 0 then return end   -- 선택 보상 설명 중에는 배우기·칸 넣기가 없다 (단추도 감춘다)
-        -- 카드를 따로 누르지 않았어도 오른쪽에 보이는 스킬을 배운다 (10-20 첫 1시간 점검: 설명이 떠 있는데 「습득」이 아무 반응이 없었다)
-        if self.Selected == "" then self.Selected = self.SelMain end
-        if self.Selected == "" then return end
-        if slot == 0 then book:RequestLearn(self.Selected) else book:RequestSetSlot(slot, self.Selected) end
+        -- 카드를 따로 누르지 않았어도 공방에 보이는 스킬을 배운다 (10-20 첫 1시간 점검: 설명이 떠 있는데 「습득」이 아무 반응이 없었다)
+        local main = self:MainOf()
+        if main == "" then return end
+        if self.Selected == "" then self.Selected = main end
+        if slot == 0 then book:RequestLearn(main) else book:RequestSetSlot(slot, main) end
         self.RenderKey = ""
+        log("[VRF] skill act rank id=" .. main .. " slot=" .. tostring(slot))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ActNode()
+        -- 오른쪽 강화 판 「강화 +1」: 고른 강화 노드 한 단계 (노드를 안 골랐으면 단추가 꺼져 있다 · 판정·포인트는 서버 SkillBook.RequestLearn)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        if book == nil or self.ChoiceSlot > 0 then return end
+        local node = self:SelectedNode()
+        if node == "" then return end
+        book:RequestLearn(node)
+        self.RenderKey = ""
+        log("[VRF] skill act node id=" .. node)
     end
 
 end

@@ -8,6 +8,100 @@
 "use strict";
 const { R, P, rock } = require("./kit.cjs");
 
+// ───────── 11-01 방 다시 구성 (사용자 「4년차 개발자·최상급 모델 합작 수준이 아니다」 — 기록고 서가 방 · 밀수꾼 금고 방을 손으로) ─────────
+//   원칙: 바닥 구역 2~3(paint · 들쭉날쭉 경계) · 가구는 줄과 무리(세트 하나 = 소품 6~10 장면) · 빛 자리 2~3 · 벽에 붙는 것 · 벽 글자 섬 0 · 흩뿌림 0 · 길 막지 않기.
+//   put 꼴: [종류, 그림, x, y, 배율, 뒤집기, args, 색] — args: wall=1 벽 밀착(뒤 칸 막음) · padl/padr 끝 칸 더 막음 · fill=x/y,… 그 칸도 막음(옛 벽 섬 칸 그대로) · ok=cliff 벽 위 걸이
+//   좌표 = 월드 칸 (설계도 칸 (c, r) → x = c − 30 · y = 20 − r). 전후 그림: docs/evidence/2026-11-01-room-remake/
+const ARCHIVE_ROOMS = {
+  zones: {
+    r: "temple-floor 0.8/0.72/0.6 북쪽 열람 구역 (무늬 타일)",
+    s: "temple-floor 0.78/0.7/0.58 남쪽 열람 구역 (무늬 타일)",   // 같은 그림이어도 글자를 따로 — 검사기는 구역 글자마다 공간(특징 1)으로 센다
+  },
+  paint: [
+    { z: "r", r: [3, 9, 8, 13], rough: 0, in: "c" },      // 북쪽 열람실 동쪽 = 열람 탁자 자리 (실내 무늬 바닥은 곧은 네모 — 들쭉날쭉 계단은 흙·물 같은 자연 바닥에만)
+    { z: "s", r: [-5, -14, -1, -10], rough: 0, in: "e" },  // 남쪽 열람실 서쪽 = 독서대 자리
+    { z: ".", r: [-15, 1, -14, 1], rough: 0, in: "b" },     // 서쪽 열람실 띠 북쪽 홈 (옛 띠 덧대기 자리 — 북쪽 서가 줄 곁이라 덧대기가 빠져 띠 경계가 13칸 곧게 이어졌다)
+  ],
+  // 서가 줄 자리 규칙 (검사기 facing·behindWall과 같은 잣대): 정면 그림 줄은 북벽에 붙이거나(wall=1) 북벽에서 4칸 이상 · 남벽·옆벽에서 3칸 이상 띄운다 —
+  //   1~2칸 틈은 뒤로 들어가 갇히는 좁은 골목이 된다. 간격은 북벽 줄과 같은 1.6칸(빈틈 없이 이어 보이게)
+  put: [
+    // ── 북쪽 열람실 (x −6~8 · y 7~16): 서쪽 서가 두 줄(앞층 -top) · 동쪽 열람 탁자 장면 · 북벽 책장 줄(v5 자동 9개)
+    ...[-3.6, -2, -0.4, 1.2].map((x) => ["prop", "bookshelf", x, 12.2, 1, 0]),   // 막는 칸 x −4~1 · y 12~13
+    ...[-2, -0.4, 1.2].map((x) => ["prop", "bookshelf", x, 9.2, 1, 0]),          // 막는 칸 x −3~1 · y 9~10 (서벽에서 3칸)
+    ["prop", "keeper-desk", 5.6, 11.0, 1, 0],                                     // 열람 탁자 (장소 특징)
+    ["prop", "crypt-candlestand", 3.8, 11.0, 0.72, 0], ["prop", "crypt-candlestand", 7.5, 11.0, 0.72, 0],   // 빛 자리 1 — 탁자 양옆 촛대 쌍
+    ["prop", "mp-lectern", 7.3, 13.7, 1, 1],                                      // 독서대
+    ["prop", "mp-ladder", 3.7, 14.3, 1, 0],                                        // 북벽 책장에 기댄 사다리 (통과)
+    ["prop", "burnt-paper", 4.2, 9.5, 0.9, 0], ["prop", "a2-adjunct-burnt-scroll", 6.0, 9.3, 1, 1],
+    ["prop", "a2-adjunct-censer-base", 7.0, 8.2, 1, 0], ["prop", "a2-broken-urns", 5.6, 8.1, 0.8, 1],   // 빛 자리 2 — 남동 구석 향로
+    ["prop", "a2-adjunct-sandstone-fragments", -3.9, 7.5, 0.85, 0], ["prop", "burnt-paper", -5.4, 13.6, 0.8, 1],
+    ["prop", "mp-cobweb", -6.6, 17.02, 1.5, 0, "ok=cliff", "1/1/1"], ["prop", "mp-cobweb", 8.6, 17.02, 1.5, 1, "ok=cliff", "1/1/1"],
+    ["decal", "a2-decal-sand-drift", -5.6, 14.4, 0.9, 0], ["decal", "a2-decal-sand-drift", -4.6, 8.2, 0.8, 1], ["decal", "a2-decal-broken-tiles", 2.4, 13.6, 0.8, 0],
+    // ── 남쪽 열람실 (x −6~8 · y −16~−7): 북벽 책장 한 벌(책장·사다리·책상)·책장·부서진 선반 · 동쪽 서가 한 줄 · 서쪽 독서대 장면 · 남동 불탄 구석
+    ...[2.8, 4.4, 6].map((x) => ["prop", "bookshelf", x, -11.8, 1, 0]),           // 막는 칸 x 2~6 · y −12~−11 (북벽 토막에서 4칸 · 동벽에서 3칸)
+    ["prop", "mp-library-nook", -4.3, -7.95, 1, 0, "wall=1", "0.92/0.86/0.78"], ["prop", "bookshelf", -1.7, -7.8, 1, 0, "wall=1"],
+    ["prop", "cellar-broken-shelf", 7.0, -7.8, 1, 0, "wall=1"],
+    ["prop", "crypt-candlestand", -5.3, -10.4, 0.72, 0], ["prop", "crypt-candlestand", -5.3, -14.4, 0.72, 0],   // 빛 자리 — 서벽 촛대 쌍
+    ["prop", "keeper-desk", -3.1, -12.3, 1, 1], ["prop", "mp-lectern", -1.6, -10.6, 1, 0],   // 독서대 자리 — 책상(장소 특징) · 독서대
+    ["prop", "a2-adjunct-sun-disc-plaque", 4.6, -14.7, 0.8, 1], ["prop", "mp-rubble", 6.6, -14.95, 1, 0], ["prop", "mp-rubble", -5.2, -15.7, 1, 1],
+    ["prop", "mp-cobweb-b", 8.7, -5.98, 1.4, 1, "ok=cliff", "1/1/1"],
+    ["decal", "a2-decal-scorched-circle", 4.0, -14.4, 0.9, 0], ["decal", "a2-decal-sand-drift", 1.6, -12.6, 0.85, 0], ["decal", "a2-decal-broken-tiles", -2.2, -15.2, 0.8, 1],
+    // ── 서쪽 열람실 (x −20~−9 · 골격 띠가 y −1~1로 지난다): 띠 북쪽 서가 넷 · 남쪽 서가 셋 (화로 −15, −2 곁은 비움)
+    ...[-17.4, -15.8, -14.2, -12.6].map((x) => ["prop", "bookshelf", x, 2.2, 1, 0]),   // 막는 칸 x −18~−13 · y 2~3
+    ...[-14.6, -13, -11.4].map((x) => ["prop", "bookshelf", x, -3.8, 1, 0]),         // 막는 칸 x −15~−12 · y −4~−3
+    ["prop", "mp-cobweb", -20.6, 7.02, 1.5, 0, "ok=cliff", "1/1/1"],
+  ],
+  dress: {
+    c: { row: { name: "bookshelf", side: "n", contiguous: true, step: 1.6, min: 2, minLine: 4 }, decals: [], dn: 0 },
+    e: { decals: [], dn: 0 },
+  },
+};
+const SMUGGLER2_VAULT = {
+  zones: {
+    k: "a3-wet-plank-floor-r2 0.95/0.8/0.64 금고 방 하역장 (판자)",
+    w: "a3-barnacle-stone-floor-r2 0.76/0.8/0.82 금고 방 젖은 돌",
+  },
+  paint: [
+    { z: "w", e: [-27.0, 1.5, 3.6, 12.5], rough: 1.6, in: "e" },   // 서벽 따라 젖은 돌
+    { z: "w", e: [-18.0, -10.6, 9.5, 2.6], rough: 1.6, in: "e" },  // 남벽 따라 젖은 돌
+    { z: "k", r: [-21, -6, -16, 0], rough: 0, in: ["e", "w"] },     // 돌기둥 넷 사이 하역장 판자 (판자 단은 곧은 네모)
+    // (방 가운데 작은 패치·네모 물웅덩이 구역은 시험했다가 뺐다 — 칸 단위 구역은 작으면 네모 덩어리 + keep 이음새 그늘로 보였다. 웅덩이는 둥근 tidal-pool 그림으로)
+  ],
+  put: [
+    // 돌기둥 넷 = 하역장을 두른 네모 (옛 바위 섬 넷은 입구→되돌아가는 문·끝방 골격 위라 같은 칸에 두지 않았다 · 앞층 -top)
+    ["prop", "chapel-pillar", -21.5, -0.4, 0.8, 0], ["prop", "chapel-pillar", -14.5, -0.4, 0.8, 1],
+    ["prop", "chapel-pillar", -21.5, -6.4, 0.8, 0], ["prop", "chapel-pillar", -14.5, -6.4, 0.8, 1],
+    // 북벽: 지도 탁자(랜드마크 · 기존 put) 양옆 벽걸이 등불 + 벽에 건 지도
+    ["prop", "mp-wall-lantern", -22.3, 12.35, 1, 0, "ok=cliff"], ["prop", "mp-wall-lantern", -12.8, 12.35, 1, 1, "ok=cliff"],   // 빛 자리 1
+    ["prop", "mp-wall-map", -25.4, 12.25, 1, 0, "ok=cliff"],
+    // 북동 구석 보물 더미 장면 (궤짝 · 금화 더미 · 흩어진 금화 · 상자 · 자루)
+    ["prop", "mp-treasure-chest", -10.3, 11.2, 1, 1, "", "0.8/0.74/0.62"], ["prop", "mp-gold-pile", -11.9, 11.5, 1, 0, "", "0.74/0.68/0.56"],
+    ["decal", "mp-decal-coin-spill", -10.9, 10.0, 1, 0, "", "0.74/0.68/0.56"], ["prop", "smuggler-crates", -9.8, 9.3, 0.9, 1], ["prop", "a3-adjunct-salt-sack-r2", -10.0, 7.6, 0.9, 0],
+    ["prop", "mp-cobweb", -8.6, 12.35, 1.4, 1, "ok=cliff", "1/1/1"],
+    // 입구(동쪽 y 0~3) 양옆 등불 기둥 쌍 — 빛 자리 2
+    ["prop", "harbor-lantern", -8.6, 5.0, 1, 0], ["prop", "harbor-lantern", -8.6, -1.6, 1, 1],
+    // 서벽 짐 더미 둘 (밀수품 창고)
+    ["prop", "harbor-barrels", -25.9, 5.7, 1, 0], ["prop", "smuggler-crates", -25.9, 4.1, 1, 0], ["prop", "a3-adjunct-salt-sack-r2", -24.3, 6.5, 0.85, 1], ["prop", "a3-adjunct-drift-barrel-r2", -24.2, 4.5, 0.85, 1],
+    ["prop", "a3-drift-crates", -25.9, -1.5, 1, 0], ["prop", "cellar-rotten-barrel", -25.9, -3.4, 0.9, 1], ["prop", "fishing-net", -24.2, -2.5, 0.9, 0], ["prop", "a1-adjunct-rope-pile", -24.4, -0.5, 0.8, 0],
+    ["prop", "mp-cobweb-b", -27.6, 12.4, 1.3, 0, "ok=cliff", "1/1/1"],
+    // 하역장 위 부리다 만 짐
+    ["prop", "mp-barrel-lying", -19.8, -4.6, 1, 0], ["prop", "a3-adjunct-wet-net-pile-r2", -17.6, -2.4, 0.85, 1], ["decal", "a3-decal-wet-footprints-r2", -16.4, 1.6, 0.9, 1],
+    // 남서 구석 물웅덩이(돌 두른 웅덩이 그림) 둘레 (조개 무더기 · 부서진 노 · 해초 더미 · 게 발자국)
+    ["prop", "tidal-pool", -24.6, -8.9, 1.25, 0],
+    ["prop", "a3-adjunct-shell-pile-r2", -22.6, -9.0, 0.9, 0], ["prop", "a3-adjunct-broken-oar-r2", -26.0, -6.6, 0.9, 1],
+    ["decal", "a3-decal-seaweed-pile-r2", -25.4, -7.4, 0.85, 0], ["decal", "a3-decal-seaweed-pile-r2", -23.2, -9.9, 0.7, 1], ["decal", "a3-decal-crab-tracks-r2", -20.8, -8.4, 0.8, 0],
+    // 남동 구석 닻 장면 (닻 · 닻사슬 더미 · 녹슨 갈고리 · 깨진 등롱 · 돌무더기)
+    ["prop", "wreck-anchor", -11.0, -8.7, 1, 1], ["prop", "a3-adjunct-barnacle-anchor-chain-r2", -13.4, -9.2, 0.9, 0], ["prop", "a3-adjunct-rusty-hook-r2", -9.7, -6.9, 0.85, 0],
+    ["prop", "a3-adjunct-broken-lantern-r2", -15.0, -9.4, 0.85, 1], ["prop", "mp-rubble", -9.6, -9.9, 1, 1],
+    // 남벽 가운데 자루·상자
+    ["prop", "mp-sack-crate", -17.6, -9.5, 1, 0], ["prop", "a1-adjunct-burst-barrel", -18.9, -9.3, 0.75, 1],
+    ["decal", "a3-decal-salt-band-r2", -21.5, 4.6, 0.85, 0], ["decal", "mp-decal-coin-spill", -16.2, 9.4, 0.8, 1, "", "0.7/0.64/0.52"], ["decal", "a3-decal-seawater-puddle-r2", -24.2, 9.0, 0.7, 1],
+  ],
+  dress: {
+    e: { decals: [], dn: 0 },
+  },
+};
+
 const OVERRIDES = {
   // 납골당 2층: W→E 기둥 회랑(b)을 그대로 주 경로로 두고, 유물 곁방(c)은 좁은 시험방(방패·원거리), 구덩이(e)는 넓은 시험방(무리).
   //   두 시험방은 회랑에서 한 번 들어갔다 나오는 막다른 방 — 둘 다 건너뛰고 E로 갈 수 있다. 곁방끼리 잇던 고리 두 줄은 뺐다.
@@ -153,7 +247,23 @@ const OVERRIDES = {
   //   금서실 1×1 바위 기둥 넷은 뺐다 (낱개 기둥 — 사원 기둥 열주로 대신). 서가 줄(설계도 담 글자 %)은 반복 구조라 그대로.
   archive: (s) => Object.assign({}, s, {
     paths: s.paths.filter((p) => !["8,12", "8,-12"].includes(p.pts[0].join(","))),
-    rocks: s.rocks.filter((r) => !r.e),
+    rocks: [],   // 11-01 방 다시 구성: 서가 줄(설계도 담 글자 %)이 검은 구멍처럼 보였다 → 담 글자를 다 빼고 같은 칸에 책장 그림 줄(아래 ARCHIVE_ROOMS)
+    walls: { "#": s.walls["#"] },
+    torches: [[-26, 2], [-15, -2], [0, 7], [1, -2], [1, -8], [20, 0]],   // 화로 자리 고정 (담 글자를 빼면 자동 자리가 열람실 가운데로 옮겨 갔다 — 옛 자리 그대로)
+    zones: Object.assign({}, s.zones, ARCHIVE_ROOMS.zones),
+    paint: ARCHIVE_ROOMS.paint,
+    put: [...(s.put || []), ...ARCHIVE_ROOMS.put],
+    v5: Object.assign({}, s.v5, { dress: Object.assign({}, s.v5.dress, ARCHIVE_ROOMS.dress) }),
+  }),
+
+  // 밀수꾼 동굴 2층 — 두목의 금고 방 (11-01 방 다시 구성 · 아래 SMUGGLER2_VAULT): 금고 방 가운데 바위 기둥 넷(설계도 벽 글자 섬)을 빼고 같은 칸에 돌기둥 그림(앞층 -top)을,
+  //   바닥은 하역장 판자 · 벽 쪽 젖은 돌 · 남서 물웅덩이로 나누고, 벽·모서리에 짐 더미·보물 더미·닻 세트. 바닥·통로·기능 자리·keep 모드는 그대로
+  smuggler2: (s) => Object.assign({}, s, {
+    rocks: [],
+    zones: Object.assign({}, s.zones, SMUGGLER2_VAULT.zones),
+    paint: SMUGGLER2_VAULT.paint,
+    put: [...(s.put || []), ...SMUGGLER2_VAULT.put],
+    v5: Object.assign({}, s.v5, { dress: Object.assign({}, s.v5.dress, SMUGGLER2_VAULT.dress) }),
   }),
 };
 

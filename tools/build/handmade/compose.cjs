@@ -233,6 +233,7 @@ function compose(id, spec, ctx, mapRow) {
   // 맵 구성 v5 (설계서 v5): 골격 띠 · 구역 바닥 재적합 · 섬 · 역할표 배치를 v5.cjs가 한다 (아래 8) 꾸밈 대신 · 64장은 이 줄을 지나지 않는다)
   if (spec.v5) {
     const v = require("./v5.cjs").run({ id, spec, g, func, markerOf, puts, table, ctx, seed, mapRow, footCells, clear });
+    paintZones(id, spec, g, markerOf, seed);
     const grid = [];
     for (let y = g.y1; y >= g.y0; y--) {
       let line = "";
@@ -376,6 +377,7 @@ function compose(id, spec, ctx, mapRow) {
     }
   });
 
+  paintZones(id, spec, g, markerOf, seed);
   // 9) 글자 격자
   const grid = [];
   for (let y = g.y1; y >= g.y0; y--) {
@@ -392,6 +394,23 @@ function compose(id, spec, ctx, mapRow) {
     grid.push(line);
   }
   return { grid, rows, func, torches };
+}
+
+// 바닥 구역 칠하기 (11-01 방 다시 구성 · 바닥 구역 토큰): 설계서 paint [{ z, e: [cx, cy, rx, ry] | r: [x0, y0, x1, y1], rough, in: "c" | ["c", "."] }]
+//   장소·길·벽·배치가 다 끝난 뒤 그 모양 안의 걷는 칸 중 구역 글자가 in인 칸만 z로 바꾼다 (벽·통행·장소 번호·골격 띠·표식 칸은 그대로 — 바닥 그림만 달라진다).
+//   가장자리는 inShape 잡음(rough)으로 들쭉날쭉 — 직선 네모 경계 금지(검사기 straightEdge). 뒤에 적은 칠이 앞을 덮는다. 설계서에 paint가 없으면 아무것도 안 한다
+//   z "." = 바탕(v5 띠와 같은 바닥) — 손 배치 막힘 곁이라 띠 덧대기가 빠져 띠 경계가 곧게 이어진 자리에 홈을 판다
+function paintZones(id, spec, g, markerOf, seed) {
+  (spec.paint || []).forEach((pt, i) => {
+    if (pt.z !== "." && !(pt.z in spec.zones)) throw new Error(`${id}: paint ${i + 1}번 구역 글자 '${pt.z}'가 zones에 없음`);
+    const ins = new Set([].concat(pt.in || []));
+    const box = pt.e ? [pt.e[0] - pt.e[2] - 3, pt.e[1] - pt.e[3] - 3, pt.e[0] + pt.e[2] + 3, pt.e[1] + pt.e[3] + 3] : [pt.r[0] - 1, pt.r[1] - 1, pt.r[2] + 1, pt.r[3] + 1];
+    for (let y = Math.floor(box[1]); y <= Math.ceil(box[3]); y++) for (let x = Math.floor(box[0]); x <= Math.ceil(box[2]); x++) {
+      const c = g.get(x, y);
+      if (!c || c.wall || c.band || c.road || markerOf.has(key(x, y)) || (ins.size && !ins.has(c.zone))) continue;
+      if (inShape(pt, x, y, seed + 7000 + i * 131 + (pt.seed || 0), pt.rough ?? 1.2)) c.zone = pt.z;
+    }
+  });
 }
 
 // 곁가지 입구 · 층 계단 그림 (10-28 코덱스 entrances — 「단순 포털이 아니라 굴에 포털을 올려 — 디아2처럼」):

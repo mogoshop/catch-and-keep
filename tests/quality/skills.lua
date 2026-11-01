@@ -3,7 +3,7 @@
 -- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
--- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
+-- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
 -- @source SkillOffer UI/Windows/SkillOffer.mlua Pick+,Render+
 -- @source HudMain UI/Hud/HudMain.mlua GiantCountsLine,GiantShort
@@ -109,6 +109,62 @@ SkillWindow:RenderWorkshop(book,stats)
 assert(values['SkillWin/WS/Name']==_SkillData:Get('armor_thick').name)
 assert(string.find(values['SkillWin/WS/Desc'],_SkillData:Get('armor_thick').desc,1,true))
 assert(string.find(values['SkillWin/WS/Stat'],'+20%',1,true) and string.find(values['SkillWin/WS/Stat'],'+40%',1,true))
+-- 11-01 사용자 결정 (스킬 창 단추 나눔): 왼쪽 아래 = 메인 스킬 랭크 전용(노드를 골라도 상위 스킬) · 오른쪽 「강화 +1」(WS/BtnUpgrade) = 고른 노드만 ·
+--   「스킬 칸에 넣기」 = 메인 스킬을 배웠을 때만 (랭크 0 = 누름 막음 + 흐림). [VRF] skill btn 줄은 바뀔 때만
+do
+ local W='SkillWin'
+ local btns={}
+ for _,k in ipairs({W..'/BtnLearn',W..'/BtnEdit',W..'/WS/BtnUpgrade'}) do btns[k]={ButtonComponent={Enable=true}} end
+ local en,col,logs={},{},{}
+ local keep={Get=_UIKit.Get,SetEnabled=_UIKit.SetEnabled,SetColor=_UIKit.SetColor,log=log,lv=stats.Level,pts=stats.SkillPoints,req=book.RequestLearn}
+ _UIKit.Get=function(_,path) return btns[path] end
+ _UIKit.SetEnabled=function(_,path,on) en[path]=on end
+ _UIKit.SetColor=function(_,path,c) col[path]=c end
+ log=function(m) if string.find(m,'[VRF] skill',1,true) then table.insert(logs,m) end end
+ local asked={}
+ book.RequestLearn=function(_,id) table.insert(asked,id) end
+ stats.Level,stats.SkillPoints=10,5
+ local function render(levels,main,sel)
+  book.Levels=levels;values={};logs={}
+  SkillWindow.SelMain=main;SkillWindow.Selected=sel;SkillWindow.ChoiceSlot=0
+  SkillWindow.NodeIds=SkillWindow:VisibleNodes(book,main)   -- RenderNodes가 채우는 강화 칸 (해골 전사 공방 전체는 편성 줄 고정 장치가 뒤에 있어 노드만)
+  SkillWindow:RenderLearnButton(book,stats)
+  return logs[#logs] or ''
+ end
+ local dim=function(path) return col[path] ~= nil and col[path][1] < 1 end
+ -- ① 배우지 않은 메인 스킬: 배우기 · 칸 넣기 꺼짐 · 강화 +1 꺼짐(노드 안 고름)
+ local l1=render({},'raise_skeleton','raise_skeleton')
+ assert(values[W..'/BtnLearn']=='배우기' and not dim(W..'/BtnLearn') and btns[W..'/BtnLearn'].ButtonComponent.Enable,'rank 0 learn '..tostring(values[W..'/BtnLearn']))
+ assert(btns[W..'/BtnEdit'].ButtonComponent.Enable==false and dim(W..'/BtnEdit'),'rank 0 → 스킬 칸에 넣기 꺼짐')
+ assert(en[W..'/WS/BtnUpgrade']==true and btns[W..'/WS/BtnUpgrade'].ButtonComponent.Enable==false and dim(W..'/WS/BtnUpgrade'),'노드 안 고름 → 강화 +1 꺼짐·흐림')
+ assert(string.find(l1,'mode=skill id=raise_skeleton main=raise_skeleton rankBtn=learn/ok nodeBtn=off slotBtn=off',1,true),l1)
+ -- ② 노드를 골랐지만 상위 스킬 미습득: 왼쪽 = 상위 스킬 배우기 · 칸 넣기 꺼짐 · 강화 +1은 누를 수 있으나 흐림(서버가 이유)
+ local l2=render({},'raise_skeleton','skeleton_mastery')
+ assert(values[W..'/BtnLearn']=='배우기' and btns[W..'/BtnEdit'].ButtonComponent.Enable==false,'node + parent rank 0')
+ assert(btns[W..'/WS/BtnUpgrade'].ButtonComponent.Enable==true and dim(W..'/WS/BtnUpgrade'),'node picked but locked → 강화 +1 흐림')
+ assert(string.find(l2,'mode=node id=skeleton_mastery main=raise_skeleton rankBtn=learn/ok nodeBtn=dim slotBtn=off',1,true),l2)
+ -- ③ 상위 스킬 랭크 3 + 「단련된 뼈」(필요 랭크 3): 왼쪽 = 레벨 업 +1(해골 전사) · 강화 +1 켜짐 · 칸 넣기 켜짐
+ local l3=render({raise_skeleton=3},'raise_skeleton','skeleton_mastery')
+ assert(values[W..'/BtnLearn']=='레벨 업 +1' and btns[W..'/BtnEdit'].ButtonComponent.Enable==true and not dim(W..'/BtnEdit'),'rank 3 levelup + slot on')
+ assert(btns[W..'/WS/BtnUpgrade'].ButtonComponent.Enable==true and values[W..'/WS/BtnUpgrade']=='강화 +1','node clickable')
+ assert(string.find(l3,'mode=node id=skeleton_mastery main=raise_skeleton rankBtn=levelup/',1,true) and string.find(l3,'slotBtn=on',1,true) and not string.find(l3,'nodeBtn=off',1,true),l3)
+ local nodeOk=book:CanLearn('skeleton_mastery',stats.Level,stats.SkillPoints)==''
+ assert(string.find(l3,'nodeBtn='..(nodeOk and 'ok' or 'dim'),1,true),l3)
+ -- 같은 상태로 다시 그리면 로그 없음 (바뀔 때만)
+ logs={};SkillWindow:RenderLearnButton(book,stats);assert(#logs==0,'btn log only on change')
+ -- 단추 동작: 왼쪽 = 상위 스킬, 오른쪽 = 고른 노드
+ asked={};SkillWindow:Act(0);SkillWindow:ActNode()
+ assert(asked[1]=='raise_skeleton' and asked[2]=='skeleton_mastery' and #asked==2,'act targets '..table.concat(asked,','))
+ -- 메인 스킬을 고르면 강화 +1은 아무 것도 안 한다 (단추도 꺼짐)
+ render({raise_skeleton=3},'raise_skeleton','raise_skeleton')
+ asked={};SkillWindow:ActNode();assert(#asked==0 and btns[W..'/WS/BtnUpgrade'].ButtonComponent.Enable==false,'no node → no request')
+ -- 노드 없는 트리 대비: 다른 트리 노드를 Selected에 남겨도 강화 +1 대상 아님
+ SkillWindow.Selected='armor_thick';assert(SkillWindow:SelectedNode()=='','other tree node ignored')
+ _UIKit.Get,_UIKit.SetEnabled,_UIKit.SetColor,log=keep.Get,keep.SetEnabled,keep.SetColor,keep.log
+ stats.Level,stats.SkillPoints,book.RequestLearn=keep.lv,keep.pts,keep.req
+ SkillWindow.BtnLogKey=''
+ print('[quality/skills] 11-01 skill buttons: rank 0 learn/slot off/upgrade off · node+parent0 learn/dim · node+rank3 levelup/upgrade on/slot on · act main vs node · log on change only')
+end
 local calls=0;SkillWindow.Act=function() calls=calls+1 end
 SkillWindow:Pick('armor_thick');SkillWindow:Pick('armor_thick');assert(calls==0)
 SkillWindow:Pick('bone_armor');assert(SkillWindow.SelMain=='bone_armor')
@@ -697,7 +753,7 @@ do
  cmdG.GiantKind=''
  assert(book:GiantCount()==0 and not book:GiantStanding(),'client none')
  entity.GetComponent=keepGet2;UndeadSystem.IsServer=keepUS
- -- S48-UI-DETAIL-PIPS-01: 편성 줄은 WS/Roster에만 · 효과 칸에는 없음 · 경고까지 그대로 · 칸(474×112)에 13px로도 들어감
+ -- S48-UI-DETAIL-PIPS-01: 편성 줄은 WS/Roster에만 · 효과 칸에는 없음 · 경고까지 그대로 · 칸(332×112 · 11-01 강화 단추 줄 왼쪽까지)에 13px로도 들어감
  do
   local keepGet3=entity.GetComponent
   local cmdR={UndeadRoster='s:greatsword,s:twin,s:|0'}
@@ -718,7 +774,7 @@ do
    rosterLog=(rosterLog or '')..c[1]..' '..n..'줄 · '
   end
   book.FormHope=keepHope;entity.GetComponent=keepGet3
-  print('[quality/skills] S48-UI-DETAIL-PIPS-01 roster line in WS/Roster only (text intact · fits 474×112 at 13px): '..rosterLog)
+  print('[quality/skills] S48-UI-DETAIL-PIPS-01 roster line in WS/Roster only (text intact · fits 332×112 at 13px): '..rosterLog)
  end
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet

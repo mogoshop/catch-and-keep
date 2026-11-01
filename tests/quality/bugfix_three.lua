@@ -10,7 +10,7 @@
 -- 엔진 UI·DataStorage는 대역 — 실제 화면 배치·저장소 쪽 크기·동기화 지연은 메이커 확인(VERIFY-PLAN)
 -- @source HudMap UI/Hud/HudMap.mlua RemainingFocus
 -- @source PlayerQuest Quest/PlayerQuest.mlua TierOfSlot,PickOf,ChoiceTier,PendingChoice,ChoiceDef,ChoiceQuestTitle
--- @source SkillWindow UI/Windows/SkillWindow.mlua RenderChoices,RenderChoiceDetail,PickChoice,ChoiceTierName,TreeColor,TreeHex,Pick,Act
+-- @source SkillWindow UI/Windows/SkillWindow.mlua RenderChoices,RenderChoiceDetail,PickChoice,ChoiceTierName,TreeColor,TreeHex,Pick,Act+
 -- @source RankingSystem Endgame/RankingSystem.mlua ReadSorted,ReadNames,ReadLooks,GetTop,MineDigest,ProgressText,RecordProgress,CharId,RankKey,CharIdOf,CharName
 -- @source RankWindow UI/Windows/RankWindow.mlua OnData+,ValueText,MineText
 --@pre local VMT={} VMT.__index=VMT VMT.__sub=function(a,b) return Vector2(a.x-b.x,a.y-b.y) end function VMT:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end function Vector2(x,y) return setmetatable({x=x,y=y},VMT) end
@@ -119,7 +119,7 @@ ok(ui.text[WS..'/Name']=='정예로 서는 그림자' and ui.icon[WS..'/Portrait
 ok(has(ui.text[WS..'/Info'],'선택 보상') and has(ui.text[WS..'/Info'],'모래 전갈 여왕') and has(ui.text[WS..'/Info'],'노말'),'설명 머리: 선택 보상 · 의뢰 · 단계')
 ok(has(ui.text[WS..'/Desc'],'그림자 1기가 정예로 선다'),'설명 = desc')
 ok(has(ui.text[WS..'/Stat'],'다음 단계: ') and has(ui.text[WS..'/Stat'],'악몽 ×1.35 · 지옥 ×1.45') and has(ui.text[WS..'/Stat'],'선택 보상 — 스킬과 별개로 늘 적용됩니다'),'다음 단계(next) + 「스킬과 별개로 늘 적용」 문장')
-ok(ui.en['SkillWin/BtnLearn']==false and ui.en['SkillWin/BtnEdit']==false and ui.en[WS..'/N1']==false and ui.en[WS..'/Hub']==false and ui.icon[WS..'/Pip1']=='','배우기·칸 넣기·강화 노드·랭크 점 감춤')
+ok(ui.en['SkillWin/BtnLearn']==false and ui.en['SkillWin/BtnEdit']==false and ui.en[WS..'/BtnUpgrade']==false and ui.en[WS..'/N1']==false and ui.en[WS..'/Hub']==false and ui.icon[WS..'/Pip1']=='','배우기·칸 넣기·강화 +1·강화 노드·랭크 점 감춤')
 ok(lastLog('[VRF] skill choice detail')=='[VRF] skill choice detail slot=2 axis=command tier=1','[VRF] skill choice detail')
 SkillWindow:RenderChoices(pq)
 ok(ui.icon[C..'2/Rim']=='UI_ui_loot_label' and ui.color[C..'2/Rim'].r==0.9 and ui.color[C..'2/Rim'].g==0.78,'설명 중인 칸 금테 (11-01 3-A: 장식 없는 판 + 금빛 테 색)')
