@@ -2,7 +2,9 @@
 --   ① 0.15초 넘게 걸으면 걸음 방향으로 돈다(예전: 유지 시간을 같은 프레임에 0으로 되돌려 60fps에선 영영 안 돎 → 걷기 46% 반대)
 --   ② 0.15초 안의 한두 프레임 흔들림은 돌지 않는다(껌뻑임 방지 유지) ③ 공격 중(CommandState attack)은 서버 방향 바로
 --   ④ 몬스터 대역도 같은 규칙(걷기 0.15초 · 넉백 바로) ⑤ 비스듬한 느린 가로 걸음(0.15칸/초)도 걸음 방향
--- @source MotionSmoother World/MotionSmoother.mlua LookUnit,LookMonster,WalkStep,MonsterActing
+--   ⑥ (11-01 아이폰 「변이 해골 대검·쌍칼이 뒤로 걷는다」) 그림 방향: 코덱스 변이(skelform_)·거인(giant_) 프레임은 오른쪽을 보고 납품 → ArtFacesRight가 참,
+--      일반 해골·몬스터는 거짓 · 대역을 못 쓸 때(UseProxy 끔) 루트 그림 FlipX도 그림 방향대로
+-- @source MotionSmoother World/MotionSmoother.mlua LookUnit,LookMonster,WalkStep,MonsterActing,EnsureFrameIndex,ArtFacesRight
 function isvalid(x) return x~=nil and x~=false end
 _UtilLogic={ElapsedSeconds=0,ServerElapsedSeconds=0}
 local checks=0
@@ -64,5 +66,28 @@ do
  r.mst=nil r.matk=nil r.rt=1
  MotionSmoother:LookMonster(r)
  ok(r.visFlip==false,'몬스터: 넉백 중엔 서버 좌우(때린 쪽) 바로')
+end
+do
+ local function set(p) return { stand={r={p..'s1',p..'s2'},d={0.1,0.1},loop=true}, move={r={p..'m1',p..'m2'},d={0.1,0.1},loop=true}, attack={r={p..'a1',p..'a2',p..'a3'},d={0.1,0.1,0.1},loop=false,s=2} } end
+ _GameData={MonsterFrames={skel_warrior=set('base'),skelform_greatsword=set('gs'),skelform_twin=set('tw'),giant_twin=set('gt'),hellhound=set('hh')},GetMonsterFrames=function(self,k) return self.MonsterFrames[k] end}
+ MotionSmoother.FrameIndex=nil
+ ok(MotionSmoother:ArtFacesRight('gss1')==true,'대검 변이 서기 첫 장 = 오른쪽 그림')
+ ok(MotionSmoother:ArtFacesRight('tws1')==true,'쌍칼 변이 = 오른쪽 그림')
+ ok(MotionSmoother:ArtFacesRight('gts1')==true,'거인 = 오른쪽 그림')
+ ok(MotionSmoother:ArtFacesRight('gsa2')==true,'변이 공격 타격 장도 같은 묶음')
+ ok(MotionSmoother:ArtFacesRight('bases1')==false,'일반 해골 = 왼쪽 그림 (예전 그대로)')
+ ok(MotionSmoother:ArtFacesRight('hhs1')==false,'몬스터 = 왼쪽 그림')
+ ok(MotionSmoother:ArtFacesRight('')==false and MotionSmoother:ArtFacesRight('unknown')==false,'모르는 그림 = 왼쪽')
+ -- 대역 없이 루트로 그릴 때: 오른쪽 그림이면 루트 FlipX 켬, 일반 해골은 끔
+ MotionSmoother.UseProxy=false
+ for _,c in ipairs({{'gs',true},{'base',false}}) do
+  local sprite={SpriteRUID=c[1]..'s1',FlipX=not c[2]}
+  local unit={StandRUID=c[1]..'s1',MoveRUID=c[1]..'m1',CommandState='follow',Entity={SpriteRendererComponent=sprite}}
+  local r,t={unit=unit,moving=false,vx=0,vy=0},{Scale={x=1,y=1,z=1}}
+  MotionSmoother.FrameClip=function(_,_,clip) return clip end
+  MotionSmoother:LookUnit(r,t,DT)
+  ok(sprite.FlipX==c[2],'루트 그림 FlipX = 그림 방향 ('..c[1]..')')
+ end
+ MotionSmoother.UseProxy=true
 end
 print(string.format('facing: %d checks passed', checks))
