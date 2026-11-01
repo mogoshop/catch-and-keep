@@ -212,6 +212,8 @@ test('build embeds scene-preview data and verifies its separate still manifest',
 
 test('scene rules cover every effect slot and resolve only through the provenance accessor',async()=>{
   const {SLOTS}=await import('./slot-defs.mjs');const {SCENE_RULES}=await import('./scene-defs.mjs');
+  assert.equal(SLOTS.length,81);assert.equal(SCENE_RULES.length,81);
+  assert.ok(!SLOTS.some(s=>/^spear/.test(s.id)||/FxSkillSpear/.test(s.runtime||"")),"뼈 창 자리는 11-01 스킬 삭제로 뺐다");
   assert.deepEqual(SCENE_RULES.map(r=>r.id).sort(),SLOTS.map(s=>s.id).sort());
   const uses=[];const rec=t=>(v,x)=>(uses.push(t),typeof v==='number'?v:typeof x==='number'?x:1);
   const k={c:(key,fb)=>(uses.push('read'),fb),kv:(key,n,fb)=>(uses.push('read'),fb),kvList:()=>(uses.push('read'),[6,1]),list:()=>[],cfg:(n,fb)=>(uses.push('read'),fb),code:rec('code'),est:rec('est')};

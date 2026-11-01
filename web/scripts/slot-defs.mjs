@@ -30,8 +30,6 @@ export const SLOTS = [
   {id: 'shard-hit', title: '골편 명중', group: 'attack', runtime: 'GameConst.FxSkillShardHit', maple: ['SkillEffects.FxShardHit'], match: 'ShardHit|shard-hit'},
   {id: 'bone-arrow', title: '뼈 화살 (중립·의식 3기)', group: 'attack', runtime: 'GameConst.FxSkillBoneArrow', match: 'BoneArrow|bone-arrow(?!-hit)|RiteArrow|rite-arrow'},
   {id: 'hit-bone', title: '투사체 명중 · 뼈', group: 'attack', runtime: 'GameConst.FxSkillHitBone', match: 'HitBone|hit-bone|bone-arrow-hit'},
-  {id: 'spear', title: '뼈 창', group: 'attack', runtime: 'GameConst.FxSkillSpear', match: 'FxSkillSpear(?![A-Z])|bone-spear(?!-stick)|SpearShard|spear-shard'},
-  {id: 'spear-hit', title: '뼈 창 꽂힘', group: 'attack', runtime: 'GameConst.FxSkillSpearHit', match: 'SpearHit|spear-stick'},
   {id: 'flame-shot', title: '불꽃 발사체', group: 'attack', runtime: 'GameConst.FxSkillFlameShot', maple: ['SkillEffects.FxFlameShot'], match: 'FlameShot|flame-shot'},
   {id: 'hit-fire', title: '투사체 명중 · 불', group: 'attack', runtime: 'GameConst.FxSkillHitFire', match: 'HitFire|hit-fire'},
   {id: 'frost-shot', title: '서리 발사체', group: 'attack', runtime: 'GameConst.FxSkillFrostShot', maple: ['SkillEffects.FxFrostShot'], match: 'FrostShot|frost-shot'},

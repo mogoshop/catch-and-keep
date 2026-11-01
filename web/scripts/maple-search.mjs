@@ -32,8 +32,6 @@ const Q = {
   'shard-hit': ['보라 파편 타격 파열', 'purple shard hit burst'],
   'bone-arrow': ['화살 투사체 하얀 뼈', 'white bone arrow projectile'],
   'hit-bone': ['하얀 파편 타격 튀김', 'white fragments hit impact'],
-  'spear': ['창 투사체 날아감', 'spear lance projectile flying'],
-  'spear-hit': ['창이 꽂히는 타격', 'spear impale hit'],
   'flame-shot': ['불꽃 화살 투사체', 'fireball flame projectile'],
   'hit-fire': ['불꽃 타격 작은 폭발', 'fire hit small explosion'],
   'frost-shot': ['푸른 얼음 투사체', 'blue ice shard projectile'],
