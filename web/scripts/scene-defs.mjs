@@ -15,6 +15,7 @@
 // order = MapLayer0 OrderInLayer — 1 이하 = 몸 뒤(바닥) · 2~4 = 몬스터와 캐릭터 사이 · 5 이상 = 몸 앞.
 // 장면 배우(scene): player = 캐릭터가 시전 · summon = 소환수(해골·그림자)가 시전 · giant = 뼈 의식 거인이 시전 ·
 //   giant 칸 = 그 기술을 쓰는 거인(greatsword·shield·twin·basic · 없으면 마법사 거인).
+//   caster 칸 = 소환수 중 시전자 배우 역할(summon-mage = 해골 마법사 · 없으면 해골 전사).
 //   monster = 몬스터가 캐릭터를 침(캐릭터가 맞는 자리). anchor: casterFeet/casterBody/targetFeet/targetBody/targetHead/aim(표적 바닥).
 // 투사체(proj): from → to 로 speed(칸/초) 비행, 진행 방향으로 회전 · 명중 효과(hit-*·*-hit)는 표적 몸에서 시작하고 그 순간 맞는 쪽이 번쩍인다(근사).
 
@@ -74,7 +75,7 @@ export const SCENE_RULES = [
     scale: k => 2 * k.code(1.3, 'SkillEffects.mlua:1101-1106 파쇄 반경') / 1.28, order: k => k.c('SkillEffects.FramesFxOrder', 6),
     frameSec: k => k.c('SkillEffects.ShatterFrameSec', 0.09), hold: k => k.c('SkillEffects.ShatterHoldSec', 0.2), fade: k => k.c('SkillEffects.ShatterFadeSec', 0.2), flash: true,
     note: '얼어 죽은 자리 + 0.3', src: ['SkillEffects.mlua:1101-1106']},
-  {id: 'mage-bolt', scene: 'summon', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(7, 'MageBolts.mlua:159-163 마력탄 속도')},
+  {id: 'mage-bolt', scene: 'summon', caster: 'summon-mage', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(7, 'MageBolts.mlua:159-163 마력탄 속도')},
     scale: k => k.code(1.2, 'MageBolts.mlua:159-163 배율'), order: PROJ_ORDER, pivot: [0.5, 0.5], flash: true,
     note: '저주 마법사 마력탄 · 그림이 왼쪽을 봐서 코드가 +180° 돌림(장면도 같게)', flipX: true, src: ['MageBolts.mlua:159-163']},
   {id: 'monster-arrow', scene: 'monster', proj: {from: 'targetHand', to: 'casterBody', speed: k => k.c('MonsterAttack.ArrowSpeed', 7)},
@@ -84,11 +85,11 @@ export const SCENE_RULES = [
     playRate: k => k.code(1.5, 'MonsterTraits.mlua:428-430 PlayRate'), order: MAPLE_ORDER, flash: true, src: ['MonsterTraits.mlua:428-430', 'Monster.mlua:588']},
 
   // ---------- 해골·망자 스킬 ----------
-  {id: 'bone-bolt', scene: 'summon', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(14, 'MageBolts.mlua:146 뼈 투척(bone) 속도')},
+  {id: 'bone-bolt', scene: 'summon', caster: 'summon-mage', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(14, 'MageBolts.mlua:146 뼈 투척(bone) 속도')},
     scale: k => k.code(0.9, 'MageBolts.mlua:140 SkinXY(FxBoneBolt, 0.9, 0.9)'), order: PROJ_ORDER, pivot: [0.5, 0.5], flash: true,
     note: '해골 마법사(뼈 속성)가 몸(발 + 0.3)에서 몬스터로 쏨 · 그림이 오른쪽을 봄(진행 방향으로 회전) · 관통 2·3·4·5(마법사 랭크) · 사거리 = 공격 사거리 + 0.8 · FxBoneBolt가 비면 골편 궤적(FxShardShot)을 1.32×0.6으로 늘림 · 메이플 후보도 같은 배율 0.9로 놓음(근사)',
     src: ['MageBolts.mlua:136-146', 'ShadowUnit.mlua:1504-1541 마법사 발사(발 + 0.3에서 생성 · MageBolts.Configure)']},
-  {id: 'bone-bolt-hit', scene: 'summon', anchor: 'targetBody', dy: bodyHeight, scale: k => k.c('Projectile.SpearHitScale', 1.0),
+  {id: 'bone-bolt-hit', scene: 'summon', caster: 'summon-mage', anchor: 'targetBody', dy: bodyHeight, scale: k => k.c('Projectile.SpearHitScale', 1.0),
     order: k => k.code(6, 'Projectile.mlua:425 PlayFramesMs 층 6'), pivot: [0.5, 0.5], flash: true,
     note: '뼈 투척이 맞은 몬스터 몸 중심(발 + HeightOffset) · 진행 방향으로 회전(장면은 오른쪽 비행이라 0°) · 장별 간격 FxBoneBoltHitMs · 마지막 장(창대가 남은 장)까지 한 번',
     src: ['Projectile.mlua:414-427', 'Projectile.mlua:498 관통 명중 자리 = 몬스터 발 + HeightOffset', 'GameConst.mlua:91,107']},

@@ -288,3 +288,98 @@ test('scene view renders rule and actor text as text and exports the shortlist J
   vm.runInContext(`SV.on=true;PICK.view='compare';PICK.slot='c';render();`,context);
   assert.ok(getNode('#grid').innerHTML.includes('판정 원에 맞춤'));assert.ok(getNode('#grid').innerHTML.includes('판정 지름 3칸'));
 });
+
+test('build embeds recommendation data and verifies the re-search frame manifest',async t=>{
+  for(const kind of ['ok','bad-hash'])await t.test(kind,async t=>{
+    const {folder}=await fixture(t);
+    const extraFrame=Buffer.from('re-search frame bytes');
+    await mkdir(path.join(folder,'content/assets/media/slots'),{recursive:true});
+    await writeFile(path.join(folder,'content/assets/media/slots/r.png'),extraFrame);
+    const extra={id:'maple:r',source:'maple',origin:'recommend',title:'</script><img src=x onerror=alert(1)>',frames:['media/slots/r.png'],durations:[100],ruids:['3'.repeat(32)],box:[1,1]};
+    const reco={createdAt:'2026-11-01',slotsCommit:'abc',counts:{slots:1},slots:{s:{id:'s',status:'maple',pick:'maple:r',confidence:'high',ranked:[{candidateId:'maple:r',score:80,reasons:['</script>']}]}},extras:{s:[extra]}};
+    await writeJSON(path.join(folder,'content/assets/recommend.json'),reco);
+    await writeJSON(path.join(folder,'content/assets/recommend-manifest.json'),[{file:'media/slots/r.png',sha256:kind==='ok'?createHash('sha256').update(extraFrame).digest('hex'):'wrong'}]);
+    const result=run(folder,'build');
+    if(kind==='bad-hash'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch/);return;}
+    assert.equal(result.status,0,result.stderr);
+    await access(path.join(folder,'dist/assets/media/slots/r.png'));
+    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const embedded=html.match(/<script id="reco-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+    assert.deepEqual(JSON.parse(embedded),reco);
+    assert.equal(embedded.includes('</script>'),false);
+  });
+});
+
+test('recommendation table covers every slot and the PNG reader decodes RGBA and palette images',async()=>{
+  const {SLOTS}=await import('./slot-defs.mjs');const {RECO_SLOTS,ROLE_KO,ELEMENTS,WEIGHTS}=await import('./recommend-defs.mjs');const {EXCLUDED}=await import('./maple-queries.mjs');
+  assert.deepEqual(Object.keys(RECO_SLOTS).sort(),SLOTS.map(s=>s.id).sort());
+  for(const [id,[role,el]] of Object.entries(RECO_SLOTS)){assert.ok(ROLE_KO[role],`${id} role ${role}`);assert.ok(ELEMENTS[el],`${id} element ${el}`);}
+  assert.equal(Math.round(Object.values(WEIGHTS).reduce((a,b)=>a+b,0)*1000),1000);
+  assert.deepEqual(Object.keys(EXCLUDED).sort(),['blast','rite-whirl','rite-whirl-trace','summon-ritual']);
+  const {decodePNG}=await import('./png.mjs');const {deflateSync,crc32}=await import('node:zlib');
+  const chunk=(type,body)=>{const len=Buffer.alloc(4);len.writeUInt32BE(body.length);const tb=Buffer.concat([Buffer.from(type,'ascii'),body]);const crc=Buffer.alloc(4);crc.writeUInt32BE((crc32?crc32(tb):0)>>>0);return Buffer.concat([len,tb,crc]);};
+  const png=(w,h,depth,type,rows,extra=[])=>{const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=depth;ih[9]=type;return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',ih),...extra,chunk('IDAT',deflateSync(Buffer.concat(rows))),chunk('IEND',Buffer.alloc(0))]);};
+  // 2×1 RGBA, 둘째 줄 없음 · 필터 1(Sub)
+  const rgba=decodePNG(png(2,1,8,6,[Buffer.from([1,10,20,30,255,5,5,5,0])]));
+  assert.deepEqual([...rgba.data],[10,20,30,255,15,25,35,255]);
+  // 팔레트 2색 · 1비트 · tRNS로 0번 투명
+  const pal=decodePNG(png(3,1,1,3,[Buffer.from([0,0b01000000])],[chunk('PLTE',Buffer.from([0,0,0,200,100,50])),chunk('tRNS',Buffer.from([0]))]));
+  assert.deepEqual([...pal.data],[0,0,0,0,200,100,50,255,0,0,0,0]);
+});
+
+test('picker shows recommendation badges, confirms through the normal pick and cycles alternatives',async()=>{
+  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
+  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const evil='<img src=x onerror=alert(1)>';
+  const a={id:'maple:a',source:'maple',origin:'search',title:'A',frames:['media/a.png'],durations:[100],ruids:['a'.repeat(32)],box:[1,1]};
+  const b={id:'maple:b',source:'maple',origin:'search',title:'B',frames:['media/b.png'],durations:[100],ruids:['b'.repeat(32)],box:[1,1]};
+  const extra={id:'maple:r',source:'maple',origin:'recommend',title:evil,frames:['media/r.png'],durations:[100],ruids:['c'.repeat(32)],box:[1,1],pivots:[[3,4]]};
+  const codex={id:'current',source:'current',kind:'codex',title:'해골 폭탄',frames:['media/k.png'],durations:[100],ruids:['d'.repeat(32)],use:'connected'};
+  const slots={createdAt:'2026-11-01T00:00:00Z',sourceRef:'origin/main',sourceCommit:'abcdef12',sourceDate:'2026-11-01T00:00:00+09:00',catalog:{createdAt:'2026-10-31',sourceCommit:'12345678'},
+    groups:[{id:'g',title:'G'}],slots:[{id:'s',title:'S',group:'g',runtime:'GameConst.FxSkillShardHit',currentNote:'',current:null,fx:[],maple:[a,b]},{id:'k',title:'K',group:'g',runtime:'GameConst.FxSkillBlast',currentNote:'',current:codex,fx:[],maple:[],mapleExcluded:'해골'}],unassigned:[],counts:{slots:2}};
+  const reco={createdAt:'2026-11-01T00:00:00Z',slotsCommit:'abcdef12',counts:{maple:1,high:0,mid:0,low:1,codexKeep:1,fromSearch:0,fromResearch:1},rule:{weights:{part:0.5,color:0.5},confidence:{high:70}},
+    slots:{s:{id:'s',status:'maple',pick:'maple:r',confidence:'low',roleKo:'명중',elementKo:'저주',margin:1.2,lowWhy:[evil],ranked:[{candidateId:'maple:r',score:81,reasons:[evil,'색 · 보라']},{candidateId:'maple:b',score:79.8,reasons:['B 이유']},{candidateId:'maple:gone',score:50}]},
+      k:{id:'k',status:'codex-keep',pick:'current',confidence:'keep',reasons:['해골 관련 자리 — 코덱스 커스텀 그림 유지'],ranked:[]}},extras:{s:[extra]}};
+  const data={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:1,frameReferences:1},skills:[],groups:[],engineEffects:[],proceduralEffects:[]};
+  const nodes=new Map();
+  const getNode=selector=>{
+    if(!nodes.has(selector))nodes.set(selector,{textContent:'',innerHTML:'',value:'',querySelectorAll:()=>[],querySelector:()=>null,setAttribute(){},classList:{toggle(){}},showModal(){},getContext:()=>({clearRect(){},fillText(){}}),width:100,height:100});
+    return nodes.get(selector);
+  };
+  getNode('#catalog-data').textContent=JSON.stringify(data);
+  getNode('#slots-data').textContent=JSON.stringify(slots);
+  getNode('#reco-data').textContent=JSON.stringify(reco);
+  const context=vm.createContext({document:{querySelector:getNode,querySelectorAll:()=>[],getElementById:id=>getNode('#'+id)},
+    performance:{now:()=>0},requestAnimationFrame(){},IntersectionObserver:class{disconnect(){}observe(){}},Image:class{complete=false;naturalWidth=0;}});
+  vm.runInContext(script,context);
+  // 재검색 후보가 자리 후보 끝에 붙고, 없어진 후보(maple:gone)는 순위에서 빠진다
+  assert.deepEqual(JSON.parse(vm.runInContext(`JSON.stringify(SLOTS.slots[0].maple.map(c=>c.id))`,context)),['maple:a','maple:b','maple:r']);
+  assert.equal(vm.runInContext(`rankedOf(SLOTS.slots[0]).length`,context),2);
+  for(const view of ['maple','reco','compare']){
+    vm.runInContext(`STATE.tab='pick';PICK.view=${JSON.stringify(view)};PICK.slot='s';render();`,context);
+    const html=getNode('#grid').innerHTML;
+    assert.ok(html.includes('추천 1순위'),view);assert.ok(html.includes('data-reco-ok="s"'),view);
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'),view);assert.equal(html.includes('<img src=x'),false,view);
+  }
+  vm.runInContext(`STATE.tab='pick';PICK.view='maple';render();`,context);
+  let html=getNode('#grid').innerHTML;
+  assert.ok(html.includes('코덱스 커스텀 유지'));assert.ok(html.includes('확신 낮음'));assert.ok(html.includes('메이플 후보 · 재검색'));assert.ok(html.includes('다른 것 · 지금 1/2'));
+  // 맨 앞 카드 = 추천 1순위
+  assert.ok(html.indexOf('data-card="maple:r"')<html.indexOf('data-card="maple:a"'));
+  vm.runInContext(`confirmReco('s')`,context);
+  assert.equal(vm.runInContext(`PICK.picks.s.choice`,context),'maple:r');
+  vm.runInContext(`confirmReco('s')`,context); // 두 번 눌러도 풀리지 않음
+  assert.equal(vm.runInContext(`PICK.picks.s.choice`,context),'maple:r');
+  const json=JSON.parse(vm.runInContext('buildExport()',context).match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.equal(json.kind,'catch-and-keep/effect-picks');assert.equal(json.picks[0].choice,'maple');assert.equal(json.picks[0].candidateOrigin,'recommend');assert.deepEqual(json.picks[0].ruids,['c'.repeat(32)]);
+  vm.runInContext(`nextReco('s')`,context);
+  assert.equal(vm.runInContext(`shownReco(SLOTS.slots[0]).row.candidateId`,context),'maple:b');
+  vm.runInContext(`confirmReco('s')`,context);assert.equal(vm.runInContext(`PICK.picks.s.choice`,context),'maple:b');
+  vm.runInContext(`nextReco('s')`,context);assert.equal(vm.runInContext(`shownReco(SLOTS.slots[0]).rank`,context),1);
+  vm.runInContext(`confirmReco('k')`,context);assert.equal(vm.runInContext(`PICK.picks.k.choice`,context),'current');
+  // 필터: 확신 낮음만 / 코덱스 유지
+  vm.runInContext(`PICK.view='maple';PICK.recoFilter='keep';render();`,context);html=getNode('#grid').innerHTML;assert.ok(html.includes('id="slot-k"'));assert.equal(html.includes('id="slot-s"'),false);
+  vm.runInContext(`PICK.recoFilter='low';render();`,context);html=getNode('#grid').innerHTML;assert.ok(html.includes('id="slot-s"'));assert.equal(html.includes('id="slot-k"'),false);
+  // 재검색 후보의 장면 피벗은 후보에 실린 값을 쓴다
+  assert.equal(vm.runInContext(`pivotOf(SLOTS.slots[0].maple[2],{},0,10,10).join(',')`,context),'3,4');
+});
