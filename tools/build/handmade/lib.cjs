@@ -16,6 +16,8 @@
 //   ;plate <장면판 id> x0 y0 x1 y1     장면판 (11-02 기획 53 · data/handmade/scene_plates.csv): 월드 사각형 [x0, x1)×[y0, y1) 안에 발이 있는 배치표 행(prop·decal·set 조각·
 //                                    cluster 흩뿌림)·재질 접합·출구 표식은 놓지 않고(이름 번호는 그대로 소비 → 구역 밖 엔티티 이름 불변), 그 표의 바닥판 한 장(z −0.012 · 바닥·길·띠 위, 벽·장식 아래)과
 //                                    특징물(+ -top 앞층)·소품을 표의 자리·피벗·z 그대로 놓는다. 표 blocks 칸은 장식 발밑처럼 충돌 칸(art.blocked). 바닥 조각(ArtZone·ArtRoad·띠)은 덮기만 한다
+//                                    표에 wall-cover 줄(벽 덮개 · 11-02 코덱스 2차 A)이 있으면 구역 안 벽 칸의 벽 그림(ArtWall 9조각·윗면)은 놓지 않는다 — 충돌 타일(설계도 벽)은 그대로.
+//                                    벽 덮개 = ArtWallCover<n>(DarkVision 벽 어둡게 대상) · 앞층 wall-cover-top = ArtWallCover<n>Top (열마다 자르는 선 = scene_plate_cuts.csv)
 //   ;floormix <바닥그림>[,<바닥그림>…]  그 바닥 그림을 쓰는 구역(바탕 . 포함)을 그림 한 장(1.28칸) 단위로 좌우·상하 뒤집어 반복 격자를 깬다
 //                                    (10-29 폭풍의 눈 따개비 돌 — 큰 조약돌이 1.28칸 격자로 보였다). 좌우는 그림 열마다 · 상하는 그림 줄마다 같은 값이라
 //                                    이음 없는 타일이면 이음이 깨지지 않는다 (칸마다 따로 뒤집으면 옆 칸과 가장자리 줄이 거꾸로 맞닿아 금이 간다 — 원본 PNG로 잼).
@@ -377,6 +379,10 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // ;plate 장면판 구역 (11-02): 발이 이 사각형 안이면 자동·배치표 장식을 놓지 않는다 — 그림이 장면판에 들어 있다
   const plates = bp.plates || [];
   const inPlate = (x, y) => plates.some((p) => x >= p.x0 && x < p.x1 && y >= p.y0 && y < p.y1);
+  // 11-02 벽 덮개: 표에 wall-cover 줄이 있는 장면판 구역 안의 벽 칸은 벽 그림을 비운다 (덮개 그림이 그 칸을 불투명하게 덮는다 · 겹쳐 두면 옛 회색 벽 돌출이 비친다 — 코덱스 납품 메모)
+  const coverPlates = plates.filter((p) => (scenePlates()[p.id] || []).some((r) => r.role === "wall-cover"));
+  const inCoverPlate = (cx, cy) => coverPlates.some((p) => cx >= p.x0 && cx + 1 <= p.x1 && cy >= p.y0 && cy + 1 <= p.y1);
+  let plateWallHidden = 0;
   const plateSkipped = [];
   const sprite = (rid, size, order) => ({
     "MOD.Core.SpriteRendererComponent": Object.assign({ SpriteRUID: rid, SortingLayer: "MapLayer0", OrderInLayer: order },
@@ -934,6 +940,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
     const ch = bp.at(x, y);
     if (ch === null || !(ch in bp.walls) || ch === lowCh || cutCells.has(key(x, y))) continue;
+    if (inCoverPlate(x, y)) { plateWallHidden++; continue; }   // 장면판 벽 덮개 아래 (충돌 타일은 설계도 벽 그대로)
     let piece = pieceAt(x, y);
     if (piece === "center" && !touchesFloor(x, y) && (depth.has(key(x, y)) || deepShallow.has(key(x, y)))) piece = bp.walls[ch].top ? "top" : "n";
     pk.set(key(x, y), `${ch}|${piece}|${piece === "center" && touchesFloor(x, y) ? 1 : 0}`);
@@ -1151,9 +1158,41 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
         const bz = list.find((q) => q.key === base).z;
         z = Math.round(num(bz) * 1e6) / 1e6; layer = TOP_LAYER; order = TOP_ORDER;
       } else if (r.role === "prop") name = `${tag}_P${++pN}`;
-      else throw new Error(`${wherep}: '${r.key}' 역할 '${r.role}' 모름 (plate/feature/feature-top/prop)`);
+      else if (r.role === "wall-cover") {
+        // 벽 덮개: 이름이 ArtWall로 시작해야 DarkVision이 바깥 벽(ArtWall*)과 같은 배율로 어둡게 한다 (구역 경계에서 밝기가 끊기지 않게)
+        name = `ArtWallCover${plateN}`;
+        const hw = num(r.w) / 200, hh = num(r.h) / 200, cx = x + (0.5 - num(r.pivot_x)) * num(r.w) / 100, cy = y + (0.5 - num(r.pivot_y)) * num(r.h) / 100;
+        if (Math.abs(cx - hw - p.x0) > 1e-6 || Math.abs(cx + hw - p.x1) > 1e-6 || Math.abs(cy - hh - p.y0) > 1e-6 || Math.abs(cy + hh - p.y1) > 1e-6)
+          throw new Error(`${wherep}: 벽 덮개가 덮는 사각형 [${r3(cx - hw)}, ${r3(cx + hw)}]×[${r3(cy - hh)}, ${r3(cy + hh)}] ≠ ;plate [${p.x0}, ${p.x1}]×[${p.y0}, ${p.y1}] (구역 안 벽 그림을 비우므로 꼭 같아야 한다)`);
+      } else if (r.role === "wall-cover-top") {
+        // 벽 덮개 앞층: 구역 안 벽의 열마다 이어진 토막(남쪽 발선 · 북쪽 끝)이 scene_plate_cuts.csv 줄과 같고 자르는 선 = 발선 + TOP_FRONT_HEAD(앞에 선 머리) · 토막 안이어야 놓는다
+        const base = list.find((q) => q.role === "wall-cover");
+        if (!base) throw new Error(`${wherep}: '${r.key}'의 벽 덮개(wall-cover) 줄이 없음`);
+        const cuts = (load("handmade/scene_plate_cuts") || []).filter((q) => q.plate === p.id && q.key === r.key);
+        const runs = [];
+        for (let cx = p.x0; cx < p.x1; cx++) for (let cy = p.y0; cy < p.y1; cy++) {
+          if (!bp.isWall(cx, cy) || (cy > p.y0 && bp.isWall(cx, cy - 1))) continue;
+          let top = cy; while (top < p.y1 && bp.isWall(cx, top)) top++;
+          runs.push({ x: cx, foot: cy, top });
+        }
+        const bad = [];
+        for (const u of runs) {
+          const c = cuts.find((q) => num(q.x) === u.x && num(q.foot_y) === u.foot);
+          if (!c) { bad.push(`열 ${u.x} 토막 ${u.foot}~${u.top}: 자르는 선 줄 없음`); continue; }
+          const cut = num(c.cut_y);
+          if (num(c.top_y) !== u.top) bad.push(`열 ${u.x} 토막 ${u.foot}~${u.top}: 표 북쪽 끝 ${c.top_y}`);
+          if (cut < u.foot + TOP_FRONT_HEAD - 1e-6) bad.push(`열 ${u.x}: 자르는 선 y ${cut} < 앞에 선 머리 ${u.foot + TOP_FRONT_HEAD}`);
+          if (cut > u.top + 1e-6) bad.push(`열 ${u.x}: 자르는 선 y ${cut} > 토막 꼭대기 ${u.top}`);
+        }
+        if (cuts.length !== runs.length) bad.push(`자르는 선 줄 ${cuts.length} ≠ 구역 안 벽 토막 ${runs.length}`);
+        if (bad.length) { warn.push(`${wherep}: '${r.key}' 놓지 않음 — ${bad.join(" · ")}`); continue; }
+        name = `ArtWallCover${plateN}Top`;   // Top으로 끝나야 DarkVision이 순서·z를 내리지 않는다 (ArtWall로 시작 → 덮개와 같이 어둡게)
+        z = Math.round(num(base.z) * 1e6) / 1e6; layer = TOP_LAYER; order = TOP_ORDER;
+        plateInfo.push({ plate: p.id, name, key: r.key, wallRuns: runs.length, wallHidden: plateWallHidden });
+      }
+      else throw new Error(`${wherep}: '${r.key}' 역할 '${r.role}' 모름 (plate/feature/feature-top/prop/wall-cover/wall-cover-top)`);
       if (z === null) throw new Error(`${wherep}: '${r.key}' z가 비었음`);
-      if (r.role !== "plate" && !inPlate(x, y)) warn.push(`${wherep}: '${r.key}' (${x}, ${y})이 ;plate 구역 밖`);
+      if (!["plate", "wall-cover", "wall-cover-top"].includes(r.role) && !inPlate(x, y)) warn.push(`${wherep}: '${r.key}' (${x}, ${y})이 ;plate 구역 밖`);
       const o = sprite(sp.ruid, null, order);
       o["MOD.Core.SpriteRendererComponent"].SortingLayer = layer;
       o["MOD.Core.TransformComponent"] = { Scale: vec3(1) };
@@ -1178,7 +1217,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   if (droppedOnRoute.length) warn.push(`${d.id}: 길 안내 폭 3칸 안이라 뺀 막는 조각 ${droppedOnRoute.length}개 — ${droppedOnRoute.join(", ")}`);
   const extra = mode ? { droppedOnRoute: droppedOnRoute.length, topSkipped: topSkipped.length, marks: markN, guide: guide ? guide.entities.length : 0, bands: seam ? seam.bands : 0, shades: seam ? seam.shades : 0, corners: seam ? seam.corners : 0 } : {};
   return { entities: out, blocked, warn, size, pieces, topSkipped: topSkippedList, route: opts.route || null, guide, seam, mode, plates: plates.length ? { skipped: plateSkipped, info: plateInfo } : null,
-    counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, plateN ? { plates: plateN, plateEntities: plateEnts, plateSkipped: plateSkipped.length } : {}, extra) };
+    counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, plateN ? Object.assign({ plates: plateN, plateEntities: plateEnts, plateSkipped: plateSkipped.length }, plateWallHidden ? { plateWallHidden } : {}) : {}, extra) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
