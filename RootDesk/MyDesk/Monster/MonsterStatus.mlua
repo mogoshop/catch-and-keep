@@ -67,7 +67,7 @@ script MonsterStatus extends Component
     property Entity FrostSource = nil         -- 서리 혼으로 얼린 플레이어 (「파쇄」)
     property number FrostUntil = 0
     property number FrostDamage = 0
-    property number FrostMarkPct = 0          -- 강화 「서리 표식」(44 결정 4): FrostSource의 뼈 창·골편이 이 적에게 +% (FrostUntil까지)
+    property number FrostMarkPct = 0          -- 강화 「서리 표식」(44 결정 4): FrostSource의 골편이 이 적에게 +% (FrostUntil까지)
 
     method Monster Body()
         ---@type Monster
@@ -336,7 +336,7 @@ script MonsterStatus extends Component
     end
 
     method number FrostMarkFor(Entity player)
-        -- 강화 「서리 표식」: 이 플레이어의 서리 혼에 느려져 표식이 남아 있으면 뼈 창·골편 추가 피해 %, 아니면 0
+        -- 강화 「서리 표식」: 이 플레이어의 서리 혼에 느려져 표식이 남아 있으면 골편 추가 피해 %, 아니면 0
         if self.FrostMarkPct <= 0 or _UtilLogic.ElapsedSeconds >= self.FrostUntil or self.FrostSource ~= player then return 0 end
         return self.FrostMarkPct
     end
@@ -522,7 +522,7 @@ script MonsterStatus extends Component
 
     @ExecSpace("ServerOnly")
     method void ApplyFrost(number seconds, Entity source, number damage, number markPct)
-        -- 서리 혼: 둔화 + 누가 얼렸는지 기억 (강화 「파쇄」) + 강화 「서리 표식」 세기 (그 플레이어의 뼈 창·골편 +%, 같은 시간 동안)
+        -- 서리 혼: 둔화 + 누가 얼렸는지 기억 (강화 「파쇄」) + 강화 「서리 표식」 세기 (그 플레이어의 골편 +%, 같은 시간 동안)
         self:ApplyChill(seconds)
         if self.FrostSource ~= source or _UtilLogic.ElapsedSeconds >= self.FrostUntil then self.FrostMarkPct = 0 end
         self.FrostSource = source

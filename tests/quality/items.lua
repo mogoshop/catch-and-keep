@@ -1,7 +1,7 @@
 -- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,ParseGearOffer,TraceQuestStep,FirstGearQuest,StartGearWatch
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source ItemTables Data/ItemTables.mlua Ensure
--- @source ItemData Item/ItemData.mlua T,GetBase,Parse,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods,AffixPool,ProvenanceMeta,DecodeMeta,EncodeMeta,AffixRow,NewItemUid,Base36
+-- @source ItemData Item/ItemData.mlua T,GetBase,Parse+,Serialize,OldWeight,WeightedPick,PickBase,Generate,GenerateWithMinimum,GenerateQuestReward,GenerateEquipment,GetDropTable,RollRarity,PickSetPiece,PickUnique,MakeUnique,FillAffixes,PickAffix,RollAffix,TierOfLevel,LevelProgress,IsCountStat,AddModsRolled,RareName,RerollMods,AffixPool,ProvenanceMeta,DecodeMeta,EncodeMeta,AffixRow,NewItemUid,Base36
 _ItemTables:Ensure()
 _GameData:Ensure()
 math.randomseed(20261029)

@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 const SKILL_FAMILY = {
-  bone_shard: "magic", bone_spear: "magic", corpse_blast: "magic", soul_drain: "magic",
+  bone_shard: "magic", corpse_blast: "magic", soul_drain: "magic",
   frost_soul: "magic", frost_split: "magic", frost_shatter: "magic",
   hex_flame: "curse", hex_burst: "curse", mark_weakness: "curse", enfeeble: "curse",
   skeleton_bomb: "summon_skill", bone_rite: "summon_skill", bone_rite_push: "summon_skill",

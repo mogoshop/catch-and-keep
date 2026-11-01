@@ -80,8 +80,6 @@ script SkillBook extends Component
             local owner = self.Entity:GetComponent("script.PlayerStats")
             return owner ~= nil and self:NodeUsable(id, lv, owner.Level) or lv
         end
-        -- 선택 보상 2차 주문 「미리 쥔 뼈 창」: 악몽 +1 · 지옥 +2 레벨 (1랭크는 GetLevel이 거저 준다)
-        if id == "bone_spear" then lv = lv + math.max(0, self:ChoiceTier(2, "soul") - 1) end
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return lv end
@@ -89,12 +87,11 @@ script SkillBook extends Component
     end
 
     method integer GetLevel(string id)
-        -- 서버는 표, 클라이언트는 동기화 문자열. 선택 보상 2차 주문 「미리 쥔 뼈 창」은 뼈 창 1랭크를 거저 준다 (해금 레벨 전에도 쓴다 · 초기화해도 돌려줄 포인트 없음)
-        local free = (id == "bone_spear" and self:ChoiceTier(2, "soul") > 0) and 1 or 0
-        if self:IsServer() then return (self.Levels[id] or 0) + free end
+        -- 서버는 표, 클라이언트는 동기화 문자열 (11-01: 선택 보상 2차 주문이 「꿰뚫는 골편」으로 바뀌어 거저 주는 랭크는 없다)
+        if self:IsServer() then return self.Levels[id] or 0 end
         local lv = string.match(";" .. self.SkillDigest, ";" .. id .. ":(%d+)")
-        if lv == nil then return free end
-        return tonumber(lv) + free
+        if lv == nil then return 0 end
+        return tonumber(lv)
     end
 
     @ExecSpace("ServerOnly")
@@ -288,7 +285,7 @@ script SkillBook extends Component
     end
 
     method boolean IsDamageSkill(string id)
-        local ids = { bone_shard = true, poison_mist = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, bone_spear = true, hex_flame = true, frost_soul = true }
+        local ids = { bone_shard = true, poison_mist = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, hex_flame = true, frost_soul = true }
         return ids[id] == true
     end
 
@@ -302,7 +299,7 @@ script SkillBook extends Component
 
     method integer ProjectileTier(integer level)
         -- 투사체 스킬 레벨 구간 0~3 (config pierceTier2·3·4Lv = 5·8·12). 10-28 사용자 「모두 관통만 늘어 매력이 빠진다」 → 투사체 A안:
-        --   골편 = 부채꼴 발 수 · 뼈 창 = 관통 · 서리 혼 = 쪼개짐 · 저주 불꽃 = 폭발 반경이 같은 구간에서 커진다
+        --   골편 = 부채꼴 발 수 · 서리 혼 = 쪼개짐 · 저주 불꽃 = 폭발 반경이 같은 구간에서 커진다
         if level < _GameData.pierceTier2Lv then return 0 end
         if level < _GameData.pierceTier3Lv then return 1 end
         if level < _GameData.pierceTier4Lv then return 2 end
@@ -333,24 +330,15 @@ script SkillBook extends Component
         return radii[self:ProjectileTier(level) + 1]
     end
 
-    method integer GetPierceCap(integer level)
-        -- 관통 투사체(골편 투척·뼈 창·서리 혼) 한 발이 맞히는 최대 적 수. 레벨마다 조금씩이 아니라 구간마다 껑충 (config pierceTier* · 10-24 사용자 결정)
-        if level < _GameData.pierceTier2Lv then return math.floor(_GameData.pierceHits1) end
-        if level < _GameData.pierceTier3Lv then return math.floor(_GameData.pierceHits2) end
-        if level < _GameData.pierceTier4Lv then return math.floor(_GameData.pierceHits3) end
-        return math.floor(_GameData.pierceHits4)
-    end
-
-    method string PierceText(integer level)
-        -- 스킬 요약용: 「1마리 명중」 / 「최대 3마리 관통」
-        local cap = self:GetPierceCap(level)
-        if cap <= 1 then return "1마리 명중" end
-        return string.format("최대 %d마리 관통", cap)
+    method integer GetShardHits()
+        -- 골편 한 발이 맞히는 적 수: 기본 1 (10-28 투사체 A안 — 관통 없이 발 수로 넓힌다) + 선택 보상 2차 주문 「꿰뚫는 골편」 단계
+        --   (보통 +1 · 악몽 +2 · 지옥 +3 · 11-01 사용자 결정 · docs/design/49 — 지운 Lv15 관통 스킬 대신 · 튕긴 뼛조각은 1마리 그대로)
+        return 1 + self:ChoiceTier(2, "soul")
     end
 
     -- ───────── 랭크 단계 (44-7 · 기획서 44 §4-6 A) ─────────
     -- 숨어 있던 「그 스킬에 포인트를 몰았을 때만 오는 사건」을 사다리·시간선·추천 카드·알림에 보이게 한다.
-    -- 단계는 효과 레벨(장비 스킬 레벨 포함 · GetPowerLevel) 기준 — 투사체 4종은 pierceTier 5·8·12, 영혼 격류·역병 저주는 5레벨마다.
+    -- 단계는 효과 레벨(장비 스킬 레벨 포함 · GetPowerLevel) 기준 — 투사체 3종은 pierceTier 5·8·12, 영혼 격류·역병 저주는 5레벨마다.
 
     method table RankStages(string id)
         -- { { lv = 효과 레벨, text = "4발" }, … } 낮은 레벨부터. 단계가 없는 스킬은 빈 표
@@ -358,8 +346,6 @@ script SkillBook extends Component
         local tiers = { math.floor(_GameData.pierceTier2Lv), math.floor(_GameData.pierceTier3Lv), math.floor(_GameData.pierceTier4Lv) }
         if id == "bone_shard" then
             for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = tostring(self:GetBoneShardCount(lv)) .. "발" }) end
-        elseif id == "bone_spear" then
-            for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = "관통 " .. tostring(self:GetPierceCap(lv)) }) end
         elseif id == "frost_soul" then
             for _, lv in ipairs(tiers) do table.insert(list, { lv = lv, text = "파편 " .. tostring(self:GetFrostSplitCount(lv)) .. "개" }) end
         elseif id == "hex_flame" then
@@ -405,7 +391,7 @@ script SkillBook extends Component
     end
 
     method table MageSchoolAt(integer level)
-        -- 48 §2-3 표 (표시용 · 실제 투사체 설정은 갈래 B MageBolts가 같은 config 값으로): 뼈 창 관통 · 서리 파편 · 불꽃 폭발 반경 · 영혼 발 수 · 저주 낙인 %
+        -- 48 §2-3 표 (표시용 · 실제 투사체 설정은 갈래 B MageBolts가 같은 config 값으로): 뼈 투척 관통 · 서리 파편 · 불꽃 폭발 반경 · 영혼 발 수 · 저주 낙인 %
         local t = self:MageTier(level)
         local rank = math.max(1, level)
         local out = {}
@@ -592,7 +578,7 @@ script SkillBook extends Component
         -- 공격 스킬 공통 곡선 (10-24 사용자 결정 A안): 늦게 배우는 스킬은 그동안 찍었을 랭크만큼 앞에서 출발한다.
         -- 가상 레벨 = 스킬 레벨 + (배우는 캐릭터 레벨 - 1) ÷ 2 → 기본 skillCurveBase + skillCurvePerLv × (가상 레벨 - 1), 여기에 스킬 성격 배율.
         -- 같은 캐릭터 레벨에서 다 찍었다면 늦게 배운 스킬이 더 세다 (예전: 1레벨 골편 투척이 9레벨 저주 불꽃보다 셌다)
-        local role = { bone_shard = _GameData.boneShardDmgMul, hex_flame = 1.0, poison_mist = 0.35, bone_spear = 1.3, soul_drain = 1.2, frost_soul = 0.9,
+        local role = { bone_shard = _GameData.boneShardDmgMul, hex_flame = 1.0, poison_mist = 0.35, soul_drain = 1.2, frost_soul = 0.9,
             bone_storm = 0.3, shadow_sacrifice = 2.0, soul_torrent = 0.8, death_wave = 2.5 }
         local mul = role[id]
         if mul == nil then return 0 end
@@ -652,7 +638,7 @@ script SkillBook extends Component
     end
 
     method integer FrostMarkPct(integer rank)
-        -- 「서리 표식」(시린 혼 자리): 서리 혼에 느려진 적에게 뼈 창·골편 피해 +10/15/20%
+        -- 「서리 표식」(시린 혼 자리): 서리 혼에 느려진 적에게 골편 피해 +10/15/20%
         if rank <= 0 then return 0 end
         return math.floor(_GameData.frostMarkBasePct + _GameData.frostMarkPerRankPct * rank)
     end
@@ -724,8 +710,6 @@ script SkillBook extends Component
             curse_power = string.format("수치형 저주 효과 +%d%%", 10 * level),
             armor_thick = string.format("뼈 갑옷 흡수량 +%d%%", 20 * level),
             armor_thorns = string.format("갑옷이 깨질 때 반경 1.5에 막은 피해 합 ×%.2f", self:ArmorBurstMul(level)),
-            spear_long = string.format("뼈 창 사거리 %.1f", 9 * (1 + 0.2 * level)),
-            spear_twin = "뼈 창 두 갈래",
             skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
             shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
             shard_spike = string.format("튕길 때마다 · 마지막으로 박힐 때 피해 +%d%%", 15 * level),
@@ -734,7 +718,7 @@ script SkillBook extends Component
             bomb_pair = "의식 1기에 해골 2기가 함께 돌진",
             flame_hex = string.format("저주 걸린 적에게 피해 +%d%%", 50 + 20 * level),
             flame_twin = string.format("불꽃 화살 %d발", 1 + level),
-            frost_long = string.format("표식 남은 적에게 뼈 창·골편 피해 +%d%%", self:FrostMarkPct(level)),
+            frost_long = string.format("표식 남은 적에게 골편 피해 +%d%%", self:FrostMarkPct(level)),
             frost_shatter = string.format("느려진 적이 죽으면 서리 혼 피해의 %d%% 파편", 30 * level),
             offering_heal = string.format("뼈 성찬 회복량 +%d%%", 20 * level),
             offering_wide = string.format("뼈 성찬 범위 %.1f", 4 * (1 + 0.25 * level)),
@@ -817,8 +801,7 @@ script SkillBook extends Component
             local splits = self:GetFrostSplitCount(level)
             return string.format("서리 혼 · %s · 기준 피해 %.1f · %g초 둔화", splits > 0 and string.format("맞으면 파편 %d개로 갈라짐", splits) or "1마리 명중", power * (1 + stats:GetSpellPowerPct() / 100), _GameData.frostSlowSec)
         end
-        if id == "bone_spear" then return string.format("창 %s · %s · 꿰뚫을 때마다 +10%% · 기준 피해 %.1f · 사거리 %.1f", self:Node("spear_twin") > 0 and "2갈래" or "1개", self:PierceText(level), power * (1 + stats:GetSpellPowerPct() / 100), 9 * (1 + 0.2 * self:Node("spear_long"))) end
-        if id == "bone_shard" then return string.format("뼛조각 %d발 부채꼴 · 발마다 1마리 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
+        if id == "bone_shard" then return string.format("뼛조각 %d발 부채꼴 · 발마다 %d마리 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), self:GetShardHits(), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
         if power > 0 then
@@ -1207,7 +1190,7 @@ script SkillBook extends Component
             -- 질주(도약): 내 클라이언트가 이미 움직였고 target은 도착점이다. 서버 위치는 조금 늦으니 1.5칸 여유
             if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
-        elseif (id == "bone_shard" or id == "soul_torrent" or id == "bone_spear" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
+        elseif (id == "bone_shard" or id == "soul_torrent" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
         elseif self:IsGroundSkill(id) then target = self:ClampGroundPoint(me, target)   -- 44-3 A: 땅 찍기는 6칸 넘으면 그 방향 6칸에 놓는다 (범위 원과 같은 자리)
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
@@ -1814,7 +1797,7 @@ script SkillBook extends Component
         ---@type SkillEffects
         local effects = self.Entity:GetComponent("script.SkillEffects")
         if effects == nil then return end
-        effects:PredictBoneShard(target, self:GetBoneShardCount(lv), lock, 1)
+        effects:PredictBoneShard(target, self:GetBoneShardCount(lv), lock, self:GetShardHits())
         self:PlayCastGesture("bone_shard", target - me)
         self.PredictedCastAt = _UtilLogic.ElapsedSeconds
     end
@@ -1873,6 +1856,7 @@ script SkillBook extends Component
         local refund = 0
         refund = refund + self:MigrateBombToRite(stats.Level)
         refund = refund + self:MigrateNodeSwap(sv)
+        refund = refund + self:MigrateSpearToShard()
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
             if def == nil or not def.impl then
@@ -1906,6 +1890,26 @@ script SkillBook extends Component
             -- 돌려줬다는 알림은 띄우지 않는다 (10-29 사용자: 변경 해명·이전 안내 알림은 만들지 않는다 — 포인트만 늘어 있다)
             log("[VRF] skill migrate refund=" .. tostring(refund))
         end
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateSpearToShard()
+        -- 11-01 사용자 결정 (docs/design/49 · 한 번만): 골편 투척과 같은 스킬이던 Lv15 혼 스킬과 그 강화 둘을 게임에서 뺐다. 돌려준 포인트 수
+        --   배운 랭크만큼 포인트로 돌려주고 표에서 지운다 — 지운 칸이라 다시 불러도·다시 호출해도 두 번 돌려주지 않는다 (저장 판 번호와 무관)
+        --   칸·우클릭에 걸린 옛 스킬은 LoadSaveData가 비운다. 알림은 띄우지 않는다 (10-29 글귀 규칙: 옛 저장 이전 안내·변경 해명 금지 — 포인트만 늘어 있다)
+        --   옛 키 이름은 이 함수 · LoadSaveData 칸 정리에만 남긴다 (tools/check_data.cjs 「지운 스킬의 흔적」 검사가 이 자리만 허용)
+        local back = 0
+        local moved = {}
+        for _, id in ipairs({ "bone_spear", "spear_long", "spear_twin" }) do
+            local r = self.Levels[id] or 0
+            if r > 0 then
+                back = back + r
+                table.insert(moved, id .. ":" .. tostring(r))
+            end
+            self.Levels[id] = nil
+        end
+        if back > 0 then log(string.format("[VRF] skill migrate bone_spear refund=%d nodes=%s", back, table.concat(moved, ","))) end
+        return back
     end
 
     @ExecSpace("ServerOnly")
@@ -2069,6 +2073,10 @@ script SkillBook extends Component
         end
         if d.slots ~= nil then self.Slots = d.slots end
         if d.right ~= nil then self.RightSkill = d.right end
+        -- 11-01 Lv15 혼 스킬 삭제 (docs/design/49 · MigrateSpearToShard): 칸·우클릭에 걸린 옛 스킬을 비운다 (SanitizeSlots도 정의 없는 스킬을 비우지만 이유를 여기 남긴다)
+        local wrapped = string.gsub("," .. self.Slots .. ",", ",bone_spear,", ",,")   -- 다중 반환은 지역에 먼저 받는다 (LEA-1102)
+        self.Slots = string.sub(wrapped, 2, -2)
+        if self.RightSkill == "bone_spear" then self.RightSkill = "" end
         -- 10-29 해골 폭탄 → 뼈 의식: 칸에 든 폭탄은 의식으로 바꿔 둔다 (의식을 아직 못 배웠으면 SanitizeSlots가 비운다)
         self.Slots = (string.gsub(self.Slots, "skel_bomb", "bone_rite"))
         if self.RightSkill == "skel_bomb" then self.RightSkill = "bone_rite" end

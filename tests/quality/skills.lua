@@ -1,6 +1,6 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
+-- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+
@@ -31,7 +31,7 @@ _UIKit.TextWidth=function(_,t,px) return UIKitReal:TextWidth(t,px) end
 function isvalid(x) return x~=nil end
 function Vector2(x,y) return {x=x,y=y} end
 -- Gear crosses projectile/mana tiers; preview and cast use precisely the same effective rank.
-book.Levels={bone_shard=4,wraith_dash=4,bone_spear=4}
+book.Levels={bone_shard=4,wraith_dash=4}
 local text=SkillWindow:StatLine(book,stats,'bone_shard')
 assert(book:GetPowerLevel('bone_shard')==5)
 assert(string.find(text,'마나 '..book:GetManaCost('bone_shard',book:GetPowerLevel('bone_shard')),1,true),text)
@@ -39,15 +39,14 @@ assert(string.find(text,'뼛조각 2발',1,true),text)
 local dash=SkillWindow:StatLine(book,stats,'wraith_dash')
 assert(string.find(dash,string.format('충전 %.2f초',book:DashCooldown(book:GetPowerLevel('wraith_dash'))),1,true),dash)
 assert(not string.find(dash,'충전 1.80초',1,true),'dash incorrectly affected by FCR')
-choices['2:soul']=3;book.Levels.bone_spear=3
-assert(book:GetLevel('bone_spear')==4 and book:GetPowerLevel('bone_spear')==7 and book:PowerLevelAt('bone_spear',5)==8)
-local spear=SkillWindow:StatLine(book,stats,'bone_spear')
-assert(string.find(spear,'마나 '..book:GetManaCost('bone_spear',7),1,true),spear)
--- Free quest rank is counted once; bonus label does not misattribute quest ranks to equipment.
-book.Levels.bone_spear=0
-assert(book:GetPowerLevel('bone_spear')==4)
-local freeSpear=SkillWindow:StatLine(book,stats,'bone_spear')
-assert(string.find(freeSpear,'마나 15',1,true) and not string.find(freeSpear,'장비 +',1,true),freeSpear)
+-- 11-01 선택 보상 2차 혼 축 「꿰뚫는 골편」(docs/design/49): 골편 한 발이 맞히는 적 수 1 → +1·+2·+3 (보통·악몽·지옥) · 거저 주는 랭크는 없다
+assert(book:GetShardHits()==1 and string.find(text,'발마다 1마리',1,true),text)
+choices['2:soul']=1;assert(book:GetShardHits()==2)
+choices['2:soul']=3;assert(book:GetShardHits()==4 and book:GetLevel('bone_shard')==4 and book:GetPowerLevel('bone_shard')==5)
+local pierceLine=SkillWindow:StatLine(book,stats,'bone_shard')
+assert(string.find(pierceLine,'발마다 4마리',1,true),pierceLine)
+assert(_SkillData:Get('bone_spear')==nil and _SkillData:Get('spear_long')==nil and _SkillData:Get('spear_twin')==nil,'removed skills')
+choices['2:soul']=nil
 -- Node ranks never receive gear bonuses, and legacy early investments use NodeUsable.
 book.Levels={armor_thick=2,bone_armor=5};stats.Level=99;bonus=9
 assert(book:GetPowerLevel('armor_thick')==2 and book:PowerLevelAt('armor_thick',3)==3)
@@ -724,5 +723,37 @@ do
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
  print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
+end
+-- 11-01 Lv15 혼 스킬 삭제 저장 이전 (docs/design/49): 배운 랭크만큼 포인트 · 표에서 지움 · 칸/우클릭 비움 · 다시 불러도·다시 이전해도 0 · 알림 없음 (10-29 글귀 규칙)
+do
+ local keepPts,keepLog,keepT,keepU=stats.SkillPoints,log,_TimerService,_Util
+ local timers,notes,vrf={},{},{}
+ _TimerService={SetTimerOnce=function(_,fn,sec) table.insert(timers,{fn=fn,sec=sec}) return #timers end}
+ _Util={Notify=function(_,text,uid) table.insert(notes,{text=text,uid=uid}) end}
+ log=function(m) if string.find(m,'[VRF] skill migrate bone_spear',1,true) then table.insert(vrf,m) end end
+ local function load(d) book.Levels={};book.Slots=',,,';book.RightSkill='';book:LoadSaveData(d) end
+ local old={sv=5,levelCount=4,slots='bone_spear,bone_shard,,',right='bone_spear',levels={bone_shard=6,bone_spear=7,spear_long=3,spear_twin=1}}
+ stats.SkillPoints=2
+ load(old)
+ assert(stats.SkillPoints==13,'spear refund '..stats.SkillPoints)
+ assert(book.Levels.bone_spear==nil and book.Levels.spear_long==nil and book.Levels.spear_twin==nil and book.Levels.bone_shard==6,'spear levels removed')
+ assert(not string.find(book.Slots,'bone_spear',1,true) and book.RightSkill=='','spear slots cleared '..book.Slots..' / '..book.RightSkill)
+ assert(string.find(','..book.Slots..',',',bone_shard,',1,true),'other slot kept '..book.Slots)
+ assert(#vrf==1 and string.find(vrf[1],'refund=11',1,true),'vrf '..table.concat(vrf,' | '))
+ assert(#timers==0 and #notes==0,'no refund notice (points only)')
+ -- 다시 저장 → 불러오기 · 같은 표로 다시 이전: 두 번 돌려주지 않고 알림도 없다
+ local saved=book:GetSaveData()
+ assert(saved.levels.bone_spear==nil and saved.levels.spear_long==nil,'saved without spear')
+ load(saved)
+ book:MigrateLevels(5)
+ assert(stats.SkillPoints==13 and #timers==0 and #vrf==1,'no double refund '..stats.SkillPoints)
+ -- 같은 옛 저장을 다시 불러오면(저장 전 방 이동 등) 그 저장 기준으로 한 번 — 합은 늘 같다
+ stats.SkillPoints=2;load(old)
+ assert(stats.SkillPoints==13 and #timers==0 and #notes==0,'same old save once')
+ -- 안 배운 캐릭터: 0
+ stats.SkillPoints=5;load({sv=5,levelCount=1,levels={bone_shard=3}})
+ assert(stats.SkillPoints==5 and #timers==0 and #notes==0,'untouched save')
+ stats.SkillPoints,log,_TimerService,_Util=keepPts,keepLog,keepT,keepU
+ print('[quality/skills] 49 spear→shard: refund 7+3+1=11 once (save→reload 0 · re-migrate 0 · same old save 11) · slot/right cleared · no notice (points only) · choice 「꿰뚫는 골편」 hits 1/2/4')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

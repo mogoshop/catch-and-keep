@@ -83,7 +83,7 @@ local quests={
  {title='폭풍의 눈',reward='xp:5,choice:3'},
 }
 _QuestData={Count=function() return #quests end,Get=function(_,i) return quests[i] end}
-local icons={raise_skeleton='IC_SKEL',elite_promote='IC_ELITE',bone_shard='IC_SHARD',bone_spear='IC_SPEAR'}
+local icons={raise_skeleton='IC_SKEL',elite_promote='IC_ELITE',bone_shard='IC_SHARD'}
 _SkillData={Get=function(_,id) if icons[id] then return {icon=icons[id],kind='active',tree='command',name=id} end return nil end}
 _GameData={GetUiIcon=function(_,k) return 'UI_'..k end}
 local ui={text={},en={},icon={},color={}}

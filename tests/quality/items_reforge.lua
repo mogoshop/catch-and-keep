@@ -3,7 +3,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetDifficulty
 -- @source ItemTables Data/ItemTables.mlua Ensure
 -- @source QuestData Data/QuestData.mlua Ensure,Get,Count
--- @source ItemData Item/ItemData.mlua Generate+,GenerateQuestReward+,RerollMods+,Parse,Serialize,WithLock,IsLocked,SameItem+,PunchSockets,CanPunch+,CanReroll+,GetRuneword,GetTotalMods+,PartialState+,HasPendingReroll+,PartialRerollCost+,PartialPoolSize+,RollPartial+,ResolvePartial+,PartialText+,QuestGearRarity+,RewardSlotsFor+,GenerateQuestSlotReward+,SlotLabel,GetSlot,CanLock,IsRune,IsStack,IsSoulbound,Consumable,MakeStack,StackName,StackLimit,MakeRuneString
+-- @source ItemData Item/ItemData.mlua Generate+,GenerateQuestReward+,RerollMods+,Parse+,Serialize,WithLock,IsLocked,SameItem+,PunchSockets,CanPunch+,CanReroll+,GetRuneword,GetTotalMods+,PartialState+,HasPendingReroll+,PartialRerollCost+,PartialPoolSize+,RollPartial+,ResolvePartial+,PartialText+,QuestGearRarity+,RewardSlotsFor+,GenerateQuestSlotReward+,SlotLabel,GetSlot,CanLock,IsRune,IsStack,IsSoulbound,Consumable,MakeStack,StackName,StackLimit,MakeRuneString
 -- @source PlayerInventory Item/PlayerInventory.mlua IsOwnerRequest,Stats,RefreshDigest,RejectPending,RequestPartialReroll,RequestResolvePartial,RequestReroll,RequestEquip,RequestDeposit,RequestLockBag,RequestSell,RequestDiscard,GetSaveData,LoadSaveData,ResetStashPages,GetStashData,GetStashCounts,LoadStash,IsRetiredItem,EnsureAshenHoodGrant,ApplyEquipment,CountStack,GetBagList,GetEquipMap
 -- @source PlayerQuest Quest/PlayerQuest.mlua TurnIn,RewardBagSlots,IsGearChoiceQuest,ParseGearOffer,GearOfferText,OfferHasSlot,MakeGearOffer,OfferGearChoice,RequestGearChoice,RequestTurnIn,NearGiver,GetSaveData,LoadSaveData,SwitchDifficulty,TraceQuestStep,FirstGearQuest,StartGearWatch
 -- @source RuneWindow UI/Windows/RuneWindow.mlua BaseFits,ReadyText,WordList,OwnedRunes,GearList
@@ -61,7 +61,9 @@ do
     end
     for i = 1, 25 do add(_ItemData:GenerateQuestReward(lv, "boss", 300, 2)) end
   end
-  ok(n == 1760 and string.format("%016x", h) == "c16b7a608417728f", "F01 visible sequence changed: " .. n .. " " .. string.format("%016x", h))
+  -- 11-01 docs/design/49: 유니크 둘(lancer_hood 이름 · lancer_hood/soulhorn_scythe 단일 스킬 키)만 바뀌어 해시 c16b7a608417728f → 392989adb880d37c
+  --   (두 물건의 이름·키를 옛 값으로 되돌려 해시하면 c16b7a608417728f 그대로 — 추첨 순서는 바뀌지 않았다)
+  ok(n == 1760 and string.format("%016x", h) == "392989adb880d37c", "F01 visible sequence changed: " .. n .. " " .. string.format("%016x", h))
   math.randomseed(20261030)
 end
 print("[quality/items_reforge] F01 seeded visible sequence identical to pre-provenance code (1760 items incl. full rerolls · quest rewards)")

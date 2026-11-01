@@ -392,8 +392,8 @@ do
   ok(#list==n,name..' '..n..'장 ('..#list..')')
   for _,r in ipairs(list) do ok(#r==32 and art[r]~=nil and art[r].kind=='effect' and artRuidCount[r]==1,name..' art_sprites 효과 행 1개') table.insert(all,r) end
  end
- take(Util:Frames(_GameConst.FxSkillSpear),1,'뼈 창 몸')
- take(Util:Frames(_GameConst.FxSkillSpearHit),6,'뼈 창 꽂힘')
+ take(Util:Frames(_GameConst.FxBoneBolt),1,'뼈 투척 몸 (해골 마법사)')
+ take(Util:Frames(_GameConst.FxBoneBoltHit),6,'뼈 투척 꽂힘 (해골 마법사)')
  take(Util:Frames(_GameConst.FxSkillSacrifice),10,'그림자 희생')   -- 10-31 통일 공정 5종 전체 (옛 fx-B 8장)
  take(Util:Frames(_GameConst.FxSkillPrisonHold),8,'골격 감옥 묶임')
  take(Util:Frames(_GameConst.FxSkillPrisonRelease),2,'골격 감옥 풀림')
@@ -404,11 +404,11 @@ do
  for _,r in ipairs(all) do ok(not seen[r],'E2 RUID 중복 0') seen[r]=true end
  ok(#all==51,'정본 33 + 파생 16 + 희생 통일 공정 2장 더(8 → 10) = 51장 ('..#all..')')
  local sum=0
- for v in _GameConst.FxSkillSpearHitMs:gmatch('[^,]+') do sum=sum+tonumber(v) end
+ for v in _GameConst.FxBoneBoltHitMs:gmatch('[^,]+') do sum=sum+tonumber(v) end
  ok(sum==400,'꽂힘 장별 ms 합 400 (코덱스 제안)')
 end
 
--- ⑦ FramePlanMs (뼈 창 꽂힘 60·60·70·70·70·70)
+-- ⑦ FramePlanMs (뼈 투척 꽂힘 60·60·70·70·70·70)
 do
  local p=Util:FramePlanMs('60,60,70,70,70,70',6,0,0)
  ok(#p.steps==6 and near(p.steps[2].at,0.06) and near(p.steps[3].at,0.12) and near(p.steps[6].at,0.33),'장별 시각 0·0.06·0.12·…·0.33')

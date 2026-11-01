@@ -77,7 +77,7 @@ do
  for _,info in ipairs({'skill.giant_nova','skill.giant_meteor'}) do ok(PlayerAttack:SkillElement(info)=='fire','giant_fire_skill_element: '..info..' = fire') end
  local fr=io.open('RootDesk/MyDesk/Undead/RiteGiantMoves.mlua') local rg=fr:read('a') fr:close()
  ok(rg:find('giant_nova2',1,true)==nil and select(2,rg:gsub('"skill.giant_nova"',''))==1,'노바 단일 폭발: 화염 정보 skill.giant_nova 한 곳 · nova2 경로 없음')
- ok(PlayerAttack:SkillElement('skill.hex_flame')=='fire' and PlayerAttack:SkillElement('skill.frost_soul')=='cold' and PlayerAttack:SkillElement('skill.bone_spear')=='magic','기존 캐릭터 기술 속성 그대로')
+ ok(PlayerAttack:SkillElement('skill.hex_flame')=='fire' and PlayerAttack:SkillElement('skill.frost_soul')=='cold' and PlayerAttack:SkillElement('skill.bone_shard')=='magic','기존 캐릭터 기술 속성 그대로')
  for _,info in ipairs({'skill.giant_spin','skill.giant_slam','skill.giant_rift','skill.giant_dash','skill.giant_flurry'}) do ok(PlayerAttack:SkillElement(info)=='magic','다른 거인 기술 그대로 magic: '..info) end
 end
 -- FIRE-02 마법사 거인 평타 구슬·폭발 = fire (실제 CalcDamage → Monster:GetResist)

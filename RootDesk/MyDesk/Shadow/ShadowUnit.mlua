@@ -104,7 +104,7 @@ script ShadowUnit extends AttackComponent
     property integer BoltPierce = 0          -- 관통: 화살이 꿰뚫는 적 수 (0 = 첫 적에서 멈춤)
     property number HexPct = 0               -- 저주: 맞은 적 4초 받는 피해 +%
     property number BlastMult = 0            -- 마법사 거인 평타: 맞은 자리 반경 BlastRadius 다른 적에게 × 이 값 (rite_giants.csv blastMul · 48부터 일반 마법사 폭발 변이는 없다)
-    property string MageSchool = ""          -- 해골 마법사 속성 (48 §2-2: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 창 · soul 영혼 격류 · curse 저주 — MageBolts) · "" = 옛 기록이면 Element로 읽는다
+    property string MageSchool = ""          -- 해골 마법사 속성 (48 §2-2: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 투척 · soul 영혼 격류 · curse 저주 — MageBolts) · "" = 옛 기록이면 Element로 읽는다
     property integer MageRank = 0            -- 일으킬 때의 해골 마법사 랭크 (속성 특성 구간 §2-3 · 0 = 1로 본다)
     property number ShotMul = 1              -- 지금 맞히는 마법사 투사체 한 발 배율 (HitBolt가 AttackFast 동안만 둔다 · CalcDamage)
     property Entity BlastSkip = nil          -- 폭발이 처음 맞은 적은 다시 때리지 않는다
@@ -1558,7 +1558,7 @@ script ShadowUnit extends AttackComponent
 
     @ExecSpace("ServerOnly")
     method void HitBolt(Entity target, number mul, number burst)
-        -- 원거리 투사체 한 발 적중 (Projectile 소환수 갈래): 피해 = 공격 × mul (속성 한 발 배율 · 뼈 창 가시 포함).
+        -- 원거리 투사체 한 발 적중 (Projectile 소환수 갈래): 피해 = 공격 × mul (속성 한 발 배율 · 뼈 투척 가시 포함).
         -- burst > 0 = 불꽃 마법사 폭발(48 §2-3 · Q9 늘 터짐): 맞은 자리 반경 burst 안 다른 적에게 한 발 피해 × MageBolts.BurstMul(0.3).
         -- 마법사 거인 평타 자리 폭발은 지금처럼 BlastMult · BlastRadius (rite_giants.csv)
         if not self:IsLiveTarget(target) then return end
@@ -1691,7 +1691,7 @@ script ShadowUnit extends AttackComponent
         -- 속성 몫은 대상의 그 속성 저항만큼 줄어든다 (화염 잿불 들개 그림자는 화염 저항 몬스터에게 약하다)
         local dmg = self.Atk * self:AuraMult("dmg")
         if attackInfo == "shadow.basic" then dmg = dmg * self.BasicMult end   -- 대검 해골 범위 베기
-        if attackInfo == "shadow.ranged" then dmg = dmg * self.BoltMult * self.ShotMul end   -- 마법사 속성 한 발 배율 · 뼈 창 가시 · 서리 파편 (HitBolt)
+        if attackInfo == "shadow.ranged" then dmg = dmg * self.BoltMult * self.ShotMul end   -- 마법사 속성 한 발 배율 · 뼈 투척 가시 · 서리 파편 (HitBolt)
         if attackInfo == "shadow.mageburst" then dmg = dmg * self.BoltMult * self.ShotMul end   -- 불꽃 마법사 폭발 (한 발 × 0.3 · HitBolt)
         if attackInfo == "shadow.blast" then dmg = dmg * self.BoltMult * self.BlastMult end   -- 마법사 거인 자리 폭발
         -- 암살자 그림자: 25% 치명타 ×1.8 (판정은 서버 값이 쓰인다)

@@ -187,7 +187,6 @@ script SkillEffects extends Component
         if id == "bone_shard" then ok = self:BoneShardVolley(me, target, power * spell, book:GetBoneShardCount(lv), nil, nil, nil)
         elseif id == "poison_mist" then ok = self:PoisonMist(target, power * spell)
         elseif id == "bone_armor" then ok = self:BoneArmor(power)
-        elseif id == "bone_spear" then ok = self:BoneSpear(me, target, power * spell)
         elseif id == "hex_flame" then ok = self:HexFlame(me, target, power * spell, 1 + self:Node("flame_twin"))
         elseif id == "frost_soul" then ok = self:FrostSoul(me, target, power * spell)
         elseif id == "bone_offering" then ok = _UndeadSystem:BoneOffering(self.Entity, power * (1 + 0.2 * self:Node("offering_heal")), 4 * (1 + 0.25 * self:Node("offering_wide")), 10 * self:Node("offering_frenzy"))
@@ -227,12 +226,12 @@ script SkillEffects extends Component
         return ok
     end
 
-    method integer PierceCap(string id)
-        -- 관통 투사체 한 발의 최대 적 수 (SkillBook.GetPierceCap, 장비 스킬 레벨 포함)
+    method integer ShardHits()
+        -- 골편 한 발이 맞히는 적 수 (SkillBook.GetShardHits — 기본 1 + 선택 보상 2차 주문 「꿰뚫는 골편」)
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         if book == nil then return 1 end
-        return book:GetPierceCap(book:GetPowerLevel(id))
+        return book:GetShardHits()
     end
 
     method integer ChoiceTier(integer slot, string axis)
@@ -752,41 +751,6 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method boolean BoneSpear(Vector2 me, Vector2 target, number damage)
-        -- 뼈 창: 조준 방향으로 길게 꿰뚫는 창 (초속 14, 사거리 9 × 「긴 창」). 「두 갈래」면 곧은 창 + 7° 옆 창 (둘 다 벌리면 정면 적을 비껴갔다). 모두에게 보이는 서버 투사체
-        local dir = target - me
-        if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
-        dir = dir:Normalize()
-        local range = 9 * (1 + 0.2 * self:Node("spear_long"))
-        local dirs = { dir }
-        if self:Node("spear_twin") > 0 then
-            local a = math.atan(dir.y, dir.x)
-            dirs = { dir, Vector2(math.cos(a + 0.12), math.sin(a + 0.12)) }
-        end
-        local map = self.Entity.CurrentMap
-        local owner = self.Entity
-        for _, d in ipairs(dirs) do
-            local start = me + Vector2(0, 0.3) + d * 0.35
-            self.ShotCount = self.ShotCount + 1
-            local shot = _SpawnService:SpawnByModelId(_GameConst.ModelProjectile, "BoneSpear_" .. tostring(self.ShotCount), Vector3(start.x, start.y, 0), map)
-            if isvalid(shot) then
-                local fly = d
-                _Util:AfterSpawn(shot, "script.Projectile", function(comp)
-                    ---@type Projectile
-                    local proj = comp
-                    if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then shot:Destroy() return end
-                    -- 외형·속도 = 해골 마법사 뼈 창과 공용 (MageBolts.Configure · 48 §2-6) · 세기(관통 상한 · 가시 +10%)는 캐릭터 것
-                    local speed = _MageBolts:Configure(proj, "bone")
-                    proj.MaxHits = self:PierceCap("bone_spear")
-                    proj.SpikePct = 10   -- 10-28 투사체 A안: 관통은 뼈 창의 몫 — 꿰뚫을 때마다 +10%
-                    proj:Launch(owner, fly, speed, range, damage, "skill.bone_spear", true)
-                end, function() if isvalid(shot) then shot:Destroy() end end)
-            end
-        end
-        return true
-    end
-
-    @ExecSpace("ServerOnly")
     method boolean ShardBounce(Vector2 from, table hitIds, number damage, integer bouncesLeft, number spikePct)
         -- 골편 강화 「튕김」: 맞힌 자리에서 4칸 안 아직 안 맞은 가장 가까운 적에게 뼛조각이 튄다 (모두에게 보이는 서버 투사체). 튈 적이 있어 날렸으면 true
         local map = self.Entity.CurrentMap
@@ -898,7 +862,7 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method boolean BoneShard(Vector2 me, Vector2 target, number damage, any onComplete, any canCommit, Entity lock)
-        -- 조준 방향으로 뼛조각이 날아간다 (초속 12, 사거리 6.5). 처음 맞은 적에서 멈춘다 (10-28 투사체 A안 — 발 수는 BoneShardVolley 부채꼴)
+        -- 조준 방향으로 뼛조각이 날아간다 (초속 12, 사거리 6.5). 처음 맞은 적에서 멈춘다 (10-28 투사체 A안 — 발 수는 BoneShardVolley 부채꼴 · 선택 보상 「꿰뚫는 골편」이면 그 수만큼 꿰뚫고 멈춘다)
         -- lock(고정 대상)이 있으면 그 몬스터를 따라가 닿는 순간 터진다 (가는 길의 적도 맞는다)
         local dir = target - me
         if dir:Magnitude() < 0.01 then dir = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX, 0) end
@@ -934,7 +898,7 @@ script SkillEffects extends Component
             if isvalid(lock) then proj.Lock = lock end
             proj.SpikePct = 15 * self:Node("shard_spike")   -- 강화 「뼈 가시」: 튕길 때마다 +15%/랭크 (10-28 투사체 A안)
             proj.Bounces = self:Node("shard_bounce") + self:ChoiceTier(3, "soul")   -- 강화 「튕김」 + 선택 보상 3차 주문 「튀는 뼛조각」
-            proj.MaxHits = 1                                 -- 10-28 투사체 A안: 골편은 관통하지 않고 부채꼴 발 수로 넓힌다
+            proj.MaxHits = self:ShardHits()                  -- 10-28 투사체 A안: 골편은 기본 1마리(발 수로 넓힌다) · 11-01 선택 보상 2차 주문 「꿰뚫는 골편」 +1/+2/+3
             proj:Launch(owner, dir, 12, 6.5, damage, "skill.bone_shard", true)
             finish(true)
         end, function() finish(false) end)
@@ -2075,7 +2039,7 @@ script SkillEffects extends Component
     @ExecSpace("ServerOnly")
     method boolean RiteArrows(table used, Vector2 target, number damage, Entity lock)
         -- 3기 「뼈 화살」: 바친 해골 셋이 제자리에서 riteArrowGap 간격으로 큰 뼈 화살을 한 발씩 쏘고 무너진다.
-        --   고른 적(lock — 시전 순간 정한 수동 조준)이 있으면 셋 다 그 적에게 몰려 꽂힌다 (관통·튕김 없음 — 뼈 창 관통·골편 부채꼴과 다른 「몰림 순간 화력」).
+        --   고른 적(lock — 시전 순간 정한 수동 조준)이 있으면 셋 다 그 적에게 몰려 꽂힌다 (관통·튕김 없음 — 골편 부채꼴과 다른 「몰림 순간 화력」).
         --   마지막 발(skill.bone_rite_push)은 맞은 적을 약 0.5칸 밀친다 (PlayerAttack.SkillHitExtra). 대상이 없으면 조준점 쪽으로 곧게 날아 처음 맞은 적에서 멈춘다
         local owner = self.Entity
         local map = owner.CurrentMap

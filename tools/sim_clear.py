@@ -82,19 +82,21 @@ PROFILES = {
                  elites=2, gearTierLag=0, life=30, res=40, markUp=0.6),
     "P65": dict(order=["raise_skeleton:1", "skeleton_mastery:4", "shadow_summon:cap-1", "command_mastery:4", "deploy_expand:3",
                        "skel_legion:1", "bone_shard:4", "bone_armor:3", "raise_skeleton:cap-2", "corpse_blast:2", "raise_mage:2",
-                       "poison_mist:3", "mark_weakness:3", "bone_spear:cap", "shadow_summon:cap", "raise_skeleton:cap"],
+                       "poison_mist:3", "mark_weakness:3", "bone_shard:cap", "shadow_summon:cap", "raise_skeleton:cap"],   # 11-01 Lv15 혼 스킬 삭제(docs/design/49) → 남는 포인트는 골편으로
                 stat=dict(str=0.35, vit=0.35, dex=0.15, ene=0.15), gearMinion=0.6, tree=(1, 1), plus=0.6, lvLag=1, ratio=1.3,
                 elites=1, gearTierLag=1, life=15, res=20, markUp=0.25),
     "P40": dict(order=["raise_skeleton:1", "bone_shard:6", "shadow_summon:cap-4", "bone_armor:4", "corpse_blast:4",
                        "raise_skeleton:cap-4", "skeleton_mastery:1", "command_mastery:1", "deploy_expand:1", "poison_mist:5",
-                       "soul_drain:4", "bone_spear:cap", "raise_skeleton:cap"],
+                       "soul_drain:4", "bone_shard:cap", "raise_skeleton:cap"],
                 stat=dict(str=0.15, vit=0.3, dex=0.25, ene=0.3), gearMinion=0.0, tree=(0, 0), plus=0.0, lvLag=4, ratio=1.0,
                 elites=0, gearTierLag=2, life=5, res=5, markUp=0.0),
 }
 
 
 def cap(sid, L):
-    s = SKILL[sid]
+    s = SKILL.get(sid)
+    if s is None:
+        return 0   # 지운 스킬(10-20 corpse_blast 등)은 투자 순서에 남아 있어도 건너뛴다 — 예전엔 KeyError로 멈췄다
     row, mx = int(s["row"]), int(s["maxLv"])
     if L < row:
         return 0
@@ -192,8 +194,6 @@ def build(name, L):
     max_mana = 40 + 2 * (L - 1) + (Ene - 25) * 2
     regen = max_mana * C["manaRegenPct"] + Ene * C["manaRegenPerEne"]
     spells = []
-    if rk.get("bone_spear"):
-        spells.append(((30 + 12 * (rk["bone_spear"] - 1)) * scale * 2.0, 14, 1.2))   # 관통 평균 2마리
     if rk.get("bone_shard"):
         spells.append(((10 + 6 * (rk["bone_shard"] - 1)) * C.get("boneShardDmgMul", 1) * scale * 1.5, 5, 0.75))
     spell_dps = 0

@@ -11,7 +11,7 @@ local function near(a,b) return math.abs(a-b)<1e-6 end
 function isvalid(x) return x~=nil and x~=false end
 Environment={IsPublishedPlay=function() return false end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,a,b) return math.random(a,b) end,RandomDouble=function() return 0.99 end}
-_GameConst={FxSkillSpear="",FxSkillTorrent="",FxSkillFlameShot="",FxSkillFrostShot="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
+_GameConst={FxBoneBolt="",FxSkillTorrent="",FxSkillFlameShot="",FxSkillFrostShot="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
 local V={} V.__index=V
 V.__add=function(a,b) return setmetatable({x=a.x+b.x,y=a.y+b.y},V) end
 V.__sub=function(a,b) return setmetatable({x=a.x-b.x,y=a.y-b.y},V) end
@@ -63,11 +63,11 @@ end
 local function tint(p,r,g,b) return p.tint~=nil and near(p.tint[1],r) and near(p.tint[2],g) and near(p.tint[3],b) end
 do
  local p=fakeProj() local sp=MageBolts:Configure(p,'bone')
- ok(sp==14 and p.ruid=='423983c3b393414c8a8d91578b1fab9c' and p.sx==1.32 and p.sy==0.6 and tint(p,0.95,0.9,0.78) and p.Style=='spear','뼈 창 외형·속도 (그림 없을 때)')
- _GameConst.FxSkillSpear='spearRUID'
+ ok(sp==14 and p.ruid=='423983c3b393414c8a8d91578b1fab9c' and p.sx==1.32 and p.sy==0.6 and tint(p,0.95,0.9,0.78) and p.Style=='spear','뼈 투척 외형·속도 (그림 없을 때)')
+ _GameConst.FxBoneBolt='spearRUID'
  p=fakeProj() MageBolts:Configure(p,'bone')
- ok(p.ruid=='spearRUID' and p.sx==0.9 and p.sy==0.9 and p.tint==nil,'뼈 창 코덱스 그림이 오면 제 비율')
- _GameConst.FxSkillSpear=''
+ ok(p.ruid=='spearRUID' and p.sx==0.9 and p.sy==0.9 and p.tint==nil,'뼈 투척 코덱스 그림이 오면 제 비율')
+ _GameConst.FxBoneBolt=''
  p=fakeProj() sp=MageBolts:Configure(p,'fire')
  ok(sp==11 and p.ruid=='40f0991c2e204ee888670cb3006382e5' and p.sx==0.45 and tint(p,1,0.75,0.55) and p.Style=='','저주 불꽃 외형·속도')
  p=fakeProj() sp=MageBolts:Configure(p,'cold')
@@ -85,7 +85,7 @@ end
 do
  local fh=io.open('RootDesk/MyDesk/Skill/SkillEffects.mlua')
  local se=fh:read('a') fh:close()
- for _,pair in ipairs({{'BoneSpear','bone'},{'HexFlame','fire'},{'FrostSoul','cold'},{'FrostSplit','cold_shard'},{'SoulTorrent','soul'}}) do
+ for _,pair in ipairs({{'HexFlame','fire'},{'FrostSoul','cold'},{'FrostSplit','cold_shard'},{'SoulTorrent','soul'}}) do
   local body=se:match('method %w+ '..pair[1]..'%(.-\n    end\n')
   ok(body~=nil and body:find('_MageBolts:Configure(proj, "'..pair[2]..'")',1,true)~=nil,'캐릭터 '..pair[1]..' → Configure '..pair[2])
   ok(body:find('proj:Skin(',1,true)==nil and body:find('proj:SkinXY(',1,true)==nil,'캐릭터 '..pair[1]..'에 따로 그린 그림 없음')
@@ -94,12 +94,12 @@ do
   local v=se:match('property string '..k..' = "(%w+)"')
   ok(v==MageBolts[k],'그림 RUID 같음 '..k)
  end
- ok(se:find('proj.SpikePct = 10',1,true)~=nil and se:find('proj.MaxHits = self:PierceCap("bone_spear")',1,true)~=nil,'캐릭터 뼈 창 세기(가시 10 · 관통 상한) 그대로')
+ ok(se:find('_MageBolts:Configure(proj, "bone")',1,true)==nil and se:find('proj.MaxHits = self:ShardHits()',1,true)~=nil,'11-01 docs/design/49: 캐릭터 bone 속성 투사체 없음 · 골편 한 발 적중 수 = ShardHits (꿰뚫는 골편)')
 end
 -- ④ 마법사 세기
 do
  local p=fakeProj() MageBolts:MageTraits(p,'bone',11)
- ok(p.MaxHits==4 and p.SpikePct==5 and p.MinionMul==1 and MageBolts:Pierces('bone'),'뼈 창 마법사 랭크 11: 관통 4 · 가시 5%')
+ ok(p.MaxHits==4 and p.SpikePct==5 and p.MinionMul==1 and MageBolts:Pierces('bone'),'뼈 투척 마법사 랭크 11: 관통 4 · 가시 5%')
  p=fakeProj() MageBolts:MageTraits(p,'cold',16)
  ok(p.MaxHits==1 and p.Splits==4 and near(p.MinionMul,0.9),'서리 마법사 랭크 16: 파편 4')
  p=fakeProj() MageBolts:MageTraits(p,'fire',6)
@@ -184,7 +184,7 @@ do
  u:ShootBolt(Vector2(3,0))
  ok(#dirs==5 and near(dirs[1],-30) and near(dirs[5],30),'격류 랭크 16 = 5발 · ±30°')
  dirs={} u.MageSchool='bone' u:ShootBolt(Vector2(3,0))
- ok(#dirs==1 and near(dirs[1],0),'뼈 창 1발')
+ ok(#dirs==1 and near(dirs[1],0),'뼈 투척 1발')
  dirs={} u.MageSchool='soul' u.Giant=true u:ShootBolt(Vector2(3,0))
  ok(#dirs==1,'거인은 한 발')
 end

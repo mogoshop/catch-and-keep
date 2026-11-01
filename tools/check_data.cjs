@@ -540,6 +540,39 @@ T.difficulty.forEach((r, i) => {
 });
 T.sounds.forEach((r, i) => { if (!RUID.test(r.ruid)) err("sounds", i, `ruid 형식 오류`); });
 
+// ── 11-01 지운 스킬 (docs/design/49 · 골편 투척과 같은 스킬이던 Lv15 혼 스킬 + 강화 둘) — 데이터·코드에 다시 생기지 않게 ──
+//   허용: 옛 저장·옛 장비를 읽는 이전 자리만 (SkillBook.MigrateSpearToShard · LoadSaveData 칸 정리, ItemData.MigrateLegacyItem)
+{
+  const GONE = /bone_spear|BoneSpear|FxSkillSpear|spear_long|spear_twin|\uBF08 \uCC3D|\uCC3D\uC220\uC0AC/;   // 한글 두 이름(옛 스킬 이름 · 옛 두건 접두)은 이스케이프로 (이 검사기 자신이 걸리지 않게)
+  const dataDir = process.env.GAME_DATA_DIR || path.join(ROOT, "data");
+  for (const f of fs.readdirSync(dataDir).filter((n) => n.endsWith(".csv")).sort()) {
+    fs.readFileSync(path.join(dataDir, f), "utf8").split("\n").forEach((line, i) => {
+      if (GONE.test(line)) err(f.replace(/\.csv$/, ""), i - 1, "지운 스킬(49)의 흔적 — " + line.slice(0, 60));
+    });
+  }
+  const ALLOW = { "SkillBook.mlua": ["MigrateSpearToShard", "LoadSaveData"], "ItemData.mlua": ["MigrateLegacyItem"] };
+  const walk = (d, out = []) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, out); else if (e.name.endsWith(".mlua")) out.push(p);
+    }
+    return out;
+  };
+  const src = path.join(ROOT, "RootDesk/MyDesk");
+  if (fs.existsSync(src) && !process.env.GAME_DATA_DIR) {
+    for (const f of walk(src).sort()) {
+      const allow = ALLOW[path.basename(f)] || [];
+      let inMethod = "";
+      fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        const m = line.match(/^    method [^(]*?(\w+)\(/);
+        if (m) inMethod = m[1];
+        else if (/^    end\s*$/.test(line)) { inMethod = ""; }
+        if (GONE.test(line) && !allow.includes(inMethod)) errors.push(`${path.relative(ROOT, f)}:${i + 1}: 지운 스킬(49)의 흔적 — ${line.trim().slice(0, 70)}`);
+      });
+    }
+  }
+}
+
 for (const e of errors) console.log(e);
 console.log(`\n[check_data] 표 ${Object.keys(T).length}개, 문제 ${errors.length}건`);
 process.exitCode = errors.length ? 1 : 0;

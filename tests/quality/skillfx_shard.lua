@@ -43,7 +43,7 @@ end
 -- ① 골편 5자리 · art_sprites (11-01 통일 공정: 투척·중립 화살 4장 큰 캔버스 · 명중 6장 · 창·폭풍 골편은 10-31 fx-B 그대로)
 local SLOTS={
  {'FxSkillShardThrow','fx-unify-shard-throw-',192,96,4},
- {'FxSkillSpearShard','fx-B-spear-shard-sample-',128,64,4},
+ {'FxBoneBoltShard','fx-B-spear-shard-sample-',128,64,4},
  {'FxSkillStormShard','fx-B-storm-shard-sample-',128,64,4},
  {'FxSkillBoneArrow','fx-unify-bone-arrow-neutral-',256,128,4},
  {'FxSkillShardHit','fx-unify-shard-hit-',96,96,6}}
@@ -102,8 +102,8 @@ local function proj(skin,dx,dy)
  return p,sprite
 end
 do
- local SEC={FxSkillShardThrow=0.07,FxSkillSpearShard=0.1,FxSkillStormShard=0.1,FxSkillBoneArrow=0.07}   -- 11-01: 투척·중립 화살 70ms · 창·폭풍 골편 100ms 그대로
- for _,k in ipairs({'FxSkillShardThrow','FxSkillSpearShard','FxSkillStormShard','FxSkillBoneArrow'}) do
+ local SEC={FxSkillShardThrow=0.07,FxBoneBoltShard=0.1,FxSkillStormShard=0.1,FxSkillBoneArrow=0.07}   -- 11-01: 투척·중립 화살 70ms · 창·폭풍 골편 100ms 그대로
+ for _,k in ipairs({'FxSkillShardThrow','FxBoneBoltShard','FxSkillStormShard','FxSkillBoneArrow'}) do
   local p,s=proj(_GameConst[k],-1)
   ok(p:MirrorSkin(),k..' 골편 투사체 그림')
   ok(near(p:FrameSec(),SEC[k]),k..' 장 간격 '..SEC[k]..'초')
@@ -237,7 +237,7 @@ do
  for _,k in ipairs({'FxSkillShardThrow','FxSkillStormShard','FxSkillBoneArrow','FxSkillShardHit','FxSkillShardFrameMs'}) do
   ok(all:find('_GameConst.'..k,1,true)~=nil,k..' 부르는 곳 있음')
  end
- ok(count(all,'_GameConst.FxSkillSpearShard')==1 and count(pj,'_GameConst.FxSkillSpearShard')==1,'창 골편은 쓸 자리 미정 (Projectile.MirrorSkin 목록에만)')
+ ok(count(all,'_GameConst.FxBoneBoltShard')==1 and count(pj,'_GameConst.FxBoneBoltShard')==1,'창 골편은 쓸 자리 미정 (Projectile.MirrorSkin 목록에만)')
  -- 골편 경로: 예측·서버·튕김은 ShardSkinRuid · 명중·뼛가루는 ShardHit
  ok(count(se,'self:ShardSkinRuid(), self:ShardSkinScale(0.55)')==2 and count(se,'self:ShardSkinRuid(), self:ShardSkinScale(0.5))')==1,'골편 예측·서버(0.55)·튕김(0.5)')
  ok(se:find('PlayLocal(self.Entity, d, 12, 6.5, self.FxShardShot',1,true)==nil and se:find('proj:Skin(self.FxShardShot, 0.55)',1,true)==nil and se:find('proj:Skin(self.FxShardShot, 0.5)',1,true)==nil,'골편 경로에 예전 보라 궤적 직접 호출 없음')
@@ -282,7 +282,7 @@ do
  local function all(list,name) local n=0 for _,r in ipairs(list) do if got[r] then n=n+1 end end ok(#list>0 and n==#list,name..' 모든 장 미리 불러 둠 ('..n..'/'..#list..')') end
  local NF={FxSkillShardThrow=4,FxSkillStormShard=4,FxSkillBoneArrow=4,FxSkillShardHit=6,FxSkillRiteArrow=4,FxSkillConsumedDust=6,FxSkillHitBone=6}
  for _,k in ipairs({'FxSkillShardThrow','FxSkillStormShard','FxSkillBoneArrow','FxSkillShardHit','FxSkillRiteArrow','FxSkillConsumedDust','FxSkillHitBone'}) do local l=Util:Frames(_GameConst[k]) ok(#l==NF[k],k..' '..NF[k]..'장') all(l,k) end
- local spear=0 for _,r in ipairs(Util:Frames(_GameConst.FxSkillSpearShard)) do if got[r] then spear=spear+1 end end
+ local spear=0 for _,r in ipairs(Util:Frames(_GameConst.FxBoneBoltShard)) do if got[r] then spear=spear+1 end end
  ok(spear==0,'창 골편은 미리 불러 두지 않음 (부르는 곳 없음)')
 
  local line=nil for _,l in ipairs(logs) do if l:find('[VRF] preload n=',1,true) then line=l end end

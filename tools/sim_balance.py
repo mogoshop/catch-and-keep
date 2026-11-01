@@ -130,7 +130,7 @@ PROFILES = {
     # 60%: 군단 위주지만 골편·뼈 갑옷·독안개에 포인트를 흩고, 숙련·군령·배치 확장이 늦다 · 고른 능력치 · 보통 원본 · 강화 절반 · 낙인 가끔
     "P60": dict(order=["raise_skeleton:1", "bone_shard:2", "raise_skeleton:3", "shadow_summon:1", "bone_armor:2", "skeleton_mastery:3",
                        "shadow_summon:3", "mark_weakness:1", "command_mastery:3", "shadow_summon:5",
-                       "deploy_expand:2", "skeleton_mastery:4", "raise_skeleton:cap-2", "bone_spear:3", "shadow_summon:cap-2",
+                       "deploy_expand:2", "skeleton_mastery:4", "raise_skeleton:cap-2", "bone_shard:5", "shadow_summon:cap-2",
                        "raise_mage:3", "command_mastery:5", "deploy_expand:3", "raise_skeleton:cap", "shadow_summon:cap"],
                 stat=dict(str=0.35, vit=0.35, dex=0.15, ene=0.15), dmgRatio=1.6, hpRatio=1.25, elites=1, plus=0.75, markUp=0.55),
 }
@@ -212,7 +212,7 @@ def allocate(order, L):
 
 def mage_school_mul(lv, curse=False):
     # 48 §2-2 · §2-3 (10-30): 해골 마법사 속성 넷(+저주)의 한 발 기대 배율 — 「지금 마법사 한 발 ×1」 대비, 무리 대상 기대 ASSUME mageCrowd
-    #   구간 = 효과 레벨 1·6·11·16 (config mageTier*Lv) · 불꽃 ×1.0 + 둘레 ×0.3(늘 터짐 · 리뷰 Q9) · 서리 ×0.9 + 파편 ×0.45 · 뼈 창 관통(꿰뚫을 때마다 +5%) · 영혼 발당 ×0.4 · 저주 ×0.6(낙인은 따로 셈하지 않음)
+    #   구간 = 효과 레벨 1·6·11·16 (config mageTier*Lv) · 불꽃 ×1.0 + 둘레 ×0.3(늘 터짐 · 리뷰 Q9) · 서리 ×0.9 + 파편 ×0.45 · 뼈 투척 관통(꿰뚫을 때마다 +5%) · 영혼 발당 ×0.4 · 저주 ×0.6(낙인은 따로 셈하지 않음)
     if lv <= 0:
         return 1.0
     t = sum(1 for k in ("mageTier2Lv", "mageTier3Lv", "mageTier4Lv") if lv >= C.get(k, 99))
@@ -281,26 +281,17 @@ def build(prof, L, act=1, diff=0):
     sh_n = math.floor(25 * p["dmgRatio"] * C["shadowStatMul"] * grow_a * sm)
     sh_e = math.floor(50 * min(2.5, p["dmgRatio"] * 1.1) * C["shadowStatMul"] * grow_a * sm)
     sh_hp = math.floor(60 * p["hpRatio"] * C["shadowHpMul"] * grow_h * sm)
-    # 플레이어: 평타 30% 가동 + (P60) 골편 · 뼈 창
+    # 플레이어: 평타 30% 가동 + (P60) 골편 (11-01 Lv15 혼 스킬 삭제 · docs/design/49)
     wpn = 6 if L < 8 else (11 if L < 18 else (18 if L < 33 else (40 if L < 55 else (70 if L < 80 else 110))))
     ias = min(75, Dex * 0.3)
     melee = (12 + wpn) * (1 + Dex * 0.005) / (0.45 / (1 + ias / 100))
     spell_pct = Ene + 0
     scale = C["skillPowerMult"] * (1 + C["skillDmgPerCharLevel"] * (L - 1)) * C["skillDmgMult"] * (1 + spell_pct / 100)
     spell = 0
-    def pierce_cap(lv):
-        # 관통 상한 (SkillBook.GetPierceCap · 10-24): 스킬 레벨 구간마다 1·3·5·10마리
-        for t in (4, 3, 2):
-            if lv >= C["pierceTier%dLv" % t]: return C["pierceHits%d" % t]
-        return C["pierceHits1"]
     if rk.get("bone_shard"):
         # 10-28 투사체 A안: 관통 대신 레벨 구간마다 부채꼴 1·2·3·4발(SkillBook.GetBoneShardCount) — 무리에 맞는 몫은 발마다 +0.3 (상한 1.9)
         n_shard = 1 + sum(1 for t in (2, 3, 4) if rk["bone_shard"] >= C["pierceTier%dLv" % t])
         spell += (C["skillCurveBase"] + C["skillCurvePerLv"] * (rk["bone_shard"] - 1)) * C["boneShardDmgMul"] * scale * min(1.9, 1 + 0.3 * (n_shard - 1)) / 0.75 * 0.25
-    if rk.get("bone_spear"):
-        # 공통 곡선 (SkillBook.DamageCurve: 가상 레벨 = 랭크 + (해금 row - 1) // 2 · 배율 1.3) — 10-28: 관통·가동률 항이 주석 안에 있어 계산되지 않던 버그 수정, +7 하드코딩 → row
-        virt = rk["bone_spear"] + max(0, int(num(SKILL["bone_spear"]["row"])) - 1) // 2
-        spell += 1.3 * (C["skillCurveBase"] + C["skillCurvePerLv"] * (virt - 1)) * scale * min(2.0, pierce_cap(rk["bone_spear"])) / 1.2 * 0.25
     dps = {
         "그림자": ((n_sh - n_el) * sh_n + n_el * sh_e) / sh_iv,
         "해골": n_sk * sk_atk / C["skeletonCooldown"],

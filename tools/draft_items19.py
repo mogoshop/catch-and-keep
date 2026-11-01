@@ -23,7 +23,7 @@ new_u = [
     # 일반형 보강 — 영혼 4 · 저주 1
     u('bone_caller', 'staff15', '뼈를 부르는 손', 'ene=12,mana=25,fcr=10', 'treeSoul=1,spellDmg=10', 'soul'),
     u('pyre_lamp', 'lamp15', '화장터의 등불', 'fireDmg=8,ene=10,fireRes=20', 'spellDmg=15', 'soul'),
-    u('marrow_helm', 'helm15', '골수 투구', 'def=15,mana=30,ene=8', 'sk_bone_spear=1', 'soul'),
+    u('marrow_helm', 'helm15', '골수 투구', 'def=15,mana=30,ene=8', 'sk_bone_shard=1', 'soul'),   # 11-01 Lv15 혼 스킬 삭제(docs/design/49) — 같은 수의 골편 레벨로
     u('shard_ring', 'ring1', '골편 반지', 'dmgFlat=6,ene=8,mana=20', 'sk_bone_shard=2', 'soul'),
     u('cult_fingers', 'gloves15', '교단의 손가락', 'fcr=10,ene=8,poisonRes=20', 'treeCurse=1,curseDur=15', 'curse'),
     # 강화형 20 — 소환 6 · 영혼 6 · 저주 4 · 범용 4 (보스 5종은 악몽 보스 전용 — 베이스 요구 Lv ≤ 보스 Lv+30+3)
@@ -34,7 +34,7 @@ new_u = [
     u('queen_veil', 'armor4', '여왕의 장례 베일', 'def=90,minion=40,allRes=15', 'treeCommand=2', 'command', 'grave_queen'),
     u('barg_banner', 'amulet2', '바르그의 군기', 'minion=35,coldRes=30,fcr=15', 'treeCommand=1,minionRes=20', 'command', 'skel_captain'),
     u('marrow_staff', 'staff4', '골수 지팡이', 'ene=25,mana=60,fcr=15', 'treeSoul=1,spellDmg=25', 'soul'),
-    u('lancer_hood', 'helm4', '창술사의 두건', 'def=50,ene=15,mana=40', 'sk_bone_spear=2,spellDmg=15', 'soul'),
+    u('lancer_hood', 'helm4', '투척수의 두건', 'def=50,ene=15,mana=40', 'sk_bone_shard=2,spellDmg=15', 'soul'),
     u('soulfire_lamp', 'lamp5', '혼불 등롱', 'ene=20,fireDmg=20,fireRes=25', 'treeSoul=1,spellDmg=20', 'soul'),
     u('torrent_seal', 'ring2', '격류의 인장', 'lightDmg=20,ene=15,mana=30', 'spellDmg=20,sk_soul_torrent=1', 'soul'),
     u('priest_mitre', 'helm5', '대사제의 관', 'def=65,fireRes=35,ene=20,fcr=15', 'treeSoul=2', 'soul', 'high_priest'),
@@ -55,7 +55,7 @@ new_u = [
     u('queen_throne', 'armor7', '여왕의 왕좌 갑주', 'def=170,minion=60,allRes=25,life=100', 'treeCommand=3', 'command', 'grave_queen'),
     u('barg_crown', 'amulet3', '바르그의 왕관 인장', 'minion=55,coldRes=40,fcr=20', 'treeCommand=2,minionRes=25', 'command', 'skel_captain'),
     u('abyss_scepter', 'staff6', '심연을 읽는 홀', 'ene=40,mana=100,fcr=25', 'treeSoul=2,spellDmg=40', 'soul'),
-    u('soulhorn_scythe', 'scythe7', '혼각을 베는 낫', 'dmgPct=200,ene=30,mana=60', 'sk_bone_spear=3,spellDmg=35', 'soul'),
+    u('soulhorn_scythe', 'scythe7', '혼각을 베는 낫', 'dmgPct=200,ene=30,mana=60', 'sk_bone_shard=3,spellDmg=35', 'soul'),
     u('torrent_lantern', 'lamp7', '영혼 급류 등롱', 'ene=35,lightDmg=30,coldRes=35', 'treeSoul=2,spellDmg=30', 'soul'),
     u('oracle_crown', 'helm10', '명계 예언자의 관', 'def=120,ene=30,mana=80,fcr=20', 'treeSoul=2,sk_death_wave=2', 'soul'),
     u('priest_undying', 'amulet3', '대사제의 불멸 향로', 'fireDmg=35,fireRes=40,ene=30,fcr=25', 'treeSoul=3', 'soul', 'high_priest'),

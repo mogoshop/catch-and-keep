@@ -93,7 +93,20 @@ script ItemData extends Logic
         local item = { base = f[1] or "", rarity = tonumber(f[2]) or 0, ilvl = tonumber(f[3]) or 1, name = f[4] or "", mods = {}, sockets = tonumber(f[6]) or 0, runes = {}, count = tonumber(f[8]) or 1, locked = f[9] == "L", meta = f[10] or "" }
         for k, v in string.gmatch(f[5] or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = tonumber(v) end
         for r in string.gmatch(f[7] or "", "[^,]+") do table.insert(item.runes, r) end
+        self:MigrateLegacyItem(item)
         return item
+    end
+
+    method void MigrateLegacyItem(table item)
+        -- 11-01 Lv15 혼 스킬 삭제 (docs/design/49): 옛 고유 장비 둘의 지운 스킬 레벨은 같은 수의 골편 투척 레벨로, 옛 두건 이름은 새 이름으로 읽는다.
+        --   가방·창고·장착·거래 문자열이 모두 Parse를 지나므로 다음 저장(Serialize)부터 새 값으로 쓰인다 · 유니크 도감 키는 id라 그대로
+        --   옛 키·이름은 이 함수에만 남긴다 (tools/check_data.cjs 「지운 스킬의 흔적」 검사가 허용하는 자리)
+        local old = item.mods.sk_bone_spear
+        if old ~= nil then
+            item.mods.sk_bone_spear = nil
+            item.mods.sk_bone_shard = (item.mods.sk_bone_shard or 0) + old
+        end
+        if item.name == "창술사의 두건" then item.name = "투척수의 두건" end
     end
 
     method string Serialize(table item)
