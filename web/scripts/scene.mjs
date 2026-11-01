@@ -155,11 +155,11 @@ function feetOf(img) {
   for (let y = top; y <= bottom; y++) for (let x = 0; x < w; x++) if (data[(y * w + x) * 4 + 3] >= 8) { sx += x; n++; }
   return [n ? Math.round(sx / n) : Math.round(w / 2), bottom + 1];
 }
-const manifest = [];
+const manifest = []; const shaOf = new Map();
 async function encode(img, name) {
   const file = `media/${name}.png`, abs = path.join(out, file);
   sh('ffmpeg', ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${img.w}x${img.h}`, '-i', '-', abs], {input: img.data});
-  const buf = await readFile(abs); manifest.push({file, sha256: sha256(buf)}); return file;
+  const buf = await readFile(abs); const h = sha256(buf); manifest.push({file, sha256: h}); shaOf.set(file, h); return file;
 }
 
 // 다시 만들 결과만 지운다 — content/scene/incoming/(정식 배우 PNG 받는 곳)은 남긴다.
@@ -191,7 +191,7 @@ for (const a of SCENE_ACTORS) {
     const feet = a.source.feet ? [a.source.feet[0] - pic.offset[0], a.source.feet[1] - pic.offset[1]] : feetOf(pic);
     if (a.source.feet && a.flip) feet[0] = pic.w - feet[0];
     const file = await encode(pic, `actor-${a.id}`);
-    actors.push({id: a.id, role: a.role, pose: a.pose, label: a.label, file, size: [pic.w, pic.h], feet, pxPerCell: round(a.source.pxPerCell), kind: a.source.kind,
+    actors.push({id: a.id, role: a.role, pose: a.pose, label: a.label, file, v: shaOf.get(file).slice(0, 12), size: [pic.w, pic.h], feet, pxPerCell: round(a.source.pxPerCell), kind: a.source.kind,
       approx: a.source.kind === 'capture' || !!a.source.matte, flip: !!a.flip, source: meta, note: a.note || ''});
   } catch (e) { warnings.push(`배우 ${a.id}: ${e.message}`); }
 }
@@ -200,7 +200,7 @@ for (const m of SCENE_MAPS) {
   try {
     const {img, meta} = await sourceImage(m.source);
     const file = await encode(img, `map-${m.id}`);
-    maps.push({id: m.id, label: m.label, file, size: [img.w, img.h], pxPerCell: round(m.source.pxPerCell), source: meta, note: m.note || ''});
+    maps.push({id: m.id, label: m.label, file, v: shaOf.get(file).slice(0, 12), size: [img.w, img.h], pxPerCell: round(m.source.pxPerCell), source: meta, note: m.note || ''});
   } catch (e) { warnings.push(`맵 ${m.id}: ${e.message}`); }
 }
 

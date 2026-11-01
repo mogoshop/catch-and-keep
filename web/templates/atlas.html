@@ -147,11 +147,13 @@ function setHash(){try{if(typeof history!=='undefined'&&history.replaceState)his
 function readHash(){try{if(typeof location==='undefined')return;const m=String(location.hash||'').match(/^#pick(?:\/(current|fx|maple|reco|compare))?(?:\/([\w-]+))?/);if(!m)return;STATE.tab='pick';PICK.view=m[1]||'current';if(m[2])PICK.slot=m[2];document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.tab==='pick')))}catch(e){}}
 // ---- 장면 보기: 맵 바탕 위에 배우(캐릭터·몬스터·거인·소환수)와 효과를 코드 배치 규칙대로 겹쳐 재생 (웹 합성 근사) ----
 let SCENE=null;try{SCENE=JSON.parse(document.getElementById('scene-data').textContent||'null')}catch(e){SCENE=null}
-const SCENE_KEY='ckl.sceneView.v1';const SV={on:false,map:'',size:'auto',flipMaple:false,close:false};
+const SCENE_KEY='ckl.sceneView.v1';const SV={on:true,map:'',size:'auto',flipMaple:false,close:false};
 // 후보 크기: auto = 원형판 자리(규칙에 판정 지름 judgeD)는 판정 원에 맞춤 · 그 밖은 코드 배율 / code / fit = 지금 그림 폭 / circle = 판정 원(원형판 자리만 · 그 밖은 코드 배율)
 const SIZES=['auto','code','fit','circle'];
-function loadSV(){try{const raw=typeof localStorage!=='undefined'?localStorage.getItem(SCENE_KEY):null;const v=raw?JSON.parse(raw):null;if(v&&typeof v==='object'){SV.on=!!v.on;if(typeof v.map==='string')SV.map=v.map;if(v.sv===2&&SIZES.includes(v.size))SV.size=v.size;else if(v.size==='fit')SV.size='fit';SV.flipMaple=!!v.flipMaple;SV.close=!!v.close}}catch(e){}}
-function saveSV(){try{if(typeof localStorage!=='undefined')localStorage.setItem(SCENE_KEY,JSON.stringify({...SV,sv:2}))}catch(e){}}
+function loadSV(){try{const raw=typeof localStorage!=='undefined'?localStorage.getItem(SCENE_KEY):null;const v=raw?JSON.parse(raw):null;if(v&&typeof v==='object'){if(v.sv>=3)SV.on=!!v.on;if(typeof v.map==='string')SV.map=v.map;if(v.sv>=2&&SIZES.includes(v.size))SV.size=v.size;else if(v.size==='fit')SV.size='fit';SV.flipMaple=!!v.flipMaple;SV.close=!!v.close}}catch(e){}}
+function saveSV(){try{if(typeof localStorage!=='undefined')localStorage.setItem(SCENE_KEY,JSON.stringify({...SV,sv:3}))}catch(e){}}
+// 장면 그림 주소 = 파일 + 내용 해시(?v=) — 같은 이름으로 다시 배포해도 옛 그림이 남지 않게
+const sceneSrc=x=>'scene/'+x.file+(x.v?'?v='+encodeURIComponent(x.v):'');
 function sceneReady(){return!!(SCENE&&SCENE.rules&&typeof SCENE.rules==='object'&&Array.isArray(SCENE.actors)&&SCENE.actors.length)}
 function ruleOf(id){return sceneReady()&&SCENE.rules[id]&&typeof SCENE.rules[id]==='object'?SCENE.rules[id]:null}
 function sceneOn(){return(SV.on||PICK.view==='reco')&&sceneReady()}
@@ -204,9 +206,9 @@ function pivotOf(c,r,n,iw,ih){if(isMapleCand(c)){if(Array.isArray(c.pivots)&&Arr
 const FLASH=new Map();
 // 피격 번쩍임(근사): 배우 그림 위에 흰빛을 덮은 사본
 function flashed(a,im){if(FLASH.has(a.file))return FLASH.get(a.file);if(typeof document==='undefined'||typeof document.createElement!=='function')return im;const cv=document.createElement('canvas');cv.width=im.naturalWidth;cv.height=im.naturalHeight;const x=cv.getContext('2d');x.drawImage(im,0,0);x.globalCompositeOperation='source-atop';x.fillStyle='rgba(255,255,255,0.78)';x.fillRect(0,0,cv.width,cv.height);FLASH.set(a.file,cv);return cv}
-function drawActor(ctx,a,x,flash){if(!a)return;const im=img('scene/'+a.file);if(!im.complete||!im.naturalWidth)return;const k=scPX()/num(a.pxPerCell,100);const [sx,sy]=toScreen(x,0);const f=a.feet||[im.naturalWidth/2,im.naturalHeight];ctx.drawImage(flash?flashed(a,im):im,Math.round(sx-f[0]*k),Math.round(sy-f[1]*k),Math.round(im.naturalWidth*k),Math.round(im.naturalHeight*k))}
+function drawActor(ctx,a,x,flash){if(!a)return;const im=img(sceneSrc(a));if(!im.complete||!im.naturalWidth)return;const k=scPX()/num(a.pxPerCell,100);const [sx,sy]=toScreen(x,0);const f=a.feet||[im.naturalWidth/2,im.naturalHeight];ctx.drawImage(flash?flashed(a,im):im,Math.round(sx-f[0]*k),Math.round(sy-f[1]*k),Math.round(im.naturalWidth*k),Math.round(im.naturalHeight*k))}
 function sceneMap(){const maps=sceneReady()&&Array.isArray(SCENE.maps)?SCENE.maps:[];return maps.find(x=>x.id===SV.map)||maps[0]||null}
-function drawMapBg(ctx){ctx.fillStyle='#1b2630';ctx.fillRect(0,0,SC.W,SC.H);const m=sceneMap();if(!m)return;const im=img('scene/'+m.file);if(!im.complete||!im.naturalWidth)return;const k=scPX()/num(m.pxPerCell,100),w=im.naturalWidth*k,h=im.naturalHeight*k;
+function drawMapBg(ctx){ctx.fillStyle='#1b2630';ctx.fillRect(0,0,SC.W,SC.H);const m=sceneMap();if(!m)return;const im=img(sceneSrc(m));if(!im.complete||!im.naturalWidth)return;const k=scPX()/num(m.pxPerCell,100),w=im.naturalWidth*k,h=im.naturalHeight*k;
  for(let iy=0,y=0;y<SC.H;iy++,y+=h)for(let ix=0,x=0;x<SC.W;ix++,x+=w){ctx.save();ctx.translate(x+(ix%2?w:0),y+(iy%2?h:0));ctx.scale(ix%2?-1:1,iy%2?-1:1);ctx.drawImage(im,0,0,w,h);ctx.restore()}}
 function drawFx(ctx,s,c,r,n,wx,wy,alpha,angle){const im=img(c.frames[n]);if(!im.complete||!im.naturalWidth)return;const iw=im.naturalWidth,ih=im.naturalHeight;const f=fitFactor(s,c,r);const sc=num(r.scale,1)*f,scy=(r.scaleY!=null?num(r.scaleY,1):num(r.scale,1))*f;const kx=sc/100*scPX(),ky=scy/100*scPX();const pv=pivotOf(c,r,n,iw,ih);
  const flip=(!!r.flipX)!==(SV.flipMaple&&isMapleCand(c));const [sx,sy]=toScreen(wx,wy);ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,alpha*num(r.alpha,1)));ctx.translate(sx,sy);if(angle){ctx.rotate(-angle);if(Math.cos(angle)<0)ctx.scale(1,-1)}ctx.scale(flip?-1:1,1);ctx.drawImage(im,-pv[0]*kx,-pv[1]*ky,iw*kx,ih*ky);ctx.restore()}

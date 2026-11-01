@@ -259,6 +259,9 @@ test('scene view renders rule and actor text as text and exports the shortlist J
   const context=vm.createContext({document:{querySelector:getNode,querySelectorAll:()=>[],getElementById:id=>getNode('#'+id)},
     performance:{now:()=>0},requestAnimationFrame(){},IntersectionObserver:class{disconnect(){}observe(){}},Image:class{complete=false;naturalWidth=0;}});
   vm.runInContext(script,context);
+  // 장면 보기는 처음 여는 사람에게도 기본으로 켜져 있다(저장된 옛 설정 sv<3의 꺼짐은 무시) · 그림 주소에 내용 해시
+  assert.equal(vm.runInContext('SV.on&&sceneOn()',context),true);
+  assert.equal(vm.runInContext("sceneSrc({file:'media/a.png',v:'abc123'})",context),'scene/media/a.png?v=abc123');
   for(const view of ['maple','compare']){
     vm.runInContext(`SV.on=true;STATE.tab='pick';PICK.view=${JSON.stringify(view)};PICK.slot='s';render();`,context);
     const html=getNode('#grid').innerHTML;
