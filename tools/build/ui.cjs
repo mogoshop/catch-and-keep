@@ -338,10 +338,16 @@ function buildGameHud() {
     const n = `SkillPick/Grid/Pick${i + 1}`;
     k.slot(n, { anchor: "top-left", pos: [20 + col * 132, -16 - row * 136], rect_size: [120, 128] }, 60, "slot_skill");
     b.patch(`${n}/Icon`, { pos: [0, 14] });
-    b.text(`${n}/Name`, "", { size: 16, bold: true, anchor: "bottom-center", pos: [0, 6], rect_size: [116, 26], ...outline });
+    // 이름 글 칸 = 칸 폭 − 양쪽 inset (ui-tokens PICKNAME · 11-02 7자 이름이 테두리에 닿음 → 길면 BestFit으로 줄어 테 안쪽에 여백)
+    const PN = require("./ui-tokens.cjs").PICKNAME;
+    b.text(`${n}/Name`, "", { size: PN.font, bold: true, anchor: "bottom-center", pos: [0, 6], rect_size: [PN.slotW - PN.inset * 2, PN.h], bestfit: true, min_size: PN.minFont, max_size: PN.font, ...outline });
+    b.patchComponent(`${n}/Name`, "MOD.Core.TextGUIRendererComponent", { Overflow: 1 });
   }
   b.text("SkillPick/Desc", "", { size: 20, color: C.white, alignment: 6, anchor: "bottom-left", pos: [40, 24], rect_size: [600, 90] });
-  k.btn("SkillPick/BtnClear", "칸 비우기", { anchor: "bottom-right", pos: [-40, 30], rect_size: [190, 70] });
+  // 11-02 메이커(iPad): 공격 버튼 칸의 「기본 공격으로」가 「기본 공격으 / 로」 두 줄로 접혔다(BestFit은 접힌 두 줄이 높이에 들면 안 줄임)
+  //   → 글귀 「기본 공격」(SkillPicker.Poll) + 글 칸을 한 줄 높이로(fitButtonText oneLine · 길면 접지 않고 줄인다). 높이 88 = ux-layout 터치 하한과 같게
+  k.btn("SkillPick/BtnClear", "칸 비우기", { anchor: "bottom-right", pos: [-40, 30], rect_size: [190, 88] });
+  require("./lib.cjs").fitButtonText(b, "SkillPick/BtnClear", { oneLine: true });
 
   // ── 능력치 창 ──
   // 10-27 개편 (docs/design/37 §3 · 디아3/4·이모탈 레퍼런스): 1140×720 두 칸

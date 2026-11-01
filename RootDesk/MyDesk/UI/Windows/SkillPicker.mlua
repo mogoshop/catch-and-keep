@@ -124,7 +124,7 @@ script SkillPicker extends Logic
                 local path = self.Win .. "/Grid/Pick" .. tostring(n)
                 _UIKit:SetEnabled(path, true)
                 _UIKit:SetIcon(path .. "/Icon", def.icon)
-                _UIKit:SetText(path .. "/Name", _UIKit:Clip(def.name, 7))   -- 11-02 메인 이름 실존 이름(56): 최장 7자 「드레드 셰이드」 = 6.28em ≈ 100px < 칸 116px
+                _UIKit:SetText(path .. "/Name", _UIKit:Clip(def.name, 7))   -- 11-02 최장 7자 「드레드 셰이드」 ≈ 5.75em: 글 칸 84px(ui-tokens PICKNAME)에서 BestFit ≈ 14px로 줄어 테 안쪽 여백
                 _UIKit:SetColor(path, id == current and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
             end
         end
@@ -138,7 +138,8 @@ script SkillPicker extends Logic
         if n == 0 then desc = desc .. "\n배운 스킬이 없습니다. 스킬 창(K)에서 먼저 배우세요." else desc = desc .. "\n아래에서 스킬을 누르면 이 칸에 들어갑니다." end
         _UIKit:SetText(self.Win .. "/Desc", desc)
         local clear = "칸 비우기"
-        if self.Slot == 5 and Environment:IsMobilePlatform() then clear = "기본 공격으로" end
+        -- 모바일 공격 버튼 칸: 비우면 기본 공격 → 단추 글 「기본 공격」(11-02 「기본 공격으로」가 두 줄로 접힘 · 고르기 목록처럼 누르면 이 칸에 들어간다는 뜻)
+        if self.Slot == 5 and Environment:IsMobilePlatform() then clear = "기본 공격" end
         _UIKit:SetText(self.Win .. "/BtnClear", clear)
     end
 
@@ -148,7 +149,10 @@ script SkillPicker extends Logic
         ---@type PlayerBelt
         local belt = _UIKit:Comp("script.PlayerBelt")
         if belt == nil then return end
-        local key = "belt#" .. belt.Layout .. "#" .. tostring(belt.HpPot) .. tostring(belt.MpPot) .. tostring(belt:CountOf("tp")) .. "#" .. tostring(self.Slot)
+        -- 키 = 가방 내용(다음에 마실 등급이 바뀌면 숫자가 바뀐다 · HudMain 벨트 칸과 같은 키)
+        ---@type PlayerInventory
+        local inv = _UIKit:Comp("script.PlayerInventory")
+        local key = "belt#" .. belt.Layout .. "#" .. (inv ~= nil and inv.BagDigest or "") .. "#" .. tostring(belt:CountOf("tp")) .. "#" .. tostring(self.Slot)
         if key == self.RenderKey then return end
         self.RenderKey = key
         _UIKit:SetText(self.Win .. "/Title", "벨트 칸 지정")
@@ -171,8 +175,10 @@ script SkillPicker extends Logic
             self.Picks[i] = kind
             local path = self.Win .. "/Grid/Pick" .. tostring(i)
             _UIKit:SetEnabled(path, true)
-            _UIKit:SetIcon(path .. "/Icon", _GameData:GetUiIcon(_GameConst:BeltIcon(kind)))
-            _UIKit:SetText(path .. "/Name", _UIKit:Clip(_GameConst:BeltName(kind), 5) .. " " .. tostring(belt:CountOf(kind)))
+            -- 그림·숫자 = 벨트 칸과 같은 규칙(PlayerBelt.KindView): 물약은 다음에 마실 등급의 그림·그 등급 개수 (10-20 사용자 요청 「칸에 그 등급이 보인다」)
+            local view = belt:KindView(kind)
+            _UIKit:SetIcon(path .. "/Icon", view.icon)
+            _UIKit:SetText(path .. "/Name", _UIKit:Clip(_GameConst:BeltName(kind), 5) .. " " .. tostring(math.max(0, view.count)))
             _UIKit:SetColor(path, kind == current and Color(0.42, 0.3, 0.12, 0.95) or Color(0.05, 0.045, 0.06, 0.94))
         end
         for i = #kinds + 1, self.PickCount do _UIKit:SetEnabled(self.Win .. "/Grid/Pick" .. tostring(i), false) end

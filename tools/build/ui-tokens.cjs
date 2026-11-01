@@ -137,6 +137,10 @@ const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16
 //   → 두 글 칸을 각각 한 줄 높이(글자 × 약 1.58, BAND 38/24와 같은 비)로 좁혀, 길면 접지 않고 글자를 줄인다. 아래 줄은 하한에서도 넘치면 말줄임.
 //   위에서부터: top 12 · 칸 이름 34 · 스킬 이름 28 · bottom 14 (= 88). 폭은 BUTTON.padX 안쪽 92 — 「드레드 셰이드」 5.75em(실측 0.92·0.23) → 약 16px
 const PICKTAB = { w: 152, h: 88, top: 12, labelH: 34, nameH: 28, font: 22, nameFont: 18, minFont: 12 };
+// 스킬 지정 창 고르기 목록 칸 이름 (SkillPick/Grid/PickN/Name · 칸 120×128 · 청동 테 약 10px):
+//   11-02 메이커 「7자 이름(드레드 셰이드)이 칸 테두리에 거의 닿음」 — 글 칸 116에 굵은 16px이면 글 폭 ≈ 92~96px(5.75em 실측 + 굵기)라 칸 끝에서 12~14px(테 바로 안).
+//   글 칸을 칸 폭 − 양쪽 inset(18) = 84로 좁혀, 7자 이름은 BestFit으로 약 14px로 줄어 칸 끝에서 약 18~20px(전보다 +6). 5자 이하·벨트 「생명 물약 24」는 15~16 그대로. 하한에서도 넘치면 말줄임
+const PICKNAME = { slotW: 120, inset: 18, h: 26, font: 16, minFont: 12 };
 // HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「스킬 추천 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
 //   글은 한 줄. 양 끝 장식(약 40) 안쪽 padX부터, 위아래 padY로 글 칸을 한 줄 높이(72 − 34 = 38)로 좁혀 두 줄로 갈라지지 않게.
 //   긴 제목은 실행 중(UIKit.SetBandText)에 폭을 maxW까지 넓히고 → 글자를 minFont까지 줄이고 → 끝내 말줄임. 같은 값: SkillOffer.mlua Band*
@@ -219,6 +223,7 @@ SOCIAL.winH = SOCIAL.rowTop + (SOCIAL.perPage - 1) * SOCIAL.rowStep + SOCIAL.row
 module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, RANK, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout, rankWinLayout };
 module.exports.PARTY = PARTY;
 module.exports.PICKTAB = PICKTAB;
+module.exports.PICKNAME = PICKNAME;
 module.exports.SOCIAL = SOCIAL;
 module.exports.ARROW = ARROW;
 module.exports.socialChipW = socialChipW;
