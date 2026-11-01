@@ -6,6 +6,10 @@
 --   서버 재사용 간격마다 다시 보낸다. 골편만 (의식·희생·지면 반복 없음). 메뉴·사망·맵 이동·「취소」 조준·손가락 소유권(앱 전환·칸 바뀜·설정 끔)에서 바로 멈춘다.
 --   반복을 한 번이라도 한 손가락은 뗄 때 한 발을 더 쏘지 않는다. 반복을 가진 동안 기본 공격 입력은 PlayerAttack.SubmitBasicInput 입구에서 막는다 (BlocksBasic · 동시 발동 금지)
 -- 스킬 편집: 스킬 창의 「스킬 편집」으로 시작(칸마다 +), 칸이나 큰 버튼을 누르면 SkillPicker로 그 칸에 넣을 스킬을 고른다. 「편집 끝」으로 마친다.
+-- 11-01 실기기(아이폰 가로) 터치 판정: 손가락이 어느 칸에 들어가는지는 엔진 UI 레이캐스트(단추 네모 RectSize)가 정하고 PadDown이 한 번 더 고른다.
+--   ① 큰 단추(Attack 220 네모)는 보이는 원(Ring 지름/2 + PadHitSlack)만 받는다 — 네모 모서리(원 밖)는 버린다.
+--   ② 큰 단추 네모 안이어도 작은 단추(기본 공격·둘레 칸) 원 + PadSmallSlack 안이면 작은 단추가 이긴다.
+--   ③ 같은 손가락 번호로 새로 눌렀는데 옛 제스처가 남아 있으면(놓음 유실) 옛 제스처는 쏘지 않고 버린다 · UI up은 누른 단추에서 온 것만 받는다.
 @Logic
 script MobilePad extends Logic
 
@@ -41,6 +45,11 @@ script MobilePad extends Logic
     property string ShardStopReason = ""     -- 마지막 중단 사유: release · menu · edit · dead · map · aim · focus · slot · toggle · owner
     property string GestureSkill = ""        -- B-IN-02: 손가락이 닿을 때 그 칸의 스킬 — 놓을 때 칸 스킬이 바뀌었으면 시전하지 않는다 (편집·기본 공격 제스처 제외)
     property Entity GesturePlayer = nil      -- B-IN-OBS-01: 손가락이 닿을 때의 내 캐릭터 — 바뀌면 골편 반복 소유를 끝낸다
+    property integer GestureSource = 0       -- 11-01: 손가락을 받은 단추의 칸 번호 (큰 단추 모서리에서 작은 단추로 넘겨도 5) — UI drag·up은 이 단추에서 온 것만 받는다
+    property number GestureSeenAt = 0        -- 11-01: 이 손가락의 마지막 down·drag·hold 시각 — 오래 소식이 없는데 다른 손가락이 누르면 옛 제스처를 버린다
+    property number GestureStaleAfter = 1    -- 11-01: 위 「오래」 (초)
+    property number PadHitSlack = 6          -- 11-01: 큰 단추 원형 판정 여유 (1920 기준 px) — 반지름 = Attack/Ring 지름/2(117) + 이것
+    property number PadSmallSlack = 28       -- 11-01: 큰 단추 네모에 들어온 점이 작은 단추 원(Ring 지름/2) + 이만큼 안이면 작은 단추 우선
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -103,10 +112,90 @@ script MobilePad extends Logic
     @ExecSpace("ClientOnly")
     method void BindAimButton(string path, integer slot)
         -- ButtonClick과 중복 연결하지 않아 한 번 놓으면 한 번만 발동한다.
+        -- 11-01: 엔진이 고른 단추(slot) → PadDown이 원형 판정·작은 단추 우선으로 실제 칸을 다시 고른다
         _UIKit:ConnectAimControl(path,
-            function(event) self:BeginGesture(slot, event.TouchId, event.TouchPoint) end,
-            function(event) self:UpdateGesture(event.TouchId, event.TouchPoint) end,
-            function(event) self:EndGesture(event.TouchId, event.TouchPoint) end)
+            function(event) self:PadDown(slot, event.TouchId, event.TouchPoint) end,
+            function(event) self:PadDrag(slot, event.TouchId, event.TouchPoint) end,
+            function(event) self:PadUp(slot, event.TouchId, event.TouchPoint) end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PadDown(integer source, integer touchId, Vector2 point)
+        -- 11-01 단추 down 입구. 같은 손가락 번호가 이미 제스처를 가졌다 = 그 손가락의 놓음을 못 받았다 → 옛 제스처는 쏘지 않고 버린다
+        --   (예전: 남은 큰 단추 제스처가 다음 탭의 up에 끝나 둘레 칸·기본 공격을 눌러도 큰 단추 스킬이 나갔다)
+        if self.GestureTouchId ~= 0 and (self:MatchesGesture(touchId) or _UtilLogic.ElapsedSeconds - self.GestureSeenAt > self.GestureStaleAfter) then
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] pad stale gesture cleared slot=%d old=%d new=%d", self.GestureSlot, self.GestureTouchId, touchId)) end
+            self:ClearGesture()
+        end
+        local slot = self:ResolvePadSlot(source, point)
+        if slot <= 0 then return end
+        self:BeginGesture(slot, touchId, point)
+        if self.GestureTouchId == touchId and self.GestureSlot == slot then self.GestureSource = source end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PadDrag(integer source, integer touchId, Vector2 point)
+        -- 다른 단추의 UI drag는 이 제스처와 상관없다 (같은 손가락의 화면 hold는 HandleAimHold가 따로 받는다)
+        if self.GestureTouchId ~= 0 and source ~= self.GestureSource then return end
+        self:UpdateGesture(touchId, point)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PadUp(integer source, integer touchId, Vector2 point)
+        -- 누른 단추의 UI up만 제스처를 끝낸다 (다른 단추의 up으로 남의 스킬이 나가지 않게 · 화면 release는 HandleAimRelease가 받는다)
+        if self.GestureTouchId ~= 0 and source ~= self.GestureSource then return end
+        self:EndGesture(touchId, point)
+    end
+
+    @ExecSpace("ClientOnly")
+    method number PadHitRadius(string path)
+        -- 단추의 보이는 원 반지름: 테두리(Ring) 그림 지름/2, 없으면 칸 짧은 변/2
+        local ring = _UIKit:Get(path .. "/Ring")
+        if isvalid(ring) then return ring.UITransformComponent.RectSize.x * 0.5 end
+        local e = _UIKit:Get(path)
+        if not isvalid(e) then return 0 end
+        return math.min(e.UITransformComponent.RectSize.x, e.UITransformComponent.RectSize.y) * 0.5
+    end
+
+    @ExecSpace("ClientOnly")
+    method number PadDistance(string path, Vector2 point)
+        -- 화면 점에서 단추 가운데까지 거리 (1920 기준 px · 피벗 가운데) — 꺼진 단추는 -1
+        local e = _UIKit:Get(path)
+        if not isvalid(e) or not e.Enable then return -1 end
+        local p = _UILogic:ScreenToLocalUIPosition(point, e.UITransformComponent)
+        return p:Magnitude()
+    end
+
+    @ExecSpace("ClientOnly")
+    method integer ResolvePadSlot(integer source, Vector2 point)
+        -- 엔진이 고른 단추 → 실제 칸 (0 = 아무 칸도 아님). 작은 단추(둘레 칸·기본 공격)는 입력 네모(96·120)가 보이는 원(104·128)보다 작고
+        --   서로 안 겹쳐 엔진 판정 그대로 둔다. 큰 단추는 네모(220)의 모서리가 보이는 원(234) 밖이고 그 모서리가 기본 공격·S3 쪽을 향한다
+        if source ~= 5 then
+            if not Environment:IsPublishedPlay() then
+                local path = source == self.BasicSlot and (self.Root .. "/BasicAtk") or (self.Root .. "/Skills/S" .. tostring(source))
+                log(string.format("[VRF] pad hit src=%d slot=%d dist=%.0f r=%.0f", source, source, self:PadDistance(path, point), self:PadHitRadius(path)))
+            end
+            return source
+        end
+        local best, bestRatio, bestD, bestR = 0, 0, 0, 0
+        local cands = { { self.Root .. "/BasicAtk", self.BasicSlot } }
+        for i = 1, 4 do table.insert(cands, { self.Root .. "/Skills/S" .. tostring(i), i }) end
+        for _, c in ipairs(cands) do
+            local d = self:PadDistance(c[1], point)
+            local r = self:PadHitRadius(c[1]) + self.PadSmallSlack
+            if d >= 0 and r > 0 and d <= r and (best == 0 or d / r < bestRatio) then
+                best, bestRatio, bestD, bestR = c[2], d / r, d, r
+            end
+        end
+        local dA = self:PadDistance(self.Root .. "/Attack", point)
+        local rA = self:PadHitRadius(self.Root .. "/Attack") + self.PadHitSlack
+        local slot = 0
+        if best ~= 0 then slot = best
+        elseif dA >= 0 and dA <= rA then slot = 5 end
+        if not Environment:IsPublishedPlay() then
+            log(string.format("[VRF] pad hit src=5 slot=%d dist=%.0f r=%.0f small=%d sdist=%.0f sr=%.0f", slot, dA, rA, best, bestD, bestR))
+        end
+        return slot
     end
 
     @ExecSpace("ClientOnly")
@@ -120,11 +209,12 @@ script MobilePad extends Logic
     method void BeginGesture(integer slot, integer touchId, Vector2 point)
         -- 하나의 공격 손가락만 캡처한다. 빈/편집 칸도 놓을 때 선택창을 연다.
         local player = _UserService.LocalPlayer
-        if self.GestureTouchId ~= 0 or not isvalid(player) or player.PlayerComponent.Hp <= 0 or _UIKit:AnyWindowOpen() then return end
+        if slot <= 0 or self.GestureTouchId ~= 0 or not isvalid(player) or player.PlayerComponent.Hp <= 0 or _UIKit:AnyWindowOpen() then return end
         if slot == self.BasicSlot and self.EditMode then return end   -- 기본 공격 단추는 편집할 칸이 아니다 (편집 중에는 숨긴다)
         self.GestureTouchId = touchId
         self.GestureSlot = slot
         self.GestureStart = point
+        self.GestureSeenAt = _UtilLogic.ElapsedSeconds
         self.GestureMap = player.CurrentMap
         local book = _UIKit:Comp("script.SkillBook")
         self.GestureBasic = slot == self.BasicSlot or (slot == 5 and not self.EditMode and (book == nil or book:GetSlotSkill(5) == ""))
@@ -151,6 +241,7 @@ script MobilePad extends Logic
     method void UpdateGesture(integer touchId, Vector2 point)
         -- 화면 이동량을 단위 방향으로 바꾼다. 중앙 데드존에서는 자동 조준한다.
         if not self:MatchesGesture(touchId) then return end
+        self.GestureSeenAt = _UtilLogic.ElapsedSeconds
         local player = _UserService.LocalPlayer
         if not isvalid(player) or player.CurrentMap ~= self.GestureMap or _UIKit:AnyWindowOpen() then
             if self.ShardActive then self:StopShardHold(self:ShardStopCheck()) end
@@ -201,6 +292,7 @@ script MobilePad extends Logic
         self.Holding = false
         self.GestureTouchId = 0
         self.GestureSlot = 0
+        self.GestureSource = 0
         self.GestureMap = nil
         self.GestureBasic = false
         self.AimReach = 0

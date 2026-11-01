@@ -1135,17 +1135,20 @@ script HudMain extends Logic
                 if place ~= nil and place ~= "" then table.insert(lines, "<size=14><color=#9DB89F>  " .. place .. "</color></size>") end
             end
         end
-        local open = self.PartyHover or self.PartyPinned or Environment:IsMobilePlatform()
+        local mobile = Environment:IsMobilePlatform()
+        local open = self.PartyHover or self.PartyPinned or mobile
+        -- 11-01: 모바일은 큰 알림 판이 파티 목록 자리(왼쪽 열 의뢰 추적 아래 384~)를 번갈아 쓴다 → 판이 떠 있는 동안 파티를 숨긴다 (MobileLayout)
+        local yield = mobile and _UXFeedback:SlotBusy()
         local text = ""
         if n > 0 then
             if open then text = "파티 (" .. tostring(n) .. ")\n" .. table.concat(lines, "\n")
             else text = _UIKit:Clip("파티 (" .. tostring(n) .. ") · " .. table.concat(short, " · "), self.PartyFoldChars) end
         end
-        local key = text .. "#" .. tostring(open)
+        local key = text .. "#" .. tostring(open) .. "#" .. tostring(yield)
         if key == self.PartyKey then return end
         self.PartyKey = key
         _UIKit:SetText("Party/Text", text)
-        _UIKit:SetEnabled("Party", n > 0)
+        _UIKit:SetEnabled("Party", n > 0 and not yield)
         -- 눌리는 칸(그리고 왼쪽 알림 더미가 피하는 칸)을 글 크기에 맞춘다
         local box = _UIKit:Get("Party")
         local label = _UIKit:Get("Party/Text")

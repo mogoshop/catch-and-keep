@@ -93,6 +93,7 @@ function _Util:Pos2(e) return e.pos end
 -- 화면 (16:9, 오른쪽 아래 기준 빌드 좌표를 왼쪽 아래 기준 화면 좌표로: x = 1920 + px, y = py)
 local function pad(px, py) return Vector2(1920 + px, py) end
 local SCREEN = {
+  S1 = pad(-430, 170), S4 = pad(-176, 430),   -- 11-01 판정 검사용 (tools/build/ui.cjs)
   S2 = pad(-395, 300), S3 = pad(-304, 395), Attack = pad(-170, 170), BasicAtk = pad(-60, 338),   -- tools/build/ui.cjs (I04 ㉠ 10-29: S3 -300→-304 · BasicAtk 330→338)
   Cancel = pad(-576, 545),   -- tools/build/ui.cjs MobilePad/AimCancel
 }
@@ -200,6 +201,14 @@ local function Reset()
     ["/ui/ShadowHUD/MobilePad/AimCancel"] = { Enable = false, UITransformComponent = { RectSize = Vector2(92, 92), center = SCREEN.Cancel } },
     ["/ui/ShadowHUD/MobilePad"] = { Enable = true },
   }
+  -- 11-01 판정: 단추 입력 네모(RectSize)·보이는 테두리(Ring) — ui/ShadowHUD 빌드 값 (Attack 220/234 · BasicAtk 96/104 · S 120/128)
+  local function btn(path, center, size, ring, on)
+    W.ents[path] = { Enable = on, UITransformComponent = { RectSize = Vector2(size, size), center = center } }
+    W.ents[path .. "/Ring"] = { Enable = true, UITransformComponent = { RectSize = Vector2(ring, ring), center = center } }
+  end
+  btn("/ui/ShadowHUD/MobilePad/Attack", SCREEN.Attack, 220, 234, true)
+  btn("/ui/ShadowHUD/MobilePad/BasicAtk", SCREEN.BasicAtk, 96, 104, true)
+  for i = 1, 4 do btn("/ui/ShadowHUD/MobilePad/Skills/S" .. i, SCREEN["S" .. i], 120, 128, true) end
   W.stats = { Mana = 100 }
   function W.stats:GetAttackInterval(base) return base end
   function W.stats:GetCastCooldownMult() return 1 end
@@ -674,6 +683,83 @@ scenario("B-IN-OBS-01 같은 맵에서 내 캐릭터 엔티티가 바뀌면 반�
   check(not MobilePad.ShardActive and MobilePad.ShardStopReason == "owner" and W.requests == sent, "새 엔티티로 반복 요청 0 (" .. W.requests .. ")")
   _UserService.LocalPlayer = W.player
   MobilePad:ClearGesture()
+end)
+
+-- ───────── 11-01 실기기 터치 판정 (큰 단추 네모 모서리 · 놓음 유실) ─────────
+-- 큰 단추 입력 네모 = 가운데 ±110 (모서리까지 155.6) · 보이는 원 = 117 (+여유 6 = 123)
+local function inAttackRect(p) local d = p - SCREEN.Attack return math.abs(d.x) <= 110 and math.abs(d.y) <= 110 end
+scenario("11-01 큰 단추 원형 판정 · 작은 단추 우선", function()
+  W.book.RightSkill = "curse_weak"
+  local A = SCREEN.Attack
+  check(MobilePad:ResolvePadSlot(5, A) == 5, "큰 단추 가운데 = 5")
+  check(MobilePad:ResolvePadSlot(5, A + Vector2(0, 110)) == 5, "네모 위 가장자리 가운데(거리 110 ≤ 123) = 5")
+  check(MobilePad:ResolvePadSlot(5, A + Vector2(-86, -86)) == 5, "원 안 왼쪽 아래(거리 121.6 ≤ 123) = 5")
+  local tr = A + Vector2(100, 100)   -- 오른쪽 위 모서리: 원 밖(141) · 기본 공격까지 68.7 ≤ 52+28
+  check(inAttackRect(tr) and MobilePad:ResolvePadSlot(5, tr) == MobilePad.BasicSlot, "오른쪽 위 모서리 = 기본 공격(6)")
+  local tl = A + Vector2(-100, 100)  -- 왼쪽 위 모서리: 원 밖 · S3 129.5 · S2 128.5 (> 64+28)
+  check(inAttackRect(tl) and MobilePad:ResolvePadSlot(5, tl) == 0, "왼쪽 위 모서리 = 아무 칸도 아님(약화의 낙인 안 나감)")
+  check(MobilePad:ResolvePadSlot(5, A + Vector2(100, -100)) == 0, "오른쪽 아래 모서리 = 0")
+  check(MobilePad:ResolvePadSlot(3, SCREEN.S3) == 3 and MobilePad:ResolvePadSlot(6, SCREEN.BasicAtk) == 6, "작은 단추는 엔진 판정 그대로")
+  W.ents["/ui/ShadowHUD/MobilePad/BasicAtk"].Enable = false   -- 4칸 배치·편집 중엔 기본 공격 단추가 꺼져 있다
+  check(MobilePad:ResolvePadSlot(5, tr) == 0, "기본 공격 단추가 꺼져 있으면 모서리 = 0")
+end)
+scenario("11-01 큰 단추 모서리 → 기본 공격 단추로 넘김 (down·drag·up 한 손가락)", function()
+  W.book.RightSkill = "curse_weak"
+  local before = snapshot()
+  local tr = SCREEN.Attack + Vector2(100, 100)
+  MobilePad:PadDown(5, 61, tr)
+  check(MobilePad.GestureSlot == MobilePad.BasicSlot and MobilePad.GestureSource == 5 and MobilePad.GestureBasic, "기본 공격 제스처 · 받은 단추는 큰 단추")
+  check(W.basic == 1, "누르는 순간 기본 공격 1")
+  MobilePad:PadDrag(5, 61, tr + Vector2(4, 0))
+  MobilePad:PadUp(5, 61, tr)   -- 큰 단추 엔티티의 UI up
+  MobilePad:EndGesture(61, tr) -- 같은 손가락 화면 release (중복)
+  check(MobilePad.GestureTouchId == 0 and not MobilePad.Holding, "떼면 정리")
+  unchanged(before, "모서리 → 기본 공격")   -- 약화의 낙인 요청 0
+end)
+scenario("11-01 큰 단추 왼쪽 위 모서리 탭 → 아무것도 안 나감", function()
+  W.book.RightSkill = "curse_weak"
+  local before = snapshot()
+  local tl = SCREEN.Attack + Vector2(-100, 100)
+  MobilePad:PadDown(5, 62, tl)
+  check(MobilePad.GestureTouchId == 0, "제스처 없음")
+  MobilePad:PadUp(5, 62, tl)
+  MobilePad:EndGesture(62, tl)
+  unchanged(before, "모서리 탭")
+  check(W.basic == 0, "기본 공격도 0")
+end)
+scenario("11-01 놓음 유실로 남은 큰 단추 제스처 → 같은 번호 손가락으로 S3 탭: 약화의 낙인 안 나감", function()
+  W.book.RightSkill = "curse_weak"
+  MobilePad:PadDown(5, 1, SCREEN.Attack)
+  check(MobilePad.GestureSlot == 5 and MobilePad.CancelShown, "큰 단추 스킬 끌기 시작")
+  -- 놓음이 들어오지 않음 (UI up·화면 release 유실) → 같은 손가락 번호 1로 S3를 누른다
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.3
+  local mana = W.stats.Mana
+  MobilePad:PadDown(3, 1, SCREEN.S3)
+  check(MobilePad.GestureSlot == 3 and MobilePad.GestureSource == 3, "옛 제스처를 버리고 S3 제스처")
+  check(W.requests == 0 and W.stats.Mana == mana, "옛 큰 단추 스킬 요청 0")
+  MobilePad:PadUp(3, 1, SCREEN.S3)
+  check(W.requests == 1 and W.book.RiteHoldSlot == 0, "S3(뼈 의식) 한 번 · 큰 단추 스킬 없음 (요청 " .. W.requests .. ")")
+  check(W.book:CooldownLeft("curse_weak") == 0, "약화의 낙인 재사용 시작 안 함")
+end)
+scenario("11-01 남은 제스처가 오래 소식 없음 → 다른 번호 손가락 탭이 이긴다", function()
+  W.book.RightSkill = "curse_weak"
+  MobilePad:PadDown(5, 3, SCREEN.Attack)
+  _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 1.2   -- hold·drag 소식 없이 1.2초
+  MobilePad:PadDown(6, 4, SCREEN.BasicAtk)
+  check(MobilePad.GestureSlot == MobilePad.BasicSlot and W.basic == 1, "기본 공격 단추가 받는다")
+  MobilePad:PadUp(6, 4, SCREEN.BasicAtk)
+  check(W.requests == 0, "큰 단추 스킬 요청 0")
+end)
+scenario("11-01 붙잡고 있는 손가락(hold 소식 있음)은 다른 손가락 탭에 안 뺏긴다 · 다른 단추 up은 무시", function()
+  W.book.RightSkill = "curse_weak"
+  MobilePad:PadDown(5, 5, SCREEN.Attack)
+  for _ = 1, 6 do _UtilLogic.ElapsedSeconds = _UtilLogic.ElapsedSeconds + 0.3 MobilePad:UpdateGesture(5, SCREEN.Attack + Vector2(-40, 20)) end
+  MobilePad:PadDown(3, 6, SCREEN.S3)
+  check(MobilePad.GestureSlot == 5 and MobilePad.GestureTouchId == 5, "큰 단추 제스처 유지")
+  MobilePad:PadUp(3, 5, SCREEN.S3)   -- (이상 입력) 같은 번호라도 다른 단추에서 온 UI up
+  check(MobilePad.GestureTouchId == 5 and W.requests == 0, "다른 단추 up으로 끝나지 않음")
+  MobilePad:EndGesture(5, SCREEN.Attack + Vector2(-40, 20))   -- 화면 release
+  check(W.casts == 1 and W.book:CooldownLeft("curse_weak") > 0, "화면 release로 큰 단추 스킬 1")
 end)
 
 for _, s in ipairs(scenarios) do

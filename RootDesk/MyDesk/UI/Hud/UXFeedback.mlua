@@ -88,6 +88,15 @@ script UXFeedback extends Logic
         return isvalid(root) and root.Enable and self.Until > _UtilLogic.ElapsedSeconds
     end
 
+    @ExecSpace("ClientOnly")
+    method boolean SlotBusy()
+        -- 모바일 왼쪽 열(11-01): 판이 떠 있거나, 켜진 채 다음 판이 바로 이어 뜰 참이면 true → 같은 자리를 쓰는 파티 목록이 비켜 준다 (HudMain.RenderParty)
+        --   IsShowing만 보면 판과 판 사이(Tick 0.1초)에 파티가 잠깐 깜빡인다. 창이 떠서 붙잡는 동안은 Yield가 판을 끄므로 false
+        local root = _UIKit:Get("/ui/RewardHUD/Toast")
+        if not isvalid(root) or not root.Enable then return false end
+        return self.Until > _UtilLogic.ElapsedSeconds or #self.Queue > 0
+    end
+
     -- ───────── 넣기 ─────────
 
     @ExecSpace("ClientOnly")

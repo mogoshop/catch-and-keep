@@ -18,7 +18,8 @@ const CANVASES = [["16:9", 1920, 1080], ["아이폰 가로(안전영역)", 2014,
 const ANCHOR = { 0: [0.5, 0.5], 1: [0, 0.5], 2: [1, 0.5], 3: [0.5, 1], 4: [0, 1], 5: [1, 1], 6: [0.5, 0], 7: [0, 0], 8: [1, 0] };
 const NAMED = { top: 3, topL: 4, topR: 5, bottom: 6, TopCenter: 3, TopLeft: 4, TopRight: 5, BottomCenter: 6, BottomLeft: 7, BottomRight: 8 };
 // 같은 자리를 차례로 쓰는 것 (동시에 뜨지 않는다 — docs/ui/message-rules.md, UXFeedback.IsShowing)
-const TURNS = [["GameHUD/Banner", "GameHUD/Tip"], ["GameHUD/GatePrompt", "RewardHUD/Toast"]];
+//   11-01: 모바일 큰 알림 판은 왼쪽 열 파티 목록 자리를 번갈아 쓴다 (판이 떠 있는 동안 파티 숨김 — HudMain.RenderParty · UXFeedback.SlotBusy)
+const TURNS = [["GameHUD/Banner", "GameHUD/Tip"], ["GameHUD/GatePrompt", "RewardHUD/Toast"], ["GameHUD/Party", "RewardHUD/Toast"]];
 // 겹쳐도 되는 것 (없음 — 10-13: 안내 줄이 펼친 지도를 덮던 것을 지도 아래로 옮겼다)
 const ACCEPTED = [];
 

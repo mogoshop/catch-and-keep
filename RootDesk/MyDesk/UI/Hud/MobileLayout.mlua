@@ -1,5 +1,5 @@
 -- 모바일 HUD 배치 (디아블로 이모탈식, docs/ui/mobile-layout.md) — 모바일에서만, PC 배치는 빌드 값 그대로.
---   왼쪽 위: 캐릭터 틀(MFrame) · 버프 · 의뢰 추적(HudMap) · 파티
+--   왼쪽 위: 캐릭터 틀(MFrame) · 버프 · 의뢰 추적(HudMap) · 파티 / 큰 알림 판(번갈아 — 판이 떠 있는 동안 파티는 숨는다, 11-01)
 --   위 가운데: 대상 체력 → 맵 배너·여정 안내 → 출구 안내 (엔진 채팅 알림·전체 화면 단추 아래)
 --   오른쪽 위: 지도 0.75배(HudMap) · 메뉴·일지 단추 · 지도 아래 안내 줄(NoticeFeed, 두 줄)
 --   가운데 아래: 경험치 · 소환수 줄(CompanionHUD) · 대화 단추(NpcWindow) / 왼쪽 아래: 조이스틱 · 채팅
@@ -42,7 +42,16 @@ script MobileLayout extends Logic
         self:Size("/ui/GameHUD/Tip", Vector2(860, 74))
         self:Size("/ui/GameHUD/Tip/Text", Vector2(820, 66))
         self:Place("/ui/GameHUD/GatePrompt", top, Vector2(0.5, 1), Vector2(0, -384))
-        self:Place("/ui/RewardHUD/Toast", top, Vector2(0.5, 1), Vector2(0, -392))
+        -- 큰 알림 판(UXFeedback 600×122)은 왼쪽 열 의뢰 추적(196~372) 바로 아래 384~506 — 파티 목록(384~584)과 같은 자리를 번갈아 쓴다 (HudMain.RenderParty가 UXFeedback.SlotBusy 동안 파티를 숨김)
+        --   11-01 실기기(아이폰 17 가로): 위 가운데 392~514(가로 707~1307)였을 때 해골 사망 알림이 플레이어 머리 위(화면 가운데 위 ~400~510)를 덮었다 → PC처럼 「왼쪽 알림 판」으로
+        --   아래 끝 506 = 아이폰 아래에서 519 > 조이스틱 위 끝 400 · 스킬 추천 띠(404~476) 위 · 출구 안내(가운데, 16:9에서 x 580~)와는 원래대로 번갈아 (UXFeedback.ShowNext가 끈다)
+        --   파티를 판 아래로 내리면 384+122+12 = 518 → 파티 200이면 아래 끝 718 = 아이폰 아래에서 307로 조이스틱(~400)을 덮어 숨기는 쪽을 골랐다 (tools/check_mobile_layout.cjs TURNS)
+        self:Place("/ui/RewardHUD/Toast", topL, Vector2(0, 1), Vector2(24, -384))
+        local toast = _EntityService:GetEntityByPath("/ui/RewardHUD/Toast")
+        if isvalid(toast) then
+            local tt = toast.UITransformComponent
+            log(string.format("[VRF] MobileLayout toast left align=%s pos=(%d,%d) size=%dx%d top=%d bottom=%d", tostring(tt.AlignmentOption), math.floor(tt.anchoredPosition.x), math.floor(tt.anchoredPosition.y), math.floor(tt.RectSize.x), math.floor(tt.RectSize.y), math.floor(-tt.anchoredPosition.y), math.floor(-tt.anchoredPosition.y + tt.RectSize.y)))
+        end
         -- 「스킬 추천」 띠: 가운데 아래는 소환수 줄(172~284) · 대화 단추(296~392, NpcWindow)가 쓰고 오른쪽은 그림자 명령·스킬 편집 단추라
         --   대화 단추 위 왼쪽(540~980 · 404~476)으로 (10-29 45 1-26 A: 빌드 자리 236은 소환수 줄·대화 단추·추출 단추와 겹쳤다)
         --   10-29 UI-20261029-01: 긴 선택 보상 제목은 띠가 넓어진다(SkillOffer.BandMaxWMobile) → 오른쪽 끝 980에 붙이고 왼쪽으로만 넓힌다 (스킬 편집 단추 990~)
