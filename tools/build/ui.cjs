@@ -374,26 +374,33 @@ function buildGameHud() {
   b.text("SkillWin/Points", "", { size: 24, color: "#F4ED83", anchor: "top-left", pos: [51, -76], rect_size: [340, 40], alignment: 3, ...outline });
   // 10-31 실플레이 피드백 「정예 승격을 배웠는데 표시가 없다」 (A안): 머리 줄 가운데(예전 트리색 범례 자리)에 「선택 보상」 3칸 — 의뢰 1·2·3에서 고른 선택 보상.
   //   칸 = 고른 축의 아이콘(+ 「선택 보상」 꼬리표) · 이름 · 단계(노말/악몽/지옥) · 고를 차례면 「고르기」 · 의뢰 전이면 잠금 + 의뢰 제목. 누르면 아래 공방 자리에 설명 (SkillWindow.RenderChoices·RenderChoiceDetail)
-  //   범례는 시간선 판 머리 줄(TL/Legend)로 옮긴다. 칸 테두리·바탕은 공방 강화 노드·깃발 칸과 같은 그림(sk_ws_node_frame_*)
+  //   범례는 시간선 판 머리 줄(TL/Legend)로 옮긴다.
+  //   11-01 사용자 결정 3-A 「장식 없는 칸 테로 교체」: 예전엔 공방 강화 노드 테(sk_ws_node_frame_*, 둥근 테 + 가시 장식)를 칸 폭으로 늘려 써서
+  //   이름(「해골 하나 더」·「메마른 우물의 혼」)이 오른쪽 장식 위로 지나갔다 → 장식 없는 어두운 9조각 판(ui-tokens PLATE = ui_loot_label · 바닥 이름표 판).
+  //   테 선은 가장자리 5px 안이라 아이콘·꼬리표·글은 PLATE.pad 안쪽. 칸 상태(고름 = 트리색 · 고를 차례 = 초록 · 설명 중 = 금빛 · 의뢰 전 = 흐린 남회색)는 테 색으로 (SkillWindow.RenderChoices)
   {
     const T = require("./ui-tokens.cjs");
+    const PL = T.PLATE;
     const row = "SkillWin/Choice";
     const x0 = 400, w = 640, h = 52, headW = 84, gap = T.SPACE / 2;
     const chipW = Math.floor((w - headW - 3 * gap) / 3);
+    const tag = { w: 52, h: 16 };
+    const nameH = 22, tierH = 20, textTop = (h - nameH - tierH) / 2;   // 이름·단계 두 줄을 칸 가운데로 (위아래 5 — 테 선 안)
     b.empty(row, { anchor: "top-left", pivot: [0, 1], pos: [x0, -70], rect_size: [w, h] });
     b.text(`${row}/Head`, "선택 보상", { size: 16, bold: true, color: "#E6C88A", anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [headW, h], alignment: 3, ...outline });
     for (let i = 1; i <= 3; i++) {
       const c = `${row}/C${i}`;
-      const iconX = gap, icon = 40, textX = iconX + icon + 8, textW = chipW - textX - gap;
+      // 아이콘 = 칸 높이 − 위아래 pad (가운데) · 꼬리표는 아이콘 왼쪽 아래 모서리(pad 안) · 글은 꼬리표 오른쪽 끝부터 오른쪽 pad까지
+      const iconX = PL.pad, icon = h - 2 * PL.pad, textX = PL.pad + tag.w, textW = chipW - textX - PL.pad;
       b.button(c, "", { anchor: "top-left", pivot: [0, 1], pos: [headW + gap + (i - 1) * (chipW + gap), 0], rect_size: [chipW, h], bg_color: { r: 0, g: 0, b: 0, a: 0.3 }, sprite_type: 1 });
-      b.sprite(`${c}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [chipW, h], ...part("sk_ws_node_frame_empty"), sprite_type: 1 });
+      b.sprite(`${c}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [chipW, h], ...part(PL.key), sprite_type: 1 });
       b.patchComponent(`${c}/Rim`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-      b.sprite(`${c}/Icon`, { anchor: "middle-left", pivot: [0, 0.5], pos: [iconX, 3], rect_size: [icon, icon], color: WHITE, alpha: 1, sprite_type: 0 });
+      b.sprite(`${c}/Icon`, { anchor: "middle-left", pivot: [0, 0.5], pos: [iconX, 0], rect_size: [icon, icon], color: WHITE, alpha: 1, sprite_type: 0 });
       k.aspect(`${c}/Icon`);
       b.patchComponent(`${c}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
-      k.choiceTag(`${c}/Tag`, { anchor: "bottom-left", pivot: [0, 0], pos: [2, 2], w: 52, h: 16, size: 11 });
-      b.text(`${c}/Name`, "", { size: 15, bold: true, color: C.title, anchor: "top-left", pivot: [0, 1], pos: [textX, -5], rect_size: [textW, 22], alignment: 3, bestfit: true, min_size: 11, max_size: 15, ...outline });
-      b.text(`${c}/Tier`, "", { size: 13, color: C.dim, anchor: "bottom-left", pivot: [0, 0], pos: [textX, 5], rect_size: [textW, 20], alignment: 3, bestfit: true, min_size: 10, max_size: 13 });
+      k.choiceTag(`${c}/Tag`, { anchor: "bottom-left", pivot: [0, 0], pos: [PL.pad, PL.pad], w: tag.w, h: tag.h, size: 11 });
+      b.text(`${c}/Name`, "", { size: 15, bold: true, color: C.title, anchor: "top-left", pivot: [0, 1], pos: [textX, -textTop], rect_size: [textW, nameH], alignment: 3, bestfit: true, min_size: 11, max_size: 15, ...outline });
+      b.text(`${c}/Tier`, "", { size: 13, color: C.dim, anchor: "bottom-left", pivot: [0, 0], pos: [textX, textTop], rect_size: [textW, tierH], alignment: 3, bestfit: true, min_size: 10, max_size: 13 });
     }
   }
   k.btn("SkillWin/BtnReset", "초기화", { anchor: "top-right", pos: [-51, -72], rect_size: [300, 48], font_size: 18 });
@@ -781,15 +788,28 @@ function buildGameHud() {
   b.text("WpWin/DiffTip/Text", "", { size: 19, color: C.gold, anchor: "middle-center", pos: [0, 0], rect_size: [488, 88], alignment: 4, bestfit: true, min_size: 14, max_size: 19, ...outline });
 
   // ── 랭킹 창 ──
-  k.frame("RankWin", "middle-center", [0, 60], [640, 660], "랭킹");
+  const RT = require("./ui-tokens.cjs").RANKTAB;
+  k.frame("RankWin", "middle-center", [0, 60], [RT.winW, RT.winH], "랭킹");
   // 10-20 B안: 「이번 주 심연」 탭 (주간 규칙 + 주마다 새 기록판) · 10-24 「성장 순위」 탭 (레벨 + 가장 멀리 간 난이도·액트) — 탭 넷.
   // 심연을 숨긴 동안(config depthEnabled 0) 심연 두 탭은 RankWindow가 끈다 → 앞 두 칸(성장·보스)만 보인다
-  [["TabProgress", "성장 순위", -228], ["TabQueen", "묘지기 여왕 처치 시간", -76], ["TabDepth", "심연 최고 층", 76], ["TabWeek", "이번 주 심연", 228]].forEach(([n, t, x]) => {
-    k.btn(`RankWin/${n}`, t, { anchor: "top-center", pos: [x, -86], rect_size: [148, 56], font_size: 16 });
-  });
-  // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김)
-  k.actPager("RankWin/ActBar", "top-center", [0, -166], 580);
-  k.inner("RankWin/Paper", "top-center", [0, -218], [580, 414], "win_content");
+  // 11-01 사용자 결정 2-C 「탭 폭 넓히기」: 폭 148에서 「보스 처치 시간」(실행 중 RankWindow가 넣는 글)이 두 줄로 꺾였다 → 글귀·글자 16 그대로,
+  //   폭 = 가장 긴 탭 글 + 양쪽 장식 안쪽(ui-tokens RANKTAB.side) · 글 칸은 한 줄 높이(넘치면 줄이지 꺾지 않는다). 자리는 보이는 탭 수로 RankWindow.LayoutTabs가 다시 잡는다
+  //   — 빌드 배치 = 심연을 숨긴 기본(둘이 한 줄 가운데) · 심연 탭 둘은 둘째 줄 자리
+  {
+    const T = require("./ui-tokens.cjs");
+    const tabs = [["TabProgress", "성장 순위"], ["TabQueen", "보스 처치 시간"], ["TabDepth", "심연 최고 층"], ["TabWeek", "이번 주 심연"]];
+    const tabW = T.rankTabW(tabs.map(([, t]) => t));
+    const lay = T.rankLayout(tabs.length, tabW);
+    tabs.forEach(([n, t], i) => {
+      const p = `RankWin/${n}`;
+      k.btn(p, t, { anchor: "top-center", pos: [lay.tabs[i].x, lay.tabs[i].y], rect_size: [tabW, RT.h], font_size: RT.font });
+      require("./lib.cjs").fitButtonText(b, p, { oneLine: true });
+      b.patchComponent(p, "MOD.Core.TextGUIRendererComponent", { Padding: { ...b.getComponent(p, "MOD.Core.TextGUIRendererComponent").Padding, left: RT.side, right: RT.side } });
+    });
+  }
+  // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김). 탭 한 줄일 때 자리 (넷이면 RankWindow.LayoutTabs가 내린다)
+  k.actPager("RankWin/ActBar", "top-center", [0, -RT.actBarTop], 580);
+  k.inner("RankWin/Paper", "top-center", [0, -RT.paperTop], [580, RT.paperH], "win_content");
   // 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안): 목록 아래 구분선 + 「내 순위」 한 줄 (RankWindow.MineText · 서버 RankingSystem.MineDigest).
   //   목록 칸을 그만큼 줄이고 넘치면 글자를 줄인다 (이번 주 판은 규칙 줄까지 15줄 남짓)
   {
@@ -797,7 +817,7 @@ function buildGameHud() {
     const padX = 20, mineH = 30, listTop = 16;
     const mineY = T.SPACE;                                // 판 아래에서 내 순위 줄 바닥
     const divY = mineY + mineH + T.SPACE / 2;             // 구분선
-    const listH = 414 - listTop - divY - T.SPACE / 2;     // 목록 바닥 = 구분선 위 6
+    const listH = RT.paperH - listTop - divY - T.SPACE / 2;     // 목록 바닥 = 구분선 위 6
     b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [padX, -listTop], rect_size: [540, listH], bestfit: true, min_size: 14, max_size: 19 });
     b.panel("RankWin/Paper/MineDiv", { anchor: "bottom-left", pivot: [0, 0], pos: [padX, divY], rect_size: [540, 2], color: { r: 0.45, g: 0.38, b: 0.28, a: 0.6 } });
     b.text("RankWin/Paper/Mine", "", { size: 19, bold: true, color: "#F4ED83", alignment: 3, anchor: "bottom-left", pivot: [0, 0], pos: [padX, mineY], rect_size: [540, mineH], bestfit: true, min_size: 14, max_size: 19, ...outline });

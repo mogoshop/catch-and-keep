@@ -36,7 +36,52 @@ const SKPANEL = { border: 24, pad: 24 + SPACE };
 // 버튼 (모든 창 공통 · 터치 88 이상)
 const BUTTON = { h: 88, w: 240, wide: 360, font: 22, fontMain: 26,
   padX: 30,        // 버튼 그림(btn_frame) 양 끝 장식 안쪽부터 글자 (장식에 글자가 닿지 않게)
+  // 양 끝 장식(해골 + 안쪽 마름모 끝)이 단추 가장자리에서 차지하는 폭 — btn_frame 320×80 그림 열 분석(11-01): 왼쪽 38 · 오른쪽 36.
+  //   padX(30)부터 글을 두면 긴 글이 마름모 끝(30~38)에 닿는다 (10-29 「정렬」·「여러 개 선택」). 글 길이로 폭을 정하는 단추는 artEdge + SPACE/2를 비운다
+  artEdge: 38,
   minFont: 14 };   // 글이 길면 이 크기까지 줄인다 (「다음 ▶ [Space]」 같은 PC 단축키 안내)
+// 글 폭 어림 — 실행 중 UIKit.TextWidth와 같은 규칙: 한글·기호 1자 = 글자 크기 · 영문·숫자·빈칸 = 0.55배 (서식 태그는 뺀다).
+//   메이커 실측(11-01 랭킹 탭 사진 · 기본 글꼴): 한글 0.92배 · 빈칸 0.23배 — 어림이 넉넉해서 「어림으로 한 줄에 든다」면 화면에서도 든다
+const GLYPH = { wide: 1, narrow: 0.55 };
+function textWidth(text, px) {
+  let w = 0;
+  for (const ch of String(text).replace(/<\/?[A-Za-z][\w-]*[^<>]*>/g, '')) w += (ch.codePointAt(0) > 127 ? GLYPH.wide : GLYPH.narrow) * px;
+  return w;
+}
+// 랭킹 창 탭 (11-01 사용자 결정 2-C 「탭 폭 넓히기」 — 글귀·글자 크기 16 그대로. 폭 148에서 「보스 처치 시간」이 두 줄로 꺾였다).
+//   탭 폭 = 가장 긴 탭 글(GLYPH 어림 · 한 줄) + 양쪽 side(단추 장식 artEdge + SPACE/2) → rankTabW. 글 칸 여백도 side (넘치면 줄이지 장식에 닿지 않게).
+//   한 줄에 perRow개 — 넷을 한 줄에 두면 4×202 + 3×16 = 856 > 창 안쪽 538(바탕 640 − padX×2)이라 둘씩. 보이는 탭만 가운데 정렬:
+//   심연을 숨긴 동안(성장·보스 둘) = 빌더 배치 그대로 한 줄 · 심연이 켜져 넷 = 둘째 줄 + 액트 넘김 막대·기록 칸을 gapY씩 아래로 쌓고 창을 늘린다.
+//   실행 중 배치 RankWindow.LayoutTabs가 같은 값을 쓴다 (check_ui_tokens가 RankWindow 속성 · 빌드된 탭 · 2/4탭 배치 겹침을 잰다)
+const RANKTAB = { font: 16, h: 56, top: FRAME.contentTop + SPACE, gapX: FRAME.gap, gapY: SPACE, perRow: 2, side: BUTTON.artEdge + SPACE / 2,
+  winW: 640, winH: 660, actBarH: 76, paperH: 414 };
+RANKTAB.actBarTop = RANKTAB.top + RANKTAB.h + SPACE * 2;   // 166 — 탭 한 줄일 때 액트 넘김 막대 위 끝 (예전 자리 그대로)
+RANKTAB.paperTop = RANKTAB.top + RANKTAB.h + RANKTAB.actBarH;   // 218 — 탭 한 줄일 때 기록 칸 위 끝 (예전 자리 그대로)
+function rankTabW(labels) {
+  return Math.ceil(Math.max(...labels.map((t) => textWidth(t, RANKTAB.font))) + RANKTAB.side * 2);
+}
+// 보이는 탭 n개의 배치 (창 바탕 위 가운데 기준, y는 위에서 아래로 −). RankWindow.LayoutTabs와 같은 계산
+function rankLayout(n, tabW) {
+  const R = RANKTAB;
+  const rows = Math.max(1, Math.ceil(n / R.perRow));
+  const tabs = [];
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / R.perRow), inRow = Math.min(R.perRow, n - row * R.perRow), col = i % R.perRow;
+    tabs.push({ x: (col - (inRow - 1) / 2) * (tabW + R.gapX), y: -(R.top + row * (R.h + R.gapY)) });
+  }
+  let actTop = -R.actBarTop, paperTop = -R.paperTop;
+  if (rows > 1) {
+    const bottom = -(R.top + rows * R.h + (rows - 1) * R.gapY);
+    actTop = bottom - R.gapY;
+    paperTop = actTop - R.actBarH - R.gapY;
+  }
+  const winH = R.winH + (-R.paperTop - paperTop);
+  return { rows, tabs, actTop, paperTop, winH, rim: [R.winW + FRAME.rimOut * 2, winH + FRAME.rimOut * 2] };
+}
+// 장식 없는 어두운 칸 테 (ui_loot_label 96×32 · 9조각 테두리 12 — 코덱스 feel-fx-v2 「밝은 회색 얇은 테 · 색을 입히는 용도 · 안쪽 반투명 검정 · 돌출 장식 없음」).
+//   11-01 사용자 결정 3-A: 스킬 창 머리 줄 「선택 보상」 칸이 공방 노드 테(sk_ws_node_frame_*, 둥근 테 + 가시 장식)를 칸 폭으로 늘려 써서 이름이 장식 위로 지나갔다 → 이 판으로.
+//   테 선은 가장자리에서 5px 안쪽까지(모서리 빗면 포함 · 그림 실측) → 아이콘·꼬리표·글은 pad(SPACE/2) 안쪽. 칸 상태는 그림 대신 테 색(SkillWindow.RenderChoices)
+const PLATE = { key: 'ui_loot_label', border: 12, rim: 5, pad: SPACE / 2 };
 // 책갈피 칸 (guide_tab 320×88): 왼쪽 해골 장식 40 · 오른쪽 화살촉 50을 뺀 안쪽에 아이콘 + 이름을 가운데로 (10-27 사용자: 「목차 내부 패딩 엉망 · 수평 중앙」)
 const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16 };
 // HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「스킬 추천 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
@@ -94,4 +139,4 @@ const TOPBAND = { targetTop: 20, targetH: 114, tipH: 74, gap: SPACE };
 TOPBAND.slot2 = TOPBAND.targetTop + TOPBAND.targetH + TOPBAND.gap;   // 146 — 여정 안내 위 끝
 TOPBAND.slot3 = TOPBAND.slot2 + TOPBAND.tipH + TOPBAND.gap;          // 232 — 출구 안내 위 끝
 
-module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite };
+module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout };

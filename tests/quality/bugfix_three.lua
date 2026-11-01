@@ -122,7 +122,7 @@ ok(has(ui.text[WS..'/Stat'],'다음 단계: ') and has(ui.text[WS..'/Stat'],'악
 ok(ui.en['SkillWin/BtnLearn']==false and ui.en['SkillWin/BtnEdit']==false and ui.en[WS..'/N1']==false and ui.en[WS..'/Hub']==false and ui.icon[WS..'/Pip1']=='','배우기·칸 넣기·강화 노드·랭크 점 감춤')
 ok(lastLog('[VRF] skill choice detail')=='[VRF] skill choice detail slot=2 axis=command tier=1','[VRF] skill choice detail')
 SkillWindow:RenderChoices(pq)
-ok(ui.icon[C..'2/Rim']=='UI_sk_ws_node_frame_max','설명 중인 칸 금테')
+ok(ui.icon[C..'2/Rim']=='UI_ui_loot_label' and ui.color[C..'2/Rim'].r==0.9 and ui.color[C..'2/Rim'].g==0.78,'설명 중인 칸 금테 (11-01 3-A: 장식 없는 판 + 금빛 테 색)')
 local learned=0
 BOOK={RequestLearn=function() learned=learned+1 end,RequestSetSlot=function() learned=learned+1 end}
 SkillWindow.Selected='bone_shard'
@@ -149,8 +149,8 @@ local so=read('RootDesk/MyDesk/UI/Windows/SkillOffer.mlua')
 ok(has(so,'_UIKit:SetEnabled(c .. "/Tag", def ~= nil)') and has(so,'"/Card" .. tostring(i) .. "/Tag", false)'),'보상 카드 꼬리표: 보상 모드 켬 · 스킬 추천 끔')
 local gen=read('tools/build/ui.cjs')
 local _,tagN=gen:gsub('k%.choiceTag%(','')
-ok(tagN==2 and has(gen,'pos: [50, -158], w: 72, h: 20') and has(gen,'pos: [2, 2], w: 52, h: 16') and has(gen,'"선택 보상"'),'생성기: 카드·새 줄 꼬리표 (같은 choiceTag)')
-ok(has(gen,'const row = "SkillWin/Choice";') and has(gen,'part("sk_ws_node_frame_empty")') and not has(gen,'b.text("SkillWin/Legend"'),'생성기: 선택 보상 줄은 기존 노드 테두리 재사용 · 머리 줄 범례 자리 비움')
+ok(tagN==2 and has(gen,'pos: [50, -158], w: 72, h: 20') and has(gen,'pos: [PL.pad, PL.pad], w: tag.w, h: tag.h') and has(gen,'"선택 보상"'),'생성기: 카드·새 줄 꼬리표 (같은 choiceTag · 새 줄은 칸 테 안쪽 PLATE.pad)')
+ok(has(gen,'const row = "SkillWin/Choice";') and has(gen,'...part(PL.key)') and not has(gen,'b.text("SkillWin/Legend"'),'생성기: 선택 보상 줄 칸 테 = ui-tokens PLATE(장식 없는 판 · 11-01 3-A) · 머리 줄 범례 자리 비움')
 
 -- ───────── ③ 랭킹 내 순위 ─────────
 _UtilLogic={ElapsedSeconds=100}

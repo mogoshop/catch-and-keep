@@ -9,6 +9,22 @@ script RankWindow extends Logic
     property string Win = "RankWin"
     property string Kind = "progress"
     property integer Act = 0                -- 심연 탭에서 보는 액트 (0 = 아직 안 고름 → 지금 액트)
+    -- 탭 배치 (11-01 사용자 결정 2-C 「탭 폭 넓히기」 · 글귀·글자 16 그대로): 빌더(tools/build/ui.cjs · ui-tokens RANKTAB)와 같은 값 — check_ui_tokens가 본다.
+    --   탭 폭은 가장 긴 글(「보스 처치 시간」) + 양쪽 단추 장식 안쪽. 보이는 탭만 한 줄에 TabPerRow개씩 가운데로 —
+    --   심연을 숨긴 동안 = 성장·보스 한 줄(빌더 자리 그대로) · 심연이 켜져 넷 = 둘째 줄 + 액트 넘김 막대·기록 칸을 TabGapY씩 아래로 쌓고 창을 늘린다
+    --   (넷을 한 줄에 두면 856 > 창 안쪽 538)
+    property integer TabW = 202
+    property integer TabH = 56
+    property integer TabTop = -86            -- 첫 줄 위 끝 (창 바탕 위에서)
+    property integer TabGapX = 16            -- 나란한 탭 사이 (ui-tokens FRAME.gap)
+    property integer TabGapY = 12            -- 줄 사이 · 둘째 줄 아래 쌓기 사이 (ui-tokens SPACE)
+    property integer TabPerRow = 2
+    property integer ActBarTop = -166        -- 탭 한 줄일 때 액트 넘김 막대 위 끝 (빌더 자리)
+    property integer ActBarH = 76
+    property integer PaperTop = -218         -- 탭 한 줄일 때 기록 칸 위 끝 (빌더 자리)
+    property integer WinW = 640
+    property integer WinH = 660              -- 탭 한 줄일 때 창 바탕 높이
+    property integer RimOut = 20             -- 창 테두리가 바탕 밖으로 넘치는 폭 (ui-tokens FRAME.rimOut)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -24,6 +40,41 @@ script RankWindow extends Logic
         _UIKit:Connect(self.Win .. "/ActBar/Next", function() self:SetAct(self:CurrentAct() + 1) end)
         -- 탭 글자: 보스 이름은 아래 표 제목에 있다 (10-24: 탭이 좁아져 「재의 왕 고르바스 처치」가 두 줄로 접혔다)
         _UIKit:SetText(self.Win .. "/TabQueen", "보스 처치 시간")
+        self:LayoutTabs(_GameData.depthEnabled >= 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void LayoutTabs(boolean depth)
+        -- 보이는 탭만 한 줄에 TabPerRow개씩 가운데 정렬. 줄이 둘 이상이면 액트 넘김 막대·기록 칸을 탭 아래로 TabGapY씩 쌓고 창(테두리 포함)을 그만큼 늘린다
+        local shown = { "TabProgress", "TabQueen" }
+        if depth then
+            table.insert(shown, "TabDepth")
+            table.insert(shown, "TabWeek")
+        end
+        local per = math.max(1, self.TabPerRow)
+        local rows = math.max(1, math.ceil(#shown / per))
+        local xs = {}
+        for i, name in ipairs(shown) do
+            local row = math.floor((i - 1) / per)
+            local inRow = math.min(per, #shown - row * per)
+            local col = (i - 1) - row * per
+            local x = (col - (inRow - 1) / 2) * (self.TabW + self.TabGapX)
+            _UIKit:SetPos(self.Win .. "/" .. name, Vector2(x, self.TabTop - row * (self.TabH + self.TabGapY)))
+            table.insert(xs, tostring(math.floor(x)))
+        end
+        local actTop = self.ActBarTop
+        local paperTop = self.PaperTop
+        if rows > 1 then
+            local bottom = self.TabTop - rows * self.TabH - (rows - 1) * self.TabGapY
+            actTop = bottom - self.TabGapY
+            paperTop = actTop - self.ActBarH - self.TabGapY
+        end
+        local winH = self.WinH + (self.PaperTop - paperTop)
+        _UIKit:SetPos(self.Win .. "/ActBar", Vector2(0, actTop))
+        _UIKit:SetPos(self.Win .. "/Paper", Vector2(0, paperTop))
+        _UIKit:SetSize(self.Win, Vector2(self.WinW, winH))
+        _UIKit:SetSize(self.Win .. "/Rim", Vector2(self.WinW + self.RimOut * 2, winH + self.RimOut * 2))
+        log(string.format("[VRF] rank tabs shown=%d rows=%d w=%d x=%s actTop=%d paperTop=%d winH=%d", #shown, rows, self.TabW, table.concat(xs, ","), math.floor(actTop), math.floor(paperTop), math.floor(winH)))
     end
 
     @ExecSpace("ClientOnly")

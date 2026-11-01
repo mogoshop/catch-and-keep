@@ -40,6 +40,9 @@ script SkillWindow extends Logic
     property string ShowGiant = ""          -- 46-5 뼈 의식 공방에 펼친 거인 노드 줄 (basic·shield·greatsword·twin·mage · "" = 깃발 → 지금 무리 → 기본)
     property integer ChoiceSlot = 0         -- 공방 자리에 설명을 띄운 선택 보상 칸 (1~3 · 0 = 스킬 공방) — 10-31 A안
     property string ElitePromoteNote = "선택 보상 「정예로 서는 그림자」와는 다른 스킬입니다"   -- 정예 승격 상세에만 (이름이 비슷해 혼동 · 10-31)
+    -- 선택 보상 칸 테 (11-01 사용자 결정 3-A 「장식 없는 칸 테로 교체」 · 빌더 tools/build/ui.cjs SkillWin/Choice · ui-tokens PLATE):
+    --   장식 없는 어두운 9조각 판 하나를 네 상태가 같이 쓰고, 상태는 테 색으로 — 예전엔 공방 노드 테 4장(가시·자물쇠 장식)을 칸 폭으로 늘려 이름이 장식 위로 지나갔다
+    property string ChoiceRimKey = "ui_loot_label"
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -210,6 +213,7 @@ script SkillWindow extends Logic
     @ExecSpace("ClientOnly")
     method void RenderChoices(PlayerQuest quest)
         -- 머리 줄 「선택 보상」 3칸: 고름 = 축 아이콘(+꼬리표)·이름·단계 · 고를 차례 = 「고르기」 · 의뢰 전 = 잠금 + 의뢰 제목. 지금 설명 중인 칸은 금테
+        --   칸 테는 장식 없는 판 하나(ChoiceRimKey) — 상태는 테 색: 고름 = 트리색 · 고를 차례 = 초록 · 의뢰 전 = 흐린 남회색(잠긴 제목 글색) · 설명 중 = 금빛 (11-01 3-A)
         local root = self.Win .. "/Choice"
         _UIKit:SetEnabled(root, quest ~= nil)
         if quest == nil then return end
@@ -223,20 +227,20 @@ script SkillWindow extends Logic
             local name = ""
             local sub = ""
             local tint = Color(1, 1, 1, 1)
-            local key = "sk_ws_node_frame_locked"
-            local ring = Color(1, 1, 1, 1)
+            local ring = Color(0.55, 0.6, 0.71, 1)   -- 의뢰 전 = #8C99B4
+            local state = "locked"
             if def ~= nil then
                 icon = skill ~= nil and skill.icon or ""
                 name = def.name
                 sub = self:ChoiceTierName(tier)
-                key = "sk_ws_node_frame_learned"
                 ring = self:TreeColor(axis)   -- 축 이름 = 트리 이름 (command · soul · curse)
+                state = "picked"
             elseif tier > 0 then
                 icon = _GameData:GetUiIcon("q_avail")
                 name = _UIKit:Colored("#7CFF7A", "고르기")
                 sub = quest:ChoiceQuestTitle(slot)
-                key = "sk_ws_node_frame_empty"
                 ring = Color(0.62, 0.92, 0.62, 1)
+                state = "pending"
             else
                 icon = _GameData:GetUiIcon("skill_locked")
                 name = _UIKit:Colored("#8C99B4", quest:ChoiceQuestTitle(slot))
@@ -244,8 +248,8 @@ script SkillWindow extends Logic
                 tint = Color(0.7, 0.7, 0.75, 0.9)
             end
             if slot == self.ChoiceSlot then
-                key = "sk_ws_node_frame_max"
-                ring = Color(1, 1, 1, 1)
+                ring = Color(0.9, 0.78, 0.54, 1)   -- 설명 중 = 금빛 #E6C88A (다른 창 고른 칸 금테와 같은 색)
+                state = "shown"
             end
             _UIKit:SetIcon(c .. "/Icon", icon)
             _UIKit:SetEnabled(c .. "/Icon", icon ~= "")
@@ -253,11 +257,11 @@ script SkillWindow extends Logic
             _UIKit:SetEnabled(c .. "/Tag", def ~= nil)
             _UIKit:SetText(c .. "/Name", name)
             _UIKit:SetText(c .. "/Tier", sub)
-            _UIKit:SetIcon(c .. "/Rim", _GameData:GetUiIcon(key))
+            _UIKit:SetIcon(c .. "/Rim", _GameData:GetUiIcon(self.ChoiceRimKey))
             _UIKit:SetColor(c .. "/Rim", ring)
             local shown = axis
             if shown == "" then shown = tier > 0 and "pending" or "locked" end
-            log(string.format("[VRF] skill choice row slot=%d axis=%s tier=%d", slot, shown, tier))
+            log(string.format("[VRF] skill choice row slot=%d axis=%s tier=%d rim=%s", slot, shown, tier, state))
         end
     end
 

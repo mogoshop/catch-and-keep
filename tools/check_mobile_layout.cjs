@@ -424,9 +424,64 @@ for (const win of WIDE) {
   }
 }
 
+// ── 스킬 창 머리 줄 「선택 보상」 3칸 (11-01 사용자 결정 3-A 「장식 없는 칸 테로 교체」 · ui-tokens PLATE) ──
+//   모바일에서도 PC와 같은 자리다 (SkillWindow 실행 중 배치는 시간선만 옮기고 · WindowFit은 스킬 창을 옮기지 않는다 · RenderChoices는 그림·색만 바꾼다).
+//   4:3 태블릿 보이는 칸(NARROW.visibleW) 가운데에 창을 두고: 머리 줄이 화면 가장자리 안 · 남은 포인트(Points)·초기화(BtnReset)·시간선 판(TL)과 겹치지 않음 ·
+//   칸 테 = 장식 없는 판(PLATE.key, 9조각) · 칸마다 아이콘·꼬리표·이름·단계가 테 선(PLATE.rim) 안 · 꼬리표가 이름·단계 글과 겹치지 않음 · 칸끼리 겹치지 않음
+let headerChecked = 0;
+{
+  const { PLATE } = require('./build/ui-tokens.cjs');
+  const gb = uiOf('GameHUD');
+  const icons = Object.fromEntries(require('./lib/csv.cjs').load('ui_icons').map((r) => [r.key, r.ruid]));
+  const win = geo(gb, '/ui/GameHUD/SkillWin');
+  const [WW, WH] = win.size;
+  // 창 기준(왼쪽 아래 0, 위 +) 사각형 → 화면(보이는 칸 왼쪽 아래 0) : 창 가운데 = 보이는 칸 가운데 + 창 자리
+  const toScreen = (r) => { const ox = NARROW.visibleW / 2 + win.pos[0] - WW / 2, oy = NARROW.visibleH / 2 + win.pos[1] - WH / 2; return [r[0] + ox, r[1] + ox, r[2] + oy, r[3] + oy]; };
+  const inWin = (p) => childRect(geo(gb, '/ui/GameHUD/SkillWin/' + p), WW, WH);
+  const ov = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[3], b[3]) - Math.max(a[2], b[2]) > 0.5;
+  const row = inWin('Choice');
+  const rs = toScreen(row);
+  headerChecked++;
+  if (rs[0] < NARROW.edge - 0.5 || rs[1] > NARROW.visibleW - NARROW.edge + 0.5 || rs[3] > NARROW.visibleH - NARROW.edge + 0.5) problems.push(`좁은 화면 4:3: 스킬 창 머리 줄 선택 보상(x ${rs[0]}~${rs[1]} · y ${rs[2]}~${rs[3]})이 보이는 칸 ${NARROW.visibleW}×${NARROW.visibleH} − 가장자리 ${NARROW.edge} 밖`);
+  for (const other of ['Points', 'BtnReset', 'TL']) {
+    headerChecked++;
+    if (ov(row, inWin(other))) problems.push(`스킬 창 머리 줄 선택 보상 ↔ ${other} 겹침`);
+  }
+  const RW = row[1] - row[0], RH = row[3] - row[2];
+  const chips = [];
+  for (let i = 1; i <= 3; i++) {
+    const c = `/ui/GameHUD/SkillWin/Choice/C${i}`;
+    const cg = geo(gb, c);
+    const cr = childRect(cg, RW, RH);
+    chips.push(cr);
+    if (cr[0] < -0.5 || cr[1] > RW + 0.5 || cr[2] < -0.5 || cr[3] > RH + 0.5) problems.push(`스킬 창 선택 보상 C${i}이 머리 줄 밖`);
+    const [CW, CH] = cg.size;
+    const sp = gb.getComponent(c + '/Rim', 'MOD.Core.SpriteGUIRendererComponent');
+    const img = sp && sp.ImageRUID && (sp.ImageRUID.DataId || sp.ImageRUID);
+    headerChecked++;
+    if (img !== icons[PLATE.key] || sp.Type !== 1) problems.push(`스킬 창 선택 보상 C${i} 칸 테 ${img}(종류 ${sp && sp.Type}) ≠ 장식 없는 판 ${PLATE.key} 9조각`);
+    const rim = childRect(geo(gb, c + '/Rim'), CW, CH);
+    headerChecked++;
+    if (rim[0] !== 0 || rim[1] !== CW || rim[2] !== 0 || rim[3] !== CH) problems.push(`스킬 창 선택 보상 C${i} 칸 테가 칸 크기와 다르다`);
+    const parts = {};
+    for (const k of ['Icon', 'Tag', 'Name', 'Tier']) {
+      const r = childRect(geo(gb, c + '/' + k), CW, CH);
+      parts[k] = r;
+      headerChecked++;
+      if (r[0] < PLATE.rim - 0.5 || r[1] > CW - PLATE.rim + 0.5 || r[2] < PLATE.rim - 0.5 || r[3] > CH - PLATE.rim + 0.5) problems.push(`스킬 창 선택 보상 C${i}/${k}(x ${r[0]}~${r[1]} · y ${r[2]}~${r[3]})가 칸 테 선(${PLATE.rim}) 안쪽 ${CW}×${CH} 밖`);
+    }
+    for (const [a, b] of [['Tag', 'Name'], ['Tag', 'Tier'], ['Icon', 'Name'], ['Icon', 'Tier'], ['Name', 'Tier']]) {
+      headerChecked++;
+      if (ov(parts[a], parts[b])) problems.push(`스킬 창 선택 보상 C${i}: ${a} ↔ ${b} 겹침`);
+    }
+    if (verbose && i === 1) console.log(`스킬 창 선택 보상 칸 ${CW}×${CH} · 테 선 ${PLATE.rim} · ` + Object.entries(parts).map(([k, r]) => `${k} x ${r[0]}~${r[1]} y ${r[2]}~${r[3]}`).join(' · ') + ` · 머리 줄 화면 x ${rs[0]}~${rs[1]}`);
+  }
+  for (let i = 0; i < chips.length; i++) for (let j = i + 1; j < chips.length; j++) { headerChecked++; if (ov(chips[i], chips[j])) problems.push(`스킬 창 선택 보상 C${i + 1} ↔ C${j + 1} 겹침`); }
+}
+
 if (problems.length) {
   for (const p of problems) console.log(p);
   console.log(`[check_mobile_layout] 문제 ${problems.length}건`);
   process.exit(1);
 }
-console.log(`[check_mobile_layout] 요소 ${names.length}개 · 화면 ${CANVASES.length}종 · 좁은 화면 넓은 창 ${WIDE.length}개(조각 ${wideChecked}), 문제 0건`);
+console.log(`[check_mobile_layout] 요소 ${names.length}개 · 화면 ${CANVASES.length}종 · 좁은 화면 넓은 창 ${WIDE.length}개(조각 ${wideChecked}) · 스킬 창 머리 줄 ${headerChecked}, 문제 0건`);
