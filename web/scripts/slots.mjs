@@ -15,6 +15,7 @@ import {execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {readJSON, assertSanitized} from './lib.mjs';
 import {SLOT_GROUPS, SLOTS} from './slot-defs.mjs';
+import {EXCLUDED as MAPLE_EXCLUDED, MAPLE_PICKS} from './maple-picks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'content/assets');
@@ -164,6 +165,7 @@ function gifDelays(b) {
   }
   return delays;
 }
+const BLANK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=', 'base64'); // 1×1 transparent
 const mapleCache = new Map();
 async function mapleClip(ruid) {
   if (mapleCache.has(ruid)) return mapleCache.get(ruid);
@@ -179,6 +181,9 @@ async function mapleClip(ruid) {
       const frames = []; let exact = true;
       for (const f of p.frames) {
         const s = byId.get(f.spriteRuid); const url = s?.payload?.thumbnail;
+        if (!url && f.width <= 8 && f.height <= 8) { // tiny empty spacer frame (no thumbnail exists): keep its timing as a blank frame
+          frames.push({...await store(BLANK_PNG, 'png', 'blank-spacer'), size: [f.width, f.height], pivot: f.pivot, spriteRuid: f.spriteRuid, blank: true}); continue;
+        }
         if (!url) { exact = false; break; }
         const buf = await download(url, `sprite-${f.spriteRuid}.png`);
         if (!buf) { exact = false; break; }
@@ -375,8 +380,19 @@ for (const [order, def] of SLOTS.entries()) {
     const m = await mapleCandidate(key, ruid);
     if (m) maple.push(m); else warnings.push(`maple candidate missing for ${def.id} ${key}`);
   }
+  // Searched MSW clips (fixed list in maple-picks.mjs): 「메이플 후보 · 검색」
+  for (const pick of MAPLE_PICKS[def.id] || []) {
+    if (mapleSeen.has(pick.ruid)) continue; mapleSeen.add(pick.ruid);
+    const clip = await mapleClip(pick.ruid);
+    if (!clip) { warnings.push(`search pick missing for ${def.id} ${pick.ruid}`); continue; }
+    const pv = pivotBox(clip.frames);
+    maple.push({id: `maple:${pick.ruid}`, source: 'maple', origin: 'search', title: pick.name || clip.dname, runtimeKey: null, ruids: [pick.ruid],
+      frameRuids: clip.frames.map(f => f.spriteRuid).filter(Boolean), resourceType: clip.type, resourceName: clip.dname,
+      frames: clip.frames.map(f => f.file), sizes: clip.frames.map(f => f.size), box: pv.box, offsets: pv.offsets, durations: clip.durations, timingLabel: clip.timingLabel, loop: true,
+      mediaKind: clip.mediaKind, status: 'search', statusLabel: pick.part ? `${pick.part} 효과` : '메이플 효과', tone: 'maple', reason: pick.reason});
+  }
   for (const c of [current, ...fx, ...maple]) if (c) delete c.haystack;
-  slots.push({id: def.id, title: def.title, group: def.group, order, runtime: def.runtime || null, currentNote, current, fx, maple});
+  slots.push({id: def.id, title: def.title, group: def.group, order, runtime: def.runtime || null, currentNote, current, fx, maple, mapleExcluded: MAPLE_EXCLUDED[def.id] || null});
 }
 for (const c of unassigned) { if (c.origin === 'catalog') { const [status, label, tone] = catalogStatus(c); Object.assign(c, {status, statusLabel: label, tone}); } delete c.haystack; }
 const scrub = s => String(s).split(GAME).join('<game>').replace(/\/(?:Users|private)\/[^\s'"]*/g, '<local>');
@@ -389,6 +405,8 @@ const counts = {
   fx: slots.reduce((n, s) => n + s.fx.length + (s.current?.kind === 'codex' ? 1 : 0), 0) + unassigned.length,
   fxNew: slots.reduce((n, s) => n + s.fx.filter(c => c.origin === 'v3').length, 0),
   maple: slots.reduce((n, s) => n + s.maple.length + (s.current?.kind === 'maple' ? 1 : 0), 0),
+  mapleSearch: slots.reduce((n, s) => n + s.maple.filter(c => c.origin === 'search').length, 0),
+  mapleSearchSlots: slots.filter(s => s.maple.some(c => c.origin === 'search')).length,
   mapleClips: new Set(slots.flatMap(s => [...s.maple, ...(s.current?.kind === 'maple' ? [s.current] : [])].map(c => c.ruids[0]))).size,
   unassigned: unassigned.length
 };
@@ -398,5 +416,5 @@ const data = {createdAt: new Date().toISOString(), sourceRef: REF, sourceCommit,
 assertSanitized(data, 'slots');
 await writeFile(path.join(out, 'slots.json'), JSON.stringify(data));
 await writeFile(path.join(out, 'slots-manifest.json'), JSON.stringify([...slotManifest.values()]));
-console.log(`Slots ${counts.slots} · current ${counts.current}/${counts.currentDeclared} · FX ${counts.fx} (new ${counts.fxNew}) · maple ${counts.maple} (${counts.mapleClips} clips) · unassigned ${counts.unassigned} · stored ${slotManifest.size} new files`);
+console.log(`Slots ${counts.slots} · current ${counts.current}/${counts.currentDeclared} · FX ${counts.fx} (new ${counts.fxNew}) · maple ${counts.maple} (${counts.mapleClips} clips, search ${counts.mapleSearch} in ${counts.mapleSearchSlots} slots) · unassigned ${counts.unassigned} · stored ${slotManifest.size} new files`);
 if (warnings.length) console.log('Warnings:\n- ' + warnings.join('\n- '));

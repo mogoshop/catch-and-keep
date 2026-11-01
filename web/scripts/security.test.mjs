@@ -131,8 +131,9 @@ test('effect picker renders slot text as text and exports RUIDs with the memo',a
   const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
   const evil='<img src=x onerror=alert(1)>';
   const cand={id:'maple:x',source:'maple',title:evil,statusLabel:evil,frames:['media/a.png'],durations:[100],ruids:['1'.repeat(32)],box:[1,1],runtimeKey:'SkillEffects.FxPoisonCloud'};
+  const searched={id:'maple:y',source:'maple',origin:'search',title:'검색 후보',statusLabel:'타격 효과',reason:evil,frames:['media/a.png'],durations:[100],ruids:['2'.repeat(32)],box:[1,1]};
   const slots={createdAt:'2026-11-01T00:00:00Z',sourceRef:'origin/main',sourceCommit:'abcdef12',sourceDate:'2026-11-01T00:00:00+09:00',catalog:{createdAt:'2026-10-31',sourceCommit:'12345678'},
-    groups:[{id:'g',title:evil}],slots:[{id:'s',title:evil,group:'g',runtime:'GameConst.FxSkillPoisonCloud',currentNote:evil,current:null,fx:[],maple:[cand]}],unassigned:[],counts:{slots:1}};
+    groups:[{id:'g',title:evil}],slots:[{id:'s',title:evil,group:'g',runtime:'GameConst.FxSkillPoisonCloud',currentNote:evil,current:null,fx:[],maple:[cand,searched]},{id:'t',title:'T',group:'g',runtime:null,currentNote:'',current:null,fx:[],maple:[],mapleExcluded:evil}],unassigned:[],counts:{slots:2}};
   const data={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:1,frameReferences:1},skills:[],groups:[],engineEffects:[],proceduralEffects:[]};
   const nodes=new Map();
   const getNode=selector=>{
@@ -150,6 +151,13 @@ test('effect picker renders slot text as text and exports RUIDs with the memo',a
     assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'),view);
     assert.equal(html.includes('<img src=x'),false,view);
   }
+  vm.runInContext(`STATE.tab='pick';PICK.view='maple';render();`,context);
+  assert.ok(getNode('#grid').innerHTML.includes('메이플 후보 · 검색'));
+  assert.ok(vm.runInContext('buildExport.length===0',context));
+  const searchedText=vm.runInContext(`PICK.picks={s:{choice:'maple:y'}};buildExport()`,context);
+  const searchedJson=JSON.parse(searchedText.match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.equal(searchedJson.picks[0].candidateOrigin,'search');
+  assert.deepEqual(searchedJson.picks[0].ruids,['2'.repeat(32)]);
   const text=vm.runInContext(`PICK.picks={s:{choice:'maple:x',memo:'잘 보임'}};buildExport()`,context);
   const json=JSON.parse(text.match(/```json\n([\s\S]*?)\n```/)[1]);
   assert.equal(json.picks[0].slotId,'s');

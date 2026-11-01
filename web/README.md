@@ -50,6 +50,8 @@ npm test && npm run build
 - 메이플 클립은 게임 체크아웃의 msw-search 래퍼(`getResource`/`getResourcesBatch`)로 프레임 스프라이트 썸네일 PNG와 미리보기 GIF 간격을 받습니다.
 - 결과는 `content/assets/slots.json`, `slots-manifest.json`(SHA-256), `media/slots/`에만 씁니다(Git 제외). 빌드는 이 해시도 검사합니다.
 - `slots.json`이 없으면 빌드는 경고만 하고 탭에 빈 상태를 보여 줍니다.
+- 「메이플 후보 · 검색」은 자리마다 MSW 리소스 검색으로 고른 클립 3개입니다. 목록은 `scripts/maple-picks.mjs`에 고정되어 있어 `npm run slots`를 다시 돌려도 바뀌지 않습니다.
+  검색을 새로 하려면 `node scripts/maple-search.mjs --game <checkout> --write`(검색어·해골 제외 자리는 그 파일 안) 뒤 결과를 검토하고 커밋합니다.
 
 ## Vercel
 
