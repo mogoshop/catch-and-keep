@@ -7,7 +7,8 @@
 --   Shadow_N : shadow
 -- 슬롯이 생기기 전 저장(Char·Inv·Shadow)은 지우지 않고 1번 캐릭터로 옮긴다 (그 캐릭터 첫 저장 때 Char_1… 생성, 원본은 백업으로 남는다).
 -- 입장: Account·Stash 읽기 → 선택 창 → 고른 슬롯 3키만 읽기. 심도 같은 방 이동은 고른 슬롯을 이어서 불러온다 (MarkSlotTravel).
--- 캐릭터 삭제는 슬롯 목록에서만 뺀다 (저장 데이터는 남겨 두고, 그 칸에 새 캐릭터를 만들면 덮어쓴다).
+-- 캐릭터 삭제는 슬롯 목록에서만 뺀다 (저장 데이터는 남겨 두고, 그 칸에 새 캐릭터를 만들면 덮어쓴다). 랭킹 줄은 감춘다 (RankingSystem.HideCharacter).
+-- 슬롯 요약의 created(만든 시각 ms)는 캐릭터 id로도 쓴다 (랭킹 키 RankingSystem.CharId) — 만든 뒤 바꾸지 않는다.
 -- 2분마다 바뀐 키만 BatchSetAsync, 퇴장·인스턴스 이동 전 BatchSetAndWait. 바뀜 판단 = 마지막으로 "저장 확인된" 문자열과 비교
 @Component
 script PlayerSave extends Component
@@ -422,7 +423,11 @@ script PlayerSave extends Component
         self:PublishSlots()
         local json = self:AccountJson()
         local code, ok = self:Storage():BatchSetAndWait({ Account = json })
-        if code == 0 then self.LastSaved["Account"] = json else log_error("[PlayerSave] 슬롯 삭제 저장 실패 " .. tostring(code)) end
+        if code == 0 then
+            self.LastSaved["Account"] = json
+            -- 랭킹: 이 캐릭터 줄을 목록에서 감춘다 (11-01 캐릭터 단위 랭킹 · 기록은 남긴다). 저장이 실패하면 다음 접속에 슬롯이 돌아오니 감추지 않는다
+            _RankingSystem:HideCharacter(self.Entity.PlayerComponent.ProfileCode, slot, info)
+        else log_error("[PlayerSave] 슬롯 삭제 저장 실패 " .. tostring(code)) end
         _Util:Notify("캐릭터 「" .. tostring(info.name) .. "」 삭제", senderUserId)
     end
 

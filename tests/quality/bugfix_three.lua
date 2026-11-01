@@ -11,7 +11,7 @@
 -- @source HudMap UI/Hud/HudMap.mlua RemainingFocus
 -- @source PlayerQuest Quest/PlayerQuest.mlua TierOfSlot,PickOf,ChoiceTier,PendingChoice,ChoiceDef,ChoiceQuestTitle
 -- @source SkillWindow UI/Windows/SkillWindow.mlua RenderChoices,RenderChoiceDetail,PickChoice,ChoiceTierName,TreeColor,TreeHex,Pick,Act
--- @source RankingSystem Endgame/RankingSystem.mlua ReadSorted,GetTop,MineDigest,ProgressText,RecordProgress
+-- @source RankingSystem Endgame/RankingSystem.mlua ReadSorted,ReadNames,GetTop,MineDigest,ProgressText,RecordProgress,CharId,RankKey,CharIdOf,CharName
 -- @source RankWindow UI/Windows/RankWindow.mlua OnData,ValueText,MineText
 --@pre local VMT={} VMT.__index=VMT VMT.__sub=function(a,b) return Vector2(a.x-b.x,a.y-b.y) end function VMT:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end function Vector2(x,y) return setmetatable({x=x,y=y},VMT) end
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
@@ -183,8 +183,11 @@ local function namesPage(keys) local d={} for i,k in ipairs(keys) do d[i]={KeyIn
 function _DataStorageService:GetGlobalDataStorage() return {BatchGetAndWait=function(_,keys) return namesPage(keys) end} end
 local recorded=0
 RankingSystem.RecordProgress=function() recorded=recorded+1 end
-local me={PlayerComponent={ProfileCode='ME',Nickname='me'}}
-store.rank_progress_0=makeBoard(150,'ME',37)
+-- 11-01 1-B: 키 = 계정 ProfileCode .. "_" .. 캐릭터 id (슬롯 4 · 만든 시각 ms) — 자세한 캐릭터 단위 검사는 rank_per_character 그룹
+local meSave={Slot=4,SlotInfo=function(_,s) return {name='새내기',created=63928683821328} end,CharName=function() return '새내기' end}
+local me={PlayerComponent={ProfileCode='ME',Nickname='me'},GetComponent=function(_,t) if t=='script.PlayerSave' then return meSave end end}
+local ME='ME_c4_63928683821328'
+store.rank_progress_0=makeBoard(150,ME,37)
 local digest=RankingSystem:GetTop('rank_progress_0',false)
 local mine=RankingSystem:MineDigest(me,'rank_progress_0',false,true)
 ok(mine=='37|9963','첫 쪽 37번째 → 37|값 ('..mine..')')
@@ -199,7 +202,7 @@ ok(sortedReads==2 and mine=='37|9963','캐시 중에도 내 순위는 정렬 첫
 _UtilLogic.ElapsedSeconds=112
 RankingSystem:MineDigest(me,'rank_progress_0',false,true)
 ok(sortedReads==2,'5초 안 같은 판 연타는 방금 답 그대로')
-store.rank_boss_x_0=makeBoard(150,'ME',120)
+store.rank_boss_x_0=makeBoard(150,ME,120)
 mine=RankingSystem:MineDigest(me,'rank_boss_x_0',true,false)
 ok(mine=='-1|9880' and getReads==1,'첫 쪽(100줄) 밖 → 순위 -1 · 값은 GetAndWait')
 store.rank_progress_0=makeBoard(20)
@@ -212,7 +215,7 @@ _UtilLogic.ElapsedSeconds=300
 RankingSystem:MineDigest(me,'rank_progress_0',false,true)
 ok(recorded==1,'RecordProgress는 세션당 한 번')
 ok(lastLog('[VRF] rank mine')=='[VRF] rank mine board=rank_progress_0 rank=0 value=0','기록 없음 로그 rank=0 value=0')
-RankingSystem.Known['rank_boss_x_0|ME']=4242
+RankingSystem.Known['rank_boss_x_0|'..ME]=4242
 RankingSystem.MineAt={}
 store.rank_boss_x_0=makeBoard(150)
 getReads=0
