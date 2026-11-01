@@ -39,6 +39,19 @@ if(slots) {
   const candidates=slots.slots.flatMap(s=>[s.current,...s.fx,...s.maple]).concat(slots.unassigned).filter(Boolean);
   for(const c of candidates)for(const f of c.frames)assetFiles.add(mediaPath(f));
 }
+// Optional scene-preview data (npm run scene): actor/map stills under content/scene with their own SHA manifest.
+let scene=null;const sceneFiles=new Set(),sceneHashes=new Map();
+try { scene=await readJSON(path.join(content,'scene/scene.json')); }
+catch(e){ if(e.code!=='ENOENT')throw e; console.warn('No content/scene/scene.json: the scene preview will show its empty state. Run npm run scene -- --game <checkout>.'); }
+if(scene) {
+  assertSanitized(scene,'scene');
+  for(const m of await readJSON(path.join(content,'scene/scene-manifest.json'))) {
+    const file=mediaPath(m.file);
+    if(sceneHashes.has(file))throw new Error(`Duplicate scene manifest path: ${file}`);
+    sceneHashes.set(file,m.sha256);
+  }
+  for(const a of [...(scene.actors||[]),...(scene.maps||[])])sceneFiles.add(mediaPath(a.file));
+}
 for(const s of atlas.skills)if(s.icon)assetFiles.add(mediaPath(s.icon));
 const referencePath=value=>typeof value==='object'&&value?value.src||value.path||value.url:value;
 for(const m of maps.maps) {
@@ -56,11 +69,13 @@ async function copyReferencedMedia(kind,files) {
       if(info.isSymbolicLink()||(i===segments.length-1?!info.isFile():!info.isDirectory()))throw new Error(`Not a regular bundle media file: ${kind}/${file}`);
     }
     const data=await readFile(source);
-    if(kind==='assets') {
-      if(!hashes.has(file))throw new Error(`Referenced asset missing from manifest: ${file}`);
-      if(createHash('sha256').update(data).digest('hex')!==hashes.get(file))throw new Error(`Asset hash mismatch: ${file}`);
+    const verify=kind==='assets'?hashes:kind==='scene'?sceneHashes:null;
+    if(verify) {
+      if(!verify.has(file))throw new Error(`Referenced asset missing from manifest: ${kind}/${file}`);
+      if(createHash('sha256').update(data).digest('hex')!==verify.get(file))throw new Error(`Asset hash mismatch: ${kind}/${file}`);
     }
-    const destination=path.join(dist,kind,file);
+    // Scene stills are served next to the atlas page (assets/scene/media/...).
+    const destination=path.join(dist,kind==='scene'?'assets/scene':kind,file);
     await mkdir(path.dirname(destination),{recursive:true});
     await writeFile(destination,data);
   }
@@ -70,24 +85,25 @@ await cp(path.join(root,'public'),dist,{recursive:true});
 await mkdir(path.join(dist,'assets'),{recursive:true});
 await copyReferencedMedia('maps',mapFiles);
 await copyReferencedMedia('assets',assetFiles);
+await copyReferencedMedia('scene',sceneFiles);
 await writeFile(path.join(dist,'data/maps.json'),JSON.stringify(maps));
 await writeFile(path.join(dist,'data/policies.json'),JSON.stringify(policies));
 await writeFile(path.join(dist,'assets/catalog.json'),JSON.stringify(atlas));
 await writeFile(path.join(dist,'assets/audit-summary.json'),JSON.stringify(atlas.summary));
 const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
 const embed=value=>JSON.stringify(value).replaceAll('</','<\\/');
-await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>embed(atlas)).replace('__SLOTS__',()=>embed(slots)));
+await writeFile(path.join(dist,'assets/index.html'),template.replace('__CATALOG__',()=>embed(atlas)).replace('__SLOTS__',()=>embed(slots)).replace('__SCENE__',()=>embed(scene)));
 let commit='local';try {commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();}catch{}
 const visible=g=>!g.hiddenDuplicate&&(!['legacy','superseded'].includes(g.status)||g.connection==='connected');
 const site={title:'잡으면 내편 · 개발 자료실',builtAt:new Date().toISOString(),sourceCommit:commit,
  asset:{...atlas.summary,fxGroups:atlas.groups.filter(g=>g.category==='fx'&&visible(g)).length,summonGroups:atlas.groups.filter(g=>g.category==='summon'&&visible(g)).length,slots:slots?.counts||null},
  map:{total:maps.maps.length,withPreview:maps.maps.filter(m=>m.preview).length},policy:{count:policies.policies.length},
- snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
+ snapshots:[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),...(scene?[{type:'장면 보기 배치 규칙',date:scene.createdAt,sourceCommit:scene.sourceCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'정책',date:policies.updatedAt,sourceCommit:policies.sourceCommit}]};
 await writeFile(path.join(dist,'data/site.json'),JSON.stringify(site));
 await writeFile(path.join(dist,'robots.txt'),'User-agent: *\nDisallow: /\n');
 const output=path.join(root,'.vercel/output');await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
 await cp(dist,path.join(output,'static'),{recursive:true});
 await writeFile(path.join(output,'config.json'),JSON.stringify({version:3,routes:[{src:'/(.*)',headers:{'X-Robots-Tag':'noindex, nofollow, noarchive','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'},continue:true},{handle:'filesystem'}]}));
 const files=await filesUnder(dist);
-await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt:site.builtAt,fileCount:files.length,mediaHashes:assetFiles.size,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length},null,2));
-console.log(`Built ${files.length} files: ${atlas.skills.length} skills, ${maps.maps.length} maps, ${policies.policies.length} policies. Verified ${assetFiles.size} referenced asset hashes.`);
+await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt:site.builtAt,fileCount:files.length,mediaHashes:assetFiles.size,sceneHashes:sceneFiles.size,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length},null,2));
+console.log(`Built ${files.length} files: ${atlas.skills.length} skills, ${maps.maps.length} maps, ${policies.policies.length} policies. Verified ${assetFiles.size} referenced asset hashes${scene?` and ${sceneFiles.size} scene stills`:''}.`);

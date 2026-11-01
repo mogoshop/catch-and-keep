@@ -188,3 +188,79 @@ else process.exit(7);\n`;
     if(mode==='signal')assert.match(result.stderr,/Deployment terminated by signal/);
   });
 });
+
+test('build embeds scene-preview data and verifies its separate still manifest',async t=>{
+  for(const kind of ['ok','bad-hash','outside-media'])await t.test(kind,async t=>{
+    const {folder}=await fixture(t);
+    const still=Buffer.from('scene still bytes');
+    await mkdir(path.join(folder,'content/scene/media'),{recursive:true});
+    await writeFile(path.join(folder,'content/scene/media/actor-player-stand.png'),still);
+    const scene={createdAt:'2026-11-01',sourceRef:'origin/main',sourceCommit:'abc',rules:{s:{id:'s',scene:'player',anchor:'targetBody',scale:1,order:6,note:'</script><img src=x onerror=alert(1)>',uses:[],estimated:[]}},
+      actors:[{id:'player-stand',role:'player',pose:'stand',label:'P',file:kind==='outside-media'?'scene.json':'media/actor-player-stand.png',size:[1,1],feet:[0,1],pxPerCell:100,kind:'capture',source:{}}],maps:[],pivots:{}};
+    await writeJSON(path.join(folder,'content/scene/scene.json'),scene);
+    await writeJSON(path.join(folder,'content/scene/scene-manifest.json'),[{file:'media/actor-player-stand.png',sha256:kind==='bad-hash'?'wrong':createHash('sha256').update(still).digest('hex')}]);
+    const result=run(folder,'build');
+    if(kind!=='ok'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch|must stay in media/);await assert.rejects(access(path.join(folder,'.vercel/output/config.json')));return;}
+    assert.equal(result.status,0,result.stderr);
+    await access(path.join(folder,'dist/assets/scene/media/actor-player-stand.png'));
+    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const embedded=html.match(/<script id="scene-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+    assert.deepEqual(JSON.parse(embedded),scene);
+    assert.equal(embedded.includes('</script>'),false);
+  });
+});
+
+test('scene rules cover every effect slot and resolve only through the provenance accessor',async()=>{
+  const {SLOTS}=await import('./slot-defs.mjs');const {SCENE_RULES}=await import('./scene-defs.mjs');
+  assert.deepEqual(SCENE_RULES.map(r=>r.id).sort(),SLOTS.map(s=>s.id).sort());
+  const uses=[];const rec=t=>(v,x)=>(uses.push(t),typeof v==='number'?v:typeof x==='number'?x:1);
+  const k={c:(key,fb)=>(uses.push('read'),fb),kv:(key,n,fb)=>(uses.push('read'),fb),kvList:()=>(uses.push('read'),[6,1]),list:()=>[],cfg:(n,fb)=>(uses.push('read'),fb),code:rec('code'),est:rec('est')};
+  for(const r of SCENE_RULES){
+    const s=r.scale(k);assert.ok(Number.isFinite(s)&&s>0,`${r.id} scale ${s}`);
+    if(typeof r.order==='function')assert.ok(Number.isFinite(r.order(k)),r.id);
+    assert.ok(r.proj||r.anchor,`${r.id} needs anchor or proj`);
+  }
+  assert.ok(uses.includes('read')&&uses.includes('code')&&uses.includes('est'));
+});
+
+test('scene view renders rule and actor text as text and exports the shortlist JSON',async()=>{
+  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
+  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const evil='<img src=x onerror=alert(1)>';
+  const cand={id:'maple:x',source:'maple',title:'T',frames:['media/a.png'],durations:[100],ruids:['1'.repeat(32)],box:[1,1]};
+  const slots={createdAt:'2026-11-01T00:00:00Z',sourceRef:'origin/main',sourceCommit:'abcdef12',sourceDate:'2026-11-01T00:00:00+09:00',catalog:{createdAt:'2026-10-31',sourceCommit:'12345678'},
+    groups:[{id:'g',title:'G'}],slots:[{id:'s',title:'S',group:'g',runtime:'GameConst.FxSkillShardHit',currentNote:'',current:null,fx:[],maple:[cand]}],unassigned:[],counts:{slots:1}};
+  const scene={sourceCommit:'fedcba98',sourceDate:'2026-11-01T00:00:00+09:00',rules:{s:{id:'s',scene:'player',anchor:'targetBody',dy:0.3,scale:1.1,order:6,note:evil,src:[evil],uses:[{f:'scale',t:'est',v:1.1,why:evil}],estimated:['scale']}},
+    actors:[{id:'player-stand',role:'player',pose:'stand',label:evil,file:'media/a.png',size:[1,1],feet:[0,1],pxPerCell:100,kind:'capture',source:{file:evil,crop:[0,0,1,1],zoom:100},note:evil}],
+    maps:[{id:'m',label:evil,file:'media/m.png',size:[1,1],pxPerCell:100,source:{file:'x'}}],pivots:{}};
+  const data={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:1,frameReferences:1},skills:[],groups:[],engineEffects:[],proceduralEffects:[]};
+  const nodes=new Map();
+  const getNode=selector=>{
+    if(!nodes.has(selector))nodes.set(selector,{textContent:'',innerHTML:'',value:'',querySelectorAll:()=>[],querySelector:()=>null,setAttribute(){},classList:{toggle(){}},showModal(){},getContext:()=>({clearRect(){},fillText(){}}),width:100,height:100});
+    return nodes.get(selector);
+  };
+  getNode('#catalog-data').textContent=JSON.stringify(data);
+  getNode('#slots-data').textContent=JSON.stringify(slots);
+  getNode('#scene-data').textContent=JSON.stringify(scene);
+  const context=vm.createContext({document:{querySelector:getNode,querySelectorAll:()=>[],getElementById:id=>getNode('#'+id)},
+    performance:{now:()=>0},requestAnimationFrame(){},IntersectionObserver:class{disconnect(){}observe(){}},Image:class{complete=false;naturalWidth=0;}});
+  vm.runInContext(script,context);
+  for(const view of ['maple','compare']){
+    vm.runInContext(`SV.on=true;STATE.tab='pick';PICK.view=${JSON.stringify(view)};PICK.slot='s';render();`,context);
+    const html=getNode('#grid').innerHTML;
+    assert.ok(html.includes('scene-stage'),view);assert.ok(html.includes('장면 규칙'),view);assert.ok(html.includes('후보 남기기'),view);
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'),view);
+    assert.equal(html.includes('<img src=x'),false,view);
+  }
+  vm.runInContext(`toggleKeep('s','maple:x',true)`,context);
+  const json=JSON.parse(vm.runInContext('buildShortlist()',context));
+  assert.equal(json.kind,'catch-and-keep/effect-shortlist');
+  assert.equal(json.data.sceneRulesCommit,'fedcba98');
+  assert.equal(json.slots[0].slotId,'s');
+  assert.equal(json.slots[0].runtimeKey,'GameConst.FxSkillShardHit');
+  assert.deepEqual(json.slots[0].keep.map(x=>x.candidateId),['maple:x']);
+  assert.deepEqual(json.slots[0].keep[0].ruids,['1'.repeat(32)]);
+  assert.deepEqual(json.slots[0].sceneRule.estimated,['scale']);
+  vm.runInContext(`toggleKeep('s','maple:x',false)`,context);
+  assert.equal(JSON.parse(vm.runInContext('buildShortlist()',context)).slots.length,0);
+});
