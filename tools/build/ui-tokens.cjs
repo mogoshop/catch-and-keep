@@ -50,17 +50,13 @@ function textWidth(text, px) {
 }
 // 랭킹 창 탭 (11-01 사용자 결정 2-C 「탭 폭 넓히기」 — 글귀·글자 크기 16 그대로. 폭 148에서 「보스 처치 시간」이 두 줄로 꺾였다).
 //   탭 폭 = 가장 긴 탭 글(GLYPH 어림 · 한 줄) + 양쪽 side(단추 장식 artEdge + SPACE/2) → rankTabW. 글 칸 여백도 side (넘치면 줄이지 장식에 닿지 않게).
-//   한 줄에 perRow개 — 넷을 한 줄에 두면 4×202 + 3×16 = 856 > 창 안쪽 538(바탕 640 − padX×2)이라 둘씩. 보이는 탭만 가운데 정렬:
-//   심연을 숨긴 동안(성장·보스 둘) = 빌더 배치 그대로 한 줄 · 심연이 켜져 넷 = 둘째 줄 + 액트 넘김 막대·기록 칸을 gapY씩 아래로 쌓고 창을 늘린다.
+//   11-01 2차(RANK): 창이 넓어져(바탕 1188) 넷도 한 줄 — 4×202 + 3×16 = 856 ≤ 창 안쪽 1086. 보이는 탭(둘 또는 넷)만 한 줄 가운데.
 //   실행 중 배치 RankWindow.LayoutTabs가 같은 값을 쓴다 (check_ui_tokens가 RankWindow 속성 · 빌드된 탭 · 2/4탭 배치 겹침을 잰다)
-const RANKTAB = { font: 16, h: 56, top: FRAME.contentTop + SPACE, gapX: FRAME.gap, gapY: SPACE, perRow: 2, side: BUTTON.artEdge + SPACE / 2,
-  winW: 640, winH: 660, actBarH: 76, paperH: 414 };
-RANKTAB.actBarTop = RANKTAB.top + RANKTAB.h + SPACE * 2;   // 166 — 탭 한 줄일 때 액트 넘김 막대 위 끝 (예전 자리 그대로)
-RANKTAB.paperTop = RANKTAB.top + RANKTAB.h + RANKTAB.actBarH;   // 218 — 탭 한 줄일 때 기록 칸 위 끝 (예전 자리 그대로)
+const RANKTAB = { font: 16, h: 56, top: FRAME.contentTop + SPACE, gapX: FRAME.gap, gapY: SPACE, perRow: 4, side: BUTTON.artEdge + SPACE / 2 };
 function rankTabW(labels) {
   return Math.ceil(Math.max(...labels.map((t) => textWidth(t, RANKTAB.font))) + RANKTAB.side * 2);
 }
-// 보이는 탭 n개의 배치 (창 바탕 위 가운데 기준, y는 위에서 아래로 −). RankWindow.LayoutTabs와 같은 계산
+// 보이는 탭 n개의 자리 (창 바탕 위 가운데 기준, y는 위에서 아래로 −). RankWindow.LayoutTabs와 같은 계산 — 줄이 둘 이상이면 기록 판이 그만큼 내려간다
 function rankLayout(n, tabW) {
   const R = RANKTAB;
   const rows = Math.max(1, Math.ceil(n / R.perRow));
@@ -69,19 +65,54 @@ function rankLayout(n, tabW) {
     const row = Math.floor(i / R.perRow), inRow = Math.min(R.perRow, n - row * R.perRow), col = i % R.perRow;
     tabs.push({ x: (col - (inRow - 1) / 2) * (tabW + R.gapX), y: -(R.top + row * (R.h + R.gapY)) });
   }
-  let actTop = -R.actBarTop, paperTop = -R.paperTop;
-  if (rows > 1) {
-    const bottom = -(R.top + rows * R.h + (rows - 1) * R.gapY);
-    actTop = bottom - R.gapY;
-    paperTop = actTop - R.actBarH - R.gapY;
-  }
-  const winH = R.winH + (-R.paperTop - paperTop);
-  return { rows, tabs, actTop, paperTop, winH, rim: [R.winW + FRAME.rimOut * 2, winH + FRAME.rimOut * 2] };
+  return { rows, tabs, below: (rows - 1) * (R.h + R.gapY) };
+}
+// 랭킹 창 2차 (11-01 사용자 「랭킹창에 이 공백은 도대체 뭐여 줄이자 · 캐릭터도 작게 · 20위까지 · ui는 너가 판단」 — docs/evidence/2026-11-01-rank-window-2):
+//   ① 공백: 예전엔 심연 탭에서만 쓰는 액트 넘김 막대 자리(76 + 사이)가 모든 탭에 비어 있었다 → 막대는 기록 판 머리 줄 오른쪽(심연 탭에서만 머리 줄이 막대 높이),
+//      나머지 탭은 머리 줄 한 줄 · 보이는 것만 위에서 아래로 쌓는다 (탭 → 기록 판[머리 줄 → 목록 → 내 순위]).
+//   ② 상위 20 = 칸 4 × 5줄 (1·2·3·4 / 5·6·7·8 …, 순위는 칸마다 숫자) — 스크롤 없음(PC 휠 스크롤 미지원). 1~10 | 11~20 두 칸(줄 40 · 그림 36×40)보다
+//      창이 낮고(본문 668 대 728) 캐릭터 그림이 크다(44×56). 칸 = 순위 | 캐릭터 그림(UI 아바타) | 이름(위) · 기록(아래)
+//   ③ 하단 메뉴 줄·퀵슬롯·버프 줄과 떨어지게 (메이커 11-01 관찰 2: 예전 탭 넷 배치 창 752가 하단 메뉴 줄에 닿을 듯): 창 테두리 위 끝(rimTop)을 고정하고
+//      아래로만 늘고 준다 — 가장 긴 배치(심연 탭 · 머리 줄 76)도 테두리 아래 끝이 버프 줄(−266)·하단 메뉴 줄(−306) 위. 아이폰 가로 안전영역(위 끝 512)에서도 위 여백이 남는다.
+//      실행 중 배치 RankWindow.Layout이 같은 값을 쓴다 (check_ui_tokens가 RankWindow 속성 · 빌드 · 탭 둘/넷 × 막대 보임/숨김 배치를 잰다)
+const RANK = {
+  top: 20, cols: 4, rows: 5,
+  cellW: 264, cellH: 62, gapX: 10, gapY: 6,      // 칸 · 칸 사이 (4 × 264 + 3 × 10 = 1086)
+  cellPad: SPACE / 2, rankW: 34, avatarGap: 2, avatar: [44, 56], textGap: SPACE - 4,   // 칸 안: 순위 34 | 그림 44×56 | 글
+  nameH: 24, valueH: 24, textInset: 7,           // 이름(칸 위에서 7) · 기록(칸 아래에서 7) 두 줄
+  pad: SPACE, gap: SPACE, headH: 40, actBarW: 420, actBarH: 76,   // 기록 판 안 여백 · 덩어리 사이 · 머리 줄(심연 탭이면 막대 높이 76)
+  mineH: 56, mineLabelW: 96, mineRankW: 120, mineNameW: 320, mineValueW: 360,   // 내 순위 줄 (판 아래 · 칸과 같은 그림 크기)
+  // 창 테두리 아래 모서리 꽃불 장식이 바탕 안으로 들어오는 폭 (메이커 11-01 iPad 캡처 B7 실측 약 44~50 — 예전 「내 순위」 글 첫 글자가 장식 위에 겹쳤다).
+  //   내 순위 줄은 판 아래에 붙어 장식 높이 안이라, 줄 안 글·그림은 양끝에서 mineInset 띄워 바탕 가장자리에서 cornerClear 이상 떨어지게
+  mineInset: SPACE * 2, cornerClear: 64,
+  edge: INSET.side, bottom: INSET.bottom,        // 기록 판 좌우 = 창 테두리 안쪽 경계 · 판 아래 ↔ 창 바탕 아래
+  rimTop: 496,                                   // 창 테두리 위 끝 (화면 가운데 기준 · PC 위 여백 44 · 아이폰 가로 안전영역 1025의 위 끝 512에서 16)
+  font: { rank: 22, name: 18, value: 16, head: 20, mine: 20, min: 13 },
+};
+RANK.textX = RANK.cellPad + RANK.rankW + RANK.avatarGap + RANK.avatar[0] + RANK.textGap;   // 94
+RANK.textW = RANK.cellW - RANK.textX - RANK.cellPad;                                        // 164
+RANK.listW = RANK.cols * RANK.cellW + (RANK.cols - 1) * RANK.gapX;                          // 1086
+RANK.listH = RANK.rows * RANK.cellH + (RANK.rows - 1) * RANK.gapY;                          // 334
+RANK.paperW = RANK.listW + RANK.pad * 2;                                                     // 1110
+RANK.winW = RANK.paperW + RANK.edge * 2;                                                     // 1188
+RANK.paperTop = RANKTAB.top + RANKTAB.h + SPACE;                                             // 154 — 탭 한 줄 바로 아래
+// 배치: kind = progress · boss_* (머리 줄 한 줄) / depth · week (머리 줄 = 막대 높이 · 막대 오른쪽). tabRows = 탭 줄 수(지금은 늘 1)
+function rankWinLayout(kind, tabRows = 1) {
+  const R = RANK;
+  const paged = kind === 'depth' || kind === 'week';
+  const headH = paged ? R.actBarH : R.headH;
+  const paperTop = R.paperTop + (tabRows - 1) * (RANKTAB.h + RANKTAB.gapY);
+  const listTop = R.pad + headH + R.gap;
+  const paperH = listTop + R.listH + R.gap + R.mineH + R.pad;
+  const winH = paperTop + paperH + R.bottom;
+  const top = R.rimTop - FRAME.rimOut;                    // 창 바탕 위 끝 (고정)
+  return { paged, headH, paperTop, listTop, paperH, winH, winY: top - winH / 2, rim: [R.winW + FRAME.rimOut * 2, winH + FRAME.rimOut * 2], rimBottom: R.rimTop - winH - FRAME.rimOut * 2 };
 }
 // 장식 없는 어두운 칸 테 (ui_loot_label 96×32 · 9조각 테두리 12 — 코덱스 feel-fx-v2 「밝은 회색 얇은 테 · 색을 입히는 용도 · 안쪽 반투명 검정 · 돌출 장식 없음」).
 //   11-01 사용자 결정 3-A: 스킬 창 머리 줄 「선택 보상」 칸이 공방 노드 테(sk_ws_node_frame_*, 둥근 테 + 가시 장식)를 칸 폭으로 늘려 써서 이름이 장식 위로 지나갔다 → 이 판으로.
 //   테 선은 가장자리에서 5px 안쪽까지(모서리 빗면 포함 · 그림 실측) → 아이콘·꼬리표·글은 pad(SPACE/2) 안쪽. 칸 상태는 그림 대신 테 색(SkillWindow.RenderChoices)
-const PLATE = { key: 'ui_loot_label', border: 12, rim: 5, pad: SPACE / 2 };
+//   11-01 메이커 관찰 1: 고른 칸의 금빛 「선택 보상」 꼬리표 오른쪽 끝과 단계 글 「노말」이 붙어 「선택 보상노말」로 읽혔다 → 글은 꼬리표 끝에서 gap만큼 띄운다 (이름·단계 두 줄 같은 x)
+const PLATE = { key: 'ui_loot_label', border: 12, rim: 5, pad: SPACE / 2, gap: SPACE / 2 };
 // 책갈피 칸 (guide_tab 320×88): 왼쪽 해골 장식 40 · 오른쪽 화살촉 50을 뺀 안쪽에 아이콘 + 이름을 가운데로 (10-27 사용자: 「목차 내부 패딩 엉망 · 수평 중앙」)
 const TAB = { artLeft: 40, artRight: 50, icon: 44, gap: 8, font: 24, minFont: 16 };
 // HUD 장식 띠 (sk_offer_banner 360×72, 9조각 20 — 「스킬 추천 / 선택 보상 — 고르기」 OfferBand · 10-29 UI-20261029-01):
@@ -154,6 +185,6 @@ SOCIAL.rowW = SOCIAL.winW - FRAME.padX * 2;                                     
 SOCIAL.rowTop = FRAME.contentTop + SOCIAL.summaryH + SPACE;                          // 118 — 첫 줄 위 끝 (바탕 위에서)
 SOCIAL.winH = SOCIAL.rowTop + (SOCIAL.perPage - 1) * SOCIAL.rowStep + SOCIAL.rowH + SPACE + SOCIAL.barH + FRAME.buttonBottom;   // 714
 
-module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout };
+module.exports = { INSET, SPACE, FRAME, NARROW, INNER, SKPANEL, BUTTON, GLYPH, RANKTAB, RANK, PLATE, TAB, BAND, COLOR, DIALOG, TOPBAND, dialogLayout, buttonText, bandText, portraitSprite, textWidth, rankTabW, rankLayout, rankWinLayout };
 module.exports.PARTY = PARTY;
 module.exports.SOCIAL = SOCIAL;

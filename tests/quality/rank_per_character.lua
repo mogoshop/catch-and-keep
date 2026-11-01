@@ -2,11 +2,12 @@
 --   키 = ProfileCode_c<슬롯>_<만든 시각 ms>(슬롯 요약 created · 실수로 읽혀도 같은 글자) · 판 이름 끝 _c1 · 이름 저장소 rank_names_c1 = 캐릭터 이름(계정 닉네임 아님) ·
 --   예전 계정 키 판(rank_<kind>_<diff>)·이름(rank_names)은 읽기·쓰기 0 · 같은 계정 두 캐릭터가 따로 줄 · 「내 순위」 = 지금 캐릭터(반례: 예전엔 같은 계정 Lv60 지옥 줄) ·
 --   연타 5초·Known은 캐릭터마다 · 캐릭터를 안 골랐으면 기록 안 함 · 슬롯 삭제(계정 저장 성공 때만) → 이름 감춤 · 기록 줄은 남김 · 같은 칸 새 캐릭터는 이어받지 않음 ·
---   감춘 줄이 상위 10에 섞이면 25줄까지 한 번 더 읽어 10줄 채움(평소 이름 조회 1번) · 내 순위에서 위 감춘 줄 빼기 · 보스·심연·이번 주 판도 캐릭터 단위 · [VRF] 형식
+--   감춘 줄이 상위 20에 섞이면 45줄까지 한 번 더 읽어 20줄 채움(평소 이름 조회 1번) · 내 순위에서 위 감춘 줄 빼기 · 보스·심연·이번 주 판도 캐릭터 단위 · [VRF] 형식
+--   11-01 2차: 이름 저장소 형식 그대로(캐릭터 이름만) · 외형은 rank_looks_c1 · 목록·창은 칸 20 (자세한 칸·그림·외형 채우기는 rank_window_2)
 -- 엔진 DataStorage·UI는 대역 (정렬은 값 → 키 순) — 실제 저장소 정렬·동기화 지연은 메이커 확인(README 「메이커 확인 절차」)
--- @source RankingSystem Endgame/RankingSystem.mlua BoardName,DepthKind,CharId,RankKey,CharIdOf,CharName,Record,HideCharacter,ReadSorted,ReadNames,GetTop,MineDigest,RequestBoard,ShowBoard,ProgressValue,RecordProgress,ProgressText,RecordBossTime,RecordDepth,RecordDepthRun,RecordWeekRun
--- @source PlayerSave Player/PlayerSave.mlua RequestDeleteSlot,SlotInfo,PublishSlots,LookOf,AccountJson,Storage,CharName,DefaultName
--- @source RankWindow UI/Windows/RankWindow.mlua OnData,ValueText,MineText
+-- @source RankingSystem Endgame/RankingSystem.mlua BoardName,DepthKind,CharId,RankKey,CharIdOf,CharName,CharLook,WriteLook,ReadLooks,FillLook,PatchLook,MeText,Record,HideCharacter,ReadSorted,ReadNames,GetTop,MineDigest,RequestBoard,ShowBoard,ProgressValue,RecordProgress,ProgressText,RecordBossTime,RecordDepth,RecordDepthRun,RecordWeekRun
+-- @source PlayerSave Player/PlayerSave.mlua RequestDeleteSlot,SlotInfo,PublishSlots,LookOf,Look,AccountJson,Storage,CharName,DefaultName
+-- @source RankWindow UI/Windows/RankWindow.mlua OnData+,ValueText,MineText
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
 local function read(path) local f=assert(io.open(path,'r')) local s=f:read('a') f:close() return s end
@@ -29,8 +30,9 @@ _GameData={GetMonsterName=function(_,id) return '재의 왕 고르바스' end}
 _WeeklyRules={BoardKind=function(_,act,week) return 'weekrun_a'..act..'_w'..week end}
 _UtilLogic={ElapsedSeconds=1000}
 SortDirection={Descending=0,Ascending=1}
-local ui={}
-_UIKit={SetText=function(_,p,t) ui[p]=t end}
+local ui,en={},{}
+_UIKit={SetText=function(_,p,t) ui[p]=t end,SetEnabled=function(_,p,v) en[p]=v end,SetColor=function() end,Colored=function(_,hex,t) return '<color='..hex..'>'..t..'</color>' end,Get=function() return nil end}
+_CharSelectWindow={Dress=function() end}
 local notes={}
 _Util={Notify=function(_,msg,uid) table.insert(notes,msg) end}
 _HttpService={JSONEncode=function(_,t) return 'json' end}
@@ -100,7 +102,7 @@ gstore('rank_names').ACC_A='인꾸'
 
 -- ───────── 1. 캐릭터 id ─────────
 local RS=RankingSystem
-ok(RS.NameStore=='rank_names_c1' and RS.BoardSuffix=='_c1' and RS.HiddenName=='|hidden' and RS.NameScanMax==25,'새 이름 저장소·판 접미·감춤 표시·이름 조회 상한')
+ok(RS.NameStore=='rank_names_c1' and RS.BoardSuffix=='_c1' and RS.HiddenName=='|hidden' and RS.NameScanMax==45 and RS.TopCount==20,'새 이름 저장소·판 접미·감춤 표시·이름 조회 상한 (2차: 상위 20 · 45줄)')
 ok(RS:CharId(4,{created=63928683821328})=='c4_63928683821328','id = c<슬롯>_<만든 시각 ms>')
 ok(RS:CharId(4,{created=6.3928683821328e13})=='c4_63928683821328','JSON에서 실수로 읽혀도 같은 id (14자리 < 2^53)')
 ok(RS:CharId(4,{created='63928683821328'})=='c4_63928683821328','글자로 읽혀도 같은 id')
@@ -122,11 +124,11 @@ local B1='ACC_B_c1_63927000000000'
 play(A,4,40,0,9)
 RS:RecordProgress(A)
 ok(sstore('rank_progress_0_c1')[A4]==4003,'새내기 Lv40 노말 액트 3 → 캐릭터 키 줄 4003')
-ok(gstore('rank_names_c1')[A4]=='새내기','이름 = 캐릭터 이름 (계정 닉네임 「인꾸」 아님)')
-ok(lastLog('[VRF] rank record')=='[VRF] rank record board=rank_progress_0_c1 char=c4_63928683821328 name=새내기 value=4003 prev=nil','[VRF] rank record 형식 (새 판 첫 기록 prev=nil)')
+ok(gstore('rank_names_c1')[A4]=='새내기' and gstore('rank_looks_c1')[A4]=='m-3-1-2-2','이름 = 캐릭터 이름 (계정 닉네임 「인꾸」 아님) · 2차: 외형은 따로 rank_looks_c1')
+ok(lastLog('[VRF] rank record')=='[VRF] rank record board=rank_progress_0_c1 char=c4_63928683821328 name=새내기 value=4003 prev=nil look=m-3-1-2-2','[VRF] rank record 형식 (새 판 첫 기록 prev=nil · 2차 look=)')
 play(A,1,17,0,5)
 RS:RecordProgress(A)
-ok(sstore('rank_progress_0_c1')[A1]==1702 and gstore('rank_names_c1')[A1]=='인꾸','같은 계정 1번 캐릭터 「인꾸」는 따로 줄 1702')
+ok(sstore('rank_progress_0_c1')[A1]==1702 and gstore('rank_names_c1')[A1]=='인꾸' and gstore('rank_looks_c1')[A1]=='m-1-1','같은 계정 1번 캐릭터 「인꾸」는 따로 줄 1702 (외형 없던 예전 캐릭터 = 기본 m-1-1)')
 play(B,1,25,1,9)
 RS:RecordProgress(B)
 ok(sstore('rank_progress_0_c1')[B1]==2513,'다른 계정 해골왕 Lv25 악몽 액트 3')
@@ -144,11 +146,18 @@ RS:Record(noChar,RS:BoardName('progress',0),500,false)
 ok(#ops==n0 and lastLog('[VRF] rank record skip')=='[VRF] rank record skip board=rank_progress_0_c1 reason=nochar','캐릭터를 안 골랐으면(슬롯 0) 저장소 요청 0 + skip 로그')
 
 -- ───────── 3. 랭킹 창 (실제 RequestBoard → GetTop·MineDigest → ShowBoard → RankWindow.OnData) ─────────
+local function plain(t) return (string.gsub(t or '','<[^>]*>','')) end
 local function open(uid,kind,diff)
  senderUserId=uid
  RankWindow.Kind=kind
  RS:RequestBoard(kind,diff)
- return ui['RankWin/Paper/List'],ui['RankWin/Paper/Mine']
+ -- 11-01 2차 창 = 칸 20 (순위 · 그림 · 이름 · 기록) → 예전 목록 글 모양으로 모아 본다: 「 1.  이름   값」 · 「내 순위  N위 · 값」 / 「내 순위  기록 없음」
+ local lines={ui['RankWin/Paper/Head'] or ''}
+ for i=1,20 do local c='RankWin/Paper/List/R'..i if en[c] then lines[#lines+1]=string.format('%2d.  %s   %s',i,plain(ui[c..'/Name']),ui[c..'/Value']) end end
+ if en['RankWin/Paper/List/Empty'] then lines[#lines+1]=ui['RankWin/Paper/List/Empty'] end
+ local r=ui['RankWin/Paper/Mine/Rank']
+ local v=ui['RankWin/Paper/Mine/Value']
+ return table.concat(lines,'\n'),(r=='-' and '내 순위  기록 없음' or ('내 순위  '..r..' · '..v))
 end
 local g0=opsOf('gbatch','rank_names_c1')
 local list,mine=open('uA','progress',0)
@@ -156,7 +165,7 @@ ok(has(list,' 1.  새내기   Lv41 · 노말 액트 3') and has(list,' 2.  해�
 ok(not has(list,'Lv60'),'예전 계정 키 줄(인꾸 Lv60 지옥)은 새 판에 없음')
 ok(mine=='내 순위  1위 · Lv41 · 노말 액트 3','「내 순위」 = 지금 캐릭터 새내기 (반례: 예전엔 같은 계정 Lv60 지옥 줄)')
 ok(opsOf('gbatch','rank_names_c1')==g0+1,'감춘 줄이 없으면 이름 조회 1번 (예전과 같은 비용)')
-ok(lastLog('[VRF] rank top')=='[VRF] rank top board=rank_progress_0_c1 rows=3 shown=3 hidden=0 names=3','[VRF] rank top 형식')
+ok(lastLog('[VRF] rank top')=='[VRF] rank top board=rank_progress_0_c1 rows=3 shown=3 hidden=0 names=3 looks=3','[VRF] rank top 형식 (2차 looks=)')
 ok(lastLog('[VRF] rank char')=='[VRF] rank char board=rank_progress_0_c1 char=c4_63928683821328 name=새내기 hiddenAbove=0','[VRF] rank char 형식 (지금 캐릭터 id·이름)')
 ok(lastLog('[VRF] rank mine')=='[VRF] rank mine board=rank_progress_0_c1 rank=1 value=4103','[VRF] rank mine 형식 그대로 (판 이름만 _c1)')
 -- 같은 계정, 캐릭터를 1번 「인꾸」로 바꿔 1초 뒤 다시 연다: 연타 방지(5초)는 캐릭터마다라 새내기 답을 돌려주지 않는다
@@ -229,11 +238,11 @@ ok(mine=='내 순위  3위 · Lv1 · 노말 액트 1' and not has(list,'Lv41'),'
 list,mine=open('uA','boss_ash_king',2)
 ok(mine=='내 순위  기록 없음' and has(list,'아직 기록이 없습니다'),'보스 판: 지운 캐릭터 120초 줄 감춤 · 새 캐릭터 기록 없음')
 
--- ───────── 7. 감춘 줄이 상위 10에 섞이면 25줄까지 더 읽어 채움 ─────────
+-- ───────── 7. 감춘 줄이 상위 20에 섞이면 45줄까지 더 읽어 채움 (11-01 2차: 10 → 20 · 25 → 45) ─────────
 local board=RS:BoardName('boss_ash_king',0)
 local bs=sstore(board)
 local gn=gstore('rank_names_c1')
-for i=1,14 do local k='P'..i..'_c1_1' bs[k]=100+i gn[k]='P'..i end
+for i=1,24 do local k='P'..i..'_c1_1' bs[k]=100+i gn[k]='P'..i end
 gn['P2_c1_1']='|hidden'
 gn['P5_c1_1']='|hidden'
 local C=makePlayer('P7','칠','u7',{['1']={name='P7',created=1}})
@@ -242,9 +251,9 @@ local gb=opsOf('gbatch','rank_names_c1')
 _UtilLogic.ElapsedSeconds=1300
 list,mine=open('u7','boss_ash_king',0)
 local shown=0 for _ in string.gmatch(list,'\n%s*%d+%.  ') do shown=shown+1 end
-ok(shown==10 and not has(list,'P2 ') and not has(list,'P5 ') and has(list,'10.  P12   112초'),'감춘 2줄을 건너뛰고 11·12번째 줄로 10줄 채움')
-ok(opsOf('gbatch','rank_names_c1')==gb+2,'이름 조회 2번 (첫 10줄 + 나머지 25줄까지)')
-ok(lastLog('[VRF] rank top')=='[VRF] rank top board=rank_boss_ash_king_0_c1 rows=14 shown=10 hidden=2 names=14','[VRF] rank top hidden=2')
+ok(shown==20 and not has(list,'P2 ') and not has(list,'P5 ') and has(list,'20.  P22   122초') and not has(list,'P23'),'감춘 2줄을 건너뛰고 21·22번째 줄로 20줄 채움')
+ok(opsOf('gbatch','rank_names_c1')==gb+2,'이름 조회 2번 (첫 20줄 + 나머지 45줄까지 · 한 번에 25 이하)')
+ok(lastLog('[VRF] rank top')=='[VRF] rank top board=rank_boss_ash_king_0_c1 rows=24 shown=20 hidden=2 names=24 looks=0','[VRF] rank top hidden=2 (외형 없는 옛 줄 looks=0)')
 ok(mine=='내 순위  5위 · 107초','내 순위 = 7번째 줄 − 위 감춘 2줄 = 5위')
 
 -- ───────── 8. 이름 구분 문자 · 소스 확인 ─────────
@@ -261,7 +270,7 @@ for line in rs:gmatch('[^\n]+') do
   ok(has(code,'self:RankKey(player.PlayerComponent.ProfileCode, id)'),'ProfileCode는 캐릭터 id와 묶어서만 키로: '..code)
  end
 end
-ok(codeLines==2,'ProfileCode 코드 줄 = Record·MineDigest 2곳 ('..codeLines..')')
+ok(codeLines==3,'ProfileCode 코드 줄 = Record·MineDigest·FillLook 3곳 ('..codeLines..')')
 ok(not has(rs,'DeleteAsync') and not has(rs,'DeleteAndWait'),'기록을 지우는 요청 없음')
 local ps=read('RootDesk/MyDesk/Player/PlayerSave.mlua')
 ok(has(ps,'if code == 0 then\n            self.LastSaved["Account"] = json\n') and has(ps,'_RankingSystem:HideCharacter(self.Entity.PlayerComponent.ProfileCode, slot, info)'),'PlayerSave 삭제: 계정 저장 성공 안에서만 감춤')

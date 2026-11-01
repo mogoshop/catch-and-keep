@@ -1,6 +1,6 @@
 -- 11-01 사용자 결정 2건 회귀 검사 (docs/evidence/2026-11-01-ui-tabs-chip) — 실제 mLua 본문으로:
 --   2-C 랭킹 탭 폭 넓히기 RankWindow.LayoutTabs: 글귀·글자 16 그대로 탭 넷이 각자 한 줄(글 폭 어림 = UIKit.TextWidth 규칙 · 양쪽 단추 장식 안쪽 비움) ·
---       심연을 숨긴 동안 둘 = 한 줄 가운데(빌더 자리 그대로) · 넷 = 둘씩 두 줄 + 액트 넘김 막대·기록 칸을 아래로 쌓고 창을 늘림 · 어느 쪽이든 겹침 0 · 창 안
+--       심연을 숨긴 동안 둘 = 한 줄 가운데 · 11-01 2차: 창 1188이라 넷도 한 줄 가운데 · 어느 쪽이든 탭·닫기·기록 판 겹침 0 · 창 안 (세로 쌓기·칸은 rank_window_2)
 --   3-A 스킬 창 머리 줄 「선택 보상」 칸 테 SkillWindow.RenderChoices: 네 상태 모두 장식 없는 판(ui_loot_label) 하나 + 테 색(고름 트리색 · 고를 차례 초록 ·
 --       의뢰 전 남회색 · 설명 중 금빛) · 아이콘·꼬리표·이름·단계·「고르기」·잠금 그대로 · 노드 테(sk_ws_node_frame_*)를 더는 쓰지 않음
 -- 엔진 UI는 대역 — 실제 글꼴 폭·9조각 그림은 메이커 확인 (보고서 절차). 빌드된 .ui 값 대조는 tools/check_ui_tokens.cjs · tools/check_mobile_layout.cjs
@@ -49,27 +49,24 @@ ok(has(rw,'self:LayoutTabs(_GameData.depthEnabled >= 1)'),'OnBeginPlay가 심연
 
 local W='RankWin/'
 local function rectTab(n) local p=ui.pos[W..n] return {l=p.x-R.TabW/2,r=p.x+R.TabW/2,t=p.y,b=p.y-R.TabH,name=n} end
-local function rectTop(n,w,h) local p=ui.pos[W..n] return {l=p.x-w/2,r=p.x+w/2,t=p.y,b=p.y-h,name=n} end
 local function overlap(a,b) return math.min(a.r,b.r)-math.max(a.l,b.l)>0.5 and math.min(a.t,b.t)-math.max(a.b,b.b)>0.5 end
-local function check(mode,names,withAct)
- local winH=ui.size[W:sub(1,-2)].y
+local function check(mode,names)
  local rects={}
  for _,n in ipairs(names) do rects[#rects+1]=rectTab(n) end
- if withAct then rects[#rects+1]=rectTop('ActBar',580,R.ActBarH) end
- rects[#rects+1]=rectTop('Paper',580,414)
  rects[#rects+1]={l=R.WinW/2+closeX-closeSize,r=R.WinW/2+closeX,t=closeY,b=closeY-closeSize,name='BtnClose'}   -- 닫기 단추 (오른쪽 위 모서리 · ui-tokens FRAME.close)
+ rects[#rects+1]={l=-R.PaperW/2,r=R.PaperW/2,t=R.PaperTop,b=R.PaperTop-100,name='Paper'}   -- 기록 판 위 끝 (11-01 2차: 탭 바로 아래 — 자세한 세로 쌓기는 rank_window_2)
  for i=1,#rects do for j=i+1,#rects do ok(not overlap(rects[i],rects[j]),mode..': '..rects[i].name..' × '..rects[j].name..' 겹치지 않음') end end
  for _,r in ipairs(rects) do
   if r.name:sub(1,3)=='Tab' then ok(r.l>=-(R.WinW/2-padX) and r.r<=R.WinW/2-padX,mode..': '..r.name..' 창 안쪽(padX '..padX..') 안') end
-  ok(r.b>=-winH and r.t<=0,mode..': '..r.name..' 창 바탕 안 (위 '..r.t..' · 아래 '..r.b..' · 높이 '..winH..')')
  end
 end
+-- 11-01 2차: 창 바탕 1188이라 넷도 한 줄 (예전 640 창은 둘씩 두 줄 + 막대·기록 칸을 내리고 창을 늘렸다 — 메이커 관찰 2 「창 아래 테가 하단 메뉴 줄에 닿을 듯」)
 R:LayoutTabs(false)
 ok(ui.pos[W..'TabProgress'].x==-109 and ui.pos[W..'TabQueen'].x==109 and ui.pos[W..'TabProgress'].y==-86 and ui.pos[W..'TabQueen'].y==-86,'심연 숨김: 두 탭 한 줄 가운데 (±109 · 위 −86)')
 ok(ui.pos[W..'TabDepth']==nil and ui.pos[W..'TabWeek']==nil,'심연 숨김: 심연 탭 자리 안 건드림 (꺼져 있음)')
-ok(ui.pos[W..'ActBar'].y==-166 and ui.pos[W..'Paper'].y==-218 and ui.size['RankWin'].x==640 and ui.size['RankWin'].y==660 and ui.size[W..'Rim'].x==680 and ui.size[W..'Rim'].y==700,'심연 숨김: 막대·기록 칸·창 = 빌더 자리 그대로 (−166 · −218 · 640×660 · 테두리 680×700)')
-ok(lastLog('[VRF] rank tabs')=='[VRF] rank tabs shown=2 rows=1 w=202 x=-109,109 actTop=-166 paperTop=-218 winH=660','[VRF] rank tabs (둘)')
-check('탭 둘',{'TabProgress','TabQueen'},false)
+ok(R.TabRows==1,'심연 숨김: 탭 한 줄')
+ok(lastLog('[VRF] rank tabs')=='[VRF] rank tabs shown=2 rows=1 w=202 x=-109,109','[VRF] rank tabs (둘)')
+check('탭 둘',{'TabProgress','TabQueen'})
 local gapX=ui.pos[W..'TabQueen'].x-ui.pos[W..'TabProgress'].x-R.TabW
 ok(gapX==R.TabGapX,'탭 사이 '..gapX..' = TabGapX')
 local leftMargin=(R.WinW/2-padX)+ui.pos[W..'TabProgress'].x-R.TabW/2
@@ -78,13 +75,12 @@ ok(leftMargin==rightMargin,'탭 둘 좌우 여백 같음 ('..leftMargin..')')
 
 ui.pos={} ui.size={}
 R:LayoutTabs(true)
-ok(ui.pos[W..'TabProgress'].y==-86 and ui.pos[W..'TabQueen'].y==-86 and ui.pos[W..'TabDepth'].y==-154 and ui.pos[W..'TabWeek'].y==-154,'심연 켬: 둘씩 두 줄 (−86 · −154)')
-ok(ui.pos[W..'TabDepth'].x==-109 and ui.pos[W..'TabWeek'].x==109,'심연 켬: 둘째 줄도 가운데 (±109)')
-ok(ui.pos[W..'ActBar'].y==-222 and ui.pos[W..'Paper'].y==-310,'심연 켬: 막대 = 둘째 줄 아래 12 · 기록 칸 = 막대 아래 12 (−222 · −310)')
-ok(ui.size['RankWin'].y==752 and ui.size[W..'Rim'].x==680 and ui.size[W..'Rim'].y==792,'심연 켬: 창 660 → 752 · 테두리 680×792 (기록 칸 아래 여백 28 그대로)')
-ok(lastLog('[VRF] rank tabs')=='[VRF] rank tabs shown=4 rows=2 w=202 x=-109,109,-109,109 actTop=-222 paperTop=-310 winH=752','[VRF] rank tabs (넷)')
-check('탭 넷',{'TabProgress','TabQueen','TabDepth','TabWeek'},true)
-ok(4*R.TabW+3*R.TabGapX>R.WinW-2*padX,'넷을 한 줄에 두면 '..(4*R.TabW+3*R.TabGapX)..' > 창 안쪽 '..(R.WinW-2*padX)..' — 두 줄이 맞다')
+ok(ui.pos[W..'TabProgress'].x==-327 and ui.pos[W..'TabQueen'].x==-109 and ui.pos[W..'TabDepth'].x==109 and ui.pos[W..'TabWeek'].x==327,'심연 켬: 넷 한 줄 가운데 (−327 · −109 · 109 · 327)')
+ok(ui.pos[W..'TabProgress'].y==-86 and ui.pos[W..'TabWeek'].y==-86 and R.TabRows==1,'심연 켬: 모두 위 −86 · 한 줄')
+ok(lastLog('[VRF] rank tabs')=='[VRF] rank tabs shown=4 rows=1 w=202 x=-327,-109,109,327','[VRF] rank tabs (넷)')
+check('탭 넷',{'TabProgress','TabQueen','TabDepth','TabWeek'})
+ok(4*R.TabW+3*R.TabGapX<=R.WinW-2*padX,'넷 한 줄 '..(4*R.TabW+3*R.TabGapX)..' ≤ 창 안쪽 '..(R.WinW-2*padX))
+ok(4*R.TabW+3*R.TabGapX>640-2*padX,'반례: 예전 창 640에서는 넷 한 줄('..(4*R.TabW+3*R.TabGapX)..')이 창 안쪽 '..(640-2*padX)..'을 넘었다')
 
 -- ───────── 3-A 선택 보상 칸 테 ─────────
 local icons={raise_skeleton='IC_SKEL'}

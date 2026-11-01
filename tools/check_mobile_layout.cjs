@@ -474,6 +474,11 @@ let headerChecked = 0;
       headerChecked++;
       if (ov(parts[a], parts[b])) problems.push(`스킬 창 선택 보상 C${i}: ${a} ↔ ${b} 겹침`);
     }
+    // 11-01 메이커 관찰 1: 꼬리표 오른쪽 끝 = 단계 글 시작이라 「선택 보상노말」로 붙어 읽혔다 → 이름·단계 글은 꼬리표 끝에서 PLATE.gap 이상
+    for (const k of ['Name', 'Tier']) {
+      headerChecked++;
+      if (parts[k][0] - parts.Tag[1] < PLATE.gap - 0.5) problems.push(`스킬 창 선택 보상 C${i}: 꼬리표 끝(x ${parts.Tag[1]}) ↔ ${k} 시작(x ${parts[k][0]}) 사이 ${parts[k][0] - parts.Tag[1]} < ${PLATE.gap}`);
+    }
     if (verbose && i === 1) console.log(`스킬 창 선택 보상 칸 ${CW}×${CH} · 테 선 ${PLATE.rim} · ` + Object.entries(parts).map(([k, r]) => `${k} x ${r[0]}~${r[1]} y ${r[2]}~${r[3]}`).join(' · ') + ` · 머리 줄 화면 x ${rs[0]}~${rs[1]}`);
   }
   for (let i = 0; i < chips.length; i++) for (let j = i + 1; j < chips.length; j++) { headerChecked++; if (ov(chips[i], chips[j])) problems.push(`스킬 창 선택 보상 C${i + 1} ↔ C${j + 1} 겹침`); }

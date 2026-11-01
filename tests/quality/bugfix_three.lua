@@ -11,8 +11,8 @@
 -- @source HudMap UI/Hud/HudMap.mlua RemainingFocus
 -- @source PlayerQuest Quest/PlayerQuest.mlua TierOfSlot,PickOf,ChoiceTier,PendingChoice,ChoiceDef,ChoiceQuestTitle
 -- @source SkillWindow UI/Windows/SkillWindow.mlua RenderChoices,RenderChoiceDetail,PickChoice,ChoiceTierName,TreeColor,TreeHex,Pick,Act
--- @source RankingSystem Endgame/RankingSystem.mlua ReadSorted,ReadNames,GetTop,MineDigest,ProgressText,RecordProgress,CharId,RankKey,CharIdOf,CharName
--- @source RankWindow UI/Windows/RankWindow.mlua OnData,ValueText,MineText
+-- @source RankingSystem Endgame/RankingSystem.mlua ReadSorted,ReadNames,ReadLooks,GetTop,MineDigest,ProgressText,RecordProgress,CharId,RankKey,CharIdOf,CharName
+-- @source RankWindow UI/Windows/RankWindow.mlua OnData+,ValueText,MineText
 --@pre local VMT={} VMT.__index=VMT VMT.__sub=function(a,b) return Vector2(a.x-b.x,a.y-b.y) end function VMT:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end function Vector2(x,y) return setmetatable({x=x,y=y},VMT) end
 --@pre function Color(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 local checks=0
@@ -193,7 +193,7 @@ local mine=RankingSystem:MineDigest(me,'rank_progress_0',false,true)
 ok(mine=='37|9963','첫 쪽 37번째 → 37|값 ('..mine..')')
 ok(sortedReads==1,'GetTop이 방금 읽은 첫 쪽을 재사용 (정렬 조회 1번)')
 local _,semi=digest:gsub(';','')
-ok(semi==9,'상위 10 다이제스트 그대로')
+ok(semi==19,'상위 20 다이제스트 (11-01 2차 · 10 → 20)')
 ok(lastLog('[VRF] rank mine')=='[VRF] rank mine board=rank_progress_0 rank=37 value=9963','[VRF] rank mine 형식')
 _UtilLogic.ElapsedSeconds=110
 RankingSystem:GetTop('rank_progress_0',false)
@@ -228,10 +228,15 @@ ok(RankWindow:MineText('progress','none')=='내 순위  기록 없음','내 순�
 ok(RankWindow:MineText('depthrun_a1','3|799814')=='내 순위  3위 · 7층 · 3분 05초','심연 판 값 글')
 ok(RankWindow:MineText('boss_x','2|95')=='내 순위  2위 · 95초','보스 판 값 글')
 ui.text={}
+ui.en={}
+_UIKit.Get=function() return nil end
+_CharSelectWindow={Dress=function() end}
 RankWindow.Kind='progress'
-RankWindow:OnData('progress',0,'A|4404;B|4303','5|4101')
-ok(has(ui.text['RankWin/Paper/List'],' 1.  A   Lv44 · 노말 액트 4') and ui.text['RankWin/Paper/Mine']=='내 순위  5위 · Lv41 · 노말 액트 1','성장 순위 목록 + 내 순위 줄')
+RankWindow:OnData('progress',0,'A|4404|m-2-1-1-1;B|4303|','5|4101','나|m-1-1')
+local R1='RankWin/Paper/List/R1'
+ok(ui.en[R1]==true and ui.text[R1..'/Name']=='A' and ui.text[R1..'/Value']=='Lv44 · 노말 액트 4' and ui.en['RankWin/Paper/List/R3']==false,'성장 순위 칸 (11-01 2차: 칸 20 — 순위·이름·기록 · 기록 없는 칸은 꺼짐)')
+ok(ui.text['RankWin/Paper/Mine/Rank']=='5위' and ui.text['RankWin/Paper/Mine/Value']=='Lv41 · 노말 액트 1' and ui.text['RankWin/Paper/Mine/Name']=='나','내 순위 줄 (순위 · 이름 · 기록)')
 local rs=read('RootDesk/MyDesk/Endgame/RankingSystem.mlua')
-ok(has(rs,'method void ShowBoard(string kind, integer diff, string digest, string mine)') and has(rs,'self:ShowBoard(kind, diff, digest, mine, senderUserId)'),'ShowBoard에 내 순위 인자 · 대상 = 요청자')
+ok(has(rs,'method void ShowBoard(string kind, integer diff, string digest, string mine, string me)') and has(rs,'self:ShowBoard(kind, diff, digest, mine, self:MeText(player), senderUserId)'),'ShowBoard에 내 순위 · 내 캐릭터(이름|외형) 인자 · 대상 = 요청자')
 ok(has(rs,'_UserService:GetUserEntityByUserId(senderUserId)'),'요청자 = senderUserId의 플레이어')
 print(string.format('[bugfix_three] 통과 %d', checks))

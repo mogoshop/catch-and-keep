@@ -6,18 +6,28 @@
 --   판 이름 끝에 BoardSuffix를 붙이고 이름은 새 저장소(NameStore)에 캐릭터 이름으로 둔다 — 예전 계정 키 판(접미 없음)·이름(rank_names)은 읽지도 지우지도 않는다(되돌리기용).
 --   예전 기록은 옮기지 않는다: 성장 순위는 입장 때 다시 적혀 채워지고, 보스·심연은 새로 시작 (docs/evidence/2026-11-01-rank-per-character/README.md).
 --   캐릭터를 지우면 이름 자리에 HiddenName을 적어 목록·내 순위 셈에서 뺀다 (기록 줄은 남긴다 — PlayerSave 슬롯 삭제가 저장 데이터를 남기는 것과 같은 방식).
+-- 11-01 2차 (사용자 「캐릭터도 작게 · 20위까지」 · docs/evidence/2026-11-01-rank-window-2): 상위 10 → TopCount(20) · 다이제스트 "이름|값|외형".
+--   외형(PlayerSave.Look "g-h-f-s-t" — 캐릭터 선택 카드와 같은 값)은 새 저장소 LookStore(캐릭터 키 → 외형)에 둔다 — 다른 사람의 오프라인 캐릭터도 창에서 그 모습으로.
+--   이름 저장소(NameStore)는 형식 그대로 「캐릭터 이름」만 (이름 칸에 외형을 붙이면 되돌린 예전 코드·아직 예전 코드로 도는 인스턴스가 외형 글을 이름으로 보인다).
+--   외형 쓰기 = 캐릭터마다 세션에 한 번(기록이 좋아질 때 이름과 함께) · 외형 읽기 = 목록을 새로 만들 때 보이는 줄만 묶음 1번(60초 캐시). 외형이 없는 옛 줄은 창이 그림자 모습으로 그리고,
+--   그 캐릭터가 목록에 보이는 채로 창을 열면 한 번 채운다(FillLook). 요청자에게는 지금 캐릭터 「이름|외형」(MeText)을 함께 보내 「내 순위」 줄도 그림으로 그린다
 @Logic
 script RankingSystem extends Logic
 
     property string NameStore = "rank_names_c1"   -- 캐릭터 키 → 캐릭터 이름 (11-01 전 계정 키 → 계정 닉네임은 "rank_names"에 그대로 남아 있다)
+    property string LookStore = "rank_looks_c1"   -- 캐릭터 키 → 외형 "g-h-f-s-t" (11-01 2차 · 목록 캐릭터 그림)
     property string BoardSuffix = "_c1"            -- 캐릭터 단위 판 이름 끝 (예전 계정 단위 판 rank_<kind>_<diff>와 섞이지 않게)
     property string HiddenName = "|hidden"         -- 지운 캐릭터 표시 (이름에는 | 가 들어갈 수 없다 — PlayerSave.CleanName · CharName)
-    property integer NameScanMax = 25              -- 상위 10을 채우려고 이름을 읽는 최대 줄 (지운 캐릭터가 섞였을 때만 10줄 넘게 · 이름 묶음 조회 한 쪽 25)
+    property integer TopCount = 20                 -- 창에 보이는 줄 (11-01 2차: 10 → 20 · 칸 4 × 5줄)
+    property integer NameScanMax = 45              -- 상위 20을 채우려고 이름을 읽는 최대 줄 (첫 묶음 20줄 · 지운 캐릭터가 섞였을 때만 한 번 더 25줄 — 이름 묶음 조회 한 쪽 25)
+    property integer SortMax = 2000000000          -- 정렬 조회 값 상한 (예전 999999는 심연 10층부터(값 = 층 × 100000 + …) 빠졌다)
+    property table StoredLook = {}                 -- 이번 세션에 외형 저장소에서 읽었거나 쓴 값 (캐릭터 키 → 외형 · 읽었는데 없으면 "") — FillLook이 목록에 보인 줄을 알아본다
+    property table LookWritten = {}                -- 캐릭터 키 → 이번 세션에 적은 외형 (같은 값을 다시 쓰지 않게)
     property table Hidden = {}                     -- 이번 세션에 확인한 지운 캐릭터 키 → true (내 순위 셈에서 위 줄 빼기)
     property table Cache = {}            -- board → { at, digest }
     property table Known = {}            -- board|캐릭터 키 → 이번 세션에 확인한 기록 (중복 조회 방지)
     property table NameWritten = {}      -- 캐릭터 키 → 이번 세션에 적은 이름 (기록판마다 같은 이름을 다시 쓰지 않게)
-    -- 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안 · 「내 순위」 줄): 상위 10과 따로 요청자 본인의 순위·값을 보낸다 (60초 캐시를 쓰지 않는다)
+    -- 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안 · 「내 순위」 줄): 상위 목록과 따로 요청자 본인의 순위·값을 보낸다 (60초 캐시를 쓰지 않는다)
     property integer MinePageMax = 100   -- 내 순위는 정렬 첫 쪽에서 이 줄까지만 센다 (그 밖은 「100위 밖」 · 다음 쪽은 읽지 않는다)
     property number MineGuardSec = 5     -- 같은 캐릭터·같은 판을 이 초 안에 다시 물으면 방금 답을 그대로 (탭 연타로 정렬 조회가 쌓이지 않게)
     property table Fresh = {}            -- board → 방금 GetTop이 읽은 정렬 첫 쪽 (같은 요청의 내 순위가 다시 읽지 않게 · MineDigest가 바로 비운다)
@@ -63,6 +73,27 @@ script RankingSystem extends Logic
         local name, _ = string.gsub(raw or "", "[|;]", "")
         if name == "" then name = "망자" end
         return name
+    end
+
+    @ExecSpace("ServerOnly")
+    method string CharLook(Entity player)
+        -- 목록 캐릭터 그림용 외형 "g-h-f-s-t" (PlayerSave.Look — 캐릭터 선택 카드와 같은 값 · 외형이 없던 예전 캐릭터는 기본 "m-1-1"). 구분 문자는 걸러 낸다
+        ---@type PlayerSave
+        local save = player:GetComponent("script.PlayerSave")
+        if save == nil then return "" end
+        local look, _ = string.gsub(save:Look() or "", "[|;]", "")
+        return look
+    end
+
+    @ExecSpace("ServerOnly")
+    method void WriteLook(string key, string look)
+        -- 외형 저장소 한 줄 (이번 세션에 같은 값을 썼거나 읽어 이미 같으면 요청하지 않는다 · 값 십여 바이트)
+        if look == "" or self.LookWritten[key] == look or self.StoredLook[key] == look then return end
+        self.LookWritten[key] = look
+        self.StoredLook[key] = look
+        _DataStorageService:GetGlobalDataStorage(self.LookStore):SetAsync(key, look, function(code, k)
+            if code ~= 0 then log_warning("[RankingSystem] 외형 기록 실패 " .. tostring(code)) end
+        end)
     end
 
     method string DepthKind(integer act)
@@ -174,8 +205,10 @@ script RankingSystem extends Logic
             self.NameWritten[key] = name
             _DataStorageService:GetGlobalDataStorage(self.NameStore):SetAsync(key, name, nil)
         end
+        local look = self:CharLook(player)
+        self:WriteLook(key, look)
         self.Cache[board] = nil
-        log(string.format("[VRF] rank record board=%s char=%s name=%s value=%d prev=%s", board, id, name, value, tostring(best)))
+        log(string.format("[VRF] rank record board=%s char=%s name=%s value=%d prev=%s look=%s", board, id, name, value, tostring(best), look))
     end
 
     @ExecSpace("ServerOnly")
@@ -200,7 +233,7 @@ script RankingSystem extends Logic
         local ds = _DataStorageService:GetSortableDataStorage(board)
         local dir = SortDirection.Descending
         if ascending then dir = SortDirection.Ascending end
-        local code, pages = ds:GetSortedAndWait(dir, 1, 999999)
+        local code, pages = ds:GetSortedAndWait(dir, 1, self.SortMax)
         local rows = {}
         if code == 0 then
             local datas = pages:GetCurrentPageDatas()
@@ -233,19 +266,39 @@ script RankingSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
+    method table ReadLooks(table keys)
+        -- 목록에 보이는 줄의 외형 (한 번의 묶음 조회 · TopCount ≤ 25). 읽은 키는 StoredLook에 (없으면 "" — 옛 줄 · FillLook이 알아본다)
+        local looks = {}
+        if #keys == 0 then return looks end
+        local code, pages = _DataStorageService:GetGlobalDataStorage(self.LookStore):BatchGetAndWait(keys)
+        if code ~= 0 then return looks end
+        for _, k in ipairs(keys) do self.StoredLook[k] = "" end
+        local datas = pages:GetCurrentPageDatas()
+        if datas ~= nil then
+            for i = 1, #datas do
+                local look = datas[i].Value
+                if string.match(look or "", "^[mf]%-[%d%-]+$") == nil then look = "" end
+                looks[datas[i].KeyInfo.Key] = look
+                self.StoredLook[datas[i].KeyInfo.Key] = look
+            end
+        end
+        return looks
+    end
+
+    @ExecSpace("ServerOnly")
     method string GetTop(string board, boolean ascending)
-        -- 상위 10명 "이름|값;..." (60초 캐시). 새로 읽었으면 정렬 첫 쪽을 Fresh에 잠깐 둔다 (같은 요청의 내 순위가 다시 읽지 않게)
-        --   이름은 첫 10줄만 읽고, 지운 캐릭터가 섞여 10줄이 안 차면 NameScanMax줄까지 한 번 더 읽어 채운다 (보통은 이름 조회 1번 그대로)
+        -- 상위 TopCount명 "이름|값|외형;..." (60초 캐시 · 외형 없는 옛 줄은 외형 칸이 빈다). 새로 읽었으면 정렬 첫 쪽을 Fresh에 잠깐 둔다 (같은 요청의 내 순위가 다시 읽지 않게)
+        --   이름은 첫 TopCount줄만 읽고, 지운 캐릭터가 섞여 덜 차면 NameScanMax줄까지 한 번 더 읽어 채운다 (보통은 이름 조회 1번 그대로) · 외형은 보이는 줄만 묶음 1번
         local c = self.Cache[board]
         if c ~= nil and _UtilLogic.ElapsedSeconds - c.at < 60 then return c.digest end
         local sorted = self:ReadSorted(board, ascending)
         self.Fresh[board] = sorted
-        local scanned = math.min(10, #sorted)
+        local scanned = math.min(self.TopCount, #sorted)
         local names = self:ReadNames(sorted, 1, scanned)
-        local parts = {}
+        local shown = {}
         local hidden = 0
         local i = 1
-        while #parts < 10 and i <= #sorted do
+        while #shown < self.TopCount and i <= #sorted do
             if i > scanned then
                 if scanned >= self.NameScanMax then break end
                 local upto = math.min(#sorted, self.NameScanMax)
@@ -254,13 +307,63 @@ script RankingSystem extends Logic
             end
             local r = sorted[i]
             if self.Hidden[r.key] or names[r.key] == self.HiddenName then hidden = hidden + 1
-            else table.insert(parts, (names[r.key] or "?") .. "|" .. tostring(r.value)) end
+            else table.insert(shown, r) end
             i = i + 1
+        end
+        local keys = {}
+        for _, r in ipairs(shown) do table.insert(keys, r.key) end
+        local looks = self:ReadLooks(keys)
+        local parts = {}
+        local known = 0
+        for _, r in ipairs(shown) do
+            local look = looks[r.key] or ""
+            if look ~= "" then known = known + 1 end
+            table.insert(parts, (names[r.key] or "?") .. "|" .. tostring(r.value) .. "|" .. look)
         end
         local digest = table.concat(parts, ";")
         self.Cache[board] = { at = _UtilLogic.ElapsedSeconds, digest = digest }
-        log(string.format("[VRF] rank top board=%s rows=%d shown=%d hidden=%d names=%d", board, #sorted, #parts, hidden, scanned))
+        log(string.format("[VRF] rank top board=%s rows=%d shown=%d hidden=%d names=%d looks=%d", board, #sorted, #parts, hidden, scanned, known))
         return digest
+    end
+
+    @ExecSpace("ServerOnly")
+    method string FillLook(Entity player)
+        -- 11-01 2차: 외형이 없는 옛 줄(2차 전 기록)이 상위 목록에 보이면, 그 캐릭터가 창을 열 때 한 번 외형을 채운다. 채웠으면 그 외형, 아니면 ""
+        --   목록을 만들며 읽은 키(StoredLook)만 · 세션에 한 번(WriteLook) · 다른 줄은 기록이 좋아질 때 Record가 함께 쓴다
+        if not isvalid(player) then return "" end
+        local id = self:CharIdOf(player)
+        if id == "" then return "" end
+        local key = self:RankKey(player.PlayerComponent.ProfileCode, id)
+        local stored = self.StoredLook[key]
+        local look = self:CharLook(player)
+        if stored == nil or stored == look or self.Hidden[key] then return "" end
+        self:WriteLook(key, look)
+        log(string.format("[VRF] rank look fill char=%s look=%s", id, look))
+        return look
+    end
+
+    @ExecSpace("ServerOnly")
+    method string PatchLook(string board, string digest, string mine, string look)
+        -- 방금 채운 내 외형을 이번 목록(과 60초 캐시)에도 바로 넣는다 — 내 순위 자리 줄의 값이 내 값과 같을 때만 (저장소 요청 없음)
+        local rank = tonumber(string.match(mine or "", "^(%d+)|") or "") or 0
+        local value = string.match(mine or "", "^%d+|(%d+)$")
+        if rank <= 0 or value == nil then return digest end
+        local parts = {}
+        for row in string.gmatch(digest .. ";", "([^;]*);") do table.insert(parts, row) end
+        local row = parts[rank]
+        if row == nil or string.match(row, "^[^|]*|(%d+)|") ~= value then return digest end
+        parts[rank] = string.match(row, "^([^|]*|%d+|)") .. look
+        local patched = table.concat(parts, ";")
+        local c = self.Cache[board]
+        if c ~= nil and c.digest == digest then c.digest = patched end
+        return patched
+    end
+
+    @ExecSpace("ServerOnly")
+    method string MeText(Entity player)
+        -- 「내 순위」 줄 그림·이름: 요청자의 지금 캐릭터 "이름|외형" (캐릭터를 안 골랐으면 "|")
+        if not isvalid(player) or self:CharIdOf(player) == "" then return "|" end
+        return self:CharName(player) .. "|" .. self:CharLook(player)
     end
 
     @ExecSpace("ServerOnly")
@@ -318,18 +421,21 @@ script RankingSystem extends Logic
 
     @ExecSpace("Server")
     method void RequestBoard(string kind, integer diff)
-        -- 클라이언트 랭킹 창 → 결과(상위 10 + 내 순위)는 그 사람에게만
+        -- 클라이언트 랭킹 창 → 결과(상위 20 + 내 순위 + 내 캐릭터 「이름|외형」)는 그 사람에게만
         if kind == "progress" then diff = 0 end   -- 성장 순위는 난이도 하나의 판
         local board = self:BoardName(kind, diff)
         local ascending = kind == "queen" or string.sub(kind, 1, 5) == "boss_"
         local digest = self:GetTop(board, ascending)
-        local mine = self:MineDigest(_UserService:GetUserEntityByUserId(senderUserId), board, ascending, kind == "progress")
-        self:ShowBoard(kind, diff, digest, mine, senderUserId)
+        local player = _UserService:GetUserEntityByUserId(senderUserId)
+        local mine = self:MineDigest(player, board, ascending, kind == "progress")
+        local filled = self:FillLook(player)
+        if filled ~= "" then digest = self:PatchLook(board, digest, mine, filled) end
+        self:ShowBoard(kind, diff, digest, mine, self:MeText(player), senderUserId)
     end
 
     @ExecSpace("Client")
-    method void ShowBoard(string kind, integer diff, string digest, string mine)
-        _RankWindow:OnData(kind, diff, digest, mine)
+    method void ShowBoard(string kind, integer diff, string digest, string mine, string me)
+        _RankWindow:OnData(kind, diff, digest, mine, me)
     end
 
 end

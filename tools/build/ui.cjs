@@ -390,8 +390,9 @@ function buildGameHud() {
     b.text(`${row}/Head`, "선택 보상", { size: 16, bold: true, color: "#E6C88A", anchor: "middle-left", pivot: [0, 0.5], pos: [0, 0], rect_size: [headW, h], alignment: 3, ...outline });
     for (let i = 1; i <= 3; i++) {
       const c = `${row}/C${i}`;
-      // 아이콘 = 칸 높이 − 위아래 pad (가운데) · 꼬리표는 아이콘 왼쪽 아래 모서리(pad 안) · 글은 꼬리표 오른쪽 끝부터 오른쪽 pad까지
-      const iconX = PL.pad, icon = h - 2 * PL.pad, textX = PL.pad + tag.w, textW = chipW - textX - PL.pad;
+      // 아이콘 = 칸 높이 − 위아래 pad (가운데) · 꼬리표는 아이콘 왼쪽 아래 모서리(pad 안) · 글은 꼬리표 오른쪽 끝에서 PL.gap 띄워 오른쪽 pad까지
+      //   (11-01 메이커 관찰 1: 꼬리표 끝 = 글 시작이라 「선택 보상노말」로 붙어 읽혔다 — 이름·단계 두 줄 모두 같은 x로 옮긴다)
+      const iconX = PL.pad, icon = h - 2 * PL.pad, textX = PL.pad + tag.w + PL.gap, textW = chipW - textX - PL.pad;
       b.button(c, "", { anchor: "top-left", pivot: [0, 1], pos: [headW + gap + (i - 1) * (chipW + gap), 0], rect_size: [chipW, h], bg_color: { r: 0, g: 0, b: 0, a: 0.3 }, sprite_type: 1 });
       b.sprite(`${c}/Rim`, { anchor: "middle-center", pos: [0, 0], rect_size: [chipW, h], ...part(PL.key), sprite_type: 1 });
       b.patchComponent(`${c}/Rim`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
@@ -807,39 +808,55 @@ function buildGameHud() {
   b.text("WpWin/DiffTip/Text", "", { size: 19, color: C.gold, anchor: "middle-center", pos: [0, 0], rect_size: [488, 88], alignment: 4, bestfit: true, min_size: 14, max_size: 19, ...outline });
 
   // ── 랭킹 창 ──
-  const RT = require("./ui-tokens.cjs").RANKTAB;
-  k.frame("RankWin", "middle-center", [0, 60], [RT.winW, RT.winH], "랭킹");
   // 10-20 B안: 「이번 주 심연」 탭 (주간 규칙 + 주마다 새 기록판) · 10-24 「성장 순위」 탭 (레벨 + 가장 멀리 간 난이도·액트) — 탭 넷.
   // 심연을 숨긴 동안(config depthEnabled 0) 심연 두 탭은 RankWindow가 끈다 → 앞 두 칸(성장·보스)만 보인다
-  // 11-01 사용자 결정 2-C 「탭 폭 넓히기」: 폭 148에서 「보스 처치 시간」(실행 중 RankWindow가 넣는 글)이 두 줄로 꺾였다 → 글귀·글자 16 그대로,
-  //   폭 = 가장 긴 탭 글 + 양쪽 장식 안쪽(ui-tokens RANKTAB.side) · 글 칸은 한 줄 높이(넘치면 줄이지 꺾지 않는다). 자리는 보이는 탭 수로 RankWindow.LayoutTabs가 다시 잡는다
-  //   — 빌드 배치 = 심연을 숨긴 기본(둘이 한 줄 가운데) · 심연 탭 둘은 둘째 줄 자리
+  // 11-01 사용자 결정 2-C 「탭 폭 넓히기」: 폭 = 가장 긴 탭 글 + 양쪽 장식 안쪽(ui-tokens RANKTAB.side) · 글 칸은 한 줄 높이(넘치면 줄이지 꺾지 않는다)
+  // 11-01 2차 (사용자 「랭킹창에 이 공백은 도대체 뭐여 줄이자 · 캐릭터도 작게 · 20위까지 · ui는 너가 판단」 — ui-tokens RANK · docs/evidence/2026-11-01-rank-window-2):
+  //   창 바탕 1188 · 탭은 둘이든 넷이든 한 줄 · 기록 판 = 머리 줄(제목 | 심연 탭에서만 오른쪽 액트 넘김 막대) → 상위 20 칸(4 × 5) → 내 순위 줄.
+  //   빌드 배치 = 기본(성장·보스 탭 둘 · 막대 없음). 탭 자리 · 머리 줄 높이 · 목록 자리 · 창 높이·자리는 RankWindow.LayoutTabs / Layout이 보이는 것만 쌓아 다시 잡는다
   {
     const T = require("./ui-tokens.cjs");
+    const RT = T.RANKTAB, R = T.RANK;
+    const lay = T.rankWinLayout("progress");
+    const avatar = require("./char-card.cjs").avatarOf(b);
+    k.frame("RankWin", "middle-center", [0, lay.winY], [R.winW, lay.winH], "랭킹");
     const tabs = [["TabProgress", "성장 순위"], ["TabQueen", "보스 처치 시간"], ["TabDepth", "심연 최고 층"], ["TabWeek", "이번 주 심연"]];
     const tabW = T.rankTabW(tabs.map(([, t]) => t));
-    const lay = T.rankLayout(tabs.length, tabW);
+    const four = T.rankLayout(4, tabW);
     tabs.forEach(([n, t], i) => {
-      const p = `RankWin/${n}`;
-      k.btn(p, t, { anchor: "top-center", pos: [lay.tabs[i].x, lay.tabs[i].y], rect_size: [tabW, RT.h], font_size: RT.font });
+      // 빌드 = 탭 넷 한 줄 자리 (서로 안 겹침) · 심연 둘은 꺼 둔다. 심연을 숨긴 동안 LayoutTabs(false)가 성장·보스 둘을 가운데(±109)로 옮긴다
+      const p = `RankWin/${n}`, at = four.tabs[i];
+      k.btn(p, t, { anchor: "top-center", pos: [at.x, at.y], rect_size: [tabW, RT.h], font_size: RT.font, enable: i < 2 });
       require("./lib.cjs").fitButtonText(b, p, { oneLine: true });
       b.patchComponent(p, "MOD.Core.TextGUIRendererComponent", { Padding: { ...b.getComponent(p, "MOD.Core.TextGUIRendererComponent").Padding, left: RT.side, right: RT.side } });
     });
-  }
-  // 심연 기록은 액트별 (10-20) — 심연 탭 아래 액트 넘김 막대 (RankWindow.SetAct, 보스 탭에선 숨김). 탭 한 줄일 때 자리 (넷이면 RankWindow.LayoutTabs가 내린다)
-  k.actPager("RankWin/ActBar", "top-center", [0, -RT.actBarTop], 580);
-  k.inner("RankWin/Paper", "top-center", [0, -RT.paperTop], [580, RT.paperH], "win_content");
-  // 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안): 목록 아래 구분선 + 「내 순위」 한 줄 (RankWindow.MineText · 서버 RankingSystem.MineDigest).
-  //   목록 칸을 그만큼 줄이고 넘치면 글자를 줄인다 (이번 주 판은 규칙 줄까지 15줄 남짓)
-  {
-    const T = require("./ui-tokens.cjs");
-    const padX = 20, mineH = 30, listTop = 16;
-    const mineY = T.SPACE;                                // 판 아래에서 내 순위 줄 바닥
-    const divY = mineY + mineH + T.SPACE / 2;             // 구분선
-    const listH = RT.paperH - listTop - divY - T.SPACE / 2;     // 목록 바닥 = 구분선 위 6
-    b.text("RankWin/Paper/List", "", { size: 19, color: C.gold, alignment: 0, anchor: "top-left", pos: [padX, -listTop], rect_size: [540, listH], bestfit: true, min_size: 14, max_size: 19 });
-    b.panel("RankWin/Paper/MineDiv", { anchor: "bottom-left", pivot: [0, 0], pos: [padX, divY], rect_size: [540, 2], color: { r: 0.45, g: 0.38, b: 0.28, a: 0.6 } });
-    b.text("RankWin/Paper/Mine", "", { size: 19, bold: true, color: "#F4ED83", alignment: 3, anchor: "bottom-left", pivot: [0, 0], pos: [padX, mineY], rect_size: [540, mineH], bestfit: true, min_size: 14, max_size: 19, ...outline });
+    const P = "RankWin/Paper";
+    k.inner(P, "top-center", [0, -R.paperTop], [R.paperW, lay.paperH], "win_content");
+    // 머리 줄: 판 제목(왼쪽) · 심연 탭이면 오른쪽에 액트 넘김 막대 (10-20 심연 기록은 액트별 · RankWindow.SetAct) — 예전엔 막대 자리가 모든 탭에 비어 있었다
+    b.text(`${P}/Head`, "", { size: R.font.head, bold: true, color: C.title, anchor: "top-left", pivot: [0, 1], pos: [R.pad, -R.pad], rect_size: [R.listW, R.headH], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.head, ...outline });
+    k.actPager(`${P}/ActBar`, "top-right", [-R.pad, -R.pad], R.actBarW);
+    b.patch(`${P}/ActBar`, { enable: false });
+    // 상위 20: 칸 4 × 5줄 (1·2·3·4 / 5·6·7·8 …) — 칸 = 순위 | 캐릭터 그림(UI 아바타 · CharSelectWindow.Dress가 외형을 입힌다) | 이름 · 기록 두 줄
+    b.empty(`${P}/List`, { anchor: "top-left", pivot: [0, 1], pos: [R.pad, -lay.listTop], rect_size: [R.listW, R.listH] });
+    for (let i = 0; i < R.top; i++) {
+      const c = `${P}/List/R${i + 1}`, col = i % R.cols, row = Math.floor(i / R.cols);
+      b.panel(c, { anchor: "top-left", pivot: [0, 1], pos: [col * (R.cellW + R.gapX), -row * (R.cellH + R.gapY)], rect_size: [R.cellW, R.cellH], color: { r: 1, g: 1, b: 1, a: 0.05 }, enable: false });
+      b.text(`${c}/Rank`, "", { size: R.font.rank, bold: true, color: "#B8AE9A", anchor: "middle-left", pivot: [0, 0.5], pos: [R.cellPad, 0], rect_size: [R.rankW, R.cellH - 2 * R.textInset], alignment: 4, ...outline });
+      avatar(`${c}/Avatar`, { anchor: "middle-left", pivot: [0, 0.5], pos: [R.cellPad + R.rankW + R.avatarGap, 0], rect_size: R.avatar });
+      b.text(`${c}/Name`, "", { size: R.font.name, bold: true, color: C.gold, anchor: "top-left", pivot: [0, 1], pos: [R.textX, -R.textInset], rect_size: [R.textW, R.nameH], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.name, ...outline });
+      b.text(`${c}/Value`, "", { size: R.font.value, color: C.value, anchor: "bottom-left", pivot: [0, 0], pos: [R.textX, R.textInset], rect_size: [R.textW, R.valueH], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.value });
+    }
+    b.text(`${P}/List/Empty`, "", { size: R.font.head, color: C.dim, anchor: "middle-center", pos: [0, 0], rect_size: [R.listW, R.cellH], alignment: 4 });
+    // 10-31 실플레이 피드백 「랭킹에 내가 안 보인다」 (A안) → 2차: 판 아래 「내 순위」 줄도 칸과 같은 규칙 (순위 · 지금 캐릭터 그림 · 이름 · 기록 — RankingSystem.MeText·MineDigest)
+    const M = `${P}/Mine`;
+    b.panel(M, { anchor: "bottom-left", pivot: [0, 0], pos: [R.pad, R.pad], rect_size: [R.listW, R.mineH], color: { r: 0.96, g: 0.85, b: 0.35, a: 0.12 } });
+    // 줄 양끝은 창 아래 모서리 장식 높이 안이라 글·그림을 mineInset 띄운다 (ui-tokens RANK.cornerClear)
+    b.text(`${M}/Label`, "내 순위", { size: R.font.value, bold: true, color: "#CDBF8F", anchor: "middle-left", pivot: [0, 0.5], pos: [R.mineInset, 0], rect_size: [R.mineLabelW, R.nameH], alignment: 3, ...outline });
+    b.text(`${M}/Rank`, "", { size: R.font.rank, bold: true, color: "#F4ED83", anchor: "middle-left", pivot: [0, 0.5], pos: [R.mineInset + R.mineLabelW, 0], rect_size: [R.mineRankW, R.nameH + 6], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.rank, ...outline });
+    const mineAvatarX = R.mineInset + R.mineLabelW + R.mineRankW;
+    avatar(`${M}/Avatar`, { anchor: "middle-left", pivot: [0, 0.5], pos: [mineAvatarX, 0], rect_size: [R.avatar[0], R.mineH - R.avatarGap * 2] });
+    b.text(`${M}/Name`, "", { size: R.font.mine, bold: true, color: "#F4ED83", anchor: "middle-left", pivot: [0, 0.5], pos: [mineAvatarX + R.avatar[0] + R.textGap, 0], rect_size: [R.mineNameW, R.nameH + 6], alignment: 3, bestfit: true, min_size: R.font.min, max_size: R.font.mine, ...outline });
+    b.text(`${M}/Value`, "", { size: R.font.mine, bold: true, color: "#F4ED83", anchor: "middle-right", pivot: [1, 0.5], pos: [-R.mineInset, 0], rect_size: [R.mineValueW, R.nameH + 6], alignment: 5, bestfit: true, min_size: R.font.min, max_size: R.font.mine, ...outline });
   }
 
   // ── 채널 창 (메뉴 「채널 변경」): 채널별 인원, 고르면 확인 후 이동 (ChannelWindow.mlua) ──
