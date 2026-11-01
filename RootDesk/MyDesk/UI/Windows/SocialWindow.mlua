@@ -285,13 +285,15 @@ script SocialWindow extends Logic
         ---@type PlayerDuel
         local duel = _UIKit:Comp("script.PlayerDuel")
         local foe = duel ~= nil and duel.Opponent or ""
+        -- 0.25초마다 불린다: 바뀐 게 없으면 목록을 풀기 전에 끝낸다
+        local tail = ":" .. myMap .. ":" .. tostring(myLv) .. ":" .. foe .. ":" .. self.Digest
+        local head = tostring(self.Got) .. tostring(self.ListOk) .. ":"
+        if head .. tostring(self.Page) .. tail == self.RenderKey then return end
         local rows = self.Got and self:ParseRows(self.Digest) or {}
         local view = self:BuildView(rows, me)
         local pages = self:Paginate(view.list, self.PerPage)
         self.Page = math.max(1, math.min(self.Page, #pages))
-        local key = tostring(self.Got) .. tostring(self.ListOk) .. ":" .. tostring(self.Page) .. ":" .. myMap .. ":" .. tostring(myLv) .. ":" .. foe .. ":" .. self.Digest
-        if key == self.RenderKey then return end
-        self.RenderKey = key
+        self.RenderKey = head .. tostring(self.Page) .. tail
         local s = self:Social()
         _UIKit:SetText(self.Win .. "/Summary", self:SummaryText(view, self.Got, self.ListOk))
         local page = pages[self.Page]
