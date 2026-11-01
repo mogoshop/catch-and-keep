@@ -268,9 +268,8 @@ def build(prof, L, act=1, diff=0):
     deploy_quest = sum(1 for x in DEPLOY_LEVELS if x <= L) + DONE["runs"] * len(DEPLOY_LEVELS)
     if ss <= 0:
         n_sh = 0
-    elif L < C["shadowFullLevel"]:
-        n_sh = int(C["shadowEarlyDeployLimit"]) + deploy_quest
     else:
+        # 11-01 사용자 A안: 기본 deployBase(1) + 증원 노드 + 장비 + 의뢰 — 레벨 계단(예전 shadowFullLevel)은 없다 (ShadowCommander.GetDeployLimit)
         gear_dep = int(lerp_gear(prof, "deploy", L))
         # 그림자 증원 랭크는 캐릭터 Lv deployExpandFromLv부터 deployExpandStep마다 하나씩 (SkillBook.NodeLevel)
         open_ranks = 0 if L < C["deployExpandFromLv"] else int((L - C["deployExpandFromLv"]) // C["deployExpandStep"]) + 1

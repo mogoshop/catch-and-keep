@@ -3,7 +3,8 @@
 --   · 그 일에 눌러야 할 버튼들의 붉은 점(Badge)을 깜빡인다 — PC 메뉴 줄·모바일 패드·메뉴 창·스킬 카드·그림자 창 버튼에 미리 넣어 둔 점이라
 --     화면 좌표 계산이 없어 PC·모바일 모두 같은 방식으로 맞는다. 쓸 포인트 표시(HudMain.RenderBadges)와 같은 점을 같이 쓴다.
 --   · 위쪽 안내 줄 한 줄(HudMain.RenderTip이 Tip()을 먼저 본다).
---   · 핵심 순간 세 번만 카드 한 장(GuideWindow.ShowCard): Lv5 그림자 해금 · 첫 그림자 · Lv15 군단 확장. 계정에 한 번 (PlayerSave.GuideCards).
+--   · 핵심 순간 세 번만 카드 한 장(GuideWindow.ShowCard): Lv5 그림자 해금 · 첫 그림자 · 군단 확장(그림자 한도가 기본 1기보다 늘어난 순간 —
+--     「그림자 증원」 첫 랭크가 효력을 내는 캐릭터 Lv12 또는 장비·의뢰 보너스 · 11-01 A안). 계정에 한 번 (PlayerSave.GuideCards).
 --   · 10-31 실플레이 피드백 B-2: 「그림자 소환」을 배우면(레벨 무관 · 언제든) 게임 안내 창(GuideWindow 「군단」 책갈피 「그림자 추출」 쪽)을
 --     캐릭터마다 한 번 저절로 연다 (SkillBook.ShadowGuide 저장). 이미 배운 기존 캐릭터는 다음 접속 때 한 번. 첫 진입 둘러보기는 그대로.
 -- 단계는 상태에서 다시 계산하므로 따로 저장하지 않는다 — 이미 한 사람에게는 처음부터 아무것도 뜨지 않는다.
@@ -151,8 +152,9 @@ script GuideCoach extends Logic
             return self:Say("summon", mobile and "그림자 명령 버튼 → 「소환」으로 지정한 그림자를 부르세요" or "Z — 지정한 그림자를 불러내세요 (X 회수 · C 집결)")
         end
         if cmd.DeployedCount > 0 and not self:CardSeen("summoned") then self:MarkCard("summoned") end
-        -- 6) Lv15 군단 확장: 배치 한도가 늘었는데 지정이 모자라면 (카드를 본 뒤 그림자 창을 열었다 닫으면 끝 — 창 안에서는 지정할 줄을 가리킨다)
-        if st.Level >= _GameData.shadowFullLevel and assigned < limit and owner.StorageCount > assigned and not self:CardSeen("legion_open") then
+        -- 6) 군단 확장: 소환 한도가 기본(deployBase 1기)보다 늘었는데 지정이 모자라면 (11-01 A안 — 레벨 계단이 없으니 「그림자 증원」 첫 랭크가
+        --    효력을 내는 때(Lv12에 찍어 둔 노드 · Lv12 이상에서 찍은 순간)나 장비·의뢰 보너스가 붙은 때). 카드를 본 뒤 그림자 창을 열었다 닫으면 끝 — 창 안에서는 지정할 줄을 가리킨다
+        if limit > math.floor(_GameData.deployBase) and assigned < limit and owner.StorageCount > assigned and not self:CardSeen("legion_open") then
             local open = _UIKit:IsOpen("/ui/ShadowHUD/Window")
             if open and self:CardSeen("legion") then self.LegionVisited = true end
             if not open and self.LegionVisited then
@@ -160,9 +162,18 @@ script GuideCoach extends Logic
                 return ""
             end
             self:PointShadowWindow(points, mobile)
-            return self:Say("legion", string.format("그림자를 %d기까지 거느릴 수 있습니다 — %s에서 「소환 지정」을 더 하세요 (지금 %d기)", limit, shadowKey, assigned))
+            return self:Say("legion", string.format("함께 다니는 그림자가 %d기로 늘었습니다 — %s에서 「소환 지정」을 더 해주세요 (지금 %d기)", limit, shadowKey, assigned))
         end
         return ""
+    end
+
+    method string ExpandLevels()
+        -- 「그림자 증원」 랭크가 효력을 내는 캐릭터 레벨 "12·17·22" (SkillBook.NodeLevel과 같은 규칙 · config deployExpandFromLv/Step · 노드 최대 랭크)
+        local def = _SkillData:Get("deploy_expand")
+        local n = def ~= nil and math.floor(def.maxLv) or 3
+        local parts = {}
+        for i = 1, n do table.insert(parts, tostring(math.floor(_GameData.deployExpandFromLv + _GameData.deployExpandStep * (i - 1)))) end
+        return table.concat(parts, "·")
     end
 
     method string Say(string step, string tip)
@@ -338,13 +349,13 @@ script GuideCoach extends Logic
                 .. "· " .. g("강화") .. " — 정수를 써서 공격·생명을 올립니다 (내 레벨이 오를수록 더 높이).\n"
                 .. "· " .. g("분해") .. " — 필요 없는 그림자를 정수로 바꿉니다.\n\n"
                 .. "지정한 뒤 " .. (mobile and g("그림자 명령 → 소환") or (g("Z") .. " 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결")) .. ".\n"
-                .. "Lv" .. tostring(math.floor(_GameData.shadowFullLevel)) .. "까지는 한 번에 1기, 그 뒤로는 여러 기를 함께 거느립니다."
+                .. "처음에는 한 번에 1기를 데리고 다닙니다. 스킬 " .. g("「그림자 증원」") .. "을 찍으면 Lv" .. self:ExpandLevels() .. "에 한 기씩 늘어납니다."
         else
             local limit = cmd ~= nil and cmd:GetDeployLimit() or 5
             head = "군단이 커졌습니다"
             body = "이제 그림자를 " .. g(tostring(limit) .. "기") .. "까지 함께 거느릴 수 있습니다.\n\n"
-                .. (mobile and "메뉴 → 그림자" or "그림자(H)") .. " 창에서 " .. g("「소환 지정」") .. "을 더 하세요 — 지정한 수만큼 한꺼번에 나옵니다.\n\n"
-                .. "그림자는 군단 피해의 대부분을 맡습니다. 막히는 곳이 있으면\n"
+                .. (mobile and "메뉴 → 그림자" or "그림자(H)") .. " 창에서 " .. g("「소환 지정」") .. "을 더 해주세요 — 지정한 수만큼 한꺼번에 나옵니다.\n\n"
+                .. "그림자는 해골 곁에서 군단을 두텁게 합니다. 막히는 곳이 있으면\n"
                 .. "· 더 강한 몬스터(정예·보스)를 그림자로 거두거나\n"
                 .. "· 정수로 " .. g("강화") .. "하거나\n"
                 .. "· 앞 사냥터에서 레벨과 장비를 채우고 다시 도전하세요."

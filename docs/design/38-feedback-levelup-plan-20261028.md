@@ -742,7 +742,7 @@
 | 6 | 액트 2 첫 의뢰 | ⚠ **B 유지**(사막 자칼 45) | |
 | 7 | 전환 글 17쪽 | **A 이야기 카드 「전체 건너뛰기」 단추** | |
 | 8 | 스킬 포인트 | **A 레벨당 1 유지** | #26 뒤 재검 |
-| 9 | 그림자 초반 계단 | ⚠ **B 본격 Lv10 + 증원 12/17/22**(10-24 B안 되돌림) | 소환수 +1기 부하 확인 |
+| 9 | 그림자 초반 계단 | ⚠ **B 본격 Lv10 + 증원 12/17/22**(10-24 B안 되돌림) → **11-01 사용자 A안으로 대체**: 기본 1기 · 레벨 계단(Lv10 거저 +1기) 삭제 · 기수는 「그림자 증원」 12/17/22·장비·세트·의뢰로만 | 소환수 +1기 부하 확인 |
 | 10 | 경험치 템포 | ⚠ **B 초반 가속 Lv8·×1.8 + 높은 레벨 보정 12% · `expHighLevelTo 37` 동반** | 37 동반 없으면 악몽 71·지옥 94 — 반드시 같이. 넣기 전 `sim_balance --diff all` |
 | 11 | 아군 표시 | **A 셋 다** | |
 | 12 | 흔들림 토글 기본값 | **A PC 켬 · 모바일 끔** | |
@@ -811,7 +811,7 @@
 | 6 | 액트 2 첫 의뢰 유지 | quests 사막 자칼 45 | 값 대조 |
 | 7 | 이야기 「전체 건너뛰기」 | StoryCard.SkipAll · 단추 | 남은 카드 비우고 닫힘 |
 | 8 | 스킬 포인트 레벨당 1 | config skillPerLevel 1 | 값 대조 |
-| 9 | 그림자 본격 Lv10 · 증원 12/17/22 | config shadowFullLevel·deployExpand* | 증원 12/17/22 · 본격 Lv10 (실행 값) |
+| 9 | ~~그림자 본격 Lv10~~ → 11-01 A안 기본 1기 · 증원 12/17/22 | config deployBase 1 · shadowFullLevel·shadowEarlyDeployLimit 행 삭제 · deployExpand* | 기본 1기 · 레벨 계단 없음 · 증원 12/17/22 (11-01 A안으로 대체 — check_decisions38 결정 9) |
 | 10 | 경험치 B + expHighLevelTo 37 | config earlyExp*·expHighLevel* | 시뮬 끝 Lv 40·67·89 (실측 길 기준) |
 | 11 | 아군 표시 셋 다 | ShadowUnit 고리 색·체력 막대 · MotionSmoother 0.55 | 교전 판정을 CommandState로 고친 뒤 싸우는 3마리 고리 0.00 / 평소 0.60 |
 | 12 | 흔들림 기본 PC 켬 · 모바일 끔 | Util.ShakeEnabled · PlayerSave.ScreenShake | 설정 1 → 0(꺼짐) → 1(켜짐) 저장값 따라 바뀜 |

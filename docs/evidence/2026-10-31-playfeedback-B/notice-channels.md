@@ -185,7 +185,7 @@
 | Progress/PlayerJournal.mlua | Util.Banner | 4 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Progress/ProgressionSystem.mlua | Util.Banner | 2 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Quest/PlayerQuest.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
-| Shadow/ShadowCommander.mlua | Util.Warn | 7 | 머리 위 경고 (창이 떠 있으면 B) |
+| Shadow/ShadowCommander.mlua | Util.Warn | 8 | 머리 위 경고 (창이 떠 있으면 B) · 11-01 Z 키 한도 거절 이유 추가 |
 | Shadow/ShadowOwner.mlua | Util.Banner | 2 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Shadow/ShadowOwner.mlua | Util.Warn | 6 | 머리 위 경고 (창이 떠 있으면 B) |
 | Shadow/SoulExtractor.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |

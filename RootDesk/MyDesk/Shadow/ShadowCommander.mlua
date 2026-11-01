@@ -210,17 +210,34 @@ script ShadowCommander extends Component
     end
 
     method integer GetDeployLimit()
-        -- Lv15(shadowFullLevel) 전에는 맛보기로 1기만 (잡으면 내편: Lv5부터 첫 그림자)
+        -- 11-01 사용자 A안: 기본 deployBase(1)기 + 「그림자 증원」 노드(캐릭터 Lv12·17·22에 한 랭크씩 효력) + 장비·세트 (hardCap 이하).
+        --   레벨만으로 거저 느는 계단(예전 shadowFullLevel Lv10부터 2기)은 없다 — 그림자는 투자한 만큼만 커진다.
         local limit = _ShadowConfig:GetDeployLimit(self:GetDeployBonus(), self:GetCapBonus())
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats ~= nil and stats.Level < _GameData.shadowFullLevel then limit = math.min(limit, math.floor(_GameData.shadowEarlyDeployLimit)) end
-        -- 의뢰 영구 보상(가라앉은 지하실의 수장, 난이도마다 +1)은 초반 한도 위에 더한다 — 받은 순간부터 체감되게.
+        -- 의뢰 영구 보상(가라앉은 지하실의 수장, 난이도마다 +1)은 그 위에 더한다 — 받은 순간부터 체감되게.
         -- 다만 모든 보너스를 합쳐도 hardCap + 장비 상한 최대(8 + 2 = 10기)를 넘지 않는다 (10-24 사용자 B안 · 예전엔 의뢰가 상한 밖이라 12기)
         ---@type PlayerQuest
         local quest = self.Entity:GetComponent("script.PlayerQuest")
         if quest ~= nil then limit = limit + quest.DeployBonus end
         return math.min(limit, _ShadowConfig:GetHardCap() + math.floor(_GameData.shadowCapBonusMax))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LogDeployLimit()
+        -- [VRF] 소환 요청 때 한 번: 한도 계산 내역 (캐릭터 Lv · 효력 있는 증원 랭크/찍은 랭크 · 장비 · 세트 상한 · 의뢰 → 한도)
+        if Environment:IsPublishedPlay() then return end
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        ---@type PlayerStats
+        local ps = self.Entity:GetComponent("script.PlayerStats")
+        ---@type PlayerQuest
+        local quest = self.Entity:GetComponent("script.PlayerQuest")
+        -- 찍은 랭크는 book:GetLevel (GetSkillLevel은 GetPowerLevel을 거쳐 이미 효력 있는 랭크만 돌려준다 — 11-01 메이커 lv=11 node=0/0 오표시)
+        local rank = book ~= nil and book:GetLevel("deploy_expand") or self:GetSkillLevel("deploy_expand")
+        local usable = rank
+        if book ~= nil and ps ~= nil then usable = book:NodeUsable("deploy_expand", rank, ps.Level) end
+        log(string.format("[VRF] shadow deploy limit lv=%d node=%d/%d equip=%d cap=%d quest=%d deployed=%d -> %d",
+            ps ~= nil and ps.Level or 0, usable, rank, ps ~= nil and ps.BonusDeploy or 0, self:GetCapBonus(),
+            quest ~= nil and quest.DeployBonus or 0, self.DeployedCount, self:GetDeployLimit()))
     end
 
     @ExecSpace("ServerOnly")
@@ -456,6 +473,7 @@ script ShadowCommander extends Component
     method integer DeployNext()
         -- 소환 지정이 있으면 지정 순서대로 다음 하나, 지정이 없으면 등급·레벨이 높은 것 하나. 소환한 수(0/1)
         self:Prune()
+        self:LogDeployLimit()
         local owner = self:Owner()
         local assigned = owner:AssignedList()
         if #assigned > 0 then
@@ -729,7 +747,17 @@ script ShadowCommander extends Component
             return
         end
         local ok = false
-        if id == "" then ok = self:DeployNext() > 0 else ok = self:Deploy(id) end
+        if id == "" then
+            ok = self:DeployNext() > 0
+            -- 11-01 메이커(A안 확인): Z 키·명령 단추로 한도에 막히면 아무 반응이 없었다 → 스킬 칸 시전(SkillEffects.SummonShadow)과 같이 이유를 알린다
+            if not ok then
+                local why = self:DeployBlockReason()
+                if why ~= nil and why ~= "" then _Util:Warn(why, senderUserId) end
+            end
+        else
+            self:LogDeployLimit()
+            ok = self:Deploy(id)
+        end
         if ok and stats ~= nil and cost > 0 then stats:SpendMana(cost) end
     end
 

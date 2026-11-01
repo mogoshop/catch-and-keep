@@ -171,9 +171,8 @@ def build(name, L):
     hpScale = C["shadowHpMul"] * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (eff - 1))
     if ss <= 0:
         n_sh = 0
-    elif L < C["shadowFullLevel"]:
-        n_sh = 1
     else:
+        # 11-01 사용자 A안: 기본 deployBase(1) + 증원 랭크 (레벨 계단 없음)
         n_sh = min(int(C["deployBase"]) + rk.get("deploy_expand", 0), int(C["hardCap"]))
     n_el = min(p["elites"], n_sh)
     sh_cd = 1.6 * C["shadowCooldownMul"]  # 원본 공격 간격 평균 1.6초
