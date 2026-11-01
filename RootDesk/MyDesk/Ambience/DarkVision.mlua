@@ -38,6 +38,13 @@ script DarkVision extends Logic
     property integer TopFadeCount = 0       -- 지금 가리는(옅게 하는) 그림 수 — 바뀔 때만 [VRF] 로그
     property table TopSprites = {}          -- RUID → { w, h, px, py, ppu } 스프라이트 크기·피벗 (못 읽으면 false) · 맵이 바뀌어도 그대로 쓴다
     property any TopBase = nil              -- 윗부분 그림 엔티티 id → 원래 색 (다시 들어와도 옅어진 색을 원래 색으로 잡지 않게)
+    -- 11-02 맵 전환 중 null (DarkVision.EnterMap:7 ← Tick:6): BuildTopFade의 LoadSpriteAndWait가 스크립트를 멈추는 동안 반복 타이머가 Tick을 또 돌려
+    --   ① 멈춘 사이 맵을 떠나면(서문 포털 되튕김) 깨어난 EnterMap이 지워진 옛 맵에 GetComponent → null ② 멈춘 사이 Tick·TickCleared가 전체 조명을 하나 더 만들어 LWA-3010.
+    --   진입 중에는 Tick이 기다리고, 깨어난 EnterMap은 자기 차례(EnterSerial)·맵 유효성을 다시 보고 아니면 그만둔다
+    property integer EnterSerial = 0        -- EnterMap 호출마다 +1 (멈췄다 깨어난 옛 진입이 새 진입의 상태를 덮지 않게)
+    property boolean Entering = false       -- EnterMap이 그림 크기를 읽느라 멈춰 있는 중
+    property number EnteringAt = 0          -- 진입 시작 시각 (오류로 멈춘 진입이 Tick을 영원히 막지 않게 EnterTimeout 뒤엔 다시 진입)
+    property number EnterTimeout = 10
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -45,6 +52,7 @@ script DarkVision extends Logic
         self.Lights = {}
         self.CurrentMap = nil
         self.Active = false
+        self.Entering = false
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, self.ScanInterval)
         -- 윗부분 반투명 판정: 클라이언트 반복 타이머 하나 (맵 진입·이탈은 Tick → EnterMap이 목록을 다시 만든다 · Logic이라 OnMapEnter/OnMapLeave가 오지 않는다)
         self.TopFades = {}
@@ -65,6 +73,7 @@ script DarkVision extends Logic
         self:ClearAll()
         self.CurrentMap = nil
         self.Active = false
+        self.Entering = false
         _OverlayLightService:SetOverlayLightEnabled(false)
     end
 
@@ -105,7 +114,17 @@ script DarkVision extends Logic
         if not isvalid(player) then return end
         local map = player.CurrentMap
         if not isvalid(map) then return end
-        if map ~= self.CurrentMap then self:EnterMap(player, map) end
+        if self.Entering then
+            -- 앞선 EnterMap이 그림 크기를 읽느라 멈춰 있다: 그동안 조명을 만들지 않고 기다린다 (깨어난 진입이 맵이 바뀌었으면 스스로 그만둔다)
+            if _UtilLogic.ElapsedSeconds - self.EnteringAt < self.EnterTimeout then return end
+            self.Entering = false    -- 오류로 끝나지 못한 진입: 처음부터 다시 들어간다
+            self.CurrentMap = nil
+        end
+        if map ~= self.CurrentMap then
+            self:EnterMap(player, map)
+            -- EnterMap이 멈췄다 깨어나는 사이 맵이 바뀌었으면 이 틱은 그만둔다 (다음 틱이 지금 맵으로 다시 들어간다)
+            if self.CurrentMap ~= map or not isvalid(map) then return end
+        end
         if not self.Active then return end
         self:TickCleared(player, map)
         self:TickHeartbeat(map)
@@ -172,8 +191,24 @@ script DarkVision extends Logic
         -- 맵의 어둠 설정을 읽어 전체 조명 + 내 주변 빛을 만든다
         self:ClearAll()
         self:RestoreTopFade()   -- 떠나는 맵의 옅어진 윗부분 그림을 원래 색으로 (맵 이탈 짝)
+        self.EnterSerial = self.EnterSerial + 1
+        local serial = self.EnterSerial
+        self.Entering = true
+        self.EnteringAt = _UtilLogic.ElapsedSeconds
+        self.Active = false     -- 진입이 끝날 때까지 SetAwake·RefreshDepthCurse·SetBossStorm이 조명을 만들지 않게
         self.CurrentMap = map
-        self:ShadeWalls(map)    -- 윗부분 그림 목록도 여기서 다시 만든다 (BuildTopFade · 맵 진입 짝)
+        self:ShadeWalls(map)    -- 윗부분 그림 목록도 여기서 다시 만든다 (BuildTopFade · 맵 진입 짝) · 처음 보는 그림은 LoadSpriteAndWait로 멈출 수 있다
+        if serial ~= self.EnterSerial then return end   -- 멈춘 사이 더 새 진입이 시작됐다: 상태는 그쪽 몫
+        self.Entering = false
+        local waited = _UtilLogic.ElapsedSeconds - self.EnteringAt
+        if waited > 0.05 and not Environment:IsPublishedPlay() then log(string.format("[VRF] darkvision entermap waited %.2fs (그림 크기 읽기)", waited)) end
+        if not isvalid(map) or not isvalid(player) or player.CurrentMap ~= map then
+            -- 멈춘 사이 맵을 떠났다 (서문 포털 되튕김 등): 지워진 맵을 만지지 않고 다음 Tick에 지금 맵으로 다시 들어간다
+            self:RestoreTopFade()
+            self.CurrentMap = nil
+            log("[VRF] darkvision entermap skipped: map not ready")
+            return
+        end
         ---@type MapAmbience
         local amb = map:GetComponent("script.MapAmbience")
         if amb == nil then
@@ -208,7 +243,7 @@ script DarkVision extends Logic
             ambient = lit.ambient
             color = lit.color
         end
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
+        self:SetGlobalLight(map, color, ambient)
         -- 카메라를 뺀 만큼(cameraZoom) 시야도 넓혀 화면 대비 밝은 범위를 유지한다
         local r = math.max(amb.PlayerLightRadius, _GameData.darkMinLightRadius) * _GameData.visionZoomMul
         self.BaseRadius = r
@@ -279,13 +314,15 @@ script DarkVision extends Logic
         if not _GameConst.TopFadeOn or #tops == 0 then return end
         if self.TopBase == nil then self.TopBase = {} end
         local skipped = 0
+        local serial = self.EnterSerial
         for i, r in ipairs(tops) do
-            if i > _GameConst.TopFadeMax then
+            if serial ~= self.EnterSerial then return end   -- 그림을 읽느라 멈춘 사이 다른 맵으로 다시 들어갔다
+            if i > _GameConst.TopFadeMax or not isvalid(r) then
                 skipped = skipped + 1
             else
-                local info = self:TopSpriteInfo(r.SpriteRUID)
                 local e = r.Entity
-                if info == false or not isvalid(e) then
+                local info = self:TopSpriteInfo(r.SpriteRUID)   -- 처음 보는 RUID면 여기서 멈춘다 → 깨어난 뒤 렌더러·엔티티를 다시 확인
+                if info == false or serial ~= self.EnterSerial or not isvalid(r) or not isvalid(e) then
                     skipped = skipped + 1
                 else
                     local p = e.TransformComponent.WorldPosition
@@ -438,8 +475,7 @@ script DarkVision extends Logic
         local t = (_UtilLogic.ElapsedSeconds - self.FadeAt) / self.FadeSeconds
         if t >= 1 then self.FadeFrom = 0 end
         local lit = self:ClearedLight(t)
-        if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, lit.color, lit.ambient))
+        self:SetGlobalLight(map, lit.color, lit.ambient)
     end
 
     method boolean AwakeHere(Entity map)
@@ -461,9 +497,8 @@ script DarkVision extends Logic
         -- 내 주변 빛 색도 바꾼다 (재의 왕을 쓰러뜨려 밝아지는 중이어도 붉은 빛은 걷힌다)
         self:ApplyPlayerLight(_UserService.LocalPlayer)
         if self.Cleared then return end
-        if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
         local ambient = self.DarkAmbient + (self:AwakeHere(map) and self.AwakeAmbientAdd or 0)
-        self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
+        self:SetGlobalLight(map, color, ambient)
     end
 
     @ExecSpace("ClientOnly")
@@ -475,7 +510,15 @@ script DarkVision extends Logic
         local ambient = self.DarkAmbient + self.AwakeAmbientAdd * 0.6 + 0.13 * beat
         local c = self.AwakeColor
         local color = Color(1, math.max(0, c.g - 0.08 * beat), math.max(0, c.b - 0.06 * beat), 1)
+        self:SetGlobalLight(map, color, ambient)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetGlobalLight(Entity map, Color color, number ambient)
+        -- 전체 조명은 늘 하나: 가진 것을 먼저 지우고 새로 만든다 (EnterMap도 이 길로 → 진입과 밝아짐이 겹쳐도 Global 조명 2개가 되지 않게 · LWA-3010)
         if self.GlobalSerial ~= 0 then _OverlayLightService:DestroyOverlayLight(self.GlobalSerial) end
+        self.GlobalSerial = 0
+        if not isvalid(map) then return end
         self.GlobalSerial = _OverlayLightService:SpawnGlobalTypeOverlayLight(GlobalTypeOverlayLightInfo(map, 0, color, ambient))
     end
 
