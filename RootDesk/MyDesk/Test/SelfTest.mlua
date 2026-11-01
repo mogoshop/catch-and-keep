@@ -81,11 +81,19 @@ script SelfTest extends Logic
         -- 언데드 수 (D2): 1·2·3·3·3·4 … 20레벨 8
         local u = _UndeadSystem
         self:Check("undead count", u:CountFor(1) == 1 and u:CountFor(3) == 3 and u:CountFor(4) == 3 and u:CountFor(6) == 4 and u:CountFor(20) == 8, "D2 해골 수 규칙")
-        self:Check("rally skill", _SkillData:Get("rally") ~= nil and _SkillData:Get("rally").row == 18 and _SkillData:Get("rally").maxLv == 1, "집결은 배워야 쓰는 Lv18 스킬 (1랭크)")
+        self:Check("rally skill", _SkillData:Get("rally") ~= nil and _SkillData:Get("rally").row == 18 and _SkillData:Get("rally").maxLv == 1, "컨보케이션은 배워야 쓰는 Lv18 스킬 (1랭크)")
         self:Check("shadow unlock", _SkillData:Get("shadow_summon").row == 5 and _SkillData:Get("raise_skeleton").row == 1, "해골 Lv1, 그림자 Lv5")
         -- 10-11 메인 스킬 + 강화 (docs/design/16): 강화는 메인 스킬에 붙고, 숙련 패시브는 강화로 흡수됐다
         local mastery = _SkillData:Get("skeleton_mastery")
-        self:Check("skill nodes", mastery ~= nil and mastery.kind == "node" and mastery.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 3, "단련된 뼈 = 해골 전사 강화, 그림자 소환 강화 3개")
+        self:Check("skill nodes", mastery ~= nil and mastery.kind == "node" and mastery.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 3, "단련된 뼈 = 해골 전사 강화, 리바이브 강화 3개")
+        -- 11-02 거인 분리 (사용자 결정 B · 기획서 52 §2-2 안 ①): 본 골렘 = 칸에 넣는 독립 액티브(본 노바와 같은 Lv) · 거인 노드 12개 부모 · 본 노바 아래는 폭탄 3만 · 시전음·랭크 배율 자리
+        local giantDef = _SkillData:Get("bone_giant")
+        local giantNodes = 0
+        for _, nid in ipairs(_SkillData:NodesOf("bone_giant")) do if string.sub(nid, 1, 6) == "giant_" then giantNodes = giantNodes + 1 end end
+        self:Check("giant split", giantDef ~= nil and giantDef.kind == "active" and giantDef.impl and giantDef.row == _SkillData:Get("bone_rite").row and giantNodes == 12 and #_SkillData:NodesOf("bone_rite") == 3,
+            "본 골렘 액티브 · 거인 노드 " .. tostring(giantNodes) .. "/12 · 본 노바 노드 " .. tostring(#_SkillData:NodesOf("bone_rite")) .. "/3")
+        self:Check("giant split cast", _GameData:GetSound("cast_bone_giant") ~= "" and _GameData.riteGiantRankPct > 0 and giantDef ~= nil and giantDef.mana == _GameData.riteGiantMana,
+            "본 골렘 시전음 · 랭크당 +" .. tostring(_GameData.riteGiantRankPct) .. "% · 마나 = 예전 5기 마나")
         self:Check("deploy rank", _ShadowConfig:GetDeploySkillBonus(1) == 1 and _ShadowConfig:GetDeploySkillBonus(3) == 3, "그림자 증원 랭크 = 추가 그림자 수")
         self:Check("deploy base", _ShadowConfig:GetDeployLimit(0, 0) == 1 and _ShadowConfig:GetDeployLimit(1, 0) == 2, "그림자 기본 한도 1기 · 증원 1랭크면 2기 (11-01 A안 · 레벨 계단 없음)")
         -- 10-29 길 위 사건 (기획서 39 #7 A): 액트 3·4 사냥터 16장에 하나씩 · 종류마다 4 · 액트 그림 줄(a3·a4)이 비지 않음
@@ -158,7 +166,7 @@ script SelfTest extends Logic
         end
         self:Check("stat names", _ItemData:StatName("fireRes") ~= "fireRes", "stats.csv")
         -- 계열 능력치 (docs/design/19): 이름표, 레벨형은 배율로 줄이지 않는다
-        self:Check("tree stats", _ItemData:StatName("treeCommand") == "소환 스킬 레벨" and _ItemData:StatName("sk_bone_shard") == "골편 투척 레벨" and _ItemData:StatValueText("sk_raise_skeleton", 2) == "해골 전사 레벨 +2" and _ItemData:IsCountStat("treeSoul") and _ItemData:IsCountStat("sk_bone_shard") and not _ItemData:IsCountStat("spellDmg"), _ItemData:StatName("sk_bone_shard") .. " · " .. _ItemData:StatValueText("sk_raise_skeleton", 2))
+        self:Check("tree stats", _ItemData:StatName("treeCommand") == "소환 스킬 레벨" and _ItemData:StatName("sk_bone_shard") == "티스 레벨" and _ItemData:StatValueText("sk_raise_skeleton", 2) == "해골 전사 레벨 +2" and _ItemData:IsCountStat("treeSoul") and _ItemData:IsCountStat("sk_bone_shard") and not _ItemData:IsCountStat("spellDmg"), _ItemData:StatName("sk_bone_shard") .. " · " .. _ItemData:StatValueText("sk_raise_skeleton", 2))
         self:Check("tree scale", _ItemData:ScaleMods("treeCurse=2,sk_bone_shard=3") == "treeCurse=2,sk_bone_shard=3", _ItemData:ScaleMods("treeCurse=2,sk_bone_shard=3"))
         -- 베이스 3등급 · 옵션 난이도 구간 (docs/design/19 2단계)
         local slotsByGrade = { {}, {}, {} }

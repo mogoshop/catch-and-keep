@@ -527,9 +527,9 @@ def main():
     ap.add_argument("--eff", type=float)
     ap.add_argument("--profile", default="P60")
     ap.add_argument("--diff", default="0", help="0 보통 · 1 악몽 · 2 지옥 · all 이어서")
-    ap.add_argument("--rite", type=float, default=0, help="뼈 의식 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
-    ap.add_argument("--rite-check", action="store_true", help="뼈 의식 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
-    ap.add_argument("--giant", type=float, default=0, help="46-7 뼈 의식 거인 가정: 악몽·지옥에서만 빌드 총 피해 +N%% (기획서 46 부록 A-3 · 기본 8.3 · 대검 13.5 · 노드 최대 20)")
+    ap.add_argument("--rite", type=float, default=0, help="본 노바 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
+    ap.add_argument("--rite-check", action="store_true", help="본 노바 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
+    ap.add_argument("--giant", type=float, default=0, help="46-7 본 골렘 가정: 악몽·지옥에서만 빌드 총 피해 +N%% (기획서 46 부록 A-3 · 기본 8.3 · 대검 13.5 · 노드 최대 20)")
     ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20·+26%% 끝 레벨 41·68·90 불변 확인만 (+26 = 48 거인 2마리 상한 가정 · 바뀌면 종료 코드 1)")
     a = ap.parse_args()
     if a.rite_check:
@@ -605,7 +605,7 @@ def rite_check(prof, eff, pct=5.0):
     with_rite = chain(prof, eff)
     RITE["pct"] = 0.0
     names = ["보통", "악몽", "지옥"]
-    print("== 뼈 의식 반영 점검 (%s · 해금 Lv%d부터 빌드 총 피해 +%g%%) ==" % (prof, RITE["row"], pct))
+    print("== 본 노바 반영 점검 (%s · 해금 Lv%d부터 빌드 총 피해 +%g%%) ==" % (prof, RITE["row"], pct))
     same = True
     for i, n in enumerate(names):
         (t0, l0), (t1, l1) = base[i], with_rite[i]
@@ -620,7 +620,7 @@ def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
     names = ["보통", "악몽", "지옥"]
     GIANT["pct"] = 0.0
     base = chain(prof, eff)
-    print("== 뼈 의식 거인 점검 (%s · 악몽·지옥에서만 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % prof)
+    print("== 본 골렘 점검 (%s · 악몽·지옥에서만 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % prof)
     print(" 기준  " + " · ".join("%s %s Lv%d" % (names[i], fmt(t), l) for i, (t, l) in enumerate(base)))
     ok = [l for _, l in base] == [41, 68, 90]
     if not ok:

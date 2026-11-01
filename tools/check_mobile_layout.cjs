@@ -388,7 +388,7 @@ for (const win of WIDE) {
     let trees = 0;
     for (const main of all.filter((s) => s.kind !== 'node')) {
       const own = all.filter((s) => s.kind === 'node' && s.parent === main.id && !s.hold);
-      for (const show of main.id === 'bone_rite' ? ['basic', 'shield', 'greatsword', 'twin', 'mage'] : ['']) {
+      for (const show of main.id === 'bone_giant' ? ['basic', 'shield', 'greatsword', 'twin', 'mage'] : ['']) {
         const nodes = own.filter((n) => giantOf(n.id) === '' || giantOf(n.id) === show);
         if (!nodes.length) continue;
         trees++;
@@ -414,7 +414,7 @@ for (const win of WIDE) {
         if (overlap(c, kids.Up)) problems.push(`스킬 창 깃발 칸 K${i} ↔ 강화 +1 겹침`);
       }
     }
-    if (verbose) console.log(`스킬 창 강화 +1 WS/BtnUpgrade x ${kids.Up.l}~${kids.Up.r} · y ${kids.Up.b}~${kids.Up.t} · 직접 정하기 x ${kids.Mode.l}~${kids.Mode.r} · 트리 ${trees}개(뼈 의식 거인 5종 따로) 노드와 안 겹침`);
+    if (verbose) console.log(`스킬 창 강화 +1 WS/BtnUpgrade x ${kids.Up.l}~${kids.Up.r} · y ${kids.Up.b}~${kids.Up.t} · 직접 정하기 x ${kids.Mode.l}~${kids.Mode.r} · 트리 ${trees}개(본 골렘 거인 5종 따로) 노드와 안 겹침`);
   }
   if (verbose) console.log(`스킬 창 편성 칸 WS/Form x ${fr.l}~${fr.r} · y ${fr.b}~${fr.t} · Mode ${kids.Mode.r - kids.Mode.l}×${kids.Mode.t - kids.Mode.b} · ± ${kids.Minus.r - kids.Minus.l}×${kids.Minus.t - kids.Minus.b}`);
 }

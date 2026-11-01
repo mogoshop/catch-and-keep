@@ -50,6 +50,7 @@ script MobilePad extends Logic
     property number GestureStaleAfter = 1    -- 11-01: 위 「오래」 (초)
     property number PadHitSlack = 6          -- 11-01: 큰 단추 원형 판정 여유 (1920 기준 px) — 반지름 = Attack/Ring 지름/2(117) + 이것
     property number PadSmallSlack = 28       -- 11-01: 큰 단추 네모에 들어온 점이 작은 단추 원(Ring 지름/2) + 이만큼 안이면 작은 단추 우선
+    property boolean AttackLabelFit = false   -- 11-02 큰 단추 이름 자동 축소를 한 번 걸었다 (FitAttackLabel)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -638,6 +639,21 @@ script MobilePad extends Logic
     -- ───────── 갱신 ─────────
 
     @ExecSpace("ClientOnly")
+    method void FitAttackLabel()
+        -- 11-02 (기획 54 §1-1 · 56 R5): 큰 단추 이름 칸 120px · 28px 고정이면 「앰플리파이」(5em)·7자 메인이 칸 밖으로 나갔다 →
+        --   글자 자동 축소(최대 28 · 최소 18) 한 번. 18px × 6.28em(공백 포함 7자) ≈ 113px < 120px · 「공격」「줍기」는 28 그대로
+        if self.AttackLabelFit then return end
+        local e = _UIKit:Get(self.Root .. "/Attack/Label")
+        if not isvalid(e) or not isvalid(e.TextGUIRendererComponent) then return end
+        local t = e.TextGUIRendererComponent
+        t.MaxSize = 28
+        t.MinSize = 18
+        t.BestFit = true
+        self.AttackLabelFit = true
+        if not Environment:IsPublishedPlay() then log("[VRF] mobile attack label bestfit 18~28 clip 7") end
+    end
+
+    @ExecSpace("ClientOnly")
     method void Poll()
         -- 안내 창(웨이포인트 Passive)이 떠 있어도 패드·벨트를 숨긴다 (10-29 45 §2-6 #7: m-07에서 스킬 단추·벨트가 창 옆에 남아 오탭) — 그때는 X·바깥으로 닫는다
         local windowOpen = _UIKit:AnyWindowShown()
@@ -693,13 +709,14 @@ script MobilePad extends Logic
         end
         -- 큰 버튼: 스킬이 들어 있으면 그 아이콘·이름, 아니면 칼·공격 (줍기로 바뀌어 있으면 그대로)
         local main = book:GetSlotSkill(5)
+        self:FitAttackLabel()
         if self.PickMode then
             _UIKit:SetIcon(self.Root .. "/Attack/Icon", _GameData:GetUiIcon("icon_pickup"))
             _UIKit:SetText(self.Root .. "/Attack/Label", "줍기")
         elseif main ~= "" then
             local def = _SkillData:Get(main)
             _UIKit:SetIcon(self.Root .. "/Attack/Icon", def.icon)
-            _UIKit:SetText(self.Root .. "/Attack/Label", _UIKit:Clip(def.name, 5))
+            _UIKit:SetText(self.Root .. "/Attack/Label", _UIKit:Clip(def.name, 7))
         else
             _UIKit:SetIcon(self.Root .. "/Attack/Icon", _GameData:GetUiIcon("icon_sword"))
             _UIKit:SetText(self.Root .. "/Attack/Label", "공격")

@@ -80,12 +80,12 @@
 | Quest/PlayerQuest.mlua | 497 | TurnIn | Util.Notify | 보상: | B |
 | Quest/PlayerQuest.mlua | 541 | StartGearWatch | Util.Notify | 새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부… | B |
 | Quest/PlayerQuest.mlua | 674 | OfferGearChoice | Util.Notify | 보상 받을 가방 공간 | B |
-| Shadow/ShadowCommander.mlua | 434 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
-| Shadow/ShadowCommander.mlua | 436 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
+| Shadow/ShadowCommander.mlua | 451 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
+| Shadow/ShadowCommander.mlua | 453 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
 | Shadow/ShadowOwner.mlua | 94 | DisassembleMany | Util.Notify | 그림자 | B |
 | Shadow/ShadowOwner.mlua | 207 | RestAll | Util.Notify | 마을에서 쉬어 지친 그림자가 다시 싸울 수 있습니다 | B |
 | Shadow/ShadowOwner.mlua | 246 | GainKillExp | Util.Notify | 그림자 레벨 업 · | B |
-| Shadow/SoulExtractor.mlua | 110 | TryExtractNearby | NoticeFeed.Push | 혼 추출은 스킬 「그림자 소환」(Lv | B |
+| Shadow/SoulExtractor.mlua | 110 | TryExtractNearby | NoticeFeed.Push | 혼 추출은 스킬 「리바이브」(Lv | B |
 | Shadow/SoulExtractor.mlua | 116 | TryExtractNearby | NoticeFeed.Push | 가까운 혼이 없습니다 | B |
 | Shop/Supporter.mlua | 104 | ProcessPurchase | Util.Notify | 후원 고맙습니다! 개발자가 오늘 밤도 커피 마시고 패치하러 갑니다 | B |
 | Social/ChannelSystem.mlua | 91 | RequestMove | Util.Notify | 이미 이 채널에 있습니다 | B |
@@ -120,42 +120,42 @@
 | Social/RoomSystem.mlua | 479 | Poll | Util.Notify | 함께 들어갈 채널을 찾지 못했습니다. 다시 시도해주세요 | B |
 | Social/RoomSystem.mlua | 494 | Poll | Util.Notify | 기다리던 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요 | B |
 | Social/RoomSystem.mlua | 498 | Poll | Util.Notify | 5분 동안 자리가 나지 않았습니다 — 다른 방을 고르거나 다시 시도해주세요 | B |
-| Social/RoomSystem.mlua | 662 | Enter | Util.Notify | 방에 들어가지 못했습니다. 다시 시도해주세요 | B |
-| Social/RoomSystem.mlua | 692 | OnLobbyReady | Util.Notify | 그 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요 | B |
-| Social/RoomSystem.mlua | 744 | RequestLeaveGame | Util.Notify | 쓰러진 상태에서는 나갈 수 없습니다 | B |
-| Social/RoomSystem.mlua | 757 | RequestLeaveGame | Util.Notify | 로비로 나가지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 327 | RequestToggleLfg | Util.Notify | 게시판에 쓰지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 341 | RequestInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
-| Social/TownBoard.mlua | 346 | RequestInvite | Util.Notify | 그 사람은 이제 파티를 찾지 않습니다 | B |
-| Social/TownBoard.mlua | 354 | RequestInvite | Util.Notify | 그 사람은 아직 | B |
-| Social/TownBoard.mlua | 360 | RequestInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
-| Social/TownBoard.mlua | 445 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
-| Social/TownBoard.mlua | 452 | AnswerInvite | Util.Notify | 아직 열지 않은 난이도의 게임입니다 | B |
-| Social/TownBoard.mlua | 459 | AnswerInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
-| Social/TownBoard.mlua | 464 | AnswerInvite | Util.Notify | 초대한 게임이 이제 없습니다 | B |
-| Social/TownBoard.mlua | 470 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
-| Social/TownBoard.mlua | 482 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 505 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
-| Social/TownBoard.mlua | 529 | RequestChannelInvite | Util.Notify | 그 플레이어를 찾지 못했습니다. 목록을 다시 확인해주세요 | B |
-| Social/TownBoard.mlua | 536 | RequestChannelInvite | Util.Notify | text, uid) end | B |
-| Social/TownBoard.mlua | 543 | RequestChannelInvite | Util.Notify | 같은 플레이어에게는 | B |
-| Social/TownBoard.mlua | 560 | RequestChannelInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
-| Social/TownBoard.mlua | 569 | OnChannelEvent | Util.Notify | self:ReplyText(e.Code, e.FromName), e.ToUi… | B |
+| Social/RoomSystem.mlua | 670 | EnterWith | Util.Notify | 방에 들어가지 못했습니다. 다시 시도해주세요 | B |
+| Social/RoomSystem.mlua | 700 | OnLobbyReady | Util.Notify | 그 방이 닫혔거나 가득 찼습니다 — 다른 방을 고르세요 | B |
+| Social/RoomSystem.mlua | 752 | RequestLeaveGame | Util.Notify | 쓰러진 상태에서는 나갈 수 없습니다 | B |
+| Social/RoomSystem.mlua | 765 | RequestLeaveGame | Util.Notify | 로비로 나가지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 328 | RequestToggleLfg | Util.Notify | 게시판에 쓰지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 342 | RequestInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
+| Social/TownBoard.mlua | 347 | RequestInvite | Util.Notify | 그 사람은 이제 파티를 찾지 않습니다 | B |
+| Social/TownBoard.mlua | 355 | RequestInvite | Util.Notify | 그 사람은 아직 | B |
+| Social/TownBoard.mlua | 361 | RequestInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
+| Social/TownBoard.mlua | 446 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
+| Social/TownBoard.mlua | 453 | AnswerInvite | Util.Notify | 아직 열지 않은 난이도의 게임입니다 | B |
+| Social/TownBoard.mlua | 460 | AnswerInvite | Util.Notify | 이 게임은 이미 가득 찼습니다 | B |
+| Social/TownBoard.mlua | 465 | AnswerInvite | Util.Notify | 초대한 게임이 이제 없습니다 | B |
+| Social/TownBoard.mlua | 471 | AnswerInvite | Util.Notify | 지금은 다른 게임으로 옮길 수 없습니다 | B |
+| Social/TownBoard.mlua | 489 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 517 | AnswerInvite | Util.Notify | 게임을 옮기지 못했습니다. 다시 시도해주세요 | B |
+| Social/TownBoard.mlua | 540 | RequestChannelInvite | Util.Notify | 그 플레이어를 찾지 못했습니다. 목록을 다시 확인해주세요 | B |
+| Social/TownBoard.mlua | 547 | RequestChannelInvite | Util.Notify | text, uid) end | B |
+| Social/TownBoard.mlua | 554 | RequestChannelInvite | Util.Notify | 같은 플레이어에게는 | B |
+| Social/TownBoard.mlua | 571 | RequestChannelInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
+| Social/TownBoard.mlua | 580 | OnChannelEvent | Util.Notify | self:ReplyText(e.Code, e.FromName), e.ToUi… | B |
 | Story/AshAwakening.mlua | 265 | Awaken | HudMap.ShowAlert | 하늘이 핏빛으로 물든다 | A |
 | UI/Hud/HudMain.mlua | 104 | OnBeginPlay | NoticeFeed.Push | d) end | B |
 | UI/Hud/HudMain.mlua | 509 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
-| UI/Hud/HudMain.mlua | 695 | RaidWarn | HudMap.TopPushFor | raid:warn | A |
-| UI/Hud/HudMain.mlua | 792 | RaidDefeated | HudMap.TopPush | raid:done | A |
+| UI/Hud/HudMain.mlua | 689 | RaidWarn | HudMap.TopPushFor | raid:warn | A |
+| UI/Hud/HudMain.mlua | 786 | RaidDefeated | HudMap.TopPush | raid:done | A |
 | UI/Hud/NoticeFeed.mlua | 82 | Push | HudMain.PickupPop | text) | D |
-| UI/Hud/UXFeedback.mlua | 153 | Push | HudMap.TopPush | : | A |
-| UI/Hud/UXFeedback.mlua | 159 | Push | NoticeFeed.Push | self:LineText(title, detail, true)) | B (큰 알림 넘침·창 안 결과) |
-| UI/Hud/UXFeedback.mlua | 208 | DropOne | NoticeFeed.Push | self:LineText(m.title, m.detail, false)) | B (큰 알림 넘침·창 안 결과) |
-| UI/Hud/UXFeedback.mlua | 359 | Release | NoticeFeed.Push | 외 알림 | B (큰 알림 넘침·창 안 결과) |
+| UI/Hud/UXFeedback.mlua | 162 | Push | HudMap.TopPush | : | A |
+| UI/Hud/UXFeedback.mlua | 168 | Push | NoticeFeed.Push | self:LineText(title, detail, true)) | B (큰 알림 넘침·창 안 결과) |
+| UI/Hud/UXFeedback.mlua | 217 | DropOne | NoticeFeed.Push | self:LineText(m.title, m.detail, false)) | B (큰 알림 넘침·창 안 결과) |
+| UI/Hud/UXFeedback.mlua | 368 | Release | NoticeFeed.Push | 외 알림 | B (큰 알림 넘침·창 안 결과) |
 | UI/Windows/GuideWindow.mlua | 461 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
 | UI/Windows/JournalWindow.mlua | 123 | UpdateBadge | HudMain.SetJournalTrack |  | C |
-| Undead/UndeadSystem.mlua | 809 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
-| Undead/UndeadSystem.mlua | 1650 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
-| Undead/UndeadSystem.mlua | 1656 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 812 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
+| Undead/UndeadSystem.mlua | 1653 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 1659 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
 | World/AltarRitual.mlua | 68 | OnReached | Util.Notify | 피의 제단이 잠잠합니다 — %d:%02d 뒤 다시 의식을 시작할 수 있습니다 | B |
 | World/AltarRitual.mlua | 223 | Bless | Util.Notify | 피의 신전 · 주는 피해 +25% (60초) | B |
 | World/AltarRitual.mlua | 229 | Tell | Util.Notify | text, p.PlayerComponent.UserId) end | B |
@@ -185,12 +185,12 @@
 | Progress/PlayerJournal.mlua | Util.Banner | 4 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Progress/ProgressionSystem.mlua | Util.Banner | 2 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Quest/PlayerQuest.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
-| Shadow/ShadowCommander.mlua | Util.Warn | 8 | 머리 위 경고 (창이 떠 있으면 B) · 11-01 Z 키 한도 거절 이유 추가 |
+| Shadow/ShadowCommander.mlua | Util.Warn | 8 | 머리 위 경고 (창이 떠 있으면 B) |
 | Shadow/ShadowOwner.mlua | Util.Banner | 2 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Shadow/ShadowOwner.mlua | Util.Warn | 6 | 머리 위 경고 (창이 떠 있으면 B) |
 | Shadow/SoulExtractor.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillBook.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
-| Skill/SkillBook.mlua | Util.Warn | 12 | 머리 위 경고 (창이 떠 있으면 B) |
+| Skill/SkillBook.mlua | Util.Warn | 15 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillEffects.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Social/PartyRescue.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Social/PlayerDuel.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |

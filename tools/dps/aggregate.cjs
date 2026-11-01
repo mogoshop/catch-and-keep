@@ -17,7 +17,7 @@ const SKILL_FAMILY = {
   bone_shard: "magic", corpse_blast: "magic", soul_drain: "magic",
   frost_soul: "magic", frost_split: "magic", frost_shatter: "magic",
   hex_flame: "curse", hex_burst: "curse", mark_weakness: "curse", enfeeble: "curse",
-  skeleton_bomb: "summon_skill", bone_rite: "summon_skill", bone_rite_push: "summon_skill",
+  skeleton_bomb: "summon_skill", bone_rite: "summon_skill", bone_giant: "summon_skill", bone_rite_push: "summon_skill",
 };
 
 function categoryOf(src) {

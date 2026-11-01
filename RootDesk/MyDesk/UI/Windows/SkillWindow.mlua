@@ -39,7 +39,7 @@ script SkillWindow extends Logic
     property integer StatFont = 17          -- 효과 줄 글자 크기 (빌더 WS/Stat max_size와 같다) — 화면 폭을 잴 기준
     property string FormKind = ""           -- 편성 조작 칸(WS/Form)이 다루는 종류: skeleton · mage · shard(모바일 골편 홀드 반복) · "" (숨김)
     property string FormForm = ""           -- 편성 조작 칸 ± 대상 변이 (변이 노드를 골랐을 때만)
-    property string ShowGiant = ""          -- 46-5 뼈 의식 공방에 펼친 거인 노드 줄 (basic·shield·greatsword·twin·mage · "" = 깃발 → 지금 무리 → 기본)
+    property string ShowGiant = ""          -- 46-5 본 골렘 공방(11-02 거인 분리 전엔 뼈 의식)에 펼친 거인 노드 줄 (basic·shield·greatsword·twin·mage · "" = 깃발 → 지금 무리 → 기본)
     property integer ChoiceSlot = 0         -- 공방 자리에 설명을 띄운 선택 보상 칸 (1~3 · 0 = 스킬 공방) — 10-31 A안
     property string ElitePromoteNote = "선택 보상 「정예로 서는 그림자」와는 다른 스킬입니다"   -- 정예 승격 상세에만 (이름이 비슷해 혼동 · 10-31)
     -- 선택 보상 칸 테 (11-01 사용자 결정 3-A 「장식 없는 칸 테로 교체」 · 빌더 tools/build/ui.cjs SkillWin/Choice · ui-tokens PLATE):
@@ -551,7 +551,7 @@ script SkillWindow extends Logic
         -- 46-6 거인 깃발 줄 (§5-3 · §10-2 · 결정 8 V1 — 노말에서도 보임): 「동률이면」 + [방패][대검][쌍칼][마법사][기본][안 고름].
         --   고른 칸 = 금테(깃발) · 펼친 거인 = 트리색 테 · 누르면 깃발을 바꾸고 그 거인의 강화 노드를 펼친다 (깃발은 동률 최다 안에서만 이긴다 — GiantPlan)
         local root = self.Win .. "/WS/Banner"
-        local on = self.SelMain == "bone_rite"
+        local on = self.SelMain == "bone_giant"   -- 11-02 거인 분리: 깃발 줄은 본 골렘 공방으로
         _UIKit:SetEnabled(root, on)
         if not on then return end
         local kinds = _UndeadSystem:GiantFallback()
@@ -805,10 +805,10 @@ script SkillWindow extends Logic
     end
 
     method table VisibleNodes(SkillBook book, string main)
-        -- 공방에 세울 강화 노드 (46-5 · §4-4 두 묶음): 보류(hold) 줄은 빼고, 뼈 의식은 폭탄 3 + 펼친 거인 하나의 노드만 (나머지 4종은 깃발 줄에서 골라 펼친다 — 46-6).
-        --   폭탄 필요 랭크 1·3·5 + 거인 10·14|17|20 = 5열 · 6칸 이하라 빌더 칸(6열 · 8칸) 안
+        -- 공방에 세울 강화 노드 (46-5 · §4-4 두 묶음): 보류(hold) 줄은 빼고, 본 골렘은 펼친 거인 하나의 노드만 (나머지 4종은 깃발 줄에서 골라 펼친다 — 46-6).
+        --   11-02 거인 분리: 본 노바는 폭탄 3(필요 랭크 1·3·5) · 본 골렘은 거인 10·14|17|20 = 3열 · 3칸 이하라 빌더 칸(6열 · 8칸) 안
         local out = {}
-        local show = main == "bone_rite" and self:ShownGiant(book) or ""
+        local show = main == "bone_giant" and self:ShownGiant(book) or ""
         for _, nid in ipairs(_SkillData:NodesOf(main)) do
             local nd = _SkillData:Get(nid)
             local giant = book:GiantOfNode(nid)

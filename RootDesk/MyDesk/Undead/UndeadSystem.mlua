@@ -104,8 +104,9 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method boolean BoneRite(Entity player, integer stage, Vector2 target, number rankMul, Entity lock)
-        -- 뼈 의식 2·3·5기 (기획서 43 §3-1). 2·3기는 생명이 가장 낮은 해골 전사부터 stage기를 바친다 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
-        -- 5기는 바치지 않고 합친다 (StartGiant). 피해 = 바친 해골 평균 공격력 × 단계 배율 × rankMul (해골 공격력이 이미 캐릭터 레벨·숙련·장비를 따른다)
+        -- 본 노바 2·3기 (기획서 43 §3-1). 2·3기는 생명이 가장 낮은 해골 전사부터 stage기를 바친다 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
+        -- 피해 = 바친 해골 평균 공격력 × 단계 배율 × rankMul (해골 공격력이 이미 캐릭터 레벨·숙련·장비를 따른다)
+        -- stage 5 = 본 골렘 (11-02 거인 분리 · SkillBook.CastGiant): 바치지 않고 합친다 (StartGiant) · rankMul = 본 골렘 랭크 배율 (거인 공격·생명)
         local userId = player.PlayerComponent.UserId
         if stage == 5 then
             -- 46-1: 5기는 해골 전사 + 마법사 참여 다섯 (GiantPlan · 고리 예고와 같은 계획 — 서버 목록을 RosterView로 같은 모양으로 넘긴다)
@@ -115,7 +116,7 @@ script UndeadSystem extends Logic
                 log("[VRF] rite stage=5 short pool=" .. tostring(self:GiantPoolCount(self:RosterView(player))))
                 return false
             end
-            return self:StartGiant(player, plan)
+            return self:StartGiant(player, plan, rankMul)
         end
         local picks = self:LiveUnits(player, "skeleton")
         if #picks < stage then
@@ -150,7 +151,7 @@ script UndeadSystem extends Logic
     end
 
     @ExecSpace("ServerOnly")
-    method boolean StartGiant(Entity player, table plan)
+    method boolean StartGiant(Entity player, table plan, number rankMul)
         -- 뼈 의식 5기 거인 (46-1 · 기획서 46 §2-7 · §10-1): 참여 다섯(plan.picks · 소환 순서 앞 다섯) 가운데 이긴 종류(plan.type)의 해골 중
         -- 생명 비율이 가장 높은 하나(같으면 목록 앞)가 거인 몸이 되고 나머지 넷(종류 무관)은 목록에서 빠져 합쳐진다 (소모 아님 · 「~」).
         -- 46-3: 거인 생명 = 다섯 생명 합 × 종류 hpMul · 기본 공격 = 다섯 공격 합 × 종류 atkMul (rite_giants.csv · 46 결정 4 초안) · 받는 피해·간격·반경·도발은 ShadowUnit.StartGiant가 종류 줄로.
@@ -206,12 +207,14 @@ script UndeadSystem extends Logic
         self.Giants[uid] = giants
         local cover = self:GiantChargeUse(player)
         local spec = _GameData:GetGiant(plan.type)
-        local gAtk, gHp, gMax = math.floor(atk * spec.atkMul), hp * spec.hpMul, maxHp * spec.hpMul
+        -- 11-02 본 골렘 랭크 배율 (riteGiantRankPct% × (랭크 − 1) · 1랭크 = 1 = 예전 값) — 공격·생명에 함께
+        local mul = (rankMul ~= nil and rankMul > 0) and rankMul or 1
+        local gAtk, gHp, gMax = math.floor(atk * spec.atkMul * mul), hp * spec.hpMul * mul, maxHp * spec.hpMul * mul
         host.unit:StartGiant(plan.type, gAtk, gMax, gHp, self:GiantLook(plan.type))
         self:RefreshSummary(player)
         _TimerService:SetTimerOnce(function() self:EndGiant(player, epoch, true) end, _GameData.riteGiantSeconds)
-        log(string.format("[VRF] rite stage=5 giant type=%s counts=%s tie=%s banner=%s host=%s atk=%d hp=%.0f/%.0f sec=%.0f", plan.type, self:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed),
-            host.rec.kind .. ":" .. (host.rec.form or ""), gAtk, gHp, gMax, _GameData.riteGiantSeconds))
+        log(string.format("[VRF] rite stage=5 giant type=%s counts=%s tie=%s banner=%s host=%s atk=%d hp=%.0f/%.0f sec=%.0f rankMul=%.2f", plan.type, self:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed),
+            host.rec.kind .. ":" .. (host.rec.form or ""), gAtk, gHp, gMax, _GameData.riteGiantSeconds, mul))
         log(string.format("[VRF] giant count=%d cap=%d kinds=%s charge=%d cover=%.1f", #giants, self:GiantMax(), self:GiantKindsText(player), self:GiantChargeState(player).charges, cover))
         return true
     end
@@ -260,7 +263,7 @@ script UndeadSystem extends Logic
         return table.concat(kinds, ",")
     end
 
-    -- ───────── 5기 충전 (48 Q2 C2) ─────────
+    -- ───────── 5기 충전 (48 Q2 C2 · 11-02부터 본 골렘 bone_giant 시전이 쓴다) ─────────
     -- 5기 단계만 충전 riteGiantCharges(2)회. 한 번에 한 칸씩 차오르고(직렬) 한 칸 길이 = riteGiantCd(30초) × 시전 속도 보정(PlayerStats.GetCastCooldownMult — 예전 재사용 계산 그대로).
     -- 하위 단계(1기 bone_rite · 2기 rite_whirl · 3기 rite_arrow)의 재사용 덮개와 섞지 않는다 — 5기 충전은 이 표만 쓰고 저장하지 않는다(재사용 덮개처럼 메모리만).
     -- 장기 가동률은 예전과 같다(한 칸 길이마다 거인 하나). 다른 것은 모아 둔 두 칸으로 처음 한 번 연달아 둘(초기 버스트)을 세울 수 있다는 것뿐
@@ -330,7 +333,7 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method number GiantChargeCover(Entity player)
-        -- SkillBook이 5기 재사용 덮개(rite_giant)에 거는 길이 (0 = 바로 또 쓸 수 있음)
+        -- SkillBook.CastGiant가 본 골렘 재사용 덮개(bone_giant · 11-02 전엔 rite_giant)에 거는 길이 (0 = 바로 또 쓸 수 있음)
         local st = self:GiantChargeState(player)
         return self:GiantChargeCoverOf(st, _UtilLogic.ElapsedSeconds, self:GiantChargeMax())
     end

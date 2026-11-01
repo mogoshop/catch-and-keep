@@ -1,7 +1,7 @@
 -- I03 편성 미리보기 대조: UndeadSystem.RosterPreview(읽기 전용)가 실제 일으키기(Raise → MakeRecord·ApplyForm → SlotPlan·TrimOldest)와 같은 답을 내는가
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
--- @source SkillBook Skill/SkillBook.mlua GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
+-- @source SkillBook Skill/SkillBook.mlua GiantReason+,GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
 -- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+,BoneRite+,StartGiant+,EndGiant+,OnUnitDied+,DismissRecords+,GetBaseStats,GiantChargeCover+,GiantChargeSpend+,GiantChargeCoverOf+,GiantStandingAny+,GiantCapReached+,ShownForms,EvolveRank,TwinHuntDecide,TwinHuntState,TwinHuntLoad,TwinHuntClear,IsTwinHunter
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 _GameData:Ensure();_SkillData:Ensure()
@@ -664,22 +664,22 @@ do
  local c3=UndeadSystem:GiantPlanFor(player)
  server=true
  assert(s3.picks[1].rec==live[2] and c3.type==s3.type and UndeadSystem:GiantCountsText(c3)==UndeadSystem:GiantCountsText(s3),'notReady parity')
- -- 5기 단계: 거인이 서 있으면 3으로 내린다 · 재료 = 전사 + 마법사
+ -- 본 골렘 (11-02 거인 분리 · 예전 뼈 의식 5기): 재료 = 전사 + 마법사 · 거인이 상한이면 못 세우고 본 노바는 3기까지
  G=G+1
  live[1].entity={GetComponent=function() return hpOf[live[1].id] end}
  stats.MaxDifficulty=1;stats.Mana=999
- book.Levels={bone_rite=5,raise_skeleton=12,raise_mage=6}
+ book.Levels={bone_rite=5,bone_giant=5,raise_skeleton=12,raise_mage=6}
  book.ReadyAt={}
  assert(book:RiteUnits5()==7,'units5 '..book:RiteUnits5())
- assert(book:RiteBestStage(5,-1)==5,'stage 5 available')
+ assert(book:GiantReason(-1)=='' and book:RiteBestStage(5,-1)==3,'giant available · nova cap 3 '..book:GiantReason(-1))
  UndeadSystem.Giants={u1={{host=live[7],mates={},epoch=9,kind='twin'}}}
  -- 48-4: 5기는 상한(riteGiantMax 2)에 닿을 때만 건너뛴다 — 통합 전(SkillBook.GiantStanding)·후(C 어댑터 GiantCapReached) 같은 판단이 되게 UndeadSystem 공개 API로 맞춘다
  local capFn=function(bk) return UndeadSystem:GiantCapReached(bk.Entity) end
  local keepS,keepC=book.GiantStanding,book.GiantCapReached
  book.GiantStanding=capFn;book.GiantCapReached=capFn
- assert(UndeadSystem:GiantStandingAny(player) and book:RiteBestStage(5,-1)==5,'one giant: second allowed, got '..book:RiteBestStage(5,-1))
+ assert(UndeadSystem:GiantStandingAny(player) and book:GiantReason(-1)=='','one giant: second allowed, got '..book:GiantReason(-1))
  table.insert(UndeadSystem.Giants.u1,{host=live[6],mates={},epoch=10,kind='shield'})
- assert(book:RiteBestStage(5,-1)==3,'two giants must drop to 3, got '..book:RiteBestStage(5,-1))
+ assert(book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==3,'two giants: cap · nova still 3, got '..book:GiantReason(-1))
  table.remove(UndeadSystem.Giants.u1,2)
  book.GiantStanding=keepS;book.GiantCapReached=keepC
  UndeadSystem:RefreshSummary(player)
@@ -829,7 +829,7 @@ do
   UndeadSystem.Giants={};UndeadSystem.GiantCharges={}
  end)
  case('48-4 Q3 mixed 8+8 → two giants + 6 · per-kind quota · cap warn · RiteBestStage cap swap',function()
-  book.Levels={raise_skeleton=18,raise_mage=18,bone_rite=5}
+  book.Levels={raise_skeleton=18,raise_mage=18,bone_rite=5,bone_giant=5}
   local list={}
   for _=1,8 do table.insert(list,liveRec('skeleton','shield')) end
   for _=1,8 do table.insert(list,liveRec('mage','')) end
@@ -839,13 +839,13 @@ do
   local keepStanding,keepCap=book.GiantStanding,book.GiantCapReached
   book.GiantStanding=function(bk) return UndeadSystem:GiantCapReached(bk.Entity) end
   book.GiantCapReached=book.GiantStanding
-  assert(book:RiteBestStage(5,-1)==5,'cap-based: second giant allowed, got '..book:RiteBestStage(5,-1))
+  assert(book:GiantReason(-1)=='','cap-based: second giant allowed, got '..book:GiantReason(-1))
   assert(UndeadSystem:BoneRite(player,5,Vector2(0,0),1,nil),'giant 2 (3 skeleton + 2 mage)')
   local g2=UndeadSystem.Giants.u1[2]
   local mm=0
   for _,r in ipairs(g2.mates) do if r.kind=='mage' then mm=mm+1 end end
   assert(g2.kind=='shield' and mm==2,'second giant mates mage '..mm)
-  assert(UndeadSystem:GiantCapReached(player) and book:RiteBestStage(5,-1)==0,'two giants skip 5 (no skeleton left for 3)')
+  assert(UndeadSystem:GiantCapReached(player) and book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==0,'two giants: cap (no skeleton left for nova 3)')
   book.GiantStanding=keepStanding;book.GiantCapReached=keepCap
   local mages=0
   for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind=='mage' then mages=mages+1 end end

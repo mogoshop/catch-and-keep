@@ -232,8 +232,8 @@ script HudMain extends Logic
             local def = _SkillData:Get("wraith_dash")
             local cd = book:CooldownLeft("wraith_dash")
             local max = 1 + book:Node("dash_charge")
-            local name = book:Node("dash_blink") > 0 and "망령 도약" or "망령 질주"
-            table.insert(list, { key = "skill_dash", icon = def ~= nil and def.icon or nil, label = "질주", color = Color(0.55, 0.75, 1, 1), left = -1, dim = cd > 0.05,
+            local name = book:Node("dash_blink") > 0 and "망령 도약" or "레이스 폼"
+            table.insert(list, { key = "skill_dash", icon = def ~= nil and def.icon or nil, label = "레이스 폼", color = Color(0.55, 0.75, 1, 1), left = -1, dim = cd > 0.05,
                 timeText = cd > 0.05 and string.format("%.1f초", cd) or (max > 1 and (tostring(book.DashShown) .. "/" .. tostring(max)) or ""),
                 desc = string.format("%s · %s · 남은 횟수 %d/%d", name, Environment:IsMobilePlatform() and "질주 단추" or "스페이스", book.DashShown, max) })
         end
@@ -243,12 +243,12 @@ script HudMain extends Logic
         end
         if book ~= nil and book:GetLevel("command_aura") > 0 then
             local aura = book:GetCommandAura()
-            table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
-                desc = string.format("호령 · 그림자·언데드 공격·생명 +%d%%, 이동 +%d%%, 모든 저항 +%d", math.floor(aura.atk), math.floor(aura.speed), math.floor(aura.resist)) })
+            table.insert(list, { key = "buff_command", label = "오더스", color = Color(0.95, 0.78, 0.35, 1), left = -1,
+                desc = string.format("배틀 오더스 · 그림자·언데드 공격·생명 +%d%%, 이동 +%d%%, 모든 저항 +%d", math.floor(aura.atk), math.floor(aura.speed), math.floor(aura.resist)) })
         end
         self:AddAuraBuffs(player, book, list)
         if st.BoneArmor > 0 then
-            table.insert(list, { key = "buff_bone_armor", label = "뼈갑옷", color = Color(0.85, 0.8, 0.65, 1), left = -1, timeText = tostring(math.floor(st.BoneArmor)), desc = string.format("뼈 갑옷 · 피해 흡수 %d / %d 남음", math.floor(st.BoneArmor), math.floor(st.BoneArmorMax)) })
+            table.insert(list, { key = "buff_bone_armor", label = "본 아머", color = Color(0.85, 0.8, 0.65, 1), left = -1, timeText = tostring(math.floor(st.BoneArmor)), desc = string.format("본 아머 · 피해 흡수 %d / %d 남음", math.floor(st.BoneArmor), math.floor(st.BoneArmorMax)) })
         end
         if st.ChillUntil > now then
             table.insert(list, { key = "debuff_chill", label = "둔화", color = Color(0.4, 0.65, 1, 1), left = st.ChillUntil - now, desc = "냉기 둔화 · 이동 속도 -40% (냉기 저항이 높을수록 짧아집니다)", debuff = true })
@@ -300,8 +300,8 @@ script HudMain extends Logic
             local stepLv = book:GetPowerLevel("swift_step")
             if stepLv > 0 then
                 local def = _SkillData:Get("swift_step")
-                table.insert(list, { key = "buff_swift_step", icon = def ~= nil and def.icon or nil, label = "걸음", color = Color(0.6, 0.85, 0.7, 1), left = -1,
-                    desc = string.format("가벼운 걸음 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv)) })
+                table.insert(list, { key = "buff_swift_step", icon = def ~= nil and def.icon or nil, label = "헤이스트", color = Color(0.6, 0.85, 0.7, 1), left = -1,
+                    desc = string.format("헤이스트 · 내 이동 속도 +%g%%", book:GetEffectPower("swift_step", stepLv)) })
             end
             ---@type PlayerStats
             local ast = player:GetComponent("script.PlayerStats")
@@ -361,8 +361,8 @@ script HudMain extends Logic
                     local other = p:GetComponent("script.SkillBook")
                     if other ~= nil and other:GetLevel("command_aura") > 0 then
                         local aura = other:GetCommandAura()
-                        table.insert(list, { key = "buff_command", label = "호령", color = Color(0.95, 0.78, 0.35, 1), left = -1,
-                            desc = string.format("동료의 호령 · 내 소환수 공격 +%d%%, 이동 +%d%%", math.floor(aura.atk), math.floor(aura.speed)) })
+                        table.insert(list, { key = "buff_command", label = "오더스", color = Color(0.95, 0.78, 0.35, 1), left = -1,
+                            desc = string.format("동료의 배틀 오더스 · 내 소환수 공격 +%d%%, 이동 +%d%%", math.floor(aura.atk), math.floor(aura.speed)) })
                         break
                     end
                 end
@@ -594,8 +594,8 @@ script HudMain extends Logic
     @ExecSpace("ClientOnly")
     method void RenderRite(SkillBook book)
         -- 뼈 의식 충전 고리 (기획서 43 §3-1 · 결정 1A · 임시 그림): 누르는 동안 머리 위에 고리가 위에서 시계 방향으로 차고,
-        -- 가운데 숫자 = 지금 떼면 나갈 단계(해골·재사용·마나가 모자라면 낮춘 값), 아래 = 단계 이름, 눈금 점 = 2·3·5기 문턱 (넘으면 밝아진다).
-        -- 5기 문턱은 악몽이 열린 뒤에만 보이고, 그 전에는 고리 한 바퀴 = 3기(1초)
+        -- 가운데 숫자 = 지금 떼면 나갈 단계(해골·재사용·마나가 모자라면 낮춘 값), 아래 = 단계 이름, 눈금 점 = 2·3기 문턱 (넘으면 밝아진다).
+        -- 11-02 거인 분리: 고리 한 바퀴 = 3기(1초) · 5기 눈금(T5)은 늘 끈다 (거인은 본 골렘 칸)
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not _UIKit:CanUseGameplayInput() or book:GetSlotSkill(book.RiteHoldSlot) ~= "bone_rite" then
             book:CancelRiteHold()
@@ -603,19 +603,18 @@ script HudMain extends Logic
             return
         end
         local held = _UtilLogic.ElapsedSeconds - book.RiteHoldAt
-        local giant = book:RiteGiantUnlocked()
-        local top = giant and _GameData.riteHold5 or _GameData.riteHold3
-        local want = book:RiteStageForHold(held, giant)
+        local top = _GameData.riteHold3
+        local want = book:RiteStageForHold(held)
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
         local stage = book:RiteBestStage(want, st ~= nil and st.Mana or -1)
         _UIKit:SetEnabled("RiteRing", true)
         _UIKit:SetPos("RiteRing", self:WorldToHud(_Util:Pos2(player) + Vector2(0, 1.8)))
         _UIKit:SetFill("RiteRing/Fill", held / math.max(0.1, top))
-        local colors = { [0] = Color(0.45, 0.42, 0.4, 0.9), [1] = Color(0.85, 0.8, 0.7, 0.95), [2] = Color(0.62, 0.86, 0.8, 0.95), [3] = Color(0.96, 0.82, 0.45, 0.95), [5] = Color(0.92, 0.42, 0.3, 0.95) }
+        local colors = { [0] = Color(0.45, 0.42, 0.4, 0.9), [1] = Color(0.85, 0.8, 0.7, 0.95), [2] = Color(0.62, 0.86, 0.8, 0.95), [3] = Color(0.96, 0.82, 0.45, 0.95) }
         _UIKit:SetColor("RiteRing/Fill", colors[stage] or colors[0])
         -- 눈금: 고리 위쪽(12시)에서 시계 방향으로 문턱 비율만큼 (FillOrigin 2 · 시계 방향 — tools/build/ui.cjs RiteRing)
-        local marks = { { "T2", _GameData.riteHold2, true }, { "T3", _GameData.riteHold3, true }, { "T5", _GameData.riteHold5, giant } }
+        local marks = { { "T2", _GameData.riteHold2, true }, { "T3", _GameData.riteHold3, true }, { "T5", 0, false } }
         for _, m in ipairs(marks) do
             local path = "RiteRing/" .. m[1]
             _UIKit:SetEnabled(path, m[3] and m[2] <= top + 0.001)
@@ -625,23 +624,18 @@ script HudMain extends Logic
                 _UIKit:SetColor(path, held >= m[2] and Color(1, 0.95, 0.8, 1) or Color(0.43, 0.4, 0.35, 1))
             end
         end
-        -- 46-6: 5기면 거인 이름(「대검 거인」) + 둘째 줄 참여 다섯 종류 수 — 서버 StartGiant와 같은 GiantPlan(동기화된 편성 · 깃발)
-        local plan = stage == 5 and _UndeadSystem:GiantPlanFor(player) or nil
-        local sub = plan ~= nil and self:GiantCountsLine(plan) or ""
+        -- 11-02 거인 분리: 둘째 줄(거인 참여 다섯)은 본 골렘으로 옮겨 비운다
+        local sub = ""
         if stage ~= self.RiteLastStage or not self.RiteShown or sub ~= self.RiteLastSub then
             -- 단계 이름 · 낮춰 나갈 때는 「{단계}까지만」 (10-29 사용자 확정 — 까닭이 해골·마나·재사용 대기 어느 것이든 같은 글)
-            local names = { [1] = "해골 폭탄", [2] = "뼈 회오리", [3] = "뼈 화살", [5] = "뼈 거인" }
-            if plan ~= nil then names[5] = _GameData:GetGiant(plan.type).name end
+            local names = { [1] = "해골 폭탄", [2] = "뼈 회오리", [3] = "뼈 화살" }
             local label = stage == 0 and "해골 없음" or names[stage]
             if stage > 0 and stage < want then label = label .. "까지만" end
             _UIKit:SetText("RiteRing/Count", stage > 0 and tostring(stage) or "-")
             _UIKit:SetText("RiteRing/Label", label)
             _UIKit:SetText("RiteRing/Sub", sub)
             _UIKit:SetEnabled("RiteRing/Sub", sub ~= "")
-            if not Environment:IsPublishedPlay() then
-                if plan ~= nil then log(string.format("[VRF] rite ring stage=5 giant=%s counts=%s tie=%s banner=%s want=%d held=%.2f", plan.type, _UndeadSystem:GiantCountsText(plan), tostring(plan.tie), tostring(plan.bannerUsed), want, held))
-                else log(string.format("[VRF] rite ring stage=%d want=%d held=%.2f", stage, want, held)) end
-            end
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite ring stage=%d want=%d max=3 held=%.2f", stage, want, held)) end
             self.RiteLastStage = stage
             self.RiteLastSub = sub
         end

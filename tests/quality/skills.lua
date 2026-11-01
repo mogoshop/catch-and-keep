@@ -1,6 +1,6 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
+-- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
@@ -246,7 +246,7 @@ for i,c in ipairs(split) do
  for _,x in ipairs(c.ids) do table.insert(b2,x) end
 end
 assert(table.concat(a,',')==table.concat(b2,','),'mobile split lost/reordered skills')
-assert(#split==#logical+1,'only Lv18 (3 mains) should split: '..#split)
+assert(#split==#logical+2,'only Lv18 · Lv24 (3 mains each · 11-02 본 골렘) should split: '..#split)
 -- 모바일 시간선 실제 그리기: 쪽마다 칸 위치(1줄 −20 · 2줄 −20−112) · 3줄 없음 · 쪽을 다 넘기면 모든 메인이 한 번씩
 Environment.IsMobilePlatform=function() return true end
 SkillWindow.MobileColumns=nil;SkillWindow.Columns=nil
@@ -429,7 +429,7 @@ do
  local bookSrc=io.open('RootDesk/MyDesk/Skill/SkillBook.mlua'):read('a')
  assert(string.find(bookSrc,'self:NotifyLearned(id, self:GetLevel(id), self:GetRankSummary(id, self:GetLevel(id)), slot, pc.UserId)',1,true),'53/54: learn notice must keep the raw shared summary (condition tail)')
  local dupLog={}
- for _,c in ipairs({{'step_gale','wraith_dash','(망령 질주를 배우면)','망령 질주를 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(뼈 갑옷을 배우면)','뼈 갑옷을 배워야 회복합니다','질주 끝에 뼈 갑옷'}}) do
+ for _,c in ipairs({{'step_gale','wraith_dash','(레이스 폼을 배우면)','레이스 폼을 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(본 아머를 배우면)','본 아머를 배워야 회복합니다','질주 끝에 본 아머'}}) do
   local id,pre,tail,hintText,main=c[1],c[2],c[3],c[4],c[5]
   local parent=_SkillData:Get(id).parent
   for _,lv in ipairs({0,1}) do
@@ -545,7 +545,7 @@ do
  local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet   -- 위 8조합 검사가 바꿔 둔 가짜 표를 실제 표로
  stats.Level=99;stats.SkillPoints=20
- book.Levels={bone_rite=20}
+ book.Levels={bone_rite=20,bone_giant=20}
  stats.MaxDifficulty=0
  -- 48-0: 기본 거인 노드 3줄(giant_quake · giant_basic_split · giant_basic_return)이 없어져 같은 필요 랭크의 방패 · 대검 노드로 본다
  assert(book:CanLearn('giant_shield_wall',99,20)=='악몽부터','nightmare lock: '..book:CanLearn('giant_shield_wall',99,20))
@@ -555,23 +555,26 @@ do
  assert(book:NodeLevel('giant_shield_wall',1)==42 and book:NodeLevel('giant_shield_wall',2)==46 and book:NodeLevel('giant_shield_wall',3)==50,'wall levels')
  assert(book:NodeLevel('giant_gs_scar',1)==56 and book:NodeLevel('giant_twin_echo',1)==56 and book:NodeLevel('giant_mage_pull',1)==62,'choice levels')
  assert(book:CanLearn('giant_shield_wall',41,20)=='캐릭터 Lv42에 다음 랭크','Lv42 gate')
- book.Levels={bone_rite=16}
- assert(string.find(book:CanLearn('giant_gs_scar',99,20),'17랭크부터',1,true),'need 17')
- book.Levels={bone_rite=20,giant_gs_scar=1}
+ book.Levels={bone_rite=20,bone_giant=16}
+ assert(string.find(book:CanLearn('giant_gs_scar',99,20),'「본 골렘」 17랭크부터',1,true),'need 17 = 본 골렘 랭크 (11-02 거인 분리)')
+ book.Levels={bone_rite=20}
+ assert(string.find(book:CanLearn('giant_gs_spin',99,20),'먼저 「본 골렘」',1,true),'giant node needs bone_giant: '..book:CanLearn('giant_gs_spin',99,20))
+ book.Levels={bone_rite=20,bone_giant=20,giant_gs_scar=1}
  local r=book:CanLearn('giant_gs_twice',99,20)
  assert(r=='이미 「갈라진 땅」을(를) 골랐습니다',r)
  assert(book:CanLearn('giant_twin_echo',99,20)=='','other group independent')
- book.Levels={bone_rite=20}
+ book.Levels={bone_rite=20,bone_giant=20}
  assert(book:CanLearn('giant_shield_alt',99,20)~='' and book:CanLearn('giant_shield_phalanx',99,20)~='','shield pair on hold')
  assert(book:CanLearn('giant_shield_wall',99,20)=='','shield normal node open')
- -- 공방: 뼈 의식 = 폭탄 3 + 펼친 거인 노드만 · 보류 줄 없음 · 칸(8)·열(6) 안
+ -- 공방 (11-02 거인 분리): 본 노바 = 폭탄 3만 · 본 골렘 = 펼친 거인 노드만 · 보류 줄 없음 · 칸(8)·열(6) 안
  book.RiteBanner=''
  SkillWindow.ShowGiant='shield';SkillWindow.Selected=''
- local vis=SkillWindow:VisibleNodes(book,'bone_rite')
- assert(table.concat(vis,',')=='bomb_wide,bomb_marrow,bomb_pair,giant_shield_wall','shield view '..table.concat(vis,','))
+ assert(table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),',')=='bomb_wide,bomb_marrow,bomb_pair','nova view = bombs only '..table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),','))
+ local vis=SkillWindow:VisibleNodes(book,'bone_giant')
+ assert(table.concat(vis,',')=='giant_shield_wall','shield view '..table.concat(vis,','))
  SkillWindow.ShowGiant='twin'
- vis=SkillWindow:VisibleNodes(book,'bone_rite')
- assert(#vis==6 and vis[4]=='giant_twin_flurry' and vis[6]=='giant_twin_echo','twin view '..table.concat(vis,','))
+ vis=SkillWindow:VisibleNodes(book,'bone_giant')
+ assert(#vis==3 and vis[1]=='giant_twin_flurry' and vis[3]=='giant_twin_echo','twin view '..table.concat(vis,','))
  local cols={}
  for _,nid in ipairs(vis) do cols[book:NodeNeed(nid,1)]=true end
  local nc=0 for _ in pairs(cols) do nc=nc+1 end
@@ -589,9 +592,9 @@ do
  do local d=_SkillData:Get('giant_mage_pull') assert(d.name=='폭발 증폭' and not string.find(d.desc,'두 겹',1,true) and not string.find(d.desc,'흡인',1,true) and string.find(d.desc,'×1.5',1,true),'pull copy '..d.name..' / '..d.desc)
   assert(not string.find(_SkillData:Get('giant_mage_resist').desc,'두 겹',1,true),'resist cross-ref')
   assert(_GameData:GetGiant('mage').s1Radius==3.75 and _GameData:GetGiant('mage').s1Opts.novaAmpMul==1.5 and _GameData:GetGiant('mage').s1Opts.ring==nil,'nova data') end
- -- 48-0: 기본 거인은 노드가 없다 — 펼치면 폭탄 3칸만
+ -- 48-0: 기본 거인은 노드가 없다 — 본 골렘 공방에서 펼치면 빈 칸 (11-02 거인 분리 · 폭탄은 본 노바 공방)
  SkillWindow.ShowGiant='basic'
- assert(table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),',')=='bomb_wide,bomb_marrow,bomb_pair','basic view '..table.concat(SkillWindow:VisibleNodes(book,'bone_rite'),','))
+ assert(#SkillWindow:VisibleNodes(book,'bone_giant')==0,'basic view '..table.concat(SkillWindow:VisibleNodes(book,'bone_giant'),','))
  SkillWindow.ShowGiant=''
  stats.Level,stats.SkillPoints=keepLv,keepPts
  stats.MaxDifficulty=nil
@@ -606,7 +609,7 @@ do
  local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
  _HudMain=HudMain
- book.Levels={bone_rite=5};stats.MaxDifficulty=1
+ book.Levels={bone_rite=5,bone_giant=5};stats.MaxDifficulty=1
  book.RiteBanner=''
  local plan=_UndeadSystem:GiantPlanFor(entity)
  assert(plan.type=='greatsword' and plan.tie and not plan.bannerUsed,'fallback greatsword over mage')
@@ -614,15 +617,18 @@ do
  book.RiteBanner='mage'
  plan=_UndeadSystem:GiantPlanFor(entity)
  assert(plan.type=='mage' and HudMain:GiantCountsLine(plan)=='대검 2 · 마법사 2 · 기본 1 (동률 · 깃발)',HudMain:GiantCountsLine(plan))
- local sum=book:GetRankSummary('bone_rite',5)
- assert(string.find(sum,'거인 20초 · 지금 무리라면 마법사 거인',1,true),sum)
+ local sum=book:GetRankSummary('bone_giant',5)
+ assert(sum=='거인 20초 · 공격·생명 +12% · 충전 2칸 · 지금 무리라면 마법사 거인',sum)
+ assert(book:GetRankSummary('bone_giant',1)=='거인 20초 · 충전 2칸 · 지금 무리라면 마법사 거인',book:GetRankSummary('bone_giant',1))
+ assert(not string.find(book:GetRankSummary('bone_rite',5),'거인',1,true),'nova summary has no giant (11-02) '..book:GetRankSummary('bone_rite',5))
  roster.UndeadRoster='s:greatsword,s:greatsword,m:|0'
- assert(not string.find(book:GetRankSummary('bone_rite',5),'지금 무리라면',1,true),'fewer than 5 → no giant line')
+ assert(not string.find(book:GetRankSummary('bone_giant',5),'지금 무리라면',1,true),'fewer than 5 → no giant line')
  stats.MaxDifficulty=0
- assert(string.find(book:GetRankSummary('bone_rite',5),'거인 악몽부터',1,true),'normal lock text')
- -- 깃발 줄: 뼈 의식에서만 · 칸 순서 = fallback · 노말 머리 글
+ assert(string.find(book:GetRankSummary('bone_giant',5),' · 악몽부터',1,true),'normal lock text '..book:GetRankSummary('bone_giant',5))
+ assert(book:CanLearn('bone_giant',99,5)=='악몽부터','bone_giant learn nightmare lock '..book:CanLearn('bone_giant',99,5))
+ -- 깃발 줄: 본 골렘에서만 (11-02) · 칸 순서 = fallback · 노말 머리 글
  values={}
- SkillWindow.SelMain='bone_rite';SkillWindow.Selected='bone_rite';SkillWindow.ShowGiant=''
+ SkillWindow.SelMain='bone_giant';SkillWindow.Selected='bone_giant';SkillWindow.ShowGiant=''
  SkillWindow:RenderBanner(book,stats)
  assert(values['SkillWin/WS/Banner/Head']=='거인 악몽부터 · 동률이면' and values['SkillWin/WS/Banner/K1/Label']=='방패' and values['SkillWin/WS/Banner/K4/Label']=='마법사' and values['SkillWin/WS/Banner/K6/Label']=='안 고름','banner '..tostring(values['SkillWin/WS/Banner/Head']))
  stats.MaxDifficulty=1
@@ -643,7 +649,7 @@ do
  stats.Level=99;stats.MaxDifficulty=1;bonus=0;choices={}
  -- 48-0 노드 수: 해골 전사 6 · 해골 마법사 3 · 거인 12 = 21 (지운 9 · 더한 저주 속성 1)
  local giants=0
- for _,nid in ipairs(_SkillData:NodesOf('bone_rite')) do if string.sub(nid,1,6)=='giant_' then giants=giants+1 end end
+ for _,nid in ipairs(_SkillData:NodesOf('bone_giant')) do if string.sub(nid,1,6)=='giant_' then giants=giants+1 end end   -- 11-02 거인 분리: 부모 = 본 골렘
  local nSk,nMg=#_SkillData:NodesOf('raise_skeleton'),#_SkillData:NodesOf('raise_mage')
  assert(nSk==6 and nMg==3 and giants==12,'node counts '..nSk..'/'..nMg..'/'..giants)
  for _,gone in ipairs({'skel_shield','mage_aura','mage_twin','mage_pierce','mage_blast','mage_hex','giant_quake','giant_basic_split','giant_basic_return'}) do assert(_SkillData:Get(gone)==nil,gone) end
@@ -662,7 +668,7 @@ do
  assert(book.Levels.skel_shield==nil and book.Levels.mage_twin==nil and book.Levels.mage_hex==nil and book.Levels.giant_quake==nil and book.Levels.giant_mage_pull==nil,'removed')
  assert(book.Levels.raise_skeleton==12 and book.Levels.raise_mage==8 and book.Levels.bone_rite==20,'mains kept')
  local saved=book:GetSaveData()
- assert(saved.sv==5 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==6 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
  load(saved)
  assert(stats.SkillPoints==11,'48-3 double refund after save '..stats.SkillPoints)
  book:MigrateLevels(4)
@@ -675,7 +681,7 @@ do
  -- 48 V2: 현행 sv 5 저장의 「폭발 증폭」(옛 「두 겹 고리」 투자)은 그대로 · 환급 0 · 다시 저장해도 sv 5 그대로 (재학습·중복 환급 없음)
  stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_pull=1}})
  assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp kept '..stats.SkillPoints)
- do local again=book:GetSaveData() assert(again.sv==5 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
+ do local again=book:GetSaveData() assert(again.sv==6 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
  stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
  -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번
@@ -690,7 +696,7 @@ do
  for _,f in ipairs(_UndeadSystem:FormOrder('skeleton')) do if f=='shield' then hasShield=true end end
  assert(string.find(book.FormHope,'s:d:',1,true) and string.find(book.FormHope,'greatsword=1',1,true) and string.find(book.FormHope,'twin=0',1,true),'hope '..book.FormHope)
  assert(hasShield or not string.find(book.FormHope,'shield',1,true),'hope shield '..book.FormHope)
- assert(book:GetSaveData().hope==book.FormHope and book:GetSaveData().sv==5,'hope saved')
+ assert(book:GetSaveData().hope==book.FormHope and book:GetSaveData().sv==6,'hope saved')
  assert(notices==0,'48-3 notices '..notices)
  local refundLogs=0
  for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
@@ -710,11 +716,11 @@ do
  local want={[1]='관통 2 · 파편 1 · 폭발 0.8칸 · 영혼 2발',[6]='관통 3 · 파편 2 · 폭발 1.0칸 · 영혼 3발',[11]='관통 4 · 파편 3 · 폭발 1.2칸 · 영혼 4발',[16]='관통 5 · 파편 4 · 폭발 1.4칸 · 영혼 5발',[20]='관통 5 · 파편 4 · 폭발 1.4칸 · 영혼 5발'}
  for lv,frag in pairs(want) do
   local t=book:GetRankSummary('raise_mage',lv)
-  assert(string.find(t,frag,1,true) and not string.find(t,'낙인',1,true) and not string.find(t,'일반형',1,true),lv..': '..t)
+  assert(string.find(t,frag,1,true) and not string.find(t,'앰플리파이',1,true) and not string.find(t,'일반형',1,true),lv..': '..t)
  end
  book.Levels={raise_mage=20,mage_curse=1}
- assert(string.find(book:GetRankSummary('raise_mage',1),'낙인 +8%',1,true) and string.find(book:GetRankSummary('raise_mage',20),'낙인 +19.4%',1,true),book:GetRankSummary('raise_mage',20))
- assert(book:GetRankSummary('mage_curse',1)=='저주 속성 · 맞은 적 4초 받는 피해 +19.4% (약화의 낙인과 겹치면 큰 쪽)',book:GetRankSummary('mage_curse',1))
+ assert(string.find(book:GetRankSummary('raise_mage',1),'앰플리파이 +8%',1,true) and string.find(book:GetRankSummary('raise_mage',20),'앰플리파이 +19.4%',1,true),book:GetRankSummary('raise_mage',20))
+ assert(book:GetRankSummary('mage_curse',1)=='저주 속성 · 맞은 적 4초 받는 피해 +19.4% (앰플리파이와 겹치면 큰 쪽)',book:GetRankSummary('mage_curse',1))
  book.Levels={raise_mage=10}
  local mline=SkillWindow:StatLine(book,stats,'raise_mage')
  assert(string.find(mline,'관통 3',1,true) and string.find(mline,'다음 랭크: ',1,true) and string.find(mline,'관통 4 · 파편 3 · 폭발 1.2칸 · 영혼 4발',1,true),mline)
@@ -779,6 +785,99 @@ do
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
  print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
+end
+-- 11-02 거인 분리 (사용자 결정 B · 기획서 52 §2-2 안 ①): 본 골렘 시전 길 · 랭크 배율 · 본 노바 3기 상한 · 옛 저장 이전(거인 노드 있으면 본 골렘 1랭크 · 칸 그대로 · 한 번만)
+do
+ local fNodes,fMains,fGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
+ local keepLv,keepPts,keepDiff,keepLog=stats.Level,stats.SkillPoints,stats.MaxDifficulty,log
+ local keepU,keepUS,keepGE,keepGC,keepUL=_Util,_UndeadSystem,_GameEvents,_GameConst,_UtilLogic
+ local keepPC,keepSC,keepRS,keepRU,keepCap,keepGet=book.PresentCast,book.SetCooldown,book.RiteSkeletons,book.RiteUnits5,book.GiantCapReached,entity.GetComponent
+ local warns,rite,emits,covers,ults,vrf={},{},{},{},{},{}
+ local keepV2=Vector2
+ local V={}
+ V.__index=V
+ Vector2=function(x,y) return setmetatable({x=x,y=y},V) end
+ V.__sub=function(p,q) return Vector2(p.x-q.x,p.y-q.y) end
+ V.__add=function(p,q) return Vector2(p.x+q.x,p.y+q.y) end
+ V.__mul=function(p,k) return Vector2(p.x*k,p.y*k) end
+ function V:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end
+ function V:Normalize() local m=self:Magnitude() return Vector2(self.x/m,self.y/m) end
+ log=function(m) if string.find(m,'[VRF]',1,true) then table.insert(vrf,m) end end
+ _Util={IsAlive=function() return true end,Warn=function(_,t) table.insert(warns,t) end,Pos2=function() return Vector2(0,0) end,NearestMonster=function() return nil end,Distance=function() return 99 end}
+ _GameConst={IsTown=function() return false end,LevelOf=function() return stats.Level end}
+ _GameEvents={Emit=function(_,name,e) table.insert(emits,e.skill) end}
+ _UtilLogic={ElapsedSeconds=100,ServerElapsedSeconds=100,RandomIntegerRange=function(_,lo) return lo end}
+ local nextCover=0
+ _UndeadSystem={BoneRite=function(_,player,stage,target,mul,lock) table.insert(rite,{stage=stage,mul=mul}) return true end,
+  SkeletonBomb=function() table.insert(rite,{stage=1}) return true end,GiantChargeCover=function() return nextCover end,
+  GiantCount=function() return 1 end,GiantPlanFor=function() return nil end}
+ book.PresentCast=function() end
+ book.SetCooldown=function(_,id,sec) covers[id]=sec;book.ReadyAt[id]=_UtilLogic.ElapsedSeconds+sec end
+ book.RiteSkeletons=function() return 8 end
+ book.RiteUnits5=function() return 6 end
+ book.GiantCapReached=function() return false end
+ stats.Mana=500;stats.SpendMana=function(self,c) self.Mana=self.Mana-c return true end
+ local fx={ShowUltimate=function(_,key) table.insert(ults,key) end}
+ entity.GetComponent=function(self,key) if key=='script.SkillEffects' then return fx end return keepGet(self,key) end
+ book.ReadyAt={};book.PendingMana=0;bonus=0;stats.Level=60;stats.MaxDifficulty=1
+ -- 시전 길: SkillBook.Cast가 bone_giant를 CastGiant로 보낸다 (소스 확인) → BoneRite 5단계 · 랭크 배율 1 + 3% × (랭크 − 1)
+ local sbSrc=io.open('RootDesk/MyDesk/Skill/SkillBook.mlua'):read('a')
+ assert(sbSrc:find('if id == "bone_giant" then return self:CastGiant(target) end',1,true),'Cast routes bone_giant → CastGiant')
+ book.Levels={bone_giant=5,bone_rite=20}
+ assert(math.abs(book:GiantRankMul(5)-1.12)<1e-9 and book:GiantRankMul(1)==1,'rank mul '..book:GiantRankMul(5))
+ assert(book:GiantReason(-1)=='','giant ready '..book:GiantReason(-1))
+ assert(book:CastGiant(Vector2(1,0)),'cast giant')
+ assert(#rite==1 and rite[1].stage==5 and math.abs(rite[1].mul-1.12)<1e-9,'BoneRite stage 5 mul 1.12')
+ assert(stats.Mana==500-book:GetManaCost('bone_giant',5) and book:GetManaCost('bone_giant',5)==31 and emits[1]=='bone_giant' and ults[1]=='rite_giant' and covers.bone_giant==0,'mana/emit/ult/cover')
+ nextCover=24;rite={}
+ assert(book:CastGiant(Vector2(1,0)) and covers.bone_giant==24,'second charge → cover 24')
+ assert(not book:CastGiant(Vector2(1,0)) and #rite==1 and book:GiantReason(-1)=='충전 대기','charges empty blocks')
+ book.ReadyAt={};rite={};stats.MaxDifficulty=0
+ assert(not book:CastGiant(Vector2(1,0)) and #rite==0 and warns[#warns]=='본 골렘은 악몽부터 쓸 수 있습니다','normal: giant locked '..tostring(warns[#warns]))
+ stats.MaxDifficulty=1;book.RiteUnits5=function() return 4 end
+ assert(book:GiantReason(-1)=='해골 1기 부족','short pool reason')
+ book.RiteUnits5=function() return 6 end
+ local hasGiantLog=false for _,m in ipairs(vrf) do if string.find(m,'[VRF] cast bone_giant lv=5 mul=1.12',1,true) then hasGiantLog=true end end
+ assert(hasGiantLog,'[VRF] cast bone_giant log')
+ -- 본 노바 3기 상한: 오래 눌러도(5초) 3 · 5를 요청해도 3기로 내려 쏜다 · 거인 단계 없음
+ assert(book:RiteStageForHold(5)==3 and book:RiteStageForHold(1.0)==3 and book:RiteStageForHold(0.6)==2 and book:RiteStageForHold(0.1)==1,'hold cap 3')
+ assert(book:RiteBestStage(5,-1)==3,'best stage caps at 3 '..book:RiteBestStage(5,-1))
+ rite={}
+ local castOk=book:CastRite(5,Vector2(1,0))
+ assert(castOk and rite[1] and rite[1].stage==3,'want 5 → stage 3 ok='..tostring(castOk)..' n='..#rite..' warn='..tostring(warns[#warns])..' vrf='..tostring(vrf[#vrf]))
+ local capLog=false for _,m in ipairs(vrf) do if string.find(m,'[VRF] rite stage=3 skel=8 want=3 max=3',1,true) then capLog=true end end
+ assert(capLog,'[VRF] rite max=3 log')
+ _UndeadSystem=keepUS   -- 저장 이전은 실제 UndeadSystem(희망 편성 읽기 · 깃발)
+ -- 옛 저장 이전 (MigrateGiantSplit · sv 5 → 6): 거인 노드가 있으면 본 골렘 1랭크 · 노드 랭크·칸 그대로 · 포인트 그대로 · 한 번만
+ local function load(d) book.Levels={};book.Slots=',,,';book.RightSkill='';book:LoadSaveData(d) end
+ vrf={};stats.SkillPoints=0
+ load({sv=5,levelCount=4,slots='bone_rite,bone_shard,,',right='',levels={bone_rite=20,bone_shard=10,giant_gs_spin=3,giant_gs_scar=1}})
+ assert(book.Levels.bone_giant==1 and book.Levels.giant_gs_spin==3 and book.Levels.giant_gs_scar==1 and book.Levels.bone_rite==20 and stats.SkillPoints==0,'grant 1 · keep nodes · points same')
+ assert(book.Slots=='bone_rite,bone_shard,,' and book.RightSkill=='','no slot for bone_giant')
+ local mig=0 for _,m in ipairs(vrf) do if string.find(m,'[VRF] giant split migrate sv=5 grant bone_giant=1 nodes=4',1,true) then mig=mig+1 end end
+ assert(mig==1,'[VRF] giant split migrate once')
+ local saved=book:GetSaveData()
+ assert(saved.sv==6 and saved.levels.bone_giant==1,'saved sv 6')
+ load(saved)
+ assert(book.Levels.bone_giant==1 and stats.SkillPoints==0,'reload no double grant')
+ book:MigrateLevels(5)
+ assert(book.Levels.bone_giant==1,'re-migrate keeps 1 (already has bone_giant)')
+ load({sv=5,levelCount=1,levels={bone_rite=20}})
+ assert(book.Levels.bone_giant==nil,'no giant nodes → nothing')
+ load({sv=6,levelCount=2,levels={bone_rite=20,giant_gs_spin=1}})
+ assert(book.Levels.bone_giant==nil,'sv 6 → no migrate (respec state kept)')
+ -- 노드 필요 랭크 = 본 골렘 랭크 (본 골렘 1랭크면 효과는 레벨로만 잠기고 다음 랭크는 본 골렘 10부터)
+ book.Levels={bone_rite=20,bone_giant=1,giant_gs_spin=1}
+ assert(string.find(book:CanLearn('giant_gs_spin',60,5),'「본 골렘」 10랭크부터',1,true),'need from bone_giant rank '..book:CanLearn('giant_gs_spin',60,5))
+ assert(book:PowerLevelAt('giant_gs_spin',1)==1,'learned node rank still usable by level')
+ _Util,_UndeadSystem,_GameEvents,_GameConst,_UtilLogic=keepU,keepUS,keepGE,keepGC,keepUL
+ Vector2=keepV2
+ book.PresentCast,book.SetCooldown,book.RiteSkeletons,book.RiteUnits5,book.GiantCapReached,entity.GetComponent=keepPC,keepSC,keepRS,keepRU,keepCap,keepGet
+ stats.Level,stats.SkillPoints,stats.MaxDifficulty,log=keepLv,keepPts,keepDiff,keepLog
+ book.Levels={};book.ReadyAt={}
+ _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
+ print('[quality/skills] 11-02 giant split: Cast→CastGiant · BoneRite 5 mul 1.12 @5 · mana 31 · charge cover 0→24 · nightmare lock · nova hold/want cap 3 · migrate sv5 grant 1 once (nodes/slots/points kept) · need = 본 골렘 랭크')
 end
 -- 11-01 Lv15 혼 스킬 삭제 저장 이전 (docs/design/49): 배운 랭크만큼 포인트 · 표에서 지움 · 칸/우클릭 비움 · 다시 불러도·다시 이전해도 0 · 알림 없음 (10-29 글귀 규칙)
 do

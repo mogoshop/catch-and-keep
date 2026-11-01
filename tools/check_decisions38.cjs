@@ -40,7 +40,7 @@ check(2, "기본 이속 1.73 · 짐승·떼·암살자 ×1.2 · 해골 1.7 · �
 //    의식 줄 · 폭탄 강화 3개가 의식 아래로 옮겨졌는지 · 저장 이전(SkillBook.MigrateBombToRite)이 있는지를 본다
 const bombNodes = ["bomb_wide", "bomb_marrow", "bomb_pair"];
 const rite = skills.bone_rite;
-check(3, "가벼운 걸음 Lv4 · 해골 폭탄 → 뼈 의식 1기 (43 결정 2·3 · Lv24)",
+check(3, "헤이스트 Lv4 · 해골 폭탄 → 본 노바 1기 (43 결정 2·3 · Lv24)",
   skills.swift_step.row === "4" && !skills.skel_bomb && rite && rite.row === "24" && rite.kind === "active"
     && bombNodes.every((n) => skills[n] && skills[n].parent === "bone_rite")
     && has("RootDesk/MyDesk/Skill/SkillBook.mlua", "method integer MigrateBombToRite"),

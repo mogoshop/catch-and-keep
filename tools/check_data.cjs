@@ -464,8 +464,25 @@ for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
   const curse = T.skills.find((r) => r.id === "mage_curse");
   if (!curse || curse.parent !== "raise_mage" || curse.kind !== "node" || curse.maxLv !== "1") err("skills", null, "48-0: mage_curse(저주 속성) — raise_mage 노드 · 1랭크여야 함");
   const nodesOf = (p, pre) => T.skills.filter((r) => r.kind === "node" && r.parent === p && (!pre || r.id.startsWith(pre))).length;
-  const counts = { skeleton: nodesOf("raise_skeleton"), mage: nodesOf("raise_mage"), giant: nodesOf("bone_rite", "giant_") };
-  if (counts.skeleton !== 6 || counts.mage !== 3 || counts.giant !== 12) err("skills", null, `48-0 노드 수 해골 전사 ${counts.skeleton}/6 · 마법사 ${counts.mage}/3 · 거인 ${counts.giant}/12 (합 21)`);
+  const counts = { skeleton: nodesOf("raise_skeleton"), mage: nodesOf("raise_mage"), giant: nodesOf("bone_giant", "giant_") };
+  if (counts.skeleton !== 6 || counts.mage !== 3 || counts.giant !== 12) err("skills", null, `48-0 노드 수 해골 전사 ${counts.skeleton}/6 · 마법사 ${counts.mage}/3 · 거인(본 골렘) ${counts.giant}/12 (합 21)`);
+  // 11-02 거인 분리 (52 §2-2 안 ① · 사용자 결정 B): 본 골렘 = 소환 트리 액티브 · 본 노바(bone_rite)와 같은 해금 레벨 · 거인 노드 12개 전부 본 골렘 아래 · 본 노바 아래 거인 노드 0 · 필요 랭크 ≤ 본 골렘 최대 랭크
+  const bg = T.skills.find((r) => r.id === "bone_giant"), br = T.skills.find((r) => r.id === "bone_rite");
+  if (!bg || bg.kind !== "active" || bg.tree !== "command" || bg.impl !== "true") err("skills", null, "11-02: bone_giant(본 골렘) — command 트리 active · impl true 줄 필요");
+  else if (br && bg.row !== br.row) err("skills", null, `11-02: bone_giant row ${bg.row} ≠ bone_rite row ${br.row} (예전 거인 단계가 열리던 레벨)`);
+  if (nodesOf("bone_rite", "giant_") !== 0) err("skills", null, "11-02: 거인 노드가 아직 bone_rite(본 노바) 아래에 있음 — parent는 bone_giant");
+  for (const [i, r] of T.skills.entries()) if (r.id.startsWith("giant_") && r.kind === "node" && bg && num(r.need) > num(bg.maxLv)) err("skills", i, `11-02: ${r.id} need ${r.need} > 본 골렘 최대 랭크 ${bg.maxLv}`);
+  if (!T.sounds.some((r) => r.key === "cast_bone_giant")) err("sounds", null, "11-02: cast_bone_giant 시전음 줄 필요 (SoundDirector.PlaySkillCue)");
+  // 11-02 메인 이름 실존 이름 (56 §2 · 사용자 결정 A): 바꾼 메인 26개의 옛 이름이 skills.csv 이름·설명에 다시 나오지 않게
+  //   (예외: 노드 이름 「뼈까지 쇠약」 — 노드 이름은 사용자 결정 대기 · poison_mist 설명의 보통 낱말 「독안개」)
+  const OLD_MAIN = ["\uADF8\uB9BC\uC790 \uC18C\uD658", "\uC9D1\uACB0", "\uBF08 \uC758\uC2DD", "\uBF08 \uC131\uCC2C", "\uC815\uC608 \uC2B9\uACA9", "\uD638\uB839", "\uACE8\uD3B8 \uD22C\uCC99", "\uBF08 \uAC11\uC637", "\uC800\uC8FC \uBD88\uAF43", "\uACE8\uACA9 \uAC10\uC625", "\uC0DD\uAE30 \uC557\uAE30", "\uC11C\uB9AC \uD63C", "\uBF08 \uD3ED\uD48D", "\uADF8\uB9BC\uC790 \uD76C\uC0DD", "\uC601\uD63C \uACA9\uB958", "\uC8FD\uC74C\uC758 \uD30C\uB3D9", "\uC57D\uD654\uC758 \uB099\uC778", "\uAC00\uC2DC \uC800\uC8FC", "\uC0DD\uBA85 \uC57D\uD0C8", "\uC800\uD56D \uBD95\uAD34", "\uC5ED\uBCD1 \uC800\uC8FC", "\uAC00\uBCBC\uC6B4 \uAC78\uC74C", "\uB9DD\uB839 \uC9C8\uC8FC", "\uACF5\uD3EC"].map((x) => JSON.parse('"' + x + '"'));   // 이스케이프 = 이 검사기 자신이 이름 검색에 걸리지 않게
+  const OLD_OK = [JSON.parse('"\uBF08\uAE4C\uC9C0 \uC1E0\uC57D"'), JSON.parse('"\uCEE4\uC11C \uC704\uCE58\uC5D0 \uB3C5\uC548\uAC1C"')];
+  for (const [i, r] of T.skills.entries()) {
+    let text = r.name + " " + r.desc + " " + (r.card || "");
+    for (const ok of OLD_OK) text = text.split(ok).join("");
+    const hit = OLD_MAIN.find((o) => text.includes(o)) || (text.includes(JSON.parse('"\uC1E0\uC57D"')) ? "쇠약" : "") || (text.includes(JSON.parse('"\uB3C5\uC548\uAC1C"')) ? "독안개" : "");
+    if (hit) err("skills", i, `11-02: 옛 메인 이름이 남음 (${r.id}) — tools/rename_skills.cjs 사전`);
+  }
   const basic = T.rite_giants.find((r) => r.kind === "basic");
   if (basic && (basic.s1 !== "" || basic.s2 !== "" || Number(basic.tauntSec) !== 0)) err("rite_giants", null, "48-0: 기본 거인은 s1·s2·도발 비움");
   const mage = T.rite_giants.find((r) => r.kind === "mage");
