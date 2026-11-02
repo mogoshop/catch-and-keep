@@ -1,0 +1,15 @@
+황무지 장면판 1호 + 벽 덮개 롤백 — 확인 기록 (11-02 17:00~17:05 KST · 사용자 결정: 액트 1 실제 유저 진입 중이라 입구만 그림인 게 어색)
+되돌린 것(데이터 지시문만):
+  data/handmade/wasteland.txt  11~13행 삭제 — `;plate scene-wasteland-entry -35 -4 -15 6` + 장면판 주석 + 벽 덮개 주석
+  data/handmade/scene_plates.csv  wall-cover · wall-cover-top 두 줄 삭제
+남긴 것: scene_plates.csv 나머지 29행 · scene_plate_cuts.csv(장면판을 쓸 때만 읽힘 → 참조 끊겨도 검사 경고 없음) · art_sprites.csv/decor_collision.csv +31 · 업로드 RUID · 생성기 ;plate 코드(tools/build/handmade)
+재빌드: node tools/build/handmade/build.cjs wasteland → map/wasteland·_nm·_hell 3장만 바뀜(나머지 map/ sha 불변)
+  엔티티(빌더 집계) 848(장면판+덮개) → 863 = 롤백 전 853 + 발밑 그림자 10 · 닿는 바닥 1689 → 1694 · 길 GateBack→GateNext 68 불변(route_lengths --check 바뀐 행 0)
+  맵 파일: ArtWall 340→361 · ArtWallCover 2→0 · ArtPlate 29→0 · ArtProp 43→50 · ArtDecal 78→86 · OverlayLight 11 유지 · SoundComponent 1 유지 (노말·악몽·지옥 같음)
+  5ba3644a^ 판과 비교: 빠진 엔티티 0 · 더해진 것 ArtShadow1~10(파일럿 발밑 그림자, 파일럿 때 9 → 옛 장식 복귀로 10) · 바뀐 필드 = 파일럿분(Flicker·OverlayLight·Tint·TintMix·Fog·Weather·Sound)·displayOrder·다시 놓인 36개 id뿐
+검사: check_decor_collision 66장 문제 0 · check_map_composition --all v5 위반 0 · check_assets 0 · check_data 0 · npm test 21/21
+메이커: 멈춤→5초→map 3파일 touch→5초→refresh 1회 → build 로그 Error 2 = LEA-1102 `PlanNext(...)` 시그니처 (다른 레인 미커밋 UndeadSystem/SelfTest 작업 · 맵과 무관) · 맵 관련 Error 0
+  play → SelfTest 412/0 → 슬롯 4 입장 · Solo 방 · guard(저장 끔·무적) → Go wasteland (-30.5,0.5) · (-20.5,0.5)
+  런타임(클라): /maps/wasteland ArtPlate 0 · ArtWallCover 0 · ArtWall 361 · ArtShadow 10 · OverlayLight 11 · Sound 1 · DarkVision 벽 그림 361개 어둡게 · torch flicker 11 · amb sound Torch1 · fog 1 · weather wind · mood #A9C6FF 0.16
+  로딩 town→wasteland 1.66s · normal 로그 Error/Warning 0 · 스크린샷 maker/pc-gate-x-30.5-z60.png · maker/pc-entry-x-20.5-z60.png (UI 숨김 · 줌 ×0.6) = 옛 회색 바위 벽 + 타일·장식 구성
+  maker_stop → 편집 모드 · maker_save 안 씀
