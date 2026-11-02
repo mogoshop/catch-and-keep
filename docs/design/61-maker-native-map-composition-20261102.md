@@ -180,7 +180,7 @@
 - 재발 방지 제안: 새 맵 연출 요구가 오면 「그림을 더 깔기」 전에 이 문서 §3 표의 내장 기능부터 검토한다(엔티티를 늘리지 않으므로 로딩 위험이 작다).
 
 ## 6. 미확인 · 메이커로 확인할 것
-1. RectTile + `KinematicbodyComponent` 아바타가 밟은 타일의 맵 레이어로 SortingLayer가 바뀌는지(단계 1).
+1. RectTile + `KinematicbodyComponent` 아바타가 밟은 타일의 맵 레이어로 SortingLayer가 바뀌는지(단계 1). → **확인(11-02 파일럿 단계 1): 안 바뀐다 — 레이어 2 타일 위에서도 `AvatarRendererComponent` Default/4 고정(판정 B). 지금 `-top` 방식이 엔진 한계 안의 정답** (`docs/evidence/2026-11-02-wasteland-native-pilot/README.md` §1)
 2. 맵 레이어가 여럿일 때 OverlayLight Global 1개가 모든 층에 걸리는지(「한 SortingLayer에 Global 여럿 불가」 문장만 있음).
 3. GrassMovement·UVScroll·Additive·Vignette 머티리얼 속성 이름(메이커 샘플) · Tiled 스프라이트에 UVScroll을 걸었을 때 이음 · DarkVision `Color` 곱과의 겹침.
 4. DropShadow 셰이더가 실제로 그리는 모양(문서 설명은 「TargetColor 색에 그림자」뿐).
