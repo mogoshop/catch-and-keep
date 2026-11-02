@@ -3,8 +3,8 @@
 export const EXCLUDED = {
   'blast': '해골 폭탄·제물 폭발 — 해골이 터지는 효과',
   'summon-ritual': '해골 소환 성공 바닥 문양 — 해골 소환 의식',
-  'rite-whirl': '의식 2기 뼈 회오리 — 거인 소환 의식(뼈 의식) 단계',
-  'rite-whirl-trace': '의식 회오리 바닥 자국 — 거인 소환 의식(뼈 의식) 단계'
+  'rite-whirl': '본 노바 2기 뼈 회오리 — 본 노바(옛 뼈 의식) 단계',
+  'rite-whirl-trace': '본 노바 회오리 바닥 자국 — 본 노바(옛 뼈 의식) 단계'
 };
 // What each slot should look like + search phrases (Korean and English).
 export const Q = {

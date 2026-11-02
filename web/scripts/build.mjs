@@ -66,6 +66,9 @@ if(scene) {
   for(const a of [...(scene.actors||[]),...(scene.maps||[])])sceneFiles.add(mediaPath(a.file));
 }
 for(const s of atlas.skills)if(s.icon)assetFiles.add(mediaPath(s.icon));
+// Previous icons for the 「아이콘 교체」 / 「삭제됨」 comparison (atlas build-changes.py) are checked against the same manifest.
+for(const c of atlas.changes?.iconChanged||[])if(c.previousIcon)assetFiles.add(mediaPath(c.previousIcon));
+for(const r of atlas.changes?.removed||[])if(r.icon)assetFiles.add(mediaPath(r.icon));
 const referencePath=value=>typeof value==='object'&&value?value.src||value.path||value.url:value;
 for(const m of maps.maps) {
   const refs=[m.preview,m.thumbnail,...(m.screenshots||[]),...(m.diagrams||[])].map(referencePath).filter(Boolean);
