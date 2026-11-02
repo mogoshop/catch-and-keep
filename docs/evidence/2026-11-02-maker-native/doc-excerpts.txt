@@ -1,0 +1,65 @@
+# 2026-11-02 메이커 권장 맵 구성 — 공식 가이드 발췌 (기획 61 근거)
+
+출처: msw-mcp `mlua_document_retriever` 검색 결과 (MSW 크리에이터 센터 공식 가이드). 각 줄 = 「문서 제목 › 소제목 › 절」 + 요지(번역·요약, 원문 인용은 15단어 미만).
+검색 11회 · 2026-11-02 오후 · 게임 파일·메이커 변경 없음.
+
+## 1. 맵 레이어
+- Map Layer › Relationship Between Map Layer and Player Avatar › Example 2 — 4개 레이어에 타일·오브젝트를 나눠 둠. 아바타는 밟고 선 타일의 레이어에 속함 → 초록 타일(낮은 층) 위 아바타는 Layer4 나무 뒤로, 연두 타일(Layer3) 위에서는 Layer2 장난감 앞으로. 「불길·덤불을 통과하는 연출」에 쓰라고 권함.
+- Map Layer › Relationship… (본문) — 아바타 외 엔티티는 처음 놓인 레이어에 고정. 아바타만 밟은 엔티티(타일·발판)에 따라 레이어가 바뀜.
+- Map Layer › Understanding Map Layer › Model's Layer Order — 기본 OrderInLayer: 오브젝트 0 · 타일 1 · 몬스터·NPC·발판·포털·아이템 2 · 남 아바타 3 · 내 아바타 4. 「3 이상은 넣지 말 것」(아바타가 가려짐).
+- Map Layer › Layer Priority Rules — 정렬 = ① 맵 레이어(SortingLayer) ② OrderInLayer ③ Z.
+- Map Layer › Map Layer Window Configuration — 레이어는 최대 10개.
+- Utilizing RectTileMap › Layer Setting › Adding a Layer — 레이어를 추가하면 RectTileMap 엔티티가 하나 더 생김(레이어마다 타일맵).
+- Utilizing RectTileMap › Applying Tile Set by Layer — 레이어마다 다른 타일셋을 쓰라고 권장.
+- Understanding MapleStory Movement Concepts › Intensive Movement › SortingLayer — RigidbodyComponent를 가진 엔티티(플레이어)는 지금 밟은 타일맵 레이어로 SortingLayer가 바뀜. 예시는 숲 오브젝트를 Layer2에. ※ RectTile 몸(KinematicbodyComponent)에 대한 언급은 없음.
+
+## 2. RectTile 그림
+- RectTile Creation › Preparation — 기본 타일 64×64px. 높이 타일은 여러 칸.
+- RectTile Creation › Tile Type — 기본(무늬 없음/있음) · 연결 타일(길) · 높이 타일(벽: 64px 두 칸 권장 · 계단).
+- RectTile Creation › Drawing Default Tiles › Connection Tiles — 길 하나에 최소 12장(3×3 + 2×2), 겹치는 경계에 그림자를 그려 자연스럽게.
+- RectTile Creation › Drawing Height Tiles › Wall Tiles — 위아래 4~6px 여백, 윗면은 밝게·아래는 어둡게, 마지막에 그림자·풀.
+- RectTile Creation › Patterned Tiles — 무늬는 자동 효과보다 손으로, 불규칙한 모양을 섞어 단조로움을 피함.
+
+## 3. 조명
+- Using LitMode and Light Sources › Applying Light Sources — 빛 적용 4가지: LightComponent · 머티리얼 LitMode · LitMode 속성 컴포넌트 · 서비스.
+- 같은 문서 › Applying Light Sources (절) — TargetAllSortingLayers / TargetSortingLayers. 층마다 따로 빛 텍스처를 만들어 그림 → 「모바일에는 부담일 수 있음」.
+- 같은 문서 › LitMode — Default(WorldConfig.UseLitDefaultMaterial 따름) · Lit(빛 받음) · Unlit(빛 무시, 가벼움). UI·TextComponent 등은 늘 Unlit.
+- 같은 문서 › LitMode › Components — AreaParticle·BasicParticle·SpriteParticle·DamageSkinSetting은 LitMode를 따로 정할 수 있음.
+- Controlling Overlay Lights › Types of Light Sources — Spot(원 · Scale 영향 없음) · Freeform(모양 직접) · Global(화면 전체 · 한 SortingLayer에 Global 여럿 동시 불가) · Sprite(스프라이트 모양 빛).
+- Controlling Overlay Lights › Controlling Light Sources › Removing… / OverlayLightService — 서비스로 만든 빛은 씬에서 안 보이지만 엔티티를 만들지 않아 OverlayLightComponent보다 부하가 적음.
+- Controlling Overlay Lights › Checking Overlay Light — SetOverlayLightEnabled(true) 필요, 광원이 하나도 없으면 화면 전체가 어두움.
+- Controlling Overlay Lights › Main Properties › Light Combinations — Additive(겹칠수록 밝음) / AlphaBlend(LightOrder 큰 쪽 색).
+
+## 4. 머티리얼·그림자
+- Designing Materials › Shader Type › ColorEffect — … DropShadow: 「TargetColor로 지정한 색에 그림자 효과」(바닥에 드리우는 그림자라는 설명은 없음).
+- 같은 문서 › Outline — Outline · InnerOutline · ColorDiffOutline.
+- 같은 문서 › UVEffect — Noise · RoundWave · UVScroll(UV 이동) · Wave · Glitch · GrassMovement(풀 흔들림) · Distortion · Ripple.
+- 같은 문서 › Blurry — Pixel · ChromaticAberration · Blur · MotionBlur · RadialBlur · KuwaharaFilter(도트 그림엔 차이 작음).
+- 같은 문서 › BlendColor — Multiply·Overlay·SoftLight 등 23종.
+- 같은 문서 › AlphaBlend — Additive · SoftAdditive.
+- 같은 문서 › Screen — LensDistortion · Vignette. CameraComponent 전용.
+- Implementing Materials › Use Materials in Various Components — 여러 렌더러에 같은 방법으로 적용, 컴포넌트별 쓸 수 있는 셰이더는 Shader Picker에서 확인.
+
+## 5. 배경·카메라
+- Set Background › Setting a Template Background — 메이플 프리셋 배경 + ScrollRate(클수록 빨리, 음수는 반대).
+- Set Background › Setting a Gradient Background — 위·중상·중하·아래 4색 + MiddleTopRatio·MiddleBottomRatio.
+- Controlling the Camera with CameraService › Zoom Control — ZoomTo(퍼센트, 시간) · ZoomReset · CurrentZoomRatio 기본 100.
+
+## 6. 파티클·소리
+- Using Particles › Types of Particle Components › AreaParticleComponent — 생성 영역(AreaOffset·AreaSize) 지정. 영역만 키우면 밀도가 줄어듦 → ParticleCount도 같이.
+- Using Particles › Course Introduction — 눈·비·먼지 같은 작은 요소를 ParticleComponent로.
+- Creating Sound Effects › SoundComponent — 엔티티에 붙여 거리 따라 음량. HearingDistance · SetCameraAsListener(화면 가운데 기준) · SetListenerEntity. 예시 = 망치질하는 물체에 가까이 가면 들림.
+- Creating BGM and sound effects › Setting Music — 맵 엔티티에 SoundComponent(Bgm·PlayOnEnable).
+
+## 7. 성능
+- Analyzing World Performance with Profiler › Data Analysis — FPS 최소 30 권장 · Engine FPS는 엔티티·효과·파티클이 많으면 크게 떨어짐 · 모바일 메모리 1GB 넘으면 강제 종료될 수 있음 · **모바일은 엔티티 5,000개 넘으면 성능 저하 가능 → 5,000 이하 권장**(클라이언트는 유저가 있는 맵만 로드).
+- Creating and Managing Maps › Summary — 맵이 너무 크거나 놓인 오브젝트가 많으면 로딩·플레이 지연. 크기·오브젝트 수를 적절히.
+- Utilizing Atlases › The Atlas Unpacker — 아틀라스 2048×2048 · 256조각까지, 잘라서 바로 RectTile 세트에 넣을 수 있음.
+
+## 못 찾은 것 (「관행 추정」으로만 씀)
+- 탑뷰(RectTile)용 「권장 맵 구성 절차」를 한 편으로 묶은 공식 문서 — 없음. 위 조각들이 전부.
+- SortingLayer 목록 설계 권장 — 없음(맵 레이어 이름 = SortingLayer 규칙만).
+- 그림자(장식·벽) 권장 — 없음. DropShadow는 색 대상 효과로만 설명.
+- MapObject 템플릿·애니메이션 오브젝트 맵 장식 가이드 — 검색에 안 나옴(스켈레톤·점프대 예시만).
+- Tiled DrawMode(SpriteRenderer) 가이드 — 없음(UI Sliced/Tiled · 사다리 TiledSize만).
+- RectTile에서 Kinematicbody 아바타가 밟은 타일 레이어로 바뀌는지 — 문서에 없음(MapleTile·Rigidbody 예시만).
