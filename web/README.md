@@ -1,4 +1,4 @@
-# 잡으면 내편 — 개발 자료실
+# 메이플 리저렉션 — 개발 자료실 (개발명 잡으면 내편)
 
 세션과 무관한 고정 주소에서 스킬 애니메이션, 맵 전수 목록, 정책과 기준 시점을 보는 정적 웹입니다.
 서버·DB·런타임 패키지 의존성은 없습니다. Node 20 이상을 사용합니다.
@@ -10,13 +10,28 @@
 자료는 Vercel Authentication의 **All Deployments** 보호 아래 빌드 결과로만 올립니다.
 검색 차단 헤더는 로그인 보호를 대체하지 않습니다.
 
-## 폴더
+## 폴더 · 경로
 
-- `public/`: 자료실 화면과 스타일
-- `templates/atlas.html`: 원본 프레임 재생 화면
-- `scripts/`: 가져오기, 검증, 빌드, 미리보기, 비공개 배포
-- `content/`: 로컬 비공개 자료 묶음(Git 제외)
-- `dist/`: 검증된 정적 결과(Git 제외)
+- `scripts/site.mjs`: 경로마다 HTML을 만드는 정적 사전 렌더(틀 = 상단 내비 + 본문 1200px + 푸터 · 페이지별 title/description/OG · SVG 아이콘 한 세트)
+- `scripts/check-site.mjs`: 빌드 끝 검사 — 라우트 수 · 내부 링크 깨짐 0 · 해시 링크 0(`#main` 건너뛰기만) · 이모지 0 · `/skills/` HTML 300KB 이하. 하나라도 걸리면 빌드 실패
+- `public/`: `site.css`(토큰·구성 요소 한 벌) · `site.js`(접힘 메뉴·목록 필터 `?q= ?act= ?role= ?cat=`·옛 해시 주소 옮기기) · `fonts/`(Pretendard 400·600·800 woff2, KS X 1001 한글 2350자+기호+라틴 서브셋, OFL) · `img/hero-wasteland.webp`(홈 히어로 · 실제 게임 장면)
+- `templates/skills-views.js`: 대조표·아이콘·상세·효과 카드 조각(순수 함수) — 빌드가 node:vm으로 미리 렌더하고 브라우저도 같은 함수로 다시 그림
+- `templates/skills-app.js`: 스킬 화면 동작(프레임 재생·크게 보기·효과 고르기·장면 보기·추천). 빌드가 두 파일을 이어 `/skills/app.js`로 냄
+- `content/`: 로컬 비공개 자료 묶음(Git 제외) · `dist/`: 검증된 정적 결과(Git 제외)
+
+| 경로 | 화면 |
+|---|---|
+| `/` | 홈(히어로·세 입구·최신 스냅샷·바뀐 것) |
+| `/skills/` · `/skills/fx/` · `/skills/summons/` · `/skills/icons/` · `/skills/pick/` | 대조표(기본) · 효과 · 거인·소환물 · 아이콘 · 효과 고르기(`?view=compare&slot=`) |
+| `/skills/<id>/` | 스킬 상세(메인 스킬마다) |
+| `/maps/` · `/maps/<id>/` | 맵 목록(액트·역할·검색) · 맵 상세(그림 고르기·제원·이전/다음) |
+| `/rules/` · `/rules/<id>/` | 규칙 목록 · 상세 |
+| `/changelog/` | 스냅샷 기록 |
+| `/404.html` | 없는 주소 |
+
+옛 주소: `/assets/` → `/skills/`(308), `/#maps` → `/maps/`, `/assets/#pick/…` → `/skills/pick/?view=…`(클라이언트).
+`npm run publish`는 Build Output API(prebuilt)라 `vercel.json`을 읽지 않으므로 같은 규칙(리다이렉트·끝 `/`·404)을 `build.mjs`가 `.vercel/output/config.json`에 씁니다. `npm run preview`(scripts/serve.mjs)도 같은 규칙입니다.
+그림 경로: 자료의 `media/…`는 화면에 싣는 사본에서만 `/assets/media/…`로 바꿉니다(자료 원본·해시 검사는 그대로).
 
 ## 기존 납품 가져오기
 
@@ -39,7 +54,7 @@ maps 폴더는 `maps.json`, `media/`를, policies 폴더는 `policies.json`을 �
 
 ## 효과 고르기(자리별 비교) 자료
 
-에셋 라이브러리의 「효과 고르기」 탭은 스킬 효과 자리(슬롯)마다 현재 사용 중 / 코덱스 FX 후보 / 메이플(MSW 리소스) 클립을
+`/skills/pick/`(효과 고르기)은 스킬 효과 자리(슬롯)마다 현재 사용 중 / 코덱스 FX 후보 / 메이플(MSW 리소스) 클립을
 같은 이름·순서로 나란히 보여 주고, 브라우저 localStorage에 고른 것과 메모를 저장해 「선택 내보내기」로 복사합니다.
 
 ```sh
@@ -137,7 +152,7 @@ publish는 로그인 보호 상태를 API로 확인한 뒤 Build Output API의 �
 
 ## 스킬 화면 조각 (대조표 · 아이콘)
 
-`templates/atlas.html`의 「스킬 화면 조각」 블록(JS)과 CSS 「skill views」 블록은 다른 틀로 옮길 수 있게 독립 함수로 둡니다.
+`templates/skills-views.js`의 「스킬 화면 조각」 블록과 `public/site.css`의 「대조표 · 아이콘 조각(skv)」 블록은 독립 함수로 둡니다.
 `renderSkillAudit(root, catalog, {onOpenGroup, onCount})` = 트리별 카드 대조표, `renderSkillIcons(root, catalog, {...})` = 트리별 아이콘(104·60·40px).
 상태는 `SKV`(트리·검색·펼치기·변경됨만·크기) 하나만 쓰고 전역 STATE를 읽지 않습니다. 쓰는 공용 함수는 `esc` 하나입니다.
 
