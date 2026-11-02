@@ -83,15 +83,15 @@ script SelfTest extends Logic
         self:Check("undead count", u:CountFor(1) == 1 and u:CountFor(3) == 3 and u:CountFor(4) == 3 and u:CountFor(6) == 4 and u:CountFor(20) == 8, "D2 해골 수 규칙")
         -- 11-02 편성 자동 하나 (기획 52 §3-2 안 C): 변이 배치 수 = 노드 랭크 · 다음 소환 계획도 같은 수 (직접 편성·희망 수 없음)
         local place = _UndeadSystem:PlaceQuota("skeleton", { greatsword = 2, twin = 1 })
-        local planQ = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, {}, 0)
-        self:Check("roster place = rank", place.greatsword == 2 and place.twin == 1 and planQ.place.greatsword == 2 and planQ.place.twin == 1 and planQ.form == "greatsword" and planQ.direct == nil,
+        local planQ = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, {}, 0, 1)
+        self:Check("roster place = rank", place.greatsword == 2 and place.twin == 1 and planQ.place.greatsword == 2 and planQ.place.twin == 1 and (planQ.form == "greatsword" or planQ.form == "twin") and planQ.direct == nil,
             "대검 " .. tostring(place.greatsword) .. " · 쌍칼 " .. tostring(place.twin) .. " · 다음 " .. tostring(planQ.form))
-        -- 11-02 「찍은 만큼 나오게」: 정원 4 · 대검 2 · 쌍칼 1 — 30번 일으키는 동안 정원이 찬 뒤(교체 순간 포함) 매번 정확히 대검 2 · 쌍칼 1
+        -- 11-02 랜덤 편성: 정원 4 ≥ 랭크 합 3 · 대검 2 · 쌍칼 1 — 시드가 바뀌어도 3번째부터(교체 순간 포함) 매번 정확히 대검 2 · 쌍칼 1
         local simList = {}
         local exactOk = true
         local exactAt = ""
         for i = 1, 30 do
-            local pl = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, simList, 0)
+            local pl = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, simList, 0, i)
             for _, v in ipairs(pl.victims) do _UndeadSystem:RemoveRec(simList, v) end
             table.insert(simList, { kind = "skeleton", form = pl.form })
             local gs, tw = 0, 0

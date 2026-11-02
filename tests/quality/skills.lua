@@ -283,7 +283,7 @@ assert(pos['SkillWin/TL/Bar'].y==-304 and pos['SkillWin/TL/C1/S2'].y==-88 and po
 print('[quality/skills] OBS-02 mobile timeline: '..#split..' columns, '..pages..' pages, rows 2 at step '..SkillWindow.MobileStepY..', bar '..SkillWindow.MobileBarY..', first column x '..SkillWindow.MobileX0..' (RB-OBS-04), PC unchanged')
 -- INT1725-OBS-01 (PC Lv40 스킬 추천 셋째 카드): 강화 카드 초록 줄(Card{i}/Change 222×72 · BestFit 12~16)에 편성 경고를 뜻·숫자 그대로 자기 줄로.
 --   줄은 「 · 」·「 (」·띄어쓰기 경계에서만 나뉘고(띄어쓰기·「·」를 빼고 다시 이으면 원문 글자 그대로) 줄마다 폭 222 안 — 폭은 넉넉한 어림 UIKit.TextWidth 16px(칸 최대 글꼴)
---   캡처 장면 4개(대검 0기 · 방패 세기만 · 자리 없어짐 · 거인 중 0기)는 3줄 = 16px 그대로 · 모든 변이 노드 × 랭크 × 경고 꼴(두 자리 정원)의 최악도 4줄 = 12px 이상으로 칸 안
+--   장면 4개(섞여 섬 둘 · 대검 세기만 · 거인 중 0기 — 11-02 랜덤 편성)는 3줄 = 16px 그대로 · 모든 변이 노드 × 랭크 × 경고 꼴(두 자리 정원)의 최악도 4줄 = 12px 이상으로 칸 안
 local cardSrc=io.open('tools/build/ui.cjs'):read('a')
 local chH=tonumber(string.match(cardSrc,'/Change`, "", {[^\n]-rect_size: %[CARD%.text, (%d+)%]'))
 local chMax=tonumber(string.match(cardSrc,'/Change`, "", {[^\n]-max_size: (%d+)'))
@@ -334,9 +334,9 @@ local function checkCard(name,text,hint,maxLines)
  return ls
 end
 local scenes={
- {'쌍칼 0기 (I03-3 · 48)',{raise_skeleton=2,skel_greatsword=3,skel_twin=1},'s:greatsword,s:greatsword|0','skel_twin','정원 2기로는 0기 · 정원 +2(뼈 군단)부터 섭니다','쌍칼 해골 2기',SkillOffer.ChangeMaxLines},   -- 11-02 정확히 랭크: 대검 3이 다 선 뒤라 +2
+ {'섞여 섬 쌍칼 (11-02 랜덤 편성)',{raise_skeleton=2,skel_greatsword=3,skel_twin=1},'s:greatsword,s:greatsword|0','skel_twin','변이 합이 정원 2기보다 많아 소환마다 섞여 섭니다','쌍칼 해골 2기',SkillOffer.ChangeMaxLines},   -- 대검 3 + 쌍칼 2 > 정원 2 · 쌍칼도 선다 (옛 「0기 · 정원 +2」 없음)
  {'대검 세기만 (I03-5 · 48)',{raise_skeleton=2,skel_greatsword=2},'s:greatsword,s:greatsword|0','skel_greatsword','다음 랭크는 세기만 오릅니다 (정원이 차 2기 그대로)','대검 해골 3기',SkillOffer.ChangeMaxLines},
- {'자리 없어짐 (I03-4 · 48 · 11-02 대검 1→2)',{raise_skeleton=2,skel_twin=1,skel_greatsword=1},'s:greatsword,s:twin|0','skel_greatsword','찍으면 쌍칼 해골 자리가 없어집니다 · 정원 2기','대검 해골 2기',SkillOffer.ChangeMaxLines},
+ {'섞여 섬 대검 (11-02 랜덤 편성 · 대검 1→2)',{raise_skeleton=2,skel_twin=1,skel_greatsword=1},'s:greatsword,s:twin|0','skel_greatsword','변이 합이 정원 2기보다 많아 소환마다 섞여 섭니다','대검 해골 2기',SkillOffer.ChangeMaxLines},
  {'거인 중 0기 (I03-6 · 48)',{bone_rite=1,raise_skeleton=7,skel_greatsword=2,skel_twin=1},'s:!,s:greatsword|4','skel_twin','뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다','쌍칼 해골 2기'},}
 local sceneLog={}
 for _,sc in ipairs(scenes) do
@@ -346,19 +346,19 @@ for _,sc in ipairs(scenes) do
  assert(string.find(ls[1],sc[6],1,true)==1,sc[1]..': first line '..ls[1])
  table.insert(sceneLog,sc[1]..' '..#ls..'줄')
 end
--- CARD-E1E-R01 (대검 0기 장면): 경고 때 요약을 줄여도 카드 설명(Effect)에 값이 없는 「반경 ×1.8」은 초록 줄에 남는다 — Effect+Change를 합쳐 다음 랭크 수치와 경고 원문이 모두 읽힌다.
+-- CARD-E1E-R01 (경고가 붙은 대검 카드): 경고 때 요약을 줄여도 카드 설명(Effect)에 값이 없는 「반경 ×1.8」은 초록 줄에 남는다 — Effect+Change를 합쳐 다음 랭크 수치와 경고 원문이 모두 읽힌다.
 --   설명에 값이 있는 「피해 ×0.95」(설명 「×0.8/0.95/1.1」)만 빠질 수 있다
 do
- -- 48-0: 방패 변이가 없어져(대검이 첫 순서) 대검 0기 경고는 실제 편성으로 만들 수 없다 → 같은 경고 글을 UseHint로 넣어 카드 그리기(R01)만 본다
+ -- 대검 1랭크만 배운 정원 2에서는 경고가 없다 → 경고 글(11-02 랜덤 편성 꼴)을 UseHint로 넣어 카드 그리기(R01)만 본다
  local keepHint=book.UseHint
- book.UseHint=function(b,id) if id=='skel_greatsword' then return '정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다' end return keepHint(b,id) end
+ book.UseHint=function(b,id) if id=='skel_greatsword' then return '변이 합이 정원 2기보다 많아 소환마다 섞여 섭니다' end return keepHint(b,id) end
  local gsText=cardChange({raise_skeleton=2,skel_greatsword=1},'s:greatsword,s:greatsword|0','skel_greatsword')
  book.UseHint=keepHint
  local eff=values['OfferWin/Card1/Effect'] or ''
  local both=plain(eff)..'\n'..plain(gsText)
  assert(not string.find(eff,'반경',1,true),'Effect now carries radius — R01 check is moot: '..eff)
  assert(string.find(strip(plain(gsText)),strip('반경 ×1.8'),1,true),'R01: radius dropped from card\n'..gsText)
- assert(string.find(strip(both),strip('정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다'),1,true),'R01: warning not intact\n'..gsText)
+ assert(string.find(strip(both),strip('변이 합이 정원 2기보다 많아 소환마다 섞여 섭니다'),1,true),'R01: warning not intact\n'..gsText)
  assert(string.find(eff,'0.95',1,true),'R01: damage value missing from Effect '..eff)
  for _,frag in ipairs(_SkillWindow:SplitPlain(book:GetRankSummary('skel_greatsword',2),' · ')) do
   local nums={} for n in string.gmatch(frag,'%d+%.?%d*') do table.insert(nums,n) end
@@ -383,11 +383,7 @@ for _,kind in ipairs({'skeleton','mage'}) do
  local others=kind=='mage' and {'광기 마법사','저주 마법사','쌍발 마법사','관통 마법사','폭발 마법사'} or {'방패 해골','대검 해골','쌍칼 해골'}
  local hints={}
  for _,N in ipairs({2,12}) do
-  for _,k in ipairs({1,12}) do
-   table.insert(hints,string.format('배워도 정원 %d기로는 0기 · 정원 +%d(%s)부터 섭니다',N,k,legion))
-   table.insert(hints,string.format('정원 %d기로는 0기 · 정원 +%d(%s)부터 섭니다',N,k,legion))
-  end
-  for _,o in ipairs(others) do table.insert(hints,string.format('찍으면 %s 자리가 없어집니다 · 정원 %d기',o,N)) end
+  table.insert(hints,string.format('변이 합이 정원 %d기보다 많아 소환마다 섞여 섭니다',N))   -- 11-02 랜덤 편성 (옛 「0기 · 정원 +N」·「자리가 없어집니다」 없음)
   table.insert(hints,string.format('다음 랭크는 세기만 오릅니다 (정원이 차 %d기 그대로)',N))
  end
  if kind=='skeleton' then table.insert(hints,'뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다') end
@@ -468,11 +464,13 @@ entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then ret
 book.Levels={bone_rite=1,raise_skeleton=7,skel_legion=1,skel_greatsword=2,skel_twin=1};stats.Level=40;bonus=0
 cmdRoster.UndeadRoster='s:!,s:greatsword|4'
 local gline=book:RosterLine('raise_skeleton')
-assert(gline=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',gline)
+-- 11-02 랜덤 편성: 다음 변이는 모자란 대검·쌍칼 가운데 시드로 하나 (옛 문자열은 시드 0)
+local function nextOneOf(line,a,b) return line==a or line==b end
+assert(nextOneOf(gline,'편성: 대검 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)','편성: 대검 1·거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 쌍칼 해골(가장 오래된 대검 해골 교체)'),gline)
 local gp=_UndeadSystem:RosterPreview(entity,'skeleton')
 assert(gp.have==6 and gp.max==5 and gp.reserved==4 and gp.counts['']==1 and gp.counts.greatsword==1 and gp.bodies==1 and (gp.units[''] or 0)==0 and gp.units.greatsword==1,'raw have/counts or display split')
 cmdRoster.UndeadRoster='s:!|4'
-assert(book:RosterLine('skel_twin')=='편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골',book:RosterLine('skel_twin'))
+assert(nextOneOf(book:RosterLine('skel_twin'),'편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골','편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 쌍칼 해골'),book:RosterLine('skel_twin'))
 cmdRoster.UndeadRoster='s:greatsword,s:greatsword,s:twin,s:,s:|0'   -- 거인이 갈라진 뒤: 예전 꼴 그대로
 assert(book:RosterLine('skel_twin')=='편성 5/5: 일반 2·대검 2·쌍칼 1 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',book:RosterLine('skel_twin'))   -- 11-02 정확히 랭크: 무너질 대검 자리를 대검으로
 entity.GetComponent=oldGet

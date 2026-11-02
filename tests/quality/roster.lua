@@ -123,13 +123,16 @@ local function steadyByRaise(kind,count,keepList)
  return seen
 end
 local function sameSteady(name,kind)
+ -- 11-02 랜덤 편성: SteadyRoster = 변이별 상한 min(랭크, 자리) — 실제 반복 소환은 어느 변이도 상한을 넘지 않고, 상한이 있는 변이는 실제로 서며, 일반형 칸은 같다
  total=total+1
  local p=UndeadSystem:RosterPreview(player,kind)
  local sim=UndeadSystem:SteadyRoster(kind,p.max,p.quota,{},0)
  local real=steadyByRaise(kind,80)
- for _,f in ipairs({'',table.unpack(UndeadSystem:FormOrder(kind))}) do
-  assert((sim[f] or 0)==(real[f] or 0),name..': steady '..f..' sim='..tostring(sim[f])..' raise='..tostring(real[f]))
+ for _,f in ipairs(UndeadSystem:FormOrder(kind)) do
+  assert((real[f] or 0)<=(sim[f] or 0),name..': over cap '..f..' sim='..tostring(sim[f])..' raise='..tostring(real[f]))
+  assert(((sim[f] or 0)>0)==((real[f] or 0)>0),name..': stand '..f..' sim='..tostring(sim[f])..' raise='..tostring(real[f]))
  end
+ assert((sim[''] or 0)==(real[''] or 0),name..': base sim='..tostring(sim[''])..' raise='..tostring(real['']))
  passed=passed+1
 end
 
@@ -142,24 +145,80 @@ book.Levels={raise_skeleton=2,skel_shield=1,skel_greatsword=1,skel_twin=1}
 setList({rec('skeleton','shield'),rec('skeleton','greatsword')})
 local p2=check('2 full three forms','skeleton',{max=2,have=2,full=true,nextForm='twin',replaces=1})
 assert(p2.replaces[1].form=='shield')
--- 3. 앞 변이가 정원을 다 씀: 대검 3 · 쌍칼 1 · 정원 2 → 쌍칼 0기 (11-02 정확히 랭크: 대검 3이 다 선 뒤라 정원 +2부터 · 옛 규칙은 교체 순간 끼어 +1) · 다음은 대검 (48-1: 방패는 변이가 아니다)
-book.Levels={raise_skeleton=2,skel_greatsword=3,skel_twin=1}
-setList({rec('skeleton','greatsword'),rec('skeleton','greatsword')})
-check('3 front form starves twin','skeleton',{max=2,nextForm='greatsword',replaces=1,idle='twin+2'})
+-- R1 (11-02 랜덤 편성): 정원 3 < 랭크 합 5 (대검 3 · 쌍칼 2) — 200번 연속 일으켜도 대검·쌍칼 둘 다 서고 기본형 0 · 어느 순간도 대검 > 3 · 쌍칼 > 2 없음
+book.Levels={raise_skeleton=3,skel_greatsword=3,skel_twin=2}
+setList({})
+do
+ total=total+1
+ local seenGs,seenTw,base=0,0,0
+ for i=1,200 do
+  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() end}
+  assert(UndeadSystem:Raise(player,'skeleton',3,Vector2(0,0),nil),'R1 raise refused #'..i)
+  local newest=UndeadSystem:ListOf(player)[#UndeadSystem:ListOf(player)]
+  if newest.form=='greatsword' then seenGs=seenGs+1 elseif newest.form=='twin' then seenTw=seenTw+1 else base=base+1 end
+  local c={}
+  for _,r in ipairs(UndeadSystem:ListOf(player)) do c[r.form or '']=(c[r.form or ''] or 0)+1 end
+  assert((c.greatsword or 0)<=3 and (c.twin or 0)<=2 and #UndeadSystem:ListOf(player)<=3,'R1 over rank #'..i..' gs='..tostring(c.greatsword)..' twin='..tostring(c.twin))
+ end
+ assert(seenGs>0 and seenTw>0 and base==0,'R1 gs='..seenGs..' twin='..seenTw..' base='..base)
+ print(string.format('[quality/roster] R1 cap 3 · gs3 tw2 · 200 raises: greatsword %d · twin %d · base %d',seenGs,seenTw,base))
+ passed=passed+1
+end
+for i=1,6 do check('R1 preview == raise #'..i,'skeleton') end   -- R3: 같은 시드면 서버 미리보기 = 클라이언트(「^시드」 문자열) 미리보기 = 실제 Raise
 local hint=book:UseHint('skel_twin')
-assert(string.find(hint,'0기',1,true) and string.find(hint,'정원 +2',1,true),hint)
+assert(not string.find(hint,'0기',1,true) and not string.find(hint,'정원 +',1,true),hint)
 local line=book:RosterLine('raise_skeleton')
-assert(string.find(line,'편성 2/2: 대검 2',1,true) and string.find(line,'다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',1,true),line)
-sameSteady('3 steady matches repeated raise','skeleton')
--- 3b. 뼈 군단 +2면 쌍칼이 실제로 선다 (안내한 「정원 +2」 확인 · +1이면 대검 3뿐)
-book.Levels.skel_legion=1
-assert(#UndeadSystem:RosterPreview(player,'skeleton').idle==1,'legion +1 should still starve twin')
-book.Levels.skel_legion=2
-local p3b=UndeadSystem:RosterPreview(player,'skeleton')
-assert(#p3b.idle==0 and p3b.max==4,digest(p3b))
-assert(not string.find(book:UseHint('skel_twin'),'0기',1,true),book:UseHint('skel_twin'))
-sameSteady('3b legion lets twin stand','skeleton')
-assert((steadyByRaise('skeleton',40).twin or 0)>0)
+assert(string.find(line,'편성 3/3: ',1,true) and string.find(line,'다음 소환: ',1,true) and string.find(line,'(가장 오래된 ',1,true),line)
+sameSteady('R1 steady cap = min(rank, slots)','skeleton')
+-- R2: 정원 6 ≥ 랭크 합 5 → 충분히 돌린 뒤 늘 대검 3 · 쌍칼 2 · 기본 1
+setList({})
+do
+ total=total+1
+ book.Levels={raise_skeleton=9,skel_legion=1,skel_greatsword=3,skel_twin=2}
+ assert(UndeadSystem:RosterPreview(player,'skeleton').max==6,'R2 cap 6 = '..UndeadSystem:RosterPreview(player,'skeleton').max)
+ for i=1,60 do
+  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() end}
+  assert(UndeadSystem:Raise(player,'skeleton',9,Vector2(0,0),nil),'R2 raise refused')
+  local c={}
+  for _,r in ipairs(UndeadSystem:ListOf(player)) do c[r.form or '']=(c[r.form or ''] or 0)+1 end
+  assert((c.greatsword or 0)<=3 and (c.twin or 0)<=2,'R2 over rank #'..i)
+  if i>=6 then assert(c.greatsword==3 and c.twin==2 and (c['shield'] or 0)+(c[''] or 0)==1,'R2 not converged #'..i..' gs='..tostring(c.greatsword)..' twin='..tostring(c.twin)) end
+ end
+ local pv=UndeadSystem:RosterPreview(player,'skeleton')
+ assert(pv.steady.greatsword==3 and pv.steady.twin==2 and pv.steady['']==1 and #pv.idle==0,digest(pv))
+ passed=passed+1
+end
+-- R3: 시드 고정 — 같은 시드·같은 목록이면 PlanNext·PickForm이 늘 같은 답 · 시드에 따라 두 변이가 다 나온다
+do
+ total=total+1
+ local list={rec('skeleton','greatsword'),rec('skeleton','')}
+ local got={}
+ for sd=1,64 do
+  local a=UndeadSystem:PlanNext('skeleton',3,{greatsword=3,twin=2},list,0,sd)
+  local b=UndeadSystem:PlanNext('skeleton',3,{greatsword=3,twin=2},list,0,sd)
+  assert(a.form==b.form and a.form~='','R3 seed '..sd..' '..a.form..'/'..b.form)
+  got[a.form]=(got[a.form] or 0)+1
+ end
+ assert((got.greatsword or 0)>0 and (got.twin or 0)>0,'R3 both forms over seeds')
+ passed=passed+1
+end
+-- R4: 옛 형식 문자열(「^시드」 없음) 디코드 → 시드 0 · 예외 없음 · 새 형식 왕복
+do
+ total=total+1
+ local old=UndeadSystem:DecodeRoster('s:greatsword,s:twin!|2')
+ assert(#old.list==2 and old.reserved==2 and old.seed==0 and old.list[2].giant==true,'R4 old decode')
+ local cmdKeep=cmd.UndeadRoster
+ cmd.UndeadRoster='s:greatsword,s:|0'
+ server=false
+ local pc=UndeadSystem:RosterPreview(player,'skeleton')
+ server=true
+ assert(pc.nextForm=='greatsword' or pc.nextForm=='twin','R4 old string preview '..pc.nextForm)
+ cmd.UndeadRoster=cmdKeep
+ local t=UndeadSystem:EncodeRoster({rec('skeleton','twin')},0,12345)
+ assert(t=='s:twin|0^12345' and UndeadSystem:DecodeRoster(t).seed==12345,'R4 new format '..t)
+ assert(UndeadSystem:DecodeRoster('').seed==0 and #UndeadSystem:DecodeRoster(nil).list==0,'R4 empty')
+ passed=passed+1
+end
 -- 4. 뼈 거인 예약: 거인 몸(방패) + 일반 1 · 거인에 넷 · 정원 6 → 꽉 참, 일반이 교체 · 거인 몸은 남는다
 book.Levels={raise_skeleton=12,skel_shield=1,skel_greatsword=1}
 local host=rec('skeleton','shield',{giant=true})
@@ -209,8 +268,8 @@ for i=1,20 do check('10 sequence #'..i,'skeleton') end
 -- 11. 다음 랭크가 세기만 올리는 경우 / 앞 변이 투자가 뒤 변이를 밀어내는 경우 안내
 book.Levels={raise_skeleton=2,skel_greatsword=2}
 assert(string.find(book:UseHint('skel_greatsword'),'세기만',1,true),book:UseHint('skel_greatsword'))
-book.Levels={raise_skeleton=2,skel_greatsword=1,skel_twin=1}   -- 11-02 정확히 랭크: 대검 1·쌍칼 1이 서 있다가 대검 2를 찍으면 쌍칼이 밀려난다 (대검 2·쌍칼 1·정원 2는 이미 쌍칼 0기)
-assert(string.find(book:UseHint('skel_greatsword'),'쌍칼 해골 자리가 없어집니다',1,true),book:UseHint('skel_greatsword'))
+book.Levels={raise_skeleton=2,skel_greatsword=1,skel_twin=1}   -- 11-02 랜덤 편성: 대검 2를 찍으면 변이 합 3 > 정원 2 → 소환마다 섞여 선다 (쌍칼이 밀려나지 않는다)
+assert(string.find(book:UseHint('skel_greatsword'),'소환마다 섞여 섭니다',1,true),book:UseHint('skel_greatsword'))
 -- 12. 여러 노드 조합에서 SteadyRoster = 실제 Raise 반복
 for _,levels in ipairs({{raise_skeleton=1,skel_greatsword=1,skel_twin=1},{raise_skeleton=5,skel_greatsword=3,skel_twin=3},
   {raise_skeleton=3,skel_legion=2,skel_twin=3,skel_greatsword=1},{raise_skeleton=20,skel_legion=2,skel_greatsword=3,skel_twin=3}}) do
@@ -305,7 +364,7 @@ local p0=UndeadSystem:RosterPreview(player,'skeleton')
 local _=book:RosterLine('raise_skeleton')..book:UseHint('skel_twin')..book:UseHint('skel_greatsword')
 UndeadSystem:RosterPreview(player,'mage')
 assert(next(UndeadSystem.Owned)==nil,'preview registered Owned entry')
-assert(UndeadSystem.Serial==serial0 and p0.have==0 and p0.nextForm=='greatsword' and #p0.replaces==0,digest(p0))
+assert(UndeadSystem.Serial==serial0 and p0.have==0 and (p0.nextForm=='greatsword' or p0.nextForm=='twin') and #p0.replaces==0,digest(p0))
 passed=passed+1
 -- 13. 인코딩 왕복: 변이·거인 표시·예약 수
 local text=UndeadSystem:EncodeRoster({rec('skeleton','shield',{giant=true}),rec('revive',''),rec('mage','')},4)
@@ -321,14 +380,14 @@ assert(back2.list[2].notReady and back2.list[3].merged and back2.list[3].form=='
 senderUserId='u1'
 UndeadSystem.Giants={}
 local function formCase(name,fn) total=total+1 fn() passed=passed+1 end
-local function legacyPlan(kind,max,quota,list,reserved)
+local function legacyPlan(kind,max,quota,list,reserved,sd)
  -- 고정 규칙 (11-02 「찍은 만큼 나오게」): SlotCount.keep → TrimVictims → 무너질 기록을 뺀 생존 편성에서 PickForm (거인 몸·합쳐진 넷은 victims가 아니라 그대로 센다)
  local victims=UndeadSystem:TrimVictims(list,kind,UndeadSystem:SlotCount(max,kind,list,reserved).keep)
  local gone={}
  for _,v in ipairs(victims) do gone[v]=true end
  local remain={}
  for _,r in ipairs(list) do if not gone[r] then table.insert(remain,r) end end
- return UndeadSystem:PickForm(kind,quota,remain,nil),victims
+ return UndeadSystem:PickForm(kind,quota,remain,nil,sd),victims
 end
 local function raiseOnce(kind)
  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() end}
@@ -360,8 +419,8 @@ formCase('F1 place = node rank · pinned rule (3000 random states)',function()
   local list={}
   for j=1,rnd(10) do table.insert(list,rec(kind,forms[1+rnd(#forms)],{giant=(kind=='skeleton' and j==1 and rnd(4)==0) or nil})) end
   local reserved=kind=='skeleton' and rnd(5) or 0
-  local plan=UndeadSystem:PlanNext(kind,max,quota,list,reserved)
-  local f,v=legacyPlan(kind,max,quota,list,reserved)
+  local plan=UndeadSystem:PlanNext(kind,max,quota,list,reserved,i)
+  local f,v=legacyPlan(kind,max,quota,list,reserved,i)
   assert(plan.form==f and #plan.victims==#v,'auto parity #'..i..' '..plan.form..' vs '..f)
   for k=1,#v do assert(plan.victims[k]==v[k],'auto victim #'..i) end
   for _,form in ipairs(UndeadSystem:FormOrder(kind)) do assert(plan.place[form]==quota[form],'place ~= rank #'..i..' '..form) end
@@ -407,6 +466,7 @@ formCase('F3 power = node rank',function()
  book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=3}
  setList({})
  local a=raiseOnce('skeleton')
+ for _=1,6 do if a.form~='greatsword' then a=raiseOnce('skeleton') end end
  assert(a.form=='greatsword' and math.abs(a.basicMul-(0.65+0.15*3))<1e-9 and a.radiusMul==1.8,'greatsword mul '..tostring(a.basicMul))
  local b=raiseOnce('skeleton')
  for _=1,4 do if b.form~='twin' then b=raiseOnce('skeleton') end end
@@ -893,5 +953,5 @@ do
  end)
  print('[quality/roster] 48 A: rank 7 to 8 evolve (effect level, snapshot, guard 20/25/30), cap10 = gs3 tw3 shield4, two giants burst + blocked raise + status 10/10 + split one, C2 serial charges + cast speed, max8 no second, Q3 mixed 8+8 + per-kind quota + cap warn + RiteBestStage cap swap, mage mates quota/status, twin hunt decide + server state ('..N..' cases)')
 end
-print(string.format('[quality/roster] 11-02 form auto only (52 §3-2 C): manual API removed, place = node rank x3000 + pinned rule, 30-raise sequence (exact rank incl. replacement · 11-02) + 30 full-cap replacements gs2/twin1 exact, power = node rank, old save hope dropped, shard hold request, giant held, async plan revalidation (B-DRAFT-01 + rank change)'))
-print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))
+print(string.format('[quality/roster] 11-02 form auto only (52 §3-2 C): manual API removed, place = node rank x3000 + pinned rule, 30-raise sequence (exact rank incl. replacement · random seed) + 30 full-cap replacements gs2/twin1 exact, power = node rank, old save hope dropped, shard hold request, giant held, async plan revalidation (B-DRAFT-01 + rank change)'))
+print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, random R1 cap3 gs3/tw2 x200 · R2 converge · R3 seed · R4 old string, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))
