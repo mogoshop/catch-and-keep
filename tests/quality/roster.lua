@@ -1,8 +1,8 @@
 -- I03 편성 미리보기 대조: UndeadSystem.RosterPreview(읽기 전용)가 실제 일으키기(Raise → MakeRecord·ApplyForm → SlotPlan·TrimOldest)와 같은 답을 내는가
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetMonsterFrames,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName
--- @source SkillBook Skill/SkillBook.mlua GiantReason+,GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,AutoHope+,HasHope+,RequestFormMode+,RequestFormHope+,SaveFormHope+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
--- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,ParseHope+,EncodeHope+,HopeOf+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+,BoneRite+,StartGiant+,EndGiant+,OnUnitDied+,DismissRecords+,GetBaseStats,GiantChargeCover+,GiantChargeSpend+,GiantChargeCoverOf+,GiantStandingAny+,GiantCapReached+,ShownForms,EvolveRank,TwinHuntDecide,TwinHuntState,TwinHuntLoad,TwinHuntClear,IsTwinHunter
+-- @source SkillBook Skill/SkillBook.mlua GiantReason+,GetPowerLevel+,PowerLevelAt+,GetLevel+,Node+,GetCommandAura+,UseHint+,FormHint+,RosterLine+,RequestShardHold,GetSaveData,LoadSaveData+,RequestRiteBanner,RiteUnits5+,GiantStanding,RiteBestStage+
+-- @source UndeadSystem Undead/UndeadSystem.mlua Raise+,MakeRecord+,TrimOldest+,RefreshSummary+,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,EncodeRoster,DecodeRoster,RosterOf+,FormName,NodeForm+,PlanList,RosterView+,NotReady,ListOf,Remove+,PlanNext+,PlanFor+,PlaceQuota+,SamePlan,PickForm+,SlotCount,TrimVictims,RemoveRec,FormOrder,LiveUnits,GiantFallback,GiantKey,GiantPool,GiantPoolCount,GiantPlan+,GiantCountsText,GiantPlanFor+,BoneRite+,StartGiant+,EndGiant+,OnUnitDied+,DismissRecords+,GetBaseStats,GiantChargeCover+,GiantChargeSpend+,GiantChargeCoverOf+,GiantStandingAny+,GiantCapReached+,ShownForms,EvolveRank,TwinHuntDecide,TwinHuntState,TwinHuntLoad,TwinHuntClear,IsTwinHunter
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 _GameData:Ensure();_SkillData:Ensure()
 Environment={IsPublishedPlay=function() return true end}
@@ -125,7 +125,7 @@ end
 local function sameSteady(name,kind)
  total=total+1
  local p=UndeadSystem:RosterPreview(player,kind)
- local sim=UndeadSystem:SteadyRoster(kind,p.max,p.quota,p.hope,{},0)
+ local sim=UndeadSystem:SteadyRoster(kind,p.max,p.quota,{},0)
  local real=steadyByRaise(kind,80)
  for _,f in ipairs({'',table.unpack(UndeadSystem:FormOrder(kind))}) do
   assert((sim[f] or 0)==(real[f] or 0),name..': steady '..f..' sim='..tostring(sim[f])..' raise='..tostring(real[f]))
@@ -266,7 +266,7 @@ UndeadSystem.Giants={}
 --   48-4: 정원 5 = 몸 1 + 합쳐진 넷 → 교체할 개체가 없어 추가 소환 없음(blocked) · 서는 수 0 → 「거인 동안 0기」
 for _,body in ipairs({{'twin','skel_twin'},{'greatsword','skel_greatsword'},{'',nil}}) do
  total=total+1
- book.Levels={raise_skeleton=9,skel_greatsword=1,skel_twin=1};book.FormHope=''
+ book.Levels={raise_skeleton=9,skel_greatsword=1,skel_twin=1}
  local hb=rec('skeleton',body[1],{giant=true})
  setList({hb})
  UndeadSystem.Giants={u1={{host=hb,mates={rec('skeleton',''),rec('skeleton',''),rec('skeleton',''),rec('skeleton','')},epoch=1}}}
@@ -280,7 +280,7 @@ for _,body in ipairs({{'twin','skel_twin'},{'greatsword','skel_greatsword'},{'',
 end
 -- 46-0 R1: 거인 동안 일으켜도 합쳐진 넷의 변이 자리를 다시 쓰지 않는다 → 갈라진 뒤 변이 수 ≤ 랭크
 total=total+1
-book.Levels={raise_skeleton=12,skel_greatsword=2,skel_twin=1};book.FormHope=''
+book.Levels={raise_skeleton=12,skel_greatsword=2,skel_twin=1}
 do
  local hs=rec('skeleton','',{giant=true})
  setList({hs})
@@ -315,10 +315,10 @@ local text2=UndeadSystem:EncodeRoster({rec('skeleton','twin',{giant=true}),rec('
 assert(text2=='s:twin!,m:hex?,s:shield~,m:aura~|0',text2)
 local back2=UndeadSystem:DecodeRoster(text2)
 assert(back2.list[2].notReady and back2.list[3].merged and back2.list[3].form=='shield' and back2.list[4].kind=='mage' and back2.reserved==0,'decode marks')
--- ───────── I03 단계 2 희망 편성 (10-30 갈래 B · goal-roster-input-review-plan-0035 B-T01~B-T03) ─────────
+-- ───────── 11-02 편성 자동 하나 (사용자 결정 · 기획 52 §3-2 안 C): 「직접 정하기」·희망 수 삭제 — 변이 수 = 노드 랭크 ─────────
 senderUserId='u1'
 UndeadSystem.Giants={}
-local function hopeCase(name,fn) total=total+1 fn() passed=passed+1 end
+local function formCase(name,fn) total=total+1 fn() passed=passed+1 end
 local function legacyPlan(kind,max,quota,list,reserved)
  -- 고정 4ba51d5e 규칙 그대로: 무너질 개체를 센 채 PickForm → SlotCount.keep → TrimVictims
  local form=UndeadSystem:PickForm(kind,quota,list,nil)
@@ -336,15 +336,12 @@ local function tally(kind)
  for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind==kind then c[r.form or '']=(c[r.form or ''] or 0)+1 end end
  return c
 end
-hopeCase('H0 parse/encode',function()
- -- 48-1: 옛 저장의 shield=N은 읽을 때 버린다 (방패는 변이가 아니라 진화한 기본형)
- local t=UndeadSystem:EncodeHope(UndeadSystem:ParseHope('s:d:shield=2,bogus=3,twin=1/x:y/m:a:aura=1'))
- assert(t=='s:d:twin=1',t)   -- 48-2: 마법사 변이 희망도 사라진다
- assert(UndeadSystem:EncodeHope(UndeadSystem:ParseHope(''))=='','old save stays empty')
- local h=UndeadSystem:ParseHope('s:d:/m:d:hex=0')
- assert(h.skeleton.direct and next(h.skeleton.want)==nil and h.mage.direct and next(h.mage.want)==nil,'mage hope has no forms (48-2)')
+formCase('F0 manual mode removed',function()
+ -- 직접 편성 상태·요청이 남아 있지 않다 (희망 수 속성 · 자동/직접 요청 · 희망 ± 요청)
+ assert(SkillBook.FormHope==nil and SkillBook.RequestFormMode==nil and SkillBook.RequestFormHope==nil and SkillBook.AutoHope==nil,'SkillBook manual form API left')
+ assert(UndeadSystem.ParseHope==nil and UndeadSystem.EncodeHope==nil and UndeadSystem.HopeOf==nil,'UndeadSystem hope API left')
 end)
-hopeCase('H1 auto = pinned rule (3000 random states)',function()
+formCase('F1 place = node rank · pinned rule (3000 random states)',function()
  local seed=12345
  local function rnd(n) seed=(seed*1103515245+12345)%2147483648 return seed%n end
  for i=1,3000 do
@@ -357,165 +354,95 @@ hopeCase('H1 auto = pinned rule (3000 random states)',function()
   local list={}
   for j=1,rnd(10) do table.insert(list,rec(kind,forms[1+rnd(#forms)],{giant=(kind=='skeleton' and j==1 and rnd(4)==0) or nil})) end
   local reserved=kind=='skeleton' and rnd(5) or 0
-  local hope=(i%3==0) and {direct=false,want={shield=rnd(3),aura=rnd(3)}} or {direct=false,want={}}
-  local plan=UndeadSystem:PlanNext(kind,max,quota,hope,list,reserved)
+  local plan=UndeadSystem:PlanNext(kind,max,quota,list,reserved)
   local f,v=legacyPlan(kind,max,quota,list,reserved)
   assert(plan.form==f and #plan.victims==#v,'auto parity #'..i..' '..plan.form..' vs '..f)
   for k=1,#v do assert(plan.victims[k]==v[k],'auto victim #'..i) end
-  assert(not plan.direct and not plan.clipped)
+  for _,form in ipairs(UndeadSystem:FormOrder(kind)) do assert(plan.place[form]==quota[form],'place ~= rank #'..i..' '..form) end
+  assert(plan.direct==nil and plan.clipped==nil,'manual fields left')
  end
 end)
--- H2 직접 편성: 정원 4 · 희망 대검1 쌍칼2 → 30번 일으키는 동안 매번 미리보기 = 실제, 끝 편성 = 희망 (일반 1)
-book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=3}
-book.FormHope='s:d:greatsword=1,twin=2'
+-- F2 정원 4 · 대검 1랭크 쌍칼 2랭크 → 30번 일으키는 동안 매번 미리보기 = 실제 · 변이 수는 노드 랭크를 넘지 않고 장기 편성(SteadyRoster) = 노드 랭크
+--   (자동 규칙 그대로: 무너질 가장 오래된 개체도 센 채 고르므로 정원이 찬 뒤 교체 순간에는 한 변이가 랭크−1인 때가 있다 · 10-24 규칙 · 이번 결정은 규칙을 바꾸지 않는다)
+book.Levels={raise_skeleton=6,skel_greatsword=1,skel_twin=2}
 setList({})
-for i=1,30 do check('H2 direct sequence #'..i,'skeleton') end
-hopeCase('H2 direct converges to hope',function()
+for i=1,30 do check('F2 rank sequence #'..i,'skeleton') end
+formCase('F2 variant count = node rank',function()
  local c=tally('skeleton')
- assert(c.greatsword==1 and c.twin==2 and c['']==1,'tally greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin)..' normal='..tostring(c['']))
- assert(string.find(book:RosterLine('raise_skeleton'),'직접 편성 4/4',1,true),book:RosterLine('raise_skeleton'))
+ assert((c.greatsword or 0)<=1 and (c.twin or 0)<=2,'over rank greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin))
+ local p=UndeadSystem:RosterPreview(player,'skeleton')
+ assert(p.steady.greatsword==1 and p.steady.twin==2 and p.place.greatsword==1 and p.place.twin==2,'steady greatsword='..tostring(p.steady.greatsword)..' twin='..tostring(p.steady.twin))
+ local line=book:RosterLine('raise_skeleton')
+ assert(string.sub(line,1,#'편성 4/4')=='편성 4/4' and not string.find(line,'직접',1,true) and not string.find(line,'희망',1,true),line)
 end)
-sameSteady('H2 direct steady = repeated raise','skeleton')
--- H3 희망 수와 세기 분리 (B-R01): 강화 3랭크 · 희망 1 → 대검 범위·쌍칼 속도·저주 세기는 3랭크 그대로
-hopeCase('H3 power stays node rank',function()
+sameSteady('F2 steady = repeated raise','skeleton')
+-- F3 세기 = 노드 랭크 (B-R01): 강화 3랭크 → 대검 범위·쌍칼 속도는 3랭크
+formCase('F3 power = node rank',function()
  book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=3}
- book.FormHope='s:d:greatsword=1,twin=1'
  setList({})
  local a=raiseOnce('skeleton')
  assert(a.form=='greatsword' and math.abs(a.basicMul-(0.65+0.15*3))<1e-9 and a.radiusMul==1.8,'greatsword mul '..tostring(a.basicMul))
  local b=raiseOnce('skeleton')
+ for _=1,4 do if b.form~='twin' then b=raiseOnce('skeleton') end end
  assert(b.form=='twin' and math.abs(b.cooldown-_GameData.skeletonCooldown/(1.2+0.1*3))<1e-9,'twin cd '..tostring(b.cooldown))
- book.FormHope=''
- setList({})
- local auto=raiseOnce('skeleton')
- assert(auto.form=='greatsword' and auto.basicMul==a.basicMul,'auto mul '..tostring(auto.basicMul))
- setList({a,b})
- book.FormHope='s:d:greatsword=0,twin=0'
- local p=UndeadSystem:RosterPreview(player,'skeleton')
- assert(p.nextForm=='' and a.form=='greatsword' and UndeadSystem:ListOf(player)[1]==a,'existing unit changed')
- local c=raiseOnce('skeleton')
- assert(c.form=='' and a.form=='greatsword' and #UndeadSystem:ListOf(player)==3,'next only')
  book.Levels={raise_mage=6}
- book.FormHope=''
  setList({})
  local m=raiseOnce('mage')
  assert(m.form=='' and m.school=='fire' and m.element=='fire' and m.mageRank==6 and m.hex==nil and m.bolts==nil,'mage school '..tostring(m.school))
 end)
--- H4 장비로 정원이 줄어도 희망 수는 그대로 · 표시만 잘림 (B-R02)
-hopeCase('H4 gear cap shrink keeps wishes',function()
- book.Levels={raise_skeleton=3,skel_greatsword=2,skel_twin=2}
- book.FormHope='s:d:greatsword=2,twin=1'
- setList({rec('skeleton','greatsword'),rec('skeleton','twin')})
- local before=book.FormHope
- local p=UndeadSystem:RosterPreview(player,'skeleton')
- assert(p.max==3 and not p.clipped and p.nextForm=='greatsword',p.nextForm)
- bonus=-2
- local q=UndeadSystem:RosterPreview(player,'skeleton')
- assert(q.max==1 and q.clipped and q.cut.greatsword==1 and q.cut.twin==1,'clip')
- assert(book.FormHope==before,'wish overwritten')
- assert(string.find(book:RosterLine('raise_skeleton'),'희망 중 2기는 정원·랭크를 넘어 일반형으로 섭니다',1,true),book:RosterLine('raise_skeleton'))
- check('H4 lowered cap direct','skeleton',{max=1,full=true,replaces=2})
- bonus=0
- local r=UndeadSystem:RosterPreview(player,'skeleton')
- assert(r.max==3 and not r.clipped and book.FormHope==before,'restore')
-end)
--- H5 저장: 옛 저장 = 자동·끔 · 왕복 보존 · 모르는 형식 버림
-hopeCase('H5 save round trip',function()
+-- F4 저장: 옛 희망 편성 칸(hope)은 읽고 버린다 — 다음 저장에 칸 없음 · 골편 반복은 그대로 왕복
+formCase('F4 old hope dropped on load',function()
  local keepSan,keepDig,keepMig=book.SanitizeSlots,book.RefreshDigest,book.MigrateLevels
  book.SanitizeSlots=function() end
  book.RefreshDigest=function() end
  book.MigrateLevels=function() end
- book.Levels={raise_skeleton=3}
- book.FormHope='s:d:twin=1/m:d:'
+ book.Levels={raise_skeleton=3,skel_greatsword=1}
  book.ShardHold=true
  local d=book:GetSaveData()
- assert(d.hope=='s:d:twin=1/m:d:' and d.shardHold==true and d.sv>=4,'save fields')
- book.FormHope='x'
+ assert(d.hope==nil and d.shardHold==true and d.sv>=4,'save fields')
  book.ShardHold=false
  book:LoadSaveData(d)
- assert(book.FormHope=='s:d:twin=1/m:d:' and book.ShardHold==true,'restore')
- -- 48-1: 옛 저장의 방패 희망은 불러올 때 사라지고 나머지는 그대로
- book:LoadSaveData({levelCount=0,sv=4,hope='s:d:shield=2,greatsword=1,twin=0'})
- assert(book.FormHope=='s:d:greatsword=1,twin=0','old shield hope '..book.FormHope)
- book:LoadSaveData({levelCount=1,levels={raise_skeleton=3},slots=',,,',right='',sv=4})
- assert(book.FormHope=='' and book.ShardHold==false,'old save → auto/off')
- local d2=book:GetSaveData()
- assert(d2.hope==nil and d2.shardHold==nil,'default writes no new fields')
- book:LoadSaveData({levelCount=0,sv=4,hope='s:q:junk/m:d:aura=9,zzz=1'})
- assert(book.FormHope=='m:d:','sanitize '..book.FormHope)
+ assert(book.ShardHold==true,'restore shard hold')
+ book:LoadSaveData({levelCount=1,levels={raise_skeleton=3,skel_greatsword=1},sv=6,hope='s:d:greatsword=0,twin=0/m:d:'})
+ assert(book.FormHope==nil and book:GetSaveData().hope==nil and book.ShardHold==false,'old hope kept')
+ -- 옛 「희망 0」이 있던 저장도 변이 수 = 랭크 (대검 1기)
+ book.Levels={raise_skeleton=3,skel_greatsword=1}
+ setList({})
+ local r=raiseOnce('skeleton')
+ assert(r.form=='greatsword','old zero hope still applied '..tostring(r.form))
  book.SanitizeSlots=keepSan
  book.RefreshDigest=keepDig
  book.MigrateLevels=keepMig
- book.FormHope=''
  book.ShardHold=false
 end)
--- H6 서버 요청 검사: 주인만 · 아는 종류·변이 · ±1 · 0~배운 랭크 · 합은 정원 안 · 자동이면 자동 모습에서 직접으로
-hopeCase('H6 request validation',function()
- book.Levels={raise_skeleton=3,skel_greatsword=2,skel_twin=2}
- book.FormHope=''
- setList({})
- local auto=book:AutoHope('skeleton')
- local sum=0
- for _,n in pairs(auto) do sum=sum+n end
- assert(sum<=3,'seed within cap')
- book:RequestFormMode('skeleton',true)
- local h=UndeadSystem:ParseHope(book.FormHope).skeleton
- assert(h.direct and h.want.greatsword==auto.greatsword and h.want.twin==auto.twin,'seeded '..book.FormHope)
- book:RequestFormMode('skeleton',false)
- local back=UndeadSystem:ParseHope(book.FormHope).skeleton
- assert(back.direct==false and back.want.greatsword==auto.greatsword,'auto keeps wishes')
- book.FormHope='s:d:greatsword=2,twin=0'
- notices={}
- book:RequestFormHope('skeleton','greatsword',1)
- assert(book.FormHope=='s:d:greatsword=2,twin=0' and #notices==1 and string.find(notices[1],'배운 강화 랭크(2)',1,true),'rank cap')
- book:RequestFormHope('skeleton','twin',1)
- assert(book.FormHope=='s:d:greatsword=2,twin=1','twin +1 '..book.FormHope)
- notices={}
- book:RequestFormHope('skeleton','twin',1)
- assert(book.FormHope=='s:d:greatsword=2,twin=1' and string.find(notices[1] or '','정원 3기가 찼습니다',1,true),'sum cap')
- book:RequestFormHope('skeleton','greatsword',-1)
- assert(book.FormHope=='s:d:greatsword=1,twin=1','minus')
- book:RequestFormHope('skeleton','twin',-1)
- book:RequestFormHope('skeleton','twin',-1)
- assert(book.FormHope=='s:d:greatsword=1,twin=0','minus at 0')
- book:RequestFormHope('skeleton','aura',1)
- book:RequestFormHope('skeleton','shield',1)   -- 48-1: 방패는 희망 칸이 아니다
- book:RequestFormHope('revive','twin',1)
- book:RequestFormHope('skeleton','twin',2)
- assert(book.FormHope=='s:d:greatsword=1,twin=0','invalid ignored')
+-- F5 골편 반복 요청은 그대로 · 남의 요청 거절
+formCase('F5 shard hold request',function()
+ book.ShardHold=false
  senderUserId='intruder'
- book:RequestFormHope('skeleton','twin',1)
- book:RequestFormMode('skeleton',false)
  book:RequestShardHold(true)
+ assert(book.ShardHold==false,'foreign sender')
  senderUserId='u1'
- assert(book.FormHope=='s:d:greatsword=1,twin=0' and book.ShardHold==false,'foreign sender')
- book.Levels={raise_skeleton=3,skel_greatsword=1}
- book.FormHope='s:d:greatsword=3,twin=0'
- assert(UndeadSystem:RosterPreview(player,'skeleton').cut.greatsword==2)
- book:RequestFormHope('skeleton','greatsword',-1)
- assert(book.FormHope=='s:d:greatsword=0,twin=0',book.FormHope)
- local owned=UndeadSystem.Owned.u1 or {}
- assert(#owned==0,'requests touched units')
+ book:RequestShardHold(true)
+ assert(book.ShardHold==true,'owner toggle')
+ book:RequestShardHold(false)
+ assert(book.ShardHold==false,'owner toggle off')
 end)
--- H7 거인 유지 + 직접 편성: 몸 보호·예약 4 · 미리보기 = 실제
+-- F6 거인 유지 중: 몸 보호·예약 4 · 미리보기 = 실제
 book.Levels={raise_skeleton=12,skel_greatsword=3,skel_twin=1}
 do
  local gh=rec('skeleton','shield',{giant=true})
  setList({gh,rec('skeleton',''),rec('skeleton','twin')})
  UndeadSystem.Giants={u1={{host=gh,mates={rec('skeleton',''),rec('skeleton',''),rec('skeleton',''),rec('skeleton','')},epoch=1}}}
- book.FormHope='s:d:greatsword=1,twin=1'
- for i=1,6 do check('H7 giant direct #'..i,'skeleton',{reserved=4}) end
+ for i=1,6 do check('F6 giant held #'..i,'skeleton',{reserved=4}) end
  assert(UndeadSystem:ListOf(player)[1]==gh,'giant host trimmed')
  UndeadSystem.Giants={}
 end
--- H8 생성 대기 중 계획이 바뀌면 (B-DRAFT-01) 확정 전에 거절: 혼·마나 소비 0 · 옛 개체 그대로 · 이후 미리보기는 새 계획 / 대조군: 그대로면 계획대로 확정
-hopeCase('H8 async plan revalidation',function()
+-- F7 생성 대기 중 계획이 바뀌면 (B-DRAFT-01) 확정 전에 거절: 혼·마나 소비 0 · 옛 개체 그대로 / 대조군: 그대로면 계획대로 확정
+formCase('F7 async plan revalidation',function()
  local realSpawn=UndeadSystem.SpawnUnit
  local pending=nil
  UndeadSystem.SpawnUnit=function(_,_,r,_,onReady) r.entity=nil pending=onReady return true end
  book.Levels={raise_skeleton=3,skel_greatsword=1}
- book.FormHope='s:d:greatsword=1'
- -- 대조군: 목록 그대로 → 대검 A 교체 · 새 대검
  local A,B,C=rec('skeleton','greatsword'),rec('skeleton',''),rec('skeleton','')
  setList({A,B,C})
  local consumed=0
@@ -524,8 +451,8 @@ hopeCase('H8 async plan revalidation',function()
  assert(UndeadSystem:Raise(player,'skeleton',3,Vector2(0,0),function(s) done=s end))
  pending()
  local list=UndeadSystem:ListOf(player)
- assert(done==true and consumed==1 and #list==3 and list[1]==B and list[3].form=='greatsword','control commit')
- -- B-DRAFT-01: 같은 준비에서 생성 대기 중 C가 죽는다 → 거절
+ assert(done==true and consumed==1 and #list==3 and list[1]==B and list[3].form=='','control commit')   -- 자동: 무너질 대검 A도 센 채 고른다 → 일반형 · A 교체
+ -- 같은 준비에서 생성 대기 중 C가 죽는다 → 거절
  A,B,C=rec('skeleton','greatsword'),rec('skeleton',''),rec('skeleton','')
  setList({A,B,C})
  consumed=0
@@ -538,48 +465,23 @@ hopeCase('H8 async plan revalidation',function()
  list=UndeadSystem:ListOf(player)
  assert(done==false and consumed==0 and orb.Reserved==false,'stale plan consumed soul')
  assert(#list==2 and list[1]==A and list[2]==B and A.form=='greatsword','old units changed')
- assert(UndeadSystem:RosterPreview(player,'skeleton').nextForm=='','preview after reject')
- -- 희망 편성이 바뀐 경우도 같은 거절 (형태가 달라짐)
+ -- 노드 랭크가 바뀐 경우(초기화 등)도 같은 거절 (형태가 달라짐)
+ book.Levels={raise_skeleton=3,skel_greatsword=1}
  setList({rec('skeleton',''),rec('skeleton','')})
  consumed=0
  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() consumed=consumed+1 end}
  assert(UndeadSystem:Raise(player,'skeleton',3,Vector2(0,0),nil))
- book.FormHope='s:d:greatsword=0'
+ book.Levels={raise_skeleton=3}
  pending()
- assert(consumed==0 and #UndeadSystem:ListOf(player)==2,'hope change during spawn')
+ assert(consumed==0 and #UndeadSystem:ListOf(player)==2,'rank change during spawn')
  -- canCommit false (마나 부족 등) → 소비 0
- book.FormHope='s:d:greatsword=1'
+ book.Levels={raise_skeleton=3,skel_greatsword=1}
  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() consumed=consumed+1 end}
  assert(UndeadSystem:Raise(player,'skeleton',3,Vector2(0,0),nil,function() return false end))
  pending()
  assert(consumed==0 and #UndeadSystem:ListOf(player)==2 and orb.Reserved==false,'canCommit false consumed')
  UndeadSystem.SpawnUnit=realSpawn
 end)
--- H9 희망 0 = 명시한 일반형 · 「0기」 경고 대신 직접 편성 안내
-hopeCase('H9 explicit zero',function()
- book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=3}
- book.FormHope='s:d:greatsword=0,twin=0'
- setList({})
- for _=1,8 do
-  local r=raiseOnce('skeleton')
-  assert(r.form=='','zero hope raised '..tostring(r.form))
- end
- local hint=book:UseHint('skel_greatsword')
- assert(string.find(hint,'직접 편성 희망 0기',1,true) and not string.find(hint,'정원',1,true),hint)
- assert(#UndeadSystem:RosterPreview(player,'skeleton').idle==0,'zero hope is not idle warning')
- assert(string.sub(book:RosterLine('raise_skeleton'),1,13)=='직접 편성',book:RosterLine('raise_skeleton'))
-end)
--- H10 전사·마법사 따로: 전사 직접이어도 마법사는 자동 규칙 그대로
-hopeCase('H10 kinds independent',function()
- book.Levels={raise_skeleton=3,skel_greatsword=2,raise_mage=2,mage_aura=1,mage_hex=1,mage_twin=1}
- book.FormHope='s:d:greatsword=0'
- setList({rec('mage','aura'),rec('mage','hex')})
- local p=UndeadSystem:RosterPreview(player,'mage')
- local f=legacyPlan('mage',p.max,p.quota,UndeadSystem:ListOf(player),0)
- assert(not p.direct and p.nextForm==f and f=='','mage auto '..p.nextForm)
- assert(UndeadSystem:RosterPreview(player,'skeleton').direct)
-end)
-book.FormHope=''
 -- ───────── 46-1 거인 고르기 (기획서 46 §2-7 · §10-1) ─────────
 do
  local G=0
@@ -707,7 +609,7 @@ end
 do
  local N=0
  local function case(name,fn) N=N+1 total=total+1 fn() passed=passed+1 end
- book.FormHope='';book.RiteBanner='';UndeadSystem.Giants={};UndeadSystem.GiantCharges={};UndeadSystem.TwinHunts={};bonus=0;castMul=1
+ book.RiteBanner='';UndeadSystem.Giants={};UndeadSystem.GiantCharges={};UndeadSystem.TwinHunts={};bonus=0;castMul=1
  _UtilLogic.ElapsedSeconds=0
  local function liveRec(kind,form)
   local r=rec(kind,form)
@@ -750,17 +652,6 @@ do
   for _=1,30 do raiseOnce('skeleton') end
   local c=tally('skeleton')
   assert(#UndeadSystem:ListOf(player)==10 and c.greatsword==3 and c.twin==3 and c.shield==4 and (c[''] or 0)==0,'tally gs='..tostring(c.greatsword)..' tw='..tostring(c.twin)..' sh='..tostring(c.shield))
- end)
- case('48-1 old shield hope auto-converts to base',function()
-  book.Levels={raise_skeleton=8,skel_greatsword=1}
-  book.FormHope='s:d:shield=2,greatsword=1'
-  setList({})
-  local h=UndeadSystem:HopeOf(player,'skeleton')
-  assert(h.direct and h.want.shield==nil and h.want.greatsword==1,'shield hope dropped')
-  for _=1,4 do raiseOnce('skeleton') end
-  local c=tally('skeleton')
-  assert(c.greatsword==1 and c.shield==3,'direct + base shield gs='..tostring(c.greatsword)..' sh='..tostring(c.shield))
-  book.FormHope=''
  end)
  case('48-4 skeleton-only cap 10 → two giants (charges burst) → raise blocked · status 10/10',function()
   book.Levels={raise_skeleton=20,skel_legion=2}
@@ -974,7 +865,7 @@ do
   assert(UndeadSystem.TwinHunts.u1[t1.id]==nil,'unit gone')
   UndeadSystem.TwinHunts={}
  end)
- print('[quality/roster] 48 A: rank 7 to 8 evolve (effect level, snapshot, guard 20/25/30), cap10 = gs3 tw3 shield4, old shield hope to base, two giants burst + blocked raise + status 10/10 + split one, C2 serial charges + cast speed, max8 no second, Q3 mixed 8+8 + per-kind quota + cap warn + RiteBestStage cap swap, mage mates quota/status, twin hunt decide + server state ('..N..' cases)')
+ print('[quality/roster] 48 A: rank 7 to 8 evolve (effect level, snapshot, guard 20/25/30), cap10 = gs3 tw3 shield4, two giants burst + blocked raise + status 10/10 + split one, C2 serial charges + cast speed, max8 no second, Q3 mixed 8+8 + per-kind quota + cap warn + RiteBestStage cap swap, mage mates quota/status, twin hunt decide + server state ('..N..' cases)')
 end
-print(string.format('[quality/roster] I03 step2 hope: parse/encode, auto=pinned rule x3000, direct 30-raise sequence + convergence + steady, power=node rank, gear cap clip keeps wishes, save round trip/old save, request validation, giant+direct, async plan revalidation (B-DRAFT-01), explicit zero, kinds independent'))
+print(string.format('[quality/roster] 11-02 form auto only (52 §3-2 C): manual API removed, place = node rank x3000 + pinned rule, 30-raise sequence (count <= rank · steady = rank), power = node rank, old save hope dropped, shard hold request, giant held, async plan revalidation (B-DRAFT-01 + rank change)'))
 print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))

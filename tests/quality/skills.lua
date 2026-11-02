@@ -1,7 +1,7 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
 -- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+
--- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,ParseHope+,EncodeHope+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
+-- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
 -- @source UIKitReal UI/Core/UIKit.mlua PlainText,TextWidth
@@ -490,7 +490,7 @@ for mask=0,7 do
  for _,id in ipairs({'new','rank','node'}) do if bits[id] then table.insert(expected,id) end end
  assert(table.concat(offer,',')==table.concat(expected,','),'candidate category lost at mask '..mask)
 end
--- I03 단계 2 · I04 편성 조작 칸 (SkillWindow.RenderForm, 10-30 갈래 B): 해골 전사·마법사 트리에서만 · 직접/자동 머리 글 · ± 는 변이 노드만 · 골편 홀드 설정은 모바일만
+-- I04 골편 반복 칸 (SkillWindow.RenderForm) · 11-02 사용자 결정(기획 52 §3-2 안 C): 해골 전사·마법사 트리에는 「직접 정하기」·−/+ 없음 (편성 = 노드 랭크) · 골편 홀드 설정은 모바일만
 do
  local en={}
  local keepEn=_UIKit.SetEnabled
@@ -499,25 +499,26 @@ do
  Environment.IsMobilePlatform=function() return false end
  book.Levels={raise_skeleton=6,skel_greatsword=3,skel_twin=2,bone_shard=1,bone_armor=1}   -- 48-0: 방패 변이 노드 → 대검
  stats.Level=99
- book.FormHope='s:d:greatsword=1,twin=0'
+ for _,mobile in ipairs({false,true}) do
+  Environment.IsMobilePlatform=function() return mobile end
+  for _,sel in ipairs({{'raise_skeleton','skel_greatsword'},{'raise_skeleton','raise_skeleton'},{'raise_skeleton','skel_twin'},{'raise_mage','raise_mage'}}) do
+   SkillWindow.SelMain=sel[1]
+   SkillWindow.Selected=sel[2]
+   en={}
+   values={}
+   SkillWindow:RenderWorkshop(book,stats)
+   assert(en['SkillWin/WS/Form']==false and SkillWindow.FormKind=='','form row shown on '..sel[2]..' mobile='..tostring(mobile))
+   assert(en['SkillWin/WS/Form/Minus']==nil and en['SkillWin/WS/Form/Plus']==nil and values['SkillWin/WS/Form/Mode']==nil and values['SkillWin/WS/Form/Head']==nil,'manual form controls touched '..sel[2])
+  end
+ end
+ Environment.IsMobilePlatform=function() return false end
  SkillWindow.SelMain='raise_skeleton'
  SkillWindow.Selected='skel_greatsword'
  values={}
  SkillWindow:RenderWorkshop(book,stats)
- local head=values['SkillWin/WS/Form/Head']
- assert(en['SkillWin/WS/Form']==true and head=='대검 희망 1/3' and values['SkillWin/WS/Form/Mode']=='자동으로 되돌리기' and en['SkillWin/WS/Form/Plus']==true and en['SkillWin/WS/Form/Minus']==true,'form node '..tostring(head))
- assert(SkillWindow.FormKind=='skeleton' and SkillWindow.FormForm=='greatsword')
- -- S48-UI-DETAIL-PIPS-01: 편성 줄은 효과 칸이 아니라 WS/Roster (랭크 점 줄과 떨어진 칸)
- assert(string.find(values['SkillWin/WS/Roster'],'직접 편성',1,true) and not string.find(values['SkillWin/WS/Stat'],'편성',1,true),values['SkillWin/WS/Roster'])
- SkillWindow.Selected='raise_skeleton'
- values={}
- SkillWindow:RenderWorkshop(book,stats)
- assert(values['SkillWin/WS/Form/Head']=='편성: 직접' and en['SkillWin/WS/Form/Plus']==false and SkillWindow.FormForm=='','main node')
- book.FormHope=''
- SkillWindow.Selected='skel_twin'
- values={}
- SkillWindow:RenderWorkshop(book,stats)
- assert(string.find(values['SkillWin/WS/Form/Head'],'쌍칼 자동 ',1,true) and values['SkillWin/WS/Form/Mode']=='직접 정하기','auto '..tostring(values['SkillWin/WS/Form/Head']))
+ -- S48-UI-DETAIL-PIPS-01: 편성 줄은 효과 칸이 아니라 WS/Roster (랭크 점 줄과 떨어진 칸) · 머리말은 「편성」 하나
+ local roster=values['SkillWin/WS/Roster'] or ''
+ assert(string.find(roster,'편성',1,true) and not string.find(roster,'직접',1,true) and not string.find(roster,'희망',1,true) and not string.find(values['SkillWin/WS/Stat'],'편성',1,true),roster)
  SkillWindow.SelMain='bone_shard'
  SkillWindow.Selected='bone_shard'
  values={}
@@ -526,10 +527,10 @@ do
  Environment.IsMobilePlatform=function() return true end
  book.ShardHold=false
  SkillWindow:RenderWorkshop(book,stats)
- assert(en['SkillWin/WS/Form']==true and values['SkillWin/WS/Form/Head']=='누르고 있으면 반복: 끔' and values['SkillWin/WS/Form/Mode']=='켜기' and en['SkillWin/WS/Form/Minus']==false,'mobile shard toggle')
+ assert(en['SkillWin/WS/Form']==true and SkillWindow.FormKind=='shard' and values['SkillWin/WS/Form/Head']=='누르고 있으면 반복: 끔' and values['SkillWin/WS/Form/Mode']=='켜기','mobile shard toggle')
  book.ShardHold=true
  SkillWindow:RenderWorkshop(book,stats)
- assert(values['SkillWin/WS/Form/Mode']=='끄기')
+ assert(values['SkillWin/WS/Form/Mode']=='끄기' and values['SkillWin/WS/Form/Head']=='누르고 있으면 반복: 켬')
  SkillWindow.SelMain='bone_armor'
  SkillWindow.Selected='bone_armor'
  SkillWindow:RenderWorkshop(book,stats)
@@ -537,7 +538,7 @@ do
  book.ShardHold=false
  _UIKit.SetEnabled=keepEn
  Environment.IsMobilePlatform=keepMobile
- print('[quality/skills] I03 step2/I04 form control: direct node head 대검 희망 1/3, main 편성: 직접, auto head, shard toggle mobile-only, other trees hidden')
+ print('[quality/skills] I04 form row (11-02 auto only): skeleton·mage trees hide row PC/mobile · no −/+ · roster head 편성 · shard toggle mobile-only · other trees hidden')
 end
 -- 46-5 거인 강화: 악몽 잠김 · 택일(둘 중 하나 · 다시 고르기 불가) · 보류(방패 갈림 쌍) · 열림 레벨(10→42 · 14→50 · 17→56 · 20→62) · 공방 두 묶음
 do
@@ -641,7 +642,7 @@ do
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fakeNodes,fakeMains,fakeGet
  print('[quality/skills] 46-6 HUD text: ring sub line (tie · banner), workshop 「지금 무리라면」 (client plan), banner row order + normal head')
 end
--- 48 소환물 정리 (갈래 C · 48-0 / 48-3 / UI): 노드 21개 · 환급 한 번만 · 조용히 · 희망 편성 칸 호환 · 상세 글귀(현재/다음 · 메테오 상한) · 거인 수 어댑터
+-- 48 소환물 정리 (갈래 C · 48-0 / 48-3 / UI): 노드 21개 · 환급 한 번만 · 조용히 · 옛 희망 편성 칸 버림(11-02) · 상세 글귀(현재/다음 · 메테오 상한) · 거인 수 어댑터
 do
  local fNodes,fMains,fGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=oldNodes,oldMains,oldGet
@@ -690,13 +691,9 @@ do
  -- 현행 저장(지운 노드 없음 · sv 4): 0
  stats.SkillPoints=3;load({sv=4,levelCount=3,levels={raise_skeleton=9,skel_greatsword=2,skel_twin=1}})
  assert(stats.SkillPoints==3 and book.Levels.skel_greatsword==2,'current save untouched')
- -- 갈래 B 희망 편성(skills.hope): 옛 shield 희망은 FormOrder에 없으면 버리고(갈래 A 규칙) 대검 · 쌍칼 희망은 그대로
+ -- 11-02 편성 자동 하나 (기획 52 §3-2 안 C): 옛 희망 편성 칸(skills.hope)은 읽고 버린다 — 다음 저장에 칸 없음 · 랭크·포인트 그대로
  load({sv=4,levelCount=1,levels={raise_skeleton=5},hope='s:d:shield=2,greatsword=1,twin=0/m:d:aura=1'})
- local hasShield=false
- for _,f in ipairs(_UndeadSystem:FormOrder('skeleton')) do if f=='shield' then hasShield=true end end
- assert(string.find(book.FormHope,'s:d:',1,true) and string.find(book.FormHope,'greatsword=1',1,true) and string.find(book.FormHope,'twin=0',1,true),'hope '..book.FormHope)
- assert(hasShield or not string.find(book.FormHope,'shield',1,true),'hope shield '..book.FormHope)
- assert(book:GetSaveData().hope==book.FormHope and book:GetSaveData().sv==6,'hope saved')
+ assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==6,'old hope kept')
  assert(notices==0,'48-3 notices '..notices)
  local refundLogs=0
  for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
@@ -764,9 +761,8 @@ do
   local keepGet3=entity.GetComponent
   local cmdR={UndeadRoster='s:greatsword,s:twin,s:|0'}
   entity.GetComponent=function(self,key) if key=='script.ShadowCommander' then return cmdR end return keepGet3(self,key) end
-  local keepHope=book.FormHope
-  for _,c in ipairs({{'raise_skeleton',{raise_skeleton=3,skel_greatsword=1,skel_twin=1},'s:d:greatsword=3,twin=3'},{'raise_mage',{raise_mage=10},''},{'skel_twin',{raise_skeleton=7,skel_legion=2,skel_greatsword=3,skel_twin=3},'s:d:greatsword=3,twin=3'}}) do
-   book.Levels=c[2];book.FormHope=c[3];values={}
+  for _,c in ipairs({{'raise_skeleton',{raise_skeleton=3,skel_greatsword=1,skel_twin=1}},{'raise_mage',{raise_mage=10}},{'skel_twin',{raise_skeleton=7,skel_legion=2,skel_greatsword=3,skel_twin=3}}}) do
+   book.Levels=c[2];values={}
    SkillWindow.SelMain=(c[1]=='raise_mage') and 'raise_mage' or 'raise_skeleton';SkillWindow.Selected=c[1]
    SkillWindow:RenderWorkshop(book,stats)
    local full=book:RosterLine(c[1])
@@ -779,12 +775,12 @@ do
    assert(n*13*1.48<=112,'roster box overflow '..c[1]..' '..n)
    rosterLog=(rosterLog or '')..c[1]..' '..n..'줄 · '
   end
-  book.FormHope=keepHope;entity.GetComponent=keepGet3
+  entity.GetComponent=keepGet3
   print('[quality/skills] S48-UI-DETAIL-PIPS-01 roster line in WS/Roster only (text intact · fits 332×112 at 13px): '..rosterLog)
  end
  stats.Level,stats.SkillPoints,stats.MaxDifficulty=keepLv,keepPts,keepDiff
  _SkillData.NodesOf,_SkillData.Mains,_SkillData.Get=fNodes,fMains,fGet
- print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · hope compat (shield '..(hasShield and 'kept pre-A' or 'dropped')..') · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
+ print('[quality/skills] 48 C: nodes 6/3/12=21 · refund old sv4 +11 once (save→reload 0 · re-migrate 0 · same old save 11) · sv5 0 · sv4 resist 1 · sv3 6 · current 0 · notices 0 · refund logs '..refundLogs..' · old hope dropped · skeleton rank 8 shield copy · mage tiers 1/6/11/16 + curse 8→19.4% · giant count API server/client')
 end
 -- 11-02 거인 분리 (사용자 결정 B · 기획서 52 §2-2 안 ①): 본 골렘 시전 길 · 랭크 배율 · 본 노바 3기 상한 · 옛 저장 이전(거인 노드 있으면 본 골렘 1랭크 · 칸 그대로 · 한 번만)
 do
@@ -848,7 +844,7 @@ do
  assert(castOk and rite[1] and rite[1].stage==3,'want 5 → stage 3 ok='..tostring(castOk)..' n='..#rite..' warn='..tostring(warns[#warns])..' vrf='..tostring(vrf[#vrf]))
  local capLog=false for _,m in ipairs(vrf) do if string.find(m,'[VRF] rite stage=3 skel=8 want=3 max=3',1,true) then capLog=true end end
  assert(capLog,'[VRF] rite max=3 log')
- _UndeadSystem=keepUS   -- 저장 이전은 실제 UndeadSystem(희망 편성 읽기 · 깃발)
+ _UndeadSystem=keepUS   -- 저장 이전은 실제 UndeadSystem(깃발)
  -- 옛 저장 이전 (MigrateGiantSplit · sv 5 → 6): 거인 노드가 있으면 본 골렘 1랭크 · 노드 랭크·칸 그대로 · 포인트 그대로 · 한 번만
  local function load(d) book.Levels={};book.Slots=',,,';book.RightSkill='';book:LoadSaveData(d) end
  vrf={};stats.SkillPoints=0

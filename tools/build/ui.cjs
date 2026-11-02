@@ -517,21 +517,23 @@ function buildGameHud() {
     b.patchComponent(`${n}/Icon`, "MOD.Core.SpriteGUIRendererComponent", { RaycastTarget: false });
     b.text(`${n}/Label`, "", { size: 14, color: C.white, anchor: "bottom-center", pos: [0, 0], rect_size: [100, 34], alignment: 4, bestfit: true, min_size: 11, max_size: 14, ...outline });
   }
-  // 강화 단추 줄 (11-01 사용자 결정 「왼쪽 아래 단추는 스킬 랭크 전용 · 노드 강화 +1은 오른쪽 스킬 강화 판의 직접 정하기 옆으로 · 두 단추 한 줄」):
-  //   오른쪽 강화 판 맨 아래 줄(판 안쪽 아래 −416 위로 단추 높이 88) = [직접 정하기(편성 트리만 · WS/Form/Mode)][강화 +1(WS/BtnUpgrade · 모든 트리)].
+  // 강화 단추 줄 (11-01 사용자 결정 「왼쪽 아래 단추는 스킬 랭크 전용 · 노드 강화 +1은 오른쪽 스킬 강화 판 아래 · 두 단추 한 줄」):
+  //   오른쪽 강화 판 맨 아래 줄(판 안쪽 아래 −416 위로 단추 높이 88) = [골편 반복 켜기/끄기(모바일 골편 트리만 · WS/Form/Mode)][강화 +1(WS/BtnUpgrade · 모든 트리)].
+  //   11-02 사용자 결정(기획 52 §3-2 안 C): 해골 전사 「직접 정하기」·−/+ 삭제 — 편성은 자동 하나(변이 수 = 노드 랭크). 강화 +1은 오른쪽 끝 그대로
   //   강화 노드는 어느 트리든 둘째 줄(바닥 −298)까지라(뼈 의식은 펼친 거인 하나만 · VisibleNodes) 이 줄은 늘 빈다. 오른쪽 끝 = 판 안쪽(1298 − SKPANEL).
   //   강화 +1 폭 142: 글 「강화 +1」(20px ≈ 64)이 양 끝 장식(artEdge 38 + SPACE/2) 안에 들고, 왼쪽에 깃발 칸 6개(88 · 사이 4 = 548)가 SPACE 띄워 들어가는 폭.
-  //   직접 정하기 폭 204 = 예전 그대로(「자동으로 되돌리기」가 크기 맞춤으로 든다)
+  //   골편 반복 단추 폭 204 = 예전 편성 단추 자리 그대로
   const ACT = (() => {
     const T = require("./ui-tokens.cjs");
     const right = 1298 - SP, bottom = -(452 - SP), upW = 142, formBtnW = 204;
     const upX = right - upW;
     return { right, bottom, top: bottom + T.BUTTON.h, h: T.BUTTON.h, upW, upX, formBtnW, formBtnX: upX - T.SPACE - formBtnW };
   })();
-  // 편성 조작 칸 (I03 단계 2 희망 편성 · I04 모바일 골편 홀드 반복 설정 — 10-30 코덱스 계약 「새 창 금지 · 기존 편성 줄에 최소 조작」). 컨트롤러 SkillWindow.RenderForm
-  //   자리: 해골 전사(필요 랭크 1·3·5·6·9)·해골 마법사(1·3·4·10·14)·골편(1·3·5) 트리는 노드가 5열 첫 줄까지라 5열 둘째 줄 위 ~ 판 안쪽 오른쪽이 빈다.
-  //   칸(WS/Form) = 머리 글 + −/+ 한 줄: 왼쪽 = 5열 노드 왼쪽 끝 · 오른쪽 = 판 안쪽 · 위 = 첫 줄 노드 바닥(RenderNodes 줄 96+102씩) · 아래 = 강화 단추 줄 위 − SPACE/2.
-  //   직접 정하기(Mode)는 칸의 자식이지만 강화 단추 줄에 — 「강화 +1」 왼쪽 (11-01 · 칸이 꺼지면 같이 꺼진다). 단추는 터치 88(BUTTON.h) · 가로 사이 SPACE
+  // 골편 반복 칸 (I04 모바일 골편 홀드 반복 설정 — 10-30 코덱스 계약 「새 창 금지」). 컨트롤러 SkillWindow.RenderForm (모바일 골편 공방에서만 켠다)
+  //   자리: 골편(필요 랭크 1·3·5) 트리는 노드가 5열 첫 줄까지라 5열 둘째 줄 위 ~ 판 안쪽 오른쪽이 빈다.
+  //   칸(WS/Form) = 머리 글: 왼쪽 = 5열 노드 왼쪽 끝 · 오른쪽 = 판 안쪽 · 위 = 첫 줄 노드 바닥(RenderNodes 줄 96+102씩) · 아래 = 강화 단추 줄 위 − SPACE/2.
+  //   켜기/끄기 단추(Mode)는 칸의 자식이지만 강화 단추 줄에 — 「강화 +1」 왼쪽 (11-01 · 칸이 꺼지면 같이 꺼진다). 단추는 터치 88(BUTTON.h) · 가로 사이 SPACE
+  //   11-02: 해골 전사 편성 −/+(Minus·Plus) 삭제 — 머리 글 높이는 예전 그대로(−/+ 줄 자리는 비워 둔다)
   {
     const T = require("./ui-tokens.cjs");
     const nodeW = 100, colX = (i) => 680 + (i - 1) * 104;
@@ -540,19 +542,16 @@ function buildGameHud() {
     const gap = T.SPACE / 2;                          // 머리 글 ↔ −/+ ↔ 강화 단추 줄 (세로 칸이 좁아 SPACE의 반)
     const bottom = ACT.top + gap;                     // 강화 단추 줄 위
     const w = right - left, h = top - bottom;
-    const btnW = (w - T.SPACE) / 2;
     const headH = h - T.BUTTON.h - gap;               // 남는 높이를 머리 글 한 줄에
     const f = `${ws}/Form`;
     b.empty(f, { anchor: "top-left", pivot: [0, 1], pos: [left, top], rect_size: [w, h] });
     b.text(`${f}/Head`, "", { size: 16, color: "#E6C88A", anchor: "top-left", pivot: [0, 1], pos: [0, 0], rect_size: [w, headH], alignment: 4, bestfit: true, min_size: 12, max_size: 16, ...outline });
-    k.btn(`${f}/Mode`, "직접 정하기", { anchor: "top-left", pivot: [0, 1], pos: [ACT.formBtnX - left, ACT.top - top], rect_size: [ACT.formBtnW, ACT.h], font_size: 20 });
-    k.btn(`${f}/Minus`, "−", { anchor: "top-left", pivot: [0, 1], pos: [0, -(headH + gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
-    k.btn(`${f}/Plus`, "+", { anchor: "top-left", pivot: [0, 1], pos: [btnW + T.SPACE, -(headH + gap)], rect_size: [btnW, T.BUTTON.h], font_size: 30 });
+    k.btn(`${f}/Mode`, "켜기", { anchor: "top-left", pivot: [0, 1], pos: [ACT.formBtnX - left, ACT.top - top], rect_size: [ACT.formBtnW, ACT.h], font_size: 20 });
     b.patch(f, { enable: false });
   }
   // S48-UI-DETAIL-PIPS-01 (10-30) 편성 줄 WS/Roster (컨트롤러 SkillWindow.RosterText): 효과 칸(WS/Stat)에 붙어 있으면 6~7줄이 크기 맞춤 하한 13에서도 칸을 넘쳐
   //   랭크 점 줄(-280)을 덮었다 → 강화 트리 아래 빈 줄로 옮긴다. 편성 줄은 해골 전사·해골 마법사 트리에서만 나오고 그 트리 노드는 둘째 줄(바닥 -298)까지라 판 아래가 빈다.
-  //   자리 = 뼈 의식 깃발 줄(WS/Banner)과 같은 x 560 · y -304 (깃발은 뼈 의식 트리에서만 · 둘이 한 화면에 같이 나오지 않는다), 오른쪽 끝 = 강화 단추 줄 「직접 정하기」 왼쪽 − SPACE (11-01), 아래 = 판 안쪽
+  //   자리 = 뼈 의식 깃발 줄(WS/Banner)과 같은 x 560 · y -304 (깃발은 뼈 의식 트리에서만 · 둘이 한 화면에 같이 나오지 않는다), 오른쪽 끝 = 강화 단추 줄 골편 반복 단추 자리 왼쪽 − SPACE (11-01), 아래 = 판 안쪽
   {
     const T = require("./ui-tokens.cjs");
     const left = 560, top = -304;

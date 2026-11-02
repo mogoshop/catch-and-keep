@@ -154,8 +154,8 @@
 | UI/Windows/GuideWindow.mlua | 461 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
 | UI/Windows/JournalWindow.mlua | 123 | UpdateBadge | HudMain.SetJournalTrack |  | C |
 | Undead/UndeadSystem.mlua | 812 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
-| Undead/UndeadSystem.mlua | 1653 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
-| Undead/UndeadSystem.mlua | 1659 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 1578 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 1584 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
 | World/AltarRitual.mlua | 68 | OnReached | Util.Notify | 피의 제단이 잠잠합니다 — %d:%02d 뒤 다시 의식을 시작할 수 있습니다 | B |
 | World/AltarRitual.mlua | 223 | Bless | Util.Notify | 피의 신전 · 주는 피해 +25% (60초) | B |
 | World/AltarRitual.mlua | 229 | Tell | Util.Notify | text, p.PlayerComponent.UserId) end | B |
@@ -190,7 +190,7 @@
 | Shadow/ShadowOwner.mlua | Util.Warn | 6 | 머리 위 경고 (창이 떠 있으면 B) |
 | Shadow/SoulExtractor.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillBook.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
-| Skill/SkillBook.mlua | Util.Warn | 15 | 머리 위 경고 (창이 떠 있으면 B) |
+| Skill/SkillBook.mlua | Util.Warn | 13 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillEffects.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Social/PartyRescue.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Social/PlayerDuel.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
