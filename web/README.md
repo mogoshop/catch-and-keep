@@ -29,6 +29,9 @@ npm run preview
 ```
 
 atlas 폴더는 `catalog.json`, `media-manifest.json`, `media/`를 포함합니다.
+바꿀 묶음만 주면 됩니다. 예: 스킬 자료만 새로 `npm run import -- --atlas <새 atlas>` (맵·정책은 그대로).
+atlas 묶음은 자기 폴더의 스크립트로 다시 만듭니다(README.txt 순서 · `refresh-runtime-audit.py` → … → `build-changes.py` → `verify-atlas.py`).
+`catalog.changes`(직전 묶음 대비 이름 바뀜·아이콘 교체·신규·삭제)가 있으면 대조표에 「변경됨」 배지로 보이고, 옛 아이콘도 매니페스트 해시로 검사해 함께 배포합니다.
 maps 폴더는 `maps.json`, `media/`를, policies 폴더는 `policies.json`을 포함합니다.
 가져오기는 복사만 하며 원본 게임 데이터와 이미지를 수정하지 않습니다.
 절대 로컬 경로를 제거하고 에셋 SHA, 파일 경로, 필수 카탈로그를 빌드에서 검사합니다.
@@ -132,9 +135,15 @@ GitHub는 소스 이력을 관리합니다. 비공개 자료가 없는 Git 빌�
 publish는 로그인 보호 상태를 API로 확인한 뒤 Build Output API의 정적 파일만 업로드합니다.
 비공개 자료·토큰을 공개 저장소나 GitHub Actions 로그에 넣지 않습니다.
 
+## 스킬 화면 조각 (대조표 · 아이콘)
+
+`templates/atlas.html`의 「스킬 화면 조각」 블록(JS)과 CSS 「skill views」 블록은 다른 틀로 옮길 수 있게 독립 함수로 둡니다.
+`renderSkillAudit(root, catalog, {onOpenGroup, onCount})` = 트리별 카드 대조표, `renderSkillIcons(root, catalog, {...})` = 트리별 아이콘(104·60·40px).
+상태는 `SKV`(트리·검색·펼치기·변경됨만·크기) 하나만 쓰고 전역 STATE를 읽지 않습니다. 쓰는 공용 함수는 `esc` 하나입니다.
+
 ## 데이터 의미
 
-스킬 29개와 강화 노드 64개는 서로 독립된 93개 애니메이션을 의미하지 않습니다.
+스킬 29개와 강화 노드 62개(11-02 기준)는 서로 독립된 91개 애니메이션을 의미하지 않습니다.
 정지 아이콘, 공유 효과, 프레임 시퀀스, 엔진 내장 효과를 구분합니다.
 맵의 등록/기획/실제 촬영/수정 적용 여부와 정책 승인/구현 검증 상태도 구분합니다.
 배포 시각과 자료 검수 시각은 별개이며 스냅샷 기록에 각각 표시합니다.

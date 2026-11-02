@@ -23,7 +23,7 @@ export const SCENE_ACTORS = [
   {id: 'player-stand', role: 'player', pose: 'stand', label: '캐릭터(새내기 Lv40 · 단낫) · 서기',
     source: {kind: 'png', file: IN + 'char-stand.png', crop: [40, 40, 150, 170], feet: [70, 138], pxPerCell: PX11, matte: 'flood', tol: 46, tolRef: 120},
     note: '11-01 메이커 캡처 char-stand.png(피 묻은 황무지 · 오른쪽을 봄) · 발 (110,178) · 바닥 지우기 근사'},
-  {id: 'player-cast', role: 'player', pose: 'cast', label: '캐릭터 · 시전(골편 투척 자세)',
+  {id: 'player-cast', role: 'player', pose: 'cast', label: '캐릭터 · 시전(티스 자세)',
     source: {kind: 'png', file: IN + 'char-cast.png', crop: [40, 40, 150, 170], feet: [70, 138], pxPerCell: PX11, matte: 'flood', tol: 46, tolRef: 120},
     note: '11-01 메이커 캡처 char-cast.png(팔 든 장) · 발 (110,178)'},
   {id: 'monster-stand', role: 'monster', pose: 'stand', label: '굶주린 구울(액트 1 일반 몬스터) · 서기',

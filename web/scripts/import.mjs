@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {readJSON,assertSanitized,filesUnder} from './lib.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const argv=process.argv.slice(2);const opts={};for(let i=0;i<argv.length;i+=2)opts[argv[i].replace(/^--/,'')]=argv[i+1];
-if(!opts.atlas||!opts.maps||!opts.policies)throw new Error('Usage: npm run import -- --atlas <atlas folder> --maps <map package> --policies <policy package>');
+if(!opts.atlas&&!opts.maps&&!opts.policies)throw new Error('Usage: npm run import -- [--atlas <atlas folder>] [--maps <map package>] [--policies <policy package>] (give only the snapshots to replace)');
 function clean(v){
  if(Array.isArray(v))return v.map(clean);
  if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,clean(x)]));
@@ -18,13 +18,16 @@ function clean(v){
  return v;
 }
 await mkdir(path.join(root,'content'),{recursive:true});
-const atlas=clean(await readJSON(path.join(opts.atlas,'catalog.json')));assertSanitized(atlas);
-const manifest=clean(await readJSON(path.join(opts.atlas,'media-manifest.json')));assertSanitized(manifest);
-await mkdir(path.join(root,'content/assets'),{recursive:true});
-await cp(path.join(opts.atlas,'media'),path.join(root,'content/assets/media'),{recursive:true});
-await writeFile(path.join(root,'content/assets/catalog.json'),JSON.stringify(atlas));
-await writeFile(path.join(root,'content/assets/media-manifest.json'),JSON.stringify(manifest));
-for(const name of ['maps','policies']){
+if(opts.atlas){
+ const atlas=clean(await readJSON(path.join(opts.atlas,'catalog.json')));assertSanitized(atlas);
+ const manifest=clean(await readJSON(path.join(opts.atlas,'media-manifest.json')));assertSanitized(manifest);
+ await mkdir(path.join(root,'content/assets'),{recursive:true});
+ await cp(path.join(opts.atlas,'media'),path.join(root,'content/assets/media'),{recursive:true});
+ await writeFile(path.join(root,'content/assets/catalog.json'),JSON.stringify(atlas));
+ await writeFile(path.join(root,'content/assets/media-manifest.json'),JSON.stringify(manifest));
+}
+// Each snapshot is replaced only when its folder is given; the others stay as previously imported.
+for(const name of ['maps','policies'].filter(n=>opts[n])){
  const dir=path.join(root,'content',name);await mkdir(dir,{recursive:true});
  const data=clean(await readJSON(path.join(opts[name],name+'.json')));assertSanitized(data,name);
  await writeFile(path.join(dir,name+'.json'),JSON.stringify(data));
