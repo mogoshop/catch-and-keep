@@ -86,6 +86,24 @@ script SelfTest extends Logic
         local planQ = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, {}, 0)
         self:Check("roster place = rank", place.greatsword == 2 and place.twin == 1 and planQ.place.greatsword == 2 and planQ.place.twin == 1 and planQ.form == "greatsword" and planQ.direct == nil,
             "대검 " .. tostring(place.greatsword) .. " · 쌍칼 " .. tostring(place.twin) .. " · 다음 " .. tostring(planQ.form))
+        -- 11-02 「찍은 만큼 나오게」: 정원 4 · 대검 2 · 쌍칼 1 — 30번 일으키는 동안 정원이 찬 뒤(교체 순간 포함) 매번 정확히 대검 2 · 쌍칼 1
+        local simList = {}
+        local exactOk = true
+        local exactAt = ""
+        for i = 1, 30 do
+            local pl = _UndeadSystem:PlanNext("skeleton", 4, { greatsword = 2, twin = 1 }, simList, 0)
+            for _, v in ipairs(pl.victims) do _UndeadSystem:RemoveRec(simList, v) end
+            table.insert(simList, { kind = "skeleton", form = pl.form })
+            local gs, tw = 0, 0
+            for _, r in ipairs(simList) do
+                if r.form == "greatsword" then gs = gs + 1 elseif r.form == "twin" then tw = tw + 1 end
+            end
+            if i >= 3 and (gs ~= 2 or tw ~= 1) and exactOk then
+                exactOk = false
+                exactAt = "#" .. tostring(i) .. " 대검 " .. tostring(gs) .. " · 쌍칼 " .. tostring(tw)
+            end
+        end
+        self:Check("roster place = rank exact on replace", exactOk, "교체 순간 변이 수 ≠ 랭크 " .. exactAt)
         self:Check("rally skill", _SkillData:Get("rally") ~= nil and _SkillData:Get("rally").row == 18 and _SkillData:Get("rally").maxLv == 1, "컨보케이션은 배워야 쓰는 Lv18 스킬 (1랭크)")
         self:Check("shadow unlock", _SkillData:Get("shadow_summon").row == 5 and _SkillData:Get("raise_skeleton").row == 1, "해골 Lv1, 그림자 Lv5")
         -- 10-11 메인 스킬 + 강화 (docs/design/16): 강화는 메인 스킬에 붙고, 숙련 패시브는 강화로 흡수됐다

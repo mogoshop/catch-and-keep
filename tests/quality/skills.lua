@@ -334,9 +334,9 @@ local function checkCard(name,text,hint,maxLines)
  return ls
 end
 local scenes={
- {'쌍칼 0기 (I03-3 · 48)',{raise_skeleton=2,skel_greatsword=3,skel_twin=1},'s:greatsword,s:greatsword|0','skel_twin','정원 2기로는 0기 · 정원 +1(뼈 군단)부터 섭니다','쌍칼 해골 2기',SkillOffer.ChangeMaxLines},
+ {'쌍칼 0기 (I03-3 · 48)',{raise_skeleton=2,skel_greatsword=3,skel_twin=1},'s:greatsword,s:greatsword|0','skel_twin','정원 2기로는 0기 · 정원 +2(뼈 군단)부터 섭니다','쌍칼 해골 2기',SkillOffer.ChangeMaxLines},   -- 11-02 정확히 랭크: 대검 3이 다 선 뒤라 +2
  {'대검 세기만 (I03-5 · 48)',{raise_skeleton=2,skel_greatsword=2},'s:greatsword,s:greatsword|0','skel_greatsword','다음 랭크는 세기만 오릅니다 (정원이 차 2기 그대로)','대검 해골 3기',SkillOffer.ChangeMaxLines},
- {'자리 없어짐 (I03-4 · 48)',{raise_skeleton=2,skel_twin=1,skel_greatsword=2},'s:greatsword,s:greatsword|0','skel_greatsword','찍으면 쌍칼 해골 자리가 없어집니다 · 정원 2기','대검 해골 3기',SkillOffer.ChangeMaxLines},
+ {'자리 없어짐 (I03-4 · 48 · 11-02 대검 1→2)',{raise_skeleton=2,skel_twin=1,skel_greatsword=1},'s:greatsword,s:twin|0','skel_greatsword','찍으면 쌍칼 해골 자리가 없어집니다 · 정원 2기','대검 해골 2기',SkillOffer.ChangeMaxLines},
  {'거인 중 0기 (I03-6 · 48)',{bone_rite=1,raise_skeleton=7,skel_greatsword=2,skel_twin=1},'s:!,s:greatsword|4','skel_twin','뼈 거인이 서 있는 동안 0기 · 거인이 갈라진 뒤 섭니다','쌍칼 해골 2기'},}
 local sceneLog={}
 for _,sc in ipairs(scenes) do
@@ -474,7 +474,7 @@ assert(gp.have==6 and gp.max==5 and gp.reserved==4 and gp.counts['']==1 and gp.c
 cmdRoster.UndeadRoster='s:!|4'
 assert(book:RosterLine('skel_twin')=='편성: 거인 본체 1·거인에 4 · 정원 5기 · 다음 소환: 대검 해골',book:RosterLine('skel_twin'))
 cmdRoster.UndeadRoster='s:greatsword,s:greatsword,s:twin,s:,s:|0'   -- 거인이 갈라진 뒤: 예전 꼴 그대로
-assert(book:RosterLine('skel_twin')=='편성 5/5: 일반 2·대검 2·쌍칼 1 · 다음 소환: 해골 전사(가장 오래된 대검 해골 교체)',book:RosterLine('skel_twin'))
+assert(book:RosterLine('skel_twin')=='편성 5/5: 일반 2·대검 2·쌍칼 1 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',book:RosterLine('skel_twin'))   -- 11-02 정확히 랭크: 무너질 대검 자리를 대검으로
 entity.GetComponent=oldGet
 print('[quality/skills] INT1725-OBS-02 giant roster line: '..gline)
 -- All eight category-presence combinations, including missing first/middle category.

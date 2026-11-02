@@ -1084,14 +1084,19 @@ script UndeadSystem extends Logic
         -- 다음 소환 계획 (I03): 편성 미리보기(PreviewFrom)·실제 일으키기(MakeRecord·Raise)·장기 편성(SteadyRoster)이 함께 부르는 하나의 순수 함수. 목록·기록·Serial은 바꾸지 않는다.
         -- 입력 = 정원 max · 노드 랭크 quota · 지금 목록 list(오래된 순, 뼈 거인 몸 포함) · 거인 예약 reserved
         -- 출력 = 다음 변이 form · 새 개체 전에 남길 수 keep · 무너질 기록 victims(가장 오래된 것부터 · 거인 몸 제외) · 배치 수 place(= 노드 랭크)
-        -- 무너질 개체도 센 채로 고른다 (PickForm 먼저 · 10-24 규칙)
+        -- 11-02 「찍은 만큼 나오게」: 교체로 무너질 개체(victims)를 뺀 생존 편성 remain에서 고른다 → 정원이 찬 뒤 교체 순간에도 변이 수 = 노드 랭크
+        --   (옛 10-24 규칙은 무너질 개체까지 세어 교체 순간 한 변이가 랭크−1이 됐다 · 거인 몸·합쳐진 넷은 victims가 아니라 그대로 센다)
         local slots = self:SlotCount(max, kind, list, reserved)
         local victims = self:TrimVictims(list, kind, slots.keep)
         local place = self:PlaceQuota(kind, quota)
-        local form = self:PickForm(kind, place, list, nil)
+        local gone = {}
+        for _, v in ipairs(victims) do gone[v] = true end
+        local remain = {}
+        for _, r in ipairs(list) do if not gone[r] then table.insert(remain, r) end end
+        local form = self:PickForm(kind, place, remain, nil)
         -- 48-4 blocked: 무너뜨릴 수 있는 기록을 다 빼도 새 개체가 들어갈 자리가 없다 (정원이 거인 몸·합쳐진 넷뿐) → 추가 소환 없음
         return { form = form, max = max, have = slots.have, keep = slots.keep, full = slots.full, reserved = slots.reserved, victims = victims,
-            place = place, blocked = max <= 0 or slots.have - #victims >= max }
+            remain = remain, place = place, blocked = max <= 0 or slots.have - #victims >= max }
     end
 
     method table PlanFor(Entity player, string kind, integer slvl, table list, integer reserved)
@@ -1102,6 +1107,13 @@ script UndeadSystem extends Logic
         if plan.form == "" then plan.form = self:BaseForm(player, kind) end
         if not Environment:IsPublishedPlay() and kind == "skeleton" then
             log(string.format("[VRF] roster place=rank gs rank=%d place=%d · twin rank=%d place=%d · next=%s", quota.greatsword or 0, plan.place.greatsword or 0, quota.twin or 0, plan.place.twin or 0, plan.form))
+            -- 교체 전(지금 목록)·후(생존 편성 + 새 개체) 변이 수 (11-02 정확히 랭크 검증)
+            local before = { greatsword = 0, twin = 0 }
+            local after = { greatsword = 0, twin = 0 }
+            for _, r in ipairs(list) do if r.kind == kind and before[r.form or ""] ~= nil then before[r.form] = before[r.form] + 1 end end
+            for _, r in ipairs(plan.remain) do if r.kind == kind and after[r.form or ""] ~= nil then after[r.form] = after[r.form] + 1 end end
+            if not plan.blocked and after[plan.form] ~= nil then after[plan.form] = after[plan.form] + 1 end
+            log(string.format("[VRF] roster rank exact before gs=%d twin=%d · victims=%d · after gs=%d twin=%d · rank gs=%d twin=%d", before.greatsword, before.twin, #plan.victims, after.greatsword, after.twin, quota.greatsword or 0, quota.twin or 0))
         end
         return plan
     end
@@ -1125,7 +1137,7 @@ script UndeadSystem extends Logic
 
     method string PickForm(string kind, table quota, table list, table exclude)
         -- 일으킬 때 고르는 변이: list(오래된 순 · exclude 제외)에서 자리가 남은 첫 변이, 없으면 "" (일반형).
-        -- 무너뜨리기(TrimVictims) 전에 고르므로 정원이 찬 상태에서도 교체될 개체의 변이를 센다
+        -- PlanNext는 교체로 무너질 기록을 뺀 생존 편성(remain)을 넘긴다 (11-02 · 교체 순간에도 변이 수 = 노드 랭크)
         local used = {}
         for _, form in ipairs(self:FormOrder(kind)) do used[form] = 0 end
         for _, other in ipairs(list) do

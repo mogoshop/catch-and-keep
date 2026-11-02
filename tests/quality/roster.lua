@@ -142,19 +142,21 @@ book.Levels={raise_skeleton=2,skel_shield=1,skel_greatsword=1,skel_twin=1}
 setList({rec('skeleton','shield'),rec('skeleton','greatsword')})
 local p2=check('2 full three forms','skeleton',{max=2,have=2,full=true,nextForm='twin',replaces=1})
 assert(p2.replaces[1].form=='shield')
--- 3. 앞 변이가 정원을 다 씀: 대검 3 · 쌍칼 1 · 정원 2 → 쌍칼 0기 (정원 +1부터) · 다음은 대검 (48-1: 방패는 변이가 아니다)
+-- 3. 앞 변이가 정원을 다 씀: 대검 3 · 쌍칼 1 · 정원 2 → 쌍칼 0기 (11-02 정확히 랭크: 대검 3이 다 선 뒤라 정원 +2부터 · 옛 규칙은 교체 순간 끼어 +1) · 다음은 대검 (48-1: 방패는 변이가 아니다)
 book.Levels={raise_skeleton=2,skel_greatsword=3,skel_twin=1}
 setList({rec('skeleton','greatsword'),rec('skeleton','greatsword')})
-check('3 front form starves twin','skeleton',{max=2,nextForm='greatsword',replaces=1,idle='twin+1'})
+check('3 front form starves twin','skeleton',{max=2,nextForm='greatsword',replaces=1,idle='twin+2'})
 local hint=book:UseHint('skel_twin')
-assert(string.find(hint,'0기',1,true) and string.find(hint,'정원 +1',1,true),hint)
+assert(string.find(hint,'0기',1,true) and string.find(hint,'정원 +2',1,true),hint)
 local line=book:RosterLine('raise_skeleton')
 assert(string.find(line,'편성 2/2: 대검 2',1,true) and string.find(line,'다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',1,true),line)
 sameSteady('3 steady matches repeated raise','skeleton')
--- 3b. 뼈 군단 +1이면 쌍칼이 실제로 선다 (안내한 「정원 +1」 확인)
+-- 3b. 뼈 군단 +2면 쌍칼이 실제로 선다 (안내한 「정원 +2」 확인 · +1이면 대검 3뿐)
 book.Levels.skel_legion=1
+assert(#UndeadSystem:RosterPreview(player,'skeleton').idle==1,'legion +1 should still starve twin')
+book.Levels.skel_legion=2
 local p3b=UndeadSystem:RosterPreview(player,'skeleton')
-assert(#p3b.idle==0 and p3b.max==3,digest(p3b))
+assert(#p3b.idle==0 and p3b.max==4,digest(p3b))
 assert(not string.find(book:UseHint('skel_twin'),'0기',1,true),book:UseHint('skel_twin'))
 sameSteady('3b legion lets twin stand','skeleton')
 assert((steadyByRaise('skeleton',40).twin or 0)>0)
@@ -169,8 +171,8 @@ assert(string.find(book:RosterLine('raise_skeleton'),'거인에 4',1,true),book:
 -- INT1725-OBS-02: 방패 모습의 거인 몸은 「방패」로 세지 않고 「거인 본체」 · 분모 섞인 「6/6」 대신 「정원 6기」 (have·counts는 진단 그대로 거인 몸을 센다)
 assert(p4.counts.shield==1 and p4.bodies==1 and (p4.units.shield or 0)==0 and p4.units['']==1,digest(p4))
 --   check가 실제로 한 번 일으킨 뒤(일반 교체 → 대검)의 줄: 방패 몸은 끝까지 「방패」로 세지 않는다
---   48-1: 효과 레벨 12 ≥ 8이라 다음 기본형은 방패 해골 (진화)
-assert(book:RosterLine('raise_skeleton')=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 6기 · 다음 소환: 방패 해골(가장 오래된 대검 해골 교체)',book:RosterLine('raise_skeleton'))
+--   48-1: 효과 레벨 12 ≥ 8이라 기본형은 방패 해골 (진화) · 11-02 정확히 랭크: 무너질 대검을 빼고 고르므로 다음도 대검 (대검 1기 유지 · 옛 규칙은 방패로 바뀌어 대검 0)
+assert(book:RosterLine('raise_skeleton')=='편성: 대검 1·거인 본체 1·거인에 4 · 정원 6기 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)',book:RosterLine('raise_skeleton'))
 UndeadSystem.Giants={}
 -- 5. 일시 소환(revive · 옛 기록 호환 — 첫 처치 그림자는 10-31 제거) 섞임: 해골 정원·교체에 끼지 않는다
 book.Levels={raise_skeleton=3,skel_twin=1}
@@ -189,7 +191,7 @@ sameSteady('6 mage steady matches repeated raise','mage')
 book.Levels={raise_skeleton=1,skel_twin=1};bonus=1
 setList({rec('skeleton','twin'),rec('skeleton',''),rec('skeleton',''),rec('skeleton','')})
 assert(string.find(book:RosterLine('skel_twin'),'오래된 3기 교체',1,true),book:RosterLine('skel_twin'))
-check('7 lowered cap trims several','skeleton',{max=2,have=4,full=true,keep=1,replaces=3,nextForm=''})
+check('7 lowered cap trims several','skeleton',{max=2,have=4,full=true,keep=1,replaces=3,nextForm='twin'})   -- 11-02: 무너질 쌍칼을 빼고 고르므로 다음이 쌍칼 (쌍칼 1 유지)
 bonus=0
 -- 8. 선택 보상 「해골 하나 더」가 정원에 들어가고 빈자리면 교체 없음
 book.Levels={raise_skeleton=2,skel_greatsword=2};choices['1:command']=1
@@ -207,7 +209,7 @@ for i=1,20 do check('10 sequence #'..i,'skeleton') end
 -- 11. 다음 랭크가 세기만 올리는 경우 / 앞 변이 투자가 뒤 변이를 밀어내는 경우 안내
 book.Levels={raise_skeleton=2,skel_greatsword=2}
 assert(string.find(book:UseHint('skel_greatsword'),'세기만',1,true),book:UseHint('skel_greatsword'))
-book.Levels={raise_skeleton=2,skel_greatsword=2,skel_twin=1}
+book.Levels={raise_skeleton=2,skel_greatsword=1,skel_twin=1}   -- 11-02 정확히 랭크: 대검 1·쌍칼 1이 서 있다가 대검 2를 찍으면 쌍칼이 밀려난다 (대검 2·쌍칼 1·정원 2는 이미 쌍칼 0기)
 assert(string.find(book:UseHint('skel_greatsword'),'쌍칼 해골 자리가 없어집니다',1,true),book:UseHint('skel_greatsword'))
 -- 12. 여러 노드 조합에서 SteadyRoster = 실제 Raise 반복
 for _,levels in ipairs({{raise_skeleton=1,skel_greatsword=1,skel_twin=1},{raise_skeleton=5,skel_greatsword=3,skel_twin=3},
@@ -320,9 +322,13 @@ senderUserId='u1'
 UndeadSystem.Giants={}
 local function formCase(name,fn) total=total+1 fn() passed=passed+1 end
 local function legacyPlan(kind,max,quota,list,reserved)
- -- 고정 4ba51d5e 규칙 그대로: 무너질 개체를 센 채 PickForm → SlotCount.keep → TrimVictims
- local form=UndeadSystem:PickForm(kind,quota,list,nil)
- return form,UndeadSystem:TrimVictims(list,kind,UndeadSystem:SlotCount(max,kind,list,reserved).keep)
+ -- 고정 규칙 (11-02 「찍은 만큼 나오게」): SlotCount.keep → TrimVictims → 무너질 기록을 뺀 생존 편성에서 PickForm (거인 몸·합쳐진 넷은 victims가 아니라 그대로 센다)
+ local victims=UndeadSystem:TrimVictims(list,kind,UndeadSystem:SlotCount(max,kind,list,reserved).keep)
+ local gone={}
+ for _,v in ipairs(victims) do gone[v]=true end
+ local remain={}
+ for _,r in ipairs(list) do if not gone[r] then table.insert(remain,r) end end
+ return UndeadSystem:PickForm(kind,quota,remain,nil),victims
 end
 local function raiseOnce(kind)
  orb={Entity={CurrentMap=map},Rank='normal',Reserved=false,Consume=function() end}
@@ -362,14 +368,34 @@ formCase('F1 place = node rank · pinned rule (3000 random states)',function()
   assert(plan.direct==nil and plan.clipped==nil,'manual fields left')
  end
 end)
--- F2 정원 4 · 대검 1랭크 쌍칼 2랭크 → 30번 일으키는 동안 매번 미리보기 = 실제 · 변이 수는 노드 랭크를 넘지 않고 장기 편성(SteadyRoster) = 노드 랭크
---   (자동 규칙 그대로: 무너질 가장 오래된 개체도 센 채 고르므로 정원이 찬 뒤 교체 순간에는 한 변이가 랭크−1인 때가 있다 · 10-24 규칙 · 이번 결정은 규칙을 바꾸지 않는다)
+-- F2 정원 4 · 대검 1랭크 쌍칼 2랭크 → 30번 일으키는 동안 매번 미리보기 = 실제 · 변이가 다 선 뒤(3번째부터)는 정원이 찬 교체 순간까지 매번 정확히 랭크
+--   (11-02 「찍은 만큼 나오게」: 무너질 가장 오래된 개체를 뺀 생존 편성에서 고른다 — 옛 10-24 규칙의 교체 순간 랭크−1 없음)
 book.Levels={raise_skeleton=6,skel_greatsword=1,skel_twin=2}
 setList({})
-for i=1,30 do check('F2 rank sequence #'..i,'skeleton') end
+for i=1,30 do
+ check('F2 rank sequence #'..i,'skeleton')
+ if i>=3 then
+  local c=tally('skeleton')
+  assert((c.greatsword or 0)==1 and (c.twin or 0)==2,'F2 #'..i..' not exact rank greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin))
+ end
+end
+-- F2b 사용자 현상 (4ffee2b8 레인 5번째 소환 = 일반 2·대검 1·쌍칼 1): 정원 4 · 대검 2 · 쌍칼 1 — 정원이 찬 뒤 30번 교체해도 매번 대검 2·쌍칼 1·일반 1
+book.Levels={raise_skeleton=6,skel_greatsword=2,skel_twin=1}
+setList({})
+for i=1,34 do
+ local newest=raiseOnce('skeleton')
+ if i>=3 then
+  local c=tally('skeleton')
+  assert((c.greatsword or 0)==2 and (c.twin or 0)==1 and (c[''] or 0)+(c.shield or 0)==math.min(i,4)-3,'F2b #'..i..' greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin)..' new='..tostring(newest.form))
+ end
+end
+formCase('F2b exact rank across 30 replacements',function() assert(#UndeadSystem:ListOf(player)==4) end)
+book.Levels={raise_skeleton=6,skel_greatsword=1,skel_twin=2}
+setList({})
+for i=1,30 do check('F2 rank sequence again #'..i,'skeleton') end
 formCase('F2 variant count = node rank',function()
  local c=tally('skeleton')
- assert((c.greatsword or 0)<=1 and (c.twin or 0)<=2,'over rank greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin))
+ assert((c.greatsword or 0)==1 and (c.twin or 0)==2,'not exact rank greatsword='..tostring(c.greatsword)..' twin='..tostring(c.twin))
  local p=UndeadSystem:RosterPreview(player,'skeleton')
  assert(p.steady.greatsword==1 and p.steady.twin==2 and p.place.greatsword==1 and p.place.twin==2,'steady greatsword='..tostring(p.steady.greatsword)..' twin='..tostring(p.steady.twin))
  local line=book:RosterLine('raise_skeleton')
@@ -451,7 +477,7 @@ formCase('F7 async plan revalidation',function()
  assert(UndeadSystem:Raise(player,'skeleton',3,Vector2(0,0),function(s) done=s end))
  pending()
  local list=UndeadSystem:ListOf(player)
- assert(done==true and consumed==1 and #list==3 and list[1]==B and list[3].form=='','control commit')   -- 자동: 무너질 대검 A도 센 채 고른다 → 일반형 · A 교체
+ assert(done==true and consumed==1 and #list==3 and list[1]==B and list[3].form=='greatsword','control commit')   -- 11-02: 무너질 대검 A를 뺀 생존 편성에서 고른다 → 대검 · A 교체 (대검 1 유지)
  -- 같은 준비에서 생성 대기 중 C가 죽는다 → 거절
  A,B,C=rec('skeleton','greatsword'),rec('skeleton',''),rec('skeleton','')
  setList({A,B,C})
@@ -867,5 +893,5 @@ do
  end)
  print('[quality/roster] 48 A: rank 7 to 8 evolve (effect level, snapshot, guard 20/25/30), cap10 = gs3 tw3 shield4, two giants burst + blocked raise + status 10/10 + split one, C2 serial charges + cast speed, max8 no second, Q3 mixed 8+8 + per-kind quota + cap warn + RiteBestStage cap swap, mage mates quota/status, twin hunt decide + server state ('..N..' cases)')
 end
-print(string.format('[quality/roster] 11-02 form auto only (52 §3-2 C): manual API removed, place = node rank x3000 + pinned rule, 30-raise sequence (count <= rank · steady = rank), power = node rank, old save hope dropped, shard hold request, giant held, async plan revalidation (B-DRAFT-01 + rank change)'))
+print(string.format('[quality/roster] 11-02 form auto only (52 §3-2 C): manual API removed, place = node rank x3000 + pinned rule, 30-raise sequence (exact rank incl. replacement · 11-02) + 30 full-cap replacements gs2/twin1 exact, power = node rank, old save hope dropped, shard hold request, giant held, async plan revalidation (B-DRAFT-01 + rank change)'))
 print(string.format('[quality/roster] preview == live raise %d/%d (states: plain, full 3 forms, starved form + legion, giant reserve, temp summons, mage 5 forms, lowered cap, quest slot, mage boundary, 20-raise sequence, steady combos, giant-held 0기 vs split, first lookup keeps Owned, encode)',passed,total))
