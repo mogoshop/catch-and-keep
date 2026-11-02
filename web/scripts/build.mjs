@@ -141,6 +141,7 @@ for(const {path:p,html} of pages){
 }
 await writeFile(path.join(dist,'robots.txt'),'User-agent: *\nDisallow: /\n');
 const check=await checkSite(dist);
+if(check.warnings.length)console.warn(`Site check warnings (${check.warnings.length}):\n`+check.warnings.slice(0,40).join('\n'));
 if(check.errors.length)throw new Error(`Site check failed (${check.errors.length}):\n`+check.errors.slice(0,40).join('\n'));
 const site={title:'메이플 리저렉션 · 개발 자료실',builtAt,sourceCommit:commit,routes:check.routes.length,
  asset:{...atlas.summary,fxGroups:atlas.groups.filter(g=>g.category==='fx'&&visible(g)).length,summonGroups:atlas.groups.filter(g=>g.category==='summon'&&visible(g)).length,slots:slots?.counts||null},

@@ -7,7 +7,7 @@ import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {checkSite,EMOJI} from './check-site.mjs';
+import {checkSite,EMOJI,checkStyle,visibleText,BANNED_WORDS,HYPE_WORDS} from './check-site.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const png=Buffer.from('fixture image bytes');const sha=createHash('sha256').update(png).digest('hex');
@@ -46,7 +46,7 @@ test('build emits one HTML page per route with no broken internal links, hash li
   assert.ok((await readFile(path.join(dist,'maps/index.html'),'utf8')).includes('이미지 없음'));
   const home=await readFile(path.join(dist,'index.html'),'utf8');
   assert.ok(home.includes('메이플 리저렉션'));assert.equal(/Catch &amp; Keep|잡으면 내편<\/h1>/.test(home),false);
-  assert.match(home,/property="og:image" content="https:\/\/[^"]+\/img\/hero-wasteland\.webp"/);
+  assert.match(home,/property="og:image" content="https:\/\/[^"]+\/img\/og-default\.webp"/);
   const detail=await readFile(path.join(dist,'skills/a_skill/index.html'),'utf8');
   assert.ok(detail.includes('이름 바뀜'));assert.match(detail,/og:image" content="https:\/\/[^"]+\/assets\/media\/i\.png"/);
   const cfg=JSON.parse(await readFile(path.join(folder,'.vercel/output/config.json'),'utf8'));
@@ -65,4 +65,13 @@ test('site checker reports broken links, hash links, relative links and emoji',a
   assert.equal(errors.some(e=>/#main|\/ok\//.test(e)),false);
   for(const ch of ['\u{1F480}','✨','▧','✓'])assert.ok(EMOJI.test(ch),ch);
   for(const ch of ['→','↔','·','×'])assert.equal(EMOJI.test(ch),false,ch);
+});
+
+test('AI-look checks: gradient text, glow shadows, banned and hype words fail; off-scale radius warns (지시서 58 §6)',async()=>{
+  const bad=checkStyle('.a{background-clip:text;-webkit-text-fill-color:transparent}.b{text-shadow:0 0 8px gold}.c{box-shadow:0 0 12px #f0c}.d{border-radius:14px}.e{box-shadow:0 0 0 1px #fff,0 6px 20px rgba(0,0,0,.1);border-radius:16px 999px}');
+  assert.ok(bad.errors.some(e=>/gradient text/.test(e)));assert.ok(bad.errors.some(e=>/text-shadow/.test(e)));
+  assert.equal(bad.errors.filter(e=>/glow/.test(e)).length,1);assert.deepEqual(bad.warnings,['radius 14px outside 16/10/8/999 in /site.css']);
+  const ok=checkStyle(await readFile(path.join(root,'public/site.css'),'utf8'));assert.deepEqual(ok.errors,[]);assert.deepEqual(ok.warnings,[]);
+  const text=visibleText('<p>개발 라이브러리 허브</p><script id="d" type="application/json">{"x":"아카이브"}</script><p>완벽한 군단</p>');
+  assert.deepEqual(text.match(BANNED_WORDS),['라이브러리','허브']);assert.deepEqual(text.match(HYPE_WORDS),['완벽한']);
 });
