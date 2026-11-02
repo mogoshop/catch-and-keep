@@ -122,7 +122,7 @@ function main() {
   const out = [["map", "route", "near", "floor"]];
   const detour = [];
   for (const m of mapRows) {
-    if (m.kind === "instance" || !hm.hasBlueprint(m.id)) continue;
+    if (m.kind === "instance" || m.kind === "handmade" || !hm.hasBlueprint(m.id)) continue;   // handmade = 메이커 전용 표본 방 (sample_plate · 유저 길이 아님)
     const r = measure(m, mapRows, ctx, basis);
     if (!r) continue;
     out.push([m.id, r.route, r.near, r.floor]);

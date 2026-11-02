@@ -425,7 +425,7 @@ T.maps.forEach((r, i) => {
   }
 });
 // 액트마다 마을 하나 (필드 사슬은 같은 액트의 마을에서 시작해 마을로 돌아온다)
-for (const act of new Set(T.maps.map((r) => r.act || "1"))) {
+for (const act of new Set(T.maps.filter((r) => r.kind !== "handmade").map((r) => r.act || "1"))) {   // handmade = 메이커 전용 표본 방 (act 0 · 마을 없음)
   if (T.maps.filter((r) => (r.act || "1") === act && r.kind === "town").length !== 1) err("maps", null, `액트 ${act}: town은 정확히 하나여야 함`);
 }
 

@@ -1,0 +1,19 @@
+표본 방 sample_plate — 후처리 A 장면판 + 벽 덮개 + 메이커 내장 연출 + 밝기 0.40 확인 기록 (11-02 18:14~18:24 KST · 액트 1 실맵 wasteland는 그대로)
+등록: maps.csv order 78 · id sample_plate · kind handmade(메이커 전용 — GameConst.GameRoomMaps가 배포 플레이에서는 방에 싣지 않는다) · act 0(액트 1 해방 밝기 0.82가 덮지 않게) · ambient 0.40
+  설계도 = wasteland.txt 복사 + `;plate scene-wasteland-entry-pp -35 -4 -15 6` · 배치표 = wasteland.csv 복사 + 화로 11줄(handmade는 화로를 배치표에서 읽음) · 포털·웨이포인트 없음(어느 맵에서도 이어지지 않음)
+  scene_plates.csv +31 (scene-wasteland-entry-pp · key 접미사 -pp, -top 줄은 -pp-top) · scene_plate_cuts.csv +14 · art_sprites.csv +31(후처리 A 새 RUID) · decor_collision.csv +31 · tile_classes.csv +19 · specs/native_pilot.cjs sample_plate(깜빡임 0.15·발밑 그림자)
+  검사 쪽 제외: tools/route_lengths.cjs(handmade 행 안 씀 · routes.csv 62장 불변) · tools/check_data.cjs(액트마다 마을 하나 규칙에서 handmade 제외)
+빌드: node tools/build/handmade/build.cjs sample_plate → map/sample_plate · _nm · _hell (새 파일 3장 · 다른 map/ 변경 0)
+  빌더 엔티티 853 · 닿는 바닥 1689칸 · 파일 실측 858 = ArtPlate 29 · ArtWallCover 2 · ArtWall 340 · ArtShadow 9 · ArtProp 43 · ArtDecal 78 · Torch 11(OverlayLight 11) · WarpGate 0 · Waypoint 0 · 새 RUID 31/31 · 옛 RUID 0
+검사: check_decor_collision 66장 0 · check_map_composition --all v5 위반 0 · check_assets 0 · check_data 0 · route_lengths --check 바뀐 행 0 · tile_classes --check 67맵 0 · npm test 21/21
+메이커:
+  18:15 편집 모드 → 5초 → map/sample_plate* · GameData.mlua touch → 5초 → refresh 1회 → build 로그 359줄 Error 0 (Warning 105 · maker/build-log.json)
+  1회차 play → SelfTest 413/0 → 슬롯 4 「새내기」 → Solo 방 → guard(저장 끔 IsLoadSuccess=false · 무적) → Go sample_plate (-30.5,0.5)
+    로딩 town→sample_plate 1.22s · 밝기 0.40 (cleared=false) · 빛 색 #A9C6FF 0.16 · 바람 1 · 안개 1 · 화로 깜빡임 11 · Torch1 장작 소리 playing
+    런타임(클라) ArtPlate 29 · ArtWallCover 2 · ArtWall 340 · ArtShadow 9 · Top 5 · Torch 11 · OverlayLight 11 · Sound 1 · 출현 32(무리 11)
+    스크린샷(카메라 ZoomRatio 60 · UI 숨김): maker/pc-gate-x-30.5-zoom60.png · pc-entry-x-20.5-zoom60.png · pc-pack-on-plate-x-17.5-y-2.5-zoom60.png(구울 1마리 판 위 · 들개는 y −6 판 밖) · pc-torch1-x-25.5-y2.5-zoom60.png
+    ※ 롤백 레인 「z60」 파일은 실제 ZoomRatio 48(key-lines의 zoom=48.0) → 같은 줌 비교를 위해 2회차를 다시 돌림
+  2회차 play(18:21) → SelfTest 412/0·413/0 → 같은 절차 → 로딩 3.14s(새 방 첫 입장) · 밝기 0.40 · ZoomRatio 48.0 → maker/pc-gate-x-30.5-z60.png · pc-entry-x-20.5-z60.png (롤백 파일과 같은 이름·같은 줌)
+  normal 로그 Error = SelfTest 의도한 실패(boom) 회차마다 1줄뿐 · Warning 0 (읽은 구간 기준 — 1회차 18:18:3x 4줄·18:19:2x 8줄은 비우기 전에 읽지 못함)
+  maker_stop → 편집 모드 · map01 · maker_save 안 씀
+비교판: compare-rollback-plate-sample.png = [롤백 옛 타일 · 줌 48] · [장면판 원본 가장 가까운 장면 · 줌 80 · UI 보임] · [표본 방 · 줌 48]

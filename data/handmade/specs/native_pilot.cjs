@@ -10,4 +10,9 @@ module.exports = {
     torchFlicker: 0.15,
     footShadow: { roles: ["feature", "structure"], width: 0.7, alpha: 0.55, max: 30 },
   },
+  // 표본 방 (11-02 · maps.csv kind handmade · 황무지 설계도 복사 + 후처리 A 장면판) — 황무지와 같은 연출
+  sample_plate: {
+    torchFlicker: 0.15,
+    footShadow: { roles: ["feature", "structure"], width: 0.7, alpha: 0.55, max: 30 },
+  },
 };
