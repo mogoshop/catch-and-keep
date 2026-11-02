@@ -1,0 +1,249 @@
+MAP-CAPTURE-V5-20261102 실행 기록 (KST) — 메이커 단일 담당 (Claude Opus 5.5, 조정자 Fable) · 브랜치 codex/player-experience-polish · HEAD 86789485 (촬영 중 다른 레인 문서 커밋 6b604cd6·bf54f7f0 — 맵·코드 변경 없음)
+목표: 자료실 맵 사진(10-31 18:56 묶음 = 10-31 12:28 길 안내판 캡처)이 옛 판이라 설계도 맵 66장(노말 id · maps.csv order 순 · depth 12 제외)을 메이커에서 다시 찍고, 자료실이 바로 가져올 맵 묶음(maps-bundle-20261102)을 만든다
+절차·후처리 규칙 = 10-31 1차·2차(map-capture-all · map-capture-guide)와 11-01 액트 2·3 회차(map-v5-act23-maker): 클라 캡처 스크립트 v3 계열 → 서버 PlayerTravel:Go(<id>, (0.5,0.5)) → sleep 7~9 → maker_screenshot 을 한 응답에 7회씩
+--- 0. 상태·반영 ---
+10:22 편집 모드 · map01 · PC
+10:22:4x maker_refresh_workspace 1회 → build 로그 359줄 · Error 0 · Warning 104 · Info 255 (빌드 시각 10:15:14 그대로 = 스크립트 재빌드 없음 → 10-31 함정과 같은 조건이라 판 대조를 촬영 중에 함)
+맵 파일 기대값 = scripts/expect-from-map-files.tsv (scripts/expect.py · 맵 바로 아래 Art* 수·ArtProp<N>·*Top·ArtRoad*·ArtPlate*·ArtGuide*)
+  ※ ArtGuide(길 안내 타일)는 66장 모두 0 — v5 구성(10-31 22:07~11-01 01:22 커밋)에서 빠졌다. 그래서 판 대조 지표를 guide 대신 art/prop/top/road/plate로 바꿈
+--- 1. play (한 번 · 재시도 0) ---
+10:23:3x play · SelfTest 411/0 (로비)
+10:24:22 S [VRF] MC5 backup readback code=0 match=3/5 Account=615/78249138 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/1540438451 (캐릭터 선택 · 입장 전)
+  → S48 기준과 Char_4·Inv_4·Shadow_4 같음, Account·Stash는 같은 길이로 키 순서만 바뀐 값(다른 세션에서 재저장) → 10:24:36 두 키 원문을 로그로 백업(scripts 밖 · 복원 본문에 그대로 넣음)
+10:25:1x 슬롯 4 「새내기」 Lv40 입장(클라 _CharSelectWindow:PickSlot(4)·Enter()) → 10:25:28 _RoomWindow:Solo() → room game:s1bd3e88bfb9 town · SelfTest 411/0(방)
+10:25:59 S [VRF] MC5 guard load=false map=town hp=155/155 known=camp,wasteland act=1 (저장 끔 IsLoadSuccess=false · 무적 타이머 0.2초)
+10:26:43 C [CAP] installed MC5 v5 recapture (scripts/cap_client_mc5.lua = a23m 본문 + DarkVision 전역 조명 런타임 제거 + 윗부분 반투명(TopFade) 타이머 끔 + ready 줄에 road/plate 수)
+10:26:44 town ~ 10:39:37 throne · 66/66 · 재시도 0 (crypt3·lighthouse2는 9초, temple3·stormcliff·lighthouse1·3·stormeye·abyssgate2·3·ashhall·throneante는 8초 대기)
+검증 1 (판 대조 · 수): ready 줄 art/prop/top/road/plate = 맵 파일 66/66 일치 (archive art 366·prop 58·top 35 = 76af367b 손 재구성 판 · 11-01 회차 378과 다름 / smuggler2 471·43·5 / wasteland plate 29 = 장면판 판)
+검증 2 (판 대조 · 그림): 10:42 RUID 앞 8자 분포 탐침 — wasteland 832개 100종 = 맵 파일과 같음 · harbor 441개 39종 = 맵 파일과 같음(파일 빈 RUID 1 = 런타임 모델 기본값 d2592c48 1) · archive·smuggler2 탐침은 맵 도착 직후 실행돼 일부(43개)만 읽힘 → 수 대조(검증 1)로 판단
+  (첫 탐침 방식 = 이름·RUID 전체 해시는 클라에서 너무 느려 멈춤 → 빈 스크립트로 정지 후 앞 8자 집계로 바꿈)
+검증 3 (시각): 66장 모두 ready 뒤 2초 이상 지나 촬영 (최소 2.0초)
+검증 4 (크기): 66장 모두 검은 바탕이 아닌 화소 bbox = 기대 크기 w·s·PPU × h·s·PPU ±1px (oasis·harbor만 위로 10px 튀어나온 야자수·배 → 잘림, 10-31과 같음)
+오류: 촬영 play normal 로그 Error 1 = SelfTest 의도한 실패(boom)뿐 · 서버 스크립트 오류 0
+--- 2. 끝: 슬롯 4 복원 (새 play 캐릭터 선택 화면 server_main) ---
+10:43:4x stop(→편집) · 로그 비움(stop 때 LEA-3051 캡처 타이머 경고 줄은 읽기 전에 비움) → play · SelfTest 410/0
+본문 = 2026-10-30-summon48-maker/slot4-restore-S48.lua 계열(Char_4·Inv_4·Shadow_4 = S48 본문) + Account·Stash = 10:24:36 재조회 원문 · guard: 5키 len/djb2 모두 맞을 때만 BatchSetAndWait
+10:44:59 S [VRF] MC5 restore after code=0 match=5/5 Account=615/78249138 Char_4=1126/1554558725 Inv_4=1838/694193390 Shadow_4=40/923051497 Stash=83/1540438451 (= 10:24:22 입장 전 값 5/5)
+  ※ before·guard·BatchSetAndWait 줄은 출력 지연 중 로그 비우기로 지워져 원문 없음 — after 5/5가 입장 전 재조회와 같음으로 판단
+10:45:1x maker_stop → 편집 모드 · map01 (maker_get_current_map 확인) · maker_save 안 씀 · refresh는 0단계 1회뿐 · 게임 파일 변경 없음
+--- 3. 후처리 (scripts/post_mc5.py) ---
+raw/<NN>-<id>.png = 스크린샷을 맵 경계로 자른 것 (1차·2차는 원본 그대로 + 크롭 사각형 → 이번은 잘라서 저장 · 원본 파일명·크롭 사각형은 maps-index.tsv)
+크롭 = 기대 크기 w·s·PPU × h·s·PPU (PPU = 화면폭/(1280/30)) · 위치 = 검은 바탕이 아닌 화소의 왼쪽·아래 모서리 기준 (1차와 같은 규칙)
+maps-index.tsv = no·id·act·kind·w·h·s·원본 shot·crop_px·bbox_px·crop_box·밝기(이번)·밝기(10-31)
+sheet-act1..4.png = 액트별 같은 축척 1칸 11px · compare-act1..4.png = 10-31 12:28 길 안내판 raw(1차 크롭 사각형) ↔ 이번, 1칸 6px
+zones/NN-id.png · zones-sheet-act1..4.png = tools/review/zone_sheet.py 를 출력 경로만 바꿔(scratch) 다시 돌린 것 — 입력 = dump_map_layout.cjs(현재 설계도·빌더 배치) + 이번 캡처. 게임 쪽 docs/review/map-audit-20261031 은 그대로 둠
+--- 4. 자료실 맵 묶음 ---
+/Users/leeinguk/Documents/New project/maps-bundle-20261102/ (README.txt · validation.json 참고) · 자료실 import/build/publish 는 안 함
+--- 로그 ↔ 스크린샷 짝 (shot = 파일 시각 · go = 서버 이동 로그 · ready = 클라 줄이기 끝) ---
+town	shot=102652	go=-	ready=102644 s=0.908 n=248 ticks=6 art=226 prop=10 top=3 road=10 plate=0 guide=0
+wasteland	shot=102720	go=102713	ready=102718 s=0.445 n=873 ticks=9 art=832 prop=41 top=5 road=31 plate=29 guide=0
+rotmarsh	shot=102727	go=102720	ready=102725 s=0.445 n=1351 ticks=8 art=1306 prop=17 top=2 road=58 plate=0 guide=0
+execution	shot=102826	go=102819	ready=102823 s=0.445 n=942 ticks=6 art=904 prop=21 top=7 road=36 plate=0 guide=0
+gallows	shot=102833	go=102826	ready=102831 s=0.445 n=1094 ticks=8 art=1026 prop=18 top=8 road=37 plate=0 guide=0
+crypt1	shot=102840	go=102833	ready=102838 s=0.554 n=352 ticks=6 art=317 prop=30 top=7 road=0 plate=0 guide=0
+crypt2	shot=102848	go=102841	ready=102846 s=0.554 n=357 ticks=12 art=313 prop=35 top=10 road=0 plate=0 guide=0
+crypt3	shot=102857	go=102848	ready=102853 s=0.554 n=374 ticks=12 art=334 prop=23 top=11 road=0 plate=0 guide=0
+queentomb	shot=102905	go=102858	ready=102902 s=0.554 n=332 ticks=6 art=304 prop=34 top=22 road=0 plate=0 guide=0
+hollow	shot=102912	go=102905	ready=102909 s=0.554 n=495 ticks=6 art=462 prop=14 top=1 road=0 plate=0 guide=0
+cellar1	shot=102945	go=102938	ready=102943 s=0.554 n=328 ticks=8 art=299 prop=11 top=2 road=0 plate=0 guide=0
+cellar2	shot=102953	go=102946	ready=102950 s=0.554 n=387 ticks=9 art=341 prop=24 top=12 road=0 plate=0 guide=0
+pit1	shot=103000	go=102953	ready=102957 s=0.554 n=563 ticks=6 art=518 prop=13 top=4 road=0 plate=0 guide=0
+pit2	shot=103007	go=103000	ready=103004 s=0.554 n=492 ticks=6 art=459 prop=8 top=1 road=0 plate=0 guide=0
+cave	shot=103015	go=103008	ready=103012 s=0.554 n=481 ticks=6 art=446 prop=10 top=1 road=0 plate=0 guide=0
+oasis	shot=103022	go=103015	ready=103019 s=0.908 n=278 ticks=6 art=255 prop=13 top=0 road=10 plate=0 guide=0
+dunes	shot=103030	go=103023	ready=103027 s=0.504 n=961 ticks=6 art=909 prop=9 top=0 road=40 plate=0 guide=0
+canyon	shot=103055	go=103048	ready=103053 s=0.445 n=973 ticks=8 art=928 prop=13 top=2 road=28 plate=0 guide=0
+stormwaste	shot=103103	go=103056	ready=103100 s=0.445 n=426 ticks=9 art=372 prop=21 top=7 road=4 plate=0 guide=0
+sunkenroad	shot=103110	go=103103	ready=103107 s=0.445 n=383 ticks=6 art=333 prop=30 top=9 road=6 plate=0 guide=0
+scorpnest1	shot=103119	go=103111	ready=103115 s=0.554 n=582 ticks=8 art=542 prop=7 top=0 road=0 plate=0 guide=0
+scorpnest2	shot=103126	go=103119	ready=103123 s=0.554 n=483 ticks=9 art=443 prop=6 top=0 road=0 plate=0 guide=0
+drywell	shot=103133	go=103126	ready=103130 s=0.554 n=500 ticks=6 art=467 prop=7 top=0 road=0 plate=0 guide=0
+kingtomb1	shot=103141	go=103134	ready=103138 s=0.554 n=340 ticks=6 art=307 prop=14 top=6 road=0 plate=0 guide=0
+kingtomb2	shot=103200	go=103153	ready=103157 s=0.554 n=390 ticks=9 art=345 prop=17 top=6 road=0 plate=0 guide=0
+archive	shot=103208	go=103200	ready=103204 s=0.554 n=405 ticks=9 art=366 prop=58 top=35 road=0 plate=0 guide=0
+vipernest	shot=103258	go=103250	ready=103255 s=0.554 n=523 ticks=9 art=481 prop=13 top=0 road=0 plate=0 guide=0
+temple1	shot=103305	go=103258	ready=103302 s=0.554 n=372 ticks=6 art=330 prop=24 top=15 road=0 plate=0 guide=0
+temple2	shot=103312	go=103305	ready=103310 s=0.554 n=366 ticks=9 art=314 prop=12 top=7 road=0 plate=0 guide=0
+temple3	shot=103321	go=103313	ready=103317 s=0.554 n=452 ticks=12 art=409 prop=19 top=12 road=0 plate=0 guide=0
+sanctum	shot=103328	go=103321	ready=103325 s=0.554 n=379 ticks=9 art=343 prop=44 top=27 road=0 plate=0 guide=0
+harbor	shot=103336	go=103328	ready=103332 s=0.908 n=466 ticks=6 art=441 prop=16 top=1 road=10 plate=0 guide=0
+saltflat	shot=103343	go=103336	ready=103340 s=0.504 n=914 ticks=6 art=863 prop=9 top=2 road=39 plate=0 guide=0
+wreckcoast	shot=103409	go=103402	ready=103407 s=0.445 n=1177 ticks=9 art=1129 prop=13 top=3 road=43 plate=0 guide=0
+stormcliff	shot=103417	go=103409	ready=103414 s=0.445 n=1993 ticks=9 art=1941 prop=11 top=2 road=72 plate=0 guide=0
+drownedvillage	shot=103425	go=103418	ready=103422 s=0.445 n=1091 ticks=6 art=1038 prop=10 top=4 road=36 plate=0 guide=0
+crabcave1	shot=103436	go=103427	ready=103431 s=0.554 n=956 ticks=6 art=921 prop=7 top=1 road=0 plate=0 guide=0
+crabcave2	shot=103444	go=103437	ready=103441 s=0.554 n=834 ticks=8 art=796 prop=10 top=1 road=0 plate=0 guide=0
+wreckhold	shot=103451	go=103444	ready=103448 s=0.554 n=493 ticks=9 art=457 prop=7 top=1 road=0 plate=0 guide=0
+smuggler1	shot=103459	go=103452	ready=103456 s=0.554 n=374 ticks=9 art=343 prop=9 top=3 road=0 plate=0 guide=0
+smuggler2	shot=103525	go=103518	ready=103523 s=0.554 n=501 ticks=9 art=471 prop=43 top=5 road=0 plate=0 guide=0
+seachapel	shot=103533	go=103526	ready=103530 s=0.554 n=409 ticks=9 art=372 prop=11 top=5 road=0 plate=0 guide=0
+keeperhouse	shot=103540	go=103533	ready=103537 s=0.554 n=494 ticks=9 art=460 prop=8 top=2 road=0 plate=0 guide=0
+lighthouse1	shot=103548	go=103540	ready=103544 s=0.554 n=1053 ticks=6 art=1011 prop=11 top=1 road=0 plate=0 guide=0
+lighthouse2	shot=103558	go=103549	ready=103554 s=0.554 n=1142 ticks=18 art=1082 prop=12 top=3 road=0 plate=0 guide=0
+lighthouse3	shot=103606	go=103558	ready=103603 s=0.554 n=1172 ticks=11 art=1126 prop=15 top=7 road=0 plate=0 guide=0
+stormeye	shot=103615	go=103607	ready=103610 s=0.554 n=1254 ticks=6 art=1217 prop=8 top=1 road=0 plate=0 guide=0
+outpost	shot=103644	go=103637	ready=103640 s=0.908 n=242 ticks=6 art=219 prop=15 top=5 road=10 plate=0 guide=0
+embercanyon	shot=103651	go=103644	ready=103648 s=0.504 n=1130 ticks=7 art=1076 prop=16 top=3 road=33 plate=0 guide=0
+demonroad	shot=103659	go=103652	ready=103655 s=0.445 n=685 ticks=6 art=648 prop=15 top=6 road=24 plate=0 guide=0
+sulfurmarsh	shot=103706	go=103659	ready=103703 s=0.445 n=1274 ticks=8 art=1221 prop=30 top=8 road=44 plate=0 guide=0
+burningkeep	shot=103714	go=103706	ready=103710 s=0.445 n=1003 ticks=8 art=955 prop=12 top=9 road=19 plate=0 guide=0
+sulfurcave1	shot=103721	go=103714	ready=103718 s=0.554 n=534 ticks=8 art=499 prop=14 top=1 road=0 plate=0 guide=0
+sulfurcave2	shot=103728	go=103721	ready=103725 s=0.554 n=511 ticks=9 art=469 prop=8 top=1 road=0 plate=0 guide=0
+soulprison	shot=103754	go=103747	ready=103750 s=0.554 n=337 ticks=6 art=306 prop=28 top=7 road=0 plate=0 guide=0
+forge1	shot=103802	go=103755	ready=103758 s=0.554 n=378 ticks=9 art=340 prop=19 top=6 road=0 plate=0 guide=0
+forge2	shot=103809	go=103802	ready=103806 s=0.554 n=530 ticks=9 art=492 prop=11 top=1 road=0 plate=0 guide=0
+apostate	shot=103817	go=103809	ready=103813 s=0.554 n=383 ticks=9 art=340 prop=15 top=5 road=0 plate=0 guide=0
+pit	shot=103825	go=103817	ready=103821 s=0.554 n=493 ticks=9 art=455 prop=19 top=3 road=0 plate=0 guide=0
+abyssgate1	shot=103832	go=103825	ready=103829 s=0.554 n=359 ticks=9 art=315 prop=40 top=11 road=0 plate=0 guide=0
+abyssgate2	shot=103841	go=103833	ready=103837 s=0.554 n=411 ticks=12 art=359 prop=24 top=8 road=0 plate=0 guide=0
+abyssgate3	shot=103906	go=103858	ready=103902 s=0.554 n=390 ticks=11 art=342 prop=26 top=9 road=0 plate=0 guide=0
+ashhall	shot=103914	go=103906	ready=103910 s=0.554 n=481 ticks=12 art=434 prop=18 top=1 road=0 plate=0 guide=0
+heartbridge	shot=103922	go=103914	ready=103918 s=0.445 n=713 ticks=8 art=654 prop=13 top=6 road=15 plate=0 guide=0
+throneante	shot=103930	go=103922	ready=103926 s=0.554 n=553 ticks=8 art=504 prop=18 top=10 road=0 plate=0 guide=0
+throne	shot=103937	go=103930	ready=103933 s=0.554 n=367 ticks=6 art=336 prop=39 top=27 road=0 plate=0 guide=0
+--- [CAP]·MC5 로그 원문 ---
+10:25:28 C [VRF] MC5 solo
+10:25:59 S [VRF] MC5 guard load=false map=town hp=155/155 known=camp,wasteland act=1
+10:26:43 C [CAP] installed MC5 v5 recapture
+10:26:44 C [CAP] ready town s=0.908 n=248 ticks=6 art=226 prop=10 top=3 road=10 plate=0 guide=0
+10:27:13 S [CAP] go wasteland
+10:27:18 C [CAP] ready wasteland s=0.445 n=873 ticks=9 art=832 prop=41 top=5 road=31 plate=29 guide=0
+10:27:20 S [CAP] go rotmarsh
+10:27:25 C [CAP] ready rotmarsh s=0.445 n=1351 ticks=8 art=1306 prop=17 top=2 road=58 plate=0 guide=0
+10:27:28 C [CAP] DUMP 3 | ready town s=0.908 n=248 ticks=6 art=226 prop=10 top=3 road=10 plate=0 | ready wasteland s=0.445 n=873 ticks=9 art=832 prop=41 top=5 road=31 plate=29 | ready rotmarsh s=0.445 n=1351 ticks=8 art=1306 prop=17 top=2 road=58 plate=0
+10:28:19 S [CAP] go execution
+10:28:23 C [CAP] ready execution s=0.445 n=942 ticks=6 art=904 prop=21 top=7 road=36 plate=0 guide=0
+10:28:26 S [CAP] go gallows
+10:28:31 C [CAP] ready gallows s=0.445 n=1094 ticks=8 art=1026 prop=18 top=8 road=37 plate=0 guide=0
+10:28:33 S [CAP] go crypt1
+10:28:38 C [CAP] ready crypt1 s=0.554 n=352 ticks=6 art=317 prop=30 top=7 road=0 plate=0 guide=0
+10:28:41 S [CAP] go crypt2
+10:28:46 C [CAP] ready crypt2 s=0.554 n=357 ticks=12 art=313 prop=35 top=10 road=0 plate=0 guide=0
+10:28:48 S [CAP] go crypt3
+10:28:53 C [CAP] ready crypt3 s=0.554 n=374 ticks=12 art=334 prop=23 top=11 road=0 plate=0 guide=0
+10:28:58 S [CAP] go queentomb
+10:29:02 C [CAP] ready queentomb s=0.554 n=332 ticks=6 art=304 prop=34 top=22 road=0 plate=0 guide=0
+10:29:05 S [CAP] go hollow
+10:29:09 C [CAP] ready hollow s=0.554 n=495 ticks=6 art=462 prop=14 top=1 road=0 plate=0 guide=0
+10:29:38 S [CAP] go cellar1
+10:29:43 C [CAP] ready cellar1 s=0.554 n=328 ticks=8 art=299 prop=11 top=2 road=0 plate=0 guide=0
+10:29:46 S [CAP] go cellar2
+10:29:50 C [CAP] ready cellar2 s=0.554 n=387 ticks=9 art=341 prop=24 top=12 road=0 plate=0 guide=0
+10:29:53 S [CAP] go pit1
+10:29:57 C [CAP] ready pit1 s=0.554 n=563 ticks=6 art=518 prop=13 top=4 road=0 plate=0 guide=0
+10:30:00 S [CAP] go pit2
+10:30:04 C [CAP] ready pit2 s=0.554 n=492 ticks=6 art=459 prop=8 top=1 road=0 plate=0 guide=0
+10:30:08 S [CAP] go cave
+10:30:12 C [CAP] ready cave s=0.554 n=481 ticks=6 art=446 prop=10 top=1 road=0 plate=0 guide=0
+10:30:15 S [CAP] go oasis
+10:30:19 C [CAP] ready oasis s=0.908 n=278 ticks=6 art=255 prop=13 top=0 road=10 plate=0 guide=0
+10:30:23 S [CAP] go dunes
+10:30:27 C [CAP] ready dunes s=0.504 n=961 ticks=6 art=909 prop=9 top=0 road=40 plate=0 guide=0
+10:30:48 S [CAP] go canyon
+10:30:53 C [CAP] ready canyon s=0.445 n=973 ticks=8 art=928 prop=13 top=2 road=28 plate=0 guide=0
+10:30:56 S [CAP] go stormwaste
+10:31:00 C [CAP] ready stormwaste s=0.445 n=426 ticks=9 art=372 prop=21 top=7 road=4 plate=0 guide=0
+10:31:03 S [CAP] go sunkenroad
+10:31:07 C [CAP] ready sunkenroad s=0.445 n=383 ticks=6 art=333 prop=30 top=9 road=6 plate=0 guide=0
+10:31:11 S [CAP] go scorpnest1
+10:31:15 C [CAP] ready scorpnest1 s=0.554 n=582 ticks=8 art=542 prop=7 top=0 road=0 plate=0 guide=0
+10:31:19 S [CAP] go scorpnest2
+10:31:23 C [CAP] ready scorpnest2 s=0.554 n=483 ticks=9 art=443 prop=6 top=0 road=0 plate=0 guide=0
+10:31:26 S [CAP] go drywell
+10:31:30 C [CAP] ready drywell s=0.554 n=500 ticks=6 art=467 prop=7 top=0 road=0 plate=0 guide=0
+10:31:34 S [CAP] go kingtomb1
+10:31:38 C [CAP] ready kingtomb1 s=0.554 n=340 ticks=6 art=307 prop=14 top=6 road=0 plate=0 guide=0
+10:31:53 S [CAP] go kingtomb2
+10:31:57 C [CAP] ready kingtomb2 s=0.554 n=390 ticks=9 art=345 prop=17 top=6 road=0 plate=0 guide=0
+10:32:00 S [CAP] go archive
+10:32:04 C [CAP] ready archive s=0.554 n=405 ticks=9 art=366 prop=58 top=35 road=0 plate=0 guide=0
+10:32:08 C [CAP] DUMP 26 | ready town s=0.908 n=248 ticks=6 art=226 prop=10 top=3 road=10 plate=0 | ready wasteland s=0.445 n=873 ticks=9 art=832 prop=41 top=5 road=31 plate=29 | ready rotmarsh s=0.445 n=1351 ticks=8 art=1306 prop=17 top=2 road=58 plate=0 | ready execution s=0.445 n=942 ticks=6 art=904 prop=21
+10:32:50 S [CAP] go vipernest
+10:32:55 C [CAP] ready vipernest s=0.554 n=523 ticks=9 art=481 prop=13 top=0 road=0 plate=0 guide=0
+10:32:58 S [CAP] go temple1
+10:33:02 C [CAP] ready temple1 s=0.554 n=372 ticks=6 art=330 prop=24 top=15 road=0 plate=0 guide=0
+10:33:05 S [CAP] go temple2
+10:33:10 C [CAP] ready temple2 s=0.554 n=366 ticks=9 art=314 prop=12 top=7 road=0 plate=0 guide=0
+10:33:13 S [CAP] go temple3
+10:33:17 C [CAP] ready temple3 s=0.554 n=452 ticks=12 art=409 prop=19 top=12 road=0 plate=0 guide=0
+10:33:21 S [CAP] go sanctum
+10:33:25 C [CAP] ready sanctum s=0.554 n=379 ticks=9 art=343 prop=44 top=27 road=0 plate=0 guide=0
+10:33:28 S [CAP] go harbor
+10:33:32 C [CAP] ready harbor s=0.908 n=466 ticks=6 art=441 prop=16 top=1 road=10 plate=0 guide=0
+10:33:36 S [CAP] go saltflat
+10:33:40 C [CAP] ready saltflat s=0.504 n=914 ticks=6 art=863 prop=9 top=2 road=39 plate=0 guide=0
+10:34:02 S [CAP] go wreckcoast
+10:34:07 C [CAP] ready wreckcoast s=0.445 n=1177 ticks=9 art=1129 prop=13 top=3 road=43 plate=0 guide=0
+10:34:09 S [CAP] go stormcliff
+10:34:14 C [CAP] ready stormcliff s=0.445 n=1993 ticks=9 art=1941 prop=11 top=2 road=72 plate=0 guide=0
+10:34:18 S [CAP] go drownedvillage
+10:34:22 C [CAP] ready drownedvillage s=0.445 n=1091 ticks=6 art=1038 prop=10 top=4 road=36 plate=0 guide=0
+10:34:27 S [CAP] go crabcave1
+10:34:31 C [CAP] ready crabcave1 s=0.554 n=956 ticks=6 art=921 prop=7 top=1 road=0 plate=0 guide=0
+10:34:37 S [CAP] go crabcave2
+10:34:41 C [CAP] ready crabcave2 s=0.554 n=834 ticks=8 art=796 prop=10 top=1 road=0 plate=0 guide=0
+10:34:44 S [CAP] go wreckhold
+10:34:48 C [CAP] ready wreckhold s=0.554 n=493 ticks=9 art=457 prop=7 top=1 road=0 plate=0 guide=0
+10:34:52 S [CAP] go smuggler1
+10:34:56 C [CAP] ready smuggler1 s=0.554 n=374 ticks=9 art=343 prop=9 top=3 road=0 plate=0 guide=0
+10:35:18 S [CAP] go smuggler2
+10:35:23 C [CAP] ready smuggler2 s=0.554 n=501 ticks=9 art=471 prop=43 top=5 road=0 plate=0 guide=0
+10:35:26 S [CAP] go seachapel
+10:35:30 C [CAP] ready seachapel s=0.554 n=409 ticks=9 art=372 prop=11 top=5 road=0 plate=0 guide=0
+10:35:33 S [CAP] go keeperhouse
+10:35:37 C [CAP] ready keeperhouse s=0.554 n=494 ticks=9 art=460 prop=8 top=2 road=0 plate=0 guide=0
+10:35:40 S [CAP] go lighthouse1
+10:35:44 C [CAP] ready lighthouse1 s=0.554 n=1053 ticks=6 art=1011 prop=11 top=1 road=0 plate=0 guide=0
+10:35:49 S [CAP] go lighthouse2
+10:35:54 C [CAP] ready lighthouse2 s=0.554 n=1142 ticks=18 art=1082 prop=12 top=3 road=0 plate=0 guide=0
+10:35:58 S [CAP] go lighthouse3
+10:36:03 C [CAP] ready lighthouse3 s=0.554 n=1172 ticks=11 art=1126 prop=15 top=7 road=0 plate=0 guide=0
+10:36:07 S [CAP] go stormeye
+10:36:10 C [CAP] ready stormeye s=0.554 n=1254 ticks=6 art=1217 prop=8 top=1 road=0 plate=0 guide=0
+10:36:37 S [CAP] go outpost
+10:36:40 C [CAP] ready outpost s=0.908 n=242 ticks=6 art=219 prop=15 top=5 road=10 plate=0 guide=0
+10:36:44 S [CAP] go embercanyon
+10:36:48 C [CAP] ready embercanyon s=0.504 n=1130 ticks=7 art=1076 prop=16 top=3 road=33 plate=0 guide=0
+10:36:52 S [CAP] go demonroad
+10:36:55 C [CAP] ready demonroad s=0.445 n=685 ticks=6 art=648 prop=15 top=6 road=24 plate=0 guide=0
+10:36:59 S [CAP] go sulfurmarsh
+10:37:03 C [CAP] ready sulfurmarsh s=0.445 n=1274 ticks=8 art=1221 prop=30 top=8 road=44 plate=0 guide=0
+10:37:06 S [CAP] go burningkeep
+10:37:10 C [CAP] ready burningkeep s=0.445 n=1003 ticks=8 art=955 prop=12 top=9 road=19 plate=0 guide=0
+10:37:14 S [CAP] go sulfurcave1
+10:37:18 C [CAP] ready sulfurcave1 s=0.554 n=534 ticks=8 art=499 prop=14 top=1 road=0 plate=0 guide=0
+10:37:21 S [CAP] go sulfurcave2
+10:37:25 C [CAP] ready sulfurcave2 s=0.554 n=511 ticks=9 art=469 prop=8 top=1 road=0 plate=0 guide=0
+10:37:47 S [CAP] go soulprison
+10:37:50 C [CAP] ready soulprison s=0.554 n=337 ticks=6 art=306 prop=28 top=7 road=0 plate=0 guide=0
+10:37:55 S [CAP] go forge1
+10:37:58 C [CAP] ready forge1 s=0.554 n=378 ticks=9 art=340 prop=19 top=6 road=0 plate=0 guide=0
+10:38:02 S [CAP] go forge2
+10:38:06 C [CAP] ready forge2 s=0.554 n=530 ticks=9 art=492 prop=11 top=1 road=0 plate=0 guide=0
+10:38:09 S [CAP] go apostate
+10:38:13 C [CAP] ready apostate s=0.554 n=383 ticks=9 art=340 prop=15 top=5 road=0 plate=0 guide=0
+10:38:17 S [CAP] go pit
+10:38:21 C [CAP] ready pit s=0.554 n=493 ticks=9 art=455 prop=19 top=3 road=0 plate=0 guide=0
+10:38:25 S [CAP] go abyssgate1
+10:38:29 C [CAP] ready abyssgate1 s=0.554 n=359 ticks=9 art=315 prop=40 top=11 road=0 plate=0 guide=0
+10:38:33 S [CAP] go abyssgate2
+10:38:37 C [CAP] ready abyssgate2 s=0.554 n=411 ticks=12 art=359 prop=24 top=8 road=0 plate=0 guide=0
+10:38:58 S [CAP] go abyssgate3
+10:39:02 C [CAP] ready abyssgate3 s=0.554 n=390 ticks=11 art=342 prop=26 top=9 road=0 plate=0 guide=0
+10:39:06 S [CAP] go ashhall
+10:39:10 C [CAP] ready ashhall s=0.554 n=481 ticks=12 art=434 prop=18 top=1 road=0 plate=0 guide=0
+10:39:14 S [CAP] go heartbridge
+10:39:18 C [CAP] ready heartbridge s=0.445 n=713 ticks=8 art=654 prop=13 top=6 road=15 plate=0 guide=0
+10:39:22 S [CAP] go throneante
+10:39:26 C [CAP] ready throneante s=0.554 n=553 ticks=8 art=504 prop=18 top=10 road=0 plate=0 guide=0
+10:39:30 S [CAP] go throne
+10:39:33 C [CAP] ready throne s=0.554 n=367 ticks=6 art=336 prop=39 top=27 road=0 plate=0 guide=0
+10:39:38 C [CAP] DUMP 66 | ready town s=0.908 n=248 ticks=6 art=226 prop=10 top=3 road=10 plate=0 | ready wasteland s=0.445 n=873 ticks=9 art=832 prop=41 top=5 road=31 plate=29 | ready rotmarsh s=0.445 n=1351 ticks=8 art=1306 prop=17 top=2 road=58 plate=0 | ready execution s=0.445 n=942 ticks=6 art=904 prop=21
+10:40:24 S [CAP] go wasteland (fp probe)
+10:40:28 C [CAP] ready wasteland s=0.445 n=865 ticks=6 art=832 prop=41 top=5 road=31 plate=29 guide=0
+10:40:33 S [CAP] go archive (fp probe)
+10:40:37 C [CAP] ready archive s=0.554 n=413 ticks=9 art=366 prop=58 top=35 road=0 plate=0 guide=0
+10:40:42 S [CAP] go smuggler2 (fp probe)
+10:40:46 C [CAP] ready smuggler2 s=0.554 n=515 ticks=9 art=471 prop=43 top=5 road=0 plate=0 guide=0
+10:40:51 S [CAP] go harbor (fp probe)
+10:40:55 C [CAP] ready harbor s=0.908 n=466 ticks=6 art=441 prop=16 top=1 road=10 plate=0 guide=0
