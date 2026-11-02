@@ -35,6 +35,10 @@ const layoutGen = require("../layout.cjs");
 const ROOT = path.resolve(__dirname, "../../..");
 const HM_DIR = path.join(ROOT, "data/handmade");
 const MATERIAL_JOINS = require(path.join(HM_DIR, "specs", "material_joins.cjs"));   // 10-30 I07 재질 접합 (artEntities 끝)
+// 기획 61 §4 메이커 내장 기능 파일럿 (11-02): 이 표에 있는 맵만 화로 깜빡임(OverlayLightComponent)·장식 발밑 그림자·위치 소리·구역 안개를 켠다
+const NATIVE_PILOT = require(path.join(HM_DIR, "specs", "native_pilot.cjs"));
+const FOOT_SHADOW = "cabd4773c16c465a90cb46d571d1d623";   // 공용 발밑 그림자 (maps.cjs·models.cjs와 같은 그림 · 120×34px · 최대 알파 0.55 · 가운데 피벗)
+const FOOT_SHADOW_W = 1.2;                                // 그 그림 가로 (월드 칸, 배율 1)
 const decor = require("./decor.cjs");   // 10-31 실플레이 피드백 C: 흩뿌림·충돌 분류·길 안내·이음새 (정책 맵만 — data/handmade/specs/decor_policy.cjs)
 const tileClasses = require("./tile_classes.cjs");
 const roles = require("./roles.cjs");   // 맵 구성 v5: 역할표 기준 크기 (;v5 맵만)
@@ -960,6 +964,8 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   // over: 배치표 args over=1 — 같은 자리 그림 위에 겹치는 층(코덱스 a4-abyss-wall-pulse 발광 층)을 그 그림 바로 앞에 (z는 0.001 단위라 발 y를 조금 내려서는 앞뒤가 안 갈린다)
   const droppedOnRoute = [];   // 10-31 C-3: 길 안에 걸려 뺀 막는 조각
   const topSkipped = [], topSkippedList = [];   // 10-31 윗부분 층: 자르는 선이 막힘 꼭대기보다 위라 놓지 않은 -top (List = 검사기용 {이름, 그림, 자르는 선, 막힘 꼭대기})
+  const pilotShadow = (NATIVE_PILOT[d.id] || {}).footShadow || null;   // 기획 61 단계 3: 큰 장식 발밑 그림자
+  let shadowN = 0;
   const pieces = [];   // 10-31 C: 놓은 장식마다 {이름, 그림, 발, 막음, 막은 칸, 흩뿌림} — 검사기·전후 표
   const place = (name, spName, x, y, scaleMul, flip, tint, decal, where, ok, over, collide, scatter, fopt) => {
     const sp = spriteOf(table, spName, where);
@@ -998,6 +1004,14 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     o["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
     const py = y + (num(sp.ny, 0) * num(sp.h, 0) * sc) / 100;   // 발이 y에 오게 (메이플 피벗 보정)
     out.push({ name, pos: [r3(x), r3(py), over ? zOf(y, decal) - 0.0005 : zOf(y, decal)], overrides: o });
+    // 기획 61 단계 3 (파일럿 맵만): 역할표 feature·structure 장식 발밑에 공용 발밑 그림자 — 장식보다 조금 뒤(z +0.002) · 같은 MapLayer0/1 · 이름 ArtShadow<n>
+    if (pilotShadow && !decal && !over && pilotShadow.roles.includes(roles.roleOf(spName)) && shadowN < (pilotShadow.max || Infinity)) {
+      const ss = r3(((num(sp.w, 128) * sc) / 100) * pilotShadow.width / FOOT_SHADOW_W);
+      const so = sprite(FOOT_SHADOW, null, 1);
+      so["MOD.Core.SpriteRendererComponent"].Color = { r: 1, g: 1, b: 1, a: pilotShadow.alpha };
+      so["MOD.Core.TransformComponent"] = { Scale: vec3([ss, r3(ss * 0.9)]) };
+      out.push({ name: `ArtShadow${++shadowN}`, pos: [r3(x), r3(y + 0.02), r3(zOf(y, false) + 0.002)], overrides: so });
+    }
     // v5: 키 큰 그림의 윗부분 그림(<그림>-top, art_sprites.csv에 있을 때만)을 같은 자리 앞층(TOP_LAYER Default · 순서 TOP_ORDER 5)에 — 플레이어가 뒤에 서면 윗부분이 가린다.
     //   10-31 코덱스 납품 13종 업로드(docs/evidence/2026-10-31-map-v5-toppart) — 원본과 같은 캔버스·피벗이라 위치·배율·뒤집기·색을 그대로 복사한다.
     //   그림 엔티티(artsprite = Transform+SpriteRenderer)라 충돌·클릭 없음 · 막힌 칸(place의 blocked)에도 넣지 않는다.
@@ -1063,7 +1077,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
         place(`ArtCl${clN}_${++placed}`, name, px, py, 0.85 + rand() * 0.3, rand() < 0.5, null, decal, `${where} 흩뿌림`, undefined, false, null, true);
       }
       if (placed < n) warn.push(`${where}: 흩뿌림 ${n}개 중 ${placed}개만 자리를 찾음`);
-    } else if (!["gate", "torch", "waypoint"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
+    } else if (!["gate", "torch", "waypoint", "sound", "fog"].includes(r.kind)) throw new Error(`${where}: kind '${r.kind}' 알 수 없음`);
   }
   // 10-30 I07 재질 접합 (specs/material_joins.cjs · 코덱스 0045): 내부 재질 접점의 짧은 바닥 무늬 몇 장을 맨 끝에 ArtJoin<n>으로 —
   //   기존 장식 이름·순서는 그대로. 그림이 art_sprites.csv에 아직 없으면(업로드 전 임시 키) 건너뛰고 「등록 필요」 경고 한 줄
@@ -1217,7 +1231,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
   if (droppedOnRoute.length) warn.push(`${d.id}: 길 안내 폭 3칸 안이라 뺀 막는 조각 ${droppedOnRoute.length}개 — ${droppedOnRoute.join(", ")}`);
   const extra = mode ? { droppedOnRoute: droppedOnRoute.length, topSkipped: topSkipped.length, marks: markN, guide: guide ? guide.entities.length : 0, bands: seam ? seam.bands : 0, shades: seam ? seam.shades : 0, corners: seam ? seam.corners : 0 } : {};
   return { entities: out, blocked, warn, size, pieces, topSkipped: topSkippedList, route: opts.route || null, guide, seam, mode, plates: plates.length ? { skipped: plateSkipped, info: plateInfo } : null,
-    counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, plateN ? Object.assign({ plates: plateN, plateEntities: plateEnts, plateSkipped: plateSkipped.length }, plateWallHidden ? { plateWallHidden } : {}) : {}, extra) };
+    counts: Object.assign({ props: propN, decals: decalN, sets: setN, clusters: clN, walls: wallN, roads: roadN, zones: zoneN, raised: raisedN, foam: foamN }, mixN ? { floorMix: mixN } : {}, joinN ? { joins: joinN } : {}, plateN ? Object.assign({ plates: plateN, plateEntities: plateEnts, plateSkipped: plateSkipped.length }, plateWallHidden ? { plateWallHidden } : {}) : {}, shadowN ? { shadows: shadowN } : {}, extra) };
 }
 
 // ───────── 검사: 표식 ↔ 기능 엔티티 · 이어짐 ─────────
@@ -1267,7 +1281,10 @@ function ambience(d) {
     Bgm: d.bgm, Wind: bool(d.wind), Crows: bool(d.crows), Difficulty: 0, LevelBonus: 0,
     Storm: num(d.storm, 0), StatMul: num(d.statMul, 1),
     // 날씨 (10-28 액트 3 「젖은 느낌」, maps.cjs와 같은 규칙): 바람 부는 바깥 맵 = 비, 그 밖의 액트 3 맵 = 옅은 안개
-    Weather: num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
+    //   maps.csv weather 열이 있으면 그 값 (11-02 기획 61 단계 4: wasteland = wind 바람선)
+    Weather: d.weather ? d.weather : num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
+    // 기획 61 단계 2 · 기획 51 안 B: 전체 조명 색 섞기 (maps.csv tint · tintMix — 비우면 지금과 같다)
+    ...(d.tint ? { Tint: d.tint, TintMix: num(d.tintMix, 0) } : {}),   // 비운 맵은 필드를 쓰지 않는다 (맵 파일 그대로)
   };
 }
 
@@ -1279,6 +1296,7 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   const rows = loadRows(d.id);
   const func = funcIn || functionalEntities(d, maps, ctx, rows);
   const art = artEntities(d, ctx, bp, rows, func);
+  const pilot = NATIVE_PILOT[d.id] || {};
   const result = check(bp, func, art);
 
   const file = opts.outFile || P.map(d.id);
@@ -1293,7 +1311,9 @@ function build(d, maps, ctx, funcIn, opts = {}) {
     tileIndex: isBlockCell(x, y) || art.blocked.has(key(x, y)) || result.sealed.has(key(x, y)) ? TILE.wall : bp.isRoad(x, y) ? TILE.road : TILE.floor,
   }));
   map.patchComponent("RectTileMap", "MOD.Core.RectTileMapComponent", { TileSetRUID: PROJECT_TILESET, tileMap });
-  map.upsertComponent(d.id, "script.MapAmbience", ambience(d));
+  // 기획 61 단계 4: 배치표 kind fog = 구역 안개 (x y = 가운데 · args w= h= a= 알파 · name = AreaParticleType 이름) → MapAmbience.Fog "종류/x/y/w/h/a;…" (엔티티 0 · DarkVision이 입자로)
+  const fogs = rows.filter((r) => r.kind === "fog").map((r) => { const a = parseArgs(r.args); return [r.name || "FogCalm", r3(num(r.x)), r3(num(r.y)), num(a.w, 6), num(a.h, 4), num(a.a, 0.3)].join("/"); });
+  map.upsertComponent(d.id, "script.MapAmbience", Object.assign(ambience(d), fogs.length ? { Fog: fogs.join(";") } : {}));
   if (bp.backdrop) {   // 맵 밖 배경 (10-29 메이커: 바다·용암 맵 양옆이 템플릿 갈색에 플레이어 빛이 비쳐 주황 그라데이션으로 떴다)
     const c = tintOf(bp.backdrop);
     map.patchComponent("Background", "MOD.Core.BackgroundComponent", { Type: 2, SolidColor: { r: c.r, g: c.g, b: c.b, a: 1 } });
@@ -1305,7 +1325,25 @@ function build(d, maps, ctx, funcIn, opts = {}) {
   map.data.Usage = 1;   // 인스턴스 맵 (게임 방에 실린다) — maps.cjs buildNormal과 같다
   if (bp.v5) map.data.CoreVersion = decor.POLICY.V5.CORE_VERSION;   // v5 맵: 템플릿 26.7 대신 커밋본과 같은 값 (악몽·지옥 복제는 노말을 복사해 따라온다)
   for (const e of art.entities) map.placeModel(e.name, P.model("Objects/ArtSprite"), { pos: e.pos, componentOverrides: e.overrides });
-  for (const e of func) map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: e.overrides || {} });
+  for (const e of func) {
+    const flicker = pilot.torchFlicker && e.model === "Objects/Brazier" ? pilot.torchFlicker : 0;
+    const ov = flicker ? Object.assign({}, e.overrides || {}, { "script.TorchLight": Object.assign({}, (e.overrides || {})["script.TorchLight"], { Flicker: flicker }) }) : (e.overrides || {});
+    map.placeModel(e.name, P.model(e.model), { pos: e.pos, componentOverrides: ov });
+    // 기획 61 단계 2: 깜빡이는 화로는 엔티티에 붙은 오버레이 빛(속성을 실시간으로 바꿀 수 있다 · 서비스 빛은 바꾸는 메서드가 없다). 값 = TorchLight 기본(색 1/0.55/0.25 · 세기 0.9 · 반경 2.2 · 안 0.3)
+    if (flicker) map.upsertComponent(e.name, "MOD.Core.OverlayLightComponent", {
+      "@type": "MOD.Core.OverlayLightComponent", Enable: true, Type: 0, OverlapOperation: 0, Color: { r: 1, g: 0.55, b: 0.25, a: 1 },
+      Intensity: 0.9, InnerRadius: 0.66, OuterRadius: 2.2, FalloffIntensity: 0.6, FalloffDistance: 0.5, SpotInnerAngle: 360, SpotOuterAngle: 360, LightOrder: 0, PlayRate: 1, SpriteRUID: "",
+    });
+  }
+  // 기획 61 단계 5: 배치표 kind sound = 위치 환경음 (name = 소리 RUID · args target=붙일 기능 엔티티 이름 · dist= 들리는 거리 · vol= 음량). 새 엔티티 없이 그 엔티티에 SoundComponent
+  for (const r of rows.filter((q) => q.kind === "sound")) {
+    const a = parseArgs(r.args);
+    if (!a.target || !map.find(a.target)) throw new Error(`${d.id}.csv sound ${r.name}: target '${a.target}' 엔티티가 없음`);
+    map.upsertComponent(a.target, "MOD.Core.SoundComponent", {
+      "@type": "MOD.Core.SoundComponent", Enable: true, AudioClipRUID: r.name, Bgm: false, KeepBGM: false, Loop: true, Mute: false, Pitch: 1,
+      PlayOnEnable: true, SetCameraAsListener: true, HearingDistance: num(a.dist, 4), Volume: num(a.vol, 0.5),
+    });
+  }
   if (d.spawns !== "") {
     map.empty("Spawner", { pos: [0, 0, 0], scripts: ["script.MonsterSpawner"] });
     const e = edgesOf(d);

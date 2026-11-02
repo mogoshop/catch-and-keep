@@ -45,6 +45,17 @@ script DarkVision extends Logic
     property boolean Entering = false       -- EnterMap이 그림 크기를 읽느라 멈춰 있는 중
     property number EnteringAt = 0          -- 진입 시작 시각 (오류로 멈춘 진입이 Tick을 영원히 막지 않게 EnterTimeout 뒤엔 다시 진입)
     property number EnterTimeout = 10
+    -- 11-02 기획 61 파일럿 (메이커 내장 기능 · 그림 0): 깜빡이는 화로 · 불꽃 입자 · 위치 환경음 음량 · 구역 안개 · 맵 전체 빛 색 섞기
+    --   TorchLight.Flicker > 0이고 엔티티에 OverlayLightComponent(생성기가 파일럿 맵 화로에만 붙임)가 있으면 서비스 빛 대신 그 컴포넌트 세기를 흔든다
+    property integer FlickerTimerId = 0
+    property number FlickerTick = 0.06      -- 깜빡임 판정 주기 (초) — 화로마다 0.12~0.3초 난수 간격으로 세기를 바꾼다
+    property any Flickers = nil             -- 엔티티 id → { e, light, base, amp, next, flame } (지금 맵 · plain table)
+    property integer FlickerCount = 0       -- 지금 맵 깜빡이는 화로 수 (바뀔 때만 [VRF] 로그)
+    property number FlameRange = 9          -- 이 거리(칸) 안 화로만 불꽃 입자·깜빡임 (화면 밖은 끈다)
+    property number FlameY = 0.3            -- 불꽃 입자 높이 (화로 발 기준 · 11-02 메이커: 0.55는 그림 불꽃 위에 떠 보였다)
+    property number FlameScale = 0.45
+    property Color FlameColor = Color(1, 0.62, 0.3, 0.85)   -- 불꽃 입자 색 (기본 색은 메이커에서 창백한 푸른 흰빛으로 떠 보였다)
+    property any AmbSounds = nil            -- 엔티티 id → { sc, base } 위치 환경음 (설정 환경음 음량을 곱한다)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -54,6 +65,10 @@ script DarkVision extends Logic
         self.Active = false
         self.Entering = false
         self.TimerId = _TimerService:SetTimerRepeat(function() self:Tick() end, self.ScanInterval)
+        self.Flickers = {}
+        self.AmbSounds = {}
+        self.FlickerCount = 0
+        self.FlickerTimerId = _TimerService:SetTimerRepeat(function() self:FlickerStep() end, self.FlickerTick)
         -- 윗부분 반투명 판정: 클라이언트 반복 타이머 하나 (맵 진입·이탈은 Tick → EnterMap이 목록을 다시 만든다 · Logic이라 OnMapEnter/OnMapLeave가 오지 않는다)
         self.TopFades = {}
         self.TopFadeCount = 0
@@ -69,6 +84,8 @@ script DarkVision extends Logic
         self.TimerId = 0
         if self.TopFadeTimerId ~= 0 then _TimerService:ClearTimer(self.TopFadeTimerId) end
         self.TopFadeTimerId = 0
+        if self.FlickerTimerId ~= 0 then _TimerService:ClearTimer(self.FlickerTimerId) end
+        self.FlickerTimerId = 0
         self:RestoreTopFade()
         self:ClearAll()
         self.CurrentMap = nil
@@ -88,12 +105,21 @@ script DarkVision extends Logic
         self.DustSerial = 0
         for _, id in ipairs(self.WeatherSerials) do _ParticleService:RemoveParticle(id) end
         self.WeatherSerials = {}
+        if self.Flickers ~= nil then
+            for _, f in pairs(self.Flickers) do
+                if f.flame ~= 0 then _ParticleService:RemoveParticle(f.flame) end
+            end
+        end
+        self.Flickers = {}
+        self.FlickerCount = 0
+        self.AmbSounds = {}
     end
 
     @ExecSpace("ClientOnly")
     method void StartWeather(Entity map, string weather)
         -- 맵 전체를 덮는 날씨 입자 (10-28 사용자: 액트 3 「물에 젖은 느낌」 — 코덱스 젖은 바닥이 오기 전에 먼저).
         --   rain: 굵은 비 + 옅은 바다 안개 · mist: 동굴·등대 안 옅은 안개만. 맵 크기는 MapInfo(w·h)
+        --   wind (11-02 기획 61 단계 4): 바람 부는 바깥 맵에 옅은 바람선 (Windlines · 알파 0.15는 밝기 0.32 어둠에서 안 보여 0.3 — 메이커 11-02)
         if weather == "" then return end
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
         local size = Vector2((info ~= nil and info.w or 60) + 6, (info ~= nil and info.h or 40) + 6)
@@ -102,9 +128,106 @@ script DarkVision extends Logic
             table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.Rain, size, map, at, 0, Vector3(1, 1, 1), true,
                 { Color = Color(0.82, 0.92, 1, 0.45), ParticleCount = 4, SortingLayer = "MapLayer0", OrderInLayer = 40 }))
         end
-        table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.FogLively, size, map, at, 0, Vector3(1, 1, 1), true,
-            { Color = Color(0.7, 0.85, 0.9, weather == "rain" and 0.35 or 0.25), SortingLayer = "MapLayer0", OrderInLayer = 39 }))
-        log("[VRF] weather " .. weather .. " on " .. map.Name)
+        if weather == "rain" or weather == "mist" then
+            table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.FogLively, size, map, at, 0, Vector3(1, 1, 1), true,
+                { Color = Color(0.7, 0.85, 0.9, weather == "rain" and 0.35 or 0.25), SortingLayer = "MapLayer0", OrderInLayer = 39 }))
+        end
+        if weather == "wind" then
+            table.insert(self.WeatherSerials, _ParticleService:PlayAreaParticle(AreaParticleType.Windlines, size, map, at, 0, Vector3(1, 1, 1), true,
+                { Color = Color(0.9, 0.92, 1, 0.3), ParticleCount = 2, SortingLayer = "MapLayer0", OrderInLayer = 39 }))
+        end
+        log("[VRF] weather " .. weather .. " on " .. map.Name .. " n=" .. tostring(#self.WeatherSerials))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StartFog(Entity map, string fog)
+        -- 구역 안개 (11-02 기획 61 단계 4 · 배치표 kind fog → MapAmbience.Fog "종류/x/y/w/h/알파;…"): 그 사각형에만 영역 입자 하나씩 (엔티티 0)
+        if fog == "" then return end
+        local n = 0
+        for part in string.gmatch(fog, "[^;]+") do
+            local v = {}
+            for w in string.gmatch(part, "[^/]+") do table.insert(v, w) end
+            if #v >= 6 then
+                local kind = AreaParticleType.FogCalm
+                if v[1] == "FogHeavy" then kind = AreaParticleType.FogHeavy elseif v[1] == "FogLively" then kind = AreaParticleType.FogLively end
+                local serial = _ParticleService:PlayAreaParticle(kind, Vector2(tonumber(v[4]), tonumber(v[5])), map, Vector3(tonumber(v[2]), tonumber(v[3]), 0), 0, Vector3(1, 1, 1), true,
+                    { Color = Color(0.78, 0.82, 0.92, tonumber(v[6])), SortingLayer = "MapLayer0", OrderInLayer = 39 })
+                if serial ~= 0 then
+                    table.insert(self.WeatherSerials, serial)
+                    n = n + 1
+                end
+            end
+        end
+        log("[VRF] fog zones " .. tostring(n) .. " on " .. map.Name .. " (" .. fog .. ")")
+    end
+
+    method any ParseTint(string hex)
+        -- "#RRGGBB" → Color (형식이 틀리면 nil)
+        local h = string.gsub(hex or "", "#", "")
+        if string.len(h) ~= 6 then return nil end
+        local r, g, b = tonumber(string.sub(h, 1, 2), 16), tonumber(string.sub(h, 3, 4), 16), tonumber(string.sub(h, 5, 6), 16)
+        if r == nil or g == nil or b == nil then return nil end
+        return Color(r / 255, g / 255, b / 255, 1)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void AttachFlicker(Entity e, TorchLight t, OverlayLightComponent light)
+        -- 깜빡이는 화로 (기획 61 단계 2): 엔티티에 붙은 오버레이 빛을 TorchLight 값으로 맞추고 깜빡임 목록에 넣는다 (서비스 빛은 만들지 않는다)
+        if self.Flickers == nil then self.Flickers = {} end
+        if self.Flickers[e.Id] ~= nil then return end
+        light.Color = t.LightColor
+        light.Intensity = t.Intensity
+        light.InnerRadius = t.Radius * 0.3
+        light.OuterRadius = t.Radius
+        self.Flickers[e.Id] = { e = e, light = light, base = t.Intensity, amp = t.Flicker, next = 0, flame = 0 }
+        self.FlickerCount = self.FlickerCount + 1
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] torch flicker n=%d (%s amp %.2f)", self.FlickerCount, e.Name, t.Flicker)) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FlickerStep()
+        -- 0.06초마다: 가까운(FlameRange) 깜빡이는 화로만 세기를 난수 간격으로 흔들고 불꽃 입자를 붙인다. 멀어지면 불꽃을 떼고 세기를 원래대로
+        if self.Flickers == nil or self.FlickerCount == 0 then return end
+        local player = _UserService.LocalPlayer
+        if not isvalid(player) or player.CurrentMap ~= self.CurrentMap then return end
+        local p = _Util:Pos2(player)
+        local now = _UtilLogic.ElapsedSeconds
+        for id, f in pairs(self.Flickers) do
+            if not isvalid(f.e) or not isvalid(f.light) then
+                if f.flame ~= 0 then _ParticleService:RemoveParticle(f.flame) end
+                self.Flickers[id] = nil
+                self.FlickerCount = self.FlickerCount - 1
+            elseif (_Util:Pos2(f.e) - p):Magnitude() <= self.FlameRange then
+                if f.flame == 0 then
+                    f.flame = _ParticleService:PlayBasicParticleAttached(BasicParticleType.ToonFireTorch, f.e, Vector3(0, self.FlameY, 0), 0,
+                        Vector3(self.FlameScale, self.FlameScale, 1), true, { Color = self.FlameColor, SortingLayer = "MapLayer0", OrderInLayer = 3 })
+                end
+                if now >= f.next then
+                    f.light.Intensity = f.base * (1 - f.amp * _UtilLogic:RandomDouble())
+                    f.next = now + 0.12 + 0.18 * _UtilLogic:RandomDouble()
+                end
+            elseif f.flame ~= 0 then
+                _ParticleService:RemoveParticle(f.flame)
+                f.flame = 0
+                f.light.Intensity = f.base
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TuneAmbSound(Entity e)
+        -- 위치 환경음 (기획 61 단계 5 · 생성기가 배치표 kind sound로 화로에 붙인 SoundComponent): 원래 음량 × 설정 환경음 음량 (끄면 0)
+        local sc = e.SoundComponent
+        if sc == nil then return end
+        if self.AmbSounds == nil then self.AmbSounds = {} end
+        local rec = self.AmbSounds[e.Id]
+        if rec == nil then
+            rec = { sc = sc, base = sc.Volume }
+            self.AmbSounds[e.Id] = rec
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] amb sound %s base %.2f dist %.1f playing=%s", e.Name, rec.base, sc.HearingDistance, tostring(sc:IsPlaying()))) end
+        end
+        local v = rec.base * _SoundDirector.AmbienceVolume
+        if sc.Volume ~= v then sc.Volume = v end
     end
 
     @ExecSpace("ClientOnly")
@@ -151,7 +274,10 @@ script DarkVision extends Logic
         for _, c in ipairs(map:GetChildComponentsByTypeName("script.TorchLight", true)) do
             ---@type TorchLight
             local t = c
-            self:Attach(c.Entity, t.LightColor, t.Intensity, t.Radius * 0.3, t.Radius)
+            local light = c.Entity.OverlayLightComponent
+            if t.Flicker > 0 and light ~= nil then self:AttachFlicker(c.Entity, t, light)
+            else self:Attach(c.Entity, t.LightColor, t.Intensity, t.Radius * 0.3, t.Radius) end
+            if c.Entity.SoundComponent ~= nil then self:TuneAmbSound(c.Entity) end
         end
         -- 혼(추출 대상)은 은은하게 빛난다
         local myId = isvalid(player) and player.PlayerComponent.UserId or ""
@@ -219,6 +345,7 @@ script DarkVision extends Logic
         self.Active = true
         _OverlayLightService:SetOverlayLightEnabled(true)
         self:StartWeather(map, amb.Weather)
+        self:StartFog(map, amb.Fog)
         -- 어둠 속에서도 길·적의 윤곽은 남긴다. 먼 곳은 어둡게 두고 내 주변의 읽을 수 있는 범위를 넓힌다.
         -- 밝기는 maps.csv가 기준 (맵을 다시 빌드하지 않아도 표 값이 바로 반영된다). 표에 없으면 맵에 저장된 값
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
@@ -230,6 +357,13 @@ script DarkVision extends Logic
         -- 이 맵 액트의 최종 보스를 쓰러뜨렸는지 먼저 본다 (붉은 하늘 여부 AwakeHere가 이 값을 쓴다)
         self.Cleared = depth == nil and self:ActCleared(player, map)
         if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
+        -- 맵 빛 색 섞기 (11-02 기획 61 단계 2 · 기획 51 안 B): 전체 조명 색 = 기존색 × (1 − sG) + 틴트 × sG. 우선순위 각성 > 심도 > 틴트 > 기본 (아래 두 줄이 덮는다)
+        local tint = self:ParseTint(amb.Tint)
+        if tint ~= nil and amb.TintMix > 0 then
+            local sg = math.min(1, amb.TintMix)
+            color = Color(color.r * (1 - sg) + tint.r * sg, color.g * (1 - sg) + tint.g * sg, color.b * (1 - sg) + tint.b * sg, 1)
+            log(string.format("[VRF] DarkVision mood %s %s sG %.2f → (%.3f,%.3f,%.3f)", map.Name, amb.Tint, sg, color.r, color.g, color.b))
+        end
         if self:AwakeHere(map) then color = self.AwakeColor end                          -- 재의 왕이 깨어난 뒤: 핏빛 하늘 (AshAwakening)
         if depth ~= nil then
             ambient = _GameData.depthAmbient

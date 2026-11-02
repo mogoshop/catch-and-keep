@@ -599,8 +599,10 @@ function ambience(d) {
     Bgm: d.bgm, Wind: bool(d.wind), Crows: bool(d.crows), Difficulty: 0, LevelBonus: 0,
     Storm: num(d.storm, 0),
     // 날씨 (10-28 액트 3 「젖은 느낌」): 바람이 부는 바깥 맵(maps.csv wind)은 비, 그 밖의 액트 3 맵(동굴·선창·등대 안)은 옅은 안개
-    Weather: num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
+    //   maps.csv weather 열이 있으면 그 값 (11-02 기획 61 · handmade/lib.cjs ambience와 같은 규칙)
+    Weather: d.weather ? d.weather : num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
     StatMul: num(d.statMul, 1),
+    ...(d.tint ? { Tint: d.tint, TintMix: num(d.tintMix, 0) } : {}),   // 기획 61 단계 2 · 기획 51 안 B 전체 조명 색 섞기 — 비운 맵은 필드를 쓰지 않는다 (맵 파일 그대로)
   };
 }
 
