@@ -12,15 +12,17 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const frame=Buffer.from('fixture image bytes');
 const digest=createHash('sha256').update(frame).digest('hex');
 const writeJSON=(file,value)=>writeFile(file,JSON.stringify(value));
+const appScript=async()=>(await readFile(path.join(root,'templates/skills-views.js'),'utf8'))+'\n'+(await readFile(path.join(root,'templates/skills-app.js'),'utf8'));
+const absMedia=v=>Array.isArray(v)?v.map(absMedia):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,absMedia(x)])):typeof v==='string'&&/^media\/[^\s"]+\.(?:png|webp|gif|jpe?g)$/i.test(v)?'/assets/'+v:v;
 const run=(folder,script,env=process.env)=>spawnSync(process.execPath,[`scripts/${script}.mjs`],{cwd:folder,env,encoding:'utf8'});
 
 async function fixture(t) {
   const folder=await mkdtemp(path.join(os.tmpdir(),'library-security-'));
   t.after(()=>rm(folder,{recursive:true,force:true}));
-  for(const dir of ['scripts','public','templates','content/assets/media','content/maps/media','content/policies'])await mkdir(path.join(folder,dir),{recursive:true});
-  for(const name of ['build.mjs','lib.mjs'])await cp(path.join(root,'scripts',name),path.join(folder,'scripts',name));
-  await cp(path.join(root,'templates/atlas.html'),path.join(folder,'templates/atlas.html'));
-  await writeFile(path.join(folder,'public/index.html'),'<main>Fixture</main>');
+  for(const dir of ['scripts','templates','content/assets/media','content/maps/media','content/policies'])await mkdir(path.join(folder,dir),{recursive:true});
+  for(const name of ['build.mjs','lib.mjs','site.mjs','check-site.mjs'])await cp(path.join(root,'scripts',name),path.join(folder,'scripts',name));
+  for(const name of ['skills-views.js','skills-app.js'])await cp(path.join(root,'templates',name),path.join(folder,'templates',name));
+  await cp(path.join(root,'public'),path.join(folder,'public'),{recursive:true});
   const atlas={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:1,frameReferences:1},
     skills:[{id:'skill',name:'Skill',icon:'media/used.png',groups:['group']}],
     groups:[{id:'group',title:'Group',category:'fx',frames:['media/used.png'],durations:[100]}],engineEffects:[],proceduralEffects:[]};
@@ -52,10 +54,14 @@ test('build publishes only current referenced media and preserves catalog dollar
     await assert.rejects(access(path.join(folder,output,'assets/media/removed.png')));
     await assert.rejects(access(path.join(folder,output,'maps/media/removed.webp')));
   }
-  const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
-  const embedded=html.match(/<script id="catalog-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-  assert.deepEqual(JSON.parse(embedded),atlas);
-  assert.equal(embedded.includes('</script>'),false);
+  assert.deepEqual(JSON.parse(await readFile(path.join(folder,'dist/assets/catalog.json'),'utf8')),atlas);
+  const data=JSON.parse(await readFile(path.join(folder,'dist/skills/data/skills.json'),'utf8'));
+  assert.equal(data.skills[0].desc,atlas.skills[0].desc);assert.equal(data.skills[0].icon,'/assets/media/used.png');
+  for(const page of ['skills/index.html','skills/skill/index.html']){
+    const html=await readFile(path.join(folder,'dist',page),'utf8');
+    assert.ok(html.includes('&lt;/script&gt;&lt;script&gt;example'),page);assert.equal(html.includes('</script><script>example'),false,page);
+    assert.ok(html.includes('Literal $&amp; $` $&#39; $$'),page);
+  }
 });
 
 test('build rejects out-of-media paths, symlinks and unverified referenced assets',async t=>{
@@ -77,8 +83,7 @@ test('build rejects out-of-media paths, symlinks and unverified referenced asset
 });
 
 test('atlas renders catalog image attributes and summary text without creating HTML',async()=>{
-  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
-  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const script=await appScript();
   const injected='media/image" onerror="alert(1).png';
   const data={createdAt:'2026-10-31',sourceCommit:'12345678',summary:{uniqueImages:'<img src=x onerror=alert(1)>',frameReferences:1},
     skills:[{name:'Skill',icon:injected}],groups:[{id:'group',title:'Group',category:'fx',frames:[injected],durations:[100]}],engineEffects:[],proceduralEffects:[]};
@@ -95,13 +100,11 @@ test('atlas renders catalog image attributes and summary text without creating H
     performance:{now:()=>0},requestAnimationFrame(){},IntersectionObserver:class{disconnect(){}observe(){}},Image:class{complete=false;naturalWidth=0;}});
   vm.runInContext(script,context);
   vm.runInContext('renderAudit();openDetail(DATA.groups[0]);',context);
-  for(const selector of ['#grid','#frames']) {
+  for(const selector of ['#skv-root','#frames']) {
     const html=getNode(selector).innerHTML;
     assert.ok(html.includes('src="media/image&quot; onerror=&quot;alert(1).png"'));
     assert.equal(html.includes('src="media/image" onerror='),false);
   }
-  assert.ok(getNode('#stats').innerHTML.includes('&lt;img src=x onerror=alert(1)&gt;'));
-  assert.equal(getNode('#stats').innerHTML.includes('<img'),false);
 });
 
 test('build embeds effect-slot data and verifies its separate media manifest',async t=>{
@@ -119,16 +122,15 @@ test('build embeds effect-slot data and verifies its separate media manifest',as
     if(kind==='bad-hash'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch/);return;}
     assert.equal(result.status,0,result.stderr);
     await access(path.join(folder,'dist/assets/media/slots/a.png'));
-    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const html=await readFile(path.join(folder,'dist/skills/pick/index.html'),'utf8');
     const embedded=html.match(/<script id="slots-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-    assert.deepEqual(JSON.parse(embedded),slots);
+    assert.deepEqual(JSON.parse(embedded),absMedia(slots));
     assert.equal(embedded.includes('</script>'),false);
   });
 });
 
 test('effect picker renders slot text as text and exports RUIDs with the memo',async()=>{
-  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
-  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const script=await appScript();
   const evil='<img src=x onerror=alert(1)>';
   const cand={id:'maple:x',source:'maple',title:evil,statusLabel:evil,frames:['media/a.png'],durations:[100],ruids:['1'.repeat(32)],box:[1,1],runtimeKey:'SkillEffects.FxPoisonCloud'};
   const searched={id:'maple:y',source:'maple',origin:'search',title:'검색 후보',statusLabel:'타격 효과',reason:evil,frames:['media/a.png'],durations:[100],ruids:['2'.repeat(32)],box:[1,1]};
@@ -203,7 +205,7 @@ test('build embeds scene-preview data and verifies its separate still manifest',
     if(kind!=='ok'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch|must stay in media/);await assert.rejects(access(path.join(folder,'.vercel/output/config.json')));return;}
     assert.equal(result.status,0,result.stderr);
     await access(path.join(folder,'dist/assets/scene/media/actor-player-stand.png'));
-    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const html=await readFile(path.join(folder,'dist/skills/pick/index.html'),'utf8');
     const embedded=html.match(/<script id="scene-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
     assert.deepEqual(JSON.parse(embedded),scene);
     assert.equal(embedded.includes('</script>'),false);
@@ -238,8 +240,7 @@ test('scene rules cover every effect slot and resolve only through the provenanc
 });
 
 test('scene view renders rule and actor text as text and exports the shortlist JSON',async()=>{
-  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
-  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const script=await appScript();
   const evil='<img src=x onerror=alert(1)>';
   const cand={id:'maple:x',source:'maple',title:'T',frames:['media/a.png'],durations:[100],ruids:['1'.repeat(32)],box:[1,1]};
   const slots={createdAt:'2026-11-01T00:00:00Z',sourceRef:'origin/main',sourceCommit:'abcdef12',sourceDate:'2026-11-01T00:00:00+09:00',catalog:{createdAt:'2026-10-31',sourceCommit:'12345678'},
@@ -261,7 +262,7 @@ test('scene view renders rule and actor text as text and exports the shortlist J
   vm.runInContext(script,context);
   // 장면 보기는 처음 여는 사람에게도 기본으로 켜져 있다(저장된 옛 설정 sv<3의 꺼짐은 무시) · 그림 주소에 내용 해시
   assert.equal(vm.runInContext('SV.on&&sceneOn()',context),true);
-  assert.equal(vm.runInContext("sceneSrc({file:'media/a.png',v:'abc123'})",context),'scene/media/a.png?v=abc123');
+  assert.equal(vm.runInContext("sceneSrc({file:'media/a.png',v:'abc123'})",context),'/assets/scene/media/a.png?v=abc123');
   for(const view of ['maple','compare']){
     vm.runInContext(`SV.on=true;STATE.tab='pick';PICK.view=${JSON.stringify(view)};PICK.slot='s';render();`,context);
     const html=getNode('#grid').innerHTML;
@@ -306,9 +307,9 @@ test('build embeds recommendation data and verifies the re-search frame manifest
     if(kind==='bad-hash'){assert.notEqual(result.status,0);assert.match(result.stderr,/hash mismatch/);return;}
     assert.equal(result.status,0,result.stderr);
     await access(path.join(folder,'dist/assets/media/slots/r.png'));
-    const html=await readFile(path.join(folder,'dist/assets/index.html'),'utf8');
+    const html=await readFile(path.join(folder,'dist/skills/pick/index.html'),'utf8');
     const embedded=html.match(/<script id="reco-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-    assert.deepEqual(JSON.parse(embedded),reco);
+    assert.deepEqual(JSON.parse(embedded),absMedia(reco));
     assert.equal(embedded.includes('</script>'),false);
   });
 });
@@ -331,8 +332,7 @@ test('recommendation table covers every slot and the PNG reader decodes RGBA and
 });
 
 test('picker shows recommendation badges, confirms through the normal pick and cycles alternatives',async()=>{
-  const template=await readFile(path.join(root,'templates/atlas.html'),'utf8');
-  const script=template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+  const script=await appScript();
   const evil='<img src=x onerror=alert(1)>';
   const a={id:'maple:a',source:'maple',origin:'search',title:'A',frames:['media/a.png'],durations:[100],ruids:['a'.repeat(32)],box:[1,1]};
   const b={id:'maple:b',source:'maple',origin:'search',title:'B',frames:['media/b.png'],durations:[100],ruids:['b'.repeat(32)],box:[1,1]};
