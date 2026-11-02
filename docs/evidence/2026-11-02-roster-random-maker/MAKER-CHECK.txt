@@ -1,0 +1,24 @@
+11-02 메이커 검증 — 과제 1: 해골 전사 변이 랜덤 편성(685e9ac3) 실플레이 · 과제 2: 롤백 황무지 밝기 0.40 공정 비교 컷 (18:29~18:41 KST · 코드·데이터 변경 0)
+반영: 편집 모드 확인 → UndeadSystem·SkillBook mlua touch → 5초 → maker_refresh_workspace 1회 → build 로그 359줄 Error 0 · Warning 105 (LEA-1102 PlanNext 시그니처 오류 없음)
+플레이 1회 (PC FHD): clear_logs → play → SelfTest 412/0 · 413/0 → client _CharSelectWindow:PickSlot(4)·Enter → _RoomWindow:Solo() → 게임 방 서버 guard(PlayerSave.IsLoadSuccess=false 저장 끔 · PlayerVitals 무적) — maker_save 안 씀
+과제 1 준비(execute_script, server_instance_game): SkillBook.Levels raise_skeleton=3 · skel_greatsword=3 · skel_twin=2 · skel_legion=0 → RefreshDigest → 효과 레벨 rs=3 gs=3 tw=2 · MaxFor=3 (Lv40 · 칸1 raise_skeleton)
+  Go execution (-5.5,-4.8) · 혼 준비 = hellhound Lv5를 플레이어 공격으로 처치(S48-server-souls.lua 방식, 시험 대상 아님) · 입장 때 열린 선택 보상 창은 Esc 실제 입력으로 닫음 · 키보드 조준(ClickControl:SetMouseMode(false), 런타임만)
+  소환 = 전부 실제 키 A 입력. 혼이 사라진 뒤 누른 몇 번은 「summon rejected: no owned soul」(편성 계획 로그만 남고 소환 없음 — 정상 거절)
+정원 3 · 소환 11회 (18:33:46~18:35:47): 대검 7 · 쌍칼 4 · 기본 0 → 편성 내내 대검 ≤3 · 쌍칼 ≤2 (정원 3이라 섞여 섬: 대검2·쌍칼1 / 대검1·쌍칼2 / 대검2·쌍칼1 …)
+정원 6 (skel_legion=3 → MaxFor=6) · 소환 7회 (18:37:06~18:38:37): 쌍칼 3 · 대검 3 · 기본 1 → 18:37:12부터 converged=true · 최종 편성 대검 3 · 쌍칼 2 · 기본 1 (RR final2 n=6)
+판정:
+  (a) roster rand 27줄 모두 over=false (after 최대 대검 3 · 쌍칼 2 = 랭크와 같음) — 통과
+  (b) baseWithNeed=true 0줄 · 기본형은 정원 6에서 대검3·쌍칼2가 다 찬 뒤(18:37:17 next= · converged=true) 한 번만 — 통과
+  (c) 정원 3 11회 뒤 대검·쌍칼 모두 등장 · 어느 순간도 대검 >3 · 쌍칼 >2 없음 — 통과
+  (d) roster raised 18줄 전부 match=true (미리보기 계획 = 실제) — 통과
+  수렴: 정원 6에서 converged=true 연속 (18:37:12 이후 rand 8줄 전부) · 최종 대검 3 · 쌍칼 2 · 기본 1 — 통과
+스킬 창 (K 실제 입력 · 칸/노드 선택은 ButtonClickEvent):
+  pc-skillwin-raise-skeleton-roster-line-cap3.png — 해골 전사 상세 「편성 3/3: 대검 2·쌍칼 1 · 다음 소환: 대검 해골(가장 오래된 대검 해골 교체)」 (UI 텍스트 로그와 같음)
+  pc-skillwin-twin-node-formhint-mixed-cap3.png — 쌍칼 해골 노드 상세 「변이 합이 정원 3기보다 많아 소환마다 섞여 섭니다」 실제 표시 · 편성 줄 같이 보임
+  관찰(시험 설정 탓): 쌍칼 노드 아래 「6랭크부터」 — raise_skeleton 3에서 skel_twin 2를 직접 넣었기 때문(정상 진행에서는 생기지 않는 조합). 서버 효과 레벨은 tw=2로 계산됨
+로그: normal Error = SelfTest 의도한 실패(boom) 2줄 + 내 시험 스크립트 실수 1줄(_ClickControl 전역 없음 → 컴포넌트로 다시 호출) · 게임 코드 Error/Warning 0
+과제 2 (같은 플레이 이어서): DismissAll(해골 치움) → Go wasteland (-30.5,0.5) → DarkVision wasteland 밝기 0.82 (cleared=true · 원래 darkAmb 0.32)
+  어둠 강제 = scene-plate-wasteland maker-wall 「DM forced dark overlay (runtime only)」와 같은 길: client _DarkVision:SetGlobalLight(map, DarkColor, 0.40) (FadeFrom=0) · /ui 자식 19개 Enable=false · _CameraService:ZoomTo(48)
+  컷: wasteland-0.40-gate-x-30.5-z48.png (zoom=48.0) · wasteland-0.40-entry-x-20.5-z48.png (zoom=48.0) · wasteland-0.40-pack-x-17.5-y-2.5-z60.png (zoom=60 — 표본 방 무리 컷 pc-pack-on-plate-x-17.5-y-2.5-zoom60.png와 같은 위치·줌 · 화면 근처 몬스터 11)
+  해제: SetGlobalLight(ClearedLight(1)) → 밝기 0.82 · UI 19개 복구 · 줌 80 → maker_stop → 편집 모드
+비교판: docs/evidence/2026-11-02-sample-plate-room/compare-fair-0.40.png = 2열[롤백 황무지 0.40 | 표본 방 0.40] × 3행[입구 줌48 · 안쪽 줌48 · 몬스터 무리 줌60] (장면판 원본 열 제외)
