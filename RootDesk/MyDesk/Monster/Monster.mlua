@@ -56,7 +56,8 @@ script Monster extends Component
     @Sync
     property number RiteShield = 0           -- 보스 의식: 이만큼 피해를 먼저 막는 보호막 (오렌 심장 조각 — 최대 생명 15%)
     @Sync
-    property boolean Horde = false           -- 습격의 떼 (RaidDirector · 기획서 41): 생명 ×raidHordeHpMul · 피해 ×raidHordeDmgMul · 수식어 없음 · 리스폰 없음 · 등급 「horde」. 클라이언트는 이름표 「떼 · 」
+    property boolean Horde = false           -- 습격의 떼 (RaidDirector · 기획서 41 · 11-03 개편): 생명 ×raidHordeHpMul(1.0) · 피해 ×raidHordeDmgMul · 수식어 없음 · 리스폰 없음 · 등급 「horde」(추출) · 드롭은 일반 표. 클라이언트는 이름표 「떼 · 」
+    property number HordeSpeedMul = 1        -- 습격 떼 이동 속도 2단 (RaidDirector · 11-03 사용자 결정 3: raidHordeSpeedSlow 0.85 / raidHordeSpeedFast 1.1 — 줄 서서 오고 겹치지 않게)
     property boolean Inflow = false          -- 생성 D 혼합 ② 유입으로 들어온 몬스터 (MonsterSpawner): 일반 등급 그대로 · 죽으면 자리 리스폰 대신 스포너 풀로 돌아간다
     -- 개발용 전투 계측 (I05 · Telemetry DPS, 기본 꺼짐): HP 원장 식별자. 계측이 꺼져 있으면 읽지도 쓰지도 않는다
     property integer DpsRun = 0              -- 이 생명이 기록된 계측 실행 번호 (0 = 기록 밖)
@@ -229,6 +230,7 @@ script Monster extends Component
         local status = self:Status()
         if status ~= nil then mult = mult * status:SpeedMult() end
         if self.Enraged then mult = mult * 1.2 end
+        if self.Horde then mult = mult * self.HordeSpeedMul end
         movement.InputSpeed = self.BaseSpeed * mult * self:StateMul("speed")
     end
 
@@ -241,7 +243,7 @@ script Monster extends Component
         local traits = self:Traits()
         if traits ~= nil and traits.Champion then return "champion" end   -- 변종 우두머리 (악몽 이후 능력 붙은 정예는 정예 그대로)
         if self.Grade == 2 then return "elite" end
-        if self.Horde then return "horde" end   -- 습격의 떼 (monster_ranks horde · 추출 0.08 · 골드만)
+        if self.Horde then return "horde" end   -- 습격의 떼 (monster_ranks horde · 추출 0.08 · 드롭은 LootSystem이 일반 표로 — 11-03)
         return "normal"
     end
 

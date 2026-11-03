@@ -44,6 +44,12 @@ script MonsterTraits extends Component
     property integer ContactCount = 0
     property integer ContactEffectCount = 0
     property integer ContactPauseCount = 0
+    -- 습격 떼 솟아오름 (11-03 사용자 결정 A): 서버가 RiseSec(raidRiseSec)를 켜면 클라이언트가 한 번 — 발밑에서 위로 자라며(세로 0.2 → 1) 알파 0 → 1 + 발밑 흙·모래·물·재 튐
+    @Sync
+    property number RiseSec = 0
+    property number RiseStartAt = -1         -- 클라이언트: 솟기 시작한 때
+    property number RiseBaseY = 1            -- 클라이언트: 원래 세로 크기
+    property boolean RiseDone = false        -- 클라이언트: 이 개체의 솟음을 끝냈다 (다시 하지 않는다)
     property string AmpTint = "1,0.7,0.92"    -- 약화의 낙인 걸린 몸 색조 (곱 · 옅은 자홍 · 10-31 갈래 E — 둔화 푸른 색조와 같은 경로 · ""면 끔)
 
     @ExecSpace("ServerOnly")
@@ -141,6 +147,7 @@ script MonsterTraits extends Component
         -- 서버: 변종 능력 / 클라이언트: 색조
         if self:IsServer() then self:AbilityTick(delta) else
             self:TintTick()
+            if self.RiseSec > 0 and not self.RiseDone then self:RiseTick() end
             self:FlashTick()
             if self.Entity.Name == "BossShade" then self:GhostTick(delta) end
         end
@@ -514,6 +521,55 @@ script MonsterTraits extends Component
             _ParticleService:PlayBasicParticle(BasicParticleType.Aura, self.Entity.CurrentMap, Vector3(pos.x, pos.y + 0.6, 0), 0, Vector3(1.1, 1.1, 1), false, { Color = Color(0.45, 0.3, 0.7, 0.9) })
         end
         self.GhostWasAttack = attack
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RiseTick()
+        -- 습격 떼가 땅을 뚫고 솟는다 (RiseSec초): 세로 0.2 → 1(발밑 기준으로 자란다) · 알파 0 → 1. 처음 한 번 발밑 튐 (땅 속에서 숨던 무덤 구더기 EmergeFx와 같은 엔진 먼지 효과 · 바다 액트는 물보라)
+        local sprite = self.Entity.SpriteRendererComponent
+        local tr = self.Entity.TransformComponent
+        if not isvalid(sprite) or not isvalid(tr) then self.RiseDone = true return end
+        local now = _UtilLogic.ElapsedSeconds
+        if self.RiseStartAt < 0 then
+            self.RiseStartAt = now
+            self.RiseBaseY = tr.Scale.y
+            self:RiseBurst()
+        end
+        local t = math.min(1, (now - self.RiseStartAt) / math.max(0.05, self.RiseSec))
+        local c = sprite.Color
+        if t >= 1 then
+            tr.Scale = Vector3(tr.Scale.x, self.RiseBaseY, tr.Scale.z)
+            sprite.Color = Color(c.r, c.g, c.b, 1)
+            self.RiseDone = true
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] horde rise done %s sec=%.2f scaleY=%.2f", self.Entity.Name, now - self.RiseStartAt, self.RiseBaseY)) end
+            return
+        end
+        local e = 1 - (1 - t) * (1 - t)
+        tr.Scale = Vector3(tr.Scale.x, self.RiseBaseY * (0.2 + 0.8 * e), tr.Scale.z)
+        sprite.Color = Color(c.r, c.g, c.b, t)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RiseBurst()
+        -- 발밑 튐: 액트 1·2 흙·모래 먼지 · 액트 3 얕은 바다 물보라 · 액트 4 재 먼지 + 잿빛 김
+        local map = self.Entity.CurrentMap
+        if not isvalid(map) then return end
+        local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
+        local act = info ~= nil and info.act or 1
+        local p = self.Entity.TransformComponent.WorldPosition
+        local at = Vector3(p.x, p.y + 0.05, p.z - 0.05)
+        local kind = "dust"
+        if act == 3 then
+            kind = "water"
+            _ParticleService:PlayBasicParticle(BasicParticleType.BigSplash, map, at, 0, Vector3(0.35, 0.3, 1), false, { Color = Color(0.55, 0.7, 0.8, 0.9), ParticleCount = 10 })
+        else
+            _ParticleService:PlayBasicParticle(BasicParticleType.DustExplosion, map, at, 0, Vector3(0.45, 0.22, 1), false, { ParticleCount = 10 })
+            if act >= 4 then
+                kind = "ash"
+                _ParticleService:PlayBasicParticle(BasicParticleType.RisingSteam, map, at, 0, Vector3(0.4, 0.4, 1), false, { Color = Color(0.32, 0.3, 0.3, 0.6) })
+            end
+        end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] horde rise start %s act=%d fx=%s at=(%.2f,%.2f)", self.Entity.Name, act, kind, p.x, p.y)) end
     end
 
     @ExecSpace("ClientOnly")

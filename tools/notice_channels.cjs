@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 알림 채널 배정표 (10-31 실플레이 피드백 B-4): 화면 알림을 부르는 곳을 전부 찾아 채널 A·B·C·D로 나눈다.
-//   A 「상단 띠」  HudMap.TopPush · TopPushFor · ShowAlert · Util.NotifyTop(Map) — 습격 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장
+//   A 「상단 띠」  HudMap.TopPush · TopPushFor · ShowAlert · Util.NotifyTop(Map) — 습격 격퇴(예고는 11-03부터 글귀 없음) · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장
 //   B 「왼쪽 알림 더미」 NoticeFeed.Push · Util.Notify(Map) — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N · 상한·경고류 60초에 한 번
 //   C 「오른쪽 추적기」 HudMain.SetJournalTrack — 퀘스트 추적기 안 일지 진행 한 줄
 //   D 「줍기 표시」 Util.NotifyPickup · HudMain.PickupPop — 발밑 작은 글씨

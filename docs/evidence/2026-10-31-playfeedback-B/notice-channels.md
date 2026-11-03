@@ -12,7 +12,7 @@
 
 파티 목록(PC)은 평소 「파티 (n) · 이름 Lv · …」 한 줄로 접고 마우스를 올리거나 누르면 펼친다 — 왼쪽 알림 더미는 그 아래 끝을 피한다(`NoticeFeed.PlaceHome`). 모바일은 알림 더미가 지도 아래(오른쪽)라 예전처럼 펼친 채.
 
-## 부르는 곳 전수 (152곳 · A 10 · B 138 · C 1 · D 3)
+## 부르는 곳 전수 (152곳 · A 9 · B 139 · C 1 · D 3)
 
 | 파일 | 줄 | 함수 | 부르는 법 | 글(앞부분) | 채널 |
 |---|---|---|---|---|---|
@@ -51,8 +51,8 @@
 | Item/PlayerShop.mlua | 152 | Buy | Util.Notify | 도박: | B |
 | Monster/BossPattern.mlua | 809 | Announce | HudMap.TopPush | boss: | A |
 | Monster/BossPattern.mlua | 812 | Announce | NoticeFeed.Push | 처치! | B (채널 A를 끈 때만) |
-| Monster/Monster.mlua | 730 | Die | Util.NotifyTopMap | boss: | A |
-| Monster/Monster.mlua | 820 | TryRespawn | Util.NotifyTopMap | bossup: | A |
+| Monster/Monster.mlua | 732 | Die | Util.NotifyTopMap | boss: | A |
+| Monster/Monster.mlua | 822 | TryRespawn | Util.NotifyTopMap | bossup: | A |
 | Monster/MonsterSpawner.mlua | 655 | TrackNamed | Util.NotifyTopMap | boss: | A |
 | Monster/MonsterSpawner.mlua | 664 | TrackNamed | Util.NotifyTopMap | bossup: | A |
 | Player/PetSystem.mlua | 119 | ProcessPurchase | Util.Notify | 펫 「 | B |
@@ -80,8 +80,8 @@
 | Quest/PlayerQuest.mlua | 497 | TurnIn | Util.Notify | 보상: | B |
 | Quest/PlayerQuest.mlua | 541 | StartGearWatch | Util.Notify | 새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부… | B |
 | Quest/PlayerQuest.mlua | 674 | OfferGearChoice | Util.Notify | 보상 받을 가방 공간 | B |
-| Shadow/ShadowCommander.mlua | 451 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
-| Shadow/ShadowCommander.mlua | 453 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
+| Shadow/ShadowCommander.mlua | 449 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
+| Shadow/ShadowCommander.mlua | 451 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
 | Shadow/ShadowOwner.mlua | 94 | DisassembleMany | Util.Notify | 그림자 | B |
 | Shadow/ShadowOwner.mlua | 207 | RestAll | Util.Notify | 마을에서 쉬어 지친 그림자가 다시 싸울 수 있습니다 | B |
 | Shadow/ShadowOwner.mlua | 246 | GainKillExp | Util.Notify | 그림자 레벨 업 · | B |
@@ -144,8 +144,8 @@
 | Story/AshAwakening.mlua | 265 | Awaken | HudMap.ShowAlert | 하늘이 핏빛으로 물든다 | A |
 | UI/Hud/HudMain.mlua | 104 | OnBeginPlay | NoticeFeed.Push | d) end | B |
 | UI/Hud/HudMain.mlua | 509 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
-| UI/Hud/HudMain.mlua | 689 | RaidWarn | HudMap.TopPushFor | raid:warn | A |
-| UI/Hud/HudMain.mlua | 786 | RaidDefeated | HudMap.TopPush | raid:done | A |
+| UI/Hud/HudMain.mlua | 689 | RaidWarn | NoticeFeed.Push | 사방에서 떼가 몰려옵니다 | B |
+| UI/Hud/HudMain.mlua | 790 | RaidDefeated | HudMap.TopPush | raid:done | A |
 | UI/Hud/NoticeFeed.mlua | 82 | Push | HudMain.PickupPop | text) | D |
 | UI/Hud/UXFeedback.mlua | 162 | Push | HudMap.TopPush | : | A |
 | UI/Hud/UXFeedback.mlua | 168 | Push | NoticeFeed.Push | self:LineText(title, detail, true)) | B (큰 알림 넘침·창 안 결과) |
@@ -153,9 +153,9 @@
 | UI/Hud/UXFeedback.mlua | 368 | Release | NoticeFeed.Push | 외 알림 | B (큰 알림 넘침·창 안 결과) |
 | UI/Windows/GuideWindow.mlua | 461 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
 | UI/Windows/JournalWindow.mlua | 123 | UpdateBadge | HudMain.SetJournalTrack |  | C |
-| Undead/UndeadSystem.mlua | 812 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
-| Undead/UndeadSystem.mlua | 1578 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
-| Undead/UndeadSystem.mlua | 1584 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 813 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
+| Undead/UndeadSystem.mlua | 1617 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
+| Undead/UndeadSystem.mlua | 1623 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |
 | World/AltarRitual.mlua | 68 | OnReached | Util.Notify | 피의 제단이 잠잠합니다 — %d:%02d 뒤 다시 의식을 시작할 수 있습니다 | B |
 | World/AltarRitual.mlua | 223 | Bless | Util.Notify | 피의 신전 · 주는 피해 +25% (60초) | B |
 | World/AltarRitual.mlua | 229 | Tell | Util.Notify | text, p.PlayerComponent.UserId) end | B |

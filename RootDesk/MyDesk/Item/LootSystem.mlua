@@ -31,19 +31,13 @@ script LootSystem extends Logic
             mf = stats.BonusMF
             gf = stats.BonusGF
         end
+        -- 습격의 떼 (11-03 사용자 결정 「떼 몬스터도 아이템 드랍하게 해」): 예전 「골드만 절반」 예외를 없애고 일반 드롭표 그대로 — 품질도 일반 ×1.0 (상향 없음 · 파밍 남용 방지)
+        local hordeKill = rank == "horde"
+        if hordeKill then rank = "normal" end
         local d = _ItemData:GetDropTable(rank)
         -- 악몽·지옥: 없음 줄이고 골드·룬·장비 품질을 올린다 (difficulty.csv drop*Mul — 10-23 사용자: 디아2처럼 난이도가 오를수록 드롭이 좋아야)
         local diffIndex = self:DifficultyAt(monster.CurrentMap)
         local diff = _GameData:GetDifficulty(diffIndex)
-        if rank == "horde" then
-            -- 습격의 떼 (기획서 41 #3-A): 장비·룬·물약 없음 — 파밍 루프가 생기지 않게. 골드만 raidHordeGoldChance 확률로 일반의 절반
-            if _UtilLogic:RandomDouble() < _GameData.raidHordeGoldChance then
-                local q = monster.TransformComponent.WorldPosition
-                local amount = math.floor(_UtilLogic:RandomIntegerRange(monLevel * 3 + 2, monLevel * 8 + 5) * 0.5 * (1 + gf / 100) * (diff ~= nil and diff.goldAmountMul or 1))
-                if amount > 0 then self:Spawn(Vector2(q.x, q.y), killer.PlayerComponent.UserId, "gold", "", amount, 0) end
-            end
-            return
-        end
         -- 같은 맵 인원 보정: 추첨 횟수 + 비율 (소수 부분은 확률로, CoopRules · 10-13 X2)
         local pickF = d.picks * (1 + _CoopRules:DropBonus(monster.CurrentMap))
         local picks = math.floor(pickF)
@@ -109,6 +103,7 @@ script LootSystem extends Logic
             end
         end
         _ItemData.DropDiff = 0
+        if hordeKill and not Environment:IsPublishedPlay() then log(string.format("[VRF] horde drop picks=%d lv=%d", picks, monLevel)) end
         -- 룬은 D2처럼 희귀한 엔드 재료: 보스 확정 룬은 없앴다 (10-09). 의뢰 룬은 마지막 의뢰(묘지기 여왕)에서만
     end
 

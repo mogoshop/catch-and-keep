@@ -674,8 +674,9 @@ script HudMain extends Logic
     end
 
     @ExecSpace("ClientOnly")
-    method void RaidWarn(table pts, number sec, integer act)
-        -- 습격 예고 (기획서 41 #7-A · 글귀 「습격이 온다」): 가운데 위 글귀 + 떼가 솟을 자리마다 화면 가장자리 표식(RenderRaid) + 바닥 조짐 + 소리
+    method void RaidWarn(table pts, number sec, integer act, boolean first)
+        -- 습격 파도 예고 (11-03 사용자 결정 A · 「습격이 온다」 글귀·상단 띠 없앰): raidWarnSec(1.5초) 동안 떼가 솟을 쪽 화면 가장자리 붉은 맥동(RenderRaid)
+        --   + 미니맵 붉은 점(HudMap.RaidDots) + 바닥 조짐 + 낮은 북소리 1회. 첫 습격 한 번만 안내 줄 (그 뒤로는 글귀 없음)
         -- 10-29 코덱스 전체 납품: 바닥 조짐은 그 맵 액트(RaidDirector가 maps 정보의 act로 보낸다)의 4프레임을 150ms마다 갈아 끼운다 (Util.BeamFx와 같은 방식)
         local now = _UtilLogic.ElapsedSeconds
         for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
@@ -685,20 +686,16 @@ script HudMain extends Logic
         self.RaidUntil = now + sec
         self.RaidMarkFrame = 0
         self.RaidMarkRuids = { _GameData:GetUiIcon("ui_raid_edge_mark_1"), _GameData:GetUiIcon("ui_raid_edge_mark_2"), _GameData:GetUiIcon("ui_raid_edge_mark_3") }
-        if _HudMap.TopChannelOn then
-            _HudMap:TopPushFor("raid:warn", "습격이 온다", "", 2, math.max(_HudMap.TopSeconds, sec))   -- 채널 A 「상단 띠」 (10-31 B-4)
-        else
-            _UIKit:SetText("RaidText", "습격이 온다")
-            _UIKit:SetEnabled("RaidText", true)
-        end
-        _SoundDirector:PlayEffect(_GameConst.SfxCurse, 0.9)
+        if first then _NoticeFeed:Push("사방에서 떼가 몰려옵니다") end
+        local drum = _GameData:GetSound("raid_drum")
+        _SoundDirector:PlayEffect(drum ~= "" and drum or _GameConst.SfxCurse, 0.9)
         local a = math.max(1, math.min(4, act))
         self.RaidOmenAct = a
         self.RaidOmenFrames = _Util:KeyFrames(_GameConst.SpriteRaidOmen, "a" .. tostring(a))
         self.RaidOmenTick = 0
         self:RaidOmenDraw()   -- 다음 프레임부터는 RenderRaid(매 화면)가 예고 시작부터 지난 시간으로 150ms마다 갈아 끼운다
         _TimerService:SetTimerOnce(function() self:RaidClear() end, sec + 0.2)
-        log(string.format("[VRF] raid warn shown pts=%d sec=%.1f act=%d omenFrames=%d", #pts, sec, act, #self.RaidOmenFrames))
+        log(string.format("[VRF] raid warn shown pts=%d sec=%.1f act=%d omenFrames=%d first=%s drum=%s text=none", #pts, sec, act, #self.RaidOmenFrames, tostring(first), drum))
     end
 
     @ExecSpace("ClientOnly")
@@ -729,20 +726,26 @@ script HudMain extends Logic
         self.RaidUntil = 0
         _UIKit:SetEnabled("RaidText", false)
         for i = 1, 8 do _UIKit:SetEnabled("RaidMark" .. tostring(i), false) end
+        _HudMap:RaidDots({}, 0)
         for _, d in ipairs(self.RaidDecals) do if d ~= 0 then _EffectService:RemoveEffect(d) end end
         self.RaidDecals = {}
     end
 
     @ExecSpace("ClientOnly")
     method void RenderRaid()
-        -- 떼가 솟을 자리를 화면 가장자리 안쪽(48px)에 표식으로 — 화면 밖 자리의 방향이 보인다. 크기가 숨 쉬듯 커졌다 작아진다
+        -- 떼가 솟을 자리를 화면 가장자리 안쪽(48px)에 표식으로 — 화면 밖 자리의 방향이 보인다.
+        -- 11-03 A: 붉은 맥동 — 심장 박동처럼 0.5초마다 크게 뛰고(64 → 92px) 붉게 밝아졌다 흐려진다 (예전: 흰 표식이 숨 쉬듯 ±15%)
         -- 10-29 사용자 결정 64px · 코덱스 표식 3프레임(요청서 B-1): 1 나타남(첫 150ms) → 2 긁음(예고 내내) → 3 흩어짐(마지막 150ms)
         local now = _UtilLogic.ElapsedSeconds
         local root = _UIKit:Get("/ui/GameHUD")
         if now >= self.RaidUntil or not isvalid(root) then self:RaidClear() return end
         local size = root.UITransformComponent.RectSize
         local hx, hy = size.x * 0.5 - 48, size.y * 0.5 - 48
-        local pulse = 0.85 + 0.15 * math.sin(now * 9)
+        local beat = (now - self.RaidStartAt) % 0.5 / 0.5
+        local throb = math.max(0, 1 - beat * 2.2)            -- 박동 직후 1 → 0.23초에 0
+        local pulse = 1 + 0.45 * throb
+        local alpha = 0.45 + 0.55 * throb
+        _HudMap:RaidDots(self.RaidPts, 0.5 + 0.5 * throb)
         local tick = math.floor((now - self.RaidStartAt) / 0.15)
         if tick ~= self.RaidOmenTick and #self.RaidOmenFrames > 1 then
             self.RaidOmenTick = tick
@@ -753,7 +756,7 @@ script HudMain extends Logic
         local ruid = self.RaidMarkRuids[frame] or ""
         if frame ~= self.RaidMarkFrame then
             self.RaidMarkFrame = frame
-            log(string.format("[VRF] raid mark frame=%d size=%.0f pts=%d t=%.2f", frame, 64 * pulse, #self.RaidPts, now - self.RaidStartAt))
+            log(string.format("[VRF] raid mark frame=%d size=%.0f alpha=%.2f red pts=%d t=%.2f", frame, 64 * pulse, alpha, #self.RaidPts, now - self.RaidStartAt))
         end
         for i = 1, 8 do
             local name = "RaidMark" .. tostring(i)
@@ -769,6 +772,7 @@ script HudMain extends Logic
                     e.UITransformComponent.RectSize = Vector2(64 * pulse, 64 * pulse)
                     local sp = e.SpriteGUIRendererComponent
                     if ruid ~= "" and sp ~= nil and sp.ImageRUID.DataId ~= ruid then sp.ImageRUID = DataRef(ruid) end
+                    if sp ~= nil then sp.Color = Color(1, 0.2, 0.16, alpha) end
                 end
                 _UIKit:SetEnabled(name, true)
             else

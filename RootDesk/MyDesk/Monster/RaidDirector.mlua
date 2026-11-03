@@ -4,7 +4,13 @@
 -- 자리 = 불린 사람(처치를 채운 막타 주인) 둘레 반지름 raidRadiusMin~Max 8방향 — ReachablePoint로 벽 앞까지 당기고 raidMinReach 미만이면 그 방향은 버린다 (벽 너머 금지 · 시야 트인 방향만).
 -- 떼 = 맵 출현 목록 중 무리 유형 우선 · 생명 최저 종에 Monster.Horde (생명 ×raidHordeHpMul · 피해 ×raidHordeDmgMul · 수식어 없음 · 수명 raidHordeLifeSec · 리스폰 없음 · 등급 horde).
 --   악몽은 정예 우두머리 1 · 지옥은 변종 우두머리 1 + 2파(첫 파 raidPhase2At를 잡으면 raidPhase2Size).
--- 상한 = 플레이어당 raidCap(25/30/40) · 맵 raidMapCap · 방 raidRoomMobCap 넘으면 건너뛴다 ([TEL] raid skip). 예고 raidWarnSec 뒤 raidSpawnBatch마리씩 나눠 소환.
+-- 상한 = 플레이어당 raidCap(25/30/40) · 맵 raidMapCap · 방 raidRoomMobCap 넘으면 건너뛴다 ([TEL] raid skip).
+-- 11-03 개편 (사용자 결정 A + 1 + 3 · docs/design/64): 글귀 「습격이 온다」·상단 띠 없음 →
+--   [1] 파도: 규모 N을 raidWaveSize(4)씩 raidWaveGapSec(7)초 간격 파도로, 파도마다 8방향 고리에서 다른 방향(+3칸씩 돌아 135°씩 바뀐다). 모든 파도를 잡거나 수명이 끝나야 격퇴.
+--       지옥 2파는 첫 파도 묶음의 raidPhase2At를 잡으면 raidPhase2Size 규모를 파도로 더 붙인다.
+--   [3] 간격: 한 방향 최대 raidDirMax(3)마리(넘치면 가장 가까운 옆 방향) · 방향마다 바깥으로 raidSpawnGap(1.2)칸 줄 · 속도 2단(raidHordeSpeedFast/Slow 번갈아 · 줄 앞이 빠름).
+--   [A] 파도마다 raidWarnSec(1.5)초 예고 = 가장자리 붉은 맥동 + 미니맵 붉은 점 + 북소리(HudMain) → 소환 직후 raidRiseSec(0.5)초 땅을 뚫고 솟음(MonsterTraits.RiseTick · 그동안 제자리).
+--       첫 습격 1회만 안내 줄 「사방에서 떼가 몰려옵니다」(PlayerQuest.StorySeen raidintro).
 -- 보상 = 떼 처치 경험치 ×raidExpMul(RewardSystem) · 격퇴(떼 전멸)하면 불린 사람 발밑 골드 주머니(raidGoldPerLevel × 맵 레벨 + raidGoldBase) + 「습격 격퇴 · N마리」.
 -- 소환수 진형은 바꾸지 않는다 (10-28 사용자 #5-C).
 @Logic
@@ -158,28 +164,131 @@ script RaidDirector extends Logic
         self.Serial = self.Serial + 1
         -- 이 습격 표를 지역 변수로 들고 있는다: 아래 예고·로그 사이에 s.active가 다른 경로(맵 잠듦 Finish 등)로 비면 s.active.id가 nil 오류(LEA-2007)였다 (10-29 새벽 1건)
         local raid = { id = self.Serial, caller = caller, center = center, size = allow, species = species, level = level, leader = d.raidLeader or 0, phases = d.raidPhases or 1,
-            spawned = 0, killed = 0, fled = 0, alive = {}, queue = {}, startAt = now, pts = pts, spawnTimer = 0, phase2 = false, diff = diff, players = #players }
+            spawned = 0, killed = 0, fled = 0, alive = {}, queue = {}, startAt = now, pts = pts, spawnTimer = 0, phase2 = false, diff = diff, players = #players,
+            waves = self:SplitWaves(allow), waveNext = 1, waveTimer = 0, dirStart = _UtilLogic:RandomIntegerRange(0, 7), firstBatch = allow, act = 1 }
         s.active = raid
         s.kills = 0
         s.count = s.count + 1
-        local flat = {}
-        for _, p in ipairs(pts) do table.insert(flat, { p.x, p.y }) end
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
-        local act = info ~= nil and info.act or 1
-        for _, p in ipairs(players) do self:Warn(flat, _GameData.raidWarnSec, act, p.PlayerComponent.UserId) end
+        raid.act = info ~= nil and info.act or 1
         _Telemetry:NoteRaid(caller, "raidCount")
         _Telemetry:Say(string.format("[TEL] raid start map=%s diff=%d n=%d players=%d dirs=%d species=%s lv=%d", map.Name, diff, allow, #players, #pts, species, level))
         local o = self:RingOrigin(map, center)
-        log(string.format("[VRF] raid warn %s n=%d dirs=%d species=%s lv=%d count=%d/%d at=(%.2f,%.2f) shift=%.2f dirs0=%d", map.Name, allow, #pts, species, level, s.count, d.raidWaves or 0, center.x, center.y, (o - center):Magnitude(),
+        log(string.format("[VRF] raid warn %s n=%d waves=%d dirs=%d species=%s lv=%d count=%d/%d at=(%.2f,%.2f) shift=%.2f dirs0=%d", map.Name, allow, #raid.waves, #pts, species, level, s.count, d.raidWaves or 0, center.x, center.y, (o - center):Magnitude(),
             #self:RingSpotsFrom(map, center, center, _GameData.raidRadiusMin, _GameData.raidRadiusMax, _GameData.raidMinReach)))
-        local id = raid.id
-        _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:Launch(s) end end, _GameData.raidWarnSec)
+        self:ScheduleWave(s)
+    end
+
+    @ExecSpace("ServerOnly")
+    method table SplitWaves(integer n)
+        -- 규모 n을 raidWaveSize씩 파도로 (끝 파도는 남는 수 · 남는 수가 1이면 앞 파도에 붙인다 — 1마리 파도는 싱겁다)
+        local size = math.max(1, math.floor(_GameData.raidWaveSize))
+        local out = {}
+        local left = n
+        while left > 0 do
+            table.insert(out, math.min(size, left))
+            left = left - size
+        end
+        if #out >= 2 and out[#out] == 1 then
+            out[#out - 1] = out[#out - 1] + 1
+            table.remove(out, #out)
+        end
+        return out
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer DirIndex(Vector2 center, Vector2 p)
+        -- 고리 자리의 8방향 번호 (0 = 오른쪽 · 반시계 45°씩)
+        local v = p - center
+        return math.floor(math.atan(v.y, v.x) / (math.pi / 4) + 0.5) % 8
+    end
+
+    @ExecSpace("ServerOnly")
+    method table WaveDirs(table a, integer k)
+        -- 파도 k의 방향: 열린 방향 중 가장 오래 앞장서지 않은 방향(바로 전 파도와 다른 방향) · 같으면 8방향 고리에서 파도마다 +3칸(135°) 돈 자리에 가까운 쪽.
+        -- 옆 방향 = 앞장 방향에서 가장 가까운 다른 열린 방향 (한 방향 raidDirMax를 넘칠 때만 쓴다). 좁은 길(열린 방향 2개)이면 두 방향이 번갈아 앞장선다
+        local want = (a.dirStart + 3 * (k - 1)) % 8
+        local function gap(i, j) local g = math.abs(i - j) % 8 return math.min(g, 8 - g) end
+        if a.dirUsed == nil then a.dirUsed = {} end
+        local best, bestI, bestScore = nil, -1, 1e9
+        for _, p in ipairs(a.pts) do
+            local i = self:DirIndex(a.center, p)
+            local score = (a.dirUsed[i] or -99) * 10 + gap(i, want)
+            if score < bestScore then best, bestI, bestScore = p, i, score end
+        end
+        if best == nil then return {} end
+        a.dirUsed[bestI] = k
+        local side, sideG = nil, 99
+        for _, p in ipairs(a.pts) do
+            local i = self:DirIndex(a.center, p)
+            if i ~= bestI then
+                local g = gap(i, bestI)
+                if g < sideG then side, sideG = p, g end
+            end
+        end
+        if side == nil then return { best } end
+        return { best, side }
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ScheduleWave(table s)
+        -- 다음 파도: 불린 사람 둘레 자리를 다시 재고(움직였을 수 있다) 방향을 정해 raidWarnSec 예고 → LaunchWave
+        local a = s.active
+        if a == nil then return end
+        a.waveTimer = 0
+        local k = a.waveNext
+        if k > #a.waves then return end
+        local map = s.map
+        if _Util:IsAlive(a.caller) and a.caller.CurrentMap == map then
+            local center = _Util:Pos2(a.caller)
+            local pts = self:Spots(map, center)
+            if #pts > 0 then a.pts = pts a.center = center end
+        end
+        local dirs = self:WaveDirs(a, k)
+        if #dirs == 0 then self:Finish(s, "no-dir") return end
+        a.waveDirs = dirs
+        local n = a.waves[k]
+        local flat = { { dirs[1].x, dirs[1].y } }
+        if n > _GameData.raidDirMax and dirs[2] ~= nil then table.insert(flat, { dirs[2].x, dirs[2].y }) end
+        for _, p in ipairs(_Util:PlayersInMap(map)) do
+            local first = false
+            if k == 1 then
+                ---@type PlayerQuest
+                local quest = p:GetComponent("script.PlayerQuest")
+                if quest ~= nil and not quest:HasSeenStory("raidintro") then
+                    first = true
+                    quest:AddStorySeen("raidintro")
+                end
+            end
+            self:Warn(flat, _GameData.raidWarnSec, a.act, first, p.PlayerComponent.UserId)
+        end
+        local id = a.id
+        a.waveTimer = _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:LaunchWave(s, k) end end, _GameData.raidWarnSec)
+        log(string.format("[VRF] raid wave warn %s k=%d/%d n=%d dir=%d side=%d", map.Name, k, #a.waves, n, self:DirIndex(a.center, dirs[1]), dirs[2] ~= nil and self:DirIndex(a.center, dirs[2]) or -1))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LaunchWave(table s, integer k)
+        -- 파도 k 소환: 첫 파도는 불린 사람이 그 맵에 살아 있어야 한다 (아니면 취소) · 다음 파도 예약
+        local a = s.active
+        if a == nil then return end
+        a.waveTimer = 0
+        local map = s.map
+        if k == 1 and (not _Util:IsAlive(a.caller) or a.caller.CurrentMap ~= map) then self:Finish(s, "cancel") return end
+        self:EnqueueWave(s, k, k == 1 and a.leader > 0)
+        a.waveNext = k + 1
+        if a.spawnTimer == 0 then a.spawnTimer = _TimerService:SetTimerRepeat(function() self:RunQueue(s) end, _GameData.raidSpawnBatchSec) end
+        self:RunQueue(s)
+        if a.waveNext <= #a.waves then
+            local id = a.id
+            a.waveTimer = _TimerService:SetTimerOnce(function() if s.active ~= nil and s.active.id == id then self:ScheduleWave(s) end end, math.max(0.1, _GameData.raidWaveGapSec - _GameData.raidWarnSec))
+        end
     end
 
     @ExecSpace("Client")
-    method void Warn(table pts, number sec, integer act)
-        -- 예고 (본인 화면): HudMain이 글귀·가장자리 표식·바닥 조짐·소리를 띄운다
-        _HudMain:RaidWarn(pts, sec, act)
+    method void Warn(table pts, number sec, integer act, boolean first)
+        -- 파도 예고 (본인 화면): HudMain이 가장자리 붉은 맥동·미니맵 붉은 점·바닥 조짐·북소리 (글귀 없음 · 첫 습격만 안내 줄)
+        _HudMain:RaidWarn(pts, sec, act, first)
     end
 
     @ExecSpace("Client")
@@ -304,35 +413,70 @@ script RaidDirector extends Logic
     -- ───────── 소환 ─────────
 
     @ExecSpace("ServerOnly")
-    method void Launch(table s)
-        -- 예고가 끝났다: 불린 사람이 그 맵에 살아 있으면 자리를 다시 재고(3칸 넘게 움직였으면) 나눠 소환
+    method void EnqueueWave(table s, integer k, boolean withLeader)
+        -- 파도 하나를 줄 세운다 (11-03 사용자 결정 3): 한 방향 최대 raidDirMax · 넘치면 옆 방향, 방향마다 고리 자리에서 바깥으로 raidSpawnGap칸 간격 한 줄.
+        -- 소환점은 이 파도·살아 있는 떼 모두와 raidSpawnGap 이상 떨어진다 (벽에 막히면 옆으로 한 칸씩 비켜 본다). 속도는 번갈아 빠름·느림, 줄 앞(플레이어 쪽)이 빠름 → 따라잡아 겹치지 않는다
         local a = s.active
         local map = s.map
-        if a == nil then return end
-        if not _Util:IsAlive(a.caller) or a.caller.CurrentMap ~= map then self:Finish(s, "cancel") return end
-        local center = _Util:Pos2(a.caller)
-        if (center - a.center):Magnitude() > 3 then
-            local pts = self:Spots(map, center)
-            if #pts > 0 then a.pts = pts a.center = center end
+        local n = a.waves[k]
+        local dirs = a.waveDirs or self:WaveDirs(a, k)
+        local cap = math.max(1, math.floor(_GameData.raidDirMax))
+        local gapLen = _GameData.raidSpawnGap
+        local taken = {}
+        for _, h in ipairs(a.alive) do if isvalid(h.e) then table.insert(taken, _Util:Pos2(h.e)) end end   -- 앞 파도가 아직 고리 근처에 있으면 그 자리도 피한다
+        local cols = {}
+        local left = n
+        for ci, base in ipairs(dirs) do
+            if left <= 0 then break end
+            local c = math.min(cap, left)
+            if ci == #dirs then c = left end   -- 열린 방향이 하나뿐이면 그 방향에 다 (드문 경우 · 로그로 남긴다)
+            table.insert(cols, { base = base, n = c })
+            left = left - c
         end
-        self:Enqueue(s, a.size, a.leader > 0)
-        a.spawnTimer = _TimerService:SetTimerRepeat(function() self:RunQueue(s) end, _GameData.raidSpawnBatchSec)
-        self:RunQueue(s)
+        local speeds = {}
+        for i = 1, n do table.insert(speeds, (i % 2 == 1) and _GameData.raidHordeSpeedFast or _GameData.raidHordeSpeedSlow) end
+        local si = 1
+        local minGap = 99
+        local placed = {}
+        for ci, col in ipairs(cols) do
+            local dir = col.base - a.center
+            local len = math.max(0.01, dir:Magnitude())
+            local u = Vector2(dir.x / len, dir.y / len)
+            local side = Vector2(-u.y, u.x)
+            local colSpeeds = {}
+            for j = 1, col.n do table.insert(colSpeeds, speeds[si]) si = si + 1 end
+            table.sort(colSpeeds, function(x, y) return x > y end)
+            for j = 0, col.n - 1 do
+                local p = self:GapSpot(map, col.base, u, side, j, gapLen, taken)
+                local near = 99
+                for _, q in ipairs(taken) do near = math.min(near, (q - p):Magnitude()) end
+                minGap = math.min(minGap, near)
+                table.insert(taken, p)
+                table.insert(placed, string.format("%d:%.1f", self:DirIndex(a.center, col.base), colSpeeds[j + 1]))
+                table.insert(a.queue, { p = p, leader = withLeader and ci == 1 and j == 0, speed = colSpeeds[j + 1] })
+            end
+        end
+        log(string.format("[VRF] raid wave %s k=%d/%d n=%d cols=%d minGap=%.2f slots=%s", map.Name, k, #a.waves, n, #cols, minGap >= 99 and -1 or minGap, table.concat(placed, ",")))
     end
 
     @ExecSpace("ServerOnly")
-    method void Enqueue(table s, integer n, boolean withLeader)
-        -- 자리를 방향마다 돌아가며 나누고 조금씩 흔든다 (벽 칸이면 가장 가까운 빈 칸)
-        local a = s.active
-        for i = 1, n do
-            local base = a.pts[(i - 1) % #a.pts + 1]
-            local dir = base - a.center
-            local len = math.max(0.01, dir:Magnitude())
-            local side = Vector2(-dir.y / len, dir.x / len)
-            local q = base + side * ((_UtilLogic:RandomDouble() - 0.5) * 1.8) + dir * ((_UtilLogic:RandomDouble() - 0.5) * 1.2 / len)
-            local free = _Util:NearestFreePoint(s.map, q, 2)
-            table.insert(a.queue, { p = free or base, leader = withLeader and i == 1 })
+    method Vector2 GapSpot(Entity map, Vector2 base, Vector2 u, Vector2 side, integer j, number gapLen, table taken)
+        -- 줄의 j번째 자리: 고리 자리에서 바깥으로 j칸 → 막혔거나 가까우면 옆으로 ±1·±2칸 (같은 깊이·한 칸 앞) → 그래도 없으면 가장 가까운 빈 칸
+        local tries = { { j, 0 }, { j, 1 }, { j, -1 }, { j - 1, 1 }, { j - 1, -1 }, { j, 2 }, { j, -2 }, { j + 1, 0 }, { j + 1, 1 }, { j + 1, -1 },
+            { j + 1, 2 }, { j + 1, -2 }, { j + 2, 0 }, { j + 2, 1 }, { j + 2, -1 }, { j, 3 }, { j, -3 } }
+        for _, t in ipairs(tries) do
+            local want = base + u * (gapLen * t[1]) + side * (gapLen * t[2])
+            local q = _Util:ReachablePoint(map, base, want, 0.4)
+            if (q - want):Magnitude() < 0.05 then
+                local ok = true
+                for _, o in ipairs(taken) do
+                    if (o - q):Magnitude() < gapLen then ok = false break end
+                end
+                if ok then return q end
+            end
         end
+        local free = _Util:NearestFreePoint(map, base + u * (gapLen * j), 2)
+        return free or base
     end
 
     @ExecSpace("ServerOnly")
@@ -350,13 +494,15 @@ script RaidDirector extends Logic
             if isvalid(e) then
                 a.spawned = a.spawned + 1
                 table.insert(a.alive, { e = e, at = now })
-                local level, leader, diff = a.level, item.leader, a.diff
+                local level, leader, diff, speed = a.level, item.leader, a.diff, item.speed or 1
                 _Util:AfterSpawn(e, "script.Monster", function(comp)
                     ---@type Monster
                     local m = comp
                     m.Horde = true
                     m.RespawnDelay = -1
+                    m.HordeSpeedMul = speed
                     m:ApplyLevel(level, leader)
+                    m:RefreshSpeed()
                     if leader then
                         -- 떼 우두머리: 악몽 = 정예(+정예 능력) · 지옥 = 변종 우두머리 (D-A)
                         if diff >= 2 then m:MakeVariant(_GameData:RollVariant(diff))
@@ -365,13 +511,25 @@ script RaidDirector extends Logic
                     -- 감지 4칸 밖에서도 곧장 온다: SetTarget만으로는 서 있었고(10-28 메이커 실험: 9.4칸 그대로 IDLE), 탐지 범위를 키워야 온다(9.4 → 1.7칸)
                     local chase = e.AIChaseComponent
                     if isvalid(chase) then chase.DetectionRange = _GameData.raidHordeDetect end
+                    -- 땅을 뚫고 솟는다 (11-03 A): 클라이언트가 RiseSec초 동안 아래에서 위로 + 알파 0→1 · 그동안 제자리 (추격을 잠깐 끈다)
+                    ---@type MonsterTraits
+                    local traits = e:GetComponent("script.MonsterTraits")
+                    local rise = _GameData.raidRiseSec
+                    if traits ~= nil and rise > 0 then
+                        traits.RiseSec = rise
+                        if isvalid(chase) then chase.Enable = false end
+                        _TimerService:SetTimerOnce(function()
+                            if isvalid(e) and isvalid(e.AIChaseComponent) and not m.IsDead then e.AIChaseComponent.Enable = true end
+                        end, rise)
+                        _TimerService:SetTimerOnce(function() if isvalid(e) and traits ~= nil then traits.RiseSec = 0 end end, rise + 1)
+                    end
                 end, nil)
             end
         end
         if #a.queue == 0 and a.spawnTimer ~= 0 then
             _TimerService:ClearTimer(a.spawnTimer)
             a.spawnTimer = 0
-            log(string.format("[VRF] raid spawned %s n=%d", map.Name, a.spawned))
+            log(string.format("[VRF] raid spawned %s n=%d wave=%d/%d", map.Name, a.spawned, a.waveNext - 1, #a.waves))
         end
     end
 
@@ -425,15 +583,15 @@ script RaidDirector extends Logic
             self:Finish(s, "empty")
             return
         end
-        -- 지옥 2파: 첫 파의 raidPhase2At를 잡았을 때 raidPhase2Size 규모를 같은 자리에서 한 번 더
-        if a.phases >= 2 and not a.phase2 and a.killed >= math.ceil(a.size * _GameData.raidPhase2At) then
+        -- 지옥 2파: 첫 파도 묶음의 raidPhase2At를 잡았을 때 raidPhase2Size 규모를 파도로 더 붙인다 (파도 예약이 끝났으면 바로 다음 파도)
+        if a.phases >= 2 and not a.phase2 and a.killed >= math.ceil(a.firstBatch * _GameData.raidPhase2At) then
             a.phase2 = true
-            local n = math.max(1, math.floor(a.size * _GameData.raidPhase2Size))
-            self:Enqueue(s, n, false)
-            if a.spawnTimer == 0 then a.spawnTimer = _TimerService:SetTimerRepeat(function() self:RunQueue(s) end, _GameData.raidSpawnBatchSec) end
-            log(string.format("[VRF] raid phase2 %s n=%d", map.Name, n))
+            local n = math.max(1, math.floor(a.firstBatch * _GameData.raidPhase2Size))
+            for _, w in ipairs(self:SplitWaves(n)) do table.insert(a.waves, w) end
+            if a.waveTimer == 0 then self:ScheduleWave(s) end
+            log(string.format("[VRF] raid phase2 %s n=%d waves=%d", map.Name, n, #a.waves))
         end
-        if #a.queue == 0 and #a.alive == 0 and a.spawned > 0 and a.spawnTimer == 0 then
+        if a.waveNext > #a.waves and a.waveTimer == 0 and #a.queue == 0 and #a.alive == 0 and a.spawned > 0 and a.spawnTimer == 0 then
             if a.fled == 0 then self:Victory(s) else self:Finish(s, "timeout") end
         end
     end
@@ -465,6 +623,8 @@ script RaidDirector extends Logic
         local a = s.active
         if a == nil then return end
         if a.spawnTimer ~= 0 then _TimerService:ClearTimer(a.spawnTimer) end
+        if a.waveTimer ~= 0 then _TimerService:ClearTimer(a.waveTimer) end
+        a.waveTimer = 0
         local now = _UtilLogic.ElapsedSeconds
         s.active = nil
         s.nextAt = now + _GameData.raidMinGapSec

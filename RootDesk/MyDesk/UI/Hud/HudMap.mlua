@@ -56,6 +56,8 @@ script HudMap extends Logic
     property number NextBossAt = 0
     property string RemainLogKey = ""          -- 남은 망자 안내 판정 로그 (값이 바뀔 때만 — RemainingFocus)
 
+    property table RaidDotEntities = {}     -- 습격 파도 예고 미니맵 붉은 점 (11-03 A · 파티원 점 P1을 실행 중 복제 — ui 파일은 그대로)
+    property integer RaidDotShown = 0
     property integer CheerMarkCount = 8     -- 격려 「!」 칸 수 (ui.cjs CheerMark1~8)
     -- ── 알림 채널 A 「상단 띠」 (10-31 실플레이 피드백 B-4 · docs/evidence/2026-10-31-playfeedback-B/notice-channels.md) ──
     --   맵 배너 자리(Banner) 하나를 습격 시작/격퇴 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장 이름이 함께 쓴다.
@@ -1188,6 +1190,35 @@ script HudMap extends Logic
             end
         end
         for i = n + 1, 3 do _UIKit:SetEnabled("MiniMap/Body/Area/P" .. tostring(i), false) end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RaidDots(table pts, number alpha)
+        -- 습격 파도가 솟을 자리를 미니맵에 붉은 점으로 (HudMain.RenderRaid가 예고 동안 매 화면 · pts 비면 거둔다). 원 밖 자리는 ToMini가 테두리에 붙인다
+        local area = _UIKit:Get("MiniMap/Body/Area")
+        local proto = _UIKit:Get("MiniMap/Body/Area/P1")
+        for i = 1, math.min(8, #pts) do
+            local e = self.RaidDotEntities[i]
+            if not isvalid(e) and isvalid(proto) and isvalid(area) then
+                e = _SpawnService:SpawnByEntity(proto, "RaidDot" .. tostring(i), Vector3(0, 0, 0), area, true)
+                self.RaidDotEntities[i] = e
+                if isvalid(e) then log("[VRF] raid minimap dot made " .. tostring(i)) end
+            end
+            if isvalid(e) then
+                local sp = e.SpriteGUIRendererComponent
+                if isvalid(sp) then sp.Color = Color(1, 0.16, 0.12, alpha) end
+                e.UITransformComponent.anchoredPosition = self:ToMini(Vector2(pts[i][1], pts[i][2]))
+                if not e.Enable then e.Enable = true end
+            end
+        end
+        for i = #pts + 1, 8 do
+            local e = self.RaidDotEntities[i]
+            if isvalid(e) and e.Enable then e.Enable = false end
+        end
+        if #pts ~= self.RaidDotShown then
+            self.RaidDotShown = #pts
+            log(string.format("[VRF] raid minimap dots=%d", #pts))
+        end
     end
 
     @ExecSpace("ClientOnly")
