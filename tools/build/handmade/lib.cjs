@@ -282,6 +282,60 @@ function scenePlates() {
   if (!SCENE_PLATES) { SCENE_PLATES = {}; if (fs.existsSync(path.join(HM_DIR, "scene_plates.csv"))) for (const r of load("handmade/scene_plates")) (SCENE_PLATES[r.plate] = SCENE_PLATES[r.plate] || []).push(r); }
   return SCENE_PLATES;
 }
+// 11-03 포탈 문 (data/handmade/door_tops.csv · 사용자 「사냥터로 가는 포탈 문 위로 캐릭터가 올라간다」): 입구·계단 그림(decor_collision class portal)은
+//   열린 문(open_l~open_r 열)만 통행 · 양옆 기둥·문틀(body 나머지 열)은 발 줄부터 자르는 선(cut_row = 열린 문 아치 윗선)까지 막고,
+//   윗부분(<그림>-top · 같은 캔버스·피벗)을 앞층(Default/5)에 얹는다. 이름 <ArtProp n>DoorTop — DarkVision은 문 윗부분을 반투명(TopFade)으로 만들지 않는다(문 안으로 들어가는 몸 윗부분을 가린다)
+let DOOR_TOPS = null;
+function doorOf(name) { if (!DOOR_TOPS) { DOOR_TOPS = {}; if (fs.existsSync(path.join(HM_DIR, "door_tops.csv"))) for (const r of load("handmade/door_tops")) DOOR_TOPS[r.name] = r; } return DOOR_TOPS[name] || null; }
+// 문 그림의 막을 칸·자르는 선 (월드): 캔버스 px → 월드 = 발 x ± (px − 피벗 x × 폭) × 배율/100 · 자르는 선 y = 발 y + (높이 − cut_row − 피벗 y × 높이) × 배율/100
+function doorCells(dr, x, y, sc, flip, pivotY) {
+  const W = num(dr.w), H = num(dr.h), k = sc / 100;
+  const wx = (px) => (flip ? x - (px - 0.5 * W) * k : x + (px - 0.5 * W) * k);
+  const span = (a, b) => [Math.min(wx(a), wx(b)), Math.max(wx(a), wx(b))];
+  const [bl, br] = span(num(dr.body_l), num(dr.body_r)), [ol, or] = span(num(dr.open_l), num(dr.open_r));
+  const cutY = y + (H - num(dr.cut_row) - pivotY * H) * k;
+  const ov = (cx, a, b) => Math.min(cx + 1, b) - Math.max(cx, a);
+  const cy0 = Math.floor(y), out = [], open = [];
+  for (let cx = Math.floor(bl); cx <= Math.floor(br - 1e-6); cx++) {
+    if (ov(cx, bl, br) < 0.35) continue;
+    if (ov(cx, ol, or) >= 0.5 || cx === Math.floor(x)) { open.push(cx); continue; }   // 열린 문 + 포털 열은 늘 통행
+    for (let cy = cy0; cy < cutY - 1e-6; cy++) out.push([cx, cy]);
+  }
+  return { cells: out, open, cutY };
+}
+// 문 기둥 칸 고르기: 아래 줄부터 한 칸씩 더해 보고, 포털 칸에서 창(±DOOR_WIN칸) 안 4방향 BFS로 ① 막기 전에 닿던 바닥이 모두 닿고 ② 창 가장자리 띠(DOOR_RING칸 밖) 거리가 그대로일 때만 남긴다
+const DOOR_WIN = 12, DOOR_RING = 9, DOOR_TOL = 2;
+function doorKeep(cand, pc, open, tol = 0) {
+  const bfs = (extra) => {
+    const d = new Map([[key(pc[0], pc[1]), 0]]), q = [pc];
+    for (let i = 0; i < q.length; i++) {
+      const [x, y] = q[i], dd = d.get(key(x, y));
+      for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + ax, ny = y + ay, k = key(nx, ny);
+        if (Math.abs(nx - pc[0]) > DOOR_WIN || Math.abs(ny - pc[1]) > DOOR_WIN || d.has(k) || extra.has(k) || !open(nx, ny)) continue;
+        d.set(k, dd + 1); q.push([nx, ny]);
+      }
+    }
+    return d;
+  };
+  const d0 = bfs(new Set()), kept = new Set();
+  for (const c of cand.slice().sort((a, b) => a[1] - b[1] || a[0] - b[0])) {
+    const k = key(c[0], c[1]);
+    if (!d0.has(k)) continue;   // 원래 닿지 않던 칸은 막을 필요 없다
+    const trial = new Set(kept); trial.add(k);
+    const d1 = bfs(trial);
+    let ok = true;
+    for (const [kk, v] of d0) {
+      if (trial.has(kk)) continue;
+      const v1 = d1.get(kk);
+      if (v1 === undefined) { ok = false; break; }
+      const [xx, yy] = kk.split(",").map(Number);
+      if (Math.max(Math.abs(xx - pc[0]), Math.abs(yy - pc[1])) >= DOOR_RING && v1 > v + tol) { ok = false; break; }
+    }
+    if (ok) kept.add(k);
+  }
+  return cand.filter((c) => kept.has(key(c[0], c[1])));
+}
 function topCuts() { if (!TOP_CUT) { TOP_CUT = {}; if (fs.existsSync(path.join(HM_DIR, "top_cutlines.csv"))) for (const r of load("handmade/top_cutlines")) TOP_CUT[r.name] = r; } return TOP_CUT; }
 // 자르는 선 높이 = 발 y + 그림 화면 높이 × topCutFrac (= 캔버스 아래에서 첫 완전 투명 줄까지 비율 − 피벗)
 function topCutFrac(topName, srcName) { const r = topCuts()[topName]; return r ? (num(r.h) - num(r.first_clear_row)) / num(r.h) - num(r.pivot_y, 0) : roles.footFrac(srcName); }
@@ -979,7 +1033,21 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     const cell = [Math.floor(x), Math.floor(y)];
     let topCells = null;   // 이 그림이 막은 칸 (윗부분 그림 자르는 선 대조)
     const okHas = (w) => String(ok || "").split("+").includes(w);   // ok=gate+cliff: 둘 다 일부러 (10-28 곁가지 올라가는 계단 — 벽에 붙고 포털 위)
-    if (mode) {
+    const dr = !decal && v5 ? doorOf(spName) : null;   // 11-03 포탈 문: 기둥 막음 + 윗부분 앞층 (doorCells)
+    if (mode && dr) {
+      const dc = doorCells(dr, x, y, sc, !!flip, num((topCuts()[`${spName}-top`] || {}).pivot_y, 0));
+      const cand = dc.cells.filter(([cx, cy]) => bp.isFloor(cx, cy) && !funcCells.has(key(cx, cy)) && !blocked.has(key(cx, cy)));
+      // 길을 바꾸지 않는 칸만 막는다 (route_lengths 불변): 포털 칸에서 창(±DOOR_WIN) 안 BFS 거리 — 창 가장자리 띠 칸의 거리가 그대로이고 새로 갇히는 바닥이 없을 때만 그 칸을 더한다.
+      //   맵 끝 층 계단처럼 옆에서 들어오는 문은 기둥 칸이 유일한 길이라 자연히 빠진다 (11-03 crabcave1 서쪽 계단)
+      let pc = [Math.floor(x), Math.floor(y) + 1];   // 포털 칸 = 문 열(발 x) 발 줄 위 4칸 안의 기능 엔티티 칸
+      for (let cy = Math.floor(y); cy <= Math.floor(y) + 4; cy++) if (funcCells.has(key(Math.floor(x), cy))) { pc = [Math.floor(x), cy]; break; }
+      // 곁가지 입구(H)는 길(W→E·끝방)의 끝이 아니라 둘레 띠 거리 +DOOR_TOL까지 허용 · 층 계단(W·E 자리)은 0 (route_lengths 불변)
+      const cells = doorKeep(cand, pc, (cx, cy) => bp.isFloor(cx, cy) && !blocked.has(key(cx, cy)), /^a\d-stair-/.test(spName) ? 0 : DOOR_TOL);
+      // 길 안내 둘레 검사(C-3)는 하지 않는다 — 문은 길의 끝(포털)이고 막는 건 열린 문 양옆 기둥뿐
+      for (const [cx, cy] of cells) blocked.add(key(cx, cy));
+      pieces.push({ name, sprite: spName, x, y, sc, decal: false, block: cells.length > 0, door: true, cells, scatter: !!scatter, flip: !!flip, open: dc.open, cutY: r3(dc.cutY) });
+      topCells = cells;
+    } else if (mode) {
       // 10-31 C-2: 키 큰 것(block)만 막는다 — 길 칸·기능 자리 곁이라고 봐주지 않는다(일관성). 기능 엔티티가 선 칸만은 비운다
       // v5: 역할표 feature·structure(서 있는 것)는 막음이 기본 — 바닥 분류(floor)·포털 그림·겹친 빛만 통과
       const cls = decal ? null : decor.classOf(spName), standing = v5 && !decal && ["feature", "structure"].includes(roles.roleOf(spName)) && !["floor", "portal", "overlay"].includes(cls.class);
@@ -1020,7 +1088,19 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     //   막지 않는 그림이면(막힌 칸 없음) 어디든 설 수 있어 같은 꼴이라 놓지 않는다. 자르는 선 자체는 고치지 않는다(코덱스 그림 그대로).
     //   (10-31 윗부분 2차) 자르는 선은 실제 값(topCutFrac). 후보가 여럿(배치 변형)이면 규칙을 지키는 것 중 자르는 선이 가장 높은 것(막힘 꼭대기에 가장 가까운 것)을 쓴다.
     const tops = v5 && !decal ? topCandidates(table, spName) : [];
-    if (tops.length) {
+    if (dr && mode && tops.length) {
+      // 11-03 포탈 문 윗부분: 문 안(열린 열)에 선 몸은 가리는 게 목적이라 막힘 꼭대기 규칙은 쓰지 않고, 앞(남쪽)에 선 머리만 덮지 않게 (TOP_FRONT_HEAD)
+      const cutY = y + ((num(sp.h, 0) * sc) / 100) * topCutFrac(tops[0], spName), head = cell[1] + TOP_FRONT_HEAD;
+      if (cutY < head - 1e-6) {
+        topSkippedList.push({ name, sprite: spName, reason: "front", cutY: r3(cutY), blockTop: null, head });
+        topSkipped.push(`${name} ${spName}(앞에 선 머리 y ${r3(head)} > 문 자르는 선 y ${r3(cutY)})`);
+      } else {
+        const t = sprite(table[tops[0]].ruid, null, TOP_ORDER), tr = t["MOD.Core.SpriteRendererComponent"];
+        tr.SortingLayer = TOP_LAYER; tr.FlipX = !!flip; if (c) tr.Color = tintOf(c);
+        t["MOD.Core.TransformComponent"] = { Scale: vec3(sc) };
+        out.push({ name: `${name}DoorTop`, pos: [r3(x), r3(py), zOf(y, decal)], overrides: t });
+      }
+    } else if (tops.length) {
       const col = (topCells || []).filter(([cx]) => cx === cell[0]);
       const blockTop = col.length ? Math.max(...col.map(([, cy]) => cy)) + 1 : null;
       const H = (num(sp.h, 0) * sc) / 100, cuts = tops.map((n) => ({ n, cutY: y + H * topCutFrac(n, spName) }));

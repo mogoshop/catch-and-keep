@@ -566,7 +566,10 @@ function layoutOf(id, env) {
     id, v5: !!bp.v5, w: bp.w, h: bp.h, grid: bp.rows, walls: new Set(Object.keys(bp.walls)), zones: bp.zones, roads: bp.roads, base: bp.base, markers: bp.markers,
     builtOpen: new Set(bp.cells().filter(([x, y]) => built.open(x, y)).map(([x, y]) => `${x},${y}`)), end: rl.endOf(d),
     pieces: (art.pieces || []).map((p) => ({ name: p.name, s: p.sprite, x: p.x, y: p.y, decal: p.decal, block: p.block, flip: p.flip, cells: p.block ? (p.cells || []).map(([x, y]) => `${x + bp.w / 2},${bp.h / 2 - y}`) : null, vh: visH(p) })),
-    blocked: [...art.blocked].map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
+    // 11-03 포탈 문 기둥 칸(lib.cjs doorCells · door_tops.csv)은 골격 너비·벽감·막다른 줄 판정에서 뺀다 — 문은 길의 끝(포털)이고 열린 문 1칸 + 양옆 기둥은 그림 그대로의 의도
+    //   (기둥은 빌더 doorKeep이 길이 바뀌지 않는 칸만 고른다 · route_lengths --check가 길 불변을 확인) · 충돌 칸 자체는 builtOpen·check_decor_collision이 그대로 잰다
+    blocked: [...art.blocked].filter((k) => !(art.pieces || []).some((p) => p.door && (p.cells || []).some(([x, y]) => `${x},${y}` === k))).map((k) => { const [x, y] = k.split(",").map(Number); return `${x + bp.w / 2},${bp.h / 2 - y}`; }),
+    doorCells: (art.pieces || []).filter((p) => p.door).reduce((n, p) => n + (p.cells || []).length, 0),
     guide: art.entities.filter((e) => /^ArtGuide/.test(e.name)).length, v5keep: !!bp.v5keep,
     seams: bp.v5 && !bp.v5keep ? art.entities.filter((e) => /^Art(Band|Corner|Shade)\d/.test(e.name) && ((e.overrides["MOD.Core.SpriteRendererComponent"] || {}).Color || { a: 1 }).a < 1).length : 0, entities: art.entities.length + func.length + 1, piecesKnown: !!art.mode,
     tallNoTop: tallNoTop(art, ctx), topSkipped: art.topSkipped || [],
