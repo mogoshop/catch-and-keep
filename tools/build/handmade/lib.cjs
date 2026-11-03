@@ -286,6 +286,7 @@ function scenePlates() {
 //   열린 문(open_l~open_r 열)만 통행 · 양옆 기둥·문틀(body 나머지 열)은 발 줄부터 자르는 선(cut_row = 열린 문 아치 윗선)까지 막고,
 //   윗부분(<그림>-top · 같은 캔버스·피벗)을 앞층(Default/5)에 얹는다. 이름 <ArtProp n>DoorTop — DarkVision은 문 윗부분을 반투명(TopFade)으로 만들지 않는다(문 안으로 들어가는 몸 윗부분을 가린다)
 let DOOR_TOPS = null;
+const DOOR_OPEN_HALF = 1;   // 포털 열 양옆 통행 칸 수 (3칸 폭)
 function doorOf(name) { if (!DOOR_TOPS) { DOOR_TOPS = {}; if (fs.existsSync(path.join(HM_DIR, "door_tops.csv"))) for (const r of load("handmade/door_tops")) DOOR_TOPS[r.name] = r; } return DOOR_TOPS[name] || null; }
 // 문 그림의 막을 칸·자르는 선 (월드): 캔버스 px → 월드 = 발 x ± (px − 피벗 x × 폭) × 배율/100 · 자르는 선 y = 발 y + (높이 − cut_row − 피벗 y × 높이) × 배율/100
 function doorCells(dr, x, y, sc, flip, pivotY) {
@@ -298,7 +299,8 @@ function doorCells(dr, x, y, sc, flip, pivotY) {
   const cy0 = Math.floor(y), out = [], open = [];
   for (let cx = Math.floor(bl); cx <= Math.floor(br - 1e-6); cx++) {
     if (ov(cx, bl, br) < 0.35) continue;
-    if (ov(cx, ol, or) >= 0.5 || cx === Math.floor(x)) { open.push(cx); continue; }   // 열린 문 + 포털 열은 늘 통행
+    // 열린 문 + 포털 열 ±1은 늘 통행 (11-03 사용자 「굶주린 굴에 충돌 넣어서 진입이 안 된다」 — 기둥이 포털 열 바로 양옆을 막아 폭 1칸 통로였다 · 플레이어 0.75칸 + 여유 = 3칸)
+    if (ov(cx, ol, or) >= 0.5 || Math.abs(cx - Math.floor(x)) <= DOOR_OPEN_HALF) { open.push(cx); continue; }
     for (let cy = cy0; cy < cutY - 1e-6; cy++) out.push([cx, cy]);
   }
   return { cells: out, open, cutY };

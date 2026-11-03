@@ -950,7 +950,7 @@ Object.assign(module.exports.gallows, {
 // 11-03 강조 에셋 샘플 (기획 63 §4 · 사용자 「벽만으로 공간을 만들지 말고 환경에 어울리는 에셋을 크게 키워 중심물로」): 잿불 야영지 무너진 성문을 좌우 반전 · ×2.5(배율 열 1.441 → 3.603, 화면 Transform 0.9 → 2.25 ≤ 2.5)로 키워
 //   남문 길 어귀에 세운다 — 앞(남쪽) 기둥이 왼쪽 · 뒤 기둥이 오른쪽. 발밑은 양쪽 기둥만 막고 가운데 3칸은 통행(포탈 문 규칙 door_tops)(길 안내 폭 3칸 유지) · 윗부분(-top, 자르는 선 = 캔버스 359/512)은 앞층(Default/5)이라 문 아래로 지나가는 캐릭터가 아치 뒤로 간다.
 //   남문 오른쪽 틈 말뚝 세트(a1_gate_east_stakes)와 꺼진 화로 받침은 옛 성문 기둥 곁 자리라 뺀다(흩뿌림 줄이기).
-const HERO_TOWN_GATE = { x: 0, y: -10.6, scale: 3.603, args: "ok=cliff" };   // 막을 칸·윗부분은 포탈 문 규칙(data/handmade/door_tops.csv 줄 · lib.cjs doorCells) — 열린 열 x -1~1 · 양쪽 기둥 열은 발~자르는 선
+const HERO_TOWN_GATE = { x: 0, y: -10.6, scale: 2.017, args: "ok=cliff" };   // 11-03 핫픽스: ×2.5(3.603 · Transform 2.25 · 캔버스 11.5칸)가 화면을 덮어(사용자 「문은 왜 이렇게 커진 거야」) ×1.4(2.017 · Transform 1.26 · 6.4칸)   // 막을 칸·윗부분은 포탈 문 규칙(data/handmade/door_tops.csv 줄 · lib.cjs doorCells) — 열린 열 x -1~1 · 양쪽 기둥 열은 발~자르는 선
 //   창고(npc:Stash 2,-3)는 커진 아치 윗부분(앞층) 아래에 가려져 (6,-3)으로 옮긴다 — 마을 도착 자리(0,-1.6)는 아치 꼭대기(y -1.87)보다 북쪽이라 가려지지 않는다.
 Object.assign(module.exports.town, {
   extra: Object.assign({}, module.exports.town.extra, { "npc:Stash": [6, -3] }),
