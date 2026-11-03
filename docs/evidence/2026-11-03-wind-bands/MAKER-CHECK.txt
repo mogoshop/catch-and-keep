@@ -1,0 +1,19 @@
+11-03 바람 연출 (weather=wind 18장) — 메이커 확인 · MAKER-FREE 15:57:15 삭제 → 16:06:34 다시 생성 · maker_save 0
+
+구현: RootDesk/MyDesk/Ambience/DarkVision.mlua StartWeather의 wind 분기 → StartWind / WindStep / WindLog / StopWind (클라이언트 전용)
+  · 띠 = 클라이언트 artsprite(맵 아래 · 이름 WindBand<n>) · 그림 fx-wind-sand-band 512×32 흰 띠(양 끝이 가늘게 사라지고 살짝 물결 · Bilinear · 피벗 가운데 · RUID 9d429cee0caf4850b42a0e476f70308a · 그룹 OJYYQ)
+  · 0.033초 반복 타이머로 windBandAngle(-15° = 왼쪽 위 → 오른쪽 아래) 방향 이동 · 띠마다 수명 2.2~4.0초 · 알파 = sin 곡선으로 나타났다 사라짐 · 수명 가운데에 내 빛 둘레 6×4.5칸 타원을 지나게 띄움
+  · 돌풍: 끝난 뒤 8~12초 난수 → 2.5초(앞뒤 0.4초 오르내림) · 띠 ×3 · 속도 ×1.6 · 알파 +0.15 · 바닥 먼지 소용돌이 BasicParticle SpinField 2개(돌풍 때만) · 캐릭터 위 Default/6 띠 1개(알파 0.18)
+  · 층: 띠·소용돌이 MapLayer0/39(바닥·장식 위 · 캐릭터·적·이름표·피해 숫자 아래) · 위 층 띠만 Default/6 · 상수 data/config.csv wind* 22개 → GameData 재생성
+
+반영: 편집 모드 → touch → 5초 → refresh(15:57) → play 1회차 → 띠가 안 보여 고침 → stop → touch → 5초 → refresh(16:02) → play 2회차
+빌드 로그 Error 0 (Info 256 · Warning 104 · 두 번 같음) · normal Error = SelfTest boom(의도한 실패)만 · SelfTest 408·409/0
+1회차(15:58~16:01): 띠 두께 0.22·0.6 · 색 #D9B27A는 밝기 0.40 어둠과 모래 바닥 위에서 거의 안 보임(맵 전체 화면에 고르게 띄운 띠는 내 빛 밖이라 어둠에 묻힘) → 두께 0.9 · 밝은 모래색 #FAE6B8 · 내 빛 둘레로 띄우기
+2회차(16:03~16:06) 녹화 — dunes (3.5,-0.5) · 줌 48 · 화면 오프셋 0.5 · 이야기 단계 0(시험용 의뢰 Index=1 State=0 · 저장 끔) · 같은 조명
+  rec/wind-before.mp4 20초 = HEAD 값 런타임 재현(StopWind 후 Windlines ParticleCount 2 · 알파 0.3 · MapLayer0/39 · 16:04:12)
+  rec/wind-after.mp4 25초 = 개선 바람(16:04:42 · 돌풍 16:04:44·16:04:57 두 번 포함)
+  rec/wind-side-by-side.mp4 (전 20초 + 끝 정지 5초 | 후 25초 · 라벨 그림 오버레이 — ffmpeg에 drawtext 필터가 없어 PIL 라벨 PNG를 overlay) · rec/wind-before-after-concat.mp4 45초
+  대표 프레임 wind-frames.png (b10 = 전 10초 · a2~a24 = 후 초)
+로그: [VRF] weather wind bands=4 speed=5.0 gust=off 10초마다 · 돌풍 켜짐 bands→speed 8.0 gust=on whirls=2 · 꺼질 때 bands=10~13 (key-lines.txt) · 돌풍 시작 간격 12.6~13.5초
+maker_stop → 편집 모드 map01
+남은 점: 띠는 조명을 받는 그림이라 내 빛 밖 어둠에서는 거의 안 보인다(내 둘레로 띄워 보완) · 소용돌이 SpinField는 작은 점 고리 모양
