@@ -981,6 +981,13 @@ do
  assert(back==5 and stats.SkillPoints==5 and book.Levels.wraith_dash==1 and book.Levels.bone_shard==nil,'reset keeps free rank '..back)
  book.Levels={};back=book:ResetSkills()
  assert(back==0 and book.Levels.wraith_dash==1,'reset from empty gives free rank, no refund '..back)
+ -- 11-03 저녁 후속: 레이스 폼 강화는 무료 1랭크와 무관하게 예전 해금표 (Lv9·11·13·15·17·19 · 노드 row 9 > 부모 row 1 예외)
+ assert(book:NodeLevel('dash_ghost',1)==9 and book:NodeLevel('dash_quick',1)==11 and book:NodeLevel('dash_blink',1)==19 and book:NodeLevel('dash_ghost',2)==13,'dash node unlock '..book:NodeLevel('dash_ghost',1)..'/'..book:NodeLevel('dash_blink',1))
+ assert(book:NodeLevel('shard_bounce',1)==book:NextRankLevel('bone_shard',_SkillData:Get('shard_bounce').need),'other nodes unchanged')
+ do local keepLv=stats.Level stats.Level=1 book.Levels={wraith_dash=1}
+  assert(book:CanLearn('dash_ghost',1,1)=='캐릭터 Lv9에 다음 랭크','Lv1 dash node locked: '..book:CanLearn('dash_ghost',1,1))
+  assert(book:CanLearn('dash_ghost',9,1)=='','Lv9 dash node open')
+  stats.Level=keepLv end
  print('[quality/skills] 11-03 evening start rank: sv7 0→1 free · ≥1 → +1 point once · sv8 untouched · reset keeps 1 free')
  print('[quality/skills] 11-03 rank rework: refund prune 18 + swap 9 = 27 once (sv6 · save sv7 → reload 0 · re-migrate 0 · same old save 27) · sv7 swap kept · no notice · whirl 8/10/12 ticks · weaken cap 75 · late ramp ≥24 only')
 end

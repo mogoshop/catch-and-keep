@@ -174,6 +174,9 @@ script SkillBook extends Component
         if def == nil or def.kind ~= "node" then return 0 end
         local parent = _SkillData:Get(def.parent)
         local first = parent ~= nil and self:NextRankLevel(def.parent, math.max(1, def.need)) or (1 + 2 * (math.max(1, def.need) - 1))
+        -- 11-03 저녁 예외: 무료 시작 스킬(레이스 폼 Lv1)의 강화는 예전 해금표 그대로 — 노드 row(9)가 부모 row보다 늦으면 노드 row를 해금 Lv로 보고 need 랭크 시점을 센다
+        --   (Lv9·11·13·15·17·19 · 다른 노드는 row = 부모 row라 영향 없음 · 62 §13)
+        if parent ~= nil and def.row > parent.row then first = math.floor(def.row) + math.ceil(self:RankStep(def.row) * (math.max(1, def.need) - 1) - 1e-9) end
         return math.floor(first + _GameData.nodeLevelStep * (math.max(1, rank) - 1))
     end
 
