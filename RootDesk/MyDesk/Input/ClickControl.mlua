@@ -3,6 +3,7 @@
 --   몬스터 클릭/누르고 있기 → 다가가서 공격 (공격 자체는 기존 PlayerAttack 경로를 그대로 쓴다)
 --   방향키 입력 → 클릭 이동 취소 (키보드 조작과 함께 쓸 수 있다)
 --   키보드 이동은 메이플처럼 방향키만. 엔진 기본 W A S D 이동과 C 앉기는 뗀다 (BlockExtraKeys — A S D 스킬 키와 C 집결이 이동·앉기와 겹쳤다)
+--   점프도 뗀다 (11-03 저녁 · 탑뷰라 점프 없음 — 스페이스는 질주만)
 -- 모바일은 이 컴포넌트를 쓰지 않고 가상 스틱(ShadowHUD 모바일 패드)을 쓴다.
 @Component
 script ClickControl extends Component
@@ -665,8 +666,21 @@ script ClickControl extends Component
         for _, key in ipairs({ KeyboardKey.W, KeyboardKey.A, KeyboardKey.S, KeyboardKey.D, KeyboardKey.C }) do
             controller:RemoveActionKey(key)
         end
+        -- 11-03 저녁 사용자 「스페이스바 누르면 점프하는데 점프 없애주고」: 탑뷰라 점프는 쓰지 않는다 → 스페이스 = 레이스 폼 질주만 (마을은 NPC 대화 · SkillBook·NpcWindow가 InputService로 받는다)
+        --   엔진 점프 키(스페이스·Alt)를 떼고, 남은 점프 묶음도 이름으로 지운 뒤 점프 조건을 늘 거짓으로 둔다 (키를 다시 묶어도 뛰지 않게)
+        local spaceAct = controller:GetActionName(KeyboardKey.Space) or ""
+        local altAct = controller:GetActionName(KeyboardKey.LeftAlt) or ""
+        --   메이커 실측(11-03): 기본 묶음은 Space = Jump · LeftAlt = Jump2 → 둘 다 뗀다
+        for _, key in ipairs({ KeyboardKey.Space, KeyboardKey.LeftAlt, KeyboardKey.RightAlt }) do
+            local act = controller:GetActionName(key) or ""
+            if key == KeyboardKey.Space or string.find(act, "Jump", 1, true) ~= nil then controller:RemoveActionKey(key) end
+        end
+        for _, name in ipairs({ "Jump", "Jump2", "DownJump" }) do
+            controller:RemoveAllActionKeyByActionName(name)
+            controller:AddCondition(name, function() return false end)
+        end
         self.ExtraKeysBlocked = true
-        log("[VRF] ClickControl W A S D 이동·C 앉기 뗌 (이동은 방향키·마우스)")
+        log("[VRF] ClickControl W A S D 이동·C 앉기 뗌 (이동은 방향키·마우스) · 점프 뗌 space=" .. spaceAct .. " alt=" .. altAct .. " → space=" .. (controller:GetActionName(KeyboardKey.Space) or "") .. " alt=" .. (controller:GetActionName(KeyboardKey.LeftAlt) or ""))
     end
 
 end
