@@ -14,7 +14,7 @@
 //   4-6-1. 맵 장식 충돌·길 안내·이음새     (check_decor_collision — 10-31 실플레이 피드백 C: 키 큰 것만 막음 · 길 폭 3칸 비움 · 경계 띠 · 둥근 길)
 //   4-6-2. 맵 구성 v5 · 검사기 자가 테스트  (check_map_composition --all · --selftest — 길 = 구역 경계 띠 · 고리·곁길 0 · 역할 배치)
 //   4-6-3. 맵 길 표 최신                    (route_lengths --check — data/handmade/routes.csv = 지금 설계도·빌드된 맵 칸 · 11-01 사용자 결정 7-A)
-//   4-7. 기획서 46 거인 끝 레벨             (sim_balance --giant-check — 악몽·지옥 +20%까지 41·68·90 그대로)
+//   4-7. 기획서 46 거인 끝 레벨             (sim_balance --giant-check — 악몽·지옥 +20%까지 42·70·93 그대로 · 11-03 사용자: killExpCoef 15 선택에 따른 기준 · 출현 ×2 반영)
 //   5. 검사기 자가 테스트                  (tests/fixtures: 일부러 틀린 코드의 "-- EXPECT" 줄을 정확히 잡는가)
 //   6. --build: 빌드를 두 번 돌려 결과가 같은가 (멱등성, 파일을 다시 쓴다)
 // 사용: node tools/test.cjs [--build]
@@ -64,7 +64,7 @@ step("DPS 집계 도구", () => tool("dps/selftest.cjs"));   // I05 개발용 �
 step("거인 그림 등록 대기표", () => tool("register_giant_visuals.cjs", ["check"]));
 step("거인 그림 검증표 자체 테스트", () => tool("register_giant_visuals.cjs", ["selftest"]));   // 48 V2 (10-30): 구 납품 통과 · 새 범위(몸 12~16 · 효과 12~16) 통과 · 장 수·중복 장·타격 칸·반복·지속 위반 검출 · 지금 monster_frames 통과   // 10-30 갈래 E: 5종 몸 150 + HUD 5 (코덱스 0200 · 마법사 그림은 대기 지원만 — 5단계 자연 선택은 해골 전용 그대로) · 동작·장 수·타이밍·피벗 (RUID는 업로드 뒤)
 
-step("거인 끝 레벨 (46-7)", () => {   // 기획서 46 부록 A-3: 악몽·지옥 빌드 +0·+8·+13.5·+20%에서 끝 레벨 41·68·90 그대로 (경험치 경로 모델 · 재미 증명 아님)
+step("거인 끝 레벨 (46-7)", () => {   // 기획서 46 부록 A-3: 악몽·지옥 빌드 +0·+8·+13.5·+20%에서 끝 레벨 42·70·93 그대로 (11-03 사용자: killExpCoef 15 선택에 따른 기준 · 출현 ×2 반영 · 경험치 경로 모델 · 재미 증명 아님)
   const r = spawnSync("python3", [path.join(__dirname, "sim_balance.py"), "--giant-check"], { cwd: ROOT, encoding: "utf8" });
   if (r.error) return [false, "python3 없음 — " + r.error.message];
   const out = (r.stdout + r.stderr).trim();

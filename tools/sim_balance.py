@@ -18,7 +18,7 @@
   python3 tools/sim_balance.py --diff all  # 보통 → 악몽 → 지옥 이어서 (레벨·경험치 이어받기, 10-23 추가)
   python3 tools/sim_balance.py --rite-check      # 뼈 의식 반영(기획서 43 §5 가정 +5%, 해금 Lv) 전후 보통→악몽→지옥 시간·끝 레벨 비교 (10-29)
   python3 tools/sim_balance.py --rite 5 --diff all  # 뼈 의식 +5%를 넣은 채로 진행 표
-  python3 tools/sim_balance.py --giant-check     # 46-7 뼈 의식 거인(악몽·지옥만 빌드 총 피해 +0·+8·+13.5·+20%) 끝 레벨 41·68·90 불변 확인 (기획서 46 부록 A-3 · 바뀌면 종료 코드 1)
+  python3 tools/sim_balance.py --giant-check     # 46-7 뼈 의식 거인(악몽·지옥만 빌드 총 피해 +0·+8·+13.5·+20%) 끝 레벨 42·70·93(11-03 기준) 불변 확인 (기획서 46 부록 A-3 · 바뀌면 종료 코드 1)
   python3 tools/sim_balance.py --giant 13.5 --diff all  # 거인 +13.5%(대검 수준 추정)를 악몽·지옥에 넣은 채로 진행 표
   (48-7 · 10-30) 해골 마법사 속성 넷의 랭크 구간(1·6·11·16)을 build에 넣었다 (mage_school_mul) · --giant-check는 +26(거인 2마리 상한 가정)까지 본다
 
@@ -47,6 +47,23 @@ def num(v, d=0.0):
 
 
 C = {r["key"]: num(r["value"]) for r in rows("config.csv")}
+
+
+def spawn_mul(mp):
+    # 11-03 저녁: 게임은 maps.csv 출현 수에 config spawnCountMul을 곱한다 (MonsterSpawner — 깨우기를 쓰는 맵 = 사냥터·곁가지, 보스 등급이 있는 맵 제외)
+    if mp.get("kind") not in ("field", "side"):
+        return 1
+    ids = [t.split(":")[0] for t in mp["spawns"].split(";") if t] + [t.split("@")[0] for t in mp.get("fixed", "").split(";") if t]
+    if any(i in MON and int(float(MON[i].get("grade") or 1)) >= 3 for i in ids):
+        return 1
+    return C.get("spawnCountMul", 1) or 1
+
+
+def spawn_count(mp, n):
+    # MonsterSpawner와 같은 규칙: × spawnCountMul · 올림 · 항목마다 최소 1
+    m = spawn_mul(mp)
+    return n if m == 1 else max(1, math.ceil(n * m - 1e-9))
+
 MON = {r["id"]: r for r in rows("monsters.csv")}
 BOSS = {r["id"]: r for r in rows("bosses.csv")}
 SKILL = {r["id"]: r for r in rows("skills.csv")}
@@ -472,7 +489,7 @@ def run(prof, eff=None, diff=0, L=1, exp=0.0):
         ec = num(mp["eliteChance"]) + 0.2 / max(1, num(mp["packSize"], 3))
         for tok in spawns:
             mid, n, ml = tok.split(":")
-            n, ml = int(n), scale_level(int(ml), diff)
+            n, ml = spawn_count(mp, int(n)), scale_level(int(ml), diff)
             hp, dmg, iv, el, ratio, grade = mon_stats(mid, ml, sm)
             ehp = mon_stats(mid, ml, sm, elite=True)[0]
             g2 = grade == 2
@@ -539,7 +556,7 @@ def main():
     ap.add_argument("--rite", type=float, default=0, help="본 노바 가정: 해금 레벨부터 빌드 총 피해 +N%% (기획서 43 §5는 5)")
     ap.add_argument("--rite-check", action="store_true", help="본 노바 +5%% 전후 보통→악몽→지옥 시간·끝 레벨 비교만 찍는다")
     ap.add_argument("--giant", type=float, default=0, help="46-7 본 골렘 가정: 악몽·지옥에서만 빌드 총 피해 +N%% (기획서 46 부록 A-3 · 기본 8.3 · 대검 13.5 · 노드 최대 20)")
-    ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20·+26%% 끝 레벨 41·68·90 불변 확인만 (+26 = 48 거인 2마리 상한 가정 · 바뀌면 종료 코드 1)")
+    ap.add_argument("--giant-check", action="store_true", help="거인 +0·+8·+13.5·+20·+26%% 끝 레벨 42·70·93(11-03 기준) 불변 확인만 (+26 = 48 거인 2마리 상한 가정 · 바뀌면 종료 코드 1)")
     a = ap.parse_args()
     if a.rite_check:
         rite_check(a.profile if a.profile != "all" else "P60", a.eff)
@@ -623,6 +640,9 @@ def rite_check(prof, eff, pct=5.0):
     print(" 끝 레벨 %s · %s" % (" · ".join(str(x[1]) for x in with_rite), "그대로" if same else "바뀜"))
 
 
+END_LEVELS = [42, 70, 93]   # 보통·악몽·지옥 끝 레벨 기준 — 11-03 사용자: killExpCoef 15 선택에 따른 기준 · 출현 ×2 반영
+
+
 def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
     # 48-7 (10-30): +26 = 거인 2마리 상한 가정(기획서 48 §8) · 해골 마법사 속성 구간(mage_school_mul)이 build에 들어간 기준선 — 끝 레벨만 본다 (균형·재미 완료 증거 아님)
     # 기획서 46 부록 A-3: 악몽·지옥에서만 +N% · 노말은 그대로(5기 거인은 악몽부터) · 끝 레벨 41 · 68 · 90 불변인지 (경험치 경로 모델 — 안전 범위 확인이지 재미 증명 아님)
@@ -631,9 +651,10 @@ def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
     base = chain(prof, eff)
     print("== 본 골렘 점검 (%s · 악몽·지옥에서만 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % prof)
     print(" 기준  " + " · ".join("%s %s Lv%d" % (names[i], fmt(t), l) for i, (t, l) in enumerate(base)))
-    ok = [l for _, l in base] == [41, 68, 90]
+    # 11-03 사용자: killExpCoef 15 선택에 따른 기준 · 출현 ×2 반영 (예전 41 · 68 · 90 → 42 · 70 · 93 · 정확값)
+    ok = [l for _, l in base] == END_LEVELS
     if not ok:
-        print(" 기준 끝 레벨이 41 · 68 · 90이 아님 — 다른 변경을 먼저 확인")
+        print(" 기준 끝 레벨이 %s이 아님 — 다른 변경을 먼저 확인" % " · ".join(map(str, END_LEVELS)))
     for pct in pcts:
         if pct == 0:
             continue
@@ -643,7 +664,7 @@ def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
         ok = ok and same
         print(" +%-5g " % pct + " · ".join("%s %s Lv%d (%+d초)" % (names[i], fmt(t), l, round(t - base[i][0])) for i, (t, l) in enumerate(res)) + " · " + ("그대로" if same else "바뀜"))
     GIANT["pct"] = 0.0
-    print(" 끝 레벨 41 · 68 · 90 %s" % ("모두 그대로" if ok else "바뀜 — 확인 필요"))
+    print(" 끝 레벨 %s %s" % (" · ".join(map(str, END_LEVELS)), "모두 그대로" if ok else "바뀜 — 확인 필요"))
     return ok
 
 

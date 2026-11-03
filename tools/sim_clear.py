@@ -39,6 +39,23 @@ def rows(name):
 
 
 C = {r["key"]: float(r["value"]) for r in rows("config.csv") if r["value"].replace(".", "", 1).replace("-", "", 1).isdigit()}
+
+
+def spawn_mul(mp):
+    # 11-03 저녁: 게임은 maps.csv 출현 수에 config spawnCountMul을 곱한다 (MonsterSpawner — 깨우기를 쓰는 맵 = 사냥터·곁가지, 보스 등급이 있는 맵 제외)
+    if mp.get("kind") not in ("field", "side"):
+        return 1
+    ids = [t.split(":")[0] for t in mp["spawns"].split(";") if t] + [t.split("@")[0] for t in mp.get("fixed", "").split(";") if t]
+    if any(i in MON and int(float(MON[i].get("grade") or 1)) >= 3 for i in ids):
+        return 1
+    return C.get("spawnCountMul", 1) or 1
+
+
+def spawn_count(mp, n):
+    # MonsterSpawner와 같은 규칙: × spawnCountMul · 올림 · 항목마다 최소 1
+    m = spawn_mul(mp)
+    return n if m == 1 else max(1, math.ceil(n * m - 1e-9))
+
 MON = {r["id"]: r for r in rows("monsters.csv")}
 MAPS = [r for r in rows("maps.csv") if r["act"] in ("2", "3")]
 SKILL = {r["id"]: r for r in rows("skills.csv")}
@@ -295,7 +312,7 @@ def run(profile, start_level, start_exp, route):
         t_combat, gained, worst, wh = 0, 0, (99, ""), 0
         for tok in filter(None, mp["spawns"].split(";")):
             mid, n, ml = tok.split(":")
-            n, ml = int(n), int(ml)
+            n, ml = spawn_count(mp, int(n)), int(ml)
             ec = float(mp["eliteChance"] or 0) + 0.2 / max(1, float(mp["packSize"] or 3))
             hp, dmg, iv, el = mon(mid, ml, sm)
             ehp, _, _, _ = mon(mid, ml, sm, elite=True)
@@ -349,7 +366,7 @@ def farm_rate(prof, L, mapid):
     t = g = 0
     for tok in mp["spawns"].split(";"):
         mid, n, ml = tok.split(":")
-        n, ml = int(n), int(ml)
+        n, ml = spawn_count(mp, int(n)), int(ml)
         hp, _, _, _ = mon(mid, ml, float(mp["statMul"] or 1))
         g2 = int(MON[mid]["grade"]) == 2
         mul = 1 if g2 else 1 + 2 * float(mp["eliteChance"] or 0)
