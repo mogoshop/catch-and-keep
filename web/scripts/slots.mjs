@@ -209,6 +209,20 @@ async function mapleClip(ruid) {
   })().catch(e => { warnings.push(`maple ${ruid}: ${e.message}`); return null; });
   mapleCache.set(ruid, result); return result;
 }
+// 11-03 효과 고르기 3자리 더: 게임이 메이플 클립의 장 일부를 우리 그룹 스프라이트로 올려 장 목록으로 쓰는 자리 (그룹 RUID는 공개 검색 API에 없음 → 원본 클립 장을 잘라 보여 준다)
+//   키 = 그 칸의 첫 그룹 RUID · clip = 원본 메이플 클립 · from/to = 원본 장 번호(0부터) · ms = 게임 장별 간격 · loop = 게임에서 반복하는지
+const GROUP_FRAMES = {
+  c3747bdcde0e49a49d8c59ced4f1dd7b: {clip: '00b9a2f368a84e9d8e6a5a3aa69d60c7', from: 2, to: 15, ms: 150, loop: false, title: '스킬 31141502 불기둥 (앞 2장 뺀 14장)'},
+  c3be0d020fbd43bfadfbe32586b5cd5f: {clip: '5c6f1aad97e8420f8f36154be00f62e7', from: 4, to: 9, ms: 120, loop: true, title: '흰 회오리 (도는 4~9장 반복)'},
+};
+async function groupFramesCandidate(key, ruids) {
+  const g = GROUP_FRAMES[ruids[0]]; if (!g) return null;
+  const clip = await mapleClip(g.clip); if (!clip || clip.frames.length <= g.to) return null;
+  const frames = clip.frames.slice(g.from, g.to + 1); const pv = pivotBox(frames);
+  return {id: `maple:${g.clip}`, source: 'maple', title: g.title, runtimeKey: key, ruids, frameRuids: frames.map(f => f.spriteRuid).filter(Boolean), resourceType: 'sprite', resourceName: clip.dname,
+    frames: frames.map(f => f.file), sizes: frames.map(f => f.size), box: pv.box, offsets: pv.offsets, durations: frames.map(() => g.ms), timingLabel: `게임 장별 ${g.ms}ms (원본 ${g.clip.slice(0, 8)} ${g.from}~${g.to}장)`, loop: g.loop,
+    mediaKind: clip.mediaKind, groupOf: {clip: g.clip, from: g.from, to: g.to}};
+}
 function pivotBox(frames) {
   if (!frames.every(f => f.pivot && f.size)) { const W = Math.max(...frames.map(f => f.size?.[0] || 0)), H = Math.max(...frames.map(f => f.size?.[1] || 0)); return {box: [W, H]}; }
   // MSW pivots are measured from the bottom-left (same as the game's pivot_y = 0.25 → ground line).
@@ -368,6 +382,10 @@ for (const [order, def] of SLOTS.entries()) {
             frames: frames.map(f => f.file), sizes: frames.map(f => f.size), box: [W, H], sha: frames.map(f => f.sha),
             durations: t?.durations || frames.map(() => 100), timingLabel: t?.label || (frames.length > 1 ? '검수용 100ms/장' : '정지 그림'), loop: twin ? !!twin.loop : false, package: pkgPath};
         } catch (e) { currentNote = `현재 그림 파일을 읽지 못함: ${e.message}`; }
+      } else if (GROUP_FRAMES[r.ruids[0]]) {
+        const m = await groupFramesCandidate(r.key, r.ruids);
+        if (m) current = {...m, ...common, kind: 'maple', title: m.title, statusLabel: `${useLabel} · 메이플 클립 장 일부(그룹 스프라이트 ${r.ruids.length}장)`};
+        else currentNote = `현재 RUID ${r.ruids[0]}의 원본 클립 장을 찾지 못함`;
       } else {
         const m = await mapleCandidate(r.key, r.ruids[0]);
         if (m) current = {...m, ...common, kind: 'maple', title: m.title, statusLabel: `${useLabel} · 메이플 리소스`, firstUse: m.firstUse};
