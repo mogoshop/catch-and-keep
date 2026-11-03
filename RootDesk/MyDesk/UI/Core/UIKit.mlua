@@ -10,6 +10,7 @@ script UIKit extends Logic
     property table Cache = {}
     property table Handlers = {}
     property table Windows = {}             -- Esc로 닫을 창 이름 목록
+    property any StoryArt = nil             -- 이야기 그림 RUID → "loading" · "ok" · "fail" (PreloadStory · StoryCard가 받기 전 쪽을 어둡게 둔다 · 11-03 저녁)
     -- 대화 상자 규격 (NPC 대화창 · 이야기 카드 공통, 10-22): tools/build/ui-tokens.cjs FRAME·DIALOG와 같은 값. 한쪽만 바꾸지 않는다
     property number DialogWidth = 1300
     property number DialogPadX = 51          -- FRAME.padX (테두리 안쪽 경계 39 + 12)
@@ -405,6 +406,53 @@ script UIKit extends Logic
                 end
             end
             log("[VRF] UIKit 아이콘 미리 불러오기 " .. tostring(#list) .. "개 · 실패 " .. tostring(failed))
+        end)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PreloadStory(table ruids, any done)
+        -- 이야기 카드 그림을 받아 두고 결과를 StoryArt에 남긴다 (이미 받았거나 받는 중이면 다시 부르지 않는다). done = 이번에 새로 부른 묶음이 끝나면 (없으면 바로)
+        if self.StoryArt == nil then self.StoryArt = {} end
+        local list = {}
+        for _, r in ipairs(ruids) do
+            if type(r) == "string" and #r == 32 and self.StoryArt[r] == nil then
+                self.StoryArt[r] = "loading"
+                table.insert(list, r)
+            end
+        end
+        if #list == 0 then
+            if done ~= nil then done() end
+            return
+        end
+        _ResourceService:PreloadAsync(list, function(results)
+            for _, r in ipairs(list) do
+                local st = type(results) == "table" and results[r] or nil
+                self.StoryArt[r] = (st == nil or st == PreloadResultStatus.Success) and "ok" or "fail"
+            end
+            if done ~= nil then done() end
+        end)
+    end
+
+    method string StoryArtState(string ruid)
+        -- "" = 아직 부르지 않음 · "loading" · "ok" · "fail"
+        if self.StoryArt == nil or ruid == "" then return "" end
+        return self.StoryArt[ruid] or ""
+    end
+
+    @ExecSpace("ClientOnly")
+    method void PreloadStoryOpening()
+        -- 11-03 저녁 사용자 「처음 캐릭터 생성 후 진입하면 스토리보드 첫 사진이 다운로드가 안 돼서 하얀 점이 나온다」:
+        --   접속하자마자(캐릭터 선택 창보다 먼저) 시작 내레이션 첫 그림 story_prologue1을 받고, 그다음 2~5를 받는다.
+        --   PreloadItemIcons 목록에는 넣지 않는다 (10-11: 큰 이야기 그림 11장 30MB를 접속 때 한꺼번에 받지 않게 — 여기선 시작 그림 5장만 차례로)
+        _GameData:Ensure()
+        local t0 = _UtilLogic.ElapsedSeconds
+        local first = _GameData:GetUiIcon("story_prologue1")
+        log(string.format("[VRF] story opening preload start t=%.2f p1=%s", t0, string.sub(first, 1, 8)))
+        self:PreloadStory({ first }, function()
+            log(string.format("[VRF] story opening preload p1 done t=%.2f (+%.2fs) state=%s", _UtilLogic.ElapsedSeconds, _UtilLogic.ElapsedSeconds - t0, self:StoryArtState(first)))
+            local rest = {}
+            for i = 2, 5 do table.insert(rest, _GameData:GetUiIcon("story_prologue" .. tostring(i))) end
+            self:PreloadStory(rest, function() log(string.format("[VRF] story opening preload p2-5 done t=%.2f", _UtilLogic.ElapsedSeconds)) end)
         end)
     end
 

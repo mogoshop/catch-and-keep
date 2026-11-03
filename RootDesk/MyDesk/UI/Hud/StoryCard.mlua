@@ -30,6 +30,8 @@ script StoryCard extends Logic
     property number PaperH = 200             -- 글 칸 높이 (ui-tokens.cjs DIALOG.storyPaperH · 나머지 배치는 UIKit 대화 상자 규격)
     property string ArtNow = ""              -- 지금 그림 (같은 그림이면 다가가는 움직임을 이어 간다)
     property number ArtAt = 0                -- 그림을 바꾼 시각 (밝아짐 · 천천히 다가감)
+    property string ArtWait = ""             -- 아직 받는 중인 그림 (받을 때까지 알파 0 — 흰 자리 표시 대신 어두운 바탕 · 11-03 저녁)
+    property number ArtFade = 0.6            -- 밝아지는 시간 (받기를 기다린 그림은 0.2초)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -41,6 +43,8 @@ script StoryCard extends Logic
         _UIKit:RegisterWindow(self.Card)
         _UIKit:Connect(self.Card, function() self:Advance() end)
         _UIKit:Connect(self.Card .. "/Skip", function() self:SkipAll() end)
+        -- 시작 내레이션 첫 그림은 접속하자마자 받는다 (캐릭터 선택 창보다 먼저 · 새 캐릭터 여부와 무관 — UIKit.PreloadStoryOpening)
+        _UIKit:PreloadStoryOpening()
     end
 
     @ExecSpace("ClientOnly")
@@ -81,7 +85,7 @@ script StoryCard extends Logic
             local ruid = _GameData:GetUiIcon(k)
             if ruid ~= "" then table.insert(list, ruid) end
         end
-        if #list > 0 then _ResourceService:PreloadAsync(list, function(results) end) end
+        if #list > 0 then _UIKit:PreloadStory(list, nil) end   -- 결과를 UIKit.StoryArt에 남긴다 (ShowArt가 받기 전 쪽을 어둡게)
     end
 
     @ExecSpace("ClientOnly")
@@ -271,6 +275,16 @@ script StoryCard extends Logic
         if art ~= self.ArtNow then
             self.ArtNow = art
             self.ArtAt = _UtilLogic.ElapsedSeconds
+            self.ArtFade = 0.6
+            -- 아직 못 받은 그림: 받을 때까지 알파 0 (MoveArt가 받는 순간 0.2초에 밝힌다) · 실패면 바로 (지금처럼)
+            local state = _UIKit:StoryArtState(art)
+            if art ~= "" and state ~= "ok" and state ~= "fail" then
+                self.ArtWait = art
+                if state == "" then _UIKit:PreloadStory({ art }, nil) end
+            else
+                self.ArtWait = ""
+            end
+            if self.Key == "prologue" then log(string.format("[VRF] story prologue page%d shown t=%.2f ready=%s", page, _UtilLogic.ElapsedSeconds, tostring(state == "ok"))) end
             _UIKit:SetIcon(self.Card .. "/Art", art)
             self:MoveArt()
         end
@@ -281,13 +295,26 @@ script StoryCard extends Logic
         -- 그림이 바뀌면 0.6초 동안 어둠에서 밝아지고, 그 뒤 16초에 걸쳐 6% 천천히 다가간다 (멈춘 배경이 아니라 장면처럼)
         local e = _UIKit:Get(self.Card .. "/Art")
         if not isvalid(e) or self.ArtNow == "" then return end
+        if self.ArtWait ~= "" then
+            local state = _UIKit:StoryArtState(self.ArtWait)
+            if state ~= "ok" and state ~= "fail" then
+                local sr0 = e.SpriteGUIRendererComponent
+                if sr0.Color.a > 0.001 then sr0.Color = Color(1, 1, 1, 0) end
+                return
+            end
+            -- 받았다: 지금부터 0.2초에 밝힌다 (실패면 바로)
+            self.ArtWait = ""
+            self.ArtAt = _UtilLogic.ElapsedSeconds
+            self.ArtFade = state == "ok" and 0.2 or 0.001
+            log(string.format("[VRF] story art arrived t=%.2f state=%s", self.ArtAt, state))
+        end
         local t = _UtilLogic.ElapsedSeconds - self.ArtAt
         local k = math.min(1, t / 16)
         local ease = k * (2 - k)
         local sc = 1 + 0.06 * ease
         e.UITransformComponent.UIScale = Vector3(sc, sc, 1)
         e.UITransformComponent.anchoredPosition = Vector2(-18 * ease, 10 * ease)
-        local a = 0.85 * math.min(1, t / 0.6)
+        local a = 0.85 * math.min(1, t / math.max(0.001, self.ArtFade))
         local sr = e.SpriteGUIRendererComponent
         if math.abs(sr.Color.a - a) > 0.01 then sr.Color = Color(1, 1, 1, a) end
     end
