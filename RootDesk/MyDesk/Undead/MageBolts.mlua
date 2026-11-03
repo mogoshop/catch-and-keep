@@ -15,6 +15,10 @@ script MageBolts extends Logic
     property string FxShardShot = "423983c3b393414c8a8d91578b1fab9c"     -- 어두운 보라 궤적 (뼈 투척 그림이 비면 가늘고 길게)
     -- 10-31 C 7종 투사체 (GameConst.FxSkillFlameShot·FxSkillFrostShot · 128×64 오른쪽 기준 · 비행 중 순환 · 왼쪽 FlipY = Projectile.MirrorSkin): 칸이 비면 위 메이플 원본 그대로
     --   배율 = 예전 배율 × 예전 클립 배율 1의 폭(audit P06 1.38/0.45 = 3.067 · P08 1.88/0.6 = 3.133칸) ÷ 새 그림 내용 폭(알파>16 최대 · 불꽃 115px · 서리 235px = 10-31 보정 재출력 256×128) → 보이는 폭이 예전과 같다
+    -- 11-03 효과 고르기 flame-shot·frost-shot: GameConst 칸을 비워 위 메이플 원본 클립 그대로 — 배율은 예전 메이플 배율(코덱스 배율이 이 보이는 폭에 맞춰 계산된 값이라 보이는 크기 같음)
+    property number FlameClipScale = 0.45       -- 「불꽃 화살」 40f0991c 최대 324×132px → 1.46칸 (웹 장면 기본 「코드 배율」 1.2는 코덱스 115px 그림용 — 메이플 클립에 쓰면 3.9칸)
+    property number FrostClipScale = 0.6        -- 「서리 혼」 d5a9e48c 최대 336×144px → 2.0칸
+    property number FrostShardClipScale = 0.4   -- 서리 파편 (같은 클립 · 1.34칸)
     property number FlameShotArtScale = 1.2     -- 저주 불꽃·불꽃 마법사 (예전 0.45) → 내용 115×43px = 1.38×0.52칸
     property number FrostShotArtScale = 0.796   -- 서리 혼·서리 마법사 (예전 0.6) → 10-31 통일 공정 보정 재출력 256×128 내용 235×84px = 1.87×0.67칸 (128×64 판 때 1.6 × 117px = 1.87칸)
     property number FrostShardArtScale = 0.533  -- 서리 파편 (예전 0.4) → 235×84px = 1.25×0.45칸 (128×64 판 때 1.07)
@@ -116,20 +120,20 @@ script MageBolts extends Logic
         -- 피해·관통 상한·파편 수·폭발 반경 같은 「세기」는 여기서 정하지 않는다 (캐릭터 = SkillEffects · 마법사 = MageTraits)
         -- 10-31 9계열: 명중 그림 속성(Projectile.HitKind) — 불 · 서리(서리 혼·파편) · 저주 마력탄 = GameConst.FxSkillHit* (뼈 투척·영혼 격류는 Style 자기 명중이라 "")
         if school == "fire" then
-            if _GameConst.FxSkillFlameShot ~= "" then proj:Skin(_GameConst.FxSkillFlameShot, self.FlameShotArtScale) else proj:Skin(self.FxFlameShot, 0.45) end
-            self:C7Log(school, _GameConst.FxSkillFlameShot, self.FlameShotArtScale)
+            if _GameConst.FxSkillFlameShot ~= "" then proj:Skin(_GameConst.FxSkillFlameShot, self.FlameShotArtScale) else proj:Skin(self.FxFlameShot, self.FlameClipScale) end
+            self:C7Log(school, _GameConst.FxSkillFlameShot ~= "" and _GameConst.FxSkillFlameShot or self.FxFlameShot, _GameConst.FxSkillFlameShot ~= "" and self.FlameShotArtScale or self.FlameClipScale)
             proj:Tint(Color(1, 0.75, 0.55, 1))
             proj.HitKind = "fire"
             return 11
         elseif school == "cold" then
-            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShotArtScale) else proj:Skin(self.FxFrostShot, 0.6) end
-            self:C7Log(school, _GameConst.FxSkillFrostShot, self.FrostShotArtScale)
+            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShotArtScale) else proj:Skin(self.FxFrostShot, self.FrostClipScale) end
+            self:C7Log(school, _GameConst.FxSkillFrostShot ~= "" and _GameConst.FxSkillFrostShot or self.FxFrostShot, _GameConst.FxSkillFrostShot ~= "" and self.FrostShotArtScale or self.FrostClipScale)
             proj:Tint(Color(0.85, 0.95, 1, 1))
             proj.HitKind = "frost"
             return 9
         elseif school == "cold_shard" then
-            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShardArtScale) else proj:Skin(self.FxFrostShot, 0.4) end
-            self:C7Log(school, _GameConst.FxSkillFrostShot, self.FrostShardArtScale)
+            if _GameConst.FxSkillFrostShot ~= "" then proj:Skin(_GameConst.FxSkillFrostShot, self.FrostShardArtScale) else proj:Skin(self.FxFrostShot, self.FrostShardClipScale) end
+            self:C7Log(school, _GameConst.FxSkillFrostShot ~= "" and _GameConst.FxSkillFrostShot or self.FxFrostShot, _GameConst.FxSkillFrostShot ~= "" and self.FrostShardArtScale or self.FrostShardClipScale)
             proj:Tint(Color(0.85, 0.95, 1, 1))
             proj.HitKind = "frost"
             return 10
@@ -169,7 +173,8 @@ script MageBolts extends Logic
         self.C7Logged[school] = true
         local n = 0
         for _ in string.gmatch(ruids, "[^|]+") do n = n + 1 end
-        log(string.format("[VRF] c7 projectile school=%s art=%s n=%d scale=%.2f", school, tostring(ruids ~= ""), n, scale))
+        local slot = school == "fire" and "flame-shot" or "frost-shot"
+        log(string.format("[VRF] fxpick %s school=%s ruid=%s codex=%s n=%d scale=%.2f", slot, school, string.sub(ruids, 1, 8), tostring(n > 1), n, scale))
     end
 
     method void MageTraits(Projectile proj, string school, integer rank)

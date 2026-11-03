@@ -70,6 +70,12 @@ script Projectile extends Component
     property string HitKind = ""             -- 10-31 9계열: 명중 그림 속성 (서버만 · "bone"/"curse"/"fire"/"frost" · MageBolts.Configure·의식 화살·중립 뼈 화살이 정한다 · "" = 공용 불꽃) → HitFx 인자
     property number HitArtScale = 1.0        -- 속성 명중 2장 배율: 96px = 0.96칸 · 내용 67~80px = 0.67~0.8칸 (예전 불꽃 0.6)
     property number HitBoneArtScale = 0.92   -- 11-01 통일 공정 골편 3종: 뼈 명중 = 골편 명중 6장(가장 큰 내용 84px · 02번 장) 배율 — 예전 2장(sample-01·03 가장 큰 내용 77px × HitArtScale 1.0 = 0.77칸)과 보이는 크기 같게 1.0 × 77/84 (6장 장별 ms 길에서만 · 예전 2장이면 HitArtScale)
+    -- 11-03 효과 고르기: 명중 3자리를 메이플 한 RUID 애니메이션클립으로 (GameConst.FxSkillHitBone·HitFire·HitFrost에 「|」 없음 → HitFx가 Util.PlayClipOnce · 그림 자기 색 · 층 6)
+    --   배율 = 코덱스 명중 그림의 보이는 크기(뼈 84px × 0.92 = 0.77칸 · 불·서리 내용 67~80px × 1.0 ≈ 0.8칸)에 맞춰 시작 → 메이커 캡처로 몬스터 몸과 견줘 고친 값
+    property number HitBoneClipScale = 0.65     -- 뼈 「스킬 80003291」 4장 120×108(피벗 왼쪽 0.2) → 0.78칸
+    property number HitFireClipScale = 0.4      -- 불 「스킬 5241000」 11장 최대 248px → 0.99칸 (같은 배율 1.0이면 2.5칸 — 추천기 경고 「크기」)
+    property number HitFrostClipScale = 0.6     -- 서리 「마그네틱 앵커」 5장 최대 140px → 0.84칸
+    property number HitClipMaxSec = 2.0         -- 한 클립 명중 안전 지움 (클립이 스스로 끝나지 않을 때만)
     property number TorrentHitArtScale = 0.75   -- 영혼 격류 명중 4장 배율: 내용 88~112px = 0.66~0.84칸 (예전 혼 구슬 0.6)
     property number SpearHitScale = 1.0      -- 해골 마법사 뼈 투척 꽂힘(P05 · 128px = 1.28칸) 배율 (10-31 갈래 E2 · 코덱스 renderer_scale_proposal 1 · 예전 대기 자리 0.9)
 
@@ -441,7 +447,12 @@ script Projectile extends Component
             _Util:SkillShake(shooter, 0.1, 0.14)
         else
             local art = self:HitArt(kind)
-            if art ~= "" then
+            if art ~= "" and string.find(art, "|", 1, true) == nil then
+                -- 11-03 효과 고르기 hit-bone·hit-fire·hit-frost: 메이플 한 RUID 클립을 그대로 한 번 (장 넘김 = 클립 · 그림 자기 색 · 몸 앞 층 6)
+                local cs = self:HitClipScale(kind)
+                _Util:PlayClipOnce(art, map, pos, 0, Vector3(cs, cs, 1), self.HitClipMaxSec, Color(1, 1, 1, 1), 6)
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick hit-%s ruid=%s scale=%.2f clip=true", kind, string.sub(art, 1, 8), cs)) end
+            elseif art ~= "" then
                 -- 10-31 9계열 P11: 속성 명중 2장 한 번 (장마다 FxSkillHitMs) — 뼈 = 골편 명중 2장 재사용(무채색이라 투사체 색) · 저주·불·서리 = 그림 자기 색
                 if kind == "bone" and _Util:MsCount(_GameConst.FxSkillShardHitMs) == #_Util:Frames(art) then
                     -- 11-01 통일 공정 골편 3종: 뼈 명중 = 골편 명중 6장 RUID 공유 · 장별 FxSkillShardHitMs(잦아듦이 그림 알파에 들어 있어 hold·fade 0) · 보이는 크기는 예전 2장과 같게 HitBoneArtScale · 투사체 색
@@ -455,6 +466,14 @@ script Projectile extends Component
         end
         if shake and style ~= "rite_push" then _Util:SkillShake(shooter, 0.06, 0.09) end
         if (style ~= "" or (kind or "") ~= "") and not Environment:IsPublishedPlay() and shooter == me then log("[VRF] projectile hit fx style=" .. style .. " kind=" .. (kind or "") .. " art=" .. tostring(self:HitArt(kind) ~= "")) end
+    end
+
+    method number HitClipScale(string kind)
+        -- 11-03 효과 고르기: 한 RUID 메이플 명중 클립 배율 (뼈·불·서리 · 그 밖은 HitArtScale)
+        if kind == "bone" then return self.HitBoneClipScale end
+        if kind == "fire" then return self.HitFireClipScale end
+        if kind == "frost" then return self.HitFrostClipScale end
+        return self.HitArtScale
     end
 
     method string HitArt(string kind)

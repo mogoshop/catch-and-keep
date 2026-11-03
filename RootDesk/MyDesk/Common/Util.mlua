@@ -623,6 +623,30 @@ script Util extends Logic
         self:PlayFramesHold(ruids, instigator, pos, rot, scale, frameSec, frameSec, 0, tint, order)
     end
 
+    method integer PlayClipOnce(string ruid, Entity instigator, Vector3 pos, number rot, Vector3 scale, number maxSec, Color tint, integer order)
+        -- 한 RUID 애니메이션클립(메이플 원본 · 11-03 효과 고르기)을 한 번 재생한다 (클라이언트에서 부른다) — 장 넘김은 클립 자신이 한다(SpriteRUID = 클립 RUID면 모든 장이 스스로 재생).
+        --   반복 아님(isLoop false) · 혹시 끝에 안 지워지는 경우를 막으려고 maxSec 뒤 한 번 더 지운다 · instigator가 사라지면 엔진이 같이 지운다. 반환 = 효과 serial(0 = 실패)
+        if ruid == "" or not isvalid(instigator) then return 0 end
+        local serial = _EffectService:PlayEffect(ruid, instigator, pos, rot, scale, false, { SortingLayer = "MapLayer0", OrderInLayer = order, Color = tint })
+        if serial ~= 0 and maxSec > 0 then _TimerService:SetTimerOnce(function() _EffectService:RemoveEffect(serial) end, maxSec) end
+        return serial
+    end
+
+    method boolean HexBurstFx(Entity instigator, Vector3 pos, number diameter, number frameSec, number holdSec, number fadeSec, Color tint, integer order)
+        -- 저주 불꽃 폭발 그림(GameConst.FxSkillHexBurst) 한 번 — 클라이언트에서 부른다. 비면 false(부르는 쪽 예전 길)
+        --   「|」 여러 장(코덱스) = PlayFramesHold(지름 / 1.28 · 128px 판) · 한 RUID(11-03 효과 고르기 메이플 「스킬 3341002」) = 클립 그대로 한 번(지름 × 100 / FxSkillHexBurstClipPx) — hold·fade는 장 넘김 판에만 쓰이고 클립은 스스로 끝난다(안전 지움 = 클립 길이 + hold + fade)
+        local ruids = _GameConst.FxSkillHexBurst
+        if ruids == "" or not isvalid(instigator) then return false end
+        if string.find(ruids, "|", 1, true) == nil then
+            local s = diameter * 100 / math.max(1, _GameConst.FxSkillHexBurstClipPx)
+            self:PlayClipOnce(ruids, instigator, pos, 0, Vector3(s, s, 1), _GameConst.FxSkillHexBurstClipSec + holdSec + fadeSec, tint, order)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick hex-burst ruid=%s scale=%.2f d=%.2f clip=true", string.sub(ruids, 1, 8), s, diameter)) end
+        else
+            self:PlayFramesHold(ruids, instigator, pos, 0, Vector3(diameter / 1.28, diameter / 1.28, 1), frameSec, holdSec, fadeSec, tint, order)
+        end
+        return true
+    end
+
     method table FramePlan(integer n, number frameSec, number holdSec, number fadeSec)
         -- 프레임 그림 한 번 재생 계획 (순수 계산 · tests/quality/skillfx_e.lua): 장 i(1..n)는 시작 + (i−1) × frameSec에 뜬다 —
         --   첫 장도 frameSec 동안 보이고 · 마지막 장은 max(frameSec, holdSec) 동안 잡고 · fadeSec > 0이면 그 뒤 FrameFadeSteps번 옅어지며(같은 장 · 투명도만) 사라진다.
