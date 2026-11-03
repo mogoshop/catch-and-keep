@@ -1,0 +1,55 @@
+11-03 출시 점검 — 디스크 정리 · release:check · 메이커 스모크 (HEAD 977cae7c = origin/main)
+(MAKER-FREE 23:37 확인·삭제 → 11-04 00:14:45 반납 · maker_save 0회 · 메이커 MCP는 도구 + stdio MakerMCP 직접 호출)
+
+[1 디스크 정리]
+되돌림 19개 (git checkout -- 파일 단위): ui HUD 18개(Aim·AudioSettings·CharSelect·Chat·Companion·Confirm·Coop·Equipment·Game·Journal·Merchant·Navigation·QuestJournal·Reward·Shadow·Shop·Stash·Story — 메이커 재저장분) + RootDesk/MyDesk/Shop.directory
+  · Shop.directory diff = "StudioVersion": "" → "0.1.0.0" 한 줄(메이커 메타)뿐 → 같이 되돌림 · 항목 추가·삭제 없음
+  · 지시서의 「ui 19개」는 실제 18개였다(ui 18 + Shop.directory 1 = 19)
+남은 것: 루트의 추적 안 되는 scratchpad/ (10-28자 캡처·임시 스크립트 · 월드에 안 실림)가 release:check를 막음
+  → 지우거나 옮기지 않고 .git/info/exclude 에 /scratchpad/ 한 줄(로컬 전용 · 추적 파일 변경 없음)
+되돌린 뒤 git status: .claude/ · AGENTS.md · 추적 안 되는 assets/ · docs/ 만
+
+[2 메이커 반영] 편집 모드 · 5초 대기 → maker_refresh_workspace 1회(23:38) → 빌드 Error 0 (Info 257 · Warning 104 — 이전 회차와 같은 종류)
+  스모크 뒤 다시: 빌드 Error 0 (Info 257 · Warning 104)
+
+[3 release:check] (23:40경 · 루트 scratchpad 제외 뒤)
+  통과  작업 트리 깨끗함 / 통과  HEAD = origin/main (977cae7) / 통과  npm test
+  [release:check] 출시 가능 — 출시 커밋 977cae7를 docs/ux-polish.json에 기록
+  (첫 실행은 「커밋하지 않은 변경 1개 scratchpad/」로 실패 → 위 제외 뒤 통과)
+
+[4 스모크] 슬롯 3 「핏빛망령」 Lv4(노말) · 혼자 하기 · 저장 끔(불러오기 끝나자마자 IsLoadSuccess=false · 0.05초 감시) · 무적
+  SelfTest: 통과 410 / 실패 0 (방 시작 23:55:40 · 게임 방 23:58:54 두 번) · normal Error = SelfTest 의도한 boom 2건뿐
+  입장 대체: 캐릭터 칸·「입장」·「솔로 플레이」는 엔진 UI 단추라 maker_mouse_input이 못 누름(도구 설명·이전 회차와 같음)
+    → _CharSelectWindow:PickSlot(3)/Enter() · _RoomWindow:Solo() · 보상 카드는 _GearChoiceWindow:Choose(1) · 스킬 창 칸은 _SkillWindow:Pick
+    · 그 밖의 이동·대화·질주·소환·창 열기·확인은 실제 키(방향키·Space·A·K·Esc·Enter), 공격은 실제 왼쪽 클릭
+  주의(점검 도구): 저장 끔 상태에선 방 이동 요청이 거부된다(RoomSystem.LobbyPlayer가 IsLoadSuccess 확인) → Solo 전 잠시 풀고(23:58:43) 게임 방에서 다시 걸었다(23:59:18) · 그 사이 저장 이벤트 없음
+
+(a) 캐릭터 선택 → 잿불 야영지: 통과
+    shots/a0-charselect-slot3.jpg · a1-town-arrive.jpg · a2-town-ruin-gate.jpg
+    유적 문(PC 1920×1080 캡처 실측): 가로 약 44%(화면 절반 이하) · 세로 약 80% — 화면을 덮지 않음 · 문 앞 (1.20,−7.54)에서 몸이 아치 앞층에 가려 안 보임(핫픽스 기록의 의도된 앞층과 같음)
+    이야기 카드: 이 슬롯은 프롤로그를 이미 봐서 안 뜸 → 접속 직후 미리 불러오기 로그로만: story opening preload p1 done +0.00s state=ok · p2-5 done (방 시작·게임 방 두 번) — 흰 점 화면 확인은 못 함(새 캐릭터 불가)
+    야영지 → 황무지: 실제 아래 방향키로 문 통과 map transition shown 1.58s
+(b) 황무지 → 굶주린 굴: 통과
+    문 위 (8.5,−13.5)로 옮긴 뒤 실제 아래 방향키 2.0초 + 1.5초 → map transition cover → hollow · shown 1.54s (첫 2초는 포털 칸까지 못 닿음 (8.50,−16.375))
+    출현 ×2: spawner count mul map=hollow x2 before=13 after=26 · 소환 26 · 무리 8 · 깨움 placed=12 pending=14 · clear remaining=26 live=12
+    황무지도 x2 before=32 after=64 · shots/b1-wasteland-hollow-door.jpg · b2-hollow-door-front.jpg · b3-hollow-inside.jpg
+(c) 피 묻은 황무지: 통과
+    질주: 실제 Space → combat cue cast_wraith_dash · DASHWATCH moved=3.00칸(랭크 1 곡선 3.00) · 2초 동안 states=IDLE:120 (JUMP 없음) → shots/c1-space-dash.jpg
+      (질주 방향 = 마우스 모드 커서 쪽 — 왼쪽을 본 뒤에도 오른쪽으로 나감. 메이커 도구는 실제 OS 커서를 못 옮겨 커서가 오른쪽 아래에 있었다 · 동작 규칙이라 판단은 하지 않음)
+    처치 20 → 습격: 몬스터 체력 1 치트 + 실제 왼쪽 클릭 → 00:06:08 raid start n=16 dirs=3 · 파도 4×4(k=1..4/4 · 7초 간격) · raid warn shown text=none first=true(첫 회만) → 화면에 습격 글귀 없음 (shots/c3-raid-wave.jpg)
+      솟아오름 horde rise start fx=dust → done 0.50초 · 떼 드롭 horde drop picks=1 · 두 번째 습격 00:09:01(kill 누적 다시 20)
+      습격 끝 두 번 모두 why=timeout(공격을 멈춰서) — 격퇴 연출은 이번 범위 밖
+    해골 소환: 실제 A 키 · 혼 1개 → roster raised kind=skeleton · cast committed raise_skeleton mana=12
+      SKELVIS undeadSkelScale=1.2 VisualScale=1.20 root=0.55 vis=0.66(=0.55×1.2) · AllyRing.a=0.00 · MSVisRing.a=0.00 · auraOn=false → 발밑 원 없음
+      shots/c4-raise-skeleton.jpg(왼쪽 아래 소환수 칸) · c5-skeleton-world.jpg · e1-oren-dialog.jpg(오렌 옆 「내 소환수」 해골 — 발밑 원 없음)
+      조준 대체: 마우스 모드는 실제 OS 커서 자리 혼만 고르므로(도구가 OS 커서를 못 옮김 — 첫 두 번 ui sound fail) 잠깐 키보드 모드(ClickControl:SetMouseMode(false))로 가까운 혼 자동 조준 → 끝나고 true로 되돌림(00:10:20)
+(d) 스킬 창(K 실제 키): 통과 — 레이스 폼 「걸음 · 랭크 1/3 (최대 20)」 · 지금 3.00칸 질주 · 무적 0.30초 · 재사용 4.0초 → shots/d1-skillwin-wraith.jpg
+(e) 의뢰 보고: 통과 (기존 흐름 · D안 미반영 확인)
+    오렌에게 실제 Space로 말 걸기 → 대화 5쪽 Space → quest accepted 굶주린 굴(e1·e2)
+    목표만 치트로 달성(PlayerQuest:Complete) → 위 띠 「목표 달성 · 굶주린 굴 — 파문당한 사제 오렌에게 보고」(e3)
+    실제 Space 보고 → 「보상 고르기」 세트 3부위(gear offer new …armor,gloves,ring · e5) → 카드 고르기 → 확인 창 실제 Enter → gear choice done slot=armor rarity=4 · 경험치 951 → 2451
+      → 안내 줄 「새 장비는 가방에서 지금 장비와 비교해 장착해 주세요…」(e6) → Esc → 알림 판 ux show kind=quest 「퀘스트 보상 · 굶주린 굴」 → 다음 의뢰 「가라앉은 지하실의 수장」(e7-after-close-feed · e7-quest-reward-banner)
+    보상 연출 D안 요소 없음(예전 고르기 창 그대로)
+
+[5 마무리] maker_stop → 편집 모드(map01) · 빌드 Error 0 · MAKER-FREE 다시 생성 11-04 00:14:45 · 메이커가 ui를 다시 저장하지 않음(git status 깨끗)
+로그 원본: 세션 임시 폴더(커밋 안 함) · 탐침 중간에 로그를 세 번 비워 몇 초 분량은 원본에 없을 수 있다(핵심 줄은 비우기 전에 받음)
