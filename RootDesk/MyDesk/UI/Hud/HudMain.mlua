@@ -595,7 +595,7 @@ script HudMain extends Logic
     method void RenderRite(SkillBook book)
         -- 뼈 의식 충전 고리 (기획서 43 §3-1 · 결정 1A · 임시 그림): 누르는 동안 머리 위에 고리가 위에서 시계 방향으로 차고,
         -- 가운데 숫자 = 지금 떼면 나갈 단계(해골·재사용·마나가 모자라면 낮춘 값), 아래 = 단계 이름, 눈금 점 = 2·3기 문턱 (넘으면 밝아진다).
-        -- 11-02 거인 분리: 고리 한 바퀴 = 3기(1초) · 5기 눈금(T5)은 늘 끈다 (거인은 본 골렘 칸)
+        -- 11-02 거인 분리: 5기 눈금(T5)은 늘 끈다 (거인은 본 골렘 칸) · 11-03 C안: 고리 한 바퀴 = 2단계 회오리(0.5초) · 3기 눈금(T3)도 끈다
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not _UIKit:CanUseGameplayInput() or book:GetSlotSkill(book.RiteHoldSlot) ~= "bone_rite" then
             book:CancelRiteHold()
@@ -603,7 +603,7 @@ script HudMain extends Logic
             return
         end
         local held = _UtilLogic.ElapsedSeconds - book.RiteHoldAt
-        local top = _GameData.riteHold3
+        local top = _GameData.riteHold2
         local want = book:RiteStageForHold(held)
         ---@type PlayerStats
         local st = _UIKit:Comp("script.PlayerStats")
@@ -614,7 +614,7 @@ script HudMain extends Logic
         local colors = { [0] = Color(0.45, 0.42, 0.4, 0.9), [1] = Color(0.85, 0.8, 0.7, 0.95), [2] = Color(0.62, 0.86, 0.8, 0.95), [3] = Color(0.96, 0.82, 0.45, 0.95) }
         _UIKit:SetColor("RiteRing/Fill", colors[stage] or colors[0])
         -- 눈금: 고리 위쪽(12시)에서 시계 방향으로 문턱 비율만큼 (FillOrigin 2 · 시계 방향 — tools/build/ui.cjs RiteRing)
-        local marks = { { "T2", _GameData.riteHold2, true }, { "T3", _GameData.riteHold3, true }, { "T5", 0, false } }
+        local marks = { { "T2", _GameData.riteHold2, true }, { "T3", 0, false }, { "T5", 0, false } }
         for _, m in ipairs(marks) do
             local path = "RiteRing/" .. m[1]
             _UIKit:SetEnabled(path, m[3] and m[2] <= top + 0.001)
@@ -628,14 +628,14 @@ script HudMain extends Logic
         local sub = ""
         if stage ~= self.RiteLastStage or not self.RiteShown or sub ~= self.RiteLastSub then
             -- 단계 이름 · 낮춰 나갈 때는 「{단계}까지만」 (10-29 사용자 확정 — 까닭이 해골·마나·재사용 대기 어느 것이든 같은 글)
-            local names = { [1] = "해골 폭탄", [2] = "뼈 회오리", [3] = "뼈 화살" }
+            local names = { [1] = "해골 폭탄", [2] = "해골 회오리" }
             local label = stage == 0 and "해골 없음" or names[stage]
             if stage > 0 and stage < want then label = label .. "까지만" end
             _UIKit:SetText("RiteRing/Count", stage > 0 and tostring(stage) or "-")
             _UIKit:SetText("RiteRing/Label", label)
             _UIKit:SetText("RiteRing/Sub", sub)
             _UIKit:SetEnabled("RiteRing/Sub", sub ~= "")
-            if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite ring stage=%d want=%d max=3 held=%.2f", stage, want, held)) end
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite ring stage=%d want=%d max=2 held=%.2f", stage, want, held)) end
             self.RiteLastStage = stage
             self.RiteLastSub = sub
         end

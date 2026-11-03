@@ -4,9 +4,9 @@
 게임 코드 공식 (10-23 기준 — 출처는 docs/design/33-balance-final-20261023.md):
   몬스터 생명   baseHp × (1+0.3(L−1))/(1+0.3(bl−1)) × statMul × 정예 3 × 보스(L<13 2.7 · 그 위 4.5)        Monster.RecomputeMaxHp
   몬스터 공격   floor(baseDmg × (1+0.2(L−bl)) × statMul + 0.5) × 보스 1.3                                  MonsterAttack.ScaleToLevel
-  해골 전사     floor(6 × (1+0.12(OL−1)) × (1+0.1(slv−1)) × (1+0.08·숙련)) × (1+소환수%)  · 1.1초             UndeadSystem.GetBaseStats
+  해골 전사     floor(6 × (1+0.12(OL−1)) × (1+0.1(slv−1))) × (1+소환수%)  · 1.1초 (11-03 「단련된 뼈」 삭제)      UndeadSystem.GetBaseStats
   그림자        floor(25(정예 50) × 공격비 × 0.6 × (1+0.12(L−1)) × statMul) · 원본 간격 × 0.67                ShadowConfig.GetProfile
-                statMul = [1 + (3(그림자 소환−1) + 8·군령 + 소환수%)/100] × (1 + 0.06 × 강화)
+                statMul = [1 + (10(그림자 소환−1) + 소환수%)/100] × (1 + 0.06 × 강화) (11-03 「군령」 삭제)
   플레이어 생명 60 + 1.5(L−1) + 3(활력−15) + 장비 · 물리 ×100/(100+방어) · 속성 ×(1−저항)                       PlayerStats
   레벨 차       주는 피해 ×max(0.25, 1−0.035·over) · 받는 피해 ×(1+min(0.45, 0.015·over)) (over = 몬스터−나−1)  GameConst
   약화의 낙인   받는 피해 +(20+2(r−1))% — 10-23부터 소환수 피해에도 (ShadowUnit.CalcDamage)
@@ -122,16 +122,17 @@ def quest_exp(q, diff):
 
 PROFILES = {
     # 최대 투자: 군단 위주 최적 순서 · 통솔 50 · 활력 40 · 민첩 10% · 좋은 원본(공격비 1.8) · 정예 그림자 2 · 강화 상한 · 낙인 상시
-    "P100": dict(order=["raise_skeleton:3", "shadow_summon:1", "skeleton_mastery:5", "mark_weakness:1", "shadow_summon:3",
-                        "command_mastery:5", "shadow_summon:5", "deploy_expand:3", "skel_legion:2", "bone_armor:1",
+    # 11-03 (62 §10): 지운 노드(단련된 뼈 · 군령 · 원소 집중)는 투자 순서에서 뺐다 — 그 포인트는 뒤의 cap 항목이 가져간다
+    "P100": dict(order=["raise_skeleton:3", "shadow_summon:1", "mark_weakness:1", "shadow_summon:3",
+                        "shadow_summon:5", "deploy_expand:3", "skel_legion:2", "bone_armor:1",
                         "raise_skeleton:cap", "shadow_summon:cap", "curse_power:3", "raise_mage:cap", "mage_legion:2",
-                        "mage_focus:5", "mark_weakness:cap"],
+                        "mark_weakness:cap"],
                  stat=dict(str=0.5, vit=0.4, dex=0.1, ene=0.0), dmgRatio=1.8, hpRatio=1.5, elites=2, plus=1.0, markUp=0.7),
     # 60%: 군단 위주지만 골편·뼈 갑옷·독안개에 포인트를 흩고, 숙련·군령·배치 확장이 늦다 · 고른 능력치 · 보통 원본 · 강화 절반 · 낙인 가끔
-    "P60": dict(order=["raise_skeleton:1", "bone_shard:2", "raise_skeleton:3", "shadow_summon:1", "bone_armor:2", "skeleton_mastery:3",
-                       "shadow_summon:3", "mark_weakness:1", "command_mastery:3", "shadow_summon:5",
-                       "deploy_expand:2", "skeleton_mastery:4", "raise_skeleton:cap-2", "bone_shard:5", "shadow_summon:cap-2",
-                       "raise_mage:3", "command_mastery:5", "deploy_expand:3", "raise_skeleton:cap", "shadow_summon:cap"],
+    "P60": dict(order=["raise_skeleton:1", "bone_shard:2", "raise_skeleton:3", "shadow_summon:1", "bone_armor:2",
+                       "shadow_summon:3", "mark_weakness:1", "shadow_summon:5",
+                       "deploy_expand:2", "raise_skeleton:cap-2", "bone_shard:5", "shadow_summon:cap-2",
+                       "raise_mage:3", "deploy_expand:3", "raise_skeleton:cap", "shadow_summon:cap"],
                 stat=dict(str=0.35, vit=0.35, dex=0.15, ene=0.15), dmgRatio=1.6, hpRatio=1.25, elites=1, plus=0.75, markUp=0.55),
 }
 
@@ -157,10 +158,9 @@ def node_level(sid, rank):
     s = SKILL[sid]
     if sid == "deploy_expand":
         return int(C["deployExpandFromLv"] + C["deployExpandStep"] * (max(1, rank) - 1))
-    if sid == "command_mastery":
-        return 0
-    prow = int(num(SKILL[s["parent"]]["row"])) if s["parent"] in SKILL else 1
-    first = prow + 2 * (max(1, int(num(s["need"]))) - 1)
+    # 62 §8-3: 처음 열리는 레벨 = 부모가 need 랭크에 닿는 가장 이른 레벨 (해금 ≥ 24 부모는 1.5레벨 규칙)
+    need = max(1, int(num(s["need"])))
+    first = next_rank_level(s["parent"], need) if s["parent"] in SKILL else 1 + 2 * (need - 1)
     return int(first + C["nodeLevelStep"] * (max(1, rank) - 1))
 
 
@@ -178,7 +178,18 @@ def rank_cap(sid, L, rk):
     row, mx = int(num(s["row"])), int(num(s["maxLv"]))
     if L < row:
         return 0
-    return min(mx, 1 + (L - row) // 2)
+    return min(mx, 1 + int(math.floor((L - row) / rank_step(row) + 1e-9)))
+
+
+def rank_step(row):
+    # SkillBook.RankStep (62 §8 · 11-03): 해금 ≥ rankLateRow(24)면 rankLateStep(1.5)레벨마다 1랭크, 그 밖은 2
+    return C.get("rankLateStep", 2) if row >= C.get("rankLateRow", 999) else 2
+
+
+def next_rank_level(sid, rank):
+    # SkillBook.NextRankLevel: 해금 + ⌈step × (랭크 − 1)⌉
+    row = int(num(SKILL[sid]["row"]))
+    return row + int(math.ceil(rank_step(row) * (max(1, rank) - 1) - 1e-9))
 
 
 DONE = {"runs": 0}
@@ -240,8 +251,8 @@ def build(prof, L, act=1, diff=0):
         if slv <= 0:
             return 0, 0
         pct = C["undeadSkillLvPct"] if pct is None else pct
-        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
-        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)) * (1 + C["skeletonMasteryPct"] / 100 * mast))
+        a = math.floor(base_atk * (1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)))   # 11-03 숙련 곱 삭제
+        h = math.floor(base_hp * (1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)) * (1 + pct / 100 * (slv - 1)))
         return a * (1 + minion / 100), h * (1 + minion / 100)
 
     def count(slv, legion):
@@ -250,19 +261,17 @@ def build(prof, L, act=1, diff=0):
         return (slv if slv <= 3 else min(8, 2 + slv // 3)) + legion
 
     sl = rk.get("raise_skeleton", 0) + (tree if rk.get("raise_skeleton", 0) else 0)
-    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl, rk.get("skeleton_mastery", 0), C.get("skeletonSkillLvPct", C["undeadSkillLvPct"]))
+    sk_atk, sk_hp = undead(C["skeletonAtkBase"], C["skeletonHpBase"], sl, 0, C.get("skeletonSkillLvPct", C["undeadSkillLvPct"]))
     n_sk = count(sl, rk.get("skel_legion", 0))
     ml = rk.get("raise_mage", 0) + (tree if rk.get("raise_mage", 0) else 0)
-    mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml, rk.get("skeleton_mastery", 0))
-    mg_atk *= 1 + C.get("mageFocusPct", 10) / 100 * rk.get("mage_focus", 0)
+    mg_atk, _ = undead(C["mageAtkBase"], C["mageHpBase"], ml, 0)   # 11-03 「원소 집중」 삭제
     mg_atk *= mage_school_mul(ml, rk.get("mage_curse", 0) > 0)
     n_mg = count(ml, rk.get("mage_legion", 0))
     # 그림자 (ShadowConfig · ShadowCommander)
     ss = rk.get("shadow_summon", 0) + (tree if rk.get("shadow_summon", 0) else 0)
     plus = min(math.floor(p["plus"] * (L // int(C["shadowPlusLevelDiv"]))), int(C["shadowPlusMax"]))
-    # 군령은 그림자 소환 commandMasteryStep 랭크마다 한 랭크만 효과 (ShadowCommander.GetUnitMultiplier)
-    cmd = min(rk.get("command_mastery", 0), ss // max(1, int(C["commandMasteryStep"])))
-    sm = (1 + (C["shadowSummonPerLvPct"] * max(0, ss - 1) + C["commandMasteryPct"] * cmd + minion) / 100) * (1 + C["shadowPlusPct"] / 100 * plus)
+    # 11-03 「군령」 삭제 (ShadowCommander.GetUnitMultiplier = 그림자 소환 랭크 + 장비 소환수% + 배틀 오더스)
+    sm = (1 + (C["shadowSummonPerLvPct"] * max(0, ss - 1) + minion) / 100) * (1 + C["shadowPlusPct"] / 100 * plus)
     grow_a = 1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)
     grow_h = 1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)
     deploy_quest = sum(1 for x in DEPLOY_LEVELS if x <= L) + DONE["runs"] * len(DEPLOY_LEVELS)

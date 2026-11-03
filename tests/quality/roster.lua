@@ -659,7 +659,7 @@ do
  book.Levels={bone_rite=5,bone_giant=5,raise_skeleton=12,raise_mage=6}
  book.ReadyAt={}
  assert(book:RiteUnits5()==7,'units5 '..book:RiteUnits5())
- assert(book:GiantReason(-1)=='' and book:RiteBestStage(5,-1)==3,'giant available · nova cap 3 '..book:GiantReason(-1))
+ assert(book:GiantReason(-1)=='' and book:RiteBestStage(5,-1)==2,'giant available · nova cap 2 (11-03) '..book:GiantReason(-1))
  UndeadSystem.Giants={u1={{host=live[7],mates={},epoch=9,kind='twin'}}}
  -- 48-4: 5기는 상한(riteGiantMax 2)에 닿을 때만 건너뛴다 — 통합 전(SkillBook.GiantStanding)·후(C 어댑터 GiantCapReached) 같은 판단이 되게 UndeadSystem 공개 API로 맞춘다
  local capFn=function(bk) return UndeadSystem:GiantCapReached(bk.Entity) end
@@ -667,7 +667,7 @@ do
  book.GiantStanding=capFn;book.GiantCapReached=capFn
  assert(UndeadSystem:GiantStandingAny(player) and book:GiantReason(-1)=='','one giant: second allowed, got '..book:GiantReason(-1))
  table.insert(UndeadSystem.Giants.u1,{host=live[6],mates={},epoch=10,kind='shield'})
- assert(book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==3,'two giants: cap · nova still 3, got '..book:GiantReason(-1))
+ assert(book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==2,'two giants: cap · nova still 2, got '..book:GiantReason(-1))
  table.remove(UndeadSystem.Giants.u1,2)
  book.GiantStanding=keepS;book.GiantCapReached=keepC
  UndeadSystem:RefreshSummary(player)
@@ -822,7 +822,7 @@ do
   local mm=0
   for _,r in ipairs(g2.mates) do if r.kind=='mage' then mm=mm+1 end end
   assert(g2.kind=='shield' and mm==2,'second giant mates mage '..mm)
-  assert(UndeadSystem:GiantCapReached(player) and book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==0,'two giants: cap (no skeleton left for nova 3)')
+  assert(UndeadSystem:GiantCapReached(player) and book:GiantReason(-1)=='거인 상한' and book:RiteBestStage(5,-1)==0,'two giants: cap (no skeleton left for nova)')
   book.GiantStanding=keepStanding;book.GiantCapReached=keepCap
   local mages=0
   for _,r in ipairs(UndeadSystem:ListOf(player)) do if r.kind=='mage' then mages=mages+1 end end

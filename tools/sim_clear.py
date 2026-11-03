@@ -144,7 +144,7 @@ def build(name, L):
         tree = 0
     # 해골 전사
     sl = rk.get("raise_skeleton", 0) + tree
-    mast = 1 + C["skeletonMasteryPct"] * rk.get("skeleton_mastery", 0) / 100
+    mast = 1 + C.get("skeletonMasteryPct", 0) * rk.get("skeleton_mastery", 0) / 100
     atkGrow = 1 + C["monsterDmgPerLevel"] * C["summonGrowthMul"] * (L - 1)
     hpGrow = 1 + C["monsterHpPerLevel"] * C["summonGrowthMul"] * (L - 1)
     def undead(base_atk, base_hp, lvl, pct=None):

@@ -141,6 +141,8 @@ script PlayerStats extends Component
     @Sync
     property number AfterStepPct = 0
     property number ArmorSoaked = 0          -- 강화 「터지는 갑옷」: 지금 뼈 갑옷이 막은 피해 합 (다 깨질 때 터뜨리고 0 · 새로 두르면 0)
+    property integer ArmorCastSerial = 0     -- 본 아머를 두른 횟수 (서버 · 강화 「급속 골화」 되감김이 같은 시전인지 본다 · 11-03)
+    property boolean ArmorReformed = false   -- 이번 시전에서 「급속 골화」로 이미 다시 둘렀나 (시전마다 한 번 · 다시 시전하면 false)
     property integer ArmorRingSerial = 0     -- 클라이언트: 뼈 갑옷 몸 고리 입자 (44 §4-1 B — 남은 흡수량만큼 진하게)
     property integer ArmorRingStep = 0       -- 클라이언트: 지금 그린 고리 단계 (0 = 없음 · 1~4)
     -- 10-31 실플레이 갈래 E (audit P15 「뼈방패가 충격적」): 값만 되돌리면 예전 그대로
@@ -676,6 +678,27 @@ script PlayerStats extends Component
                     local fx = isvalid(me) and me:GetComponent("script.SkillEffects") or nil
                     if fx ~= nil then fx:ArmorBurst(soaked * mul) end
                 end, 0.05)
+            end
+            -- 강화 「급속 골화」(11-03 · 옛 두꺼운 뼈 자리 · 62 §10): 다 깨지면 2초 뒤 최대치의 15%/랭크로 다시 두름 — 시전마다 한 번 (다시 시전하면 초기화 · 다시 두른 몫이 깨지면 「터지는 갑옷」이 그 몫으로 한 번 더)
+            local reform = book ~= nil and book:ArmorReformPct(book:Node("armor_thick")) or 0
+            if reform > 0 and not self.ArmorReformed and self.BoneArmorMax > 0 then
+                self.ArmorReformed = true
+                local serial = self.ArmorCastSerial
+                local me = self.Entity
+                _TimerService:SetTimerOnce(function()
+                    if not isvalid(me) or not _Util:IsAlive(me) or self.ArmorCastSerial ~= serial or self.BoneArmor > 0 then
+                        if not Environment:IsPublishedPlay() then log(string.format("[VRF] armor reform skip alive=%s serial=%s armor=%d", tostring(isvalid(me) and _Util:IsAlive(me)), tostring(self.ArmorCastSerial == serial), math.floor(self.BoneArmor))) end
+                        return
+                    end
+                    self.BoneArmor = math.max(1, math.floor(self.BoneArmorMax * reform / 100))
+                    self.ArmorSoaked = 0
+                    ---@type SkillEffects
+                    local fx = me:GetComponent("script.SkillEffects")
+                    if fx ~= nil then fx:StatusFx("shell", me.TransformComponent.WorldPosition, 1) end
+                    if not Environment:IsPublishedPlay() then log(string.format("[VRF] armor reform pct=%d armor=%d/%d", reform, math.floor(self.BoneArmor), math.floor(self.BoneArmorMax))) end
+                end, 2)
+            elseif reform > 0 and self.ArmorReformed and not Environment:IsPublishedPlay() then
+                log("[VRF] armor reform used (once per cast)")
             end
         end
         return final - math.floor(absorbed)

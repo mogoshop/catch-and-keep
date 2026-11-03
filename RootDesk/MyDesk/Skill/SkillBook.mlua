@@ -54,6 +54,37 @@ script SkillBook extends Component
         for id in string.gmatch(self.StartSkills, "[^,]+") do self.Levels[id] = 1 end
         self:SanitizeSlots()
         self:RefreshDigest()
+        if not Environment:IsPublishedPlay() then self:LogRankCurves() end
+    end
+
+    @ExecSpace("ServerOnly")
+    method void LogRankCurves()
+        -- 11-03 랭크 개편 자가 출력 (docs/design/62 §7·§8 · 메이커 확인용 · 발행판 제외): 메인 13개 R1/R10/R20 (Lv1 환산 · 노드 0 — 접속 직후라 표가 비어 있다) + 랭크 열림 규칙
+        local parts = {}
+        local fmt = function(v) return string.format("%.2f", v) end
+        local triple = function(fn) return fmt(fn(1)) .. "/" .. fmt(fn(10)) .. "/" .. fmt(fn(20)) end
+        local raw = function(id) return function(r) return self:RawEffectPower(id, r) end end
+        for _, id in ipairs({ "bone_storm", "shadow_sacrifice", "soul_torrent", "death_wave" }) do
+            table.insert(parts, id .. "=" .. triple(function(r) return self:DamageCurve(id, r) * _GameData.skillPowerMult * _GameData.skillDmgMult end))
+        end
+        table.insert(parts, "enfeeble=" .. triple(raw("enfeeble")))
+        table.insert(parts, "bone_rite.bomb=" .. triple(raw("bone_rite")))
+        table.insert(parts, "bone_rite.whirl=" .. triple(function(r) return self:RiteRankMul(r) * _GameData.riteWhirlMul * self:RiteWhirlTicks(0) end))
+        table.insert(parts, "bone_giant=" .. triple(function(r) return 1 + self:RawEffectPower("bone_giant", r) / 100 end))
+        table.insert(parts, "elite_promote=" .. triple(raw("elite_promote")))
+        table.insert(parts, "wraith_dash=" .. triple(raw("wraith_dash")))
+        table.insert(parts, "bone_offering=" .. triple(raw("bone_offering")))
+        table.insert(parts, "resist_break=" .. triple(function(r) return self:RawEffectPower("resist_break", r) * _GameData.skillPowerMult end))
+        table.insert(parts, "bone_prison=" .. triple(raw("bone_prison")))
+        table.insert(parts, "terror=" .. triple(raw("terror")))
+        log("[VRF] rank curves " .. table.concat(parts, " "))
+        local caps = {}
+        for _, c in ipairs({ { "bone_rite", 52 }, { "bone_rite", 53 }, { "death_wave", 78 }, { "death_wave", 79 }, { "hex_flame", 47 }, { "bone_giant", 53 } }) do
+            table.insert(caps, string.format("%s@%d=%d", c[1], c[2], self:RankCap(c[1], c[2])))
+        end
+        log(string.format("[VRF] rankcap rule step=%g lateRow=%d %s next(bone_rite,20)=%d next(death_wave,20)=%d giantNode(giant_gs_spin,1)=%d rite_fork(1)=%d rite_reach(1)=%d",
+            _GameData.rankLateStep, math.floor(_GameData.rankLateRow), table.concat(caps, " "), self:NextRankLevel("bone_rite", 20), self:NextRankLevel("death_wave", 20),
+            self:NodeLevel("giant_gs_spin", 1), self:NodeLevel("rite_fork", 1), self:NodeLevel("rite_reach", 1)))
     end
 
     method integer ChoiceTier(integer slot, string axis)
@@ -103,39 +134,45 @@ script SkillBook extends Component
 
     method integer RankCap(string id, integer playerLevel)
         -- 지금 올릴 수 있는 최대 랭크 (docs/design/16): 메인 = min(최대 20, 1 + (캐릭터 Lv − 해금 Lv) // 2), 강화 = 최대 랭크
+        --   62 §8 · 11-03 Fable 결정 3: 해금 Lv ≥ rankLateRow(24) 메인 11개는 rankLateStep(1.5)레벨마다 1랭크 (본 노바 Lv53 · 데스 노바 Lv79에 20랭크)
         local def = _SkillData:Get(id)
         if def == nil then return 0 end
         if def.kind == "node" then return def.maxLv end
         if playerLevel < def.row then return 0 end
-        return math.min(def.maxLv, 1 + (playerLevel - def.row) // 2)
+        return math.min(def.maxLv, 1 + math.floor((playerLevel - def.row) / self:RankStep(def.row) + 1e-9))
+    end
+
+    method number RankStep(integer row)
+        -- 메인 랭크 하나가 열리는 캐릭터 레벨 간격: 해금 Lv ≥ rankLateRow면 rankLateStep(1.5), 그 밖은 2 (62 §8)
+        if row >= _GameData.rankLateRow then return _GameData.rankLateStep end
+        return 2
     end
 
     method integer NextRankLevel(string id, integer rank)
         -- 메인 스킬을 rank까지 올리는 데 필요한 캐릭터 레벨
         local def = _SkillData:Get(id)
         if def == nil or def.kind == "node" then return 1 end
-        return def.row + 2 * (rank - 1)
+        return def.row + math.ceil(self:RankStep(def.row) * (math.max(1, rank) - 1) - 1e-9)   -- 해금 ≥ 24: 해금 + ⌈1.5 × (랭크 − 1)⌉ (62 §8-1)
     end
 
     method integer NodeNeed(string id, integer rank)
-        -- 강화 rank랭크를 찍는 데 필요한 메인 스킬 랭크. 군령은 랭크마다 commandMasteryStep씩, 나머지는 표의 need 하나
+        -- 강화 rank랭크를 찍는 데 필요한 메인 스킬 랭크 = 표의 need 하나 (11-03 군령 삭제로 랭크마다 다른 need는 없다)
         --   (10-28 투사체 A안: 골편 발 수가 스킬 레벨 구간으로 들어가 「다중 투사체」 랭크 간격 규칙은 없앴다 — 그 자리는 강화 「모인 뼈」)
         local def = _SkillData:Get(id)
         if def == nil then return 0 end
-        if id == "command_mastery" then return math.max(def.need, math.floor(_GameData.commandMasteryStep) * math.max(1, rank)) end   -- 10-24 사용자 C안: 3·6·9·12·15
         return def.need
     end
 
     method integer NodeLevel(string id, integer rank)
         -- 강화 rank랭크에 필요한 캐릭터 레벨 (0 = 조건 없음). 10-24 사용자: 강화는 열린 뒤 nodeLevelStep(4)레벨마다 한 랭크
         --   (예전엔 열리는 순간 모든 랭크를 한 번에 찍었다 — 단련된 뼈 Lv5에 5랭크). 처음 열리는 레벨 = 메인 스킬을 need 랭크로 올릴 수 있는 가장 이른 레벨
-        -- 예외: 그림자 증원 Lv17·23·29 · 군령은 메인 스킬 랭크 간격(NodeNeed)으로 이미 벌어진다
+        -- 예외: 그림자 증원 Lv12·17·22
+        --   62 §8-3: 처음 열리는 레벨 = 부모가 need 랭크에 닿는 가장 이른 레벨(NextRankLevel) — 해금 ≥ 24 부모(본 골렘 거인 노드 Lv38 등)는 1.5레벨 규칙을 따른다
         if id == "deploy_expand" then return math.floor(_GameData.deployExpandFromLv + _GameData.deployExpandStep * (math.max(1, rank) - 1)) end
-        if id == "command_mastery" then return 0 end
         local def = _SkillData:Get(id)
         if def == nil or def.kind ~= "node" then return 0 end
         local parent = _SkillData:Get(def.parent)
-        local first = (parent ~= nil and parent.row or 1) + 2 * (math.max(1, def.need) - 1)
+        local first = parent ~= nil and self:NextRankLevel(def.parent, math.max(1, def.need)) or (1 + 2 * (math.max(1, def.need) - 1))
         return math.floor(first + _GameData.nodeLevelStep * (math.max(1, rank) - 1))
     end
 
@@ -233,7 +270,7 @@ script SkillBook extends Component
         local hint = ""
         if def.kind == "passive" or def.kind == "node" or def.kind == "aura" then
             hint = "자동 적용"
-            if id == "skeleton_mastery" or id == "command_mastery" or id == "skel_legion" or id == "mage_legion" or id == "mage_focus" or string.sub(id, 1, 5) == "mage_" or id == "skel_greatsword" or id == "skel_twin" or id == "command_aura" or id == "dash_legion" then hint = "다음 소환부터 적용" end
+            if id == "skel_legion" or id == "mage_legion" or string.sub(id, 1, 5) == "mage_" or id == "skel_greatsword" or id == "skel_twin" or id == "command_aura" or id == "dash_legion" then hint = "다음 소환부터 적용" end
         elseif id == "wraith_dash" then
             hint = Environment:IsMobilePlatform() and "질주 단추로 사용" or "스페이스로 사용"
         elseif slot > 0 then
@@ -325,8 +362,9 @@ script SkillBook extends Component
 
     method number GetHexBurstRadius(integer level)
         -- 저주 불꽃 「폭발」: 저주 걸린 적에 맞으면 터지는 반경 (구간마다 0.9·1.1·1.3·1.6)
+        --   11-03 강화 「피투성이 난장판」(옛 낙인 연소 자리 · Fable 결정 7): 폭발 범위 +15%/랭크
         local radii = { 0.9, 1.1, 1.3, 1.6 }
-        return radii[self:ProjectileTier(level) + 1]
+        return radii[self:ProjectileTier(level) + 1] * (1 + 0.15 * self:Node("flame_hex"))
     end
 
     method integer GetShardHits()
@@ -476,12 +514,13 @@ script SkillBook extends Component
         -- 그 스킬의 판정 반경 — SkillEffects.PoisonMist · BonePrison · Curse와 같은 식 (바꾸면 둘 다)
         if id == "poison_mist" then return 1.3 * (1 + 0.2 * self:Node("mist_wide")) end
         if id == "bone_prison" then return 1.3 * (1 + 0.15 * self:Node("prison_wide")) end
-        if id == "bone_rite" then return _GameData.riteWhirlRadius end
+        if id == "bone_rite" then return self:RiteWhirlRadius() end
         if self:IsGroundSkill(id) then
             ---@type PlayerStats
             local stats = self.Entity:GetComponent("script.PlayerStats")
             local bonus = stats ~= nil and stats.BonusCurse / 100 or 0
-            return 1.5 * (1 + bonus + 0.15 * self:Node("curse_area"))
+            local base = id == "enfeeble" and self:EnfeebleRadius() or 1.5   -- 11-03 강화 「약화의 오라」 위큰 범위 +20%/랭크
+            return base * (1 + bonus + 0.15 * self:Node("curse_area"))
         end
         return 0
     end
@@ -506,11 +545,8 @@ script SkillBook extends Component
             if self.GroundHoldMap ~= self.Entity.CurrentMap then self:CancelGroundHold() return nil end
             id = self:GetSlotSkill(self.GroundHoldSlot)
         elseif self.RiteHoldAt >= 0 then
-            if Environment:IsMobilePlatform() and _MobilePad.CancelHover then return nil end   -- I04: 「취소」 위면 의식 범위 원도 끈다
-            local held = _UtilLogic.ElapsedSeconds - self.RiteHoldAt
-            ---@type PlayerStats
-            local st = self.Entity:GetComponent("script.PlayerStats")
-            if self:RiteBestStage(self:RiteStageForHold(held), st ~= nil and st.Mana or -1) == 2 then id = "bone_rite" end
+            -- 11-03 C안: 2단계는 조준점 장판이 아니라 표적을 쫓는 돌진 회오리라 조준점 범위 원을 그리지 않는다 (머리 위 충전 고리만)
+            return nil
         elseif Environment:IsMobilePlatform() and _MobilePad.GestureTouchId ~= 0 and not _MobilePad.GestureBasic and not _MobilePad.EditMode then
             if _MobilePad.CancelHover then return nil end   -- I04: 「취소」 위에 손가락이 있으면 놓아도 쓰지 않으므로 범위 원을 끈다
             id = self:GetSlotSkill(_MobilePad.GestureSlot)
@@ -545,7 +581,7 @@ script SkillBook extends Component
     end
 
     method number GetCurseDuration(integer level)
-        -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 20.5초)
+        -- 저주 지속: 1레벨 4초, 5레벨까지 +0.5초씩, 6레벨부터 +1초씩 (20레벨 21초)
         if level <= 0 then return 0 end
         local base = 4 + 0.5 * math.min(level - 1, 4) + 1 * math.max(0, level - 5)
         return self:CurseDurationWithMods(base)
@@ -584,7 +620,9 @@ script SkillBook extends Component
         local def = _SkillData:Get(id)
         local row = def ~= nil and def.row or 1
         local virtual = level + math.max(0, row - 1) // 2
-        return mul * (_GameData.skillCurveBase + _GameData.skillCurvePerLv * (virtual - 1))
+        -- 62 §7-2 안 ②′ (11-03 Fable 결정 1): 해금 ≥ skillLateRow(24) 공격 스킬(본 스톰·세크리파이스·본 스피리트·데스 노바)만 랭크 램프 ×(1 + 1% × (랭크 − 1)) · R1 그대로
+        local ramp = row >= _GameData.skillLateRow and (1 + _GameData.skillLateRampPct / 100 * (math.max(1, level) - 1)) or 1
+        return mul * (_GameData.skillCurveBase + _GameData.skillCurvePerLv * (virtual - 1)) * ramp
     end
 
     method number RawEffectPower(string id, integer level)
@@ -592,24 +630,24 @@ script SkillBook extends Component
         -- 공격 스킬 한 발(독안개는 초당 · 뼈 폭풍은 0.5초당 · 그림자 희생은 + 희생한 그림자 공격력 ×2 · 혼 흡수는 피해의 절반 회복): 공통 곡선
         local curve = self:DamageCurve(id, level)
         if curve > 0 then return curve end
-        if id == "bone_rite" then return 2.5 + 0.15 * (level - 1) end  -- 뼈 의식 1기(해골 폭탄) 해골 공격력 배율 (해골 공격력이 이미 캐릭터 레벨을 따른다)
+        if id == "bone_rite" then return 2.5 + 0.25 * (level - 1) end  -- 본 노바 1단계(해골 폭탄) 해골 공격력 배율 (62 §7-1: +0.15 → +0.25/랭크 · 해골 공격력이 이미 캐릭터 레벨을 따른다)
         if id == "bone_giant" then return _GameData.riteGiantRankPct * (level - 1) end   -- 11-02 본 골렘: 거인 공격·생명 + % (1랭크 = 0 = 예전 뼈 의식 5기 거인 그대로)
-        if id == "bone_offering" then return 25 + 1.5 * (level - 1) end   -- 소환수 최대 생명 대비 회복 %
+        if id == "bone_offering" then return 25 + 2.1 * (level - 1) end   -- 소환수 최대 생명 대비 회복 % (62 §7-1: +1.5 → +2.1/랭크 · 「진한 성찬」 삭제)
         if id == "swift_step" then return 8 + (level - 1) end          -- 이동 속도 % (10-24: 4 → 8 시작)
         if id == "plague_curse" then return 3 + level // 5 end         -- 저주가 옮는 적 수
-        if id == "wraith_dash" then return self:Node("dash_blink") > 0 and 5 or (3 + 0.05 * (level - 1)) end  -- 질주 거리 (칸) · 강화 「망령 도약」이면 조준점까지 최대 5칸
+        if id == "wraith_dash" then return self:Node("dash_blink") > 0 and _GameData.dashBlinkRange or (3 + 2 * (level - 1) / 19) end  -- 질주 거리 (칸 · 62 §7-1: 20랭크 5칸) · 강화 「망령 도약」이면 조준점까지 최대 dashBlinkRange(6)칸
         if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
-        if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) + 3 * self:Node("enfeeble_deep") end
+        if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end   -- 62 §7-1: +2%p/랭크 (상한 enfeebleMaxPct는 저주 세기를 곱한 뒤 · EnfeebleCap)
         if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
         local k = level - 1
         if id == "thorn_curse" then return 50 + 5 * k end            -- 반사 %
         if id == "terror" then return 3 + 0.2 * k end                -- 도주 초
         if id == "life_tap" then return 10 + 1 * k end               -- 흡혈 %
-        if id == "resist_break" then return 25 + 1.5 * k end         -- 저항 감소 %p
+        if id == "resist_break" then return 25 + 2.3 * k end         -- 저항 감소 %p (62 §7-1: 원식 +1.5 → +2.3 · 표시 = × skillPowerMult 0.7)
         if id == "bone_prison" then return 2 + 0.15 * k end          -- 속박 초
         if id == "poison_spread" then return 1.25 + 0.25 * level end -- 확산 반경 (강화 노드 랭크 1~3: 1.5·1.75·2.0)
         if id == "command_aura" then return 10 + 2 * k end           -- 소환수 공격·생명 %
-        if id == "bone_armor" then return (20 + 10 * k) * (1 + 0.2 * self:Node("armor_thick")) end   -- 흡수량 (캐릭터 레벨 비례는 GetEffectPower)
+        if id == "bone_armor" then return 20 + 10 * k end   -- 흡수량 (캐릭터 레벨 비례는 GetEffectPower · 11-03 「두꺼운 뼈」 → 「급속 골화」로 흡수량 곱 없음)
         return 0
     end
 
@@ -653,8 +691,7 @@ script SkillBook extends Component
         -- 가상 랭크를 받는 순수 미리보기. 현재 소환 공식도 이 함수를 쓴다.
         local rush = 5 * self:Node("dash_legion")
         if lv <= 0 then return { atk = 0, speed = rush, resist = 0 } end
-        local deep = 1 + 0.2 * self:Node("aura_deep")   -- 강화 「깊은 울림」
-        return { atk = self:GetEffectPower("command_aura", lv) * deep, speed = 5 + 0.5 * (lv - 1) + rush, resist = 5 + (lv - 1) }
+        return { atk = self:GetEffectPower("command_aura", lv), speed = 5 + 0.5 * (lv - 1) + rush, resist = 5 + (lv - 1) }
     end
 
     method string GetRankSummary(string id, integer level)
@@ -667,11 +704,10 @@ script SkillBook extends Component
         if stats == nil then return "" end
         if id == "raise_skeleton" or id == "raise_mage" then
             local kind = id == "raise_skeleton" and "skeleton" or "mage"
-            local values = _UndeadSystem:GetBaseStats(kind, level, self:GetPowerLevel("skeleton_mastery"), stats.Level)
+            local values = _UndeadSystem:GetBaseStats(kind, level, 0, stats.Level)
             local equip = math.max(0.1, 1 + stats:GetMinionPct() / 100) * (1 + self:GetCommandAura().atk / 100)
-            local focus = kind == "mage" and (1 + _GameData.mageFocusPct / 100 * self:Node("mage_focus")) or 1
             local count = _UndeadSystem:MaxFor(self.Entity, kind, level)
-            local atk, hp = math.max(1, math.floor(values.atk * focus * equip)), math.max(1, math.floor(values.hp * equip))
+            local atk, hp = math.max(1, math.floor(values.atk * equip)), math.max(1, math.floor(values.hp * equip))
             if kind == "mage" then
                 -- 48 §2-3 (글귀 §9 추천 1 「관통 · 파편 · 폭발 · 영혼」): 속성 넷의 특성이 랭크 구간 1·6·11·16에서 함께 커진다 · 저주 속성을 배웠으면 낙인 %
                 local m = self:MageSchoolAt(level)
@@ -684,8 +720,6 @@ script SkillBook extends Component
             end
             return string.format("최대 %d기 · 일반형 공격 %d · 생명 %d (다음 소환 기준)", count, atk, hp)
         end
-        if id == "skeleton_mastery" then return string.format("해골 공격·생명 +%g%%", _GameData.skeletonMasteryPct * level) end
-        if id == "command_mastery" then return string.format("그림자 공격·생명 +%g%%", _GameData.commandMasteryPct * level) end
         if id == "shadow_summon" then
             if level == 1 then return "혼 추출·그림자 소환 해금" end
             return string.format("그림자 공격·생명 +%g%%", _GameData.shadowSummonPerLvPct * (level - 1))
@@ -708,19 +742,18 @@ script SkillBook extends Component
             curse_area = string.format("모든 저주 범위 +%d%%", 15 * level),
             curse_duration = string.format("모든 저주 지속 +%d%%", 15 * level),
             curse_power = string.format("수치형 저주 효과 +%d%%", 10 * level),
-            armor_thick = string.format("본 아머 흡수량 +%d%%", 20 * level),
+            armor_thick = string.format("본 아머가 다 깨지면 2초 뒤 최대치의 %d%%로 다시 두름 (시전마다 한 번)", self:ArmorReformPct(level)),
             armor_thorns = string.format("갑옷이 깨질 때 반경 1.5에 막은 피해 합 ×%.2f", self:ArmorBurstMul(level)),
             skel_burst = string.format("쓰러질 때 반경 1.5에 해골 공격력 ×%.1f 피해", 0.5 * level + 0.5),
             shard_bounce = string.format("맞힌 뒤 가까운 적에게 %d번 튕김", level),
-            shard_spike = string.format("튕길 때마다 · 마지막으로 박힐 때 피해 +%d%%", 15 * level),
-            bomb_wide = string.format("본 노바 1기(해골 폭탄) 범위 %.2f", 1.6 * (1 + 0.15 * level)),
-            bomb_marrow = string.format("본 노바 1기(해골 폭탄) 피해 +%d%%", 20 * level),
-            bomb_pair = "본 노바 1기에 해골 2기가 함께 돌진",
-            flame_hex = string.format("저주 걸린 적에게 피해 +%d%%", 50 + 20 * level),
+            shard_spike = string.format("튕김이 닿는 거리 %d칸", self:ShardBounceRange(level)),
+            bomb_wide = string.format("해골 폭탄 범위 %.2f · 회오리 범위 %.2f", 1.6 * (1 + 0.15 * level), _GameData.riteWhirlRadius * (1 + 0.15 * level)),
+            rite_fork = string.format("폭탄 돌진 해골 %d기 · 회오리 %d갈래 (갈래 피해 %d%%)", 1 + level, 1 + level, math.floor(_GameData.riteWhirlForkMul * 100 + 0.5)),
+            rite_reach = string.format("회오리 돌진 거리 %.1f칸", self:RiteWhirlReach(level)),
+            flame_hex = string.format("헥스블라스트 폭발 범위 +%d%%", 15 * level),
             flame_twin = string.format("불꽃 화살 %d발", 1 + level),
             frost_long = string.format("표식 남은 적에게 티스 피해 +%d%%", self:FrostMarkPct(level)),
             frost_shatter = string.format("느려진 적이 죽으면 프로즌 오브 피해의 %d%% 파편", 30 * level),
-            offering_heal = string.format("본 오퍼링 회복량 +%d%%", 20 * level),
             offering_wide = string.format("본 오퍼링 범위 %.1f", 4 * (1 + 0.25 * level)),
             offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
             skel_resonance = string.format("해골 공격력 ×%.1f · 반경 %.1f칸 · 해골마다 %.1f초", _SkeletonResonance.AtkMult, _SkeletonResonance.Radius, _SkeletonResonance.Cooldown),
@@ -729,7 +762,7 @@ script SkillBook extends Component
             dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
             dash_quick = string.format("질주 재사용 -%.1f초 (최저 1.5초)", 0.2 * level),
             dash_legion = string.format("질주하면 3칸 밖 소환수가 곁으로 도약 · 소환수 이동 +%d%%", 5 * level),
-            dash_blink = "질주가 조준점(최대 5칸) 순간이동으로",
+            dash_blink = string.format("질주가 조준점(최대 %g칸) 순간이동으로", _GameData.dashBlinkRange),
             step_gale = string.format("질주 뒤 %.1f초간 이동 속도 +%d%%%s", _GameData.afterStepSec, self:AfterStepPct(level), self:GetLevel("wraith_dash") > 0 and "" or " (레이스 폼을 배우면)"),
             step_hunt = string.format("처치하면 3초간 이동 속도 +%d%%", 4 * level),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
@@ -737,16 +770,14 @@ script SkillBook extends Component
             mist_wide = string.format("포이즌 미스트 범위 +%d%%", 20 * level),
             mist_thick = string.format("포이즌 미스트 지속 +%d초", level),
             mage_legion = string.format("해골 마법사 최대 수 +%d", level),
-            mage_focus = string.format("해골 마법사 피해 +%d%%", math.floor(_GameData.mageFocusPct * level)),
             -- 48 §2-4 「저주 속성」 (1랭크): 낙인 %는 해골 마법사 효과 레벨을 따른다 (8 + 0.6 × (랭크 − 1))
             mage_curse = string.format("저주 속성 · 맞은 적 4초 받는 피해 +%g%% (앰플리파이와 겹치면 큰 쪽)", self:MageSchoolAt(math.max(1, self:GetPowerLevel("raise_mage"))).curse),
-            enfeeble_deep = string.format("위큰 공격력 감소 +%d%%p", 3 * level),
+            enfeeble_deep = string.format("위큰 범위 +%d%%", 20 * level),
             enfeeble_decay = string.format("위큰에 쇠퇴: 이동 속도·공격력 -%d%%", 8 * level),
             prison_wide = string.format("본 프리즌 범위 +%d%%", 15 * level),
             prison_pull = string.format("반경 %.1f 안 적을 끌어모은 뒤 가둠", 2.4 + 0.3 * level),
             terror_frenzy = string.format("하울이 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
             drain_share = string.format("가까운 적 %d마리로 이어짐 · 이어진 적은 피해 %d%%", level, math.floor(_GameData.drainChainPct)),
-            aura_deep = string.format("배틀 오더스 공격·생명 효과 +%d%%", 20 * level),
             -- 46-5 거인 강화 (§4-3 「지금 / 다음 랭크」 · 수치 초안 · 글귀 승인 전)
             giant_shield_wall = string.format("도발 %.1f칸 · 받는 피해 -%d%%", 3 + 0.3 * level, 30 + 3 * level),
             giant_shield_alt = "별도 검토 중",
@@ -767,6 +798,7 @@ script SkillBook extends Component
         local power = self:GetEffectPower(id, level)
         local cm = self:GetCursePowerMult(id)
         if cm ~= 1 then power = math.floor(power * cm * 10 + 0.5) / 10 end
+        if id == "enfeeble" then power = self:EnfeebleCap(power) end
         if id == "elite_promote" then return string.format("그림자 1기 공격·생명 ×%.2f", power) end
         if id == "mark_weakness" then return string.format("받는 피해 +%g%% · %g초", power, self:GetCurseDuration(level)) end
         if id == "enfeeble" then return string.format("적 공격력 -%g%% · %g초", power, self:GetCurseDuration(level)) end
@@ -783,10 +815,12 @@ script SkillBook extends Component
         if id == "bone_armor" then return string.format("흡수 %d (캐릭터 Lv%d 기준)", math.floor(power), stats.Level) end
         if id == "bone_rite" then
             -- 단계별 한 줄: 단계 이름으로 (10-29 글귀 확정 43 — 「1기·2기」가 해골 수인지 헷갈렸다). 11-02 거인 분리: 3단계(화살)까지 · 거인은 본 골렘 줄
+            -- 11-03 C안 (62 §9): 3기 뼈 화살 삭제 · 2단계 = 해골 3기 회오리 돌진 (W2 표적 추적 · 한 적 최대 타수)
             local rank = self:RiteRankMul(level)
-            return string.format("폭탄 ×%.2f·반경 %.2f%s · 회오리 ×%.2f×%d · 화살 ×%.1f×3",
-                power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), self:Node("bomb_pair") > 0 and "·2기 돌진" or "",
-                _GameData.riteWhirlMul * rank, math.floor(_GameData.riteWhirlSeconds / 0.5), _GameData.riteArrowMul * rank)
+            local fork = self:Node("rite_fork")
+            return string.format("폭탄 ×%.2f·반경 %.2f%s · 회오리 ×%.2f×%d타·반경 %.2f·거리 %.1f칸%s",
+                power, 1.6 * (1 + 0.15 * self:Node("bomb_wide")), fork > 0 and string.format("·%d기 돌진", 1 + fork) or "",
+                _GameData.riteWhirlMul * rank, self:RiteWhirlTicks(self:Node("rite_reach")), self:RiteWhirlRadius(), self:RiteWhirlReach(self:Node("rite_reach")), fork > 0 and string.format("·%d갈래", 1 + fork) or "")
         end
         if id == "bone_giant" then
             -- 11-02 거인 분리 (52 §2-2 안 ①): 지속 · 랭크 배율(2랭크부터) · 충전 칸 · 지금 무리로 서는 거인 (GiantPlan — 서버 StartGiant와 같은 계획 · 46-6)
@@ -796,11 +830,11 @@ script SkillBook extends Component
             if plan ~= nil then text = text .. " · 지금 무리라면 " .. _GameData:GetGiant(plan.type).name end
             return text
         end
-        if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * (1 + 0.2 * self:Node("offering_heal")) * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
+        if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
         if id == "swift_step" then return string.format("이동 속도 +%g%%", power) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
         if id == "wraith_dash" then return string.format("%s · 무적 %.2f초 · 재사용 %.1f초%s", self:Node("dash_blink") > 0 and string.format("최대 %g칸 순간이동", power) or string.format("%.2f칸 질주", power), _GameData.dashInvulnSec, self:DashCooldown(level), self:Node("dash_charge") > 0 and string.format(" · %d번 연달아", 1 + self:Node("dash_charge")) or "") end
-        if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +%d%% · 그 자리 반경 %.1f 폭발", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), 50 + 20 * self:Node("flame_hex"), self:GetHexBurstRadius(level)) end
+        if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +50%% · 그 자리 반경 %.2f 폭발", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), self:GetHexBurstRadius(level)) end
         if id == "frost_soul" then
             local splits = self:GetFrostSplitCount(level)
             return string.format("프로즌 오브 · %s · 기준 피해 %.1f · %g초 둔화", splits > 0 and string.format("맞으면 파편 %d개로 갈라짐", splits) or "1마리 명중", power * (1 + stats:GetSpellPowerPct() / 100), _GameData.frostSlowSec)
@@ -1158,12 +1192,11 @@ script SkillBook extends Component
     end
 
     -- ───────── 뼈 의식 (기획서 43 §3-1 · 10-29 결정 1A·2·3) ─────────
-    -- 단추 하나: 짧게 = 1기 해골 폭탄, riteHold2(0.5초) = 2기 뼈 회오리, riteHold3(1초) = 3기 뼈 화살 (11-02 거인 분리: 5기 거인은 본 골렘 CastGiant로 옮겨 3기가 상한).
+    -- 단추 하나: 짧게 = 1기 해골 폭탄, riteHold2(0.5초) 이상 = 해골 3기 회오리 돌진 (11-03 C안 · 62 §9: 3기 뼈 화살 단계 삭제 · 거인은 본 골렘 CastGiant).
     -- 해골·쿨다운·마나가 모자라면 할 수 있는 가장 높은 단계로 내려간다 (서버가 최종 결정). PC 키 누름·모바일 단추 길게 모두 같은 길
 
     method integer RiteStageForHold(number held)
-        -- 누른 시간 → 바라는 단계 (1·2·3). 11-02 거인 분리: 3기(뼈 화살)가 상한 — 더 눌러도 3기
-        if held >= _GameData.riteHold3 then return 3 end
+        -- 누른 시간 → 바라는 단계 (1·2). 11-03 C안: 2단계(회오리)가 상한 — 더 눌러도 2단계
         if held >= _GameData.riteHold2 then return 2 end
         return 1
     end
@@ -1171,14 +1204,12 @@ script SkillBook extends Component
     method string RiteCdKey(integer stage)
         -- 단계별 재사용 덮개 키 (1기는 스킬 칸 덮개 bone_rite 그대로 · 모든 단계가 bone_rite 1초도 함께 건다)
         if stage == 2 then return "rite_whirl" end
-        if stage == 3 then return "rite_arrow" end
         return "bone_rite"
     end
 
     method number RiteCooldown(integer stage)
         -- 단계별 재사용(초, 시전 속도 적용 전)
         if stage == 2 then return _GameData.riteWhirlCd end
-        if stage == 3 then return _GameData.riteArrowCd end
         local def = _SkillData:Get("bone_rite")
         return def ~= nil and def.cooldown or 1
     end
@@ -1187,7 +1218,6 @@ script SkillBook extends Component
         -- 단계별 마나 (+ 랭크 ÷ 4 — 다른 스킬과 같은 규칙). 1기는 표의 마나
         local base = 0
         if stage == 2 then base = _GameData.riteWhirlMana
-        elseif stage == 3 then base = _GameData.riteArrowMana
         else
             local def = _SkillData:Get("bone_rite")
             base = def ~= nil and def.mana or 10
@@ -1196,8 +1226,48 @@ script SkillBook extends Component
     end
 
     method number RiteRankMul(integer level)
-        -- 2·3기 피해의 랭크 배율 (1 + riteRankPct% × (랭크 − 1)). 1기는 해골 폭탄 공식 그대로 · 거인은 GiantRankMul
+        -- 2단계(회오리) 피해의 랭크 배율 (1 + riteRankPct% × (랭크 − 1) · 62 §7-1 7%). 1기는 해골 폭탄 공식 그대로 · 거인은 GiantRankMul
         return 1 + _GameData.riteRankPct / 100 * (math.max(1, level) - 1)
+    end
+
+    method number RiteWhirlRadius()
+        -- 해골 회오리 판정 반경 = riteWhirlRadius(0.9) × (1 + 15% × 「초거대」 랭크) (62 §9-3)
+        return _GameData.riteWhirlRadius * (1 + 0.15 * self:Node("bomb_wide"))
+    end
+
+    method number RiteWhirlReach(integer reachRank)
+        -- 해골 회오리 진행 거리(칸) = 속도 × 수명(5칸) + 「뼈의 길」 랭크 × riteWhirlReachPerRank(1.5)
+        return _GameData.riteWhirlSpeed * _GameData.riteWhirlSeconds + _GameData.riteWhirlReachPerRank * math.max(0, reachRank)
+    end
+
+    method number RiteWhirlLife(integer reachRank)
+        -- 해골 회오리 수명(초) = 거리 ÷ 속도 (기본 2초 · 「뼈의 길」 랭크당 +0.6초)
+        return self:RiteWhirlReach(reachRank) / math.max(0.1, _GameData.riteWhirlSpeed)
+    end
+
+    method integer RiteWhirlTicks(integer reachRank)
+        -- 한 적 기준 최대 타수 = 수명 ÷ 타격 간격 (기본 8 · 뼈의 길 1·2 = 10·12)
+        return math.floor(self:RiteWhirlLife(reachRank) / math.max(0.05, _GameData.riteWhirlTick) + 1e-6)
+    end
+
+    method number EnfeebleRadius()
+        -- 위큰 기본 범위(칸) = 1.5 × (1 + 20% × 「약화의 오라」 랭크) — 장비·「저주 범위」는 Curse·GroundRadius가 그 위에 곱한다 (11-03 Fable 결정 7)
+        return 1.5 * (1 + 0.2 * self:Node("enfeeble_deep"))
+    end
+
+    method number EnfeebleCap(number pct)
+        -- 위큰 공격력 감소 상한 (11-03 Fable 결정 5): 랭크 + 「저주의 무게」 + 장비 저주 효과를 곱한 값이 enfeebleMaxPct(75%)를 넘지 않게
+        return math.min(_GameData.enfeebleMaxPct, pct)
+    end
+
+    method integer ArmorReformPct(integer rank)
+        -- 강화 「급속 골화」(옛 두꺼운 뼈 자리 · 62 §10): 다 깨진 본 아머를 2초 뒤 최대치의 15%/랭크로 다시 두른다
+        return 15 * math.max(0, rank)
+    end
+
+    method integer ShardBounceRange(integer rank)
+        -- 강화 「유도탄」(옛 뼈 가시 자리 · 62 §10): 튕김이 닿는 거리 4 + 랭크칸
+        return 4 + math.max(0, rank)
     end
 
     method boolean RiteGiantUnlocked()
@@ -1245,12 +1315,13 @@ script SkillBook extends Component
 
     method integer RiteBestStage(integer want, number mana)
         -- 바라는 단계 이하에서 해골 수·재사용·마나가 되는 가장 높은 단계 (0 = 어느 단계도 안 됨). mana < 0 이면 마나는 보지 않는다
-        -- 11-02 거인 분리: 3기가 상한 (5기 재료·거인 상한 판단은 본 골렘 GiantReason)
+        -- 11-03 C안: 2단계(해골 riteWhirlSkel 3기 회오리)가 상한 (5기 재료·거인 상한 판단은 본 골렘 GiantReason)
         local skel = self:RiteSkeletons()
         local lv = self:GetPowerLevel("bone_rite")
         if not self:RiteReady("bone_rite") then return 0 end
-        for _, s in ipairs({ 3, 2, 1 }) do
-            if s <= want and skel >= s and (s == 1 or self:RiteReady(self:RiteCdKey(s)))
+        for _, s in ipairs({ 2, 1 }) do
+            local need = s == 2 and math.floor(_GameData.riteWhirlSkel) or 1
+            if s <= want and skel >= need and (s == 1 or self:RiteReady(self:RiteCdKey(s)))
                 and (mana < 0 or mana >= self:RiteManaCost(s, lv)) then
                 return s
             end
@@ -1283,7 +1354,7 @@ script SkillBook extends Component
             return false
         end
         if target.x ~= target.x or target.y ~= target.y or math.abs(target.x) > 10000 or math.abs(target.y) > 10000 then return false end
-        if want >= 3 then want = 3 elseif want ~= 2 then want = 1 end   -- 11-02 거인 분리: 3기 상한 (예전 5 요청도 3으로 내려 쏜다)
+        if want >= 2 then want = 2 else want = 1 end   -- 11-03 C안: 2단계 상한 (옛 클라이언트 3·5 요청도 2로 내린다)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return false end
@@ -1298,21 +1369,24 @@ script SkillBook extends Component
         end
         local me = _Util:Pos2(self.Entity)
         local ray = target - me
-        if ray:Magnitude() > 6 then target = me + ray:Normalize() * 6 end   -- 조준점은 6칸까지 (폭탄 돌진·회오리 자리·화살 방향)
+        if ray:Magnitude() > 6 then target = me + ray:Normalize() * 6 end   -- 조준점은 6칸까지 (폭탄 돌진·회오리 방향)
         local lock = nil
-        if stage == 3 then
-            -- 수동 조준: 플레이어가 고른 적 → 없으면 조준점(커서) 근처 1.2칸 적. 자동으로 다른 적을 고르지 않는다
+        if stage == 2 then
+            -- 회오리 표적 (62 §9-2 · 11-03 Fable 결정 2 W2): 고른 적(7.5칸 안) → 없으면 조준 방향 ±30° 부채꼴 7칸 안 가장 가까운 적 → 없으면 조준 방향 직진
             ---@type PlayerAttack
             local attack = self.Entity:GetComponent("script.PlayerAttack")
             if attack ~= nil and attack:IsLiveMonster(attack.SelectedTarget) and _Util:Distance(self.Entity, attack.SelectedTarget) <= 7.5 then lock = attack.SelectedTarget end
-            local near = lock == nil and _Util:NearestMonster(self.Entity.CurrentMap, target, 1.2) or nil
-            if near ~= nil and (_Util:Pos2(near.Entity) - me):Magnitude() <= 7.5 then lock = near.Entity end
-            if lock ~= nil then target = _Util:Pos2(lock) end
+            if lock == nil then
+                local face = target - me
+                if face:Magnitude() < 0.01 then face = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0) end
+                local m = _Util:MonsterInCone(self.Entity.CurrentMap, me, face:Normalize(), 7, 0.866)
+                if m ~= nil then lock = m.Entity end
+            end
         end
         local ok = false
         if stage == 1 then
             local power = self:GetEffectPower("bone_rite", lv)
-            ok = _UndeadSystem:SkeletonBomb(self.Entity, target, power * (1 + 0.2 * self:Node("bomb_marrow")), 1.6 * (1 + 0.15 * self:Node("bomb_wide")), 1 + self:Node("bomb_pair"))
+            ok = _UndeadSystem:SkeletonBomb(self.Entity, target, power, 1.6 * (1 + 0.15 * self:Node("bomb_wide")), 1 + self:Node("rite_fork"))
         else
             ok = _UndeadSystem:BoneRite(self.Entity, stage, target, self:RiteRankMul(lv), lock)
         end
@@ -1327,7 +1401,7 @@ script SkillBook extends Component
         self:SetCooldown("bone_rite", (def.cooldown or 1) * castMul)
         if stage > 1 then self:SetCooldown(self:RiteCdKey(stage), self:RiteCooldown(stage) * castMul) end
         self:PresentCast("bone_rite", target - me, userId)
-        log(string.format("[VRF] rite stage=%d skel=%d want=%d max=3 lv=%d mana=%d lock=%s", stage, skel, want, lv, math.floor(cost), tostring(lock ~= nil)))
+        log(string.format("[VRF] rite stage=%d skel=%d want=%d max=2 lv=%d mana=%d lock=%s", stage, skel, want, lv, math.floor(cost), tostring(lock ~= nil)))
         return true
     end
 
@@ -1433,7 +1507,7 @@ script SkillBook extends Component
         ---@type ClickControl
         local click = self.Entity:GetComponent("script.ClickControl")
         if click ~= nil then click.AttackTimer = math.max(click.AttackTimer, 0.6) end
-        if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite release held=%.2f want=%d max=3 predicted=%d skel=%d", held, want, predicted, self:RiteSkeletons())) end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] rite release held=%.2f want=%d max=2 predicted=%d skel=%d", held, want, predicted, self:RiteSkeletons())) end
     end
 
     @ExecSpace("ClientOnly")
@@ -1809,6 +1883,7 @@ script SkillBook extends Component
         refund = refund + self:MigrateBombToRite(stats.Level)
         refund = refund + self:MigrateNodeSwap(sv)
         refund = refund + self:MigrateSpearToShard()
+        refund = refund + self:MigrateNodes1103(sv)
         self:MigrateGiantSplit(sv)
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
@@ -1866,6 +1941,37 @@ script SkillBook extends Component
     end
 
     @ExecSpace("ServerOnly")
+    method integer MigrateNodes1103(integer sv)
+        -- 11-03 스킬 랭크 개편 (docs/design/62 §10-4 · §12): 돌려준 포인트 수. 알림 없음 (10-29 글귀 규칙 — 포인트만 늘어 있다)
+        --   삭제 7개(진한 성찬·골수 화약·원소 집중·단련된 뼈·깊은 울림·군령 + 갈래가 흡수한 짝 폭탄): 키가 있으면 한 번 돌려주고 지운다 (지운 칸이라 다시 불러도 두 번 안 줌 · 저장 판 무관)
+        --   축 바꾼 4개(급속 골화·피투성이 난장판·유도탄·약화의 오라 — 키 그대로): 저장 sv 7 전 판만 한 번 돌려주고 지운다 (sv 7 저장은 새 효과로 찍은 것)
+        --   옛 키 이름은 이 함수에만 남긴다 (tools/check_data.cjs 「지운 스킬의 흔적」 허용 자리)
+        local back = 0
+        local pruned = {}
+        for _, id in ipairs({ "offering_heal", "bomb_marrow", "mage_focus", "skeleton_mastery", "aura_deep", "command_mastery", "bomb_pair" }) do
+            local r = self.Levels[id] or 0
+            if r > 0 then
+                back = back + r
+                table.insert(pruned, id .. ":" .. tostring(r))
+            end
+            self.Levels[id] = nil
+        end
+        local swapped = {}
+        if sv < 7 then
+            for _, id in ipairs({ "armor_thick", "flame_hex", "shard_spike", "enfeeble_deep" }) do
+                local r = self.Levels[id] or 0
+                if r > 0 then
+                    back = back + r
+                    self.Levels[id] = nil
+                    table.insert(swapped, id .. ":" .. tostring(r))
+                end
+            end
+        end
+        if back > 0 then log(string.format("[VRF] skill migrate nodes1103 refund=%d sv=%d prune=%s swap=%s", back, sv, table.concat(pruned, ","), table.concat(swapped, ","))) end
+        return back
+    end
+
+    @ExecSpace("ServerOnly")
     method integer MigrateGiantSplit(integer sv)
         -- 11-02 사용자 결정 B (기획서 52 §2-2 안 ① · 한 번만 · 저장 sv 5 → 6): 거인 노드 12개의 부모가 뼈 의식 → 본 골렘(bone_giant)으로 바뀌었다.
         --   노드 키는 그대로라 찍은 랭크는 그대로 둔다. 거인 노드에 1랭크라도 찍은 옛 저장은 본 골렘 1랭크를 거저 준다 (포인트 그대로 · 칸에는 넣지 않는다 —
@@ -1918,7 +2024,7 @@ script SkillBook extends Component
     method integer MigrateBombToRite(integer playerLevel)
         -- 10-29 기획서 43 결정 2 (한 번만): 해골 폭탄(skel_bomb, Lv10) → 뼈 의식(bone_rite, Lv24)의 1기 단계로 랭크·강화를 옮긴다. 돌려준 포인트 수
         --   메인 랭크: 지금 레벨의 의식 상한(RankCap — Lv24 전이면 0)까지 옮기고 넘는 몫은 포인트로 돌려준다.
-        --   강화(큰 폭발·골수 화약·짝 폭탄): 키는 그대로 의식 1기 강화가 됐다. 해금이 Lv10 → 24로 늦어져 지금 레벨·의식 랭크로 열리지 않은 랭크만 돌려준다.
+        --   강화(큰 폭발 = 지금 초거대): 키는 그대로 의식 1기 강화가 됐다 (골수 화약·짝 폭탄은 11-03 삭제 — MigrateNodes1103이 돌려준다). 해금이 Lv10 → 24로 늦어져 지금 레벨·의식 랭크로 열리지 않은 랭크만 돌려준다.
         --   skel_bomb 키가 사라진 저장은 다시 돌지 않는다 (저장은 PlayerSave 자동 저장이 바뀐 값을 알아서 쓴다 — 따로 DataStorage를 부르지 않는다)
         local bomb = self.Levels.skel_bomb
         if bomb == nil then return 0 end
@@ -1930,7 +2036,7 @@ script SkillBook extends Component
         local back = bomb - keep
         local riteLv = self.Levels.bone_rite or 0
         local moved = {}
-        for _, node in ipairs({ "bomb_wide", "bomb_marrow", "bomb_pair" }) do
+        for _, node in ipairs({ "bomb_wide" }) do
             local r = self.Levels[node] or 0
             if r > 0 then
                 local ok = 0
@@ -2027,8 +2133,8 @@ script SkillBook extends Component
         local levels = {}
         for id, lv in pairs(self.Levels) do levels[id] = lv end
         -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 · sv 5 (48-3): 마법사 거인 갈림 둘을 한 번 돌려준 뒤 (MigrateNodeSwap)
-        -- sv 6 (11-02 거인 분리): 거인 노드 부모가 본 골렘으로 바뀐 뒤 (MigrateGiantSplit)
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 6 }
+        -- sv 6 (11-02 거인 분리): 거인 노드 부모가 본 골렘으로 바뀐 뒤 (MigrateGiantSplit) · sv 7 (11-03): 축 바꾼 노드 4개를 한 번 돌려준 뒤 (MigrateNodes1103)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 7 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         -- I04 골편 홀드 반복 — 선택 칸 (없으면 끔 · 판 번호와 무관). 옛 희망 편성 칸 hope는 11-02 편성 자동 하나로 쓰지 않는다 (불러올 때 버림)

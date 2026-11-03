@@ -105,8 +105,8 @@ script UndeadSystem extends Logic
 
     @ExecSpace("ServerOnly")
     method boolean BoneRite(Entity player, integer stage, Vector2 target, number rankMul, Entity lock)
-        -- 본 노바 2·3기 (기획서 43 §3-1). 2·3기는 생명이 가장 낮은 해골 전사부터 stage기를 바친다 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
-        -- 피해 = 바친 해골 평균 공격력 × 단계 배율 × rankMul (해골 공격력이 이미 캐릭터 레벨·숙련·장비를 따른다)
+        -- 본 노바 2단계 (11-03 C안 · 62 §9): 생명이 가장 낮은 해골 전사부터 riteWhirlSkel(3)기를 바쳐 회오리 돌진 (폭탄과 같은 순서 · 「뼈 파편」은 터지지 않는다).
+        -- 피해 = 바친 해골 평균 공격력 × riteWhirlMul × rankMul (해골 공격력이 이미 캐릭터 레벨·장비를 따른다) · 3기 뼈 화살 단계는 삭제
         -- stage 5 = 본 골렘 (11-02 거인 분리 · SkillBook.CastGiant): 바치지 않고 합친다 (StartGiant) · rankMul = 본 골렘 랭크 배율 (거인 공격·생명)
         local userId = player.PlayerComponent.UserId
         if stage == 5 then
@@ -119,9 +119,11 @@ script UndeadSystem extends Logic
             end
             return self:StartGiant(player, plan, rankMul)
         end
+        if stage ~= 2 then return false end
+        local need = math.floor(_GameData.riteWhirlSkel)
         local picks = self:LiveUnits(player, "skeleton")
-        if #picks < stage then
-            _Util:Warn("해골 전사가 " .. tostring(stage - #picks) .. "기 모자랍니다", userId)
+        if #picks < need then
+            _Util:Warn("해골 전사가 " .. tostring(need - #picks) .. "기 모자랍니다", userId)
             log(string.format("[VRF] rite stage=%d skel=%d short", stage, #picks))
             return false
         end
@@ -130,24 +132,20 @@ script UndeadSystem extends Logic
         if fx == nil then return false end
         local used = {}
         local sum = 0
-        for i = 1, stage do
+        for i = 1, need do
             local pick = picks[i]
             sum = sum + pick.unit.Atk
             table.insert(used, { pos = _Util:Pos2(pick.unit.Entity), unit = pick.unit })
             self:DetachConsumed(player, pick.rec)
             pick.unit.Dead = true   -- 판단·피격을 멈춘다 (쓰러짐 알림·뼈 파편 없음). 엔티티는 아래에서 치운다
         end
-        local avg = sum / stage
-        if stage == 2 then
-            for _, u in ipairs(used) do
-                fx:ConsumedDust(u.pos, 0.5, 0.6)   -- 무너지는 뼛가루 (10-31 9계열 FxSkillConsumedDust · 발 앵커 · 비면 골편 명중 → 보라 파열)
-                if isvalid(u.unit.Entity) then u.unit.Entity:Destroy() end
-            end
-            fx:RiteWhirl(target, avg * _GameData.riteWhirlMul * rankMul)
-        else
-            fx:RiteArrows(used, target, avg * _GameData.riteArrowMul * rankMul, lock)
+        local avg = sum / need
+        for _, u in ipairs(used) do
+            fx:ConsumedDust(u.pos, 0.5, 0.6)   -- 무너지는 뼛가루 (10-31 9계열 FxSkillConsumedDust · 발 앵커 · 비면 골편 명중 → 보라 파열)
+            if isvalid(u.unit.Entity) then u.unit.Entity:Destroy() end
         end
-        log(string.format("[VRF] rite stage=%d skel=%d consumed=%d avgAtk=%.0f rankMul=%.2f", stage, #picks, stage, avg, rankMul))
+        fx:RiteWhirlDash(target, avg * _GameData.riteWhirlMul * rankMul, lock)
+        log(string.format("[VRF] rite stage=%d skel=%d consumed=%d avgAtk=%.0f rankMul=%.2f", stage, #picks, need, avg, rankMul))
         return true
     end
 
@@ -266,7 +264,7 @@ script UndeadSystem extends Logic
 
     -- ───────── 5기 충전 (48 Q2 C2 · 11-02부터 본 골렘 bone_giant 시전이 쓴다) ─────────
     -- 5기 단계만 충전 riteGiantCharges(2)회. 한 번에 한 칸씩 차오르고(직렬) 한 칸 길이 = riteGiantCd(30초) × 시전 속도 보정(PlayerStats.GetCastCooldownMult — 예전 재사용 계산 그대로).
-    -- 하위 단계(1기 bone_rite · 2기 rite_whirl · 3기 rite_arrow)의 재사용 덮개와 섞지 않는다 — 5기 충전은 이 표만 쓰고 저장하지 않는다(재사용 덮개처럼 메모리만).
+    -- 하위 단계(1기 bone_rite · 2단계 rite_whirl)의 재사용 덮개와 섞지 않는다 — 5기 충전은 이 표만 쓰고 저장하지 않는다(재사용 덮개처럼 메모리만).
     -- 장기 가동률은 예전과 같다(한 칸 길이마다 거인 하나). 다른 것은 모아 둔 두 칸으로 처음 한 번 연달아 둘(초기 버스트)을 세울 수 있다는 것뿐
 
     method integer GiantChargeMax()
@@ -853,7 +851,7 @@ script UndeadSystem extends Logic
         -- 일으킬 때 숙련과 장비 소환수 보너스를 확정한다. 이동 때는 재적용하지 않는다.
         self.Serial = self.Serial + 1
         local rec = { id = "ud" .. tostring(self.Serial), kind = kind, ownerEntityId = player.Id, expireAt = 0, entity = nil, element = "", ratio = 0 }
-        local base = self:GetBaseStats(kind, slvl, self:SkillLevel(player, "skeleton_mastery"), _GameConst:LevelOf(player))
+        local base = self:GetBaseStats(kind, slvl, 0, _GameConst:LevelOf(player))   -- 11-03 「단련된 뼈」 삭제 (62 §10) — 숙련 인자 0
         if kind == "skeleton" then
             local m = _GameData:GetMonsterStats("skel_warrior")
             rec.atk = base.atk
@@ -878,7 +876,7 @@ script UndeadSystem extends Logic
             rec.element = _MageBolts:ElementOf(rec.school)
             rec.mageRank = slvl
             rec.ratio = 1
-            rec.atk = base.atk * (1 + _GameData.mageFocusPct / 100 * self:SkillLevel(player, "mage_focus"))   -- 강화 「원소 집중」
+            rec.atk = base.atk   -- 11-03 강화 「원소 집중」 삭제 (62 §10)
             rec.hp = base.hp
             rec.cooldown = _GameData.mageCooldown
             rec.range = _GameData.mageRange
@@ -940,8 +938,8 @@ script UndeadSystem extends Logic
 
     method table GetBaseStats(string kind, integer level, integer masteryLevel, integer ownerLevel)
         -- 소환 레코드와 스킬 창이 동일한 숙련·반올림 순서를 사용한다. 장비는 호출부에서 적용한다.
-        -- 기본값 × 주인 레벨 성장(몬스터 곡선 × summonGrowthMul) × 스킬 레벨 % × 숙련 %
-        local mastery = 1 + _GameData.skeletonMasteryPct * masteryLevel / 100
+        -- 기본값 × 주인 레벨 성장(몬스터 곡선 × summonGrowthMul) × 스킬 레벨 %. 11-03 「단련된 뼈」 삭제(62 §10)로 masteryLevel은 쓰지 않는다 (부르는 곳 호환용 인자)
+        local mastery = 1
         -- 스킬 레벨 %: 해골 전사 skeletonSkillLvPct(12) · 마법사 undeadSkillLvPct(14) — 10-24 사용자 (c)
         local skill = 1 + (kind == "skeleton" and _GameData.skeletonSkillLvPct or _GameData.undeadSkillLvPct) * math.max(0, level - 1) / 100
         local lv = math.max(1, ownerLevel)

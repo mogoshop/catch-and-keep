@@ -37,8 +37,8 @@ check(2, "기본 이속 1.73 · 짐승·떼·암살자 ×1.2 · 해골 1.7 · �
   cfg.playerSpeedMul === 1.73 && cfg.skeletonSpeed === 1.7 && cfg.shadowSpeedMin === 1.2 && (sped === -1 || sped >= 10),
   `playerSpeedMul ${cfg.playerSpeedMul} · skeletonSpeed ${cfg.skeletonSpeed} · shadowSpeedMin ${cfg.shadowSpeedMin} · ×1.2 몬스터 ${sped}/${fastArch.length}`);
 // #3 해골 폭탄 Lv10 → 10-29 기획서 43 결정 2·3: 뼈 의식(bone_rite, Lv24)의 1기 단계로 병합. 폭탄 줄이 사라진 대신
-//    의식 줄 · 폭탄 강화 3개가 의식 아래로 옮겨졌는지 · 저장 이전(SkillBook.MigrateBombToRite)이 있는지를 본다
-const bombNodes = ["bomb_wide", "bomb_marrow", "bomb_pair"];
+//    의식 줄 · 본 노바 강화 3개(11-03 초거대·갈래·뼈의 길)가 의식 아래에 있는지 · 저장 이전(SkillBook.MigrateBombToRite)이 있는지를 본다
+const bombNodes = ["bomb_wide", "rite_fork", "rite_reach"];   // 11-03 (62 §10): 골수 화약·짝 폭탄 삭제 → 갈래·뼈의 길
 const rite = skills.bone_rite;
 check(3, "헤이스트 Lv4 · 해골 폭탄 → 본 노바 1기 (43 결정 2·3 · Lv24)",
   skills.swift_step.row === "4" && !skills.skel_bomb && rite && rite.row === "24" && rite.kind === "active"

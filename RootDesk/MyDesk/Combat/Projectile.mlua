@@ -40,7 +40,7 @@ script Projectile extends Component
     property number Damage = 0
     property string Info = ""
     property boolean Pierce = true
-    property number SpikePct = 0             -- 골편 강화 「뼈 가시」: 꿰뚫을 때마다 피해 +% (docs/design/16)
+    property number SpikePct = 0             -- 뼈 투척 마법사 가시: 꿰뚫을 때마다 피해 +% (MageBolts · 11-03 골편 「뼈 가시」는 「유도탄」 튕김 거리로 바뀌어 골편은 0)
     property integer PierceHits = 0          -- 지금까지 맞힌 적 수
     property integer MaxHits = 0             -- 관통해도 이만큼 맞히면 멈춘다 (0 = 제한 없음 · 스킬 레벨 구간 SkillBook.GetPierceCap, 10-24)
     property integer Bounces = 0             -- 골편 강화 「튕김」: 맞힌 뒤 가까운 다른 적에게 튈 남은 횟수
@@ -525,16 +525,11 @@ script Projectile extends Component
                     self.PierceHits = self.PierceHits + 1
                     local bounced = false
                     if self.Info == "skill.bone_shard" and self.Bounces > 0 then
-                        -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼). 「뼈 가시」는 튈 때마다 세진다 (10-28 A안)
+                        -- 「튕김」: 맞힌 자리에서 가까운 다른 적에게 새 뼛조각 (한 발이 튈 수 있는 횟수는 랭크만큼 · 닿는 거리는 강화 「유도탄」 · 11-03 피해 가산 없음)
                         ---@type SkillEffects
                         local effects = self.Owner:GetComponent("script.SkillEffects")
                         if effects ~= nil then bounced = effects:ShardBounce(_Util:Pos2(m.Entity), self.HitIds, self.Damage * (1 + self.SpikePct / 100), self.Bounces - 1, self.SpikePct) end
                         self.Bounces = 0
-                    end
-                    -- 「뼈 가시」(44 결정 4): 더 튀지 못하는 마지막 뼛조각(튕김을 다 썼거나 튈 적이 없다)에도 가시가 박힌다 — 예전엔 튕길 때만 붙어 튕김 0이면 효과 0
-                    if self.Info == "skill.bone_shard" and self.SpikePct > 0 and not bounced then
-                        dmg = dmg * (1 + self.SpikePct / 100)
-                        log(string.format("[VRF] shard spike last hit +%d%% dmg=%.0f", math.floor(self.SpikePct), dmg))
                     end
                     if atk ~= nil then atk:SkillHitOne(m.Entity, self.Info, dmg) end
                     if self.Info == "skill.frost_soul" and self.Splits > 0 then

@@ -455,7 +455,7 @@ for (const act of new Set(T.maps.filter((r) => r.kind !== "handmade").map((r) =>
   });
 }
 
-// ── 48 소환물 정리 (48-0 · 기획서 48 §0-3 · §4-4): 지운 노드 9개는 어느 표에도 남지 않고, 해골 전사 6 · 해골 마법사 3 · 거인 노드 12 = 21 ──
+// ── 48 소환물 정리 (48-0 · 기획서 48 §0-3 · §4-4): 지운 노드 9개는 어느 표에도 남지 않고, 해골 전사 5 · 해골 마법사 2 · 거인 노드 12 = 19 (11-03 62 §10: 단련된 뼈·원소 집중 삭제) ──
 {
   const GONE = ["skel_shield", "mage_aura", "mage_twin", "mage_pierce", "mage_blast", "mage_hex", "giant_quake", "giant_basic_split", "giant_basic_return"];
   for (const id of GONE) if (skillIds.has(id)) err("skills", null, `48-0: '${id}'는 지운 노드 (투자는 SkillBook.MigrateLevels가 돌려줌)`);
@@ -465,7 +465,8 @@ for (const act of new Set(T.maps.filter((r) => r.kind !== "handmade").map((r) =>
   if (!curse || curse.parent !== "raise_mage" || curse.kind !== "node" || curse.maxLv !== "1") err("skills", null, "48-0: mage_curse(저주 속성) — raise_mage 노드 · 1랭크여야 함");
   const nodesOf = (p, pre) => T.skills.filter((r) => r.kind === "node" && r.parent === p && (!pre || r.id.startsWith(pre))).length;
   const counts = { skeleton: nodesOf("raise_skeleton"), mage: nodesOf("raise_mage"), giant: nodesOf("bone_giant", "giant_") };
-  if (counts.skeleton !== 6 || counts.mage !== 3 || counts.giant !== 12) err("skills", null, `48-0 노드 수 해골 전사 ${counts.skeleton}/6 · 마법사 ${counts.mage}/3 · 거인(본 골렘) ${counts.giant}/12 (합 21)`);
+  // 11-03 (62 §10): 단련된 뼈 · 원소 집중 삭제 → 해골 전사 5 · 해골 마법사 2
+  if (counts.skeleton !== 5 || counts.mage !== 2 || counts.giant !== 12) err("skills", null, `48-0 노드 수 해골 전사 ${counts.skeleton}/5 · 마법사 ${counts.mage}/2 · 거인(본 골렘) ${counts.giant}/12 (합 19)`);
   // 11-02 거인 분리 (52 §2-2 안 ① · 사용자 결정 B): 본 골렘 = 소환 트리 액티브 · 본 노바(bone_rite)와 같은 해금 레벨 · 거인 노드 12개 전부 본 골렘 아래 · 본 노바 아래 거인 노드 0 · 필요 랭크 ≤ 본 골렘 최대 랭크
   const bg = T.skills.find((r) => r.id === "bone_giant"), br = T.skills.find((r) => r.id === "bone_rite");
   if (!bg || bg.kind !== "active" || bg.tree !== "command" || bg.impl !== "true") err("skills", null, "11-02: bone_giant(본 골렘) — command 트리 active · impl true 줄 필요");
@@ -585,6 +586,42 @@ T.sounds.forEach((r, i) => { if (!RUID.test(r.ruid)) err("sounds", i, `ruid 형�
         if (m) inMethod = m[1];
         else if (/^    end\s*$/.test(line)) { inMethod = ""; }
         if (GONE.test(line) && !allow.includes(inMethod)) errors.push(`${path.relative(ROOT, f)}:${i + 1}: 지운 스킬(49)의 흔적 — ${line.trim().slice(0, 70)}`);
+      });
+    }
+  }
+}
+
+// ── 11-03 지운 강화 노드 7개 (docs/design/62 §10 · §12) — 데이터·코드에 다시 생기지 않게 ──
+//   허용: 옛 저장 환급 SkillBook.MigrateNodes1103 · 그 삭제를 확인하는 SelfTest.TestData만
+{
+  const GONE = /\b(offering_heal|bomb_marrow|mage_focus|mageFocus|skeleton_mastery|skeletonMastery|aura_deep|command_mastery|commandMastery|bomb_pair|riteArrow|RiteArrows|riteHold3)\b/;
+  const dataDir = process.env.GAME_DATA_DIR || path.join(ROOT, "data");
+  for (const f of ["skills.csv", "config.csv"]) {
+    const full = path.join(dataDir, f);
+    if (!fs.existsSync(full)) continue;
+    fs.readFileSync(full, "utf8").split("\n").forEach((line, i) => {
+      if (GONE.test(line.split(",")[0])) err(f.replace(/\.csv$/, ""), i - 1, "지운 노드(62)의 흔적 — " + line.slice(0, 60));
+    });
+  }
+  const ALLOW = { "SkillBook.mlua": ["MigrateNodes1103"], "SelfTest.mlua": ["TestData"] };
+  const walk = (d, out = []) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, out); else if (e.name.endsWith(".mlua") && !/Data\/(GameData|SkillData)\.mlua$/.test(p)) out.push(p);
+    }
+    return out;
+  };
+  const src = path.join(ROOT, "RootDesk/MyDesk");
+  if (fs.existsSync(src) && !process.env.GAME_DATA_DIR) {
+    for (const f of walk(src).sort()) {
+      const allow = ALLOW[path.basename(f)] || [];
+      let inMethod = "";
+      fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        const m = line.match(/^    method [^(]*?(\w+)\(/);
+        if (m) inMethod = m[1];
+        else if (/^    end\s*$/.test(line)) { inMethod = ""; }
+        const code = line.replace(/--.*$/, "");
+        if (GONE.test(code) && !allow.includes(inMethod)) errors.push(`${path.relative(ROOT, f)}:${i + 1}: 지운 노드(62)의 흔적 — ${line.trim().slice(0, 70)}`);
       });
     }
   }

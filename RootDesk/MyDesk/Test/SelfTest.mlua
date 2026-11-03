@@ -71,10 +71,10 @@ script SelfTest extends Logic
         self:Check("level gap dealt", math.abs(g:LevelGapDealt(10, 31) - 0.3) < 0.01 and g:LevelGapDealt(10, 11) == 1 and g:LevelGapDealt(10, 80) == g.LevelGapDmgFloor, "높은 몬스터에게 피해 감소·하한")
         self:Check("level gap taken", g:LevelGapTaken(31, 10) > 1.2 and g:LevelGapTaken(31, 10) <= 1 + g.LevelGapTakenCap and g:LevelGapTaken(10, 31) == 1, "높은 몬스터는 더 아프다")
         self:Check("level gap extract", g:LevelGapExtract(10, 31) < 1 and g:LevelGapExtract(10, 31) >= g.LevelGapExtractFloor and g:LevelGapExtract(31, 10) == 1, "높은 몬스터 혼은 덜 뽑힌다")
-        -- 소환수 성장 = 몬스터 곡선 × summonGrowthMul: Lv10·해골 5·숙련 3이면 옛 공식(공격 16·생명 92)보다 세고, 주인 레벨에 따라 큰다
-        local sk = _UndeadSystem:GetBaseStats("skeleton", 5, 3, 10)
+        -- 소환수 성장 = 몬스터 곡선 × summonGrowthMul: Lv10·해골 5면 옛 공식(공격 16·생명 92)보다 세고, 주인 레벨에 따라 큰다 (11-03 「단련된 뼈」 삭제 — 숙련 인자 0)
+        local sk = _UndeadSystem:GetBaseStats("skeleton", 5, 0, 10)
         local mobHp = 135 * (1 + _GameData.monsterHpPerLevel * 9)
-        self:Check("undead vs level", sk.hp > 92 and sk.atk > 16 and sk.hp >= mobHp * 0.3 and _UndeadSystem:GetBaseStats("skeleton", 5, 3, 1).hp < sk.hp, "해골이 옛 공식보다 세고 같은 레벨 몬스터 생명의 30% 이상")
+        self:Check("undead vs level", sk.hp > 92 and sk.atk > 16 and sk.hp >= mobHp * 0.3 and _UndeadSystem:GetBaseStats("skeleton", 5, 0, 1).hp < sk.hp, "해골이 옛 공식보다 세고 같은 레벨 몬스터 생명의 30% 이상")
         local sh10 = _ShadowConfig:GetProfile("skel_warrior", 1, 10, 1)
         self:Check("shadow vs level", sh10.hp >= mobHp * 0.4, "Lv10 그림자 생명 ≥ 같은 레벨 몬스터의 40%")
         self:Check("shadow power level", _ShadowConfig:EffectiveLevel(31, 10) == 10 and _ShadowConfig:EffectiveLevel(8, 10) == 8, "그림자 힘 = min(본래, 주인)")
@@ -107,8 +107,22 @@ script SelfTest extends Logic
         self:Check("rally skill", _SkillData:Get("rally") ~= nil and _SkillData:Get("rally").row == 18 and _SkillData:Get("rally").maxLv == 1, "컨보케이션은 배워야 쓰는 Lv18 스킬 (1랭크)")
         self:Check("shadow unlock", _SkillData:Get("shadow_summon").row == 5 and _SkillData:Get("raise_skeleton").row == 1, "해골 Lv1, 그림자 Lv5")
         -- 10-11 메인 스킬 + 강화 (docs/design/16): 강화는 메인 스킬에 붙고, 숙련 패시브는 강화로 흡수됐다
-        local mastery = _SkillData:Get("skeleton_mastery")
-        self:Check("skill nodes", mastery ~= nil and mastery.kind == "node" and mastery.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 3, "단련된 뼈 = 해골 전사 강화, 리바이브 강화 3개")
+        local legion = _SkillData:Get("skel_legion")
+        self:Check("skill nodes", legion ~= nil and legion.kind == "node" and legion.parent == "raise_skeleton" and #_SkillData:NodesOf("shadow_summon") == 2, "뼈 군단 = 해골 전사 강화, 리바이브 강화 2개 (11-03 군령 삭제)")
+        -- 11-03 스킬 랭크 개편 (docs/design/62 §7·§8·§10 · §12 Fable 결정): 삭제 7 · 새 노드 2 · 곡선 상수 · 랭크 열림 (메이커에서 SkillBook.LogRankCurves 실제 값과 맞춰 본다)
+        local gone = 0
+        for _, nid in ipairs({ "offering_heal", "bomb_marrow", "mage_focus", "skeleton_mastery", "aura_deep", "command_mastery", "bomb_pair" }) do if _SkillData:Get(nid) == nil then gone = gone + 1 end end
+        local fork, reach = _SkillData:Get("rite_fork"), _SkillData:Get("rite_reach")
+        local dw = function(r) return 2.5 * (_GameData.skillCurveBase + _GameData.skillCurvePerLv * (r + 24 - 1)) * (1 + _GameData.skillLateRampPct / 100 * (r - 1)) end
+        local ratio = dw(20) / dw(1)
+        local last = dw(20) / dw(19) - 1
+        local enf20 = _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * 19
+        local whirl1 = _GameData.riteWhirlMul * math.floor(_GameData.riteWhirlSeconds / _GameData.riteWhirlTick + 1e-6)
+        local okCurve = gone == 7 and fork ~= nil and fork.need == 3 and fork.maxLv == 2 and reach ~= nil and reach.need == 5 and ratio >= 2.0 and last >= 0.03
+            and enf20 == 63 and _GameData.enfeebleMaxPct == 75 and math.abs(whirl1 - 6.4) < 0.001 and _GameData.dashBlinkRange == 6 and _GameData.rankLateStep == 1.5
+        self:Check("rank rework 1103", okCurve, string.format("삭제 %d/7 · 갈래·뼈의 길 · 데스 노바 1→20 ×%.2f · 19→20 %.2f%% · 위큰 R20 %g · 회오리 한 적 ×%.2f", gone, ratio, last * 100, enf20, whirl1))
+        log(string.format("[VRF] SelfTest rank curves death_wave R1=%.1f R20=%.1f x%.2f last=%.2f%% enfeeble R20=%g cap=%g whirl x%.2f ticks=%d blink=%g lateStep=%g gone=%d",
+            dw(1) * 1.4, dw(20) * 1.4, ratio, last * 100, enf20, _GameData.enfeebleMaxPct, whirl1, math.floor(_GameData.riteWhirlSeconds / _GameData.riteWhirlTick + 1e-6), _GameData.dashBlinkRange, _GameData.rankLateStep, gone))
         -- 11-02 거인 분리 (사용자 결정 B · 기획서 52 §2-2 안 ①): 본 골렘 = 칸에 넣는 독립 액티브(본 노바와 같은 Lv) · 거인 노드 12개 부모 · 본 노바 아래는 폭탄 3만 · 시전음·랭크 배율 자리
         local giantDef = _SkillData:Get("bone_giant")
         local giantNodes = 0
