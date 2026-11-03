@@ -1087,7 +1087,8 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
     //   뒤에 붙어 선 플레이어 발이 자르는 선 아래로 나와 원본 아랫부분 앞에 그려지고 몸만 가려진다(메이커 7차 열주 남열 「발 조각」 · 쓰러진 거인도 같은 꼴).
     //   막지 않는 그림이면(막힌 칸 없음) 어디든 설 수 있어 같은 꼴이라 놓지 않는다. 자르는 선 자체는 고치지 않는다(코덱스 그림 그대로).
     //   (10-31 윗부분 2차) 자르는 선은 실제 값(topCutFrac). 후보가 여럿(배치 변형)이면 규칙을 지키는 것 중 자르는 선이 가장 높은 것(막힘 꼭대기에 가장 가까운 것)을 쓴다.
-    const tops = v5 && !decal ? topCandidates(table, spName) : [];
+    // 11-03 강조 에셋: <그림>-top-hero 는 배치표 args hero=1 인 자리(키운 중심물)만 — 같은 그림을 원래 크기로 쓰는 다른 맵(협곡·가라앉은 대로 거상 머리 · 황무지 수레)은 그대로
+    const tops = v5 && !decal ? topCandidates(table, spName).filter((n) => !/-top-hero$/.test(n) || (fopt && fopt.hero)) : [];
     if (dr && mode && tops.length) {
       // 11-03 포탈 문 윗부분: 문 안(열린 열)에 선 몸은 가리는 게 목적이라 막힘 꼭대기 규칙은 쓰지 않고, 앞(남쪽)에 선 머리만 덮지 않게 (TOP_FRONT_HEAD)
       const cutY = y + ((num(sp.h, 0) * sc) / 100) * topCutFrac(tops[0], spName), head = cell[1] + TOP_FRONT_HEAD;
@@ -1127,7 +1128,7 @@ function artEntities(d, ctx, bp, rows, func, opts = {}) {
       plateSkipped.push(`${r.kind} ${r.name} (${r.x}, ${r.y})`);
       continue;
     }
-    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1", padl: num(a.padl, 0), padr: num(a.padr, 0), hole: num(a.hole, 0), fill: a.fill ? a.fill.split(",").map((t) => t.split("/").map(Number)) : null }); }
+    if (r.kind === "prop") { const a = parseArgs(r.args); place(`ArtProp${++propN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, false, where, a.ok, num(a.over) === 1, null, !!r.scatter, { frac: num(a.foot, 0), toWall: a.wall === "1", padl: num(a.padl, 0), padr: num(a.padr, 0), hole: num(a.hole, 0), fill: a.fill ? a.fill.split(",").map((t) => t.split("/").map(Number)) : null, hero: a.hero === "1" }); }
     else if (r.kind === "decal") place(`ArtDecal${++decalN}`, r.name, x, y, r.scale, num(r.flip) === 1, r.tint, true, where);
     else if (r.kind === "set") {
       const pieces = ctx.sets[r.name];

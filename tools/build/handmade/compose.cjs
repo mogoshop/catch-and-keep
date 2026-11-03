@@ -234,6 +234,9 @@ function compose(id, spec, ctx, mapRow) {
   if (spec.v5) {
     const v = require("./v5.cjs").run({ id, spec, g, func, markerOf, puts, table, ctx, seed, mapRow, footCells, clear });
     paintZones(id, spec, g, markerOf, seed);
+    // carve [{ r: [x0, y0, x1, y1], z }] (11-03 강조 에셋 「벽 대신」): v5 배치가 끝난 뒤 벽 칸을 그 구역 바닥으로 판다 — 배치(띠·화로·특징 자리)는 그대로 두고
+    //   큰 중심물(배치표 fill=)이 그 칸을 다시 막는다 (벽 그림 대신 중심물이 경계가 된다 · 왕들의 묘실 1층 거상 머리)
+    for (const cv of spec.carve || []) for (let y = cv.r[1]; y <= cv.r[3]; y++) for (let x = cv.r[0]; x <= cv.r[2]; x++) g.dig(x, y, zoneOf(cv.z || "."), -1);
     const grid = [];
     for (let y = g.y1; y >= g.y0; y--) {
       let line = "";
@@ -614,6 +617,8 @@ function main() {
     const row = mapRows.find((m) => m.id === id);
     if (!row) throw new Error(`${id}: maps.csv에 없음`);
     const out = compose(id, spec, ctx, row);
+    // postRows(rows) (11-03 강조 에셋): 생성기(v5)가 다 놓은 배치표 줄을 마지막에 고친다 — 특징 하나만 키우고 막을 칸을 바꿀 때 띠·화로·다른 특징 자리가 다시 잡히지 않게
+    if (typeof spec.postRows === "function") out.rows = spec.postRows(out.rows);
     const specOut = out.zonesExtra ? Object.assign({}, spec, { zones: Object.assign({}, spec.zones, out.zonesExtra) }) : spec;
     results.push({ id, spec: specOut, ...out });
     if (out.v5) { console.log(`  [v5${spec.v5.mode === "keep" ? " keep" : ""}] ${id} ${spec.v5.mode === "keep" ? "골격(그리지 않음 · 배치 비움용)" : "띠"} ${out.v5.band}칸 (${out.v5.legs.join(" · ")}) · 패치 ${out.v5.patches} · 섬 ${out.v5.islands} · 경계 고침 ${out.v5.edgeFix}`); for (const t of out.v5.spaces) console.log("    " + t); for (const w of out.v5.warn) console.log("    ! " + w); }

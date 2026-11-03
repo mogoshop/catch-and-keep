@@ -946,3 +946,25 @@ Object.assign(module.exports.gallows, {
     },
   },
 });
+
+// 11-03 강조 에셋 샘플 (기획 63 §4 · 사용자 「벽만으로 공간을 만들지 말고 환경에 어울리는 에셋을 크게 키워 중심물로」): 잿불 야영지 무너진 성문을 좌우 반전 · ×2.5(배율 열 1.441 → 3.603, 화면 Transform 0.9 → 2.25 ≤ 2.5)로 키워
+//   남문 길 어귀에 세운다 — 앞(남쪽) 기둥이 왼쪽 · 뒤 기둥이 오른쪽. 발밑은 양쪽 기둥만 막고 가운데 3칸은 통행(포탈 문 규칙 door_tops)(길 안내 폭 3칸 유지) · 윗부분(-top, 자르는 선 = 캔버스 359/512)은 앞층(Default/5)이라 문 아래로 지나가는 캐릭터가 아치 뒤로 간다.
+//   남문 오른쪽 틈 말뚝 세트(a1_gate_east_stakes)와 꺼진 화로 받침은 옛 성문 기둥 곁 자리라 뺀다(흩뿌림 줄이기).
+const HERO_TOWN_GATE = { x: 0, y: -10.6, scale: 3.603, args: "ok=cliff" };   // 막을 칸·윗부분은 포탈 문 규칙(data/handmade/door_tops.csv 줄 · lib.cjs doorCells) — 열린 열 x -1~1 · 양쪽 기둥 열은 발~자르는 선
+//   창고(npc:Stash 2,-3)는 커진 아치 윗부분(앞층) 아래에 가려져 (6,-3)으로 옮긴다 — 마을 도착 자리(0,-1.6)는 아치 꼭대기(y -1.87)보다 북쪽이라 가려지지 않는다.
+Object.assign(module.exports.town, {
+  extra: Object.assign({}, module.exports.town.extra, { "npc:Stash": [6, -3] }),
+  put: module.exports.town.put
+    .filter((p) => !(p[0] === "set" && p[1] === "a1_gate_east_stakes") && p[1] !== "a1-adjunct-extinguished-brazier-base")
+    .map((p) => (p[1] === "a1-landmark-ruined-gate" ? [p[0], p[1], HERO_TOWN_GATE.x, HERO_TOWN_GATE.y, HERO_TOWN_GATE.scale, 1, HERO_TOWN_GATE.args] : p)),
+});
+
+// 11-03 강조 에셋 샘플 (기획 63 §2 · 사용자 그림 표시 「두 겹 동그라미 = 키우기 · 화살표 = 옮기기」): 썩은 갈대 늪 — 남쪽 습격당한 수레 행렬 방의 짐수레(세트 a1_ambush_camp 조각 · 맵에 하나뿐)를
+//   북쪽 가라앉은 사당 방 서쪽 공터(-22, 12.4)로 옮기고 ×2.2로 키운다(배율 열 2.2 · 화면 Transform 0.66 → 1.46). 역할표 camp-cart는 prop(기준 1칸 · multOf 0.461) 그대로 두고 배율 열로 상쇄 —
+//   역할을 feature로 바꾸면 잿불 야영지·황무지 수레도 함께 커진다. 발밑 2줄(foot=0.8) · 윗부분 = 위 1/3(camp-cart-top · 캔버스 55줄 위 · top_cutlines.csv) 앞층(Default/5).
+//   생성기가 다 놓은 뒤 그 줄만 고친다(postRows — 띠·화로·다른 세트 자리 그대로). 수레 행렬 방에는 세트의 나머지(바퀴·창·장작·무늬)가 남는다.
+const HERO_RM_CART = { x: -22, y: 12.4, scale: 2.2, args: "foot=0.8;hero=1" };
+Object.assign(module.exports.rotmarsh, {
+  postRows: (rows) => rows.map((r) => (r.kind === "prop" && r.name === "camp-cart" && /a1_ambush_camp/.test(r.note)
+    ? Object.assign({}, r, { x: HERO_RM_CART.x, y: HERO_RM_CART.y, scale: HERO_RM_CART.scale, args: HERO_RM_CART.args, note: "가라앉은 사당 · 11-03 강조 ×2.2 (수레 행렬 방에서 옮김)" }) : r)),
+});

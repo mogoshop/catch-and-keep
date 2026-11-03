@@ -541,7 +541,7 @@ function tallNoTop(art, ctx) {
     if (!/^Art(Prop|Set|Cl)\d/.test(e.name) || /Top$/.test(e.name)) continue;
     const sr = (e.overrides || {})["MOD.Core.SpriteRendererComponent"], tr = (e.overrides || {})["MOD.Core.TransformComponent"];
     const name = sr && byRuid[sr.SpriteRUID];
-    if (!name || /-top$/.test(name) || table[name + "-top"]) continue;
+    if (!name || /-top(-hero)?$/.test(name) || table[name + "-top"] || table[name + "-top-hero"]) continue;   // -top-hero: 11-03 강조 에셋(배치표 hero=1 자리만)
     const role = roleOf(name);
     if (!["feature", "structure"].includes(role) || ["floor", "portal", "overlay"].includes(classOfSafe(name))) continue;
     const sc = tr && tr.Scale ? Number(tr.Scale.y) : 1, cells = (Number(table[name].h) * sc) / 100;

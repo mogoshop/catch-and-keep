@@ -998,3 +998,34 @@ Object.assign(module.exports.temple3, {
     h: "a2-scorched-sandstone-floor 0.8/0.74/0.66 태양 제단실 남쪽",   // 띠 남쪽 (북쪽 d와 다른 톤)
   }),
 });
+
+// 11-03 강조 에셋 샘플 (기획 63 §2 · 사용자 「벽만으로 공간을 만들지 말고 환경에 어울리는 에셋을 크게 키워 중심물로 — 캐릭터가 돌아서 지나가게」):
+//   오아시스 샘을 북쪽 언덕 밑(0.5, 9.4)에서 물가 공터 가운데(-0.15, 5)로 옮기고 크게 — 사용자 「우물 생긴 게 너무 다르다 · 원래 이미지에서 이미지만 키워 달라」(11-03):
+//   지금 게임의 샘 그림(oasis-pool 205×128 · claude-act23-aligned)을 최근접 정수 3배(615×384 · 모양·색·그림체 그대로)로 올린 oasis-pool-x3을 배율 1.25(7.7×4.8칸)로 쓴다.
+//   발밑 = 물+돌 테두리 전체(그림 알파 칸 덮임 ≥0.4인 칸 + 앞 야자수 사이 3칸을 fill=로 · decor_collision oasis-pool-x3 tall/block) — 둘레 젖은 모래(물가 바닥)는 통행 · 북·동·서로 돌아간다.
+//   윗부분 = 같은 3배 그림의 돌 테두리 북쪽 반(oasis-pool-x3-top-hero · 캔버스 156줄 위 · top_cutlines.csv) — 앞층(Default/5) · 배치표 hero=1 자리만.
+//   야자수 둘(물가 양끝 언덕 벽감) → 샘 둘레 테두리 4그루(역할표 repeat ring · 대각 네 자리).
+//   촌장(npc:Elder -2,7)은 샘 자리가 되어 샘 남쪽 광장(0,3)으로 — 앞 야자수 둘 사이 칸(y 4)은 샘 발밑과 이어 막는다(벽감 없게). 남문 길 소품 묶음은 이정표 하나로 줄인다(흩뿌림 줄이기).
+const HERO_OASIS_FILL = "-1/4,0/4,2/4,-2/5,-1/5,0/5,1/5,2/5,-4/6,-3/6,-2/6,-1/6,0/6,1/6,2/6,3/6,-4/7,-3/7,-2/7,-1/7,0/7,1/7,2/7,-2/8,-1/8,0/8";
+const HERO_OASIS_SCALE = 1.25;   // oasis-pool-x3(원본 최근접 3배 615×384) × 1.25 = 7.7×4.8칸 (사용자 11-03 「원래 이미지에서 이미지만 키워」 · ×2.5안 = 1.04 = 6.4×4.0칸은 메이커 런타임 비교 캡처)
+const HERO_OASIS_PALMS = [[-1.75, 4.9, 0], [-1.75, 9.3, 0], [1.45, 9.3, 1], [1.45, 4.9, 1]];   // 샘 둘레 네 모서리(가운데 -0.15, 7.1 · 이웃 3.2·4.4칸 ≤4.5 · 검사기 고리 반경 흩어짐 0) — 앞 둘은 샘 발(y 5)보다 남쪽(앞)이라야 샘 그림에 가려지지 않는다 · 뒤 둘은 북쪽 돌 테두리 뒤 · 북쪽 물가 길(y 10~11)은 열어 둠
+Object.assign(module.exports.oasis, {
+  extra: Object.assign({}, module.exports.oasis.extra, { "npc:Elder": [0, 3] }),
+  put: module.exports.oasis.put.filter((p) => p[1] !== "palm")
+    .map((p) => (p[1] === "oasis-pool" ? [p[0], "oasis-pool-x3", -0.15, 5, HERO_OASIS_SCALE, 0, `foot=0.01;hero=1;fill=${HERO_OASIS_FILL}`] : p))
+    .concat(HERO_OASIS_PALMS.map(([x, y, f]) => ["prop", "palm", x, y, 1, f, y < 5 ? "ok=gate;over=1" : "ok=gate"])),   // 앞 둘 over=1: 샘과 z가 같은 칸(소수 셋째 자리)이라 메이커에서 샘 뒤에 가려졌다(11-03 1회차) → 샘 바로 앞 층
+  v5: Object.assign({}, module.exports.oasis.v5, {
+    dress: Object.assign({}, module.exports.oasis.v5.dress, { e: { props: ["mp-signpost"], clusters: 1, decals: ["a2-decal-camel-tracks", "a2-decal-sand-ripples"], dn: 2 } }),
+  }),
+});
+
+// 11-03 강조 에셋 샘플 (기획 63 §3 「벽 대신」 · 사용자 「벽만으로 공간을 만들지 말고 큰 중심물로」): 왕들의 묘실 1층 석관 방 — 왕관 쓴 거상 머리(생성기 특징 · 같은 자리 17.5, 3.3)를 ×2(배율 열 2 · 화면 Transform 1.19 → 2.38 ≤ 2.5)로 키워
+//   방 북쪽 고리길 어귀(x 15~17 통로 홈)와 그 동쪽 묘실 벽 홈(x 18~19 · y 7~9 # 6칸 → carve로 석관 방 바닥으로 판 뒤 막음)을 머리가 벽 대신 막는다 — 발 줄(y 3)~머리 꼭대기(y 9) x 13~20 + 왼쪽 기둥 뒤 막다른 벽감 3칸(fill=) — 통로 북쪽 끝 y 10~12는 고리길에서 머리 뒤까지 걸어 들어오는 막다른 끝으로 남긴다(보이지 않는 벽 없음).
+//   고리길(향료 방 → 북쪽 통로 → 석관 방)은 끊기고 북쪽 통로는 향료 방 쪽 막다른 곁길이 된다(들어오는 문 → 나가는 문 큰길 y 1은 그대로 · route_lengths 길이 불변).
+//   생성기가 다 놓은 뒤 그 줄만 고친다(postRows · carve) — put으로 옮기면 띠·화로·황금 가면 벽·바람 비석 열 자리가 다시 잡혀 사라졌다. 양옆 사원 기둥 한 쌍은 생성기 자리 그대로.
+//   윗부분 = 위 1/2(a2-crowned-colossus-head-top · top_cutlines.csv) 앞층(Default/5).
+const HERO_KT_HEAD = { scale: 2, args: "hero=1;fill=11/4,12/4,12/5,13/3,14/3,15/3,16/3,17/3,18/3,19/3,20/3,13/4,14/4,15/4,16/4,17/4,18/4,19/4,20/4,13/5,14/5,15/5,16/5,17/5,18/5,19/5,20/5,13/6,14/6,15/6,16/6,17/6,18/6,19/6,20/6,13/7,14/7,15/7,16/7,17/7,18/7,19/7,20/7,13/8,14/8,15/8,16/8,17/8,18/8,19/8,20/8,13/9,14/9,15/9,16/9,17/9,18/9,19/9,20/9" };
+Object.assign(module.exports.kingtomb1, {
+  carve: [{ r: [18, 7, 19, 9], z: "e" }],
+  postRows: (rows) => rows.map((r) => (r.kind === "prop" && r.name === "a2-crowned-colossus-head" ? Object.assign({}, r, { scale: HERO_KT_HEAD.scale, args: HERO_KT_HEAD.args, note: r.note + " · 11-03 강조 ×2 벽 대신" }) : r)),
+});
