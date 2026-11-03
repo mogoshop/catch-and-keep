@@ -334,7 +334,19 @@ for (const [order, def] of SLOTS.entries()) {
   } else if (def.runtime) {
     const r = specRuids(def.runtime);
     if (!r) currentNote = `${def.runtime} 선언을 ${sourceCommit.slice(0, 8)}에서 찾지 못함`;
-    else if (!r.ruids.length) currentNote = `비어 있음 — ${r.prop.comment.split('→')[1]?.split('·')[0]?.trim() || '대체 연출'}`;
+    else if (!r.ruids.length) {
+      // 칸이 비면 게임은 그 자리의 메이플 폴백 칸(def.maple 순서)을 그린다 (11-03 효과 고르기: 코덱스 칸을 비우고 폴백 칸에 고른 클립) → 그 클립이 「현재 사용 중」
+      for (const key of def.maple || []) {
+        const fr = specRuids(key); if (!fr?.ruids.length) continue;
+        const m = await mapleCandidate(fr.key, fr.ruids[0]); if (!m) continue;
+        const since = period(key, fr.ruids).from;
+        current = {...m, id: 'current', source: 'current', kind: 'maple', runtimeKey: key, ruids: fr.ruids, use: 'connected', status: 'connected',
+          statusLabel: `코드 연결 확인 · 메이플 리소스 (${def.runtime} 비움 → ${key})`, source_ref: `${fr.prop.path}:${fr.prop.line}`, comment: fr.prop.comment,
+          since: since ? {commit: since.commit, date: since.date, subject: since.subject} : null, firstUse: m.firstUse};
+        break;
+      }
+      if (!current) currentNote = `비어 있음 — ${r.prop.comment.split('→')[1]?.split('·')[0]?.trim() || '대체 연출'}`;
+    }
     else {
       currentRuids = r.ruids;
       const twin = groupByKey.get(def.runtime) || groupByKey.get(RENAMED[def.runtime]);
