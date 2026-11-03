@@ -1,0 +1,32 @@
+메이커 확인 (11-03 22:48~23:11 · MAKER-FREE 잠금 사용 · maker_save 안 씀)
+재반영: 편집 모드 → 바뀐 파일 touch → 5초 → maker_refresh_workspace 1회 → play. 빌드 Error 0 (Warning 104 · Info 255~265 = 이전과 같은 종류)
+SelfTest 409/0(1회차) → 410/0(wraith start 검사 추가 뒤) · normal Error = SelfTest 의도한 boom 1건뿐
+
+[레이스 폼 기본 지급]
+(a) 새 캐릭터 상태 = 접속 직후 기본 엔티티(슬롯 0 · 저장 안 됨 — 빈 슬롯이 없어 RequestCreateSlot 대신 같은 시작 상태를 FinishLoad(true)로 확정)
+    [VRF] newchar before finish slot=0 skp=1 digest=wraith_dash:1 · 스킬 창 K(실제 키) → 레이스 폼 「랭크 1/1 (최대 20)」 · 남은 포인트 1 → a-newchar-skillwin-wraith-1.jpg
+(b) 피 묻은 황무지(노말 · 슬롯 4 Lv40 · 저장 끔 IsLoadSuccess=false) 실제 Space 키
+    [VRF] combat cue cast_wraith_dash · [VRF] KEYWATCH from=(1.50,-2.80) to=(4.71,-2.84) moved=3.21 states=IDLE:90 (랭크 3 = 3.21칸) → b-space-dash-wasteland.jpg
+(c) 옛 저장 이전: 슬롯 4(sv 7 · 레이스 폼 3) → [VRF] skill migrate start rank sv=7 refund=1 had=wraith_dash:3 · skill migrate refund=1 (skp 9→10)
+    게임 방으로 옮긴 뒤 다시 불러오기(sv 8)에서는 이전 로그 없음(두 번 환급 없음). 랭크 0 경우는 tests/quality/skills.lua(sv7 0→1 무료 · 포인트 그대로)로 확인
+(d) maker_set_platform mobile(iPad) → [VRF] MOBILE platform=true dashEnabled=true wraith=1 → d-mobile-dash-button.jpg (오른쪽 아래 질주 단추)
+(e) 빌드 Error 0 · SelfTest 410/0
+
+[A 점프 제거] ClickControl.BlockExtraKeys: [VRF] … 점프 뗌 space=Jump alt=Jump2 → space= alt=
+    실제 Space 탭·300ms 누름·LeftAlt 탭 모두 states=IDLE만(JUMP 0) · 질주는 그대로 나감(위 b)
+    참고: 웨이포인트 위에서는 Space가 웨이포인트 창을 연다(기존 상호작용 · 마을 대화와 같은 규칙)
+
+[B 출현 ×2] [VRF] spawner count mul map=wasteland x2 before=32 after=64 → 배치 55 + 유입 풀 9 · 무리 19 · 깨운 몬스터 31(깨우기 반경 18칸)
+    hollow(곁가지) x2 before=13 after=26 → 26마리 전부 배치
+    프레임: 맵 진입 12초 창 최대 간격 town(몬스터 0) 2093ms ≈ hollow(26마리) 2067ms — 맵 불러오기 자체 · 출현으로 늘어난 튐 없음 (over100ms 3 = 3)
+    같은 방 안에서 맵을 다시 들어가면 스포너가 다시 펼쳐지지 않아 ×1 런타임 비교는 못 함 → 전 값은 로그 before= 로 둔다
+
+[C 프롤로그 첫 그림] 접속 직후(캐릭터 선택 창 전) [VRF] story opening preload start t=4.49 → p1 done +0.26s state=ok → p2-5 done t=4.94
+    카드 1쪽: [VRF] story prologue page1 shown ready=true → C-prologue-page1-ready.jpg (흰 점 없음)
+    안전망: ClearCaches + UnloadUnusedResources + StoryArt 비움 → page1 shown ready=false → story art arrived state=ok(로컬 파일이라 같은 프레임) → 0.2초 밝아짐
+    메이커는 리소스가 로컬이라 실제 첫 다운로드 지연은 재현 못 함(실기기 확인 필요)
+
+[D 해골 ×1.2 · 발밑 원] 해골 2 + 해골 마법사 1 (시험 소환 MakeRecord+SpawnUnit)
+    [VRF] SKELVIS mul=1.2 auraIdle=0 | vis=1.20 root=0.55 ring.a=0.00 (해골) · vis=1.20 root=0.50 ring.a=0.00 (마법사) → D-after-skel-x1.2-aura-off.jpg
+    전(런타임 값 1 / 1): vis=1.00 ring.a=0.60 → D-before-skel-x1.0-aura-on.jpg (마법사 발밑 연한 청록 타원)
+    본체 Scale(0.55·0.5)은 그대로 = 충돌·사거리 불변 · 그림 대역(MSVis)만 ×1.2

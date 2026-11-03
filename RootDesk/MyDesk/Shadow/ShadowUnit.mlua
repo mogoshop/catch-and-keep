@@ -10,6 +10,7 @@ script ShadowUnit extends AttackComponent
     property Entity OwnerPlayer = nil
     @Sync
     property string Kind = "shadow"          -- shadow(보관함 그림자) / skeleton / mage / revive (UndeadSystem)
+    property number AuraCastUntil = 0        -- 클라이언트: 언데드 발밑 원을 이 시각까지 보인다 (ShowCastAura · 11-03 저녁 · 지금은 미사용)
     property string ShadowId = ""
     property integer Atk = 10
     @Sync
@@ -222,10 +223,32 @@ script ShadowUnit extends AttackComponent
 
     method Color RingColor()
         -- 발밑 원 색: 언데드 청록 · 그림자 보라 · 정예 금빛 (알파 0.6)
+        --   11-03 저녁 사용자 「하단 파란색 오오라 없애줘 · 나중에 실제 시전 시 쓰고 싶다」: 언데드 청록 원은 평소 알파 0 (undeadAuraIdle 0) — 시전 때만 켤 훅 ShowCastAura
         local color = Color(0.3, 1, 0.8, 0.6)
         if self.Kind == "shadow" then color = Color(0.75, 0.5, 1, 0.6) end
         if self.Promoted then color = Color(1, 0.8, 0.3, 0.6) end
+        if not self:IdleAuraOn() then color = Color(color.r, color.g, color.b, 0) end
         return color
+    end
+
+    method boolean IdleAuraOn()
+        -- 발밑 원을 지금 보이는가: 그림자·정예는 늘 · 언데드(해골·마법사·되살린 몹·거인)는 undeadAuraIdle ~= 0이거나 ShowCastAura 시간 안일 때만
+        if self.Kind == "shadow" or self.Promoted then return true end
+        if (_GameData.undeadAuraIdle or 1) ~= 0 then return true end
+        return _UtilLogic.ElapsedSeconds < self.AuraCastUntil
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowCastAura(number sec)
+        -- (지금은 부르는 곳 없음 · 11-03 저녁 보류) 실제 시전 순간에만 언데드 발밑 청록 원을 sec초 보인다 — 예: 뼈 의식·명령 시전 때 _UndeadSystem 쪽에서 부른다
+        self.AuraCastUntil = _UtilLogic.ElapsedSeconds + math.max(0, sec)
+        self:RefreshView()
+    end
+
+    method number VisualScale()
+        -- 그림만 키우는 배율 (MotionSmoother 대역 · 충돌·사거리·속도 그대로): 일반 해골·해골 마법사 × undeadSkelScale (11-03 저녁 사용자 · 거인은 GiantArtScale 따로)
+        if (self.Kind == "skeleton" or self.Kind == "mage") and self.GiantKind == "" then return _GameData.undeadSkelScale or 1 end
+        return 1
     end
 
     @ExecSpace("ClientOnly")

@@ -723,7 +723,9 @@ script MotionSmoother extends Logic
         local sc = t.Scale
         local sign = r.visSignWant or (sc.x < 0 and -1 or 1)
         local vt = vis.TransformComponent
-        vt.Scale = Vector3(math.abs(sc.x) * sign, math.abs(sc.y), sc.z)
+        -- 그림만 키우는 배율 (11-03 저녁 사용자: 해골 소환물 ×1.2 · ShadowUnit.VisualScale · 발 피벗이라 발은 그 자리) — 본체·충돌은 그대로
+        local vm = (r.unit ~= nil and isvalid(r.unit)) and r.unit:VisualScale() or 1
+        vt.Scale = Vector3(math.abs(sc.x) * vm * sign, math.abs(sc.y) * vm, sc.z)
         vt.WorldPosition = Vector3(x, y, p.z)
         if r.monster then self:PlaceAura(r, vis, dst, sc) end
         if r.visRing ~= nil and isvalid(r.visRing) and isvalid(r.ring) then
