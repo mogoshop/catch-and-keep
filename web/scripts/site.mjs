@@ -326,12 +326,13 @@ ${pager(link(prev),link(next),'규칙')}`;
 function changelogPage(ctx){
   const {atlas}=ctx;const ch=atlas.changes||{};const ren=ch.renamed||[],ic=ch.iconChanged||[],add=ch.added||[],rem=ch.removed||[];
   const nameOf=id=>(atlas.skills.find(s=>s.id===id)||{}).name||id;
+  const hasPage=id=>ctx.skillModel.mains.some(s=>s.id===id);   // 상세 쪽은 메인 스킬만 — 노드 이름 바뀜은 글자로 (11-03 노드 축 바꾸기)
   const rows=ctx.snapshots.map(s=>`<tr><th scope="row">${esc(s.type)}</th><td>${esc(fmtTime(s.date))}</td><td><code title="${esc(s.sourceCommit||'')}">${esc(short(s.sourceCommit))}</code></td><td>${esc(s.changes||'비교 자료 없음')}</td></tr>`).join('');
   const body=`${pageHead('기록','자료마다 만든 시각과 기준 게임 소스 커밋입니다. 배포 시각·자료 검수 시각·실제 게임 검증 기록과는 별개입니다.')}
 <div class="table-wrap"><table class="table"><thead><tr><th scope="col">자료</th><th scope="col">만든 시각</th><th scope="col">소스 커밋</th><th scope="col">바뀐 수</th></tr></thead><tbody>${rows}</tbody></table></div>
 ${ch.previous?`<section class="log-section"><h2>스킬 묶음 변경</h2><p class="minor">직전 ${esc(ch.previous.createdAt)}(${esc(short(ch.previous.sourceCommit))}) → 이번 ${esc(atlas.createdAt)}(${esc(short(atlas.sourceCommit))})</p>
 <div class="log-grid">
-<div><h3>이름 바뀜 <span class="count">${ren.length}</span></h3>${ren.length?`<ul class="plain">${ren.map(r=>`<li><a href="/skills/${enc(r.id)}/">${esc(r.to)}</a> <span class="minor">← ${esc(r.from)}</span></li>`).join('')}</ul>`:'<p class="minor">없음</p>'}</div>
+<div><h3>이름 바뀜 <span class="count">${ren.length}</span></h3>${ren.length?`<ul class="plain">${ren.map(r=>`<li>${hasPage(r.id)?`<a href="/skills/${enc(r.id)}/">${esc(r.to)}</a>`:esc(r.to)} <span class="minor">← ${esc(r.from)}${hasPage(r.id)?'':' · 노드'}</span></li>`).join('')}</ul>`:'<p class="minor">없음</p>'}</div>
 <div><h3>아이콘 교체 <span class="count">${ic.length}</span></h3>${ic.length?`<ul class="plain">${ic.map(r=>`<li>${esc(nameOf(r.id))}</li>`).join('')}</ul>`:'<p class="minor">없음</p>'}<h3>신규 <span class="count">${add.length}</span></h3>${add.length?`<ul class="plain">${add.map(r=>`<li>${esc(r.name)}</li>`).join('')}</ul>`:'<p class="minor">없음</p>'}<h3>삭제 <span class="count">${rem.length}</span></h3>${rem.length?`<ul class="plain">${rem.map(r=>`<li>${esc(r.name)} <span class="minor">${esc(r.kind==='node'?'노드':'스킬')}</span></li>`).join('')}</ul>`:'<p class="minor">없음</p>'}</div>
 </div></section>`:''}
 <section class="log-section"><h2>이 사이트 빌드</h2><table class="spec"><tbody><tr><th scope="row">생성 시각</th><td>${esc(fmtTime(ctx.builtAt))}</td></tr><tr><th scope="row">웹 소스 커밋</th><td><code>${esc(short(ctx.webCommit))}</code></td></tr><tr><th scope="row">원본 목록</th><td><a href="/assets/catalog.json">스킬 목록 JSON</a> · <a href="/assets/audit-summary.json">대조 요약 JSON</a></td></tr></tbody></table></section>`;
