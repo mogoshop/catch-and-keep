@@ -1285,6 +1285,9 @@ function ambience(d) {
     Weather: d.weather ? d.weather : num(d.act, 1) !== 3 ? "" : bool(d.wind) ? "rain" : "mist",
     // 기획 61 단계 2 · 기획 51 안 B: 전체 조명 색 섞기 (maps.csv tint · tintMix — 비우면 지금과 같다)
     ...(d.tint ? { Tint: d.tint, TintMix: num(d.tintMix, 0) } : {}),   // 비운 맵은 필드를 쓰지 않는다 (맵 파일 그대로)
+    // 11-03 무드 틴트 66장: 내 주변 빛 비율 sP · 프롤로그(이야기 단계 0) 전용 틴트 "#RRGGBB/sG/sP" (기획 51 안 A1) — 비운 맵은 필드를 쓰지 않는다
+    ...(d.tint && num(d.tintLight, 0) > 0 ? { TintLight: num(d.tintLight, 0) } : {}),
+    ...(d.tintPrologue ? { TintPrologue: d.tintPrologue } : {}),
   };
 }
 

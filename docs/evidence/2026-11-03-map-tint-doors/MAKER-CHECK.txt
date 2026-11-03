@@ -1,0 +1,26 @@
+11-03 맵 레인 메이커 확인 (편집 모드 → touch → 5초 → refresh 1회 → build → play 1회 → stop · maker_save 0)
+
+빌드: refresh 뒤 build 로그 Error 0 (Info 255 · Warning 104 — 기존과 같은 종류) · play 중 다시 읽어도 Error 0
+      stop 뒤 [VRF] 문구 한 줄 고침(mood 로그가 프롤로그 때 실제 색을 찍게) → touch·refresh 1회 → build Error 0 (스크립트 로그 문구만 바뀜 · 재플레이 안 함)
+normal: Error = SelfTest boom 2건(의도한 실패, 두 번 기동) + stop 때 [LEA-3051] MemoryLeak 1건 — MakerScript 4행 = 내 시험 guard 스크립트의 0.2초 무적 반복 타이머(게임 코드 아님)
+SelfTest: 통과 408 / 실패 0
+
+순서: SelfTest → 슬롯 4 → Solo → guard(IsLoadSuccess=false·무적) → 시험용 의뢰 Index=1·State=0(저장 끔 · 액트 해방·이야기 단계 0을 보려고)
+  · 슬롯 4는 액트 1~3 해방(stage 3) 상태라 사냥터가 해방 밝기 0.82(틴트 없음)로 보인다 → 의뢰를 처음으로 돌려 해방 전 화면에서 확인
+  · 선택 보상 창(OfferWin)이 자동으로 열려 이동 입력을 막아 _UIKit:Close("OfferWin") 후 컨트롤러 복구(ClickControl.ModalHoldsController=false) — 이동은 실제 방향키
+
+(1) 밝기 0.40 + 틴트 — 같은 좌표·같은 줌(60)에서 틴트 켬/0 (UI 숨김)
+  wasteland(액트1) shots/tint-wasteland-on|off.png · tint-pair-wasteland.png
+  dunes(액트2)     shots/tint-dunes-on|off.png · tint-pair-dunes.png
+  saltflat(액트3)  shots/tint-saltflat-on|off.png · tint-pair-saltflat.png
+  embercanyon(액트4) shots/tint-embercanyon-on|off.png · tint-pair-embercanyon.png
+  화면 RGB 평균 차(tint-pair-rgb.csv): 가운데(내 빛) ±1~2 · 가장자리 어둠 ±0.5~1 → sG 0.10~0.16·sP 0.06~0.08은 0.40 밝기에서도 맨눈 구분이 거의 안 된다(보고 참고)
+(2) 보스방 처치 전: queentomb sG 0.30·sP 0.15 cleared=false → shots/tint-boss-queentomb-alive.png
+    마을: town 단계 3 = 등불 #FFC890 0.15/0.08 · 단계 0 = 잿불 #FFB36B 0.25/0.12 (prologue 로그) → shots/tint-town-prologue-stage0.png
+(3) 문 4곳(액트마다 1) — 실제 방향키
+  a1 wasteland 굶주린 굴: 왼쪽 기둥 열에서 막힘(-16.99) · 몸이 굴 지붕(-top) 뒤로 가려짐 shots/door-a1-wasteland-behind-pillar-blocked.png · 열린 문 → hollow 이동
+  a2 dunes 전갈 굴: 뒤(북)에서 13.01 막힘·앞(남)에서 10.99 막힘 · 가려짐 shots/door-a2-dunes-behind-pillar-blocked.png · 열린 문 → scorpnest1
+  a3 saltflat 바다 동굴: 뒤에서 15.01 막힘(자르는 선 15.343 → 발~0.33칸만 보이고 윗몸 가려짐) shots/door-a3-saltflat-behind-pillar-blocked.png · 열린 문 → crabcave1
+  a4 embercanyon 유황 동굴: 뒤에서 -13.99 막힘(자르는 선 -13.838) shots/door-a4-embercanyon-behind-pillar-blocked.png · 열린 문 → sulfurcave1
+  문 윗부분은 Default/5 · 이름 …DoorTop · TopFade(반투명) 대상에서 뺌 → 가린 채 유지
+로딩: map transition shown 1.44~1.83s(같은 세션 재진입) · 처음 들어간 맵 3.5~3.9s(리소스 첫 로드) — 파일럿 기준 1.625~1.74s, +0.15 안. 엔티티는 문 있는 맵만 +1(합계 39,560 → 39,596 · 예산 47,900)

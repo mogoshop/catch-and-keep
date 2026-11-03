@@ -56,6 +56,9 @@ script DarkVision extends Logic
     property number FlameScale = 0.45
     property Color FlameColor = Color(1, 0.62, 0.3, 0.85)   -- 불꽃 입자 색 (기본 색은 메이커에서 창백한 푸른 흰빛으로 떠 보였다)
     property any AmbSounds = nil            -- 엔티티 id → { sc, base } 위치 환경음 (설정 환경음 음량을 곱한다)
+    -- 11-03 무드 틴트 66장 (기획 51 · maps.csv tint·tintMix·tintLight·tintPrologue): 내 주변 빛에도 틴트를 섞는다 (해방·각성·심도 때는 섞지 않는다)
+    property any MoodTint = nil             -- 이 맵 틴트 색 (Color · 없으면 nil)
+    property number MoodLight = 0           -- 내 주변 빛 섞는 비율 sP
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -359,10 +362,31 @@ script DarkVision extends Logic
         if _GameConst:ActOfMap(map.Name) == 4 then color = Color(0.9, 0.5, 0.4, 1) end   -- 액트 4 심연의 문: 붉은 불빛 (용암·불꽃으로 길을 읽는다)
         -- 맵 빛 색 섞기 (11-02 기획 61 단계 2 · 기획 51 안 B): 전체 조명 색 = 기존색 × (1 − sG) + 틴트 × sG. 우선순위 각성 > 심도 > 틴트 > 기본 (아래 두 줄이 덮는다)
         local tint = self:ParseTint(amb.Tint)
-        if tint ~= nil and amb.TintMix > 0 then
-            local sg = math.min(1, amb.TintMix)
+        local sgMix, spMix = amb.TintMix, amb.TintLight
+        if amb.TintPrologue ~= "" then
+            -- 기획 51 안 A1: 이야기 단계 "0"(프롤로그 첫 밤)일 때만 다른 틴트 "#RRGGBB/sG/sP" — 액트 1을 끝내면 기본 틴트로
+            ---@type PlayerQuest
+            local pq = player:GetComponent("script.PlayerQuest")
+            local v = {}
+            for w in string.gmatch(amb.TintPrologue, "[^/]+") do table.insert(v, w) end
+            local alt = self:ParseTint(v[1] or "")
+            if pq ~= nil and pq:StoryStage() == "0" and alt ~= nil then
+                tint = alt
+                sgMix = tonumber(v[2]) or sgMix
+                spMix = tonumber(v[3]) or spMix
+                log("[VRF] DarkVision mood prologue " .. map.Name .. " " .. amb.TintPrologue)
+            end
+        end
+        self.MoodTint = nil
+        self.MoodLight = 0
+        if tint ~= nil and depth == nil then
+            self.MoodTint = tint
+            self.MoodLight = math.min(1, math.max(0, spMix))
+        end
+        if tint ~= nil and sgMix > 0 then
+            local sg = math.min(1, sgMix)
             color = Color(color.r * (1 - sg) + tint.r * sg, color.g * (1 - sg) + tint.g * sg, color.b * (1 - sg) + tint.b * sg, 1)
-            log(string.format("[VRF] DarkVision mood %s %s sG %.2f → (%.3f,%.3f,%.3f)", map.Name, amb.Tint, sg, color.r, color.g, color.b))
+            log(string.format("[VRF] DarkVision mood %s tint (%.3f,%.3f,%.3f) sG %.2f → (%.3f,%.3f,%.3f)", map.Name, tint.r, tint.g, tint.b, sg, color.r, color.g, color.b))
         end
         if self:AwakeHere(map) then color = self.AwakeColor end                          -- 재의 왕이 깨어난 뒤: 핏빛 하늘 (AshAwakening)
         if depth ~= nil then
@@ -604,6 +628,7 @@ script DarkVision extends Logic
             self.FadeFrom = 1
             self.FadeAt = _UtilLogic.ElapsedSeconds
             log("[VRF] DarkVision 어둠이 걷힌다 " .. map.Name)
+            if self.MoodTint ~= nil and self.MoodLight > 0 then self:ApplyPlayerLight(player) end   -- 내 주변 빛 틴트도 걷는다 (보스방 틴트 = 처치 전까지)
         end
         if self.FadeFrom <= 0 then return end
         local t = (_UtilLogic.ElapsedSeconds - self.FadeAt) / self.FadeSeconds
@@ -668,6 +693,13 @@ script DarkVision extends Logic
         local storm = math.max(self.MapStorm, self.BossStorm)
         local r = self.BaseRadius * (1 - storm) * (1 - self.CurseDark)
         local tint = self:AwakeHere(self.CurrentMap) and self.AwakePlayerLight or Color(1, 0.92, 0.8, 1)
+        -- 11-03 무드 틴트: 내 주변 빛 = (1,0.92,0.8) × (1 − sP) + 틴트 × sP (기획 51 §3) — 각성 핏빛·해방 뒤에는 섞지 않는다
+        local mood = self.MoodTint
+        if mood ~= nil and self.MoodLight > 0 and not self:AwakeHere(self.CurrentMap) and not self.Cleared then
+            local sp = self.MoodLight
+            tint = Color(tint.r * (1 - sp) + mood.r * sp, tint.g * (1 - sp) + mood.g * sp, tint.b * (1 - sp) + mood.b * sp, 1)
+        end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] DarkVision player light (%.3f,%.3f,%.3f) sP %.2f", tint.r, tint.g, tint.b, mood ~= nil and self.MoodLight or 0)) end
         self:Attach(player, tint, 1, r * 0.6, r)
         if storm > 0 and self.DustSerial == 0 then
             self.DustSerial = _ParticleService:PlayBasicParticleAttached(BasicParticleType.DustStorm, player, Vector3(0, 0.6, 0), 0, Vector3(4, 3, 1), true, { Color = Color(0.95, 0.8, 0.55, 0.35) })
