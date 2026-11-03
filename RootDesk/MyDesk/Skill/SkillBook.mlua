@@ -1372,14 +1372,13 @@ script SkillBook extends Component
         if ray:Magnitude() > 6 then target = me + ray:Normalize() * 6 end   -- 조준점은 6칸까지 (폭탄 돌진·회오리 방향)
         local lock = nil
         if stage == 2 then
-            -- 회오리 표적 (62 §9-2 · 11-03 Fable 결정 2 W2): 고른 적(7.5칸 안) → 없으면 조준 방향 ±30° 부채꼴 7칸 안 가장 가까운 적 → 없으면 조준 방향 직진
+            -- 회오리 표적 (62 §9-2 · 11-03 Fable 결정 2 W2 · 11-03 후속 수정): 고른 적(7.5칸 안) → 없으면 조준·바라보는 방향과 무관하게 플레이어 반경 6칸 안 가장 가까운 살아 있는 적
+            --   → 그것도 없을 때만 조준(바라보는) 방향 직진 (예전 조준 방향 ±30° 부채꼴은 뒤·옆 적을 놓쳐 target=false로 허공에 갔다)
             ---@type PlayerAttack
             local attack = self.Entity:GetComponent("script.PlayerAttack")
             if attack ~= nil and attack:IsLiveMonster(attack.SelectedTarget) and _Util:Distance(self.Entity, attack.SelectedTarget) <= 7.5 then lock = attack.SelectedTarget end
             if lock == nil then
-                local face = target - me
-                if face:Magnitude() < 0.01 then face = Vector2(self.Entity.PlayerControllerComponent.LookDirectionX >= 0 and 1 or -1, 0) end
-                local m = _Util:MonsterInCone(self.Entity.CurrentMap, me, face:Normalize(), 7, 0.866)
+                local m = _Util:NearestMonster(self.Entity.CurrentMap, me, 6)
                 if m ~= nil then lock = m.Entity end
             end
         end

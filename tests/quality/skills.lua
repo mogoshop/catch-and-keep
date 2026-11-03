@@ -803,7 +803,7 @@ do
  function V:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end
  function V:Normalize() local m=self:Magnitude() return Vector2(self.x/m,self.y/m) end
  log=function(m) if string.find(m,'[VRF]',1,true) then table.insert(vrf,m) end end
- _Util={IsAlive=function() return true end,Warn=function(_,t) table.insert(warns,t) end,Pos2=function() return Vector2(0,0) end,NearestMonster=function() return nil end,Distance=function() return 99 end,MonsterInCone=function() return nil end}
+ _Util={IsAlive=function() return true end,Warn=function(_,t) table.insert(warns,t) end,Pos2=function() return Vector2(0,0) end,NearestMonster=function() return nil end,Distance=function() return 99 end,MonsterInCone=function() return nil end,NearestMonster=function() return nil end}
  _GameConst={IsTown=function() return false end,LevelOf=function() return stats.Level end}
  _GameEvents={Emit=function(_,name,e) table.insert(emits,e.skill) end}
  _UtilLogic={ElapsedSeconds=100,ServerElapsedSeconds=100,RandomIntegerRange=function(_,lo) return lo end}
