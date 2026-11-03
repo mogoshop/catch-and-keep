@@ -438,6 +438,7 @@ script RaidDirector extends Logic
         local si = 1
         local minGap = 99
         local placed = {}
+        local deferred, dropped = 0, 0
         for ci, col in ipairs(cols) do
             local dir = col.base - a.center
             local len = math.max(0.01, dir:Magnitude())
@@ -448,35 +449,74 @@ script RaidDirector extends Logic
             table.sort(colSpeeds, function(x, y) return x > y end)
             for j = 0, col.n - 1 do
                 local p = self:GapSpot(map, col.base, u, side, j, gapLen, taken)
-                local near = 99
-                for _, q in ipairs(taken) do near = math.min(near, (q - p):Magnitude()) end
-                minGap = math.min(minGap, near)
-                table.insert(taken, p)
-                table.insert(placed, string.format("%d:%.1f", self:DirIndex(a.center, col.base), colSpeeds[j + 1]))
-                table.insert(a.queue, { p = p, leader = withLeader and ci == 1 and j == 0, speed = colSpeeds[j + 1] })
+                local pBase = col.base
+                if p == nil and k >= #a.waves then
+                    -- 마지막 파도: 다른 열린 방향의 고리 자리에서 한 번 더 (다음 파도로 넘길 곳이 없다)
+                    for _, other in ipairs(a.pts) do
+                        if p ~= nil then break end
+                        if (other - col.base):Magnitude() > 0.5 then
+                            local od = other - a.center
+                            local ol = math.max(0.01, od:Magnitude())
+                            local ou = Vector2(od.x / ol, od.y / ol)
+                            p = self:GapSpot(map, other, ou, Vector2(-ou.y, ou.x), 0, gapLen, taken)
+                            if p ~= nil then pBase = other end
+                        end
+                    end
+                end
+                if p == nil then
+                    -- 간격을 지킬 자리가 없다: 겹쳐 놓지 않는다 — 다음 파도로 넘기고, 마지막 파도면 규모에서 뺀다 (11-04 코덱스 검수)
+                    if k < #a.waves then
+                        a.waves[k + 1] = a.waves[k + 1] + 1
+                        deferred = deferred + 1
+                    else
+                        dropped = dropped + 1
+                        log(string.format("[VRF] raid gap drop %s k=%d/%d dir=%d taken=%d", map.Name, k, #a.waves, self:DirIndex(a.center, col.base), #taken))
+                    end
+                else
+                    local near = 99
+                    for _, q in ipairs(taken) do near = math.min(near, (q - p):Magnitude()) end
+                    minGap = math.min(minGap, near)
+                    table.insert(taken, p)
+                    table.insert(placed, string.format("%d:%.1f", self:DirIndex(a.center, pBase), colSpeeds[j + 1]))
+                    table.insert(a.queue, { p = p, leader = withLeader and ci == 1 and j == 0, speed = colSpeeds[j + 1] })
+                end
             end
         end
-        log(string.format("[VRF] raid wave %s k=%d/%d n=%d cols=%d minGap=%.2f slots=%s", map.Name, k, #a.waves, n, #cols, minGap >= 99 and -1 or minGap, table.concat(placed, ",")))
+        log(string.format("[VRF] raid wave %s k=%d/%d n=%d cols=%d minGap=%.2f deferred=%d dropped=%d slots=%s", map.Name, k, #a.waves, n, #cols, minGap >= 99 and -1 or minGap, deferred, dropped, table.concat(placed, ",")))
     end
 
     @ExecSpace("ServerOnly")
-    method Vector2 GapSpot(Entity map, Vector2 base, Vector2 u, Vector2 side, integer j, number gapLen, table taken)
-        -- 줄의 j번째 자리: 고리 자리에서 바깥으로 j칸 → 막혔거나 가까우면 옆으로 ±1·±2칸 (같은 깊이·한 칸 앞) → 그래도 없으면 가장 가까운 빈 칸
+    method any GapSpot(Entity map, Vector2 base, Vector2 u, Vector2 side, integer j, number gapLen, table taken)
+        -- 줄의 j번째 자리 (nil = 간격을 지킬 자리가 없다 · 부르는 쪽이 다음 파도로 넘긴다):
+        --   ① 고리 자리에서 바깥으로 j칸 → 막혔거나 가까우면 옆으로 ±1·±2·±3칸 (같은 깊이·한 칸 앞·뒤)
+        --   ② 가장 가까운 빈 칸 — 이것도 taken과 gapLen 이상이어야 (11-04 코덱스 검수: 예전엔 재검사 없이 돌려 minGap 0.00·0.15가 나왔다)
+        --   ③ 고리 자리 둘레 반지름 gapLen~2.5칸 12방향 (닿을 수 있고 간격을 지키는 첫 점)
         local tries = { { j, 0 }, { j, 1 }, { j, -1 }, { j - 1, 1 }, { j - 1, -1 }, { j, 2 }, { j, -2 }, { j + 1, 0 }, { j + 1, 1 }, { j + 1, -1 },
             { j + 1, 2 }, { j + 1, -2 }, { j + 2, 0 }, { j + 2, 1 }, { j + 2, -1 }, { j, 3 }, { j, -3 } }
         for _, t in ipairs(tries) do
             local want = base + u * (gapLen * t[1]) + side * (gapLen * t[2])
             local q = _Util:ReachablePoint(map, base, want, 0.4)
-            if (q - want):Magnitude() < 0.05 then
-                local ok = true
-                for _, o in ipairs(taken) do
-                    if (o - q):Magnitude() < gapLen then ok = false break end
-                end
-                if ok then return q end
-            end
+            if (q - want):Magnitude() < 0.05 and self:GapOk(q, gapLen, taken) then return q end
         end
         local free = _Util:NearestFreePoint(map, base + u * (gapLen * j), 2)
-        return free or base
+        if free ~= nil and self:GapOk(free, gapLen, taken) then return free end
+        for _, r in ipairs({ gapLen, (gapLen + 2.5) * 0.5, 2.5 }) do
+            for i = 0, 11 do
+                local ang = i * math.pi / 6
+                local want = base + Vector2(math.cos(ang) * r, math.sin(ang) * r)
+                local q = _Util:ReachablePoint(map, base, want, 0.4)
+                if (q - want):Magnitude() < 0.05 and self:GapOk(q, gapLen, taken) then return q end
+            end
+        end
+        return nil
+    end
+
+    method boolean GapOk(Vector2 q, number gapLen, table taken)
+        -- q가 이미 잡힌 자리(이 파도·살아 있는 떼) 모두와 gapLen 이상 떨어졌나
+        for _, o in ipairs(taken) do
+            if (o - q):Magnitude() < gapLen then return false end
+        end
+        return true
     end
 
     @ExecSpace("ServerOnly")
