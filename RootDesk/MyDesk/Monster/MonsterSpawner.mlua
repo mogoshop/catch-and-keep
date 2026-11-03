@@ -748,6 +748,17 @@ script MonsterSpawner extends Component
         self.BossMap = self:DetectBossMap(map, list)
         local depth = map:GetComponent("script.DepthDirector") ~= nil
         local useWake = (mapKind == "field" or mapKind == "side") and not self.BossMap and not depth
+        -- 11-03 저녁 사용자 「기본 몬스터량 2배」: 사냥터·곁가지(깨우기를 쓰는 맵 = 보스 맵·심연 제외)의 출현 항목마다 × spawnCountMul (올림 · 최소 1) — 노말·악몽·지옥 공통 (maps.csv는 그대로)
+        local countMul = _GameData.spawnCountMul or 1
+        if useWake and countMul ~= 1 then
+            local before = want
+            want = 0
+            for _, entry in ipairs(list) do
+                entry.count = math.max(1, math.ceil(entry.count * countMul - 1e-9))
+                want = want + entry.count
+            end
+            log(string.format("[VRF] spawner count mul map=%s x%g before=%d after=%d", map.Name, countMul, before, want))
+        end
         self.InflowOn = useWake and mapKind == "field" and self.RespawnSec >= 0
         self.MapDiff = diff
         self.VariantRate = variantChance
