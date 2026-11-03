@@ -1,6 +1,6 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+
+-- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+,MigrateStartRank,ResetSkills
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
@@ -246,7 +246,7 @@ for i,c in ipairs(split) do
  for _,x in ipairs(c.ids) do table.insert(b2,x) end
 end
 assert(table.concat(a,',')==table.concat(b2,','),'mobile split lost/reordered skills')
-assert(#split==#logical+2,'only Lv18 · Lv24 (3 mains each · 11-02 본 골렘) should split: '..#split)
+assert(#split==#logical+3,'only Lv1 · Lv18 · Lv24 (3 mains each · 11-02 본 골렘 · 11-03 저녁 레이스 폼 Lv1) should split: '..#split)
 -- 모바일 시간선 실제 그리기: 쪽마다 칸 위치(1줄 −20 · 2줄 −20−112) · 3줄 없음 · 쪽을 다 넘기면 모든 메인이 한 번씩
 Environment.IsMobilePlatform=function() return true end
 SkillWindow.MobileColumns=nil;SkillWindow.Columns=nil
@@ -672,7 +672,7 @@ do
  assert(book.Levels.skel_shield==nil and book.Levels.mage_twin==nil and book.Levels.mage_hex==nil and book.Levels.giant_quake==nil and book.Levels.giant_mage_pull==nil,'removed')
  assert(book.Levels.raise_skeleton==12 and book.Levels.raise_mage==8 and book.Levels.bone_rite==20,'mains kept')
  local saved=book:GetSaveData()
- assert(saved.sv==7 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==8 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
  load(saved)
  assert(stats.SkillPoints==11,'48-3 double refund after save '..stats.SkillPoints)
  book:MigrateLevels(4)
@@ -685,7 +685,7 @@ do
  -- 48 V2: 현행 sv 5 저장의 「폭발 증폭」(옛 「두 겹 고리」 투자)은 그대로 · 환급 0 · 다시 저장해도 sv 5 그대로 (재학습·중복 환급 없음)
  stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_pull=1}})
  assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp kept '..stats.SkillPoints)
- do local again=book:GetSaveData() assert(again.sv==7 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
+ do local again=book:GetSaveData() assert(again.sv==8 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
  stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
  -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번
@@ -696,7 +696,7 @@ do
  assert(stats.SkillPoints==3 and book.Levels.skel_greatsword==2,'current save untouched')
  -- 11-02 편성 자동 하나 (기획 52 §3-2 안 C): 옛 희망 편성 칸(skills.hope)은 읽고 버린다 — 다음 저장에 칸 없음 · 랭크·포인트 그대로
  load({sv=4,levelCount=1,levels={raise_skeleton=5},hope='s:d:shield=2,greatsword=1,twin=0/m:d:aura=1'})
- assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==7,'old hope kept')
+ assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==8,'old hope kept')
  assert(notices==0,'48-3 notices '..notices)
  local refundLogs=0
  for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
@@ -861,7 +861,7 @@ do
  local mig=0 for _,m in ipairs(vrf) do if string.find(m,'[VRF] giant split migrate sv=5 grant bone_giant=1 nodes=4',1,true) then mig=mig+1 end end
  assert(mig==1,'[VRF] giant split migrate once')
  local saved=book:GetSaveData()
- assert(saved.sv==7 and saved.levels.bone_giant==1,'saved sv 7')
+ assert(saved.sv==8 and saved.levels.bone_giant==1,'saved sv 8')
  load(saved)
  assert(book.Levels.bone_giant==1 and stats.SkillPoints==0,'reload no double grant')
  book:MigrateLevels(5)
@@ -938,7 +938,7 @@ do
  assert(#timers==0 and #notes==0,'no refund notice (points only)')
  -- 다시 저장(sv 7) → 불러오기 · 같은 표로 다시 이전: 0
  local saved=book:GetSaveData()
- assert(saved.sv==7,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==8,'saved sv '..tostring(saved.sv))
  load(saved);book:MigrateLevels(7)
  assert(stats.SkillPoints==28 and #vrf==1,'no double refund '..stats.SkillPoints)
  -- sv 7 저장에서 새 효과로 찍은 축 바꾼 노드(급속 골화 2 · 유도탄 1 · 피투성이 난장판 1 · 약화의 오라 3)는 그대로
@@ -962,6 +962,26 @@ do
  assert(math.abs(book:DamageCurve('death_wave',20)/book:DamageCurve('death_wave',1)-945.5/462)<1e-3 and math.abs(book:DamageCurve('hex_flame',20)-177.8/1.4)<0.05,'late ramp only ≥24')
  stats.SkillPoints,log,_TimerService,_Util,stats.Level=keepPts,keepLog,keepT,keepU,keepLv
  book.Levels={}
+ -- 11-03 저녁 (62 §13): 레이스 폼 1랭크 기본 지급 — sv 7 이하 저장: 0랭크 → 1 (포인트 그대로) · 1랭크 이상 → 그대로 + 포인트 1 · sv 8은 그대로 · 같은 저장 다시 이전 0
+ local srv={}
+ log=function(m) if string.find(m,'[VRF] skill migrate start rank',1,true) then table.insert(srv,m) end end
+ stats.SkillPoints=3;load({sv=7,levelCount=1,levels={bone_shard=2}})
+ assert(book.Levels.wraith_dash==1 and stats.SkillPoints==3 and #srv==1 and string.find(srv[1],'refund=0',1,true),'start rank grant '..stats.SkillPoints)
+ stats.SkillPoints=3;load({sv=7,levelCount=2,levels={bone_shard=2,wraith_dash=4}})
+ assert(book.Levels.wraith_dash==4 and stats.SkillPoints==4,'start rank refund 1 '..stats.SkillPoints)
+ book:MigrateLevels(7)
+ assert(stats.SkillPoints==4 and #srv==2,'start rank no double refund '..stats.SkillPoints)
+ local saved8=book:GetSaveData();stats.SkillPoints=4;load(saved8)
+ assert(book.Levels.wraith_dash==4 and stats.SkillPoints==4 and #srv==2,'sv8 untouched')
+ stats.SkillPoints=0;load({sv=8,levelCount=1,levels={bone_shard=2}})
+ assert(book.Levels.wraith_dash==1 and stats.SkillPoints==0,'sv8 missing start rank filled free')
+ -- 초기화: 거저 받은 1랭크는 남고 돌려주지 않는다 (레이스 폼 4 + 골편 2 → 돌려받는 포인트 3 + 2 = 5)
+ book.Levels={bone_shard=2,wraith_dash=4};stats.SkillPoints=0
+ local back=book:ResetSkills()
+ assert(back==5 and stats.SkillPoints==5 and book.Levels.wraith_dash==1 and book.Levels.bone_shard==nil,'reset keeps free rank '..back)
+ book.Levels={};back=book:ResetSkills()
+ assert(back==0 and book.Levels.wraith_dash==1,'reset from empty gives free rank, no refund '..back)
+ print('[quality/skills] 11-03 evening start rank: sv7 0→1 free · ≥1 → +1 point once · sv8 untouched · reset keeps 1 free')
  print('[quality/skills] 11-03 rank rework: refund prune 18 + swap 9 = 27 once (sv6 · save sv7 → reload 0 · re-migrate 0 · same old save 27) · sv7 swap kept · no notice · whirl 8/10/12 ticks · weaken cap 75 · late ramp ≥24 only')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')

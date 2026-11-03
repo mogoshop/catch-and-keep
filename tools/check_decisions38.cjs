@@ -32,7 +32,8 @@ const mons = load("monsters");
 const fastArch = mons.filter((m) => ["beast", "swarm", "assassin"].includes(m.archetype) && num(m.grade) < 3);
 const sped = before ? fastArch.filter((m) => before[m.id] && Math.abs(num(m.speed) - before[m.id].speed * 1.2) < 0.051).length : -1;
 
-check(1, "질주 Lv9 해금(포인트로 배움)", skills.wraith_dash.row === "9" && skills.wraith_dash.kind === "active" && has("RootDesk/MyDesk/UI/Windows/GuideWindow.mlua", "질주 (Lv\" .. tostring(math.floor((_SkillData:Get(\"wraith_dash\")"), `wraith_dash row ${skills.wraith_dash.row} (배우는 스킬) · 안내 창 「Space 질주 (Lv9부터」 — 해금 레벨을 스킬 표에서 읽는다`);
+// #1 질주: 10-28 「Lv9 해금(포인트로 배움)」 → 11-03 저녁 사용자 결정(62 §13): 해금 Lv1 · 1랭크는 시작부터 거저 (SkillBook.StartSkills · 옛 저장 sv 8 이전 MigrateStartRank)
+check(1, "질주 Lv1 해금 · 1랭크 기본 지급", skills.wraith_dash.row === "1" && skills.wraith_dash.kind === "active" && has("RootDesk/MyDesk/Skill/SkillBook.mlua", 'property string StartSkills = "wraith_dash"') && has("RootDesk/MyDesk/Skill/SkillBook.mlua", "method integer MigrateStartRank(integer sv)") && has("RootDesk/MyDesk/UI/Windows/GuideWindow.mlua", 'g("Space") .. " 질주 (마을에서는 대화)'), `wraith_dash row ${skills.wraith_dash.row} · 시작 랭크 StartSkills · 저장 이전 sv 8 · 안내 창 「Space 질주 (마을에서는 대화)」`);
 check(2, "기본 이속 1.73 · 짐승·떼·암살자 ×1.2 · 해골 1.7 · 그림자 하한 1.2",
   cfg.playerSpeedMul === 1.73 && cfg.skeletonSpeed === 1.7 && cfg.shadowSpeedMin === 1.2 && (sped === -1 || sped >= 10),
   `playerSpeedMul ${cfg.playerSpeedMul} · skeletonSpeed ${cfg.skeletonSpeed} · shadowSpeedMin ${cfg.shadowSpeedMin} · ×1.2 몬스터 ${sped}/${fastArch.length}`);

@@ -4,7 +4,8 @@
 @Component
 script SkillBook extends Component
 
-    property string StartSkills = ""          -- D2처럼 처음엔 배운 스킬 없이 포인트 1로 시작 (해골 전사·골편 투척은 Lv1부터 배울 수 있다)
+    property string StartSkills = "wraith_dash"   -- 거저 주는 시작 랭크 1 (11-03 저녁 사용자: 레이스 폼은 1랭크를 찍고 시작 · 포인트 1은 그대로 · 초기화해도 1랭크는 남는다 — docs/design/62 §13)
+    property boolean StartGrantDone = false   -- 이번 불러오기에서 시작 랭크 이전(MigrateStartRank)을 이미 했다 (같은 저장으로 MigrateLevels를 다시 불러도 두 번 돌려주지 않게 · 저장 안 함)
     property table Levels = {}                -- id → 투자 레벨 (서버)
     property table PendingCasts = {}
     property number PendingMana = 0
@@ -1883,6 +1884,7 @@ script SkillBook extends Component
         refund = refund + self:MigrateNodeSwap(sv)
         refund = refund + self:MigrateSpearToShard()
         refund = refund + self:MigrateNodes1103(sv)
+        refund = refund + self:MigrateStartRank(sv)
         self:MigrateGiantSplit(sv)
         for id, lv in pairs(self.Levels) do
             local def = _SkillData:Get(id)
@@ -1905,7 +1907,7 @@ script SkillBook extends Component
         end
         local shadow = _SkillData:Get("shadow_summon")
         if shadow ~= nil and (self.Levels.shadow_summon or 0) > 0 and stats.Level < shadow.row then
-            -- 현재 시작 스킬은 비어 있다. 대체 스킬을 주지 않으므로 제거한 투자 전부를 돌려준다.
+            -- 그림자 소환은 시작 스킬이 아니다 (시작 스킬은 레이스 폼뿐). 대체 스킬을 주지 않으므로 제거한 투자 전부를 돌려준다.
             refund = refund + self.Levels.shadow_summon
             self.Levels.shadow_summon = nil
         end
@@ -1967,6 +1969,25 @@ script SkillBook extends Component
             end
         end
         if back > 0 then log(string.format("[VRF] skill migrate nodes1103 refund=%d sv=%d prune=%s swap=%s", back, sv, table.concat(pruned, ","), table.concat(swapped, ","))) end
+        return back
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateStartRank(integer sv)
+        -- 11-03 저녁 사용자 결정 (docs/design/62 §13 · 저장 sv 7 → 8 · 한 번만): 레이스 폼 1랭크는 시작부터 거저 준다 (StartSkills). 돌려준 포인트 수
+        --   옛 저장에 이미 1랭크 이상을 포인트로 찍었으면 랭크는 그대로 두고 포인트 1을 돌려준다 (그 1랭크가 이제 무료) · 0이면 1로 올린다 (포인트 그대로)
+        --   sv 8 저장 · 이번 불러오기에서 이미 한 번 했으면 다시 돌지 않는다 (StartGrantDone — LoadSaveData가 불러올 때마다 지운다). 알림 없음 (10-29 글귀 규칙)
+        if self.StartGrantDone then return 0 end
+        self.StartGrantDone = true   -- sv 8 저장도 표시한다 (그 저장을 MigrateLevels로 다시 돌려도 옛 판으로 보지 않게)
+        if sv >= 8 then return 0 end
+        local back = 0
+        local moved = {}
+        for id in string.gmatch(self.StartSkills, "[^,]+") do
+            local r = self.Levels[id] or 0
+            if r >= 1 then back = back + 1 else self.Levels[id] = 1 end
+            table.insert(moved, id .. ":" .. tostring(r))
+        end
+        log(string.format("[VRF] skill migrate start rank sv=%d refund=%d had=%s", sv, back, table.concat(moved, ",")))
         return back
     end
 
@@ -2056,11 +2077,17 @@ script SkillBook extends Component
     @ExecSpace("ServerOnly")
     method integer ResetSkills()
         -- 모든 스킬·강화 투자를 돌려준다 (돌려준 포인트 수). 퀵슬롯도 비운다
+        --   시작 랭크(StartSkills — 레이스 폼 1)는 거저 받은 것이라 돌려주지 않고 1랭크로 남긴다 (62 §13)
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         local refund = 0
         for _, lv in pairs(self.Levels) do refund = refund + lv end
-        self.Levels = {}
+        local keep = {}
+        for id in string.gmatch(self.StartSkills, "[^,]+") do
+            if (self.Levels[id] or 0) > 0 then refund = refund - 1 end
+            keep[id] = 1
+        end
+        self.Levels = keep
         self.Slots = ",,,"
         self.RightSkill = ""
         if stats ~= nil then stats.SkillPoints = stats.SkillPoints + refund end
@@ -2133,7 +2160,8 @@ script SkillBook extends Component
         for id, lv in pairs(self.Levels) do levels[id] = lv end
         -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 · sv 5 (48-3): 마법사 거인 갈림 둘을 한 번 돌려준 뒤 (MigrateNodeSwap)
         -- sv 6 (11-02 거인 분리): 거인 노드 부모가 본 골렘으로 바뀐 뒤 (MigrateGiantSplit) · sv 7 (11-03): 축 바꾼 노드 4개를 한 번 돌려준 뒤 (MigrateNodes1103)
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 7 }
+        -- sv 8 (11-03 저녁): 레이스 폼 1랭크가 거저 주는 시작 랭크가 된 뒤 (MigrateStartRank)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 8 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         -- I04 골편 홀드 반복 — 선택 칸 (없으면 끔 · 판 번호와 무관). 옛 희망 편성 칸 hope는 11-02 편성 자동 하나로 쓰지 않는다 (불러올 때 버림)
@@ -2150,6 +2178,7 @@ script SkillBook extends Component
         if d.levels ~= nil or d.levelCount == 0 then
             self.Levels = {}
             for id, lv in pairs(d.levels or {}) do self.Levels[id] = lv end
+            self.StartGrantDone = false   -- 불러온 저장마다 시작 랭크 이전을 한 번 (MigrateStartRank)
             self:MigrateLevels(math.floor(d.sv or 1))
         end
         if d.slots ~= nil then self.Slots = d.slots end
