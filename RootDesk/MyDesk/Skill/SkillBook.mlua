@@ -801,7 +801,7 @@ script SkillBook extends Component
             prison_pull = string.format("반경 %.1f 안 적을 끌어모은 뒤 가둠", 2.4 + 0.3 * level),
             terror_frenzy = string.format("하울이 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
             sudden_impact = string.format("뼈 쐐기 기절 +%.2f초 (최대 %g초)", self:ImpactStunSec(level), _GameData.impactStunMaxSec),
-            bone_pillars = string.format("대상과 주변 %d기 · 범위 %.1f칸", self:PillarExtra(level), self:SpikeRadius(level)),
+            bone_pillars = string.format("대상과 주변 %d기 · 반지름 %.1f칸", self:PillarExtra(level), self:SpikeRadius(level)),
             -- 46-5 거인 강화 (§4-3 「지금 / 다음 랭크」 · 수치 초안 · 글귀 승인 전)
             giant_shield_wall = string.format("도발 %.1f칸 · 받는 피해 -%d%%", 3 + 0.3 * level, 30 + 3 * level),
             giant_shield_alt = "별도 검토 중",
@@ -865,7 +865,11 @@ script SkillBook extends Component
         end
         if id == "bone_shard" then return string.format("뼛조각 %d발 부채꼴 · 발마다 %d마리 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), self:GetShardHits(), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
-        if id == "bone_spikes" then return string.format("반경 %.1f칸 · 기준 피해 %.1f · 기절 %.2f초%s (보스·최상위는 경직만)", _GameData.spikeRadius, power * (1 + stats:GetSpellPowerPct() / 100), self:SpikeStunSec(level, self:Node("sudden_impact")), self:Node("bone_pillars") > 0 and string.format(" · 주변 %d기(%.1f칸 안)", self:PillarExtra(self:Node("bone_pillars")), self:SpikeRadius(self:Node("bone_pillars"))) or "") end
+        if id == "bone_spikes" then
+            -- 11-04 상세 줄(10-29 글귀 규칙): 한 적 피해 · 기절 초(급작스러운 충격 반영) · 반지름(뼈 기둥 반영 — 주변 대상 수 함께)
+            local pillar = self:Node("bone_pillars")
+            return string.format("한 적 피해 %d · 기절 %.2f초 · 반지름 %.1f칸%s", math.floor(power * (1 + stats:GetSpellPowerPct() / 100) + 0.5), self:SpikeStunSec(level, self:Node("sudden_impact")), self:SpikeRadius(pillar), pillar > 0 and string.format(" · 주변 %d기", self:PillarExtra(pillar)) or "")
+        end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
         if power > 0 then
             local label = "기준 피해"
