@@ -38,9 +38,9 @@ test('build emits one HTML page per route with no broken internal links, hash li
   const {folder,dist}=await site(t);
   const c=await checkSite(dist);
   assert.deepEqual(c.errors,[]);
-  // 홈 1 · 스킬 5(대조표·효과·거인·아이콘·고르기) + 메인 스킬 2 · 맵 1+3 · 규칙 1+2 · 기록 1 · 404 1
-  assert.equal(c.routes.length,1+5+2+4+3+1+1);
-  for(const r of ['/','/skills/','/skills/fx/','/skills/summons/','/skills/icons/','/skills/pick/','/skills/a_skill/','/skills/b_skill/','/maps/','/maps/town/','/maps/field/','/maps/depth/','/rules/','/rules/vision/','/rules/r2/','/changelog/','/404.html'])assert.ok(c.routes.includes(r),r);
+  // 홈 1 · 스킬 5(대조표·효과·거인·아이콘·고르기) + 메인 스킬 2 · 맵 1+3 · 규칙 1+2 · 기록 1 · 404 1 · 검수 자료실 1(자료 없음 빈 상태)
+  assert.equal(c.routes.length,1+5+2+4+3+1+1+1);
+  for(const r of ['/','/skills/','/skills/fx/','/skills/summons/','/skills/icons/','/skills/pick/','/skills/a_skill/','/skills/b_skill/','/maps/','/maps/town/','/maps/field/','/maps/depth/','/rules/','/rules/vision/','/rules/r2/','/changelog/','/review/','/404.html'])assert.ok(c.routes.includes(r),r);
   const map=await readFile(path.join(dist,'maps/field/index.html'),'utf8');
   assert.match(map,/<title>맵 · 들판 — 메이플 리저렉션<\/title>/);assert.match(map,/레벨대<\/th><td>Lv 1~3/);assert.match(map,/출구<\/th><td>자료 없음/);
   assert.ok((await readFile(path.join(dist,'maps/index.html'),'utf8')).includes('이미지 없음'));

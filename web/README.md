@@ -26,6 +26,7 @@
 | `/skills/<id>/` | 스킬 상세(메인 스킬마다) |
 | `/maps/` · `/maps/<id>/` | 맵 목록(액트·역할·검색) · 맵 상세(그림 고르기·제원·이전/다음) |
 | `/rules/` · `/rules/<id>/` | 규칙 목록 · 상세 |
+| `/review/` · `/review/<항목 id>/` | 검수 자료실 목록(완료 · 참고) · 항목 상세(사진 격자·확대 · 영상 · 표 · 기록) |
 | `/changelog/` | 스냅샷 기록 |
 | `/404.html` | 없는 주소 |
 
@@ -133,6 +134,20 @@ npm test && npm run build
 - 결과는 `content/assets/recommend.json`, `recommend-manifest.json`(재검색 프레임 SHA-256), `media/slots/`에만 씁니다(Git 제외). 빌드가 해시를 검사하고 `__RECO__`로 넣습니다.
 - 장면 보기의 배우·바탕은 11-01 메이커 정지 캡처(`content/scene/incoming/`, 게임 체크아웃 `docs/evidence/2026-11-01-fx-picker-scene/actors/`에서 복사 · 171.6px/칸 · 바닥 지우기 근사)입니다.
   `npm run scene`은 이제 `content/scene/incoming/`을 지우지 않습니다. 「가까이 보기」는 화면 폭을 9.6칸 → 6칸으로 줄여 크게 봅니다.
+
+## 검수 자료실(/review/)
+
+끝난 작업의 실제 게임(메이커) 캡처·실속도 영상을 항목마다 한 쪽으로 묶습니다. 항목 목록은 `review/items.json`(공개 소스 · 제목·날짜·커밋·한 줄 설명·게임 저장소 기준 증거 폴더·섹션별 글롭·캡션)에 있습니다.
+
+```sh
+npm run review -- --game /path/to/game-checkout && npm test && npm run publish
+```
+
+- 새 항목(예: 강조 확산 액트 2)은 `review/items.json`의 `items`에 한 덩어리를 더하고 위 한 줄을 다시 돌립니다. 한 항목만 다시 만들려면 `--only <항목 id>`(나머지는 직전 결과 유지).
+- 섹션 키: `images`(사진 글롭 · `shots/chk-*.jpg` · `shots/[0-9]*-view.jpg`) · `videos`(mp4) · `tables`(CSV → 표) · `notes`(README.md는 글로 · txt는 그대로). `cover`는 목록 카드 그림, `captions`는 파일별 설명(없으면 파일 이름).
+- 사진은 긴 변 1600px JPEG(품질 85) + 640px 미리보기로 줄여 싣고 원본 PNG는 올리지 않습니다. 영상은 그대로(빠른 시작 재포장)이고 20MB 넘는 파일만 H.264 CRF 23로 다시 인코딩합니다(macOS `sips` · `ffmpeg` 필요).
+- 결과는 `content/review/`(review.json · review-manifest.json SHA-256 · media/)에만 쓰고(Git 제외), 빌드가 해시를 검사해 `/review/media/`로 복사합니다. 게임 체크아웃은 읽기만 합니다. 글의 로컬 절대 경로와 이모지는 지웁니다.
+- 자료가 없으면 `/review/`는 빈 상태로 나옵니다.
 
 ## Vercel
 

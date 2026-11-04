@@ -71,7 +71,7 @@ const policyStatus=v=>({approved:['승인','ok'],active:['적용','ok'],current:
 const mapStatusTone=s=>/이미지 없음/.test(s||'')?'old':/적용 완료/.test(s||'')?'ok':/표본|잔여|미확대/.test(s||'')?'warn':'neutral';
 
 // ---- 공용 틀 ----
-const NAV=[['/','홈','home'],['/skills/','스킬','skills'],['/maps/','맵','maps'],['/rules/','규칙','rules'],['/changelog/','기록','changelog']];
+const NAV=[['/','홈','home'],['/skills/','스킬','skills'],['/maps/','맵','maps'],['/rules/','규칙','rules'],['/review/','검수','review'],['/changelog/','기록','changelog']];
 // 출처·커밋·생성 시각은 본문 위가 아니라 푸터 한 줄(footNote = 이 화면 자료의 출처)
 function layout(ctx,{path:p,section,title,description,image,body,bodyAttrs='',scripts='',head='',footNote=''}){
   const full=p==='/'?`${SITE_NAME} — 개발 자료실`:`${title} — ${SITE_NAME}`;
@@ -338,6 +338,66 @@ ${ch.previous?`<section class="log-section"><h2>스킬 묶음 변경</h2><p clas
 <section class="log-section"><h2>이 사이트 빌드</h2><table class="spec"><tbody><tr><th scope="row">생성 시각</th><td>${esc(fmtTime(ctx.builtAt))}</td></tr><tr><th scope="row">웹 소스 커밋</th><td><code>${esc(short(ctx.webCommit))}</code></td></tr><tr><th scope="row">원본 목록</th><td><a href="/assets/catalog.json">스킬 목록 JSON</a> · <a href="/assets/audit-summary.json">대조 요약 JSON</a></td></tr></tbody></table></section>`;
   return layout(ctx,{path:'/changelog/',section:'changelog',title:'기록',description:'자료별 스냅샷 시각·소스 커밋과 스킬 묶음 변경 내역.',body});
 }
+// ---- 검수 자료실(npm run review): 끝난 작업의 실제 게임 캡처·실속도 영상 ----
+// 사진은 미리보기(640) → 눌러서 크게(1600, site.js 확대 창) · 영상은 HTML5 video(내려받기 링크) · 표(CSV)·기록(README·MAKER-CHECK)은 글로
+const rvMedia=v=>'/review/'+v;
+const fmtBytes=n=>n>=1048576?`${(n/1048576).toFixed(1)}MB`:`${Math.max(1,Math.round(n/1024))}KB`;
+const fmtSec=s=>`${Math.round(s)}초`;
+const rvKind=k=>k==='reference'?['참고','old']:['완료','ok'];
+const inlineMd=t=>esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+// 작은 마크다운: 제목 · 표 · 목록(- · 1.) · 문단 · **굵게** · `코드`
+export function miniMarkdown(md){
+  const lines=md.replace(/\r/g,'').split('\n');const out=[];let i=0;
+  const cells=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+  while(i<lines.length){
+    const l=lines[i];
+    if(!l.trim()){i++;continue}
+    const h=l.match(/^(#{1,6})\s+(.*)$/);if(h){const n=Math.min(6,h[1].length+2);out.push(`<h${n}>${inlineMd(h[2])}</h${n}>`);i++;continue}
+    if(/^\s*\|/.test(l)&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1]||'')){
+      const head=cells(l);i+=2;const rows=[];while(i<lines.length&&/^\s*\|/.test(lines[i]))rows.push(cells(lines[i++]));
+      out.push(`<div class="table-wrap"><table class="table"><thead><tr>${head.map(c=>`<th scope="col">${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);continue}
+    if(/^\s*(?:[-*]|\d+\.)\s+/.test(l)){const ol=/^\s*\d+\./.test(l);const items=[];
+      while(i<lines.length&&/^\s*(?:[-*]|\d+\.)\s+/.test(lines[i])){let t=lines[i++].replace(/^\s*(?:[-*]|\d+\.)\s+/,'');while(i<lines.length&&/^\s{2,}\S/.test(lines[i])&&!/^\s*(?:[-*]|\d+\.)\s+/.test(lines[i]))t+=' '+lines[i++].trim();items.push(t)}
+      out.push(`<${ol?'ol':'ul'} class="rv-list">${items.map(t=>`<li>${inlineMd(t)}</li>`).join('')}</${ol?'ol':'ul'}>`);continue}
+    if(/^-{3,}\s*$/.test(l)){out.push('<hr>');i++;continue}
+    const para=[];while(i<lines.length&&lines[i].trim()&&!/^(#{1,6}\s|\s*\||\s*(?:[-*]|\d+\.)\s+|-{3,}\s*$)/.test(lines[i]))para.push(lines[i++].trim());
+    if(para.length)out.push(`<p>${inlineMd(para.join(' '))}</p>`);else{out.push(`<p>${inlineMd(l)}</p>`);i++}
+  }
+  return out.join('\n');
+}
+function rvCard(it){
+  const k=rvKind(it.kind);const c=it.cover;
+  const media=c?`<img src="${esc(rvMedia(c.thumb))}" alt="${esc(it.title)} — ${esc(c.caption||'')}" loading="lazy" decoding="async">`:'<span class="thumb-empty">그림 없음</span>';
+  const meta=`${fmtDay(it.date+'T12:00:00+09:00')} · 커밋 ${short(it.commit)} · 사진 ${it.counts.images}${it.counts.videos?` · 영상 ${it.counts.videos}`:''}`;
+  return `<li>${tcard(`/review/${enc(it.id)}/`,media,it.title,meta,`<span class="rv-sum">${esc(it.summary)}</span><span class="badge ${k[1]}">${k[0]}</span>`)}</li>`;
+}
+function reviewPage(ctx){
+  const r=ctx.review;const items=r?.items||[];
+  const done=items.filter(i=>i.kind!=='reference'),ref=items.filter(i=>i.kind==='reference');
+  const group=(t,l)=>l.length?`<section class="rv-group"><h2>${esc(t)} <span class="count">${l.length}</span></h2><ul class="map-grid rv-cards">${l.map(rvCard).join('')}</ul></section>`:'';
+  const body=`${pageHead(r?.title||'검수 자료실',r?.lead||'끝난 작업의 실제 게임 캡처와 영상입니다.')}
+${items.length?group('완료 항목',done)+group('참고',ref):'<div class="shot-empty">검수 자료가 아직 없습니다 · npm run review -- --game &lt;게임 체크아웃&gt;</div>'}`;
+  const cover=items.find(i=>i.cover)?.cover;
+  return layout(ctx,{path:'/review/',section:'review',title:r?.title||'검수 자료실',description:`끝난 작업 ${items.length}건의 실제 게임 캡처·실속도 영상.`,image:cover?rvMedia(cover.src):undefined,body,footNote:r?`검수 자료 생성 ${esc(fmtTime(r.createdAt))} · 게임 HEAD <code>${esc(short(r.gameHead))}</code> · 사진은 긴 변 1600px JPEG로 줄인 사본(원본 PNG는 게임 저장소)`:''});
+}
+function reviewDetail(ctx,it,i,list){
+  const prev=list[i-1],next=list[i+1];const link=x=>x&&{href:`/review/${enc(x.id)}/`,label:x.title};const k=rvKind(it.kind);
+  const fig=(x,n)=>`<li><a class="rv-shot" href="${esc(rvMedia(x.src))}" data-lightbox="${esc(it.id)}" data-caption="${esc(x.caption)}"><img src="${esc(rvMedia(x.thumb))}" alt="${esc(x.caption)}" width="${Math.round(x.width*Math.min(1,640/Math.max(x.width,x.height)))}" height="${Math.round(x.height*Math.min(1,640/Math.max(x.width,x.height)))}"${n>3?' loading="lazy"':''} decoding="async"></a><span class="rv-cap">${esc(x.caption)}</span></li>`;
+  const vid=v=>`<figure class="rv-video"><video controls preload="metadata" playsinline poster="${esc(rvMedia(v.poster))}" width="${v.width}" height="${v.height}"><source src="${esc(rvMedia(v.src))}" type="video/mp4"></video><figcaption><span>${esc(v.caption)}</span><span class="minor">${fmtSec(v.duration)} · ${v.width}×${v.height} · ${fmtBytes(v.bytes)}${v.reencoded?` · ${esc(v.reencoded)} 재인코딩(원본 ${fmtBytes(v.originalBytes)})`:''} · <a class="text-link" href="${esc(rvMedia(v.src))}" download>내려받기</a></span><code>${esc(it.folder+v.source)}</code></figcaption></figure>`;
+  const table=t=>`<p class="minor"><code>${esc(it.folder+t.source)}</code> · ${t.rows.length}줄</p><div class="table-wrap"><table class="table rv-table"><thead><tr>${t.header.map(c=>`<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const note=n=>`<details class="rv-note"${n.format==='md'?' open':''}><summary><code>${esc(it.folder+n.source)}</code></summary>${n.format==='md'?`<div class="rv-md">${miniMarkdown(n.text)}</div>`:`<pre class="rv-pre">${esc(n.text)}</pre>`}</details>`;
+  let n=0;
+  const secs=it.sections.map(s=>`<section class="rv-section"><h2>${esc(s.title)}${s.images.length?` <span class="count">${s.images.length}</span>`:''}</h2>${s.lead?`<p class="minor">${esc(s.lead)}</p>`:''}
+${s.videos.length?`<div class="rv-videos">${s.videos.map(vid).join('')}</div>`:''}${s.images.length?`<ul class="rv-grid">${s.images.map(x=>fig(x,n++)).join('')}</ul>`:''}${s.tables.map(table).join('')}${s.notes.map(note).join('')}</section>`).join('\n');
+  const rows=[['날짜',fmtDay(it.date+'T12:00:00+09:00')],['게임 커밋',`<code title="${esc(it.commit)}">${esc(short(it.commit))}</code>`],['자료 폴더',`<code>${esc(it.folder)}</code> <span class="minor">(게임 저장소)</span>`],['사진 · 영상',`${it.counts.images}장 · ${it.counts.videos}개`]];
+  const body=`${crumb('/review/','검수 자료실')}
+${pageHead(it.title,it.summary,`<p class="eyebrow">${esc(fmtDay(it.date+'T12:00:00+09:00'))} · <span class="badge ${k[1]}">${k[0]}</span></p>`)}
+<table class="spec rv-spec"><tbody>${rows.map(([a,b])=>`<tr><th scope="row">${esc(a)}</th><td>${b}</td></tr>`).join('')}</tbody></table>
+${secs}
+${pager(link(prev),link(next),'항목')}
+<dialog class="rv-lightbox" aria-label="크게 보기"><div class="dialog-top"><h2 data-lb-cap></h2><span class="minor" data-lb-n></span><button type="button" data-lb-prev aria-label="이전 사진">${icon('prev',20)}</button><button type="button" data-lb-next aria-label="다음 사진">${icon('next',20)}</button><button type="button" data-lb-close aria-label="닫기">${icon('close',20)}</button></div><img data-lb-img alt=""></dialog>`;
+  return layout(ctx,{path:`/review/${encodeURIComponent(it.id)}/`,section:'review',title:`검수 · ${it.title}`,description:`${fmtDay(it.date+'T12:00:00+09:00')} ${it.title} — ${it.summary}`,image:it.cover?rvMedia(it.cover.src):undefined,body,footNote:`검수 자료 생성 ${esc(fmtTime(ctx.review.createdAt))} · 게임 커밋 <code>${esc(short(it.commit))}</code> · 자료 폴더 <code>${esc(it.folder)}</code> · 사진은 긴 변 1600px JPEG 사본`});
+}
 function notFoundPage(ctx){
   const body=`<section class="not-found"><h1>없는 주소입니다</h1><p class="lead">주소가 바뀌었거나 지워졌을 수 있습니다.</p><ul class="nf-links">${NAV.map(([href,label])=>`<li><a class="card" href="${href}">${esc(label)}${icon('next',16)}</a></li>`).join('')}</ul></section>`;
   return layout(ctx,{path:'/404.html',section:'',title:'없는 주소',description:'찾는 주소가 없습니다.',body});
@@ -358,6 +418,8 @@ export function renderSite(ctx){
   ctx.mapList.forEach((m,i,l)=>add(`/maps/${encodeURIComponent(m.id)}/`,mapDetail(ctx,m,i,l)));
   add('/rules/',rulesPage(ctx));
   ctx.policies.policies.forEach((p,i,l)=>add(`/rules/${encodeURIComponent(p.id)}/`,ruleDetail(ctx,p,i,l)));
+  add('/review/',reviewPage(ctx));
+  (ctx.review?.items||[]).forEach((it,i,l)=>add(`/review/${encodeURIComponent(it.id)}/`,reviewDetail(ctx,it,i,l)));
   add('/changelog/',changelogPage(ctx));
   add('/404.html',notFoundPage(ctx));
   return pages;

@@ -106,4 +106,18 @@
       box.querySelectorAll('[data-shot-panel]').forEach(p => { p.hidden = p.dataset.shotPanel !== b.dataset.shot; });
     });
   });
+  // 검수 자료실: [data-lightbox] 사진을 누르면 확대 창(←/→ 넘김 · Esc 닫기). 스크립트가 없으면 링크가 원본 JPEG를 연다
+  const lb = document.querySelector('dialog.rv-lightbox');
+  if (lb && typeof lb.showModal === 'function') {
+    const shots = [...document.querySelectorAll('a[data-lightbox]')];
+    const img = lb.querySelector('[data-lb-img]'), cap = lb.querySelector('[data-lb-cap]'), num = lb.querySelector('[data-lb-n]');
+    let at = 0;
+    const show = i => { at = (i + shots.length) % shots.length; const a = shots[at]; img.src = a.href; img.alt = a.dataset.caption || ''; cap.textContent = a.dataset.caption || ''; num.textContent = (at + 1) + ' / ' + shots.length; };
+    shots.forEach((a, i) => a.addEventListener('click', e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); show(i); lb.showModal(); }));
+    lb.querySelector('[data-lb-prev]').addEventListener('click', () => show(at - 1));
+    lb.querySelector('[data-lb-next]').addEventListener('click', () => show(at + 1));
+    lb.querySelector('[data-lb-close]').addEventListener('click', () => lb.close());
+    lb.addEventListener('click', e => { if (e.target === lb) lb.close(); });
+    lb.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') show(at - 1); else if (e.key === 'ArrowRight') show(at + 1); });
+  }
 })();

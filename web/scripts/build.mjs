@@ -68,6 +68,20 @@ if(scene) {
   }
   for(const a of [...(scene.actors||[]),...(scene.maps||[])])sceneFiles.add(mediaPath(a.file));
 }
+// Optional review gallery (npm run review): 검수 자료실 사진·영상은 content/review에 자기 SHA 매니페스트로 둔다.
+let review=null;const reviewFiles=new Set(),reviewHashes=new Map();
+try { review=await readJSON(path.join(content,'review/review.json')); }
+catch(e){ if(e.code!=='ENOENT')throw e; console.warn('No content/review/review.json: /review/ shows its empty state. Run npm run review -- --game <checkout>.'); }
+if(review) {
+  assertSanitized(review,'review');
+  for(const m of await readJSON(path.join(content,'review/review-manifest.json'))) {
+    const file=path.posix.normalize(safeRelative(m.file));
+    if(!file.startsWith('media/'))throw new Error(`Review media must stay in media/: ${m.file}`);
+    if(reviewHashes.has(file))throw new Error(`Duplicate review manifest path: ${file}`);
+    reviewHashes.set(file,m.sha256);
+  }
+  for(const it of review.items)for(const s of it.sections){for(const x of s.images){reviewFiles.add(mediaPath(x.src));reviewFiles.add(mediaPath(x.thumb))}for(const v of s.videos){reviewFiles.add(mediaPath(v.src));reviewFiles.add(mediaPath(v.poster))}}
+}
 for(const s of atlas.skills)if(s.icon)assetFiles.add(mediaPath(s.icon));
 // Previous icons for the 「아이콘 교체」 / 「삭제됨」 comparison (atlas build-changes.py) are checked against the same manifest.
 for(const c of atlas.changes?.iconChanged||[])if(c.previousIcon)assetFiles.add(mediaPath(c.previousIcon));
@@ -88,7 +102,7 @@ async function copyReferencedMedia(kind,files) {
       if(info.isSymbolicLink()||(i===segments.length-1?!info.isFile():!info.isDirectory()))throw new Error(`Not a regular bundle media file: ${kind}/${file}`);
     }
     const data=await readFile(source);
-    const verify=kind==='assets'?hashes:kind==='scene'?sceneHashes:null;
+    const verify=kind==='assets'?hashes:kind==='scene'?sceneHashes:kind==='review'?reviewHashes:null;
     if(verify) {
       if(!verify.has(file))throw new Error(`Referenced asset missing from manifest: ${kind}/${file}`);
       if(createHash('sha256').update(data).digest('hex')!==verify.get(file))throw new Error(`Asset hash mismatch: ${kind}/${file}`);
@@ -105,6 +119,7 @@ await mkdir(path.join(dist,'assets'),{recursive:true});
 await copyReferencedMedia('maps',mapFiles);
 await copyReferencedMedia('assets',assetFiles);
 await copyReferencedMedia('scene',sceneFiles);
+await copyReferencedMedia('review',reviewFiles);
 await writeFile(path.join(dist,'assets/catalog.json'),JSON.stringify(atlas));
 await writeFile(path.join(dist,'assets/audit-summary.json'),JSON.stringify(atlas.summary));
 let commit='local';try {commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();}catch{}
@@ -129,11 +144,11 @@ const versions=new Map();
 const asset=url=>{if(!versions.has(url))versions.set(url,createHash('sha256').update(readFileSync(path.join(dist,url))).digest('hex').slice(0,10));return `${url}?v=${versions.get(url)}`};
 const visible=g=>!g.hiddenDuplicate&&(!['legacy','superseded'].includes(g.status)||g.connection==='connected');
 const ch=atlas.changes||{};const nChanged=(ch.renamed||[]).length+(ch.iconChanged||[]).length+(ch.added||[]).length+(ch.removed||[]).length;
-const snapshots=[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit,changes:ch.previous?`${nChanged}건 (이름 ${(ch.renamed||[]).length} · 아이콘 ${(ch.iconChanged||[]).length} · 신규 ${(ch.added||[]).length} · 삭제 ${(ch.removed||[]).length})`:''},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),...(scene?[{type:'장면 보기 배치 규칙',date:scene.createdAt,sourceCommit:scene.sourceCommit}]:[]),...(reco?[{type:'효과 추천 점수',date:reco.createdAt,sourceCommit:reco.slotsCommit}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'규칙',date:policies.updatedAt,sourceCommit:policies.sourceCommit}];
+const snapshots=[{type:'스킬·에셋',date:atlas.createdAt,sourceCommit:atlas.sourceCommit,changes:ch.previous?`${nChanged}건 (이름 ${(ch.renamed||[]).length} · 아이콘 ${(ch.iconChanged||[]).length} · 신규 ${(ch.added||[]).length} · 삭제 ${(ch.removed||[]).length})`:''},...(slots?[{type:'효과 자리 비교',date:slots.createdAt,sourceCommit:slots.sourceCommit}]:[]),...(scene?[{type:'장면 보기 배치 규칙',date:scene.createdAt,sourceCommit:scene.sourceCommit}]:[]),...(reco?[{type:'효과 추천 점수',date:reco.createdAt,sourceCommit:reco.slotsCommit}]:[]),...(review?[{type:'검수 자료실',date:review.createdAt,sourceCommit:review.gameHead,changes:`${review.items.length}개 항목`}]:[]),{type:'맵',date:maps.updatedAt,sourceCommit:maps.sourceCommit},{type:'규칙',date:policies.updatedAt,sourceCommit:policies.sourceCommit}];
 const builtAt=new Date().toISOString();
 const latest=[atlas.createdAt,maps.updatedAt,policies.updatedAt,slots?.createdAt].filter(Boolean).sort((a,b)=>(+new Date(String(b).replace(/ (\d\d:\d\d) KST$/,'T$1:00+09:00'))||0)-(+new Date(String(a).replace(/ (\d\d:\d\d) KST$/,'T$1:00+09:00'))||0))[0];
 const hero={src:'/img/hero-wasteland.webp',og:'/img/hero-wasteland.webp',alt:'피 묻은 황무지 전체맵 — 메이커 재촬영 화면',caption:'피 묻은 황무지 전체맵 가운데 부분 · 메이커 재촬영(맵 그림만 · 표시용 축소) · 2026.11.02'};
-const ctx={atlas,atlasView,maps,policies,slots,slotsView,scene,reco,recoView,builtAt,latest,webCommit:commit,snapshots,hero,asset,views:loadSkillViews(root)};
+const ctx={atlas,atlasView,maps,policies,slots,slotsView,scene,reco,recoView,review,builtAt,latest,webCommit:commit,snapshots,hero,asset,views:loadSkillViews(root)};
 const pages=renderSite(ctx);
 for(const {path:p,html} of pages){
   const file=p.endsWith('/')?path.join(dist,decodeURIComponent(p),'index.html'):path.join(dist,p);
@@ -159,5 +174,5 @@ const output=path.join(root,'.vercel/output');await rm(output,{recursive:true,fo
 await cp(dist,path.join(output,'static'),{recursive:true});
 await writeFile(path.join(output,'config.json'),JSON.stringify({version:3,routes}));
 const files=await filesUnder(dist);
-await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt,fileCount:files.length,routes:check.routes.length,internalLinks:check.links,mediaHashes:assetFiles.size,sceneHashes:sceneFiles.size,recommendSlots:reco?Object.keys(reco.slots||{}).length:0,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length,site},null,2));
+await writeFile(path.join(root,'.vercel/build-verification.json'),JSON.stringify({builtAt,fileCount:files.length,routes:check.routes.length,internalLinks:check.links,mediaHashes:assetFiles.size,sceneHashes:sceneFiles.size,reviewMedia:reviewFiles.size,recommendSlots:reco?Object.keys(reco.slots||{}).length:0,skills:atlas.skills.length,maps:maps.maps.length,policies:policies.policies.length,site},null,2));
 console.log(`Built ${files.length} files · ${check.routes.length} pages (${check.links} internal link targets checked): ${atlas.skills.length} skills, ${maps.maps.length} maps, ${policies.policies.length} policies. Verified ${assetFiles.size} referenced asset hashes${scene?` and ${sceneFiles.size} scene stills`:''}.`);
