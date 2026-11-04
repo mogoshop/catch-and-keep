@@ -177,6 +177,125 @@ const MAPS = {
     h.hero(rows, "execution-chain-pillar", { near: [17.1, -3.9], x: 20.6, y: -18.2, flip: 1, k: 1.5, args: "foot=0.5;padr=1", note: "목매단 동굴 입구 오른쪽(반전)" });
     return rows;
   } },
+  // ── 액트 2 ──
+  // 뜨거운 모래 언덕: 짐승 두개골(세트 a2_beast_grave) ×1.8 · 짐승 무덤 광장 가운데 · 마른 오아시스 터 야자 2 빼기 · 창 해골 울타리 빼기 · 동쪽 바람길 세트 곁 조각 하나 빼기
+  dunes: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_beast_grave");
+    h.hero(rows, "a2-giant-beast-skull", { k: 1.8, args: "foot=0.67;wall=1", note: "짐승 무덤 광장 가운데" });
+    rows = h.explode(rows, "a2_oasis_ruin");
+    rows = h.drop(rows, "palm", { where: /a2_oasis_ruin/ });
+    rows = h.drop(rows, "a2-spear-skull-fence");
+    rows = h.drop(rows, "a2-adjunct-broken-waterjug", { keep: 0 });
+    return rows;
+  } },
+  // 메마른 협곡: 마른 물레방아 ×3 · 갈라진 바위턱 광장 가운데 · 거상 머리 세트 빼기(3맵 중복 → 샘플 kingtomb1만) · 우물 빼기
+  canyon: { ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-dry-waterwheel", { k: 3, args: "foot=0.67;wall=1", note: "갈라진 바위턱 가운데" });
+    rows = h.drop(rows, "a2_colossus");
+    rows = h.drop(rows, "well");
+    rows = h.explode(rows, "a2_rib_pass");   // §4 갈비뼈 고개 아치 ×1.5 반전 · 문 규칙(door_tops · 열린 3칸) · 양옆 바위 그대로
+    h.hero(rows, "a2-rib-arch", { flip: 1, k: 1.5, args: "", note: "서쪽 협곡 통로 입구 아치(반전 · 문 규칙)" });
+    return rows;
+  } },
+  // 바람 무덤 사막: 바람 무덤 기둥(세트 a2_lm_wind_tomb) ×3 · 남쪽 무덤 광장 가운데 · §4 무덤 문 ×1.5(무덤 입구) · 무너진 집(액트 1 그림) 빼기 · 사막 바위 2·뼈 빼기
+  stormwaste: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_lm_wind_tomb");
+    h.hero(rows, "a2-landmark-wind-tomb-pillar", { k: 3, args: "foot=0.75", note: "무덤 광장 가운데" });
+    h.hero(rows, "tomb-door", { k: 1.5, hero: false, args: "padl=2;wall=1", note: "무덤 입구 문(북벽 밀착 · 뒤 칸 없음이라 -top 없이)" });
+    rows = h.drop(rows, "mp-house-ruin");
+    rows = h.drop(rows, "desert-rock");
+    rows = h.drop(rows, "desert-bones");
+    return rows;
+  } },
+  // 가라앉은 대로: 거상 머리는 샘플(왕들의 묘실 1층)에만 → 여기서 뺀다 · §4 가라앉은 개선문 ×2.5 동쪽 출구 · 부러진 기둥 4→2 · 쓰러진 오벨리스크 빼기
+  sunkenroad: { ops: (rows, h) => {
+    rows = h.drop(rows, "a2-crowned-colossus-head");
+    h.hero(rows, "a2-landmark-sunken-triumph-arch", { k: 2.5, args: "foot=0.67;wall=1", note: "동쪽 출구 성벽 앞" });
+    rows = h.drop(rows, "broken-column", { keep: 2, near: [15.9, 2.9] });
+    rows = h.drop(rows, "a2-fallen-obelisk");
+    return rows;
+  } },
+  // 전갈 굴 1층: 독 웅덩이 바위(세트 a2_lm_venom_pool) ×3 · 껍질 광장 가운데 · 게 껍질 더미(액트 3 그림)·붕대 빼기
+  scorpnest1: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_lm_venom_pool");
+    h.hero(rows, "a2-landmark-venom-pool-rock", { k: 3, args: "foot=0.67;wall=1", note: "껍질 광장 가운데" });
+    rows = h.drop(rows, "a3-crab-shell-pile");
+    rows = h.drop(rows, "a2-adjunct-bandage-bundle");
+    rows = h.explode(rows, "a2_rib_pass");   // §4 매복 굴 아치 ×1.5 반전 · 문 규칙
+    h.hero(rows, "a2-rib-arch", { flip: 1, k: 1.5, args: "", note: "동쪽 굴 통로 입구 아치(반전 · 문 규칙)" });
+    return rows;
+  } },
+  // 전갈 굴 2층: 전갈 알 둥지 ×2.5 · 서쪽 막다른 방 끝 · 게 껍질 더미 2(액트 3 그림)·붕대 빼기
+  scorpnest2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_lm_egg_nest");
+    h.hero(rows, "a2-landmark-scorpion-egg-nest", { k: 2.5, args: "foot=0.5;wall=1", note: "막다른 방 끝" });
+    rows = h.drop(rows, "a3-crab-shell-pile");
+    rows = h.drop(rows, "a2-adjunct-bandage-bundle");
+    return rows;
+  } },
+  // 버려진 우물: 마른 우물 도르래(세트 a2_lm_well_pulley) ×3 · 동쪽 방 광장 가운데 · 낱개로 흩은 태양 원반 판·향로 받침·가면 조각(a2_tomb_offering 조각) 빼기
+  drywell: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_lm_well_pulley");
+    h.hero(rows, "a2-landmark-dry-well-pulley", { k: 3, args: "foot=0.67;wall=1", note: "물웅덩이 터 가운데" });
+    rows = h.drop(rows, /^a2-adjunct-(censer-base|sun-disc-plaque|golden-mask-fragments)$/, { where: /a2_tomb_offering/ });
+    return rows;
+  } },
+  // 왕들의 묘실 2층: 수호왕 석관 ×2.5 · 동쪽 열주 방 · §4 무덤 문 ×1.5(동쪽 방 입구) · 바람 비석 4→2
+  kingtomb2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a2_lm_king_sarcophagus");
+    h.hero(rows, "a2-landmark-guardian-king-sarcophagus", { k: 2.5, args: "foot=0.75", note: "열주 방 끝" });
+    h.hero(rows, "tomb-door", { k: 1.5, args: "", note: "동쪽 방 입구 문" });
+    rows = h.drop(rows, "wind-stele", { keep: 2, near: [13.5, -9.7] });
+    return rows;
+  } },
+  // 잊힌 서고: 불탄 책장 탑 ×2.5 · 동쪽 홀 북벽 대신(벽 두 줄 팜) · 책장 27→15 · 사서 책상 2→1 · 거미줄 3 빼기
+  archive: { carve: [{ r: [19, 11, 22, 12], z: "f" }], ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-burning-bookshelf-tower", { k: 2.5, args: "foot=0.67;wall=1", note: "동쪽 홀 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "bookshelf", { at: [[-17.4, 2.2], [-15.8, 2.2], [-14.2, 2.2], [-12.6, 2.2], [-14.6, -3.8], [-13, -3.8], [-11.4, -3.8], [2.8, -11.8], [4.4, -11.8], [6, -11.8], [-1.7, -7.8], [-5, 15.2]] });   // 줄 단위로(평행 두 줄은 짝째 · 낱개로 빼면 산발)
+    rows = h.drop(rows, "keeper-desk", { at: [[-3.1, -12.3]] });
+    rows = h.drop(rows, /^mp-cobweb(-b)?$/);
+    return rows;
+  } },
+  // 독사의 둥지: 똬리 튼 뱀 기둥 ×3 · 가운데 굴 광장 · 허물·사암 조각·붕대 각 1개만
+  vipernest: { ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-coiled-serpent-column", { k: 3, args: "foot=0.75", note: "둥지 굴 가운데" });
+    for (const n of ["a2-adjunct-snake-shed", "a2-adjunct-sandstone-fragments", "a2-adjunct-bandage-bundle"]) rows = h.drop(rows, n, { keep: 1 });
+    return rows;
+  } },
+  // 잊힌 사원 1층: 향로 계단 ×2 · 기둥 회랑 북벽 대신(이미 벽 밀착) · 책장 7→4 · 부러진 기둥 3·사막 뼈 2 빼기
+  temple1: { ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-temple-stair-censer", { k: 2, args: "wall=1", note: "기둥 회랑 북벽 대신" });
+    rows = h.drop(rows, "bookshelf", { keep: 4, near: [18.8, 13.2] });
+    rows = h.drop(rows, "broken-column");
+    rows = h.drop(rows, "desert-bones");
+    h.add(rows, { name: "a2-temple-gate-arch", x: 0.5, y: -7.6, flip: 1, args: "ok=cliff", note: "서고 계단 앞 통로 입구 문(재고)" });
+    h.hero(rows, "a2-temple-gate-arch", { k: 2, args: "ok=cliff", note: "서고 계단 앞 통로 입구(반전 · 문 규칙)" });
+    return rows;
+  } },
+  // 잊힌 사원 2층: 사자 쌍둥이 계단 문 ×2 · 문지기 전당 북벽 대신(벽 두 줄 팜) · 바람 비석 2 빼기 · 흩은 향로 받침 빼기
+  temple2: { carve: [{ r: [13, 11, 16, 12], z: "e" }], ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-lion-twin-stair-gate", { k: 2, args: "foot=0.67;wall=1", note: "문지기 전당 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "wind-stele");
+    rows = h.drop(rows, "a2-adjunct-censer-base");
+    h.add(rows, { name: "a2-temple-gate-arch", x: -25, y: -3.2, args: "ok=cliff", note: "서쪽 고리 통로 입구 문(재고)" });
+    h.hero(rows, "a2-temple-gate-arch", { k: 2, args: "ok=cliff", note: "서쪽 고리 통로 입구(문 규칙)" });
+    return rows;
+  } },
+  // 잊힌 사원 3층: 노래하는 모래 제단 ×2.5 · 태양 제단실 북벽 대신(벽 홈 팜) · 책장 8→4
+  temple3: { carve: [{ r: [1, 7, 5, 8], z: "d" }], ops: (rows, h) => {
+    h.hero(rows, "a2-landmark-singing-sand-altar", { k: 2.5, args: "foot=0.67;wall=1", note: "태양 제단실 북벽 대신(벽 홈 팜)" });
+    rows = h.drop(rows, "bookshelf", { keep: 4, near: [17.6, 15.2] });
+    return rows;
+  } },
+  // 대사제의 성소(보스방 · 대사제 (20.5,1.5)): 태양 원반 제단은 이미 배율 1.33(캔버스 5.5칸 상한)이라 지금 크기 유지 · 2순위 없음 —
+  //   다른 맵 랜드마크 중복 중 불탄 책장 탑(= 서고) 빼기 · 바람 비석 9→6 · 향로 받침 8→4 (의식·패턴 공간은 그대로)
+  sanctum: { ops: (rows, h) => {
+    rows = h.drop(rows, "a2-landmark-burning-bookshelf-tower");   // 향로 계단은 남김: 순례자의 방 남서 모서리 막다른 줄(fill)을 메우고 있어 빼면 폭 1칸 막다른 줄 4칸이 생김
+    rows = h.drop(rows, "wind-stele", { keep: 6, near: [11, 9] });
+    rows = h.drop(rows, "a2-adjunct-censer-base", { keep: 4, near: [9.5, -8.7], where: /벽 따라 열/ });
+    return rows;
+  } },
+
 };
 
 function install(specs) {
