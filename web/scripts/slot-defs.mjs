@@ -48,9 +48,10 @@ export const SLOTS = [
   {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 꽂힘', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
   {id: 'blast', title: '본 노바 폭탄·본 오퍼링 제물 폭발', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
   {id: 'offering', title: '본 오퍼링 치유', group: 'undead', runtime: 'GameConst.FxSkillOfferingHeal', maple: ['SkillEffects.FxOffering'], match: 'Offering'},
+  {id: 'offering-sacrifice', title: '본 오퍼링 제물 (바친 해골 자리 · 11-04 blast에서 분리)', group: 'undead', runtime: 'GameConst.FxSkillOfferingSacrifice', maple: ['GameConst.FxSkillBlast'], match: 'OfferingSacrifice|offering-sacrifice'},
   {id: 'death-wave', title: '데스 노바', group: 'undead', runtime: 'GameConst.FxSkillDeathWave', maple: ['SkillEffects.FxWave'], match: 'DeathWave|death-wave'},
   {id: 'poison-mist', title: '포이즌 미스트', group: 'undead', runtime: 'GameConst.FxSkillPoisonCloud', maple: ['SkillEffects.FxPoisonCloud'], match: 'PoisonCloud|poison-cloud'},
-  {id: 'drain-vortex', title: '드레인 라이프 소용돌이', group: 'undead', runtime: 'GameConst.FxSkillDrainVortex', maple: ['SkillEffects.FxDrain'], match: 'DrainVortex|drain-vortex|soul-drain'},
+  {id: 'drain-vortex', title: '드레인 라이프 소용돌이 (11-04 스킬 삭제 · 미사용)', group: 'undead', runtime: 'GameConst.FxSkillDrainVortex', maple: ['SkillEffects.FxDrain'], match: 'DrainVortex|drain-vortex|soul-drain'},
   {id: 'bone-storm', title: '본 스톰', group: 'undead', runtime: 'GameConst.FxSkillBoneStorm', maple: ['SkillEffects.FxStorm'], match: 'BoneStorm|bone-storm|StormShard|storm-shard'},
   {id: 'rite-whirl', title: '본 노바 해골 회오리 돌진 (3기 · 표적 추적)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirl', maple: ['SkillEffects.FxStorm'], match: 'RiteWhirl(?!Trace)|rite-bone-whirl(?!-trace)|bone-vortex(?!-floor)|storm-reuse'},
   {id: 'rite-whirl-trace', title: '본 노바 회오리 바닥 자국 (11-03 돌진형이라 안 씀)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirlTrace', match: 'RiteWhirlTrace|whirl-trace|bone-vortex-floor'},
@@ -59,6 +60,7 @@ export const SLOTS = [
 
   {id: 'prison-hold', title: '본 프리즌 유지', group: 'bone', runtime: 'GameConst.FxSkillPrisonHold', match: 'PrisonHold|prison-hold|fx-bone-prison(?!-release)'},
   {id: 'prison-release', title: '본 프리즌 해제', group: 'bone', runtime: 'GameConst.FxSkillPrisonRelease', match: 'PrisonRelease|prison-release'},
+  {id: 'bone-spikes', title: '뼈 쐐기 가시 (땅에서 솟음 · 11-04)', group: 'bone', runtime: 'GameConst.FxSkillBoneSpikes', match: 'BoneSpikes|bone-spikes'},
   {id: 'armor-cast', title: '본 아머 시전', group: 'bone', runtime: 'GameConst.FxSkillArmorCast', match: 'ArmorCast|armor-cast'},
   {id: 'armor-ring-front', title: '본 아머 고리 · 앞층', group: 'bone', runtime: 'GameConst.FxSkillArmorRingFront', match: 'ArmorRingFront|ArmorRing(?![A-Z])|bone-armor-ring|armor-plate'},
   {id: 'armor-ring-back', title: '본 아머 고리 · 뒤층', group: 'bone', runtime: 'GameConst.FxSkillArmorRingBack', match: 'ArmorRingBack'},
@@ -83,7 +85,7 @@ export const SLOTS = [
 
   mark('amp', '앰플리파이 표식'), mark('weaken', '위큰 표식'), mark('thorn', '아이언 메이든 표식'), mark('terror', '하울 표식'), mark('confuse', '혼란 표식'),
   mark('lifetap', '라이프 탭 표식'), mark('decay', '부패 표식'), mark('resist', '로워 레지스트 표식'), mark('root', '속박 표식'), mark('chill', '냉기 표식'),
-  mark('poison', '중독 표식'), mark('hex', '주술 표식'), mark('frost', '서리 표식', 'catalog:codex-skill-fx-v1--mark_frost'),
+  mark('poison', '중독 표식'), mark('hex', '주술 표식'), mark('stun', '기절 표식 (뼈 쐐기)'), mark('frost', '서리 표식', 'catalog:codex-skill-fx-v1--mark_frost'),
 
   {id: 'giant-nova', title: '마법사 거인 노바', group: 'giant', runtime: 'SkillEffects.FxGiantNovaV2', match: 'GiantNova'},
   {id: 'meteor-telegraph', title: '메테오 예고', group: 'giant', runtime: 'GameConst.FxGiantMeteorTelegraph', match: 'MeteorTelegraph|meteor\\S*tele'},
