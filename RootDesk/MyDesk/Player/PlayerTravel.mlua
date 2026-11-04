@@ -14,6 +14,14 @@ script PlayerTravel extends Component
     property any FieldGate = nil              -- 귀환 두루마리로 사냥터에 연 포털 (마을로)
     property any TownGate = nil               -- 그 짝으로 마을에 연 포털 (사냥터 그 자리로)
     property number PortalGap = 1.3           -- 사냥터 포털을 연 사람에게서 이만큼 옆에 연다 (포털 반경 0.6 밖이라 열자마자 빨려 들지 않는다)
+    -- 마을 포털 자리 (11-05 사용자: 마을 포털이 흩어져 3명이 넘으면 누구 것인지 안 보였다). 네 마을이 같은 배치(도착 0/-1.6 · 남문 0.5/-9.5 · 웨이포인트 -5.5/2.5)라 한 자리를 같이 쓴다
+    --   추천안: 광장 남쪽 가장자리 한 줄 (도착 자리 바로 북쪽 2칸 · NPC와 1.6칸 이상). 줄 왼쪽 끝 TownPortalOrigin에서 TownPortalCols칸(간격 TownPortalGap),
+    --   한 줄 안에서는 가운데부터 채운다(3~4개면 도착 자리 정면에 모인다). 넘치면 다음 줄(TownPortalRowGap만큼 아래 — 큰길 남쪽). 닫힌 포털의 칸은 다음 사람이 쓴다
+    property Vector2 TownPortalOrigin = Vector2(-4.5, 0.5)
+    property number TownPortalGap = 1.8
+    property number TownPortalRowGap = 3.5
+    property integer TownPortalCols = 6
+    property number TownPortalNpcClear = 1.6  -- NPC·웨이포인트·심도 문과 이만큼 떨어진 칸만 (Space가 NPC 대화와 섞이지 않게)
     property number WaypointRange = 2.2
     property any ResumeAt = nil              -- 저장된 마지막 사냥터 자리 { m, x, y, t } (재접속 때 한 번 쓴다)
     property number ResumeWindowSec = 900    -- 끊긴 뒤 이 시간(15분) 안에 다시 들어오면 그 자리로
@@ -296,11 +304,11 @@ script PlayerTravel extends Component
         self:ClosePortal(0)
         local name = self:OwnerName()
         local fieldSpot = self:FreeSpot(field, here, { Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1), Vector2(0.7, 0.7), Vector2(-0.7, 0.7), Vector2(0.7, -0.7), Vector2(-0.7, -0.7) }, self.PortalGap)
-        -- 마을 쪽은 파티원 포털끼리 이름표가 겹치지 않게 넓게 (10-24: 1.4 간격이면 「되돌아가기 · 이름」 두 줄이 겹쳤다)
-        local townSpot = self:FreeSpot(town, Vector2(4, -3.6), { Vector2(0, 0), Vector2(-1, 0), Vector2(1, 0), Vector2(-2, 0), Vector2(0, -0.7), Vector2(-1, -0.7), Vector2(1, -0.7), Vector2(-2, -0.7) }, 2.6)
-        -- 이름표 「{가는 곳} - {주인}」 (10-24 사용자: 누구 포털인지·어디로 가는지 구분)
-        self.FieldGate = self:SpawnPortal(field, fieldSpot, town.Name, Vector2(0, 0), self:PlaceName(town.Name) .. " - " .. name, false)
-        self.TownGate = self:SpawnPortal(town, townSpot, field.Name, here, self:PlaceName(field.Name) .. " - " .. name, true)
+        -- 마을 쪽은 정해 둔 포털 자리 격자의 빈 칸 (11-05)
+        local townSpot = self:TownPortalSpot(town)
+        -- 이름표 두 줄 「주인 / 가는 곳」 (11-05 — HudMap.RenderGates가 내 것 하늘색 · 파티원 흰색 · 못 쓰는 것 흐리게)
+        self.FieldGate = self:SpawnPortal(field, fieldSpot, town.Name, Vector2(0, 0), self:PlaceName(town.Name), name, false)
+        self.TownGate = self:SpawnPortal(town, townSpot, field.Name, here, self:PlaceName(field.Name), name, true)
         log("[VRF] 귀환 포털 열림 " .. field.Name .. " (" .. string.format("%.1f,%.1f", fieldSpot.x, fieldSpot.y) .. ") ↔ " .. town.Name)
     end
 
@@ -312,7 +320,7 @@ script PlayerTravel extends Component
         local townName = self:TownMap()
         if not isvalid(_EntityService:GetEntityByPath("/maps/" .. townName)) then return end
         local spot = self:FreeSpot(field, at, { Vector2(1, -1), Vector2(-1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(0, -1.4), Vector2(1.4, 0), Vector2(-1.4, 0) }, 1.2)
-        local gate = self:SpawnPortal(field, spot, townName, Vector2(0, 0), self:PlaceName(townName) .. " - 보스 처치", false)
+        local gate = self:SpawnPortal(field, spot, townName, Vector2(0, 0), self:PlaceName(townName) .. " · 보스 처치", self:OwnerName(), false)
         if gate == nil then return end
         _TimerService:SetTimerOnce(function() if isvalid(gate) then gate:Destroy() end end, 60)
         _Util:NotifyMap(field, bossName .. " 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸습니다")
@@ -320,7 +328,7 @@ script PlayerTravel extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method any SpawnPortal(Entity map, Vector2 at, string targetMap, Vector2 targetPos, string label, boolean ownerCloses)
+    method any SpawnPortal(Entity map, Vector2 at, string targetMap, Vector2 targetPos, string label, string ownerName, boolean ownerCloses)
         -- 주인·파티원만 쓰는 귀환 포털 하나 (WarpGate.CanUse). ownerCloses: 주인이 지나가면 짝까지 닫힌다
         local e = _SpawnService:SpawnByModelId(_GameConst.ModelWarpGate, "ReturnGate", Vector3(at.x, at.y, 0), map)
         if not isvalid(e) then return nil end
@@ -332,9 +340,55 @@ script PlayerTravel extends Component
             gate.TargetPos = targetPos
             gate.Label = label
             gate.OwnerUserId = ownerId
+            gate.OwnerName = ownerName
             gate.OwnerCloses = ownerCloses
         end, nil)
         return e
+    end
+
+    @ExecSpace("ServerOnly")
+    method Vector2 TownPortalSpot(Entity town)
+        -- 마을 포털 자리 격자의 첫 빈 칸 (걸을 수 있고 · 다른 포털과 겹치지 않고 · NPC·웨이포인트·심도 문과 떨어진 칸). 칸이 모자라면 줄을 늘린다 (24칸까지), 그래도 없으면 예전처럼 둘레에서 찾는다
+        local memo = _Util:TerrainMemo(town)
+        local gates = town:GetChildComponentsByTypeName("script.WarpGate", true)
+        local others = {}
+        for _, kind in ipairs({ "script.WorldNPC", "script.Waypoint", "script.DepthGate" }) do
+            for _, c in ipairs(town:GetChildComponentsByTypeName(kind, true)) do table.insert(others, _Util:Pos2(c.Entity)) end
+        end
+        local cols = math.max(1, self.TownPortalCols)
+        -- 한 줄 안 순서: 가운데부터 좌우로 (6칸이면 2,3,1,4,0,5)
+        local order = {}
+        local mid = (cols - 1) / 2
+        for c = 0, cols - 1 do table.insert(order, c) end
+        table.sort(order, function(a, b)
+            local da, db = math.abs(a - mid), math.abs(b - mid)
+            if math.abs(da - db) > 0.01 then return da < db end
+            return a < b
+        end)
+        for i = 0, 23 do
+            local col = order[(i % cols) + 1]
+            local p = self.TownPortalOrigin + Vector2(col * self.TownPortalGap, -math.floor(i / cols) * self.TownPortalRowGap)
+            local ok = true
+            for _, o in ipairs(others) do
+                if (o - p):Magnitude() < self.TownPortalNpcClear then ok = false break end
+            end
+            if ok and memo ~= nil then
+                for _, o in ipairs({ Vector2(0, 0), Vector2(0.35, 0), Vector2(-0.35, 0), Vector2(0, 0.35), Vector2(0, -0.35) }) do
+                    if _Util:CellBlocked(memo, p + o) then ok = false break end
+                end
+            end
+            if ok then
+                for _, g in ipairs(gates) do
+                    local q = g.Entity.TransformComponent.WorldPosition
+                    if (Vector2(q.x, q.y) - p):Magnitude() < self.TownPortalGap * 0.6 then ok = false break end
+                end
+            end
+            if ok then
+                log(string.format("[VRF] town portal slot=%d at=(%.1f,%.1f) town=%s gates=%d", i, p.x, p.y, town.Name, #gates))
+                return p
+            end
+        end
+        return self:FreeSpot(town, self.TownPortalOrigin, { Vector2(0, -1), Vector2(-1, -1), Vector2(1, -1), Vector2(0, -2) }, 2.6)
     end
 
     @ExecSpace("Server")

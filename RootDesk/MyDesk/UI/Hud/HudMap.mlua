@@ -19,8 +19,12 @@ script HudMap extends Logic
     property boolean HasQuestNpc = false
     property table NpcPos = {}                -- NPC 종류 → 위치 (의뢰인 머리 위 「!」)
     property table NpcLabel = {}              -- NPC 종류 → 이름 (화면 밖 「!」 옆에 붙인다)
-    property table Gates = {}               -- 이 맵의 포털 { pos, label }
+    property table Gates = {}               -- 이 맵의 포털 { pos, label, radius, owner, style } (style: exit · mine · party · other)
     property number GateLabelRange = 9
+    property integer GateLabelMax = 8        -- 출구 이름표 수 (11-05: 마을 포털 격자 8칸 — Gate1~4는 GameHUD, 5~8은 Gate1을 복제)
+    property table GateLabels = {}           -- 이름표 엔티티 (1~GateLabelMax)
+    property number GateLabelHeight = 34     -- Gate1 원래 높이 (한 줄)
+    property string GateStyleShown = ""      -- [VRF] 이름표 모양이 바뀔 때만 남긴다
     property integer TerrainCount = 256
     property integer TerrainUsed = 0
     property integer TerrainLive = 0           -- 켜 두었을 수 있는 바닥 칸 끝 번호 (맵이 바뀌면 이 번호까지 남은 칸만 끈다 · 11-02)
@@ -278,6 +282,7 @@ script HudMap extends Logic
         -- 지형에서 계산한 축척을 표식에도 그대로 적용한다. 표식은 그림 대신 색 점 + 짧은 이름 (와우·이모탈 미니맵)
         local n = 0
         local features = self:MapFeatures(_UserService.LocalPlayer.CurrentMap, info)
+        self:CollectGates(_UserService.LocalPlayer.CurrentMap)
         self.LastFeatureKey = self:FeatureKey(features)
         for _, f in ipairs(features) do
             table.insert(self.Features, { kind = f.kind, x = f.x, y = f.y, label = f.label, targetMap = f.targetMap or "", waypointId = f.waypointId or "", npcKind = f.npcKind or "" })
@@ -288,7 +293,6 @@ script HudMap extends Logic
                 _UIKit:SetIcon(path, _GameData:GetUiIcon(f.kind == "portal" and "minimap_exit" or "dot"))
                 _UIKit:SetColor(path, self:FeatureColor(f.kind))
             end
-            if (f.kind == "portal" or f.kind == "depth") and (f.label or "") ~= "" then table.insert(self.Gates, { pos = Vector2(f.x, f.y), label = f.label, radius = f.radius or 0.6 }) end
             if f.kind == "quest" then
                 self.HasQuestNpc = true
                 self.QuestPos = Vector2(f.x, f.y)
@@ -434,6 +438,7 @@ script HudMap extends Logic
         self.NextFeatureRefresh = now + self.FeatureRefreshInterval
         local info = _GameData:GetMapInfo(_GameConst:BaseMapName(map.Name))
         if info == nil then return end
+        self:CollectGates(map)
         local features = self:MapFeatures(map, info)
         if self:FeatureKey(features) == self.LastFeatureKey then return end
         self:BuildMiniMap(info)
@@ -1222,10 +1227,75 @@ script HudMap extends Logic
     end
 
     @ExecSpace("ClientOnly")
+    method void CollectGates(Entity map)
+        -- 출구 이름표 대상 (11-05): 맵 출구·심도 문 + 귀환 포털 전부. 귀환 포털은 내 것(mine) · 파티원 것(party) · 못 쓰는 남의 것(other, 흐리게)까지 —
+        --   미니맵은 쓸 수 있는 것만 그리지만, 마을 포털 줄에서 누구 것인지 알아보려면 남의 것도 이름이 있어야 한다
+        self.Gates = {}
+        local player = _UserService.LocalPlayer
+        if not isvalid(map) or not isvalid(player) then return end
+        local myId = player.PlayerComponent.UserId
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.WarpGate", true)) do
+            ---@type WarpGate
+            local gate = c
+            if isvalid(gate.Entity) and gate.Entity.Enable and gate.Label ~= "" then
+                local usable = gate:CanUse(player)
+                local style = "exit"
+                if gate.OwnerUserId ~= "" then
+                    style = gate.OwnerUserId == myId and "mine" or (usable and "party" or "other")
+                end
+                if style ~= "exit" or usable then
+                    table.insert(self.Gates, { pos = _Util:Pos2(gate.Entity), label = _GameConst:LevelText(gate.Label, map.Name), radius = gate.Radius, owner = gate.OwnerName, style = style })
+                end
+            end
+        end
+        for _, c in ipairs(map:GetChildComponentsByTypeName("script.DepthGate", true)) do
+            ---@type DepthGate
+            local door = c
+            if isvalid(door.Entity) and door.Entity.Enable then
+                local label = door.Label ~= "" and door.Label or (door.Action == "enter" and "심도 입구" or "")
+                if label ~= "" then table.insert(self.Gates, { pos = _Util:Pos2(door.Entity), label = label, radius = door.Radius, owner = "", style = "exit" }) end
+            end
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity GateLabel(integer i)
+        -- i번째 이름표. Gate1~4는 GameHUD에 있고, 그 너머는 Gate1을 복제해 만든다 (UI 파일은 고치지 않는다)
+        local e = self.GateLabels[i]
+        if e ~= nil and isvalid(e) then return e end
+        e = _UIKit:Get("Gate" .. tostring(i))
+        if not isvalid(e) then
+            local src = _UIKit:Get("Gate1")
+            if not isvalid(src) then return nil end
+            e = src:Clone("Gate" .. tostring(i))
+            if not isvalid(e) then return nil end
+            log("[VRF] gate label cloned i=" .. tostring(i))
+        end
+        if i == 1 then self.GateLabelHeight = e.UITransformComponent.RectSize.y end
+        self.GateLabels[i] = e
+        return e
+    end
+
+    @ExecSpace("ClientOnly")
+    method string GateText(table g)
+        -- 이름표 글. 맵 출구는 「▼ 가는 곳」 한 줄(예전 그대로) 포털 위, 귀환 포털은 두 줄 — 주인 이름 굵게 / 가는 곳 — 포털 아래 (캐릭터 이름표처럼 발밑).
+        --   내 것 하늘색(내 편 색) · 파티원 것 흰색 · 못 쓰는 남의 것 흐린 회색
+        if g.style == "exit" or (g.owner or "") == "" then return "▼ " .. g.label end
+        local color = "#FFFFFF"
+        if g.style == "mine" then color = "#7FD4FF"
+        elseif g.style == "other" then color = "#C4C4C4E0" end
+        return "<color=" .. color .. "><b>" .. g.owner .. "</b>\n<size=18>" .. g.label .. "</size></color>"
+    end
+
+    @ExecSpace("ClientOnly")
     method void RenderGates(Entity player)
-        -- D2처럼 출구 위에 갈 곳 이름: 가까운 포털(9칸 안)만, 최대 4개. 화면 밖이면 숨김
+        -- D2처럼 출구 위에 갈 곳 이름: 가까운 포털(9칸 안)부터 최대 GateLabelMax개. 화면 밖이면 숨김
         if _UIKit:AnyWindowOpen() then
-            for i = 1, 4 do _UIKit:SetEnabled("Gate" .. tostring(i), false) end
+            for i = 1, self.GateLabelMax do
+                local e = self.GateLabels[i]
+                if e ~= nil and isvalid(e) and e.Enable then e.Enable = false end
+                if i <= 4 then _UIKit:SetEnabled("Gate" .. tostring(i), false) end
+            end
             _UIKit:SetEnabled("GatePrompt", false)
             return
         end
@@ -1235,29 +1305,60 @@ script HudMap extends Logic
         local n = 0
         local nearest = nil
         local nearestDist = math.huge
+        local order = {}
         for _, g in ipairs(self.Gates) do
             local d = (g.pos - me):Magnitude()
-            if d <= math.max(1.8, (g.radius or 0.6) + 0.8) and d < nearestDist then
+            -- 위 큰 배너는 맵 출구만 (귀환 포털은 두 줄 이름표·아래 「Space · 가는 곳」 안내로 충분 — 배너가 이름표를 가렸다 · 11-05 메이커)
+            if g.style == "exit" and d <= math.max(1.8, (g.radius or 0.6) + 0.8) and d < nearestDist then
                 nearestDist = d
                 nearest = g
             end
-            if n < 4 and d <= self.GateLabelRange then
-                local screen = _UILogic:WorldToScreenPosition(g.pos + Vector2(0, 1.3))
-                local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
-                -- 화면 밖 출구를 임의의 화면 안 위치에 붙이지 않는다. 바깥 방향은 미니맵으로 안내한다.
-                if ui.x >= -760 and ui.x <= 760 and ui.y >= -230 and ui.y <= 380 then
+            if d <= self.GateLabelRange then table.insert(order, { g = g, d = d }) end
+        end
+        table.sort(order, function(a, b) return a.d < b.d end)
+        local styles = {}
+        for _, o in ipairs(order) do
+            if n >= self.GateLabelMax then break end
+            local g = o.g
+            local twoLines = g.style ~= "exit" and (g.owner or "") ~= ""
+            -- 귀환 포털 이름표는 포털 아래: 마을 포털 줄이 도착 자리 바로 북쪽이라 위에 달면 도착 화면에서 위 HUD 쪽으로 밀려 안 보였다 (11-05 메이커)
+            local screen = _UILogic:WorldToScreenPosition(g.pos + Vector2(0, twoLines and -0.95 or 1.3))
+            local ui = _UILogic:ScreenToLocalUIPosition(screen, root.UITransformComponent)
+            -- 화면 밖 출구를 임의의 화면 안 위치에 붙이지 않는다. 바깥 방향은 미니맵으로 안내한다.
+            if ui.x >= -760 and ui.x <= 760 and ui.y >= -230 and ui.y <= 380 then
+                local e = self:GateLabel(n + 1)
+                if e ~= nil then
                     n = n + 1
-                    local path = "Gate" .. tostring(n)
-                    _UIKit:SetEnabled(path, true)
-                    _UIKit:SetText(path, "▼ " .. g.label)
-                    _UIKit:SetPos(path, ui)
+                    if not e.Enable then e.Enable = true end
+                    local text = self:GateText(g)
+                    if e.TextGUIRendererComponent.Text ~= text then e.TextGUIRendererComponent.Text = text end
+                    local t = e.UITransformComponent
+                    local h = twoLines and self.GateLabelHeight + 24 or self.GateLabelHeight
+                    if math.abs(t.RectSize.y - h) > 0.5 then t.RectSize = Vector2(t.RectSize.x, h) end
+                    t.anchoredPosition = ui
+                    table.insert(styles, g.style)
                 end
             end
         end
-        for i = n + 1, 4 do _UIKit:SetEnabled("Gate" .. tostring(i), false) end
+        for i = n + 1, self.GateLabelMax do
+            local e = self.GateLabels[i]
+            if e ~= nil and isvalid(e) then
+                if e.Enable then e.Enable = false end
+            elseif i <= 4 then
+                _UIKit:SetEnabled("Gate" .. tostring(i), false)
+            end
+        end
+        local key = table.concat(styles, ",")
+        if key ~= self.GateStyleShown then
+            self.GateStyleShown = key
+            log("[VRF] gate labels n=" .. tostring(n) .. " styles=" .. key)
+        end
         -- 전투 중에는 실제 이동 반경 바로 앞에서만 큰 배너를 띄운다. 포털 이름은 계속 유지한다.
         _UIKit:SetEnabled("GatePrompt", self:ShouldShowGatePrompt(player, nearest, nearestDist))
-        if nearest ~= nil then _UIKit:SetText("GatePrompt/Text", "출구: " .. nearest.label .. " — " .. (Environment:IsPCPlatform() and "Space로 이동" or "들어가기로 이동")) end
+        if nearest ~= nil then
+            local how = Environment:IsPCPlatform() and "Space로 이동" or "들어가기로 이동"
+            _UIKit:SetText("GatePrompt/Text", "출구: " .. nearest.label .. " — " .. how)
+        end
     end
 
     @ExecSpace("ClientOnly")
