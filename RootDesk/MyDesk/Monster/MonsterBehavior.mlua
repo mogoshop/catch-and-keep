@@ -1,6 +1,8 @@
 -- 몬스터 특수 행동 (06장 4절 AI 유형). Mode:
 --   "hitrun" : 공격 직후 잠시 대상에게서 물러났다가 다시 덤빈다 (시체 까마귀)
 --   "burrow" : 플레이어가 가까이 올 때까지 땅속에 숨어 있다(희미하게 보이고 맞지 않음). 오래 혼자면 다시 숨는다 (무덤 구더기)
+--              11-04 P-6: 2.2칸 안이면 바로, AwareRange(4.5칸) 안에 AwareSeconds(3초) 머물면 눈치채고 나온다 (곁에 서 있어도 끝없이 숨지 않게) ·
+--              정리 맵에서 남은 적이 모두 숨은 채면 스포너가 ForceEmerge로 끌어낸다 (다시 숨지 않음)
 --   "coward" : 근처 같은 종족이 죽으면 잠시 흩어져 달아났다가 다시 덤빈다 (D2 폴른 — 굶주린 구울)
 --   "ranged" : 사거리 끝에 멈춰 쏘고, 너무 가까우면 물러선다 (D2 다크 레인저 — 교단 광신 석궁병)
 --   "phase"  : 주기적으로 반투명해져 받는 피해 -50% (모래 망령). 반투명 PhaseSeconds · 실체 SolidSeconds
@@ -12,6 +14,10 @@ script MonsterBehavior extends Component
     property number RetreatSeconds = 0.9
     property number EmergeRange = 2.2
     property number ReburrowSeconds = 8
+    property number AwareRange = 4.5         -- 11-04 P-6: 이 안에 AwareSeconds 머물면 나온다 (EmergeRange보다 바깥 · 화면 반 폭 안)
+    property number AwareSeconds = 3
+    property number AwareSince = 0
+    property boolean NoReburrow = false      -- ForceEmerge 뒤 (정리 맵 마지막 적): 다시 숨지 않는다
     property number CheckInterval = 0.3
     property number FleeSeconds = 2.2
     property number FleeRadius = 5
@@ -112,9 +118,17 @@ script MonsterBehavior extends Component
         end
         local near = self:NearestDefenderDistance()
         if self.Burrowed then
-            if near <= self.EmergeRange then self:SetBurrowed(false) end
+            if near <= self.EmergeRange then
+                self:Emerge("near", near)
+            elseif near <= self.AwareRange then
+                if self.AwareSince == 0 then self.AwareSince = now end
+                if now - self.AwareSince >= self.AwareSeconds then self:Emerge("aware", near) end
+            else
+                self.AwareSince = 0
+            end
             return
         end
+        if self.NoReburrow then return end
         if near > 4 then
             if self.LonelySince == 0 then self.LonelySince = now end
             if now - self.LonelySince > self.ReburrowSeconds then self:SetBurrowed(true) end
@@ -270,9 +284,25 @@ script MonsterBehavior extends Component
     method number NearestDefenderDistance()
         -- 무덤 구더기는 소환수에도 반응하지만 벽 뒤·사망한 대상에는 반응하지 않는다.
         local attack = self.Entity:GetComponent("script.MonsterAttack")
-        local target = attack ~= nil and attack:FindDefender(math.max(4.1, self.EmergeRange)) or nil
+        local target = attack ~= nil and attack:FindDefender(math.max(4.1, self.EmergeRange, self.AwareRange)) or nil
         if not isvalid(target) then return 999 end
         return _Util:Distance(target, self.Entity)
+    end
+
+    @ExecSpace("ServerOnly")
+    method void Emerge(string why, number near)
+        -- 땅속에서 나온다 (근접 · 눈치챔 · 정리 맵 끌어내기) — 이유를 [VRF]로 남긴다
+        if not self.Burrowed then return end
+        self:SetBurrowed(false)
+        local p = _Util:Pos2(self.Entity)
+        log(string.format("[VRF] burrow emerge why=%s near=%.1f at(%.1f,%.1f) map=%s", why, near, p.x, p.y, isvalid(self.Entity.CurrentMap) and self.Entity.CurrentMap.Name or "?"))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void ForceEmerge(string why)
+        -- 정리 맵 스포너: 남은 적이 모두 숨은 채 → 끌어내고 다시 숨지 않게
+        self.NoReburrow = true
+        self:Emerge(why, self:NearestDefenderDistance())
     end
 
     @ExecSpace("ServerOnly")
@@ -280,6 +310,7 @@ script MonsterBehavior extends Component
         -- 숨으면 맞지 않고(HitComponent 끔) 움직이지 않는다
         self.Burrowed = value
         self.LonelySince = 0
+        self.AwareSince = 0
         self.RetreatUntil = 0
         self.EmergeUntil = value and 0 or (_UtilLogic.ElapsedSeconds + self.EmergeSeconds)
         local attack = self.Entity:GetComponent("script.MonsterAttack")
@@ -304,6 +335,7 @@ script MonsterBehavior extends Component
         self.LonelySince = 0
         self.CheckTimer = 0
         self.RangeTarget = nil
+        self.NoReburrow = false
         if self.Mode == "burrow" then self:SetBurrowed(true) end
         self.Phased = false
         self.PhaseNextAt = 0

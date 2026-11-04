@@ -552,20 +552,37 @@ script MonsterSpawner extends Component
         self:TrackNamed(map, #players > 0)
         if self.ClearMode and now - self.SpawnedAt > 2 then
             local alive = 0
+            local hidden = 0
+            local burrowers = {}
             for _, c in ipairs(map:GetChildComponentsByTypeName("script.Monster", true)) do
                 ---@type Monster
                 local m = c
-                if isvalid(m.Entity) and not m.IsDead and not m.Horde then alive = alive + 1 end   -- 습격의 떼는 정리 집계에 넣지 않는다 (기획서 41 #8-A: 떼가 섞이면 의뢰가 안 끝난다)
+                -- 습격의 떼는 정리 집계에 넣지 않는다 (기획서 41 #8-A: 떼가 섞이면 의뢰가 안 끝난다).
+                -- 11-04 P-6: 싸움 중 불려 나온 졸개(변종 「무리 부르기」 · Monster.Summoned)도 뺀다 — 배치 무리만 센다 (기획 14 「정리 중 리젠 없음」 · 남은 수가 다시 늘던 원인)
+                if isvalid(m.Entity) and not m.IsDead and not m.Horde and not m.Summoned and string.sub(m.Entity.Name, 1, 9) ~= "Summoned_" then   -- 이름 검사: 스폰 직후 Summoned가 켜지기 전 한 틈
+                    alive = alive + 1
+                    ---@type MonsterBehavior
+                    local b = m.Entity:GetComponent("script.MonsterBehavior")
+                    if b ~= nil and b.Burrowed then
+                        hidden = hidden + 1
+                        table.insert(burrowers, b)
+                    end
+                end
             end
             -- 생성 D ①: 깨우기 대기 무리·소환 대기열도 남은 수에 넣는다 (「남은 수」가 처음부터 전체로 보이게).
             -- 산 몬스터가 하나도 없는데 대기 무리만 남았으면 모두 깨운다 (남은 수만 있고 찾을 적이 없게 되지 않게)
             if alive == 0 and #(self.SpawnQueue or {}) == 0 and self.PendingPacks ~= nil and #self.PendingPacks > 0 then self:WakeAll("clear-empty") end
             local pending = self:PendingCount()
+            -- 11-04 P-6: 남은 적이 모두 땅속에 숨은 채(대기 무리도 없음)면 모두 끌어낸다 — 숨은 적만 남아 의뢰가 멈추지 않게
+            if hidden > 0 and hidden == alive and pending == 0 and #(self.SpawnQueue or {}) == 0 then
+                for _, b in ipairs(burrowers) do b:ForceEmerge("clear-last") end
+            end
             local liveCount = alive
             alive = alive + pending
-            if self.ClearLogged ~= alive then
-                self.ClearLogged = alive
-                log(string.format("[VRF] clear remaining=%d (pending %d) live=%d total=%d map=%s", alive, pending, liveCount, math.max(self.Total, alive), map.Name))
+            local clearKey = alive * 1000 + hidden   -- 남은 수 · 숨은 수 중 하나라도 바뀌면 찍는다
+            if self.ClearLogged ~= clearKey then
+                self.ClearLogged = clearKey
+                log(string.format("[VRF] clear remaining=%d (pending %d) live=%d hidden=%d total=%d map=%s", alive, pending, liveCount, hidden, math.max(self.Total, alive), map.Name))
             end
             self.Total = math.max(self.Total, alive)
             self.Remaining = alive
@@ -574,7 +591,7 @@ script MonsterSpawner extends Component
             for _, p in ipairs(players) do
                 ---@type PlayerQuest
                 local q = p:GetComponent("script.PlayerQuest")
-                if q ~= nil then q:ShowClearProgress(base, self.Total, alive) end
+                if q ~= nil then q:ShowClearProgress(base, self.Total, alive, hidden) end
             end
             if alive == 0 and self.Total > 0 and not self.Cleared then
                 self.Cleared = true

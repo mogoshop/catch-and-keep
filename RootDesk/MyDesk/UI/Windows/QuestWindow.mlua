@@ -209,6 +209,11 @@ script QuestWindow extends Logic
         else
             if q.kind == "clear" then
                 view.status = count > 0 and ("진행 중 · 남은 망자 " .. tostring(count - progress) .. "/" .. tostring(count)) or "진행 중 · 굴에 들어가면 남은 수 표시"
+                -- 11-04 P-6: 남은 적 중 땅속에 숨은 적 (목표 맵 안에서 · 가까이 가면 나온다)
+                local me = _UserService.LocalPlayer
+                if index == quest.Index and count > 0 and quest.ClearHidden > 0 and isvalid(me) and isvalid(me.CurrentMap) and _GameConst:BaseMapName(me.CurrentMap.Name) == q.target then
+                    view.status = view.status .. " · 숨은 적 " .. tostring(quest.ClearHidden)
+                end
             elseif q.kind == "chest" then
                 view.status = progress >= 1 and "진행 중 · 열쇠 획득 → 봉인 상자" or "진행 중 · 열쇠를 지닌 적 찾기"
             elseif q.kind == "gate" then

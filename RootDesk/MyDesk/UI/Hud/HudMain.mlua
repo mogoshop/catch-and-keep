@@ -1117,6 +1117,8 @@ script HudMain extends Logic
         local q = _QuestData:Get(quest.Index)
         local total = _QuestData:Count()
         self.QuestTrackKey = tostring(quest.Index) .. ":" .. tostring(quest.State)
+        -- 11-04 P-7: 「모두 처치」 의뢰의 목표 맵에 들어오면 키가 바뀌어 접어 둔 카드가 다시 펼쳐진다 (그 맵 안에서는 남은 수를 볼 곳이 카드뿐 — 누르면 그 맵 안에서는 다시 접힌다)
+        if q ~= nil and quest.State == 1 and q.kind == "clear" and self:InQuestMap(player, q.target) then self.QuestTrackKey = self.QuestTrackKey .. ":in" end
         local badge, title, caption, goal = "", "", "", ""
         if q == nil then
             badge, title, caption, goal = "완료", "모든 퀘스트 완료", "심도 던전·높은 난이도", "새로운 도전을 찾아보세요"
@@ -1158,12 +1160,22 @@ script HudMain extends Logic
         if on and mobile then _UIKit:SetText("QuestTrack/Body", self.JournalTrack) end
     end
 
+    method boolean InQuestMap(Entity player, string mapKey)
+        -- 플레이어가 지금 의뢰 목표 맵(난이도 접미 제외한 맵 키) 안에 있나
+        if not isvalid(player) or not isvalid(player.CurrentMap) or mapKey == nil or mapKey == "" then return false end
+        return _GameConst:BaseMapName(player.CurrentMap.Name) == mapKey
+    end
+
     method string QuestGoalText(table q, PlayerQuest quest)
         -- 진행 중 목표 한 줄: 정리 = 남은 수, 열쇠 → 상자 = 단계, 나머지 = n/count
         if q.kind == "clear" then
             local count = quest:CountFor(q)
             if count <= 0 then return q.objective end
-            return "남은 망자 " .. tostring(math.max(0, count - quest.Progress)) .. " / " .. tostring(count)
+            local line = "남은 망자 " .. tostring(math.max(0, count - quest.Progress)) .. " / " .. tostring(count)
+            -- 11-04 P-6: 남은 적 중 땅속에 숨은 적 (가까이 가면 나온다) — 목표 맵 안에서만
+            local player = quest.Entity
+            if quest.ClearHidden > 0 and self:InQuestMap(player, q.target) then line = line .. " · 숨은 적 " .. tostring(quest.ClearHidden) end
+            return line
         end
         if q.kind == "chest" or q.kind == "gate" then
             return quest:StepGoal(q)

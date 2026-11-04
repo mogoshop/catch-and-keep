@@ -15,6 +15,8 @@ script PlayerQuest extends Component
     property integer Progress = 0
     @Sync
     property integer Goal = 0                 -- clear 의뢰: 지금 맵의 몬스터 수 (0이면 데이터 count)
+    @Sync
+    property integer ClearHidden = 0          -- 11-04 P-6: clear 의뢰 맵 안 남은 적 중 땅속에 숨은 수 (추적기·의뢰 창 「숨은 적 N」)
     property integer Diff = 0                 -- 지금 Index/State/Progress가 속한 난이도
     property table ByDiff = {}                -- "0"/"1"/"2" → { i, s, p } (지금 난이도 것은 바꿀 때·저장할 때 채운다)
     property table Sealed = {}                -- "0"/"1"/"2" → ";hollow;cave;" 그 난이도에서 처음 연 봉인 상자
@@ -115,12 +117,13 @@ script PlayerQuest extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void ShowClearProgress(string mapKey, integer total, integer alive)
-        -- 정리 맵 안에서 1초마다: 남은 수를 진행으로 보여 준다
+    method void ShowClearProgress(string mapKey, integer total, integer alive, integer hidden)
+        -- 정리 맵 안에서 1초마다: 남은 수를 진행으로 보여 준다 (hidden = 남은 적 중 땅속에 숨은 수)
         local q = self:Current()
         if q == nil or q.kind ~= "clear" or q.target ~= mapKey then return end
         self.Goal = total
         self.Progress = math.max(0, total - alive)
+        if self.ClearHidden ~= hidden then self.ClearHidden = hidden end
     end
 
     @ExecSpace("ServerOnly")
