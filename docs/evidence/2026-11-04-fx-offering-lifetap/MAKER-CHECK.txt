@@ -1,0 +1,23 @@
+11-04 메이커 검증 — 효과 교체 2자리 (offering 본 오퍼링 치유 = 메이플 「산의 씨앗」 bdaf649b · curse-lifetap 라이프 탭 원형판 = 메이플 「보이드 프레셔」 f07d30fd 실범위) · 13:52~14:06 KST · maker_save 안 씀
+범위 변경: 혼란 표식 → 몹 스킬 123 교체는 사용자 취소(기절 표식 「뼈 쐐기」로 감 · 다른 차선) — 1회차에 바꿔 확인했던 코드는 되돌림(MonsterStatus 그대로 · FxSkillMarks confuse 원래 값)
+업로드: 없음 — offering = 메이플 animationclip 그대로(Multicast PickClipAll → Util.PlayClipOnce 한 번) · lifetap = 클립의 장 스프라이트 4개(공개 sprite RUID)를 원형 판 장 목록에 그대로
+반영: 편집 모드 → refresh 2회(1회차 offering · 2회차 lifetap 14:04) → build Error 0 · Warning 104(이전과 같은 수) · 플레이 SelfTest 통과 409·410 / 실패 0 (boom 1줄은 의도한 실패)
+플레이 2회 (PC FHD): client CharSelect 슬롯 4(Lv40) Enter → RoomWindow Solo → 게임 방 server_instance_game:s1c01225143e → PlayerSave.IsLoadSuccess=false · 무적 타이머
+  1회차 준비(server execute_script · 상태만): SkillBook.Levels bone_offering 10 · 칸 A 해골 소환 · S 본 오퍼링 · Go wasteland (-12,0.5) · IsLoadSuccess=false · 무적
+  혼: fallenimp 5기 스크립트 처치 → 혼 주인=나(스크립트 처치라 주인이 비어 「no owned soul」) · 키보드 조준(ClickControl:SetMouseMode(false) 런타임만)
+  시전은 maker_keyboard_input 실제 키: A ×5 → 해골 전사 5기 소환 · S 본 오퍼링 3회
+자리별 판정 (캡처 = 이 폴더 · 로그 = key-lines.txt):
+  offering   ✅ 시전자 발 자리에 초록 빛 구슬 + 반짝 십자 · 몸 뒤 층 1(C7ClipOrders) — 캐릭터 몸은 앞에 그대로 · 구슬 둘레 빛·고리·작은 구슬이 몸 밖으로 보임 · 바친 해골 자리 피 폭발(blast)과 함께 · 실속도 한 번 ≈0.5초(gif 기준 1.5초보다 빠름 · 안전 지움 1.8초)   offering-seed-zoom.jpg / offering-seed-full.jpg
+             [VRF] fxpick offering ruid=bdaf649b scale=1.01 clip=true pos=-12.06,0.50 (3회 모두) · bone offering healed=2/2/1
+추천값 선택(offering 층): 조사판 A 메모 「몸 뒤 층 또는 알파 0.85」 중 몸 뒤 층 1 — 녹화로 보니 1.44칸 구슬이 0.75칸 몸보다 커서 둘레가 충분히 보이고, 알파를 낮추면 빛 구슬 자체가 흐려진다. 몸 앞(6)이면 캐릭터가 통째로 가려짐(조사판 장면)
+판단 메모: 치유 효과 자리는 기존 설계 그대로 「시전자 발(효과 반경 4 원의 가운데)」 — 회복받는 소환수 각자 위가 아니다(반경 원 RangeRimFx 0.6초가 함께 뜸)
+실속도 녹화 (녹화 중 maker_screenshot 0회 · ffmpeg avfoundation 「Capture screen 1」 30fps crop=2196:1236:787:236 → 1920폭): rec/offering.mp4 6초(1.7초 무렵 S) — mp4 커밋하지 않음
+Error: 내 시험 스크립트 3줄(Configure 바로 부름 LEA-2004 · TakeDamage LEA-2011 · 클라이언트 _ClickControl nil) — 게임 코드 Error 0
+2회차(14:04~14:06 · 방 server_instance_game:s1c014e5a96a): SkillBook.Levels life_tap 10 · 칸 D · Go wasteland (4.5,0.5) · 표적 fallenimp 4기(뿌리 묶음·체력 유지): imp1 (1.5,0.5) = 조준 중심 · imp2 (2.7,0.5) 중심에서 1.2칸 · imp4 (1.5,1.9) 1.4칸(가장자리) · imp3 (-0.4,0.5) 1.9칸(밖)
+  curse-lifetap ✅ D 실제 키 → 검붉은 고리가 imp1 발 자리 가운데 · 보이는 지름 ≈ 3칸 = 판정 지름(반경 1.5) · imp1·imp2·imp4(가장자리)에 라이프 탭 표식(핏방울) · 원 밖 imp3은 안 걸림 · 몸 뒤 층 1 · 진한 0·1장 반복 → 2·3장 잦아듦   lifetap-range-zoom.jpg / lifetap-range-full.jpg
+             [VRF] fxpick curse-lifetap ruid=4e23e5ff n=4 scale=3.26 ms=150,150,150,150 rel=2 order=1 r=1.50 draw=2.59,-1.71 · curse marker lifetap on imp4/imp2/imp1 (imp3 없음)
+  배율 근거: 라이프 탭 반경 = SkillEffects.Apply 「Curse(target, "lifetap", …, 1.5, …)」 1.5칸 × (1 + 장비 저주 범위% + 0.15 × 강화 curse_area) → CurseCircleScale = 반경 ÷ (CurseCircleFitPx lifetap 46px / 100) = 1.5 / 0.46 = 3.26 (범위가 늘면 같은 비율로 커짐)
+    46px = 보이드 프레셔 고리의 보이는 폭 92px(0·1장 가운데 줄 알파>64 · 2장 87px)의 반 · 1칸 = 100px
+  피벗 보정: 장 스프라이트 원본 피벗이 그림 밖 오른쪽 아래(84,−16 등)라 그대로면 고리가 (−0.33, +0.68)×배율칸 어긋남 → CurseCircleOffsetPxByKind lifetap=-33.4,67.9(장 0~3 그림 상자 가운데 ↔ 피벗 평균)만큼 반대로 옮김 — 화면에서 고리 가운데 = imp1 발 자리 확인(메이커는 원본 피벗을 그대로 씀)
+실속도 녹화 추가: rec/lifetap.mp4 6초(2.4초 무렵 D) — mp4 커밋하지 않음
+끝: maker_stop → 편집 모드 (14:06)

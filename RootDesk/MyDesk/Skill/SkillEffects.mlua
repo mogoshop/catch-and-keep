@@ -25,7 +25,7 @@ script SkillEffects extends Component
     property string FxBlast = "22444db0645d47f48f300f36b3d90e4b"         -- 검붉은 피 폭발 (해골 폭탄)
     property string FxFlameShot = "40f0991c2e204ee888670cb3006382e5"     -- 불꽃 화살 (저주 불꽃)
     property string FxFrostShot = "d5a9e48c2d654726811db8b127699233"     -- 서리 혼
-    property string FxOffering = "b92b4c5e6a8a47f7867204509ba9e4fe"      -- 초록 회복 고리 (뼈 성찬)
+    property string FxOffering = "bdaf649b59f3401aab194ea33a167430"      -- 뼈 성찬 치유 = 11-04 효과 교체 offering 메이플 「산의 씨앗(스킬 162101012 summon/die)」 10장 클립 144×140 · 피벗 아래(발) · 한 번 (GameConst.FxSkillOfferingHeal을 비워 이 칸 · C7ClipMul·C7ClipSec·C7ClipOrders) · 옛: b92b4c5e6a8a47f7867204509ba9e4fe 초록 회복 고리
     property string FxBlink = "1212ff9a8bbf41d1a6798484e1aa20d6"         -- 푸른 고리 섬광 (망령 도약·질주)
     property string FxPoisonCloud = "3a6509634ee24b789f5446afb10fe357"   -- 독안개 = 11-03 효과 고르기 poison-mist 메이플 「독안개 바닥 장판(스킬 2111003)」 8장 클립 140×132(가운데 피벗 · 반복 · GameConst.FxSkillPoisonCloud를 비워 이 칸 · 크기 C7ClipMul) · 옛: 71898bc523f441e39f00f25ac4989166 초록 독구름
     property string FxDrain = "07e92bf63fa44ba5a74507f96cb4e18c"         -- 보라 소용돌이
@@ -145,7 +145,8 @@ script SkillEffects extends Component
     property number ArmorCastArtScale = 1.0     -- 뼈 갑옷 두름 4장 배율: 128px = 1.28칸 · 가장 큰 장 내용 109×104px ≈ 1.07칸 (유지 고리 캔버스 0.96칸보다 한 단 크게)
     property number ArmorArtDy = 0.45           -- 몸 가운데 = 발 + 0.45칸 (PlayerStats.ArmorRingDy와 같은 자리)
     property integer ArmorCastOrder = 5         -- 몸 앞 (예전 시전 입자와 같은 층)
-    property string CurseCircleFitPx = "amp=179.5;weaken=183.8;terror=186.1;thorn=213;lifetap=186.6;resist=201.7"   -- 11-03 thorn = 메이플 불기둥 2~12장 내용 폭 최대 426px의 반(잦아듦 13~15장은 446~456px로 7% 넓어진다) → 불기둥 폭 = 저주 지름 · 옛 thorn=180.5 · 원형 판의 보이는 반경(px · 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 10장 중 최대 · 10-31 통일 공정 5종 전체 384px 판 실측) → 이 반경 = 저주 반경 (CurseSigilFitPx와 같은 계산) · 옛 128px 판: amp=58.5;weaken=56.7;terror=62.2;thorn=57.7;lifetap=55.5;resist=58.7
+    property string CurseCircleFitPx = "amp=179.5;weaken=183.8;terror=186.1;thorn=213;lifetap=46;resist=201.7"   -- 11-04 lifetap = 메이플 「보이드 프레셔」 고리 보이는 폭 92px(0·1장 가운데 줄 알파>64 · 0~2장 87~92)의 반 46px → 배율 = 저주 반경 ÷ 0.46 (기본 반경 1.5칸 → 3.26 · 보이는 지름 3칸 = 판정 지름 · 옛 코덱스 186.6) · 11-03 thorn = 메이플 불기둥 2~12장 내용 폭 최대 426px의 반(잦아듦 13~15장은 446~456px로 7% 넓어진다) → 불기둥 폭 = 저주 지름 · 옛 thorn=180.5 · 원형 판의 보이는 반경(px · 캔버스 가운데에서 알파>16 화소까지 가장 먼 거리 · 10장 중 최대 · 10-31 통일 공정 5종 전체 384px 판 실측) → 이 반경 = 저주 반경 (CurseSigilFitPx와 같은 계산) · 옛 128px 판: amp=58.5;weaken=56.7;terror=62.2;thorn=57.7;lifetap=55.5;resist=58.7
+    property string CurseCircleOffsetPxByKind = "lifetap=-33.4,67.9"   -- 11-04 원형 판 저주별 그림 가운데 ↔ 피벗 거리(px · x 오른쪽 · y 위 · 장 0~3 평균 · 알파>16 상자 가운데): 메이플 「보이드 프레셔」 장 스프라이트 피벗이 그림 밖 오른쪽 아래(84,−16)라 그대로 두면 고리가 왼쪽 위로 0.33·0.68×배율칸 밀린다 → 그만큼 반대로 옮겨 그림 가운데 = 저주 중심
     property integer CurseCircleOrder = 1       -- 원형 판 층: MapLayer0 1 = 바닥 층(몸 뒤 · MSW 기본 몬스터 2 · 아바타 3·4보다 아래) — 10-31 메이커 회차 B1 「판 조각이 몸 위로 보이는 장」 → 문장 층(CurseSigilOrder)에 묶지 않고 원형 판 전용 상수로 고정 · 피벗·크기는 그대로
     property string CurseCircleOrderByKind = "thorn=5"   -- 11-03 저주별 층 덮어쓰기(「kind=n;…」 · 없는 저주는 CurseCircleOrder 1): 아이언 메이든 불기둥은 위에서 본 바닥 원이 아니라 몸을 감싸 솟는 기둥 → 몸 앞 MapLayer0 5 (몬스터 2 · 아바타 3·4 위)
     property number CurseCircleHoldSec = 0.3    -- 원형 판 마지막 장 추가 유지 (문장 CurseSigilHoldSec와 같은 값)
@@ -171,8 +172,9 @@ script SkillEffects extends Component
     property string C7OldW = "blast=4.333;offering=1.327;wave=2.45;poison=2.144"   -- 예전 클립 배율 1의 폭(칸): FxBlast 3.25/0.75 (P38 · P36 1.95/0.45도 같음) · FxOffering 1.46/1.1 (P35) · FxWave 6.37/2.6 (P29) · FxPoisonCloud 2.68/1.25 (P12)
     property string C7FitPx = "blast=335;offering=183;wave=743;poison=342"   -- 새 그림 내용 폭 최대(px · 알파>16): 10-31 통일 공정 5종 전체(10장 중 최대) 폭발 03 335×241(384×288) · 파동 03 743×455(768×512) · 독 구름 03 342×242(384×320) · 성찬은 C7 그대로 02 183×127 · 옛 C7 4장 판: blast=183;wave=243;poison=244
     property string C7Orders = "blast=6;offering=6;wave=1;poison=1"   -- 층 MapLayer0 (1 = 바닥과 몸 사이 · 코덱스 합성판 기본 「behind」 · 6 = 몸 앞 foreground-stress 판) — 10-31 메이커 회차: 제물 폭발(blast 1.95칸)·성찬 치유(offering 1.46칸)는 작아서 층 1이면 몸에 거의 다 가려 판독 불가 → 6 (해골 폭탄도 같은 blast 칸이라 함께 몸 앞) · 파동·독 구름은 1 그대로
-    property string C7ClipMul = "poison=1.53"   -- 11-03 효과 고르기: 그림 칸을 비워 메이플 클립 옛 길(ClipFx)로 그릴 때 옛 배율에 곱하는 값 — poison 「독안개 바닥 장판」 3a650963 140px: 옛 독구름 1.25배 2.68칸과 같게 2.68/(1.40 × 1.25) ≈ 1.53
-    property string C7ClipSec = "blast=2.4"     -- 11-03 효과 고르기: 한 클립 길로 그리는 칸의 안전 지움 시간(초 · 클립은 스스로 끝남) — blast 「검붉은 피 폭발」 15장 × 150ms = 2.25초 + 여유
+    property string C7ClipMul = "poison=1.53;offering=0.92"   -- offering 「산의 씨앗」 144px: 옛 고리 보이는 폭 1.46칸(반경 4 · 배율 1.1 × 1.327)과 같게 1.327/1.44 ≈ 0.92 · 11-03 효과 고르기: 그림 칸을 비워 메이플 클립 옛 길(ClipFx)로 그릴 때 옛 배율에 곱하는 값 — poison 「독안개 바닥 장판」 3a650963 140px: 옛 독구름 1.25배 2.68칸과 같게 2.68/(1.40 × 1.25) ≈ 1.53
+    property string C7ClipSec = "blast=2.4;offering=1.8"     -- offering 「산의 씨앗」 10장 × 150ms = 1.5초 + 여유 · 11-03 효과 고르기: 한 클립 길로 그리는 칸의 안전 지움 시간(초 · 클립은 스스로 끝남) — blast 「검붉은 피 폭발」 15장 × 150ms = 2.25초 + 여유
+    property string C7ClipOrders = "offering=1"   -- 11-04 효과 교체: 메이플 클립 길의 층 MapLayer0 (C7Orders는 코덱스 칸 길 그대로) — offering 「산의 씨앗」은 피벗이 아래(발 위 26~48px)라 발에 두면 빛 구슬이 몸 가운데를 덮는다(조사판 2026-11-04-fx-armor-storm-candidates/A) → 1 = 몸 뒤(몬스터 2 · 아바타 3·4 아래) · 1.44칸 구슬이 0.75칸 몸보다 커서 둘레 빛·반짝임은 보인다
     property number C7HoldSec = 0.2             -- 한 번 계열(폭발·성찬·파동) 마지막 장 유지 (100ms 대신 0.2초)
     property number C7FadeSec = 0.25            -- 그 뒤 옅어짐 → 0.3 + 0.2 + 0.25 = 0.75초 (4장 0.4초만이면 예전 클립 0.6~1.2초보다 짧다 — 「짧아서 안 보임」 반복 지적)
 
@@ -413,6 +415,10 @@ script SkillEffects extends Component
                 local order = math.floor(self:C7Opt(self.C7Orders, kind, 1) + 0.5)
                 self:ClipFxOrder(self:C7OldRuid(kind), Vector3(feet.x, feet.y + oldDy, 0), s, seconds, order)
                 if not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick poison-mist ruid=%s scale=%.2f sec=%.2f dy=%.2f order=%d pos=%.2f,%.2f", string.sub(self:C7OldRuid(kind), 1, 8), s, seconds, oldDy, order, feet.x, feet.y)) end
+            elseif kind == "offering" then
+                -- 11-04 효과 교체 offering: 메이플 「산의 씨앗」 10장 클립을 한 번 끝까지 (Multicast PickClipAll → Util.PlayClipOnce) — 피벗이 아래라 옛 발 + oldDy 대신 발 자리 · 층 C7ClipOrders offering 1(몸 뒤)
+                local order = math.floor(self:C7Opt(self.C7ClipOrders, kind, 1) + 0.5)
+                self:PickClipAll("offering", self:C7OldRuid(kind), Vector3(feet.x, feet.y, 0), s, math.max(seconds, self:C7Opt(self.C7ClipSec, kind, seconds)), order)
             elseif kind == "blast" then
                 -- 11-03 효과 고르기 blast: 메이플 「검붉은 피 폭발」 15장 클립(장당 ≈150ms · 2.25초)을 한 번 끝까지 (Multicast PickClipAll → Util.PlayClipOnce · 반복 아님) —
                 --   옛 ClipFx는 seconds(폭탄 1.2 · 제물 0.8초)에 잘라 앞 5~8장만 보였다 · 클립 피벗이 가운데 아래(ny 0.10~0.18 = 폭발 바닥)라 옛 발 + oldDy 대신 발 자리 · 층 C7Orders blast 6(몸 앞)
@@ -2671,6 +2677,10 @@ script SkillEffects extends Component
                 if k == kind then order = math.floor(tonumber(v) or order) end
             end
             if kind == "thorn" and self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick curse-thorn ruid=%s n=%d scale=%.2f ms=%s rel=%d order=%d r=%.2f pos=%.2f,%.2f", string.sub(circle[1], 1, 8), #circle, ck, cms, rel, order, radius, pos.x, pos.y)) end
+            for k, ox, oy in string.gmatch(self.CurseCircleOffsetPxByKind, "(%w+)=([%-%d%.]+),([%-%d%.]+)") do
+                if k == kind then pos = pos - Vector3((tonumber(ox) or 0) * ck / 100, (tonumber(oy) or 0) * ck / 100, 0) end
+            end
+            if kind == "lifetap" and self.Entity == _UserService.LocalPlayer and not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick curse-lifetap ruid=%s n=%d scale=%.2f ms=%s rel=%d order=%d r=%.2f draw=%.2f,%.2f", string.sub(circle[1], 1, 8), #circle, ck, cms, rel, order, radius, pos.x, pos.y)) end
             if _Util:MsCount(cms) == #circle then
                 -- 10-31 통일 공정 5종 전체: 10장 = 반복 8장(CurseCircleLoopSec · 적어도 한 바퀴) → 잦아듦 FxSkillUnifyReleaseN장 → 마지막 장 CurseCircleFadeSec 옅어짐 (Util.PlayFramesLoopMs · 클라이언트)
                 _Util:PlayFramesLoopMs(table.concat(circle, "|"), self.Entity, pos, 0, Vector3(ck, ck, 1), cms, rel, self.CurseCircleLoopSec, self.CurseCircleFadeSec, Color(1, 1, 1, 1), order)
