@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // 알림 채널 배정표 (10-31 실플레이 피드백 B-4): 화면 알림을 부르는 곳을 전부 찾아 채널 A·B·C·D로 나눈다.
 //   A 「상단 띠」  HudMap.TopPush · TopPushFor · ShowAlert · Util.NotifyTop(Map) — 습격 격퇴(예고는 11-03부터 글귀 없음) · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장
-//   B 「왼쪽 알림 더미」 NoticeFeed.Push · Util.Notify(Map) — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N · 상한·경고류 60초에 한 번
+//   B 「왼쪽 알림 더미」 NoticeFeed.Push · Util.Notify(Map) · Util.Warn · HudMain.ShowWarn — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N · 상한·경고류 60초에 한 번
+//      (경고 Util.Warn · HudMain.ShowWarn은 11-05부터 머리 위 대신 늘 B 주황 줄 · 같은 경고 2초 안 중복 억제 · 상한 60초 규칙 없음 — 그래서 한 곳씩 센다)
 //   C 「오른쪽 추적기」 HudMain.SetJournalTrack — 퀘스트 추적기 안 일지 진행 한 줄
 //   D 「줍기 표시」 Util.NotifyPickup · HudMain.PickupPop — 발밑 작은 글씨
-//   (머리 위 경고 Util.Warn은 창이 떠 있을 때만 B — 파일별 수만 적는다 · 큰 알림 판 Util.Banner/UXFeedback은 퀘스트 목표 달성·일지 완료만 A로 간다)
+//   (큰 알림 판 Util.Banner/UXFeedback은 파일별 수만 적는다 — 퀘스트 목표 달성·일지 완료만 A로 간다)
 // 사용: node tools/notice_channels.cjs            → docs/evidence/2026-10-31-playfeedback-B/notice-channels.md 다시 쓰기
 //       node tools/notice_channels.cjs --check    → 표와 코드의 부르는 곳 수가 파일·방법마다 같은지 (누락 0 · npm test)
 "use strict";
@@ -27,8 +28,11 @@ const APIS = [
   { re: /_HudMap:ShowAlert\(/, api: "HudMap.ShowAlert" },
   { re: /_HudMain:PickupPop\(/, api: "HudMain.PickupPop" },
   { re: /_HudMain:SetJournalTrack\(/, api: "HudMain.SetJournalTrack" },
+  { re: /_Util:Warn\(/, api: "Util.Warn" },
+  { re: /_HudMain:ShowWarn\(/, api: "HudMain.ShowWarn" },
+  { re: /_NoticeFeed:PushWarn\(/, api: "NoticeFeed.PushWarn" },
 ];
-const GROUPED = [{ re: /_Util:Warn\(/, api: "Util.Warn" }, { re: /_Util:Banner\(/, api: "Util.Banner" }];
+const GROUPED = [{ re: /_Util:Banner\(/, api: "Util.Banner" }];
 
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -62,12 +66,14 @@ function channelOf(file, api, c, fn) {
   if (api.startsWith("HudMap.") || api === "Util.NotifyTop" || api === "Util.NotifyTopMap") return "A";
   if (api === "Util.NotifyPickup" || api === "HudMain.PickupPop") return "D";
   if (api === "HudMain.SetJournalTrack") return "C";
+  if (api === "Util.Warn" || api === "HudMain.ShowWarn") return base === "Util" ? "B 경고 (Warn 본체)" : "B 경고";
+  if (api === "NoticeFeed.PushWarn") return "B 경고 (ShowWarn 본체)";
   if (api === "NoticeFeed.Push") {
     if (base === "Util" && fn === "Notify") return "B (Notify 본체)";
-    if (base === "Util" && fn === "Warn") return "B (창이 떠 있을 때 Warn)";
     if (base === "Util" && fn === "NotifyTop") return "B (채널 A를 끈 때만)";
     if (base === "BossPattern") return "B (채널 A를 끈 때만)";
     if (base === "HudMain" && fn === "PickupPop") return "B (창이 떠 있을 때 줍기)";
+    if (base === "HudMain" && fn === "ShowWarn") return "B (경고 예전 경로 · WarnToFeed 끔)";
     if (base === "UXFeedback") return "B (큰 알림 넘침·창 안 결과)";
   }
   const limited = LIMIT.some((p) => c.includes(p));
@@ -105,7 +111,7 @@ function render({ rows, grouped }) {
   L.push("| 채널 | 자리 · 규칙 (상수) | 무엇 |");
   L.push("|---|---|---|");
   L.push("| **A 상단 띠** | 위 가운데 맵 배너 자리 하나 · 한 번에 1개 · 대기열 · 2.5초(`HudMap.TopSeconds`) · 같은 키 10초 안 다시 안 띄움(`TopDedupSec`) · 급한 것(습격 시작·보스 등장)이 덜 급한 것을 밀어냄 · 창이 떠 있으면 기다리고 8초 지난 것은 버림(`TopStaleSec`) · 끄기 `HudMap.TopChannelOn` | 습격 시작/격퇴 · 보스 등장/처치(「○○ 처치!」 + 다시 나오는 때 한 띠로 합침) · 퀘스트 목표 달성 · 일지 완료(업적 달성 · 일일 퀘스트 완료) · 맵 입장 이름(예전 맵 배너 — 입장 때 1회) · 재의 왕 각성 안내 |");
-  L.push("| **B 왼쪽 알림 더미** | PC 채팅 창 바로 위(펼치면 위로 · `ChatOpenExtra`) · 파티 목록·큰 알림 판 아래 끝까지만 · 위가 최신 · 동시 3줄(`KeepLines`) · 모바일 2줄(`MobileKeepLines`) · 4초 · 같은 글(숫자만 다른 글 포함) 10초 안 ×N(`MergeSec`) · 상한·경고류 60초에 1회(`LimitSec` · `LimitPatterns`) | 아래 표의 B 줄 전부 · 머리 위 경고(`Util.Warn`)는 창이 떠 있을 때만 |");
+  L.push("| **B 왼쪽 알림 더미** | PC 채팅 창 바로 위(펼치면 위로 · `ChatOpenExtra`) · 파티 목록·큰 알림 판 아래 끝까지만 · 위가 최신 · 동시 3줄(`KeepLines`) · 모바일 2줄(`MobileKeepLines`) · 4초 · 같은 글(숫자만 다른 글 포함) 10초 안 ×N(`MergeSec`) · 상한·경고류 60초에 1회(`LimitSec` · `LimitPatterns`) | 아래 표의 B 줄 전부 · 경고(`Util.Warn` · `HudMain.ShowWarn` — 지금 한 행동이 안 된 이유)는 11-05부터 늘 여기 주황 줄(`NoticeFeed.WarnColor`) · 같은 경고 2초 안 중복 억제(`WarnDedupSec`) · 상한 60초 규칙 없음 · 끄기 `HudMain.WarnToFeed` |");
   L.push("| **C 오른쪽 추적기** | 퀘스트 추적기 맨 아래 한 줄(PC는 카드 +34 · 모바일은 지역 줄 자리) · 바뀌면 제자리 갱신 · 30초 뒤 접음(`HudMain.JournalTrackSec`) · 예전 일지 진행 말풍선은 끔(`JournalWindow.PulseToTracker`) | 일지 진행 「업적 · 이름 n/N」 · 「일일 퀘스트 · 이름 n/N」 |");
   L.push("| **D 줍기 표시** | 캐릭터 발밑 작은 글씨 1.5초 떠올라 사라짐(`HudMain.PickSeconds`) · 최대 3개 · 골드는 0.9초 안 한 글로 더함 · 머리 위 COMBO와 떨어진 발밑 · 창이 떠 있으면 B | 골드 +N · 귀환 두루마리 +N · 물약 +N · 아이템 이름 |");
   L.push("");
@@ -123,7 +129,7 @@ function render({ rows, grouped }) {
   L.push("|---|---|---|---|");
   for (const k of Object.keys(grouped).sort()) {
     const [file, api] = k.split("|");
-    L.push(`| ${file.replace("RootDesk/MyDesk/", "")} | ${api} | ${grouped[k]} | ${api === "Util.Warn" ? "머리 위 경고 (창이 떠 있으면 B)" : "큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A)"} |`);
+    L.push(`| ${file.replace("RootDesk/MyDesk/", "")} | ${api} | ${grouped[k]} | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |`);
   }
   L.push("");
   return L.join("\n");

@@ -21,6 +21,8 @@ script HudMain extends Logic
     property number WarnUntil = 0               -- 머리 위 경고 글씨 (ShowWarn)
     property number WarnSeconds = 1.3
     property string WarnText = ""
+    property boolean WarnToFeed = true          -- 11-05: 경고를 머리 위(탑뷰라 화면 정중앙) 대신 왼쪽 알림 더미(채널 B) 주황 줄로 · false = 예전 머리 위 글씨
+    property integer WarnFeedCount = 0          -- 채널 B로 보낸 경고 수 (메이커 확인용)
     property number RaidUntil = 0               -- 습격 예고 (RaidDirector.Warn → RaidWarn): 가장자리 표식·글귀가 보이는 동안
     property table RaidPts = {}                 -- 떼가 솟을 자리 { {x, y}, ... } (최대 8)
     property table RaidDecals = {}              -- 바닥 조짐 이펙트 번호 (끝나면 지운다)
@@ -504,7 +506,17 @@ script HudMain extends Logic
 
     @ExecSpace("ClientOnly")
     method void ShowWarn(string text)
-        -- 지금 한 행동이 안 된 이유: 내 캐릭터 머리 위에 주황 글씨로 잠깐 (같은 문구가 이어지면 시간만 늘린다)
+        -- 지금 한 행동이 안 된 이유. 「안 된 이유」라 공통 실패 소리를 함께 낸다 (10-29 45-3 · 연달아 와도 0.5초에 한 번)
+        --   11-05 (사용자: 「가방이 가득 차 … 안내가 정중앙에 나온다」): 왼쪽 알림 더미(채널 B)에 주황 줄로 — 창이 떠 있어도 같은 더미(창 밖 가장자리)
+        --   WarnToFeed = false면 예전처럼 머리 위 주황 글씨 (창이 떠 있으면 안내 줄)
+        if text == nil or text == "" then return end
+        _UIKit:Sound("fail")
+        if self.WarnToFeed then
+            self.WarnFeedCount = self.WarnFeedCount + 1
+            _NoticeFeed:PushWarn(text)
+            return
+        end
+        if _UIKit:AnyWindowOpen() then _NoticeFeed:Push(text) return end
         self.WarnText = text
         self.WarnUntil = _UtilLogic.ElapsedSeconds + self.WarnSeconds
         _UIKit:SetText("WarnPop", text)

@@ -29,14 +29,12 @@ script Util extends Logic
 
     -- 메시지 세 갈래 (10-11 팀 QA: 위쪽 가운데·왼쪽 아래로 흩어져 보기 불편했다 — docs/ui/message-rules.md)
     --   · Notify: 왼쪽 아래 안내 줄 — 획득·기록·창 안의 결과 (골드, 구매, 판매, 보상 내역)
-    --   · Warn:   내 캐릭터 머리 위 짧은 글씨 — 지금 한 행동이 안 된 이유 (마나 부족, 혼이 멀다, 이미 마을)
+    --   · Warn:   왼쪽 알림 더미(채널 B) 주황 줄 — 지금 한 행동이 안 된 이유 (마나 부족, 혼이 멀다, 이미 마을)
+    --             11-05: 예전엔 내 캐릭터 머리 위(탑뷰라 사실상 화면 정중앙)였다 → 창 열림과 무관하게 B로 · 되돌리기는 HudMain.WarnToFeed = false
     --   · Banner: 왼쪽 알림 판(안내 줄 바로 위) — 진행 사건 (레벨 업, 의뢰 완료, 업적, 난이도 열림, 층 정리)
     @ExecSpace("Client")
     method void Warn(string text)
-        -- 서버에서 _Util:Warn(text, userId). 창이 열려 있으면 머리 위 글씨가 가려지므로 안내 줄로 (창 밖 가장자리 — NoticeFeed)
-        -- 「안 된 이유」라 공통 실패 소리를 함께 낸다 (10-29 45-3 · 연달아 와도 0.5초에 한 번)
-        _UIKit:Sound("fail")
-        if _UIKit:AnyWindowOpen() then _NoticeFeed:Push(text) return end
+        -- 서버에서 _Util:Warn(text, userId). 자리·실패 소리는 HudMain.ShowWarn이 정한다 (11-05: 왼쪽 알림 더미 주황 줄 · 창이 떠 있으면 NoticeFeed가 창 밖 가장자리로)
         _HudMain:ShowWarn(text)
     end
 
@@ -54,7 +52,7 @@ script Util extends Logic
 
     -- 알림 채널 (10-31 실플레이 피드백 B-4 · docs/evidence/2026-10-31-playfeedback-B/notice-channels.md)
     --   A 「상단 띠」(HudMap.TopPush): 습격 · 보스 등장/처치 · 퀘스트 목표 달성 · 일지 완료 · 맵 입장 — 한 번에 하나
-    --   B 「왼쪽 알림 더미」(NoticeFeed): Notify · Warn(창이 떠 있을 때) — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N
+    --   B 「왼쪽 알림 더미」(NoticeFeed): Notify · Warn(11-05부터 늘 · 주황 줄) — 최대 3줄(모바일 2) · 같은 글 10초 안 ×N
     --   C 「오른쪽 추적기」: 퀘스트 추적기 안 일지 진행 (JournalWindow → HudMain.SetJournalTrack)
     --   D 「줍기 표시」(HudMain.PickupPop): 골드·아이템 획득을 캐릭터 발밑 작은 글씨로
     @ExecSpace("Client")
