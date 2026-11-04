@@ -1,0 +1,42 @@
++    property integer RewardDiff = 0           -- 지금 만드는 의뢰 보상의 난이도 (PlayerQuest.TurnIn 동안만 · 유니크 무기 피해 % 상한 판정)
++        self:CapUniqueWeapon(item, self:UniqueDiff(ilvl))
++    method integer UniqueDiff(integer ilvl)
++        -- 유니크가 만들어지는 난이도: 몬스터 드롭(DropDiff) · 의뢰 보상(RewardDiff) · 아이템 레벨 구간 중 가장 높은 것
++        return math.max(self.DropDiff, self.RewardDiff, self:TierOfLevel(ilvl))
++    end
++
++    method void CapUniqueWeapon(table item, integer diff)
++        -- 11-05 사용자 결정: 노말에서 나온 유니크 무기의 「피해 %」는 difficulty.csv uniqueDmgPctCap(노말 30)까지. 0 = 제한 없음 (악몽·지옥)
++        --   이미 가진 아이템은 다시 굴리지 않는다 (생성 시점에만 자른다) · 무기 밖 부위(반지 피해 등)는 그대로
++        local b = self:T().Bases[item.base]
++        if b == nil or b.slot ~= "weapon" then return end
++        local d = _GameData:GetDifficulty(diff)
++        local cap = d ~= nil and (d.uniqueDmgPctCap or 0) or 0
++        local v = item.mods["dmgPct"]
++        if cap > 0 and v ~= nil and v > cap then
++            item.mods["dmgPct"] = cap
++            if not Environment:IsPublishedPlay() then log(string.format("[VRF] unique dmgPct cap %s %d -> %d (diff=%d)", item.name or "", math.floor(v), math.floor(cap), diff)) end
++        end
++    end
++
++        -- 이 의뢰의 난이도로 보상 장비를 만든다 (노말 유니크 무기 피해 % 상한 — ItemData.CapUniqueWeapon). 보상을 다 만든 뒤 0으로 되돌린다
++        _ItemData.RewardDiff = self.Diff
+-            if offer == nil or offer.index ~= self.Index then return end
++            if offer == nil or offer.index ~= self.Index then _ItemData.RewardDiff = 0 return end
+-            if chosen == "" then return end
++            if chosen == "" then _ItemData.RewardDiff = 0 return end
++        _ItemData.RewardDiff = 0
++        -- 11-05: 노말 유니크 무기 피해 % 상한 30 (difficulty.csv uniqueDmgPctCap) · 악몽 구간 아이템 레벨은 그대로
++        local capN = _ItemData:Parse(_ItemData:MakeUnique(firstU, 10)).mods["dmgPct"] or 0
++        local capNm = _ItemData:Parse(_ItemData:MakeUnique(firstU, 50)).mods["dmgPct"] or 0
++        self:Check("normal unique cap", capN <= _GameData:GetDifficulty(0).uniqueDmgPctCap and capNm > _GameData:GetDifficulty(0).uniqueDmgPctCap, "노말 " .. tostring(capN) .. " · 악몽 " .. tostring(capNm))
+-id,index,name,mapSuffix,levelBonus,levelFrom,levelTo,ambientMul,resistPenalty,deathExpLossPct,questRewardMul,monsterHpMul,monsterDmgMul,dropQualityMul,dropMagicMul,dropGoldMul,dropRuneMul,dropNoneMul,auraW1,auraW2,auraW3,eliteVariantChance,championDual,goldAm
+-normal,0,노말,,0,1,40,1,0,0,0.8,1,1,1,1,1,1,1,60,30,10,0,0,1,20,2,16,4,0,25,0,0.25,1
+-nightmare,1,악몽,_nm,40,41,70,0.8,-30,5,3,2.4,1.2,1.5,1.2,1.5,1.5,0.85,45,38,17,0.15,1,0.8,15,2,18,6,1,30,1,0.10,1
+-hell,2,지옥,_hell,70,71,99,0.65,-60,10,7,2.6,1.2,2,1.4,2,2.25,0.7,30,42,28,0.15,1,0.6,12,3,24,8,2,40,1,0.05,2
++id,index,name,mapSuffix,levelBonus,levelFrom,levelTo,ambientMul,resistPenalty,deathExpLossPct,questRewardMul,monsterHpMul,monsterDmgMul,dropQualityMul,dropMagicMul,dropGoldMul,dropRuneMul,dropNoneMul,auraW1,auraW2,auraW3,eliteVariantChance,championDual,goldAm
++normal,0,노말,,0,1,40,1,0,0,0.8,1,1,1,1,1,1,1,60,30,10,0,0,1,20,2,16,4,0,25,0,0.25,1,30
++nightmare,1,악몽,_nm,40,41,70,0.8,-30,5,3,2.4,1.2,1.5,1.2,1.5,1.5,0.85,45,38,17,0.15,1,0.8,15,2,18,6,1,30,1,0.10,1,0
++hell,2,지옥,_hell,70,71,99,0.65,-60,10,7,2.6,1.2,2,1.4,2,2.25,0.7,30,42,28,0.15,1,0.6,12,3,24,8,2,40,1,0.05,2,0
+-    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resis
++    ...diffs.map((d) => `        self.Difficulties[${n(d.index)}] = { id = ${s(d.id)}, name = ${s(d.name)}, suffix = ${s(d.mapSuffix)}, levelBonus = ${n(d.levelBonus)}, levelFrom = ${n(d.levelFrom)}, levelTo = ${n(d.levelTo)}, resistPenalty = ${n(-num(d.resis

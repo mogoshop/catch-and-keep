@@ -260,6 +260,10 @@ script SelfTest extends Logic
         self:Check("grail list", #grail == #t.UniqueList + #t.SetPieceOrder + nRw, tostring(#grail) .. "칸")
         local firstU = t.UniqueList[1]
         local uKey = _ItemData:GrailKeyOf(_ItemData:MakeUnique(firstU, 10))
+        -- 11-05: 노말 유니크 무기 피해 % 상한 30 (difficulty.csv uniqueDmgPctCap) · 악몽 구간 아이템 레벨은 그대로
+        local capN = _ItemData:Parse(_ItemData:MakeUnique(firstU, 10)).mods["dmgPct"] or 0
+        local capNm = _ItemData:Parse(_ItemData:MakeUnique(firstU, 50)).mods["dmgPct"] or 0
+        self:Check("normal unique cap", capN <= _GameData:GetDifficulty(0).uniqueDmgPctCap and capNm > _GameData:GetDifficulty(0).uniqueDmgPctCap, "노말 " .. tostring(capN) .. " · 악몽 " .. tostring(capNm))
         local firstPiece = t.SetPieces[t.SetPieceOrder[1]]
         local sKey = _ItemData:GrailKeyOf(firstPiece.base .. "|4|10|" .. firstPiece.name .. "||0|")
         self:Check("grail keys", uKey == "u:" .. firstU.id and sKey == "s:" .. firstPiece.base and _ItemData:GrailKeyOf("scythe1|0|1|단낫||0|") == "", uKey .. " · " .. sKey)

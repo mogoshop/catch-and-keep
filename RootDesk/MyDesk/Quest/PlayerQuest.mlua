@@ -491,11 +491,13 @@ script PlayerQuest extends Component
         end
         -- 고른 부위 장비는 다른 보상을 하나도 주기 전에 만든다 (못 만들면 아무것도 바꾸지 않고 멈춘다)
         local chosen = ""
+        -- 이 의뢰의 난이도로 보상 장비를 만든다 (노말 유니크 무기 피해 % 상한 — ItemData.CapUniqueWeapon). 보상을 다 만든 뒤 0으로 되돌린다
+        _ItemData.RewardDiff = self.Diff
         if gearSlot ~= "" then
             local offer = self:ParseGearOffer(self.GearOffers[tostring(self.Diff)] or "")
-            if offer == nil or offer.index ~= self.Index then return end
+            if offer == nil or offer.index ~= self.Index then _ItemData.RewardDiff = 0 return end
             chosen = _ItemData:GenerateQuestSlotReward(offer.lv, gearSlot, offer.rarity)
-            if chosen == "" then return end
+            if chosen == "" then _ItemData.RewardDiff = 0 return end
         end
         local items = {}
         local lv = stats.Level
@@ -540,6 +542,7 @@ script PlayerQuest extends Component
             elseif key == "stp" then statPoints = statPoints + (tonumber(val) or 0)
             elseif key == "socket" then sockets = sockets + (tonumber(val) or 0) end
         end
+        _ItemData.RewardDiff = 0
         -- 서버의 한 번의 실행에서 전부 지급하고 의뢰를 다음 단계로 넘긴다.
         inv:PutBagItems(items)
         stats.SkillPoints = stats.SkillPoints + skillPoints

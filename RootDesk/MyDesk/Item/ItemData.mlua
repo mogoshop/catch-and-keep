@@ -10,6 +10,7 @@ script ItemData extends Logic
 
     property table GrailCache = {}            -- 아이템 도감 목록 (처음 부를 때 만든다)
     property integer DropDiff = 0             -- 지금 굴리는 몬스터 드롭의 난이도 (LootSystem.RollDrops 동안만 · RollRarity 배율)
+    property integer RewardDiff = 0           -- 지금 만드는 의뢰 보상의 난이도 (PlayerQuest.TurnIn 동안만 · 유니크 무기 피해 % 상한 판정)
     property table UniqueKeyCache = {}        -- "이름|베이스" → 유니크 id
     property integer UidSeq = 0               -- 출처 id 순번 (같은 초에 만든 물건끼리 겹치지 않게)
     property table AffixById = {}             -- 접사 id → 행 (부분 재련 출처 확인 · 처음 부를 때 만든다)
@@ -985,7 +986,27 @@ script ItemData extends Logic
         -- 유니크는 같은 부위 레어보다 확실히 세게 (uniqueStatMul) + 유니크만의 고유 효과(special: 모든 스킬·배치 한도·소환수 독…)
         self:AddModsRolled(item.mods, u.mods, _GameData.uniqueStatMul)
         for k, v in string.gmatch(u.special or "", "([%w_]+)=([%-%d%.]+)") do item.mods[k] = (item.mods[k] or 0) + (tonumber(v) or 0) end
+        self:CapUniqueWeapon(item, self:UniqueDiff(ilvl))
         return self:Serialize(item)
+    end
+
+    method integer UniqueDiff(integer ilvl)
+        -- 유니크가 만들어지는 난이도: 몬스터 드롭(DropDiff) · 의뢰 보상(RewardDiff) · 아이템 레벨 구간 중 가장 높은 것
+        return math.max(self.DropDiff, self.RewardDiff, self:TierOfLevel(ilvl))
+    end
+
+    method void CapUniqueWeapon(table item, integer diff)
+        -- 11-05 사용자 결정: 노말에서 나온 유니크 무기의 「피해 %」는 difficulty.csv uniqueDmgPctCap(노말 30)까지. 0 = 제한 없음 (악몽·지옥)
+        --   이미 가진 아이템은 다시 굴리지 않는다 (생성 시점에만 자른다) · 무기 밖 부위(반지 피해 등)는 그대로
+        local b = self:T().Bases[item.base]
+        if b == nil or b.slot ~= "weapon" then return end
+        local d = _GameData:GetDifficulty(diff)
+        local cap = d ~= nil and (d.uniqueDmgPctCap or 0) or 0
+        local v = item.mods["dmgPct"]
+        if cap > 0 and v ~= nil and v > cap then
+            item.mods["dmgPct"] = cap
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] unique dmgPct cap %s %d -> %d (diff=%d)", item.name or "", math.floor(v), math.floor(cap), diff)) end
+        end
     end
 
     method string GradeName(integer grade)
