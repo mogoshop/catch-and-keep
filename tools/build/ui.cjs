@@ -1032,6 +1032,15 @@ function buildGameHud() {
 
   // 줍기 표시 (10-31 B-4 채널 D): 골드 +N · 아이템 획득을 캐릭터 발밑 작은 글씨로 1.5초 떠올라 사라지게 — 최대 3개 · 맨 끝에 만들어 다른 엔티티의 순서(displayOrder)를 밀지 않는다 — 창이 떠 있으면 HudMain이 숨긴다 (HudMain.PickupPop · RenderPicks). 머리 위 COMBO와 겹치지 않게 발밑
   for (let i = 1; i <= 3; i++) b.text(`PickPop${i}`, "", { size: 20, bold: true, color: "#F4E2B0", anchor: "middle-center", pos: [0, 0], rect_size: [420, 30], alignment: 4, ...outline, outline_width: 0.25, enable: false });
+  // 사망 띠 (11-04 기획 65 M-2 · 줍기 표시처럼 맨 끝에 만들어 다른 엔티티의 순서를 밀지 않는다): 화면을 옅게 어둡게 + 가운데 아래 띠 「사망했습니다」 · 잃은 골드·장비 · 시체 위치(맵·입구 기준 방향) · 「N초 뒤 야영지」.
+  //   캐릭터(가운데)를 가리지 않게 아래쪽, 파티 구출 판(CoopHUD 위쪽 가운데)과 겹치지 않는다. 클릭은 통과 (HudMain.ShowDeathBand · RenderDeathBand)
+  b.sprite("DeathDim", { anchor: "middle-center", pos: [0, 0], rect_size: [4000, 2400], image_ruid: K.ui_white_square, color: "#000000", alpha: 0.42, sprite_type: 0, enable: false });
+  b.sprite("DeathBand", { anchor: "middle-center", pos: [0, -150], rect_size: [900, 176], ...part("hud_box"), sprite_type: 1, enable: false });
+  b.upsertComponent("DeathBand", "MOD.Core.CanvasGroupComponent", { GroupAlpha: 1, BlocksRaycasts: false, Interactable: false });
+  b.text("DeathBand/Title", "사망했습니다", { size: 34, bold: true, color: "#F07A62", anchor: "middle-center", pos: [0, 52], rect_size: [840, 44], alignment: 4, ...outline, outline_width: 0.25 });
+  b.text("DeathBand/Body", "", { size: 22, color: "#E6DCC6", anchor: "middle-center", pos: [0, 10], rect_size: [840, 32], alignment: 4, bestfit: true, min_size: 15, max_size: 22, ...outline, outline_width: 0.15 });
+  b.text("DeathBand/Corpse", "", { size: 21, bold: true, color: "#A8E6A0", anchor: "middle-center", pos: [0, -26], rect_size: [840, 30], alignment: 4, bestfit: true, min_size: 14, max_size: 21, ...outline, outline_width: 0.15 });
+  b.text("DeathBand/Sub", "", { size: 20, color: "#A8A090", anchor: "middle-center", pos: [0, -60], rect_size: [840, 28], alignment: 4, bestfit: true, min_size: 14, max_size: 20, ...outline, outline_width: 0.15 });
 
   const file = P.ui("GameHUD");
   const previous = readIfExists(file);

@@ -401,10 +401,21 @@ script PlayerStats extends Component
         if fill then
             pc.Hp = pc.MaxHp
             self.Mana = self.MaxMana
+        elseif pc.Hp <= 0 and self:IsDying() then
+            -- 11-04 M-2: 쓰러진 뒤(장비가 시체로 가 최대 생명이 바뀜) 생명이 1로 되살아나 구슬이 「1/64」로 보이던 결함 — 0 그대로 (부활이 채운다)
+            pc.Hp = 0
+            self.Mana = self.MaxMana * manaRatio
         else
             pc.Hp = math.max(1, math.floor(pc.MaxHp * hpRatio))
             self.Mana = self.MaxMana * manaRatio
         end
+    end
+
+    method boolean IsDying()
+        -- 사망 처리 중(PlayerVitals.Dying)인가 — 쓰러진 동안 생명을 되살리지 않게
+        ---@type PlayerVitals
+        local vitals = self.Entity:GetComponent("script.PlayerVitals")
+        return vitals ~= nil and vitals.Dying
     end
 
     @ExecSpace("ServerOnly")

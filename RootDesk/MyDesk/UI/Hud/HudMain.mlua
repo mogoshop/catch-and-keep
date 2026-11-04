@@ -31,6 +31,11 @@ script HudMain extends Logic
     property table RaidMarkRuids = {}           -- 가장자리 표식 1·2·3 (ui_icons ui_raid_edge_mark_1~3)
     property integer RaidMarkFrame = 0          -- 지금 그린 표식 번호 (바뀔 때만 [VRF])
     property number RaidPlateUntil = 0          -- 습격 격퇴 판 (RaidDefeated): 4초 보이고 끝 0.5초 흐려진다
+    property number DeathUntil = 0              -- 11-04 M-2 사망 띠: 부활 예정 시각 (0 = 숨김 · PlayerVitals.NotifyDeath → ShowDeathBand)
+    property number DeathShownAt = 0
+    property string DeathTown = ""
+    property boolean DeathRescue = false
+    property integer DeathLeftShown = -1
     property string TipText = ""                -- 위쪽 가운데 여정 안내: 바뀌거나 맵에 들어올 때만 TipSeconds 동안
     property string TipMap = ""
     property number TipUntil = 0
@@ -403,10 +408,15 @@ script HudMain extends Logic
         local st = _UIKit:Comp("script.PlayerStats")
         if not isvalid(player) or st == nil then return end
         local pc = player.PlayerComponent
-        local hp = pc.Hp / math.max(1, pc.MaxHp)
+        -- 11-04 M-2: 쓰러진 동안은 생명 0 (서버 생명 값이 잠깐 1로 남아도 살아 있는 것처럼 보이지 않게)
+        ---@type PlayerVitals
+        local vitals = player:GetComponent("script.PlayerVitals")
+        local downed = vitals ~= nil and vitals.Downed
+        local hpNow = downed and 0 or pc.Hp
+        local hp = hpNow / math.max(1, pc.MaxHp)
         local mp = st.Mana / math.max(1, st.MaxMana)
         self:RenderBuffs(player, st)
-        local hpText = tostring(math.floor(pc.Hp)) .. "/" .. tostring(math.floor(pc.MaxHp))
+        local hpText = tostring(math.floor(hpNow)) .. "/" .. tostring(math.floor(pc.MaxHp))
         local mpText = tostring(math.floor(st.Mana)) .. "/" .. tostring(math.floor(st.MaxMana))
         -- PC = 양쪽 아래 오브, 모바일 = 왼쪽 위 캐릭터 틀의 막대 (docs/ui/mobile-layout.md)
         for _, orb in ipairs({ { "LifeOrb", hp, hpText }, { "MFrame/Hp", hp, hpText }, { "ManaOrb", mp, mpText }, { "MFrame/Mp", mp, mpText } }) do
@@ -585,6 +595,7 @@ script HudMain extends Logic
         end
         if self.RaidUntil > 0 then self:RenderRaid() end
         if self.RaidPlateUntil > 0 then self:RenderRaidPlate() end
+        if self.DeathUntil > 0 then self:RenderDeathBand() end
         ---@type SkillBook
         local book = _UIKit:Comp("script.SkillBook")
         if book ~= nil and book.RiteHoldAt >= 0 then self:RenderRite(book)
@@ -799,6 +810,53 @@ script HudMain extends Logic
         self:RenderRaidPlate()
         _SoundDirector:PlayEffect(_GameConst.SfxTreasure, 0.8)
         log(string.format("[VRF] raid plate shown n=%d gold=%d", n, gold))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowDeathBand(string title, string body, string corpse, string town, number waitSec, boolean rescue)
+        -- 11-04 M-2 사망 띠: 화면을 옅게 어둡게 + 가운데 아래 「사망했습니다」 · 잃은 것 · 시체 위치 · 「N초 뒤 <마을>에서 일어납니다」
+        local now = _UtilLogic.ElapsedSeconds
+        self.DeathUntil = now + math.max(1, waitSec)
+        self.DeathShownAt = now
+        self.DeathTown = town
+        self.DeathRescue = rescue
+        self.DeathLeftShown = -1
+        _UIKit:SetText("DeathBand/Title", title)
+        _UIKit:SetText("DeathBand/Body", body)
+        _UIKit:SetText("DeathBand/Corpse", corpse)
+        _UIKit:SetEnabled("DeathBand/Corpse", corpse ~= "")
+        _UIKit:SetEnabled("DeathDim", true)
+        _UIKit:SetEnabled("DeathBand", true)
+        self:RenderDeathBand()
+        log(string.format("[VRF] death band shown title=%s body=%s corpse=%s wait=%.1f rescue=%s", title, body, corpse, waitSec, tostring(rescue)))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void RenderDeathBand()
+        -- 남은 초를 세고, 일어나면(Downed 해제) 또는 시간이 지나고 3초 뒤 거둔다. 처음 0.4초는 어둠·띠가 서서히 짙어진다
+        local player = _UserService.LocalPlayer
+        ---@type PlayerVitals
+        local vitals = isvalid(player) and player:GetComponent("script.PlayerVitals") or nil
+        local now = _UtilLogic.ElapsedSeconds
+        local up = vitals ~= nil and not vitals.Downed and now - self.DeathShownAt > 0.5
+        if up or now > self.DeathUntil + 3 then
+            self.DeathUntil = 0
+            _UIKit:SetEnabled("DeathBand", false)
+            _UIKit:SetEnabled("DeathDim", false)
+            log("[VRF] death band hidden up=" .. tostring(up))
+            return
+        end
+        local fade = math.min(1, (now - self.DeathShownAt) / 0.4)
+        local band = _UIKit:Get("DeathBand")
+        if isvalid(band) and band.CanvasGroupComponent ~= nil then band.CanvasGroupComponent.GroupAlpha = fade end
+        local dim = _UIKit:Get("DeathDim")
+        if isvalid(dim) and dim.SpriteGUIRendererComponent ~= nil then dim.SpriteGUIRendererComponent.Color = Color(0, 0, 0, 0.42 * fade) end
+        local left = math.max(0, math.ceil(self.DeathUntil - now))
+        if left == self.DeathLeftShown then return end
+        self.DeathLeftShown = left
+        local sub = tostring(left) .. "초 뒤 " .. self.DeathTown .. "에서 일어납니다"
+        if self.DeathRescue then sub = "파티원이 곁에 오면 그 자리에서 일어납니다 · " .. tostring(left) .. "초 뒤 " .. self.DeathTown end
+        _UIKit:SetText("DeathBand/Sub", sub)
     end
 
     @ExecSpace("ClientOnly")
