@@ -191,7 +191,7 @@
 | Shadow/ShadowOwner.mlua | Util.Warn | 6 | 머리 위 경고 (창이 떠 있으면 B) |
 | Shadow/SoulExtractor.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillBook.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
-| Skill/SkillBook.mlua | Util.Warn | 13 | 머리 위 경고 (창이 떠 있으면 B) |
+| Skill/SkillBook.mlua | Util.Warn | 12 | 머리 위 경고 (창이 떠 있으면 B) |
 | Skill/SkillEffects.mlua | Util.Warn | 1 | 머리 위 경고 (창이 떠 있으면 B) |
 | Social/PartyRescue.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |
 | Social/PlayerDuel.mlua | Util.Banner | 1 | 큰 알림 판 (업적 달성 · 일일 퀘스트 완료는 A) |

@@ -538,7 +538,7 @@ do
  Environment.IsMobilePlatform=keepMobile
  print('[quality/skills] I04 form row (11-02 auto only): skeleton·mage trees hide row PC/mobile · no −/+ · roster head 편성 · shard toggle mobile-only · other trees hidden')
 end
--- 46-5 거인 강화: 악몽 잠김 · 택일(둘 중 하나 · 다시 고르기 불가) · 보류(방패 갈림 쌍) · 열림 레벨(10→42 · 14→50 · 17→56 · 20→62) · 공방 두 묶음
+-- 46-5 거인 강화: 노말에서도 열림(11-05 사용자: 악몽 잠김 삭제) · 택일(둘 중 하나 · 다시 고르기 불가) · 보류(방패 갈림 쌍) · 열림 레벨(10→42 · 14→50 · 17→56 · 20→62) · 공방 두 묶음
 do
  local keepLv,keepPts=stats.Level,stats.SkillPoints
  local fakeNodes,fakeMains,fakeGet=_SkillData.NodesOf,_SkillData.Mains,_SkillData.Get
@@ -547,7 +547,7 @@ do
  book.Levels={bone_rite=20,bone_giant=20}
  stats.MaxDifficulty=0
  -- 48-0: 기본 거인 노드 3줄(giant_quake · giant_basic_split · giant_basic_return)이 없어져 같은 필요 랭크의 방패 · 대검 노드로 본다
- assert(book:CanLearn('giant_shield_wall',99,20)=='악몽부터','nightmare lock: '..book:CanLearn('giant_shield_wall',99,20))
+ assert(book:CanLearn('giant_shield_wall',99,20)=='','giant node open in normal (11-05): '..book:CanLearn('giant_shield_wall',99,20))
  assert(book:CanLearn('bomb_wide',99,20)=='','bomb nodes stay open in normal')
  stats.MaxDifficulty=1
  assert(book:CanLearn('giant_shield_wall',99,20)=='','open after nightmare: '..book:CanLearn('giant_shield_wall',99,20))
@@ -628,13 +628,13 @@ do
  roster.UndeadRoster='s:greatsword,s:greatsword,m:|0'
  assert(not string.find(book:GetRankSummary('bone_giant',5),'지금 무리라면',1,true),'fewer than 5 → no giant line')
  stats.MaxDifficulty=0
- assert(string.find(book:GetRankSummary('bone_giant',5),' · 악몽부터',1,true),'normal lock text '..book:GetRankSummary('bone_giant',5))
- assert(book:CanLearn('bone_giant',99,5)=='악몽부터','bone_giant learn nightmare lock '..book:CanLearn('bone_giant',99,5))
+ assert(not string.find(book:GetRankSummary('bone_giant',5),'악몽',1,true),'normal: no nightmare text (11-05) '..book:GetRankSummary('bone_giant',5))
+ assert(book:CanLearn('bone_giant',99,5)=='','bone_giant learnable in normal (11-05) '..book:CanLearn('bone_giant',99,5))
  -- 깃발 줄: 본 골렘에서만 (11-02) · 칸 순서 = fallback · 노말 머리 글
  values={}
  SkillWindow.SelMain='bone_giant';SkillWindow.Selected='bone_giant';SkillWindow.ShowGiant=''
  SkillWindow:RenderBanner(book,stats)
- assert(values['SkillWin/WS/Banner/Head']=='거인 악몽부터 · 동률이면' and values['SkillWin/WS/Banner/K1/Label']=='방패' and values['SkillWin/WS/Banner/K4/Label']=='마법사' and values['SkillWin/WS/Banner/K6/Label']=='안 고름','banner '..tostring(values['SkillWin/WS/Banner/Head']))
+ assert(values['SkillWin/WS/Banner/Head']=='동률이면' and values['SkillWin/WS/Banner/K1/Label']=='방패' and values['SkillWin/WS/Banner/K4/Label']=='마법사' and values['SkillWin/WS/Banner/K6/Label']=='안 고름','banner '..tostring(values['SkillWin/WS/Banner/Head']))
  stats.MaxDifficulty=1
  values={}
  SkillWindow:RenderBanner(book,stats)
@@ -833,7 +833,8 @@ do
  assert(book:CastGiant(Vector2(1,0)) and covers.bone_giant==24,'second charge → cover 24')
  assert(not book:CastGiant(Vector2(1,0)) and #rite==1 and book:GiantReason(-1)=='충전 대기','charges empty blocks')
  book.ReadyAt={};rite={};stats.MaxDifficulty=0
- assert(not book:CastGiant(Vector2(1,0)) and #rite==0 and warns[#warns]=='본 골렘은 악몽부터 쓸 수 있습니다','normal: giant locked '..tostring(warns[#warns]))
+ assert(book:CastGiant(Vector2(1,0)) and #rite==1 and rite[1].stage==5,'normal: giant casts (11-05) '..tostring(warns[#warns]))
+ book.ReadyAt={};rite={}
  stats.MaxDifficulty=1;book.RiteUnits5=function() return 4 end
  assert(book:GiantReason(-1)=='해골 1기 부족','short pool reason')
  book.RiteUnits5=function() return 6 end

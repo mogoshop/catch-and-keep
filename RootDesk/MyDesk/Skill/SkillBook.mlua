@@ -210,8 +210,7 @@ script SkillBook extends Component
         local lv = self:GetLevel(id)
         if lv >= def.maxLv then return "최대 랭크" end
         if def.kind == "node" then
-            -- 46-5 거인 강화: 악몽 진입 전엔 배울 수 없다 (5기 거인 해금과 같은 조건 · 사유 줄 「악몽부터」 · §8 후보 1 승인 전)
-            if self:GiantOfNode(id) ~= "" and not self:RiteGiantUnlocked() then return "악몽부터" end
+            -- 11-05 사용자: 본 골렘·거인 강화의 「악몽부터」 제한을 없앴다 (노말에서도 배운다 · 레벨·필요 랭크 규칙은 그대로)
             -- 택일 묶음 (44 결정 5 · 46 §4-3): 같은 묶음에서 이미 하나를 골랐으면 다른 쪽은 못 배운다 (다시 고르기 불가 — 스킬 초기화로만)
             if (def.group or "") ~= "" then
                 for _, other in ipairs(_SkillData:GroupOf(def.group)) do
@@ -236,7 +235,6 @@ script SkillBook extends Component
             if playerLevel < needLv then return "캐릭터 Lv" .. tostring(needLv) .. "에 다음 랭크" end
         else
             if playerLevel < def.row then return "Lv" .. tostring(def.row) .. "에 열림" end
-            if id == "bone_giant" and not self:RiteGiantUnlocked() then return "악몽부터" end   -- 11-02 거인 분리: 거인 해금(악몽 진입)과 같은 조건 · 거인 노드와 같은 사유 줄
             if lv >= self:RankCap(id, playerLevel) then return "Lv" .. tostring(self:NextRankLevel(id, lv + 1)) .. "에 다음 랭크" end
         end
         if skillPoints <= 0 then return "스킬 포인트 부족" end
@@ -850,7 +848,6 @@ script SkillBook extends Component
         if id == "bone_giant" then
             -- 11-02 거인 분리 (52 §2-2 안 ①): 지속 · 랭크 배율(2랭크부터) · 충전 칸 · 지금 무리로 서는 거인 (GiantPlan — 서버 StartGiant와 같은 계획 · 46-6)
             local text = string.format("거인 %d초%s · 충전 %d칸", math.floor(_GameData.riteGiantSeconds), power > 0 and string.format(" · 공격·생명 +%g%%", power) or "", math.floor(_GameData.riteGiantCharges))
-            if not self:RiteGiantUnlocked() then return text .. " · 악몽부터" end
             local plan = _UndeadSystem:GiantPlanFor(self.Entity)
             if plan ~= nil then text = text .. " · 지금 무리라면 " .. _GameData:GetGiant(plan.type).name end
             return text
@@ -1354,13 +1351,6 @@ script SkillBook extends Component
         return 4 + math.max(0, rank)
     end
 
-    method boolean RiteGiantUnlocked()
-        -- 뼈 거인(본 골렘) 해금 = 악몽 진입 자격 (노말 재의 왕을 쓰러뜨려 악몽이 열림 · PlayerStats.MaxDifficulty, 저장·동기화되는 값)
-        ---@type PlayerStats
-        local st = self.Entity:GetComponent("script.PlayerStats")
-        return st ~= nil and st.MaxDifficulty >= 1
-    end
-
     method integer RiteSkeletons()
         -- 바칠 수 있는 해골 전사 수: 서버 = UndeadSystem 목록(돌진·거인 제외), 클라이언트 = 동기화된 소환수 배지 수 (예측용)
         if self:IsServer() then return #_UndeadSystem:LiveUnits(self.Entity, "skeleton") end
@@ -1501,7 +1491,6 @@ script SkillBook extends Component
         --   재료 = 바칠 수 있는 해골 전사 + 마법사 (RiteUnits5 · 46-1) · 거인이 상한(riteGiantMax 2)만큼 서 있으면 못 세운다 (GiantCapReached · 48 §3-1)
         local lv = self:GetPowerLevel("bone_giant")
         if lv <= 0 then return "배우지 않음" end
-        if not self:RiteGiantUnlocked() then return "악몽부터" end
         if self:GiantCapReached() then return "거인 상한" end
         if not self:RiteReady("bone_giant") then return "충전 대기" end
         local short = 5 - self:RiteUnits5()
@@ -1512,7 +1501,7 @@ script SkillBook extends Component
 
     @ExecSpace("ServerOnly")
     method boolean CastGiant(Vector2 target)
-        -- 습득·마을·악몽·충전·마나 확인 → 거인 (StartGiant가 참여 다섯·상한·충전 칸을 마지막으로 본다) → 마나·덮개 확정 (실패면 아무것도 쓰지 않는다)
+        -- 습득·마을·충전·마나 확인 → 거인 (StartGiant가 참여 다섯·상한·충전 칸을 마지막으로 본다) → 마나·덮개 확정 (실패면 아무것도 쓰지 않는다)
         if not _Util:IsAlive(self.Entity) then return false end
         local def = _SkillData:Get("bone_giant")
         local lv = self:GetPowerLevel("bone_giant")
@@ -1526,10 +1515,6 @@ script SkillBook extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats == nil then return false end
-        if not self:RiteGiantUnlocked() then
-            _Util:Warn(def.name .. "은 악몽부터 쓸 수 있습니다", userId)
-            return false
-        end
         if not self:RiteReady("bone_giant") then return false end
         local cost = self:GetManaCost("bone_giant", lv)
         if stats.Mana - self.PendingMana < cost then

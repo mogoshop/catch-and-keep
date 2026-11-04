@@ -210,9 +210,10 @@ def next_rank_level(sid, rank):
 
 
 DONE = {"runs": 0}
-# 46-7 뼈 의식 거인 (기획서 46 §3-5 · 부록 A-3): 5기 거인은 악몽부터라 악몽·지옥(diff ≥ 1)에서만 빌드 총 피해 +pct%.
+# 46-7 뼈 의식 거인 (기획서 46 §3-5 · 부록 A-3): 본 골렘 해금 레벨(skills.csv bone_giant row)부터 빌드 총 피해 +pct%.
+#   11-05 사용자: 「악몽부터」 제한 삭제 — 예전엔 악몽·지옥(diff ≥ 1)에서만 더했다
 #   기획서 표의 빌드 +N%(대상 수 기대값 · 사용률 50% · 스킬을 쿨마다 쓴 상한 · 변이 효과 생략)를 그대로 넣는 가정 — 재미·DPS 증명이 아니라 끝 레벨 안전 범위 확인
-GIANT = {"pct": 0.0}
+GIANT = {"pct": 0.0, "row": int(num(SKILL["bone_giant"]["row"])) if "bone_giant" in SKILL else 24}
 # 뼈 의식 (기획서 43 §3-1 · §5 · 10-29): 해금 레벨(skills.csv bone_rite row)부터 빌드 총 피해 +pct%. 실제 단계별 수치가 아니라 「이 정도 세지면」 가정
 RITE = {"pct": 0.0, "row": int(num(SKILL["bone_rite"]["row"])) if "bone_rite" in SKILL else 24}   # 이미 끝낸 난이도 수 (의뢰 스킬·능력치·배치 보상은 난이도마다 다시 준다)
 
@@ -337,7 +338,7 @@ def build(prof, L, act=1, diff=0):
     res = {k: min(C["resistCap"], v + pen) for k, v in res.items()}
     bone_armor = math.floor((20 + 10 * (rk.get("bone_armor", 0) - 1)) * (1 + 0.1 * (L - 1))) if rk.get("bone_armor") else 0
     rite = 1 + RITE["pct"] / 100 if RITE["pct"] and L >= RITE["row"] else 1
-    giant = 1 + GIANT["pct"] / 100 if GIANT["pct"] and diff >= 1 else 1
+    giant = 1 + GIANT["pct"] / 100 if GIANT["pct"] and L >= GIANT["row"] else 1
     return dict(L=L, rk=rk, left=left, pts=skill_points(L), dps=dps, total=sum(dps.values()) * taken_mul * rite * giant, hp=hp, defense=defense,
                 res=res, n_sk=n_sk, n_mg=n_mg, n_sh=n_sh, n_el=n_el, plus=plus, minion=minion, sk_hp=sk_hp, sh_hp=sh_hp, sh_n=sh_n,
                 bone_armor=bone_armor, amp=amp * p["markUp"], Str=Str, Vit=Vit)
@@ -645,11 +646,11 @@ END_LEVELS = [42, 70, 93]   # 보통·악몽·지옥 끝 레벨 기준 — 11-03
 
 def giant_check(prof, eff, pcts=(0.0, 8.0, 13.5, 20.0, 26.0)):
     # 48-7 (10-30): +26 = 거인 2마리 상한 가정(기획서 48 §8) · 해골 마법사 속성 구간(mage_school_mul)이 build에 들어간 기준선 — 끝 레벨만 본다 (균형·재미 완료 증거 아님)
-    # 기획서 46 부록 A-3: 악몽·지옥에서만 +N% · 노말은 그대로(5기 거인은 악몽부터) · 끝 레벨 41 · 68 · 90 불변인지 (경험치 경로 모델 — 안전 범위 확인이지 재미 증명 아님)
+    # 기획서 46 부록 A-3: 본 골렘 해금 Lv(24)부터 모든 난이도 +N% (11-05 사용자: 악몽부터 제한 삭제) · 끝 레벨 41 · 68 · 90 불변인지 (경험치 경로 모델 — 안전 범위 확인이지 재미 증명 아님)
     names = ["보통", "악몽", "지옥"]
     GIANT["pct"] = 0.0
     base = chain(prof, eff)
-    print("== 본 골렘 점검 (%s · 악몽·지옥에서만 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % prof)
+    print("== 본 골렘 점검 (%s · Lv%d부터 빌드 총 피해 +N%% · 기획서 46 부록 A-3) ==" % (prof, GIANT["row"]))
     print(" 기준  " + " · ".join("%s %s Lv%d" % (names[i], fmt(t), l) for i, (t, l) in enumerate(base)))
     # 11-03 사용자: killExpCoef 15 선택에 따른 기준 · 출현 ×2 반영 (예전 41 · 68 · 90 → 42 · 70 · 93 · 정확값)
     ok = [l for _, l in base] == END_LEVELS
