@@ -44,6 +44,10 @@ script PlayerQuest extends Component
     property boolean GearWatch = false
     property table GearArmed = {}             -- slot -> { item, at }; successful manual equip only, not saved or emitted.
     property integer GearOfferSeq = 0         -- 제안 버전 순번 (늦게 도착한 옛 요청을 거른다)
+    -- 11-03 D안 퀘스트 완료 보상 연출 (UI/Windows/QuestRewardWindow): 클라이언트가 보상 띠·결산 판을 띄우면 그 퀘스트 번호를 기억한다 (서버 메모리 · 저장 안 함).
+    --   기억한 퀘스트는 받지 않고 창을 닫거나(RequestAutoClaim) 맵을 떠나면(OnMapLeave) 자동 지급 → 유실 0. 지급 결과는 안내 줄·알림 판 대신 RewardGranted로
+    property integer ClaimArmed = 0
+    property string ClaimMode = ""            -- TurnIn 한 번 동안: "" 받기 · auto 닫음 · leave 맵 이동
 
     -- ───────── 진행 (QuestSystem이 부른다) ─────────
 
@@ -401,6 +405,54 @@ script PlayerQuest extends Component
         self:TurnIn("")
     end
 
+    @ExecSpace("Server")
+    method void RequestRewardView(integer expectedIndex)
+        -- 보상 띠·결산 판을 띄웠다 (보고 대기 · 의뢰인 곁 · 표시한 번호만). 지급은 받기(RequestTurnIn) · 닫기(RequestAutoClaim) · 맵 이동(OnMapLeave)
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 2 then return end
+        local q = _QuestData:Get(self.Index)
+        if q == nil or not self:NearGiver(q) then return end
+        self.ClaimArmed = self.Index
+        log("[VRF] quest reward view armed q=" .. tostring(self.Index))
+    end
+
+    @ExecSpace("Server")
+    method void RequestAutoClaim(integer expectedIndex)
+        -- 보상을 본 뒤 받지 않고 닫았다 → 그대로 지급 (의뢰인 곁 검사 없음 — 본 순간 이미 확인했다). 부위 고르기 퀘스트는 고르기 전이라 보관
+        local pc = self.Entity.PlayerComponent
+        if senderUserId ~= pc.UserId or self.Index ~= expectedIndex or self.State ~= 2 or self.ClaimArmed ~= self.Index then return end
+        self:AutoClaim("auto")
+    end
+
+    @ExecSpace("ServerOnly")
+    method void AutoClaim(string mode)
+        local q = _QuestData:Get(self.Index)
+        if q == nil or self:IsGearChoiceQuest(q) then
+            log("[VRF] quest reward auto skip (gear choice) q=" .. tostring(self.Index))
+            self.ClaimArmed = 0
+            return
+        end
+        local before = self.Index
+        self.ClaimMode = mode
+        self:TurnIn("")
+        self.ClaimMode = ""
+        self.ClaimArmed = 0
+        log(string.format("[VRF] quest reward auto %s q=%d done=%s", mode, before, tostring(self.Index ~= before)))
+    end
+
+    @ExecSpace("ServerOnly")
+    method void OnMapLeave(Entity leftMap)
+        -- 보상을 본 채 맵을 떠났다 (귀환·포털·사망 등) → 자동 지급
+        if self.ClaimArmed > 0 and self.ClaimArmed == self.Index and self.State == 2 then self:AutoClaim("leave") end
+    end
+
+    @ExecSpace("Client")
+    method void RewardGranted(integer index, string mode, integer exp, integer gold, table items, integer dropped, integer goldTotal)
+        -- 지급 결과 → 보상 연출 (비행 · 골드 굴림 · 자동 지급이면 알림 판)
+        if self.Entity ~= _UserService.LocalPlayer then return end
+        _QuestRewardWindow:OnGranted(index, mode, exp, gold, items, dropped, goldTotal)
+    end
+
     @ExecSpace("ServerOnly")
     method integer RewardBagSlots(table q)
         -- 보상이 차지할 가방 칸 (F06 가방 선검사 — 보고·부위 고르기 제안이 같은 수를 쓴다)
@@ -420,6 +472,9 @@ script PlayerQuest extends Component
         if q == nil or self.State ~= 2 or not _Util:IsAlive(self.Entity) then return end
         local reportIndex = self.Index
         local reportField = not _Util:NearNpc(self.Entity, q.giver)
+        -- 보상 띠·결산 판을 본 퀘스트면 안내 줄·알림 판 대신 연출 RPC (11-03 D안)
+        local viewed = self.ClaimArmed > 0 and self.ClaimArmed == self.Index
+        local dropped = 0
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         ---@type PlayerInventory
@@ -469,6 +524,7 @@ script PlayerQuest extends Component
                     if u ~= nil then
                         local made = _ItemData:MakeUnique(u, lv + 2)
                         _LootSystem:Spawn(_Util:Pos2(self.Entity), self.Entity.PlayerComponent.UserId, "item", made, 1, _ItemData:Parse(made).rarity)
+                        dropped = dropped + 1
                         _Util:Banner(u.name, _GameData:GetMonsterName(q.target) .. "이(가) 남긴 것 — 발밑에 떨어졌습니다", self.Entity.PlayerComponent.UserId)
                         log("[VRF] act boss unique " .. q.target .. " → " .. u.id)
                     else
@@ -494,10 +550,17 @@ script PlayerQuest extends Component
         stats:AddGold(gold)
         local rewardText = _QuestData:RewardText(q.reward)
         local head = (exp > 0 and ("경험치 +" .. tostring(exp) .. " · ") or "") .. "골드 +" .. tostring(gold)
-        _Util:Notify("보상: " .. head .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
-        local icon = _GameData:GetUiIcon("q_done")
-        if #items > 0 then icon = _ItemData:IconFor(items[1]) end
-        self:NotifyQuest("퀘스트 보상 · " .. q.title, head .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
+        if viewed then
+            local mode = self.ClaimMode ~= "" and self.ClaimMode or "claim"
+            self:RewardGranted(reportIndex, mode, exp, gold, items, dropped, stats.Gold, self.Entity.PlayerComponent.UserId)
+            self.ClaimArmed = 0
+            log(string.format("[VRF] quest reward granted q=%d mode=%s exp=%d gold=%d items=%d goldTotal=%d", reportIndex, mode, exp, gold, #items, stats.Gold))
+        else
+            _Util:Notify("보상: " .. head .. (rewardText ~= "" and (", " .. rewardText) or ""), self.Entity.PlayerComponent.UserId)
+            local icon = _GameData:GetUiIcon("q_done")
+            if #items > 0 then icon = _ItemData:IconFor(items[1]) end
+            self:NotifyQuest("퀘스트 보상 · " .. q.title, head .. (rewardText ~= "" and ("\n" .. rewardText) or ""), icon, self.Entity.PlayerComponent.UserId)
+        end
         log("[PlayerQuest] 완료 " .. q.title .. " diff=" .. tostring(self.Diff))
         _GameEvents:Emit("QuestCompleted", { player = self.Entity, index = self.Index })
         -- 액트 마지막 의뢰면 장 마무리 내레이션 (docs/design/18 §3-4)

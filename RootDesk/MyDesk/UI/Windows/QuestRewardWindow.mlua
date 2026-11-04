@@ -1,0 +1,746 @@
+-- 퀘스트 완료 보상 연출 (클라이언트 · 11-03 D안 — 사용자 「완료 버튼 이후 받을 보상을 좀 더 극적으로」). 화면은 QuestRewardHUD (tools/build/quest-reward.cjs).
+--   보통 퀘스트 = NPC 대화 마지막 쪽 단추 줄 왼쪽에 보상 칩 줄(Band) + 「받기」 (NpcWindow 주 단추) — 누르는 순간 서버 지급(PlayerQuest.RequestTurnIn)
+--   큰 퀘스트 (보상에 gen·unique·skp가 있거나 액트 마지막 퀘스트) = 「완료」 → 결산 판(Plate): 카드가 0.15초 간격으로 튀어나옴 → 경험치 막대 → 「받기」
+--   액트 마지막 퀘스트 = 결산 판 앞 0.6초 어두워짐 + 금빛 빛기둥 (ActClearFx는 보스를 쓰러뜨린 자리에서 이미 나왔다 · 이야기 카드는 판이 닫힌 뒤 — StoryCard는 창이 닫힐 때까지 기다린다)
+--   카메라 줌은 넣지 않는다 (모바일 어지러움)
+-- 받기 뒤: 서버 PlayerQuest.RewardGranted → 아이콘이 가방 단추로 0.4초 곡선 비행 · 골드 숫자 굴림 · 소리. 왼쪽 안내 줄·알림 판은 서버가 생략한다 (중복 금지)
+-- 유실 0: 띠·판을 보여 줄 때 서버에 「봤다」를 알리고(RequestRewardView) — 받지 않고 닫으면 RequestAutoClaim, 맵을 떠나면 서버 PlayerQuest.OnMapLeave가 지급
+--   (부위 고르기 퀘스트는 고르기 전에는 지급할 수 없어 그대로 보관 — 다시 말을 걸면 같은 카드)
+@Logic
+script QuestRewardWindow extends Logic
+
+    property string Root = "/ui/QuestRewardHUD/SafeArea"
+    property string Plate = "/ui/QuestRewardHUD/SafeArea/Plate"
+    property string Band = "/ui/QuestRewardHUD/SafeArea/Band"
+    property string Fly = "/ui/QuestRewardHUD/SafeArea/Fly"
+    property string Dim = "/ui/QuestRewardHUD/SafeArea/Dim"
+    property string Pillar = "/ui/QuestRewardHUD/SafeArea/Pillar"
+    property string BagPc = "/ui/GameHUD/Bottom/Menu/BtnInv"     -- PC 하단 메뉴 「인벤토리」
+    property string BagMobile = "/ui/GameHUD/BtnMenu"            -- 모바일은 메뉴 단추 (인벤토리가 그 안)
+    property number CardStep = 256           -- 카드 240 + 사이 16 (quest-reward.cjs CARD)
+    property number CardW = 240
+    property number CardH = 285
+    property number CardPop = 0.15           -- 카드 사이 · 바운스 길이
+    property number ExpTime = 0.9
+    property number FlyTime = 0.4
+    property number IntroTime = 0.6
+    property number BandGap = 10
+    -- 띠
+    property integer BandIndex = 0            -- 띠를 보이고 있는 퀘스트 번호 (0 = 없음)
+    property boolean BandClaiming = false     -- 받기를 눌러 서버 응답을 기다린다
+    property number BandClaimAt = 0
+    property any BandList = nil               -- 칩 목록 (보통 Lua 표)
+    -- 결산 판
+    property integer PlateIndex = 0
+    property string Phase = ""                -- intro · cards · ready · claiming · done · handoff (부위 고르기 창으로 넘김)
+    property number PhaseAt = 0
+    property any CardList = nil
+    property integer CardShown = 0
+    property boolean ActEnd = false
+    property integer ExpGain = 0
+    property integer ExpLv = 1
+    property integer ExpNow = 0
+    property number ExpAt = -1
+    property number ClaimAt = 0
+    property number DimAlpha = 0
+    -- 비행 · 골드 굴림
+    property any Flights = nil
+    property integer CountFrom = 0
+    property integer CountTo = 0
+    property number CountAt = -1
+    property Vector2 CountPos = Vector2(0, 0)
+    property any BumpEntity = nil
+    property number BumpAt = -1
+    property boolean GoldSounded = false
+    property string LastMap = ""
+
+    @ExecSpace("ClientOnly")
+    method void OnBeginPlay()
+        -- 결산 판을 창으로 등록 (떠 있는 동안 전투 입력을 막고 Esc로 닫힌다 · 이야기 카드는 닫힐 때까지 기다린다)
+        self.Flights = {}
+        self.CardList = {}
+        self.BandList = {}
+        _UIKit:RegisterWindow(self.Plate)
+        _UIKit:SetEnabled(self.Band, false)
+        _UIKit:SetEnabled(self.Dim, false)
+        _UIKit:SetEnabled(self.Pillar, false)
+        _UIKit:SetEnabled(self.Fly .. "/Count", false)
+        for i = 1, 6 do _UIKit:SetEnabled(self.Fly .. "/I" .. tostring(i), false) end
+        _UIKit:Connect(self.Plate .. "/BtnGet", function() self:OnPlateButton() end)
+        _UIKit:Connect(self.Plate .. "/BtnClose", function() _UIKit:Close(self.Plate) end)
+        log("[VRF] quest reward window ready")
+    end
+
+    -- ───────── 분류 · 보상 목록 ─────────
+
+    method boolean IsActEnd(integer index)
+        -- 액트 마지막 퀘스트 (액트 최종 보스 퀘스트까지 들어온 액트만)
+        local q = _QuestData:Get(index)
+        return q ~= nil and _QuestData:LastOfAct(q.act) == index and _QuestData:ActClosed(q.act)
+    end
+
+    method boolean IsBig(integer index)
+        -- 큰 퀘스트 = 보상에 장비(gen)·유니크(unique)·스킬 포인트(skp)가 있거나 액트 마지막 퀘스트 → 결산 판. 나머지 = 대사 안 보상 띠
+        local q = _QuestData:Get(index)
+        if q == nil then return false end
+        local r = "," .. q.reward
+        if string.find(r, ",gen:", 1, true) ~= nil or string.find(r, ",unique:", 1, true) ~= nil or string.find(r, ",skp:", 1, true) ~= nil then return true end
+        return self:IsActEnd(index)
+    end
+
+    method boolean IsGearChoice(integer index)
+        -- 부위 고르기 퀘스트 (PlayerQuest.IsGearChoiceQuest와 같은 기준 — gen:3)
+        local q = _QuestData:Get(index)
+        return q ~= nil and string.find("," .. q.reward .. ",", ",gen:3,", 1, true) ~= nil
+    end
+
+    method string Comma(integer n)
+        -- 1234567 → 1,234,567
+        local s = tostring(math.floor(math.max(0, n)))
+        local out = ""
+        local len = string.len(s)
+        for i = 1, len do
+            out = out .. string.sub(s, i, i)
+            local left = len - i
+            if left > 0 and left % 3 == 0 then out = out .. "," end
+        end
+        return out
+    end
+
+    @ExecSpace("ClientOnly")
+    method table Rewards(integer index)
+        -- 보여 줄 보상 칸 (골드 → 경험치 → 보상 칸 순서). 경험치·골드는 지금 난이도에서 실제로 받는 값 (NpcWindow.RewardText와 같은 계산)
+        -- 칸 = { kind, icon, tint, glyph, value, note, chip, bag(가방으로 날아감), items(받은 물건 몇 개를 쓰는가), sound }
+        local list = {}
+        local q = _QuestData:Get(index)
+        if q == nil then return list end
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        local diff = st ~= nil and st.Difficulty or 0
+        local d = _GameData:GetDifficulty(diff)
+        local mul = d ~= nil and (d.questRewardMul or 1) or 1
+        local gold = math.floor(q.gold * mul)
+        local exp = _QuestData:ExpFor(q, diff)
+        local icon = function(key) return _GameData:GetUiIcon(key) end
+        local white = Color(1, 1, 1, 1)
+        table.insert(list, { key = "gold", kind = "골드", icon = icon("icon_gold"), tint = white, glyph = "", value = "+" .. self:Comma(gold), note = "", chip = "골드 " .. self:Comma(gold), bag = true, items = 0, sound = "drop_gold", amount = gold })
+        if exp > 0 then
+            table.insert(list, { key = "exp", kind = "경험치", icon = "", tint = white, glyph = "EXP", value = "+" .. self:Comma(exp), note = "", chip = "경험치 " .. self:Comma(exp), bag = false, items = 0, sound = "ui_confirm", amount = exp })
+        end
+        local resist = { respoison = { "독 저항", "stat_res_poison" }, reslight = { "번개 저항", "stat_res_light" }, resfire = { "화염 저항", "stat_res_fire" } }
+        for key, val in string.gmatch(q.reward, "(%a+):([^,]+)") do
+            local n = tonumber(val) or 0
+            if key == "skp" then
+                table.insert(list, { key = key, kind = "스킬 포인트", icon = icon("icon_skill"), tint = white, glyph = "", value = "+" .. val, note = "", chip = "스킬 포인트 " .. val, bag = false, items = 0, sound = "ui_confirm" })
+            elseif key == "stp" then
+                table.insert(list, { key = key, kind = "능력치 포인트", icon = icon("icon_stats"), tint = white, glyph = "", value = "+" .. val, note = "", chip = "능력치 포인트 " .. val, bag = false, items = 0, sound = "ui_confirm" })
+            elseif key == "gen" then
+                local rare = n >= 3
+                local note = "받을 때 옵션 결정"
+                if self:IsGearChoice(index) then note = "부위 고르기" end
+                local c = Color.FromHexCode(_ItemData:RarityColor(rare and 2 or 1))
+                table.insert(list, { key = key, kind = rare and "희귀 장비" or "마법 장비", icon = icon("eq_armor"), tint = c, glyph = "", value = "1개", note = note, chip = rare and "희귀 장비" or "마법 장비", bag = true, items = 1, sound = rare and "drop_rare" or "drop_magic" })
+            elseif key == "unique" then
+                table.insert(list, { key = key, kind = "유니크 장비", icon = icon("eq_amulet"), tint = Color.FromHexCode(_ItemData:RarityColor(3)), glyph = "", value = val .. "개", note = "", chip = "유니크 장비", bag = true, items = n, sound = "drop_unique" })
+            elseif key == "runes" or key == "rune" then
+                local count = key == "runes" and n or 1
+                local name = "룬"
+                if key == "rune" then
+                    local r = _ItemData:GetRune(val)
+                    if r ~= nil then name = r.name .. " 룬" end
+                end
+                table.insert(list, { key = key, kind = name, icon = icon("rune"), tint = white, glyph = "", value = tostring(count) .. "개", note = "", chip = name .. " " .. tostring(count), bag = true, items = count, sound = "drop_unique" })
+            elseif key == "item" then
+                local it = _ItemData:Parse(val)
+                table.insert(list, { key = key, kind = it.name, icon = _ItemData:IconFor(val), tint = white, glyph = "", value = "1개", note = "", chip = it.name, bag = true, items = 1, sound = "drop_magic" })
+            elseif key == "socket" then
+                table.insert(list, { key = key, kind = "소켓권", icon = icon("socket_ring"), tint = white, glyph = "", value = val .. "장", note = "대장장이 소켓", chip = "소켓권 " .. val, bag = false, items = 0, sound = "ui_confirm" })
+            elseif key == "deploy" then
+                table.insert(list, { key = key, kind = "그림자 배치", icon = icon("icon_shadow"), tint = white, glyph = "", value = "+" .. val, note = "영구", chip = "그림자 배치 +" .. val, bag = false, items = 0, sound = "ui_confirm" })
+            elseif resist[key] ~= nil then
+                table.insert(list, { key = key, kind = resist[key][1], icon = icon(resist[key][2]), tint = white, glyph = "", value = "+" .. val, note = "영구", chip = resist[key][1] .. " +" .. val, bag = false, items = 0, sound = "ui_confirm" })
+            elseif key == "choice" then
+                table.insert(list, { key = key, kind = "선택 보상", icon = icon("icon_skill"), tint = Color(1, 0.86, 0.5, 1), glyph = "", value = "1회", note = "군단·주문·저주 중 하나", chip = "선택 보상", bag = false, items = 0, sound = "ui_confirm" })
+            end
+        end
+        return list
+    end
+
+    -- ───────── ① 보상 칩 줄 (보통 퀘스트 · NpcWindow가 부른다) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void ShowBand(integer index)
+        -- NPC 대화 창 마지막 쪽: 단추 줄 왼쪽 빈자리(대사 칸 왼쪽 끝 ~ 주 단추 왼쪽)에 칩을 왼쪽부터
+        --   초상화 칸(왼쪽 51 + 220 + 사이 16 = 287)은 비운다 — 11-04 메이커 확인: 초상화 칸부터 깔면 칩이 오렌 발치를 덮었다
+        if self.BandClaiming and self.BandIndex == index then return end
+        local list = self:Rewards(index)
+        self.BandList = list
+        self.BandIndex = index
+        self.BandClaiming = false
+        local npc = _UIKit:Get("NpcWin")
+        local band = _UIKit:Get(self.Band)
+        if not isvalid(npc) or not isvalid(band) then return end
+        local size = npc.UITransformComponent.RectSize
+        local at = npc.UITransformComponent.anchoredPosition
+        -- 대사 칸 왼쪽(287 = ui-tokens dialogLayout paperX)부터 주 단추(184) + 사이 16 앞까지 · 오른쪽 여백 51 (FRAME.padX · DIALOG.npcButtonW)
+        local left = 287
+        local w = size.x - left - 51 - 184 - 16
+        band.UITransformComponent.RectSize = Vector2(w, 88)
+        band.UITransformComponent.anchoredPosition = Vector2(at.x - size.x / 2 + left + w / 2, at.y + 48)
+        local x = 72
+        for i = 1, 5 do
+            local chip = self.Band .. "/C" .. tostring(i)
+            local r = list[i]
+            _UIKit:SetEnabled(chip, r ~= nil)
+            if r ~= nil then
+                local tw = math.ceil(_UIKit:TextWidth(r.chip, 21)) + 6
+                local cw = 11 + 44 + 6 + tw + 11
+                if x + cw > w then
+                    _UIKit:SetEnabled(chip, false)
+                else
+                    _UIKit:SetSize(chip, Vector2(cw, 64))
+                    _UIKit:SetPos(chip, Vector2(x, 0))
+                    _UIKit:SetSize(chip .. "/Text", Vector2(tw, 56))
+                    _UIKit:SetText(chip .. "/Text", r.chip)
+                    self:SetIconOrGlyph(chip, r)
+                    x = x + cw + self.BandGap
+                end
+            end
+        end
+        _UIKit:SetEnabled(self.Band, true)
+        log(string.format("[VRF] reward band show q=%d chips=%d", index, #list))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void SetIconOrGlyph(string path, table r)
+        -- 칸 그림: 아이콘이 있으면 그림 + 색, 없으면 글자 표지 (경험치 「EXP」)
+        if r.icon ~= "" then
+            _UIKit:SetIcon(path .. "/Icon", r.icon)
+            _UIKit:SetColor(path .. "/Icon", r.tint)
+            _UIKit:SetEnabled(path .. "/Glyph", false)
+        else
+            _UIKit:SetEnabled(path .. "/Icon", false)
+            _UIKit:SetText(path .. "/Glyph", r.glyph)
+            _UIKit:SetEnabled(path .. "/Glyph", true)
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HideBand()
+        -- 다른 쪽을 그릴 때 (받는 중·비행 중이면 그대로)
+        if self.BandIndex == 0 or self.BandClaiming then return end
+        self.BandIndex = 0
+        _UIKit:SetEnabled(self.Band, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void BandClaimStart(integer index)
+        -- NPC 대화 창 「받기」를 눌렀다 (NpcWindow.Action → RequestTurnIn)
+        if self.BandIndex ~= index then return end
+        self.BandClaiming = true
+        self.BandClaimAt = _UtilLogic.ElapsedSeconds
+        log("[VRF] reward band claim q=" .. tostring(index))
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean BandBusy()
+        -- 받기 응답·비행이 끝날 때까지 대화 창을 닫지 않는다 (NpcWindow.Poll)
+        return self.BandIndex > 0 and self.BandClaiming
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnDialogClosed()
+        -- NPC 대화 창이 닫혔다 (닫기 · 멀어짐 · 다른 창 열기 · Esc). 띠를 보였는데 받지 않았으면 자동 지급
+        if self.BandIndex == 0 or self.BandClaiming then return end
+        local index = self.BandIndex
+        self.BandIndex = 0
+        _UIKit:SetEnabled(self.Band, false)
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest ~= nil and quest.Index == index and quest.State == 2 then
+            quest:RequestAutoClaim(index)
+            log("[VRF] reward band closed -> auto claim q=" .. tostring(index))
+        end
+    end
+
+    -- ───────── ② 결산 판 (큰 퀘스트) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void OpenPlate(integer index)
+        -- NPC 대화 「완료」: 서버에 봤다고 알리고(자동 지급 대비) 판을 띄운다. 액트 마지막이면 어두워짐 + 빛기둥 0.6초 뒤
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil or quest.Index ~= index or quest.State ~= 2 or self.PlateIndex > 0 then return end
+        self.PlateIndex = index
+        self.LastMap = ""
+        self.CardList = self:Rewards(index)
+        self.ActEnd = self:IsActEnd(index)
+        quest:RequestRewardView(index)
+        _NpcWindow:Dismiss()
+        _UIKit:SetEnabled(self.Dim, true)
+        _UIKit:SetColor(self.Dim, Color(0, 0, 0, 0))
+        self.DimAlpha = 0
+        if self.ActEnd then
+            self.Phase = "intro"
+            self.PhaseAt = _UtilLogic.ElapsedSeconds
+            _UIKit:SetEnabled(self.Pillar, true)
+            self:Sfx("drop_unique", 0.8)
+            log("[VRF] reward plate intro (act end) q=" .. tostring(index))
+        else
+            self:ShowPlateNow()
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ShowPlateNow()
+        -- 판 글 · 카드 자리(보상 수만큼 가운데) · 경험치 줄 처음 값 → 연다
+        local q = _QuestData:Get(self.PlateIndex)
+        if q == nil then return end
+        _UIKit:SetText(self.Plate .. "/Heading", "퀘스트 완료")
+        _UIKit:SetText(self.Plate .. "/Sub", q.title)
+        local n = math.min(4, #self.CardList)
+        local total = n * self.CardW + (n - 1) * (self.CardStep - self.CardW)
+        local x0 = (4 * self.CardW + 3 * (self.CardStep - self.CardW) - total) / 2
+        for i = 1, 4 do
+            local card = self.Plate .. "/Cards/K" .. tostring(i)
+            local r = self.CardList[i]
+            _UIKit:SetEnabled(card, false)
+            if r ~= nil then
+                _UIKit:SetPos(card, Vector2(x0 + (i - 1) * self.CardStep + self.CardW / 2, -self.CardH / 2))
+                _UIKit:SetText(card .. "/Kind", r.kind)
+                _UIKit:SetText(card .. "/Value", r.value)
+                _UIKit:SetText(card .. "/Note", r.note)
+                self:SetIconOrGlyph(card, r)
+            end
+        end
+        self.CardShown = 0
+        -- 경험치 줄: 지금 레벨·경험치에서 시작
+        ---@type PlayerStats
+        local st = _UIKit:Comp("script.PlayerStats")
+        self.ExpGain = 0
+        for _, r in ipairs(self.CardList) do if r.key == "exp" then self.ExpGain = r.amount end end
+        self.ExpLv = st ~= nil and st.Level or 1
+        self.ExpNow = st ~= nil and st.Exp or 0
+        self.ExpAt = -1
+        self:DrawExp(0)
+        _UIKit:SetEnabled(self.Plate .. "/Exp/Up", false)
+        _UIKit:SetText(self.Plate .. "/BtnGet", "받기")
+        _UIKit:Open(self.Plate)
+        -- Open이 판을 맨 앞으로 옮긴다 → 날아가는 아이콘 층을 다시 맨 앞으로
+        local fly = _UIKit:Get(self.Fly)
+        if isvalid(fly) then _UILogic:SetSiblingIndex(fly.UITransformComponent, 1000000) end
+        self.Phase = "cards"
+        self.PhaseAt = _UtilLogic.ElapsedSeconds
+        log(string.format("[VRF] reward plate open q=%d cards=%d actEnd=%s", self.PlateIndex, n, tostring(self.ActEnd)))
+    end
+
+    method integer NeedExp(integer level)
+        -- PlayerStats.CalcExpToNext와 같은 식
+        return math.floor(_GameData.expCurveCoef * (level ^ _GameData.expCurveExp) + 0.5)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void DrawExp(number p)
+        -- 경험치 막대: 받을 경험치의 p(0~1)만큼 더한 레벨·막대 (레벨이 오르면 막대가 다시 차오른다)
+        local cap = math.floor(_GameData.levelCap)
+        local lv = self.ExpLv
+        local cur = self.ExpNow + math.floor(self.ExpGain * p + 0.5)
+        local need = self:NeedExp(lv)
+        while cur >= need and lv < cap do
+            cur = cur - need
+            lv = lv + 1
+            need = self:NeedExp(lv)
+        end
+        local ratio = lv >= cap and 1 or (cur / math.max(1, need))
+        _UIKit:SetBar(self.Plate .. "/Exp/Bar/Fill", ratio)
+        _UIKit:SetText(self.Plate .. "/Exp/Lv", lv > self.ExpLv and ("Lv " .. tostring(self.ExpLv) .. " → " .. tostring(lv)) or ("Lv " .. tostring(lv)))
+        if self.ExpGain > 0 then
+            _UIKit:SetText(self.Plate .. "/Exp/Value", "경험치 +" .. self:Comma(math.floor(self.ExpGain * p + 0.5)))
+        else
+            _UIKit:SetText(self.Plate .. "/Exp/Value", self:Comma(cur) .. " / " .. self:Comma(need))
+        end
+        if lv > self.ExpLv and not _UIKit:IsOpen(self.Plate .. "/Exp/Up") then
+            _UIKit:SetEnabled(self.Plate .. "/Exp/Up", true)
+            self:Sfx("ui_gain", 0.5)
+            log("[VRF] reward plate level up preview " .. tostring(self.ExpLv) .. "->" .. tostring(lv))
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void FinishPlateAnim()
+        -- 카드·막대를 끝 상태로 (받기를 일찍 눌렀을 때)
+        for i = 1, math.min(4, #self.CardList) do
+            local card = self.Plate .. "/Cards/K" .. tostring(i)
+            _UIKit:SetEnabled(card, true)
+            local e = _UIKit:Get(card)
+            if isvalid(e) then e.UITransformComponent.UIScale = Vector3(1, 1, 1) end
+        end
+        self.CardShown = math.min(4, #self.CardList)
+        self:DrawExp(1)
+        self.ExpAt = -2
+    end
+
+    @ExecSpace("ClientOnly")
+    method void OnPlateButton()
+        -- 받기 → 서버 지급 · 다 받은 뒤 「확인」 → 닫기
+        if self.PlateIndex == 0 then return end
+        if self.Phase == "done" then
+            _UIKit:Close(self.Plate)
+            return
+        end
+        if self.Phase ~= "cards" and self.Phase ~= "ready" then return end
+        -- 「완료」를 누른 같은 Space가 판을 열자마자 받기까지 누르지 않게 — 대사를 Space로 빠르게 넘기던 손이 판을 못 보고 받기까지 누르지 않도록 판이 뜬 뒤 0.8초는 받기를 받지 않는다
+        --   (11-04 메이커 확인: 0.35초·카드 단계만 막았을 때, 보상 카드 4장 + 경험치 0이면 0.8초 만에 ready가 되어 연타 한 번에 받기까지 눌렸다)
+        if _UtilLogic.ElapsedSeconds - self.PhaseAt < 0.8 then return end
+        ---@type PlayerQuest
+        local quest = _UIKit:Comp("script.PlayerQuest")
+        if quest == nil or quest.Index ~= self.PlateIndex or quest.State ~= 2 then return end
+        self:FinishPlateAnim()
+        self.Phase = "claiming"
+        self.ClaimAt = _UtilLogic.ElapsedSeconds
+        _UIKit:SetText(self.Plate .. "/BtnGet", "처리 중…")
+        quest:RequestTurnIn(self.PlateIndex)
+        log("[VRF] reward plate claim q=" .. tostring(self.PlateIndex))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ClosePlateState()
+        -- 판 상태를 지운다 (어두워짐·빛기둥 끔)
+        self.PlateIndex = 0
+        self.Phase = ""
+        _UIKit:SetEnabled(self.Dim, false)
+        _UIKit:SetEnabled(self.Pillar, false)
+    end
+
+    -- ───────── 지급 결과 (서버 PlayerQuest.RewardGranted) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void OnGranted(integer index, string mode, integer exp, integer gold, table items, integer dropped, integer goldTotal)
+        -- mode: claim(받기) · auto(받지 않고 닫음) · leave(맵 이동)
+        log(string.format("[VRF] reward granted q=%d mode=%s exp=%d gold=%d items=%d dropped=%d goldTotal=%d", index, mode, exp, gold, #items, dropped, goldTotal))
+        self:Sfx("ui_gain", 0.55)
+        local q = _QuestData:Get(index)
+        local title = q ~= nil and q.title or ""
+        if mode ~= "claim" and self.BandIndex == index then
+            -- 띠를 띄운 채 자동 지급(맵 이동 등): 이동 화면에 가려 비행이 안 보인다 → 띠를 거두고 아래 알림 판으로 (11-04 메이커 확인)
+            self.BandClaiming = false
+            self.BandIndex = 0
+            _UIKit:SetEnabled(self.Band, false)
+        end
+        if mode == "claim" and self.PlateIndex == index and _UIKit:IsOpen(self.Plate) then
+            -- 결산 판: 장비 카드를 실제 받은 물건으로 바꾸고 → 가방으로
+            local sources = {}
+            local k = 1
+            for i, r in ipairs(self.CardList) do
+                if i > 4 then break end
+                local card = self.Plate .. "/Cards/K" .. tostring(i)
+                local icon = r.icon
+                local flies = r.bag and icon ~= ""
+                if r.items > 0 then
+                    local got = items[k]
+                    k = k + r.items
+                    if got == nil or got == "" then flies = false end
+                    if got ~= nil and got ~= "" then
+                        icon = _ItemData:IconFor(got)
+                        local it = _ItemData:Parse(got)
+                        _UIKit:SetIcon(card .. "/Icon", icon)
+                        _UIKit:SetColor(card .. "/Icon", Color(1, 1, 1, 1))
+                        _UIKit:SetText(card .. "/Value", _UIKit:Colored(_ItemData:RarityColor(it.rarity), it.name))
+                    elseif r.key == "unique" and dropped > 0 then
+                        _UIKit:SetText(card .. "/Note", "발밑 확인")
+                    end
+                end
+                if flies then
+                    table.insert(sources, { entity = _UIKit:Get(card .. "/Icon"), icon = icon, gold = r.key == "gold" })
+                end
+            end
+            self:StartFlights(sources, goldTotal - gold, goldTotal)
+            _UIKit:SetText(self.Plate .. "/BtnGet", "확인")
+            self.Phase = "done"
+            return
+        end
+        if self.BandIndex == index then
+            -- 띠: 칩 그림이 가방으로
+            local sources = {}
+            local k = 1
+            for i, r in ipairs(self.BandList) do
+                if i > 5 then break end
+                local chip = self.Band .. "/C" .. tostring(i)
+                local icon = r.icon
+                if r.items > 0 then
+                    local got = items[k]
+                    k = k + r.items
+                    if got ~= nil and got ~= "" then icon = _ItemData:IconFor(got) end
+                end
+                if r.bag and icon ~= "" and _UIKit:IsOpen(chip) then table.insert(sources, { entity = _UIKit:Get(chip .. "/Icon"), icon = icon, gold = r.key == "gold" }) end
+            end
+            self:StartFlights(sources, goldTotal - gold, goldTotal)
+            self.BandClaiming = false
+            self.BandIndex = 0
+            _UIKit:SetEnabled(self.Band, false)
+            return
+        end
+        if mode == "claim" then
+            -- 부위 고르기 창에서 받은 경우 (판은 이미 닫힘): 화면 가운데에서 가방으로
+            local sources = {}
+            local list = self:Rewards(index)
+            local k = 1
+            for _, r in ipairs(list) do
+                local icon = r.icon
+                if r.items > 0 then
+                    local got = items[k]
+                    k = k + r.items
+                    if got ~= nil and got ~= "" then icon = _ItemData:IconFor(got) end
+                end
+                if r.bag and icon ~= "" then table.insert(sources, { entity = nil, icon = icon, gold = r.key == "gold" }) end
+            end
+            self:StartFlights(sources, goldTotal - gold, goldTotal)
+            if self.PlateIndex == index then self:ClosePlateState() end
+            return
+        end
+        -- 자동 지급 (받지 않고 닫음 · 맵 이동): 알림 판 하나로 알린다
+        local head = (exp > 0 and ("경험치 +" .. self:Comma(exp) .. " · ") or "") .. "골드 +" .. self:Comma(gold)
+        local extra = q ~= nil and _QuestData:RewardText(q.reward) or ""
+        local icon = _GameData:GetUiIcon("q_done")
+        if #items > 0 then icon = _ItemData:IconFor(items[1]) end
+        _UXFeedback:ShowKind("quest", "퀘스트 보상 · " .. title, head .. (extra ~= "" and ("\n" .. extra) or ""), icon)
+        if self.PlateIndex == index then
+            _UIKit:Close(self.Plate)
+            self:ClosePlateState()
+        end
+    end
+
+    -- ───────── ④ 비행 · 골드 굴림 ─────────
+
+    @ExecSpace("ClientOnly")
+    method Entity BagTarget()
+        -- 가방 단추: PC 하단 「인벤토리」, 모바일(또는 숨김)이면 메뉴 단추
+        local pc = _UIKit:Get(self.BagPc)
+        if isvalid(pc) and _UIKit:IsShown(pc) then return pc end
+        return _UIKit:Get(self.BagMobile)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Vector2 LocalOf(Entity e)
+        -- 다른 UI 그룹의 엔티티 가운데 → 비행 층(Fly) 안 좌표
+        local fly = _UIKit:Get(self.Fly)
+        if not isvalid(fly) or not isvalid(e) then return Vector2(0, 0) end
+        local c = e.UITransformComponent:GetWorldCorners()
+        if c == nil or #c < 4 then return Vector2(0, 0) end
+        local mid = Vector3((c[1].x + c[3].x) / 2, (c[1].y + c[3].y) / 2, 0)
+        local p = fly.UITransformComponent:ToLocalPoint(mid)
+        return Vector2(p.x, p.y)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void StartFlights(table sources, integer goldFrom, integer goldTo)
+        -- 출발 그림마다 곡선 비행 (0.06초 간격 · 0.4초) → 가방 단추 콕 → 골드 숫자 굴림
+        local target = self:BagTarget()
+        local to = self:LocalOf(target)
+        self.Flights = {}
+        local now = _UtilLogic.ElapsedSeconds
+        for i, s in ipairs(sources) do
+            if i > 6 then break end
+            local from = Vector2((i - (#sources + 1) / 2) * 90, 0)
+            if s.entity ~= nil and isvalid(s.entity) then from = self:LocalOf(s.entity) end
+            local path = self.Fly .. "/I" .. tostring(i)
+            _UIKit:SetIcon(path, s.icon)
+            _UIKit:SetPos(path, from)
+            local mid = Vector2((from.x + to.x) / 2, math.max(from.y, to.y) + 220)
+            table.insert(self.Flights, { path = path, from = from, ctrl = mid, to = to, at = now + (i - 1) * 0.06, gold = s.gold, landed = false })
+        end
+        self.BumpEntity = target
+        self.GoldSounded = false
+        self.CountFrom = goldFrom
+        self.CountTo = goldTo
+        self.CountAt = -1
+        self.CountPos = Vector2(to.x, to.y + (to.y < 0 and 80 or -80))
+        if #self.Flights == 0 then self.CountAt = now end
+        log(string.format("[VRF] reward fly n=%d to=(%.0f,%.0f) gold %d->%d", #self.Flights, to.x, to.y, goldFrom, goldTo))
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickFlights(number now)
+        if self.Flights == nil or #self.Flights == 0 then return end
+        local left = 0
+        for _, f in ipairs(self.Flights) do
+            if not f.landed then
+                local t = (now - f.at) / self.FlyTime
+                local e = _UIKit:Get(f.path)
+                if t >= 1 then
+                    f.landed = true
+                    _UIKit:SetEnabled(f.path, false)
+                    if not self.GoldSounded then
+                        self.GoldSounded = true
+                        self:Sfx("drop_gold", 0.5)
+                        self.CountAt = now
+                        self.BumpAt = now
+                    end
+                elseif t >= 0 and isvalid(e) then
+                    local u = t * t * (3 - 2 * t)
+                    local a = (1 - u) * (1 - u)
+                    local b = 2 * (1 - u) * u
+                    local c = u * u
+                    e.UITransformComponent.anchoredPosition = Vector2(a * f.from.x + b * f.ctrl.x + c * f.to.x, a * f.from.y + b * f.ctrl.y + c * f.to.y)
+                    local s = 1 - 0.45 * u
+                    e.UITransformComponent.UIScale = Vector3(s, s, 1)
+                end
+                if not f.landed then left = left + 1 end
+            end
+        end
+        if left == 0 then self.Flights = {} end
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickCount(number now)
+        -- 가방 위 골드 숫자 굴림 0.6초 → 1.2초 머문 뒤 사라짐 · 가방 단추 콕(1.15 → 1)
+        if self.BumpAt >= 0 and isvalid(self.BumpEntity) then
+            local t = (now - self.BumpAt) / 0.25
+            local s = t >= 1 and 1 or (1 + 0.15 * math.sin(t * math.pi))
+            self.BumpEntity.UITransformComponent.UIScale = Vector3(s, s, 1)
+            if t >= 1 then self.BumpAt = -1 end
+        end
+        if self.CountAt < 0 then return end
+        local t = now - self.CountAt
+        local path = self.Fly .. "/Count"
+        if t >= 1.8 then
+            self.CountAt = -1
+            _UIKit:SetEnabled(path, false)
+            return
+        end
+        local p = math.min(1, t / 0.6)
+        local v = math.floor(self.CountFrom + (self.CountTo - self.CountFrom) * p + 0.5)
+        _UIKit:SetPos(path, self.CountPos)
+        _UIKit:SetText(path, "골드 " .. self:Comma(v))
+        _UIKit:SetEnabled(path, true)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void Sfx(string key, number volume)
+        local ruid = _GameData:GetSound(key)
+        if ruid ~= "" then _SoundDirector:PlayEffect(ruid, volume) end
+    end
+
+    -- ───────── 매 프레임 ─────────
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number delta)
+        local now = _UtilLogic.ElapsedSeconds
+        self:TickFlights(now)
+        self:TickCount(now)
+        if self.BandClaiming and now - self.BandClaimAt > 3.5 then
+            -- 응답 없음 (가방 부족 등 서버 거절): 띠를 다시 받을 수 있는 상태로
+            self.BandClaiming = false
+        end
+        if self.PlateIndex == 0 then return end
+        self:TickPlate(now)
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TickPlate(number now)
+        local t = now - self.PhaseAt
+        -- 맵이 바뀌면 판을 닫는다 (지급은 서버 OnMapLeave)
+        local player = _UserService.LocalPlayer
+        local mapName = (isvalid(player) and isvalid(player.CurrentMap)) and player.CurrentMap.Name or ""
+        if self.Phase == "intro" then
+            local p = math.min(1, t / self.IntroTime)
+            self.DimAlpha = 0.72 * p
+            _UIKit:SetColor(self.Dim, Color(0, 0, 0, self.DimAlpha))
+            local frame = math.min(8, 1 + math.floor(p * 8))
+            _UIKit:SetIcon(self.Pillar .. "/Frame", _GameData:GetUiIcon("fx_levelup_" .. tostring(frame)))
+            if p >= 1 then self:ShowPlateNow() end
+            return
+        end
+        -- 어두워짐: 판 뒤 0.5 (액트 끝은 0.72에서 내려온다) · 빛기둥은 판이 뜨면 0.5초에 걸쳐 사라진다
+        local want = 0.5
+        if math.abs(self.DimAlpha - want) > 0.01 then
+            self.DimAlpha = self.DimAlpha + (want - self.DimAlpha) * math.min(1, 6 * (1 / 60))
+            _UIKit:SetColor(self.Dim, Color(0, 0, 0, self.DimAlpha))
+        end
+        if self.ActEnd and _UIKit:IsOpen(self.Pillar) then
+            local fade = math.max(0, 1 - t / 0.5)
+            _UIKit:SetColor(self.Pillar .. "/Frame", Color(1, 0.9, 0.6, fade))
+            _UIKit:SetColor(self.Pillar .. "/Beam", Color(1, 0.82, 0.42, 0.85 * fade))
+            _UIKit:SetColor(self.Pillar .. "/Glow", Color(1, 0.85, 0.5, 0.8 * fade))
+            if fade <= 0 then
+                _UIKit:SetEnabled(self.Pillar, false)
+                _UIKit:SetColor(self.Pillar .. "/Frame", Color(1, 0.9, 0.6, 1))
+                _UIKit:SetColor(self.Pillar .. "/Beam", Color(1, 0.82, 0.42, 0.85))
+                _UIKit:SetColor(self.Pillar .. "/Glow", Color(1, 0.85, 0.5, 0.8))
+            end
+        end
+        if not _UIKit:IsOpen(self.Plate) then
+            -- 판이 닫혔다: 받기 전이면 자동 지급 · 받는 중이면 부위 고르기 창으로 넘어간 것 · 받은 뒤면 끝
+            local index = self.PlateIndex
+            if self.Phase == "cards" or self.Phase == "ready" then
+                ---@type PlayerQuest
+                local quest = _UIKit:Comp("script.PlayerQuest")
+                if quest ~= nil and quest.Index == index and quest.State == 2 and not self:IsGearChoice(index) then
+                    quest:RequestAutoClaim(index)
+                    log("[VRF] reward plate closed -> auto claim q=" .. tostring(index))
+                end
+                self:ClosePlateState()
+            elseif self.Phase == "claiming" then
+                self.Phase = "handoff"
+                self.PhaseAt = now
+                _UIKit:SetEnabled(self.Dim, false)
+                _UIKit:SetEnabled(self.Pillar, false)
+                log("[VRF] reward plate handoff q=" .. tostring(index))
+            elseif self.Phase == "handoff" then
+                if t > 120 then self:ClosePlateState() end
+            else
+                self:ClosePlateState()
+            end
+            return
+        end
+        if self.LastMap ~= "" and mapName ~= self.LastMap then
+            _UIKit:Close(self.Plate)
+        end
+        self.LastMap = mapName
+        if self.Phase == "cards" then
+            -- 카드가 0.15초 간격으로 하나씩 · 크기 1.15 → 1.0 바운스 · 칸마다 소리
+            local n = math.min(4, #self.CardList)
+            for i = 1, n do
+                local start = 0.1 + (i - 1) * self.CardPop
+                local card = self.Plate .. "/Cards/K" .. tostring(i)
+                if t >= start then
+                    local e = _UIKit:Get(card)
+                    if i > self.CardShown then
+                        self.CardShown = i
+                        _UIKit:SetEnabled(card, true)
+                        local r = self.CardList[i]
+                        self:Sfx(r.sound, 0.4)
+                        log("[VRF] reward plate card " .. tostring(i) .. " " .. r.kind)
+                    end
+                    if isvalid(e) then
+                        local u = math.min(1, (t - start) / self.CardPop)
+                        local s = 1.15 - 0.15 * (u * (2 - u))
+                        e.UITransformComponent.UIScale = Vector3(s, s, 1)
+                    end
+                end
+            end
+            local cardsEnd = 0.1 + n * self.CardPop + 0.1
+            if t >= cardsEnd then
+                local p = self.ExpGain > 0 and math.min(1, (t - cardsEnd) / self.ExpTime) or 1
+                self:DrawExp(p)
+                if p >= 1 then
+                    self.Phase = "ready"
+                    log("[VRF] reward plate ready q=" .. tostring(self.PlateIndex))
+                end
+            end
+        elseif self.Phase == "claiming" and now - self.ClaimAt > 4 then
+            -- 응답 없음 (가방 부족 등): 다시 받을 수 있게
+            self.Phase = "ready"
+            _UIKit:SetText(self.Plate .. "/BtnGet", "받기")
+        end
+    end
+
+    @ExecSpace("ClientOnly")
+    @EventSender("Service", "InputService")
+    handler HandleKeyDownEvent(KeyDownEvent event)
+        -- 판이 떠 있으면 Space·Enter = 받기 / 확인
+        if self.PlateIndex == 0 or not _UIKit:IsOpen(self.Plate) then return end
+        if event.key == KeyboardKey.Space or event.key == KeyboardKey.Return then self:OnPlateButton() end
+    end
+
+end
