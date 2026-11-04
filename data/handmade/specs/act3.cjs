@@ -1007,3 +1007,6 @@ Object.assign(module.exports.stormeye, {
     },
   },
 });
+
+// 11-03 강조 에셋 확산 (기획 63 · 나머지 62장): 맵별 줄은 hero_rollout.cjs MAPS — 생성기 배치 뒤 postRows · carve (샘플 4장 줄 뒤에 겹쳐 건다)
+require("./hero_rollout.cjs").install(module.exports);

@@ -1029,3 +1029,6 @@ Object.assign(module.exports.kingtomb1, {
   carve: [{ r: [18, 7, 19, 9], z: "e" }],
   postRows: (rows) => rows.map((r) => (r.kind === "prop" && r.name === "a2-crowned-colossus-head" ? Object.assign({}, r, { scale: HERO_KT_HEAD.scale, args: HERO_KT_HEAD.args, note: r.note + " · 11-03 강조 ×2 벽 대신" }) : r)),
 });
+
+// 11-03 강조 에셋 확산 (기획 63 · 나머지 62장): 맵별 줄은 hero_rollout.cjs MAPS — 생성기 배치 뒤 postRows · carve (샘플 4장 줄 뒤에 겹쳐 건다)
+require("./hero_rollout.cjs").install(module.exports);

@@ -968,3 +968,6 @@ Object.assign(module.exports.rotmarsh, {
   postRows: (rows) => rows.map((r) => (r.kind === "prop" && r.name === "camp-cart" && /a1_ambush_camp/.test(r.note)
     ? Object.assign({}, r, { x: HERO_RM_CART.x, y: HERO_RM_CART.y, scale: HERO_RM_CART.scale, args: HERO_RM_CART.args, note: "가라앉은 사당 · 11-03 강조 ×2.2 (수레 행렬 방에서 옮김)" }) : r)),
 });
+
+// 11-03 강조 에셋 확산 (기획 63 · 나머지 62장): 맵별 줄은 hero_rollout.cjs MAPS — 생성기 배치 뒤 postRows · carve (샘플 4장 줄 뒤에 겹쳐 건다)
+require("./hero_rollout.cjs").install(module.exports);
