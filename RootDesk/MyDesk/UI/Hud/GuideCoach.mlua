@@ -7,6 +7,8 @@
 --     「그림자 증원」 첫 랭크가 효력을 내는 캐릭터 Lv12 또는 장비·의뢰 보너스 · 11-01 A안). 계정에 한 번 (PlayerSave.GuideCards).
 --   · 10-31 실플레이 피드백 B-2: 「그림자 소환」을 배우면(레벨 무관 · 언제든) 게임 안내 창(GuideWindow 「군단」 책갈피 「그림자 추출」 쪽)을
 --     캐릭터마다 한 번 저절로 연다 (SkillBook.ShadowGuide 저장). 이미 배운 기존 캐릭터는 다음 접속 때 한 번. 첫 진입 둘러보기는 그대로.
+--   · 11-04 기획 65 P-3: 큰 창(안내 창·카드)은 안전한 때만 — 마을이거나, 싸움(10칸 안 적 · 생명·마나가 줄어듦)이 끝나고 5초 뒤.
+--     싸우는 중에 그 순간이 오면 창 대신 위쪽 띠 한 줄(HudMap.TopPush)로 알리고, 메뉴 「게임 안내」를 누르면 그 쪽이 바로 열린다 (GuideWindow.Show).
 -- 단계는 상태에서 다시 계산하므로 따로 저장하지 않는다 — 이미 한 사람에게는 처음부터 아무것도 뜨지 않는다.
 @Logic
 script GuideCoach extends Logic
@@ -29,6 +31,12 @@ script GuideCoach extends Logic
     property boolean ShadowGuideAsked = false -- 이번 접속에서 안내 창을 열고 서버에 남겼다 (동기화가 오기 전 두 번 열지 않게)
     property string ShadowGuideTab = "legion" -- 열 책갈피 (GuideWindow.BuildTabs key)
     property integer ShadowGuidePage = 2     -- 「그림자 추출」 쪽
+    property number LastFightAt = -999       -- 11-04 P-3 마지막으로 싸운 시각 (가까운 적 · 생명이나 마나가 줄어듦)
+    property number FightRadius = 10         -- 이 칸 안에 적이 있으면 싸우는 중 (예전 6칸은 유입 무리가 밀려오는 틈에도 「조용함」이었다)
+    property number SafeAfter = 5            -- 싸움이 끝나고 이 초가 지나야 큰 창을 연다
+    property number LastHp = -1
+    property number LastMana = -1
+    property boolean ShadowGuideBand = false -- 싸우는 중이라 안내 창 대신 띠를 띄웠다 (접속마다 한 번)
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -85,6 +93,7 @@ script GuideCoach extends Logic
         local step = ""
         self.TipText = ""
         if isvalid(player) and st ~= nil and book ~= nil and save ~= nil and save.BootDone and not save.Selecting and save.Slot > 0 and _Util:IsAlive(player) then
+            self:TrackFight(player, st)
             step = self:Decide(player, st, book, owner, cmd, points)
             self:MaybeCard(player, st, save, owner, cmd, step, delta)
             self:MaybeShadowGuide(player, book, delta)
@@ -268,7 +277,56 @@ script GuideCoach extends Logic
         log("[VRF] guide step=" .. self.Step .. " points=" .. key)
     end
 
+    -- ───────── 큰 창을 열어도 되는 때 (11-04 기획 65 P-3) ─────────
+
+    @ExecSpace("ClientOnly")
+    method void TrackFight(Entity player, PlayerStats st)
+        -- 싸우는 중인지: 10칸 안에 적이 있거나, 생명이 줄었거나(맞음), 마나가 줄었다(스킬). 그때마다 시각을 남긴다
+        local now = _UtilLogic.ElapsedSeconds
+        local hp = player.PlayerComponent ~= nil and player.PlayerComponent.Hp or 0
+        local fight = _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), self.FightRadius) ~= nil
+        if self.LastHp >= 0 and hp < self.LastHp - 0.01 then fight = true end
+        if self.LastMana >= 0 and st.Mana < self.LastMana - 0.01 then fight = true end
+        self.LastHp = hp
+        self.LastMana = st.Mana
+        if fight then self.LastFightAt = now end
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean Fighting()
+        return _UtilLogic.ElapsedSeconds - self.LastFightAt < self.SafeAfter
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean SafeForBigWindow(Entity player)
+        -- 창·이야기 카드·큰 알림이 없고, 마을이거나 싸움이 끝난 지 SafeAfter초가 지났다
+        local quiet = not _UIKit:AnyWindowOpen() and not _StoryCard.Active and #_StoryCard.Queue <= 0
+            and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds
+        if not quiet then return false end
+        if _GameConst:IsTown(player.CurrentMap) then return true end
+        return not self:Fighting()
+    end
+
     -- ───────── 그림자 소환을 배운 뒤 게임 안내 창 (캐릭터마다 한 번 · 10-31 B-2) ─────────
+
+    @ExecSpace("ClientOnly")
+    method boolean ShadowGuidePending()
+        -- 「리바이브」를 배웠는데 이 캐릭터가 아직 「그림자 추출」 안내 쪽을 안 봤다
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        return book ~= nil and not self.ShadowGuideAsked and not book.ShadowGuide and book:GetLevel("shadow_summon") > 0
+    end
+
+    @ExecSpace("ClientOnly")
+    method void ConsumeShadowGuide(string via)
+        -- 안내 쪽을 열었다고 서버에 남긴다 (저절로 · 메뉴 「게임 안내」 어느 쪽이든 한 번)
+        ---@type SkillBook
+        local book = _UIKit:Comp("script.SkillBook")
+        self.ShadowGuideAsked = true
+        self.ShadowGuideCalm = 0
+        if book ~= nil then book:RequestShadowGuide() end
+        log("[VRF] shadow guide window opened tab=" .. self.ShadowGuideTab .. " page=" .. tostring(self.ShadowGuidePage) .. " via=" .. via)
+    end
 
     @ExecSpace("ClientOnly")
     method void MaybeShadowGuide(Entity player, SkillBook book, number delta)
@@ -278,20 +336,25 @@ script GuideCoach extends Logic
             self.ShadowGuideCalm = 0
             return
         end
-        local calm = _GuideWindow.AutoDone and not _UIKit:AnyWindowOpen() and not _StoryCard.Active and #_StoryCard.Queue <= 0
-            and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds
-            and _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 6) == nil
-        if not calm then
+        if not _GuideWindow.AutoDone then
             self.ShadowGuideCalm = 0
+            return
+        end
+        if not self:SafeForBigWindow(player) then
+            self.ShadowGuideCalm = 0
+            -- 싸우는 중: 큰 창 대신 위쪽 띠 한 줄 (이동·공격을 막지 않는다). 창이 떠 있을 때는 띠도 미룬다
+            if self:Fighting() and not self.ShadowGuideBand and not _UIKit:AnyWindowOpen() then
+                self.ShadowGuideBand = true
+                local mobile = _ApplicationService:IsMobilePlatform()
+                _HudMap:TopPushFor("guide:shadow", "그림자 소환 안내", (mobile and "메뉴" or "M 메뉴") .. " → 「게임 안내」 군단에서 보기", 1, 6)
+                log("[VRF] shadow guide deferred band fight=true input=" .. tostring(_UIKit:CanUseGameplayInput()) .. " window=" .. tostring(_UIKit:AnyWindowOpen()))
+            end
             return
         end
         self.ShadowGuideCalm = self.ShadowGuideCalm + delta
         if self.ShadowGuideCalm < self.CardCalmNeed then return end
-        self.ShadowGuideCalm = 0
-        self.ShadowGuideAsked = true
-        book:RequestShadowGuide()
+        self:ConsumeShadowGuide(_GameConst:IsTown(player.CurrentMap) and "town" or "calm")
         _GuideWindow:ShowTabKey(self.ShadowGuideTab, self.ShadowGuidePage)
-        log("[VRF] shadow guide window opened tab=" .. self.ShadowGuideTab .. " page=" .. tostring(self.ShadowGuidePage))
     end
 
     -- ───────── 카드 (계정에 한 번) ─────────
@@ -315,15 +378,13 @@ script GuideCoach extends Logic
 
     @ExecSpace("ClientOnly")
     method void MaybeCard(Entity player, PlayerStats st, PlayerSave save, ShadowOwner owner, ShadowCommander cmd, string step, number delta)
-        -- 그 순간의 카드: 창·이야기 카드가 없고 가까이 적이 없을 때 (싸우는 중에 가리지 않게) 잠깐 이어진 뒤
+        -- 그 순간의 카드: 창·이야기 카드가 없고 마을이거나 싸움이 끝나고 5초 뒤 (싸우는 중에 가리지 않게 · 11-04 P-3) 잠깐 이어진 뒤
         local card = ""
         if step == "shadow_learn" and not self:CardSeen("shadow") then card = "shadow"
         elseif step == "assign" and not self:CardSeen("first_shadow") then card = "first_shadow"
         elseif step == "legion" and not self:CardSeen("legion") then card = "legion" end
         -- (레벨 업 알림 같은 위쪽 알림이 끝난 뒤 — 알림이 카드 위에 겹쳤다)
-        local calm = card ~= "" and not _UIKit:AnyWindowOpen() and not _StoryCard.Active and #_StoryCard.Queue <= 0
-            and _UXFeedback.Until <= _UtilLogic.ElapsedSeconds
-            and _Util:NearestMonster(player.CurrentMap, _Util:Pos2(player), 6) == nil
+        local calm = card ~= "" and self:SafeForBigWindow(player)
         if not calm then
             self.CardCalm = 0
             return
@@ -336,14 +397,17 @@ script GuideCoach extends Logic
         local g = function(s) return "<color=#E8C66B>" .. s .. "</color>" end
         local head, body = "", ""
         if card == "shadow" then
+            -- 11-04 P-10: 추출은 Lv1부터 누구나 · 리바이브는 거둔 그림자를 불러내는 스킬 (카드 설명·안내 창·추출 알림과 같은 순서)
+            local stored = owner ~= nil and owner.StorageCount or 0
             head = "Lv5 — 리바이브가 열렸습니다"
-            body = "이제부터 쓰러뜨린 적은 " .. g("내 편") .. "이 될 수 있습니다.\n\n"
+            body = g("「리바이브」") .. "를 배우면 추출한 그림자를 " .. g("곁에 불러낼") .. " 수 있습니다.\n\n"
                 .. "1. " .. (mobile and "메뉴 → 스킬" or "스킬(K)") .. "에서 " .. g("「리바이브」") .. "를 배웁니다.\n"
-                .. "2. 적을 쓰러뜨린 자리에 남은 " .. g("혼") .. " 곁에서 " .. (mobile and g("「추출」 버튼") or g("E")) .. " — 성공하면 그 몬스터가 그림자가 됩니다.\n"
-                .. "3. 강한 몬스터일수록 강한 그림자. 정예·보스도 데려올 수 있습니다.\n\n"
-                .. "깜빡이는 " .. g("붉은 점") .. "을 따라 누르면 됩니다."
+                .. "2. 혼 곁에서 " .. (mobile and g("「추출」 버튼") or g("E")) .. " — 추출에 성공한 몬스터는 그림자 보관함에 들어갑니다"
+                .. (stored > 0 and (" (지금 " .. g(tostring(stored) .. "마리") .. ")") or "") .. ".\n"
+                .. "3. " .. (mobile and "메뉴 → 그림자" or "그림자(H)") .. "에서 " .. g("「소환 지정」") .. " 뒤 " .. (mobile and (g("그림자 명령 → 소환") .. "으로") or (g("Z") .. "로")) .. " 불러냅니다.\n\n"
+                .. "깜빡이는 " .. g("붉은 점") .. "을 따라 누르세요."
         elseif card == "first_shadow" then
-            head = "첫 그림자를 거두었습니다"
+            head = "그림자를 불러낼 차례입니다"
             body = (mobile and "메뉴 → 그림자" or "그림자(H)") .. " 창에서 그림자를 고르면 아래 버튼 셋이 있습니다.\n\n"
                 .. "· " .. g("소환 지정") .. " — 불러낼 그림자와 순서를 정합니다. 지정한 그림자만 나옵니다.\n"
                 .. "· " .. g("강화") .. " — 정수를 써서 공격·생명을 올립니다 (내 레벨이 오를수록 더 높이).\n"

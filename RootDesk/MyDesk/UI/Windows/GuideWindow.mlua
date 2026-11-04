@@ -2,7 +2,7 @@
 --   · 첫 진입: 계정에서 한 번도 안 봤으면(PlayerSave.GuideSeen) 캐릭터를 다 불러오고 시작 이야기 카드가 닫힌 뒤 저절로 연다.
 --     책갈피 1~4(시작하기 · 군단 · 성장 · 장비·파밍)를 이어서 넘기고 4번 끝에서 「시작하기」로 닫는다 (10-27 사용자 B안).
 --     연 순간 서버에 「봤다」를 남겨 다른 캐릭터·다음 접속에는 다시 띄우지 않는다 (RequestGuideSeen).
---   · 책갈피 5~7(모험 · 함께하기 · 위험 신호)은 그 순간이 오면 상황 카드가 「자세히 보기」로 데려간다 (GuideCoach).
+--   · 책갈피 5~7(모험 · 파티플레이 · 위험 신호)은 그 순간이 오면 상황 카드가 「자세히 보기」로 데려간다 (GuideCoach).
 --   · 안 본 책갈피에는 붉은 점 — 펴 보면 계정에 남긴다 (PlayerSave.GuideCards의 gtab_<key>).
 --   · 메뉴 「게임 안내」로 언제든 다시 본다. 조작 쪽은 PC·모바일 글이 다르다 (_ApplicationService:IsMobilePlatform).
 --   · 상황 카드: GuideCoach가 그 순간 필요한 한 장만 같은 창에 띄운다 (ShowCard / ShowCardLink — 쪽 점 없이 「확인」).
@@ -92,7 +92,13 @@ script GuideWindow extends Logic
     @ExecSpace("ClientOnly")
     method void Show(integer page)
         -- 메뉴 「게임 안내」: 첫 책갈피의 그 쪽부터 (둘러보기 아님)
+        -- 11-04 P-3: 싸우는 중이라 미뤄 둔 「그림자 추출」 안내가 있으면 그 쪽부터 (띠 「메뉴 → 게임 안내 군단에서 보기」와 짝)
         self.Tour = false
+        if _GuideCoach:ShadowGuidePending() then
+            _GuideCoach:ConsumeShadowGuide("menu")
+            self:ShowTabKey(_GuideCoach.ShadowGuideTab, _GuideCoach.ShadowGuidePage)
+            return
+        end
         self:ShowTab(1, page)
     end
 
@@ -562,8 +568,9 @@ script GuideWindow extends Logic
                 .. "· 함께 세울 수 있는 해골 수는 스킬 랭크만큼 — 랭크를 올리면 군단이 늘어납니다.\n"
                 .. "· 그냥 쓰면 가까운 " .. g("일반 혼") .. "부터 씁니다. 정예·보스의 귀한 혼은 직접 겨냥했을 때만 씁니다." },
             { kind = "clip", vid = { 32, 7 }, head = "그림자 추출",
-              body = "Lv5에 「리바이브」를 배우면 쓰러뜨린 적을 " .. g("그림자") .. "로 거둘 수 있습니다.\n"
-                .. "· 혼 곁에서 " .. key("E", "추출 버튼") .. " — 성공하면 그 몬스터가 내 그림자가 됩니다.\n"
+              body = "쓰러뜨린 적의 혼을 추출하면 그 몬스터가 " .. g("그림자") .. "가 됩니다 — Lv1부터 누구나.\n"
+                .. "· 혼 곁에서 " .. key("E", "추출 버튼") .. " — 성공하면 그림자 보관함에 들어갑니다.\n"
+                .. "· 보관함의 그림자는 Lv5 " .. g("「리바이브」") .. "를 배우면 불러낼 수 있습니다.\n"
                 .. "· 강한 몬스터일수록 강한 그림자. 정예 · 고유 몬스터 · 보스도 데려올 수 있습니다." },
             { kind = "clip", vid = { 39, 8 }, head = "그림자 창",
               body = key("그림자(H)", "메뉴 → 그림자") .. " 창에서 그림자를 고르면\n"
@@ -573,7 +580,7 @@ script GuideWindow extends Logic
             { kind = "clip", vid = { 47, 5 }, head = "소환 · 회수 · 집결",
               body = (mobile and (g("그림자 명령") .. " 버튼") or (g("Z") .. " 소환 · " .. g("X") .. " 회수 · " .. g("C") .. " 집결")) .. "\n"
                 .. "· " .. g("집결") .. "은 흩어진 군단을 내 곁으로 모읍니다 — 보스 앞에서 한 번에 몰아치세요\n"
-                .. "· 처음에는 한 번에 1기 — 스킬 " .. g("「그림자 증원」") .. "을 찍으면 Lv" .. expand .. "에 한 기씩 늘어납니다 (장비·의뢰로도 늘어납니다)" },
+                .. "· 처음에는 한 번에 1기 — 스킬 " .. g("「그림자 증원」") .. "을 찍으면 Lv" .. expand .. "에 한 기씩 늘어납니다 (장비·퀘스트로도 늘어납니다)" },
             { kind = "shot", shot = shot("skel_variant"), head = "해골 변이",
               body = "해골 스킬의 강화 노드를 찍으면 해골의 모습과 싸움법이 바뀝니다.\n"
                 .. "· " .. g("해골 전사") .. " — 방패 · 대검 · 쌍칼\n"
@@ -642,7 +649,7 @@ script GuideWindow extends Logic
                 .. "· 악몽부터는 쓰러지면 경험치를 조금 잃습니다" },
         } })
 
-        table.insert(tabs, { key = "together", name = "함께하기", pages = {
+        table.insert(tabs, { key = "together", name = "파티플레이", pages = {
             { kind = "shot", shot = shot("party"), head = "함께 출발하기",
               body = "로비의 게임 고르기에서 " .. g("혼자 하기 · 공개 방 · 비공개 방") .. " 중 하나로 출발합니다.\n"
                 .. "· 방은 최대 " .. g("4명") .. " — 방장이 「출발」을 누르면 다 같이 들어갑니다\n"

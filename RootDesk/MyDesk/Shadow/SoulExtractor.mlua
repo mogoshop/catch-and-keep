@@ -139,7 +139,14 @@ script SoulExtractor extends Component
         local count = owner ~= nil and owner.StorageCount or 0
         local open = Environment:IsMobilePlatform() and "메뉴 → 그림자" or "H"
         local title = "그림자 획득 · [" .. gradeName .. "] " .. name
-        local body = "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. open .. "에서 소환·강화"
+        -- 11-04 기획 65 P-10: 추출은 Lv1부터 누구나 · 불러내기는 Lv5 「리바이브」부터 — 배우기 전이면 둘째 줄을 그 안내로 (카드 설명·게임 안내와 같은 순서)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        local revive = book ~= nil and book:GetLevel("shadow_summon") > 0
+        local tail = revive and (open .. "에서 소환·강화")
+            or ("Lv" .. tostring(_SkillData:Get("shadow_summon").row) .. " 「리바이브」를 배우면 불러낼 수 있습니다")
+        local body = "확률 " .. tostring(chancePct) .. "%에 성공 · 보관함 " .. tostring(count) .. "마리\n" .. tail
+        log("[VRF] extract notice revive=" .. tostring(revive) .. " line=" .. tail)
         if _GameData:GetMonsterStats(src) ~= nil then
             -- 보관함과 같은 몸만 자른 초상 (프레임 썸네일은 여백이 커서 몬스터가 작게 보였다, 10-13)
             _UXFeedback:ShowMonster(title, body, src)

@@ -12,13 +12,13 @@
 
 파티 목록(PC)은 평소 「파티 (n) · 이름 Lv · …」 한 줄로 접고 마우스를 올리거나 누르면 펼친다 — 왼쪽 알림 더미는 그 아래 끝을 피한다(`NoticeFeed.PlaceHome`). 모바일은 알림 더미가 지도 아래(오른쪽)라 예전처럼 펼친 채.
 
-## 부르는 곳 전수 (152곳 · A 9 · B 139 · C 1 · D 3)
+## 부르는 곳 전수 (153곳 · A 10 · B 139 · C 1 · D 3)
 
 | 파일 | 줄 | 함수 | 부르는 법 | 글(앞부분) | 채널 |
 |---|---|---|---|---|---|
-| Combat/PlayerVitals.mlua | 304 | NotifyDepthEnd | NoticeFeed.Push | 심연 | B |
-| Combat/PlayerVitals.mlua | 311 | NotifyDeath | NoticeFeed.Push | 결투에서 패배했습니다. 골드 | B |
-| Combat/PlayerVitals.mlua | 316 | NotifyDeath | NoticeFeed.Push | text) | B |
+| Combat/PlayerVitals.mlua | 393 | NotifyDepthEnd | NoticeFeed.Push | 심연 | B |
+| Combat/PlayerVitals.mlua | 403 | NotifyDeath | NoticeFeed.Push | 결투에서 패배했습니다. 골드 | B |
+| Combat/PlayerVitals.mlua | 413 | NotifyDeath | NoticeFeed.Push | text) | B |
 | Common/Util.mlua | 27 | Notify | NoticeFeed.Push | text) | B (Notify 본체) |
 | Common/Util.mlua | 39 | Warn | NoticeFeed.Push | text) return end | B (창이 떠 있을 때 Warn) |
 | Common/Util.mlua | 64 | NotifyTop | HudMap.TopPush | key, title, line, prio) | A |
@@ -51,13 +51,13 @@
 | Item/PlayerShop.mlua | 152 | Buy | Util.Notify | 도박: | B |
 | Monster/BossPattern.mlua | 809 | Announce | HudMap.TopPush | boss: | A |
 | Monster/BossPattern.mlua | 812 | Announce | NoticeFeed.Push | 처치! | B (채널 A를 끈 때만) |
-| Monster/Monster.mlua | 732 | Die | Util.NotifyTopMap | boss: | A |
-| Monster/Monster.mlua | 822 | TryRespawn | Util.NotifyTopMap | bossup: | A |
-| Monster/MonsterSpawner.mlua | 655 | TrackNamed | Util.NotifyTopMap | boss: | A |
-| Monster/MonsterSpawner.mlua | 664 | TrackNamed | Util.NotifyTopMap | bossup: | A |
+| Monster/Monster.mlua | 742 | Die | Util.NotifyTopMap | boss: | A |
+| Monster/Monster.mlua | 832 | TryRespawn | Util.NotifyTopMap | bossup: | A |
+| Monster/MonsterSpawner.mlua | 712 | TrackNamed | Util.NotifyTopMap | boss: | A |
+| Monster/MonsterSpawner.mlua | 721 | TrackNamed | Util.NotifyTopMap | bossup: | A |
 | Player/PetSystem.mlua | 119 | ProcessPurchase | Util.Notify | 펫 「 | B |
-| Player/PlayerCorpses.mlua | 58 | EnsureSpawned | Util.Notify | 지난번에 쓰러진 시체가 마을에 있습니다 — 다가가면 장비를 되찾습니다 (미니… | B |
-| Player/PlayerCorpses.mlua | 170 | TakeCorpse | Util.Notify | 시체를 되찾았습니다 | B |
+| Player/PlayerCorpses.mlua | 62 | EnsureSpawned | Util.Notify | 지난번에 쓰러진 시체가 마을에 있습니다 — 다가가면 장비를 되찾습니다 (미니… | B |
+| Player/PlayerCorpses.mlua | 179 | TakeCorpse | Util.Notify | 시체를 되찾았습니다 | B |
 | Player/PlayerSave.mlua | 155 | Protect | Util.Notify | 저장 데이터를 읽지 못했습니다. 기존 데이터 보호를 위해 저장을 중단합니다 | B |
 | Player/PlayerSave.mlua | 340 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
 | Player/PlayerSave.mlua | 346 | RequestCreateSlot | Util.Notify | 새 캐릭터 「 | B |
@@ -76,10 +76,10 @@
 | Player/PlayerTravel.mlua | 318 | OpenBossPortal | Util.NotifyMap | 처치 — 옆에 마을로 가는 포털이 1분 동안 열렸습니다 | B |
 | Progress/PlayerJournal.mlua | 265 | RequestClaim | Util.Notify | 업적 보상을 받을 가방 공간 1칸이 필요합니다. 보상은 보관됩니다 | B |
 | Progress/ProgressionSystem.mlua | 90 | AnnounceActBoss | Util.Notify | text, u.PlayerComponent.UserId) end | B |
-| Quest/PlayerQuest.mlua | 431 | TurnIn | Util.Notify | 보상 받을 가방 공간 | B |
-| Quest/PlayerQuest.mlua | 497 | TurnIn | Util.Notify | 보상: | B |
-| Quest/PlayerQuest.mlua | 541 | StartGearWatch | Util.Notify | 새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부… | B |
-| Quest/PlayerQuest.mlua | 674 | OfferGearChoice | Util.Notify | 보상 받을 가방 공간 | B |
+| Quest/PlayerQuest.mlua | 489 | TurnIn | Util.Notify | 보상 받을 가방 공간 | B |
+| Quest/PlayerQuest.mlua | 562 | TurnIn | Util.Notify | 보상: | B |
+| Quest/PlayerQuest.mlua | 607 | StartGearWatch | Util.Notify | 새 장비는 가방에서 지금 장비와 비교해 장착해 주세요. 장착하면 다음 전투부… | B |
+| Quest/PlayerQuest.mlua | 740 | OfferGearChoice | Util.Notify | 보상 받을 가방 공간 | B |
 | Shadow/ShadowCommander.mlua | 449 | OnUnitDied | Util.Notify | 그림자가 지쳤습니다 — 마을에 들를 때까지 소환할 수 없습니다 ( | B |
 | Shadow/ShadowCommander.mlua | 451 | OnUnitDied | Util.Notify | %s 그림자 쓰러짐 %d/%d — 한도가 차면 마을에 들를 때까지 부를 수 … | B · 상한 60초 |
 | Shadow/ShadowOwner.mlua | 94 | DisassembleMany | Util.Notify | 그림자 | B |
@@ -142,16 +142,17 @@
 | Social/TownBoard.mlua | 571 | RequestChannelInvite | Util.Notify | 님에게 초대를 보냈습니다 | B |
 | Social/TownBoard.mlua | 580 | OnChannelEvent | Util.Notify | self:ReplyText(e.Code, e.FromName), e.ToUi… | B |
 | Story/AshAwakening.mlua | 265 | Awaken | HudMap.ShowAlert | 하늘이 핏빛으로 물든다 | A |
-| UI/Hud/HudMain.mlua | 104 | OnBeginPlay | NoticeFeed.Push | d) end | B |
-| UI/Hud/HudMain.mlua | 509 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
-| UI/Hud/HudMain.mlua | 689 | RaidWarn | NoticeFeed.Push | 사방에서 떼가 몰려옵니다 | B |
-| UI/Hud/HudMain.mlua | 790 | RaidDefeated | HudMap.TopPush | raid:done | A |
+| UI/Hud/GuideCoach.mlua | 349 | MaybeShadowGuide | HudMap.TopPushFor | guide:shadow | A |
+| UI/Hud/HudMain.mlua | 109 | OnBeginPlay | NoticeFeed.Push | d) end | B |
+| UI/Hud/HudMain.mlua | 519 | PickupPop | NoticeFeed.Push | text) | B (창이 떠 있을 때 줍기) |
+| UI/Hud/HudMain.mlua | 700 | RaidWarn | NoticeFeed.Push | 사방에서 떼가 몰려옵니다 | B |
+| UI/Hud/HudMain.mlua | 801 | RaidDefeated | HudMap.TopPush | raid:done | A |
 | UI/Hud/NoticeFeed.mlua | 82 | Push | HudMain.PickupPop | text) | D |
 | UI/Hud/UXFeedback.mlua | 162 | Push | HudMap.TopPush | : | A |
 | UI/Hud/UXFeedback.mlua | 168 | Push | NoticeFeed.Push | self:LineText(title, detail, true)) | B (큰 알림 넘침·창 안 결과) |
 | UI/Hud/UXFeedback.mlua | 217 | DropOne | NoticeFeed.Push | self:LineText(m.title, m.detail, false)) | B (큰 알림 넘침·창 안 결과) |
 | UI/Hud/UXFeedback.mlua | 368 | Release | NoticeFeed.Push | 외 알림 | B (큰 알림 넘침·창 안 결과) |
-| UI/Windows/GuideWindow.mlua | 461 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
+| UI/Windows/GuideWindow.mlua | 467 | Later | NoticeFeed.Push | 게임 안내는 메뉴에서 다시 볼 수 있습니다 | B |
 | UI/Windows/JournalWindow.mlua | 123 | UpdateBadge | HudMain.SetJournalTrack |  | C |
 | Undead/UndeadSystem.mlua | 813 | Raise | Util.Notify | 는 지금 최대 | B · 상한 60초 |
 | Undead/UndeadSystem.mlua | 1617 | StashForRoomTravel | Util.Notify | 소환수 이동 준비에 실패했습니다. 다시 시도해주세요 | B |

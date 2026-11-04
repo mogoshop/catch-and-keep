@@ -106,6 +106,25 @@ for (const m of parse('maps.csv')) {
 }
 for (const m of parse('monsters.csv')) if (m.lore) scan(`monsters.csv ${m.id} lore`, m.lore);
 
+// UI 글귀 용어 (10-29 사용자: 「의뢰 → 퀘스트」「소지품 → 인벤토리」 · 게임 안내 책갈피 「함께하기 → 파티플레이」 · 11-04 기획 65 S-1).
+//   RootDesk/MyDesk/UI 아래 .mlua의 따옴표 글귀만 본다 (주석 줄 · 줄 끝 주석은 뺀다). 펫 창 「함께하기」 단추는 펫 따라다니기라 그대로 둔다
+const UI_TERMS = [['의뢰', '퀘스트'], ['소지품', '인벤토리']];
+const uiDir = path.join(root, 'RootDesk', 'MyDesk', 'UI');
+function walk(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => d.isDirectory() ? walk(path.join(dir, d.name)) : (d.name.endsWith('.mlua') ? [path.join(dir, d.name)] : []));
+}
+for (const file of walk(uiDir)) {
+  const rel = path.relative(root, file);
+  fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    const code = line.trim().startsWith('--') ? '' : line;
+    for (const m of code.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+      for (const [w, to] of UI_TERMS) if (m[1].includes(w)) bad(`${rel}:${i + 1}`, `UI 글귀 「${w}」 — 「${to}」로`);
+    }
+    if (/GuideWindow\.mlua$/.test(file) && /name = "함께하기"/.test(code)) bad(`${rel}:${i + 1}`, '게임 안내 책갈피 「함께하기」 — 「파티플레이」로');
+  });
+}
+
 for (const p of problems) console.log('  ✗ ' + p);
 console.log(`[check_voice] 말투·용어 문제 ${problems.length}건`);
 process.exit(problems.length ? 1 : 0);
