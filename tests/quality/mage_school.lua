@@ -11,7 +11,7 @@ local function near(a,b) return math.abs(a-b)<1e-6 end
 function isvalid(x) return x~=nil and x~=false end
 Environment={IsPublishedPlay=function() return false end}
 _UtilLogic={ElapsedSeconds=0,RandomIntegerRange=function(_,a,b) return math.random(a,b) end,RandomDouble=function() return 0.99 end}
-_GameConst={FxBoneBolt="",FxSkillTorrent="",FxSkillFlameShot="",FxSkillFrostShot="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
+_GameConst={FxBoneBolt="",FxSkillShardThrow="",FxSkillShardHit="",FxSkillTorrent="",FxSkillFlameShot="",FxSkillFrostShot="",FxAriseSoul="07e92bf63fa44ba5a74507f96cb4e18c",SpriteMageBolt="c78bbf04d1ab48a885884813eb59fce3",FxSkillHexBurst=""}
 local V={} V.__index=V
 V.__add=function(a,b) return setmetatable({x=a.x+b.x,y=a.y+b.y},V) end
 V.__sub=function(a,b) return setmetatable({x=a.x-b.x,y=a.y-b.y},V) end
@@ -63,11 +63,15 @@ end
 local function tint(p,r,g,b) return p.tint~=nil and near(p.tint[1],r) and near(p.tint[2],g) and near(p.tint[3],b) end
 do
  local p=fakeProj() local sp=MageBolts:Configure(p,'bone')
- ok(sp==14 and p.ruid=='423983c3b393414c8a8d91578b1fab9c' and p.sx==1.32 and p.sy==0.6 and tint(p,0.95,0.9,0.78) and p.Style=='spear','뼈 투척 외형·속도 (그림 없을 때)')
+ ok(sp==14 and p.ruid=='511783bb8bbb4e46816ea2979d6c89c0' and p.sx==0.55 and p.sy==0.55 and p.tint==nil and p.Style=='shard','11-04 뼈 투척 = 티스 비행 그림·배율(리버레이션 오브 0.55 · 색 없음) · 속도 14 그대로 · 명중 style shard')
  _GameConst.FxBoneBolt='spearRUID'
  p=fakeProj() MageBolts:Configure(p,'bone')
- ok(p.ruid=='spearRUID' and p.sx==0.9 and p.sy==0.9 and p.tint==nil,'뼈 투척 코덱스 그림이 오면 제 비율')
+ ok(p.ruid=='511783bb8bbb4e46816ea2979d6c89c0','옛 창 몸 칸(FxBoneBolt)을 채워도 뼈 투척은 티스 그림 (11-04 통일)')
  _GameConst.FxBoneBolt=''
+ _GameConst.FxSkillShardThrow='codexA|codexB'
+ p=fakeProj() MageBolts:Configure(p,'bone')
+ ok(p.ruid=='codexA|codexB' and near(p.sx,0.728),'티스 칸(FxSkillShardThrow)을 다시 채우면 뼈 투척도 같은 그림 · ShardThrowScale')
+ _GameConst.FxSkillShardThrow=''
  p=fakeProj() sp=MageBolts:Configure(p,'fire')
  ok(sp==11 and p.ruid=='40f0991c2e204ee888670cb3006382e5' and p.sx==0.45 and tint(p,1,0.75,0.55) and p.Style=='','저주 불꽃 외형·속도')
  p=fakeProj() sp=MageBolts:Configure(p,'cold')
@@ -90,10 +94,14 @@ do
   ok(body~=nil and body:find('_MageBolts:Configure(proj, "'..pair[2]..'")',1,true)~=nil,'캐릭터 '..pair[1]..' → Configure '..pair[2])
   ok(body:find('proj:Skin(',1,true)==nil and body:find('proj:SkinXY(',1,true)==nil,'캐릭터 '..pair[1]..'에 따로 그린 그림 없음')
  end
- for _,k in ipairs({'FxFlameShot','FxFrostShot','FxShardShot'}) do
+ for _,k in ipairs({'FxFlameShot','FxFrostShot','FxShardShot','FxShardHit'}) do
   local v=se:match('property string '..k..' = "(%w+)"')
   ok(v==MageBolts[k],'그림 RUID 같음 '..k)
  end
+ ok(near(MageBolts.ShardThrowArtScale,tonumber(se:match('property number ShardThrowScale = ([%d%.]+)'))) and near(MageBolts.ShardHitArtScale,tonumber(se:match('property number ShardHitScale = ([%d%.]+)'))) and near(MageBolts.ShardHitClipSec,tonumber(se:match('property number ShardHitClipSec = ([%d%.]+)'))),'11-04 티스 통일: 배율·시간 = SkillEffects')
+ ok(se:find('self:ShardHit(pos, 0.5, 0.6)',1,true)~=nil and near(MageBolts.ShardHitClipScale,0.5),'티스 명중 배율 0.5 = 뼈 투척 명중 배율')
+ do local fp=io.open('RootDesk/MyDesk/Combat/Projectile.mlua') local pj=fp:read('a') fp:close()
+  ok(pj:find('if style == "shard" then',1,true)~=nil and pj:find('_MageBolts.FxShardHit',1,true)~=nil,'Projectile.HitFx style shard = 티스 명중 그림') end
  ok(se:find('_MageBolts:Configure(proj, "bone")',1,true)==nil and se:find('proj.MaxHits = self:ShardHits()',1,true)~=nil,'11-01 docs/design/49: 캐릭터 bone 속성 투사체 없음 · 골편 한 발 적중 수 = ShardHits (꿰뚫는 골편)')
 end
 -- ④ 마법사 세기

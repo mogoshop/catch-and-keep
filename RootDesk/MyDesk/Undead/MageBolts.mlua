@@ -3,7 +3,7 @@
 --   같은 Configure를 불러 그림·꼬리·유도·속도가 갈라지지 않는다 (「캐릭터 스킬 투사체 재사용」을 코드로 고정).
 -- 피해·랭크 계수는 각자 따로 (리뷰 가드): 캐릭터는 SkillBook 구간(관통 상한·파편 수·폭발 반경)과 PlayerAttack 피해 그대로,
 --   마법사는 아래 MageTraits(마법사 랭크 1~20 · §2-3 표)와 ShadowUnit.CalcDamage(마법사 공격 × ShotMul).
--- 속성 키: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 투척 · soul 영혼 격류 · curse 저주(노드 「저주 속성」 mage_curse로 해금) · cold_shard 서리 파편(외형만)
+-- 속성 키: fire 저주 불꽃 · cold 서리 혼 · bone 뼈 투척(11-04 그림 = 티스 비행·명중) · soul 영혼 격류 · curse 저주(노드 「저주 속성」 mage_curse로 해금) · cold_shard 서리 파편(외형만)
 -- 수치는 모두 초안(메이커 실측 뒤 줄 단위로 고침). 랭크 구간·특성 수치는 config.csv(C 담당 · mageTier2Lv … mageCursePerRank)를 먼저 읽고,
 --   그 줄이 없는 판(통합 전)에서만 아래 속성 기본값(같은 값)을 쓴다 — 스킬 창 현재/다음 표시(SkillBook)와 같은 숫자를 보게.
 @Logic
@@ -12,7 +12,13 @@ script MageBolts extends Logic
     -- 투사체 그림 (SkillEffects의 같은 이름 속성과 같은 RUID · tests/quality/mage_school.lua가 같은지 확인)
     property string FxFlameShot = "40f0991c2e204ee888670cb3006382e5"     -- 불꽃 화살 (저주 불꽃)
     property string FxFrostShot = "d5a9e48c2d654726811db8b127699233"     -- 서리 혼
-    property string FxShardShot = "423983c3b393414c8a8d91578b1fab9c"     -- 어두운 보라 궤적 (뼈 투척 그림이 비면 가늘고 길게)
+    property string FxShardShot = "511783bb8bbb4e46816ea2979d6c89c0"     -- 뼈 투척 비행 = 티스 비행 SkillEffects.FxShardShot과 같은 RUID (11-04 사용자 「티스와 통일」 · 11-03 효과 고르기 shard-throw 메이플 「리버레이션 오브」 6장 클립 · 머리가 왼쪽 = 모델 AngleOffset 180) · 옛: 423983c3b393414c8a8d91578b1fab9c 어두운 보라 궤적(가늘고 길게 1.32×0.6 · 11-03 SkillEffects만 바뀌고 여기가 남아 있었다)
+    property string FxShardHit = "0168a5503ae740579014fdafda7bba68"      -- 뼈 투척 명중 = 티스 명중 SkillEffects.FxShardHit과 같은 RUID (11-04 · 메이플 「스킬 14141011」 10장 클립 · Projectile.HitFx style "shard") · 옛: 코덱스 창 꽂힘 GameConst.FxBoneBoltHit 6장
+    property number ShardClipScale = 0.55       -- 티스 서버 투사체 배율 SkillEffects.ShardSkinScale(0.55)와 같게 (GameConst.FxSkillShardThrow가 비면 메이플 클립 그대로 0.55)
+    property number ShardThrowArtScale = 0.728  -- GameConst.FxSkillShardThrow(코덱스 4장)를 다시 채우면 = SkillEffects.ShardThrowScale
+    property number ShardHitClipScale = 0.5     -- 티스 명중 배율 = SkillEffects.BoneShardImpact → ShardHit(pos, 0.5, …)
+    property number ShardHitClipSec = 1.5       -- 티스 명중 클립 한 번 보여 줄 시간 = SkillEffects.ShardHitClipSec
+    property number ShardHitArtScale = 1.1      -- GameConst.FxSkillShardHit(코덱스 6장)를 다시 채우면 = SkillEffects.ShardHitScale × (0.5 / 0.5)
     -- 10-31 C 7종 투사체 (GameConst.FxSkillFlameShot·FxSkillFrostShot · 128×64 오른쪽 기준 · 비행 중 순환 · 왼쪽 FlipY = Projectile.MirrorSkin): 칸이 비면 위 메이플 원본 그대로
     --   배율 = 예전 배율 × 예전 클립 배율 1의 폭(audit P06 1.38/0.45 = 3.067 · P08 1.88/0.6 = 3.133칸) ÷ 새 그림 내용 폭(알파>16 최대 · 불꽃 115px · 서리 235px = 10-31 보정 재출력 256×128) → 보이는 폭이 예전과 같다
     -- 11-03 효과 고르기 flame-shot·frost-shot: GameConst 칸을 비워 위 메이플 원본 클립 그대로 — 배율은 예전 메이플 배율(코덱스 배율이 이 보이는 폭에 맞춰 계산된 값이라 보이는 크기 같음)
@@ -138,15 +144,15 @@ script MageBolts extends Logic
             proj.HitKind = "frost"
             return 10
         elseif school == "bone" then
-            -- 44-1 A: 골편 궤적 그림을 가늘고 길게(가로:세로 2.2) — 맞으면 진행 방향으로 꽂히는 빛 파열 (Projectile.HitFx "spear").
-            --   코덱스 H-1 창 몸(GameConst.FxBoneBolt)이 오면 그 그림을 제 비율로
-            if _GameConst.FxBoneBolt ~= "" then
-                proj:SkinXY(_GameConst.FxBoneBolt, 0.9, 0.9)
-            else
-                proj:SkinXY(self.FxShardShot, 1.32, 0.6)
-                proj:Tint(Color(0.95, 0.9, 0.78, 1))
+            -- 11-04 사용자 「해골 마법사 뼈 투척을 티스와 통일」: 비행 = 티스 비행(SkillEffects.ShardSkinRuid·ShardSkinScale(0.55)와 같은 그림·배율 · 색 입히지 않음),
+            --   명중 = 티스 명중(Projectile.HitFx style "shard" → MageBolts.FxShardHit / GameConst.FxSkillShardHit). 관통 2~5·가시·피해·속성은 MageTraits 그대로 · 속도 14 그대로.
+            --   옛(44-1 A · 11-01 창 스킬 삭제 뒤 남은 그림): 코덱스 창 몸 GameConst.FxBoneBolt 0.9 · 비면 보라 궤적 1.32×0.6 + 뼈 색 · 명중 창 꽂힘 FxBoneBoltHit (style "spear")
+            if _GameConst.FxSkillShardThrow ~= "" then proj:Skin(_GameConst.FxSkillShardThrow, self.ShardThrowArtScale) else proj:Skin(self.FxShardShot, self.ShardClipScale) end
+            proj.Style = "shard"
+            if not Environment:IsPublishedPlay() and not self.C7Logged[school] then
+                self.C7Logged[school] = true
+                log(string.format("[VRF] fxpick bone-bolt school=bone ruid=%s scale=%.2f style=shard hit=%s (= 티스)", string.sub(_GameConst.FxSkillShardThrow ~= "" and _GameConst.FxSkillShardThrow or self.FxShardShot, 1, 8), _GameConst.FxSkillShardThrow ~= "" and self.ShardThrowArtScale or self.ShardClipScale, string.sub(_GameConst.FxSkillShardHit ~= "" and _GameConst.FxSkillShardHit or self.FxShardHit, 1, 8)))
             end
-            proj.Style = "spear"
             return 14
         elseif school == "soul" then
             -- 44-1 A: 혼 구슬 그림(FxAriseSoul)에 청록빛 · 촘촘한 혼 꼬리 — 코덱스 H-1 영혼 격류 6프레임(GameConst.FxSkillTorrent)이 오면 그 그림

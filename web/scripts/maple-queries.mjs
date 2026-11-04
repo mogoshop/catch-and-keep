@@ -22,11 +22,14 @@ export const Q = {
   'shatter': ['얼음 파쇄 폭발 파편', 'ice shatter explosion frost'],
   'mage-bolt': ['마법 구슬 투사체', 'magic orb bolt projectile'],
   // 해골 마법사 뼈 투사체(뼈 투척 몸·꽂힘) — 「해골」「마법사」를 넣으면 해골·마법진 그림이 섞여서 투사체 모양으로 찾는다
-  'bone-bolt': ['하얀 뼈 창 투사체', 'white bone spear projectile'],
-  'bone-bolt-hit': ['창이 꽂히는 하얀 파편 타격', 'white bone spear impale hit'],
+  'bone-bolt': ['하얀 뼈 조각 투사체', 'white bone shard projectile'],   // 11-04 티스와 공용 (옛: 뼈 창 투사체)
+  'bone-bolt-hit': ['하얀 뼈 파편 타격', 'white bone shard hit'],   // 11-04 티스와 공용 (옛: 창 꽂힘)
   'monster-arrow': ['화살 날아감', 'arrow projectile flying'],
   'hit-spark': ['타격 불꽃 스파크', 'hit spark impact'],
   'offering': ['초록 회복 고리 치유', 'green healing ring heal'],
+  'offering-sacrifice': ['초록 빛 기둥 치유', 'green light pillar heal'],   // 11-04
+  'bone-spikes': ['땅에서 솟는 뼈 가시', 'bone spikes erupting from ground'],   // 11-04
+  'mark-stun': ['머리 위 별 기절 표식', 'stun stars over head'],   // 11-04
   'death-wave': ['보라 원형 충격파', 'purple shockwave ring explosion'],
   'poison-mist': ['초록 독 안개 구름', 'green poison gas cloud'],
   'drain-vortex': ['보라 소용돌이 흡수', 'purple vortex drain life'],

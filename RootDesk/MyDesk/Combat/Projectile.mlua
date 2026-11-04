@@ -63,7 +63,7 @@ script Projectile extends Component
     property boolean LocalView = false       -- 클라이언트 전용 예측 투사체 (판정 없음, 사거리 끝에서 스스로 사라진다)
     property boolean ViewHidden = false            -- 스킬 투사체 그림 (서버에서 바꾼 SpriteRUID는 클라이언트에 안 보여서 동기화 값으로 칠한다)
     @Sync
-    property string Style = ""               -- 44-1 A 있는 그림 재조합: 스킬마다 꼬리·맞은 자리 모양 ("spear" 긴 창·꽂힘 · "torrent" 혼 꼬리 · "rite"/"rite_push" 뼈 화살 · "" 기본)
+    property string Style = ""               -- 44-1 A 있는 그림 재조합: 스킬마다 꼬리·맞은 자리 모양 ("shard" 해골 마법사 뼈 투척 = 티스 명중(11-04) · "spear" 옛 긴 창·꽂힘(미사용) · "torrent" 혼 꼬리 · "rite"/"rite_push" 뼈 화살 · "" 기본)
     property integer ViewFrame = 0           -- 클라이언트: 「|」로 이은 프레임 그림(코덱스 납품분)의 지금 칸 (SkinFrame)
     property number HitSparkScale = 0.6      -- 투사체 명중 불꽃(P11 · 저주 불꽃·서리 혼·골편 공통) 크기 (10-31 갈래 E · 예전 0.45)
     property number TorrentHitScale = 0.6    -- 영혼 격류 명중 혼 구슬(P28) 크기 (예전 0.38)
@@ -77,6 +77,7 @@ script Projectile extends Component
     property number HitFrostClipScale = 0.6     -- 서리 「마그네틱 앵커」 5장 최대 140px → 0.84칸
     property number HitClipMaxSec = 2.0         -- 한 클립 명중 안전 지움 (클립이 스스로 끝나지 않을 때만)
     property number TorrentHitArtScale = 0.75   -- 영혼 격류 명중 4장 배율: 내용 88~112px = 0.66~0.84칸 (예전 혼 구슬 0.6)
+    property boolean ShardHitLogged = false   -- [VRF] 뼈 투척 명중(티스 그림) 투사체마다 한 번 (클라이언트)
     property number SpearHitScale = 1.0      -- 해골 마법사 뼈 투척 꽂힘(P05 · 128px = 1.28칸) 배율 (10-31 갈래 E2 · 코덱스 renderer_scale_proposal 1 · 예전 대기 자리 0.9)
 
     @ExecSpace("ServerOnly")
@@ -425,7 +426,21 @@ script Projectile extends Component
         if not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
         local map = me.CurrentMap
         local angle = math.deg(math.atan(self.Dir.y, self.Dir.x))
-        if style == "spear" then
+        if style == "shard" then
+            -- 11-04 해골 마법사 뼈 투척 = 티스 명중 그림 (SkillEffects.ShardHit와 같은 길): 코덱스 칸 GameConst.FxSkillShardHit가 비면 메이플 클립(MageBolts.FxShardHit = SkillEffects.FxShardHit) 한 번 · 배율 0.5 · 1.5초
+            if _GameConst.FxSkillShardHit == "" then
+                local s = _MageBolts.ShardHitClipScale
+                _Util:PlayClipOnce(_MageBolts.FxShardHit, map, pos, 0, Vector3(s, s, 1), _MageBolts.ShardHitClipSec, Color(1, 1, 1, 1), 6)
+            else
+                local s = _MageBolts.ShardHitArtScale
+                _Util:PlayFramesMs(_GameConst.FxSkillShardHit, map, pos, 0, Vector3(s, s, 1), _GameConst.FxSkillShardHitMs, 0, 0, Color(1, 0.97, 0.9, 1), 6)
+            end
+            if not Environment:IsPublishedPlay() and not self.ShardHitLogged then
+                self.ShardHitLogged = true
+                log(string.format("[VRF] fxpick bone-bolt-hit ruid=%s (= 티스 명중) clip=%s", string.sub(_GameConst.FxSkillShardHit ~= "" and _GameConst.FxSkillShardHit or _MageBolts.FxShardHit, 1, 8), tostring(_GameConst.FxSkillShardHit == "")))
+            end
+        elseif style == "spear" then
+            -- 옛 뼈 투척 꽂힘 (11-04부터 부르는 곳 없음 · MageBolts가 style "shard"를 쓴다) — GameConst.FxBoneBoltHit를 비워 빛 파열 폴백만 남김
             if _GameConst.FxBoneBoltHit ~= "" then
                 -- 10-31 갈래 E2 P05: 꽂힘 6장 장별 60·60·70·70·70·70ms(합 400ms) · 표적 중심 · 진행 방향 · 마지막 장(창대가 남은 장)은 효과가 끝날 때까지
                 _Util:PlayFramesMs(_GameConst.FxBoneBoltHit, map, pos, angle, Vector3(self.SpearHitScale, self.SpearHitScale, 1), _GameConst.FxBoneBoltHitMs, 0, 0, Color(1, 1, 1, 1), 6)
