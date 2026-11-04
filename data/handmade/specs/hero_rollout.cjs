@@ -419,6 +419,153 @@ const MAPS = {
     return rows;
   } },
 
+  // ── 액트 4 ──
+  // 마지막 초소(마을): 봉화 화로 ×2 · 북쪽 마당 가운데(3.5,7)로 옮김(광장 'a'는 게시판·창고·화로·NPC 자리라 북쪽 마당) · §4 망루 한 쌍 ×1.5 남문 통로 양옆(반전 쌍) · 녹은 갑옷 더미 2 빼기
+  outpost: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-outpost-signal-brazier", { x: 3.5, y: 7, k: 2, args: "foot=0.75;ok=gate", note: "북쪽 마당 가운데" });
+    h.hero(rows, "a4-watchtower", { near: [-13.5, -3.6], x: -4, y: -6.6, flip: 0, k: 1.5, args: "foot=0.5;ok=gate", note: "남문 통로 왼쪽" });
+    h.hero(rows, "a4-watchtower", { near: [13.5, -3.6], x: 3, y: -6.6, flip: 1, k: 1.5, args: "foot=0.6;ok=gate;padr=1", note: "남문 통로 오른쪽(반전)" });
+    rows = h.drop(rows, "a4-melted-armor-pile");
+    return rows;
+  } },
+  // 불탄 협곡: 박쥐 매달린 죽은 나무(세트 a4_lm_ember_tree) ×3 · 북서 용암 둔덕 광장 · §4 거대 사슬 닻 좌우(재고) ×2 유황 동굴 입구 양옆 · 문장 돌 2 빼기
+  embercanyon: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_ember_tree");
+    h.hero(rows, "a4-landmark-ember-bat-dead-tree", { k: 3, args: "foot=0.75", note: "용암 둔덕 가운데" });
+    h.add(rows, { name: "a4-giant-chain-anchor-left", x: 9.6, y: -15.6, args: "ok=cliff", note: "유황 동굴 입구 왼쪽(재고)" });
+    h.add(rows, { name: "a4-giant-chain-anchor-right", x: 19.4, y: -15.6, args: "ok=cliff", note: "유황 동굴 입구 오른쪽(재고)" });
+    h.hero(rows, "a4-giant-chain-anchor-left", { k: 2, args: "ok=cliff;foot=0.5", note: "동굴 입구 왼쪽" });
+    h.hero(rows, "a4-giant-chain-anchor-right", { k: 2, args: "ok=cliff;foot=0.5", note: "동굴 입구 오른쪽" });
+    rows = h.drop(rows, "a4-sigil-stone");
+    return rows;
+  } },
+  // 악마의 행군로: 악마 전쟁 깃발(세트 a4_lm_war_banner) ×3 · 남동 보루 광장 · §3 뿔 해골 관문 ×2 북서 방 북벽 대신(벽 두 줄 팜) · 혼 우리 2 빼기
+  demonroad: { carve: [{ r: [-18, 9, -15, 10], z: "b" }], ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_war_banner");
+    h.hero(rows, "a4-landmark-demon-war-banner", { k: 3, args: "foot=0.75", note: "공성 장비 마당 가운데" });
+    h.hero(rows, "a4-horned-skull-gate", { k: 2, args: "foot=0.67;wall=1", note: "북서 방 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "a4-soul-cage");
+    return rows;
+  } },
+  // 유황 늪: 유황 간헐천 ×3 · 가운데 광장 · 특징 7→2(대장간과 중복 대용광로 · 협곡과 중복 박쥐 나무 · 죽은 나무 · 녹은 거인 갑옷 · 타락의 구덩이와 중복 기사 검 무덤 빼기)
+  sulfurmarsh: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-sulfur-geyser", { k: 3, args: "foot=0.75;fill=-1/8,-1/9,0/8", note: "혼의 제단 광장 가운데" });
+    for (const n of ["a4-landmark-great-smelter", "a4-landmark-ember-bat-dead-tree", "a4-dead-tree", "a4-melted-giant-armor", "a4-landmark-fallen-knight-sword-grave"]) rows = h.drop(rows, n, { keep: 0 });
+    return rows;
+  } },
+  // 불타는 성채 외곽: 용암 성벽 탑(세트 a4_lm_lava_tower) ×3 · 서쪽 성벽 벽 대신(낮은 담 % 6칸 팜 · fill) · 공성 병기(행군로와 중복)·뿔 석상 2 빼기
+  burningkeep: { carve: [{ r: [-10, 4, -9, 6], z: "b" }], ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_lava_tower");
+    h.hero(rows, "a4-landmark-lava-wall-tower", { k: 3, args: "foot=0.67;wall=1;fill=-10/4,-10/5,-10/6,-9/4,-9/5,-9/6,-8/4", note: "서쪽 성벽 벽 대신(낮은 담 팜)" });
+    rows = h.drop(rows, "a4-siege-engine");
+    rows = h.drop(rows, "a4-horned-statue");
+    return rows;
+  } },
+  // 유황 동굴 1층: 유황 결정 무리(세트 a4_lm_sulfur_cluster) ×3 · 가운데 섬 광장 · 흑요석·사슬 해골·혼 촛불·투구 더미 각 1개만
+  sulfurcave1: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_sulfur_cluster");
+    h.hero(rows, "a4-landmark-sulfur-crystal-cluster", { k: 3, args: "foot=0.75", note: "가운데 섬 광장" });
+    for (const n of ["a4-adjunct-obsidian-shards", "a4-adjunct-chained-skull", "a4-adjunct-soul-candle-cluster", "a4-helm-pile"]) rows = h.drop(rows, n, { keep: 1 });
+    return rows;
+  } },
+  // 유황 동굴 2층: 박쥐 여왕 뼈 둥지(세트 a4_lm_bone_roost) ×2.5 · 서쪽 막다른 방 끝 · 혼 촛불·작은 용암 샘 각 1개만
+  sulfurcave2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_bone_roost");
+    h.hero(rows, "a4-landmark-bat-queen-bone-roost", { k: 2.5, args: "foot=0.67;wall=1", note: "막다른 방 끝" });
+    for (const n of ["a4-adjunct-soul-candle-cluster", "a4-small-lava-fount"]) rows = h.drop(rows, n, { keep: 1 });
+    return rows;
+  } },
+  // 혼 감옥: 혼 우리 탑 ×2.5 · 간수장 방 북벽 대신(벽 두 줄 팜) · 혼 우리 6→4 · 사슬 기둥 6→4
+  soulprison: { carve: [{ r: [18, 12, 21, 13], z: "e" }], ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-soul-cage-tower", { k: 2.5, args: "foot=0.67;wall=1", note: "간수장 방 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "a4-soul-cage", { keep: 4 });
+    rows = h.drop(rows, "a4-chain-pillar", { keep: 4 });
+    return rows;
+  } },
+  // 용암 대장간 1층: 대용광로(세트 a4_lm_great_smelter) ×3 · 동쪽 담금질 방 · 악마 깃발 3 빼기 · 사슬 기둥 2 빼기
+  forge1: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_great_smelter");
+    h.hero(rows, "a4-landmark-great-smelter", { k: 3, args: "foot=0.75", note: "담금질 방 가운데" });
+    rows = h.drop(rows, "a4-demon-banner");
+    rows = h.drop(rows, "a4-chain-pillar");
+    return rows;
+  } },
+  // 용암 대장간 2층: 베르카의 모루(세트 a4_lm_berka_anvil) ×2.5 · 서쪽 큰 방 · 용암 잔해 2 빼기
+  forge2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_berka_anvil");
+    h.hero(rows, "a4-landmark-berka-anvil", { k: 2.5, args: "foot=0.6", note: "베르카의 대장간 가운데" });
+    rows = h.drop(rows, "a4-adjunct-lava-rubble");
+    return rows;
+  } },
+  // 배교자의 수도원: 배교자 제단 ×2 · 서쪽 홀 북벽 대신(벽 두 줄 팜 · 반전 그대로) · §4 뿔 석상 한 쌍 ×1.5 홀 동쪽 통로 입구 양옆 · 사슬 기둥 4→2 · 혼 촛불 2 빼기
+  apostate: { carve: [{ r: [-22, 12, -19, 13], z: "f" }], ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-apostate-altar", { k: 2, args: "foot=0.67;wall=1", note: "서쪽 홀 북벽 대신(벽 두 줄 팜)" });
+    h.add(rows, { name: "a4-horned-statue", x: -13.5, y: 5.2, args: "", note: "홀 동쪽 통로 입구 북쪽" });
+    h.add(rows, { name: "a4-horned-statue", x: -13.5, y: -2.0, flip: 1, args: "", note: "홀 동쪽 통로 입구 남쪽(반전)" });
+    h.hero(rows, "a4-horned-statue", { near: [-13.5, 5.2], k: 1.5, args: "foot=0.5", note: "통로 입구 쌍" });
+    h.hero(rows, "a4-horned-statue", { near: [-13.5, -2.0], k: 1.5, args: "foot=0.5", note: "통로 입구 쌍(반전)" });
+    rows = h.drop(rows, "a4-chain-pillar", { keep: 2 });
+    rows = h.drop(rows, "a4-adjunct-soul-candle-cluster");
+    return rows;
+  } },
+  // 타락의 구덩이: 쓰러진 기사의 검 무덤 ×2.5 · 서쪽 방 끝(padl 2 그대로) · 사슬 기둥 2·용암 잔해 2·흑요석 2 빼기
+  pit: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-fallen-knight-sword-grave", { k: 2.5, args: "padl=2;foot=0.67;wall=1", note: "서쪽 방 끝" });
+    for (const n of ["a4-chain-pillar", "a4-adjunct-lava-rubble", "a4-adjunct-obsidian-shards"]) rows = h.drop(rows, n);
+    return rows;
+  } },
+  // 심연의 문 1층: 숨 쉬는 룬 기둥 ×3 · 가운데 혼등 회랑 광장 · 혼 등불 10→6 · 감옥 창살 5→3
+  abyssgate1: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-breathing-rune-pillar", { k: 3, args: "foot=0.75", note: "혼등 회랑 가운데" });
+    rows = h.drop(rows, "a4-soul-lantern", { at: [[2, 4.5], [5, 4.5], [1, -2.7], [4, -2.7]] });   // 줄 끝부터(북쪽 줄 동쪽 2 · 남쪽 줄 서쪽 2) — 줄 가운데를 빼면 간격 불균일
+    rows = h.drop(rows, "a4-prison-bars-h", { keep: 3 });
+    return rows;
+  } },
+  // 심연의 문 2층: 재에 묻힌 석상(세트 a4_lm_ash_statue) ×2.5 · 가운데 문장의 홀 광장 · 문장 돌 3 빼기 · 혼 우리 3→2
+  abyssgate2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_ash_statue");
+    h.hero(rows, "a4-landmark-ash-buried-statue", { y: -5, k: 2.5, args: "foot=0.75", note: "문장의 홀 가운데(큰길 남쪽으로 1칸)" });
+    rows = h.drop(rows, "a4-sigil-stone");
+    rows = h.drop(rows, "a4-soul-cage", { keep: 2 });
+    return rows;
+  } },
+  // 재의 회랑: 재의 강 폭포(세트 a4_lm_ash_river) ×3 · 동쪽 투구 창고 북벽 대신(벽 두 줄 팜) · 감옥 창살 6→3 · 재 항아리·악마 해골 창 빼기
+  ashhall: { carve: [{ r: [11, 15, 14, 16], z: "b" }], ops: (rows, h) => {
+    rows = h.explode(rows, "a4_lm_ash_river");
+    h.hero(rows, "a4-landmark-ash-river-fall", { k: 3, args: "foot=0.67;wall=1", note: "투구 창고 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "a4-prison-bars-h", { keep: 3 });
+    rows = h.drop(rows, /^a4-adjunct-(ash-urn|demon-skull-spear)$/);
+    return rows;
+  } },
+  // 심장의 다리: 심장 다리 석상 ×2.5 · 다리 가운데참 광장 · 문장 돌 2·사슬 기둥 2·화로 2 빼기
+  heartbridge: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-heart-bridge-statue", { k: 2.5, args: "foot=0.75", note: "다리 가운데참" });
+    for (const n of ["a4-sigil-stone", "a4-chain-pillar", "a4-brazier"]) rows = h.drop(rows, n);
+    return rows;
+  } },
+  // 옥좌의 전실: 무릎 꿇은 석상 줄 ×2.5 · 동쪽 끝 동벽 대신(동벽 x 28까지 fill) · 뿔 석상 5→3 · 흩은 화로·촛불 빼기
+  throneante: { ops: (rows, h) => {
+    h.hero(rows, "a4-landmark-kneeling-statues-row", { k: 2.5, args: "foot=0.75;fill=27/3,27/4,27/5,27/6", note: "동쪽 끝 동벽 앞(동벽까지 막음)" });
+    rows = h.drop(rows, "a4-horned-statue", { keep: 3, near: [19, -8.7] });
+    rows = h.drop(rows, /^a4-adjunct-(ember-brazier|soul-candle-cluster)$/);
+    return rows;
+  } },
+  // 심연의 문 3층(보스방 · 대주교 (-14.5,3.5)): 피의 설교대는 지금 크기 유지 · 2순위 사슬 닻 쌍은 뺌 — 동쪽 굽은 길(x 6~16)은 남북이 벽이라 발이 벽 위(막힘 0 → -top 못 놓음)이고,
+  //   x 17 목(b·c 방 입구 폭 3)에 세우면 화로 2·3 방이 끊긴다(검사 「Torch2까지 길 없음」) · 문장 돌 6→4만
+  abyssgate3: { ops: (rows, h) => {
+    rows = h.drop(rows, "a4-sigil-stone", { keep: 4 });
+    return rows;
+  } },
+  // 군주의 옥좌(보스방 · 재의 왕 (-17.5,5.5)): 돌아온 심장 제단은 지금 크기 유지 · 2순위 옥좌 단(재고 768×512) ×2를 제단 바로 뒤(북쪽 9.2) 벽 대신 —
+  //   의식(보스 둘레 2.6×1.9칸 · 웅덩이는 아래쪽)·패턴 공간(y ≤ 7.4) 밖 · 불씨 기둥 10→6 · 혼 등불 8→4 · 낱개 배교자 제단 빼기
+  throne: { ops: (rows, h) => {
+    h.add(rows, { name: "a4-throne-dais", x: -17.5, y: 9.2, args: "wall=1", note: "옥좌 단(제단 뒤 벽 대신 · 재고)" });
+    h.hero(rows, "a4-throne-dais", { k: 2, hero: false, args: "wall=1", note: "옥좌 단 · 제단 뒤 벽 대신" });
+    rows = h.drop(rows, "a4-ember-pillar", { keep: 6, near: [-17.5, 3] });
+    rows = h.drop(rows, "a4-soul-lantern", { keep: 4, near: [-17.5, 3] });
+    rows = h.drop(rows, "a4-apostate-altar");
+    return rows;
+  } },
 };
 
 function install(specs) {
