@@ -2129,19 +2129,24 @@ script SkillEffects extends Component
         else
             -- 11-04 변형 키: 같은 클립을 copies개 — 반지름 radius × Spread 원 안 고르게(황금각 + 흔들기) · 배율 CopyMin~Max · 시작 0~StaggerSec 어긋남 (가시가 많이 솟는 모양)
             local spread = radius * _GameConst.FxSkillBoneSpikesSpread
+            local loops = math.max(1, _GameConst.FxSkillBoneSpikesLoops)
+            for loop = 1, loops do
+            local loopAt = (loop - 1) * math.max(0, _GameConst.FxSkillBoneSpikesLoopGapSec)
+            local turn = _UtilLogic:RandomDouble() * 6.2832   -- 회차마다 흩는 각을 새로 (같은 자리 반복 안 보이게)
             for i = 1, copies do
-                local ang = i * 2.39996 + (_UtilLogic:RandomDouble() - 0.5) * 0.8
+                local ang = turn + i * 2.39996 + (_UtilLogic:RandomDouble() - 0.5) * 0.8
                 local dist = spread * math.sqrt((i - 0.5) / copies) * (0.8 + _UtilLogic:RandomDouble() * 0.3)
-                if i == 1 then dist = 0 end
+                if i == 1 and loop == 1 then dist = 0 end
                 local p = Vector3(pos.x + math.cos(ang) * dist, pos.y + math.sin(ang) * dist * 0.5, pos.z)
                 local k = kx * (_GameConst.FxSkillBoneSpikesCopyMin + (_GameConst.FxSkillBoneSpikesCopyMax - _GameConst.FxSkillBoneSpikesCopyMin) * _UtilLogic:RandomDouble())
                 local flip = (_UtilLogic:RandomDouble() < 0.5) and -1 or 1
-                local delay = (i == 1) and 0 or _UtilLogic:RandomDouble() * _GameConst.FxSkillBoneSpikesStaggerSec
+                local delay = loopAt + ((i == 1) and 0 or _UtilLogic:RandomDouble() * _GameConst.FxSkillBoneSpikesStaggerSec)
                 local play = function() if isvalid(me) then _Util:PlayClipOnce(_GameConst.FxSkillBoneSpikes, me.CurrentMap, p, 0, Vector3(k * flip, k * _GameConst.FxSkillBoneSpikesTall, 1), _GameConst.FxSkillBoneSpikesClipSec, Color(1, 1, 1, 1), _GameConst.FxSkillBoneSpikesOrder) end end
                 if delay <= 0.001 then play() else _TimerService:SetTimerOnce(play, delay) end
             end
+            end
         end
-        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick bone-spikes ruid=%s scale=%.2fx%.2f order=%d pos=%.2f,%.2f copies=%d spread=%.2f k=%.2f~%.2f stagger=%.2f", string.sub(_GameConst.FxSkillBoneSpikes, 1, 8), kx, kx * _GameConst.FxSkillBoneSpikesTall, _GameConst.FxSkillBoneSpikesOrder, pos.x, pos.y, copies, _GameConst.FxSkillBoneSpikesSpread, _GameConst.FxSkillBoneSpikesCopyMin, _GameConst.FxSkillBoneSpikesCopyMax, _GameConst.FxSkillBoneSpikesStaggerSec)) end
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick bone-spikes ruid=%s scale=%.2fx%.2f order=%d pos=%.2f,%.2f copies=%d spread=%.2f k=%.2f~%.2f stagger=%.2f loops=%d gap=%.2f", string.sub(_GameConst.FxSkillBoneSpikes, 1, 8), kx, kx * _GameConst.FxSkillBoneSpikesTall, _GameConst.FxSkillBoneSpikesOrder, pos.x, pos.y, copies, _GameConst.FxSkillBoneSpikesSpread, _GameConst.FxSkillBoneSpikesCopyMin, _GameConst.FxSkillBoneSpikesCopyMax, _GameConst.FxSkillBoneSpikesStaggerSec, _GameConst.FxSkillBoneSpikesLoops, _GameConst.FxSkillBoneSpikesLoopGapSec)) end
     end
 
     @ExecSpace("ServerOnly")

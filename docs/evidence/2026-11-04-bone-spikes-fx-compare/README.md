@@ -37,3 +37,26 @@ g.FxSkillBoneSpikesCopies=8 g.FxSkillBoneSpikesFixedScale=0.38 g.FxSkillBoneSpik
 - `shots/*-full.png`(전체 화면) · `shots/*-zoom.png`(무리 확대)
 - `contact/*-0.25s.png` — 실속도 녹화 6초를 0.25초 간격 24장(시전 ≈1.2~1.5초)
 - `rec/*.mp4` — 실속도 6초 녹화(30fps · 녹화 중 maker_screenshot 0) · 커밋 안 함
+
+## 추가 (11-04 사용자 피드백) — C안 가시 8개 묶음 2회 반복
+「크기와 시차를 달리한 가시 8개, 이게 루프로 두 번 정도 반복되면 좋겠다」 → 변형 키 2개 추가(기본은 반복 없음 · 게임 값은 여전히 다크니스 오멘).
+- `FxSkillBoneSpikesLoops` (기본 1) — 묶음 재생 횟수. C 반복안 = **2**
+- `FxSkillBoneSpikesLoopGapSec` (기본 **0.35** · Loops ≥ 2일 때만 씀) — 회차 사이 시작 간격
+- 2회차는 흩는 각을 무작위로 돌리고 자리·좌우 반전·배율(0.8~1.5)·개별 시차(0~0.15초)를 모두 새로 뽑는다(1회차 가운데 고정 가시도 2회차는 흩음)
+- 피해·기절 판정은 서버 `BoneSpikes`에서 시전당 1회 그대로(매 시전 `bone spikes … hits=5` 한 줄) · 피해량·범위·재사용 불변 — 연출만 클라이언트에서 반복
+
+| 간격 | 겹침 | 0.1초 띠 판정 | 파일 |
+|---|---|---|---|
+| 0.9초 (클립 1.2 × 0.75) | 없음 | 1회차가 0.6초쯤 사라진 뒤 **0.4초 빈 틈** → 끊겨 보임(기각) | rec/C-loop2-gap0.9.mp4 · contact/C-loop2-gap0.9-0.1s.png |
+| 0.5초 | 적게 | 두 박자가 또렷, 경계에 0.1초 옅은 연기 장 | rec/C-loop2-gap0.5.mp4 · contact/C-loop2-gap0.5-0.1s.png · shots/C-loop2-gap0.5-loop1/2.png |
+| **0.35초 (추천 · 기본값)** | 많이 | 빈 장 없이 이어지며 2회차가 다른 자리에서 다시 솟음 | rec/C-loop2-gap0.35.mp4 · contact/C-loop2-gap0.35-0.1s.png · shots/C-loop2-gap0.35-loop1/2.png |
+
+클립 길이는 8장 × 0.15초 = 1.2초지만 눈에 보이는 몫은 앞 0.5~0.6초(뒤는 옅은 회색 연기)라, 요청서 예시(클립 × 0.6~0.75 = 0.72~0.9초)로는 틈이 생겨 실측으로 줄였다.
+비교 시트: `compare-C-loop.png` (두 간격 × 1·2회차 정점). 조건은 위와 같음(적 6기 = 들개 3 · 구울 3, 캐릭터에서 3.2칸 · 같은 자리 · 같은 줌 · 실제 D 키).
+
+C 반복안 켜기(클라이언트):
+```lua
+local g=_GameConst g.FxSkillBoneSpikes="0fdbad343a9449aa8e99f6d1b2290378" g.FxSkillBoneSpikesTall=1.0 g.FxSkillBoneSpikesClipSec=1.5
+g.FxSkillBoneSpikesCopies=8 g.FxSkillBoneSpikesFixedScale=0.38 g.FxSkillBoneSpikesCopyMin=0.8 g.FxSkillBoneSpikesCopyMax=1.5 g.FxSkillBoneSpikesStaggerSec=0.15
+g.FxSkillBoneSpikesLoops=2 g.FxSkillBoneSpikesLoopGapSec=0.35
+```
