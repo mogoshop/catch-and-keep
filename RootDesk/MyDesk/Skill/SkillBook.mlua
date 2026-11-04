@@ -272,12 +272,16 @@ script SkillBook extends Component
         if def == nil then return end
         -- 알림 판은 두 줄뿐이라 「(Lv12 기준)」 같은 꼬리는 뺀다 (스킬 창 설명에는 그대로 있다)
         local detail = string.gsub(after, "%s*%([^%(%)]*기준%)", "")
+        -- 11-05: 망령 도약 줄은 키 이름(스페이스·질주 단추)과 노리는 자리(커서·바라보는 방향)를 담는데 서버는 내 플랫폼·조작을 모르니 내 화면에서 다시 만든다
+        --   도약 알림은 두 줄 판이라 키 이름은 아래 줄(hint)로만 · 잠긴 문 예외는 스킬 창 설명에만 (모바일 「바라보는 방향으로」가 길어 세 줄이 됐다)
+        if id == "dash_blink" then detail = string.format("%s 최대 %g칸 순간이동 · 벽을 넘음", self:BlinkWhereText(), _GameData.dashBlinkRange)
+        elseif id == "wraith_dash" and self:Node("dash_blink") > 0 then detail = self:GetRankSummary(id, level) end
         local hint = ""
         if def.kind == "passive" or def.kind == "node" or def.kind == "aura" then
             hint = "자동 적용"
             if id == "skel_legion" or id == "mage_legion" or string.sub(id, 1, 5) == "mage_" or id == "skel_greatsword" or id == "skel_twin" or id == "command_aura" or id == "dash_legion" then hint = "다음 소환부터 적용" end
         elseif id == "wraith_dash" then
-            hint = Environment:IsMobilePlatform() and "질주 단추로 사용" or "스페이스로 사용"
+            hint = self:DashKeyName() .. "로 사용"
         elseif slot > 0 then
             local keys = { "A", "S", "D", "F", "우클릭" }
             hint = keys[slot] .. " 배정"
@@ -288,6 +292,11 @@ script SkillBook extends Component
             elseif level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
         end
         if id == "shadow_summon" and level > 1 then hint = "강화된 능력치는 다음 소환부터 적용" end
+        if id == "dash_blink" then
+            -- 11-05 사용자 「망령 질주는 스페이스를 써야 한다는 안내가 있나」: 도약도 질주와 같은 키라고 알린다
+            hint = "질주와 같은 키 · " .. self:DashKeyName() .. "로 사용"
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] blink learn notice detail=%s hint=%s", detail, hint)) end
+        end
         if id == "deploy_expand" then
             -- 작은 알림은 두 줄 안에 보너스와 다음 목표만 표시한다.
             detail = string.format("그림자 +%d기", _ShadowConfig:GetDeploySkillBonus(level))
@@ -784,7 +793,7 @@ script SkillBook extends Component
             skel_resonance = string.format("해골 공격력 ×%.1f · 반경 %.1f칸 · 해골마다 %.1f초", _SkeletonResonance.AtkMult, _SkeletonResonance.Radius, _SkeletonResonance.Cooldown),
             dash_charge = string.format("질주 %d번 연달아", 1 + level),
             dash_legion = string.format("질주하면 3칸 밖 소환수가 곁으로 도약 · 소환수 이동 +%d%%", 5 * level),
-            dash_blink = string.format("질주가 조준점(최대 %g칸) 순간이동으로 · 벽을 넘음 (잠긴 문은 못 넘음)", _GameData.dashBlinkRange),
+            dash_blink = string.format("질주가 순간이동으로 · %s · %s 최대 %g칸 · 벽을 넘음 (잠긴 문은 못 넘음)", self:DashKeyName(), self:BlinkWhereText(), _GameData.dashBlinkRange),
             step_gale = string.format("질주 뒤 %.1f초간 이동 속도 +%d%%%s", _GameData.afterStepSec, self:AfterStepPct(level), self:GetLevel("wraith_dash") > 0 and "" or " (질주를 배우면)"),
             step_hunt = string.format("처치하면 3초간 이동 속도 +%d%%", 4 * level),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
@@ -855,7 +864,7 @@ script SkillBook extends Component
         if id == "bone_offering" then return string.format("소환수 생명 %g%% 회복 · 반경 %.1f · 3초간 받는 피해 -20%%", math.floor(power * 10 + 0.5) / 10, 4 * (1 + 0.25 * self:Node("offering_wide"))) end
         if id == "swift_step" then return string.format("이동 속도 +%g%%", power) end
         if id == "plague_curse" then return string.format("저주가 반경 2.5 안 적 %d기에게 옮음", math.floor(power)) end
-        if id == "wraith_dash" then return string.format("%s · 무적 %.2f초 · 재사용 %.1f초%s", self:Node("dash_blink") > 0 and string.format("최대 %g칸 순간이동", power) or string.format("%.2f칸 질주", power), _GameData.dashInvulnSec, self:DashCooldown(level), self:Node("dash_charge") > 0 and string.format(" · %d번 연달아", 1 + self:Node("dash_charge")) or "") end
+        if id == "wraith_dash" then return string.format("%s · 무적 %.2f초 · 재사용 %.1f초%s", self:Node("dash_blink") > 0 and string.format("%s · %s 최대 %g칸 순간이동", self:DashKeyName(), self:BlinkWhereText(), power) or string.format("%.2f칸 질주", power), _GameData.dashInvulnSec, self:DashCooldown(level), self:Node("dash_charge") > 0 and string.format(" · %d번 연달아", 1 + self:Node("dash_charge")) or "") end
         if id == "hex_flame" then return string.format("불꽃 화살 %d발 · 발당 기준 피해 %.1f · 저주 걸린 적 +50%% · 그 자리 반경 %.2f 폭발", 1 + self:Node("flame_twin"), power * (1 + stats:GetSpellPowerPct() / 100), self:GetHexBurstRadius(level)) end
         if id == "frost_soul" then
             local splits = self:GetFrostSplitCount(level)
@@ -876,6 +885,19 @@ script SkillBook extends Component
             return label .. " " .. string.format("%.1f", power * (1 + stats:GetSpellPowerPct() / 100))
         end
         return ""
+    end
+
+    method string DashKeyName()
+        -- 질주·망령 도약 키 이름 (HudMain 질주 칸 툴팁과 같은 분기): 모바일 = 질주 단추 · 그 밖 = 스페이스
+        return Environment:IsMobilePlatform() and "질주 단추" or "스페이스"
+    end
+
+    method string BlinkWhereText()
+        -- 망령 도약이 노리는 자리 (BlinkAimPoint와 같은 규칙): PC 마우스 조작 = 커서 자리 · 키보드 조작·모바일 = 바라보는 방향
+        ---@type ClickControl
+        local cc = self.Entity:GetComponent("script.ClickControl")
+        if Environment:IsPCPlatform() and cc ~= nil and cc.MouseMode then return "커서 자리로" end
+        return "바라보는 방향으로"
     end
 
     method string UseHint(string id)
