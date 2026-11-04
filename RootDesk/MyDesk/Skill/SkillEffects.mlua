@@ -195,7 +195,7 @@ script SkillEffects extends Component
         elseif id == "frost_soul" then ok = self:FrostSoul(me, target, power * spell)
         elseif id == "bone_offering" then ok = _UndeadSystem:BoneOffering(self.Entity, power, 4 * (1 + 0.25 * self:Node("offering_wide")), 10 * self:Node("offering_frenzy"))
         elseif id == "wraith_dash" then ok = self:WraithDash(me, target)
-        elseif id == "soul_drain" then ok = self:SoulDrain(target, power * spell)
+        elseif id == "bone_spikes" then ok = self:BoneSpikes(target, power * spell, lv)
         elseif id == "bone_storm" then ok = self:BoneStorm(power * spell)
         elseif id == "mark_weakness" then ok = self:Curse(target, "amp", power, 1.5, duration)
         elseif id == "enfeeble" then
@@ -324,6 +324,9 @@ script SkillEffects extends Component
         for _, ruids in ipairs({ _GameConst.FxSkillBlast, _GameConst.FxSkillOfferingHeal, _GameConst.FxSkillDeathWave, _GameConst.FxSkillFlameShot, _GameConst.FxSkillFrostShot, _GameConst.FxSkillPoisonCloud, _GameConst.FxSkillSlash, _GameConst.FxSkillSacrifice }) do
             for _, r in ipairs(_Util:Frames(ruids)) do add(r) end
         end
+        -- 11-04 뼈 쐐기 가시 클립 · 기절 별 고리 클립 (첫 시전·첫 기절에 늦게 뜨지 않게)
+        add(_GameConst.FxSkillBoneSpikes)
+        for _, r in ipairs(_Util:KeyFrames(_GameConst.FxSkillMarks, "stun")) do add(r) end
         -- 10-31 메테오 L2: 4자리 모든 장 (예고·낙하·착지·잔불 × 8)
         for _, ruids in ipairs({ _GameConst.FxGiantMeteorTelegraph, _GameConst.FxGiantMeteorFall, _GameConst.FxGiantMeteorImpact, _GameConst.FxGiantMeteorAfterglow }) do
             for _, r in ipairs(_Util:Frames(ruids)) do add(r) end
@@ -1939,79 +1942,70 @@ script SkillEffects extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method boolean SoulDrain(Vector2 target, number damage)
-        -- 가장 가까운 적 하나의 생명을 흡수 → 피해의 50% 회복, 소환수도 30% 회복 (마법)
-        local m = self:Targets(target, 1.5)[1]
-        if m == nil then
-            -- 결투 상대 플레이어 흡수 (마법 저항 · PvP 배율)
-            local foe = self:FoePlayers(target, 1.5)[1]
-            if foe == nil then
-                self:Fail("흡수할 대상이 없습니다")
-                return false
+    method boolean BoneSpikes(Vector2 target, number damage, integer lv)
+        -- 11-04 뼈 쐐기 (드레인 라이프 자리 · 기획 62 §14): 조준 자리 반경 1.2칸 땅에서 뼈 가시가 솟아 모든 적에게 피해 + 기절 (보스·최상위는 경직만 — MonsterStatus.ApplyStun)
+        --   강화 「뼈 기둥」: 맞은 적이 있으면 반경 1.2 + 0.2/랭크 안 그 밖의 적을 가까운 순으로 1·1·2기 더 (같은 피해·기절) · 「급작스러운 충격」: 기절 +0.17·0.33·0.5초 (상한 2.5)
+        ---@type SkillBook
+        local book = self.Entity:GetComponent("script.SkillBook")
+        ---@type PlayerAttack
+        local atk = self.Entity:GetComponent("script.PlayerAttack")
+        if book == nil or atk == nil then return false end
+        local pillar = self:Node("bone_pillars")
+        local impact = self:Node("sudden_impact")
+        local base = _GameData.spikeRadius
+        local wide = book:SpikeRadius(pillar)
+        local extraMax = book:PillarExtra(pillar)
+        local stunSec = book:SpikeStunSec(lv, impact)
+        local hits = {}
+        local ring = {}
+        for _, m in ipairs(self:Targets(target, wide)) do
+            if (_Util:Pos2(m.Entity) - target):Magnitude() <= base then table.insert(hits, m) else table.insert(ring, m) end
+        end
+        local extra = {}
+        if #hits > 0 then
+            for i = 1, math.min(extraMax, #ring) do table.insert(extra, ring[i]) end
+        end
+        local foes = self:FoePlayers(target, base)
+        if #hits == 0 and #foes == 0 then
+            self:Fail("가시를 세울 적이 범위 안에 없습니다")
+            return false
+        end
+        local stunned = 0
+        for _, list in ipairs({ hits, extra }) do
+            for _, m in ipairs(list) do
+                if isvalid(m.Entity) and not m.IsDead then
+                    atk:SkillHitOne(m.Entity, "skill.bone_spikes", damage)
+                    if not m.IsDead and m:ApplyStun(stunSec, self.Entity) > 0 then stunned = stunned + 1 end
+                end
             end
+        end
+        for _, foe in ipairs(foes) do
+            -- 결투 상대: 같은 피해(PvP 배율) + 기절 대신 묶음(이동만 · 지속 PvpDurationMul배)
             ---@type PlayerStats
             local fs = foe:GetComponent("script.PlayerStats")
             ---@type PlayerVitals
             local fv = foe:GetComponent("script.PlayerVitals")
-            local dealt = damage * _GameData.pvpDamageMult * (fs ~= nil and fs:PvpTakenMult() or 1)
-            if fv ~= nil then fv:TakeDuelDamage(dealt, self.Entity) end
-            ---@type PlayerStats
-            local mine = self.Entity:GetComponent("script.PlayerStats")
-            if mine ~= nil then mine:Heal(dealt * 0.5, 0) end
-            self:Fx("drain", foe.TransformComponent.WorldPosition, 0.8)
-            self:DrainVortex(foe.TransformComponent.WorldPosition + Vector3(0, 0.4, 0))
-            return true
+            if fv ~= nil then fv:TakeDuelDamage(damage * _GameData.pvpDamageMult * (fs ~= nil and fs:PvpTakenMult() or 1), self.Entity) end
+            if fs ~= nil then fs:ApplyRoot(stunSec * _GameData.pvpDurationMul) end
         end
-        -- 44 §3-3: 예전엔 TakeDamage(히트 판정 밖)라 번쩍·정지 · 분노 신전 · 오라 피해 · 생명 약탈 · 피해 숫자가 빠졌다 → 다른 스킬처럼 HitEvent 경로로
-        --   (마법 저항·낙인·레벨 차이는 PlayerAttack.CalcDamage가 본다). 회복은 실제로 들어간 피해 기준
-        local dealt = self:DrainHit(m, damage)
-        self:Fx("drain", m.Entity.TransformComponent.WorldPosition, 0.8)
-        self:DrainVortex(m.Entity.TransformComponent.WorldPosition + Vector3(0, 0.4, 0))
-        -- 강화 「혼 사슬」(나눔 자리 · 44 결정 4): 앞 대상에서 drainChainRange 안 가장 가까운 적으로 랭크만큼 이어진다 (이어진 적 피해 drainChainPct%)
-        local chain = self:Node("drain_share")
-        local links = 0
-        if chain > 0 then
-            local hit = { [m.Entity.Id] = true }
-            local from = m.Entity
-            for i = 1, chain do
-                local nextFoe = nil
-                local bestD = _GameData.drainChainRange
-                for _, f in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, _Util:Pos2(from), _GameData.drainChainRange)) do
-                    if not hit[f.Entity.Id] and not f.IsDead then
-                        local d = (_Util:Pos2(f.Entity) - _Util:Pos2(from)):Magnitude()
-                        if d < bestD then nextFoe, bestD = f, d end
-                    end
-                end
-                if nextFoe == nil then break end
-                hit[nextFoe.Entity.Id] = true
-                self:StatusFx2("chain", from.TransformComponent.WorldPosition, nextFoe.Entity.TransformComponent.WorldPosition)
-                dealt = dealt + self:DrainHit(nextFoe, damage * _GameData.drainChainPct / 100)
-                from = nextFoe.Entity
-                links = links + 1
-            end
+        self:BoneSpikesFx(Vector3(target.x, target.y, 0), base)
+        for _, m in ipairs(extra) do
+            if isvalid(m.Entity) then self:BoneSpikesFx(m.Entity.TransformComponent.WorldPosition, base * 0.5) end
         end
-        ---@type PlayerStats
-        local stats = self.Entity:GetComponent("script.PlayerStats")
-        if stats ~= nil then stats:Heal(dealt * 0.5, 0) end
-        -- 보관함 그림자와 언데드 모두 같은 주인의 살아 있는 소환수다.
-        for _, unit in ipairs(self.Entity.CurrentMap:GetChildComponentsByTypeName("script.ShadowUnit", true)) do
-            if unit.OwnerPlayer == self.Entity and not unit.Dead and unit.Hp > 0 then
-                unit.Hp = math.min(unit.MaxHp, unit.Hp + dealt * 0.3)
-            end
+        if not Environment:IsPublishedPlay() then
+            log(string.format("[VRF] bone spikes lv=%d hits=%d extra=%d/%d stunned=%d stun=%.2f radius=%.2f/%.2f impact=%d pillar=%d dmg=%.1f", lv, #hits, #extra, extraMax, stunned, stunSec, base, wide, impact, pillar, damage))
         end
-        log(string.format("[VRF] soul drain hit dealt=%.0f links=%d/%d", dealt, links, chain))
         return true
     end
 
-    @ExecSpace("ServerOnly")
-    method number DrainHit(Monster m, number damage)
-        -- 생기 앗기 한 대상: PlayerAttack 판정(HitEvent)으로 때리고 실제로 들어간 피해를 돌려준다 (회복 계산용)
-        ---@type PlayerAttack
-        local atk = self.Entity:GetComponent("script.PlayerAttack")
-        if atk == nil or m == nil or m.IsDead then return 0 end
-        atk.LastSkillFinal = 0
-        atk:SkillHitOne(m.Entity, "skill.soul_drain", damage)
-        return atk.LastSkillFinal
+    @ExecSpace("Multicast")
+    method void BoneSpikesFx(Vector3 pos, number radius)
+        -- 땅에서 솟는 뼈 가시 (효과 자리 bone-spikes · GameConst.FxSkillBoneSpikes 메이플 「다크니스 오멘」 7장 클립 한 번) — 가로 = 판정 지름 · 세로 ×Tall · 바닥 층(몸 뒤) · 발 자리(아래 피벗)
+        local me = _UserService.LocalPlayer
+        if _GameConst.FxSkillBoneSpikes == "" or not isvalid(me) or me.CurrentMap ~= self.Entity.CurrentMap then return end
+        local kx = 2 * radius * 100 / math.max(1, _GameConst.FxSkillBoneSpikesClipPx)
+        _Util:PlayClipOnce(_GameConst.FxSkillBoneSpikes, me.CurrentMap, pos, 0, Vector3(kx, kx * _GameConst.FxSkillBoneSpikesTall, 1), _GameConst.FxSkillBoneSpikesClipSec, Color(1, 1, 1, 1), _GameConst.FxSkillBoneSpikesOrder)
+        if self.Entity == me and not Environment:IsPublishedPlay() then log(string.format("[VRF] fxpick bone-spikes ruid=%s scale=%.2fx%.2f order=%d pos=%.2f,%.2f", string.sub(_GameConst.FxSkillBoneSpikes, 1, 8), kx, kx * _GameConst.FxSkillBoneSpikesTall, _GameConst.FxSkillBoneSpikesOrder, pos.x, pos.y)) end
     end
 
     @ExecSpace("ServerOnly")

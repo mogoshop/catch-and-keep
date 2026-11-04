@@ -627,6 +627,42 @@ T.sounds.forEach((r, i) => { if (!RUID.test(r.ruid)) err("sounds", i, `ruid 형�
   }
 }
 
+// ── 11-04 지운 스킬 드레인 라이프 + 강화 「혼 사슬」 (docs/design/62 §14 · 뼈 쐐기로 교체) — 데이터·코드에 다시 생기지 않게 ──
+//   허용: 옛 저장 환급 SkillBook.MigrateDrainToSpikes · LoadSaveData 칸 정리 · MigrateNodeSwap(44 결정 4 옛 목록)
+{
+  const GONE = /\b(soul_drain|drain_share|SoulDrain|drainChainRange|drainChainPct)\b/;
+  const dataDir = process.env.GAME_DATA_DIR || path.join(ROOT, "data");
+  for (const f of ["skills.csv", "config.csv", "sounds.csv", "skill_choices.csv"]) {
+    const full = path.join(dataDir, f);
+    if (!fs.existsSync(full)) continue;
+    fs.readFileSync(full, "utf8").split("\n").forEach((line, i) => {
+      if (GONE.test(line.split(",")[0]) || /cast_soul_drain/.test(line)) err(f.replace(/\.csv$/, ""), i - 1, "지운 스킬(11-04)의 흔적 — " + line.slice(0, 60));
+    });
+  }
+  const ALLOW = { "SkillBook.mlua": ["MigrateDrainToSpikes", "LoadSaveData", "MigrateNodeSwap"] };
+  const walk = (d, out = []) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, out); else if (e.name.endsWith(".mlua")) out.push(p);
+    }
+    return out;
+  };
+  const src = path.join(ROOT, "RootDesk/MyDesk");
+  if (fs.existsSync(src) && !process.env.GAME_DATA_DIR) {
+    for (const f of walk(src).sort()) {
+      const allow = ALLOW[path.basename(f)] || [];
+      let inMethod = "";
+      fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        const m = line.match(/^    method [^(]*?(\w+)\(/);
+        if (m) inMethod = m[1];
+        else if (/^    end\s*$/.test(line)) { inMethod = ""; }
+        const code = line.replace(/--.*$/, "");
+        if (GONE.test(code) && !allow.includes(inMethod)) errors.push(`${path.relative(ROOT, f)}:${i + 1}: 지운 스킬(11-04)의 흔적 — ${line.trim().slice(0, 70)}`);
+      });
+    }
+  }
+}
+
 for (const e of errors) console.log(e);
 console.log(`\n[check_data] 표 ${Object.keys(T).length}개, 문제 ${errors.length}건`);
 process.exitCode = errors.length ? 1 : 0;

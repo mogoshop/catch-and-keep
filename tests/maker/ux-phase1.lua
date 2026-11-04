@@ -37,12 +37,12 @@ check("empty inventory roundtrip",next(inv.Bag)==nil and next(inv.Equip)==nil,ne
 inv.Bag=oldBag inv.Equip=oldEquip shadow.Storage=oldStorage inv:RefreshDigest() inv:ApplyEquipment()
 
 check("all save sections present",saved.Char~=nil and saved.Inv~=nil and saved.Shadow~=nil,saved.Char~=nil)
-bk.Levels={bone_shard=1,corpse_blast=1,soul_drain=1,mark_weakness=1,enfeeble=1,raise_skeleton=1}
+bk.Levels={bone_shard=1,corpse_blast=1,bone_spikes=1,mark_weakness=1,enfeeble=1,raise_skeleton=1}
 bk.ReadyAt={} bk.CdLen={} bk.CdDigest="" bk:RefreshDigest()
 travel:Go("map01",Vector2(-19,9))
 _TimerService:SetTimerOnce(function()
  local me=_Util:Pos2(p)
- for _,id in ipairs({"corpse_blast","soul_drain","mark_weakness","enfeeble"}) do
+ for _,id in ipairs({"corpse_blast","bone_spikes","mark_weakness","enfeeble"}) do
   local mana=st.Mana
   local accepted=bk:Cast(id,me+Vector2(100,100))
   check("failure preserves cost "..id,not accepted and st.Mana==mana and bk.ReadyAt[id]==nil,st.Mana)

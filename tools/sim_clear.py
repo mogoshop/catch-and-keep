@@ -104,7 +104,7 @@ PROFILES = {
                 elites=1, gearTierLag=1, life=15, res=20, markUp=0.25),
     "P40": dict(order=["raise_skeleton:1", "bone_shard:6", "shadow_summon:cap-4", "bone_armor:4", "corpse_blast:4",
                        "raise_skeleton:cap-4", "skeleton_mastery:1", "command_mastery:1", "deploy_expand:1", "poison_mist:5",
-                       "soul_drain:4", "bone_shard:cap", "raise_skeleton:cap"],
+                       "bone_spikes:4", "bone_shard:cap", "raise_skeleton:cap"],
                 stat=dict(str=0.15, vit=0.3, dex=0.25, ene=0.3), gearMinion=0.0, tree=(0, 0), plus=0.0, lvLag=4, ratio=1.0,
                 elites=0, gearTierLag=2, life=5, res=5, markUp=0.0),
 }

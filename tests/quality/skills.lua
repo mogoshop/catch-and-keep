@@ -672,7 +672,7 @@ do
  assert(book.Levels.skel_shield==nil and book.Levels.mage_twin==nil and book.Levels.mage_hex==nil and book.Levels.giant_quake==nil and book.Levels.giant_mage_pull==nil,'removed')
  assert(book.Levels.raise_skeleton==12 and book.Levels.raise_mage==8 and book.Levels.bone_rite==20,'mains kept')
  local saved=book:GetSaveData()
- assert(saved.sv==8 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==9 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
  load(saved)
  assert(stats.SkillPoints==11,'48-3 double refund after save '..stats.SkillPoints)
  book:MigrateLevels(4)
@@ -685,7 +685,7 @@ do
  -- 48 V2: 현행 sv 5 저장의 「폭발 증폭」(옛 「두 겹 고리」 투자)은 그대로 · 환급 0 · 다시 저장해도 sv 5 그대로 (재학습·중복 환급 없음)
  stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_pull=1}})
  assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp kept '..stats.SkillPoints)
- do local again=book:GetSaveData() assert(again.sv==8 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
+ do local again=book:GetSaveData() assert(again.sv==9 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
  stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
  -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번
@@ -696,7 +696,7 @@ do
  assert(stats.SkillPoints==3 and book.Levels.skel_greatsword==2,'current save untouched')
  -- 11-02 편성 자동 하나 (기획 52 §3-2 안 C): 옛 희망 편성 칸(skills.hope)은 읽고 버린다 — 다음 저장에 칸 없음 · 랭크·포인트 그대로
  load({sv=4,levelCount=1,levels={raise_skeleton=5},hope='s:d:shield=2,greatsword=1,twin=0/m:d:aura=1'})
- assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==8,'old hope kept')
+ assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==9,'old hope kept')
  assert(notices==0,'48-3 notices '..notices)
  local refundLogs=0
  for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
@@ -861,7 +861,7 @@ do
  local mig=0 for _,m in ipairs(vrf) do if string.find(m,'[VRF] giant split migrate sv=5 grant bone_giant=1 nodes=4',1,true) then mig=mig+1 end end
  assert(mig==1,'[VRF] giant split migrate once')
  local saved=book:GetSaveData()
- assert(saved.sv==8 and saved.levels.bone_giant==1,'saved sv 8')
+ assert(saved.sv==9 and saved.levels.bone_giant==1,'saved sv 9')
  load(saved)
  assert(book.Levels.bone_giant==1 and stats.SkillPoints==0,'reload no double grant')
  book:MigrateLevels(5)
@@ -938,7 +938,7 @@ do
  assert(#timers==0 and #notes==0,'no refund notice (points only)')
  -- 다시 저장(sv 7) → 불러오기 · 같은 표로 다시 이전: 0
  local saved=book:GetSaveData()
- assert(saved.sv==8,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==9,'saved sv '..tostring(saved.sv))
  load(saved);book:MigrateLevels(7)
  assert(stats.SkillPoints==28 and #vrf==1,'no double refund '..stats.SkillPoints)
  -- sv 7 저장에서 새 효과로 찍은 축 바꾼 노드(급속 골화 2 · 유도탄 1 · 피투성이 난장판 1 · 약화의 오라 3)는 그대로
@@ -988,6 +988,38 @@ do
   assert(book:CanLearn('dash_ghost',1,1)=='캐릭터 Lv9에 다음 랭크','Lv1 dash node locked: '..book:CanLearn('dash_ghost',1,1))
   assert(book:CanLearn('dash_ghost',9,1)=='','Lv9 dash node open')
   stats.Level=keepLv end
+ -- 11-04 드레인 라이프 → 뼈 쐐기 (62 §14): 드레인·혼 사슬 랭크 모두 한 번 환급 · 칸·우클릭 비움 · 저장 sv 9 · 다시 불러도·다시 이전해도 0 · 알림 없음
+ do
+  local keepPts,keepLog=stats.SkillPoints,log
+  local dv={}
+  log=function(m) if string.find(m,'[VRF] skill migrate drain',1,true) then table.insert(dv,m) end end
+  local function load(d) book.Levels={};book.Slots=',,,';book.RightSkill='';book:LoadSaveData(d) end
+  local old={sv=8,levelCount=4,slots='bone_shard,soul_drain,,',right='soul_drain',levels={bone_shard=6,soul_drain=9,drain_share=2,wraith_dash=1}}
+  stats.SkillPoints=1;load(old)
+  assert(stats.SkillPoints==12 and book.Levels.soul_drain==nil and book.Levels.drain_share==nil and book.Levels.bone_shard==6,'drain refund 9+2 '..stats.SkillPoints)
+  assert(not string.find(book.Slots,'soul_drain',1,true) and string.find(book.Slots,'bone_shard',1,true) and book.RightSkill=='','drain slots cleared '..book.Slots..' / '..book.RightSkill)
+  assert(#dv==1 and string.find(dv[1],'refund=11',1,true),'drain vrf '..table.concat(dv,' | '))
+  local saved=book:GetSaveData()
+  assert(saved.sv==9 and saved.levels.soul_drain==nil,'saved sv9 '..tostring(saved.sv))
+  load(saved);book:MigrateLevels(9)
+  assert(stats.SkillPoints==12 and #dv==1,'drain no double refund '..stats.SkillPoints)
+  stats.SkillPoints=1;load(old)
+  assert(stats.SkillPoints==12,'same old save once')
+  assert(_SkillData:Get('soul_drain')==nil and _SkillData:Get('drain_share')==nil,'drain defs removed')
+  local def=_SkillData:Get('bone_spikes')
+  assert(def~=nil and def.row==18 and def.maxLv==20 and def.mana==12 and def.cooldown==4 and def.tree=='soul' and def.kind=='active','bone_spikes def')
+  for _,id in ipairs({'sudden_impact','bone_pillars'}) do local n=_SkillData:Get(id) assert(n~=nil and n.parent=='bone_spikes' and n.maxLv==3 and n.row==18,'node '..id) end
+  -- 랭크별 효과 (사용자 채택 문구: 급작스러운 충격 = 기절 +0.5초 · 뼈 기둥 = 대상과 주변 2기 — 3랭크 합이 문구와 같다)
+  local function near(a,b) return math.abs(a-b)<1e-9 end
+  assert(near(book:ImpactStunSec(0),0) and near(book:ImpactStunSec(1),0.5/3) and near(book:ImpactStunSec(2),1/3) and near(book:ImpactStunSec(3),0.5),'impact ranks')
+  assert(book:PillarExtra(0)==0 and book:PillarExtra(1)==1 and book:PillarExtra(2)==1 and book:PillarExtra(3)==2,'pillar extra 1·1·2')
+  assert(near(book:SpikeRadius(0),1.2) and near(book:SpikeRadius(3),1.8),'spike radius')
+  assert(near(book:SpikeStunSec(1,0),1.0) and near(book:SpikeStunSec(20,0),1.95) and near(book:SpikeStunSec(20,3),2.45) and near(book:SpikeStunSec(1,3),1.5),'stun secs')
+  assert(near(book:DamageCurve('bone_spikes',1),1.2*(_GameData.skillCurveBase+_GameData.skillCurvePerLv*(1+8-1))),'drain curve kept (role 1.2 · offset 8)')
+  stats.SkillPoints,log=keepPts,keepLog
+  book.Levels={}
+  print('[quality/skills] 11-04 drain→spikes: refund 9+2=11 once (sv9 save → reload 0 · re-migrate 0) · slot/right cleared · stun 1.0~1.95(+0.17/0.33/0.5 → 2.45) · pillar 1·1·2 · radius 1.2/1.8')
+ end
  print('[quality/skills] 11-03 evening start rank: sv7 0→1 free · ≥1 → +1 point once · sv8 untouched · reset keeps 1 free')
  print('[quality/skills] 11-03 rank rework: refund prune 18 + swap 9 = 27 once (sv6 · save sv7 → reload 0 · re-migrate 0 · same old save 27) · sv7 swap kept · no notice · whirl 8/10/12 ticks · weaken cap 75 · late ramp ≥24 only')
 end

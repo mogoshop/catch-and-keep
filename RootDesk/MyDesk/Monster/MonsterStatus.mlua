@@ -26,6 +26,7 @@ script MonsterStatus extends Component
     @Sync
     property number KnockUntil = 0           -- 넉백·경직 (서버). 그동안 이동·공격·특수 행동을 멈춘다
     property number StaggerUntil = 0
+    property number StunUntil = 0             -- 기절 (11-04 뼈 쐐기 · 넉백·경직과 별개): 이동·공격·특수 행동 정지 · 피격은 됨 · 보스·최상위 면역 · 동기화 안 함(표식은 CurseMask 비트)
     property number PoiseDamage = 0
     property number PoiseHitAt = -99
     property number InterruptReadyAt = 0
@@ -305,6 +306,7 @@ script MonsterStatus extends Component
         if kind == "decay" then return self.DecayUntil end
         if kind == "resist" then return self.ResistBreakUntil end
         if kind == "root" then return self.RootUntil end
+        if kind == "stun" then return self.StunUntil end
         if kind == "hex" then return self.HexUntil end
         if kind == "frostmark" then return self.FrostMarkPct > 0 and self.FrostUntil or 0 end
         if kind == "chill" then return self.ChillUntil end
@@ -331,6 +333,7 @@ script MonsterStatus extends Component
             { bit = 1024, name = "서리 표식", kind = "frostmark", skill = "frost_long", mark = "mark_frost", curse = false },
             { bit = 2048, name = "둔화", kind = "chill", skill = "frost_soul", mark = "mark_chill", curse = false },
             { bit = 4096, name = "독", kind = "poison", skill = "poison_mist", mark = "mark_poison", curse = false },
+            { bit = 8192, name = "기절", kind = "stun", skill = "bone_spikes", mark = "mark_stun", curse = false },   -- 11-04 뼈 쐐기: 표식 = GameConst.FxSkillMarks stun(메이플 몹 스킬 123 별 고리 클립 · 반복)
         }
         return self.CurseDefCache
     end
@@ -595,8 +598,42 @@ script MonsterStatus extends Component
     -- ───────── 넉백·경직 ─────────
 
     method boolean IsStunned()
+        -- 이동·공격·특수 행동을 멈추는 상태: 넉백 · 경직 · 기절(11-04 뼈 쐐기)
         local now = _UtilLogic.ElapsedSeconds
-        return now < self.KnockUntil or now < self.StaggerUntil
+        return now < self.KnockUntil or now < self.StaggerUntil or now < self.StunUntil
+    end
+
+    method boolean IsStunImmune()
+        -- 기절 면역: 보스(등급 3) · 최상위(고유 이름 — 이름 있는 끝방 우두머리 포함). 공포·혼란·넉백과 같은 줄
+        local body = self:Body()
+        return body ~= nil and (body.Grade >= 3 or body.Unique)
+    end
+
+    @ExecSpace("ServerOnly")
+    method number ApplyStun(number seconds, Entity source)
+        -- 11-04 뼈 쐐기 기절: 이동·공격·AI 정지(피격은 그대로). 남은 기절보다 길 때만 갱신. 면역이면 경직만(보스는 경직도 없음 — Stagger 규칙). 실제로 건 초(못 걸면 0)
+        local body = self:Body()
+        if body == nil or body.IsDead or seconds <= 0 then return 0 end
+        local now = _UtilLogic.ElapsedSeconds
+        if self:IsStunImmune() then
+            self:Stagger()
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] stun immune %s grade=%d unique=%s → stagger", self.Entity.Name, body.Grade, tostring(body.Unique))) end
+            return 0
+        end
+        if now + seconds <= self.StunUntil then return 0 end
+        self.StunUntil = now + seconds
+        self:Hold()
+        local attack = self.Entity:GetComponent("script.MonsterAttack")
+        if attack ~= nil then attack:CancelPending() end
+        if self.KnockUntil <= now and isvalid(self.Entity.MovementComponent) then self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0) end
+        local sc = self.Entity.StateComponent
+        if isvalid(sc) and sc.CurrentStateName ~= "DEAD" and sc.CurrentStateName ~= "IDLE" then sc:ChangeState("IDLE") end
+        self:RefreshCurseTag()
+        if not Environment:IsPublishedPlay() then
+            local q = self.Entity.TransformComponent.WorldPosition
+            log(string.format("[VRF] stun apply %s sec=%.2f pos=%.2f,%.2f", self.Entity.Name, seconds, q.x, q.y))
+        end
+        return seconds
     end
 
     @ExecSpace("ServerOnly")
@@ -662,7 +699,7 @@ script MonsterStatus extends Component
         -- 저주 표시는 만료 시 지우고, 넉백·경직이 끝나면 이동을 복구한다.
         self:RefreshCurseTag()
         self:ControlTick()
-        if self.KnockUntil <= 0 and self.StaggerUntil <= 0 then return end
+        if self.KnockUntil <= 0 and self.StaggerUntil <= 0 and self.StunUntil <= 0 then return end
         local now = _UtilLogic.ElapsedSeconds
         local body = self:Body()
         if self.KnockUntil > 0 and now >= self.KnockUntil then
@@ -670,7 +707,12 @@ script MonsterStatus extends Component
             self.Entity.MovementComponent:MoveToDirection(Vector2(0, 0), 0)
             if body ~= nil then body:RefreshSpeed() end
         end
-        if self.KnockUntil > 0 or now < self.StaggerUntil then return end
+        if self.KnockUntil > 0 or now < self.StaggerUntil or now < self.StunUntil then return end
+        if self.StunUntil > 0 and not Environment:IsPublishedPlay() then
+            local q = self.Entity.TransformComponent.WorldPosition
+            log(string.format("[VRF] stun end %s pos=%.2f,%.2f", self.Entity.Name, q.x, q.y))
+        end
+        self.StunUntil = 0
         self.StaggerUntil = 0
         self:Release()
     end
@@ -742,6 +784,7 @@ script MonsterStatus extends Component
         self.PoisonUntil = 0
         self.KnockUntil = 0
         self.StaggerUntil = 0
+        self.StunUntil = 0
         self.PoiseDamage = 0
         self.PoiseHitAt = -99
         self.InterruptReadyAt = 0
@@ -816,7 +859,7 @@ script MonsterStatus extends Component
             local skillDef = _SkillData:Get(skillId)
             rec.mark = skillDef == nil or icon ~= skillDef.icon
             -- 10-31 갈래 E: 표식 뒤 반투명 검정 원판 (표식의 자식 · 같이 크고 같이 지워진다 · 표식 바로 뒤 층)
-            local plateRuid = self.MarkerPlate and _GameData:GetUiIcon("mark_backplate") or ""
+            local plateRuid = (self.MarkerPlate and kind ~= "stun") and _GameData:GetUiIcon("mark_backplate") or ""   -- 기절 별 고리(88×39 클립)는 원판 없이
             if plateRuid ~= "" then
                 local plate = _SpawnService:SpawnByModelId("artsprite", "CursePlate_" .. kind, rec.entity.TransformComponent.WorldPosition, rec.entity)
                 if isvalid(plate) then

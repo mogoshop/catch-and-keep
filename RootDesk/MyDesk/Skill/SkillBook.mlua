@@ -325,7 +325,7 @@ script SkillBook extends Component
     end
 
     method boolean IsDamageSkill(string id)
-        local ids = { bone_shard = true, poison_mist = true, soul_drain = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, hex_flame = true, frost_soul = true }
+        local ids = { bone_shard = true, poison_mist = true, bone_spikes = true, bone_storm = true, soul_torrent = true, death_wave = true, shadow_sacrifice = true, hex_flame = true, frost_soul = true }
         return ids[id] == true
     end
 
@@ -617,7 +617,7 @@ script SkillBook extends Component
         -- 공격 스킬 공통 곡선 (10-24 사용자 결정 A안): 늦게 배우는 스킬은 그동안 찍었을 랭크만큼 앞에서 출발한다.
         -- 가상 레벨 = 스킬 레벨 + (배우는 캐릭터 레벨 - 1) ÷ 2 → 기본 skillCurveBase + skillCurvePerLv × (가상 레벨 - 1), 여기에 스킬 성격 배율.
         -- 같은 캐릭터 레벨에서 다 찍었다면 늦게 배운 스킬이 더 세다 (예전: 1레벨 골편 투척이 9레벨 저주 불꽃보다 셌다)
-        local role = { bone_shard = _GameData.boneShardDmgMul, hex_flame = 1.0, poison_mist = 0.35, soul_drain = 1.2, frost_soul = 0.9,
+        local role = { bone_shard = _GameData.boneShardDmgMul, hex_flame = 1.0, poison_mist = 0.35, bone_spikes = 1.2, frost_soul = 0.9,
             bone_storm = 0.3, shadow_sacrifice = 2.0, soul_torrent = 0.8, death_wave = 2.5 }
         local mul = role[id]
         if mul == nil then return 0 end
@@ -653,6 +653,32 @@ script SkillBook extends Component
         if id == "command_aura" then return 10 + 2 * k end           -- 소환수 공격·생명 %
         if id == "bone_armor" then return 20 + 10 * k end   -- 흡수량 (캐릭터 레벨 비례는 GetEffectPower · 11-03 「두꺼운 뼈」 → 「급속 골화」로 흡수량 곱 없음)
         return 0
+    end
+
+    -- ───────── 뼈 쐐기 (11-04 사용자: 드레인 라이프 자리 · 기획 62 §14) ─────────
+
+    method number ImpactStunSec(integer rank)
+        -- 강화 「급작스러운 충격」 기절 + 초: 3랭크 = impactStunFullSec(0.5) · 랭크 r = 0.5 × r ÷ 3 (0.17·0.33·0.50 · 사용자 채택 문구 「기절 +0.5초」)
+        if rank <= 0 then return 0 end
+        return _GameData.impactStunFullSec * math.min(rank, 3) / 3
+    end
+
+    method integer PillarExtra(integer rank)
+        -- 강화 「뼈 기둥」 주변 추가 대상 수: 반올림(2 × r ÷ 3) → 1·1·2기 (3랭크 = 「대상과 주변 2기」)
+        if rank <= 0 then return 0 end
+        return math.floor(_GameData.pillarExtraFull * math.min(rank, 3) / 3 + 0.5)
+    end
+
+    method number SpikeRadius(integer pillarRank)
+        -- 판정 반지름: 1.2칸 + 「뼈 기둥」 0.2칸/랭크 (기본 1.2칸 안 적은 모두 · 그 밖에서 이 반지름 안 적을 가까운 순으로 PillarExtra기 — SkillEffects.BoneSpikes)
+        return _GameData.spikeRadius + _GameData.pillarRadiusPerRank * math.max(0, pillarRank)
+    end
+
+    method number SpikeStunSec(integer level, integer impactRank)
+        -- 기절 초: min(2.0, 1.0 + 0.05 × (레벨 − 1)) + 급작스러운 충격 → 상한 2.5
+        if level <= 0 then return 0 end
+        local base = math.min(_GameData.spikeStunMaxSec, _GameData.spikeStunBaseSec + _GameData.spikeStunPerRankSec * (level - 1))
+        return math.min(_GameData.impactStunMaxSec, base + self:ImpactStunSec(impactRank))
     end
 
     method integer GetTorrentCount(integer level)
@@ -781,7 +807,8 @@ script SkillBook extends Component
             prison_wide = string.format("본 프리즌 범위 +%d%%", 15 * level),
             prison_pull = string.format("반경 %.1f 안 적을 끌어모은 뒤 가둠", 2.4 + 0.3 * level),
             terror_frenzy = string.format("하울이 끝나면 %.1f초 혼란 (보스 면역)", 1 + 0.5 * level),
-            drain_share = string.format("가까운 적 %d마리로 이어짐 · 이어진 적은 피해 %d%%", level, math.floor(_GameData.drainChainPct)),
+            sudden_impact = string.format("뼈 쐐기 기절 +%.2f초 (최대 %g초)", self:ImpactStunSec(level), _GameData.impactStunMaxSec),
+            bone_pillars = string.format("대상과 주변 %d기 · 범위 %.1f칸", self:PillarExtra(level), self:SpikeRadius(level)),
             -- 46-5 거인 강화 (§4-3 「지금 / 다음 랭크」 · 수치 초안 · 글귀 승인 전)
             giant_shield_wall = string.format("도발 %.1f칸 · 받는 피해 -%d%%", 3 + 0.3 * level, 30 + 3 * level),
             giant_shield_alt = "별도 검토 중",
@@ -845,6 +872,7 @@ script SkillBook extends Component
         end
         if id == "bone_shard" then return string.format("뼛조각 %d발 부채꼴 · 발마다 %d마리 · 발당 기준 피해 %.1f (Lv%d 기준)", self:GetBoneShardCount(level), self:GetShardHits(), power * (1 + stats:GetSpellPowerPct() / 100), stats.Level) end
         if id == "soul_torrent" then return string.format("유도 영혼 %d발 · 발당 기준 피해 %.1f", self:GetTorrentCount(level), power * (1 + stats:GetSpellPowerPct() / 100)) end
+        if id == "bone_spikes" then return string.format("반경 %.1f칸 · 기준 피해 %.1f · 기절 %.2f초%s (보스·최상위는 경직만)", _GameData.spikeRadius, power * (1 + stats:GetSpellPowerPct() / 100), self:SpikeStunSec(level, self:Node("sudden_impact")), self:Node("bone_pillars") > 0 and string.format(" · 주변 %d기(%.1f칸 안)", self:PillarExtra(self:Node("bone_pillars")), self:SpikeRadius(self:Node("bone_pillars"))) or "") end
         if id == "shadow_sacrifice" then return string.format("그림자 1기 폭발 · 기준 피해 %.1f + 그림자 공격력×2", power * (1 + stats:GetSpellPowerPct() / 100)) end
         if power > 0 then
             local label = "기준 피해"
@@ -1109,7 +1137,8 @@ script SkillBook extends Component
         local selfCast = id == "shadow_summon" or id == "rally" or id == "elite_promote" or id == "bone_storm" or id == "death_wave" or id == "bone_armor" or id == "bone_offering"
         local move = id == "wraith_dash"
         local lock = nil
-        if id == "bone_shard" then
+        if id == "bone_shard" or id == "bone_spikes" then
+            -- 11-04 뼈 쐐기도 티스와 같은 조준: 고른 적 → 커서 근처(1.2) 적 → 없으면 커서 자리(6칸 넘으면 그 방향 6칸)
             -- 10-10 2차 QA: 커서가 몬스터 위가 아니면 오른쪽 몬스터를 두고 왼쪽으로 날아갔다.
             -- 플레이어가 고른 대상 → 없으면 커서 근처(1.2) 몬스터 순으로 고정해, 뼛조각이 그 몬스터까지 날아가 맞는다.
             -- (조준 쐐기 PlayerAttack.UpdateAimIndicator와 같은 우선순위)
@@ -1129,7 +1158,7 @@ script SkillBook extends Component
             if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
         elseif (id == "bone_shard" or id == "soul_torrent" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
-        elseif self:IsGroundSkill(id) then target = self:ClampGroundPoint(me, target)   -- 44-3 A: 땅 찍기는 6칸 넘으면 그 방향 6칸에 놓는다 (범위 원과 같은 자리)
+        elseif self:IsGroundSkill(id) or id == "bone_spikes" then target = self:ClampGroundPoint(me, target)   -- 44-3 A: 땅 찍기는 6칸 넘으면 그 방향 6칸에 놓는다 (범위 원과 같은 자리)
         elseif ray:Magnitude() > 6 then _Util:Warn("시전할 곳이 너무 멉니다", userId) return false end
         local kind = ""
         if id == "raise_skeleton" then kind = "skeleton"
@@ -1886,6 +1915,7 @@ script SkillBook extends Component
         refund = refund + self:MigrateBombToRite(stats.Level)
         refund = refund + self:MigrateNodeSwap(sv)
         refund = refund + self:MigrateSpearToShard()
+        refund = refund + self:MigrateDrainToSpikes()
         refund = refund + self:MigrateNodes1103(sv)
         refund = refund + self:MigrateStartRank(sv)
         self:MigrateGiantSplit(sv)
@@ -1941,6 +1971,26 @@ script SkillBook extends Component
             self.Levels[id] = nil
         end
         if back > 0 then log(string.format("[VRF] skill migrate bone_spear refund=%d nodes=%s", back, table.concat(moved, ","))) end
+        return back
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateDrainToSpikes()
+        -- 11-04 사용자 결정 (기획 62 §14 · 저장 sv 8 → 9): 드레인 라이프와 그 강화 「혼 사슬」을 빼고 뼈 쐐기를 넣었다. 돌려준 포인트 수
+        --   찍은 랭크를 모두 포인트로 돌려주고 키를 지운다 — 지운 칸이라 다시 불러도·다시 호출해도 두 번 돌려주지 않는다 (저장 판 번호와 무관 · MigrateSpearToShard 선례)
+        --   칸·우클릭의 옛 스킬은 LoadSaveData가 비운다(뼈 쐐기는 0랭크라 칸에 둘 수 없다). 2soul·장비 고유 효과에 옛 스킬 참조 없음(11-04 확인). 알림 없음 (10-29 글귀 규칙)
+        --   옛 키 이름은 이 함수 · LoadSaveData · MigrateNodeSwap(44 결정 4 옛 목록)에만 남긴다 (tools/check_data.cjs 「지운 스킬(11-04)의 흔적」 허용 자리)
+        local back = 0
+        local moved = {}
+        for _, id in ipairs({ "soul_drain", "drain_share" }) do
+            local r = self.Levels[id] or 0
+            if r > 0 then
+                back = back + r
+                table.insert(moved, id .. ":" .. tostring(r))
+            end
+            self.Levels[id] = nil
+        end
+        if back > 0 then log(string.format("[VRF] skill migrate drain→spikes refund=%d had=%s", back, table.concat(moved, ","))) end
         return back
     end
 
@@ -2163,8 +2213,8 @@ script SkillBook extends Component
         for id, lv in pairs(self.Levels) do levels[id] = lv end
         -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 · sv 5 (48-3): 마법사 거인 갈림 둘을 한 번 돌려준 뒤 (MigrateNodeSwap)
         -- sv 6 (11-02 거인 분리): 거인 노드 부모가 본 골렘으로 바뀐 뒤 (MigrateGiantSplit) · sv 7 (11-03): 축 바꾼 노드 4개를 한 번 돌려준 뒤 (MigrateNodes1103)
-        -- sv 8 (11-03 저녁): 레이스 폼 1랭크가 거저 주는 시작 랭크가 된 뒤 (MigrateStartRank)
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 8 }
+        -- sv 8 (11-03 저녁): 레이스 폼 1랭크가 거저 주는 시작 랭크가 된 뒤 (MigrateStartRank) · sv 9 (11-04): 드레인 라이프 → 뼈 쐐기 (MigrateDrainToSpikes · 키 기준이라 판 번호와 무관)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 9 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         -- I04 골편 홀드 반복 — 선택 칸 (없으면 끔 · 판 번호와 무관). 옛 희망 편성 칸 hope는 11-02 편성 자동 하나로 쓰지 않는다 (불러올 때 버림)
@@ -2190,6 +2240,10 @@ script SkillBook extends Component
         local wrapped = string.gsub("," .. self.Slots .. ",", ",bone_spear,", ",,")   -- 다중 반환은 지역에 먼저 받는다 (LEA-1102)
         self.Slots = string.sub(wrapped, 2, -2)
         if self.RightSkill == "bone_spear" then self.RightSkill = "" end
+        -- 11-04 드레인 라이프 삭제 (MigrateDrainToSpikes): 칸·우클릭의 옛 스킬을 비운다 (뼈 쐐기로 바꿔 넣어도 0랭크라 SanitizeSlots가 비운다)
+        local drainWrapped = string.gsub("," .. self.Slots .. ",", ",soul_drain,", ",,")
+        self.Slots = string.sub(drainWrapped, 2, -2)
+        if self.RightSkill == "soul_drain" then self.RightSkill = "" end
         -- 10-29 해골 폭탄 → 뼈 의식: 칸에 든 폭탄은 의식으로 바꿔 둔다 (의식을 아직 못 배웠으면 SanitizeSlots가 비운다)
         self.Slots = (string.gsub(self.Slots, "skel_bomb", "bone_rite"))
         if self.RightSkill == "skel_bomb" then self.RightSkill = "bone_rite" end
