@@ -189,3 +189,55 @@ Hand-painted dark-fantasy icon in the exact style of the approved 'skill node ic
 ```
 Hand-painted dark-fantasy MAIN SKILL icon in the exact style of the approved 'skill icons v2 main' set: a FULL-BLEED OPAQUE square scene, near-black background (#0d0d0d to #151317) with soft dark vignette toward the corners, subject lit by one warm key light from upper-left plus a restrained colored rim glow. Painterly volumes, NOT pixel art, NOT flat vector. Palette: bone ivory/ochre (#a48d6c, #b79160, #624c34) on near-black; one accent color only. Subject fills 70-85% of the square, big silhouette, 2-3 main forms, legible at 64x64 and still readable at 48x48 (mobile pad). No text, no explicit frame or border (the set only has a slightly darker 2 px edge), no bright backdrop, no particle confetti, no photo-real gore. SUBJECT (keep this composition exactly as in the attached first draft): a faceless hooded runner in clean side view sprinting to the right with a strong forward lean, both legs wide apart in a full stride, both arms pumping, a short cloak trailing; behind the runner exactly two broad, tapering horizontal speed bands. Repaint, do not redesign: painterly soft volumes, muted bone ivory/ochre cloth with deep plum shadows and a 1-2 px dark outline, the two speed bands in cold spirit blue-white (#8ea9e3, #53659b), near-black full-bleed background with a soft vignette, warm key light from upper-left. Simple, sharp silhouette readable at 48 px.
 ```
+
+
+## [REV3 · 11-04] 추가 3종 — 새 기절 스킬 「뼈 쐐기」(bone_spikes, 드레인 라이프 대체 · Lv18 혼 트리) + 노드 2
+(앞의 7종은 승인·적용 완료 cbab1199 — 다시 만들지 않음)
+
+### bone_spikes — 뼈 쐐기 (A-active-main · soul)
+- 효과: Bone spikes burst from the ground at the cursor: small-area damage (radius 1.2 tiles) + stun 1.0-2.0 s. Soul tree, Lv18.
+- 반드시 읽혀야 할 것: Jagged ivory bone spikes erupting UPWARD out of dark ground, one enemy-sized target pinned/stunned above them. Reads as "ground spikes" at 64 px.
+- 장면: Three to five sharp ivory bone spikes of different heights thrusting up out of cracked dark earth in the lower half of the square, dirt and small bone chips thrown up around the bases, the tallest spike slightly off-center; a faint cold steel-blue glow along the spike edges. No figure needed; the ground and the spikes are the subject.
+- 피할 것: No spear/arrow (that is Teeth), no whirl, no skull-only, no green poison, no bright violet.
+- 크기: 128x128 RGBA, fully opaque
+- 참고 원본(승인본):
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/active-main-v2/main-bone_shard.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/active-main-v2/main-bone_armor.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/active-main-v2/main-bone_rite.png
+- 영문 프롬프트:
+
+```
+Hand-painted dark-fantasy MAIN SKILL icon in the exact style of the approved 'skill icons v2 main' set: a FULL-BLEED OPAQUE square scene, near-black background (#0d0d0d to #151317) with soft dark vignette toward the corners, subject lit by one warm key light from upper-left plus a restrained colored rim glow. Painterly volumes, NOT pixel art, NOT flat vector. Palette: bone ivory/ochre (#a48d6c, #b79160, #624c34) on near-black; one accent color only. Subject fills 70-85% of the square, big silhouette, 2-3 main forms, legible at 64x64 and still readable at 48x48 (mobile pad). No text, no explicit frame or border (the set only has a slightly darker 2 px edge), no bright backdrop, no particle confetti, no photo-real gore. SUBJECT: three to five jagged ivory bone spikes of different heights erupting upward out of cracked dark earth that fills the lower half of the square, clods of dirt and small bone chips thrown up around their bases, the tallest spike a little off-center; faint cold steel-blue glow along the spike edges. Painterly volumes, muted bone ivory/ochre on near-black, warm key light upper-left. soul tree accent = cold steel-blue spirit glow (#3a466c, #53659b, highlight #8ea9e3)
+```
+
+### sudden_impact — 급작스러운 충격 (B-node · soul)
+- 효과: Stun duration +0.2 s per rank (cap 2.5 s).
+- 반드시 읽혀야 할 것: LONGER stun: a dazed skull with a ring of small stars/sparks orbiting it, and a bone spike beneath.
+- 장면: A single bone spike tip rising from the bottom with a small dazed skull resting on it, tilted, and a ring of four or five tiny pale-blue star sparks circling the skull (the in-game stun mark is a blue star ring); the ring is the emphasis.
+- 피할 것: No clock, no arrows, no violet.
+- 크기: 96x96 RGBA transparent
+- 참고 원본(승인본):
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-frost_shatter.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-shard_bounce.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-skel_legion.png
+- 영문 프롬프트:
+
+```
+Hand-painted dark-fantasy icon in the exact style of the approved 'skill node icons v3' set: ONE centered object/scene cut out on a FULLY TRANSPARENT background (no backdrop, no frame, no vignette). Painterly soft shading with visible brush volumes (NOT pixel art, NOT flat vector, NOT thin line-art). Every shape closed by a 1-2 px dark plum/near-black outline (#1a1016 to #201316) so it reads on dark UI. Muted palette: bone ivory/ochre (#fdd1a8, #ad8c6a, #946d5a, #4c352d) for bone and flesh, deep plum shadows (#201316, #2d1a2a); one tree accent only. Lighting: one soft warm key light from upper-left, restrained rim glow in the accent color, no bloom halos. Silhouette strong and chunky: 2-3 main forms max, no small clutter, no particle confetti. Subject fills about 85% of the square (keep >=6 px clear margin at 96x96 on every side), slightly overflowing diagonal composition is fine. Legible at 48x48 and still identifiable at 32x32. No text, letters, numbers, runes-as-text, UI frames, borders, drop shadows on the canvas, photo-real gore, cute faces. SUBJECT: a dazed, tilted ivory skull resting on the tip of one bone spike that rises from the bottom edge, with a ring of four or five tiny pale steel-blue star sparks orbiting the skull; the star ring is the main read, the spike secondary. soul tree accent = cold steel-blue spirit glow (#3a466c, #53659b, highlight #8ea9e3)
+```
+
+### bone_pillars — 뼈 기둥 (B-node · soul)
+- 효과: Hits one extra enemy around the target per rank (+0.3 tile radius per rank).
+- 반드시 읽혀야 할 것: MORE spikes spread wider: a row of three thick bone pillars/spikes rising at different distances, wider than the base skill.
+- 장면: Three thick, blunt bone pillars rising from cracked ground side by side, the middle one tallest, the outer two leaning slightly outward to show spread; small dirt bursts at each base; cold steel-blue glow at the tips.
+- 피할 것: No single spike (that is the base skill), no figures.
+- 크기: 96x96 RGBA transparent
+- 참고 원본(승인본):
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-bomb_wide.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-armor_thorns.png
+  - /Users/leeinguk/Documents/New project/maple-quality-remediation-20261029/claude-icon-brief-20261104/refs/node-v3/node-offering_wide.png
+- 영문 프롬프트:
+
+```
+Hand-painted dark-fantasy icon in the exact style of the approved 'skill node icons v3' set: ONE centered object/scene cut out on a FULLY TRANSPARENT background (no backdrop, no frame, no vignette). Painterly soft shading with visible brush volumes (NOT pixel art, NOT flat vector, NOT thin line-art). Every shape closed by a 1-2 px dark plum/near-black outline (#1a1016 to #201316) so it reads on dark UI. Muted palette: bone ivory/ochre (#fdd1a8, #ad8c6a, #946d5a, #4c352d) for bone and flesh, deep plum shadows (#201316, #2d1a2a); one tree accent only. Lighting: one soft warm key light from upper-left, restrained rim glow in the accent color, no bloom halos. Silhouette strong and chunky: 2-3 main forms max, no small clutter, no particle confetti. Subject fills about 85% of the square (keep >=6 px clear margin at 96x96 on every side), slightly overflowing diagonal composition is fine. Legible at 48x48 and still identifiable at 32x32. No text, letters, numbers, runes-as-text, UI frames, borders, drop shadows on the canvas, photo-real gore, cute faces. SUBJECT: three thick blunt ivory bone pillars rising side by side from a strip of cracked dark earth, the middle one tallest and the outer two leaning slightly outward to show the spread, small dirt bursts at each base, cold steel-blue glow at the tips; painterly, muted bone ochre with deep plum shadows and a dark outline. soul tree accent = cold steel-blue spirit glow (#3a466c, #53659b, highlight #8ea9e3)
+```
