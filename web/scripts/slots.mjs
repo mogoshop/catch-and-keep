@@ -88,6 +88,18 @@ function period(spec, ruids) {
   return {from, to};
 }
 
+// 정본 커밋 RootDesk/MyDesk의 .mlua에서 그 상수를 읽는 줄(선언·주석 줄 제외) — 첫 줄을 「path:line」으로
+const consumerCache = new Map();
+function codeConsumer(spec) {
+  const name = spec.split(':')[0].split('.')[1];
+  if (consumerCache.has(spec)) return consumerCache.get(spec);
+  let rows = [];
+  try { rows = git('grep', '-n', '-E', `GameConst\\.${name}([^A-Za-z0-9_]|$)`, sourceCommit, '--', 'RootDesk/MyDesk/*.mlua').trim().split('\n').filter(Boolean); } catch {}
+  const hit = rows.map(l => { const m = l.match(/^[^:]+:([^:]+):(\d+):(.*)$/); return m && {path: m[1], line: Number(m[2]), code: m[3]}; })
+    .filter(x => x && !/^\s*--/.test(x.code) && !/^\s*property\s/.test(x.code) && /_GameConst\./.test(x.code.split('--')[0]))[0] || null;
+  const v = hit ? `${hit.path}:${hit.line}` : null; consumerCache.set(spec, v); return v;
+}
+
 // ---------- RUID → local PNG ----------
 const lookup = new Map(); // ruid -> {file (relative to game), sha}
 if (opts.atlas) {
@@ -366,10 +378,13 @@ for (const [order, def] of SLOTS.entries()) {
     else {
       currentRuids = r.ruids;
       const twin = groupByKey.get(def.runtime) || groupByKey.get(RENAMED[def.runtime]);
-      const use = twin ? (twin.connection === 'connected' ? 'connected' : 'registered') : engineById.get(r.key) ? (USAGE[engineById.get(r.key).usage_status]?.[1] === 'connected' ? 'connected' : 'registered') : 'unknown';
+      let use = twin ? (twin.connection === 'connected' ? 'connected' : 'registered') : engineById.get(r.key) ? (USAGE[engineById.get(r.key).usage_status]?.[1] === 'connected' ? 'connected' : 'registered') : 'unknown';
+      // 11-04: 카탈로그(atlas)보다 새 상수는 정본 커밋 코드에서 부르는 곳을 직접 찾는다 → 있으면 「코드 연결 확인」
+      let consumer = null;
+      if (use === 'unknown') { consumer = codeConsumer(def.runtime); if (consumer) use = 'connected'; }
       const useLabel = {connected: '코드 연결 확인', registered: '선언만 · 부르는 곳 없음', unknown: '선언됨 · 연결 확인 안 됨'}[use];
       const since = period(def.runtime, r.ruids).from;
-      const common = {id: 'current', source: 'current', runtimeKey: def.runtime, ruids: r.ruids, use, status: use, statusLabel: useLabel, source_ref: `${r.prop.path}:${r.prop.line}`, comment: r.prop.comment,
+      const common = {id: 'current', source: 'current', runtimeKey: def.runtime, ruids: r.ruids, use, status: use, statusLabel: useLabel, source_ref: `${r.prop.path}:${r.prop.line}`, comment: r.prop.comment, ...(consumer ? {consumer} : {}),
         since: since ? {commit: since.commit, date: since.date, subject: since.subject} : null};
       if (twin && twin.resourceKeys.join() === r.ruids.join()) {
         current = {...catalogCandidate(twin), ...common, kind: 'codex', package: twin.package, title: RENAMED[def.runtime] ? def.title : twin.title};
@@ -390,7 +405,7 @@ for (const [order, def] of SLOTS.entries()) {
         else currentNote = `현재 RUID ${r.ruids[0]}의 원본 클립 장을 찾지 못함`;
       } else {
         const m = await mapleCandidate(r.key, r.ruids[0]);
-        if (m) current = {...m, ...common, kind: 'maple', title: m.title, statusLabel: `${useLabel} · 메이플 리소스`, firstUse: m.firstUse};
+        if (m) current = {...m, ...common, kind: 'maple', title: r.kind ? def.title : m.title, statusLabel: `${useLabel} · 메이플 리소스`, firstUse: m.firstUse};
         else currentNote = `현재 RUID ${r.ruids[0]}의 그림을 찾지 못함`;
       }
     }

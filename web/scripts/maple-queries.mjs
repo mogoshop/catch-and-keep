@@ -28,7 +28,7 @@ export const Q = {
   'hit-spark': ['타격 불꽃 스파크', 'hit spark impact'],
   'offering': ['초록 회복 고리 치유', 'green healing ring heal'],
   'offering-sacrifice': ['초록 빛 기둥 치유', 'green light pillar heal'],   // 11-04
-  'bone-spikes': ['땅에서 솟는 뼈 가시', 'bone spikes erupting from ground'],   // 11-04
+  'bone-spikes': ['땅에서 솟는 뼈 가시', 'bone spikes erupting from ground', '지면 융기 가시', 'thorn spikes rising stalagmite'],   // 11-04
   'mark-stun': ['머리 위 별 기절 표식', 'stun stars over head'],   // 11-04
   'death-wave': ['보라 원형 충격파', 'purple shockwave ring explosion'],
   'poison-mist': ['초록 독 안개 구름', 'green poison gas cloud'],
