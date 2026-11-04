@@ -86,15 +86,17 @@ export const SCENE_RULES = [
 
   // ---------- 해골·망자 스킬 ----------
   {id: 'bone-bolt', scene: 'summon', caster: 'summon-mage', proj: {from: 'casterBody', to: 'targetBody', speed: k => k.code(14, 'MageBolts.mlua:146 뼈 투척(bone) 속도')},
-    scale: k => k.code(0.9, 'MageBolts.mlua:140 SkinXY(FxBoneBolt, 0.9, 0.9)'), order: PROJ_ORDER, pivot: [0.5, 0.5], flash: true,
-    note: '해골 마법사(뼈 속성)가 몸(발 + 0.3)에서 몬스터로 쏨 · 그림이 오른쪽을 봄(진행 방향으로 회전) · 관통 2·3·4·5(마법사 랭크) · 사거리 = 공격 사거리 + 0.8 · FxBoneBolt가 비면 골편 궤적(FxShardShot)을 1.32×0.6으로 늘림 · 메이플 후보도 같은 배율 0.9로 놓음(근사)',
+    scale: k => k.c('MageBolts.ShardClipScale', 0.55), order: PROJ_ORDER, pivot: [0.5, 0.5], flash: true,
+    note: '11-04 티스와 공용 그림: 해골 마법사(뼈 속성)가 몸(발 + 0.3)에서 몬스터로 쏨 · 티스 비행 클립(MageBolts.FxShardShot = SkillEffects.FxShardShot) 0.55배 · 관통 2·3·4·5(마법사 랭크) · 사거리 = 공격 사거리 + 0.8',
     src: ['MageBolts.mlua:136-146', 'ShadowUnit.mlua:1504-1541 마법사 발사(발 + 0.3에서 생성 · MageBolts.Configure)']},
-  {id: 'bone-bolt-hit', scene: 'summon', caster: 'summon-mage', anchor: 'targetBody', dy: bodyHeight, scale: k => k.c('Projectile.SpearHitScale', 1.0),
-    order: k => k.code(6, 'Projectile.mlua:425 PlayFramesMs 층 6'), pivot: [0.5, 0.5], flash: true,
-    note: '뼈 투척이 맞은 몬스터 몸 중심(발 + HeightOffset) · 진행 방향으로 회전(장면은 오른쪽 비행이라 0°) · 장별 간격 FxBoneBoltHitMs · 마지막 장(창대가 남은 장)까지 한 번',
+  {id: 'bone-bolt-hit', scene: 'summon', caster: 'summon-mage', anchor: 'targetBody', dy: bodyHeight, scale: k => k.c('MageBolts.ShardHitClipScale', 0.5),
+    order: k => k.code(6, 'Projectile.mlua HitFx style shard PlayClipOnce 층 6'), pivot: [0.5, 0.5], flash: true,
+    note: '11-04 티스와 공용 그림: 뼈 투척이 맞은 몬스터 몸 중심(발 + HeightOffset) · 티스 명중 클립(MageBolts.FxShardHit = SkillEffects.FxShardHit) 0.5배 한 번',
     src: ['Projectile.mlua:414-427', 'Projectile.mlua:498 관통 명중 자리 = 몬스터 발 + HeightOffset', 'GameConst.mlua:91,107']},
   {id: 'blast', scene: 'summon', dist: 1.6, anchor: 'casterFeet', pivot: [0.5, 0.1667], scale: c7('blast', 0.75, 'ShadowUnit.mlua:926-944 해골 폭탄 옛 배율 0.75 × r/1.6 (r 1.6)'),
     order: k => k.kv('SkillEffects.C7Orders', 'blast', 6), flash: true, note: '해골 폭탄 = 해골 발 자리 · 성찬 제물 폭발은 옛 0.45 → 0.58', src: ['ShadowUnit.mlua:926-944', 'SkillEffects.mlua:161-175', 'SkillEffects.mlua:392-444']},
+  {id: 'offering-sacrifice', scene: 'summon', anchor: 'casterFeet', pivot: [0.5, 0.1], scale: k => k.c('GameConst.FxSkillOfferingSacrificeScale', 3),
+    order: k => k.c('GameConst.FxSkillOfferingSacrificeOrder', 6), note: '11-04 바친 해골 발 자리 빛 기둥 ×3(장면은 하나) · 한 번', src: ['SkillEffects.mlua OfferingSacrifice', 'GameConst.mlua FxSkillOfferingSacrifice*']},
   {id: 'offering', scene: 'player', anchor: 'casterFeet', pivot: [0.5, 0.25], scale: c7('offering', 1.1, 'UndeadSystem.mlua:638-641 옛 1.1 × r/4 (r 4)'),
     order: k => k.kv('SkillEffects.C7Orders', 'offering', 6), hold: k => k.c('SkillEffects.C7HoldSec', 0.2), fade: k => k.c('SkillEffects.C7FadeSec', 0.25),
     note: '시전자 발 · 반경 4 초록 범위 원(0.6초)은 장면에 안 그림', src: ['UndeadSystem.mlua:638-641', 'SkillEffects.mlua:171-175']},
@@ -104,7 +106,7 @@ export const SCENE_RULES = [
     order: k => k.kv('SkillEffects.C7Orders', 'poison', 1), loop: true, dur: k => k.code(3.47, 'SkillEffects.mlua:946-975 반복 → 잦아듦 → 옅어짐 = 약 4초'),
     release: k => k.c('GameConst.FxSkillUnifyReleaseN', 2), fade: k => k.c('SkillEffects.C7FadeSec', 0.25), flash: true, src: ['SkillEffects.mlua:946-975', 'GameConst.mlua:173-174']},
   {id: 'drain-vortex', scene: 'player', anchor: 'targetFeet', dy: k => k.code(0.4, 'SkillEffects.mlua:1883-1900 표적 발 + 0.4'), pivot: [0.5, 0.5],
-    scale: k => k.c('SkillEffects.DrainVortexScale', 0.8), order: k => k.code(6, 'SkillEffects.mlua:1930'), loop: true, dur: k => k.c('SkillEffects.DrainVortexSec', 0.7), flash: true,
+    scale: k => k.code(0.8, '11-04 드레인 라이프 삭제 — 옛 SkillEffects.DrainVortexScale'), order: k => k.code(6, 'SkillEffects.mlua:1930'), loop: true, dur: k => k.code(0.7, '옛 DrainVortexSec'), flash: true,
     src: ['SkillEffects.mlua:1883-1900', 'SkillEffects.mlua:165-166']},
   {id: 'bone-storm', scene: 'player', anchor: 'casterFeet', dy: k => k.code(0.3, 'SkillEffects.mlua:447-504 발 + 0.3'), pivot: [0.5, 0.5],
     scale: k => 2 * k.c('SkillEffects.StormRadius', 1.2) / 1.28, order: k => k.code(5, 'SkillEffects.mlua:447-504'), loop: true, dur: k => k.code(2.4, '6초 지속 — 장면에서는 2.4초'),
@@ -124,6 +126,8 @@ export const SCENE_RULES = [
     flash: true, note: '희생된 그림자 발(장면은 해골 소환수로 대신) · 피벗은 가운데로 추정', src: ['SkillEffects.mlua:2388-2416', 'SkillEffects.mlua:131-132']},
 
   // ---------- 뼈 감옥·뼈 갑옷·혼 격류 ----------
+  {id: 'bone-spikes', scene: 'player', anchor: 'targetFeet', pivot: [0.5, 0.15], scale: k => 2 * k.code(1.2, 'SkillBook 뼈 쐐기 반지름 1.2') * 100 / k.c('GameConst.FxSkillBoneSpikesClipPx', 580),
+    order: k => k.c('GameConst.FxSkillBoneSpikesOrder', 1), note: '11-04 뼈 쐐기: 표적 발 자리 · 가로 = 판정 지름 2.4칸 · 게임은 세로만 FxSkillBoneSpikesTall(1.3)배 더(장면은 같은 배율) · 한 번', src: ['SkillEffects.mlua BoneSpikesFx', 'GameConst.mlua FxSkillBoneSpikes*']},
   {id: 'prison-hold', scene: 'player', anchor: 'targetFeet', pivot: [0.5, 0.2], scale: k => k.c('SkillEffects.PrisonScale', 1.0), order: k => k.c('SkillEffects.PrisonOrder', 6),
     loop: true, dur: k => k.code(2.75, 'SkillBook.mlua:623 묶임 2 + 0.15 × 강화 5'), frameSec: k => k.c('SkillEffects.PrisonFrameSec', 0.1), flash: true, src: ['SkillEffects.mlua:2268-2300', 'SkillEffects.mlua:133-136']},
   {id: 'prison-release', scene: 'player', anchor: 'targetFeet', pivot: [0.5, 0.2], scale: k => k.c('SkillEffects.PrisonScale', 1.0), order: k => k.c('SkillEffects.PrisonOrder', 6),
@@ -177,7 +181,7 @@ export const SCENE_RULES = [
     order: k => k.est(6, '부르는 코드 없음'), note: '지금 코드에서 부르는 곳 없음(조사 11-01)', src: ['GameConst.mlua:99']},
 
   // ---------- 머리 위 표식 ----------
-  mark('amp'), mark('weaken'), mark('thorn'), mark('terror'), mark('confuse'), mark('lifetap'), mark('decay'), mark('resist'), mark('root'), mark('chill'), mark('poison'), mark('hex'), mark('frost'),
+  mark('amp'), mark('weaken'), mark('thorn'), mark('terror'), mark('confuse'), mark('lifetap'), mark('decay'), mark('resist'), mark('root'), mark('chill'), mark('poison'), mark('hex'), mark('stun'), mark('frost'),
 
   // ---------- 거인 기술 (뼈 의식 거인 = 캐릭터의 소환수) ----------
   {id: 'giant-nova', scene: 'giant', anchor: 'casterFeet', pivot: [0.5, 0.375], start: k => k.code(0.3, 'RiteGiantMoves.mlua:256-298 영창 0.3초'),

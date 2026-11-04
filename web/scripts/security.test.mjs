@@ -214,11 +214,11 @@ test('build embeds scene-preview data and verifies its separate still manifest',
 
 test('scene rules cover every effect slot and resolve only through the provenance accessor',async()=>{
   const {SLOTS}=await import('./slot-defs.mjs');const {SCENE_RULES}=await import('./scene-defs.mjs');
-  assert.equal(SLOTS.length,83);assert.equal(SCENE_RULES.length,83);
+  assert.equal(SLOTS.length,86);assert.equal(SCENE_RULES.length,86);   // 11-04 offering-sacrifice·bone-spikes·mark-stun
   assert.ok(!SLOTS.some(s=>/^spear/.test(s.id)||/FxSkillSpear/.test(s.runtime||"")),"뼈 창 자리는 11-01 스킬 삭제로 뺐다");
-  // 해골 마법사 뼈 투척(옛 뼈 창 그림) 두 자리: 해골·망자 묶음 · 옛 이름 후보(FxSkillSpear*·bone-spear·spear-stick·spear-shard)를 모은다
+  // 해골 마법사 뼈 투척 두 자리(11-04 티스와 공용 · 폴백 = MageBolts.FxShardShot·FxShardHit): 해골·망자 묶음 · 옛 이름 후보(FxSkillSpear*·bone-spear·spear-stick·spear-shard)를 모은다
   const bolt=SLOTS.find(s=>s.id==='bone-bolt'),hit=SLOTS.find(s=>s.id==='bone-bolt-hit');
-  assert.equal(bolt.runtime,'GameConst.FxBoneBolt');assert.equal(hit.runtime,'GameConst.FxBoneBoltHit');assert.equal(bolt.group,'undead');assert.equal(hit.group,'undead');
+  assert.equal(bolt.runtime,'GameConst.FxBoneBolt');assert.equal(hit.runtime,'GameConst.FxBoneBoltHit');assert.equal(bolt.sharedWith,'shard-throw');assert.equal(hit.sharedWith,'shard-hit');assert.deepEqual(hit.maple,['MageBolts.FxShardHit']);assert.equal(bolt.group,'undead');assert.equal(hit.group,'undead');
   const first=name=>(SLOTS.find(s=>s.match&&new RegExp(s.match,'i').test(name))||{}).id;
   for(const n of ['runtime--GameConst-FxSkillSpear GameConst.FxSkillSpear','codex-skill-fx-v1--fx-bone-spear','runtime--GameConst-FxSkillSpearShard GameConst.FxSkillSpearShard','fx-B-bone-spear-projectile-00'])assert.equal(first(n),'bone-bolt',n);
   for(const n of ['runtime--GameConst-FxSkillSpearHit GameConst.FxSkillSpearHit','fx-B-bone-spear-stick-03'])assert.equal(first(n),'bone-bolt-hit',n);

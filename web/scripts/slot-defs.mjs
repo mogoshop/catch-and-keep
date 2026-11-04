@@ -2,6 +2,8 @@
 // A slot is one place in the game that shows an effect (e.g. 독안개 구름).
 // Every tab (현재 사용 중 / FX / 메이플 에셋) lists slots in this order with these names.
 //
+// unused:  this slot's skill/stage was removed — the constant may still hold a picture but nothing draws it (shown as 「미사용」).
+// sharedWith: this slot draws the same picture as another slot (game constant left empty on purpose).
 // runtime: where the game reads the picture now (`File.Property` or `File.Property:kind`),
 //          or `catalog:<group id>` for effects wired outside the constant files.
 // maple:   MSW/MapleStory resource clips declared in code for this slot (original clip,
@@ -42,19 +44,20 @@ export const SLOTS = [
   {id: 'monster-arrow', title: '몬스터 화살', group: 'attack', runtime: 'GameConst.SpriteArrow', match: 'SpriteArrow'},
   {id: 'hit-spark', title: '맞은 자리 불꽃', group: 'attack', maple: ['GameConst.FxHit'], match: 'FxHit(?![A-Za-z])'},
 
-  // 해골 마법사(뼈 속성) 뼈 투척 — 11-01 캐릭터 뼈 창 스킬 삭제 뒤 남은 같은 그림(옛 FxSkillSpear*) · 옛 이름 패턴도 여기로 모은다
-  {id: 'bone-bolt', title: '해골 마법사 · 뼈 투척', group: 'undead', runtime: 'GameConst.FxBoneBolt', maple: ['MageBolts.FxShardShot'],
+  // 해골 마법사(뼈 속성) 뼈 투척 — 11-04 사용자 결정으로 티스와 공용(비행 = 티스 비행 리버레이션 오브 · 명중 = 티스 명중). GameConst.FxBoneBolt*(옛 뼈 창 그림)는 비워
+  //   현재 그림은 폴백 칸 MageBolts.FxShardShot·FxShardHit(= SkillEffects 같은 RUID). 옛 이름 패턴(FxSkillSpear*·bone-spear·spear-stick)은 그대로 여기로 모은다 (id·runtime은 저장된 고르기와 맞물려 안 바꿈)
+  {id: 'bone-bolt', title: '해골 마법사 · 뼈 투척 (티스와 공용 · 11-04)', group: 'undead', runtime: 'GameConst.FxBoneBolt', maple: ['MageBolts.FxShardShot'], sharedWith: 'shard-throw',
     match: 'FxBoneBolt(?![A-Za-z])|BoneBoltShard|FxSkillSpear(?![A-Za-z])|bone-spear(?!-stick)|SpearShard|spear-shard'},
-  {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 꽂힘', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
-  {id: 'blast', title: '본 노바 폭탄·본 오퍼링 제물 폭발', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
+  {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 명중 (티스와 공용 · 11-04)', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', maple: ['MageBolts.FxShardHit'], sharedWith: 'shard-hit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
+  {id: 'blast', title: '본 노바 폭탄 (11-04 제물은 offering-sacrifice로 분리)', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
   {id: 'offering', title: '본 오퍼링 치유', group: 'undead', runtime: 'GameConst.FxSkillOfferingHeal', maple: ['SkillEffects.FxOffering'], match: 'Offering'},
   {id: 'offering-sacrifice', title: '본 오퍼링 제물 (바친 해골 자리 · 11-04 blast에서 분리)', group: 'undead', runtime: 'GameConst.FxSkillOfferingSacrifice', maple: ['GameConst.FxSkillBlast'], match: 'OfferingSacrifice|offering-sacrifice'},
   {id: 'death-wave', title: '데스 노바', group: 'undead', runtime: 'GameConst.FxSkillDeathWave', maple: ['SkillEffects.FxWave'], match: 'DeathWave|death-wave'},
   {id: 'poison-mist', title: '포이즌 미스트', group: 'undead', runtime: 'GameConst.FxSkillPoisonCloud', maple: ['SkillEffects.FxPoisonCloud'], match: 'PoisonCloud|poison-cloud'},
-  {id: 'drain-vortex', title: '드레인 라이프 소용돌이 (11-04 스킬 삭제 · 미사용)', group: 'undead', runtime: 'GameConst.FxSkillDrainVortex', maple: ['SkillEffects.FxDrain'], match: 'DrainVortex|drain-vortex|soul-drain'},
+  {id: 'drain-vortex', title: '드레인 라이프 소용돌이 (11-04 스킬 삭제 · 미사용)', group: 'undead', runtime: 'GameConst.FxSkillDrainVortex', maple: ['SkillEffects.FxDrain'], unused: '미사용 · 11-04 드레인 라이프 삭제 (부르는 곳 없음)', match: 'DrainVortex|drain-vortex|soul-drain'},
   {id: 'bone-storm', title: '본 스톰', group: 'undead', runtime: 'GameConst.FxSkillBoneStorm', maple: ['SkillEffects.FxStorm'], match: 'BoneStorm|bone-storm|StormShard|storm-shard'},
   {id: 'rite-whirl', title: '본 노바 해골 회오리 돌진 (3기 · 표적 추적)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirl', maple: ['SkillEffects.FxStorm'], match: 'RiteWhirl(?!Trace)|rite-bone-whirl(?!-trace)|bone-vortex(?!-floor)|storm-reuse'},
-  {id: 'rite-whirl-trace', title: '본 노바 회오리 바닥 자국 (11-03 돌진형이라 안 씀)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirlTrace', match: 'RiteWhirlTrace|whirl-trace|bone-vortex-floor'},
+  {id: 'rite-whirl-trace', title: '본 노바 회오리 바닥 자국 (11-03 돌진형이라 안 씀)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirlTrace', unused: '미사용 · 11-03 본 노바 3기 돌진형 (부르는 곳 없음)', match: 'RiteWhirlTrace|whirl-trace|bone-vortex-floor'},
   {id: 'dash-ghost', title: '질주 잔상', group: 'undead', runtime: 'GameConst.FxSkillDashGhost', maple: ['SkillEffects.FxBlink'], match: 'DashGhost|dash-ghost'},
   {id: 'sacrifice', title: '세크리파이스', group: 'undead', runtime: 'GameConst.FxSkillSacrifice', match: 'Sacrifice|shadow-sacrifice'},
 

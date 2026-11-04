@@ -214,6 +214,8 @@ async function mapleClip(ruid) {
 const GROUP_FRAMES = {
   c3747bdcde0e49a49d8c59ced4f1dd7b: {clip: '00b9a2f368a84e9d8e6a5a3aa69d60c7', from: 2, to: 15, ms: 150, loop: false, title: '스킬 31141502 불기둥 (앞 2장 뺀 14장)'},
   c3be0d020fbd43bfadfbe32586b5cd5f: {clip: '5c6f1aad97e8420f8f36154be00f62e7', from: 4, to: 9, ms: 120, loop: true, title: '흰 회오리 (도는 4~9장 반복)'},
+  // 11-04 라이프 탭 원형판: 메이플 「보이드 프레셔」 장 스프라이트 4장을 그대로(공개 sprite RUID · 업로드 없음) — 첫 장 RUID로 원본 클립 장을 보여 준다
+  '4e23e5ffb4684e80a7d157cf67f31bed': {clip: 'f07d30fda9f144a4bbfd41bf3c030e57', from: 0, to: 3, ms: 150, loop: true, title: '보이드 프레셔 (4장 · 0·1 반복 → 2·3 잦아듦 · 실범위 배율 3.26)'},
 };
 async function groupFramesCandidate(key, ruids) {
   const g = GROUP_FRAMES[ruids[0]]; if (!g) return null;
@@ -424,6 +426,10 @@ for (const [order, def] of SLOTS.entries()) {
       frames: clip.frames.map(f => f.file), sizes: clip.frames.map(f => f.size), box: pv.box, offsets: pv.offsets, durations: clip.durations, timingLabel: clip.timingLabel, loop: true,
       mediaKind: clip.mediaKind, status: 'search', statusLabel: pick.part ? `${pick.part} 효과` : '메이플 효과', tone: 'maple', reason: pick.reason});
   }
+  // 11-04: 스킬이 지워진 자리(def.unused)는 그림이 남아 있어도 「미사용」 · 다른 자리와 같은 그림(def.sharedWith)은 그 자리 이름을 붙인다
+  if (current && def.unused) Object.assign(current, {use: 'registered', status: 'registered', statusLabel: def.unused});
+  if (current && def.sharedWith) current.statusLabel = `${current.statusLabel} · ${SLOTS.find(s => s.id === def.sharedWith)?.title || def.sharedWith} 자리와 같은 그림`;
+  if (!current && def.unused) currentNote = def.unused;
   for (const c of [current, ...fx, ...maple]) if (c) delete c.haystack;
   slots.push({id: def.id, title: def.title, group: def.group, order, runtime: def.runtime || null, currentNote, current, fx, maple, mapleExcluded: MAPLE_EXCLUDED[def.id] || null});
 }
