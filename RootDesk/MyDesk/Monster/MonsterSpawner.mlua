@@ -84,6 +84,7 @@ script MonsterSpawner extends Component
     property table RestUntil = {}           -- 숨 고르기 끝 시각: 무리 키(파티 "p<id>" · 혼자면 userId) → 시각
     property table RestBusy = {}            -- 지난 유입 검사 때 둘레에서 그 무리와 교전 중이던 몬스터 수: 무리 키 → 수
     property table HoldLogged = {}          -- 유입 보류 로그: userId → 마지막으로 찍은 사유 (바뀔 때만 찍는다)
+    property table EntryGuardLogged = {}    -- 11-04 M-1: 입구 보호 상태 로그 userId → "in"/"out" (바뀔 때만 찍는다)
 
     @ExecSpace("ServerOnly")
     method void OnBeginPlay()
@@ -153,9 +154,14 @@ script MonsterSpawner extends Component
         -- 어떤 플레이어든 무리 중심까지 spawnWakeRadius 안이면 그 무리를 나눠 소환 대기열로 넘긴다. 넘긴 몬스터 수
         local keep = {}
         local woke = 0
+        -- 11-04 M-1: 입구 보호 중인 저레벨 노말 플레이어는 깨움 기준에서 뺀다 (EntryGuarded)
+        local seekers = {}
+        for _, p in ipairs(players) do
+            if not self:EntryGuarded(map, p) then table.insert(seekers, p) end
+        end
         for _, pack in ipairs(self.PendingPacks or {}) do
             local best = 999
-            for _, p in ipairs(players) do best = math.min(best, (_Util:Pos2(p) - pack.center):Magnitude()) end
+            for _, p in ipairs(seekers) do best = math.min(best, (_Util:Pos2(p) - pack.center):Magnitude()) end
             if best <= _GameData.spawnWakeRadius then
                 self:QueuePack(pack)
                 woke = woke + #pack.list
@@ -167,6 +173,40 @@ script MonsterSpawner extends Component
         self.PendingPacks = keep
         if woke > 0 and start then self:StartQueue() end
         return woke
+    end
+
+    @ExecSpace("ServerOnly")
+    method boolean EntryGuarded(Entity map, Entity p)
+        -- 11-04 M-1 (기획 65 · 사용자 승인): 노말 맵 · 캐릭터 Lv < entryGuardBelowLv 플레이어가
+        --   입구·출구 포털·웨이포인트·심도 입구 안전 반경(SafeZones = config entrySafeRadius) 안에 있거나, 맵에 들어온 지 entryGraceSec 안이면
+        --   그 사람은 유입 대상·무리 깨움 기준에서 뺀다. 출현 수·습격·다른 난이도·Lv10 이상은 그대로
+        if self.MapDiff ~= 0 or _GameData.entryGuardBelowLv <= 0 or not isvalid(p) then return false end
+        ---@type PlayerStats
+        local stats = p:GetComponent("script.PlayerStats")
+        if stats == nil or stats.Level >= _GameData.entryGuardBelowLv then return self:NoteEntryGuard(map, p, false, "") end
+        ---@type PlayerTravel
+        local travel = p:GetComponent("script.PlayerTravel")
+        local since = travel ~= nil and (_UtilLogic.ElapsedSeconds - travel.ArrivedAt) or 999
+        if since < _GameData.entryGraceSec then return self:NoteEntryGuard(map, p, true, string.format("grace %.1f", since)) end
+        local here = _Util:Pos2(p)
+        for _, zone in ipairs(self.SafeZones) do
+            local d = (here - zone.pos):Magnitude()
+            if d < zone.radius then return self:NoteEntryGuard(map, p, true, string.format("entry d=%.1f r=%.1f", d, zone.radius)) end
+        end
+        return self:NoteEntryGuard(map, p, false, "")
+    end
+
+    method boolean NoteEntryGuard(Entity map, Entity p, boolean guarded, string why)
+        -- 입구 보호 상태가 바뀔 때만 [VRF] 로그 (판정 결과를 그대로 돌려준다)
+        local uid = p.PlayerComponent.UserId
+        local state = guarded and "in" or "out"
+        if self.EntryGuardLogged[uid] ~= state then
+            self.EntryGuardLogged[uid] = state
+            ---@type PlayerStats
+            local stats = p:GetComponent("script.PlayerStats")
+            log(string.format("[VRF] entry guard %s map=%s uid=%s lv=%d diff=%d %s", state, map.Name, uid, stats ~= nil and stats.Level or -1, self.MapDiff, why))
+        end
+        return guarded
     end
 
     @ExecSpace("ServerOnly")
@@ -302,7 +342,7 @@ script MonsterSpawner extends Component
         for _, p in ipairs(players) do
             if self:PoolCount() <= 0 then return end
             local uid = p.PlayerComponent.UserId
-            if (owned[uid] or 0) < _GameData.inflowAlivePerPlayer and _Util:IsAlive(p) then
+            if (owned[uid] or 0) < _GameData.inflowAlivePerPlayer and _Util:IsAlive(p) and not self:EntryGuarded(map, p) then
                 local g = groups.of[uid]
                 local why = self:InflowHold(g.key, chasers[uid] or 0, now)
                 self:NoteHold(map, uid, why, g.key, chasers[uid] or 0, now)

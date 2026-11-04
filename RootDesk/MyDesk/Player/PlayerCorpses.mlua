@@ -22,18 +22,22 @@ script PlayerCorpses extends Component
     end
 
     @ExecSpace("ServerOnly")
-    method void LeaveCorpse(Vector2 pos, integer expRecover)
-        -- 착용 장비를 모두 벗겨 죽은 자리의 시체에 담는다
+    method string LeaveCorpse(Vector2 pos, integer expRecover, boolean keepGear)
+        -- 착용 장비를 모두 벗겨 죽은 자리의 시체에 담는다. 만든 시체의 키 (만들지 않았으면 "")
+        -- 11-04 M-1: keepGear(노말 · Lv < corpseKeepGearBelowLv)면 장비는 그대로 입고, 되찾을 경험치가 있을 때만 장비 없는 시체를 남긴다
         ---@type PlayerInventory
         local inv = self.Entity:GetComponent("script.PlayerInventory")
-        if inv == nil then return end
-        local items = inv:StripEquipment()
-        if #items == 0 and expRecover <= 0 then return end
+        if inv == nil then return "" end
+        local items = {}
+        if not keepGear then items = inv:StripEquipment() end
+        log(string.format("[VRF] corpse leave uid=%s keepGear=%s items=%d exp=%d", self.Entity.PlayerComponent.UserId, tostring(keepGear), #items, expRecover))
+        if #items == 0 and expRecover <= 0 then return "" end
         self.Serial = self.Serial + 1
         local key = tostring(math.floor(_UtilLogic.ElapsedSeconds * 1000)) .. "_" .. tostring(self.Serial)
         local map = self.Entity.CurrentMap
         self.Corpses[key] = { items = items, exp = expRecover, map = map.Name, x = pos.x, y = pos.y }
         self:SpawnCorpse(key, map, pos)
+        return key
     end
 
     @ExecSpace("ServerOnly")
@@ -77,6 +81,10 @@ script PlayerCorpses extends Component
             ---@type PlayerCorpse
             local corpse = comp
             corpse:Setup(pc.UserId, name, key)
+            -- 11-04 M-1: 장비 없이 경험치만 담은 시체는 이름표에 표시 (되찾으면 경험치만 돌아온다)
+            local data = self.Corpses[key]
+            local tag = isvalid(corpse.Entity) and corpse.Entity.NameTagComponent or nil
+            if data ~= nil and #(data.items or {}) == 0 and isvalid(tag) then tag.Name = name .. "의 시체 · 장비 없음" end
         end, nil)
     end
 
@@ -167,6 +175,7 @@ script PlayerCorpses extends Component
         ---@type PlayerStats
         local stats = self.Entity:GetComponent("script.PlayerStats")
         if stats ~= nil and data.exp > 0 then stats:GainExp(data.exp) end
+        log(string.format("[VRF] corpse taken uid=%s items=%d exp=%d", pc.UserId, #(data.items or {}), data.exp))
         _Util:Notify("시체를 되찾았습니다" .. (data.exp > 0 and (" (경험치 +" .. tostring(data.exp) .. ")") or ""), pc.UserId)
     end
 
