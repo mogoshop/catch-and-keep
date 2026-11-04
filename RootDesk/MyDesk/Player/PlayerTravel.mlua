@@ -337,6 +337,21 @@ script PlayerTravel extends Component
         return e
     end
 
+    @ExecSpace("Server")
+    method void RequestGate(Entity gate)
+        -- 클라이언트(NpcWindow)가 Space·「들어가기」로 고른 포털·심도 문에 들어가기를 청한다. 서버가 구역·권한을 다시 본다 (11-05)
+        if senderUserId ~= self.Entity.PlayerComponent.UserId or not isvalid(gate) or not _Util:IsAlive(self.Entity) then return end
+        ---@type WarpGate
+        local warp = gate:GetComponent("script.WarpGate")
+        if warp ~= nil then
+            warp:TryEnter(self.Entity)
+            return
+        end
+        ---@type DepthGate
+        local depth = gate:GetComponent("script.DepthGate")
+        if depth ~= nil then depth:TryEnter(self.Entity) end
+    end
+
     @ExecSpace("ServerOnly")
     method void ClosePortal(number delay)
         -- 짝 포털 둘을 닫는다. 지금 짝만 붙잡아 두어 그사이 새로 연 짝은 닫지 않는다

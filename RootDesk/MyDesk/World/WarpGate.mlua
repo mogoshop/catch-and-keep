@@ -1,4 +1,5 @@
--- 맵 사이 포털. 플레이어가 반경 안에 오면 지정한 맵·위치로 보낸다 (0.3초 검사, 사람마다 2초 재사용 대기).
+-- 맵 사이 포털. 반응 구역 안에서 Space(PC)·「들어가기」 단추(모바일)를 누르면 지정한 맵·위치로 보낸다 (11-05 사용자: 지나가다 이동하는 일이 많았다 → 밟기만으로는 이동하지 않는다).
+--   클라이언트 NpcWindow가 구역 안 포털을 찾아 안내를 띄우고, 입력이 오면 PlayerTravel.RequestGate → 서버가 구역·권한을 다시 보고 TryEnter.
 -- 귀환 포털(OwnerUserId 지정)은 주인과 파티원이 쓴다. 마을 쪽(OwnerCloses)은 주인이 지나가면 사냥터 짝과 함께 닫힌다 (PlayerTravel.ClosePortal).
 @Component
 script WarpGate extends Component
@@ -16,22 +17,23 @@ script WarpGate extends Component
     property number Cooldown = 2
     @Sync
     property string OwnerUserId = ""
+    @Sync
+    property string OwnerName = ""            -- 귀환 포털 주인 캐릭터 이름 (마을 이름표 두 줄 「주인 / 가는 곳」 · 11-05)
     property boolean OwnerCloses = true       -- 주인이 지나가면 닫힌다 (귀환 짝 중 사냥터 쪽은 false — 주인이 마을로 갔다가 돌아올 길)
     property string SealGate = ""             -- 봉인 문: 이 문지기(몬스터 sourceId)를 쓰러뜨린 사람만 지난다 (PlayerQuest.GatePassed, gate 의뢰 · 10-23 옥좌의 문)
     property table SealWarned = {}
 
-    property integer TimerId = 0
     property table LastWarp = {}
-    property number ArrivalGrace = 2.5        -- 맵에 막 들어온 사람은 이 시간 동안 포털이 반응하지 않는다 (10-20 첫 1시간 점검: 이동키를 누른 채 들어오면 바로 옆 귀환 포털로 튕겨 나갔다)
+    property number Reach = 0.35              -- 안내·입력 구역: 이동 반경(Radius·TriggerBox) 둘레 이만큼 더 (밟는 자동 이동이 없어져 조금 넉넉하게)
+    property number ServerSlack = 0.6         -- 서버 확인 여유 (플레이어 → 서버 위치 동기화 10Hz라 서버 위치가 늦다)
     @Sync
     property string Mist = ""                 -- 곁가지 입구·층 계단 포털 (10-28 사용자 A안): "r,g,b" — 구멍에서 피어오르는 안개 색. 비면 안개 없음
     property integer MistFx = 0               -- 클라이언트: 안개 입자
 
     method void OnBeginPlay()
-        -- 서버: 0.3초마다 반경 검사 / 클라이언트: 입구 안개
+        -- 서버: 자동 이동 검사 없음 (입력으로만 — TryEnter) / 클라이언트: 입구 안개
         if self:IsServer() then
             self.LastWarp = {}
-            self.TimerId = _TimerService:SetTimerRepeat(function() self:Check() end, 0.3)
             if self:HasBox() then
                 local p = _Util:Pos2(self.Entity)
                 log(string.format("[VRF] WarpGate box ready gate=%s map=%s at=(%.2f,%.2f) half=(%.2f,%.2f) radius=%.2f -> %s", self.Entity.Name, self.Entity.CurrentMap ~= nil and self.Entity.CurrentMap.Name or "?", p.x, p.y, self.TriggerBox.x, self.TriggerBox.y, self.Radius, self.TargetMap))
@@ -42,9 +44,7 @@ script WarpGate extends Component
     end
 
     method void OnEndPlay()
-        -- 타이머·안개 정리
-        if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) end
-        self.TimerId = 0
+        -- 안개 정리
         if self.MistFx ~= 0 then _ParticleService:RemoveParticle(self.MistFx) end
         self.MistFx = 0
     end
@@ -60,29 +60,30 @@ script WarpGate extends Component
             { Color = Color(tonumber(r), tonumber(g), tonumber(b), 0.8), SortingLayer = "MapLayer0", OrderInLayer = 31 })
     end
 
+    method boolean InZone(Vector2 p, number slack)
+        -- 반응 구역 안인가 (클라이언트 안내·서버 확인 공용): 원(Radius + Reach + slack) 또는 사각(TriggerBox + Reach + slack)
+        local d = p - _Util:Pos2(self.Entity)
+        local pad = self.Reach + slack
+        if d:Magnitude() <= self.Radius + pad then return true end
+        return self:HasBox() and math.abs(d.x) <= self.TriggerBox.x + pad and math.abs(d.y) <= self.TriggerBox.y + pad
+    end
+
     @ExecSpace("ServerOnly")
-    method void Check()
-        -- 반응 구역 안 플레이어를 보낸다. 사각 구역(TriggerBox)이 없으면 예전과 같은 원 판정 그대로
-        local now = _UtilLogic.ElapsedSeconds
-        local here = _Util:Pos2(self.Entity)
-        local box = self:HasBox()
-        local reach = self.Radius
-        if box then reach = math.max(self.Radius, self.TriggerBox:Magnitude()) end
-        for _, u in ipairs(_Util:PlayersNear(self.Entity.CurrentMap, here, reach)) do
-            local d = _Util:Pos2(u) - here
-            local inCircle = d:Magnitude() <= self.Radius
-            if inCircle or (box and math.abs(d.x) <= self.TriggerBox.x and math.abs(d.y) <= self.TriggerBox.y) then
-                local id = u.PlayerComponent.UserId
-                ---@type PlayerTravel
-                local travel = u:GetComponent("script.PlayerTravel")
-                local fresh = travel ~= nil and now - travel.ArrivedAt < self.ArrivalGrace
-                if not fresh and self:CanUse(u) and now - (self.LastWarp[id] or -100) > self.Cooldown then
-                    self.LastWarp[id] = now
-                    if box then log(string.format("[VRF] WarpGate box warp gate=%s map=%s d=(%.2f,%.2f) circle=%s -> %s", self.Entity.Name, self.Entity.CurrentMap.Name, d.x, d.y, tostring(inCircle), self.TargetMap)) end
-                    self:Warp(u)
-                end
-            end
+    method boolean TryEnter(Entity player)
+        -- 입력(Space·들어가기)으로 들어간다: 구역(서버 여유 포함) · 재사용 대기 · 권한(CanUse가 막히면 안내) 확인 뒤 Warp
+        if not isvalid(player) or player.PlayerComponent == nil or player.CurrentMap ~= self.Entity.CurrentMap then return false end
+        if not self:InZone(_Util:Pos2(player), self.ServerSlack) then
+            log(string.format("[VRF] WarpGate enter rejected far gate=%s", self.Entity.Name))
+            return false
         end
+        local id = player.PlayerComponent.UserId
+        local now = _UtilLogic.ElapsedSeconds
+        if now - (self.LastWarp[id] or -100) <= self.Cooldown then return false end
+        if not self:CanUse(player) then return false end
+        self.LastWarp[id] = now
+        log(string.format("[VRF] WarpGate enter by input gate=%s map=%s -> %s owner=%s", self.Entity.Name, self.Entity.CurrentMap.Name, self.TargetMap, self.OwnerName))
+        self:Warp(player)
+        return true
     end
 
     method boolean HasBox()
@@ -124,7 +125,7 @@ script WarpGate extends Component
     end
 
     method void WarnOnce(Entity player, string text)
-        -- 포털 위에 서 있는 동안 0.3초마다 막히므로 사람마다 4초에 한 번만 알린다 (서버에서만 — 미니맵의 CanUse 확인은 클라이언트)
+        -- Space를 연달아 눌러도 사람마다 4초에 한 번만 알린다 (서버에서만 — 미니맵·이름표의 CanUse 확인은 클라이언트)
         if not self:IsServer() then return end
         local id = player.PlayerComponent.UserId
         local now = _UtilLogic.ElapsedSeconds

@@ -10,6 +10,9 @@
 --   caravan = 카라반 대장: 액트 사이 이동 (잿불 야영지 ↔ 오아시스 시장, 앞 액트 보스를 쓰러뜨려야 열림) + 의뢰
 --   captain = 선장 (소금바람 항구): 카라반과 같은 창. 카라반·선장 모두 열린 다른 액트 마을로 데려다준다 (docs/design/17 §6)
 --   scholar · apothecary = 액트 2 의뢰인, harbormaster · keeperdaughter = 액트 3 의뢰인 (자기 의뢰 차례가 아니면 한마디만)
+--   11-05 포털: 포털(WarpGate)·심도 문(DepthGate) 반응 구역 안이면 같은 안내 버튼이 「Space · 가는 곳」(모바일 「가는 곳 · 들어가기」)이 되고
+--           Space·B · 버튼 터치로 들어간다 (PlayerTravel.RequestGate — 서버가 구역·권한을 다시 본다). 밟기만 해서는 이동하지 않는다.
+--           구역 안에서는 Space가 질주(SkillBook.CastMove)로 새지 않게 질주 연타 막이(MovePredictAt)를 잠깐씩 앞으로 민다 — 마을에서 NPC가 Space를 쓰는 것과 같은 우선순위
 --   10-30 현장 보고 (I08 · PlayerQuest.FieldHandoff*): 의식 의뢰를 끝낸 제단 앞에서 같은 버튼(Space·B · 대화 단추)으로 의뢰 대화를 연다 —
 --   그 의뢰 보고와 같은 의뢰인의 다음 의뢰 수락만. 대사·보상·처리는 의뢰인과 같은 화면(RenderQuest)이고 서버가 다시 검증한다
 @Logic
@@ -40,6 +43,11 @@ script NpcWindow extends Logic
     property string CheerText = ""           -- 액트 보스를 쓰러뜨린 뒤의 격려 한마디 (말을 건 첫 쪽, docs/design/31 §7)
     property boolean FieldAltar = false      -- 지금 대화가 현장 보고 제단인가 (ActiveNpc = 제단 엔티티)
     property string AltarName = "피의 제단"
+    property Entity ActiveGate = nil         -- 지금 안내 중인 포털·심도 문 (구역 안 · 클라이언트)
+    property table GateCache = {}            -- 이 맵의 포털·심도 문 컴포넌트 (맵 전체 검색은 1초에 한 번만)
+    property number GateCacheAt = -100
+    property string GateCacheMap = ""
+    property string GateShownKey = ""        -- [VRF] 안내가 바뀔 때만 남긴다
 
     @ExecSpace("ClientOnly")
     method void OnBeginPlay()
@@ -70,6 +78,60 @@ script NpcWindow extends Logic
         if self.TimerId ~= 0 then _TimerService:ClearTimer(self.TimerId) self.TimerId = 0 end
         self.ActiveNpc = nil
         _UIKit:SetEnabled(self.Prompt, false)
+    end
+
+    @ExecSpace("ClientOnly")
+    method Entity FindGate(Entity player)
+        -- 반응 구역 안에서 가장 가까운 포털·심도 문 (켜져 있는 것만 — 해금 전 심도 입구는 클라이언트에서 꺼져 있다). 없으면 nil
+        if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) then return nil end
+        local map = player.CurrentMap
+        local now = _UtilLogic.ElapsedSeconds
+        if self.GateCacheMap ~= map.Id or now - self.GateCacheAt > 1 then
+            self.GateCacheMap = map.Id
+            self.GateCacheAt = now
+            local list = {}
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.WarpGate", true)) do table.insert(list, c) end
+            for _, c in ipairs(map:GetChildComponentsByTypeName("script.DepthGate", true)) do table.insert(list, c) end
+            self.GateCache = list
+        end
+        local p = _Util:Pos2(player)
+        local best = nil
+        local bestDist = math.huge
+        for _, c in ipairs(self.GateCache) do
+            if isvalid(c) and isvalid(c.Entity) and c.Entity.Enable and c.Entity.CurrentMap == map and c:InZone(p, 0) then
+                local d = (_Util:Pos2(c.Entity) - p):Magnitude()
+                if d < bestDist then
+                    bestDist = d
+                    best = c.Entity
+                end
+            end
+        end
+        return best
+    end
+
+    @ExecSpace("ClientOnly")
+    method string GateName(Entity gate, Entity map)
+        -- 안내 버튼 글: 가는 곳 (귀환 포털은 「가는 곳 (주인)」 · 심도 문은 이름 또는 「심도 입구」)
+        ---@type WarpGate
+        local warp = gate:GetComponent("script.WarpGate")
+        if warp ~= nil then
+            local label = warp.Label ~= "" and _GameConst:LevelText(warp.Label, map.Name) or "출구"
+            if warp.OwnerName ~= "" then label = label .. " (" .. warp.OwnerName .. ")" end
+            return label
+        end
+        ---@type DepthGate
+        local depth = gate:GetComponent("script.DepthGate")
+        if depth ~= nil then return depth.Label ~= "" and depth.Label or "심도 입구" end
+        return "출구"
+    end
+
+    @ExecSpace("ClientOnly")
+    method void HoldDash(Entity player)
+        -- 포털 구역 안의 Space는 포털 몫: 질주(SkillBook.CastMove)의 연타 막이 시각을 0.1초 앞으로 민다 → 0.4초 동안 질주가 나가지 않는다.
+        --   안내는 0.2초마다 다시 민다. 구역을 나가면 0.4초 안에 질주가 돌아온다 (모바일 질주 단추도 같은 길이라 구역 안에서는 「들어가기」만)
+        ---@type SkillBook
+        local book = player:GetComponent("script.SkillBook")
+        if book ~= nil then book.MovePredictAt = _UtilLogic.ElapsedSeconds + 0.1 end
     end
 
     @ExecSpace("ClientOnly")
@@ -126,6 +188,16 @@ script NpcWindow extends Logic
         -- 명시적인 버튼/키 입력 한 번에 가장 가까운 대화 대상을 고정한다.
         local player = _UserService.LocalPlayer
         if not isvalid(player) or not isvalid(player.CurrentMap) or not _Util:IsAlive(player) or _UIKit:AnyWindowOpen() then return end
+        -- 포털·심도 문 구역 안이면 그쪽이 먼저 (11-05: 밟기 대신 입력으로 들어간다)
+        local gate = self:FindGate(player)
+        if gate ~= nil then
+            self:HoldDash(player)
+            ---@type PlayerTravel
+            local travel = _UIKit:Comp("script.PlayerTravel")
+            if travel ~= nil then travel:RequestGate(gate) end
+            log("[VRF] portal enter input gate=" .. gate.Name .. " map=" .. player.CurrentMap.Name .. " pc=" .. tostring(Environment:IsPCPlatform()))
+            return
+        end
         local npc = self:FindNpc(player)
         self.FieldAltar = false
         if npc == nil then
@@ -235,6 +307,26 @@ script NpcWindow extends Logic
             self:Dismiss()
             _UIKit:SetEnabled(self.Prompt, false)
             return
+        end
+        -- 포털·심도 문 구역 안이면 안내 버튼이 「Space · 가는 곳」 (NPC·제단·웨이포인트보다 먼저 — 포털 위에 섰다는 건 들어가려는 것)
+        local gate = self:FindGate(player)
+        self.ActiveGate = gate
+        if gate ~= nil and not _UIKit:AnyWindowOpen() then
+            self:HoldDash(player)
+            local name = self:GateName(gate, player.CurrentMap)
+            local text = Environment:IsPCPlatform() and ("Space · " .. name) or (name .. " · 들어가기")
+            _UIKit:SetEnabled(self.Prompt, true)
+            _UIKit:SetFitText(self.Prompt, text, 28, 56, 300, 640)
+            if self.GateShownKey ~= gate.Id then
+                self.GateShownKey = gate.Id
+                log("[VRF] portal prompt shown gate=" .. gate.Name .. " text=" .. text)
+            end
+            if not _UIKit:IsOpen(self.Win) then self.ActiveNpc = nil end
+            return
+        end
+        if gate == nil and self.GateShownKey ~= "" then
+            self.GateShownKey = ""
+            log("[VRF] portal prompt hidden")
         end
         local nearby = self:FindNpc(player)
         -- NPC가 없으면 현장 보고 제단(차례일 때만), 그다음 웨이포인트 — 같은 안내 버튼으로 연다 (Space·B · 버튼 터치 → Talk)
