@@ -73,7 +73,8 @@ script SkillBook extends Component
         table.insert(parts, "bone_rite.whirl=" .. triple(function(r) return self:RiteRankMul(r) * _GameData.riteWhirlMul * self:RiteWhirlTicks(0) end))
         table.insert(parts, "bone_giant=" .. triple(function(r) return 1 + self:RawEffectPower("bone_giant", r) / 100 end))
         table.insert(parts, "elite_promote=" .. triple(raw("elite_promote")))
-        table.insert(parts, "wraith_dash=" .. triple(raw("wraith_dash")))
+        table.insert(parts, string.format("wraith_dash=%.2f/%.2f/%.2f cd=%.2f/%.2f/%.2f cap@1/5/30=%d/%d/%d next(5)=%d", self:RawEffectPower("wraith_dash", 1), self:RawEffectPower("wraith_dash", 5), self:RawEffectPower("wraith_dash", 10),
+            self:DashCooldown(1), self:DashCooldown(5), self:DashCooldown(10), self:RankCap("wraith_dash", 1), self:RankCap("wraith_dash", 5), self:RankCap("wraith_dash", 30), self:NextRankLevel("wraith_dash", 5)))
         table.insert(parts, "bone_offering=" .. triple(raw("bone_offering")))
         table.insert(parts, "resist_break=" .. triple(function(r) return self:RawEffectPower("resist_break", r) * _GameData.skillPowerMult end))
         table.insert(parts, "bone_prison=" .. triple(raw("bone_prison")))
@@ -140,6 +141,8 @@ script SkillBook extends Component
         if def == nil then return 0 end
         if def.kind == "node" then return def.maxLv end
         if playerLevel < def.row then return 0 end
+        -- 11-04 질주 개편: 표의 rankStep(질주 3)이 있으면 랭크 k = 캐릭터 Lv rankStep×k (랭크 1은 해금 Lv · Lv30에 10랭크) — 다른 스킬 rankStep 0 = 그대로
+        if (def.rankStep or 0) > 0 then return math.min(def.maxLv, math.max(1, math.floor(playerLevel / def.rankStep + 1e-9))) end
         return math.min(def.maxLv, 1 + math.floor((playerLevel - def.row) / self:RankStep(def.row) + 1e-9))
     end
 
@@ -153,6 +156,7 @@ script SkillBook extends Component
         -- 메인 스킬을 rank까지 올리는 데 필요한 캐릭터 레벨
         local def = _SkillData:Get(id)
         if def == nil or def.kind == "node" then return 1 end
+        if (def.rankStep or 0) > 0 then return rank <= 1 and math.floor(def.row) or math.max(math.floor(def.row), math.floor(def.rankStep * rank + 1e-9)) end   -- 11-04 질주: 랭크 k = Lv 3k (랭크 1 = 해금 Lv)
         return def.row + math.ceil(self:RankStep(def.row) * (math.max(1, rank) - 1) - 1e-9)   -- 해금 ≥ 24: 해금 + ⌈1.5 × (랭크 − 1)⌉ (62 §8-1)
     end
 
@@ -174,9 +178,7 @@ script SkillBook extends Component
         if def == nil or def.kind ~= "node" then return 0 end
         local parent = _SkillData:Get(def.parent)
         local first = parent ~= nil and self:NextRankLevel(def.parent, math.max(1, def.need)) or (1 + 2 * (math.max(1, def.need) - 1))
-        -- 11-03 저녁 예외: 무료 시작 스킬(레이스 폼 Lv1)의 강화는 예전 해금표 그대로 — 노드 row(9)가 부모 row보다 늦으면 노드 row를 해금 Lv로 보고 need 랭크 시점을 센다
-        --   (Lv9·11·13·15·17·19 · 다른 노드는 row = 부모 row라 영향 없음 · 62 §13)
-        if parent ~= nil and def.row > parent.row then first = math.floor(def.row) + math.ceil(self:RankStep(def.row) * (math.max(1, def.need) - 1) - 1e-9) end
+        --   11-04 질주 개편: 질주 강화도 부모 랭크 기준 (여분 숨 랭크 3 = Lv9 · 군단 질주 5 = Lv15 · 망령 도약 7 = Lv21) — 옛 「노드 row > 부모 row」 예외(11-03 저녁)는 없앴다
         return math.floor(first + _GameData.nodeLevelStep * (math.max(1, rank) - 1))
     end
 
@@ -639,7 +641,7 @@ script SkillBook extends Component
         if id == "bone_offering" then return 25 + 2.1 * (level - 1) end   -- 소환수 최대 생명 대비 회복 % (62 §7-1: +1.5 → +2.1/랭크 · 「진한 성찬」 삭제)
         if id == "swift_step" then return 8 + (level - 1) end          -- 이동 속도 % (10-24: 4 → 8 시작)
         if id == "plague_curse" then return 3 + level // 5 end         -- 저주가 옮는 적 수
-        if id == "wraith_dash" then return self:Node("dash_blink") > 0 and _GameData.dashBlinkRange or (3 + 2 * (level - 1) / 19) end  -- 질주 거리 (칸 · 62 §7-1: 20랭크 5칸) · 강화 「망령 도약」이면 조준점까지 최대 dashBlinkRange(6)칸
+        if id == "wraith_dash" then return self:Node("dash_blink") > 0 and _GameData.dashBlinkRange or (3 + 2 * (math.max(1, level) - 1) / 9) end  -- 질주 거리 (칸 · 11-04 질주 개편: 10랭크 5칸 · 랭크당 +0.222칸) · 강화 「망령 도약」이면 조준점까지 최대 dashBlinkRange(6)칸
         if id == "mark_weakness" then return 20 + 2 * (level - 1) end   -- 1레벨 20% → 20레벨 58%
         if id == "enfeeble" then return _GameData.enfeebleBasePct + _GameData.enfeeblePerLvPct * (level - 1) end   -- 62 §7-1: +2%p/랭크 (상한 enfeebleMaxPct는 저주 세기를 곱한 뒤 · EnfeebleCap)
         if id == "elite_promote" then return _GameData.elitePromoteBaseMul + _GameData.elitePromotePerLvMul * (level - 1) end
@@ -691,12 +693,6 @@ script SkillBook extends Component
         -- 「잔걸음」(질풍 걸음 자리): 질주 뒤 이동 속도 +15/20/25%
         if rank <= 0 then return 0 end
         return math.floor(_GameData.afterStepBasePct + _GameData.afterStepPerRankPct * rank)
-    end
-
-    method integer BoneShellPct(integer rank)
-        -- 「뼈 껍질」(흐릿한 형체 자리): 질주 끝에 뼈 갑옷 최대치의 10/15/20%를 채운다
-        if rank <= 0 then return 0 end
-        return math.floor(_GameData.boneShellBasePct + _GameData.boneShellPerRankPct * rank)
     end
 
     method number ArmorBurstMul(integer rank)
@@ -787,12 +783,9 @@ script SkillBook extends Component
             offering_wide = string.format("본 오퍼링 범위 %.1f", 4 * (1 + 0.25 * level)),
             offering_frenzy = string.format("5초간 소환수 공격 속도 +%d%%", 10 * level),
             skel_resonance = string.format("해골 공격력 ×%.1f · 반경 %.1f칸 · 해골마다 %.1f초", _SkeletonResonance.AtkMult, _SkeletonResonance.Radius, _SkeletonResonance.Cooldown),
-            dash_ghost = string.format("질주 끝에 본 아머 최대치의 %d%% 채움%s", self:BoneShellPct(level), self:GetLevel("bone_armor") > 0 and "" or " (본 아머를 배우면)"),
             dash_charge = string.format("질주 %d번 연달아", 1 + level),
-            dash_trail = string.format("지나간 적에게 피해 %d · 1.5초 둔화", self:DashTrailDamage(level)),
-            dash_quick = string.format("질주 재사용 -%.1f초 (최저 1.5초)", 0.2 * level),
             dash_legion = string.format("질주하면 3칸 밖 소환수가 곁으로 도약 · 소환수 이동 +%d%%", 5 * level),
-            dash_blink = string.format("질주가 조준점(최대 %g칸) 순간이동으로", _GameData.dashBlinkRange),
+            dash_blink = string.format("질주가 조준점(최대 %g칸) 순간이동으로 · 벽을 넘음 (잠긴 문은 못 넘음)", _GameData.dashBlinkRange),
             step_gale = string.format("질주 뒤 %.1f초간 이동 속도 +%d%%%s", _GameData.afterStepSec, self:AfterStepPct(level), self:GetLevel("wraith_dash") > 0 and "" or " (질주를 배우면)"),
             step_hunt = string.format("처치하면 3초간 이동 속도 +%d%%", 4 * level),
             storm_fast = string.format("타격 간격 %.2f초", 0.5 * (1 - 0.15 * level)),
@@ -886,7 +879,6 @@ script SkillBook extends Component
     method string UseHint(string id)
         -- 선투자는 허용하되 지금 발동하지 않는 조건을 선택 화면에서 알려 준다.
         if id == "step_gale" and self:GetLevel("wraith_dash") <= 0 then return "질주를 배워야 발동합니다" end
-        if id == "dash_ghost" and self:GetLevel("bone_armor") <= 0 then return "본 아머를 배워야 회복합니다" end
         if id == "shard_multi" and self:GetBoneShardCount(math.max(1, self:GetPowerLevel("bone_shard"))) <= 1 then return "티스가 2발 이상일 때 모이는 효과가 납니다" end
         local nodeForm = _UndeadSystem:NodeForm(id)
         if nodeForm.form ~= "" then return self:FormHint(id, nodeForm.kind, nodeForm.form) end
@@ -1156,6 +1148,14 @@ script SkillBook extends Component
         elseif move then
             -- 질주(도약): 내 클라이언트가 이미 움직였고 target은 도착점이다. 서버 위치는 조금 늦으니 1.5칸 여유
             if ray:Magnitude() > self:GetEffectPower(id, lv) + 1.5 then return false end
+            if self:Node("dash_blink") > 0 then
+                -- 11-04 망령 도약: 서버도 같은 착지 규칙으로 확인 (맵 밖 · 걸어서 이어지지 않는 칸이면 거절)
+                local check = self:BlinkLanding(self.Entity.CurrentMap, me, target, self:GetEffectPower(id, lv) + 1.5)
+                if check.reason == "outside" or (check.pos - target):Magnitude() > 0.6 then
+                    log(string.format("[VRF] blink rejected reason=%s want=%.2f,%.2f got=%.2f,%.2f", check.reason, target.x, target.y, check.pos.x, check.pos.y))
+                    return false
+                end
+            end
         elseif lock ~= nil then -- 고정 대상은 사거리 7.5까지 그대로 겨눈다
         elseif (id == "bone_shard" or id == "soul_torrent" or id == "hex_flame" or id == "frost_soul") and ray:Magnitude() > 6 then target = me + ray:Normalize() * 6   -- 방향만 쓰는 투사체
         elseif self:IsGroundSkill(id) or id == "bone_spikes" then target = self:ClampGroundPoint(me, target)   -- 44-3 A: 땅 찍기는 6칸 넘으면 그 방향 6칸에 놓는다 (범위 원과 같은 자리)
@@ -1211,17 +1211,63 @@ script SkillBook extends Component
         return def ~= nil and def.cooldown or 0
     end
 
-    method number DashCooldown(integer level)
-        -- 망령 질주 한 번이 다시 차는 시간: 4초, 랭크마다 -0.1초 (20랭크 2.1초) · 강화 「재빠른 숨」 -0.2초/랭크 · 최저 1.5초
-        return math.max(1.5, 4 - 0.1 * (math.max(1, level) - 1) - 0.2 * self:Node("dash_quick"))
+    method table BlinkLanding(Entity map, Vector2 me, Vector2 aim, number range)
+        -- 11-04 망령 도약 착지 (사용자): 조준점까지 벽·장식 충돌을 무시하고 순간이동(최대 range칸).
+        --   조준점 칸이 맵 밖(칸 없음)이면 거부(reason outside). 조준점이 벽·막힌 칸이면 조준 방향 선 위에서 조준점에 가장 가까운 걷는 칸(뒤쪽으로 탐색).
+        --   그 칸은 지금 자리에서 걸어서 이어져야 한다(봉인 문·잠긴 문·막힌 둥지 너머 = 이어지지 않음 → 건너뜀 skipped · 그래서 문 앞까지만). 없으면 질주처럼 벽 앞(reason wall)
+        --   { pos, reason = aim/nearest/wall/outside/open, over = 벽을 넘었나, skipped = 건너뛴 이어지지 않는 칸 수 } — 클라이언트(CastMove)·서버(Cast) 같은 식
+        local ray = aim - me
+        if ray:Magnitude() > range then aim = me + ray:Normalize() * range end
+        local m = _Util:TerrainMemo(map)
+        if m == nil then return { pos = aim, reason = "open", over = false, skipped = 0 } end
+        local cx = function(q) return math.floor((q.x - m.ox) / m.gx + 0.5) end
+        local cy = function(q) return math.floor((q.y - m.oy) / m.gy + 0.5) end
+        if m.tiles:GetTile(Vector2Int(cx(aim), cy(aim))) == nil then return { pos = me, reason = "outside", over = false, skipped = 0 } end
+        local margin = 0.25
+        local free = function(q)
+            return not _Util:CellBlocked(m, q) and not _Util:CellBlocked(m, q + Vector2(margin, 0)) and not _Util:CellBlocked(m, q - Vector2(margin, 0))
+                and not _Util:CellBlocked(m, q + Vector2(0, margin)) and not _Util:CellBlocked(m, q - Vector2(0, margin))
+        end
+        -- 지금 자리에서 걸어서 이어지는 칸 (상하좌우 · 사방 range + 24칸 상자 · 최대 9000칸)
+        local sx, sy = cx(me), cy(me)
+        local lim = math.ceil(range / math.min(m.gx, m.gy)) + 24
+        local seen = {}
+        seen[sx * 100000 + sy] = true
+        local queue = { { sx, sy } }
+        local head = 1
+        local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+        while head <= #queue and #queue < 9000 do
+            local c = queue[head]
+            head = head + 1
+            for _, d in ipairs(dirs) do
+                local nx, ny = c[1] + d[1], c[2] + d[2]
+                local key = nx * 100000 + ny
+                if not seen[key] and math.abs(nx - sx) <= lim and math.abs(ny - sy) <= lim then
+                    if not _Util:CellBlocked(m, Vector2(m.ox + nx * m.gx, m.oy + ny * m.gy)) then
+                        seen[key] = true
+                        table.insert(queue, { nx, ny })
+                    end
+                end
+            end
+        end
+        local offset = aim - me
+        local count = math.max(1, math.ceil(offset:Magnitude() / 0.2))
+        local skipped = 0
+        for i = count, 1, -1 do
+            local q = me + offset * (i / count)
+            if free(q) then
+                if seen[cx(q) * 100000 + cy(q)] then
+                    return { pos = q, reason = i == count and "aim" or "nearest", over = not _Util:HasLineOfSight(map, me, q), skipped = skipped }
+                end
+                skipped = skipped + 1
+            end
+        end
+        return { pos = _Util:ReachablePoint(map, me, aim, margin), reason = "wall", over = false, skipped = skipped }
     end
 
-    method integer DashTrailDamage(integer rank)
-        -- 강화 「망령 자취」 피해: (8 + 캐릭터 레벨 × 3) × 랭크
-        ---@type PlayerStats
-        local st = self.Entity:GetComponent("script.PlayerStats")
-        local lv = st ~= nil and st.Level or 1
-        return math.floor((8 + 3 * lv) * rank)
+    method number DashCooldown(integer level)
+        -- 질주 한 번이 다시 차는 시간 (11-04 사용자): 4.0 − 0.25 × 랭크 · 최저 1.5초 (랭크 1 = 3.75초 … 랭크 10 = 1.5초 · 「재빠른 숨」 삭제)
+        return math.max(1.5, 4 - 0.25 * math.max(1, level))
     end
 
     -- ───────── 뼈 의식 (기획서 43 §3-1 · 10-29 결정 1A·2·3) ─────────
@@ -1576,6 +1622,7 @@ script SkillBook extends Component
         self.DashShown = self.DashCharges
         if self.DashCharges <= 0 then self:SetCooldown("wraith_dash", math.max(0.1, self.DashRechargeAt - now)) end
         local left = self.DashRechargeAt - now
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] dash charge used lv=%d cd=%.2f left=%.2f charges=%d", level, self:DashCooldown(level), left, self.DashCharges)) end
         _TimerService:SetTimerOnce(function() if isvalid(self.Entity) then self:RefillDash() end end, left + 0.05)
     end
 
@@ -1611,10 +1658,14 @@ script SkillBook extends Component
         local dest
         local blink = self:Node("dash_blink") > 0
         if blink then
-            local aim = self:GetAimPoint(id)
-            local ray = aim - me
-            if ray:Magnitude() > range then aim = me + ray:Normalize() * range end
-            dest = _Util:ReachablePoint(map, me, aim, 0.25)
+            -- 11-04 망령 도약: 벽을 넘는다 (BlinkLanding — 맵 밖 거부 · 걸어서 이어지지 않는 칸(봉인·잠긴 문 너머) 건너뜀 · 없으면 벽 앞)
+            local landing = self:BlinkLanding(map, me, self:GetAimPoint(id), range)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] blink landing reason=%s over=%s skipped=%d from=%.2f,%.2f to=%.2f,%.2f", landing.reason, tostring(landing.over), landing.skipped, me.x, me.y, landing.pos.x, landing.pos.y)) end
+            if landing.reason == "outside" then
+                _HudMain:ShowWarn("맵 밖으로는 도약할 수 없습니다")
+                return
+            end
+            dest = landing.pos
         else
             local dir = self:MoveDirection()
             dest = _Util:ReachablePoint(map, me, me + dir * range, 0.25)
@@ -1916,6 +1967,7 @@ script SkillBook extends Component
         refund = refund + self:MigrateNodeSwap(sv)
         refund = refund + self:MigrateSpearToShard()
         refund = refund + self:MigrateDrainToSpikes()
+        refund = refund + self:MigrateDash1104()
         refund = refund + self:MigrateNodes1103(sv)
         refund = refund + self:MigrateStartRank(sv)
         self:MigrateGiantSplit(sv)
@@ -1991,6 +2043,32 @@ script SkillBook extends Component
             self.Levels[id] = nil
         end
         if back > 0 then log(string.format("[VRF] skill migrate drain→spikes refund=%d had=%s", back, table.concat(moved, ","))) end
+        return back
+    end
+
+    @ExecSpace("ServerOnly")
+    method integer MigrateDash1104()
+        -- 11-04 질주 개편 (사용자 · 기획 62 §15 · 저장 sv 10): 질주 maxLv 20 → 10 · 강화 뼈 껍질·망령 자취·재빠른 숨 삭제. 돌려준 포인트 수
+        --   삭제 노드 3개는 찍은 랭크를 돌려주고 키를 지운다 · 질주 11~20랭크는 10으로 내리고 넘친 랭크를 돌려준다 (키·상한 기준 · 한 번 · 다시 불러도 0). 알림 없음
+        --   옛 키 이름은 이 함수와 MigrateNodeSwap(44 결정 4 옛 목록)에만 남긴다 (tools/check_data.cjs 「지운 노드(11-04)의 흔적」 허용 자리)
+        local back = 0
+        local moved = {}
+        for _, id in ipairs({ "dash_ghost", "dash_trail", "dash_quick" }) do
+            local r = self.Levels[id] or 0
+            if r > 0 then
+                back = back + r
+                table.insert(moved, id .. ":" .. tostring(r))
+            end
+            self.Levels[id] = nil
+        end
+        local dash = self.Levels.wraith_dash or 0
+        local def = _SkillData:Get("wraith_dash")
+        if def ~= nil and dash > def.maxLv then
+            back = back + dash - def.maxLv
+            table.insert(moved, "wraith_dash:" .. tostring(dash) .. "→" .. tostring(def.maxLv))
+            self.Levels.wraith_dash = def.maxLv
+        end
+        if back > 0 then log(string.format("[VRF] skill migrate dash1104 refund=%d had=%s", back, table.concat(moved, ","))) end
         return back
     end
 
@@ -2214,7 +2292,8 @@ script SkillBook extends Component
         -- sv 4 (10-29 44 결정 4): 효과가 바뀐 강화 5개를 한 번 돌려준 뒤의 저장 · sv 5 (48-3): 마법사 거인 갈림 둘을 한 번 돌려준 뒤 (MigrateNodeSwap)
         -- sv 6 (11-02 거인 분리): 거인 노드 부모가 본 골렘으로 바뀐 뒤 (MigrateGiantSplit) · sv 7 (11-03): 축 바꾼 노드 4개를 한 번 돌려준 뒤 (MigrateNodes1103)
         -- sv 8 (11-03 저녁): 레이스 폼 1랭크가 거저 주는 시작 랭크가 된 뒤 (MigrateStartRank) · sv 9 (11-04): 드레인 라이프 → 뼈 쐐기 (MigrateDrainToSpikes · 키 기준이라 판 번호와 무관)
-        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 9 }
+        -- sv 10 (11-04): 질주 랭크 10 · 강화 3개 삭제 (MigrateDash1104 · 키·상한 기준)
+        local saved = { levelCount = 0, slots = self.Slots, right = self.RightSkill, sv = 10 }
         for _ in pairs(levels) do saved.levelCount = saved.levelCount + 1 end
         if saved.levelCount > 0 then saved.levels = levels end
         -- I04 골편 홀드 반복 — 선택 칸 (없으면 끔 · 판 번호와 무관). 옛 희망 편성 칸 hope는 11-02 편성 자동 하나로 쓰지 않는다 (불러올 때 버림)

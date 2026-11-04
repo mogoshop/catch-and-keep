@@ -1877,39 +1877,17 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method boolean WraithDash(Vector2 me, Vector2 dest)
-        -- 망령 질주: 내 클라이언트가 이미 움직였다 (SkillBook.CastMove). 여기서는 무적·연출, 강화 「망령 자취」 피해·둔화, 「군단 질주」 소환수 도약
+        -- 질주: 내 클라이언트가 이미 움직였다 (SkillBook.CastMove). 여기서는 무적·연출, 「군단 질주」 소환수 도약 (11-04 「망령 자취」 삭제)
         ---@type SkillBook
         local book = self.Entity:GetComponent("script.SkillBook")
         ---@type PlayerVitals
         local vitals = self.Entity:GetComponent("script.PlayerVitals")
-        local seconds = _GameData.dashInvulnSec   -- 10-29 44 결정 4: 무적 +0.05초/랭크(흐릿한 형체)는 「뼈 껍질」로 바뀌어 고정 0.3초
+        local seconds = _GameData.dashInvulnSec   -- 무적 0.3초 고정 (11-04 질주 개편에도 그대로)
         if vitals ~= nil then
             vitals.InvincibleUntil = math.max(vitals.InvincibleUntil, _UtilLogic.ElapsedSeconds + seconds)
             vitals:Blink(seconds)
         end
         if book ~= nil then self:AfterDash(book) end
-        local trail = book ~= nil and book:Node("dash_trail") or 0
-        if trail > 0 then
-            local path = dest - me
-            local len = path:Magnitude()
-            if len > 0.1 then
-                local mid = me + path * 0.5
-                local hit = {}
-                for _, m in ipairs(_Util:MonstersNear(self.Entity.CurrentMap, mid, len * 0.5 + 0.6)) do
-                    -- 지나간 길(선분)에서 0.6칸 안의 적
-                    local unit = path * (1 / len)
-                    local q = _Util:Pos2(m.Entity) - me
-                    local along = math.max(0, math.min(len, q:Dot(unit)))
-                    if (q - unit * along):Magnitude() <= 0.6 then table.insert(hit, m) end
-                end
-                ---@type PlayerAttack
-                local atk = self.Entity:GetComponent("script.PlayerAttack")
-                for _, m in ipairs(hit) do
-                    if atk ~= nil and not m.IsDead then atk:SkillHitOne(m.Entity, "skill.dash_trail", book:DashTrailDamage(trail)) end
-                    m:ApplyChill(1.5)
-                end
-            end
-        end
         if book ~= nil and book:Node("dash_legion") > 0 then
             -- 소환수는 주인 서버 위치(조금 늦다)를 따라 자리를 잡으므로, 0.8초 동안 3칸 밖이면 곁으로 도약한다 (ShadowUnit 끈)
             local untilAt = _UtilLogic.ElapsedSeconds + 0.8
@@ -1920,13 +1898,15 @@ script SkillEffects extends Component
             end
         end
         -- 10-31 갈래 E P18: 떠난 자리 섬광을 느리게 틀어 DashAfterSec(0.6초) 잔상으로 (예전 0.4초 · 기존 그림 그대로)
-        if _GameConst.FxSkillDashGhost ~= "" then
-            -- 10-31 9계열 P18: 푸른 고리 섬광 대신 코덱스 망령 잔상 4장을 떠난 자리 → 도착 쪽 길 위에 (강화 「망령 도약」이면 도착 자리에도)
-            self:DashGhostFx(Vector3(me.x, me.y, 0), Vector3(dest.x, dest.y, 0), book ~= nil and book:Node("dash_blink") > 0)
-        elseif book ~= nil and book:Node("dash_blink") > 0 then
-            -- 강화 「망령 도약」: 떠난 자리·도착 자리에 섬광
+        local blink = book ~= nil and book:Node("dash_blink") > 0
+        if blink then
+            -- 11-04 망령 도약(벽을 넘는 순간이동): 질주 잔상 대신 떠난 자리 소실 · 도착 자리 출현 섬광(FxBlink · 메이플 원본)
+            if not Environment:IsPublishedPlay() then log(string.format("[VRF] blink fx vanish=%.2f,%.2f appear=%.2f,%.2f", me.x, me.y, dest.x, dest.y)) end
             self:ClipFxRate(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.6, self.DashAfterSec, 0, self.DashAfterRate, Color(1, 1, 1, 0.9))
             self:ClipFx(self.FxBlink, Vector3(dest.x, dest.y + 0.3, 0), 0.6, 0.45, 0)
+        elseif _GameConst.FxSkillDashGhost ~= "" then
+            -- 10-31 9계열 P18: 푸른 고리 섬광 대신 코덱스 망령 잔상 4장을 떠난 자리 → 도착 쪽 길 위에
+            self:DashGhostFx(Vector3(me.x, me.y, 0), Vector3(dest.x, dest.y, 0), false)
         else
             self:ClipFxRate(self.FxBlink, Vector3(me.x, me.y + 0.3, 0), 0.45, self.DashAfterSec, 0, self.DashAfterRate, Color(1, 1, 1, 0.9))
         end
@@ -2809,7 +2789,7 @@ script SkillEffects extends Component
 
     @ExecSpace("ServerOnly")
     method void AfterDash(SkillBook book)
-        -- 질주를 받은 직후 (WraithDash): 강화 「잔걸음」 이동 속도 · 「뼈 껍질」 뼈 갑옷 채움
+        -- 질주를 받은 직후 (WraithDash): 강화 「잔걸음」 이동 속도 (11-04 「뼈 껍질」 삭제)
         ---@type PlayerStats
         local st = self.Entity:GetComponent("script.PlayerStats")
         if st == nil then return end
@@ -2821,21 +2801,6 @@ script SkillEffects extends Component
             st:StartAfterStep(step, sec)
             self:StatusFxOn(owner, "afterstep", sec)
             log(string.format("[VRF] after step +%d%% %.1fs", step, sec))
-        end
-        local shell = book:BoneShellPct(book:Node("dash_ghost"))
-        local armorLv = book:GetPowerLevel("bone_armor")
-        if shell > 0 and armorLv > 0 then
-            local map = owner.CurrentMap
-            _TimerService:SetTimerOnce(function()
-                -- 질주가 끝난 자리에서 (0.2초 뒤) 갑옷을 채운다. 갑옷을 한 번도 두르지 않았으면 지금 랭크의 최대치를 기준으로
-                if not _Util:IsAlive(owner) or owner.CurrentMap ~= map then return end
-                local max = math.max(st.BoneArmorMax, math.floor(book:GetEffectPower("bone_armor", armorLv)))
-                local before = st.BoneArmor
-                st.BoneArmorMax = max
-                st.BoneArmor = math.min(max, st.BoneArmor + math.floor(max * shell / 100))
-                if st.BoneArmor > before then self:StatusFx("shell", owner.TransformComponent.WorldPosition, 1) end
-                log(string.format("[VRF] bone shell %d -> %d / %d (+%d%%)", math.floor(before), math.floor(st.BoneArmor), max, shell))
-            end, 0.2)
         end
     end
 

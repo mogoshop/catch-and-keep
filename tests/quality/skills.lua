@@ -1,6 +1,6 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+,MigrateStartRank,ResetSkills
+-- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+,MigrateStartRank,ResetSkills,DashCooldown,BlinkLanding
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
@@ -78,9 +78,9 @@ local naked=SkillWindow:StatLine(book,stats,'bone_shard')
 assert(string.find(naked,'마나 6',1,true) and string.find(naked,'재사용 0.38초',1,true),naked)
 bonus=2
 local charged=SkillWindow:StatLine(book,stats,'wraith_dash')
-assert(string.find(charged,'마나 4',1,true) and string.find(charged,'충전 3.80초',1,true),charged)
+assert(string.find(charged,'마나 4',1,true) and string.find(charged,'충전 3.25초',1,true),charged)
 bonus=0
-assert(string.find(SkillWindow:StatLine(book,stats,'wraith_dash'),'충전 4.00초',1,true))
+assert(string.find(SkillWindow:StatLine(book,stats,'wraith_dash'),'충전 3.75초',1,true))
 -- Summon caps include nodes and quest reward; ordinary-form next-spawn values share the live base calculations.
 book.Levels={raise_skeleton=5,raise_mage=5,skel_legion=2,mage_legion=2,command_aura=4}   -- 11-03 단련된 뼈·원소 집중 삭제
 choices['1:command']=3
@@ -171,9 +171,9 @@ SkillWindow:Pick('bone_armor');assert(SkillWindow.SelMain=='bone_armor')
 -- No-current-effect guidance does not change point/refund/prerequisite policy.
 book.Levels={bone_shard=1};bonus=0;choices={}
 assert(book:UseHint('shard_multi')~='')
-assert(book:UseHint('step_gale')~='' and book:UseHint('dash_ghost')~='')
+assert(book:UseHint('step_gale')~='')
 book.Levels.bone_shard=5;book.Levels.wraith_dash=1;book.Levels.bone_armor=1
-assert(book:UseHint('shard_multi')=='' and book:UseHint('step_gale')=='' and book:UseHint('dash_ghost')=='')
+assert(book:UseHint('shard_multi')=='' and book:UseHint('step_gale')=='')
 book.Levels={bone_shard=4,armor_thick=2};book.SkillDigest='bone_shard:4;armor_thick:2;';bonus=1
 book.IsServer=function() return false end
 assert(book:GetPowerLevel('bone_shard')==5 and book:GetPowerLevel('armor_thick')==2)
@@ -425,7 +425,7 @@ do
  local bookSrc=io.open('RootDesk/MyDesk/Skill/SkillBook.mlua'):read('a')
  assert(string.find(bookSrc,'self:NotifyLearned(id, self:GetLevel(id), self:GetRankSummary(id, self:GetLevel(id)), slot, pc.UserId)',1,true),'53/54: learn notice must keep the raw shared summary (condition tail)')
  local dupLog={}
- for _,c in ipairs({{'step_gale','wraith_dash','(질주를 배우면)','질주를 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(본 아머를 배우면)','본 아머를 배워야 회복합니다','질주 끝에 본 아머'}}) do
+ for _,c in ipairs({{'step_gale','wraith_dash','(질주를 배우면)','질주를 배워야 발동합니다','질주 뒤 '}}) do
   local id,pre,tail,hintText,main=c[1],c[2],c[3],c[4],c[5]
   local parent=_SkillData:Get(id).parent
   for _,lv in ipairs({0,1}) do
@@ -672,7 +672,7 @@ do
  assert(book.Levels.skel_shield==nil and book.Levels.mage_twin==nil and book.Levels.mage_hex==nil and book.Levels.giant_quake==nil and book.Levels.giant_mage_pull==nil,'removed')
  assert(book.Levels.raise_skeleton==12 and book.Levels.raise_mage==8 and book.Levels.bone_rite==20,'mains kept')
  local saved=book:GetSaveData()
- assert(saved.sv==9 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==10 and saved.levels.skel_shield==nil,'saved sv '..tostring(saved.sv))
  load(saved)
  assert(stats.SkillPoints==11,'48-3 double refund after save '..stats.SkillPoints)
  book:MigrateLevels(4)
@@ -685,7 +685,7 @@ do
  -- 48 V2: 현행 sv 5 저장의 「폭발 증폭」(옛 「두 겹 고리」 투자)은 그대로 · 환급 0 · 다시 저장해도 sv 5 그대로 (재학습·중복 환급 없음)
  stats.SkillPoints=0;load({sv=5,levelCount=2,levels={bone_rite=20,giant_mage_pull=1}})
  assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp kept '..stats.SkillPoints)
- do local again=book:GetSaveData() assert(again.sv==9 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
+ do local again=book:GetSaveData() assert(again.sv==10 and again.levels.giant_mage_pull==1,'sv5 amp resave') load(again) assert(stats.SkillPoints==0 and book.Levels.giant_mage_pull==1,'sv5 amp reload no refund') end
  stats.SkillPoints=0;load({sv=4,levelCount=2,levels={bone_rite=20,giant_mage_resist=1}})
  assert(stats.SkillPoints==1 and book.Levels.giant_mage_resist==nil,'sv4 resist refund')
  -- sv 3 옛 저장: 44 결정 4 교체(질풍 걸음 2)와 48(폭발 마법사 3 · 세 갈래 뼈 1)이 각각 한 번
@@ -696,7 +696,7 @@ do
  assert(stats.SkillPoints==3 and book.Levels.skel_greatsword==2,'current save untouched')
  -- 11-02 편성 자동 하나 (기획 52 §3-2 안 C): 옛 희망 편성 칸(skills.hope)은 읽고 버린다 — 다음 저장에 칸 없음 · 랭크·포인트 그대로
  load({sv=4,levelCount=1,levels={raise_skeleton=5},hope='s:d:shield=2,greatsword=1,twin=0/m:d:aura=1'})
- assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==9,'old hope kept')
+ assert(book.FormHope==nil and book:GetSaveData().hope==nil and book:GetSaveData().sv==10,'old hope kept')
  assert(notices==0,'48-3 notices '..notices)
  local refundLogs=0
  for _,m in ipairs(logs) do if string.find(m,'skill migrate refund=',1,true) then refundLogs=refundLogs+1 end end
@@ -861,7 +861,7 @@ do
  local mig=0 for _,m in ipairs(vrf) do if string.find(m,'[VRF] giant split migrate sv=5 grant bone_giant=1 nodes=4',1,true) then mig=mig+1 end end
  assert(mig==1,'[VRF] giant split migrate once')
  local saved=book:GetSaveData()
- assert(saved.sv==9 and saved.levels.bone_giant==1,'saved sv 9')
+ assert(saved.sv==10 and saved.levels.bone_giant==1,'saved sv 10')
  load(saved)
  assert(book.Levels.bone_giant==1 and stats.SkillPoints==0,'reload no double grant')
  book:MigrateLevels(5)
@@ -938,7 +938,7 @@ do
  assert(#timers==0 and #notes==0,'no refund notice (points only)')
  -- 다시 저장(sv 7) → 불러오기 · 같은 표로 다시 이전: 0
  local saved=book:GetSaveData()
- assert(saved.sv==9,'saved sv '..tostring(saved.sv))
+ assert(saved.sv==10,'saved sv '..tostring(saved.sv))
  load(saved);book:MigrateLevels(7)
  assert(stats.SkillPoints==28 and #vrf==1,'no double refund '..stats.SkillPoints)
  -- sv 7 저장에서 새 효과로 찍은 축 바꾼 노드(급속 골화 2 · 유도탄 1 · 피투성이 난장판 1 · 약화의 오라 3)는 그대로
@@ -958,7 +958,7 @@ do
  assert(book:EnfeebleCap(81.9)==75 and book:EnfeebleCap(63)==63 and book:RawEffectPower('enfeeble',20)==63,'weaken cap')
  assert(math.abs(book:EnfeebleRadius()-1.5*1.6)<1e-9 and math.abs(book:GetHexBurstRadius(20)-1.6*1.45)<1e-9,'range nodes')
  assert(book:ShardBounceRange(3)==7 and book:ArmorReformPct(3)==45 and math.abs(book:RawEffectPower('bone_armor',5)-60)<1e-9,'swap nodes')
- assert(math.abs(book:RawEffectPower('bone_offering',20)-64.9)<1e-9 and math.abs(book:RawEffectPower('elite_promote',20)-3.06)<1e-9 and math.abs(book:RawEffectPower('wraith_dash',20)-5)<1e-9,'curves 7-1')
+ assert(math.abs(book:RawEffectPower('bone_offering',20)-64.9)<1e-9 and math.abs(book:RawEffectPower('elite_promote',20)-3.06)<1e-9 and math.abs(book:RawEffectPower('wraith_dash',10)-5)<1e-9,'curves 7-1')
  assert(math.abs(book:DamageCurve('death_wave',20)/book:DamageCurve('death_wave',1)-945.5/462)<1e-3 and math.abs(book:DamageCurve('hex_flame',20)-177.8/1.4)<0.05,'late ramp only ≥24')
  stats.SkillPoints,log,_TimerService,_Util,stats.Level=keepPts,keepLog,keepT,keepU,keepLv
  book.Levels={}
@@ -981,12 +981,18 @@ do
  assert(back==5 and stats.SkillPoints==5 and book.Levels.wraith_dash==1 and book.Levels.bone_shard==nil,'reset keeps free rank '..back)
  book.Levels={};back=book:ResetSkills()
  assert(back==0 and book.Levels.wraith_dash==1,'reset from empty gives free rank, no refund '..back)
- -- 11-03 저녁 후속: 레이스 폼 강화는 무료 1랭크와 무관하게 예전 해금표 (Lv9·11·13·15·17·19 · 노드 row 9 > 부모 row 1 예외)
- assert(book:NodeLevel('dash_ghost',1)==9 and book:NodeLevel('dash_quick',1)==11 and book:NodeLevel('dash_blink',1)==19 and book:NodeLevel('dash_ghost',2)==13,'dash node unlock '..book:NodeLevel('dash_ghost',1)..'/'..book:NodeLevel('dash_blink',1))
+ -- 11-04 질주 개편: 강화는 질주 랭크 기준 (여분 숨 랭크 3 = Lv9 · 군단 질주 5 = Lv15 · 망령 도약 7 = Lv21 · 노드 랭크 간격 nodeLevelStep 4)
+ assert(book:NodeLevel('dash_charge',1)==9 and book:NodeLevel('dash_charge',2)==13 and book:NodeLevel('dash_legion',1)==15 and book:NodeLevel('dash_legion',3)==23 and book:NodeLevel('dash_blink',1)==21,'dash node unlock '..book:NodeLevel('dash_charge',1)..'/'..book:NodeLevel('dash_legion',1)..'/'..book:NodeLevel('dash_blink',1))
+ assert(book:RankCap('wraith_dash',1)==1 and book:RankCap('wraith_dash',5)==1 and book:RankCap('wraith_dash',6)==2 and book:RankCap('wraith_dash',29)==9 and book:RankCap('wraith_dash',30)==10 and book:RankCap('wraith_dash',99)==10,'dash rank cap 3 lv')
+ assert(book:NextRankLevel('wraith_dash',1)==1 and book:NextRankLevel('wraith_dash',2)==6 and book:NextRankLevel('wraith_dash',10)==30,'dash next rank level')
+ assert(math.abs(book:DashCooldown(1)-3.75)<1e-9 and math.abs(book:DashCooldown(10)-1.5)<1e-9 and math.abs(book:DashCooldown(5)-2.75)<1e-9,'dash cd 3.75→1.5')
+ assert(math.abs(book:RawEffectPower('wraith_dash',1)-3)<1e-9 and math.abs(book:RawEffectPower('wraith_dash',10)-5)<1e-9,'dash range 3→5')
+ assert(book:NextRankLevel('bone_shard',3)==5 and book:RankCap('bone_shard',5)==3,'other skills keep 2-level rule')
  assert(book:NodeLevel('shard_bounce',1)==book:NextRankLevel('bone_shard',_SkillData:Get('shard_bounce').need),'other nodes unchanged')
  do local keepLv=stats.Level stats.Level=1 book.Levels={wraith_dash=1}
-  assert(book:CanLearn('dash_ghost',1,1)=='캐릭터 Lv9에 다음 랭크','Lv1 dash node locked: '..book:CanLearn('dash_ghost',1,1))
-  assert(book:CanLearn('dash_ghost',9,1)=='','Lv9 dash node open')
+  book.Levels={wraith_dash=3}
+  assert(book:CanLearn('dash_charge',1,1)~='','Lv1 dash node locked: '..book:CanLearn('dash_charge',1,1))
+  assert(book:CanLearn('dash_charge',9,1)=='','Lv9 dash node open (rank 3)')
   stats.Level=keepLv end
  -- 11-04 드레인 라이프 → 뼈 쐐기 (62 §14): 드레인·혼 사슬 랭크 모두 한 번 환급 · 칸·우클릭 비움 · 저장 sv 9 · 다시 불러도·다시 이전해도 0 · 알림 없음
  do
@@ -1000,7 +1006,7 @@ do
   assert(not string.find(book.Slots,'soul_drain',1,true) and string.find(book.Slots,'bone_shard',1,true) and book.RightSkill=='','drain slots cleared '..book.Slots..' / '..book.RightSkill)
   assert(#dv==1 and string.find(dv[1],'refund=11',1,true),'drain vrf '..table.concat(dv,' | '))
   local saved=book:GetSaveData()
-  assert(saved.sv==9 and saved.levels.soul_drain==nil,'saved sv9 '..tostring(saved.sv))
+  assert(saved.sv==10 and saved.levels.soul_drain==nil,'saved sv9 '..tostring(saved.sv))
   load(saved);book:MigrateLevels(9)
   assert(stats.SkillPoints==12 and #dv==1,'drain no double refund '..stats.SkillPoints)
   stats.SkillPoints=1;load(old)
@@ -1018,6 +1024,49 @@ do
   assert(near(book:DamageCurve('bone_spikes',1),1.2*(_GameData.skillCurveBase+_GameData.skillCurvePerLv*(1+8-1))),'drain curve kept (role 1.2 · offset 8)')
   stats.SkillPoints,log=keepPts,keepLog
   book.Levels={}
+  -- 11-04 질주 개편 (62 §15 · sv 10): 뼈 껍질·망령 자취·재빠른 숨 랭크 + 질주 11~20랭크 넘침 한 번 환급 · 다시 불러도 0
+  local dd={}
+  log=function(m) if string.find(m,'[VRF] skill migrate dash1104',1,true) then table.insert(dd,m) end end
+  local oldDash={sv=9,levelCount=6,slots=',,,',right='',levels={wraith_dash=14,dash_ghost=3,dash_trail=2,dash_quick=1,dash_charge=2,dash_blink=1}}
+  stats.SkillPoints=0;load(oldDash)
+  assert(stats.SkillPoints==10 and book.Levels.wraith_dash==10 and book.Levels.dash_ghost==nil and book.Levels.dash_trail==nil and book.Levels.dash_quick==nil and book.Levels.dash_charge==2 and book.Levels.dash_blink==1,'dash refund 3+2+1+4 '..stats.SkillPoints)
+  assert(#dd==1 and string.find(dd[1],'refund=10',1,true),'dash vrf '..table.concat(dd,' | '))
+  local saved10=book:GetSaveData();load(saved10)
+  assert(stats.SkillPoints==10 and #dd==1 and saved10.sv==10,'dash no double refund')
+  -- 11-04 망령 도약 착지 (BlinkLanding · 실제 본문): 1칸 격자 · y=0 줄. x 0~2 내 자리 · x=3 벽 · x 4~6 = 벽 너머 (아래 y=-2 통로로 이어짐 → 걸어서 닿음)
+  --   위 줄 y=4: x 0~2 · x=3 벽 · x 4~6 = 봉인 방(어디로도 이어지지 않음) · x≥8 = 칸 없음(맵 밖)
+  do
+   local keepU2,keepV3,keepVI=_Util,Vector2,Vector2Int
+   local V={} V.__index=V
+   Vector2=function(x,y) return setmetatable({x=x,y=y},V) end
+   V.__sub=function(p,q) return Vector2(p.x-q.x,p.y-q.y) end
+   V.__add=function(p,q) return Vector2(p.x+q.x,p.y+q.y) end
+   V.__mul=function(p,k) return Vector2(p.x*k,p.y*k) end
+   function V:Magnitude() return math.sqrt(self.x*self.x+self.y*self.y) end
+   function V:Normalize() local m=self:Magnitude() return Vector2(self.x/m,self.y/m) end
+   Vector2Int=function(x,y) return {x=x,y=y} end
+   local open={}
+   local function o(x,y) open[x..','..y]=true end
+   for x=0,6 do if x~=3 then o(x,0) o(x,4) end end
+   for x=0,6 do o(x,-1) o(x,-2) end      -- 아래 통로: 벽 너머(4~6,0)와 내 자리가 이어진다
+   for x=0,2 do o(x,1) o(x,2) o(x,3) end -- 내 쪽 세로 통로 (위 줄 0~2와 이어짐 · 봉인 방 4~6,4는 고립)
+   local tiles={GetTile=function(_,c) if c.x>=8 or c.x<-3 or c.y>8 or c.y<-5 then return nil end return {IsCollidable=not open[c.x..','..c.y]} end}
+   local memo={tiles=tiles,ox=0,oy=0,gx=1,gy=1,cells={}}
+   local function blocked(q) local x=math.floor(q.x+0.5) local y=math.floor(q.y+0.5) local t=tiles:GetTile({x=x,y=y}) return t==nil or t.IsCollidable end
+   _Util={TerrainMemo=function() return memo end,CellBlocked=function(_,m,q) return blocked(q) end,
+    HasLineOfSight=function(_,map,a,b) local d=b-a local n=math.max(1,math.ceil(d:Magnitude()/0.2)) for i=1,n do if blocked(a+d*(i/n)) then return false end end return true end,
+    ReachablePoint=function(_,map,a,b,mg) local d=b-a local n=math.max(1,math.ceil(d:Magnitude()/0.2)) local last=a for i=1,n do local q=a+d*(i/n) if blocked(q) then return last end last=q end return last end}
+   local L1=book:BlinkLanding({},Vector2(1,0),Vector2(5,0),6)
+   assert(L1.reason=='aim' and L1.over==true and math.abs(L1.pos.x-5)<1e-6,'over wall '..L1.reason..' '..L1.pos.x)
+   local L2=book:BlinkLanding({},Vector2(1,4),Vector2(5,4),6)
+   assert(L2.reason=='nearest' and L2.over==false and L2.skipped>0 and L2.pos.x<=2.3,'sealed room skipped '..L2.reason..' '..L2.pos.x..' skipped='..L2.skipped)
+   local L3=book:BlinkLanding({},Vector2(1,0),Vector2(9,0),9)
+   assert(L3.reason=='outside' and L3.pos.x==1,'outside rejected '..L3.reason)
+   local L4=book:BlinkLanding({},Vector2(1,0),Vector2(13,0),6)
+   assert(L4.pos.x<=7.01,'range clamp 6 '..L4.pos.x)
+   _Util,Vector2,Vector2Int=keepU2,keepV3,keepVI
+   print('[quality/skills] 11-04 blink landing: over wall → aim (over=true) · sealed room → nearest connected (skipped) · outside → reject · range 6')
+  end
   print('[quality/skills] 11-04 drain→spikes: refund 9+2=11 once (sv9 save → reload 0 · re-migrate 0) · slot/right cleared · stun 1.0~1.95(+0.17/0.33/0.5 → 2.45) · pillar 1·1·2 · radius 1.2/1.8')
  end
  print('[quality/skills] 11-03 evening start rank: sv7 0→1 free · ≥1 → +1 point once · sv8 untouched · reset keeps 1 free')

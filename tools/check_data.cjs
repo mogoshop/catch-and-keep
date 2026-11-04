@@ -630,7 +630,7 @@ T.sounds.forEach((r, i) => { if (!RUID.test(r.ruid)) err("sounds", i, `ruid 형�
 // ── 11-04 지운 스킬 드레인 라이프 + 강화 「혼 사슬」 (docs/design/62 §14 · 뼈 쐐기로 교체) — 데이터·코드에 다시 생기지 않게 ──
 //   허용: 옛 저장 환급 SkillBook.MigrateDrainToSpikes · LoadSaveData 칸 정리 · MigrateNodeSwap(44 결정 4 옛 목록)
 {
-  const GONE = /\b(soul_drain|drain_share|SoulDrain|drainChainRange|drainChainPct)\b/;
+  const GONE = /\b(soul_drain|drain_share|SoulDrain|drainChainRange|drainChainPct|dash_ghost|dash_trail|dash_quick|BoneShellPct|DashTrailDamage|boneShellBasePct|boneShellPerRankPct)\b/;   // + 11-04 질주 개편 지운 강화 3개
   const dataDir = process.env.GAME_DATA_DIR || path.join(ROOT, "data");
   for (const f of ["skills.csv", "config.csv", "sounds.csv", "skill_choices.csv"]) {
     const full = path.join(dataDir, f);
@@ -639,7 +639,7 @@ T.sounds.forEach((r, i) => { if (!RUID.test(r.ruid)) err("sounds", i, `ruid 형�
       if (GONE.test(line.split(",")[0]) || /cast_soul_drain/.test(line)) err(f.replace(/\.csv$/, ""), i - 1, "지운 스킬(11-04)의 흔적 — " + line.slice(0, 60));
     });
   }
-  const ALLOW = { "SkillBook.mlua": ["MigrateDrainToSpikes", "LoadSaveData", "MigrateNodeSwap"] };
+  const ALLOW = { "SkillBook.mlua": ["MigrateDrainToSpikes", "MigrateDash1104", "LoadSaveData", "MigrateNodeSwap"], "SelfTest.mlua": ["TestData"] };
   const walk = (d, out = []) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
