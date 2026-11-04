@@ -60,3 +60,9 @@ local g=_GameConst g.FxSkillBoneSpikes="0fdbad343a9449aa8e99f6d1b2290378" g.FxSk
 g.FxSkillBoneSpikesCopies=8 g.FxSkillBoneSpikesFixedScale=0.38 g.FxSkillBoneSpikesCopyMin=0.8 g.FxSkillBoneSpikesCopyMax=1.5 g.FxSkillBoneSpikesStaggerSec=0.15
 g.FxSkillBoneSpikesLoops=2 g.FxSkillBoneSpikesLoopGapSec=0.35
 ```
+
+## 확정 (11-04 사용자) — C안을 게임 기본값으로
+- `GameConst.FxSkillBoneSpikes` = 0fdbad343a9449aa8e99f6d1b2290378 · Copies 8 · Spread 1.0 · FixedScale 0.38 · CopyMin 0.8 · CopyMax 1.5 · StaggerSec 0.15 · Loops 2 · LoopGapSec 0.35 · Tall 1.0 · ClipSec 1.5 (다크니스 오멘 17432944…는 주석 이력)
+- 미리 불러오기: `FxSkillBoneSpikesFrames`(8장 sprite) → SkillEffects 미리 불러오기 목록 (`[VRF] preload n=242`)
+- 메이커(새 플레이 세션 · 변수 덮어쓰기 없이 기본값): `[VRF] PROBE defaults ruid=0fdbad34… copies=8 loops=2 gap=0.35 fixed=0.38 k=0.80~1.50 stagger=0.15` · 세션 첫 시전부터 `fxpick … copies=8 … loops=2 gap=0.35` · 판정 `bone spikes … hits=N` 시전당 1줄
+- 캡처: `shots/final-default-ingame.png` (기본값 시전 — 가시 뒤쪽 장). 화면 녹화는 다른 창이 메이커를 가려 이번엔 못 씀(mp4 삭제)

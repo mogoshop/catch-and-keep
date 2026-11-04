@@ -780,6 +780,7 @@ a·b·b′·c 중 하나라도 걸린 메인: **20개** (c를 빼면 13개).
 ### 14-4. 효과 · 소리
 
 - 가시: 효과 자리 `bone-spikes` = `GameConst.FxSkillBoneSpikes` 메이플 「다크니스 오멘」(14121003 effect_ple/end) 7장 클립 `17432944a5e141a78cd3e9f64b0ec304` · 바닥 층(MapLayer0 1) · 한 번 · 가로 = 판정 지름(내용 폭 580px 기준 0.41배) · 세로 1.3배. 후보 3개 합성판 `docs/evidence/2026-11-04-bone-spikes/fx-candidates.png`(① 다크니스 오멘 · ② 싸이킥 인스팅트 뼈 뿔 · ③ 매드 크래시 돌기둥).
+- **11-04 확정 교체(사용자 C안):** 가시 = 메이플 「스킬 63141501」 8장 클립 `0fdbad343a9449aa8e99f6d1b2290378` 8개를 반지름 1.2칸에 흩어 배율 0.38 × 0.8~1.5 · 시차 0~0.15초 · 2회 반복(간격 0.35초 · 회차마다 자리·반전·배율 재추첨) · 판정은 시전당 1회 그대로 · 8장 미리 불러오기(`FxSkillBoneSpikesFrames`) · 위 다크니스 오멘은 이력 — 비교 `docs/evidence/2026-11-04-bone-spikes-fx-compare`(compare-4 · compare-C-loop · shots/final-default-ingame.png)
 - 시전음: `cast_bone_spikes` = 메이플 「분노의 가시」 명중음 `521af740…`(귀로 확인 전).
 - 옛 자리 `drain-vortex`(생기 앗기 소용돌이)는 「미사용」 — 그림·코드는 남김(되돌리기 쉬움).
 
