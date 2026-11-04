@@ -296,6 +296,129 @@ const MAPS = {
     return rows;
   } },
 
+  // ── 액트 3 ──
+  // 소금바람 항구: 정박한 배 ×1.6 · 남쪽 부두 끝 바다 쪽 벽 대신(물가 절벽 위 · ok=cliff) · 뒤집힌 배·통 2·소금 자루 2 빼기
+  harbor: { ops: (rows, h) => {
+    h.hero(rows, "moored-ship", { k: 1.6, args: "ok=cliff", note: "부두 끝 바다 쪽 벽 대신" });
+    rows = h.drop(rows, "a3-capsized-boat");
+    rows = h.drop(rows, "harbor-barrels");
+    rows = h.drop(rows, "a3-adjunct-salt-sack-r2");
+    return rows;
+  } },
+  // 소금 갯벌: 고래 뼈(세트 a3_leviathan) ×1.6 · 북서 갯벌 광장 가운데 · 어부 야영지 뒤집힌 배·통 빼기 · 조개 더미 2 빼기
+  saltflat: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_leviathan");
+    h.hero(rows, "a3-leviathan-bones", { k: 1.6, args: "foot=0.67", note: "북서 갯벌 가운데" });
+    rows = h.explode(rows, "a3_fish_camp");
+    rows = h.drop(rows, /^(a3-capsized-boat|harbor-barrels)$/, { where: /a3_fish_camp/ });
+    rows = h.drop(rows, "a3-adjunct-shell-pile-r2");
+    return rows;
+  } },
+  // 난파선 해안: 뱃머리 ×1.7 · 북서 해안 북벽 대신(벽 두 줄 팜) · 항구 등불 3·부서진 노 2 빼기
+  wreckcoast: { carve: [{ r: [-16, 14, -13, 15], z: "b" }], ops: (rows, h) => {
+    h.hero(rows, "a3-figurehead-bow", { k: 1.7, args: "foot=0.67;wall=1", note: "북서 해안 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "harbor-lantern");
+    rows = h.drop(rows, "a3-adjunct-broken-oar-r2");
+    return rows;
+  } },
+  // 번개 절벽: 쓰러진 등대 꼭대기 ×1.9 · 북서 섬 광장 가운데 · 밀수꾼 상자(남쪽 입구 곁) 빼기 · 떠밀린 상자 2 빼기
+  stormcliff: { ops: (rows, h) => {
+    h.hero(rows, "a3-fallen-lighthouse-top", { k: 1.9, args: "foot=0.67;wall=1", note: "북서 섬 북벽 밀착(뒤 벽감 없게)" });
+    rows = h.drop(rows, "smuggler-crates");
+    rows = h.drop(rows, "a3-drift-crates");
+    return rows;
+  } },
+  // 가라앉은 어촌: 가라앉은 종탑 지붕(세트 a3_lm_belfry_roof) ×3 · 북쪽 마을 광장 · §3 가라앉은 집 ×1.25(북서 골목 벽 대신 · 이미 벽 밀착) · 고래 뼈 세트(갯벌과 중복) 빼기 · 뒤집힌 배 빼기
+  drownedvillage: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_belfry_roof");
+    h.hero(rows, "a3-landmark-drowned-belfry-roof", { k: 3, args: "foot=0.67;wall=1;fill=-10/12,-10/13,-10/14,-10/15,-10/16", note: "북쪽 마을 광장 북벽 밀착" });
+    h.hero(rows, "drowned-hut", { near: [-15.2, 12.5], k: 1.25, args: "wall=1;padr=1", note: "북서 골목 벽 대신" });
+    rows = h.drop(rows, "a3_leviathan");
+    rows = h.drop(rows, "a3-capsized-boat");
+    return rows;
+  } },
+  // 집게 동굴 1층: 조개 무덤(세트 a3_lm_shell_mound) ×3 · 가운데 밝은 굴 광장 · 낱개 조개 더미 빼기
+  crabcave1: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_shell_mound");
+    h.hero(rows, "a3-landmark-shell-mound", { k: 3, args: "foot=0.67;wall=1", note: "가운데 굴 광장 북벽 밀착" });
+    rows = h.drop(rows, "a3-adjunct-shell-pile-r2");
+    return rows;
+  } },
+  // 집게 동굴 2층: 게 왕 껍데기 옥좌 ×2.5 · 동쪽 큰 물 방 북벽 대신(벽 두 줄 팜) · 게 껍질 더미 2·조개 더미 2 빼기
+  crabcave2: { carve: [{ r: [16, 11, 19, 12], z: "d" }], ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-crab-king-shell-throne", { k: 2.5, args: "foot=0.67;wall=1", note: "동쪽 물 방 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "a3-crab-shell-pile");
+    rows = h.drop(rows, "a3-adjunct-shell-pile-r2");
+    return rows;
+  } },
+  // 난파선 선창: 사슬에 묶인 화물 영혼 ×2.5 · 가운데 짐칸(막을 칸 다시 · 옛 fill 지움) · §3 난파선 선체(재고) ×1 서쪽 방 북벽 대신
+  wreckhold: { ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-chained-cargo-souls", { k: 2.5, args: "foot=0.8;fill=1/8", note: "가운데 짐칸" });
+    rows = h.drop(rows, "smuggler-crates", { at: [[4.44, 8.36]] });
+    h.add(rows, { name: "wreck-hull", x: -11.5, y: 13.2, args: "wall=1", note: "북서 화물칸 북벽 대신(재고 선체 · 서쪽 입구 방은 화로 벽감이라 피함)" });
+    h.hero(rows, "wreck-hull", { k: 1, hero: false, args: "wall=1", note: "서쪽 방 북벽 대신" });
+    return rows;
+  } },
+  // 밀수꾼 동굴 1층: 밀수품 상자 탑(세트 a3_lm_crate_tower) ×2.5 · 동쪽 화물 창고 가운데 · 항구 등불 2 빼기
+  smuggler1: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_crate_tower");
+    h.hero(rows, "a3-landmark-contraband-crate-tower", { k: 2.5, args: "foot=0.75;fill=10/-4", note: "화물 창고 가운데" });
+    rows = h.drop(rows, "harbor-lantern");
+    return rows;
+  } },
+  // 밀수꾼 동굴 2층: 밀수꾼 지도 탁자(세트 a3_lm_map_table) ×2 · 서쪽 큰 방 가운데 · 항구 등불 2·조수 웅덩이 2·밀수꾼 상자 2 빼기
+  smuggler2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_map_table");
+    h.hero(rows, "a3-landmark-smuggler-map-table", { k: 2, args: "foot=0.8", note: "서쪽 큰 방 가운데" });
+    rows = h.drop(rows, "harbor-lantern");
+    rows = h.drop(rows, "tidal-pool");
+    rows = h.drop(rows, "smuggler-crates", { at: [[-9.8, 9.3]] });   // 서쪽 끝 하나는 벽감을 메우고 있어 남김
+    return rows;
+  } },
+  // 물에 잠긴 예배당: 푸른 불꽃 설교대 ×2 · 서쪽 예배당 끝 북벽 대신(벽 두 줄 팜) · 조개 더미 2·부서진 노 2 빼기 · 열주(기둥 4) 유지
+  seachapel: { carve: [{ r: [-22, 11, -19, 12], z: "f" }], ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-blue-flame-pulpit", { k: 2, args: "foot=0.67;wall=1", note: "서쪽 예배당 끝 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "a3-adjunct-shell-pile-r2");
+    rows = h.drop(rows, "a3-adjunct-broken-oar-r2");
+    return rows;
+  } },
+  // 등대지기의 집: 미친 렌즈 작업대 ×2 · 서쪽 방 북벽 대신(벽 두 줄 팜 · 막을 칸 다시) · 사서 책상(서고와 공용 특징) 빼기
+  keeperhouse: { carve: [{ r: [-23, 13, -20, 14], z: "e" }], ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-mad-lens-workbench", { k: 2, args: "foot=0.67;wall=1", note: "서쪽 방 북벽 대신(벽 두 줄 팜)" });
+    rows = h.drop(rows, "keeper-desk");
+    return rows;
+  } },
+  // 폭풍 등대 1층: 나선 계단 기둥 ×3 · 등대 홀 북벽 대신(벽 두 줄 팜) · §4 등대지기 집 입구 문 ×1.5(문 규칙) · 항구 등불 2·부서진 노 2 빼기
+  lighthouse1: { carve: [{ r: [-7, 8, -4, 9], z: "d" }], ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-spiral-stair-column", { k: 3, args: "foot=0.67;wall=1", note: "등대 홀 북벽 대신(벽 두 줄 팜)" });
+    h.hero(rows, "a3-entrance-keeper-door-r2", { k: 1.5, hero: false, args: "ok=gate+cliff", note: "등대지기 집 입구(문 규칙)" });
+    rows = h.drop(rows, "harbor-lantern");
+    rows = h.drop(rows, "a3-adjunct-broken-oar-r2");
+    return rows;
+  } },
+  // 폭풍 등대 2층: 부서진 렌즈 받침(세트 a3_lm_lens_stand) ×3 · 남쪽 방 광장 가운데 · 항구 등불 5→3 · 조개 더미 2 빼기
+  lighthouse2: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_lens_stand");
+    h.hero(rows, "a3-landmark-broken-lens-stand", { k: 3, args: "foot=0.75", note: "등대 홀 가운데" });
+    rows = h.drop(rows, "harbor-lantern", { at: [[-10, 3.5], [-7, 3.5]] });   // 북벽 쌍을 빼고 남쪽 줄 3 남김
+    rows = h.drop(rows, "a3-adjunct-shell-pile-r2");
+    return rows;
+  } },
+  // 폭풍 등대 3층: 폭풍 종(세트 a3_lm_storm_bell) ×3 · 서쪽 렌즈 홀 가운데 · 항구 등불 12→6(두 줄 각 3)
+  lighthouse3: { ops: (rows, h) => {
+    rows = h.explode(rows, "a3_lm_storm_bell");
+    h.hero(rows, "a3-landmark-storm-bell", { k: 3, args: "foot=0.75", note: "렌즈 홀 가운데" });
+    rows = h.drop(rows, "harbor-lantern", { at: [[-22, 9.5], [-19, 9.5], [-16, 9.5], [-13, -7.7], [-10, -7.7]] });
+    return rows;
+  } },
+  // 폭풍의 눈(보스방 · 제독 (-17.5,4.5)): 제독의 닻 잔해는 보스 바로 뒤(4.4칸) 큰 방 끝 · 상한 안에서 키우되 보스 둘레 의식 반경(2.6×1.9 · 웅덩이 d)을 막지 않는지 좌표로 확인 · 등불 열주 6→4 · 부두 화물 세트 빼기
+  stormeye: { ops: (rows, h) => {
+    h.hero(rows, "a3-landmark-admiral-anchor-wreck", { k: 2.5, args: "foot=0.67;wall=1", note: "서쪽 큰 방 끝(보스 뒤 벽 대신)" });
+    rows = h.drop(rows, "harbor-lantern", { at: [[-9, -2.8], [-9, 2.2]] });
+    rows = h.drop(rows, "a3_dock_cargo");
+    return rows;
+  } },
+
 };
 
 function install(specs) {
