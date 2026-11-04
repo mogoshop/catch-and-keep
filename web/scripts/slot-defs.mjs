@@ -54,7 +54,7 @@ export const SLOTS = [
   {id: 'bone-storm', title: '본 스톰', group: 'undead', runtime: 'GameConst.FxSkillBoneStorm', maple: ['SkillEffects.FxStorm'], match: 'BoneStorm|bone-storm|StormShard|storm-shard'},
   {id: 'rite-whirl', title: '본 노바 해골 회오리 돌진 (3기 · 표적 추적)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirl', maple: ['SkillEffects.FxStorm'], match: 'RiteWhirl(?!Trace)|rite-bone-whirl(?!-trace)|bone-vortex(?!-floor)|storm-reuse'},
   {id: 'rite-whirl-trace', title: '본 노바 회오리 바닥 자국 (11-03 돌진형이라 안 씀)', group: 'undead', runtime: 'GameConst.FxSkillRiteWhirlTrace', match: 'RiteWhirlTrace|whirl-trace|bone-vortex-floor'},
-  {id: 'dash-ghost', title: '레이스 폼 잔상', group: 'undead', runtime: 'GameConst.FxSkillDashGhost', maple: ['SkillEffects.FxBlink'], match: 'DashGhost|dash-ghost'},
+  {id: 'dash-ghost', title: '질주 잔상', group: 'undead', runtime: 'GameConst.FxSkillDashGhost', maple: ['SkillEffects.FxBlink'], match: 'DashGhost|dash-ghost'},
   {id: 'sacrifice', title: '세크리파이스', group: 'undead', runtime: 'GameConst.FxSkillSacrifice', match: 'Sacrifice|shadow-sacrifice'},
 
   {id: 'prison-hold', title: '본 프리즌 유지', group: 'bone', runtime: 'GameConst.FxSkillPrisonHold', match: 'PrisonHold|prison-hold|fx-bone-prison(?!-release)'},

@@ -425,7 +425,7 @@ do
  local bookSrc=io.open('RootDesk/MyDesk/Skill/SkillBook.mlua'):read('a')
  assert(string.find(bookSrc,'self:NotifyLearned(id, self:GetLevel(id), self:GetRankSummary(id, self:GetLevel(id)), slot, pc.UserId)',1,true),'53/54: learn notice must keep the raw shared summary (condition tail)')
  local dupLog={}
- for _,c in ipairs({{'step_gale','wraith_dash','(레이스 폼을 배우면)','레이스 폼을 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(본 아머를 배우면)','본 아머를 배워야 회복합니다','질주 끝에 본 아머'}}) do
+ for _,c in ipairs({{'step_gale','wraith_dash','(질주를 배우면)','질주를 배워야 발동합니다','질주 뒤 '},{'dash_ghost','bone_armor','(본 아머를 배우면)','본 아머를 배워야 회복합니다','질주 끝에 본 아머'}}) do
   local id,pre,tail,hintText,main=c[1],c[2],c[3],c[4],c[5]
   local parent=_SkillData:Get(id).parent
   for _,lv in ipairs({0,1}) do
