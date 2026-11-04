@@ -494,7 +494,7 @@ for (const act of new Set(T.maps.filter((r) => r.kind !== "handmade").map((r) =>
     // 48 V2 (10-30 사용자 영상 피드백): 화염 노바 = 한 번에 터지는 단발 폭발 · 반경 2.5 → 3.75(+50% · 상한) · 「폭발 증폭」 단발 ×novaAmpMul(1~1.5 · 예전 ×1+×0.5 합) · 둘째 파동(ring) 금지
     const n = Object.fromEntries((mage.s1Opts || "").split(";").filter(Boolean).map((x) => x.split("=")));
     if (mage.s1 === "nova") {
-      if (!(Number(mage.s1Radius) > 0 && Number(mage.s1Radius) <= 3.75)) err("rite_giants", null, `48 V2: 화염 노바 반경 s1Radius ${mage.s1Radius} — 0 초과 3.75 이하 (2.5의 1.5배가 상한)`);
+      if (!(Number(mage.s1Radius) > 0 && Number(mage.s1Radius) <= 5.5)) err("rite_giants", null, `11-04: 화염 노바 반경 s1Radius ${mage.s1Radius} — 0 초과 5.5 이하 (사용자 결정 상한 · 원거리 후방 기술 · 초안 3.75)`);
       if (!(Number(n.novaAmpMul) >= 1 && Number(n.novaAmpMul) <= 1.5)) err("rite_giants", null, `48 V2: s1Opts novaAmpMul '${n.novaAmpMul}' — 「폭발 증폭」 단발 계수 1~1.5 (예전 두 겹 ×1+×0.5 합을 넘지 않음)`);
       if (n.ring !== undefined) err("rite_giants", null, "48 V2: s1Opts ring — 노바는 단발 폭발 (0.4초 뒤 둘째 파동 금지)");
     }

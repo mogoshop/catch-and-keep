@@ -17,6 +17,7 @@ script SkillEffects extends Component
     property table Whirls = {}                -- 클라이언트: 본 노바 회오리 돌진 그림 (id → 보간 구간 · RiteWhirlDashFx · 11-03)
     property table DrainVisuals = {}           -- 짧은 흡수 궤적; 맵 이동·사망에서도 정리한다
     property table BlastVisuals = {}
+    property table NovaFxEnts = {}              -- 클라이언트: 화염 노바 변형 층 엔티티 (11-04 · 맵 이동·사망 때 ClearLocalVisuals가 지운다)
     property integer BlastFxCount = 0
     -- 메이플 스킬 이펙트 (animationclip, 장식 모델 summonritual에 입혀 재생)
     property string FxShardShot = "511783bb8bbb4e46816ea2979d6c89c0"     -- 골편 투사체 = 11-03 효과 고르기 shard-throw 메이플 「리버레이션 오브」 6장 클립(204~216×68~76 · 머리가 왼쪽 · GameConst.FxSkillShardThrow를 비워 이 칸) · 옛: 423983c3b393414c8a8d91578b1fab9c 어두운 보라 궤적
@@ -1311,8 +1312,153 @@ script SkillEffects extends Component
         return spec
     end
 
+    method table NovaVariantOpts()
+        -- 11-04 화염 노바 변형 키(비교용 · GameConst.GiantNovaFx): 안별 기본값 + GameConst.GiantNovaFxOpts 덮어쓰기 (FxOpts 「k=v;…」).
+        --   grow = 작게 시작 → 정점까지(초 · 서버 타격 순간도 이 시각) · fade = 정점 뒤 사라지는 길이 · s0 = 시작 배율(정점 1 기준) · s2 = 사라질 때 배율 · yr = 세로 비(지면 원근)
+        local v = _GameConst.GiantNovaFx
+        local o = { grow = 0.3, fade = 0.6, s0 = 0.25, s2 = 1.15, yr = 1 }
+        if v == "grow" then
+            o.peak = 7 o.outer = 1 o.outerDelay = 0.12 o.outerMul = 1.1 o.outerAlpha = 0.6
+        elseif v == "maple" then
+            o.peak = 3 o.px = _GameConst.FxGiantNovaMaplePx o.yr = 1 o.flash = 1 o.flashMul = 0.4
+        elseif v == "ring" then
+            o.peak = 6 o.px = _GameConst.FxGiantNovaRingPx o.s0 = 0.3 o.s2 = 1.05 o.yr = 0.55 o.ringDy = -43 o.inner = 0.55
+        end
+        for k, x in pairs(self:FxOpts(_GameConst.GiantNovaFxOpts)) do o[k] = x end
+        return o
+    end
+
+    @ExecSpace("ClientOnly")
+    method boolean NovaVariantFx(Vector3 pos, number width)
+        -- 11-04 화염 노바 변형 3안 (이 클라이언트 · 지름 width = 반경 × 2): grow 「현재 그림 강화」 · maple 「메이플 2141500」 · ring 「고리 + 폭발 겹침」.
+        --   모두 작게 시작 → grow초에 정점(배율 1 = 판정 지름) → fade 동안 s2까지 조금 더 커지며 알파 1→0 — 장 사이는 틱마다 배율·알파 보간(TweenLayer)
+        local v = _GameConst.GiantNovaFx
+        local o = self:NovaVariantOpts()
+        local total = o.grow + o.fade
+        local kV2 = (100 / 56) * width / 7.5   -- V2 16장: 내용 지름 7.5칸(56px=1칸)을 width로
+        local v2 = _Util:Frames(self.FxGiantNovaV2)
+        local v2ms = {}
+        for x in string.gmatch("20,20,25,25,35,35,25,25,40,50,80,80,90,90,90,90", "[^,]+") do table.insert(v2ms, tonumber(x)) end
+        if v == "grow" then
+            if #v2 == 0 then return false end
+            self:TweenLayer({ tag = "grow", list = v2, ms = v2ms, peak = o.peak, pos = pos, k = kV2, s0 = o.s0, s2 = o.s2, yr = o.yr, grow = o.grow, total = total, alpha = 1, order = 1, flip = false, delay = 0 })
+            if (o.outer or 0) > 0 then
+                -- PoE식 겹고리: 같은 그림 좌우 반전 · 120ms 늦게 · 조금 크게 · 옅게 (두께감)
+                self:TweenLayer({ tag = "grow_outer", list = v2, ms = v2ms, peak = o.peak, pos = pos, k = kV2 * o.outerMul, s0 = o.s0, s2 = o.s2, yr = o.yr, grow = o.grow, total = total, alpha = o.outerAlpha, order = 1, flip = true, delay = o.outerDelay })
+            end
+        elseif v == "maple" then
+            local list = _Util:Frames(_GameConst.FxGiantNovaMaple)
+            if #list == 0 then return false end
+            local k = width * 100 / math.max(1, o.px)
+            self:TweenLayer({ tag = "maple", list = list, ms = nil, peak = o.peak, pos = pos, k = k, s0 = o.s0, s2 = o.s2, yr = o.yr, grow = o.grow, total = total, alpha = 1, order = 1, flip = false, delay = 0 })
+            if (o.flash or 0) > 0 and #v2 >= 8 then
+                -- 중앙 섬광: V2 정점 3장(6~8)만 작게 · 정점 앞뒤 짧게
+                local fl = { v2[6], v2[7], v2[8] }
+                self:TweenLayer({ tag = "maple_flash", list = fl, ms = nil, peak = 0, pos = pos, k = kV2 * o.flashMul, s0 = 1, s2 = 1.1, yr = 1, grow = 0.06, total = 0.24, alpha = 1, order = 2, flip = false, delay = math.max(0, o.grow - 0.06), tint = Color(1, 1, 0.9, 1) })
+            end
+        elseif v == "ring" then
+            local list = _Util:Frames(_GameConst.FxGiantNovaRing)
+            if #list == 0 or #v2 == 0 then return false end
+            local k = width * 100 / math.max(1, o.px)
+            -- 바깥 고리: 0.3 → 1.0 팽창 (지면 원근 yr · 고리 그림 피벗(위 45px)과 고리 중심이 어긋나 ringDy px(−43 = 아래로 · 메이커 실측 11-04)만큼 옮겨 안쪽 V2와 같은 중심)
+            self:TweenLayer({ tag = "ring", list = list, ms = nil, peak = o.peak, pos = pos, k = k, s0 = o.s0, s2 = o.s2, yr = o.yr, grow = o.grow, total = total, alpha = 1, order = 1, flip = false, delay = 0, dypx = o.ringDy })
+            -- 안쪽 폭발: 지금 V2를 작게(inner 배)
+            self:TweenLayer({ tag = "ring_inner", list = v2, ms = v2ms, peak = 7, pos = pos, k = kV2 * o.inner, s0 = 0.5, s2 = 1.05, yr = 1, grow = o.grow, total = total, alpha = 1, order = 2, flip = false, delay = 0 })
+        else
+            return false
+        end
+        if not Environment:IsPublishedPlay() then log(string.format("[VRF] nova variant=%s w=%.2f grow=%.2f fade=%.2f s0=%.2f s2=%.2f yr=%.2f", v, width, o.grow, o.fade, o.s0, o.s2, o.yr)) end
+        return true
+    end
+
+    @ExecSpace("ClientOnly")
+    method void TweenLayer(table L)
+        -- 한 층 재생 (클라이언트 엔티티 · artsprite): 장은 시각표대로 SpriteRUID 교체 · 배율·알파·위치는 틱(1/60초)마다 보간.
+        --   peak 장(1부터)이 grow초에 오게 앞 장들은 grow 안에 · 뒤 장들은 나머지 안에 (원래 ms 비율 · 없으면 고르게). peak 0이면 전체를 고르게
+        --   배율: grow까지 s0 → 1 (ease-out 3차) · 그 뒤 1 → s2 (선형) · 알파: grow까지 alpha · 그 뒤 alpha → 0. 실제 배율 = k × 그 값 (세로 × yr)
+        local me = _UserService.LocalPlayer
+        if not isvalid(me) then return end
+        local map = me.CurrentMap
+        local start = function()
+            local me1 = _UserService.LocalPlayer
+            if not isvalid(me1) or me1.CurrentMap ~= map or not isvalid(map) then return end
+            local n = #L.list
+            local at = {}
+            local w = {}
+            for i = 1, n do w[i] = (L.ms ~= nil and L.ms[i] ~= nil) and L.ms[i] or 1 end
+            local pk = L.peak or 0
+            if pk > 1 and pk <= n then
+                local a = 0
+                for i = 1, pk - 1 do a = a + w[i] end
+                local b = 0
+                for i = pk, n do b = b + w[i] end
+                local t = 0
+                for i = 1, pk - 1 do at[i] = t t = t + L.grow * w[i] / math.max(0.001, a) end
+                for i = pk, n do at[i] = t t = t + (L.total - L.grow) * w[i] / math.max(0.001, b) end
+            else
+                local s = 0
+                for i = 1, n do s = s + w[i] end
+                local t = 0
+                for i = 1, n do at[i] = t t = t + L.total * w[i] / math.max(0.001, s) end
+            end
+            local e = _SpawnService:SpawnByModelId("artsprite", "NovaFx_" .. L.tag, L.pos, map)
+            if not isvalid(e) then return end
+            local sp = e.SpriteRendererComponent
+            sp.SpriteRUID = L.list[1]
+            sp.SortingLayer = "MapLayer0"
+            sp.OrderInLayer = L.order or 1
+            local tint = L.tint or Color(1, 1, 1, 1)
+            local idx = 1
+            local ticks = 0
+            local maxS = 0
+            local t0 = _UtilLogic.ElapsedSeconds
+            local key = "novafx" .. L.tag .. tostring(t0)
+            local apply = function(t)
+                local f = 0
+                local s = 1
+                local al = L.alpha
+                if t < L.grow then
+                    f = t / math.max(0.001, L.grow)
+                    s = L.s0 + (1 - L.s0) * (1 - (1 - f) ^ 3)
+                else
+                    f = math.min(1, (t - L.grow) / math.max(0.001, L.total - L.grow))
+                    s = 1 + (L.s2 - 1) * f
+                    al = L.alpha * (1 - f)
+                end
+                local sx = L.k * s
+                if sx > maxS then maxS = sx end
+                e.TransformComponent.Scale = Vector3(L.flip and -sx or sx, sx * (L.yr or 1), 1)
+                local dy = (L.dypx or 0) / 100 * sx * (L.yr or 1)
+                e.TransformComponent.WorldPosition = Vector3(L.pos.x, L.pos.y + dy, 0)
+                sp.Color = Color(tint.r, tint.g, tint.b, math.max(0, al))
+                local j = idx
+                while j < n and t >= at[j + 1] do j = j + 1 end
+                if j ~= idx then idx = j sp.SpriteRUID = L.list[idx] end
+            end
+            apply(0)
+            self.NovaFxEnts[key] = e
+            self.VisualTimers[key] = _TimerService:SetTimerRepeat(function()
+                local t = _UtilLogic.ElapsedSeconds - t0
+                local me2 = _UserService.LocalPlayer
+                if t >= L.total or not isvalid(e) or not isvalid(me2) or me2.CurrentMap ~= map then
+                    local id = self.VisualTimers[key]
+                    self.VisualTimers[key] = nil
+                    if id ~= nil then _TimerService:ClearTimer(id) end
+                    self.NovaFxEnts[key] = nil
+                    if isvalid(e) then e:Destroy() end
+                    if not Environment:IsPublishedPlay() then log(string.format("[VRF] nova layer %s done ticks=%d frames=%d/%d maxScale=%.2f t=%.3f", L.tag, ticks, idx, n, maxS, t)) end
+                    return
+                end
+                ticks = ticks + 1
+                apply(t)
+            end, 1 / 60)
+        end
+        if (L.delay or 0) > 0.001 then _TimerService:SetTimerOnce(start, L.delay) else start() end
+    end
+
     method number GiantFxImpactSec(string kind)
         -- 그림 계약의 타격 칸 시각(초 · 장별 시간 ms가 있을 때만): 첫 장부터 impact 칸 앞까지 지속 합 — 서버(RiteGiantMoves)가 피해 시각을 그림 정점에 맞춘다. 모르면 -1
+        if kind == "nova" and _GameConst.GiantNovaFx ~= "" then return self:NovaVariantOpts().grow end   -- 11-04 변형 키: 타격 = 변형의 정점(grow초)
         local spec = self:GiantFxSpec(kind)
         if spec.ruids == "" or spec.durs == nil or spec.impact == nil then return -1 end
         local n = #_Util:Frames(spec.ruids)
@@ -1510,6 +1656,7 @@ script SkillEffects extends Component
             self:SeqFx("spin_front", self:GiantFxSpec("spin_front"), pos, anchor, offset, facing, width, height, angle, seconds)
             return
         end
+        if kind == "nova" and _GameConst.GiantNovaFx ~= "" and self:NovaVariantFx(pos, width) then return end   -- 11-04 화염 노바 변형 키(비교용) · 비면 아래 지금 그림
         if kind == "nova" and self.FxGiantNovaV2 ~= "" and self.FxGiantNovaV2Front ~= "" then
             -- 노바 V2 두 층: 바닥 광선·외곽 파편(배우 뒤 order 1) + 작은 중앙 타원·흰 섬광(배우 앞 order 6) — 같은 지면 원점·같은 장별 시간으로 함께 시작 (둘이 합쳐 원본 장과 같음)
             self:SeqFx("nova", self:GiantFxSpec("nova"), pos, anchor, offset, facing, width, height, angle, seconds)
@@ -2263,6 +2410,8 @@ script SkillEffects extends Component
         -- 궁극기 카메라 펀치 도중에 끊겼으면 줌을 바로 되돌린다 (타이머를 아래에서 지운다)
         if self.VisualTimers["ultzoom"] ~= nil and self.Entity == _UserService.LocalPlayer then _CameraService:ZoomTo(_GameData.cameraZoom, 0.1) end
         for _, timer in pairs(self.VisualTimers) do _TimerService:ClearTimer(timer) end
+        for _, ent in pairs(self.NovaFxEnts) do if isvalid(ent) then ent:Destroy() end end
+        self.NovaFxEnts = {}
         self.MistVisuals = {}
         self.DrainVisuals = {}
         self.BlastVisuals = {}

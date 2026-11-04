@@ -119,7 +119,7 @@ script RiteGiantMoves extends Logic
     end
 
     method number S1Radius(ShadowUnit unit, table spec)
-        -- 스킬 1 반경 (대검 회전 1.6 · 노바 3.75(48 연출 V2: 2.5 × 1.5 · 표시 지름 7.5) — rite_giants.csv s1Radius · 자동 발동 둘레 수·타격·그림 지름 모두 이 값)
+        -- 스킬 1 반경 (대검 회전 1.6 · 노바 5.5(11-04 사용자 결정 · 표시 지름 11 · 초안 3.75) — rite_giants.csv s1Radius · 자동 발동 둘레 수·타격·그림 지름 모두 이 값)
         return spec.s1Radius
     end
 
@@ -285,14 +285,16 @@ script RiteGiantMoves extends Logic
             _TimerService:SetTimerOnce(function()
                 if not isvalid(unit.Entity) or not unit.Giant or unit.Dead or not _Util:IsAlive(unit.OwnerPlayer) then return end
                 local hits = 0
+                local maxd = 0
                 for _, m in ipairs(_Util:MonstersNear(unit.Entity.CurrentMap, center, radius)) do
                     if not m.IsDead then
                         self:HitOne(unit, m.Entity, "skill.giant_nova", dmg * mul)
                         self:MageResist(unit, m)
                         hits = hits + 1
+                        maxd = math.max(maxd, (_Util:Pos2(m.Entity) - center):Magnitude())
                     end
                 end
-                if not Environment:IsPublishedPlay() then log(string.format("[VRF] nova single hits=%d mul=%.2f radius=%.2f burst=%.2f", hits, mul, radius, burst)) end
+                if not Environment:IsPublishedPlay() then log(string.format("[VRF] nova single hits=%d mul=%.2f radius=%.2f burst=%.2f maxd=%.2f fx=%s", hits, mul, radius, burst, maxd, _GameConst.GiantNovaFx)) end
                 self:LogSkill(unit, 1, hits, dmg * mul * hits, false, radius)
             end, burst)
         end, delay)

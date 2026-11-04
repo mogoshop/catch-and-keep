@@ -591,7 +591,7 @@ do
  assert(book:GetRankSummary('giant_mage_meteor',1)=='메테오 반경 1.95칸 · 영창 0.9초',book:GetRankSummary('giant_mage_meteor',1))
  assert(book:GetRankSummary('giant_mage_meteor',2)=='메테오 반경 2.00칸(최대) · 영창 0.8초',book:GetRankSummary('giant_mage_meteor',2))
  assert(book:GetRankSummary('giant_mage_meteor',3)=='메테오 반경 2.00칸(최대) · 영창 0.7초',book:GetRankSummary('giant_mage_meteor',3))
- assert(book:GetRankSummary('giant_mage_resist',1)=='노바·메테오에 맞은 적 화염 저항 -15 · 4초' and book:GetRankSummary('giant_mage_pull',1)=='노바 폭발 피해 ×1.5 · 반경 3.75칸','mage choice summary '..book:GetRankSummary('giant_mage_pull',1))
+ assert(book:GetRankSummary('giant_mage_resist',1)=='노바·메테오에 맞은 적 화염 저항 -15 · 4초' and book:GetRankSummary('giant_mage_pull',1)=='노바 폭발 피해 ×1.5 · 반경 5.5칸','mage choice summary '..book:GetRankSummary('giant_mage_pull',1))
  -- 48 V2 「폭발 증폭」(giant_mage_pull 옛 id): 이름·설명·현재/다음 = 실제 단발 ×1.5 · 반경 3.75 (두 겹·흡인 글귀 없음)
  do local d=_SkillData:Get('giant_mage_pull') assert(d.name=='폭발 증폭' and not string.find(d.desc,'두 겹',1,true) and not string.find(d.desc,'흡인',1,true) and string.find(d.desc,'×1.5',1,true),'pull copy '..d.name..' / '..d.desc)
   assert(not string.find(_SkillData:Get('giant_mage_resist').desc,'두 겹',1,true),'resist cross-ref')

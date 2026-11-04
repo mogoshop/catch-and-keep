@@ -13,8 +13,8 @@ local G=_GameData.RiteGiants
 -- 갈래 C(e9639aae) rite_giants.csv 줄과 같은 값 (C 반영 전 판에서도 같은 조건으로 돌게)
 G.basic.s1='' G.basic.s1Name='' G.basic.s1Mul=0 G.basic.s1Cd=0 G.basic.s1Radius=0 G.basic.s1Opts={} G.basic.s2='' G.basic.s2Name='' G.basic.s2Mul=0 G.basic.s2Cd=0 G.basic.s2Shape='' G.basic.s2Reach=0 G.basic.s2Opts={} G.basic.tauntSec=0 G.basic.tauntRadius=0
 G.greatsword.s1Radius=1.5 G.greatsword.s1Mul=0.4 G.greatsword.s1Opts={hits=5,gap=0.3,travel=5}   -- 10-30 이동형 휠윈드 (rite_giants.csv 그대로)
--- 48 연출 V2 (갈래 C 0f72d37f rite_giants.csv): 노바 반경 3.75 · s1Opts novaAmpMul=1.5 · ring 삭제
-G.mage.s1='nova' G.mage.s1Name='화염 노바' G.mage.s1Mul=1 G.mage.s1Cd=8 G.mage.s1Radius=3.75 G.mage.s1Opts={min=2,chant=0.3,grow=0.5,inner=0.5,novaAmpMul=1.5}   -- 갈래 C 0f72d37f 줄 (ring 삭제 · novaAmpMul 추가 · grow = 폭발 뒤 회복으로 읽음 · burst 없으면 0.18)
+-- 48 연출 V2 (갈래 C 0f72d37f rite_giants.csv) · 11-04 사용자 결정 노바 반경 5.5(초안 3.75) · s1Opts novaAmpMul=1.5 · ring 삭제
+G.mage.s1='nova' G.mage.s1Name='화염 노바' G.mage.s1Mul=1 G.mage.s1Cd=8 G.mage.s1Radius=5.5 G.mage.s1Opts={min=2,chant=0.3,grow=0.5,inner=0.5,novaAmpMul=1.5}   -- 갈래 C 0f72d37f 줄 (ring 삭제 · novaAmpMul 추가 · grow = 폭발 뒤 회복으로 읽음 · burst 없으면 0.18)
 G.mage.s2='meteor' G.mage.s2Name='기도 메테오' G.mage.s2Mul=3 G.mage.s2Cd=12 G.mage.s2Shape='single' G.mage.s2Reach=6 G.mage.s2Opts={radius=1.8,radiusMax=2,chant=1,fall=0.5,scorch=1.5}
 local checks=0
 local function ok(c,msg) assert(c,msg) checks=checks+1 end
@@ -114,15 +114,15 @@ do
  monster('a',0.4)
  tick(u,10)
  ok(cast('nova')==0,'둘레 적 1 → 노바 안 나감')
- monster('b',1.5) monster('c',-2.4) monster('edge',3.7) monster('far',3.85)
+ monster('b',1.5) monster('c',-2.4) monster('edge',5.45) monster('far',5.6)
  local t0=nil
  for _=1,120 do advance(0.0667) RiteGiantMoves:Tick(u,0.0667) if cast('nova')==1 and t0==nil then t0=_UtilLogic.ElapsedSeconds end end
  ok(cast('nova')==1,'둘레 적 2 이상 → 노바 저절로 '..cast('nova'))
  local h=hitNames('skill.giant_nova')
- ok(h.a==1 and h.b==1 and h.c==1 and h.edge==1 and h.far==nil,'nova_single_hit: 반경 3.75 안 적 정확히 1회 (3.7 맞음 · 3.85 없음)')
+ ok(h.a==1 and h.b==1 and h.c==1 and h.edge==1 and h.far==nil,'nova_single_hit: 반경 5.5 안 적 정확히 1회 (5.45 맞음 · 5.6 없음)')
  ok(next(hitNames('skill.giant_nova2'))==nil,'nova_no_second_wave: 둘째 파동 정보 giant_nova2 0')
  local nf=novaFx()
- ok(#nf==1 and near(nf[1].w,7.5) and near(nf[1].sec,0.18),'nova_fx_once: 폭발 그림 1번 · 지름 7.5(반경 3.75) · 타격까지 burst 0.18')
+ ok(#nf==1 and near(nf[1].w,11) and near(nf[1].sec,0.18),'nova_fx_once: 폭발 그림 1번 · 지름 11(반경 5.5) · 타격까지 burst 0.18')
  local hitAt=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_nova' then hitAt=hitAt or x.at end end
  ok(near(nf[1].at-t0,0.3) and near(hitAt-nf[1].at,0.18),'영창 0.3 → 폭발 그림 → 0.18초 뒤 한 번의 타격 (지연 타격 없음)')
  local all=true for _,x in ipairs(hitsLog) do if x.info=='skill.giant_nova' and not near(x.at,hitAt) then all=false end end
@@ -133,7 +133,7 @@ do
  local dmg=nil for _,x in ipairs(hitsLog) do if x.info=='skill.giant_nova' then dmg=x.dmg end end
  ok(near(dmg,100/0.8*1),'노바 미강화 ×1.0 (다섯 공격 합 기준)')
  local n,l=vrf('[VRF] nova single')
- ok(n==1 and l:find('hits=4 mul=1.00 radius=3.75',1,true)~=nil,'[VRF] nova single hits=4 mul=1.00 radius=3.75 · '..tostring(l))
+ ok(n==1 and l:find('hits=4 mul=1.00 radius=5.50',1,true)~=nil,'[VRF] nova single hits=4 mul=1.00 radius=5.50 · '..tostring(l))
  RiteGiantMoves:Clear(u)
 end
 -- ②-a 노바 V2 그림 정점(GiantFxImpactSec 0.16)이 있으면 타격 = 폭발 시작 + 0.16 (표 burst 0.18 대신 그림 정점에 맞춤)
