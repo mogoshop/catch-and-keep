@@ -1639,6 +1639,16 @@ script SkillBook extends Component
         if self.Entity ~= _UserService.LocalPlayer or not _UIKit:CanUseGameplayInput() or not _Util:IsAlive(self.Entity) then return end
         local map = self.Entity.CurrentMap
         if not isvalid(map) or _GameConst:IsTown(map) then return end
+        -- 11-05 포털: 포털·심도 문 반응 구역 안의 Space·질주 단추는 진입 몫 (NpcWindow.FindGate — 안내 버튼과 같은 판정). 충전·마나는 쓰지 않는다
+        local gate = _NpcWindow:FindGate(self.Entity)
+        if gate ~= nil then
+            if not Environment:IsPublishedPlay() then
+                ---@type PlayerStats
+                local gs = self.Entity:GetComponent("script.PlayerStats")
+                log(string.format("[VRF] dash held by gate=%s mana=%.1f charges=%d", gate.Name, gs ~= nil and gs.Mana or -1, self.DashShown))
+            end
+            return
+        end
         local lv = self:GetPowerLevel(id)
         if lv <= 0 then
             if id == "wraith_dash" then
