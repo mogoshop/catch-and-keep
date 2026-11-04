@@ -428,7 +428,7 @@ for (const [order, def] of SLOTS.entries()) {
   }
   // 11-04: 스킬이 지워진 자리(def.unused)는 그림이 남아 있어도 「미사용」 · 다른 자리와 같은 그림(def.sharedWith)은 그 자리 이름을 붙인다
   if (current && def.unused) Object.assign(current, {use: 'registered', status: 'registered', statusLabel: def.unused});
-  if (current && def.sharedWith) current.statusLabel = `${current.statusLabel} · ${SLOTS.find(s => s.id === def.sharedWith)?.title || def.sharedWith}와 같은 그림`;
+  if (current && def.sharedWith) current.statusLabel = `${current.statusLabel} · ${SLOTS.find(s => s.id === def.sharedWith)?.title || def.sharedWith} 자리와 같은 그림`;
   if (!current && def.unused) currentNote = def.unused;
   for (const c of [current, ...fx, ...maple]) if (c) delete c.haystack;
   slots.push({id: def.id, title: def.title, group: def.group, order, runtime: def.runtime || null, currentNote, current, fx, maple, mapleExcluded: MAPLE_EXCLUDED[def.id] || null});
