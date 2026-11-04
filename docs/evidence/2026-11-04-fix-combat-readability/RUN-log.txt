@@ -1,0 +1,27 @@
+# 11-04 차선 B · 기획 65 P-4·P-5 혼전 가독성 · 메이커 실행 기록 (KST) · 서버=S 클라=C
+# 메이커 소유: 19:09:43 MAKER-FREE 삭제 → 19:30:25 재생성 · 저장 끔(PlayerSave.IsLoadSuccess=false) · refresh 1회(19:24) · maker_save 안 함
+# 주의: 같은 작업 트리에 다른 차선(A·C·D)의 커밋 전 변경이 있어, 「전」 플레이도 그 변경을 포함한다. 이 차선의 두 파일(ShadowUnit·PlayerVitals 한 줄)은 전 = HEAD 그대로였다.
+
+## 전 (HEAD 58fe441b + 다른 차선 미커밋)
+19:10:26 play → S [SelfTest] 통과 408 / 실패 0 · C 슬롯 3 → BtnEnter → Solo → room game:s1c05c9f4f3e
+19:11:21 S 저장 끔 · HP 999999 · Go wasteland (5.97,1.61) · 플레이어 Lv4
+19:11:33 C [VRF] B layer player avatar=Default/4
+19:12~19:14 S 그림자 들개 2기(hellhound 혼 → AddShadow → Deploy) + 해골 전사 2기(Raise) + 유입 무리 10기(들개 6·임프 4, Lv1·생명 9,999,999) 둘레 배치 · 아군·플레이어 생명 0.2초마다 채움
+19:13:14 C [VRF] B layers: 몬스터 본체·대역(MSVis) MapLayer0/2 ×10 · 소환수 본체·대역 MapLayer0/3 · 소환수 막대 MSVisBar(PixelRenderer) MapLayer0/6 · 발밑 그림자 /1
+# 층 시험(클라 전용 사각형 artsprite, 증거 shots/layer-test-*): MapLayer0/5 · Default/5 사각형 모두 아바타(Default/4) 뒤 → 아바타는 이미 몬스터·소환수보다 앞에 그려진다. 같은 순서끼리는 생성 순서.
+# 원인 확인: 무적 끔(InvincibleUntil=0)으로 실제로 맞게 하자 PlayerVitals.TickBlink가 0.08초마다 아바타 투명도 0.35 ↔ 0.85 → 떼에 계속 맞는 동안 절반이 0.35라 뒤 몬스터가 비쳐 캐릭터가 사라짐(shots/before-2·3). 무적 상태(깜빡임 없음)에서는 캐릭터가 늘 위(before-1).
+19:23:26~30 캡처 before-1·2·3 (줌 100 · 같은 자리)
+# 그림자 색: ShadowUnit.ShadowTint 기본 (0.35,0.2,0.55,0.85) 보라 = 잿불 들개(보라 몸) 위에 보라를 곱한 것이라 적 들개와 같은 계열. 막대(청록)는 생명 70% 이상이면 숨겨 평소엔 표식이 없다.
+# 외곽선 머티리얼: mlua_document_retriever — Outline 분류(Outline·InnerOutline·ColorDiffOutline)는 있으나 속성 이름은 문서에 없고 프로젝트에 .material 0개 → 메이커에서 사람이 한 번 만들어야 해서 이번엔 틴트(안 ②의 대안)로.
+# 틴트 후보 시험(서버에서 색만): (0.45,0.62,0.95) 확인 → 채택 (0.45,0.58,0.95,0.85)
+
+## 구현 → 19:24 stop · 6초 · touch 2개 · 5초 · refresh 1회 → 19:25:23 play · S [SelfTest] 통과 408 / 실패 0 · 오류 0
+19:26:49~53 C [VRF] readability layers player=Default/4 unit=MapLayer0/3 bar=MapLayer0/6 kind=shadow tint=0.45,0.58,0.95,0.85 (×그림자 2·해골 2 — 해골 줄의 tint는 클라 속성 기본값이고 실제 몸 색은 UndeadSystem rec.tint 그대로)
+19:27:22~26 캡처 after-1·2·3 (같은 준비 스크립트 maker-setup.lua · 줌 100 · 무적 끔 · 실제 피격 중)
+## 성능 (그림자 10기 + 해골 2기 = 12기, 같은 판에서 색만 바꿔 비교, 클라 wait(0) 4초)
+19:29:01 C [VRF] B perf tint=new units=12 loops=1524 fps=381.0 maxGap=33ms
+19:29:18 C [VRF] B perf tint=old units=12 loops=1524 fps=381.0 maxGap=31ms   → 차이 없음(색 상수만 바뀜 · 추가 엔티티·매 프레임 작업 0)
+19:29:32~51 캡처 shadow10-tint-old / -new
+## 영상 (ffmpeg avfoundation Capture screen 1 · crop 2196:1236:787:236)
+# 녹화하는 동안 같은 화면(4K)에 Chrome 창이 계속 앞으로 와 6초 연속이 한 번도 안 찍힘(전 3회·후 4회 시도, 프레임 띠로 확인). 전 영상은 남은 것 없음, 후 영상은 깨끗한 2.2초만(자료실에만 · mp4 커밋 안 함).
+19:30 stop(메이커 already_stopping) · MAKER-FREE 재생성 · npm test 21/21 통과

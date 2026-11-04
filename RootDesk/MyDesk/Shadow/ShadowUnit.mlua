@@ -77,7 +77,9 @@ script ShadowUnit extends AttackComponent
     property boolean Personal = false         -- 개인 성향(반응·걸음·흔들림)을 정했는지
     property number LeashDistance = 9
     property number RetargetInterval = 0.4  -- 매 프레임 탐색하지 않는다 (설계 7장)
-    property Color ShadowTint = Color(0.35, 0.2, 0.55, 0.85)
+    -- 11-04 기획 65 P-4: 예전 보라(0.35, 0.2, 0.55)는 보라색 적(잿불 들개 등)과 같은 계열이라 겹치면 구분이 안 됐다 →
+    --   아군 표시색(청록 막대·하늘색 이름표) 쪽 서늘한 푸른 톤. 해골 소환수의 「서늘한 아군 색조」(UndeadSystem rec.tint)와 같은 생각 · 투명도 0.85 그대로
+    property Color ShadowTint = Color(0.45, 0.58, 0.95, 0.85)
 
     property string Element = ""             -- 원본 몬스터의 공격 속성 (ElementRatio만큼이 그 속성)
     property number ElementRatio = 0
@@ -354,6 +356,15 @@ script ShadowUnit extends AttackComponent
         local state = mine and (town and "mine:town" or "mine") or ("other:" .. owner.PlayerComponent.Nickname)
         if state == self.ViewState then return end
         self.ViewState = state
+        if mine and not Environment:IsPublishedPlay() then
+            -- 11-04 P-4·P-5 혼전 가독성: 그리기 층 확인 (플레이어 아바타 > 소환수 > 몬스터 · 막대는 그 위)
+            local ar = me.AvatarRendererComponent
+            local sr = self.Entity.SpriteRendererComponent
+            local tint = self.ShadowTint
+            log(string.format("[VRF] readability layers player=%s/%d unit=%s/%d bar=MapLayer0/6 kind=%s tint=%.2f,%.2f,%.2f,%.2f",
+                isvalid(ar) and ar.SortingLayer or "?", isvalid(ar) and ar.OrderInLayer or -1,
+                isvalid(sr) and sr.SortingLayer or "?", isvalid(sr) and sr.OrderInLayer or -1, self.Kind, tint.r, tint.g, tint.b, tint.a))
+        end
         local tag = self.Entity.NameTagComponent
         if self.TagAlt ~= nil and isvalid(self.TagAlt) then
             -- 이름표는 그림 대역에 (루트 이름표는 서버 위치에 붙어 몸보다 늦게 따라온다 — MotionSmoother.PlaceVis)
