@@ -1,6 +1,6 @@
 -- @source GameData Data/GameData.mlua Ensure,GetUiIcon,GetMonsterStats,GetGiant
 -- @source SkillData Data/SkillData.mlua Ensure,Get,Mains,NodesOf,TreeName,GroupOf
--- @source SkillBook Skill/SkillBook.mlua CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+,MigrateStartRank,ResetSkills,DashCooldown,BlinkLanding
+-- @source SkillBook Skill/SkillBook.mlua UseDashCharge+,RefillDash+,CastGiant+,CastRite+,RiteStageForHold,RiteBestStage+,GiantReason+,GiantRankMul+,MigrateGiantSplit,MigrateLevels+,GetSaveData,LoadSaveData+,GetShardHits,MageSchoolAt+,SkelGuardPct,GiantCount,GiantCapReached,GiantStanding,RosterLine+,GetRankSummary+,PowerLevelAt+,GetPowerLevel+,GetManaCost+,SkillCooldown+,GetCommandAura+,UseHint+,RankCap+,CanLearn+,StageRanks+,NextStage+,IsComplete+,StageReachedAt+,RankStages+,GearRanks+,NextRankLevel+,MigrateNodes1103,RiteWhirlTicks+,RiteWhirlRadius+,RiteWhirlReach+,RiteRankMul,EnfeebleCap,EnfeebleRadius+,GetHexBurstRadius+,ShardBounceRange,ArmorReformPct,RawEffectPower+,DamageCurve+,MigrateStartRank,ResetSkills,DashCooldown,BlinkLanding
 -- @source UndeadSystem Undead/UndeadSystem.mlua MaxFor+,GetBaseStats,MakeRecord+,NodeForm+,GiantFallback,RosterPreview+,PreviewFrom+,SteadyRoster+,ExtraSlotsFor+,FormName,RosterOf+,GiantPlanFor+,GiantCountsText,GiantCount+,GiantStandingAny+,GiantCapReached+,ShownForms+
 -- @source MageBolts Undead/MageBolts.mlua Schools,PickSchool+,ElementOf,BodyTint
 -- @source SkillWindow UI/Windows/SkillWindow.mlua StatLine,RosterText,WrapLines+,DropHintDup,Pick,VisibleNodes+,RenderBanner+,RenderWorkshop+,RenderForm+,RenderTimeline+,SplitColumns,DisplayColumns+,SlotPathOf+,Flip+,RenderLearnButton+,Act+,ActNode+
@@ -1071,5 +1071,33 @@ do
  end
  print('[quality/skills] 11-03 evening start rank: sv7 0→1 free · ≥1 → +1 point once · sv8 untouched · reset keeps 1 free')
  print('[quality/skills] 11-03 rank rework: refund prune 18 + swap 9 = 27 once (sv6 · save sv7 → reload 0 · re-migrate 0 · same old save 27) · sv7 swap kept · no notice · whirl 8/10/12 ticks · weaken cap 75 · late ramp ≥24 only')
+end
+-- 11-05 질주 충전 (사용자 「여분 숨을 찍었는데 1/2 이상 안 찬다」): 연달아 두 번 써도 시전 없이 두 칸 모두 다시 찬다 · 가득이면 충전 시각 0
+do
+ local keepT,keepE,keepSE,keepLv,keepLvls,keepLog=_TimerService,_UtilLogic.ElapsedSeconds,_UtilLogic.ServerElapsedSeconds,stats.Level,book.Levels,log
+ local now=100 local timers={} local cleared={}
+ _TimerService={SetTimerOnce=function(_,fn,sec) table.insert(timers,{fn=fn,at=now+sec}) return #timers end,ClearTimer=function(_,id) cleared[id]=true end}
+ log=function() end
+ local function advance(to)
+  while true do
+   local nxt,nid=nil,nil
+   for id,t in ipairs(timers) do if not cleared[id] and not t.done and (nxt==nil or t.at<nxt) then nxt,nid=t.at,id end end
+   if nxt==nil or nxt>to then break end
+   now=nxt _UtilLogic.ElapsedSeconds=now _UtilLogic.ServerElapsedSeconds=now timers[nid].done=true timers[nid].fn()
+  end
+  now=to _UtilLogic.ElapsedSeconds=now _UtilLogic.ServerElapsedSeconds=now
+ end
+ stats.Level=13 book.Levels={wraith_dash=4,dash_charge=1}
+ book.DashCharges=2 book.DashRechargeAt=0 book.DashRefillTimer=0 book.DashShown=2
+ _UtilLogic.ElapsedSeconds=now _UtilLogic.ServerElapsedSeconds=now
+ assert(book:RefillDash()==2,'dash max 2')
+ book:UseDashCharge(4)
+ advance(100.5) book:RefillDash() book:UseDashCharge(4)
+ assert(book.DashCharges==0 and book.DashShown==0,'two uses → 0')
+ advance(103.2) assert(book.DashCharges==1 and book.DashShown==1 and book.DashRechargeAt>103,'first refill at cd 3.0 '..book.DashCharges)
+ advance(106.2) assert(book.DashCharges==2 and book.DashShown==2 and book.DashRechargeAt==0,'second refill without a cast (11-05) '..book.DashCharges..'/'..book.DashRechargeAt)
+ book:UseDashCharge(4) assert(book.DashCharges==1 and math.abs(book.DashRechargeAt-109.2)<1e-9,'full → fresh recharge clock')
+ _TimerService,log,stats.Level,book.Levels=keepT,keepLog,keepLv,keepLvls _UtilLogic.ElapsedSeconds=keepE _UtilLogic.ServerElapsedSeconds=keepSE
+ print('[quality/skills] 11-05 dash charge chain: 2 uses → 1 at +3.0 → 2 at +6.0 without cast · full clears clock')
 end
 print('[quality/skills] effective rank/gear/choice, dash charge, nodes, aura preview, summon totals, selected-node detail/no-spend, use hints and 8 offer combinations passed')
