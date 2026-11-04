@@ -48,6 +48,7 @@ export const SLOTS = [
   {id: 'bone-bolt-hit', title: '해골 마법사 · 뼈 투척 꽂힘', group: 'undead', runtime: 'GameConst.FxBoneBoltHit', match: 'FxBoneBoltHit|SpearHit|spear-stick'},
   {id: 'blast', title: '본 노바 폭탄·본 오퍼링 제물 폭발', group: 'undead', runtime: 'GameConst.FxSkillBlast', maple: ['SkillEffects.FxBlast'], match: 'FxSkillBlast(?![A-Z])|bone-blast|FxBlast'},
   {id: 'offering', title: '본 오퍼링 치유', group: 'undead', runtime: 'GameConst.FxSkillOfferingHeal', maple: ['SkillEffects.FxOffering'], match: 'Offering'},
+  {id: 'offering-sacrifice', title: '본 오퍼링 제물 (바친 해골 자리 · 11-04 blast에서 분리)', group: 'undead', runtime: 'GameConst.FxSkillOfferingSacrifice', maple: ['GameConst.FxSkillBlast'], match: 'OfferingSacrifice|offering-sacrifice'},
   {id: 'death-wave', title: '데스 노바', group: 'undead', runtime: 'GameConst.FxSkillDeathWave', maple: ['SkillEffects.FxWave'], match: 'DeathWave|death-wave'},
   {id: 'poison-mist', title: '포이즌 미스트', group: 'undead', runtime: 'GameConst.FxSkillPoisonCloud', maple: ['SkillEffects.FxPoisonCloud'], match: 'PoisonCloud|poison-cloud'},
   {id: 'drain-vortex', title: '드레인 라이프 소용돌이 (11-04 스킬 삭제 · 미사용)', group: 'undead', runtime: 'GameConst.FxSkillDrainVortex', maple: ['SkillEffects.FxDrain'], match: 'DrainVortex|drain-vortex|soul-drain'},
