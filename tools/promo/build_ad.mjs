@@ -14,6 +14,8 @@
 // 그다음 한 번에: 확대(lanczos) · 세로면 위쪽 흐린 바탕 · 글자 PNG 겹치기 · 컷 사이 디졸브(xfade) · 엔드카드
 // 소리: 컷 소리를 acrossfade로 잇고 loudnorm 2단계(I=-16 LUFS, TP=-1.5) → 엔드카드 전 0.6초 페이드아웃
 // 글자: ffmpeg에 drawtext가 없어 promo_overlay.py(Pillow)로 투명 PNG를 그려 overlay
+// 3차(v3): 글귀 세트에 "style": "minimal"이면 띠 없이 작은 흰 글자 한 줄(그림자만) — tag(고정 한 줄) · perCut(컷마다) · 짧은 검정 엔드카드.
+//   세로 전체 화면은 layout.videoTop 0(540×960 → 정확히 2배). 무음 재료 컷은 "audioFrom": {src, start}로 다른 녹화의 게임 소리를 그 컷 길이만큼 이어 붙인다.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -161,10 +163,19 @@ async function makeCut(c, i) {
   }).filter((r) => (r.keys ? true : r.x + r.w > 0 && r.y + r.h > 0 && r.x < cw && r.y < ch));
   if (tagDefs && (c.src || 'play.mp4') === tagDefs.src && c.tags !== false) {
     // 컷별 문턱 낮추기(섬광·혼잡 컷): c.tagThr = {w, l} → 견본 문턱과 비교해 낮은 쪽
-    const list = c.tagThr ? tagDefs.list.map((t) => ({ ...t, thr: Math.min(t.thr, c.tagThr.w ?? 1), thr_lum: Math.min(t.thr_lum, c.tagThr.l ?? 1), grow: c.tagGrow ?? t.grow })) : tagDefs.list;
+    const g0 = spec.tagGrow;
+    const list0 = g0 ? tagDefs.list.map((t) => ({ ...t, grow: g0 })) : tagDefs.list;
+    const thrO = c.tagThr ?? spec.tagThr; // spec.tagThr: 전체 컷 문턱 낮추기(3차 — tagVerify로 오검출을 거르니 낮춰도 됨)
+    const list = thrO ? tagDefs.list.map((t) => ({ ...t, thr: Math.min(t.thr, thrO.w ?? 1), thr_lum: Math.min(t.thr_lum, thrO.l ?? 1), grow: c.tagGrow ?? g0 ?? t.grow })) : list0;
     regions.push({ tags: list, hold: c.tagHold ?? spec.tagHold ?? 6 });
   }
   const audioArgs = info.audio ? ['-map', '1:a:0', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2'] : [];
+  if (!info.audio && c.audioFrom) {
+    // 무음 재료(rec/) 컷: 다른 녹화의 게임 소리를 같은 길이만큼 따로 뽑아 둔다 → 소리 잇기에서 이 컷 소리로 쓴다
+    c._audioFile = path.join(work, `cut-${i}-audio.wav`);
+    run('ffmpeg', ['-v', 'error', '-y', '-ss', String(c.audioFrom.start), '-t', String(c.dur), '-i', path.resolve(srcRoot, c.audioFrom.src),
+      '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', ...(c.audioFrom.gain ? ['-af', `volume=${c.audioFrom.gain}dB`] : []), c._audioFile]);
+  }
   const enc = ['-c:v', 'libx264', '-crf', '10', '-preset', 'fast', '-pix_fmt', 'yuv420p'];
   if (!regions.length) {
     run('ffmpeg', ['-v', 'error', '-y', ...seek, ...(info.audio ? ['-ss', String(c.start), '-t', String(c.dur), '-i', src] : []),
@@ -173,6 +184,9 @@ async function makeCut(c, i) {
     const regPath = path.join(work, `cut-${i}-regions.json`);
     const boxPath = path.join(work, `cut-${i}-boxes.json`);
     fs.writeFileSync(regPath, JSON.stringify(regions));
+    if (spec.blurPad != null) process.env.PROMO_BLUR_PAD = String(spec.blurPad);
+    if (spec.blurStyle) process.env.PROMO_BLUR_STYLE = spec.blurStyle; // 'blank' = 빈 이름표로 덮기
+    if (spec.tagVerify) process.env.PROMO_TAG_VERIFY = '1';
     const blurPy = path.join(HERE, 'nametag_blur.py');
     await pipeline([
       ['ffmpeg', ['-v', 'error', ...seek, '-an', '-vf', vf, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-']],
@@ -202,7 +216,19 @@ function overlay(name, items, bg) {
   return png;
 }
 const S = spec.text || {};
+const MIN = copy.style === 'minimal';
+// 3차 글자: 작고 흰 한 줄 · 얇은 그림자(띠·외곽선·노랑 강조 없음)
+function minimalText(text, pos) {
+  const v = format === 'vertical';
+  const size = S.minSize ?? (v ? 44 : 40);
+  const it = { type: 'text', text, size, weight: S.minWeight ?? 'SemiBold', max_w: W - 2 * (S.minMargin ?? 64), color: [255, 255, 255, 240],
+    shadow: { dx: 0, dy: 2, blur: 3, spread: 2, color: [0, 0, 0, 190] },
+    pill: S.minPill === false ? undefined : { pad_x: 18, pad_y: 8, color: [0, 0, 0, S.minPillAlpha ?? 56], radius: 12 } };
+  if (pos === 'top') return { ...it, cx: W / 2, cy: S.topY ?? (v ? 330 : 90) };
+  return { ...it, align: 'left', x: S.minMargin ?? 72, cy: S.bottomLeftY ?? (v ? 1220 : 960) };
+}
 function baseOverlay() {
+  if (MIN) return copy.tag ? overlay('base', [minimalText(copy.tag.text, copy.tag.pos)]) : null;
   if (format !== 'vertical' || !copy.hook) return null;
   const items = [];
   const top = videoTop;
@@ -220,6 +246,7 @@ function baseOverlay() {
   return overlay('base', items);
 }
 function captionOverlay(text, k) {
+  if (MIN) return overlay(`cap-${k}`, [minimalText(text, copy.perCutPos || 'bottom')]);
   const cy = format === 'vertical' ? (S.captionY ?? 1395) : 900;
   return overlay(`cap-${k}`, [{ type: 'text', text, cx: W / 2, cy, size: S.captionSize ?? (format === 'vertical' ? 76 : 64), weight: 'Black', max_w: W - 120,
     color: [255, 255, 255, 255], stroke: 5, stroke_color: [0, 0, 0, 255], hl: copy.captionHl || [], pill: { pad_x: 40, pad_y: 18, color: [0, 0, 0, 120], radius: 26 } }]);
@@ -228,6 +255,11 @@ function endOverlay() {
   const e = copy.end || { title: '메이플 리저렉션', sub: copy.bottom };
   const items = [];
   const v = format === 'vertical';
+  if (MIN) {
+    items.push({ type: 'text', text: e.title, cx: W / 2, cy: v ? 920 : 500, size: v ? 92 : 96, weight: 'Bold', max_w: W - 160, color: [255, 255, 255, 255] });
+    if (e.sub) items.push({ type: 'text', text: e.sub, cx: W / 2, cy: v ? 1030 : 610, size: v ? 40 : 42, weight: 'Regular', max_w: W - 160, color: [255, 255, 255, 170] });
+    return overlay('end', items, [0, 0, 0, 255]);
+  }
   items.push({ type: 'text', text: e.title, cx: W / 2, cy: v ? 880 : 470, size: v ? 118 : 120, weight: 'Black', max_w: W - 120, color: e.titleColor || [255, 255, 255, 255] });
   if (e.sub) items.push({ type: 'text', text: e.sub, cx: W / 2, cy: v ? 1030 : 630, size: v ? 50 : 64, weight: e.subWeight || 'Bold', max_w: W - 140, color: e.subColor || [255, 214, 0, 255], hl: e.subHl || [] });
   return overlay('end', items, [0, 0, 0, 255]);
@@ -238,8 +270,8 @@ function buildAudio(mainLen, total) {
   const wav = path.join(work, 'audio.wav');
   const ins = [], fc = [];
   cuts.forEach((c, i) => {
-    ins.push('-i', c._file);
-    fc.push(c._audio ? `[${i}:a]atrim=0:${c.dur},asetpts=N/SR/TB,aformat=sample_rates=48000:channel_layouts=stereo[a${i}]`
+    ins.push('-i', c._audioFile || c._file);
+    fc.push(c._audio || c._audioFile ? `[${i}:a]atrim=0:${c.dur},asetpts=N/SR/TB,aformat=sample_rates=48000:channel_layouts=stereo[a${i}]`
       : `anullsrc=r=48000:cl=stereo,atrim=0:${c.dur}[a${i}]`);
   });
   let last = 'a0';
@@ -275,7 +307,9 @@ async function main() {
   for (let i = 0; i < cuts.length; i++) await makeCut(cuts[i], i);
   const base = baseOverlay();
   const capTexts = [];
-  if (style === 'narrative' && copy.captions) {
+  if (copy.perCut) {
+    cuts.forEach((c) => capTexts.push(c.cap == null || c.cap < 0 ? null : copy.perCut[c.cap]));
+  } else if (style === 'narrative' && copy.captions) {
     cuts.forEach((c, i) => {
       const k = c.cap ?? (cuts.length === copy.captions.length ? i : null);
       capTexts.push(k == null || k < 0 ? null : copy.captions[k]);
@@ -298,7 +332,7 @@ async function main() {
       const gh = H - videoTop;
       const fh = even((W * c._crop.ch) / c._crop.cw);
       fc.push(`[${vi}:v]trim=0:${c.dur},setpts=PTS-STARTPTS,scale=${W}:${fh}:flags=lanczos,split[g${i}][gb${i}]`);
-      fc.push(`[gb${i}]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,gblur=sigma=10,eq=brightness=-0.12:saturation=0.75,scale=${W}:${H}:flags=bilinear[bg${i}]`);
+      fc.push(`[gb${i}]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,gblur=sigma=10,eq=brightness=${c.bgBrightness ?? -0.12}:saturation=0.75,scale=${W}:${H}:flags=bilinear[bg${i}]`);
       fc.push(`[bg${i}][g${i}]overlay=0:${c.box ? videoTop + (c.boxTop ?? 150) : Math.round(videoTop + (gh - fh) / 2)}[v${i}]`);
     } else if (format === 'vertical') {
       const gh = H - videoTop;

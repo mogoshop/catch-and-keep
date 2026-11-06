@@ -6,13 +6,14 @@ spec = {"size":[W,H], "bg":[r,g,b,a]?, "items":[
   {"type":"rect","x":0,"y":0,"w":W,"h":300,"color":[0,0,0,140], "fade_top":60?, "fade_bottom":40?},
   {"type":"text","text":"...","cx":540,"cy":200,"size":80,"weight":"ExtraBold","color":[255,255,255,255],
    "hl":["단어"],"hl_color":[255,214,0,255],"max_w":1000,"stroke":4,"stroke_color":[0,0,0,255],
-   "pill":{"pad_x":36,"pad_y":18,"color":[0,0,0,150],"radius":24}}
+   "pill":{"pad_x":36,"pad_y":18,"color":[0,0,0,150],"radius":24},
+   "align":"left"|"right"(+"x") · "shadow":{"dx":0,"dy":2,"blur":4,"spread":1,"color":[0,0,0,160]}}
 ]}
 글꼴: Pretendard (~/Library/Fonts 또는 /Library/Fonts) → 없으면 Apple SD Gothic Neo.
 표준 출력에 실제 쓴 글꼴 경로와 글자 크기(자동 축소 후)를 JSON 한 줄로 남긴다.
 """
 import json, os, sys
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 WEIGHTS = ['Black', 'ExtraBold', 'Bold', 'SemiBold', 'Medium', 'Regular']
 
@@ -57,7 +58,12 @@ def draw_text(img, it, log):
         size -= 2
     asc, desc = f.getmetrics()
     th = asc + desc
-    x = it['cx'] - tw / 2
+    if it.get('align') == 'left':
+        x = it['x']
+    elif it.get('align') == 'right':
+        x = it['x'] - tw
+    else:
+        x = it['cx'] - tw / 2
     y = it['cy'] - th / 2
     pill = it.get('pill')
     if pill:
@@ -70,10 +76,19 @@ def draw_text(img, it, log):
     hlc = tuple(it.get('hl_color', [255, 214, 0, 255]))
     sc = tuple(it.get('stroke_color', [0, 0, 0, 255]))
     cx = x - bb[0]
+    sh = it.get('shadow')
+    if sh:
+        # 얇은 그림자: 글자 모양을 그림자 색으로 따로 그려 살짝 흐린 뒤 밑에 깐다 (띠·외곽선 대신)
+        layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(layer).text((cx + sh.get('dx', 0), y + sh.get('dy', 2)), it['text'], font=f, fill=tuple(sh.get('color', [0, 0, 0, 160])),
+                                   stroke_width=sh.get('spread', 1), stroke_fill=tuple(sh.get('color', [0, 0, 0, 160])))
+        layer = layer.filter(ImageFilter.GaussianBlur(sh.get('blur', 4)))
+        img.alpha_composite(layer)
+        d = ImageDraw.Draw(img)
     for seg, m in segments(it['text'], it.get('hl')):
         d.text((cx, y), seg, font=f, fill=hlc if m else base, stroke_width=stroke, stroke_fill=sc)
         cx += d.textlength(seg, font=f)
-    log.append({'text': it['text'], 'size': size, 'font': os.path.basename(path), 'width': tw})
+    log.append({'text': it['text'], 'size': size, 'font': os.path.basename(path), 'width': tw, 'height': bb[3] - bb[1], 'x': round(x), 'y': round(y + bb[1])})
 
 def draw_rect(img, it):
     layer = Image.new('RGBA', img.size, (0, 0, 0, 0))

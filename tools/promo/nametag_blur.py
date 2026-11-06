@@ -20,7 +20,20 @@ import json, sys
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-PAD = 4
+import os
+PAD = int(os.environ.get('PROMO_BLUR_PAD', '4'))
+# 3차(v3): 'blank' = 모자이크 대신 이름표 상자를 상자 바탕색으로 덮어 「글자 없는 이름표」처럼 (혼전 컷의 회색 조각이 지저분하다는 지적)
+STYLE = os.environ.get('PROMO_BLUR_STYLE', 'mosaic')
+# 3차(v3): 견본 일치 뒤 「어두운 상자 + 흰 글씨」인지 한 번 더 확인 — 데미지 숫자·흰 펫·섬광 오검출 제거
+VERIFY = os.environ.get('PROMO_TAG_VERIFY', '0') == '1'
+
+def looks_like_tag(wch, lum, x, y, w, h):
+    H, W = wch.shape
+    if x < 0 or y < 0 or x + w > W or y + h > H:
+        return False
+    a = wch[y:y + h, x:x + w]; l = lum[y:y + h, x:x + w]
+    white = (a > 185).mean(); dark = (l < 115).mean()
+    return 0.05 <= white <= 0.4 and dark >= 0.35
 
 def read_frames(w, h, ch):
     size = w * h * ch
@@ -137,6 +150,8 @@ def detect_tags(frames, tags, lums=None):
                     if any(abs(y - ty) < h // 2 and abs(x - tx) < w // 2 for ty, tx in taken):
                         continue
                     taken.append((y, x))
+                    if VERIFY and lums is not None and not looks_like_tag(f, lums[fi], x, y, w, h):
+                        continue
                     out.append([x - gl, y - gt, w + gl + gr, h + gt + gb])
         hits.append(out)
     return hits
@@ -208,6 +223,28 @@ def blur_patch(p):
         out = (q[:-2, :-2] + q[:-2, 1:-1] + q[:-2, 2:] + q[1:-1, :-2] + q[1:-1, 1:-1] + q[1:-1, 2:] + q[2:, :-2] + q[2:, 1:-1] + q[2:, 2:]) / 9
     return out.astype(np.uint8)
 
+def blank_patch(p):
+    """이름표 바탕색(상자 안 어두운 쪽 절반의 중앙값)으로 채운다 → 글자만 지운 빈 이름표처럼 보인다."""
+    q = p.reshape(-1, 3).astype(np.float32)
+    lum = q[:, 0] * 0.3 + q[:, 1] * 0.59 + q[:, 2] * 0.11
+    dark = q[lum <= np.percentile(lum, 50)]
+    out = np.empty_like(p, dtype=np.float32)
+    out[:] = np.median(dark, axis=0)
+    # 가장자리 한 줄은 원본과 반반 섞어 경계를 덜 딱딱하게
+    out[0, :] = (out[0, :] + p[0, :]) / 2; out[-1, :] = (out[-1, :] + p[-1, :]) / 2
+    out[:, 0] = (out[:, 0] + p[:, 0]) / 2; out[:, -1] = (out[:, -1] + p[:, -1]) / 2
+    return out.astype(np.uint8)
+
+def soft_patch(p):
+    """상자 안만 부드럽게 흐림(반경 작게) — 이름표 상자 모양·색은 남고 글자만 읽히지 않게."""
+    out = p.astype(np.float32)
+    for _ in range(4):
+        q = np.pad(out, ((2, 2), (2, 2), (0, 0)), mode='reflect')
+        out = sum(q[dy:dy + out.shape[0], 2:2 + out.shape[1]] for dy in range(5)) / 5
+        q = np.pad(out, ((0, 0), (2, 2), (0, 0)), mode='reflect')
+        out = sum(q[:, dx:dx + out.shape[1]] for dx in range(5)) / 5
+    return out.astype(np.uint8)
+
 def cmd_apply(w, h, boxes_path):
     data = json.load(open(boxes_path))
     boxes = data['boxes']
@@ -218,7 +255,7 @@ def cmd_apply(w, h, boxes_path):
             x0, y0 = max(0, int(x) - PAD), max(0, int(y) - PAD)
             x1, y1 = min(w, int(x + bw) + PAD), min(h, int(y + bh) + PAD)
             if x1 - x0 > 2 and y1 - y0 > 2:
-                img[y0:y1, x0:x1] = blur_patch(img[y0:y1, x0:x1])
+                img[y0:y1, x0:x1] = ({'blank': blank_patch, 'soft': soft_patch}.get(STYLE, blur_patch))(img[y0:y1, x0:x1])
         outp.write(img.tobytes())
     outp.flush()
 
