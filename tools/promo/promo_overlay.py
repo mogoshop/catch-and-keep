@@ -97,6 +97,10 @@ def draw_rect(img, it):
     x, y, w, h = it['x'], it['y'], it['w'], it['h']
     r, g, b, a = it['color']
     ft, fb = it.get('fade_top', 0), it.get('fade_bottom', 0)
+    if it.get('radius'):  # 둥근 알약 판(페이드 없음) — 최종본 배지 줄 뒤
+        d.rounded_rectangle([x, y, x + w - 1, y + h - 1], radius=it['radius'], fill=(r, g, b, a))
+        img.alpha_composite(layer)
+        return
     for yy in range(h):
         k = 1.0
         if ft and yy < ft: k = yy / ft

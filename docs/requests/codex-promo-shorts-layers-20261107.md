@@ -53,4 +53,4 @@
 - ④ 검색 배지 `badge-search-300.png` — **승인·확정**. 샘플 그대로, 추가 작업 없음(엔드카드 + 본편 아래 띠에 고정으로 씀).
 - ③ 전환 띠(혼 샘플 `transition-soul.png` + 군단·보스 초안) — **반려**. 실제 화면 위 가시성이 낮고 게임 안내를 가림 → 추가 제작 불필요.
 - 글귀: 「메이플 그림체 핵앤슬래시」 → **「메이플 핵앤슬래쉬」**. 글자는 조립기가 넣으므로 코덱스 작업 없음.
-- 적용 결과: `docs/evidence/2026-11-07-marketing-video-shorts-v4/contact-v4-shorts-60s-B-final.jpg` · `contact-v4-shorts-60s-B-final-text.jpg` · `endcard-B-final.png` · `frame-B-final-badge.png` (최종본 `v4-shorts-60s-B-final`, 59.87초).
+- 적용 결과: `docs/evidence/2026-11-07-marketing-video-shorts-v4/contact-v4-shorts-60s-B-final.jpg` · `contact-v4-shorts-60s-B-final-text.jpg` · `endcard-B-final.png` · `frame-B-final-badge.png` (최종본 `v4-shorts-60s-B-final`, 59.87초 · 본편 배지 줄은 게임 화면 바닥 y 1475).
