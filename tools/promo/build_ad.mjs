@@ -19,6 +19,7 @@
 // 4차(v4): "timeline": [{name, items, from, to, fade}] — 컷과 상관없이 영상 전체 시각으로 켜고 끄는 글자 판(디졸브 뒤에 겹침).
 //   from/to가 음수면 엔드카드 시작 시각 기준(-5 = 엔드카드 5초 전). "atCut": k + "dur" = k번째 컷 시작부터 dur초. "endCard": {items, bg} — 엔드카드를 직접 그림(로고 그림은 items의 type "image").
 //   "endTransition": 0.3 = 본편 → 엔드카드 디졸브만 따로(기본은 transition). timeline 항목 "fadeIn"/"fadeOut"(초)으로 등장·소멸을 따로, items에 "image"(그림 레이어)도 가능.
+//   "baseItems": [...] — 위·아래 띠 판(base)에 덧붙이는 고정 항목(본편 처음~끝, 엔드카드 디졸브 때 컷과 함께 사라짐).
 //   "noCaptions": true면 글귀 세트의 장면 자막(captions/perCut)을 쓰지 않는다. 이름표 흐림은 tagTemplates를 빼면 꺼진다.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -248,6 +249,7 @@ function baseOverlay() {
     items.push({ type: 'rect', x: 0, y: by, w: W, h: H - by, color: [0, 0, 0, S.bottomAlpha ?? 228], fade_top: 60 });
     items.push({ type: 'text', text: copy.bottom, cx: W / 2, cy: by + 118, size: S.bottomSize ?? 50, weight: 'Bold', max_w: 1000, color: [255, 255, 255, 255], hl: copy.bottomHl || [], hl_color: [255, 214, 0, 255] });
   }
+  if (spec.baseItems?.length) items.push(...resolveItems(spec.baseItems)); // 최종본: 본편 내내 고정으로 얹는 판(검색 배지 줄 등) — 컷마다 같은 그림이라 디졸브에도 그대로
   return overlay('base', items);
 }
 function captionOverlay(text, k) {

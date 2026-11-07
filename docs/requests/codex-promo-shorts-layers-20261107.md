@@ -45,3 +45,12 @@
   - `previews/badge-sizes.png` — ④를 300 · 96 · 48px 나란히, 검정 바탕과 실제 장면 위 둘 다
 
 샘플 승인제: 항목별 1안(①·②·③ 중 1장·④)을 먼저 받고, 사용자가 승인한 뒤 확정본(③ 나머지 포함)을 만든다. 승인 뒤 Claude가 엔드카드·장 전환에 연결해 다시 조립한다.
+
+## 결정 (2026-11-07, 사용자)
+
+- ① 로고 `logo-maple-resurrection-900.png` — **승인·확정**. 샘플 그대로 최종본에 씀, 추가 작업 없음.
+- ② 아웃트로 판 `outro-1080x1920.png` — **승인·확정**. 샘플 그대로, 추가 작업 없음.
+- ④ 검색 배지 `badge-search-300.png` — **승인·확정**. 샘플 그대로, 추가 작업 없음(엔드카드 + 본편 아래 띠에 고정으로 씀).
+- ③ 전환 띠(혼 샘플 `transition-soul.png` + 군단·보스 초안) — **반려**. 실제 화면 위 가시성이 낮고 게임 안내를 가림 → 추가 제작 불필요.
+- 글귀: 「메이플 그림체 핵앤슬래시」 → **「메이플 핵앤슬래쉬」**. 글자는 조립기가 넣으므로 코덱스 작업 없음.
+- 적용 결과: `docs/evidence/2026-11-07-marketing-video-shorts-v4/contact-v4-shorts-60s-B-final.jpg` · `contact-v4-shorts-60s-B-final-text.jpg` · `endcard-B-final.png` · `frame-B-final-badge.png` (최종본 `v4-shorts-60s-B-final`, 59.87초).
