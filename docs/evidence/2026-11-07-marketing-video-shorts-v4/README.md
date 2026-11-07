@@ -103,3 +103,58 @@ python3 tools/promo/cuts/v4/sheets.py v4-shorts-60s-A
 ## 코덱스 요청
 
 `docs/requests/codex-promo-shorts-layers-20261107.md` — ① 로고 투명 레이어 ② 아웃트로 판 1080×1920 ③ 장 전환 삽입 그림 2~3장 ④ 「메이플스토리 월드에서 검색」 자리 배지. 샘플 승인 뒤 엔드카드·장 전환에 연결해 다시 조립.
+
+## 코덱스 레이어 적용 (B안 확정 뒤 · 11-07)
+
+사용자 확정 B안에 코덱스 납품 `assets/codex-promo-shorts-v1/`(첫 샘플 4종, 읽기만)을 얹은 최종 후보 2편. 미채택 초안 `drafts/transition-legion·boss`는 쓰지 않음.
+
+```
+python3 tools/promo/cuts/v4/make_codex.py          # B.json → B-codex.json · B-codex-tr.json
+node tools/promo/build_ad.mjs tools/promo/cuts/v4/v4-shorts-60s-B-codex.json
+node tools/promo/build_ad.mjs tools/promo/cuts/v4/v4-shorts-60s-B-codex-tr.json
+python3 tools/promo/cuts/v4/codex_sheets.py         # endcard-B-codex.png · transitions-B-codex-tr.jpg
+```
+
+| 편 | 길이 | 차이 |
+|---|---|---|
+| `v4-shorts-60s-B-codex` | 59.87초 (본편 B와 같은 컷·글자 + 엔드카드 3.0초) | 엔드카드 교체만 |
+| `v4-shorts-60s-B-codex-tr` | 59.87초 | 위 + 장 경계 4곳 혼불 띠(비교용) |
+
+- 컷·위 띠 훅·아래 띠 브랜드 줄은 B 그대로. 마지막 결산 컷은 B와 같은 2.9초(엔드카드 +0.5초 · 엔드 디졸브 겹침 +0.15초 → targetDuration 59.5 → 59.85).
+- 본편 → 엔드카드 디졸브 0.3초(컷 사이는 0.15초 그대로). 소리 B와 같음: 게임 소리 loudnorm 2단계 I=-16 LUFS(결과 -16.0 · TP -1.3~-1.5), 엔드카드 전 0.6초 페이드아웃.
+
+### 엔드카드 (3.0초, 1080×1920 왼쪽 위 기준)
+
+| 층 | 그림·글 | 중심 | 크기 |
+|---|---|---|---|
+| 1 | `outro-1080x1920.png` 아웃트로 판(불투명) | 540,960 | 1080 폭 |
+| 2 | `logo-maple-resurrection-900.png` 로고 | 540,880 | 900 폭(원본 1배) |
+| 3 | 부제 「메이플 그림체 핵앤슬래시」 | 540,1330 | Pretendard Regular 46px · 흰색 75%(B와 같음) |
+| 4 | `badge-search-300.png` 검색 배지 | 220,1430 | 80 폭 |
+| 5 | 「메이플스토리 월드에서 검색」 | 왼쪽 x 272 · 세로 중심 1430 | Pretendard Regular 39px · 흰색 75% |
+
+`endcard-B-codex.png` = 끝 0.5초 전 정지(원본 크기). 로고(y 545~1213)·부제(y 1309~1350)·배지 줄(y 1390~1470)·낫 끝(y ≈1520) 사이 겹침 없음, 투구 해골·낫은 y 1520 아래.
+
+### 전환 띠 (-tr만)
+
+- `transition-soul.png` 폭 1000 · 중심 **(540, 580)** · 0.6초 = 등장 0.1 / 유지 0.36 / 소멸 0.14. 2·3·4·5장 첫 컷 시작 0.2초 전에 켜서 컷 디졸브(0.15초)가 유지 구간 안에 들어감 → 12.40 · 21.95 · 33.75 · 44.25초.
+- 코덱스 제안 y 720에서 위로 올린 까닭: B는 영상이 y 380부터라 화면 가운데 캐릭터 머리가 y ≈790~900 — 720이면 띠 실제 그림(그림 안 y 150~461 → 화면 581~869)이 캐릭터 머리를 덮음. 580이면 띠가 y 441~729로 위 띠(0~380)와 캐릭터 사이에 들어감.
+- 대가: 4장 첫 컷 「습격 격퇴 · 24마리」 아랫줄·COMBO, 5장 첫 컷 보스방 몬스터 체력판 가운데를 0.6초 덮음(`transitions-B-codex-tr.jpg` 위 줄).
+- `transitions-B-codex-tr.jpg` = 띠가 가장 진한 순간 4장(위: -tr · 아래: 같은 시각 띠 없는 편).
+
+### 접촉판
+
+- `contact-v4-shorts-60s-B-codex.jpg` · `contact-v4-shorts-60s-B-codex-tr.jpg` — 16칸 균등
+- `endcard-B-codex.png` · `transitions-B-codex-tr.jpg`
+
+### 조립기 확장 (`tools/promo/build_ad.mjs`, 기존 컷 목록 호환)
+
+- `"endTransition"`: 본편 → 엔드카드 디졸브만 따로(없으면 `transition`). targetDuration 계산·소리 페이드 시점에 반영.
+- timeline 항목 `"fadeIn"`/`"fadeOut"`: 등장·소멸 길이를 따로(없으면 `fade`). timeline items의 `"image"` 경로도 리포 기준으로 풀어 줌.
+
+### 코덱스 샘플 소견
+
+- 로고: 가장자리 깨끗함(종이 잔여·먹 번짐 없음), 900px 1배라 선명. 임시 투명화 로고보다 확실히 나음.
+- 아웃트로 판: 투구 해골·낫·보라 혼불 선명, 위쪽 붓 질감 배경이 어두워 글자 대비 충분. 해골이 화면 맨 아래(y 1700~1900)라 일부 앱의 하단 UI(좋아요·설명 줄)에 가릴 수 있음.
+- 전환 띠: 그림 대부분이 투명이고 진한 부분이 가운데 폭 ~350px 혼불 한 갈래라, 밝은 사막 맵에서 0.6초면 「띠」보다 작은 보라 불꽃이 스치는 정도로 보임 — 장 구분 효과는 약함.
+- 배지 80px: 돋보기+보라 잎이 읽히지만 실제 보이는 그림은 ~51px라 작음. 배지 중심 220이 제안값이라 배지 줄 전체(x 180~700)가 화면 가운데보다 왼쪽으로 치우침.

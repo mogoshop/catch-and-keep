@@ -18,6 +18,7 @@
 //   세로 전체 화면은 layout.videoTop 0(540×960 → 정확히 2배). 무음 재료 컷은 "audioFrom": {src, start}로 다른 녹화의 게임 소리를 그 컷 길이만큼 이어 붙인다.
 // 4차(v4): "timeline": [{name, items, from, to, fade}] — 컷과 상관없이 영상 전체 시각으로 켜고 끄는 글자 판(디졸브 뒤에 겹침).
 //   from/to가 음수면 엔드카드 시작 시각 기준(-5 = 엔드카드 5초 전). "atCut": k + "dur" = k번째 컷 시작부터 dur초. "endCard": {items, bg} — 엔드카드를 직접 그림(로고 그림은 items의 type "image").
+//   "endTransition": 0.3 = 본편 → 엔드카드 디졸브만 따로(기본은 transition). timeline 항목 "fadeIn"/"fadeOut"(초)으로 등장·소멸을 따로, items에 "image"(그림 레이어)도 가능.
 //   "noCaptions": true면 글귀 세트의 장면 자막(captions/perCut)을 쓰지 않는다. 이름표 흐림은 tagTemplates를 빼면 꺼진다.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -54,6 +55,7 @@ const copy = copySetName ? JSON.parse(fs.readFileSync(copyPath, 'utf8'))[copySet
 if (copySetName && !copy) throw new Error(`글귀 세트 없음: ${copySetName}`);
 const FPS = 30;
 const T = spec.transition ?? 0.2;
+const TE = spec.endTransition ?? T; // 본편 → 엔드카드 디졸브 길이(기본은 컷 사이와 같음)
 const W = format === 'vertical' ? 1080 : 1920;
 const H = format === 'vertical' ? 1920 : 1080;
 const videoTop = format === 'vertical' ? (spec.layout?.videoTop ?? 380) : 0;
@@ -114,7 +116,7 @@ if (style === 'loop') {
 const nClips = cuts.length + (endDur > 0 ? 1 : 0);
 if (spec.targetDuration && style !== 'loop') {
   const others = cuts.slice(0, -1).reduce((s, c) => s + c.dur, 0);
-  const need = spec.targetDuration - others - endDur + (nClips - 1) * T;
+  const need = spec.targetDuration - others - endDur + (nClips - 1) * T + (endDur > 0 ? TE - T : 0);
   if (need < 0.6) throw new Error(`targetDuration에 비해 컷이 너무 김 (마지막 컷 ${need.toFixed(2)}초)`);
   cuts[cuts.length - 1].dur = +need.toFixed(3);
 }
@@ -254,8 +256,9 @@ function captionOverlay(text, k) {
   return overlay(`cap-${k}`, [{ type: 'text', text, cx: W / 2, cy, size: S.captionSize ?? (format === 'vertical' ? 76 : 64), weight: 'Black', max_w: W - 120,
     color: [255, 255, 255, 255], stroke: 5, stroke_color: [0, 0, 0, 255], hl: copy.captionHl || [], pill: { pad_x: 40, pad_y: 18, color: [0, 0, 0, 120], radius: 26 } }]);
 }
+const resolveItems = (items) => items.map((it) => (it.type === 'image' ? { ...it, path: path.resolve(ROOT, it.path) } : it));
 function endOverlay() {
-  if (spec.endCard) return overlay('end', spec.endCard.items.map((it) => (it.type === 'image' ? { ...it, path: path.resolve(ROOT, it.path) } : it)), spec.endCard.bg || [0, 0, 0, 255]);
+  if (spec.endCard) return overlay('end', resolveItems(spec.endCard.items), spec.endCard.bg || [0, 0, 0, 255]);
   const e = copy.end || { title: '메이플 리저렉션', sub: copy.bottom };
   const items = [];
   const v = format === 'vertical';
@@ -380,8 +383,9 @@ async function main() {
     let acc = clipLabels[0].dur, last = clipLabels[0].L;
     for (let k = 1; k < clipLabels.length; k++) {
       const o = k === clipLabels.length - 1 ? 'vout' : `x${k}`;
-      fc.push(`[${last}][${clipLabels[k].L}]xfade=transition=fade:duration=${T}:offset=${(acc - T).toFixed(3)}[${o}]`);
-      acc += clipLabels[k].dur - T; last = o;
+      const d = clipLabels[k].L === 'cend' ? TE : T;
+      fc.push(`[${last}][${clipLabels[k].L}]xfade=transition=fade:duration=${d}:offset=${(acc - d).toFixed(3)}[${o}]`);
+      acc += clipLabels[k].dur - d; last = o;
     }
     if (clipLabels.length === 1) fc.push(`[${last}]null[vout]`);
     outLabel = 'vout'; total = acc;
@@ -403,17 +407,17 @@ async function main() {
         a = tl.from < 0 ? endStart + tl.from : tl.from;
         b = tl.to == null ? endStart : tl.to <= 0 ? endStart + tl.to : tl.to;
       }
-      const fd = tl.fade ?? 0.3;
-      const png = overlay(`tl-${tl.name || k}`, tl.items); // 같은 그림을 여러 번 써도 이름이 같으면 한 번만 그려짐
+      const fi = tl.fadeIn ?? tl.fade ?? 0.3, fo = tl.fadeOut ?? tl.fade ?? 0.3; // 등장·소멸 길이를 따로 줄 수 있음(전환 띠 100/140ms)
+      const png = overlay(`tl-${tl.name || k}`, resolveItems(tl.items)); // 같은 그림을 여러 번 써도 이름이 같으면 한 번만 그려짐 · image 항목 가능
       const ti = addIn('-loop', '1', '-framerate', String(FPS), '-t', total.toFixed(3), '-i', png);
-      fc.push(`[${ti}:v]format=rgba,fade=t=in:st=${a.toFixed(3)}:d=${fd}:alpha=1,fade=t=out:st=${(b - fd).toFixed(3)}:d=${fd}:alpha=1[tlk${k}]`);
+      fc.push(`[${ti}:v]format=rgba,fade=t=in:st=${a.toFixed(3)}:d=${fi}:alpha=1,fade=t=out:st=${(b - fo).toFixed(3)}:d=${fo}:alpha=1[tlk${k}]`);
       fc.push(`[${cur}][tlk${k}]overlay=0:0:eof_action=pass[tlo${k}]`);
       cur = `tlo${k}`;
       tl._at = [+a.toFixed(2), +b.toFixed(2)];
     });
     outLabel = cur;
   }
-  const mainLen = total - endDur + (end ? T : 0);
+  const mainLen = total - endDur + (end ? TE : 0);
   let audio = null;
   if (audioMode === 'game') audio = buildAudio(mainLen, total);
   const args = ['-v', 'error', '-y', ...ins];
