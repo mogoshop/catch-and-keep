@@ -7,7 +7,8 @@ spec = {"size":[W,H], "bg":[r,g,b,a]?, "items":[
   {"type":"text","text":"...","cx":540,"cy":200,"size":80,"weight":"ExtraBold","color":[255,255,255,255],
    "hl":["단어"],"hl_color":[255,214,0,255],"max_w":1000,"stroke":4,"stroke_color":[0,0,0,255],
    "pill":{"pad_x":36,"pad_y":18,"color":[0,0,0,150],"radius":24},
-   "align":"left"|"right"(+"x") · "shadow":{"dx":0,"dy":2,"blur":4,"spread":1,"color":[0,0,0,160]}}
+   "align":"left"|"right"(+"x") · "shadow":{"dx":0,"dy":2,"blur":4,"spread":1,"color":[0,0,0,160]}},
+  {"type":"image","path":"logo.png","cx":540,"cy":900,"w":900,"alpha":1.0}
 ]}
 글꼴: Pretendard (~/Library/Fonts 또는 /Library/Fonts) → 없으면 Apple SD Gothic Neo.
 표준 출력에 실제 쓴 글꼴 경로와 글자 크기(자동 축소 후)를 JSON 한 줄로 남긴다.
@@ -103,6 +104,15 @@ def draw_rect(img, it):
         d.line([(x, y + yy), (x + w - 1, y + yy)], fill=(r, g, b, int(a * k)))
     img.alpha_composite(layer)
 
+def draw_image(img, it):
+    # {"type":"image","path":"x.png","cx":540,"cy":900,"w":900} — 폭에 맞춰 줄이고 가운데 기준으로 얹는다(투명 PNG 그대로)
+    im = Image.open(it['path']).convert('RGBA')
+    w = it.get('w', im.width); h = round(im.height * w / im.width)
+    im = im.resize((w, h), Image.LANCZOS)
+    if it.get('alpha') is not None:
+        im.putalpha(im.getchannel('A').point(lambda v: int(v * it['alpha'])))
+    img.alpha_composite(im, (round(it['cx'] - w / 2), round(it['cy'] - h / 2)))
+
 def main():
     spec = json.load(open(sys.argv[1]))
     W, H = spec['size']
@@ -111,6 +121,7 @@ def main():
     for it in spec['items']:
         if it['type'] == 'rect': draw_rect(img, it)
         elif it['type'] == 'text': draw_text(img, it, log)
+        elif it['type'] == 'image': draw_image(img, it)
     img.save(sys.argv[2])
     print(json.dumps(log, ensure_ascii=False))
 

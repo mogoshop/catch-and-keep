@@ -16,6 +16,9 @@
 // 글자: ffmpeg에 drawtext가 없어 promo_overlay.py(Pillow)로 투명 PNG를 그려 overlay
 // 3차(v3): 글귀 세트에 "style": "minimal"이면 띠 없이 작은 흰 글자 한 줄(그림자만) — tag(고정 한 줄) · perCut(컷마다) · 짧은 검정 엔드카드.
 //   세로 전체 화면은 layout.videoTop 0(540×960 → 정확히 2배). 무음 재료 컷은 "audioFrom": {src, start}로 다른 녹화의 게임 소리를 그 컷 길이만큼 이어 붙인다.
+// 4차(v4): "timeline": [{name, items, from, to, fade}] — 컷과 상관없이 영상 전체 시각으로 켜고 끄는 글자 판(디졸브 뒤에 겹침).
+//   from/to가 음수면 엔드카드 시작 시각 기준(-5 = 엔드카드 5초 전). "atCut": k + "dur" = k번째 컷 시작부터 dur초. "endCard": {items, bg} — 엔드카드를 직접 그림(로고 그림은 items의 type "image").
+//   "noCaptions": true면 글귀 세트의 장면 자막(captions/perCut)을 쓰지 않는다. 이름표 흐림은 tagTemplates를 빼면 꺼진다.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -252,6 +255,7 @@ function captionOverlay(text, k) {
     color: [255, 255, 255, 255], stroke: 5, stroke_color: [0, 0, 0, 255], hl: copy.captionHl || [], pill: { pad_x: 40, pad_y: 18, color: [0, 0, 0, 120], radius: 26 } }]);
 }
 function endOverlay() {
+  if (spec.endCard) return overlay('end', spec.endCard.items.map((it) => (it.type === 'image' ? { ...it, path: path.resolve(ROOT, it.path) } : it)), spec.endCard.bg || [0, 0, 0, 255]);
   const e = copy.end || { title: '메이플 리저렉션', sub: copy.bottom };
   const items = [];
   const v = format === 'vertical';
@@ -307,7 +311,9 @@ async function main() {
   for (let i = 0; i < cuts.length; i++) await makeCut(cuts[i], i);
   const base = baseOverlay();
   const capTexts = [];
-  if (copy.perCut) {
+  if (spec.noCaptions) {
+    cuts.forEach(() => capTexts.push(null));
+  } else if (copy.perCut) {
     cuts.forEach((c) => capTexts.push(c.cap == null || c.cap < 0 ? null : copy.perCut[c.cap]));
   } else if (style === 'narrative' && copy.captions) {
     cuts.forEach((c, i) => {
@@ -383,6 +389,30 @@ async function main() {
     fc.push(`${clipLabels.map((c) => `[${c.L}]`).join('')}concat=n=${clipLabels.length}:v=1:a=0[vout]`);
     outLabel = 'vout'; total = clipLabels.reduce((s, c) => s + c.dur, 0);
   }
+  if (spec.timeline?.length) {
+    // 영상 전체 시각 기준 글자 판: 투명 PNG를 반복 입력으로 넣고 알파 페이드로 켜고 끈다
+    const endStart = total - endDur;
+    let cur = outLabel;
+    spec.timeline.forEach((tl, k) => {
+      let a, b;
+      if (tl.atCut != null) {
+        // 컷 k가 시작하는 시각부터 dur초 (장이 바뀔 때마다 잠깐 켜는 글자)
+        a = cuts.slice(0, tl.atCut).reduce((s, c) => s + c.dur - T, 0) + (tl.from ?? 0);
+        b = a + tl.dur;
+      } else {
+        a = tl.from < 0 ? endStart + tl.from : tl.from;
+        b = tl.to == null ? endStart : tl.to <= 0 ? endStart + tl.to : tl.to;
+      }
+      const fd = tl.fade ?? 0.3;
+      const png = overlay(`tl-${tl.name || k}`, tl.items); // 같은 그림을 여러 번 써도 이름이 같으면 한 번만 그려짐
+      const ti = addIn('-loop', '1', '-framerate', String(FPS), '-t', total.toFixed(3), '-i', png);
+      fc.push(`[${ti}:v]format=rgba,fade=t=in:st=${a.toFixed(3)}:d=${fd}:alpha=1,fade=t=out:st=${(b - fd).toFixed(3)}:d=${fd}:alpha=1[tlk${k}]`);
+      fc.push(`[${cur}][tlk${k}]overlay=0:0:eof_action=pass[tlo${k}]`);
+      cur = `tlo${k}`;
+      tl._at = [+a.toFixed(2), +b.toFixed(2)];
+    });
+    outLabel = cur;
+  }
   const mainLen = total - endDur + (end ? T : 0);
   let audio = null;
   if (audioMode === 'game') audio = buildAudio(mainLen, total);
@@ -408,6 +438,7 @@ async function main() {
     audio: audio ? { mode: audio.bed ? `bed ${audio.bed.src}@${audio.bed.start}s` : 'game', beforeLUFS: audio.before, afterLUFS: audio.after, truePeak: audio.tp } : { mode: 'none' },
     fonts: [...new Set(fontLog.map((f) => f.font))],
     textSizes: fontLog.map((f) => ({ text: f.text, size: f.size })),
+    timeline: (spec.timeline || []).map((tl) => ({ name: tl.name, at: tl._at })),
   };
   fs.writeFileSync(path.join(work, 'summary.json'), JSON.stringify(summary, null, 2));
   if (!opt.keep) for (const c of cuts) fs.rmSync(c._file, { force: true });
